@@ -51,6 +51,8 @@ interface ComposerProps {
   readonly inputRef?: RefObject<HTMLTextAreaElement | null>;
   readonly onInputAvailable?: (input: HTMLTextAreaElement | null) => void;
   readonly approvalLocked?: boolean;
+  /** RS-07 §4.2: blocks ONLY Send (typing stays free) while the thread's detached run is live. */
+  readonly sendBlocked?: boolean;
   readonly uploads?: AttachmentUploads;
   readonly draftPrompt?: ComposerDraftPrompt | undefined;
   readonly onDraftPromptConsumed?: ((nonce: number) => void) | undefined;
@@ -77,6 +79,7 @@ export function Composer({
   inputRef,
   onInputAvailable,
   approvalLocked = false,
+  sendBlocked = false,
   uploads,
   draftPrompt,
   onDraftPromptConsumed,
@@ -126,7 +129,7 @@ export function Composer({
   const isDictating = dictation != null;
   const isRecording = recordingEpoch === captureEpoch;
   const activeDictationPhase = dictationCaptureEpoch === captureEpoch ? dictationPhase : 'idle';
-  const sendDisabled = approvalLocked || uploads?.hasBlockingUploads === true;
+  const sendDisabled = approvalLocked || sendBlocked || uploads?.hasBlockingUploads === true;
 
   useLayoutEffect(() => {
     onInputAvailable?.(composerInputRef.current);

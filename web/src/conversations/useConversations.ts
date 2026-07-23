@@ -43,6 +43,11 @@ export interface Conversation {
    *  ShareLink.snapshot_turn_count). Optional and forward-compatible for the same reason as
    *  LastActiveAt above — not yet projected server-side. */
   readonly TurnCount?: number;
+  /** RS-07 §4.2: the id of this thread's live detached run, for reload-attach via
+   *  GET /agent/runs/{id}/events. snake_case by design — an additive gateway field,
+   *  unlike the Go-named projection keys above; absent when no run is live (or
+   *  AURA_AGUI_RUN_DETACH is off). */
+  readonly live_run_id?: string;
 }
 
 /** GET /api/conversations/search hit — conversations.Store.SearchResult projection. */

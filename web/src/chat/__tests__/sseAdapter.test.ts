@@ -277,12 +277,32 @@ describe('sseAdapter — usageFromStateDelta', () => {
 describe('sseAdapter — SSE frame parsing', () => {
   it('parseSSEBlock reads a data: line and trusts the JSON type', () => {
     const block = `event: TEXT_MESSAGE_CONTENT\ndata: ${JSON.stringify(golden.TEXT_MESSAGE_CONTENT)}`;
-    const f = parseSSEBlock(block);
-    expect(f?.type).toBe('TEXT_MESSAGE_CONTENT');
+    const ev = parseSSEBlock(block);
+    expect(ev?.frame.type).toBe('TEXT_MESSAGE_CONTENT');
+    // No id: line (flag-off wire) → no resume cursor.
+    expect(ev?.id).toBeUndefined();
+  });
+
+  it('parseSSEBlock extracts an INTEGER id: line (1.3B resume wire)', () => {
+    const block = `event: TEXT_MESSAGE_CONTENT\nid: 7\ndata: ${JSON.stringify(golden.TEXT_MESSAGE_CONTENT)}`;
+    const ev = parseSSEBlock(block);
+    expect(ev?.frame.type).toBe('TEXT_MESSAGE_CONTENT');
+    expect(ev?.id).toBe(7);
+  });
+
+  it('parseSSEBlock treats non-integer ids as "no resume capability" (SDK flag-off shape)', () => {
+    const data = `data: ${JSON.stringify(golden.RUN_STARTED)}`;
+    // The SDK's <TYPE>_<timestampMs> id, a negative and a float are all rejected.
+    expect(parseSSEBlock(`event: RUN_STARTED\nid: RUN_STARTED_1780766525937\n${data}`)?.id).toBe(
+      undefined,
+    );
+    expect(parseSSEBlock(`event: RUN_STARTED\nid: -3\n${data}`)?.id).toBeUndefined();
+    expect(parseSSEBlock(`event: RUN_STARTED\nid: 3.5\n${data}`)?.id).toBeUndefined();
   });
 
   it('parseSSEBlock ignores comments / keep-alives / non-data blocks', () => {
     expect(parseSSEBlock(': keep-alive')).toBeNull();
+    expect(parseSSEBlock(':hb')).toBeNull(); // Tier A heartbeat comment
     expect(parseSSEBlock('event: PING')).toBeNull();
     expect(parseSSEBlock('data: {not json')).toBeNull();
     expect(parseSSEBlock('data: 42')).toBeNull(); // no type field
@@ -304,11 +324,33 @@ describe('sseAdapter — SSE frame parsing', () => {
       },
     });
     const frames: AguiFrame[] = [];
-    for await (const f of readSSEFrames(stream)) frames.push(f);
+    for await (const { frame } of readSSEFrames(stream)) frames.push(frame);
     expect(frames.map((f) => f.type)).toEqual([
       'RUN_STARTED',
       'TEXT_MESSAGE_CONTENT',
       'RUN_FINISHED',
+    ]);
+  });
+
+  it('readSSEFrames yields each frame with its integer id and skips heartbeats', async () => {
+    const enc = new TextEncoder();
+    const wire =
+      `event: RUN_STARTED\nid: 1\ndata: ${JSON.stringify(golden.RUN_STARTED)}\n\n` +
+      ':hb\n\n' + // heartbeat comment: no frame, never advances the cursor
+      `event: TEXT_MESSAGE_CONTENT\nid: 2\ndata: ${JSON.stringify(golden.TEXT_MESSAGE_CONTENT)}\n\n`;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(enc.encode(wire));
+        controller.close();
+      },
+    });
+    const events: { type: string; id?: number }[] = [];
+    for await (const { frame, id } of readSSEFrames(stream)) {
+      events.push({ type: frame.type, ...(id !== undefined ? { id } : {}) });
+    }
+    expect(events).toEqual([
+      { type: 'RUN_STARTED', id: 1 },
+      { type: 'TEXT_MESSAGE_CONTENT', id: 2 },
     ]);
   });
 
@@ -322,7 +364,7 @@ describe('sseAdapter — SSE frame parsing', () => {
       },
     });
     const frames: AguiFrame[] = [];
-    for await (const f of readSSEFrames(stream)) frames.push(f);
+    for await (const { frame } of readSSEFrames(stream)) frames.push(frame);
     expect(frames.map((f) => f.type)).toEqual(['TEXT_MESSAGE_CONTENT']);
   });
 });

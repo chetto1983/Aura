@@ -93,9 +93,14 @@ export const resources = {
         },
         running: 'Running...',
         empty: chatEmptyEn,
+        liveRun: {
+          hint: 'A run is still in progress in this conversation. Sending re-enables when it finishes.',
+        },
         error: {
           stream:
             'The response stopped unexpectedly. Retry the last message or check the runtime status.',
+          connectionLost:
+            'Connection lost mid-response. Showing the saved state of this conversation.',
           createConversation:
             "Couldn't start a new conversation. Check the runtime status and try again.",
           loadHistory:
@@ -368,9 +373,14 @@ export const resources = {
         },
         running: 'In esecuzione...',
         empty: chatEmptyIt,
+        liveRun: {
+          hint: "Un'esecuzione è ancora in corso in questa conversazione. L'invio si riattiva al termine.",
+        },
         error: {
           stream:
             "La risposta si è interrotta inaspettatamente. Riprova l'ultimo messaggio o controlla lo stato del runtime.",
+          connectionLost:
+            'Connessione persa durante la risposta. Viene mostrato lo stato salvato della conversazione.',
           createConversation:
             'Impossibile avviare una nuova conversazione. Controlla lo stato runtime e riprova.',
           loadHistory:

@@ -4,11 +4,16 @@ import {
   errorDetail,
   type AguiFrame,
   type ChatPart,
-  type JSONPatchOp,
   type ReasoningPart,
   type TextPart,
   type ToolPart,
 } from './sseAdapter_frames';
+import {
+  isUsageDelta,
+  toolCallIdFromDelta,
+  usageFromStateDelta,
+  type TurnUsage,
+} from './sseAdapter_usage';
 import { buildAuraRunBody } from './auraRunBody';
 
 // sseAdapter maps Aura's AG-UI/SSE event stream (POST /agent/run) onto
@@ -33,62 +38,10 @@ import { buildAuraRunBody } from './auraRunBody';
 //
 // The wire-frame types, the part-union types, the snapshot shapes and the shared
 // errorDetail helper live in ./sseAdapter_frames (the leaf); persisted-history
-// rehydration lives in ./sseAdapter_snapshot. This module keeps the live reducer,
-// SSE parsing and the stream runners, then re-exports both siblings so the public
-// import surface (`./sseAdapter`) stays unchanged.
-
-// ---------------------------------------------------------------------------
-// Usage — read off the final STATE_DELTA (cost/cache footer, D-10).
-// ---------------------------------------------------------------------------
-
-export interface TurnUsage {
-  readonly promptTokens: number;
-  readonly completionTokens: number;
-  readonly cacheHitTokens: number;
-  readonly costUsd?: number;
-}
-
-/** True when this STATE_DELTA carries usage keys (vs the tool-result marker). */
-export function isUsageDelta(ops: readonly JSONPatchOp[]): boolean {
-  return ops.some(
-    (o) =>
-      o.path === '/prompt_tokens' ||
-      o.path === '/completion_tokens' ||
-      o.path === '/cache_hit_tokens' ||
-      o.path === '/cost_usd',
-  );
-}
-
-/** The tool_call_id a STATE_DELTA marks (Pitfall 2 — tool-result, never prose). */
-export function toolCallIdFromDelta(ops: readonly JSONPatchOp[]): string | undefined {
-  const marker = ops.find((o) => o.path === '/tool_call_id');
-  if (marker === undefined) return undefined;
-  return typeof marker.value === 'string' ? marker.value : undefined;
-}
-
-/**
- * Project the usage JSONPatch ops onto a TurnUsage. Missing cost_usd → costUsd
- * undefined (D-10: provider may omit cost). Numeric coercion is defensive.
- */
-export function usageFromStateDelta(ops: readonly JSONPatchOp[]): TurnUsage {
-  const byPath = new Map(ops.map((o) => [o.path, o.value]));
-  const cost = byPath.get('/cost_usd');
-  return {
-    promptTokens: Number(byPath.get('/prompt_tokens') ?? 0),
-    completionTokens: Number(byPath.get('/completion_tokens') ?? 0),
-    cacheHitTokens: Number(byPath.get('/cache_hit_tokens') ?? 0),
-    ...(cost !== undefined ? { costUsd: Number(cost) } : {}),
-  };
-}
-
-/**
- * Cache-hit ratio (0..1) for the footer. Guards divide-by-zero: promptTokens=0
- * returns 0, never NaN (matching cachemetrics.Aggregate "ratio left to caller").
- */
-export function cacheHitRatio(usage: TurnUsage): number {
-  if (usage.promptTokens <= 0) return 0;
-  return usage.cacheHitTokens / usage.promptTokens;
-}
+// rehydration lives in ./sseAdapter_snapshot; the D-10 usage projection lives in
+// ./sseAdapter_usage. This module keeps the live reducer, SSE parsing and the
+// stream runners, then re-exports the siblings so the public import surface
+// (`./sseAdapter`) stays unchanged.
 
 // ---------------------------------------------------------------------------
 // The reducer — folds frames onto a single assistant ThreadMessageLike.
@@ -221,7 +174,7 @@ function ensureTool(
  * (no card, no corruption). `path` MAY ride the descriptor for Telegram parity
  * (D-01) but is deliberately absent from this shape — the reducer never reads it.
  */
-interface ArtifactDescriptor {
+export interface ArtifactDescriptor {
   readonly tool_call_id: string;
   readonly filename: string;
   readonly size_bytes?: number;
@@ -233,6 +186,17 @@ function isArtifactDescriptor(value: unknown): value is ArtifactDescriptor {
   if (typeof value !== 'object' || value === null) return false;
   const candidate = value as { tool_call_id?: unknown; filename?: unknown };
   return typeof candidate.tool_call_id === 'string' && typeof candidate.filename === 'string';
+}
+
+/**
+ * Narrow a frame to its actionable `aura.artifact` descriptor (or null). The
+ * single decision point for the PUMP-level onArtifact signal (T-37B-15: never
+ * emitted from the pure reduceFrame) — shared by streamSSE here and by the
+ * resilient wrapper in ./sseResume so the two pumps cannot drift.
+ */
+export function artifactDescriptorValue(frame: AguiFrame): ArtifactDescriptor | null {
+  if (frame.type !== 'CUSTOM' || frame.name !== 'aura.artifact') return null;
+  return isArtifactDescriptor(frame.value) ? frame.value : null;
 }
 
 /**
@@ -409,32 +373,51 @@ export function toThreadMessage(state: AssistantTurnState): ThreadMessageLike {
 // ---------------------------------------------------------------------------
 
 /**
- * Parse one SSE event block (lines between blank-line delimiters) into a frame.
- * The AG-UI SSE writer emits `event: <TYPE>` + `data: <json>`; we trust the JSON
- * body's own `type` field (it is authoritative and matches the event line).
- * Returns null for keep-alives / comment lines / unparseable blocks.
+ * One parsed SSE block: the AG-UI frame plus its `id:` when the resume-capable
+ * gateway stamped an INTEGER sequence (fix-plan 1.3B — 1-based, strictly
+ * monotonic per run). A non-integer id (the SDK's `<TYPE>_<timestampMs>` shape,
+ * flag off) yields `id` undefined — "no resume capability" — so callers degrade
+ * to the single-shot contract.
  */
-export function parseSSEBlock(block: string): AguiFrame | null {
+export interface SSEFrameEvent {
+  readonly frame: AguiFrame;
+  readonly id?: number;
+}
+
+/**
+ * Parse one SSE event block (lines between blank-line delimiters) into a frame.
+ * The AG-UI SSE writer emits `event: <TYPE>` [+ `id: <seq>`] + `data: <json>`;
+ * we trust the JSON body's own `type` field (it is authoritative and matches
+ * the event line). Returns null for keep-alives / comment lines / unparseable
+ * blocks — heartbeat comments (`:hb`) never advance the resume cursor.
+ */
+export function parseSSEBlock(block: string): SSEFrameEvent | null {
   const dataLines: string[] = [];
+  let id: number | undefined;
   for (const raw of block.split('\n')) {
     const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
     if (line.startsWith(':')) continue; // comment / keep-alive
+    if (line.startsWith('id:')) {
+      const value = line.slice(3).replace(/^ /, '');
+      if (/^\d+$/.test(value)) id = Number(value);
+      continue;
+    }
     if (line.startsWith('data:')) dataLines.push(line.slice(5).replace(/^ /, ''));
   }
   if (dataLines.length === 0) return null;
   try {
     const parsed = JSON.parse(dataLines.join('\n')) as { type?: string };
     if (typeof parsed.type !== 'string') return null;
-    return parsed as AguiFrame;
+    return { frame: parsed as AguiFrame, ...(id !== undefined ? { id } : {}) };
   } catch {
     return null;
   }
 }
 
-/** Async-iterate AG-UI frames from a fetch Response's SSE body. */
+/** Async-iterate AG-UI frames (with their resume ids) from an SSE body. */
 export async function* readSSEFrames(
   body: ReadableStream<Uint8Array>,
-): AsyncGenerator<AguiFrame, void, unknown> {
+): AsyncGenerator<SSEFrameEvent, void, unknown> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
@@ -447,16 +430,16 @@ export async function* readSSEFrames(
       while (sep !== -1) {
         const block = buffer.slice(0, sep);
         buffer = buffer.slice(sep + 2);
-        const frame = parseSSEBlock(block);
-        if (frame) yield frame;
+        const event = parseSSEBlock(block);
+        if (event) yield event;
         sep = buffer.indexOf('\n\n');
       }
     }
     // Flush a trailing block with no final blank-line delimiter.
     const tail = (buffer + decoder.decode()).trim();
     if (tail.length > 0) {
-      const frame = parseSSEBlock(tail);
-      if (frame) yield frame;
+      const event = parseSSEBlock(tail);
+      if (event) yield event;
     }
   } finally {
     reader.releaseLock();
@@ -495,7 +478,7 @@ export interface StreamPostOptions {
   readonly newId?: () => string;
 }
 
-const SSE_REQUEST_HEADERS: HeadersInit = {
+export const SSE_REQUEST_HEADERS: Record<string, string> = {
   'Content-Type': 'application/json',
   Accept: 'text/event-stream',
 };
@@ -522,18 +505,13 @@ async function streamSSE(opts: StreamSSEOptions): Promise<TurnUsage | undefined>
     return state.usage;
   }
 
-  for await (const frame of readSSEFrames(res.body)) {
+  for await (const { frame } of readSSEFrames(res.body)) {
     reduceFrame(state, frame);
     // onArtifact is a PUMP-level signal, NEVER emitted from the pure reduceFrame
     // (Pitfall/T-37B-15): fire it here when the descriptor frame lands, passing the
     // asset_id (undefined on a degraded delivery — the panel still auto-opens).
-    if (
-      frame.type === 'CUSTOM' &&
-      frame.name === 'aura.artifact' &&
-      isArtifactDescriptor(frame.value)
-    ) {
-      opts.onArtifact?.(frame.value.asset_id);
-    }
+    const artifact = artifactDescriptorValue(frame);
+    if (artifact !== null) opts.onArtifact?.(artifact.asset_id);
     opts.onUpdate(toThreadMessage(state), state.usage);
   }
   return state.usage;
@@ -591,9 +569,17 @@ export async function streamRun(opts: StreamRunOptions): Promise<TurnUsage | und
 
 // ---------------------------------------------------------------------------
 // Barrel — keep the public `./sseAdapter` import surface unchanged. Everything
-// moved into the leaf (wire/part types) and the snapshot module is re-exported
-// here so consumers and tests import from this path exactly as before.
+// moved into the leaves (wire/part types, usage projection) and the snapshot
+// module is re-exported here so consumers and tests import from this path
+// exactly as before.
 // ---------------------------------------------------------------------------
 
 export type { AguiFrame, ChatPart, JSONPatchOp } from './sseAdapter_frames';
 export { fetchThreadMessages, snapshotToThreadMessages } from './sseAdapter_snapshot';
+export {
+  cacheHitRatio,
+  isUsageDelta,
+  toolCallIdFromDelta,
+  usageFromStateDelta,
+  type TurnUsage,
+} from './sseAdapter_usage';

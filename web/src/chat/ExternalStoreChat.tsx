@@ -19,7 +19,7 @@ import { useThreadApprovals } from '../approvals/useThreadApprovals';
 import type { Approval } from '../approvals/useApprovals';
 import { Composer, type ComposerDraftPrompt } from './Composer';
 import { EmptyThreadStarters } from './EmptyThreadStarters';
-import { deleteAsset, listThreadAssets, promoteAsset, retryAsset } from './attachments/api';
+import { listThreadAssets } from './attachments/api';
 import { useAttachmentUploads } from './attachments/useAttachmentUploads';
 import { useComposerSkills } from './composer/useComposerSkills';
 import { usePinnedSkill } from './composer/usePinnedSkill';
@@ -34,11 +34,13 @@ import {
   attachAssetsToUserMessages,
   foldAgentOntoAssistant,
   isAbortSignalAborted,
-  removeAssetFromMessages,
-  replaceAssetInMessages,
   userMessage,
 } from './ExternalStoreChat_folds';
-import { fetchThreadMessages, streamPost, streamRun } from './sseAdapter';
+import { useAssetActions } from './ExternalStoreChat_assets';
+import { useBranchEdits } from './ExternalStoreChat_branches';
+import { useLiveRunAttach } from './ExternalStoreChat_liveRun';
+import { fetchThreadMessages, streamPost, type TurnUsage } from './sseAdapter';
+import { cancelRun, streamRunResilient } from './sseResume';
 import { useRunUsageLifecycle, type RunUsageEvent } from './runUsage';
 import { useRunUsageBaseline, type RunSessionBaselineListener } from './useRunUsageBaseline';
 import { AutoSpeak } from './voice/AutoSpeak';
@@ -98,6 +100,8 @@ export function ExternalStoreChat({
   const historyAbortRef = useRef<AbortController | null>(null);
   const historyRequestRef = useRef(0);
   const isRunningRef = useRef(false);
+  /** The live runId of the stream this tab drives/watches — the §4.4 cancel key. */
+  const activeRunIdRef = useRef<string | null>(null);
   const usageThreadRef = useRef<string | null>(null);
   const usageLifecycle = useRunUsageLifecycle(onUsage, allocateUsageRunId);
   const prepareUsageBaseline = useRunUsageBaseline(onUsageBaseline);
@@ -111,7 +115,10 @@ export function ExternalStoreChat({
   const skills = useComposerSkills();
   const { pinnedSkill, setPinnedSkill } = usePinnedSkill();
   const reasoningCaps = useReasoningCapabilities();
-  const hydratedEffort = useConversation(threadId).data?.ReasoningEffort;
+  const conversation = useConversation(threadId).data;
+  const hydratedEffort = conversation?.ReasoningEffort;
+  /** RS-07 §4.2: a set live_run_id means a detached run is in flight for this thread. */
+  const liveRunId = conversation?.live_run_id;
   const { effort, setEffort } = useReasoningEffort(threadId, hydratedEffort, reasoningCaps.levels);
 
   const invalidateRuntimeReads = useCallback(
@@ -168,13 +175,18 @@ export function ExternalStoreChat({
           return;
         }
         if (!(await prepareUsageBaseline(runThreadId, usageRunId, controller.signal))) return;
-        await streamRun({
+        await streamRunResilient({
           threadId: runThreadId,
           userText: text,
           attachmentIds: readyAttachmentIds,
           ...(pinnedSkill !== null ? { skill: pinnedSkill.name } : {}),
           effort,
           signal: controller.signal,
+          connectionLostNote: t('chat.error.connectionLost'),
+          onRunId: (runId) => {
+            activeRunIdRef.current = runId;
+          },
+          onSnapshotReplace: setMessages,
           ...(onArtifact !== undefined ? { onArtifact } : {}),
           onUpdate: (assistant, usage) => {
             usageLifecycle.update(usageRunId, usage);
@@ -211,6 +223,7 @@ export function ExternalStoreChat({
           isRunningRef.current = false;
           setIsRunning(false);
           abortRef.current = null;
+          activeRunIdRef.current = null;
         }
         invalidateRuntimeReads(runThreadId);
       }
@@ -232,6 +245,17 @@ export function ExternalStoreChat({
 
   const onCancel = useCallback(() => {
     abortRef.current?.abort();
+    const runId = activeRunIdRef.current;
+    activeRunIdRef.current = null;
+    if (runId !== null) {
+      // §4.4: with run-detach on, abort only detaches this viewer — the cancel
+      // POST is what actually stops the agent. Fire-and-forget; the composer is
+      // already released, so a failure is only logged (the run stays bounded by
+      // the server's Budget/wallclock caps either way).
+      void cancelRun(runId).catch((err: unknown) => {
+        console.error('aura: run cancel failed', err);
+      });
+    }
     return Promise.resolve();
   }, []);
 
@@ -319,29 +343,8 @@ export function ExternalStoreChat({
     };
   }, [threadId, usageLifecycle, t]);
 
-  const handleAssetRetry = useCallback((assetID: string) => {
-    void retryAsset(assetID)
-      .then((asset) => {
-        setMessages((prev) => replaceAssetInMessages(prev, asset));
-      })
-      .catch(() => undefined);
-  }, []);
-
-  const handleAssetPromote = useCallback((assetID: string) => {
-    void promoteAsset(assetID)
-      .then((asset) => {
-        setMessages((prev) => replaceAssetInMessages(prev, asset));
-      })
-      .catch(() => undefined);
-  }, []);
-
-  const handleAssetRemove = useCallback((assetID: string) => {
-    void deleteAsset(assetID)
-      .then(() => {
-        setMessages((prev) => removeAssetFromMessages(prev, assetID));
-      })
-      .catch(() => undefined);
-  }, []);
+  // Attachment-chip actions live in ./ExternalStoreChat_assets (600-LOC split).
+  const { handleAssetRetry, handleAssetPromote, handleAssetRemove } = useAssetActions(setMessages);
 
   const foldReRun = useCallback(
     async (url: string, body: unknown, base: ThreadMessageLike[]) => {
@@ -383,37 +386,41 @@ export function ExternalStoreChat({
     [usageLifecycle, onArtifact, invalidateRuntimeReads, t, threadId, prepareUsageBaseline],
   );
 
-  const foldResumeRun = useCallback(
-    async (resumeThreadId: string) => {
+  // Shared scaffolding for streams that APPEND a fresh assistant turn to the
+  // current list (HITL resume + the RS-07 live-run attach): one usage lifecycle,
+  // one AbortController, the append-then-replace-last message fold, the error
+  // surface, and the settle/invalidate tail. Extracted so the callers cannot drift.
+  const foldAppendedStream = useCallback(
+    async (
+      runThreadId: string,
+      run: (
+        controller: AbortController,
+        onUpdate: (assistant: ThreadMessageLike, usage: TurnUsage | undefined) => void,
+      ) => Promise<unknown>,
+    ) => {
       historyRequestRef.current += 1;
       historyAbortRef.current?.abort();
       historyAbortRef.current = null;
       const controller = new AbortController();
       abortRef.current = controller;
-      usageThreadRef.current = resumeThreadId;
+      usageThreadRef.current = runThreadId;
       isRunningRef.current = true;
       setIsRunning(true);
       let appended = false;
       const usageRunId = usageLifecycle.start();
       try {
-        if (!(await prepareUsageBaseline(resumeThreadId, usageRunId, controller.signal))) return;
-        await streamPost({
-          url: '/agent/run',
-          body: { threadId: resumeThreadId, messages: [] },
-          signal: controller.signal,
-          ...(onArtifact !== undefined ? { onArtifact } : {}),
-          onUpdate: (assistant, usage) => {
-            usageLifecycle.update(usageRunId, usage);
-            setMessages((prev) => {
-              if (!appended) {
-                appended = true;
-                return [...prev, assistant];
-              }
-              const next = prev.slice();
-              next[next.length - 1] = assistant;
-              return next;
-            });
-          },
+        if (!(await prepareUsageBaseline(runThreadId, usageRunId, controller.signal))) return;
+        await run(controller, (assistant, usage) => {
+          usageLifecycle.update(usageRunId, usage);
+          setMessages((prev) => {
+            if (!appended) {
+              appended = true;
+              return [...prev, assistant];
+            }
+            const next = prev.slice();
+            next[next.length - 1] = assistant;
+            return next;
+          });
         });
       } catch (error) {
         if (!isAbortError(error)) {
@@ -426,17 +433,45 @@ export function ExternalStoreChat({
           isRunningRef.current = false;
           setIsRunning(false);
           abortRef.current = null;
+          activeRunIdRef.current = null;
         }
-        invalidateRuntimeReads(resumeThreadId);
+        invalidateRuntimeReads(runThreadId);
       }
     },
-    [usageLifecycle, onArtifact, invalidateRuntimeReads, t, prepareUsageBaseline],
+    [usageLifecycle, invalidateRuntimeReads, t, prepareUsageBaseline],
+  );
+
+  const foldResumeRun = useCallback(
+    (resumeThreadId: string) =>
+      foldAppendedStream(resumeThreadId, (controller, onUpdate) =>
+        streamPost({
+          url: '/agent/run',
+          body: { threadId: resumeThreadId, messages: [] },
+          signal: controller.signal,
+          ...(onArtifact !== undefined ? { onArtifact } : {}),
+          onUpdate,
+        }),
+      ),
+    [foldAppendedStream, onArtifact],
   );
 
   const resumeRun = useCallback(async () => {
     if (threadId.length === 0) return;
     await foldResumeRun(threadId);
   }, [foldResumeRun, threadId]);
+
+  // RS-07 §4.2 reload-attach lives in ./ExternalStoreChat_liveRun (600-LOC
+  // split): discovery via live_run_id + the read-only full-replay attach.
+  useLiveRunAttach({
+    threadId,
+    liveRunId,
+    historyReadiness,
+    isRunningRef,
+    activeRunIdRef,
+    foldAppendedStream,
+    setMessages,
+    onArtifact,
+  });
 
   const threadApprovals = useThreadApprovals(threadId, resumeRun, dispatchApprovalFocus);
   const requestApprovalFocus = useApprovalFocus(
@@ -454,62 +489,9 @@ export function ExternalStoreChat({
     };
   }, [requestApprovalFocus]);
 
-  // backendSeqAt maps a visible message to the backend turn seq it diverges from. Rehydrated
-  // snapshots carry metadata.custom.backendSeq from the GET /threads/{id}/messages ids
-  // (msg-1, msg-2, ...). Fresh in-memory turns fall back to the visible index + 1 because
-  // normal Aura conversations start at the first user turn (no persisted system row).
-  const backendSeqAt = useCallback(
-    (index: number): number => {
-      if (index < 0) return 0;
-      const seq = messages[index]?.metadata?.custom?.backendSeq;
-      return typeof seq === 'number' && Number.isFinite(seq) && seq > 0 ? seq : index + 1;
-    },
-    [messages],
-  );
-
-  // onEdit (D-09): edit a USER turn → slice to the parent, append the edited user turn (a
-  // fresh id), then POST /edit (fork a sibling branch off the diverging turn's parent +
-  // re-run). The runtime tracks the prior user turn + its answer as a sibling branch.
-  const onEdit = useCallback(
-    async (message: AppendMessage) => {
-      const text = appendMessageText(message);
-      const sourceId = message.sourceId ?? message.parentId;
-      const sourceIndex = messages.findIndex((m) => m.id === sourceId);
-      const seq = backendSeqAt(sourceIndex);
-      // The edited user turn replaces the old one (a fresh id); everything after the
-      // edited source is dropped from THIS branch (the runtime keeps it as the sibling).
-      const base: ThreadMessageLike[] = [...messages.slice(0, sourceIndex), userMessage(text)];
-      await foldReRun(
-        `/api/conversations/${threadId}/edit`,
-        { diverge_seq: seq, role: 'user', content: text },
-        base,
-      );
-    },
-    [threadId, messages, backendSeqAt, foldReRun],
-  );
-
-  // onReload (D-09): regenerate an ASSISTANT turn → slice to the parent user turn, then
-  // POST /edit (role assistant, no content) so the agent produces a fresh assistant turn on
-  // a new sibling branch. parentId is the user turn the assistant answered.
-  const onReload = useCallback(
-    async (parentId: string | null) => {
-      const parentIndex = messages.findIndex((m) => m.id === parentId);
-      // WR-02: an assistant turn's parent (the user turn it answered) is ALWAYS in the
-      // visible list, so a not-found parent here is a stale/unknown id — never the legitimate
-      // first-turn case (unlike onEdit, whose parent can be the invisible system/root). An
-      // unknown parent would fork at seq 1 (the system turn) and replace the whole visible
-      // thread (base = slice(0,0)) — a silent destructive re-run. Bail before it.
-      if (parentIndex < 0) return;
-      const seq = backendSeqAt(parentIndex) + 1; // the assistant turn after its user parent
-      const base: ThreadMessageLike[] = messages.slice(0, parentIndex + 1);
-      await foldReRun(
-        `/api/conversations/${threadId}/edit`,
-        { diverge_seq: seq, role: 'assistant', content: '' },
-        base,
-      );
-    },
-    [threadId, messages, backendSeqAt, foldReRun],
-  );
+  // The D-09 branch-edit callbacks (backendSeqAt + onEdit/onReload) live in
+  // ./ExternalStoreChat_branches (600-LOC split); the stream fold stays here.
+  const { onEdit, onReload } = useBranchEdits({ threadId, messages, foldReRun });
 
   // 25-07: edit/regenerate + branch nav ride this runtime; onEdit/onReload fork sibling
   // branches the runtime models from setMessages so BranchPicker navigates them.
@@ -571,6 +553,16 @@ export function ExternalStoreChat({
             </p>
           ) : null}
 
+          {/* RS-07 §4.2: while the thread has a live detached run, sending is
+              blocked (Stop replaces Send once attached) and this hint explains
+              why — strictly better than the raw 409 the widened lock window
+              would otherwise surface. */}
+          {liveRunId !== undefined && liveRunId.length > 0 ? (
+            <p role="status" className="px-3 py-1 text-[0.75rem] text-text-muted sm:px-4">
+              {t('chat.liveRun.hint')}
+            </p>
+          ) : null}
+
           <ThreadApprovalCards
             approvals={threadApprovals.approvals}
             isStreaming={isRunning}
@@ -582,6 +574,7 @@ export function ExternalStoreChat({
             inputRef={composerInputRef}
             onInputAvailable={setComposerInput}
             approvalLocked={threadApprovals.isPending}
+            sendBlocked={liveRunId !== undefined && liveRunId.length > 0}
             uploads={uploads}
             draftPrompt={draftPrompt}
             onDraftPromptConsumed={onDraftPromptConsumed}
