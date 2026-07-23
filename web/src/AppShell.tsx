@@ -404,8 +404,14 @@ export function AppShell() {
   );
 
   return (
+    // `relative` is load-bearing, not cosmetic: it makes the shell the containing
+    // block for stray position:absolute descendants (sr-only status spans in the
+    // chat/tool cards) that would otherwise resolve to the ICB at their deep static
+    // Y in a long chat, escape every overflow-y-auto clip, and extend the document
+    // height — the "empty band below the footer" over-scroll. With the shell as
+    // their containing block, its overflow-hidden clips them at 100dvh.
     <div
-      className="aura-shell grid h-[100dvh] min-h-0 overflow-hidden bg-bg text-text [grid-template-rows:auto_minmax(0,1fr)_auto]"
+      className="aura-shell relative grid h-[100dvh] min-h-0 overflow-hidden bg-bg text-text [grid-template-rows:auto_minmax(0,1fr)_auto]"
       data-surface={surface}
       {...edgeSwipe}
     >
