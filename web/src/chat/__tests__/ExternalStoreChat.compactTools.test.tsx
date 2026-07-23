@@ -121,6 +121,51 @@ describe('compact tool cards on snapshot rehydration', () => {
     expect(screen.getByText('report.xlsx')).toBeTruthy();
   });
 
+  it('AC-10: three settled tools group into ONE header; a running fourth stays outside', async () => {
+    const calls = (ids: readonly string[]) =>
+      ids.map((id) => ({
+        id,
+        type: 'function',
+        function: { name: `tool_${id}`, arguments: '{"query":"q"}' },
+      }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        snapshotFetchMock([
+          { id: 'msg-0', role: 'user', content: 'do four things' },
+          {
+            id: 'msg-1',
+            role: 'assistant',
+            content: '',
+            toolCalls: calls(['c1', 'c2', 'c3', 'c4']),
+          },
+          // Results settle c1..c3; c4 never settles (still running / crashed).
+          { id: 'msg-2', role: 'tool', toolCallId: 'c1', content: 'r1' },
+          { id: 'msg-3', role: 'tool', toolCallId: 'c2', content: 'r2' },
+          { id: 'msg-4', role: 'tool', toolCallId: 'c3', content: 'r3' },
+          { id: 'msg-5', role: 'assistant', content: 'Answer.' },
+        ]),
+      ),
+    );
+    renderChat(<ExternalStoreChat threadId="conv-1" />);
+    await screen.findByText('Answer.');
+
+    // ONE group header for the settled run; the unsettled c4 renders its own row.
+    expect(screen.getAllByTestId('tool-group')).toHaveLength(1);
+    expect(screen.getByText('3 tools')).toBeTruthy();
+    const looseRows = screen
+      .getAllByTestId('tool-row')
+      .filter((row) => row.closest('[data-testid="tool-group-body"]') === null);
+    expect(looseRows).toHaveLength(1);
+    expect(looseRows[0]?.textContent).toContain('tool_c4');
+
+    // Expanding the group reveals the three member rows.
+    fireEvent.click(screen.getByRole('button', { name: 'Grouped tool activity' }));
+    const body = screen.getByTestId('tool-group-body');
+    expect(body.hidden).toBe(false);
+    expect(body.querySelectorAll('[data-testid="tool-row"]')).toHaveLength(3);
+  });
+
   it('AC-7 on replay: a raw tool turn (no display) expands to the Request/Result panel', async () => {
     vi.stubGlobal('fetch', vi.fn(snapshotFetchMock(toolTurn(undefined))));
     renderChat(<ExternalStoreChat threadId="conv-1" />);

@@ -22,6 +22,8 @@ import { hasAnswerText } from './ExternalStoreChat_folds';
 import { MarkdownText } from './MarkdownText';
 import { ReasoningPill } from './ReasoningPill';
 import { ToolActivityCard } from './ToolActivityCard';
+import { ToolGroup, type ToolGroupMember } from './ToolGroup';
+import { toolRun } from './toolGrouping';
 
 // ExternalStoreChat_messages — the presentational message-render components split
 // out of ExternalStoreChat.tsx (refactor-on-touch, CLAUDE.md 600-LOC cap). These
@@ -362,13 +364,20 @@ const INLINE_DISPLAY_TYPES = new Set<string>(['system_event', 'local_artifact'])
  * chip click opens the SHARED Source Explorer (the same sheet the answer-level
  * "Sources (N)" button opens) over THIS turn's registry, focused on the refId.
  */
-const ToolFallback: ToolCallMessagePartComponent = ({ toolName, argsText, result, isError }) => {
+const ToolFallback: ToolCallMessagePartComponent = ({
+  toolCallId,
+  toolName,
+  argsText,
+  result,
+  isError,
+}) => {
   const { openSources } = useSourceExplorer();
   const part = useAuiState((s) => s.part) as {
     display?: unknown;
     startedAt?: unknown;
     finishedAt?: unknown;
   };
+  const content = useAuiState((s) => s.message.content) as readonly unknown[];
   const display: DisplayPayload | undefined = isDisplayPayload(part.display)
     ? part.display
     : undefined;
@@ -391,6 +400,48 @@ const ToolFallback: ToolCallMessagePartComponent = ({ toolName, argsText, result
       />
     );
   }
+
+  // §3.3 grouping: a run of ≥3 consecutive settled tool parts renders ONE
+  // ToolGroup — drawn entirely by the run's FIRST member; later members render
+  // nothing. The still-running tool is never a member (falls through below).
+  const run = toolRun(content, toolCallId);
+  if (run !== null) {
+    if (run.ids[0] !== toolCallId) return null;
+    const members = run.ids.flatMap((id, offset): ToolGroupMember[] => {
+      const raw = content[run.startIndex + offset];
+      if (typeof raw !== 'object' || raw === null) return [];
+      const p = raw as {
+        toolName?: unknown;
+        argsText?: unknown;
+        result?: unknown;
+        isError?: unknown;
+        startedAt?: unknown;
+        finishedAt?: unknown;
+        display?: unknown;
+      };
+      return [
+        {
+          toolCallId: id,
+          toolName: typeof p.toolName === 'string' ? p.toolName : '',
+          argsText: typeof p.argsText === 'string' ? p.argsText : undefined,
+          result: typeof p.result === 'string' ? p.result : undefined,
+          isError: p.isError === true ? true : undefined,
+          startedAt: typeof p.startedAt === 'number' ? p.startedAt : undefined,
+          finishedAt: typeof p.finishedAt === 'number' ? p.finishedAt : undefined,
+          display: isDisplayPayload(p.display) ? p.display : undefined,
+        },
+      ];
+    });
+    return (
+      <ToolGroup
+        members={members}
+        onOpenSource={(memberDisplay, refId) => {
+          openSources(memberDisplay.sources ?? [], refId);
+        }}
+      />
+    );
+  }
+
   return (
     <ToolActivityCard
       toolName={toolName}

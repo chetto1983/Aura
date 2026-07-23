@@ -39,6 +39,9 @@ export const chatToolEn = {
   copy: 'Copy result',
   copied: 'Copied',
   copyAria: 'Copy the raw result',
+  group_one: '{{count}} tool',
+  group_other: '{{count}} tools',
+  groupAria: 'Grouped tool activity',
   meta: {
     results_one: '{{count}} result',
     results_other: '{{count}} results',
@@ -72,6 +75,9 @@ export const chatToolIt = {
   copy: 'Copia risultato',
   copied: 'Copiato',
   copyAria: 'Copia il risultato grezzo',
+  group_one: '{{count}} strumento',
+  group_other: '{{count}} strumenti',
+  groupAria: 'Attività strumenti raggruppata',
   meta: {
     results_one: '{{count}} risultato',
     results_other: '{{count}} risultati',
