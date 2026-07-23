@@ -111,6 +111,21 @@ export function removeAssetFromMessages(
   });
 }
 
+/**
+ * True when an assistant message carries at least one non-empty TEXT part — a
+ * real answer. Messages whose parts are exclusively machinery (tool-call /
+ * reasoning / display) must NOT surface the Copy/Regenerate/TTS action bar
+ * (operator directive: no message actions on tool cards or reasoning-only
+ * turns). Works on both live-built and snapshot-rehydrated messages: the
+ * runtime's converted message keeps the same content-part contract.
+ */
+export function hasAnswerText(message: ThreadMessageLike): boolean {
+  if (typeof message.content === 'string') return message.content.trim().length > 0;
+  return message.content.some(
+    (part) => part.type === 'text' && typeof part.text === 'string' && part.text.trim().length > 0,
+  );
+}
+
 export function assistantErrorMessage(text: string): ThreadMessageLike {
   return {
     id: crypto.randomUUID(),

@@ -18,6 +18,7 @@ import { aggregateAnswerSources } from './displays/answerSources';
 import { useSourceExplorer } from './displays/sourceExplorerControls';
 import { SourcesButton } from './displays/SourcesButton';
 import { isDisplayPayload, type DisplayPayload } from './displays/types';
+import { hasAnswerText } from './ExternalStoreChat_folds';
 import { MarkdownText } from './MarkdownText';
 import { ReasoningDrawer } from './ReasoningDrawer';
 import { ToolActivityCard } from './ToolActivityCard';
@@ -197,25 +198,30 @@ export function AssistantMessage() {
       </MessagePrimitive.Error>
       {/* Assistant action bar: Copy + Reload (regenerate) + the answer-level
           "Sources (N)" affordance (D-13). The feedback rating group is deferred;
-          Reload forks an assistant-turn branch. */}
-      <ActionBarPrimitive.Root data-message-actions className={MESSAGE_ACTION_ROW_CLASS}>
-        <ActionBarPrimitive.Copy
-          aria-label={t('chat.action.copy')}
-          data-required-touch-target
-          className={MESSAGE_ACTION_CLASS}
-        >
-          {t('chat.action.copy')}
-        </ActionBarPrimitive.Copy>
-        <ActionBarPrimitive.Reload
-          aria-label={t('chat.action.reload')}
-          data-required-touch-target
-          className={MESSAGE_ACTION_CLASS}
-        >
-          {t('chat.action.reload')}
-        </ActionBarPrimitive.Reload>
-        <AssistantSpeakerControl />
-        <BranchPicker />
-      </ActionBarPrimitive.Root>
+          Reload forks an assistant-turn branch. Rendered ONLY on messages that
+          carry a real answer (non-empty text part): tool-card-only and
+          reasoning-only turns show no Copy/Regenerate/TTS (operator directive —
+          the machinery rows are not copyable answers). */}
+      {hasAnswerText(message) ? (
+        <ActionBarPrimitive.Root data-message-actions className={MESSAGE_ACTION_ROW_CLASS}>
+          <ActionBarPrimitive.Copy
+            aria-label={t('chat.action.copy')}
+            data-required-touch-target
+            className={MESSAGE_ACTION_CLASS}
+          >
+            {t('chat.action.copy')}
+          </ActionBarPrimitive.Copy>
+          <ActionBarPrimitive.Reload
+            aria-label={t('chat.action.reload')}
+            data-required-touch-target
+            className={MESSAGE_ACTION_CLASS}
+          >
+            {t('chat.action.reload')}
+          </ActionBarPrimitive.Reload>
+          <AssistantSpeakerControl />
+          <BranchPicker />
+        </ActionBarPrimitive.Root>
+      ) : null}
       {/* The "Sources (N)" affordance lives OUTSIDE the hover-only action bar so the
           evidence count is always visible (D-13); hidden when N=0. */}
       <AnswerSources />
