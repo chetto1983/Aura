@@ -14,6 +14,7 @@ import (
 
 type reconnectingClient interface {
 	Server
+	Ping(ctx context.Context) error
 	Close() error
 }
 
@@ -41,6 +42,15 @@ type reconnectingServer struct {
 	refreshHook      func()
 	closed           bool
 	reconnectTimeout time.Duration
+	// open is the pluggable replacement-open seam: openReplacement calls s.open
+	// instead of openMCPClient directly, so the SAME breaker/backoff/two-context
+	// reopen/no-replay machinery serves both mount branches. The stdio
+	// constructor path below defaults it to the existing openMCPClient var seam
+	// (kept so tests that stub openMCPClient keep working unmodified);
+	// MountManagedServer's streamable-HTTP branch overrides it via setOpen to
+	// close over (name, server) and call mcp.OpenServer — an HTTP client has no
+	// subprocess, so its open ignores processCtx but keeps the same signature.
+	open func(processCtx, handshakeCtx context.Context) (reconnectingClient, error)
 	// processCtx bounds a RECONNECTED replacement subprocess's entire lifetime
 	// (Pitfall #2): set via setProcessContext to the same daemon/boot context
 	// MountServer/MountManagedServer used for the initial Open, so a reconnect never
@@ -57,16 +67,45 @@ type reconnectingServer struct {
 	reconnectFailures   int
 	breakerOpenUntil    time.Time
 	nextReconnectAfter  time.Time
+
+	// pingStop/pingDone bound the optional background liveness-poll goroutine
+	// (bridge_ping.go): pingStop is closed exactly once by Close() (guarded by
+	// the closed flag above, mirroring how the rest of Close() is idempotent);
+	// pingDone is closed by the poller goroutine itself on return, so tests can
+	// deterministically observe it stopping instead of racing goleak's own retry
+	// window. Both stay nil when startPingPoll was never called (interval<=0 or
+	// a test construction that never mounts through the poll-starting path).
+	pingStop chan struct{}
+	pingDone chan struct{}
 }
 
 func newReconnectingServer(name string, cfg mcp.ServerConfig, client reconnectingClient) *reconnectingServer {
-	return &reconnectingServer{
+	s := &reconnectingServer{
 		name:             name,
 		cfg:              cfg,
 		client:           client,
 		bridged:          map[string]*bridgedTool{},
 		reconnectTimeout: defaultMCPReconnectTimeout,
 	}
+	s.open = func(processCtx, handshakeCtx context.Context) (reconnectingClient, error) {
+		return openMCPClient(processCtx, handshakeCtx, s.name, s.cfg)
+	}
+	return s
+}
+
+// setOpen overrides the replacement-open seam (see the open field's doc
+// comment). Called once, right after construction, before the server is
+// exposed to concurrent callers — mirrors setProcessContext's contract.
+func (s *reconnectingServer) setOpen(open func(processCtx, handshakeCtx context.Context) (reconnectingClient, error)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.open = open
+}
+
+func (s *reconnectingServer) openFunc() func(context.Context, context.Context) (reconnectingClient, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.open
 }
 
 // setProcessContext records the process-lifetime context a reconnect must use to
@@ -148,7 +187,11 @@ func (s *reconnectingServer) Close() error {
 	}
 	s.closed = true
 	client := s.client
+	pingStop := s.pingStop
 	s.mu.Unlock()
+	if pingStop != nil {
+		close(pingStop)
+	}
 	if client == nil {
 		return nil
 	}
@@ -294,7 +337,7 @@ func (s *reconnectingServer) openReplacement(parent context.Context, timeout tim
 	handshakeCtx, cancel := context.WithTimeout(context.WithoutCancel(parent), timeout)
 	defer cancel()
 
-	next, err := openMCPClient(s.processContext(), handshakeCtx, s.name, s.cfg)
+	next, err := s.openFunc()(s.processContext(), handshakeCtx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("reconnect mcp %q: %w", s.name, err)
 	}

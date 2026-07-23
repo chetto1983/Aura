@@ -62,6 +62,11 @@ func (c *errReconnectClient) Close() error {
 	return c.closeErr
 }
 
+// Ping always succeeds: no test in this file drives the ping-poll path through
+// errReconnectClient (see bridge_ping_test.go for the dedicated ping fakes), so
+// a no-op keeps this double satisfying reconnectingClient.
+func (c *errReconnectClient) Ping(context.Context) error { return nil }
+
 // TestReconnectServer_ListToolsTransportErrorReconnectsAndRetries covers the
 // reconnect-on-transport-error branch of ListTools: the first tools/list fails
 // with a transport error, the server reopens (refreshed client lists clean), and
@@ -318,7 +323,8 @@ func (c *swapOnListClient) ListTools(context.Context) ([]mcp.ToolDef, error) {
 func (c *swapOnListClient) CallTool(context.Context, string, map[string]any) (string, error) {
 	return "", nil
 }
-func (c *swapOnListClient) Close() error { return nil }
+func (c *swapOnListClient) Close() error               { return nil }
+func (c *swapOnListClient) Ping(context.Context) error { return nil }
 
 // TestReconnectServer_ListToolsRetriesOnConcurrentlySwappedClient covers ListTools'
 // line-48 retry: when the transport failure races a reconnect done by another
@@ -444,6 +450,10 @@ func (c *alwaysTransportListClient) Close() error {
 	c.closed.Store(true)
 	return nil
 }
+
+// Ping is unused by these single-flight/breaker tests (they drive reconnect via
+// ListTools transport errors); returning nil keeps the double interface-complete.
+func (c *alwaysTransportListClient) Ping(context.Context) error { return nil }
 
 func TestReconnectServer_ConcurrentTransportFailuresSingleFlight(t *testing.T) {
 	initial := &alwaysTransportListClient{}

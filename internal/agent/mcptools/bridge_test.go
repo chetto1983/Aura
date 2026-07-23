@@ -56,6 +56,11 @@ func (f *fakeReconnectClient) Close() error {
 	return nil
 }
 
+// Ping is unused by the reconnect tests in this file (they drive reconnect via
+// ListTools/CallTool transport errors); returning nil keeps the double
+// interface-complete. bridge_ping_test.go has dedicated ping fakes.
+func (f *fakeReconnectClient) Ping(context.Context) error { return nil }
+
 type blockingReconnectClient struct {
 	defs    []mcp.ToolDef
 	started chan struct{}
@@ -81,6 +86,10 @@ func (f *blockingReconnectClient) Close() error {
 	close(f.closed)
 	return nil
 }
+
+// Ping is unused by TestReconnectServerCloseDoesNotWaitForBlockedCall (it blocks
+// CallTool, not Ping); returning nil keeps the double interface-complete.
+func (f *blockingReconnectClient) Ping(context.Context) error { return nil }
 
 func sandboxDefs() []mcp.ToolDef {
 	return []mcp.ToolDef{

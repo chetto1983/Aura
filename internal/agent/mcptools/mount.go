@@ -30,16 +30,7 @@ func MountServer(processCtx, handshakeCtx context.Context, reg *tools.Registry, 
 // two-context contract (Pitfall #2).
 func MountManagedServer(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, server mcp.ManagedServer) (closer func() error, names []string, err error) {
 	if isStreamableHTTPManagedServer(server) {
-		srv, err := mcp.OpenServer(handshakeCtx, name, server)
-		if err != nil {
-			return nil, nil, err
-		}
-		names, err = Mount(handshakeCtx, reg, name, srv)
-		if err != nil {
-			_ = srv.Close()
-			return nil, nil, fmt.Errorf("mount %q: %w", name, err)
-		}
-		return srv.Close, names, nil
+		return mountManagedHTTP(processCtx, handshakeCtx, reg, name, server)
 	}
 
 	cfg, err := managedStdioConfig(name, server)
@@ -47,6 +38,40 @@ func MountManagedServer(processCtx, handshakeCtx context.Context, reg *tools.Reg
 		return nil, nil, err
 	}
 	return mountStdio(processCtx, handshakeCtx, reg, name, cfg)
+}
+
+// mountManagedHTTP is the streamable-HTTP mirror of mountStdio: it opens the raw
+// transport and lists tools via handshakeCtx (bounded exactly like mountStdio's
+// raw discovery call — same rationale, see mountStdio's doc comment), then wraps
+// the transport in a reconnectingServer so every CALL after a successful mount
+// gets the same reconnect-on-transport-error behavior the stdio branch already
+// had (fix-plan 1.6 — previously this branch mounted the raw transport directly,
+// so a dropped HTTP session/sidecar restart left those tools dead until reboot).
+// An HTTP client has no subprocess, so the wrapper's open closure ignores
+// processCtx and re-opens via mcp.OpenServer bounded by handshakeCtx alone; the
+// parameter is kept for signature uniformity with mountStdio/openMCPClient.
+func mountManagedHTTP(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, server mcp.ManagedServer) (closer func() error, names []string, err error) {
+	srv, err := mcp.OpenServer(handshakeCtx, name, server)
+	if err != nil {
+		return nil, nil, err
+	}
+	defs, err := srv.ListTools(handshakeCtx)
+	if err != nil {
+		_ = srv.Close()
+		return nil, nil, err
+	}
+	wrapper := newReconnectingServer(name, mcp.ServerConfig{}, srv)
+	wrapper.setProcessContext(processCtx)
+	wrapper.setOpen(func(_, handshakeCtx context.Context) (reconnectingClient, error) {
+		return mcp.OpenServer(handshakeCtx, name, server)
+	})
+	names, err = MountWithDefs(reg, name, wrapper, defs)
+	if err != nil {
+		_ = wrapper.Close()
+		return nil, nil, fmt.Errorf("mount %q: %w", name, err)
+	}
+	wrapper.startPingPoll(configuredMCPPingInterval())
+	return wrapper.Close, names, nil
 }
 
 // mountStdio is the shared stdio mount body for MountServer and MountManagedServer's
@@ -74,6 +99,7 @@ func mountStdio(processCtx, handshakeCtx context.Context, reg *tools.Registry, n
 		_ = srv.Close()
 		return nil, nil, fmt.Errorf("mount %q: %w", name, err)
 	}
+	srv.startPingPoll(configuredMCPPingInterval())
 	return srv.Close, names, nil
 }
 

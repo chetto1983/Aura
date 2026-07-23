@@ -3,9 +3,11 @@ package mcptools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
@@ -180,6 +182,109 @@ func TestMountManagedServer_HTTPBranchInfersFromBareURL(t *testing.T) {
 	}()
 	if len(names) != 2 {
 		t.Fatalf("all advertised tools should mount over an inferred-HTTP bare URL, got %v", names)
+	}
+}
+
+// TestMountManagedServer_HTTPBranchReconnectsOnUse drives fix-plan 1.6's
+// generalized reconnect through the REAL streamable-HTTP branch, not a fake: the
+// first tools/call is answered by hijacking and abruptly closing the TCP
+// connection mid-request — a genuine ErrTransport-classified failure (client.Do
+// itself errors), not a JSON-RPC application error. The mounted tool is
+// mutating, so the first Execute surfaces the existing no-replay transport
+// error inline (mirroring TestReconnectServerSecondTransportFailureIsInlineToolError's
+// stdio-side contract byte-for-byte); a SECOND, independent Execute is then
+// served by the reconnected client, proving mountManagedHTTP's setOpen closure
+// (mcp.OpenServer re-dialing the same URL) actually replaced the dead transport
+// instead of the tools staying dead until reboot (the residual gap this task
+// closes).
+func TestMountManagedServer_HTTPBranchReconnectsOnUse(t *testing.T) {
+	var initCount, callCount atomic.Int32
+	httpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		var req struct {
+			ID     *int64 `json:"id"`
+			Method string `json:"method"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("decode request: %v", err)
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		switch req.Method {
+		case "initialize":
+			n := initCount.Add(1)
+			w.Header().Set("Mcp-Session-Id", fmt.Sprintf("sess-%d", n))
+			writeManagedRPC(t, w, req.ID, map[string]any{"protocolVersion": "2025-06-18"})
+		case "notifications/initialized":
+			w.WriteHeader(http.StatusAccepted)
+		case "tools/list":
+			writeManagedRPC(t, w, req.ID, map[string]any{"tools": []mcp.ToolDef{
+				{Name: "flaky_write", Description: "Write something.", InputSchema: json.RawMessage(`{"type":"object"}`)},
+			}})
+		case "tools/call":
+			if callCount.Add(1) == 1 {
+				hj, ok := w.(http.Hijacker)
+				if !ok {
+					t.Fatal("httptest ResponseWriter does not support Hijack")
+				}
+				conn, _, err := hj.Hijack()
+				if err != nil {
+					t.Fatalf("hijack: %v", err)
+				}
+				_ = conn.Close()
+				return
+			}
+			writeManagedRPC(t, w, req.ID, map[string]any{
+				"content": []map[string]any{{"type": "text", "text": "reconnected"}},
+			})
+		default:
+			t.Errorf("unexpected method %q", req.Method)
+			http.Error(w, "unexpected", http.StatusBadRequest)
+		}
+	}))
+	t.Cleanup(httpSrv.Close)
+
+	reg := tools.NewRegistry()
+	server := mcp.ManagedServer{Type: mcp.ServerTypeStreamableHTTP, URL: httpSrv.URL}
+	closer, names, err := MountManagedServer(context.Background(), context.Background(), reg, "flaky", server)
+	if err != nil {
+		t.Fatalf("MountManagedServer: %v", err)
+	}
+	t.Cleanup(func() {
+		if cerr := closer(); cerr != nil {
+			t.Errorf("closer: %v", cerr)
+		}
+	})
+	if len(names) != 1 {
+		t.Fatalf("want 1 mounted tool, got %v", names)
+	}
+	tool, ok := reg.Get(names[0])
+	if !ok {
+		t.Fatalf("%s not registered", names[0])
+	}
+
+	ctx := tools.WithToolCallContext(context.Background(), "sess", "call-1", t.TempDir(), 2048)
+	res, err := tool.Execute(ctx, json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("first Execute (transport failure) must surface as inline content, got Go error %v", err)
+	}
+	if !strings.Contains(res.Preview, "not replayed") {
+		t.Fatalf("first Execute preview = %q, want inline no-replay transport failure", res.Preview)
+	}
+	if got := initCount.Load(); got != 2 {
+		t.Fatalf("want exactly 2 initialize round-trips (initial mount + one reconnect), got %d", got)
+	}
+
+	ctx2 := tools.WithToolCallContext(context.Background(), "sess", "call-2", t.TempDir(), 2048)
+	res2, err := tool.Execute(ctx2, json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("second Execute (served by the reconnected client): %v", err)
+	}
+	if res2.Preview != "reconnected" {
+		t.Fatalf("second Execute preview = %q, want served by the reconnected client", res2.Preview)
 	}
 }
 
