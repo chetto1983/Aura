@@ -66,8 +66,13 @@ func New(cfg llm.Config) *Client {
 
 // wireRequest is the OpenAI chat-completions request body (D-16/D-20). It sends
 // tool_choice:"auto" and provider.data_collection:"deny"; it does NOT send
-// usage:{include} or stream_options:{include_usage} — both are deprecated no-ops
-// on OpenRouter (RESEARCH State of the Art).
+// usage:{include} — a deprecated no-op on OpenRouter (RESEARCH State of the
+// Art). stream_options:{include_usage} follows the same OpenRouter-no-op rule
+// EXCEPT on the llama.cpp target: llama.cpp only emits a usage object on the
+// final stream chunk when include_usage is explicitly requested, and that
+// object is the sole source of the cockpit CONTESTO/CACHE gauges — so
+// buildWireRequest sets it there (see the ReasoningTarget branch below), while
+// OpenRouter (which always sends usage) keeps the wire byte-unchanged.
 type wireRequest struct {
 	Model       string         `json:"model"`
 	Messages    []llm.Message  `json:"messages"`
@@ -81,11 +86,18 @@ type wireRequest struct {
 	// (Reasoning is left nil there — llama-server ignores the OpenRouter object); on
 	// the OpenRouter path they stay nil and omitempty drops them, so that wire is
 	// byte-unchanged.
-	ChatTemplateKwargs   map[string]any `json:"chat_template_kwargs,omitempty"`
-	ThinkingBudgetTokens *int           `json:"thinking_budget_tokens,omitempty"`
-	SessionID            string         `json:"session_id,omitempty"`
-	Stream               bool           `json:"stream"`
-	Provider             providerObj    `json:"provider"`
+	ChatTemplateKwargs   map[string]any     `json:"chat_template_kwargs,omitempty"`
+	ThinkingBudgetTokens *int               `json:"thinking_budget_tokens,omitempty"`
+	SessionID            string             `json:"session_id,omitempty"`
+	Stream               bool               `json:"stream"`
+	Provider             providerObj        `json:"provider"`
+	StreamOptions        *wireStreamOptions `json:"stream_options,omitempty"`
+}
+
+// wireStreamOptions is set ONLY on the llama.cpp target (buildWireRequest) —
+// see the wireRequest doc comment for why.
+type wireStreamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
 }
 
 type wireReasoning struct {
@@ -250,6 +262,7 @@ func (c *Client) buildWireRequest(req llm.Request) wireRequest {
 	// nested object UNCHANGED — xhigh/max serialize automatically via string(r.Effort).
 	if llm.ReasoningTarget(c.cfg.Provider, c.cfg.BaseURL) == llm.ReasoningTargetLlamaCpp {
 		applyLlamaCppReasoning(&wire, req.Reasoning)
+		wire.StreamOptions = &wireStreamOptions{IncludeUsage: true}
 	} else {
 		wire.Reasoning = buildWireReasoning(req.Reasoning)
 	}

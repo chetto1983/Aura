@@ -312,8 +312,12 @@ func TestStream_429NoRetry(t *testing.T) {
 
 // TestRequestBody asserts the wire body sends tool_choice:auto +
 // provider.data_collection:deny + stream:true, and sends NEITHER usage NOR
-// stream_options (deprecated no-ops). Attribution headers + the Bearer auth are
-// present on the request.
+// stream_options — both deprecated no-ops on this OpenRouter-scoped contract
+// (testConfig sets no Provider, so llm.ReasoningTarget resolves non-llamacpp,
+// the same branch OpenRouter takes — see TestRequestBody_LlamaCppStreamOptions
+// in client_llamacpp_stream_test.go for the llama.cpp counterpart, which DOES
+// send stream_options). Attribution headers + the Bearer auth are present on
+// the request.
 func TestRequestBody(t *testing.T) {
 	var gotBody []byte
 	var gotAuth, gotReferer, gotTitle string

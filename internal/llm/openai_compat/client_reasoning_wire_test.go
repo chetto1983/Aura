@@ -38,6 +38,9 @@ func TestBuildWireRequestReasoningTarget(t *testing.T) {
 				if wire.ThinkingBudgetTokens != nil {
 					t.Errorf("ThinkingBudgetTokens = %d, want nil on the OpenRouter path", *wire.ThinkingBudgetTokens)
 				}
+				if wire.StreamOptions != nil {
+					t.Errorf("StreamOptions = %+v, want nil on the OpenRouter path (deprecated no-op there)", wire.StreamOptions)
+				}
 			})
 		}
 
@@ -46,10 +49,27 @@ func TestBuildWireRequestReasoningTarget(t *testing.T) {
 		if wire.Reasoning != nil {
 			t.Errorf("Reasoning = %+v, want nil for empty reasoning", wire.Reasoning)
 		}
+		if wire.StreamOptions != nil {
+			t.Errorf("StreamOptions = %+v, want nil on the OpenRouter path", wire.StreamOptions)
+		}
 	})
 
 	t.Run("llamacpp branch", func(t *testing.T) {
 		c := New(llm.Config{Provider: "llamacpp", BaseURL: "http://localhost:8080/v1"})
+
+		// assertStreamOptions proves stream_options:{include_usage:true} rides
+		// EVERY llama.cpp request regardless of reasoning effort — it is the fix
+		// for the cockpit context/cache gauges reading 0 (llama.cpp emits stream
+		// usage only when asked), not a reasoning-effort-conditional knob.
+		assertStreamOptions := func(t *testing.T, wire wireRequest) {
+			t.Helper()
+			if wire.StreamOptions == nil {
+				t.Fatal("StreamOptions = nil, want &wireStreamOptions{IncludeUsage:true} on the llama.cpp target")
+			}
+			if !wire.StreamOptions.IncludeUsage {
+				t.Errorf("StreamOptions.IncludeUsage = false, want true on the llama.cpp target")
+			}
+		}
 
 		t.Run("off sets enable_thinking false", func(t *testing.T) {
 			wire := c.buildWireRequest(llm.Request{Reasoning: llm.ReasoningConfig{Effort: llm.ReasoningEffortNone}})
@@ -63,6 +83,7 @@ func TestBuildWireRequestReasoningTarget(t *testing.T) {
 			if !ok || v {
 				t.Errorf("ChatTemplateKwargs[enable_thinking] = %v (ok=%v), want false", wire.ChatTemplateKwargs["enable_thinking"], ok)
 			}
+			assertStreamOptions(t, wire)
 		})
 
 		budgets := []struct {
@@ -90,6 +111,7 @@ func TestBuildWireRequestReasoningTarget(t *testing.T) {
 				if *wire.ThinkingBudgetTokens != tc.want {
 					t.Errorf("ThinkingBudgetTokens = %d, want %d for effort %q", *wire.ThinkingBudgetTokens, tc.want, tc.effort)
 				}
+				assertStreamOptions(t, wire)
 			})
 		}
 
@@ -99,6 +121,7 @@ func TestBuildWireRequestReasoningTarget(t *testing.T) {
 				t.Errorf("auto: reasoning=%+v kwargs=%v budget=%v, want all nil",
 					wire.Reasoning, wire.ChatTemplateKwargs, wire.ThinkingBudgetTokens)
 			}
+			assertStreamOptions(t, wire)
 		})
 	})
 }
