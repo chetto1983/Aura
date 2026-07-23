@@ -1327,7 +1327,20 @@ jobs:
         # boot failure fails this step via the webServer readiness timeout rather than a
         # green run — see the WR-06 note in playwright.config.ts.
         if: steps.changes.outputs.web == 'true'
-        run: cd web && npm run test:e2e
+        # TEMP-harvest (revert after committing the PNGs, playbook 64ba3ec4/ecc98359):
+        # the 4 calm-prism baselines went stale after the compact-chat batch; CI renders
+        # with the runner's Chrome, so off-runner regeneration fails on font/build diffs.
+        # --update-snapshots regenerates them ON the runner while the rest of the suite
+        # still runs as a real gate; the artifact below is harvested and committed.
+        run: cd web && npm run test:e2e -- --update-snapshots
+
+      - name: HARVEST (TEMP — revert after committing the PNGs) upload regenerated calm-prism snapshots
+        if: always() && steps.changes.outputs.web == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: calm-prism-snapshots
+          path: web/e2e/__screenshots__/chat-calm-prism.spec.ts/
+          if-no-files-found: error
 
       - name: Tear down
         if: always()

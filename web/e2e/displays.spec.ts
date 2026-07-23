@@ -1,5 +1,6 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { gotoAuthenticated } from './auth';
+import { expandToolRow } from './support/toolRow';
 
 // displays.spec.ts — the Phase 26 typed-display protocol E2E matrix. It proves the
 // cockpit renders every DisplayPayload kind through the REAL in-browser DisplayRouter
@@ -125,6 +126,7 @@ test.describe('Phase 26 — typed displays (desktop + mobile)', () => {
     page,
   }, testInfo) => {
     await openWith(page, 'Here are results.', webResultPayload());
+    await expandToolRow(page);
 
     await expect(page.getByText('Web results').first()).toBeVisible({ timeout: 15000 });
     await expect(page.getByText('Result 1').first()).toBeVisible();
@@ -150,6 +152,7 @@ test.describe('Phase 26 — typed displays (desktop + mobile)', () => {
     page,
   }) => {
     await openWith(page, 'Cited answer.', webResultPayload());
+    await expandToolRow(page);
     await expect(page.getByText('Web results').first()).toBeVisible({ timeout: 15000 });
 
     // The first source is cited → its citation chip carries citation.aria "Source 1: …".
@@ -173,6 +176,7 @@ test.describe('Phase 26 — typed displays (desktop + mobile)', () => {
     page,
   }, testInfo) => {
     await openWith(page, 'Answer with sources.', webResultPayload());
+    await expandToolRow(page);
     await expect(page.getByText('Web results').first()).toBeVisible({ timeout: 15000 });
 
     const sourcesBtn = page.getByRole('button', { name: 'View 5 sources' });
@@ -218,6 +222,7 @@ test.describe('Phase 26 — typed displays (desktop + mobile)', () => {
       },
     };
     await openWith(page, 'Document follows.', display, 'web_fetch');
+    await expandToolRow(page);
 
     const chatRegion = page.getByRole('region', { name: 'Chat' });
     await expect(chatRegion.getByText('Document', { exact: true }).first()).toBeVisible({
@@ -272,6 +277,7 @@ test.describe('Phase 26 — typed displays (desktop + mobile)', () => {
       ],
     };
     await openWith(page, 'Workers done.', display, 'swarm_spawn');
+    await expandToolRow(page);
 
     await expect(page.getByText('Workers').first()).toBeVisible({ timeout: 15000 });
     await expect(page.getByRole('columnheader', { name: 'Worker' })).toBeVisible();
@@ -308,6 +314,7 @@ test.describe('Phase 26 — typed displays (desktop + mobile)', () => {
       },
     };
     await openWith(page, 'Table follows.', display, 'shell_exec');
+    await expandToolRow(page);
 
     await expect(page.getByText('Table').first()).toBeVisible({ timeout: 15000 });
     await expect(page.getByRole('button', { name: 'Sort by City' })).toBeVisible();
@@ -328,6 +335,7 @@ test.describe('Phase 26 — typed displays (desktop + mobile)', () => {
       chart: { x_labels: ['Jan', 'Feb', 'Mar'], y_values: [10, 20, 15], x_axis_label: 'Month' },
     };
     await openWith(page, 'Chart follows.', display, 'shell_exec');
+    await expandToolRow(page);
 
     await expect(page.getByText('Chart').first()).toBeVisible({ timeout: 15000 });
     // D-02: the authoritative data path is a real <table> (bars are decorative).
@@ -346,6 +354,7 @@ test.describe('Phase 26 — typed displays (desktop + mobile)', () => {
       },
     };
     await openWith(page, 'Code follows.', display, 'shell_exec');
+    await expandToolRow(page);
 
     await expect(page.getByText('Code').first()).toBeVisible({ timeout: 15000 });
     await expect(page.getByRole('button', { name: 'Copy code' })).toBeVisible();

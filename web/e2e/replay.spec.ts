@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { gotoAuthenticated } from './auth';
+import { expandToolRow } from './support/toolRow';
 
 // replay.spec.ts proves D-06 end-to-end: a turn that emits a TYPED DISPLAY renders
 // live, and reopening the thread (reload → GET /threads/{id}/messages) RE-DERIVES
@@ -178,7 +179,9 @@ test.describe('cockpit replay — typed-display rehydration (D-06 E2E)', () => {
     await composer.press('Enter');
 
     // 1a) LIVE: the typed web_result display renders (the "Web results" card label +
-    // the result snippet from the aura.display frame) — NOT the raw tool blob.
+    // the result snippet from the aura.display frame) — NOT the raw tool blob. The
+    // display sits behind the collapsed tool row (compact-chat AC-8) → expand first.
+    await expandToolRow(page);
     await expect(page.getByText('Web results').first()).toBeVisible({ timeout: 15000 });
     await expect(page.getByText('sunny').first()).toBeVisible();
     await expect(page.getByText('Forecast').first()).toBeVisible();
@@ -197,6 +200,8 @@ test.describe('cockpit replay — typed-display rehydration (D-06 E2E)', () => {
 
     // 2b) REPLAYED: the SAME typed display re-renders identically — the card label +
     // the snippet + the title are all present again (no blank viewport, no raw fallback).
+    // The reloaded page rehydrates a fresh collapsed row (AC-8) → expand again.
+    await expandToolRow(page);
     await expect(page.getByText('Web results').first()).toBeVisible({ timeout: 15000 });
     await expect(page.getByText('sunny').first()).toBeVisible();
     await expect(page.getByText('Forecast').first()).toBeVisible();
