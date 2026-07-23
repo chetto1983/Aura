@@ -104,7 +104,16 @@ func (s *Server) handleTTS(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "text required", http.StatusBadRequest)
 		return
 	}
-	text, truncated := capText(body.Text, s.ttsMaxChars)
+	// Markdown syntax is stripped BEFORE the cap (operator directive: raw markers
+	// read aloud "sound like a robot"; capping clean runes also moves the D-05
+	// truncation point onto real prose). A message that strips to nothing (e.g. a
+	// code-block-only answer) has no speakable content — an honest 400.
+	spoken := speechText(body.Text)
+	if spoken == "" {
+		http.Error(w, "text required", http.StatusBadRequest)
+		return
+	}
+	text, truncated := capText(spoken, s.ttsMaxChars)
 	audio, err := s.tts.Synthesize(r.Context(), text)
 	if err != nil {
 		http.Error(w, "tts synthesis failed", http.StatusBadGateway)
