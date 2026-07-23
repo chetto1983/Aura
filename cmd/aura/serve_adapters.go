@@ -251,26 +251,6 @@ func (s *cronTaskStore) ApproveScheduledTask(ctx context.Context, id string) err
 	return nil
 }
 
-// ApproveScheduledTaskInConversation is the on-channel HITL approval transition: it
-// flips a pending_approval task to active ONLY when the task's origin conversation
-// matches the AUTHENTICATED conversation the approval pause was raised in. Keying on
-// the server-stored origin (never a model-relayed id) is the WR-02 authorization: a
-// model relaying a foreign task_id from another thread cannot approve it, and the task
-// can only be approved from the very conversation that scheduled it.
-func (s *cronTaskStore) ApproveScheduledTaskInConversation(ctx context.Context, taskID, conversationID string) error {
-	tag, err := s.pool.Exec(ctx, `
-		UPDATE aura.scheduler_tasks
-		SET status = 'active', updated_at = now()
-		WHERE id = $1 AND origin_conversation_id = $2 AND status = 'pending_approval'`, taskID, conversationID)
-	if err != nil {
-		return fmt.Errorf("approve scheduled task %s: %w", taskID, err)
-	}
-	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("scheduled task %s is not awaiting approval in conversation %s", taskID, conversationID)
-	}
-	return nil
-}
-
 // --- skill tool wiring (live `skill` tool, 11-02; adapters in internal/skilladapters) ---
 
 // taskStorePool extracts the live pool from the task-store adapter (nil-safe): the
@@ -340,48 +320,6 @@ func newSkillResumeHook(cfg *config.Config, pool *pgxpool.Pool) runner.ResumeHoo
 			return fmt.Errorf("skill resume context: missing skill_name")
 		}
 		return h.Resume(ctx, resp.Action, rc.SkillName, pending.Token, skills.AuditActor{ActorID: "local"})
-	}
-}
-
-// scheduledTaskApprover is the owner-scoped approve seam the scheduled-task resume
-// hook drives. *cronTaskStore satisfies it live; unit tests inject a fake.
-type scheduledTaskApprover interface {
-	ApproveScheduledTaskInConversation(ctx context.Context, taskID, conversationID string) error
-}
-
-// newScheduledTaskResumeHook is the production ResumeHook that activates a
-// pending_approval scheduled task when the operator ACCEPTS its relayed
-// scheduled_task_approval ask_user pause — the on-channel HITL parity for the
-// scheduler (the analog of newShellResumeHook/newGatewayResumeHook). The `task` tool
-// emits the approval directive (scheduledApprovalRequiredResult) which the model
-// relays via ask_user; on accept this hook flips the task to active. It keys the
-// approve on the AUTHENTICATED pending.ConversationID (server-stored at pause
-// creation), never the model-relayed resume_context id, so an accept surfaced in
-// conv-B cannot activate a task scheduled from conv-A (WR-02). A decline/cancel /
-// wrong-type / non-approval-kind resolves nothing (fail-closed) — the task stays
-// pending_approval until an explicit accept or cancel.
-func newScheduledTaskResumeHook(store scheduledTaskApprover) runner.ResumeHook {
-	if store == nil {
-		return nil
-	}
-	return func(ctx context.Context, pending askuser.Pending, resp runner.ResponseInput) error {
-		if pending.Kind != tools.KindApproval || resp.Action != askuser.ActionAccept || len(pending.ResumeContext) == 0 {
-			return nil
-		}
-		var rc struct {
-			Type   string `json:"type"`
-			TaskID string `json:"task_id"`
-		}
-		if err := json.Unmarshal(pending.ResumeContext, &rc); err != nil {
-			return fmt.Errorf("scheduled task resume context: %w", err)
-		}
-		if rc.Type != "scheduled_task_approval" {
-			return nil
-		}
-		if rc.TaskID == "" {
-			return fmt.Errorf("scheduled task resume context: missing task_id")
-		}
-		return store.ApproveScheduledTaskInConversation(ctx, rc.TaskID, pending.ConversationID)
 	}
 }
 

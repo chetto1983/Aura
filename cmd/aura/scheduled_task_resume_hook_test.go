@@ -10,19 +10,29 @@ import (
 	"github.com/chetto1983/aura/internal/runner"
 )
 
-// fakeScheduledApprover records the owner-scoped approve call so the hook tests assert
+// fakeScheduledApprover records the owner-scoped approve/cancel calls so the hook tests assert
 // routing without a DB (mirrors the shell/gateway hook fakes).
 type fakeScheduledApprover struct {
-	taskID string
-	convID string
-	calls  int
-	err    error
+	taskID       string
+	convID       string
+	calls        int
+	cancelTaskID string
+	cancelConvID string
+	cancelCalls  int
+	err          error
 }
 
 func (f *fakeScheduledApprover) ApproveScheduledTaskInConversation(_ context.Context, taskID, conversationID string) error {
 	f.calls++
 	f.taskID = taskID
 	f.convID = conversationID
+	return f.err
+}
+
+func (f *fakeScheduledApprover) CancelScheduledTaskInConversation(_ context.Context, taskID, conversationID string) error {
+	f.cancelCalls++
+	f.cancelTaskID = taskID
+	f.cancelConvID = conversationID
 	return f.err
 }
 
@@ -52,9 +62,33 @@ func TestScheduledTaskResumeHookApprovesAccepted(t *testing.T) {
 	}
 }
 
-// TestScheduledTaskResumeHookIgnoresNonMatching proves the hook resolves NOTHING
-// (fail-closed) on decline/cancel, a non-approval kind, or an unrelated resume_context
-// type — the task stays pending_approval until an explicit accept.
+// TestScheduledTaskResumeHookCancelsDeclined proves a decline on a scheduled_task_approval
+// pause CANCELS the task (owner-scoped on the authenticated conversation) so a declined task is
+// dropped and stops re-nudging. Decline is the on-channel "No" (ActionCancel never reaches a
+// ResumeHook — SubmitAnswer short-circuits it before applyResumeHook).
+func TestScheduledTaskResumeHookCancelsDeclined(t *testing.T) {
+	store := &fakeScheduledApprover{}
+	hook := newScheduledTaskResumeHook(store)
+
+	err := hook(context.Background(), askuser.Pending{
+		ConversationID: "conv-A",
+		Kind:           tools.KindApproval,
+		ResumeContext:  rawJSON(t, map[string]string{"type": "scheduled_task_approval", "task_id": "task-99"}),
+	}, runner.ResponseInput{Action: askuser.ActionDecline})
+	if err != nil {
+		t.Fatalf("hook: %v", err)
+	}
+	if store.cancelCalls != 1 || store.calls != 0 {
+		t.Fatalf("decline => cancel=%d approve=%d, want cancel=1 approve=0", store.cancelCalls, store.calls)
+	}
+	if store.cancelTaskID != "task-99" || store.cancelConvID != "conv-A" {
+		t.Errorf("cancel keyed on (%q,%q), want (task-99, conv-A)", store.cancelTaskID, store.cancelConvID)
+	}
+}
+
+// TestScheduledTaskResumeHookIgnoresNonMatching proves the hook resolves NOTHING (fail-closed)
+// on a raw ActionCancel, a non-approval kind, or an unrelated resume_context type — the task
+// stays pending_approval.
 func TestScheduledTaskResumeHookIgnoresNonMatching(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -62,7 +96,6 @@ func TestScheduledTaskResumeHookIgnoresNonMatching(t *testing.T) {
 		kind   string
 		rcType string
 	}{
-		{"decline", askuser.ActionDecline, tools.KindApproval, "scheduled_task_approval"},
 		{"cancel", askuser.ActionCancel, tools.KindApproval, "scheduled_task_approval"},
 		{"not approval kind", askuser.ActionAccept, tools.KindClarification, "scheduled_task_approval"},
 		{"unrelated type", askuser.ActionAccept, tools.KindApproval, "skill_approval"},
@@ -78,8 +111,8 @@ func TestScheduledTaskResumeHookIgnoresNonMatching(t *testing.T) {
 			if err != nil {
 				t.Fatalf("hook: %v", err)
 			}
-			if store.calls != 0 {
-				t.Fatalf("%s must not approve, got %d calls", tc.name, store.calls)
+			if store.calls != 0 || store.cancelCalls != 0 {
+				t.Fatalf("%s must resolve nothing, got approve=%d cancel=%d", tc.name, store.calls, store.cancelCalls)
 			}
 		})
 	}
