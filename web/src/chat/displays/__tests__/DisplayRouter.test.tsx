@@ -6,10 +6,12 @@ import type { DisplayPayload } from '../types';
 
 // DisplayRouter routes a trusted-normalizer payload to its per-type card; the
 // SECURITY-critical contract is the `default:` — an unknown/foreign type must
-// degrade to the escaped raw ToolActivityCard (never null, never a rich render).
+// degrade to the escaped ToolResultPanel (never null, never a rich render).
+// The router is now hosted INSIDE the compact tool row's expanded body
+// (compact-chat spec §3.5), so the default degrade is the panel, not a card.
 
 // A payload with an unknown discriminant (e.g. a future/foreign type the cockpit
-// doesn't know) — still degrades to the raw card, never thrown away.
+// doesn't know) — still degrades to the raw panel, never thrown away.
 const unknownType = {
   type: 'totally_unknown_type',
   tool_call_id: 'call-2',
@@ -28,19 +30,19 @@ describe('DisplayRouter (DISP-02 / D-FALLBACK)', () => {
     expect(screen.getByText('Web results')).toBeTruthy();
   });
 
-  it('renders the raw card for an unknown payload type (default case, never null)', () => {
+  it('renders the raw panel for an unknown payload type (default case, never null)', () => {
     const { container } = render(
       <DisplayRouter payload={unknownType} toolName="mystery_tool" result="OUTPUT" />,
     );
     expect(container.firstChild).not.toBeNull();
-    expect(screen.getByText('mystery_tool')).toBeTruthy();
+    expect(screen.getByText('Result')).toBeTruthy();
+    expect(screen.getByText('OUTPUT')).toBeTruthy();
   });
 
   it('renders untrusted result as ESCAPED text, never markdown/HTML (HARDEN-08 / T-26-05)', () => {
     const payload = '<img src=x onerror="alert(1)"><b>bold</b>';
     render(<DisplayRouter payload={unknownType} toolName="evil_tool" result={payload} />);
-    // Expand the raw blob via the card's expander.
-    fireEvent.click(screen.getByRole('button', { name: 'Show raw result' }));
+    // The panel renders the (non-JSON) blob as a plain escaped <pre> directly.
     const pre = screen.getByText(payload);
     // The markup is present as TEXT (escaped) inside a <pre>, not parsed into DOM.
     expect(pre.tagName.toLowerCase()).toBe('pre');
@@ -49,7 +51,7 @@ describe('DisplayRouter (DISP-02 / D-FALLBACK)', () => {
     expect(pre.querySelector('b')).toBeNull();
   });
 
-  it('passes argsText + isError through to the raw card', () => {
+  it('passes argsText + result through to the raw panel sections', () => {
     render(
       <DisplayRouter
         payload={unknownType}
@@ -59,13 +61,15 @@ describe('DisplayRouter (DISP-02 / D-FALLBACK)', () => {
         isError
       />,
     );
-    expect(screen.getByText('failing_tool')).toBeTruthy();
-    expect(screen.getByText('Error')).toBeTruthy();
+    expect(screen.getByText('Request')).toBeTruthy();
+    expect(screen.getByText(/"q": "x"/)).toBeTruthy();
+    expect(screen.getByText('boom')).toBeTruthy();
   });
 
-  it('renders a running raw card when no result has arrived (D-15 progressive swap)', () => {
+  it('renders a Request-only panel when no result has arrived (D-15 progressive swap)', () => {
     render(<DisplayRouter payload={unknownType} toolName="slow_tool" argsText="{}" />);
-    expect(screen.getByText('Running')).toBeTruthy();
+    expect(screen.getByText('Request')).toBeTruthy();
+    expect(screen.queryByText('Result')).toBeNull();
   });
 
   // Each per-type case routes to its typed card (the per-card behavior is covered in

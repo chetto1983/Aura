@@ -210,9 +210,13 @@ test.describe('Calm Prism Chrome contracts', () => {
     await reasoningToggle.click();
     await expect(page.getByRole('button', { name: 'Hide reasoning' })).toBeVisible();
     await expect(page.getByText('Checking release evidence', { exact: false })).toBeVisible();
-    await expect(page.getByText('Running', { exact: true })).toBeVisible();
-    await expect(page.getByText('Done', { exact: true })).toBeVisible();
-    await expect(page.getByText('Error', { exact: true })).toBeVisible();
+    // Compact rows: the status WORD is sr-only (dot + duration carry it visually);
+    // it must still be in the accessibility tree. Error keeps a VISIBLE danger word.
+    await expect(page.getByText('Running', { exact: true }).first()).toBeAttached();
+    await expect(page.getByText('Done', { exact: true }).first()).toBeAttached();
+    await expect(
+      page.locator('[data-testid="tool-row"] .text-danger', { hasText: 'Error' }).first(),
+    ).toBeVisible();
     await expect(page.getByText('Approval required', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Pilot workspace' })).toBeVisible();
     await expect(page.getByText('Expired — auto-resolved.')).toBeVisible();

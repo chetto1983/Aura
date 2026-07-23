@@ -128,7 +128,8 @@ export function AssistantMessage() {
   const attachments = messageAttachments(message);
   return (
     <MessagePrimitive.Root data-message-role="assistant" className="w-full min-w-0 space-y-2">
-      <div data-message-content className="w-full min-w-0 overflow-x-auto">
+      {/* §4 spacing rhythm: machinery parts within one turn stack with 8px. */}
+      <div data-message-content className="w-full min-w-0 space-y-2 overflow-x-auto">
         <MessagePrimitive.Parts
           components={{
             // Assistant prose → sanitized markdown.
@@ -340,16 +341,22 @@ function ReasoningPillPart({ text }: { readonly text: string }) {
   );
 }
 
+/** Display types that render INLINE with no disclosure row (compact-chat §3.5):
+ *  system_event is safety-relevant one-line status; local_artifact is the small
+ *  actionable download chip. Everything else lives behind the compact tool row. */
+const INLINE_DISPLAY_TYPES = new Set<string>(['system_event', 'local_artifact']);
+
 /**
- * The tools.Fallback render: the single seam where a tool turn becomes a typed
- * display. It reads the custom `display` payload off the stored message part
- * (the sseAdapter attaches it by toolCallId, live or on replay) via useAuiState —
- * the external-store runtime passes our ThreadMessageLike part through unchanged
+ * The tools.Fallback render: the single seam where a tool turn becomes UI. It
+ * reads the custom `display` payload off the stored message part (the sseAdapter
+ * attaches it by toolCallId, live or on replay) via useAuiState — the
+ * external-store runtime passes our ThreadMessageLike part through unchanged
  * (convertMessage: identity), so the field survives.
  *
- * D-15 progressive swap: while a tool runs, no payload exists yet → the raw
- * running card stays; the typed display replaces it only once the aura.display
- * payload arrives on completion. D-FALLBACK: no/unknown payload → the raw card.
+ * Compact-chat (spec §3): every tool turn renders as the collapsed
+ * ToolActivityCard row; the typed display (when attached) becomes the row's
+ * EXPANDED body via the card's DisplayRouter dispatch. The two inline
+ * exceptions (system_event / local_artifact) keep today's row-less markup.
  *
  * Citation click-through (D-04): when the payload carries a source registry, a
  * chip click opens the SHARED Source Explorer (the same sheet the answer-level
@@ -368,11 +375,11 @@ const ToolFallback: ToolCallMessagePartComponent = ({ toolName, argsText, result
   const resultText = typeof result === 'string' ? result : undefined;
   const startedAt = typeof part.startedAt === 'number' ? part.startedAt : undefined;
   const finishedAt = typeof part.finishedAt === 'number' ? part.finishedAt : undefined;
+  const onOpenSource = (refId: string) => {
+    openSources(display?.sources ?? [], refId);
+  };
 
-  if (display !== undefined) {
-    const onOpenSource = (refId: string) => {
-      openSources(display.sources ?? [], refId);
-    };
+  if (display !== undefined && INLINE_DISPLAY_TYPES.has(display.type)) {
     return (
       <DisplayRouter
         payload={display}
@@ -392,6 +399,7 @@ const ToolFallback: ToolCallMessagePartComponent = ({ toolName, argsText, result
       {...(isError !== undefined ? { isError } : {})}
       {...(startedAt !== undefined ? { startedAt } : {})}
       {...(finishedAt !== undefined ? { finishedAt } : {})}
+      {...(display !== undefined ? { display, onOpenSource } : {})}
     />
   );
 };

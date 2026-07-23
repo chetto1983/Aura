@@ -1,21 +1,28 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useId, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { DisplayRouter } from './displays/DisplayRouter';
+import type { DisplayPayload } from './displays/types';
 import { useElapsed } from './durationFormat';
 import { toolStatus, type ToolStatus } from './toolStatus';
+import { ToolResultPanel } from './ToolResultPanel';
+import { resultMeta, summarizeArgs } from './toolSummary';
 import { Button } from '@/components/ui/button';
 
-// ToolActivityCard (D-02): the LIGHTWEIGHT raw tool-activity view. It shows a
-// marker + tool name + text status + optional elapsed time + a raw-text disclosure.
+// ToolActivityCard — the compact disclosure tool row (compact-chat spec
+// docs/superpowers/specs/2026-07-23-cockpit-compact-chat-ui-spec.md §3):
+// a single 44px one-liner [dot · mono name · args summary · meta · duration ·
+// chevron], COLLAPSED BY DEFAULT in every state — the auto-expand/auto-collapse
+// machinery is deleted (C2). Expanding reveals the typed DisplayRouter card
+// (evidence types) or the structured ToolResultPanel (raw), inside the row.
+// Errors stay collapsed with a danger tint + a visible "Error" word (OQ-2).
 //
-// SECURITY (T-25-11 / HARDEN-08): the raw blob is untrusted tool/swarm output —
-// it renders as TEXT inside a <pre> (React escapes children), never as raw HTML,
-// and is NEVER passed through a markdown renderer. There is deliberately NO typed
-// per-type display routing here — that is Phase 26 (DISP-01..05). The XSS guard is
-// asserted behaviourally in ToolActivityCard.test.tsx.
+// SECURITY (T-25-11 / HARDEN-08): summaries and raw bodies are untrusted
+// tool/swarm output — they render as escaped React text (the panel's highlight
+// path is Shiki's tokenize-as-text HTML), NEVER through a markdown renderer.
 
 const DOT_CLASS: Record<ToolStatus, string> = {
-  running: 'bg-warning',
+  running: 'bg-warning aura-dot-pulse',
   done: 'bg-success',
   error: 'bg-danger',
 };
@@ -41,112 +48,10 @@ export interface ToolActivityCardProps {
   readonly finishedAt?: number;
   /** Nested subagent/child tool entries (swarm). Absent/empty → single-row shape. */
   readonly childActivity?: readonly ToolActivityChild[];
-}
-
-interface ToolActivityRowProps {
-  readonly toolName: string;
-  readonly status: ToolStatus;
-  readonly argsText?: string;
-  readonly result?: string;
-  /** Pre-formatted elapsed readout (parent only); omitted on child rows. */
-  readonly elapsed?: string | null;
-  /** Running ticks stay hidden from assistive technology; settled duration does not. */
-  readonly elapsedRunning?: boolean;
-}
-
-/**
- * One tool-activity line: marker + name + text status + optional elapsed + an XSS-safe
- * raw-text disclosure. Owns the expand state machine: auto-expand while
- * running, auto-collapse ONCE on the running → done|error settle edge, and a userToggled
- * intent-guard that lets a manual toggle win thereafter. Used by both the parent card and
- * its nested child rows (no duplication).
- */
-function ToolActivityRow({
-  toolName,
-  status,
-  argsText,
-  result,
-  elapsed,
-  elapsedRunning = false,
-}: ToolActivityRowProps) {
-  const { t } = useTranslation();
-  const bodyId = useId();
-  // The raw blob: prefer the result; while running, show the streamed args so the operator
-  // sees what was requested. Always rendered as plain text/mono.
-  const raw = result ?? argsText ?? '';
-  const hasRaw = raw.length > 0;
-  const userToggled = useRef(false);
-  const settledOnce = useRef(status !== 'running');
-  const previous = useRef({ status, hasRaw });
-  const [expanded, setExpanded] = useState(status === 'running' && hasRaw);
-
-  // Expand when streamed raw first arrives, then auto-collapse ONCE on the running →
-  // done|error transition. Manual intent wins thereafter, and a later status flicker does
-  // not re-drive the expander.
-  useEffect(() => {
-    const delayedRaw = status === 'running' && hasRaw && !previous.current.hasRaw;
-    const settled = previous.current.status === 'running' && status !== 'running';
-    if (!userToggled.current && delayedRaw && !settledOnce.current) setExpanded(true);
-    if (!userToggled.current && settled && !settledOnce.current) setExpanded(false);
-    if (settled) settledOnce.current = true;
-    previous.current = { status, hasRaw };
-  }, [hasRaw, status]);
-
-  return (
-    <>
-      <div className="flex min-h-[var(--row-h)] min-w-0 items-center justify-between gap-2 px-3 py-1">
-        <span className="flex min-w-0 items-center gap-2">
-          <span
-            aria-hidden="true"
-            className={`inline-block h-2 w-2 shrink-0 rounded-sm ${DOT_CLASS[status]}`}
-          />
-          <span className="min-w-0 break-words font-mono text-xs text-text">{toolName}</span>
-          <span className="shrink-0 text-xs text-text-muted">
-            {t(`chat.tool.status.${status}`)}
-          </span>
-          {elapsed !== null && elapsed !== undefined ? (
-            <span
-              aria-hidden={elapsedRunning ? true : undefined}
-              data-testid="tool-elapsed"
-              className="font-mono text-[0.75rem] tabular-nums text-text-faint"
-            >
-              {elapsed}
-            </span>
-          ) : null}
-        </span>
-        {hasRaw ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={() => {
-              userToggled.current = true;
-              setExpanded((v) => !v);
-            }}
-            aria-expanded={expanded}
-            aria-controls={bodyId}
-            aria-label={expanded ? t('chat.tool.hideRaw') : t('chat.tool.showRaw')}
-            className="min-h-11 min-w-11 text-text-muted hover:text-text"
-          >
-            <ChevronDown
-              data-icon
-              aria-hidden="true"
-              className={`transition-transform motion-reduce:transition-none ${expanded ? 'rotate-180' : ''}`}
-            />
-          </Button>
-        ) : null}
-      </div>
-      {hasRaw ? (
-        <pre
-          id={bodyId}
-          hidden={!expanded}
-          className="overflow-x-auto border-t border-border px-3 py-2 font-mono text-xs leading-relaxed text-text-muted"
-        >
-          {raw}
-        </pre>
-      ) : null}
-    </>
-  );
+  /** Typed display payload — the expanded body renders the DisplayRouter card. */
+  readonly display?: DisplayPayload;
+  /** Citation click-through for the expanded evidence displays (D-04). */
+  readonly onOpenSource?: (refId: string) => void;
 }
 
 export function ToolActivityCard({
@@ -157,40 +62,147 @@ export function ToolActivityCard({
   startedAt,
   finishedAt,
   childActivity,
+  display,
+  onOpenSource,
 }: ToolActivityCardProps) {
+  const { t } = useTranslation();
+  const bodyId = useId();
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const [expanded, setExpanded] = useState(false);
   const status = toolStatus({
     ...(result !== undefined ? { result } : {}),
     ...(isError !== undefined ? { isError } : {}),
   });
-  const elapsed = useElapsed(startedAt, finishedAt, status === 'running');
-  const elapsedRunning = status === 'running';
+  const running = status === 'running';
+  const elapsed = useElapsed(startedAt, finishedAt, running);
+  const summary = summarizeArgs(toolName, argsText ?? '');
+  // Result meta appears only once settled (§3.1 — absent while running).
+  const meta = running ? null : resultMeta(display, result);
   const hasChildren = childActivity !== undefined && childActivity.length > 0;
 
+  const toggle = useCallback(() => {
+    setExpanded((prev) => {
+      const next = !prev;
+      // Collapse while focus is inside the body (e.g. after Copy) → return
+      // focus to the row trigger so it never falls to <body> (§8.3).
+      if (!next) {
+        const active = document.activeElement;
+        const body = document.getElementById(bodyId);
+        if (active !== null && body?.contains(active) === true) {
+          rootRef.current?.querySelector('button')?.focus();
+        }
+      }
+      return next;
+    });
+  }, [bodyId]);
+
+  let metaText: string | null = null;
+  if (meta !== null) {
+    metaText =
+      meta.text ??
+      `${meta.prefix !== undefined ? `${meta.prefix} · ` : ''}${t(meta.key ?? '', { count: meta.count ?? 0 })}`;
+  }
+
   return (
-    <div className="rounded-[var(--radius-md)] border border-border">
-      <ToolActivityRow
-        toolName={toolName}
-        status={status}
-        {...(argsText !== undefined ? { argsText } : {})}
-        {...(result !== undefined ? { result } : {})}
-        elapsed={elapsed}
-        elapsedRunning={elapsedRunning}
-      />
-      {hasChildren ? (
-        <div data-testid="tool-children" className="ms-3 mb-1 ps-4 border-l border-border">
-          {childActivity.map((child, i) => (
-            <ToolActivityRow
-              // Swarm child entries arrive in stream order and have no stable id; the index
-              // is a stable key within a single parent card's children list.
-              key={`${child.toolName}-${String(i)}`}
-              toolName={child.toolName}
-              status={toolStatus(child)}
-              {...(child.argsText !== undefined ? { argsText: child.argsText } : {})}
-              {...(child.result !== undefined ? { result: child.result } : {})}
+    <div
+      ref={rootRef}
+      data-testid="tool-row"
+      className={`rounded-[var(--radius-md)] border ${
+        status === 'error' ? 'border-danger/40' : 'border-border'
+      }`}
+    >
+      <Button
+        type="button"
+        variant="ghost"
+        onClick={toggle}
+        aria-expanded={expanded}
+        aria-controls={bodyId}
+        aria-label={t('chat.tool.rowAria', { tool: toolName })}
+        title={t(expanded ? 'chat.tool.collapseAria' : 'chat.tool.expandAria', {
+          tool: toolName,
+        })}
+        className="min-h-11 w-full justify-between gap-2 px-3 text-xs"
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <span
+            aria-hidden="true"
+            className={`inline-block h-2 w-2 shrink-0 rounded-sm ${DOT_CLASS[status]}`}
+          />
+          <span className="min-w-0 shrink-0 break-words font-mono text-xs text-text">
+            {toolName}
+          </span>
+          {summary.length > 0 ? (
+            <span className="min-w-0 truncate text-xs text-text-muted">{summary}</span>
+          ) : null}
+          {/* The visible status WORD is dropped (dot + duration carry it); AT
+              still hears it. Error stays visible — never color-only (1.4.1). */}
+          <span className="sr-only">{t(`chat.tool.status.${status}`)}</span>
+          {status === 'error' ? (
+            <span className="shrink-0 text-xs font-medium text-danger">
+              {t('chat.tool.status.error')}
+            </span>
+          ) : null}
+        </span>
+        <span className="flex shrink-0 items-center gap-2">
+          {metaText !== null ? (
+            <span data-testid="tool-meta" className="text-[0.75rem] text-text-faint">
+              {metaText}
+            </span>
+          ) : null}
+          {elapsed !== null ? (
+            <span
+              aria-hidden={running ? true : undefined}
+              data-testid="tool-elapsed"
+              className="font-mono text-[0.75rem] tabular-nums text-text-faint"
+            >
+              {elapsed}
+            </span>
+          ) : null}
+          <ChevronDown
+            data-icon
+            aria-hidden="true"
+            className={`transition-transform motion-reduce:transition-none ${expanded ? 'rotate-180' : ''}`}
+          />
+        </span>
+      </Button>
+      <div
+        id={bodyId}
+        hidden={!expanded}
+        role="region"
+        aria-label={t('chat.tool.regionAria', { tool: toolName })}
+        data-testid="tool-body"
+        className="aura-part-reveal border-t border-border"
+      >
+        {display !== undefined ? (
+          <div className="p-2">
+            <DisplayRouter
+              payload={display}
+              toolName={toolName}
+              {...(argsText !== undefined ? { argsText } : {})}
+              {...(result !== undefined ? { result } : {})}
+              {...(isError !== undefined ? { isError } : {})}
+              {...(onOpenSource !== undefined ? { onOpenSource } : {})}
             />
-          ))}
-        </div>
-      ) : null}
+          </div>
+        ) : (
+          <ToolResultPanel argsText={argsText} result={result} />
+        )}
+        {hasChildren ? (
+          <div data-testid="tool-children" className="ms-3 mb-1 border-l border-border ps-4">
+            {childActivity.map((child, i) => (
+              <ToolActivityCard
+                // Swarm child entries arrive in stream order and have no stable id; the
+                // index is a stable key within a single parent card's children list.
+                key={`${child.toolName}-${String(i)}`}
+                toolName={child.toolName}
+                {...(child.argsText !== undefined ? { argsText: child.argsText } : {})}
+                {...(child.result !== undefined ? { result: child.result } : {})}
+                {...(child.isError !== undefined ? { isError: child.isError } : {})}
+              />
+            ))}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

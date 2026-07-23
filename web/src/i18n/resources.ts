@@ -1,5 +1,5 @@
 import { adminEn, adminIt } from './resources.admin';
-import { chatReasoningEn, chatReasoningIt } from './resources.chatactivity';
+import { chatReasoningEn, chatReasoningIt, chatToolEn, chatToolIt } from './resources.chatactivity';
 import {
   composerEffortEn,
   composerEffortIt,
@@ -113,19 +113,7 @@ export const resources = {
           codeCopied: 'Code copied',
         },
         reasoning: chatReasoningEn,
-        tool: {
-          showRaw: 'Show raw result',
-          hideRaw: 'Hide raw result',
-          duration: {
-            seconds: '{{value}} s',
-            minutes: '{{minutes}} min {{seconds}} s',
-          },
-          status: {
-            running: 'Running',
-            done: 'Done',
-            error: 'Error',
-          },
-        },
+        tool: chatToolEn,
         branch: {
           label: 'Branch {{current}} of {{count}}',
           previous: 'Previous branch',
@@ -390,19 +378,7 @@ export const resources = {
           codeCopied: 'Codice copiato',
         },
         reasoning: chatReasoningIt,
-        tool: {
-          showRaw: 'Mostra risultato grezzo',
-          hideRaw: 'Nascondi risultato grezzo',
-          duration: {
-            seconds: '{{value}} s',
-            minutes: '{{minutes}} min {{seconds}} s',
-          },
-          status: {
-            running: 'In corso',
-            done: 'Completato',
-            error: 'Errore',
-          },
-        },
+        tool: chatToolIt,
         branch: {
           label: 'Ramo {{current}} di {{count}}',
           previous: 'Ramo precedente',

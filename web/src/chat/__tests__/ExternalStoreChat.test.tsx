@@ -192,13 +192,16 @@ describe('ExternalStoreChat (CHAT-01)', () => {
     expect(reasoningToggle.getAttribute('aria-expanded')).toBe('true');
     expect(reasoningText.hidden).toBe(false);
 
-    // Tool card shows the tool name + done status; expanding reveals the raw blob.
+    // Compact tool row: mono name visible, collapsed by default; expanding the
+    // row reveals the Request/Result panel with the raw blob (spec §3.5).
     expect(screen.getByText('web_search')).toBeTruthy();
     expect(
       screen.getByText('web_search').compareDocumentPosition(screen.getByText('It is sunny.')) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Show raw result' }));
+    expect(screen.getByTestId('tool-body').hidden).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'web_search activity' }));
+    expect(screen.getByTestId('tool-body').hidden).toBe(false);
     expect(screen.getByText('sunny 25C')).toBeTruthy();
 
     // Usage flowed to the footer seam (25-04).
