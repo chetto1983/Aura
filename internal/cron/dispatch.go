@@ -96,6 +96,10 @@ type DispatchDeps struct {
 	// R4/R7). Nil → legacy route-only behavior (the regression guard); the
 	// composition root adapts *channels.Registry onto it.
 	ChannelDeliverer ChannelDeliverer
+	// ApprovalReminderStore backs the per-tick pending-approval reminder sweep (fix-plan
+	// 1.7 / Amendment #92). Nil → no sweep (defaulted from Store in NewDispatch when the
+	// concrete *Store is supplied, mirroring NotificationStore).
+	ApprovalReminderStore ApprovalReminderStore
 	// PreferOriginChannel is the AURA_SCHEDULER_PREFER_ORIGIN_CHANNEL kill-switch,
 	// resolved once at the composition root (default true). False → byte-identical
 	// legacy route-only behavior even when a ChannelDeliverer is wired (D-03).
@@ -134,6 +138,11 @@ func NewDispatch(handlers map[TaskKind]Handler, deps DispatchDeps) *Dispatch {
 	if deps.NotificationStore == nil {
 		if store, ok := deps.Store.(PendingNotificationStore); ok {
 			deps.NotificationStore = store
+		}
+	}
+	if deps.ApprovalReminderStore == nil {
+		if store, ok := deps.Store.(ApprovalReminderStore); ok {
+			deps.ApprovalReminderStore = store
 		}
 	}
 	return &Dispatch{deps: deps, handlers: handlers}

@@ -190,6 +190,15 @@ type Querier interface {
 	ListDocumentTags(ctx context.Context, documentID pgtype.UUID) ([]string, error)
 	ListDocumentVersions(ctx context.Context, documentID pgtype.UUID) ([]AuraDocumentVersions, error)
 	ListDocuments(ctx context.Context, arg ListDocumentsParams) ([]AuraDocuments, error)
+	// fix-plan 1.7 / Amendment #92: the per-tick approval-reminder sweep. Channel-owned
+	// pending_approval tasks whose throttle stamp is due (never reminded, or older than the
+	// cadence cutoff computed in Go: now() - AURA_SCHEDULER_APPROVAL_REMINDER_SEC). CLI/
+	// cockpit-local rows (identity_id IN ('', 'local')) are excluded — cockpit approvals are
+	// already visible in the AG-UI panel. No FOR UPDATE SKIP LOCKED: the sweep runs on the
+	// autocommit pool (like DueTasks) where a row lock releases the instant the SELECT
+	// returns (inert). The dedup is the approval_reminded_at throttle stamp, not a row lock;
+	// a rare cross-instance double-nudge under HA is benign (a duplicate reminder).
+	ListDuePendingApprovalReminders(ctx context.Context, arg ListDuePendingApprovalRemindersParams) ([]AuraSchedulerTasks, error)
 	ListExpiredReplayBodies(ctx context.Context, arg ListExpiredReplayBodiesParams) ([]ListExpiredReplayBodiesRow, error)
 	ListIdentities(ctx context.Context) ([]AuraIdentities, error)
 	ListIdentityAudit(ctx context.Context, arg ListIdentityAuditParams) ([]AuraIdentityAudit, error)
@@ -226,6 +235,9 @@ type Querier interface {
 	ListTurnsBySeq(ctx context.Context, conversationID pgtype.UUID) ([]ListTurnsBySeqRow, error)
 	LockConversationForTurnAppend(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)
 	LookupRecoveryByEmail(ctx context.Context, email string) (LookupRecoveryByEmailRow, error)
+	// Stamp the throttle after a reminder ATTEMPT (delivered or not) so a pending approval
+	// re-nudges at most once per cadence and a failing channel cannot spam the tick.
+	MarkApprovalReminded(ctx context.Context, id pgtype.UUID) error
 	MarkNotificationDelivered(ctx context.Context, id pgtype.UUID) error
 	MarkNotificationFailed(ctx context.Context, arg MarkNotificationFailedParams) error
 	MarkOperationIndeterminate(ctx context.Context, arg MarkOperationIndeterminateParams) (int64, error)

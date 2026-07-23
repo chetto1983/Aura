@@ -558,6 +558,7 @@ type AuraSchedulerTasks struct {
 	OriginConversationID pgtype.UUID        `json:"origin_conversation_id"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	ApprovalRemindedAt   pgtype.Timestamptz `json:"approval_reminded_at"`
 }
 
 // Cockpit-editable runtime override layer for model-backend knobs (Settings page). MUTABLE (aura_app full DML). Overlaid onto the environment at boot by internal/settings (DB wins); applied on restart. is_secret rows are redacted in API GET responses.

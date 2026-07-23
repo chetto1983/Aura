@@ -47,7 +47,7 @@ INSERT INTO aura.scheduler_tasks (
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 RETURNING id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at
+    created_at, updated_at, approval_reminded_at
 `
 
 type CreateTaskParams struct {
@@ -102,6 +102,7 @@ func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (AuraSch
 		&i.OriginConversationID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ApprovalRemindedAt,
 	)
 	return i, err
 }
@@ -109,7 +110,7 @@ func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (AuraSch
 const dueTasks = `-- name: DueTasks :many
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at
+    created_at, updated_at, approval_reminded_at
 FROM aura.scheduler_tasks
 WHERE status = 'active' AND next_run_at <= now()
 ORDER BY next_run_at ASC
@@ -146,6 +147,7 @@ func (q *Queries) DueTasks(ctx context.Context, limit int32) ([]AuraSchedulerTas
 			&i.OriginConversationID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ApprovalRemindedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -160,7 +162,7 @@ func (q *Queries) DueTasks(ctx context.Context, limit int32) ([]AuraSchedulerTas
 const getTask = `-- name: GetTask :one
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at
+    created_at, updated_at, approval_reminded_at
 FROM aura.scheduler_tasks
 WHERE id = $1
 `
@@ -185,6 +187,7 @@ func (q *Queries) GetTask(ctx context.Context, id pgtype.UUID) (AuraSchedulerTas
 		&i.OriginConversationID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ApprovalRemindedAt,
 	)
 	return i, err
 }
@@ -192,7 +195,7 @@ func (q *Queries) GetTask(ctx context.Context, id pgtype.UUID) (AuraSchedulerTas
 const listActiveTasks = `-- name: ListActiveTasks :many
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at
+    created_at, updated_at, approval_reminded_at
 FROM aura.scheduler_tasks
 WHERE status = 'active'
 ORDER BY next_run_at ASC NULLS LAST, id ASC
@@ -224,6 +227,70 @@ func (q *Queries) ListActiveTasks(ctx context.Context) ([]AuraSchedulerTasks, er
 			&i.OriginConversationID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ApprovalRemindedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDuePendingApprovalReminders = `-- name: ListDuePendingApprovalReminders :many
+SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
+    step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
+    created_at, updated_at, approval_reminded_at
+FROM aura.scheduler_tasks
+WHERE status = 'pending_approval'
+    AND identity_id NOT IN ('', 'local')
+    AND (approval_reminded_at IS NULL OR approval_reminded_at <= $1)
+ORDER BY created_at ASC
+LIMIT $2
+`
+
+type ListDuePendingApprovalRemindersParams struct {
+	ApprovalRemindedAt pgtype.Timestamptz `json:"approval_reminded_at"`
+	Limit              int32              `json:"limit"`
+}
+
+// fix-plan 1.7 / Amendment #92: the per-tick approval-reminder sweep. Channel-owned
+// pending_approval tasks whose throttle stamp is due (never reminded, or older than the
+// cadence cutoff computed in Go: now() - AURA_SCHEDULER_APPROVAL_REMINDER_SEC). CLI/
+// cockpit-local rows (identity_id IN (”, 'local')) are excluded — cockpit approvals are
+// already visible in the AG-UI panel. No FOR UPDATE SKIP LOCKED: the sweep runs on the
+// autocommit pool (like DueTasks) where a row lock releases the instant the SELECT
+// returns (inert). The dedup is the approval_reminded_at throttle stamp, not a row lock;
+// a rare cross-instance double-nudge under HA is benign (a duplicate reminder).
+func (q *Queries) ListDuePendingApprovalReminders(ctx context.Context, arg ListDuePendingApprovalRemindersParams) ([]AuraSchedulerTasks, error) {
+	rows, err := q.db.Query(ctx, listDuePendingApprovalReminders, arg.ApprovalRemindedAt, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuraSchedulerTasks{}
+	for rows.Next() {
+		var i AuraSchedulerTasks
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.ScheduleKind,
+			&i.CronExpr,
+			&i.EveryMinutes,
+			&i.RunAt,
+			&i.Tz,
+			&i.Payload,
+			&i.StepBudget,
+			&i.Status,
+			&i.NextRunAt,
+			&i.NotifyRoute,
+			&i.IdentityID,
+			&i.OriginConversationID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ApprovalRemindedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -238,7 +305,7 @@ func (q *Queries) ListActiveTasks(ctx context.Context) ([]AuraSchedulerTasks, er
 const listManageableTasks = `-- name: ListManageableTasks :many
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at
+    created_at, updated_at, approval_reminded_at
 FROM aura.scheduler_tasks
 WHERE status IN ('active', 'pending_approval')
 ORDER BY next_run_at ASC NULLS LAST, id ASC
@@ -273,6 +340,7 @@ func (q *Queries) ListManageableTasks(ctx context.Context) ([]AuraSchedulerTasks
 			&i.OriginConversationID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ApprovalRemindedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -282,6 +350,19 @@ func (q *Queries) ListManageableTasks(ctx context.Context) ([]AuraSchedulerTasks
 		return nil, err
 	}
 	return items, nil
+}
+
+const markApprovalReminded = `-- name: MarkApprovalReminded :exec
+UPDATE aura.scheduler_tasks
+SET approval_reminded_at = now()
+WHERE id = $1
+`
+
+// Stamp the throttle after a reminder ATTEMPT (delivered or not) so a pending approval
+// re-nudges at most once per cadence and a failing channel cannot spam the tick.
+func (q *Queries) MarkApprovalReminded(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, markApprovalReminded, id)
+	return err
 }
 
 const runTaskNowRow = `-- name: RunTaskNowRow :execrows

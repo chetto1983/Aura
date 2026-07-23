@@ -6,19 +6,19 @@ INSERT INTO aura.scheduler_tasks (
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 RETURNING id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at;
+    created_at, updated_at, approval_reminded_at;
 
 -- name: GetTask :one
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at
+    created_at, updated_at, approval_reminded_at
 FROM aura.scheduler_tasks
 WHERE id = $1;
 
 -- name: ListActiveTasks :many
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at
+    created_at, updated_at, approval_reminded_at
 FROM aura.scheduler_tasks
 WHERE status = 'active'
 ORDER BY next_run_at ASC NULLS LAST, id ASC;
@@ -30,7 +30,7 @@ ORDER BY next_run_at ASC NULLS LAST, id ASC;
 -- is what makes each due task a singleton across concurrent workers.
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at
+    created_at, updated_at, approval_reminded_at
 FROM aura.scheduler_tasks
 WHERE status = 'active' AND next_run_at <= now()
 ORDER BY next_run_at ASC
@@ -52,10 +52,36 @@ WHERE id = $1;
 -- non-null next_run_at too — it is the first fire computed at schedule time).
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at
+    created_at, updated_at, approval_reminded_at
 FROM aura.scheduler_tasks
 WHERE status IN ('active', 'pending_approval')
 ORDER BY next_run_at ASC NULLS LAST, id ASC;
+
+-- name: ListDuePendingApprovalReminders :many
+-- fix-plan 1.7 / Amendment #92: the per-tick approval-reminder sweep. Channel-owned
+-- pending_approval tasks whose throttle stamp is due (never reminded, or older than the
+-- cadence cutoff computed in Go: now() - AURA_SCHEDULER_APPROVAL_REMINDER_SEC). CLI/
+-- cockpit-local rows (identity_id IN ('', 'local')) are excluded — cockpit approvals are
+-- already visible in the AG-UI panel. No FOR UPDATE SKIP LOCKED: the sweep runs on the
+-- autocommit pool (like DueTasks) where a row lock releases the instant the SELECT
+-- returns (inert). The dedup is the approval_reminded_at throttle stamp, not a row lock;
+-- a rare cross-instance double-nudge under HA is benign (a duplicate reminder).
+SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
+    step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
+    created_at, updated_at, approval_reminded_at
+FROM aura.scheduler_tasks
+WHERE status = 'pending_approval'
+    AND identity_id NOT IN ('', 'local')
+    AND (approval_reminded_at IS NULL OR approval_reminded_at <= $1)
+ORDER BY created_at ASC
+LIMIT $2;
+
+-- name: MarkApprovalReminded :exec
+-- Stamp the throttle after a reminder ATTEMPT (delivered or not) so a pending approval
+-- re-nudges at most once per cadence and a failing channel cannot spam the tick.
+UPDATE aura.scheduler_tasks
+SET approval_reminded_at = now()
+WHERE id = $1;
 
 -- name: ApproveTaskRow :execrows
 -- Flip a pending_approval task to active (the cockpit approval, parity with the CLI

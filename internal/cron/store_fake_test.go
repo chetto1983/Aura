@@ -167,6 +167,7 @@ func schedulerTaskRow(t *testing.T) []any {
 		uuidVal(t, fakeConvID),                       // origin_conversation_id
 		pgtype.Timestamptz{Time: now, Valid: true},   // created_at
 		pgtype.Timestamptz{Time: now, Valid: true},   // updated_at
+		pgtype.Timestamptz{},                         // approval_reminded_at (NULL)
 	}
 }
 

@@ -51,6 +51,13 @@ type notificationSweeper interface {
 	sweepNotifications(ctx context.Context) error
 }
 
+// approvalReminderSweeper is the tick seam for the pending-approval reminder sweep
+// (fix-plan 1.7 / Amendment #92), type-asserted on the dispatcher exactly like
+// notificationSweeper so the wiring stays optional and test-injectable.
+type approvalReminderSweeper interface {
+	sweepApprovalReminders(ctx context.Context) error
+}
+
 // Scheduler is the in-process tick loop owning the due-task claim lifecycle.
 type Scheduler struct {
 	// Now is the injectable clock (W8). Defaults to time.Now; tests inject a frozen
@@ -258,6 +265,11 @@ func (s *Scheduler) tick(ctx context.Context) error {
 	if sweeper, ok := s.dispatch.(notificationSweeper); ok {
 		if err := sweeper.sweepNotifications(ctx); err != nil {
 			return fmt.Errorf("tick sweep notifications: %w", err)
+		}
+	}
+	if sweeper, ok := s.dispatch.(approvalReminderSweeper); ok {
+		if err := sweeper.sweepApprovalReminders(ctx); err != nil {
+			return fmt.Errorf("tick sweep approval reminders: %w", err)
 		}
 	}
 	return nil
