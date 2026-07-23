@@ -137,7 +137,9 @@ func TestCatchUpMissed_ConsultsReschedulesOnRecovery(t *testing.T) {
 	now := time.Date(2026, 6, 4, 12, 0, 0, 0, time.UTC)
 	pool := migratedPool(t)
 	store := New(pool)
-	// Inject the real flags: reminder=false (no replay), agent_job=true (replays once).
+	// Inject the real flags: skill_ttl_sweep=false (a periodic sweep never replays a
+	// missed window), agent_job=true (replays once). Reminder is no longer the false
+	// case — fix-plan 1.2 flipped it to true (missed reminders re-fire at catch-up).
 	s := NewScheduler(pool, store, SchedulerConfig{
 		Now:           func() time.Time { return now },
 		MaxConcurrent: 2,
@@ -156,9 +158,9 @@ func TestCatchUpMissed_ConsultsReschedulesOnRecovery(t *testing.T) {
 	}
 	overdue := now.Add(-time.Hour) // 12 missed every-5m windows
 
-	noReplay, err := store.CreateTask(ctx, CreateTaskParams{Kind: KindReminder, Spec: spec, StepBudget: 8, NextRunAt: overdue})
+	noReplay, err := store.CreateTask(ctx, CreateTaskParams{Kind: KindSkillTTLSweep, Spec: spec, StepBudget: 8, NextRunAt: overdue})
 	if err != nil {
-		t.Fatalf("CreateTask reminder: %v", err)
+		t.Fatalf("CreateTask skill_ttl_sweep: %v", err)
 	}
 	t.Cleanup(func() { cleanupTask(t, pool, noReplay.ID) })
 
@@ -182,14 +184,14 @@ func TestCatchUpMissed_ConsultsReschedulesOnRecovery(t *testing.T) {
 		return false
 	}
 
-	// The reminder (ReschedulesOnRecovery=false) is NOT re-fired — but its cadence DID
+	// The sweep (ReschedulesOnRecovery=false) is NOT re-fired — but its cadence DID
 	// advance, so the next window fires normally.
 	if inMissed(noReplay.ID) {
 		t.Error("a ReschedulesOnRecovery=false task must NOT be auto-re-fired at catch-up (M-g)")
 	}
 	reloadedNoReplay, err := store.GetTask(ctx, noReplay.ID)
 	if err != nil {
-		t.Fatalf("GetTask reminder: %v", err)
+		t.Fatalf("GetTask skill_ttl_sweep: %v", err)
 	}
 	if want := now.Add(5 * time.Minute); !reloadedNoReplay.NextRunAt.Equal(want) {
 		t.Errorf("non-rescheduling task next_run_at = %s, want cadence still advanced to %s", reloadedNoReplay.NextRunAt, want)

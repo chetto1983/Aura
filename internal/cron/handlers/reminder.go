@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -21,20 +22,28 @@ type reminderPayload struct {
 	Text string `json:"text"`
 }
 
-// Meta declares the reminder contract: a missed reminder does NOT reschedule on
-// recovery (a one-shot reminder fired late is delivered once via catch-up, not
-// re-armed — D-18 collapses the windows upstream).
+// Meta declares the reminder contract: a missed reminder DOES reschedule on
+// recovery (PRD Slice 6: re-notifying is idempotent, a silently dropped reminder is
+// not — parity with agent_job/backup, fix-plan 1.2). D-18 collapses the missed
+// windows upstream, so boot catch-up delivers exactly ONE late fire carrying
+// MissedSince; a retired one-shot fires at most once.
 func (ReminderHandler) Meta() HandlerMeta {
-	return HandlerMeta{Kind: KindReminder, MaxDuration: reminderMaxDuration, ReschedulesOnRecovery: false}
+	return HandlerMeta{Kind: KindReminder, MaxDuration: reminderMaxDuration, ReschedulesOnRecovery: true}
 }
 
 // Run returns the verbatim payload text as the summary. An empty or malformed
 // payload is not an error — a reminder with no text degrades to a generic line so the
-// run still completes and the audit row is written (D-21 never silent-fails).
+// run still completes and the audit row is written (D-21 never silent-fails). A boot
+// catch-up run (MissedSince non-zero, D-18) appends a late-delivery marker so the
+// notification is honest about firing after its scheduled time.
 func (ReminderHandler) Run(_ context.Context, job Job) (string, error) {
 	text := reminderText(job.Payload)
 	if text == "" {
-		return "reminder fired (no text in payload)", nil
+		text = "reminder fired (no text in payload)"
+	}
+	if !job.MissedSince.IsZero() {
+		return fmt.Sprintf("%s (late delivery — originally scheduled %s)",
+			text, job.MissedSince.UTC().Format("2006-01-02 15:04 MST")), nil
 	}
 	return text, nil
 }

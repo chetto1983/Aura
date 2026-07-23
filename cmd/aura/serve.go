@@ -315,8 +315,9 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		Dispatch:  dispatch,
 		Readiness: readinessState,
 		// Consult each kind's ReschedulesOnRecovery at boot catch-up (M-g): a handler
-		// that does not reschedule on recovery (reminder, skill_ttl_sweep) is never
-		// auto-re-fired for a missed window — only its cadence resumes.
+		// that does not reschedule on recovery (the periodic sweeps — skill_ttl_sweep,
+		// retention, purge) is never auto-re-fired for a missed window — only its
+		// cadence resumes. Reminder/agent_job/backup DO re-fire once (fix-plan 1.2).
 		ReschedulesOnRecovery: dispatch.ReschedulesOnRecovery,
 	})
 	// Seed the daily snippet TTL sweep (D-16) idempotently — only when no

@@ -325,10 +325,11 @@ func TestReschedulesOnRecoverySeam(t *testing.T) {
 		}
 	}
 
-	// An injected lookup mirroring the real handler flags: agent_job/backup reschedule
-	// (re-fire on recovery), reminder/skill_ttl_sweep do not.
+	// An injected lookup mirroring the real handler flags: reminder/agent_job/backup
+	// reschedule (re-fire once on recovery — reminder flipped by fix-plan 1.2), the
+	// periodic sweeps (skill_ttl_sweep) do not.
 	reschedules := map[TaskKind]bool{
-		KindReminder:       false,
+		KindReminder:       true,
 		KindAgentJob:       true,
 		KindBackupPostgres: true,
 		KindBackupNeo4j:    true,
@@ -354,12 +355,12 @@ func TestReschedulesOnRecoverySeam(t *testing.T) {
 // and false for an unroutable kind.
 func TestDispatchReschedulesOnRecoveryLookup(t *testing.T) {
 	d := NewDispatch(map[TaskKind]Handler{
-		KindReminder: &fakeHandler{meta: HandlerMeta{Kind: KindReminder, ReschedulesOnRecovery: false}},
-		KindAgentJob: &fakeHandler{meta: HandlerMeta{Kind: KindAgentJob, ReschedulesOnRecovery: true}},
+		KindSkillTTLSweep: &fakeHandler{meta: HandlerMeta{Kind: KindSkillTTLSweep, ReschedulesOnRecovery: false}},
+		KindAgentJob:      &fakeHandler{meta: HandlerMeta{Kind: KindAgentJob, ReschedulesOnRecovery: true}},
 	}, DispatchDeps{Store: &fakeCompleter{}})
 
-	if d.ReschedulesOnRecovery(KindReminder) {
-		t.Error("a reminder handler reports ReschedulesOnRecovery=false")
+	if d.ReschedulesOnRecovery(KindSkillTTLSweep) {
+		t.Error("a sweep handler reports ReschedulesOnRecovery=false")
 	}
 	if !d.ReschedulesOnRecovery(KindAgentJob) {
 		t.Error("an agent_job handler reports ReschedulesOnRecovery=true")
