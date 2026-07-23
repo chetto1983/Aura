@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   AlertCircle,
   Archive,
+  Download,
   MessageSquareText,
   MoreHorizontal,
   Pencil,
@@ -12,6 +13,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { ariaInvalid } from '../a11y/aria';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
+import { exportConversationMarkdown } from './exportConversation';
 import {
   displayTitle,
   isArchived,
@@ -418,6 +420,20 @@ function ConversationRow({
                     }}
                   />
                 )}
+                {/* fix-plan 2.10: wire the dark-code export endpoint. Read-only GET;
+                    the server names the file via Content-Disposition. A failure is
+                    non-blocking (console, the menu's fire-and-forget error pattern). */}
+                <MenuAction
+                  label={t('conversations.actions.export')}
+                  icon={<Download data-icon aria-hidden="true" className="size-4" />}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setMenuPosition(null);
+                    void exportConversationMarkdown(conv.ID).catch((err: unknown) => {
+                      console.error('aura: conversation export failed', err);
+                    });
+                  }}
+                />
                 <div className="my-1 h-px bg-border" />
                 <MenuAction
                   label={t('conversations.actions.delete')}

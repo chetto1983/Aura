@@ -47,12 +47,27 @@ interface FetchLog {
 }
 
 // A fetch double: list (recent-first as the server returns it) + 204 on mutations.
-// Returns the included-archived list when ?archived=true.
-function stubFetch(log: FetchLog[]) {
+// Returns the included-archived list when ?archived=true. The export route (fix-plan
+// 2.10) serves Markdown bytes named via Content-Disposition, before the list branch
+// (both are GET /api/conversations…).
+function stubFetch(log: FetchLog[], exportStatus = 200) {
   return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = urlOf(input);
     const method = init?.method ?? 'GET';
     log.push({ url, method });
+    if (method === 'GET' && url.endsWith('/export')) {
+      if (exportStatus !== 200) {
+        return Promise.resolve(new Response('not found', { status: exportStatus }));
+      }
+      return Promise.resolve(
+        new Response('# export', {
+          status: 200,
+          headers: {
+            'Content-Disposition': `attachment; filename="latest-run.md"; filename*=UTF-8''latest-run.md`,
+          },
+        }),
+      );
+    }
     if (method === 'GET' && url.includes('/api/conversations')) {
       const body = url.includes('archived=true') ? [...ROWS, ARCHIVED] : ROWS;
       return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
@@ -275,6 +290,59 @@ describe('ConversationSidebar (CHAT-02 / D-07)', () => {
         log.some((c) => c.method === 'DELETE' && c.url.endsWith('/api/conversations/c-recent')),
       ).toBe(true);
     });
+  });
+
+  it('exports a conversation to Markdown → GET /export downloads the served filename', async () => {
+    const createUrl = vi.fn(() => 'blob:mock');
+    const revokeUrl = vi.fn();
+    URL.createObjectURL = createUrl;
+    URL.revokeObjectURL = revokeUrl;
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => undefined);
+
+    renderSidebar();
+    await screen.findByText('Latest run');
+    fireEvent.click(
+      within(openActions('Latest run')).getByRole('menuitem', { name: 'Export (Markdown)' }),
+    );
+
+    await waitFor(() => {
+      expect(
+        log.some((c) => c.method === 'GET' && c.url.endsWith('/api/conversations/c-recent/export')),
+      ).toBe(true);
+    });
+    await waitFor(() => {
+      expect(click).toHaveBeenCalledTimes(1);
+    });
+    expect(createUrl).toHaveBeenCalledTimes(1);
+    expect(revokeUrl).toHaveBeenCalledWith('blob:mock');
+    click.mockRestore();
+  });
+
+  it('surfaces an export failure non-blockingly (console) without crashing the menu', async () => {
+    vi.stubGlobal('fetch', stubFetch(log, 404));
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const createUrl = vi.fn(() => 'blob:mock');
+    URL.createObjectURL = createUrl;
+
+    renderSidebar();
+    await screen.findByText('Latest run');
+    fireEvent.click(
+      within(openActions('Latest run')).getByRole('menuitem', { name: 'Export (Markdown)' }),
+    );
+
+    await waitFor(() => {
+      expect(consoleError).toHaveBeenCalledWith(
+        'aura: conversation export failed',
+        expect.any(Error),
+      );
+    });
+    expect(createUrl).not.toHaveBeenCalled();
+    // The sidebar stays alive: rows still render and the menu can reopen.
+    expect(screen.getByText('Latest run')).toBeTruthy();
+    expect(openActions('Latest run')).toBeTruthy();
+    consoleError.mockRestore();
   });
 
   it('shows the empty state when there are no conversations', async () => {

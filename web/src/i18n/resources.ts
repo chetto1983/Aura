@@ -193,6 +193,7 @@ export const resources = {
           rename: 'Rename',
           archive: 'Archive',
           unarchive: 'Unarchive',
+          export: 'Export (Markdown)',
           delete: 'Delete permanently',
         },
         delete: {
@@ -473,6 +474,7 @@ export const resources = {
           rename: 'Rinomina',
           archive: 'Archivia',
           unarchive: 'Ripristina',
+          export: 'Esporta (Markdown)',
           delete: 'Elimina definitivamente',
         },
         delete: {
