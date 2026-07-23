@@ -13,7 +13,17 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/askuser"
+	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/runner"
+)
+
+// Compile-time proof the composition-root ensurer satisfies the cron approval-sweep seam, and
+// that its live collaborators satisfy the narrow ensurer interfaces (*askuser.Store lists pending;
+// *runner.Runner mints). These keep the serve_dispatch wiring honest without a full-boot test.
+var (
+	_ cron.ApprovalPauseEnsurer = approvalPauseEnsurer{}
+	_ approvalPauseLister       = (*askuser.Store)(nil)
+	_ approvalMinter            = (*runner.Runner)(nil)
 )
 
 // ApproveScheduledTaskInConversation is the on-channel HITL approval transition: it

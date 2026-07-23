@@ -32,6 +32,11 @@ const nanoCPUsPerCPU = 1_000_000_000
 // assertion lives in cmd/aura, NOT in cron (cron must not import channels).
 var _ cron.ChannelDeliverer = (*channels.Registry)(nil)
 
+// *channels.Registry ALSO satisfies the cron-local ApprovalChannel seam (via DeliverApproval,
+// Amendment #92 revised): the approval-reminder sweep pushes the actionable on-channel HITL
+// prompt through it. Assertion lives here, not in cron (cron must not import channels).
+var _ cron.ApprovalChannel = (*channels.Registry)(nil)
+
 // buildDispatch assembles the cron Dispatcher from the live runtime (D-15/10-05): the
 // real per-TaskKind handlers adapted onto the cron-local Handler seam, the composite
 // Notifier over the mounted MCP self-send registry, the scheduler's quiet-hours
@@ -118,6 +123,13 @@ func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry, own
 		// resolved once at config load (AURA_SCHEDULER_PREFER_ORIGIN_CHANNEL, default true).
 		ChannelDeliverer:    reg,
 		PreferOriginChannel: chat.cfg.SchedulerPreferOriginChannel,
+		// On-channel HITL re-surface of a pending_approval task (Amendment #92 revised): the
+		// sweep ensures a real scheduled_task_approval pause on the task's origin conversation
+		// (reused from the model relay, else minted host-side via the Runner) and pushes the
+		// actionable prompt to the origin channel. chat.pause + chat.run are always non-nil once
+		// serve boots (assembleChatEnv), so the sweep is live here (kill-switch is the cadence env).
+		ApprovalPauseEnsurer: approvalPauseEnsurer{pauses: chat.pause, minter: chat.run},
+		ApprovalChannel:      reg,
 	})
 }
 
