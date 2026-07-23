@@ -25,6 +25,14 @@ const mutationTests = [
   'src/chat/share/ShareModal.test.tsx',
   'src/chat/share/shareViewModel.test.ts',
   'src/shell/ShareShell.test.tsx',
+  // Compact-chat + audit modules (2026-07-23): pure logic under mutation.
+  // ReasoningPill.test rides along as the durationFormat consumer suite.
+  'src/chat/__tests__/toolSummary.test.ts',
+  'src/chat/__tests__/toolGrouping.test.ts',
+  'src/chat/__tests__/durationFormat.test.ts',
+  'src/chat/__tests__/ReasoningPill.test.tsx',
+  'src/audit/__tests__/auditPairing.test.ts',
+  'src/conversations/__tests__/exportConversation.test.ts',
 ] as const;
 
 export default defineConfig({

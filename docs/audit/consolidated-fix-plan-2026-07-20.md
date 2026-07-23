@@ -116,7 +116,7 @@ Hard constraint honored: context management stays Aura-side + provider-agnostic 
 | **2.7** RLS backstop (7 tables) | (audit, LATENT) | Owner-isolation policies (defense-in-depth; app-level `*ForIdentity` is primary). | migration / no | low |
 | **2.8** Memory→task cascade (BUG-3b) | CONFIRMED (high) | Provenance column on `scheduler_tasks` (mirror `origin_conversation_id`) + Aura-side cascade: on memory-forget success extract removed ids → existing soft-cancel path via a new import-cycle-free `taskStore` seam. | **migration** / **PRD** | med |
 | **2.9** Dead `sandbox_exec` ref | (audit) | Remove dead escalation instruction + stale docblock. | no / no | low |
-| **2.10** Orphan cleanup | (audit) | Delete dead `RuntimeHealthPanel`; wire export + skills PATCH/DELETE UI or remove endpoints. | no / no | low |
+| **2.10** Orphan cleanup | 🟡 **PARTIAL** — export leg ✅ DONE 2026-07-23 | **Export leg wired** (`53f81024e`): "Esporta (Markdown)" in the conversation actions menu → `GET /api/conversations/{id}/export` (Content-Disposition download, i18n en+it, vitest). Remaining: dead `RuntimeHealthPanel` deletion + skills PATCH/DELETE UI-or-remove. | no / no | low |
 | **2.11** Operator recovery seed | (audit) | Run manual `aura identity recover-operator` on host (not a live lockout). | no / no | low |
 
 ---

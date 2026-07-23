@@ -29,7 +29,12 @@
     "src/chat/share/shareTypes.ts",
     "src/chat/share/shareViewModel.ts",
     "src/chat/share/useThreadShares.ts",
-    "src/shell/ShareShell.tsx"
+    "src/shell/ShareShell.tsx",
+    "src/chat/durationFormat.ts",
+    "src/chat/toolSummary.ts",
+    "src/chat/toolGrouping.ts",
+    "src/conversations/exportConversation.ts",
+    "src/audit/auditPairing.ts"
   ],
   "thresholds": { "high": 85, "low": 70, "break": 70 },
   "dryRunTimeoutMinutes": 10,

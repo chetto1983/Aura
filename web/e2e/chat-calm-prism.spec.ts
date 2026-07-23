@@ -211,11 +211,16 @@ test.describe('Calm Prism Chrome contracts', () => {
     await expect(page.getByRole('button', { name: 'Hide reasoning' })).toBeVisible();
     await expect(page.getByText('Checking release evidence', { exact: false })).toBeVisible();
     // Compact rows: the status WORD is sr-only (dot + duration carry it visually);
-    // it must still be in the accessibility tree. Error keeps a VISIBLE danger word.
+    // it must still be in the accessibility tree. The fixture's error tool carries a
+    // system_event display, which per spec §2.6 renders INLINE as SystemEventCard —
+    // its danger affordance is the card's text-danger severity icon + enum reason
+    // label, not a collapsed tool-row Error word (that state is vitest-pinned on the
+    // live isError path, AC-8).
     await expect(page.getByText('Running', { exact: true }).first()).toBeAttached();
     await expect(page.getByText('Done', { exact: true }).first()).toBeAttached();
+    await expect(page.getByText('This URL was blocked by the safety policy.')).toBeVisible();
     await expect(
-      page.locator('[data-testid="tool-row"] .text-danger', { hasText: 'Error' }).first(),
+      page.locator('.text-danger').filter({ has: page.locator('circle') }).first(),
     ).toBeVisible();
     await expect(page.getByText('Approval required', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Pilot workspace' })).toBeVisible();
