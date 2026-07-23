@@ -143,8 +143,12 @@ type Server struct {
 	// leaks to the client. An empty URL → the /api/connect/pim/* routes answer 503 (graceful).
 	calendarMCPURL   string
 	calendarMCPToken string
-	cfg              ServerConfig
-	readinessRuns    readinessProbeCoordinator
+	// runs is the detached-run session registry (fix-plan 1.3 Tier B). Nil = flag
+	// off (AURA_AGUI_RUN_DETACH unset/false) = today's request-scoped run path and
+	// hidden resume/cancel routes; wired via SetRunRegistry only when the flag is on.
+	runs          *RunRegistry
+	cfg           ServerConfig
+	readinessRuns readinessProbeCoordinator
 	// probeTimeout bounds a single live MCP probe (GOV-01). Zero falls back to
 	// defaultProbeTimeout (3s); tests shrink it to exercise the deadline-honoring path
 	// quickly. Kept off the constructor so production uses the 3s default.
@@ -204,6 +208,13 @@ func NewServer(run Runner, conv ConversationStore, cfg ServerConfig) *Server {
 // daemon composition root after NewServer; until set, the approvals read route answers
 // 503 (the resolve route only needs the Runner and works regardless).
 func (s *Server) SetApprovalStore(store ApprovalStore) { s.approvals = store }
+
+// SetRunRegistry wires the detached-run RunSession registry (fix-plan 1.3 Tier B,
+// AURA_AGUI_RUN_DETACH). It is set by the daemon composition root ONLY when the
+// detach flag is on; until set (nil), handleRun keeps today's byte-identical
+// request-scoped path and the run resume/cancel routes hide themselves (404) —
+// D-A2-02 narrow seam, mirroring SetApprovalStore.
+func (s *Server) SetRunRegistry(registry *RunRegistry) { s.runs = registry }
 
 // SetOperationRegistry installs the process-wide durable mutation registry.
 // Keeping this as a narrow consumer-side seam lets tests leave it nil while the

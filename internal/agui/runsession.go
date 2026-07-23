@@ -71,7 +71,12 @@ type RunSession struct {
 	// cleanup is the run-end callback (§1.2): thread-lock release + registry
 	// byThread removal. finish invokes it exactly once, after releasing mu.
 	cleanup func()
-	now     func() time.Time
+	// cancel is the wallclock/explicit-cancel handle over the detached run ctx
+	// (§1.1): fired by the cancel endpoint (RS-05) and by RunRegistry.Close at
+	// daemon shutdown. Set by RunRegistry.Start before the session is published;
+	// immutable afterwards.
+	cancel context.CancelFunc
+	now    func() time.Time
 }
 
 // newRunSession builds a session with a fixed-cap ring. Non-positive caps fall back
@@ -175,6 +180,15 @@ func (s *RunSession) subscribeFrom(fromSeq int64) (<-chan seqEvent, func(), bool
 		s.mu.Unlock()
 	}
 	return ch, cancel, true
+}
+
+// terminalState reports whether the session is terminal and when it finished — the
+// reaper's eviction predicate (`terminal && now-finishedAt > linger`, §1.3). Safe
+// from any goroutine.
+func (s *RunSession) terminalState() (bool, time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.terminal, s.finishedAt
 }
 
 // finish marks the session terminal, stamps finishedAt (the reaper's linger clock,
