@@ -92,6 +92,16 @@ type wireRequest struct {
 	Stream               bool               `json:"stream"`
 	Provider             providerObj        `json:"provider"`
 	StreamOptions        *wireStreamOptions `json:"stream_options,omitempty"`
+	// Transforms carries OpenRouter's ["middle-out"] overflow belt (fix-plan
+	// 1.11): a LOSSY provider-side truncation with no tool-pair awareness, so it
+	// is explicitly NOT a compaction mechanism — Aura's own context management
+	// (amendment #21 ladder, 1.10 estimator) stays primary. It exists only as a
+	// last-resort net against a hard 400 "context length exceeded" when the
+	// local trim under-counts on the OpenRouter path. Set ONLY when BOTH the
+	// resolved target is OpenRouter AND AURA_LLM_OPENROUTER_MIDDLE_OUT is on
+	// (buildWireRequest); everywhere else nil, and omitempty drops the key —
+	// llama.cpp and default-config OpenRouter both stay byte-unchanged.
+	Transforms []string `json:"transforms,omitempty"`
 }
 
 // wireStreamOptions is set ONLY on the llama.cpp target (buildWireRequest) —
@@ -260,11 +270,15 @@ func (c *Client) buildWireRequest(req llm.Request) wireRequest {
 	// reasoning:{...} object (spike 095), so it gets its own per-request fields and
 	// leaves Reasoning nil; OpenRouter (and any unrecognized target) keeps today's
 	// nested object UNCHANGED — xhigh/max serialize automatically via string(r.Effort).
-	if llm.ReasoningTarget(c.cfg.Provider, c.cfg.BaseURL) == llm.ReasoningTargetLlamaCpp {
+	target := llm.ReasoningTarget(c.cfg.Provider, c.cfg.BaseURL)
+	if target == llm.ReasoningTargetLlamaCpp {
 		applyLlamaCppReasoning(&wire, req.Reasoning)
 		wire.StreamOptions = &wireStreamOptions{IncludeUsage: true}
 	} else {
 		wire.Reasoning = buildWireReasoning(req.Reasoning)
+	}
+	if target == llm.ReasoningTargetOpenRouter && c.cfg.OpenRouterMiddleOut {
+		wire.Transforms = []string{"middle-out"}
 	}
 	return wire
 }

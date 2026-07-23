@@ -5252,6 +5252,7 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_MODEL_CONTEXT_WINDOW` | (auto, per provider) | operative | 1.8b | Override context window calc. |
 | `AURA_MODEL_MAX_OUTPUT_TOKENS` | (auto, per provider) | operative | 1.8b | Override max output calc. |
 | `AURA_MODEL_LLAMACPP_ERROR_RESERVE_TOKENS` | `4096` | cap | 1.10 | Extra L2 hard-cap headroom reserved ONLY on the local llama.cpp path (`provider=llamacpp`) for the tiktoken-vs-local-tokenizer gap — no provider-side overflow net there. `0` disables; OpenRouter reserves nothing. |
+| `AURA_LLM_OPENROUTER_MIDDLE_OUT` | `false` | operative | 1.11 | Opt-in belt: when `true` AND the resolved reasoning target is OpenRouter, `wireRequest` sends `transforms:["middle-out"]` — a provider-side LOSSY truncation with no tool-pair awareness, NOT a compaction mechanism (Aura's own context ladder stays primary). Last-resort net against a hard 400 "context length exceeded" when the local trim under-counts. Default off; dormant on the llama.cpp target regardless of the knob. |
 | `AURA_CONVERSATION_TURN_CAP_BYTES` | `65536` (64 KiB) | cap | 1.8 | DB cell spillover boundary. (Era erroneamente 262144 in tabella; codice + §L968/L4620 = 65536 — fix doc-verify 2026-06-01.) |
 | `AURA_SANDBOX_URL` | `http://127.0.0.1:18901` | operative | 2a | Sandbox sidecar endpoint. |
 | `AURA_SANDBOX_TIMEOUT_SEC` | `30` (cap `600`) | cap | 2a | Per-execute timeout. |

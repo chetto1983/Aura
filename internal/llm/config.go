@@ -74,6 +74,10 @@ const (
 	envCompletionGate        = "AURA_COMPLETION_GATE"
 	envCompletionCriticModel = "AURA_COMPLETION_CRITIC_MODEL"
 	envReasoningLearning     = "AURA_LLM_REASONING_LEARNING"
+
+	// envOpenRouterMiddleOut arms the fix-plan 1.11 overflow belt (see
+	// Config.OpenRouterMiddleOut). Default OFF.
+	envOpenRouterMiddleOut = "AURA_LLM_OPENROUTER_MIDDLE_OUT"
 )
 
 // ErrMissingAPIKey is the clear, non-panic error surfaced when the API key is
@@ -129,6 +133,17 @@ type Config struct {
 	// (write). Default OFF: the classifier runs seed-only (its validated baseline)
 	// with no extra subprocess and no oracle-token spend. AURA_LLM_REASONING_LEARNING.
 	ReasoningLearning bool
+
+	// OpenRouterMiddleOut is the opt-in overflow belt (fix-plan 1.11): when ON
+	// (AND the resolved reasoning target is OpenRouter) the wire layer sets
+	// transforms:["middle-out"], OpenRouter's provider-side lossy truncation
+	// with no tool-pair awareness. It is a last-resort net against a hard 400
+	// "context length exceeded" when the local trim under-counts on the
+	// OpenRouter path — NOT a compaction mechanism (Aura's own context
+	// management stays primary). Default OFF; dormant while Aura runs local
+	// (llamacpp target never sets the wire key regardless of this knob).
+	// AURA_LLM_OPENROUTER_MIDDLE_OUT.
+	OpenRouterMiddleOut bool
 }
 
 // fileConfig mirrors the JSON shape of ~/.aura/llm.json. Every field is a
@@ -215,6 +230,7 @@ func load(allowEmptyKey bool) (*Config, error) {
 	cfg.CompletionGate = envBool(envCompletionGate, defaultCompletionGate)
 	cfg.CompletionCriticModel = os.Getenv(envCompletionCriticModel)
 	cfg.ReasoningLearning = envBool(envReasoningLearning, false)
+	cfg.OpenRouterMiddleOut = envBool(envOpenRouterMiddleOut, false)
 
 	if cfg.APIKey == "" && !allowEmptyKey {
 		return nil, ErrMissingAPIKey

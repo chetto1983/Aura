@@ -1,6 +1,8 @@
 package openai_compat
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/llm"
@@ -123,5 +125,58 @@ func TestBuildWireRequestReasoningTarget(t *testing.T) {
 			}
 			assertStreamOptions(t, wire)
 		})
+	})
+}
+
+// TestBuildWireRequestMiddleOutTransformGate is the wire-shape proof of the
+// fix-plan 1.11 overflow belt's strict OpenRouter-target gate: the transforms
+// key appears ONLY when BOTH the resolved target is OpenRouter AND the opt-in
+// knob is on; the target gate wins over a perversely-configured llamacpp+ON
+// combination, and OpenRouter-with-knob-OFF (today's default) stays
+// byte-unchanged — no "transforms" key at all, not even an empty one.
+func TestBuildWireRequestMiddleOutTransformGate(t *testing.T) {
+	marshal := func(t *testing.T, wire wireRequest) string {
+		t.Helper()
+		body, err := json.Marshal(wire)
+		if err != nil {
+			t.Fatalf("json.Marshal(wire): %v", err)
+		}
+		return string(body)
+	}
+
+	t.Run("openrouter knob on emits transforms", func(t *testing.T) {
+		c := New(llm.Config{Provider: "openrouter", BaseURL: "https://openrouter.ai/api/v1", OpenRouterMiddleOut: true})
+		wire := c.buildWireRequest(llm.Request{})
+		if len(wire.Transforms) != 1 || wire.Transforms[0] != "middle-out" {
+			t.Fatalf("Transforms = %v, want [middle-out]", wire.Transforms)
+		}
+		body := marshal(t, wire)
+		if !strings.Contains(body, `"transforms":["middle-out"]`) {
+			t.Errorf("wire body = %s, want it to contain \"transforms\":[\"middle-out\"]", body)
+		}
+	})
+
+	t.Run("openrouter knob off omits transforms", func(t *testing.T) {
+		c := New(llm.Config{Provider: "openrouter", BaseURL: "https://openrouter.ai/api/v1", OpenRouterMiddleOut: false})
+		wire := c.buildWireRequest(llm.Request{})
+		if wire.Transforms != nil {
+			t.Errorf("Transforms = %v, want nil (knob off)", wire.Transforms)
+		}
+		body := marshal(t, wire)
+		if strings.Contains(body, "transforms") {
+			t.Errorf("wire body = %s, want no transforms key when the knob is off", body)
+		}
+	})
+
+	t.Run("llamacpp target wins over knob on", func(t *testing.T) {
+		c := New(llm.Config{Provider: "llamacpp", BaseURL: "http://localhost:8080/v1", OpenRouterMiddleOut: true})
+		wire := c.buildWireRequest(llm.Request{})
+		if wire.Transforms != nil {
+			t.Errorf("Transforms = %v, want nil — the OpenRouter-target gate must win over a perverse llamacpp+knob-ON config", wire.Transforms)
+		}
+		body := marshal(t, wire)
+		if strings.Contains(body, "transforms") {
+			t.Errorf("wire body = %s, want no transforms key on the llama.cpp target regardless of the knob", body)
+		}
 	})
 }

@@ -31,6 +31,7 @@ func clearLLMEnv(t *testing.T) {
 		"AURA_COMPLETION_GATE",
 		"AURA_COMPLETION_CRITIC_MODEL",
 		"AURA_LLM_REASONING_LEARNING",
+		"AURA_LLM_OPENROUTER_MIDDLE_OUT",
 	} {
 		t.Setenv(k, "")
 	}
@@ -180,6 +181,56 @@ func TestLoadAllowEmptyKeyAllowsEmptyAPIKey(t *testing.T) {
 	if _, err := llm.Load(); !errors.Is(err, llm.ErrMissingAPIKey) {
 		t.Fatalf("Load() with the same empty key err = %v, want ErrMissingAPIKey", err)
 	}
+}
+
+// TestConfigEnvOpenRouterMiddleOut locks the fix-plan 1.11 knob: default OFF
+// (dormant belt, byte-unchanged wire), set-true flips it on, and a malformed
+// value falls back to the current value (non-fatal, mirrors ReasoningLearning
+// — an operator typo on an opt-in toggle must not block boot).
+func TestConfigEnvOpenRouterMiddleOut(t *testing.T) {
+	t.Run("unset_defaults_off", func(t *testing.T) {
+		isolateHome(t)
+		clearLLMEnv(t)
+		t.Setenv("OPENROUTER_API_KEY", "sk-test-middleout-default")
+
+		cfg, err := llm.Load()
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if cfg.OpenRouterMiddleOut {
+			t.Error("OpenRouterMiddleOut = true, want false default (opt-in belt)")
+		}
+	})
+
+	t.Run("set_true_overrides_default", func(t *testing.T) {
+		isolateHome(t)
+		clearLLMEnv(t)
+		t.Setenv("OPENROUTER_API_KEY", "sk-test-middleout-on")
+		t.Setenv("AURA_LLM_OPENROUTER_MIDDLE_OUT", "true")
+
+		cfg, err := llm.Load()
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if !cfg.OpenRouterMiddleOut {
+			t.Error("OpenRouterMiddleOut = false, want true from AURA_LLM_OPENROUTER_MIDDLE_OUT=true")
+		}
+	})
+
+	t.Run("malformed_falls_back", func(t *testing.T) {
+		isolateHome(t)
+		clearLLMEnv(t)
+		t.Setenv("OPENROUTER_API_KEY", "sk-test-middleout-malformed")
+		t.Setenv("AURA_LLM_OPENROUTER_MIDDLE_OUT", "not-a-bool")
+
+		cfg, err := llm.Load()
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if cfg.OpenRouterMiddleOut {
+			t.Error("OpenRouterMiddleOut = true, want false fallback on a malformed value")
+		}
+	})
 }
 
 func TestConfigMalformedEnvFailsFast(t *testing.T) {
