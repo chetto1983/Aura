@@ -155,6 +155,16 @@ func (r *RunRegistry) Start(p runParams) (*RunSession, error) {
 	return sess, nil
 }
 
+// atCapacity reports whether Start would refuse right now — the cheap pre-check
+// handleRunDetached runs BEFORE contending the thread lock (§2.4: the 503 must not
+// cost a lock acquisition). Advisory only: Start re-checks under the same mutex, so
+// a lost race still refuses there.
+func (r *RunRegistry) atCapacity() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.closed || len(r.byThread) >= r.cfg.maxLive
+}
+
 // Get resolves a session by run id — live or lingering-terminal (the resume route's
 // lookup; a miss is the owner-scoped 404, §3.2).
 func (r *RunRegistry) Get(runID string) (*RunSession, bool) {
