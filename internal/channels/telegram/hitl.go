@@ -218,6 +218,16 @@ func (h *hitl) cancel(ctx context.Context, convID, token string) (resumed bool, 
 	return h.submit(ctx, convID, token, askuser.ActionCancel, "")
 }
 
+// resolveScheduled resolves a scheduled_task_approval pause by the operator's on-channel action
+// WITHOUT driving a continuation turn: an operator-origin scheduled approval has no live turn to
+// continue, and the scheduled-task ResumeHook (accept→activate, decline→cancel) fires inside
+// SubmitAnswer. action MUST be askuser.ActionAccept or ActionDecline — never ActionCancel, which
+// SubmitAnswer routes to cancelConversation and would abort the whole origin conversation.
+func (h *hitl) resolveScheduled(ctx context.Context, token, action string) error {
+	_, err := h.runner.SubmitAnswer(ctx, token, runner.ResponseInput{Action: action})
+	return err
+}
+
 // approvalMarkup builds the accept/decline InlineKeyboard for an approval pause.
 func approvalMarkup(token string) *tele.ReplyMarkup {
 	mk := &tele.ReplyMarkup{}

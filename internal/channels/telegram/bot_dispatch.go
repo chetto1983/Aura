@@ -96,6 +96,9 @@ func (t *Telegram) registerHandlers(daemonCtx context.Context, bot *tele.Bot) {
 	bot.Handle(&tele.InlineButton{Unique: searchCallbackUnique}, t.onSearchCallback())
 	bot.Handle(&tele.InlineButton{Unique: statusCancelUnique}, t.onStatusCancelCallback())
 	bot.Handle(&tele.InlineButton{Unique: profileCallbackUnique}, t.onProfileCallback(daemonCtx))
+	// The scheduler approval-reminder push (Amendment #92 revised): its Sì/No buttons resolve the
+	// REAL scheduled_task_approval ask_user pause without driving a continuation turn.
+	bot.Handle(&tele.InlineButton{Unique: schedApprovalUnique}, t.onScheduledApprovalCallback(daemonCtx))
 	// A callback NOT matching the HITL button falls through to OnCallback: ack it so
 	// the client clears the spinner; it carries no live pause to resolve (a forged
 	// or stale callback is a no-op — T-13-10-PauseHijack).

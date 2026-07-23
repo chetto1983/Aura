@@ -16,6 +16,11 @@ import (
 // (Phase 20 R3) without any registry change.
 var _ channels.Deliverer = (*Telegram)(nil)
 
+// compile-time proof that *Telegram ALSO satisfies the optional channels.ApprovalDeliverer
+// capability — the scheduler approval-reminder sweep fans out through it to render a real
+// on-channel HITL approval prompt (Amendment #92 revised).
+var _ channels.ApprovalDeliverer = (*Telegram)(nil)
+
 // accountResolver is the narrow identity→account seam Deliver reads. *Store
 // satisfies it (GetAccountByIdentity); declaring it consumer-side keeps Deliver
 // unit-testable with a stub and free of a DB. A non-UUID/missing identity surfaces
@@ -55,6 +60,38 @@ func (t *Telegram) Deliver(ctx context.Context, identityID, text string) (bool, 
 	}
 	if _, err := sender.Send(tele.ChatID(acct.TelegramUserID), text); err != nil {
 		return false, fmt.Errorf("telegram deliver: send to %d: %w", acct.TelegramUserID, err)
+	}
+	return true, nil
+}
+
+// DeliverApproval renders an ACTIONABLE scheduled-task approval prompt to the 1:1 Telegram chat
+// owned by identityID, satisfying channels.ApprovalDeliverer (Amendment #92 revised): a bounded
+// question (task kind + short id, never the payload) + an inline Sì/No keyboard bound to the
+// pause token. Pressing a button resolves the REAL ask_user pause (onScheduledApprovalCallback →
+// SubmitAnswer → the scheduled-task ResumeHook), so this is HITL parity with the model relay, not
+// a bespoke approve. It honors the SAME tri-state contract as Deliver: (false,nil) not my user;
+// (true,nil) delivered; (false,err) owns-but-failed.
+func (t *Telegram) DeliverApproval(ctx context.Context, identityID, token, taskID, kind string) (bool, error) {
+	t.mu.Lock()
+	sender := t.deliverSender()
+	t.mu.Unlock()
+	if sender == nil {
+		return false, nil
+	}
+	resolver := t.accountResolver()
+	if resolver == nil {
+		return false, nil
+	}
+	acct, err := resolver.GetAccountByIdentity(ctx, identityID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil // not my user → try next channel (WebUI pulls the pause)
+		}
+		return false, fmt.Errorf("telegram deliver approval: resolve identity %s: %w", identityID, err)
+	}
+	text := scheduledApprovalText(taskID, kind)
+	if _, err := sender.Send(tele.ChatID(acct.TelegramUserID), text, &tele.SendOptions{ReplyMarkup: scheduledApprovalMarkup(token)}); err != nil {
+		return false, fmt.Errorf("telegram deliver approval: send to %d: %w", acct.TelegramUserID, err)
 	}
 	return true, nil
 }
