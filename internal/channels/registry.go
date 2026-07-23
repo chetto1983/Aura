@@ -144,6 +144,44 @@ func (r *Registry) DeliverToIdentity(ctx context.Context, identityID, text strin
 	return false, nil // not-my-user across all → caller falls back to the route
 }
 
+// DeliverApproval fans an ACTIONABLE approval prompt out to the started channel that owns
+// identityID, in the SAME deterministic sorted-by-name order and tri-state contract as
+// DeliverToIdentity (Amendment #92 revised): a started Channel that does not implement
+// ApprovalDeliverer is skipped; the first channel to deliver wins; an owning channel that fails
+// stops the fan-out (no sibling double-delivery); no owner → (false, nil) so the caller falls
+// back (for an approval that means the WebUI pull surface handles it, not an error). The token
+// binds the inline buttons to the pending ask_user pause the operator resolves; taskID/kind feed
+// the bounded, secret-safe prompt.
+//
+// The lock is held only to snapshot r.started — a Deliver call can block on the network, so it
+// runs unlocked (mirrors DeliverToIdentity).
+func (r *Registry) DeliverApproval(ctx context.Context, identityID, token, taskID, kind string) (bool, error) {
+	r.mu.Lock()
+	names := make([]string, 0, len(r.started))
+	snap := make(map[string]Channel, len(r.started))
+	for n, ch := range r.started {
+		names = append(names, n)
+		snap[n] = ch
+	}
+	r.mu.Unlock()
+
+	sort.Strings(names)
+	for _, n := range names {
+		d, ok := snap[n].(ApprovalDeliverer)
+		if !ok {
+			continue // channel can't render an actionable approval → skip
+		}
+		delivered, err := d.DeliverApproval(ctx, identityID, token, taskID, kind)
+		if err != nil {
+			return false, err // owns-but-failed → stop, no siblings
+		}
+		if delivered {
+			return true, nil // first-delivers-wins
+		}
+	}
+	return false, nil // not-my-user across all → caller falls back (WebUI pulls the pause)
+}
+
 // enabled resolves a channel's enablement: the override wins when it returns
 // ok=true, else the AURA_CHANNEL_<upper(Name)>_ENABLED env gate (default true).
 func (r *Registry) enabled(name string) bool {

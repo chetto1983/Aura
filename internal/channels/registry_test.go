@@ -281,6 +281,102 @@ func (d *fakeDeliverer) delivers() int {
 	return d.deliverCalls
 }
 
+// fakeApprovalDeliverer is a fakeChannel that ALSO implements ApprovalDeliverer, mirroring
+// fakeDeliverer, so TestRegistryDeliverApproval exercises the actionable-approval fan-out.
+type fakeApprovalDeliverer struct {
+	fakeChannel
+	delivered  bool
+	deliverErr error
+	mu         sync.Mutex
+	calls      int
+	lastToken  string
+}
+
+func (d *fakeApprovalDeliverer) DeliverApproval(_ context.Context, _, token, _, _ string) (bool, error) {
+	d.mu.Lock()
+	d.calls++
+	d.lastToken = token
+	d.mu.Unlock()
+	return d.delivered, d.deliverErr
+}
+
+func (d *fakeApprovalDeliverer) delivers() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.calls
+}
+
+func TestRegistryDeliverApproval(t *testing.T) {
+	errSend := errors.New("send failed")
+
+	t.Run("first-delivers-wins in sorted order carries the token", func(t *testing.T) {
+		a := &fakeApprovalDeliverer{fakeChannel: fakeChannel{name: "a"}, delivered: true}
+		b := &fakeApprovalDeliverer{fakeChannel: fakeChannel{name: "b"}, delivered: true}
+		reg := NewRegistry()
+		reg.Register(b)
+		reg.Register(a)
+		if err := reg.StartAll(context.Background()); err != nil {
+			t.Fatalf("StartAll: %v", err)
+		}
+		ok, err := reg.DeliverApproval(context.Background(), "id-1", "tok-9", "task-1", "agent_job")
+		if err != nil || !ok {
+			t.Fatalf("DeliverApproval = (%v,%v), want (true,nil)", ok, err)
+		}
+		if a.delivers() != 1 || a.lastToken != "tok-9" {
+			t.Errorf("a calls=%d token=%q, want 1/tok-9", a.delivers(), a.lastToken)
+		}
+		if b.delivers() != 0 {
+			t.Errorf("b must not be asked once a delivered, got %d", b.delivers())
+		}
+	})
+
+	t.Run("no owner returns (false,nil) so the caller falls back to the pull surface", func(t *testing.T) {
+		a := &fakeApprovalDeliverer{fakeChannel: fakeChannel{name: "a"}} // delivered=false
+		reg := NewRegistry()
+		reg.Register(a)
+		if err := reg.StartAll(context.Background()); err != nil {
+			t.Fatalf("StartAll: %v", err)
+		}
+		ok, err := reg.DeliverApproval(context.Background(), "webui-id", "tok", "task", "agent_job")
+		if ok || err != nil {
+			t.Fatalf("DeliverApproval = (%v,%v), want (false,nil)", ok, err)
+		}
+	})
+
+	t.Run("owns-but-fails stops the fan-out (no sibling double-delivery)", func(t *testing.T) {
+		a := &fakeApprovalDeliverer{fakeChannel: fakeChannel{name: "a"}, deliverErr: errSend}
+		b := &fakeApprovalDeliverer{fakeChannel: fakeChannel{name: "b"}, delivered: true}
+		reg := NewRegistry()
+		reg.Register(a)
+		reg.Register(b)
+		if err := reg.StartAll(context.Background()); err != nil {
+			t.Fatalf("StartAll: %v", err)
+		}
+		ok, err := reg.DeliverApproval(context.Background(), "id-1", "tok", "task", "agent_job")
+		if ok || !errors.Is(err, errSend) {
+			t.Fatalf("DeliverApproval = (%v,%v), want (false, errSend)", ok, err)
+		}
+		if b.delivers() != 0 {
+			t.Errorf("b must NOT be asked after a owns-but-fails, got %d", b.delivers())
+		}
+	})
+
+	t.Run("channel without ApprovalDeliverer is skipped", func(t *testing.T) {
+		plain := &fakeChannel{name: "a-plain"} // Channel but NOT ApprovalDeliverer
+		appr := &fakeApprovalDeliverer{fakeChannel: fakeChannel{name: "b-appr"}, delivered: true}
+		reg := NewRegistry()
+		reg.Register(plain)
+		reg.Register(appr)
+		if err := reg.StartAll(context.Background()); err != nil {
+			t.Fatalf("StartAll: %v", err)
+		}
+		ok, err := reg.DeliverApproval(context.Background(), "id-1", "tok", "task", "agent_job")
+		if err != nil || !ok {
+			t.Fatalf("DeliverApproval = (%v,%v), want (true,nil) (plain skipped, approver answers)", ok, err)
+		}
+	})
+}
+
 func TestRegistryDeliverToIdentity(t *testing.T) {
 	errSend := errors.New("send failed")
 
