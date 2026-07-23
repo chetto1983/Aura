@@ -313,6 +313,11 @@ func (s *Server) Mux() http.Handler {
 	mux.Handle("GET /debug/vars", expvar.Handler())
 	mux.Handle("GET /metrics", promhttp.Handler())
 	mux.HandleFunc("POST /agent/run", s.handleRun)
+	// Fix-plan 1.3 Tier B run resume + explicit-Stop (amendment #90 points 3-4).
+	// Colocated with their handlers (server_run_resume.go); both answer 404 while
+	// the registry is nil (flag off — the surface hides itself entirely).
+	mux.HandleFunc("GET /agent/runs/{runID}/events", s.handleRunEvents)
+	mux.HandleFunc("POST /agent/runs/{runID}/cancel", s.handleRunCancel)
 	mux.HandleFunc("GET /threads/{id}/messages", s.handleMessages)
 	// DISP-05/D-09 image-proxy: a same-origin SSRF-safe relay for web_result
 	// thumbnails/favicons. Mounted under /api/ so it inherits the parent-mux

@@ -18,6 +18,11 @@ func TestHTTPMutationCoverageHasCompleteIdempotencyMetadata(t *testing.T) {
 	}
 	for _, route := range []string{
 		"POST /agent/run",
+		// The run-scoped explicit Stop (fix-plan 1.3 Tier B). Its sibling
+		// GET /agent/runs/{runID}/events is read-only by construction and thus
+		// deliberately absent — the sweep below is method-based, so GETs never
+		// require inventory entries (the graph-query/TTS/STT rationale).
+		"POST /agent/runs/{runID}/cancel",
 		"POST /api/approvals/{token}/resolve",
 		"POST /api/conversations",
 		"DELETE /api/conversations/{id}",

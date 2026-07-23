@@ -182,6 +182,30 @@ func (s *Server) handleCreateConversation(w http.ResponseWriter, r *http.Request
 	writeJSONStatus(w, http.StatusCreated, conv)
 }
 
+// conversationDTO decorates the store projection with the additive-optional
+// live_run_id (fix-plan 1.3 Tier B, amendment #90 point 6) — the reload-attach
+// discovery key (§4.2): a client reopening a thread with a live detached run
+// attaches read-only via GET /agent/runs/{live_run_id}/events. omitempty + the
+// nil-registry guard keep the JSON byte-identical when the flag is off or no run is
+// live.
+type conversationDTO struct {
+	conversations.Conversation
+	LiveRunID string `json:"live_run_id,omitempty"`
+}
+
+// conversationDTOFor stamps the (identity, thread)'s live run id from the in-memory
+// registry — a map lookup, never a store round-trip. The identity scoping rides
+// LiveForThread's composite key, so a foreign live run is never disclosed.
+func (s *Server) conversationDTOFor(r *http.Request, conv conversations.Conversation) conversationDTO {
+	dto := conversationDTO{Conversation: conv}
+	if s.runs != nil {
+		if sess, ok := s.runs.LiveForThread(scopedIdentityID(r.Context()), conv.ID); ok {
+			dto.LiveRunID = sess.RunID
+		}
+	}
+	return dto
+}
+
 // handleListConversations returns the authenticated principal's conversations
 // (ListForIdentity — MUSR-01, owner-scoped through WithIdentityTx). ?archived=true adds
 // the archived rows (deleted rows are always excluded by the query). The `local` fallback
@@ -193,12 +217,21 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 		http.Error(w, sanitizeErr(err), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, rows)
+	// nil stays nil (JSON `null`) so the empty-list wire is byte-identical to the
+	// pre-DTO projection.
+	var dtos []conversationDTO
+	if rows != nil {
+		dtos = make([]conversationDTO, 0, len(rows))
+		for _, row := range rows {
+			dtos = append(dtos, s.conversationDTOFor(r, row))
+		}
+	}
+	writeJSON(w, dtos)
 }
 
 // handleGetConversation returns the single Conversation row including the
 // session-cumulative aggregates (Total{Input,Output,Cached}Tokens / TotalCostUSD) —
-// the D-10 footer reload seed.
+// the D-10 footer reload seed — plus the optional live_run_id (amendment #90 point 6).
 func (s *Server) handleGetConversation(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseConvID(w, r)
 	if !ok {
@@ -211,7 +244,7 @@ func (s *Server) handleGetConversation(w http.ResponseWriter, r *http.Request) {
 		writeStoreErr(w, err)
 		return
 	}
-	writeJSON(w, conv)
+	writeJSON(w, s.conversationDTOFor(r, conv))
 }
 
 // handleSearchConversations returns SearchConversationTurns(ctx, q, limit) projected

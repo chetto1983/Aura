@@ -48,6 +48,11 @@ type mutationRouteMeta struct {
 // probes) are excluded because HTTP method alone is not mutation classification.
 var httpMutationRoutes = map[string]mutationRouteMeta{
 	"POST /agent/run": httpMutationMeta("agent_run"),
+	// The sibling GET /agent/runs/{runID}/events resume route is deliberately NOT
+	// inventoried: it is read-only by construction (zero write seams — no
+	// SubmitAnswers, no lock, no turn start; server_run_resume.go), the same
+	// method-based exclusion rationale as the graph-query/TTS/STT reads.
+	"POST /agent/runs/{runID}/cancel":                             httpMutationMeta("agent_run_cancel"),
 	"POST /api/admin/identities/{id}/capabilities":                httpMutationMeta("capability_grant"),
 	"DELETE /api/admin/identities/{id}/capabilities/{capability}": httpMutationMeta("capability_revoke"),
 	"POST /api/approvals/{token}/resolve":                         httpMutationMeta("approval_resolve"),

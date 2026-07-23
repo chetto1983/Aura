@@ -124,6 +124,13 @@ func (s *Server) handleRunDetached(w http.ResponseWriter, r *http.Request, ctx c
 // source error maps to a sanitized terminal RUN_ERROR (streamSSE's producer parity).
 // finish() is the single terminal: it stamps finishedAt, closes every subscriber,
 // and fires the cleanup chain (byThread removal + thread unlock).
+//
+// append's false return (fan aborted on a done ctx) deliberately does NOT stop this
+// loop: the ring write precedes the fan, and a CANCELLED run's remaining frames —
+// above all the translator's terminal RUN_ERROR — must still reach the ring so a
+// resume replays them (§4.4). This cannot wedge: once ctx is done every lifecycle
+// send is immediately abortable, so each append is non-blocking, and the stream
+// itself ends because the turn ctx (a child of ours) is what unwound the agent.
 func (s *Server) runProducer(ctx context.Context, cancel context.CancelFunc, sess *RunSession, stream iter.Seq2[events.Event, error]) {
 	defer cancel() // releases the wallclock timer once the turn is done
 	defer sess.finish()
@@ -135,9 +142,7 @@ func (s *Server) runProducer(ctx context.Context, cancel context.CancelFunc, ses
 		if ev == nil {
 			continue
 		}
-		if !sess.append(ctx, redactEvent(ev)) {
-			return
-		}
+		sess.append(ctx, redactEvent(ev))
 	}
 }
 
