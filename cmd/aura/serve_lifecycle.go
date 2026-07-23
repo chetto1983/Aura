@@ -117,20 +117,25 @@ func runServeComponentsWithMetrics(
 	}
 	results := make(chan serveComponentResult, componentCount)
 	go func() {
-		_, observeEnd := serveListenerBoundary.Start(ctx)
 		var err error
-		defer observeEnd.PanicSafe(&err)
-		state.MarkListenerRunning()
-		err = server.Serve(listener)
-		if errors.Is(err, http.ErrServerClosed) && state.IsDraining() {
-			err = nil
-		} else if err == nil {
-			err = errors.New("http serve loop stopped without an error")
-		}
-		if err != nil {
-			state.MarkListenerFailure(err)
-			err = fmt.Errorf("agui listener stopped: %w", err)
-		}
+		// Inner closure so the deferred boundary End records the terminal
+		// transition BEFORE the result is delivered — otherwise the lifecycle
+		// can return (and metric readers collect) ahead of the emission.
+		func() {
+			_, observeEnd := serveListenerBoundary.Start(ctx)
+			defer observeEnd.PanicSafe(&err)
+			state.MarkListenerRunning()
+			err = server.Serve(listener)
+			if errors.Is(err, http.ErrServerClosed) && state.IsDraining() {
+				err = nil
+			} else if err == nil {
+				err = errors.New("http serve loop stopped without an error")
+			}
+			if err != nil {
+				state.MarkListenerFailure(err)
+				err = fmt.Errorf("agui listener stopped: %w", err)
+			}
+		}()
 		results <- serveComponentResult{name: "listener", err: err}
 	}()
 	go func() {
@@ -143,18 +148,21 @@ func runServeComponentsWithMetrics(
 	}()
 	if metrics != nil {
 		go func() {
-			_, observeEnd := serveListenerBoundary.Start(ctx)
 			var err error
-			defer observeEnd.PanicSafe(&err)
-			err = metrics.server.Serve(metrics.listener)
-			if errors.Is(err, http.ErrServerClosed) && state.IsDraining() {
-				err = nil
-			} else if err == nil {
-				err = errors.New("private metrics serve loop stopped without an error")
-			}
-			if err != nil {
-				err = fmt.Errorf("private metrics listener stopped: %w", err)
-			}
+			// Same ordering guarantee as the listener goroutine above.
+			func() {
+				_, observeEnd := serveListenerBoundary.Start(ctx)
+				defer observeEnd.PanicSafe(&err)
+				err = metrics.server.Serve(metrics.listener)
+				if errors.Is(err, http.ErrServerClosed) && state.IsDraining() {
+					err = nil
+				} else if err == nil {
+					err = errors.New("private metrics serve loop stopped without an error")
+				}
+				if err != nil {
+					err = fmt.Errorf("private metrics listener stopped: %w", err)
+				}
+			}()
 			results <- serveComponentResult{name: "metrics", err: err}
 		}()
 	}
