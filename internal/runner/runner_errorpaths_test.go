@@ -189,7 +189,7 @@ func TestPersistAssistantAnswer_AppendError(t *testing.T) {
 	r, conv, _ := newTestRunner(t, agenttest.NewFakeClient())
 	conv.appendEr = errFake
 	ev := &agent.Event{LLMResponse: &agent.LLMResponse{Content: "hi", FinishReason: "stop"}}
-	if err := r.persistAssistantAnswer(context.Background(), newConvID(t), ev); err == nil {
+	if err := r.persistAssistantAnswer(context.Background(), &turnTracker{convID: newConvID(t)}, ev); err == nil {
 		t.Fatal("expected the assistant-turn append error to surface")
 	}
 }
@@ -398,7 +398,7 @@ func TestPersistAssistantAnswer_NilCacheMetricStore(t *testing.T) {
 	r, _, _ := newTestRunner(t, agenttest.NewFakeClient())
 	r.cacheMetrics = nil
 	ev := &agent.Event{LLMResponse: &agent.LLMResponse{Content: "hi", FinishReason: "stop"}}
-	if err := r.persistAssistantAnswer(context.Background(), newConvID(t), ev); err == nil {
+	if err := r.persistAssistantAnswer(context.Background(), &turnTracker{convID: newConvID(t)}, ev); err == nil {
 		t.Fatal("a nil cacheMetrics store must fail loud through persistAssistantAnswer")
 	}
 }

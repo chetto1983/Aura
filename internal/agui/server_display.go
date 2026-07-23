@@ -6,6 +6,7 @@ import (
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/events"
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/types"
 	"github.com/chetto1983/aura/internal/agent/display"
+	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/llm"
 )
 
@@ -21,13 +22,20 @@ type displaySnapshotEvent struct {
 }
 
 // displaySnapshotMessage mirrors events.Message's wire shape (id/role/content/
-// toolCallId) with display-aware tool calls.
+// toolCallId) with display-aware tool calls. Reasoning + ReasoningDurationMs are
+// the amendment #91 (fix-plan 1.12) display-rehydration fields, set only on
+// assistant answer messages whose persisted turn carries CoT (omitted otherwise —
+// the wire is byte-unchanged for reasoning-less threads). Camel casing follows the
+// SDK convention already used by toolCallId/toolCalls; the cockpit
+// snapshotToThreadMessages maps them onto the {type:'reasoning'} part (RS-07).
 type displaySnapshotMessage struct {
-	ID         string                    `json:"id"`
-	Role       types.Role                `json:"role"`
-	Content    string                    `json:"content,omitempty"`
-	ToolCallID string                    `json:"toolCallId,omitempty"`
-	ToolCalls  []displaySnapshotToolCall `json:"toolCalls,omitempty"`
+	ID                  string                    `json:"id"`
+	Role                types.Role                `json:"role"`
+	Content             string                    `json:"content,omitempty"`
+	ToolCallID          string                    `json:"toolCallId,omitempty"`
+	ToolCalls           []displaySnapshotToolCall `json:"toolCalls,omitempty"`
+	Reasoning           string                    `json:"reasoning,omitempty"`
+	ReasoningDurationMs int64                     `json:"reasoningDurationMs,omitempty"`
 }
 
 // displaySnapshotToolCall mirrors types.ToolCall (id/type/function) plus the additive
@@ -161,6 +169,40 @@ func toolNamesByCallID(hist []llm.Message) map[string]string {
 		}
 	}
 	return names
+}
+
+// attachTurnReasoning merges the persisted display-only reasoning rows (amendment
+// #91 / fix-plan 1.12) onto the snapshot's assistant answer messages. Pairing is
+// positional: rows carries ONE entry per answer-shaped assistant turn (role
+// assistant, no tool_calls — conversations.ListTurnReasoning) in seq order, and the
+// repaired LoadHistory projection preserves exactly those messages in the same
+// order (repairToolMessagePairs never drops, synthesizes, or reorders an assistant
+// message without tool calls), so the k-th row belongs to the k-th assistant
+// no-tool-call message. Rows with empty Reasoning (NULL column: pre-migration,
+// redacted, disabled) attach nothing — the drawer stays absent, the correct
+// degrade. Fail-soft on any count mismatch: surplus rows are ignored, surplus
+// messages stay bare.
+func attachTurnReasoning(snap *displaySnapshotEvent, rows []conversations.TurnReasoning) {
+	if len(rows) == 0 {
+		return
+	}
+	next := 0
+	for i := range snap.Messages {
+		m := &snap.Messages[i]
+		if m.Role != types.Role(llm.RoleAssistant) || len(m.ToolCalls) > 0 {
+			continue
+		}
+		if next >= len(rows) {
+			return
+		}
+		row := rows[next]
+		next++
+		if row.Reasoning == "" {
+			continue
+		}
+		m.Reasoning = row.Reasoning
+		m.ReasoningDurationMs = row.DurationMS
+	}
 }
 
 // projectDisplayToolCalls maps the persisted tool calls onto the display-aware shape,

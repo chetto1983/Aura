@@ -88,6 +88,12 @@ type Deps struct {
 	Workspace    string // shell workspace announced per turn (#52/D-41); "" → the process cwd
 	TitleTimeout time.Duration
 	StopTimeout  time.Duration
+	// ReasoningPersistMaxRunes caps the display-only CoT accumulated per turn and
+	// persisted onto conversation_turns.reasoning (amendment #91 / fix-plan 1.12,
+	// AURA_REASONING_PERSIST_MAX_RUNES — the composition root passes the resolved
+	// knob). <=0 disables persistence entirely, which is also the hand-built-Deps
+	// zero value, so tests opt in explicitly.
+	ReasoningPersistMaxRunes int
 	// AlwaysBlock renders the messages[1] always-on skill block per turn from current
 	// loader state (D-07). The composition root wires it over skills.RenderAlwaysBlock
 	// + the live loader; nil means no skills are wired (the block is empty). Rebuilt
@@ -169,6 +175,9 @@ type Runner struct {
 	previewCap int
 	evictAfter int
 	workspace  string // the shell workspace path the per-turn tail hint announces (#52/D-41)
+	// reasoningPersistMaxRunes bounds the per-turn display-only CoT accumulator
+	// (amendment #91); <=0 disables persistence (see Deps.ReasoningPersistMaxRunes).
+	reasoningPersistMaxRunes int
 
 	titleTimeout time.Duration
 	stopTimeout  time.Duration
@@ -233,29 +242,30 @@ func New(d Deps) *Runner {
 	// MCP-free `aura chat` is not coupled to embed availability (Open-Q #2).
 	wireToolSearchEmbedder(d.Registry, d.Embedder)
 	r := &Runner{
-		Conv:             d.Conv,
-		pause:            d.Pause,
-		identity:         d.Identity,
-		cacheMetrics:     d.CacheMetrics,
-		toolInvocations:  d.ToolInvocations,
-		client:           d.Client,
-		registry:         d.Registry,
-		cfg:              d.LLM,
-		runDir:           d.RunDir,
-		previewCap:       d.PreviewCap,
-		evictAfter:       d.EvictAfter,
-		workspace:        workspace,
-		titleTimeout:     titleTimeout,
-		stopTimeout:      stopTimeout,
-		resumeHook:       d.ResumeHook,
-		archivalRecaller: d.ArchivalRecaller,
-		hookManager:      d.HookManager,
-		alwaysBlock:      d.AlwaysBlock,
-		classifier:       classifier,
-		breaker:          d.Breaker,
-		gateway:          d.Gateway,
-		shareRevoker:     d.ShareRevoker,
-		resumeCommitter:  d.ResumeCommitter,
+		Conv:                     d.Conv,
+		pause:                    d.Pause,
+		identity:                 d.Identity,
+		cacheMetrics:             d.CacheMetrics,
+		toolInvocations:          d.ToolInvocations,
+		client:                   d.Client,
+		registry:                 d.Registry,
+		cfg:                      d.LLM,
+		runDir:                   d.RunDir,
+		previewCap:               d.PreviewCap,
+		evictAfter:               d.EvictAfter,
+		workspace:                workspace,
+		reasoningPersistMaxRunes: d.ReasoningPersistMaxRunes,
+		titleTimeout:             titleTimeout,
+		stopTimeout:              stopTimeout,
+		resumeHook:               d.ResumeHook,
+		archivalRecaller:         d.ArchivalRecaller,
+		hookManager:              d.HookManager,
+		alwaysBlock:              d.AlwaysBlock,
+		classifier:               classifier,
+		breaker:                  d.Breaker,
+		gateway:                  d.Gateway,
+		shareRevoker:             d.ShareRevoker,
+		resumeCommitter:          d.ResumeCommitter,
 		// stopDone starts nil: the first waitWorkers arms the wg-drain waiter, and each
 		// clean drain resets it to nil so a later Stop re-arms (WR-02).
 	}

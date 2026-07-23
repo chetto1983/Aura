@@ -370,11 +370,13 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 		// Amendment #88: the per-turn "Working directory" hint mirrors the fixed
 		// WorkspaceRoot every host-direct tool now resolves against, replacing the
 		// process-cwd fallback (runner.New still falls back to os.Getwd if this is "").
-		Workspace:        cfg.WorkspaceDir,
-		PreviewCap:       cfg.ToolPreviewCap,
-		EvictAfter:       cfg.ContextToolEvictAfterTurns,
-		ArchivalRecaller: archivalRecallProvider(cfg), // nil unless AURA_CONTEXT_MEMORY_RECALL (default off)
-		AlwaysBlock:      alwaysBlockProvider(cfg),
+		Workspace:  cfg.WorkspaceDir,
+		PreviewCap: cfg.ToolPreviewCap,
+		EvictAfter: cfg.ContextToolEvictAfterTurns,
+		// Amendment #91 (fix-plan 1.12): bounded display-only CoT persistence cap.
+		ReasoningPersistMaxRunes: cfg.ReasoningPersistMaxRunes,
+		ArchivalRecaller:         archivalRecallProvider(cfg), // nil unless AURA_CONTEXT_MEMORY_RECALL (default off)
+		AlwaysBlock:              alwaysBlockProvider(cfg),
 		// The gateway resume hook records an operator's accept of a relayed gateway_approval
 		// pause into the SAME gateway instance (gw) the runner's PEP reads (D-03 point 2).
 		ResumeHook:  chainResumeHooks(newSkillResumeHook(cfg, pool), newShellResumeHook(toolHandles.ShellApprovals), newGatewayResumeHook(gw), newScheduledTaskResumeHook(taskStore)),

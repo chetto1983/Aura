@@ -21,7 +21,11 @@ import (
 // downstream format (Markdown/JSON/the public page model) consumes. It
 // structurally cannot carry a tool argument, a tool result, a filesystem
 // path, or the owner's identity id (the Conversation.identity_id column) —
-// there is no field shaped to hold any of them.
+// there is no field shaped to hold any of them. The same structural exclusion
+// covers the amendment #91 display-only reasoning columns: BuildSnapshot's
+// []llm.Message input has no reasoning field, so shared-link projections can
+// never include persisted CoT (amendment #91 point 4, pinned by
+// TestSnapshotOmitsReasoning).
 type Snapshot struct {
 	SchemaVersion int                `json:"schema_version"`
 	Title         string             `json:"title"`

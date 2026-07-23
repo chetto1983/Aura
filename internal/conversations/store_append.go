@@ -42,6 +42,15 @@ type AppendTurnParams struct {
 	OutputTokens   int
 	CachedTokens   int
 	CostUSD        float64
+	// Reasoning is the turn's accumulated chain-of-thought, persisted DISPLAY-ONLY
+	// on the final assistant answer turn (amendment #91 / fix-plan 1.12). "" maps to
+	// SQL NULL (mirrors ToolCallID/optionalText). It is bounded upstream by the
+	// runner's AURA_REASONING_PERSIST_MAX_RUNES cap and is NEVER selected by the
+	// llm.Message history rebuild (ListTurnsBySeq omits the column by design).
+	Reasoning string
+	// ReasoningDurationMS is the wall time (ms) from the first to the last reasoning
+	// delta of the turn ("Thought for X s" rehydration). 0 maps to SQL NULL.
+	ReasoningDurationMS int64
 }
 
 // AppendTurn writes one turn AND folds its token/cost delta into the conversation
@@ -236,6 +245,10 @@ func (s *Store) appendTurnWrites(p AppendTurnParams) (sqlc.InsertConversationTur
 		InputTokens:        int32(p.InputTokens),
 		OutputTokens:       int32(p.OutputTokens),
 		CachedTokens:       int32(p.CachedTokens),
+		// Display-only CoT (amendment #91): rune-bounded upstream so it never spills;
+		// NUL-scrubbed like content (model text can carry \x00, which pg text rejects).
+		Reasoning:           optionalText(postgresTextSafe(p.Reasoning)),
+		ReasoningDurationMs: optionalInt8(p.ReasoningDurationMS),
 	}
 	agg := sqlc.UpdateConversationAggregatesParams{
 		InputTokens:  int64(p.InputTokens),

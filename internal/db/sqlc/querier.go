@@ -166,6 +166,14 @@ type Querier interface {
 	ListAppliedKnowledgeMigrations(ctx context.Context) ([]AuraKnowledgeMigrations, error)
 	ListAssetsForLibrary(ctx context.Context, arg ListAssetsForLibraryParams) ([]AuraAssets, error)
 	ListAssetsForThread(ctx context.Context, arg ListAssetsForThreadParams) ([]AuraAssets, error)
+	// Amendment #91 (fix-plan 1.12) display-only read: the reasoning columns for every
+	// answer-shaped assistant turn (no tool_calls payload), ordered by seq. Deliberately
+	// SEPARATE from ListTurnsBySeq so the llm.Message history rebuild can never select
+	// reasoning. Scope mirrors ListTurnsBySeq exactly (conversation-wide, no branch
+	// filter) so the snapshot merge pairs positionally with the LoadHistory projection.
+	// The tool_calls filter mirrors turnToMessage's Go semantics: rows whose tool_calls
+	// decode to zero calls ('[]'/'null') count as answer-shaped there too.
+	ListAssistantTurnReasoning(ctx context.Context, conversationID pgtype.UUID) ([]ListAssistantTurnReasoningRow, error)
 	// D-09 (CHAT-05): the navigable branch set. A leaf is a turn that is NOT the parent of
 	// any other turn (no row's parent_seq points at it) — i.e. the tip of a branch path. The
 	// BranchPicker navigates among these sibling leaves; a re-run continues over the selected

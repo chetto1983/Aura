@@ -233,6 +233,35 @@ func TestSnapshotOmitsIdentity(t *testing.T) {
 	}
 }
 
+// TestSnapshotOmitsReasoning pins amendment #91 point 4: shared-link projections
+// MUST NOT include the display-only persisted reasoning. Structurally the share
+// path cannot carry it (BuildSnapshot consumes []llm.Message, which has no
+// reasoning field), but this pin fails fast if a reasoning-shaped field is ever
+// added to a share type or an llm.Message change starts leaking a "reasoning"
+// JSON key into the snapshot wire.
+func TestSnapshotOmitsReasoning(t *testing.T) {
+	for _, v := range []any{Snapshot{}, SnapshotTurn{}, SnapshotArtifact{}, ConvMeta{}} {
+		rt := reflect.TypeOf(v)
+		for i := 0; i < rt.NumField(); i++ {
+			if strings.Contains(strings.ToLower(rt.Field(i).Name), "reasoning") {
+				t.Fatalf("%s.%s: field name suggests it could carry persisted CoT (amendment #91 point 4)", rt.Name(), rt.Field(i).Name)
+			}
+		}
+	}
+	snap, err := BuildSnapshot(ConvMeta{Title: "t", Model: "m"},
+		[]llm.Message{{Role: llm.RoleUser, Content: "q"}, {Role: llm.RoleAssistant, Content: "a"}}, nil, time.Now())
+	if err != nil {
+		t.Fatalf("BuildSnapshot: %v", err)
+	}
+	data, err := snap.JSON()
+	if err != nil {
+		t.Fatalf("Snapshot.JSON: %v", err)
+	}
+	if strings.Contains(string(data), "reasoning") {
+		t.Fatalf("share snapshot wire carries a reasoning key: %s", data)
+	}
+}
+
 // TestSnapshotRoleAllowlist is table-driven: user/assistant emit a turn;
 // tool/system/empty/unrecognized roles never do (fail-closed default).
 func TestSnapshotRoleAllowlist(t *testing.T) {

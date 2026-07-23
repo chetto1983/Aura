@@ -146,6 +146,10 @@ type AuraConversationTurns struct {
 	BranchID pgtype.UUID `json:"branch_id"`
 	// D-09 branch tree (CHAT-05): seq of the parent turn within the conversation; NULL at the root (seq=1). Canonical backfill: seq-1.
 	ParentSeq pgtype.Int4 `json:"parent_seq"`
+	// Display-only accumulated CoT (amendment #91): bounded by AURA_REASONING_PERSIST_MAX_RUNES; NULL when redacted, disabled, or pre-migration. Never rehydrated into llm.Message.
+	Reasoning pgtype.Text `json:"reasoning"`
+	// Wall time (ms) from the first to the last reasoning delta of the turn (amendment #91, UI-spec OQ-1 "Thought for X s"); NULL when unknown.
+	ReasoningDurationMs pgtype.Int8 `json:"reasoning_duration_ms"`
 }
 
 // Multi-thread persisted conversations (Slice 1.8). Aggregates token + USD totals per thread.

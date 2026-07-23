@@ -80,21 +80,24 @@ func (q *Queries) GetTurnPointers(ctx context.Context, arg GetTurnPointersParams
 const insertConversationTurn = `-- name: InsertConversationTurn :exec
 INSERT INTO aura.conversation_turns (
     conversation_id, seq, role, content, content_sidecar_path,
-    tool_call_id, tool_calls, input_tokens, output_tokens, cached_tokens
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    tool_call_id, tool_calls, input_tokens, output_tokens, cached_tokens,
+    reasoning, reasoning_duration_ms
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 `
 
 type InsertConversationTurnParams struct {
-	ConversationID     pgtype.UUID `json:"conversation_id"`
-	Seq                int32       `json:"seq"`
-	Role               string      `json:"role"`
-	Content            pgtype.Text `json:"content"`
-	ContentSidecarPath pgtype.Text `json:"content_sidecar_path"`
-	ToolCallID         pgtype.Text `json:"tool_call_id"`
-	ToolCalls          []byte      `json:"tool_calls"`
-	InputTokens        int32       `json:"input_tokens"`
-	OutputTokens       int32       `json:"output_tokens"`
-	CachedTokens       int32       `json:"cached_tokens"`
+	ConversationID      pgtype.UUID `json:"conversation_id"`
+	Seq                 int32       `json:"seq"`
+	Role                string      `json:"role"`
+	Content             pgtype.Text `json:"content"`
+	ContentSidecarPath  pgtype.Text `json:"content_sidecar_path"`
+	ToolCallID          pgtype.Text `json:"tool_call_id"`
+	ToolCalls           []byte      `json:"tool_calls"`
+	InputTokens         int32       `json:"input_tokens"`
+	OutputTokens        int32       `json:"output_tokens"`
+	CachedTokens        int32       `json:"cached_tokens"`
+	Reasoning           pgtype.Text `json:"reasoning"`
+	ReasoningDurationMs pgtype.Int8 `json:"reasoning_duration_ms"`
 }
 
 func (q *Queries) InsertConversationTurn(ctx context.Context, arg InsertConversationTurnParams) error {
@@ -109,8 +112,52 @@ func (q *Queries) InsertConversationTurn(ctx context.Context, arg InsertConversa
 		arg.InputTokens,
 		arg.OutputTokens,
 		arg.CachedTokens,
+		arg.Reasoning,
+		arg.ReasoningDurationMs,
 	)
 	return err
+}
+
+const listAssistantTurnReasoning = `-- name: ListAssistantTurnReasoning :many
+SELECT seq, reasoning, reasoning_duration_ms
+FROM aura.conversation_turns
+WHERE conversation_id = $1
+  AND role = 'assistant'
+  AND (tool_calls IS NULL OR tool_calls = '[]'::jsonb OR tool_calls = 'null'::jsonb)
+ORDER BY seq ASC
+`
+
+type ListAssistantTurnReasoningRow struct {
+	Seq                 int32       `json:"seq"`
+	Reasoning           pgtype.Text `json:"reasoning"`
+	ReasoningDurationMs pgtype.Int8 `json:"reasoning_duration_ms"`
+}
+
+// Amendment #91 (fix-plan 1.12) display-only read: the reasoning columns for every
+// answer-shaped assistant turn (no tool_calls payload), ordered by seq. Deliberately
+// SEPARATE from ListTurnsBySeq so the llm.Message history rebuild can never select
+// reasoning. Scope mirrors ListTurnsBySeq exactly (conversation-wide, no branch
+// filter) so the snapshot merge pairs positionally with the LoadHistory projection.
+// The tool_calls filter mirrors turnToMessage's Go semantics: rows whose tool_calls
+// decode to zero calls ('[]'/'null') count as answer-shaped there too.
+func (q *Queries) ListAssistantTurnReasoning(ctx context.Context, conversationID pgtype.UUID) ([]ListAssistantTurnReasoningRow, error) {
+	rows, err := q.db.Query(ctx, listAssistantTurnReasoning, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAssistantTurnReasoningRow{}
+	for rows.Next() {
+		var i ListAssistantTurnReasoningRow
+		if err := rows.Scan(&i.Seq, &i.Reasoning, &i.ReasoningDurationMs); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listBranchLeaves = `-- name: ListBranchLeaves :many

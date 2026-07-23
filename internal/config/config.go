@@ -62,6 +62,7 @@ type Config struct {
 	RunDirSweepIntervalSec     int  // AURA_RUN_DIR_SWEEP_INTERVAL_SEC — periodic sidecar-sweep cadence in `serve` (M-06); <=0 disables the worker (boot sweep still runs)
 	MemoryRecall               bool // AURA_CONTEXT_MEMORY_RECALL — opt-in L4 archival-memory recall injection (default off)
 	MemoryRecallMaxItems       int  // AURA_CONTEXT_MEMORY_RECALL_MAX_ITEMS — cap on recalled long-term items per turn
+	ReasoningPersistMaxRunes   int  // AURA_REASONING_PERSIST_MAX_RUNES — display-only per-turn CoT persistence cap (amendment #91); <=0 disables persistence
 
 	// Phase 7 (Slice 5) web_search/web_fetch knobs. SearxngURL is the upstream-
 	// canonical name (NO AURA_ prefix); an empty value is NOT boot-fatal — it is
@@ -425,6 +426,7 @@ func loadBase() *Config {
 		RunDirSweepIntervalSec:     envutil.IntDefault("AURA_RUN_DIR_SWEEP_INTERVAL_SEC", 3600),
 		MemoryRecall:               envutil.BoolDefault("AURA_CONTEXT_MEMORY_RECALL", false),
 		MemoryRecallMaxItems:       envutil.IntDefault("AURA_CONTEXT_MEMORY_RECALL_MAX_ITEMS", 8),
+		ReasoningPersistMaxRunes:   envutil.IntDefault("AURA_REASONING_PERSIST_MAX_RUNES", 65536),
 
 		// Phase 7 web knobs. SEARXNG_URL has an empty default on purpose (D-05):
 		// missing is fail-closed at call time, never a boot error.

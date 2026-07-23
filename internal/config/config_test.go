@@ -53,6 +53,7 @@ func clearPostgresEnv(t *testing.T) {
 		"AURA_RERANK_BASE_URL",
 		"AURA_PROFILE", "AURA_OBJECTSTORE_REPLICATION_FACTOR", "GARAGE_RPC_SECRET",
 		"AURA_SHELL_DESTRUCTIVE_PATTERNS", "AURA_MUSR_ISOLATION",
+		"AURA_REASONING_PERSIST_MAX_RUNES",
 	}
 	for _, k := range keys {
 		t.Setenv(k, "")
@@ -428,6 +429,30 @@ func TestEmbedDimensions_RequiredNonZero(t *testing.T) {
 	}
 	if cfg.Neo4j.EmbedDimensions != 768 {
 		t.Errorf("EmbedDimensions: want non-zero contract default 768, got %d", cfg.Neo4j.EmbedDimensions)
+	}
+}
+
+// TestReasoningPersistMaxRunes_DefaultAndOverride asserts the amendment #91
+// (fix-plan 1.12) display-only CoT persistence cap: default 65536, an override is
+// honored verbatim, and <=0 (the documented off switch the runner reads) passes
+// through — envutil.IntDefault semantics, non-fatal on a typo.
+func TestReasoningPersistMaxRunes_DefaultAndOverride(t *testing.T) {
+	clearPostgresEnv(t)
+
+	if cfg := LoadDB(); cfg.ReasoningPersistMaxRunes != 65536 {
+		t.Errorf("ReasoningPersistMaxRunes: want default 65536, got %d", cfg.ReasoningPersistMaxRunes)
+	}
+	t.Setenv("AURA_REASONING_PERSIST_MAX_RUNES", "1024")
+	if cfg := LoadDB(); cfg.ReasoningPersistMaxRunes != 1024 {
+		t.Errorf("ReasoningPersistMaxRunes: override not applied, got %d", cfg.ReasoningPersistMaxRunes)
+	}
+	t.Setenv("AURA_REASONING_PERSIST_MAX_RUNES", "-1")
+	if cfg := LoadDB(); cfg.ReasoningPersistMaxRunes != -1 {
+		t.Errorf("ReasoningPersistMaxRunes: <=0 off switch must pass through, got %d", cfg.ReasoningPersistMaxRunes)
+	}
+	t.Setenv("AURA_REASONING_PERSIST_MAX_RUNES", "not-a-number")
+	if cfg := LoadDB(); cfg.ReasoningPersistMaxRunes != 65536 {
+		t.Errorf("ReasoningPersistMaxRunes: malformed value must fall back to the default, got %d", cfg.ReasoningPersistMaxRunes)
 	}
 }
 

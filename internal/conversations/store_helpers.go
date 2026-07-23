@@ -170,6 +170,15 @@ func optionalText(s string) pgtype.Text {
 	return pgtype.Text{String: s, Valid: true}
 }
 
+// optionalInt8 maps a zero int64 to a NULL pgtype.Int8 (mirrors optionalText:
+// reasoning_duration_ms is only set on reasoning-bearing assistant answer turns).
+func optionalInt8(v int64) pgtype.Int8 {
+	if v == 0 {
+		return pgtype.Int8{}
+	}
+	return pgtype.Int8{Int64: v, Valid: true}
+}
+
 // validateID rejects any id that could escape the fixed
 // <run_dir>/conversations/ prefix once joined into a path: `..` traversal or an
 // embedded separator (T-04-13, mirrors tools/result.go validateID). The only

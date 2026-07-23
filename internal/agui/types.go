@@ -29,6 +29,10 @@ import (
 type ConversationStore interface {
 	Get(ctx context.Context, conversationID string) (conversations.Conversation, error)
 	LoadHistory(ctx context.Context, conversationID string) ([]llm.Message, error)
+	// ListTurnReasoning is the amendment #91 (fix-plan 1.12) DISPLAY-ONLY read:
+	// the persisted per-turn CoT + duration for the snapshot projection, kept
+	// separate from LoadHistory so llm.Message stays structurally reasoning-free.
+	ListTurnReasoning(ctx context.Context, conversationID string) ([]conversations.TurnReasoning, error)
 	List(ctx context.Context, includeArchived bool) ([]conversations.Conversation, error)
 	SearchConversationTurns(ctx context.Context, query string, limit int) ([]conversations.SearchResult, error)
 	UpdateStatus(ctx context.Context, conversationID, status string) error

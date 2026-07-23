@@ -480,7 +480,17 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	// thread renders typed displays identically to live. The envelope is byte-compatible
 	// with the SDK MESSAGES_SNAPSHOT plus the additive per-tool-call `display` key the
 	// cockpit replay reads.
-	if err := json.NewEncoder(w).Encode(projectDisplaySnapshot(hist)); err != nil {
+	snap := projectDisplaySnapshot(hist)
+	// Amendment #91 (fix-plan 1.12) display rehydration: merge the persisted per-turn
+	// CoT onto the assistant answer messages so the ReasoningDrawer survives reload.
+	// Fail-soft: reasoning is additive display data — a read failure degrades to a
+	// drawer-less snapshot (the NULL-column posture), never a 500 for the whole thread.
+	if reasonings, rerr := s.conv.ListTurnReasoning(ctx, id); rerr != nil {
+		slog.Warn("agui: list turn reasoning (serving snapshot without it)", "thread", id, "err", rerr)
+	} else {
+		attachTurnReasoning(&snap, reasonings)
+	}
+	if err := json.NewEncoder(w).Encode(snap); err != nil {
 		slog.Warn("agui: encode messages snapshot", "err", err)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent"
@@ -46,6 +47,17 @@ type turnTracker struct {
 	pendingToolCalls []llm.ToolCall
 	openToolCalls    map[string]struct{}
 	toolSeq          int
+
+	// Display-only CoT accumulation (amendment #91 / fix-plan 1.12): the turn's
+	// reasoning deltas joined in arrival order (interleaved spans across rounds),
+	// rune-bounded by Runner.reasoningPersistMaxRunes, persisted onto the final
+	// assistant answer turn. The observe/reset/read helpers live in
+	// runner_reasoning_persist.go.
+	reasoning          strings.Builder
+	reasoningRunes     int
+	reasoningTruncated bool
+	reasoningFirst     time.Time // timestamp of the turn's first reasoning delta
+	reasoningLast      time.Time // timestamp of the turn's last reasoning delta
 }
 
 func (t *turnTracker) nextToolInvocationSeq() int {
@@ -71,6 +83,13 @@ func (r *Runner) persistEvent(ctx context.Context, tr *turnTracker, ev *agent.Ev
 	if ev == nil {
 		return nil
 	}
+	// B-12 repudiation: a mid-stream retry repudiates everything already streamed —
+	// the accumulated CoT included — so the persisted reasoning mirrors what the
+	// consumer actually rendered (the retry over a blank slate), never failed-attempt
+	// deltas joined with their replay.
+	if ev.Actions.DiscardStreamed {
+		tr.resetReasoning()
+	}
 	if ev.Actions.AwaitingInput != nil {
 		return r.persistPause(ctx, tr, ev.Actions.AwaitingInput)
 	}
@@ -90,8 +109,11 @@ func (r *Runner) persistEvent(ctx context.Context, tr *turnTracker, ev *agent.Ev
 		}
 		return nil
 	}
+	if ev.LLMResponse != nil && ev.LLMResponse.Reasoning != "" {
+		r.observeReasoning(tr, ev)
+	}
 	if ev.LLMResponse != nil && ev.LLMResponse.FinishReason != "" {
-		return r.persistAssistantAnswer(ctx, tr.convID, ev)
+		return r.persistAssistantAnswer(ctx, tr, ev)
 	}
 	return nil
 }
@@ -244,13 +266,15 @@ func toolInvocationTimestamp(ti *agent.ToolInvocation, fallback time.Time) time.
 }
 
 // persistAssistantAnswer persists the terminal assistant answer turn with its
-// per-turn usage (read off the final Event's StateDelta, mirroring chat_render.go).
+// per-turn usage (read off the final Event's StateDelta, mirroring chat_render.go)
+// plus the turn's accumulated display-only reasoning (amendment #91): the bounded
+// CoT + first→last delta wall time land on the same row, "" / 0 mapping to NULL.
 //
 // Consistency contract: the assistant turn, conversation aggregate update, and
 // cache_metrics row are persisted through the conversation store's atomic
 // assistant-write seam. A metric failure rolls the turn back, so callers never see a
 // failed turn while the conversation history already contains the answer.
-func (r *Runner) persistAssistantAnswer(ctx context.Context, convID string, ev *agent.Event) error {
+func (r *Runner) persistAssistantAnswer(ctx context.Context, tr *turnTracker, ev *agent.Event) error {
 	u := usageFromStateDelta(ev.Actions.StateDelta)
 	// Prefer the provider's wire-reported cost (D-18); fall back to the seeded price
 	// table (D-23) when the provider omits it, so a priced turn never persists $0 while
@@ -260,16 +284,19 @@ func (r *Runner) persistAssistantAnswer(ctx context.Context, convID string, ev *
 	if v, ok := llm.CostUSDValue(r.cfg.Prices, r.cfg.Model, u.PromptTokens, u.CompletionTokens, u.Cost); ok {
 		cost = v
 	}
+	reasoning, reasoningDurationMS := tr.persistedReasoning()
 	turn := conversations.AppendTurnParams{
-		ConversationID: convID,
-		Role:           llm.RoleAssistant,
-		Content:        ev.LLMResponse.Content,
-		InputTokens:    u.PromptTokens,
-		OutputTokens:   u.CompletionTokens,
-		CachedTokens:   u.CachedTokens,
-		CostUSD:        cost,
+		ConversationID:      tr.convID,
+		Role:                llm.RoleAssistant,
+		Content:             ev.LLMResponse.Content,
+		InputTokens:         u.PromptTokens,
+		OutputTokens:        u.CompletionTokens,
+		CachedTokens:        u.CachedTokens,
+		CostUSD:             cost,
+		Reasoning:           reasoning,
+		ReasoningDurationMS: reasoningDurationMS,
 	}
-	metric, err := r.cacheMetricParams(convID, 0, u, cost)
+	metric, err := r.cacheMetricParams(tr.convID, 0, u, cost)
 	if err != nil {
 		return err
 	}

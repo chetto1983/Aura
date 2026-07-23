@@ -41,6 +41,10 @@ func (e *errConvStore) LoadHistory(context.Context, string) ([]llm.Message, erro
 	return nil, e.err
 }
 
+func (e *errConvStore) ListTurnReasoning(context.Context, string) ([]conversations.TurnReasoning, error) {
+	return nil, e.err
+}
+
 func (e *errConvStore) List(context.Context, bool) ([]conversations.Conversation, error) {
 	return nil, e.err
 }
