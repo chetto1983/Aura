@@ -369,6 +369,62 @@ func TestDispatchReschedulesOnRecoveryLookup(t *testing.T) {
 	}
 }
 
+func TestSchedulerReadinessMaxAge(t *testing.T) {
+	cases := []struct {
+		name string
+		tick time.Duration
+		env  string
+		want time.Duration
+	}{
+		{"tick 30s floors at 90s", 30 * time.Second, "", 90 * time.Second},
+		{"tick 120s derives 3x", 120 * time.Second, "", 360 * time.Second},
+		{"env override wins verbatim", 30 * time.Second, "45", 45 * time.Second},
+		{"env unset falls to derived", 45 * time.Second, "", 135 * time.Second},
+		{"env zero falls to derived", 120 * time.Second, "0", 360 * time.Second},
+		{"env negative falls to derived", 120 * time.Second, "-5", 360 * time.Second},
+		{"env garbage falls to derived", 120 * time.Second, "not-a-number", 360 * time.Second},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Setenv("AURA_SCHEDULER_READY_MAX_STALE_SEC", c.env)
+			if got := schedulerReadinessMaxAge(c.tick); got != c.want {
+				t.Errorf("schedulerReadinessMaxAge(%s) = %s, want %s", c.tick, got, c.want)
+			}
+		})
+	}
+}
+
+// TestNewScheduler_PushesReadinessMaxAge proves NewScheduler derives the /readyz
+// staleness window from the RESOLVED tick (not a re-read of the env) and pushes it
+// into the readiness snapshot, so an operator-widened tick does not trip a false
+// scheduler_stalled between ticks (fix-plan 1.4 residual).
+func TestNewScheduler_PushesReadinessMaxAge(t *testing.T) {
+	base := time.Date(2026, 7, 23, 9, 0, 0, 0, time.UTC)
+	now := base
+	snapshot := readiness.NewSnapshot(readiness.Config{
+		Now:                 func() time.Time { return now },
+		MigrationCompatible: true,
+	})
+	snapshot.MarkListenerRunning()
+
+	NewScheduler(nil, nil, SchedulerConfig{
+		Now:          func() time.Time { return now },
+		TickInterval: 120 * time.Second,
+		Readiness:    snapshot,
+	})
+	snapshot.MarkSchedulerProgress()
+
+	now = base.Add(100 * time.Second) // stale for the historical 90s floor, fresh for 3x120s=360s
+	if got := snapshot.Reasons(); slices.Contains(got, readiness.CodeSchedulerStalled) {
+		t.Fatalf("Reasons() = %v, want no scheduler_stalled at 100s under a 120s-tick window", got)
+	}
+
+	now = base.Add(400 * time.Second)
+	if got := snapshot.Reasons(); !slices.Contains(got, readiness.CodeSchedulerStalled) {
+		t.Fatalf("Reasons() = %v, want scheduler_stalled past the derived 360s window", got)
+	}
+}
+
 func TestDuringQuietHours_UnsetOrMalformedIsNeverQuiet(t *testing.T) {
 	at := time.Date(2026, 6, 4, 2, 0, 0, 0, time.UTC)
 	// Unset.

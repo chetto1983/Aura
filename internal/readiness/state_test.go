@@ -85,6 +85,34 @@ func TestSnapshotReasonsAreSortedAndRaceSafe(t *testing.T) {
 	)
 }
 
+func TestSnapshotSetSchedulerMaxAge(t *testing.T) {
+	base := time.Date(2026, 7, 23, 10, 0, 0, 0, time.UTC)
+	now := base
+	s := NewSnapshot(Config{
+		Now:                 func() time.Time { return now },
+		SchedulerMaxAge:     90 * time.Second,
+		MigrationCompatible: true,
+		SchedulerEnabled:    true,
+	})
+	s.MarkListenerRunning()
+	s.MarkSchedulerProgress()
+
+	now = base.Add(150 * time.Second) // stale under the 90s default, fresh under 300s
+	assertReasons(t, s, CodeSchedulerStalled)
+
+	s.SetSchedulerMaxAge(300 * time.Second)
+	assertReasons(t, s)
+
+	// Non-positive values are ignored, keeping the current (widened) window.
+	s.SetSchedulerMaxAge(0)
+	assertReasons(t, s)
+	s.SetSchedulerMaxAge(-time.Second)
+	assertReasons(t, s)
+
+	now = base.Add(400 * time.Second)
+	assertReasons(t, s, CodeSchedulerStalled)
+}
+
 func assertReasons(t *testing.T, s *Snapshot, want ...Code) {
 	t.Helper()
 	if got := s.Reasons(); !slices.Equal(got, want) {

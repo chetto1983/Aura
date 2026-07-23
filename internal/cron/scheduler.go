@@ -34,6 +34,9 @@ const (
 	defaultMaxConcurrentRuns = 4
 	defaultHeartbeatInterval = 30 * time.Second
 	staleRecoverySeconds     = 90 // last_heartbeat_at older than this → unknown_recovery (D-02)
+	// minSchedulerReadinessMaxAge mirrors readiness.defaultSchedulerMaxAge: the floor
+	// below which the derived /readyz staleness window never shrinks (fix-plan 1.4).
+	minSchedulerReadinessMaxAge = 90 * time.Second
 )
 
 // Dispatcher runs a claimed task's actual work (the per-TaskKind handlers land in
@@ -122,8 +125,26 @@ func NewScheduler(pool *pgxpool.Pool, store *Store, cfg SchedulerConfig) *Schedu
 	}
 	if cfg.Readiness != nil {
 		cfg.Readiness.SetSchedulerEnabled(!cfg.Disabled)
+		cfg.Readiness.SetSchedulerMaxAge(schedulerReadinessMaxAge(tick))
 	}
 	return scheduler
+}
+
+// schedulerReadinessMaxAge derives the /readyz scheduler staleness window from the
+// RESOLVED tick interval, so widening AURA_SCHEDULER_TICK_SECONDS (e.g. to 120s or
+// 300s) does not leave the hardcoded 90s window reporting scheduler_stalled between
+// every tick (fix-plan 1.4 residual — a dishonest 503 is as much a lie as a
+// dishonest 200). AURA_SCHEDULER_READY_MAX_STALE_SEC, when a positive integer
+// seconds value, overrides the derivation verbatim; otherwise the window tracks 3
+// ticks, floored at the historical 90s.
+func schedulerReadinessMaxAge(tick time.Duration) time.Duration {
+	if v := envInt("AURA_SCHEDULER_READY_MAX_STALE_SEC", 0); v > 0 {
+		return time.Duration(v) * time.Second
+	}
+	if derived := 3 * tick; derived > minSchedulerReadinessMaxAge {
+		return derived
+	}
+	return minSchedulerReadinessMaxAge
 }
 
 // envInt reads a non-negative integer env var, falling back to def on unset or

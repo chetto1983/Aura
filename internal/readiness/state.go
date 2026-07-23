@@ -129,6 +129,18 @@ func (s *Snapshot) SetSchedulerEnabled(enabled bool) {
 	s.mu.Unlock()
 }
 
+// SetSchedulerMaxAge widens or narrows the scheduler staleness window (e.g. to
+// track an operator-configured tick interval). d<=0 is ignored, keeping the
+// current value — NewSnapshot's defaultSchedulerMaxAge floor stays intact.
+func (s *Snapshot) SetSchedulerMaxAge(d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	s.mu.Lock()
+	s.schedulerMaxAge = d
+	s.mu.Unlock()
+}
+
 // MarkSchedulerProgress records a successfully completed scheduler scan.
 func (s *Snapshot) MarkSchedulerProgress() {
 	now := s.now().UTC()
