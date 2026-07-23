@@ -223,8 +223,15 @@ func TestDetachedRun_SurvivesDisconnectAndLockSpansRun(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if run.locked.Load() {
-		t.Fatal("thread lock still held after turn end; cleanup must release it")
+	// finish() stamps terminal under the session mutex and fires the unlock cleanup
+	// AFTER releasing it, so the release trails terminal by a hair — poll, don't
+	// assert instantaneously.
+	deadline = time.Now().Add(2 * time.Second)
+	for run.locked.Load() {
+		if time.Now().After(deadline) {
+			t.Fatal("thread lock still held after turn end; cleanup must release it")
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 
 	// The lingering terminal ring holds the COMPLETE turn (nothing was lost to the
