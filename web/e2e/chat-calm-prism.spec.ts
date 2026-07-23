@@ -220,7 +220,10 @@ test.describe('Calm Prism Chrome contracts', () => {
     await expect(page.getByText('Done', { exact: true }).first()).toBeAttached();
     await expect(page.getByText('This URL was blocked by the safety policy.')).toBeVisible();
     await expect(
-      page.locator('.text-danger').filter({ has: page.locator('circle') }).first(),
+      page
+        .locator('.text-danger')
+        .filter({ has: page.locator('circle') })
+        .first(),
     ).toBeVisible();
     await expect(page.getByText('Approval required', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Pilot workspace' })).toBeVisible();
