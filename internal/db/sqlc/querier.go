@@ -190,14 +190,17 @@ type Querier interface {
 	ListDocumentTags(ctx context.Context, documentID pgtype.UUID) ([]string, error)
 	ListDocumentVersions(ctx context.Context, documentID pgtype.UUID) ([]AuraDocumentVersions, error)
 	ListDocuments(ctx context.Context, arg ListDocumentsParams) ([]AuraDocuments, error)
-	// fix-plan 1.7 / Amendment #92: the per-tick approval-reminder sweep. Channel-owned
-	// pending_approval tasks whose throttle stamp is due (never reminded, or older than the
-	// cadence cutoff computed in Go: now() - AURA_SCHEDULER_APPROVAL_REMINDER_SEC). CLI/
-	// cockpit-local rows (identity_id IN ('', 'local')) are excluded — cockpit approvals are
-	// already visible in the AG-UI panel. No FOR UPDATE SKIP LOCKED: the sweep runs on the
-	// autocommit pool (like DueTasks) where a row lock releases the instant the SELECT
-	// returns (inert). The dedup is the approval_reminded_at throttle stamp, not a row lock;
-	// a rare cross-instance double-nudge under HA is benign (a duplicate reminder).
+	// fix-plan 1.7 / Amendment #92 (REVISED): the per-tick approval-reminder sweep. Every
+	// pending_approval task with an ORIGIN CONVERSATION whose throttle stamp is due (never
+	// reminded, or older than the cadence cutoff computed in Go: now() -
+	// AURA_SCHEDULER_APPROVAL_REMINDER_SEC). The old identity_id NOT IN ('','local') filter is
+	// DROPPED: WebUI/local-origin rows MUST be selected so the sweep can MINT their pause (they
+	// surface via the pull /api/approvals; the Telegram push is simply a no-op for them). Rows
+	// with a NULL origin_conversation_id (CLI-origin, no conversation to key a pause on) are
+	// excluded and keep the `aura task approve` CLI path. No FOR UPDATE SKIP LOCKED: the sweep
+	// runs on the autocommit pool (like DueTasks) where a row lock releases the instant the
+	// SELECT returns (inert). The dedup is the approval_reminded_at throttle stamp, not a row
+	// lock; a rare cross-instance double-nudge under HA is benign.
 	ListDuePendingApprovalReminders(ctx context.Context, arg ListDuePendingApprovalRemindersParams) ([]AuraSchedulerTasks, error)
 	ListExpiredReplayBodies(ctx context.Context, arg ListExpiredReplayBodiesParams) ([]ListExpiredReplayBodiesRow, error)
 	ListIdentities(ctx context.Context) ([]AuraIdentities, error)

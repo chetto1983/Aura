@@ -1,16 +1,17 @@
 package cron
 
-// deliver_approval.go — fix-plan 1.7 / Amendment #92: the per-tick pending-approval
-// reminder sweep. A task forced to status='pending_approval' (every agent_job per AG-016,
-// or a risky-scored task) whose approval the model never relays is silently forgotten.
-// This re-surfaces it to its origin channel until it is approved or cancelled, throttled
-// by scheduler_tasks.approval_reminded_at. It reuses the existing ChannelDeliverer seam —
-// no new channel wiring, no cron→channels/tools import (the import-cycle constraint the
-// notify.go/deliver.go headers document).
+// deliver_approval.go — fix-plan 1.7 / Amendment #92 (REVISED): the per-tick pending-approval
+// reminder sweep. A task forced to status='pending_approval' (every agent_job per AG-016, or a
+// risky-scored task) whose approval the model never relays is silently forgotten. This makes the
+// sweep the DETERMINISTIC guarantor: per due row it (a) ensures a real scheduled_task_approval
+// ask_user pause exists on the task's origin conversation (reused if the model relayed one, else
+// minted host-side via ApprovalPauseEnsurer), then (b) pushes the actionable prompt to the ORIGIN
+// channel (Telegram Sì/No via ApprovalChannel; WebUI needs no push — it pulls /api/approvals).
+// Throttled by scheduler_tasks.approval_reminded_at. cron imports NEITHER askuser NOR channels —
+// both are consumer-side seams the composition root satisfies (import-cycle constraint).
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"os"
 	"strconv"
@@ -31,6 +32,22 @@ type ApprovalReminderStore interface {
 
 var _ ApprovalReminderStore = (*Store)(nil)
 
+// ApprovalPauseEnsurer ensures a real scheduled_task_approval ask_user pause exists on a task's
+// origin conversation (reused if the model already relayed one, else minted host-side), returning
+// its token. The composition root satisfies it over askuser.Store + the Runner; cron never imports
+// either. Nil → the approval sweep no-ops.
+type ApprovalPauseEnsurer interface {
+	EnsureApprovalPause(ctx context.Context, taskID, conversationID, kind string) (token string, err error)
+}
+
+// ApprovalChannel pushes an ACTIONABLE approval prompt (inline accept/reject bound to the pause
+// token) to the channel that owns identityID. *channels.Registry satisfies it (DeliverApproval).
+// Nil → the approval sweep no-ops. A (false,nil) return is expected for a WebUI-origin identity (no
+// push channel owns it; it pulls the pause) and is NOT treated as an error.
+type ApprovalChannel interface {
+	DeliverApproval(ctx context.Context, identityID, token, taskID, kind string) (delivered bool, err error)
+}
+
 // approvalReminderInterval resolves AURA_SCHEDULER_APPROVAL_REMINDER_SEC. Unlike envInt,
 // a valid <=0 value DISABLES the sweep (returns 0) rather than falling back to the
 // default — the kill switch (Amendment #92 point 5). Empty/invalid → the 1h default.
@@ -49,17 +66,23 @@ func approvalReminderInterval() time.Duration {
 	return time.Duration(n) * time.Second
 }
 
-// sweepApprovalReminders re-surfaces channel-owned pending_approval tasks to their origin
-// channel, throttled to once per cadence. It runs on the scheduler tick right after
-// sweepNotifications. Every selected row is stamped after the attempt REGARDLESS of
-// delivery outcome (delivered / no-channel / channel-error) so a pending approval
-// re-nudges at most once per cadence and a permanently-failing channel cannot spam the
-// tick (Amendment #92 point 4). A store-query error is returned (swallowed per tick by
-// runScheduledScan → slog.Warn, never terminates the scheduler); a per-row delivery or
-// stamp error is logged and the sweep continues.
+// sweepApprovalReminders is the deterministic on-channel HITL guarantor (Amendment #92 revised):
+// per due pending_approval row it (a) ensures a real scheduled_task_approval ask_user pause exists
+// on the task's origin conversation (reused or minted host-side), then (b) pushes the actionable
+// prompt to the origin channel. It runs on the scheduler tick right after sweepNotifications.
+// Every selected row is stamped after the attempt REGARDLESS of outcome (ensured/minted, pushed /
+// no-push-channel / channel-error) so a pending approval re-nudges at most once per cadence and a
+// permanently-failing channel cannot spam the tick. A store-query error is returned (swallowed per
+// tick by runScheduledScan → slog.Warn, never terminates the scheduler); a per-row ensure/push/stamp
+// error is logged and the sweep continues.
+//
+// A WebUI-origin row surfaces its pause via the pull /api/approvals: EnsureApprovalPause still runs
+// (so the pause is minted if the model never relayed), and DeliverApproval returns (false,nil) — no
+// push channel owns it — which is the expected no-op, not an error.
 func (d *Dispatch) sweepApprovalReminders(ctx context.Context) error {
 	interval := approvalReminderInterval()
-	if interval <= 0 || d.deps.ApprovalReminderStore == nil || d.deps.ChannelDeliverer == nil {
+	if interval <= 0 || d.deps.ApprovalReminderStore == nil ||
+		d.deps.ApprovalPauseEnsurer == nil || d.deps.ApprovalChannel == nil {
 		return nil
 	}
 	cutoff := time.Now().UTC().Add(-interval)
@@ -68,27 +91,23 @@ func (d *Dispatch) sweepApprovalReminders(ctx context.Context) error {
 		return err
 	}
 	for _, task := range rows {
-		delivered, derr := d.deps.ChannelDeliverer.DeliverToIdentity(ctx, task.IdentityID, approvalReminderText(task))
-		switch {
-		case derr != nil:
-			slog.Warn("approval reminder delivery failed (retry next cadence)", "task", task.ID, "err", derr)
-		case !delivered:
-			slog.Debug("approval reminder: no channel owns identity", "task", task.ID, "identity", task.IdentityID)
+		token, eerr := d.deps.ApprovalPauseEnsurer.EnsureApprovalPause(ctx, task.ID, task.OriginConversationID, string(task.Kind))
+		if eerr != nil {
+			// Ensure failed (e.g. transient DB): still stamp so a permanently-failing ensure
+			// cannot spam the tick; retried next cadence.
+			slog.Warn("approval reminder: ensure pause failed (retry next cadence)", "task", task.ID, "err", eerr)
+		} else {
+			delivered, derr := d.deps.ApprovalChannel.DeliverApproval(ctx, task.IdentityID, token, task.ID, string(task.Kind))
+			switch {
+			case derr != nil:
+				slog.Warn("approval reminder push failed (retry next cadence)", "task", task.ID, "err", derr)
+			case !delivered:
+				slog.Debug("approval reminder: no push channel owns identity (WebUI pulls the pause)", "task", task.ID, "identity", task.IdentityID)
+			}
 		}
 		if merr := d.deps.ApprovalReminderStore.MarkApprovalReminded(ctx, task.ID); merr != nil {
 			slog.Warn("mark approval reminded", "task", task.ID, "err", merr)
 		}
 	}
 	return nil
-}
-
-// approvalReminderText is the bounded nudge (Amendment #92 point 4): task kind + a short
-// id for identification, never the raw payload — no goal/secret leakage beyond what the
-// origin channel already saw when the task was scheduled.
-func approvalReminderText(task Task) string {
-	id := task.ID
-	if len(id) > 8 {
-		id = id[:8]
-	}
-	return fmt.Sprintf("A scheduled %s task (id %s) is awaiting your approval. Approve or cancel it in the Aura cockpit.", task.Kind, id)
 }

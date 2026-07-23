@@ -14,10 +14,12 @@ import (
 	"time"
 )
 
-// TestListDueApprovalReminders_FiltersAndThrottle proves the SQL contract: only
-// channel-owned pending_approval rows are returned; NULL-stamp rows are always due;
-// MarkApprovalReminded stamps now() so the cutoff throttle then excludes the row until
-// it ages past the cadence; and CLI/cockpit-local + non-pending rows are never selected.
+// TestListDueApprovalReminders_FiltersAndThrottle proves the SQL contract (Amendment #92
+// revised): every pending_approval row WITH an origin conversation is returned — including a
+// WebUI/local-origin row (it surfaces via the pull /api/approvals) — while a row with NO origin
+// conversation (CLI-origin) and non-pending rows are excluded; NULL-stamp rows are always due;
+// MarkApprovalReminded stamps now() so the cutoff throttle then excludes the row until it ages
+// past the cadence.
 func TestListDueApprovalReminders_FiltersAndThrottle(t *testing.T) {
 	pool := migratedPool(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -33,10 +35,10 @@ func TestListDueApprovalReminders_FiltersAndThrottle(t *testing.T) {
 		t.Fatalf("NextRunAt: %v", err)
 	}
 
-	mk := func(identity, status string) string {
+	mk := func(identity, status, originConv string) string {
 		task, err := s.CreateTask(ctx, CreateTaskParams{
 			Kind: KindAgentJob, Spec: spec, Payload: []byte(`{"goal":"x"}`),
-			NextRunAt: next, IdentityID: identity, Status: status,
+			NextRunAt: next, IdentityID: identity, Status: status, OriginConversationID: originConv,
 		})
 		if err != nil {
 			t.Fatalf("CreateTask(%s,%s): %v", identity, status, err)
@@ -47,10 +49,14 @@ func TestListDueApprovalReminders_FiltersAndThrottle(t *testing.T) {
 
 	idA := "11111111-1111-1111-1111-111111111111"
 	idB := "22222222-2222-2222-2222-222222222222"
-	pendingA := mk(idA, "pending_approval")
-	pendingB := mk(idB, "pending_approval")
-	mk("local", "pending_approval")                      // excluded: CLI/cockpit-local
-	mk("33333333-3333-3333-3333-333333333333", "active") // excluded: not pending
+	convA := "aaaa1111-1111-1111-1111-111111111111"
+	convB := "bbbb2222-2222-2222-2222-222222222222"
+	convW := "cccc3333-3333-3333-3333-333333333333"
+	pendingA := mk(idA, "pending_approval", convA)
+	pendingB := mk(idB, "pending_approval", convB)
+	pendingWebUI := mk("local", "pending_approval", convW)      // INCLUDED now: WebUI-origin (pulls the pause)
+	noOrigin := mk(idA, "pending_approval", "")                 // excluded: CLI-origin (NULL origin conversation)
+	mk("33333333-3333-3333-3333-333333333333", "active", convA) // excluded: not pending
 
 	ids := func(tasks []Task) map[string]bool {
 		m := map[string]bool{}
@@ -60,7 +66,8 @@ func TestListDueApprovalReminders_FiltersAndThrottle(t *testing.T) {
 		return m
 	}
 
-	// Never-reminded (NULL stamp) rows are due regardless of cutoff; local + active excluded.
+	// Never-reminded (NULL stamp) rows are due regardless of cutoff; the WebUI-origin row is
+	// now included, the CLI-origin (no-conversation) + active rows excluded.
 	due, err := s.ListDueApprovalReminders(ctx, time.Now(), 50)
 	if err != nil {
 		t.Fatalf("ListDueApprovalReminders: %v", err)
@@ -69,12 +76,18 @@ func TestListDueApprovalReminders_FiltersAndThrottle(t *testing.T) {
 	if !got[pendingA] || !got[pendingB] {
 		t.Fatalf("channel-owned pending_approval rows must be due, got %v", got)
 	}
+	if !got[pendingWebUI] {
+		t.Fatalf("a WebUI/local-origin pending row WITH an origin conversation must be due (it pulls the pause), got %v", got)
+	}
+	if got[noOrigin] {
+		t.Fatalf("a CLI-origin row with NO origin conversation must be excluded, got %v", got)
+	}
 	for _, tk := range due {
-		if tk.IdentityID == "local" || tk.IdentityID == "" {
-			t.Fatalf("local/empty identity must be excluded, got %q", tk.IdentityID)
-		}
 		if tk.Status != "pending_approval" {
 			t.Fatalf("non-pending row selected: %s status=%q", tk.ID, tk.Status)
+		}
+		if tk.OriginConversationID == "" {
+			t.Fatalf("a row with no origin conversation must never be selected: %s", tk.ID)
 		}
 	}
 

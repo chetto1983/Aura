@@ -245,7 +245,7 @@ SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     created_at, updated_at, approval_reminded_at
 FROM aura.scheduler_tasks
 WHERE status = 'pending_approval'
-    AND identity_id NOT IN ('', 'local')
+    AND origin_conversation_id IS NOT NULL
     AND (approval_reminded_at IS NULL OR approval_reminded_at <= $1)
 ORDER BY created_at ASC
 LIMIT $2
@@ -256,14 +256,17 @@ type ListDuePendingApprovalRemindersParams struct {
 	Limit              int32              `json:"limit"`
 }
 
-// fix-plan 1.7 / Amendment #92: the per-tick approval-reminder sweep. Channel-owned
-// pending_approval tasks whose throttle stamp is due (never reminded, or older than the
-// cadence cutoff computed in Go: now() - AURA_SCHEDULER_APPROVAL_REMINDER_SEC). CLI/
-// cockpit-local rows (identity_id IN (”, 'local')) are excluded — cockpit approvals are
-// already visible in the AG-UI panel. No FOR UPDATE SKIP LOCKED: the sweep runs on the
-// autocommit pool (like DueTasks) where a row lock releases the instant the SELECT
-// returns (inert). The dedup is the approval_reminded_at throttle stamp, not a row lock;
-// a rare cross-instance double-nudge under HA is benign (a duplicate reminder).
+// fix-plan 1.7 / Amendment #92 (REVISED): the per-tick approval-reminder sweep. Every
+// pending_approval task with an ORIGIN CONVERSATION whose throttle stamp is due (never
+// reminded, or older than the cadence cutoff computed in Go: now() -
+// AURA_SCHEDULER_APPROVAL_REMINDER_SEC). The old identity_id NOT IN (”,'local') filter is
+// DROPPED: WebUI/local-origin rows MUST be selected so the sweep can MINT their pause (they
+// surface via the pull /api/approvals; the Telegram push is simply a no-op for them). Rows
+// with a NULL origin_conversation_id (CLI-origin, no conversation to key a pause on) are
+// excluded and keep the `aura task approve` CLI path. No FOR UPDATE SKIP LOCKED: the sweep
+// runs on the autocommit pool (like DueTasks) where a row lock releases the instant the
+// SELECT returns (inert). The dedup is the approval_reminded_at throttle stamp, not a row
+// lock; a rare cross-instance double-nudge under HA is benign.
 func (q *Queries) ListDuePendingApprovalReminders(ctx context.Context, arg ListDuePendingApprovalRemindersParams) ([]AuraSchedulerTasks, error) {
 	rows, err := q.db.Query(ctx, listDuePendingApprovalReminders, arg.ApprovalRemindedAt, arg.Limit)
 	if err != nil {

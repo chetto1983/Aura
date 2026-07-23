@@ -100,6 +100,13 @@ type DispatchDeps struct {
 	// 1.7 / Amendment #92). Nil → no sweep (defaulted from Store in NewDispatch when the
 	// concrete *Store is supplied, mirroring NotificationStore).
 	ApprovalReminderStore ApprovalReminderStore
+	// ApprovalPauseEnsurer + ApprovalChannel back the on-channel HITL re-surface of a
+	// pending_approval task (Amendment #92 revised): the sweep ensures a real ask_user pause
+	// exists on the task's origin conversation, then pushes the actionable prompt to the origin
+	// channel. Nil (either) → the approval sweep no-ops. The composition root wires them; cron
+	// imports neither askuser nor channels (import-cycle constraint).
+	ApprovalPauseEnsurer ApprovalPauseEnsurer
+	ApprovalChannel      ApprovalChannel
 	// PreferOriginChannel is the AURA_SCHEDULER_PREFER_ORIGIN_CHANNEL kill-switch,
 	// resolved once at the composition root (default true). False → byte-identical
 	// legacy route-only behavior even when a ChannelDeliverer is wired (D-03).
