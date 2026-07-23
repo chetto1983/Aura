@@ -32,7 +32,15 @@ func (w *EmbeddingWorker) Enqueue(ctx context.Context, doc ExtractedDocument) er
 }
 
 // Process embeds and indexes one extracted document synchronously.
-func (w *EmbeddingWorker) Process(ctx context.Context, doc ExtractedDocument) error {
+func (w *EmbeddingWorker) Process(ctx context.Context, doc ExtractedDocument) (err error) {
+	started := time.Now()
+	defer func() {
+		outcome := "success"
+		if err != nil {
+			outcome = "error"
+		}
+		recordIngestionEmbedDuration(ctx, time.Since(started).Seconds(), outcome)
+	}()
 	if w.Generator == nil {
 		return fmt.Errorf("embedding worker has no generator")
 	}

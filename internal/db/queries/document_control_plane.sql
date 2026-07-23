@@ -231,6 +231,11 @@ SET
 WHERE id = $1
 RETURNING *;
 
+-- name: CountIngestionJobsByStatus :one
+SELECT count(*)
+FROM aura.ingestion_jobs
+WHERE status = sqlc.arg(status);
+
 -- name: AppendIngestionEvent :one
 INSERT INTO aura.ingestion_events (
     entity_type,

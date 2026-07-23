@@ -71,6 +71,30 @@ func TestRuntimeProcessingJobWorkerProcessesEmbeddingJob(t *testing.T) {
 	}
 }
 
+func TestNewRuntimeProcessingJobWorkerWiresQueueDepthWhenStoreSupportsIt(t *testing.T) {
+	store := &fakeRuntimeIngestionJobQueueWithDepth{}
+	worker := newRuntimeProcessingJobWorker(store, nil, &recordingAssetProcessor{}, nil, 1)
+	if worker.QueueDepth == nil {
+		t.Fatal("QueueDepth should be wired when the store implements IngestionQueueDepthSource")
+	}
+}
+
+func TestNewRuntimeProcessingJobWorkerLeavesQueueDepthNilWhenUnsupported(t *testing.T) {
+	store := &fakeRuntimeIngestionJobQueue{}
+	worker := newRuntimeProcessingJobWorker(store, nil, &recordingAssetProcessor{}, nil, 1)
+	if worker.QueueDepth != nil {
+		t.Fatal("QueueDepth must stay nil (fail-soft) when the store lacks CountByStatus")
+	}
+}
+
+type fakeRuntimeIngestionJobQueueWithDepth struct {
+	fakeRuntimeIngestionJobQueue
+}
+
+func (f *fakeRuntimeIngestionJobQueueWithDepth) CountByStatus(context.Context, string) (int64, error) {
+	return 0, nil
+}
+
 func TestRuntimeIngestionWorkerStartStopProcesses(t *testing.T) {
 	processor := &recordingRuntimeIngestionProcessor{done: make(chan struct{})}
 	worker := newRuntimeIngestionWorker(processor, time.Hour)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"mime"
 	"os"
 	"path/filepath"
@@ -139,7 +140,9 @@ func (s *Service) IngestPath(ctx context.Context, req IngestRequest, path string
 		return &job, err
 	}
 	if s.Embedder != nil {
-		_ = s.Embedder.Enqueue(context.WithoutCancel(ctx), doc)
+		if err := s.Embedder.Enqueue(context.WithoutCancel(ctx), doc); err != nil {
+			slog.Warn("documents: embed enqueue dropped", "document_id", doc.ID, "source_id", req.SourceID, "err", err)
+		}
 	}
 	return &job, nil
 }

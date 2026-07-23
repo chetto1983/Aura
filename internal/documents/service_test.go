@@ -1,9 +1,11 @@
 package documents
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"testing"
@@ -39,6 +41,45 @@ func TestServiceMakesDocumentSearchableBeforeEmbedding(t *testing.T) {
 	}
 	if indexer.docs[0].ID != job.DocumentID {
 		t.Fatalf("indexed doc id = %q job doc id = %q", indexer.docs[0].ID, job.DocumentID)
+	}
+}
+
+func TestServiceIngestPathStaysFailSoftAndWarnsWhenEmbedEnqueueDrops(t *testing.T) {
+	path := writeNamedTempFile(t, "manual.pdf", "payload")
+	jobs := newFakeJobStore()
+	embedder := &fakeEmbedQueue{err: errors.New("embed queue unavailable")}
+	service := &Service{
+		Jobs:      jobs,
+		Extractor: &fakeExtractor{resp: oneChunkResponse()},
+		Indexer:   &fakeSparseIndexer{count: 1},
+		Embedder:  embedder,
+		Clock:     func() time.Time { return time.Unix(10, 0) },
+	}
+
+	var logs bytes.Buffer
+	prevLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(prevLogger) })
+
+	job, err := service.IngestPath(t.Context(), IngestRequest{SourceID: "cli"}, path)
+	if err != nil {
+		t.Fatalf("IngestPath must stay fail-soft on embed enqueue drop, got err = %v", err)
+	}
+	if job.Status != JobSearchable {
+		t.Fatalf("status = %s, want %s (sparse index unaffected by embed drop)", job.Status, JobSearchable)
+	}
+	if len(embedder.docs) != 1 {
+		t.Fatalf("embedder must still be invoked, docs = %d", len(embedder.docs))
+	}
+	logged := logs.String()
+	if !strings.Contains(logged, "documents: embed enqueue dropped") {
+		t.Fatalf("warn log missing enqueue-drop message: %q", logged)
+	}
+	if !strings.Contains(logged, "document_id="+job.DocumentID) {
+		t.Fatalf("warn log missing document_id attribute: %q", logged)
+	}
+	if !strings.Contains(logged, "source_id=cli") {
+		t.Fatalf("warn log missing source_id attribute: %q", logged)
 	}
 }
 

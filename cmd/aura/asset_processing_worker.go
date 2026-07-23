@@ -56,7 +56,7 @@ func newRuntimeProcessingJobWorker(store documents.IngestionJobQueue, events doc
 	if embedding != nil {
 		handlers[documents.IngestionJobTypeDocumentEmbed] = embedding
 	}
-	return &documents.IngestionJobWorker{
+	worker := &documents.IngestionJobWorker{
 		Store:         store,
 		Events:        events,
 		WorkerID:      runtimeIngestionWorkerID,
@@ -65,6 +65,10 @@ func newRuntimeProcessingJobWorker(store documents.IngestionJobQueue, events doc
 		RetryBackoff:  time.Minute,
 		Handlers:      handlers,
 	}
+	if depthSource, ok := store.(documents.IngestionQueueDepthSource); ok {
+		worker.QueueDepth = depthSource
+	}
+	return worker
 }
 
 func newRuntimeIngestionWorker(processor runtimeIngestionProcessor, interval time.Duration) *runtimeIngestionWorker {

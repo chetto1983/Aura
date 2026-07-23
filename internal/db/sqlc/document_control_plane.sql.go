@@ -137,6 +137,19 @@ func (q *Queries) ClaimIngestionJobs(ctx context.Context, arg ClaimIngestionJobs
 	return items, nil
 }
 
+const countIngestionJobsByStatus = `-- name: CountIngestionJobsByStatus :one
+SELECT count(*)
+FROM aura.ingestion_jobs
+WHERE status = $1
+`
+
+func (q *Queries) CountIngestionJobsByStatus(ctx context.Context, status string) (int64, error) {
+	row := q.db.QueryRow(ctx, countIngestionJobsByStatus, status)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createDeleteJob = `-- name: CreateDeleteJob :one
 INSERT INTO aura.delete_jobs (
     document_id,

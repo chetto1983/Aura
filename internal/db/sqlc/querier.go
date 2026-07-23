@@ -47,6 +47,7 @@ type Querier interface {
 	// A reservation cannot be replaced or released after teardown starts. Once its exact
 	// row is absent, the worker holding that reservation committed the terminal delete.
 	ConversationDeleteCompleted(ctx context.Context, arg ConversationDeleteCompletedParams) (bool, error)
+	CountIngestionJobsByStatus(ctx context.Context, status string) (int64, error)
 	// Current durable work that has not reached a terminal completed/failed item state.
 	// This query owns the restart-safe backlog gauge; transition counters are not state.
 	CountRetentionBacklog(ctx context.Context) (int64, error)

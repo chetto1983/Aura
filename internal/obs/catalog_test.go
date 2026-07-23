@@ -44,6 +44,9 @@ retention_disk_utilization|aura.retention.disk.utilization|aura_retention_disk_u
 learning_operations|aura.learning.operation|aura_learning_operation_total|counter|1|operation,tool_class,outcome,error_class|Total bounded learning-store operations.|
 learning_size|aura.learning.size|aura_learning_size|gauge|1|tool_class,state|Current bounded learning-store size.|
 learning_oldest_age|aura.learning.oldest.age|aura_learning_oldest_age_seconds|gauge|s|tool_class,state|Oldest bounded learning-store item age.|
+ingestion_jobs|aura.ingestion.job|aura_ingestion_job_total|counter|1|outcome|Total durable ingestion job terminal outcomes.|
+ingestion_embed_duration|aura.ingestion.embed.duration|aura_ingestion_embed_duration_seconds|histogram|s|outcome|Embedding worker per-document processing duration.|0.01,0.05,0.1,0.25,0.5,1,2.5,5,10,30,60,120
+ingestion_queue_depth|aura.ingestion.queue.depth|aura_ingestion_queue_depth_items|gauge|items||Current durable queued ingestion job backlog.|
 `
 
 func TestCatalogDescriptorGolden(t *testing.T) {

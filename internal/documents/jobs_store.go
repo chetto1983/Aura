@@ -133,6 +133,16 @@ func (s *PostgresIngestionJobStore) UpdateStatus(ctx context.Context, id, status
 	return ingestionJobFromSQL(row)
 }
 
+// CountByStatus returns the current durable job count for one status value,
+// backing the ingestion_queue_depth gauge (obs.IngestionQueueDepthID).
+func (s *PostgresIngestionJobStore) CountByStatus(ctx context.Context, status string) (int64, error) {
+	count, err := s.q.CountIngestionJobsByStatus(ctx, status)
+	if err != nil {
+		return 0, fmt.Errorf("count ingestion jobs by status: %w", err)
+	}
+	return count, nil
+}
+
 // Retry returns a claimed job to the queued state for a later attempt.
 func (s *PostgresIngestionJobStore) Retry(ctx context.Context, id, stage, code, message string, nextAttemptAt time.Time) (IngestionJob, error) {
 	pgID, err := pgUUID("ingestion job id", id)

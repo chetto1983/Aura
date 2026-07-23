@@ -91,6 +91,9 @@ const (
 	LearningOperationsID         InstrumentID = "learning_operations"
 	LearningSizeID               InstrumentID = "learning_size"
 	LearningOldestAgeID          InstrumentID = "learning_oldest_age"
+	IngestionJobsID              InstrumentID = "ingestion_jobs"
+	IngestionEmbedDurationID     InstrumentID = "ingestion_embed_duration"
+	IngestionQueueDepthID        InstrumentID = "ingestion_queue_depth"
 )
 
 // Descriptor defines one stable OTel instrument and its Prometheus projection.
@@ -148,6 +151,9 @@ var descriptors = []Descriptor{
 	count(LearningOperationsID, "aura.learning.operation", "aura_learning_operation_total", []AttributeKey{AttributeOperation, AttributeToolClass, AttributeOutcome, AttributeErrorClass}, "Total bounded learning-store operations."),
 	gauge(LearningSizeID, "aura.learning.size", "aura_learning_size", []AttributeKey{AttributeToolClass, AttributeState}, "Current bounded learning-store size.", "1"),
 	gauge(LearningOldestAgeID, "aura.learning.oldest.age", "aura_learning_oldest_age_seconds", []AttributeKey{AttributeToolClass, AttributeState}, "Oldest bounded learning-store item age.", "s"),
+	count(IngestionJobsID, "aura.ingestion.job", "aura_ingestion_job_total", []AttributeKey{AttributeOutcome}, "Total durable ingestion job terminal outcomes."),
+	histogram(IngestionEmbedDurationID, "aura.ingestion.embed.duration", "aura_ingestion_embed_duration_seconds", []AttributeKey{AttributeOutcome}, "Embedding worker per-document processing duration.", slowDurationBuckets),
+	gauge(IngestionQueueDepthID, "aura.ingestion.queue.depth", "aura_ingestion_queue_depth_items", nil, "Current durable queued ingestion job backlog.", "items"),
 }
 
 func count(id InstrumentID, name, prom string, attrs []AttributeKey, description string) Descriptor {
@@ -274,7 +280,8 @@ var allowedAttributeValues = map[AttributeKey]map[string]struct{}{
 	AttributeOutcome: finiteSet(
 		"success", "error", "canceled", "timeout", "paused", "content_stop", "text_response", "max_steps", "budget_exhausted",
 		"panic", "hook_error", "breaker_open", "consumer_stopped", "empty_response", "tool_args_truncated", "tool_terminal", "denied",
-		"accepted", "declined", "replayed", "conflict", "in_progress", "indeterminate", "skipped", "allow", "result", "fail_open", ValueOther,
+		"accepted", "declined", "replayed", "conflict", "in_progress", "indeterminate", "skipped", "allow", "result", "fail_open",
+		"succeeded", "dead_letter", "retry_scheduled", ValueOther,
 	),
 	AttributeErrorClass: finiteSet("none", "canceled", "timeout", "unavailable", "invalid", "conflict", "permission", "panic", "internal", ValueOther),
 	AttributeState:      finiteSet("starting", "running", "ready", "degraded", "draining", "stopped", "pending", "in_progress", "completed", "failed", "indeterminate", "expired", ValueOther),
