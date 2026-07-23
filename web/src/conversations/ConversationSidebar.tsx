@@ -55,9 +55,13 @@ export interface ConversationSidebarProps {
   readonly activeId: string;
   /** Select a conversation → the chat lane POSTs against it. */
   readonly onSelect: (id: string) => void;
+  /** Fires after a hard delete SUCCEEDS, with the deleted id — AppShell resets
+   *  the main pane when the ACTIVE conversation was deleted (operator report:
+   *  the pane kept rendering a deleted thread and sends hit thread-not-found). */
+  readonly onDeleted?: (id: string) => void;
 }
 
-export function ConversationSidebar({ activeId, onSelect }: ConversationSidebarProps) {
+export function ConversationSidebar({ activeId, onSelect, onDeleted }: ConversationSidebarProps) {
   const { t } = useTranslation();
   const [includeArchived, setIncludeArchived] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Conversation | null>(null);
@@ -74,7 +78,11 @@ export function ConversationSidebar({ activeId, onSelect }: ConversationSidebarP
   function confirmDelete() {
     const target = pendingDelete;
     if (!target) return;
-    remove.mutate(target.ID);
+    remove.mutate(target.ID, {
+      // Only a CONFIRMED backend delete resets the pane — a failed DELETE keeps
+      // the conversation (and the pane) intact.
+      onSuccess: () => onDeleted?.(target.ID),
+    });
     setPendingDelete(null);
   }
 

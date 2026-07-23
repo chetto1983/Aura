@@ -186,6 +186,24 @@ export function AppShell() {
     [activeThreadId, createConversation, navigate],
   );
 
+  // Operator report: deleting the ACTIVE conversation left the main pane bound
+  // to the dead threadId (messages + composer still live; the next send hit
+  // thread-not-found). On a confirmed delete of the active row, reset to the
+  // pristine new-chat state — cleared selection + route '/' — the exact state a
+  // fresh session starts in: EmptyThreadStarters shows and the NEXT send
+  // creates a conversation via ensureThread. Deliberately NOT the eager
+  // startNewConversation path: after "delete all" it would immediately mint a
+  // fresh empty row, resurrecting the list the operator just emptied.
+  const handleConversationDeleted = useCallback(
+    (id: string) => {
+      if (id !== selectedId) return;
+      setSelectedId('');
+      resetUsage();
+      void navigate('/', { replace: true });
+    },
+    [selectedId, resetUsage, navigate],
+  );
+
   const openCreateIdentity = useCallback(() => {
     setOnboardingOpen(true);
     closeNav();
@@ -277,7 +295,11 @@ export function AppShell() {
         }}
       />
       <div className="min-h-0 flex-1 overflow-hidden">
-        <ConversationSidebar activeId={activeThreadId} onSelect={selectThread} />
+        <ConversationSidebar
+          activeId={activeThreadId}
+          onSelect={selectThread}
+          onDeleted={handleConversationDeleted}
+        />
       </div>
     </div>
   );
@@ -323,7 +345,11 @@ export function AppShell() {
           }}
         />
         <div className="min-h-0 flex-1 overflow-hidden">
-          <ConversationSidebar activeId={activeThreadId} onSelect={selectThreadFromMobileNav} />
+          <ConversationSidebar
+            activeId={activeThreadId}
+            onSelect={selectThreadFromMobileNav}
+            onDeleted={handleConversationDeleted}
+          />
         </div>
       </div>
     </MobileAppSidebar>
