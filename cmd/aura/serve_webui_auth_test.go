@@ -417,6 +417,25 @@ func TestServeWebuiAuthWiring(t *testing.T) {
 		}
 	})
 
+	// Fix-plan 1.3 Tier B: the /agent/runs/ subtree (resume GET + cancel POST) must reach
+	// the AG-UI mux, never the embed's backend-404 — the live E2E caught the missing
+	// prefix entry (the agui mux registered the routes but the parent never routed them).
+	t.Run("run-scoped subtree reaches the AG-UI handler", func(t *testing.T) {
+		for _, tc := range []struct{ method, path string }{
+			{http.MethodGet, "/agent/runs/run-00000000-0000-0000-0000-000000000000/events"},
+			{http.MethodPost, "/agent/runs/run-00000000-0000-0000-0000-000000000000/cancel"},
+		} {
+			aguiHits = nil
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(tc.method, tc.path, nil)
+			addAuthulaSession(req)
+			handler.ServeHTTP(rec, req)
+			if len(aguiHits) != 1 || aguiHits[0] != tc.path {
+				t.Fatalf("%s %s did not reach the AG-UI handler: hits=%v code=%d", tc.method, tc.path, aguiHits, rec.Code)
+			}
+		}
+	})
+
 	// APRV (Phase 25): the read inherits the whole-origin gate (no second auth check on
 	// the new route) - a no-cookie GET /api/approvals is 401'd before the AG-UI handler.
 	t.Run("no cookie /api/approvals -> 401 (RequireAuth inherited)", func(t *testing.T) {
