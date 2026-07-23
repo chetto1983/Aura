@@ -75,7 +75,7 @@ func New(cfg llm.Config) *Client {
 // OpenRouter (which always sends usage) keeps the wire byte-unchanged.
 type wireRequest struct {
 	Model       string         `json:"model"`
-	Messages    []llm.Message  `json:"messages"`
+	Messages    []wireMessage  `json:"messages"`
 	Tools       []llm.ToolDef  `json:"tools,omitempty"`
 	ToolChoice  string         `json:"tool_choice,omitempty"`
 	Temperature float64        `json:"temperature"`
@@ -102,6 +102,42 @@ type wireRequest struct {
 	// (buildWireRequest); everywhere else nil, and omitempty drops the key —
 	// llama.cpp and default-config OpenRouter both stay byte-unchanged.
 	Transforms []string `json:"transforms,omitempty"`
+}
+
+// wireMessage mirrors llm.Message on the wire but GUARANTEES a content field on every
+// non-assistant message. llm.Message.Content is `omitempty`, so an empty tool/user/
+// system message serializes WITHOUT a content key — which strict OpenAI servers
+// (llama.cpp) reject with 400 "All non-assistant messages must contain 'content'"
+// (OpenRouter silently tolerates the omission, so the bug is invisible there). The most
+// common trigger is a tool that returned an empty result: its persisted tool turn
+// rehydrates as a content-less tool message. Assistant messages keep OMITTING empty
+// content — they are carried by tool_calls and content is optional for them per the
+// OpenAI spec. Content is a *string: nil omits the key, &"" emits "content":"".
+type wireMessage struct {
+	Role       string         `json:"role"`
+	Content    *string        `json:"content,omitempty"`
+	ToolCalls  []llm.ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string         `json:"tool_call_id,omitempty"`
+	Name       string         `json:"name,omitempty"`
+}
+
+// toWireMessages projects caller messages onto the wire, guaranteeing a content field on
+// every non-assistant message (empty content becomes "content":"" instead of a dropped
+// key). The caller's slice is never mutated.
+func toWireMessages(msgs []llm.Message) []wireMessage {
+	out := make([]wireMessage, len(msgs))
+	for i, m := range msgs {
+		wm := wireMessage{Role: m.Role, ToolCalls: m.ToolCalls, ToolCallID: m.ToolCallID, Name: m.Name}
+		if m.Role == llm.RoleAssistant && m.Content == "" {
+			// Assistant may omit content when tool_calls carry the turn (spec-optional).
+			out[i] = wm
+			continue
+		}
+		c := m.Content
+		wm.Content = &c
+		out[i] = wm
+	}
+	return out
 }
 
 // wireStreamOptions is set ONLY on the llama.cpp target (buildWireRequest) —
@@ -257,7 +293,7 @@ func (c *Client) buildWireRequest(req llm.Request) wireRequest {
 	}
 	wire := wireRequest{
 		Model:       req.Model,
-		Messages:    req.Messages,
+		Messages:    toWireMessages(req.Messages),
 		Tools:       tools,
 		ToolChoice:  choice,
 		Temperature: req.Temperature,
