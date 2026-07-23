@@ -203,6 +203,11 @@ test.describe('Calm Prism Chrome contracts', () => {
       },
     ]);
     await openMatrix(page, 'dark');
+    // Compact-chat spec §2.2: the reasoning pill is COLLAPSED BY DEFAULT — expand
+    // it to reveal the CoT body (the sticky localStorage preference is retired).
+    const reasoningToggle = page.getByRole('button', { name: 'Show reasoning' });
+    await expect(reasoningToggle).toBeVisible();
+    await reasoningToggle.click();
     await expect(page.getByRole('button', { name: 'Hide reasoning' })).toBeVisible();
     await expect(page.getByText('Checking release evidence', { exact: false })).toBeVisible();
     await expect(page.getByText('Running', { exact: true })).toBeVisible();

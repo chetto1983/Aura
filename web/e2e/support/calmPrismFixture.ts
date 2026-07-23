@@ -232,7 +232,6 @@ export async function installCalmPrismFixture(
       localStorage.setItem('aura.language', 'en');
       localStorage.setItem('aura.theme', selectedTheme);
       localStorage.setItem('aura.density', 'operator');
-      localStorage.setItem('aura.chat.reasoning.shown', '1');
     },
     { selectedTheme: theme },
   );

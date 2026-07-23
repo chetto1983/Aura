@@ -34,6 +34,68 @@
   .login-signal-path {
     animation: login-signal-run 8s linear infinite;
   }
+
+  /* Compact-chat (spec §7): the "Thinking…" label shimmer. The gradient clip +
+     transparent color live ONLY inside this no-preference block, so reduced
+     motion keeps a plain readable muted label (the static fallback). Cadence
+     matches --skeleton-duration so all "working" cues breathe together. */
+  .aura-thinking-shimmer {
+    animation: aura-thinking-shimmer 2200ms linear infinite;
+    background: linear-gradient(
+      90deg,
+      var(--color-text-muted) 0%,
+      var(--color-accent-text) 50%,
+      var(--color-text-muted) 100%
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    background-size: 260% 100%;
+    color: transparent;
+  }
+
+  /* Body reveal — the ONE high-impact disclosure moment. Runs when the hidden
+     attr is removed (display none→block restarts CSS animations); collapse is
+     instant by design. */
+  .aura-part-reveal {
+    animation: aura-part-reveal var(--motion-base) var(--motion-ease-out);
+  }
+
+  /* Running tool dot pulse. */
+  .aura-dot-pulse {
+    animation: aura-dot-pulse 1200ms var(--motion-ease-in-out) infinite alternate;
+  }
+}
+
+@keyframes aura-thinking-shimmer {
+  from {
+    background-position: 140% 0;
+  }
+
+  to {
+    background-position: -140% 0;
+  }
+}
+
+@keyframes aura-part-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes aura-dot-pulse {
+  from {
+    opacity: 0.45;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 [data-login-background] {

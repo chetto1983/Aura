@@ -1,4 +1,5 @@
 import { adminEn, adminIt } from './resources.admin';
+import { chatReasoningEn, chatReasoningIt } from './resources.chatactivity';
 import {
   composerEffortEn,
   composerEffortIt,
@@ -111,11 +112,7 @@ export const resources = {
           copyCode: 'Copy code',
           codeCopied: 'Code copied',
         },
-        reasoning: {
-          show: 'Show reasoning',
-          hide: 'Hide reasoning',
-          pending: 'Thinking...',
-        },
+        reasoning: chatReasoningEn,
         tool: {
           showRaw: 'Show raw result',
           hideRaw: 'Hide raw result',
@@ -392,11 +389,7 @@ export const resources = {
           copyCode: 'Copia codice',
           codeCopied: 'Codice copiato',
         },
-        reasoning: {
-          show: 'Mostra ragionamento',
-          hide: 'Nascondi ragionamento',
-          pending: 'Ragionamento in corso...',
-        },
+        reasoning: chatReasoningIt,
         tool: {
           showRaw: 'Mostra risultato grezzo',
           hideRaw: 'Nascondi risultato grezzo',

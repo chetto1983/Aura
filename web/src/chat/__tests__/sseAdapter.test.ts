@@ -96,7 +96,7 @@ describe('sseAdapter — golden-frame reducer', () => {
     expect(state.status).toEqual({ type: 'complete', reason: 'stop' });
   });
 
-  it('REASONING_*  → a reasoning part bound to the drawer', () => {
+  it('REASONING_*  → a reasoning part bound to the pill', () => {
     const state = fold([
       frame('REASONING_START'),
       frame('REASONING_MESSAGE_START'),
@@ -109,6 +109,37 @@ describe('sseAdapter — golden-frame reducer', () => {
     const reasoning = messageParts(msg).filter((p) => p.type === 'reasoning');
     expect(reasoning).toHaveLength(1);
     expect(reasoning[0]).toMatchObject({ type: 'reasoning', text: 'thinking…' });
+  });
+
+  it('AC-14: stamps reasoning startedAt/finishedAt from the REASONING_* frame timestamps', () => {
+    const state = fold([
+      frameWith('REASONING_START', { messageId: 'rsn-1', timestamp: 1000 }),
+      frameWith('REASONING_MESSAGE_START', { messageId: 'rsn-1', timestamp: 1200 }),
+      frameWith('REASONING_MESSAGE_CONTENT', { messageId: 'rsn-1', delta: 'thinking' }),
+      frameWith('REASONING_MESSAGE_END', { messageId: 'rsn-1', timestamp: 4000 }),
+      frameWith('REASONING_END', { messageId: 'rsn-1', timestamp: 4600 }),
+    ]);
+    const reasoning = messageParts(toThreadMessage(state)).filter((p) => p.type === 'reasoning');
+    // startedAt is first-wins (the span's opening frame); finishedAt last-wins.
+    expect(reasoning[0]).toMatchObject({
+      type: 'reasoning',
+      text: 'thinking',
+      startedAt: 1000,
+      finishedAt: 4600,
+    });
+  });
+
+  it('AC-14: a timestamp-less reasoning frame still ensures the span part (no stamp)', () => {
+    const state = fold([
+      frameWith('REASONING_MESSAGE_START', { messageId: 'rsn-1', timestamp: undefined }),
+      frameWith('REASONING_MESSAGE_CONTENT', { messageId: 'rsn-1', delta: 'x' }),
+      frameWith('REASONING_MESSAGE_END', { messageId: 'rsn-1', timestamp: undefined }),
+    ]);
+    const reasoning = messageParts(toThreadMessage(state)).filter((p) => p.type === 'reasoning');
+    expect(reasoning).toHaveLength(1);
+    expect(reasoning[0]).toMatchObject({ type: 'reasoning', text: 'x' });
+    expect((reasoning[0] as { startedAt?: number }).startedAt).toBeUndefined();
+    expect((reasoning[0] as { finishedAt?: number }).finishedAt).toBeUndefined();
   });
 
   it('TOOL_CALL_START/ARGS/END/RESULT → one tool part with the raw result preview', () => {

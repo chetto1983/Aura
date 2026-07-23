@@ -1,13 +1,19 @@
 import type { ThreadMessageLike } from '@assistant-ui/react';
 import { isDisplayPayload, type DisplayPayload } from './displays/types';
+import { errorDetail, type AguiFrame } from './sseAdapter_frames';
 import {
-  errorDetail,
-  type AguiFrame,
-  type ChatPart,
-  type ReasoningPart,
-  type TextPart,
-  type ToolPart,
-} from './sseAdapter_frames';
+  ensureReasoning,
+  ensureText,
+  ensureTool,
+  frameTimestamp,
+  newAssistantTurn,
+  stampReasoning,
+  toThreadMessage,
+  updateReasoning,
+  updateText,
+  writeTool,
+  type AssistantTurnState,
+} from './sseAdapter_parts';
 import {
   isUsageDelta,
   toolCallIdFromDelta,
@@ -24,7 +30,7 @@ import { buildAuraRunBody } from './auraRunBody';
 // The contract is the backend translator output (internal/agui/translator.go):
 //   RUN_STARTED                            → open a running assistant message
 //   TEXT_MESSAGE_START/CONTENT/END         → a single { type: "text" } part
-//   REASONING_START/MESSAGE_*/END          → a { type: "reasoning" } part (drawer)
+//   REASONING_START/MESSAGE_*/END          → a { type: "reasoning" } part (pill) + span timestamps
 //   TOOL_CALL_START(name)/ARGS/END/RESULT  → a { type: "tool-call" } part (raw result)
 //   STATE_DELTA { tool_call_id }           → a tool-result marker → tool part (Pitfall 2)
 //   STATE_DELTA { usage keys }             → footer usage (NOT a message part)
@@ -37,133 +43,12 @@ import { buildAuraRunBody } from './auraRunBody';
 // frame fixture (internal/agui/testdata/golden-events.json) drives the test.
 //
 // The wire-frame types, the part-union types, the snapshot shapes and the shared
-// errorDetail helper live in ./sseAdapter_frames (the leaf); persisted-history
+// errorDetail helper live in ./sseAdapter_frames (the leaf); the assistant-turn
+// accumulator + its part builders live in ./sseAdapter_parts; persisted-history
 // rehydration lives in ./sseAdapter_snapshot; the D-10 usage projection lives in
-// ./sseAdapter_usage. This module keeps the live reducer, SSE parsing and the
-// stream runners, then re-exports the siblings so the public import surface
-// (`./sseAdapter`) stays unchanged.
-
-// ---------------------------------------------------------------------------
-// The reducer — folds frames onto a single assistant ThreadMessageLike.
-// ---------------------------------------------------------------------------
-
-type AssistantStatus = ThreadMessageLike['status'];
-
-/**
- * The accumulator for one assistant turn. Parts preserve arrival order; a
- * tool-call part is keyed by toolCallId so ARGS/END/RESULT (and a tool_call_id
- * STATE_DELTA marker) merge onto the part the START created.
- */
-export interface AssistantTurnState {
-  readonly id: string;
-  /** Ordered assistant parts exactly as they arrived on the AG-UI stream. */
-  readonly content: ChatPart[];
-  text: string;
-  textOpen: boolean;
-  reasoning: string;
-  readonly textById: Map<string, number>;
-  readonly reasoningById: Map<string, number>;
-  /** ordered tool parts, by first-seen toolCallId. */
-  readonly toolOrder: string[];
-  readonly tools: Map<string, ToolPart>;
-  readonly toolIndexById: Map<string, number>;
-  usage?: TurnUsage;
-  error?: string;
-  status: AssistantStatus;
-}
-
-export function newAssistantTurn(id: string): AssistantTurnState {
-  return {
-    id,
-    content: [],
-    text: '',
-    textOpen: false,
-    reasoning: '',
-    textById: new Map(),
-    reasoningById: new Map(),
-    toolOrder: [],
-    tools: new Map(),
-    toolIndexById: new Map(),
-    status: { type: 'running' },
-  };
-}
-
-function frameTimestamp(frame: AguiFrame): number | undefined {
-  const t = (frame as { readonly timestamp?: unknown }).timestamp;
-  return typeof t === 'number' ? t : undefined;
-}
-
-function ensureText(state: AssistantTurnState, messageId: string): TextPart {
-  const existingIndex = state.textById.get(messageId);
-  if (existingIndex !== undefined) {
-    const existing = state.content[existingIndex];
-    if (existing?.type === 'text') return existing;
-  }
-  const part: TextPart = { type: 'text', text: '' };
-  state.textById.set(messageId, state.content.length);
-  state.content.push(part);
-  return part;
-}
-
-function updateText(state: AssistantTurnState, messageId: string, text: string): void {
-  const part = ensureText(state, messageId);
-  const index = state.textById.get(messageId);
-  if (index === undefined) return;
-  state.content[index] = { ...part, text };
-}
-
-function ensureReasoning(state: AssistantTurnState, messageId: string): ReasoningPart {
-  const existingIndex = state.reasoningById.get(messageId);
-  if (existingIndex !== undefined) {
-    const existing = state.content[existingIndex];
-    if (existing?.type === 'reasoning') return existing;
-  }
-  const part: ReasoningPart = { type: 'reasoning', text: '' };
-  state.reasoningById.set(messageId, state.content.length);
-  state.content.push(part);
-  return part;
-}
-
-function updateReasoning(state: AssistantTurnState, messageId: string, text: string): void {
-  const part = ensureReasoning(state, messageId);
-  const index = state.reasoningById.get(messageId);
-  if (index === undefined) return;
-  state.content[index] = { ...part, text };
-}
-
-function writeTool(state: AssistantTurnState, part: ToolPart): ToolPart {
-  state.tools.set(part.toolCallId, part);
-  const index = state.toolIndexById.get(part.toolCallId);
-  if (index !== undefined) state.content[index] = part;
-  return part;
-}
-
-function ensureTool(
-  state: AssistantTurnState,
-  toolCallId: string,
-  toolName: string,
-  startedAt?: number,
-): ToolPart {
-  const existing = state.tools.get(toolCallId);
-  if (existing) {
-    if (toolName !== '' && existing.toolName === '') {
-      return writeTool(state, { ...existing, toolName });
-    }
-    return existing;
-  }
-  const part: ToolPart = {
-    type: 'tool-call',
-    toolCallId,
-    toolName,
-    argsText: '',
-    ...(startedAt !== undefined ? { startedAt } : {}),
-  };
-  state.tools.set(toolCallId, part);
-  state.toolOrder.push(toolCallId);
-  state.toolIndexById.set(toolCallId, state.content.length);
-  state.content.push(part);
-  return part;
-}
+// ./sseAdapter_usage. This module keeps the frame → builder dispatch (reduceFrame),
+// SSE parsing and the stream runners, then re-exports the siblings so the public
+// import surface (`./sseAdapter`) stays unchanged.
 
 /**
  * The `aura.artifact` CUSTOM descriptor (37A-02 enriched: a delivered send_file).
@@ -224,7 +109,7 @@ export function reduceFrame(state: AssistantTurnState, frame: AguiFrame): Assist
       state.textOpen = false;
       return state;
     case 'REASONING_MESSAGE_START':
-      ensureReasoning(state, frame.messageId);
+      stampReasoning(state, frame.messageId, 'startedAt', frameTimestamp(frame));
       return state;
     case 'REASONING_MESSAGE_CONTENT': {
       const part = ensureReasoning(state, frame.messageId);
@@ -233,6 +118,7 @@ export function reduceFrame(state: AssistantTurnState, frame: AguiFrame): Assist
       return state;
     }
     case 'REASONING_MESSAGE_END':
+      stampReasoning(state, frame.messageId, 'finishedAt', frameTimestamp(frame));
       return state;
     case 'TOOL_CALL_START':
       ensureTool(state, frame.toolCallId, frame.toolCallName, frameTimestamp(frame));
@@ -328,44 +214,15 @@ export function reduceFrame(state: AssistantTurnState, frame: AguiFrame): Assist
       }
       return state;
     }
-    case 'RUN_STARTED':
     case 'REASONING_START':
+      stampReasoning(state, frame.messageId, 'startedAt', frameTimestamp(frame));
+      return state;
     case 'REASONING_END':
+      stampReasoning(state, frame.messageId, 'finishedAt', frameTimestamp(frame));
+      return state;
+    case 'RUN_STARTED':
       return state;
   }
-}
-
-/**
- * Narrow a ThreadMessageLike's content (string | parts[]) to the parts array.
- * A string content (never produced by this reducer) wraps into a single text
- * part so callers always see an array.
- */
-export function messageParts(message: ThreadMessageLike): readonly ChatPart[] {
-  if (typeof message.content === 'string') return [{ type: 'text', text: message.content }];
-  return message.content as readonly ChatPart[];
-}
-
-/**
- * Materialise the accumulated turn into a ThreadMessageLike for the runtime.
- * Part order preserves frame arrival order: reasoning spans, tool cards, and
- * text appear exactly where the stream first introduced them. An empty turn still
- * yields a (possibly empty) text part so the message renders.
- */
-export function toThreadMessage(state: AssistantTurnState): ThreadMessageLike {
-  const content: ChatPart[] = [...state.content];
-  if (state.text.length > 0 || content.length === 0) {
-    const hasText = content.some((part) => part.type === 'text');
-    if (!hasText) content.push({ type: 'text', text: state.text });
-  }
-  if (state.error !== undefined) {
-    content.push({ type: 'text', text: state.error });
-  }
-  return {
-    id: state.id,
-    role: 'assistant',
-    content,
-    status: state.status,
-  };
 }
 
 // ---------------------------------------------------------------------------
@@ -575,6 +432,12 @@ export async function streamRun(opts: StreamRunOptions): Promise<TurnUsage | und
 // ---------------------------------------------------------------------------
 
 export type { AguiFrame, ChatPart, JSONPatchOp } from './sseAdapter_frames';
+export {
+  messageParts,
+  newAssistantTurn,
+  toThreadMessage,
+  type AssistantTurnState,
+} from './sseAdapter_parts';
 export { fetchThreadMessages, snapshotToThreadMessages } from './sseAdapter_snapshot';
 export {
   cacheHitRatio,

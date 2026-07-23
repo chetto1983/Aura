@@ -20,7 +20,7 @@ import { SourcesButton } from './displays/SourcesButton';
 import { isDisplayPayload, type DisplayPayload } from './displays/types';
 import { hasAnswerText } from './ExternalStoreChat_folds';
 import { MarkdownText } from './MarkdownText';
-import { ReasoningDrawer } from './ReasoningDrawer';
+import { ReasoningPill } from './ReasoningPill';
 import { ToolActivityCard } from './ToolActivityCard';
 
 // ExternalStoreChat_messages — the presentational message-render components split
@@ -137,9 +137,9 @@ export function AssistantMessage() {
                 <MarkdownText constrainProse />
               </div>
             ),
-            // CoT → collapsible drawer (D-01). The drawer reads the reasoning text
-            // from the part via the reasoning render-fn arg.
-            Reasoning: ({ text }) => <ReasoningDrawer text={text} />,
+            // CoT → the compact ReasoningPill (compact-chat spec §2.2). The part
+            // wiring reads span timestamps + snapshot duration off the stored part.
+            Reasoning: ReasoningPillPart,
             // Tool activity → typed display when a trusted backend normalizer
             // produced an aura.display payload (Phase 26, DISP-02); otherwise the
             // raw escaped card (D-02 / D-FALLBACK). The branch lives in ToolFallback.
@@ -310,6 +310,32 @@ function AnswerSources() {
       onOpen={(srcs) => {
         openSources(srcs);
       }}
+    />
+  );
+}
+
+/**
+ * ReasoningPillPart adapts the stored reasoning part to the ReasoningPill (spec
+ * §5.1). It mirrors ToolFallback's seam: the external-store runtime passes our
+ * ThreadMessageLike part through unchanged (convertMessage: identity), so the
+ * span timestamps (live) and the snapshot's durationMs decoration survive on
+ * `s.part`; the message-level running status drives the streaming state.
+ */
+function ReasoningPillPart({ text }: { readonly text: string }) {
+  const part = useAuiState((s) => s.part) as {
+    durationMs?: unknown;
+    startedAt?: unknown;
+    finishedAt?: unknown;
+  };
+  const isRunning = useAuiState((s) => s.message.status?.type === 'running');
+  const asMs = (v: unknown): number | undefined => (typeof v === 'number' ? v : undefined);
+  return (
+    <ReasoningPill
+      text={text}
+      durationMs={asMs(part.durationMs)}
+      startedAt={asMs(part.startedAt)}
+      finishedAt={asMs(part.finishedAt)}
+      isRunning={isRunning}
     />
   );
 }

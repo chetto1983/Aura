@@ -371,9 +371,8 @@ test.describe('cockpit chat — core-value loop (E2E)', () => {
     if (g === null) throw new Error('golden fixture not loaded');
     const health = collectBrowserHealth(page, new URL(baseURL ?? 'http://127.0.0.1:9080').origin);
 
-    await page.addInitScript(() => {
-      localStorage.removeItem('aura.chat.reasoning.shown');
-    });
+    // The reasoning pill is collapsed-by-default with per-part ephemeral state
+    // (compact-chat spec §2.4) — no localStorage preference exists to clear.
     await installTimelineRoutes(page, g);
     await gotoAuthenticated(page, `/c/${CONV_ID}`);
 

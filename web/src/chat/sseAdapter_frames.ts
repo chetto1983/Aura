@@ -159,9 +159,13 @@ export interface ReasoningPart {
   readonly type: 'reasoning';
   readonly text: string;
   /** 1.12 rehydrate: elapsed reasoning wallclock (ms) from the snapshot's
-   *  `reasoningDurationMs` decoration. Absent on live-streamed parts; the
-   *  upcoming compact-chat UI consumes it (today's drawer renders text only). */
+   *  `reasoningDurationMs` decoration. Absent on live-streamed parts (they carry
+   *  startedAt/finishedAt instead); the ReasoningPill consumes either. */
   readonly durationMs?: number;
+  /** Epoch-ms from the REASONING_* frame timestamps (compact-chat spec §5.2.1;
+   *  mirror of ToolPart.startedAt/finishedAt). Absent on rehydrated parts. */
+  readonly startedAt?: number;
+  readonly finishedAt?: number;
 }
 
 /** The assistant message-part union the reducer emits. */

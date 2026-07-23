@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import type { TFunction } from 'i18next';
 import { ChevronDown } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useElapsed } from './durationFormat';
 import { toolStatus, type ToolStatus } from './toolStatus';
 import { Button } from '@/components/ui/button';
 
@@ -149,70 +149,6 @@ function ToolActivityRow({
   );
 }
 
-/** Format elapsed time through the active locale and bilingual duration templates. */
-function formatElapsed(ms: number, language: string, t: TFunction): string {
-  const seconds = Math.max(0, ms / 1000);
-  const number = new Intl.NumberFormat(language, {
-    maximumFractionDigits: seconds < 10 ? 2 : 0,
-  });
-  if (seconds < 60) {
-    return t('chat.tool.duration.seconds', { value: number.format(seconds) });
-  }
-  return t('chat.tool.duration.minutes', {
-    minutes: String(Math.floor(seconds / 60)),
-    seconds: String(Math.floor(seconds % 60)),
-  });
-}
-
-/**
- * Canonical result/error status controls ticker life and assistive semantics. `finishedAt`
- * is the authoritative endpoint when present; otherwise the logical settlement instant is
- * captured once. The interval is cleared on settlement and unmount. Returns null without
- * a start timestamp.
- */
-function useElapsed(
-  startedAt: number | undefined,
-  finishedAt: number | undefined,
-  status: ToolStatus,
-): string | null {
-  const { i18n, t } = useTranslation();
-  const isRunning = startedAt !== undefined && status === 'running';
-  const previousStatus = useRef(status);
-  // Date.now initializes state once during mount rendering, then is read on running ticks
-  // and the logical-settlement edge.
-  const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    if (!isRunning) return;
-    const id = setInterval(() => {
-      setNow(Date.now());
-    }, 1000);
-    return () => {
-      clearInterval(id);
-    };
-  }, [isRunning, startedAt]);
-
-  useEffect(() => {
-    const settled = previousStatus.current === 'running' && status !== 'running';
-    previousStatus.current = status;
-    if (!settled || finishedAt !== undefined || startedAt === undefined) return;
-
-    const settledAt = Date.now();
-    let active = true;
-    // Capture synchronously, then notify outside the effect body to preserve hook purity.
-    queueMicrotask(() => {
-      if (active) setNow(settledAt);
-    });
-    return () => {
-      active = false;
-    };
-  }, [finishedAt, startedAt, status]);
-
-  if (startedAt === undefined) return null;
-  const end = finishedAt ?? now;
-  return formatElapsed(end - startedAt, i18n.resolvedLanguage ?? i18n.language, t);
-}
-
 export function ToolActivityCard({
   toolName,
   argsText,
@@ -226,7 +162,7 @@ export function ToolActivityCard({
     ...(result !== undefined ? { result } : {}),
     ...(isError !== undefined ? { isError } : {}),
   });
-  const elapsed = useElapsed(startedAt, finishedAt, status);
+  const elapsed = useElapsed(startedAt, finishedAt, status === 'running');
   const elapsedRunning = status === 'running';
   const hasChildren = childActivity !== undefined && childActivity.length > 0;
 
