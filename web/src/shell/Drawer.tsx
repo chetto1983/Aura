@@ -72,7 +72,7 @@ export function Drawer({ open, title, side, onClose, children }: DrawerProps) {
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`absolute top-0 flex h-[100svh] w-[min(22rem,88vw)] flex-col overflow-hidden border-border bg-surface shadow-[var(--shadow-drawer)] ${
+        className={`absolute top-0 flex h-[100dvh] w-[min(22rem,88vw)] flex-col overflow-hidden border-border bg-surface shadow-[var(--shadow-drawer)] ${
           side === 'left' ? 'left-0 border-r' : 'right-0 border-l'
         }`}
       >

@@ -159,7 +159,7 @@ function BottomDockSkeleton() {
 export function AppShellSkeleton({ label = 'Loading cockpit...' }: AnnouncedSkeletonProps) {
   return (
     <SkeletonPage
-      className="grid h-[100svh] min-h-0 overflow-hidden bg-bg text-text [grid-template-rows:auto_minmax(0,1fr)_auto]"
+      className="grid h-[100dvh] min-h-0 overflow-hidden bg-bg text-text [grid-template-rows:auto_minmax(0,1fr)_auto]"
       label={label}
     >
       <ShellHeaderSkeleton />

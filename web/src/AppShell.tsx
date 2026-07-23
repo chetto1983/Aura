@@ -405,7 +405,7 @@ export function AppShell() {
 
   return (
     <div
-      className="aura-shell grid h-[100svh] min-h-0 overflow-hidden bg-bg text-text [grid-template-rows:auto_minmax(0,1fr)_auto]"
+      className="aura-shell grid h-[100dvh] min-h-0 overflow-hidden bg-bg text-text [grid-template-rows:auto_minmax(0,1fr)_auto]"
       data-surface={surface}
       {...edgeSwipe}
     >

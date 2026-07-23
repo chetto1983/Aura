@@ -103,7 +103,7 @@ export function SourceExplorerSheet({
         role="dialog"
         aria-modal="true"
         aria-label={t('source.title')}
-        className="absolute inset-x-0 top-0 mx-auto flex h-[100svh] w-full max-w-3xl flex-col overflow-hidden border-border bg-surface shadow-[var(--shadow-drawer)] sm:inset-4 sm:h-auto sm:max-h-[calc(100svh-2rem)] sm:rounded-[var(--radius-lg)] sm:border"
+        className="absolute inset-x-0 top-0 mx-auto flex h-[100dvh] w-full max-w-3xl flex-col overflow-hidden border-border bg-surface shadow-[var(--shadow-drawer)] sm:inset-4 sm:h-auto sm:max-h-[calc(100dvh-2rem)] sm:rounded-[var(--radius-lg)] sm:border"
       >
         <SheetBody sources={sources} initialRefId={focusRefId} onClose={onClose} />
       </div>
