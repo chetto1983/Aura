@@ -7,8 +7,9 @@ import "testing"
 // so that file stays under the 600-LOC cap, refactor-on-touch) plus the fix-plan
 // 1.3 Tier B AURA_AGUI_RUN_* detached-run bundle (amendment #90 point 9). Unset →
 // documented defaults; set → overrides. The loopback bind default is the
-// auth-deferred compensating control (Pitfall 6 / amendment #35); the Detach=false
-// default is load-bearing (flag off ⇒ byte-identical /agent/run wire).
+// auth-deferred compensating control (Pitfall 6 / amendment #35); Detach defaults
+// TRUE since amendment #90.1 (live E2E 10/10, 2026-07-23) — explicit "false" is
+// the operator rollback to the pre-detach wire.
 func TestAGUIConfigDefaultsAndOverrides(t *testing.T) {
 	clearPostgresEnv(t)
 
@@ -25,8 +26,10 @@ func TestAGUIConfigDefaultsAndOverrides(t *testing.T) {
 	if cfg.AGUISSEHeartbeatSec != 15 {
 		t.Errorf("AGUISSEHeartbeatSec default = %d, want 15", cfg.AGUISSEHeartbeatSec)
 	}
-	if cfg.AGUIRun.Detach {
-		t.Error("AGUIRun.Detach default = true, want false (flag off ships byte-identical wire)")
+	// Behavior change, amendment #90.1: default flipped to true after the live E2E
+	// campaign passed 10/10 — the rollback is an explicit AURA_AGUI_RUN_DETACH=false.
+	if !cfg.AGUIRun.Detach {
+		t.Error("AGUIRun.Detach default = false, want true (amendment #90.1 flip)")
 	}
 	if cfg.AGUIRun.BufferEvents != 2048 {
 		t.Errorf("AGUIRun.BufferEvents default = %d, want 2048", cfg.AGUIRun.BufferEvents)
@@ -45,7 +48,7 @@ func TestAGUIConfigDefaultsAndOverrides(t *testing.T) {
 	t.Setenv("AURA_AGUI_CORS_PERMISSIVE", "true")
 	t.Setenv("AURA_AGUI_BUFFER_CAP", "128")
 	t.Setenv("AURA_AGUI_SSE_HEARTBEAT_SEC", "5")
-	t.Setenv("AURA_AGUI_RUN_DETACH", "true")
+	t.Setenv("AURA_AGUI_RUN_DETACH", "false")
 	t.Setenv("AURA_AGUI_RUN_BUFFER_EVENTS", "512")
 	t.Setenv("AURA_AGUI_RUN_LINGER_SEC", "60")
 	t.Setenv("AURA_AGUI_RUN_MAX_WALLCLOCK_SEC", "900")
@@ -63,8 +66,8 @@ func TestAGUIConfigDefaultsAndOverrides(t *testing.T) {
 	if cfg.AGUISSEHeartbeatSec != 5 {
 		t.Errorf("AGUISSEHeartbeatSec override = %d, want 5", cfg.AGUISSEHeartbeatSec)
 	}
-	if !cfg.AGUIRun.Detach {
-		t.Error("AGUIRun.Detach override = false, want true")
+	if cfg.AGUIRun.Detach {
+		t.Error("AGUIRun.Detach override = true, want false (explicit rollback wins)")
 	}
 	if cfg.AGUIRun.BufferEvents != 512 {
 		t.Errorf("AGUIRun.BufferEvents override = %d, want 512", cfg.AGUIRun.BufferEvents)
@@ -83,8 +86,8 @@ func TestAGUIConfigDefaultsAndOverrides(t *testing.T) {
 	t.Setenv("AURA_AGUI_RUN_DETACH", "not-a-bool")
 	t.Setenv("AURA_AGUI_RUN_BUFFER_EVENTS", "not-an-int")
 	cfg = LoadDB()
-	if cfg.AGUIRun.Detach {
-		t.Error("malformed AURA_AGUI_RUN_DETACH must fall back to false")
+	if !cfg.AGUIRun.Detach {
+		t.Error("malformed AURA_AGUI_RUN_DETACH must fall back to the default (true, #90.1)")
 	}
 	if cfg.AGUIRun.BufferEvents != 2048 {
 		t.Errorf("malformed AURA_AGUI_RUN_BUFFER_EVENTS fell back to %d, want 2048", cfg.AGUIRun.BufferEvents)

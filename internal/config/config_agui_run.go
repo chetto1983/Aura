@@ -13,14 +13,16 @@ package config
 
 import "github.com/chetto1983/aura/internal/envutil"
 
-// AGUIRunConfig is the detached-run knob bundle. Detach default-off is
-// load-bearing: off ⇒ nil RunRegistry ⇒ the /agent/run wire is byte-identical to
-// today (the flag flips to true only after the live E2E scores >9.8, its own PRD
-// amendment line). The four ints are caps/bounds resolved agui-side with
-// non-positive→default fallbacks (agui.NewRunRegistry) — the bufferCap convention,
-// NOT the heartbeat's <=0-disables.
+// AGUIRunConfig is the detached-run knob bundle. Detach is default-ON since the
+// 2026-07-23 live E2E campaign passed at 10/10 (amendment #90 point 10's flip
+// condition: kill-TCP resume, reload-attach, cancel, lock-release all proven on
+// the live stack — the flip is ratified as amendment #90.1). Off ⇒ nil
+// RunRegistry ⇒ the pre-detach /agent/run wire, kept as the operator rollback.
+// The four ints are caps/bounds resolved agui-side with non-positive→default
+// fallbacks (agui.NewRunRegistry) — the bufferCap convention, NOT the
+// heartbeat's <=0-disables.
 type AGUIRunConfig struct {
-	Detach          bool // AURA_AGUI_RUN_DETACH — decouple run lifetime from the HTTP fetch (default false)
+	Detach          bool // AURA_AGUI_RUN_DETACH — decouple run lifetime from the HTTP fetch (default true, #90.1)
 	BufferEvents    int  // AURA_AGUI_RUN_BUFFER_EVENTS — per-run replay ring capacity in events (default 2048 ≈ 1 MiB/run worst-case)
 	LingerSec       int  // AURA_AGUI_RUN_LINGER_SEC — terminal-session replay window before reaper eviction (default 180)
 	MaxWallclockSec int  // AURA_AGUI_RUN_MAX_WALLCLOCK_SEC — outer detached-ctx bound over the agent Budget (default 3600)
@@ -31,7 +33,7 @@ type AGUIRunConfig struct {
 // wired into loadBase() as cfg.AGUIRun.
 func loadAGUIRunConfig() AGUIRunConfig {
 	return AGUIRunConfig{
-		Detach:          envutil.BoolDefault("AURA_AGUI_RUN_DETACH", false),
+		Detach:          envutil.BoolDefault("AURA_AGUI_RUN_DETACH", true),
 		BufferEvents:    envutil.IntDefault("AURA_AGUI_RUN_BUFFER_EVENTS", 2048),
 		LingerSec:       envutil.IntDefault("AURA_AGUI_RUN_LINGER_SEC", 180),
 		MaxWallclockSec: envutil.IntDefault("AURA_AGUI_RUN_MAX_WALLCLOCK_SEC", 3600),

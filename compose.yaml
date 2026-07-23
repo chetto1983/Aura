@@ -153,8 +153,9 @@ services:
       AURA_AGUI_CORS_PERMISSIVE: ${AURA_AGUI_CORS_PERMISSIVE:-false}
       AURA_AGUI_BUFFER_CAP: ${AURA_AGUI_BUFFER_CAP:-64}
       # Fix-plan 1.3 Tier B (PRD Amendment #90): detached-run registry + SSE resume.
-      # Default-off until the live E2E campaign ratifies the flip (amendment line).
-      AURA_AGUI_RUN_DETACH: ${AURA_AGUI_RUN_DETACH:-false}
+      # Default-ON since amendment #90.1 (live E2E 10/10, 2026-07-23); set =false to roll
+      # back to the pre-detach wire.
+      AURA_AGUI_RUN_DETACH: ${AURA_AGUI_RUN_DETACH:-true}
       AURA_AGUI_RUN_BUFFER_EVENTS: ${AURA_AGUI_RUN_BUFFER_EVENTS:-2048}
       AURA_AGUI_RUN_LINGER_SEC: ${AURA_AGUI_RUN_LINGER_SEC:-180}
       AURA_AGUI_RUN_MAX_WALLCLOCK_SEC: ${AURA_AGUI_RUN_MAX_WALLCLOCK_SEC:-3600}
