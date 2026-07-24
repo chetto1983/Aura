@@ -163,11 +163,11 @@ func renderAndAnswerPauses(ctx context.Context, d replDeps, reader *bufio.Reader
 	}
 	p := pending[0] // answer one at a time in FIFO order
 	resp := promptForPause(d, p, reader)
-	remaining, err := d.run.SubmitAnswer(ctx, p.Token, resp)
+	directive, err := d.run.SubmitAnswer(ctx, p.Token, resp)
 	if err != nil {
 		return 0, false, err
 	}
-	return remaining, resp.Action == askuser.ActionCancel, nil
+	return directive.Remaining, resp.Action == askuser.ActionCancel, nil
 }
 
 // promptForPause renders the pause inline per kind (D-A3-02) and reads the answer:

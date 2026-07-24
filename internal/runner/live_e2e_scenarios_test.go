@@ -77,12 +77,12 @@ func TestLiveE2E_PauseResume(t *testing.T) {
 
 	// Resume programmatically with an accept answer.
 	const answer = "yes"
-	remaining, err := h.r.SubmitAnswer(ctx, pending.Token, ResponseInput{Action: askuser.ActionAccept, Content: answer})
+	directive, err := h.r.SubmitAnswer(ctx, pending.Token, ResponseInput{Action: askuser.ActionAccept, Content: answer})
 	if err != nil {
 		t.Fatalf("SC#1 SubmitAnswer: %v", err)
 	}
-	if remaining != 0 {
-		t.Fatalf("SC#1: want 0 remaining pending after the single resume, got %d", remaining)
+	if directive.Remaining != 0 {
+		t.Fatalf("SC#1: want 0 remaining pending after the single resume, got %d", directive.Remaining)
 	}
 
 	// Ground truth #1: paused_states.resumed_answer == {accept, yes}, row resolved.

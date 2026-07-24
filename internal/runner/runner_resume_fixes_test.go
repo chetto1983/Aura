@@ -51,12 +51,12 @@ func TestCancel_RehydratedHistoryWireValid_CR01(t *testing.T) {
 		t.Fatalf("want 1 pending, got %d (err=%v)", len(pending), err)
 	}
 
-	remaining, err := r.SubmitAnswer(ctx, pending[0].Token, ResponseInput{Action: askuser.ActionCancel})
+	directive, err := r.SubmitAnswer(ctx, pending[0].Token, ResponseInput{Action: askuser.ActionCancel})
 	if err != nil {
 		t.Fatalf("cancel: %v", err)
 	}
-	if remaining != 0 {
-		t.Fatalf("cancel must auto-resolve all pendings, remaining=%d", remaining)
+	if directive.Remaining != 0 {
+		t.Fatalf("cancel must auto-resolve all pendings, remaining=%d", directive.Remaining)
 	}
 	if pause.unresolvedCount(convID) != 0 {
 		t.Fatalf("want 0 unresolved after cancel, got %d", pause.unresolvedCount(convID))

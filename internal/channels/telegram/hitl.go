@@ -27,7 +27,7 @@ import (
 // reads pending and resolves via SubmitAnswer — it never touches askuser.Store.
 type resumeRunner interface {
 	PendingFor(ctx context.Context, convID string) ([]askuser.Pending, error)
-	SubmitAnswer(ctx context.Context, token string, resp runner.ResponseInput) (int, error)
+	SubmitAnswer(ctx context.Context, token string, resp runner.ResponseInput) (runner.ResolveDirective, error)
 }
 
 // resumeFunc drives a continuation turn (runner.Turn(ctx, convID, nil)) after the
@@ -127,7 +127,7 @@ func (h *hitl) handleCallbackResult(
 		value = h.resolveChoiceValue(ctx, convID, token, value)
 	}
 	out.content = value
-	remaining, err := h.runner.SubmitAnswer(ctx, token, runner.ResponseInput{Action: action, Content: value})
+	directive, err := h.runner.SubmitAnswer(ctx, token, runner.ResponseInput{Action: action, Content: value})
 	if err != nil {
 		slog.Warn("telegram hitl: submit answer failed", "conv", convID, "err", err)
 		return out
@@ -136,7 +136,7 @@ func (h *hitl) handleCallbackResult(
 	if afterSubmit != nil {
 		afterSubmit(out)
 	}
-	if action == askuser.ActionCancel || remaining > 0 {
+	if action == askuser.ActionCancel || directive.Remaining > 0 {
 		return out
 	}
 	if h.resume != nil {
@@ -190,7 +190,7 @@ func (h *hitl) handleTextReply(ctx context.Context, convID, text string) (resume
 // error is returned (not just logged) so the channel can tell the user their answer
 // did not register — the pause stays open, so silent swallowing would strand them.
 func (h *hitl) submit(ctx context.Context, convID, token, action, content string) (resumed bool, err error) {
-	remaining, err := h.runner.SubmitAnswer(ctx, token, runner.ResponseInput{Action: action, Content: content})
+	directive, err := h.runner.SubmitAnswer(ctx, token, runner.ResponseInput{Action: action, Content: content})
 	if err != nil {
 		slog.Warn("telegram hitl: submit answer failed", "conv", convID, "err", err)
 		return false, err
@@ -200,7 +200,7 @@ func (h *hitl) submit(ctx context.Context, convID, token, action, content string
 	if action == askuser.ActionCancel {
 		return false, nil
 	}
-	if remaining > 0 {
+	if directive.Remaining > 0 {
 		return false, nil // more pauses to answer first (FIFO)
 	}
 	if h.resume != nil {
@@ -224,7 +224,8 @@ func (h *hitl) cancel(ctx context.Context, convID, token string) (resumed bool, 
 // SubmitAnswer. action MUST be askuser.ActionAccept or ActionDecline — never ActionCancel, which
 // SubmitAnswer routes to cancelConversation and would abort the whole origin conversation.
 func (h *hitl) resolveScheduled(ctx context.Context, token, action string) error {
-	_, err := h.runner.SubmitAnswer(ctx, token, runner.ResponseInput{Action: action})
+	directive, err := h.runner.SubmitAnswer(ctx, token, runner.ResponseInput{Action: action})
+	_ = directive
 	return err
 }
 

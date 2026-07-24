@@ -46,17 +46,17 @@ func (f *fakeResume) PendingFor(_ context.Context, _ string) ([]askuser.Pending,
 	return f.pending, nil
 }
 
-func (f *fakeResume) SubmitAnswer(_ context.Context, token string, resp runner.ResponseInput) (int, error) {
+func (f *fakeResume) SubmitAnswer(_ context.Context, token string, resp runner.ResponseInput) (runner.ResolveDirective, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.submitted = append(f.submitted, submitCall{token: token, action: resp.Action, content: resp.Content})
 	if f.submitErr != nil {
-		return 0, f.submitErr
+		return runner.ResolveDirective{}, f.submitErr
 	}
 	if f.clearPendingOnSubmit {
 		f.pending = nil
 	}
-	return f.remaining, nil
+	return runner.ResolveDirective{Remaining: f.remaining}, nil
 }
 
 func (f *fakeResume) resumeTurn(_ context.Context, _ string) {

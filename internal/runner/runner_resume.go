@@ -72,12 +72,12 @@ const cancelledContent = "user cancelled the request"
 //   - decline → a "user declined" RoleTool is injected so the model adapts.
 //   - cancel  → the turn is aborted via the Stop auto-resolve path (no injection);
 //     the caller should treat a cancel as a turn termination.
-func (r *Runner) SubmitAnswer(ctx context.Context, token string, resp ResponseInput) (remaining int, err error) {
+func (r *Runner) SubmitAnswer(ctx context.Context, token string, resp ResponseInput) (_ ResolveDirective, err error) {
 	ctx, end := resumeBoundary.Start(ctx)
 	defer end.PanicSafe(&err)
 	pending, err := r.pause.GetByToken(ctx, token)
 	if err != nil {
-		return 0, fmt.Errorf("submit answer: %w", err)
+		return ResolveDirective{}, fmt.Errorf("submit answer: %w", err)
 	}
 	if resp.Action == askuser.ActionCancel {
 		return r.cancelConversation(ctx, pending.ConversationID)
@@ -92,12 +92,16 @@ func (r *Runner) SubmitAnswer(ctx context.Context, token string, resp ResponseIn
 	// structurally impossible — no more split MarkResumed → injectAnswer.
 	claim := ResumeClaim{Token: token, Answer: toResumeAnswer(resp), Turn: r.answerTurn(pending, resp)}
 	if err := r.resumeCommitter.CommitResume(ctx, claim); err != nil {
-		return 0, fmt.Errorf("submit answer: %w", err)
+		return ResolveDirective{}, fmt.Errorf("submit answer: %w", err)
 	}
 	if err := r.applyResumeHook(ctx, pending, resp); err != nil {
-		return 0, fmt.Errorf("submit answer: %w", err)
+		return ResolveDirective{}, fmt.Errorf("submit answer: %w", err)
 	}
-	return r.remainingPending(ctx, pending.ConversationID)
+	remaining, err := r.remainingPending(ctx, pending.ConversationID)
+	if err != nil {
+		return ResolveDirective{}, err
+	}
+	return classifyResolve(pending, resp.Action, remaining), nil
 }
 
 // SubmitAnswers resolves MANY pending pauses in ONE cross-store tx (D-04/LOOP-02): it
@@ -123,7 +127,11 @@ func (r *Runner) SubmitAnswers(ctx context.Context, answers map[string]ResponseI
 		pendings[token] = p
 		convID = p.ConversationID
 		if answers[token].Action == askuser.ActionCancel {
-			return r.cancelConversation(ctx, p.ConversationID)
+			directive, err := r.cancelConversation(ctx, p.ConversationID)
+			if err != nil {
+				return 0, err
+			}
+			return directive.Remaining, nil
 		}
 	}
 
@@ -228,14 +236,18 @@ func (r *Runner) injectAnswer(ctx context.Context, pending askuser.Pending, resp
 // rehydrated history wire-valid) and then auto-resolves every paused_states row. The
 // caller treats a cancel as a turn termination — it does NOT drive a fresh
 // Turn(convID, nil) afterward. Returns the remaining count (0 after auto-resolve).
-func (r *Runner) cancelConversation(ctx context.Context, conversationID string) (int, error) {
+func (r *Runner) cancelConversation(ctx context.Context, conversationID string) (ResolveDirective, error) {
 	if err := r.injectCancelledAnswers(ctx, conversationID); err != nil {
-		return 0, fmt.Errorf("submit answer (cancel): %w", err)
+		return ResolveDirective{}, fmt.Errorf("submit answer (cancel): %w", err)
 	}
 	if err := r.pause.AutoResolveForConversation(ctx, conversationID); err != nil {
-		return 0, fmt.Errorf("submit answer (cancel): %w", err)
+		return ResolveDirective{}, fmt.Errorf("submit answer (cancel): %w", err)
 	}
-	return r.remainingPending(ctx, conversationID)
+	remaining, err := r.remainingPending(ctx, conversationID)
+	if err != nil {
+		return ResolveDirective{}, err
+	}
+	return ResolveDirective{Outcome: OutcomeTerminated, Remaining: remaining}, nil
 }
 
 func (r *Runner) injectCancelledAnswers(ctx context.Context, conversationID string) error {

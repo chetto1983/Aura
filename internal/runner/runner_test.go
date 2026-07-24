@@ -287,19 +287,19 @@ func TestSubmitAnswer_ReturnsRemaining(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	remaining, err := r.SubmitAnswer(ctx, pending[0].Token, ResponseInput{Action: askuser.ActionAccept, Content: "a1"})
+	directive, err := r.SubmitAnswer(ctx, pending[0].Token, ResponseInput{Action: askuser.ActionAccept, Content: "a1"})
 	if err != nil {
 		t.Fatalf("submit answer: %v", err)
 	}
-	if remaining != 1 {
-		t.Fatalf("want remaining 1 after first answer, got %d", remaining)
+	if directive.Remaining != 1 {
+		t.Fatalf("want remaining 1 after first answer, got %d", directive.Remaining)
 	}
-	remaining, err = r.SubmitAnswer(ctx, pending[1].Token, ResponseInput{Action: askuser.ActionAccept, Content: "a2"})
+	directive, err = r.SubmitAnswer(ctx, pending[1].Token, ResponseInput{Action: askuser.ActionAccept, Content: "a2"})
 	if err != nil {
 		t.Fatalf("submit answer: %v", err)
 	}
-	if remaining != 0 {
-		t.Fatalf("want remaining 0 after both, got %d", remaining)
+	if directive.Remaining != 0 {
+		t.Fatalf("want remaining 0 after both, got %d", directive.Remaining)
 	}
 }
 
@@ -335,12 +335,12 @@ func TestResume_NoSilentReRun_SC4(t *testing.T) {
 	if err != nil || len(pending) != 1 {
 		t.Fatalf("want 1 pending, got %d (err=%v)", len(pending), err)
 	}
-	remaining, err := r.SubmitAnswer(ctx, pending[0].Token, ResponseInput{Action: askuser.ActionAccept, Content: "Rome"})
+	directive, err := r.SubmitAnswer(ctx, pending[0].Token, ResponseInput{Action: askuser.ActionAccept, Content: "Rome"})
 	if err != nil {
 		t.Fatalf("submit: %v", err)
 	}
-	if remaining != 0 {
-		t.Fatalf("want 0 remaining, got %d", remaining)
+	if directive.Remaining != 0 {
+		t.Fatalf("want 0 remaining, got %d", directive.Remaining)
 	}
 
 	// Continue-after-resume: userMsg=nil.

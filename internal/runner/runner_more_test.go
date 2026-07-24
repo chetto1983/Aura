@@ -151,12 +151,12 @@ func TestSubmitAnswer_RunsResumeHookForContext(t *testing.T) {
 		return nil
 	}
 
-	remaining, err := r.SubmitAnswer(ctx, token, ResponseInput{Action: askuser.ActionAccept, Content: "yes"})
+	directive, err := r.SubmitAnswer(ctx, token, ResponseInput{Action: askuser.ActionAccept, Content: "yes"})
 	if err != nil {
 		t.Fatalf("SubmitAnswer: %v", err)
 	}
-	if remaining != 0 {
-		t.Fatalf("remaining = %d, want 0", remaining)
+	if directive.Remaining != 0 {
+		t.Fatalf("remaining = %d, want 0", directive.Remaining)
 	}
 	if !called {
 		t.Fatal("resume hook was not called")
@@ -180,12 +180,12 @@ func TestSubmitAnswer_Cancel(t *testing.T) {
 		t.Fatalf("turn: %v", err)
 	}
 	pending, _ := pause.ListPending(ctx, convID)
-	remaining, err := r.SubmitAnswer(ctx, pending[0].Token, ResponseInput{Action: askuser.ActionCancel})
+	directive, err := r.SubmitAnswer(ctx, pending[0].Token, ResponseInput{Action: askuser.ActionCancel})
 	if err != nil {
 		t.Fatalf("cancel: %v", err)
 	}
-	if remaining != 0 {
-		t.Fatalf("cancel must auto-resolve all pendings, remaining=%d", remaining)
+	if directive.Remaining != 0 {
+		t.Fatalf("cancel must auto-resolve all pendings, remaining=%d", directive.Remaining)
 	}
 	if pause.unresolvedCount(convID) != 0 {
 		t.Fatalf("want 0 unresolved after cancel, got %d", pause.unresolvedCount(convID))
