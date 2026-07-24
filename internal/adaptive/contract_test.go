@@ -15,16 +15,16 @@ func TestAssignmentIDForPointIsDeterministicAndScoped(t *testing.T) {
 	owner := uuid.MustParse("17fc3d72-985a-4aa7-a80f-bc8e0f27d88c")
 	request := uuid.MustParse("690d460e-6375-4637-ab93-59e07b2d81d6")
 
-	first := AssignmentIDForPoint(owner, request, PointReasoning, 2)
-	second := AssignmentIDForPoint(owner, request, PointReasoning, 2)
+	first := mustAssignmentID(owner, request, PointReasoning, 2)
+	second := mustAssignmentID(owner, request, PointReasoning, 2)
 	if first == uuid.Nil || first != second {
 		t.Fatalf("AssignmentIDForPoint deterministic ID = %s then %s", first, second)
 	}
 	changes := []uuid.UUID{
-		AssignmentIDForPoint(uuid.Must(uuid.NewV7()), request, PointReasoning, 2),
-		AssignmentIDForPoint(owner, uuid.Must(uuid.NewV7()), PointReasoning, 2),
-		AssignmentIDForPoint(owner, request, PointToolDiscovery, 2),
-		AssignmentIDForPoint(owner, request, PointReasoning, 3),
+		mustAssignmentID(uuid.Must(uuid.NewV7()), request, PointReasoning, 2),
+		mustAssignmentID(owner, uuid.Must(uuid.NewV7()), PointReasoning, 2),
+		mustAssignmentID(owner, request, PointToolDiscovery, 2),
+		mustAssignmentID(owner, request, PointReasoning, 3),
 	}
 	for i, changed := range changes {
 		if changed == first {
@@ -37,15 +37,15 @@ func TestAssignmentEventIDIsDeterministicByKindAndSource(t *testing.T) {
 	t.Parallel()
 	assignmentID := uuid.MustParse("278b27e8-e53c-4fbc-9e40-ddb359cb3b7f")
 
-	first := EventIDForSource(assignmentID, EventDecision, "assignment")
-	second := EventIDForSource(assignmentID, EventDecision, "assignment")
+	first := mustEventID(assignmentID, EventDecision, "assignment")
+	second := mustEventID(assignmentID, EventDecision, "assignment")
 	if first == uuid.Nil || first != second {
 		t.Fatalf("EventIDForSource deterministic ID = %s then %s", first, second)
 	}
-	if EventIDForSource(assignmentID, EventDelivery, "assignment") == first {
+	if mustEventID(assignmentID, EventDelivery, "assignment") == first {
 		t.Fatal("event kind did not affect deterministic event ID")
 	}
-	if EventIDForSource(assignmentID, EventDecision, "retry-2") == first {
+	if mustEventID(assignmentID, EventDecision, "retry-2") == first {
 		t.Fatal("stable source identity did not affect deterministic event ID")
 	}
 }
@@ -61,7 +61,7 @@ func TestAssignmentConstructorProducesCanonicalSchema2Event(t *testing.T) {
 	if event.Kind != EventDecision {
 		t.Fatalf("Kind = %q, want %q", event.Kind, EventDecision)
 	}
-	if event.ID != EventIDForSource(assignment.AssignmentID, EventDecision, "assignment") {
+	if event.ID != mustEventID(assignment.AssignmentID, EventDecision, "assignment") {
 		t.Fatalf("ID = %s, want deterministic assignment event ID", event.ID)
 	}
 	if event.OwnerID != assignment.OwnerID || event.DecisionID != assignment.AssignmentID {
@@ -364,7 +364,7 @@ func TestDeliveryConstructorRecordsIntendedActualStatusAndExposure(t *testing.T)
 	if event.Kind != EventDelivery {
 		t.Fatalf("Kind = %q, want %q", event.Kind, EventDelivery)
 	}
-	if event.ID != EventIDForSource(delivery.AssignmentID, EventDelivery, "assignment") {
+	if event.ID != mustEventID(delivery.AssignmentID, EventDelivery, "assignment") {
 		t.Fatalf("ID = %s, want deterministic delivery event ID", event.ID)
 	}
 	if event.DecisionID != assignment.AssignmentID ||
@@ -536,7 +536,7 @@ func validAssignment() Assignment {
 	request := uuid.MustParse("690d460e-6375-4637-ab93-59e07b2d81d6")
 	return Assignment{
 		SchemaVersion:       SchemaVersion2,
-		AssignmentID:        AssignmentIDForPoint(owner, request, PointReasoning, 2),
+		AssignmentID:        mustAssignmentID(owner, request, PointReasoning, 2),
 		OwnerID:             owner,
 		RequestID:           request,
 		Domain:              DomainReasoning,

@@ -20,6 +20,7 @@ const (
 	maxActionIDLength        = 128
 	maxResultIDLength        = 256
 	maxRevisionIDLength      = 128
+	maxSourceIdentityLength  = 128
 )
 
 var (
@@ -80,12 +81,29 @@ func AssignmentIDForPoint(
 	requestID uuid.UUID,
 	point DecisionPoint,
 	ordinal uint32,
+) (uuid.UUID, error) {
+	switch {
+	case ownerID == uuid.Nil:
+		return uuid.Nil, errors.New("adaptive assignment ID owner_id is required")
+	case requestID == uuid.Nil:
+		return uuid.Nil, errors.New("adaptive assignment ID request_id is required")
+	case !point.valid():
+		return uuid.Nil, fmt.Errorf("adaptive assignment ID point %q is invalid", point)
+	}
+	return assignmentIDForPoint(ownerID, requestID, point, ordinal), nil
+}
+
+func assignmentIDForPoint(
+	ownerID uuid.UUID,
+	requestID uuid.UUID,
+	point DecisionPoint,
+	ordinal uint32,
 ) uuid.UUID {
 	identity := make([]byte, 0, 16+16+1+len(point)+1+4)
 	identity = append(identity, ownerID[:]...)
 	identity = append(identity, requestID[:]...)
 	identity = append(identity, 0)
-	identity = append(identity, strings.TrimSpace(string(point))...)
+	identity = append(identity, point...)
 	identity = append(identity, 0)
 	identity = binary.BigEndian.AppendUint32(identity, ordinal)
 	return uuid.NewHash(sha256.New(), assignmentIDNamespace, identity, 5)
@@ -95,8 +113,23 @@ func EventIDForSource(
 	assignmentID uuid.UUID,
 	kind EventKind,
 	sourceIdentity string,
+) (uuid.UUID, error) {
+	switch {
+	case assignmentID == uuid.Nil:
+		return uuid.Nil, errors.New("adaptive event ID assignment_id is required")
+	case !kind.valid():
+		return uuid.Nil, fmt.Errorf("adaptive event ID kind %q is invalid", kind)
+	case !validASCIIID(sourceIdentity, maxSourceIdentityLength):
+		return uuid.Nil, errors.New("adaptive event ID source identity is invalid")
+	}
+	return eventIDForSource(assignmentID, kind, sourceIdentity), nil
+}
+
+func eventIDForSource(
+	assignmentID uuid.UUID,
+	kind EventKind,
+	sourceIdentity string,
 ) uuid.UUID {
-	sourceIdentity = strings.TrimSpace(sourceIdentity)
 	identity := make([]byte, 0, len(SchemaVersion2)+1+16+1+len(kind)+1+len(sourceIdentity))
 	identity = append(identity, SchemaVersion2...)
 	identity = append(identity, 0)

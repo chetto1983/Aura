@@ -161,7 +161,7 @@ func NewAssignmentEvent(assignment Assignment) (Event, error) {
 		return Event{}, fmt.Errorf("marshal adaptive assignment: %w", err)
 	}
 	return newEvent(EventParams{
-		ID:          EventIDForSource(assignment.AssignmentID, EventDecision, "assignment"),
+		ID:          eventIDForSource(assignment.AssignmentID, EventDecision, "assignment"),
 		OwnerID:     assignment.OwnerID,
 		AggregateID: assignment.RequestID.String(),
 		DecisionID:  assignment.AssignmentID,
@@ -185,7 +185,7 @@ func NewDeliveryEvent(ownerID, requestID uuid.UUID, delivery Delivery) (Event, e
 		return Event{}, fmt.Errorf("marshal adaptive delivery: %w", err)
 	}
 	return newEvent(EventParams{
-		ID:          EventIDForSource(delivery.AssignmentID, EventDelivery, "assignment"),
+		ID:          eventIDForSource(delivery.AssignmentID, EventDelivery, "assignment"),
 		OwnerID:     ownerID,
 		AggregateID: requestID.String(),
 		DecisionID:  delivery.AssignmentID,
@@ -210,7 +210,7 @@ func validateAssignment(assignment Assignment) error {
 		return fmt.Errorf("adaptive assignment point %q is invalid", assignment.Point)
 	case assignment.Domain.point() != assignment.Point:
 		return fmt.Errorf("adaptive assignment domain %q does not bind point %q", assignment.Domain, assignment.Point)
-	case assignment.AssignmentID != AssignmentIDForPoint(
+	case assignment.AssignmentID != assignmentIDForPoint(
 		assignment.OwnerID,
 		assignment.RequestID,
 		assignment.Point,
