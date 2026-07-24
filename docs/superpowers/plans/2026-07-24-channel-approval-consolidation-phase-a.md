@@ -60,21 +60,21 @@
 
 - [ ] **Step 1: Write the failing test** — `internal/runner/runner_resume_directive_test.go`
 
+> NOTE (plan fix 2026-07-24): a helper `schedApprovalPending(taskID string) askuser.Pending`
+> ALREADY EXISTS in the tracked file `internal/runner/runner_resume_scheduled_approval_test.go`
+> (Kind "approval" + scheduled_task_approval resume_context). Do NOT redeclare it — reuse it.
+> The new test file imports only `testing`, `github.com/chetto1983/aura/internal/agent/tools`,
+> and `github.com/chetto1983/aura/internal/askuser`.
+
 ```go
 package runner
 
 import (
-	"encoding/json"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/askuser"
 )
-
-func schedApprovalPending(taskID string) askuser.Pending {
-	rc, _ := json.Marshal(map[string]string{"type": "scheduled_task_approval", "task_id": taskID})
-	return askuser.Pending{Kind: tools.KindApproval, ResumeContext: rc}
-}
 
 func TestClassifyResolve(t *testing.T) {
 	ordinary := askuser.Pending{Kind: "clarification"}
