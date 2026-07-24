@@ -85,10 +85,14 @@ const (
 type ResultKind string
 
 const (
-	ResultArtifact ResultKind = "artifact"
-	ResultNode     ResultKind = "node"
-	ResultTool     ResultKind = "tool"
-	ResultSkill    ResultKind = "skill"
+	ResultArtifact             ResultKind = "artifact"
+	ResultNode                 ResultKind = "node"
+	ResultTool                 ResultKind = "tool"
+	ResultSkill                ResultKind = "skill"
+	ResultMemoryEntity         ResultKind = "memory_entity"
+	ResultMemoryPreference     ResultKind = "memory_preference"
+	ResultMemoryMessage        ResultKind = "memory_message"
+	ResultMemoryReasoningTrace ResultKind = "memory_reasoning_trace"
 )
 
 type ResultID struct {
@@ -301,8 +305,10 @@ func validateActionCatalog(assignment Assignment) error {
 
 func validateAssignmentMode(assignment Assignment) error {
 	if assignment.Override {
-		if assignment.PolicyMode != PolicyShadow && assignment.PolicyMode != PolicyCanary {
-			return errors.New("adaptive assignment override is only valid in shadow or canary mode")
+		if assignment.PolicyMode != PolicyShadow &&
+			assignment.PolicyMode != PolicyCanary &&
+			assignment.PolicyMode != PolicyActive {
+			return errors.New("adaptive assignment override is only valid in a serving mode")
 		}
 		if assignment.SelectionReason != SelectionOperatorOverride {
 			return errors.New("adaptive assignment override requires operator_override selection reason")
@@ -320,10 +326,13 @@ func validateAssignmentMode(assignment Assignment) error {
 	}
 	switch assignment.PolicyMode {
 	case PolicyShadow:
-		if assignment.SelectionReason != SelectionShadowStatic {
-			return errors.New("adaptive shadow assignment requires shadow_static selection reason")
+		if assignment.SelectionReason == SelectionShadowStatic {
+			return validateNonRandomizedAction(assignment, assignment.ChampionActionID, false)
 		}
-		return validateNonRandomizedAction(assignment, assignment.ChampionActionID, false)
+		if assignment.SelectionReason.failClosed() {
+			return validateNonRandomizedAction(assignment, StaticActionID, false)
+		}
+		return errors.New("adaptive shadow assignment has invalid selection reason")
 	case PolicyCanary:
 		switch {
 		case assignment.SelectionReason == SelectionCanaryAssignment:

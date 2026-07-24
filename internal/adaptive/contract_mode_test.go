@@ -1,6 +1,8 @@
 package adaptive
 
 import (
+	"encoding/json"
+	"slices"
 	"testing"
 
 	"github.com/google/uuid"
@@ -103,6 +105,52 @@ func TestAssignmentAcceptsCanaryAndActiveFailClosedReasons(t *testing.T) {
 	}
 }
 
+func TestAssignmentAcceptsShadowFailClosedReasons(t *testing.T) {
+	t.Parallel()
+	for _, reason := range failClosedSelectionReasons() {
+		reason := reason
+		t.Run(string(reason), func(t *testing.T) {
+			t.Parallel()
+			assignment := validAssignment()
+			assignment.SelectionReason = reason
+			assignment.ChampionActionID = "candidate"
+			assignment.RecommendedActionID = "candidate"
+			setDeterministicAction(&assignment, StaticActionID)
+			if _, err := NewAssignmentEvent(assignment); err != nil {
+				t.Fatalf("NewAssignmentEvent: %v", err)
+			}
+		})
+	}
+}
+
+func TestAssignmentAcceptsActiveExogenousOverride(t *testing.T) {
+	t.Parallel()
+	assignment := validAssignment()
+	assignment.PolicyMode = PolicyActive
+	assignment.Override = true
+	assignment.SelectionReason = SelectionOperatorOverride
+	assignment.RecommendedActionID = "candidate"
+	setDeterministicAction(&assignment, "candidate")
+
+	if _, err := NewAssignmentEvent(assignment); err != nil {
+		t.Fatalf("NewAssignmentEvent: %v", err)
+	}
+	for _, mutate := range []func(*Assignment){
+		func(a *Assignment) { a.ExperimentID = "experiment-1" },
+		func(a *Assignment) { a.ArmID = "candidate" },
+		func(a *Assignment) {
+			probability := 0.5
+			a.ArmProbability = &probability
+		},
+	} {
+		invalid := assignment
+		mutate(&invalid)
+		if _, err := NewAssignmentEvent(invalid); err == nil {
+			t.Fatal("NewAssignmentEvent accepted randomized semantics on active override")
+		}
+	}
+}
+
 func TestAssignmentRejectsInvalidModeClaims(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -153,6 +201,15 @@ func TestAssignmentRejectsInvalidModeClaims(t *testing.T) {
 			a.PolicyMode = PolicyCanary
 			a.SelectionReason = SelectionStateMissing
 			setDeterministicAction(a, "candidate")
+		}},
+		{name: "shadow fail-closed non-static", mutate: func(a *Assignment) {
+			a.SelectionReason = SelectionStateMissing
+			a.ChampionActionID = "candidate"
+			setDeterministicAction(a, "candidate")
+		}},
+		{name: "shadow fail-closed arm", mutate: func(a *Assignment) {
+			a.SelectionReason = SelectionStateMissing
+			a.ArmID = "candidate"
 		}},
 	}
 	for _, tt := range tests {
@@ -205,6 +262,73 @@ func TestAssignmentRejectsPartialRandomClaimsOutsideFocalCanary(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestDeliveryAcceptsTypedMemoryResultsAndPerTypeLimits(t *testing.T) {
+	t.Parallel()
+	assignment := validAssignment()
+	delivery := validDelivery(assignment.AssignmentID)
+	delivery.ResultCount = 5
+	delivery.ResultIDs = []ResultID{
+		{Kind: ResultMemoryEntity, ID: "entity-1"},
+		{Kind: ResultMemoryPreference, ID: "preference-1"},
+		{Kind: ResultMemoryMessage, ID: "message-1"},
+		{Kind: ResultMemoryReasoningTrace, ID: "trace-1"},
+		{Kind: ResultNode, ID: "document-node-1"},
+	}
+	delivery.EffectiveLimits = map[string]int{
+		"entity_requested_k":          5,
+		"entity_effective_k":          4,
+		"entity_count":                3,
+		"preference_requested_k":      4,
+		"preference_effective_k":      3,
+		"preference_count":            2,
+		"message_requested_k":         3,
+		"message_effective_k":         2,
+		"message_count":               1,
+		"reasoning_trace_requested_k": 2,
+		"reasoning_trace_effective_k": 1,
+		"reasoning_trace_count":       1,
+	}
+
+	event, err := NewDeliveryEvent(assignment.OwnerID, assignment.RequestID, delivery)
+	if err != nil {
+		t.Fatalf("NewDeliveryEvent: %v", err)
+	}
+	var payload Delivery
+	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		t.Fatalf("unmarshal delivery: %v", err)
+	}
+	if !slices.Equal(payload.ResultIDs, delivery.ResultIDs) {
+		t.Fatalf("ordered typed result IDs = %#v, want %#v", payload.ResultIDs, delivery.ResultIDs)
+	}
+}
+
+func TestDeliveryRejectsUnknownMemoryKindAndLimit(t *testing.T) {
+	t.Parallel()
+	assignment := validAssignment()
+	tests := []struct {
+		name   string
+		mutate func(*Delivery)
+	}{
+		{name: "kind", mutate: func(d *Delivery) {
+			d.ResultIDs[0].Kind = ResultKind("memory_fact")
+		}},
+		{name: "limit", mutate: func(d *Delivery) {
+			d.EffectiveLimits["memory_fact_requested_k"] = 1
+		}},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			delivery := validDelivery(assignment.AssignmentID)
+			tt.mutate(&delivery)
+			if _, err := NewDeliveryEvent(assignment.OwnerID, assignment.RequestID, delivery); err == nil {
+				t.Fatal("NewDeliveryEvent error = nil, want unknown memory metadata rejection")
+			}
+		})
 	}
 }
 

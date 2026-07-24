@@ -59,6 +59,10 @@ var registeredRevisionKeys = map[string]struct{}{
 var registeredEffectiveLimitKeys = map[string]struct{}{
 	"candidate_limit": {}, "max_results": {}, "max_rounds": {}, "max_tokens": {},
 	"recall_limit": {}, "skill_limit": {}, "timeout_ms": {}, "tool_limit": {}, "top_k": {},
+	"entity_requested_k": {}, "entity_effective_k": {}, "entity_count": {},
+	"preference_requested_k": {}, "preference_effective_k": {}, "preference_count": {},
+	"message_requested_k": {}, "message_effective_k": {}, "message_count": {},
+	"reasoning_trace_requested_k": {}, "reasoning_trace_effective_k": {}, "reasoning_trace_count": {},
 }
 
 func AssignmentIDForPoint(
@@ -278,7 +282,9 @@ func (status DeliveryStatus) valid() bool {
 
 func (kind ResultKind) valid() bool {
 	switch kind {
-	case ResultArtifact, ResultNode, ResultTool, ResultSkill:
+	case ResultArtifact, ResultNode, ResultTool, ResultSkill,
+		ResultMemoryEntity, ResultMemoryPreference, ResultMemoryMessage,
+		ResultMemoryReasoningTrace:
 		return true
 	default:
 		return false
