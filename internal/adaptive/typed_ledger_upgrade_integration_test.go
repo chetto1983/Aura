@@ -22,7 +22,9 @@ import (
 func TestSchema2LedgerUpgradeFrom0060SealsExistingDatabase(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	pool, migrateURL := schema2Upgrade0060Database(t, ctx)
+	pool, migrateURL := schema2MigrationDatabase(
+		t, ctx, "aura_schema2_upgrade_drill", 60,
+	)
 	queries := sqlc.New(pool)
 	owner := seedTypedLedgerOwner(t, pool)
 
@@ -110,9 +112,11 @@ func TestSchema2LedgerUpgradeFrom0060SealsExistingDatabase(t *testing.T) {
 	}
 }
 
-func schema2Upgrade0060Database(
+func schema2MigrationDatabase(
 	t *testing.T,
 	ctx context.Context,
+	database string,
+	steps int,
 ) (*pgxpool.Pool, string) {
 	t.Helper()
 	password := os.Getenv("POSTGRES_PASSWORD")
@@ -144,7 +148,6 @@ func schema2Upgrade0060Database(
 		t.Fatal(err)
 	}
 	t.Cleanup(admin.Close)
-	const database = "aura_schema2_upgrade_drill"
 	if _, err := admin.Exec(ctx, "DROP DATABASE IF EXISTS "+database+" WITH (FORCE)"); err != nil {
 		t.Fatal(err)
 	}
@@ -168,15 +171,15 @@ func schema2Upgrade0060Database(
 	freshAdmin.Close()
 
 	migrateURL := dsn("aura_migrate", database)
-	if err := db.MigrateSteps(ctx, migrateURL, 60); err != nil {
-		t.Fatalf("install original migrations through 0060: %v", err)
+	if err := db.MigrateSteps(ctx, migrateURL, steps); err != nil {
+		t.Fatalf("install migrations through %04d: %v", steps, err)
 	}
 	pool, err := db.Open(ctx, &db.Config{URL: dsn("aura_app", database)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(pool.Close)
-	assertSchema2MigrationVersion(t, ctx, migrateURL, 60)
+	assertSchema2MigrationVersion(t, ctx, migrateURL, steps)
 	return pool, migrateURL
 }
 
@@ -247,6 +250,18 @@ func assertSchema2MigrationVersion(
 	want int,
 ) {
 	t.Helper()
+	version, dirty := schema2MigrationState(t, ctx, migrateURL)
+	if version != want || dirty {
+		t.Fatalf("schema migration state = version %d dirty %t, want %d clean", version, dirty, want)
+	}
+}
+
+func schema2MigrationState(
+	t *testing.T,
+	ctx context.Context,
+	migrateURL string,
+) (int, bool) {
+	t.Helper()
 	pool, err := db.Open(ctx, &db.Config{URL: migrateURL})
 	if err != nil {
 		t.Fatal(err)
@@ -260,7 +275,5 @@ func assertSchema2MigrationVersion(
 	).Scan(&version, &dirty); err != nil {
 		t.Fatal(err)
 	}
-	if version != want || dirty {
-		t.Fatalf("schema migration state = version %d dirty %t, want %d clean", version, dirty, want)
-	}
+	return version, dirty
 }
