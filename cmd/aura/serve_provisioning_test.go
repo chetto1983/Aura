@@ -2,14 +2,17 @@ package main
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/chetto1983/aura/internal/adaptive"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/cron/handlers"
+	"github.com/chetto1983/aura/internal/knowledge"
 )
 
 // validProvisioningAuthulaSecret is a 64-hex-char (32-byte) AURA_AUTHULA_SECRET for the
@@ -103,6 +106,61 @@ func TestBuildDeprovisionerWiresPurger(t *testing.T) {
 		t.Fatalf("nil-pool PurgeExpired: purged %d, want 0 (no-op)", n)
 	}
 }
+
+type fakeAdaptiveGraphClient struct {
+	writer adaptive.GraphWriter
+	closed bool
+}
+
+func (f *fakeAdaptiveGraphClient) Write(ctx context.Context, query string, params map[string]any) ([]map[string]any, error) {
+	return f.writer.Write(ctx, query, params)
+}
+
+func (f *fakeAdaptiveGraphClient) Close() error {
+	f.closed = true
+	return nil
+}
+
+type adaptivePurgeWriter struct {
+	queries []string
+	err     error
+}
+
+func (w *adaptivePurgeWriter) Write(_ context.Context, query string, _ map[string]any) ([]map[string]any, error) {
+	w.queries = append(w.queries, query)
+	return nil, w.err
+}
+
+func TestAdaptiveGraphPurgeAdapterFailsClosedAndClosesClient(t *testing.T) {
+	writer := &adaptivePurgeWriter{}
+	client := &fakeAdaptiveGraphClient{writer: writer}
+	adapter := adaptiveGraphPurgeAdapter{
+		cfg: &knowledge.Config{BoltURL: "bolt://neo4j:7687"},
+		open: func(context.Context, *knowledge.Config) (adaptiveGraphClient, error) {
+			return client, nil
+		},
+	}
+
+	if err := adapter.PurgeAdaptiveGraph(context.Background(), testAdaptiveIdentityID); err != nil {
+		t.Fatalf("PurgeAdaptiveGraph: %v", err)
+	}
+	if len(writer.queries) != 1 {
+		t.Fatalf("graph writes = %d, want 1", len(writer.queries))
+	}
+	if !client.closed {
+		t.Fatal("adaptive graph client was not closed")
+	}
+
+	openErr := errors.New("neo4j unavailable")
+	adapter.open = func(context.Context, *knowledge.Config) (adaptiveGraphClient, error) {
+		return nil, openErr
+	}
+	if err := adapter.PurgeAdaptiveGraph(context.Background(), testAdaptiveIdentityID); !errors.Is(err, openErr) {
+		t.Fatalf("unavailable graph error = %v, want wrapped %v", err, openErr)
+	}
+}
+
+const testAdaptiveIdentityID = "22222222-2222-4222-8222-222222222222"
 
 // TestBuildDispatchRegistersIdentityPurge asserts buildDispatch builds with the new
 // identity_purge entry present. cron.Dispatch's handler map is unexported (package cron),
