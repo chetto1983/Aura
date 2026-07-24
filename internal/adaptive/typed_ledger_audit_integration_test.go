@@ -13,6 +13,7 @@ import (
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	migratedb "github.com/golang-migrate/migrate/v4/database"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -27,6 +28,10 @@ func TestSchema2LedgerAuditRejectsPreHardeningAssignment(t *testing.T) {
 	if err := insertUnsafeSchema2Assignment(ctx, pool, assignment, 1); err != nil {
 		t.Fatalf("seed pre-hardening assignment: %v", err)
 	}
+	canonical := typedLedgerAssignment(t, owner)
+	canonicalAssignment, canonicalDelivery := insertCanonicalSchema2Facts(
+		t, ctx, pool, canonical,
+	)
 	if err := db.MigrateSteps(ctx, migrateURL, 1); err != nil {
 		t.Fatalf("upgrade fixture to 0061: %v", err)
 	}
@@ -41,6 +46,38 @@ func TestSchema2LedgerAuditRejectsPreHardeningAssignment(t *testing.T) {
 	if after != before {
 		t.Fatalf("rejected assignment audit mutated ledger: before=%+v after=%+v", before, after)
 	}
+	queries := sqlc.New(pool)
+	if _, err := queries.LockSchema2AdaptiveAssignment(
+		ctx,
+		sqlc.LockSchema2AdaptiveAssignmentParams{
+			OwnerID: dbUUID(owner), AssignmentID: dbUUID(assignment.AssignmentID),
+		},
+	); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("dirty assignment loader error = %v, want no rows", err)
+	}
+	if _, err := queries.GetSchema2AdaptiveDelivery(
+		ctx,
+		sqlc.GetSchema2AdaptiveDeliveryParams{
+			OwnerID: dbUUID(owner), AssignmentID: dbUUID(assignment.AssignmentID),
+		},
+	); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("dirty assignment delivery loader error = %v, want no rows", err)
+	}
+	eligible, err := queries.ListEligibleSchema2AdaptiveAggregateFacts(
+		ctx,
+		sqlc.ListEligibleSchema2AdaptiveAggregateFactsParams{
+			OwnerID: dbUUID(owner), AggregateID: assignment.RequestID.String(),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(eligible) != 0 {
+		t.Fatalf("dirty invalid assignment remained eligible: %+v", eligible)
+	}
+	assertCanonicalSchema2Loaders(
+		t, ctx, queries, canonical, canonicalAssignment, canonicalDelivery,
+	)
 }
 
 func TestSchema2LedgerAuditRejectsPreHardeningDeliveryMismatch(t *testing.T) {
@@ -54,6 +91,10 @@ func TestSchema2LedgerAuditRejectsPreHardeningDeliveryMismatch(t *testing.T) {
 	if err := insertMismatchedSchema2Delivery(t, ctx, pool, assignment); err != nil {
 		t.Fatalf("seed pre-hardening delivery mismatch: %v", err)
 	}
+	canonical := typedLedgerAssignment(t, owner)
+	canonicalAssignment, canonicalDelivery := insertCanonicalSchema2Facts(
+		t, ctx, pool, canonical,
+	)
 	if err := db.MigrateSteps(ctx, migrateURL, 1); err != nil {
 		t.Fatalf("upgrade fixture to 0061: %v", err)
 	}
@@ -68,6 +109,38 @@ func TestSchema2LedgerAuditRejectsPreHardeningDeliveryMismatch(t *testing.T) {
 	if after != before {
 		t.Fatalf("rejected delivery audit mutated ledger: before=%+v after=%+v", before, after)
 	}
+	queries := sqlc.New(pool)
+	if _, err := queries.LockSchema2AdaptiveAssignment(
+		ctx,
+		sqlc.LockSchema2AdaptiveAssignmentParams{
+			OwnerID: dbUUID(owner), AssignmentID: dbUUID(assignment.AssignmentID),
+		},
+	); err != nil {
+		t.Fatalf("valid assignment hidden with dirty delivery: %v", err)
+	}
+	if _, err := queries.GetSchema2AdaptiveDelivery(
+		ctx,
+		sqlc.GetSchema2AdaptiveDeliveryParams{
+			OwnerID: dbUUID(owner), AssignmentID: dbUUID(assignment.AssignmentID),
+		},
+	); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("dirty mismatched delivery loader error = %v, want no rows", err)
+	}
+	eligible, err := queries.ListEligibleSchema2AdaptiveAggregateFacts(
+		ctx,
+		sqlc.ListEligibleSchema2AdaptiveAggregateFactsParams{
+			OwnerID: dbUUID(owner), AggregateID: assignment.RequestID.String(),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(eligible) != 1 || eligible[0].EventKind != string(EventDecision) {
+		t.Fatalf("dirty delivery eligible facts = %+v, want assignment only", eligible)
+	}
+	assertCanonicalSchema2Loaders(
+		t, ctx, queries, canonical, canonicalAssignment, canonicalDelivery,
+	)
 }
 
 func TestSchema2LedgerAuditAcceptsCanonical0061Database(t *testing.T) {
@@ -195,5 +268,77 @@ func assertSchema2RejectedUpgradeState(
 	err := db.MigrateSteps(ctx, migrateURL, 1)
 	if err == nil || !strings.Contains(err.Error(), "Dirty database version 62") {
 		t.Fatalf("dirty audit retry error = %v, want fail-closed dirty-version error", err)
+	}
+}
+
+func insertCanonicalSchema2Facts(
+	t *testing.T,
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	assignment Assignment,
+) (Event, Event) {
+	t.Helper()
+	assignmentEvent, err := NewAssignmentEvent(assignment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := insertAdaptiveLedgerEvent(ctx, pool, assignmentEvent, 1); err != nil {
+		t.Fatalf("insert canonical assignment: %v", err)
+	}
+	deliveryEvent, err := NewDeliveryEvent(
+		assignment, typedLedgerDelivery(t, assignment),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := insertAdaptiveLedgerEvent(ctx, pool, deliveryEvent, 2); err != nil {
+		t.Fatalf("insert canonical delivery: %v", err)
+	}
+	return assignmentEvent, deliveryEvent
+}
+
+func assertCanonicalSchema2Loaders(
+	t *testing.T,
+	ctx context.Context,
+	queries *sqlc.Queries,
+	assignment Assignment,
+	assignmentEvent Event,
+	deliveryEvent Event,
+) {
+	t.Helper()
+	locked, err := queries.LockSchema2AdaptiveAssignment(
+		ctx,
+		sqlc.LockSchema2AdaptiveAssignmentParams{
+			OwnerID:      dbUUID(assignment.OwnerID),
+			AssignmentID: dbUUID(assignment.AssignmentID),
+		},
+	)
+	if err != nil || locked.ID.Bytes != assignmentEvent.ID {
+		t.Fatalf("canonical assignment loader = %+v err %v", locked, err)
+	}
+	delivery, err := queries.GetSchema2AdaptiveDelivery(
+		ctx,
+		sqlc.GetSchema2AdaptiveDeliveryParams{
+			OwnerID:      dbUUID(assignment.OwnerID),
+			AssignmentID: dbUUID(assignment.AssignmentID),
+		},
+	)
+	if err != nil || delivery.ID.Bytes != deliveryEvent.ID {
+		t.Fatalf("canonical delivery loader = %+v err %v", delivery, err)
+	}
+	eligible, err := queries.ListEligibleSchema2AdaptiveAggregateFacts(
+		ctx,
+		sqlc.ListEligibleSchema2AdaptiveAggregateFactsParams{
+			OwnerID:     dbUUID(assignment.OwnerID),
+			AggregateID: assignment.RequestID.String(),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(eligible) != 2 ||
+		eligible[0].ID.Bytes != assignmentEvent.ID ||
+		eligible[1].ID.Bytes != deliveryEvent.ID {
+		t.Fatalf("canonical eligible facts = %+v", eligible)
 	}
 }

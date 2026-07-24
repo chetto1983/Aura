@@ -203,7 +203,7 @@ func insertUnsafeSchema2Assignment(
 		return err
 	}
 	return insertAdaptiveLedgerRow(
-		ctx, pool, uuid.Must(uuid.NewV7()), assignment.OwnerID,
+		ctx, pool, event.ID, assignment.OwnerID,
 		assignment.RequestID.String(), sequence, assignment.AssignmentID,
 		EventDecision, encoded,
 	)
@@ -237,7 +237,7 @@ func insertMismatchedSchema2Delivery(
 		return err
 	}
 	return insertAdaptiveLedgerRow(
-		ctx, pool, uuid.Must(uuid.NewV7()), assignment.OwnerID,
+		ctx, pool, deliveryEvent.ID, assignment.OwnerID,
 		assignment.RequestID.String(), 2, assignment.AssignmentID,
 		EventDelivery, encoded,
 	)

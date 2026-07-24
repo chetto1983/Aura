@@ -357,8 +357,8 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if head != 62 {
-		t.Fatalf("MigrationHead=%d, want embedded head 62", head)
+	if head != 63 {
+		t.Fatalf("MigrationHead=%d, want embedded head 63", head)
 	}
 }
 

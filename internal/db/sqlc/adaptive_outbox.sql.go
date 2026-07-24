@@ -137,15 +137,131 @@ func (q *Queries) GetAdaptiveOutboxByID(ctx context.Context, id pgtype.UUID) (Au
 }
 
 const getSchema2AdaptiveDelivery = `-- name: GetSchema2AdaptiveDelivery :one
-SELECT id, owner_id, aggregate_id, sequence, decision_id, event_kind,
-       payload, payload_hash, status, attempts, available_at,
-       lease_owner, lease_expires_at, created_at, projected_at,
-       dead_letter_at, last_error_class
-FROM aura.adaptive_outbox
-WHERE owner_id = $1
-  AND decision_id = $2
-  AND event_kind = 'delivery'
-  AND payload->>'schema_version' = '2.0'
+WITH valid_deliveries AS MATERIALIZED (
+    SELECT delivery.id, delivery.owner_id, delivery.aggregate_id,
+           delivery.decision_id, delivery.payload
+    FROM aura.adaptive_outbox AS delivery
+    WHERE delivery.owner_id = $1
+      AND delivery.decision_id = $2
+      AND delivery.event_kind = 'delivery'
+      AND delivery.payload->>'schema_version' = '2.0'
+      AND aura.adaptive_schema2_delivery_payload_valid(
+          delivery.payload, delivery.decision_id
+      ) IS TRUE
+),
+valid_assignments AS MATERIALIZED (
+    SELECT assignment.id, assignment.owner_id, assignment.aggregate_id,
+           assignment.decision_id, assignment.payload
+    FROM aura.adaptive_outbox AS assignment
+    WHERE assignment.owner_id = $1
+      AND assignment.decision_id = $2
+      AND assignment.event_kind = 'decision'
+      AND assignment.payload->>'schema_version' = '2.0'
+      AND aura.adaptive_schema2_assignment_payload_valid(
+          assignment.payload, assignment.owner_id,
+          assignment.aggregate_id, assignment.decision_id
+      ) IS TRUE
+),
+assignment_digests AS (
+    SELECT valid_assignments.id, valid_assignments.owner_id, valid_assignments.aggregate_id, valid_assignments.decision_id, valid_assignments.payload,
+           substring(sha256(
+               uuid_send('c5370396-c73f-4a44-ae7b-112f070523ae'::uuid)
+               || uuid_send(owner_id)
+               || uuid_send((payload->>'request_id')::uuid)
+               || decode('00', 'hex')
+               || convert_to(payload->>'point', 'UTF8')
+               || decode('00', 'hex')
+               || substring(int8send(
+                   ((payload->>'point_ordinal')::numeric)::bigint
+               ) FROM 5 FOR 4)
+           ) FROM 1 FOR 16) AS assignment_digest,
+           substring(sha256(
+               uuid_send('fb3f7ce9-d343-41fb-a26f-35155b229189'::uuid)
+               || convert_to('2.0', 'UTF8')
+               || decode('00', 'hex')
+               || uuid_send(decision_id)
+               || decode('00', 'hex')
+               || convert_to('decision', 'UTF8')
+               || decode('00', 'hex')
+               || convert_to('assignment', 'UTF8')
+           ) FROM 1 FOR 16) AS event_digest
+    FROM valid_assignments
+),
+canonical_assignments AS (
+    SELECT assignment_digests.id, assignment_digests.owner_id, assignment_digests.aggregate_id, assignment_digests.decision_id, assignment_digests.payload, assignment_digests.assignment_digest, assignment_digests.event_digest,
+           encode(set_byte(set_byte(
+               assignment_digest, 6,
+               (get_byte(assignment_digest, 6) & 15) | 80
+           ), 8, (get_byte(assignment_digest, 8) & 63) | 128), 'hex')::uuid
+               AS canonical_assignment_id,
+           encode(set_byte(set_byte(
+               event_digest, 6,
+               (get_byte(event_digest, 6) & 15) | 80
+           ), 8, (get_byte(event_digest, 8) & 63) | 128), 'hex')::uuid
+               AS canonical_event_id
+    FROM assignment_digests
+),
+delivery_digests AS (
+    SELECT valid_deliveries.id, valid_deliveries.owner_id, valid_deliveries.aggregate_id, valid_deliveries.decision_id, valid_deliveries.payload,
+           substring(sha256(
+               uuid_send('fb3f7ce9-d343-41fb-a26f-35155b229189'::uuid)
+               || convert_to('2.0', 'UTF8')
+               || decode('00', 'hex')
+               || uuid_send(decision_id)
+               || decode('00', 'hex')
+               || convert_to('delivery', 'UTF8')
+               || decode('00', 'hex')
+               || convert_to('assignment', 'UTF8')
+           ) FROM 1 FOR 16) AS event_digest
+    FROM valid_deliveries
+),
+canonical_deliveries AS (
+    SELECT delivery_digests.id, delivery_digests.owner_id, delivery_digests.aggregate_id, delivery_digests.decision_id, delivery_digests.payload, delivery_digests.event_digest,
+           encode(set_byte(set_byte(
+               event_digest, 6,
+               (get_byte(event_digest, 6) & 15) | 80
+           ), 8, (get_byte(event_digest, 8) & 63) | 128), 'hex')::uuid
+               AS canonical_event_id
+    FROM delivery_digests
+)
+SELECT delivery.id, delivery.owner_id, delivery.aggregate_id,
+       delivery.sequence, delivery.decision_id, delivery.event_kind,
+       delivery.payload, delivery.payload_hash, delivery.status,
+       delivery.attempts, delivery.available_at, delivery.lease_owner,
+       delivery.lease_expires_at, delivery.created_at,
+       delivery.projected_at, delivery.dead_letter_at,
+       delivery.last_error_class
+FROM aura.adaptive_outbox AS delivery
+JOIN canonical_deliveries AS canonical_delivery
+  ON canonical_delivery.id = delivery.id
+JOIN canonical_assignments AS assignment
+  ON assignment.owner_id = canonical_delivery.owner_id
+ AND assignment.aggregate_id = canonical_delivery.aggregate_id
+ AND assignment.decision_id = canonical_delivery.decision_id
+WHERE assignment.decision_id = assignment.canonical_assignment_id
+  AND assignment.id = assignment.canonical_event_id
+  AND canonical_delivery.id = canonical_delivery.canonical_event_id
+  AND canonical_delivery.payload->>'intended_action_id' =
+      assignment.payload->>'intended_action_id'
+  AND (
+      canonical_delivery.payload->>'actual_action_id' = 'none'
+      OR (assignment.payload->'eligible_actions') ?
+          (canonical_delivery.payload->>'actual_action_id')
+  )
+  AND (
+      canonical_delivery.payload->>'status' <> 'success'
+      OR NOT (canonical_delivery.payload->>'exposure_known')::boolean
+      OR EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(
+              assignment.payload->'action_probabilities'
+          ) AS probability
+          WHERE probability->>'action_id' =
+              canonical_delivery.payload->>'intended_action_id'
+            AND (probability->>'probability')::numeric =
+                (canonical_delivery.payload->>'exposure_probability')::numeric
+      )
+  )
 `
 
 type GetSchema2AdaptiveDeliveryParams struct {
@@ -279,16 +395,141 @@ func (q *Queries) ListAdaptiveAggregate(ctx context.Context, arg ListAdaptiveAgg
 }
 
 const listEligibleSchema2AdaptiveAggregateFacts = `-- name: ListEligibleSchema2AdaptiveAggregateFacts :many
-SELECT id, owner_id, aggregate_id, sequence, decision_id, event_kind,
-       payload, payload_hash, status, attempts, available_at,
-       lease_owner, lease_expires_at, created_at, projected_at,
-       dead_letter_at, last_error_class
-FROM aura.adaptive_outbox
-WHERE owner_id = $1
-  AND aggregate_id = $2
-  AND event_kind IN ('decision', 'delivery')
-  AND payload->>'schema_version' = '2.0'
-ORDER BY sequence ASC
+WITH valid_assignments AS MATERIALIZED (
+    SELECT assignment.id, assignment.owner_id, assignment.aggregate_id,
+           assignment.decision_id, assignment.payload
+    FROM aura.adaptive_outbox AS assignment
+    WHERE assignment.owner_id = $1
+      AND assignment.aggregate_id = $2
+      AND assignment.event_kind = 'decision'
+      AND assignment.payload->>'schema_version' = '2.0'
+      AND aura.adaptive_schema2_assignment_payload_valid(
+          assignment.payload, assignment.owner_id,
+          assignment.aggregate_id, assignment.decision_id
+      ) IS TRUE
+),
+assignment_digests AS (
+    SELECT valid_assignments.id, valid_assignments.owner_id, valid_assignments.aggregate_id, valid_assignments.decision_id, valid_assignments.payload,
+           substring(sha256(
+               uuid_send('c5370396-c73f-4a44-ae7b-112f070523ae'::uuid)
+               || uuid_send(owner_id)
+               || uuid_send((payload->>'request_id')::uuid)
+               || decode('00', 'hex')
+               || convert_to(payload->>'point', 'UTF8')
+               || decode('00', 'hex')
+               || substring(int8send(
+                   ((payload->>'point_ordinal')::numeric)::bigint
+               ) FROM 5 FOR 4)
+           ) FROM 1 FOR 16) AS assignment_digest,
+           substring(sha256(
+               uuid_send('fb3f7ce9-d343-41fb-a26f-35155b229189'::uuid)
+               || convert_to('2.0', 'UTF8')
+               || decode('00', 'hex')
+               || uuid_send(decision_id)
+               || decode('00', 'hex')
+               || convert_to('decision', 'UTF8')
+               || decode('00', 'hex')
+               || convert_to('assignment', 'UTF8')
+           ) FROM 1 FOR 16) AS event_digest
+    FROM valid_assignments
+),
+canonical_assignments AS (
+    SELECT assignment_digests.id, assignment_digests.owner_id, assignment_digests.aggregate_id, assignment_digests.decision_id, assignment_digests.payload, assignment_digests.assignment_digest, assignment_digests.event_digest,
+           encode(set_byte(set_byte(
+               assignment_digest, 6,
+               (get_byte(assignment_digest, 6) & 15) | 80
+           ), 8, (get_byte(assignment_digest, 8) & 63) | 128), 'hex')::uuid
+               AS canonical_assignment_id,
+           encode(set_byte(set_byte(
+               event_digest, 6,
+               (get_byte(event_digest, 6) & 15) | 80
+           ), 8, (get_byte(event_digest, 8) & 63) | 128), 'hex')::uuid
+               AS canonical_event_id
+    FROM assignment_digests
+),
+valid_deliveries AS MATERIALIZED (
+    SELECT delivery.id, delivery.owner_id, delivery.aggregate_id,
+           delivery.decision_id, delivery.payload
+    FROM aura.adaptive_outbox AS delivery
+    WHERE delivery.owner_id = $1
+      AND delivery.aggregate_id = $2
+      AND delivery.event_kind = 'delivery'
+      AND delivery.payload->>'schema_version' = '2.0'
+      AND aura.adaptive_schema2_delivery_payload_valid(
+          delivery.payload, delivery.decision_id
+      ) IS TRUE
+),
+delivery_digests AS (
+    SELECT valid_deliveries.id, valid_deliveries.owner_id, valid_deliveries.aggregate_id, valid_deliveries.decision_id, valid_deliveries.payload,
+           substring(sha256(
+               uuid_send('fb3f7ce9-d343-41fb-a26f-35155b229189'::uuid)
+               || convert_to('2.0', 'UTF8')
+               || decode('00', 'hex')
+               || uuid_send(decision_id)
+               || decode('00', 'hex')
+               || convert_to('delivery', 'UTF8')
+               || decode('00', 'hex')
+               || convert_to('assignment', 'UTF8')
+           ) FROM 1 FOR 16) AS event_digest
+    FROM valid_deliveries
+),
+canonical_deliveries AS (
+    SELECT delivery_digests.id, delivery_digests.owner_id, delivery_digests.aggregate_id, delivery_digests.decision_id, delivery_digests.payload, delivery_digests.event_digest,
+           encode(set_byte(set_byte(
+               event_digest, 6,
+               (get_byte(event_digest, 6) & 15) | 80
+           ), 8, (get_byte(event_digest, 8) & 63) | 128), 'hex')::uuid
+               AS canonical_event_id
+    FROM delivery_digests
+),
+eligible_ids AS (
+    SELECT assignment.id
+    FROM canonical_assignments AS assignment
+    WHERE assignment.decision_id = assignment.canonical_assignment_id
+      AND assignment.id = assignment.canonical_event_id
+    UNION ALL
+    SELECT delivery.id
+    FROM canonical_deliveries AS delivery
+    JOIN canonical_assignments AS assignment
+      ON assignment.owner_id = delivery.owner_id
+     AND assignment.aggregate_id = delivery.aggregate_id
+     AND assignment.decision_id = delivery.decision_id
+    WHERE assignment.decision_id = assignment.canonical_assignment_id
+      AND assignment.id = assignment.canonical_event_id
+      AND delivery.id = delivery.canonical_event_id
+      AND delivery.payload->>'intended_action_id' =
+          assignment.payload->>'intended_action_id'
+      AND (
+          delivery.payload->>'actual_action_id' = 'none'
+          OR (assignment.payload->'eligible_actions') ?
+              (delivery.payload->>'actual_action_id')
+      )
+      AND (
+          delivery.payload->>'status' <> 'success'
+          OR NOT (delivery.payload->>'exposure_known')::boolean
+          OR EXISTS (
+              SELECT 1
+              FROM jsonb_array_elements(
+                  assignment.payload->'action_probabilities'
+              ) AS probability
+              WHERE probability->>'action_id' =
+                  delivery.payload->>'intended_action_id'
+                AND (probability->>'probability')::numeric =
+                    (delivery.payload->>'exposure_probability')::numeric
+          )
+      )
+)
+SELECT fact.id, fact.owner_id, fact.aggregate_id, fact.sequence,
+       fact.decision_id, fact.event_kind, fact.payload, fact.payload_hash,
+       fact.status, fact.attempts, fact.available_at, fact.lease_owner,
+       fact.lease_expires_at, fact.created_at, fact.projected_at,
+       fact.dead_letter_at, fact.last_error_class
+FROM aura.adaptive_outbox AS fact
+JOIN eligible_ids ON eligible_ids.id = fact.id
+WHERE fact.owner_id = $1
+  AND fact.aggregate_id = $2
+  AND fact.event_kind IN ('decision', 'delivery')
+ORDER BY fact.sequence ASC
 `
 
 type ListEligibleSchema2AdaptiveAggregateFactsParams struct {
@@ -344,16 +585,71 @@ func (q *Queries) LockAdaptiveEvent(ctx context.Context, eventID string) error {
 }
 
 const lockSchema2AdaptiveAssignment = `-- name: LockSchema2AdaptiveAssignment :one
-SELECT id, owner_id, aggregate_id, sequence, decision_id, event_kind,
-       payload, payload_hash, status, attempts, available_at,
-       lease_owner, lease_expires_at, created_at, projected_at,
-       dead_letter_at, last_error_class
-FROM aura.adaptive_outbox
-WHERE owner_id = $1
-  AND decision_id = $2
-  AND event_kind = 'decision'
-  AND payload->>'schema_version' = '2.0'
-FOR UPDATE
+WITH valid_assignments AS MATERIALIZED (
+    SELECT assignment.id, assignment.owner_id, assignment.aggregate_id,
+           assignment.decision_id, assignment.payload
+    FROM aura.adaptive_outbox AS assignment
+    WHERE assignment.owner_id = $1
+      AND assignment.decision_id = $2
+      AND assignment.event_kind = 'decision'
+      AND assignment.payload->>'schema_version' = '2.0'
+      AND aura.adaptive_schema2_assignment_payload_valid(
+          assignment.payload, assignment.owner_id,
+          assignment.aggregate_id, assignment.decision_id
+      ) IS TRUE
+),
+digests AS (
+    SELECT valid_assignments.id, valid_assignments.owner_id, valid_assignments.aggregate_id, valid_assignments.decision_id, valid_assignments.payload,
+           substring(sha256(
+               uuid_send('c5370396-c73f-4a44-ae7b-112f070523ae'::uuid)
+               || uuid_send(owner_id)
+               || uuid_send((payload->>'request_id')::uuid)
+               || decode('00', 'hex')
+               || convert_to(payload->>'point', 'UTF8')
+               || decode('00', 'hex')
+               || substring(int8send(
+                   ((payload->>'point_ordinal')::numeric)::bigint
+               ) FROM 5 FOR 4)
+           ) FROM 1 FOR 16) AS assignment_digest,
+           substring(sha256(
+               uuid_send('fb3f7ce9-d343-41fb-a26f-35155b229189'::uuid)
+               || convert_to('2.0', 'UTF8')
+               || decode('00', 'hex')
+               || uuid_send(decision_id)
+               || decode('00', 'hex')
+               || convert_to('decision', 'UTF8')
+               || decode('00', 'hex')
+               || convert_to('assignment', 'UTF8')
+           ) FROM 1 FOR 16) AS event_digest
+    FROM valid_assignments
+),
+canonical_assignments AS (
+    SELECT digests.id, digests.owner_id, digests.aggregate_id, digests.decision_id, digests.payload, digests.assignment_digest, digests.event_digest,
+           encode(set_byte(set_byte(
+               assignment_digest, 6,
+               (get_byte(assignment_digest, 6) & 15) | 80
+           ), 8, (get_byte(assignment_digest, 8) & 63) | 128), 'hex')::uuid
+               AS canonical_assignment_id,
+           encode(set_byte(set_byte(
+               event_digest, 6,
+               (get_byte(event_digest, 6) & 15) | 80
+           ), 8, (get_byte(event_digest, 8) & 63) | 128), 'hex')::uuid
+               AS canonical_event_id
+    FROM digests
+)
+SELECT assignment.id, assignment.owner_id, assignment.aggregate_id,
+       assignment.sequence, assignment.decision_id, assignment.event_kind,
+       assignment.payload, assignment.payload_hash, assignment.status,
+       assignment.attempts, assignment.available_at, assignment.lease_owner,
+       assignment.lease_expires_at, assignment.created_at,
+       assignment.projected_at, assignment.dead_letter_at,
+       assignment.last_error_class
+FROM aura.adaptive_outbox AS assignment
+JOIN canonical_assignments AS canonical
+  ON canonical.id = assignment.id
+WHERE canonical.decision_id = canonical.canonical_assignment_id
+  AND canonical.id = canonical.canonical_event_id
+FOR UPDATE OF assignment
 `
 
 type LockSchema2AdaptiveAssignmentParams struct {
