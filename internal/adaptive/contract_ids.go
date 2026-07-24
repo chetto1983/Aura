@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"math"
 	"strings"
 
 	"github.com/google/uuid"
@@ -27,35 +26,6 @@ var (
 	assignmentIDNamespace = uuid.MustParse("c5370396-c73f-4a44-ae7b-112f070523ae")
 	eventIDNamespace      = uuid.MustParse("fb3f7ce9-d343-41fb-a26f-35155b229189")
 )
-
-var registeredFeatureKeys = map[string]struct{}{
-	"available_skill_count":  {},
-	"available_tool_count":   {},
-	"candidate_count":        {},
-	"context_length":         {},
-	"context_token_count":    {},
-	"deferred_tool_count":    {},
-	"document_count":         {},
-	"input_token_count":      {},
-	"matched_skill_count":    {},
-	"memory_count":           {},
-	"message_count":          {},
-	"prompt_length":          {},
-	"query_length":           {},
-	"recall_limit":           {},
-	"request_length":         {},
-	"result_count":           {},
-	"retrieval_limit":        {},
-	"retrieved_result_count": {},
-	"retry_count":            {},
-	"skill_candidate_count":  {},
-	"tool_argument_count":    {},
-	"tool_result_count":      {},
-}
-
-var registeredRevisionKeys = map[string]struct{}{
-	"corpus": {}, "embedding": {}, "index": {}, "reranker": {}, "retriever": {}, "schema": {},
-}
 
 var registeredEffectiveLimitKeys = map[string]struct{}{
 	"candidate_limit": {}, "max_results": {}, "max_rounds": {}, "max_tokens": {},
@@ -141,22 +111,6 @@ func eventIDForSource(
 	return uuid.NewHash(sha256.New(), eventIDNamespace, identity, 5)
 }
 
-func validateNumericFeatures(features map[string]float64) error {
-	if len(features) > 128 {
-		return errors.New("adaptive assignment features exceed 128 entries")
-	}
-	for key, value := range features {
-		if err := validateRegisteredKey("feature", key, registeredFeatureKeys); err != nil {
-			return err
-		}
-		if math.IsNaN(value) || math.IsInf(value, 0) ||
-			value < 0 || value > 1_000_000_000 || math.Trunc(value) != value {
-			return fmt.Errorf("adaptive assignment feature %q is out of range", key)
-		}
-	}
-	return nil
-}
-
 func validateResultIDs(resultIDs []ResultID) error {
 	seen := make(map[ResultID]struct{}, len(resultIDs))
 	for _, resultID := range resultIDs {
@@ -171,14 +125,9 @@ func validateResultIDs(resultIDs []ResultID) error {
 	return nil
 }
 
-func validateDeliveryMaps(revisions map[string]string, limits map[string]int) error {
-	for key, revision := range revisions {
-		if err := validateRegisteredKey("revision", key, registeredRevisionKeys); err != nil {
-			return err
-		}
-		if !validASCIIID(revision, maxRevisionIDLength) {
-			return fmt.Errorf("adaptive delivery revision %q is invalid", key)
-		}
+func validateDeliveryMaps(revisions RevisionSet, limits map[string]int) error {
+	if err := revisions.validate(); err != nil {
+		return err
 	}
 	for key, limit := range limits {
 		if err := validateRegisteredKey("effective limit", key, registeredEffectiveLimitKeys); err != nil {

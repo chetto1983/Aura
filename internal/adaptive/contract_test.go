@@ -329,14 +329,14 @@ func TestAssignmentFeatureRegistryRejectsFingerprintAliases(t *testing.T) {
 		t.Run(key, func(t *testing.T) {
 			t.Parallel()
 			assignment := validAssignment()
-			assignment.Features = map[string]float64{key: 1}
+			assignment.Features = map[FeatureKey]float64{FeatureKey(key): 1}
 			if _, err := NewAssignmentEvent(assignment); err == nil {
 				t.Fatalf("NewAssignmentEvent accepted fingerprint alias %q", key)
 			}
 		})
 	}
 	assignment := validAssignment()
-	assignment.Features = map[string]float64{
+	assignment.Features = map[FeatureKey]float64{
 		"prompt_length":         400,
 		"available_tool_count":  12,
 		"available_skill_count": 8,
@@ -346,7 +346,7 @@ func TestAssignmentFeatureRegistryRejectsFingerprintAliases(t *testing.T) {
 	if _, err := NewAssignmentEvent(assignment); err != nil {
 		t.Fatalf("NewAssignmentEvent registered safe lengths/counts: %v", err)
 	}
-	assignment.Features["unregistered_count"] = 1
+	assignment.Features[FeatureKey("unregistered_count")] = 1
 	if _, err := NewAssignmentEvent(assignment); err == nil {
 		t.Fatal("NewAssignmentEvent accepted unregistered numeric feature")
 	}
@@ -402,11 +402,9 @@ func TestDeliveryConstructorRejectsUnsafeIDsReasonsAndUnregisteredMaps(t *testin
 		{name: "intended action", mutate: func(d *Delivery) { d.IntendedActionID = "candidate\n" }},
 		{name: "actual action", mutate: func(d *Delivery) { d.ActualActionID = "stàtic" }},
 		{name: "result ID", mutate: func(d *Delivery) { d.ResultIDs[0] = ResultID{} }},
-		{name: "revision value", mutate: func(d *Delivery) { d.Revisions["retriever"] = "revision\nsecret" }},
 		{name: "fallback prose", mutate: func(d *Delivery) {
 			d.FallbackReason = FallbackReason("the model exposed private output")
 		}},
-		{name: "unregistered revision key", mutate: func(d *Delivery) { d.Revisions["model"] = "model-v1" }},
 		{name: "unregistered effective limit", mutate: func(d *Delivery) {
 			d.EffectiveLimits["temperature"] = 1
 		}},
@@ -515,7 +513,7 @@ func TestPrivatePayloadKeysAreRejectedBeforeSerialization(t *testing.T) {
 		t.Run("assignment_"+key, func(t *testing.T) {
 			t.Parallel()
 			assignment := validAssignment()
-			assignment.Features[key] = 1
+			assignment.Features[FeatureKey(key)] = 1
 			if _, err := NewAssignmentEvent(assignment); err == nil {
 				t.Fatalf("NewAssignmentEvent accepted private feature key %q", key)
 			}
@@ -524,7 +522,10 @@ func TestPrivatePayloadKeysAreRejectedBeforeSerialization(t *testing.T) {
 			t.Parallel()
 			assignment := validAssignment()
 			delivery := validDelivery(assignment.AssignmentID)
-			delivery.Revisions[key] = "forbidden"
+			privateKind := RevisionKind(key)
+			delivery.Revisions = RevisionSet{values: map[RevisionKind]Revision{
+				privateKind: {kind: privateKind, value: "forbidden", validated: true},
+			}}
 			if _, err := NewDeliveryEvent(assignment, delivery); err == nil {
 				t.Fatalf("NewDeliveryEvent accepted private revision key %q", key)
 			}
@@ -562,7 +563,7 @@ func validAssignment() Assignment {
 			{ActionID: StaticActionID, Probability: 1},
 		},
 		SelectionReason: "shadow_static",
-		Features:        map[string]float64{"candidate_count": 2},
+		Features:        map[FeatureKey]float64{FeatureCandidateCount: 2},
 	}
 }
 
@@ -593,7 +594,7 @@ func validDelivery(assignmentID uuid.UUID) Delivery {
 		ResultIDs: []ResultID{
 			mustResultID(NewArtifactResultID(artifactResultUUID)),
 		},
-		Revisions:       map[string]string{"retriever": "retriever-v2"},
+		Revisions:       mustRevisionSet(),
 		EffectiveLimits: map[string]int{"top_k": 8},
 	}
 }

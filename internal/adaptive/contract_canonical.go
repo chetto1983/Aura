@@ -10,7 +10,7 @@ func canonicalAssignment(assignment Assignment) Assignment {
 		assignment.ActionProbabilities[i].Probability =
 			canonicalZero(assignment.ActionProbabilities[i].Probability)
 	}
-	features := make(map[string]float64, len(assignment.Features))
+	features := make(map[FeatureKey]float64, len(assignment.Features))
 	for key, value := range assignment.Features {
 		features[key] = canonicalZero(value)
 	}
@@ -20,11 +20,7 @@ func canonicalAssignment(assignment Assignment) Assignment {
 
 func canonicalDelivery(delivery Delivery) Delivery {
 	delivery.ResultIDs = append([]ResultID{}, delivery.ResultIDs...)
-	revisions := make(map[string]string, len(delivery.Revisions))
-	for key, value := range delivery.Revisions {
-		revisions[key] = value
-	}
-	delivery.Revisions = revisions
+	delivery.Revisions = delivery.Revisions.clone()
 	limits := make(map[string]int, len(delivery.EffectiveLimits))
 	for key, value := range delivery.EffectiveLimits {
 		limits[key] = value

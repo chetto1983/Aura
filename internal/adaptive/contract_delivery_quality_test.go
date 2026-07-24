@@ -100,7 +100,7 @@ func TestAssignmentEventCanonicalizesNilMapsAndSignedZero(t *testing.T) {
 	nilAndNegativeZero.Features = nil
 	nilAndNegativeZero.ActionProbabilities[0].Probability = math.Copysign(0, -1)
 	emptyAndPositiveZero := validAssignment()
-	emptyAndPositiveZero.Features = map[string]float64{}
+	emptyAndPositiveZero.Features = map[FeatureKey]float64{}
 	emptyAndPositiveZero.ActionProbabilities[0].Probability = 0
 
 	first, err := NewAssignmentEvent(nilAndNegativeZero)
@@ -122,11 +122,11 @@ func TestDeliveryEventCanonicalizesNilAndEmptyCollections(t *testing.T) {
 	assignment := validAssignment()
 	nilCollections := assignmentBoundDelivery(assignment)
 	nilCollections.ResultIDs = nil
-	nilCollections.Revisions = nil
+	nilCollections.Revisions = RevisionSet{}
 	nilCollections.EffectiveLimits = nil
 	emptyCollections := assignmentBoundDelivery(assignment)
 	emptyCollections.ResultIDs = []ResultID{}
-	emptyCollections.Revisions = map[string]string{}
+	emptyCollections.Revisions = mustRevisionSet()
 	emptyCollections.EffectiveLimits = map[string]int{}
 
 	first, err := NewDeliveryEvent(assignment, nilCollections)
