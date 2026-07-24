@@ -401,7 +401,7 @@ func TestDeliveryConstructorRejectsUnsafeIDsReasonsAndUnregisteredMaps(t *testin
 	}{
 		{name: "intended action", mutate: func(d *Delivery) { d.IntendedActionID = "candidate\n" }},
 		{name: "actual action", mutate: func(d *Delivery) { d.ActualActionID = "stàtic" }},
-		{name: "result ID", mutate: func(d *Delivery) { d.ResultIDs[0].ID = "artifact secret" }},
+		{name: "result ID", mutate: func(d *Delivery) { d.ResultIDs[0] = ResultID{} }},
 		{name: "revision value", mutate: func(d *Delivery) { d.Revisions["retriever"] = "revision\nsecret" }},
 		{name: "fallback prose", mutate: func(d *Delivery) {
 			d.FallbackReason = FallbackReason("the model exposed private output")
@@ -591,7 +591,7 @@ func validDelivery(assignmentID uuid.UUID) Delivery {
 		FallbackReason:   "candidate_unavailable",
 		ResultCount:      2,
 		ResultIDs: []ResultID{
-			{Kind: ResultArtifact, ID: "artifact-1"},
+			mustResultID(NewArtifactResultID(artifactResultUUID)),
 		},
 		Revisions:       map[string]string{"retriever": "retriever-v2"},
 		EffectiveLimits: map[string]int{"top_k": 8},

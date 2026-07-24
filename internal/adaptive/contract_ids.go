@@ -160,7 +160,7 @@ func validateNumericFeatures(features map[string]float64) error {
 func validateResultIDs(resultIDs []ResultID) error {
 	seen := make(map[ResultID]struct{}, len(resultIDs))
 	for _, resultID := range resultIDs {
-		if !resultID.Kind.valid() || !validASCIIID(resultID.ID, maxResultIDLength) {
+		if err := validateResultID(resultID); err != nil {
 			return fmt.Errorf("adaptive delivery result ID %#v is invalid", resultID)
 		}
 		if _, exists := seen[resultID]; exists {
@@ -194,8 +194,8 @@ func validateDeliveryMaps(revisions map[string]string, limits map[string]int) er
 func validateMemoryMetadata(delivery Delivery) error {
 	resultCounts := make(map[ResultKind]int, len(memoryResultTypes))
 	for _, resultID := range delivery.ResultIDs {
-		if resultID.Kind.memory() {
-			resultCounts[resultID.Kind]++
+		if resultID.Kind().memory() {
+			resultCounts[resultID.Kind()]++
 		}
 	}
 

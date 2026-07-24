@@ -313,7 +313,7 @@ func TestDeliveryRejectsIncoherentMemoryMetadata(t *testing.T) {
 			d.ResultCount = 5
 		}},
 		{name: "memory result mixed with generic node", mutate: func(d *Delivery) {
-			d.ResultIDs = append(d.ResultIDs, ResultID{Kind: ResultNode, ID: "document-node-1"})
+			d.ResultIDs = append(d.ResultIDs, mustResultID(NewNodeResultID(nodeResultUUID)))
 			d.ResultCount = 5
 		}},
 		{name: "metadata without matching result kind", mutate: func(d *Delivery) {
@@ -350,7 +350,7 @@ func TestDeliveryKeepsNonMemoryResultCountIndependent(t *testing.T) {
 	assignment := validAssignment()
 	delivery := validDelivery(assignment.AssignmentID)
 	delivery.ResultCount = 5
-	delivery.ResultIDs = []ResultID{{Kind: ResultNode, ID: "document-node-1"}}
+	delivery.ResultIDs = []ResultID{mustResultID(NewNodeResultID(nodeResultUUID))}
 
 	if _, err := NewDeliveryEvent(assignment, delivery); err != nil {
 		t.Fatalf("NewDeliveryEvent: %v", err)
@@ -365,7 +365,7 @@ func TestDeliveryRejectsUnknownMemoryKindAndLimit(t *testing.T) {
 		mutate func(*Delivery)
 	}{
 		{name: "kind", mutate: func(d *Delivery) {
-			d.ResultIDs[0].Kind = ResultKind("memory_fact")
+			d.ResultIDs[0] = ResultID{kind: ResultKind("memory_fact"), id: entityResultUUID}
 		}},
 		{name: "limit", mutate: func(d *Delivery) {
 			d.EffectiveLimits["memory_fact_requested_k"] = 1
@@ -459,7 +459,7 @@ func TestDeliveryRejectsNoneActionResultsOrExposure(t *testing.T) {
 			d.ResultCount = 1
 		}},
 		{name: "result ID", mutate: func(d *Delivery) {
-			d.ResultIDs = []ResultID{{Kind: ResultArtifact, ID: "artifact-1"}}
+			d.ResultIDs = []ResultID{mustResultID(NewArtifactResultID(artifactResultUUID))}
 		}},
 		{name: "known exposure", mutate: func(d *Delivery) {
 			probability := 0.5
@@ -488,10 +488,10 @@ func coherentMemoryDelivery(assignmentID uuid.UUID) Delivery {
 	delivery := validDelivery(assignmentID)
 	delivery.ResultCount = 4
 	delivery.ResultIDs = []ResultID{
-		{Kind: ResultMemoryEntity, ID: "entity-1"},
-		{Kind: ResultMemoryPreference, ID: "preference-1"},
-		{Kind: ResultMemoryMessage, ID: "message-1"},
-		{Kind: ResultMemoryReasoningTrace, ID: "trace-1"},
+		mustResultID(NewMemoryEntityResultID(entityResultUUID)),
+		mustResultID(NewMemoryPreferenceResultID(preferenceUUID)),
+		mustResultID(NewMemoryMessageResultID(messageResultUUID)),
+		mustResultID(NewMemoryReasoningTraceResultID(reasoningTraceUUID)),
 	}
 	delivery.EffectiveLimits = map[string]int{
 		"entity_requested_k":          5,

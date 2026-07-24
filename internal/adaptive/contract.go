@@ -95,11 +95,6 @@ const (
 	ResultMemoryReasoningTrace ResultKind = "memory_reasoning_trace"
 )
 
-type ResultID struct {
-	Kind ResultKind `json:"kind"`
-	ID   string     `json:"id"`
-}
-
 type ActionProbability struct {
 	ActionID    string  `json:"action_id"`
 	Probability float64 `json:"probability"`
