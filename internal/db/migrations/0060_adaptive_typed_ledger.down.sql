@@ -30,6 +30,3 @@ ALTER TABLE aura.adaptive_outbox
 
 DROP FUNCTION aura.adaptive_schema2_delivery_payload_valid(jsonb, uuid);
 DROP FUNCTION aura.adaptive_schema2_assignment_payload_valid(jsonb, uuid, text, uuid);
-DROP FUNCTION IF EXISTS aura.adaptive_schema2_revision_value_valid(text, text);
-DROP FUNCTION IF EXISTS aura.adaptive_schema2_safe_slug_valid(text, integer);
-DROP FUNCTION IF EXISTS aura.adaptive_schema2_ascii_id_valid(text, integer);

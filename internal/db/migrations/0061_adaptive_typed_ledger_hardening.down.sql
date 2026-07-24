@@ -1,4 +1,4 @@
-CREATE FUNCTION aura.adaptive_schema2_assignment_payload_valid(
+CREATE OR REPLACE FUNCTION aura.adaptive_schema2_assignment_payload_valid(
     p_payload jsonb,
     p_owner_id uuid,
     p_aggregate_id text,
@@ -146,7 +146,7 @@ EXCEPTION
 END;
 $$;
 
-CREATE FUNCTION aura.adaptive_schema2_delivery_payload_valid(
+CREATE OR REPLACE FUNCTION aura.adaptive_schema2_delivery_payload_valid(
     p_payload jsonb,
     p_decision_id uuid
 ) RETURNS boolean
@@ -242,36 +242,13 @@ END;
 $$;
 
 ALTER TABLE aura.adaptive_outbox
-    DROP CONSTRAINT adaptive_outbox_event_kind_check;
-ALTER TABLE aura.adaptive_outbox
-    ADD CONSTRAINT adaptive_outbox_event_kind_check CHECK (
-        event_kind IN ('decision', 'delivery', 'outcome', 'correction', 'promotion', 'rollback')
-    ),
+    DROP CONSTRAINT adaptive_outbox_delivery_schema_check,
     ADD CONSTRAINT adaptive_outbox_delivery_schema_check CHECK (
         event_kind <> 'delivery' OR payload->>'schema_version' = '2.0'
-    ),
-    ADD CONSTRAINT adaptive_outbox_schema2_assignment_check CHECK (
-        payload->>'schema_version' <> '2.0'
-        OR event_kind <> 'decision'
-        OR aura.adaptive_schema2_assignment_payload_valid(
-            payload, owner_id, aggregate_id, decision_id
-        )
-    ),
-    ADD CONSTRAINT adaptive_outbox_schema2_delivery_check CHECK (
-        payload->>'schema_version' <> '2.0'
-        OR event_kind <> 'delivery'
-        OR aura.adaptive_schema2_delivery_payload_valid(payload, decision_id)
     );
 
-CREATE UNIQUE INDEX adaptive_outbox_schema2_assignment_owner_decision_uidx
-    ON aura.adaptive_outbox (owner_id, decision_id)
-    WHERE event_kind = 'decision' AND payload->>'schema_version' = '2.0';
-
-CREATE UNIQUE INDEX adaptive_outbox_schema2_delivery_owner_decision_uidx
-    ON aura.adaptive_outbox (owner_id, decision_id)
-    WHERE event_kind = 'delivery' AND payload->>'schema_version' = '2.0';
-
-CREATE FUNCTION aura.enforce_adaptive_schema2_delivery_assignment() RETURNS trigger
+CREATE OR REPLACE FUNCTION aura.enforce_adaptive_schema2_delivery_assignment()
+RETURNS trigger
     LANGUAGE plpgsql
     SET search_path = pg_catalog
 AS $$
@@ -296,6 +273,6 @@ BEGIN
 END;
 $$;
 
-CREATE TRIGGER adaptive_outbox_schema2_delivery_assignment
-    BEFORE INSERT ON aura.adaptive_outbox
-    FOR EACH ROW EXECUTE FUNCTION aura.enforce_adaptive_schema2_delivery_assignment();
+DROP FUNCTION IF EXISTS aura.adaptive_schema2_revision_value_valid(text, text);
+DROP FUNCTION IF EXISTS aura.adaptive_schema2_safe_slug_valid(text, integer);
+DROP FUNCTION IF EXISTS aura.adaptive_schema2_ascii_id_valid(text, integer);
