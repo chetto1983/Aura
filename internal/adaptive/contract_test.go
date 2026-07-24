@@ -357,7 +357,7 @@ func TestDeliveryConstructorRecordsIntendedActualStatusAndExposure(t *testing.T)
 	assignment := validAssignment()
 	delivery := validDelivery(assignment.AssignmentID)
 
-	event, err := NewDeliveryEvent(assignment.OwnerID, assignment.RequestID, delivery)
+	event, err := NewDeliveryEvent(assignment, delivery)
 	if err != nil {
 		t.Fatalf("NewDeliveryEvent: %v", err)
 	}
@@ -377,8 +377,8 @@ func TestDeliveryConstructorRecordsIntendedActualStatusAndExposure(t *testing.T)
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
 		t.Fatalf("unmarshal delivery payload: %v", err)
 	}
-	if payload.IntendedActionID != "candidate" ||
-		payload.ActualActionID != StaticActionID ||
+	if payload.IntendedActionID != StaticActionID ||
+		payload.ActualActionID != "candidate" ||
 		payload.Status != DeliveryFallback {
 		t.Fatalf("delivery action/status = (%q, %q, %q)",
 			payload.IntendedActionID, payload.ActualActionID, payload.Status)
@@ -417,7 +417,7 @@ func TestDeliveryConstructorRejectsUnsafeIDsReasonsAndUnregisteredMaps(t *testin
 			t.Parallel()
 			delivery := validDelivery(assignment.AssignmentID)
 			tt.mutate(&delivery)
-			if _, err := NewDeliveryEvent(assignment.OwnerID, assignment.RequestID, delivery); err == nil {
+			if _, err := NewDeliveryEvent(assignment, delivery); err == nil {
 				t.Fatal("NewDeliveryEvent error = nil, want bounded registry rejection")
 			}
 		})
@@ -429,30 +429,30 @@ func TestDeliveryConstructorValidatesBindingsAndExposure(t *testing.T) {
 	assignment := validAssignment()
 	tests := []struct {
 		name   string
-		mutate func(*uuid.UUID, *uuid.UUID, *Delivery)
+		mutate func(*Assignment, *Delivery)
 	}{
-		{name: "owner", mutate: func(owner, _ *uuid.UUID, _ *Delivery) { *owner = uuid.Nil }},
-		{name: "request", mutate: func(_, request *uuid.UUID, _ *Delivery) { *request = uuid.Nil }},
-		{name: "schema", mutate: func(_, _ *uuid.UUID, d *Delivery) { d.SchemaVersion = "1.0" }},
-		{name: "assignment", mutate: func(_, _ *uuid.UUID, d *Delivery) { d.AssignmentID = uuid.Nil }},
-		{name: "intended action", mutate: func(_, _ *uuid.UUID, d *Delivery) { d.IntendedActionID = "" }},
-		{name: "actual action", mutate: func(_, _ *uuid.UUID, d *Delivery) { d.ActualActionID = "" }},
-		{name: "status", mutate: func(_, _ *uuid.UUID, d *Delivery) { d.Status = DeliveryStatus("unknown") }},
-		{name: "fallback reason", mutate: func(_, _ *uuid.UUID, d *Delivery) { d.FallbackReason = "" }},
-		{name: "unknown exposure with probability", mutate: func(_, _ *uuid.UUID, d *Delivery) {
+		{name: "owner", mutate: func(a *Assignment, _ *Delivery) { a.OwnerID = uuid.Nil }},
+		{name: "request", mutate: func(a *Assignment, _ *Delivery) { a.RequestID = uuid.Nil }},
+		{name: "schema", mutate: func(_ *Assignment, d *Delivery) { d.SchemaVersion = "1.0" }},
+		{name: "assignment", mutate: func(_ *Assignment, d *Delivery) { d.AssignmentID = uuid.Nil }},
+		{name: "intended action", mutate: func(_ *Assignment, d *Delivery) { d.IntendedActionID = "" }},
+		{name: "actual action", mutate: func(_ *Assignment, d *Delivery) { d.ActualActionID = "" }},
+		{name: "status", mutate: func(_ *Assignment, d *Delivery) { d.Status = DeliveryStatus("unknown") }},
+		{name: "fallback reason", mutate: func(_ *Assignment, d *Delivery) { d.FallbackReason = "" }},
+		{name: "unknown exposure with probability", mutate: func(_ *Assignment, d *Delivery) {
 			probability := 0.5
 			d.ExposureProbability = &probability
 		}},
-		{name: "known exposure without probability", mutate: func(_, _ *uuid.UUID, d *Delivery) {
+		{name: "known exposure without probability", mutate: func(_ *Assignment, d *Delivery) {
 			d.ExposureKnown = true
 		}},
-		{name: "known invalid exposure", mutate: func(_, _ *uuid.UUID, d *Delivery) {
+		{name: "known invalid exposure", mutate: func(_ *Assignment, d *Delivery) {
 			probability := 1.1
 			d.ExposureKnown = true
 			d.ExposureProbability = &probability
 		}},
-		{name: "negative result count", mutate: func(_, _ *uuid.UUID, d *Delivery) { d.ResultCount = -1 }},
-		{name: "more result IDs than results", mutate: func(_, _ *uuid.UUID, d *Delivery) {
+		{name: "negative result count", mutate: func(_ *Assignment, d *Delivery) { d.ResultCount = -1 }},
+		{name: "more result IDs than results", mutate: func(_ *Assignment, d *Delivery) {
 			d.ResultCount = 0
 		}},
 	}
@@ -460,10 +460,10 @@ func TestDeliveryConstructorValidatesBindingsAndExposure(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			owner, request := assignment.OwnerID, assignment.RequestID
+			boundAssignment := assignment
 			delivery := validDelivery(assignment.AssignmentID)
-			tt.mutate(&owner, &request, &delivery)
-			if _, err := NewDeliveryEvent(owner, request, delivery); err == nil {
+			tt.mutate(&boundAssignment, &delivery)
+			if _, err := NewDeliveryEvent(boundAssignment, delivery); err == nil {
 				t.Fatal("NewDeliveryEvent error = nil, want rejected binding")
 			}
 		})
@@ -473,7 +473,8 @@ func TestDeliveryConstructorValidatesBindingsAndExposure(t *testing.T) {
 func TestDeliveryConstructorAcceptsKnownExposureAndSuccess(t *testing.T) {
 	t.Parallel()
 	assignment := validAssignment()
-	probability := 0.4
+	makeCanary(&assignment)
+	probability := 0.5
 	delivery := validDelivery(assignment.AssignmentID)
 	delivery.IntendedActionID = "candidate"
 	delivery.ActualActionID = "candidate"
@@ -482,7 +483,7 @@ func TestDeliveryConstructorAcceptsKnownExposureAndSuccess(t *testing.T) {
 	delivery.ExposureProbability = &probability
 	delivery.FallbackReason = ""
 
-	event, err := NewDeliveryEvent(assignment.OwnerID, assignment.RequestID, delivery)
+	event, err := NewDeliveryEvent(assignment, delivery)
 	if err != nil {
 		t.Fatalf("NewDeliveryEvent: %v", err)
 	}
@@ -524,7 +525,7 @@ func TestPrivatePayloadKeysAreRejectedBeforeSerialization(t *testing.T) {
 			assignment := validAssignment()
 			delivery := validDelivery(assignment.AssignmentID)
 			delivery.Revisions[key] = "forbidden"
-			if _, err := NewDeliveryEvent(assignment.OwnerID, assignment.RequestID, delivery); err == nil {
+			if _, err := NewDeliveryEvent(assignment, delivery); err == nil {
 				t.Fatalf("NewDeliveryEvent accepted private revision key %q", key)
 			}
 		})
@@ -583,8 +584,8 @@ func validDelivery(assignmentID uuid.UUID) Delivery {
 	return Delivery{
 		SchemaVersion:    SchemaVersion2,
 		AssignmentID:     assignmentID,
-		IntendedActionID: "candidate",
-		ActualActionID:   StaticActionID,
+		IntendedActionID: StaticActionID,
+		ActualActionID:   "candidate",
 		Status:           DeliveryFallback,
 		ExposureKnown:    false,
 		FallbackReason:   "candidate_unavailable",

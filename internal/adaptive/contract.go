@@ -153,6 +153,7 @@ type Delivery struct {
 }
 
 func NewAssignmentEvent(assignment Assignment) (Event, error) {
+	assignment = canonicalAssignment(assignment)
 	if err := validateAssignment(assignment); err != nil {
 		return Event{}, err
 	}
@@ -170,14 +171,16 @@ func NewAssignmentEvent(assignment Assignment) (Event, error) {
 	})
 }
 
-func NewDeliveryEvent(ownerID, requestID uuid.UUID, delivery Delivery) (Event, error) {
-	if ownerID == uuid.Nil {
-		return Event{}, errors.New("adaptive delivery owner_id is required")
-	}
-	if requestID == uuid.Nil {
-		return Event{}, errors.New("adaptive delivery request_id is required")
+func NewDeliveryEvent(assignment Assignment, delivery Delivery) (Event, error) {
+	assignment = canonicalAssignment(assignment)
+	delivery = canonicalDelivery(delivery)
+	if err := validateAssignment(assignment); err != nil {
+		return Event{}, fmt.Errorf("validate adaptive delivery assignment: %w", err)
 	}
 	if err := validateDelivery(delivery); err != nil {
+		return Event{}, err
+	}
+	if err := validateDeliveryAssignment(assignment, delivery); err != nil {
 		return Event{}, err
 	}
 	payload, err := json.Marshal(delivery)
@@ -186,12 +189,36 @@ func NewDeliveryEvent(ownerID, requestID uuid.UUID, delivery Delivery) (Event, e
 	}
 	return newEvent(EventParams{
 		ID:          eventIDForSource(delivery.AssignmentID, EventDelivery, "assignment"),
-		OwnerID:     ownerID,
-		AggregateID: requestID.String(),
+		OwnerID:     assignment.OwnerID,
+		AggregateID: assignment.RequestID.String(),
 		DecisionID:  delivery.AssignmentID,
 		Kind:        EventDelivery,
 		Payload:     payload,
 	})
+}
+
+func validateDeliveryAssignment(assignment Assignment, delivery Delivery) error {
+	switch {
+	case delivery.AssignmentID != assignment.AssignmentID:
+		return errors.New("adaptive delivery assignment_id does not match assignment")
+	case delivery.IntendedActionID != assignment.IntendedActionID:
+		return errors.New("adaptive delivery intended_action_id does not match assignment")
+	case delivery.ActualActionID != ActionNoneID &&
+		!slices.Contains(assignment.EligibleActions, delivery.ActualActionID):
+		return errors.New("adaptive delivery actual_action_id is not eligible")
+	}
+	if delivery.Status == DeliverySuccess && delivery.ExposureKnown {
+		for _, action := range assignment.ActionProbabilities {
+			if action.ActionID == assignment.IntendedActionID {
+				if *delivery.ExposureProbability != action.Probability {
+					return errors.New("adaptive delivery exposure_probability does not match assignment")
+				}
+				return nil
+			}
+		}
+		return errors.New("adaptive delivery assignment omits intended action probability")
+	}
+	return nil
 }
 
 func validateAssignment(assignment Assignment) error {

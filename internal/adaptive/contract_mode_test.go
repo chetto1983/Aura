@@ -270,7 +270,7 @@ func TestDeliveryAcceptsTypedMemoryResultsAndPerTypeLimits(t *testing.T) {
 	assignment := validAssignment()
 	delivery := coherentMemoryDelivery(assignment.AssignmentID)
 
-	event, err := NewDeliveryEvent(assignment.OwnerID, assignment.RequestID, delivery)
+	event, err := NewDeliveryEvent(assignment, delivery)
 	if err != nil {
 		t.Fatalf("NewDeliveryEvent: %v", err)
 	}
@@ -327,7 +327,7 @@ func TestDeliveryRejectsIncoherentMemoryMetadata(t *testing.T) {
 			t.Parallel()
 			delivery := coherentMemoryDelivery(assignment.AssignmentID)
 			tt.mutate(&delivery)
-			if _, err := NewDeliveryEvent(assignment.OwnerID, assignment.RequestID, delivery); err == nil {
+			if _, err := NewDeliveryEvent(assignment, delivery); err == nil {
 				t.Fatal("NewDeliveryEvent error = nil, want incoherent memory metadata rejection")
 			}
 		})
@@ -340,7 +340,7 @@ func TestDeliveryRejectsPartialMemoryMetadataWithoutTypedResults(t *testing.T) {
 	delivery := validDelivery(assignment.AssignmentID)
 	delivery.EffectiveLimits["entity_requested_k"] = 4
 
-	if _, err := NewDeliveryEvent(assignment.OwnerID, assignment.RequestID, delivery); err == nil {
+	if _, err := NewDeliveryEvent(assignment, delivery); err == nil {
 		t.Fatal("NewDeliveryEvent accepted partial memory metadata without typed results")
 	}
 }
@@ -352,7 +352,7 @@ func TestDeliveryKeepsNonMemoryResultCountIndependent(t *testing.T) {
 	delivery.ResultCount = 5
 	delivery.ResultIDs = []ResultID{{Kind: ResultNode, ID: "document-node-1"}}
 
-	if _, err := NewDeliveryEvent(assignment.OwnerID, assignment.RequestID, delivery); err != nil {
+	if _, err := NewDeliveryEvent(assignment, delivery); err != nil {
 		t.Fatalf("NewDeliveryEvent: %v", err)
 	}
 }
@@ -377,7 +377,7 @@ func TestDeliveryRejectsUnknownMemoryKindAndLimit(t *testing.T) {
 			t.Parallel()
 			delivery := validDelivery(assignment.AssignmentID)
 			tt.mutate(&delivery)
-			if _, err := NewDeliveryEvent(assignment.OwnerID, assignment.RequestID, delivery); err == nil {
+			if _, err := NewDeliveryEvent(assignment, delivery); err == nil {
 				t.Fatal("NewDeliveryEvent error = nil, want unknown memory metadata rejection")
 			}
 		})
@@ -401,7 +401,7 @@ func TestDeliveryAcceptsRegisteredServingRevisionsAndContextBudgetFallback(t *te
 		"schema":    "schema-v6",
 	}
 
-	if _, err := NewDeliveryEvent(assignment.OwnerID, assignment.RequestID, delivery); err != nil {
+	if _, err := NewDeliveryEvent(assignment, delivery); err != nil {
 		t.Fatalf("NewDeliveryEvent: %v", err)
 	}
 }
@@ -427,7 +427,7 @@ func TestDeliveryRejectsNoneIntendedAction(t *testing.T) {
 	delivery := validDelivery(assignment.AssignmentID)
 	delivery.IntendedActionID = ActionNoneID
 
-	if _, err := NewDeliveryEvent(assignment.OwnerID, assignment.RequestID, delivery); err == nil {
+	if _, err := NewDeliveryEvent(assignment, delivery); err == nil {
 		t.Fatal("NewDeliveryEvent accepted none as the intended action")
 	}
 }
@@ -443,7 +443,7 @@ func TestDeliveryRejectsSuccessfulNoneAction(t *testing.T) {
 	delivery.ResultCount = 0
 	delivery.ResultIDs = nil
 
-	if _, err := NewDeliveryEvent(assignment.OwnerID, assignment.RequestID, delivery); err == nil {
+	if _, err := NewDeliveryEvent(assignment, delivery); err == nil {
 		t.Fatal("NewDeliveryEvent accepted none as a successful delivery")
 	}
 }
@@ -477,7 +477,7 @@ func TestDeliveryRejectsNoneActionResultsOrExposure(t *testing.T) {
 			delivery.ResultCount = 0
 			delivery.ResultIDs = nil
 			tt.mutate(&delivery)
-			if _, err := NewDeliveryEvent(assignment.OwnerID, assignment.RequestID, delivery); err == nil {
+			if _, err := NewDeliveryEvent(assignment, delivery); err == nil {
 				t.Fatal("NewDeliveryEvent error = nil, want none-action evidence rejection")
 			}
 		})
