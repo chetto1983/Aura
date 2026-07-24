@@ -454,7 +454,10 @@ func validateDelivery(delivery Delivery) error {
 	if err := validateResultIDs(delivery.ResultIDs); err != nil {
 		return err
 	}
-	return validateDeliveryMaps(delivery.Revisions, delivery.EffectiveLimits)
+	if err := validateDeliveryMaps(delivery.Revisions, delivery.EffectiveLimits); err != nil {
+		return err
+	}
+	return validateMemoryMetadata(delivery)
 }
 
 func validSHA256(value string) bool {

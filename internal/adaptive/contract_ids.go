@@ -65,6 +65,16 @@ var registeredEffectiveLimitKeys = map[string]struct{}{
 	"reasoning_trace_requested_k": {}, "reasoning_trace_effective_k": {}, "reasoning_trace_count": {},
 }
 
+var memoryResultTypes = []struct {
+	kind   ResultKind
+	prefix string
+}{
+	{kind: ResultMemoryEntity, prefix: "entity"},
+	{kind: ResultMemoryPreference, prefix: "preference"},
+	{kind: ResultMemoryMessage, prefix: "message"},
+	{kind: ResultMemoryReasoningTrace, prefix: "reasoning_trace"},
+}
+
 func AssignmentIDForPoint(
 	ownerID uuid.UUID,
 	requestID uuid.UUID,
@@ -144,6 +154,42 @@ func validateDeliveryMaps(revisions map[string]string, limits map[string]int) er
 		if limit < 0 || limit > 1_000_000_000 {
 			return fmt.Errorf("adaptive delivery effective limit %q is out of range", key)
 		}
+	}
+	return nil
+}
+
+func validateMemoryMetadata(delivery Delivery) error {
+	resultCounts := make(map[ResultKind]int, len(memoryResultTypes))
+	for _, resultID := range delivery.ResultIDs {
+		if resultID.Kind.memory() {
+			resultCounts[resultID.Kind]++
+		}
+	}
+
+	metadataPresent := false
+	totalCount := 0
+	for _, resultType := range memoryResultTypes {
+		requested, requestedOK := delivery.EffectiveLimits[resultType.prefix+"_requested_k"]
+		effective, effectiveOK := delivery.EffectiveLimits[resultType.prefix+"_effective_k"]
+		count, countOK := delivery.EffectiveLimits[resultType.prefix+"_count"]
+		represented := resultCounts[resultType.kind] > 0 || requestedOK || effectiveOK || countOK
+		if !represented {
+			continue
+		}
+		metadataPresent = true
+		if !requestedOK || !effectiveOK || !countOK {
+			return fmt.Errorf("adaptive delivery memory %s metadata triple is incomplete", resultType.prefix)
+		}
+		if requested < effective || effective < count {
+			return fmt.Errorf("adaptive delivery memory %s limits are contradictory", resultType.prefix)
+		}
+		if count != resultCounts[resultType.kind] {
+			return fmt.Errorf("adaptive delivery memory %s count does not match result IDs", resultType.prefix)
+		}
+		totalCount += count
+	}
+	if metadataPresent && totalCount != delivery.ResultCount {
+		return errors.New("adaptive delivery memory counts do not match result_count")
 	}
 	return nil
 }
@@ -284,6 +330,16 @@ func (kind ResultKind) valid() bool {
 	switch kind {
 	case ResultArtifact, ResultNode, ResultTool, ResultSkill,
 		ResultMemoryEntity, ResultMemoryPreference, ResultMemoryMessage,
+		ResultMemoryReasoningTrace:
+		return true
+	default:
+		return false
+	}
+}
+
+func (kind ResultKind) memory() bool {
+	switch kind {
+	case ResultMemoryEntity, ResultMemoryPreference, ResultMemoryMessage,
 		ResultMemoryReasoningTrace:
 		return true
 	default:
