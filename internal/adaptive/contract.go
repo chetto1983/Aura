@@ -8,15 +8,25 @@ import (
 	"math"
 	"slices"
 	"strings"
-	"unicode"
 
 	"github.com/google/uuid"
 )
 
 const (
+	SchemaVersion1 = "1.0"
 	SchemaVersion2 = "2.0"
 	StaticActionID = "static"
 	ActionNoneID   = "none"
+)
+
+type Domain string
+
+const (
+	DomainReasoning     Domain = "reasoning"
+	DomainToolDiscovery Domain = "tool_discovery"
+	DomainSkillRouting  Domain = "skill_routing"
+	DomainKnowledge     Domain = "knowledge_retrieval"
+	DomainMemoryRecall  Domain = "memory_recall"
 )
 
 type DecisionPoint string
@@ -29,11 +39,45 @@ const (
 	PointMemoryRecall  DecisionPoint = "memory_recall"
 )
 
+type SelectionReason string
+
+const (
+	SelectionShadowStatic     SelectionReason = "shadow_static"
+	SelectionCanaryAssignment SelectionReason = "canary_assignment"
+	SelectionOperatorOverride SelectionReason = "operator_override"
+	SelectionActivePolicy     SelectionReason = "active_policy"
+	SelectionPolicyOff        SelectionReason = "policy_off"
+	SelectionPolicyRollback   SelectionReason = "policy_rollback"
+	SelectionStateMissing     SelectionReason = "state_missing"
+	SelectionStateInvalid     SelectionReason = "state_invalid"
+	SelectionStateStale       SelectionReason = "state_stale"
+	SelectionOwnerMismatch    SelectionReason = "owner_mismatch"
+	SelectionModelMismatch    SelectionReason = "model_mismatch"
+	SelectionProviderMismatch SelectionReason = "provider_mismatch"
+	SelectionUnsupported      SelectionReason = "unsupported"
+	SelectionChecksumMismatch SelectionReason = "checksum_mismatch"
+)
+
 type DeliveryStatus string
 
 const (
 	DeliverySuccess  DeliveryStatus = "success"
 	DeliveryFallback DeliveryStatus = "fallback"
+)
+
+type FallbackReason string
+
+const (
+	FallbackCandidateUnavailable FallbackReason = "candidate_unavailable"
+	FallbackStrategyFailed       FallbackReason = "strategy_failed"
+	FallbackStateInvalid         FallbackReason = "state_invalid"
+	FallbackStateStale           FallbackReason = "state_stale"
+	FallbackOwnerMismatch        FallbackReason = "owner_mismatch"
+	FallbackModelMismatch        FallbackReason = "model_mismatch"
+	FallbackProviderMismatch     FallbackReason = "provider_mismatch"
+	FallbackUnsupported          FallbackReason = "unsupported"
+	FallbackChecksumMismatch     FallbackReason = "checksum_mismatch"
+	FallbackResultPersistFailed  FallbackReason = "result_persist_failed"
 )
 
 type ResultKind string
@@ -60,6 +104,7 @@ type Assignment struct {
 	AssignmentID        uuid.UUID             `json:"assignment_id"`
 	OwnerID             uuid.UUID             `json:"owner_id"`
 	RequestID           uuid.UUID             `json:"request_id"`
+	Domain              Domain                `json:"domain"`
 	Point               DecisionPoint         `json:"point"`
 	PointOrdinal        uint32                `json:"point_ordinal"`
 	PolicyEpoch         uint64                `json:"policy_epoch"`
@@ -81,7 +126,7 @@ type Assignment struct {
 	ArmID               string                `json:"arm_id"`
 	ArmProbability      *float64              `json:"arm_probability"`
 	ActionProbabilities []ActionProbability   `json:"action_probabilities"`
-	SelectionReason     string                `json:"selection_reason"`
+	SelectionReason     SelectionReason       `json:"selection_reason"`
 	Override            bool                  `json:"override"`
 	Features            map[string]float64    `json:"features"`
 }
@@ -94,7 +139,7 @@ type Delivery struct {
 	Status              DeliveryStatus    `json:"status"`
 	ExposureKnown       bool              `json:"exposure_known"`
 	ExposureProbability *float64          `json:"exposure_probability"`
-	FallbackReason      string            `json:"fallback_reason"`
+	FallbackReason      FallbackReason    `json:"fallback_reason"`
 	ResultCount         int               `json:"result_count"`
 	ResultIDs           []ResultID        `json:"result_ids"`
 	Revisions           map[string]string `json:"revisions"`
@@ -153,8 +198,12 @@ func validateAssignment(assignment Assignment) error {
 		return errors.New("adaptive assignment owner_id is required")
 	case assignment.RequestID == uuid.Nil:
 		return errors.New("adaptive assignment request_id is required")
+	case !assignment.Domain.valid():
+		return fmt.Errorf("adaptive assignment domain %q is invalid", assignment.Domain)
 	case !assignment.Point.valid():
 		return fmt.Errorf("adaptive assignment point %q is invalid", assignment.Point)
+	case assignment.Domain.point() != assignment.Point:
+		return fmt.Errorf("adaptive assignment domain %q does not bind point %q", assignment.Domain, assignment.Point)
 	case assignment.AssignmentID != AssignmentIDForPoint(
 		assignment.OwnerID,
 		assignment.RequestID,
@@ -164,8 +213,8 @@ func validateAssignment(assignment Assignment) error {
 		return errors.New("adaptive assignment assignment_id does not match owner, request, point, and ordinal")
 	case assignment.PolicyEpoch == 0:
 		return errors.New("adaptive assignment policy_epoch is required")
-	case strings.TrimSpace(assignment.PolicyVersion) == "":
-		return errors.New("adaptive assignment policy_version is required")
+	case !validASCIIID(assignment.PolicyVersion, maxPolicyVersionIDLength):
+		return errors.New("adaptive assignment policy_version is invalid")
 	case !assignment.PolicyMode.valid():
 		return fmt.Errorf("adaptive assignment policy_mode %q is invalid", assignment.PolicyMode)
 	case assignment.SnapshotID == uuid.Nil:
@@ -174,18 +223,22 @@ func validateAssignment(assignment Assignment) error {
 		return errors.New("adaptive assignment snapshot_sha256 must be a lowercase SHA-256")
 	case !assignment.Environment.valid():
 		return fmt.Errorf("adaptive assignment environment %q is invalid", assignment.Environment)
-	case strings.TrimSpace(assignment.ProviderID) == "":
-		return errors.New("adaptive assignment provider_id is required")
-	case strings.TrimSpace(assignment.ModelID) == "":
-		return errors.New("adaptive assignment model_id is required")
+	case !validASCIIID(assignment.ProviderID, maxProviderIDLength):
+		return errors.New("adaptive assignment provider_id is invalid")
+	case !validASCIIID(assignment.ModelID, maxModelIDLength):
+		return errors.New("adaptive assignment model_id is invalid")
 	case assignment.CohortID != nil && *assignment.CohortID == uuid.Nil:
 		return errors.New("adaptive assignment cohort_id cannot be nil UUID")
 	case !validSHA256(assignment.EligibilitySHA256):
 		return errors.New("adaptive assignment eligibility_sha256 must be a lowercase SHA-256")
 	case !validSHA256(assignment.CatalogSHA256):
 		return errors.New("adaptive assignment catalog_sha256 must be a lowercase SHA-256")
-	case strings.TrimSpace(assignment.SelectionReason) == "":
-		return errors.New("adaptive assignment selection_reason is required")
+	case !assignment.SelectionReason.valid():
+		return fmt.Errorf("adaptive assignment selection_reason %q is invalid", assignment.SelectionReason)
+	case assignment.ExperimentID != "" && !validASCIIID(assignment.ExperimentID, maxExperimentIDLength):
+		return errors.New("adaptive assignment experiment_id is invalid")
+	case assignment.ArmID != "" && !validASCIIID(assignment.ArmID, maxArmIDLength):
+		return errors.New("adaptive assignment arm_id is invalid")
 	}
 	if err := validateActionCatalog(assignment); err != nil {
 		return err
@@ -205,8 +258,8 @@ func validateActionCatalog(assignment Assignment) error {
 	}
 	seen := make(map[string]struct{}, len(assignment.EligibleActions))
 	for _, actionID := range assignment.EligibleActions {
-		if strings.TrimSpace(actionID) == "" {
-			return errors.New("adaptive assignment eligible action ID is required")
+		if !validASCIIID(actionID, maxActionIDLength) {
+			return fmt.Errorf("adaptive assignment eligible action ID %q is invalid", actionID)
 		}
 		if _, exists := seen[actionID]; exists {
 			return fmt.Errorf("adaptive assignment eligible action %q is duplicated", actionID)
@@ -248,12 +301,26 @@ func validateActionCatalog(assignment Assignment) error {
 }
 
 func validateAssignmentMode(assignment Assignment) error {
-	if assignment.Override &&
-		(assignment.ExperimentID != "" || assignment.ArmID != "" || assignment.ArmProbability != nil) {
-		return errors.New("adaptive assignment override cannot claim a randomized arm")
+	if assignment.Override {
+		if assignment.SelectionReason != SelectionOperatorOverride {
+			return errors.New("adaptive assignment override requires operator_override selection reason")
+		}
+		if assignment.ExperimentID != "" || assignment.ArmID != "" || assignment.ArmProbability != nil {
+			return errors.New("adaptive assignment override cannot claim a randomized arm")
+		}
+		if !deterministicIntendedAction(assignment) {
+			return errors.New("adaptive assignment override must give its intended action probability 1")
+		}
+		return nil
+	}
+	if assignment.SelectionReason == SelectionOperatorOverride {
+		return errors.New("adaptive assignment operator_override reason requires explicit override")
 	}
 	switch assignment.PolicyMode {
 	case PolicyShadow:
+		if assignment.SelectionReason != SelectionShadowStatic {
+			return errors.New("adaptive shadow assignment requires shadow_static selection reason")
+		}
 		if assignment.IntendedActionID != assignment.ChampionActionID {
 			return errors.New("adaptive shadow assignment must intend the static champion")
 		}
@@ -270,6 +337,9 @@ func validateAssignmentMode(assignment Assignment) error {
 			}
 		}
 	case PolicyCanary:
+		if assignment.SelectionReason != SelectionCanaryAssignment {
+			return errors.New("adaptive canary assignment requires canary_assignment selection reason")
+		}
 		if assignment.CohortID == nil {
 			return errors.New("adaptive canary assignment cohort_id is required")
 		}
@@ -292,19 +362,17 @@ func validateAssignmentMode(assignment Assignment) error {
 	return nil
 }
 
-func validateNumericFeatures(features map[string]float64) error {
-	if len(features) > 128 {
-		return errors.New("adaptive assignment features exceed 128 entries")
-	}
-	for key, value := range features {
-		if err := validateSafeKey("feature", key); err != nil {
-			return err
+func deterministicIntendedAction(assignment Assignment) bool {
+	for _, action := range assignment.ActionProbabilities {
+		want := 0.0
+		if action.ActionID == assignment.IntendedActionID {
+			want = 1
 		}
-		if math.IsNaN(value) || math.IsInf(value, 0) || math.Abs(value) > 1e12 {
-			return fmt.Errorf("adaptive assignment feature %q is out of range", key)
+		if action.Probability != want {
+			return false
 		}
 	}
-	return nil
+	return true
 }
 
 func validateDelivery(delivery Delivery) error {
@@ -313,10 +381,10 @@ func validateDelivery(delivery Delivery) error {
 		return fmt.Errorf("adaptive delivery schema_version must be %q", SchemaVersion2)
 	case delivery.AssignmentID == uuid.Nil:
 		return errors.New("adaptive delivery assignment_id is required")
-	case strings.TrimSpace(delivery.IntendedActionID) == "":
-		return errors.New("adaptive delivery intended_action_id is required")
-	case strings.TrimSpace(delivery.ActualActionID) == "":
-		return errors.New("adaptive delivery actual_action_id is required")
+	case !validASCIIID(delivery.IntendedActionID, maxActionIDLength):
+		return errors.New("adaptive delivery intended_action_id is invalid")
+	case !validASCIIID(delivery.ActualActionID, maxActionIDLength):
+		return errors.New("adaptive delivery actual_action_id is invalid")
 	case !delivery.Status.valid():
 		return fmt.Errorf("adaptive delivery status %q is invalid", delivery.Status)
 	case delivery.ExposureKnown && (delivery.ExposureProbability == nil ||
@@ -340,77 +408,14 @@ func validateDelivery(delivery Delivery) error {
 		if delivery.ActualActionID == delivery.IntendedActionID {
 			return errors.New("adaptive fallback delivery must change the actual action")
 		}
-		if strings.TrimSpace(delivery.FallbackReason) == "" {
-			return errors.New("adaptive fallback delivery fallback_reason is required")
+		if !delivery.FallbackReason.valid() {
+			return fmt.Errorf("adaptive fallback delivery fallback_reason %q is invalid", delivery.FallbackReason)
 		}
 	}
 	if err := validateResultIDs(delivery.ResultIDs); err != nil {
 		return err
 	}
 	return validateDeliveryMaps(delivery.Revisions, delivery.EffectiveLimits)
-}
-
-func validateResultIDs(resultIDs []ResultID) error {
-	seen := make(map[ResultID]struct{}, len(resultIDs))
-	for _, resultID := range resultIDs {
-		if !resultID.Kind.valid() || strings.TrimSpace(resultID.ID) == "" {
-			return fmt.Errorf("adaptive delivery result ID %#v is invalid", resultID)
-		}
-		if _, exists := seen[resultID]; exists {
-			return fmt.Errorf("adaptive delivery result ID %#v is duplicated", resultID)
-		}
-		seen[resultID] = struct{}{}
-	}
-	return nil
-}
-
-func validateDeliveryMaps(revisions map[string]string, limits map[string]int) error {
-	allowedRevisions := map[string]struct{}{
-		"corpus": {}, "index": {}, "retriever": {},
-	}
-	for key, revision := range revisions {
-		if err := validateSafeKey("revision", key); err != nil {
-			return err
-		}
-		if _, allowed := allowedRevisions[key]; !allowed {
-			return fmt.Errorf("adaptive delivery revision key %q is not registered", key)
-		}
-		if strings.TrimSpace(revision) == "" {
-			return fmt.Errorf("adaptive delivery revision %q is empty", key)
-		}
-	}
-	for key, limit := range limits {
-		if err := validateSafeKey("effective limit", key); err != nil {
-			return err
-		}
-		if limit < 0 || limit > 1_000_000_000 {
-			return fmt.Errorf("adaptive delivery effective limit %q is out of range", key)
-		}
-	}
-	return nil
-}
-
-func validateSafeKey(kind, key string) error {
-	if key == "" || len(key) > 64 {
-		return fmt.Errorf("adaptive %s key %q is invalid", kind, key)
-	}
-	for _, r := range key {
-		if r != '_' && !unicode.IsLower(r) && !unicode.IsDigit(r) {
-			return fmt.Errorf("adaptive %s key %q is invalid", kind, key)
-		}
-	}
-	privateKeys := map[string]struct{}{
-		"api_key": {}, "chain_of_thought": {}, "content_fingerprint": {},
-		"content_hash": {}, "credentials": {}, "document_content": {},
-		"document_hash": {}, "memory_content": {}, "memory_hash": {},
-		"password": {}, "prompt": {}, "prompt_text": {}, "query": {},
-		"query_hash": {}, "query_text": {}, "raw_prompt": {}, "raw_query": {},
-		"result_hash": {}, "secret": {}, "tool_args": {}, "tool_arguments": {},
-	}
-	if _, private := privateKeys[key]; private {
-		return fmt.Errorf("adaptive %s key %q is private", kind, key)
-	}
-	return nil
 }
 
 func validSHA256(value string) bool {
@@ -429,46 +434,6 @@ func finiteProbability(value float64, allowZero bool) bool {
 		return value >= 0
 	}
 	return value > 0
-}
-
-func (point DecisionPoint) valid() bool {
-	switch point {
-	case PointReasoning, PointToolDiscovery, PointSkillRouting, PointKnowledge, PointMemoryRecall:
-		return true
-	default:
-		return false
-	}
-}
-
-func (mode PolicyMode) valid() bool {
-	switch mode {
-	case PolicyOff, PolicyShadow, PolicyCanary, PolicyActive, PolicyRollback:
-		return true
-	default:
-		return false
-	}
-}
-
-func (environment EvaluationEnvironment) valid() bool {
-	switch environment {
-	case EvaluationSpike, EvaluationOffline, EvaluationProductionCanary:
-		return true
-	default:
-		return false
-	}
-}
-
-func (status DeliveryStatus) valid() bool {
-	return status == DeliverySuccess || status == DeliveryFallback
-}
-
-func (kind ResultKind) valid() bool {
-	switch kind {
-	case ResultArtifact, ResultNode, ResultTool, ResultSkill:
-		return true
-	default:
-		return false
-	}
 }
 
 const sha256HexLength = 64

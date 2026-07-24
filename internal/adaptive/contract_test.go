@@ -81,6 +81,7 @@ func TestAssignmentConstructorProducesCanonicalSchema2Event(t *testing.T) {
 	}
 	for key, want := range map[string]any{
 		"schema_version":     SchemaVersion2,
+		"domain":             string(DomainReasoning),
 		"point":              string(PointReasoning),
 		"point_ordinal":      float64(2),
 		"policy_mode":        string(PolicyShadow),
@@ -108,6 +109,8 @@ func TestAssignmentConstructorRejectsMissingBindings(t *testing.T) {
 		{name: "derived assignment id", mutate: func(a *Assignment) { a.AssignmentID = uuid.Must(uuid.NewV7()) }},
 		{name: "owner", mutate: func(a *Assignment) { a.OwnerID = uuid.Nil }},
 		{name: "request", mutate: func(a *Assignment) { a.RequestID = uuid.Nil }},
+		{name: "domain", mutate: func(a *Assignment) { a.Domain = Domain("") }},
+		{name: "domain point mismatch", mutate: func(a *Assignment) { a.Domain = DomainToolDiscovery }},
 		{name: "point", mutate: func(a *Assignment) { a.Point = DecisionPoint("unknown") }},
 		{name: "policy epoch", mutate: func(a *Assignment) { a.PolicyEpoch = 0 }},
 		{name: "policy version", mutate: func(a *Assignment) { a.PolicyVersion = "" }},
@@ -251,6 +254,104 @@ func TestAssignmentConstructorPreservesExplicitOverride(t *testing.T) {
 	}
 }
 
+func TestAssignmentConstructorAcceptsExogenousCanaryOverride(t *testing.T) {
+	t.Parallel()
+	assignment := validAssignment()
+	assignment.PolicyMode = PolicyCanary
+	assignment.Override = true
+	assignment.RecommendedActionID = "candidate"
+	assignment.IntendedActionID = "candidate"
+	assignment.ActionProbabilities[0].Probability = 1
+	assignment.ActionProbabilities[1].Probability = 0
+	assignment.SelectionReason = SelectionOperatorOverride
+
+	event, err := NewAssignmentEvent(assignment)
+	if err != nil {
+		t.Fatalf("NewAssignmentEvent: %v", err)
+	}
+	var payload Assignment
+	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		t.Fatalf("unmarshal assignment: %v", err)
+	}
+	if payload.ExperimentID != "" || payload.ArmID != "" || payload.ArmProbability != nil {
+		t.Fatalf("override claimed randomized assignment: %#v", payload)
+	}
+	if !payload.Override || payload.SelectionReason != SelectionOperatorOverride {
+		t.Fatalf("override truth = (%t, %q), want explicit operator override",
+			payload.Override, payload.SelectionReason)
+	}
+}
+
+func TestAssignmentConstructorRejectsUnsafeIDsAndUnregisteredReasons(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		mutate func(*Assignment)
+	}{
+		{name: "policy version unicode", mutate: func(a *Assignment) { a.PolicyVersion = "policy-☃" }},
+		{name: "provider whitespace", mutate: func(a *Assignment) { a.ProviderID = "open router" }},
+		{name: "model control", mutate: func(a *Assignment) { a.ModelID = "model\nsecret" }},
+		{name: "model too long", mutate: func(a *Assignment) { a.ModelID = strings.Repeat("m", 257) }},
+		{name: "action unsafe", mutate: func(a *Assignment) {
+			a.EligibleActions[0] = "candidate\n"
+			a.RecommendedActionID = "candidate\n"
+			a.ActionProbabilities[0].ActionID = "candidate\n"
+		}},
+		{name: "selection prose", mutate: func(a *Assignment) {
+			a.SelectionReason = SelectionReason("operator said use the secret answer")
+		}},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assignment := validAssignment()
+			tt.mutate(&assignment)
+			if _, err := NewAssignmentEvent(assignment); err == nil {
+				t.Fatal("NewAssignmentEvent error = nil, want bounded registry rejection")
+			}
+		})
+	}
+}
+
+func TestAssignmentFeatureRegistryRejectsFingerprintAliases(t *testing.T) {
+	t.Parallel()
+	privateAliases := []string{
+		"response_fingerprint",
+		"memory_fingerprint_sha256",
+		"content_sha256",
+		"payload_digest",
+		"result_checksum",
+		"document_content_hash",
+	}
+	for _, key := range privateAliases {
+		key := key
+		t.Run(key, func(t *testing.T) {
+			t.Parallel()
+			assignment := validAssignment()
+			assignment.Features = map[string]float64{key: 1}
+			if _, err := NewAssignmentEvent(assignment); err == nil {
+				t.Fatalf("NewAssignmentEvent accepted fingerprint alias %q", key)
+			}
+		})
+	}
+	assignment := validAssignment()
+	assignment.Features = map[string]float64{
+		"prompt_length":         400,
+		"available_tool_count":  12,
+		"available_skill_count": 8,
+		"document_count":        5,
+		"memory_count":          3,
+	}
+	if _, err := NewAssignmentEvent(assignment); err != nil {
+		t.Fatalf("NewAssignmentEvent registered safe lengths/counts: %v", err)
+	}
+	assignment.Features["unregistered_count"] = 1
+	if _, err := NewAssignmentEvent(assignment); err == nil {
+		t.Fatal("NewAssignmentEvent accepted unregistered numeric feature")
+	}
+}
+
 func TestDeliveryConstructorRecordsIntendedActualStatusAndExposure(t *testing.T) {
 	t.Parallel()
 	assignment := validAssignment()
@@ -288,6 +389,38 @@ func TestDeliveryConstructorRecordsIntendedActualStatusAndExposure(t *testing.T)
 	if payload.ResultCount != 2 || len(payload.ResultIDs) != 1 {
 		t.Fatalf("result count/IDs = (%d, %d), independent count was not preserved",
 			payload.ResultCount, len(payload.ResultIDs))
+	}
+}
+
+func TestDeliveryConstructorRejectsUnsafeIDsReasonsAndUnregisteredMaps(t *testing.T) {
+	t.Parallel()
+	assignment := validAssignment()
+	tests := []struct {
+		name   string
+		mutate func(*Delivery)
+	}{
+		{name: "intended action", mutate: func(d *Delivery) { d.IntendedActionID = "candidate\n" }},
+		{name: "actual action", mutate: func(d *Delivery) { d.ActualActionID = "stàtic" }},
+		{name: "result ID", mutate: func(d *Delivery) { d.ResultIDs[0].ID = "artifact secret" }},
+		{name: "revision value", mutate: func(d *Delivery) { d.Revisions["retriever"] = "revision\nsecret" }},
+		{name: "fallback prose", mutate: func(d *Delivery) {
+			d.FallbackReason = FallbackReason("the model exposed private output")
+		}},
+		{name: "unregistered revision key", mutate: func(d *Delivery) { d.Revisions["model"] = "model-v1" }},
+		{name: "unregistered effective limit", mutate: func(d *Delivery) {
+			d.EffectiveLimits["temperature"] = 1
+		}},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			delivery := validDelivery(assignment.AssignmentID)
+			tt.mutate(&delivery)
+			if _, err := NewDeliveryEvent(assignment.OwnerID, assignment.RequestID, delivery); err == nil {
+				t.Fatal("NewDeliveryEvent error = nil, want bounded registry rejection")
+			}
+		})
 	}
 }
 
@@ -406,6 +539,7 @@ func validAssignment() Assignment {
 		AssignmentID:        AssignmentIDForPoint(owner, request, PointReasoning, 2),
 		OwnerID:             owner,
 		RequestID:           request,
+		Domain:              DomainReasoning,
 		Point:               PointReasoning,
 		PointOrdinal:        2,
 		PolicyEpoch:         11,

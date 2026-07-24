@@ -80,9 +80,9 @@ func TestNewEventRejectsUnscopedOrUnversionedPayload(t *testing.T) {
 	}
 }
 
-func TestNewEventKeepsSchema1ReadableButRejectsSchema2Decision(t *testing.T) {
+func TestNewEventKeepsSchema1ReadableButRejectsTypedAndFutureEvidence(t *testing.T) {
 	t.Parallel()
-	params := EventParams{
+	valid := EventParams{
 		ID:          uuid.Must(uuid.NewV7()),
 		OwnerID:     uuid.Must(uuid.NewV7()),
 		AggregateID: "turn-42",
@@ -90,11 +90,19 @@ func TestNewEventKeepsSchema1ReadableButRejectsSchema2Decision(t *testing.T) {
 		Kind:        EventDecision,
 		Payload:     json.RawMessage(`{"schema_version":"1.0"}`),
 	}
-	if _, err := NewEvent(params); err != nil {
-		t.Fatalf("NewEvent(schema 1.0): %v", err)
-	}
-	params.Payload = json.RawMessage(`{"schema_version":"2.0"}`)
-	if _, err := NewEvent(params); err == nil {
-		t.Fatal("NewEvent accepted schema-2 decision instead of requiring typed constructor")
+	for _, kind := range []EventKind{EventDecision, EventOutcome, EventCorrection} {
+		params := valid
+		params.Kind = kind
+		if _, err := NewEvent(params); err != nil {
+			t.Fatalf("NewEvent(%s schema 1.0): %v", kind, err)
+		}
+		for _, version := range []string{"2.0", "3.0", "future"} {
+			params = valid
+			params.Kind = kind
+			params.Payload = json.RawMessage(`{"schema_version":"` + version + `"}`)
+			if _, err := NewEvent(params); err == nil {
+				t.Fatalf("NewEvent accepted generic %s schema %q", kind, version)
+			}
+		}
 	}
 }

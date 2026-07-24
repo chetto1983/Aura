@@ -87,13 +87,15 @@ func NewEvent(p EventParams) (Event, error) {
 	if err := json.Unmarshal(canonical, &envelope); err != nil {
 		return Event{}, fmt.Errorf("decode adaptive payload envelope: %w", err)
 	}
-	if envelope.SchemaVersion == SchemaVersion2 &&
-		p.Kind != EventPromotion &&
-		p.Kind != EventRollback {
-		return Event{}, errors.New("adaptive schema-2 evidence requires a typed constructor")
+	if p.Kind.genericEvidence() && envelope.SchemaVersion != SchemaVersion1 {
+		return Event{}, errors.New("generic adaptive evidence requires schema_version 1.0")
 	}
 	p.Payload = canonical
 	return newEvent(p)
+}
+
+func (k EventKind) genericEvidence() bool {
+	return k == EventDecision || k == EventOutcome || k == EventCorrection
 }
 
 func newEvent(p EventParams) (Event, error) {
