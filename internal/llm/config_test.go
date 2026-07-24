@@ -30,7 +30,6 @@ func clearLLMEnv(t *testing.T) {
 		"AURA_MODEL_MAX_OUTPUT_TOKENS",
 		"AURA_COMPLETION_GATE",
 		"AURA_COMPLETION_CRITIC_MODEL",
-		"AURA_LLM_REASONING_LEARNING",
 		"AURA_LLM_OPENROUTER_MIDDLE_OUT",
 	} {
 		t.Setenv(k, "")
@@ -185,8 +184,7 @@ func TestLoadAllowEmptyKeyAllowsEmptyAPIKey(t *testing.T) {
 
 // TestConfigEnvOpenRouterMiddleOut locks the fix-plan 1.11 knob: default OFF
 // (dormant belt, byte-unchanged wire), set-true flips it on, and a malformed
-// value falls back to the current value (non-fatal, mirrors ReasoningLearning
-// — an operator typo on an opt-in toggle must not block boot).
+// value falls back to the current value without blocking boot.
 func TestConfigEnvOpenRouterMiddleOut(t *testing.T) {
 	t.Run("unset_defaults_off", func(t *testing.T) {
 		isolateHome(t)

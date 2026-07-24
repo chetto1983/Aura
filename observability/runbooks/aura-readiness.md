@@ -17,7 +17,7 @@ Open the linked panel on dashboard `aura-overview`. Filter only by catalog-owned
 3. For migration mismatch, stop serving traffic and run the repository migration command with the migrate role. Do not let `aura serve` apply migrations.
 4. For scheduler no-progress, confirm it is enabled and not intentionally draining. Preserve the durable queue; do not delete or replay jobs manually.
 5. For resume failures, preserve pause and operation records before retrying. Never reinvoke a terminal `indeterminate` mutation.
-6. For DB pressure, pause optional batch work and retention/learning compaction before changing connection limits.
+6. For DB pressure, pause optional batch work and retention sweeps before changing connection limits.
 
 ## Escalation
 
@@ -26,4 +26,3 @@ Escalate immediately if two core dependencies fail together, a listener exits un
 ## Recovery evidence
 
 Close the incident only after `/readyz` is stable 200 for two healthcheck intervals, listener and scheduler progress panels advance, resume failures stop increasing, DB error ratio stays below five percent, DB in-flight work is below 50, and a fresh synthetic read-only turn completes. Record the last firing time and the trace link used for confirmation.
-

@@ -56,7 +56,7 @@ const TECHNICAL_NODES: readonly ClientNode[] = [
     size: 8,
     labels: ['Chunk'],
   },
-  { id: 'n2', caption: 'web_search', color: '#81C995', size: 6, labels: ['ToolSelectionExample'] },
+  { id: 'n2', caption: 'web_search', color: '#81C995', size: 6, labels: ['Source'] },
 ];
 const DENSE_NODES: readonly ClientNode[] = Array.from({ length: 33 }, (_, index) => ({
   id: `n${String(index)}`,

@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -14,51 +15,31 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 )
 
-// --- CloseLearner ---
+type fakeEmbedder struct {
+	mu  sync.Mutex
+	err error
+	n   int
+}
 
-// TestCloseLearner exercises the shutdown path for both async workers and the
-// nil-safe branches (nil receiver, nil learners).
-func TestCloseLearner(t *testing.T) {
-	t.Run("nil receiver is safe", func(t *testing.T) {
-		var r *Runner
-		r.CloseLearner() // must not panic
-	})
-	t.Run("closes a wired reasoning + tool-select learner", func(t *testing.T) {
-		reg := tools.NewRegistry()
-		ts := &tools.ToolSearch{Registry: reg}
-		reg.Register(ts)
-		reg.Register(deferredTool{name: "web_search"})
-		reg.Register(deferredTool{name: "shell_exec"})
-		r := New(Deps{
-			Conv:            newFakeConvStore(),
-			Pause:           newFakePauseStore(),
-			Identity:        newFakeIdentityStore(),
-			CacheMetrics:    newFakeCacheMetricStore(),
-			ToolInvocations: newFakeToolInvocationStore(),
-			Client:          agenttest.NewFakeClient(),
-			Registry:        reg,
-			LLM:             llm.Config{Model: "test-model", ReasoningLearning: true},
-			Embedder:        &fakeEmbedder{},
-			ExampleStore:    nil,
-			ReasoningSaver:  &fakeReasoningSaver{},
-			ToolSelectSaver: &fakeToolSelectSaver{},
-			TitleTimeout:    time.Second,
-			StopTimeout:     time.Second,
-		})
-		if r.learner == nil {
-			t.Fatal("expected a wired reasoning learner")
-		}
-		if r.toolSelectLearner == nil {
-			t.Fatal("expected a wired tool-select learner")
-		}
-		r.CloseLearner() // joins both workers; goleak (TestMain) asserts no leak
-	})
-	t.Run("nil learners are safe", func(t *testing.T) {
-		r, _, _ := newTestRunner(t, agenttest.NewFakeClient())
-		r.learner = nil
-		r.toolSelectLearner = nil
-		r.CloseLearner()
-	})
+func (f *fakeEmbedder) Embed(_ context.Context, texts []string) ([][]float64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.n++
+	if f.err != nil {
+		return nil, f.err
+	}
+	out := make([][]float64, len(texts))
+	for i, text := range texts {
+		seed := float64(len(text)%7) + 1
+		out[i] = []float64{seed, seed / 2, 1}
+	}
+	return out, nil
+}
+
+func (f *fakeEmbedder) calls() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.n
 }
 
 // --- TryLockThread + Turn(threadLockHeld) ---

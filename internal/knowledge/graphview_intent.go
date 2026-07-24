@@ -74,9 +74,7 @@ RETURN
 // Conversation->Message->MENTIONS footprint but do contain evidence relationships
 // such as Document->Chunk, Chunk->Chunk, and User->Preference. Filters are still
 // bound as data; the label filter keeps an edge when either endpoint carries one
-// of the selected labels. A label-filtered branch also returns isolated learning
-// evidence nodes (ReasoningExample/ToolSelectionExample), because those nodes are
-// intentionally stored without relationships and would otherwise look "empty".
+// of the selected labels.
 //
 // The three ownership facts are ROW-INVARIANT, so they are computed ONCE in the
 // leading WITH and imported into the CALL, never re-derived per candidate edge:
@@ -101,22 +99,13 @@ CALL {
   WHERE (unscoped
     OR elementId(s) IN owned_entities OR elementId(n) IN owned_entities
     OR (single_tenant AND (
-      s:Document OR s:Chunk OR s:Preference OR s:Entity OR s:Source OR s:ReasoningExample OR s:ToolSelectionExample OR
-      n:Document OR n:Chunk OR n:Preference OR n:Entity OR n:Source OR n:ReasoningExample OR n:ToolSelectionExample
+      s:Document OR s:Chunk OR s:Preference OR s:Entity OR s:Source OR
+      n:Document OR n:Chunk OR n:Preference OR n:Entity OR n:Source
     )))
     AND ($rel_types = [] OR type(r) IN $rel_types)
     AND ($labels = [] OR any(l IN labels(s) WHERE l IN $labels) OR any(l IN labels(n) WHERE l IN $labels))
   WITH s, r, n LIMIT $edge_cap
   RETURN s, r, n
-  UNION
-  WITH unscoped, single_tenant
-  MATCH (s)
-  WHERE $labels <> []
-    AND any(l IN labels(s) WHERE l IN $labels)
-    AND NOT (s)--()
-    AND (unscoped OR (single_tenant AND (s:ReasoningExample OR s:ToolSelectionExample)))
-  WITH s LIMIT $node_cap
-  RETURN s, null AS r, null AS n
 }
 WITH collect({s:s, r:r, n:n}) AS rows
 WITH [row IN rows | elementId(row.s)] + [row IN rows WHERE row.n IS NOT NULL | elementId(row.n)] AS candidate_ids, rows
@@ -166,7 +155,7 @@ WHERE elementId(s) = $seed
       MATCH (other:User)
       WHERE coalesce(other.identifier, other.id, '') <> $user_id
     }
-    AND (s:Document OR s:Chunk OR s:Preference OR s:Entity OR s:Source OR s:User OR s:ReasoningExample OR s:ToolSelectionExample)
+    AND (s:Document OR s:Chunk OR s:Preference OR s:Entity OR s:Source OR s:User)
   })
 OPTIONAL MATCH (s)-[r]-(n)
 WHERE ($rel_types = [] OR type(r) IN $rel_types)

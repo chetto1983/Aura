@@ -10,7 +10,7 @@
 // Question #1's first instinct): internal/db's cache_metrics integration test is
 // package db and imports internal/cachemetrics, so making cachemetrics import
 // internal/db forms a db↔cachemetrics test cycle. A dedicated pg-flavoured leaf keeps
-// the "Postgres home, not neostore" intent while staying cycle-free (D-06).
+// the "Postgres-owned numeric seam" intent while staying cycle-free (D-06).
 package pgnumeric
 
 import (

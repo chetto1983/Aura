@@ -172,38 +172,11 @@ func TestCompileOverviewScopesByUserID(t *testing.T) {
 		"coalesce(other.identifier, other.id, '') <> $user_id",
 		"s:Document OR s:Chunk OR s:Preference",
 		"n:Document OR n:Chunk OR n:Preference",
-		"s:ReasoningExample OR s:ToolSelectionExample",
-		"n:ReasoningExample OR n:ToolSelectionExample",
 	} {
 		if !strings.Contains(cypher, frag) {
 			t.Fatalf("overview query missing user-scope fragment %q:\n%s", frag, cypher)
 		}
 	}
-}
-
-func TestCompileOverviewIncludesIsolatedLearningExamples(t *testing.T) {
-	cypher, params := compileOverview(GraphIntent{Op: OpSchemaOverview, Labels: []string{"ToolSelectionExample"}})
-
-	if labels, ok := params["labels"].([]string); !ok || len(labels) != 1 || labels[0] != "ToolSelectionExample" {
-		t.Fatalf("params[labels] = %#v, want [ToolSelectionExample]", params["labels"])
-	}
-	for _, frag := range []string{
-		"UNION",
-		"MATCH (s)",
-		"$labels <> []",
-		"any(l IN labels(s) WHERE l IN $labels)",
-		"AND NOT (s)--()",
-		"s:ReasoningExample OR s:ToolSelectionExample",
-		"RETURN s, null AS r, null AS n",
-		"CASE WHEN r IS NULL THEN '' ELSE elementId(r) END AS r_id",
-		"coalesce(s.name, s.canonical_name, s.tool, s.query) AS s_caption",
-		"apoc.map.removeKey(properties(s), 'embedding') AS s_props",
-	} {
-		if !strings.Contains(cypher, frag) {
-			t.Fatalf("overview query missing isolated-learning fragment %q:\n%s", frag, cypher)
-		}
-	}
-	assertExplicitProjection(t, cypher)
 }
 
 func TestCompileExpandScopesByUserID(t *testing.T) {
@@ -222,10 +195,21 @@ func TestCompileExpandScopesByUserID(t *testing.T) {
 		"NOT EXISTS {",
 		"coalesce(other.identifier, other.id, '') <> $user_id",
 		"s:Document OR s:Chunk OR s:Preference",
-		"s:ReasoningExample OR s:ToolSelectionExample",
 	} {
 		if !strings.Contains(cypher, frag) {
 			t.Fatalf("expand query missing user-scope fragment %q:\n%s", frag, cypher)
+		}
+	}
+}
+
+func TestGraphIntentQueriesHaveNoLegacyLearningLabelExceptions(t *testing.T) {
+	overview, _ := compileOverview(GraphIntent{Op: OpSchemaOverview})
+	expand, _ := compileExpand(GraphIntent{Op: OpExpand, SeedID: "node-1"})
+	for _, query := range []string{overview, expand} {
+		for _, label := range []string{"ReasoningExample", "ReasoningSeed", "ToolSelectionExample", "ToolSelectionSeed"} {
+			if strings.Contains(query, label) {
+				t.Errorf("query retains legacy label exception %s:\n%s", label, query)
+			}
 		}
 	}
 }

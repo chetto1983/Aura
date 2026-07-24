@@ -45,9 +45,9 @@ These recur throughout the code and explain most of the non-obvious decisions:
 - **Trust boundaries are explicit.** Anything the model didn't author — MCP results,
   web pages, document text — is wrapped/framed as untrusted before it re-enters the
   prompt (prompt-injection containment), and secrets are redacted at every egress.
-- **Self-improvement without latency.** A reusable embedding-index substrate powers
-  both reasoning-tier routing and tool discovery, and an async learner upgrades them
-  off the hot path so accuracy rises without slowing any user turn.
+- **Static serving, measured adaptation.** A reusable embedding-index substrate powers
+  curated-seed reasoning-tier routing and semantic tool discovery. The separate adaptive
+  control plane remains shadow-only until its promotion gates authorize serving.
 
 ## 2. Layered view
 
@@ -73,15 +73,14 @@ These recur throughout the code and explain most of the non-obvious decisions:
 │                       mcp/manager (recipes, trust, audit)                 │
 ├──────────────────────────────────────────────────────────────────────────┤
 │ Intelligence subst.   llm (+openai_compat) · semindex (embed-index core)  │
-│                       · activelearn · reasoning{fifo,learn,store,trace}   │
-│                       · toolselect{learn,store} · multimodal · rerank     │
+│                       · adaptive · reasoningtrace · multimodal · rerank   │
 ├──────────────────────────────────────────────────────────────────────────┤
 │ Capabilities          web · skills (+skilladapters) · cron (+handlers)    │
 │                       · onboarding · documents · assets · settings ·      │
 │                       eval · runner                                       │
 ├──────────────────────────────────────────────────────────────────────────┤
 │ Persistence           db (+sqlc, Postgres) · knowledge (Neo4j) ·          │
-│                       neostore · conversations (+cl100k) · objectstore    │
+│                       conversations (+cl100k) · objectstore               │
 │                       (+garageadmin) · identity · profile · secret        │
 ├──────────────────────────────────────────────────────────────────────────┤
 │ Observability         obs · agent/panicobs · reasoningtrace ·             │
@@ -266,14 +265,7 @@ PIM sidecar — its send/search email tools subsume mail-mcp.
   granite-embedding classifier maps the turn to `none|low|high` with a single local
   embed + cosine argmax; on abstention it falls back to the LLM "oracle" router. The design
   target recorded in `reasoning_classifier.go` is ~10 ms CPU at 90% accuracy over a
-  60-prompt held-out set. An async learner (`reasoninglearn` → `activelearn` →
-  `reasoningstore` in Neo4j) labels the uncertain turns off the hot path so the classifier
-  converges toward oracle accuracy with no added latency.
-- **`activelearn`** — the label-agnostic async self-improvement mechanism (bounded queue,
-  content-hash dedup, margin gate, drop-on-full, goleak-clean). Two consumers: reasoning
-  routing and tool selection (`toolselectlearn` → `toolselectstore`), the latter teaching
-  `tool_search`'s per-tool centroids from confirmed routings via a free-ranker/DeepSeek
-  two-tier oracle.
+  60-prompt held-out set. Its curated seeds are the complete serving baseline.
 - **`multimodal` + `rerank`** — the sidecar clients for vision/STT/TTS and for the
   llama.cpp `/v1/rerank` reranker used to re-order retrieval hits.
 - **`scoring`** — pure Risk-Based governance: maps scheduler tasks, skill mutations, and
@@ -302,12 +294,11 @@ Cypher, with SQLSTATE-classified errors and pgtype boundary conversion:
   bypass for backfills, while `aura_app` is a non-owner, non-superuser, non-BYPASSRLS
   role. Both halves of that assumption are asserted live (`TestAuraAppLacksRLSBypass`,
   `TestRLSBackstop`).
-- **Neo4j** (`internal/knowledge`, `internal/neostore`) — the LLM-facing runtime interface
+- **Neo4j** (`internal/knowledge`) — the LLM-facing runtime interface
   is the `mcp-neo4j-cypher` subprocess over stdio (no native driver for data ops); a
   separate driver-backed `SchemaExecutor` runs the DDL the MCP layer can't. **HNSW 768-d
   vector index** + fulltext, Cypher migrations audited in Postgres. Holds the document
-  graph and the self-improvement example stores (`:ReasoningExample`,
-  `:ToolSelectionExample`).
+  graph and private adaptive shadow projections.
 - **`objectstore`** — the S3/filesystem blob seam with per-identity prefixes
   (`identity_store.go`) and a Garage admin client for provisioning.
 

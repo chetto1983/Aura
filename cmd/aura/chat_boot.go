@@ -25,16 +25,12 @@ import (
 	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/idempotency"
 	"github.com/chetto1983/aura/internal/identity"
-	"github.com/chetto1983/aura/internal/knowledge"
-	"github.com/chetto1983/aura/internal/learningretention"
 	"github.com/chetto1983/aura/internal/llm"
-	"github.com/chetto1983/aura/internal/reasoningstore"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 	"github.com/chetto1983/aura/internal/settings"
 	"github.com/chetto1983/aura/internal/share"
 	"github.com/chetto1983/aura/internal/toolinvocations"
-	"github.com/chetto1983/aura/internal/toolselectstore"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -65,8 +61,7 @@ type chatEnv struct {
 	// under a non-strict profile or a Docker-unavailable host — a safe host-direct no-op
 	// everywhere (Route/Strict/SuspendIdle all nil-guard). buildDispatch registers it as the
 	// KindSandboxReap reaper; plan 37-07 wires it onto the box-capable tools.
-	sandboxRouter  *usersandbox.SandboxRouter
-	learningStores []learningretention.Store
+	sandboxRouter *usersandbox.SandboxRouter
 }
 
 // close releases the pool (the OTel TracerProvider is owned by the REPL path).
@@ -78,11 +73,6 @@ func (e *chatEnv) close() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = e.toolHandles.BackgroundShells.Shutdown(ctx)
-	}
-	// Drain the async reasoning learner BEFORE the graph client it writes through
-	// is closed (mcpClosers below holds gclient.Close).
-	if e.run != nil {
-		e.run.CloseLearner()
 	}
 	_ = closeMCPServers(e.mcpClosers)
 	if e.pool != nil {
@@ -303,69 +293,25 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 	// cannot tier panics here rather than silently under-gating a live turn.
 	gateway.ValidateClassifiable(reg)
 
-	// Reasoning-tier self-improvement (spike 053) is one opt-in feature behind
-	// AURA_LLM_REASONING_LEARNING: only when it is on do we open a graph client
-	// (the mcp-neo4j-cypher subprocess) so the classifier can fold oracle-labeled
-	// :ReasoningExample nodes (read) and the async learner write new ones. Default
-	// OFF means the classifier runs seed-only — its validated baseline — with zero
-	// extra subprocess. Best-effort even when on: a missing binary or a down Neo4j
-	// leaves it seed-only and never blocks boot.
-	var reasoningStore *reasoningstore.Store
-	var toolSelectStore *toolselectstore.Store
-	var learningStores []learningretention.Store
-	// WR-05 — coupling note: the tool-selection active-learning loop has NO independent
-	// enable flag. It deliberately rides AURA_LLM_REASONING_LEARNING (cfg.LLM.ReasoningLearning)
-	// below: the toolSelectStore is constructed only inside this gate, sharing the SAME
-	// graph client the reasoning learner opens (no extra mcp-neo4j-cypher subprocess). So
-	// reasoning-tier self-improvement OFF ⇒ tool-selection self-improvement OFF too, and
-	// vice versa; they cannot be toggled independently. AURA_TOOLSELECT_ORACLE gates only
-	// the PAID escalation tier, never whether the loop runs at all. (Documented per WR-05;
-	// a dedicated env var was deliberately NOT added to avoid scope expansion.)
-	if cfg.LLM.ReasoningLearning {
-		if gclient, gerr := knowledge.Open(ctx, &cfg.Neo4j); gerr != nil {
-			fmt.Fprintln(os.Stderr, "warn: reasoning example store unavailable:", gerr)
-		} else {
-			mcpClosers = append(mcpClosers, gclient.Close)
-			learningStores = []learningretention.Store{
-				learningretention.NewReasoningGraphStore(gclient),
-				learningretention.NewToolSelectionGraphStore(gclient),
-			}
-			reasoningStore = &reasoningstore.Store{
-				Client: gclient, BucketCap: cfg.Learning.BucketCap,
-				StoreCap: cfg.Learning.StoreCap, ExampleTTL: cfg.Learning.ExampleTTL,
-			}
-			// The tool-selection active-learning loop (D-06/D-07) rides the SAME graph
-			// client: when the reasoning learner is on (and Neo4j opened) the tool_search
-			// ranker also self-improves via :ToolSelectionExample. No extra subprocess.
-			toolSelectStore = &toolselectstore.Store{
-				Client: gclient, BucketCap: cfg.Learning.BucketCap,
-				StoreCap: cfg.Learning.StoreCap, ExampleTTL: cfg.Learning.ExampleTTL,
-				ValidTool: func(name string) bool {
-					_, ok := reg.Get(name)
-					return ok
-				},
-			}
-		}
-	}
-
 	hookManager, err := agent.CommandHookManagerFromEnv(os.LookupEnv)
 	if err != nil {
 		return nil, fmt.Errorf("command hooks: %w", err)
 	}
+	hookManager, adaptiveCommitter := buildAdaptiveShadowRuntime(ctx, pool, convStore, hookManager)
 	client := newLLMClient(cfg.LLM)
 	deps := runner.Deps{
-		Conv:            convStore,
-		Pause:           pauseStore,
-		Identity:        idStore,
-		CacheMetrics:    cacheStore,
-		ToolInvocations: toolInvocationStore,
+		Conv:              convStore,
+		Pause:             pauseStore,
+		Identity:          idStore,
+		CacheMetrics:      cacheStore,
+		ToolInvocations:   toolInvocationStore,
+		AdaptiveCommitter: adaptiveCommitter,
 		// Atomic cross-store HITL durability (D-03/D-05): the pool-owning committer spans
 		// a pause claim + its answer turn (and pause exposure) in ONE db.WithTx.
 		ResumeCommitter: runner.NewPoolResumeCommitter(pool, convStore, pauseStore),
 		Client:          client,
 		Registry:        reg,
 		LLM:             cfg.LLM,
-		Learning:        cfg.Learning,
 		RunDir:          cfg.RunDir,
 		// Amendment #88: the per-turn "Working directory" hint mirrors the fixed
 		// WorkspaceRoot every host-direct tool now resolves against, replacing the
@@ -387,18 +333,9 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 		// falls back to the LLM router.
 		Embedder: embeddingClient(cfg, documentHTTPClient(cfg)),
 	}
-	// Set the store-backed fields only when the graph client opened (a nil
-	// *Store wrapped in an interface would be a non-nil interface and panic).
-	if reasoningStore != nil {
-		deps.ExampleStore = reasoningStore
-		deps.ReasoningSaver = reasoningStore
-	}
-	if toolSelectStore != nil {
-		deps.ToolSelectSaver = toolSelectStore
-	}
 	run := runner.New(deps)
 	success = true // disarm the close-on-error guard; chatEnv.close now owns the lifecycle.
-	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, gateway: gw, operations: operations, toolInvocations: toolInvocationStore, deleteReconciler: runner.NewDeleteReconciler(run, time.Minute), toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter, learningStores: learningStores}, nil
+	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, gateway: gw, operations: operations, toolInvocations: toolInvocationStore, deleteReconciler: runner.NewDeleteReconciler(run, time.Minute), toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter}, nil
 }
 
 func openSettingsOverlayPool(ctx context.Context) (*pgxpool.Pool, bool, error) {

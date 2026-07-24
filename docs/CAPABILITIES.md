@@ -26,7 +26,6 @@ cockpit (Phases 22-30) shipped 2026-06-29 · **v2.0.0** industrial hardening
 | Workflow agents | Sequential / Parallel / Loop composition (leak-safe, escalate-aware) | ✅ | `agent/workflow` |
 | Swarm fan-out | `swarm_spawn`: N goals as budget-bounded parallel workers, per-child failure isolation | ✅ | `swarm`, `agent/tools` |
 | Adaptive reasoning router | Local embedding classifier routes reasoning effort (`none/low/high`) off the hot path | ✅ | `agent/prompt` (`reasoning_policy`), `semindex` (`classifier`) |
-| Self-improving routers | Async learner upgrades reasoning + tool routing off the hot path | ✅ | `activelearn`, `reasoninglearn`, `toolselectlearn` |
 | HITL pause/resume | `ask_user` suspends a turn for clarification/approval/choice; FIFO ledger | ✅ | `agent`, `agent/tools` (`ask_user`), `askuser`, `db` |
 | Hooks | In-process + trust-gated out-of-process lifecycle hooks (before/after model & tool) | ✅ | `agent` (`hooks`, `hooks_command`) |
 | ToolGateway + policy engine | Central PEP: every tool call passes `Decide` → allow / deny / consent-bound approval | ✅ | `gateway` (`decide`, `classify`, `approvals`) |
@@ -56,7 +55,7 @@ cockpit (Phases 22-30) shipped 2026-06-29 · **v2.0.0** industrial hardening
 | Conversation persistence | Multi-thread, Claude.ai-style; atomic per-turn append | ✅ | `conversations`, `db` |
 | Context-management ladder | L1 microcompact → L2 budget gate → L2.5 oldest-pair drop + rot events | ✅ | `conversations` (`context`) |
 | Document ingestion | PDF/xlsx/DOCX → chunks → Neo4j sparse FTS + async vector embeddings | ✅ | `documents`, `knowledge`, `assets` |
-| Graph + vector store | Neo4j Community + APOC + GDS, **768-d** HNSW (cosine) + fulltext | ✅ | `knowledge`, `neostore` |
+| Graph + vector store | Neo4j Community + APOC + GDS, **768-d** HNSW (cosine) + fulltext | ✅ | `knowledge` |
 | Rerank | Cross-encoder rerank over hybrid candidates; fail-soft identity degrade | ✅ | `rerank` |
 | Agent-memory MCP | Entities / facts / preferences / sessions via the memory MCP server | ✅ | `mcp/manager` (catalog), `agent/mcptools` |
 | User profile | Per-identity `Agent.md` (atomic writes), injected as a protected block | ✅ | `profile`, `onboarding` |

@@ -1,0 +1,47 @@
+{
+  "schema_version": "1.0",
+  "created_at": "2026-07-24T12:04:25.4651224Z",
+  "subject_model_id": "synthetic-model-not-production",
+  "seed": 10520260724,
+  "trials_per_scenario": 1000,
+  "assigned_per_arm": 2500,
+  "gate_config": {
+    "MinPerArm": 2000,
+    "MinEffectiveSampleSize": 1900,
+    "MinimumQualityUplift": 0,
+    "MaximumHarmIncrease": 0.02,
+    "TotalAlpha": 0.05,
+    "PlannedLooks": 5,
+    "Look": 5,
+    "MaxCensorRate": 0.05,
+    "MaxCensorImbalance": 0.02
+  },
+  "scenarios": [
+    {
+      "name": "null_equal_quality",
+      "trials": 1000,
+      "promotions": 0,
+      "promotion_rate": 0
+    },
+    {
+      "name": "safe_quality_uplift",
+      "trials": 1000,
+      "promotions": 1000,
+      "promotion_rate": 1
+    },
+    {
+      "name": "quality_uplift_with_harm_regression",
+      "trials": 1000,
+      "promotions": 0,
+      "promotion_rate": 0
+    }
+  ],
+  "negative_gates": {
+    "differential_censoring_rejected": true,
+    "duplicate_decision_rejected": true,
+    "self_report_rejected": true,
+    "spike_evidence_rejected": true
+  },
+  "verdict": "VALIDATED_GATE_NOT_MODEL",
+  "scope": "Synthetic seeded trials validate false-promotion, power, harm, and poison behavior of the gate. They do not prove that any production model or adaptive policy improves Aura."
+}

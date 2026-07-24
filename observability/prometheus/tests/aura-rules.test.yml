@@ -289,4 +289,3 @@ tests:
   # boundary: AuraIdempotencyIndeterminate threshold 0/1/2 debounce 4m/5m/6m
   # boundary: AuraRetentionFailures threshold 0/1/2 debounce 4m/5m/6m
   # boundary: AuraRetentionBacklog threshold 99/100/101 debounce 4m/5m/6m
-  # boundary: AuraLearningCapacityPressure threshold 9999/10000/10001 debounce 4m/5m/6m

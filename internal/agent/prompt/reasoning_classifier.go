@@ -15,30 +15,6 @@ import (
 // and the classifier and the tool ranker depend on one interface (D-01).
 type Embedder = semindex.Embedder
 
-// LabeledVec is one stored reasoning example: an L2-normalized embedding plus
-// the tier an oracle (the LLM router) assigned to it. Reasoning-specific —
-// reasoningstore/reasoninglearn import it from here; it does NOT move to
-// semindex (relocating it cascade-breaks those packages).
-type LabeledVec struct {
-	Tier ReasoningTier
-	Vec  []float64
-}
-
-// ExampleStore loads oracle-labeled examples that the classifier folds into its
-// per-tier centroids (the self-improvement substrate, spike 053). nil store =>
-// the classifier uses the curated seeds alone. Backed by Neo4j in production.
-type ExampleStore interface {
-	LoadExamples(ctx context.Context) ([]LabeledVec, error)
-}
-
-// Learner observes every embedding-based classification so a background worker
-// can oracle-label the uncertain ones (low margin) and grow the example store
-// (self-improvement, spike 053). Observe MUST be non-blocking — it runs on the
-// turn's hot path. nil learner => no observation.
-type Learner interface {
-	Observe(text string, vec []float64, margin float64)
-}
-
 // Reasoning-tier anchors. The tier definitions are the production router's own
 // wording; the seeds are the few-shot examples validated in spike 052 (variant
 // B: 90% accuracy / 92% none-vs-rest over a 60-prompt held-out set, ~10ms CPU).
@@ -113,9 +89,7 @@ var trivialGreetings = map[string]struct{}{
 // centroid/cosine/margin math lives in semindex.Classifier (Centroid mode); this
 // type owns only the tier policy (defs/seeds, greeting pre-filter, soft fallback).
 type ReasoningClassifier struct {
-	embed   Embedder
-	store   ExampleStore // optional: oracle-labeled examples folded into centroids
-	learner Learner      // optional: observes classifications for self-improvement
+	embed Embedder
 
 	mu         sync.Mutex
 	build      singleflight.Group
@@ -124,36 +98,13 @@ type ReasoningClassifier struct {
 	built      bool                 // false => the next Classify rebuilds the bank
 }
 
-// SetLearner attaches a self-improvement learner (safe to call once at wiring
-// time, before concurrent Classify). nil is a no-op.
-func (c *ReasoningClassifier) SetLearner(l Learner) {
-	if c != nil {
-		c.learner = l
-	}
-}
-
-// NewReasoningClassifier returns a classifier over the given embedder (and an
-// optional ExampleStore for self-improvement), or nil if embed is nil (callers
-// treat nil as "no classifier wired" and fall back to the LLM router).
-func NewReasoningClassifier(embed Embedder, store ExampleStore) *ReasoningClassifier {
+// NewReasoningClassifier returns a classifier over the static curated anchors,
+// or nil if embed is nil.
+func NewReasoningClassifier(embed Embedder) *ReasoningClassifier {
 	if embed == nil {
 		return nil
 	}
-	return &ReasoningClassifier{embed: embed, store: store}
-}
-
-// Refresh drops the cached centroids so the next Classify rebuilds them,
-// re-folding any newly stored examples. Safe to call concurrently.
-func (c *ReasoningClassifier) Refresh() {
-	if c == nil {
-		return
-	}
-	c.mu.Lock()
-	c.cls = nil
-	c.built = false
-	c.generation++
-	c.build.Forget("anchors")
-	c.mu.Unlock()
+	return &ReasoningClassifier{embed: embed}
 }
 
 // Classify returns the reasoning tier for userText and true when it produced a
@@ -182,9 +133,6 @@ func (c *ReasoningClassifier) Classify(ctx context.Context, userText string) (Re
 	tier := ReasoningTier(verdict.Label)
 	if !verdict.Ok || !tier.Valid() {
 		return "", false
-	}
-	if c.learner != nil {
-		c.learner.Observe(userText, v, verdict.Margin)
 	}
 	return tier, true
 }
@@ -240,17 +188,6 @@ func (c *ReasoningClassifier) buildAnchors(ctx context.Context) (*semindex.Class
 			return nil, err // not cached: a retry rebuilds the whole bank
 		}
 		cls.AddVecs(string(t), vecs...)
-	}
-	// Fold in oracle-labeled examples (self-improvement). A store error is
-	// non-fatal: fall back to seed-only centroids rather than failing the turn.
-	if c.store != nil {
-		if examples, err := c.store.LoadExamples(ctx); err == nil {
-			for _, ex := range examples {
-				if ex.Tier.Valid() && len(ex.Vec) > 0 {
-					cls.AddVecs(string(ex.Tier), ex.Vec)
-				}
-			}
-		}
 	}
 	return cls, nil
 }

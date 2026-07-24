@@ -10,6 +10,10 @@ tags: [adaptive-learning, qwen3.5, llama-cpp, tools, skills, graphrag]
 
 # Spike 097: Qwen multi-domain reward surface
 
+Qwen3.5 2B is only the controlled spike instrument in this experiment. It is not
+Aura's real model or a production candidate, and no result in this spike transfers to
+production-model quality.
+
 ## What This Validates
 
 The proposed adaptive policy is only warranted if different actions win for

@@ -133,13 +133,12 @@ type LlmAgentConfig struct {
 	UserTurns   []llm.Message
 	// Classifier is the SHARED long-lived reasoning-tier classifier (anchors built
 	// once, reused across turns). Production injects this via the Runner so the
-	// 18-seed anchor build + Neo4j example load is amortized, not paid per turn.
+	// static curated-anchor build is amortized rather than paid per turn.
 	Classifier *prompt.ReasoningClassifier
-	// Embedder/ExampleStore are a convenience for tests/standalone construction:
+	// Embedder is a convenience for tests/standalone construction:
 	// when Classifier is nil and Embedder is set, NewLlmAgent builds a per-agent
 	// classifier. Production leaves these unset and passes Classifier instead.
-	Embedder     prompt.Embedder
-	ExampleStore prompt.ExampleStore
+	Embedder prompt.Embedder
 	// Breaker is the SHARED process-lifetime circuit breaker (B-05). The Runner owns
 	// ONE breaker and injects it into every per-turn agent so a provider outage trips
 	// cross-turn protection (a fresh per-agent breaker reset each turn and never

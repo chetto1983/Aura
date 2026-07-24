@@ -28,14 +28,8 @@ import (
 // at round end (flushPause), not one assistant turn per Event.
 type turnTracker struct {
 	convID string
-	// userMsg is the round's user request, threaded here so the off-hot-path tool-
-	// selection capture (persistToolTurn on ToolInvocationEnd) can pair it with the
-	// executed tool name and feed the active-learning detector (Open-Q #3). Empty on a
-	// resume round (userMsg=nil at turn start) — then no (request, used-tool) signal is
-	// captured, which is correct (the request already produced its tool turns).
-	userMsg string
-	paused  bool
-	pauses  []*agent.AwaitingInput // the round's ask_user pauses, flushed as ONE assistant turn
+	paused bool
+	pauses []*agent.AwaitingInput // the round's ask_user pauses, flushed as ONE assistant turn
 	// pauseInserts are the round's paused_states rows (each with its minted token),
 	// accumulated by persistPause; flushPause writes them + the single assistant ask_user
 	// tool_call turn in ONE cross-store tx so a pause is exposed only after durable history (D-05).
@@ -94,7 +88,7 @@ func (r *Runner) persistEvent(ctx context.Context, tr *turnTracker, ev *agent.Ev
 		return r.persistPause(ctx, tr, ev.Actions.AwaitingInput)
 	}
 	if ev.Actions.ToolInvocation != nil {
-		if err := r.persistToolTurn(ctx, tr, ev.Actions.ToolInvocation); err != nil {
+		if err := r.persistToolTurnEvent(ctx, tr, ev.Actions.ToolInvocation, ev); err != nil {
 			return err
 		}
 		// The ledger is operational observability (migration 0011 header), NOT a
@@ -119,6 +113,10 @@ func (r *Runner) persistEvent(ctx context.Context, tr *turnTracker, ev *agent.Ev
 }
 
 func (r *Runner) persistToolTurn(ctx context.Context, tr *turnTracker, ti *agent.ToolInvocation) error {
+	return r.persistToolTurnEvent(ctx, tr, ti, nil)
+}
+
+func (r *Runner) persistToolTurnEvent(ctx context.Context, tr *turnTracker, ti *agent.ToolInvocation, ev *agent.Event) error {
 	if ti == nil || ti.ToolCallID == "" {
 		return nil
 	}
@@ -141,24 +139,33 @@ func (r *Runner) persistToolTurn(ctx context.Context, tr *turnTracker, ti *agent
 		if err := r.flushToolCalls(ctx, tr); err != nil {
 			return err
 		}
-		if err := r.Conv.AppendTurn(ctx, conversations.AppendTurnParams{
+		turn := conversations.AppendTurnParams{
 			ConversationID: tr.convID,
 			Role:           llm.RoleTool,
 			Content:        ti.ResultPreview,
 			ToolCallID:     ti.ToolCallID,
-		}); err != nil {
-			return fmt.Errorf("persist tool result turn %s/%s: %w", ti.ToolName, ti.ToolCallID, err)
 		}
-		// Open-Q #3 — the LIVE tool-selection capture site. This is the post-tool-
-		// execution, ToolName-bearing, already-best-effort branch (the ledger insert next
-		// to it is non-fatal too): the correct observation point for the (request,
-		// used-tool) detection signal. Observe is a NON-BLOCKING handoff (CR-01): it only
-		// enqueues the raw signal onto a bounded, drop-on-full channel and returns — the
-		// mis-route detection (which embeds) AND the exemplar embed run on the learner's
-		// intake worker, off this lock-held turn goroutine, so a hung embed sidecar can
-		// never wedge the user turn. nil-safe and skipped on a resume round (userMsg empty).
-		if r.toolSelectLearner != nil && tr.userMsg != "" {
-			r.toolSelectLearner.Observe(tr.userMsg, ti.ToolName)
+		var persistErr error
+		if r.adaptiveCommitter != nil {
+			outcome, err := runnerAdaptiveOutcome(ctx, ev, "tool:"+ti.ToolCallID, map[string]any{
+				"domain":           "tool",
+				"tool_name":        ti.ToolName,
+				"tool_call_id":     ti.ToolCallID,
+				"status":           ti.Status,
+				"duration_ms":      ti.DurationMS,
+				"result_bytes":     ti.ResultBytes,
+				"result_truncated": ti.ResultTruncated,
+				"quality_observed": false,
+			})
+			if err != nil {
+				return fmt.Errorf("build adaptive tool outcome: %w", err)
+			}
+			persistErr = r.adaptiveCommitter.CommitTurn(ctx, turn, nil, outcome)
+		} else {
+			persistErr = r.Conv.AppendTurn(ctx, turn)
+		}
+		if persistErr != nil {
+			return fmt.Errorf("persist tool result turn %s/%s: %w", ti.ToolName, ti.ToolCallID, persistErr)
 		}
 		delete(tr.openToolCalls, ti.ToolCallID)
 		if len(tr.openToolCalls) == 0 {
@@ -299,6 +306,24 @@ func (r *Runner) persistAssistantAnswer(ctx context.Context, tr *turnTracker, ev
 	metric, err := r.cacheMetricParams(tr.convID, 0, u, cost)
 	if err != nil {
 		return err
+	}
+	if r.adaptiveCommitter != nil {
+		outcome, eventErr := runnerAdaptiveOutcome(ctx, ev, "assistant", map[string]any{
+			"domain":            "completion",
+			"finish_reason":     ev.LLMResponse.FinishReason,
+			"prompt_tokens":     u.PromptTokens,
+			"completion_tokens": u.CompletionTokens,
+			"cached_tokens":     u.CachedTokens,
+			"cost_usd":          cost,
+			"quality_observed":  false,
+		})
+		if eventErr != nil {
+			return fmt.Errorf("build adaptive assistant outcome: %w", eventErr)
+		}
+		if err := r.adaptiveCommitter.CommitTurn(ctx, turn, &metric, outcome); err != nil {
+			return fmt.Errorf("persist assistant answer with adaptive outcome: %w", err)
+		}
+		return nil
 	}
 	if err := r.Conv.AppendAssistantTurnWithCacheMetric(ctx, turn, metric); err != nil {
 		return fmt.Errorf("persist assistant answer: %w", err)

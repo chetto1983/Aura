@@ -11,10 +11,12 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/chetto1983/aura/internal/adaptive"
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/idroot"
+	"github.com/chetto1983/aura/internal/knowledge"
 	"github.com/chetto1983/aura/internal/mcp"
 	"github.com/chetto1983/aura/internal/objectstore"
 	"github.com/chetto1983/aura/internal/objectstore/garageadmin"
@@ -52,6 +54,8 @@ var (
 	_ agui.SagaJournal            = sagaJournalAdapter{}
 	_ agui.IdentityDeactivator    = identityDeactivatorAdapter{}
 	_ agui.IdentityDeleter        = auraLegAdapter{}
+	_ agui.AdaptiveIdentityFencer = adaptiveIdentityFenceAdapter{}
+	_ agui.AdaptiveGraphPurger    = adaptiveGraphPurgeAdapter{}
 )
 
 // objectStoreProvisionAdapter, its objectStoreCredentialResolver/objectStoreMinter seams, and
@@ -244,6 +248,62 @@ func (a identityDeactivatorAdapter) ResolveTarget(ctx context.Context, identityI
 	return t, nil
 }
 
+type adaptiveGraphClient interface {
+	adaptive.GraphWriter
+	Close() error
+}
+
+type adaptiveIdentityFenceAdapter struct {
+	pool *pgxpool.Pool
+}
+
+func (a adaptiveIdentityFenceAdapter) FenceAdaptiveIdentity(ctx context.Context, identityID string) error {
+	if a.pool == nil {
+		return fmt.Errorf("adaptive identity fence is not configured")
+	}
+	var fenced bool
+	err := a.pool.QueryRow(ctx,
+		`SELECT aura.fence_adaptive_identity($1::uuid)`,
+		identityID,
+	).Scan(&fenced)
+	if err != nil {
+		return fmt.Errorf("fence adaptive identity %q: %w", identityID, err)
+	}
+	if !fenced {
+		return fmt.Errorf("fence adaptive identity %q: identity not found", identityID)
+	}
+	return nil
+}
+
+// adaptiveGraphPurgeAdapter opens a short-lived graph client for the infrequent
+// grace-window purge. Opening at execution time makes Neo4j failure fail closed:
+// the journal records adaptive_graph failed and the later identity-row step is
+// not run, so the next sweep retries rather than orphaning private learning data.
+type adaptiveGraphPurgeAdapter struct {
+	cfg  *knowledge.Config
+	open func(context.Context, *knowledge.Config) (adaptiveGraphClient, error)
+}
+
+func openAdaptiveGraphClient(ctx context.Context, cfg *knowledge.Config) (adaptiveGraphClient, error) {
+	return knowledge.Open(ctx, cfg)
+}
+
+func (a adaptiveGraphPurgeAdapter) PurgeAdaptiveGraph(ctx context.Context, identityID string) error {
+	if a.cfg == nil {
+		return fmt.Errorf("adaptive graph purge is not configured")
+	}
+	open := a.open
+	if open == nil {
+		open = openAdaptiveGraphClient
+	}
+	client, err := open(ctx, a.cfg)
+	if err != nil {
+		return fmt.Errorf("open adaptive graph purge client: %w", err)
+	}
+	defer func() { _ = client.Close() }()
+	return adaptive.NewGraphStore(client).PurgeAdaptiveGraph(ctx, identityID)
+}
+
 // buildProvisioningPorts assembles the three onboarding resource-leg ports. It returns NIL
 // adapters when the pool OR the Garage admin config (endpoint+token) is absent, so an
 // interview-only / pre-cutover deploy provisions nothing (each agui port nil-skips its leg).
@@ -278,9 +338,10 @@ func buildProvisioningPorts(chat *chatEnv) (agui.ObjectStoreProvisioner, agui.Fi
 
 // buildDeprovisioner assembles the D-27 de-provisioning saga over the chat-reachable ports.
 // A nil pool yields an empty Deprovisioner whose PurgeExpired is a safe no-op (nil
-// Deactivator). AuthulaDelete + Conversations/Graph/Sessions/Jobs are LEFT nil: the Authula
-// provider is not reachable from chatEnv at buildDispatch time (it is built later in serve.go
-// boot), and the conversation/graph/session/job purgers have no one-line composition-root
+// Deactivator). AdaptiveGraph is wired independently because Aura owns those private
+// labels and can delete them without touching agent-memory's shared :User. AuthulaDelete +
+// Conversations/Graph/Sessions/Jobs remain nil because those providers are built later in
+// serve boot or have no one-line composition-root
 // reuse here. Every nil plane is fail-closed-secure — Task 3 denies the deactivated identity
 // at the auth boundary, so any retained plane is inert (recorded as a data-retention
 // follow-up in 36-14-SUMMARY). The identity FK-cascade delete (IdentityDelete) already drops
@@ -293,6 +354,8 @@ func buildDeprovisioner(chat *chatEnv) *agui.Deprovisioner {
 	return agui.NewDeprovisioner(agui.DeprovisionDeps{
 		Journal:        jrnl,
 		Deactivator:    identityDeactivatorAdapter{pool: chat.pool},
+		AdaptiveFence:  adaptiveIdentityFenceAdapter{pool: chat.pool},
+		AdaptiveGraph:  adaptiveGraphPurgeAdapter{cfg: &chat.cfg.Neo4j},
 		ObjectStore:    objProv,
 		Filesystem:     fsProv,
 		IdentityDelete: auraLegAdapter{pool: chat.pool},
@@ -439,9 +502,4 @@ func seedShareExpirySweep(ctx context.Context, store *cron.Store) error {
 // seedRetentionSweep installs the single scheduler owner for the shared engine.
 func seedRetentionSweep(ctx context.Context, store *cron.Store) error {
 	return seedDailyCronSweep(ctx, store, cron.KindRetentionSweep, "30 2 * * *", "retention sweep")
-}
-
-// seedLearningCompaction installs the single daily bounded learned-example owner.
-func seedLearningCompaction(ctx context.Context, store *cron.Store) error {
-	return seedDailyCronSweep(ctx, store, cron.KindLearningCompaction, "15 3 * * *", "learning compaction")
 }

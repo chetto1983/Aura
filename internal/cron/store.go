@@ -50,16 +50,15 @@ type TaskKind string
 // handlers.KindShareExpirySweep ("share_expiry_sweep") — the cron store writes the row, the
 // dispatcher routes the same string to the handler handlers.NewShareExpiryHandler builds.
 const (
-	KindReminder           TaskKind = "reminder"
-	KindAgentJob           TaskKind = "agent_job"
-	KindBackupPostgres     TaskKind = "backup_postgres"
-	KindBackupNeo4j        TaskKind = "backup_neo4j"
-	KindSkillTTLSweep      TaskKind = "skill_ttl_sweep"
-	KindIdentityPurge      TaskKind = "identity_purge"
-	KindSandboxReap        TaskKind = "sandbox_reap"
-	KindShareExpirySweep   TaskKind = "share_expiry_sweep"
-	KindRetentionSweep     TaskKind = "retention_sweep"
-	KindLearningCompaction TaskKind = "learning_compaction"
+	KindReminder         TaskKind = "reminder"
+	KindAgentJob         TaskKind = "agent_job"
+	KindBackupPostgres   TaskKind = "backup_postgres"
+	KindBackupNeo4j      TaskKind = "backup_neo4j"
+	KindSkillTTLSweep    TaskKind = "skill_ttl_sweep"
+	KindIdentityPurge    TaskKind = "identity_purge"
+	KindSandboxReap      TaskKind = "sandbox_reap"
+	KindShareExpirySweep TaskKind = "share_expiry_sweep"
+	KindRetentionSweep   TaskKind = "retention_sweep"
 )
 
 // Store wraps a pgx pool and the generated Queries — the identity-04-02 canonical

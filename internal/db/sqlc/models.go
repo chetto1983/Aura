@@ -8,6 +8,79 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AuraAdaptiveAggregateSequences struct {
+	OwnerID      pgtype.UUID `json:"owner_id"`
+	AggregateID  string      `json:"aggregate_id"`
+	NextSequence int64       `json:"next_sequence"`
+}
+
+// Permanent deny-list for deleted identity UUIDs; prevents adaptive-policy resurrection after UUID reuse.
+type AuraAdaptiveIdentityTombstones struct {
+	OwnerID      pgtype.UUID        `json:"owner_id"`
+	IdentityName string             `json:"identity_name"`
+	DeletedAt    pgtype.Timestamptz `json:"deleted_at"`
+}
+
+// Authoritative owner-scoped adaptive decision/outcome outbox. Neo4j is a replayable projection.
+type AuraAdaptiveOutbox struct {
+	ID          pgtype.UUID `json:"id"`
+	OwnerID     pgtype.UUID `json:"owner_id"`
+	AggregateID string      `json:"aggregate_id"`
+	Sequence    int64       `json:"sequence"`
+	DecisionID  pgtype.UUID `json:"decision_id"`
+	EventKind   string      `json:"event_kind"`
+	Payload     []byte      `json:"payload"`
+	// SHA-256 of canonical payload JSON; the same event UUID with a different hash is a hard conflict.
+	PayloadHash    []byte             `json:"payload_hash"`
+	Status         string             `json:"status"`
+	Attempts       int32              `json:"attempts"`
+	AvailableAt    pgtype.Timestamptz `json:"available_at"`
+	LeaseOwner     pgtype.Text        `json:"lease_owner"`
+	LeaseExpiresAt pgtype.Timestamptz `json:"lease_expires_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	ProjectedAt    pgtype.Timestamptz `json:"projected_at"`
+	DeadLetterAt   pgtype.Timestamptz `json:"dead_letter_at"`
+	LastErrorClass pgtype.Text        `json:"last_error_class"`
+}
+
+// Authoritative global adaptive rollout epoch. Every execution gate reads it; unavailable means baseline-only.
+type AuraAdaptivePolicyState struct {
+	Scope         string             `json:"scope"`
+	Epoch         int64              `json:"epoch"`
+	PolicyVersion string             `json:"policy_version"`
+	Mode          string             `json:"mode"`
+	RolloutBps    int32              `json:"rollout_bps"`
+	Config        []byte             `json:"config"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
+// Append-only actor/capability-audited adaptive policy state transition ledger.
+type AuraAdaptivePolicyTransitions struct {
+	ID            pgtype.UUID        `json:"id"`
+	ActorID       pgtype.UUID        `json:"actor_id"`
+	FromEpoch     int64              `json:"from_epoch"`
+	ToEpoch       int64              `json:"to_epoch"`
+	FromMode      string             `json:"from_mode"`
+	ToMode        string             `json:"to_mode"`
+	PolicyVersion string             `json:"policy_version"`
+	RolloutBps    int32              `json:"rollout_bps"`
+	EvidenceID    pgtype.UUID        `json:"evidence_id"`
+	Reason        string             `json:"reason"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+// Immutable calibrated closed-cohort report bound transactionally to a canary/active transition.
+type AuraAdaptivePromotionEvidence struct {
+	ID            pgtype.UUID        `json:"id"`
+	ActorID       pgtype.UUID        `json:"actor_id"`
+	PolicyVersion string             `json:"policy_version"`
+	ModelID       string             `json:"model_id"`
+	CohortID      string             `json:"cohort_id"`
+	EvidenceHash  []byte             `json:"evidence_hash"`
+	Report        []byte             `json:"report"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
 // Per-run audit ledger (Slice 6 / Phase 10). Audit-forever (no aura_app DELETE, PRD OQ4). completed_with_hash is the SC#2 idempotency key (UNIQUE; a duplicate completion swallows 23505).
 type AuraAgentJobRuns struct {
 	ID                pgtype.UUID        `json:"id"`

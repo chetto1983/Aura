@@ -17,7 +17,7 @@ func resolveClassifier(cfg LlmAgentConfig) *prompt.ReasoningClassifier {
 	if cfg.Classifier != nil {
 		return cfg.Classifier
 	}
-	return prompt.NewReasoningClassifier(cfg.Embedder, cfg.ExampleStore)
+	return prompt.NewReasoningClassifier(cfg.Embedder)
 }
 
 func (a *LlmAgent) adaptiveReasoningTier(ctx context.Context) (prompt.ReasoningTier, bool) {

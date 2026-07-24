@@ -64,6 +64,22 @@ type ConversationPurger interface {
 	PurgeConversations(ctx context.Context, identityID string) error
 }
 
+// AdaptiveIdentityFencer permanently denies new adaptive writes for an identity
+// before its private graph projection is purged. It closes the projector/purge
+// race: a projector that crossed the pre-write check must observe the fence on
+// its post-write check and remove its own late projection.
+type AdaptiveIdentityFencer interface {
+	FenceAdaptiveIdentity(ctx context.Context, identityID string) error
+}
+
+// AdaptiveGraphPurger removes only Aura's private adaptive-learning projection from the
+// shared Neo4j deployment. It is deliberately separate from GraphPurger: the adaptive
+// projector reuses agent-memory's :User ownership anchor, but must not delete that shared
+// node or any memory data.
+type AdaptiveGraphPurger interface {
+	PurgeAdaptiveGraph(ctx context.Context, identityID string) error
+}
+
 // GraphPurger removes the identity's Neo4j plane: its :Document nodes + :User-[:HAS_DOCUMENT]
 // edges and its memory subgraph node/edges (D-27). Idempotent.
 type GraphPurger interface {
@@ -93,6 +109,8 @@ type DeprovisionDeps struct {
 	Sessions       SessionTerminator
 	Jobs           JobTerminator
 	Conversations  ConversationPurger
+	AdaptiveFence  AdaptiveIdentityFencer
+	AdaptiveGraph  AdaptiveGraphPurger
 	Graph          GraphPurger
 	ObjectStore    ObjectStoreProvisioner
 	Filesystem     FilesystemProvisioner
@@ -161,6 +179,20 @@ func (d *Deprovisioner) Purge(ctx context.Context, target DeprovisionTarget) err
 	if d.deps.Conversations != nil {
 		if err := run.step(ctx, sagaStepConversations, func(ctx context.Context) error {
 			return d.deps.Conversations.PurgeConversations(ctx, target.IdentityID)
+		}); err != nil {
+			return err
+		}
+	}
+	if d.deps.AdaptiveFence != nil {
+		if err := run.step(ctx, sagaStepAdaptiveFence, func(ctx context.Context) error {
+			return d.deps.AdaptiveFence.FenceAdaptiveIdentity(ctx, target.IdentityID)
+		}); err != nil {
+			return err
+		}
+	}
+	if d.deps.AdaptiveGraph != nil {
+		if err := run.step(ctx, sagaStepAdaptiveGraph, func(ctx context.Context) error {
+			return d.deps.AdaptiveGraph.PurgeAdaptiveGraph(ctx, target.IdentityID)
 		}); err != nil {
 			return err
 		}

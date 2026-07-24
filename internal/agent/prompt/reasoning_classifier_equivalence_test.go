@@ -17,9 +17,7 @@ import (
 // live accuracy raise is Plan 04.
 func TestReasoningClassifier_EquivalenceGoldenVerdicts(t *testing.T) {
 	t.Parallel()
-	// The two-arg shipped signature with no store: seeds-only centroids, which
-	// is the baseline the equivalence is measured against.
-	c := NewReasoningClassifier(&fakeEmbedder{}, nil)
+	c := NewReasoningClassifier(&fakeEmbedder{})
 
 	golden := []struct {
 		name  string
@@ -52,39 +50,4 @@ func TestReasoningClassifier_EquivalenceGoldenVerdicts(t *testing.T) {
 			}
 		})
 	}
-}
-
-// TestReasoningClassifier_EquivalenceMarginIsPositive locks the structural
-// margin shape: for a clearly-winning input the top-2 margin (best - second)
-// the migrated classifier feeds to its learner MUST be strictly positive
-// (the synthetic axes are orthogonal, so a clean winner separates from the
-// runner-up). A zero/negative margin would mean the argmax-with-second
-// delegation to semindex broke. The learner observes this margin to gate
-// self-improvement, so its sign/ordering is behavior-bearing.
-func TestReasoningClassifier_EquivalenceMarginIsPositive(t *testing.T) {
-	t.Parallel()
-	rec := &marginRecorder{}
-	c := NewReasoningClassifier(&fakeEmbedder{}, nil)
-	c.SetLearner(rec)
-
-	if _, ok := c.Classify(context.Background(), "debugga il mio script python"); !ok {
-		t.Fatal("clear high input should classify")
-	}
-	if rec.margin <= 0 {
-		t.Errorf("observed margin = %v; want > 0 (clean one-hot winner must separate from the runner-up)", rec.margin)
-	}
-	if len(rec.vec) == 0 {
-		t.Error("learner must observe the normalized query vector (empty vec means the migration dropped the observe vector)")
-	}
-}
-
-// marginRecorder captures the last (vec, margin) the classifier observes so the
-// equivalence test can assert the structural margin/vector shape.
-type marginRecorder struct {
-	vec    []float64
-	margin float64
-}
-
-func (m *marginRecorder) Observe(_ string, vec []float64, margin float64) {
-	m.vec, m.margin = vec, margin
 }

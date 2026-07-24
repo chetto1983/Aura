@@ -101,18 +101,7 @@ func (c *Config) ValidateProfile(p RuntimeProfile) []Violation {
 	vs = append(vs, c.gateMCPLegacyEnv(p)...)
 	vs = append(vs, c.gateObjectStoreEndpoint(p)...)
 	vs = append(vs, c.gateRetention()...)
-	vs = append(vs, c.gateLearning()...)
 	return vs
-}
-
-func (c *Config) gateLearning() []Violation {
-	if c.Learning == (LearningConfig{}) {
-		return nil
-	}
-	if err := c.Learning.Validate(); err != nil {
-		return []Violation{{Knob: "AURA_LEARNING_*", Sev: Fatal, Msg: err.Error()}}
-	}
-	return nil
 }
 
 func (c *Config) gateRetention() []Violation {

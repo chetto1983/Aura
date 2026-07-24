@@ -1,0 +1,7 @@
+DROP TRIGGER IF EXISTS adaptive_policy_transitions_no_truncate ON aura.adaptive_policy_transitions;
+DROP TRIGGER IF EXISTS adaptive_promotion_evidence_no_truncate ON aura.adaptive_promotion_evidence;
+DROP TRIGGER IF EXISTS adaptive_policy_transitions_no_update_delete ON aura.adaptive_policy_transitions;
+DROP TRIGGER IF EXISTS adaptive_promotion_evidence_no_update_delete ON aura.adaptive_promotion_evidence;
+DROP FUNCTION IF EXISTS aura.reject_adaptive_policy_audit_mutation();
+DROP TABLE IF EXISTS aura.adaptive_policy_transitions;
+DROP TABLE IF EXISTS aura.adaptive_promotion_evidence;

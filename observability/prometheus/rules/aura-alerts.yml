@@ -240,16 +240,3 @@ groups:
           runbook_url: observability/runbooks/aura-data-retention.md
           threshold: utilization >= 0.85
           debounce: 5m
-      - alert: AuraLearningCapacityPressure
-        expr: aura:learning_size:max >= 10000
-        for: 5m
-        labels: {severity: warning}
-        annotations:
-          summary: A learned-example store reached its global cap
-          dashboard_uid: aura-data-retention
-          panel_id: "7"
-          dashboard_url: /d/aura-data-retention?viewPanel=7
-          runbook_url: observability/runbooks/aura-data-retention.md
-          threshold: size >= 10000
-          debounce: 5m
-

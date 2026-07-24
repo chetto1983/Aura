@@ -82,6 +82,18 @@ type fakeGraphPurger struct{ recordingPort }
 
 func (f *fakeGraphPurger) PurgeGraph(_ context.Context, id string) error { return f.record(id) }
 
+type fakeAdaptiveGraphPurger struct{ recordingPort }
+
+func (f *fakeAdaptiveGraphPurger) PurgeAdaptiveGraph(_ context.Context, id string) error {
+	return f.record(id)
+}
+
+type fakeAdaptiveIdentityFencer struct{ recordingPort }
+
+func (f *fakeAdaptiveIdentityFencer) FenceAdaptiveIdentity(_ context.Context, id string) error {
+	return f.record(id)
+}
+
 type fakeIdentityDeleter struct{ recordingPort }
 
 func (f *fakeIdentityDeleter) DeleteIdentity(_ context.Context, name string) error {
@@ -96,36 +108,40 @@ const testIdentityID = "22222222-2222-4222-8222-222222222222"
 
 func fullDeprovisionDeps() (DeprovisionDeps, *deprovFakes) {
 	f := &deprovFakes{
-		deact:   &fakeDeactivator{targets: map[string]DeprovisionTarget{}},
-		sess:    &fakeSessions{},
-		jobs:    &fakeJobs{},
-		conv:    &fakeConvPurger{},
-		graph:   &fakeGraphPurger{},
-		os:      newFakeObjectStore(),
-		fs:      newFakeFilesystem(),
-		iddel:   &fakeIdentityDeleter{},
-		authdel: &fakeAuthulaDeleter{},
-		journal: newFakeJournal(),
+		deact:    &fakeDeactivator{targets: map[string]DeprovisionTarget{}},
+		sess:     &fakeSessions{},
+		jobs:     &fakeJobs{},
+		conv:     &fakeConvPurger{},
+		graph:    &fakeGraphPurger{},
+		adaptive: &fakeAdaptiveGraphPurger{},
+		fence:    &fakeAdaptiveIdentityFencer{},
+		os:       newFakeObjectStore(),
+		fs:       newFakeFilesystem(),
+		iddel:    &fakeIdentityDeleter{},
+		authdel:  &fakeAuthulaDeleter{},
+		journal:  newFakeJournal(),
 	}
 	deps := DeprovisionDeps{
 		Journal: f.journal, Deactivator: f.deact, Sessions: f.sess, Jobs: f.jobs,
-		Conversations: f.conv, Graph: f.graph, ObjectStore: f.os, Filesystem: f.fs,
+		Conversations: f.conv, Graph: f.graph, AdaptiveFence: f.fence, AdaptiveGraph: f.adaptive, ObjectStore: f.os, Filesystem: f.fs,
 		IdentityDelete: f.iddel, AuthulaDelete: f.authdel,
 	}
 	return deps, f
 }
 
 type deprovFakes struct {
-	deact   *fakeDeactivator
-	sess    *fakeSessions
-	jobs    *fakeJobs
-	conv    *fakeConvPurger
-	graph   *fakeGraphPurger
-	os      *fakeObjectStore
-	fs      *fakeFilesystem
-	iddel   *fakeIdentityDeleter
-	authdel *fakeAuthulaDeleter
-	journal *fakeJournal
+	deact    *fakeDeactivator
+	sess     *fakeSessions
+	jobs     *fakeJobs
+	conv     *fakeConvPurger
+	graph    *fakeGraphPurger
+	adaptive *fakeAdaptiveGraphPurger
+	fence    *fakeAdaptiveIdentityFencer
+	os       *fakeObjectStore
+	fs       *fakeFilesystem
+	iddel    *fakeIdentityDeleter
+	authdel  *fakeAuthulaDeleter
+	journal  *fakeJournal
 }
 
 func targetFor(id string) DeprovisionTarget {
@@ -167,8 +183,9 @@ func TestDeprovisionPurgeReversesEveryLeg(t *testing.T) {
 	if err := d.Purge(context.Background(), targetFor(testIdentityID)); err != nil {
 		t.Fatalf("Purge: %v", err)
 	}
-	if f.conv.count() != 1 || f.graph.count() != 1 {
-		t.Fatalf("data-plane purge: conversations=%d graph=%d, want 1/1", f.conv.count(), f.graph.count())
+	if f.conv.count() != 1 || f.graph.count() != 1 || f.fence.count() != 1 || f.adaptive.count() != 1 {
+		t.Fatalf("data-plane purge: conversations=%d graph=%d fence=%d adaptive=%d, want 1/1/1/1",
+			f.conv.count(), f.graph.count(), f.fence.count(), f.adaptive.count())
 	}
 	if f.os.deprovCalls[testIdentityID] != 1 || f.fs.deprovCalls[testIdentityID] != 1 {
 		t.Fatalf("resource-plane purge: objectstore=%d filesystem=%d, want 1/1",
@@ -178,7 +195,7 @@ func TestDeprovisionPurgeReversesEveryLeg(t *testing.T) {
 		t.Fatalf("identity/authula delete: id=%d authula=%d, want 1/1", f.iddel.count(), f.authdel.count())
 	}
 	sid := sagaID(sagaKindDeprovision, testIdentityID)
-	for _, step := range []string{sagaStepConversations, sagaStepGraph, sagaStepObjectStore, sagaStepDirs, sagaStepIdentityRow, sagaStepAuthula} {
+	for _, step := range []string{sagaStepConversations, sagaStepAdaptiveFence, sagaStepAdaptiveGraph, sagaStepGraph, sagaStepObjectStore, sagaStepDirs, sagaStepIdentityRow, sagaStepAuthula} {
 		if !f.journal.stepDone(sid, step) {
 			t.Errorf("deprovision journal step %q not marked done", step)
 		}

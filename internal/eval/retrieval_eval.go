@@ -263,7 +263,7 @@ func writeRetrievalReport(path string, results []queryEval, s evalSummary, model
 			truncateQuery(r.query), r.relevant, r.vectorNDCG, r.rerankNDCG,
 			r.vectorRecall, r.rerankRecall, r.vectorMRR, r.rerankMRR, r.changed)
 	}
-	b.WriteString("\nSelf-learning: OUT (deferred per spike-070) — no internal/activelearn loop is added by this harness.\n")
+	b.WriteString("\nAdaptive serving: OUT — this evaluation harness does not mutate runtime policy.\n")
 	return os.WriteFile(path, []byte(b.String()), 0o600)
 }
 

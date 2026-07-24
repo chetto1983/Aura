@@ -18,6 +18,7 @@ package runner
 import (
 	"context"
 
+	"github.com/chetto1983/aura/internal/adaptive"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/db/sqlc"
@@ -139,6 +140,18 @@ type CacheMetricStore interface {
 // tool execution.
 type ToolInvocationStore interface {
 	Insert(ctx context.Context, e toolinvocations.Event) error
+}
+
+// AdaptiveTurnCommitter is the optional cross-domain durability seam. When
+// wired, a Runner turn and its typed adaptive outcome land in one Postgres
+// transaction; exact retries are idempotent and Neo4j remains a later projection.
+type AdaptiveTurnCommitter interface {
+	CommitTurn(
+		ctx context.Context,
+		turn conversations.AppendTurnParams,
+		metric *sqlc.InsertCacheMetricParams,
+		event adaptive.Event,
+	) error
 }
 
 // IdentityStore is the narrow identity surface the Runner consumes (D-A2-02).

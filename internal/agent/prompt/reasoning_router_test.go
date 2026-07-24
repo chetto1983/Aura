@@ -5,11 +5,9 @@ import (
 	"testing"
 )
 
-// TestReasoningRouterSystemPrompt locks the oracle prompt contract: it must
-// demand a JSON-only reply and enumerate exactly the three routable tiers, since
-// both the LLM-router fallback and the self-improvement oracle parse its output
-// with ParseReasoningRouterTier. A drift here (e.g. an added "medium" tier the
-// parser does not normalize) would silently produce unparseable verdicts.
+// TestReasoningRouterSystemPrompt locks the fallback prompt contract: it must
+// demand a JSON-only reply and enumerate exactly the three tiers parsed by
+// ParseReasoningRouterTier.
 func TestReasoningRouterSystemPrompt(t *testing.T) {
 	t.Parallel()
 	for _, want := range []string{

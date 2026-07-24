@@ -118,7 +118,7 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 	aguiServer.SetCalendarMCP(chat.cfg.CalendarMCPURL, chat.cfg.CalendarMCPAdminToken)
 	// Wire the Phase-27 GRAPH-01 read-only graph explorer. Per RESEARCH A7/Open-Q2 the
 	// serve daemon opens ONE boot-time knowledge.Client (the mcp-neo4j-cypher subprocess)
-	// for the gateway lifetime — distinct from the ReasoningLearning-gated client in
+	// for the gateway lifetime — distinct from other graph clients in
 	// chat.go, which is conditional. Best-effort: a missing binary or a down Neo4j leaves
 	// the two /api/graph/* routes at 503 (SetGraphView never called) and MUST NOT abort
 	// serve boot (a graph-explorer outage is not a daemon outage). On success the client's

@@ -47,14 +47,3 @@ func wireToolSearchEmbedder(reg *tools.Registry, embedder prompt.Embedder) {
 			"error", err)
 	}
 }
-
-// CloseLearner stops the async self-improvement workers (reasoning + tool-selection),
-// if any. The composition root calls it at process shutdown (nil-safe).
-func (r *Runner) CloseLearner() {
-	if r != nil {
-		r.learner.Close()
-		if r.toolSelectLearner != nil {
-			r.toolSelectLearner.Close()
-		}
-	}
-}

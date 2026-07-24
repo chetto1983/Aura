@@ -58,10 +58,6 @@ type ToolSearch struct {
 	banked map[string]string
 	specs  []Spec // bm25-aligned deferred specs (sorted by Name)
 
-	// learned is the stage-2 per-tool centroid boost (D-07, search_learn.go), folded
-	// by the tool-selection active-learning loop. nil until wired by the composition
-	// root; when nil (or empty) the stage-1 description ranking stands alone.
-	learned *learnedBoost
 }
 
 const defaultMaxResults = 5
@@ -294,8 +290,7 @@ func (ts *ToolSearch) match(ctx context.Context, q string, limit int) ([]Tool, e
 		return nil, nil
 	}
 	// Embed the query ONCE (Req-6: a sidecar-down error surfaces here) and reuse the
-	// vector for BOTH the stage-1 description ranking AND the stage-2 learned-centroid
-	// boost — no second embed for the learned stage.
+	// vector for the static semantic-description ranking.
 	qVecs, err := ts.embedQuery(ctx, q)
 	if err != nil {
 		return nil, err // Req-6: embed sidecar down on the query embed
@@ -308,19 +303,8 @@ func (ts *ToolSearch) match(ctx context.Context, q string, limit int) ([]Tool, e
 	// cap so the guarded tiebreak can reorder within the confident region before capping.
 	rankWidth := limit + fusionGuardTopK
 	stage1 := ranker.RankVecs(qVecs, rankWidth)
-	// Guarded BM25 tiebreak (Plan 03), then the margin-gated learned stage-2 boost
-	// (D-07). The learned boost is a STRICT no-op below min-support/tau, so the no-fold
-	// path leaves the Plan-03 order unchanged.
+	// Guarded BM25 tiebreak (Plan 03).
 	ranked := guardedTiebreak(stage1, bm25Names)
-	// Snapshot ts.learned under the lock before use (WR-02): the field is written under
-	// ts.mu (EnableLearnedBoost) and read under ts.mu (FoldLearned); reading it lock-free
-	// here is a latent data race the moment EnableLearnedBoost is ever exercised
-	// concurrently with a turn. The *learnedBoost itself is internally RWMutex-guarded, so
-	// only the pointer read needs the lock.
-	ts.mu.Lock()
-	learned := ts.learned
-	ts.mu.Unlock()
-	ranked = learned.rerank(ranked, qVecs)
 	if len(ranked) > limit {
 		ranked = ranked[:limit]
 	}

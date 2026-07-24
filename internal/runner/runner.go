@@ -15,13 +15,10 @@ import (
 	"github.com/chetto1983/aura/internal/agent/prompt"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/askuser"
-	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/llm"
-	"github.com/chetto1983/aura/internal/reasoninglearn"
-	"github.com/chetto1983/aura/internal/toolselectlearn"
 	"github.com/google/uuid"
 )
 
@@ -69,6 +66,9 @@ type Deps struct {
 	Identity        IdentityStore
 	CacheMetrics    CacheMetricStore
 	ToolInvocations ToolInvocationStore
+	// AdaptiveCommitter atomically pairs persisted tool/final-answer turns with
+	// typed adaptive outcomes. nil preserves the pre-adaptive persistence path.
+	AdaptiveCommitter AdaptiveTurnCommitter
 	// ResumeCommitter is the cross-store HITL-durability seam (D-03/D-05). The
 	// composition root injects a pool-owning *PoolResumeCommitter so single/batch resume
 	// and pause exposure each commit in ONE db.WithTx; nil => New defaults to the
@@ -77,7 +77,6 @@ type Deps struct {
 	Client          llm.Client
 	Registry        *tools.Registry
 	LLM             llm.Config
-	Learning        config.LearningConfig
 	// Breaker is the SHARED process-lifetime LLM circuit breaker (B-05). The
 	// composition root may inject one; nil => New mints the default. It is threaded
 	// into every per-turn agent so a provider outage trips cross-turn protection.
@@ -109,14 +108,6 @@ type Deps struct {
 	// falls back to the LLM router. The composition root passes the granite
 	// sidecar client (documents.EmbeddingClient over Neo4j.EmbedURL).
 	Embedder prompt.Embedder
-	// ExampleStore folds oracle-labeled examples (Neo4j :ReasoningExample) into
-	// the classifier's centroids (self-improvement, spike 053). nil => seed-only.
-	ExampleStore prompt.ExampleStore
-	// ReasoningSaver persists new oracle-labeled examples for the async learner
-	// (the write half of self-improvement). Enabled only when LLM.ReasoningLearning
-	// is set; nil => no learning. The composition root passes the same Neo4j store
-	// as ExampleStore.
-	ReasoningSaver reasoninglearn.Saver
 	// HookManager is the optional agent extension surface. nil keeps the agent's
 	// hook calls as no-ops; production may inject command hooks here.
 	HookManager *agent.HookManager
@@ -126,26 +117,11 @@ type Deps struct {
 	// GateRecommended call routes to an approval pause here, never a headless deny. nil
 	// is an Allow no-op (dev-parity).
 	Gateway *gateway.Gateway
-	// ToolSelectSaver persists oracle-confirmed (query -> tool) examples for the
-	// tool-selection active-learning loop (D-06/D-07) to :ToolSelectionExample. nil =>
-	// the loop is off (the tool_search ranker runs without the learned stage-2 boost).
-	// The composition root passes a *toolselectstore.Store over the same Neo4j client
-	// as ReasoningSaver, when the graph client opened.
-	ToolSelectSaver toolselectlearn.Saver
 	// ShareRevoker is the D-15 consumer-declared seam (runner_delete.go step 4.5): the
 	// composition root injects the live *share.Service, structurally satisfying the
 	// interface with no internal/share import here. nil => share was never mounted in this
 	// deployment, and step 4.5 is a silent skip (not a panic).
 	ShareRevoker ShareRevoker
-}
-
-// toolSelectObserver is the narrow seam the runner holds for the tool-selection
-// active-learning loop: the post-turn capture (Observe) + shutdown (Close). It lets a
-// test inject a fake to prove the Open-Q #3 wiring (Observe IS called on a real turn),
-// not just the synthetic exemplar unit tests. *toolselectlearn.Learner satisfies it.
-type toolSelectObserver interface {
-	Observe(request, usedTool string)
-	Close()
 }
 
 // ResumeHook is called after a paused ask_user response is persisted and before
@@ -160,12 +136,13 @@ type ResumeHook func(ctx context.Context, pending askuser.Pending, resp Response
 // CLI read conversations directly (list/search/lifecycle) without re-plumbing the
 // narrow interface; pause/title orchestration stays in the Runner.
 type Runner struct {
-	Conv            ConversationStore
-	pause           PauseStore
-	identity        IdentityStore
-	cacheMetrics    CacheMetricStore
-	toolInvocations ToolInvocationStore
-	resumeCommitter ResumeCommitter // cross-store HITL-durability seam (D-03/D-05); split fallback when unset
+	Conv              ConversationStore
+	pause             PauseStore
+	identity          IdentityStore
+	cacheMetrics      CacheMetricStore
+	toolInvocations   ToolInvocationStore
+	adaptiveCommitter AdaptiveTurnCommitter
+	resumeCommitter   ResumeCommitter // cross-store HITL-durability seam (D-03/D-05); split fallback when unset
 
 	client     llm.Client
 	registry   *tools.Registry
@@ -183,14 +160,12 @@ type Runner struct {
 	stopTimeout  time.Duration
 	resumeHook   ResumeHook
 
-	archivalRecaller  ArchivalRecaller            // L4 archival-memory recall for messages[1] (amendment #21); nil → no recall
-	hookManager       *agent.HookManager          // optional per-turn LlmAgent hooks
-	alwaysBlock       func() string               // renders the messages[1] always-block per turn (D-07); nil → empty
-	classifier        *prompt.ReasoningClassifier // SHARED reasoning-tier classifier (anchors built once); nil → LLM router
-	learner           *reasoninglearn.Learner     // async reasoning self-improvement worker; nil unless ReasoningLearning is on
-	toolSelectLearner toolSelectObserver          // async tool-selection self-improvement worker (Open-Q #3); nil unless a saver is wired
-	gateway           *gateway.Gateway            // Phase-35 policy PEP injected into every per-turn agent; nil → Allow no-op
-	shareRevoker      ShareRevoker                // D-15 consumer-declared seam (runner_delete.go step 4.5); nil → step 4.5 is a silent skip
+	archivalRecaller ArchivalRecaller            // L4 archival-memory recall for messages[1] (amendment #21); nil → no recall
+	hookManager      *agent.HookManager          // optional per-turn LlmAgent hooks
+	alwaysBlock      func() string               // renders the messages[1] always-block per turn (D-07); nil → empty
+	classifier       *prompt.ReasoningClassifier // SHARED reasoning-tier classifier (anchors built once); nil → LLM router
+	gateway          *gateway.Gateway            // Phase-35 policy PEP injected into every per-turn agent; nil → Allow no-op
+	shareRevoker     ShareRevoker                // D-15 consumer-declared seam (runner_delete.go step 4.5); nil → step 4.5 is a silent skip
 
 	// threadLocks + sessions are the two per-conversation in-memory maps, BOTH keyed by
 	// the composite (identity, session) sessionKey (D-23, runner_session.go): threadLocks
@@ -231,9 +206,9 @@ func New(d Deps) *Runner {
 			workspace = filepath.ToSlash(wd)
 		}
 	}
-	// Build the reasoning-tier classifier ONCE here so its 18-seed anchors + Neo4j
-	// example load are amortized across every turn, not rebuilt per turn.
-	classifier := prompt.NewReasoningClassifier(d.Embedder, d.ExampleStore)
+	// Build the static curated-seed reasoning classifier once so its anchors are
+	// amortized across every turn.
+	classifier := prompt.NewReasoningClassifier(d.Embedder)
 	// Wire the SAME granite embedder into the tool_search ranker (08.2-03): free-text
 	// tool_search ranks deferred tools by embedding cosine, so the embed sidecar is a
 	// HARD dependency for tool_search (Req-6). The reasoning classifier keeps its SOFT
@@ -247,6 +222,7 @@ func New(d Deps) *Runner {
 		identity:                 d.Identity,
 		cacheMetrics:             d.CacheMetrics,
 		toolInvocations:          d.ToolInvocations,
+		adaptiveCommitter:        d.AdaptiveCommitter,
 		client:                   d.Client,
 		registry:                 d.Registry,
 		cfg:                      d.LLM,
@@ -280,18 +256,6 @@ func New(d Deps) *Runner {
 	// per-turn breaker reset on each rebuild and never opened across turns.
 	if r.breaker == nil {
 		r.breaker = llm.NewDefaultBreaker()
-	}
-	// Attach the async self-improvement worker (no-op unless ReasoningLearning is
-	// enabled and a save-capable store is wired).
-	r.learner = buildReasoningLearner(d, classifier)
-	// Attach the tool-selection active-learning loop (D-06/D-07): the detector + the
-	// two-tier DeepSeek oracle on the activelearn core, with Refresh re-folding the
-	// per-tool centroids into the tool_search ranker. No-op unless a ToolSelectSaver is
-	// wired. It reuses the SAME granite embedder already wired into the ranker above.
-	// Assign through a typed nil-guard so a nil *Learner does not become a non-nil
-	// interface (which would NPE the Observe/Close paths).
-	if tsl := buildToolSelectLearner(d); tsl != nil {
-		r.toolSelectLearner = tsl
 	}
 	return r
 }
@@ -425,9 +389,6 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, input turnInput)
 		// because the agent emits one pause Event per call but rewrites its history to
 		// a single multi-tool_call assistant message.
 		tr := &turnTracker{convID: convID}
-		if input.visibleUserMsg != nil {
-			tr.userMsg = *input.visibleUserMsg // thread the round's request for the tool-select capture (Open-Q #3)
-		}
 		// flushPause writes the single combined assistant ask_user tool_call turn (CR-02)
 		// — the message the injected RoleTool answers attach to on resume. It MUST run
 		// even when the consumer stops iterating ON the pause Event: the AG-UI translator

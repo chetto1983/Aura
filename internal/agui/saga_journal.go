@@ -48,6 +48,8 @@ const (
 	sagaStepAudit         = "audit"
 	sagaStepDeactivate    = "deactivate"
 	sagaStepConversations = "conversations"
+	sagaStepAdaptiveFence = "adaptive_fence"
+	sagaStepAdaptiveGraph = "adaptive_graph"
 	sagaStepGraph         = "graph"
 	sagaStepObjectStore   = "objectstore"
 	sagaStepDirs          = "dirs"

@@ -46,7 +46,6 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"AURA_LLM_STREAM_IDLE_TIMEOUT_SEC: ${AURA_LLM_STREAM_IDLE_TIMEOUT_SEC:-60}",
 		"AURA_SHOW_REASONING: ${AURA_SHOW_REASONING:-true}",
 		"AURA_COMPLETION_GATE: ${AURA_COMPLETION_GATE:-true}",
-		"AURA_LLM_REASONING_LEARNING: ${AURA_LLM_REASONING_LEARNING:-false}",
 		"SEARXNG_URL: http://searxng:8080/search",
 		"AURA_WEB_FETCH_MAX_BODY_BYTES: ${AURA_WEB_FETCH_MAX_BODY_BYTES:-5000000}",
 		"AURA_MCP_CONFIG: ${AURA_MCP_CONFIG:-/var/lib/aura/mcp/servers.json}",
@@ -154,6 +153,7 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"aura-runs:",
 		"aura-skills:",
 		"aura-exported-skills:",
+		"AURA_LLM_REASONING_LEARNING",
 	} {
 		if strings.Contains(compose, retired) {
 			t.Fatalf("compose.yaml still contains retired hardening knob %q", retired)
@@ -422,7 +422,6 @@ func TestDotEnvTemplateHygiene(t *testing.T) {
 		"AURA_LLM_STREAM_IDLE_TIMEOUT_SEC=",
 		"AURA_MODEL_CONTEXT_WINDOW=",
 		"AURA_COMPLETION_GATE=",
-		"AURA_LLM_REASONING_LEARNING=",
 		"AURA_AGENT_JOB_MAX_DURATION_SEC=",
 		"AURA_SWARM_MAX_GOALS=",
 		"AURA_SWARM_CHILD_TIMEOUT_SEC=",
@@ -471,13 +470,15 @@ func TestDotEnvTemplateHygiene(t *testing.T) {
 	for _, want := range []string{
 		"AURA_LLM_MODEL=deepseek/deepseek-v4-flash:nitro",
 		"AURA_SHOW_REASONING=true",
-		"AURA_LLM_REASONING_LEARNING=false",
 		"AURA_OBJECTSTORE_PUBLIC_ENDPOINT=http://127.0.0.1:3900",
 		"AURA_WHATSAPP_BRIDGE_PORT=8094",
 	} {
 		if !hasActiveEnvLine(envExample, want) {
 			t.Fatalf(".env.example missing coherent default line %q", want)
 		}
+	}
+	if strings.Contains(envExample, "AURA_LLM_REASONING_LEARNING") {
+		t.Fatal(".env.example still exposes the forbidden legacy learned-serving switch")
 	}
 
 	seen := map[string]bool{}

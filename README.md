@@ -46,7 +46,7 @@ default) plus a few local CPU sidecars. It is built as a **product, not a protot
 
 - **Streaming agent loop** with a shared *budget tree* (step + wall-clock caps) and a tool-loop *dedup ring* — bounded, predictable cost.
 - **Deferred-tool pattern + semantic `tool_search`** — dozens of tools (incl. dynamic MCP tools) stay discoverable at near-zero per-turn token cost.
-- **Adaptive reasoning router** — a local embedding classifier picks reasoning effort in ~10 ms and self-improves off the hot path.
+- **Adaptive reasoning router** — a local curated-seed embedding classifier picks reasoning effort in ~10 ms.
 - **Full host terminal + filesystem tools** — real operating power, with destructive-command approval gates and secret redaction.
 - **Graph-native memory** — documents become a searchable Neo4j graph (FTS + HNSW vectors); conversations persist with a context-management ladder.
 - **Self-extension** — the agent authors and runs its own skills, and mounts MCP servers (calculator, calendar, whatsapp, memory).
@@ -58,7 +58,7 @@ default) plus a few local CPU sidecars. It is built as a **product, not a protot
 Transport & UX     cmd/aura (CLI) · channels (+telegram) · agui (SSE) · setup · askuser
 Agent runtime      agent (LlmAgent, Budget, Events, hooks) · workflow (Seq/Par/Loop) · swarm
 Tools & MCP        agent/tools (registry, deferred, tool_search, fs/shell/web/skill) · mcp (+bridge, manager)
-Intelligence       llm (+openai_compat) · semindex (embed-index core) · reasoning* · activelearn · scoring
+Intelligence       llm (+openai_compat) · semindex (embed-index core) · reasoningtrace · adaptive · scoring
 Capabilities       web · skills · cron · onboarding · documents · eval
 Persistence        db (Postgres+sqlc) · knowledge (Neo4j) · conversations · identity · profile · secret
 Observability      obs · panicobs · reasoningtrace · toolinvocations · cachemetrics

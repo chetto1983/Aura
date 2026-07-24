@@ -88,9 +88,6 @@ const (
 	RetentionBytesID             InstrumentID = "retention_bytes"
 	RetentionBacklogID           InstrumentID = "retention_backlog"
 	RetentionDiskUtilizationID   InstrumentID = "retention_disk_utilization"
-	LearningOperationsID         InstrumentID = "learning_operations"
-	LearningSizeID               InstrumentID = "learning_size"
-	LearningOldestAgeID          InstrumentID = "learning_oldest_age"
 	IngestionJobsID              InstrumentID = "ingestion_jobs"
 	IngestionEmbedDurationID     InstrumentID = "ingestion_embed_duration"
 	IngestionQueueDepthID        InstrumentID = "ingestion_queue_depth"
@@ -148,9 +145,6 @@ var descriptors = []Descriptor{
 	count(RetentionBytesID, "aura.retention.bytes", "aura_retention_bytes_total", []AttributeKey{AttributeOperation, AttributeOutcome}, "Total bytes processed by retention."),
 	gauge(RetentionBacklogID, "aura.retention.backlog", "aura_retention_backlog_items", nil, "Current durable non-terminal retention item backlog.", "items"),
 	gauge(RetentionDiskUtilizationID, "aura.retention.disk.utilization", "aura_retention_disk_utilization_ratio", []AttributeKey{AttributeState}, "Current bounded retention disk utilization ratio.", "1"),
-	count(LearningOperationsID, "aura.learning.operation", "aura_learning_operation_total", []AttributeKey{AttributeOperation, AttributeToolClass, AttributeOutcome, AttributeErrorClass}, "Total bounded learning-store operations."),
-	gauge(LearningSizeID, "aura.learning.size", "aura_learning_size", []AttributeKey{AttributeToolClass, AttributeState}, "Current bounded learning-store size.", "1"),
-	gauge(LearningOldestAgeID, "aura.learning.oldest.age", "aura_learning_oldest_age_seconds", []AttributeKey{AttributeToolClass, AttributeState}, "Oldest bounded learning-store item age.", "s"),
 	count(IngestionJobsID, "aura.ingestion.job", "aura_ingestion_job_total", []AttributeKey{AttributeOutcome}, "Total durable ingestion job terminal outcomes."),
 	histogram(IngestionEmbedDurationID, "aura.ingestion.embed.duration", "aura_ingestion_embed_duration_seconds", []AttributeKey{AttributeOutcome}, "Embedding worker per-document processing duration.", slowDurationBuckets),
 	gauge(IngestionQueueDepthID, "aura.ingestion.queue.depth", "aura_ingestion_queue_depth_items", nil, "Current durable queued ingestion job backlog.", "items"),
@@ -273,7 +267,7 @@ var allowedAttributeValues = map[AttributeKey]map[string]struct{}{
 		"turn", "llm_call", "tool_dispatch", "turn_start", "before_model", "before_tool", "after_tool", "turn_end",
 		"pause_create", "pause_answer", "resume", "resume_commit", "mcp_initialize", "mcp_list_tools", "mcp_call_tool", "mcp_ping", "mcp_bridge",
 		"db_query", "db_transaction", "scheduler_tick", "scheduler_claim", "scheduler_job", "listener_serve", "idempotency_reserve", "idempotency_complete",
-		"idempotency_replay", "retention_plan", "retention_apply", "retention_delete", "learning_load", "learning_write", "learning_compact", ValueOther,
+		"idempotency_replay", "retention_plan", "retention_apply", "retention_delete", ValueOther,
 	),
 	AttributeToolClass: finiteSet(ToolClassBuiltin, ToolClassFilesystem, ToolClassShell, ToolClassWeb, ToolClassInteraction, ToolClassMCP, ToolClassScheduler, ToolClassData, ValueOther),
 	AttributeTransport: finiteSet("grpc", "http", "stdio", "sse", "streamable_http", "in_process", ValueOther),

@@ -62,7 +62,3 @@ groups:
         expr: max(aura_retention_backlog_items)
       - record: aura:retention_disk_utilization:max
         expr: max by (state) (aura_retention_disk_utilization_ratio)
-      - record: aura:learning_size:max
-        expr: max(aura_learning_size) or vector(0)
-      - record: aura:learning_oldest_age:max_seconds
-        expr: max(aura_learning_oldest_age_seconds) or vector(0)

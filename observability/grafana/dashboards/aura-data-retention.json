@@ -14,13 +14,6 @@
       "targets": [{"editorMode": "code", "expr": "sum by (operation, outcome) (rate(aura_retention_operation_total[5m]))", "legendFormat": "{{operation}} / {{outcome}}", "range": true, "refId": "A"}], "title": "Retention activity", "type": "timeseries"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "aura-prometheus"}, "description": "Age of the oldest bounded learning item.",
-      "fieldConfig": {"defaults": {"links": [{"title": "Retention runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-data-retention.md"}], "noValue": "No data", "unit": "s"}, "overrides": []},
-      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 0}, "id": 2,
-      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"hideZeros": false, "mode": "multi", "sort": "desc"}},
-      "targets": [{"editorMode": "code", "expr": "aura:learning_oldest_age:max_seconds", "legendFormat": "oldest item", "range": true, "refId": "A"}], "title": "Learning oldest age", "type": "timeseries"
-    },
-    {
       "datasource": {"type": "prometheus", "uid": "aura-prometheus"}, "description": "Retention failures over fifteen minutes. Alert: failures > 0 for 5m.",
       "fieldConfig": {"defaults": {"links": [{"title": "Retention runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-data-retention.md"}], "noValue": "No data", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 0}]}, "unit": "short"}, "overrides": []},
       "gridPos": {"h": 8, "w": 8, "x": 16, "y": 0}, "id": 3,
@@ -40,20 +33,6 @@
       "gridPos": {"h": 8, "w": 8, "x": 8, "y": 8}, "id": 5,
       "options": {"minVizHeight": 75, "minVizWidth": 75, "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showThresholdLabels": true, "showThresholdMarkers": true, "sizing": "auto"},
       "targets": [{"editorMode": "code", "expr": "max(aura_retention_disk_utilization_ratio)", "legendFormat": "utilization", "range": true, "refId": "A"}], "title": "Aura storage utilization", "type": "gauge"
-    },
-    {
-      "datasource": {"type": "prometheus", "uid": "aura-prometheus"}, "description": "Learning-store size grouped only by bounded tool class and state.",
-      "fieldConfig": {"defaults": {"links": [{"title": "Retention runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-data-retention.md"}], "noValue": "No data", "unit": "short"}, "overrides": []},
-      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 8}, "id": 6,
-      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "right", "showLegend": true}, "tooltip": {"hideZeros": false, "mode": "multi", "sort": "desc"}},
-      "targets": [{"editorMode": "code", "expr": "max by (tool_class, state) (aura_learning_size)", "legendFormat": "{{tool_class}} / {{state}}", "range": true, "refId": "A"}], "title": "Learning stores", "type": "timeseries"
-    },
-    {
-      "datasource": {"type": "prometheus", "uid": "aura-prometheus"}, "description": "Largest bounded learning-store size. Alert: size >= 10000 for 5m.",
-      "fieldConfig": {"defaults": {"links": [{"title": "Retention runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-data-retention.md"}], "noValue": "No data", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 10000}]}, "unit": "short"}, "overrides": []},
-      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 16}, "id": 7,
-      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
-      "targets": [{"editorMode": "code", "expr": "aura:learning_size:max", "legendFormat": "largest store", "range": true, "refId": "A"}], "title": "Learning capacity", "type": "stat"
     }
   ],
   "refresh": "30s", "schemaVersion": 41, "tags": ["aura", "data", "retention", "bounded-labels"], "templating": {"list": []},

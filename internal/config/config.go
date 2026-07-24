@@ -269,7 +269,6 @@ type Config struct {
 	Sandbox   SandboxConfig
 	Share     ShareConfig
 	Retention RetentionConfig
-	Learning  LearningConfig
 
 	// Amendment #88 fixed local working root. WorkspaceDir is the single WorkspaceRoot
 	// every host-direct tool (shell_exec, fs_read/write/edit/glob/grep, send_file) and
@@ -417,7 +416,6 @@ func loadBase() *Config {
 
 		Profile:   ParseProfile(os.Getenv("AURA_PROFILE")),
 		Retention: loadRetentionConfig(ParseProfile(os.Getenv("AURA_PROFILE"))),
-		Learning:  loadLearningConfig(),
 
 		ConversationTurnCapBytes:   envutil.IntDefault("AURA_CONVERSATION_TURN_CAP_BYTES", 65536),
 		ContextToolEvictAfterTurns: envutil.IntDefault("AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS", 10),

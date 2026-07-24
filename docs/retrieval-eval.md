@@ -90,10 +90,7 @@ On a host without the GPU sidecar the tier `t.Skip`s (locally) — it is not wir
 (a paid/GPU-gated tier). The pure metrics still run and are coverage-counted under the
 default build.
 
-## Self-learning: OUT (deferred per spike-070)
+## Adaptive serving: OUT
 
-This phase ships the **static** reranker plus the regression gate only. No
-`internal/activelearn` learning loop is added. Spike-070 concluded the fixed
-Qwen3-Reranker already works well and there is no production miss-data to learn from yet;
-a learning loop now would be overengineering. Revisit only if production eval shows a
-persistent, patterned rerank miss.
+This phase ships the **static** reranker plus the regression gate only. Runtime
+policy mutation and learned serving remain outside this evaluation harness.

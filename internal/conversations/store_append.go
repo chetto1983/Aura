@@ -139,6 +139,42 @@ func (s *Store) AppendTurnTx(ctx context.Context, q *sqlc.Queries, p AppendTurnP
 	return insertTurnAndAggregates(ctx, q, turn, agg)
 }
 
+// AppendTurnTxWithSpillCleanup is the cross-store transaction variant used by
+// adaptive.TurnCommitter. It may create the normal final sidecar before the
+// caller's PostgreSQL transaction commits and returns a cleanup closure. The
+// caller MUST invoke cleanup if any later write or commit fails; on success it
+// discards the closure. A process crash is reconciled by the existing orphan
+// scan, matching AppendTurn's established spill contract.
+func (s *Store) AppendTurnTxWithSpillCleanup(
+	ctx context.Context,
+	q *sqlc.Queries,
+	p AppendTurnParams,
+) (cleanup func(), err error) {
+	if p.Seq <= 0 {
+		return nil, fmt.Errorf("append turn tx with spill %s: %w", p.ConversationID, ErrSeqRequired)
+	}
+	turn, agg, err := s.appendTurnWrites(p)
+	if err != nil {
+		return nil, err
+	}
+	path := turn.ContentSidecarPath.String
+	if path != "" {
+		cleanup = func() { _ = os.Remove(path) }
+	}
+	if err := insertTurnAndAggregates(ctx, q, turn, agg); err != nil {
+		return cleanup, err
+	}
+	return cleanup, nil
+}
+
+// AllocateTurnSeqTx exposes the existing row-locked sequence allocator to
+// cross-domain committers that already own a transaction. It opens no nested
+// transaction and preserves the same missing-conversation classification as
+// AppendTurn.
+func (s *Store) AllocateTurnSeqTx(ctx context.Context, q *sqlc.Queries, conversationID string) (int, error) {
+	return s.allocateTurnSeq(ctx, q, conversationID)
+}
+
 // AppendAssistantTurnWithCacheMetric writes a terminal assistant turn, folds its
 // usage into the conversation aggregate, and appends the matching cache_metrics row
 // in one database transaction. The Runner uses this for final assistant Events so a

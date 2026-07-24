@@ -34,7 +34,7 @@ var errBadOp = errors.New("graphview: unknown op")
 
 // GraphReader is the narrow Cypher seam GraphView needs. *knowledge.Client
 // satisfies it. It exposes Read ONLY — the read-only milestone never surfaces a
-// Write path through this seam (mirror reasoningstore.GraphClient, minus Write).
+// Write access is intentionally absent from this graph-explorer seam.
 type GraphReader interface {
 	Read(ctx context.Context, query string, params map[string]any) ([]map[string]any, error)
 }
