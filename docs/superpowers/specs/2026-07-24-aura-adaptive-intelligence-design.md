@@ -3,7 +3,8 @@
 **Date:** 2026-07-24
 **Status:** Shadow plumbing validated; adaptive production serving blocked
 **Evidence:** Spikes 095–105
-**Initial domains:** reasoning, tool routing, skill routing, knowledge retrieval
+**Initial domains:** reasoning, tool routing, skill routing, knowledge retrieval,
+memory recall
 **Authority:** PostgreSQL
 **Projection:** private Neo4j labels in Aura's existing agent-memory deployment
 **Serving default:** static Aura behavior
@@ -23,9 +24,10 @@ production answer quality. The held-out Qwen spike improved balanced utility
 by `+0.1679`, but its family-bootstrap 95% interval was
 `[-0.0168, +0.3198]`. Generalization therefore failed the preregistered gate.
 
-The current production champion remains Aura's static behavior. Graph kNN remains a
-shadow challenger until a randomized canary on the real configured model and real
-traffic passes the calibrated promotion gate.
+The current production champion remains Aura's static behavior. Graph kNN is the
+designated first shadow candidate, but no immutable snapshot builder or production
+scorer currently loads it. It cannot serve unless a randomized canary on the real
+configured model and real traffic passes the calibrated promotion gate.
 
 ## 2. Evidence ledger
 
@@ -38,7 +40,7 @@ traffic passes the calibrated promotion gate.
 | Supported OPE, spike 102 | SNIPS error `.0004`, DR error `.0051`, ESS `5605` | randomized logged propensities can recover known target value | production effect |
 | Runner/outbox, spike 103 | validated mechanism | real Runner control points, atomic durable events, ordered projection | better answers |
 | Identity/rollback, spike 104 | validated safety mechanism | deletion, tombstones, private graph, distributed kill switch | better answers |
-| Canary statistics, spike 105 | validated gate, not model | false-promotion, power, harm, poison, and censor behavior | real-model win |
+| Canary statistics, spike 105 | validated seeded simulation only | false-promotion, power, harm, poison, censor behavior of that function | production inference or real-model win |
 
 ## 3. Goals
 
@@ -63,9 +65,14 @@ traffic passes the calibrated promotion gate.
 - Treating tool completion, HTTP success, token savings, or model self-report as
   answer quality.
 - Cross-identity learning from raw prompts, arguments, embeddings, or outcomes.
-- Querying Neo4j on the request hot path.
+- Querying Neo4j for adaptive scoring, snapshot loading, or private projection on the
+  request hot path. Existing owner-scoped memory recall is the explicit exception.
 - Writing adaptive evidence through LLM-facing `memory_add_*` tools.
 - Claiming Qwen 2B results transfer to a larger or different production model.
+- Creating or mutating executable skills, code, configuration, prompts, policies,
+  or model weights through a runtime learned action.
+- Treating model-asserted approval or successful execution without error as authority
+  or proof that an improvement is safe and useful.
 - Activating every adaptive surface at once.
 
 ## 5. Adaptive surface catalog
@@ -76,21 +83,50 @@ does not automatically promote another.
 
 | Surface | Safe strategy choices | Authoritative outcome examples | State |
 |---|---|---|---|
-| Reasoning | direct, bounded, deep | deterministic correctness, calibrated answer rubric, tokens, latency | shadow-ready |
-| Tool discovery | semantic top-1, model top-3, full eligible catalog | correct tool, gateway verdict, structured result, independent task result | shadow-ready |
-| Skill routing | semantic top-1, model top-3, full eligible catalog | correct skill, artifact rubric, explicit correction | shadow-ready |
-| Knowledge retrieval | none, vector, graph expansion, rerank depth | citation support, deterministic answer, retrieval relevance | shadow-ready |
-| Memory recall | none, recent, semantic, graph-temporal | explicit correction, preference/entity recall rubric | future adapter |
+| Reasoning | direct, bounded, deep | deterministic correctness, calibrated answer rubric, tokens, latency | generic observation only; adapter required before each model request is built |
+| Tool discovery | semantic top-1, model top-3, full eligible catalog | correct discovery set/order, later tool use, independent task result | adapt ordered discovery results before deferred-tool exposure; model tool call is observation |
+| Skill routing | semantic top-1, model top-3, full eligible catalog | correct skill, artifact rubric, explicit correction | adapt ordered read-only skill candidates; pinned/use/write actions are not arms |
+| Executable skill reuse | lexical, structural, graph, vector, hybrid, none | gateway-observed use linked to later calibrated outcome | future producer-consumer episode contract; no mutation authority |
+| Knowledge/document retrieval | none, vector, graph expansion, rerank depth | citation support, deterministic answer, retrieval relevance | adapt internal retrieval strategy before execution; model query/scope is observation |
+| Memory recall | off, owner-scoped long-term top-4, long-term top-8 | explicit correction, recall rubric, final quality | adapt existing `ArchivalRecaller` before the deployed MCP call |
 | Memory write | do not write, candidate, supersede | human confirmation, later contradiction, temporal validity | future adapter |
 | Model/provider routing | local/cloud/model capability class | calibrated quality, cost, latency, availability | future adapter |
 | Context management | retain, compact, recall, tool-result eviction depth | answer rubric, cache/tokens, lost-fact checks | future adapter |
-| Document search | vector depth, graph expansion, rerank | grounded citation and exact-document checks | future adapter |
 | Multimodal route | local/cloud/fallback strategy | modality-specific deterministic or human rubric | future adapter |
 | Retry/recovery | retry, alternate provider, ask user, stop | terminal correctness, duplicate-side-effect checks | future adapter |
 | Scheduler/concurrency | serial, bounded parallel, defer | completion, deadline, cost, conflict rate | research only |
 
 “Future adapter” means the control-plane contract is reusable; it is not permission to
 add an action before its risk analysis, evaluator, and canary are specified.
+
+SAGE's AppWorld result supports testing skill reuse, not copying its weight-training
+stack or text/name heuristic. Provenance proves exposure, not causal contribution.
+Skill reuse stays shadow-only until randomized skill/no-skill exposure defines
+many-to-many attribution, interference, horizon, censoring, and contamination.
+
+Retrieval families are peers: lexical/structural, graph, vector, hybrid/reranked, and
+none are frozen versioned actions. Aura benchmarks them on its own model and calibrated
+data; each snapshot binds corpus/ACL epoch, parser, embedding, index, reranker, top-K,
+and tie-breaking. Neo4j availability does not privilege graph or vector retrieval.
+
+Improvement mutation is a separate proposal workflow. It requires exact artifact/source
+binding, server-side current-message approval, owner capability, idempotency, isolated
+review, normal Aura verification gates, and immutable audit. Adaptive evidence alone
+cannot write or activate executable production assets.
+
+Memory recall reuses the vendored agent-memory sidecar, MCP bridge, POLE+O graph,
+owner scope, dedup, forget, and untrusted-data fence. The first actions vary only
+off/top-K; memory mutation is never an arm and PostgreSQL owns adaptive facts. Move
+the exact fenced result out of stable `messages[1]` into one synthetic non-persisted
+dynamic-tail item. The context budgeter treats it as indivisible, protects it from
+L1/L2.5 changes, and positions it immediately before the current model-visible user
+message, or at the tail when none exists. Delivery commits only after the final
+transformed request fits and contains the exact item; otherwise record
+`none/context_budget` and omit it—never truncate it. The whole multi-query MCP
+operation is bracketed by equal epochs advanced by every result-affecting writer;
+Neo4j read-committed and a bookmark alone are insufficient. Result-neutral
+`User`/adaptive projector writes require proof; bad epochs or untracked affecting
+writes are diagnostic-only. Raw query/content and content fingerprints remain forbidden.
 
 ## 6. Non-negotiable invariants
 
@@ -111,6 +147,9 @@ add an action before its risk analysis, evaluator, and canary are specified.
 15. A spike model can validate mechanics but cannot satisfy a production-model gate.
 16. Canary or active policy state cannot make a learned action serve until the
     production serving adapter exists and passes its own activation gates.
+17. A pre-execution assignment never claims delivery; exposure follows its durable fact.
+18. Missing/fallback delivery remains in ITT and never enters served-action OPE without
+    a valid marginal exposure probability.
 
 ## 7. Architecture
 
@@ -122,11 +161,13 @@ request
   ├─ authoritative PostgreSQL policy epoch gate
   │     └─ unavailable/off/rollback => static decision
   ├─ immutable local challenger snapshot
-  ├─ shadow or randomized safe canary assignment
-  └─ domain adapter executes an eligible strategy
+  ├─ durable shadow or randomized safe canary assignment
+  ├─ domain adapter executes an eligible strategy
+  ├─ durable delivery/exposure fact
+  └─ expose result to downstream model/consumer
           │
           ▼
-tool result / answer / correction / deterministic evaluator / human rubric
+answer / correction / deterministic evaluator / human rubric
           │
           ├─ typed immutable event
           ├─ conversation turn + event in one PostgreSQL transaction
@@ -143,8 +184,10 @@ it may not lose a turn or permit stale activation.
 
 ### 7.2 Request path
 
-The long-term scorer is local and immutable after context features exist. Neo4j,
-remote teachers, snapshot building, and evaluation remain off the hot path.
+The adaptive scorer is local and immutable after context features exist. Remote
+teachers, snapshot building, private projection, and adaptive Neo4j analysis remain
+off the hot path. The existing owner-scoped Neo4j-backed memory-recall call is the
+only initial exception; the adaptive policy chooses its bounded top-K before that call.
 
 The distributed safety epoch is different: before an adaptive action can affect
 execution, the process reads `aura.adaptive_policy_state`. This gives a hard rollback
@@ -152,21 +195,50 @@ bound of one authoritative read before the next action. A read error returns the
 baseline. An optimized cache may be introduced only if it preserves an explicit,
 measured stale-serving bound and still fails closed during a partition.
 
-### 7.3 Outcome path
+### 7.3 Current observation path
 
-The current Runner integration records:
+The current Runner integration records terminal tool results, terminal assistant
+answers, request-level reasoning configuration, top-level model-emitted tool calls,
+tokens, cost, latency, and bounded operational fields. Tool and assistant completion
+events explicitly carry `quality_observed:false`.
 
-- terminal tool results;
-- terminal assistant answers;
-- actual model reasoning configuration;
-- actual selected tool/skill/knowledge call;
-- tokens, cost, latency, and bounded operational fields.
+This is schema-`1.0` operational observation, not production-eligible adaptive
+evidence. It does not distinguish repeated model rounds in one request, record the
+candidate action catalog or true behavior propensity, identify a frozen snapshot, or
+represent a multiplexed skill/knowledge choice hidden inside tool arguments.
+Independent or human evidence is not yet composed into the production lifecycle.
 
-Tool and assistant completion events explicitly carry `quality_observed:false`.
-Independent or human evidence arrives as later immutable events linked to the same
-decision.
+### 7.4 Schema-2.0 assignment, delivery, outcome, and correction contract
 
-## 8. Implemented PostgreSQL contracts
+Amendment #93.4 defines the first promotion-eligible ledger contract. Each typed
+assignment uses a unique owner-scoped assignment ID derived from request, canonical
+decision point, and point ordinal. It freezes policy/snapshot/model/cohort identity,
+ordered eligible actions, champion/recommended/selected intended action, optional
+experiment and arm identity/propensity, marginal intended-action probabilities,
+bounded features, and selection/override reason. It cannot claim post-execution truth.
+The canary gate uses arm assignment. An explicit static/no-op action is representable.
+
+After execution, one deterministic immutable delivery fact records actual exposure,
+its known marginal probability or explicit unknown, effective bounded parameters,
+registered result IDs/order and revisions, or fallback. It commits before downstream
+exposure. Missing delivery remains ITT missing/censored; treatment-as-served OPE
+requires a recorded positive marginal exposure probability.
+Outcomes/corrections append separately; operational completion remains ineligible.
+
+The draw and durable assignment commit happen before the selected strategy executes.
+If assignment, execution, or delivery persistence fails, the learned result is
+discarded and static behavior serves. Payloads contain only typed safe projections—
+registered IDs, bounded limits, booleans, and lengths—never raw prompts, queries,
+arguments, documents, memories, credentials, reasoning, or content fingerprints.
+
+Schema-`2.0` event IDs are deterministic from assignment/kind/stable source identity.
+One delivery exists per assignment and one terminal outcome per evaluator/source key.
+Corrections form one same-owner/scope chain; missing targets, forks, cycles, and
+cross-kind links are invalid. Schema-`1.0` history is never eligible.
+The existing `decision` event kind carries assignments; schema `2.0` adds `delivery`
+and retains the existing `outcome` and `correction` kinds.
+
+## 8. Implemented PostgreSQL plumbing contracts
 
 Migrations:
 
@@ -181,7 +253,7 @@ Migrations:
 ### 8.1 Event
 
 Event kinds are `decision`, `outcome`, `correction`, `promotion`, and `rollback`.
-Every event has:
+The implemented schema-`1.0` envelope has:
 
 ```text
 id UUID
@@ -198,7 +270,11 @@ created_at
 ```
 
 The event UUID is idempotent only when every immutable field and the canonical payload
-hash match. Reusing an UUID with changed content is a hard conflict.
+hash match. Reusing an UUID with changed content is a hard conflict. The current
+database check requires only an object payload with a string `schema_version`; it does
+not yet enforce Amendment #93.4's typed assignment, delivery, outcome, and correction
+fields or assignment/delivery uniqueness. Schema-`2.0` enforcement must be additive
+so immutable historical rows are retained but excluded from eligible cohorts.
 
 Per-owner/per-aggregate sequencing is atomic and gap-free. Projector workers use
 `SKIP LOCKED`, but may claim sequence `n+1` only after earlier events in that aggregate
@@ -258,17 +334,26 @@ compatibility, but no dormant application caller is shipped. A future mutation
 surface must land with an authorized production composition root and live
 capability/audit evidence in the same amendment.
 
-Canary assignment hashes a point-specific decision ID and policy version into 10,000
-stable buckets. Reasoning, each tool call, and other adaptive points derive different
-decision IDs from one request ID, preventing multi-assignment collisions.
+Migration `0058`'s single evidence-report rule for both `canary` and `active` is not
+the final transition contract. It must be replaced by distinct sealed artifact kinds:
+an admission plan for `shadow -> canary`, and a loader-reconstructed closed outcome
+report for `canary -> active`. The transition revalidates artifact kind, exact scope,
+hashes, eligibility, and target state in the same transaction.
+
+Canary assignment is designed to hash a point-specific assignment ID and policy
+version into 10,000 stable buckets. The current reasoning hook instead derives one
+`DecisionIDForPoint(requestID, "reasoning")` for every model round in a request, so
+multi-round observations collide semantically. Amendment #93.4 requires the point
+ordinal in every typed assignment ID before canary evidence can be eligible.
 
 ### 8.5 Production composition boundary
 
 Aura's chat boot path now composes the decision hook and atomic turn committer only
-when the authoritative boot policy is `shadow`. The hook observes challengers while
-the static action remains served. Before every observation or adaptive commit, a fresh
-policy read gates the path; `off`, `rollback`, or a policy-store error falls back to
-the existing non-adaptive persistence path.
+when the authoritative boot policy is `shadow`. The hook records generic observations
+while the static action remains served; no learned snapshot scorer is composed.
+Before every observation or adaptive commit, a fresh policy read gates the path;
+`off`, `rollback`, or a policy-store error falls back to the existing non-adaptive
+persistence path.
 
 `canary` and `active` learned-action serving are deliberately not implemented. If
 either state is encountered at boot, Aura logs the unsupported state and forces the
@@ -294,8 +379,11 @@ Rules:
    labels.
 5. Adaptive purge deletes only `AdaptiveEpisode` and `AdaptiveEvent`; the shared
    `User` and memory subgraph remain.
-6. The existing Aura agent-memory fork remains authoritative for memory semantics.
-   Adaptive storage does not restore removed reasoning-trace MCP tools.
+6. Projector user creation matches agent-memory's non-null `id`, `created_at`, and
+   `attributes_json` schema, or uses `MATCH` after its supported user upsert.
+7. Live proof projects first, then passes owner-scoped agent-memory write/read.
+8. The vendored Apache-2.0 license/notices ship in source and image; provenance names
+   both upstream/fork base and the actual later Aura tree revision.
 
 The live test projected an adaptive marker through an existing user, called the real
 agent-memory `memory_get_context`, confirmed the marker and event ID were absent, then
@@ -314,20 +402,26 @@ The static policy is the champion.
 The first challenger remains:
 
 > per action, top-5 non-negative cosine-neighbor mean from at most 256 chosen-action
-> outcomes, with a versioned local snapshot, bounded recent overlay, clipped raw
-> components, and action-local drift quarantine.
+> outcomes frozen at the training cutoff, with a versioned local snapshot and an
+> explicit static prior when action-local support is absent.
 
-Spike 102 invalidated promotion of that challenger on unseen families. It may continue
-in shadow while Aura collects stronger real-model evidence. LinUCB and graph-prior
-LinUCB remain research challengers, not production fallbacks.
+Spike 102 invalidated promotion of that challenger on unseen families. It may be
+implemented as a frozen shadow snapshot while Aura collects stronger real-model
+evidence. LinUCB and graph-prior LinUCB remain research challengers, not production
+fallbacks.
+
+The first implementation has no mutable recent overlay. Every refresh creates a new
+fully hashed snapshot and policy version.
 
 No algorithm may compensate for missing overlap. An action with no supported evidence
 uses the static prior.
 
 ## 11. Off-policy evaluation
 
-Production logs must include the actual probability of the chosen action and non-zero
-support for every candidate action being evaluated.
+Production logs distinguish randomized experiment-arm propensity from each action's
+marginal behavior probability. The intention-to-treat canary gate uses the assigned
+arm even when champion and challenger serve the same action. OPE uses marginal action
+propensity and requires non-zero support for every candidate action being evaluated.
 
 Required diagnostics:
 
@@ -342,7 +436,9 @@ Deterministic logs without support are rejected, not scored. Spike 102 proved th
 behavior and showed why IPS alone is insufficient: IPS missed truth while SNIPS and DR
 covered it.
 
-OPE may qualify a candidate for a production canary. It cannot directly activate one.
+OPE is an admission diagnostic only when its logging policy has real support. Shadow
+traffic served at champion propensity `1.0` is not OPE-eligible. OPE cannot claim
+canary outcomes or activate a policy.
 
 ## 12. Calibrated outcome and promotion gate
 
@@ -362,7 +458,8 @@ measured on held-out labeled examples and versioned.
 
 ### 12.2 Closed production cohort
 
-The implemented gate requires:
+The implemented statistical function validates the following fields on an in-memory
+batch:
 
 - environment `production_canary`;
 - real model ID, policy version, closed cohort ID;
@@ -375,8 +472,8 @@ The implemented gate requires:
 - quality-uplift lower bound above the declared threshold;
 - harm-increase upper bound at or below the declared margin.
 
-Five looks divide total alpha `0.05` by Bonferroni correction. Independent-arm
-Wilson/Newcombe bounds are intentionally conservative.
+Five looks divide total alpha `0.05`. The current ESS-weighted independent-arm
+Wilson/Newcombe bounds are simulation evidence only, not a production authorizer.
 
 Spike 105 used a 2-point harm margin and 2,500 assignments per arm:
 
@@ -388,6 +485,25 @@ These seeded trials validate gate behavior, not model quality. Before a real can
 Aura must run a power analysis using the real baseline rate, expected minimum effect,
 harm rate, randomization ratio, and planned looks. Low traffic extends the experiment;
 it does not lower the evidence requirement.
+
+Production uses exactly one randomized focal request per evaluation conversation;
+later requests stay champion diagnostics. Preregistration freezes binary quality/harm
+endpoints, snapshot/policy, focal predicate, owner/session/time blocks, carryover and
+interference assumptions, power simulation, and five alpha allocations totaling
+`0.05`. Each look applies exact randomization inference under the frozen assignment
+mechanism and inverts it for quality/harm effect bounds. Unmodelled carryover or
+interference invalidates the cohort.
+
+The ledger-only loader reconstructs assignments, deliveries, outcomes, corrections,
+and membership. ITT uses arm propensity. Treatment-as-served OPE requires known
+positive marginal exposure probability and rejects missing/fallback mismatch. The
+loader seals exact scope plus ledger/report hashes for transactional revalidation.
+
+Shadow-to-canary admission uses a distinct immutable artifact containing the verified
+snapshot, evaluator calibration, power/support/randomization plan, preregistered focal
+cohort, safety limits, rollback plan, and operator approval. It claims no canary
+outcomes. Only a closed loader-sealed real-canary outcome artifact may authorize
+canary-to-active.
 
 ### 12.3 Poisoning and delayed outcomes
 
@@ -408,10 +524,11 @@ off -> shadow -> canary -> active
            ----------> rollback
 ```
 
-`shadow` records real decisions and outcomes but serves the static choice. `canary`
-uses stable randomized assignment only for eligible safe actions. `active` is allowed
-only after every domain-specific gate passes. `rollback` disables observing and
-adapting until an audited operator transition.
+`shadow` records diagnostics but serves the static choice at behavior probability
+`1.0`. A sealed admission artifact is required before `canary`, which uses stable
+randomized assignment only for one preregistered focal safe domain per request.
+`active` requires a closed loader-sealed real-canary outcome artifact. `rollback`
+disables observing and adapting until an audited operator transition.
 
 Automatic rollback triggers include:
 
@@ -443,7 +560,11 @@ Rollback changes future strategy only. It cannot undo completed tool side effect
 ## 15. Security and privacy
 
 - No raw prompt is written by the current decision hook.
-- Tool arguments are represented only by byte count and SHA-256.
+- Historical schema-`1.0` observations used tool-argument byte count plus SHA-256;
+  those rows are ineligible and schema `2.0` forbids every content-derived fingerprint
+  of prompts, queries, arguments, memories, and documents.
+- Plain hashes protect only non-secret immutable artifact integrity. Schema `2.0`
+  performs no content-derived deduplication.
 - Logs and spans carry bounded IDs/enums, not arguments or retrieved text.
 - RLS/FK owner scope is enforced in PostgreSQL.
 - Adaptive Neo4j labels are private to the internal projector.
@@ -457,7 +578,8 @@ Rollback changes future strategy only. It cannot undo completed tool side effect
 
 Required bounded metrics:
 
-- decisions by domain, mode, action, policy, and fallback reason;
+- assignments by domain, mode, intended action, policy, and selection reason;
+- deliveries by actual action, exposure status, and bounded fallback reason;
 - shadow disagreement and canary assignment;
 - propensity/overlap/ESS diagnostics;
 - evaluator kind, calibration version, censor rate, and outcome delay;
@@ -470,134 +592,8 @@ Required bounded metrics:
 `learning_write` success, projected row count, tool HTTP success, and the old
 “9.8/10 plumbing” checklist are not answer-quality metrics.
 
-## 17. Verification matrix
+## 17. Validation, delivery, and evidence appendix
 
-| Gate | Current result |
-|---|---|
-| Real Runner tool/final persistence points | pass |
-| Atomic turn + adaptive event | pass |
-| Concurrent idempotency and gap-free order | pass |
-| Projector lease/retry/dead-letter behavior | pass |
-| Live graph-outage pending/retry/dead-letter path | pass |
-| Live Postgres migration/integration | pass |
-| Live Neo4j projection | pass |
-| Real agent-memory MCP non-leakage | pass |
-| Identity cascade, tombstone, private purge | pass |
-| Deletion/projector TOCTOU interleaving | pass |
-| Two-process rollback and stale CAS rejection | pass |
-| Partition fail-closed behavior | pass |
-| Point-specific decision IDs | pass |
-| Atomic oversized-turn spill and fault cleanup | pass |
-| Capability/evidence/audit-bound policy service | pass |
-| Production shadow composition and baseline fallback | pass |
-| Supported SNIPS/DR OPE | pass |
-| Canary false-promotion/harm/poison gate | pass |
-| Unseen-family generalization | **fail** |
-| Real configured production model quality | **not run** |
-| Real production randomized traffic | **not run** |
-| Learned-action canary/active serving | **not implemented** |
-| Production operator CLI/API | **not implemented** |
-
-## 18. Industrial readiness verdict
-
-There is no universal online “industrial AI score” that converts these checks into a
-credible single number. NIST AI RMF, contextual-bandit OPE practice, and production
-experimentation all require evidence by risk dimension.
-
-Aura's defensible scorecard is therefore:
-
-| Dimension | Verdict |
-|---|---|
-| event integrity and replay | live-validated mechanism |
-| identity isolation and deletion | live-validated mechanism |
-| distributed rollback | live-validated mechanism |
-| agent-memory coexistence | live validated |
-| production shadow wiring | implementation validated |
-| policy promotion control | capability/evidence/audit mechanism validated |
-| OPE support | validated on known spike surface |
-| sequential canary gate | statistically validated in seeded simulation |
-| challenger generalization | failed current gate |
-| real-model benefit | unproved |
-| production activation | **blocked** |
-
-The result is a strong adaptive platform, not a proven quality win. Aura “wins a lot”
-on architecture, durability, privacy, and evaluation rigor. It has not yet won on the
-only number that authorizes serving: real-model, real-traffic quality and harm.
-
-## 19. Production activation criteria
-
-Activation remains blocked until all are true:
-
-1. The real configured production model—not Qwen 2B—runs the four initial domains.
-2. Static champion and challenger are randomized only over safe eligible decisions.
-3. Every assignment records support and propensity.
-4. Independent evaluator calibration passes on a held-out human/deterministic set.
-5. A preregistered power analysis sets cohort size and look schedule.
-6. Quality lower and harm upper bounds pass per domain and overall.
-7. Missing/differential outcomes remain within declared limits.
-8. The learned-action serving adapter is implemented and independently fault-tested;
-   until then `canary` and `active` remain baseline-only.
-9. A production cohort loader proves promotion observations came from the immutable
-   assignment/outcome ledger rather than caller-constructed input.
-10. Community Neo4j remains inaccessible to untrusted general Cypher, or Enterprise
-    property privileges/isolation are deployed.
-11. Full unit, integration, live-infrastructure, race, privacy, retention, restart,
-    and rollback suites pass.
-12. An operator explicitly approves the candidate.
-
-## 20. Delivery sequence
-
-1. **Keep off by default.** Typed events, outbox, private graph, deletion fence,
-   policy service, promotion gate, and atomic spill handling are implemented.
-2. **Run shadow only.** Actual hooks and committers are composed behind the
-   authoritative shadow state; learned actions still cannot serve.
-3. **Calibrate evaluators.** Build versioned deterministic/human sets for each domain
-   and load closed cohorts from the immutable ledger.
-4. **Run real-model shadow.** Use Aura's real configured model—not Qwen 2B—and collect
-   supported propensities without changing served actions.
-5. **Run real canary.** Use the preregistered closed cohort and sequential gate.
-6. **Activate narrowly.** Promote one proven domain/action catalog at a time.
-7. **Extend surfaces.** Add memory, provider, context, document, multimodal, and
-   recovery adapters only after each gets its own risk/evaluation contract.
-
-## 21. Primary references
-
-- Vowpal Wabbit contextual bandits:
-  <https://vowpalwabbit.org/docs/vowpal_wabbit/python/latest/tutorials/python_Contextual_bandits_and_Vowpal_Wabbit.html>
-- Vowpal Wabbit off-policy evaluation:
-  <https://vowpalwabbit.org/docs/vowpal_wabbit/python/latest/tutorials/off_policy_evaluation.html>
-- Wang, Agarwal, Dudík, *Optimal and Adaptive Off-policy Evaluation in Contextual
-  Bandits*:
-  <https://www.microsoft.com/en-us/research/publication/optimal-adaptive-off-policy-evaluation-contextual-bandits/>
-- Anytime-valid off-policy inference:
-  <https://arxiv.org/abs/2210.10768>
-- Confidence sequences for bounded random variables:
-  <https://arxiv.org/abs/2210.08639>
-- Debezium transactional outbox:
-  <https://debezium.io/documentation/reference/transformations/outbox-event-router.html>
-- Neo4j operations and editions:
-  <https://neo4j.com/docs/operations-manual/current/introduction/>
-- Neo4j property-based access control:
-  <https://neo4j.com/docs/operations-manual/current/authentication-authorization/property-based-access-control/>
-- OpenTelemetry GenAI conventions:
-  <https://opentelemetry.io/docs/specs/semconv/registry/attributes/gen-ai/>
-- NIST AI Risk Management Framework:
-  <https://airc.nist.gov/airmf-resources/airmf/5-sec-core/>
-
-## 22. Repository evidence
-
-- `.planning/spikes/097-qwen-multidomain-reward-surface`
-- `.planning/spikes/098a-static-centroid-baseline`
-- `.planning/spikes/098b-graph-knn-policy`
-- `.planning/spikes/098c-linucb-policy`
-- `.planning/spikes/098d-graph-prior-linucb`
-- `.planning/spikes/099-neo4j-outcome-policy-graph`
-- `.planning/spikes/100-adaptive-policy-governance-stress`
-- `.planning/spikes/101-aura-adaptive-shadow-e2e`
-- `.planning/spikes/102-adaptive-generalization-ope-gate`
-- `.planning/spikes/103-adaptive-runner-outbox-proof`
-- `.planning/spikes/104-adaptive-identity-distributed-safety`
-- `.planning/spikes/105-adaptive-quality-canary-gate`
-
-The JSON artifacts and executable tests in those directories are the evidence. This
-specification does not promote claims beyond their recorded scope.
+The current verification matrix, readiness verdict, activation criteria, ordered
+delivery sequence, primary research links, and repository evidence index live in
+`2026-07-24-aura-adaptive-intelligence-delivery-and-evidence.md`.
