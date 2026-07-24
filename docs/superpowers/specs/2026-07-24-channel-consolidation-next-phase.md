@@ -31,24 +31,24 @@ Two independent implementations of one concept → each fix had to be made twice
 
 Fixes 1 and 4 live in shared code (`runner`, `cron`) and survive the consolidation; 2, 3, 5 are patches to the Telegram-native path that the consolidation **deletes**.
 
-## Phase A — channel approval consolidation (priority)
+## Phase A — private native consolidation (priority)
 
-**Goal:** one approval implementation, both channels. Telegram renders the cockpit approval card and resolves through the **same** `/api/approvals`; the duplicate Telegram-native approval rendering/callback/resolve code is removed.
+**Operator constraint (2026-07-24):** **no cloud, no public endpoint — simple and private.** This rules OUT the Telegram Mini App: a `web_app` button opens a URL the Telegram *client* loads over HTTPS, so it inherently needs a reachable HTTPS endpoint (public, or private-over-VPN with a trusted cert) — neither simple nor endpoint-free. So the consolidation is done **in-process**, with no new infra.
 
-**Approach (decided during 1.7 — "Approach A / Mini App"):**
-- A Telegram **Mini App** (Web App): an inline `web_app` button opens the cockpit approval surface inside Telegram's in-app browser.
-- Reuse `web/src/approvals/InlineApprovalCard.tsx` + `GET /api/approvals` + `POST /api/approvals/{token}/resolve` verbatim — no callback_data, no 64-byte cap, no second continuation path.
-- Build the Mini App shell with **@telegram-apps/telegram-ui** (https://github.com/telegram-mini-apps-dev/TelegramUI — native-look React kit).
-- **Auth:** validate the signed `initData` blob (HMAC of the bot token) on the backend; map `initData.user.id` → identity via the existing `aura.telegram_accounts.telegram_user_id` binding. No separate login.
-- **Delete** (or reduce to "launch the Mini App"): `scheduled_approval.go`'s native markup/callback, and the approval branch of `hitl.go`. The sweep's `ApprovalDeliverer` becomes "send a `web_app` launch button" instead of an inline Sì/No.
+**Goal:** kill the per-channel divergence that caused the 1.7 bugs WITHOUT a Mini App, and enrich the native Telegram approval — everything private and in-process.
 
-**Requirements / unknowns to resolve in the brainstorm:**
-- A **public HTTPS URL** for the Mini App (Telegram fetches it). Caddy vhost vs the Cloudflare tunnel (ephemeral trycloudflare is not stable enough) — decide the hosting.
-- `initData` validation lib/impl in Go; replay/expiry handling.
-- Fallback when the Mini App can't open (old client / no HTTPS): keep a minimal native accept/reject? Or hard-require the Mini App.
-- Free-text and choice `ask_user` kinds (not just approval) — the Mini App should cover them too, finishing the "ask_user like the WebUI" ask.
+**Approach — two parts:**
+1. **Consolidate the shared resolve/continuation orchestration.** Move the "after a pause resolves, do we drive a continuation turn / what confirmation goes back" decision into ONE place both channels drive (the Telegram callback path and the WebUI `/api/approvals` path funnel through the same runner-level logic). This is what structurally removes the loop/duplicate/behavior-divergence bug class — the actual root cause — with zero new infra. `runner.SubmitAnswer(s)` + `answerTurn` already own most of it; finish pulling the channel-specific continuation decisions into the shared layer so a channel only *renders* and *forwards the action*.
+2. **Enrich the native Telegram approval** (the "richer ask_user" the operator wants, no Mini App): a formatted message (kind + bounded goal summary + schedule + risk, secret-safe), a multi-row inline keyboard (Approva / Rifiuta / Dettagli), and `ForceReply` for the free-text/choice `ask_user` kinds. A step up from bare Sì/No, still 100% in-process.
 
-**Acceptance (real-scenario, >9.8):** schedule an `agent_job` from Telegram → the approval opens the **cockpit card** in Telegram → approve/reject/free-text resolves via `/api/approvals` → task flips → **the Telegram-native approval code is gone** and there is exactly one resolve path exercised by both channels.
+**What stays vs goes:** the Telegram-native rendering STAYS (it's the private surface) but becomes a thin render+forward layer over the shared orchestration; the divergent *behavior* (separate continuation logic, the two callback paths `aura_hitl`/`aura_sappr`) is unified. The 1.7 guards (callback_data on-wire length, id masking, outcome edit) remain — they are correct for a native transport.
+
+**Requirements / unknowns for the brainstorm:**
+- Draw the exact seam: what the shared orchestration owns vs what a channel owns (render markup, parse action, forward). Both `aura_hitl` and `aura_sappr` Telegram callbacks should collapse to one path.
+- Native rendering of free-text/choice kinds on Telegram (ForceReply + option buttons) at parity with the WebUI card's affordances.
+- Bounded goal/summary in the Telegram message (secret-safety: never dump the full payload).
+
+**Acceptance (real-scenario, >9.8):** schedule an `agent_job` from Telegram AND from the cockpit → both resolve through the **same** orchestration (one continuation-decision code path, verified) → the richer native Telegram approval renders (kind + summary + multi-row keyboard + free-text where applicable) → no loop, no duplicate, consistent behavior with the cockpit → all private, no endpoint added.
 
 ## Phase B — scheduler board detail + edit
 
