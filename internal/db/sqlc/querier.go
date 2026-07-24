@@ -119,6 +119,7 @@ type Querier interface {
 	GetRetentionItem(ctx context.Context, id pgtype.UUID) (AuraRetentionOperationItems, error)
 	GetRetentionOperationByToken(ctx context.Context, token string) (AuraRetentionOperations, error)
 	GetRun(ctx context.Context, id pgtype.UUID) (AuraAgentJobRuns, error)
+	GetSchema2AdaptiveDelivery(ctx context.Context, arg GetSchema2AdaptiveDeliveryParams) (AuraAdaptiveOutbox, error)
 	GetSetting(ctx context.Context, key string) (AuraSettings, error)
 	GetTask(ctx context.Context, id pgtype.UUID) (AuraSchedulerTasks, error)
 	GetTelegramAccountByIdentity(ctx context.Context, identityID pgtype.UUID) (AuraTelegramAccounts, error)
@@ -208,6 +209,7 @@ type Querier interface {
 	// SELECT returns (inert). The dedup is the approval_reminded_at throttle stamp, not a row
 	// lock; a rare cross-instance double-nudge under HA is benign.
 	ListDuePendingApprovalReminders(ctx context.Context, arg ListDuePendingApprovalRemindersParams) ([]AuraSchedulerTasks, error)
+	ListEligibleSchema2AdaptiveAggregateFacts(ctx context.Context, arg ListEligibleSchema2AdaptiveAggregateFactsParams) ([]AuraAdaptiveOutbox, error)
 	ListExpiredReplayBodies(ctx context.Context, arg ListExpiredReplayBodiesParams) ([]ListExpiredReplayBodiesRow, error)
 	ListIdentities(ctx context.Context) ([]AuraIdentities, error)
 	ListIdentityAudit(ctx context.Context, arg ListIdentityAuditParams) ([]AuraIdentityAudit, error)
@@ -244,6 +246,7 @@ type Querier interface {
 	ListTurnsBySeq(ctx context.Context, conversationID pgtype.UUID) ([]ListTurnsBySeqRow, error)
 	LockAdaptiveEvent(ctx context.Context, eventID string) error
 	LockConversationForTurnAppend(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)
+	LockSchema2AdaptiveAssignment(ctx context.Context, arg LockSchema2AdaptiveAssignmentParams) (AuraAdaptiveOutbox, error)
 	LookupRecoveryByEmail(ctx context.Context, email string) (LookupRecoveryByEmailRow, error)
 	MarkAdaptiveProjected(ctx context.Context, arg MarkAdaptiveProjectedParams) (int64, error)
 	// Stamp the throttle after a reminder ATTEMPT (delivered or not) so a pending approval

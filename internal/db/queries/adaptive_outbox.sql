@@ -44,6 +44,41 @@ FROM aura.adaptive_outbox
 WHERE owner_id = $1 AND aggregate_id = $2
 ORDER BY sequence ASC;
 
+-- name: LockSchema2AdaptiveAssignment :one
+SELECT id, owner_id, aggregate_id, sequence, decision_id, event_kind,
+       payload, payload_hash, status, attempts, available_at,
+       lease_owner, lease_expires_at, created_at, projected_at,
+       dead_letter_at, last_error_class
+FROM aura.adaptive_outbox
+WHERE owner_id = sqlc.arg(owner_id)
+  AND decision_id = sqlc.arg(assignment_id)
+  AND event_kind = 'decision'
+  AND payload->>'schema_version' = '2.0'
+FOR UPDATE;
+
+-- name: GetSchema2AdaptiveDelivery :one
+SELECT id, owner_id, aggregate_id, sequence, decision_id, event_kind,
+       payload, payload_hash, status, attempts, available_at,
+       lease_owner, lease_expires_at, created_at, projected_at,
+       dead_letter_at, last_error_class
+FROM aura.adaptive_outbox
+WHERE owner_id = sqlc.arg(owner_id)
+  AND decision_id = sqlc.arg(assignment_id)
+  AND event_kind = 'delivery'
+  AND payload->>'schema_version' = '2.0';
+
+-- name: ListEligibleSchema2AdaptiveAggregateFacts :many
+SELECT id, owner_id, aggregate_id, sequence, decision_id, event_kind,
+       payload, payload_hash, status, attempts, available_at,
+       lease_owner, lease_expires_at, created_at, projected_at,
+       dead_letter_at, last_error_class
+FROM aura.adaptive_outbox
+WHERE owner_id = sqlc.arg(owner_id)
+  AND aggregate_id = sqlc.arg(aggregate_id)
+  AND event_kind IN ('decision', 'delivery', 'outcome', 'correction')
+  AND payload->>'schema_version' = '2.0'
+ORDER BY sequence ASC;
+
 -- name: ClaimAdaptiveOutbox :one
 WITH candidate AS (
     SELECT current.id
