@@ -1,0 +1,214 @@
+{
+  "schema_version": "1.0",
+  "run_id": "adaptive-shadow-101-20260724T094741Z",
+  "created_at": "2026-07-24T09:47:52.1488445Z",
+  "model": "unsloth/Qwen3.5-2B-GGUF:Qwen3.5-2B-Q4_K_M.gguf",
+  "model_url": "http://127.0.0.1:18080",
+  "embed_url": "http://127.0.0.1:8081",
+  "policy": "graph_knn_shadow_v1",
+  "qwen_healthy": true,
+  "agent_memory_before": true,
+  "agent_memory_after": true,
+  "turns": [
+    {
+      "decision_id": "adaptive-shadow-101-20260724T094741Z/01/r03",
+      "scenario_id": "r03",
+      "domain": "reasoning",
+      "served_action": "low_256",
+      "shadow_action": "high_768",
+      "shadow_scores": {
+        "high_768": 0.9157838499322779,
+        "low_256": 0.3486225431632394,
+        "off": 0.19506607218024374
+      },
+      "served_action_unchanged": true,
+      "outcome": {
+        "content": "0.10",
+        "selected": "low_256",
+        "correct": false,
+        "tokens": 317,
+        "latency_ms": 4509.15,
+        "reasoning_runes": 749
+      },
+      "reward": -0.0433966,
+      "observe_latency_ms": 0
+    },
+    {
+      "decision_id": "adaptive-shadow-101-20260724T094741Z/02/t01",
+      "scenario_id": "t01",
+      "domain": "tool",
+      "served_action": "qwen_full",
+      "shadow_action": "qwen_top3",
+      "shadow_scores": {
+        "qwen_full": 0.894764349200868,
+        "qwen_top3": 0.9274049952641178,
+        "semantic_top1": 0.6
+      },
+      "served_action_unchanged": true,
+      "outcome": {
+        "content": "",
+        "selected": "weather_now",
+        "correct": true,
+        "tokens": 747,
+        "latency_ms": 824.584,
+        "reasoning_runes": 0
+      },
+      "reward": 0.936941664,
+      "observe_latency_ms": 0
+    },
+    {
+      "decision_id": "adaptive-shadow-101-20260724T094741Z/03/s01",
+      "scenario_id": "s01",
+      "domain": "skill",
+      "served_action": "qwen_full",
+      "shadow_action": "qwen_full",
+      "shadow_scores": {
+        "qwen_full": 0.886570936446555,
+        "qwen_top3": 0.7065543538156885,
+        "semantic_top1": 0.8
+      },
+      "served_action_unchanged": true,
+      "outcome": {
+        "content": "",
+        "selected": "golang-testing",
+        "correct": true,
+        "tokens": 520,
+        "latency_ms": 1104.884,
+        "reasoning_runes": 0
+      },
+      "reward": 0.953980464,
+      "observe_latency_ms": 0
+    },
+    {
+      "decision_id": "adaptive-shadow-101-20260724T094741Z/04/k01",
+      "scenario_id": "k01",
+      "domain": "knowledge",
+      "served_action": "graph_expand",
+      "shadow_action": "graph_expand",
+      "shadow_scores": {
+        "graph_expand": 0.9082273899081365,
+        "none": -0.060209986841384164,
+        "vector_top1": 0.7058511573699855
+      },
+      "served_action_unchanged": true,
+      "outcome": {
+        "content": "KESTREL-47",
+        "selected": "graph_expand",
+        "correct": true,
+        "tokens": 77,
+        "latency_ms": 572.087,
+        "reasoning_runes": 0
+      },
+      "reward": 0.991551652,
+      "observe_latency_ms": 0
+    },
+    {
+      "decision_id": "adaptive-shadow-101-20260724T094741Z/05/r04",
+      "scenario_id": "r04",
+      "domain": "reasoning",
+      "served_action": "off",
+      "shadow_action": "high_768",
+      "shadow_scores": {
+        "high_768": 0.9288011482368894,
+        "low_256": 0.3661875774719395,
+        "off": 0.3951932297471525
+      },
+      "served_action_unchanged": true,
+      "outcome": {
+        "content": "5",
+        "selected": "off",
+        "correct": true,
+        "tokens": 65,
+        "latency_ms": 423.757,
+        "reasoning_runes": 0
+      },
+      "reward": 0.993104972,
+      "observe_latency_ms": 0
+    },
+    {
+      "decision_id": "adaptive-shadow-101-20260724T094741Z/06/t02",
+      "scenario_id": "t02",
+      "domain": "tool",
+      "served_action": "qwen_full",
+      "shadow_action": "qwen_top3",
+      "shadow_scores": {
+        "qwen_full": 0.5017655300773722,
+        "qwen_top3": 0.9262195619138787,
+        "semantic_top1": 0.6
+      },
+      "served_action_unchanged": true,
+      "outcome": {
+        "content": "",
+        "selected": "send_email",
+        "correct": true,
+        "tokens": 751,
+        "latency_ms": 577.176,
+        "reasoning_runes": 0
+      },
+      "reward": 0.9376112959999999,
+      "observe_latency_ms": 0
+    },
+    {
+      "decision_id": "adaptive-shadow-101-20260724T094741Z/07/s02",
+      "scenario_id": "s02",
+      "domain": "skill",
+      "served_action": "qwen_full",
+      "shadow_action": "qwen_full",
+      "shadow_scores": {
+        "qwen_full": 0.8995739677161723,
+        "qwen_top3": 0.5019306805248508,
+        "semantic_top1": 0.6
+      },
+      "served_action_unchanged": true,
+      "outcome": {
+        "content": "",
+        "selected": "web-research",
+        "correct": true,
+        "tokens": 518,
+        "latency_ms": 917.871,
+        "reasoning_runes": 0
+      },
+      "reward": 0.954888516,
+      "observe_latency_ms": 0
+    },
+    {
+      "decision_id": "adaptive-shadow-101-20260724T094741Z/08/k05",
+      "scenario_id": "k05",
+      "domain": "knowledge",
+      "served_action": "graph_expand",
+      "shadow_action": "graph_expand",
+      "shadow_scores": {
+        "graph_expand": 0.7037540988783111,
+        "none": -0.06408588544419638,
+        "vector_top1": 0.32105057890256583
+      },
+      "served_action_unchanged": true,
+      "outcome": {
+        "content": "Tuesday at 02:00 UTC",
+        "selected": "graph_expand",
+        "correct": true,
+        "tokens": 90,
+        "latency_ms": 827.747,
+        "reasoning_runes": 0
+      },
+      "reward": 0.9894890120000001,
+      "observe_latency_ms": 0
+    }
+  ],
+  "learning": {
+    "accepted": 8,
+    "success": 8,
+    "errors": 0
+  },
+  "observe_p95_ms": 0,
+  "mean_reward": 0.839271372,
+  "shadow_disagreement_rate": 0.5,
+  "graph": {
+    "decisions": 8,
+    "outcomes": 8,
+    "unchanged_served": 8,
+    "snapshot_status": "promotion_eligible",
+    "cleanup_nodes": 44
+  },
+  "promotion_eligibility": "promotion_eligible"
+}
