@@ -172,7 +172,28 @@ Il modello detecta skill rilevante dal frontmatter `description` (es. "Use when 
 - **NEVER MODIFY TESTS TO MAKE THEM PASS** unless the test itself is broken. Fix the code or rewrite the test with explicit justification in commit message.
 - **SCOPE CONTROL.** Do exactly what was asked. No unrequested features, refactors, or improvements.
 - **FOLLOW EXISTING PATTERNS.** Never invent new approaches when codebase patterns exist.
-- **NO GOD CLASS.** Never create a file >600 LOC. Refactor on touch (split into `<name>_<concern>.go`).
+- **NO GOD CLASS.** Never create a file >600 LOC. Refactor on touch (split into `<name>_<concern>.go`). Legacy if forbidden too remove olde code and unused param. DARK CODE IS FORBIDDEN TOO.
+- **CODE BASE RULES.** Code base must be clean and readable. Remove unnecessary complex part. Code must be work on same way in simpler implementation. in case of doubt read:
+"""
+Beautiful is better than ugly.
+Explicit is better than implicit.
+Simple is better than complex.
+Complex is better than complicated.
+Flat is better than nested.
+Sparse is better than dense.
+Readability counts.
+Special cases aren't special enough to break the rules.
+Although practicality beats purity.
+Errors should never pass silently.
+Unless explicitly silenced.
+In the face of ambiguity, refuse the temptation to guess.
+There should be one-- and preferably only one --obvious way to do it.
+Although that way may not be obvious at first.
+Now is better than never.
+Although never is often better than *right* now.
+If the implementation is hard to explain, it's a bad idea.
+If the implementation is easy to explain, it may be a good idea.
+"""
 - **REUSABLE CODE.** Never duplicate; extract a helper.
 - **DEEP REFACTOR ON TOUCH.** Every file you edit gets dead-code removal + dupl-folding + LOC ≤600 + comments-updated in the SAME commit.
 - **GIT PUSH DISCIPLINE.**  `git push` (or any remote-mutating command) at the end of a phase or a competed job and check all CI are green.
