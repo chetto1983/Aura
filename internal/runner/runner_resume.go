@@ -186,17 +186,14 @@ func (r *Runner) answerTurn(pending askuser.Pending, resp ResponseInput) convers
 // decline → cancelled + do-not-reschedule. The short id (first 8) keeps it bounded and
 // leaks no payload.
 func scheduledApprovalAnswer(pending askuser.Pending, resp ResponseInput) string {
-	if pending.Kind != tools.KindApproval || len(pending.ResumeContext) == 0 {
+	if !isScheduledTaskApproval(pending) {
 		return ""
 	}
 	var rc struct {
 		Type   string `json:"type"`
 		TaskID string `json:"task_id"`
 	}
-	if json.Unmarshal(pending.ResumeContext, &rc) != nil ||
-		rc.Type != "scheduled_task_approval" || rc.TaskID == "" {
-		return ""
-	}
+	_ = json.Unmarshal(pending.ResumeContext, &rc)
 	short := rc.TaskID
 	if len(short) > 8 {
 		short = short[:8]
