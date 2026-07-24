@@ -286,7 +286,7 @@ SELECT id, owner_id, aggregate_id, sequence, decision_id, event_kind,
 FROM aura.adaptive_outbox
 WHERE owner_id = $1
   AND aggregate_id = $2
-  AND event_kind IN ('decision', 'delivery', 'outcome', 'correction')
+  AND event_kind IN ('decision', 'delivery')
   AND payload->>'schema_version' = '2.0'
 ORDER BY sequence ASC
 `

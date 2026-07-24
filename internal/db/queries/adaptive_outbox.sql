@@ -75,7 +75,7 @@ SELECT id, owner_id, aggregate_id, sequence, decision_id, event_kind,
 FROM aura.adaptive_outbox
 WHERE owner_id = sqlc.arg(owner_id)
   AND aggregate_id = sqlc.arg(aggregate_id)
-  AND event_kind IN ('decision', 'delivery', 'outcome', 'correction')
+  AND event_kind IN ('decision', 'delivery')
   AND payload->>'schema_version' = '2.0'
 ORDER BY sequence ASC;
 

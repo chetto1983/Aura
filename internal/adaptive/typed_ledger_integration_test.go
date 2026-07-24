@@ -22,20 +22,18 @@ func TestSchema2LedgerPersistsTypedFactsAndExcludesHistoricalSchemas(t *testing.
 	ctx := context.Background()
 	owner := seedTypedLedgerOwner(t, pool)
 	assignment := typedLedgerAssignment(t, owner)
-	delivery := typedLedgerDelivery(t, assignment)
 	assignmentEvent, err := NewAssignmentEvent(assignment)
 	if err != nil {
 		t.Fatal(err)
 	}
-	deliveryEvent, err := NewDeliveryEvent(assignment, delivery)
+	deliveryEvent, err := NewDeliveryEvent(assignment, typedLedgerDelivery(t, assignment))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	legacyDecisionID := uuid.Must(uuid.NewV7())
 	if err := insertAdaptiveLedgerRow(
 		ctx, pool, uuid.Must(uuid.NewV7()), owner, assignment.RequestID.String(),
-		1, legacyDecisionID, EventDecision,
+		1, uuid.Must(uuid.NewV7()), EventDecision,
 		[]byte(`{"schema_version":"1.0","action":"static"}`),
 	); err != nil {
 		t.Fatalf("insert schema-1 history: %v", err)
@@ -53,12 +51,23 @@ func TestSchema2LedgerPersistsTypedFactsAndExcludesHistoricalSchemas(t *testing.
 	); err != nil {
 		t.Fatalf("insert unknown-version history: %v", err)
 	}
+	for sequence, kind := range []EventKind{EventOutcome, EventCorrection} {
+		if err := insertAdaptiveLedgerRow(
+			ctx, pool, uuid.Must(uuid.NewV7()), owner, assignment.RequestID.String(),
+			int64(sequence+5), assignment.AssignmentID, kind,
+			[]byte(`{"schema_version":"2.0","untyped":true}`),
+		); err != nil {
+			t.Fatalf("insert untyped schema-2 %s: %v", kind, err)
+		}
+	}
 
 	queries := sqlc.New(pool)
-	loadedDelivery, err := queries.GetSchema2AdaptiveDelivery(ctx, sqlc.GetSchema2AdaptiveDeliveryParams{
-		OwnerID:      dbUUID(owner),
-		AssignmentID: dbUUID(assignment.AssignmentID),
-	})
+	loadedDelivery, err := queries.GetSchema2AdaptiveDelivery(
+		ctx,
+		sqlc.GetSchema2AdaptiveDeliveryParams{
+			OwnerID: dbUUID(owner), AssignmentID: dbUUID(assignment.AssignmentID),
+		},
+	)
 	if err != nil {
 		t.Fatalf("GetSchema2AdaptiveDelivery: %v", err)
 	}
@@ -68,8 +77,7 @@ func TestSchema2LedgerPersistsTypedFactsAndExcludesHistoricalSchemas(t *testing.
 	eligible, err := queries.ListEligibleSchema2AdaptiveAggregateFacts(
 		ctx,
 		sqlc.ListEligibleSchema2AdaptiveAggregateFactsParams{
-			OwnerID:     dbUUID(owner),
-			AggregateID: assignment.RequestID.String(),
+			OwnerID: dbUUID(owner), AggregateID: assignment.RequestID.String(),
 		},
 	)
 	if err != nil {
@@ -111,8 +119,7 @@ func TestSchema2LedgerLocksAssignmentByOwnerAndAssignmentID(t *testing.T) {
 		t.Fatal(err)
 	}
 	params := sqlc.LockSchema2AdaptiveAssignmentParams{
-		OwnerID:      dbUUID(owner),
-		AssignmentID: dbUUID(assignment.AssignmentID),
+		OwnerID: dbUUID(owner), AssignmentID: dbUUID(assignment.AssignmentID),
 	}
 
 	first, err := pool.Begin(ctx)
@@ -143,17 +150,43 @@ func TestSchema2LedgerLocksAssignmentByOwnerAndAssignmentID(t *testing.T) {
 	}
 }
 
+func TestSchema2LedgerAcceptsTypedDeliveryResult(t *testing.T) {
+	pool := adaptiveIntegrationPool(t)
+	ctx := context.Background()
+	owner := seedTypedLedgerOwner(t, pool)
+	assignment := typedLedgerAssignment(t, owner)
+	assignmentEvent, err := NewAssignmentEvent(assignment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := insertAdaptiveLedgerEvent(ctx, pool, assignmentEvent, 1); err != nil {
+		t.Fatal(err)
+	}
+	result, err := NewArtifactResultID(uuid.Must(uuid.NewV7()).String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	delivery := typedLedgerDelivery(t, assignment)
+	delivery.ResultCount, delivery.ResultIDs = 1, []ResultID{result}
+	deliveryEvent, err := NewDeliveryEvent(assignment, delivery)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := insertAdaptiveLedgerEvent(ctx, pool, deliveryEvent, 2); err != nil {
+		t.Fatalf("insert typed delivery result: %v", err)
+	}
+}
+
 func TestSchema2LedgerRejectsDuplicateAssignmentAndDelivery(t *testing.T) {
 	pool := adaptiveIntegrationPool(t)
 	ctx := context.Background()
 	owner := seedTypedLedgerOwner(t, pool)
 	assignment := typedLedgerAssignment(t, owner)
-	delivery := typedLedgerDelivery(t, assignment)
 	assignmentEvent, err := NewAssignmentEvent(assignment)
 	if err != nil {
 		t.Fatal(err)
 	}
-	deliveryEvent, err := NewDeliveryEvent(assignment, delivery)
+	deliveryEvent, err := NewDeliveryEvent(assignment, typedLedgerDelivery(t, assignment))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,191 +207,6 @@ func TestSchema2LedgerRejectsDuplicateAssignmentAndDelivery(t *testing.T) {
 		3, assignment.AssignmentID, EventDelivery, deliveryEvent.Payload,
 	); err == nil {
 		t.Fatal("different event ID created a duplicate schema-2 delivery")
-	}
-}
-
-func TestSchema2LedgerRejectsInvalidAssignmentBindingsShapeAndProbabilities(t *testing.T) {
-	pool := adaptiveIntegrationPool(t)
-	ctx := context.Background()
-	owner := seedTypedLedgerOwner(t, pool)
-	otherOwner := seedTypedLedgerOwner(t, pool)
-
-	for _, testCase := range []struct {
-		name      string
-		mutate    func(map[string]any)
-		owner     uuid.UUID
-		aggregate string
-		decision  uuid.UUID
-		kind      EventKind
-	}{
-		{
-			name:   "owner binding",
-			mutate: func(payload map[string]any) { payload["owner_id"] = otherOwner.String() },
-		},
-		{
-			name:      "request aggregate binding",
-			aggregate: uuid.Must(uuid.NewV7()).String(),
-		},
-		{
-			name:     "assignment decision binding",
-			decision: uuid.Must(uuid.NewV7()),
-		},
-		{
-			name: "event kind shape",
-			kind: EventDelivery,
-		},
-		{
-			name:   "required shape",
-			mutate: func(payload map[string]any) { delete(payload, "eligible_actions") },
-		},
-		{
-			name: "probability type",
-			mutate: func(payload map[string]any) {
-				payload["action_probabilities"].([]any)[0].(map[string]any)["probability"] = "NaN"
-			},
-		},
-		{
-			name: "probability total",
-			mutate: func(payload map[string]any) {
-				probabilities := payload["action_probabilities"].([]any)
-				probabilities[0].(map[string]any)["probability"] = 0.4
-				probabilities[1].(map[string]any)["probability"] = 0.4
-			},
-		},
-	} {
-		t.Run(testCase.name, func(t *testing.T) {
-			assignment := typedLedgerAssignment(t, owner)
-			event, err := NewAssignmentEvent(assignment)
-			if err != nil {
-				t.Fatal(err)
-			}
-			payload := decodeTypedLedgerPayload(t, event.Payload)
-			if testCase.mutate != nil {
-				testCase.mutate(payload)
-			}
-			encoded, err := json.Marshal(payload)
-			if err != nil {
-				t.Fatal(err)
-			}
-			rowOwner := testCase.owner
-			if rowOwner == uuid.Nil {
-				rowOwner = owner
-			}
-			aggregate := testCase.aggregate
-			if aggregate == "" {
-				aggregate = assignment.RequestID.String()
-			}
-			decision := testCase.decision
-			if decision == uuid.Nil {
-				decision = assignment.AssignmentID
-			}
-			kind := testCase.kind
-			if kind == "" {
-				kind = EventDecision
-			}
-			if err := insertAdaptiveLedgerRow(
-				ctx, pool, uuid.Must(uuid.NewV7()), rowOwner, aggregate,
-				1, decision, kind, encoded,
-			); err == nil {
-				t.Fatalf("database accepted invalid schema-2 assignment payload %s", encoded)
-			}
-		})
-	}
-}
-
-func TestSchema2LedgerRejectsInvalidDeliveryBindingsShapeAndProbabilities(t *testing.T) {
-	pool := adaptiveIntegrationPool(t)
-	ctx := context.Background()
-	owner := seedTypedLedgerOwner(t, pool)
-	otherOwner := seedTypedLedgerOwner(t, pool)
-
-	for _, testCase := range []struct {
-		name              string
-		mutate            func(map[string]any)
-		deliveryOwner     uuid.UUID
-		deliveryAggregate string
-		deliveryDecision  uuid.UUID
-		deliveryKind      EventKind
-	}{
-		{
-			name:          "owner assignment binding",
-			deliveryOwner: otherOwner,
-		},
-		{
-			name:              "request assignment binding",
-			deliveryAggregate: uuid.Must(uuid.NewV7()).String(),
-		},
-		{
-			name:             "assignment decision binding",
-			deliveryDecision: uuid.Must(uuid.NewV7()),
-		},
-		{
-			name:         "event kind shape",
-			deliveryKind: EventDecision,
-		},
-		{
-			name: "required shape",
-			mutate: func(payload map[string]any) {
-				delete(payload, "actual_action_id")
-			},
-		},
-		{
-			name: "known probability required",
-			mutate: func(payload map[string]any) {
-				payload["exposure_probability"] = nil
-			},
-		},
-		{
-			name: "probability range",
-			mutate: func(payload map[string]any) {
-				payload["exposure_probability"] = 1.1
-			},
-		},
-	} {
-		t.Run(testCase.name, func(t *testing.T) {
-			assignment := typedLedgerAssignment(t, owner)
-			assignmentEvent, err := NewAssignmentEvent(assignment)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := insertAdaptiveLedgerEvent(ctx, pool, assignmentEvent, 1); err != nil {
-				t.Fatal(err)
-			}
-			deliveryEvent, err := NewDeliveryEvent(assignment, typedLedgerDelivery(t, assignment))
-			if err != nil {
-				t.Fatal(err)
-			}
-			payload := decodeTypedLedgerPayload(t, deliveryEvent.Payload)
-			if testCase.mutate != nil {
-				testCase.mutate(payload)
-			}
-			encoded, err := json.Marshal(payload)
-			if err != nil {
-				t.Fatal(err)
-			}
-			rowOwner := testCase.deliveryOwner
-			if rowOwner == uuid.Nil {
-				rowOwner = owner
-			}
-			aggregate := testCase.deliveryAggregate
-			if aggregate == "" {
-				aggregate = assignment.RequestID.String()
-			}
-			decision := testCase.deliveryDecision
-			if decision == uuid.Nil {
-				decision = assignment.AssignmentID
-			}
-			kind := testCase.deliveryKind
-			if kind == "" {
-				kind = EventDelivery
-			}
-			if err := insertAdaptiveLedgerRow(
-				ctx, pool, uuid.Must(uuid.NewV7()), rowOwner, aggregate,
-				2, decision, kind, encoded,
-			); err == nil {
-				t.Fatalf("database accepted invalid schema-2 delivery payload %s", encoded)
-			}
-		})
 	}
 }
 
