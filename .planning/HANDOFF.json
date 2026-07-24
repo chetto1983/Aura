@@ -1,0 +1,159 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-07-24T15:09:31.955Z",
+  "phase": "adaptive-intelligence",
+  "phase_name": "Adaptive intelligence beyond the shadow foundation",
+  "phase_dir": ".planning/spikes/103-adaptive-runner-outbox-proof",
+  "plan": 1,
+  "task": 2,
+  "total_tasks": 6,
+  "status": "paused",
+  "completed_tasks": [
+    {
+      "id": 1,
+      "name": "Ratify Amendments #93 through #93.3",
+      "status": "done",
+      "commit": "9fea6eff4"
+    },
+    {
+      "id": 2,
+      "name": "Ship and verify the shadow event/policy/outbox foundation",
+      "status": "done",
+      "commit": "a4d123b71"
+    },
+    {
+      "id": 3,
+      "name": "Decommission legacy adaptive code, configuration, scheduler, and stored data",
+      "status": "done",
+      "commit": "a4d123b71"
+    },
+    {
+      "id": 4,
+      "name": "Remove dormant policy-service dark code",
+      "status": "done",
+      "commit": "ffe4a5b84"
+    }
+  ],
+  "remaining_tasks": [
+    {
+      "id": 5,
+      "name": "Define and implement OPE-complete typed assignment/outcome contracts and domain adapters",
+      "status": "not_started"
+    },
+    {
+      "id": 6,
+      "name": "Implement immutable cohort reconstruction, production projection, challengers, snapshots, and disagreement",
+      "status": "not_started"
+    },
+    {
+      "id": 7,
+      "name": "Implement reachable capability-gated policy administration and safe canary serving",
+      "status": "not_started"
+    },
+    {
+      "id": 8,
+      "name": "Prove the full system on Aura's real configured model and close industrial gates",
+      "status": "not_started"
+    }
+  ],
+  "blockers": [
+    {
+      "description": "The current generic hook is observation plumbing, not a functional adaptive-learning loop: it lacks OPE-complete assignments, typed domain actions, immutable cohorts, challengers, and serving.",
+      "type": "technical",
+      "workaround": "Keep production behavior static and write Amendment #93.4 before the next implementation slice."
+    },
+    {
+      "description": "The healthy aura container and aura:local image were built at 2026-07-24T10:02Z, before adaptive commit a4d123b71; database migrations are live but the new binary is not deployed.",
+      "type": "technical",
+      "workaround": "Rebuild and recreate aura only after the next deployable slice passes local gates; do not describe current runtime code as deployed."
+    },
+    {
+      "description": "Final-head GitHub Actions runs for 6042c113e were still in progress when paused.",
+      "type": "external",
+      "workaround": "Inspect runs 30104006958, 30104007075, and 30104006995 before changing code."
+    },
+    {
+      "description": "Production activation is forbidden until Aura's real configured model passes preregistered real-traffic gates and the operator explicitly approves the candidate.",
+      "type": "human_action",
+      "workaround": "Continue in off/shadow mode; never use Qwen 2B spike evidence for activation."
+    }
+  ],
+  "async_jobs": [
+    {
+      "manifest": "",
+      "job_id": "30104006958",
+      "backend": "github-actions",
+      "status": "in_progress",
+      "submit_command": "git push origin master",
+      "submitted_at": "2026-07-24T15:08:31Z",
+      "expected_artifacts": [
+        "CI conclusion for commit 6042c113e"
+      ],
+      "verification_command": "gh run view 30104006958 --json status,conclusion,jobs,url",
+      "resume_command": "gh run watch 30104006958 --exit-status"
+    },
+    {
+      "manifest": "",
+      "job_id": "30104007075",
+      "backend": "github-actions",
+      "status": "in_progress",
+      "submit_command": "git push origin master",
+      "submitted_at": "2026-07-24T15:08:31Z",
+      "expected_artifacts": [
+        "CodeQL conclusion for commit 6042c113e"
+      ],
+      "verification_command": "gh run view 30104007075 --json status,conclusion,jobs,url",
+      "resume_command": "gh run watch 30104007075 --exit-status"
+    },
+    {
+      "manifest": "",
+      "job_id": "30104006995",
+      "backend": "github-actions",
+      "status": "in_progress",
+      "submit_command": "git push origin master",
+      "submitted_at": "2026-07-24T15:08:31Z",
+      "expected_artifacts": [
+        "Skills gate conclusion for commit 6042c113e"
+      ],
+      "verification_command": "gh run view 30104006995 --json status,conclusion,jobs,url",
+      "resume_command": "gh run watch 30104006995 --exit-status"
+    }
+  ],
+  "human_actions_pending": [
+    {
+      "action": "Explicitly approve a future production adaptive candidate only after real-model gates pass.",
+      "context": "Amendment #93 forbids Qwen/synthetic evidence from authorizing canary or active serving.",
+      "blocking": false
+    }
+  ],
+  "decisions": [
+    {
+      "decision": "Qwen3.5 2B Q4_K_M under llama.cpp is a portability and measurement spike only.",
+      "rationale": "Its family-bootstrap confidence interval crossed zero and it is not Aura's real configured model.",
+      "phase": "adaptive-intelligence"
+    },
+    {
+      "decision": "PostgreSQL is authoritative and Neo4j/agent-memory infrastructure is a replayable private projection.",
+      "rationale": "This preserves immutable owner-scoped evidence, identity deletion, auditability, and rebuild safety.",
+      "phase": "adaptive-intelligence"
+    },
+    {
+      "decision": "Delete the complete legacy reasoning/tool learning stack and its stored data.",
+      "rationale": "It bypassed the unified policy gate and violated off/rollback baseline semantics.",
+      "phase": "adaptive-intelligence"
+    },
+    {
+      "decision": "Do not ship a test-only policy mutation service.",
+      "rationale": "CLAUDE.md forbids dark code; a mutation API must land with a real authorized production caller.",
+      "phase": "adaptive-intelligence"
+    },
+    {
+      "decision": "The current release stays observation-only and serves static Aura behavior.",
+      "rationale": "Typed assignments, cohorts, challengers, projector lifecycle, and real-model evidence are not implemented.",
+      "phase": "adaptive-intelligence"
+    }
+  ],
+  "uncommitted_files": [],
+  "next_action": "Read AGENTS.md and CLAUDE.md fully, inspect the three GitHub runs, then write and atomically commit PRD Amendment #93.4 defining the OPE-complete assignment/outcome schema and the first typed domain adapters before changing code.",
+  "context_notes": "Master and origin/master are clean at 6042c113e. PostgreSQL is at public schema migration 59 with dirty=false; Neo4j migrations 1-4 are applied. Legacy scheduler tasks/runs/settings and the four legacy graph labels are zero. Independent cleanup reviews returned SPEC_COMPLIANT and APPROVED. Full WSL lint/vet/build/unit/race, live migration tests, and owned deadcode are green. This is not a completed adaptive-learning implementation."
+}
