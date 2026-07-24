@@ -44,6 +44,7 @@ type SelectionReason string
 const (
 	SelectionShadowStatic     SelectionReason = "shadow_static"
 	SelectionCanaryAssignment SelectionReason = "canary_assignment"
+	SelectionCanaryDiagnostic SelectionReason = "canary_diagnostic"
 	SelectionOperatorOverride SelectionReason = "operator_override"
 	SelectionActivePolicy     SelectionReason = "active_policy"
 	SelectionPolicyOff        SelectionReason = "policy_off"
@@ -77,6 +78,7 @@ const (
 	FallbackProviderMismatch     FallbackReason = "provider_mismatch"
 	FallbackUnsupported          FallbackReason = "unsupported"
 	FallbackChecksumMismatch     FallbackReason = "checksum_mismatch"
+	FallbackContextBudget        FallbackReason = "context_budget"
 	FallbackResultPersistFailed  FallbackReason = "result_persist_failed"
 )
 
@@ -278,9 +280,6 @@ func validateActionCatalog(assignment Assignment) error {
 			return fmt.Errorf("adaptive assignment %s %q is not eligible", name, actionID)
 		}
 	}
-	if assignment.ChampionActionID != StaticActionID {
-		return fmt.Errorf("adaptive assignment champion_action_id must be %q", StaticActionID)
-	}
 	if len(assignment.ActionProbabilities) != len(assignment.EligibleActions) {
 		return errors.New("adaptive assignment action probability catalog is incomplete")
 	}
@@ -302,6 +301,9 @@ func validateActionCatalog(assignment Assignment) error {
 
 func validateAssignmentMode(assignment Assignment) error {
 	if assignment.Override {
+		if assignment.PolicyMode != PolicyShadow && assignment.PolicyMode != PolicyCanary {
+			return errors.New("adaptive assignment override is only valid in shadow or canary mode")
+		}
 		if assignment.SelectionReason != SelectionOperatorOverride {
 			return errors.New("adaptive assignment override requires operator_override selection reason")
 		}
@@ -321,43 +323,71 @@ func validateAssignmentMode(assignment Assignment) error {
 		if assignment.SelectionReason != SelectionShadowStatic {
 			return errors.New("adaptive shadow assignment requires shadow_static selection reason")
 		}
-		if assignment.IntendedActionID != assignment.ChampionActionID {
-			return errors.New("adaptive shadow assignment must intend the static champion")
-		}
-		if assignment.ExperimentID != "" || assignment.ArmID != "" || assignment.ArmProbability != nil {
-			return errors.New("adaptive shadow assignment cannot claim a randomized arm")
-		}
-		for _, action := range assignment.ActionProbabilities {
-			want := 0.0
-			if action.ActionID == assignment.ChampionActionID {
-				want = 1
-			}
-			if action.Probability != want {
-				return errors.New("adaptive shadow assignment must give the static champion probability 1")
-			}
-		}
+		return validateNonRandomizedAction(assignment, assignment.ChampionActionID, false)
 	case PolicyCanary:
-		if assignment.SelectionReason != SelectionCanaryAssignment {
-			return errors.New("adaptive canary assignment requires canary_assignment selection reason")
+		switch {
+		case assignment.SelectionReason == SelectionCanaryAssignment:
+			return validateFocalCanary(assignment)
+		case assignment.SelectionReason == SelectionCanaryDiagnostic:
+			return validateNonRandomizedAction(assignment, assignment.ChampionActionID, true)
+		case assignment.SelectionReason.failClosed():
+			return validateNonRandomizedAction(assignment, StaticActionID, false)
+		default:
+			return errors.New("adaptive canary assignment has invalid selection reason")
 		}
-		if assignment.CohortID == nil {
-			return errors.New("adaptive canary assignment cohort_id is required")
+	case PolicyOff:
+		if assignment.SelectionReason != SelectionPolicyOff {
+			return errors.New("adaptive off assignment requires policy_off selection reason")
 		}
-		if strings.TrimSpace(assignment.ExperimentID) == "" || strings.TrimSpace(assignment.ArmID) == "" {
-			return errors.New("adaptive canary assignment experiment_id and arm_id are required")
+		return validateNonRandomizedAction(assignment, StaticActionID, false)
+	case PolicyRollback:
+		if assignment.SelectionReason != SelectionPolicyRollback {
+			return errors.New("adaptive rollback assignment requires policy_rollback selection reason")
 		}
-		if assignment.ArmProbability == nil || !finiteProbability(*assignment.ArmProbability, false) {
-			return errors.New("adaptive canary assignment arm_probability is invalid")
+		return validateNonRandomizedAction(assignment, StaticActionID, false)
+	case PolicyActive:
+		if assignment.SelectionReason == SelectionActivePolicy {
+			return validateNonRandomizedAction(assignment, assignment.IntendedActionID, false)
 		}
-		for _, action := range assignment.ActionProbabilities {
-			if action.Probability == 0 {
-				return fmt.Errorf("adaptive canary action %q has no support", action.ActionID)
-			}
+		if assignment.SelectionReason.failClosed() {
+			return validateNonRandomizedAction(assignment, StaticActionID, false)
 		}
-	default:
-		if assignment.ArmProbability != nil && !finiteProbability(*assignment.ArmProbability, false) {
-			return errors.New("adaptive assignment arm_probability is invalid")
+		return errors.New("adaptive active assignment has invalid selection reason")
+	}
+	return nil
+}
+
+func validateFocalCanary(assignment Assignment) error {
+	if assignment.CohortID == nil {
+		return errors.New("adaptive canary assignment cohort_id is required")
+	}
+	if strings.TrimSpace(assignment.ExperimentID) == "" || strings.TrimSpace(assignment.ArmID) == "" {
+		return errors.New("adaptive canary assignment experiment_id and arm_id are required")
+	}
+	if assignment.ArmProbability == nil || !finiteProbability(*assignment.ArmProbability, false) {
+		return errors.New("adaptive canary assignment arm_probability is invalid")
+	}
+	for _, action := range assignment.ActionProbabilities {
+		if action.Probability == 0 {
+			return fmt.Errorf("adaptive canary action %q has no support", action.ActionID)
 		}
+	}
+	return nil
+}
+
+func validateNonRandomizedAction(
+	assignment Assignment,
+	requiredActionID string,
+	rejectCohort bool,
+) error {
+	if assignment.ExperimentID != "" || assignment.ArmID != "" || assignment.ArmProbability != nil {
+		return errors.New("adaptive non-randomized assignment cannot claim experiment or arm")
+	}
+	if rejectCohort && assignment.CohortID != nil {
+		return errors.New("adaptive non-focal assignment cannot claim cohort")
+	}
+	if assignment.IntendedActionID != requiredActionID || !deterministicIntendedAction(assignment) {
+		return fmt.Errorf("adaptive assignment must deterministically intend action %q", requiredActionID)
 	}
 	return nil
 }

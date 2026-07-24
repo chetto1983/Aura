@@ -53,7 +53,7 @@ var registeredFeatureKeys = map[string]struct{}{
 }
 
 var registeredRevisionKeys = map[string]struct{}{
-	"corpus": {}, "index": {}, "retriever": {},
+	"corpus": {}, "embedding": {}, "index": {}, "reranker": {}, "retriever": {}, "schema": {},
 }
 
 var registeredEffectiveLimitKeys = map[string]struct{}{
@@ -218,9 +218,21 @@ func (point DecisionPoint) valid() bool {
 
 func (reason SelectionReason) valid() bool {
 	switch reason {
-	case SelectionShadowStatic, SelectionCanaryAssignment, SelectionOperatorOverride,
+	case SelectionShadowStatic, SelectionCanaryAssignment, SelectionCanaryDiagnostic,
+		SelectionOperatorOverride,
 		SelectionActivePolicy, SelectionPolicyOff, SelectionPolicyRollback,
 		SelectionStateMissing, SelectionStateInvalid, SelectionStateStale,
+		SelectionOwnerMismatch, SelectionModelMismatch, SelectionProviderMismatch,
+		SelectionUnsupported, SelectionChecksumMismatch:
+		return true
+	default:
+		return false
+	}
+}
+
+func (reason SelectionReason) failClosed() bool {
+	switch reason {
+	case SelectionStateMissing, SelectionStateInvalid, SelectionStateStale,
 		SelectionOwnerMismatch, SelectionModelMismatch, SelectionProviderMismatch,
 		SelectionUnsupported, SelectionChecksumMismatch:
 		return true
@@ -234,6 +246,7 @@ func (reason FallbackReason) valid() bool {
 	case FallbackCandidateUnavailable, FallbackStrategyFailed, FallbackStateInvalid,
 		FallbackStateStale, FallbackOwnerMismatch, FallbackModelMismatch,
 		FallbackProviderMismatch, FallbackUnsupported, FallbackChecksumMismatch,
+		FallbackContextBudget,
 		FallbackResultPersistFailed:
 		return true
 	default:
