@@ -79,3 +79,22 @@ func TestNewEventRejectsUnscopedOrUnversionedPayload(t *testing.T) {
 		})
 	}
 }
+
+func TestNewEventKeepsSchema1ReadableButRejectsSchema2Decision(t *testing.T) {
+	t.Parallel()
+	params := EventParams{
+		ID:          uuid.Must(uuid.NewV7()),
+		OwnerID:     uuid.Must(uuid.NewV7()),
+		AggregateID: "turn-42",
+		DecisionID:  uuid.Must(uuid.NewV7()),
+		Kind:        EventDecision,
+		Payload:     json.RawMessage(`{"schema_version":"1.0"}`),
+	}
+	if _, err := NewEvent(params); err != nil {
+		t.Fatalf("NewEvent(schema 1.0): %v", err)
+	}
+	params.Payload = json.RawMessage(`{"schema_version":"2.0"}`)
+	if _, err := NewEvent(params); err == nil {
+		t.Fatal("NewEvent accepted schema-2 decision instead of requiring typed constructor")
+	}
+}

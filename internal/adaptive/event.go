@@ -28,6 +28,8 @@ type EventKind string
 const (
 	// EventDecision records the action selected at an adaptive decision point.
 	EventDecision EventKind = "decision"
+	// EventDelivery records the action and exposure actually served.
+	EventDelivery EventKind = "delivery"
 	// EventOutcome records the observed consequence of a prior decision.
 	EventOutcome EventKind = "outcome"
 	// EventCorrection records explicit feedback that supersedes an outcome.
@@ -40,7 +42,7 @@ const (
 
 func (k EventKind) valid() bool {
 	switch k {
-	case EventDecision, EventOutcome, EventCorrection, EventPromotion, EventRollback:
+	case EventDecision, EventDelivery, EventOutcome, EventCorrection, EventPromotion, EventRollback:
 		return true
 	default:
 		return false
@@ -70,8 +72,31 @@ type Event struct {
 	CreatedAt   time.Time
 }
 
-// NewEvent validates identifiers and hashes a canonical JSON payload.
+// NewEvent preserves the generic schema-1 history and internal policy facts.
 func NewEvent(p EventParams) (Event, error) {
+	if p.Kind == EventDelivery {
+		return Event{}, errors.New("adaptive delivery events require the typed constructor")
+	}
+	canonical, err := canonicalPayload(p.Payload)
+	if err != nil {
+		return Event{}, err
+	}
+	var envelope struct {
+		SchemaVersion string `json:"schema_version"`
+	}
+	if err := json.Unmarshal(canonical, &envelope); err != nil {
+		return Event{}, fmt.Errorf("decode adaptive payload envelope: %w", err)
+	}
+	if envelope.SchemaVersion == SchemaVersion2 &&
+		p.Kind != EventPromotion &&
+		p.Kind != EventRollback {
+		return Event{}, errors.New("adaptive schema-2 evidence requires a typed constructor")
+	}
+	p.Payload = canonical
+	return newEvent(p)
+}
+
+func newEvent(p EventParams) (Event, error) {
 	switch {
 	case p.ID == uuid.Nil:
 		return Event{}, errors.New("adaptive event id is required")
@@ -92,7 +117,6 @@ func NewEvent(p EventParams) (Event, error) {
 	if createdAt.IsZero() {
 		createdAt = time.Now().UTC()
 	}
-	hash := sha256.Sum256(canonical)
 	return Event{
 		ID:          p.ID,
 		OwnerID:     p.OwnerID,
@@ -100,9 +124,14 @@ func NewEvent(p EventParams) (Event, error) {
 		DecisionID:  p.DecisionID,
 		Kind:        p.Kind,
 		Payload:     canonical,
-		PayloadHash: hash[:],
+		PayloadHash: payloadSHA256(canonical),
 		CreatedAt:   createdAt,
 	}, nil
+}
+
+func payloadSHA256(payload []byte) []byte {
+	hash := sha256.Sum256(payload)
+	return hash[:]
 }
 
 func canonicalPayload(raw json.RawMessage) (json.RawMessage, error) {
