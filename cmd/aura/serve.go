@@ -33,7 +33,6 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/cron"
-	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/envutil"
 	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/readiness"
@@ -265,10 +264,6 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	chat, err := bootServeChatEnv(ctx)
 	if err != nil {
 		return nil, err
-	}
-	if err := db.CheckMigrationHead(ctx, chat.cfg.DB.MigrateURL); err != nil {
-		chat.close()
-		return nil, fmt.Errorf("postgres migration compatibility: %w", err)
 	}
 	readinessState := readiness.NewSnapshot(readiness.Config{
 		MigrationCompatible: true,

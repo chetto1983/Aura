@@ -122,6 +122,105 @@ func TestBootReleaseResourcesDrainsClosersAndClosesPool(t *testing.T) {
 	releaseBootResources(nil, nil)
 }
 
+func TestBootChatCompositionRejectsIncompatibleMigrationBeforeAssembly(t *testing.T) {
+	tests := []struct {
+		name     string
+		checkErr error
+	}{
+		{
+			name: "dirty tracker",
+			checkErr: errors.New(
+				"migration tracker incompatible: version=62 dirty=true want=62",
+			),
+		},
+		{
+			name: "stale head",
+			checkErr: errors.New(
+				"migration tracker incompatible: version=61 dirty=false want=62",
+			),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pool := unreachablePool(t)
+			cfg := validBootConfig()
+			cfg.DB.MigrateURL = "postgres://migrate:secret@127.0.0.1:1/aura"
+			assembled := false
+			check := func(_ context.Context, migrateURL string) error {
+				if migrateURL != cfg.DB.MigrateURL {
+					t.Errorf("migration checker URL = %q, want configured migrate URL", migrateURL)
+				}
+				return tt.checkErr
+			}
+			assemble := func(
+				context.Context,
+				*config.Config,
+				*pgxpool.Pool,
+			) (*chatEnv, error) {
+				assembled = true
+				return &chatEnv{}, nil
+			}
+
+			env, err := assembleChatEnvAtMigrationHead(
+				context.Background(), cfg, pool, check, assemble,
+			)
+			if env != nil || !errors.Is(err, tt.checkErr) {
+				t.Fatalf("incompatible migration result = env %v err %v", env, err)
+			}
+			if !strings.Contains(err.Error(), "postgres migration compatibility") {
+				t.Fatalf("migration error lacks composition context: %v", err)
+			}
+			if assembled {
+				t.Fatal("adaptive chat environment assembled before migration compatibility passed")
+			}
+			assertPoolClosed(t, pool)
+		})
+	}
+}
+
+func TestBootChatCompositionAcceptsCompatibleMigration(t *testing.T) {
+	pool := unreachablePool(t)
+	cfg := validBootConfig()
+	cfg.DB.MigrateURL = "postgres://migrate:secret@127.0.0.1:1/aura"
+	checked := false
+	assembled := false
+	check := func(_ context.Context, migrateURL string) error {
+		checked = true
+		if migrateURL != cfg.DB.MigrateURL {
+			t.Errorf("migration checker URL = %q, want configured migrate URL", migrateURL)
+		}
+		return nil
+	}
+	assemble := func(
+		_ context.Context,
+		gotCfg *config.Config,
+		gotPool *pgxpool.Pool,
+	) (*chatEnv, error) {
+		assembled = true
+		if gotCfg != cfg || gotPool != pool {
+			t.Fatalf("assembler inputs = cfg %p pool %p, want cfg %p pool %p", gotCfg, gotPool, cfg, pool)
+		}
+		return &chatEnv{pool: gotPool}, nil
+	}
+
+	env, err := assembleChatEnvAtMigrationHead(
+		context.Background(), cfg, pool, check, assemble,
+	)
+	if err != nil {
+		t.Fatalf("compatible migration composition: %v", err)
+	}
+	if env == nil || !checked || !assembled {
+		t.Fatalf("compatible composition = env %v checked %t assembled %t", env, checked, assembled)
+	}
+	pingCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := pool.Ping(pingCtx); err != nil && strings.Contains(err.Error(), "closed") {
+		t.Fatalf("compatible migration gate closed the pool before assembly ownership: %v", err)
+	}
+	env.close()
+	assertPoolClosed(t, pool)
+}
+
 // TestBootCloseOnFinalValidateFailure covers the post-overlay (reloaded) Validate
 // failure: assembleChatEnv's first act is to re-Validate the reloaded config, and a
 // failure there must release the already-open pool.

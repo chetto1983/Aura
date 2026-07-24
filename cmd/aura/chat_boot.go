@@ -104,11 +104,12 @@ func bootChatNamed(ctx context.Context, label string) *chatEnv {
 
 // bootChatEnv is the error-returning composition root for `aura chat` (D-15). It
 // uses fail-fast config.Load; serve shares the lower helper through bootServeChatEnv.
-// It loads config, opens the pool, constructs the Stores, runs
-// the boot orphan scan (Req#12) BEFORE serving, initializes the tiktoken encoder
-// once, mounts MCP, and constructs the Runner. It NEVER calls os.Exit — every failure
-// is returned so serve can shut down its already-booted resources cleanly (Pitfall 6:
-// an os.Exit in the shared boot would skip a daemon's graceful shutdown).
+// It loads config, opens the pool, verifies migration compatibility, constructs the
+// Stores, runs the boot orphan scan (Req#12) BEFORE serving, initializes the
+// tiktoken encoder once, mounts MCP, and constructs the Runner. It NEVER calls
+// os.Exit — every failure is returned so serve can shut down its already-booted
+// resources cleanly (Pitfall 6: an os.Exit in the shared boot would skip a daemon's
+// graceful shutdown).
 func bootChatEnv(ctx context.Context) (*chatEnv, error) {
 	return bootChatEnvWithConfig(ctx, config.Load)
 }
@@ -124,7 +125,9 @@ func bootChatEnvWithConfig(ctx context.Context, loadConfig func() (*config.Confi
 	if err != nil {
 		return nil, err
 	}
-	return assembleChatEnv(ctx, cfg, pool)
+	return assembleChatEnvAtMigrationHead(
+		ctx, cfg, pool, db.CheckMigrationHead, assembleChatEnv,
+	)
 }
 
 // dbOpener opens a pgx pool from a DB config; it matches db.Open. resolveConfigAndPool
@@ -133,14 +136,36 @@ func bootChatEnvWithConfig(ctx context.Context, loadConfig func() (*config.Confi
 // cannot be driven past pool-open in a test.
 type dbOpener func(ctx context.Context, cfg *db.Config) (*pgxpool.Pool, error)
 
+type migrationHeadChecker func(context.Context, string) error
+
+type chatEnvAssembler func(
+	context.Context,
+	*config.Config,
+	*pgxpool.Pool,
+) (*chatEnv, error)
+
+func assembleChatEnvAtMigrationHead(
+	ctx context.Context,
+	cfg *config.Config,
+	pool *pgxpool.Pool,
+	check migrationHeadChecker,
+	assemble chatEnvAssembler,
+) (*chatEnv, error) {
+	if err := check(ctx, cfg.DB.MigrateURL); err != nil {
+		releaseBootResources(pool, nil)
+		return nil, fmt.Errorf("postgres migration compatibility: %w", err)
+	}
+	return assemble(ctx, cfg, pool)
+}
+
 // resolveConfigAndPool loads the config and opens the DB pool, handing BOTH to
-// assembleChatEnv. It runs the config → (optional settings-overlay) → reload sequence
-// and owns the pool ONLY across a post-overlay reload failure: if the reload fails it
-// closes the freshly-opened pool before returning (no leak). On success it returns the
-// OPEN pool and the caller (assembleChatEnv) takes over its lifecycle. Returning the
-// pool from here also fixes a latent shadow bug: the previous inline form declared the
-// overlay pool with `:=` inside the keyless branch, shadowing the outer var, so an
-// overlay-success boot proceeded on a nil pool.
+// migration gate and assembleChatEnv. It runs the config → (optional
+// settings-overlay) → reload sequence and owns the pool ONLY across a post-overlay
+// reload failure: if the reload fails it closes the freshly-opened pool before
+// returning (no leak). On success it returns the OPEN pool and the caller takes over
+// its lifecycle. Returning the pool from here also fixes a latent shadow bug: the
+// previous inline form declared the overlay pool with `:=` inside the keyless branch,
+// shadowing the outer var, so an overlay-success boot proceeded on a nil pool.
 func resolveConfigAndPool(ctx context.Context, loadConfig func() (*config.Config, error), open dbOpener) (*config.Config, *pgxpool.Pool, error) {
 	cfg, err := loadConfig()
 	if err != nil {
