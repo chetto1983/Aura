@@ -40,22 +40,32 @@ func remindedContains(ids []string, want string) bool {
 	return slices.Contains(ids, want)
 }
 
-// fakeEnsurer records EnsureApprovalPause calls and returns a per-task token (or an error).
+// fakeEnsurer records EnsureApprovalPause calls and returns a per-task token + minted flag (or an
+// error). minted defaults to true (a fresh mint) unless mintedByTask says otherwise — a false entry
+// models a REUSED model-relayed pause, which the sweep must NOT re-push.
 type fakeEnsurer struct {
-	tokenByTask map[string]string
-	err         error
-	calls       []struct{ taskID, convID, kind string }
+	tokenByTask  map[string]string
+	mintedByTask map[string]bool
+	err          error
+	calls        []struct{ taskID, convID, kind string }
 }
 
-func (f *fakeEnsurer) EnsureApprovalPause(_ context.Context, taskID, conversationID, kind string) (string, error) {
+func (f *fakeEnsurer) EnsureApprovalPause(_ context.Context, taskID, conversationID, kind string) (string, bool, error) {
 	f.calls = append(f.calls, struct{ taskID, convID, kind string }{taskID, conversationID, kind})
 	if f.err != nil {
-		return "", f.err
+		return "", false, f.err
 	}
+	tok := "tok-" + taskID
 	if f.tokenByTask != nil {
-		return f.tokenByTask[taskID], nil
+		tok = f.tokenByTask[taskID]
 	}
-	return "tok-" + taskID, nil
+	minted := true
+	if f.mintedByTask != nil {
+		if v, ok := f.mintedByTask[taskID]; ok {
+			minted = v
+		}
+	}
+	return tok, minted, nil
 }
 
 func (f *fakeEnsurer) calledFor(taskID string) bool {
@@ -97,6 +107,7 @@ func (f *fakeApprovalChannel) pushFor(identityID string) (string, bool) {
 // (no push channel) is still ensured + stamped (it pulls the pause).
 func TestSweepApprovalRemindersEnsuresPushesAndStampsRegardlessOfOutcome(t *testing.T) {
 	t.Setenv("AURA_SCHEDULER_APPROVAL_REMINDER_SEC", "3600")
+	t.Setenv("AURA_SCHEDULER_APPROVAL_GRACE_SEC", "0") // exercise the ensure/push body, not the grace gate
 	store := &fakeApprovalReminderStore{tasks: []Task{
 		{ID: "aaaaaaaa-1111-1111-1111-111111111111", Kind: "agent_job", IdentityID: "id-DELIV", OriginConversationID: "conv-A"},
 		{ID: "bbbbbbbb-2222-2222-2222-222222222222", Kind: "reminder", IdentityID: "local", OriginConversationID: "conv-WEBUI"}, // WebUI-origin: no push channel
@@ -161,6 +172,7 @@ func TestSweepApprovalRemindersEnsuresPushesAndStampsRegardlessOfOutcome(t *test
 // NOT push (no token) but STILL stamps the row (a permanently-failing ensure cannot spam the tick).
 func TestSweepApprovalRemindersEnsureFailureStillStamps(t *testing.T) {
 	t.Setenv("AURA_SCHEDULER_APPROVAL_REMINDER_SEC", "3600")
+	t.Setenv("AURA_SCHEDULER_APPROVAL_GRACE_SEC", "0")
 	store := &fakeApprovalReminderStore{tasks: []Task{
 		{ID: "dddddddd-4444-4444-4444-444444444444", Kind: "agent_job", IdentityID: "id-X", OriginConversationID: "conv-X"},
 	}}
@@ -210,6 +222,87 @@ func TestSweepApprovalRemindersStoreErrorPropagates(t *testing.T) {
 	d := NewDispatch(nil, DispatchDeps{ApprovalReminderStore: store, ApprovalPauseEnsurer: &fakeEnsurer{}, ApprovalChannel: &fakeApprovalChannel{}})
 	if err := d.sweepApprovalReminders(context.Background()); err == nil {
 		t.Fatal("a store list error must propagate so the tick logs it")
+	}
+}
+
+// TestSweepApprovalRemindersReusedPauseNotPushed proves the backstop invariant: when
+// EnsureApprovalPause REUSES a model-relayed pause (minted=false), the sweep does NOT push a second
+// prompt (the model already rendered it on the origin channel) but STILL stamps the throttle. This
+// is what kills the 1.7 duplicate-prompt regression.
+func TestSweepApprovalRemindersReusedPauseNotPushed(t *testing.T) {
+	t.Setenv("AURA_SCHEDULER_APPROVAL_REMINDER_SEC", "3600")
+	t.Setenv("AURA_SCHEDULER_APPROVAL_GRACE_SEC", "0")
+	store := &fakeApprovalReminderStore{tasks: []Task{
+		{ID: "reused-11", Kind: "agent_job", IdentityID: "id-R", OriginConversationID: "conv-R"},
+	}}
+	ensurer := &fakeEnsurer{mintedByTask: map[string]bool{"reused-11": false}} // model already relayed
+	channel := &fakeApprovalChannel{}
+	d := NewDispatch(nil, DispatchDeps{ApprovalReminderStore: store, ApprovalPauseEnsurer: ensurer, ApprovalChannel: channel})
+	if err := d.sweepApprovalReminders(context.Background()); err != nil {
+		t.Fatalf("sweepApprovalReminders: %v", err)
+	}
+	if !ensurer.calledFor("reused-11") {
+		t.Fatal("the task must still be ensured (the dedup read)")
+	}
+	if len(channel.calls) != 0 {
+		t.Fatalf("a reused (model-relayed) pause must NOT be re-pushed, got %d pushes", len(channel.calls))
+	}
+	if !remindedContains(store.reminded, "reused-11") {
+		t.Fatalf("a reused pause must still be stamped, got %v", store.reminded)
+	}
+}
+
+// TestSweepApprovalRemindersSkipsFreshTasksWithinGrace proves a task younger than the grace is
+// skipped entirely (not ensured, not pushed, not stamped) so the sweep never mints mid-model-turn;
+// an aged sibling in the same batch is still processed.
+func TestSweepApprovalRemindersSkipsFreshTasksWithinGrace(t *testing.T) {
+	t.Setenv("AURA_SCHEDULER_APPROVAL_REMINDER_SEC", "3600")
+	t.Setenv("AURA_SCHEDULER_APPROVAL_GRACE_SEC", "60")
+	store := &fakeApprovalReminderStore{tasks: []Task{
+		{ID: "fresh-99", Kind: "agent_job", IdentityID: "id-F", OriginConversationID: "conv-F", CreatedAt: time.Now()},
+		{ID: "aged-99", Kind: "agent_job", IdentityID: "id-A", OriginConversationID: "conv-A", CreatedAt: time.Now().Add(-2 * time.Minute)},
+	}}
+	ensurer := &fakeEnsurer{}
+	channel := &fakeApprovalChannel{byIdentity: map[string]struct {
+		delivered bool
+		err       error
+	}{"id-A": {delivered: true}}}
+	d := NewDispatch(nil, DispatchDeps{ApprovalReminderStore: store, ApprovalPauseEnsurer: ensurer, ApprovalChannel: channel})
+	if err := d.sweepApprovalReminders(context.Background()); err != nil {
+		t.Fatalf("sweepApprovalReminders: %v", err)
+	}
+	if ensurer.calledFor("fresh-99") {
+		t.Error("a task younger than the grace must NOT be ensured (no mint mid-model-turn)")
+	}
+	if remindedContains(store.reminded, "fresh-99") {
+		t.Error("a within-grace task must NOT be stamped (re-evaluated next tick)")
+	}
+	if !ensurer.calledFor("aged-99") {
+		t.Error("a task older than the grace must be ensured")
+	}
+	if !remindedContains(store.reminded, "aged-99") {
+		t.Error("an aged task must be stamped")
+	}
+}
+
+func TestApprovalMintGrace(t *testing.T) {
+	cases := []struct {
+		env  string
+		want time.Duration
+	}{
+		{"", 60 * time.Second},     // unset/empty → default
+		{"0", 0},                   // explicit no-grace (tests)
+		{"-5", 0},                  // negative → no grace
+		{"120", 120 * time.Second}, // positive → verbatim
+		{"abc", 60 * time.Second},  // invalid → default
+	}
+	for _, c := range cases {
+		t.Run(c.env, func(t *testing.T) {
+			t.Setenv("AURA_SCHEDULER_APPROVAL_GRACE_SEC", c.env)
+			if got := approvalMintGrace(); got != c.want {
+				t.Fatalf("approvalMintGrace() with %q = %v, want %v", c.env, got, c.want)
+			}
+		})
 	}
 }
 

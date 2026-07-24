@@ -149,7 +149,8 @@ func TestTaskScheduleDestructivePayloadGated(t *testing.T) {
 // scheduled_task_approval resume_context the resume hook decodes. This is what makes
 // the approval reach the sending channel instead of the CLI-only path (bug fix).
 func TestTaskScheduleApprovalDirective(t *testing.T) {
-	store := &fakeTaskStore{createID: "019f-task-id"}
+	const fullID = "019f9349-e0e5-77cc-9639-804bcf88b968" // a real 36-char UUID
+	store := &fakeTaskStore{createID: fullID}
 	tool := &TaskTool{Store: store}
 
 	// Every agent_job is gated to pending_approval (AG-016), independent of risk.
@@ -174,15 +175,24 @@ func TestTaskScheduleApprovalDirective(t *testing.T) {
 	if got.Status != "pending_approval" {
 		t.Errorf("directive status = %q, want pending_approval", got.Status)
 	}
-	if got.TaskID != "019f-task-id" {
-		t.Errorf("directive task_id = %q, want the created id", got.TaskID)
+	// The machine-facing task_id + resume_context still carry the FULL id (the resume hook
+	// keys on it) — only the human-facing question is masked.
+	if got.TaskID != fullID {
+		t.Errorf("directive task_id = %q, want the full created id", got.TaskID)
 	}
-	if got.Question == "" {
-		t.Error("directive must carry a non-empty approval question")
+	// The question the operator sees masks the UUID to its first 8 chars (no raw 36-char id)
+	// and names the kind, so the Sì/No prompt reads friendly instead of dumping a UUID.
+	if strings.Contains(got.Question, fullID) {
+		t.Errorf("question must NOT contain the full UUID, got %q", got.Question)
+	}
+	for _, want := range []string{"019f9349", "agent_job"} {
+		if !strings.Contains(got.Question, want) {
+			t.Errorf("question must contain %q (masked id + kind), got %q", want, got.Question)
+		}
 	}
 	// The message must instruct the model to relay via ask_user with the exact
-	// resume_context the scheduled-task resume hook keys on.
-	for _, want := range []string{"ask_user", "scheduled_task_approval", "019f-task-id"} {
+	// resume_context the scheduled-task resume hook keys on (full id preserved).
+	for _, want := range []string{"ask_user", "scheduled_task_approval", fullID} {
 		if !strings.Contains(got.Message, want) {
 			t.Errorf("directive message must contain %q, got %q", want, got.Message)
 		}

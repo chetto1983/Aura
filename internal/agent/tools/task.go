@@ -271,7 +271,11 @@ func (t *TaskTool) actionSchedule(ctx context.Context, raw json.RawMessage) (Too
 // authenticated origin conversation are the authorization (the hook owner-scopes the
 // UPDATE), so no question-match challenge is needed here.
 func scheduledApprovalRequiredResult(taskID, kind, summary, tier string, immediate bool) ToolResult {
-	question := fmt.Sprintf("Approve scheduled task %s (kind=%s, %s, risk=%s)? It will not fire until you approve.", taskID, kind, summary, tier)
+	// The human-facing question masks the UUID to its first 8 chars (kind + summary already
+	// identify the task) so the Sì/No prompt reads friendly instead of dumping a 36-char id;
+	// the full task_id stays in the machine-facing resume_context below (the resume hook keys
+	// on it). Bounded id + kind only — never the payload.
+	question := fmt.Sprintf("Approve scheduled %s task %s (%s, risk=%s)? It will not fire until you approve.", kind, shortScheduledTaskID(taskID), summary, tier)
 	payload := map[string]string{
 		"status":   "pending_approval",
 		"task_id":  taskID,
@@ -289,6 +293,16 @@ func scheduledApprovalRequiredResult(taskID, kind, summary, tier string, immedia
 		raw = []byte(`{"status":"pending_approval","task_id":"` + taskID + `"}`)
 	}
 	return ToolResult{Preview: string(raw), Bytes: len(raw)}
+}
+
+// shortScheduledTaskID renders the first 8 chars of a task id for the operator-facing approval
+// prompt — a bounded, friendly handle instead of the raw 36-char UUID (the full id stays in the
+// machine-facing resume_context). Parity with the sweep push's shortTelegramTaskID.
+func shortScheduledTaskID(id string) string {
+	if len(id) > 8 {
+		return id[:8]
+	}
+	return id
 }
 
 // resolvedSpec is the validated grammar the tool persists. It mirrors the cron

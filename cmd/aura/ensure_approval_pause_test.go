@@ -50,12 +50,15 @@ func TestEnsureApprovalPause_ReusesMatchingPending(t *testing.T) {
 	minter := &recordingMinter{token: "fresh-tok"}
 	e := approvalPauseEnsurer{pauses: lister, minter: minter}
 
-	tok, err := e.EnsureApprovalPause(context.Background(), "task-7", "conv-A", "agent_job")
+	tok, minted, err := e.EnsureApprovalPause(context.Background(), "task-7", "conv-A", "agent_job")
 	if err != nil {
 		t.Fatalf("EnsureApprovalPause: %v", err)
 	}
 	if tok != "existing-tok" {
 		t.Errorf("token = %q, want the reused existing-tok", tok)
+	}
+	if minted {
+		t.Error("reuse must report minted=false so the sweep does not re-push the model's pause")
 	}
 	if minter.calls != 0 {
 		t.Errorf("mint calls = %d, want 0 (reuse)", minter.calls)
@@ -75,12 +78,15 @@ func TestEnsureApprovalPause_MintsWhenAbsent(t *testing.T) {
 	minter := &recordingMinter{token: "fresh-tok"}
 	e := approvalPauseEnsurer{pauses: lister, minter: minter}
 
-	tok, err := e.EnsureApprovalPause(context.Background(), "task-7", "conv-A", "agent_job")
+	tok, minted, err := e.EnsureApprovalPause(context.Background(), "task-7", "conv-A", "agent_job")
 	if err != nil {
 		t.Fatalf("EnsureApprovalPause: %v", err)
 	}
 	if tok != "fresh-tok" || minter.calls != 1 {
 		t.Fatalf("token=%q mintCalls=%d, want fresh-tok/1", tok, minter.calls)
+	}
+	if !minted {
+		t.Error("a fresh mint must report minted=true so the sweep pushes it to the channel")
 	}
 	if minter.convID != "conv-A" {
 		t.Errorf("mint conv = %q, want conv-A", minter.convID)
@@ -100,7 +106,7 @@ func TestEnsureApprovalPause_MintsWhenAbsent(t *testing.T) {
 // TestEnsureApprovalPause_ListError surfaces a pending-read failure (never silently mints).
 func TestEnsureApprovalPause_ListError(t *testing.T) {
 	e := approvalPauseEnsurer{pauses: fakePauseLister{err: errors.New("db down")}, minter: &recordingMinter{}}
-	if _, err := e.EnsureApprovalPause(context.Background(), "task-7", "conv-A", "agent_job"); err == nil {
+	if _, _, err := e.EnsureApprovalPause(context.Background(), "task-7", "conv-A", "agent_job"); err == nil {
 		t.Fatal("want the list-pending error to surface")
 	}
 }

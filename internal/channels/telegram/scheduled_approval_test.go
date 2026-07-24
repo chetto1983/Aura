@@ -38,7 +38,7 @@ func TestParseScheduledApproval(t *testing.T) {
 
 func TestScheduledApprovalMarkupBindsToken(t *testing.T) {
 	t.Parallel()
-	const token = "11111111-1111-1111-1111-111111111111"
+	const token = "11111111-1111-1111-1111-111111111111" // a real 36-char UUID length
 	mk := scheduledApprovalMarkup(token)
 	if len(mk.InlineKeyboard) != 1 || len(mk.InlineKeyboard[0]) != 2 {
 		t.Fatalf("want one row of two buttons, got %v", mk.InlineKeyboard)
@@ -50,8 +50,15 @@ func TestScheduledApprovalMarkupBindsToken(t *testing.T) {
 	if yes.Data != token+"|approve" || no.Data != token+"|reject" {
 		t.Errorf("callback data wrong: yes=%q no=%q", yes.Data, no.Data)
 	}
-	if len(yes.Data) > 64 || len(no.Data) > 64 { // Telegram caps callback_data at 64 bytes
-		t.Errorf("callback_data exceeds 64 bytes: yes=%d no=%d", len(yes.Data), len(no.Data))
+	// Telegram caps callback_data at 64 bytes, but telebot frames it ON THE WIRE as
+	// "\f<Unique>|<Data>" (processButtons, options.go) — the check MUST count that framing,
+	// not just Data. The original bug shipped a 19-char Unique + 36-char token + "|approve" =
+	// 65 bytes → BUTTON_DATA_INVALID(400) at send time (never caught by a Data-only check).
+	for _, b := range []tele.InlineButton{yes, no} {
+		onWire := len("\f") + len(b.Unique) + len("|") + len(b.Data)
+		if onWire > 64 {
+			t.Errorf("on-wire callback_data exceeds 64 bytes (\\f%s|%s = %d)", b.Unique, b.Data, onWire)
+		}
 	}
 }
 
@@ -150,6 +157,11 @@ func TestOnScheduledApprovalCallbackRejectSubmitsDecline(t *testing.T) {
 	if bot.responds != 1 {
 		t.Errorf("callback must be acked once, got %d", bot.responds)
 	}
+	if edits := bot.recordedEdits(); len(edits) != 1 {
+		t.Fatalf("reject must rewrite the prompt in one edit, got %d", len(edits))
+	} else if s, _ := edits[0].what.(string); !strings.Contains(strings.ToLower(s), "rifiutato") {
+		t.Errorf("outcome edit must confirm rejection, got %q", edits[0].what)
+	}
 	if calls2, _ := rt.snapshot(); calls2 != 0 {
 		t.Errorf("scheduled approval must NOT drive a continuation turn, got %d", calls2)
 	}
@@ -170,6 +182,15 @@ func TestOnScheduledApprovalCallbackApproveSubmitsAccept(t *testing.T) {
 	calls := rs.calls()
 	if len(calls) != 1 || calls[0].action != askuser.ActionAccept || calls[0].token != "tok-2" {
 		t.Fatalf("approve must submit accept for tok-2, got %+v", calls)
+	}
+	// The prompt is rewritten to a visible outcome (the backstop path has no agent turn to post
+	// a confirmation message) — otherwise the resolve reads as "nothing happened".
+	edits := bot.recordedEdits()
+	if len(edits) != 1 {
+		t.Fatalf("approve must rewrite the prompt in one edit, got %d", len(edits))
+	}
+	if s, _ := edits[0].what.(string); !strings.Contains(strings.ToLower(s), "approvato") {
+		t.Errorf("outcome edit must confirm approval, got %q", edits[0].what)
 	}
 }
 

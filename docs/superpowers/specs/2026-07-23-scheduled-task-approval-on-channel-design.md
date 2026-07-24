@@ -127,3 +127,21 @@ No new migration (0051 stands; the dedup query reads existing `paused_states.res
 - Loose ends from the working session: revert `compose.override.yaml` (5s/10s test cadence) before deploy; commit regenerated calm-prism baselines + revert the TEMP `--update-snapshots` step in `ci.yml`; push unpushed commits CI-green.
 - Adaptive reasoning is a no-op on llama.cpp (`ApplyAdaptiveReasoning` is OpenRouter-gated) — separate enhancement.
 - The reasoning-object → None-target wire bug (llama.cpp ignores it today, latent) — separate.
+
+## Post-E2E hardening (2026-07-24)
+
+Live E2E on the real stack (Telegram, DeepSeek-V4-Flash) surfaced four defects the daemon-free unit tests missed; all fixed on this branch:
+
+1. **Accept-loop (BUG-1B tail).** Accepting the model-relayed `ask_user` pause drove a continuation turn, but the task activation was a silent resume-hook side-effect — the resumed model, never told the task was now active, re-ran `task schedule` and relayed another approval every time the operator tapped Sì. **Fix:** `answerTurn` (runner) now injects an explicit RoleTool result on accept/decline of a `scheduled_task_approval` pause ("task is ACTIVE/CANCELLED — scheduling complete, do NOT re-schedule").
+
+2. **`BUTTON_DATA_INVALID (400)` — the sweep push never delivered.** telebot frames inline callback_data on the wire as `"\f<Unique>|<Data>"`; the 19-char Unique `aura_sched_approval` + a 36-char UUID token + `|approve` = 65 bytes > Telegram's 64-byte cap. **Fix:** shortened the Unique to `aura_sappr` (10) + an on-wire length guard + a markup test that counts the framing. (The in-turn HITL only survived because its `aura_hitl` Unique is 9 chars.)
+
+3. **Raw UUID in the prompt.** The relay question dumped the full 36-char id. **Fix:** masked to `kind + first-8` (`shortScheduledTaskID`); the full id stays in the machine-facing `resume_context`.
+
+4. **Duplicate prompt — the sweep raced the model relay.** The sweep selects `approval_reminded_at IS NULL` tasks on the *next* tick (~30s), so it fired in the few-second window between `task schedule` and the model's `ask_user`, minting a second pause → two prompts. This violated this doc's own "we do **not** mint mid-model-turn" rule. **Fix:** the sweep is now a true backstop — (a) a **grace delay** (`AURA_SCHEDULER_APPROVAL_GRACE_SEC`, default 60s) skips a task until it is older than the grace so the in-turn relay wins the fast path; (b) `EnsureApprovalPause` returns a `minted` flag and the sweep pushes **only when it minted** (the model never relayed) — a reused pause is already on the channel.
+
+5. **Backstop resolve read as "nothing happened".** The sweep-button press resolves via `resolveScheduled`, which (correctly) drives no continuation turn — so unlike the model-relay path's "Fatto!" message, it left only a transient toast + a keyboard clear while the task silently flipped to active. **Fix:** `onScheduledApprovalCallback` now rewrites the prompt in place to a persistent outcome (`✅ approvato` / `❌ rifiutato`), giving the backstop path visible confirmation.
+
+**Behavior change vs the original design:** the sweep no longer re-nudges a pending approval each cadence — it delivers the surface **once** (on mint) and relies on the pause's continued existence for the deterministic guarantee. This removes the duplicate-push vector; the "no silent-forget" property is unchanged (a surface always exists within grace + one tick). `AURA_SCHEDULER_APPROVAL_REMINDER_SEC<=0` still hard-disables the sweep.
+
+**Root cause across all five (operator directive):** the two Telegram approval paths (in-turn HITL `aura_hitl` + sweep `aura_sappr`) are a **per-channel duplication** of the WebUI's `/api/approvals` — which is why these bugs hit Telegram and not the cockpit. The point-fixes make the native path correct enough to ship 1.7's deterministic backstop; the **next phase consolidates** Telegram onto the shared cockpit approval surface (Mini App → `InlineApprovalCard` + `/api/approvals`), deleting the duplicate Telegram-native approval code. See the next-phase spec.

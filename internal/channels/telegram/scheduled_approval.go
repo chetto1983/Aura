@@ -18,21 +18,42 @@ import (
 )
 
 // schedApprovalUnique is the inline-button endpoint for the scheduler approval-reminder push,
-// distinct from the in-turn HITL callbackUnique. callback_data is "<token>|<action>" where action
-// is "approve"/"reject" (token uuid 36 + 1 + ≤7 well under Telegram's 64-byte callback_data cap).
-const schedApprovalUnique = "aura_sched_approval"
+// distinct from the in-turn HITL callbackUnique. It MUST stay short: telebot frames the wire
+// callback_data as "\f<Unique>|<Data>" (processButtons, options.go) and Telegram caps THAT at
+// 64 bytes. Data is "<token>|<action>" = a 36-char UUID + "|approve" (44), so only 18 bytes
+// remain for "\f"+Unique+"|". The original "aura_sched_approval" (19) overflowed by one →
+// BUTTON_DATA_INVALID(400) at send time (see schedCallbackData's guard + the markup test).
+const schedApprovalUnique = "aura_sappr"
 
 const schedApprovalSep = "|"
+
+// schedCallbackTelebotFrameBytes is telebot's per-button on-wire overhead beyond Data:
+// the leading "\f" (1) + Unique + the "|" (1) that joins Unique to Data.
+const schedCallbackTelebotFrameBytes = len("\f") + len(schedApprovalUnique) + len(schedApprovalSep)
 
 // scheduledApprovalMarkup builds the Sì/No inline keyboard for a scheduled-task approval push,
 // each button carrying the pause token + the action so the callback resolves the real pause.
 func scheduledApprovalMarkup(token string) *tele.ReplyMarkup {
 	mk := &tele.ReplyMarkup{}
 	mk.InlineKeyboard = [][]tele.InlineButton{{
-		{Unique: schedApprovalUnique, Text: "Sì", Data: token + schedApprovalSep + "approve"},
-		{Unique: schedApprovalUnique, Text: "No", Data: token + schedApprovalSep + "reject"},
+		{Unique: schedApprovalUnique, Text: "Sì", Data: schedCallbackData(token, "approve")},
+		{Unique: schedApprovalUnique, Text: "No", Data: schedCallbackData(token, "reject")},
 	}}
 	return mk
+}
+
+// schedCallbackData builds a scheduled-approval button's Data and guards the FULL on-wire size.
+// telebot sends "\f<Unique>|<Data>" and Telegram rejects >64 bytes — so the budget is checked
+// WITH the framing, not on Data alone (the exact miss that shipped BUTTON_DATA_INVALID). The
+// panic is a programming-invariant guard (token is always a 36-char UUID, Unique/action are
+// constants): it can never fire in production and is asserted by the markup unit test — it exists
+// so lengthening the Unique or an action fails loudly in tests instead of silently at send time.
+func schedCallbackData(token, action string) string {
+	data := token + schedApprovalSep + action
+	if schedCallbackTelebotFrameBytes+len(data) > 64 {
+		panic("telegram scheduled-approval callback_data exceeds Telegram's 64-byte cap")
+	}
+	return data
 }
 
 // scheduledApprovalText is the bounded push copy — task kind + short id only, never the payload
@@ -95,8 +116,25 @@ func (t *Telegram) onScheduledApprovalCallback(daemonCtx context.Context) tele.H
 			return nil
 		}
 		_ = c.Respond(&tele.CallbackResponse{Text: scheduledApprovalToast(action)})
-		t.disarmCallbackKeyboard(c.Bot(), cb.Message)
+		// Rewrite the prompt to the outcome (and drop the keyboard) so the backstop path gives the
+		// operator VISIBLE confirmation. resolveScheduled drives no continuation turn — without this
+		// the sweep-minted approval resolved silently (only a transient toast), reading as "nothing
+		// happened" vs the model-relay path's "Fatto!" message.
+		t.editScheduledApprovalOutcome(c.Bot(), cb.Message, action)
 		return nil
+	}
+}
+
+// editScheduledApprovalOutcome replaces the approval prompt with its resolved outcome and clears the
+// inline keyboard in one edit. Best-effort: on failure it falls back to clearing the keyboard so a
+// stale prompt is never left armed.
+func (t *Telegram) editScheduledApprovalOutcome(bot tele.API, msg *tele.Message, action string) {
+	if bot == nil || msg == nil {
+		return
+	}
+	if _, err := bot.Edit(msg, scheduledApprovalResolvedText(action), &tele.ReplyMarkup{}); err != nil {
+		slog.Warn("telegram scheduled approval: outcome edit failed", "err", err)
+		t.disarmCallbackKeyboard(bot, msg)
 	}
 }
 
@@ -105,4 +143,13 @@ func scheduledApprovalToast(action string) string {
 		return "Approvato ✓"
 	}
 	return "Rifiutato"
+}
+
+// scheduledApprovalResolvedText is the persistent in-chat confirmation the sweep-button press leaves
+// in place of the prompt (the backstop path has no agent turn to post a "Fatto!" message).
+func scheduledApprovalResolvedText(action string) string {
+	if action == askuser.ActionAccept {
+		return "✅ Task pianificato approvato — è attivo e partirà all'orario previsto."
+	}
+	return "❌ Task pianificato rifiutato — annullato."
 }

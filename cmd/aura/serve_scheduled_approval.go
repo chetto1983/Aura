@@ -140,12 +140,14 @@ type approvalPauseEnsurer struct {
 }
 
 // EnsureApprovalPause returns the token of the existing (or freshly minted) scheduled-task
-// approval pause on conversationID for taskID. kind is the scheduler task kind (e.g. agent_job)
-// used only for the bounded, secret-safe prompt text.
-func (e approvalPauseEnsurer) EnsureApprovalPause(ctx context.Context, taskID, conversationID, kind string) (string, error) {
+// approval pause on conversationID for taskID, and whether it MINTED a fresh pause (true) or
+// REUSED a model-relayed one (false). The sweep pushes to the channel only when it minted — a
+// reused pause is already on the origin channel, so a second push would duplicate it. kind is the
+// scheduler task kind (e.g. agent_job) used only for the bounded, secret-safe prompt text.
+func (e approvalPauseEnsurer) EnsureApprovalPause(ctx context.Context, taskID, conversationID, kind string) (string, bool, error) {
 	pending, err := e.pauses.ListPending(ctx, conversationID)
 	if err != nil {
-		return "", fmt.Errorf("ensure approval pause: list pending: %w", err)
+		return "", false, fmt.Errorf("ensure approval pause: list pending: %w", err)
 	}
 	for _, p := range pending {
 		if p.Kind != tools.KindApproval || len(p.ResumeContext) == 0 {
@@ -156,15 +158,16 @@ func (e approvalPauseEnsurer) EnsureApprovalPause(ctx context.Context, taskID, c
 			TaskID string `json:"task_id"`
 		}
 		if json.Unmarshal(p.ResumeContext, &rc) == nil && rc.Type == "scheduled_task_approval" && rc.TaskID == taskID {
-			return p.Token, nil // reuse — no duplicate across cadences / with the model relay
+			return p.Token, false, nil // reuse — no duplicate across cadences / with the model relay
 		}
 	}
 	rc, err := json.Marshal(map[string]string{"type": "scheduled_task_approval", "task_id": taskID})
 	if err != nil {
-		return "", fmt.Errorf("ensure approval pause: marshal resume context: %w", err)
+		return "", false, fmt.Errorf("ensure approval pause: marshal resume context: %w", err)
 	}
 	question := fmt.Sprintf("Scheduled %s task %s needs your approval. Approve or reject it below.", kind, shortTaskID(taskID))
-	return e.minter.MintApprovalPause(ctx, conversationID, question, rc)
+	token, err := e.minter.MintApprovalPause(ctx, conversationID, question, rc)
+	return token, true, err
 }
 
 // shortTaskID renders the first 8 chars of a task id for a bounded, secret-safe prompt (the

@@ -19,8 +19,9 @@ import (
 )
 
 const (
-	defaultApprovalReminderSeconds = 3600
-	approvalReminderSweepLimit     = 50
+	defaultApprovalReminderSeconds  = 3600
+	defaultApprovalMintGraceSeconds = 60
+	approvalReminderSweepLimit      = 50
 )
 
 // ApprovalReminderStore lists due pending_approval tasks and stamps their throttle. The
@@ -33,11 +34,14 @@ type ApprovalReminderStore interface {
 var _ ApprovalReminderStore = (*Store)(nil)
 
 // ApprovalPauseEnsurer ensures a real scheduled_task_approval ask_user pause exists on a task's
-// origin conversation (reused if the model already relayed one, else minted host-side), returning
-// its token. The composition root satisfies it over askuser.Store + the Runner; cron never imports
-// either. Nil → the approval sweep no-ops.
+// origin conversation, returning its token and whether it MINTED a fresh one (true) or REUSED an
+// existing model-relayed pause (false). The composition root satisfies it over askuser.Store + the
+// Runner; cron never imports either. Nil → the approval sweep no-ops. The minted flag is what makes
+// the sweep a true backstop: it pushes to the channel ONLY when it minted (the model never
+// relayed) — a reused pause is already rendered on the origin channel, so a second push would
+// duplicate it.
 type ApprovalPauseEnsurer interface {
-	EnsureApprovalPause(ctx context.Context, taskID, conversationID, kind string) (token string, err error)
+	EnsureApprovalPause(ctx context.Context, taskID, conversationID, kind string) (token string, minted bool, err error)
 }
 
 // ApprovalChannel pushes an ACTIONABLE approval prompt (inline accept/reject bound to the pause
@@ -61,6 +65,27 @@ func approvalReminderInterval() time.Duration {
 		return defaultApprovalReminderSeconds * time.Second
 	}
 	if n <= 0 {
+		return 0
+	}
+	return time.Duration(n) * time.Second
+}
+
+// approvalMintGrace resolves AURA_SCHEDULER_APPROVAL_GRACE_SEC — how long a pending_approval task
+// must age before the sweep will mint its pause. This is what enforces the design's "do not mint
+// mid-model-turn" rule: within the grace the in-turn model relay creates (and renders) the pause
+// on the origin channel; only if the model still hasn't relayed once the task is older than the
+// grace does the sweep mint the deterministic backstop. Empty/invalid → the 60s default; a
+// negative (or 0) value → 0 (no grace, mint on the first tick — used by unit tests).
+func approvalMintGrace() time.Duration {
+	v := os.Getenv("AURA_SCHEDULER_APPROVAL_GRACE_SEC")
+	if v == "" {
+		return defaultApprovalMintGraceSeconds * time.Second
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return defaultApprovalMintGraceSeconds * time.Second
+	}
+	if n < 0 {
 		return 0
 	}
 	return time.Duration(n) * time.Second
@@ -90,13 +115,27 @@ func (d *Dispatch) sweepApprovalReminders(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	grace := approvalMintGrace()
 	for _, task := range rows {
-		token, eerr := d.deps.ApprovalPauseEnsurer.EnsureApprovalPause(ctx, task.ID, task.OriginConversationID, string(task.Kind))
-		if eerr != nil {
-			// Ensure failed (e.g. transient DB): still stamp so a permanently-failing ensure
-			// cannot spam the tick; retried next cadence.
+		// Backstop, NOT a racer (design: "do not mint mid-model-turn"). Skip a task until it is
+		// older than the grace so the in-turn model relay wins the fast path and renders the pause
+		// on the origin channel first. NOT stamped — re-evaluated next tick, and minted only if the
+		// model still hasn't relayed once the task ages past the grace. Without this the sweep fired
+		// in the few-second window between task schedule and the model's ask_user, minting a second
+		// pause → two prompts (the 1.7 E2E race).
+		if grace > 0 && time.Since(task.CreatedAt) < grace {
+			continue
+		}
+		token, minted, eerr := d.deps.ApprovalPauseEnsurer.EnsureApprovalPause(ctx, task.ID, task.OriginConversationID, string(task.Kind))
+		switch {
+		case eerr != nil:
+			// Ensure failed (e.g. transient DB): still stamp (below) so a permanently-failing
+			// ensure cannot spam the tick; retried next cadence.
 			slog.Warn("approval reminder: ensure pause failed (retry next cadence)", "task", task.ID, "err", eerr)
-		} else {
+		case minted:
+			// Push ONLY when the sweep created the surface (the model never relayed). A REUSED pause
+			// is already rendered on the origin channel by the model relay — a second push would
+			// duplicate it. A WebUI-origin mint returns (false,nil) here (no push channel; it pulls).
 			delivered, derr := d.deps.ApprovalChannel.DeliverApproval(ctx, task.IdentityID, token, task.ID, string(task.Kind))
 			switch {
 			case derr != nil:

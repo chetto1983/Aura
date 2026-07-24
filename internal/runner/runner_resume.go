@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -153,18 +154,63 @@ func (r *Runner) applyResumeHook(ctx context.Context, pending askuser.Pending, r
 
 // answerTurn builds the RoleTool answer turn keyed by the pause's original tool_call_id
 // (SC-4 wire-correctness): decline injects the "user declined" marker; accept/cancel
-// inject the supplied content. Seq is left 0 — the committer reserves it under the
+// inject the supplied content. A scheduled_task_approval pause overrides both with an
+// explicit outcome so the resumed model learns the task's new state (see
+// scheduledApprovalAnswer). Seq is left 0 — the committer reserves it under the
 // conversation row-lock inside its tx (the split fallback lets AppendTurn allocate it).
 func (r *Runner) answerTurn(pending askuser.Pending, resp ResponseInput) conversations.AppendTurnParams {
 	content := resp.Content
 	if resp.Action == askuser.ActionDecline {
 		content = declinedContent
 	}
+	if sc := scheduledApprovalAnswer(pending, resp); sc != "" {
+		content = sc
+	}
 	return conversations.AppendTurnParams{
 		ConversationID: pending.ConversationID,
 		Role:           llm.RoleTool,
 		ToolCallID:     pending.ToolCallID,
 		Content:        content,
+	}
+}
+
+// scheduledApprovalAnswer returns the RoleTool content that tells a resumed model the
+// outcome of an on-channel scheduled-task approval, or "" when pending is not one (the
+// caller keeps the default content, so ordinary HITL is untouched).
+//
+// Without it, accepting a model-relayed scheduled_task_approval pause injects only the raw
+// button value ("yes"): the operator-origin activation happens in the resume hook as a
+// SILENT side-effect, so the resumed model — never told the task is now active — re-runs
+// task schedule and relays a fresh approval, looping on every accept (fix-plan 1.7 E2E
+// BUG-1B). The explicit answer gives the model closure: accept → active + do-not-reschedule;
+// decline → cancelled + do-not-reschedule. The short id (first 8) keeps it bounded and
+// leaks no payload.
+func scheduledApprovalAnswer(pending askuser.Pending, resp ResponseInput) string {
+	if pending.Kind != tools.KindApproval || len(pending.ResumeContext) == 0 {
+		return ""
+	}
+	var rc struct {
+		Type   string `json:"type"`
+		TaskID string `json:"task_id"`
+	}
+	if json.Unmarshal(pending.ResumeContext, &rc) != nil ||
+		rc.Type != "scheduled_task_approval" || rc.TaskID == "" {
+		return ""
+	}
+	short := rc.TaskID
+	if len(short) > 8 {
+		short = short[:8]
+	}
+	switch resp.Action {
+	case askuser.ActionAccept:
+		return fmt.Sprintf("Operator APPROVED scheduled task %s. It is now ACTIVE and will fire at its "+
+			"scheduled time — the scheduling is already complete. Confirm this to the operator and do "+
+			"NOT call task schedule again for it.", short)
+	case askuser.ActionDecline:
+		return fmt.Sprintf("Operator REJECTED scheduled task %s. It has been cancelled and will not fire. "+
+			"Acknowledge the rejection to the operator and do NOT re-schedule it.", short)
+	default:
+		return ""
 	}
 }
 
