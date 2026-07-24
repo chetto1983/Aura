@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
@@ -27,9 +26,6 @@ const (
 	PolicyRollback PolicyMode = "rollback"
 )
 
-// ErrPolicyChanged reports a failed optimistic policy transition.
-var ErrPolicyChanged = errors.New("adaptive policy epoch changed")
-
 // Policy is the current distributed adaptive-control state.
 type Policy struct {
 	Epoch      int64
@@ -38,14 +34,6 @@ type Policy struct {
 	RolloutBPS int32
 	Config     json.RawMessage
 	UpdatedAt  time.Time
-}
-
-// PolicyUpdate describes the requested next adaptive-control state.
-type PolicyUpdate struct {
-	Version    string
-	Mode       PolicyMode
-	RolloutBPS int32
-	Config     json.RawMessage
 }
 
 // PolicyReader supplies the authoritative policy at each decision point.
@@ -80,35 +68,6 @@ func policyFromRow(epoch int64, version, mode string, rolloutBPS int32, config [
 		Epoch: epoch, Version: version, Mode: PolicyMode(mode), RolloutBPS: rolloutBPS,
 		Config: append(json.RawMessage(nil), config...), UpdatedAt: updatedAt,
 	}
-}
-
-func validatePolicyUpdate(update PolicyUpdate) error {
-	if strings.TrimSpace(update.Version) == "" {
-		return errors.New("adaptive policy version is required")
-	}
-	switch update.Mode {
-	case PolicyOff, PolicyShadow, PolicyRollback:
-		if update.RolloutBPS != 0 {
-			return fmt.Errorf("adaptive policy mode %s requires zero rollout", update.Mode)
-		}
-	case PolicyCanary:
-		if update.RolloutBPS <= 0 || update.RolloutBPS >= 10_000 {
-			return errors.New("adaptive canary rollout must be between 1 and 9999 basis points")
-		}
-	case PolicyActive:
-		if update.RolloutBPS != 10_000 {
-			return errors.New("adaptive active mode requires 10000 basis points")
-		}
-	default:
-		return fmt.Errorf("unknown adaptive policy mode %q", update.Mode)
-	}
-	if len(update.Config) > 0 {
-		var value map[string]any
-		if err := json.Unmarshal(update.Config, &value); err != nil || value == nil {
-			return errors.New("adaptive policy config must be a JSON object")
-		}
-	}
-	return nil
 }
 
 // PolicyGate is the decision-local result of evaluating the current policy.

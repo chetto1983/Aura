@@ -251,17 +251,12 @@ config JSONB
 updated_at
 ```
 
-All application policy mutation goes through `adaptive.PolicyService`. The service
-requires the actor's `adaptive.manage` capability (or wildcard capability), locks the
-current row, validates the legal state transition, and increments `epoch` with
-compare-and-swap semantics. A stale expected epoch returns `ErrPolicyChanged`.
-
-Transitions to `canary` or `active` require a gate report that the service evaluates
-itself, a configured production-model ID match, and immutable
-`adaptive_promotion_evidence`. Every transition writes
-`adaptive_policy_transitions`; evidence and transition rows are protected by
-append-only triggers. The legacy direct compare-and-swap application method is
-deleted; `PolicyService` is the only application mutation API.
+The shadow-only release exposes no Go, CLI, or HTTP policy-mutation API. Direct
+runtime table mutation is revoked. PostgreSQL retains the narrow capability-bound
+transition function plus append-only evidence/audit schema for migration
+compatibility, but no dormant application caller is shipped. A future mutation
+surface must land with an authorized production composition root and live
+capability/audit evidence in the same amendment.
 
 Canary assignment hashes a point-specific decision ID and policy version into 10,000
 stable buckets. Reasoning, each tool call, and other adaptive points derive different
@@ -453,8 +448,8 @@ Rollback changes future strategy only. It cannot undo completed tool side effect
 - RLS/FK owner scope is enforced in PostgreSQL.
 - Adaptive Neo4j labels are private to the internal projector.
 - Destructive/risky actions receive zero exploration.
-- Promotion/rollback use the capability-gated, evidence-bound `PolicyService`. No
-  production CLI or API is exposed yet.
+- Direct runtime policy DML is revoked, and the shadow release exposes no Go, CLI,
+  or API mutation surface.
 - Global policies may use curated or explicitly approved anonymized evidence only.
 - Raw user evidence is never pooled globally by default.
 
