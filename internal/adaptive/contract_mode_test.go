@@ -392,9 +392,9 @@ func TestDeliveryAcceptsRegisteredServingRevisionsAndContextBudgetFallback(t *te
 	delivery.FallbackReason = FallbackContextBudget
 	delivery.ResultCount = 0
 	delivery.ResultIDs = nil
-	catalog, err := NewRevisionCatalog(validRevisionCatalogEntries())
+	catalog, err := newRevisionCatalog(validRevisionCatalogEntries())
 	if err != nil {
-		t.Fatalf("NewRevisionCatalog: %v", err)
+		t.Fatalf("newRevisionCatalog: %v", err)
 	}
 	delivery.Revisions = mustRevisionSet(
 		mustCorpusRevision(42),

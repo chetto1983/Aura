@@ -167,15 +167,8 @@ func NewAssignmentEvent(assignment Assignment) (Event, error) {
 }
 
 func NewDeliveryEvent(assignment Assignment, delivery Delivery) (Event, error) {
-	assignment = canonicalAssignment(assignment)
-	delivery = canonicalDelivery(delivery)
-	if err := validateAssignment(assignment); err != nil {
-		return Event{}, fmt.Errorf("validate adaptive delivery assignment: %w", err)
-	}
-	if err := validateDelivery(delivery); err != nil {
-		return Event{}, err
-	}
-	if err := validateDeliveryAssignment(assignment, delivery); err != nil {
+	assignment, delivery, err := canonicalAssignmentBoundDelivery(assignment, delivery)
+	if err != nil {
 		return Event{}, err
 	}
 	payload, err := json.Marshal(delivery)
@@ -190,6 +183,24 @@ func NewDeliveryEvent(assignment Assignment, delivery Delivery) (Event, error) {
 		Kind:        EventDelivery,
 		Payload:     payload,
 	})
+}
+
+func canonicalAssignmentBoundDelivery(
+	assignment Assignment,
+	delivery Delivery,
+) (Assignment, Delivery, error) {
+	assignment = canonicalAssignment(assignment)
+	delivery = canonicalDelivery(delivery)
+	if err := validateAssignment(assignment); err != nil {
+		return Assignment{}, Delivery{}, fmt.Errorf("validate adaptive delivery assignment: %w", err)
+	}
+	if err := validateDelivery(delivery); err != nil {
+		return Assignment{}, Delivery{}, err
+	}
+	if err := validateDeliveryAssignment(assignment, delivery); err != nil {
+		return Assignment{}, Delivery{}, err
+	}
+	return assignment, delivery, nil
 }
 
 func validateDeliveryAssignment(assignment Assignment, delivery Delivery) error {

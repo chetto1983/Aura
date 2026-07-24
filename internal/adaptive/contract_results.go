@@ -14,11 +14,12 @@ type ResultID struct {
 	id   string
 }
 
+// ResultCatalog is a sealed capability minted only after verified snapshot/config loading.
 type ResultCatalog struct {
 	registered map[ResultKind]map[string]struct{}
 }
 
-func NewResultCatalog(entries map[ResultKind][]string) (ResultCatalog, error) {
+func newResultCatalog(entries map[ResultKind][]string) (ResultCatalog, error) {
 	registered := make(map[ResultKind]map[string]struct{}, len(entries))
 	for kind, ids := range entries {
 		if kind != ResultTool && kind != ResultSkill {
@@ -26,7 +27,7 @@ func NewResultCatalog(entries map[ResultKind][]string) (ResultCatalog, error) {
 		}
 		kindEntries := make(map[string]struct{}, len(ids))
 		for _, id := range ids {
-			if !validSafeSlug(id, maxResultIDLength) {
+			if !validSafeSlug(id, maxResultIDLength) || sensitiveCatalogID(id) {
 				return ResultCatalog{}, fmt.Errorf("adaptive result catalog ID %q is invalid", id)
 			}
 			if _, exists := kindEntries[id]; exists {

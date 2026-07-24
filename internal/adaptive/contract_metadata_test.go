@@ -16,9 +16,9 @@ func TestRevisionValuesRequireTypedConstructorsAndFrozenCatalog(t *testing.T) {
 		}
 	}
 	entries := validRevisionCatalogEntries()
-	catalog, err := NewRevisionCatalog(entries)
+	catalog, err := newRevisionCatalog(entries)
 	if err != nil {
-		t.Fatalf("NewRevisionCatalog: %v", err)
+		t.Fatalf("newRevisionCatalog: %v", err)
 	}
 	entries[RevisionRetriever][0] = "api-key"
 
@@ -53,9 +53,9 @@ func TestRevisionValuesRequireTypedConstructorsAndFrozenCatalog(t *testing.T) {
 
 func TestRevisionRegistryRejectsSecretsAndProse(t *testing.T) {
 	t.Parallel()
-	catalog, err := NewRevisionCatalog(validRevisionCatalogEntries())
+	catalog, err := newRevisionCatalog(validRevisionCatalogEntries())
 	if err != nil {
-		t.Fatalf("NewRevisionCatalog: %v", err)
+		t.Fatalf("newRevisionCatalog: %v", err)
 	}
 	for _, value := range []string{
 		"api-key",

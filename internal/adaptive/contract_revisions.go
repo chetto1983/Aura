@@ -25,6 +25,7 @@ type Revision struct {
 	validated bool
 }
 
+// RevisionCatalog is a sealed capability minted only after verified snapshot/config loading.
 type RevisionCatalog struct {
 	registered map[RevisionKind]map[string]struct{}
 }
@@ -33,7 +34,7 @@ type RevisionSet struct {
 	values map[RevisionKind]Revision
 }
 
-func NewRevisionCatalog(entries map[RevisionKind][]string) (RevisionCatalog, error) {
+func newRevisionCatalog(entries map[RevisionKind][]string) (RevisionCatalog, error) {
 	registered := make(map[RevisionKind]map[string]struct{}, len(entries))
 	for kind, values := range entries {
 		if !kind.fixed() {
@@ -41,7 +42,7 @@ func NewRevisionCatalog(entries map[RevisionKind][]string) (RevisionCatalog, err
 		}
 		kindEntries := make(map[string]struct{}, len(values))
 		for _, value := range values {
-			if !validSafeSlug(value, maxRevisionIDLength) {
+			if !validImmutableRevisionID(value) {
 				return RevisionCatalog{}, fmt.Errorf("adaptive revision %q is invalid", value)
 			}
 			if _, exists := kindEntries[value]; exists {
@@ -59,7 +60,7 @@ func NewRegisteredRevision(
 	value string,
 	catalog RevisionCatalog,
 ) (Revision, error) {
-	if !kind.fixed() || !validSafeSlug(value, maxRevisionIDLength) {
+	if !kind.fixed() || !validImmutableRevisionID(value) {
 		return Revision{}, fmt.Errorf("adaptive %s revision %q is invalid", kind, value)
 	}
 	if _, exists := catalog.registered[kind][value]; !exists {

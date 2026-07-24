@@ -78,9 +78,9 @@ func TestToolAndSkillResultsRequireFrozenCatalogMembership(t *testing.T) {
 		ResultTool:  {"memory_get_context"},
 		ResultSkill: {"document-search"},
 	}
-	catalog, err := NewResultCatalog(entries)
+	catalog, err := newResultCatalog(entries)
 	if err != nil {
-		t.Fatalf("NewResultCatalog: %v", err)
+		t.Fatalf("newResultCatalog: %v", err)
 	}
 	entries[ResultTool][0] = "api-key"
 
