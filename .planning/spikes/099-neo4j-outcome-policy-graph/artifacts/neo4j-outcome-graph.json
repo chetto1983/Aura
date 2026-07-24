@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0",
+  "run_id": "adaptive-099-20260724T092050Z",
+  "created_at": "2026-07-24T09:20:52.7226549Z",
+  "rows": 132,
+  "delayed_rows": 19,
+  "first_write_ms": 843.184,
+  "idempotent_write_ms": 81.031,
+  "before_delayed": {
+    "decisions": 132,
+    "contexts": 44,
+    "actions": 12,
+    "outcomes": 113,
+    "considered": 396
+  },
+  "after_delayed": {
+    "decisions": 132,
+    "contexts": 44,
+    "actions": 12,
+    "outcomes": 132,
+    "considered": 396
+  },
+  "after_idempotent": {
+    "decisions": 132,
+    "contexts": 44,
+    "actions": 12,
+    "outcomes": 132,
+    "considered": 396
+  },
+  "neighbor_p50_ms": 3.715,
+  "neighbor_p95_ms": 5.305,
+  "promoted_policy": "adaptive-099-20260724T092050Z/graph-knn-v1",
+  "rolled_back_policy": "adaptive-099-20260724T092050Z/static-v1",
+  "memory_healthy_before": true,
+  "memory_healthy_after": true,
+  "cleanup_counts": {
+    "decisions": 0,
+    "contexts": 0,
+    "actions": 0,
+    "outcomes": 0,
+    "considered": 0
+  }
+}
