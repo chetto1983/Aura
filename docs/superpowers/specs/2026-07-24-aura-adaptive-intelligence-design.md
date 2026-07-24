@@ -1,11 +1,11 @@
 # Aura Adaptive Intelligence — Design Specification
 
-**Date:** 2026-07-24  
-**Status:** Approved architecture; written specification awaiting operator review  
-**Audience:** Aura maintainers, reviewers, and implementation planners  
-**Evidence:** Spikes 095–101  
-**Initial domains:** reasoning effort, tool routing, skill routing, knowledge retrieval  
-**Primary stores:** PostgreSQL durable outbox, Neo4j outcome graph, in-memory policy snapshots  
+**Date:** 2026-07-24
+**Status:** Approved architecture; written specification awaiting operator review
+**Audience:** Aura maintainers, reviewers, and implementation planners
+**Evidence:** Spikes 095–101
+**Initial domains:** reasoning effort, tool routing, skill routing, knowledge retrieval
+**Primary stores:** PostgreSQL durable outbox, Neo4j outcome graph, in-memory policy snapshots
 
 ---
 
