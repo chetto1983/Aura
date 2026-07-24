@@ -390,6 +390,8 @@ func TestDeliveryAcceptsRegisteredServingRevisionsAndContextBudgetFallback(t *te
 	delivery := validDelivery(assignment.AssignmentID)
 	delivery.ActualActionID = ActionNoneID
 	delivery.FallbackReason = FallbackContextBudget
+	delivery.ResultCount = 0
+	delivery.ResultIDs = nil
 	delivery.Revisions = map[string]string{
 		"corpus":    "corpus-v1",
 		"embedding": "embedding-v2",
@@ -401,6 +403,42 @@ func TestDeliveryAcceptsRegisteredServingRevisionsAndContextBudgetFallback(t *te
 
 	if _, err := NewDeliveryEvent(assignment.OwnerID, assignment.RequestID, delivery); err != nil {
 		t.Fatalf("NewDeliveryEvent: %v", err)
+	}
+}
+
+func TestDeliveryRejectsNoneActionResultsOrExposure(t *testing.T) {
+	t.Parallel()
+	assignment := validAssignment()
+	tests := []struct {
+		name   string
+		mutate func(*Delivery)
+	}{
+		{name: "nonzero result count", mutate: func(d *Delivery) {
+			d.ResultCount = 1
+		}},
+		{name: "result ID", mutate: func(d *Delivery) {
+			d.ResultIDs = []ResultID{{Kind: ResultArtifact, ID: "artifact-1"}}
+		}},
+		{name: "known exposure", mutate: func(d *Delivery) {
+			probability := 0.5
+			d.ExposureKnown = true
+			d.ExposureProbability = &probability
+		}},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			delivery := validDelivery(assignment.AssignmentID)
+			delivery.ActualActionID = ActionNoneID
+			delivery.FallbackReason = FallbackContextBudget
+			delivery.ResultCount = 0
+			delivery.ResultIDs = nil
+			tt.mutate(&delivery)
+			if _, err := NewDeliveryEvent(assignment.OwnerID, assignment.RequestID, delivery); err == nil {
+				t.Fatal("NewDeliveryEvent error = nil, want none-action evidence rejection")
+			}
+		})
 	}
 }
 

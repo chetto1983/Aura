@@ -431,6 +431,12 @@ func validateDelivery(delivery Delivery) error {
 		return errors.New("adaptive delivery known exposure_probability is invalid")
 	case !delivery.ExposureKnown && delivery.ExposureProbability != nil:
 		return errors.New("adaptive delivery unknown exposure cannot include probability")
+	case delivery.ActualActionID == ActionNoneID &&
+		(delivery.ExposureKnown || delivery.ExposureProbability != nil):
+		return errors.New("adaptive none delivery cannot claim exposure")
+	case delivery.ActualActionID == ActionNoneID &&
+		(delivery.ResultCount != 0 || len(delivery.ResultIDs) != 0):
+		return errors.New("adaptive none delivery cannot claim results")
 	case delivery.ResultCount < 0:
 		return errors.New("adaptive delivery result_count cannot be negative")
 	case len(delivery.ResultIDs) > delivery.ResultCount:
