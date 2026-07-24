@@ -406,6 +406,48 @@ func TestDeliveryAcceptsRegisteredServingRevisionsAndContextBudgetFallback(t *te
 	}
 }
 
+func TestAssignmentRejectsNoneActionCatalog(t *testing.T) {
+	t.Parallel()
+	assignment := validAssignment()
+	assignment.EligibleActions = []string{"candidate", ActionNoneID, StaticActionID}
+	assignment.ActionProbabilities = []ActionProbability{
+		{ActionID: "candidate", Probability: 0},
+		{ActionID: ActionNoneID, Probability: 0},
+		{ActionID: StaticActionID, Probability: 1},
+	}
+
+	if _, err := NewAssignmentEvent(assignment); err == nil {
+		t.Fatal("NewAssignmentEvent accepted none as an eligible action")
+	}
+}
+
+func TestDeliveryRejectsNoneIntendedAction(t *testing.T) {
+	t.Parallel()
+	assignment := validAssignment()
+	delivery := validDelivery(assignment.AssignmentID)
+	delivery.IntendedActionID = ActionNoneID
+
+	if _, err := NewDeliveryEvent(assignment.OwnerID, assignment.RequestID, delivery); err == nil {
+		t.Fatal("NewDeliveryEvent accepted none as the intended action")
+	}
+}
+
+func TestDeliveryRejectsSuccessfulNoneAction(t *testing.T) {
+	t.Parallel()
+	assignment := validAssignment()
+	delivery := validDelivery(assignment.AssignmentID)
+	delivery.IntendedActionID = ActionNoneID
+	delivery.ActualActionID = ActionNoneID
+	delivery.Status = DeliverySuccess
+	delivery.FallbackReason = ""
+	delivery.ResultCount = 0
+	delivery.ResultIDs = nil
+
+	if _, err := NewDeliveryEvent(assignment.OwnerID, assignment.RequestID, delivery); err == nil {
+		t.Fatal("NewDeliveryEvent accepted none as a successful delivery")
+	}
+}
+
 func TestDeliveryRejectsNoneActionResultsOrExposure(t *testing.T) {
 	t.Parallel()
 	assignment := validAssignment()

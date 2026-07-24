@@ -264,6 +264,9 @@ func validateActionCatalog(assignment Assignment) error {
 	}
 	seen := make(map[string]struct{}, len(assignment.EligibleActions))
 	for _, actionID := range assignment.EligibleActions {
+		if actionID == ActionNoneID {
+			return errors.New("adaptive assignment none cannot be an eligible action")
+		}
 		if !validASCIIID(actionID, maxActionIDLength) {
 			return fmt.Errorf("adaptive assignment eligible action ID %q is invalid", actionID)
 		}
@@ -422,10 +425,14 @@ func validateDelivery(delivery Delivery) error {
 		return errors.New("adaptive delivery assignment_id is required")
 	case !validASCIIID(delivery.IntendedActionID, maxActionIDLength):
 		return errors.New("adaptive delivery intended_action_id is invalid")
+	case delivery.IntendedActionID == ActionNoneID:
+		return errors.New("adaptive delivery intended_action_id cannot be none")
 	case !validASCIIID(delivery.ActualActionID, maxActionIDLength):
 		return errors.New("adaptive delivery actual_action_id is invalid")
 	case !delivery.Status.valid():
 		return fmt.Errorf("adaptive delivery status %q is invalid", delivery.Status)
+	case delivery.ActualActionID == ActionNoneID && delivery.Status != DeliveryFallback:
+		return errors.New("adaptive none delivery must be a fallback")
 	case delivery.ExposureKnown && (delivery.ExposureProbability == nil ||
 		!finiteProbability(*delivery.ExposureProbability, false)):
 		return errors.New("adaptive delivery known exposure_probability is invalid")
