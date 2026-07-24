@@ -14,11 +14,10 @@ type AuraAdaptiveAggregateSequences struct {
 	NextSequence int64       `json:"next_sequence"`
 }
 
-// Permanent deny-list for deleted identity UUIDs; prevents adaptive-policy resurrection after UUID reuse.
+// Permanent UUID-only deny-list for deleted identities; contains no retained identity name.
 type AuraAdaptiveIdentityTombstones struct {
-	OwnerID      pgtype.UUID        `json:"owner_id"`
-	IdentityName string             `json:"identity_name"`
-	DeletedAt    pgtype.Timestamptz `json:"deleted_at"`
+	OwnerID   pgtype.UUID        `json:"owner_id"`
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
 }
 
 // Authoritative owner-scoped adaptive decision/outcome outbox. Neo4j is a replayable projection.
@@ -56,7 +55,8 @@ type AuraAdaptivePolicyState struct {
 
 // Append-only actor/capability-audited adaptive policy state transition ledger.
 type AuraAdaptivePolicyTransitions struct {
-	ID            pgtype.UUID        `json:"id"`
+	ID pgtype.UUID `json:"id"`
+	// Immutable actor UUID snapshot; intentionally no FK so identity deletion cannot erase or block audit.
 	ActorID       pgtype.UUID        `json:"actor_id"`
 	FromEpoch     int64              `json:"from_epoch"`
 	ToEpoch       int64              `json:"to_epoch"`
@@ -71,7 +71,8 @@ type AuraAdaptivePolicyTransitions struct {
 
 // Immutable calibrated closed-cohort report bound transactionally to a canary/active transition.
 type AuraAdaptivePromotionEvidence struct {
-	ID            pgtype.UUID        `json:"id"`
+	ID pgtype.UUID `json:"id"`
+	// Immutable actor UUID snapshot; intentionally no FK so identity deletion cannot erase or block audit.
 	ActorID       pgtype.UUID        `json:"actor_id"`
 	PolicyVersion string             `json:"policy_version"`
 	ModelID       string             `json:"model_id"`
