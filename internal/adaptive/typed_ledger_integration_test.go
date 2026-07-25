@@ -304,7 +304,9 @@ func insertAdaptiveLedgerEvent(
 
 func insertAdaptiveLedgerRow(
 	ctx context.Context,
-	pool *pgxpool.Pool,
+	executor interface {
+		Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+	},
 	id uuid.UUID,
 	owner uuid.UUID,
 	aggregate string,
@@ -314,7 +316,7 @@ func insertAdaptiveLedgerRow(
 	payload []byte,
 ) error {
 	hash := sha256.Sum256(payload)
-	_, err := pool.Exec(ctx, `
+	_, err := executor.Exec(ctx, `
 INSERT INTO aura.adaptive_outbox (
     id, owner_id, aggregate_id, sequence, decision_id, event_kind,
     payload, payload_hash, created_at

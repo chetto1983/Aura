@@ -168,6 +168,10 @@ func TestAdaptiveTypedLedgerMigrationSourceContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if got := fmt.Sprintf("%x", sha256.Sum256(identityBytes)); got !=
+		"2a75a3952b977bc53a5d51d5bc00fb5ac206a3ed8a12bea2b4d7e6aa49f53655" {
+		t.Fatalf("0063 up migration changed after release: sha256=%s", got)
+	}
 	identity := string(identityBytes)
 	for _, want := range []string{
 		"CREATE FUNCTION aura.adaptive_uuid_v5_sha256",
@@ -220,6 +224,10 @@ func TestAdaptiveTypedLedgerMigrationSourceContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if got := fmt.Sprintf("%x", sha256.Sum256(identityDownBytes)); got !=
+		"49f6304723b71cd55a229783f32ddf706698c28b990a549038ccc2ab3785a81b" {
+		t.Fatalf("0063 down migration changed after release: sha256=%s", got)
+	}
 	identityDown := string(identityDownBytes)
 	for _, want := range []string{
 		"DROP INDEX IF EXISTS aura.adaptive_outbox_schema2_assignment_tuple_uidx",
@@ -232,6 +240,64 @@ func TestAdaptiveTypedLedgerMigrationSourceContract(t *testing.T) {
 	} {
 		if !strings.Contains(identityDown, want) {
 			t.Errorf("0063 down migration missing %q", want)
+		}
+	}
+
+	lockedAuditBytes, err := migrationsFS.ReadFile(
+		"migrations/0064_adaptive_locked_identity_audit.up.sql",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockedAudit := string(lockedAuditBytes)
+	for _, want := range []string{
+		"LOCK TABLE aura.adaptive_outbox IN SHARE MODE;",
+		"aura.adaptive_schema2_assignment_row_valid(",
+		"aura.adaptive_schema2_delivery_row_valid(",
+		"IS NOT TRUE",
+		"ERRCODE = '23514'",
+		"schema-2 locked identity audit found an invalid fact",
+	} {
+		if !strings.Contains(lockedAudit, want) {
+			t.Errorf("0064 up migration missing %q", want)
+		}
+	}
+	lockAt := strings.Index(
+		lockedAudit,
+		"LOCK TABLE aura.adaptive_outbox IN SHARE MODE;",
+	)
+	lockedAuditAt := strings.Index(lockedAudit, "DO $$")
+	if lockAt < 0 || lockedAuditAt <= lockAt {
+		t.Error("0064 must lock adaptive_outbox before taking the audit snapshot")
+	}
+	for _, forbidden := range []string{
+		"DELETE FROM aura.adaptive_outbox",
+		"UPDATE aura.adaptive_outbox",
+		"INSERT INTO aura.adaptive_outbox",
+		"ALTER TABLE aura.adaptive_outbox",
+		"CREATE INDEX",
+		"DROP INDEX",
+	} {
+		if strings.Contains(lockedAudit, forbidden) {
+			t.Errorf("0064 up migration changes ledger or schema via %q", forbidden)
+		}
+	}
+
+	lockedAuditDownBytes, err := migrationsFS.ReadFile(
+		"migrations/0064_adaptive_locked_identity_audit.down.sql",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockedAuditDown := string(lockedAuditDownBytes)
+	for _, want := range []string{
+		"transaction-scoped table lock",
+		"changed no schema or rows",
+		"0063 enforcement",
+		"NULL;",
+	} {
+		if !strings.Contains(lockedAuditDown, want) {
+			t.Errorf("0064 down migration missing no-op rationale %q", want)
 		}
 	}
 

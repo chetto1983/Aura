@@ -202,12 +202,14 @@ type schema2LedgerSnapshot struct {
 func schema2LedgerSnapshotForOwner(
 	t *testing.T,
 	ctx context.Context,
-	pool *pgxpool.Pool,
+	querier interface {
+		QueryRow(context.Context, string, ...any) pgx.Row
+	},
 	owner uuid.UUID,
 ) schema2LedgerSnapshot {
 	t.Helper()
 	var snapshot schema2LedgerSnapshot
-	if err := pool.QueryRow(ctx, `
+	if err := querier.QueryRow(ctx, `
 SELECT count(*),
        coalesce(
            string_agg(
