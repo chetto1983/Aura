@@ -94,6 +94,37 @@ func TestNewPolicySnapshot_HashMatchesTypedCanonicalDocument_When_ContentIsMinim
 	}
 }
 
+func TestNewPolicySnapshot_CanonicalizesUtilitySignedZero_When_HashingContent(t *testing.T) {
+	positive := snapshotTestSpec()
+	negative := snapshotTestSpec()
+	positive.Actions[0].Examples[0].Utility = 0
+	negative.Actions[0].Examples[0].Utility = math.Copysign(0, -1)
+
+	positiveSnapshot, err := NewPolicySnapshot(positive)
+	if err != nil {
+		t.Fatalf("NewPolicySnapshot(positive zero) error = %v", err)
+	}
+	negativeSnapshot, err := NewPolicySnapshot(negative)
+	if err != nil {
+		t.Fatalf("NewPolicySnapshot(negative zero) error = %v", err)
+	}
+
+	if positiveSnapshot.ID() != negativeSnapshot.ID() {
+		t.Fatalf(
+			"signed-zero snapshot IDs differ: %s != %s",
+			positiveSnapshot.ID(),
+			negativeSnapshot.ID(),
+		)
+	}
+	if positiveSnapshot.SHA256() != negativeSnapshot.SHA256() {
+		t.Fatalf(
+			"signed-zero snapshot hashes differ: %s != %s",
+			positiveSnapshot.SHA256(),
+			negativeSnapshot.SHA256(),
+		)
+	}
+}
+
 func TestNewPolicySnapshot_RejectsMalformedContent_When_ContractIsUnsafe(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -155,6 +186,9 @@ func TestNewPolicySnapshot_RejectsMalformedContent_When_ContractIsUnsafe(t *test
 		{name: "feature scale nonfinite", mutate: func(spec *SnapshotSpec) {
 			spec.FeatureSchema[0].Scale = math.Inf(1)
 		}},
+		{name: "declared normalization range overflows", mutate: func(spec *SnapshotSpec) {
+			spec.FeatureSchema[0].Scale = math.SmallestNonzeroFloat64
+		}},
 		{name: "outcome id missing", mutate: func(spec *SnapshotSpec) {
 			spec.Actions[0].Examples[0].OutcomeID = uuid.Nil
 		}},
@@ -206,6 +240,12 @@ func TestNewPolicySnapshot_RejectsMalformedContent_When_ContractIsUnsafe(t *test
 		}},
 		{name: "example feature outside registered range", mutate: func(spec *SnapshotSpec) {
 			spec.Actions[0].Examples[0].Features[0].Value = -1
+		}},
+		{name: "example normalizes to zero vector", mutate: func(spec *SnapshotSpec) {
+			spec.Actions[0].Examples[0].Features = []SnapshotFeatureValue{
+				{Key: FeatureCandidateCount, Value: 1},
+				{Key: FeatureContextLength, Value: 10},
+			}
 		}},
 		{name: "more than 256 eligible examples", mutate: func(spec *SnapshotSpec) {
 			example := spec.Actions[0].Examples[0]

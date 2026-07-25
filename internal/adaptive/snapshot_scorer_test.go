@@ -7,6 +7,8 @@ import (
 	"github.com/google/uuid"
 )
 
+var snapshotDecisionSink SnapshotDecision
+
 func TestPolicySnapshot_ScoresSimilarityWeightedUtility_When_VectorsAreHandCheckable(t *testing.T) {
 	spec := snapshotTestSpec()
 	spec.Actions[0].Examples = []SnapshotExample{
@@ -96,6 +98,72 @@ func TestPolicySnapshot_ReturnsStaticChampion_When_QueryVectorIsZero(t *testing.
 
 	if decision.ActionID != StaticActionID || decision.Reason != SnapshotStaticNoSupport {
 		t.Fatalf("Score() = %#v, want static no-support decision", decision)
+	}
+}
+
+func TestPolicySnapshot_ScoresStableCosine_When_VectorsHaveExtremeMagnitude(t *testing.T) {
+	tests := []struct {
+		name       string
+		feature    FeatureKey
+		center     float64
+		scale      float64
+		value      float64
+		otherValue float64
+	}{
+		{
+			name:       "huge normalized vector",
+			feature:    FeatureCandidateCount,
+			scale:      1e-191,
+			value:      1_000_000_000,
+			otherValue: 1,
+		},
+		{
+			name:       "subnormal normalized vector",
+			feature:    FeatureKNNSimilarity,
+			scale:      1,
+			value:      math.SmallestNonzeroFloat64,
+			otherValue: 1,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			spec := snapshotTestSpec()
+			spec.FeatureSchema = []SnapshotFeatureDefinition{
+				{Key: test.feature, Center: test.center, Scale: test.scale},
+			}
+			spec.Actions[0].Examples = []SnapshotExample{
+				snapshotSingleFeatureExample(
+					spec.Scope,
+					"00000000-0000-4000-8000-000000000041",
+					0.9,
+					test.feature,
+					test.value,
+				),
+			}
+			spec.Actions[1].Examples = []SnapshotExample{
+				snapshotSingleFeatureExample(
+					spec.Scope,
+					"00000000-0000-4000-8000-000000000042",
+					0.1,
+					test.feature,
+					test.otherValue,
+				),
+			}
+			snapshot := mustSnapshot(t, spec)
+			query := snapshotTestQuery(spec.Scope, 1, 10)
+			query.Features = []SnapshotFeatureValue{{Key: test.feature, Value: test.value}}
+
+			decision := snapshot.Score(query)
+
+			if decision.ActionID != "deep" || decision.Reason != SnapshotScored {
+				t.Fatalf("Score() = %#v, want stable deep score", decision)
+			}
+			deep := findSnapshotActionScore(t, decision, "deep")
+			if deep.Neighbors != 1 || deep.Utility != 0.9 {
+				t.Fatalf("deep score = %#v, want one exact neighbor", deep)
+			}
+		})
 	}
 }
 
@@ -290,6 +358,53 @@ func TestPolicySnapshot_ReturnsStaticChampion_When_ReceiverIsNilOrZero(t *testin
 	}
 }
 
+func TestPolicySnapshot_ReturnsInvalidSnapshot_When_FrozenSupportIsInconsistent(t *testing.T) {
+	spec := snapshotTestSpec()
+	snapshot := mustSnapshot(t, spec)
+	snapshot.scoringActions[0].examples = nil
+
+	decision := snapshot.Score(snapshotTestQuery(spec.Scope, 2, 10))
+
+	if decision.ActionID != StaticActionID || decision.Reason != SnapshotStaticInvalid {
+		t.Fatalf("Score() = %#v, want static invalid-snapshot decision", decision)
+	}
+}
+
+func TestPolicySnapshot_ScoreAllocationsStayBounded_When_ExampleCountGrows(t *testing.T) {
+	smallSpec := snapshotTestSpec()
+	smallSpec.Actions[0].Examples = smallSpec.Actions[0].Examples[:1]
+	smallSpec.Actions[1].Examples = nil
+	small := mustSnapshot(t, smallSpec)
+
+	largeSpec := snapshotTestSpec()
+	largeSpec.Actions[1].Examples = nil
+	example := largeSpec.Actions[0].Examples[0]
+	largeSpec.Actions[0].Examples = make([]SnapshotExample, maxSnapshotExamplesPerAction)
+	for index := range largeSpec.Actions[0].Examples {
+		example.OutcomeID = uuid.MustParse(
+			"00000000-0000-4000-8000-" + leftPadDecimal(index+1, 12),
+		)
+		largeSpec.Actions[0].Examples[index] = example
+	}
+	large := mustSnapshot(t, largeSpec)
+	query := snapshotTestQuery(smallSpec.Scope, 2, 10)
+
+	smallAllocations := testing.AllocsPerRun(50, func() {
+		snapshotDecisionSink = small.Score(query)
+	})
+	largeAllocations := testing.AllocsPerRun(50, func() {
+		snapshotDecisionSink = large.Score(query)
+	})
+
+	if largeAllocations > smallAllocations+1 {
+		t.Fatalf(
+			"Score() allocations grow with examples: small=%.0f large=%.0f",
+			smallAllocations,
+			largeAllocations,
+		)
+	}
+}
+
 func snapshotTestQuery(
 	scope SnapshotScope,
 	candidates float64,
@@ -316,6 +431,18 @@ func mustSnapshot(t *testing.T, spec SnapshotSpec) *PolicySnapshot {
 		t.Fatalf("NewPolicySnapshot() error = %v", err)
 	}
 	return snapshot
+}
+
+func snapshotSingleFeatureExample(
+	scope SnapshotScope,
+	outcomeID string,
+	utility float64,
+	feature FeatureKey,
+	value float64,
+) SnapshotExample {
+	example := snapshotTestExample(scope, outcomeID, utility, 1, 10)
+	example.Features = []SnapshotFeatureValue{{Key: feature, Value: value}}
+	return example
 }
 
 func findSnapshotActionScore(

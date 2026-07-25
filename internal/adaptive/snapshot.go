@@ -84,6 +84,7 @@ type PolicySnapshot struct {
 	championActionID string
 	featureSchema    []SnapshotFeatureDefinition
 	actions          []SnapshotAction
+	scoringActions   []snapshotScoringAction
 	verified         bool
 }
 
@@ -98,6 +99,13 @@ type canonicalSnapshot struct {
 // NewPolicySnapshot validates, canonicalizes, hashes, and freezes a snapshot.
 func NewPolicySnapshot(spec SnapshotSpec) (*PolicySnapshot, error) {
 	canonical, err := canonicalizeSnapshot(spec)
+	if err != nil {
+		return nil, err
+	}
+	scoringActions, err := buildSnapshotScoringActions(
+		canonical.Actions,
+		canonical.FeatureSchema,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -124,6 +132,7 @@ func NewPolicySnapshot(spec SnapshotSpec) (*PolicySnapshot, error) {
 		championActionID: canonical.ChampionActionID,
 		featureSchema:    canonical.FeatureSchema,
 		actions:          canonical.Actions,
+		scoringActions:   scoringActions,
 		verified:         true,
 	}, nil
 }
@@ -209,6 +218,7 @@ func canonicalizeSnapshot(spec SnapshotSpec) (SnapshotSpec, error) {
 				)
 			}
 			example.Features = features
+			example.Utility = canonicalZero(example.Utility)
 			if err := validateSnapshotExample(spec.Scope, *example); err != nil {
 				return SnapshotSpec{}, fmt.Errorf(
 					"adaptive snapshot action %q: %w",
@@ -291,8 +301,24 @@ func validateSnapshotFeatureSchema(schema []SnapshotFeatureDefinition) error {
 		if !finiteInRange(definition.Scale, math.SmallestNonzeroFloat64, maxSnapshotFeatureScale) {
 			return fmt.Errorf("adaptive snapshot feature %q scale is invalid", definition.Key)
 		}
+		if !snapshotNormalizationRangeIsFinite(*definition, registered) {
+			return fmt.Errorf(
+				"adaptive snapshot feature %q normalization range is invalid",
+				definition.Key,
+			)
+		}
 	}
 	return nil
+}
+
+func snapshotNormalizationRangeIsFinite(
+	definition SnapshotFeatureDefinition,
+	registered featureSpec,
+) bool {
+	minimum := (registered.minimum - definition.Center) / definition.Scale
+	maximum := (registered.maximum - definition.Center) / definition.Scale
+	return !math.IsNaN(minimum) && !math.IsInf(minimum, 0) &&
+		!math.IsNaN(maximum) && !math.IsInf(maximum, 0)
 }
 
 func validateSnapshotActionCatalog(spec SnapshotSpec) error {
