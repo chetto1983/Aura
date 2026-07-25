@@ -16,6 +16,8 @@ interface ResolveCall {
   readonly body: unknown;
 }
 
+// Resolve answers 200 + the ResolveDirective (Phase A); 'continue' is the in-session verdict
+// these thread tests exercise.
 function stubResolve(calls: ResolveCall[]) {
   return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
@@ -23,7 +25,14 @@ function stubResolve(calls: ResolveCall[]) {
       url,
       body: init?.body !== undefined ? JSON.parse(init.body as string) : undefined,
     });
-    return Promise.resolve(new Response(null, { status: 204 }));
+    return Promise.resolve(directiveResponse('continue'));
+  });
+}
+
+function directiveResponse(outcome: string, remaining = 0): Response {
+  return new Response(JSON.stringify({ outcome, remaining }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
   });
 }
 

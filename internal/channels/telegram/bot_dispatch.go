@@ -36,6 +36,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/documents"
+	"github.com/chetto1983/aura/internal/runner"
 	tele "gopkg.in/telebot.v4"
 )
 
@@ -91,14 +92,13 @@ func (t *Telegram) registerHandlers(daemonCtx context.Context, bot *tele.Bot) {
 	// The HITL inline buttons all carry Unique == callbackUnique; telebot routes
 	// such callbacks to the handler registered under that button and strips the
 	// \f<unique> prefix, leaving the raw token|action|value payload parseCallback
-	// expects.
+	// expects. This is the SOLE approval endpoint: the scheduler approval-reminder
+	// sweep push (Amendment #92 revised) renders through the same builder, so both
+	// legs resolve their pause through one handler (Phase A consolidation).
 	bot.Handle(&tele.InlineButton{Unique: callbackUnique}, t.onCallback(daemonCtx))
 	bot.Handle(&tele.InlineButton{Unique: searchCallbackUnique}, t.onSearchCallback())
 	bot.Handle(&tele.InlineButton{Unique: statusCancelUnique}, t.onStatusCancelCallback())
 	bot.Handle(&tele.InlineButton{Unique: profileCallbackUnique}, t.onProfileCallback(daemonCtx))
-	// The scheduler approval-reminder push (Amendment #92 revised): its Sì/No buttons resolve the
-	// REAL scheduled_task_approval ask_user pause without driving a continuation turn.
-	bot.Handle(&tele.InlineButton{Unique: schedApprovalUnique}, t.onScheduledApprovalCallback(daemonCtx))
 	// A callback NOT matching the HITL button falls through to OnCallback: ack it so
 	// the client clears the spinner; it carries no live pause to resolve (a forged
 	// or stale callback is a no-op — T-13-10-PauseHijack).
@@ -239,7 +239,13 @@ func (t *Telegram) onCallback(daemonCtx context.Context) tele.HandlerFunc {
 			return nil
 		}
 		chatID := cb.Message.Chat.ID
-		_, action, _, valid := parseCallback(cb.Data)
+		token, action, _, valid := parseCallback(cb.Data)
+		// Dettagli reveals the full question and leaves the pause open — it must not reach
+		// handleCallbackResult's resolve path at all.
+		if valid && action == actionDetails {
+			t.revealApprovalDetails(daemonCtx, c, chatID, token)
+			return nil
+		}
 		// Acknowledge immediately so Telegram clears the button spinner and shows a
 		// small toast before any continuation turn starts rendering.
 		_ = c.Respond(callbackToast(action, valid))
@@ -247,14 +253,63 @@ func (t *Telegram) onCallback(daemonCtx context.Context) tele.HandlerFunc {
 			t.disarmCallbackKeyboard(c.Bot(), cb.Message)
 			t.trackPausePrompt(chatID, nil) // this prompt is now disarmed; drop the tracked handle
 		})
-		if out.submitted && !out.resumed {
-			// Not resumed → either more FIFO pauses remain (render the next one) or it
-			// was a cancel/no-op (PendingFor is empty after the cancel auto-resolve, so
-			// the render no-ops). A resume (resumed==true) drove a continuation turn
-			// whose handleTurn already rendered any further pause — don't double-render.
-			t.promptPendingPause(daemonCtx, t.sender(c), chatID)
+		if !out.submitted {
+			return nil
+		}
+		// Render the runner's verdict — one switch for BOTH legs (in-turn relay and the
+		// scheduler sweep push), which is the whole point of the consolidation.
+		switch out.outcome {
+		case runner.OutcomeApproved, runner.OutcomeRejected:
+			// The scheduled-task ResumeHook already activated/cancelled the task and no turn
+			// runs, so without this edit the press leaves only a transient toast — it reads as
+			// "nothing happened" (fix-plan 1.7 defect E).
+			t.editApprovalOutcome(c.Bot(), cb.Message, out.outcome)
+		case runner.OutcomePending:
+			t.promptPendingPause(daemonCtx, t.sender(c), chatID) // more FIFO pauses: render the next
+		case runner.OutcomeContinue, runner.OutcomeTerminated:
+			// Continue drove a continuation turn whose handleTurn renders any further pause
+			// (double-rendering it here would duplicate the prompt); Terminated was auto-resolved
+			// by the Runner and has nothing left to show.
 		}
 		return nil
+	}
+}
+
+// revealApprovalDetails answers a Dettagli tap by editing the prompt to the pause's full bounded
+// question with the keyboard left armed, so the operator reads first and decides after. It is a
+// pure render over the pending read the channel already performs — no new data source, and the
+// question is the server-sanitized one. A stale token (pause already resolved) leaves the message
+// untouched rather than blanking it.
+func (t *Telegram) revealApprovalDetails(ctx context.Context, c tele.Context, chatID int64, token string) {
+	_ = c.Respond(&tele.CallbackResponse{Text: "Dettagli"})
+	cb := c.Callback()
+	if cb == nil || cb.Message == nil || c.Bot() == nil {
+		return
+	}
+	question := t.hitlFor(c, chatID).questionFor(ctx, convID(chatID), token)
+	if question == "" {
+		return
+	}
+	if _, err := c.Bot().Edit(cb.Message, question, approvalMarkup(token)); err != nil {
+		slog.Warn("telegram approval: details reveal failed", "err", err)
+	}
+}
+
+// editApprovalOutcome replaces a resolved approval prompt with its outcome and clears the inline
+// keyboard in one edit. The copy is channel-owned Italian: the runner emits a semantic code only
+// (it is not locale-aware). Best-effort — on failure it still disarms the keyboard so a resolved
+// prompt is never left tappable.
+func (t *Telegram) editApprovalOutcome(bot tele.API, msg *tele.Message, outcome runner.ResolveOutcome) {
+	if bot == nil || msg == nil {
+		return
+	}
+	text := "✅ Task pianificato approvato — è attivo e partirà all'orario previsto."
+	if outcome == runner.OutcomeRejected {
+		text = "❌ Task pianificato rifiutato — annullato."
+	}
+	if _, err := bot.Edit(msg, text, &tele.ReplyMarkup{}); err != nil {
+		slog.Warn("telegram approval: outcome edit failed", "err", err)
+		t.disarmCallbackKeyboard(bot, msg)
 	}
 }
 

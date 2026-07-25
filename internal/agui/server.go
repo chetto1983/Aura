@@ -74,6 +74,11 @@ type ServerConfig struct {
 type Runner interface {
 	Turn(ctx context.Context, convID string, userMsg *string) iter.Seq2[*agent.Event, error]
 	SubmitAnswers(ctx context.Context, answers map[string]runner.ResponseInput) (int, error)
+	// SubmitAnswer resolves ONE pause and returns the runner's ResolveDirective — the
+	// continue-vs-outcome decision the approval center renders instead of re-deriving it
+	// client-side (Phase A: one resolver, transports only render). SubmitAnswers stays for the
+	// protocol-native Resume[] path, which resolves a whole map at once and needs no directive.
+	SubmitAnswer(ctx context.Context, token string, resp runner.ResponseInput) (runner.ResolveDirective, error)
 	NewConversation(ctx context.Context) (string, error)
 	// TurnBranch is the D-09 / CHAT-05 re-run-from-a-point: it drives a fresh agent
 	// round over the SELECTED branch path (leafSeq) with no fresh user message — the

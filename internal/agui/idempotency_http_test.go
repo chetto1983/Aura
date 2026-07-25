@@ -225,7 +225,9 @@ func TestApprovalResolveForwardsOriginalOperationContext(t *testing.T) {
 
 	rr := httptest.NewRecorder()
 	s.handleResolveApproval(rr, r)
-	if rr.Code != http.StatusNoContent {
+	// 200 (was 204): the Phase A resolve returns the ResolveDirective. The operation-context
+	// forwarding this test pins is untouched by that projection.
+	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, body=%q", rr.Code, rr.Body.String())
 	}
 	got, ok := idempotency.OperationFromContext(run.submitAnswersCtx)

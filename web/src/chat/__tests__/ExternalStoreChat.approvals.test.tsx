@@ -82,7 +82,16 @@ function approvalsFetch(
       const body = JSON.parse(init?.body as string) as { action: string };
       pending =
         body.action === 'cancel' ? [] : pending.filter((approval) => approval.token !== token);
-      return Promise.resolve(new Response(null, { status: 204 }));
+      // Mirror the server's classifyResolve (Phase A): cancel terminates, a still-pending FIFO
+      // pends, an emptied queue continues — so the gate re-drives exactly where the real one does.
+      const outcome =
+        body.action === 'cancel' ? 'terminated' : pending.length > 0 ? 'pending' : 'continue';
+      return Promise.resolve(
+        new Response(JSON.stringify({ outcome, remaining: pending.length }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
     }
     if (url === '/agent/run' && method === 'POST') {
       runRequests.push(init ?? {});

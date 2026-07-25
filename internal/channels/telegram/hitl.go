@@ -47,6 +47,13 @@ const callbackSep = "|"
 
 const callbackDataMaxBytes = 64
 
+// callbackTelebotFrameBytes is telebot's per-button on-wire overhead beyond Data: the leading
+// "\f" (1) + Unique + the "|" (1) joining Unique to Data (processButtons, options.go). Telegram
+// caps the FRAMED payload at 64 bytes, so the budget must be checked with the framing included —
+// checking Data alone is exactly what shipped BUTTON_DATA_INVALID(400) on the 19-char
+// scheduled-approval endpoint this callback absorbed (fix-plan 1.7 defect B).
+const callbackTelebotFrameBytes = len("\f") + len(callbackUnique) + len(callbackSep)
+
 // hitl renders ask_user pauses and resolves them through the Runner.
 type hitl struct {
 	runner resumeRunner
@@ -58,6 +65,9 @@ type callbackOutcome struct {
 	content   string
 	submitted bool
 	resumed   bool
+	// outcome is the runner's ResolveDirective verdict — the channel renders it, it never
+	// re-derives it (Phase A: one resolver, transports only render).
+	outcome runner.ResolveOutcome
 }
 
 // newHitl builds the HITL surface over the Runner pause backend + the resume
@@ -123,6 +133,10 @@ func (h *hitl) handleCallbackResult(
 		return callbackOutcome{}
 	}
 	out := callbackOutcome{action: action}
+	// Dettagli only reveals; resolving here would answer a pause the operator has not decided on.
+	if action == actionDetails {
+		return out
+	}
 	if action == askuser.ActionAccept {
 		value = h.resolveChoiceValue(ctx, convID, token, value)
 	}
@@ -133,15 +147,18 @@ func (h *hitl) handleCallbackResult(
 		return out
 	}
 	out.submitted = true
+	out.outcome = directive.Outcome
 	if afterSubmit != nil {
 		afterSubmit(out)
 	}
-	if action == askuser.ActionCancel || directive.Remaining > 0 {
+	// A continuation turn is driven ONLY for OutcomeContinue. Terminated (cancel — the Runner
+	// already injected the terminating answers), Pending (more FIFO pauses first), Approved and
+	// Rejected (the scheduled-task ResumeHook already activated/cancelled the task; there is no
+	// live turn to continue) are rendered by the caller instead.
+	if directive.Outcome != runner.OutcomeContinue || h.resume == nil {
 		return out
 	}
-	if h.resume != nil {
-		h.resume(ctx, convID)
-	}
+	h.resume(ctx, convID)
 	out.resumed = true
 	return out
 }
@@ -173,6 +190,22 @@ func (h *hitl) resolveChoiceValue(ctx context.Context, convID, token, value stri
 	return value
 }
 
+// questionFor returns the bounded question of the pause a token addresses, or "" when that pause
+// is gone (already resolved / stale button). The text is the server-sanitized one the Runner
+// stored — the channel reveals it, it never composes detail of its own.
+func (h *hitl) questionFor(ctx context.Context, convID, token string) string {
+	pending, err := h.runner.PendingFor(ctx, convID)
+	if err != nil {
+		return ""
+	}
+	for _, p := range pending {
+		if p.Token == token {
+			return p.Question
+		}
+	}
+	return ""
+}
+
 // handleTextReply resolves a free-text ForceReply answer: it reads the first
 // pending pause and, when there is one, submits the text as an accept answer. It
 // returns whether a resume was driven. With no pending pause it is a no-op
@@ -185,27 +218,21 @@ func (h *hitl) handleTextReply(ctx context.Context, convID, text string) (resume
 	return h.submit(ctx, convID, pending[0].Token, askuser.ActionAccept, text)
 }
 
-// submit resolves ONE pause via the Runner (the sole paused_states writer) and
-// drives a resume Turn when remaining==0 and the action was not a cancel. A submit
-// error is returned (not just logged) so the channel can tell the user their answer
-// did not register — the pause stays open, so silent swallowing would strand them.
+// submit resolves ONE pause via the Runner (the sole paused_states writer) and drives a resume
+// Turn only when the directive says Continue — the SAME rule handleCallbackResult applies, so a
+// scheduled approval answered by ForceReply text behaves exactly like one answered by button. A
+// submit error is returned (not just logged) so the channel can tell the user their answer did
+// not register — the pause stays open, so silent swallowing would strand them.
 func (h *hitl) submit(ctx context.Context, convID, token, action, content string) (resumed bool, err error) {
 	directive, err := h.runner.SubmitAnswer(ctx, token, runner.ResponseInput{Action: action, Content: content})
 	if err != nil {
 		slog.Warn("telegram hitl: submit answer failed", "conv", convID, "err", err)
 		return false, err
 	}
-	// A cancel terminates the turn (the Runner injected the terminating answers and
-	// auto-resolved) — never drive a continuation Turn.
-	if action == askuser.ActionCancel {
+	if directive.Outcome != runner.OutcomeContinue || h.resume == nil {
 		return false, nil
 	}
-	if directive.Remaining > 0 {
-		return false, nil // more pauses to answer first (FIFO)
-	}
-	if h.resume != nil {
-		h.resume(ctx, convID)
-	}
+	h.resume(ctx, convID)
 	return true, nil
 }
 
@@ -218,24 +245,27 @@ func (h *hitl) cancel(ctx context.Context, convID, token string) (resumed bool, 
 	return h.submit(ctx, convID, token, askuser.ActionCancel, "")
 }
 
-// resolveScheduled resolves a scheduled_task_approval pause by the operator's on-channel action
-// WITHOUT driving a continuation turn: an operator-origin scheduled approval has no live turn to
-// continue, and the scheduled-task ResumeHook (accept→activate, decline→cancel) fires inside
-// SubmitAnswer. action MUST be askuser.ActionAccept or ActionDecline — never ActionCancel, which
-// SubmitAnswer routes to cancelConversation and would abort the whole origin conversation.
-func (h *hitl) resolveScheduled(ctx context.Context, token, action string) error {
-	directive, err := h.runner.SubmitAnswer(ctx, token, runner.ResponseInput{Action: action})
-	_ = directive
-	return err
-}
+// actionDetails is a channel-local action carried in callback_data that reveals the pause's full
+// bounded question. It is NOT an askuser action: it never reaches SubmitAnswer and never resolves
+// the pause — the keyboard stays armed so the operator reads, then decides.
+const actionDetails = "details"
 
-// approvalMarkup builds the accept/decline InlineKeyboard for an approval pause.
+// approvalMarkup builds the approval InlineKeyboard: Approva/Rifiuta on the first row, a
+// non-resolving Dettagli on the second. It serves BOTH legs of the approval surface — the in-turn
+// relay (hitl.prompt) and the scheduler approval-reminder sweep push (DeliverApproval) — one
+// builder, one callback endpoint, so a rendering fix can no longer land on one leg and miss the
+// other (Phase A consolidation).
 func approvalMarkup(token string) *tele.ReplyMarkup {
 	mk := &tele.ReplyMarkup{}
-	mk.InlineKeyboard = [][]tele.InlineButton{{
-		{Unique: callbackUnique, Text: "Sì", Data: callbackData(token, askuser.ActionAccept, "yes")},
-		{Unique: callbackUnique, Text: "No", Data: callbackData(token, askuser.ActionDecline, "")},
-	}}
+	mk.InlineKeyboard = [][]tele.InlineButton{
+		{
+			{Unique: callbackUnique, Text: "Approva", Data: callbackData(token, askuser.ActionAccept, "yes")},
+			{Unique: callbackUnique, Text: "Rifiuta", Data: callbackData(token, askuser.ActionDecline, "")},
+		},
+		{
+			{Unique: callbackUnique, Text: "Dettagli", Data: callbackData(token, actionDetails, "")},
+		},
+	}
 	return mk
 }
 
@@ -281,13 +311,16 @@ func decodeOptions(raw []byte) []pauseOption {
 	return opts
 }
 
-// callbackData encodes token|action|value into an inline-button payload. The value
-// is kept compact (an option value or a short marker), well under Telegram's
-// 64-byte callback_data ceiling.
+// callbackData encodes token|action|value into an inline-button payload, guarding the FULL
+// on-wire size (framing included — see callbackTelebotFrameBytes). The value is kept compact
+// (an option INDEX or a short marker), so the budget holds for a 36-char UUID token. The panic
+// is a programming-invariant guard asserted by the markup tests: it can never fire in
+// production and exists so lengthening the endpoint name or an action fails loudly in tests
+// instead of silently at send time with a 400.
 func callbackData(token, action, value string) string {
 	data := strings.Join([]string{token, action, value}, callbackSep)
-	if len(data) > callbackDataMaxBytes {
-		panic("telegram callback_data exceeds 64 bytes")
+	if callbackTelebotFrameBytes+len(data) > callbackDataMaxBytes {
+		panic("telegram callback_data exceeds Telegram's 64-byte on-wire cap")
 	}
 	return data
 }

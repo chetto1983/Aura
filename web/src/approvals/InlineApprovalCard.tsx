@@ -3,7 +3,12 @@ import { useTranslation } from 'react-i18next';
 import { ariaInvalid } from '../a11y/aria';
 import { isTerminal, parseOptions } from './approvalState';
 import type { ApprovalResolution, ApprovalResolutionAttempt } from './useThreadApprovals';
-import { useResolveApproval, type Approval, type ResolveAction } from './useApprovals';
+import {
+  useResolveApproval,
+  type Approval,
+  type ResolveAction,
+  type ResolveOutcome,
+} from './useApprovals';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -17,6 +22,25 @@ import { Textarea } from '@/components/ui/textarea';
 // token never appears as a dedicated visible field.
 
 type CardState = 'pending' | 'answered' | 'declined' | 'cancelled';
+
+/**
+ * cardStateFor maps the server's verdict to the terminal chip. The server is authoritative — a
+ * scheduled gate reports approved/rejected regardless of which button produced it — and the
+ * action is only the fallback for the in-session verdicts ('continue'/'pending'), where the chip
+ * reflects what the operator just did while the turn goes on.
+ */
+function cardStateFor(outcome: ResolveOutcome, action: ResolveAction): CardState {
+  switch (outcome) {
+    case 'approved':
+      return 'answered';
+    case 'rejected':
+      return 'declined';
+    case 'terminated':
+      return 'cancelled';
+    default:
+      return action === 'accept' ? 'answered' : action === 'decline' ? 'declined' : 'cancelled';
+  }
+}
 
 export interface InlineApprovalCardProps {
   readonly approval: Approval;
@@ -80,11 +104,11 @@ export function InlineApprovalCard({
         ? { token: approval.token, action, content: content ?? '' }
         : { token: approval.token, action },
       {
-        onSuccess: () => {
-          setState(
-            action === 'accept' ? 'answered' : action === 'decline' ? 'declined' : 'cancelled',
-          );
-          void onResolved?.(attempt);
+        onSuccess: (directive) => {
+          setState(cardStateFor(directive.outcome, action));
+          // The verdict rides along so the thread gate re-drives the turn only when the model
+          // actually has more work ('continue'); a scheduled gate is already complete.
+          void onResolved?.({ ...attempt, outcome: directive.outcome });
         },
         onError: () => {
           void onResolutionFailed?.(attempt);

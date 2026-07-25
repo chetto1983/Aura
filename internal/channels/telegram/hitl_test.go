@@ -23,8 +23,9 @@ type fakeResume struct {
 
 	pending    []askuser.Pending
 	submitted  []submitCall
-	remaining  int // returned by SubmitAnswer
-	resumes    int // Turn(convID,nil) drives
+	remaining  int                   // returned by SubmitAnswer
+	outcome    runner.ResolveOutcome // scripted verdict when neither cancel nor remaining applies
+	resumes    int                   // Turn(convID,nil) drives
 	submitErr  error
 	pendingErr error
 
@@ -56,7 +57,22 @@ func (f *fakeResume) SubmitAnswer(_ context.Context, token string, resp runner.R
 	if f.clearPendingOnSubmit {
 		f.pending = nil
 	}
-	return runner.ResolveDirective{Remaining: f.remaining}, nil
+	return f.directiveFor(resp.Action), nil
+}
+
+// directiveFor mirrors runner.classifyResolve's precedence (cancel → Terminated; remaining>0 →
+// Pending; else the scripted outcome, default Continue). The double MUST be faithful here: the
+// channel now decides whether to resume from the directive alone, so a double that returned a
+// directive the real runner never emits would test a contract that does not exist.
+func (f *fakeResume) directiveFor(action string) runner.ResolveDirective {
+	switch {
+	case action == askuser.ActionCancel:
+		return runner.ResolveDirective{Outcome: runner.OutcomeTerminated}
+	case f.remaining > 0:
+		return runner.ResolveDirective{Outcome: runner.OutcomePending, Remaining: f.remaining}
+	default:
+		return runner.ResolveDirective{Outcome: f.outcome}
+	}
 }
 
 func (f *fakeResume) resumeTurn(_ context.Context, _ string) {
@@ -136,6 +152,67 @@ func (b *hitlBot) recorded() []hitlSend {
 	out := make([]hitlSend, len(b.sends))
 	copy(out, b.sends)
 	return out
+}
+
+// TestApprovalMarkupMultiRow pins the enriched native approval: Approva/Rifiuta on row 1, a
+// non-resolving Dettagli on row 2, and every button within Telegram's 64-byte on-wire budget
+// (framing included) for a real 36-char UUID token.
+func TestApprovalMarkupMultiRow(t *testing.T) {
+	t.Parallel()
+	const token = "11112222-3333-4444-5555-666677778888"
+	mk := approvalMarkup(token)
+	if len(mk.InlineKeyboard) != 2 {
+		t.Fatalf("want 2 rows (Approva/Rifiuta, Dettagli), got %d", len(mk.InlineKeyboard))
+	}
+	if len(mk.InlineKeyboard[0]) != 2 || len(mk.InlineKeyboard[1]) != 1 {
+		t.Fatalf("unexpected keyboard shape: %+v", mk.InlineKeyboard)
+	}
+	if got := mk.InlineKeyboard[1][0].Text; got != "Dettagli" {
+		t.Errorf("row 2 button = %q, want Dettagli", got)
+	}
+	for _, row := range mk.InlineKeyboard {
+		for _, b := range row {
+			if !strings.Contains(b.Data, token) {
+				t.Errorf("button %q must carry the pause token, data=%q", b.Text, b.Data)
+			}
+			if wire := len("\f") + len(b.Unique) + len(callbackSep) + len(b.Data); wire > callbackDataMaxBytes {
+				t.Errorf("button %q on-wire %d > %d", b.Text, wire, callbackDataMaxBytes)
+			}
+		}
+	}
+}
+
+// TestDetailsCallbackIsNonResolving proves a Dettagli tap never answers the pause: it only
+// reveals. Resolving on a reveal would decide for the operator.
+func TestDetailsCallbackIsNonResolving(t *testing.T) {
+	t.Parallel()
+	rs := &fakeResume{}
+	h := newHitl(rs, rs.resumeTurn)
+
+	out := h.handleCallbackResult(context.Background(), callbackData("tok-1", actionDetails, ""), "conv-1", nil)
+	if len(rs.calls()) != 0 {
+		t.Errorf("details must not reach SubmitAnswer, got %+v", rs.calls())
+	}
+	if out.submitted || out.resumed || rs.resumes != 0 {
+		t.Errorf("details must neither resolve nor resume, got %+v (resumes=%d)", out, rs.resumes)
+	}
+}
+
+// TestQuestionForMatchesToken proves the reveal reads the pause's own server-sanitized question
+// and returns "" for a stale token, so a resolved prompt is never blanked.
+func TestQuestionForMatchesToken(t *testing.T) {
+	t.Parallel()
+	rs := &fakeResume{pending: []askuser.Pending{
+		{Token: "tok-1", Kind: "approval", Question: "Attivo il job giornaliero delle 7:00?"},
+	}}
+	h := newHitl(rs, rs.resumeTurn)
+
+	if got := h.questionFor(context.Background(), "conv-1", "tok-1"); got != "Attivo il job giornaliero delle 7:00?" {
+		t.Errorf("questionFor = %q", got)
+	}
+	if got := h.questionFor(context.Background(), "conv-1", "stale"); got != "" {
+		t.Errorf("stale token must yield \"\", got %q", got)
+	}
 }
 
 // TestHITLChoiceRendersInlineKeyboard: a pause WITH options renders an
@@ -242,6 +319,40 @@ func TestHITLCallbackResumesWhenRemainingZero(t *testing.T) {
 	}
 	if rs.resumes != 1 {
 		t.Errorf("resume drives = %d, want 1", rs.resumes)
+	}
+}
+
+// TestHITLCallbackScheduledApprovalRendersOutcomeWithoutResume is the Phase A behavioral pin:
+// a scheduled_task_approval resolves to a deterministic Approved/Rejected verdict, and the
+// channel must NOT drive a continuation turn for it — the ResumeHook activating the task IS the
+// whole intent, and resuming is what made the agent re-schedule in a loop (fix-plan 1.7 defect A).
+func TestHITLCallbackScheduledApprovalRendersOutcomeWithoutResume(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		action  string
+		outcome runner.ResolveOutcome
+	}{
+		{"approve", askuser.ActionAccept, runner.OutcomeApproved},
+		{"reject", askuser.ActionDecline, runner.OutcomeRejected},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			rs := &fakeResume{outcome: tc.outcome}
+			h := newHitl(rs, rs.resumeTurn)
+
+			out := h.handleCallbackResult(context.Background(),
+				callbackData("tok-1", tc.action, ""), "conv-1", nil)
+			if !out.submitted {
+				t.Fatal("the pause must still be submitted through the Runner")
+			}
+			if out.outcome != tc.outcome {
+				t.Errorf("outcome = %v, want %v", out.outcome, tc.outcome)
+			}
+			if out.resumed || rs.resumes != 0 {
+				t.Errorf("a scheduled approval must NOT drive a continuation turn (resumes=%d)", rs.resumes)
+			}
+		})
 	}
 }
 
