@@ -12,11 +12,18 @@
 
 ## Progress checkpoint — 2026-07-25
 
-**Current approved head:** `45b845652` (approved immutable `CohortStore` and
-atomic focal claim/assignment)
+**Current approved head:** `f7691f529` (approved server-owned record time and
+explicit backdate proof)
 
 **Current review candidates:**
 
+- Migration `0074_adaptive_outbox_record_time` is implemented atomically in
+  `a037d347a` with explicit backdate proof in `f7691f529`. RED source and
+  reversible negative-trigger proofs, disposable-DB normal/race
+  `73 -> 74 -> 73 -> 74`, historical `NULL`, caller-time overwrite, function
+  security, column privilege plus trigger immutability, operational update,
+  package normal/race, vet/build/lint/diff/file-size gates are GREEN. Mandatory
+  spec and quality reviews are both `APPROVE`.
 - Commits `eb7b947f7` and `4ec56df83` contain the versioned canonical
   focal-cohort artifact and its fail-closed identity-integrity repair. The
   initial fresh spec review approved; quality review found that package-local
@@ -53,6 +60,12 @@ atomic focal claim/assignment)
   schema-2 Assignment in the same transaction. Exact retries do not redraw;
   callback/validation/write failures roll back; orphan assignments and slot
   losers fail closed. Final spec and adversarial quality reviews returned
+  `APPROVE`.
+- PRD Amendment #93.6 is complete in `5ad5cd0f9`. It freezes server-owned
+  record time, an explicit pre-cutoff `open` result, a closed pre-cutoff view,
+  claim/Assignment bijection, one primary observation root, deterministic
+  censoring, and a ledger hash that excludes late diagnostics. Three
+  adversarial review rounds closed six concrete ambiguities and ended
   `APPROVE`.
 
 - The schema-2 Assignment/Delivery Go contract is complete through
@@ -132,7 +145,7 @@ atomic focal claim/assignment)
 - Ledger-only reconstruction, exact statistical inference, sealed evidence,
   runtime adapters, Agent Memory integration, legacy `CanaryBatch`/Wilson
   removal, real-model benchmarks, final quality gate, and push remain Task 2
-  work. The current migration head is `0073`.
+  work. The current migration head is `0074`.
 - Do not replay unchanged remote CI. Resume with the ledger-only cohort loader
   and deterministic correction reconstruction under TDD.
 
@@ -154,6 +167,11 @@ atomic focal claim/assignment)
   normal/race, owner-conversation and cross-cohort races, package normal/race,
   vet/build/lint/diff/file-size gates GREEN; final spec and quality reviews
   `APPROVE`.
+- [x] Bitemporal cutoff and reconstruction contract — PRD Amendment #93.6 in
+  `5ad5cd0f9`; adversarial review `APPROVE`.
+- [x] Migration `0074` server-owned immutable `adaptive_outbox.recorded_at` —
+  implemented in `a037d347a`/`f7691f529`; mandatory spec review `APPROVE`,
+  quality review `APPROVE`.
 - [ ] Ledger-only cohort loader and deterministic correction reconstruction.
 - [ ] Exact blocked randomization inference and sealed admission/outcome
   evidence.
@@ -325,7 +343,7 @@ go build ./...
 - Delete: `internal/adaptive/promotion.go`
 - Delete: `internal/adaptive/promotion_test.go`
 - Create: next free PostgreSQL migration after rechecking disk head; current
-  head is `0073`
+  head is `0074`
 - Modify: `internal/db/queries/adaptive_policy.sql`
 - Add: focused DB integration tests
 
