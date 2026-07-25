@@ -72,25 +72,44 @@ func NewStore(pool *pgxpool.Pool, cfg StoreConfig) *Store {
 // A transaction-scoped advisory lock serializes retries for the same event UUID,
 // preventing an idempotent race from consuming an aggregate sequence number.
 func (s *Store) Record(ctx context.Context, event Event) (int64, error) {
-	if s == nil || s.pool == nil {
-		return 0, errors.New("adaptive store requires a database pool")
+	if err := rejectGenericSchema2Event(event); err != nil {
+		return 0, err
 	}
-	var sequence int64
-	err := db.WithIdentityTx(ctx, s.pool, event.OwnerID.String(), func(q *sqlc.Queries) error {
-		var err error
-		sequence, _, err = s.RecordTx(ctx, q, event)
-		return err
-	})
+	sequence, err := s.recordValidated(ctx, event)
 	if err != nil {
 		return 0, fmt.Errorf("record adaptive event %s: %w", event.ID, err)
 	}
 	return sequence, nil
 }
 
+func (s *Store) recordValidated(ctx context.Context, event Event) (int64, error) {
+	if s == nil || s.pool == nil {
+		return 0, errors.New("adaptive store requires a database pool")
+	}
+	var sequence int64
+	err := db.WithIdentityTx(ctx, s.pool, event.OwnerID.String(), func(q *sqlc.Queries) error {
+		var err error
+		sequence, _, err = s.recordValidatedTx(ctx, q, event)
+		return err
+	})
+	return sequence, err
+}
+
 // RecordTx is Record's transaction-inner form. duplicate is true only for an
 // exact idempotent replay; callers that atomically pair an event with another
 // write should skip that companion write on duplicate.
 func (s *Store) RecordTx(ctx context.Context, q *sqlc.Queries, event Event) (sequence int64, duplicate bool, err error) {
+	if err := rejectGenericSchema2Event(event); err != nil {
+		return 0, false, err
+	}
+	return s.recordValidatedTx(ctx, q, event)
+}
+
+func (s *Store) recordValidatedTx(
+	ctx context.Context,
+	q *sqlc.Queries,
+	event Event,
+) (sequence int64, duplicate bool, err error) {
 	tombstoned, err := q.AdaptiveIdentityTombstoned(ctx, dbUUID(event.OwnerID))
 	if err != nil {
 		return 0, false, fmt.Errorf("check adaptive owner tombstone: %w", err)
