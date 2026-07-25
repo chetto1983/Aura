@@ -91,14 +91,13 @@ func (t *Telegram) registerHandlers(daemonCtx context.Context, bot *tele.Bot) {
 	// The HITL inline buttons all carry Unique == callbackUnique; telebot routes
 	// such callbacks to the handler registered under that button and strips the
 	// \f<unique> prefix, leaving the raw token|action|value payload parseCallback
-	// expects.
+	// expects. This is the SOLE approval endpoint: the scheduler approval-reminder
+	// sweep push (Amendment #92 revised) renders through the same builder, so both
+	// legs resolve their pause through one handler (Phase A consolidation).
 	bot.Handle(&tele.InlineButton{Unique: callbackUnique}, t.onCallback(daemonCtx))
 	bot.Handle(&tele.InlineButton{Unique: searchCallbackUnique}, t.onSearchCallback())
 	bot.Handle(&tele.InlineButton{Unique: statusCancelUnique}, t.onStatusCancelCallback())
 	bot.Handle(&tele.InlineButton{Unique: profileCallbackUnique}, t.onProfileCallback(daemonCtx))
-	// The scheduler approval-reminder push (Amendment #92 revised): its Sì/No buttons resolve the
-	// REAL scheduled_task_approval ask_user pause without driving a continuation turn.
-	bot.Handle(&tele.InlineButton{Unique: schedApprovalUnique}, t.onScheduledApprovalCallback(daemonCtx))
 	// A callback NOT matching the HITL button falls through to OnCallback: ack it so
 	// the client clears the spinner; it carries no live pause to resolve (a forged
 	// or stale callback is a no-op — T-13-10-PauseHijack).

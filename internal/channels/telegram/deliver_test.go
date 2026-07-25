@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
 	tele "gopkg.in/telebot.v4"
+
+	"github.com/chetto1983/aura/internal/askuser"
 )
 
 // sendRecorder is a botSender double recording every (recipient, text) Send so the
@@ -21,19 +24,37 @@ type sendRecorder struct {
 }
 
 type recordedSend struct {
-	to   tele.Recipient
-	text string
+	to     tele.Recipient
+	text   string
+	markup *tele.ReplyMarkup // nil unless the send carried SendOptions (approval keyboard)
 }
 
-func (b *sendRecorder) Send(to tele.Recipient, what any, _ ...any) (*tele.Message, error) {
+func (b *sendRecorder) Send(to tele.Recipient, what any, opts ...any) (*tele.Message, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.sendErr != nil {
 		return nil, b.sendErr
 	}
 	text, _ := what.(string)
-	b.sends = append(b.sends, recordedSend{to: to, text: text})
+	b.sends = append(b.sends, recordedSend{to: to, text: text, markup: replyMarkupFrom(opts)})
 	return &tele.Message{ID: len(b.sends)}, nil
+}
+
+// replyMarkupFrom digs the ReplyMarkup out of a telebot variadic send option so the approval
+// tests can assert on the RENDERED keyboard — the callback endpoint and its on-wire size are
+// only observable there (a wrong Unique 400s at Telegram, never locally).
+func replyMarkupFrom(opts []any) *tele.ReplyMarkup {
+	for _, o := range opts {
+		switch v := o.(type) {
+		case *tele.SendOptions:
+			if v != nil {
+				return v.ReplyMarkup
+			}
+		case *tele.ReplyMarkup:
+			return v
+		}
+	}
+	return nil
 }
 
 func (b *sendRecorder) Edit(_ tele.Editable, _ any, _ ...any) (*tele.Message, error) {
@@ -191,6 +212,111 @@ func TestDeliver(t *testing.T) {
 		}
 		if res.callCount() != 0 {
 			t.Errorf("resolver calls = %d, want 0 (nil bot must short-circuit before the lookup)", res.callCount())
+		}
+	})
+}
+
+// TestDeliverApprovalUsesUnifiedCallback is the Phase A consolidation pin: the sweep push must
+// render through the SAME endpoint as the in-turn relay (callbackUnique), not a second one, and
+// the button must fit Telegram's 64-byte cap WITH telebot's "\f<Unique>|" framing — the exact
+// budget the deleted 19-char aura_sched_approval endpoint blew (BUTTON_DATA_INVALID, fix-plan 1.7).
+func TestDeliverApprovalUsesUnifiedCallback(t *testing.T) {
+	t.Parallel()
+	const validUUID = "11111111-1111-1111-1111-111111111111"
+	const token = "22222222-2222-2222-2222-222222222222" // a real 36-char UUID length
+
+	bot := &sendRecorder{}
+	res := &stubResolver{acct: Account{TelegramUserID: 4242, IdentityID: validUUID}}
+	tg := NewChannel(Deps{Offline: true})
+	tg.deliverBot = bot
+	tg.deliverResolver = res
+
+	ok, err := tg.DeliverApproval(context.Background(), validUUID, token, "task-abcdef12345", "agent_job")
+	if err != nil || !ok {
+		t.Fatalf("DeliverApproval = (%v,%v), want (true,nil)", ok, err)
+	}
+	sends := bot.recorded()
+	if len(sends) != 1 || sends[0].markup == nil {
+		t.Fatalf("want 1 send carrying a keyboard, got %+v", sends)
+	}
+	kb := sends[0].markup.InlineKeyboard
+	if len(kb) != 1 || len(kb[0]) != 2 {
+		t.Fatalf("want one row of two buttons, got %v", kb)
+	}
+	for _, b := range kb[0] {
+		if b.Unique != callbackUnique {
+			t.Errorf("button Unique = %q, want the unified %q", b.Unique, callbackUnique)
+		}
+		if wire := len("\f") + len(b.Unique) + len(callbackSep) + len(b.Data); wire > callbackDataMaxBytes {
+			t.Errorf("on-wire callback_data = %d bytes > %d (\\f%s|%s)", wire, callbackDataMaxBytes, b.Unique, b.Data)
+		}
+	}
+	if kb[0][0].Data != callbackData(token, askuser.ActionAccept, "yes") {
+		t.Errorf("accept button data = %q", kb[0][0].Data)
+	}
+	if kb[0][1].Data != callbackData(token, askuser.ActionDecline, "") {
+		t.Errorf("decline button data = %q", kb[0][1].Data)
+	}
+}
+
+// TestDeliverApprovalTriState pins the ApprovalDeliverer contract (moved here from the deleted
+// scheduled_approval_test.go — DeliverApproval itself survives the consolidation): bounded copy,
+// (false,nil) for a foreign identity so the WebUI leg pulls it instead, (false,err) on a send fail.
+func TestDeliverApprovalTriState(t *testing.T) {
+	const validUUID = "11111111-1111-1111-1111-111111111111"
+
+	t.Run("delivered sends bounded prompt to resolved chat", func(t *testing.T) {
+		t.Parallel()
+		bot := &sendRecorder{}
+		res := &stubResolver{acct: Account{TelegramUserID: 4242, IdentityID: validUUID}}
+		tg := NewChannel(Deps{Offline: true})
+		tg.deliverBot = bot
+		tg.deliverResolver = res
+
+		ok, err := tg.DeliverApproval(context.Background(), validUUID, "tok-9", "task-abcdef12345", "agent_job")
+		if err != nil || !ok {
+			t.Fatalf("DeliverApproval = (%v,%v), want (true,nil)", ok, err)
+		}
+		sends := bot.recorded()
+		if len(sends) != 1 || sends[0].to != tele.ChatID(4242) {
+			t.Fatalf("want 1 send to ChatID(4242), got %v", sends)
+		}
+		if !strings.Contains(sends[0].text, "agent_job") || !strings.Contains(sends[0].text, "task-abc") {
+			t.Errorf("prompt = %q, want kind + short id", sends[0].text)
+		}
+		if strings.Contains(sends[0].text, "task-abcdef12345") {
+			t.Errorf("prompt must NOT carry the full task id / payload: %q", sends[0].text)
+		}
+	})
+
+	t.Run("not my user returns false,nil (WebUI pulls)", func(t *testing.T) {
+		t.Parallel()
+		bot := &sendRecorder{}
+		res := &stubResolver{err: fmt.Errorf("resolve: %w", pgx.ErrNoRows)}
+		tg := NewChannel(Deps{Offline: true})
+		tg.deliverBot = bot
+		tg.deliverResolver = res
+
+		ok, err := tg.DeliverApproval(context.Background(), validUUID, "tok", "task", "agent_job")
+		if ok || err != nil {
+			t.Fatalf("want (false,nil), got (%v,%v)", ok, err)
+		}
+		if len(bot.recorded()) != 0 {
+			t.Errorf("no account → no send")
+		}
+	})
+
+	t.Run("send failure is owns-but-failed", func(t *testing.T) {
+		t.Parallel()
+		bot := &sendRecorder{sendErr: errors.New("net down")}
+		res := &stubResolver{acct: Account{TelegramUserID: 7, IdentityID: validUUID}}
+		tg := NewChannel(Deps{Offline: true})
+		tg.deliverBot = bot
+		tg.deliverResolver = res
+
+		ok, err := tg.DeliverApproval(context.Background(), validUUID, "tok", "task", "agent_job")
+		if ok || err == nil {
+			t.Fatalf("want (false, err), got (%v,%v)", ok, err)
 		}
 	})
 }

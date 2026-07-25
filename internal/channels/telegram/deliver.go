@@ -67,10 +67,11 @@ func (t *Telegram) Deliver(ctx context.Context, identityID, text string) (bool, 
 // DeliverApproval renders an ACTIONABLE scheduled-task approval prompt to the 1:1 Telegram chat
 // owned by identityID, satisfying channels.ApprovalDeliverer (Amendment #92 revised): a bounded
 // question (task kind + short id, never the payload) + an inline Sì/No keyboard bound to the
-// pause token. Pressing a button resolves the REAL ask_user pause (onScheduledApprovalCallback →
-// SubmitAnswer → the scheduled-task ResumeHook), so this is HITL parity with the model relay, not
-// a bespoke approve. It honors the SAME tri-state contract as Deliver: (false,nil) not my user;
-// (true,nil) delivered; (false,err) owns-but-failed.
+// pause token. It renders through the SAME approvalMarkup/callback endpoint as the in-turn relay
+// (Phase A consolidation), so pressing a button resolves the REAL ask_user pause via the single
+// onCallback → SubmitAnswer path — HITL parity with the model relay, not a bespoke approve. It
+// honors the SAME tri-state contract as Deliver: (false,nil) not my user; (true,nil) delivered;
+// (false,err) owns-but-failed.
 func (t *Telegram) DeliverApproval(ctx context.Context, identityID, token, taskID, kind string) (bool, error) {
 	t.mu.Lock()
 	sender := t.deliverSender()
@@ -89,11 +90,28 @@ func (t *Telegram) DeliverApproval(ctx context.Context, identityID, token, taskI
 		}
 		return false, fmt.Errorf("telegram deliver approval: resolve identity %s: %w", identityID, err)
 	}
-	text := scheduledApprovalText(taskID, kind)
-	if _, err := sender.Send(tele.ChatID(acct.TelegramUserID), text, &tele.SendOptions{ReplyMarkup: scheduledApprovalMarkup(token)}); err != nil {
+	text := approvalPromptText(taskID, kind)
+	if _, err := sender.Send(tele.ChatID(acct.TelegramUserID), text, &tele.SendOptions{ReplyMarkup: approvalMarkup(token)}); err != nil {
 		return false, fmt.Errorf("telegram deliver approval: send to %d: %w", acct.TelegramUserID, err)
 	}
 	return true, nil
+}
+
+// approvalPromptText is the bounded sweep-push copy — task kind + short id only, never the
+// payload (no goal/secret leakage beyond what the origin already saw). The in-turn relay renders
+// the pause's own Question instead; this leg has only (taskID, kind) to work with.
+func approvalPromptText(taskID, kind string) string {
+	return "🔔 Il task pianificato " + kind + " " + shortTelegramTaskID(taskID) + " richiede la tua approvazione."
+}
+
+// shortTelegramTaskID renders the first 8 chars of a task id for the bounded prompt: a raw
+// 36-char UUID in operator-facing copy is noise, and the full id stays in resume_context for the
+// machine leg (parity with the tool-side mask in internal/agent/tools/task.go).
+func shortTelegramTaskID(id string) string {
+	if len(id) > 8 {
+		return id[:8]
+	}
+	return id
 }
 
 // deliverSender returns the botSender Deliver pushes through. It MUST be called

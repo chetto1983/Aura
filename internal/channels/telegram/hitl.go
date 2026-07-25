@@ -47,6 +47,13 @@ const callbackSep = "|"
 
 const callbackDataMaxBytes = 64
 
+// callbackTelebotFrameBytes is telebot's per-button on-wire overhead beyond Data: the leading
+// "\f" (1) + Unique + the "|" (1) joining Unique to Data (processButtons, options.go). Telegram
+// caps the FRAMED payload at 64 bytes, so the budget must be checked with the framing included —
+// checking Data alone is exactly what shipped BUTTON_DATA_INVALID(400) on the 19-char
+// scheduled-approval endpoint this callback absorbed (fix-plan 1.7 defect B).
+const callbackTelebotFrameBytes = len("\f") + len(callbackUnique) + len(callbackSep)
+
 // hitl renders ask_user pauses and resolves them through the Runner.
 type hitl struct {
 	runner resumeRunner
@@ -218,18 +225,10 @@ func (h *hitl) cancel(ctx context.Context, convID, token string) (resumed bool, 
 	return h.submit(ctx, convID, token, askuser.ActionCancel, "")
 }
 
-// resolveScheduled resolves a scheduled_task_approval pause by the operator's on-channel action
-// WITHOUT driving a continuation turn: an operator-origin scheduled approval has no live turn to
-// continue, and the scheduled-task ResumeHook (accept→activate, decline→cancel) fires inside
-// SubmitAnswer. action MUST be askuser.ActionAccept or ActionDecline — never ActionCancel, which
-// SubmitAnswer routes to cancelConversation and would abort the whole origin conversation.
-func (h *hitl) resolveScheduled(ctx context.Context, token, action string) error {
-	directive, err := h.runner.SubmitAnswer(ctx, token, runner.ResponseInput{Action: action})
-	_ = directive
-	return err
-}
-
-// approvalMarkup builds the accept/decline InlineKeyboard for an approval pause.
+// approvalMarkup builds the accept/decline InlineKeyboard for an approval pause. It serves BOTH
+// legs of the approval surface: the in-turn relay (hitl.prompt) and the scheduler
+// approval-reminder sweep push (DeliverApproval) — one builder, one callback endpoint, so a
+// rendering fix can no longer land on one leg and miss the other (Phase A consolidation).
 func approvalMarkup(token string) *tele.ReplyMarkup {
 	mk := &tele.ReplyMarkup{}
 	mk.InlineKeyboard = [][]tele.InlineButton{{
@@ -281,13 +280,16 @@ func decodeOptions(raw []byte) []pauseOption {
 	return opts
 }
 
-// callbackData encodes token|action|value into an inline-button payload. The value
-// is kept compact (an option value or a short marker), well under Telegram's
-// 64-byte callback_data ceiling.
+// callbackData encodes token|action|value into an inline-button payload, guarding the FULL
+// on-wire size (framing included — see callbackTelebotFrameBytes). The value is kept compact
+// (an option INDEX or a short marker), so the budget holds for a 36-char UUID token. The panic
+// is a programming-invariant guard asserted by the markup tests: it can never fire in
+// production and exists so lengthening the endpoint name or an action fails loudly in tests
+// instead of silently at send time with a 400.
 func callbackData(token, action, value string) string {
 	data := strings.Join([]string{token, action, value}, callbackSep)
-	if len(data) > callbackDataMaxBytes {
-		panic("telegram callback_data exceeds 64 bytes")
+	if callbackTelebotFrameBytes+len(data) > callbackDataMaxBytes {
+		panic("telegram callback_data exceeds Telegram's 64-byte on-wire cap")
 	}
 	return data
 }
