@@ -3,6 +3,7 @@ package adaptive
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -55,5 +56,14 @@ func (cohort *FocalCohort) canonicalArtifact() ([]byte, error) {
 	if !cohort.initialized() {
 		return nil, errors.New("adaptive cohort is uninitialized")
 	}
-	return marshalCanonicalCohort(cohort.spec)
+	reconstructed, err := NewFocalCohort(cohort.spec)
+	if err != nil {
+		return nil, fmt.Errorf("verify adaptive cohort: %w", err)
+	}
+	if reconstructed.id != cohort.id ||
+		reconstructed.sha256 != cohort.sha256 ||
+		reconstructed.predicateSHA256 != cohort.predicateSHA256 {
+		return nil, errors.New("adaptive cohort identity does not match content")
+	}
+	return marshalCanonicalCohort(reconstructed.spec)
 }

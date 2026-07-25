@@ -57,3 +57,12 @@ func TestFocalCohort_CanonicalArtifactRejectsUninitializedCohort(t *testing.T) {
 		t.Fatal("zero-value cohort produced a canonical artifact")
 	}
 }
+
+func TestFocalCohort_CanonicalArtifactRejectsIdentityMismatch(t *testing.T) {
+	cohort := mustFocalCohort(t, focalCohortTestSpec())
+	cohort.spec.ExperimentID = "mutated_experiment"
+
+	if _, err := cohort.canonicalArtifact(); err == nil {
+		t.Fatal("identity-mismatched cohort produced a canonical artifact")
+	}
+}
