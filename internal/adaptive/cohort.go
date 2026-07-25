@@ -51,27 +51,27 @@ const (
 
 // CohortScope freezes the owner and serving artifacts eligible for a cohort.
 type CohortScope struct {
-	OwnerID        uuid.UUID
-	ProviderID     string
-	ModelID        string
-	PolicyVersion  string
-	PolicyEpoch    uint64
-	SnapshotID     uuid.UUID
-	SnapshotSHA256 string
-	Environment    EvaluationEnvironment
+	OwnerID        uuid.UUID             `json:"owner_id"`
+	ProviderID     string                `json:"provider_id"`
+	ModelID        string                `json:"model_id"`
+	PolicyVersion  string                `json:"policy_version"`
+	PolicyEpoch    uint64                `json:"policy_epoch"`
+	SnapshotID     uuid.UUID             `json:"snapshot_id"`
+	SnapshotSHA256 string                `json:"snapshot_sha256"`
+	Environment    EvaluationEnvironment `json:"environment"`
 }
 
 // FocalPredicate identifies the one decision point eligible for randomization.
 type FocalPredicate struct {
-	Domain  Domain
-	Point   DecisionPoint
-	Ordinal uint32
+	Domain  Domain        `json:"domain"`
+	Point   DecisionPoint `json:"point"`
+	Ordinal uint32        `json:"ordinal"`
 }
 
 // CohortArm records a randomized experimental arm and its true probability.
 type CohortArm struct {
-	ArmID       string
-	Probability float64
+	ArmID       string  `json:"arm_id"`
+	Probability float64 `json:"probability"`
 }
 
 // CohortEndpointKind identifies an exact binary primary endpoint role.
@@ -86,45 +86,45 @@ const (
 
 // CohortEndpoint freezes one safe binary endpoint and its evaluator artifact.
 type CohortEndpoint struct {
-	ID        string
-	Kind      CohortEndpointKind
-	Evaluator EvaluatorProvenance
+	ID        string              `json:"id"`
+	Kind      CohortEndpointKind  `json:"kind"`
+	Evaluator EvaluatorProvenance `json:"evaluator"`
 }
 
 // CohortPowerPlan freezes the preregistered power and support assumptions.
 type CohortPowerPlan struct {
-	BaselineQualityRate   float64
-	BaselineHarmRate      float64
-	MinimumDetectableLift float64
-	ExpectedMembers       uint64
-	MinimumMembers        uint64
-	MinimumArmSupport     float64
-	SimulationSHA256      string
+	BaselineQualityRate   float64 `json:"baseline_quality_rate"`
+	BaselineHarmRate      float64 `json:"baseline_harm_rate"`
+	MinimumDetectableLift float64 `json:"minimum_detectable_lift"`
+	ExpectedMembers       uint64  `json:"expected_members"`
+	MinimumMembers        uint64  `json:"minimum_members"`
+	MinimumArmSupport     float64 `json:"minimum_arm_support"`
+	SimulationSHA256      string  `json:"simulation_sha256"`
 }
 
 // CohortMargins freezes the primary quality and harm decision margins.
 type CohortMargins struct {
-	MinimumQualityUplift float64
-	MaximumHarmIncrease  float64
+	MinimumQualityUplift float64 `json:"minimum_quality_uplift"`
+	MaximumHarmIncrease  float64 `json:"maximum_harm_increase"`
 }
 
 // CohortCensoring freezes permitted censoring limits.
 type CohortCensoring struct {
-	MaxCensorRate      float64
-	MaxCensorImbalance float64
+	MaxCensorRate      float64 `json:"max_censor_rate"`
+	MaxCensorImbalance float64 `json:"max_censor_imbalance"`
 }
 
 // CohortAdmission freezes the unit blocking and interference plan.
 type CohortAdmission struct {
-	BlockKeys        []BlockKey
-	TimeBlockSeconds uint64
-	Interference     Interference
+	BlockKeys        []BlockKey   `json:"block_keys"`
+	TimeBlockSeconds uint64       `json:"time_block_seconds"`
+	Interference     Interference `json:"interference"`
 }
 
 // CohortLook allocates alpha to one planned sequential look.
 type CohortLook struct {
-	Look  uint8
-	Alpha float64
+	Look  uint8   `json:"look"`
+	Alpha float64 `json:"alpha"`
 }
 
 // CohortSpec is caller input for a canonical immutable focal cohort.
@@ -169,10 +169,12 @@ func NewFocalCohort(spec CohortSpec) (*FocalCohort, error) {
 	if err != nil {
 		return nil, err
 	}
-	contentSHA256, err := canonicalCohortHash(spec)
+	artifact, err := marshalCanonicalCohort(spec)
 	if err != nil {
 		return nil, err
 	}
+	contentSum := sha256.Sum256(artifact)
+	contentSHA256 := hex.EncodeToString(contentSum[:])
 	digest, err := hex.DecodeString(contentSHA256)
 	if err != nil {
 		return nil, fmt.Errorf("decode canonical cohort hash: %w", err)
