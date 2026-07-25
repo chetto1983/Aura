@@ -24,6 +24,7 @@ from fastmcp import Context
 # private alias below preserves backward compatibility for internal callers
 # (including tests/unit/mcp/test_fastmcp_tools.py).
 from neo4j_agent_memory.core.query import is_read_only_query as _is_read_only_query  # noqa: F401
+from neo4j_agent_memory.integration import entity_name_fields
 from neo4j_agent_memory.mcp._common import get_client, get_integration
 
 if TYPE_CHECKING:
@@ -585,7 +586,7 @@ def _register_extended_tools(mcp: FastMCP) -> None:
                 "found": True,
                 "entity": {
                     "id": str(entity.id),
-                    "name": entity.display_name,
+                    **entity_name_fields(entity),
                     "type": (
                         entity.type.value if hasattr(entity.type, "value") else str(entity.type)
                     ),
@@ -733,8 +734,8 @@ def _register_extended_tools(mcp: FastMCP) -> None:
                     "stored": True,
                     "type": "relationship",
                     "id": str(rel.id) if hasattr(rel, "id") else None,
-                    "source": source.display_name,
-                    "target": target.display_name,
+                    "source": source.name,
+                    "target": target.name,
                     "relationship_type": relationship_type,
                 },
                 default=str,

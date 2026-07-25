@@ -13,14 +13,20 @@
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import inspect
+import json
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
+
+from fastmcp import FastMCP
 
 from neo4j_agent_memory import integration as integration_module
 from neo4j_agent_memory.graph import queries
-from neo4j_agent_memory.integration import _entity_name_fields
+from neo4j_agent_memory.integration import entity_name_fields
+from neo4j_agent_memory.mcp._tools import register_tools
 from neo4j_agent_memory.memory import long_term as long_term_module
 from neo4j_agent_memory.memory import short_term as short_term_module
 from neo4j_agent_memory.memory.long_term import Entity, LongTermMemory
@@ -35,39 +41,131 @@ def _entity(name: str, canonical: str | None) -> Entity:
 
 
 def test_projection_reports_the_stored_name_not_the_canonical():
-    fields = _entity_name_fields(_entity("Davide", "David"))
+    fields = entity_name_fields(_entity("Davide", "David"))
 
     assert fields["name"] == "Davide", "the API must report what was stored"
     assert fields["canonical_name"] == "David", "the canonical is additive, not a replacement"
 
 
 def test_projection_omits_canonical_when_it_adds_nothing():
-    assert _entity_name_fields(_entity("Davide", "Davide")) == {"name": "Davide"}
-    assert _entity_name_fields(_entity("Davide", None)) == {"name": "Davide"}
+    assert entity_name_fields(_entity("Davide", "Davide")) == {"name": "Davide"}
+    assert entity_name_fields(_entity("Davide", None)) == {"name": "Davide"}
 
 
-def test_no_read_path_projects_display_name_as_name():
-    """The rule, pinned at the source: display_name renders a label, it is not the data.
+# ── The class guard ──────────────────────────────────────────────────────────
+#
+# Three read paths were fixed, then a fourth (the recalled-context block) turned up, then a
+# fifth (memory_get_entity) — each time because the guard checked a LITERAL from the site
+# just fixed, so the next site, written differently, walked straight past it. What follows
+# bans the mistake itself: no caller-facing read may reach for ``display_name`` at all.
+#
+# The file set is derived from the package directory, not listed here, so a read path added
+# in a NEW module is covered the day it is written. ``integrations/`` is deliberately out of
+# scope: those are upstream framework adapters (LangChain, CrewAI, Strands...) that Aura does
+# not serve, and pulling them in would trade a rule that must hold for a backlog nobody owns.
 
-    A unit test on the helper cannot stop a fourth read path from being added next to the
-    three that were fixed, which is exactly how this shipped.
+_PACKAGE = Path(inspect.getfile(integration_module)).parent
+
+CALLER_FACING_SOURCES = [
+    _PACKAGE / "integration.py",
+    *sorted((_PACKAGE / "mcp").glob("*.py")),
+    *sorted((_PACKAGE / "memory").glob("*.py")),
+]
+
+
+def _display_name_reads(path: Path) -> list[str]:
+    """Every ``<something>.display_name`` access in a module, as ``file:line``.
+
+    Parsed, not grepped: the property's own definition is a FunctionDef and the word appears
+    in comments and docstrings that explain the rule. A textual scan would flag all of those
+    and the guard would be silenced as noisy — which is how guards die.
     """
-    source = Path(inspect.getfile(integration_module)).read_text(encoding="utf-8")
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    return [
+        f"{path.name}:{node.lineno}"
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Attribute) and node.attr == "display_name"
+    ]
 
-    assert '"name": entity.display_name' not in source
+
+def test_the_class_guard_is_actually_looking_at_something():
+    """A guard that scans an empty file set passes forever. Pin what it must cover."""
+    names = {p.name for p in CALLER_FACING_SOURCES}
+
+    assert {"integration.py", "_tools.py", "_resources.py", "long_term.py"} <= names
+    assert all(p.is_file() for p in CALLER_FACING_SOURCES)
 
 
-def test_recalled_context_names_the_entity_as_stored():
-    """The same rule where it bites hardest: the block injected into the model every turn.
+def test_no_caller_facing_read_reaches_for_display_name():
+    """display_name renders a label; it is never the data a caller asked for.
 
-    With display_name here, the live profile read "- David (PERSON): ... Preferisce essere
-    chiamato Davide." — the agent was handed a contradiction about its own operator on every
-    single turn, and no amount of correcting the record could clear it.
+    Supersedes the two literal guards that preceded it — it catches the same two sites plus
+    any other, in any module of the read surface, however it is spelled.
     """
-    source = Path(inspect.getfile(long_term_module)).read_text(encoding="utf-8")
+    offenders = {
+        path.name: hits for path in CALLER_FACING_SOURCES if (hits := _display_name_reads(path))
+    }
 
-    assert "{entity.display_name} ({type_str})" not in source
-    assert "{entity.name} ({type_str})" in source
+    assert not offenders, (
+        f"display_name read on a caller-facing path: {offenders}. "
+        "Project names through integration.entity_name_fields(entity), which reports the "
+        "STORED name and adds the canonical as its own field. If you genuinely want a "
+        "rendered label, write `entity.canonical_name or entity.name` at the site so it "
+        "cannot be mistaken for the data."
+    )
+
+
+def test_the_projection_helper_is_the_one_in_use():
+    """Guard the other direction: the ban above is also satisfied by projecting no name."""
+    users = [
+        path.name
+        for path in CALLER_FACING_SOURCES
+        if "entity_name_fields(" in path.read_text(encoding="utf-8")
+    ]
+
+    assert {"integration.py", "_tools.py", "_resources.py"} <= set(users)
+
+
+def _ctx(client):
+    return SimpleNamespace(
+        request_context=SimpleNamespace(lifespan_context={"client": client}),
+    )
+
+
+class _OneEntityClient:
+    """Answers any entity search with the operator's node: stored "Davide", canonical "David"."""
+
+    def __init__(self, entity):
+        self.long_term = SimpleNamespace(search_entities=self._search)
+        self._entity = entity
+
+    async def _search(self, **_kwargs):
+        return [self._entity]
+
+
+def test_memory_get_entity_reports_the_stored_name():
+    """Driven through the registered tool, because that is where the source guards missed it.
+
+    Live on 2026-07-25, on one node in one moment: memory_search said "Davide" and
+    memory_get_entity said "David". The agent believed the second, concluded its write had
+    failed, and deleted its own correct data.
+    """
+    mcp = FastMCP("entity-name-projection-guard")
+    register_tools(mcp, profile="extended")
+    tool = _run(mcp.get_tools())["memory_get_entity"]
+
+    payload = json.loads(
+        _run(
+            tool.fn(
+                _ctx(_OneEntityClient(_entity("Davide", "David"))),
+                name="Davide",
+                include_neighbors=False,
+            )
+        )
+    )
+
+    assert payload["entity"]["name"] == "Davide", "the tool must report what was stored"
+    assert payload["entity"]["canonical_name"] == "David", "the canonical is additive"
 
 
 class _RecordingClient:

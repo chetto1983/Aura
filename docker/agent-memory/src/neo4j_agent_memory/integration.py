@@ -31,8 +31,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _entity_name_fields(entity: Any) -> dict[str, Any]:
+def entity_name_fields(entity: Any) -> dict[str, Any]:
     """Project an entity's name for the API: the STORED name, never a substitute.
+
+    Every caller-facing read path must project names through here — the MCP tools and
+    resources included. ``tests/test_entity_name_projection.py`` enforces that by banning
+    ``.display_name`` outright across the read surface; a fourth path written by hand is
+    exactly how the defect below survived three fixes.
 
     ``Entity.display_name`` returns ``canonical_name or name`` — correct for rendering a
     label, catastrophic on a data interface. Reporting the canonical as "name" made every
@@ -405,7 +410,7 @@ class MemoryIntegration:
                 results["entities"] = [
                     {
                         "id": str(entity.id),
-                        **_entity_name_fields(entity),
+                        **entity_name_fields(entity),
                         "type": (
                             entity.type.value if hasattr(entity.type, "value") else str(entity.type)
                         ),
@@ -494,7 +499,7 @@ class MemoryIntegration:
                 "stored": True,
                 "type": "entity",
                 "id": str(entity.id),
-                **_entity_name_fields(entity),
+                **entity_name_fields(entity),
                 "entity_type": (
                     entity.type.value if hasattr(entity.type, "value") else str(entity.type)
                 ),
@@ -793,7 +798,7 @@ class MemoryIntegration:
             "fields": fields,
             "entity": {
                 "id": str(entity.id),
-                **_entity_name_fields(entity),
+                **entity_name_fields(entity),
                 "type": (
                     entity.type.value if hasattr(entity.type, "value") else str(entity.type)
                 ),

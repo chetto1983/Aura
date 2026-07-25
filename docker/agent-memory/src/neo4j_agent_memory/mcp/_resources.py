@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 from fastmcp import Context
 
+from neo4j_agent_memory.integration import entity_name_fields
 from neo4j_agent_memory.mcp._common import get_client
 
 if TYPE_CHECKING:
@@ -80,7 +81,7 @@ def _register_extended_resources(mcp: FastMCP) -> None:
             entity_list = [
                 {
                     "id": str(e.id),
-                    "name": e.display_name,
+                    **entity_name_fields(e),
                     "type": e.type.value if hasattr(e.type, "value") else str(e.type),
                     "subtype": e.subtype if hasattr(e, "subtype") else None,
                     "description": e.description,
