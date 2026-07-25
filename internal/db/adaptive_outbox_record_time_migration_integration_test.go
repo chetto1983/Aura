@@ -195,15 +195,33 @@ WHERE n.nspname='aura'
 		)
 	}
 
-	callerRecordedAt := time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC)
-	newID := uuid.Must(uuid.NewV7())
-	recordedAt, statementAt := insertRow(newID, &callerRecordedAt)
-	if !recordedAt.Equal(statementAt) || recordedAt.Equal(callerRecordedAt) {
-		t.Fatalf(
-			"new record time = %s, statement time = %s, caller time = %s",
-			recordedAt, statementAt, callerRecordedAt,
-		)
+	callerRecordTimes := []struct {
+		name       string
+		id         uuid.UUID
+		suppliedAt time.Time
+	}{
+		{
+			name:       "future date",
+			id:         uuid.Must(uuid.NewV7()),
+			suppliedAt: time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			name:       "backdate",
+			id:         uuid.Must(uuid.NewV7()),
+			suppliedAt: time.Date(2001, 1, 1, 0, 0, 0, 0, time.UTC),
+		},
 	}
+	for _, tc := range callerRecordTimes {
+		recordedAt, statementAt := insertRow(tc.id, &tc.suppliedAt)
+		if !recordedAt.Equal(statementAt) || recordedAt.Equal(tc.suppliedAt) {
+			t.Fatalf(
+				"%s record time = %s, statement time = %s, caller time = %s",
+				tc.name, recordedAt, statementAt, tc.suppliedAt,
+			)
+		}
+	}
+	newID := callerRecordTimes[0].id
+	callerRecordedAt := callerRecordTimes[0].suppliedAt
 
 	tx, err := app.Begin(ctx)
 	if err != nil {
