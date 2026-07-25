@@ -17,17 +17,19 @@ durable plan checkpoint)
 
 **Current review candidates:**
 
-- Exact commit `eb7b947f7` contains the versioned canonical focal-cohort
-  artifact and is under fresh spec/quality review. It makes the authoritative
-  UTF-8 JSON bytes explicit (`schema_version = "1.0"`, stable snake-case
-  fields), and derives both SHA-256 and deterministic cohort UUID from those
-  exact bytes.
+- Commits `eb7b947f7` and `4ec56df83` contain the versioned canonical
+  focal-cohort artifact and its fail-closed identity-integrity repair. The
+  initial fresh spec review approved; quality review found that package-local
+  mutation could desynchronize content and identity. A RED corruption test now
+  proves reconstruction rejects that mismatch, all local gates are GREEN, and
+  final cumulative spec/quality re-reviews both returned `APPROVE`.
 - Migration `0071_adaptive_focal_cohorts` and its source/live migration tests
   are present in the shared working tree and under root review. They are not
-  committed or approved yet. The migration worker reports clean source tests
-  and a live `70 -> 71 -> 70 -> 71` down/up path; root still must verify the
-  schema/API contract, artifact byte parity, privileges, focused gates, and
-  atomic staging.
+  committed or approved yet. Root review corrected cutoff direction, bound the
+  full snapshot scope/digest through a composite FK, blocked post-cutoff
+  claims, and replaced caller text blocks with a typed server-derived
+  `time_block_start`. Source/security and `70 -> 71 -> 70 -> 71` migration
+  paths are GREEN; row-level live constraint fixtures and final gates remain.
 
 - The schema-2 Assignment/Delivery Go contract is complete through
   `03643cc9a`. Its spec and code-quality reviews both returned `APPROVE`.
@@ -56,10 +58,11 @@ durable plan checkpoint)
   censoring, interference blocks, planned looks, cutoff, and canonical hashes.
   It fails closed for nil/uninitialized state, bounds every collection before
   cloning, and validates binary outcome evidence against exact frozen scope.
-- The canonical persistence representation landed atomically at `eb7b947f7`.
+- The canonical persistence representation landed atomically at `eb7b947f7`
+  and its adversarial integrity repair at `4ec56df83`.
   Its focused/full adaptive normal and race tests, `go vet ./...`,
   `go build ./...`, diff-scoped lint, diff check, and file-size gate pass. Two
-  fresh reviews remain before it is approved.
+  final cumulative reviews returned `APPROVE`.
 - The persistence commits after the Go contract are `b0216f494`,
   `79a5f719d`, `f941a0e0f`, `001d6f974`, `ca587adb8`, `9ed7f625b`, and
   `fee72ff13`. The typed Store commits are `05849027b`, `a29401417`,
@@ -119,11 +122,12 @@ durable plan checkpoint)
 - [x] Immutable PostgreSQL snapshot persistence through migration `0070`.
 - [x] Typed outcome/correction recorder and bounded correction folding.
 - [x] Pure immutable focal-cohort contract.
-- [ ] Versioned canonical focal-cohort artifact — committed at `eb7b947f7`
-  with all local gates GREEN; fresh spec/quality reviews pending.
+- [x] Versioned canonical focal-cohort artifact — commits `eb7b947f7` and
+  `4ec56df83`; all local gates GREEN; final cumulative spec and quality reviews
+  both `APPROVE`.
 - [ ] Migration `0071` cohort/claim schema — implementation in working tree;
-  root schema review, live/security coverage, atomic commit, and reviews
-  pending.
+  root schema corrections and security/roundtrip tests GREEN; row-level live
+  fixtures, atomic commit, and final reviews pending.
 - [ ] Typed `CohortStore` and atomic claim API.
 - [ ] Ledger-only cohort loader and deterministic correction reconstruction.
 - [ ] Exact blocked randomization inference and sealed admission/outcome
