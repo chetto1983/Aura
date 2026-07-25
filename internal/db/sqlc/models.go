@@ -80,6 +80,7 @@ type AuraAdaptiveOutbox struct {
 	ProjectedAt    pgtype.Timestamptz `json:"projected_at"`
 	DeadLetterAt   pgtype.Timestamptz `json:"dead_letter_at"`
 	LastErrorClass pgtype.Text        `json:"last_error_class"`
+	RecordedAt     pgtype.Timestamptz `json:"recorded_at"`
 }
 
 // Authoritative immutable owner-scoped adaptive policy snapshot artifacts.

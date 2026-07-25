@@ -11,6 +11,7 @@ import (
 )
 
 type Querier interface {
+	AdaptiveCohortReconstructionTime(ctx context.Context) (pgtype.Timestamptz, error)
 	AdaptiveIdentityTombstoned(ctx context.Context, ownerID pgtype.UUID) (bool, error)
 	AggregateCacheMetricsSince(ctx context.Context, since pgtype.Timestamptz) (AggregateCacheMetricsSinceRow, error)
 	AppendIngestionEvent(ctx context.Context, arg AppendIngestionEventParams) (AuraIngestionEvents, error)
@@ -86,6 +87,7 @@ type Querier interface {
 	FinalizeRetentionOperation(ctx context.Context, arg FinalizeRetentionOperationParams) (AuraRetentionOperations, error)
 	GetActivePasswordResetChallenge(ctx context.Context, identityID pgtype.UUID) (AuraPasswordResetChallenges, error)
 	GetAdaptiveFocalCohort(ctx context.Context, arg GetAdaptiveFocalCohortParams) (AuraAdaptiveFocalCohorts, error)
+	GetAdaptiveFocalCohortForReconstruction(ctx context.Context, arg GetAdaptiveFocalCohortForReconstructionParams) (AuraAdaptiveFocalCohorts, error)
 	GetAdaptiveOutboxByID(ctx context.Context, id pgtype.UUID) (AuraAdaptiveOutbox, error)
 	GetAdaptivePolicy(ctx context.Context) (GetAdaptivePolicyRow, error)
 	GetAdaptivePolicySnapshot(ctx context.Context, arg GetAdaptivePolicySnapshotParams) (AuraAdaptivePolicySnapshots, error)
@@ -164,6 +166,8 @@ type Querier interface {
 	ListActiveTasks(ctx context.Context) ([]AuraSchedulerTasks, error)
 	ListAdaptiveAggregate(ctx context.Context, arg ListAdaptiveAggregateParams) ([]AuraAdaptiveOutbox, error)
 	ListAdaptiveFocalCohortClaimConflicts(ctx context.Context, arg ListAdaptiveFocalCohortClaimConflictsParams) ([]AuraAdaptiveFocalCohortClaims, error)
+	ListAdaptiveFocalCohortClaimsForReconstruction(ctx context.Context, arg ListAdaptiveFocalCohortClaimsForReconstructionParams) ([]AuraAdaptiveFocalCohortClaims, error)
+	ListAdaptiveFocalCohortFactsForReconstruction(ctx context.Context, arg ListAdaptiveFocalCohortFactsForReconstructionParams) ([]AuraAdaptiveOutbox, error)
 	// Cross-thread pending list (APRV-01 / D-04): the same SELECT as
 	// ListPendingPausedStates with NO conversation_id filter, so the approval center
 	// can aggregate every still-pending pause across ALL conversations. KEEPS the
@@ -252,6 +256,7 @@ type Querier interface {
 	ListTurnsBySeq(ctx context.Context, conversationID pgtype.UUID) ([]ListTurnsBySeqRow, error)
 	LockAdaptiveEvent(ctx context.Context, eventID string) error
 	LockAdaptiveOwner(ctx context.Context, ownerID pgtype.UUID) (pgtype.UUID, error)
+	LockAdaptiveOwnerForCohortReconstruction(ctx context.Context, ownerID pgtype.UUID) (pgtype.UUID, error)
 	LockConversationForTurnAppend(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)
 	LockSchema2AdaptiveAssignment(ctx context.Context, arg LockSchema2AdaptiveAssignmentParams) (AuraAdaptiveOutbox, error)
 	LockSchema2AdaptiveAssignmentEvents(ctx context.Context, arg LockSchema2AdaptiveAssignmentEventsParams) ([]AuraAdaptiveOutbox, error)

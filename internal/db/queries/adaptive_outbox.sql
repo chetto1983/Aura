@@ -18,7 +18,7 @@ SELECT EXISTS (
 SELECT id, owner_id, aggregate_id, sequence, decision_id, event_kind,
        payload, payload_hash, status, attempts, available_at,
        lease_owner, lease_expires_at, created_at, projected_at,
-       dead_letter_at, last_error_class
+       dead_letter_at, last_error_class, recorded_at
 FROM aura.adaptive_outbox
 WHERE id = $1;
 
@@ -45,7 +45,7 @@ ON CONFLICT (id) DO NOTHING;
 SELECT id, owner_id, aggregate_id, sequence, decision_id, event_kind,
        payload, payload_hash, status, attempts, available_at,
        lease_owner, lease_expires_at, created_at, projected_at,
-       dead_letter_at, last_error_class
+       dead_letter_at, last_error_class, recorded_at
 FROM aura.adaptive_outbox
 WHERE owner_id = $1 AND aggregate_id = $2
 ORDER BY sequence ASC;
@@ -109,7 +109,7 @@ SELECT assignment.id, assignment.owner_id, assignment.aggregate_id,
        assignment.attempts, assignment.available_at, assignment.lease_owner,
        assignment.lease_expires_at, assignment.created_at,
        assignment.projected_at, assignment.dead_letter_at,
-       assignment.last_error_class
+       assignment.last_error_class, assignment.recorded_at
 FROM aura.adaptive_outbox AS assignment
 JOIN canonical_assignments AS canonical
   ON canonical.id = assignment.id
@@ -211,7 +211,7 @@ SELECT delivery.id, delivery.owner_id, delivery.aggregate_id,
        delivery.attempts, delivery.available_at, delivery.lease_owner,
        delivery.lease_expires_at, delivery.created_at,
        delivery.projected_at, delivery.dead_letter_at,
-       delivery.last_error_class
+       delivery.last_error_class, delivery.recorded_at
 FROM aura.adaptive_outbox AS delivery
 JOIN canonical_deliveries AS canonical_delivery
   ON canonical_delivery.id = delivery.id
@@ -287,7 +287,7 @@ SELECT event.id, event.owner_id, event.aggregate_id, event.sequence,
        event.payload_hash, event.status, event.attempts,
        event.available_at, event.lease_owner, event.lease_expires_at,
        event.created_at, event.projected_at, event.dead_letter_at,
-       event.last_error_class
+       event.last_error_class, event.recorded_at
 FROM aura.adaptive_outbox AS event
 JOIN relevant_ids ON relevant_ids.id = event.id
 ORDER BY event.id
@@ -422,7 +422,7 @@ SELECT fact.id, fact.owner_id, fact.aggregate_id, fact.sequence,
        fact.decision_id, fact.event_kind, fact.payload, fact.payload_hash,
        fact.status, fact.attempts, fact.available_at, fact.lease_owner,
        fact.lease_expires_at, fact.created_at, fact.projected_at,
-       fact.dead_letter_at, fact.last_error_class
+       fact.dead_letter_at, fact.last_error_class, fact.recorded_at
 FROM aura.adaptive_outbox AS fact
 JOIN eligible_ids ON eligible_ids.id = fact.id
 WHERE fact.owner_id = sqlc.arg(owner_id)
@@ -466,7 +466,7 @@ RETURNING claimed.id, claimed.owner_id, claimed.aggregate_id, claimed.sequence,
           claimed.payload_hash, claimed.status, claimed.attempts,
           claimed.available_at, claimed.lease_owner, claimed.lease_expires_at,
           claimed.created_at, claimed.projected_at, claimed.dead_letter_at,
-          claimed.last_error_class;
+          claimed.last_error_class, claimed.recorded_at;
 
 -- name: MarkAdaptiveProjected :execrows
 UPDATE aura.adaptive_outbox

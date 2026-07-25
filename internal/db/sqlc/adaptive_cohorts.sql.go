@@ -11,6 +11,17 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const adaptiveCohortReconstructionTime = `-- name: AdaptiveCohortReconstructionTime :one
+SELECT statement_timestamp()::timestamptz AS closure_time
+`
+
+func (q *Queries) AdaptiveCohortReconstructionTime(ctx context.Context) (pgtype.Timestamptz, error) {
+	row := q.db.QueryRow(ctx, adaptiveCohortReconstructionTime)
+	var closure_time pgtype.Timestamptz
+	err := row.Scan(&closure_time)
+	return closure_time, err
+}
+
 const getAdaptiveFocalCohort = `-- name: GetAdaptiveFocalCohort :one
 SELECT id, owner_id, provider_id, model_id, policy_epoch, policy_version,
        snapshot_id, snapshot_sha256, environment, domain, decision_point,
@@ -28,6 +39,48 @@ type GetAdaptiveFocalCohortParams struct {
 
 func (q *Queries) GetAdaptiveFocalCohort(ctx context.Context, arg GetAdaptiveFocalCohortParams) (AuraAdaptiveFocalCohorts, error) {
 	row := q.db.QueryRow(ctx, getAdaptiveFocalCohort, arg.OwnerID, arg.CohortID)
+	var i AuraAdaptiveFocalCohorts
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerID,
+		&i.ProviderID,
+		&i.ModelID,
+		&i.PolicyEpoch,
+		&i.PolicyVersion,
+		&i.SnapshotID,
+		&i.SnapshotSha256,
+		&i.Environment,
+		&i.Domain,
+		&i.DecisionPoint,
+		&i.PointOrdinal,
+		&i.PredicateSha256,
+		&i.ExperimentID,
+		&i.Cutoff,
+		&i.Sha256,
+		&i.Artifact,
+		&i.ArtifactJson,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getAdaptiveFocalCohortForReconstruction = `-- name: GetAdaptiveFocalCohortForReconstruction :one
+SELECT id, owner_id, provider_id, model_id, policy_epoch, policy_version,
+       snapshot_id, snapshot_sha256, environment, domain, decision_point,
+       point_ordinal, predicate_sha256, experiment_id, cutoff, sha256,
+       artifact, artifact_json, created_at
+FROM aura.adaptive_focal_cohorts
+WHERE owner_id = $1
+  AND id = $2
+`
+
+type GetAdaptiveFocalCohortForReconstructionParams struct {
+	OwnerID  pgtype.UUID `json:"owner_id"`
+	CohortID pgtype.UUID `json:"cohort_id"`
+}
+
+func (q *Queries) GetAdaptiveFocalCohortForReconstruction(ctx context.Context, arg GetAdaptiveFocalCohortForReconstructionParams) (AuraAdaptiveFocalCohorts, error) {
+	row := q.db.QueryRow(ctx, getAdaptiveFocalCohortForReconstruction, arg.OwnerID, arg.CohortID)
 	var i AuraAdaptiveFocalCohorts
 	err := row.Scan(
 		&i.ID,
@@ -249,11 +302,143 @@ func (q *Queries) ListAdaptiveFocalCohortClaimConflicts(ctx context.Context, arg
 	return items, nil
 }
 
+const listAdaptiveFocalCohortClaimsForReconstruction = `-- name: ListAdaptiveFocalCohortClaimsForReconstruction :many
+SELECT id, owner_id, cohort_id, request_id, evaluation_conversation_id,
+       assignment_id, domain, decision_point, point_ordinal, session_id,
+       episode_id, time_block_start, claimed_at
+FROM aura.adaptive_focal_cohort_claims
+WHERE owner_id = $1
+  AND cohort_id = $2
+ORDER BY request_id, assignment_id, id
+`
+
+type ListAdaptiveFocalCohortClaimsForReconstructionParams struct {
+	OwnerID  pgtype.UUID `json:"owner_id"`
+	CohortID pgtype.UUID `json:"cohort_id"`
+}
+
+func (q *Queries) ListAdaptiveFocalCohortClaimsForReconstruction(ctx context.Context, arg ListAdaptiveFocalCohortClaimsForReconstructionParams) ([]AuraAdaptiveFocalCohortClaims, error) {
+	rows, err := q.db.Query(ctx, listAdaptiveFocalCohortClaimsForReconstruction, arg.OwnerID, arg.CohortID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuraAdaptiveFocalCohortClaims{}
+	for rows.Next() {
+		var i AuraAdaptiveFocalCohortClaims
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerID,
+			&i.CohortID,
+			&i.RequestID,
+			&i.EvaluationConversationID,
+			&i.AssignmentID,
+			&i.Domain,
+			&i.DecisionPoint,
+			&i.PointOrdinal,
+			&i.SessionID,
+			&i.EpisodeID,
+			&i.TimeBlockStart,
+			&i.ClaimedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAdaptiveFocalCohortFactsForReconstruction = `-- name: ListAdaptiveFocalCohortFactsForReconstruction :many
+WITH cohort_assignments AS (
+    SELECT decision_id
+    FROM aura.adaptive_outbox
+    WHERE owner_id = $1
+      AND event_kind = 'decision'
+      AND payload->>'cohort_id' = $2::text
+)
+SELECT fact.id, fact.owner_id, fact.aggregate_id, fact.sequence,
+       fact.decision_id, fact.event_kind, fact.payload, fact.payload_hash,
+       fact.status, fact.attempts, fact.available_at, fact.lease_owner,
+       fact.lease_expires_at, fact.created_at, fact.projected_at,
+       fact.dead_letter_at, fact.last_error_class, fact.recorded_at
+FROM aura.adaptive_outbox AS fact
+WHERE fact.owner_id = $1
+  AND (
+      (fact.event_kind = 'decision' AND fact.payload->>'cohort_id' = $2::text)
+      OR (
+          fact.event_kind IN ('delivery', 'outcome', 'correction')
+          AND fact.decision_id IN (SELECT decision_id FROM cohort_assignments)
+      )
+  )
+ORDER BY fact.decision_id, fact.event_kind, fact.id
+`
+
+type ListAdaptiveFocalCohortFactsForReconstructionParams struct {
+	OwnerID  pgtype.UUID `json:"owner_id"`
+	CohortID string      `json:"cohort_id"`
+}
+
+func (q *Queries) ListAdaptiveFocalCohortFactsForReconstruction(ctx context.Context, arg ListAdaptiveFocalCohortFactsForReconstructionParams) ([]AuraAdaptiveOutbox, error) {
+	rows, err := q.db.Query(ctx, listAdaptiveFocalCohortFactsForReconstruction, arg.OwnerID, arg.CohortID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuraAdaptiveOutbox{}
+	for rows.Next() {
+		var i AuraAdaptiveOutbox
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerID,
+			&i.AggregateID,
+			&i.Sequence,
+			&i.DecisionID,
+			&i.EventKind,
+			&i.Payload,
+			&i.PayloadHash,
+			&i.Status,
+			&i.Attempts,
+			&i.AvailableAt,
+			&i.LeaseOwner,
+			&i.LeaseExpiresAt,
+			&i.CreatedAt,
+			&i.ProjectedAt,
+			&i.DeadLetterAt,
+			&i.LastErrorClass,
+			&i.RecordedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockAdaptiveOwnerForCohortReconstruction = `-- name: LockAdaptiveOwnerForCohortReconstruction :one
+SELECT id
+FROM aura.identities
+WHERE id = $1
+FOR UPDATE
+`
+
+func (q *Queries) LockAdaptiveOwnerForCohortReconstruction(ctx context.Context, ownerID pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, lockAdaptiveOwnerForCohortReconstruction, ownerID)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const lockSchema2AdaptiveAssignmentEvents = `-- name: LockSchema2AdaptiveAssignmentEvents :many
 SELECT id, owner_id, aggregate_id, sequence, decision_id, event_kind,
        payload, payload_hash, status, attempts, available_at,
        lease_owner, lease_expires_at, created_at, projected_at,
-       dead_letter_at, last_error_class
+       dead_letter_at, last_error_class, recorded_at
 FROM aura.adaptive_outbox
 WHERE owner_id = $1
   AND decision_id = $2
@@ -294,6 +479,7 @@ func (q *Queries) LockSchema2AdaptiveAssignmentEvents(ctx context.Context, arg L
 			&i.ProjectedAt,
 			&i.DeadLetterAt,
 			&i.LastErrorClass,
+			&i.RecordedAt,
 		); err != nil {
 			return nil, err
 		}
