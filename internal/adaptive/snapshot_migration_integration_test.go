@@ -127,9 +127,6 @@ func TestSnapshotMigration0069UpgradeDownAndUp(t *testing.T) {
 		t.Fatalf("upgrade 0068 to 0069: %v", err)
 	}
 	assertSchema2MigrationVersion(t, ctx, migrateURL, 69)
-	if err := db.CheckMigrationHead(ctx, migrateURL); err != nil {
-		t.Fatalf("CheckMigrationHead() at 0069: %v", err)
-	}
 	assertSnapshotMigrationContract(t, ctx, pool)
 	for _, snapshot := range snapshots {
 		if !snapshotValidatorAccepts(t, ctx, pool, snapshot) {
@@ -169,14 +166,14 @@ func TestSnapshotMigration0069UpgradeDownAndUp(t *testing.T) {
 	}
 }
 
-func TestSnapshotMigrationCleanInstallAt0069(t *testing.T) {
+func TestSnapshotMigrationCleanInstallAt0070(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
 	defer cancel()
 	pool, migrateURL := schema2MigrationDatabase(
 		t,
 		ctx,
 		"aura_snapshot_clean_install",
-		69,
+		70,
 	)
 	if err := db.CheckMigrationHead(ctx, migrateURL); err != nil {
 		t.Fatalf("CheckMigrationHead() after clean install: %v", err)
