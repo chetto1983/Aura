@@ -381,7 +381,11 @@ go build ./...
   `recordOwnerLockedTx`, and commits before learned execution. Callback/build
   or assignment failure rolls back both facts; exact retry does not redraw and
   a concurrent or cross-cohort loser never invokes the callback.
-- [ ] **Step 6: Implement the ledger-only loader**: reconstruct assignments, deliveries, eligible outcomes, and folded corrections at the cohort cutoff; include missing delivery/outcome as censored ITT rows; reject unsealed catalogs, unknown exposure probabilities, cross-owner facts, and facts beyond cutoff.
+- [x] **Step 6: Implement the ledger-only loader**: reconstruct assignments,
+  deliveries, eligible outcomes, and folded corrections at the cohort cutoff;
+  include missing delivery/outcome as censored ITT rows; reject unsealed
+  catalogs, unknown exposure probabilities, cross-owner facts, and facts
+  beyond cutoff. Approved through `983afb130`.
 - [x] **Step 7: Implement a production typed outcome/correction recorder.** `OutcomeRecorder.RecordOutcome` accepts only a typed `OutcomeObservation`, loads the referenced schema-2 assignment, binds domain/owner/provider/model, validates the registered evaluator kind/ID/version/rubric/calibration/provenance hash, and appends the deterministic terminal event. `RecordCorrection` transactionally loads the current effective leaf and rejects missing, cross-owner/domain/evaluator, cross-kind, fork, or cycle links. Operational tool/HTTP/persistence/model-self-report completion cannot call this eligible recorder. Compose the deterministic and calibrated-judge benchmark evaluators through this same service; no benchmark may insert ledger rows directly.
 - [ ] **Step 8: Implement separate sealed artifact kinds**:
 
