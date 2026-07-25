@@ -29,6 +29,13 @@ cd /d/Aura && git apply --3way /d/tmp/x.patch                  # main tree must 
 | task→memory cascade | a cancelled task must stop being recalled as present intent (BUG-3b / 2.8) | `internal/cron`, `cmd/aura/memory*.go`, possibly a migration |
 | onboarding latency | one MCP connection instead of ~20 handshakes; stop the per-page-load status probe; fix the write-ordering bug | `cmd/aura/memory_onboarding.go`, `cmd/aura/memory.go`, `web/src/AppShell.tsx` |
 
+### Two of the three FAILED — read before re-dispatching
+
+Both died the same way: `Agent stalled: no progress for 600s (stream watchdog did not recover)`. Not a code problem; they were killed mid-work. Two of the three long-running Go agents hit this, while the Python ones completed — worth watching whether long Go builds inside a worktree are what starves the stream.
+
+- **onboarding latency** — left **partial, unverified** work in `.claude/worktrees/agent-a218f7c0a1287596f`: 251 lines across `cmd/aura/memory_onboarding.go` + `memory_onboarding_test.go`. `web/src/AppShell.tsx` is untouched, so fix 2 (the per-page-load status probe) was never done, and it never reported a build or test result. **Treat the Go side as a draft to review, not as working code.** Do not prune that worktree before someone reads it.
+- **task→memory cascade** — died at "Now I have the full picture. Let me implement. First, the migration." Its worktree is **empty**: nothing to salvage, re-dispatch from scratch. Note it was about to create a migration — whoever redoes it must re-derive the number with `ls internal/db/migrations/ | tail -1`, since the floor moved today (`0071` is on disk but still uncommitted by the parallel workstream).
+
 The last two are Go → **they cannot be committed until blocker 1 clears.**
 
 ---
