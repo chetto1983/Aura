@@ -222,6 +222,48 @@ func TestReconstructCohortLedgerFoldsPrimaryCorrection(t *testing.T) {
 	}
 }
 
+func TestReconstructCohortLedgerRejectsNonbinaryPrimaryRoot(t *testing.T) {
+	cohort, claim, assignmentFact := closedCohortLedgerFixture(t)
+	facts := append([]cohortLedgerFact{assignmentFact}, successfulCohortOutcomeFacts(t, cohort, assignmentFact)...)
+	catalog, err := NewEvaluatorCatalog(cohort.Evaluators()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	facts[2] = cohortOutcomeFactWithCatalog(
+		t,
+		assignmentFact.assignment,
+		catalog,
+		cohort.PrimaryQualityEndpoint().Evaluator,
+		cohort.Cutoff().Add(-time.Second),
+		cohort.Cutoff().Add(-time.Second),
+		0.5,
+		0,
+	)
+
+	_, err = reconstructCohortLedger(cohort, cohort.Cutoff(), []FocalClaim{claim}, facts)
+	if !errors.Is(err, ErrInvalidCohortLedger) {
+		t.Fatalf("nonbinary primary root error = %v, want ErrInvalidCohortLedger", err)
+	}
+}
+
+func TestReconstructCohortLedgerRejectsNonbinaryPrimaryCorrectionLeaf(t *testing.T) {
+	cohort, claim, assignmentFact := closedCohortLedgerFixture(t)
+	facts := append([]cohortLedgerFact{assignmentFact}, successfulCohortOutcomeFacts(t, cohort, assignmentFact)...)
+	facts = append(facts, correctionFact(
+		t,
+		cohort,
+		assignmentFact.assignment,
+		cohort.PrimaryQualityEndpoint().Evaluator,
+		facts[2].event.ID,
+		0.5,
+	))
+
+	_, err := reconstructCohortLedger(cohort, cohort.Cutoff(), []FocalClaim{claim}, facts)
+	if !errors.Is(err, ErrInvalidCohortLedger) {
+		t.Fatalf("nonbinary primary correction error = %v, want ErrInvalidCohortLedger", err)
+	}
+}
+
 func TestReconstructCohortLedgerCanonicalizesMemberAndFactOrder(t *testing.T) {
 	cohort, firstClaim, firstFact := closedCohortLedgerFixture(t)
 	secondClaim, secondFact := additionalCohortLedgerMember(t, cohort, firstFact)

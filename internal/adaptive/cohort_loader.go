@@ -356,13 +356,21 @@ func reconstructCohortMember(cohort *FocalCohort, claim FocalClaim, facts []coho
 	if err := validateCohortCorrectionGraph(outcomes, corrections); err != nil {
 		return CohortMember{}, err
 	}
-	member.Quality, err = effectivePrimaryCohortObservation(cohort.PrimaryQualityEndpoint().Evaluator, outcomes, corrections)
+	quality, qualityObservation, err := effectivePrimaryCohortObservation(cohort.PrimaryQualityEndpoint().Evaluator, outcomes, corrections)
 	if err != nil {
 		return CohortMember{}, err
 	}
-	member.Harm, err = effectivePrimaryCohortObservation(cohort.PrimaryHarmEndpoint().Evaluator, outcomes, corrections)
+	member.Quality = quality
+	if member.Quality != nil && cohort.ValidatePrimaryQualityOutcome(qualityObservation) != nil {
+		return CohortMember{}, fmt.Errorf("%w: primary quality evidence", ErrInvalidCohortLedger)
+	}
+	harm, harmObservation, err := effectivePrimaryCohortObservation(cohort.PrimaryHarmEndpoint().Evaluator, outcomes, corrections)
 	if err != nil {
 		return CohortMember{}, err
+	}
+	member.Harm = harm
+	if member.Harm != nil && cohort.ValidatePrimaryHarmOutcome(harmObservation) != nil {
+		return CohortMember{}, fmt.Errorf("%w: primary harm evidence", ErrInvalidCohortLedger)
 	}
 	member.Observed = member.Quality != nil && member.Harm != nil && member.Quality.Status == OutcomeObserved && member.Harm.Status == OutcomeObserved
 	member.OPEEligible = member.Observed && member.Delivery != nil && member.Delivery.Status == DeliverySuccess &&
@@ -430,7 +438,7 @@ func validateCohortCorrectionGraph(outcomes map[uuid.UUID]loadedCohortOutcome, c
 	return nil
 }
 
-func effectivePrimaryCohortObservation(evaluator EvaluatorProvenance, outcomes map[uuid.UUID]loadedCohortOutcome, corrections map[uuid.UUID]loadedCohortCorrection) (*CohortEffectiveObservation, error) {
+func effectivePrimaryCohortObservation(evaluator EvaluatorProvenance, outcomes map[uuid.UUID]loadedCohortOutcome, corrections map[uuid.UUID]loadedCohortCorrection) (*CohortEffectiveObservation, OutcomeObservation, error) {
 	facts := make([]outcomeChainFact, 0, len(outcomes)+len(corrections))
 	roots := make([]uuid.UUID, 0, 1)
 	for id, outcome := range outcomes {
@@ -443,20 +451,27 @@ func effectivePrimaryCohortObservation(evaluator EvaluatorProvenance, outcomes m
 		facts = append(facts, outcomeChainFact{id: id, kind: EventCorrection, evaluator: correction.correction.Evaluator, supersedes: correction.correction.SupersedesEventID})
 	}
 	if len(roots) == 0 {
-		return nil, nil
+		return nil, OutcomeObservation{}, nil
 	}
 	if len(roots) != 1 {
-		return nil, fmt.Errorf("%w: duplicate primary root", ErrInvalidCohortLedger)
+		return nil, OutcomeObservation{}, fmt.Errorf("%w: duplicate primary root", ErrInvalidCohortLedger)
 	}
 	terminal, err := foldOutcomeChain(facts, roots[0])
 	if err != nil {
-		return nil, fmt.Errorf("%w: primary correction chain", ErrInvalidCohortLedger)
+		return nil, OutcomeObservation{}, fmt.Errorf("%w: primary correction chain", ErrInvalidCohortLedger)
 	}
 	if outcome, exists := outcomes[terminal.id]; exists {
-		return &CohortEffectiveObservation{EventID: outcome.event.ID, Status: outcome.observation.Status, Measures: outcome.observation.Measures, ObservedAt: outcome.observation.ObservedAt}, nil
+		return &CohortEffectiveObservation{EventID: outcome.event.ID, Status: outcome.observation.Status, Measures: outcome.observation.Measures, ObservedAt: outcome.observation.ObservedAt}, outcome.observation, nil
 	}
 	correction := corrections[terminal.id]
-	return &CohortEffectiveObservation{EventID: correction.event.ID, Status: correction.correction.Status, Measures: correction.correction.Measures, ObservedAt: correction.correction.ObservedAt}, nil
+	observation := OutcomeObservation{
+		SchemaVersion: correction.correction.SchemaVersion, AssignmentID: correction.correction.AssignmentID,
+		OwnerID: correction.correction.OwnerID, Domain: correction.correction.Domain,
+		ProviderID: correction.correction.ProviderID, ModelID: correction.correction.ModelID,
+		Evaluator: correction.correction.Evaluator, SourceObservationID: correction.correction.CorrectionSourceID,
+		Status: correction.correction.Status, Measures: correction.correction.Measures, ObservedAt: correction.correction.ObservedAt,
+	}
+	return &CohortEffectiveObservation{EventID: correction.event.ID, Status: correction.correction.Status, Measures: correction.correction.Measures, ObservedAt: correction.correction.ObservedAt}, observation, nil
 }
 
 func validateCohortAssignmentFact(cohort *FocalCohort, claim FocalClaim, event Event, assignment Assignment) error {

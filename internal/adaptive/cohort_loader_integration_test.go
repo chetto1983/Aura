@@ -77,7 +77,7 @@ func TestCohortStoreReconstructsDeliveryOutcomesAndCorrection(t *testing.T) {
 	if _, err := recorder.RecordOutcome(fixture.ctx, harm); err != nil {
 		t.Fatalf("record harm outcome: %v", err)
 	}
-	correction := cohortLoaderCorrection(assignment, quality.Evaluator, qualityEvent.ID, 0.75, 0)
+	correction := cohortLoaderCorrection(assignment, quality.Evaluator, qualityEvent.ID, 1, 0)
 	if _, err := recorder.RecordCorrection(fixture.ctx, correction); err != nil {
 		t.Fatalf("record quality correction: %v", err)
 	}
@@ -94,8 +94,45 @@ func TestCohortStoreReconstructsDeliveryOutcomesAndCorrection(t *testing.T) {
 	member := ledger.Members[0]
 	if ledger.State != CohortLedgerClosed || len(ledger.Members) != 1 || len(ledger.IncludedFacts) != 5 ||
 		!member.Observed || !member.ITTEligible || !member.OPEEligible || member.Quality == nil || member.Harm == nil ||
-		member.Quality.EventID != correctionEvent.ID || *member.Quality.Measures.Quality != 0.75 || len(member.ReasonCodes) != 0 {
+		member.Quality.EventID != correctionEvent.ID || *member.Quality.Measures.Quality != 1 || len(member.ReasonCodes) != 0 {
 		t.Fatalf("reconstructed full ledger = %#v", ledger)
+	}
+}
+
+func TestCohortStoreReconstructRejectsNonbinaryPrimaryCorrection(t *testing.T) {
+	fixture := newCohortLoaderFixture(t, 3*time.Second)
+	assignment := fixture.enrollment.Assignment
+	catalog, err := NewEvaluatorCatalog(fixture.cohort.Evaluators()...)
+	if err != nil {
+		t.Fatalf("new evaluator catalog: %v", err)
+	}
+	recorder, err := NewOutcomeRecorder(fixture.ledger, catalog)
+	if err != nil {
+		t.Fatalf("new outcome recorder: %v", err)
+	}
+	quality := cohortLoaderObservedOutcome(assignment, fixture.cohort.PrimaryQualityEndpoint().Evaluator, 1, 0)
+	if _, err := recorder.RecordOutcome(fixture.ctx, quality); err != nil {
+		t.Fatalf("record quality outcome: %v", err)
+	}
+	qualityEvent, err := NewOutcomeEvent(assignment, quality, catalog)
+	if err != nil {
+		t.Fatalf("construct quality event: %v", err)
+	}
+	harm := cohortLoaderObservedOutcome(assignment, fixture.cohort.PrimaryHarmEndpoint().Evaluator, 1, 0)
+	if _, err := recorder.RecordOutcome(fixture.ctx, harm); err != nil {
+		t.Fatalf("record harm outcome: %v", err)
+	}
+	if _, err := recorder.RecordCorrection(
+		fixture.ctx,
+		cohortLoaderCorrection(assignment, quality.Evaluator, qualityEvent.ID, 0.5, 0),
+	); err != nil {
+		t.Fatalf("record nonbinary quality correction: %v", err)
+	}
+	fixture.waitForClose(t)
+
+	_, err = fixture.store.Reconstruct(fixture.ctx, fixture.ownerID, fixture.cohort.ID())
+	if !errors.Is(err, ErrInvalidCohortLedger) {
+		t.Fatalf("Reconstruct() error = %v, want ErrInvalidCohortLedger", err)
 	}
 }
 
