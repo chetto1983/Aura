@@ -29,12 +29,72 @@ cd /d/Aura && git apply --3way /d/tmp/x.patch                  # main tree must 
 | task→memory cascade | a cancelled task must stop being recalled as present intent (BUG-3b / 2.8) | `internal/cron`, `cmd/aura/memory*.go`, possibly a migration |
 | onboarding latency | one MCP connection instead of ~20 handshakes; stop the per-page-load status probe; fix the write-ordering bug | `cmd/aura/memory_onboarding.go`, `cmd/aura/memory.go`, `web/src/AppShell.tsx` |
 
-### Two of the three FAILED — read before re-dispatching
+### ALL THREE FAILED — read before re-dispatching
 
-Both died the same way: `Agent stalled: no progress for 600s (stream watchdog did not recover)`. Not a code problem; they were killed mid-work. Two of the three long-running Go agents hit this, while the Python ones completed — worth watching whether long Go builds inside a worktree are what starves the stream.
+All died the same way: `Agent stalled: no progress for 600s (stream watchdog did not recover)`. Not a code problem; they were killed mid-work. **This is not Go-specific** — the ownership agent was pure Python and stalled too, so the earlier "long Go builds starve the stream" guess is wrong. Four long-running agents were dispatched today and only the first (embedding) finished. Consider smaller, shorter-lived agents, or doing the work inline.
 
 - **onboarding latency** — left **partial, unverified** work in `.claude/worktrees/agent-a218f7c0a1287596f`: 251 lines across `cmd/aura/memory_onboarding.go` + `memory_onboarding_test.go`. `web/src/AppShell.tsx` is untouched, so fix 2 (the per-page-load status probe) was never done, and it never reported a build or test result. **Treat the Go side as a draft to review, not as working code.** Do not prune that worktree before someone reads it.
 - **task→memory cascade** — died at "Now I have the full picture. Let me implement. First, the migration." Its worktree is **empty**: nothing to salvage, re-dispatch from scratch. Note it was about to create a migration — whoever redoes it must re-derive the number with `ls internal/db/migrations/ | tail -1`, since the floor moved today (`0071` is on disk but still uncommitted by the parallel workstream).
+- **ownership + last read path** — stalled too. Its first half was **done inline afterwards** and is committed (see below); its second half is the one thing still missing before the controprova can pass.
+
+---
+
+## Landed after this file was first written
+
+| Commit | What |
+|---|---|
+| `28fbe5efb` | the recalled-context block names the entity as stored (a 4th read path the earlier fix missed) |
+| `fb0000caa` | extraction embeds on write; composite uniqueness constraint on the MERGE key; backfill wired + CLI |
+| (ownership) | extracted entities get their message-owner's `HAS_ENTITY` edge — the actual reason `memory_forget` refused |
+
+The ownership one deserves a note, because the obvious fix was the wrong one. The instinct was to widen `DELETE_ENTITY_SCOPED`'s guard to match `ENTITY_IN_USER_SCOPE`. That would have loosened permission on the destructive verb to paper over a gap in the write path. The real defect: only `add_entity` ever wrote `(:User)-[:HAS_ENTITY]->(:Entity)`, so extraction-born entities had no ownership at all. Fixed where the entity is created, not where it is deleted.
+
+---
+
+## THE one thing blocking the controprova
+
+`memory_get_entity` still projects `canonical_name` as `name`. Same node, same moment, in the live trace: `memory_search` → `"name": "Davide"`, `memory_get_entity` → `"name": "David"`.
+
+Three projection sites in `integration.py` were fixed with `_entity_name_fields()` (stored name + `canonical_name` as its own field when it differs) and the context builder in `long_term.py` was fixed after that. `get_entity` builds its dict somewhere else and was missed; the source guard in `tests/test_entity_name_projection.py` did not catch it because that site is written differently from the literal the guard checks.
+
+Do two things: fix the site, and make the guard catch the CLASS (any read path exposing `display_name` as a caller-facing name, across modules) rather than one string in one file.
+
+---
+
+## Resume here — next session
+
+```
+Aura, memory sidecar + Phase A. Read docs/audit/HANDOFF-2026-07-25-memory-and-phase-a.md
+and the Phase A / memory / onboarding sections of
+docs/audit/consolidated-fix-plan-2026-07-20.md first.
+
+Do these in order:
+
+1. Fix the last read path: memory_get_entity still reports canonical_name as
+   "name". Then strengthen tests/test_entity_name_projection.py to catch the
+   class of mistake, not the literal string. Python only, so it commits fine.
+
+2. Rebuild + restart the memory sidecar, then restart the aura container too —
+   the daemon mounted 12 memory tools at boot and never re-mounted after the
+   sidecar restart, so it may not have memory_update at all. That ambiguity has
+   to be gone before the test means anything.
+
+3. Run the controprova. Ask Aura in plain language to fix its own memory (wrong
+   name + duplicates). Watch aura.tool_invocations and the Neo4j graph, not its
+   reply. Pass = the three entity ids survive (corrected, not recreated),
+   2a368f39's canonical becomes "Davide", no :Entity named "David" remains, no
+   add->forget loop. The baseline is in the handoff.
+
+4. Then, with the operator present, run the embedding backfill so the two
+   embedding-less duplicates become searchable:
+   docker exec aura-agent-memory-mcp neo4j-agent-memory \
+     maintenance backfill-embeddings --embedding-dimensions 768
+
+Blocked until the internal/adaptive lint goes green (46 findings from a parallel
+workstream): every .go commit, the push, and CI. Python and docs commit fine.
+--no-verify is forbidden. Do not re-dispatch long-running subagents without
+reading the failure note — 3 of 4 were killed by a 600s stall watchdog today.
+```
 
 The last two are Go → **they cannot be committed until blocker 1 clears.**
 
