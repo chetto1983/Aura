@@ -77,12 +77,8 @@ func TestMigrate0066TypedOutcomesCleanInstallDownUpAndPrivileges(t *testing.T) {
 		t.Fatalf("grant public schema create: %v", err)
 	}
 	migrateURL := dsn("aura_migrate", database)
-	applied, err := Migrate(ctx, migrateURL)
-	if err != nil {
-		t.Fatalf("clean migration install: %v", err)
-	}
-	if want := shippedMigrationCount(t); applied != want {
-		t.Fatalf("clean migration install applied %d, want %d", applied, want)
+	if err := MigrateSteps(ctx, migrateURL, 66); err != nil {
+		t.Fatalf("clean migration install through 0066: %v", err)
 	}
 	migratePool, err := Open(ctx, &Config{URL: migrateURL})
 	if err != nil {

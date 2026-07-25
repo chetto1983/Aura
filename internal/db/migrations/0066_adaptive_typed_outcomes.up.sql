@@ -442,6 +442,7 @@ AS $$
 DECLARE
     assignment_payload jsonb;
     target_payload jsonb;
+    target_kind text;
     chain_depth integer;
     chain_cycle boolean;
 BEGIN
@@ -484,8 +485,8 @@ BEGIN
     IF NEW.event_kind = 'outcome' THEN
         RETURN NEW;
     END IF;
-    SELECT target.payload
-    INTO target_payload
+    SELECT target.payload, target.event_kind
+    INTO target_payload, target_kind
     FROM aura.adaptive_outbox AS target
     WHERE target.id = (NEW.payload->>'supersedes_event_id')::uuid
       AND target.owner_id = NEW.owner_id
@@ -547,7 +548,7 @@ BEGIN
             ERRCODE = '23514',
             MESSAGE = 'schema-2 adaptive correction chain cycles';
     END IF;
-    IF chain_depth >= 64 THEN
+    IF chain_depth > 64 THEN
         RAISE EXCEPTION USING
             ERRCODE = '54000',
             MESSAGE = 'schema-2 adaptive correction chain is too long';
