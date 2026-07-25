@@ -52,9 +52,17 @@ func focalCohortTestSpec() CohortSpec {
 			{ActionID: "static", Probability: 0.5},
 			{ActionID: "vector_rerank", Probability: 0.25},
 		},
-		Evaluators:     []EvaluatorRegistration{harm, quality},
-		PrimaryQuality: quality.Provenance(),
-		PrimaryHarm:    harm.Provenance(),
+		Evaluators: []EvaluatorRegistration{harm, quality},
+		PrimaryQuality: CohortEndpoint{
+			ID:        "citation-supported",
+			Kind:      CohortBinaryQuality,
+			Evaluator: quality.Provenance(),
+		},
+		PrimaryHarm: CohortEndpoint{
+			ID:        "harm-free",
+			Kind:      CohortBinaryHarm,
+			Evaluator: harm.Provenance(),
+		},
 		Power: CohortPowerPlan{
 			BaselineQualityRate:   0.65,
 			BaselineHarmRate:      0.01,
@@ -140,10 +148,10 @@ func TestNewFocalCohort_FreezesCanonicalContent_When_SpecIsValid(t *testing.T) {
 	if got := cohort.Censoring(); got != spec.Censoring {
 		t.Fatalf("censoring = %#v, want %#v", got, spec.Censoring)
 	}
-	if got := cohort.PrimaryQualityEvaluator(); got != spec.PrimaryQuality {
+	if got := cohort.PrimaryQualityEndpoint(); got != spec.PrimaryQuality {
 		t.Fatalf("primary quality = %#v, want %#v", got, spec.PrimaryQuality)
 	}
-	if got := cohort.PrimaryHarmEvaluator(); got != spec.PrimaryHarm {
+	if got := cohort.PrimaryHarmEndpoint(); got != spec.PrimaryHarm {
 		t.Fatalf("primary harm = %#v, want %#v", got, spec.PrimaryHarm)
 	}
 	admission := cohort.Admission()
@@ -206,6 +214,13 @@ func TestNewFocalCohort_DerivesDeterministicIdentity_When_ContentChanges(t *test
 	}
 	if otherOrdinalCohort.ID() == cohort.ID() {
 		t.Fatal("changed focal ordinal did not change cohort identity")
+	}
+
+	otherEndpoint := focalCohortTestSpec()
+	otherEndpoint.PrimaryQuality.ID = "citation-correct"
+	otherEndpointCohort := mustFocalCohort(t, otherEndpoint)
+	if otherEndpointCohort.ID() == cohort.ID() || otherEndpointCohort.SHA256() == cohort.SHA256() {
+		t.Fatal("changed primary endpoint did not change cohort identity")
 	}
 }
 
@@ -351,21 +366,30 @@ func TestNewFocalCohort_RejectsInvalidSpecifications(t *testing.T) {
 		{"duplicate evaluator", func(s *CohortSpec) { s.Evaluators[1] = s.Evaluators[0] }},
 		{"ineligible evaluator", func(s *CohortSpec) { s.Evaluators[0].Kind = EvaluatorSelfReport }},
 		{"invalid evaluator hash", func(s *CohortSpec) { s.Evaluators[0].ProvenanceSHA256 = "nope" }},
-		{"unregistered primary quality", func(s *CohortSpec) {
-			s.PrimaryQuality = unregistered.Provenance()
+		{"unregistered primary quality evaluator", func(s *CohortSpec) {
+			s.PrimaryQuality.Evaluator = unregistered.Provenance()
 		}},
-		{"unregistered primary harm", func(s *CohortSpec) {
-			s.PrimaryHarm = unregistered.Provenance()
+		{"unregistered primary harm evaluator", func(s *CohortSpec) {
+			s.PrimaryHarm.Evaluator = unregistered.Provenance()
 		}},
+		{"swapped binary endpoint kinds", func(s *CohortSpec) {
+			s.PrimaryQuality.Kind, s.PrimaryHarm.Kind = s.PrimaryHarm.Kind, s.PrimaryQuality.Kind
+		}},
+		{"unknown primary endpoint kind", func(s *CohortSpec) { s.PrimaryQuality.Kind = "ordinal_quality" }},
+		{"invalid primary endpoint ID", func(s *CohortSpec) { s.PrimaryQuality.ID = "citation quality" }},
+		{"sensitive primary endpoint ID", func(s *CohortSpec) { s.PrimaryQuality.ID = "credential-quality" }},
 		{"baseline quality out of range", func(s *CohortSpec) { s.Power.BaselineQualityRate = 1.5 }},
 		{"baseline harm out of range", func(s *CohortSpec) { s.Power.BaselineHarmRate = -0.1 }},
 		{"no detectable lift", func(s *CohortSpec) { s.Power.MinimumDetectableLift = 0 }},
+		{"impossible detectable lift", func(s *CohortSpec) { s.Power.MinimumDetectableLift = 0.36 }},
 		{"no expected members", func(s *CohortSpec) { s.Power.ExpectedMembers = 0 }},
 		{"minimum exceeds expected members", func(s *CohortSpec) { s.Power.MinimumMembers = 5001 }},
 		{"no minimum members", func(s *CohortSpec) { s.Power.MinimumMembers = 0 }},
 		{"no arm support", func(s *CohortSpec) { s.Power.MinimumArmSupport = 0 }},
+		{"insufficient arm support", func(s *CohortSpec) { s.Power.MinimumArmSupport = 0.51 }},
 		{"invalid simulation hash", func(s *CohortSpec) { s.Power.SimulationSHA256 = "" }},
 		{"negative quality margin", func(s *CohortSpec) { s.Margins.MinimumQualityUplift = -0.1 }},
+		{"impossible quality margin", func(s *CohortSpec) { s.Margins.MinimumQualityUplift = 0.35 }},
 		{"saturated harm margin", func(s *CohortSpec) { s.Margins.MaximumHarmIncrease = 1 }},
 		{"saturated censor rate", func(s *CohortSpec) { s.Censoring.MaxCensorRate = 1 }},
 		{"negative censor imbalance", func(s *CohortSpec) { s.Censoring.MaxCensorImbalance = -0.1 }},
@@ -393,6 +417,10 @@ func TestNewFocalCohort_RejectsInvalidSpecifications(t *testing.T) {
 		{"zero alpha allocation", func(s *CohortSpec) { s.Looks[0].Alpha = 0 }},
 		{"alpha budget exceeded", func(s *CohortSpec) { s.Looks[4].Alpha = 0.031 }},
 		{"missing cutoff", func(s *CohortSpec) { s.Cutoff = time.Time{} }},
+		{"secret provider", func(s *CohortSpec) { s.Scope.ProviderID = "secret-provider" }},
+		{"password model", func(s *CohortSpec) { s.Scope.ModelID = "password-model" }},
+		{"credential policy", func(s *CohortSpec) { s.Scope.PolicyVersion = "credential-policy" }},
+		{"token experiment", func(s *CohortSpec) { s.ExperimentID = "token-experiment" }},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			spec := focalCohortTestSpec()

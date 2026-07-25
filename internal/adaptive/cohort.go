@@ -72,6 +72,23 @@ type CohortArm struct {
 	Probability float64
 }
 
+// CohortEndpointKind identifies an exact binary primary endpoint role.
+type CohortEndpointKind string
+
+const (
+	// CohortBinaryQuality identifies the frozen binary primary quality endpoint.
+	CohortBinaryQuality CohortEndpointKind = "binary_quality"
+	// CohortBinaryHarm identifies the frozen binary primary harm endpoint.
+	CohortBinaryHarm CohortEndpointKind = "binary_harm"
+)
+
+// CohortEndpoint freezes one safe binary endpoint and its evaluator artifact.
+type CohortEndpoint struct {
+	ID        string
+	Kind      CohortEndpointKind
+	Evaluator EvaluatorProvenance
+}
+
 // CohortPowerPlan freezes the preregistered power and support assumptions.
 type CohortPowerPlan struct {
 	BaselineQualityRate   float64
@@ -116,8 +133,8 @@ type CohortSpec struct {
 	Arms           []CohortArm
 	Actions        []ActionProbability
 	Evaluators     []EvaluatorRegistration
-	PrimaryQuality EvaluatorProvenance
-	PrimaryHarm    EvaluatorProvenance
+	PrimaryQuality CohortEndpoint
+	PrimaryHarm    CohortEndpoint
 	Power          CohortPowerPlan
 	Margins        CohortMargins
 	Censoring      CohortCensoring
@@ -233,18 +250,18 @@ func (cohort *FocalCohort) Evaluators() []EvaluatorRegistration {
 	return slices.Clone(cohort.spec.Evaluators)
 }
 
-// PrimaryQualityEvaluator returns the frozen primary quality evaluator.
-func (cohort *FocalCohort) PrimaryQualityEvaluator() EvaluatorProvenance {
+// PrimaryQualityEndpoint returns the frozen primary binary quality endpoint.
+func (cohort *FocalCohort) PrimaryQualityEndpoint() CohortEndpoint {
 	if cohort == nil {
-		return EvaluatorProvenance{}
+		return CohortEndpoint{}
 	}
 	return cohort.spec.PrimaryQuality
 }
 
-// PrimaryHarmEvaluator returns the frozen primary harm evaluator.
-func (cohort *FocalCohort) PrimaryHarmEvaluator() EvaluatorProvenance {
+// PrimaryHarmEndpoint returns the frozen primary binary harm endpoint.
+func (cohort *FocalCohort) PrimaryHarmEndpoint() CohortEndpoint {
 	if cohort == nil {
-		return EvaluatorProvenance{}
+		return CohortEndpoint{}
 	}
 	return cohort.spec.PrimaryHarm
 }
@@ -398,7 +415,10 @@ func validateCohortActions(actions []ActionProbability) error {
 	return nil
 }
 
-func validateCohortEvaluators(registrations []EvaluatorRegistration, quality, harm EvaluatorProvenance) error {
+func validateCohortEvaluators(registrations []EvaluatorRegistration, quality, harm CohortEndpoint) error {
+	if !validCohortEndpoint(quality, CohortBinaryQuality) || !validCohortEndpoint(harm, CohortBinaryHarm) {
+		return errors.New("adaptive cohort primary endpoint is invalid")
+	}
 	if len(registrations) == 0 || !slices.IsSortedFunc(registrations, func(a, b EvaluatorRegistration) int {
 		if compare := strings.Compare(string(a.Kind), string(b.Kind)); compare != 0 {
 			return compare
@@ -412,12 +432,18 @@ func validateCohortEvaluators(registrations []EvaluatorRegistration, quality, ha
 		if err := validateEvaluatorRegistration(registration); err != nil {
 			return err
 		}
+		if !safeCohortID(registration.ID, maxEvaluatorIDLength) ||
+			!safeCohortID(registration.Version, maxEvaluatorVersionLength) ||
+			!safeCohortID(registration.RubricID, maxRubricIDLength) ||
+			!safeCohortID(registration.CalibrationID, maxCalibrationIDLength) {
+			return errors.New("adaptive cohort evaluator catalog identifier is invalid")
+		}
 		if i > 0 && registration.Kind == registrations[i-1].Kind && registration.ID == registrations[i-1].ID {
 			return errors.New("adaptive cohort evaluator is duplicated")
 		}
 		provenance := registration.Provenance()
-		qualityOK = qualityOK || provenance == quality
-		harmOK = harmOK || provenance == harm
+		qualityOK = qualityOK || provenance == quality.Evaluator
+		harmOK = harmOK || provenance == harm.Evaluator
 	}
 	if !qualityOK || !harmOK {
 		return errors.New("adaptive cohort primary evaluator is not registered")
@@ -425,12 +451,35 @@ func validateCohortEvaluators(registrations []EvaluatorRegistration, quality, ha
 	return nil
 }
 
+func validCohortEndpoint(endpoint CohortEndpoint, kind CohortEndpointKind) bool {
+	return endpoint.Kind == kind && safeCohortID(endpoint.ID, maxEvaluatorIDLength)
+}
+
 func validateCohortNumbers(spec CohortSpec) error {
 	power := spec.Power
-	if !unitInterval(power.BaselineQualityRate) || !unitInterval(power.BaselineHarmRate) || !positiveFinite(power.MinimumDetectableLift) || power.ExpectedMembers == 0 || power.MinimumMembers == 0 || power.MinimumMembers > power.ExpectedMembers || !finiteProbability(power.MinimumArmSupport, false) || !validSHA256(power.SimulationSHA256) {
+	if !unitInterval(power.BaselineQualityRate) || !unitInterval(power.BaselineHarmRate) ||
+		!positiveFinite(power.MinimumDetectableLift) ||
+		power.BaselineQualityRate+power.MinimumDetectableLift > 1 ||
+		power.ExpectedMembers == 0 || power.MinimumMembers == 0 ||
+		power.MinimumMembers > power.ExpectedMembers ||
+		!finiteProbability(power.MinimumArmSupport, false) ||
+		!validSHA256(power.SimulationSHA256) {
 		return errors.New("adaptive cohort power plan is invalid")
 	}
-	if !nonnegativeFinite(spec.Margins.MinimumQualityUplift) || !finiteProbability(spec.Margins.MaximumHarmIncrease, true) || spec.Margins.MaximumHarmIncrease >= 1 || !finiteProbability(spec.Censoring.MaxCensorRate, true) || spec.Censoring.MaxCensorRate >= 1 || !nonnegativeFinite(spec.Censoring.MaxCensorImbalance) || spec.Censoring.MaxCensorImbalance >= 1 || spec.Cutoff.IsZero() {
+	for _, arm := range spec.Arms {
+		if arm.Probability < power.MinimumArmSupport {
+			return errors.New("adaptive cohort arm support is insufficient")
+		}
+	}
+	if !nonnegativeFinite(spec.Margins.MinimumQualityUplift) ||
+		spec.Margins.MinimumQualityUplift >= 1 ||
+		power.BaselineQualityRate+spec.Margins.MinimumQualityUplift >= 1 ||
+		!finiteProbability(spec.Margins.MaximumHarmIncrease, true) ||
+		spec.Margins.MaximumHarmIncrease >= 1 ||
+		!finiteProbability(spec.Censoring.MaxCensorRate, true) ||
+		spec.Censoring.MaxCensorRate >= 1 ||
+		!nonnegativeFinite(spec.Censoring.MaxCensorImbalance) ||
+		spec.Censoring.MaxCensorImbalance >= 1 || spec.Cutoff.IsZero() {
 		return errors.New("adaptive cohort thresholds are invalid")
 	}
 	return nil
@@ -474,8 +523,7 @@ func safeCohortID(value string, maximum int) bool {
 	if !validASCIIID(value, maximum) || value != strings.ToLower(value) {
 		return false
 	}
-	lower := strings.ToLower(value)
-	return !strings.Contains(lower, "api-key") && !strings.Contains(lower, "bearer") && !strings.Contains(lower, "content")
+	return !sensitiveCatalogID(value)
 }
 func unitInterval(value float64) bool { return finiteProbability(value, true) }
 func positiveFinite(value float64) bool {
