@@ -139,3 +139,68 @@ func TestValidateCorrectionAppendRejectsMissingScopeForkAndCycle(t *testing.T) {
 		})
 	}
 }
+
+func TestCorrectionChainBoundaryMatchesFoldLimit(t *testing.T) {
+	t.Parallel()
+	evaluator := validEvaluatorRegistration(EvaluatorDeterministic).Provenance()
+
+	accepted, rootID, leafID := linearOutcomeChain(
+		t,
+		maxCorrectionChainLength-2,
+		evaluator,
+	)
+	nextID := uuid.Must(uuid.NewV7())
+	next := CorrectionObservation{
+		Evaluator:         evaluator,
+		SupersedesEventID: leafID,
+	}
+	if err := validateCorrectionAppend(accepted, nextID, next); err != nil {
+		t.Fatalf("append exact maximum correction: %v", err)
+	}
+	accepted = append(accepted, outcomeChainFact{
+		id: nextID, kind: EventCorrection, evaluator: evaluator,
+		supersedes: leafID,
+	})
+	leaf, err := foldOutcomeChain(accepted, rootID)
+	if err != nil {
+		t.Fatalf("fold exact maximum correction chain: %v", err)
+	}
+	if leaf.id != nextID {
+		t.Fatalf("exact maximum leaf = %s, want %s", leaf.id, nextID)
+	}
+
+	tooLongID := uuid.Must(uuid.NewV7())
+	tooLong := CorrectionObservation{
+		Evaluator:         evaluator,
+		SupersedesEventID: nextID,
+	}
+	if err := validateCorrectionAppend(
+		accepted,
+		tooLongID,
+		tooLong,
+	); !errors.Is(err, ErrCorrectionChainTooLong) {
+		t.Fatalf("over-limit append error = %v, want ErrCorrectionChainTooLong", err)
+	}
+}
+
+func linearOutcomeChain(
+	t *testing.T,
+	correctionCount int,
+	evaluator EvaluatorProvenance,
+) ([]outcomeChainFact, uuid.UUID, uuid.UUID) {
+	t.Helper()
+	rootID := uuid.Must(uuid.NewV7())
+	facts := []outcomeChainFact{
+		{id: rootID, kind: EventOutcome, evaluator: evaluator},
+	}
+	leafID := rootID
+	for range correctionCount {
+		correctionID := uuid.Must(uuid.NewV7())
+		facts = append(facts, outcomeChainFact{
+			id: correctionID, kind: EventCorrection, evaluator: evaluator,
+			supersedes: leafID,
+		})
+		leafID = correctionID
+	}
+	return facts, rootID, leafID
+}

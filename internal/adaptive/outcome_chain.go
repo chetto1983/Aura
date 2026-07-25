@@ -96,7 +96,7 @@ func validateCorrectionAppend(
 		}
 		cursor = parent
 		depth++
-		if depth > maxCorrectionChainLength {
+		if depth >= maxCorrectionChainLength {
 			return ErrCorrectionChainTooLong
 		}
 	}

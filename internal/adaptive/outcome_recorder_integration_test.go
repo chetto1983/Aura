@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -153,6 +154,113 @@ func TestOutcomeRecorderBindsPersistedAssignmentAndBenchmarkAdapters(t *testing.
 		t.Fatalf("judge adapter = (%d, %v), want (3, nil)", sequence, err)
 	}
 	assertAdaptiveNextSequence(t, pool, owner, assignment.RequestID.String(), 4)
+}
+
+func TestOutcomeRecorderAndDatabaseEnforceFoldableCorrectionLimit(t *testing.T) {
+	pool := adaptiveIntegrationPool(t)
+	ctx := context.Background()
+	owner := seedTypedLedgerOwner(t, pool)
+	assignment := typedLedgerAssignment(t, owner)
+	store := NewStore(pool, StoreConfig{})
+	if _, err := store.RecordAssignment(ctx, assignment); err != nil {
+		t.Fatal(err)
+	}
+	registration := validEvaluatorRegistration(EvaluatorDeterministic)
+	catalog, err := NewEvaluatorCatalog(registration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder, err := NewOutcomeRecorder(store, catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcome := validOutcomeObservation(assignment, registration)
+	if _, err := recorder.RecordOutcome(ctx, outcome); err != nil {
+		t.Fatal(err)
+	}
+	root, err := NewOutcomeEvent(assignment, outcome, catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leafID := root.ID
+	for index := 0; index < maxCorrectionChainLength-1; index++ {
+		correction := validCorrectionObservation(assignment, registration, leafID)
+		correction.CorrectionSourceID = uuid.Must(uuid.NewV7())
+		event, err := NewCorrectionEvent(assignment, correction, catalog)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := recorder.RecordCorrection(ctx, correction); err != nil {
+			t.Fatalf("RecordCorrection exact-limit index %d: %v", index, err)
+		}
+		leafID = event.ID
+	}
+	records, err := store.ListAggregate(ctx, owner, assignment.RequestID.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	facts := make([]outcomeChainFact, 0, maxCorrectionChainLength)
+	for _, record := range records {
+		switch record.Kind {
+		case EventOutcome:
+			decoded, err := DecodeOutcome(record.Payload, assignment, catalog)
+			if err != nil {
+				t.Fatal(err)
+			}
+			facts = append(facts, outcomeChainFact{
+				id: record.ID, kind: record.Kind, evaluator: decoded.Evaluator,
+			})
+		case EventCorrection:
+			decoded, err := DecodeCorrection(record.Payload, assignment, catalog)
+			if err != nil {
+				t.Fatal(err)
+			}
+			facts = append(facts, outcomeChainFact{
+				id:         record.ID,
+				kind:       record.Kind,
+				evaluator:  decoded.Evaluator,
+				supersedes: decoded.SupersedesEventID,
+			})
+		}
+	}
+	folded, err := foldOutcomeChain(facts, root.ID)
+	if err != nil {
+		t.Fatalf("fold exact-limit persisted chain: %v", err)
+	}
+	if folded.id != leafID {
+		t.Fatalf("persisted exact-limit leaf = %s, want %s", folded.id, leafID)
+	}
+
+	overLimit := validCorrectionObservation(assignment, registration, leafID)
+	overLimit.CorrectionSourceID = uuid.Must(uuid.NewV7())
+	if _, err := recorder.RecordCorrection(
+		ctx,
+		overLimit,
+	); !errors.Is(err, ErrCorrectionChainTooLong) {
+		t.Fatalf("over-limit recorder error = %v, want ErrCorrectionChainTooLong", err)
+	}
+	assertAdaptiveNextSequence(
+		t,
+		pool,
+		owner,
+		assignment.RequestID.String(),
+		int64(maxCorrectionChainLength+2),
+	)
+
+	overLimitEvent, err := NewCorrectionEvent(assignment, overLimit, catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = insertAdaptiveLedgerEvent(
+		ctx,
+		pool,
+		overLimitEvent,
+		int64(maxCorrectionChainLength+2),
+	)
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "54000" {
+		t.Fatalf("over-limit direct insert error = %v, want SQLSTATE 54000", err)
+	}
 }
 
 func assertAdaptiveNextSequence(
