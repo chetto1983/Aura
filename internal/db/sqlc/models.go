@@ -14,6 +14,46 @@ type AuraAdaptiveAggregateSequences struct {
 	NextSequence int64       `json:"next_sequence"`
 }
 
+// Immutable owner-scoped focal assignment claims made before arm draw.
+type AuraAdaptiveFocalCohortClaims struct {
+	ID                       pgtype.UUID        `json:"id"`
+	OwnerID                  pgtype.UUID        `json:"owner_id"`
+	CohortID                 pgtype.UUID        `json:"cohort_id"`
+	RequestID                pgtype.UUID        `json:"request_id"`
+	EvaluationConversationID pgtype.UUID        `json:"evaluation_conversation_id"`
+	AssignmentID             pgtype.UUID        `json:"assignment_id"`
+	Domain                   string             `json:"domain"`
+	DecisionPoint            string             `json:"decision_point"`
+	PointOrdinal             int64              `json:"point_ordinal"`
+	SessionID                pgtype.UUID        `json:"session_id"`
+	EpisodeID                pgtype.UUID        `json:"episode_id"`
+	TimeBlockStart           pgtype.Timestamptz `json:"time_block_start"`
+	ClaimedAt                pgtype.Timestamptz `json:"claimed_at"`
+}
+
+// Authoritative immutable preregistered focal cohort artifacts.
+type AuraAdaptiveFocalCohorts struct {
+	ID              pgtype.UUID        `json:"id"`
+	OwnerID         pgtype.UUID        `json:"owner_id"`
+	ProviderID      string             `json:"provider_id"`
+	ModelID         string             `json:"model_id"`
+	PolicyEpoch     int64              `json:"policy_epoch"`
+	PolicyVersion   string             `json:"policy_version"`
+	SnapshotID      pgtype.UUID        `json:"snapshot_id"`
+	SnapshotSha256  []byte             `json:"snapshot_sha256"`
+	Environment     string             `json:"environment"`
+	Domain          string             `json:"domain"`
+	DecisionPoint   string             `json:"decision_point"`
+	PointOrdinal    int64              `json:"point_ordinal"`
+	PredicateSha256 []byte             `json:"predicate_sha256"`
+	ExperimentID    string             `json:"experiment_id"`
+	Cutoff          pgtype.Timestamptz `json:"cutoff"`
+	Sha256          []byte             `json:"sha256"`
+	Artifact        []byte             `json:"artifact"`
+	ArtifactJson    []byte             `json:"artifact_json"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+}
+
 // Permanent UUID-only deny-list for deleted identities; contains no retained identity name.
 type AuraAdaptiveIdentityTombstones struct {
 	OwnerID   pgtype.UUID        `json:"owner_id"`
