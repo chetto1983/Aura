@@ -248,6 +248,14 @@ func TestFocalCohort_MatchesFocalPoint_When_DomainPointAndOrdinalAreExact(t *tes
 	}
 }
 
+func TestFocalCohort_RejectsFocalPointForUninitializedCohort(t *testing.T) {
+	var cohort FocalCohort
+
+	if cohort.MatchesFocalPoint("", "", 0) {
+		t.Fatal("zero-value cohort matched a zero-value focal predicate")
+	}
+}
+
 func TestNewFocalCohort_ReturnsDefensiveCopies_When_CallersMutate(t *testing.T) {
 	spec := focalCohortTestSpec()
 	cohort := mustFocalCohort(t, spec)

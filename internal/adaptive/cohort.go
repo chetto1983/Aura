@@ -287,7 +287,7 @@ func (cohort *FocalCohort) ValidatePrimaryHarmOutcome(observation OutcomeObserva
 }
 
 func validatePrimaryOutcome(cohort *FocalCohort, observation OutcomeObservation, endpoint CohortEndpoint, value *float64) error {
-	if cohort == nil || cohort.id == uuid.Nil || cohort.sha256 == "" || cohort.predicateSHA256 == "" ||
+	if !cohort.initialized() ||
 		observation.OwnerID != cohort.spec.Scope.OwnerID ||
 		observation.Domain != cohort.spec.Predicate.Domain ||
 		observation.ProviderID != cohort.spec.Scope.ProviderID ||
@@ -351,7 +351,11 @@ func (cohort *FocalCohort) Cutoff() time.Time {
 
 // MatchesFocalPoint reports whether a decision is the cohort's sole focal point.
 func (cohort *FocalCohort) MatchesFocalPoint(domain Domain, point DecisionPoint, ordinal uint32) bool {
-	return cohort != nil && cohort.spec.Predicate == (FocalPredicate{Domain: domain, Point: point, Ordinal: ordinal})
+	return cohort.initialized() && cohort.spec.Predicate == (FocalPredicate{Domain: domain, Point: point, Ordinal: ordinal})
+}
+
+func (cohort *FocalCohort) initialized() bool {
+	return cohort != nil && cohort.id != uuid.Nil && cohort.sha256 != "" && cohort.predicateSHA256 != ""
 }
 
 func canonicalCohortSpec(spec CohortSpec) CohortSpec {
