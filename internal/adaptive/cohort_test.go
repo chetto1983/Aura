@@ -1,6 +1,7 @@
 package adaptive
 
 import (
+	"math"
 	"slices"
 	"strings"
 	"testing"
@@ -345,6 +346,9 @@ func TestNewFocalCohort_RejectsInvalidSpecifications(t *testing.T) {
 		{"invalid model", func(s *CohortSpec) { s.Scope.ModelID = "model with spaces" }},
 		{"invalid policy version", func(s *CohortSpec) { s.Scope.PolicyVersion = "" }},
 		{"missing policy epoch", func(s *CohortSpec) { s.Scope.PolicyEpoch = 0 }},
+		{"policy epoch exceeds PostgreSQL bigint", func(s *CohortSpec) {
+			s.Scope.PolicyEpoch = uint64(math.MaxInt64) + 1
+		}},
 		{"missing snapshot", func(s *CohortSpec) { s.Scope.SnapshotID = uuid.Nil }},
 		{"invalid snapshot hash", func(s *CohortSpec) { s.Scope.SnapshotSHA256 = "ABC" }},
 		{"offline environment", func(s *CohortSpec) { s.Scope.Environment = EvaluationOffline }},
@@ -424,6 +428,9 @@ func TestNewFocalCohort_RejectsInvalidSpecifications(t *testing.T) {
 			s.Admission.BlockKeys = []BlockKey{"tenant"}
 		}},
 		{"missing time block width", func(s *CohortSpec) { s.Admission.TimeBlockSeconds = 0 }},
+		{"time block width exceeds PostgreSQL bigint", func(s *CohortSpec) {
+			s.Admission.TimeBlockSeconds = uint64(math.MaxInt64) + 1
+		}},
 		{"unused time block width", func(s *CohortSpec) {
 			s.Admission.BlockKeys = []BlockKey{BlockOwner}
 		}},

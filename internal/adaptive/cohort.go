@@ -413,7 +413,7 @@ func validateCohortSpec(spec CohortSpec) error {
 }
 
 func validateCohortScope(scope CohortScope) error {
-	if scope.OwnerID == uuid.Nil || !safeCohortID(scope.ProviderID, maxProviderIDLength) || !safeCohortID(scope.ModelID, maxModelIDLength) || !safeCohortID(scope.PolicyVersion, maxPolicyVersionIDLength) || scope.PolicyEpoch == 0 || scope.SnapshotID == uuid.Nil || !validSHA256(scope.SnapshotSHA256) || scope.Environment != EvaluationProductionCanary {
+	if scope.OwnerID == uuid.Nil || !safeCohortID(scope.ProviderID, maxProviderIDLength) || !safeCohortID(scope.ModelID, maxModelIDLength) || !safeCohortID(scope.PolicyVersion, maxPolicyVersionIDLength) || scope.PolicyEpoch == 0 || scope.PolicyEpoch > math.MaxInt64 || scope.SnapshotID == uuid.Nil || !validSHA256(scope.SnapshotSHA256) || scope.Environment != EvaluationProductionCanary {
 		return errors.New("adaptive cohort scope is invalid")
 	}
 	return nil
@@ -527,7 +527,7 @@ func validateCohortNumbers(spec CohortSpec) error {
 
 func validateCohortAdmissionAndLooks(spec CohortSpec) error {
 	admission := spec.Admission
-	if admission.Interference != InterferenceNoneBetweenUnits || len(admission.BlockKeys) == 0 || !slices.IsSorted(admission.BlockKeys) || admission.TimeBlockSeconds == 0 || !slices.Contains(admission.BlockKeys, BlockTimeBlock) {
+	if admission.Interference != InterferenceNoneBetweenUnits || len(admission.BlockKeys) == 0 || !slices.IsSorted(admission.BlockKeys) || admission.TimeBlockSeconds == 0 || admission.TimeBlockSeconds > math.MaxInt64 || !slices.Contains(admission.BlockKeys, BlockTimeBlock) {
 		return errors.New("adaptive cohort admission plan is invalid")
 	}
 	for i, key := range admission.BlockKeys {
