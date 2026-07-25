@@ -121,6 +121,9 @@ func (receipt RandomizationReceipt) Validate() error {
 	if totalProbability.Cmp(MustExactRational(1, 1)) != 0 {
 		return errors.New("randomization receipt action probabilities do not sum to one")
 	}
+	if err := validateTwoArmMarginal(receipt.ActionProbabilities); err != nil {
+		return err
+	}
 	selectedRef := receipt.ArmPolicyRefs[receipt.MappedBit]
 	if selectedRef.ArmID != receipt.SelectedArmID {
 		return errors.New("randomization receipt selected arm reference does not match")
@@ -142,10 +145,85 @@ func validReceiptArmPolicyRef(reference ReceiptArmPolicyRef, arm RandomizedArm) 
 		reference.Weight.Cmp(MustExactRational(1, 1)) == 0 &&
 		reference.PolicyID == policyID &&
 		reference.PolicyRevision == 1 &&
+		validateCanonicalUUID(reference.SnapshotID) == nil &&
 		validSHA256(reference.SnapshotSHA256) &&
 		validSHA256(reference.ActionSchemaSHA256) &&
 		validSHA256(reference.FeatureSchemaSHA256) &&
 		reference.FeatureSchemaSHA256 != "9d3da8a268742cc8871fa33993732e4cf6515b2acb6d52070b292fda3f2620c0"
+}
+
+func validateTwoArmMarginal(probabilities []ExactActionProbability) error {
+	nonzero := make([]ExactActionProbability, 0, 2)
+	for _, probability := range probabilities {
+		if probability.Probability.Cmp(MustExactRational(0, 1)) > 0 {
+			nonzero = append(nonzero, probability)
+		}
+	}
+	if len(nonzero) == 1 &&
+		nonzero[0].ActionID == "static" &&
+		nonzero[0].Probability.Cmp(MustExactRational(1, 1)) == 0 {
+		return nil
+	}
+	if len(nonzero) == 2 &&
+		nonzero[0].ActionID == "static" &&
+		nonzero[0].Probability.Cmp(MustExactRational(1, 2)) == 0 &&
+		nonzero[1].ActionID != "static" &&
+		nonzero[1].Probability.Cmp(MustExactRational(1, 2)) == 0 {
+		return nil
+	}
+	return errors.New("randomization receipt action probabilities are not the frozen two-arm marginal")
+}
+
+// RandomizationAssignmentBinding is the assignment subset proven by a receipt.
+type RandomizationAssignmentBinding struct {
+	AssignmentID        string
+	OwnerID             string
+	CohortID            string
+	RequestID           string
+	SelectedArmID       string
+	SelectedArmRole     string
+	ArmProbability      ExactRational
+	IntendedActionID    string
+	ActionProbabilities []ExactActionProbability
+}
+
+// ValidateAssignment rejects a receipt that does not prove the persisted assignment.
+func (receipt RandomizationReceipt) ValidateAssignment(binding RandomizationAssignmentBinding) error {
+	if err := receipt.Validate(); err != nil {
+		return err
+	}
+	if binding.AssignmentID != receipt.AssignmentID ||
+		binding.OwnerID != receipt.OwnerID ||
+		binding.CohortID != receipt.CohortID ||
+		binding.RequestID != receipt.RequestID ||
+		binding.SelectedArmID != receipt.SelectedArmID ||
+		binding.SelectedArmRole != receipt.SelectedArmRole ||
+		binding.ArmProbability.Cmp(receipt.ArmProbability) != 0 ||
+		len(binding.ActionProbabilities) != len(receipt.ActionProbabilities) {
+		return errors.New("randomization receipt does not match assignment binding")
+	}
+	for index := range binding.ActionProbabilities {
+		if binding.ActionProbabilities[index].ActionID != receipt.ActionProbabilities[index].ActionID ||
+			binding.ActionProbabilities[index].Probability.Cmp(
+				receipt.ActionProbabilities[index].Probability,
+			) != 0 {
+			return errors.New("randomization receipt action probabilities do not match assignment")
+		}
+	}
+	expectedAction := "static"
+	if receipt.SelectedArmID == string(RandomizedArmChallenger) {
+		for _, probability := range receipt.ActionProbabilities {
+			if probability.ActionID != "static" &&
+				probability.Probability.Cmp(MustExactRational(1, 2)) == 0 {
+				expectedAction = probability.ActionID
+				break
+			}
+		}
+	}
+	if binding.IntendedActionID != expectedAction {
+		return errors.New("randomization receipt selected arm does not match intended action")
+	}
+	return nil
 }
 
 // CanonicalJSON validates then emits the exact field-ordered JSON bytes.

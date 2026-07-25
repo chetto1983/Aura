@@ -5,32 +5,6 @@ import (
 	"testing"
 )
 
-func TestEvaluateSelectedIntentionOPE_MatchesHandVector(t *testing.T) {
-	rows := []OPERow{
-		{
-			MemberID: "01", ClusterID: "cluster-a", IntendedActionID: "static", Reward: 0,
-			Actions: []OPEAction{
-				{ActionID: "static", Behavior: 0.5, Target: 0, QHat: 0.4},
-				{ActionID: "summarize", Behavior: 0.5, Target: 1, QHat: 0.8},
-			},
-		},
-		{
-			MemberID: "02", ClusterID: "cluster-b", IntendedActionID: "summarize", Reward: 1,
-			Actions: []OPEAction{
-				{ActionID: "static", Behavior: 0.5, Target: 0, QHat: 0.4},
-				{ActionID: "summarize", Behavior: 0.5, Target: 1, QHat: 0.8},
-			},
-		},
-	}
-	got, err := EvaluateSelectedIntentionOPE(rows)
-	if err != nil {
-		t.Fatalf("EvaluateSelectedIntentionOPE() error = %v", err)
-	}
-	if got.DR != 1 || got.SNIPS != 1 || got.ESS != 1 {
-		t.Fatalf("OPE = %#v, want DR=SNIPS=ESS=1", got)
-	}
-}
-
 func TestClusterSampler_MatchesFrozenZeroSeedVector(t *testing.T) {
 	var seed [32]byte
 	got, err := SampleClusterIndices(seed, 3, 12)

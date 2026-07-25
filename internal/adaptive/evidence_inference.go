@@ -292,38 +292,53 @@ func ExactATEBounds(
 	return report, nil
 }
 
-// NeumaierSum accumulates canonical finite binary64 values without FMA.
-func NeumaierSum(values []float64) (float64, error) {
-	sum := 0.0
-	correction := 0.0
-	for _, value := range values {
-		if !finite(value) {
-			return 0, errors.New("Neumaier input is nonfinite")
-		}
-		total := binary64Add(sum, value)
-		if !finite(total) {
-			return 0, errors.New("Neumaier sum is nonfinite")
-		}
-		var delta float64
-		if math.Abs(sum) >= math.Abs(value) {
-			delta = binary64Add(binary64Add(sum, -total), value)
-		} else {
-			delta = binary64Add(binary64Add(value, -total), sum)
-		}
-		correction = binary64Add(correction, delta)
-		if !finite(correction) {
-			return 0, errors.New("Neumaier correction is nonfinite")
-		}
-		sum = total
+type neumaierAccumulator struct {
+	sum        float64
+	correction float64
+}
+
+func (accumulator *neumaierAccumulator) add(value float64) error {
+	if !finite(value) {
+		return errors.New("nonfinite Neumaier input")
 	}
-	result := binary64Add(sum, correction)
+	total := binary64Add(accumulator.sum, value)
+	if !finite(total) {
+		return errors.New("nonfinite Neumaier sum")
+	}
+	var delta float64
+	if math.Abs(accumulator.sum) >= math.Abs(value) {
+		delta = binary64Add(binary64Add(accumulator.sum, -total), value)
+	} else {
+		delta = binary64Add(binary64Add(value, -total), accumulator.sum)
+	}
+	accumulator.correction = binary64Add(accumulator.correction, delta)
+	if !finite(accumulator.correction) {
+		return errors.New("nonfinite Neumaier correction")
+	}
+	accumulator.sum = total
+	return nil
+}
+
+func (accumulator neumaierAccumulator) result() (float64, error) {
+	result := binary64Add(accumulator.sum, accumulator.correction)
 	if !finite(result) {
-		return 0, errors.New("Neumaier result is nonfinite")
+		return 0, errors.New("nonfinite Neumaier result")
 	}
 	if result == 0 {
 		return 0, nil
 	}
 	return result, nil
+}
+
+// NeumaierSum accumulates canonical finite binary64 values without FMA.
+func NeumaierSum(values []float64) (float64, error) {
+	var accumulator neumaierAccumulator
+	for _, value := range values {
+		if err := accumulator.add(value); err != nil {
+			return 0, err
+		}
+	}
+	return accumulator.result()
 }
 
 //go:noinline

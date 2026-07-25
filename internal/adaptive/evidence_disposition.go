@@ -3,6 +3,8 @@ package adaptive
 // OutcomeDisposition is the terminal state of one sealed look.
 type OutcomeDisposition string
 
+// These are the only dispositions a sealed look may carry, and only
+// OutcomeDispositionContinue permits another look — look 5 can never emit it.
 const (
 	OutcomeDispositionContinue     OutcomeDisposition = "continue"
 	OutcomeDispositionPromote      OutcomeDisposition = "promote"

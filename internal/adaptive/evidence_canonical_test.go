@@ -109,3 +109,63 @@ func TestBuildEndpointCounts_AppliesFrozenMissingSubstitution(t *testing.T) {
 		t.Fatalf("harm counts = %#v", harm)
 	}
 }
+
+func TestCanonicalArtifacts_RejectMalformedSchemasAndRows(t *testing.T) {
+	if _, err := (ActionSchemaArtifact{}).SHA256(); err == nil {
+		t.Fatal("empty action schema accepted")
+	}
+	if _, err := (ActionSchemaArtifact{
+		SchemaID: "aura.adaptive.action-schema/v1", Revision: 1,
+		Actions: []string{"static", "static"},
+	}).SHA256(); err == nil {
+		t.Fatal("duplicate action schema accepted")
+	}
+	if _, err := (EmptyFeatureSchemaArtifact{
+		SchemaID: "aura.adaptive.feature-schema/empty/v1", Revision: 1,
+	}).SHA256(); err == nil {
+		t.Fatal("nil empty-feature array accepted")
+	}
+	if _, err := (TargetPolicyManifest{}).SHA256(); err == nil {
+		t.Fatal("invalid target policy accepted")
+	}
+	if _, err := (BehaviorPolicyManifest{}).SHA256(); err == nil {
+		t.Fatal("invalid behavior policy accepted")
+	}
+	if _, err := (BinaryRewardDefinition{}).SHA256(); err == nil {
+		t.Fatal("invalid reward definition accepted")
+	}
+	if _, err := (PredictionVector{}).SHA256(); err == nil {
+		t.Fatal("invalid prediction vector accepted")
+	}
+	vector := PredictionVector{
+		SchemaID: "aura.adaptive.prediction-vector/action-mean/v1", Revision: 1,
+		EndpointKind: "quality", ActionSchemaSHA256: repeatedSHA("1"),
+		RewardDefinitionSHA256: repeatedSHA("2"),
+		Predictions: []ActionMeanPrediction{
+			{ActionID: "static", SupportCount: 1, SuccessCount: 2, QHat: MustExactRational(1, 1)},
+		},
+	}
+	if _, err := vector.SHA256(); err == nil {
+		t.Fatal("prediction with successes above support accepted")
+	}
+	vector.Predictions[0] = ActionMeanPrediction{
+		ActionID: "static", SupportCount: 2, SuccessCount: 1, QHat: MustExactRational(3, 4),
+	}
+	if _, err := vector.SHA256(); err == nil {
+		t.Fatal("prediction with count/qhat mismatch accepted")
+	}
+	if _, err := BuildEndpointCounts("", EvidenceEndpointQuality, []BinaryITTMember{{}}); err == nil {
+		t.Fatal("empty endpoint stratum accepted")
+	}
+	if _, err := BuildEndpointCounts("s", "composite", []BinaryITTMember{{}}); err == nil {
+		t.Fatal("composite endpoint accepted")
+	}
+	observed := true
+	counts, err := BuildEndpointCounts(
+		"s", EvidenceEndpointQuality,
+		[]BinaryITTMember{{Treated: true, Outcome: &observed}, {Outcome: &observed}},
+	)
+	if err != nil || counts.TreatedSuccesses != 1 || counts.ControlSuccesses != 1 {
+		t.Fatalf("observed endpoint counts = %#v, error=%v", counts, err)
+	}
+}

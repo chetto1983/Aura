@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"slices"
 	"time"
 
@@ -16,6 +17,8 @@ import (
 // RandomizedArm is the frozen independent-Bernoulli arm identity.
 type RandomizedArm string
 
+// The two arms are frozen by the cohort's immutable randomization plan: ordered arm
+// 0 is the control baseline, arm 1 the treatment challenger.
 const (
 	RandomizedArmBaseline   RandomizedArm = "baseline"
 	RandomizedArmChallenger RandomizedArm = "challenger"
@@ -123,7 +126,7 @@ func NewAnalysisStratum(ownerID string, claimedAt time.Time, blockWidthSeconds i
 	if err := validateCanonicalUUID(ownerID); err != nil {
 		return AnalysisStratum{}, fmt.Errorf("owner id: %w", err)
 	}
-	if blockWidthSeconds <= 0 {
+	if blockWidthSeconds <= 0 || blockWidthSeconds > math.MaxInt64/1_000_000 {
 		return AnalysisStratum{}, errors.New("block width must be positive")
 	}
 	claimedAt = claimedAt.UTC().Truncate(time.Microsecond)

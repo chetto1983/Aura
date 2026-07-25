@@ -34,11 +34,12 @@ func NewFiveLookPlan(cutoffs []time.Time) ([]EvidenceLook, error) {
 		MustExactRational(1, 20),
 	}
 	looks := make([]EvidenceLook, len(cutoffs))
+	var previous time.Time
 	for index, cutoff := range cutoffs {
 		if cutoff.Location() != time.UTC || !cutoff.Equal(cutoff.Truncate(time.Microsecond)) {
 			return nil, errors.New("look cutoff must be canonical UTC microsecond time")
 		}
-		if index > 0 && !cutoffs[index-1].Before(cutoff) {
+		if index > 0 && !previous.Before(cutoff) {
 			return nil, errors.New("look cutoffs must be strictly increasing")
 		}
 		predecessorRule := "immediate_continue"
@@ -52,6 +53,7 @@ func NewFiveLookPlan(cutoffs []time.Time) ([]EvidenceLook, error) {
 			CumulativeAlpha: cumulative[index],
 			PredecessorRule: predecessorRule,
 		}
+		previous = cutoff
 	}
 	return looks, nil
 }

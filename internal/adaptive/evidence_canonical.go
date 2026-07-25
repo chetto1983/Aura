@@ -238,6 +238,8 @@ func validEvidenceEndpoint(endpoint string) bool {
 // EvidenceEndpointKind prevents quality/harm report substitution.
 type EvidenceEndpointKind string
 
+// The two endpoint kinds are frozen: quality and harm must carry different report
+// IDs and hashes, so one can never be substituted for the other.
 const (
 	EvidenceEndpointQuality EvidenceEndpointKind = "quality"
 	EvidenceEndpointHarm    EvidenceEndpointKind = "harm"

@@ -6,11 +6,48 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 )
 
 // ExactRational is a reduced arbitrary-precision rational used by evidence gates.
 type ExactRational struct {
 	value *big.Rat
+}
+
+// FormatLowerEightDecimals rounds an exact bound toward negative infinity.
+func FormatLowerEightDecimals(rational ExactRational) string {
+	return formatOutwardEightDecimals(rational, false)
+}
+
+// FormatUpperEightDecimals rounds an exact bound toward positive infinity.
+func FormatUpperEightDecimals(rational ExactRational) string {
+	return formatOutwardEightDecimals(rational, true)
+}
+
+func formatOutwardEightDecimals(rational ExactRational, upper bool) string {
+	value := rational.normalized()
+	scaled := new(big.Int).Mul(value.Num(), big.NewInt(100_000_000))
+	quotient, remainder := new(big.Int), new(big.Int)
+	quotient.QuoRem(scaled, value.Denom(), remainder)
+	if remainder.Sign() != 0 {
+		if upper && scaled.Sign() > 0 {
+			quotient.Add(quotient, big.NewInt(1))
+		}
+		if !upper && scaled.Sign() < 0 {
+			quotient.Sub(quotient, big.NewInt(1))
+		}
+	}
+	negative := quotient.Sign() < 0
+	digits := new(big.Int).Abs(quotient).String()
+	if len(digits) <= 8 {
+		digits = strings.Repeat("0", 9-len(digits)) + digits
+	}
+	whole := digits[:len(digits)-8]
+	fraction := digits[len(digits)-8:]
+	if negative {
+		return "-" + whole + "." + fraction
+	}
+	return whole + "." + fraction
 }
 
 // NewExactRational constructs a reduced exact rational.
