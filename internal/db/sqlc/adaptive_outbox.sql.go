@@ -696,6 +696,63 @@ func (q *Queries) LockSchema2AdaptiveAssignment(ctx context.Context, arg LockSch
 	return i, err
 }
 
+const lockSchema2AdaptiveOutcomeChain = `-- name: LockSchema2AdaptiveOutcomeChain :many
+SELECT id, owner_id, aggregate_id, sequence, decision_id, event_kind,
+       payload, payload_hash, status, attempts, available_at,
+       lease_owner, lease_expires_at, created_at, projected_at,
+       dead_letter_at, last_error_class
+FROM aura.adaptive_outbox
+WHERE owner_id = $1
+  AND decision_id = $2
+  AND event_kind IN ('outcome', 'correction')
+  AND payload->>'schema_version' = '2.0'
+ORDER BY sequence ASC
+FOR UPDATE
+`
+
+type LockSchema2AdaptiveOutcomeChainParams struct {
+	OwnerID      pgtype.UUID `json:"owner_id"`
+	AssignmentID pgtype.UUID `json:"assignment_id"`
+}
+
+func (q *Queries) LockSchema2AdaptiveOutcomeChain(ctx context.Context, arg LockSchema2AdaptiveOutcomeChainParams) ([]AuraAdaptiveOutbox, error) {
+	rows, err := q.db.Query(ctx, lockSchema2AdaptiveOutcomeChain, arg.OwnerID, arg.AssignmentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuraAdaptiveOutbox{}
+	for rows.Next() {
+		var i AuraAdaptiveOutbox
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerID,
+			&i.AggregateID,
+			&i.Sequence,
+			&i.DecisionID,
+			&i.EventKind,
+			&i.Payload,
+			&i.PayloadHash,
+			&i.Status,
+			&i.Attempts,
+			&i.AvailableAt,
+			&i.LeaseOwner,
+			&i.LeaseExpiresAt,
+			&i.CreatedAt,
+			&i.ProjectedAt,
+			&i.DeadLetterAt,
+			&i.LastErrorClass,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markAdaptiveProjected = `-- name: MarkAdaptiveProjected :execrows
 UPDATE aura.adaptive_outbox
 SET status = 'projected',

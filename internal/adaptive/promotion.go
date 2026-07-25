@@ -21,18 +21,6 @@ const (
 	EvaluationProductionCanary EvaluationEnvironment = "production_canary"
 )
 
-// EvaluatorKind identifies the source of an observed outcome.
-type EvaluatorKind string
-
-// Evaluator kinds distinguish eligible calibrated evidence from weak proxies.
-const (
-	EvaluatorDeterministic   EvaluatorKind = "deterministic"
-	EvaluatorHuman           EvaluatorKind = "human"
-	EvaluatorCalibratedJudge EvaluatorKind = "calibrated_judge"
-	EvaluatorSelfReport      EvaluatorKind = "self_report"
-	EvaluatorOperational     EvaluatorKind = "operational_proxy"
-)
-
 // CanaryArm identifies the randomized assignment served to a cohort member.
 type CanaryArm string
 

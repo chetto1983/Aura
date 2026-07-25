@@ -58,8 +58,8 @@ func TestSchema2LedgerPersistsTypedFactsAndExcludesHistoricalSchemas(t *testing.
 			ctx, pool, uuid.Must(uuid.NewV7()), owner, assignment.RequestID.String(),
 			int64(sequence+5), assignment.AssignmentID, kind,
 			[]byte(`{"schema_version":"2.0","untyped":true}`),
-		); err != nil {
-			t.Fatalf("insert untyped schema-2 %s: %v", kind, err)
+		); err == nil {
+			t.Fatalf("insert untyped schema-2 %s succeeded", kind)
 		}
 	}
 

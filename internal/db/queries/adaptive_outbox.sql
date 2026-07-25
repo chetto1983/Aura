@@ -244,6 +244,19 @@ WHERE assignment.decision_id = assignment.canonical_assignment_id
       )
   );
 
+-- name: LockSchema2AdaptiveOutcomeChain :many
+SELECT id, owner_id, aggregate_id, sequence, decision_id, event_kind,
+       payload, payload_hash, status, attempts, available_at,
+       lease_owner, lease_expires_at, created_at, projected_at,
+       dead_letter_at, last_error_class
+FROM aura.adaptive_outbox
+WHERE owner_id = sqlc.arg(owner_id)
+  AND decision_id = sqlc.arg(assignment_id)
+  AND event_kind IN ('outcome', 'correction')
+  AND payload->>'schema_version' = '2.0'
+ORDER BY sequence ASC
+FOR UPDATE;
+
 -- name: ListEligibleSchema2AdaptiveAggregateFacts :many
 WITH valid_assignments AS MATERIALIZED (
     SELECT assignment.id, assignment.owner_id, assignment.aggregate_id,

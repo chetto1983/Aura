@@ -248,6 +248,7 @@ type Querier interface {
 	LockAdaptiveOwner(ctx context.Context, ownerID pgtype.UUID) (pgtype.UUID, error)
 	LockConversationForTurnAppend(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)
 	LockSchema2AdaptiveAssignment(ctx context.Context, arg LockSchema2AdaptiveAssignmentParams) (AuraAdaptiveOutbox, error)
+	LockSchema2AdaptiveOutcomeChain(ctx context.Context, arg LockSchema2AdaptiveOutcomeChainParams) ([]AuraAdaptiveOutbox, error)
 	LookupRecoveryByEmail(ctx context.Context, email string) (LookupRecoveryByEmailRow, error)
 	MarkAdaptiveProjected(ctx context.Context, arg MarkAdaptiveProjectedParams) (int64, error)
 	// Stamp the throttle after a reminder ATTEMPT (delivered or not) so a pending approval
