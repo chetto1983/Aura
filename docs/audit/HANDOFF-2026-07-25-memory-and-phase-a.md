@@ -98,26 +98,20 @@ the controprova ran again. It failed one layer up — see "Controprova round 2".
 
 Do these in order:
 
-1. COMMIT THE M-7 FIX the moment the internal/adaptive lint goes green — it is
-   RUNNING LIVE IN THE APPLIANCE BUT NOT IN GIT (operator's call, 2026-07-25).
-   Until it lands, any rebuild of aura:local from a clean tree silently reverts
-   memory_update to refusing the operator's own data.
-     git apply /d/tmp/bridge-user-identifier.patch
-   Already build/vet/race/lint-clean at df2e055a0. The live image was built from
+1. COMMIT THE TWO GO FIXES (M-7 + M-8) the moment the internal/adaptive lint
+   goes green. They are RUNNING LIVE IN THE APPLIANCE BUT NOT IN GIT (operator's
+   call, 2026-07-25). Until they land, any rebuild of aura:local from a clean
+   tree silently reverts memory_update to refusing the operator's own data AND
+   re-bricks the MCP session after a sidecar restart.
+     git apply /d/tmp/memory-bridge-and-session-fixes.patch
+   Both are build/vet/race/lint-clean at df2e055a0, each with a test that fails
+   on the exact live symptom when mutated. The live image was built from
    /d/tmp/aura-head-build (worktree, still on disk, patch applied).
 
-2. M-9: memory_forget reports "deleted" for an entity the caller can still read
-   back through MENTIONS. Decide which half is wrong — the verb's report or its
-   reach — before more of the memory UX is built on top of it.
+2. Wire the sidecar's 67 tests into CI — nothing runs them today (see below).
+   The two that execute Cypher need a Neo4j; the other 65 need nothing.
 
-3. M-8: restarting the sidecar 400s every memory call on the running daemon
-   until aura restarts, with no warning anywhere. At minimum detect the dead
-   session and re-mount; at best make it a health signal.
-
-4. memory_get_entity searches with limit=1, so a name with two matches hides the
-   second — which is why round 5 corrected one duplicate and left the other.
-
-5. Phase A T8 + T10 still open (see the plan's Phase A table).
+3. Phase A T8 + T10 still open (see the plan's Phase A table).
 
 Blocked until the internal/adaptive lint goes green (52 findings from a parallel
 workstream, up from 46 — it is still growing): every .go commit, the push, and
@@ -130,7 +124,37 @@ watchdog.
 
 ---
 
-## Controprova rounds 3 and 5 — 3 of 4 criteria pass, and the last one is no longer plumbing
+## ✅ Controprova PASSES (2026-07-25 16:11 UTC)
+
+Same driver, same prompt, same four criteria. Four tool calls, twenty seconds:
+`get_entity("David")` + `get_entity("Davide")` → `forget(37003044)` → `update(2a368f39)`.
+
+| Criterion | Verdict |
+|---|---|
+| the operator's node corrected, never recreated | ✅ `2a368f39` kept its id through every round and was edited in place |
+| `2a368f39`'s canonical becomes "Davide" | ✅ |
+| no `:Entity` named "David" remains | ✅ both duplicates gone — `20d7511c` and `37003044` deleted outright (`removed_node: true`), not merely unlinked |
+| no add→forget loop | ✅ no `add_*` call at all |
+
+The graph is now one entity: `Davide`, PERSON, canonical `Davide`, owned by the operator.
+
+What each fix contributed, in the order they stopped mattering: the read path stopped lying
+about names, so the agent stopped deleting what it had just written (`df2e055a0`); the bridge
+started sending the caller's identity, so `memory_update` stopped refusing the operator's own
+data (M-7); the ownership backfill gave the extraction-born duplicates an owner, so
+`memory_forget` stopped refusing them (`47f07053e`); forget started cutting the caller's
+`MENTIONS` too, so a "deleted" entity actually left the graph instead of lingering unowned
+(`4338b0152`); and `get_entity` stopped hiding the second duplicate behind `limit=1`, so the
+agent saw both instead of correcting one and stopping (`4338b0152`).
+
+**Left behind, deliberately not cleaned:** the duplicate fact round 2 manufactured —
+`325b20fd` (`David → expertise → Go, AI agents`) beside `ca17ee4e` (`Davide → …`). It is the
+evidence of what a refused correction verb costs, and it is the operator's data to remove:
+`docker exec aura aura neo4j cypher write "MATCH (f:Fact {id:'325b20fd-…'}) DETACH DELETE f"`.
+
+---
+
+## Controprova rounds 3 and 5 — how it got there
 
 Round 3 (15:34 UTC) with M-7 deployed live: `memory_update` **succeeded** on the operator's node
 and `2a368f39`'s canonical became **"Davide"**. Ten tool calls, no `add_entity` at all, no loop.
