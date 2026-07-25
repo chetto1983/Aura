@@ -12,33 +12,38 @@
 
 ## Progress checkpoint — 2026-07-24
 
-**Current approved head:** `fee72ff13965cabd6e4a797057c6895492b63a3f`
+**Current approved head:** `0b71fee3024c52ff561252393a603744d462c40d`
 
 - The schema-2 Assignment/Delivery Go contract is complete through
   `03643cc9a`. Its spec and code-quality reviews both returned `APPROVE`.
-- PostgreSQL/SQLC enforcement and the shared chat/serve migration gate are
-  complete through `fee72ff13`. Migrations `0060`–`0063` are hash-locked
-  immutable history; validation-only `0064` closes the concurrent audit window.
-  The final spec and code-quality reviews both returned `APPROVE`.
+- PostgreSQL/SQLC enforcement, the shared chat/serve migration gate, and the
+  typed Store persistence slice are complete through `0b71fee3`. Migrations
+  `0060`–`0064` are hash-locked immutable history. Migration `0065` establishes
+  the owner-first lock order shared by Store writes, fencing, and deletion. The
+  final Store spec and code-quality reviews both returned `APPROVE`.
 - The persistence commits after the Go contract are `b0216f494`,
   `79a5f719d`, `f941a0e0f`, `001d6f974`, `ca587adb8`, `9ed7f625b`, and
-  `fee72ff13`.
-- Verified evidence at the approved head includes clean head-64 install,
+  `fee72ff13`. The typed Store commits are `05849027b`, `a29401417`,
+  `45fd467ff`, and `0b71fee3`.
+- Verified evidence at the approved head includes clean head-65 install,
   down/up, versioned upgrade and dirty fail-closed paths, deterministic
   Go/PostgreSQL identity parity, dirty-62 loader exclusion, live
-  INSERT/UPDATE/DELETE lock contention, schema-2 integration under race,
-  adaptive/database unit race, SQLC regeneration, `go vet ./...`,
-  `go build ./...`, diff-scoped golangci-lint with zero findings, diff checks,
-  and repository file-size checks.
-- Task 1 is intentionally not marked complete yet. The next slice must add
-  typed Store APIs that transactionally load the persisted Assignment before
-  recording Delivery, preserve exact idempotence/conflict behavior, and prevent
-  schema-2 callers from bypassing typed constructors through generic `Record`.
+  INSERT/UPDATE/DELETE lock contention, owner-first writer/fence/delete winner
+  interleavings, stable tombstone classification, no deadlock or sequence gap,
+  schema-2 integration under race, adaptive/database unit race, SQLC
+  regeneration, `go vet ./...`, `go build ./...`, diff-scoped golangci-lint
+  with zero findings, diff checks, and repository file-size checks.
+- Task 1 is complete. Typed Store APIs transactionally load and lock the
+  persisted Assignment before recording Delivery, preserve exact
+  idempotence/conflict behavior, reject every schema-2 event kind through the
+  generic Store surface, and fail closed for nil dependencies or fenced owners.
 - Outcome/correction contracts, snapshots, cohorts, and sealed evidence remain
-  Task 2 work. No production runtime adapter, Agent Memory change, benchmark,
-  final quality gate, or push has been completed.
-- Do not replay unchanged remote CI. Resume with the Store slice, use TDD, and
-  repeat spec review before code-quality review.
+  Task 2 work. Its next migration must be allocated from current head `0065`,
+  so the expected sealed-evidence migration is `0066`. No production runtime
+  adapter, Agent Memory change, benchmark, final quality gate, or push has been
+  completed.
+- Do not replay unchanged remote CI. Resume with Task 2 under TDD, then repeat
+  spec review before code-quality review.
 
 ## Global execution contract
 
@@ -102,10 +107,10 @@ cd /mnt/d/Aura
 - Regenerate: `internal/db/sqlc/`
 - Modify: adaptive store integration tests
 
-- [ ] **Step 1: Verify the migration heads** — `find internal/db/migrations -maxdepth 1 -type f -printf '%f\n' | sort | tail`; expected PostgreSQL head before this task: `0059_decommission_legacy_learning.up.sql`.
-- [ ] **Step 2: Write failing contract tests** for canonical point+ordinal assignment IDs, deterministic kind/source event IDs, explicit static action, frozen ordered catalogs, policy epoch/version/mode, immutable snapshot ID/hash, environment/cohort and provider/model scope, eligibility/catalog hashes, separate arm/action/exposure propensities, explicit override truth, delivery intended-vs-actual action, success/fallback status, independent result count, known-vs-unknown exposure probability, terminal evaluator/source uniqueness, correction-chain validity, and privacy-key rejection.
-- [ ] **Step 3: Run the focused red test** — `go test ./internal/adaptive/ -run 'TestAssignment|TestDelivery|TestOutcome|TestCorrection|TestPrivatePayload'`; expect undefined schema-2 types or failed validation.
-- [ ] **Step 4: Implement the typed public surface**:
+- [x] **Step 1: Verify the migration heads** — `find internal/db/migrations -maxdepth 1 -type f -printf '%f\n' | sort | tail`; expected PostgreSQL head before this task: `0059_decommission_legacy_learning.up.sql`.
+- [x] **Step 2: Write failing contract tests** for canonical point+ordinal assignment IDs, deterministic kind/source event IDs, explicit static action, frozen ordered catalogs, policy epoch/version/mode, immutable snapshot ID/hash, environment/cohort and provider/model scope, eligibility/catalog hashes, separate arm/action/exposure propensities, explicit override truth, delivery intended-vs-actual action, success/fallback status, independent result count, known-vs-unknown exposure probability, and privacy-key rejection.
+- [x] **Step 3: Run the focused red test** — `go test ./internal/adaptive/ -run 'TestAssignment|TestDelivery|TestOutcome|TestCorrection|TestPrivatePayload'`; expect undefined schema-2 types or failed validation.
+- [x] **Step 4: Implement the typed public surface**:
 
 ```go
 type DecisionPoint string
@@ -172,10 +177,10 @@ type Delivery struct {
 
 `AssignmentID` must hash owner, request, canonical point, and ordinal. `EventID` must hash assignment, event kind, and a stable source identity. Constructors return canonical `Event` values and reject unregistered fields before JSON serialization.
 
-- [ ] **Step 5: Add `EventDelivery = "delivery"`** and keep generic `NewEvent` only for schema-1 compatibility and internal promotion/rollback facts. Schema-2 callers must use typed constructors.
-- [ ] **Step 6: Add additive database enforcement**: delivery event kind; partial unique assignment index on schema `2.0`; one delivery per assignment; one terminal outcome per assignment/evaluator/source; object/shape/range checks; schema-1 rows unaffected.
-- [ ] **Step 7: Add SQLC loader queries** that return schema-2 facts only and never infer eligibility from schema-1. Regenerate with the repository command; never hand-edit generated Go.
-- [ ] **Step 8: Verify**:
+- [x] **Step 5: Add `EventDelivery = "delivery"`** and keep generic `NewEvent` only for schema-1 compatibility and internal promotion/rollback facts. Schema-2 callers must use typed constructors.
+- [x] **Step 6: Add additive database enforcement**: delivery event kind; partial unique assignment index on schema `2.0`; one delivery per assignment; one terminal outcome per assignment/evaluator/source; object/shape/range checks; schema-1 rows unaffected.
+- [x] **Step 7: Add SQLC loader queries** that return schema-2 facts only and never infer eligibility from schema-1. Regenerate with the repository command; never hand-edit generated Go.
+- [x] **Step 8: Verify**:
 
 ```bash
 go test ./internal/adaptive/
@@ -185,7 +190,7 @@ go vet ./...
 go build ./...
 ```
 
-- [ ] **Step 9: Commit** — `feat(adaptive): add typed schema-2 evidence ledger`.
+- [x] **Step 9: Commit** — `feat(adaptive): add typed schema-2 evidence ledger`.
 
 ## Task 2: Build immutable snapshots, focal cohorts, and sealed evidence
 
@@ -204,7 +209,7 @@ go build ./...
 - Create: `internal/adaptive/outcome_recorder_test.go`
 - Delete: `internal/adaptive/promotion.go`
 - Delete: `internal/adaptive/promotion_test.go`
-- Create: next free PostgreSQL migration, expected `0065_adaptive_sealed_evidence.*.sql`
+- Create: next free PostgreSQL migration, expected `0066_adaptive_sealed_evidence.*.sql`
 - Modify: `internal/db/queries/adaptive_policy.sql`
 - Add: focused DB integration tests
 
