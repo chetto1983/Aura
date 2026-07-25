@@ -12,8 +12,8 @@
 
 ## Progress checkpoint — 2026-07-25
 
-**Current approved head:** `a0d79452c` (approved immutable focal-cohort
-persistence and server-enforced claims)
+**Current approved head:** `45b845652` (approved immutable `CohortStore` and
+atomic focal claim/assignment)
 
 **Current review candidates:**
 
@@ -37,6 +37,22 @@ persistence and server-enforced claims)
   SQL semantic/unique-key validator now rejects them while canonical extended
   Aura IDs still persist. Fresh normal/race/live/security/down-up,
   vet/build/lint/diff/file-size gates are GREEN; both final reviewers returned
+  `APPROVE`.
+- PRD Amendment #93.5 commits `cf6c6e1bc`, `37b6fa646`, `c7b1b417c`, and
+  `30ea2f09c` define the single transaction, deterministic catalog hashes,
+  owner-scoped real conversation, static champion, and owner-global
+  conversation uniqueness.
+- Forward migrations `0072` and `0073` are complete in `02ba3c676` and
+  `f7402a70b`: direct database writers cannot claim a fabricated/cross-owner
+  conversation or randomize the same owner conversation through a second
+  cohort.
+- Typed `CohortStore` is complete in `45b845652`. Save/Load reconstruct the
+  canonical cohort fail-closed. `Enroll` locks the owner, claims the winning
+  focal slot, invokes the local draw exactly once, validates every cohort,
+  scope, catalog, hash, arm, action, and champion binding, and appends the
+  schema-2 Assignment in the same transaction. Exact retries do not redraw;
+  callback/validation/write failures roll back; orphan assignments and slot
+  losers fail closed. Final spec and adversarial quality reviews returned
   `APPROVE`.
 
 - The schema-2 Assignment/Delivery Go contract is complete through
@@ -113,16 +129,12 @@ persistence and server-enforced claims)
   persisted Assignment before recording Delivery, preserve exact
   idempotence/conflict behavior, reject every schema-2 event kind through the
   generic Store surface, and fail closed for nil dependencies or fenced owners.
-- Cohort persistence/claiming, ledger-only reconstruction, exact statistical
-  inference, sealed evidence, and legacy `CanaryBatch`/Wilson removal remain
-  Task 2 work. Migration `0070` is installed cleanly on the live database with
-  zero snapshot rows. Recheck the disk head immediately before allocation; with
-  current head `0070`, the next expected number is `0071`. No production runtime
-  adapter, Agent Memory change, real-model benchmark, final quality gate, or
-  push has been completed.
-- Do not replay unchanged remote CI. Resume with the PRD amendment that defines
-  the single-transaction focal-claim/assignment API, then implement typed
-  `CohortStore` under TDD.
+- Ledger-only reconstruction, exact statistical inference, sealed evidence,
+  runtime adapters, Agent Memory integration, legacy `CanaryBatch`/Wilson
+  removal, real-model benchmarks, final quality gate, and push remain Task 2
+  work. The current migration head is `0073`.
+- Do not replay unchanged remote CI. Resume with the ledger-only cohort loader
+  and deterministic correction reconstruction under TDD.
 
 ### Task 2 live subtask tracker
 
@@ -137,7 +149,11 @@ persistence and server-enforced claims)
   security/roundtrip, canonical row constraints, raw nested-artifact/privacy
   tests, normal/race, vet/build/lint/diff/file-size gates GREEN; final spec and
   quality reviews both `APPROVE`.
-- [ ] Typed `CohortStore` and atomic claim API.
+- [x] Typed `CohortStore` and atomic claim API — migrations `0072`/`0073` in
+  `02ba3c676`/`f7402a70b`, implementation `45b845652`; real disposable DB
+  normal/race, owner-conversation and cross-cohort races, package normal/race,
+  vet/build/lint/diff/file-size gates GREEN; final spec and quality reviews
+  `APPROVE`.
 - [ ] Ledger-only cohort loader and deterministic correction reconstruction.
 - [ ] Exact blocked randomization inference and sealed admission/outcome
   evidence.
@@ -309,7 +325,7 @@ go build ./...
 - Delete: `internal/adaptive/promotion.go`
 - Delete: `internal/adaptive/promotion_test.go`
 - Create: next free PostgreSQL migration after rechecking disk head; current
-  head is `0070`, so the next expected number is `0071`
+  head is `0073`
 - Modify: `internal/db/queries/adaptive_policy.sql`
 - Add: focused DB integration tests
 
@@ -320,21 +336,16 @@ go build ./...
 - [x] **Step 4a: Persist immutable snapshots.** Implementation and forward-only
   numerical/performance repairs are approved through `f58334f1`; migrations
   `0068` and `0069` remain immutable history and `0070` is the current head.
-- [ ] **Step 5: Implement durable focal claims.** The pure immutable cohort
-  contract is approved through `ab43e5c36`; persistence and claiming remain.
-  Enforce both constraints: unique `(cohort_id, request_id)` is the request-level
-  focal membership key, and unique
-  `(cohort_id, evaluation_conversation_id)` enforces at most one randomized
-  request in an evaluation conversation. The claim stores the exact
-  point/ordinal predicate match and happens atomically before the arm draw.
-  Codebase mapping proved a standalone `Claim` call would commit too early:
-  the store API must own one transaction that locks the owner, inserts the
-  winning claim, invokes only a local/pure arm-and-assignment builder, records
-  the typed assignment through `recordOwnerLockedTx`, then commits before any
-  learned execution. Callback/build or assignment failure rolls back both
-  claim and assignment; a concurrent loser never draws. Specify this missing
-  API seam in a PRD amendment before implementing `CohortStore`; do not invent
-  a separately committed claim API.
+- [x] **Step 5: Implement durable focal claims.** Approved through
+  `45b845652`, with forward migrations `0072` and `0073`. Unique
+  `(cohort_id, request_id)` binds request membership and unique
+  `(owner_id, evaluation_conversation_id)` permits only one randomized request
+  per owner conversation across all cohorts. One owner-locked transaction
+  inserts the winning claim, invokes only the local assignment builder, binds
+  the complete schema-2 Assignment, records it through
+  `recordOwnerLockedTx`, and commits before learned execution. Callback/build
+  or assignment failure rolls back both facts; exact retry does not redraw and
+  a concurrent or cross-cohort loser never invokes the callback.
 - [ ] **Step 6: Implement the ledger-only loader**: reconstruct assignments, deliveries, eligible outcomes, and folded corrections at the cohort cutoff; include missing delivery/outcome as censored ITT rows; reject unsealed catalogs, unknown exposure probabilities, cross-owner facts, and facts beyond cutoff.
 - [x] **Step 7: Implement a production typed outcome/correction recorder.** `OutcomeRecorder.RecordOutcome` accepts only a typed `OutcomeObservation`, loads the referenced schema-2 assignment, binds domain/owner/provider/model, validates the registered evaluator kind/ID/version/rubric/calibration/provenance hash, and appends the deterministic terminal event. `RecordCorrection` transactionally loads the current effective leaf and rejects missing, cross-owner/domain/evaluator, cross-kind, fork, or cycle links. Operational tool/HTTP/persistence/model-self-report completion cannot call this eligible recorder. Compose the deterministic and calibrated-judge benchmark evaluators through this same service; no benchmark may insert ledger rows directly.
 - [ ] **Step 8: Implement separate sealed artifact kinds**:
