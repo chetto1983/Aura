@@ -63,6 +63,16 @@ $$`,
 	if _, err := migratePool.Exec(ctx, functionSQL); err != nil {
 		t.Fatalf("create delivery blocker function: %v", err)
 	}
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cleanupCancel()
+		if _, err := migratePool.Exec(
+			cleanupCtx,
+			fmt.Sprintf(`DROP FUNCTION IF EXISTS aura.%s()`, functionName),
+		); err != nil {
+			t.Errorf("drop delivery blocker function: %v", err)
+		}
+	})
 	if _, err := migratePool.Exec(
 		ctx,
 		fmt.Sprintf(
@@ -77,14 +87,12 @@ $$`,
 	t.Cleanup(func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cleanupCancel()
-		_, _ = migratePool.Exec(
+		if _, err := migratePool.Exec(
 			cleanupCtx,
 			fmt.Sprintf(`DROP TRIGGER IF EXISTS %s ON aura.adaptive_outbox`, triggerName),
-		)
-		_, _ = migratePool.Exec(
-			cleanupCtx,
-			fmt.Sprintf(`DROP FUNCTION IF EXISTS aura.%s()`, functionName),
-		)
+		); err != nil {
+			t.Errorf("drop delivery blocker trigger: %v", err)
+		}
 	})
 
 	blocker, err := migratePool.Begin(ctx)

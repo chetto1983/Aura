@@ -208,10 +208,16 @@ func TestStoreTypedAssignmentPreservesOwnerTombstoneFence(t *testing.T) {
 	ctx := context.Background()
 	owner := seedTypedLedgerOwner(t, pool)
 	assignment := typedLedgerAssignment(t, owner)
+	delivery := typedLedgerDelivery(t, assignment)
 	store := NewStore(pool, StoreConfig{})
-	if _, err := store.RecordAssignment(ctx, assignment); err != nil {
+	sequence, err := store.RecordAssignment(ctx, assignment)
+	if err != nil {
 		t.Fatalf("RecordAssignment: %v", err)
 	}
+	if sequence != 1 {
+		t.Fatalf("RecordAssignment sequence = %d, want 1", sequence)
+	}
+	assertTypedAggregateSequence(t, ctx, pool, owner, assignment.RequestID.String(), 2)
 	if _, err := pool.Exec(ctx, `DELETE FROM aura.identities WHERE id=$1`, owner); err != nil {
 		t.Fatal(err)
 	}
@@ -222,6 +228,34 @@ func TestStoreTypedAssignmentPreservesOwnerTombstoneFence(t *testing.T) {
 		"typed-tombstone-recreated-"+owner.String(),
 	); err != nil {
 		t.Fatal(err)
+	}
+	if _, err := store.RecordDelivery(ctx, owner, assignment.AssignmentID, delivery); !errors.Is(err, ErrOwnerTombstoned) {
+		t.Fatalf("RecordDelivery after owner recreation error = %v, want ErrOwnerTombstoned", err)
+	}
+	var deliveries int
+	if err := pool.QueryRow(
+		ctx,
+		`SELECT count(*) FROM aura.adaptive_outbox
+		 WHERE owner_id=$1 AND event_kind='delivery'`,
+		owner,
+	).Scan(&deliveries); err != nil {
+		t.Fatal(err)
+	}
+	if deliveries != 0 {
+		t.Fatalf("delivery event count = %d, want 0", deliveries)
+	}
+	var sequenceRows int
+	if err := pool.QueryRow(
+		ctx,
+		`SELECT count(*) FROM aura.adaptive_aggregate_sequences
+		 WHERE owner_id=$1 AND aggregate_id=$2`,
+		owner,
+		assignment.RequestID.String(),
+	).Scan(&sequenceRows); err != nil {
+		t.Fatal(err)
+	}
+	if sequenceRows != 0 {
+		t.Fatalf("delivery after owner recreation allocated %d sequence rows, want 0", sequenceRows)
 	}
 	if _, err := store.RecordAssignment(ctx, assignment); !errors.Is(err, ErrOwnerTombstoned) {
 		t.Fatalf("RecordAssignment after owner recreation error = %v, want ErrOwnerTombstoned", err)

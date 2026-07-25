@@ -55,6 +55,13 @@ func (s *Store) RecordDelivery(
 	}
 	var sequence int64
 	err := db.WithIdentityTx(ctx, s.pool, ownerID.String(), func(q *sqlc.Queries) error {
+		tombstoned, err := q.AdaptiveIdentityTombstoned(ctx, dbUUID(ownerID))
+		if err != nil {
+			return fmt.Errorf("check adaptive owner tombstone: %w", err)
+		}
+		if tombstoned {
+			return ErrOwnerTombstoned
+		}
 		row, err := q.LockSchema2AdaptiveAssignment(
 			ctx,
 			sqlc.LockSchema2AdaptiveAssignmentParams{
