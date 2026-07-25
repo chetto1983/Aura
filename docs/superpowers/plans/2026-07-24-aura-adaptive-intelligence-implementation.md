@@ -12,7 +12,7 @@
 
 ## Progress checkpoint — 2026-07-24
 
-**Current approved head:** `0b71fee3024c52ff561252393a603744d462c40d`
+**Current approved head:** `250281c05343e746cffa16f123c1d8a96605fda3`
 
 - The schema-2 Assignment/Delivery Go contract is complete through
   `03643cc9a`. Its spec and code-quality reviews both returned `APPROVE`.
@@ -21,29 +21,42 @@
   `0060`–`0064` are hash-locked immutable history. Migration `0065` establishes
   the owner-first lock order shared by Store writes, fencing, and deletion. The
   final Store spec and code-quality reviews both returned `APPROVE`.
+- Typed outcome/correction contracts, evaluator registration, benchmark
+  adapters, persistence, and bounded chain reconstruction are complete through
+  `250281c0`. Migration `0066` is hash-locked immutable history; forward
+  migration `0067` repairs the correction-limit comparator for databases that
+  had already applied `0066`. The final outcome spec and code-quality reviews
+  both returned `APPROVE`.
 - The persistence commits after the Go contract are `b0216f494`,
   `79a5f719d`, `f941a0e0f`, `001d6f974`, `ca587adb8`, `9ed7f625b`, and
   `fee72ff13`. The typed Store commits are `05849027b`, `a29401417`,
-  `45fd467ff`, and `0b71fee3`.
-- Verified evidence at the approved head includes clean head-65 install,
+  `45fd467ff`, and `0b71fee3`. The typed outcome commits are `623f03c60`,
+  `d9946cc07`, `36b65f16d`, and `250281c05`.
+- Verified evidence at the approved head includes clean head-67 install,
   down/up, versioned upgrade and dirty fail-closed paths, deterministic
   Go/PostgreSQL identity parity, dirty-62 loader exclusion, live
   INSERT/UPDATE/DELETE lock contention, owner-first writer/fence/delete winner
   interleavings, stable tombstone classification, no deadlock or sequence gap,
-  schema-2 integration under race, adaptive/database unit race, SQLC
-  regeneration, `go vet ./...`, `go build ./...`, diff-scoped golangci-lint
-  with zero findings, diff checks, and repository file-size checks.
+  schema-2 integration under race, the exact historical upgrade/down/up path
+  `0066 -> 0067 -> 0066 -> 0067`, typed outcome and correction
+  retry/conflict/scope checks, root-plus-63 correction folding with correction
+  64 rejected before sequence allocation, target-scoped locking independent of
+  unrelated outcome rows, stable concurrent fork classification,
+  adaptive/database unit race, SQLC regeneration, `go vet ./...`,
+  `go build ./...`, diff-scoped golangci-lint with zero findings, diff checks,
+  and repository file-size checks.
 - Task 1 is complete. Typed Store APIs transactionally load and lock the
   persisted Assignment before recording Delivery, preserve exact
   idempotence/conflict behavior, reject every schema-2 event kind through the
   generic Store surface, and fail closed for nil dependencies or fenced owners.
-- Outcome/correction contracts, snapshots, cohorts, and sealed evidence remain
-  Task 2 work. Its next migration must be allocated from current head `0065`,
-  so the expected sealed-evidence migration is `0066`. No production runtime
-  adapter, Agent Memory change, benchmark, final quality gate, or push has been
-  completed.
-- Do not replay unchanged remote CI. Resume with Task 2 under TDD, then repeat
-  spec review before code-quality review.
+- Snapshots, focal cohorts, ledger-only reconstruction, exact statistical
+  inference, sealed evidence, and legacy `CanaryBatch`/Wilson removal remain
+  Task 2 work. Its next migration must be allocated from current head `0067`,
+  so the expected sealed-evidence migration is `0068`. No production runtime
+  adapter, Agent Memory change, real-model benchmark, final quality gate, or
+  push has been completed.
+- Do not replay unchanged remote CI. Resume with Task 2 snapshots/cohorts and
+  sealed evidence under TDD, then repeat spec review before code-quality review.
 
 ## Global execution contract
 
@@ -209,17 +222,17 @@ go build ./...
 - Create: `internal/adaptive/outcome_recorder_test.go`
 - Delete: `internal/adaptive/promotion.go`
 - Delete: `internal/adaptive/promotion_test.go`
-- Create: next free PostgreSQL migration, expected `0066_adaptive_sealed_evidence.*.sql`
+- Create: next free PostgreSQL migration, expected `0068_adaptive_sealed_evidence.*.sql`
 - Modify: `internal/db/queries/adaptive_policy.sql`
 - Add: focused DB integration tests
 
-- [ ] **Step 1: Recheck the migration head immediately before allocation.**
+- [x] **Step 1: Recheck the migration head immediately before allocation.**
 - [ ] **Step 2: Write red tests** for immutable owner/provider/model snapshots, top-5 nonnegative-cosine mean scoring, zero-neighbor static fallback, preregistered point/ordinal predicate, unique request membership, at most one randomized request per evaluation conversation, deterministic correction folding, missing/fork/cycle rejection, and artifact hash stability.
 - [ ] **Step 3: Write red statistical tests** using enumerated tiny blocked assignments whose exact p-values are hand-checkable. Include quality/harm margins, alpha-spent looks, censoring, cluster/conversation blocks, ITT primary analysis, served-action diagnostic analysis, and arm-vs-action propensity mismatch rejection.
 - [ ] **Step 4: Implement the scorer** as a pure local function over the sealed snapshot. Similarity is `max(0, cosine)`; use at most five neighbors; predicted value is the arithmetic mean of neighbor outcomes weighted by nonnegative similarity; empty/invalid support returns the static champion.
 - [ ] **Step 5: Implement durable focal claims** with both constraints: unique `(cohort_id, request_id)` is the request-level focal membership key, and unique `(cohort_id, evaluation_conversation_id)` enforces at most one randomized request in an evaluation conversation. The claim stores the exact point/ordinal predicate match and happens atomically before the arm draw. A cohort freezes policy/provider/model/snapshot/action catalogs, arm probabilities, evaluator versions, power/support plan, safety limits, planned looks, and cutoff.
 - [ ] **Step 6: Implement the ledger-only loader**: reconstruct assignments, deliveries, eligible outcomes, and folded corrections at the cohort cutoff; include missing delivery/outcome as censored ITT rows; reject unsealed catalogs, unknown exposure probabilities, cross-owner facts, and facts beyond cutoff.
-- [ ] **Step 7: Implement a production typed outcome/correction recorder.** `OutcomeRecorder.RecordOutcome` accepts only a typed `OutcomeObservation`, loads the referenced schema-2 assignment, binds domain/owner/provider/model, validates the registered evaluator kind/ID/version/rubric/calibration/provenance hash, and appends the deterministic terminal event. `RecordCorrection` transactionally loads the current effective leaf and rejects missing, cross-owner/domain/evaluator, cross-kind, fork, or cycle links. Operational tool/HTTP/persistence/model-self-report completion cannot call this eligible recorder. Compose the deterministic and calibrated-judge benchmark evaluators through this same service; no benchmark may insert ledger rows directly.
+- [x] **Step 7: Implement a production typed outcome/correction recorder.** `OutcomeRecorder.RecordOutcome` accepts only a typed `OutcomeObservation`, loads the referenced schema-2 assignment, binds domain/owner/provider/model, validates the registered evaluator kind/ID/version/rubric/calibration/provenance hash, and appends the deterministic terminal event. `RecordCorrection` transactionally loads the current effective leaf and rejects missing, cross-owner/domain/evaluator, cross-kind, fork, or cycle links. Operational tool/HTTP/persistence/model-self-report completion cannot call this eligible recorder. Compose the deterministic and calibrated-judge benchmark evaluators through this same service; no benchmark may insert ledger rows directly.
 - [ ] **Step 8: Implement separate sealed artifact kinds**:
 
 ```go
@@ -235,7 +248,7 @@ The transition function must revalidate artifact kind, target state, scope, cuto
 
 - [ ] **Step 9: Delete caller-built `CanaryBatch` and ESS/IPW-Wilson authorization.** If simulation still needs Wilson/ESS, move it under `.planning/spikes/` or a `_test.go` helper with no production export.
 - [ ] **Step 10: Verify** focused unit, DB integration, privileges, migrations, race, vet, and build.
-- [ ] **Step 11: Commit outcome ingestion separately** — `feat(adaptive): record typed evaluator outcomes`.
+- [x] **Step 11: Commit outcome ingestion separately** — `feat(adaptive): record typed evaluator outcomes`.
 - [ ] **Step 12: Commit sealed evidence** — `feat(adaptive): seal cohort-built promotion evidence`.
 
 ## Task 3: Add the coordinator and correct request/round identity
