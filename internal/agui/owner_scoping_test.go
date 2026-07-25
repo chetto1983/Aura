@@ -217,10 +217,12 @@ func TestApprovalsAPI_ResolveOwnedReachesRunner(t *testing.T) {
 	run := &scriptedRunner{}
 	srv := newResolveTestServer(t, run, &ownerApprovalStore{token: token, owner: localIdentityID})
 
-	if code, body := postResolve(t, srv, token, `{"action":"accept","content":"ok"}`); code != http.StatusNoContent {
-		t.Fatalf("owner resolve = %d, want 204: %s", code, body)
+	// 200 (was 204): resolve now answers with the ResolveDirective projection (Phase A) — the
+	// owner gate this test gates on is unchanged, only the success status carries a body.
+	if code, body := postResolve(t, srv, token, `{"action":"accept","content":"ok"}`); code != http.StatusOK {
+		t.Fatalf("owner resolve = %d, want 200: %s", code, body)
 	}
 	if run.gotAnswers == nil || run.gotAnswers[token].Action != askuser.ActionAccept {
-		t.Errorf("owner resolve did not reach SubmitAnswers with accept; got %v", run.gotAnswers)
+		t.Errorf("owner resolve did not reach SubmitAnswer with accept; got %v", run.gotAnswers)
 	}
 }

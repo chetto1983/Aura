@@ -24,8 +24,9 @@ import (
 //     AG-UI Resume[] path (server.go:resumeAnswers) maps only resolved→accept and
 //     cancelled→cancel; there is NO path to askuser.ActionDecline over POST
 //     /agent/run (Pitfall 4). This adapter maps the verb (accept|decline|cancel) to
-//     askuser.Action* and calls Runner.SubmitAnswers directly with a single-entry
-//     map — reaching the FULL three-action model the Runner already implements
+//     askuser.Action* and calls Runner.SubmitAnswer, which also hands back the
+//     ResolveDirective the cockpit renders — reaching the FULL three-action model the Runner
+//     already implements
 //     end-to-end (RESEARCH Open Question 1, Option A). The Runner owns decline →
 //     declinedContent ("user declined to answer", so the agent continues INFORMED of
 //     the refusal, NOT killed) and cancel → AutoResolveForConversation; this handler
@@ -104,15 +105,15 @@ type resolveBody struct {
 
 // handleResolveApproval bridges the HTTP verb to the Runner's three-action resume
 // (APRV-02 / D-05). It uuid.Parse-guards the token (→ 404), parses {action, content},
-// maps the verb to askuser.Action* (rejecting any other value with 400), builds a
-// single-entry map[string]runner.ResponseInput{token: {Action, Content}}, and calls
-// Runner.SubmitAnswers. The Runner handles decline → declinedContent (agent continues
+// maps the verb to askuser.Action* (rejecting any other value with 400), and calls
+// Runner.SubmitAnswer. The Runner handles decline → declinedContent (agent continues
 // informed) and cancel → AutoResolveForConversation internally. An unknown /
 // already-resolved token surfaces as ErrPauseNotFound → 404 (APRV-03: a terminated
 // pending is never silently lost — the operator gets a clear "gone" rather than a
-// false success). After resolve the run continues over the rehydrated history when the
-// React layer re-drives the turn with a no-Resume POST /agent/run (continue-after-resume
-// contract for plan 25-06). Returns 204.
+// false success). Returns 200 with the ResolveDirective projection: the React layer
+// re-drives the turn with a no-Resume POST /agent/run only for outcome "continue"
+// (continue-after-resume, plan 25-06) — a scheduled approval is already complete when its
+// ResumeHook fires, so re-driving it would resume a turn that no longer exists.
 func (s *Server) handleResolveApproval(w http.ResponseWriter, r *http.Request) {
 	token := r.PathValue("token")
 	if _, err := uuid.Parse(token); err != nil {
@@ -151,10 +152,8 @@ func (s *Server) handleResolveApproval(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	answers := map[string]runner.ResponseInput{
-		token: {Action: action, Content: body.Content},
-	}
-	if _, err := s.run.SubmitAnswers(r.Context(), answers); err != nil {
+	directive, err := s.run.SubmitAnswer(r.Context(), token, runner.ResponseInput{Action: action, Content: body.Content})
+	if err != nil {
 		if errors.Is(err, askuser.ErrPauseNotFound) {
 			http.Error(w, "approval not found or already resolved", http.StatusNotFound)
 			return
@@ -162,7 +161,34 @@ func (s *Server) handleResolveApproval(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, sanitizeErr(err), http.StatusInternalServerError)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	writeJSON(w, resolveResponse{Outcome: outcomeString(directive.Outcome), Remaining: directive.Remaining})
+}
+
+// resolveResponse is the projection of runner.ResolveDirective the cockpit renders: a semantic
+// outcome code (never user prose — the runner is not locale-aware) plus how many pauses remain.
+type resolveResponse struct {
+	Outcome   string `json:"outcome"`
+	Remaining int    `json:"remaining"`
+}
+
+// outcomeString names a ResolveOutcome for the wire. The default is "continue" so an outcome
+// added runner-side degrades to "the turn goes on" — the behavior the cockpit had before this
+// endpoint returned anything at all.
+func outcomeString(o runner.ResolveOutcome) string {
+	switch o {
+	case runner.OutcomeApproved:
+		return "approved"
+	case runner.OutcomeRejected:
+		return "rejected"
+	case runner.OutcomePending:
+		return "pending"
+	case runner.OutcomeTerminated:
+		return "terminated"
+	case runner.OutcomeContinue:
+		return "continue"
+	default:
+		return "continue"
+	}
 }
 
 // resolveAction maps the HTTP verb to the askuser three-action model, returning false

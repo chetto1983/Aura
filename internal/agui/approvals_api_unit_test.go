@@ -2,6 +2,7 @@ package agui
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/askuser"
+	"github.com/chetto1983/aura/internal/runner"
 	"github.com/google/uuid"
 )
 
@@ -89,8 +91,49 @@ func postResolve(t *testing.T, srv *httptest.Server, token, body string) (int, s
 	return resp.StatusCode, string(raw)
 }
 
+// TestApprovalsAPI_ResolveReturnsDirective pins the Phase A wire contract: resolve answers 200
+// with the runner's verdict projected as {outcome, remaining}, so the cockpit renders the SAME
+// decision Telegram does instead of inferring a re-drive client-side.
+func TestApprovalsAPI_ResolveReturnsDirective(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		directive runner.ResolveDirective
+		want      string
+	}{
+		{"scheduled approval accepted", runner.ResolveDirective{Outcome: runner.OutcomeApproved}, "approved"},
+		{"scheduled approval rejected", runner.ResolveDirective{Outcome: runner.OutcomeRejected}, "rejected"},
+		{"ordinary pause continues", runner.ResolveDirective{Outcome: runner.OutcomeContinue}, "continue"},
+		{"more pauses pending", runner.ResolveDirective{Outcome: runner.OutcomePending, Remaining: 2}, "pending"},
+		{"cancel terminates", runner.ResolveDirective{Outcome: runner.OutcomeTerminated}, "terminated"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			run := &scriptedRunner{directive: tc.directive}
+			srv := newResolveTestServer(t, run, nil)
+			token := uuid.Must(uuid.NewV7()).String()
+
+			code, body := postResolve(t, srv, token, `{"action":"accept","content":"ok"}`)
+			if code != http.StatusOK {
+				t.Fatalf("status = %d, want 200: %s", code, body)
+			}
+			var got struct {
+				Outcome   string `json:"outcome"`
+				Remaining int    `json:"remaining"`
+			}
+			if err := json.Unmarshal([]byte(body), &got); err != nil {
+				t.Fatalf("decode %q: %v", body, err)
+			}
+			if got.Outcome != tc.want {
+				t.Errorf("outcome = %q, want %q", got.Outcome, tc.want)
+			}
+			if got.Remaining != tc.directive.Remaining {
+				t.Errorf("remaining = %d, want %d", got.Remaining, tc.directive.Remaining)
+			}
+		})
+	}
+}
+
 // TestApprovalsAPI_ResolveVerbMapping asserts each verb maps to the correct
-// askuser.Action* in the single-entry map handed to SubmitAnswers. accept carries the
+// askuser.Action* in the single-entry map handed to SubmitAnswer. accept carries the
 // operator content; decline/cancel pass the action through (the Runner overrides the
 // content for those — proven in internal/runner/runner_resume_test.go).
 func TestApprovalsAPI_ResolveVerbMapping(t *testing.T) {
@@ -108,11 +151,11 @@ func TestApprovalsAPI_ResolveVerbMapping(t *testing.T) {
 			token := uuid.Must(uuid.NewV7()).String()
 
 			code, body := postResolve(t, srv, token, c.body)
-			if code != http.StatusNoContent {
-				t.Fatalf("%s: status = %d, want 204: %s", c.name, code, body)
+			if code != http.StatusOK {
+				t.Fatalf("%s: status = %d, want 200: %s", c.name, code, body)
 			}
 			if run.gotAnswers == nil {
-				t.Fatalf("%s: SubmitAnswers was not called", c.name)
+				t.Fatalf("%s: SubmitAnswer was not called", c.name)
 			}
 			got, ok := run.gotAnswers[token]
 			if !ok {

@@ -183,6 +183,10 @@ func (r musrStubRunner) SubmitAnswers(context.Context, map[string]runner.Respons
 	return 0, nil
 }
 
+func (r musrStubRunner) SubmitAnswer(context.Context, string, runner.ResponseInput) (runner.ResolveDirective, error) {
+	return runner.ResolveDirective{}, nil
+}
+
 // assertRLSCount opens a tx scoped to identityID (the WithIdentityTx set_config carrier that
 // every owner-scoped web read routes through) and asserts the RAW visible-row count of one
 // conversation. This is the kernel RLS backstop (36-04): under a foreign identity var the

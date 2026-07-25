@@ -30,9 +30,10 @@ type scriptedRunner struct {
 	gotAnswers           map[string]runner.ResponseInput
 	submitAnswersCtx     context.Context
 	answersErr           error
-	gotBranchLeaf        int     // the leaf TurnBranch was called with (D-09 re-run assertion)
-	turnCalled           bool    // Turn was invoked (continue-after-resume reached the runner)
-	gotTurnUserMsg       *string // the userMsg Turn was called with (nil = continue-after-resume)
+	directive            runner.ResolveDirective // returned by SubmitAnswer (zero value = Continue)
+	gotBranchLeaf        int                     // the leaf TurnBranch was called with (D-09 re-run assertion)
+	turnCalled           bool                    // Turn was invoked (continue-after-resume reached the runner)
+	gotTurnUserMsg       *string                 // the userMsg Turn was called with (nil = continue-after-resume)
 	gotVisibleUserMsg    *string
 	gotModelUserMsg      *string
 	newConversationID    string
@@ -91,6 +92,18 @@ func (s *scriptedRunner) SubmitAnswers(ctx context.Context, answers map[string]r
 		return 0, s.answersErr
 	}
 	return 0, nil
+}
+
+// SubmitAnswer models the single-pause resolve the approval center calls. It records the call the
+// same way SubmitAnswers does (so existing assertions on gotAnswers keep working) and returns the
+// scripted directive — answersErr drives the error branches.
+func (s *scriptedRunner) SubmitAnswer(ctx context.Context, token string, resp runner.ResponseInput) (runner.ResolveDirective, error) {
+	s.submitAnswersCtx = ctx
+	s.gotAnswers = map[string]runner.ResponseInput{token: resp}
+	if s.answersErr != nil {
+		return runner.ResolveDirective{}, s.answersErr
+	}
+	return s.directive, nil
 }
 
 func (s *scriptedRunner) NewConversation(context.Context) (string, error) {
