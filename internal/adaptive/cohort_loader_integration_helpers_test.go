@@ -28,7 +28,7 @@ func newCohortLoaderFixture(t *testing.T, cutoffAfter time.Duration) cohortLoade
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
 	t.Cleanup(cancel)
-	pool, migrateURL := schema2MigrationDatabase(t, ctx, "aura_cohort_loader", 74)
+	pool, migrateURL := schema2MigrationDatabase(t, ctx, "aura_cohort_loader", shippedMigrationSteps(t))
 	ownerID := seedTypedLedgerOwner(t, pool)
 	snapshot := focalCohortSnapshotForOwner(t, ownerID)
 	if err := NewSnapshotStore(pool).Save(ctx, snapshot); err != nil {

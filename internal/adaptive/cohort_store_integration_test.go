@@ -315,7 +315,7 @@ func cohortStoreFixture(t *testing.T) (*CohortStore, *Store, *FocalCohort, Focal
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
 	t.Cleanup(cancel)
-	pool, _ := schema2MigrationDatabase(t, ctx, "aura_cohort_store", 73)
+	pool, _ := schema2MigrationDatabase(t, ctx, "aura_cohort_store", shippedMigrationSteps(t))
 	owner := seedTypedLedgerOwner(t, pool)
 	snapshot := focalCohortSnapshotForOwner(t, owner)
 	if err := NewSnapshotStore(pool).Save(ctx, snapshot); err != nil {

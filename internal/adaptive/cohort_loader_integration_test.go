@@ -14,7 +14,7 @@ import (
 func TestCohortStoreReconstructsOpenCohort(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
 	t.Cleanup(cancel)
-	pool, _ := schema2MigrationDatabase(t, ctx, "aura_cohort_loader", 74)
+	pool, _ := schema2MigrationDatabase(t, ctx, "aura_cohort_loader", shippedMigrationSteps(t))
 	ownerID := seedTypedLedgerOwner(t, pool)
 	snapshot := focalCohortSnapshotForOwner(t, ownerID)
 	if err := NewSnapshotStore(pool).Save(ctx, snapshot); err != nil {

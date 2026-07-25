@@ -112,6 +112,21 @@ func TestSchema2LedgerUpgradeFrom0060SealsExistingDatabase(t *testing.T) {
 	}
 }
 
+// shippedMigrationSteps is the number of migrations on disk — the step count that lands a
+// disposable database on TODAY's schema. Fixtures that mean "the current schema" must derive
+// it: a literal is a number somebody has to remember to bump with every migration, and the
+// one nobody bumped (0074 shipped, this fixture stayed at 73) produced a green local run and
+// a red CI, with the production query reading a column its own test schema did not have.
+// Fixtures that deliberately pin an OLD version to exercise an upgrade path keep their literal.
+func shippedMigrationSteps(t *testing.T) int {
+	t.Helper()
+	head, err := db.MigrationHead()
+	if err != nil {
+		t.Fatalf("read embedded migration head: %v", err)
+	}
+	return int(head)
+}
+
 func schema2MigrationDatabase(
 	t *testing.T,
 	ctx context.Context,

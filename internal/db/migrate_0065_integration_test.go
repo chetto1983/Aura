@@ -93,7 +93,14 @@ func TestMigrate0065OwnerLockCleanInstallDownUpAndPrivileges(t *testing.T) {
 		t.Fatalf("open disposable migration pool: %v", err)
 	}
 	t.Cleanup(migratePool.Close)
-	assertMigration0065Version(t, ctx, migratePool, 65)
+	// A clean install lands on whatever the shipped head is, NOT on 0065. Hardcoding 65
+	// here made the test assert that no migration had ever been added after it: it passed
+	// only while 0065 was head, and 0066-0074 broke it the first time CI saw them.
+	head, err := MigrationHead()
+	if err != nil {
+		t.Fatalf("read embedded migration head: %v", err)
+	}
+	assertMigration0065Version(t, ctx, migratePool, int(head))
 
 	app, err := Open(ctx, &Config{URL: dsn("aura_app", database)})
 	if err != nil {
@@ -174,7 +181,11 @@ func TestMigrate0065OwnerLockCleanInstallDownUpAndPrivileges(t *testing.T) {
 	}
 
 	lockOwner := seedMigration0065Owner(t, ctx, app)
-	if err := MigrateSteps(ctx, migrateURL, -1); err != nil {
+	// Step down to 0064 so the boundary under test is 0065's OWN, whatever else has shipped
+	// since. A bare -1 walked back the newest migration instead — with head at 0074 it
+	// removed adaptive_outbox.recorded_at and asserted 0065's fence against a schema 0065
+	// never described.
+	if err := MigrateSteps(ctx, migrateURL, -(int(head) - 64)); err != nil {
 		t.Fatalf("migrate 0065 down: %v", err)
 	}
 	assertMigration0065Version(t, ctx, migratePool, 64)
