@@ -32,6 +32,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# How many same-name entities memory_get_entity looks at. It used to fetch exactly one, so a
+# name with two entities behind it answered about whichever ranked first and said nothing about
+# the other — the operator's "David" existed twice (PERSON and OBJECT) and an agent asked to
+# clean up the duplicates was told about one of them, corrected it, and stopped (observed live
+# 2026-07-25). Small on purpose: this is a lookup, not a search, and the extras are a heads-up
+# that the name is ambiguous rather than a result set to page through.
+_MAX_ENTITY_NAME_MATCHES = 5
+
 
 # ── Registration dispatcher ──────────────────────────────────────────
 
@@ -562,6 +570,12 @@ def _register_extended_tools(mcp: FastMCP) -> None:
         Searches the knowledge graph for an entity by name and optionally
         traverses relationships to find connected entities.
 
+        When several entities match the name, the closest is returned as ``entity`` and
+        the rest are listed under ``other_matches`` (id, name, type). Duplicates are
+        exactly what someone asking about an entity by name needs to see — reporting only
+        the top hit is how a second copy stays invisible to the one tool whose job is to
+        tell you about that name.
+
         Args:
             name: Entity name to look up.
             entity_type: Filter by POLE+O type (optional).
@@ -574,7 +588,7 @@ def _register_extended_tools(mcp: FastMCP) -> None:
             entities = await client.long_term.search_entities(
                 query=name,
                 entity_types=[entity_type] if entity_type else None,
-                limit=1,
+                limit=_MAX_ENTITY_NAME_MATCHES,
                 user_identifier=user_identifier,
             )
 
@@ -595,6 +609,17 @@ def _register_extended_tools(mcp: FastMCP) -> None:
                     "aliases": entity.aliases if hasattr(entity, "aliases") else [],
                 },
             }
+            if len(entities) > 1:
+                result["other_matches"] = [
+                    {
+                        "id": str(other.id),
+                        **entity_name_fields(other),
+                        "type": (
+                            other.type.value if hasattr(other.type, "value") else str(other.type)
+                        ),
+                    }
+                    for other in entities[1:]
+                ]
 
             if include_neighbors:
                 neighbors = await _get_entity_neighbors(

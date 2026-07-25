@@ -2582,12 +2582,20 @@ class LongTermMemory(BaseMemory[Entity]):
         user_identifier: str,
     ) -> "tuple[str, bool] | None":
         """Forget an entity the user directly owns (the ``HAS_ENTITY`` edge; a mere
-        mention does not authorize deletion — see :meth:`delete_preference`). This is
-        NON-cascading: it unlinks the caller's ownership and removes the entity node
-        only when it is fully orphaned afterwards (never DETACH DELETE). Returns
-        ``(entity_id, removed_node)`` — ``removed_node`` is True when the node itself
-        was deleted, False when it was only unlinked (still referenced elsewhere) — or
-        ``None`` when the entity is absent or not owned by the caller."""
+        mention does not authorize deletion — see :meth:`delete_preference`).
+
+        Cuts every edge that keeps the entity in THIS caller's read scope — ownership,
+        their messages' ``MENTIONS``, their preferences' ``APPLIES_TO``, their reasoning
+        steps' ``TOUCHED`` — because :data:`queries.ENTITY_IN_USER_SCOPE` accepts all
+        four, so dropping ownership alone left a "forgotten" entity fully readable
+        through search, ``get_entity`` and the recalled-context block.
+
+        Still NON-cascading and still scoped to the caller: no other user's edges are
+        touched, and the node itself is removed only when it is fully orphaned
+        afterwards (never DETACH DELETE). Returns ``(entity_id, removed_node)`` —
+        ``removed_node`` is True when the node was deleted, False when it survived for
+        someone else — or ``None`` when the entity is absent or not owned by the caller.
+        """
         self._enforce_multi_tenant(user_identifier)
         rows = await self._client.execute_write(
             queries.DELETE_ENTITY_SCOPED,

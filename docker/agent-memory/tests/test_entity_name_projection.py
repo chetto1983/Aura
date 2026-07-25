@@ -219,3 +219,53 @@ def test_every_message_entity_link_also_links_the_owner():
         f"{linked} message-entity link site(s) but {owned} ownership write(s): "
         "every extracted entity must be attributed to the message's owner"
     )
+
+
+class _ManyMatchesClient:
+    """Answers an entity search with several same-name matches, closest first."""
+
+    def __init__(self, entities):
+        self.long_term = SimpleNamespace(search_entities=self._search)
+        self._entities = entities
+        self.limits: list[int] = []
+
+    async def _search(self, **kwargs):
+        self.limits.append(kwargs.get("limit"))
+        return self._entities
+
+
+def _get_entity_tool():
+    mcp = FastMCP("entity-lookup-guard")
+    register_tools(mcp, profile="extended")
+    return _run(mcp.get_tools())["memory_get_entity"]
+
+
+def test_get_entity_discloses_the_other_entities_with_that_name():
+    """A name with two entities behind it must not answer as if it had one.
+
+    memory_get_entity fetched exactly one match, so the operator's "David" — which existed
+    twice, PERSON and OBJECT — was reported as a single entity. An agent asked to clean up
+    the duplicates was told about one, corrected it, and stopped (live, 2026-07-25).
+    """
+    duplicate = _entity("David", None)
+    duplicate.type = "OBJECT"
+    client = _ManyMatchesClient([_entity("Davide", "Davide"), duplicate])
+
+    payload = json.loads(
+        _run(_get_entity_tool().fn(_ctx(client), name="David", include_neighbors=False))
+    )
+
+    assert payload["entity"]["name"] == "Davide"
+    assert [m["name"] for m in payload["other_matches"]] == ["David"]
+    assert client.limits[0] > 1, "a limit of 1 cannot see a duplicate"
+
+
+def test_get_entity_stays_quiet_when_the_name_is_unambiguous():
+    """other_matches is a signal, not a field that is always there saying nothing."""
+    client = _ManyMatchesClient([_entity("Davide", "Davide")])
+
+    payload = json.loads(
+        _run(_get_entity_tool().fn(_ctx(client), name="Davide", include_neighbors=False))
+    )
+
+    assert "other_matches" not in payload

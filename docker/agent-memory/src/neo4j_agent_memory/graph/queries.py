@@ -1215,10 +1215,34 @@ RETURN deleted_id
 # still referenced by other users' messages/preferences out from under them. So a
 # shared entity survives (just unlinked from this user); a truly private one is removed.
 # `removed_node` reports which happened.
+# Forget cuts EVERY edge that puts this entity inside this caller's read scope, not just
+# the ownership edge. Dropping ownership alone left the entity fully readable: every scoped
+# read goes through ENTITY_IN_USER_SCOPE, which also accepts MENTIONS / APPLIES_TO / TOUCHED,
+# and MENTIONS is how extraction-born entities exist at all. Measured live 2026-07-25 right
+# after a "successful" forget — owned=0, mentioned=1, scope_count=1: the caller was told
+# "deleted" about something their next turn could still read back out of search, get_entity,
+# get_context and the recalled-context block. Deleting ownership is not forgetting.
+#
+# Still NON-cascading, and still nobody else's business: only edges rooted at THIS user are
+# cut, so a shared entity survives for everyone else and the node is removed only when the
+# last reference to it is gone. The caller's own messages keep their text — what is dropped
+# is the claim that this entity appears in them, which is precisely what forgetting means.
+#
+# DISTINCT after each delete block: OPTIONAL MATCH multiplies rows per matched edge, and
+# without it the row count (and the work) grows with every mention.
 DELETE_ENTITY_SCOPED = """
 MATCH (u:User {identifier: $user_identifier})-[owns:HAS_ENTITY]->(e:Entity {id: $entity_id})
 DELETE owns
-WITH e, e.id AS deleted_id
+WITH DISTINCT u, e
+OPTIONAL MATCH (u)-[:HAS_CONVERSATION]->(:Conversation)-[:HAS_MESSAGE]->(:Message)-[mentions:MENTIONS]->(e)
+DELETE mentions
+WITH DISTINCT u, e
+OPTIONAL MATCH (u)-[:HAS_PREFERENCE]->(:Preference)-[applies:APPLIES_TO]->(e)
+DELETE applies
+WITH DISTINCT u, e
+OPTIONAL MATCH (u)-[:HAS_TRACE]->(:ReasoningTrace)-[:HAS_STEP]->(:ReasoningStep)-[touched:TOUCHED]->(e)
+DELETE touched
+WITH DISTINCT e, e.id AS deleted_id
 OPTIONAL MATCH (e)-[rel]-()
 WITH e, deleted_id, count(rel) AS remaining
 FOREACH (_ IN CASE WHEN remaining = 0 THEN [1] ELSE [] END | DELETE e)

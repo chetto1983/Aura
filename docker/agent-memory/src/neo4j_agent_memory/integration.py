@@ -756,7 +756,7 @@ class MemoryIntegration:
             "note": (
                 "entity node removed (was private to you)"
                 if removed_node
-                else "unlinked from you; entity kept (still referenced elsewhere)"
+                else "removed from your memory; the node survives for another user"
             ),
         }
 
