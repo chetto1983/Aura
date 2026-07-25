@@ -46,6 +46,7 @@ RETURN c
 GET_CONVERSATION_SCOPED = """
 MATCH (c:Conversation {id: $id})
 OPTIONAL MATCH (u:User {identifier: $user_identifier})-[:HAS_CONVERSATION]->(c)
+WITH c, u
 WHERE c.user_identifier = $user_identifier OR u IS NOT NULL
 RETURN c
 """
@@ -60,6 +61,7 @@ LIMIT 1
 GET_CONVERSATION_BY_SESSION_SCOPED = """
 MATCH (c:Conversation {session_id: $session_id})
 OPTIONAL MATCH (u:User {identifier: $user_identifier})-[:HAS_CONVERSATION]->(c)
+WITH c, u
 WHERE c.user_identifier = $user_identifier OR u IS NOT NULL
 RETURN c
 ORDER BY c.created_at DESC
@@ -184,6 +186,7 @@ CALL db.index.vector.queryNodes('message_embedding_idx', $candidate_limit, $embe
 YIELD node, score
 MATCH (c:Conversation)-[:HAS_MESSAGE]->(node)
 OPTIONAL MATCH (u:User {identifier: $user_identifier})-[:HAS_CONVERSATION]->(c)
+WITH node, score, c, u
 WHERE score >= $threshold
   AND ($session_id IS NULL OR c.session_id = $session_id)
   AND (c.user_identifier = $user_identifier OR u IS NOT NULL)
@@ -239,6 +242,7 @@ RETURN session_id, title, created_at, updated_at, message_count, first_message_p
 LIST_SESSIONS_SCOPED = """
 MATCH (c:Conversation)
 OPTIONAL MATCH (u:User {identifier: $user_identifier})-[:HAS_CONVERSATION]->(c)
+WITH c, u
 WHERE ($prefix IS NULL OR c.session_id STARTS WITH $prefix)
   AND (c.user_identifier = $user_identifier OR u IS NOT NULL)
 WITH c
@@ -338,6 +342,7 @@ OPTIONAL MATCH (:User {identifier: $user_identifier})-[ue:HAS_ENTITY]->(node)
 OPTIONAL MATCH (:User {identifier: $user_identifier})-[:HAS_CONVERSATION]->(:Conversation)-[:HAS_MESSAGE]->(m:Message)-[:MENTIONS]->(node)
 OPTIONAL MATCH (:User {identifier: $user_identifier})-[:HAS_PREFERENCE]->(p:Preference)-[:APPLIES_TO]->(node)
 OPTIONAL MATCH (:User {identifier: $user_identifier})-[:HAS_TRACE]->(:ReasoningTrace)-[:HAS_STEP]->(rs:ReasoningStep)-[:TOUCHED]->(node)
+WITH node, score, ue, m, p, rs
 WHERE score >= $threshold
   AND (ue IS NOT NULL OR m IS NOT NULL OR p IS NOT NULL OR rs IS NOT NULL)
 RETURN node AS e, score
@@ -360,9 +365,44 @@ ORDER BY e.created_at DESC
 LIMIT $limit
 """
 
+# Same read, restricted to entities the caller can reach — the scoping shape used by
+# SEARCH_ENTITIES_BY_EMBEDDING_SCOPED and ENTITY_IN_USER_SCOPE. It backs canonical-name
+# resolution, which MUST NOT see other users' entities: an unscoped candidate list let a
+# fresh PERSON be canonicalised onto a stranger's name (observed live 2026-07-25 — a new
+# "Marco Bianchi" came back canonicalised to another operator's "Davide"), which both
+# corrupts the new entity and leaks the other user's name into the caller's results.
+SEARCH_ENTITIES_BY_TYPE_SCOPED = """
+MATCH (e:Entity {type: $type})
+OPTIONAL MATCH (:User {identifier: $user_identifier})-[ue:HAS_ENTITY]->(e)
+OPTIONAL MATCH (:User {identifier: $user_identifier})-[:HAS_CONVERSATION]->(:Conversation)-[:HAS_MESSAGE]->(m:Message)-[:MENTIONS]->(e)
+OPTIONAL MATCH (:User {identifier: $user_identifier})-[:HAS_PREFERENCE]->(p:Preference)-[:APPLIES_TO]->(e)
+OPTIONAL MATCH (:User {identifier: $user_identifier})-[:HAS_TRACE]->(:ReasoningTrace)-[:HAS_STEP]->(rs:ReasoningStep)-[:TOUCHED]->(e)
+WITH e, ue, m, p, rs
+WHERE ue IS NOT NULL OR m IS NOT NULL OR p IS NOT NULL OR rs IS NOT NULL
+RETURN e
+ORDER BY e.created_at DESC
+LIMIT $limit
+"""
+
 UPDATE_ENTITY_EMBEDDING = """
 MATCH (e:Entity {id: $id})
 SET e.embedding = $embedding
+RETURN e
+"""
+
+# Correct an existing entity's fields by id, bypassing add_entity's resolver +
+# MERGE-on-name path entirely (CREATE_ENTITY's ON MATCH SET deliberately never
+# touches e.name, so a misspelled entity can never be renamed through it).
+# COALESCE leaves any field the caller did not supply untouched, same
+# convention as CREATE_ENTITY's ON MATCH SET.
+UPDATE_ENTITY_FIELDS = """
+MATCH (e:Entity {id: $id})
+SET e.name = COALESCE($name, e.name),
+    e.canonical_name = COALESCE($canonical_name, e.canonical_name),
+    e.description = COALESCE($description, e.description),
+    e.subtype = COALESCE($subtype, e.subtype),
+    e.metadata = COALESCE($metadata, e.metadata),
+    e.updated_at = datetime()
 RETURN e
 """
 
@@ -745,6 +785,7 @@ SEARCH_TRACES_BY_EMBEDDING_SCOPED = """
 CALL db.index.vector.queryNodes('task_embedding_idx', $candidate_limit, $embedding)
 YIELD node, score
 OPTIONAL MATCH (u:User {identifier: $user_identifier})-[:HAS_TRACE]->(node)
+WITH node, score, u
 WHERE score >= $threshold
   AND ($success_only = false OR node.success = true)
   AND (node.user_identifier = $user_identifier OR u IS NOT NULL)
@@ -1145,6 +1186,55 @@ OPTIONAL MATCH (e)-[rel]-()
 WITH e, deleted_id, count(rel) AS remaining
 FOREACH (_ IN CASE WHEN remaining = 0 THEN [1] ELSE [] END | DELETE e)
 RETURN deleted_id, (remaining = 0) AS removed_node
+"""
+
+# Ownership-scoped updates ("correct"). Preference and fact ownership is the
+# same direct (:User)-[:HAS_*]->(node) edge DELETE_*_SCOPED enforces, so the
+# guard and the field write happen atomically in one query: a node the caller
+# does not own yields NO match, so nothing is written (refuse, not a silent
+# no-op). COALESCE leaves any field the caller did not supply untouched.
+GET_PREFERENCE_SCOPED = """
+MATCH (:User {identifier: $user_identifier})-[:HAS_PREFERENCE]->(p:Preference {id: $preference_id})
+RETURN p
+"""
+
+UPDATE_PREFERENCE_FIELDS_SCOPED = """
+MATCH (:User {identifier: $user_identifier})-[:HAS_PREFERENCE]->(p:Preference {id: $preference_id})
+SET p.preference = COALESCE($preference, p.preference),
+    p.category = COALESCE($category, p.category),
+    p.context = COALESCE($context, p.context),
+    p.confidence = COALESCE($confidence, p.confidence),
+    p.metadata = COALESCE($metadata, p.metadata),
+    p.updated_at = datetime()
+RETURN p
+"""
+
+UPDATE_PREFERENCE_EMBEDDING = """
+MATCH (p:Preference {id: $id})
+SET p.embedding = $embedding
+RETURN p
+"""
+
+GET_FACT_SCOPED = """
+MATCH (:User {identifier: $user_identifier})-[:HAS_FACT]->(f:Fact {id: $fact_id})
+RETURN f
+"""
+
+UPDATE_FACT_FIELDS_SCOPED = """
+MATCH (:User {identifier: $user_identifier})-[:HAS_FACT]->(f:Fact {id: $fact_id})
+SET f.subject = COALESCE($subject, f.subject),
+    f.predicate = COALESCE($predicate, f.predicate),
+    f.object = COALESCE($object, f.object),
+    f.confidence = COALESCE($confidence, f.confidence),
+    f.metadata = COALESCE($metadata, f.metadata),
+    f.updated_at = datetime()
+RETURN f
+"""
+
+UPDATE_FACT_EMBEDDING = """
+MATCH (f:Fact {id: $id})
+SET f.embedding = $embedding
+RETURN f
 """
 
 # =============================================================================

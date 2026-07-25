@@ -525,7 +525,7 @@ class LongTermMemory(BaseMemory[Entity]):
 
         # Resolve against existing entities
         if resolve and self._resolver is not None:
-            existing = await self._get_existing_entity_names(parsed_type)
+            existing = await self._get_existing_entity_names(parsed_type, user_identifier)
             resolved = await self._resolver.resolve(name, parsed_type, existing_entities=existing)
             canonical_name = resolved.canonical_name
             confidence = resolved.confidence
@@ -1463,12 +1463,25 @@ class LongTermMemory(BaseMemory[Entity]):
 
         return "\n".join(parts)
 
-    async def _get_existing_entity_names(self, entity_type: str) -> list[str]:
-        """Get names of existing entities of a given type."""
-        results = await self._client.execute_read(
-            queries.SEARCH_ENTITIES_BY_TYPE,
-            {"type": entity_type, "limit": 1000},
-        )
+    async def _get_existing_entity_names(
+        self, entity_type: str, user_identifier: str | None = None
+    ) -> list[str]:
+        """Get names of existing entities of a given type, scoped to the caller when known.
+
+        These names are the candidate set for canonical-name resolution, so an unscoped read
+        would let one user's entity be canonicalised onto another user's name. With no
+        user_identifier there is no scope to enforce and the global read stands.
+        """
+        if user_identifier:
+            results = await self._client.execute_read(
+                queries.SEARCH_ENTITIES_BY_TYPE_SCOPED,
+                {"type": entity_type, "limit": 1000, "user_identifier": user_identifier},
+            )
+        else:
+            results = await self._client.execute_read(
+                queries.SEARCH_ENTITIES_BY_TYPE,
+                {"type": entity_type, "limit": 1000},
+            )
         names = []
         for row in results:
             entity_data = dict(row["e"])
@@ -2216,6 +2229,114 @@ class LongTermMemory(BaseMemory[Entity]):
         )
         return rows[0]["deleted_id"] if rows else None
 
+    async def update_preference(
+        self,
+        preference_id: UUID | str,
+        *,
+        user_identifier: str,
+        preference: str | None = None,
+        category: str | None = None,
+        context: str | None = None,
+        confidence: float | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> "tuple[Preference, list[str]] | None":
+        """Correct an existing preference in place, by id.
+
+        Ownership is the same direct ``(:User)-[:HAS_PREFERENCE]->(:Preference)``
+        edge :meth:`delete_preference` enforces: a preference the caller does
+        not own, or that does not exist, returns ``None`` (refuse, never a
+        silent no-op).
+
+        This SETs fields directly on the node by id — it never re-runs
+        ``add_preference``'s embedding-similarity or ``FIND_EXACT_PREFERENCE``
+        dedup lookups, so correcting one preference's wording can never merge
+        it into (or get shadowed by) a different preference node.
+
+        ``add_preference`` embeds ``"{category}: {preference} ({context})"``
+        (context optional); when any of ``preference``/``category``/``context``
+        changes, the embedding is regenerated from the merged post-update text
+        so ``preference_embedding_idx`` doesn't keep returning results under
+        stale wording.
+
+        Returns:
+            ``(updated_preference, changed_fields)`` on success —
+            ``changed_fields`` lists only fields whose value actually differs
+            from before (empty when the supplied values already matched what
+            was stored). ``None`` when the preference is absent or out of the
+            caller's scope.
+        """
+        self._enforce_multi_tenant(user_identifier)
+        preference_id = (
+            preference_id if isinstance(preference_id, UUID) else UUID(str(preference_id))
+        )
+
+        rows = await self._client.execute_read(
+            queries.GET_PREFERENCE_SCOPED,
+            {"preference_id": str(preference_id), "user_identifier": user_identifier},
+        )
+        if not rows:
+            return None
+        current = self._parse_preference(dict(rows[0]["p"]))
+
+        changed_fields: list[str] = []
+        if preference is not None and preference != current.preference:
+            changed_fields.append("preference")
+        if category is not None and category != current.category:
+            changed_fields.append("category")
+        if context is not None and context != current.context:
+            changed_fields.append("context")
+        if confidence is not None and confidence != current.confidence:
+            changed_fields.append("confidence")
+
+        metadata_param: str | None = None
+        if metadata is not None:
+            storage_metadata = {**current.metadata, **metadata}
+            metadata_param = _serialize_metadata(storage_metadata)
+            changed_fields.append("metadata")
+
+        if not changed_fields:
+            return current, changed_fields
+
+        embedding: list[float] | None = None
+        if self._embedder is not None and any(
+            f in changed_fields for f in ("preference", "category", "context")
+        ):
+            merged_preference = preference if preference is not None else current.preference
+            merged_category = category if category is not None else current.category
+            merged_context = context if context is not None else current.context
+            text = f"{merged_category}: {merged_preference}"
+            if merged_context:
+                text += f" ({merged_context})"
+            embedding = await self._embedder.embed(text)
+
+        await self._client.execute_write(
+            queries.UPDATE_PREFERENCE_FIELDS_SCOPED,
+            {
+                "preference_id": str(preference_id),
+                "user_identifier": user_identifier,
+                "preference": preference,
+                "category": category,
+                "context": context,
+                "confidence": confidence,
+                "metadata": metadata_param,
+            },
+        )
+
+        if embedding is not None:
+            await self._client.execute_write(
+                queries.UPDATE_PREFERENCE_EMBEDDING,
+                {"id": str(preference_id), "embedding": embedding},
+            )
+
+        updated_rows = await self._client.execute_read(
+            queries.GET_PREFERENCE_SCOPED,
+            {"preference_id": str(preference_id), "user_identifier": user_identifier},
+        )
+        updated = (
+            self._parse_preference(dict(updated_rows[0]["p"])) if updated_rows else current
+        )
+        return updated, changed_fields
+
     async def delete_fact(
         self,
         fact_id: UUID | str,
@@ -2231,6 +2352,112 @@ class LongTermMemory(BaseMemory[Entity]):
             {"fact_id": str(fact_id), "user_identifier": user_identifier},
         )
         return rows[0]["deleted_id"] if rows else None
+
+    async def update_fact(
+        self,
+        fact_id: UUID | str,
+        *,
+        user_identifier: str,
+        subject: str | None = None,
+        predicate: str | None = None,
+        obj: str | None = None,
+        confidence: float | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> "tuple[Fact, list[str]] | None":
+        """Correct an existing fact triple in place, by id.
+
+        Ownership is the same direct ``(:User)-[:HAS_FACT]->(:Fact)`` edge
+        :meth:`delete_fact` enforces: a fact the caller does not own, or that
+        does not exist, returns ``None`` (refuse, never a silent no-op).
+
+        This SETs fields directly on the node by id — it never re-runs
+        ``add_fact``'s embedding-similarity dedup lookup
+        (``FIND_DUPLICATE_FACTS``), so correcting one fact's
+        subject/predicate/object can never merge it into a different fact
+        node.
+
+        ``add_fact`` embeds ``"{subject} {predicate} {object}"``; when any of
+        those three changes, the embedding is regenerated from the merged
+        post-update triple so ``fact_embedding_idx`` doesn't keep returning
+        results under the stale wording.
+
+        Args:
+            obj: New object value, if incorrect (named ``obj`` — matches
+                ``add_fact``'s own parameter — to avoid shadowing the
+                ``object`` builtin).
+
+        Returns:
+            ``(updated_fact, changed_fields)`` on success — ``changed_fields``
+            lists only fields whose value actually differs from before (empty
+            when the supplied values already matched what was stored). ``None``
+            when the fact is absent or out of the caller's scope.
+        """
+        self._enforce_multi_tenant(user_identifier)
+        fact_id = fact_id if isinstance(fact_id, UUID) else UUID(str(fact_id))
+
+        rows = await self._client.execute_read(
+            queries.GET_FACT_SCOPED,
+            {"fact_id": str(fact_id), "user_identifier": user_identifier},
+        )
+        if not rows:
+            return None
+        current = self._parse_fact(dict(rows[0]["f"]))
+
+        changed_fields: list[str] = []
+        if subject is not None and subject != current.subject:
+            changed_fields.append("subject")
+        if predicate is not None and predicate != current.predicate:
+            changed_fields.append("predicate")
+        if obj is not None and obj != current.object:
+            changed_fields.append("object")
+        if confidence is not None and confidence != current.confidence:
+            changed_fields.append("confidence")
+
+        metadata_param: str | None = None
+        if metadata is not None:
+            storage_metadata = {**current.metadata, **metadata}
+            metadata_param = _serialize_metadata(storage_metadata)
+            changed_fields.append("metadata")
+
+        if not changed_fields:
+            return current, changed_fields
+
+        embedding: list[float] | None = None
+        if self._embedder is not None and any(
+            f in changed_fields for f in ("subject", "predicate", "object")
+        ):
+            merged_subject = subject if subject is not None else current.subject
+            merged_predicate = predicate if predicate is not None else current.predicate
+            merged_object = obj if obj is not None else current.object
+            embedding = await self._embedder.embed(
+                f"{merged_subject} {merged_predicate} {merged_object}"
+            )
+
+        await self._client.execute_write(
+            queries.UPDATE_FACT_FIELDS_SCOPED,
+            {
+                "fact_id": str(fact_id),
+                "user_identifier": user_identifier,
+                "subject": subject,
+                "predicate": predicate,
+                "object": obj,
+                "confidence": confidence,
+                "metadata": metadata_param,
+            },
+        )
+
+        if embedding is not None:
+            await self._client.execute_write(
+                queries.UPDATE_FACT_EMBEDDING,
+                {"id": str(fact_id), "embedding": embedding},
+            )
+
+        updated_rows = await self._client.execute_read(
+            queries.GET_FACT_SCOPED,
+            {"fact_id": str(fact_id), "user_identifier": user_identifier},
+        )
+        updated = self._parse_fact(dict(updated_rows[0]["f"])) if updated_rows else current
+        return updated, changed_fields
 
     async def delete_entity(
         self,
@@ -2253,6 +2480,116 @@ class LongTermMemory(BaseMemory[Entity]):
         if not rows:
             return None
         return rows[0]["deleted_id"], bool(rows[0]["removed_node"])
+
+    async def update_entity(
+        self,
+        entity_id: UUID | str,
+        *,
+        user_identifier: str,
+        name: str | None = None,
+        description: str | None = None,
+        aliases: list[str] | None = None,
+        subtype: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> "tuple[Entity, list[str]] | None":
+        """Correct an existing entity's fields in place, by id.
+
+        ``add_entity`` resolves a name against existing entities and merges
+        into the matched node — but ``CREATE_ENTITY``'s ``ON MATCH SET``
+        deliberately never touches ``e.name``, so a misspelled entity can
+        never be renamed through it; the only other lever is delete-then-
+        recreate, which throws away the node's relationships. This method
+        edits by id instead, bypassing the resolver entirely.
+
+        Ownership uses :meth:`_entity_in_user_scope` — the same broad check
+        ``search_entities`` uses (direct ownership, mentions, applied
+        preferences, or reasoning-touched all count). An entity the caller
+        has no relationship to, or that does not exist, returns ``None``
+        (refuse, never a silent no-op) — see :meth:`delete_entity`.
+
+        When ``name`` changes, ``canonical_name`` is kept in sync:
+        ``Entity.display_name`` prefers ``canonical_name``, and a stale
+        ``canonical_name`` would let the resolver keep re-merging future
+        spelling corrections back onto the old value — the exact bug this
+        method exists to fix. When ``name`` or ``description`` changes, the
+        embedding is regenerated so vector search doesn't go stale on the
+        old text.
+
+        Only keyword args actually supplied are considered; there is no way
+        to clear a field to null through this method (same limitation as
+        ``add_entity``'s merge path).
+
+        Returns:
+            ``(updated_entity, changed_fields)`` on success. ``changed_fields``
+            lists only the fields whose value actually differs from before
+            (it can be empty when the supplied values already matched what
+            was stored). ``None`` when the entity is absent or out of the
+            caller's scope.
+        """
+        self._enforce_multi_tenant(user_identifier)
+        entity_id = entity_id if isinstance(entity_id, UUID) else UUID(str(entity_id))
+
+        if not await self._entity_in_user_scope(entity_id, user_identifier):
+            return None
+
+        current = await self._get_entity_by_id(entity_id)
+        if current is None:
+            return None
+
+        changed_fields: list[str] = []
+        if name is not None and name != current.name:
+            changed_fields.append("name")
+        if description is not None and description != current.description:
+            changed_fields.append("description")
+        if subtype is not None and subtype != current.subtype:
+            changed_fields.append("subtype")
+        if aliases is not None and aliases != current.aliases:
+            changed_fields.append("aliases")
+
+        metadata_param: str | None = None
+        if aliases is not None or metadata is not None:
+            storage_metadata = {**current.metadata}
+            if metadata is not None:
+                storage_metadata.update(metadata)
+            if aliases is not None:
+                storage_metadata["aliases"] = aliases
+            elif current.aliases:
+                storage_metadata["aliases"] = current.aliases
+            if current.attributes:
+                storage_metadata["attributes"] = current.attributes
+            metadata_param = _serialize_metadata(storage_metadata)
+            if metadata is not None:
+                changed_fields.append("metadata")
+
+        if not changed_fields:
+            return current, changed_fields
+
+        embedding: list[float] | None = None
+        if self._embedder is not None and (
+            "name" in changed_fields or "description" in changed_fields
+        ):
+            embedding = await self._embedder.embed(name if name is not None else current.name)
+
+        await self._client.execute_write(
+            queries.UPDATE_ENTITY_FIELDS,
+            {
+                "id": str(entity_id),
+                "name": name,
+                "canonical_name": name,  # keep display_name in sync with the correction
+                "description": description,
+                "subtype": subtype,
+                "metadata": metadata_param,
+            },
+        )
+
+        if embedding is not None:
+            await self._client.execute_write(
+                queries.UPDATE_ENTITY_EMBEDDING,
+                {"id": str(entity_id), "embedding": embedding},
+            )
+
+        updated = await self._get_entity_by_id(entity_id)
+        return (updated if updated is not None else current), changed_fields
 
     async def get_preferences_by_category(
         self,

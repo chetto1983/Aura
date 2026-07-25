@@ -1,7 +1,7 @@
 """MCP tool implementations for Neo4j Agent Memory.
 
 Tools are organized into two profiles:
-- Core (7 tools): Essential read/write/forget cycle for memory operations.
+- Core (8 tools): Essential read/write/forget/correct cycle for memory operations.
 - Extended: entity management, relationships, and advanced graph queries.
   (Aura fork: the reasoning-trace tools + memory_export_graph were removed —
   Aura keeps its own reasoning store, so the agent-memory trace path was a
@@ -45,7 +45,7 @@ def register_tools(
 
     Args:
         mcp: FastMCP server instance.
-        profile: Tool profile - 'core' (7 tools) or 'extended'.
+        profile: Tool profile - 'core' (8 tools) or 'extended'.
         register_platinum: When True (and profile == 'extended'), register
             four additional NAMS Platinum-tier tools:
             ``memory_set_entity_feedback``, ``memory_get_entity_history``,
@@ -60,11 +60,11 @@ def register_tools(
             _register_platinum_tools(mcp)
 
 
-# ── Core Profile (6 tools) ───────────────────────────────────────────
+# ── Core Profile (8 tools) ───────────────────────────────────────────
 
 
 def _register_core_tools(mcp: FastMCP) -> None:
-    """Register the 7 core profile tools."""
+    """Register the 8 core profile tools."""
 
     @mcp.tool()
     async def memory_search(
@@ -321,6 +321,114 @@ def _register_core_tools(mcp: FastMCP) -> None:
         else:
             result = {
                 "deleted": None,
+                "reason": f"unsupported node_type {node_type!r}; use 'preference', 'fact', or 'entity'",
+            }
+        return json.dumps(result, default=str)
+
+    @mcp.tool()
+    async def memory_update(
+        ctx: Context,
+        node_type: str,
+        node_id: str,
+        name: str | None = None,
+        description: str | None = None,
+        aliases: list[str] | None = None,
+        subtype: str | None = None,
+        preference: str | None = None,
+        category: str | None = None,
+        context: str | None = None,
+        subject: str | None = None,
+        predicate: str | None = None,
+        object_value: str | None = None,
+        confidence: float | None = None,
+        metadata: dict[str, Any] | None = None,
+        user_identifier: str | None = None,
+    ) -> str:
+        """Correct an existing memory the user owns, by id — the update half of add/forget.
+
+        ``memory_add_entity``, ``memory_add_preference``, and ``memory_add_fact``
+        all resolve/deduplicate what you pass against what already exists and
+        merge into the closest match WITHOUT changing that match's stored
+        text. So re-adding to fix a mistake (e.g. correcting the name 'David'
+        to 'Davide') just re-merges onto the OLD wording every time — add can
+        never rename or reword anything. The only other lever, forgetting and
+        re-adding, throws away the node's id and relationships. This tool
+        edits the existing node directly by id instead, bypassing resolution
+        and deduplication entirely, so it is the correct way to fix a wrong
+        name, description, category, wording, or triple on a memory that
+        already exists — never delete-and-recreate for a correction.
+
+        Get node_id the same way you would for memory_forget: from the
+        relevant add_* tool's response ('id', or 'matched_entity_id' under
+        'deduplication' when it merged), from a get_* tool, or from a
+        memory_search result.
+
+        Only the fields relevant to node_type are used; anything you omit
+        keeps its current value. Changing an entity's name/description, a
+        preference's preference/category/context, or a fact's
+        subject/predicate/object also refreshes that node's embedding, so
+        the matching vector index (entity_embedding_idx,
+        preference_embedding_idx, fact_embedding_idx) doesn't keep returning
+        results under stale wording.
+
+        Args:
+            node_type: What to correct — 'preference', 'fact', or 'entity'.
+            node_id: The id of the node to correct (not its name/text).
+            name: [entity] Corrected name, if wrong. Also keeps the entity's
+                internal canonical_name in sync, so future add_entity calls
+                resolve to the corrected spelling instead of the old one.
+            description: [entity] Corrected description, if wrong.
+            aliases: [entity] Replacement list of alternative names, if wrong.
+            subtype: [entity] Corrected subtype, if wrong.
+            preference: [preference] Corrected preference text, if wrong.
+            category: [preference] Corrected category, if wrong.
+            context: [preference] Corrected context, if wrong.
+            subject: [fact] Corrected subject, if wrong.
+            predicate: [fact] Corrected predicate, if wrong.
+            object_value: [fact] Corrected object/value, if wrong.
+            confidence: [preference, fact] Corrected confidence 0.0-1.0, if wrong.
+            metadata: [preference, fact, entity] Metadata fields to merge in.
+
+        Returns a JSON object: ``{"updated": <id>, "fields": [...], "entity"|
+        "preference"|"fact": {...}}`` on success, or ``{"updated": null,
+        "reason": ...}`` when the node does not exist or is outside the
+        caller's scope — never a silent no-op.
+        """
+        integration = get_integration(ctx)
+        kind = node_type.strip().lower()
+        if kind in ("preference", "pref"):
+            result = await integration.update_preference(
+                node_id,
+                user_identifier=user_identifier,
+                preference=preference,
+                category=category,
+                context=context,
+                confidence=confidence,
+                metadata=metadata,
+            )
+        elif kind == "fact":
+            result = await integration.update_fact(
+                node_id,
+                user_identifier=user_identifier,
+                subject=subject,
+                predicate=predicate,
+                object_value=object_value,
+                confidence=confidence,
+                metadata=metadata,
+            )
+        elif kind == "entity":
+            result = await integration.update_entity(
+                node_id,
+                user_identifier=user_identifier,
+                name=name,
+                description=description,
+                aliases=aliases,
+                subtype=subtype,
+                metadata=metadata,
+            )
+        else:
+            result = {
+                "updated": None,
                 "reason": f"unsupported node_type {node_type!r}; use 'preference', 'fact', or 'entity'",
             }
         return json.dumps(result, default=str)

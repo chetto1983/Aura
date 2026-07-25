@@ -31,6 +31,26 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _entity_name_fields(entity: Any) -> dict[str, Any]:
+    """Project an entity's name for the API: the STORED name, never a substitute.
+
+    ``Entity.display_name`` returns ``canonical_name or name`` — correct for rendering a
+    label, catastrophic on a data interface. Reporting the canonical as "name" made every
+    read lie about what was written: an agent that stored "Davide" was told the entity was
+    called "David" (its resolver-assigned canonical) by add, get and search alike, concluded
+    its write had failed, deleted the node and retried — a loop observed live on 2026-07-25,
+    where the very first write had in fact succeeded.
+
+    The canonical is still useful, so it is surfaced as its own field when it differs —
+    additive information instead of a silent replacement.
+    """
+    fields: dict[str, Any] = {"name": entity.name}
+    canonical = getattr(entity, "canonical_name", None)
+    if canonical and canonical != entity.name:
+        fields["canonical_name"] = canonical
+    return fields
+
+
 class SessionStrategy(str, Enum):
     """Strategy for resolving session IDs."""
 
@@ -385,7 +405,7 @@ class MemoryIntegration:
                 results["entities"] = [
                     {
                         "id": str(entity.id),
-                        "name": entity.display_name,
+                        **_entity_name_fields(entity),
                         "type": (
                             entity.type.value if hasattr(entity.type, "value") else str(entity.type)
                         ),
@@ -474,7 +494,7 @@ class MemoryIntegration:
                 "stored": True,
                 "type": "entity",
                 "id": str(entity.id),
-                "name": entity.display_name,
+                **_entity_name_fields(entity),
                 "entity_type": (
                     entity.type.value if hasattr(entity.type, "value") else str(entity.type)
                 ),
@@ -603,6 +623,49 @@ class MemoryIntegration:
             return {"deleted": None, "reason": "not found or not owned by this user"}
         return {"deleted": removed, "type": "preference"}
 
+    async def update_preference(
+        self,
+        preference_id: str,
+        *,
+        user_identifier: str,
+        preference: str | None = None,
+        category: str | None = None,
+        context: str | None = None,
+        confidence: float | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Correct an existing preference by id (see
+        :meth:`long_term.LongTermMemory.update_preference`). Ownership is the
+        same direct HAS_PREFERENCE edge :meth:`delete_preference` enforces."""
+        try:
+            result = await self.client.long_term.update_preference(
+                preference_id,
+                user_identifier=user_identifier,
+                preference=preference,
+                category=category,
+                context=context,
+                confidence=confidence,
+                metadata=metadata,
+            )
+        except Exception as e:
+            logger.error(f"Error updating preference: {e}")
+            return {"updated": None, "error": str(e)}
+        if result is None:
+            return {"updated": None, "reason": "not found or not owned by this user"}
+        pref, fields = result
+        return {
+            "updated": str(pref.id),
+            "type": "preference",
+            "fields": fields,
+            "preference": {
+                "id": str(pref.id),
+                "category": pref.category,
+                "preference": pref.preference,
+                "context": pref.context,
+                "confidence": pref.confidence,
+            },
+        }
+
     async def delete_fact(
         self,
         fact_id: str,
@@ -620,6 +683,47 @@ class MemoryIntegration:
         if removed is None:
             return {"deleted": None, "reason": "not found or not owned by this user"}
         return {"deleted": removed, "type": "fact"}
+
+    async def update_fact(
+        self,
+        fact_id: str,
+        *,
+        user_identifier: str,
+        subject: str | None = None,
+        predicate: str | None = None,
+        object_value: str | None = None,
+        confidence: float | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Correct an existing fact triple by id (see
+        :meth:`long_term.LongTermMemory.update_fact`). Ownership is the same
+        direct HAS_FACT edge :meth:`delete_fact` enforces."""
+        try:
+            result = await self.client.long_term.update_fact(
+                fact_id,
+                user_identifier=user_identifier,
+                subject=subject,
+                predicate=predicate,
+                obj=object_value,
+                confidence=confidence,
+                metadata=metadata,
+            )
+        except Exception as e:
+            logger.error(f"Error updating fact: {e}")
+            return {"updated": None, "error": str(e)}
+        if result is None:
+            return {"updated": None, "reason": "not found or not owned by this user"}
+        fact, fields = result
+        return {
+            "updated": str(fact.id),
+            "type": "fact",
+            "fields": fields,
+            "fact": {
+                "id": str(fact.id),
+                "triple": f"{fact.subject} -> {fact.predicate} -> {fact.object}",
+                "confidence": fact.confidence,
+            },
+        }
 
     async def delete_entity(
         self,
@@ -649,4 +753,52 @@ class MemoryIntegration:
                 if removed_node
                 else "unlinked from you; entity kept (still referenced elsewhere)"
             ),
+        }
+
+    async def update_entity(
+        self,
+        entity_id: str,
+        *,
+        user_identifier: str,
+        name: str | None = None,
+        description: str | None = None,
+        aliases: list[str] | None = None,
+        subtype: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Correct an existing entity's fields by id (see
+        :meth:`long_term.LongTermMemory.update_entity` for the rename-without-
+        resolver contract). Ownership uses the same broad scope check as
+        search — direct ownership, mentions, applied preferences, or
+        reasoning-touched all count."""
+        try:
+            result = await self.client.long_term.update_entity(
+                entity_id,
+                user_identifier=user_identifier,
+                name=name,
+                description=description,
+                aliases=aliases,
+                subtype=subtype,
+                metadata=metadata,
+            )
+        except Exception as e:
+            logger.error(f"Error updating entity: {e}")
+            return {"updated": None, "error": str(e)}
+        if result is None:
+            return {"updated": None, "reason": "not found or not owned by this user"}
+        entity, fields = result
+        return {
+            "updated": str(entity.id),
+            "type": "entity",
+            "fields": fields,
+            "entity": {
+                "id": str(entity.id),
+                **_entity_name_fields(entity),
+                "type": (
+                    entity.type.value if hasattr(entity.type, "value") else str(entity.type)
+                ),
+                "subtype": entity.subtype,
+                "description": entity.description,
+                "aliases": entity.aliases,
+            },
         }
