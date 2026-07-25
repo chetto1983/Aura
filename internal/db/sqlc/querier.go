@@ -87,6 +87,7 @@ type Querier interface {
 	GetActivePasswordResetChallenge(ctx context.Context, identityID pgtype.UUID) (AuraPasswordResetChallenges, error)
 	GetAdaptiveOutboxByID(ctx context.Context, id pgtype.UUID) (AuraAdaptiveOutbox, error)
 	GetAdaptivePolicy(ctx context.Context) (GetAdaptivePolicyRow, error)
+	GetAdaptivePolicySnapshot(ctx context.Context, arg GetAdaptivePolicySnapshotParams) (AuraAdaptivePolicySnapshots, error)
 	GetAsset(ctx context.Context, id pgtype.UUID) (AuraAssets, error)
 	GetAssetForIdentity(ctx context.Context, arg GetAssetForIdentityParams) (AuraAssets, error)
 	GetConversation(ctx context.Context, id pgtype.UUID) (AuraConversations, error)
@@ -136,6 +137,7 @@ type Querier interface {
 	IncrementPasswordResetChallengeAttempts(ctx context.Context, id pgtype.UUID) error
 	IncrementPasswordResetTokenAttempts(ctx context.Context, tokenHash string) error
 	InsertAdaptiveOutbox(ctx context.Context, arg InsertAdaptiveOutboxParams) (int64, error)
+	InsertAdaptivePolicySnapshot(ctx context.Context, arg InsertAdaptivePolicySnapshotParams) (int64, error)
 	InsertAssetEvent(ctx context.Context, arg InsertAssetEventParams) error
 	// Idempotent on (conversation_id, seq): the metric write is a separate, non-transactional
 	// observation following the assistant turn (runner_persist.go). ON CONFLICT DO NOTHING

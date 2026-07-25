@@ -109,15 +109,9 @@ func NewPolicySnapshot(spec SnapshotSpec) (*PolicySnapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	payload, err := json.Marshal(canonicalSnapshot{
-		SchemaVersion:    SnapshotSchemaVersion,
-		Scope:            canonical.Scope,
-		ChampionActionID: canonical.ChampionActionID,
-		FeatureSchema:    canonical.FeatureSchema,
-		Actions:          canonical.Actions,
-	})
+	payload, err := marshalCanonicalSnapshot(canonical)
 	if err != nil {
-		return nil, fmt.Errorf("marshal adaptive policy snapshot: %w", err)
+		return nil, err
 	}
 	sum := sha256.Sum256(payload)
 	return &PolicySnapshot{
@@ -135,6 +129,44 @@ func NewPolicySnapshot(spec SnapshotSpec) (*PolicySnapshot, error) {
 		scoringActions:   scoringActions,
 		verified:         true,
 	}, nil
+}
+
+func marshalCanonicalSnapshot(spec SnapshotSpec) ([]byte, error) {
+	payload, err := json.Marshal(canonicalSnapshot{
+		SchemaVersion:    SnapshotSchemaVersion,
+		Scope:            spec.Scope,
+		ChampionActionID: spec.ChampionActionID,
+		FeatureSchema:    spec.FeatureSchema,
+		Actions:          spec.Actions,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marshal adaptive policy snapshot: %w", err)
+	}
+	return payload, nil
+}
+
+func (snapshot *PolicySnapshot) canonicalArtifact() ([]byte, error) {
+	if snapshot == nil || !snapshot.verified {
+		return nil, errors.New("adaptive policy snapshot is not verified")
+	}
+	reconstructed, err := NewPolicySnapshot(SnapshotSpec{
+		Scope:            snapshot.scope,
+		ChampionActionID: snapshot.championActionID,
+		FeatureSchema:    snapshot.featureSchema,
+		Actions:          snapshot.actions,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("verify adaptive policy snapshot: %w", err)
+	}
+	if reconstructed.id != snapshot.id || reconstructed.sha256 != snapshot.sha256 {
+		return nil, errors.New("adaptive policy snapshot identity does not match content")
+	}
+	return marshalCanonicalSnapshot(SnapshotSpec{
+		Scope:            reconstructed.scope,
+		ChampionActionID: reconstructed.championActionID,
+		FeatureSchema:    reconstructed.featureSchema,
+		Actions:          reconstructed.actions,
+	})
 }
 
 // ID returns the deterministic content-derived snapshot ID.
@@ -435,6 +467,36 @@ func cloneSnapshotActions(actions []SnapshotAction) []SnapshotAction {
 		}
 	}
 	return cloned
+}
+
+func snapshotActionsEqual(left, right []SnapshotAction) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index].ActionID != right[index].ActionID ||
+			!slices.EqualFunc(
+				left[index].Examples,
+				right[index].Examples,
+				snapshotExamplesEqual,
+			) {
+			return false
+		}
+	}
+	return true
+}
+
+func snapshotExamplesEqual(left, right SnapshotExample) bool {
+	return left.OutcomeID == right.OutcomeID &&
+		left.OwnerID == right.OwnerID &&
+		left.Domain == right.Domain &&
+		left.Point == right.Point &&
+		left.ProviderID == right.ProviderID &&
+		left.ModelID == right.ModelID &&
+		left.ObservedAt.Equal(right.ObservedAt) &&
+		left.Eligible == right.Eligible &&
+		left.Utility == right.Utility &&
+		slices.Equal(left.Features, right.Features)
 }
 
 func finiteInRange(value, minimum, maximum float64) bool {

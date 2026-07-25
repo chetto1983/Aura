@@ -42,6 +42,25 @@ type AuraAdaptiveOutbox struct {
 	LastErrorClass pgtype.Text        `json:"last_error_class"`
 }
 
+// Authoritative immutable owner-scoped adaptive policy snapshot artifacts.
+type AuraAdaptivePolicySnapshots struct {
+	ID               pgtype.UUID        `json:"id"`
+	OwnerID          pgtype.UUID        `json:"owner_id"`
+	Sha256           []byte             `json:"sha256"`
+	SchemaVersion    string             `json:"schema_version"`
+	Domain           string             `json:"domain"`
+	DecisionPoint    string             `json:"decision_point"`
+	ProviderID       string             `json:"provider_id"`
+	ModelID          string             `json:"model_id"`
+	PolicyVersion    string             `json:"policy_version"`
+	TrainingCutoff   pgtype.Timestamptz `json:"training_cutoff"`
+	FeatureSchema    []byte             `json:"feature_schema"`
+	ActionCatalog    []byte             `json:"action_catalog"`
+	ChampionActionID string             `json:"champion_action_id"`
+	Artifact         []byte             `json:"artifact"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
 // Authoritative global adaptive rollout epoch. Every execution gate reads it; unavailable means baseline-only.
 type AuraAdaptivePolicyState struct {
 	Scope         string             `json:"scope"`

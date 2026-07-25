@@ -381,36 +381,6 @@ func snapshotTestExample(
 	}
 }
 
-func snapshotActionsEqual(left, right []SnapshotAction) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	for index := range left {
-		if left[index].ActionID != right[index].ActionID ||
-			!slices.EqualFunc(
-				left[index].Examples,
-				right[index].Examples,
-				snapshotExamplesEqual,
-			) {
-			return false
-		}
-	}
-	return true
-}
-
-func snapshotExamplesEqual(left, right SnapshotExample) bool {
-	return left.OutcomeID == right.OutcomeID &&
-		left.OwnerID == right.OwnerID &&
-		left.Domain == right.Domain &&
-		left.Point == right.Point &&
-		left.ProviderID == right.ProviderID &&
-		left.ModelID == right.ModelID &&
-		left.ObservedAt.Equal(right.ObservedAt) &&
-		left.Eligible == right.Eligible &&
-		left.Utility == right.Utility &&
-		slices.Equal(left.Features, right.Features)
-}
-
 func leftPadDecimal(value, width int) string {
 	digits := []byte{}
 	for {
