@@ -47,10 +47,12 @@ func TestSnapshotMigration0070UpgradeDownAndUp(t *testing.T) {
 	if err := db.MigrateSteps(ctx, migrateURL, 1); err != nil {
 		t.Fatalf("upgrade 0069 to 0070: %v", err)
 	}
+	// The line above already pins where this drill intends to be. CheckMigrationHead asks a
+	// different question — "is this the newest migration on disk?" — which was only true here
+	// while 0070 happened to BE head; every migration since made this assertion fail on a
+	// database that is exactly where the test put it. "Am I at head?" belongs to the
+	// clean-install test, which derives it.
 	assertSchema2MigrationVersion(t, ctx, migrateURL, 70)
-	if err := db.CheckMigrationHead(ctx, migrateURL); err != nil {
-		t.Fatalf("CheckMigrationHead() at 0070: %v", err)
-	}
 	assertSnapshotMigrationContract(t, ctx, pool)
 	definition := readSnapshotValidatorDefinition(t, ctx, pool)
 	if strings.Contains(definition, "outcome_ids") ||

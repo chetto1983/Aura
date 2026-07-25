@@ -173,7 +173,7 @@ func TestSnapshotMigrationCleanInstallAt0070(t *testing.T) {
 		t,
 		ctx,
 		"aura_snapshot_clean_install",
-		70,
+		shippedMigrationSteps(t),
 	)
 	if err := db.CheckMigrationHead(ctx, migrateURL); err != nil {
 		t.Fatalf("CheckMigrationHead() after clean install: %v", err)

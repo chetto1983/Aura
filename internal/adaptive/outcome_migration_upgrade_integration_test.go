@@ -21,9 +21,9 @@ func TestOutcomeChainLimitCleanInstall0067(t *testing.T) {
 		t,
 		ctx,
 		"aura_outcome_chain_clean",
-		67,
+		shippedMigrationSteps(t),
 	)
-	assertSchema2MigrationVersion(t, ctx, migrateURL, 67)
+	assertSchema2MigrationVersion(t, ctx, migrateURL, shippedMigrationSteps(t))
 	assertOutcomeChainFunctionIsHardened(
 		t,
 		readOutcomeChainFunctionContract(t, ctx, pool),
