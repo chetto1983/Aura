@@ -116,6 +116,39 @@ func TestOnCallbackScheduledApprovalEditsOutcome(t *testing.T) {
 	}
 }
 
+// TestOnCallbackDetailsRevealsQuestionKeepingKeyboard proves the Dettagli tap edits the prompt to
+// the pause's full question and leaves the keyboard armed — the operator reads, then decides —
+// without resolving anything.
+func TestOnCallbackDetailsRevealsQuestionKeepingKeyboard(t *testing.T) {
+	t.Parallel()
+	const question = "Attivo il job giornaliero delle 7:00 che invia il report?"
+	rs := &fakeResume{pending: []askuser.Pending{{Token: "tok-1", Kind: "approval", Question: question}}}
+	rt := &recordingTurn{}
+	tg := dispatchChannel(t, rt, func(d *Deps) { d.Resume = rs })
+
+	bot := &dispatchBot{}
+	cb := &tele.Callback{Message: chatMsg(41), Data: callbackData("tok-1", actionDetails, "")}
+	if err := tg.onCallback(context.Background())(tele.NewContext(bot, tele.Update{Callback: cb})); err != nil {
+		t.Fatalf("onCallback: %v", err)
+	}
+	if calls := rs.calls(); len(calls) != 0 {
+		t.Fatalf("details must submit nothing, got %+v", calls)
+	}
+	edits := bot.recordedEdits()
+	if len(edits) != 1 {
+		t.Fatalf("want exactly one reveal edit, got %d (%+v)", len(edits), edits)
+	}
+	if s, _ := edits[0].what.(string); s != question {
+		t.Errorf("reveal text = %q, want the pause question", s)
+	}
+	if edits[0].markup == nil || len(edits[0].markup.InlineKeyboard) != 2 {
+		t.Errorf("reveal must keep the approval keyboard armed, got %+v", edits[0].markup)
+	}
+	if calls, _ := rt.snapshot(); calls != 0 {
+		t.Errorf("details must not drive a turn, got %d", calls)
+	}
+}
+
 // TestOnCallbackResumeHonorsBusyGate proves a HITL resume continuation cannot
 // bypass the same per-chat busy gate used by ordinary inbound turns.
 func TestOnCallbackResumeHonorsBusyGate(t *testing.T) {

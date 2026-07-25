@@ -133,6 +133,10 @@ func (h *hitl) handleCallbackResult(
 		return callbackOutcome{}
 	}
 	out := callbackOutcome{action: action}
+	// Dettagli only reveals; resolving here would answer a pause the operator has not decided on.
+	if action == actionDetails {
+		return out
+	}
 	if action == askuser.ActionAccept {
 		value = h.resolveChoiceValue(ctx, convID, token, value)
 	}
@@ -186,6 +190,22 @@ func (h *hitl) resolveChoiceValue(ctx context.Context, convID, token, value stri
 	return value
 }
 
+// questionFor returns the bounded question of the pause a token addresses, or "" when that pause
+// is gone (already resolved / stale button). The text is the server-sanitized one the Runner
+// stored — the channel reveals it, it never composes detail of its own.
+func (h *hitl) questionFor(ctx context.Context, convID, token string) string {
+	pending, err := h.runner.PendingFor(ctx, convID)
+	if err != nil {
+		return ""
+	}
+	for _, p := range pending {
+		if p.Token == token {
+			return p.Question
+		}
+	}
+	return ""
+}
+
 // handleTextReply resolves a free-text ForceReply answer: it reads the first
 // pending pause and, when there is one, submits the text as an accept answer. It
 // returns whether a resume was driven. With no pending pause it is a no-op
@@ -225,16 +245,27 @@ func (h *hitl) cancel(ctx context.Context, convID, token string) (resumed bool, 
 	return h.submit(ctx, convID, token, askuser.ActionCancel, "")
 }
 
-// approvalMarkup builds the accept/decline InlineKeyboard for an approval pause. It serves BOTH
-// legs of the approval surface: the in-turn relay (hitl.prompt) and the scheduler
-// approval-reminder sweep push (DeliverApproval) — one builder, one callback endpoint, so a
-// rendering fix can no longer land on one leg and miss the other (Phase A consolidation).
+// actionDetails is a channel-local action carried in callback_data that reveals the pause's full
+// bounded question. It is NOT an askuser action: it never reaches SubmitAnswer and never resolves
+// the pause — the keyboard stays armed so the operator reads, then decides.
+const actionDetails = "details"
+
+// approvalMarkup builds the approval InlineKeyboard: Approva/Rifiuta on the first row, a
+// non-resolving Dettagli on the second. It serves BOTH legs of the approval surface — the in-turn
+// relay (hitl.prompt) and the scheduler approval-reminder sweep push (DeliverApproval) — one
+// builder, one callback endpoint, so a rendering fix can no longer land on one leg and miss the
+// other (Phase A consolidation).
 func approvalMarkup(token string) *tele.ReplyMarkup {
 	mk := &tele.ReplyMarkup{}
-	mk.InlineKeyboard = [][]tele.InlineButton{{
-		{Unique: callbackUnique, Text: "Sì", Data: callbackData(token, askuser.ActionAccept, "yes")},
-		{Unique: callbackUnique, Text: "No", Data: callbackData(token, askuser.ActionDecline, "")},
-	}}
+	mk.InlineKeyboard = [][]tele.InlineButton{
+		{
+			{Unique: callbackUnique, Text: "Approva", Data: callbackData(token, askuser.ActionAccept, "yes")},
+			{Unique: callbackUnique, Text: "Rifiuta", Data: callbackData(token, askuser.ActionDecline, "")},
+		},
+		{
+			{Unique: callbackUnique, Text: "Dettagli", Data: callbackData(token, actionDetails, "")},
+		},
+	}
 	return mk
 }
 

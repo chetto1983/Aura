@@ -239,7 +239,13 @@ func (t *Telegram) onCallback(daemonCtx context.Context) tele.HandlerFunc {
 			return nil
 		}
 		chatID := cb.Message.Chat.ID
-		_, action, _, valid := parseCallback(cb.Data)
+		token, action, _, valid := parseCallback(cb.Data)
+		// Dettagli reveals the full question and leaves the pause open — it must not reach
+		// handleCallbackResult's resolve path at all.
+		if valid && action == actionDetails {
+			t.revealApprovalDetails(daemonCtx, c, chatID, token)
+			return nil
+		}
 		// Acknowledge immediately so Telegram clears the button spinner and shows a
 		// small toast before any continuation turn starts rendering.
 		_ = c.Respond(callbackToast(action, valid))
@@ -266,6 +272,26 @@ func (t *Telegram) onCallback(daemonCtx context.Context) tele.HandlerFunc {
 			// by the Runner and has nothing left to show.
 		}
 		return nil
+	}
+}
+
+// revealApprovalDetails answers a Dettagli tap by editing the prompt to the pause's full bounded
+// question with the keyboard left armed, so the operator reads first and decides after. It is a
+// pure render over the pending read the channel already performs — no new data source, and the
+// question is the server-sanitized one. A stale token (pause already resolved) leaves the message
+// untouched rather than blanking it.
+func (t *Telegram) revealApprovalDetails(ctx context.Context, c tele.Context, chatID int64, token string) {
+	_ = c.Respond(&tele.CallbackResponse{Text: "Dettagli"})
+	cb := c.Callback()
+	if cb == nil || cb.Message == nil || c.Bot() == nil {
+		return
+	}
+	question := t.hitlFor(c, chatID).questionFor(ctx, convID(chatID), token)
+	if question == "" {
+		return
+	}
+	if _, err := c.Bot().Edit(cb.Message, question, approvalMarkup(token)); err != nil {
+		slog.Warn("telegram approval: details reveal failed", "err", err)
 	}
 }
 

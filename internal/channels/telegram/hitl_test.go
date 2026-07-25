@@ -154,6 +154,67 @@ func (b *hitlBot) recorded() []hitlSend {
 	return out
 }
 
+// TestApprovalMarkupMultiRow pins the enriched native approval: Approva/Rifiuta on row 1, a
+// non-resolving Dettagli on row 2, and every button within Telegram's 64-byte on-wire budget
+// (framing included) for a real 36-char UUID token.
+func TestApprovalMarkupMultiRow(t *testing.T) {
+	t.Parallel()
+	const token = "11112222-3333-4444-5555-666677778888"
+	mk := approvalMarkup(token)
+	if len(mk.InlineKeyboard) != 2 {
+		t.Fatalf("want 2 rows (Approva/Rifiuta, Dettagli), got %d", len(mk.InlineKeyboard))
+	}
+	if len(mk.InlineKeyboard[0]) != 2 || len(mk.InlineKeyboard[1]) != 1 {
+		t.Fatalf("unexpected keyboard shape: %+v", mk.InlineKeyboard)
+	}
+	if got := mk.InlineKeyboard[1][0].Text; got != "Dettagli" {
+		t.Errorf("row 2 button = %q, want Dettagli", got)
+	}
+	for _, row := range mk.InlineKeyboard {
+		for _, b := range row {
+			if !strings.Contains(b.Data, token) {
+				t.Errorf("button %q must carry the pause token, data=%q", b.Text, b.Data)
+			}
+			if wire := len("\f") + len(b.Unique) + len(callbackSep) + len(b.Data); wire > callbackDataMaxBytes {
+				t.Errorf("button %q on-wire %d > %d", b.Text, wire, callbackDataMaxBytes)
+			}
+		}
+	}
+}
+
+// TestDetailsCallbackIsNonResolving proves a Dettagli tap never answers the pause: it only
+// reveals. Resolving on a reveal would decide for the operator.
+func TestDetailsCallbackIsNonResolving(t *testing.T) {
+	t.Parallel()
+	rs := &fakeResume{}
+	h := newHitl(rs, rs.resumeTurn)
+
+	out := h.handleCallbackResult(context.Background(), callbackData("tok-1", actionDetails, ""), "conv-1", nil)
+	if len(rs.calls()) != 0 {
+		t.Errorf("details must not reach SubmitAnswer, got %+v", rs.calls())
+	}
+	if out.submitted || out.resumed || rs.resumes != 0 {
+		t.Errorf("details must neither resolve nor resume, got %+v (resumes=%d)", out, rs.resumes)
+	}
+}
+
+// TestQuestionForMatchesToken proves the reveal reads the pause's own server-sanitized question
+// and returns "" for a stale token, so a resolved prompt is never blanked.
+func TestQuestionForMatchesToken(t *testing.T) {
+	t.Parallel()
+	rs := &fakeResume{pending: []askuser.Pending{
+		{Token: "tok-1", Kind: "approval", Question: "Attivo il job giornaliero delle 7:00?"},
+	}}
+	h := newHitl(rs, rs.resumeTurn)
+
+	if got := h.questionFor(context.Background(), "conv-1", "tok-1"); got != "Attivo il job giornaliero delle 7:00?" {
+		t.Errorf("questionFor = %q", got)
+	}
+	if got := h.questionFor(context.Background(), "conv-1", "stale"); got != "" {
+		t.Errorf("stale token must yield \"\", got %q", got)
+	}
+}
+
 // TestHITLChoiceRendersInlineKeyboard: a pause WITH options renders an
 // InlineKeyboard, one button per option, each callback carrying the pause token
 // (VALIDATION "options→InlineKeyboard").

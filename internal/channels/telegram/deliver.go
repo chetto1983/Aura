@@ -98,10 +98,15 @@ func (t *Telegram) DeliverApproval(ctx context.Context, identityID, token, taskI
 }
 
 // approvalPromptText is the bounded sweep-push copy — task kind + short id only, never the
-// payload (no goal/secret leakage beyond what the origin already saw). The in-turn relay renders
-// the pause's own Question instead; this leg has only (taskID, kind) to work with.
+// payload (no goal/secret leakage beyond what the origin already saw); the full request is one
+// Dettagli tap away, read from the pause itself. Plain text on purpose: the send sets no
+// ParseMode, so Markdown syntax would render literally. The in-turn relay renders the pause's own
+// Question instead — this leg has only (taskID, kind) to work with.
 func approvalPromptText(taskID, kind string) string {
-	return "🔔 Il task pianificato " + kind + " " + shortTelegramTaskID(taskID) + " richiede la tua approvazione."
+	return "🔔 Approvazione richiesta\n" +
+		"Task pianificato: " + kind + "\n" +
+		"ID: " + shortTelegramTaskID(taskID) + "\n" +
+		"Tocca Dettagli per la richiesta completa, poi Approva o Rifiuta."
 }
 
 // shortTelegramTaskID renders the first 8 chars of a task id for the bounded prompt: a raw

@@ -240,15 +240,17 @@ func TestDeliverApprovalUsesUnifiedCallback(t *testing.T) {
 		t.Fatalf("want 1 send carrying a keyboard, got %+v", sends)
 	}
 	kb := sends[0].markup.InlineKeyboard
-	if len(kb) != 1 || len(kb[0]) != 2 {
-		t.Fatalf("want one row of two buttons, got %v", kb)
+	if len(kb) != 2 || len(kb[0]) != 2 {
+		t.Fatalf("want the shared approval keyboard (Approva/Rifiuta + Dettagli), got %v", kb)
 	}
-	for _, b := range kb[0] {
-		if b.Unique != callbackUnique {
-			t.Errorf("button Unique = %q, want the unified %q", b.Unique, callbackUnique)
-		}
-		if wire := len("\f") + len(b.Unique) + len(callbackSep) + len(b.Data); wire > callbackDataMaxBytes {
-			t.Errorf("on-wire callback_data = %d bytes > %d (\\f%s|%s)", wire, callbackDataMaxBytes, b.Unique, b.Data)
+	for _, row := range kb {
+		for _, b := range row {
+			if b.Unique != callbackUnique {
+				t.Errorf("button Unique = %q, want the unified %q", b.Unique, callbackUnique)
+			}
+			if wire := len("\f") + len(b.Unique) + len(callbackSep) + len(b.Data); wire > callbackDataMaxBytes {
+				t.Errorf("on-wire callback_data = %d bytes > %d (\\f%s|%s)", wire, callbackDataMaxBytes, b.Unique, b.Data)
+			}
 		}
 	}
 	if kb[0][0].Data != callbackData(token, askuser.ActionAccept, "yes") {
