@@ -54,12 +54,12 @@ func focalCohortTestSpec() CohortSpec {
 		},
 		Evaluators: []EvaluatorRegistration{harm, quality},
 		PrimaryQuality: CohortEndpoint{
-			ID:        "citation-supported",
+			ID:        "citation-support",
 			Kind:      CohortBinaryQuality,
 			Evaluator: quality.Provenance(),
 		},
 		PrimaryHarm: CohortEndpoint{
-			ID:        "harm-free",
+			ID:        "harm-binary",
 			Kind:      CohortBinaryHarm,
 			Evaluator: harm.Provenance(),
 		},
@@ -218,6 +218,8 @@ func TestNewFocalCohort_DerivesDeterministicIdentity_When_ContentChanges(t *test
 
 	otherEndpoint := focalCohortTestSpec()
 	otherEndpoint.PrimaryQuality.ID = "citation-correct"
+	otherEndpoint.PrimaryQuality.Evaluator.RubricID = "citation-correct"
+	otherEndpoint.Evaluators[1].RubricID = "citation-correct"
 	otherEndpointCohort := mustFocalCohort(t, otherEndpoint)
 	if otherEndpointCohort.ID() == cohort.ID() || otherEndpointCohort.SHA256() == cohort.SHA256() {
 		t.Fatal("changed primary endpoint did not change cohort identity")
@@ -309,6 +311,14 @@ func TestFocalCohort_NilReceiverReturnsZeroValues(t *testing.T) {
 	}
 }
 
+func TestFocalCohort_IDReturnsNil_When_ReceiverIsZeroValue(t *testing.T) {
+	var cohort FocalCohort
+
+	if got := cohort.ID(); got != uuid.Nil {
+		t.Fatalf("zero-value cohort ID = %s, want nil", got)
+	}
+}
+
 func TestNewFocalCohort_RejectsInvalidSpecifications(t *testing.T) {
 	unregistered := EvaluatorRegistration{
 		Kind:             EvaluatorHuman,
@@ -390,6 +400,10 @@ func TestNewFocalCohort_RejectsInvalidSpecifications(t *testing.T) {
 		{"invalid simulation hash", func(s *CohortSpec) { s.Power.SimulationSHA256 = "" }},
 		{"negative quality margin", func(s *CohortSpec) { s.Margins.MinimumQualityUplift = -0.1 }},
 		{"impossible quality margin", func(s *CohortSpec) { s.Margins.MinimumQualityUplift = 0.35 }},
+		{"harm margin exceeds unit interval", func(s *CohortSpec) {
+			s.Power.BaselineHarmRate = 0.99
+			s.Margins.MaximumHarmIncrease = 0.02
+		}},
 		{"saturated harm margin", func(s *CohortSpec) { s.Margins.MaximumHarmIncrease = 1 }},
 		{"saturated censor rate", func(s *CohortSpec) { s.Censoring.MaxCensorRate = 1 }},
 		{"negative censor imbalance", func(s *CohortSpec) { s.Censoring.MaxCensorImbalance = -0.1 }},
@@ -429,6 +443,16 @@ func TestNewFocalCohort_RejectsInvalidSpecifications(t *testing.T) {
 				t.Fatalf("NewFocalCohort() accepted %s", testCase.name)
 			}
 		})
+	}
+}
+
+func TestNewFocalCohort_AcceptsHarmMarginAtUnitIntervalBoundary(t *testing.T) {
+	spec := focalCohortTestSpec()
+	spec.Power.BaselineHarmRate = 0.99
+	spec.Margins.MaximumHarmIncrease = 0.01
+
+	if _, err := NewFocalCohort(spec); err != nil {
+		t.Fatalf("NewFocalCohort() error = %v, want exact harm boundary accepted", err)
 	}
 }
 

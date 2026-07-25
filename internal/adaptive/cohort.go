@@ -145,8 +145,9 @@ type CohortSpec struct {
 
 // FocalCohort is the immutable, preregistered cohort contract for one focal point.
 type FocalCohort struct {
-	id, sha256, predicateSHA256 string
-	spec                        CohortSpec
+	id                      uuid.UUID
+	sha256, predicateSHA256 string
+	spec                    CohortSpec
 }
 
 // NewFocalCohort validates and freezes a preregistered focal cohort specification.
@@ -168,7 +169,7 @@ func NewFocalCohort(spec CohortSpec) (*FocalCohort, error) {
 		return nil, fmt.Errorf("decode canonical cohort hash: %w", err)
 	}
 	return &FocalCohort{
-		id:              uuid.NewHash(sha256.New(), cohortIDNamespace, digest, 5).String(),
+		id:              uuid.NewHash(sha256.New(), cohortIDNamespace, digest, 5),
 		sha256:          contentSHA256,
 		predicateSHA256: predicateSHA256,
 		spec:            spec,
@@ -180,7 +181,7 @@ func (cohort *FocalCohort) ID() uuid.UUID {
 	if cohort == nil {
 		return uuid.Nil
 	}
-	return uuid.MustParse(cohort.id)
+	return cohort.id
 }
 
 // SHA256 returns the canonical cohort content hash.
@@ -264,6 +265,28 @@ func (cohort *FocalCohort) PrimaryHarmEndpoint() CohortEndpoint {
 		return CohortEndpoint{}
 	}
 	return cohort.spec.PrimaryHarm
+}
+
+// ValidatePrimaryQualityOutcome checks persisted quality evidence against the frozen cohort endpoint.
+func (cohort *FocalCohort) ValidatePrimaryQualityOutcome(observation OutcomeObservation) error {
+	return validatePrimaryOutcome(cohort, observation, cohort.PrimaryQualityEndpoint(), observation.Measures.Quality)
+}
+
+// ValidatePrimaryHarmOutcome checks persisted harm evidence against the frozen cohort endpoint.
+func (cohort *FocalCohort) ValidatePrimaryHarmOutcome(observation OutcomeObservation) error {
+	return validatePrimaryOutcome(cohort, observation, cohort.PrimaryHarmEndpoint(), observation.Measures.Harm)
+}
+
+func validatePrimaryOutcome(cohort *FocalCohort, observation OutcomeObservation, endpoint CohortEndpoint, value *float64) error {
+	if cohort == nil || observation.OwnerID != cohort.spec.Scope.OwnerID ||
+		observation.Domain != cohort.spec.Predicate.Domain ||
+		observation.ProviderID != cohort.spec.Scope.ProviderID ||
+		observation.ModelID != cohort.spec.Scope.ModelID ||
+		observation.Status != OutcomeObserved || observation.Evaluator != endpoint.Evaluator ||
+		value == nil || (*value != 0 && *value != 1) {
+		return errors.New("adaptive cohort primary outcome evidence is invalid")
+	}
+	return nil
 }
 
 // Power returns the frozen power plan.
@@ -452,7 +475,7 @@ func validateCohortEvaluators(registrations []EvaluatorRegistration, quality, ha
 }
 
 func validCohortEndpoint(endpoint CohortEndpoint, kind CohortEndpointKind) bool {
-	return endpoint.Kind == kind && safeCohortID(endpoint.ID, maxEvaluatorIDLength)
+	return endpoint.Kind == kind && endpoint.ID == endpoint.Evaluator.RubricID && safeCohortID(endpoint.ID, maxEvaluatorIDLength)
 }
 
 func validateCohortNumbers(spec CohortSpec) error {
@@ -476,6 +499,7 @@ func validateCohortNumbers(spec CohortSpec) error {
 		power.BaselineQualityRate+spec.Margins.MinimumQualityUplift >= 1 ||
 		!finiteProbability(spec.Margins.MaximumHarmIncrease, true) ||
 		spec.Margins.MaximumHarmIncrease >= 1 ||
+		power.BaselineHarmRate+spec.Margins.MaximumHarmIncrease > 1 ||
 		!finiteProbability(spec.Censoring.MaxCensorRate, true) ||
 		spec.Censoring.MaxCensorRate >= 1 ||
 		!nonnegativeFinite(spec.Censoring.MaxCensorImbalance) ||
