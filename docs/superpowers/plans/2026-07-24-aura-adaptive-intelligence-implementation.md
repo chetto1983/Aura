@@ -10,13 +10,12 @@
 
 **Design sources:** [production specification](../specs/2026-07-24-aura-adaptive-intelligence-design.md), [delivery and evidence appendix](../specs/2026-07-24-aura-adaptive-intelligence-delivery-and-evidence.md), and PRD Amendment #93.4 in [prd.md](../../../prd.md).
 
-## Progress checkpoint — 2026-07-24
+## Progress checkpoint — 2026-07-25
 
-**Current approved head:** `f58334f1b82a4db4912761e6dbf79cd53b4b0f36`
+**Current approved head:** `ab43e5c364def85ba15aa45624d278266913d2f0`
 
-**Current review candidate:** none; the pure focal-cohort contract is in progress
-in the isolated `claude/focal-cohort-contract` worktree and has no approved
-candidate commit yet.
+**Current review candidate:** none; PostgreSQL cohort persistence and atomic
+focal claiming are the next TDD slice.
 
 - The schema-2 Assignment/Delivery Go contract is complete through
   `03643cc9a`. Its spec and code-quality reviews both returned `APPROVE`.
@@ -39,13 +38,21 @@ candidate commit yet.
   frozen-vector norm validation in immutable migration `0068`; migration `0070`
   replaces its quadratic duplicate-outcome scan with a set-based validation.
   Both the final spec and code-quality reviews returned `APPROVE`.
+- The pure immutable focal-cohort contract is complete and independently
+  approved through `ab43e5c36`. It freezes exact binary quality/harm endpoints,
+  evaluator provenance, focal point/ordinal, arm/action support, power,
+  censoring, interference blocks, planned looks, cutoff, and canonical hashes.
+  It fails closed for nil/uninitialized state, bounds every collection before
+  cloning, and validates binary outcome evidence against exact frozen scope.
 - The persistence commits after the Go contract are `b0216f494`,
   `79a5f719d`, `f941a0e0f`, `001d6f974`, `ca587adb8`, `9ed7f625b`, and
   `fee72ff13`. The typed Store commits are `05849027b`, `a29401417`,
   `45fd467ff`, and `0b71fee3`. The typed outcome commits are `623f03c60`,
   `d9946cc07`, `36b65f16d`, and `250281c05`. The snapshot/scorer commits are
   `c691dccbc` and `5eb127605`. The snapshot persistence commits are
-  `8589ec09a`, `a76096d5d`, and `f58334f1b`.
+  `8589ec09a`, `a76096d5d`, and `f58334f1b`. The focal-cohort commits are
+  `2396329b9`, `bd5da2888`, merge `72ac519b2`, `fc1dc83f3`, `abfa7452a`,
+  and `ab43e5c36`.
 - Verified evidence at the approved head includes clean head-67 install,
   down/up, versioned upgrade and dirty fail-closed paths, deterministic
   Go/PostgreSQL identity parity, dirty-62 loader exclusion, live
@@ -69,20 +76,26 @@ candidate commit yet.
   maximum-cardinality artifact with 128 actions and 32,768 outcomes. The final
   live quality run saved it in 3.84 seconds, loaded it in 524 milliseconds, and
   completed in 4.52 seconds.
+- Focal-cohort evidence includes RED-first invalid endpoint, impossible
+  effect/support, sensitive identifier, non-binary outcome, zero-value, and
+  oversized-collection cases; focused and full adaptive normal/race tests,
+  `go vet ./...`, `go build ./...`, diff-scoped lint with zero findings, diff
+  checks, and file-size gates pass. Final spec and quality reviews both returned
+  `APPROVE`.
 - Task 1 is complete. Typed Store APIs transactionally load and lock the
   persisted Assignment before recording Delivery, preserve exact
   idempotence/conflict behavior, reject every schema-2 event kind through the
   generic Store surface, and fail closed for nil dependencies or fenced owners.
-- Focal cohorts, ledger-only reconstruction, exact statistical inference,
-  sealed evidence, and legacy `CanaryBatch`/Wilson removal remain Task 2 work.
-  Migration `0070` is installed cleanly on the live database with zero snapshot
-  rows. Recheck the disk head immediately before allocation; with current head
-  `0070`, the next expected number is `0071`. No production runtime adapter,
-  Agent Memory change, real-model benchmark, final quality gate, or push has
-  been completed.
-- Do not replay unchanged remote CI. Resume with the isolated pure focal-cohort
-  contract under TDD, require independent spec and code-quality approval, merge
-  it atomically, and then implement cohort persistence and atomic focal claims.
+- Cohort persistence/claiming, ledger-only reconstruction, exact statistical
+  inference, sealed evidence, and legacy `CanaryBatch`/Wilson removal remain
+  Task 2 work. Migration `0070` is installed cleanly on the live database with
+  zero snapshot rows. Recheck the disk head immediately before allocation; with
+  current head `0070`, the next expected number is `0071`. No production runtime
+  adapter, Agent Memory change, real-model benchmark, final quality gate, or
+  push has been completed.
+- Do not replay unchanged remote CI. Resume with migration `0071`, immutable
+  cohort persistence, and the atomic request/conversation focal-claim contract
+  under TDD.
 
 ## Global execution contract
 
@@ -260,7 +273,13 @@ go build ./...
 - [x] **Step 4a: Persist immutable snapshots.** Implementation and forward-only
   numerical/performance repairs are approved through `f58334f1`; migrations
   `0068` and `0069` remain immutable history and `0070` is the current head.
-- [ ] **Step 5: Implement durable focal claims** with both constraints: unique `(cohort_id, request_id)` is the request-level focal membership key, and unique `(cohort_id, evaluation_conversation_id)` enforces at most one randomized request in an evaluation conversation. The claim stores the exact point/ordinal predicate match and happens atomically before the arm draw. A cohort freezes policy/provider/model/snapshot/action catalogs, arm probabilities, evaluator versions, power/support plan, safety limits, planned looks, and cutoff.
+- [ ] **Step 5: Implement durable focal claims.** The pure immutable cohort
+  contract is approved through `ab43e5c36`; persistence and claiming remain.
+  Enforce both constraints: unique `(cohort_id, request_id)` is the request-level
+  focal membership key, and unique
+  `(cohort_id, evaluation_conversation_id)` enforces at most one randomized
+  request in an evaluation conversation. The claim stores the exact
+  point/ordinal predicate match and happens atomically before the arm draw.
 - [ ] **Step 6: Implement the ledger-only loader**: reconstruct assignments, deliveries, eligible outcomes, and folded corrections at the cohort cutoff; include missing delivery/outcome as censored ITT rows; reject unsealed catalogs, unknown exposure probabilities, cross-owner facts, and facts beyond cutoff.
 - [x] **Step 7: Implement a production typed outcome/correction recorder.** `OutcomeRecorder.RecordOutcome` accepts only a typed `OutcomeObservation`, loads the referenced schema-2 assignment, binds domain/owner/provider/model, validates the registered evaluator kind/ID/version/rubric/calibration/provenance hash, and appends the deterministic terminal event. `RecordCorrection` transactionally loads the current effective leaf and rejects missing, cross-owner/domain/evaluator, cross-kind, fork, or cycle links. Operational tool/HTTP/persistence/model-self-report completion cannot call this eligible recorder. Compose the deterministic and calibrated-judge benchmark evaluators through this same service; no benchmark may insert ledger rows directly.
 - [ ] **Step 8: Implement separate sealed artifact kinds**:
