@@ -3,6 +3,24 @@
 Plan date: 2026-07-20
 Supersedes-as-execution-index: `operator-reported-runtime-bugs-2026-07-18.md` (BUG-1..7) + `live-attack-plan-2026-07-18.md` (Waves 0–3).
 
+## Staleness warning (2026-07-25)
+
+**This document under-reports progress, and it was caught by accident.** Work started on row
+1.1 only to find it shipped days earlier in `ac636ddcb`, with the prescribed fix at
+`internal/agent/llm_agent_finalize.go:223` + `llm_agent_completion.go:98` and three RED tests.
+A spot-check then found 0.3 in the same state (`readLineWithContext`,
+`internal/knowledge/client.go:247`) and 0.2 mooted by a deletion the plan itself records
+elsewhere. A row that says CONFIRMED here does NOT mean "still broken" — it means nobody came
+back to this file after fixing it.
+
+Three rows were verified against the code and corrected on 2026-07-25 (0.2, 0.3, 1.1). **Wave 2,
+Wave 3 and the Phase A table were NOT verified** — two audit subagents were dispatched for them
+and both were killed by the 600s stall watchdog, so those sections carry the same doubt as
+before. Verify against the code before starting any row here; the cheapest check is to grep for
+the symbols the "Fix (verified)" column already names.
+
+---
+
 ## Provenance
 
 This is the single execution truth-source that reconciles the two 2026-07-18 audits, folds in a 2026-07-20 **adversarial code-verification pass** (17 read-only verifier agents, workflow `wenpc28z1`; default stance "the finding is wrong until the code proves it"), records the **operator decisions**, and captures a **newly-discovered bug (BUG-8)** found this session by live DB inspection and already shipped.
@@ -69,8 +87,8 @@ Three fixes landed on `master` on top of the removal, all E2E-verified on the re
 | # | Verdict | Fix (verified) | migration / PRD | risk |
 |---|---|---|---|---|
 | **0.1** Evaluator dies on 23505 | CONFIRMED (high) → **SHIPPED** | Treat empty `{}` windows as "no observation" — `EvaluateOnce` skips `Apply` (the root guard that stops the storm) + `Run` tolerates a stray 23505 (self-heal, item 0.2). **The originally-planned idempotent `ON CONFLICT DO NOTHING` append was REVERTED** — it broke `TestRolloutStoreAtomicRollbackRestoresLastKnownGood`, which enforces the real immutable-ledger dedup contract (a duplicate evidence digest MUST 23505-abort the tx atomically). Guard + self-heal fully fix the crash without weakening that invariant. | no migration / no | low |
-| **0.2** Goroutine log-and-die | CONFIRMED_NARROWED (high) | **Correction: no shared "supervisor helper" exists in-repo — do NOT build one.** Mirror the swallow-per-tick pattern: `return err` → `slog.Warn`+`continue`; only ctx-cancel terminates. Census-confirmed resilient goroutines untouched. | no / no | low |
-| **0.3** Cypher hang under `mu` | CONFIRMED (high) | Extract `readLineWithContext(ctx)` mirroring `initializeWithContext` (goroutine + ctx-select + `Process.Kill()` on timeout); replace the bare `ReadBytes` at `client.go:215`; keep `mu` held (do not release across the read). | no / env-note | low |
+| **0.2** Goroutine log-and-die | ✅ **MOOT** (verified 2026-07-25) | **Correction: no shared "supervisor helper" exists in-repo — do NOT build one.** Mirror the swallow-per-tick pattern: `return err` → `slog.Warn`+`continue`; only ctx-cancel terminates. Census-confirmed resilient goroutines untouched. | no / no | low |
+| **0.3** Cypher hang under `mu` | ✅ **SHIPPED** (verified 2026-07-25) | Extract `readLineWithContext(ctx)` mirroring `initializeWithContext` (goroutine + ctx-select + `Process.Kill()` on timeout); replace the bare `ReadBytes` at `client.go:215`; keep `mu` held (do not release across the read). | no / env-note | low |
 
 **Live status:** 0.1 re-confirmed firing on the 2026-07-20 container boot (`compaction rollout evaluator stopped … 23505` within seconds).
 
@@ -88,7 +106,7 @@ Hard constraint honored: context management stays Aura-side + provider-agnostic 
 
 | # | Verdict | Fix (verified) | migration / PRD | risk |
 |---|---|---|---|---|
-| **1.1** Wallclock finalize DOA | CONFIRMED (high) | Derive synthesis/critic/recovery ctx from `context.WithoutCancel(ic.Ctx)` + fresh `TotalTimeoutSec` `WithTimeout` (keeps request/trace values, severs the expired deadline). Pattern already used by `maybeAutoTitle`/`flushPause`. | no / no | low |
+| **1.1** Wallclock finalize DOA | ✅ **SHIPPED** `ac636ddcb` (verified 2026-07-25) | Derive synthesis/critic/recovery ctx from `context.WithoutCancel(ic.Ctx)` + fresh `TotalTimeoutSec` `WithTimeout` (keeps request/trace values, severs the expired deadline). Pattern already used by `maybeAutoTitle`/`flushPause`. | no / no | low |
 | **1.2** Missed reminders dropped | ✅ **DONE** (this commit) | Flipped `ReminderHandler.Meta().ReschedulesOnRecovery` false→true — this RESTORES the PRD Slice 6 contract (PRD always said `true`: "idempotente: ri-notificare è safe"; Phase 19 M-g shipped the drift). Boot catch-up now delivers ONE collapsed fire (D-18) and `Run` appends a "late delivery — originally scheduled …" marker from `MissedSince` (the D-18 docstring's stated purpose). False comments fixed (`reminder.go` Meta, `serve.go` catch-up note); 3 tests updated with justification: `TestReminderMeta` flipped + new `TestReminderLateDeliveryMarker`, `recover_test` M-g no-replay case swapped reminder→`skill_ttl_sweep` (a genuinely-false kind), `scheduler_test` seam/lookup maps aligned. PRD drift-note added inline at the Slice 6 reminder row. | no / PRD note (done) | med |
 | **1.3** SSE no resilience | ✅ **DONE** (2026-07-23) — Tier A heartbeat `a93648c5`; Tier B FULLY SHIPPED: amendment #90 (`adfac168c`) → RS-01..03 core (`5283f54f8`/`246dd75e9`/`3dc5cc3cd`) → RS-04..06 server (`ddbbf64fc`/`004f41b25`/`fa849f679`) → RS-07 web resilient client (`870e9ae9c`) → E2E-found mount-gap fix (`a03ea717b`, /agent/runs/ subtree) → **live E2E 10/10** (kill-TCP gapless resume, reload-attach, cancel+lock-release, all wire+DB ground truth) → **default flip ratified as amendment #90.1** (AURA_AGUI_RUN_DETACH=true) | Tier A: idle SSE-comment (`:hb\n\n`) heartbeat ticker in `streamSSE`'s drain loop (`internal/agui/server_sse.go`) — the drain goroutine is the sole writer of `w`, so the ticker's write and `WriteEventWithType` are mutually-exclusive `select` cases and can never split a frame. `AURA_AGUI_SSE_HEARTBEAT_SEC` (default 15, `<=0` disables, no ticker allocated). Client comment-tolerance was already shipped (`web/src/chat/sseAdapter.ts:421`, tested). Tier B: client reconnect + `Last-Event-ID` resume; decouple run lifetime from the single fetch. | no / env-var (PRD catalog, done this commit) | med |
 | **1.4** `/readyz` lies | ✅ **DONE** (core shipped by 39-03 `a20eeddd`/`2727b1cf`; residual staleness-window/tick coupling + env knob in this commit) | Core: `CodeSchedulerStalled` gating via `readiness.Snapshot`/`Reasons()`, scheduler `markTick`/`markTerminalFailure` wiring, `/readyz` merging reasons, compose healthcheck. Residual closed here: the hardcoded 90s staleness window now derives from the RESOLVED tick (`schedulerReadinessMaxAge` = 3×tick, floored at 90s) so an operator-widened `AURA_SCHEDULER_TICK_SECONDS` doesn't false-positive `scheduler_stalled` between ticks; new `AURA_SCHEDULER_READY_MAX_STALE_SEC` override knob. Rerank/embed probes deliberately NOT added (fail-soft by design). | no / PRD note | low |
