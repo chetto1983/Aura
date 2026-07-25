@@ -287,9 +287,13 @@ func (t *Telegram) revealApprovalDetails(ctx context.Context, c tele.Context, ch
 		return
 	}
 	question := t.hitlFor(c, chatID).questionFor(ctx, convID(chatID), token)
-	if question == "" {
+	// Nothing to reveal (stale token) or already revealed: editing a message to its own content
+	// is a 400 from Telegram, not a no-op, so guard rather than let the API reject it.
+	if question == "" || question == cb.Message.Text {
 		return
 	}
+	// Re-arm WITHOUT Dettagli: the question is now on screen, so the button has nothing left to
+	// show and a second tap would be that same rejected edit.
 	if _, err := c.Bot().Edit(cb.Message, question, approvalMarkup(token)); err != nil {
 		slog.Warn("telegram approval: details reveal failed", "err", err)
 	}

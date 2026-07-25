@@ -91,7 +91,7 @@ func (t *Telegram) DeliverApproval(ctx context.Context, identityID, token, taskI
 		return false, fmt.Errorf("telegram deliver approval: resolve identity %s: %w", identityID, err)
 	}
 	text := approvalPromptText(taskID, kind)
-	if _, err := sender.Send(tele.ChatID(acct.TelegramUserID), text, &tele.SendOptions{ReplyMarkup: approvalMarkup(token)}); err != nil {
+	if _, err := sender.Send(tele.ChatID(acct.TelegramUserID), text, &tele.SendOptions{ReplyMarkup: approvalPushMarkup(token)}); err != nil {
 		return false, fmt.Errorf("telegram deliver approval: send to %d: %w", acct.TelegramUserID, err)
 	}
 	return true, nil
