@@ -1929,6 +1929,32 @@ class LongTermMemory(BaseMemory[Entity]):
 
         return processed
 
+    async def backfill_entity_ownership(self) -> int:
+        """Give extraction-born entities the ``HAS_ENTITY`` edge their owner never got.
+
+        Only ``add_entity`` used to write ``(:User)-[:HAS_ENTITY]->(:Entity)``. Entities
+        born from message extraction therefore had no ownership at all, which made them
+        visible, searchable and updatable — :data:`queries.ENTITY_IN_USER_SCOPE` also
+        accepts ``MENTIONS`` — but impossible to delete, because
+        :data:`queries.DELETE_ENTITY_SCOPED` requires the direct edge. The operator was
+        told their own data was "not found or not owned by this user".
+
+        The write path was fixed at the point entities are created rather than by
+        loosening the delete guard (widening a destructive verb to cover a gap in the
+        write path fixes the symptom on the wrong side). That fix is not retroactive:
+        rows written before it still have no owner, and this repairs them with the same
+        rule the write path now applies — a user owns what was extracted from that user's
+        own messages, and nothing wider.
+
+        Idempotent: the query skips pairs that already have the edge, so a repaired graph
+        is a no-op.
+
+        Returns:
+            The number of ownership edges created (0 when nothing needed repair).
+        """
+        rows = await self._client.execute_write(queries.BACKFILL_ENTITY_OWNERSHIP)
+        return int(rows[0]["linked"]) if rows else 0
+
     # =========================================================================
     # Provenance Tracking Methods
     # =========================================================================

@@ -807,6 +807,75 @@ def maintenance_backfill_embeddings(
     console.print(f"[green]Done.[/green] Generated embeddings for {fixed} entities.")
 
 
+@maintenance.command("backfill-entity-ownership")
+@click.option(
+    "--uri",
+    envvar="NEO4J_URI",
+    default="bolt://localhost:7687",
+    help="Neo4j URI (default: bolt://localhost:7687 or NEO4J_URI env var).",
+)
+@click.option(
+    "--user",
+    envvar="NEO4J_USER",
+    default="neo4j",
+    help="Neo4j username (default: neo4j or NEO4J_USER env var).",
+)
+@click.option(
+    "--password",
+    envvar="NEO4J_PASSWORD",
+    help="Neo4j password (or NEO4J_PASSWORD env var).",
+)
+@click.option(
+    "--database",
+    envvar="NEO4J_DATABASE",
+    default="neo4j",
+    help="Neo4j database name (default: neo4j or NEO4J_DATABASE env var).",
+)
+def maintenance_backfill_entity_ownership(
+    uri: str,
+    user: str,
+    password: str | None,
+    database: str,
+):
+    """Repair ownership on entities extracted before the write path recorded it.
+
+    Only ``add_entity`` used to write ``(:User)-[:HAS_ENTITY]->(:Entity)``, so entities
+    born from message extraction had no owner. They stayed visible, searchable and
+    updatable — the scope check for those also accepts ``MENTIONS`` — but ``memory_forget``
+    requires the direct edge and refused them with "not found or not owned by this user",
+    on the caller's own data.
+
+    Applies exactly the rule the write path now applies: a user owns the entities
+    extracted from that user's own messages. Idempotent — a repaired graph is a no-op.
+    """
+    if not password:
+        error_console.print(
+            "[red]Error:[/red] Neo4j password required. Set NEO4J_PASSWORD or use --password."
+        )
+        sys.exit(1)
+
+    from pydantic import SecretStr
+
+    from neo4j_agent_memory.config.settings import Neo4jConfig
+    from neo4j_agent_memory.graph.client import Neo4jClient
+    from neo4j_agent_memory.memory.long_term import LongTermMemory
+
+    async def do_backfill() -> int:
+        config = Neo4jConfig(
+            uri=uri, username=user, password=SecretStr(password), database=database
+        )
+        async with Neo4jClient(config) as client:
+            return await LongTermMemory(client).backfill_entity_ownership()
+
+    try:
+        linked = run_async(do_backfill())
+    except Exception as e:
+        error_console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
+    console.print(f"[green]Done.[/green] Recorded ownership for {linked} entities.")
+
+
 @cli.group()
 def mcp():
     """MCP (Model Context Protocol) server commands.

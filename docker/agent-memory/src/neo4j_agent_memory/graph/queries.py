@@ -608,6 +608,27 @@ RETURN r
 # owned by this user" about their own data. The owner is derived from the message rather than
 # threaded through the extraction signatures, so both extraction call sites get it for free and
 # a message with no owning user (unscoped/global writes) simply links nothing.
+# Retroactive form of LINK_MESSAGE_OWNER_TO_ENTITY, for entities extracted BEFORE that
+# ownership write existed. Until then only add_entity wrote (:User)-[:HAS_ENTITY]->(:Entity),
+# so an extraction-born entity was visible, searchable and updatable (ENTITY_IN_USER_SCOPE
+# also accepts MENTIONS) but UNDELETABLE — DELETE_ENTITY_SCOPED requires the direct edge, so
+# memory_forget told the operator their own data was "not found or not owned by this user".
+#
+# The rule applied here is exactly the one the write path now applies, no wider: a user owns
+# the entities extracted from that user's own messages. It never invents ownership from any
+# other relationship — an entity merely TOUCHED by a reasoning step or targeted by a
+# preference stays undeletable, because that is not where entities are born.
+#
+# DISTINCT before the MERGE: an entity mentioned in twelve messages is one ownership edge,
+# and without it the returned count reports mentions instead of links.
+BACKFILL_ENTITY_OWNERSHIP = """
+MATCH (u:User)-[:HAS_CONVERSATION]->(:Conversation)-[:HAS_MESSAGE]->(:Message)-[:MENTIONS]->(e:Entity)
+WHERE NOT EXISTS { MATCH (u)-[:HAS_ENTITY]->(e) }
+WITH DISTINCT u, e
+MERGE (u)-[:HAS_ENTITY]->(e)
+RETURN count(*) AS linked
+"""
+
 LINK_MESSAGE_OWNER_TO_ENTITY = """
 MATCH (m:Message {id: $message_id})
 MATCH (e:Entity {id: $entity_id})
