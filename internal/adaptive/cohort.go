@@ -18,7 +18,9 @@ const (
 	// CohortPlannedLooks fixes the preregistered sequential analysis schedule.
 	CohortPlannedLooks = 5
 	// CohortTotalAlpha caps total sequential false-positive allocation.
-	CohortTotalAlpha = 0.05
+	CohortTotalAlpha        = 0.05
+	maxCohortCatalogEntries = 128
+	maxCohortBlockKeys      = 4
 )
 
 var cohortIDNamespace = uuid.MustParse("37e07806-1464-47f3-8d89-f922fe7a1392")
@@ -152,6 +154,13 @@ type FocalCohort struct {
 
 // NewFocalCohort validates and freezes a preregistered focal cohort specification.
 func NewFocalCohort(spec CohortSpec) (*FocalCohort, error) {
+	if len(spec.Arms) > maxCohortCatalogEntries ||
+		len(spec.Actions) > maxCohortCatalogEntries ||
+		len(spec.Evaluators) > maxCohortCatalogEntries ||
+		len(spec.Admission.BlockKeys) > maxCohortBlockKeys ||
+		len(spec.Looks) > CohortPlannedLooks {
+		return nil, errors.New("adaptive cohort collections exceed limits")
+	}
 	spec = canonicalCohortSpec(spec)
 	if err := validateCohortSpec(spec); err != nil {
 		return nil, err
@@ -278,7 +287,8 @@ func (cohort *FocalCohort) ValidatePrimaryHarmOutcome(observation OutcomeObserva
 }
 
 func validatePrimaryOutcome(cohort *FocalCohort, observation OutcomeObservation, endpoint CohortEndpoint, value *float64) error {
-	if cohort == nil || observation.OwnerID != cohort.spec.Scope.OwnerID ||
+	if cohort == nil || cohort.id == uuid.Nil || cohort.sha256 == "" || cohort.predicateSHA256 == "" ||
+		observation.OwnerID != cohort.spec.Scope.OwnerID ||
 		observation.Domain != cohort.spec.Predicate.Domain ||
 		observation.ProviderID != cohort.spec.Scope.ProviderID ||
 		observation.ModelID != cohort.spec.Scope.ModelID ||

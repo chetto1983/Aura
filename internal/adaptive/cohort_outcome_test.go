@@ -35,6 +35,19 @@ func TestNewFocalCohort_RejectsEndpointWhoseIDDoesNotMatchEvaluatorRubric(t *tes
 	}
 }
 
+func TestFocalCohort_RejectsPrimaryOutcomeForUninitializedCohort(t *testing.T) {
+	var cohort FocalCohort
+	value := 0.0
+	observation := OutcomeObservation{
+		Status:   OutcomeObserved,
+		Measures: OutcomeMeasures{Quality: &value},
+	}
+
+	if err := cohort.ValidatePrimaryQualityOutcome(observation); err == nil {
+		t.Fatal("zero-value cohort accepted primary outcome evidence")
+	}
+}
+
 func TestFocalCohort_ValidatesPrimaryBinaryOutcomeEvidence(t *testing.T) {
 	cohort := mustFocalCohort(t, focalCohortTestSpec())
 	quality := focalCohortOutcome(cohort, cohort.PrimaryQualityEndpoint().Evaluator)

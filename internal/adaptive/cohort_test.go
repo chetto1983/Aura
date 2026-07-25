@@ -456,6 +456,29 @@ func TestNewFocalCohort_AcceptsHarmMarginAtUnitIntervalBoundary(t *testing.T) {
 	}
 }
 
+func TestNewFocalCohort_RejectsOversizedCollectionsBeforeValidation(t *testing.T) {
+	for _, testCase := range []struct {
+		name   string
+		mutate func(*CohortSpec)
+	}{
+		{"arms", func(spec *CohortSpec) { spec.Arms = make([]CohortArm, 129) }},
+		{"actions", func(spec *CohortSpec) { spec.Actions = make([]ActionProbability, 129) }},
+		{"evaluators", func(spec *CohortSpec) { spec.Evaluators = make([]EvaluatorRegistration, 129) }},
+		{"block keys", func(spec *CohortSpec) { spec.Admission.BlockKeys = make([]BlockKey, 5) }},
+		{"looks", func(spec *CohortSpec) { spec.Looks = make([]CohortLook, CohortPlannedLooks+1) }},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			spec := focalCohortTestSpec()
+			testCase.mutate(&spec)
+
+			_, err := NewFocalCohort(spec)
+			if err == nil || err.Error() != "adaptive cohort collections exceed limits" {
+				t.Fatalf("NewFocalCohort() error = %v, want collection limit rejection", err)
+			}
+		})
+	}
+}
+
 func TestNewFocalCohort_AcceptsExactAlphaBudget(t *testing.T) {
 	spec := focalCohortTestSpec()
 	spec.Looks = []CohortLook{
