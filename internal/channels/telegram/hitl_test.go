@@ -154,29 +154,36 @@ func (b *hitlBot) recorded() []hitlSend {
 	return out
 }
 
-// TestApprovalMarkupMultiRow pins the enriched native approval: Approva/Rifiuta on row 1, a
-// non-resolving Dettagli on row 2, and every button within Telegram's 64-byte on-wire budget
+// TestApprovalMarkupsMatchWhatTheTextShows pins the split live E2E forced: Dettagli exists ONLY on
+// the bounded sweep push, because the relay prompt already renders the full question and
+// "revealing" it edits the message to identical content — Telegram answers 400, and the operator
+// gets a button that visibly does nothing. Every button stays within the 64-byte on-wire budget
 // (framing included) for a real 36-char UUID token.
-func TestApprovalMarkupMultiRow(t *testing.T) {
+func TestApprovalMarkupsMatchWhatTheTextShows(t *testing.T) {
 	t.Parallel()
 	const token = "11112222-3333-4444-5555-666677778888"
-	mk := approvalMarkup(token)
-	if len(mk.InlineKeyboard) != 2 {
-		t.Fatalf("want 2 rows (Approva/Rifiuta, Dettagli), got %d", len(mk.InlineKeyboard))
+
+	relay := approvalMarkup(token)
+	if len(relay.InlineKeyboard) != 1 || len(relay.InlineKeyboard[0]) != 2 {
+		t.Fatalf("relay keyboard = decision row only, got %+v", relay.InlineKeyboard)
 	}
-	if len(mk.InlineKeyboard[0]) != 2 || len(mk.InlineKeyboard[1]) != 1 {
-		t.Fatalf("unexpected keyboard shape: %+v", mk.InlineKeyboard)
+
+	push := approvalPushMarkup(token)
+	if len(push.InlineKeyboard) != 2 || len(push.InlineKeyboard[0]) != 2 || len(push.InlineKeyboard[1]) != 1 {
+		t.Fatalf("push keyboard = decision row + Dettagli, got %+v", push.InlineKeyboard)
 	}
-	if got := mk.InlineKeyboard[1][0].Text; got != "Dettagli" {
+	if got := push.InlineKeyboard[1][0].Text; got != "Dettagli" {
 		t.Errorf("row 2 button = %q, want Dettagli", got)
 	}
-	for _, row := range mk.InlineKeyboard {
-		for _, b := range row {
-			if !strings.Contains(b.Data, token) {
-				t.Errorf("button %q must carry the pause token, data=%q", b.Text, b.Data)
-			}
-			if wire := len("\f") + len(b.Unique) + len(callbackSep) + len(b.Data); wire > callbackDataMaxBytes {
-				t.Errorf("button %q on-wire %d > %d", b.Text, wire, callbackDataMaxBytes)
+	for _, mk := range []*tele.ReplyMarkup{relay, push} {
+		for _, row := range mk.InlineKeyboard {
+			for _, b := range row {
+				if !strings.Contains(b.Data, token) {
+					t.Errorf("button %q must carry the pause token, data=%q", b.Text, b.Data)
+				}
+				if wire := len("\f") + len(b.Unique) + len(callbackSep) + len(b.Data); wire > callbackDataMaxBytes {
+					t.Errorf("button %q on-wire %d > %d", b.Text, wire, callbackDataMaxBytes)
+				}
 			}
 		}
 	}

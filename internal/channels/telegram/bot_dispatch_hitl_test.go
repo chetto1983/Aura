@@ -141,11 +141,39 @@ func TestOnCallbackDetailsRevealsQuestionKeepingKeyboard(t *testing.T) {
 	if s, _ := edits[0].what.(string); s != question {
 		t.Errorf("reveal text = %q, want the pause question", s)
 	}
-	if edits[0].markup == nil || len(edits[0].markup.InlineKeyboard) != 2 {
-		t.Errorf("reveal must keep the approval keyboard armed, got %+v", edits[0].markup)
+	// Decision buttons stay armed; Dettagli is consumed — the question is on screen now, so a
+	// second tap would re-edit identical content (a 400 from Telegram, seen live 2026-07-25).
+	if edits[0].markup == nil || len(edits[0].markup.InlineKeyboard) != 1 {
+		t.Errorf("reveal must re-arm with the decision row only, got %+v", edits[0].markup)
 	}
 	if calls, _ := rt.snapshot(); calls != 0 {
 		t.Errorf("details must not drive a turn, got %d", calls)
+	}
+}
+
+// TestOnCallbackDetailsOnAlreadyShownQuestionDoesNotEdit is the live-found regression: the in-turn
+// relay renders the pause question as the message text, so a Dettagli tap there would edit the
+// message to exactly what it already says. Telegram rejects that with
+// "message is not modified (400)" — the guard must skip the edit instead of provoking it.
+func TestOnCallbackDetailsOnAlreadyShownQuestionDoesNotEdit(t *testing.T) {
+	t.Parallel()
+	const question = "Attivo il job giornaliero delle 7:00 che invia il report?"
+	rs := &fakeResume{pending: []askuser.Pending{{Token: "tok-1", Kind: "approval", Question: question}}}
+	rt := &recordingTurn{}
+	tg := dispatchChannel(t, rt, func(d *Deps) { d.Resume = rs })
+
+	bot := &dispatchBot{}
+	msg := chatMsg(41)
+	msg.Text = question // the relay prompt already shows it
+	cb := &tele.Callback{Message: msg, Data: callbackData("tok-1", actionDetails, "")}
+	if err := tg.onCallback(context.Background())(tele.NewContext(bot, tele.Update{Callback: cb})); err != nil {
+		t.Fatalf("onCallback: %v", err)
+	}
+	if edits := bot.recordedEdits(); len(edits) != 0 {
+		t.Errorf("must not edit a message that already shows the question, got %+v", edits)
+	}
+	if len(rs.calls()) != 0 {
+		t.Errorf("details must submit nothing, got %+v", rs.calls())
 	}
 }
 

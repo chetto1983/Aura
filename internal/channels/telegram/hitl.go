@@ -250,21 +250,35 @@ func (h *hitl) cancel(ctx context.Context, convID, token string) (resumed bool, 
 // the pause — the keyboard stays armed so the operator reads, then decides.
 const actionDetails = "details"
 
-// approvalMarkup builds the approval InlineKeyboard: Approva/Rifiuta on the first row, a
-// non-resolving Dettagli on the second. It serves BOTH legs of the approval surface — the in-turn
-// relay (hitl.prompt) and the scheduler approval-reminder sweep push (DeliverApproval) — one
-// builder, one callback endpoint, so a rendering fix can no longer land on one leg and miss the
-// other (Phase A consolidation).
+// approvalDecisionRow is the accept/decline pair every approval keyboard carries. Both keyboards
+// below build on it and on the SAME callback endpoint, so a rendering fix can no longer land on
+// one leg of the approval surface and miss the other (Phase A consolidation).
+func approvalDecisionRow(token string) []tele.InlineButton {
+	return []tele.InlineButton{
+		{Unique: callbackUnique, Text: "Approva", Data: callbackData(token, askuser.ActionAccept, "yes")},
+		{Unique: callbackUnique, Text: "Rifiuta", Data: callbackData(token, askuser.ActionDecline, "")},
+	}
+}
+
+// approvalMarkup is the keyboard for a prompt whose text ALREADY shows the full question: the
+// in-turn relay (hitl.prompt renders p.Question), and a push after its detail was revealed. It
+// carries NO Dettagli button — revealing what is already on screen edits the message to identical
+// content, which Telegram rejects with a 400, so the button would be a dead affordance.
 func approvalMarkup(token string) *tele.ReplyMarkup {
 	mk := &tele.ReplyMarkup{}
+	mk.InlineKeyboard = [][]tele.InlineButton{approvalDecisionRow(token)}
+	return mk
+}
+
+// approvalPushMarkup is the keyboard for the sweep push, whose copy is deliberately bounded (kind
+// + short id, never the payload): there Dettagli reveals the question the text withholds. One tap
+// consumes it — the reveal re-arms with approvalMarkup, so a second tap cannot re-edit identical
+// content.
+func approvalPushMarkup(token string) *tele.ReplyMarkup {
+	mk := &tele.ReplyMarkup{}
 	mk.InlineKeyboard = [][]tele.InlineButton{
-		{
-			{Unique: callbackUnique, Text: "Approva", Data: callbackData(token, askuser.ActionAccept, "yes")},
-			{Unique: callbackUnique, Text: "Rifiuta", Data: callbackData(token, askuser.ActionDecline, "")},
-		},
-		{
-			{Unique: callbackUnique, Text: "Dettagli", Data: callbackData(token, actionDetails, "")},
-		},
+		approvalDecisionRow(token),
+		{{Unique: callbackUnique, Text: "Dettagli", Data: callbackData(token, actionDetails, "")}},
 	}
 	return mk
 }
