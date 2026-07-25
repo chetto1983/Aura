@@ -12,8 +12,8 @@
 
 ## Progress checkpoint — 2026-07-25
 
-**Current approved head:** `f7691f529` (approved server-owned record time and
-explicit backdate proof)
+**Current approved head:** `983afb130` (approved bitemporal ledger
+reconstruction with canonical cross-host digest)
 
 **Current review candidates:**
 
@@ -67,6 +67,17 @@ explicit backdate proof)
   censoring, and a ledger hash that excludes late diagnostics. Three
   adversarial review rounds closed six concrete ambiguities and ended
   `APPROVE`.
+- The ledger-only cohort loader is complete in `ead4689cc`, with correctness
+  repairs in `2c022dd4e`, `e46e89089`, and `983afb130`. It holds the owner
+  writer fence, reconstructs only trusted pre-cutoff facts, treats
+  post-cutoff facts as unhashed diagnostics, poisons historical `NULL`
+  record time and malformed claim/event envelopes, enforces claim/Assignment
+  bijection, folds one primary root plus its correction chain, separates ITT
+  from OPE eligibility, and hashes a canonical UTC representation. Spec
+  review found and closed non-binary-primary and explicit-censoring defects;
+  quality review found and closed cross-time-zone digest drift, diff-scoped
+  lint failures, and discarded JSON errors. Final spec and quality reviews
+  both returned `APPROVE`.
 
 - The schema-2 Assignment/Delivery Go contract is complete through
   `03643cc9a`. Its spec and code-quality reviews both returned `APPROVE`.
@@ -142,12 +153,13 @@ explicit backdate proof)
   persisted Assignment before recording Delivery, preserve exact
   idempotence/conflict behavior, reject every schema-2 event kind through the
   generic Store surface, and fail closed for nil dependencies or fenced owners.
-- Ledger-only reconstruction, exact statistical inference, sealed evidence,
-  runtime adapters, Agent Memory integration, legacy `CanaryBatch`/Wilson
-  removal, real-model benchmarks, final quality gate, and push remain Task 2
-  work. The current migration head is `0074`.
-- Do not replay unchanged remote CI. Resume with the ledger-only cohort loader
-  and deterministic correction reconstruction under TDD.
+- Exact statistical inference, sealed evidence, runtime adapters, Agent Memory
+  integration, legacy `CanaryBatch`/Wilson removal, real-model benchmarks,
+  final quality gate, and push remain Task 2 work. The current migration head
+  is `0074`.
+- Do not replay unchanged remote CI. Resume at the ledger-only cohort loader's
+  consumer: exact blocked randomization inference and sealed evidence under
+  TDD.
 
 ### Task 2 live subtask tracker
 
@@ -172,7 +184,12 @@ explicit backdate proof)
 - [x] Migration `0074` server-owned immutable `adaptive_outbox.recorded_at` —
   implemented in `a037d347a`/`f7691f529`; mandatory spec review `APPROVE`,
   quality review `APPROVE`.
-- [ ] Ledger-only cohort loader and deterministic correction reconstruction.
+- [x] Ledger-only cohort loader and deterministic correction reconstruction —
+  implementation `ead4689cc`; repairs `2c022dd4e`, `e46e89089`, and
+  `983afb130`; 8 real PostgreSQL scenarios normal/race, adaptive normal/race,
+  `sqlc compile`, package/repository vet/build, exact diff-scoped lint with
+  zero issues, diff/LOC/hooks GREEN; final spec and quality reviews
+  `APPROVE`.
 - [ ] Exact blocked randomization inference and sealed admission/outcome
   evidence.
 - [ ] Remove legacy caller-built `CanaryBatch`, Wilson/ESS authorization, and
