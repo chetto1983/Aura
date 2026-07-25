@@ -499,7 +499,13 @@ describe('ExternalStoreChat (CHAT-01)', () => {
         }
         if (url.includes('/resolve') && init?.method === 'POST') {
           pending = false;
-          return Promise.resolve(new Response(null, { status: 204 }));
+          // 200 + ResolveDirective (Phase A): 'continue' keeps the re-drive this test asserts.
+          return Promise.resolve(
+            new Response(JSON.stringify({ outcome: 'continue', remaining: 0 }), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }),
+          );
         }
         if (url === '/agent/run' && init?.method === 'POST') {
           return Promise.resolve(sseResponse(usageFrames('resumed', 'resumed answer', 77)));

@@ -317,7 +317,14 @@ describe('AppShell conversation binding (CHAT-02 / 25-03 stub resolution)', () =
             typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
           if (url.includes('/api/approvals') && (init?.method ?? 'GET') === 'POST') {
             approvalPending = false;
-            return Promise.resolve(new Response(null, { status: 204 }));
+            // Resolve answers 200 + the ResolveDirective (Phase A); 'continue' is the in-session
+            // verdict for this clarification pause.
+            return Promise.resolve(
+              new Response(JSON.stringify({ outcome: 'continue', remaining: 0 }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+              }),
+            );
           }
           if (url === '/agent/run') {
             runCalls.push(url);
