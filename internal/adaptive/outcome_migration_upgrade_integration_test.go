@@ -8,13 +8,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chetto1983/aura/internal/db"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func TestOutcomeChainLimitCleanInstall0067(t *testing.T) {
+func TestOutcomeChainLimitCleanInstallAtHead(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
 	defer cancel()
 	pool, migrateURL := schema2MigrationDatabase(
@@ -29,80 +28,6 @@ func TestOutcomeChainLimitCleanInstall0067(t *testing.T) {
 		readOutcomeChainFunctionContract(t, ctx, pool),
 	)
 	assignment, overLimitEvent := seedMaximumOutcomeChain(t, ctx, pool)
-	assertDirectCorrectionLimit(
-		t,
-		ctx,
-		pool,
-		assignment,
-		overLimitEvent,
-	)
-}
-
-func TestOutcomeChainLimitUpgradeFrom0066DownAndUp(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
-	defer cancel()
-	pool, migrateURL := schema2MigrationDatabase(
-		t,
-		ctx,
-		"aura_outcome_chain_upgrade",
-		66,
-	)
-	v66Function := readOutcomeChainFunctionContract(t, ctx, pool)
-	assertOutcomeChainFunctionIsHardened(t, v66Function)
-
-	assignment, overLimitEvent := seedMaximumOutcomeChain(t, ctx, pool)
-	assertAdaptiveNextSequence(
-		t,
-		pool,
-		assignment.OwnerID,
-		assignment.RequestID.String(),
-		int64(maxCorrectionChainLength+2),
-	)
-	if err := insertOutcomeEventAndRollback(
-		t,
-		ctx,
-		pool,
-		overLimitEvent,
-		int64(maxCorrectionChainLength+2),
-	); err != nil {
-		t.Fatalf("historical 0066 rejected correction 64: %v", err)
-	}
-	assertAdaptiveEventAbsent(t, ctx, pool, overLimitEvent.ID)
-
-	if err := db.MigrateSteps(ctx, migrateURL, 1); err != nil {
-		t.Fatalf("upgrade 0066 to 0067: %v", err)
-	}
-	assertSchema2MigrationVersion(t, ctx, migrateURL, 67)
-	assertOutcomeChainFunctionContractPreserved(t, ctx, pool, v66Function)
-	assertDirectCorrectionLimit(
-		t,
-		ctx,
-		pool,
-		assignment,
-		overLimitEvent,
-	)
-
-	if err := db.MigrateSteps(ctx, migrateURL, -1); err != nil {
-		t.Fatalf("downgrade 0067 to 0066: %v", err)
-	}
-	assertSchema2MigrationVersion(t, ctx, migrateURL, 66)
-	assertOutcomeChainFunctionContractPreserved(t, ctx, pool, v66Function)
-	if err := insertOutcomeEventAndRollback(
-		t,
-		ctx,
-		pool,
-		overLimitEvent,
-		int64(maxCorrectionChainLength+2),
-	); err != nil {
-		t.Fatalf("0067 down did not restore 0066 behavior: %v", err)
-	}
-	assertAdaptiveEventAbsent(t, ctx, pool, overLimitEvent.ID)
-
-	if err := db.MigrateSteps(ctx, migrateURL, 1); err != nil {
-		t.Fatalf("re-upgrade 0066 to 0067: %v", err)
-	}
-	assertSchema2MigrationVersion(t, ctx, migrateURL, 67)
-	assertOutcomeChainFunctionContractPreserved(t, ctx, pool, v66Function)
 	assertDirectCorrectionLimit(
 		t,
 		ctx,
@@ -170,6 +95,9 @@ func assertOutcomeChainFunctionIsHardened(
 	}
 }
 
+// assertOutcomeChainFunctionContractPreserved is consumed by the snapshot migration
+// drills, which step across versions and check the outcome-chain function survives
+// each step unchanged.
 func assertOutcomeChainFunctionContractPreserved(
 	t *testing.T,
 	ctx context.Context,

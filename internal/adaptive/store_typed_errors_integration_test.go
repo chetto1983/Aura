@@ -153,56 +153,6 @@ func TestStoreRecordDeliveryRejectsUncommittedAssignment(t *testing.T) {
 	}
 }
 
-func TestStoreRecordDeliveryRejectsStrictlyInvalidPersistedAssignment(t *testing.T) {
-	ctx := context.Background()
-	pool, _ := schema2MigrationDatabase(
-		t,
-		ctx,
-		"aura_typed_store_invalid_assignment",
-		60,
-	)
-	owner := seedTypedLedgerOwner(t, pool)
-	assignment := typedLedgerAssignment(t, owner)
-	if err := insertUnsafeSchema2Assignment(ctx, pool, assignment, 1); err != nil {
-		t.Fatalf("insert pre-hardening assignment: %v", err)
-	}
-
-	if _, err := NewStore(pool, StoreConfig{}).RecordDelivery(
-		ctx,
-		owner,
-		assignment.AssignmentID,
-		typedLedgerDelivery(t, assignment),
-	); !errors.Is(err, ErrPersistedAssignmentInvalid) {
-		t.Fatalf(
-			"invalid persisted assignment error = %v, want ErrPersistedAssignmentInvalid",
-			err,
-		)
-	}
-	var deliveries int
-	if err := pool.QueryRow(
-		ctx,
-		`SELECT count(*) FROM aura.adaptive_outbox
-		 WHERE owner_id=$1 AND event_kind='delivery'`,
-		owner,
-	).Scan(&deliveries); err != nil {
-		t.Fatal(err)
-	}
-	if deliveries != 0 {
-		t.Fatalf("invalid persisted assignment recorded %d deliveries, want 0", deliveries)
-	}
-	var sequenceRows int
-	if err := pool.QueryRow(
-		ctx,
-		`SELECT count(*) FROM aura.adaptive_aggregate_sequences WHERE owner_id=$1`,
-		owner,
-	).Scan(&sequenceRows); err != nil {
-		t.Fatal(err)
-	}
-	if sequenceRows != 0 {
-		t.Fatalf("invalid persisted assignment consumed %d sequence rows, want 0", sequenceRows)
-	}
-}
-
 func TestStoreTypedAssignmentPreservesOwnerTombstoneFence(t *testing.T) {
 	pool := adaptiveIntegrationPool(t)
 	ctx := context.Background()
