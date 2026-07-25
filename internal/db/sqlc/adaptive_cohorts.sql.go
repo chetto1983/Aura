@@ -26,7 +26,8 @@ const getAdaptiveFocalCohort = `-- name: GetAdaptiveFocalCohort :one
 SELECT id, owner_id, provider_id, model_id, policy_epoch, policy_version,
        snapshot_id, snapshot_sha256, environment, domain, decision_point,
        point_ordinal, predicate_sha256, experiment_id, cutoff, sha256,
-       artifact, artifact_json, created_at
+       artifact, artifact_json, created_at, randomization_plan_artifact,
+       randomization_plan_artifact_json
 FROM aura.adaptive_focal_cohorts
 WHERE owner_id = $1
   AND id = $2
@@ -60,6 +61,8 @@ func (q *Queries) GetAdaptiveFocalCohort(ctx context.Context, arg GetAdaptiveFoc
 		&i.Artifact,
 		&i.ArtifactJson,
 		&i.CreatedAt,
+		&i.RandomizationPlanArtifact,
+		&i.RandomizationPlanArtifactJson,
 	)
 	return i, err
 }
@@ -68,7 +71,8 @@ const getAdaptiveFocalCohortForReconstruction = `-- name: GetAdaptiveFocalCohort
 SELECT id, owner_id, provider_id, model_id, policy_epoch, policy_version,
        snapshot_id, snapshot_sha256, environment, domain, decision_point,
        point_ordinal, predicate_sha256, experiment_id, cutoff, sha256,
-       artifact, artifact_json, created_at
+       artifact, artifact_json, created_at, randomization_plan_artifact,
+       randomization_plan_artifact_json
 FROM aura.adaptive_focal_cohorts
 WHERE owner_id = $1
   AND id = $2
@@ -102,6 +106,8 @@ func (q *Queries) GetAdaptiveFocalCohortForReconstruction(ctx context.Context, a
 		&i.Artifact,
 		&i.ArtifactJson,
 		&i.CreatedAt,
+		&i.RandomizationPlanArtifact,
+		&i.RandomizationPlanArtifactJson,
 	)
 	return i, err
 }
@@ -111,37 +117,42 @@ INSERT INTO aura.adaptive_focal_cohorts (
     id, owner_id, provider_id, model_id, policy_epoch, policy_version,
     snapshot_id, snapshot_sha256, environment, domain, decision_point,
     point_ordinal, predicate_sha256, experiment_id, cutoff, sha256,
-    artifact, artifact_json
+    artifact, artifact_json, randomization_plan_artifact,
+    randomization_plan_artifact_json
 ) VALUES (
     $1, $2, $3,
     $4, $5, $6,
     $7, $8, $9,
     $10, $11, $12,
     $13, $14, $15,
-    $16, $17, $18
+    $16, $17, $18,
+    $19,
+    $20
 )
 ON CONFLICT (id) DO NOTHING
 `
 
 type InsertAdaptiveFocalCohortParams struct {
-	CohortID        pgtype.UUID        `json:"cohort_id"`
-	OwnerID         pgtype.UUID        `json:"owner_id"`
-	ProviderID      string             `json:"provider_id"`
-	ModelID         string             `json:"model_id"`
-	PolicyEpoch     int64              `json:"policy_epoch"`
-	PolicyVersion   string             `json:"policy_version"`
-	SnapshotID      pgtype.UUID        `json:"snapshot_id"`
-	SnapshotSha256  []byte             `json:"snapshot_sha256"`
-	Environment     string             `json:"environment"`
-	Domain          string             `json:"domain"`
-	DecisionPoint   string             `json:"decision_point"`
-	PointOrdinal    int64              `json:"point_ordinal"`
-	PredicateSha256 []byte             `json:"predicate_sha256"`
-	ExperimentID    string             `json:"experiment_id"`
-	Cutoff          pgtype.Timestamptz `json:"cutoff"`
-	CohortSha256    []byte             `json:"cohort_sha256"`
-	Artifact        []byte             `json:"artifact"`
-	ArtifactJson    []byte             `json:"artifact_json"`
+	CohortID                      pgtype.UUID        `json:"cohort_id"`
+	OwnerID                       pgtype.UUID        `json:"owner_id"`
+	ProviderID                    string             `json:"provider_id"`
+	ModelID                       string             `json:"model_id"`
+	PolicyEpoch                   int64              `json:"policy_epoch"`
+	PolicyVersion                 string             `json:"policy_version"`
+	SnapshotID                    pgtype.UUID        `json:"snapshot_id"`
+	SnapshotSha256                []byte             `json:"snapshot_sha256"`
+	Environment                   string             `json:"environment"`
+	Domain                        string             `json:"domain"`
+	DecisionPoint                 string             `json:"decision_point"`
+	PointOrdinal                  int64              `json:"point_ordinal"`
+	PredicateSha256               []byte             `json:"predicate_sha256"`
+	ExperimentID                  string             `json:"experiment_id"`
+	Cutoff                        pgtype.Timestamptz `json:"cutoff"`
+	CohortSha256                  []byte             `json:"cohort_sha256"`
+	Artifact                      []byte             `json:"artifact"`
+	ArtifactJson                  []byte             `json:"artifact_json"`
+	RandomizationPlanArtifact     []byte             `json:"randomization_plan_artifact"`
+	RandomizationPlanArtifactJson []byte             `json:"randomization_plan_artifact_json"`
 }
 
 func (q *Queries) InsertAdaptiveFocalCohort(ctx context.Context, arg InsertAdaptiveFocalCohortParams) (int64, error) {
@@ -164,6 +175,8 @@ func (q *Queries) InsertAdaptiveFocalCohort(ctx context.Context, arg InsertAdapt
 		arg.CohortSha256,
 		arg.Artifact,
 		arg.ArtifactJson,
+		arg.RandomizationPlanArtifact,
+		arg.RandomizationPlanArtifactJson,
 	)
 	if err != nil {
 		return 0, err
@@ -185,7 +198,9 @@ INSERT INTO aura.adaptive_focal_cohort_claims (
 ON CONFLICT DO NOTHING
 RETURNING id, owner_id, cohort_id, request_id, evaluation_conversation_id,
           assignment_id, domain, decision_point, point_ordinal, session_id,
-          episode_id, time_block_start, claimed_at
+          episode_id, time_block_start, claimed_at,
+          analysis_stratum_schema_sha256, analysis_stratum_id,
+          interference_cluster_schema_sha256, interference_cluster_id
 `
 
 type InsertAdaptiveFocalCohortClaimParams struct {
@@ -231,6 +246,10 @@ func (q *Queries) InsertAdaptiveFocalCohortClaim(ctx context.Context, arg Insert
 		&i.EpisodeID,
 		&i.TimeBlockStart,
 		&i.ClaimedAt,
+		&i.AnalysisStratumSchemaSha256,
+		&i.AnalysisStratumID,
+		&i.InterferenceClusterSchemaSha256,
+		&i.InterferenceClusterID,
 	)
 	return i, err
 }
@@ -238,7 +257,9 @@ func (q *Queries) InsertAdaptiveFocalCohortClaim(ctx context.Context, arg Insert
 const listAdaptiveFocalCohortClaimConflicts = `-- name: ListAdaptiveFocalCohortClaimConflicts :many
 SELECT id, owner_id, cohort_id, request_id, evaluation_conversation_id,
        assignment_id, domain, decision_point, point_ordinal, session_id,
-       episode_id, time_block_start, claimed_at
+       episode_id, time_block_start, claimed_at,
+       analysis_stratum_schema_sha256, analysis_stratum_id,
+       interference_cluster_schema_sha256, interference_cluster_id
 FROM aura.adaptive_focal_cohort_claims
 WHERE owner_id = $1
   AND (
@@ -291,6 +312,10 @@ func (q *Queries) ListAdaptiveFocalCohortClaimConflicts(ctx context.Context, arg
 			&i.EpisodeID,
 			&i.TimeBlockStart,
 			&i.ClaimedAt,
+			&i.AnalysisStratumSchemaSha256,
+			&i.AnalysisStratumID,
+			&i.InterferenceClusterSchemaSha256,
+			&i.InterferenceClusterID,
 		); err != nil {
 			return nil, err
 		}
@@ -305,7 +330,9 @@ func (q *Queries) ListAdaptiveFocalCohortClaimConflicts(ctx context.Context, arg
 const listAdaptiveFocalCohortClaimsForReconstruction = `-- name: ListAdaptiveFocalCohortClaimsForReconstruction :many
 SELECT id, owner_id, cohort_id, request_id, evaluation_conversation_id,
        assignment_id, domain, decision_point, point_ordinal, session_id,
-       episode_id, time_block_start, claimed_at
+       episode_id, time_block_start, claimed_at,
+       analysis_stratum_schema_sha256, analysis_stratum_id,
+       interference_cluster_schema_sha256, interference_cluster_id
 FROM aura.adaptive_focal_cohort_claims
 WHERE owner_id = $1
   AND cohort_id = $2
@@ -340,6 +367,10 @@ func (q *Queries) ListAdaptiveFocalCohortClaimsForReconstruction(ctx context.Con
 			&i.EpisodeID,
 			&i.TimeBlockStart,
 			&i.ClaimedAt,
+			&i.AnalysisStratumSchemaSha256,
+			&i.AnalysisStratumID,
+			&i.InterferenceClusterSchemaSha256,
+			&i.InterferenceClusterID,
 		); err != nil {
 			return nil, err
 		}

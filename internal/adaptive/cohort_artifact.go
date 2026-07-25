@@ -56,6 +56,20 @@ func (cohort *FocalCohort) canonicalArtifact() ([]byte, error) {
 	if !cohort.initialized() {
 		return nil, errors.New("adaptive cohort is uninitialized")
 	}
+	if cohort.v2 != nil {
+		reconstructed, err := newFocalCohortV2(
+			cohort.v2.document, cohort.v2.randomizationPlan,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("verify adaptive cohort v2: %w", err)
+		}
+		if reconstructed.id != cohort.id ||
+			reconstructed.sha256 != cohort.sha256 ||
+			reconstructed.predicateSHA256 != cohort.predicateSHA256 {
+			return nil, errors.New("adaptive cohort v2 identity does not match content")
+		}
+		return json.Marshal(reconstructed.v2.document)
+	}
 	reconstructed, err := NewFocalCohort(cohort.spec)
 	if err != nil {
 		return nil, fmt.Errorf("verify adaptive cohort: %w", err)
@@ -66,4 +80,16 @@ func (cohort *FocalCohort) canonicalArtifact() ([]byte, error) {
 		return nil, errors.New("adaptive cohort identity does not match content")
 	}
 	return marshalCanonicalCohort(reconstructed.spec)
+}
+
+func (cohort *FocalCohort) canonicalRandomizationPlanArtifact() ([]byte, error) {
+	if !cohort.randomizationEligible() {
+		return nil, errors.New("adaptive cohort does not have a v2 randomization plan")
+	}
+	if _, err := newFocalCohortV2(
+		cohort.v2.document, cohort.v2.randomizationPlan,
+	); err != nil {
+		return nil, err
+	}
+	return json.Marshal(cohort.v2.randomizationPlan)
 }

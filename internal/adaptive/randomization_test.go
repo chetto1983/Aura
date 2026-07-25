@@ -7,6 +7,8 @@ import (
 	"math"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 func TestMapRandomizationByte_SelectsFrozenArmFromLowBit(t *testing.T) {
@@ -144,6 +146,80 @@ func TestNewAnalysisStratum_RejectsBlockWidthOverflow(t *testing.T) {
 	)
 	if err == nil {
 		t.Fatal("NewAnalysisStratum() accepted overflowing block width")
+	}
+}
+
+func TestBuildRandomizationAlternatives_PrevalidatesBothArmsBeforeDraw(t *testing.T) {
+	snapshotSpec := snapshotTestSpec()
+	snapshot, err := NewPolicySnapshot(snapshotSpec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cohortSpec := focalCohortTestSpec()
+	cohortSpec.Scope = CohortScope{
+		OwnerID:        snapshot.Scope().OwnerID,
+		ProviderID:     snapshot.Scope().ProviderID,
+		ModelID:        snapshot.Scope().ModelID,
+		PolicyVersion:  snapshot.Scope().PolicyVersion,
+		PolicyEpoch:    7,
+		SnapshotID:     snapshot.ID(),
+		SnapshotSHA256: snapshot.SHA256(),
+		Environment:    EvaluationProductionCanary,
+	}
+	cohortSpec.Predicate = FocalPredicate{
+		Domain: snapshot.Scope().Domain, Point: snapshot.Scope().Point, Ordinal: 1,
+	}
+	cohortSpec.Actions = []ActionProbability{
+		{ActionID: "deep", Probability: 0.25},
+		{ActionID: "direct", Probability: 0.25},
+		{ActionID: StaticActionID, Probability: 0.5},
+	}
+	cohort := mustFocalCohort(t, cohortSpec)
+	request := FocalEnrollmentRequest{
+		OwnerID: cohort.Scope().OwnerID, CohortID: cohort.ID(),
+		RequestID:                uuid.MustParse("33333333-3333-4333-8333-333333333333"),
+		EvaluationConversationID: uuid.MustParse("22222222-2222-4222-8222-222222222222"),
+		Domain:                   cohort.Domain(), Point: cohort.Predicate().Point,
+		PointOrdinal: cohort.Predicate().Ordinal,
+	}
+	assignmentID, err := request.assignmentID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim := FocalClaim{
+		ID:      uuid.MustParse("44444444-4444-4444-8444-444444444444"),
+		OwnerID: request.OwnerID, CohortID: request.CohortID,
+		RequestID: request.RequestID, EvaluationConversationID: request.EvaluationConversationID,
+		AssignmentID: assignmentID, Domain: request.Domain, Point: request.Point,
+		PointOrdinal: request.PointOrdinal, ClaimedAt: time.Unix(60, 0).UTC(),
+	}
+	template := AssignmentTemplate{Features: []SnapshotFeatureValue{
+		{Key: FeatureCandidateCount, Value: 2},
+		{Key: FeatureContextLength, Value: 10},
+	}}
+
+	alternatives, err := buildRandomizationAlternatives(cohort, snapshot, request, claim, template)
+	if err != nil {
+		t.Fatalf("buildRandomizationAlternatives() error = %v", err)
+	}
+	if alternatives.baseline.ArmID != "baseline" ||
+		alternatives.baseline.IntendedActionID != StaticActionID ||
+		alternatives.challenger.ArmID != "challenger" ||
+		alternatives.challenger.IntendedActionID != "deep" {
+		t.Fatalf("alternatives = %#v", alternatives)
+	}
+	if alternatives.baseline.RecommendedActionID != "deep" ||
+		alternatives.challenger.RecommendedActionID != "deep" {
+		t.Fatalf("recommended actions = %q/%q", alternatives.baseline.RecommendedActionID, alternatives.challenger.RecommendedActionID)
+	}
+	if _, err := NewAssignmentEvent(alternatives.baseline); err != nil {
+		t.Fatalf("baseline is not prevalidated: %v", err)
+	}
+	if _, err := NewAssignmentEvent(alternatives.challenger); err != nil {
+		t.Fatalf("challenger is not prevalidated: %v", err)
+	}
+	if alternatives.receiptTemplate.RandomizationPlanSHA256 == "" {
+		t.Fatal("randomization plan digest is empty")
 	}
 }
 

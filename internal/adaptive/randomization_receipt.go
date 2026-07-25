@@ -2,6 +2,7 @@ package adaptive
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -159,19 +160,37 @@ func validateTwoArmMarginal(probabilities []ExactActionProbability) error {
 			nonzero = append(nonzero, probability)
 		}
 	}
-	if len(nonzero) == 1 &&
-		nonzero[0].ActionID == "static" &&
-		nonzero[0].Probability.Cmp(MustExactRational(1, 1)) == 0 {
+	staticProbability := MustExactRational(0, 1)
+	challengerCount := 0
+	for _, probability := range nonzero {
+		if probability.ActionID == "static" {
+			staticProbability = probability.Probability
+			continue
+		}
+		if probability.Probability.Cmp(MustExactRational(1, 2)) == 0 {
+			challengerCount++
+		}
+	}
+	if len(nonzero) == 1 && staticProbability.Cmp(MustExactRational(1, 1)) == 0 {
 		return nil
 	}
 	if len(nonzero) == 2 &&
-		nonzero[0].ActionID == "static" &&
-		nonzero[0].Probability.Cmp(MustExactRational(1, 2)) == 0 &&
-		nonzero[1].ActionID != "static" &&
-		nonzero[1].Probability.Cmp(MustExactRational(1, 2)) == 0 {
+		staticProbability.Cmp(MustExactRational(1, 2)) == 0 &&
+		challengerCount == 1 {
 		return nil
 	}
 	return errors.New("randomization receipt action probabilities are not the frozen two-arm marginal")
+}
+
+func canonicalRandomizationReceipt(
+	receipt RandomizationReceipt,
+) ([]byte, []byte, error) {
+	canonical, err := receipt.CanonicalJSON()
+	if err != nil {
+		return nil, nil, err
+	}
+	sum := sha256.Sum256(canonical)
+	return canonical, sum[:], nil
 }
 
 // RandomizationAssignmentBinding is the assignment subset proven by a receipt.

@@ -143,6 +143,7 @@ type Querier interface {
 	InsertAdaptiveFocalCohortClaim(ctx context.Context, arg InsertAdaptiveFocalCohortClaimParams) (AuraAdaptiveFocalCohortClaims, error)
 	InsertAdaptiveOutbox(ctx context.Context, arg InsertAdaptiveOutboxParams) (int64, error)
 	InsertAdaptivePolicySnapshot(ctx context.Context, arg InsertAdaptivePolicySnapshotParams) (int64, error)
+	InsertAdaptiveRandomizationReceipt(ctx context.Context, arg InsertAdaptiveRandomizationReceiptParams) (AuraAdaptiveRandomizationReceipts, error)
 	InsertAssetEvent(ctx context.Context, arg InsertAssetEventParams) error
 	// Idempotent on (conversation_id, seq): the metric write is a separate, non-transactional
 	// observation following the assistant turn (runner_persist.go). ON CONFLICT DO NOTHING
@@ -257,6 +258,7 @@ type Querier interface {
 	LockAdaptiveEvent(ctx context.Context, eventID string) error
 	LockAdaptiveOwner(ctx context.Context, ownerID pgtype.UUID) (pgtype.UUID, error)
 	LockAdaptiveOwnerForCohortReconstruction(ctx context.Context, ownerID pgtype.UUID) (pgtype.UUID, error)
+	LockAdaptiveRandomizationReceipt(ctx context.Context, arg LockAdaptiveRandomizationReceiptParams) (AuraAdaptiveRandomizationReceipts, error)
 	LockConversationForTurnAppend(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)
 	LockSchema2AdaptiveAssignment(ctx context.Context, arg LockSchema2AdaptiveAssignmentParams) (AuraAdaptiveOutbox, error)
 	LockSchema2AdaptiveAssignmentEvents(ctx context.Context, arg LockSchema2AdaptiveAssignmentEventsParams) ([]AuraAdaptiveOutbox, error)

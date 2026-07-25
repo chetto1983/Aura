@@ -154,7 +154,8 @@ func NewAnalysisStratum(ownerID string, claimedAt time.Time, blockWidthSeconds i
 
 // InterferenceCluster is the frozen owner-conversation resampling unit.
 type InterferenceCluster struct {
-	ID string
+	SchemaSHA256 string
+	ID           string
 }
 
 // NewInterferenceCluster derives the canonical conversation cluster ID.
@@ -171,7 +172,14 @@ func NewInterferenceCluster(ownerID, evaluationConversationID string) (Interfere
 		ownerID,
 		evaluationConversationID,
 	)
-	return InterferenceCluster{ID: sha256Hex([]byte(preimage))}, nil
+	descriptor := fmt.Sprintf(
+		`{"schema_id":"%s","revision":1,"cluster_keys":["owner_id","evaluation_conversation_id"]}`,
+		interferenceSchemaID,
+	)
+	return InterferenceCluster{
+		SchemaSHA256: sha256Hex([]byte(descriptor)),
+		ID:           sha256Hex([]byte(preimage)),
+	}, nil
 }
 
 func validateCanonicalUUID(value string) error {

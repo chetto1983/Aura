@@ -39,3 +39,106 @@ func (q *Queries) GetAdaptivePolicy(ctx context.Context) (GetAdaptivePolicyRow, 
 	)
 	return i, err
 }
+
+const insertAdaptiveRandomizationReceipt = `-- name: InsertAdaptiveRandomizationReceipt :one
+INSERT INTO aura.adaptive_randomization_receipts (
+    id, owner_id, cohort_id, request_id, claim_id, assignment_id,
+    randomization_plan_sha256, analysis_stratum_schema_sha256,
+    analysis_stratum_id, sha256, artifact, artifact_json
+) VALUES (
+    $1, $2, $3,
+    $4, $5, $6,
+    $7,
+    $8,
+    $9, $10,
+    $11, $12
+)
+ON CONFLICT (owner_id, assignment_id) DO NOTHING
+RETURNING id, owner_id, cohort_id, request_id, claim_id, assignment_id,
+          randomization_plan_sha256, analysis_stratum_schema_sha256,
+          analysis_stratum_id, sha256, artifact, artifact_json, created_at
+`
+
+type InsertAdaptiveRandomizationReceiptParams struct {
+	ReceiptID                   pgtype.UUID `json:"receipt_id"`
+	OwnerID                     pgtype.UUID `json:"owner_id"`
+	CohortID                    pgtype.UUID `json:"cohort_id"`
+	RequestID                   pgtype.UUID `json:"request_id"`
+	ClaimID                     pgtype.UUID `json:"claim_id"`
+	AssignmentID                pgtype.UUID `json:"assignment_id"`
+	RandomizationPlanSha256     []byte      `json:"randomization_plan_sha256"`
+	AnalysisStratumSchemaSha256 []byte      `json:"analysis_stratum_schema_sha256"`
+	AnalysisStratumID           []byte      `json:"analysis_stratum_id"`
+	ReceiptSha256               []byte      `json:"receipt_sha256"`
+	Artifact                    []byte      `json:"artifact"`
+	ArtifactJson                []byte      `json:"artifact_json"`
+}
+
+func (q *Queries) InsertAdaptiveRandomizationReceipt(ctx context.Context, arg InsertAdaptiveRandomizationReceiptParams) (AuraAdaptiveRandomizationReceipts, error) {
+	row := q.db.QueryRow(ctx, insertAdaptiveRandomizationReceipt,
+		arg.ReceiptID,
+		arg.OwnerID,
+		arg.CohortID,
+		arg.RequestID,
+		arg.ClaimID,
+		arg.AssignmentID,
+		arg.RandomizationPlanSha256,
+		arg.AnalysisStratumSchemaSha256,
+		arg.AnalysisStratumID,
+		arg.ReceiptSha256,
+		arg.Artifact,
+		arg.ArtifactJson,
+	)
+	var i AuraAdaptiveRandomizationReceipts
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerID,
+		&i.CohortID,
+		&i.RequestID,
+		&i.ClaimID,
+		&i.AssignmentID,
+		&i.RandomizationPlanSha256,
+		&i.AnalysisStratumSchemaSha256,
+		&i.AnalysisStratumID,
+		&i.Sha256,
+		&i.Artifact,
+		&i.ArtifactJson,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const lockAdaptiveRandomizationReceipt = `-- name: LockAdaptiveRandomizationReceipt :one
+SELECT id, owner_id, cohort_id, request_id, claim_id, assignment_id,
+       randomization_plan_sha256, analysis_stratum_schema_sha256,
+       analysis_stratum_id, sha256, artifact, artifact_json, created_at
+FROM aura.adaptive_randomization_receipts
+WHERE owner_id = $1
+  AND assignment_id = $2
+`
+
+type LockAdaptiveRandomizationReceiptParams struct {
+	OwnerID      pgtype.UUID `json:"owner_id"`
+	AssignmentID pgtype.UUID `json:"assignment_id"`
+}
+
+func (q *Queries) LockAdaptiveRandomizationReceipt(ctx context.Context, arg LockAdaptiveRandomizationReceiptParams) (AuraAdaptiveRandomizationReceipts, error) {
+	row := q.db.QueryRow(ctx, lockAdaptiveRandomizationReceipt, arg.OwnerID, arg.AssignmentID)
+	var i AuraAdaptiveRandomizationReceipts
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerID,
+		&i.CohortID,
+		&i.RequestID,
+		&i.ClaimID,
+		&i.AssignmentID,
+		&i.RandomizationPlanSha256,
+		&i.AnalysisStratumSchemaSha256,
+		&i.AnalysisStratumID,
+		&i.Sha256,
+		&i.Artifact,
+		&i.ArtifactJson,
+		&i.CreatedAt,
+	)
+	return i, err
+}

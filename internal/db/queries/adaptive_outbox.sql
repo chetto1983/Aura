@@ -59,10 +59,16 @@ WITH valid_assignments AS MATERIALIZED (
       AND assignment.decision_id = sqlc.arg(assignment_id)
       AND assignment.event_kind = 'decision'
       AND assignment.payload->>'schema_version' = '2.0'
-      AND aura.adaptive_schema2_assignment_payload_valid(
-          assignment.payload, assignment.owner_id,
-          assignment.aggregate_id, assignment.decision_id
-      ) IS TRUE
+      AND (
+          aura.adaptive_schema2_assignment_payload_valid(
+              assignment.payload, assignment.owner_id,
+              assignment.aggregate_id, assignment.decision_id
+          ) IS TRUE
+          OR aura.adaptive_schema2_randomized_assignment_payload_valid(
+              assignment.payload, assignment.owner_id,
+              assignment.aggregate_id, assignment.decision_id
+          ) IS TRUE
+      )
 ),
 digests AS (
     SELECT valid_assignments.*,

@@ -195,6 +195,24 @@ func TestExactRational_ArithmeticAndMalformedInputs(t *testing.T) {
 	}
 }
 
+func TestRandomizationReceipt_RequiresClaimAndAssignmentTuple(t *testing.T) {
+	receipt := validRandomizationReceipt()
+	canonical, digest, err := canonicalRandomizationReceipt(receipt)
+	if err != nil {
+		t.Fatalf("canonicalRandomizationReceipt() error = %v", err)
+	}
+	if len(canonical) == 0 || len(digest) != 32 {
+		t.Fatalf("canonical bytes/digest = %d/%d", len(canonical), len(digest))
+	}
+	decoded, err := DecodeRandomizationReceipt(canonical)
+	if err != nil {
+		t.Fatalf("DecodeRandomizationReceipt() error = %v", err)
+	}
+	if decoded.ClaimID != receipt.ClaimID || decoded.AssignmentID != receipt.AssignmentID {
+		t.Fatalf("decoded receipt tuple = %s/%s", decoded.ClaimID, decoded.AssignmentID)
+	}
+}
+
 func validRandomizationReceipt() RandomizationReceipt {
 	const (
 		ownerID      = "11111111-1111-4111-8111-111111111111"

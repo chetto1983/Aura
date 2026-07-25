@@ -150,6 +150,7 @@ type FocalCohort struct {
 	id                      uuid.UUID
 	sha256, predicateSHA256 string
 	spec                    CohortSpec
+	v2                      *cohortV2State
 }
 
 // NewFocalCohort validates and freezes a preregistered focal cohort specification.
@@ -358,6 +359,12 @@ func (cohort *FocalCohort) MatchesFocalPoint(domain Domain, point DecisionPoint,
 
 func (cohort *FocalCohort) initialized() bool {
 	return cohort != nil && cohort.id != uuid.Nil && cohort.sha256 != "" && cohort.predicateSHA256 != ""
+}
+
+func (cohort *FocalCohort) randomizationEligible() bool {
+	return cohort != nil && cohort.v2 != nil &&
+		cohort.v2.document.SchemaID == CohortSchemaIDV2 &&
+		cohort.v2.document.Revision == 1
 }
 
 func canonicalCohortSpec(spec CohortSpec) CohortSpec {

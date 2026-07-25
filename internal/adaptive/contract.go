@@ -460,8 +460,8 @@ func validateFocalCanary(assignment Assignment) error {
 		return errors.New("adaptive canary assignment arm_probability is invalid")
 	}
 	for _, action := range assignment.ActionProbabilities {
-		if action.Probability == 0 {
-			return fmt.Errorf("adaptive canary action %q has no support", action.ActionID)
+		if action.ActionID == assignment.IntendedActionID && action.Probability == 0 {
+			return fmt.Errorf("adaptive canary intended action %q has no support", action.ActionID)
 		}
 	}
 	return nil

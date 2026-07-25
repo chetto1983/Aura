@@ -35,7 +35,9 @@ func newCohortLoaderFixture(t *testing.T, cutoffAfter time.Duration) cohortLoade
 		t.Fatalf("save snapshot: %v", err)
 	}
 	cutoff := time.Now().UTC().Add(cutoffAfter)
-	cohort := focalCohortForSnapshot(t, snapshot, cutoff, []BlockKey{BlockOwner, BlockTimeBlock})
+	cohort := randomizedFocalCohortForSnapshot(
+		t, snapshot, cutoff, []BlockKey{BlockOwner, BlockTimeBlock},
+	)
 	ledger := NewStore(pool, StoreConfig{})
 	store := NewCohortStore(pool, ledger)
 	if err := store.Save(ctx, cohort); err != nil {

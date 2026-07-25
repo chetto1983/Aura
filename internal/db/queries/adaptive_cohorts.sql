@@ -3,14 +3,17 @@ INSERT INTO aura.adaptive_focal_cohorts (
     id, owner_id, provider_id, model_id, policy_epoch, policy_version,
     snapshot_id, snapshot_sha256, environment, domain, decision_point,
     point_ordinal, predicate_sha256, experiment_id, cutoff, sha256,
-    artifact, artifact_json
+    artifact, artifact_json, randomization_plan_artifact,
+    randomization_plan_artifact_json
 ) VALUES (
     sqlc.arg(cohort_id), sqlc.arg(owner_id), sqlc.arg(provider_id),
     sqlc.arg(model_id), sqlc.arg(policy_epoch), sqlc.arg(policy_version),
     sqlc.arg(snapshot_id), sqlc.arg(snapshot_sha256), sqlc.arg(environment),
     sqlc.arg(domain), sqlc.arg(decision_point), sqlc.arg(point_ordinal),
     sqlc.arg(predicate_sha256), sqlc.arg(experiment_id), sqlc.arg(cutoff),
-    sqlc.arg(cohort_sha256), sqlc.arg(artifact), sqlc.arg(artifact_json)
+    sqlc.arg(cohort_sha256), sqlc.arg(artifact), sqlc.arg(artifact_json),
+    sqlc.narg(randomization_plan_artifact),
+    sqlc.narg(randomization_plan_artifact_json)
 )
 ON CONFLICT (id) DO NOTHING;
 
@@ -18,7 +21,8 @@ ON CONFLICT (id) DO NOTHING;
 SELECT id, owner_id, provider_id, model_id, policy_epoch, policy_version,
        snapshot_id, snapshot_sha256, environment, domain, decision_point,
        point_ordinal, predicate_sha256, experiment_id, cutoff, sha256,
-       artifact, artifact_json, created_at
+       artifact, artifact_json, created_at, randomization_plan_artifact,
+       randomization_plan_artifact_json
 FROM aura.adaptive_focal_cohorts
 WHERE owner_id = sqlc.arg(owner_id)
   AND id = sqlc.arg(cohort_id);
@@ -36,7 +40,8 @@ SELECT statement_timestamp()::timestamptz AS closure_time;
 SELECT id, owner_id, provider_id, model_id, policy_epoch, policy_version,
        snapshot_id, snapshot_sha256, environment, domain, decision_point,
        point_ordinal, predicate_sha256, experiment_id, cutoff, sha256,
-       artifact, artifact_json, created_at
+       artifact, artifact_json, created_at, randomization_plan_artifact,
+       randomization_plan_artifact_json
 FROM aura.adaptive_focal_cohorts
 WHERE owner_id = sqlc.arg(owner_id)
   AND id = sqlc.arg(cohort_id);
@@ -44,7 +49,9 @@ WHERE owner_id = sqlc.arg(owner_id)
 -- name: ListAdaptiveFocalCohortClaimsForReconstruction :many
 SELECT id, owner_id, cohort_id, request_id, evaluation_conversation_id,
        assignment_id, domain, decision_point, point_ordinal, session_id,
-       episode_id, time_block_start, claimed_at
+       episode_id, time_block_start, claimed_at,
+       analysis_stratum_schema_sha256, analysis_stratum_id,
+       interference_cluster_schema_sha256, interference_cluster_id
 FROM aura.adaptive_focal_cohort_claims
 WHERE owner_id = sqlc.arg(owner_id)
   AND cohort_id = sqlc.arg(cohort_id)
@@ -88,12 +95,16 @@ INSERT INTO aura.adaptive_focal_cohort_claims (
 ON CONFLICT DO NOTHING
 RETURNING id, owner_id, cohort_id, request_id, evaluation_conversation_id,
           assignment_id, domain, decision_point, point_ordinal, session_id,
-          episode_id, time_block_start, claimed_at;
+          episode_id, time_block_start, claimed_at,
+          analysis_stratum_schema_sha256, analysis_stratum_id,
+          interference_cluster_schema_sha256, interference_cluster_id;
 
 -- name: ListAdaptiveFocalCohortClaimConflicts :many
 SELECT id, owner_id, cohort_id, request_id, evaluation_conversation_id,
        assignment_id, domain, decision_point, point_ordinal, session_id,
-       episode_id, time_block_start, claimed_at
+       episode_id, time_block_start, claimed_at,
+       analysis_stratum_schema_sha256, analysis_stratum_id,
+       interference_cluster_schema_sha256, interference_cluster_id
 FROM aura.adaptive_focal_cohort_claims
 WHERE owner_id = sqlc.arg(owner_id)
   AND (
