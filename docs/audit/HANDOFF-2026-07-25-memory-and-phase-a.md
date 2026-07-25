@@ -98,23 +98,26 @@ the controprova ran again. It failed one layer up — see "Controprova round 2".
 
 Do these in order:
 
-1. The moment the internal/adaptive lint goes green, land the M-7 fix:
-   git apply /d/tmp/bridge-user-identifier.patch
-   It is already build/vet/race/lint-clean (verified in an isolated worktree at
-   df2e055a0). Then rebuild the aura image and re-run the controprova — the same
-   driver, the same four criteria.
+1. COMMIT THE M-7 FIX the moment the internal/adaptive lint goes green — it is
+   RUNNING LIVE IN THE APPLIANCE BUT NOT IN GIT (operator's call, 2026-07-25).
+   Until it lands, any rebuild of aura:local from a clean tree silently reverts
+   memory_update to refusing the operator's own data.
+     git apply /d/tmp/bridge-user-identifier.patch
+   Already build/vet/race/lint-clean at df2e055a0. The live image was built from
+   /d/tmp/aura-head-build (worktree, still on disk, patch applied).
 
-2. Backfill ownership on the entities that predate a79a8df43: the two duplicates
-   have no (:User)-[:HAS_ENTITY]-> edge, so memory_forget refuses them even with
-   a correct identity. The fix shipped without repairing the rows it was
-   diagnosed from. Decide whether it is a Cypher one-off or a maintenance verb.
+2. M-9: memory_forget reports "deleted" for an entity the caller can still read
+   back through MENTIONS. Decide which half is wrong — the verb's report or its
+   reach — before more of the memory UX is built on top of it.
 
-3. With the operator present, the embedding backfill, so the two duplicates stop
-   being invisible to memory_search:
-   docker exec aura-agent-memory-mcp neo4j-agent-memory \
-     maintenance backfill-embeddings --embedding-dimensions 768
+3. M-8: restarting the sidecar 400s every memory call on the running daemon
+   until aura restarts, with no warning anywhere. At minimum detect the dead
+   session and re-mount; at best make it a health signal.
 
-4. Phase A T8 + T10 still open (see the plan's Phase A table).
+4. memory_get_entity searches with limit=1, so a name with two matches hides the
+   second — which is why round 5 corrected one duplicate and left the other.
+
+5. Phase A T8 + T10 still open (see the plan's Phase A table).
 
 Blocked until the internal/adaptive lint goes green (52 findings from a parallel
 workstream, up from 46 — it is still growing): every .go commit, the push, and
@@ -124,6 +127,46 @@ docs commit fine. --no-verify is forbidden. Do not re-dispatch long-running
 subagents without reading the failure note — 3 of 4 were killed by a 600s stall
 watchdog.
 ```
+
+---
+
+## Controprova rounds 3 and 5 — 3 of 4 criteria pass, and the last one is no longer plumbing
+
+Round 3 (15:34 UTC) with M-7 deployed live: `memory_update` **succeeded** on the operator's node
+and `2a368f39`'s canonical became **"Davide"**. Ten tool calls, no `add_entity` at all, no loop.
+Only `memory_forget` still refused the two unowned duplicates.
+
+Then the ownership backfill (`47f07053e`, 2 entities repaired) and round 5 (15:41 UTC):
+
+| Criterion | Round 1 | Round 2 | Round 5 |
+|---|---|---|---|
+| three ids survive, corrected not recreated | ❌ recreated | ⚠️ survive, uncorrected | ✅ |
+| `2a368f39` canonical → "Davide" | ❌ | ❌ | ✅ |
+| no `:Entity` named "David" remains | ❌ | ❌ | ❌ |
+| no add→forget loop | ❌ | ✅ | ✅ |
+
+Round 5 is twelve tool calls: three `get_entity`, one `search`, one `forget` (**succeeded** —
+`{"deleted": "3700…", "removed_node": false}`), one `update` that corrected the preference text
+still reading "User David". No `add_*` at all. Every write verb that was refused two rounds ago
+now works.
+
+**Why the third criterion still fails, and it is two different things now:**
+
+1. The agent handled `37003044` and stopped, leaving `20d7511c` untouched — its third
+   `get_entity` for "David" came back `{"found": false}` while another call had just returned
+   `37003044` under that name. `memory_get_entity` searches with `limit=1`, so a name with two
+   matches yields whichever ranks first and the second is invisible to that verb. This is a
+   completeness gap in the tooling/agent, not a refusal.
+2. **Forget does not remove the entity from the caller's own reads** (M-9). Measured
+   immediately after the successful forget: `owned=0, mentioned=1, scope_count=1` — ownership
+   is gone, but `ENTITY_IN_USER_SCOPE` also accepts `MENTIONS`, so search, `get_entity`,
+   `get_context` and the recalled-context block can all still surface it. The user is told
+   "deleted" about something their next turn can still read back.
+
+**And a restart hazard the runs exposed** (M-8): round 4 had to be discarded because every
+memory call returned `http 400` after the sidecar was rebuilt — the daemon's streamable-HTTP
+session dies with the sidecar and "reconnect-on-use" does not renegotiate it. `aura` must be
+restarted after ANY sidecar restart. The boot log still reports `tools=13`, so nothing warns you.
 
 ---
 
