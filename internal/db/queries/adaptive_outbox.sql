@@ -245,17 +245,53 @@ WHERE assignment.decision_id = assignment.canonical_assignment_id
   );
 
 -- name: LockSchema2AdaptiveOutcomeChain :many
-SELECT id, owner_id, aggregate_id, sequence, decision_id, event_kind,
-       payload, payload_hash, status, attempts, available_at,
-       lease_owner, lease_expires_at, created_at, projected_at,
-       dead_letter_at, last_error_class
-FROM aura.adaptive_outbox
-WHERE owner_id = sqlc.arg(owner_id)
-  AND decision_id = sqlc.arg(assignment_id)
-  AND event_kind IN ('outcome', 'correction')
-  AND payload->>'schema_version' = '2.0'
-ORDER BY sequence ASC
-FOR UPDATE;
+WITH RECURSIVE ancestors AS (
+    SELECT event.id, event.payload, event.event_kind, 0 AS depth,
+           ARRAY[event.id] AS path
+    FROM aura.adaptive_outbox AS event
+    WHERE event.id = sqlc.arg(target_event_id)
+      AND event.owner_id = sqlc.arg(owner_id)
+      AND event.decision_id = sqlc.arg(assignment_id)
+      AND event.event_kind IN ('outcome', 'correction')
+      AND event.payload->>'schema_version' = '2.0'
+    UNION ALL
+    SELECT parent.id, parent.payload, parent.event_kind,
+           ancestors.depth + 1, ancestors.path || parent.id
+    FROM ancestors
+    JOIN aura.adaptive_outbox AS parent
+      ON ancestors.event_kind = 'correction'
+     AND parent.id =
+         (ancestors.payload->>'supersedes_event_id')::uuid
+     AND parent.owner_id = sqlc.arg(owner_id)
+     AND parent.decision_id = sqlc.arg(assignment_id)
+     AND parent.event_kind IN ('outcome', 'correction')
+     AND parent.payload->>'schema_version' = '2.0'
+    WHERE ancestors.depth < 64
+      AND NOT parent.id = ANY(ancestors.path)
+),
+relevant_ids AS (
+    SELECT id
+    FROM ancestors
+    UNION
+    SELECT child.id
+    FROM aura.adaptive_outbox AS child
+    JOIN ancestors AS target ON target.depth = 0
+    WHERE child.owner_id = sqlc.arg(owner_id)
+      AND child.decision_id = sqlc.arg(assignment_id)
+      AND child.event_kind = 'correction'
+      AND child.payload->>'schema_version' = '2.0'
+      AND (child.payload->>'supersedes_event_id')::uuid = target.id
+)
+SELECT event.id, event.owner_id, event.aggregate_id, event.sequence,
+       event.decision_id, event.event_kind, event.payload,
+       event.payload_hash, event.status, event.attempts,
+       event.available_at, event.lease_owner, event.lease_expires_at,
+       event.created_at, event.projected_at, event.dead_letter_at,
+       event.last_error_class
+FROM aura.adaptive_outbox AS event
+JOIN relevant_ids ON relevant_ids.id = event.id
+ORDER BY event.id
+FOR UPDATE OF event;
 
 -- name: ListEligibleSchema2AdaptiveAggregateFacts :many
 WITH valid_assignments AS MATERIALIZED (

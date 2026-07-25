@@ -248,7 +248,12 @@ func insertOutcomeEventAndRollback(
 		t.Fatal(err)
 	}
 	defer func() {
-		if rollbackErr := tx.Rollback(context.Background()); rollbackErr != nil {
+		rollbackCtx, rollbackCancel := context.WithTimeout(
+			context.WithoutCancel(t.Context()),
+			5*time.Second,
+		)
+		defer rollbackCancel()
+		if rollbackErr := tx.Rollback(rollbackCtx); rollbackErr != nil {
 			t.Errorf("rollback direct correction insert: %v", rollbackErr)
 		}
 	}()

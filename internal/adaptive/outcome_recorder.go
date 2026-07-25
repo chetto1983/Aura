@@ -120,8 +120,9 @@ func (recorder *OutcomeRecorder) RecordCorrection(
 			rows, err := queries.LockSchema2AdaptiveOutcomeChain(
 				ctx,
 				sqlc.LockSchema2AdaptiveOutcomeChainParams{
-					OwnerID:      dbUUID(correction.OwnerID),
-					AssignmentID: dbUUID(correction.AssignmentID),
+					TargetEventID: dbUUID(correction.SupersedesEventID),
+					OwnerID:       dbUUID(correction.OwnerID),
+					AssignmentID:  dbUUID(correction.AssignmentID),
 				},
 			)
 			if err != nil {
@@ -287,13 +288,16 @@ func newBenchmarkOutcomeEvaluator(
 	registration EvaluatorRegistration,
 	expected EvaluatorKind,
 ) (*BenchmarkOutcomeEvaluator, error) {
-	if recorder == nil {
-		return nil, ErrOutcomeRecorderUnavailable
+	if err := recorder.available(); err != nil {
+		return nil, err
 	}
 	if registration.Kind != expected {
 		return nil, ErrEvaluatorRegistrationInvalid
 	}
 	if err := validateEvaluatorRegistration(registration); err != nil {
+		return nil, err
+	}
+	if err := recorder.catalog.validate(registration.Provenance()); err != nil {
 		return nil, err
 	}
 	return &BenchmarkOutcomeEvaluator{recorder: recorder, registration: registration}, nil

@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -14,7 +15,8 @@ import (
 
 func TestOutcomeRecorderPersistsIdempotentOutcomeAndLinearCorrections(t *testing.T) {
 	pool := adaptiveIntegrationPool(t)
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
 	owner := seedTypedLedgerOwner(t, pool)
 	assignment := typedLedgerAssignment(t, owner)
 	store := NewStore(pool, StoreConfig{})
@@ -105,7 +107,8 @@ func TestOutcomeRecorderPersistsIdempotentOutcomeAndLinearCorrections(t *testing
 
 func TestOutcomeRecorderBindsPersistedAssignmentAndBenchmarkAdapters(t *testing.T) {
 	pool := adaptiveIntegrationPool(t)
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
 	owner := seedTypedLedgerOwner(t, pool)
 	assignment := typedLedgerAssignment(t, owner)
 	store := NewStore(pool, StoreConfig{})
@@ -158,7 +161,8 @@ func TestOutcomeRecorderBindsPersistedAssignmentAndBenchmarkAdapters(t *testing.
 
 func TestOutcomeRecorderAndDatabaseEnforceFoldableCorrectionLimit(t *testing.T) {
 	pool := adaptiveIntegrationPool(t)
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
 	owner := seedTypedLedgerOwner(t, pool)
 	assignment := typedLedgerAssignment(t, owner)
 	store := NewStore(pool, StoreConfig{})
@@ -271,9 +275,11 @@ func assertAdaptiveNextSequence(
 	want int64,
 ) {
 	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
 	var next int64
 	if err := pool.QueryRow(
-		t.Context(),
+		ctx,
 		`SELECT next_sequence
 		 FROM aura.adaptive_aggregate_sequences
 		 WHERE owner_id=$1 AND aggregate_id=$2`,

@@ -697,26 +697,63 @@ func (q *Queries) LockSchema2AdaptiveAssignment(ctx context.Context, arg LockSch
 }
 
 const lockSchema2AdaptiveOutcomeChain = `-- name: LockSchema2AdaptiveOutcomeChain :many
-SELECT id, owner_id, aggregate_id, sequence, decision_id, event_kind,
-       payload, payload_hash, status, attempts, available_at,
-       lease_owner, lease_expires_at, created_at, projected_at,
-       dead_letter_at, last_error_class
-FROM aura.adaptive_outbox
-WHERE owner_id = $1
-  AND decision_id = $2
-  AND event_kind IN ('outcome', 'correction')
-  AND payload->>'schema_version' = '2.0'
-ORDER BY sequence ASC
-FOR UPDATE
+WITH RECURSIVE ancestors AS (
+    SELECT event.id, event.payload, event.event_kind, 0 AS depth,
+           ARRAY[event.id] AS path
+    FROM aura.adaptive_outbox AS event
+    WHERE event.id = $1
+      AND event.owner_id = $2
+      AND event.decision_id = $3
+      AND event.event_kind IN ('outcome', 'correction')
+      AND event.payload->>'schema_version' = '2.0'
+    UNION ALL
+    SELECT parent.id, parent.payload, parent.event_kind,
+           ancestors.depth + 1, ancestors.path || parent.id
+    FROM ancestors
+    JOIN aura.adaptive_outbox AS parent
+      ON ancestors.event_kind = 'correction'
+     AND parent.id =
+         (ancestors.payload->>'supersedes_event_id')::uuid
+     AND parent.owner_id = $2
+     AND parent.decision_id = $3
+     AND parent.event_kind IN ('outcome', 'correction')
+     AND parent.payload->>'schema_version' = '2.0'
+    WHERE ancestors.depth < 64
+      AND NOT parent.id = ANY(ancestors.path)
+),
+relevant_ids AS (
+    SELECT id
+    FROM ancestors
+    UNION
+    SELECT child.id
+    FROM aura.adaptive_outbox AS child
+    JOIN ancestors AS target ON target.depth = 0
+    WHERE child.owner_id = $2
+      AND child.decision_id = $3
+      AND child.event_kind = 'correction'
+      AND child.payload->>'schema_version' = '2.0'
+      AND (child.payload->>'supersedes_event_id')::uuid = target.id
+)
+SELECT event.id, event.owner_id, event.aggregate_id, event.sequence,
+       event.decision_id, event.event_kind, event.payload,
+       event.payload_hash, event.status, event.attempts,
+       event.available_at, event.lease_owner, event.lease_expires_at,
+       event.created_at, event.projected_at, event.dead_letter_at,
+       event.last_error_class
+FROM aura.adaptive_outbox AS event
+JOIN relevant_ids ON relevant_ids.id = event.id
+ORDER BY event.id
+FOR UPDATE OF event
 `
 
 type LockSchema2AdaptiveOutcomeChainParams struct {
-	OwnerID      pgtype.UUID `json:"owner_id"`
-	AssignmentID pgtype.UUID `json:"assignment_id"`
+	TargetEventID pgtype.UUID `json:"target_event_id"`
+	OwnerID       pgtype.UUID `json:"owner_id"`
+	AssignmentID  pgtype.UUID `json:"assignment_id"`
 }
 
 func (q *Queries) LockSchema2AdaptiveOutcomeChain(ctx context.Context, arg LockSchema2AdaptiveOutcomeChainParams) ([]AuraAdaptiveOutbox, error) {
-	rows, err := q.db.Query(ctx, lockSchema2AdaptiveOutcomeChain, arg.OwnerID, arg.AssignmentID)
+	rows, err := q.db.Query(ctx, lockSchema2AdaptiveOutcomeChain, arg.TargetEventID, arg.OwnerID, arg.AssignmentID)
 	if err != nil {
 		return nil, err
 	}
