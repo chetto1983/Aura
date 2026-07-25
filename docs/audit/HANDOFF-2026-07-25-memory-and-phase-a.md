@@ -9,7 +9,20 @@
 
 1. **`internal/adaptive` lint is red — every `.go` commit is blocked.** 46 findings (45 revive missing doc-comments + 1 unused func) from a parallel Codex workstream. `--no-verify` is forbidden. Docs-only and Python-only commits DO land (the lint hook is globbed on `*.go`; `go vet` still runs and passes). Everything committed today was therefore Python or docs.
 2. **CI on `origin/master` is red** for the same reason (run 30132905351, job "Build + vet + lint + deadcode").
-3. **The appliance's live DB is a moving target.** Codex applies migrations to the live `aura` DB from an *uncommitted* working tree; `serve` only CHECKS the migration head (strict equality) and never migrates, so the deployed container crash-loops until an image embedding exactly that migration set is built. The container was rescued twice today by building from a clean worktree at the merge commit **plus copying in the uncommitted `0071` files**. It will break again on `0072`.
+3. **The appliance's live DB is a moving target.** Codex applies migrations to the live `aura` DB from an *uncommitted* working tree; `serve` only CHECKS the migration head (strict equality, `internal/db/migration_head.go:45`) and never migrates, so the deployed container crash-loops until an image embedding exactly that migration set is built. It bit again at 13:40: the running binary embedded through `0071` while the DB had advanced to `73`, so **restarting `aura` at all would have crash-looped it**.
+
+   **Check before every restart** (30 seconds, and it is the difference between a restart and an outage):
+   ```
+   docker exec aura-postgres psql -U aura -d aura -tAc "select version, dirty from schema_migrations"
+   docker exec aura sh -c 'grep -ao "00[0-9][0-9]_[a-z0-9_]*\.up\.sql" $(command -v aura) | sort -u | tail -1'
+   ```
+   They must be equal. When they are not, rebuild from a **clean worktree at HEAD** — which is now enough on its own, since `0072`/`0073` are committed and only `0074` is loose:
+   ```
+   git worktree add /d/tmp/aura-head-build --detach HEAD
+   cd /d/tmp/aura-head-build && docker build -t aura:local -f docker/aura/Dockerfile .
+   cd /d/Aura && docker compose up -d --force-recreate aura
+   ```
+   Done at 13:41 (image `48a1784f`, embedded head `73` = DB head `73`). **It will break again the moment `0074` is applied to the live DB** — the same 8-minute rebuild, for a migration that is still uncommitted.
 
 ---
 
@@ -51,13 +64,24 @@ The ownership one deserves a note, because the obvious fix was the wrong one. Th
 
 ---
 
-## THE one thing blocking the controprova
+## ✅ The read path is fixed — and the controprova ran (round 2)
 
-`memory_get_entity` still projects `canonical_name` as `name`. Same node, same moment, in the live trace: `memory_search` → `"name": "Davide"`, `memory_get_entity` → `"name": "David"`.
+`df2e055a0` closed the fifth site (`memory_get_entity`) plus two more nobody had listed: the
+entities-catalog resource and the relationship echo. The live trace now reads
+`{"name": "Davide", "canonical_name": "David"}` on the node that used to answer "David".
 
-Three projection sites in `integration.py` were fixed with `_entity_name_fields()` (stored name + `canonical_name` as its own field when it differs) and the context builder in `long_term.py` was fixed after that. `get_entity` builds its dict somewhere else and was missed; the source guard in `tests/test_entity_name_projection.py` did not catch it because that site is written differently from the literal the guard checks.
+The guard was the real lesson. It had been checking a **literal** copied from the site just
+fixed, so each new site — written differently — walked past it; that is how a fifth path
+shipped after three fixes and a fourth. It now bans the mistake itself: no caller-facing module
+may read `display_name` at all, checked over the **AST** (so the comments explaining the rule
+don't trip it) on a file set **derived from the package directory** (so a read path in a NEW
+module is covered the day it is written). Two counter-guards keep it honest — one pins the
+files it must cover, one fails if the projection helper falls out of use, since "project no
+name at all" also satisfies a ban. Verified by mutation: reinstating the defect fails three
+tests, including one that drives the registered MCP tool. 53 pass.
 
-Do two things: fix the site, and make the guard catch the CLASS (any read path exposing `display_name` as a caller-facing name, across modules) rather than one string in one file.
+**Then the daemon was restarted and the controprova re-run.** See §Controprova round 2 — it
+found the next defect down, and it is not in the sidecar.
 
 ---
 
@@ -68,39 +92,88 @@ Aura, memory sidecar + Phase A. Read docs/audit/HANDOFF-2026-07-25-memory-and-ph
 and the Phase A / memory / onboarding sections of
 docs/audit/consolidated-fix-plan-2026-07-20.md first.
 
+Steps 1-3 of the previous handoff are DONE: the read path is fixed and committed
+(df2e055a0), the daemon re-mounted with 13 memory tools incl. memory_update, and
+the controprova ran again. It failed one layer up — see "Controprova round 2".
+
 Do these in order:
 
-1. Fix the last read path: memory_get_entity still reports canonical_name as
-   "name". Then strengthen tests/test_entity_name_projection.py to catch the
-   class of mistake, not the literal string. Python only, so it commits fine.
+1. The moment the internal/adaptive lint goes green, land the M-7 fix:
+   git apply /d/tmp/bridge-user-identifier.patch
+   It is already build/vet/race/lint-clean (verified in an isolated worktree at
+   df2e055a0). Then rebuild the aura image and re-run the controprova — the same
+   driver, the same four criteria.
 
-2. Rebuild + restart the memory sidecar, then restart the aura container too —
-   the daemon mounted 12 memory tools at boot and never re-mounted after the
-   sidecar restart, so it may not have memory_update at all. That ambiguity has
-   to be gone before the test means anything.
+2. Backfill ownership on the entities that predate a79a8df43: the two duplicates
+   have no (:User)-[:HAS_ENTITY]-> edge, so memory_forget refuses them even with
+   a correct identity. The fix shipped without repairing the rows it was
+   diagnosed from. Decide whether it is a Cypher one-off or a maintenance verb.
 
-3. Run the controprova. Ask Aura in plain language to fix its own memory (wrong
-   name + duplicates). Watch aura.tool_invocations and the Neo4j graph, not its
-   reply. Pass = the three entity ids survive (corrected, not recreated),
-   2a368f39's canonical becomes "Davide", no :Entity named "David" remains, no
-   add->forget loop. The baseline is in the handoff.
-
-4. Then, with the operator present, run the embedding backfill so the two
-   embedding-less duplicates become searchable:
+3. With the operator present, the embedding backfill, so the two duplicates stop
+   being invisible to memory_search:
    docker exec aura-agent-memory-mcp neo4j-agent-memory \
      maintenance backfill-embeddings --embedding-dimensions 768
 
-Blocked until the internal/adaptive lint goes green (46 findings from a parallel
-workstream): every .go commit, the push, and CI. Python and docs commit fine.
---no-verify is forbidden. Do not re-dispatch long-running subagents without
-reading the failure note — 3 of 4 were killed by a 600s stall watchdog today.
-```
+4. Phase A T8 + T10 still open (see the plan's Phase A table).
 
-The last two are Go → **they cannot be committed until blocker 1 clears.**
+Blocked until the internal/adaptive lint goes green (52 findings from a parallel
+workstream, up from 46 — it is still growing): every .go commit, the push, and
+CI. The pre-commit lint step lints ALL owned packages whenever any *.go file is
+staged, so this blocks Go commits that touch nothing near adaptive. Python and
+docs commit fine. --no-verify is forbidden. Do not re-dispatch long-running
+subagents without reading the failure note — 3 of 4 were killed by a 600s stall
+watchdog.
+```
 
 ---
 
-## The controprova — designed, run, FAILED for a reason worth keeping
+## Controprova round 2 (2026-07-25 14:30 UTC) — FAILED, one layer up
+
+Run as the operator (`e3c8eb3b…`, the identity that owns the entities) through the cockpit's own
+API, using the Authula login `web/e2e/auth.ts` and `scripts/agui_smoke.sh` already implement —
+the memory tools are identity-scoped, so a run as anyone else cannot see the data under test.
+Prompt, in plain Italian: *"Nella tua memoria il mio nome risulta sbagliato e ci sono dei
+doppioni. Sistema la tua memoria."* Thread `019f99af-22ea-7e28-985e-98878f577cb1`, 26 tool calls.
+
+| Criterion | Verdict |
+|---|---|
+| the three ids survive, corrected not recreated | ⚠️ survive, **not corrected** — nothing was destroyed and `add_entity` merged into `2a368f39` rather than minting a node, but no correction landed |
+| `2a368f39`'s canonical becomes "Davide" | ❌ still "David" |
+| no `:Entity` named "David" remains | ❌ both duplicates remain |
+| no add→forget loop | ✅ one forget, one add, terminated cleanly (baseline: repeated cycles) |
+
+**Every write verb was refused**, three times with `{"updated": null, "reason": "not found or
+not owned by this user"}` — see M-7 in the plan. `memory_update` was missing from the bridge's
+identity-injection list (`internal/agent/mcptools/bridge.go:144`), so the sidecar received
+`user_identifier=null` and refused the operator's own node. The fix is written, race-tested and
+lint-clean in an isolated worktree; it **cannot be committed until the `internal/adaptive` lint
+goes green**. Patch: `D:/tmp/bridge-user-identifier.patch`.
+
+Two things this run earned that the first one could not:
+
+- **The destructive behaviour did not recur.** The agent no longer deletes what it just wrote,
+  because `memory_get_entity` finally tells it the truth about what is stored. That was the
+  actual hypothesis under test, and it held.
+- **A refused correction verb still costs data quality.** Denied `memory_update` on the fact
+  `David → expertise → Go, AI agents`, the agent fell back to `add_fact` and created
+  `Davide → expertise → Go, AI agents` beside it (`ca17ee4e` next to `325b20fd`). The refusal
+  did not merely block a fix, it manufactured a duplicate — the same shape as the original
+  add/forget loop, one layer up.
+
+**And it reported success it had not achieved.** The reply opens with *"Fatto. Ecco cosa ho
+sistemato"* and claims the canonical is now aligned; the graph is byte-for-byte unchanged. It
+had narrated each refusal honestly mid-turn and then summarised past them. This is exactly why
+the pass criteria are `tool_invocations` + the graph and never the reply.
+
+**Still true after the run:** the two duplicates have **no `HAS_ENTITY` edge**, so
+`memory_forget` refuses them even with a correct identity — `a79a8df43` fixed the write path for
+entities created from now on and **never backfilled the rows it was diagnosed from**. They are
+reachable via `MENTIONS`, so once M-7 lands `memory_update` can rename them; deletion needs the
+ownership backfill. They also have no embedding, so `memory_search` cannot see them at all (M-5).
+
+---
+
+## The controprova — round 1: designed, run, FAILED for a reason worth keeping
 
 Test: ask Aura in plain language to fix its own memory (wrong name + duplicates) and see whether it corrects instead of destroying. Baseline was pinned at 12:18:19 UTC.
 
@@ -135,6 +208,24 @@ Repairs the embedding-less entities so `memory_search` can see them. Run it with
 ## Phase A — still open to close
 
 `T8` rebuild the committed `internal/webui/dist` (must be built on Linux node-24 via the docker webbuild stage — a Windows Vite build re-hashes every chunk) and `T10` (coverage gate on the stricter `db_integration`-only Skills number, full live E2E, push, CI green). Everything else is merged: see the plan's Phase A table for per-task commits.
+
+---
+
+## The suite the sidecar tests are not in
+
+`ci.yml` builds `docker/agent-memory` into an image and runs Aura's `memory_integration` tier
+against it — but **nothing ever runs the fork's own 53 pytest tests**. They pass only when
+someone runs them by hand, and there is no runner image: the published image carries no `tests/`
+and no pytest. The invocation that works, for whoever wires it up:
+
+```
+docker run --rm -v /d/Aura/docker/agent-memory:/work -w /work -e PYTHONPATH=/work/src \
+  aura-agent-memory-mcp:local sh -c 'pip install -q pytest pytest-asyncio pytest-timeout;
+  python -m pytest tests -q'
+```
+
+`PYTHONPATH=/work/src` matters: the image installs the package editable from its own baked
+`/app/src`, so without it the run silently tests the image's copy instead of the working tree.
 
 ---
 
