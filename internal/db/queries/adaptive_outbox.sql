@@ -1,6 +1,12 @@
 -- name: LockAdaptiveEvent :exec
 SELECT pg_advisory_xact_lock(hashtextextended(sqlc.arg(event_id)::text, 0));
 
+-- name: LockAdaptiveOwner :one
+SELECT id
+FROM aura.identities
+WHERE id = sqlc.arg(owner_id)
+FOR KEY SHARE;
+
 -- name: AdaptiveIdentityTombstoned :one
 SELECT EXISTS (
     SELECT 1

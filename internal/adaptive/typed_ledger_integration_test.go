@@ -7,10 +7,12 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -271,23 +273,54 @@ func typedLedgerDelivery(t *testing.T, assignment Assignment) Delivery {
 
 func seedTypedLedgerOwner(t *testing.T, pool *pgxpool.Pool) uuid.UUID {
 	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
 	owner := uuid.Must(uuid.NewV7())
 	if _, err := pool.Exec(
-		context.Background(),
+		ctx,
 		`INSERT INTO aura.identities (id, name, kind) VALUES ($1,$2,'user')`,
 		owner,
 		"typed-ledger-"+owner.String(),
 	); err != nil {
 		t.Fatal(err)
 	}
+	cleanupPool := typedLedgerMigrationPool(t, ctx)
 	t.Cleanup(func() {
-		_, _ = pool.Exec(
-			context.Background(),
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cleanupCancel()
+		if _, err := cleanupPool.Exec(
+			cleanupCtx,
 			`DELETE FROM aura.identities WHERE id=$1`,
 			owner,
-		)
+		); err != nil {
+			t.Errorf("delete typed-ledger owner: %v", err)
+			return
+		}
+		if _, err := cleanupPool.Exec(
+			cleanupCtx,
+			`DELETE FROM aura.adaptive_identity_tombstones WHERE owner_id=$1`,
+			owner,
+		); err != nil {
+			t.Errorf("delete typed-ledger owner tombstone: %v", err)
+		}
 	})
 	return owner
+}
+
+func typedLedgerMigrationPool(
+	t *testing.T,
+	ctx context.Context,
+) *pgxpool.Pool {
+	t.Helper()
+	pool, err := db.Open(
+		ctx,
+		&db.Config{URL: os.Getenv("AURA_DB_MIGRATE_URL")},
+	)
+	if err != nil {
+		t.Fatalf("open typed-ledger migration pool: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	return pool
 }
 
 func insertAdaptiveLedgerEvent(

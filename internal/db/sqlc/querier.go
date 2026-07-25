@@ -245,6 +245,7 @@ type Querier interface {
 	ListTurnsByBranchPath(ctx context.Context, arg ListTurnsByBranchPathParams) ([]ListTurnsByBranchPathRow, error)
 	ListTurnsBySeq(ctx context.Context, conversationID pgtype.UUID) ([]ListTurnsBySeqRow, error)
 	LockAdaptiveEvent(ctx context.Context, eventID string) error
+	LockAdaptiveOwner(ctx context.Context, ownerID pgtype.UUID) (pgtype.UUID, error)
 	LockConversationForTurnAppend(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)
 	LockSchema2AdaptiveAssignment(ctx context.Context, arg LockSchema2AdaptiveAssignmentParams) (AuraAdaptiveOutbox, error)
 	LookupRecoveryByEmail(ctx context.Context, email string) (LookupRecoveryByEmailRow, error)

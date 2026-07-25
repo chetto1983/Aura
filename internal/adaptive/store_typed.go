@@ -55,12 +55,16 @@ func (s *Store) RecordDelivery(
 	}
 	var sequence int64
 	err := db.WithIdentityTx(ctx, s.pool, ownerID.String(), func(q *sqlc.Queries) error {
-		tombstoned, err := q.AdaptiveIdentityTombstoned(ctx, dbUUID(ownerID))
-		if err != nil {
-			return fmt.Errorf("check adaptive owner tombstone: %w", err)
-		}
-		if tombstoned {
-			return ErrOwnerTombstoned
+		if err := lockAdaptiveOwnerTx(ctx, q, ownerID); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return fmt.Errorf(
+					"load adaptive assignment %s for owner %s: %w",
+					assignmentID,
+					ownerID,
+					ErrAssignmentNotFound,
+				)
+			}
+			return err
 		}
 		row, err := q.LockSchema2AdaptiveAssignment(
 			ctx,
@@ -88,7 +92,7 @@ func (s *Store) RecordDelivery(
 		if err != nil {
 			return fmt.Errorf("construct adaptive delivery event: %w", err)
 		}
-		sequence, _, err = s.recordValidatedTx(ctx, q, event)
+		sequence, _, err = s.recordOwnerLockedTx(ctx, q, event)
 		return err
 	})
 	if err != nil {

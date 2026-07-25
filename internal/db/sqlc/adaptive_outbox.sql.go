@@ -584,6 +584,20 @@ func (q *Queries) LockAdaptiveEvent(ctx context.Context, eventID string) error {
 	return err
 }
 
+const lockAdaptiveOwner = `-- name: LockAdaptiveOwner :one
+SELECT id
+FROM aura.identities
+WHERE id = $1
+FOR KEY SHARE
+`
+
+func (q *Queries) LockAdaptiveOwner(ctx context.Context, ownerID pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, lockAdaptiveOwner, ownerID)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const lockSchema2AdaptiveAssignment = `-- name: LockSchema2AdaptiveAssignment :one
 WITH valid_assignments AS MATERIALIZED (
     SELECT assignment.id, assignment.owner_id, assignment.aggregate_id,

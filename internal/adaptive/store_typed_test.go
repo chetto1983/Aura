@@ -70,6 +70,41 @@ func TestStoreRecordDeliveryRejectsMissingAssignmentIdentity(t *testing.T) {
 	}
 }
 
+func TestStoreRecordTxRejectsNilDependencies(t *testing.T) {
+	t.Parallel()
+	event, err := NewEvent(EventParams{
+		ID:          uuid.Must(uuid.NewV7()),
+		OwnerID:     uuid.Must(uuid.NewV7()),
+		AggregateID: "nil-record-tx",
+		DecisionID:  uuid.Must(uuid.NewV7()),
+		Kind:        EventDecision,
+		Payload:     []byte(`{"schema_version":"1.0"}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("store", func(t *testing.T) {
+		var store *Store
+		if _, _, err := store.RecordTx(
+			context.Background(),
+			&sqlc.Queries{},
+			event,
+		); err == nil || !strings.Contains(err.Error(), "store") {
+			t.Fatalf("nil Store RecordTx error = %v, want store dependency error", err)
+		}
+	})
+	t.Run("queries", func(t *testing.T) {
+		if _, _, err := (&Store{}).RecordTx(
+			context.Background(),
+			nil,
+			event,
+		); err == nil || !strings.Contains(err.Error(), "queries") {
+			t.Fatalf("nil queries RecordTx error = %v, want queries dependency error", err)
+		}
+	})
+}
+
 func TestAssignmentFromPersistedRowRejectsBindingAndPayloadMismatches(t *testing.T) {
 	t.Parallel()
 	assignment := validAssignment()

@@ -102,6 +102,12 @@ func (s *Store) RecordTx(ctx context.Context, q *sqlc.Queries, event Event) (seq
 	if err := rejectGenericSchema2Event(event); err != nil {
 		return 0, false, err
 	}
+	if s == nil {
+		return 0, false, errors.New("adaptive RecordTx requires a store")
+	}
+	if q == nil {
+		return 0, false, errors.New("adaptive RecordTx requires database queries")
+	}
 	return s.recordValidatedTx(ctx, q, event)
 }
 
@@ -110,24 +116,43 @@ func (s *Store) recordValidatedTx(
 	q *sqlc.Queries,
 	event Event,
 ) (sequence int64, duplicate bool, err error) {
-	tombstoned, err := q.AdaptiveIdentityTombstoned(ctx, dbUUID(event.OwnerID))
-	if err != nil {
-		return 0, false, fmt.Errorf("check adaptive owner tombstone: %w", err)
+	if err := lockAdaptiveOwnerTx(ctx, q, event.OwnerID); err != nil {
+		return 0, false, err
+	}
+	return s.recordOwnerLockedTx(ctx, q, event)
+}
+
+// Every writer locks owner parent -> assignment child (delivery only) ->
+// event advisory -> aggregate sequence/insert.
+func lockAdaptiveOwnerTx(
+	ctx context.Context,
+	q *sqlc.Queries,
+	ownerID uuid.UUID,
+) error {
+	_, err := q.LockAdaptiveOwner(ctx, dbUUID(ownerID))
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("lock adaptive owner %s: %w", ownerID, err)
+	}
+	tombstoned, tombstoneErr := q.AdaptiveIdentityTombstoned(ctx, dbUUID(ownerID))
+	if tombstoneErr != nil {
+		return fmt.Errorf("check adaptive owner tombstone: %w", tombstoneErr)
 	}
 	if tombstoned {
-		return 0, false, ErrOwnerTombstoned
+		return ErrOwnerTombstoned
 	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("adaptive owner %s not found: %w", ownerID, pgx.ErrNoRows)
+	}
+	return nil
+}
+
+func (s *Store) recordOwnerLockedTx(
+	ctx context.Context,
+	q *sqlc.Queries,
+	event Event,
+) (sequence int64, duplicate bool, err error) {
 	if err := q.LockAdaptiveEvent(ctx, event.ID.String()); err != nil {
 		return 0, false, fmt.Errorf("lock adaptive event: %w", err)
-	}
-	// Recheck after the advisory lock. A deletion may raise its permanent fence
-	// while this writer waits behind an identical event ID.
-	tombstoned, err = q.AdaptiveIdentityTombstoned(ctx, dbUUID(event.OwnerID))
-	if err != nil {
-		return 0, false, fmt.Errorf("recheck adaptive owner tombstone after event lock: %w", err)
-	}
-	if tombstoned {
-		return 0, false, ErrOwnerTombstoned
 	}
 	existing, err := q.GetAdaptiveOutboxByID(ctx, dbUUID(event.ID))
 	switch {
@@ -164,8 +189,7 @@ func (s *Store) recordValidatedTx(
 		return 0, false, fmt.Errorf("insert adaptive event: %w", err)
 	}
 	if rows != 1 {
-		// The INSERT has its own NOT EXISTS fence guard, closing the remaining
-		// post-check window against delete+UUID recreation.
+		// The SQL guard remains a database backstop for writers outside Store.
 		tombstoned, checkErr := q.AdaptiveIdentityTombstoned(ctx, dbUUID(event.OwnerID))
 		if checkErr != nil {
 			return 0, false, fmt.Errorf("classify guarded adaptive insert: %w", checkErr)
