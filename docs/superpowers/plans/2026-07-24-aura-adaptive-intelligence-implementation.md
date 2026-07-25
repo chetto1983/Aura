@@ -12,9 +12,11 @@
 
 ## Progress checkpoint — 2026-07-24
 
-**Current approved head:** `5eb127605c34d9c9ba9b6612927cd01916f68580`
+**Current approved head:** `f58334f1b82a4db4912761e6dbf79cd53b4b0f36`
 
-**Current review candidate:** `8589ec09a18df19e9cc2d72bdeff8103449d2f6c`
+**Current review candidate:** none; the pure focal-cohort contract is in progress
+in the isolated `claude/focal-cohort-contract` worktree and has no approved
+candidate commit yet.
 
 - The schema-2 Assignment/Delivery Go contract is complete through
   `03643cc9a`. Its spec and code-quality reviews both returned `APPROVE`.
@@ -32,22 +34,18 @@
 - The immutable in-memory policy snapshot contract and pure local graph-kNN
   scorer are complete through `5eb12760`. The final snapshot spec and
   code-quality reviews both returned `APPROVE`.
-- Authoritative PostgreSQL snapshot persistence is implemented and committed at
-  `8589ec09`, but is not approved yet. Its focused normal/race, live store,
-  disposable `0067 -> 0068 -> 0067 -> 0068`, RLS/ACL/corruption/fence, SQLC,
-  vet, build, diff-lint, and file-size gates pass. Independent spec review found
-  a high numerical-parity blocker: migration `0068` validates frozen-vector
-  norms with an unstable sum of squares, while the approved Go scorer uses
-  max-scaled normalization. The SQL path can therefore reject valid huge or
-  subnormal snapshots. The focused PostgreSQL reproduction/final verdict is in
-  progress; code-quality review must follow the repaired spec approval.
+- Authoritative PostgreSQL snapshot persistence is complete and independently
+  approved through `f58334f1`. Migration `0069` forward-repairs the unstable
+  frozen-vector norm validation in immutable migration `0068`; migration `0070`
+  replaces its quadratic duplicate-outcome scan with a set-based validation.
+  Both the final spec and code-quality reviews returned `APPROVE`.
 - The persistence commits after the Go contract are `b0216f494`,
   `79a5f719d`, `f941a0e0f`, `001d6f974`, `ca587adb8`, `9ed7f625b`, and
   `fee72ff13`. The typed Store commits are `05849027b`, `a29401417`,
   `45fd467ff`, and `0b71fee3`. The typed outcome commits are `623f03c60`,
   `d9946cc07`, `36b65f16d`, and `250281c05`. The snapshot/scorer commits are
-  `c691dccbc` and `5eb127605`. The unapproved snapshot persistence candidate is
-  `8589ec09a`.
+  `c691dccbc` and `5eb127605`. The snapshot persistence commits are
+  `8589ec09a`, `a76096d5d`, and `f58334f1b`.
 - Verified evidence at the approved head includes clean head-67 install,
   down/up, versioned upgrade and dirty fail-closed paths, deterministic
   Go/PostgreSQL identity parity, dirty-62 loader exclusion, live
@@ -65,21 +63,26 @@
   positive-cosine weighted scoring, deterministic ties, huge/subnormal vector
   stability, precomputed example vectors, allocation independence from example
   count, and explicit static invalid/no-support/query fallback attribution.
+- Snapshot persistence evidence includes immutable migration history, exact
+  `0069 -> 0070 -> 0069 -> 0070` restoration, SQL/Go huge and subnormal vector
+  parity, cross-action duplicate rejection, released owner locks, and a valid
+  maximum-cardinality artifact with 128 actions and 32,768 outcomes. The final
+  live quality run saved it in 3.84 seconds, loaded it in 524 milliseconds, and
+  completed in 4.52 seconds.
 - Task 1 is complete. Typed Store APIs transactionally load and lock the
   persisted Assignment before recording Delivery, preserve exact
   idempotence/conflict behavior, reject every schema-2 event kind through the
   generic Store surface, and fail closed for nil dependencies or fenced owners.
-- Snapshot persistence review, focal cohorts, ledger-only reconstruction, exact
-  statistical inference, sealed evidence, and legacy `CanaryBatch`/Wilson
-  removal remain Task 2 work. Migration `0068` is installed cleanly on the live
-  database with zero snapshot rows. The next migration must be allocated only
-  after rechecking disk head; with current head `0068`, the next expected number
-  is `0069`. No production runtime adapter, Agent Memory change, real-model
-  benchmark, final quality gate, or push has been completed.
-- Do not replay unchanged remote CI. Resume with the `8589ec09` snapshot-store
-  SQL numerical-parity RED and repair under TDD, repeat spec review, then run
-  code-quality review. Only after both approve may Task 2 continue with focal
-  cohorts under TDD.
+- Focal cohorts, ledger-only reconstruction, exact statistical inference,
+  sealed evidence, and legacy `CanaryBatch`/Wilson removal remain Task 2 work.
+  Migration `0070` is installed cleanly on the live database with zero snapshot
+  rows. Recheck the disk head immediately before allocation; with current head
+  `0070`, the next expected number is `0071`. No production runtime adapter,
+  Agent Memory change, real-model benchmark, final quality gate, or push has
+  been completed.
+- Do not replay unchanged remote CI. Resume with the isolated pure focal-cohort
+  contract under TDD, require independent spec and code-quality approval, merge
+  it atomically, and then implement cohort persistence and atomic focal claims.
 
 ## Global execution contract
 
@@ -246,7 +249,7 @@ go build ./...
 - Delete: `internal/adaptive/promotion.go`
 - Delete: `internal/adaptive/promotion_test.go`
 - Create: next free PostgreSQL migration after rechecking disk head; current
-  head is `0068`, so the next expected number is `0069`
+  head is `0070`, so the next expected number is `0071`
 - Modify: `internal/db/queries/adaptive_policy.sql`
 - Add: focused DB integration tests
 
@@ -254,7 +257,9 @@ go build ./...
 - [ ] **Step 2: Write red tests** for immutable owner/provider/model snapshots, top-5 nonnegative-cosine mean scoring, zero-neighbor static fallback, preregistered point/ordinal predicate, unique request membership, at most one randomized request per evaluation conversation, deterministic correction folding, missing/fork/cycle rejection, and artifact hash stability.
 - [ ] **Step 3: Write red statistical tests** using enumerated tiny blocked assignments whose exact p-values are hand-checkable. Include quality/harm margins, alpha-spent looks, censoring, cluster/conversation blocks, ITT primary analysis, served-action diagnostic analysis, and arm-vs-action propensity mismatch rejection.
 - [x] **Step 4: Implement the scorer** as a pure local function over the sealed snapshot. Similarity is `max(0, cosine)`; use at most five neighbors; predicted value is the arithmetic mean of neighbor outcomes weighted by nonnegative similarity; empty/invalid support returns the static champion.
-- [ ] **Step 4a: Persist immutable snapshots.** Implementation is committed at `8589ec09`; SQL numerical parity for huge/subnormal vectors is the current spec blocker. Mark complete only after the repair and independent spec/code-quality approvals.
+- [x] **Step 4a: Persist immutable snapshots.** Implementation and forward-only
+  numerical/performance repairs are approved through `f58334f1`; migrations
+  `0068` and `0069` remain immutable history and `0070` is the current head.
 - [ ] **Step 5: Implement durable focal claims** with both constraints: unique `(cohort_id, request_id)` is the request-level focal membership key, and unique `(cohort_id, evaluation_conversation_id)` enforces at most one randomized request in an evaluation conversation. The claim stores the exact point/ordinal predicate match and happens atomically before the arm draw. A cohort freezes policy/provider/model/snapshot/action catalogs, arm probabilities, evaluator versions, power/support plan, safety limits, planned looks, and cutoff.
 - [ ] **Step 6: Implement the ledger-only loader**: reconstruct assignments, deliveries, eligible outcomes, and folded corrections at the cohort cutoff; include missing delivery/outcome as censored ITT rows; reject unsealed catalogs, unknown exposure probabilities, cross-owner facts, and facts beyond cutoff.
 - [x] **Step 7: Implement a production typed outcome/correction recorder.** `OutcomeRecorder.RecordOutcome` accepts only a typed `OutcomeObservation`, loads the referenced schema-2 assignment, binds domain/owner/provider/model, validates the registered evaluator kind/ID/version/rubric/calibration/provenance hash, and appends the deterministic terminal event. `RecordCorrection` transactionally loads the current effective leaf and rejects missing, cross-owner/domain/evaluator, cross-kind, fork, or cycle links. Operational tool/HTTP/persistence/model-self-report completion cannot call this eligible recorder. Compose the deterministic and calibrated-judge benchmark evaluators through this same service; no benchmark may insert ledger rows directly.
