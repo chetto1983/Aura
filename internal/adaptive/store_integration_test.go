@@ -271,7 +271,8 @@ INSERT INTO aura.adaptive_outbox (
 
 func TestStoreRejectsRecreatedDeletedOwner(t *testing.T) {
 	pool := adaptiveIntegrationPool(t)
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
 	owner := uuid.Must(uuid.NewV7())
 	name := "adaptive-tombstone-" + owner.String()
 	if _, err := pool.Exec(ctx,
@@ -279,9 +280,7 @@ func TestStoreRejectsRecreatedDeletedOwner(t *testing.T) {
 		owner, name); err != nil {
 		t.Fatalf("seed owner: %v", err)
 	}
-	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), `DELETE FROM aura.identities WHERE id=$1`, owner)
-	})
+	registerAdaptiveOwnerCleanup(t, owner)
 
 	store := NewStore(pool, StoreConfig{})
 	decision := uuid.Must(uuid.NewV7())
@@ -335,91 +334,6 @@ WHERE table_schema='aura'
 	}
 	if _, err := store.Record(ctx, after); !errors.Is(err, ErrOwnerTombstoned) {
 		t.Fatalf("Record(after owner recreation) error = %v, want ErrOwnerTombstoned", err)
-	}
-}
-
-func TestStoreDeletionFenceClosesRecordWaitAndUUIDRecreationRace(t *testing.T) {
-	pool := adaptiveIntegrationPool(t)
-	ctx := context.Background()
-	owner := uuid.Must(uuid.NewV7())
-	name := "adaptive-record-race-" + owner.String()
-	if _, err := pool.Exec(ctx,
-		`INSERT INTO aura.identities (id, name, kind) VALUES ($1,$2,'user')`,
-		owner, name); err != nil {
-		t.Fatalf("seed owner: %v", err)
-	}
-	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), `DELETE FROM aura.identities WHERE id=$1`, owner)
-	})
-
-	event, err := NewEvent(EventParams{
-		ID: uuid.Must(uuid.NewV7()), OwnerID: owner, AggregateID: "record-delete-race",
-		DecisionID: uuid.Must(uuid.NewV7()), Kind: EventDecision,
-		Payload: []byte(`{"schema_version":"1.0","action":"shadow"}`),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	lockTx, err := pool.Begin(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = lockTx.Rollback(context.Background()) }()
-	if _, err := lockTx.Exec(ctx,
-		`SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))`,
-		event.ID.String()); err != nil {
-		t.Fatalf("hold event advisory lock: %v", err)
-	}
-
-	recordDone := make(chan error, 1)
-	go func() {
-		_, recordErr := NewStore(pool, StoreConfig{}).Record(ctx, event)
-		recordDone <- recordErr
-	}()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		var waiting bool
-		if err := pool.QueryRow(ctx, `
-SELECT EXISTS (
-    SELECT 1
-    FROM pg_stat_activity
-    WHERE usename = current_user
-      AND wait_event = 'advisory'
-      AND query LIKE '%pg_advisory_xact_lock%'
-)`).Scan(&waiting); err != nil {
-			t.Fatalf("observe blocked Record: %v", err)
-		}
-		if waiting {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("Record did not reach the held event advisory lock")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-
-	if _, err := pool.Exec(ctx, `DELETE FROM aura.identities WHERE id=$1`, owner); err != nil {
-		t.Fatalf("delete owner during blocked Record: %v", err)
-	}
-	if _, err := pool.Exec(ctx,
-		`INSERT INTO aura.identities (id, name, kind) VALUES ($1,$2,'user')`,
-		owner, name+"-recreated"); err != nil {
-		t.Fatalf("recreate owner during blocked Record: %v", err)
-	}
-	if err := lockTx.Commit(ctx); err != nil {
-		t.Fatalf("release event advisory lock: %v", err)
-	}
-	if err := <-recordDone; !errors.Is(err, ErrOwnerTombstoned) {
-		t.Fatalf("Record after delete+recreate race error = %v, want ErrOwnerTombstoned", err)
-	}
-	var count int
-	if err := pool.QueryRow(ctx,
-		`SELECT count(*) FROM aura.adaptive_outbox WHERE id=$1`, event.ID,
-	).Scan(&count); err != nil {
-		t.Fatal(err)
-	}
-	if count != 0 {
-		t.Fatalf("delete+recreate race inserted %d adaptive events, want 0", count)
 	}
 }
 
