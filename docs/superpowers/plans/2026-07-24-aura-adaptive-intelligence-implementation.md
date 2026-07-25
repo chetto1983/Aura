@@ -10,6 +10,36 @@
 
 **Design sources:** [production specification](../specs/2026-07-24-aura-adaptive-intelligence-design.md), [delivery and evidence appendix](../specs/2026-07-24-aura-adaptive-intelligence-delivery-and-evidence.md), and PRD Amendment #93.4 in [prd.md](../../../prd.md).
 
+## Progress checkpoint — 2026-07-24
+
+**Current approved head:** `fee72ff13965cabd6e4a797057c6895492b63a3f`
+
+- The schema-2 Assignment/Delivery Go contract is complete through
+  `03643cc9a`. Its spec and code-quality reviews both returned `APPROVE`.
+- PostgreSQL/SQLC enforcement and the shared chat/serve migration gate are
+  complete through `fee72ff13`. Migrations `0060`–`0063` are hash-locked
+  immutable history; validation-only `0064` closes the concurrent audit window.
+  The final spec and code-quality reviews both returned `APPROVE`.
+- The persistence commits after the Go contract are `b0216f494`,
+  `79a5f719d`, `f941a0e0f`, `001d6f974`, `ca587adb8`, `9ed7f625b`, and
+  `fee72ff13`.
+- Verified evidence at the approved head includes clean head-64 install,
+  down/up, versioned upgrade and dirty fail-closed paths, deterministic
+  Go/PostgreSQL identity parity, dirty-62 loader exclusion, live
+  INSERT/UPDATE/DELETE lock contention, schema-2 integration under race,
+  adaptive/database unit race, SQLC regeneration, `go vet ./...`,
+  `go build ./...`, diff-scoped golangci-lint with zero findings, diff checks,
+  and repository file-size checks.
+- Task 1 is intentionally not marked complete yet. The next slice must add
+  typed Store APIs that transactionally load the persisted Assignment before
+  recording Delivery, preserve exact idempotence/conflict behavior, and prevent
+  schema-2 callers from bypassing typed constructors through generic `Record`.
+- Outcome/correction contracts, snapshots, cohorts, and sealed evidence remain
+  Task 2 work. No production runtime adapter, Agent Memory change, benchmark,
+  final quality gate, or push has been completed.
+- Do not replay unchanged remote CI. Resume with the Store slice, use TDD, and
+  repeat spec review before code-quality review.
+
 ## Global execution contract
 
 - [ ] Read `D:\Aura\CLAUDE.md` completely before every new agent session and before each delegated task. More-specific `AGENTS.md` files may add constraints.
@@ -174,7 +204,7 @@ go build ./...
 - Create: `internal/adaptive/outcome_recorder_test.go`
 - Delete: `internal/adaptive/promotion.go`
 - Delete: `internal/adaptive/promotion_test.go`
-- Create: next free PostgreSQL migration, expected `0061_adaptive_sealed_evidence.*.sql`
+- Create: next free PostgreSQL migration, expected `0065_adaptive_sealed_evidence.*.sql`
 - Modify: `internal/db/queries/adaptive_policy.sql`
 - Add: focused DB integration tests
 
