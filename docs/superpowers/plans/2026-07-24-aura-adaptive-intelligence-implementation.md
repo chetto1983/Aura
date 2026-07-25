@@ -12,10 +12,22 @@
 
 ## Progress checkpoint — 2026-07-25
 
-**Current approved head:** `ab43e5c364def85ba15aa45624d278266913d2f0`
+**Current approved head:** `247c3da17` (approved focal-cohort contract plus
+durable plan checkpoint)
 
-**Current review candidate:** none; PostgreSQL cohort persistence and atomic
-focal claiming are the next TDD slice.
+**Current review candidates:**
+
+- Exact commit `eb7b947f7` contains the versioned canonical focal-cohort
+  artifact and is under fresh spec/quality review. It makes the authoritative
+  UTF-8 JSON bytes explicit (`schema_version = "1.0"`, stable snake-case
+  fields), and derives both SHA-256 and deterministic cohort UUID from those
+  exact bytes.
+- Migration `0071_adaptive_focal_cohorts` and its source/live migration tests
+  are present in the shared working tree and under root review. They are not
+  committed or approved yet. The migration worker reports clean source tests
+  and a live `70 -> 71 -> 70 -> 71` down/up path; root still must verify the
+  schema/API contract, artifact byte parity, privileges, focused gates, and
+  atomic staging.
 
 - The schema-2 Assignment/Delivery Go contract is complete through
   `03643cc9a`. Its spec and code-quality reviews both returned `APPROVE`.
@@ -44,6 +56,10 @@ focal claiming are the next TDD slice.
   censoring, interference blocks, planned looks, cutoff, and canonical hashes.
   It fails closed for nil/uninitialized state, bounds every collection before
   cloning, and validates binary outcome evidence against exact frozen scope.
+- The canonical persistence representation landed atomically at `eb7b947f7`.
+  Its focused/full adaptive normal and race tests, `go vet ./...`,
+  `go build ./...`, diff-scoped lint, diff check, and file-size gate pass. Two
+  fresh reviews remain before it is approved.
 - The persistence commits after the Go contract are `b0216f494`,
   `79a5f719d`, `f941a0e0f`, `001d6f974`, `ca587adb8`, `9ed7f625b`, and
   `fee72ff13`. The typed Store commits are `05849027b`, `a29401417`,
@@ -96,6 +112,24 @@ focal claiming are the next TDD slice.
 - Do not replay unchanged remote CI. Resume with migration `0071`, immutable
   cohort persistence, and the atomic request/conversation focal-claim contract
   under TDD.
+
+### Task 2 live subtask tracker
+
+- [x] Pure snapshot contract and local graph-kNN scorer.
+- [x] Immutable PostgreSQL snapshot persistence through migration `0070`.
+- [x] Typed outcome/correction recorder and bounded correction folding.
+- [x] Pure immutable focal-cohort contract.
+- [ ] Versioned canonical focal-cohort artifact — committed at `eb7b947f7`
+  with all local gates GREEN; fresh spec/quality reviews pending.
+- [ ] Migration `0071` cohort/claim schema — implementation in working tree;
+  root schema review, live/security coverage, atomic commit, and reviews
+  pending.
+- [ ] Typed `CohortStore` and atomic claim API.
+- [ ] Ledger-only cohort loader and deterministic correction reconstruction.
+- [ ] Exact blocked randomization inference and sealed admission/outcome
+  evidence.
+- [ ] Remove legacy caller-built `CanaryBatch`, Wilson/ESS authorization, and
+  all newly dead owned code.
 
 ## Global execution contract
 
