@@ -65,6 +65,9 @@ type callbackOutcome struct {
 	content   string
 	submitted bool
 	resumed   bool
+	// outcome is the runner's ResolveDirective verdict — the channel renders it, it never
+	// re-derives it (Phase A: one resolver, transports only render).
+	outcome runner.ResolveOutcome
 }
 
 // newHitl builds the HITL surface over the Runner pause backend + the resume
@@ -140,15 +143,18 @@ func (h *hitl) handleCallbackResult(
 		return out
 	}
 	out.submitted = true
+	out.outcome = directive.Outcome
 	if afterSubmit != nil {
 		afterSubmit(out)
 	}
-	if action == askuser.ActionCancel || directive.Remaining > 0 {
+	// A continuation turn is driven ONLY for OutcomeContinue. Terminated (cancel — the Runner
+	// already injected the terminating answers), Pending (more FIFO pauses first), Approved and
+	// Rejected (the scheduled-task ResumeHook already activated/cancelled the task; there is no
+	// live turn to continue) are rendered by the caller instead.
+	if directive.Outcome != runner.OutcomeContinue || h.resume == nil {
 		return out
 	}
-	if h.resume != nil {
-		h.resume(ctx, convID)
-	}
+	h.resume(ctx, convID)
 	out.resumed = true
 	return out
 }
@@ -192,27 +198,21 @@ func (h *hitl) handleTextReply(ctx context.Context, convID, text string) (resume
 	return h.submit(ctx, convID, pending[0].Token, askuser.ActionAccept, text)
 }
 
-// submit resolves ONE pause via the Runner (the sole paused_states writer) and
-// drives a resume Turn when remaining==0 and the action was not a cancel. A submit
-// error is returned (not just logged) so the channel can tell the user their answer
-// did not register — the pause stays open, so silent swallowing would strand them.
+// submit resolves ONE pause via the Runner (the sole paused_states writer) and drives a resume
+// Turn only when the directive says Continue — the SAME rule handleCallbackResult applies, so a
+// scheduled approval answered by ForceReply text behaves exactly like one answered by button. A
+// submit error is returned (not just logged) so the channel can tell the user their answer did
+// not register — the pause stays open, so silent swallowing would strand them.
 func (h *hitl) submit(ctx context.Context, convID, token, action, content string) (resumed bool, err error) {
 	directive, err := h.runner.SubmitAnswer(ctx, token, runner.ResponseInput{Action: action, Content: content})
 	if err != nil {
 		slog.Warn("telegram hitl: submit answer failed", "conv", convID, "err", err)
 		return false, err
 	}
-	// A cancel terminates the turn (the Runner injected the terminating answers and
-	// auto-resolved) — never drive a continuation Turn.
-	if action == askuser.ActionCancel {
+	if directive.Outcome != runner.OutcomeContinue || h.resume == nil {
 		return false, nil
 	}
-	if directive.Remaining > 0 {
-		return false, nil // more pauses to answer first (FIFO)
-	}
-	if h.resume != nil {
-		h.resume(ctx, convID)
-	}
+	h.resume(ctx, convID)
 	return true, nil
 }
 

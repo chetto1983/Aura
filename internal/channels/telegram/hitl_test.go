@@ -23,8 +23,9 @@ type fakeResume struct {
 
 	pending    []askuser.Pending
 	submitted  []submitCall
-	remaining  int // returned by SubmitAnswer
-	resumes    int // Turn(convID,nil) drives
+	remaining  int                   // returned by SubmitAnswer
+	outcome    runner.ResolveOutcome // scripted verdict when neither cancel nor remaining applies
+	resumes    int                   // Turn(convID,nil) drives
 	submitErr  error
 	pendingErr error
 
@@ -56,7 +57,22 @@ func (f *fakeResume) SubmitAnswer(_ context.Context, token string, resp runner.R
 	if f.clearPendingOnSubmit {
 		f.pending = nil
 	}
-	return runner.ResolveDirective{Remaining: f.remaining}, nil
+	return f.directiveFor(resp.Action), nil
+}
+
+// directiveFor mirrors runner.classifyResolve's precedence (cancel → Terminated; remaining>0 →
+// Pending; else the scripted outcome, default Continue). The double MUST be faithful here: the
+// channel now decides whether to resume from the directive alone, so a double that returned a
+// directive the real runner never emits would test a contract that does not exist.
+func (f *fakeResume) directiveFor(action string) runner.ResolveDirective {
+	switch {
+	case action == askuser.ActionCancel:
+		return runner.ResolveDirective{Outcome: runner.OutcomeTerminated}
+	case f.remaining > 0:
+		return runner.ResolveDirective{Outcome: runner.OutcomePending, Remaining: f.remaining}
+	default:
+		return runner.ResolveDirective{Outcome: f.outcome}
+	}
 }
 
 func (f *fakeResume) resumeTurn(_ context.Context, _ string) {
@@ -242,6 +258,40 @@ func TestHITLCallbackResumesWhenRemainingZero(t *testing.T) {
 	}
 	if rs.resumes != 1 {
 		t.Errorf("resume drives = %d, want 1", rs.resumes)
+	}
+}
+
+// TestHITLCallbackScheduledApprovalRendersOutcomeWithoutResume is the Phase A behavioral pin:
+// a scheduled_task_approval resolves to a deterministic Approved/Rejected verdict, and the
+// channel must NOT drive a continuation turn for it — the ResumeHook activating the task IS the
+// whole intent, and resuming is what made the agent re-schedule in a loop (fix-plan 1.7 defect A).
+func TestHITLCallbackScheduledApprovalRendersOutcomeWithoutResume(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		action  string
+		outcome runner.ResolveOutcome
+	}{
+		{"approve", askuser.ActionAccept, runner.OutcomeApproved},
+		{"reject", askuser.ActionDecline, runner.OutcomeRejected},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			rs := &fakeResume{outcome: tc.outcome}
+			h := newHitl(rs, rs.resumeTurn)
+
+			out := h.handleCallbackResult(context.Background(),
+				callbackData("tok-1", tc.action, ""), "conv-1", nil)
+			if !out.submitted {
+				t.Fatal("the pause must still be submitted through the Runner")
+			}
+			if out.outcome != tc.outcome {
+				t.Errorf("outcome = %v, want %v", out.outcome, tc.outcome)
+			}
+			if out.resumed || rs.resumes != 0 {
+				t.Errorf("a scheduled approval must NOT drive a continuation turn (resumes=%d)", rs.resumes)
+			}
+		})
 	}
 }
 

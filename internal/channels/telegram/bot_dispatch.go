@@ -36,6 +36,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/documents"
+	"github.com/chetto1983/aura/internal/runner"
 	tele "gopkg.in/telebot.v4"
 )
 
@@ -246,14 +247,43 @@ func (t *Telegram) onCallback(daemonCtx context.Context) tele.HandlerFunc {
 			t.disarmCallbackKeyboard(c.Bot(), cb.Message)
 			t.trackPausePrompt(chatID, nil) // this prompt is now disarmed; drop the tracked handle
 		})
-		if out.submitted && !out.resumed {
-			// Not resumed → either more FIFO pauses remain (render the next one) or it
-			// was a cancel/no-op (PendingFor is empty after the cancel auto-resolve, so
-			// the render no-ops). A resume (resumed==true) drove a continuation turn
-			// whose handleTurn already rendered any further pause — don't double-render.
-			t.promptPendingPause(daemonCtx, t.sender(c), chatID)
+		if !out.submitted {
+			return nil
+		}
+		// Render the runner's verdict — one switch for BOTH legs (in-turn relay and the
+		// scheduler sweep push), which is the whole point of the consolidation.
+		switch out.outcome {
+		case runner.OutcomeApproved, runner.OutcomeRejected:
+			// The scheduled-task ResumeHook already activated/cancelled the task and no turn
+			// runs, so without this edit the press leaves only a transient toast — it reads as
+			// "nothing happened" (fix-plan 1.7 defect E).
+			t.editApprovalOutcome(c.Bot(), cb.Message, out.outcome)
+		case runner.OutcomePending:
+			t.promptPendingPause(daemonCtx, t.sender(c), chatID) // more FIFO pauses: render the next
+		case runner.OutcomeContinue, runner.OutcomeTerminated:
+			// Continue drove a continuation turn whose handleTurn renders any further pause
+			// (double-rendering it here would duplicate the prompt); Terminated was auto-resolved
+			// by the Runner and has nothing left to show.
 		}
 		return nil
+	}
+}
+
+// editApprovalOutcome replaces a resolved approval prompt with its outcome and clears the inline
+// keyboard in one edit. The copy is channel-owned Italian: the runner emits a semantic code only
+// (it is not locale-aware). Best-effort — on failure it still disarms the keyboard so a resolved
+// prompt is never left tappable.
+func (t *Telegram) editApprovalOutcome(bot tele.API, msg *tele.Message, outcome runner.ResolveOutcome) {
+	if bot == nil || msg == nil {
+		return
+	}
+	text := "✅ Task pianificato approvato — è attivo e partirà all'orario previsto."
+	if outcome == runner.OutcomeRejected {
+		text = "❌ Task pianificato rifiutato — annullato."
+	}
+	if _, err := bot.Edit(msg, text, &tele.ReplyMarkup{}); err != nil {
+		slog.Warn("telegram approval: outcome edit failed", "err", err)
+		t.disarmCallbackKeyboard(bot, msg)
 	}
 }
 
