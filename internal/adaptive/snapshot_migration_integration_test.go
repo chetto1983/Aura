@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -33,9 +34,6 @@ func TestSnapshotMigrationUpgradeFrom0067DownAndUp(t *testing.T) {
 		t.Fatalf("upgrade 0067 to 0068: %v", err)
 	}
 	assertSchema2MigrationVersion(t, ctx, migrateURL, 68)
-	if err := db.CheckMigrationHead(ctx, migrateURL); err != nil {
-		t.Fatalf("CheckMigrationHead() at 0068: %v", err)
-	}
 	assertOutcomeChainFunctionContractPreserved(t, ctx, pool, before)
 	assertSnapshotMigrationContract(t, ctx, pool)
 
@@ -87,6 +85,169 @@ func TestSnapshotMigrationUpgradeFrom0067DownAndUp(t *testing.T) {
 	assertSchema2MigrationVersion(t, ctx, migrateURL, 68)
 	assertOutcomeChainFunctionContractPreserved(t, ctx, pool, before)
 	assertSnapshotMigrationContract(t, ctx, pool)
+}
+
+func TestSnapshotMigration0069UpgradeDownAndUp(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
+	defer cancel()
+	pool, migrateURL := schema2MigrationDatabase(
+		t,
+		ctx,
+		"aura_snapshot_vector_parity",
+		68,
+	)
+	before := readSnapshotValidatorDefinition(t, ctx, pool)
+	assertSnapshotMigrationContract(t, ctx, pool)
+	owner := seedTypedLedgerOwner(t, pool)
+	snapshots := []*PolicySnapshot{
+		extremeSnapshotForOwner(
+			t,
+			owner,
+			FeatureCandidateCount,
+			1e-191,
+			1_000_000_000,
+			1,
+		),
+		extremeSnapshotForOwner(
+			t,
+			owner,
+			FeatureKNNSimilarity,
+			1,
+			math.SmallestNonzeroFloat64,
+			1,
+		),
+	}
+	for _, snapshot := range snapshots {
+		if snapshotValidatorAccepts(t, ctx, pool, snapshot) {
+			t.Fatal("0068 validator unexpectedly accepted an extreme nonzero vector")
+		}
+	}
+
+	if err := db.MigrateSteps(ctx, migrateURL, 1); err != nil {
+		t.Fatalf("upgrade 0068 to 0069: %v", err)
+	}
+	assertSchema2MigrationVersion(t, ctx, migrateURL, 69)
+	if err := db.CheckMigrationHead(ctx, migrateURL); err != nil {
+		t.Fatalf("CheckMigrationHead() at 0069: %v", err)
+	}
+	assertSnapshotMigrationContract(t, ctx, pool)
+	for _, snapshot := range snapshots {
+		if !snapshotValidatorAccepts(t, ctx, pool, snapshot) {
+			t.Fatal("0069 validator rejected an extreme nonzero vector")
+		}
+	}
+	assertSnapshotValidatorRejectsZeroVector(
+		t,
+		ctx,
+		pool,
+		snapshotForOwner(t, owner),
+	)
+
+	if err := db.MigrateSteps(ctx, migrateURL, -1); err != nil {
+		t.Fatalf("downgrade 0069 to 0068: %v", err)
+	}
+	assertSchema2MigrationVersion(t, ctx, migrateURL, 68)
+	assertSnapshotMigrationContract(t, ctx, pool)
+	if got := readSnapshotValidatorDefinition(t, ctx, pool); got != before {
+		t.Fatal("0069 down did not restore the exact 0068 validator")
+	}
+	for _, snapshot := range snapshots {
+		if snapshotValidatorAccepts(t, ctx, pool, snapshot) {
+			t.Fatal("restored 0068 validator accepted an extreme nonzero vector")
+		}
+	}
+
+	if err := db.MigrateSteps(ctx, migrateURL, 1); err != nil {
+		t.Fatalf("re-upgrade 0068 to 0069: %v", err)
+	}
+	assertSchema2MigrationVersion(t, ctx, migrateURL, 69)
+	assertSnapshotMigrationContract(t, ctx, pool)
+	for _, snapshot := range snapshots {
+		if !snapshotValidatorAccepts(t, ctx, pool, snapshot) {
+			t.Fatal("reapplied 0069 validator rejected an extreme nonzero vector")
+		}
+	}
+}
+
+func TestSnapshotMigrationCleanInstallAt0069(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
+	defer cancel()
+	pool, migrateURL := schema2MigrationDatabase(
+		t,
+		ctx,
+		"aura_snapshot_clean_install",
+		69,
+	)
+	if err := db.CheckMigrationHead(ctx, migrateURL); err != nil {
+		t.Fatalf("CheckMigrationHead() after clean install: %v", err)
+	}
+	assertSnapshotMigrationContract(t, ctx, pool)
+	owner := seedTypedLedgerOwner(t, pool)
+	snapshot := snapshotForOwner(t, owner)
+	store := NewSnapshotStore(pool)
+
+	if err := store.Save(ctx, snapshot); err != nil {
+		t.Fatalf("Save() after clean install: %v", err)
+	}
+	loaded, err := store.Load(ctx, owner, snapshot.ID())
+	if err != nil {
+		t.Fatalf("Load() after clean install: %v", err)
+	}
+	assertSnapshotsEqual(t, loaded, snapshot)
+}
+
+func readSnapshotValidatorDefinition(
+	t *testing.T,
+	ctx context.Context,
+	pool *pgxpool.Pool,
+) string {
+	t.Helper()
+	var definition string
+	if err := pool.QueryRow(
+		ctx,
+		`SELECT pg_get_functiondef(p.oid)
+		 FROM pg_proc AS p
+		 JOIN pg_namespace AS n ON n.oid=p.pronamespace
+		 WHERE n.nspname='aura'
+		   AND p.proname='adaptive_policy_snapshot_artifact_valid'`,
+	).Scan(&definition); err != nil {
+		t.Fatal(err)
+	}
+	return definition
+}
+
+func assertSnapshotValidatorRejectsZeroVector(
+	t *testing.T,
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	snapshot *PolicySnapshot,
+) {
+	t.Helper()
+	artifact, err := snapshot.canonicalArtifact()
+	if err != nil {
+		t.Fatal(err)
+	}
+	actionCatalog, err := json.Marshal(snapshot.Actions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	nonzero := []byte(`"key":"candidate_count","value":2`)
+	zero := []byte(`"key":"candidate_count","value":1`)
+	zeroArtifact := bytes.Replace(artifact, nonzero, zero, 1)
+	zeroCatalog := bytes.Replace(actionCatalog, nonzero, zero, 1)
+	if bytes.Equal(zeroArtifact, artifact) || bytes.Equal(zeroCatalog, actionCatalog) {
+		t.Fatal("zero-vector fixture did not change the snapshot document")
+	}
+	if snapshotValidatorAcceptsPayload(
+		t,
+		ctx,
+		pool,
+		snapshot,
+		zeroArtifact,
+		zeroCatalog,
+	) {
+		t.Fatal("0069 validator accepted an actual zero vector")
+	}
 }
 
 func assertSnapshotValidatorRejectsPrivateCatalogAlias(

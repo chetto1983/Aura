@@ -218,7 +218,7 @@ func (snapshot *PolicySnapshot) Actions() []SnapshotAction {
 }
 
 func canonicalizeSnapshot(spec SnapshotSpec) (SnapshotSpec, error) {
-	spec.Scope.TrainingCutoff = spec.Scope.TrainingCutoff.UTC()
+	spec.Scope.TrainingCutoff = spec.Scope.TrainingCutoff.UTC().Truncate(time.Microsecond)
 	spec.FeatureSchema = append([]SnapshotFeatureDefinition(nil), spec.FeatureSchema...)
 	spec.Actions = cloneSnapshotActions(spec.Actions)
 	if err := validateSnapshotScope(spec.Scope); err != nil {

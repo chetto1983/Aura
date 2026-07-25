@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"math"
 	"testing"
 	"time"
 
@@ -13,6 +14,136 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
+
+func TestSnapshotStorePersistsAndLoadsExtremeNonzeroVectors(t *testing.T) {
+	tests := []struct {
+		name       string
+		feature    FeatureKey
+		scale      float64
+		value      float64
+		otherValue float64
+	}{
+		{
+			name:       "huge normalized vector",
+			feature:    FeatureCandidateCount,
+			scale:      1e-191,
+			value:      1_000_000_000,
+			otherValue: 1,
+		},
+		{
+			name:       "subnormal normalized vector",
+			feature:    FeatureKNNSimilarity,
+			scale:      1,
+			value:      math.SmallestNonzeroFloat64,
+			otherValue: 1,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			pool := adaptiveIntegrationPool(t)
+			ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+			defer cancel()
+			owner := seedTypedLedgerOwner(t, pool)
+			snapshot := extremeSnapshotForOwner(
+				t,
+				owner,
+				test.feature,
+				test.scale,
+				test.value,
+				test.otherValue,
+			)
+			store := NewSnapshotStore(pool)
+
+			if err := store.Save(ctx, snapshot); err != nil {
+				t.Fatalf("Save() error = %v", err)
+			}
+			loaded, err := store.Load(ctx, owner, snapshot.ID())
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			assertSnapshotsEqual(t, loaded, snapshot)
+		})
+	}
+}
+
+func TestSnapshotValidatorMatchesGoForExtremeNonzeroVectors(t *testing.T) {
+	tests := []struct {
+		name       string
+		feature    FeatureKey
+		scale      float64
+		value      float64
+		otherValue float64
+	}{
+		{
+			name:       "huge normalized vector",
+			feature:    FeatureCandidateCount,
+			scale:      1e-191,
+			value:      1_000_000_000,
+			otherValue: 1,
+		},
+		{
+			name:       "subnormal normalized vector",
+			feature:    FeatureKNNSimilarity,
+			scale:      1,
+			value:      math.SmallestNonzeroFloat64,
+			otherValue: 1,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			pool := adaptiveIntegrationPool(t)
+			ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+			defer cancel()
+			owner := seedTypedLedgerOwner(t, pool)
+			snapshot := extremeSnapshotForOwner(
+				t,
+				owner,
+				test.feature,
+				test.scale,
+				test.value,
+				test.otherValue,
+			)
+
+			if !snapshotValidatorAccepts(t, ctx, pool, snapshot) {
+				t.Fatal("PostgreSQL validator rejected a Go-valid nonzero vector")
+			}
+		})
+	}
+}
+
+func TestSnapshotStoreReplaysAndLoadsNanosecondCutoff(t *testing.T) {
+	pool := adaptiveIntegrationPool(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+	owner := seedTypedLedgerOwner(t, pool)
+	spec := snapshotTestSpec()
+	spec.Scope.OwnerID = owner
+	spec.Scope.TrainingCutoff = spec.Scope.TrainingCutoff.Add(123 * time.Nanosecond)
+	for actionIndex := range spec.Actions {
+		for exampleIndex := range spec.Actions[actionIndex].Examples {
+			spec.Actions[actionIndex].Examples[exampleIndex].OwnerID = owner
+		}
+	}
+	snapshot, err := NewPolicySnapshot(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := NewSnapshotStore(pool)
+
+	if err := store.Save(ctx, snapshot); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	if err := store.Save(ctx, snapshot); err != nil {
+		t.Fatalf("Save() exact replay error = %v", err)
+	}
+	loaded, err := store.Load(ctx, owner, snapshot.ID())
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	assertSnapshotsEqual(t, loaded, snapshot)
+}
 
 func TestSnapshotStorePersistsAndLoadsExactReplay(t *testing.T) {
 	pool := adaptiveIntegrationPool(t)
@@ -297,6 +428,45 @@ func snapshotForOwner(t *testing.T, owner uuid.UUID) *PolicySnapshot {
 		for exampleIndex := range spec.Actions[actionIndex].Examples {
 			spec.Actions[actionIndex].Examples[exampleIndex].OwnerID = owner
 		}
+	}
+	snapshot, err := NewPolicySnapshot(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return snapshot
+}
+
+func extremeSnapshotForOwner(
+	t *testing.T,
+	owner uuid.UUID,
+	feature FeatureKey,
+	scale float64,
+	value float64,
+	otherValue float64,
+) *PolicySnapshot {
+	t.Helper()
+	spec := snapshotTestSpec()
+	spec.Scope.OwnerID = owner
+	spec.FeatureSchema = []SnapshotFeatureDefinition{
+		{Key: feature, Scale: scale},
+	}
+	spec.Actions[0].Examples = []SnapshotExample{
+		snapshotSingleFeatureExample(
+			spec.Scope,
+			"00000000-0000-4000-8000-000000000041",
+			0.9,
+			feature,
+			value,
+		),
+	}
+	spec.Actions[1].Examples = []SnapshotExample{
+		snapshotSingleFeatureExample(
+			spec.Scope,
+			"00000000-0000-4000-8000-000000000042",
+			0.1,
+			feature,
+			otherValue,
+		),
 	}
 	snapshot, err := NewPolicySnapshot(spec)
 	if err != nil {

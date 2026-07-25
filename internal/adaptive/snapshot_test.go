@@ -1,6 +1,7 @@
 package adaptive
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"math"
@@ -10,6 +11,58 @@ import (
 
 	"github.com/google/uuid"
 )
+
+func TestNewPolicySnapshot_CanonicalizesTrainingCutoffForPostgres(t *testing.T) {
+	base := time.Date(
+		2026,
+		time.July,
+		24,
+		12,
+		0,
+		0,
+		123_456_000,
+		time.UTC,
+	)
+	first := snapshotTestSpec()
+	first.Scope.TrainingCutoff = base.Add(123 * time.Nanosecond).In(
+		time.FixedZone("offset", 2*60*60),
+	)
+	second := snapshotTestSpec()
+	second.Scope.TrainingCutoff = base.Add(999 * time.Nanosecond)
+
+	firstSnapshot, err := NewPolicySnapshot(first)
+	if err != nil {
+		t.Fatalf("NewPolicySnapshot(first) error = %v", err)
+	}
+	secondSnapshot, err := NewPolicySnapshot(second)
+	if err != nil {
+		t.Fatalf("NewPolicySnapshot(second) error = %v", err)
+	}
+
+	if got := firstSnapshot.Scope().TrainingCutoff; got != base {
+		t.Fatalf("training cutoff = %s, want PostgreSQL precision %s", got, base)
+	}
+	if firstSnapshot.Scope().TrainingCutoff.Location() != time.UTC {
+		t.Fatalf(
+			"training cutoff location = %s, want UTC",
+			firstSnapshot.Scope().TrainingCutoff.Location(),
+		)
+	}
+	if firstSnapshot.ID() != secondSnapshot.ID() ||
+		firstSnapshot.SHA256() != secondSnapshot.SHA256() {
+		t.Fatal("sub-microsecond-equivalent cutoffs changed canonical identity")
+	}
+	artifact, err := firstSnapshot.canonicalArtifact()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(
+		artifact,
+		[]byte(`"training_cutoff":"2026-07-24T12:00:00.123456Z"`),
+	) {
+		t.Fatalf("canonical artifact retained noncanonical cutoff: %s", artifact)
+	}
+}
 
 func TestNewPolicySnapshot_FreezesCanonicalContent_When_InputIsValid(t *testing.T) {
 	spec := snapshotTestSpec()

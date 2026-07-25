@@ -95,9 +95,7 @@ func (store *SnapshotStore) Save(
 			if err != nil {
 				return fmt.Errorf("insert adaptive policy snapshot: %w", err)
 			}
-			if rows == 1 {
-				return nil
-			}
+			inserted := rows == 1
 			row, err := q.GetAdaptivePolicySnapshot(
 				ctx,
 				sqlc.GetAdaptivePolicySnapshotParams{
@@ -119,6 +117,12 @@ func (store *SnapshotStore) Save(
 			if err != nil ||
 				persisted.SHA256() != snapshot.SHA256() ||
 				!bytes.Equal(row.Artifact, artifact) {
+				if inserted {
+					if err != nil {
+						return err
+					}
+					return ErrPersistedSnapshotInvalid
+				}
 				return ErrSnapshotConflict
 			}
 			return nil
