@@ -46,6 +46,11 @@ var memoryResultTypes = []struct {
 	{kind: ResultMemoryReasoningTrace, prefix: "reasoning_trace"},
 }
 
+// AssignmentIDForPoint derives an assignment's ID from what the decision IS — its owner,
+// request, decision point and ordinal — as a SHA-256 UUIDv5. Deriving rather than randomising
+// makes the identity idempotent: a retried decision recomputes the same ID instead of
+// recording a second copy, and validateAssignment can reject any assignment whose stated ID
+// disagrees with its own fields.
 func AssignmentIDForPoint(
 	ownerID uuid.UUID,
 	requestID uuid.UUID,
@@ -79,6 +84,8 @@ func assignmentIDForPoint(
 	return uuid.NewHash(sha256.New(), assignmentIDNamespace, identity, 5)
 }
 
+// EventIDForSource derives an event's ID from its assignment, kind and source identity, so
+// the same source emitting the same event twice cannot produce two rows.
 func EventIDForSource(
 	assignmentID uuid.UUID,
 	kind EventKind,
@@ -306,17 +313,6 @@ func (environment EvaluationEnvironment) valid() bool {
 
 func (status DeliveryStatus) valid() bool {
 	return status == DeliverySuccess || status == DeliveryFallback
-}
-
-func (kind ResultKind) valid() bool {
-	switch kind {
-	case ResultArtifact, ResultNode, ResultTool, ResultSkill,
-		ResultMemoryEntity, ResultMemoryPreference, ResultMemoryMessage,
-		ResultMemoryReasoningTrace:
-		return true
-	default:
-		return false
-	}
 }
 
 func (kind ResultKind) memory() bool {

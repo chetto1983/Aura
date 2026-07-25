@@ -9,6 +9,11 @@ import (
 	"github.com/google/uuid"
 )
 
+// ResultID is a validated reference to something a delivery produced. Both fields are
+// unexported and every constructor validates, so a ResultID cannot be assembled by struct
+// literal — a delivery can only ever cite results that passed the checks for their kind.
+// UUID-shaped kinds validate structurally; tool and skill IDs must additionally appear in a
+// frozen ResultCatalog, which is why those two take one and the others do not.
 type ResultID struct {
 	kind ResultKind
 	id   string
@@ -40,46 +45,61 @@ func newResultCatalog(entries map[ResultKind][]string) (ResultCatalog, error) {
 	return ResultCatalog{registered: registered}, nil
 }
 
+// NewArtifactResultID references a produced artifact by UUID.
 func NewArtifactResultID(id string) (ResultID, error) {
 	return newUUIDResultID(ResultArtifact, id)
 }
 
+// NewNodeResultID references a knowledge-graph node by UUID.
 func NewNodeResultID(id string) (ResultID, error) {
 	return newUUIDResultID(ResultNode, id)
 }
 
+// NewMemoryEntityResultID references a memory entity by UUID.
 func NewMemoryEntityResultID(id string) (ResultID, error) {
 	return newUUIDResultID(ResultMemoryEntity, id)
 }
 
+// NewMemoryPreferenceResultID references a memory preference by UUID.
 func NewMemoryPreferenceResultID(id string) (ResultID, error) {
 	return newUUIDResultID(ResultMemoryPreference, id)
 }
 
+// NewMemoryMessageResultID references a stored message by UUID.
 func NewMemoryMessageResultID(id string) (ResultID, error) {
 	return newUUIDResultID(ResultMemoryMessage, id)
 }
 
+// NewMemoryReasoningTraceResultID references a reasoning trace by UUID.
 func NewMemoryReasoningTraceResultID(id string) (ResultID, error) {
 	return newUUIDResultID(ResultMemoryReasoningTrace, id)
 }
 
+// NewToolResultID references a tool, which must be registered in catalog. Tool IDs are
+// free-form names rather than UUIDs, so the catalog is the only thing that can tell a real
+// tool from an invented one.
 func NewToolResultID(id string, catalog ResultCatalog) (ResultID, error) {
 	return newCatalogResultID(ResultTool, id, catalog)
 }
 
+// NewSkillResultID references a skill, which must be registered in catalog (see
+// NewToolResultID for why a catalog is required here and not for the UUID kinds).
 func NewSkillResultID(id string, catalog ResultCatalog) (ResultID, error) {
 	return newCatalogResultID(ResultSkill, id, catalog)
 }
 
+// Kind returns what sort of thing this result refers to.
 func (result ResultID) Kind() ResultKind {
 	return result.kind
 }
 
+// ID returns the referenced identifier.
 func (result ResultID) ID() string {
 	return result.id
 }
 
+// MarshalJSON re-validates before encoding, so a zero-value ResultID that reached a payload
+// by some route other than a constructor fails here instead of being persisted.
 func (result ResultID) MarshalJSON() ([]byte, error) {
 	if err := validateResultID(result); err != nil {
 		return nil, err
@@ -93,6 +113,9 @@ func (result ResultID) MarshalJSON() ([]byte, error) {
 	})
 }
 
+// UnmarshalJSON decodes the UUID-shaped kinds and REFUSES tool and skill IDs: verifying
+// those needs the frozen catalog, which decoding does not have, and accepting them
+// unverified would let a payload name any tool it liked.
 func (result *ResultID) UnmarshalJSON(payload []byte) error {
 	decoder := json.NewDecoder(bytes.NewReader(payload))
 	decoder.DisallowUnknownFields()

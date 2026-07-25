@@ -6,8 +6,12 @@ import (
 	"math"
 )
 
+// FeatureKey names one input the policy is allowed to see. The set is closed on purpose:
+// every key carries a featureSpec with a range and an integrality rule, so a feature vector
+// is validated against a declared contract rather than accepted as whatever the caller sent.
 type FeatureKey string
 
+// The admissible feature keys, one per entry in the spec table below.
 const (
 	FeatureAvailableSkillCount  FeatureKey = "available_skill_count"
 	FeatureAvailableToolCount   FeatureKey = "available_tool_count"

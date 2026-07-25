@@ -12,6 +12,11 @@ import (
 	"github.com/google/uuid"
 )
 
+// Contract-wide constants. SchemaVersion2 is the only version NewAssignmentEvent and
+// NewDeliveryEvent accept; SchemaVersion1 survives so already-persisted v1 events stay
+// decodable. StaticActionID is the action every eligibility set must contain — the
+// always-available baseline a fail-closed decision falls back to — and ActionNoneID marks a
+// delivery that produced nothing, which is why it is never itself eligible.
 const (
 	SchemaVersion1 = "1.0"
 	SchemaVersion2 = "2.0"
@@ -19,8 +24,11 @@ const (
 	ActionNoneID   = "none"
 )
 
+// Domain is the subsystem a decision belongs to. Each one binds exactly one DecisionPoint
+// (see Domain.point), so the pair cannot disagree about what was being decided.
 type Domain string
 
+// The adaptive domains.
 const (
 	DomainReasoning     Domain = "reasoning"
 	DomainToolDiscovery Domain = "tool_discovery"
@@ -29,8 +37,11 @@ const (
 	DomainMemoryRecall  Domain = "memory_recall"
 )
 
+// DecisionPoint is the place in a request where an adaptive choice is made. Together with
+// PointOrdinal it identifies the nth decision of that kind within one request.
 type DecisionPoint string
 
+// The decision points, one per Domain.
 const (
 	PointReasoning     DecisionPoint = "reasoning"
 	PointToolDiscovery DecisionPoint = "tool_discovery"
@@ -39,8 +50,14 @@ const (
 	PointMemoryRecall  DecisionPoint = "memory_recall"
 )
 
+// SelectionReason records WHY an action was chosen, which is what makes an assignment
+// auditable after the fact. validateAssignmentMode pins each reason to the policy modes it
+// is legal in, so a reason can never be recorded that the mode could not have produced.
 type SelectionReason string
 
+// The selection reasons. Everything from SelectionStateMissing onward is a fail-closed
+// reason (see SelectionReason.failClosed): the policy could not be trusted, so the decision
+// fell back to StaticActionID regardless of mode.
 const (
 	SelectionShadowStatic     SelectionReason = "shadow_static"
 	SelectionCanaryAssignment SelectionReason = "canary_assignment"
@@ -59,15 +76,21 @@ const (
 	SelectionChecksumMismatch SelectionReason = "checksum_mismatch"
 )
 
+// DeliveryStatus says whether the action that was intended is the action that ran.
 type DeliveryStatus string
 
+// The delivery statuses. Fallback requires the actual action to differ from the intended
+// one and to carry a FallbackReason; success requires the opposite of both.
 const (
 	DeliverySuccess  DeliveryStatus = "success"
 	DeliveryFallback DeliveryStatus = "fallback"
 )
 
+// FallbackReason records why the intended action did not run. Required on every fallback
+// delivery, forbidden on a successful one.
 type FallbackReason string
 
+// The fallback reasons.
 const (
 	FallbackCandidateUnavailable FallbackReason = "candidate_unavailable"
 	FallbackStrategyFailed       FallbackReason = "strategy_failed"
@@ -82,8 +105,11 @@ const (
 	FallbackResultPersistFailed  FallbackReason = "result_persist_failed"
 )
 
+// ResultKind is the type of artifact a delivery produced, and the discriminator a ResultID
+// carries so a reference to a memory entity can never be mistaken for a reference to a tool.
 type ResultKind string
 
+// The result kinds a delivery can reference.
 const (
 	ResultArtifact             ResultKind = "artifact"
 	ResultNode                 ResultKind = "node"
@@ -95,11 +121,19 @@ const (
 	ResultMemoryReasoningTrace ResultKind = "memory_reasoning_trace"
 )
 
+// ActionProbability is one action's share of the selection distribution. The catalog on an
+// Assignment carries one entry per eligible action, in the same order, summing to 1 — which
+// is what lets an off-policy estimator reweight the decision later.
 type ActionProbability struct {
 	ActionID    string  `json:"action_id"`
 	Probability float64 `json:"probability"`
 }
 
+// Assignment is the immutable record of one adaptive decision: what was eligible, what the
+// policy recommended, what was actually intended, and under which policy snapshot. Its ID is
+// derived from (owner, request, point, ordinal) rather than random, so the same decision
+// cannot be recorded twice under two identities. Build events with NewAssignmentEvent, which
+// canonicalises and validates before anything is persisted.
 type Assignment struct {
 	SchemaVersion       string                 `json:"schema_version"`
 	AssignmentID        uuid.UUID              `json:"assignment_id"`
@@ -132,6 +166,10 @@ type Assignment struct {
 	Features            map[FeatureKey]float64 `json:"features"`
 }
 
+// Delivery is what actually happened to an Assignment's intended action — it ran, or
+// something else did and the reason is on record. It carries the exposure probability an
+// off-policy estimator needs, and the results the action produced. Build events with
+// NewDeliveryEvent, which additionally checks the pair agrees with each other.
 type Delivery struct {
 	SchemaVersion       string         `json:"schema_version"`
 	AssignmentID        uuid.UUID      `json:"assignment_id"`
@@ -147,6 +185,10 @@ type Delivery struct {
 	EffectiveLimits     map[string]int `json:"effective_limits"`
 }
 
+// NewAssignmentEvent canonicalises and validates an assignment, then wraps it as a decision
+// event. Validation is not advisory: an assignment whose ID does not derive from its own
+// (owner, request, point, ordinal), whose probabilities do not sum to 1, or whose selection
+// reason is impossible in its policy mode is rejected rather than stored.
 func NewAssignmentEvent(assignment Assignment) (Event, error) {
 	assignment = canonicalAssignment(assignment)
 	if err := validateAssignment(assignment); err != nil {
@@ -166,6 +208,11 @@ func NewAssignmentEvent(assignment Assignment) (Event, error) {
 	})
 }
 
+// NewDeliveryEvent validates a delivery against the assignment it claims to complete —
+// matching IDs, an eligible actual action, and an exposure probability equal to the one the
+// assignment recorded for that action — then wraps it as a delivery event. Taking the
+// assignment rather than trusting the delivery alone is what stops a delivery from
+// reporting an exposure its own decision never offered.
 func NewDeliveryEvent(assignment Assignment, delivery Delivery) (Event, error) {
 	assignment, delivery, err := canonicalAssignmentBoundDelivery(assignment, delivery)
 	if err != nil {

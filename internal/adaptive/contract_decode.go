@@ -31,6 +31,11 @@ type resultIDWire struct {
 	ID   string     `json:"id"`
 }
 
+// DecodeDelivery rebuilds a persisted delivery, re-validating it against the assignment it
+// belongs to and the frozen catalogs. The catalogs are parameters rather than globals
+// because tool, skill and revision identifiers cannot be checked structurally — decoding
+// without them would mean trusting the payload to name only things that exist, which is
+// exactly what ResultID.UnmarshalJSON refuses to do on its own.
 func DecodeDelivery(
 	payload []byte,
 	assignment Assignment,

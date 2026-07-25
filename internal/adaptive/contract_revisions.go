@@ -8,8 +8,11 @@ import (
 	"strconv"
 )
 
+// RevisionKind names one moving part of the retrieval stack whose version changes results.
 type RevisionKind string
 
+// The revision kinds. Corpus is an epoch counter minted by NewCorpusRevision; the rest are
+// fixed identifiers that must be registered in a RevisionCatalog.
 const (
 	RevisionCorpus    RevisionKind = "corpus"
 	RevisionEmbedding RevisionKind = "embedding"
@@ -19,6 +22,9 @@ const (
 	RevisionSchema    RevisionKind = "schema"
 )
 
+// Revision is one component's version, carrying the proof it was built by a validating
+// constructor. The validated flag is unexported and checked by NewRevisionSet, so a
+// zero-value Revision cannot be smuggled into a set by struct literal.
 type Revision struct {
 	kind      RevisionKind
 	value     string
@@ -30,6 +36,9 @@ type RevisionCatalog struct {
 	registered map[RevisionKind]map[string]struct{}
 }
 
+// RevisionSet is the set of component versions a delivery ran under — the record of which
+// corpus, index and reranker produced a result, without which a later comparison of two
+// deliveries cannot tell a policy change from a stack change.
 type RevisionSet struct {
 	values map[RevisionKind]Revision
 }
@@ -55,6 +64,9 @@ func newRevisionCatalog(entries map[RevisionKind][]string) (RevisionCatalog, err
 	return RevisionCatalog{registered: registered}, nil
 }
 
+// NewRegisteredRevision builds a revision for a fixed-kind component, requiring the value to
+// be registered in catalog — an unregistered version is a typo or a drifted deployment, and
+// either way it must not be recorded as fact.
 func NewRegisteredRevision(
 	kind RevisionKind,
 	value string,
@@ -69,6 +81,8 @@ func NewRegisteredRevision(
 	return Revision{kind: kind, value: value, validated: true}, nil
 }
 
+// NewCorpusRevision builds the corpus revision from its epoch counter. Corpus is the one
+// kind with no catalog: its values are minted by ingestion, not registered in advance.
 func NewCorpusRevision(epoch uint64) (Revision, error) {
 	if epoch == 0 {
 		return Revision{}, errors.New("adaptive corpus revision epoch is required")
@@ -80,6 +94,8 @@ func NewCorpusRevision(epoch uint64) (Revision, error) {
 	}, nil
 }
 
+// NewRevisionSet collects revisions, rejecting any that did not come from a validating
+// constructor and any duplicate kind.
 func NewRevisionSet(revisions ...Revision) (RevisionSet, error) {
 	values := make(map[RevisionKind]Revision, len(revisions))
 	for _, revision := range revisions {
@@ -94,6 +110,7 @@ func NewRevisionSet(revisions ...Revision) (RevisionSet, error) {
 	return RevisionSet{values: values}, nil
 }
 
+// MarshalJSON encodes the set as kind/value pairs, re-validating first.
 func (revisions RevisionSet) MarshalJSON() ([]byte, error) {
 	if err := revisions.validate(); err != nil {
 		return nil, err
@@ -105,6 +122,9 @@ func (revisions RevisionSet) MarshalJSON() ([]byte, error) {
 	return json.Marshal(encoded)
 }
 
+// UnmarshalJSON accepts only an EMPTY set: rebuilding a revision means re-checking it
+// against the catalog, which decoding does not have. Callers that need the values back must
+// decode through the catalog-aware path rather than trusting the payload.
 func (revisions *RevisionSet) UnmarshalJSON(payload []byte) error {
 	decoder := json.NewDecoder(bytes.NewReader(payload))
 	var encoded map[string]string
