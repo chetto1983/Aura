@@ -1,0 +1,14 @@
+DROP TRIGGER IF EXISTS adaptive_focal_cohort_claims_immutable ON aura.adaptive_focal_cohort_claims;
+DROP TRIGGER IF EXISTS adaptive_focal_cohort_claims_cutoff_and_blocks ON aura.adaptive_focal_cohort_claims;
+DROP TRIGGER IF EXISTS adaptive_focal_cohorts_immutable ON aura.adaptive_focal_cohorts;
+DROP TRIGGER IF EXISTS adaptive_focal_cohorts_created_at ON aura.adaptive_focal_cohorts;
+DROP TABLE IF EXISTS aura.adaptive_focal_cohort_claims;
+DROP TABLE IF EXISTS aura.adaptive_focal_cohorts;
+DROP FUNCTION IF EXISTS aura.set_adaptive_focal_cohort_created_at();
+DROP FUNCTION IF EXISTS aura.enforce_adaptive_focal_claim_cutoff_and_blocks();
+DROP FUNCTION IF EXISTS aura.reject_adaptive_focal_cohort_update();
+DROP FUNCTION IF EXISTS aura.adaptive_focal_cohort_artifact_valid(bytea, jsonb, uuid, text, text, bigint, text, uuid, bytea, text, text, text, bigint, bytea, text, timestamptz);
+DROP FUNCTION IF EXISTS aura.adaptive_focal_cohort_catalogs_valid(jsonb);
+DROP FUNCTION IF EXISTS aura.adaptive_focal_cohort_metrics_valid(jsonb);
+DROP FUNCTION IF EXISTS aura.adaptive_focal_cohort_id_valid(text, integer);
+DROP INDEX IF EXISTS aura.adaptive_policy_snapshots_cohort_scope_uidx;
