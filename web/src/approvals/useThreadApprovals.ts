@@ -1,11 +1,22 @@
 import { useCallback, useLayoutEffect, useMemo, useRef } from 'react';
-import type { Approval, ResolveAction } from './useApprovals';
+import type { Approval, ResolveAction, ResolveOutcome } from './useApprovals';
 import { useApprovals } from './useApprovals';
 
 export interface ApprovalResolution {
   readonly approval: Approval;
   readonly action: ResolveAction;
   readonly attemptId: string;
+  /**
+   * The server's verdict, known only once the resolve succeeds (so it is absent on the
+   * started/failed legs). Anything but 'continue'/'pending' settles the generation WITHOUT a
+   * re-drive: a scheduled gate's ResumeHook has already done the work.
+   */
+  readonly outcome?: ResolveOutcome;
+}
+
+/** isTerminalOutcome reports whether a verdict leaves no model work to re-drive. */
+function isTerminalOutcome(outcome: ResolveOutcome | undefined): boolean {
+  return outcome === 'approved' || outcome === 'rejected' || outcome === 'terminated';
 }
 
 export type ApprovalResolutionAttempt = ApprovalResolution;
@@ -204,7 +215,7 @@ export function useThreadApprovals(
     }
   }, [onFocusRequested, pendingApprovals, pendingTokens, session, threadId]);
 
-  const finishNonCancel = useCallback(
+  const settleAndResume = useCallback(
     async (generation: number, remaining: readonly Approval[]) => {
       const current = gate.current;
       if (
@@ -237,7 +248,7 @@ export function useThreadApprovals(
     [onFocusRequested, onResume, session, threadId],
   );
 
-  const finishCancel = useCallback(
+  const settleWithoutResume = useCallback(
     (generation: number, remaining: readonly Approval[]) => {
       const current = gate.current;
       if (
@@ -285,11 +296,11 @@ export function useThreadApprovals(
     }
     clearGenerationRecoveries(current, generation);
     if (recoveryKind === 'focus') {
-      finishCancel(generation, []);
+      settleWithoutResume(generation, []);
       return;
     }
-    void finishNonCancel(generation, []);
-  }, [finishCancel, finishNonCancel, pendingApprovals.length, session, threadId]);
+    void settleAndResume(generation, []);
+  }, [settleWithoutResume, settleAndResume, pendingApprovals.length, session, threadId]);
 
   const onResolutionStarted = useCallback(
     (attempt: ApprovalResolutionAttempt) => {
@@ -360,10 +371,11 @@ export function useThreadApprovals(
       ) {
         return;
       }
-      if (deferred.recoveryKind === 'focus') finishCancel(owner.generation, deferred.remaining);
-      else await finishNonCancel(owner.generation, deferred.remaining);
+      if (deferred.recoveryKind === 'focus')
+        settleWithoutResume(owner.generation, deferred.remaining);
+      else await settleAndResume(owner.generation, deferred.remaining);
     },
-    [finishCancel, finishNonCancel, takeAttempt],
+    [settleWithoutResume, settleAndResume, takeAttempt],
   );
 
   const onResolved = useCallback(
@@ -372,6 +384,10 @@ export function useThreadApprovals(
       if (owner === undefined) return;
       const current = gate.current;
       const generation = owner.generation;
+      // A terminal verdict settles exactly like a cancel does — clear the generation, refocus —
+      // but WITHOUT the re-drive: the scheduled gate's ResumeHook already activated or cancelled
+      // the task, so POSTing a continuation would resume a turn that no longer exists.
+      const noResume = owner.action === 'cancel' || isTerminalOutcome(attempt.outcome);
       if (owner.action === 'cancel') {
         current.cancelled = generation;
         clearGenerationRecoveries(current, generation);
@@ -400,7 +416,7 @@ export function useThreadApprovals(
           attemptId: owner.attemptId,
           generation,
           resolvedToken: owner.token,
-          kind: owner.action === 'cancel' ? 'focus' : 'resume',
+          kind: noResume ? 'focus' : 'resume',
         };
         active.recoveries.set(owner.attemptId, recovery);
         if (active.pendingTokens.size !== 0) return;
@@ -409,8 +425,8 @@ export function useThreadApprovals(
           return;
         }
         clearGenerationRecoveries(active, generation);
-        if (recovery.kind === 'focus') finishCancel(generation, []);
-        else void finishNonCancel(generation, []);
+        if (recovery.kind === 'focus') settleWithoutResume(generation, []);
+        else void settleAndResume(generation, []);
       };
 
       let refreshed: Awaited<ReturnType<typeof query.refetch>>;
@@ -448,16 +464,24 @@ export function useThreadApprovals(
       gate.current.recoveries.delete(owner.attemptId);
       if (owner.action !== 'cancel' && gate.current.cancelled === generation) return;
       if (owner.action !== 'cancel' && gate.current.cancelIntents.size > 0) {
-        gate.current.deferred = { generation, remaining, resolvedToken: owner.token };
+        // Carry the no-resume verdict into the deferred outcome: without it the deferred replay
+        // defaults to 'resume' and a terminal approval would still re-drive once the racing
+        // cancel settles.
+        gate.current.deferred = {
+          generation,
+          remaining,
+          resolvedToken: owner.token,
+          ...(noResume ? { recoveryKind: 'focus' as const } : {}),
+        };
         return;
       }
-      if (owner.action === 'cancel') {
-        finishCancel(generation, remaining);
+      if (noResume) {
+        settleWithoutResume(generation, remaining);
         return;
       }
-      await finishNonCancel(generation, remaining);
+      await settleAndResume(generation, remaining);
     },
-    [finishCancel, finishNonCancel, onFocusRequested, query, session, takeAttempt, threadId],
+    [settleWithoutResume, settleAndResume, onFocusRequested, query, session, takeAttempt, threadId],
   );
 
   return {

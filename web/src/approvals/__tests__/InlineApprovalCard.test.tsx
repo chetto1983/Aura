@@ -22,15 +22,21 @@ interface ResolveCall {
 }
 
 // A fetch double that records the resolve POSTs (so the verb + content payload can
-// be asserted). Returns 204 by default; pass `fail` to make resolve 403/500.
-function stubResolve(calls: ResolveCall[], fail = false) {
+// be asserted). Resolve answers 200 + the ResolveDirective (Phase A); `outcome` scripts the
+// runner's verdict, `fail` makes resolve 403/500 instead.
+function stubResolve(calls: ResolveCall[], fail = false, outcome = 'continue') {
   return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     if (url.includes('/resolve') && init?.method === 'POST') {
       const body = JSON.parse(init.body as string) as { action: string; content?: string };
       calls.push({ url, body });
       if (fail) return Promise.resolve(new Response('forbidden', { status: 403 }));
-      return Promise.resolve(new Response(null, { status: 204 }));
+      return Promise.resolve(
+        new Response(JSON.stringify({ outcome, remaining: 0 }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
     }
     // /agent/run re-drive (continue-after-resume) + approvals poll → benign 200.
     return Promise.resolve(new Response('[]', { status: 200 }));
@@ -136,6 +142,22 @@ describe('InlineApprovalCard (APRV-02/03 / D-03/D-05/D-06)', () => {
     expect(resolution?.action).toBe('accept');
   });
 
+  it('a scheduled approval renders the server verdict and carries it to the gate', async () => {
+    // The server is authoritative: a DECLINE on a scheduled gate comes back "rejected", and the
+    // verdict must reach the thread gate so it settles WITHOUT re-driving a turn that the
+    // ResumeHook already completed.
+    vi.stubGlobal('fetch', stubResolve(calls, false, 'rejected'));
+    const onResolved = vi.fn();
+    renderCard({ approval: approval({ token: 't-sched', conversation_id: 'c-1' }), onResolved });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Decline' }));
+    await waitFor(() => {
+      expect(screen.getByText('Declined.')).toBeTruthy();
+    });
+    const resolution = onResolved.mock.calls[0]?.[0] as ApprovalResolution | undefined;
+    expect(resolution?.outcome).toBe('rejected');
+  });
+
   it('Answer (free-text) resolves accept with the typed content', async () => {
     renderCard({ approval: approval({ token: 't-1', conversation_id: 'c-1' }) });
     fireEvent.change(screen.getByPlaceholderText('Type your answer'), {
@@ -195,7 +217,11 @@ describe('InlineApprovalCard (APRV-02/03 / D-03/D-05/D-06)', () => {
     });
 
     expect(onResolutionStarted).toHaveBeenCalledTimes(1);
-    expect(onResolved.mock.calls[0]?.[0]).toEqual(onResolutionStarted.mock.calls[0]?.[0]);
+    // Phase A: the resolved attempt carries the server's verdict IN ADDITION to the started
+    // identity (the verdict does not exist yet when the attempt starts). The identity itself —
+    // approval, action, attemptId — must still match exactly, which is what this test guards.
+    const started = onResolutionStarted.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(onResolved.mock.calls[0]?.[0]).toEqual({ ...started, outcome: 'continue' });
   });
 
   it('signals Cancel intent synchronously before starting the resolve request', async () => {

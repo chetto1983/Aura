@@ -67,9 +67,22 @@ async function fetchApprovals(): Promise<Approval[]> {
   return Array.isArray(body) ? (body as Approval[]) : [];
 }
 
-// The resolve POST returns 204 No Content; a non-2xx (incl. the 403 capability
+/**
+ * The runner's verdict on a resolved pause (Go: runner.ResolveOutcome). It is a semantic code,
+ * never display text — the runner is not locale-aware, so each surface renders its own copy.
+ * Only 'continue' means the model has more work this turn; 'approved'/'rejected' are scheduled
+ * gates whose ResumeHook already ran, so re-driving them would resume a turn that does not exist.
+ */
+export type ResolveOutcome = 'continue' | 'approved' | 'rejected' | 'pending' | 'terminated';
+
+export interface ResolveDirective {
+  readonly outcome: ResolveOutcome;
+  readonly remaining: number;
+}
+
+// The resolve POST returns 200 with the ResolveDirective; a non-2xx (incl. the 403 capability
 // gate and the 404 already-resolved) is a thrown error the mutation surfaces.
-async function postResolve(vars: ResolveVars): Promise<void> {
+async function postResolve(vars: ResolveVars): Promise<ResolveDirective> {
   // accept carries the operator content; decline/cancel send NO content — the
   // server owns the declined/auto-resolve text (T-25-17 footgun guard at the wire).
   const body =
@@ -85,6 +98,8 @@ async function postResolve(vars: ResolveVars): Promise<void> {
   if (!res.ok) {
     throw new Error(`HTTP ${String(res.status)}`);
   }
+  const parsed: unknown = await res.json();
+  return parsed as ResolveDirective;
 }
 
 /**
