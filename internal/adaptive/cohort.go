@@ -1,0 +1,486 @@
+package adaptive
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"math"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+)
+
+const (
+	// CohortPlannedLooks fixes the preregistered sequential analysis schedule.
+	CohortPlannedLooks = 5
+	// CohortTotalAlpha caps total sequential false-positive allocation.
+	CohortTotalAlpha = 0.05
+)
+
+var cohortIDNamespace = uuid.MustParse("37e07806-1464-47f3-8d89-f922fe7a1392")
+
+// BlockKey identifies a frozen unit-interference blocking dimension.
+type BlockKey string
+
+const (
+	// BlockEpisode scopes a unit to its evaluation episode.
+	BlockEpisode BlockKey = "episode"
+	// BlockOwner scopes a unit to its owner.
+	BlockOwner BlockKey = "owner"
+	// BlockSession scopes a unit to its session.
+	BlockSession BlockKey = "session"
+	// BlockTimeBlock scopes a unit to a frozen time interval.
+	BlockTimeBlock BlockKey = "time_block"
+)
+
+// Interference specifies the preregistered cross-unit interference assumption.
+type Interference string
+
+const (
+	// InterferenceNoneBetweenUnits declares the required no-interference assumption.
+	InterferenceNoneBetweenUnits Interference = "none_between_units"
+	// InterferenceUnmodelled marks an ineligible unmodelled interference assumption.
+	InterferenceUnmodelled Interference = "unmodelled"
+)
+
+// CohortScope freezes the owner and serving artifacts eligible for a cohort.
+type CohortScope struct {
+	OwnerID        uuid.UUID
+	ProviderID     string
+	ModelID        string
+	PolicyVersion  string
+	PolicyEpoch    uint64
+	SnapshotID     uuid.UUID
+	SnapshotSHA256 string
+	Environment    EvaluationEnvironment
+}
+
+// FocalPredicate identifies the one decision point eligible for randomization.
+type FocalPredicate struct {
+	Domain  Domain
+	Point   DecisionPoint
+	Ordinal uint32
+}
+
+// CohortArm records a randomized experimental arm and its true probability.
+type CohortArm struct {
+	ArmID       string
+	Probability float64
+}
+
+// CohortPowerPlan freezes the preregistered power and support assumptions.
+type CohortPowerPlan struct {
+	BaselineQualityRate   float64
+	BaselineHarmRate      float64
+	MinimumDetectableLift float64
+	ExpectedMembers       uint64
+	MinimumMembers        uint64
+	MinimumArmSupport     float64
+	SimulationSHA256      string
+}
+
+// CohortMargins freezes the primary quality and harm decision margins.
+type CohortMargins struct {
+	MinimumQualityUplift float64
+	MaximumHarmIncrease  float64
+}
+
+// CohortCensoring freezes permitted censoring limits.
+type CohortCensoring struct {
+	MaxCensorRate      float64
+	MaxCensorImbalance float64
+}
+
+// CohortAdmission freezes the unit blocking and interference plan.
+type CohortAdmission struct {
+	BlockKeys        []BlockKey
+	TimeBlockSeconds uint64
+	Interference     Interference
+}
+
+// CohortLook allocates alpha to one planned sequential look.
+type CohortLook struct {
+	Look  uint8
+	Alpha float64
+}
+
+// CohortSpec is caller input for a canonical immutable focal cohort.
+type CohortSpec struct {
+	Scope          CohortScope
+	Predicate      FocalPredicate
+	ExperimentID   string
+	Arms           []CohortArm
+	Actions        []ActionProbability
+	Evaluators     []EvaluatorRegistration
+	PrimaryQuality EvaluatorProvenance
+	PrimaryHarm    EvaluatorProvenance
+	Power          CohortPowerPlan
+	Margins        CohortMargins
+	Censoring      CohortCensoring
+	Admission      CohortAdmission
+	Looks          []CohortLook
+	Cutoff         time.Time
+}
+
+// FocalCohort is the immutable, preregistered cohort contract for one focal point.
+type FocalCohort struct {
+	id, sha256, predicateSHA256 string
+	spec                        CohortSpec
+}
+
+// NewFocalCohort validates and freezes a preregistered focal cohort specification.
+func NewFocalCohort(spec CohortSpec) (*FocalCohort, error) {
+	spec = canonicalCohortSpec(spec)
+	if err := validateCohortSpec(spec); err != nil {
+		return nil, err
+	}
+	predicateSHA256, err := canonicalCohortHash(spec.Predicate)
+	if err != nil {
+		return nil, err
+	}
+	contentSHA256, err := canonicalCohortHash(spec)
+	if err != nil {
+		return nil, err
+	}
+	digest, err := hex.DecodeString(contentSHA256)
+	if err != nil {
+		return nil, fmt.Errorf("decode canonical cohort hash: %w", err)
+	}
+	return &FocalCohort{
+		id:              uuid.NewHash(sha256.New(), cohortIDNamespace, digest, 5).String(),
+		sha256:          contentSHA256,
+		predicateSHA256: predicateSHA256,
+		spec:            spec,
+	}, nil
+}
+
+// ID returns the deterministic cohort identifier.
+func (cohort *FocalCohort) ID() uuid.UUID {
+	if cohort == nil {
+		return uuid.Nil
+	}
+	return uuid.MustParse(cohort.id)
+}
+
+// SHA256 returns the canonical cohort content hash.
+func (cohort *FocalCohort) SHA256() string {
+	if cohort == nil {
+		return ""
+	}
+	return cohort.sha256
+}
+
+// PredicateSHA256 returns the canonical focal predicate hash.
+func (cohort *FocalCohort) PredicateSHA256() string {
+	if cohort == nil {
+		return ""
+	}
+	return cohort.predicateSHA256
+}
+
+// Scope returns the frozen scope.
+func (cohort *FocalCohort) Scope() CohortScope {
+	if cohort == nil {
+		return CohortScope{}
+	}
+	return cohort.spec.Scope
+}
+
+// Predicate returns the frozen focal predicate.
+func (cohort *FocalCohort) Predicate() FocalPredicate {
+	if cohort == nil {
+		return FocalPredicate{}
+	}
+	return cohort.spec.Predicate
+}
+
+// Domain returns the focal domain.
+func (cohort *FocalCohort) Domain() Domain { return cohort.Predicate().Domain }
+
+// ExperimentID returns the frozen experiment identifier.
+func (cohort *FocalCohort) ExperimentID() string {
+	if cohort == nil {
+		return ""
+	}
+	return cohort.spec.ExperimentID
+}
+
+// Arms returns a defensive copy of the frozen arm catalog.
+func (cohort *FocalCohort) Arms() []CohortArm {
+	if cohort == nil {
+		return nil
+	}
+	return slices.Clone(cohort.spec.Arms)
+}
+
+// Actions returns a defensive copy of the frozen action catalog.
+func (cohort *FocalCohort) Actions() []ActionProbability {
+	if cohort == nil {
+		return nil
+	}
+	return slices.Clone(cohort.spec.Actions)
+}
+
+// Evaluators returns a defensive copy of the frozen evaluator catalog.
+func (cohort *FocalCohort) Evaluators() []EvaluatorRegistration {
+	if cohort == nil {
+		return nil
+	}
+	return slices.Clone(cohort.spec.Evaluators)
+}
+
+// PrimaryQualityEvaluator returns the frozen primary quality evaluator.
+func (cohort *FocalCohort) PrimaryQualityEvaluator() EvaluatorProvenance {
+	if cohort == nil {
+		return EvaluatorProvenance{}
+	}
+	return cohort.spec.PrimaryQuality
+}
+
+// PrimaryHarmEvaluator returns the frozen primary harm evaluator.
+func (cohort *FocalCohort) PrimaryHarmEvaluator() EvaluatorProvenance {
+	if cohort == nil {
+		return EvaluatorProvenance{}
+	}
+	return cohort.spec.PrimaryHarm
+}
+
+// Power returns the frozen power plan.
+func (cohort *FocalCohort) Power() CohortPowerPlan {
+	if cohort == nil {
+		return CohortPowerPlan{}
+	}
+	return cohort.spec.Power
+}
+
+// Margins returns the frozen decision margins.
+func (cohort *FocalCohort) Margins() CohortMargins {
+	if cohort == nil {
+		return CohortMargins{}
+	}
+	return cohort.spec.Margins
+}
+
+// Censoring returns the frozen censoring limits.
+func (cohort *FocalCohort) Censoring() CohortCensoring {
+	if cohort == nil {
+		return CohortCensoring{}
+	}
+	return cohort.spec.Censoring
+}
+
+// Admission returns the frozen admission plan with copied block keys.
+func (cohort *FocalCohort) Admission() CohortAdmission {
+	if cohort == nil {
+		return CohortAdmission{}
+	}
+	admission := cohort.spec.Admission
+	admission.BlockKeys = slices.Clone(admission.BlockKeys)
+	return admission
+}
+
+// Looks returns a defensive copy of the planned alpha schedule.
+func (cohort *FocalCohort) Looks() []CohortLook {
+	if cohort == nil {
+		return nil
+	}
+	return slices.Clone(cohort.spec.Looks)
+}
+
+// Cutoff returns the canonical PostgreSQL-precision evaluation cutoff.
+func (cohort *FocalCohort) Cutoff() time.Time {
+	if cohort == nil {
+		return time.Time{}
+	}
+	return cohort.spec.Cutoff
+}
+
+// MatchesFocalPoint reports whether a decision is the cohort's sole focal point.
+func (cohort *FocalCohort) MatchesFocalPoint(domain Domain, point DecisionPoint, ordinal uint32) bool {
+	return cohort != nil && cohort.spec.Predicate == (FocalPredicate{Domain: domain, Point: point, Ordinal: ordinal})
+}
+
+func canonicalCohortSpec(spec CohortSpec) CohortSpec {
+	spec.Arms = slices.Clone(spec.Arms)
+	spec.Actions = slices.Clone(spec.Actions)
+	spec.Evaluators = slices.Clone(spec.Evaluators)
+	spec.Admission.BlockKeys = slices.Clone(spec.Admission.BlockKeys)
+	spec.Looks = slices.Clone(spec.Looks)
+	spec.Cutoff = spec.Cutoff.UTC().Truncate(time.Microsecond)
+	for i := range spec.Arms {
+		spec.Arms[i].Probability = canonicalZero(spec.Arms[i].Probability)
+	}
+	for i := range spec.Actions {
+		spec.Actions[i].Probability = canonicalZero(spec.Actions[i].Probability)
+	}
+	for i := range spec.Looks {
+		spec.Looks[i].Alpha = canonicalZero(spec.Looks[i].Alpha)
+	}
+	spec.Power.BaselineQualityRate = canonicalZero(spec.Power.BaselineQualityRate)
+	spec.Power.BaselineHarmRate = canonicalZero(spec.Power.BaselineHarmRate)
+	spec.Power.MinimumDetectableLift = canonicalZero(spec.Power.MinimumDetectableLift)
+	spec.Power.MinimumArmSupport = canonicalZero(spec.Power.MinimumArmSupport)
+	spec.Margins.MinimumQualityUplift = canonicalZero(spec.Margins.MinimumQualityUplift)
+	spec.Margins.MaximumHarmIncrease = canonicalZero(spec.Margins.MaximumHarmIncrease)
+	spec.Censoring.MaxCensorRate = canonicalZero(spec.Censoring.MaxCensorRate)
+	spec.Censoring.MaxCensorImbalance = canonicalZero(spec.Censoring.MaxCensorImbalance)
+	return spec
+}
+
+func validateCohortSpec(spec CohortSpec) error {
+	if err := validateCohortScope(spec.Scope); err != nil {
+		return err
+	}
+	if spec.Predicate.Domain.point() != spec.Predicate.Point || !spec.Predicate.Domain.valid() || !spec.Predicate.Point.valid() {
+		return errors.New("adaptive cohort focal predicate is invalid")
+	}
+	if !safeCohortID(spec.ExperimentID, maxExperimentIDLength) {
+		return errors.New("adaptive cohort experiment_id is invalid")
+	}
+	if err := validateCohortArms(spec.Arms); err != nil {
+		return err
+	}
+	if err := validateCohortActions(spec.Actions); err != nil {
+		return err
+	}
+	if err := validateCohortEvaluators(spec.Evaluators, spec.PrimaryQuality, spec.PrimaryHarm); err != nil {
+		return err
+	}
+	if err := validateCohortNumbers(spec); err != nil {
+		return err
+	}
+	return validateCohortAdmissionAndLooks(spec)
+}
+
+func validateCohortScope(scope CohortScope) error {
+	if scope.OwnerID == uuid.Nil || !safeCohortID(scope.ProviderID, maxProviderIDLength) || !safeCohortID(scope.ModelID, maxModelIDLength) || !safeCohortID(scope.PolicyVersion, maxPolicyVersionIDLength) || scope.PolicyEpoch == 0 || scope.SnapshotID == uuid.Nil || !validSHA256(scope.SnapshotSHA256) || scope.Environment != EvaluationProductionCanary {
+		return errors.New("adaptive cohort scope is invalid")
+	}
+	return nil
+}
+
+func validateCohortArms(arms []CohortArm) error {
+	if len(arms) < 2 || !slices.IsSortedFunc(arms, func(a, b CohortArm) int { return strings.Compare(a.ArmID, b.ArmID) }) {
+		return errors.New("adaptive cohort arms must be ordered and randomized")
+	}
+	total := 0.0
+	for i, arm := range arms {
+		if !safeCohortID(arm.ArmID, maxArmIDLength) || !finiteProbability(arm.Probability, false) || (i > 0 && arm.ArmID == arms[i-1].ArmID) {
+			return errors.New("adaptive cohort arm is invalid")
+		}
+		total += arm.Probability
+	}
+	if math.Abs(total-1) > 1e-9 {
+		return errors.New("adaptive cohort arm probabilities must total one")
+	}
+	return nil
+}
+
+func validateCohortActions(actions []ActionProbability) error {
+	if len(actions) < 2 || !slices.IsSortedFunc(actions, func(a, b ActionProbability) int { return strings.Compare(a.ActionID, b.ActionID) }) {
+		return errors.New("adaptive cohort actions must be ordered and supported")
+	}
+	total, static := 0.0, false
+	for i, action := range actions {
+		if action.ActionID == ActionNoneID || !safeCohortID(action.ActionID, maxActionIDLength) || !finiteProbability(action.Probability, false) || (i > 0 && action.ActionID == actions[i-1].ActionID) {
+			return errors.New("adaptive cohort action is invalid")
+		}
+		static = static || action.ActionID == StaticActionID
+		total += action.Probability
+	}
+	if !static || math.Abs(total-1) > 1e-9 {
+		return errors.New("adaptive cohort action catalog is invalid")
+	}
+	return nil
+}
+
+func validateCohortEvaluators(registrations []EvaluatorRegistration, quality, harm EvaluatorProvenance) error {
+	if len(registrations) == 0 || !slices.IsSortedFunc(registrations, func(a, b EvaluatorRegistration) int {
+		if compare := strings.Compare(string(a.Kind), string(b.Kind)); compare != 0 {
+			return compare
+		}
+		return strings.Compare(a.ID, b.ID)
+	}) {
+		return errors.New("adaptive cohort evaluator catalog is invalid")
+	}
+	qualityOK, harmOK := false, false
+	for i, registration := range registrations {
+		if err := validateEvaluatorRegistration(registration); err != nil {
+			return err
+		}
+		if i > 0 && registration.Kind == registrations[i-1].Kind && registration.ID == registrations[i-1].ID {
+			return errors.New("adaptive cohort evaluator is duplicated")
+		}
+		provenance := registration.Provenance()
+		qualityOK = qualityOK || provenance == quality
+		harmOK = harmOK || provenance == harm
+	}
+	if !qualityOK || !harmOK {
+		return errors.New("adaptive cohort primary evaluator is not registered")
+	}
+	return nil
+}
+
+func validateCohortNumbers(spec CohortSpec) error {
+	power := spec.Power
+	if !unitInterval(power.BaselineQualityRate) || !unitInterval(power.BaselineHarmRate) || !positiveFinite(power.MinimumDetectableLift) || power.ExpectedMembers == 0 || power.MinimumMembers == 0 || power.MinimumMembers > power.ExpectedMembers || !finiteProbability(power.MinimumArmSupport, false) || !validSHA256(power.SimulationSHA256) {
+		return errors.New("adaptive cohort power plan is invalid")
+	}
+	if !nonnegativeFinite(spec.Margins.MinimumQualityUplift) || !finiteProbability(spec.Margins.MaximumHarmIncrease, true) || spec.Margins.MaximumHarmIncrease >= 1 || !finiteProbability(spec.Censoring.MaxCensorRate, true) || spec.Censoring.MaxCensorRate >= 1 || !nonnegativeFinite(spec.Censoring.MaxCensorImbalance) || spec.Censoring.MaxCensorImbalance >= 1 || spec.Cutoff.IsZero() {
+		return errors.New("adaptive cohort thresholds are invalid")
+	}
+	return nil
+}
+
+func validateCohortAdmissionAndLooks(spec CohortSpec) error {
+	admission := spec.Admission
+	if admission.Interference != InterferenceNoneBetweenUnits || len(admission.BlockKeys) == 0 || !slices.IsSorted(admission.BlockKeys) || admission.TimeBlockSeconds == 0 || !slices.Contains(admission.BlockKeys, BlockTimeBlock) {
+		return errors.New("adaptive cohort admission plan is invalid")
+	}
+	for i, key := range admission.BlockKeys {
+		if (key != BlockEpisode && key != BlockOwner && key != BlockSession && key != BlockTimeBlock) || (i > 0 && key == admission.BlockKeys[i-1]) {
+			return errors.New("adaptive cohort block key is invalid")
+		}
+	}
+	if len(spec.Looks) != CohortPlannedLooks {
+		return errors.New("adaptive cohort must have five planned looks")
+	}
+	total := 0.0
+	for i, look := range spec.Looks {
+		if look.Look != uint8(i+1) || !finiteProbability(look.Alpha, false) {
+			return errors.New("adaptive cohort alpha look is invalid")
+		}
+		total += look.Alpha
+	}
+	if total > CohortTotalAlpha+1e-12 {
+		return errors.New("adaptive cohort alpha budget is exceeded")
+	}
+	return nil
+}
+
+func canonicalCohortHash(value any) (string, error) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return "", fmt.Errorf("marshal canonical cohort: %w", err)
+	}
+	hash := sha256.Sum256(encoded)
+	return hex.EncodeToString(hash[:]), nil
+}
+func safeCohortID(value string, maximum int) bool {
+	if !validASCIIID(value, maximum) || value != strings.ToLower(value) {
+		return false
+	}
+	lower := strings.ToLower(value)
+	return !strings.Contains(lower, "api-key") && !strings.Contains(lower, "bearer") && !strings.Contains(lower, "content")
+}
+func unitInterval(value float64) bool { return finiteProbability(value, true) }
+func positiveFinite(value float64) bool {
+	return value > 0 && !math.IsNaN(value) && !math.IsInf(value, 0)
+}
+func nonnegativeFinite(value float64) bool {
+	return value >= 0 && !math.IsNaN(value) && !math.IsInf(value, 0)
+}
