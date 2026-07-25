@@ -1844,6 +1844,92 @@ class LongTermMemory(BaseMemory[Entity]):
         )
 
     # =========================================================================
+    # Entity Embedding Maintenance
+    # =========================================================================
+
+    async def backfill_entity_embeddings(
+        self,
+        *,
+        batch_size: int = 100,
+        on_progress: Callable[[int, int], None] | None = None,
+    ) -> int:
+        """Generate embeddings for entities that don't have one.
+
+        Entities can end up without an embedding when they were written by
+        the message-extraction path before it embedded on write, or when an
+        embedder call failed during extraction and degraded to
+        ``embedding=None`` rather than losing the message (see
+        ``ShortTermMemory._embed_entity_name``). An entity with no
+        embedding is invisible to :meth:`search_entities` /
+        ``memory_search``: both query the ``entity_embedding_idx`` vector
+        index, and a null property never matches a vector probe.
+
+        This is an operator maintenance action, not an agent-facing tool —
+        run it via ``python -m neo4j_agent_memory.maintenance
+        backfill-embeddings`` after upgrading, or after any bulk load that
+        ran without an embedder configured.
+
+        Embeds the entity ``name`` only, matching :meth:`add_entity` and
+        the extraction paths — the vector index must stay populated with
+        one consistent text shape for cosine similarity across all three
+        write paths to mean the same thing.
+
+        Resumable and idempotent by construction: each page is read with
+        ``WHERE e.embedding IS NULL``, so a row drops out of that filter as
+        soon as it's fixed. Re-running this method (including after being
+        killed mid-run) only ever touches rows still missing an embedding,
+        and a fully-backfilled graph returns 0 without writing anything.
+
+        Args:
+            batch_size: Entities to embed per page.
+            on_progress: Optional callback ``(processed_count, total_count)``.
+                ``total_count`` is a snapshot taken before the first page —
+                entities created concurrently while this runs aren't
+                reflected in it, but they are still real ``embedding IS
+                NULL`` rows and will be picked up by this same drain loop.
+
+        Returns:
+            Number of entities that had an embedding generated.
+        """
+        if self._embedder is None:
+            return 0
+
+        count_rows = await self._client.execute_read(queries.COUNT_ENTITIES_WITHOUT_EMBEDDINGS)
+        total = int(count_rows[0]["count"]) if count_rows else 0
+        if total == 0:
+            return 0
+
+        processed = 0
+        while True:
+            # skip is always 0: fixed rows fall out of the WHERE clause
+            # (see docstring), so the front of the query is always the
+            # next unprocessed page rather than a moving offset that would
+            # drift as rows disappear out from under it.
+            results = await self._client.execute_read(
+                queries.GET_ENTITIES_WITHOUT_EMBEDDINGS,
+                {"skip": 0, "limit": batch_size},
+            )
+            if not results:
+                break
+
+            names = [row["name"] for row in results]
+            entity_ids = [row["id"] for row in results]
+
+            embeddings = await self._embedder.embed_batch(names)
+
+            for entity_id, embedding in zip(entity_ids, embeddings):
+                await self._client.execute_write(
+                    queries.UPDATE_ENTITY_EMBEDDING,
+                    {"id": entity_id, "embedding": embedding},
+                )
+
+            processed += len(results)
+            if on_progress:
+                on_progress(processed, total)
+
+        return processed
+
+    # =========================================================================
     # Provenance Tracking Methods
     # =========================================================================
 

@@ -678,6 +678,136 @@ def stats(format: str, uri: str, user: str, password: str | None):
 
 
 @cli.group()
+def maintenance():
+    """Operator maintenance actions.
+
+    These are deliberately NOT exposed as MCP tools: they are one-off
+    operator actions (e.g. after an upgrade, or after a bulk load that ran
+    without an embedder configured), not something an agent should be
+    choosing to invoke mid-conversation. Run via ``docker exec`` against
+    the running sidecar, or directly against any reachable Neo4j instance.
+    """
+    pass
+
+
+@maintenance.command("backfill-embeddings")
+@click.option(
+    "--uri",
+    envvar="NEO4J_URI",
+    default="bolt://localhost:7687",
+    help="Neo4j URI (default: bolt://localhost:7687 or NEO4J_URI env var).",
+)
+@click.option(
+    "--user",
+    envvar="NEO4J_USER",
+    default="neo4j",
+    help="Neo4j username (default: neo4j or NEO4J_USER env var).",
+)
+@click.option(
+    "--password",
+    envvar="NEO4J_PASSWORD",
+    help="Neo4j password (or NEO4J_PASSWORD env var).",
+)
+@click.option(
+    "--database",
+    envvar="NEO4J_DATABASE",
+    default="neo4j",
+    help="Neo4j database name (default: neo4j or NEO4J_DATABASE env var).",
+)
+@click.option(
+    "--embedding",
+    envvar="NAM_EMBEDDING",
+    default=None,
+    help=(
+        "Embedding provider string (e.g. 'openai/text-embedding-3-small', "
+        "'BAAI/bge-small-en-v1.5'). Resolved via from_provider. Use the same "
+        "model already backing entity_embedding_idx — mixing embedding "
+        "models across rows makes cosine similarity meaningless."
+    ),
+)
+@click.option(
+    "--embedding-dimensions",
+    type=int,
+    default=None,
+    help="Embedding dimensions override (for models not in the defaults table).",
+)
+@click.option(
+    "--batch-size",
+    type=int,
+    default=100,
+    help="Entities to embed per page (default: 100).",
+)
+def maintenance_backfill_embeddings(
+    uri: str,
+    user: str,
+    password: str | None,
+    database: str,
+    embedding: str | None,
+    embedding_dimensions: int | None,
+    batch_size: int,
+):
+    """Generate embeddings for :Entity nodes that don't have one.
+
+    Entities can end up without an embedding when they were written by the
+    message-extraction path before it embedded on write, or when an
+    embedder call failed during extraction and degraded rather than losing
+    the source message. Such entities are invisible to ``memory_search`` —
+    it queries the ``entity_embedding_idx`` vector index, and a null
+    property never matches a vector probe.
+
+    Safe to re-run: it only ever touches rows where ``embedding IS NULL``,
+    so a fully-backfilled graph is a fast no-op.
+    """
+    if not password:
+        error_console.print(
+            "[red]Error:[/red] Neo4j password required. Set NEO4J_PASSWORD or use --password."
+        )
+        sys.exit(1)
+    if not embedding:
+        error_console.print(
+            "[red]Error:[/red] --embedding (or NAM_EMBEDDING) is required — "
+            "there is nothing to backfill with otherwise."
+        )
+        sys.exit(1)
+
+    from pydantic import SecretStr
+
+    from neo4j_agent_memory.config.settings import Neo4jConfig
+    from neo4j_agent_memory.embeddings.base import adapt_to_legacy_embedder
+    from neo4j_agent_memory.graph.client import Neo4jClient
+    from neo4j_agent_memory.llm import from_provider
+    from neo4j_agent_memory.memory.long_term import LongTermMemory
+
+    async def do_backfill() -> int:
+        config = Neo4jConfig(
+            uri=uri, username=user, password=SecretStr(password), database=database
+        )
+        emb_kwargs: dict[str, Any] = (
+            {"dimensions": embedding_dimensions} if embedding_dimensions is not None else {}
+        )
+        provider = from_provider(embedding, kind="embedding", **emb_kwargs)
+        embedder = adapt_to_legacy_embedder(provider)
+
+        async with Neo4jClient(config) as client:
+            memory = LongTermMemory(client, embedder=embedder)
+
+            def on_progress(processed: int, total: int) -> None:
+                console.print(f"[dim]Backfilled {processed}/{total} entities...[/dim]")
+
+            return await memory.backfill_entity_embeddings(
+                batch_size=batch_size, on_progress=on_progress
+            )
+
+    try:
+        fixed = run_async(do_backfill())
+    except Exception as e:
+        error_console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
+    console.print(f"[green]Done.[/green] Generated embeddings for {fixed} entities.")
+
+
+@cli.group()
 def mcp():
     """MCP (Model Context Protocol) server commands.
 

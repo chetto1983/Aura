@@ -1,6 +1,7 @@
 """Short-term memory for conversations and messages."""
 
 import json
+import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from enum import Enum
@@ -12,6 +13,8 @@ from pydantic import BaseModel, Field
 from neo4j_agent_memory.core.memory import BaseMemory, MemoryEntry
 from neo4j_agent_memory.graph import queries
 from neo4j_agent_memory.graph.query_builder import build_create_entity_query
+
+logger = logging.getLogger(__name__)
 
 
 def _llm_summarizer(
@@ -1138,7 +1141,7 @@ class ShortTermMemory(BaseMemory[Message]):
                             "subtype": entity_subtype,
                             "canonical_name": entity.name,
                             "description": None,
-                            "embedding": None,
+                            "embedding": await self._embed_entity_name(entity.name),
                             "confidence": entity.confidence,
                             "metadata": None,
                             "deduplication_scope": "global",
@@ -1281,6 +1284,29 @@ class ShortTermMemory(BaseMemory[Message]):
             },
         )
 
+    async def _embed_entity_name(self, name: str) -> list[float] | None:
+        """Embed an entity name the same way :meth:`LongTermMemory.add_entity` does.
+
+        Extraction runs as a background side-effect of storing a message
+        that has already been persisted, so a transient embedder failure
+        here must degrade (log + return ``None``) rather than propagate
+        and unwind a write that already succeeded. An entity stored with
+        ``embedding=None`` stays reachable via graph traversal and exact
+        name lookup, just not via ``memory_search``'s vector index, until
+        :meth:`LongTermMemory.backfill_entity_embeddings` repairs it.
+        """
+        if self._embedder is None:
+            return None
+        try:
+            return await self._embedder.embed(name)
+        except Exception:
+            logger.warning(
+                "Entity embedding failed for %r during extraction; leaving embedding unset.",
+                name,
+                exc_info=True,
+            )
+            return None
+
     async def _extract_and_link_entities(
         self, message: Message, *, extract_relations: bool = True
     ) -> None:
@@ -1322,7 +1348,7 @@ class ShortTermMemory(BaseMemory[Message]):
                     "subtype": entity_subtype,
                     "canonical_name": entity.name,
                     "description": None,
-                    "embedding": None,
+                    "embedding": await self._embed_entity_name(entity.name),
                     "confidence": entity.confidence,
                     "metadata": metadata_payload,
                     "deduplication_scope": "global",

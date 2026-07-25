@@ -103,6 +103,20 @@ class SchemaManager:
         for constraint_name, label, property_name in constraints:
             await self._create_constraint(constraint_name, label, property_name)
 
+        for constraint_name, label, property_names in self._COMPOSITE_CONSTRAINTS:
+            await self._create_composite_constraint(constraint_name, label, list(property_names))
+
+    # Composite (multi-property) uniqueness constraints. ``IS UNIQUE`` on a
+    # tuple of properties works on Community Edition (unlike ``NODE KEY``,
+    # which is Enterprise-only — see queries.create_composite_constraint_query).
+    _COMPOSITE_CONSTRAINTS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+        # Entity creation MERGEs on exactly this triple
+        # (query_builder.build_create_entity_query / queries.CREATE_ENTITY).
+        # Without a constraint backing that key, two concurrent writers can
+        # both miss the MERGE match and both CREATE, producing duplicates.
+        ("entity_name_type_scope_unique", "Entity", ("name", "type", "deduplication_scope")),
+    )
+
     async def setup_indexes(self) -> None:
         """Create regular indexes for common queries."""
         indexes = [
@@ -251,6 +265,31 @@ class SchemaManager:
                 return
 
             query = queries.create_constraint_query(constraint_name, label, property_name)
+            await self._client.execute_write(query)
+        except Exception as e:
+            raise SchemaError(f"Failed to create constraint {constraint_name}: {e}") from e
+
+    async def _create_composite_constraint(
+        self,
+        constraint_name: str,
+        label: str,
+        property_names: list[str],
+    ) -> None:
+        """Create a composite (multi-property) unique constraint if it doesn't exist.
+
+        Raises like :meth:`_create_constraint` (not swallowed like the
+        version-gated vector/point indexes below): if existing data already
+        violates the uniqueness this is meant to enforce, that is a real
+        data problem — duplicate rows must be merged or removed — and
+        startup should fail loudly rather than silently leave the race
+        unguarded.
+        """
+        try:
+            exists = await self._client.check_constraint_exists(constraint_name)
+            if exists:
+                return
+
+            query = queries.create_composite_constraint_query(constraint_name, label, property_names)
             await self._client.execute_write(query)
         except Exception as e:
             raise SchemaError(f"Failed to create constraint {constraint_name}: {e}") from e

@@ -1464,6 +1464,33 @@ def create_constraint_query(constraint_name: str, label: str, property_name: str
     """
 
 
+def create_composite_constraint_query(
+    constraint_name: str, label: str, property_names: list[str]
+) -> str:
+    """Generate CREATE CONSTRAINT query for a composite uniqueness constraint.
+
+    Composite (multi-property) node uniqueness constraints are supported on
+    Neo4j Community Edition (verified against a live 5.26.28-community
+    server) — unlike ``NODE KEY``, which additionally enforces property
+    existence and requires Enterprise Edition. This is the ``IS UNIQUE``
+    form, not ``IS NODE KEY``.
+
+    Args:
+        constraint_name: Name of the constraint
+        label: Node label to apply constraint to
+        property_names: Properties whose combination must be unique
+
+    Returns:
+        Cypher query string
+    """
+    properties = ", ".join(f"n.{name}" for name in property_names)
+    return f"""
+    CREATE CONSTRAINT {constraint_name} IF NOT EXISTS
+    FOR (n:{label})
+    REQUIRE ({properties}) IS UNIQUE
+    """
+
+
 def create_index_query(index_name: str, label: str, property_name: str) -> str:
     """Generate CREATE INDEX query for regular property index.
 
