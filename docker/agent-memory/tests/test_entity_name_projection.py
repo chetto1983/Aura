@@ -21,6 +21,7 @@ from uuid import uuid4
 from neo4j_agent_memory import integration as integration_module
 from neo4j_agent_memory.graph import queries
 from neo4j_agent_memory.integration import _entity_name_fields
+from neo4j_agent_memory.memory import long_term as long_term_module
 from neo4j_agent_memory.memory.long_term import Entity, LongTermMemory
 
 
@@ -53,6 +54,19 @@ def test_no_read_path_projects_display_name_as_name():
     source = Path(inspect.getfile(integration_module)).read_text(encoding="utf-8")
 
     assert '"name": entity.display_name' not in source
+
+
+def test_recalled_context_names_the_entity_as_stored():
+    """The same rule where it bites hardest: the block injected into the model every turn.
+
+    With display_name here, the live profile read "- David (PERSON): ... Preferisce essere
+    chiamato Davide." — the agent was handed a contradiction about its own operator on every
+    single turn, and no amount of correcting the record could clear it.
+    """
+    source = Path(inspect.getfile(long_term_module)).read_text(encoding="utf-8")
+
+    assert "{entity.display_name} ({type_str})" not in source
+    assert "{entity.name} ({type_str})" in source
 
 
 class _RecordingClient:

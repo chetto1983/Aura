@@ -1456,7 +1456,11 @@ class LongTermMemory(BaseMemory[Entity]):
                 parts.append("\n### Relevant Entities")
                 for entity in entities:
                     type_str = entity.full_type
-                    line = f"- {entity.display_name} ({type_str})"
+                    # The stored name, not display_name (canonical_name or name): this block is
+                    # injected into the model's context every turn, so a canonical shown as THE
+                    # name feeds the agent a contradiction it cannot resolve — the live profile
+                    # read "- David (PERSON): ... Preferisce essere chiamato Davide."
+                    line = f"- {entity.name} ({type_str})"
                     if entity.description:
                         line += f": {entity.description}"
                     parts.append(line)
