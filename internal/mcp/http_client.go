@@ -261,6 +261,24 @@ func (c *HTTPClient) post(ctx context.Context, payload any, includeProtocol bool
 		c.sessionID = ""
 		return nil, errHTTPSessionExpired
 	}
+	// A session-less call is the SAME condition as an expired one, and saying so here is
+	// what makes the connection recoverable. The 404 branch above clears sessionID before
+	// roundtripLocked decides whether to retry; when it declines (a mutating tool call must
+	// not be replayed after send), the client is left with no session and no way back — the
+	// only trigger for reinitialize was the session id that was just cleared. Every later
+	// call, reads included, then posts bare and the server answers 400 "Missing session ID"
+	// forever. Observed live 2026-07-25 after a sidecar rebuild: twenty consecutive memory
+	// calls failed with http 400 and only restarting the daemon fixed it.
+	//
+	// Guarded on sessionID == "": with a session in hand a 400 is a real bad request and is
+	// returned as one. After reinitialize succeeds the guard no longer holds, so a genuinely
+	// malformed request costs one extra round trip and cannot loop. includeProtocol is false
+	// for exactly one method, initialize — the one call that legitimately has no session yet,
+	// and whose own 400 must surface as itself rather than as a session to go re-establish.
+	if resp.StatusCode == http.StatusBadRequest && c.sessionID == "" && includeProtocol {
+		defer func() { _ = resp.Body.Close() }()
+		return nil, errHTTPSessionExpired
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		defer func() { _ = resp.Body.Close() }()
 		return nil, fmt.Errorf("http %d", resp.StatusCode)

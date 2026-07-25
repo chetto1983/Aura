@@ -121,7 +121,8 @@ func (b *bridgedTool) Execute(ctx context.Context, raw json.RawMessage) (tools.T
 }
 
 func (b *bridgedTool) withMemoryUserIdentifier(ctx context.Context, args map[string]any) map[string]any {
-	if namespaceFromSpecName(b.Spec().Name) != "memory" || !memoryToolAcceptsUserIdentifier(b.name) {
+	spec := b.Spec()
+	if namespaceFromSpecName(spec.Name) != "memory" || !acceptsUserIdentifier(spec.Parameters) {
 		return args
 	}
 	// The memory server is fail-OPEN: a tool call with no user_identifier runs its
@@ -141,28 +142,26 @@ func (b *bridgedTool) withMemoryUserIdentifier(ctx context.Context, args map[str
 	return args
 }
 
-func memoryToolAcceptsUserIdentifier(name string) bool {
-	switch name {
-	case "memory_search",
-		"memory_get_context",
-		"memory_store_message",
-		"memory_add_entity",
-		"memory_add_preference",
-		"memory_add_fact",
-		"memory_forget",
-		"memory_get_conversation",
-		"memory_list_sessions",
-		"memory_get_entity",
-		"memory_get_facts",
-		"memory_create_relationship",
-		"memory_set_entity_feedback",
-		"memory_get_entity_history",
-		"memory_get_entity_provenance",
-		"memory_get_reflections":
-		return true
-	default:
-		return false
+// acceptsUserIdentifier reads the answer off the tool's OWN advertised schema instead of a
+// hand-kept name list. The list silently omitted memory_update when that verb shipped, so the
+// sidecar received user_identifier=null and answered "not found or not owned by this user" —
+// on the operator's own entity, which they own by a direct HAS_ENTITY edge (observed live
+// 2026-07-25: every update the agent attempted was refused, and it fell back to add_*, which
+// duplicates instead of correcting). A list that must be edited in a second repo whenever a
+// verb is added is a list that will be forgotten again; the schema cannot drift from the tool.
+//
+// An absent or unparseable schema injects ANYWAY: the memory server is fail-OPEN, so an
+// unscoped call returns every tenant's memory. Between "reject an argument the tool may not
+// take" and "leak another user's memory", the safe default is to scope.
+func acceptsUserIdentifier(parameters json.RawMessage) bool {
+	var schema struct {
+		Properties map[string]json.RawMessage `json:"properties"`
 	}
+	if err := json.Unmarshal(parameters, &schema); err != nil || schema.Properties == nil {
+		return true
+	}
+	_, ok := schema.Properties["user_identifier"]
+	return ok
 }
 
 func (b *bridgedTool) newUntrustedResult(ctx context.Context, text string) (tools.ToolResult, error) {
