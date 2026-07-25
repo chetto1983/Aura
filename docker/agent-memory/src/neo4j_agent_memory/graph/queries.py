@@ -601,6 +601,22 @@ ON CREATE SET
 RETURN r
 """
 
+# An entity extracted from a user's own message belongs to that user. Only add_entity ever
+# wrote (:User)-[:HAS_ENTITY]->(:Entity), so extraction-born entities had no ownership edge —
+# and DELETE_ENTITY_SCOPED requires exactly that edge. The result, observed live: entities the
+# operator could see and update but NOT delete, with memory_forget answering "not found or not
+# owned by this user" about their own data. The owner is derived from the message rather than
+# threaded through the extraction signatures, so both extraction call sites get it for free and
+# a message with no owning user (unscoped/global writes) simply links nothing.
+LINK_MESSAGE_OWNER_TO_ENTITY = """
+MATCH (m:Message {id: $message_id})
+MATCH (e:Entity {id: $entity_id})
+OPTIONAL MATCH (u:User)-[:HAS_CONVERSATION]->(:Conversation)-[:HAS_MESSAGE]->(m)
+FOREACH (_ IN CASE WHEN u IS NULL THEN [] ELSE [1] END |
+    MERGE (u)-[:HAS_ENTITY]->(e)
+)
+"""
+
 # Create RELATED_TO relationship between entities by name (for extraction)
 # This query looks up entities by name to support cross-message relations
 CREATE_ENTITY_RELATION_BY_NAME = """

@@ -22,6 +22,7 @@ from neo4j_agent_memory import integration as integration_module
 from neo4j_agent_memory.graph import queries
 from neo4j_agent_memory.integration import _entity_name_fields
 from neo4j_agent_memory.memory import long_term as long_term_module
+from neo4j_agent_memory.memory import short_term as short_term_module
 from neo4j_agent_memory.memory.long_term import Entity, LongTermMemory
 
 
@@ -99,3 +100,24 @@ def test_canonical_candidates_stay_global_when_there_is_no_caller_scope():
 
     query, _ = client.reads[0]
     assert query == queries.SEARCH_ENTITIES_BY_TYPE
+
+
+def test_every_message_entity_link_also_links_the_owner():
+    """Ownership must be written wherever a message-entity link is, or delete refuses it.
+
+    Only add_entity ever wrote (:User)-[:HAS_ENTITY]->(:Entity), while DELETE_ENTITY_SCOPED
+    requires exactly that edge — so entities born from extraction were visible and updatable
+    but undeletable, and memory_forget told the operator their own data was "not found or not
+    owned by this user". A behavioural test on one call site would not stop a fourth from being
+    added without the ownership write, which is how this happened.
+    """
+    source = Path(inspect.getfile(short_term_module)).read_text(encoding="utf-8")
+
+    linked = source.count("queries.LINK_MESSAGE_TO_ENTITY")
+    owned = source.count("queries.LINK_MESSAGE_OWNER_TO_ENTITY")
+
+    assert linked > 0, "no message-entity link sites found — the guard is checking nothing"
+    assert owned == linked, (
+        f"{linked} message-entity link site(s) but {owned} ownership write(s): "
+        "every extracted entity must be attributed to the message's owner"
+    )

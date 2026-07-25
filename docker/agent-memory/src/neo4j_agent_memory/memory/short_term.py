@@ -711,6 +711,10 @@ class ShortTermMemory(BaseMemory[Message]):
                     "end_pos": None,
                 },
             )
+            await self._client.execute_write(
+                queries.LINK_MESSAGE_OWNER_TO_ENTITY,
+                {"message_id": str(message.id), "entity_id": entity_id},
+            )
 
     async def get_conversation(
         self,
@@ -1163,6 +1167,10 @@ class ShortTermMemory(BaseMemory[Message]):
                             "end_pos": entity.end_pos,
                         },
                     )
+                    await self._client.execute_write(
+                        queries.LINK_MESSAGE_OWNER_TO_ENTITY,
+                        {"message_id": message_id, "entity_id": entity_id},
+                    )
                     entities_extracted += 1
 
                 # Store extracted relations
@@ -1369,6 +1377,10 @@ class ShortTermMemory(BaseMemory[Message]):
                     "start_pos": entity.start_pos,
                     "end_pos": entity.end_pos,
                 },
+            )
+            await self._client.execute_write(
+                queries.LINK_MESSAGE_OWNER_TO_ENTITY,
+                {"message_id": str(message.id), "entity_id": entity_id},
             )
 
         # Store extracted relations
