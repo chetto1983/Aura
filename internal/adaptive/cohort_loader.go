@@ -361,7 +361,7 @@ func reconstructCohortMember(cohort *FocalCohort, claim FocalClaim, facts []coho
 		return CohortMember{}, err
 	}
 	member.Quality = quality
-	if member.Quality != nil && cohort.ValidatePrimaryQualityOutcome(qualityObservation) != nil {
+	if member.Quality != nil && !validCohortTerminalPrimaryObservation(qualityObservation, cohort.ValidatePrimaryQualityOutcome) {
 		return CohortMember{}, fmt.Errorf("%w: primary quality evidence", ErrInvalidCohortLedger)
 	}
 	harm, harmObservation, err := effectivePrimaryCohortObservation(cohort.PrimaryHarmEndpoint().Evaluator, outcomes, corrections)
@@ -369,7 +369,7 @@ func reconstructCohortMember(cohort *FocalCohort, claim FocalClaim, facts []coho
 		return CohortMember{}, err
 	}
 	member.Harm = harm
-	if member.Harm != nil && cohort.ValidatePrimaryHarmOutcome(harmObservation) != nil {
+	if member.Harm != nil && !validCohortTerminalPrimaryObservation(harmObservation, cohort.ValidatePrimaryHarmOutcome) {
 		return CohortMember{}, fmt.Errorf("%w: primary harm evidence", ErrInvalidCohortLedger)
 	}
 	member.Observed = member.Quality != nil && member.Harm != nil && member.Quality.Status == OutcomeObserved && member.Harm.Status == OutcomeObserved
@@ -395,6 +395,11 @@ func cohortMemberReasonCodes(member CohortMember) []string {
 		codes = append(codes, "ope_ineligible")
 	}
 	return codes
+}
+
+func validCohortTerminalPrimaryObservation(observation OutcomeObservation, validate func(OutcomeObservation) error) bool {
+	return observation.Status == OutcomeCensored ||
+		(observation.Status == OutcomeObserved && validate(observation) == nil)
 }
 
 func cohortLedgerHash(cohort *FocalCohort, members []CohortMember, facts []IncludedFactRef) string {

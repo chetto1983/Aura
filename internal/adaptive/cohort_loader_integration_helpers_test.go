@@ -144,6 +144,21 @@ func cohortLoaderObservedOutcome(
 	}
 }
 
+func cohortLoaderCensoredOutcome(assignment Assignment, evaluator EvaluatorProvenance) OutcomeObservation {
+	return OutcomeObservation{
+		SchemaVersion:       SchemaVersion2,
+		AssignmentID:        assignment.AssignmentID,
+		OwnerID:             assignment.OwnerID,
+		Domain:              assignment.Domain,
+		ProviderID:          assignment.ProviderID,
+		ModelID:             assignment.ModelID,
+		Evaluator:           evaluator,
+		SourceObservationID: uuid.Must(uuid.NewV7()),
+		Status:              OutcomeCensored,
+		ObservedAt:          time.Now().UTC(),
+	}
+}
+
 func cohortLoaderCorrection(
 	assignment Assignment,
 	evaluator EvaluatorProvenance,

@@ -136,6 +136,43 @@ func TestCohortStoreReconstructRejectsNonbinaryPrimaryCorrection(t *testing.T) {
 	}
 }
 
+func TestCohortStoreReconstructsCensoredPrimaryRoot(t *testing.T) {
+	fixture := newCohortLoaderFixture(t, 3*time.Second)
+	assignment := fixture.enrollment.Assignment
+	if _, err := fixture.ledger.RecordDelivery(
+		fixture.ctx, fixture.ownerID, assignment.AssignmentID, cohortLoaderSuccessDelivery(t, assignment),
+	); err != nil {
+		t.Fatalf("record delivery: %v", err)
+	}
+	catalog, err := NewEvaluatorCatalog(fixture.cohort.Evaluators()...)
+	if err != nil {
+		t.Fatalf("new evaluator catalog: %v", err)
+	}
+	recorder, err := NewOutcomeRecorder(fixture.ledger, catalog)
+	if err != nil {
+		t.Fatalf("new outcome recorder: %v", err)
+	}
+	if _, err := recorder.RecordOutcome(
+		fixture.ctx,
+		cohortLoaderCensoredOutcome(assignment, fixture.cohort.PrimaryQualityEndpoint().Evaluator),
+	); err != nil {
+		t.Fatalf("record censored quality outcome: %v", err)
+	}
+	if _, err := recorder.RecordOutcome(
+		fixture.ctx,
+		cohortLoaderObservedOutcome(assignment, fixture.cohort.PrimaryHarmEndpoint().Evaluator, 1, 0),
+	); err != nil {
+		t.Fatalf("record harm outcome: %v", err)
+	}
+	fixture.waitForClose(t)
+
+	ledger, err := fixture.store.Reconstruct(fixture.ctx, fixture.ownerID, fixture.cohort.ID())
+	if err != nil {
+		t.Fatalf("Reconstruct() error = %v", err)
+	}
+	assertCensoredPrimaryCohortMember(t, ledger)
+}
+
 func TestCohortStoreReconstructExcludesPostCutoffFactsFromHash(t *testing.T) {
 	fixture := newCohortLoaderFixture(t, 2*time.Second)
 	fixture.waitForClose(t)
