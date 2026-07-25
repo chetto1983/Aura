@@ -4,11 +4,11 @@
 
 **Goal:** Replace Aura's schema-1 adaptive observation spike with a production-shaped, privacy-safe assignment/delivery/outcome ledger, five real controllable adapters, coherent Neo4j Agent Memory reuse, and reproducible statistical evidence without treating the Qwen 2B portability spike as production quality proof.
 
-**Architecture:** PostgreSQL is the immutable source of assignment, delivery, outcome, correction, cohort, snapshot, and evidence truth. Each adapter follows `durable assignment -> execute -> durable delivery -> expose`, falling back to its static champion on any learned-path failure. Neo4j stores private projections and supplies the already-deployed Agent Memory context; an equal before/after corpus epoch makes multi-query recall eligible. Promotion evidence is reconstructed from sealed ledger cohorts and evaluated with exact blocked randomization inference. Canary and active serving remain unavailable until their separate artifacts and operator-authorized control surface land.
+**Architecture:** PostgreSQL is the immutable source of assignment, delivery, outcome, correction, cohort, snapshot, and evidence truth. Each adapter follows `durable assignment -> execute -> durable delivery -> expose`, falling back to its static champion on any learned-path failure. Neo4j stores private projections and supplies the already-deployed Agent Memory context; an equal before/after corpus epoch makes multi-query recall eligible. Promotion evidence is reconstructed from sealed ledger cohorts and evaluated with exact stratified Bonferroni hypergeometric binary-ATE bounds over owner plus server claim-time strata; conversation identity defines interference clusters, not statistical blocks. Canary and active serving remain unavailable until their separate artifacts and operator-authorized control surface land.
 
 **Tech Stack:** Go 1.26, PostgreSQL/sqlc, Neo4j Cypher, Python 3.13/pytest, Neo4j Labs Agent Memory MCP, llama.cpp/OpenAI-compatible API, Docker Compose, OpenTelemetry.
 
-**Design sources:** [production specification](../specs/2026-07-24-aura-adaptive-intelligence-design.md), [delivery and evidence appendix](../specs/2026-07-24-aura-adaptive-intelligence-delivery-and-evidence.md), and PRD Amendment #93.4 in [prd.md](../../../prd.md).
+**Design sources:** [production specification](../specs/2026-07-24-aura-adaptive-intelligence-design.md), [delivery and evidence appendix](../specs/2026-07-24-aura-adaptive-intelligence-delivery-and-evidence.md), and PRD Amendments #93.4–#93.7 in [prd.md](../../../prd.md), with #93.7 authoritative for randomization, inference, OPE, and sealed evidence.
 
 ## Progress checkpoint — 2026-07-25
 
@@ -153,13 +153,13 @@ reconstruction with canonical cross-host digest)
   persisted Assignment before recording Delivery, preserve exact
   idempotence/conflict behavior, reject every schema-2 event kind through the
   generic Store surface, and fail closed for nil dependencies or fenced owners.
-- Exact statistical inference, sealed evidence, runtime adapters, Agent Memory
+- Exact stratified Bonferroni hypergeometric ATE inference, sealed evidence, runtime adapters, Agent Memory
   integration, legacy `CanaryBatch`/Wilson removal, real-model benchmarks,
   final quality gate, and push remain Task 2 work. The current migration head
   is `0074`.
 - Do not replay unchanged remote CI. Resume at the ledger-only cohort loader's
-  consumer: exact blocked randomization inference and sealed evidence under
-  TDD.
+  consumer: exact owner/claim-time-stratified Bonferroni hypergeometric ATE
+  inference, selected-intention OPE diagnostics, and sealed evidence under TDD.
 
 ### Task 2 live subtask tracker
 
@@ -190,8 +190,8 @@ reconstruction with canonical cross-host digest)
   `sqlc compile`, package/repository vet/build, exact diff-scoped lint with
   zero issues, diff/LOC/hooks GREEN; final spec and quality reviews
   `APPROVE`.
-- [ ] Exact blocked randomization inference and sealed admission/outcome
-  evidence.
+- [ ] Exact owner/claim-time-stratified Bonferroni hypergeometric ATE inference,
+  selected-intention OPE diagnostics, and sealed admission/outcome evidence.
 - [ ] Remove legacy caller-built `CanaryBatch`, Wilson/ESS authorization, and
   all newly dead owned code.
 
@@ -366,7 +366,7 @@ go build ./...
 
 - [x] **Step 1: Recheck the migration head immediately before allocation.**
 - [ ] **Step 2: Write red tests** for immutable owner/provider/model snapshots, top-5 nonnegative-cosine mean scoring, zero-neighbor static fallback, preregistered point/ordinal predicate, unique request membership, at most one randomized request per evaluation conversation, deterministic correction folding, missing/fork/cycle rejection, and artifact hash stability.
-- [ ] **Step 3: Write red statistical tests** using enumerated tiny blocked assignments whose exact p-values are hand-checkable. Include quality/harm margins, alpha-spent looks, censoring, cluster/conversation blocks, ITT primary analysis, served-action diagnostic analysis, and arm-vs-action propensity mismatch rejection.
+- [ ] **Step 3: Write red statistical and canonical-contract tests** from PRD #93.7. Exhaust tiny independent `1/2` Bernoulli assignments and prove that conditioning on realized treated counts in frozen owner plus server claim-time strata equals the product complete-randomization distribution. Hand-check `stratified-bonferroni-hypergeom-ate-v1` quality-lower/harm-upper vectors, strict hypergeometric-tail equality, missing substitutions, singleton/one-arm strata, five UTC cutoffs and exact alpha spending. Keep conversation identity in the separate immutable interference cluster. Test ITT as primary and selected-intention-only OPE with exact marginal `mu`, endpoint-specific action-mean models, DR/SNIPS/ESS, deterministic whole-cluster bootstrap, and unknown delivered exposure that remains selected-intention eligible. Reject arm/action propensity mismatch, schema/content-hash drift, feature-schema role inversion, composite endpoint/OPE report substitution, and caller-built outcome artifacts.
 - [x] **Step 4: Implement the scorer** as a pure local function over the sealed snapshot. Similarity is `max(0, cosine)`; use at most five neighbors; predicted value is the arithmetic mean of neighbor outcomes weighted by nonnegative similarity; empty/invalid support returns the static champion.
 - [x] **Step 4a: Persist immutable snapshots.** Implementation and forward-only
   numerical/performance repairs are approved through `f58334f1`; migrations
@@ -384,8 +384,11 @@ go build ./...
 - [x] **Step 6: Implement the ledger-only loader**: reconstruct assignments,
   deliveries, eligible outcomes, and folded corrections at the cohort cutoff;
   include missing delivery/outcome as censored ITT rows; reject unsealed
-  catalogs, unknown exposure probabilities, cross-owner facts, and facts
-  beyond cutoff. Approved through `983afb130`.
+  catalogs, cross-owner facts, and facts beyond cutoff. Approved through
+  `983afb130`. PRD #93.7 narrows its generic OPE flag at the evidence consumer:
+  unknown delivered exposure is ineligible only for deferred delivered-exposure
+  OPE; selected-intention OPE may remain eligible from the frozen intended
+  action and exact marginal intention `mu`.
 - [x] **Step 7: Implement a production typed outcome/correction recorder.** `OutcomeRecorder.RecordOutcome` accepts only a typed `OutcomeObservation`, loads the referenced schema-2 assignment, binds domain/owner/provider/model, validates the registered evaluator kind/ID/version/rubric/calibration/provenance hash, and appends the deterministic terminal event. `RecordCorrection` transactionally loads the current effective leaf and rejects missing, cross-owner/domain/evaluator, cross-kind, fork, or cycle links. Operational tool/HTTP/persistence/model-self-report completion cannot call this eligible recorder. Compose the deterministic and calibrated-judge benchmark evaluators through this same service; no benchmark may insert ledger rows directly.
 - [ ] **Step 8: Implement separate sealed artifact kinds**:
 
@@ -398,10 +401,10 @@ const (
 )
 ```
 
-The transition function must revalidate artifact kind, target state, scope, cutoff, snapshot/cohort hashes, ledger hash, and operator capability transactionally.
+`EvidenceStore.SealCanaryOutcome` is the sole outcome writer and accepts no caller report body. It must bind the canonical cohort/child refs, analysis-stratum schema/set hashes, distinct quality and harm report IDs/hashes, distinct quality-OPE and harm-OPE report IDs/hashes, censor-diagnostics ID/hash, predecessor, cutoff, ledger, and sealer provenance. The transition function must rebuild and revalidate the canonical transition binding—artifact kind/hash, target state, exact scope, cutoff/look/predecessor, snapshot/cohort hashes, endpoint report hashes, eligibility/disposition, and current operator capability—in the same transaction.
 
 - [ ] **Step 9: Delete caller-built `CanaryBatch` and ESS/IPW-Wilson authorization.** If simulation still needs Wilson/ESS, move it under `.planning/spikes/` or a `_test.go` helper with no production export.
-- [ ] **Step 10: Verify** focused unit, DB integration, privileges, migrations, race, vet, and build.
+- [ ] **Step 10: Verify** canonical round trips and tamper rejection for every #93.7 schema; exact stratum/cluster/draw/hypergeometric/DR/bootstrap vectors; five-look boundary and late-fact behavior; selected-intention OPE eligibility with unknown delivery exposure; distinct endpoint report/evidence bindings; sole-writer retry/rollback/non-substitution; then focused unit, DB integration, privileges, migrations, race, vet, and build.
 - [x] **Step 11: Commit outcome ingestion separately** — `feat(adaptive): record typed evaluator outcomes`.
 - [ ] **Step 12: Commit sealed evidence** — `feat(adaptive): seal cohort-built promotion evidence`.
 
@@ -606,7 +609,7 @@ ON MATCH SET
 - [ ] **Step 4: Prove llama.cpp portability only** with `unsloth/Qwen3.5-2B-GGUF`, file `Qwen3.5-2B-Q4_K_M.gguf`. Capture only allow-listed `aura.settings` rows, override them transactionally, run the real Aura binary/adaptive path against llama.cpp, then restore captured rows exactly in a guaranteed cleanup. Label every Qwen result `portability_only=true`; it cannot satisfy quality/promotion gates.
 - [ ] **Step 5: Run real-model shadow** using Aura's configured production model. Shadow serves the static champion at probability `1.0`; challenger output is diagnostic. Prepare evaluator calibration, snapshot, focal cohort/power/support plan, safety/rollback limits, and rollback plan; obtain explicit operator admission approval; bind that approval into the immutable canary-admission artifact; only then seal it.
 - [ ] **Step 6: Obtain a separate explicit operator authorization before canary mutation.** In one later atomic slice, add the capability-gated CLI/API, audited admission-artifact transition, one-focal-assignment serving, supported randomization, and rollback. Do not infer mutation authorization from successful shadow results or the earlier admission-artifact approval.
-- [ ] **Step 7: Run the closed real canary only after authorization**, seal the ledger-reconstructed outcome artifact, apply exact blocked randomization inference, obtain activation approval, and promote one domain/catalog at a time.
+- [ ] **Step 7: Run the closed real canary only after authorization**, seal the ledger-reconstructed outcome artifact, apply exact `stratified-bonferroni-hypergeom-ate-v1` bounds over owner plus server claim-time strata with conversation interference clusters, obtain activation approval, and promote one domain/catalog at a time. Selected-intention OPE remains diagnostic and cannot substitute for the closed outcome gate.
 - [ ] **Step 8: Verify the full repository once at final source state**:
 
 ```bash
