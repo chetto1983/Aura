@@ -561,7 +561,11 @@ func cycleCorrectionFacts(t *testing.T, cohort *FocalCohort, assignment Assignme
 	second := newCorrection(secondSource, uuid.Must(uuid.NewV7()))
 	first := newCorrection(firstSource, second.event.ID)
 	second = newCorrection(secondSource, first.event.ID)
-	return []cohortLedgerFact{cohortLedgerFact{assignment: assignment, event: mustAssignmentEvent(t, assignment), recordedAt: cohort.Cutoff().Add(-time.Minute)}, first, second}
+	return []cohortLedgerFact{
+		{assignment: assignment, event: mustAssignmentEvent(t, assignment), recordedAt: cohort.Cutoff().Add(-time.Minute)},
+		first,
+		second,
+	}
 }
 
 func mustAssignmentEvent(t *testing.T, assignment Assignment) Event {

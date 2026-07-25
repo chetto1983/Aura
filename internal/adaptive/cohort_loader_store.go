@@ -106,6 +106,6 @@ func cohortLedgerFactFromPersistedRow(row sqlc.AuraAdaptiveOutbox) cohortLedgerF
 			PayloadHash: row.PayloadHash,
 			CreatedAt:   row.CreatedAt.Time,
 		},
-		recordedAt: row.RecordedAt.Time,
+		recordedAt: canonicalCohortLedgerTime(row.RecordedAt.Time),
 	}
 }

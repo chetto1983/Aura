@@ -13,15 +13,20 @@ import (
 	"github.com/google/uuid"
 )
 
+// ErrInvalidCohortLedger reports an invalid closed cohort reconstruction input.
 var ErrInvalidCohortLedger = errors.New("adaptive cohort ledger is invalid")
 
+// CohortLedgerState identifies whether a cohort reconstruction is final.
 type CohortLedgerState string
 
 const (
-	CohortLedgerOpen   CohortLedgerState = "open"
+	// CohortLedgerOpen indicates that the cohort cutoff has not elapsed.
+	CohortLedgerOpen CohortLedgerState = "open"
+	// CohortLedgerClosed indicates that the cohort cutoff has elapsed.
 	CohortLedgerClosed CohortLedgerState = "closed"
 )
 
+// CohortLedger is the deterministic reconstruction of a focal cohort.
 type CohortLedger struct {
 	CohortID          uuid.UUID
 	CohortSHA256      string
@@ -34,6 +39,7 @@ type CohortLedger struct {
 	Sealable          bool
 }
 
+// CohortMember is one claim and its effective evidence in a cohort ledger.
 type CohortMember struct {
 	Claim       FocalClaim
 	Assignment  Assignment
@@ -46,6 +52,7 @@ type CohortMember struct {
 	ReasonCodes []string
 }
 
+// CohortDeliveryProjection is the delivery evidence associated with a member.
 type CohortDeliveryProjection struct {
 	EventID             uuid.UUID
 	IntendedActionID    string
@@ -56,6 +63,7 @@ type CohortDeliveryProjection struct {
 	FallbackReason      FallbackReason
 }
 
+// CohortEffectiveObservation is the terminal primary outcome evidence for a member.
 type CohortEffectiveObservation struct {
 	EventID    uuid.UUID
 	Status     OutcomeStatus
@@ -63,6 +71,7 @@ type CohortEffectiveObservation struct {
 	ObservedAt time.Time
 }
 
+// IncludedFactRef identifies one event included in a closed cohort ledger.
 type IncludedFactRef struct {
 	EventID       uuid.UUID
 	AssignmentID  uuid.UUID
@@ -71,6 +80,7 @@ type IncludedFactRef struct {
 	RecordedAt    time.Time
 }
 
+// CohortArmCensorDiagnostics summarizes censoring for one cohort arm.
 type CohortArmCensorDiagnostics struct {
 	ArmID      string
 	Members    int
@@ -78,6 +88,7 @@ type CohortArmCensorDiagnostics struct {
 	CensorRate float64
 }
 
+// CohortCensorDiagnostics summarizes censoring across a closed cohort ledger.
 type CohortCensorDiagnostics struct {
 	Members           int
 	Censored          int
@@ -128,6 +139,7 @@ func reconstructCohortLedger(
 		if err := validateCohortLedgerClaim(cohort, claim); err != nil {
 			return CohortLedger{}, err
 		}
+		claim = canonicalCohortLedgerClaim(claim)
 		if _, duplicate := claimsByAssignment[claim.AssignmentID]; duplicate {
 			return CohortLedger{}, fmt.Errorf("%w: duplicate claim", ErrInvalidCohortLedger)
 		}
@@ -160,7 +172,7 @@ func reconstructCohortLedger(
 		for _, fact := range memberFacts {
 			included = append(included, IncludedFactRef{
 				EventID: fact.event.ID, AssignmentID: assignmentID, Kind: fact.event.Kind,
-				PayloadSHA256: hex.EncodeToString(fact.event.PayloadHash), RecordedAt: fact.recordedAt,
+				PayloadSHA256: hex.EncodeToString(fact.event.PayloadHash), RecordedAt: canonicalCohortLedgerTime(fact.recordedAt),
 			})
 		}
 	}
@@ -183,10 +195,14 @@ func reconstructCohortLedger(
 		return included[i].EventID.String() < included[j].EventID.String()
 	})
 	diagnostics := cohortCensorDiagnostics(cohort, members)
+	digest, err := cohortLedgerHash(cohort, members, included)
+	if err != nil {
+		return CohortLedger{}, fmt.Errorf("%w: marshal digest: %w", ErrInvalidCohortLedger, err)
+	}
 	return CohortLedger{
 		CohortID: cohort.ID(), CohortSHA256: cohort.SHA256(), State: CohortLedgerClosed,
 		Members: members, IncludedFacts: included, LateFactCount: lateFactCount, CensorDiagnostics: diagnostics,
-		SHA256: cohortLedgerHash(cohort, members, included),
+		SHA256: digest,
 		Sealable: uint64(len(members)) >= cohort.Power().MinimumMembers &&
 			diagnostics.OverallCensorRate <= cohort.Censoring().MaxCensorRate &&
 			diagnostics.CensorImbalance <= cohort.Censoring().MaxCensorImbalance,
@@ -241,6 +257,16 @@ func cohortClaimTimeBlockStart(claimedAt time.Time, seconds uint64) time.Time {
 		quotient--
 	}
 	return time.Unix(quotient*blockSeconds, 0).UTC()
+}
+
+func canonicalCohortLedgerClaim(claim FocalClaim) FocalClaim {
+	claim.ClaimedAt = canonicalCohortLedgerTime(claim.ClaimedAt)
+	claim.TimeBlockStart = canonicalCohortLedgerTime(claim.TimeBlockStart)
+	return claim
+}
+
+func canonicalCohortLedgerTime(value time.Time) time.Time {
+	return value.Round(0).UTC()
 }
 
 func cohortCensorDiagnostics(cohort *FocalCohort, members []CohortMember) CohortCensorDiagnostics {
@@ -402,16 +428,19 @@ func validCohortTerminalPrimaryObservation(observation OutcomeObservation, valid
 		(observation.Status == OutcomeObserved && validate(observation) == nil)
 }
 
-func cohortLedgerHash(cohort *FocalCohort, members []CohortMember, facts []IncludedFactRef) string {
-	document, _ := json.Marshal(struct {
+func cohortLedgerHash(cohort *FocalCohort, members []CohortMember, facts []IncludedFactRef) (string, error) {
+	document, err := json.Marshal(struct {
 		CohortID     uuid.UUID
 		CohortSHA256 string
 		Cutoff       time.Time
 		Members      []CohortMember
 		Facts        []IncludedFactRef
 	}{cohort.ID(), cohort.SHA256(), cohort.Cutoff(), members, facts})
+	if err != nil {
+		return "", err
+	}
 	sum := sha256.Sum256(document)
-	return hex.EncodeToString(sum[:])
+	return hex.EncodeToString(sum[:]), nil
 }
 
 func validateCohortCorrectionGraph(outcomes map[uuid.UUID]loadedCohortOutcome, corrections map[uuid.UUID]loadedCohortCorrection) error {
@@ -519,6 +548,7 @@ func cohortClosedFacts(cutoff time.Time, facts []cohortLedgerFact) ([]cohortLedg
 				continue
 			}
 		}
+		fact.recordedAt = canonicalCohortLedgerTime(fact.recordedAt)
 		closed = append(closed, fact)
 	}
 	return closed, late, nil
