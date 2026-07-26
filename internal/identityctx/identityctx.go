@@ -3,11 +3,16 @@ package identityctx
 import "context"
 
 // LocalOperatorIdentity is the seeded `local` operator identity (migration 0004,
-// UUID …0001). It is the fail-closed fallback owner for any request that carries no
-// authenticated principal: a no-principal path is attributed to the local operator
-// rather than left unscoped. Both :User-writing subsystems share this single value —
-// document ingestion (documents.OperatorIdentity aliases it) and memory-MCP tool
-// scoping — so they agree on who owns no-principal data.
+// UUID …0001). It is the owner of no-principal data ONLY until an operator enrolls:
+// serve_auth.go's retireLegacyLocalIdentityForAuthulaUser migrates every Postgres
+// reference onto the enrolled identity and then DELETES this row.
+//
+// So it is a seed, not a fallback. Using it as one after first login attributes data to
+// a tenant that no longer exists, and — because the retirement does not reach Neo4j —
+// silently forks the memory graph in two: the cockpit reading as the enrolled identity
+// and the CLI writing as this one, neither seeing the other. Resolve a no-principal
+// owner with OperatorIdentity instead, which returns this value only while it is still
+// the truth.
 const LocalOperatorIdentity = "00000000-0000-0000-0000-000000000001"
 
 // CLIServiceIdentity is the non-human principal used only to own durable CLI

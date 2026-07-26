@@ -11,6 +11,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -20,6 +21,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/mcp"
 )
@@ -35,11 +38,37 @@ const memoryUsage = "usage: aura memory {search <query>|context <query>|sessions
 	"forget <preference|fact|entity> <node-id>}"
 
 func runMemory(args []string) {
-	if err := runMemoryCommand(context.Background(), args, os.Stdout); err != nil {
+	ctx, err := withOperatorIdentity(context.Background())
+	if err == nil {
+		err = runMemoryCommand(ctx, args, os.Stdout)
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		fmt.Fprintln(os.Stderr, memoryUsage)
 		os.Exit(1)
 	}
+}
+
+// withOperatorIdentity resolves who this CLI invocation writes and reads as, and seeds it
+// on the context so every memory call downstream is scoped to one answer.
+//
+// It costs a Postgres round-trip on a command that otherwise only needs the sidecar. That
+// is the honest price: the identity lives in Postgres, and the alternative — the hardcoded
+// seed this used to fall back on — was silently addressing a tenant that first login had
+// already deleted, so `aura memory` wrote a memory graph the cockpit could not see and
+// read one it had not written.
+func withOperatorIdentity(ctx context.Context) (context.Context, error) {
+	cfg := config.LoadDB()
+	pool, err := db.Open(ctx, &cfg.DB)
+	if err != nil {
+		return nil, fmt.Errorf("aura memory needs Postgres to resolve the operator identity: %w", err)
+	}
+	defer pool.Close()
+	identityID, err := identityctx.OperatorIdentity(ctx, pool)
+	if err != nil {
+		return nil, err
+	}
+	return identityctx.WithIdentityID(ctx, identityID), nil
 }
 
 func runMemoryCommand(ctx context.Context, args []string, out io.Writer) error {
@@ -330,33 +359,45 @@ func callMemoryToolText(ctx context.Context, tool string, args map[string]any) (
 		return "", err
 	}
 	defer func() { _ = cli.Close() }()
-	return cli.CallTool(callCtx, tool, scopeMemoryArgs(callCtx, args))
+	scoped, err := scopeMemoryArgs(callCtx, args)
+	if err != nil {
+		return "", err
+	}
+	return cli.CallTool(callCtx, tool, scoped)
 }
 
-// scopeMemoryArgs stamps the caller's identity on every memory call, the same fail-open
-// guard memory_onboarding.go applies and internal/agent/mcptools/bridge.go applies for the
-// agent. This path had neither: the memory server treats a missing user_identifier as "no
-// scope", so `aura memory store-message` wrote a :Conversation with a NULL owner and zero
-// HAS_CONVERSATION edges — data owned by nobody, invisible to every scoped read that is
-// supposed to return it. Worse, entities extracted from such a message fall into the
-// "global" deduplication scope and can never merge with the owner-scoped ones the agent
-// records, forking the same person into two nodes.
+// scopeMemoryArgs stamps the caller's identity on every memory call. The memory server
+// treats a missing user_identifier as "no scope", so an unstamped call wrote a
+// :Conversation with a NULL owner and zero HAS_CONVERSATION edges — data owned by nobody,
+// invisible to every scoped read meant to return it, with anything extracted from it
+// landing in the "global" deduplication scope where it can never merge with the
+// owner-scoped entities the agent records.
 //
-// A caller-supplied user_identifier is left alone: the verbs that take one explicitly
-// (an operator inspecting another identity) must not be silently rescoped.
-func scopeMemoryArgs(ctx context.Context, args map[string]any) map[string]any {
+// It takes the identity off the context and does NOT invent one. The previous fallback to
+// identityctx.LocalOperatorIdentity looked fail-closed and was not: first login retires
+// that seed, so the CLI addressed a deleted tenant while the cockpit used the enrolled
+// one, and the two never saw each other's memory. runMemory resolves the real owner up
+// front (withOperatorIdentity); an unscoped context here means that resolution was
+// skipped, which is a wiring bug worth failing on rather than papering over — the failure
+// mode it would paper over is writing a user's memory under the wrong identity.
+//
+// A caller-supplied user_identifier is left alone: the paths that pass one explicitly
+// (serve_recall.go's per-conversation owner, an operator inspecting another identity)
+// must not be silently rescoped.
+func scopeMemoryArgs(ctx context.Context, args map[string]any) (map[string]any, error) {
 	if args == nil {
 		args = map[string]any{}
 	}
 	if existing, ok := args["user_identifier"].(string); ok && existing != "" {
-		return args
+		return args, nil
 	}
 	identityID := identityctx.IdentityID(ctx)
 	if identityID == "" {
-		identityID = identityctx.LocalOperatorIdentity
+		return nil, errors.New(
+			"memory call has no identity to scope to: resolve the operator identity before calling")
 	}
 	args["user_identifier"] = identityID
-	return args
+	return args, nil
 }
 
 func arg(args []string, i int, verb, placeholder string) (string, error) {

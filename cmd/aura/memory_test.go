@@ -129,6 +129,13 @@ func withMemoryServerAt(t *testing.T, url string) {
 	}
 }
 
+// scopedCtx carries an identity the way runMemory's withOperatorIdentity does in
+// production. Without it every call fails on scoping, which would make the negative cases
+// below pass for the wrong reason.
+func scopedCtx() context.Context {
+	return identityctx.WithIdentityID(context.Background(), "identity-under-test")
+}
+
 func TestMemoryVerbMapping(t *testing.T) {
 	rec := newRecordingMemoryMCPServer(t)
 	withMemoryServerAt(t, rec.URL)
@@ -162,7 +169,7 @@ func TestMemoryVerbMapping(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			if err := runMemoryCommand(context.Background(), tc.args, &buf); err != nil {
+			if err := runMemoryCommand(scopedCtx(), tc.args, &buf); err != nil {
 				t.Fatalf("runMemoryCommand(%v): %v", tc.args, err)
 			}
 			if got := rec.tool(); got != tc.wantTool {
@@ -209,7 +216,7 @@ func TestMemoryVerbMappingNegativeCases(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			if err := runMemoryCommand(context.Background(), tc.args, &buf); err == nil {
+			if err := runMemoryCommand(scopedCtx(), tc.args, &buf); err == nil {
 				t.Fatalf("args %v: expected non-nil error, got nil (output %q)", tc.args, buf.String())
 			}
 		})
@@ -235,7 +242,7 @@ func TestMemoryNotConfigured(t *testing.T) {
 		t.Fatalf("save managed config: %v", err)
 	}
 	var buf bytes.Buffer
-	err := runMemoryCommand(context.Background(), []string{"search", "x"}, &buf)
+	err := runMemoryCommand(scopedCtx(), []string{"search", "x"}, &buf)
 	if err == nil {
 		t.Fatalf("expected error when memory server is disabled")
 	}
@@ -317,35 +324,45 @@ func TestMemoryUpdateRejectsFieldsTheServerWouldDrop(t *testing.T) {
 	}
 }
 
-// TestScopeMemoryArgs pins the fail-open guard on the CLI memory path. The memory server
+// TestScopeMemoryArgs pins the scoping guard on the CLI memory path. The memory server
 // treats a missing user_identifier as "no scope", so an unstamped call wrote a
 // :Conversation with a NULL owner and zero HAS_CONVERSATION edges — data owned by nobody
 // and invisible to every scoped read meant to return it, with anything extracted from it
 // landing in the "global" deduplication scope where it can never merge with the
 // owner-scoped entities the agent records.
 func TestScopeMemoryArgs(t *testing.T) {
-	t.Run("stamps the operator fallback when the context carries no identity", func(t *testing.T) {
-		got := scopeMemoryArgs(context.Background(), map[string]any{"session_id": "s1"})
-		if got["user_identifier"] != identityctx.LocalOperatorIdentity {
-			t.Fatalf("user_identifier = %v, want the operator fallback %q",
-				got["user_identifier"], identityctx.LocalOperatorIdentity)
+	t.Run("refuses to invent an identity when the context carries none", func(t *testing.T) {
+		// This used to fall back to identityctx.LocalOperatorIdentity, which reads as
+		// fail-closed and is not: first login retires that seed, so the CLI addressed a
+		// deleted tenant while the cockpit used the enrolled one. `aura memory facts
+		// Davide` answered 0 with three facts in the graph. Guessing an owner is the
+		// failure, not the safety net.
+		_, err := scopeMemoryArgs(context.Background(), map[string]any{"session_id": "s1"})
+		if err == nil {
+			t.Fatal("expected an error rather than a guessed owner")
+		}
+	})
+
+	t.Run("uses the identity on the context", func(t *testing.T) {
+		ctx := identityctx.WithIdentityID(context.Background(), "identity-1")
+		got, err := scopeMemoryArgs(ctx, map[string]any{"session_id": "s1"})
+		if err != nil {
+			t.Fatalf("scopeMemoryArgs: %v", err)
+		}
+		if got["user_identifier"] != "identity-1" {
+			t.Fatalf("user_identifier = %v, want identity-1", got["user_identifier"])
 		}
 		if got["session_id"] != "s1" {
 			t.Fatalf("existing args must survive: %#v", got)
 		}
 	})
 
-	t.Run("prefers the authenticated identity on the context", func(t *testing.T) {
-		ctx := identityctx.WithIdentityID(context.Background(), "identity-1")
-		got := scopeMemoryArgs(ctx, nil)
-		if got["user_identifier"] != "identity-1" {
-			t.Fatalf("user_identifier = %v, want identity-1", got["user_identifier"])
-		}
-	})
-
 	t.Run("never silently rescopes an explicit user_identifier", func(t *testing.T) {
 		ctx := identityctx.WithIdentityID(context.Background(), "identity-1")
-		got := scopeMemoryArgs(ctx, map[string]any{"user_identifier": "someone-else"})
+		got, err := scopeMemoryArgs(ctx, map[string]any{"user_identifier": "someone-else"})
+		if err != nil {
+			t.Fatalf("scopeMemoryArgs: %v", err)
+		}
 		if got["user_identifier"] != "someone-else" {
 			t.Fatalf("explicit scope was overwritten: %v", got["user_identifier"])
 		}
