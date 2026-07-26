@@ -11,6 +11,7 @@ import {
   initialIntentState,
   intentReducer,
   labelFamilyColor,
+  nodeDisplayName,
   rowsToClientGraph,
   toClientIntent,
 } from '../graphIntent';
@@ -213,6 +214,17 @@ describe('degreeToSize (non-color encoding channel)', () => {
   });
 });
 
+describe('nodeDisplayName (the one place a node becomes readable text)', () => {
+  it('prefers the caption, then the label, and only then the raw id', () => {
+    expect(nodeDisplayName({ id: 'x', caption: 'Davide', labels: ['Entity'] })).toBe('Davide');
+    expect(nodeDisplayName({ id: 'x', labels: ['Fact'] })).toBe('Fact');
+    // A whitespace-only caption is as unreadable as none at all.
+    expect(nodeDisplayName({ id: 'x', caption: '   ', labels: ['Preference'] })).toBe('Preference');
+    // Nothing left to show: the id is the last resort, not the default.
+    expect(nodeDisplayName({ id: '4:abc:21' })).toBe('4:abc:21');
+  });
+});
+
 describe('rowsToClientGraph (contract → graphology-ready)', () => {
   it('maps nodes with id/caption/color/size and de-dupes by id', () => {
     const res = result({
@@ -230,7 +242,11 @@ describe('rowsToClientGraph (contract → graphology-ready)', () => {
     expect(n1?.color).toBe(BRAND_RAMP[0]);
     expect(n1?.size).toBeGreaterThan(4); // degree 2 → larger than floor
     const n2 = out.nodes.find((n) => n.id === 'n2');
-    expect(n2?.caption).toBe('n2'); // caption falls back to id
+    // A caption-less node shows its LABEL. This assertion previously demanded the node id,
+    // which is a Neo4j elementId: the workspace printed screens of
+    // "4:4260efd2-fa44-4d3b-b1a9-8ccf7886ae88:21" because every node that was not an Entity
+    // arrived without a caption. The old expectation encoded that behaviour as correct.
+    expect(n2?.caption).toBe('Entity');
     expect(n2?.entityType).toBe('PERSON');
     expect(out.edges).toEqual([{ id: 'e1', source: 'n1', target: 'n2', label: 'MENTIONS' }]);
   });

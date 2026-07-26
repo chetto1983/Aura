@@ -277,6 +277,25 @@ export function toClientIntent(state: IntentState): GraphIntent {
   };
 }
 
+/**
+ * nodeDisplayName is the ONE place a node becomes human-readable text, shared by the canvas,
+ * the evidence list and the inspector. The server projects a caption from whichever property
+ * names each label; when a node genuinely has none — an internal bookkeeping node, or a :User
+ * identified only by its UUID — its LABEL is a far better answer than the Neo4j elementId.
+ * Every call site used to fall back to that id, so the workspace showed columns of
+ * "4:4260efd2-fa44-4d3b-b1a9-8ccf7886ae88:21" instead of names.
+ */
+export function nodeDisplayName(node: {
+  readonly caption?: string;
+  readonly labels?: readonly string[];
+  readonly id: string;
+}): string {
+  const caption = node.caption?.trim() ?? '';
+  if (caption.length > 0) return caption;
+  const label = primaryLabel(node.labels ?? []);
+  return label.length > 0 ? label : node.id;
+}
+
 /** degreeToSize maps a node's degree to a Sigma node radius — the NON-color channel that
  * keeps color from being the only encoding (WCAG 1.4.1 / D-03). A floor keeps isolated
  * nodes visible; growth is sub-linear so a hub never dwarfs the canvas. */
@@ -303,7 +322,7 @@ export function rowsToClientGraph(result: GraphResult): ClientGraph {
     const color = labelFamilyColor(primaryLabel(labels), node.entity_type, result.schema);
     nodes.push({
       id: node.id,
-      caption: node.caption ?? node.id,
+      caption: nodeDisplayName(node),
       color,
       size: degreeToSize(node.degree ?? 0),
       labels,

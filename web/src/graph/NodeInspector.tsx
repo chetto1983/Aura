@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSourceExplorer } from '../chat/displays/sourceExplorerControls';
 import { isSourceNode, sourcesForNode } from './nodeSources';
+import { nodeDisplayName } from './graphIntent';
 import type { GraphNode } from './types';
 import { Button } from '@/components/ui/button';
 
@@ -59,7 +60,7 @@ export function NodeInspector({ node, query, onPinPath, onClose }: NodeInspector
     <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4">
       <header className="flex items-start justify-between gap-2">
         <h3 className="font-display text-[18px] font-semibold text-text">
-          {node.caption ?? node.id}
+          {nodeDisplayName(node)}
         </h3>
         <Button
           type="button"

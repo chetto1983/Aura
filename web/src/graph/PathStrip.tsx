@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { GraphEdge, GraphNode } from './types';
+import { nodeDisplayName } from './graphIntent';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -12,10 +13,6 @@ import { cn } from '@/lib/utils';
 // it = the same effect as a canvas click (hover is never the only access path), and arrow keys
 // roam the list. Every interactive item is a 44px touch target. The canvas pixels are opaque to
 // assistive tech — this DOM mirror is the standards-compliant access route.
-
-function nodeCaption(node: GraphNode): string {
-  return node.caption ?? node.id;
-}
 
 export interface PathStripProps {
   readonly nodes: readonly GraphNode[];
@@ -29,7 +26,7 @@ export function PathStrip({ nodes, edges, pinnedPath, onSelectNode }: PathStripP
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const pathNodes = nodes.filter((n) => pinnedPath.has(n.id));
-  const captionById = new Map(nodes.map((n) => [n.id, nodeCaption(n)]));
+  const captionById = new Map(nodes.map((n) => [n.id, nodeDisplayName(n)]));
 
   function focusItem(index: number) {
     const clamped = Math.max(0, Math.min(index, nodes.length - 1));
@@ -59,7 +56,7 @@ export function PathStrip({ nodes, edges, pinnedPath, onSelectNode }: PathStripP
           <ol className="flex flex-wrap items-center gap-1 text-[13px]">
             {pathNodes.map((node, i) => (
               <li key={node.id} className="flex items-center gap-1">
-                <Badge>{nodeCaption(node)}</Badge>
+                <Badge>{nodeDisplayName(node)}</Badge>
                 {i < pathNodes.length - 1 ? (
                   <span aria-hidden="true" className="text-text-muted">
                     —→
@@ -95,7 +92,7 @@ export function PathStrip({ nodes, edges, pinnedPath, onSelectNode }: PathStripP
                 aria-pressed={pinnedPath.has(node.id)}
                 className="h-auto min-h-11 w-full justify-between whitespace-normal px-3 py-2 text-left text-[15.5px]"
               >
-                <span className="break-words">{nodeCaption(node)}</span>
+                <span className="break-words">{nodeDisplayName(node)}</span>
                 <span
                   className={cn(
                     'ml-2 text-[13px]',

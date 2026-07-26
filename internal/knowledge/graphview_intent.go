@@ -8,6 +8,53 @@
 // bare `RETURN n` or a bare labels() list would lose data).
 package knowledge
 
+import (
+	"strconv"
+	"strings"
+)
+
+// captionMaxChars bounds a projected caption. A :Message carries its whole body in
+// `content`; unbounded it would ship a paragraph per node to the canvas.
+const captionMaxChars = 140
+
+// captionProperties is the ordered search for a node's human-readable name, most
+// specific first. Every label the graph actually holds is represented: an Entity names
+// itself, but a Fact is identified by its predicate, a Preference by its text, a Message
+// by its content and a Conversation by its session. Only `name`/`canonical_name` used to
+// be consulted, so every node that was not an Entity projected an EMPTY caption and the
+// cockpit fell back to printing the raw Neo4j elementId — a screen of
+// "4:4260efd2-fa44-…:21" where names belong.
+//
+// `identifier` is deliberately absent: it is the :User node's UUID, so consulting it would
+// reintroduce exactly the unreadable id this list exists to remove. A User with no caption
+// renders as its label instead.
+var captionProperties = []string{
+	"name", "canonical_name", // Entity
+	"preference", // Preference
+	"title",      // Document
+	"predicate",  // Fact
+	"content",    // Message
+	"query",      // ReasoningStep
+	"tool",       // ToolCall
+	"session_id", // Conversation
+}
+
+// captionExpr renders the caption projection for a node variable. toString() guards a
+// non-string property (an epoch counter, a number) that would otherwise make left() fail at
+// runtime for the whole query. A :Message caption is a markdown body, so line breaks and
+// tabs collapse to spaces before truncation — a caption is a one-line label on the canvas
+// and in the evidence rows, and raw newlines break both.
+func captionExpr(v string) string {
+	refs := make([]string, 0, len(captionProperties)+1)
+	for _, prop := range captionProperties {
+		refs = append(refs, v+"."+prop)
+	}
+	refs = append(refs, "''")
+	raw := "toString(coalesce(" + strings.Join(refs, ", ") + "))"
+	flat := `replace(replace(replace(` + raw + `, '\n', ' '), '\r', ' '), '\t', ' ')`
+	return "left(trim(" + flat + "), " + strconv.Itoa(captionMaxChars) + ")"
+}
+
 // Op enum (GraphIntent.Op). Exported so the REST layer (Phase 27 plan 02) can
 // enum-validate an inbound intent against the SAME constants the dispatcher switches on —
 // one source of truth for the wire op set, no drift between the validator and the compiler.
@@ -48,12 +95,12 @@ RETURN
   elementId(e)                       AS s_id,
   apoc.convert.toJson(labels(e))     AS s_labels,
   e.type                             AS s_entity_type,
-  coalesce(e.name, e.canonical_name) AS s_caption,
+  ` + captionExpr("e") + ` AS s_caption,
   apoc.map.removeKey(properties(e), 'embedding') AS s_props,
   elementId(n)                       AS n_id,
   apoc.convert.toJson(labels(n))     AS n_labels,
   n.type                             AS n_entity_type,
-  coalesce(n.name, n.canonical_name) AS n_caption,
+  ` + captionExpr("n") + ` AS n_caption,
   apoc.map.removeKey(properties(n), 'embedding') AS n_props,
   elementId(r)                       AS r_id,
   type(r)                            AS r_type,
@@ -133,12 +180,12 @@ RETURN
   elementId(s)                       AS s_id,
   apoc.convert.toJson(labels(s))     AS s_labels,
   s.type                             AS s_entity_type,
-  coalesce(s.name, s.canonical_name, s.tool, s.query) AS s_caption,
+  ` + captionExpr("s") + ` AS s_caption,
   apoc.map.removeKey(properties(s), 'embedding') AS s_props,
   CASE WHEN n IS NULL THEN '' ELSE elementId(n) END AS n_id,
   CASE WHEN n IS NULL THEN '' ELSE apoc.convert.toJson(labels(n)) END AS n_labels,
   CASE WHEN n IS NULL THEN '' ELSE n.type END AS n_entity_type,
-  CASE WHEN n IS NULL THEN '' ELSE coalesce(n.name, n.canonical_name, n.tool, n.query) END AS n_caption,
+  CASE WHEN n IS NULL THEN '' ELSE ` + captionExpr("n") + ` END AS n_caption,
   CASE WHEN n IS NULL THEN {} ELSE apoc.map.removeKey(properties(n), 'embedding') END AS n_props,
   CASE WHEN r IS NULL THEN '' ELSE elementId(r) END AS r_id,
   CASE WHEN r IS NULL THEN '' ELSE type(r) END AS r_type,
@@ -176,12 +223,12 @@ RETURN
   elementId(s)                       AS s_id,
   apoc.convert.toJson(labels(s))     AS s_labels,
   s.type                             AS s_entity_type,
-  coalesce(s.name, s.canonical_name, s.tool, s.query) AS s_caption,
+  ` + captionExpr("s") + ` AS s_caption,
   apoc.map.removeKey(properties(s), 'embedding') AS s_props,
   elementId(n)                       AS n_id,
   apoc.convert.toJson(labels(n))     AS n_labels,
   n.type                             AS n_entity_type,
-  coalesce(n.name, n.canonical_name, n.tool, n.query) AS n_caption,
+  ` + captionExpr("n") + ` AS n_caption,
   apoc.map.removeKey(properties(n), 'embedding') AS n_props,
   elementId(r)                       AS r_id,
   type(r)                            AS r_type,
