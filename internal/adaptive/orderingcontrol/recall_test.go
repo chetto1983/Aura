@@ -227,15 +227,6 @@ func TestDynamicRecallFailsClosedBeforeProvider(t *testing.T) {
 				decision.Policy.Mode = adaptive.PolicyOff
 			},
 		},
-		{
-			name: "empty query",
-			mutate: func(
-				input *runner.DynamicRecallInput,
-				_ *toolDecision,
-			) {
-				input.Query = ""
-			},
-		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

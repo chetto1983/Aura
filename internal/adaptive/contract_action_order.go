@@ -9,8 +9,10 @@ var memoryRecallActionCatalog = []string{
 }
 
 func validActionCatalogOrder(domain Domain, actions []string) bool {
-	return slices.IsSorted(actions) ||
-		(domain == DomainMemoryRecall &&
-			len(actions) <= len(memoryRecallActionCatalog) &&
-			slices.Equal(actions, memoryRecallActionCatalog[:len(actions)]))
+	if domain != DomainMemoryRecall {
+		return slices.IsSorted(actions)
+	}
+	return len(actions) > 0 &&
+		len(actions) <= len(memoryRecallActionCatalog) &&
+		slices.Equal(actions, memoryRecallActionCatalog[:len(actions)])
 }

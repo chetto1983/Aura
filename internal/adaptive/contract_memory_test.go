@@ -60,3 +60,26 @@ func TestMemoryRecallContractsAcceptFrozenOrderAndLiveMetadata(t *testing.T) {
 		t.Fatalf("revisions: %v", err)
 	}
 }
+
+func TestMemoryRecallSnapshotRejectsSortedNonCatalogActions(t *testing.T) {
+	_, err := NewPolicySnapshot(SnapshotSpec{
+		Scope: SnapshotScope{
+			OwnerID: uuid.Must(uuid.NewV7()), Domain: DomainMemoryRecall,
+			Point: PointMemoryRecall, ProviderID: "openrouter",
+			ModelID: "production-model", PolicyVersion: "policy-v1",
+			TrainingCutoff: time.Now().UTC().Add(-time.Hour),
+		},
+		ChampionActionID: StaticActionID,
+		FeatureSchema: []SnapshotFeatureDefinition{
+			{Key: FeatureQueryLength, Center: 0, Scale: 1},
+			{Key: FeatureRecallLimit, Center: 0, Scale: 1},
+		},
+		Actions: []SnapshotAction{
+			{ActionID: StaticActionID},
+			{ActionID: "zzz"},
+		},
+	})
+	if err == nil {
+		t.Fatal("memory snapshot accepted a sorted non-catalog action")
+	}
+}

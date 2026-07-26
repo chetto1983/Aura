@@ -222,6 +222,7 @@ func TestDynamicRecallRunnerWiringCoversFreshAndBranchPlacement(t *testing.T) {
 	tests := []struct {
 		name       string
 		run        func(*Runner, string) ([]*agent.Event, error)
+		wantQuery  string
 		wantBefore string
 		wantTail   bool
 	}{
@@ -234,6 +235,7 @@ func TestDynamicRecallRunnerWiringCoversFreshAndBranchPlacement(t *testing.T) {
 					userPtr("current question"),
 				))
 			},
+			wantQuery:  "current question",
 			wantBefore: "current question",
 		},
 		{
@@ -287,6 +289,9 @@ func TestDynamicRecallRunnerWiringCoversFreshAndBranchPlacement(t *testing.T) {
 				input DynamicRecallInput,
 				provider DynamicRecallProvider,
 			) (*PreparedDynamicRecall, error) {
+				if input.Query != test.wantQuery {
+					t.Fatalf("recall query = %q, want %q", input.Query, test.wantQuery)
+				}
 				order = append(order, "assignment")
 				recall, err := provider(
 					ctx,

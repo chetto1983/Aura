@@ -155,7 +155,6 @@ func newMemoryRecallAssignment(
 		actions[index] = string(action)
 	}
 	if input.OwnerID == uuid.Nil || input.RequestID == uuid.Nil ||
-		strings.TrimSpace(input.Query) == "" ||
 		input.MaxItems < 4 ||
 		!slices.Equal(
 			input.CandidateActions,
