@@ -511,7 +511,11 @@ services:
   # HTTP at http://127.0.0.1:${AURA_AGENT_MEMORY_MCP_PORT:-8091}/mcp/.
   aura-agent-memory-mcp:
     build:
-      context: ./docker/agent-memory     # vendored fork src/ pinned at c1c2d65
+      context: ./docker/agent-memory
+      args:
+        # Intentionally empty by default: Dockerfile rejects builds unless the
+        # caller supplies the exact Aura revision containing the vendored tree.
+        AURA_AGENT_MEMORY_VENDOR_REV: ${AURA_AGENT_MEMORY_VENDOR_REV:-}
     image: ${AURA_AGENT_MEMORY_MCP_IMAGE:-aura-agent-memory-mcp:local}
     pull_policy: never
     container_name: aura-agent-memory-mcp

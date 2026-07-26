@@ -1,10 +1,10 @@
 # Aura agent-memory MCP sidecar — the Neo4j Labs `neo4j-agent-memory` engine
-# (3-tier POLE+O memory over Neo4j, streamable-HTTP MCP) built reproducibly from
-# the VENDORED fork instead of the hand-built `:spike-fixed` image.
+# (3-tier POLE+O memory over Neo4j, streamable-HTTP MCP) built from Aura's
+# vendored, modified fork instead of the hand-built `:spike-fixed` image.
 #
-# Pinned source: fork `aura/provenance-safe-dedup`, commit c1c2d65 (v0.5.0).
-# The vendored `src/` + `pyproject.toml` are an exact `git archive` of that commit
-# (see docker/agent-memory/src/, pyproject.toml).
+# Fork baseline: https://github.com/chetto1983/agent-memory at
+# c1c2d6585fea4f2e562c17ac78d4c528e40e0f62. The image revision label records
+# the exact Aura revision containing the vendored source and later modifications.
 #
 # WHY vendor + install from src/, NEVER `pip install neo4j-agent-memory` from PyPI
 # (Pitfall 5): the provenance-safe-dedup fix (commit c1c2d65 — +165 lines in
@@ -24,6 +24,16 @@
 # the `neo4j-agent-memory` entry point installed.
 FROM python:3.11-slim
 
+ARG AURA_AGENT_MEMORY_VENDOR_REV
+RUN test -n "$AURA_AGENT_MEMORY_VENDOR_REV"
+
+LABEL org.opencontainers.image.source="https://github.com/chetto1983/aura" \
+    org.opencontainers.image.revision="$AURA_AGENT_MEMORY_VENDOR_REV" \
+    org.opencontainers.image.licenses="Apache-2.0" \
+    io.aura.agent-memory.upstream.source="https://github.com/neo4j-labs/agent-memory" \
+    io.aura.agent-memory.upstream.fork="https://github.com/chetto1983/agent-memory" \
+    io.aura.agent-memory.upstream.revision="c1c2d6585fea4f2e562c17ac78d4c528e40e0f62"
+
 # gcc is needed for any transitive deps that build native extensions; the fork
 # pins requires-python >=3.10 and upstream/cloudrun use python:3.11-slim.
 RUN apt-get update && apt-get install -y --no-install-recommends gcc \
@@ -31,7 +41,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends gcc \
 
 WORKDIR /app
 
-# Copy metadata first for layer caching, then the vendored package source.
+# Preserve the upstream license and Aura attribution in the distributed image.
+COPY LICENSE NOTICE /usr/share/licenses/agent-memory/
+
+# Copy package metadata first for layer caching, then the vendored package source.
 COPY pyproject.toml README.md README-pypi.md constraints.txt ./
 COPY src/ ./src/
 

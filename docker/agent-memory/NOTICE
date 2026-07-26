@@ -1,0 +1,11 @@
+Aura Agent Memory Sidecar
+
+This product includes software developed by Neo4j Labs:
+https://github.com/neo4j-labs/agent-memory
+
+The vendored fork baseline is published at:
+https://github.com/chetto1983/agent-memory
+revision c1c2d6585fea4f2e562c17ac78d4c528e40e0f62
+
+The vendored files are modified by Aura. The exact Aura source revision is
+recorded in the image's org.opencontainers.image.revision label.

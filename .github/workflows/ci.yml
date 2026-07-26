@@ -828,6 +828,8 @@ jobs:
           context: ./docker/agent-memory
           tags: aura-agent-memory-mcp:local
           load: true
+          build-args: |
+            AURA_AGENT_MEMORY_VENDOR_REV=${{ github.sha }}
           cache-from: type=gha,scope=agent-memory-mcp
           cache-to: type=gha,scope=agent-memory-mcp,mode=max
 
