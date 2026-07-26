@@ -1145,8 +1145,46 @@ class LongTermMemory(BaseMemory[Entity]):
         )
         if user_identifier is not None:
             await self._link_user_to_fact(user_identifier, str(fact.id))
+            await self._link_fact_to_subject_entity(
+                user_identifier, str(fact.id), fact.subject
+            )
 
         return fact
+
+    async def _resolve_owned_entity_id(
+        self, user_identifier: str, name: str
+    ) -> str | None:
+        """Return the id of an entity the user owns under this exact name, if any."""
+        if not name or not name.strip():
+            return None
+        rows = await self._client.execute_read(
+            queries.FIND_SCOPED_ENTITY_BY_NAME,
+            {"user_identifier": user_identifier, "name": name.strip()},
+        )
+        return rows[0]["id"] if rows else None
+
+    async def _link_fact_to_subject_entity(
+        self, user_identifier: str, fact_id: str, subject: str
+    ) -> None:
+        """Attach a fact to the entity its subject names, when the user owns one.
+
+        Without this a fact is a string sitting beside the node it talks about:
+        ``Fact{subject: "Davide"}`` and ``Entity{name: "Davide"}`` are unconnected, so
+        nothing can get from the person to what is known about them by structure.
+
+        Deliberately does NOT create the entity when none resolves. Fact subjects are not
+        always names — the onboarding sentinel writes facts whose subject is an identity
+        UUID — and minting an :Entity for every one of those would fill the graph with
+        nodes no one meant to create. An unresolved subject simply stays a string, which is
+        no worse than today.
+        """
+        entity_id = await self._resolve_owned_entity_id(user_identifier, subject)
+        if entity_id is None:
+            return
+        await self._client.execute_write(
+            queries.LINK_FACT_TO_ENTITY,
+            {"fact_id": fact_id, "entity_id": entity_id},
+        )
 
     async def _link_user_to_fact(self, user_identifier: str, fact_id: str) -> None:
         """Idempotently write ``(:User)-[:HAS_FACT]->(:Fact)``."""
@@ -2649,6 +2687,19 @@ class LongTermMemory(BaseMemory[Entity]):
                 {"id": str(fact_id), "embedding": embedding},
             )
 
+        # A corrected subject means the ABOUT_SUBJECT edge now points at the wrong entity.
+        # Re-resolve rather than leave it: silent staleness is worse than either dropping
+        # the link or repointing it, because nothing downstream can tell the edge is a lie.
+        # When the new subject resolves to nothing owned, the fact keeps no link at all —
+        # the same outcome add_fact produces for an unresolvable subject.
+        if "subject" in changed_fields and subject is not None:
+            await self._client.execute_write(
+                queries.UNLINK_FACT_FROM_ENTITIES, {"fact_id": str(fact_id)}
+            )
+            await self._link_fact_to_subject_entity(
+                user_identifier, str(fact_id), subject
+            )
+
         updated_rows = await self._client.execute_read(
             queries.GET_FACT_SCOPED,
             {"fact_id": str(fact_id), "user_identifier": user_identifier},
@@ -2844,6 +2895,36 @@ class LongTermMemory(BaseMemory[Entity]):
                 "subject": subject,
                 "limit": limit,
                 "user_identifier": user_identifier,
+            },
+        )
+        return [self._parse_fact(dict(r["f"])) for r in results]
+
+    async def get_facts_about_entity(
+        self,
+        entity_id: UUID | str,
+        *,
+        user_identifier: str,
+        limit: int = 100,
+        active_only: bool = True,
+    ) -> list[Fact]:
+        """Get the caller's facts whose subject resolves to this entity.
+
+        The structural counterpart to :meth:`get_facts_about`, which matches the subject
+        string exactly: this follows the ABOUT_SUBJECT edge instead, so a fact is found
+        from the entity it is about rather than by re-guessing its wording.
+
+        Requires a user scope by signature, not by convention. There is no unscoped
+        variant: reaching facts FROM an entity is exactly the direction where a shared
+        entity node would otherwise hand back other people's facts.
+        """
+        self._enforce_multi_tenant(user_identifier)
+        results = await self._client.execute_read(
+            queries.GET_FACTS_ABOUT_ENTITY_SCOPED,
+            {
+                "entity_id": str(entity_id),
+                "user_identifier": user_identifier,
+                "limit": limit,
+                "active_only": active_only,
             },
         )
         return [self._parse_fact(dict(r["f"])) for r in results]

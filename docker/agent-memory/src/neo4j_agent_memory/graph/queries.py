@@ -686,11 +686,59 @@ ON MATCH SET
 RETURN r
 """
 
-LINK_PREFERENCE_TO_ENTITY = """
-MATCH (p:Preference {id: $preference_id})
+# FIND_SCOPED_ENTITY_BY_NAME resolves a fact's subject string to an entity the caller
+# OWNS. Rooted at HAS_ENTITY alone — the strictest of the four scope edges — deliberately:
+# a name-keyed lookup that also accepted MENTIONS or APPLIES_TO would attach the caller's
+# fact to whatever node happens to carry that name, which is the exact shape that makes
+# _link_preference_to_entity's bare `MERGE (e:Entity {name: $name})` an enumeration oracle.
+# Exact name, case-insensitive: this is resolution, not search. Vector similarity here
+# would cheerfully link a fact about "Davide" to the entity "David" — the duplicate the
+# operator is trying to get rid of.
+FIND_SCOPED_ENTITY_BY_NAME = """
+MATCH (:User {identifier: $user_identifier})-[:HAS_ENTITY]->(e:Entity)
+WHERE toLower(e.name) = toLower($name)
+RETURN e.id AS id
+ORDER BY e.created_at, e.id
+LIMIT 1
+"""
+
+# LINK_FACT_TO_ENTITY connects a fact to the entity its SUBJECT names, so a fact stops
+# being a string sitting next to the node it talks about. Both sides are matched by id —
+# never MERGEd by name — because the caller resolved the entity within its own scope
+# first; a MERGE here would create or capture nodes on behalf of whoever asked.
+#
+# Subject only. That keeps a :Fact a leaf with one outgoing edge, so it can never become
+# an (:Entity)…(:Fact)…(:Entity) connector in a variable-length traversal. Adding an
+# ABOUT_OBJECT edge later would change that property, and the neighbour walk in
+# mcp/_tools.py is untyped — the two decisions are linked, and this is the safe half.
+#
+# The type name is new on purpose: HAS_* is the ownership family and carries security
+# meaning, while APPLIES_TO and MENTIONS are scope-granting in ENTITY_IN_USER_SCOPE.
+# Reusing either would invite a future reader to drop the :Preference / :Message label
+# constraint and hand out read access by accident.
+LINK_FACT_TO_ENTITY = """
+MATCH (f:Fact {id: $fact_id})
 MATCH (e:Entity {id: $entity_id})
-MERGE (p)-[r:ABOUT]->(e)
+MERGE (f)-[r:ABOUT_SUBJECT]->(e)
 RETURN r
+"""
+
+UNLINK_FACT_FROM_ENTITIES = """
+MATCH (:Fact {id: $fact_id})-[r:ABOUT_SUBJECT]->(:Entity)
+DELETE r
+"""
+
+# GET_FACTS_ABOUT_ENTITY_SCOPED reads the edge back. Rooted at the caller's :User through
+# HAS_FACT — an inner MATCH, never an OPTIONAL one — so the dead-ownership-predicate class
+# (see tests/test_scoped_query_where_placement.py) is impossible here by construction.
+# Traversing FROM the entity would be the natural way to write it and the wrong one: it
+# would return facts belonging to anyone who happens to share that entity node.
+GET_FACTS_ABOUT_ENTITY_SCOPED = """
+MATCH (:User {identifier: $user_identifier})-[:HAS_FACT]->(f:Fact)-[:ABOUT_SUBJECT]->(:Entity {id: $entity_id})
+WHERE $active_only = false OR f.valid_until IS NULL
+RETURN f
+ORDER BY f.confidence DESC, f.created_at DESC
+LIMIT $limit
 """
 
 # =============================================================================
@@ -1241,6 +1289,13 @@ RETURN deleted_id
 #
 # DISTINCT after each delete block: OPTIONAL MATCH multiplies rows per matched edge, and
 # without it the row count (and the work) grows with every mention.
+#
+# ABOUT_SUBJECT is cut for the same reason as the other three, plus one specific to it:
+# the orphan probe below (`OPTIONAL MATCH (e)-[rel]-()`) is UNTYPED. Leave the caller's own
+# fact edges in place and `remaining` is never 0, so `removed_node` would be permanently
+# false and orphan cleanup would silently stop working for every entity that has ever been
+# a fact subject. The Fact node itself survives — it is a memory in its own right; what is
+# dropped is the claim that it is about this entity, exactly as with MENTIONS.
 DELETE_ENTITY_SCOPED = """
 MATCH (u:User {identifier: $user_identifier})-[owns:HAS_ENTITY]->(e:Entity {id: $entity_id})
 DELETE owns
@@ -1253,6 +1308,9 @@ DELETE applies
 WITH DISTINCT u, e
 OPTIONAL MATCH (u)-[:HAS_TRACE]->(:ReasoningTrace)-[:HAS_STEP]->(:ReasoningStep)-[touched:TOUCHED]->(e)
 DELETE touched
+WITH DISTINCT u, e
+OPTIONAL MATCH (u)-[:HAS_FACT]->(:Fact)-[about:ABOUT_SUBJECT]->(e)
+DELETE about
 WITH DISTINCT e, e.id AS deleted_id
 OPTIONAL MATCH (e)-[rel]-()
 WITH e, deleted_id, count(rel) AS remaining

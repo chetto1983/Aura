@@ -40,6 +40,7 @@ logger = logging.getLogger(__name__)
 # 2026-07-25). Small on purpose: this is a lookup, not a search, and the extras are a heads-up
 # that the name is ambiguous rather than a result set to page through.
 _MAX_ENTITY_NAME_MATCHES = 5
+_MAX_ENTITY_FACTS = 20
 
 
 def _names_collide(entity: Any, name: str) -> bool:
@@ -599,6 +600,11 @@ def _register_extended_tools(mcp: FastMCP) -> None:
         the top hit is how a second copy stays invisible to the one tool whose job is to
         tell you about that name.
 
+        Returns the facts recorded about the entity under ``facts`` (predicate, object,
+        confidence) — what is KNOWN about it, as opposed to ``neighbors``, which is what it
+        is connected to. A fact appears here once its subject named an entity the caller
+        owns at the time it was written.
+
         Args:
             name: Entity name to look up.
             entity_type: Filter by POLE+O type (optional).
@@ -650,6 +656,25 @@ def _register_extended_tools(mcp: FastMCP) -> None:
             ]
             if other_matches:
                 result["other_matches"] = other_matches
+
+            # What is KNOWN about the entity, reached by structure. Facts are excluded from
+            # memory_search entirely (integration_context.search covers messages, entities
+            # and preferences), so before this the only way to a fact was to guess its
+            # subject string — asking about the entity told you nothing about it.
+            if user_identifier:
+                facts = await client.long_term.get_facts_about_entity(
+                    str(entity.id), user_identifier=user_identifier, limit=_MAX_ENTITY_FACTS
+                )
+                if facts:
+                    result["facts"] = [
+                        {
+                            "id": str(fact.id),
+                            "predicate": fact.predicate,
+                            "object": fact.object,
+                            "confidence": fact.confidence,
+                        }
+                        for fact in facts
+                    ]
 
             if include_neighbors:
                 neighbors = await _get_entity_neighbors(
