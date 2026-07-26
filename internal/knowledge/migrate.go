@@ -129,23 +129,29 @@ func parseMigrationName(filename string) (int32, string, error) {
 	return int32(n), stem, nil //nolint:gosec // G109: n is bounded to [1,999999] above, conversion is safe
 }
 
-// splitCypherStatements splits a .cypher body into individual statements on ';',
-// dropping fragments that are empty or contain only // line comments. Phase 1's
-// migration bodies contain no string literals with semicolons, so a plain split
-// is correct (D-08 minimal scope).
+// splitCypherStatements splits a .cypher body into individual statements on ';'.
+//
+// Comments are stripped BEFORE the split, not after. Splitting first meant a ';' anywhere
+// in a // comment cut the body mid-sentence, and the remainder — no longer carrying its
+// '//' prefix — was handed to Neo4j as a statement: migration 0006 failed on the tail of
+// a prose sentence, `Invalid input 'this'`. Since a comment can never contain a statement,
+// removing comments up front makes that impossible instead of merely unlikely.
+//
+// Migration bodies contain no string literals with semicolons, so a plain split of what
+// remains is correct (D-08 minimal scope).
 func splitCypherStatements(body string) []string {
-	var out []string
-	for raw := range strings.SplitSeq(body, ";") {
-		var keep []string
-		for line := range strings.SplitSeq(raw, "\n") {
-			trimmed := strings.TrimSpace(line)
-			if trimmed == "" || strings.HasPrefix(trimmed, "//") {
-				continue
-			}
-			keep = append(keep, line)
+	var code []string
+	for line := range strings.SplitSeq(body, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "//") {
+			continue
 		}
-		if len(keep) > 0 {
-			out = append(out, strings.TrimSpace(strings.Join(keep, "\n")))
+		code = append(code, line)
+	}
+	var out []string
+	for raw := range strings.SplitSeq(strings.Join(code, "\n"), ";") {
+		if statement := strings.TrimSpace(raw); statement != "" {
+			out = append(out, statement)
 		}
 	}
 	return out
