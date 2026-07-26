@@ -82,6 +82,9 @@ type ContextConfig struct {
 	// llm.ProviderErrorReserveTokens(cfg); zero (the default) leaves the formula
 	// unchanged for OpenRouter and hand-built test configs.
 	ProviderErrorReserveTokens int
+	// DynamicTail is one query-dependent, non-persisted reference item. The
+	// ladder reserves its complete cost and includes it exactly once or not at all.
+	DynamicTail *DynamicTail
 }
 
 // hardCap computes the L2 hard cap from the config (SPEC Req#10:
@@ -105,6 +108,11 @@ func (c ContextConfig) hardCap() int {
 		cap = smallWindowHardCapFloor(c.ContextWindow)
 	}
 	return cap
+}
+
+// HardCap exposes the exact history cap to the final model-request guard.
+func (c ContextConfig) HardCap() int {
+	return c.hardCap()
 }
 
 // smallWindowHardCapFloor returns the positive L2 cap used when the SPEC Req#10
@@ -254,7 +262,13 @@ func applyContextLadder(
 	l1 := applyL1(turns, cfg.ToolEvictAfterTurns)
 
 	hardCap := cfg.hardCap()
+	tail, tailTokens := usableDynamicTail(cfg.DynamicTail, enc, hardCap)
+	ordinaryCap := hardCap
+	if tail != nil {
+		ordinaryCap -= tailTokens
+	}
 	tokensAfterL1 := totalTokens(enc, l1)
+	totalAfterL1 := tokensAfterL1 + tailTokens
 
 	// L2: budget gate. Over the warn cap (0.75×hard) → audit WARN; over the hard cap
 	// → fall through to L2.5. If under the hard cap, we are done after L1 (SC-1:
@@ -262,27 +276,37 @@ func applyContextLadder(
 	// <= 0 (M-03 floors every positive small window to ContextWindow/2 so it takes
 	// the normal budget path); that misconfig has no usable budget, so the gate
 	// returns the L1 history rather than erroring.
-	if hardCap > 0 && tokensAfterL1 > int(float64(hardCap)*l2WarnRatio) && tokensAfterL1 <= hardCap {
+	if hardCap > 0 && totalAfterL1 > int(float64(hardCap)*l2WarnRatio) && totalAfterL1 <= hardCap {
 		slog.Warn("conversation context over the L2 warn cap",
-			"conversation_id", conversationID, "tokens", tokensAfterL1, "hard_cap", hardCap)
+			"conversation_id", conversationID, "tokens", totalAfterL1, "hard_cap", hardCap)
 	}
-	if hardCap == 0 || tokensAfterL1 <= hardCap {
-		return repairManagedToolMessagePairs(toMessages(l1)), nil
+	if hardCap == 0 || tokensAfterL1 <= ordinaryCap {
+		return injectDynamicTail(repairManagedToolMessagePairs(toMessages(l1)), tail), nil
 	}
 
 	// L2.5: drop oldest user/assistant PAIRs (preserve system L0 + keep an even
 	// non-system length) until under the hard cap, writing ONE rot-event row.
-	reduced, pairsDropped := dropOldestPairs(enc, l1, hardCap)
+	reduced, pairsDropped := dropOldestPairs(enc, l1, ordinaryCap)
 	tokensAfter := totalTokens(enc, reduced)
-	if pairsDropped == 0 || tokensAfter > hardCap {
+	if tail != nil && (pairsDropped == 0 || tokensAfter > ordinaryCap) {
+		tail = nil
+		tailTokens = 0
+		ordinaryCap = hardCap
+		if tokensAfterL1 <= ordinaryCap {
+			return repairManagedToolMessagePairs(toMessages(l1)), nil
+		}
+		reduced, pairsDropped = dropOldestPairs(enc, l1, ordinaryCap)
+		tokensAfter = totalTokens(enc, reduced)
+	}
+	if pairsDropped == 0 || tokensAfter > ordinaryCap {
 		// L2.5 could not bring it under (only the system turn / a single oversized
 		// turn remains) → the explicit window-exceeded error (suggest `aura chat new`).
-		return nil, fmt.Errorf("%w (%d tokens, cap %d)", ErrContextWindowExceeded, tokensAfter, hardCap)
+		return nil, fmt.Errorf("%w (%d tokens, cap %d)", ErrContextWindowExceeded, tokensAfter+tailTokens, hardCap)
 	}
-	if err := emit.insertContextRotEvent(ctx, conversationID, pairsDropped, tokensAfterL1, tokensAfter); err != nil {
+	if err := emit.insertContextRotEvent(ctx, conversationID, pairsDropped, totalAfterL1, tokensAfter+tailTokens); err != nil {
 		return nil, err
 	}
-	return repairManagedToolMessagePairs(toMessages(reduced)), nil
+	return injectDynamicTail(repairManagedToolMessagePairs(toMessages(reduced)), tail), nil
 }
 
 // injectAlwaysBlock inserts the messages[1] always-block as a protected user-role

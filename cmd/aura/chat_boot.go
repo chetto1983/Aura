@@ -344,7 +344,8 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 		EvictAfter: cfg.ContextToolEvictAfterTurns,
 		// Amendment #91 (fix-plan 1.12): bounded display-only CoT persistence cap.
 		ReasoningPersistMaxRunes: cfg.ReasoningPersistMaxRunes,
-		ArchivalRecaller:         archivalRecallProvider(cfg), // nil unless AURA_CONTEXT_MEMORY_RECALL (default off)
+		DynamicRecallProvider:    dynamicRecallProvider(cfg),
+		RecallMaxItems:           cfg.MemoryRecallMaxItems,
 		AlwaysBlock:              alwaysBlockProvider(cfg),
 		// The gateway resume hook records an operator's accept of a relayed gateway_approval
 		// pause into the SAME gateway instance (gw) the runner's PEP reads (D-03 point 2).

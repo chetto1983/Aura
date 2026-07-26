@@ -102,6 +102,9 @@ type LlmAgent struct {
 	classifier *prompt.ReasoningClassifier
 	// reasoningControl is the optional typed schema-2 per-round adapter.
 	reasoningControl ReasoningControl
+	// dynamicTail is one already-assigned recall exposure whose delivery is
+	// committed by the final guard immediately before the first model call.
+	dynamicTail *DynamicTailExposure
 
 	// reasoningOverride is the FIXED per-turn effort selected in the web Composer (37E),
 	// threaded from runner.WithReasoningOverride via LlmAgentConfig. When non-empty the
@@ -164,6 +167,8 @@ type LlmAgentConfig struct {
 	ReasoningOverride llm.ReasoningEffort
 	// ReasoningControl is the optional typed per-round adaptive reasoning adapter.
 	ReasoningControl ReasoningControl
+	// DynamicTail carries one protected, non-persisted memory recall exposure.
+	DynamicTail *DynamicTailExposure
 }
 
 // Run drives the budget-gated tool-dispatch loop (Req#9/#10). Termination paths:
@@ -373,6 +378,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				llmEnd.End(err)
 				activeLLMEnd = nil
 			}
+			req = a.guardDynamicTail(llmCtx, req)
 			ch, err := a.streamWithOpenRetry(llmCtx, req, requestID)
 			if err != nil {
 				endLLM(err)

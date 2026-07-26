@@ -240,7 +240,7 @@ func (f *fakeConvStore) LoadManagedHistory(_ context.Context, id string, cfg con
 	if f.manErr != nil {
 		return nil, f.manErr
 	}
-	return f.messagesLocked(id), nil
+	return managedMessagesForFake(f.messagesLocked(id), cfg), nil
 }
 
 // LoadManagedHistoryForBranch records the selected leaf so the branch-aware re-run path
@@ -255,7 +255,32 @@ func (f *fakeConvStore) LoadManagedHistoryForBranch(_ context.Context, id string
 	if f.manErr != nil {
 		return nil, f.manErr
 	}
-	return f.messagesLocked(id), nil
+	return managedMessagesForFake(f.messagesLocked(id), cfg), nil
+}
+
+func managedMessagesForFake(
+	messages []llm.Message,
+	cfg conversations.ContextConfig,
+) []llm.Message {
+	if cfg.DynamicTail == nil || cfg.DynamicTail.Content == "" {
+		return messages
+	}
+	index := len(messages)
+	if cfg.DynamicTail.BeforeCurrentUser {
+		for candidate := len(messages) - 1; candidate >= 0; candidate-- {
+			if messages[candidate].Role == llm.RoleUser {
+				index = candidate
+				break
+			}
+		}
+	}
+	out := make([]llm.Message, 0, len(messages)+1)
+	out = append(out, messages[:index]...)
+	out = append(out, llm.Message{
+		Role: llm.RoleUser, Content: cfg.DynamicTail.Content,
+	})
+	out = append(out, messages[index:]...)
+	return out
 }
 
 // messagesLocked rebuilds the loop messages from the persisted turns (the same

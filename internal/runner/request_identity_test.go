@@ -56,10 +56,29 @@ func TestTurnMintsRequestIdentityBeforeContextAssemblyAndReusesItEverywhere(t *t
 	mustCreate(t, r, convID)
 
 	var recallRequestID string
-	r.archivalRecaller = func(ctx context.Context, _, _ string) (string, error) {
+	r.recallMaxItems = 8
+	r.dynamicRecallProvider = func(
+		ctx context.Context,
+		_, _ string,
+		_ int,
+	) (DynamicRecall, error) {
 		recallRequestID = tools.RequestIDFromContext(ctx)
-		return "", nil
+		return validDynamicRecall(), nil
 	}
+	r.dynamicRecallControl = dynamicRecallControlFunc(func(
+		ctx context.Context,
+		input DynamicRecallInput,
+		provider DynamicRecallProvider,
+	) (*PreparedDynamicRecall, error) {
+		recall, err := provider(ctx, input.OwnerID.String(), input.Query, 4)
+		return &PreparedDynamicRecall{
+			Action: DynamicRecallTop4,
+			Recall: recall,
+			Commit: func(context.Context, agent.DynamicTailOutcome) error {
+				return nil
+			},
+		}, err
+	})
 	events, err := drain(r.Turn(context.Background(), convID, userPtr("inspect identity")))
 	if err != nil {
 		t.Fatalf("Turn: %v", err)

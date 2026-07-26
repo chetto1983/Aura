@@ -29,7 +29,7 @@ func NewLlmAgent(cfg LlmAgentConfig) *LlmAgent {
 	if ledgerConvID == "" {
 		ledgerConvID = cfg.SessionID
 	}
-	return &LlmAgent{
+	agent := &LlmAgent{
 		name:              name,
 		description:       desc,
 		client:            cfg.Client,
@@ -49,8 +49,15 @@ func NewLlmAgent(cfg LlmAgentConfig) *LlmAgent {
 		classifier:        resolveClassifier(cfg),
 		reasoningOverride: cfg.ReasoningOverride,
 		reasoningControl:  cfg.ReasoningControl,
+		dynamicTail:       cfg.DynamicTail,
 		sources:           display.NewRegistry(),
 	}
+	agent.dynamicTail.bind(agent.history)
+	if agent.dynamicTail != nil && !agent.dynamicTail.Included {
+		agent.history = stripDynamicTail(agent.history, agent.dynamicTail)
+		agent.dynamicTail.boundHistoryPosition = -1
+	}
+	return agent
 }
 
 // resolveBreaker returns the injected SHARED breaker (B-05: the Runner's

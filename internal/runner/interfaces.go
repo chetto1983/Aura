@@ -58,14 +58,6 @@ type ConversationStore interface {
 	DeleteForIdentity(ctx context.Context, conversationID, identityID string) (int64, error)
 }
 
-// ArchivalRecaller recalls a durable long-term memory block for messages[1] (L4
-// archival retrieval, PRD amendment #21). userIdentifier is the owner's identity id
-// (the same value the memory-MCP write path scopes on — see mcptools bridge), query
-// is the current turn's focus text ("" => identity-only recall). It returns the block
-// to inject (empty => nothing recalled). nil on the Runner => the seam is a no-op, so
-// the default-off state is produced upstream by the composition root, never here.
-type ArchivalRecaller func(ctx context.Context, userIdentifier, query string) (string, error)
-
 // PauseStore is the narrow paused_states surface the Runner consumes (D-A2-02).
 // *askuser.Store satisfies it implicitly. The Runner writes Insert on a pause
 // Event (T-04-19).

@@ -11,7 +11,6 @@ import (
 	"github.com/chetto1983/aura/internal/agent/agenttest"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/conversations"
-	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/llm"
 )
 
@@ -202,65 +201,23 @@ func (e *errConvStore) Get(ctx context.Context, id string) (conversations.Conver
 	return e.fakeConvStore.Get(ctx, id)
 }
 
-// errIdentityStore injects a GetIdentityByID error for the context-block identity
-// resolution branch.
-type errIdentityStore struct {
-	*fakeIdentityStore
-	byIDErr error
-}
-
-func (e *errIdentityStore) GetIdentityByID(ctx context.Context, id string) (identity.Identity, error) {
-	if e.byIDErr != nil {
-		return identity.Identity{}, e.byIDErr
-	}
-	return e.fakeIdentityStore.GetIdentityByID(ctx, id)
-}
-
-func newCtxBlockRunner(t *testing.T, conv ConversationStore, id IdentityStore, recaller ArchivalRecaller) *Runner {
+func newCtxBlockRunner(t *testing.T, conv ConversationStore, id IdentityStore) *Runner {
 	t.Helper()
 	reg := tools.NewRegistry()
 	reg.Register(tools.TextResponse{})
 	reg.Register(tools.AskUser{})
 	return New(Deps{
-		Conv:             conv,
-		Pause:            newFakePauseStore(),
-		Identity:         id,
-		CacheMetrics:     newFakeCacheMetricStore(),
-		ToolInvocations:  newFakeToolInvocationStore(),
-		Client:           agenttest.NewFakeClient(agenttest.ToolCallTurn(textResponseCall("c1", "ok"))),
-		Registry:         reg,
-		LLM:              llm.Config{Model: "test-model", ContextWindow: 1000000, MaxOutputTokens: 32768},
-		ArchivalRecaller: recaller,
-		TitleTimeout:     time.Second,
-		StopTimeout:      time.Second,
+		Conv:            conv,
+		Pause:           newFakePauseStore(),
+		Identity:        id,
+		CacheMetrics:    newFakeCacheMetricStore(),
+		ToolInvocations: newFakeToolInvocationStore(),
+		Client:          agenttest.NewFakeClient(agenttest.ToolCallTurn(textResponseCall("c1", "ok"))),
+		Registry:        reg,
+		LLM:             llm.Config{Model: "test-model", ContextWindow: 1000000, MaxOutputTokens: 32768},
+		TitleTimeout:    time.Second,
+		StopTimeout:     time.Second,
 	})
-}
-
-func TestRenderContextBlock_GetError(t *testing.T) {
-	conv := &errConvStore{fakeConvStore: newFakeConvStore(), getErr: errFake}
-	r := newCtxBlockRunner(t, conv, newFakeIdentityStore(),
-		func(context.Context, string, string) (string, error) { return "block", nil })
-	convID := newConvID(t)
-	// A turn must surface the contextConfig/renderContextBlock Get error.
-	if _, err := drain(r.Turn(context.Background(), convID, userPtr("hi"))); err == nil {
-		t.Fatal("expected the context-block Get error to surface on the turn")
-	}
-}
-
-func TestRenderContextBlock_IdentityError(t *testing.T) {
-	conv := newFakeConvStore()
-	id := &errIdentityStore{fakeIdentityStore: newFakeIdentityStore(), byIDErr: errFake}
-	r := newCtxBlockRunner(t, conv, id,
-		func(context.Context, string, string) (string, error) { return "block", nil })
-	convID := newConvID(t)
-	if _, err := r.Conv.Create(context.Background(), conversations.CreateParams{
-		ID: convID, IdentityID: "00000000-0000-0000-0000-000000000001", Model: "test-model",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := drain(r.Turn(context.Background(), convID, userPtr("hi"))); err == nil {
-		t.Fatal("expected the context-block identity-resolution error to surface")
-	}
 }
 
 // TestRenderContextBlock_AlwaysBlockComposed proves the alwaysBlock leg of
@@ -325,7 +282,7 @@ func TestNewConversation_DelegatesToWithID(t *testing.T) {
 // auto-title gate is a silent no-op (the worker never fires).
 func TestMaybeAutoTitle_GetErrorIsNoOp(t *testing.T) {
 	conv := &errConvStore{fakeConvStore: newFakeConvStore(), getErr: errFake}
-	r := newCtxBlockRunner(t, conv, newFakeIdentityStore(), nil)
+	r := newCtxBlockRunner(t, conv, newFakeIdentityStore())
 	// Direct call: a Get error returns before any CountTurns/worker spawn.
 	r.maybeAutoTitle(context.Background(), newConvID(t), nil)
 	// Nothing to assert beyond "did not panic / did not spawn a worker"; Stop joins

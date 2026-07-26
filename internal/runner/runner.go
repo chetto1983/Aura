@@ -94,12 +94,11 @@ type Deps struct {
 	// loader state (D-07). The composition root wires it over skills.RenderAlwaysBlock
 	// + the live loader; nil means no skills are wired (the block is empty). Rebuilt
 	// every turn so a skill add/remove changes messages[1] without busting messages[0].
-	AlwaysBlock func() string
-	// ArchivalRecaller injects the L4 archival-memory block into messages[1] (PRD
-	// amendment #21). nil => no recall (the AURA_CONTEXT_MEMORY_RECALL default-off
-	// state is produced by the composition root returning nil).
-	ArchivalRecaller ArchivalRecaller
-	ResumeHook       ResumeHook
+	AlwaysBlock           func() string
+	DynamicRecallProvider DynamicRecallProvider
+	DynamicRecallControl  DynamicRecallControl
+	RecallMaxItems        int
+	ResumeHook            ResumeHook
 	// Embedder wires the local embedding-based reasoning-tier classifier into
 	// each per-turn agent (replaces the LLM router round-trip). nil => the agent
 	// falls back to the LLM router. The composition root passes the granite
@@ -156,12 +155,14 @@ type Runner struct {
 	stopTimeout  time.Duration
 	resumeHook   ResumeHook
 
-	archivalRecaller ArchivalRecaller            // L4 archival-memory recall for messages[1] (amendment #21); nil → no recall
-	hookManager      *agent.HookManager          // optional per-turn LlmAgent hooks
-	alwaysBlock      func() string               // renders the messages[1] always-block per turn (D-07); nil → empty
-	classifier       *prompt.ReasoningClassifier // SHARED reasoning-tier classifier (anchors built once); nil → LLM router
-	gateway          *gateway.Gateway            // Phase-35 policy PEP injected into every per-turn agent; nil → Allow no-op
-	shareRevoker     ShareRevoker                // D-15 consumer-declared seam (runner_delete.go step 4.5); nil → step 4.5 is a silent skip
+	dynamicRecallProvider DynamicRecallProvider
+	dynamicRecallControl  DynamicRecallControl
+	recallMaxItems        int
+	hookManager           *agent.HookManager          // optional per-turn LlmAgent hooks
+	alwaysBlock           func() string               // renders the messages[1] always-block per turn (D-07); nil → empty
+	classifier            *prompt.ReasoningClassifier // SHARED reasoning-tier classifier (anchors built once); nil → LLM router
+	gateway               *gateway.Gateway            // Phase-35 policy PEP injected into every per-turn agent; nil → Allow no-op
+	shareRevoker          ShareRevoker                // D-15 consumer-declared seam (runner_delete.go step 4.5); nil → step 4.5 is a silent skip
 
 	// threadLocks + sessions are the two per-conversation in-memory maps, BOTH keyed by
 	// the composite (identity, session) sessionKey (D-23, runner_session.go): threadLocks
@@ -229,7 +230,9 @@ func New(d Deps) *Runner {
 		titleTimeout:             titleTimeout,
 		stopTimeout:              stopTimeout,
 		resumeHook:               d.ResumeHook,
-		archivalRecaller:         d.ArchivalRecaller,
+		dynamicRecallProvider:    d.DynamicRecallProvider,
+		dynamicRecallControl:     d.DynamicRecallControl,
+		recallMaxItems:           d.RecallMaxItems,
 		hookManager:              d.HookManager,
 		alwaysBlock:              d.AlwaysBlock,
 		classifier:               classifier,
@@ -354,19 +357,32 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, input turnInput)
 		if input.visibleUserMsg != nil {
 			recallQuery = *input.visibleUserMsg
 		}
-		cfg, err := r.contextConfig(ctx, convID, recallQuery)
-		if err != nil {
-			yield(nil, err)
-			return
+		pendingRecall := r.prepareDynamicRecall(
+			ctx, convID, requestID, recallQuery, input.visibleUserMsg != nil,
+		)
+		var dynamicTail *conversations.DynamicTail
+		if pendingRecall != nil {
+			dynamicTail = &pendingRecall.contextTail
 		}
+		cfg := r.contextConfig(dynamicTail)
 		history, err := r.loadTurnHistory(ctx, convID, cfg, input.branchLeaf)
 		if err != nil {
 			yield(nil, err)
 			return
 		}
 		agentHistory := currentRoundModelHistory(history, input.visibleUserMsg, input.modelUserMsg)
+		var dynamicExposure *agent.DynamicTailExposure
+		if pendingRecall != nil {
+			dynamicExposure = pendingRecall.exposure
+			dynamicExposure.HardCapTokens = cfg.HardCap()
+			dynamicExposure.Included = dynamicTailIncluded(
+				agentHistory, dynamicExposure.Tail.Content,
+			)
+		}
 
-		la, ic, cancelAgent, err := r.buildAgent(ctx, convID, requestID, agentHistory)
+		la, ic, cancelAgent, err := r.buildAgent(
+			ctx, convID, requestID, agentHistory, dynamicExposure,
+		)
 		if err != nil {
 			yield(nil, err)
 			return
@@ -468,7 +484,7 @@ func (r *Runner) appendUserTurn(ctx context.Context, convID, content string) err
 // not the agent's). When the loaded history already carries a leading system turn
 // (a persisted seq=1), it is dropped here so the agent's own system message is not
 // duplicated.
-func (r *Runner) buildAgent(ctx context.Context, convID string, requestID uuid.UUID, history []llm.Message) (*agent.LlmAgent, agent.InvocationContext, context.CancelFunc, error) {
+func (r *Runner) buildAgent(ctx context.Context, convID string, requestID uuid.UUID, history []llm.Message, dynamicTail *agent.DynamicTailExposure) (*agent.LlmAgent, agent.InvocationContext, context.CancelFunc, error) {
 	bud, err := agent.NewBudget(agent.BudgetOptions{})
 	if err != nil {
 		return nil, agent.InvocationContext{}, nil, fmt.Errorf("budget config (check AURA_LOOP_* env): %w", err)
@@ -497,6 +513,7 @@ func (r *Runner) buildAgent(ctx context.Context, convID string, requestID uuid.U
 		HookManager:       r.hookManager,
 		Gateway:           r.gateway,       // Phase-35 PEP; LedgerConversationID defaults to convID (UUID)
 		ReasoningOverride: reasoningEffort, // 37E fixed effort; "" => auto (adaptive path)
+		DynamicTail:       dynamicTail,
 	})
 	ic := agent.InvocationContext{
 		Ctx:       boundedCtx,
