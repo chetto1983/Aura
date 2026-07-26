@@ -4,11 +4,26 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/chetto1983/aura/internal/knowledge"
 )
+
+func TestAdaptiveProjectorWorkerIDIsUniquePerRuntime(t *testing.T) {
+	first := newAdaptiveProjectorWorkerID()
+	second := newAdaptiveProjectorWorkerID()
+
+	if first == second {
+		t.Fatalf("runtime worker IDs collide: %q", first)
+	}
+	for _, workerID := range []string{first, second} {
+		if !strings.HasPrefix(workerID, adaptiveProjectorWorkerIDPrefix) {
+			t.Fatalf("runtime worker ID %q lacks prefix %q", workerID, adaptiveProjectorWorkerIDPrefix)
+		}
+	}
+}
 
 type adaptiveProjectorLifecycleSpy struct {
 	order    *[]string

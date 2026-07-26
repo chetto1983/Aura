@@ -7,10 +7,15 @@ import (
 
 	"github.com/chetto1983/aura/internal/adaptive"
 	"github.com/chetto1983/aura/internal/knowledge"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const adaptiveProjectorWorkerID = "aura-private-graph-projector"
+const adaptiveProjectorWorkerIDPrefix = "aura-private-graph-projector-"
+
+func newAdaptiveProjectorWorkerID() string {
+	return adaptiveProjectorWorkerIDPrefix + uuid.NewString()
+}
 
 type adaptiveProjectorLifecycle interface {
 	Start(context.Context) error
@@ -70,7 +75,7 @@ func buildAdaptiveProjectorRuntime(
 	projector := adaptive.NewProjector(
 		adaptive.NewStore(pool, adaptive.StoreConfig{}),
 		adaptive.NewGraphStore(client),
-		adaptive.ProjectorConfig{WorkerID: adaptiveProjectorWorkerID},
+		adaptive.ProjectorConfig{WorkerID: newAdaptiveProjectorWorkerID()},
 	)
 	worker := adaptive.NewProjectorWorker(
 		projector,

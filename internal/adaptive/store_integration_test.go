@@ -375,6 +375,8 @@ func TestStoreClaimsAcrossWorkersPreserveAggregateOrderAndLeaseOwnership(t *test
 	}
 
 	now := time.Now().UTC()
+	staleRuntime := "aura-private-graph-projector-" + uuid.NewString()
+	activeRuntime := "aura-private-graph-projector-" + uuid.NewString()
 	first, err := store.Claim(ctx, ClaimOptions{WorkerID: "worker-1", Now: now, Lease: time.Minute})
 	if err != nil {
 		t.Fatalf("Claim(worker-1): %v", err)
@@ -382,9 +384,9 @@ func TestStoreClaimsAcrossWorkersPreserveAggregateOrderAndLeaseOwnership(t *test
 	if first == nil || first.ID != a1.ID {
 		t.Fatalf("first claim = %+v, want aggregate-a sequence 1", first)
 	}
-	second, err := store.Claim(ctx, ClaimOptions{WorkerID: "worker-2", Now: now, Lease: time.Minute})
+	second, err := store.Claim(ctx, ClaimOptions{WorkerID: staleRuntime, Now: now, Lease: time.Minute})
 	if err != nil {
-		t.Fatalf("Claim(worker-2): %v", err)
+		t.Fatalf("Claim(stale runtime): %v", err)
 	}
 	if second == nil || second.ID != b1.ID {
 		t.Fatalf("second claim = %+v, want aggregate-b sequence 1 (not aggregate-a sequence 2)", second)
@@ -407,7 +409,7 @@ func TestStoreClaimsAcrossWorkersPreserveAggregateOrderAndLeaseOwnership(t *test
 	}
 
 	reclaimed, err := store.Claim(ctx, ClaimOptions{
-		WorkerID: "worker-4",
+		WorkerID: activeRuntime,
 		Now:      now.Add(2 * time.Minute),
 		Lease:    time.Minute,
 	})
@@ -416,6 +418,22 @@ func TestStoreClaimsAcrossWorkersPreserveAggregateOrderAndLeaseOwnership(t *test
 	}
 	if reclaimed == nil || reclaimed.ID != b1.ID || reclaimed.Attempts != 2 {
 		t.Fatalf("reclaimed = %+v, want aggregate-b attempt 2", reclaimed)
+	}
+	if err := store.MarkProjected(ctx, reclaimed.ID, staleRuntime, now.Add(2*time.Minute)); !errors.Is(err, ErrLeaseLost) {
+		t.Fatalf("stale runtime MarkProjected error = %v, want ErrLeaseLost", err)
+	}
+	if err := store.Retry(
+		ctx,
+		reclaimed.ID,
+		staleRuntime,
+		"stale_generation",
+		now.Add(2*time.Minute),
+		now.Add(3*time.Minute),
+	); !errors.Is(err, ErrLeaseLost) {
+		t.Fatalf("stale runtime Retry error = %v, want ErrLeaseLost", err)
+	}
+	if err := store.MarkProjected(ctx, reclaimed.ID, activeRuntime, now.Add(2*time.Minute)); err != nil {
+		t.Fatalf("active runtime MarkProjected: %v", err)
 	}
 }
 

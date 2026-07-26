@@ -201,26 +201,9 @@ SET u.id = null,
 	afterRecall, afterResults := callLiveLongTermRecall(
 		t, ctx, memory, owner, memoryMarker,
 	)
-	if beforeRecall.RecallMetadata.CorpusEpochAfter == nil ||
-		afterRecall.RecallMetadata.CorpusEpochAfter == nil ||
-		*beforeRecall.RecallMetadata.CorpusEpochAfter !=
-			*afterRecall.RecallMetadata.CorpusEpochAfter {
-		t.Fatalf(
-			"adaptive User repair advanced corpus epoch: before=%v after=%v",
-			beforeRecall.RecallMetadata.CorpusEpochAfter,
-			afterRecall.RecallMetadata.CorpusEpochAfter,
-		)
-	}
-	if !bytes.Equal(
-		beforeRecall.RecallMetadata.Results,
-		afterRecall.RecallMetadata.Results,
-	) || !reflect.DeepEqual(beforeResults, afterResults) {
-		t.Fatalf(
-			"reproject changed recalled IDs/order: before=%s after=%s",
-			beforeRecall.RecallMetadata.Results,
-			afterRecall.RecallMetadata.Results,
-		)
-	}
+	requireLiveRecallUnchanged(
+		t, "reproject", beforeRecall, beforeResults, afterRecall, afterResults,
+	)
 
 	survivors, err := client.Read(ctx, `
 MATCH (u:User {identifier:$owner_id})-[:HAS_ADAPTIVE_EPISODE]->
@@ -259,6 +242,49 @@ RETURN u.id AS user_id, u.created_at AS created_at,
 	if len(remaining) != 1 || remaining[0]["preference"] != preferenceID ||
 		remaining[0]["adaptive"] != nil {
 		t.Fatalf("purge must retain shared User memory only, rows=%v", remaining)
+	}
+
+	afterPurgeRecall, afterPurgeResults := callLiveLongTermRecall(
+		t, ctx, memory, owner, memoryMarker,
+	)
+	if !containsLiveRecallResult(afterPurgeResults, preferenceID) {
+		t.Fatalf("post-purge recall omits preference %s: %+v", preferenceID, afterPurgeResults)
+	}
+	requireLiveRecallUnchanged(
+		t, "purge", afterRecall, afterResults, afterPurgeRecall, afterPurgeResults,
+	)
+}
+
+func requireLiveRecallUnchanged(
+	t *testing.T,
+	operation string,
+	before liveMemoryRecallEvidence,
+	beforeResults []liveMemoryRecallResult,
+	after liveMemoryRecallEvidence,
+	afterResults []liveMemoryRecallResult,
+) {
+	t.Helper()
+	if before.RecallMetadata.CorpusEpochAfter == nil ||
+		after.RecallMetadata.CorpusEpochAfter == nil ||
+		*before.RecallMetadata.CorpusEpochAfter !=
+			*after.RecallMetadata.CorpusEpochAfter {
+		t.Fatalf(
+			"%s advanced corpus epoch: before=%v after=%v",
+			operation,
+			before.RecallMetadata.CorpusEpochAfter,
+			after.RecallMetadata.CorpusEpochAfter,
+		)
+	}
+	if !bytes.Equal(
+		before.RecallMetadata.Results,
+		after.RecallMetadata.Results,
+	) || !reflect.DeepEqual(beforeResults, afterResults) {
+		t.Fatalf(
+			"%s changed recalled IDs/order: before=%s after=%s",
+			operation,
+			before.RecallMetadata.Results,
+			after.RecallMetadata.Results,
+		)
 	}
 }
 

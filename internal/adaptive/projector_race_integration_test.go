@@ -27,6 +27,7 @@ func (unavailableAdaptiveGraph) PurgeOwner(context.Context, uuid.UUID) error {
 type interleavingAdaptiveGraph struct {
 	started chan struct{}
 	release chan struct{}
+	purged  chan int
 	once    sync.Once
 	mu      sync.Mutex
 	node    bool
@@ -50,7 +51,9 @@ func (g *interleavingAdaptiveGraph) PurgeOwner(context.Context, uuid.UUID) error
 	g.mu.Lock()
 	g.node = false
 	g.purges++
+	purges := g.purges
 	g.mu.Unlock()
+	g.purged <- purges
 	return nil
 }
 
@@ -60,7 +63,7 @@ func (g *interleavingAdaptiveGraph) state() (bool, int) {
 	return g.node, g.purges
 }
 
-func TestProjectorDeletionFenceClosesLiveTOCTOUInterleaving(t *testing.T) {
+func TestProjectorWorkerDeletionFenceClosesLiveTOCTOUInterleaving(t *testing.T) {
 	pool := adaptiveIntegrationPool(t)
 	ctx := context.Background()
 	owner := uuid.Must(uuid.NewV7())
@@ -89,13 +92,14 @@ func TestProjectorDeletionFenceClosesLiveTOCTOUInterleaving(t *testing.T) {
 	graph := &interleavingAdaptiveGraph{
 		started: make(chan struct{}),
 		release: make(chan struct{}),
+		purged:  make(chan int, 2),
 	}
 	projector := NewProjector(store, graph, ProjectorConfig{WorkerID: "delete-race"})
-	done := make(chan error, 1)
-	go func() {
-		_, projectErr := projector.ProjectOne(ctx)
-		done <- projectErr
-	}()
+	worker := NewProjectorWorker(projector, ProjectorWorkerConfig{PollInterval: time.Hour})
+	if err := worker.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	stopProjectorWorker(t, worker)
 	<-graph.started // projector passed the first tombstone check and entered graph write
 
 	// Deprovision raises the permanent fence before its graph purge.
@@ -111,9 +115,22 @@ func TestProjectorDeletionFenceClosesLiveTOCTOUInterleaving(t *testing.T) {
 	if err := graph.PurgeOwner(ctx, owner); err != nil {
 		t.Fatal(err)
 	}
+	if purges := <-graph.purged; purges != 1 {
+		t.Fatalf("deprovision purge count = %d, want 1", purges)
+	}
 	close(graph.release) // the already-in-flight projector writes after the purge
-	if err := <-done; err != nil {
-		t.Fatalf("ProjectOne: %v", err)
+	select {
+	case purges := <-graph.purged:
+		if purges != 2 {
+			t.Fatalf("worker late-projection purge count = %d, want 2", purges)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("worker did not purge the late projection")
+	}
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), time.Second)
+	defer stopCancel()
+	if err := worker.Stop(stopCtx); err != nil {
+		t.Fatalf("Stop: %v", err)
 	}
 
 	node, purges := graph.state()
@@ -130,7 +147,7 @@ func TestProjectorDeletionFenceClosesLiveTOCTOUInterleaving(t *testing.T) {
 	}
 }
 
-func TestProjectorGraphOutagePersistsRetryThenDeadLetterLive(t *testing.T) {
+func TestProjectorWorkerGraphOutagePersistsRetryThenDeadLetterLive(t *testing.T) {
 	pool := adaptiveIntegrationPool(t)
 	ctx := context.Background()
 	owner := uuid.Must(uuid.NewV7())
@@ -159,29 +176,39 @@ func TestProjectorGraphOutagePersistsRetryThenDeadLetterLive(t *testing.T) {
 	projector := NewProjector(store, unavailableAdaptiveGraph{}, ProjectorConfig{
 		WorkerID: "graph-outage-worker", RetryBackoff: time.Nanosecond,
 	})
-	if processed, err := projector.ProjectOne(ctx); !processed || !errors.Is(err, errLiveGraphUnavailable) {
-		t.Fatalf("first ProjectOne = processed %t err %v, want true/graph unavailable", processed, err)
+	worker := NewProjectorWorker(projector, ProjectorWorkerConfig{
+		PollInterval:    time.Hour,
+		ErrorBackoff:    time.Millisecond,
+		MaxErrorBackoff: time.Millisecond,
+	})
+	if err := worker.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
 	}
+	stopProjectorWorker(t, worker)
+
 	var status string
 	var attempts int
 	var deadLetterAt *time.Time
-	if err := pool.QueryRow(ctx,
-		`SELECT status, attempts, dead_letter_at FROM aura.adaptive_outbox WHERE id=$1`,
-		event.ID).Scan(&status, &attempts, &deadLetterAt); err != nil {
-		t.Fatalf("read retry state: %v", err)
+	deadline := time.After(5 * time.Second)
+	for status != "dead_letter" {
+		if err := pool.QueryRow(ctx,
+			`SELECT status, attempts, dead_letter_at FROM aura.adaptive_outbox WHERE id=$1`,
+			event.ID).Scan(&status, &attempts, &deadLetterAt); err != nil {
+			t.Fatalf("read projector worker state: %v", err)
+		}
+		if status == "dead_letter" {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("worker state = %s attempt %d, want dead_letter/2", status, attempts)
+		case <-time.After(time.Millisecond):
+		}
 	}
-	if status != "pending" || attempts != 1 || deadLetterAt != nil {
-		t.Fatalf("first outage state = %s attempt %d dead_letter %v, want pending/1/nil",
-			status, attempts, deadLetterAt)
-	}
-
-	if processed, err := projector.ProjectOne(ctx); !processed || !errors.Is(err, errLiveGraphUnavailable) {
-		t.Fatalf("second ProjectOne = processed %t err %v, want true/graph unavailable", processed, err)
-	}
-	if err := pool.QueryRow(ctx,
-		`SELECT status, attempts, dead_letter_at FROM aura.adaptive_outbox WHERE id=$1`,
-		event.ID).Scan(&status, &attempts, &deadLetterAt); err != nil {
-		t.Fatalf("read dead-letter state: %v", err)
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), time.Second)
+	defer stopCancel()
+	if err := worker.Stop(stopCtx); err != nil {
+		t.Fatalf("Stop: %v", err)
 	}
 	if status != "dead_letter" || attempts != 2 || deadLetterAt == nil {
 		t.Fatalf("second outage state = %s attempt %d dead_letter %v, want dead_letter/2/set",
