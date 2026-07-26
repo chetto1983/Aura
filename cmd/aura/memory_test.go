@@ -149,7 +149,11 @@ func TestMemoryVerbMapping(t *testing.T) {
 		{"add-preference", []string{"add-preference", "ui", "dark mode"}, "memory_add_preference", "category", "ui"},
 		{"store-message", []string{"store-message", "sess-1", "user", "hello world"}, "memory_store_message", "session_id", "sess-1"},
 		{"get-entity", []string{"get-entity", "Mario Rossi"}, "memory_get_entity", "name", "Mario Rossi"},
+		{"facts-by-subject", []string{"facts", "Mario Rossi"}, "memory_get_facts", "subject", "Mario Rossi"},
+		{"facts-semantic", []string{"facts", "--like", "dove abita"}, "memory_get_facts", "query", "dove abita"},
 		{"relationship", []string{"relationship", "Mario", "KNOWS", "Luigi"}, "memory_create_relationship", "from_entity", "Mario"},
+		{"update-entity", []string{"update", "entity", "ent-1", "name=Davide"}, "memory_update", "name", "Davide"},
+		{"update-fact", []string{"update", "fact", "f-1", "object_value=Bologna"}, "memory_update", "node_id", "f-1"},
 		{"forget-preference", []string{"forget", "preference", "pref-123"}, "memory_forget", "node_id", "pref-123"},
 		{"forget-fact", []string{"forget", "fact", "fact-456"}, "memory_forget", "node_type", "fact"},
 		{"forget-entity", []string{"forget", "entity", "ent-789"}, "memory_forget", "node_type", "entity"},
@@ -192,6 +196,15 @@ func TestMemoryVerbMappingNegativeCases(t *testing.T) {
 		{"search-missing-query", []string{"search"}},
 		{"add-fact-too-few", []string{"add-fact", "subject", "predicate"}},
 		{"forget-too-few", []string{"forget", "preference"}},
+		{"facts-missing-subject", []string{"facts"}},
+		{"facts-like-missing-text", []string{"facts", "--like"}},
+		{"about-without-value", []string{"add-preference", "home", "lives in", "--about"}},
+		{"about-empty-value", []string{"add-preference", "home", "lives in", "--about", " , "}},
+		{"update-too-few", []string{"update", "entity", "ent-1"}},
+		{"update-unknown-node-type", []string{"update", "widget", "w-1", "name=x"}},
+		{"update-field-not-on-that-type", []string{"update", "fact", "f-1", "name=x"}},
+		{"update-not-an-assignment", []string{"update", "entity", "e-1", "name"}},
+		{"update-unparsable-number", []string{"update", "fact", "f-1", "confidence=high"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -228,6 +241,79 @@ func TestMemoryNotConfigured(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "not configured") {
 		t.Fatalf("error = %v, want a not-configured message", err)
+	}
+}
+
+// TestMemoryAppliesToReachesTheWire pins the one flag this positional CLI accepts.
+// Without applies_to a preference hangs off the user node with nothing connecting it to
+// what it is ABOUT, so recall can only find it by wording — the structural half of the
+// graph is unreachable from the operator path.
+func TestMemoryAppliesToReachesTheWire(t *testing.T) {
+	tool, args, err := memoryVerbToTool("add-preference",
+		[]string{"home", "vive", "a", "Caraglio", "--about", "Caraglio, Davide"})
+	if err != nil {
+		t.Fatalf("add-preference with --about: %v", err)
+	}
+	if tool != "memory_add_preference" {
+		t.Fatalf("tool = %q, want memory_add_preference", tool)
+	}
+	if got := args["preference"]; got != "vive a Caraglio" {
+		t.Fatalf("preference = %q; the flag must not leak into the text", got)
+	}
+	if got := args["category"]; got != "home" {
+		t.Fatalf("category = %q, want home", got)
+	}
+	names, ok := args["applies_to"].([]string)
+	if !ok || len(names) != 2 || names[0] != "Caraglio" || names[1] != "Davide" {
+		t.Fatalf("applies_to = %#v, want [Caraglio Davide] with surrounding spaces trimmed", args["applies_to"])
+	}
+
+	_, bare, err := memoryVerbToTool("add-preference", []string{"ui", "dark mode"})
+	if err != nil {
+		t.Fatalf("add-preference without --about: %v", err)
+	}
+	if _, present := bare["applies_to"]; present {
+		t.Fatalf("applies_to must be absent when not given, got %#v", bare["applies_to"])
+	}
+}
+
+// TestMemoryUpdateFieldTypes pins that update sends each field in the type the tool
+// expects. A confidence delivered as the string "0.4" is not a number to the server, and
+// aliases is a list — passing either as raw text is accepted by the wire and then ignored.
+func TestMemoryUpdateFieldTypes(t *testing.T) {
+	_, args, err := memoryVerbToTool("update",
+		[]string{"entity", "ent-1", "name=Davide", "aliases=David, Dave"})
+	if err != nil {
+		t.Fatalf("update entity: %v", err)
+	}
+	if args["name"] != "Davide" || args["node_id"] != "ent-1" || args["node_type"] != "entity" {
+		t.Fatalf("update entity args = %#v", args)
+	}
+	aliases, ok := args["aliases"].([]string)
+	if !ok || len(aliases) != 2 || aliases[1] != "Dave" {
+		t.Fatalf("aliases = %#v, want a trimmed two-element list", args["aliases"])
+	}
+
+	_, prefArgs, err := memoryVerbToTool("update", []string{"preference", "p-1", "confidence=0.4"})
+	if err != nil {
+		t.Fatalf("update preference: %v", err)
+	}
+	if got, ok := prefArgs["confidence"].(float64); !ok || got != 0.4 {
+		t.Fatalf("confidence = %#v, want float64(0.4)", prefArgs["confidence"])
+	}
+}
+
+// TestMemoryUpdateRejectsFieldsTheServerWouldDrop is the reason the whitelist exists:
+// memory_update uses only the fields belonging to the node type and ignores the rest, so
+// an unchecked typo would return a success the operator has no way to distinguish from a
+// real correction.
+func TestMemoryUpdateRejectsFieldsTheServerWouldDrop(t *testing.T) {
+	_, _, err := memoryVerbToTool("update", []string{"fact", "f-1", "category=home"})
+	if err == nil {
+		t.Fatal("expected an error: a fact has no category field")
+	}
+	if !strings.Contains(err.Error(), "object_value") {
+		t.Fatalf("the error should list what a fact does accept, got: %v", err)
 	}
 }
 

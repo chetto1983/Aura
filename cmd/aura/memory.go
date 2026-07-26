@@ -13,7 +13,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"os"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,8 +28,10 @@ const memoryServerName = "memory"
 
 const memoryUsage = "usage: aura memory {search <query>|context <query>|sessions|conversation <session-id>|" +
 	"add-entity <name> [type] [description]|add-fact <subject> <predicate> <object>|" +
-	"add-preference <category> <preference>|store-message <session-id> <role> <content>|" +
-	"get-entity <name>|relationship <from> <type> <to>|" +
+	"add-preference <category> <preference> [--about <entity>[,<entity>]]|" +
+	"store-message <session-id> <role> <content>|" +
+	"get-entity <name>|facts <subject>|facts --like <text>|relationship <from> <type> <to>|" +
+	"update <preference|fact|entity> <node-id> <field>=<value>...|" +
 	"forget <preference|fact|entity> <node-id>}"
 
 func runMemory(args []string) {
@@ -91,8 +96,12 @@ func memoryVerbToTool(verb string, args []string) (string, map[string]any, error
 			return "", nil, err
 		}
 		return "memory_get_entity", map[string]any{"name": name}, nil
+	case "facts":
+		return memoryFactsArgs(args)
 	case "relationship":
 		return memoryRelationshipArgs(args)
+	case "update":
+		return memoryUpdateArgs(args)
 	case "forget":
 		return memoryForgetArgs(args)
 	default:
@@ -127,13 +136,62 @@ func memoryAddFactArgs(args []string) (string, map[string]any, error) {
 }
 
 func memoryAddPreferenceArgs(args []string) (string, map[string]any, error) {
-	if len(args) < 2 {
-		return "", nil, fmt.Errorf("memory add-preference requires <category> <preference>")
+	positional, about, err := takeAboutFlag(args)
+	if err != nil {
+		return "", nil, err
 	}
-	return "memory_add_preference", map[string]any{
-		"category":   args[0],
-		"preference": strings.Join(args[1:], " "),
-	}, nil
+	if len(positional) < 2 {
+		return "", nil, fmt.Errorf(
+			"memory add-preference requires <category> <preference> [--about <entity>[,<entity>]]")
+	}
+	call := map[string]any{
+		"category":   positional[0],
+		"preference": strings.Join(positional[1:], " "),
+	}
+	if len(about) > 0 {
+		call["applies_to"] = about
+	}
+	return "memory_add_preference", call, nil
+}
+
+// takeAboutFlag pulls `--about a,b` out of the positional args. applies_to is what links
+// a preference to the entities it is ABOUT; without it the preference dangles off the
+// user node and recall can only reach it by wording, never by structure. Every other verb
+// here is positional-only, so this stays a single recognised flag rather than a parser.
+func takeAboutFlag(args []string) (positional []string, about []string, err error) {
+	for i, a := range args {
+		if a != "--about" {
+			continue
+		}
+		if i+1 >= len(args) {
+			return nil, nil, fmt.Errorf("memory add-preference: --about requires <entity>[,<entity>]")
+		}
+		names := splitCommaList(args[i+1])
+		if len(names) == 0 {
+			return nil, nil, fmt.Errorf("memory add-preference: --about requires at least one entity name")
+		}
+		return append(append([]string{}, args[:i]...), args[i+2:]...), names, nil
+	}
+	return args, nil, nil
+}
+
+// memoryFactsArgs maps `facts` to memory_get_facts. Facts are the one memory kind
+// `memory_search` does not cover — its default memory_types are messages, entities and
+// preferences — so without both forms here a stored fact is only reachable by guessing
+// its subject exactly.
+func memoryFactsArgs(args []string) (string, map[string]any, error) {
+	if len(args) > 0 && args[0] == "--like" {
+		text := strings.Join(args[1:], " ")
+		if strings.TrimSpace(text) == "" {
+			return "", nil, fmt.Errorf("memory facts --like requires <text>")
+		}
+		return "memory_get_facts", map[string]any{"query": text}, nil
+	}
+	subject := strings.Join(args, " ")
+	if strings.TrimSpace(subject) == "" {
+		return "", nil, fmt.Errorf("memory facts requires <subject> (or --like <text>)")
+	}
+	return "memory_get_facts", map[string]any{"subject": subject}, nil
 }
 
 func memoryStoreMessageArgs(args []string) (string, map[string]any, error) {
@@ -156,6 +214,77 @@ func memoryRelationshipArgs(args []string) (string, map[string]any, error) {
 		"relationship_type": args[1],
 		"to_entity":         args[2],
 	}, nil
+}
+
+// memoryUpdateFields lists, per node type, the fields memory_update accepts and how to
+// parse them. The whitelist is enforced here because the tool uses only the fields that
+// apply to the node type and silently drops the rest: `update fact <id> name=x` would
+// otherwise report a successful update that changed nothing.
+var memoryUpdateFields = map[string]map[string]string{
+	"entity":     {"name": "text", "description": "text", "subtype": "text", "aliases": "list"},
+	"preference": {"preference": "text", "category": "text", "context": "text", "confidence": "number"},
+	"fact":       {"subject": "text", "predicate": "text", "object_value": "text", "confidence": "number"},
+}
+
+// memoryUpdateArgs maps `update` to memory_update — the correction verb. The add_* tools
+// resolve and deduplicate onto the closest existing node WITHOUT rewriting its text, so
+// re-adding can never fix a wrong name or wording; forget-and-re-add loses the node's id
+// and its relationships. This edits by id instead, and refreshes the node's embedding so
+// the vector index stops answering under the old wording.
+func memoryUpdateArgs(args []string) (string, map[string]any, error) {
+	if len(args) < 3 {
+		return "", nil, fmt.Errorf(
+			"memory update requires <preference|fact|entity> <node-id> <field>=<value> [<field>=<value>...]")
+	}
+	nodeType := strings.ToLower(args[0])
+	fields, ok := memoryUpdateFields[nodeType]
+	if !ok {
+		return "", nil, fmt.Errorf(
+			"memory update: unknown node type %q; use preference, fact or entity", args[0])
+	}
+	call := map[string]any{"node_type": nodeType, "node_id": args[1]}
+	for _, assignment := range args[2:] {
+		name, value, found := strings.Cut(assignment, "=")
+		if !found {
+			return "", nil, fmt.Errorf("memory update: %q is not <field>=<value>", assignment)
+		}
+		kind, ok := fields[name]
+		if !ok {
+			return "", nil, fmt.Errorf("memory update: a %s has no field %q; it accepts %s",
+				nodeType, name, strings.Join(slices.Sorted(maps.Keys(fields)), ", "))
+		}
+		parsed, err := parseMemoryField(kind, name, value)
+		if err != nil {
+			return "", nil, err
+		}
+		call[name] = parsed
+	}
+	return "memory_update", call, nil
+}
+
+func parseMemoryField(kind, name, value string) (any, error) {
+	switch kind {
+	case "list":
+		return splitCommaList(value), nil
+	case "number":
+		number, err := strconv.ParseFloat(value, 64)
+		if err != nil {
+			return nil, fmt.Errorf("memory update: %s must be a number, got %q", name, value)
+		}
+		return number, nil
+	default:
+		return value, nil
+	}
+}
+
+func splitCommaList(value string) []string {
+	var items []string
+	for _, item := range strings.Split(value, ",") {
+		if trimmed := strings.TrimSpace(item); trimmed != "" {
+			items = append(items, trimmed)
+		}
+	}
+	return items
 }
 
 // memoryForgetArgs maps the `forget` subverb to the memory_forget MCP tool: delete a
