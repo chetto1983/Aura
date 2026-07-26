@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "aura.adaptive.benchmark-dataset/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["dataset_id", "revision", "scenarios"],
+  "properties": {
+    "dataset_id": {
+      "const": "aura/adaptive-aura-benchmark-dataset"
+    },
+    "revision": {
+      "const": 1
+    },
+    "scenarios": {
+      "type": "array",
+      "minItems": 52,
+      "maxItems": 52,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "scenario_id",
+          "domain",
+          "prompt",
+          "expected",
+          "evaluator_id",
+          "evaluator_revision"
+        ],
+        "properties": {
+          "scenario_id": {
+            "type": "string",
+            "pattern": "^[rts][0-1][0-9]$|^[km]0[1-8]$"
+          },
+          "domain": {
+            "enum": [
+              "reasoning",
+              "tool_discovery",
+              "skill_routing",
+              "knowledge_retrieval",
+              "memory_recall"
+            ]
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          },
+          "expected": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "evaluator_id": {
+            "const": "aura/adaptive-deterministic-checker"
+          },
+          "evaluator_revision": {
+            "const": 1
+          }
+        }
+      }
+    }
+  }
+}

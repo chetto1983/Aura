@@ -161,6 +161,24 @@ type chatEnvAssembler func(
 	*pgxpool.Pool,
 ) (*chatEnv, error)
 
+type adaptiveControlSetFactory func(
+	context.Context,
+	*config.Config,
+	*pgxpool.Pool,
+) (adaptiveControlSet, error)
+
+type chatRegistryTransform func(
+	*tools.Registry,
+) (*tools.Registry, error)
+
+type chatClientTransform func(llm.Client) (llm.Client, error)
+
+type chatEnvAssemblyOptions struct {
+	adaptiveControls  adaptiveControlSetFactory
+	registryTransform chatRegistryTransform
+	clientTransform   chatClientTransform
+}
+
 func assembleChatEnvAtMigrationHead(
 	ctx context.Context,
 	cfg *config.Config,
@@ -311,6 +329,40 @@ func assembleChatEnvWithAdaptivePolicy(
 	policyReader adaptive.PolicyReader,
 	warnings io.Writer,
 ) (*chatEnv, error) {
+	return assembleChatEnvWithOptions(
+		ctx,
+		cfg,
+		pool,
+		openAdaptiveGraph,
+		chatEnvAssemblyOptions{
+			adaptiveControls: func(
+				ctx context.Context,
+				cfg *config.Config,
+				pool *pgxpool.Pool,
+			) (adaptiveControlSet, error) {
+				adaptivePool := selectAdaptiveBootPool(
+					ctx,
+					pool,
+					policyReader,
+					warnings,
+				)
+				return newAdaptiveControlSet(
+					adaptivePool,
+					cfg.LLM.Provider,
+					cfg.LLM.Model,
+				), nil
+			},
+		},
+	)
+}
+
+func assembleChatEnvWithOptions(
+	ctx context.Context,
+	cfg *config.Config,
+	pool *pgxpool.Pool,
+	openAdaptiveGraph adaptiveGraphClientOpener,
+	options chatEnvAssemblyOptions,
+) (*chatEnv, error) {
 	var mcpClosers []func() error
 	success := false
 	defer func() {
@@ -346,17 +398,13 @@ func assembleChatEnvWithAdaptivePolicy(
 		fmt.Fprintln(os.Stderr, "trusted local mode — full host capability active")
 	}
 
-	adaptivePool := selectAdaptiveBootPool(
-		ctx,
-		pool,
-		policyReader,
-		warnings,
-	)
-	adaptiveControls := newAdaptiveControlSet(
-		adaptivePool,
-		cfg.LLM.Provider,
-		cfg.LLM.Model,
-	)
+	if options.adaptiveControls == nil {
+		return nil, errors.New("adaptive control factory is unavailable")
+	}
+	adaptiveControls, err := options.adaptiveControls(ctx, cfg, pool)
+	if err != nil {
+		return nil, fmt.Errorf("adaptive controls: %w", err)
+	}
 
 	convStore := conversations.New(pool, conversations.Config{
 		RunDir:       cfg.RunDir,
@@ -410,6 +458,15 @@ func assembleChatEnvWithAdaptivePolicy(
 		// pool + closers released by the deferred close-on-error guard.
 		return nil, fmt.Errorf("mcp: %w", err)
 	}
+	if options.registryTransform != nil {
+		reg, err = options.registryTransform(reg)
+		if err != nil {
+			return nil, fmt.Errorf("registry transform: %w", err)
+		}
+		if reg == nil {
+			return nil, errors.New("registry transform returned nil")
+		}
+	}
 
 	// Fail-loud boot wiring guard (D-02d): a mutating multiplexed tool the classifier
 	// cannot tier panics here rather than silently under-gating a live turn.
@@ -420,6 +477,15 @@ func assembleChatEnvWithAdaptivePolicy(
 		return nil, fmt.Errorf("command hooks: %w", err)
 	}
 	client := newLLMClient(cfg.LLM)
+	if options.clientTransform != nil {
+		client, err = options.clientTransform(client)
+		if err != nil {
+			return nil, fmt.Errorf("client transform: %w", err)
+		}
+		if client == nil {
+			return nil, errors.New("client transform returned nil")
+		}
+	}
 	deps := runner.Deps{
 		Conv:            convStore,
 		Pause:           pauseStore,

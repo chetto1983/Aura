@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	adaptiveEvalUsage              = "usage: aura eval adaptive {verify|seal-admission}"
+	adaptiveEvalUsage              = "usage: aura eval adaptive {verify|seal-admission|benchmark}"
 	maxAdaptiveBenchmarkInputBytes = 8 << 20
 	adaptiveAdmissionManifestID    = "aura.adaptive.admission-manifest/v1"
 )
@@ -73,6 +73,22 @@ func runEvalCommand(
 	output io.Writer,
 	factory adaptiveBenchmarkFactory,
 ) error {
+	return runEvalCommandWithBenchmarkFactory(
+		ctx,
+		args,
+		output,
+		factory,
+		newAdaptiveBenchmarkRunExecution,
+	)
+}
+
+func runEvalCommandWithBenchmarkFactory(
+	ctx context.Context,
+	args []string,
+	output io.Writer,
+	factory adaptiveBenchmarkFactory,
+	runFactory adaptiveBenchmarkRunFactory,
+) error {
 	if len(args) < 2 || args[0] != "adaptive" {
 		return errors.New(adaptiveEvalUsage)
 	}
@@ -84,6 +100,10 @@ func runEvalCommand(
 	case "seal-admission":
 		return runAdaptiveBenchmarkSealAdmission(
 			ctx, args[2:], output, factory,
+		)
+	case "benchmark":
+		return runAdaptiveBenchmarkRunCommand(
+			ctx, args[2:], output, runFactory,
 		)
 	default:
 		return errors.New(adaptiveEvalUsage)
