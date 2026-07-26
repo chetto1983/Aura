@@ -171,6 +171,149 @@ func TestGraphViewLive_Footprint(t *testing.T) {
 		len(res.Nodes), len(res.Edges), len(res.Schema.Labels))
 }
 
+// seedOwnershipFixture writes the ownership shape the agent-memory sidecar ACTUALLY
+// writes — (:User)-[:HAS_ENTITY]->(:Entity) and (:User)-[:HAS_CONVERSATION]->
+// (:Conversation)-[:HAS_MESSAGE]->(:Message) — for TWO distinct users. The pre-existing
+// seedGraphViewLiveFixture invents a Conversation->Message-[:MENTIONS]->Entity path that
+// no writer produces, which is exactly why the scoped queries could be broken in
+// production while the live tests stayed green: the fixture built the graph the query
+// wanted instead of the graph that exists.
+func seedOwnershipFixture(ctx context.Context, t *testing.T, mcp *Client) (userA, userB, entityAID string, cleanup func()) {
+	t.Helper()
+
+	runID := fmt.Sprintf("graphview-own-%d", time.Now().UnixNano())
+	userA, userB = runID+"-user-a", runID+"-user-b"
+	params := map[string]any{
+		"run": runID, "user_a": userA, "user_b": userB,
+		"session": runID + "-session",
+	}
+	const seed = `CREATE (ua:User {identifier:$user_a, test_run_id:$run})
+CREATE (ub:User {identifier:$user_b, test_run_id:$run})
+CREATE (ea:Entity {name:'Ownership Fixture A', type:'PERSON', test_run_id:$run})
+CREATE (eb:Entity {name:'Ownership Fixture B', type:'PERSON', test_run_id:$run})
+CREATE (c:Conversation {session_id:$session, test_run_id:$run})
+CREATE (m:Message {test_run_id:$run})
+CREATE (ua)-[:HAS_ENTITY {test_run_id:$run}]->(ea)
+CREATE (ub)-[:HAS_ENTITY {test_run_id:$run}]->(eb)
+CREATE (ua)-[:HAS_CONVERSATION {test_run_id:$run}]->(c)
+CREATE (c)-[:HAS_MESSAGE {test_run_id:$run}]->(m)`
+	if _, err := mcp.Write(ctx, seed, params); err != nil {
+		t.Fatalf("seed ownership fixture: %v", err)
+	}
+
+	cleanup = func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if _, err := mcp.Write(cleanupCtx, `MATCH (n {test_run_id:$run}) DETACH DELETE n`, map[string]any{"run": runID}); err != nil {
+			t.Logf("cleanup ownership fixture %q: %v", runID, err)
+		}
+	}
+
+	// The mcp write tool answers with a mutation summary, not the RETURN rows, so the
+	// anchor id comes from a follow-up read. Any failure past this point must still tear
+	// the fixture down — a leaked :User is exactly the state that broke production.
+	rows, err := mcp.Read(ctx,
+		`MATCH (:User {identifier:$user_a})-[:HAS_ENTITY]->(ea:Entity) RETURN elementId(ea) AS entity_a`,
+		map[string]any{"user_a": userA})
+	if err != nil {
+		cleanup()
+		t.Fatalf("read ownership fixture anchor: %v", err)
+	}
+	if len(rows) > 0 {
+		entityAID, _ = rows[0]["entity_a"].(string)
+	}
+	if entityAID == "" {
+		cleanup()
+		t.Fatalf("ownership fixture did not yield entity A's elementId: %+v", rows)
+	}
+
+	return userA, userB, entityAID, cleanup
+}
+
+// TestGraphViewLive_EveryCompiledQueryExecutes runs EVERY compiled query against the live
+// database, scoped and unscoped, and fails on any error. The unit tests assert query shape
+// with strings.Contains and never parse the Cypher, so compileExpand shipped with an
+// unbalanced `})` — one paren left open — and answered 502 on every click-to-expand while
+// the suite stayed green. Substring assertions cannot catch that; executing it can.
+func TestGraphViewLive_EveryCompiledQueryExecutes(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	mcp := openTestMCP(ctx, t)
+	defer mcp.Close()
+	userA, _, entityAID, cleanup := seedOwnershipFixture(ctx, t, mcp)
+	defer cleanup()
+
+	for _, userID := range []string{"", userA} {
+		scope := "unscoped"
+		if userID != "" {
+			scope = "scoped"
+		}
+		intents := map[string]GraphIntent{
+			"seed":     {Op: OpSeed, Session: "any-session", UserID: userID},
+			"overview": {Op: OpSchemaOverview, UserID: userID},
+			"expand":   {Op: OpExpand, SeedID: entityAID, UserID: userID},
+		}
+		for name, in := range intents {
+			t.Run(scope+"/"+name, func(t *testing.T) {
+				var cypher string
+				var params map[string]any
+				switch in.Op {
+				case OpSeed:
+					cypher, params = compileSeed(in)
+				case OpSchemaOverview:
+					cypher, params = compileOverview(in)
+				default:
+					cypher, params = compileExpand(in)
+				}
+				if _, err := mcp.Read(ctx, cypher, params); err != nil {
+					t.Fatalf("compiled %s query failed against the live database: %v\n%s", name, err, cypher)
+				}
+			})
+		}
+	}
+}
+
+// TestGraphViewLive_OwnershipIsolation is the direct regression for the empty cockpit
+// graph. The replaced query gated every row on a `single_tenant` heuristic — "no other
+// :User exists" — so a second identity turned the whole graph off for everyone, silently.
+// This asserts BOTH halves at once: the caller's own subgraph is non-empty WHILE a second
+// user exists, and the second user's node never appears in it.
+func TestGraphViewLive_OwnershipIsolation(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	mcp := openTestMCP(ctx, t)
+	defer mcp.Close()
+	userA, userB, entityAID, cleanup := seedOwnershipFixture(ctx, t, mcp)
+	defer cleanup()
+	gv := NewGraphView(mcp)
+
+	res, err := gv.Query(ctx, GraphIntent{Op: OpSchemaOverview, UserID: userA})
+	if err != nil {
+		t.Fatalf("scoped overview: %v", err)
+	}
+	captions := make([]string, 0, len(res.Nodes))
+	for _, n := range res.Nodes {
+		captions = append(captions, n.Caption)
+	}
+	joined := strings.Join(captions, "|")
+	if !strings.Contains(joined, "Ownership Fixture A") {
+		t.Fatalf("scoped overview lost the caller's OWN entity while a second :User exists "+
+			"(the single_tenant regression); captions=%v", captions)
+	}
+	if strings.Contains(joined, "Ownership Fixture B") {
+		t.Fatalf("scoped overview leaked another identity's entity; captions=%v", captions)
+	}
+
+	// Expand is scoped by the SAME ownership set: user B may not expand user A's node.
+	foreign, err := gv.Query(ctx, GraphIntent{Op: OpExpand, SeedID: entityAID, UserID: userB})
+	if err != nil {
+		t.Fatalf("foreign expand: %v", err)
+	}
+	if len(foreign.Nodes) != 0 {
+		t.Fatalf("expand leaked a node the caller does not own: %+v", foreign.Nodes)
+	}
+}
+
 // TestGraphViewLive_Schema asserts GraphView.Schema returns a non-empty label set
 // from the live graph (the legend + filter source). The schema is dynamic, so it
 // asserts non-empty only — never a specific label set.

@@ -146,36 +146,74 @@ func TestCompileSeedScopesByUserID(t *testing.T) {
 	}
 }
 
-func TestCompileOverviewScopesByUserID(t *testing.T) {
-	in := withGraphIntentUserID(t, GraphIntent{Op: OpSchemaOverview}, "identity-1")
-	cypher, params := compileOverview(in)
+// bannedScopeConstructs are the two constructs the ownership prelude replaced. Both
+// rendered the cockpit graph empty in production: `single_tenant` gated every row on "no
+// other :User exists" (false from the moment a second identity appears), and the
+// `owned_entities` roll-up traversed a MENTIONS edge no writer produces, so the list was
+// always empty. Neither may return to a scoped query.
+var bannedScopeConstructs = []string{"single_tenant", "owned_entities", "MENTIONS"}
 
+// assertScopeContract pins what EVERY scoped query must do: bind the identity as a param
+// (never a literal), resolve ownership through the shared prelude, keep the banned
+// constructs out, and BALANCE its delimiters. The balance check is the cheap unit-level
+// stand-in for a parser: compileExpand shipped with an unbalanced `})` that left one paren
+// open, and because every assertion here was a strings.Contains on a fragment, the suite
+// stayed green while Neo4j rejected the statement outright on every click-to-expand.
+func assertScopeContract(t *testing.T, cypher string, params map[string]any) {
+	t.Helper()
 	if params["user_id"] != "identity-1" {
 		t.Fatalf("params[user_id] = %v, want identity-1", params["user_id"])
 	}
 	noLiteral(t, cypher, "identity-1")
-	// The overview hoists its three row-invariant ownership facts into the leading
-	// WITH (unscoped / single_tenant / owned_entities) and references them per row,
-	// instead of re-running a :User scan + 4-hop expand for every candidate edge.
-	// The guard asserts BOTH the traversal that populates the owned-entity set and
-	// the per-row membership/tenant checks that consume it, so a regression that drops
-	// isolation is caught regardless of which half it removes.
 	for _, frag := range []string{
 		"$user_id = ''",
 		":User {identifier:$user_id}",
-		"[:HAS_CONVERSATION]->(:Conversation)",
-		"[:HAS_MESSAGE]->(:Message)-[:MENTIONS]->(e:Entity) | elementId(e) ] AS owned_entities",
-		"elementId(s) IN owned_entities OR elementId(n) IN owned_entities",
-		") AS single_tenant",
-		"single_tenant AND (",
-		"NOT EXISTS {",
-		"coalesce(other.identifier, other.id, '') <> $user_id",
-		"s:Document OR s:Chunk OR s:Preference",
-		"n:Document OR n:Chunk OR n:Preference",
+		"AS owned_ids",
 	} {
 		if !strings.Contains(cypher, frag) {
-			t.Fatalf("overview query missing user-scope fragment %q:\n%s", frag, cypher)
+			t.Fatalf("scoped query missing ownership fragment %q:\n%s", frag, cypher)
 		}
+	}
+	for _, banned := range bannedScopeConstructs {
+		if strings.Contains(cypher, banned) {
+			t.Fatalf("scoped query resurrected the banned construct %q:\n%s", banned, cypher)
+		}
+	}
+	assertBalancedDelimiters(t, cypher)
+}
+
+// assertBalancedDelimiters fails when (), [] or {} do not balance outside string literals.
+// It reuses the guard's stripStringLiterals so a brace inside property data cannot skew
+// the count.
+func assertBalancedDelimiters(t *testing.T, cypher string) {
+	t.Helper()
+	pairs := map[byte]byte{')': '(', ']': '[', '}': '{'}
+	var stack []byte
+	for i, c := range []byte(stripStringLiterals(cypher)) {
+		switch c {
+		case '(', '[', '{':
+			stack = append(stack, c)
+		case ')', ']', '}':
+			if len(stack) == 0 || stack[len(stack)-1] != pairs[c] {
+				t.Fatalf("unbalanced %q at offset %d — the query would not parse:\n%s", c, i, cypher)
+			}
+			stack = stack[:len(stack)-1]
+		}
+	}
+	if len(stack) != 0 {
+		t.Fatalf("%d delimiter(s) left open — the query would not parse:\n%s", len(stack), cypher)
+	}
+}
+
+func TestCompileOverviewScopesByUserID(t *testing.T) {
+	in := withGraphIntentUserID(t, GraphIntent{Op: OpSchemaOverview}, "identity-1")
+	cypher, params := compileOverview(in)
+
+	assertScopeContract(t, cypher, params)
+	// Ownership is membership in one id set and BOTH endpoints must belong to it, so a
+	// node owned by another identity can never be drawn.
+	if !strings.Contains(cypher, "elementId(s) IN owned_ids AND elementId(n) IN owned_ids") {
+		t.Fatalf("overview must require BOTH endpoints to be owned:\n%s", cypher)
 	}
 }
 
@@ -183,21 +221,15 @@ func TestCompileExpandScopesByUserID(t *testing.T) {
 	in := withGraphIntentUserID(t, GraphIntent{Op: OpExpand, SeedID: "node-1"}, "identity-1")
 	cypher, params := compileExpand(in)
 
-	if params["user_id"] != "identity-1" {
-		t.Fatalf("params[user_id] = %v, want identity-1", params["user_id"])
-	}
-	noLiteral(t, cypher, "identity-1")
+	assertScopeContract(t, cypher, params)
+	// A node the caller can SEE is exactly a node the caller can EXPAND, and a neighbor
+	// they do not own is never revealed — both ends gate on the same ownership set.
 	for _, frag := range []string{
-		"$user_id = ''",
-		":User {identifier:$user_id}",
-		"[:HAS_CONVERSATION]->(:Conversation)",
-		"root = s OR (root)--(s)",
-		"NOT EXISTS {",
-		"coalesce(other.identifier, other.id, '') <> $user_id",
-		"s:Document OR s:Chunk OR s:Preference",
+		"unscoped OR elementId(s) IN owned_ids",
+		"unscoped OR elementId(n) IN owned_ids",
 	} {
 		if !strings.Contains(cypher, frag) {
-			t.Fatalf("expand query missing user-scope fragment %q:\n%s", frag, cypher)
+			t.Fatalf("expand query missing ownership gate %q:\n%s", frag, cypher)
 		}
 	}
 }
