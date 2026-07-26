@@ -46,6 +46,9 @@ type ToolSearch struct {
 	// no adapter). Wired by the composition root (runner). nil => free-text ranking
 	// returns an explicit error (Req-6); the select: path still works.
 	Embed semindex.Embedder
+	// Adaptive coordinates typed assignment and delivery for free-text discovery.
+	// Exact select: calls never cross this port.
+	Adaptive ToolDiscoveryControl
 
 	mu     sync.Mutex
 	ranker *semindex.Ranker // embedding bank over the deferred searchDocument texts
@@ -219,7 +222,13 @@ func (ts *ToolSearch) Execute(ctx context.Context, raw json.RawMessage) (ToolRes
 		limit = *args.MaxResults
 	}
 
-	matches, err := ts.match(ctx, q, limit)
+	var matches []Tool
+	var err error
+	if strings.HasPrefix(q, "select:") {
+		matches, err = ts.match(ctx, q, limit)
+	} else {
+		matches, err = ts.orderFreeText(ctx, q, limit)
+	}
 	if err != nil {
 		// Req-6 INFRA-ERROR path: the embed sidecar is a hard dependency for free-text
 		// ranking — surface an explicit, model-visible, retryable error. This is
@@ -281,40 +290,8 @@ func (ts *ToolSearch) match(ctx context.Context, q string, limit int) ([]Tool, e
 		return out, nil
 	}
 
-	ranker, bm25Names, byName, err := ts.ensureBank(ctx, q)
-	if err != nil {
-		return nil, err
-	}
-	if ranker == nil {
-		// Empty deferred corpus — nothing to rank. Capability gap (empty), not error.
-		return nil, nil
-	}
-	// Embed the query ONCE (Req-6: a sidecar-down error surfaces here) and reuse the
-	// vector for the static semantic-description ranking.
-	qVecs, err := ts.embedQuery(ctx, q)
-	if err != nil {
-		return nil, err // Req-6: embed sidecar down on the query embed
-	}
-	if len(qVecs) == 0 {
-		// A degenerate empty embedding is a capability gap, not an infra error.
-		return nil, nil
-	}
-	// Stage-1: embedding-primary description ranking (spike-056). Request more than the
-	// cap so the guarded tiebreak can reorder within the confident region before capping.
-	rankWidth := limit + fusionGuardTopK
-	stage1 := ranker.RankVecs(qVecs, rankWidth)
-	// Guarded BM25 tiebreak (Plan 03).
-	ranked := guardedTiebreak(stage1, bm25Names)
-	if len(ranked) > limit {
-		ranked = ranked[:limit]
-	}
-	out := make([]Tool, 0, len(ranked))
-	for _, r := range ranked {
-		if t, ok := byName[r.Label]; ok {
-			out = append(out, t)
-		}
-	}
-	return out, nil
+	frozen := ts.freezeDeferredTools()
+	return ts.rankFrozen(ctx, frozen, q, limit, ToolDiscoveryStatic)
 }
 
 // embedQuery embeds a single free-text query into one vector, surfacing the embedder
@@ -332,8 +309,8 @@ func (ts *ToolSearch) embedQuery(ctx context.Context, q string) ([]float64, erro
 }
 
 // ensureBank lazily builds (and incrementally extends) the embedding bank over the
-// registry's deferred tools, then returns the ranker, the BM25-ranked tool NAMES for
-// the query (the guarded-tiebreak signal), and the Name->Tool map. The embedding
+// frozen deferred tools, then returns the ranker and BM25-ranked tool names for
+// the query (the guarded-tiebreak signal). The embedding
 // input is searchDocument(spec) (reused VERBATIM from bm25.go — D-02, NOT the raw
 // description). The bank is keyed by tool Name. On the first call it embeds every
 // deferred tool; on later calls (after an MCP-mount InvalidateIndex) it embeds ONLY
@@ -342,34 +319,27 @@ func (ts *ToolSearch) embedQuery(ctx context.Context, q string) ([]float64, erro
 // current deferred set. A nil embedder or an embed error returns an error (Req-6 hard
 // dependency), never a silent empty bank. The BM25 query rank is computed under the
 // lock so it stays aligned with the (sorted) spec slice.
-func (ts *ToolSearch) ensureBank(ctx context.Context, query string) (*semindex.Ranker, []string, map[string]Tool, error) {
+func (ts *ToolSearch) ensureBank(
+	ctx context.Context,
+	query string,
+	frozen frozenToolCatalog,
+) (*semindex.Ranker, []string, error) {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 
 	// Deferred tools, sorted by Name so equal-score ties break deterministically and
 	// the BM25 index alignment is stable per run (mirror of the prior indexSnapshot).
-	all := ts.Registry.All()
-	sort.Slice(all, func(i, j int) bool { return all[i].Spec().Name < all[j].Spec().Name })
-	byName := make(map[string]Tool, len(all))
-	specs := make([]Spec, 0, len(all))
-	for _, t := range all {
-		s := t.Spec()
-		if !s.Deferred {
-			continue
-		}
-		specs = append(specs, s)
-		byName[s.Name] = t
-	}
+	specs := frozen.specs
 	// Empty corpus is a CAPABILITY GAP, not an infra error: there is nothing to embed
 	// or rank regardless of the embedder, so do not require the sidecar here (a
 	// nil ranker drives match's empty -> noMatchOrientation path).
 	if len(specs) == 0 {
-		return nil, nil, byName, nil
+		return nil, nil, nil
 	}
 
 	// With deferred tools present, the embed sidecar IS required (Req-6 hard dep).
 	if ts.Embed == nil {
-		return nil, nil, nil, fmt.Errorf("no embedder wired")
+		return nil, nil, fmt.Errorf("no embedder wired")
 	}
 	if ts.ranker == nil {
 		ts.ranker = semindex.NewRanker(ts.Embed)
@@ -409,7 +379,7 @@ func (ts *ToolSearch) ensureBank(ctx context.Context, query string) (*semindex.R
 		}
 		vecs, err := ts.Embed.Embed(ctx, texts)
 		if err != nil {
-			return nil, nil, nil, err // Req-6: not cached — a retry re-embeds the delta
+			return nil, nil, err // Req-6: not cached — a retry re-embeds the delta
 		}
 		for i, s := range newSpecs {
 			if i < len(vecs) {
@@ -436,7 +406,5 @@ func (ts *ToolSearch) ensureBank(ctx context.Context, query string) (*semindex.R
 			bm25Names = append(bm25Names, ts.specs[s.doc].Name)
 		}
 	}
-	// Return the fresh, goroutine-local byName map (never the shared one) so match
-	// can read it lock-free without racing a concurrent ensureBank write.
-	return ts.ranker, bm25Names, byName, nil
+	return ts.ranker, bm25Names, nil
 }

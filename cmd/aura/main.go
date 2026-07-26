@@ -30,6 +30,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chetto1983/aura/internal/adaptive/orderingcontrol"
 	"github.com/chetto1983/aura/internal/agent/mcptools"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
@@ -198,7 +199,14 @@ func buildBaseRegistryWithHandles(cfg *config.Config, ts *cronTaskStore, sandbox
 	}
 	reg := tools.NewRegistry()
 	reg.Register(tools.TextResponse{})
-	reg.Register(&tools.ToolSearch{Registry: reg})
+	reg.Register(&tools.ToolSearch{
+		Registry: reg,
+		Adaptive: orderingcontrol.NewToolDiscovery(
+			taskStorePool(ts),
+			cfg.LLM.Provider,
+			cfg.LLM.Model,
+		),
+	})
 	reg.Register(&tools.ReadToolOutput{})
 	reg.Register(tools.CurrentTime{})
 	reg.Register(tools.AskUser{}) // HITL pause primitive — the LLM must see ask_user in the live manifest

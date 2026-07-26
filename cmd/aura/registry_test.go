@@ -10,7 +10,9 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/mcp"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // TestBuildRegistry_RegistersAskUser guards the production wiring gap found in
@@ -40,6 +42,48 @@ func TestBuildRegistry_CoreToolsPresent(t *testing.T) {
 			t.Errorf("production registry is missing core tool %q", name)
 		}
 	}
+}
+
+func TestBuildBaseRegistryWiresToolDiscoveryOnlyWithLivePool(t *testing.T) {
+	cfg := &config.Config{
+		LLM: llm.Config{
+			Provider: "openrouter",
+			Model:    "production-model",
+		},
+		WorkspaceDir: t.TempDir(),
+	}
+	assertAdaptive := func(
+		t *testing.T,
+		reg *tools.Registry,
+		want bool,
+	) {
+		t.Helper()
+		registered, ok := reg.Get((&tools.ToolSearch{}).Spec().Name)
+		if !ok {
+			t.Fatal("tool_search is not registered")
+		}
+		search, ok := registered.(*tools.ToolSearch)
+		if !ok {
+			t.Fatalf("tool_search type = %T", registered)
+		}
+		if (search.Adaptive != nil) != want {
+			t.Fatalf(
+				"adaptive tool discovery wired = %t, want %t",
+				search.Adaptive != nil,
+				want,
+			)
+		}
+	}
+
+	assertAdaptive(t, buildBaseRegistry(cfg, nil), false)
+	assertAdaptive(
+		t,
+		buildBaseRegistry(
+			cfg,
+			newCronTaskStore(new(pgxpool.Pool), nil),
+		),
+		true,
+	)
 }
 
 // TestBuildRegistry_PassesValidate guards D-10 at the production composition root:

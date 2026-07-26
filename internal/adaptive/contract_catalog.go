@@ -1,6 +1,66 @@
 package adaptive
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
+
+// NewRegisteredCatalogDeliveryMetadata validates one ordered tool or skill
+// exposure against the candidate catalog frozen before ranking. The catalog
+// revision is recorded as a schema revision because it identifies the immutable
+// ordering contract, not mutable result content.
+func NewRegisteredCatalogDeliveryMetadata(
+	kind ResultKind,
+	registered []string,
+	delivered []string,
+	catalogRevision string,
+) ([]ResultID, RevisionSet, error) {
+	if kind != ResultTool && kind != ResultSkill {
+		return nil, RevisionSet{}, fmt.Errorf(
+			"adaptive catalog delivery kind %q is invalid",
+			kind,
+		)
+	}
+	catalog, err := newResultCatalog(map[ResultKind][]string{
+		kind: registered,
+	})
+	if err != nil {
+		return nil, RevisionSet{}, err
+	}
+	results := make([]ResultID, len(delivered))
+	for index, id := range delivered {
+		if kind == ResultTool {
+			results[index], err = NewToolResultID(id, catalog)
+		} else {
+			results[index], err = NewSkillResultID(id, catalog)
+		}
+		if err != nil {
+			return nil, RevisionSet{}, err
+		}
+	}
+	if err := validateResultIDs(results); err != nil {
+		return nil, RevisionSet{}, err
+	}
+	revisionCatalog, err := newRevisionCatalog(map[RevisionKind][]string{
+		RevisionSchema: {catalogRevision},
+	})
+	if err != nil {
+		return nil, RevisionSet{}, err
+	}
+	revision, err := NewRegisteredRevision(
+		RevisionSchema,
+		catalogRevision,
+		revisionCatalog,
+	)
+	if err != nil {
+		return nil, RevisionSet{}, err
+	}
+	revisions, err := NewRevisionSet(revision)
+	if err != nil {
+		return nil, RevisionSet{}, err
+	}
+	return results, revisions, nil
+}
 
 func sensitiveCatalogID(value string) bool {
 	normalized := strings.NewReplacer("_", "-", ".", "-").Replace(strings.ToLower(value))
