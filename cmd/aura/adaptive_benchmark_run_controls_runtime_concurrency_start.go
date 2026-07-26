@@ -37,8 +37,9 @@ func adaptiveBenchmarkStartConcurrencyClients(
 	if err := start(ctx, states["C0"]); err != nil {
 		return err
 	}
-	if err := adaptiveBenchmarkWaitSignal(
-		ctx, states["C0"].assigned, "C0 assignment",
+	if err := adaptiveBenchmarkWaitForConcurrencyAssignment(
+		ctx,
+		states["C0"],
 	); err != nil {
 		return err
 	}
@@ -60,6 +61,41 @@ func adaptiveBenchmarkStartConcurrencyClients(
 		return err
 	}
 	return nil
+}
+
+func adaptiveBenchmarkWaitForConcurrencyAssignment(
+	ctx context.Context,
+	state *adaptiveBenchmarkConcurrencyClientState,
+) error {
+	if state == nil {
+		return adaptiveBenchmarkControlError(
+			"adaptive benchmark concurrency client is unavailable",
+		)
+	}
+	select {
+	case <-state.assigned:
+		return nil
+	case <-state.done:
+		state.mu.Lock()
+		turnErr := state.turnErr
+		state.mu.Unlock()
+		return errors.Join(
+			turnErr,
+			adaptiveBenchmarkControlError(
+				"adaptive benchmark "+state.spec.ClientID+
+					" terminated before "+string(state.domain)+
+					" assignment",
+			),
+		)
+	case <-ctx.Done():
+		return errors.Join(
+			adaptiveBenchmarkControlError(
+				"adaptive benchmark concurrency wait failed: "+
+					state.spec.ClientID+" assignment",
+			),
+			context.Cause(ctx),
+		)
+	}
 }
 
 func adaptiveBenchmarkProveConcurrencyClientBlocked(
@@ -97,4 +133,35 @@ func adaptiveBenchmarkProveConcurrencyClientBlocked(
 		)
 	}
 	return nil
+}
+
+func adaptiveBenchmarkShutdownConcurrencyClients(
+	cancel context.CancelFunc,
+	started []*adaptiveBenchmarkConcurrencyClientState,
+) {
+	cancel()
+	for _, state := range started {
+		state.signalRelease()
+	}
+	for _, state := range started {
+		<-state.done
+	}
+}
+
+func adaptiveBenchmarkReleaseConcurrencyClient(
+	ctx context.Context,
+	state *adaptiveBenchmarkConcurrencyClientState,
+) error {
+	state.signalRelease()
+	return adaptiveBenchmarkWaitSignal(
+		ctx,
+		state.released,
+		state.spec.ClientID+" release",
+	)
+}
+
+func (state *adaptiveBenchmarkConcurrencyClientState) signalRelease() {
+	state.releaseOnce.Do(func() {
+		close(state.release)
+	})
 }

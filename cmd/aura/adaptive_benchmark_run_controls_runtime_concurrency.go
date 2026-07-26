@@ -32,6 +32,7 @@ type adaptiveBenchmarkConcurrencyClientState struct {
 	terminalAt     time.Time
 	deliveryCount  int
 	turnErr        error
+	releaseOnce    sync.Once
 
 	started  chan struct{}
 	assigned chan struct{}
@@ -105,16 +106,16 @@ func (runtime *adaptiveBenchmarkControlRuntime) runConcurrency(
 	if err != nil {
 		return adaptiveBenchmarkControlExecution{}, err
 	}
-	cleanup := func() error {
+	cleanup := func(cleanupCtx context.Context) error {
 		return errors.Join(
 			adaptiveBenchmarkControlDeleteConversation(
-				ctx, primary, conversations["A0"],
+				cleanupCtx, primary, conversations["A0"],
 			),
 			adaptiveBenchmarkControlDeleteConversation(
-				ctx, primary, conversations["A1"],
+				cleanupCtx, primary, conversations["A1"],
 			),
 			adaptiveBenchmarkControlDeleteConversation(
-				ctx, controlOwner, conversations["B0"],
+				cleanupCtx, controlOwner, conversations["B0"],
 			),
 		)
 	}
@@ -123,7 +124,8 @@ func (runtime *adaptiveBenchmarkControlRuntime) runConcurrency(
 		plan,
 		states,
 	)
-	if joined := errors.Join(runErr, cleanup()); joined != nil {
+	cleanupErr := adaptiveBenchmarkConcurrencyCleanup(ctx, cleanup)
+	if joined := errors.Join(runErr, cleanupErr); joined != nil {
 		return adaptiveBenchmarkControlExecution{}, joined
 	}
 	if err := auraeval.ValidateAdaptiveBenchmarkConcurrencyEvidence(
@@ -153,6 +155,23 @@ func (runtime *adaptiveBenchmarkControlRuntime) runConcurrency(
 		EvidenceIDs: ids,
 		Concurrency: &evidence,
 	}, nil
+}
+
+func adaptiveBenchmarkConcurrencyCleanup(
+	ctx context.Context,
+	cleanup func(context.Context) error,
+) error {
+	if cleanup == nil {
+		return adaptiveBenchmarkControlError(
+			"adaptive benchmark concurrency cleanup is unavailable",
+		)
+	}
+	cleanupCtx, cancel := context.WithTimeout(
+		context.WithoutCancel(ctx),
+		adaptiveBenchmarkConversationCleanupTimeout,
+	)
+	defer cancel()
+	return cleanup(cleanupCtx)
 }
 
 func adaptiveBenchmarkConcurrencyConversations(
@@ -261,12 +280,34 @@ func adaptiveBenchmarkRunConcurrencySchedule(
 	if err != nil {
 		return auraeval.AdaptiveBenchmarkConcurrencyEvidence{}, nil, err
 	}
-	defer clear()
-	waitDeadline := adaptiveBenchmarkConcurrencyDeadline(ctx)
+	clearStreams, err :=
+		adaptiveBenchmarkInstallConcurrencyStreamInterceptors(states)
+	if err != nil {
+		clear()
+		return auraeval.AdaptiveBenchmarkConcurrencyEvidence{}, nil, err
+	}
+	runCtx, cancel := context.WithCancel(ctx)
+	started := make([]*adaptiveBenchmarkConcurrencyClientState, 0, len(states))
+	defer func() {
+		adaptiveBenchmarkShutdownConcurrencyClients(cancel, started)
+		clearStreams()
+		clear()
+	}()
+	startClient := func(
+		ctx context.Context,
+		state *adaptiveBenchmarkConcurrencyClientState,
+	) error {
+		if err := adaptiveBenchmarkStartConcurrencyClient(ctx, state); err != nil {
+			return err
+		}
+		started = append(started, state)
+		return nil
+	}
+	waitDeadline := adaptiveBenchmarkConcurrencyDeadline(runCtx)
 	if err := adaptiveBenchmarkStartConcurrencyClients(
-		ctx,
+		runCtx,
 		states,
-		adaptiveBenchmarkStartConcurrencyClient,
+		startClient,
 		func(
 			ctx context.Context,
 			state *adaptiveBenchmarkConcurrencyClientState,
@@ -281,45 +322,47 @@ func adaptiveBenchmarkRunConcurrencySchedule(
 		return auraeval.AdaptiveBenchmarkConcurrencyEvidence{}, nil, err
 	}
 	for _, clientID := range []string{"C2", "C3"} {
-		if err := adaptiveBenchmarkWaitSignal(
-			ctx, states[clientID].assigned, clientID+" assignment",
+		if err := adaptiveBenchmarkWaitForConcurrencyAssignment(
+			runCtx,
+			states[clientID],
 		); err != nil {
 			return auraeval.AdaptiveBenchmarkConcurrencyEvidence{}, nil, err
 		}
 	}
 	for _, clientID := range []string{"C3", "C2", "C0"} {
 		if err := adaptiveBenchmarkReleaseConcurrencyClient(
-			ctx,
+			runCtx,
 			states[clientID],
 		); err != nil {
 			return auraeval.AdaptiveBenchmarkConcurrencyEvidence{}, nil, err
 		}
 	}
 	if err := adaptiveBenchmarkWaitSignal(
-		ctx, states["C0"].done, "C0 terminal",
+		runCtx, states["C0"].done, "C0 terminal",
 	); err != nil {
 		return auraeval.AdaptiveBenchmarkConcurrencyEvidence{}, nil, err
 	}
-	if err := adaptiveBenchmarkWaitSignal(
-		ctx, states["C1"].assigned, "C1 assignment",
+	if err := adaptiveBenchmarkWaitForConcurrencyAssignment(
+		runCtx,
+		states["C1"],
 	); err != nil {
 		return auraeval.AdaptiveBenchmarkConcurrencyEvidence{}, nil, err
 	}
 	if err := adaptiveBenchmarkReleaseConcurrencyClient(
-		ctx,
+		runCtx,
 		states["C1"],
 	); err != nil {
 		return auraeval.AdaptiveBenchmarkConcurrencyEvidence{}, nil, err
 	}
 	for _, clientID := range []string{"C1", "C2", "C3"} {
 		if err := adaptiveBenchmarkWaitSignal(
-			ctx, states[clientID].done, clientID+" terminal",
+			runCtx, states[clientID].done, clientID+" terminal",
 		); err != nil {
 			return auraeval.AdaptiveBenchmarkConcurrencyEvidence{}, nil, err
 		}
 	}
 	return adaptiveBenchmarkConcurrencyEvidence(
-		ctx,
+		runCtx,
 		plan,
 		states,
 		waitDeadline,
@@ -516,18 +559,6 @@ func (state *adaptiveBenchmarkConcurrencyClientState) recordTerminal(
 		state.terminalAt = time.Now().Round(0).UTC()
 	}
 	state.turnErr = err
-}
-
-func adaptiveBenchmarkReleaseConcurrencyClient(
-	ctx context.Context,
-	state *adaptiveBenchmarkConcurrencyClientState,
-) error {
-	close(state.release)
-	return adaptiveBenchmarkWaitSignal(
-		ctx,
-		state.released,
-		state.spec.ClientID+" release",
-	)
 }
 
 func adaptiveBenchmarkWaitSignal(
