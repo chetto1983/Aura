@@ -218,7 +218,28 @@ Same method, same result: everything below came out of *using* the tool and read
 - **Recommended: all text turns, tool blocks excluded** (~1,900-2,400 nodes, ~4,800-7,100 edges/month). *Not* "user turns only": 92% of user turns contain zero proper nouns (measured 0.08/turn — `"so?"`, `"ciao"`), so that policy would add ~50 entities/month and never build a traversable graph. The structure is in the assistant's text turns, at 3.91 entities each.
 - Lever already in the code: `short_term.add_message(extraction_mode='skip')` stores with zero extraction cost.
 
-**D-2 — Extraction is 100% paid LLM, and the "fallback" is not one.** Two findings, both verified live:
+**D-2 — Extraction is 100% paid LLM, and the "fallback" is not one — but it runs ZERO times today.**
+
+> **Correction, 2026-07-26, operator-caught.** Everything in D-2 and D-3 below is about the
+> extraction pipeline, and **nothing in Aura invokes it.** Extraction lives only in
+> `short_term._extract_and_link_entities`, reachable solely from `add_message` /
+> `memory_store_message`. Ground truth from `aura.tool_invocations`: across **238 memory
+> tool calls the agent has made, `store_message` appears 0 times** — it calls
+> `memory_search` 60, `memory_get_entity` 58, `memory_forget` 46, `memory_add_entity` 28,
+> `memory_update` 18, `memory_get_context` 10, `memory_add_preference` 8,
+> `memory_get_facts` 6, `memory_add_fact` 2. The `add_*` verbs write through
+> `long_term`, which does not touch the extractor at all. The only other `add_message`
+> callers in the package are the framework integrations (langchain, crewai, google_adk,
+> llamaindex, microsoft_agent, agentcore) — none of which Aura mounts.
+>
+> So the per-message token figures below are **the cost of a policy that is not in effect**:
+> they describe what D-1 would cost if it decided to persist turns, not what is being spent.
+> Today the extraction LLM is called zero times per conversation, and the two dead NER stages
+> throw only when an operator runs `aura memory store-message` by hand. **D-2 and D-3 are
+> downstream of D-1, not independent of it** — there is nothing to optimise until something
+> decides to persist messages, and no place for a local NER stage to plug in.
+
+Two findings, both verified live, that become live the moment D-1 turns anything on:
 
 1. **spaCy and GLiNER are not installed.** `Dockerfile:57` installs `-e ".[mcp,google,openai]"`; the `spacy`/`gliner`/`extraction` extras exist in `pyproject.toml:71-75` and nobody asks for them. But `settings.py:193-194` defaults both to enabled, so the pipeline builds both stages and **both throw on every message** (`Stage 'SpacyEntityExtractor' failed: spaCy is required…` in the live logs). Of the upstream three-stage design, only the paid stage runs.
 2. **`factory.py:277` sets `stop_on_success = not fallback_on_empty`.** With the shipped default `fallback_on_empty=True` that is `False`, and `pipeline.py:482` therefore never breaks early. **The LLM stage is always-on, not a fallback.** Installing local NER without flipping this saves zero tokens.
@@ -229,15 +250,26 @@ Highest-leverage move, zero new dependencies: **gate extraction on content** so 
 
 **D-3 — GLiNER: measured, not estimated (2026-07-26). → DECIDED: do not adopt.**
 
-> **Operator decision, 2026-07-26: "se non porta niente lasciamo così".** Correct on the
-> goal that prompted the evaluation. GLiNER is more *accurate* than what runs today (7/7
-> types vs the LLM's habit of typing a person as an OBJECT — M-6), but accuracy was not the
-> ask: the ask was to stop paying for an LLM call on every message, and it cannot deliver
-> that, because relations and preferences are LLM-only and `stop_on_success=False` means the
-> LLM stage runs regardless. Adopting it would buy +300-400 MB and +119 ms per message for
-> an unchanged token bill. **Revisit only if D-2 is done first** — once extraction is gated
-> on content, a local entity stage has somewhere to plug in. The bench in
-> `extraction-bench/` exists so that revisit costs an hour, not a day.
+> **Operator decision, 2026-07-26: "se non porta niente lasciamo così".** Right call, and
+> for a bigger reason than the one first given.
+>
+> The original reasoning: GLiNER is more *accurate* than what runs today (7/7 types vs the
+> LLM's habit of typing a person as an OBJECT — M-6), but accuracy was not the ask. The ask
+> was to stop paying for an LLM call per message, which it cannot deliver while relations
+> and preferences are LLM-only and `stop_on_success=False` keeps the LLM running regardless.
+>
+> **The real reason, found on the operator's challenge ("guarda come l'agente chiama i
+> tool"): the pipeline GLiNER would live in is never invoked.** `store_message` has 0 calls
+> in `aura.tool_invocations` against 238 memory calls; the agent writes through
+> `add_entity`/`add_fact`/`add_preference`, which bypass extraction entirely. So enabling
+> GLiNER today changes nothing at all — there is no code path to change. A cascade design
+> was worked out (GLiNER as the gate, LLM only when it finds something — measured 58.1% of
+> real text turns skipped, relations preserved where entities exist) and then **not built**,
+> because it would have been wiring for a pipeline that does not run.
+>
+> **Strictly downstream of D-1.** Revisit if and only if something starts persisting
+> messages. The bench in `extraction-bench/` and the cascade numbers above exist so that
+> revisit costs an hour, not a day.
 
 Run against the sidecar's real configuration — the 15 POLE+O labels from `factory.py:43-60` at the shipped threshold 0.5 — on real Italian: three signal sentences, three verbatim user turns from `conversation_turns`, the weather-header noise, and `"ciao"`. CPU only.
 
