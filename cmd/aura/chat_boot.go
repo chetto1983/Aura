@@ -149,6 +149,12 @@ type dbOpener func(ctx context.Context, cfg *db.Config) (*pgxpool.Pool, error)
 
 type migrationHeadChecker func(context.Context, string) error
 
+type bootSettingsOps struct {
+	openKeyless func(context.Context) (*pgxpool.Pool, bool, error)
+	recover     func(context.Context, *pgxpool.Pool) error
+	overlay     func(context.Context, *pgxpool.Pool) error
+}
+
 type chatEnvAssembler func(
 	context.Context,
 	*config.Config,
@@ -170,14 +176,34 @@ func assembleChatEnvAtMigrationHead(
 }
 
 // resolveConfigAndPool loads the config and opens the DB pool, handing BOTH to
-// migration gate and assembleChatEnv. It runs the config → (optional
-// settings-overlay) → reload sequence and owns the pool ONLY across a post-overlay
-// reload failure: if the reload fails it closes the freshly-opened pool before
-// returning (no leak). On success it returns the OPEN pool and the caller takes over
+// migration gate and assembleChatEnv. After opening the pool it recovers any stale
+// benchmark override before the settings overlay and config reload. It owns the pool
+// across every post-open failure: if recovery or reload fails it closes the pool
+// before returning. On success it returns the OPEN pool and the caller takes over
 // its lifecycle. Returning the pool from here also fixes a latent shadow bug: the
 // previous inline form declared the overlay pool with `:=` inside the keyless branch,
 // shadowing the outer var, so an overlay-success boot proceeded on a nil pool.
 func resolveConfigAndPool(ctx context.Context, loadConfig func() (*config.Config, error), open dbOpener) (*config.Config, *pgxpool.Pool, error) {
+	return resolveConfigAndPoolWithSettings(
+		ctx,
+		loadConfig,
+		open,
+		bootSettingsOps{
+			openKeyless: openSettingsOverlayPool,
+			recover:     settings.RecoverExpiredBenchmarkOverride,
+			overlay: func(ctx context.Context, pool *pgxpool.Pool) error {
+				return settings.OverlayEnv(ctx, settings.NewStore(pool))
+			},
+		},
+	)
+}
+
+func resolveConfigAndPoolWithSettings(
+	ctx context.Context,
+	loadConfig func() (*config.Config, error),
+	open dbOpener,
+	settingsOps bootSettingsOps,
+) (*config.Config, *pgxpool.Pool, error) {
 	cfg, err := loadConfig()
 	if err != nil {
 		if !errors.Is(err, llm.ErrMissingAPIKey) && !isMissingAPIKey(err) {
@@ -186,12 +212,12 @@ func resolveConfigAndPool(ctx context.Context, loadConfig func() (*config.Config
 		// Keyless first load: the required infra secrets may live in the DB settings
 		// overlay. openSettingsOverlayPool returns a nil pool whenever !ok/err, so a
 		// failed overlay path never leaks a live pool.
-		pool, ok, overlayErr := openSettingsOverlayPool(ctx)
+		pool, ok, overlayErr := settingsOps.openKeyless(ctx)
 		if overlayErr != nil || !ok {
 			return nil, nil, err
 		}
-		if err := settings.OverlayEnv(ctx, settings.NewStore(pool)); err != nil {
-			fmt.Fprintln(os.Stderr, "warn: settings overlay:", err)
+		if err := recoverAndOverlayBootSettings(ctx, pool, settingsOps); err != nil {
+			return nil, nil, err
 		}
 		cfg, err = loadConfig()
 		if err != nil {
@@ -212,8 +238,8 @@ func resolveConfigAndPool(ctx context.Context, loadConfig func() (*config.Config
 	if err != nil {
 		return nil, nil, fmt.Errorf("db open: %w", err)
 	}
-	if err := settings.OverlayEnv(ctx, settings.NewStore(pool)); err != nil {
-		fmt.Fprintln(os.Stderr, "warn: settings overlay:", err)
+	if err := recoverAndOverlayBootSettings(ctx, pool, settingsOps); err != nil {
+		return nil, nil, err
 	}
 	cfg, err = loadConfig()
 	if err != nil {
@@ -221,6 +247,21 @@ func resolveConfigAndPool(ctx context.Context, loadConfig func() (*config.Config
 		return nil, nil, err
 	}
 	return cfg, pool, nil
+}
+
+func recoverAndOverlayBootSettings(
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	settingsOps bootSettingsOps,
+) error {
+	if err := settingsOps.recover(ctx, pool); err != nil {
+		pool.Close()
+		return fmt.Errorf("recover benchmark settings override: %w", err)
+	}
+	if err := settingsOps.overlay(ctx, pool); err != nil {
+		fmt.Fprintln(os.Stderr, "warn: settings overlay:", err)
+	}
+	return nil
 }
 
 // releaseBootResources is the boot close-on-error path (QUAL-04b): it drains any MCP

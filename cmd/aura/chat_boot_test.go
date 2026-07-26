@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"reflect"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/knowledge"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/settings"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -320,7 +322,15 @@ func TestBootCloseOnReloadFailure(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	cfg, gotPool, err := resolveConfigAndPool(ctx, loadConfig, opener)
+	cfg, gotPool, err := resolveConfigAndPoolWithSettings(
+		ctx,
+		loadConfig,
+		opener,
+		bootSettingsOps{
+			recover: func(context.Context, *pgxpool.Pool) error { return nil },
+			overlay: func(context.Context, *pgxpool.Pool) error { return nil },
+		},
+	)
 	if !errors.Is(err, sentinel) {
 		t.Fatalf("want the reload sentinel error, got %v", err)
 	}
@@ -355,5 +365,154 @@ func TestBootFailFastBeforeDBOpen(t *testing.T) {
 	}
 	if gotCfg != nil || pool != nil {
 		t.Fatalf("no cfg/pool must be returned on the fail-fast path, got cfg=%v pool=%v", gotCfg, pool)
+	}
+}
+
+func TestResolveConfigAndPoolRecoversOverrideBeforeEveryOverlay(t *testing.T) {
+	tests := []struct {
+		name      string
+		firstErr  error
+		openEvent string
+	}{
+		{name: "normal load", openEvent: "open"},
+		{name: "keyless first load", firstErr: llm.ErrMissingAPIKey, openEvent: "open-keyless"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pool := unreachablePool(t)
+			cfg := validBootConfig()
+			var order []string
+			loads := 0
+			loadConfig := func() (*config.Config, error) {
+				loads++
+				order = append(order, fmt.Sprintf("load-%d", loads))
+				if loads == 1 && tt.firstErr != nil {
+					return nil, tt.firstErr
+				}
+				return cfg, nil
+			}
+			open := func(context.Context, *db.Config) (*pgxpool.Pool, error) {
+				order = append(order, "open")
+				if tt.openEvent != "open" {
+					t.Fatal("normal opener called on keyless path")
+				}
+				return pool, nil
+			}
+			ops := bootSettingsOps{
+				openKeyless: func(context.Context) (*pgxpool.Pool, bool, error) {
+					order = append(order, "open-keyless")
+					if tt.openEvent != "open-keyless" {
+						t.Fatal("keyless opener called on normal path")
+					}
+					return pool, true, nil
+				},
+				recover: func(context.Context, *pgxpool.Pool) error {
+					order = append(order, "recover")
+					return nil
+				},
+				overlay: func(context.Context, *pgxpool.Pool) error {
+					order = append(order, "overlay")
+					return nil
+				},
+			}
+
+			gotCfg, gotPool, err := resolveConfigAndPoolWithSettings(
+				context.Background(), loadConfig, open, ops,
+			)
+			if err != nil {
+				t.Fatalf("resolveConfigAndPoolWithSettings: %v", err)
+			}
+			if gotCfg != cfg || gotPool != pool {
+				t.Fatalf("resolved cfg/pool = %p/%p, want %p/%p", gotCfg, gotPool, cfg, pool)
+			}
+			wantOrder := []string{"load-1", tt.openEvent, "recover", "overlay", "load-2"}
+			if !reflect.DeepEqual(order, wantOrder) {
+				t.Fatalf("boot order = %v, want %v", order, wantOrder)
+			}
+			pool.Close()
+		})
+	}
+}
+
+func TestResolveConfigAndPoolFailsClosedOnOverrideRecoveryError(t *testing.T) {
+	tests := []struct {
+		name       string
+		firstErr   error
+		recoverErr error
+		openEvent  string
+	}{
+		{
+			name:       "normal active override",
+			recoverErr: settings.ErrBenchmarkOverrideActive,
+			openEvent:  "open",
+		},
+		{
+			name:       "normal recovery failure",
+			recoverErr: errors.New("restore failed"),
+			openEvent:  "open",
+		},
+		{
+			name:       "keyless active override",
+			firstErr:   llm.ErrMissingAPIKey,
+			recoverErr: settings.ErrBenchmarkOverrideActive,
+			openEvent:  "open-keyless",
+		},
+		{
+			name:       "keyless recovery failure",
+			firstErr:   llm.ErrMissingAPIKey,
+			recoverErr: errors.New("restore failed"),
+			openEvent:  "open-keyless",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pool := unreachablePool(t)
+			cfg := validBootConfig()
+			var order []string
+			loads := 0
+			loadConfig := func() (*config.Config, error) {
+				loads++
+				order = append(order, fmt.Sprintf("load-%d", loads))
+				if loads == 1 && tt.firstErr != nil {
+					return nil, tt.firstErr
+				}
+				return cfg, nil
+			}
+			open := func(context.Context, *db.Config) (*pgxpool.Pool, error) {
+				order = append(order, "open")
+				return pool, nil
+			}
+			ops := bootSettingsOps{
+				openKeyless: func(context.Context) (*pgxpool.Pool, bool, error) {
+					order = append(order, "open-keyless")
+					return pool, true, nil
+				},
+				recover: func(context.Context, *pgxpool.Pool) error {
+					order = append(order, "recover")
+					return tt.recoverErr
+				},
+				overlay: func(context.Context, *pgxpool.Pool) error {
+					order = append(order, "overlay")
+					return nil
+				},
+			}
+
+			gotCfg, gotPool, err := resolveConfigAndPoolWithSettings(
+				context.Background(), loadConfig, open, ops,
+			)
+			if !errors.Is(err, tt.recoverErr) {
+				t.Fatalf("recovery error = %v, want %v", err, tt.recoverErr)
+			}
+			if gotCfg != nil || gotPool != nil {
+				t.Fatalf("failed recovery returned cfg/pool = %v/%v", gotCfg, gotPool)
+			}
+			wantOrder := []string{"load-1", tt.openEvent, "recover"}
+			if !reflect.DeepEqual(order, wantOrder) {
+				t.Fatalf("failed recovery order = %v, want %v", order, wantOrder)
+			}
+			assertPoolClosed(t, pool)
+		})
 	}
 }
