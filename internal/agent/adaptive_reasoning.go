@@ -118,6 +118,7 @@ func (a *LlmAgent) prepareAssignedRequest(
 		return PreparedReasoningRequest{}, errors.New("reasoning action is unsupported")
 	}
 	request.SessionID = a.sessionID
+	request = a.attachDynamicTail(request)
 	expected := request
 	hookResult, err := a.transformModelRequest(ctx, &request, input.RequestID)
 	if err != nil {
@@ -146,6 +147,7 @@ func (a *LlmAgent) prepareStaticRequest(
 ) (PreparedReasoningRequest, error) {
 	request := a.buildRequest(budget, staticTier, staticTierSet)
 	request.SessionID = a.sessionID
+	request = a.attachDynamicTail(request)
 	hookResult, err := a.transformModelRequest(ctx, &request, requestID)
 	if err != nil {
 		return PreparedReasoningRequest{}, err

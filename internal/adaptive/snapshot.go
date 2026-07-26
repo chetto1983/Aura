@@ -363,9 +363,11 @@ func validateSnapshotActionCatalog(spec SnapshotSpec) error {
 			maxSnapshotActions,
 		)
 	}
-	if !slices.IsSortedFunc(spec.Actions, func(left, right SnapshotAction) int {
-		return stringCompare(left.ActionID, right.ActionID)
-	}) {
+	actionIDs := make([]string, len(spec.Actions))
+	for index, action := range spec.Actions {
+		actionIDs[index] = action.ActionID
+	}
+	if !validActionCatalogOrder(spec.Scope.Domain, actionIDs) {
 		return errors.New("adaptive snapshot action catalog must be ordered")
 	}
 	seen := make(map[string]struct{}, len(spec.Actions))

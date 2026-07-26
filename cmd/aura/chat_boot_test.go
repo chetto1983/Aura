@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -257,6 +258,27 @@ func TestBootCloseOnCommandHookFailure(t *testing.T) {
 		t.Fatalf("want the command-hooks failure, got %v", err)
 	}
 	assertPoolClosed(t, pool)
+}
+
+func TestAssembleChatEnvWiresProductionDynamicRecallControl(t *testing.T) {
+	pool := unreachablePool(t)
+	cfg := validBootConfig()
+	cfg.LLM.Provider = "openrouter"
+	cfg.MemoryRecall = true
+	cfg.MemoryRecallMaxItems = 8
+
+	env, err := assembleChatEnv(context.Background(), cfg, pool)
+	if err != nil {
+		t.Fatalf("assembleChatEnv: %v", err)
+	}
+	t.Cleanup(env.close)
+
+	control := reflect.ValueOf(env.run).
+		Elem().
+		FieldByName("dynamicRecallControl")
+	if !control.IsValid() || control.IsNil() {
+		t.Fatal("production runner has no dynamic recall control")
+	}
 }
 
 // TestBootCloseOnReloadFailure covers resolveConfigAndPool's post-overlay reload

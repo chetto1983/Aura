@@ -340,7 +340,7 @@ func validateActionCatalog(assignment Assignment) error {
 	if len(assignment.EligibleActions) == 0 {
 		return errors.New("adaptive assignment eligible_actions are required")
 	}
-	if !slices.IsSorted(assignment.EligibleActions) {
+	if !validActionCatalogOrder(assignment.Domain, assignment.EligibleActions) {
 		return errors.New("adaptive assignment eligible_actions must be ordered")
 	}
 	seen := make(map[string]struct{}, len(assignment.EligibleActions))

@@ -87,11 +87,11 @@ func sensitiveCatalogID(value string) bool {
 }
 
 func validImmutableRevisionID(value string) bool {
-	if !validSafeSlug(value, maxRevisionIDLength) || sensitiveCatalogID(value) {
+	if !validASCIIID(value, maxRevisionIDLength) || sensitiveCatalogID(value) {
 		return false
 	}
 	for _, segment := range strings.FieldsFunc(value, func(character rune) bool {
-		return character == '-' || character == '_' || character == '.'
+		return strings.ContainsRune("-_./@+", character)
 	}) {
 		if len(segment) > 1 && segment[0] == 'v' && allASCIIDigits(segment[1:]) {
 			return true
@@ -100,7 +100,8 @@ func validImmutableRevisionID(value string) bool {
 			return true
 		}
 	}
-	return false
+	at := strings.LastIndexByte(value, '@')
+	return at > 0 && allASCIIDigits(value[at+1:])
 }
 
 func allASCIIDigits(value string) bool {

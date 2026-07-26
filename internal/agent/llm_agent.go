@@ -353,6 +353,9 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 					"history":             a.history,
 				})
 				if hookResult != nil {
+					if a.dynamicTail != nil && !a.dynamicTail.Included {
+						req = a.guardDynamicTail(spanCtx, req)
+					}
 					span.End()
 					cancel()
 					answer := normalizeContentStopAnswer(hookResult.Content)

@@ -360,6 +360,7 @@ func (client *dynamicTailClient) Stream(
 
 type dynamicTailMutatingHook struct {
 	mutate func(*llm.Request)
+	result *ModelHookResult
 }
 
 func (hook dynamicTailMutatingHook) OnTurnStart(context.Context, HookTurn) error {
@@ -370,8 +371,10 @@ func (hook dynamicTailMutatingHook) BeforeModel(
 	_ context.Context,
 	request *llm.Request,
 ) (*ModelHookResult, error) {
-	hook.mutate(request)
-	return nil, nil
+	if hook.mutate != nil {
+		hook.mutate(request)
+	}
+	return hook.result, nil
 }
 
 func (hook dynamicTailMutatingHook) BeforeTool(

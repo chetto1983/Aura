@@ -57,20 +57,21 @@ type DynamicTail struct {
 // DynamicTailExposure holds one already-assigned recall until the model-bound
 // request has passed its final exposure checks.
 type DynamicTailExposure struct {
-	Tail                 DynamicTail
-	HardCapTokens        int
-	Included             bool
-	Results              []DynamicTailResult
-	Limits               map[string]DynamicTailLimit
-	Revisions            DynamicTailRevisions
-	CorpusEpochBefore    *uint64
-	CorpusEpochAfter     *uint64
-	Coherent             bool
-	Commit               func(context.Context, DynamicTailOutcome) error
-	ValidateRequest      func([]llm.Message, int) error
-	deliveryCommitted    bool
-	disabled             bool
-	boundHistoryPosition int
+	Tail                  DynamicTail
+	HardCapTokens         int
+	Included              bool
+	Results               []DynamicTailResult
+	Limits                map[string]DynamicTailLimit
+	Revisions             DynamicTailRevisions
+	CorpusEpochBefore     *uint64
+	CorpusEpochAfter      *uint64
+	Coherent              bool
+	Commit                func(context.Context, DynamicTailOutcome) error
+	ValidateRequest       func([]llm.Message, int) error
+	deliveryCommitted     bool
+	disabled              bool
+	boundHistoryPosition  int
+	staticRequestMessages []llm.Message
 }
 
 func (exposure *DynamicTailExposure) bind(messages []llm.Message) {
@@ -189,36 +190,69 @@ func (a *LlmAgent) guardDynamicTail(
 	if !exposure.Included {
 		exposure.commitFallback(ctx, DynamicTailFallbackContextBudget)
 		exposure.disabled = true
-		a.history = stripDynamicTail(a.history, exposure)
-		request.Messages = stripDynamicTail(request.Messages, exposure)
-		return request
+		return a.restoreStaticDynamicTailRequest(request)
 	}
 	if err := exposure.validate(); err != nil {
 		exposure.commitFallback(ctx, DynamicTailFallbackInvalid)
 		exposure.disabled = true
-		a.history = stripDynamicTail(a.history, exposure)
-		request.Messages = stripDynamicTail(request.Messages, exposure)
-		return request
+		return a.restoreStaticDynamicTailRequest(request)
 	}
 	request.Messages = placeDynamicTailAtRequestTail(request.Messages, exposure)
 	if exposure.ValidateRequest == nil ||
 		exposure.ValidateRequest(request.Messages, exposure.HardCapTokens) != nil {
 		exposure.commitFallback(ctx, DynamicTailFallbackInvalid)
 		exposure.disabled = true
-		a.history = stripDynamicTail(a.history, exposure)
-		request.Messages = stripDynamicTail(request.Messages, exposure)
-		return request
+		return a.restoreStaticDynamicTailRequest(request)
 	}
 	if exposure.deliveryCommitted {
 		return request
 	}
 	if err := exposure.Commit(ctx, DynamicTailOutcome{Delivered: true}); err != nil {
 		exposure.disabled = true
-		a.history = stripDynamicTail(a.history, exposure)
-		request.Messages = stripDynamicTail(request.Messages, exposure)
-		return request
+		return a.restoreStaticDynamicTailRequest(request)
 	}
 	exposure.deliveryCommitted = true
+	return request
+}
+
+func (a *LlmAgent) attachDynamicTail(request llm.Request) llm.Request {
+	exposure := a.dynamicTail
+	if exposure == nil || exposure.disabled || !exposure.Included {
+		return request
+	}
+	exposure.staticRequestMessages = append(
+		[]llm.Message(nil),
+		request.Messages...,
+	)
+	item := llm.Message{Role: llm.RoleUser, Content: exposure.Tail.Content}
+	index := len(request.Messages)
+	if exposure.Tail.BeforeCurrentUser {
+		index = exposure.boundHistoryPosition
+		if index < 0 || index > len(request.Messages) {
+			index = len(request.Messages)
+		}
+	}
+	messages := make([]llm.Message, 0, len(request.Messages)+1)
+	messages = append(messages, request.Messages[:index]...)
+	messages = append(messages, item)
+	messages = append(messages, request.Messages[index:]...)
+	request.Messages = messages
+	return request
+}
+
+func (a *LlmAgent) restoreStaticDynamicTailRequest(
+	request llm.Request,
+) llm.Request {
+	exposure := a.dynamicTail
+	a.history = stripDynamicTail(a.history, exposure)
+	if exposure != nil && exposure.staticRequestMessages != nil {
+		request.Messages = append(
+			[]llm.Message(nil),
+			exposure.staticRequestMessages...,
+		)
+		return request
+	}
+	request.Messages = stripDynamicTail(request.Messages, exposure)
 	return request
 }
 
@@ -276,11 +310,6 @@ func stripDynamicTail(
 			index = candidate
 			break
 		}
-	}
-	if index < 0 && exposure.boundHistoryPosition >= 0 &&
-		exposure.boundHistoryPosition < len(messages) &&
-		messages[exposure.boundHistoryPosition].Role == llm.RoleUser {
-		index = exposure.boundHistoryPosition
 	}
 	if index < 0 {
 		return messages

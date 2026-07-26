@@ -11,6 +11,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/adaptive"
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/runner"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -126,6 +127,22 @@ func (source *runtimeSource) decideDocumentRetrieval(
 			adaptive.FeatureCandidateCount: float64(len(input.PlanIDs)),
 			adaptive.FeatureQueryLength:    float64(input.QueryLength),
 			adaptive.FeatureRetrievalLimit: float64(input.MaxResults),
+		},
+	)
+}
+
+func (source *runtimeSource) decideMemoryRecall(
+	ctx context.Context,
+	input runner.DynamicRecallInput,
+) (toolDecision, error) {
+	return source.decideOrdering(
+		ctx,
+		input.OwnerID.String(),
+		adaptive.DomainMemoryRecall,
+		adaptive.PointMemoryRecall,
+		map[adaptive.FeatureKey]float64{
+			adaptive.FeatureQueryLength: float64(len([]rune(input.Query))),
+			adaptive.FeatureRecallLimit: float64(input.MaxItems),
 		},
 	)
 }

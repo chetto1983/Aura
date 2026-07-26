@@ -53,9 +53,8 @@ func NewLlmAgent(cfg LlmAgentConfig) *LlmAgent {
 		sources:           display.NewRegistry(),
 	}
 	agent.dynamicTail.bind(agent.history)
-	if agent.dynamicTail != nil && !agent.dynamicTail.Included {
+	if agent.dynamicTail != nil {
 		agent.history = stripDynamicTail(agent.history, agent.dynamicTail)
-		agent.dynamicTail.boundHistoryPosition = -1
 	}
 	return agent
 }

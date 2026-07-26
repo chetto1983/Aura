@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chetto1983/aura/internal/adaptive/orderingcontrol"
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/askuser"
@@ -345,8 +346,13 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 		// Amendment #91 (fix-plan 1.12): bounded display-only CoT persistence cap.
 		ReasoningPersistMaxRunes: cfg.ReasoningPersistMaxRunes,
 		DynamicRecallProvider:    dynamicRecallProvider(cfg),
-		RecallMaxItems:           cfg.MemoryRecallMaxItems,
-		AlwaysBlock:              alwaysBlockProvider(cfg),
+		DynamicRecallControl: orderingcontrol.NewDynamicRecall(
+			pool,
+			cfg.LLM.Provider,
+			cfg.LLM.Model,
+		),
+		RecallMaxItems: cfg.MemoryRecallMaxItems,
+		AlwaysBlock:    alwaysBlockProvider(cfg),
 		// The gateway resume hook records an operator's accept of a relayed gateway_approval
 		// pause into the SAME gateway instance (gw) the runner's PEP reads (D-03 point 2).
 		ResumeHook:  chainResumeHooks(newSkillResumeHook(cfg, pool), newShellResumeHook(toolHandles.ShellApprovals), newGatewayResumeHook(gw), newScheduledTaskResumeHook(taskStore)),
