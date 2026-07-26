@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chetto1983/aura/internal/adaptive/orderingcontrol"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/config"
@@ -287,7 +288,12 @@ func newSkillTool(cfg *config.Config, pool *pgxpool.Pool, sandboxRouter *usersan
 	// SandboxRouter (distinct field name, W6 — not the unexported ActionRouter): under a strict
 	// profile action=use renders a snippet's in-box SandboxPath; nil keeps the host-primary path.
 	tool := &tools.SkillTool{
-		Loader:        skilladapters.NewLoader(loader, cfg.SkillManifestCapBytes, cfg.SkillExportDir),
+		Loader: skilladapters.NewLoader(loader, cfg.SkillManifestCapBytes, cfg.SkillExportDir),
+		Adaptive: orderingcontrol.NewSkillRouting(
+			pool,
+			cfg.LLM.Provider,
+			cfg.LLM.Model,
+		),
 		SandboxRouter: sandboxRouter,
 	}
 	if pool != nil {

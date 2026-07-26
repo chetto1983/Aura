@@ -44,6 +44,10 @@ type SkillTool struct {
 	// proposed there fires an immediate operator alert. Nil in the interactive REPL.
 	Alerter skillAlerter
 
+	// Adaptive coordinates typed assignment and delivery only for action=list
+	// calls with a nonblank query. Other reads and every mutation are exogenous.
+	Adaptive SkillRoutingControl
+
 	// SandboxRouter is the per-identity box routing seam (plan 37-07). It is named distinctly
 	// from the unexported `router *ActionRouter` below (W6 naming collision): action=use consults
 	// its Strict() to render a snippet's IN-BOX SandboxPath (strict) vs its HostPath (lenient) in

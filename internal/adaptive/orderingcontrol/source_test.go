@@ -90,6 +90,26 @@ func TestRuntimeSourceLoadsExactScopedSnapshot(t *testing.T) {
 	}
 }
 
+func TestRuntimeSourceLoadsExactSkillRoutingSnapshot(t *testing.T) {
+	input := skillInput()
+	decision := skillShadowDecision(t, input)
+	policy := decision.Policy
+	policy.Config = runtimePolicyConfigJSON(t, decision)
+	source := runtimeSourceForPolicy(policy, decision.Snapshot)
+
+	got, err := source.decideSkillRouting(t.Context(), input)
+	if err != nil {
+		t.Fatalf("decideSkillRouting: %v", err)
+	}
+	if got.Snapshot != decision.Snapshot ||
+		got.Policy.Version != policy.Version ||
+		got.RecommendedAction == "" ||
+		got.ProviderID != "openrouter" ||
+		got.ModelID != "production-model" {
+		t.Fatalf("skill decision = %+v", got)
+	}
+}
+
 func TestRuntimeSourceRejectsPolicyScopeDrift(t *testing.T) {
 	input := toolInput()
 	decision := toolShadowDecision(t, input)

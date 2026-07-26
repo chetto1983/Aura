@@ -70,61 +70,17 @@ func (control *toolDiscovery) OrderToolDiscovery(
 	input tools.ToolDiscoveryInput,
 	execute tools.ToolDiscoveryExecutor,
 ) ([]string, error) {
-	static := func(context.Context) ([]string, error) {
-		if execute == nil {
-			return nil, errors.New(
-				"tool discovery requires a static strategy",
-			)
-		}
-		return execute(ctx, tools.ToolDiscoveryStatic)
+	if control == nil || control.source == nil {
+		return orderFromControl(
+			ctx, input, execute, nil, nil,
+			newToolAssignment, newToolDelivery,
+		)
 	}
-	if control == nil || control.source == nil ||
-		control.recorder == nil || execute == nil {
-		return static(ctx)
-	}
-	decision, err := control.source.decideToolDiscovery(ctx, input)
-	if err != nil || decision.Policy.Mode == adaptive.PolicyOff ||
-		decision.Policy.Mode == adaptive.PolicyRollback {
-		return static(ctx)
-	}
-	assignment, err := newToolAssignment(input, decision)
-	if err != nil {
-		return static(ctx)
-	}
-	var delivery adaptive.Delivery
-	return adaptive.DecideAndDeliver(
-		ctx,
-		assignment,
-		func(ctx context.Context, _ adaptive.Event) error {
-			_, err := control.recorder.RecordAssignment(ctx, assignment)
-			return err
-		},
-		func(
-			ctx context.Context,
-			assignment adaptive.Assignment,
-		) (adaptive.Exposure[[]string], error) {
-			ids, err := execute(ctx, assignment.IntendedActionID)
-			if err != nil {
-				return adaptive.Exposure[[]string]{}, err
-			}
-			delivery, err = newToolDelivery(input, assignment, ids)
-			if err != nil {
-				return adaptive.Exposure[[]string]{}, err
-			}
-			return adaptive.Exposure[[]string]{
-				Value: slices.Clone(ids), Delivery: delivery,
-			}, nil
-		},
-		func(ctx context.Context, _ adaptive.Event) error {
-			_, err := control.recorder.RecordDelivery(
-				ctx,
-				assignment.OwnerID,
-				assignment.AssignmentID,
-				delivery,
-			)
-			return err
-		},
-		static,
+	return orderFromControl(
+		ctx, input, execute,
+		control.source.decideToolDiscovery,
+		control.recorder,
+		newToolAssignment, newToolDelivery,
 	)
 }
 
@@ -223,26 +179,42 @@ func validateToolDecision(
 	ownerID uuid.UUID,
 	decision toolDecision,
 ) error {
+	return validateOrderingDecision(
+		ownerID,
+		adaptive.DomainToolDiscovery,
+		adaptive.PointToolDiscovery,
+		toolActionCatalog,
+		decision,
+	)
+}
+
+func validateOrderingDecision(
+	ownerID uuid.UUID,
+	domain adaptive.Domain,
+	point adaptive.DecisionPoint,
+	actionCatalog []string,
+	decision toolDecision,
+) error {
 	if decision.Policy.Epoch <= 0 ||
 		decision.Policy.Version == "" ||
 		decision.Snapshot == nil {
-		return errors.New("tool discovery decision state is incomplete")
+		return errors.New("adaptive ordering decision state is incomplete")
 	}
 	scope := decision.Snapshot.Scope()
 	if scope.OwnerID != ownerID ||
-		scope.Domain != adaptive.DomainToolDiscovery ||
-		scope.Point != adaptive.PointToolDiscovery ||
+		scope.Domain != domain ||
+		scope.Point != point ||
 		scope.ProviderID != decision.ProviderID ||
 		scope.ModelID != decision.ModelID ||
 		scope.PolicyVersion != decision.Policy.Version {
 		return errors.New(
-			"tool discovery snapshot scope does not match",
+			"adaptive ordering snapshot scope does not match",
 		)
 	}
 	if decision.Snapshot.ChampionActionID() !=
 		adaptive.StaticActionID {
 		return errors.New(
-			"tool discovery snapshot champion is not static",
+			"adaptive ordering snapshot champion is not static",
 		)
 	}
 	actions := decision.Snapshot.Actions()
@@ -250,9 +222,9 @@ func validateToolDecision(
 	for index, action := range actions {
 		actionIDs[index] = action.ActionID
 	}
-	if !slices.Equal(actionIDs, toolActionCatalog) {
+	if !slices.Equal(actionIDs, actionCatalog) {
 		return errors.New(
-			"tool discovery snapshot action catalog is not frozen",
+			"adaptive ordering snapshot action catalog is not frozen",
 		)
 	}
 	return nil

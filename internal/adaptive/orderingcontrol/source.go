@@ -82,10 +82,48 @@ func (source *runtimeSource) decideToolDiscovery(
 	ctx context.Context,
 	input tools.ToolDiscoveryInput,
 ) (toolDecision, error) {
+	return source.decideOrdering(
+		ctx,
+		input.OwnerID,
+		adaptive.DomainToolDiscovery,
+		adaptive.PointToolDiscovery,
+		map[adaptive.FeatureKey]float64{
+			adaptive.FeatureCandidateCount: float64(len(input.CandidateIDs)),
+			adaptive.FeatureQueryLength:    float64(input.QueryLength),
+			adaptive.FeatureRetrievalLimit: float64(input.MaxResults),
+		},
+	)
+}
+
+func (source *runtimeSource) decideSkillRouting(
+	ctx context.Context,
+	input tools.SkillRoutingInput,
+) (skillDecision, error) {
+	return source.decideOrdering(
+		ctx,
+		input.OwnerID,
+		adaptive.DomainSkillRouting,
+		adaptive.PointSkillRouting,
+		map[adaptive.FeatureKey]float64{
+			adaptive.FeatureQueryLength: float64(input.QueryLength),
+			adaptive.FeatureSkillCandidateCount: float64(
+				len(input.CandidateIDs),
+			),
+		},
+	)
+}
+
+func (source *runtimeSource) decideOrdering(
+	ctx context.Context,
+	owner string,
+	domain adaptive.Domain,
+	point adaptive.DecisionPoint,
+	values map[adaptive.FeatureKey]float64,
+) (toolDecision, error) {
 	if source == nil || source.policies == nil ||
 		source.snapshots == nil {
 		return toolDecision{}, errors.New(
-			"tool discovery decision source is unavailable",
+			"adaptive ordering decision source is unavailable",
 		)
 	}
 	policy, err := source.policies.CurrentPolicy(ctx)
@@ -100,14 +138,14 @@ func (source *runtimeSource) decideToolDiscovery(
 		policy.Mode != adaptive.PolicyCanary &&
 		policy.Mode != adaptive.PolicyActive {
 		return toolDecision{}, fmt.Errorf(
-			"tool discovery policy mode %q is invalid",
+			"adaptive ordering policy mode %q is invalid",
 			policy.Mode,
 		)
 	}
-	ownerID, err := uuid.Parse(input.OwnerID)
+	ownerID, err := uuid.Parse(owner)
 	if err != nil || ownerID == uuid.Nil {
 		return toolDecision{}, errors.New(
-			"tool discovery owner identity is invalid",
+			"adaptive ordering owner identity is invalid",
 		)
 	}
 	config, err := decodeRuntimePolicyConfig(policy.Config)
@@ -116,7 +154,7 @@ func (source *runtimeSource) decideToolDiscovery(
 	}
 	if err := source.validateScope(
 		ownerID,
-		adaptive.DomainToolDiscovery,
+		domain,
 		config,
 	); err != nil {
 		return toolDecision{}, err
@@ -131,24 +169,17 @@ func (source *runtimeSource) decideToolDiscovery(
 	}
 	if snapshot.SHA256() != config.SnapshotSHA {
 		return toolDecision{}, errors.New(
-			"tool discovery snapshot digest does not match policy",
+			"adaptive ordering snapshot digest does not match policy",
 		)
 	}
-	features, err := snapshotFeatureValues(
-		snapshot,
-		map[adaptive.FeatureKey]float64{
-			adaptive.FeatureCandidateCount: float64(len(input.CandidateIDs)),
-			adaptive.FeatureQueryLength:    float64(input.QueryLength),
-			adaptive.FeatureRetrievalLimit: float64(input.MaxResults),
-		},
-	)
+	features, err := snapshotFeatureValues(snapshot, values)
 	if err != nil {
 		return toolDecision{}, err
 	}
 	scored := snapshot.Score(adaptive.SnapshotQuery{
 		OwnerID:       ownerID,
-		Domain:        adaptive.DomainToolDiscovery,
-		Point:         adaptive.PointToolDiscovery,
+		Domain:        domain,
+		Point:         point,
 		ProviderID:    source.providerID,
 		ModelID:       source.modelID,
 		PolicyVersion: policy.Version,
