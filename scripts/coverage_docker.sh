@@ -97,7 +97,7 @@ if [ -n "$COV_POSTGRES" ]; then
   echo -n "==> waiting for coverage postgres"
   COV_POSTGRES_READY=""
   for _ in $(seq 1 60); do
-    if docker exec "$COV_POSTGRES" pg_isready -U aura -d aura >/dev/null 2>&1; then COV_POSTGRES_READY=1; break; fi
+    if docker exec "$COV_POSTGRES" pg_isready -h 127.0.0.1 -U aura -d aura >/dev/null 2>&1; then COV_POSTGRES_READY=1; break; fi
     echo -n .; sleep 1
   done
   [ -n "$COV_POSTGRES_READY" ] || { echo " FATAL: coverage postgres '$COV_POSTGRES' not ready" >&2; exit 3; }
@@ -165,6 +165,7 @@ export POSTGRES_HOST="$PG_HOST_TARGET" POSTGRES_PORT="$PG_PORT_TARGET" POSTGRES_
 export PGHOST="$PG_HOST_TARGET" PGPORT="$PG_PORT_TARGET"
 export AURA_DB_URL="postgres://aura_app:${PGPW}@${PG_HOST_TARGET}:${PG_PORT_TARGET}/${COV_DB}?sslmode=disable"
 export AURA_DB_MIGRATE_URL="postgres://aura_migrate:${PGPW}@${PG_HOST_TARGET}:${PG_PORT_TARGET}/${COV_DB}?sslmode=disable"
+export AURA_DB_BOOTSTRAP_URL="postgres://aura:${PGPW}@${PG_HOST_TARGET}:${PG_PORT_TARGET}/${COV_DB}?sslmode=disable"
 
 # Neo4j + the containerized MCP shim. Local: the disposable throwaway (the live
 # graph is NEVER the DETACH DELETE target). CI: the workflow-provided neo4j on 7687.
