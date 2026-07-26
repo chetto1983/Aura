@@ -18,7 +18,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type snapshotLoader interface {
+// SnapshotLoader reads one immutable snapshot by owner and deterministic ID.
+type SnapshotLoader interface {
 	Load(
 		context.Context,
 		uuid.UUID,
@@ -27,10 +28,11 @@ type snapshotLoader interface {
 }
 
 type runtimeSource struct {
-	policies   adaptive.PolicyReader
-	snapshots  snapshotLoader
-	providerID string
-	modelID    string
+	policies    adaptive.PolicyReader
+	snapshots   SnapshotLoader
+	providerID  string
+	modelID     string
+	environment adaptive.EvaluationEnvironment
 }
 
 type runtimePolicyConfig struct {
@@ -67,17 +69,36 @@ func New(
 
 func newRuntimeSource(
 	policies adaptive.PolicyReader,
-	snapshots snapshotLoader,
+	snapshots SnapshotLoader,
 	providerID string,
 	modelID string,
 ) *runtimeSource {
+	return newRuntimeSourceForEnvironment(
+		policies,
+		snapshots,
+		providerID,
+		modelID,
+		adaptive.EvaluationProductionCanary,
+	)
+}
+
+func newRuntimeSourceForEnvironment(
+	policies adaptive.PolicyReader,
+	snapshots SnapshotLoader,
+	providerID string,
+	modelID string,
+	environment adaptive.EvaluationEnvironment,
+) *runtimeSource {
 	if policies == nil || snapshots == nil ||
-		providerID == "" || modelID == "" {
+		providerID == "" || modelID == "" ||
+		(environment != adaptive.EvaluationProductionCanary &&
+			environment != adaptive.EvaluationOffline) {
 		return nil
 	}
 	return &runtimeSource{
 		policies: policies, snapshots: snapshots,
 		providerID: providerID, modelID: modelID,
+		environment: environment,
 	}
 }
 
@@ -85,7 +106,9 @@ func (source *runtimeSource) DecideReasoning(
 	ctx context.Context,
 	input agent.ReasoningControlInput,
 ) (Decision, error) {
-	if source == nil || source.policies == nil || source.snapshots == nil {
+	if source == nil || source.policies == nil || source.snapshots == nil ||
+		(source.environment != adaptive.EvaluationProductionCanary &&
+			source.environment != adaptive.EvaluationOffline) {
 		return Decision{}, errors.New(
 			"adaptive reasoning decision source is unavailable",
 		)
@@ -98,12 +121,25 @@ func (source *runtimeSource) DecideReasoning(
 		policy.Mode == adaptive.PolicyRollback {
 		return Decision{Policy: policy}, nil
 	}
+	if source.environment == adaptive.EvaluationOffline &&
+		(policy.Mode != adaptive.PolicyShadow ||
+			policy.RolloutBPS != 0) {
+		return Decision{}, errors.New(
+			"adaptive offline reasoning requires shadow mode at rollout zero",
+		)
+	}
 	if policy.Epoch <= 0 || policy.Version == "" ||
 		(policy.Mode != adaptive.PolicyShadow &&
 			policy.Mode != adaptive.PolicyCanary &&
 			policy.Mode != adaptive.PolicyActive) {
 		return Decision{}, errors.New(
 			"adaptive reasoning policy state is invalid",
+		)
+	}
+	if source.environment == adaptive.EvaluationOffline &&
+		input.Override != "" {
+		return Decision{}, errors.New(
+			"adaptive offline reasoning forbids operator overrides",
 		)
 	}
 	if input.OwnerID == uuid.Nil ||
@@ -160,7 +196,7 @@ func (source *runtimeSource) DecideReasoning(
 	}
 	return Decision{
 		Policy: policy, Snapshot: snapshot,
-		Environment:     adaptive.EvaluationProductionCanary,
+		Environment:     source.environment,
 		RecommendedTier: recommendedTier,
 	}, nil
 }

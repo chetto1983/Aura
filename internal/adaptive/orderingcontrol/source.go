@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 
 	"github.com/chetto1983/aura/internal/adaptive"
 	"github.com/chetto1983/aura/internal/agent/tools"
@@ -16,7 +17,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type snapshotLoader interface {
+// SnapshotLoader reads one immutable snapshot by owner and deterministic ID.
+type SnapshotLoader interface {
 	Load(
 		context.Context,
 		uuid.UUID,
@@ -25,10 +27,11 @@ type snapshotLoader interface {
 }
 
 type runtimeSource struct {
-	policies   adaptive.PolicyReader
-	snapshots  snapshotLoader
-	providerID string
-	modelID    string
+	policies    adaptive.PolicyReader
+	snapshots   SnapshotLoader
+	providerID  string
+	modelID     string
+	environment adaptive.EvaluationEnvironment
 }
 
 type runtimePolicyConfig struct {
@@ -44,17 +47,51 @@ type runtimePolicyConfig struct {
 
 func newRuntimeSource(
 	policies adaptive.PolicyReader,
-	snapshots snapshotLoader,
+	snapshots SnapshotLoader,
 	providerID string,
 	modelID string,
 ) *runtimeSource {
+	return newRuntimeSourceForEnvironment(
+		policies,
+		snapshots,
+		providerID,
+		modelID,
+		adaptive.EvaluationProductionCanary,
+	)
+}
+
+func newOfflineRuntimeSource(
+	policies adaptive.PolicyReader,
+	snapshots SnapshotLoader,
+	providerID string,
+	modelID string,
+) *runtimeSource {
+	return newRuntimeSourceForEnvironment(
+		policies,
+		snapshots,
+		providerID,
+		modelID,
+		adaptive.EvaluationOffline,
+	)
+}
+
+func newRuntimeSourceForEnvironment(
+	policies adaptive.PolicyReader,
+	snapshots SnapshotLoader,
+	providerID string,
+	modelID string,
+	environment adaptive.EvaluationEnvironment,
+) *runtimeSource {
 	if policies == nil || snapshots == nil ||
-		providerID == "" || modelID == "" {
+		providerID == "" || modelID == "" ||
+		(environment != adaptive.EvaluationProductionCanary &&
+			environment != adaptive.EvaluationOffline) {
 		return nil
 	}
 	return &runtimeSource{
 		policies: policies, snapshots: snapshots,
 		providerID: providerID, modelID: modelID,
+		environment: environment,
 	}
 }
 
@@ -155,7 +192,9 @@ func (source *runtimeSource) decideOrdering(
 	values map[adaptive.FeatureKey]float64,
 ) (toolDecision, error) {
 	if source == nil || source.policies == nil ||
-		source.snapshots == nil {
+		source.snapshots == nil ||
+		(source.environment != adaptive.EvaluationProductionCanary &&
+			source.environment != adaptive.EvaluationOffline) {
 		return toolDecision{}, errors.New(
 			"adaptive ordering decision source is unavailable",
 		)
@@ -167,6 +206,13 @@ func (source *runtimeSource) decideOrdering(
 	if policy.Mode == adaptive.PolicyOff ||
 		policy.Mode == adaptive.PolicyRollback {
 		return toolDecision{Policy: policy}, nil
+	}
+	if source.environment == adaptive.EvaluationOffline &&
+		(policy.Mode != adaptive.PolicyShadow ||
+			policy.RolloutBPS != 0) {
+		return toolDecision{}, errors.New(
+			"adaptive offline ordering requires shadow mode at rollout zero",
+		)
 	}
 	if policy.Mode != adaptive.PolicyShadow &&
 		policy.Mode != adaptive.PolicyCanary &&
@@ -221,7 +267,7 @@ func (source *runtimeSource) decideOrdering(
 	})
 	return toolDecision{
 		Policy: policy, Snapshot: snapshot,
-		Environment:       adaptive.EvaluationProductionCanary,
+		Environment:       source.environment,
 		RecommendedAction: scored.ActionID,
 		ProviderID:        source.providerID, ModelID: source.modelID,
 	}, nil
@@ -285,8 +331,23 @@ func snapshotFeatureValues(
 		)
 	}
 	schema := snapshot.FeatureSchema()
+	keys := make([]adaptive.FeatureKey, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	if len(schema) != len(keys) {
+		return nil, errors.New(
+			"adaptive runtime feature schema is not frozen",
+		)
+	}
 	features := make([]adaptive.SnapshotFeatureValue, len(schema))
 	for index, definition := range schema {
+		if definition.Key != keys[index] {
+			return nil, errors.New(
+				"adaptive runtime feature schema is not frozen",
+			)
+		}
 		value, ok := values[definition.Key]
 		if !ok {
 			return nil, fmt.Errorf(

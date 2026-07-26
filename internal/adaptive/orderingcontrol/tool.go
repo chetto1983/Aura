@@ -37,7 +37,8 @@ type toolDecisionSource interface {
 	) (toolDecision, error)
 }
 
-type toolEventRecorder interface {
+// EventRecorder persists typed assignment and delivery facts.
+type EventRecorder interface {
 	RecordAssignment(
 		context.Context,
 		adaptive.Assignment,
@@ -49,6 +50,8 @@ type toolEventRecorder interface {
 		adaptive.Delivery,
 	) (int64, error)
 }
+
+type toolEventRecorder = EventRecorder
 
 type toolDiscovery struct {
 	source   toolDecisionSource
