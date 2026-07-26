@@ -157,28 +157,53 @@ func (client *adaptiveBenchmarkObservedClient) Stream(
 	if failure != nil {
 		return nil, failure
 	}
+	streamCtx, cancel := context.WithCancel(ctx)
 	var stream <-chan llm.Chunk
 	var err error
 	if interceptor != nil {
-		stream, err = interceptor(ctx, request)
+		stream, err = interceptor(streamCtx, request)
 	} else {
-		stream, err = client.delegate.Stream(ctx, request)
+		stream, err = client.delegate.Stream(streamCtx, request)
 	}
 	if err != nil {
+		cancel()
 		return stream, err
 	}
-	return adaptiveBenchmarkGuardModelToolCalls(ctx, request, stream), nil
+	if stream == nil {
+		cancel()
+		return nil, errors.New(
+			"adaptive benchmark LLM stream is unavailable",
+		)
+	}
+	return adaptiveBenchmarkGuardModelToolCalls(
+		streamCtx,
+		cancel,
+		request,
+		stream,
+	), nil
 }
 
 func adaptiveBenchmarkGuardModelToolCalls(
 	ctx context.Context,
+	cancel context.CancelFunc,
 	request llm.Request,
 	source <-chan llm.Chunk,
 ) <-chan llm.Chunk {
 	guarded := make(chan llm.Chunk, 1)
 	go func() {
 		defer close(guarded)
-		for chunk := range source {
+		defer cancel()
+		for {
+			var chunk llm.Chunk
+			var ok bool
+			select {
+			case <-ctx.Done():
+				return
+			case chunk, ok = <-source:
+				if !ok {
+					return
+				}
+			}
 			if err := adaptiveBenchmarkValidateModelToolCall(
 				request,
 				chunk.ToolCall,
@@ -187,15 +212,11 @@ func adaptiveBenchmarkGuardModelToolCalls(
 				case guarded <- llm.Chunk{Err: err}:
 				case <-ctx.Done():
 				}
-				for range source {
-				}
 				return
 			}
 			select {
 			case guarded <- chunk:
 			case <-ctx.Done():
-				for range source {
-				}
 				return
 			}
 		}

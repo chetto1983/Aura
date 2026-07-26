@@ -5,6 +5,7 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/llm"
@@ -337,6 +338,33 @@ func TestAdaptiveBenchmarkObservedClientRejectsUndeclaredToolBeforeDispatch(
 		errAdaptiveBenchmarkModelToolCallRejected,
 	) {
 		t.Fatalf("empty-manifest chunk = %#v", emptyChunk)
+	}
+}
+
+func TestAdaptiveBenchmarkObservedClientGuardClosesOnCancellation(
+	t *testing.T,
+) {
+	t.Parallel()
+	source := make(chan llm.Chunk)
+	client, err := newAdaptiveBenchmarkObservedClient(
+		&adaptiveBenchmarkLLMClientFake{stream: source},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	stream, err := client.Stream(ctx, llm.Request{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	select {
+	case _, ok := <-stream:
+		if ok {
+			t.Fatal("guard emitted a chunk after cancellation")
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("guard did not close after cancellation")
 	}
 }
 
