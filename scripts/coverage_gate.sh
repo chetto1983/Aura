@@ -77,7 +77,26 @@ if [[ -z "${PCT}" ]]; then
   echo "FAIL: could not parse a coverage percentage from: ${TOTAL_LINE}" >&2
   exit 1
 fi
-awk -v pct="${PCT%\%}" -v min="${MIN}" 'BEGIN {
-  if (pct + 0 < min + 0) { printf "FAIL: owned coverage %s%% < %s%% (CLAUDE.md floor)\n", pct, min > "/dev/stderr"; exit 1 }
-  printf "ok: owned coverage %s%% >= %s%%\n", pct, min
+read -r COVERED_STATEMENTS TOTAL_STATEMENTS < <(
+  awk 'NR > 1 {
+    total += $2
+    if ($3 > 0) covered += $2
+  }
+  END { printf "%d %d\n", covered, total }' "${PROFILE}.filtered"
+)
+if [[ "${TOTAL_STATEMENTS:-0}" -lt 1 ]]; then
+  echo "FAIL: filtered coverage profile has no statements" >&2
+  exit 1
+fi
+awk \
+  -v covered="${COVERED_STATEMENTS}" \
+  -v total="${TOTAL_STATEMENTS}" \
+  -v displayed="${PCT%\%}" \
+  -v min="${MIN}" \
+  'BEGIN {
+  if (covered * 100 < min * total) {
+    printf "FAIL: owned coverage %d/%d (%s%% displayed) < %s%% (CLAUDE.md floor)\n", covered, total, displayed, min > "/dev/stderr"
+    exit 1
+  }
+  printf "ok: owned coverage %d/%d (%s%% displayed) >= %s%%\n", covered, total, displayed, min
 }'
