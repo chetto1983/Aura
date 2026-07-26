@@ -34,6 +34,15 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _entity_ref_name(ref: Any) -> str:
+    """Name of an applies_to target, whether it arrived as a string or an EntityRef.
+
+    Echoed back so the caller can see which entities the preference was actually linked
+    to, instead of having to trust that the link happened.
+    """
+    return ref if isinstance(ref, str) else str(getattr(ref, "name", ref))
+
+
 def _parse_iso_datetime(value: str | None) -> datetime | None:
     if value is None:
         return None
@@ -225,6 +234,7 @@ class MemoryIntegration(ContextSearchMixin):
         confidence: float = 1.0,
         metadata: dict[str, Any] | None = None,
         user_identifier: str | None = None,
+        applies_to: list | None = None,
     ) -> dict[str, Any]:
         """Record a user preference.
 
@@ -234,6 +244,13 @@ class MemoryIntegration(ContextSearchMixin):
             context: Optional context about when/why this preference was expressed.
             confidence: Confidence score (0.0-1.0).
             metadata: Additional metadata.
+            applies_to: Entities this preference is about — names or EntityRefs. The
+                storage layer has always supported this and written
+                ``(:Preference)-[:APPLIES_TO]->(:Entity)``, but no caller could reach
+                it: the parameter stopped at this boundary, so every preference landed
+                unconnected and the memory stayed a star around the user instead of a
+                graph, with the read queries traversing APPLIES_TO edges that nothing
+                wrote.
 
         Returns:
             Dict with stored preference info.
@@ -247,12 +264,14 @@ class MemoryIntegration(ContextSearchMixin):
                 metadata=metadata,
                 generate_embedding=True,
                 user_identifier=user_identifier,
+                applies_to=applies_to,
             )
             return {
                 "stored": True,
                 "type": "preference",
                 "id": str(pref.id),
                 "category": category,
+                "applies_to": [_entity_ref_name(ref) for ref in applies_to or []],
             }
         except Exception as e:
             logger.error(f"Error adding preference: {e}")

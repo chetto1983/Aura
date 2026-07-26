@@ -25,6 +25,7 @@ from fastmcp import Context
 # (including tests/unit/mcp/test_fastmcp_tools.py).
 from neo4j_agent_memory.core.query import is_read_only_query as _is_read_only_query  # noqa: F401
 from neo4j_agent_memory.integration import entity_name_fields
+from neo4j_agent_memory.memory.long_term import _normalized_text
 from neo4j_agent_memory.mcp._common import get_client, get_integration
 
 if TYPE_CHECKING:
@@ -39,6 +40,21 @@ logger = logging.getLogger(__name__)
 # 2026-07-25). Small on purpose: this is a lookup, not a search, and the extras are a heads-up
 # that the name is ambiguous rather than a result set to page through.
 _MAX_ENTITY_NAME_MATCHES = 5
+
+
+def _names_collide(entity: Any, name: str) -> bool:
+    """True when `entity` really is another entity CALLED `name`.
+
+    Compared over the name, the resolver's canonical name and any alias, so a duplicate
+    that was canonicalised onto a different spelling still counts as the collision it is.
+    """
+    wanted = _normalized_text(name)
+    candidates = [
+        getattr(entity, "name", None),
+        getattr(entity, "canonical_name", None),
+        *(getattr(entity, "aliases", None) or []),
+    ]
+    return any(_normalized_text(value) == wanted for value in candidates if value)
 
 
 # ── Registration dispatcher ──────────────────────────────────────────
@@ -225,6 +241,7 @@ def _register_core_tools(mcp: FastMCP) -> None:
         confidence: float = 1.0,
         metadata: dict[str, Any] | None = None,
         user_identifier: str | None = None,
+        applies_to: list[str] | None = None,
     ) -> str:
         """Record a user preference for personalization.
 
@@ -237,6 +254,11 @@ def _register_core_tools(mcp: FastMCP) -> None:
             context: Optional context about when/why the preference was expressed.
             confidence: Confidence score 0.0-1.0 (default: 1.0).
             metadata: Additional provenance metadata.
+            applies_to: Names of the entities this preference is ABOUT (e.g. ["Caraglio"]
+                for a home location). Always pass them when the preference concerns a
+                person, place or organization: this is what connects the preference into
+                the knowledge graph instead of leaving it dangling off the user, and it
+                lets recall reach it by structure rather than by wording alone.
         """
         integration = get_integration(ctx)
         result = await integration.add_preference(
@@ -246,6 +268,7 @@ def _register_core_tools(mcp: FastMCP) -> None:
             confidence=confidence,
             metadata=metadata,
             user_identifier=user_identifier,
+            applies_to=applies_to,
         )
         return json.dumps(result, default=str)
 
@@ -609,17 +632,24 @@ def _register_extended_tools(mcp: FastMCP) -> None:
                     "aliases": entity.aliases if hasattr(entity, "aliases") else [],
                 },
             }
-            if len(entities) > 1:
-                result["other_matches"] = [
-                    {
-                        "id": str(other.id),
-                        **entity_name_fields(other),
-                        "type": (
-                            other.type.value if hasattr(other.type, "value") else str(other.type)
-                        ),
-                    }
-                    for other in entities[1:]
-                ]
+            # Only genuine NAME COLLISIONS belong here. The recall behind this is a vector
+            # search, so `entities[1:]` is "whatever else the graph holds", not "other
+            # entities called this": asking about "ProbeCorp" listed Davide and Caraglio as
+            # other matches. That contradicts this tool's own contract and hands the caller
+            # unrelated identities as if they were duplicates of the thing they asked about.
+            other_matches = [
+                {
+                    "id": str(other.id),
+                    **entity_name_fields(other),
+                    "type": (
+                        other.type.value if hasattr(other.type, "value") else str(other.type)
+                    ),
+                }
+                for other in entities[1:]
+                if _names_collide(other, name)
+            ]
+            if other_matches:
+                result["other_matches"] = other_matches
 
             if include_neighbors:
                 neighbors = await _get_entity_neighbors(

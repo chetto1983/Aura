@@ -6,7 +6,7 @@ These types map Neo4j Agent Memory concepts to the AgentCore MemoryProvider inte
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import timezone, datetime
 from enum import Enum
 from typing import Any
 
@@ -98,7 +98,7 @@ class Memory:
             content=message.content,
             memory_type=MemoryType.MESSAGE,
             session_id=session_id,
-            created_at=message.created_at if hasattr(message, "created_at") else datetime.utcnow(),
+            created_at=message.created_at if hasattr(message, "created_at") else datetime.now(timezone.utc),
             metadata={
                 "role": message.role.value if hasattr(message.role, "value") else str(message.role),
                 **(message.metadata or {}),
@@ -165,7 +165,7 @@ class Memory:
             content=f"Task: {trace.task}\nOutcome: {trace.outcome or 'In progress'}",
             memory_type=MemoryType.TRACE,
             session_id=trace.session_id,
-            created_at=trace.started_at if hasattr(trace, "started_at") else datetime.utcnow(),
+            created_at=trace.started_at if hasattr(trace, "started_at") else datetime.now(timezone.utc),
             metadata={
                 "task": trace.task,
                 "outcome": trace.outcome,

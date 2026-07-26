@@ -3,7 +3,7 @@
 import json
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import datetime
+from datetime import timezone, datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID, uuid4
@@ -44,14 +44,14 @@ def _deserialize_json(data_str: str | None) -> dict[str, Any] | list | None:
 def _to_python_datetime(neo4j_datetime) -> datetime:
     """Convert Neo4j DateTime to Python datetime."""
     if neo4j_datetime is None:
-        return datetime.utcnow()
+        return datetime.now(timezone.utc)
     if isinstance(neo4j_datetime, datetime):
         return neo4j_datetime
     # Neo4j DateTime has to_native() method
     try:
         return neo4j_datetime.to_native()
     except AttributeError:
-        return datetime.utcnow()
+        return datetime.now(timezone.utc)
 
 
 if TYPE_CHECKING:
@@ -237,7 +237,7 @@ class StreamingTraceRecorder:
         if self.trace is None:
             raise RuntimeError("Trace not started. Use within 'async with' context.")
 
-        self._step_start_time = datetime.utcnow()
+        self._step_start_time = datetime.now(timezone.utc)
         self.current_step = await self.memory.add_step(
             self.trace.id,
             thought=thought,
@@ -283,7 +283,7 @@ class StreamingTraceRecorder:
 
         # Calculate duration if not provided
         if duration_ms is None and self._step_start_time is not None:
-            duration_ms = int((datetime.utcnow() - self._step_start_time).total_seconds() * 1000)
+            duration_ms = int((datetime.now(timezone.utc) - self._step_start_time).total_seconds() * 1000)
 
         return await self.memory.record_tool_call(
             self.current_step.id,

@@ -4,7 +4,7 @@ import json
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import timezone, datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
@@ -224,14 +224,14 @@ def _normalized_text(value: str | None) -> str:
 def _to_python_datetime(neo4j_datetime) -> datetime:
     """Convert Neo4j DateTime to Python datetime."""
     if neo4j_datetime is None:
-        return datetime.utcnow()
+        return datetime.now(timezone.utc)
     if isinstance(neo4j_datetime, datetime):
         return neo4j_datetime
     # Neo4j DateTime has to_native() method
     try:
         return neo4j_datetime.to_native()
     except AttributeError:
-        return datetime.utcnow()
+        return datetime.now(timezone.utc)
 
 
 if TYPE_CHECKING:
@@ -285,6 +285,15 @@ POLEO_TYPES = ["PERSON", "OBJECT", "LOCATION", "EVENT", "ORGANIZATION"]
 # Messages already worked this way (`ShortTermMemory.search_messages`); entities and preferences
 # did not, which is why `memory_search` returned the caller's entire set for any query.
 _RERANK_POOL_FACTOR = 5
+
+
+@dataclass
+class _NamedEntityRef:
+    """A bare entity name promoted to the EntityRef shape the link helpers expect."""
+
+    name: str
+    id: str | None = None
+    type: str | None = None
 
 
 def _rerank_pool(limit: int) -> int:
@@ -869,7 +878,14 @@ class LongTermMemory(BaseMemory[Entity]):
         preference_id: str,
         ref: Any,
     ) -> None:
-        """Write ``(:Preference)-[:APPLIES_TO]->(:Entity)`` for an EntityRef."""
+        """Write ``(:Preference)-[:APPLIES_TO]->(:Entity)`` for an EntityRef or a name.
+
+        An MCP caller can only send JSON, so ``applies_to`` arrives as a list of plain
+        entity NAMES; the in-process callers pass EntityRef objects. Both resolve here
+        rather than at each call site.
+        """
+        if isinstance(ref, str):
+            ref = _NamedEntityRef(ref)
         if getattr(ref, "id", None):
             await self._client.execute_write(
                 """

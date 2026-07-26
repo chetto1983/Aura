@@ -1,7 +1,7 @@
 """Mock implementations of memory classes for testing."""
 
 from collections.abc import Callable
-from datetime import datetime
+from datetime import timezone, datetime
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
@@ -55,7 +55,7 @@ class MockShortTermMemory:
                 id=uuid4(),
                 session_id=session_id,
                 messages=[],
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(timezone.utc),
             )
 
         conv = self._conversations[session_id]
@@ -65,12 +65,12 @@ class MockShortTermMemory:
             role=role,
             content=content,
             conversation_id=conv.id,
-            created_at=timestamp or datetime.utcnow(),
+            created_at=timestamp or datetime.now(timezone.utc),
             metadata=metadata or {},
         )
 
         conv.messages.append(message)
-        conv.updated_at = datetime.utcnow()
+        conv.updated_at = datetime.now(timezone.utc)
         self._messages[str(message.id)] = message
 
         return message
@@ -125,7 +125,7 @@ class MockShortTermMemory:
                 id=uuid4(),
                 session_id=session_id,
                 messages=[],
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(timezone.utc),
             )
 
         conv = self._conversations[session_id]
@@ -311,7 +311,7 @@ class MockLongTermMemory:
             type=entity_type,
             description=description,
             canonical_name=name,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
             metadata=metadata or {},
         )
 
@@ -335,7 +335,7 @@ class MockLongTermMemory:
             preference=preference,
             context=context,
             confidence=confidence,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
             metadata=metadata or {},
         )
 
@@ -359,7 +359,7 @@ class MockLongTermMemory:
             predicate=predicate,
             object=object_,
             confidence=confidence,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
             metadata=metadata or {},
         )
 
@@ -462,7 +462,7 @@ class MockReasoningMemory:
             id=uuid4(),
             session_id=session_id,
             task=task,
-            started_at=datetime.utcnow(),
+            started_at=datetime.now(timezone.utc),
             metadata=metadata or {},
         )
 
@@ -490,7 +490,7 @@ class MockReasoningMemory:
             thought=thought,
             action=action,
             observation=observation,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
             metadata=metadata or {},
         )
 
@@ -567,7 +567,7 @@ class MockReasoningMemory:
         if trace:
             trace.outcome = outcome
             trace.success = success
-            trace.completed_at = datetime.utcnow()
+            trace.completed_at = datetime.now(timezone.utc)
 
         return trace
 

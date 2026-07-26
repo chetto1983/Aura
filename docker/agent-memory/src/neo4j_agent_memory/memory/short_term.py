@@ -3,7 +3,7 @@
 import json
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import datetime
+from datetime import timezone, datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID, uuid4
@@ -65,6 +65,31 @@ def _llm_summarizer(
     return summarize
 
 
+def _extraction_scope(user_identifier: str | None) -> str | None:
+    """Deduplication scope for an entity born from message extraction.
+
+    It MUST be the scope ``LongTermMemory.add_entity`` derives for the same owner. The
+    entity MERGE key is ``{name, type, deduplication_scope}``, so a hardcoded "global"
+    here meant an extracted entity could never merge with one the agent had recorded:
+    the operator's graph carried two ``Davide`` PERSON nodes, identical but for the
+    scope — one ``{"user_identifier":"e3c8…"}``, one ``global`` — permanently
+    un-mergeable by construction. Deriving both from the same helper is what keeps them
+    one node; duplicating the format here is how they drifted apart in the first place.
+
+    Falls back to ``"global"`` when there is no owner: the scope is part of the MERGE key,
+    and Neo4j refuses to merge on a null property ("Cannot merge the following node
+    because of null property value for 'deduplication_scope'"), so an ownerless write must
+    keep the historical literal rather than inherit the unscoped ``None``.
+    """
+    from neo4j_agent_memory.memory.long_term import (
+        _deduplication_scope,
+        _metadata_with_user_scope,
+    )
+
+    scope = _deduplication_scope(_metadata_with_user_scope(None, user_identifier))
+    return scope or "global"
+
+
 def _serialize_metadata(metadata: dict[str, Any] | None) -> str | None:
     """Serialize metadata dict to JSON string for Neo4j storage."""
     if metadata is None or metadata == {}:
@@ -85,14 +110,14 @@ def _deserialize_metadata(metadata_str: str | None) -> dict[str, Any]:
 def _to_python_datetime(neo4j_datetime) -> datetime:
     """Convert Neo4j DateTime to Python datetime."""
     if neo4j_datetime is None:
-        return datetime.utcnow()
+        return datetime.now(timezone.utc)
     if isinstance(neo4j_datetime, datetime):
         return neo4j_datetime
     # Neo4j DateTime has to_native() method
     try:
         return neo4j_datetime.to_native()
     except AttributeError:
-        return datetime.utcnow()
+        return datetime.now(timezone.utc)
 
 
 def _build_metadata_filter_clause_json(
@@ -649,7 +674,11 @@ class ShortTermMemory(BaseMemory[Message]):
         else:
             # 'auto' — preserve historical behavior.
             if extract_entities and self._extractor is not None:
-                await self._extract_and_link_entities(message, extract_relations=extract_relations)
+                await self._extract_and_link_entities(
+                    message,
+                    extract_relations=extract_relations,
+                    user_identifier=user_identifier,
+                )
 
         return message
 
@@ -1316,13 +1345,20 @@ class ShortTermMemory(BaseMemory[Message]):
             return None
 
     async def _extract_and_link_entities(
-        self, message: Message, *, extract_relations: bool = True
+        self,
+        message: Message,
+        *,
+        extract_relations: bool = True,
+        user_identifier: str | None = None,
     ) -> None:
         """Extract entities from message and link them.
 
         Args:
             message: The message to extract entities from
             extract_relations: Whether to also extract and store relations between entities
+            user_identifier: Owner of the message. It selects the SAME provenance
+                deduplication scope ``LongTermMemory.add_entity`` derives, which is what
+                lets an extracted entity merge with one the agent recorded by hand.
         """
         if self._extractor is None:
             return
@@ -1359,7 +1395,7 @@ class ShortTermMemory(BaseMemory[Message]):
                     "embedding": await self._embed_entity_name(entity.name),
                     "confidence": entity.confidence,
                     "metadata": metadata_payload,
-                    "deduplication_scope": "global",
+                    "deduplication_scope": _extraction_scope(user_identifier),
                     "location": None,  # Required for LOCATION entities
                 },
             )
