@@ -73,10 +73,14 @@ func TestBenchmarkOverrideLeaseIsBounded(t *testing.T) {
 
 func TestBenchmarkIntegrationDSNGuard(t *testing.T) {
 	tests := []struct {
-		name    string
-		app     string
-		migrate string
-		wantErr bool
+		name string
+		app  string
+		// githubActions is set explicitly on every case, never inherited: the guard's
+		// verdict on a database named `aura` DEPENDS on it, and this test itself runs
+		// under GitHub Actions — an inherited value would silently flip "live aura".
+		githubActions string
+		migrate       string
+		wantErr       bool
 	}{
 		{
 			name:    "disposable settings database",
@@ -95,6 +99,14 @@ func TestBenchmarkIntegrationDSNGuard(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			// The CI compose database is also named `aura`, but it is created per job
+			// and dies with the runner — the same exemption coverage_gate.sh makes.
+			name:          "ephemeral aura under github actions",
+			app:           "postgres://aura_app:pw@localhost/aura?sslmode=disable",
+			migrate:       "postgres://aura_migrate:pw@localhost/aura?sslmode=disable",
+			githubActions: "true",
+		},
+		{
 			name:    "different databases",
 			app:     "postgres://aura_app:pw@localhost/aura_settings_a?sslmode=disable",
 			migrate: "postgres://aura_migrate:pw@localhost/aura_settings_b?sslmode=disable",
@@ -104,6 +116,7 @@ func TestBenchmarkIntegrationDSNGuard(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("GITHUB_ACTIONS", tt.githubActions)
 			err := validateBenchmarkIntegrationDSNs(tt.app, tt.migrate)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("validateBenchmarkIntegrationDSNs() error = %v, wantErr %v", err, tt.wantErr)
