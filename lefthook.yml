@@ -57,7 +57,10 @@ pre-push:
     build:
       run: bash -c 'go build $(bash scripts/go_packages.sh)'
     deadcode:
-      run: bash -c 'bash scripts/deadcode_gate.sh "$(go env GOPATH)/bin/deadcode" -test $(bash scripts/go_packages.sh)'
+      # No inner quotes: lefthook mangles double quotes nested in the single-quoted
+      # `bash -c '…'` string, which failed the gate closed at ~0.2s without ever running it.
+      # See scripts/deadcode_pre_push.sh.
+      run: bash scripts/deadcode_pre_push.sh
     # Frontend dead-code detector (knip) — TS/TSX parity to the Go `deadcode` gate
     # above. Gated on web/** so a Go-only push skips it; self-guards on a missing
     # web/node_modules. Config: web/knip.json (unused files + unreachable value
