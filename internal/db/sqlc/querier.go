@@ -26,6 +26,7 @@ type Querier interface {
 	// without re-authorizing against a possibly changed global candidate set.
 	AuthorizeRetentionOperation(ctx context.Context, arg AuthorizeRetentionOperationParams) (int64, error)
 	AutoResolvePendingForConversation(ctx context.Context, arg AutoResolvePendingForConversationParams) error
+	BenchmarkSettingsOverrideExpired(ctx context.Context, runID pgtype.UUID) (bool, error)
 	CancelTask(ctx context.Context, id pgtype.UUID) error
 	// D-09 (CHAT-05): the leaf (deepest) seq of a conversation's canonical branch — the
 	// all-zero sentinel branch every pre-0017 turn is backfilled onto. For a non-branched
@@ -33,12 +34,14 @@ type Querier interface {
 	// the same linear history ListTurnsBySeq returns (byte-identity, store.go:250). Returns
 	// 0 when the conversation has no turns.
 	CanonicalBranchLeafSeq(ctx context.Context, conversationID pgtype.UUID) (int32, error)
+	CaptureBenchmarkSetting(ctx context.Context, arg CaptureBenchmarkSettingParams) error
 	ClaimAdaptiveOutbox(ctx context.Context, arg ClaimAdaptiveOutboxParams) (AuraAdaptiveOutbox, error)
 	ClaimConversationDeleteTeardown(ctx context.Context, arg ClaimConversationDeleteTeardownParams) (int64, error)
 	ClaimIngestionJobs(ctx context.Context, arg ClaimIngestionJobsParams) ([]AuraIngestionJobs, error)
 	ClaimRetentionItems(ctx context.Context, arg ClaimRetentionItemsParams) ([]AuraRetentionOperationItems, error)
 	CleanupResumedOlderThan(ctx context.Context, resumedAt pgtype.Timestamptz) error
 	ClearExpiredReplayBody(ctx context.Context, arg ClearExpiredReplayBodyParams) (int64, error)
+	CompleteBenchmarkSettingsOverride(ctx context.Context, arg CompleteBenchmarkSettingsOverrideParams) (int64, error)
 	CompleteOperation(ctx context.Context, arg CompleteOperationParams) (int64, error)
 	CompleteRun(ctx context.Context, arg CompleteRunParams) error
 	ConsumePasswordResetChallenge(ctx context.Context, id pgtype.UUID) (AuraPasswordResetChallenges, error)
@@ -52,6 +55,8 @@ type Querier interface {
 	// A reservation cannot be replaced or released after teardown starts. Once its exact
 	// row is absent, the worker holding that reservation committed the terminal delete.
 	ConversationDeleteCompleted(ctx context.Context, arg ConversationDeleteCompletedParams) (bool, error)
+	CountBenchmarkSettingsOverrideRows(ctx context.Context, runID pgtype.UUID) (int32, error)
+	CountBenchmarkSettingsRestoreMismatches(ctx context.Context, runID pgtype.UUID) (int32, error)
 	CountIngestionJobsByStatus(ctx context.Context, status string) (int64, error)
 	// Current durable work that has not reached a terminal completed/failed item state.
 	// This query owns the restart-safe backlog gauge; transition counters are not state.
@@ -118,6 +123,7 @@ type Querier interface {
 	GetIdentityByID(ctx context.Context, id pgtype.UUID) (AuraIdentities, error)
 	GetIdentityByName(ctx context.Context, name string) (AuraIdentities, error)
 	GetIdentityRecoveryByIdentity(ctx context.Context, identityID pgtype.UUID) (AuraIdentityRecovery, error)
+	GetOpenBenchmarkSettingsOverride(ctx context.Context) (AuraBenchmarkSettingsOverrides, error)
 	GetOperation(ctx context.Context, arg GetOperationParams) (GetOperationRow, error)
 	GetPasswordResetToken(ctx context.Context, tokenHash string) (AuraPasswordResetTokens, error)
 	GetPausedStateByToken(ctx context.Context, token pgtype.UUID) (AuraPausedStates, error)
@@ -143,6 +149,7 @@ type Querier interface {
 	GetTurnPointers(ctx context.Context, arg GetTurnPointersParams) (GetTurnPointersRow, error)
 	GrantCapability(ctx context.Context, arg GrantCapabilityParams) error
 	HasCapability(ctx context.Context, arg HasCapabilityParams) (bool, error)
+	HeartbeatBenchmarkSettingsOverride(ctx context.Context, arg HeartbeatBenchmarkSettingsOverrideParams) (int64, error)
 	IncrementPasswordResetChallengeAttempts(ctx context.Context, id pgtype.UUID) error
 	IncrementPasswordResetTokenAttempts(ctx context.Context, tokenHash string) error
 	InsertAdaptiveFocalCohort(ctx context.Context, arg InsertAdaptiveFocalCohortParams) (int64, error)
@@ -151,6 +158,7 @@ type Querier interface {
 	InsertAdaptivePolicySnapshot(ctx context.Context, arg InsertAdaptivePolicySnapshotParams) (int64, error)
 	InsertAdaptiveRandomizationReceipt(ctx context.Context, arg InsertAdaptiveRandomizationReceiptParams) (AuraAdaptiveRandomizationReceipts, error)
 	InsertAssetEvent(ctx context.Context, arg InsertAssetEventParams) error
+	InsertBenchmarkSettingsOverride(ctx context.Context, arg InsertBenchmarkSettingsOverrideParams) (AuraBenchmarkSettingsOverrides, error)
 	// Idempotent on (conversation_id, seq): the metric write is a separate, non-transactional
 	// observation following the assistant turn (runner_persist.go). ON CONFLICT DO NOTHING
 	// makes a re-run for an already-recorded turn a no-op rather than a PK violation or a
@@ -277,6 +285,7 @@ type Querier interface {
 	// Stamp the throttle after a reminder ATTEMPT (delivered or not) so a pending approval
 	// re-nudges at most once per cadence and a failing channel cannot spam the tick.
 	MarkApprovalReminded(ctx context.Context, id pgtype.UUID) error
+	MarkBenchmarkSettingsOverrideRestoring(ctx context.Context, runID pgtype.UUID) (int64, error)
 	MarkNotificationDelivered(ctx context.Context, id pgtype.UUID) error
 	MarkNotificationFailed(ctx context.Context, arg MarkNotificationFailedParams) error
 	MarkOperationIndeterminate(ctx context.Context, arg MarkOperationIndeterminateParams) (int64, error)
@@ -300,6 +309,7 @@ type Querier interface {
 	// Cross-process export-delete fence. This must commit before any runtime teardown.
 	// Reusing the same deterministic reservation is idempotent after a process retry.
 	ReserveConversationDeleteForIdentityIfVersion(ctx context.Context, arg ReserveConversationDeleteForIdentityIfVersionParams) (int64, error)
+	RestoreBenchmarkSetting(ctx context.Context, arg RestoreBenchmarkSettingParams) error
 	RetryAdaptiveOutbox(ctx context.Context, arg RetryAdaptiveOutboxParams) (int64, error)
 	RetryIngestionJob(ctx context.Context, arg RetryIngestionJobParams) (AuraIngestionJobs, error)
 	RetryRetentionItem(ctx context.Context, arg RetryRetentionItemParams) (int64, error)
@@ -353,6 +363,7 @@ type Querier interface {
 	// payload, notify route, and the recomputed first fire. Guarded to active/pending rows so
 	// a cancelled/completed task is not silently revived. Returns rows affected.
 	UpdateTaskScheduleRow(ctx context.Context, arg UpdateTaskScheduleRowParams) (int64, error)
+	UpsertBenchmarkSetting(ctx context.Context, arg UpsertBenchmarkSettingParams) error
 	UpsertDocumentTag(ctx context.Context, arg UpsertDocumentTagParams) error
 	UpsertIdentityRecovery(ctx context.Context, arg UpsertIdentityRecoveryParams) error
 	UpsertSetting(ctx context.Context, arg UpsertSettingParams) (AuraSettings, error)

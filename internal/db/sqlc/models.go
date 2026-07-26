@@ -280,6 +280,30 @@ type AuraAuditLogs struct {
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 }
 
+// Exact pre-override settings rows; the key check prevents any secret or unrelated setting capture.
+type AuraBenchmarkSettingsOverrideRows struct {
+	RunID     pgtype.UUID        `json:"run_id"`
+	Key       string             `json:"key"`
+	Existed   bool               `json:"existed"`
+	Value     pgtype.Text        `json:"value"`
+	IsSecret  pgtype.Bool        `json:"is_secret"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	UpdatedBy pgtype.Text        `json:"updated_by"`
+}
+
+// Bounded audit and recovery journal for the three temporary Qwen portability settings.
+type AuraBenchmarkSettingsOverrides struct {
+	RunID          pgtype.UUID        `json:"run_id"`
+	OwnerID        pgtype.UUID        `json:"owner_id"`
+	State          string             `json:"state"`
+	LeaseExpiresAt pgtype.Timestamptz `json:"lease_expires_at"`
+	HeartbeatAt    pgtype.Timestamptz `json:"heartbeat_at"`
+	StartedAt      pgtype.Timestamptz `json:"started_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	CompletedAt    pgtype.Timestamptz `json:"completed_at"`
+	RecoveryCount  int32              `json:"recovery_count"`
+}
+
 // Per-turn KV-cache metrics (Slice 4 / Phase 6, D-02). Append-only: one row per completed assistant turn from llm.Usage (token counts + cost only, no message content).
 type AuraCacheMetrics struct {
 	ConversationID pgtype.UUID        `json:"conversation_id"`

@@ -11,6 +11,106 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const benchmarkSettingsOverrideExpired = `-- name: BenchmarkSettingsOverrideExpired :one
+SELECT lease_expires_at <= clock_timestamp()
+FROM aura.benchmark_settings_overrides
+WHERE run_id = $1
+`
+
+func (q *Queries) BenchmarkSettingsOverrideExpired(ctx context.Context, runID pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, benchmarkSettingsOverrideExpired, runID)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const captureBenchmarkSetting = `-- name: CaptureBenchmarkSetting :exec
+INSERT INTO aura.benchmark_settings_override_rows (
+    run_id, key, existed, value, is_secret, updated_at, updated_by
+)
+SELECT $1, requested.key, current.key IS NOT NULL,
+       current.value, current.is_secret, current.updated_at, current.updated_by
+FROM (SELECT $2::text AS key) AS requested
+LEFT JOIN aura.settings AS current ON current.key = requested.key
+`
+
+type CaptureBenchmarkSettingParams struct {
+	RunID pgtype.UUID `json:"run_id"`
+	Key   string      `json:"key"`
+}
+
+func (q *Queries) CaptureBenchmarkSetting(ctx context.Context, arg CaptureBenchmarkSettingParams) error {
+	_, err := q.db.Exec(ctx, captureBenchmarkSetting, arg.RunID, arg.Key)
+	return err
+}
+
+const completeBenchmarkSettingsOverride = `-- name: CompleteBenchmarkSettingsOverride :execrows
+UPDATE aura.benchmark_settings_overrides
+SET state = $1,
+    completed_at = clock_timestamp(),
+    updated_at = clock_timestamp(),
+    recovery_count = CASE WHEN $1::text = 'recovered' THEN 1 ELSE 0 END
+WHERE run_id = $2
+  AND state = 'restoring'
+  AND $1::text IN ('completed', 'recovered')
+`
+
+type CompleteBenchmarkSettingsOverrideParams struct {
+	State string      `json:"state"`
+	RunID pgtype.UUID `json:"run_id"`
+}
+
+func (q *Queries) CompleteBenchmarkSettingsOverride(ctx context.Context, arg CompleteBenchmarkSettingsOverrideParams) (int64, error) {
+	result, err := q.db.Exec(ctx, completeBenchmarkSettingsOverride, arg.State, arg.RunID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const countBenchmarkSettingsOverrideRows = `-- name: CountBenchmarkSettingsOverrideRows :one
+SELECT count(*)::integer
+FROM aura.benchmark_settings_override_rows
+WHERE run_id = $1
+`
+
+func (q *Queries) CountBenchmarkSettingsOverrideRows(ctx context.Context, runID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countBenchmarkSettingsOverrideRows, runID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const countBenchmarkSettingsRestoreMismatches = `-- name: CountBenchmarkSettingsRestoreMismatches :one
+SELECT count(*)::integer
+FROM aura.benchmark_settings_override_rows AS original
+FULL OUTER JOIN aura.settings AS current
+    ON current.key = original.key
+   AND current.key IN (
+        'AURA_LLM_PROVIDER', 'AURA_LLM_MODEL', 'AURA_LLM_BASE_URL'
+   )
+WHERE original.run_id = $1
+  AND (
+      original.existed IS DISTINCT FROM (current.key IS NOT NULL)
+      OR (
+          original.existed
+          AND (
+              original.value IS DISTINCT FROM current.value
+              OR original.is_secret IS DISTINCT FROM current.is_secret
+              OR original.updated_at IS DISTINCT FROM current.updated_at
+              OR original.updated_by IS DISTINCT FROM current.updated_by
+          )
+      )
+  )
+`
+
+func (q *Queries) CountBenchmarkSettingsRestoreMismatches(ctx context.Context, runID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countBenchmarkSettingsRestoreMismatches, runID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const deleteSetting = `-- name: DeleteSetting :exec
 DELETE FROM aura.settings WHERE key = $1
 `
@@ -18,6 +118,33 @@ DELETE FROM aura.settings WHERE key = $1
 func (q *Queries) DeleteSetting(ctx context.Context, key string) error {
 	_, err := q.db.Exec(ctx, deleteSetting, key)
 	return err
+}
+
+const getOpenBenchmarkSettingsOverride = `-- name: GetOpenBenchmarkSettingsOverride :one
+SELECT run_id, owner_id, state, lease_expires_at, heartbeat_at,
+       started_at, updated_at, completed_at, recovery_count
+FROM aura.benchmark_settings_overrides
+WHERE state IN ('active', 'restoring')
+ORDER BY started_at
+LIMIT 1
+FOR UPDATE
+`
+
+func (q *Queries) GetOpenBenchmarkSettingsOverride(ctx context.Context) (AuraBenchmarkSettingsOverrides, error) {
+	row := q.db.QueryRow(ctx, getOpenBenchmarkSettingsOverride)
+	var i AuraBenchmarkSettingsOverrides
+	err := row.Scan(
+		&i.RunID,
+		&i.OwnerID,
+		&i.State,
+		&i.LeaseExpiresAt,
+		&i.HeartbeatAt,
+		&i.StartedAt,
+		&i.UpdatedAt,
+		&i.CompletedAt,
+		&i.RecoveryCount,
+	)
+	return i, err
 }
 
 const getSetting = `-- name: GetSetting :one
@@ -35,6 +162,63 @@ func (q *Queries) GetSetting(ctx context.Context, key string) (AuraSettings, err
 		&i.IsSecret,
 		&i.UpdatedAt,
 		&i.UpdatedBy,
+	)
+	return i, err
+}
+
+const heartbeatBenchmarkSettingsOverride = `-- name: HeartbeatBenchmarkSettingsOverride :execrows
+UPDATE aura.benchmark_settings_overrides
+SET heartbeat_at = clock_timestamp(),
+    lease_expires_at =
+        clock_timestamp() + make_interval(secs => $1::double precision),
+    updated_at = clock_timestamp()
+WHERE run_id = $2 AND state = 'active'
+`
+
+type HeartbeatBenchmarkSettingsOverrideParams struct {
+	LeaseSeconds float64     `json:"lease_seconds"`
+	RunID        pgtype.UUID `json:"run_id"`
+}
+
+func (q *Queries) HeartbeatBenchmarkSettingsOverride(ctx context.Context, arg HeartbeatBenchmarkSettingsOverrideParams) (int64, error) {
+	result, err := q.db.Exec(ctx, heartbeatBenchmarkSettingsOverride, arg.LeaseSeconds, arg.RunID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const insertBenchmarkSettingsOverride = `-- name: InsertBenchmarkSettingsOverride :one
+INSERT INTO aura.benchmark_settings_overrides (
+    run_id, owner_id, state, lease_expires_at, heartbeat_at, started_at, updated_at
+) VALUES (
+    $1, $2, 'active',
+    clock_timestamp() + make_interval(secs => $3::double precision),
+    clock_timestamp(), clock_timestamp(), clock_timestamp()
+)
+RETURNING run_id, owner_id, state, lease_expires_at, heartbeat_at,
+          started_at, updated_at, completed_at, recovery_count
+`
+
+type InsertBenchmarkSettingsOverrideParams struct {
+	RunID        pgtype.UUID `json:"run_id"`
+	OwnerID      pgtype.UUID `json:"owner_id"`
+	LeaseSeconds float64     `json:"lease_seconds"`
+}
+
+func (q *Queries) InsertBenchmarkSettingsOverride(ctx context.Context, arg InsertBenchmarkSettingsOverrideParams) (AuraBenchmarkSettingsOverrides, error) {
+	row := q.db.QueryRow(ctx, insertBenchmarkSettingsOverride, arg.RunID, arg.OwnerID, arg.LeaseSeconds)
+	var i AuraBenchmarkSettingsOverrides
+	err := row.Scan(
+		&i.RunID,
+		&i.OwnerID,
+		&i.State,
+		&i.LeaseExpiresAt,
+		&i.HeartbeatAt,
+		&i.StartedAt,
+		&i.UpdatedAt,
+		&i.CompletedAt,
+		&i.RecoveryCount,
 	)
 	return i, err
 }
@@ -69,6 +253,75 @@ func (q *Queries) ListSettings(ctx context.Context) ([]AuraSettings, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const markBenchmarkSettingsOverrideRestoring = `-- name: MarkBenchmarkSettingsOverrideRestoring :execrows
+UPDATE aura.benchmark_settings_overrides
+SET state = 'restoring', updated_at = clock_timestamp()
+WHERE run_id = $1 AND state IN ('active', 'restoring')
+`
+
+func (q *Queries) MarkBenchmarkSettingsOverrideRestoring(ctx context.Context, runID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, markBenchmarkSettingsOverrideRestoring, runID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const restoreBenchmarkSetting = `-- name: RestoreBenchmarkSetting :exec
+WITH original AS (
+    SELECT saved.key, saved.existed, saved.value, saved.is_secret,
+           saved.updated_at, saved.updated_by
+    FROM aura.benchmark_settings_override_rows AS saved
+    WHERE saved.run_id = $1
+      AND saved.key = $2
+),
+deleted AS (
+    DELETE FROM aura.settings AS setting
+    USING original
+    WHERE setting.key = original.key AND NOT original.existed
+)
+INSERT INTO aura.settings (key, value, is_secret, updated_at, updated_by)
+SELECT key, value, is_secret, updated_at, updated_by
+FROM original
+WHERE existed
+ON CONFLICT (key) DO UPDATE
+SET value = EXCLUDED.value,
+    is_secret = EXCLUDED.is_secret,
+    updated_at = EXCLUDED.updated_at,
+    updated_by = EXCLUDED.updated_by
+`
+
+type RestoreBenchmarkSettingParams struct {
+	RunID      pgtype.UUID `json:"run_id"`
+	SettingKey string      `json:"setting_key"`
+}
+
+func (q *Queries) RestoreBenchmarkSetting(ctx context.Context, arg RestoreBenchmarkSettingParams) error {
+	_, err := q.db.Exec(ctx, restoreBenchmarkSetting, arg.RunID, arg.SettingKey)
+	return err
+}
+
+const upsertBenchmarkSetting = `-- name: UpsertBenchmarkSetting :exec
+INSERT INTO aura.settings (key, value, is_secret, updated_at, updated_by)
+VALUES ($1, $2, false, clock_timestamp(), $3)
+ON CONFLICT (key) DO UPDATE
+SET value = EXCLUDED.value,
+    is_secret = false,
+    updated_at = EXCLUDED.updated_at,
+    updated_by = EXCLUDED.updated_by
+`
+
+type UpsertBenchmarkSettingParams struct {
+	Key       string      `json:"key"`
+	Value     string      `json:"value"`
+	UpdatedBy pgtype.Text `json:"updated_by"`
+}
+
+func (q *Queries) UpsertBenchmarkSetting(ctx context.Context, arg UpsertBenchmarkSettingParams) error {
+	_, err := q.db.Exec(ctx, upsertBenchmarkSetting, arg.Key, arg.Value, arg.UpdatedBy)
+	return err
 }
 
 const upsertSetting = `-- name: UpsertSetting :one

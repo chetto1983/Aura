@@ -75,10 +75,15 @@ type Lister interface {
 }
 
 // Store is the aura.settings CRUD over a pgx pool.
-type Store struct{ q *sqlc.Queries }
+type Store struct {
+	pool *pgxpool.Pool
+	q    *sqlc.Queries
+}
 
 // NewStore builds a settings store over the pool.
-func NewStore(pool *pgxpool.Pool) *Store { return &Store{q: sqlc.New(pool)} }
+func NewStore(pool *pgxpool.Pool) *Store {
+	return &Store{pool: pool, q: sqlc.New(pool)}
+}
 
 // List returns all settings rows ordered by key.
 func (s *Store) List(ctx context.Context) ([]sqlc.AuraSettings, error) {
@@ -93,17 +98,48 @@ func (s *Store) Upsert(ctx context.Context, key, value, by string) (sqlc.AuraSet
 	if by != "" {
 		updatedBy = pgtype.Text{String: by, Valid: true}
 	}
-	return s.q.UpsertSetting(ctx, sqlc.UpsertSettingParams{
-		Key:       key,
-		Value:     value,
-		IsSecret:  meta.Secret,
-		UpdatedBy: updatedBy,
+	var row sqlc.AuraSettings
+	err := s.withWriteLock(ctx, func(q *sqlc.Queries) error {
+		var err error
+		row, err = q.UpsertSetting(ctx, sqlc.UpsertSettingParams{
+			Key: key, Value: value, IsSecret: meta.Secret, UpdatedBy: updatedBy,
+		})
+		return err
 	})
+	return row, err
 }
 
 // Delete removes a key, reverting it to its environment/.env default on restart.
 func (s *Store) Delete(ctx context.Context, key string) error {
-	return s.q.DeleteSetting(ctx, key)
+	return s.withWriteLock(ctx, func(q *sqlc.Queries) error {
+		return q.DeleteSetting(ctx, key)
+	})
+}
+
+func (s *Store) withWriteLock(
+	ctx context.Context, fn func(*sqlc.Queries) error,
+) (err error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if panicValue := recover(); panicValue != nil {
+			_ = tx.Rollback(ctx)
+			panic(panicValue)
+		}
+		if err != nil {
+			_ = tx.Rollback(ctx)
+			return
+		}
+		err = tx.Commit(ctx)
+	}()
+	if _, err = tx.Exec(
+		ctx, "SELECT pg_advisory_xact_lock($1)", benchmarkSettingsAdvisoryKey,
+	); err != nil {
+		return err
+	}
+	return fn(sqlc.New(tx))
 }
 
 // OverlayEnv applies the allowlisted aura.settings rows onto the process
