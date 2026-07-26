@@ -3,9 +3,11 @@ package adaptive
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type mutablePolicyReader struct {
@@ -97,5 +99,15 @@ func TestPolicyControllerCanaryAssignmentIsStableAndVersionBound(t *testing.T) {
 	want := canaryAssigned(decisionID, reader.policy.Version, reader.policy.RolloutBPS)
 	if changed.Adapt != want {
 		t.Fatalf("version-bound assignment = %v, want %v", changed.Adapt, want)
+	}
+}
+
+func TestPolicyStoreRejectsInvalidEvidenceTransitionBeforeDatabase(t *testing.T) {
+	store := &PolicyStore{pool: new(pgxpool.Pool)}
+	_, err := store.ApplyEvidenceTransition(
+		context.Background(), uuid.Nil, -1, uuid.Nil, 10_001, "",
+	)
+	if err == nil || !strings.Contains(err.Error(), "transition is invalid") {
+		t.Fatalf("ApplyEvidenceTransition() error = %v, want invalid request", err)
 	}
 }

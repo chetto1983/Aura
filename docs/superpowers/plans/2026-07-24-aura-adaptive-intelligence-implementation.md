@@ -179,7 +179,7 @@ reconstruction with canonical cross-host digest)
   normal/race, owner-conversation and cross-cohort races, package normal/race,
   vet/build/lint/diff/file-size gates GREEN; final spec and quality reviews
   `APPROVE`.
-- [ ] Replace the historical caller-built enrollment draw with store-owned
+- [x] Replace the historical caller-built enrollment draw with store-owned
   post-claim OS-CSPRNG randomization, an atomic canonical
   `RandomizationReceipt`, and fail-closed retry/commit-unknown/concurrency
   recovery under PRD #93.7.
@@ -194,9 +194,9 @@ reconstruction with canonical cross-host digest)
   `sqlc compile`, package/repository vet/build, exact diff-scoped lint with
   zero issues, diff/LOC/hooks GREEN; final spec and quality reviews
   `APPROVE`.
-- [ ] Exact owner/claim-time-stratified Bonferroni hypergeometric ATE inference,
+- [x] Exact owner/claim-time-stratified Bonferroni hypergeometric ATE inference,
   selected-intention OPE diagnostics, and sealed admission/outcome evidence.
-- [ ] Remove legacy caller-built `CanaryBatch`, Wilson/ESS authorization, and
+- [x] Remove legacy caller-built `CanaryBatch`, Wilson/ESS authorization, and
   all newly dead owned code.
 
 ## Global execution contract
@@ -374,8 +374,8 @@ go build ./...
   `internal/adaptive/`
 
 - [x] **Step 1: Recheck the migration head immediately before allocation.**
-- [ ] **Step 2: Write red tests** for immutable owner/provider/model snapshots, top-5 nonnegative-cosine mean scoring, zero-neighbor static fallback, preregistered point/ordinal predicate, unique request membership, at most one randomized request per evaluation conversation, deterministic correction folding, missing/fork/cycle rejection, and artifact hash stability.
-- [ ] **Step 3: Write red statistical and canonical-contract tests** from PRD #93.7. Exhaust tiny independent `1/2` Bernoulli assignments and prove that conditioning on realized treated counts in frozen owner plus server claim-time strata equals the product complete-randomization distribution. Hand-check `stratified-bonferroni-hypergeom-ate-v1` quality-lower/harm-upper vectors, strict hypergeometric-tail equality, missing substitutions, singleton/one-arm strata, five UTC cutoffs and exact alpha spending. Keep conversation identity in the separate immutable interference cluster. Test ITT as primary and selected-intention-only OPE with exact marginal `mu`, endpoint-specific action-mean models, DR/SNIPS/ESS, deterministic whole-cluster bootstrap, and unknown delivered exposure that remains selected-intention eligible. Independently reproduce the action/empty-feature/target-policy/behavior-policy/reward/prediction golden hashes; test every frozen stratum/cluster/member/action/endpoint/report/reason order and tie-breaker; and assert bit-identical `neumaier-binary64-no-fma-v1` accumulation with nonfinite, FMA, reassociation, and extended-precision negative oracles. Reject arm/action propensity mismatch, schema/content-hash drift, graph-kNN/empty-feature role inversion, composite endpoint/OPE report substitution, and caller-built outcome artifacts. Table-test every disposition row, including no-write cases, strict quality `>` versus harm `<=`, OPE independence, look-5 termination, and successor eligibility.
+- [x] **Step 2: Write red tests** for immutable owner/provider/model snapshots, top-5 nonnegative-cosine mean scoring, zero-neighbor static fallback, preregistered point/ordinal predicate, unique request membership, at most one randomized request per evaluation conversation, deterministic correction folding, missing/fork/cycle rejection, and artifact hash stability.
+- [x] **Step 3: Write red statistical and canonical-contract tests** from PRD #93.7. Exhaust tiny independent `1/2` Bernoulli assignments and prove that conditioning on realized treated counts in frozen owner plus server claim-time strata equals the product complete-randomization distribution. Hand-check `stratified-bonferroni-hypergeom-ate-v1` quality-lower/harm-upper vectors, strict hypergeometric-tail equality, missing substitutions, singleton/one-arm strata, five UTC cutoffs and exact alpha spending. Keep conversation identity in the separate immutable interference cluster. Test ITT as primary and selected-intention-only OPE with exact marginal `mu`, endpoint-specific action-mean models, DR/SNIPS/ESS, deterministic whole-cluster bootstrap, and unknown delivered exposure that remains selected-intention eligible. Independently reproduce the action/empty-feature/target-policy/behavior-policy/reward/prediction golden hashes; test every frozen stratum/cluster/member/action/endpoint/report/reason order and tie-breaker; and assert bit-identical `neumaier-binary64-no-fma-v1` accumulation with nonfinite, FMA, reassociation, and extended-precision negative oracles. Reject arm/action propensity mismatch, schema/content-hash drift, graph-kNN/empty-feature role inversion, composite endpoint/OPE report substitution, and caller-built outcome artifacts. Table-test every disposition row, including no-write cases, strict quality `>` versus harm `<=`, OPE independence, look-5 termination, and successor eligibility.
 - [x] **Step 4: Implement the scorer** as a pure local function over the sealed snapshot. Similarity is `max(0, cosine)`; use at most five neighbors; predicted value is the arithmetic mean of neighbor outcomes weighted by nonnegative similarity; empty/invalid support returns the static champion.
 - [x] **Step 4a: Persist immutable snapshots.** Implementation and forward-only
   numerical/performance repairs are approved through `f58334f1`; migrations
@@ -390,7 +390,7 @@ go build ./...
   `recordOwnerLockedTx`, and commits before learned execution. Callback/build
   or assignment failure rolls back both facts; exact retry does not redraw and
   a concurrent or cross-cohort loser never invokes the callback.
-- [ ] **Step 5a: Write replacement enrollment fault tests** in
+- [x] **Step 5a: Write replacement enrollment fault tests** in
   `internal/adaptive/randomization_test.go`,
   `internal/adaptive/randomization_receipt_test.go`, and focused
   `internal/adaptive/*integration_test.go`. Prove the store reads entropy only
@@ -402,7 +402,7 @@ go build ./...
   concurrent/cross-cohort uniqueness faults. Assert static fallback, durable
   reload before recovery, no caller arm/draw callback, no redraw, no partial
   tuple, and no duplicate claim/Assignment/receipt.
-- [ ] **Step 5b: Replace the historical enrollment draw** in
+- [x] **Step 5b: Replace the historical enrollment draw** in
   `internal/adaptive/cohort_store.go` with store-owned code in
   `internal/adaptive/randomization.go` and
   `internal/adaptive/randomization_receipt.go`; persist it through the
@@ -419,7 +419,7 @@ go build ./...
   OPE; selected-intention OPE may remain eligible from the frozen intended
   action and exact marginal intention `mu`.
 - [x] **Step 7: Implement a production typed outcome/correction recorder.** `OutcomeRecorder.RecordOutcome` accepts only a typed `OutcomeObservation`, loads the referenced schema-2 assignment, binds domain/owner/provider/model, validates the registered evaluator kind/ID/version/rubric/calibration/provenance hash, and appends the deterministic terminal event. `RecordCorrection` transactionally loads the current effective leaf and rejects missing, cross-owner/domain/evaluator, cross-kind, fork, or cycle links. Operational tool/HTTP/persistence/model-self-report completion cannot call this eligible recorder. Compose the deterministic and calibrated-judge benchmark evaluators through this same service; no benchmark may insert ledger rows directly.
-- [ ] **Step 8: Implement separate sealed artifact kinds**:
+- [x] **Step 8: Implement separate sealed artifact kinds**:
 
 ```go
 type EvidenceKind string
@@ -432,10 +432,10 @@ const (
 
 `EvidenceStore.SealCanaryOutcome` is the sole outcome writer and accepts no caller report body. It must bind the canonical cohort/child refs, analysis-stratum schema/set hashes, distinct quality and harm report IDs/hashes, distinct quality-OPE and harm-OPE report IDs/hashes, censor-diagnostics ID/hash, predecessor, cutoff, ledger, and sealer provenance. Implement the frozen disposition table exactly: no artifact for its five precondition/transaction failures; otherwise one audit artifact; diagnostic OPE never changes the gate; quality uses strict `>` and harm uses `<=`; look 5 cannot continue; only `continue` may have a successor. The transition function must rebuild and revalidate the canonical transition binding—artifact kind/hash, target state, exact scope, cutoff/look/predecessor, snapshot/cohort hashes, endpoint report hashes, eligibility/disposition, and current operator capability—in the same transaction.
 
-- [ ] **Step 9: Delete caller-built `CanaryBatch` and ESS/IPW-Wilson authorization.** If simulation still needs Wilson/ESS, move it under `.planning/spikes/` or a `_test.go` helper with no production export.
-- [ ] **Step 10: Verify** canonical round trips and tamper rejection for every #93.7 schema; all literal policy/model golden hashes; exact stratum/cluster/draw/hypergeometric/DR/bootstrap/Neumaier vectors and canonical order keys; the full disposition truth table; five-look boundary and late-fact behavior; selected-intention OPE eligibility with unknown delivery exposure; distinct endpoint report/evidence bindings; replacement randomization receipt and sole-writer retry/commit-unknown/concurrency/rollback/non-substitution; then focused unit, DB integration, privileges, migrations, race, vet, and build.
+- [x] **Step 9: Delete caller-built `CanaryBatch` and ESS/IPW-Wilson authorization.** If simulation still needs Wilson/ESS, move it under `.planning/spikes/` or a `_test.go` helper with no production export.
+- [x] **Step 10: Verify** canonical round trips and tamper rejection for every #93.7 schema; all literal policy/model golden hashes; exact stratum/cluster/draw/hypergeometric/DR/bootstrap/Neumaier vectors and canonical order keys; the full disposition truth table; five-look boundary and late-fact behavior; selected-intention OPE eligibility with unknown delivery exposure; distinct endpoint report/evidence bindings; replacement randomization receipt and sole-writer retry/commit-unknown/concurrency/rollback/non-substitution; then focused unit, DB integration, privileges, migrations, race, vet, and build.
 - [x] **Step 11: Commit outcome ingestion separately** — `feat(adaptive): record typed evaluator outcomes`.
-- [ ] **Step 12: Commit sealed evidence** — `feat(adaptive): seal cohort-built promotion evidence`.
+- [x] **Step 12: Commit sealed evidence** — `feat(adaptive): seal cohort-built promotion evidence`.
 
 ## Task 3: Add the coordinator and correct request/round identity
 

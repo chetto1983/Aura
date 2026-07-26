@@ -22,6 +22,7 @@ type OPEMemberOrder struct {
 // OPERow is one closed-ledger member evaluated by selected intention.
 type OPERow struct {
 	Order               OPEMemberOrder
+	TargetActionID      string
 	IntendedActionID    string
 	Reward              bool
 	DeliveryKnown       bool
@@ -40,7 +41,6 @@ type EndpointOutcomeModelBinding struct {
 // SelectedIntentionOPEPlan is the immutable policy/model contract for one endpoint.
 type SelectedIntentionOPEPlan struct {
 	EndpointKind           EvidenceEndpointKind
-	TargetActionID         string
 	ActionSchemaSHA256     string
 	RewardDefinitionSHA256 string
 	TargetPolicySHA256     string
@@ -98,23 +98,27 @@ func prepareSelectedIntentionOPE(input SelectedIntentionOPEInput) (OPEResult, []
 	if err != nil {
 		return OPEResult{}, nil, err
 	}
-	targetQHat, ok := qhat[input.Plan.TargetActionID]
-	if !ok {
-		return OPEResult{}, nil, errors.New("OPE target action has no endpoint prediction")
-	}
-	targetQ, err := targetQHat.Float64()
-	if err != nil {
-		return OPEResult{}, nil, err
-	}
 	prepared := make([]preparedOPERow, len(rows))
 	drTerms := make([]float64, len(rows))
 	weightedRewards := make([]float64, len(rows))
 	weights := make([]float64, len(rows))
 	squaredWeights := make([]float64, len(rows))
 	for index, row := range rows {
-		probabilities, err := validateSelectedIntentionRow(row, input.Plan, input.Artifacts.ActionSchema.Actions)
+		probabilities, err := validateSelectedIntentionRow(
+			row, input.Plan, input.Artifacts.ActionSchema.Actions,
+		)
 		if err != nil {
 			return OPEResult{}, nil, fmt.Errorf("OPE row %d: %w", index, err)
+		}
+		targetQHat, ok := qhat[row.TargetActionID]
+		if !ok {
+			return OPEResult{}, nil, errors.New(
+				"OPE row target action has no endpoint prediction",
+			)
+		}
+		targetQ, err := targetQHat.Float64()
+		if err != nil {
+			return OPEResult{}, nil, err
 		}
 		behavior := probabilities[row.IntendedActionID]
 		behaviorFloat, err := behavior.Float64()
@@ -122,7 +126,7 @@ func prepareSelectedIntentionOPE(input SelectedIntentionOPEInput) (OPEResult, []
 			return OPEResult{}, nil, err
 		}
 		weight := 0.0
-		if row.IntendedActionID == input.Plan.TargetActionID {
+		if row.IntendedActionID == row.TargetActionID {
 			weight = 1 / behaviorFloat
 		}
 		intendedQ, err := qhat[row.IntendedActionID].Float64()
@@ -173,8 +177,7 @@ func validateOPEBindings(plan SelectedIntentionOPEPlan, artifacts SelectedIntent
 	if plan.EndpointKind != EvidenceEndpointQuality && plan.EndpointKind != EvidenceEndpointHarm {
 		return errors.New("OPE endpoint kind is invalid")
 	}
-	if plan.TargetActionID == "" ||
-		plan.MinimumESS.Cmp(MustExactRational(0, 1)) <= 0 ||
+	if plan.MinimumESS.Cmp(MustExactRational(0, 1)) <= 0 ||
 		plan.MinimumOverlap.Cmp(MustExactRational(1, 2)) != 0 {
 		return errors.New("OPE plan thresholds are invalid")
 	}
@@ -220,9 +223,8 @@ func validateOPEBindings(plan SelectedIntentionOPEPlan, artifacts SelectedIntent
 		!validSHA256(model.ArtifactSHA256) {
 		return errors.New("OPE endpoint artifact binding is inconsistent")
 	}
-	if !slices.Contains(artifacts.ActionSchema.Actions, "static") ||
-		!slices.Contains(artifacts.ActionSchema.Actions, plan.TargetActionID) {
-		return errors.New("OPE static or target action is outside the frozen catalog")
+	if !slices.Contains(artifacts.ActionSchema.Actions, "static") {
+		return errors.New("OPE static action is outside the frozen catalog")
 	}
 	return nil
 }
@@ -252,10 +254,10 @@ func validateSelectedIntentionRow(
 			return nil, errors.New("behavior action row is noncanonical")
 		}
 		expected := MustExactRational(0, 1)
-		if plan.TargetActionID == "static" && actionID == "static" {
+		if row.TargetActionID == "static" && actionID == "static" {
 			expected = MustExactRational(1, 1)
-		} else if plan.TargetActionID != "static" &&
-			(actionID == "static" || actionID == plan.TargetActionID) {
+		} else if row.TargetActionID != "static" &&
+			(actionID == "static" || actionID == row.TargetActionID) {
 			expected = MustExactRational(1, 2)
 		}
 		if probability.Probability.Cmp(expected) != 0 {
@@ -267,7 +269,10 @@ func validateSelectedIntentionRow(
 	if !ok || intended.Cmp(MustExactRational(0, 1)) <= 0 {
 		return nil, errors.New("intended action lacks behavior support")
 	}
-	targetBehavior := probabilities[plan.TargetActionID]
+	targetBehavior, targetExists := probabilities[row.TargetActionID]
+	if !targetExists {
+		return nil, errors.New("target action is outside the behavior catalog")
+	}
 	if targetBehavior.Cmp(plan.MinimumOverlap) < 0 {
 		return nil, errors.New("target action overlap is below the frozen minimum")
 	}

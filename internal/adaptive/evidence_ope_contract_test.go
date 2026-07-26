@@ -173,6 +173,25 @@ func TestSelectedIntentionOPE_CanonicalizesPermutationsAndRejectsDuplicateIdenti
 	}
 }
 
+func TestSelectedIntentionOPESupportsRowSpecificTargetActions(t *testing.T) {
+	input := validSelectedIntentionOPEInput(t)
+	input.Rows[0].TargetActionID = "static"
+	input.Rows[0].ActionProbabilities = []ExactActionProbability{
+		{ActionID: "static", Probability: MustExactRational(1, 1)},
+		{ActionID: "summarize", Probability: MustExactRational(0, 1)},
+	}
+	input.Rows[1].TargetActionID = "summarize"
+
+	result, err := EvaluateSelectedIntentionOPE(input)
+	if err != nil {
+		t.Fatalf("EvaluateSelectedIntentionOPE() row targets: %v", err)
+	}
+	if result.DR != 0.6 || result.SNIPS != 2.0/3.0 ||
+		result.ESS != 9.0/5.0 {
+		t.Fatalf("row-specific result = %#v", result)
+	}
+}
+
 func TestClusterBootstrapDR_IsStreamingDeterministicAndCancellable(t *testing.T) {
 	input := validSelectedIntentionOPEInput(t)
 	caps := DefaultOPEUncertaintyCaps()
@@ -329,7 +348,7 @@ func validSelectedIntentionOPEInput(t *testing.T) SelectedIntentionOPEInput {
 	}
 	return SelectedIntentionOPEInput{
 		Plan: SelectedIntentionOPEPlan{
-			EndpointKind: EvidenceEndpointQuality, TargetActionID: "summarize",
+			EndpointKind:       EvidenceEndpointQuality,
 			ActionSchemaSHA256: actionHash, RewardDefinitionSHA256: rewardHash,
 			TargetPolicySHA256: targetHash, BehaviorPolicySHA256: behaviorHash,
 			OutcomeModelSHA256: model.ArtifactSHA256, PredictionSHA256: predictionHash,
@@ -348,7 +367,8 @@ func validSelectedIntentionOPEInput(t *testing.T) SelectedIntentionOPEInput {
 					RequestID:    "22222222-2222-4222-8222-222222222222",
 					AssignmentID: "33333333-3333-4333-8333-333333333333",
 				},
-				IntendedActionID: "static", Reward: false, DeliveryKnown: false,
+				TargetActionID: "summarize", IntendedActionID: "static",
+				Reward: false, DeliveryKnown: false,
 				ActionProbabilities: slices.Clone(probabilities),
 			},
 			{
@@ -358,7 +378,8 @@ func validSelectedIntentionOPEInput(t *testing.T) SelectedIntentionOPEInput {
 					RequestID:    "55555555-5555-4555-8555-555555555555",
 					AssignmentID: "66666666-6666-4666-8666-666666666666",
 				},
-				IntendedActionID: "summarize", Reward: true, DeliveryKnown: true,
+				TargetActionID: "summarize", IntendedActionID: "summarize",
+				Reward: true, DeliveryKnown: true,
 				ActionProbabilities: slices.Clone(probabilities),
 			},
 		},

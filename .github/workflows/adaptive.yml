@@ -1,0 +1,68 @@
+name: Adaptive sealed evidence
+
+on:
+  push:
+    branches: [ "master", "main", "tabula-rasa" ]
+    paths:
+      - "internal/adaptive/**"
+      - "internal/db/**"
+      - "go.mod"
+      - "go.sum"
+      - "Makefile"
+      - "compose*.yaml"
+      - ".github/workflows/adaptive.yml"
+  pull_request:
+    branches: [ "master", "main", "tabula-rasa" ]
+    paths:
+      - "internal/adaptive/**"
+      - "internal/db/**"
+      - "go.mod"
+      - "go.sum"
+      - "Makefile"
+      - "compose*.yaml"
+      - ".github/workflows/adaptive.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: adaptive-evidence-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  adaptive-db-integration:
+    name: Adaptive DB integration (race)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: "true"
+      POSTGRES_USER: aura
+      POSTGRES_PASSWORD: ci-test-password
+      POSTGRES_DB: aura
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+      PGHOST: 127.0.0.1
+      PGPORT: "5432"
+      AURA_DB_URL: postgres://aura_app:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
+      AURA_DB_MIGRATE_URL: postgres://aura_migrate:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
+      NEO4J_PASSWORD: ci-test-password
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Start Postgres
+        run: make db-up
+
+      - name: Run adaptive db_integration suite with race
+        run: go test -tags=db_integration -race -count=1 -p 1 ./internal/adaptive/...
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

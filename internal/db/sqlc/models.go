@@ -14,6 +14,19 @@ type AuraAdaptiveAggregateSequences struct {
 	NextSequence int64       `json:"next_sequence"`
 }
 
+type AuraAdaptiveEvidenceArtifacts struct {
+	ID           pgtype.UUID        `json:"id"`
+	OwnerID      pgtype.UUID        `json:"owner_id"`
+	CohortID     pgtype.UUID        `json:"cohort_id"`
+	Kind         string             `json:"kind"`
+	SchemaID     string             `json:"schema_id"`
+	Revision     int32              `json:"revision"`
+	Sha256       []byte             `json:"sha256"`
+	Artifact     []byte             `json:"artifact"`
+	ArtifactJson []byte             `json:"artifact_json"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+}
+
 // Immutable owner-scoped focal assignment claims made before arm draw.
 type AuraAdaptiveFocalCohortClaims struct {
 	ID                              pgtype.UUID        `json:"id"`
@@ -123,16 +136,20 @@ type AuraAdaptivePolicyState struct {
 type AuraAdaptivePolicyTransitions struct {
 	ID pgtype.UUID `json:"id"`
 	// Immutable actor UUID snapshot; intentionally no FK so identity deletion cannot erase or block audit.
-	ActorID       pgtype.UUID        `json:"actor_id"`
-	FromEpoch     int64              `json:"from_epoch"`
-	ToEpoch       int64              `json:"to_epoch"`
-	FromMode      string             `json:"from_mode"`
-	ToMode        string             `json:"to_mode"`
-	PolicyVersion string             `json:"policy_version"`
-	RolloutBps    int32              `json:"rollout_bps"`
-	EvidenceID    pgtype.UUID        `json:"evidence_id"`
-	Reason        string             `json:"reason"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	ActorID               pgtype.UUID        `json:"actor_id"`
+	FromEpoch             int64              `json:"from_epoch"`
+	ToEpoch               int64              `json:"to_epoch"`
+	FromMode              string             `json:"from_mode"`
+	ToMode                string             `json:"to_mode"`
+	PolicyVersion         string             `json:"policy_version"`
+	RolloutBps            int32              `json:"rollout_bps"`
+	EvidenceID            pgtype.UUID        `json:"evidence_id"`
+	Reason                string             `json:"reason"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	EvidenceKind          pgtype.Text        `json:"evidence_kind"`
+	EvidenceHash          []byte             `json:"evidence_hash"`
+	TransitionBinding     []byte             `json:"transition_binding"`
+	TransitionBindingJson []byte             `json:"transition_binding_json"`
 }
 
 // Immutable calibrated closed-cohort report bound transactionally to a canary/active transition.
@@ -163,6 +180,34 @@ type AuraAdaptiveRandomizationReceipts struct {
 	Artifact                    []byte             `json:"artifact"`
 	ArtifactJson                []byte             `json:"artifact_json"`
 	CreatedAt                   pgtype.Timestamptz `json:"created_at"`
+}
+
+type AuraAdaptiveSealedEvidence struct {
+	ID                    pgtype.UUID        `json:"id"`
+	Kind                  string             `json:"kind"`
+	OwnerID               pgtype.UUID        `json:"owner_id"`
+	CohortID              pgtype.UUID        `json:"cohort_id"`
+	CohortSha256          []byte             `json:"cohort_sha256"`
+	Domain                string             `json:"domain"`
+	ProviderID            string             `json:"provider_id"`
+	ModelID               string             `json:"model_id"`
+	PolicyEpoch           int64              `json:"policy_epoch"`
+	PolicyVersion         string             `json:"policy_version"`
+	SnapshotID            pgtype.UUID        `json:"snapshot_id"`
+	SnapshotSha256        []byte             `json:"snapshot_sha256"`
+	LookNumber            pgtype.Int4        `json:"look_number"`
+	LookCutoff            pgtype.Timestamptz `json:"look_cutoff"`
+	PredecessorEvidenceID pgtype.UUID        `json:"predecessor_evidence_id"`
+	PredecessorSha256     []byte             `json:"predecessor_sha256"`
+	Disposition           pgtype.Text        `json:"disposition"`
+	Eligible              bool               `json:"eligible"`
+	BodySha256            []byte             `json:"body_sha256"`
+	Sha256                []byte             `json:"sha256"`
+	Artifact              []byte             `json:"artifact"`
+	ArtifactJson          []byte             `json:"artifact_json"`
+	SealerActorID         pgtype.UUID        `json:"sealer_actor_id"`
+	SealerCapability      string             `json:"sealer_capability"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
 }
 
 // Per-run audit ledger (Slice 6 / Phase 10). Audit-forever (no aura_app DELETE, PRD OQ4). completed_with_hash is the SC#2 idempotency key (UNIQUE; a duplicate completion swallows 23505).

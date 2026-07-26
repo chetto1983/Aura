@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -61,6 +63,50 @@ func (s *PolicyStore) CurrentPolicy(ctx context.Context) (Policy, error) {
 		return Policy{}, fmt.Errorf("read adaptive policy: %w", err)
 	}
 	return policyFromRow(row.Epoch, row.PolicyVersion, row.Mode, row.RolloutBps, row.Config, row.UpdatedAt.Time), nil
+}
+
+// ApplyEvidenceTransition advances policy only through sealed database evidence.
+func (s *PolicyStore) ApplyEvidenceTransition(
+	ctx context.Context,
+	actorID uuid.UUID,
+	expectedEpoch int64,
+	evidenceID uuid.UUID,
+	rolloutBPS int32,
+	reason string,
+) (Policy, error) {
+	if s == nil || s.pool == nil {
+		return Policy{}, errors.New("adaptive policy store requires a database pool")
+	}
+	if actorID == uuid.Nil || evidenceID == uuid.Nil || expectedEpoch < 0 ||
+		rolloutBPS < 0 || rolloutBPS > 10_000 || strings.TrimSpace(reason) == "" {
+		return Policy{}, errors.New("adaptive evidence transition is invalid")
+	}
+	var policy Policy
+	err := db.WithIdentityTx(
+		ctx, s.pool, actorID.String(),
+		func(queries *sqlc.Queries) error {
+			row, err := queries.ApplyAdaptivePolicyTransition(
+				ctx,
+				sqlc.ApplyAdaptivePolicyTransitionParams{
+					ActorID: dbUUID(actorID), ExpectedEpoch: expectedEpoch,
+					EvidenceID: dbUUID(evidenceID), RolloutBps: rolloutBPS,
+					Reason: reason,
+				},
+			)
+			if err != nil {
+				return err
+			}
+			policy = policyFromRow(
+				row.Epoch, row.PolicyVersion, row.Mode, row.RolloutBps,
+				row.Config, row.UpdatedAt.Time,
+			)
+			return nil
+		},
+	)
+	if err != nil {
+		return Policy{}, fmt.Errorf("apply adaptive evidence transition: %w", err)
+	}
+	return policy, nil
 }
 
 func policyFromRow(epoch int64, version, mode string, rolloutBPS int32, config []byte, updatedAt time.Time) Policy {

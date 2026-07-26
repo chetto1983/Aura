@@ -12,9 +12,11 @@ import (
 
 type Querier interface {
 	AdaptiveCohortReconstructionTime(ctx context.Context) (pgtype.Timestamptz, error)
+	AdaptiveEvidenceTransactionTime(ctx context.Context) (pgtype.Timestamptz, error)
 	AdaptiveIdentityTombstoned(ctx context.Context, ownerID pgtype.UUID) (bool, error)
 	AggregateCacheMetricsSince(ctx context.Context, since pgtype.Timestamptz) (AggregateCacheMetricsSinceRow, error)
 	AppendIngestionEvent(ctx context.Context, arg AppendIngestionEventParams) (AuraIngestionEvents, error)
+	ApplyAdaptivePolicyTransition(ctx context.Context, arg ApplyAdaptivePolicyTransitionParams) (ApplyAdaptivePolicyTransitionRow, error)
 	// Flip a pending_approval task to active (the cockpit approval, parity with the CLI
 	// `aura task approve`). Returns rows affected so the caller distinguishes a hit (1) from
 	// a task that is not awaiting approval (0).
@@ -86,11 +88,15 @@ type Querier interface {
 	FinalizeRetentionItem(ctx context.Context, arg FinalizeRetentionItemParams) (int64, error)
 	FinalizeRetentionOperation(ctx context.Context, arg FinalizeRetentionOperationParams) (AuraRetentionOperations, error)
 	GetActivePasswordResetChallenge(ctx context.Context, identityID pgtype.UUID) (AuraPasswordResetChallenges, error)
+	GetAdaptiveEvidenceArtifact(ctx context.Context, arg GetAdaptiveEvidenceArtifactParams) (AuraAdaptiveEvidenceArtifacts, error)
 	GetAdaptiveFocalCohort(ctx context.Context, arg GetAdaptiveFocalCohortParams) (AuraAdaptiveFocalCohorts, error)
 	GetAdaptiveFocalCohortForReconstruction(ctx context.Context, arg GetAdaptiveFocalCohortForReconstructionParams) (AuraAdaptiveFocalCohorts, error)
 	GetAdaptiveOutboxByID(ctx context.Context, id pgtype.UUID) (AuraAdaptiveOutbox, error)
 	GetAdaptivePolicy(ctx context.Context) (GetAdaptivePolicyRow, error)
 	GetAdaptivePolicySnapshot(ctx context.Context, arg GetAdaptivePolicySnapshotParams) (AuraAdaptivePolicySnapshots, error)
+	GetAdaptiveSealedAdmission(ctx context.Context, arg GetAdaptiveSealedAdmissionParams) (AuraAdaptiveSealedEvidence, error)
+	GetAdaptiveSealedEvidence(ctx context.Context, arg GetAdaptiveSealedEvidenceParams) (AuraAdaptiveSealedEvidence, error)
+	GetAdaptiveSealedOutcomeLook(ctx context.Context, arg GetAdaptiveSealedOutcomeLookParams) (AuraAdaptiveSealedEvidence, error)
 	GetAsset(ctx context.Context, id pgtype.UUID) (AuraAssets, error)
 	GetAssetForIdentity(ctx context.Context, arg GetAssetForIdentityParams) (AuraAssets, error)
 	GetConversation(ctx context.Context, id pgtype.UUID) (AuraConversations, error)
@@ -166,6 +172,7 @@ type Querier interface {
 	InsertToolInvocation(ctx context.Context, arg InsertToolInvocationParams) (int64, error)
 	ListActiveTasks(ctx context.Context) ([]AuraSchedulerTasks, error)
 	ListAdaptiveAggregate(ctx context.Context, arg ListAdaptiveAggregateParams) ([]AuraAdaptiveOutbox, error)
+	ListAdaptiveEvidenceArtifactsByKind(ctx context.Context, arg ListAdaptiveEvidenceArtifactsByKindParams) ([]AuraAdaptiveEvidenceArtifacts, error)
 	ListAdaptiveFocalCohortClaimConflicts(ctx context.Context, arg ListAdaptiveFocalCohortClaimConflictsParams) ([]AuraAdaptiveFocalCohortClaims, error)
 	ListAdaptiveFocalCohortClaimsForReconstruction(ctx context.Context, arg ListAdaptiveFocalCohortClaimsForReconstructionParams) ([]AuraAdaptiveFocalCohortClaims, error)
 	ListAdaptiveFocalCohortFactsForReconstruction(ctx context.Context, arg ListAdaptiveFocalCohortFactsForReconstructionParams) ([]AuraAdaptiveOutbox, error)
@@ -299,6 +306,7 @@ type Querier interface {
 	// affected so the caller distinguishes a hit from a non-active (pending/cancelled) task.
 	RunTaskNowRow(ctx context.Context, id pgtype.UUID) (int64, error)
 	ScanStaleRuns(ctx context.Context, secs float64) ([]ScanStaleRunsRow, error)
+	SealAdaptiveEvidence(ctx context.Context, arg SealAdaptiveEvidenceParams) (AuraAdaptiveSealedEvidence, error)
 	// LOCKED cross-slice contract (D-A5-03 / SPEC Req#13). Telegram /search (Phase 13)
 	// reuses this EXACT query; only the excerpt rendering differs per channel.
 	SearchConversationTurns(ctx context.Context, arg SearchConversationTurnsParams) ([]SearchConversationTurnsRow, error)
@@ -308,6 +316,7 @@ type Querier interface {
 	SetTurnBranchPointers(ctx context.Context, arg SetTurnBranchPointersParams) error
 	SoftDeleteAsset(ctx context.Context, arg SoftDeleteAssetParams) (AuraAssets, error)
 	SoftDeleteDocument(ctx context.Context, arg SoftDeleteDocumentParams) (AuraDocuments, error)
+	StoreAdaptiveEvidenceArtifact(ctx context.Context, arg StoreAdaptiveEvidenceArtifactParams) (AuraAdaptiveEvidenceArtifacts, error)
 	SweepDueNotifications(ctx context.Context, arg SweepDueNotificationsParams) ([]AuraPendingNotifications, error)
 	TouchTelegramLastSeen(ctx context.Context, telegramUserID int64) error
 	TryStartOperation(ctx context.Context, arg TryStartOperationParams) (int64, error)

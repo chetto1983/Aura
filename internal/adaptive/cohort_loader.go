@@ -28,15 +28,16 @@ const (
 
 // CohortLedger is the deterministic reconstruction of a focal cohort.
 type CohortLedger struct {
-	CohortID          uuid.UUID
-	CohortSHA256      string
-	State             CohortLedgerState
-	Members           []CohortMember
-	IncludedFacts     []IncludedFactRef
-	LateFactCount     int
-	CensorDiagnostics CohortCensorDiagnostics
-	SHA256            string
-	Sealable          bool
+	CohortID            uuid.UUID
+	CohortSHA256        string
+	State               CohortLedgerState
+	Members             []CohortMember
+	IncludedFacts       []IncludedFactRef
+	LateFactCount       int
+	CensorDiagnostics   CohortCensorDiagnostics
+	SHA256              string
+	Sealable            bool
+	PoisonedMemberCount int
 }
 
 // CohortMember is one claim and its effective evidence in a cohort ledger.

@@ -2,10 +2,86 @@ package adaptive
 
 import (
 	"bytes"
+	"context"
 	"math"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
+
+func TestBuildGateReportsBindsDistinctExactEndpointsAndCensoring(t *testing.T) {
+	t.Parallel()
+
+	cohort, _ := randomizedFocalCohortUnitFixture(t)
+	cohort.spec.Power.MinimumMembers = 2
+	qualityZero, qualityOne, harmZero := 0.0, 1.0, 0.0
+	stratumID := testEvidenceHash("a")
+	clusterA, clusterB := testEvidenceHash("b"), testEvidenceHash("c")
+	member := func(
+		requestID, assignmentID uuid.UUID,
+		armID string,
+		quality *float64,
+		clusterID string,
+	) CohortMember {
+		return CohortMember{
+			Claim: FocalClaim{
+				ID:      uuid.NewSHA1(uuid.NameSpaceOID, requestID[:]),
+				OwnerID: cohort.Scope().OwnerID, CohortID: cohort.ID(),
+				RequestID: requestID, AssignmentID: assignmentID,
+				AnalysisStratumSchemaSHA256:     cohort.v2.randomizationPlan.AnalysisStratumSchemaSHA256,
+				AnalysisStratumID:               stratumID,
+				InterferenceClusterSchemaSHA256: testEvidenceHash("d"),
+				InterferenceClusterID:           clusterID,
+			},
+			Assignment: Assignment{
+				AssignmentID: assignmentID, ArmID: armID,
+				IntendedActionID: StaticActionID,
+			},
+			Quality: &CohortEffectiveObservation{
+				Status: OutcomeObserved, Measures: OutcomeMeasures{Quality: quality},
+			},
+			Harm: &CohortEffectiveObservation{
+				Status: OutcomeObserved, Measures: OutcomeMeasures{Harm: &harmZero},
+			},
+			ITTEligible: true,
+		}
+	}
+	requestA := uuid.MustParse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+	requestB := uuid.MustParse("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
+	ledger := CohortLedger{
+		CohortID: cohort.ID(), CohortSHA256: cohort.SHA256(),
+		State: CohortLedgerClosed, SHA256: testEvidenceHash("e"), Sealable: true,
+		Members: []CohortMember{
+			member(requestA, uuid.MustParse("11111111-1111-4111-8111-111111111111"), "baseline", &qualityZero, clusterA),
+			member(requestB, uuid.MustParse("22222222-2222-4222-8222-222222222222"), "challenger", &qualityOne, clusterB),
+		},
+		CensorDiagnostics: CohortCensorDiagnostics{
+			Members: 2,
+			ArmDiagnostics: []CohortArmCensorDiagnostics{
+				{ArmID: "baseline", Members: 1},
+				{ArmID: "challenger", Members: 1},
+			},
+		},
+	}
+	look := EvidenceLook{
+		Number: 1, Cutoff: cohort.Cutoff().Add(-time.Minute),
+		Alpha:           MustExactRational(1, 200),
+		CumulativeAlpha: MustExactRational(1, 200),
+		PredecessorRule: "none",
+	}
+	reports, err := buildGateReports(context.Background(), cohort, look, ledger)
+	if err != nil {
+		t.Fatalf("buildGateReports: %v", err)
+	}
+	if !reports.Quality.Computed || reports.Quality.ATELower == nil ||
+		!reports.Harm.Computed || reports.Harm.ATEUpper == nil ||
+		reports.Quality.ReportID == reports.Harm.ReportID ||
+		reports.QualitySHA256 == reports.HarmSHA256 ||
+		!reports.Censor.Passes {
+		t.Fatalf("gate reports = %#v", reports)
+	}
+}
 
 func TestEndpointOPEReports_BindDistinctQualityAndHarmArtifacts(t *testing.T) {
 	quality := validEndpointOPEReport(EvidenceEndpointQuality)
