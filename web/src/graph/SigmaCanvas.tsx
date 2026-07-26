@@ -1,5 +1,5 @@
 import { Component, useEffect, type ErrorInfo, type ReactNode } from 'react';
-import Graph from 'graphology';
+import { MultiDirectedGraph } from 'graphology';
 import { SigmaContainer, useLoadGraph, useRegisterEvents, useSigma } from '@react-sigma/core';
 import '@react-sigma/core/lib/style.css';
 import forceAtlas2 from 'graphology-layout-forceatlas2';
@@ -50,7 +50,7 @@ function GraphLoader({ nodes, edges, reducedMotion }: LoaderProps) {
   useEffect(() => {
     const dataKey = layoutDataKey(nodes, edges);
     const needsLayout = dataKey !== lastLayoutKey;
-    const graph = new Graph({ multi: true });
+    const graph = new MultiDirectedGraph();
     const renderAmbientLabels = shouldRenderAmbientLabels(nodes.length, edges.length);
 
     for (const node of nodes) {
@@ -280,6 +280,14 @@ export function SigmaCanvas({ nodes, edges, pinnedPath, sigmaKey, onNodeClick }:
       >
         <SigmaContainer
           key={sigmaKey}
+          // Sigma owns the graph useLoadGraph imports INTO, and it defaults to a
+          // simple (non-multi) Graph. Two nodes in this domain are routinely joined by
+          // more than one relationship — a Conversation is both HAS_MESSAGE and
+          // FIRST_MESSAGE to its opening Message — and importing that pair threw
+          // "an edge linking X to Y already exists", crashing the canvas. The class must
+          // match the multi graph GraphLoader builds; deduplicating the edges instead
+          // would silently drop a real relationship from the evidence view.
+          graph={MultiDirectedGraph}
           style={{ height: '100%', width: '100%', background: 'transparent' }}
           settings={{
             // Edge labels off-by-default: relationship types live in the inspector + evidence

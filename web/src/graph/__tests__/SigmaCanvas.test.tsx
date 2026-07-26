@@ -31,10 +31,17 @@ const sigmaShim = {
   setCustomBBox,
 };
 
+// The graph CLASS handed to SigmaContainer is captured, not discarded: sigma builds its own
+// graph from it and useLoadGraph imports into THAT one, which is where a parallel-edge crash
+// actually happens. A mock that swallows the prop is why the previous parallel-edge test
+// passed against a renderer that threw in production.
+const sigmaContainerProps: { graph?: new () => { import: (data: unknown) => unknown } }[] = [];
+
 vi.mock('@react-sigma/core', () => ({
-  SigmaContainer: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="sigma-container">{children}</div>
-  ),
+  SigmaContainer: ({ children, ...props }: { children: React.ReactNode }) => {
+    sigmaContainerProps.push(props);
+    return <div data-testid="sigma-container">{children}</div>;
+  },
   useLoadGraph: () => loadGraph,
   useRegisterEvents: () => registerEvents,
   useSigma: () => sigmaShim,
@@ -133,9 +140,23 @@ describe('SigmaCanvas (renderer mocked — no WebGL in jsdom)', () => {
       />,
     );
 
-    const graph = loadGraph.mock.calls[0]?.[0] as { order: number; size: number };
+    const graph = loadGraph.mock.calls[0]?.[0] as {
+      order: number;
+      size: number;
+      export: () => unknown;
+    };
     expect(graph.order).toBe(2);
     expect(graph.size).toBe(2);
+
+    // The load-bearing half: replay the import sigma performs internally. A Conversation is
+    // joined to its opening Message by both HAS_MESSAGE and FIRST_MESSAGE, so real cockpit
+    // data carries parallel edges; against sigma's default simple Graph this threw
+    // "an edge linking X to Y already exists" and took the whole canvas down.
+    const SigmaGraphClass = sigmaContainerProps.at(-1)?.graph;
+    if (SigmaGraphClass === undefined) {
+      throw new Error('SigmaContainer received no graph class — sigma would build a simple Graph');
+    }
+    expect(() => new SigmaGraphClass().import(graph.export())).not.toThrow();
   });
 
   it('uses compact canvas labels for technical captions while preserving human labels', () => {
