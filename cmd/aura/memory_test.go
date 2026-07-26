@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/mcp"
 )
 
@@ -228,4 +229,39 @@ func TestMemoryNotConfigured(t *testing.T) {
 	if !strings.Contains(err.Error(), "not configured") {
 		t.Fatalf("error = %v, want a not-configured message", err)
 	}
+}
+
+// TestScopeMemoryArgs pins the fail-open guard on the CLI memory path. The memory server
+// treats a missing user_identifier as "no scope", so an unstamped call wrote a
+// :Conversation with a NULL owner and zero HAS_CONVERSATION edges — data owned by nobody
+// and invisible to every scoped read meant to return it, with anything extracted from it
+// landing in the "global" deduplication scope where it can never merge with the
+// owner-scoped entities the agent records.
+func TestScopeMemoryArgs(t *testing.T) {
+	t.Run("stamps the operator fallback when the context carries no identity", func(t *testing.T) {
+		got := scopeMemoryArgs(context.Background(), map[string]any{"session_id": "s1"})
+		if got["user_identifier"] != identityctx.LocalOperatorIdentity {
+			t.Fatalf("user_identifier = %v, want the operator fallback %q",
+				got["user_identifier"], identityctx.LocalOperatorIdentity)
+		}
+		if got["session_id"] != "s1" {
+			t.Fatalf("existing args must survive: %#v", got)
+		}
+	})
+
+	t.Run("prefers the authenticated identity on the context", func(t *testing.T) {
+		ctx := identityctx.WithIdentityID(context.Background(), "identity-1")
+		got := scopeMemoryArgs(ctx, nil)
+		if got["user_identifier"] != "identity-1" {
+			t.Fatalf("user_identifier = %v, want identity-1", got["user_identifier"])
+		}
+	})
+
+	t.Run("never silently rescopes an explicit user_identifier", func(t *testing.T) {
+		ctx := identityctx.WithIdentityID(context.Background(), "identity-1")
+		got := scopeMemoryArgs(ctx, map[string]any{"user_identifier": "someone-else"})
+		if got["user_identifier"] != "someone-else" {
+			t.Fatalf("explicit scope was overwritten: %v", got["user_identifier"])
+		}
+	})
 }

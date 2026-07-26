@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/mcp"
 )
 
@@ -200,7 +201,33 @@ func callMemoryToolText(ctx context.Context, tool string, args map[string]any) (
 		return "", err
 	}
 	defer func() { _ = cli.Close() }()
-	return cli.CallTool(callCtx, tool, args)
+	return cli.CallTool(callCtx, tool, scopeMemoryArgs(callCtx, args))
+}
+
+// scopeMemoryArgs stamps the caller's identity on every memory call, the same fail-open
+// guard memory_onboarding.go applies and internal/agent/mcptools/bridge.go applies for the
+// agent. This path had neither: the memory server treats a missing user_identifier as "no
+// scope", so `aura memory store-message` wrote a :Conversation with a NULL owner and zero
+// HAS_CONVERSATION edges — data owned by nobody, invisible to every scoped read that is
+// supposed to return it. Worse, entities extracted from such a message fall into the
+// "global" deduplication scope and can never merge with the owner-scoped ones the agent
+// records, forking the same person into two nodes.
+//
+// A caller-supplied user_identifier is left alone: the verbs that take one explicitly
+// (an operator inspecting another identity) must not be silently rescoped.
+func scopeMemoryArgs(ctx context.Context, args map[string]any) map[string]any {
+	if args == nil {
+		args = map[string]any{}
+	}
+	if existing, ok := args["user_identifier"].(string); ok && existing != "" {
+		return args
+	}
+	identityID := identityctx.IdentityID(ctx)
+	if identityID == "" {
+		identityID = identityctx.LocalOperatorIdentity
+	}
+	args["user_identifier"] = identityID
+	return args
 }
 
 func arg(args []string, i int, verb, placeholder string) (string, error) {
