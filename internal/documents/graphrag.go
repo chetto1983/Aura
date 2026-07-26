@@ -46,36 +46,15 @@ type StageTimings struct {
 // It is message-prefix-safe: it reads and writes only chunk rows, never the cached
 // system/conversation prefix.
 func (s *Service) GraphRAG(ctx context.Context, req SearchRequest) (GraphRAGResult, error) {
-	var stages StageTimings
-
-	t0 := s.nowMono()
-	seeds, err := s.seedHits(ctx, req)
-	t1 := s.nowMono()
-	stages.VectorMS = t1.Sub(t0).Milliseconds()
-	if err != nil {
-		return GraphRAGResult{Stages: stages}, err
-	}
-	if len(seeds) == 0 {
-		return GraphRAGResult{Stages: stages}, nil
-	}
-
-	ranked := seeds
-	if scored, ok := s.rerankScores(ctx, req.Query, seeds); ok {
-		ranked = applyRerankGuard(seeds, scored, s.RerankThreshold, s.RerankBlend)
-	}
-	t2 := s.nowMono()
-	stages.RerankMS = t2.Sub(t1).Milliseconds()
-	winners := topHits(ranked, effectiveLimit(req.Limit))
-
-	graphQuery := graphExpandQuery
-	if s.MUSRIsolation {
-		graphQuery = graphExpandQueryScoped
-	}
-	neighbours := s.expandNeighbors(ctx, graphQuery, req.IdentityID, winners)
-	t3 := s.nowMono()
-	stages.ExpandMS = t3.Sub(t2).Milliseconds()
-
-	return GraphRAGResult{Hits: winners, Context: neighbours, Stages: stages}, nil
+	plan := s.staticRetrievalPlan(req)
+	plan.ID = RetrievalPlanVectorRerankExpand
+	plan.Revision = "static-graphrag-v1"
+	plan.Seed = string(retrievalSeedVector)
+	plan.Expand = s.Knowledge != nil
+	result, err := s.executeRetrievalPlan(ctx, plan, req)
+	return GraphRAGResult{
+		Hits: result.Hits, Context: result.Context, Stages: result.Stages,
+	}, err
 }
 
 // nowMono returns the monotonic clock GraphRAG times stages with: time.Now in

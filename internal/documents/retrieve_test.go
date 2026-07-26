@@ -307,6 +307,11 @@ func TestRetrieveExpansionAppendsNeighborContext(t *testing.T) {
 	if got := chunkIDs(hits); got != "chunk-0,chunk-1,chunk-9" {
 		t.Fatalf("hits = %s, want winners then unique neighbour", got)
 	}
+	for _, call := range knowledge.reads {
+		if strings.Contains(call.query, "HAS_CHUNK") {
+			t.Fatal("legacy Retrieve expanded through the GraphRAG route")
+		}
+	}
 }
 
 // TestRetrieveNoRerankerMatchesSearch: with no reranker configured Retrieve is exactly
@@ -464,9 +469,11 @@ func (f *fakeRetrieveKnowledge) expandWinnerIDs() ([]string, bool) {
 type fakeQueryEmbedder struct {
 	vector []float64
 	err    error
+	calls  int
 }
 
 func (f *fakeQueryEmbedder) Embed(_ context.Context, texts []string) ([][]float64, error) {
+	f.calls++
 	if f.err != nil {
 		return nil, f.err
 	}

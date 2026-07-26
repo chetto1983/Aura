@@ -113,6 +113,7 @@ type ResultKind string
 const (
 	ResultArtifact             ResultKind = "artifact"
 	ResultNode                 ResultKind = "node"
+	ResultChunk                ResultKind = "chunk"
 	ResultTool                 ResultKind = "tool"
 	ResultSkill                ResultKind = "skill"
 	ResultMemoryEntity         ResultKind = "memory_entity"

@@ -292,7 +292,8 @@ func (q runtimeEmbeddingQueue) clock() time.Time {
 }
 
 type docsToolSearcher struct {
-	cfg *config.Config
+	cfg                *config.Config
+	retrievalRevisions *documents.RetrievalRevisions
 }
 
 // Retrieve runs the two-stage retrieval pipeline for the document_search tool. It
@@ -301,14 +302,54 @@ type docsToolSearcher struct {
 // winners. Every stage is fail-soft: a down embed/rerank sidecar degrades to the
 // RRF/vector seed order, so retrieval never blocks on optional infrastructure.
 func (s docsToolSearcher) Retrieve(ctx context.Context, req documents.SearchRequest) ([]documents.SearchHit, error) {
-	if s.cfg == nil {
-		return nil, fmt.Errorf("document search config is nil")
-	}
-	mcp, err := knowledge.Open(ctx, &s.cfg.Neo4j)
+	service, closeFn, err := s.openRetrievalService(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = mcp.Close() }()
+	defer closeFn()
+	return service.Retrieve(ctx, req)
+}
+
+func (s docsToolSearcher) FreezeRetrievalPlans(
+	req documents.SearchRequest,
+) (documents.FrozenRetrievalPlans, error) {
+	if s.cfg == nil {
+		return documents.FrozenRetrievalPlans{},
+			fmt.Errorf("document search config is nil")
+	}
+	health := configuredRetrievalHealth(s.cfg)
+	service := &documents.Service{
+		RetrievalRevisions: s.frozenRetrievalRevisions(),
+		RetrievalHealth:    &health,
+		MUSRIsolation:      s.cfg.MUSRIsolation,
+	}
+	return service.FreezeRetrievalPlans(req)
+}
+
+func (s docsToolSearcher) ExecuteRetrievalPlan(
+	ctx context.Context,
+	frozen documents.FrozenRetrievalPlans,
+	planID string,
+	req documents.SearchRequest,
+) (documents.RetrievalResult, error) {
+	service, closeFn, err := s.openRetrievalService(ctx)
+	if err != nil {
+		return documents.RetrievalResult{}, err
+	}
+	defer closeFn()
+	return service.ExecuteRetrievalPlan(ctx, frozen, planID, req)
+}
+
+func (s docsToolSearcher) openRetrievalService(
+	ctx context.Context,
+) (*documents.Service, func(), error) {
+	if s.cfg == nil {
+		return nil, nil, fmt.Errorf("document search config is nil")
+	}
+	mcp, err := knowledge.Open(ctx, &s.cfg.Neo4j)
+	if err != nil {
+		return nil, nil, err
+	}
 	// One-knob local↔cloud rerank swap (D-28): AURA_RERANK_MODEL set → shared
 	// OpenRouter endpoint + the single OPENROUTER_API_KEY; unset → local sidecar.
 	rerankBase, rerankKey, rerankModel := s.cfg.RerankRoute()
@@ -325,9 +366,37 @@ func (s docsToolSearcher) Retrieve(ctx context.Context, req documents.SearchRequ
 		// identity; off (default) ⇒ the pre-existing unscoped path. Both the Service and
 		// its Searcher carry the flag so dense, sparse-fallback, and expand seeds scope
 		// together. The document_search tool supplies req.IdentityID from identityctx.
-		MUSRIsolation: s.cfg.MUSRIsolation,
+		MUSRIsolation:      s.cfg.MUSRIsolation,
+		RetrievalRevisions: s.frozenRetrievalRevisions(),
 	}
-	return svc.Retrieve(ctx, req)
+	return svc, func() { _ = mcp.Close() }, nil
+}
+
+func (s docsToolSearcher) frozenRetrievalRevisions() documents.RetrievalRevisions {
+	if s.retrievalRevisions != nil {
+		return *s.retrievalRevisions
+	}
+	return documents.RetrievalRevisions{
+		Parser: "documents-parser-v1", Chunker: "documents-chunker-v1",
+		Embedding: "qwen3-embedding-v1", Index: "neo4j-chunk-index-v1",
+		Reranker: "aura-rerank-v1", Retriever: "aura-retrieval-plan-v1",
+	}
+}
+
+func configuredRetrievalHealth(
+	cfg *config.Config,
+) documents.RetrievalDependencyHealth {
+	if cfg == nil {
+		return documents.RetrievalDependencyHealth{}
+	}
+	rerankBase, _, _ := cfg.RerankRoute()
+	return documents.RetrievalDependencyHealth{
+		Sparse: cfg.Neo4j.BoltURL != "",
+		Vector: cfg.Neo4j.BoltURL != "" && cfg.Neo4j.EmbedURL != "",
+		Reranker: cfg.Neo4j.BoltURL != "" && cfg.Neo4j.EmbedURL != "" &&
+			rerankBase != "",
+		Expand: cfg.Neo4j.BoltURL != "",
+	}
 }
 
 func documentsBaseURL(cfg *config.Config) string {

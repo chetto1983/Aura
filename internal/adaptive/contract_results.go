@@ -12,8 +12,8 @@ import (
 // ResultID is a validated reference to something a delivery produced. Both fields are
 // unexported and every constructor validates, so a ResultID cannot be assembled by struct
 // literal — a delivery can only ever cite results that passed the checks for their kind.
-// UUID-shaped kinds validate structurally; tool and skill IDs must additionally appear in a
-// frozen ResultCatalog, which is why those two take one and the others do not.
+// UUID-shaped kinds validate structurally; chunk, tool, and skill IDs must additionally
+// appear in a frozen ResultCatalog.
 type ResultID struct {
 	kind ResultKind
 	id   string
@@ -27,7 +27,7 @@ type ResultCatalog struct {
 func newResultCatalog(entries map[ResultKind][]string) (ResultCatalog, error) {
 	registered := make(map[ResultKind]map[string]struct{}, len(entries))
 	for kind, ids := range entries {
-		if kind != ResultTool && kind != ResultSkill {
+		if kind != ResultTool && kind != ResultSkill && kind != ResultChunk {
 			return ResultCatalog{}, fmt.Errorf("adaptive result catalog kind %q is invalid", kind)
 		}
 		kindEntries := make(map[string]struct{}, len(ids))
@@ -53,6 +53,11 @@ func NewArtifactResultID(id string) (ResultID, error) {
 // NewNodeResultID references a knowledge-graph node by UUID.
 func NewNodeResultID(id string) (ResultID, error) {
 	return newUUIDResultID(ResultNode, id)
+}
+
+// NewChunkResultID references a stable indexed chunk from a frozen catalog.
+func NewChunkResultID(id string, catalog ResultCatalog) (ResultID, error) {
+	return newCatalogResultID(ResultChunk, id, catalog)
 }
 
 // NewMemoryEntityResultID references a memory entity by UUID.
@@ -113,7 +118,7 @@ func (result ResultID) MarshalJSON() ([]byte, error) {
 	})
 }
 
-// UnmarshalJSON decodes the UUID-shaped kinds and REFUSES tool and skill IDs: verifying
+// UnmarshalJSON decodes the UUID-shaped kinds and REFUSES catalog IDs: verifying
 // those needs the frozen catalog, which decoding does not have, and accepting them
 // unverified would let a payload name any tool it liked.
 func (result *ResultID) UnmarshalJSON(payload []byte) error {
@@ -135,7 +140,7 @@ func (result *ResultID) UnmarshalJSON(payload []byte) error {
 		}
 		*result = decoded
 		return nil
-	case ResultTool, ResultSkill:
+	case ResultTool, ResultSkill, ResultChunk:
 		return errors.New("adaptive catalog result IDs require a frozen catalog")
 	default:
 		return fmt.Errorf("adaptive result kind %q is invalid", encoded.Kind)
@@ -166,7 +171,7 @@ func validateResultID(result ResultID) error {
 		ResultMemoryMessage, ResultMemoryReasoningTrace:
 		_, err := newUUIDResultID(result.kind, result.id)
 		return err
-	case ResultTool, ResultSkill:
+	case ResultTool, ResultSkill, ResultChunk:
 		if !validSafeSlug(result.id, maxResultIDLength) {
 			return fmt.Errorf("adaptive %s result ID %q is invalid", result.kind, result.id)
 		}

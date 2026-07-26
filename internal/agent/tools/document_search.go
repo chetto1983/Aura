@@ -17,8 +17,51 @@ type DocumentSearchBackend interface {
 	Retrieve(ctx context.Context, req documents.SearchRequest) ([]documents.SearchHit, error)
 }
 
+type versionedDocumentSearchBackend interface {
+	FreezeRetrievalPlans(
+		documents.SearchRequest,
+	) (documents.FrozenRetrievalPlans, error)
+	ExecuteRetrievalPlan(
+		context.Context,
+		documents.FrozenRetrievalPlans,
+		string,
+		documents.SearchRequest,
+	) (documents.RetrievalResult, error)
+}
+
+// DocumentRetrievalInput is the query-free projection presented to adaptive
+// control. The user's query and document scope remain exogenous execution input.
+type DocumentRetrievalInput struct {
+	OwnerID         string
+	RequestID       string
+	PointOrdinal    uint32
+	QueryLength     int
+	DocumentID      string
+	MaxResults      int
+	PlanIDs         []string
+	CatalogRevision string
+	Frozen          documents.FrozenRetrievalPlans
+}
+
+type DocumentRetrievalExecutor func(
+	context.Context,
+	string,
+) (documents.RetrievalResult, error)
+
+// DocumentRetrievalControl persists assignment and delivery around one frozen
+// plan execution.
+type DocumentRetrievalControl interface {
+	RetrieveDocuments(
+		context.Context,
+		DocumentRetrievalInput,
+		DocumentRetrievalExecutor,
+		DocumentRetrievalExecutor,
+	) (documents.RetrievalResult, error)
+}
+
 type DocumentSearch struct {
 	Searcher DocumentSearchBackend
+	Adaptive DocumentRetrievalControl
 }
 
 type documentSearchArgs struct {
@@ -79,7 +122,7 @@ func (t *DocumentSearch) Execute(ctx context.Context, raw json.RawMessage) (Tool
 	if args.Limit > 20 {
 		args.Limit = 20
 	}
-	hits, err := t.Searcher.Retrieve(ctx, documents.SearchRequest{
+	req := documents.SearchRequest{
 		Query:      args.Query,
 		DocumentID: strings.TrimSpace(args.DocumentID),
 		Limit:      args.Limit,
@@ -91,7 +134,8 @@ func (t *DocumentSearch) Execute(ctx context.Context, raw json.RawMessage) (Tool
 		// stays scoped to itself. When the flag is off, this id is ignored and the
 		// pre-existing unscoped path runs (D-13).
 		IdentityID: ownerFromContext(ctx),
-	})
+	}
+	hits, err := t.retrieve(ctx, req)
 	if err != nil {
 		return ToolResult{}, err
 	}
@@ -105,4 +149,70 @@ func (t *DocumentSearch) Execute(ctx context.Context, raw json.RawMessage) (Tool
 	}
 	result.Provenance = &ToolResultProvenance{Source: "document_search", Trust: TrustUntrusted}
 	return result, nil
+}
+
+func (t *DocumentSearch) retrieve(
+	ctx context.Context,
+	req documents.SearchRequest,
+) ([]documents.SearchHit, error) {
+	backend, ok := t.Searcher.(versionedDocumentSearchBackend)
+	if t.Adaptive == nil || !ok {
+		return t.Searcher.Retrieve(ctx, req)
+	}
+	frozen, err := backend.FreezeRetrievalPlans(req)
+	if err != nil {
+		return t.Searcher.Retrieve(ctx, req)
+	}
+	results := make(map[string]documents.RetrievalResult)
+	execute := func(
+		ctx context.Context,
+		planID string,
+	) (documents.RetrievalResult, error) {
+		if result, exists := results[planID]; exists {
+			return result, nil
+		}
+		result, err := backend.ExecuteRetrievalPlan(ctx, frozen, planID, req)
+		if err == nil {
+			results[planID] = result
+		}
+		return result, err
+	}
+	static := func(
+		ctx context.Context,
+		_ string,
+	) (documents.RetrievalResult, error) {
+		return execute(ctx, documents.RetrievalPlanStatic)
+	}
+	result, err := t.Adaptive.RetrieveDocuments(
+		ctx,
+		DocumentRetrievalInput{
+			OwnerID: req.IdentityID, RequestID: RequestIDFromContext(ctx),
+			PointOrdinal: adaptivePointOrdinal(ctx), QueryLength: len(req.Query),
+			DocumentID: req.DocumentID, MaxResults: effectiveDocumentLimit(req.Limit),
+			PlanIDs: frozen.PlanIDs(), CatalogRevision: frozen.CatalogRevision(),
+			Frozen: frozen,
+		},
+		execute,
+		static,
+	)
+	if err != nil || frozen.ValidateResult(result, req) != nil {
+		result, err = static(ctx, documents.RetrievalPlanStatic)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := frozen.ValidateResult(result, req); err != nil {
+		return nil, err
+	}
+	return result.Flatten(), nil
+}
+
+func effectiveDocumentLimit(limit int) int {
+	if limit <= 0 {
+		return 8
+	}
+	if limit > 20 {
+		return 20
+	}
+	return limit
 }

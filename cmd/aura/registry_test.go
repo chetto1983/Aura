@@ -107,6 +107,42 @@ func TestNewSkillToolWiresAdaptiveRoutingOnlyWithLivePool(t *testing.T) {
 	}
 }
 
+func TestBuildBaseRegistryWiresDocumentRetrievalOnlyWithLivePool(t *testing.T) {
+	cfg := &config.Config{
+		LLM: llm.Config{
+			Provider: "openrouter",
+			Model:    "production-model",
+		},
+		WorkspaceDir: t.TempDir(),
+	}
+	assertAdaptive := func(t *testing.T, registry *tools.Registry, want bool) {
+		t.Helper()
+		registered, ok := registry.Get((&tools.DocumentSearch{}).Spec().Name)
+		if !ok {
+			t.Fatal("document_search is not registered")
+		}
+		search, ok := registered.(*tools.DocumentSearch)
+		if !ok {
+			t.Fatalf("document_search type = %T", registered)
+		}
+		if (search.Adaptive != nil) != want {
+			t.Fatalf(
+				"adaptive document retrieval wired = %t, want %t",
+				search.Adaptive != nil, want,
+			)
+		}
+	}
+	assertAdaptive(t, buildBaseRegistry(cfg, nil), false)
+	assertAdaptive(
+		t,
+		buildBaseRegistry(
+			cfg,
+			newCronTaskStore(new(pgxpool.Pool), nil),
+		),
+		true,
+	)
+}
+
 // TestBuildRegistry_PassesValidate guards D-10 at the production composition root:
 // buildBaseRegistry runs reg.Validate() before returning, so a regression that
 // deferred every capability tool would surface as a boot os.Exit(1). buildRegistry()

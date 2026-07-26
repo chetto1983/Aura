@@ -2,6 +2,7 @@ package documents
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/chetto1983/aura/internal/rerank"
@@ -34,20 +35,188 @@ type Reranker interface {
 // Search (today's fulltext order); when the query cannot be embedded it seeds from
 // fulltext; when the reranker is absent/identity the seed (RRF/vector) order is kept.
 func (s *Service) Retrieve(ctx context.Context, req SearchRequest) ([]SearchHit, error) {
-	if s.Reranker == nil {
-		// No reranker configured: preserve today's exact sparse-search behaviour.
-		return s.Search(ctx, req)
-	}
-	seeds, err := s.seedHits(ctx, req)
+	result, err := s.executeRetrievalPlan(ctx, s.staticRetrievalPlan(req), req)
 	if err != nil {
 		return nil, err
 	}
+	return result.Flatten(), nil
+}
+
+// RetrievalResult keeps exposed winners and expansion context separate while
+// sharing one executor between Retrieve and GraphRAG.
+type RetrievalResult struct {
+	Hits           []SearchHit
+	Context        []SearchHit
+	Stages         StageTimings
+	PlanID         string
+	EffectiveLimit int
+}
+
+// Flatten returns winners followed by expansion context.
+func (result RetrievalResult) Flatten() []SearchHit {
+	out := make([]SearchHit, 0, len(result.Hits)+len(result.Context))
+	out = append(out, result.Hits...)
+	out = append(out, result.Context...)
+	return out
+}
+
+// ExecuteRetrievalPlan validates the frozen catalog and runs exactly one plan.
+func (s *Service) ExecuteRetrievalPlan(
+	ctx context.Context,
+	frozen FrozenRetrievalPlans,
+	planID string,
+	req SearchRequest,
+) (RetrievalResult, error) {
+	if err := frozen.ValidateRequest(req); err != nil {
+		return RetrievalResult{}, err
+	}
+	plan, ok := frozen.Plan(planID)
+	if !ok {
+		return RetrievalResult{}, fmt.Errorf(
+			"documents: retrieval plan %q is not frozen", planID,
+		)
+	}
+	return s.executeRetrievalPlan(ctx, plan, req)
+}
+
+func (s *Service) executeRetrievalPlan(
+	ctx context.Context,
+	plan RetrievalPlan,
+	req SearchRequest,
+) (RetrievalResult, error) {
+	var stages StageTimings
+	start := s.nowMono()
+	seeds, err := s.executeRetrievalSeed(ctx, plan, req)
+	seeded := s.nowMono()
+	stages.VectorMS = seeded.Sub(start).Milliseconds()
+	if err != nil {
+		return RetrievalResult{Stages: stages, PlanID: plan.ID}, err
+	}
 	if len(seeds) == 0 {
+		return RetrievalResult{
+			Hits: seeds, Stages: stages, PlanID: plan.ID,
+			EffectiveLimit: effectiveLimit(req.Limit),
+		}, nil
+	}
+	ranked, err := s.executeRetrievalRerank(ctx, plan, req.Query, seeds)
+	reranked := s.nowMono()
+	stages.RerankMS = reranked.Sub(seeded).Milliseconds()
+	if err != nil {
+		return RetrievalResult{Stages: stages, PlanID: plan.ID}, err
+	}
+	winners := topHits(ranked, effectiveLimit(req.Limit))
+	contextHits, err := s.executeRetrievalExpand(ctx, plan, req, winners)
+	expanded := s.nowMono()
+	stages.ExpandMS = expanded.Sub(reranked).Milliseconds()
+	if err != nil {
+		return RetrievalResult{Stages: stages, PlanID: plan.ID}, err
+	}
+	return RetrievalResult{
+		Hits: winners, Context: contextHits, Stages: stages, PlanID: plan.ID,
+		EffectiveLimit: effectiveLimit(req.Limit),
+	}, nil
+}
+
+func (s *Service) executeRetrievalSeed(
+	ctx context.Context,
+	plan RetrievalPlan,
+	req SearchRequest,
+) ([]SearchHit, error) {
+	if plan.FailSoft {
+		switch retrievalSeed(plan.Seed) {
+		case retrievalSeedSparse:
+			return s.Search(ctx, req)
+		case retrievalSeedVector:
+			return s.seedHits(ctx, req)
+		default:
+			return nil, fmt.Errorf(
+				"documents: retrieval seed %q is unsupported", plan.Seed,
+			)
+		}
+	}
+	switch retrievalSeed(plan.Seed) {
+	case retrievalSeedSparse:
+		return s.Search(ctx, req)
+	case retrievalSeedVector:
+		vector, err := s.queryVectorStrict(ctx, req.Query)
+		if err != nil {
+			return nil, err
+		}
+		return s.vectorSeed(ctx, vector, req)
+	default:
+		return nil, fmt.Errorf("documents: retrieval seed %q is unsupported", plan.Seed)
+	}
+}
+
+func (s *Service) executeRetrievalRerank(
+	ctx context.Context,
+	plan RetrievalPlan,
+	query string,
+	seeds []SearchHit,
+) ([]SearchHit, error) {
+	if !plan.Rerank {
 		return seeds, nil
 	}
-	ranked := s.rerankSeeds(ctx, req.Query, seeds)
-	winners := topHits(ranked, effectiveLimit(req.Limit))
-	return s.expandWinners(ctx, req, winners), nil
+	if plan.FailSoft {
+		return s.rerankSeeds(ctx, query, seeds), nil
+	}
+	if s.Reranker == nil {
+		return nil, errors.New("documents: reranker dependency is unavailable")
+	}
+	if len(seeds) < 2 {
+		return seeds, nil
+	}
+	texts := make([]string, len(seeds))
+	for index := range seeds {
+		texts[index] = seeds[index].Text
+	}
+	scored, err := s.Reranker.Rerank(ctx, query, texts)
+	if err != nil {
+		return nil, fmt.Errorf("documents: rerank retrieval: %w", err)
+	}
+	return applyRerankGuard(seeds, scored, s.RerankThreshold, s.RerankBlend), nil
+}
+
+func (s *Service) executeRetrievalExpand(
+	ctx context.Context,
+	plan RetrievalPlan,
+	req SearchRequest,
+	winners []SearchHit,
+) ([]SearchHit, error) {
+	if !plan.Expand {
+		return nil, nil
+	}
+	query := neighborExpandQuery
+	if s.MUSRIsolation {
+		query = neighborExpandQueryScoped
+	}
+	if plan.ID == RetrievalPlanVectorRerankExpand {
+		query = graphExpandQuery
+		if s.MUSRIsolation {
+			query = graphExpandQueryScoped
+		}
+	}
+	if plan.FailSoft {
+		return s.expandNeighbors(ctx, query, req.IdentityID, winners), nil
+	}
+	return s.expandNeighborsStrict(ctx, query, req.IdentityID, winners)
+}
+
+func (s *Service) queryVectorStrict(
+	ctx context.Context,
+	query string,
+) ([]float64, error) {
+	if s.QueryEmbedder == nil || s.Knowledge == nil {
+		return nil, errors.New("documents: vector dependencies are unavailable")
+	}
+	vectors, err := s.QueryEmbedder.Embed(ctx, []string{query})
+	if err != nil {
+		return nil, fmt.Errorf("documents: embed retrieval query: %w", err)
+	}
+	if len(vectors) != 1 || len(vectors[0]) == 0 {
+		return nil, errors.New("documents: query embedder returned no vector")
+	}
+	return vectors[0], nil
 }
 
 // seedHits produces the candidate pool. It prefers the dense vector index when the
@@ -153,25 +322,6 @@ func (s *Service) rerankScores(ctx context.Context, query string, seeds []Search
 	return scored, true
 }
 
-// expandWinners attaches 1-hop reading-order neighbour context to the reranked
-// winners as one flat list (winners first in reranked order, unique neighbours
-// appended). It is the Retrieve-shaped view of expandNeighbors; GraphRAG keeps the
-// winners and neighbours apart instead.
-func (s *Service) expandWinners(ctx context.Context, req SearchRequest, winners []SearchHit) []SearchHit {
-	query := neighborExpandQuery
-	if s.MUSRIsolation {
-		query = neighborExpandQueryScoped
-	}
-	neighbors := s.expandNeighbors(ctx, query, req.IdentityID, winners)
-	if len(neighbors) == 0 {
-		return winners
-	}
-	out := make([]SearchHit, 0, len(winners)+len(neighbors))
-	out = append(out, winners...)
-	out = append(out, neighbors...)
-	return out
-}
-
 // expandNeighbors fetches the unique 1-hop graph neighbours of the winners via the
 // given bounded, $-parameter expansion query, de-duplicated against the winners and
 // each other. Only the WINNERS are expanded — never the whole candidate pool — and
@@ -179,8 +329,24 @@ func (s *Service) expandWinners(ctx context.Context, req SearchRequest, winners 
 // cap bound the fan-out). Expansion is best-effort context: a missing graph client
 // or any graph/decode error yields no neighbours (the answer is in the winners).
 func (s *Service) expandNeighbors(ctx context.Context, query, identity string, winners []SearchHit) []SearchHit {
-	if s.Knowledge == nil || len(winners) == 0 {
+	neighbors, err := s.expandNeighborsStrict(ctx, query, identity, winners)
+	if err != nil {
 		return nil
+	}
+	return neighbors
+}
+
+func (s *Service) expandNeighborsStrict(
+	ctx context.Context,
+	query string,
+	identity string,
+	winners []SearchHit,
+) ([]SearchHit, error) {
+	if s.Knowledge == nil || len(winners) == 0 {
+		if s.Knowledge == nil && len(winners) > 0 {
+			return nil, errors.New("documents: graph expansion is unavailable")
+		}
+		return nil, nil
 	}
 	ids := make([]string, len(winners))
 	seen := make(map[string]struct{}, len(winners))
@@ -194,11 +360,11 @@ func (s *Service) expandNeighbors(ctx context.Context, query, identity string, w
 		"identity":     identity,
 	})
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	neighbors, err := hitsFromRows(rows)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	unique := make([]SearchHit, 0, len(neighbors))
 	for _, n := range neighbors {
@@ -208,7 +374,7 @@ func (s *Service) expandNeighbors(ctx context.Context, query, identity string, w
 		seen[n.ChunkID] = struct{}{}
 		unique = append(unique, n)
 	}
-	return unique
+	return unique, nil
 }
 
 // topHits keeps the first k hits (the reranked winners); k<=0 keeps all.

@@ -101,6 +101,8 @@ func decodeResultID(encoded resultIDWire, catalog ResultCatalog) (ResultID, erro
 		return NewArtifactResultID(encoded.ID)
 	case ResultNode:
 		return NewNodeResultID(encoded.ID)
+	case ResultChunk:
+		return NewChunkResultID(encoded.ID, catalog)
 	case ResultTool:
 		return NewToolResultID(encoded.ID, catalog)
 	case ResultSkill:

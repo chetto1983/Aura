@@ -15,6 +15,8 @@ type RevisionKind string
 // fixed identifiers that must be registered in a RevisionCatalog.
 const (
 	RevisionCorpus    RevisionKind = "corpus"
+	RevisionParser    RevisionKind = "parser"
+	RevisionChunker   RevisionKind = "chunker"
 	RevisionEmbedding RevisionKind = "embedding"
 	RevisionIndex     RevisionKind = "index"
 	RevisionReranker  RevisionKind = "reranker"
@@ -157,7 +159,8 @@ func (revisions RevisionSet) validate() error {
 
 func (kind RevisionKind) fixed() bool {
 	switch kind {
-	case RevisionEmbedding, RevisionIndex, RevisionReranker, RevisionRetriever, RevisionSchema:
+	case RevisionParser, RevisionChunker, RevisionEmbedding, RevisionIndex,
+		RevisionReranker, RevisionRetriever, RevisionSchema:
 		return true
 	default:
 		return false

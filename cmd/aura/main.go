@@ -223,7 +223,14 @@ func buildBaseRegistryWithHandles(cfg *config.Config, ts *cronTaskStore, sandbox
 	// already SSRF-guarded — passing sandboxRouter here would be a scope error.
 	reg.Register(&tools.WebSearch{Engine: webEngine})
 	reg.Register(&tools.WebFetch{Engine: webEngine}) // manifest auto-sorts (web_fetch < web_search); never hand-order
-	reg.Register(&tools.DocumentSearch{Searcher: docsToolSearcher{cfg: cfg}})
+	reg.Register(&tools.DocumentSearch{
+		Searcher: docsToolSearcher{cfg: cfg},
+		Adaptive: orderingcontrol.NewDocumentRetrieval(
+			taskStorePool(ts),
+			cfg.LLM.Provider,
+			cfg.LLM.Model,
+		),
+	})
 	// shell_exec is the full host terminal — THE execution surface (amendment #50 / D-15c).
 	// Deferred so simple chat/web turns do not carry a giant shell schema in the hot manifest.
 	// Amendment #88: workspace is the fixed /workspace working root (cfg.WorkspaceDir),
