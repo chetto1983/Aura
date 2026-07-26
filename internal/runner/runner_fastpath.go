@@ -30,11 +30,7 @@ func normalizeGreeting(content string) string {
 	return strings.Join(parts, " ")
 }
 
-func fastReplyEvent(convID, answer string) (*agent.Event, error) {
-	requestID, err := uuid.NewV7()
-	if err != nil {
-		return nil, err
-	}
+func fastReplyEvent(convID string, requestID uuid.UUID, answer string) *agent.Event {
 	return &agent.Event{
 		RequestID: requestID,
 		Author:    "aura",
@@ -49,7 +45,7 @@ func fastReplyEvent(convID, answer string) (*agent.Event, error) {
 			"cache_hit_tokens":  0,
 		}},
 		Timestamp: time.Now().UTC(),
-	}, nil
+	}
 }
 
 func fastReplyChunkEvent(final *agent.Event) *agent.Event {

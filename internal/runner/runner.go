@@ -66,9 +66,6 @@ type Deps struct {
 	Identity        IdentityStore
 	CacheMetrics    CacheMetricStore
 	ToolInvocations ToolInvocationStore
-	// AdaptiveCommitter atomically pairs persisted tool/final-answer turns with
-	// typed adaptive outcomes. nil preserves the pre-adaptive persistence path.
-	AdaptiveCommitter AdaptiveTurnCommitter
 	// ResumeCommitter is the cross-store HITL-durability seam (D-03/D-05). The
 	// composition root injects a pool-owning *PoolResumeCommitter so single/batch resume
 	// and pause exposure each commit in ONE db.WithTx; nil => New defaults to the
@@ -136,13 +133,12 @@ type ResumeHook func(ctx context.Context, pending askuser.Pending, resp Response
 // CLI read conversations directly (list/search/lifecycle) without re-plumbing the
 // narrow interface; pause/title orchestration stays in the Runner.
 type Runner struct {
-	Conv              ConversationStore
-	pause             PauseStore
-	identity          IdentityStore
-	cacheMetrics      CacheMetricStore
-	toolInvocations   ToolInvocationStore
-	adaptiveCommitter AdaptiveTurnCommitter
-	resumeCommitter   ResumeCommitter // cross-store HITL-durability seam (D-03/D-05); split fallback when unset
+	Conv            ConversationStore
+	pause           PauseStore
+	identity        IdentityStore
+	cacheMetrics    CacheMetricStore
+	toolInvocations ToolInvocationStore
+	resumeCommitter ResumeCommitter // cross-store HITL-durability seam (D-03/D-05); split fallback when unset
 
 	client     llm.Client
 	registry   *tools.Registry
@@ -222,7 +218,6 @@ func New(d Deps) *Runner {
 		identity:                 d.Identity,
 		cacheMetrics:             d.CacheMetrics,
 		toolInvocations:          d.ToolInvocations,
-		adaptiveCommitter:        d.AdaptiveCommitter,
 		client:                   d.Client,
 		registry:                 d.Registry,
 		cfg:                      d.LLM,
@@ -325,6 +320,12 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, input turnInput)
 			return
 		}
 		ctx = scopedCtx
+		requestID, err := uuid.NewV7()
+		if err != nil {
+			yield(nil, fmt.Errorf("mint request id: %w", err))
+			return
+		}
+		ctx = tools.WithRequestID(ctx, requestID.String())
 
 		// Persist the new user turn (if any) BEFORE rehydrating so the agent sees it.
 		if input.visibleUserMsg != nil {
@@ -333,11 +334,7 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, input turnInput)
 				return
 			}
 			if answer, ok := fastReplyFor(*input.visibleUserMsg); ok {
-				ev, err := fastReplyEvent(convID, answer)
-				if err != nil {
-					yield(nil, err)
-					return
-				}
+				ev := fastReplyEvent(convID, requestID, answer)
 				tr := &turnTracker{convID: convID}
 				if err := r.persistEvent(ctx, tr, ev); err != nil {
 					yield(nil, err)
@@ -369,7 +366,7 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, input turnInput)
 		}
 		agentHistory := currentRoundModelHistory(history, input.visibleUserMsg, input.modelUserMsg)
 
-		la, ic, cancelAgent, err := r.buildAgent(ctx, convID, agentHistory)
+		la, ic, cancelAgent, err := r.buildAgent(ctx, convID, requestID, agentHistory)
 		if err != nil {
 			yield(nil, err)
 			return
@@ -471,11 +468,7 @@ func (r *Runner) appendUserTurn(ctx context.Context, convID, content string) err
 // not the agent's). When the loaded history already carries a leading system turn
 // (a persisted seq=1), it is dropped here so the agent's own system message is not
 // duplicated.
-func (r *Runner) buildAgent(ctx context.Context, convID string, history []llm.Message) (*agent.LlmAgent, agent.InvocationContext, context.CancelFunc, error) {
-	requestID, err := uuid.NewV7()
-	if err != nil {
-		return nil, agent.InvocationContext{}, nil, fmt.Errorf("mint request id: %w", err)
-	}
+func (r *Runner) buildAgent(ctx context.Context, convID string, requestID uuid.UUID, history []llm.Message) (*agent.LlmAgent, agent.InvocationContext, context.CancelFunc, error) {
 	bud, err := agent.NewBudget(agent.BudgetOptions{})
 	if err != nil {
 		return nil, agent.InvocationContext{}, nil, fmt.Errorf("budget config (check AURA_LOOP_* env): %w", err)

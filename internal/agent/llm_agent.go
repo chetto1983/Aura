@@ -217,6 +217,9 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 		var adaptiveTier prompt.ReasoningTier
 		var adaptiveTierSet bool
 		var adaptiveTierOK bool
+		var modelRoundOrdinal modelRoundOrdinal
+		var retryRequest *llm.Request
+		var retryRound modelRound
 		// skipBudgetGate carries the one recovery turn PAST the budget gate without
 		// spending a step (Req#4, D-08): when a trip increments recoveryAttempts the
 		// budget is already exhausted, so re-entering the loop normally would just
@@ -244,8 +247,12 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			// severed for this ONE turn. Ordinary turns (recoveryTurn==false) are
 			// UNCHANGED: they keep deriving straight from ic.Ctx, so a real deadline
 			// still bounds them (no unbounding of the normal loop).
+			transportRetry := retryRequest != nil
 			recoveryTurn := skipBudgetGate
-			if skipBudgetGate {
+			if transportRetry {
+				// Exact transport retry: the already-built primary request does not
+				// consume another reasoning step.
+			} else if skipBudgetGate {
 				skipBudgetGate = false
 			} else if ok, reason := ic.Budget.ConsumeStep(); !ok {
 				if a.maybeRecover("") {
@@ -294,50 +301,65 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			// A FIXED per-turn override (37E) bypasses the adaptive classifier entirely
 			// (D-04/D-08): skip the reasoning-router round-trip so buildRequest can force
 			// the selected effort. Auto (empty override) runs the classifier UNCHANGED.
-			if a.reasoningOverride == "" && !adaptiveTierSet {
+			var req llm.Request
+			var modelRound modelRound
+			if transportRetry {
+				req = *retryRequest
+				modelRound = retryRound
+				retryRequest = nil
+			} else if a.reasoningOverride == "" && !adaptiveTierSet {
 				adaptiveTier, adaptiveTierOK = a.adaptiveReasoningTier(ic.Ctx)
 				adaptiveTierSet = true
 			}
-			req := a.buildRequest(budget, adaptiveTier, adaptiveTierOK)
-			req.SessionID = a.sessionID
-			reasoningtrace.Record("agent_request_built", map[string]any{
-				"request_id":  requestID,
-				"thread_id":   a.sessionID,
-				"provider":    a.cfg.Provider,
-				"model":       req.Model,
-				"max_tokens":  req.MaxTokens,
-				"tool_choice": req.ToolChoice,
-				"tools_count": len(req.Tools),
-				"reasoning":   req.Reasoning,
-				"history":     a.history,
-			})
-			// AG-031: snapshot messages[0] before the hook to detect cache drift.
-			prefixBefore := prefixSnapshot(req.Messages)
-			if res, err := a.hooks.BeforeModel(spanCtx, &req); err != nil {
-				span.End()
-				cancel()
-				turnReason = "hook_before_model_error"
-				yield(nil, err)
-				return
-			} else if res != nil {
-				span.End()
-				cancel()
-				answer := normalizeContentStopAnswer(res.Content)
-				if finish := res.FinishReason; finish == "" {
-					res.FinishReason = "hook"
-				}
-				if veto, feedback := a.gateCompletion(ic, answer); veto {
-					a.history = append(a.history, llm.Message{Role: llm.RoleUser, Content: feedback})
-					continue
-				}
-				a.history = append(a.history, llm.Message{Role: llm.RoleAssistant, Content: answer})
-				turnReason = "hook_model_response"
-				yield(a.finalEvent(ic, spanID, parentSpanID, requestID, answer, res.FinishReason, res.Usage), nil)
-				return
+			if !transportRetry {
+				modelRound = modelRoundOrdinal.next(ic.RequestID)
 			}
-			// AG-031: the request proceeds — detect a hook rewrite that drifted the
-			// cache-stable prefix and emit the prefix_drift metric.
-			a.checkPrefixDrift(prefixBefore, req.Messages, requestID)
+			spanCtx = withModelRound(spanCtx, modelRound)
+			if !transportRetry {
+				req = a.buildRequest(budget, adaptiveTier, adaptiveTierOK)
+				req.SessionID = a.sessionID
+			}
+			if !transportRetry {
+				reasoningtrace.Record("agent_request_built", map[string]any{
+					"request_id":          requestID,
+					"model_round_ordinal": modelRound.ordinal,
+					"thread_id":           a.sessionID,
+					"provider":            a.cfg.Provider,
+					"model":               req.Model,
+					"max_tokens":          req.MaxTokens,
+					"tool_choice":         req.ToolChoice,
+					"tools_count":         len(req.Tools),
+					"reasoning":           req.Reasoning,
+					"history":             a.history,
+				})
+				// AG-031: snapshot messages[0] before the hook to detect cache drift.
+				prefixBefore := prefixSnapshot(req.Messages)
+				if res, err := a.hooks.BeforeModel(spanCtx, &req); err != nil {
+					span.End()
+					cancel()
+					turnReason = "hook_before_model_error"
+					yield(nil, err)
+					return
+				} else if res != nil {
+					span.End()
+					cancel()
+					answer := normalizeContentStopAnswer(res.Content)
+					if finish := res.FinishReason; finish == "" {
+						res.FinishReason = "hook"
+					}
+					if veto, feedback := a.gateCompletion(ic, answer); veto {
+						a.history = append(a.history, llm.Message{Role: llm.RoleUser, Content: feedback})
+						continue
+					}
+					a.history = append(a.history, llm.Message{Role: llm.RoleAssistant, Content: answer})
+					turnReason = "hook_model_response"
+					yield(a.finalEvent(ic, spanID, parentSpanID, requestID, answer, res.FinishReason, res.Usage), nil)
+					return
+				}
+				// AG-031: the request proceeds — detect a hook rewrite that drifted the
+				// cache-stable prefix and emit the prefix_drift metric.
+				a.checkPrefixDrift(prefixBefore, req.Messages, requestID)
+			}
 			llmCtx, llmEnd := llmCallBoundary.Start(spanCtx)
 			activeLLMEnd = llmEnd
 			endLLM := func(err error) {
@@ -402,6 +424,8 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 						turnReason = "consumer_stopped"
 						return
 					}
+					retryRequest = &req
+					retryRound = modelRound
 					continue
 				}
 				turnReason = "stream_error"

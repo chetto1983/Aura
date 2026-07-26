@@ -145,27 +145,8 @@ func (r *Runner) persistToolTurnEvent(ctx context.Context, tr *turnTracker, ti *
 			Content:        ti.ResultPreview,
 			ToolCallID:     ti.ToolCallID,
 		}
-		var persistErr error
-		if r.adaptiveCommitter != nil {
-			outcome, err := runnerAdaptiveOutcome(ctx, ev, "tool:"+ti.ToolCallID, map[string]any{
-				"domain":           "tool",
-				"tool_name":        ti.ToolName,
-				"tool_call_id":     ti.ToolCallID,
-				"status":           ti.Status,
-				"duration_ms":      ti.DurationMS,
-				"result_bytes":     ti.ResultBytes,
-				"result_truncated": ti.ResultTruncated,
-				"quality_observed": false,
-			})
-			if err != nil {
-				return fmt.Errorf("build adaptive tool outcome: %w", err)
-			}
-			persistErr = r.adaptiveCommitter.CommitTurn(ctx, turn, nil, outcome)
-		} else {
-			persistErr = r.Conv.AppendTurn(ctx, turn)
-		}
-		if persistErr != nil {
-			return fmt.Errorf("persist tool result turn %s/%s: %w", ti.ToolName, ti.ToolCallID, persistErr)
+		if err := r.Conv.AppendTurn(ctx, turn); err != nil {
+			return fmt.Errorf("persist tool result turn %s/%s: %w", ti.ToolName, ti.ToolCallID, err)
 		}
 		delete(tr.openToolCalls, ti.ToolCallID)
 		if len(tr.openToolCalls) == 0 {
@@ -306,24 +287,6 @@ func (r *Runner) persistAssistantAnswer(ctx context.Context, tr *turnTracker, ev
 	metric, err := r.cacheMetricParams(tr.convID, 0, u, cost)
 	if err != nil {
 		return err
-	}
-	if r.adaptiveCommitter != nil {
-		outcome, eventErr := runnerAdaptiveOutcome(ctx, ev, "assistant", map[string]any{
-			"domain":            "completion",
-			"finish_reason":     ev.LLMResponse.FinishReason,
-			"prompt_tokens":     u.PromptTokens,
-			"completion_tokens": u.CompletionTokens,
-			"cached_tokens":     u.CachedTokens,
-			"cost_usd":          cost,
-			"quality_observed":  false,
-		})
-		if eventErr != nil {
-			return fmt.Errorf("build adaptive assistant outcome: %w", eventErr)
-		}
-		if err := r.adaptiveCommitter.CommitTurn(ctx, turn, &metric, outcome); err != nil {
-			return fmt.Errorf("persist assistant answer with adaptive outcome: %w", err)
-		}
-		return nil
 	}
 	if err := r.Conv.AppendAssistantTurnWithCacheMetric(ctx, turn, metric); err != nil {
 		return fmt.Errorf("persist assistant answer: %w", err)
