@@ -3,10 +3,16 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 
+	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/llm"
+)
+
+var errAdaptiveBenchmarkModelToolCallRejected = errors.New(
+	"adaptive benchmark model tool call rejected",
 )
 
 type adaptiveBenchmarkModelStartObserver func(context.Context, string)
@@ -151,8 +157,81 @@ func (client *adaptiveBenchmarkObservedClient) Stream(
 	if failure != nil {
 		return nil, failure
 	}
+	var stream <-chan llm.Chunk
+	var err error
 	if interceptor != nil {
-		return interceptor(ctx, request)
+		stream, err = interceptor(ctx, request)
+	} else {
+		stream, err = client.delegate.Stream(ctx, request)
 	}
-	return client.delegate.Stream(ctx, request)
+	if err != nil || len(request.Tools) == 0 {
+		return stream, err
+	}
+	return adaptiveBenchmarkGuardModelToolCalls(ctx, request, stream), nil
+}
+
+func adaptiveBenchmarkGuardModelToolCalls(
+	ctx context.Context,
+	request llm.Request,
+	source <-chan llm.Chunk,
+) <-chan llm.Chunk {
+	guarded := make(chan llm.Chunk, 1)
+	go func() {
+		defer close(guarded)
+		for chunk := range source {
+			if err := adaptiveBenchmarkValidateModelToolCall(
+				request,
+				chunk.ToolCall,
+			); err != nil {
+				select {
+				case guarded <- llm.Chunk{Err: err}:
+				case <-ctx.Done():
+				}
+				for range source {
+				}
+				return
+			}
+			select {
+			case guarded <- chunk:
+			case <-ctx.Done():
+				for range source {
+				}
+				return
+			}
+		}
+	}()
+	return guarded
+}
+
+func adaptiveBenchmarkValidateModelToolCall(
+	request llm.Request,
+	call *llm.ToolCall,
+) error {
+	if call == nil {
+		return nil
+	}
+	declared := false
+	for _, tool := range request.Tools {
+		if tool.Function.Name == call.Function.Name {
+			declared = true
+			break
+		}
+	}
+	event := &agent.Event{
+		Actions: agent.Actions{
+			ToolInvocation: &agent.ToolInvocation{
+				Event:     agent.ToolInvocationStart,
+				ToolName:  call.Function.Name,
+				Arguments: call.Function.Arguments,
+			},
+		},
+	}
+	if !declared || validateAdaptiveBenchmarkDispatch(event) != nil {
+		return fmt.Errorf(
+			"%w: %q",
+			errAdaptiveBenchmarkModelToolCallRejected,
+			call.Function.Name,
+		)
+	}
+	return nil
 }

@@ -280,6 +280,45 @@ func TestAdaptiveBenchmarkObservedClientTransportFailurePrecedesInterceptor(
 	}
 }
 
+func TestAdaptiveBenchmarkObservedClientRejectsUndeclaredToolBeforeDispatch(
+	t *testing.T,
+) {
+	t.Parallel()
+	source := make(chan llm.Chunk, 2)
+	call := llm.ToolCall{ID: "call-1", Type: "function"}
+	call.Function.Name = "calendar_create_event"
+	call.Function.Arguments = `{"when":"next Tuesday"}`
+	source <- llm.Chunk{ToolCall: &call}
+	source <- llm.Chunk{FinishReason: "tool_calls"}
+	close(source)
+	delegate := &adaptiveBenchmarkLLMClientFake{stream: source}
+	client, err := newAdaptiveBenchmarkObservedClient(delegate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var allowed llm.ToolDef
+	allowed.Type = "function"
+	allowed.Function.Name = "tool_search"
+
+	stream, err := client.Stream(
+		t.Context(),
+		llm.Request{Tools: []llm.ToolDef{allowed}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunk, ok := <-stream
+	if !ok || !errors.Is(
+		chunk.Err,
+		errAdaptiveBenchmarkModelToolCallRejected,
+	) {
+		t.Fatalf("rejected chunk = %#v", chunk)
+	}
+	if _, ok := <-stream; ok {
+		t.Fatal("guard emitted content after rejected tool call")
+	}
+}
+
 func TestAdaptiveBenchmarkObservedClientRejectsInvalidFailureState(
 	t *testing.T,
 ) {

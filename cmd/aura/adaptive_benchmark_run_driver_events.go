@@ -286,6 +286,8 @@ func adaptiveBenchmarkTurnFailureReason(err error) string {
 		errors.Is(err, io.EOF),
 		errors.Is(err, io.ErrUnexpectedEOF):
 		return auraeval.AdaptiveBenchmarkReasonModelTransportFailure
+	case errors.Is(err, errAdaptiveBenchmarkModelToolCallRejected):
+		return auraeval.AdaptiveBenchmarkReasonModelParserFailure
 	case errors.As(err, &syntaxErr),
 		errors.As(err, &typeErr):
 		return auraeval.AdaptiveBenchmarkReasonModelParserFailure

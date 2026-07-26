@@ -208,6 +208,10 @@ func TestAdaptiveBenchmarkTurnFailureReasonIsBounded(t *testing.T) {
 			want: auraeval.AdaptiveBenchmarkReasonModelParserFailure,
 		},
 		{
+			err:  errAdaptiveBenchmarkModelToolCallRejected,
+			want: auraeval.AdaptiveBenchmarkReasonModelParserFailure,
+		},
+		{
 			err:  adaptive.ErrPayloadConflict,
 			want: auraeval.AdaptiveBenchmarkReasonControlFailed,
 		},
