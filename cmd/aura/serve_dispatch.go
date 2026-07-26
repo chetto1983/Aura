@@ -55,19 +55,7 @@ func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry, own
 		sandboxReaper = chat.sandboxRouter
 	}
 
-	agentDeps := handlers.AgentDeps{
-		Client:     chat.client,
-		LLM:        chat.cfg.LLM,
-		Registry:   chat.reg,
-		PreviewCap: chat.cfg.ToolPreviewCap,
-		RunDir:     chat.cfg.RunDir,
-		// Real artifact jobs measure 150-360s live; the 120s handler fallback starved
-		// them mid-LLM-call (#53/D-42). Env-tunable: AURA_AGENT_JOB_MAX_DURATION_SEC.
-		MaxDuration: time.Duration(chat.cfg.AgentJobMaxDurationSec) * time.Second,
-		// The same policy PEP the interactive runner uses (GATE-01): a headless agent_job
-		// has no responder, so a mutating GateRecommended call degrades to deny-with-guidance.
-		Gateway: chat.gateway,
-	}
+	agentDeps := newCronAgentDeps(chat)
 	real := map[cron.TaskKind]handlers.Handler{
 		cron.KindReminder:       handlers.ReminderHandler{},
 		cron.KindAgentJob:       handlers.AgentJobHandler{Deps: agentDeps},
@@ -120,6 +108,23 @@ func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry, own
 		ApprovalPauseEnsurer: approvalPauseEnsurer{pauses: chat.pause, minter: chat.run},
 		ApprovalChannel:      reg,
 	})
+}
+
+func newCronAgentDeps(chat *chatEnv) handlers.AgentDeps {
+	return handlers.AgentDeps{
+		Client:           chat.client,
+		LLM:              chat.cfg.LLM,
+		Registry:         chat.reg,
+		PreviewCap:       chat.cfg.ToolPreviewCap,
+		RunDir:           chat.cfg.RunDir,
+		ReasoningControl: chat.reasoningControl,
+		// Real artifact jobs measure 150-360s live; the 120s handler fallback starved
+		// them mid-LLM-call (#53/D-42). Env-tunable: AURA_AGENT_JOB_MAX_DURATION_SEC.
+		MaxDuration: time.Duration(chat.cfg.AgentJobMaxDurationSec) * time.Second,
+		// The same policy PEP the interactive runner uses (GATE-01): a headless agent_job
+		// has no responder, so a mutating GateRecommended call degrades to deny-with-guidance.
+		Gateway: chat.gateway,
+	}
 }
 
 // handlerAdapter bridges a handlers.Handler (the internal/cron/handlers impls, which

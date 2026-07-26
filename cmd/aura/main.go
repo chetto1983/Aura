@@ -31,7 +31,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chetto1983/aura/internal/adaptive/orderingcontrol"
 	"github.com/chetto1983/aura/internal/agent/mcptools"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
@@ -193,6 +192,21 @@ func buildBaseRegistry(cfg *config.Config, ts *cronTaskStore) *tools.Registry {
 // dev/local_trusted) keeps every tool host-direct byte-for-byte. web_fetch / web_search are
 // deliberately NEVER routed (D-11 — they stay host-side, already SSRF-guarded).
 func buildBaseRegistryWithHandles(cfg *config.Config, ts *cronTaskStore, sandboxRouter *usersandbox.SandboxRouter) (*tools.Registry, runtimeToolHandles) {
+	pool := taskStorePool(ts)
+	return buildBaseRegistryWithAdaptiveControls(
+		cfg,
+		ts,
+		sandboxRouter,
+		newAdaptiveControlSet(pool, cfg.LLM.Provider, cfg.LLM.Model),
+	)
+}
+
+func buildBaseRegistryWithAdaptiveControls(
+	cfg *config.Config,
+	ts *cronTaskStore,
+	sandboxRouter *usersandbox.SandboxRouter,
+	adaptiveControls adaptiveControlSet,
+) (*tools.Registry, runtimeToolHandles) {
 	handles := runtimeToolHandles{
 		// The background registry carries the SAME sandboxRouter the synchronous tools do (37-09):
 		// under a strict profile shell_exec routes background jobs into the box via startBox; a nil
@@ -203,12 +217,7 @@ func buildBaseRegistryWithHandles(cfg *config.Config, ts *cronTaskStore, sandbox
 	reg := tools.NewRegistry()
 	reg.Register(tools.TextResponse{})
 	reg.Register(&tools.ToolSearch{
-		Registry: reg,
-		Adaptive: orderingcontrol.NewToolDiscovery(
-			taskStorePool(ts),
-			cfg.LLM.Provider,
-			cfg.LLM.Model,
-		),
+		Registry: reg, Adaptive: adaptiveControls.toolDiscovery,
 	})
 	reg.Register(&tools.ReadToolOutput{})
 	reg.Register(tools.CurrentTime{})
@@ -220,7 +229,12 @@ func buildBaseRegistryWithHandles(cfg *config.Config, ts *cronTaskStore, sandbox
 	// a live pool is available (serve/chat boot, ts!=nil) the write actions are wired to
 	// the durable, gated Writer (11-05); the pool-free manifest path (`aura tools`) gets
 	// a read-only tool whose write actions error loudly.
-	reg.Register(newSkillTool(cfg, taskStorePool(ts), sandboxRouter))
+	reg.Register(newSkillToolWithAdaptive(
+		cfg,
+		taskStorePool(ts),
+		adaptiveControls.skillRouting,
+		sandboxRouter,
+	))
 	webEngine := web.NewClient(cfg)
 	// web_fetch / web_search are DELIBERATELY NOT routed into the box (D-11): they stay host-side,
 	// already SSRF-guarded — passing sandboxRouter here would be a scope error.
@@ -228,11 +242,7 @@ func buildBaseRegistryWithHandles(cfg *config.Config, ts *cronTaskStore, sandbox
 	reg.Register(&tools.WebFetch{Engine: webEngine}) // manifest auto-sorts (web_fetch < web_search); never hand-order
 	reg.Register(&tools.DocumentSearch{
 		Searcher: docsToolSearcher{cfg: cfg},
-		Adaptive: orderingcontrol.NewDocumentRetrieval(
-			taskStorePool(ts),
-			cfg.LLM.Provider,
-			cfg.LLM.Model,
-		),
+		Adaptive: adaptiveControls.documentRetrieval,
 	})
 	// shell_exec is the full host terminal — THE execution surface (amendment #50 / D-15c).
 	// Deferred so simple chat/web turns do not carry a giant shell schema in the hot manifest.
@@ -308,10 +318,32 @@ func buildBaseRegistryWithHandles(cfg *config.Config, ts *cronTaskStore, sandbox
 }
 
 func buildRegistryWithMCP(ctx context.Context, cfg *config.Config, ts *cronTaskStore, sandboxRouter *usersandbox.SandboxRouter) (*tools.Registry, runtimeToolHandles, []func() error, error) {
+	pool := taskStorePool(ts)
+	return buildRegistryWithMCPAndAdaptiveControls(
+		ctx,
+		cfg,
+		ts,
+		sandboxRouter,
+		newAdaptiveControlSet(pool, cfg.LLM.Provider, cfg.LLM.Model),
+	)
+}
+
+func buildRegistryWithMCPAndAdaptiveControls(
+	ctx context.Context,
+	cfg *config.Config,
+	ts *cronTaskStore,
+	sandboxRouter *usersandbox.SandboxRouter,
+	adaptiveControls adaptiveControlSet,
+) (*tools.Registry, runtimeToolHandles, []func() error, error) {
 	if cfg.MCPServersErr != nil {
 		return nil, runtimeToolHandles{}, nil, cfg.MCPServersErr
 	}
-	reg, handles := buildBaseRegistryWithHandles(cfg, ts, sandboxRouter)
+	reg, handles := buildBaseRegistryWithAdaptiveControls(
+		cfg,
+		ts,
+		sandboxRouter,
+		adaptiveControls,
+	)
 	if len(cfg.MCPServers) == 0 && len(cfg.MCPPolicies) == 0 {
 		return reg, handles, nil, nil
 	}

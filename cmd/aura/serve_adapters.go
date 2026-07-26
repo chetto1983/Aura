@@ -274,6 +274,23 @@ func taskStorePool(ts *cronTaskStore) *pgxpool.Pool {
 // error loudly). Discovery+install is no longer a tool concern (amendment #51 /
 // D-40): the find-skills always-on skill teaches self-extension via the sandbox CLI.
 func newSkillTool(cfg *config.Config, pool *pgxpool.Pool, sandboxRouter *usersandbox.SandboxRouter) *tools.SkillTool {
+	var adaptive tools.SkillRoutingControl
+	if cfg != nil {
+		adaptive = orderingcontrol.NewSkillRouting(
+			pool,
+			cfg.LLM.Provider,
+			cfg.LLM.Model,
+		)
+	}
+	return newSkillToolWithAdaptive(cfg, pool, adaptive, sandboxRouter)
+}
+
+func newSkillToolWithAdaptive(
+	cfg *config.Config,
+	writerPool *pgxpool.Pool,
+	adaptive tools.SkillRoutingControl,
+	sandboxRouter *usersandbox.SandboxRouter,
+) *tools.SkillTool {
 	if cfg == nil || cfg.SkillsDir == "" {
 		return &tools.SkillTool{SandboxRouter: sandboxRouter}
 	}
@@ -288,16 +305,12 @@ func newSkillTool(cfg *config.Config, pool *pgxpool.Pool, sandboxRouter *usersan
 	// SandboxRouter (distinct field name, W6 — not the unexported ActionRouter): under a strict
 	// profile action=use renders a snippet's in-box SandboxPath; nil keeps the host-primary path.
 	tool := &tools.SkillTool{
-		Loader: skilladapters.NewLoader(loader, cfg.SkillManifestCapBytes, cfg.SkillExportDir),
-		Adaptive: orderingcontrol.NewSkillRouting(
-			pool,
-			cfg.LLM.Provider,
-			cfg.LLM.Model,
-		),
+		Loader:        skilladapters.NewLoader(loader, cfg.SkillManifestCapBytes, cfg.SkillExportDir),
+		Adaptive:      adaptive,
 		SandboxRouter: sandboxRouter,
 	}
-	if pool != nil {
-		w := newSkillWriter(cfg, pool)
+	if writerPool != nil {
+		w := newSkillWriter(cfg, writerPool)
 		tool.Writer = skilladapters.NewWriter(w)
 	}
 	return tool

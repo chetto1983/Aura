@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/adaptive"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/knowledge"
@@ -65,7 +67,7 @@ func validBootConfig() *config.Config {
 		DB:       db.Config{URL: "postgres://u:p@127.0.0.1:1/aura"},
 		Neo4j:    knowledge.Config{Password: "graph-secret"},
 		AGUIBind: "127.0.0.1:9080",
-		LLM:      llm.Config{Model: "test/model"},
+		LLM:      llm.Config{Provider: "openrouter", Model: "test/model"},
 	}
 }
 
@@ -268,13 +270,17 @@ func TestAssembleChatEnvWiresProductionDynamicRecallControl(t *testing.T) {
 	cfg.MemoryRecallMaxItems = 8
 
 	var projectorOrder []string
-	env, err := assembleChatEnvWithAdaptiveGraphClient(
+	env, err := assembleChatEnvWithAdaptivePolicy(
 		context.Background(),
 		cfg,
 		pool,
 		func(context.Context, *knowledge.Config) (adaptiveGraphClient, error) {
 			return &adaptiveProjectorClientSpy{order: &projectorOrder}, nil
 		},
+		adaptiveBootPolicyReaderFunc(func(context.Context) (adaptive.Policy, error) {
+			return validAdaptiveBootTestPolicy(adaptive.PolicyShadow), nil
+		}),
+		io.Discard,
 	)
 	if err != nil {
 		t.Fatalf("assembleChatEnv: %v", err)

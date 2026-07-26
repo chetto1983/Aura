@@ -10,11 +10,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/chetto1983/aura/internal/adaptive/orderingcontrol"
+	"github.com/chetto1983/aura/internal/adaptive"
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/askuser"
@@ -47,6 +48,7 @@ type chatEnv struct {
 	client            llm.Client
 	reg               *tools.Registry
 	gateway           *gateway.Gateway
+	reasoningControl  agent.ReasoningControl
 	operations        *idempotency.Store
 	toolInvocations   *toolinvocations.Store // the append-only ledger the gateway reserves + the reconciler sweeps
 	deleteReconciler  *runner.DeleteReconciler
@@ -250,6 +252,24 @@ func assembleChatEnvWithAdaptiveGraphClient(
 	pool *pgxpool.Pool,
 	openAdaptiveGraph adaptiveGraphClientOpener,
 ) (*chatEnv, error) {
+	return assembleChatEnvWithAdaptivePolicy(
+		ctx,
+		cfg,
+		pool,
+		openAdaptiveGraph,
+		adaptive.NewPolicyStore(pool),
+		os.Stderr,
+	)
+}
+
+func assembleChatEnvWithAdaptivePolicy(
+	ctx context.Context,
+	cfg *config.Config,
+	pool *pgxpool.Pool,
+	openAdaptiveGraph adaptiveGraphClientOpener,
+	policyReader adaptive.PolicyReader,
+	warnings io.Writer,
+) (*chatEnv, error) {
 	var mcpClosers []func() error
 	success := false
 	defer func() {
@@ -284,6 +304,18 @@ func assembleChatEnvWithAdaptiveGraphClient(
 	if cfg.Profile == config.ProfileLocalTrusted {
 		fmt.Fprintln(os.Stderr, "trusted local mode — full host capability active")
 	}
+
+	adaptivePool := selectAdaptiveBootPool(
+		ctx,
+		pool,
+		policyReader,
+		warnings,
+	)
+	adaptiveControls := newAdaptiveControlSet(
+		adaptivePool,
+		cfg.LLM.Provider,
+		cfg.LLM.Model,
+	)
 
 	convStore := conversations.New(pool, conversations.Config{
 		RunDir:       cfg.RunDir,
@@ -326,7 +358,13 @@ func assembleChatEnvWithAdaptiveGraphClient(
 	// Retain the task-store adapter: it backs BOTH the `task` tool (registry) AND the
 	// scheduled-task resume hook (on-channel HITL approval) below.
 	taskStore := newCronTaskStore(pool, convStore)
-	reg, toolHandles, mcpClosers, err := buildRegistryWithMCP(ctx, cfg, taskStore, sandboxRouter)
+	reg, toolHandles, mcpClosers, err := buildRegistryWithMCPAndAdaptiveControls(
+		ctx,
+		cfg,
+		taskStore,
+		sandboxRouter,
+		adaptiveControls,
+	)
 	if err != nil {
 		// pool + closers released by the deferred close-on-error guard.
 		return nil, fmt.Errorf("mcp: %w", err)
@@ -363,13 +401,10 @@ func assembleChatEnvWithAdaptiveGraphClient(
 		// Amendment #91 (fix-plan 1.12): bounded display-only CoT persistence cap.
 		ReasoningPersistMaxRunes: cfg.ReasoningPersistMaxRunes,
 		DynamicRecallProvider:    dynamicRecallProvider(cfg),
-		DynamicRecallControl: orderingcontrol.NewDynamicRecall(
-			pool,
-			cfg.LLM.Provider,
-			cfg.LLM.Model,
-		),
-		RecallMaxItems: cfg.MemoryRecallMaxItems,
-		AlwaysBlock:    alwaysBlockProvider(cfg),
+		DynamicRecallControl:     adaptiveControls.memoryRecall,
+		ReasoningControl:         adaptiveControls.reasoning,
+		RecallMaxItems:           cfg.MemoryRecallMaxItems,
+		AlwaysBlock:              alwaysBlockProvider(cfg),
 		// The gateway resume hook records an operator's accept of a relayed gateway_approval
 		// pause into the SAME gateway instance (gw) the runner's PEP reads (D-03 point 2).
 		ResumeHook:  chainResumeHooks(newSkillResumeHook(cfg, pool), newShellResumeHook(toolHandles.ShellApprovals), newGatewayResumeHook(gw), newScheduledTaskResumeHook(taskStore)),
@@ -391,7 +426,7 @@ func assembleChatEnvWithAdaptiveGraphClient(
 		return nil, err
 	}
 	success = true // disarm the close-on-error guard; chatEnv.close now owns the lifecycle.
-	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, gateway: gw, operations: operations, toolInvocations: toolInvocationStore, deleteReconciler: runner.NewDeleteReconciler(run, time.Minute), adaptiveProjector: adaptiveProjector, toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter}, nil
+	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, gateway: gw, reasoningControl: adaptiveControls.reasoning, operations: operations, toolInvocations: toolInvocationStore, deleteReconciler: runner.NewDeleteReconciler(run, time.Minute), adaptiveProjector: adaptiveProjector, toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter}, nil
 }
 
 func openSettingsOverlayPool(ctx context.Context) (*pgxpool.Pool, bool, error) {
