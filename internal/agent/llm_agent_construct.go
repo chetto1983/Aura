@@ -48,6 +48,7 @@ func NewLlmAgent(cfg LlmAgentConfig) *LlmAgent {
 		breaker:           resolveBreaker(cfg),
 		classifier:        resolveClassifier(cfg),
 		reasoningOverride: cfg.ReasoningOverride,
+		reasoningControl:  cfg.ReasoningControl,
 		sources:           display.NewRegistry(),
 	}
 }

@@ -100,6 +100,8 @@ type LlmAgent struct {
 	// embedder is wired). When present, adaptiveReasoningTier uses it instead of
 	// the per-turn LLM router round-trip; the LLM router remains the fallback.
 	classifier *prompt.ReasoningClassifier
+	// reasoningControl is the optional typed schema-2 per-round adapter.
+	reasoningControl ReasoningControl
 
 	// reasoningOverride is the FIXED per-turn effort selected in the web Composer (37E),
 	// threaded from runner.WithReasoningOverride via LlmAgentConfig. When non-empty the
@@ -160,6 +162,8 @@ type LlmAgentConfig struct {
 	// req.Reasoning on a reasoning target (OpenRouter OR llama.cpp, D-08); empty is the
 	// "auto" default, leaving today's adaptive path byte-identical (D-04, zero regression).
 	ReasoningOverride llm.ReasoningEffort
+	// ReasoningControl is the optional typed per-round adaptive reasoning adapter.
+	ReasoningControl ReasoningControl
 }
 
 // Run drives the budget-gated tool-dispatch loop (Req#9/#10). Termination paths:
@@ -315,9 +319,20 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				modelRound = modelRoundOrdinal.next(ic.RequestID)
 			}
 			spanCtx = withModelRound(spanCtx, modelRound)
+			var hookResult *ModelHookResult
 			if !transportRetry {
-				req = a.buildRequest(budget, adaptiveTier, adaptiveTierOK)
-				req.SessionID = a.sessionID
+				prepared, err := a.prepareReasoningRequest(
+					spanCtx, budget, modelRound, adaptiveTier, adaptiveTierOK,
+				)
+				if err != nil {
+					span.End()
+					cancel()
+					turnReason = "request_prepare_error"
+					yield(nil, err)
+					return
+				}
+				req = prepared.Request
+				hookResult = prepared.HookResult
 			}
 			if !transportRetry {
 				reasoningtrace.Record("agent_request_built", map[string]any{
@@ -332,20 +347,12 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 					"reasoning":           req.Reasoning,
 					"history":             a.history,
 				})
-				// AG-031: snapshot messages[0] before the hook to detect cache drift.
-				prefixBefore := prefixSnapshot(req.Messages)
-				if res, err := a.hooks.BeforeModel(spanCtx, &req); err != nil {
+				if hookResult != nil {
 					span.End()
 					cancel()
-					turnReason = "hook_before_model_error"
-					yield(nil, err)
-					return
-				} else if res != nil {
-					span.End()
-					cancel()
-					answer := normalizeContentStopAnswer(res.Content)
-					if finish := res.FinishReason; finish == "" {
-						res.FinishReason = "hook"
+					answer := normalizeContentStopAnswer(hookResult.Content)
+					if hookResult.FinishReason == "" {
+						hookResult.FinishReason = "hook"
 					}
 					if veto, feedback := a.gateCompletion(ic, answer); veto {
 						a.history = append(a.history, llm.Message{Role: llm.RoleUser, Content: feedback})
@@ -353,12 +360,12 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 					}
 					a.history = append(a.history, llm.Message{Role: llm.RoleAssistant, Content: answer})
 					turnReason = "hook_model_response"
-					yield(a.finalEvent(ic, spanID, parentSpanID, requestID, answer, res.FinishReason, res.Usage), nil)
+					yield(a.finalEvent(
+						ic, spanID, parentSpanID, requestID, answer,
+						hookResult.FinishReason, hookResult.Usage,
+					), nil)
 					return
 				}
-				// AG-031: the request proceeds — detect a hook rewrite that drifted the
-				// cache-stable prefix and emit the prefix_drift metric.
-				a.checkPrefixDrift(prefixBefore, req.Messages, requestID)
 			}
 			llmCtx, llmEnd := llmCallBoundary.Start(spanCtx)
 			activeLLMEnd = llmEnd
