@@ -25,7 +25,7 @@ func TestControlPersistsAssignmentBeforeBuildAndDeliveryBeforeExposure(t *testin
 		return shadowDecision(snapshot), nil
 	})
 	recorder := &eventRecorder{order: &order}
-	control := New(source, recorder)
+	control := newControl(source, recorder)
 
 	prepared, err := control.DecideAndDeliverReasoning(
 		t.Context(),
@@ -67,13 +67,18 @@ func TestControlPersistsAssignmentBeforeBuildAndDeliveryBeforeExposure(t *testin
 		deliveries[0].ActualActionID != string(agent.ReasoningActionStatic) {
 		t.Fatalf("shadow exposure = %+v / %+v", assignment, deliveries[0])
 	}
+	if len(assignment.Features) != 1 ||
+		assignment.Features[adaptive.FeatureMessageCount] !=
+			float64(input.MessageCount) {
+		t.Fatalf("reasoning features = %+v", assignment.Features)
+	}
 }
 
 func TestControlUsesDistinctRoundIDsAndStableExactRetryID(t *testing.T) {
 	input := testInput()
 	snapshot := testSnapshot(t, input, "policy-v1")
 	recorder := &eventRecorder{}
-	control := New(
+	control := newControl(
 		decisionSourceFunc(func(
 			context.Context,
 			agent.ReasoningControlInput,
@@ -121,7 +126,7 @@ func TestControlRecordsExplicitOverrideWithoutRandomizedArm(t *testing.T) {
 	input.Override = llm.ReasoningEffortLow
 	snapshot := testSnapshot(t, input, "policy-v1")
 	recorder := &eventRecorder{}
-	control := New(
+	control := newControl(
 		decisionSourceFunc(func(
 			context.Context,
 			agent.ReasoningControlInput,
@@ -169,7 +174,7 @@ func TestControlKeepsCanaryAndActiveStatic(t *testing.T) {
 			input := testInput()
 			snapshot := testSnapshot(t, input, "policy-v1")
 			recorder := &eventRecorder{}
-			control := New(
+			control := newControl(
 				decisionSourceFunc(func(
 					context.Context,
 					agent.ReasoningControlInput,
@@ -227,7 +232,7 @@ func TestControlFallsBackAtAllTypedBoundaries(t *testing.T) {
 			recorder := &eventRecorder{
 				assignmentErr: test.assignmentErr, deliveryErr: test.deliveryErr,
 			}
-			control := New(
+			control := newControl(
 				decisionSourceFunc(func(
 					context.Context,
 					agent.ReasoningControlInput,
@@ -279,11 +284,11 @@ func TestNewAndDisabledControlUseStaticRequest(t *testing.T) {
 		return Decision{}, nil
 	})
 	recorder := &eventRecorder{}
-	if New(nil, recorder) != nil {
-		t.Fatal("New(nil, recorder) returned a control")
+	if newControl(nil, recorder) != nil {
+		t.Fatal("newControl(nil, recorder) returned a control")
 	}
-	if New(source, nil) != nil {
-		t.Fatal("New(source, nil) returned a control")
+	if newControl(source, nil) != nil {
+		t.Fatal("newControl(source, nil) returned a control")
 	}
 
 	controls := []*Control{nil, {recorder: recorder}, {source: source}}
@@ -325,7 +330,7 @@ func TestControlSkipsAssignmentForOffAndRollback(t *testing.T) {
 		t.Run(string(mode), func(t *testing.T) {
 			input := testInput()
 			recorder := &eventRecorder{}
-			control := New(
+			control := newControl(
 				decisionSourceFunc(func(
 					context.Context,
 					agent.ReasoningControlInput,
@@ -436,7 +441,7 @@ func TestControlFallsBackForInvalidTypedDecision(t *testing.T) {
 			decision := shadowDecision(testSnapshot(t, input, "policy-v1"))
 			test.mutate(&input, &decision)
 			recorder := &eventRecorder{}
-			control := New(
+			control := newControl(
 				decisionSourceFunc(func(
 					context.Context,
 					agent.ReasoningControlInput,
@@ -484,7 +489,7 @@ func TestControlFallsBackForInvalidTypedDecision(t *testing.T) {
 func TestControlReturnsInterceptWithoutDelivery(t *testing.T) {
 	input := testInput()
 	recorder := &eventRecorder{}
-	control := New(
+	control := newControl(
 		decisionSourceFunc(func(
 			context.Context,
 			agent.ReasoningControlInput,

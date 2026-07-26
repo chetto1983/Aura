@@ -30,6 +30,7 @@ type ReasoningControlInput struct {
 	OwnerID       uuid.UUID
 	RequestID     uuid.UUID
 	PointOrdinal  uint32
+	MessageCount  int
 	ProviderID    string
 	BaseURL       string
 	ModelID       string
@@ -84,7 +85,8 @@ func (a *LlmAgent) prepareReasoningRequest(
 	}
 	input := ReasoningControlInput{
 		OwnerID: ownerID, RequestID: round.requestID, PointOrdinal: round.ordinal,
-		ProviderID: a.cfg.Provider, BaseURL: a.cfg.BaseURL, ModelID: a.cfg.Model,
+		MessageCount: len(a.history),
+		ProviderID:   a.cfg.Provider, BaseURL: a.cfg.BaseURL, ModelID: a.cfg.Model,
 		StaticTier: staticTier, StaticTierSet: staticTierSet,
 		Override: a.reasoningOverride,
 	}

@@ -42,14 +42,15 @@ func (a *RunnerAdapter) Run(ctx context.Context, goals []string) (tools.ToolResu
 	}
 
 	rc := RunConfig{
-		ParentBudget:   sc.Budget,
-		ParentRegistry: sc.Registry, // runChild derives Without(parent, "swarm_spawn") per worker (D-08/D-10)
-		Client:         sc.Client,
-		LLM:            sc.LLMCfg,
-		Cfg:            a.Cfg,
-		ConvID:         sc.ConvID,
-		Depth:          a.Depth,
-		Gateway:        sc.Gateway, // relay the parent's PEP to each worker (Open Q1 full enforcement)
+		ParentBudget:     sc.Budget,
+		ParentRegistry:   sc.Registry, // runChild derives Without(parent, "swarm_spawn") per worker (D-08/D-10)
+		Client:           sc.Client,
+		LLM:              sc.LLMCfg,
+		Cfg:              a.Cfg,
+		ConvID:           sc.ConvID,
+		Depth:            a.Depth,
+		Gateway:          sc.Gateway, // relay the parent's PEP to each worker (Open Q1 full enforcement)
+		ReasoningControl: sc.ReasoningControl,
 	}
 
 	out, err := Run(ctx, rc, goals)

@@ -74,7 +74,8 @@ func (recorder *eventRecorder) snapshot() ([]adaptive.Assignment, []adaptive.Del
 func testInput() agent.ReasoningControlInput {
 	return agent.ReasoningControlInput{
 		OwnerID: uuid.Must(uuid.NewV7()), RequestID: uuid.Must(uuid.NewV7()),
-		PointOrdinal: 1, ProviderID: "openrouter", ModelID: "test-model",
+		PointOrdinal: 1, MessageCount: 7,
+		ProviderID: "openrouter", ModelID: "test-model",
 		StaticTier: prompt.ReasoningTierLow, StaticTierSet: true,
 	}
 }

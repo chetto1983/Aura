@@ -54,8 +54,7 @@ type Control struct {
 	recorder EventRecorder
 }
 
-// New constructs a typed reasoning control. Missing ports disable the adapter.
-func New(source DecisionSource, recorder EventRecorder) *Control {
+func newControl(source DecisionSource, recorder EventRecorder) *Control {
 	if source == nil || recorder == nil {
 		return nil
 	}
@@ -200,7 +199,10 @@ func newAssignment(
 		ChampionActionID:    string(agent.ReasoningActionStatic),
 		RecommendedActionID: recommendedAction, IntendedActionID: intendedAction,
 		ActionProbabilities: probabilities, SelectionReason: selectionReason,
-		Override: override, Features: map[adaptive.FeatureKey]float64{},
+		Override: override,
+		Features: map[adaptive.FeatureKey]float64{
+			adaptive.FeatureMessageCount: float64(input.MessageCount),
+		},
 	}
 	if _, err := adaptive.NewAssignmentEvent(assignment); err != nil {
 		return adaptive.Assignment{}, err

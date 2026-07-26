@@ -39,6 +39,8 @@ type SwarmContextValue struct {
 	Client   llm.Client
 	LLMCfg   llm.Config
 	ConvID   string
+	// ReasoningControl is the same boot-clamped adapter used by the parent.
+	ReasoningControl ReasoningControl
 	// Gateway is the parent's Phase-35 policy PEP, relayed to each swarm worker so a
 	// headless child dispatch is enforced too (Open Q1 full enforcement). nil is a no-op.
 	Gateway *gateway.Gateway
@@ -48,14 +50,24 @@ type SwarmContextValue struct {
 // adapter reads. The agent's runTool calls this before dispatching each tool so a
 // swarm_spawn call can resolve the live parent budget/registry/client/config. It
 // mirrors tools.WithToolCallContext.
-func WithSwarmContext(ctx context.Context, budget *Budget, registry *tools.Registry, client llm.Client, llmCfg llm.Config, convID string, gw *gateway.Gateway) context.Context {
+func WithSwarmContext(
+	ctx context.Context,
+	budget *Budget,
+	registry *tools.Registry,
+	client llm.Client,
+	llmCfg llm.Config,
+	convID string,
+	gw *gateway.Gateway,
+	reasoningControl ReasoningControl,
+) context.Context {
 	return context.WithValue(ctx, swarmCtxKey{}, SwarmContextValue{
-		Budget:   budget,
-		Registry: registry,
-		Client:   client,
-		LLMCfg:   llmCfg,
-		ConvID:   convID,
-		Gateway:  gw,
+		Budget:           budget,
+		Registry:         registry,
+		Client:           client,
+		LLMCfg:           llmCfg,
+		ConvID:           convID,
+		ReasoningControl: reasoningControl,
+		Gateway:          gw,
 	})
 }
 

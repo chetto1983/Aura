@@ -97,6 +97,7 @@ type Deps struct {
 	AlwaysBlock           func() string
 	DynamicRecallProvider DynamicRecallProvider
 	DynamicRecallControl  DynamicRecallControl
+	ReasoningControl      agent.ReasoningControl
 	RecallMaxItems        int
 	ResumeHook            ResumeHook
 	// Embedder wires the local embedding-based reasoning-tier classifier into
@@ -157,6 +158,7 @@ type Runner struct {
 
 	dynamicRecallProvider DynamicRecallProvider
 	dynamicRecallControl  DynamicRecallControl
+	reasoningControl      agent.ReasoningControl
 	recallMaxItems        int
 	hookManager           *agent.HookManager          // optional per-turn LlmAgent hooks
 	alwaysBlock           func() string               // renders the messages[1] always-block per turn (D-07); nil → empty
@@ -232,6 +234,7 @@ func New(d Deps) *Runner {
 		resumeHook:               d.ResumeHook,
 		dynamicRecallProvider:    d.DynamicRecallProvider,
 		dynamicRecallControl:     d.DynamicRecallControl,
+		reasoningControl:         d.ReasoningControl,
 		recallMaxItems:           d.RecallMaxItems,
 		hookManager:              d.HookManager,
 		alwaysBlock:              d.AlwaysBlock,
@@ -513,6 +516,7 @@ func (r *Runner) buildAgent(ctx context.Context, convID string, requestID uuid.U
 		HookManager:       r.hookManager,
 		Gateway:           r.gateway,       // Phase-35 PEP; LedgerConversationID defaults to convID (UUID)
 		ReasoningOverride: reasoningEffort, // 37E fixed effort; "" => auto (adaptive path)
+		ReasoningControl:  r.reasoningControl,
 		DynamicTail:       dynamicTail,
 	})
 	ic := agent.InvocationContext{

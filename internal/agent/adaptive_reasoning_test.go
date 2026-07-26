@@ -154,9 +154,16 @@ func TestAdaptiveReasoningOrdersEveryPrimaryRound(t *testing.T) {
 	if len(inputs) != 2 || deliveries != 2 {
 		t.Fatalf("rounds = %d inputs/%d deliveries, want 2/2", len(inputs), deliveries)
 	}
+	wantMessageCounts := []int{2, 4}
 	for index, input := range inputs {
 		if input.RequestID != requestID || input.PointOrdinal != uint32(index+1) {
 			t.Fatalf("round %d identity = %s/%d", index, input.RequestID, input.PointOrdinal)
+		}
+		if input.MessageCount != wantMessageCounts[index] {
+			t.Fatalf(
+				"round %d message count = %d, want %d",
+				index, input.MessageCount, wantMessageCounts[index],
+			)
 		}
 		if input.Override != llm.ReasoningEffortLow {
 			t.Fatalf("round %d override = %q, want low", index, input.Override)
