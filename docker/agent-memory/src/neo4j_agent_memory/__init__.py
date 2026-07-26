@@ -1168,6 +1168,7 @@ class MemoryClient:
                     """
                     MATCH (c:Conversation)-[r:HAS_MESSAGE]->(m:Message)
                     OPTIONAL MATCH (u:User {identifier: $user_identifier})-[:HAS_CONVERSATION]->(c)
+                    WITH c, r, m, u
                     WHERE ($session_id IS NULL OR c.session_id = $session_id)
                       AND ($user_identifier IS NULL OR c.user_identifier = $user_identifier OR u IS NOT NULL)
                     WITH c, r, m
@@ -1230,6 +1231,7 @@ class MemoryClient:
                     OPTIONAL MATCH (:User {identifier: $user_identifier})-[:HAS_CONVERSATION]->(:Conversation)-[:HAS_MESSAGE]->(m:Message)-[:MENTIONS]->(e)
                     OPTIONAL MATCH (:User {identifier: $user_identifier})-[:HAS_PREFERENCE]->(p:Preference)-[:APPLIES_TO]->(e)
                     OPTIONAL MATCH (:User {identifier: $user_identifier})-[:HAS_TRACE]->(:ReasoningTrace)-[:HAS_STEP]->(rs:ReasoningStep)-[:TOUCHED]->(e)
+                    WITH e, ue, m, p, rs
                     WHERE $user_identifier IS NULL OR ue IS NOT NULL OR m IS NOT NULL OR p IS NOT NULL OR rs IS NOT NULL
                     WITH e LIMIT $limit
                     OPTIONAL MATCH (e)-[r0:RELATED_TO]-(e20:Entity)
@@ -1298,6 +1300,7 @@ class MemoryClient:
                     """
                     MATCH (rt:ReasoningTrace)
                     OPTIONAL MATCH (u:User {identifier: $user_identifier})-[:HAS_TRACE]->(rt)
+                    WITH rt, u
                     WHERE ($session_id IS NULL OR rt.session_id = $session_id)
                       AND ($user_identifier IS NULL OR rt.user_identifier = $user_identifier OR u IS NOT NULL)
                     WITH rt LIMIT $limit

@@ -992,6 +992,7 @@ async def _get_entity_neighbors(
     OPTIONAL MATCH (:User {{identifier: $user_identifier}})-[:HAS_CONVERSATION]->(:Conversation)-[:HAS_MESSAGE]->(m:Message)-[:MENTIONS]->(neighbor)
     OPTIONAL MATCH (:User {{identifier: $user_identifier}})-[:HAS_PREFERENCE]->(p:Preference)-[:APPLIES_TO]->(neighbor)
     OPTIONAL MATCH (:User {{identifier: $user_identifier}})-[:HAS_TRACE]->(:ReasoningTrace)-[:HAS_STEP]->(rs:ReasoningStep)-[:TOUCHED]->(neighbor)
+    WITH neighbor, r, ue, m, p, rs
     WHERE neighbor.id <> $entity_id
       AND ($user_identifier IS NULL OR ue IS NOT NULL OR m IS NOT NULL OR p IS NOT NULL OR rs IS NOT NULL)
     WITH DISTINCT neighbor, r
