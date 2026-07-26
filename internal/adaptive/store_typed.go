@@ -3,7 +3,6 @@ package adaptive
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -14,8 +13,6 @@ import (
 )
 
 var (
-	// ErrTypedStoreRequired rejects schema-2 facts that bypass typed persistence.
-	ErrTypedStoreRequired = errors.New("schema-2 adaptive events require typed store persistence")
 	// ErrAssignmentNotFound hides absent and foreign persisted assignments identically.
 	ErrAssignmentNotFound = errors.New("adaptive assignment not found")
 	// ErrPersistedAssignmentInvalid rejects a stored assignment that fails the Go contract.
@@ -151,16 +148,4 @@ func assignmentFromPersistedRow(
 		)
 	}
 	return assignment, nil
-}
-
-func rejectGenericSchema2Event(event Event) error {
-	decoder := json.NewDecoder(bytes.NewReader(event.Payload))
-	var envelope struct {
-		SchemaVersion string `json:"schema_version"`
-	}
-	if err := decoder.Decode(&envelope); err == nil &&
-		envelope.SchemaVersion == SchemaVersion2 {
-		return ErrTypedStoreRequired
-	}
-	return nil
 }

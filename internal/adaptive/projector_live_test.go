@@ -93,7 +93,7 @@ DETACH DELETE preference
 	}()
 
 	store := NewStore(pool, StoreConfig{})
-	event, err := NewEvent(EventParams{
+	event, err := newLegacyEvent(eventParams{
 		ID: uuid.Must(uuid.NewV7()), OwnerID: owner, AggregateID: uuid.Must(uuid.NewV7()).String(),
 		DecisionID: uuid.Must(uuid.NewV7()), Kind: EventDecision,
 		Payload: []byte(fmt.Sprintf(
@@ -103,7 +103,7 @@ DETACH DELETE preference
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Record(ctx, event); err != nil {
+	if _, err := store.recordLegacyEvent(ctx, event); err != nil {
 		t.Fatalf("Record: %v", err)
 	}
 	records, err := store.ListAggregate(ctx, owner, event.AggregateID)

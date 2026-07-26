@@ -267,6 +267,8 @@ type Querier interface {
 	LockAdaptiveOwnerForCohortReconstruction(ctx context.Context, ownerID pgtype.UUID) (pgtype.UUID, error)
 	LockAdaptiveRandomizationReceipt(ctx context.Context, arg LockAdaptiveRandomizationReceiptParams) (AuraAdaptiveRandomizationReceipts, error)
 	LockConversationForTurnAppend(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)
+	// This must run on transaction-bound Queries because autocommit releases the row lock when the statement returns.
+	LockOperationReceipt(ctx context.Context, arg LockOperationReceiptParams) (LockOperationReceiptRow, error)
 	LockSchema2AdaptiveAssignment(ctx context.Context, arg LockSchema2AdaptiveAssignmentParams) (AuraAdaptiveOutbox, error)
 	LockSchema2AdaptiveAssignmentEvents(ctx context.Context, arg LockSchema2AdaptiveAssignmentEventsParams) ([]AuraAdaptiveOutbox, error)
 	LockSchema2AdaptiveOutcomeChain(ctx context.Context, arg LockSchema2AdaptiveOutcomeChainParams) ([]AuraAdaptiveOutbox, error)
@@ -319,6 +321,7 @@ type Querier interface {
 	StoreAdaptiveEvidenceArtifact(ctx context.Context, arg StoreAdaptiveEvidenceArtifactParams) (AuraAdaptiveEvidenceArtifacts, error)
 	SweepDueNotifications(ctx context.Context, arg SweepDueNotificationsParams) ([]AuraPendingNotifications, error)
 	TouchTelegramLastSeen(ctx context.Context, telegramUserID int64) error
+	TryRecoverExpiredOperation(ctx context.Context, arg TryRecoverExpiredOperationParams) (int64, error)
 	TryStartOperation(ctx context.Context, arg TryStartOperationParams) (int64, error)
 	UpdateAssetAccepted(ctx context.Context, arg UpdateAssetAcceptedParams) (AuraAssets, error)
 	UpdateAssetResult(ctx context.Context, arg UpdateAssetResultParams) (AuraAssets, error)

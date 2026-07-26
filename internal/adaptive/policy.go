@@ -2,8 +2,6 @@ package adaptive
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -121,7 +119,6 @@ type PolicyGate struct {
 	Epoch         int64
 	PolicyVersion string
 	Observe       bool
-	Adapt         bool
 	Reason        string
 }
 
@@ -138,8 +135,8 @@ func NewPolicyController(reader PolicyReader) *PolicyController {
 	return &PolicyController{reader: reader}
 }
 
-// Gate decides whether one deterministic decision assignment may observe or adapt.
-func (c *PolicyController) Gate(ctx context.Context, decisionID uuid.UUID) (PolicyGate, error) {
+// Gate decides whether the current policy permits adaptive observation.
+func (c *PolicyController) Gate(ctx context.Context) (PolicyGate, error) {
 	if c == nil || c.reader == nil {
 		return PolicyGate{Reason: "policy_unavailable"}, errors.New("adaptive policy reader is not configured")
 	}
@@ -153,25 +150,11 @@ func (c *PolicyController) Gate(ctx context.Context, decisionID uuid.UUID) (Poli
 	switch policy.Mode {
 	case PolicyOff, PolicyRollback:
 		return gate, nil
-	case PolicyShadow:
+	case PolicyShadow, PolicyCanary, PolicyActive:
 		gate.Observe = true
-		return gate, nil
-	case PolicyCanary:
-		gate.Observe = true
-		gate.Adapt = canaryAssigned(decisionID, policy.Version, policy.RolloutBPS)
-		return gate, nil
-	case PolicyActive:
-		gate.Observe = true
-		gate.Adapt = true
 		return gate, nil
 	default:
 		return PolicyGate{Epoch: policy.Epoch, PolicyVersion: policy.Version, Reason: "invalid_policy"},
 			fmt.Errorf("unknown adaptive policy mode %q", policy.Mode)
 	}
-}
-
-func canaryAssigned(decisionID uuid.UUID, policyVersion string, rolloutBPS int32) bool {
-	sum := sha256.Sum256([]byte(decisionID.String() + "\x00" + policyVersion))
-	bucket := binary.BigEndian.Uint64(sum[:8]) % 10_000
-	return bucket < uint64(rolloutBPS)
 }

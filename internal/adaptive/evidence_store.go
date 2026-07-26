@@ -9,6 +9,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/chetto1983/aura/internal/idempotency"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -40,12 +41,14 @@ func NewEvidenceStore(pool *pgxpool.Pool) *EvidenceStore {
 	return &EvidenceStore{pool: pool, transact: db.WithIdentityTx}
 }
 
-// SealCanaryAdmission builds admission evidence only from stored cohort truth.
+// SealCanaryAdmission validates and stores every admission artifact atomically.
 func (store *EvidenceStore) SealCanaryAdmission(
 	ctx context.Context,
 	ownerID uuid.UUID,
 	cohortID uuid.UUID,
 	sealer EvidenceSealer,
+	manifestSHA256 string,
+	registrations []EvidenceArtifactRegistration,
 ) (CanaryAdmissionEvidence, error) {
 	if store == nil || store.pool == nil || store.transact == nil {
 		return CanaryAdmissionEvidence{}, errors.New(
@@ -60,6 +63,12 @@ func (store *EvidenceStore) SealCanaryAdmission(
 			"adaptive evidence cohort is invalid",
 		)
 	}
+	operation, ok := idempotency.OperationFromContext(ctx)
+	if !ok {
+		return CanaryAdmissionEvidence{}, errors.New(
+			"adaptive admission requires a trusted operation",
+		)
+	}
 	var evidence CanaryAdmissionEvidence
 	prepared := false
 	err := store.transact(
@@ -67,7 +76,14 @@ func (store *EvidenceStore) SealCanaryAdmission(
 		func(queries *sqlc.Queries) error {
 			var err error
 			evidence, err = sealCanaryAdmissionTx(
-				ctx, queries, ownerID, cohortID, sealer,
+				ctx,
+				queries,
+				ownerID,
+				cohortID,
+				sealer,
+				manifestSHA256,
+				registrations,
+				operation,
 			)
 			prepared = err == nil
 			return err
@@ -85,6 +101,15 @@ func (store *EvidenceStore) SealCanaryAdmission(
 				)
 			}
 			if recovered != nil {
+				if err := validateRecoveredCanaryAdmission(
+					evidence,
+					*recovered,
+				); err != nil {
+					return CanaryAdmissionEvidence{}, fmt.Errorf(
+						"recover adaptive canary admission after unresolved commit: %w",
+						err,
+					)
+				}
 				return *recovered, nil
 			}
 		}
@@ -95,49 +120,31 @@ func (store *EvidenceStore) SealCanaryAdmission(
 	return evidence, nil
 }
 
-// RegisterCohortArtifact stores one preregistered non-outcome child exactly once.
-func (store *EvidenceStore) RegisterCohortArtifact(
-	ctx context.Context,
-	ownerID uuid.UUID,
-	cohortID uuid.UUID,
-	sealer EvidenceSealer,
-	registration EvidenceArtifactRegistration,
+func validateRecoveredCanaryAdmission(
+	prepared CanaryAdmissionEvidence,
+	recovered CanaryAdmissionEvidence,
 ) error {
-	if store == nil || store.pool == nil || store.transact == nil {
-		return errors.New("adaptive evidence store requires a database pool")
-	}
-	if err := sealer.validate(ownerID); err != nil {
+	preparedCanonical, err := prepared.CanonicalJSON()
+	if err != nil {
 		return err
 	}
-	allowedKinds := []string{
-		"interference_plan", "look_plan", "quality_outcome_model",
-		"harm_outcome_model", "ope_plan", "operator_approval",
-	}
-	if err := registration.validate(allowedKinds...); err != nil {
+	recoveredCanonical, err := recovered.CanonicalJSON()
+	if err != nil {
 		return err
 	}
-	return store.transact(
-		ctx, store.pool, ownerID.String(),
-		func(queries *sqlc.Queries) error {
-			if err := lockAdaptiveOwnerTx(ctx, queries, ownerID); err != nil {
-				return err
-			}
-			cohort, err := loadCohortForReconstructionTx(
-				ctx, queries, ownerID, cohortID,
-			)
-			if err != nil {
-				return err
-			}
-			if err := validateRegisteredCohortArtifact(
-				cohort, registration,
-			); err != nil {
-				return err
-			}
-			return storeEvidenceArtifactTx(
-				ctx, queries, ownerID, cohortID, sealer, registration,
-			)
-		},
-	)
+	preparedSHA256, err := prepared.SHA256()
+	if err != nil {
+		return err
+	}
+	recoveredSHA256, err := recovered.SHA256()
+	if err != nil {
+		return err
+	}
+	if preparedSHA256 != recoveredSHA256 ||
+		!bytes.Equal(preparedCanonical, recoveredCanonical) {
+		return ErrCanaryAdmissionConflict
+	}
+	return nil
 }
 
 // SealCanaryOutcome is the sole outcome writer. Its signature deliberately has
@@ -266,7 +273,7 @@ func (store *EvidenceStore) reloadCanaryOutcome(
 	return evidence, err
 }
 
-func validateRegisteredCohortArtifact(
+func validateAdmissionCohortArtifact(
 	cohort *FocalCohort,
 	registration EvidenceArtifactRegistration,
 ) error {
@@ -300,16 +307,6 @@ func validateRegisteredCohortArtifact(
 		expected = document.HarmOutcomeModelRef
 	case "ope_plan":
 		expected = document.OPEPlanRef
-	case "operator_approval":
-		approval, err := DecodeOperatorApproval(registration.Canonical)
-		if err != nil || approval.OwnerID != document.OwnerID ||
-			approval.CohortID != cohort.ID().String() ||
-			approval.CohortSHA256 != cohort.SHA256() ||
-			approval.PolicyEpoch != document.PolicyEpoch ||
-			approval.PolicyVersion != document.PolicyVersion {
-			return errors.New("adaptive operator approval differs from cohort")
-		}
-		return nil
 	default:
 		return errors.New("adaptive evidence artifact kind is invalid")
 	}

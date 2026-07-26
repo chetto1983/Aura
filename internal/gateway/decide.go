@@ -59,6 +59,7 @@ func (g *Gateway) Decide(ctx context.Context, spec tools.Spec, rawArgs json.RawM
 	}
 	verdict, err := g.reserve(ctx, spec, rawArgs, key, tier, operatorID)
 	verdict.OperationDecision = operationVerdict.OperationDecision
+	verdict.OperationClaimToken = operationVerdict.OperationClaimToken
 	return verdict, err
 }
 

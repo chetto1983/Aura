@@ -199,7 +199,7 @@ func NewAssignmentEvent(assignment Assignment) (Event, error) {
 	if err != nil {
 		return Event{}, fmt.Errorf("marshal adaptive assignment: %w", err)
 	}
-	return newEvent(EventParams{
+	return newEvent(eventParams{
 		ID:          eventIDForSource(assignment.AssignmentID, EventDecision, "assignment"),
 		OwnerID:     assignment.OwnerID,
 		AggregateID: assignment.RequestID.String(),
@@ -223,7 +223,7 @@ func NewDeliveryEvent(assignment Assignment, delivery Delivery) (Event, error) {
 	if err != nil {
 		return Event{}, fmt.Errorf("marshal adaptive delivery: %w", err)
 	}
-	return newEvent(EventParams{
+	return newEvent(eventParams{
 		ID:          eventIDForSource(delivery.AssignmentID, EventDelivery, "assignment"),
 		OwnerID:     assignment.OwnerID,
 		AggregateID: assignment.RequestID.String(),

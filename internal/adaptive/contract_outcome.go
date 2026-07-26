@@ -254,7 +254,7 @@ func newTypedOutcomeEvent(
 	if err != nil {
 		return Event{}, fmt.Errorf("marshal adaptive %s: %w", kind, err)
 	}
-	return newEvent(EventParams{
+	return newEvent(eventParams{
 		ID: eventIDForSource(
 			assignment.AssignmentID,
 			kind,

@@ -23,6 +23,7 @@ var (
 type Operation struct {
 	Key         OperationKey
 	Fingerprint [32]byte
+	ClaimToken  ClaimToken
 	Correlation string
 }
 
@@ -33,6 +34,9 @@ func (o Operation) Validate() error {
 	}
 	if o.Fingerprint == ([32]byte{}) {
 		return fmt.Errorf("%w: fingerprint is required", ErrOperationContext)
+	}
+	if o.ClaimToken < 0 {
+		return fmt.Errorf("%w: claim token is invalid", ErrOperationContext)
 	}
 	if len(o.Correlation) > MaxOperationKeyBytes || containsControl(o.Correlation) {
 		return fmt.Errorf("%w: correlation is invalid", ErrOperationContext)
@@ -57,6 +61,20 @@ func WithOperation(ctx context.Context, operation Operation) (context.Context, e
 		return nil, err
 	}
 	return context.WithValue(ctx, operationContextKey{}, operation), nil
+}
+
+// WithClaimToken attaches the positive fencing generation returned by Begin or
+// recovery to an already trusted operation context.
+func WithClaimToken(ctx context.Context, claimToken ClaimToken) (context.Context, error) {
+	if claimToken <= 0 {
+		return nil, fmt.Errorf("%w: claim token is required", ErrOperationContext)
+	}
+	operation, ok := OperationFromContext(ctx)
+	if !ok {
+		return nil, ErrOperationContext
+	}
+	operation.ClaimToken = claimToken
+	return WithOperation(ctx, operation)
 }
 
 // OperationFromContext returns a value copy of the trusted operation.

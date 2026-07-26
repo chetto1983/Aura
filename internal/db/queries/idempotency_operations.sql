@@ -1,4 +1,4 @@
--- name: TryStartOperation :execrows
+-- name: TryStartOperation :one
 INSERT INTO aura.idempotency_operations (
     identity_id,
     operation_scope,
@@ -26,7 +26,22 @@ INSERT INTO aura.idempotency_operations (
     sqlc.arg(now),
     sqlc.arg(now)
 )
-ON CONFLICT (identity_id, operation_scope, operation_key) DO NOTHING;
+ON CONFLICT (identity_id, operation_scope, operation_key) DO NOTHING
+RETURNING version;
+
+-- name: TryRecoverExpiredOperation :one
+UPDATE aura.idempotency_operations
+SET lease_expires_at = sqlc.arg(lease_expires_at),
+    retry_after = sqlc.arg(retry_after),
+    updated_at = sqlc.arg(now),
+    version = version + 1
+WHERE identity_id = sqlc.arg(identity_id)
+  AND operation_scope = sqlc.arg(operation_scope)
+  AND operation_key = sqlc.arg(operation_key)
+  AND state = 'in_progress'
+  AND payload_hash = sqlc.arg(payload_hash)
+  AND lease_expires_at <= sqlc.arg(now)
+RETURNING version;
 
 -- name: GetOperation :one
 SELECT
@@ -58,6 +73,22 @@ WHERE identity_id = sqlc.arg(identity_id)
   AND operation_scope = sqlc.arg(operation_scope)
   AND operation_key = sqlc.arg(operation_key);
 
+-- name: LockOperationReceipt :one
+-- This must run on transaction-bound Queries because autocommit releases the row lock when the statement returns.
+SELECT
+    identity_id,
+    operation_scope,
+    operation_key,
+    payload_hash,
+    state,
+    version,
+    created_at
+FROM aura.idempotency_operations
+WHERE identity_id = sqlc.arg(identity_id)
+  AND operation_scope = sqlc.arg(operation_scope)
+  AND operation_key = sqlc.arg(operation_key)
+FOR UPDATE;
+
 -- name: CompleteOperation :execrows
 UPDATE aura.idempotency_operations
 SET state = 'completed',
@@ -75,7 +106,9 @@ SET state = 'completed',
 WHERE identity_id = sqlc.arg(identity_id)
   AND operation_scope = sqlc.arg(operation_scope)
   AND operation_key = sqlc.arg(operation_key)
-  AND state = 'in_progress' AND payload_hash = sqlc.arg(payload_hash);
+  AND state = 'in_progress'
+  AND payload_hash = sqlc.arg(payload_hash)
+  AND version = sqlc.arg(claim_token);
 
 -- name: MarkOperationIndeterminate :execrows
 UPDATE aura.idempotency_operations
@@ -86,7 +119,9 @@ SET state = 'indeterminate',
 WHERE identity_id = sqlc.arg(identity_id)
   AND operation_scope = sqlc.arg(operation_scope)
   AND operation_key = sqlc.arg(operation_key)
-  AND state = 'in_progress' AND payload_hash = sqlc.arg(payload_hash);
+  AND state = 'in_progress'
+  AND payload_hash = sqlc.arg(payload_hash)
+  AND version = sqlc.arg(claim_token);
 
 -- name: ListExpiredReplayBodies :many
 SELECT

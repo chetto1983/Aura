@@ -12,15 +12,6 @@ import (
 	"github.com/google/uuid"
 )
 
-var decisionIDNamespace = uuid.MustParse("af95e1bb-b0fb-4a0a-a260-e0eb682709ae")
-
-// DecisionIDForPoint derives one stable assignment identifier inside a Runner
-// request. The request UUID remains the aggregate correlation key; reasoning
-// and every tool call get distinct decision UUIDs for OPE/canary evidence.
-func DecisionIDForPoint(requestID uuid.UUID, point string) uuid.UUID {
-	return uuid.NewSHA1(decisionIDNamespace, []byte(requestID.String()+":"+strings.TrimSpace(point)))
-}
-
 // EventKind is persisted as part of the immutable adaptive-event protocol, so
 // its values must remain stable across deployments.
 type EventKind string
@@ -49,8 +40,7 @@ func (k EventKind) valid() bool {
 	}
 }
 
-// EventParams contains the untrusted fields NewEvent validates and canonicalizes.
-type EventParams struct {
+type eventParams struct {
 	ID          uuid.UUID
 	OwnerID     uuid.UUID
 	AggregateID string
@@ -72,33 +62,7 @@ type Event struct {
 	CreatedAt   time.Time
 }
 
-// NewEvent preserves the generic schema-1 history and internal policy facts.
-func NewEvent(p EventParams) (Event, error) {
-	if p.Kind == EventDelivery {
-		return Event{}, errors.New("adaptive delivery events require the typed constructor")
-	}
-	canonical, err := canonicalPayload(p.Payload)
-	if err != nil {
-		return Event{}, err
-	}
-	var envelope struct {
-		SchemaVersion string `json:"schema_version"`
-	}
-	if err := json.Unmarshal(canonical, &envelope); err != nil {
-		return Event{}, fmt.Errorf("decode adaptive payload envelope: %w", err)
-	}
-	if p.Kind.genericEvidence() && envelope.SchemaVersion != SchemaVersion1 {
-		return Event{}, errors.New("generic adaptive evidence requires schema_version 1.0")
-	}
-	p.Payload = canonical
-	return newEvent(p)
-}
-
-func (k EventKind) genericEvidence() bool {
-	return k == EventDecision || k == EventOutcome || k == EventCorrection
-}
-
-func newEvent(p EventParams) (Event, error) {
+func newEvent(p eventParams) (Event, error) {
 	switch {
 	case p.ID == uuid.Nil:
 		return Event{}, errors.New("adaptive event id is required")

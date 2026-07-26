@@ -51,7 +51,7 @@ func TestStoreRecordDeliveryRejectsMissingForeignAndSchema1AssignmentsWithoutSeq
 		t.Fatalf("foreign assignment error = %v, want ErrAssignmentNotFound", err)
 	}
 
-	schema1, err := NewEvent(EventParams{
+	schema1, err := newLegacyEvent(eventParams{
 		ID:          uuid.Must(uuid.NewV7()),
 		OwnerID:     owner,
 		AggregateID: "schema-1-history",
@@ -62,7 +62,7 @@ func TestStoreRecordDeliveryRejectsMissingForeignAndSchema1AssignmentsWithoutSeq
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Record(ctx, schema1); err != nil {
+	if _, err := store.recordLegacyEvent(ctx, schema1); err != nil {
 		t.Fatalf("Record(schema1): %v", err)
 	}
 	if _, err := store.RecordDelivery(

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"strings"
@@ -14,17 +15,19 @@ import (
 
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/db"
+	auraeval "github.com/chetto1983/aura/internal/eval"
 	"github.com/chetto1983/aura/internal/idempotency"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/google/uuid"
 )
 
 type cliMutationMeta struct {
-	Scope     idempotency.Scope
-	Normalize string
-	KeyPolicy string
-	Execute   cliCommandExecutor
-	Owner     cliMutationOwner
+	Scope          idempotency.Scope
+	Normalize      string
+	KeyPolicy      string
+	Execute        cliCommandExecutor
+	Owner          cliMutationOwner
+	RecoverExpired bool
 }
 
 type cliMutationOwner uint8
@@ -46,7 +49,12 @@ const (
 type cliOperationRegistry interface {
 	Begin(context.Context, idempotency.BeginRequest) (idempotency.BeginDecision, error)
 	Complete(context.Context, idempotency.CompleteRequest) error
-	MarkIndeterminate(context.Context, idempotency.OperationKey, [32]byte) error
+	MarkIndeterminate(
+		context.Context,
+		idempotency.OperationKey,
+		[32]byte,
+		idempotency.ClaimToken,
+	) error
 }
 
 type cliCommandExecutor func(context.Context, []string, io.Writer, io.Writer) int
@@ -63,17 +71,20 @@ type cliReplayEnvelope struct {
 var cliInvocationContext = context.Background()
 
 var cliMutationCommands = map[string]cliMutationMeta{
-	"chat archive":              cliMutationMetaFor("chat_archive"),
-	"chat delete":               cliMutationMetaFor("chat_delete"),
-	"chat new":                  cliMutationMetaFor("chat_new"),
-	"chat rename":               cliMutationMetaFor("chat_rename"),
-	"chat resume":               cliMutationMetaFor("chat_resume"),
-	"chat unarchive":            cliMutationMetaFor("chat_unarchive"),
-	"config set":                cliMutationMetaFor("config_set"),
-	"db migrate":                cliMigrationMetaFor("db_migrate"),
-	"db reset":                  cliResetMetaFor("db_reset"),
-	"docs ingest":               cliMutationMetaFor("docs_ingest"),
-	"documents backfill":        cliMutationMetaFor("documents_backfill"),
+	"chat archive":       cliMutationMetaFor("chat_archive"),
+	"chat delete":        cliMutationMetaFor("chat_delete"),
+	"chat new":           cliMutationMetaFor("chat_new"),
+	"chat rename":        cliMutationMetaFor("chat_rename"),
+	"chat resume":        cliMutationMetaFor("chat_resume"),
+	"chat unarchive":     cliMutationMetaFor("chat_unarchive"),
+	"config set":         cliMutationMetaFor("config_set"),
+	"db migrate":         cliMigrationMetaFor("db_migrate"),
+	"db reset":           cliResetMetaFor("db_reset"),
+	"docs ingest":        cliMutationMetaFor("docs_ingest"),
+	"documents backfill": cliMutationMetaFor("documents_backfill"),
+	"eval adaptive seal-admission": cliExpiredRecoveryMetaFor(
+		"eval_adaptive_seal_admission",
+	),
 	"identity grant":            cliMutationMetaFor("identity_grant"),
 	"identity recover":          cliMutationMetaFor("identity_recover"),
 	"identity recover-operator": cliMutationMetaFor("identity_recover_operator"),
@@ -114,6 +125,13 @@ func cliMutationMetaFor(normalizer string) cliMutationMeta {
 	}
 }
 
+func cliExpiredRecoveryMetaFor(normalizer string) cliMutationMeta {
+	meta := cliMutationMetaFor(normalizer)
+	meta.RecoverExpired = true
+	meta.Execute = executeCLIAdaptiveSealAdmission
+	return meta
+}
+
 func cliMigrationMetaFor(normalizer string) cliMutationMeta {
 	meta := cliMutationMetaFor(normalizer)
 	meta.Owner = cliMigrationOwner
@@ -130,11 +148,11 @@ func cliResetMetaFor(normalizer string) cliMutationMeta {
 // creates one stable operation before the selected command starts. One-shot CLI
 // calls without a key receive a generated key that is printed before execution.
 func prepareCLIIdempotency(ctx context.Context, args []string, output io.Writer) (context.Context, []string, error) {
-	command, mutating := cliMutationPath(args)
 	cleaned, explicitKey, err := removeOperationKeyFlag(args)
 	if err != nil {
 		return nil, nil, err
 	}
+	command, mutating := cliMutationPath(cleaned)
 	if !mutating {
 		if explicitKey != "" {
 			return nil, nil, errors.New("--operation-key is only valid for mutating commands")
@@ -154,10 +172,22 @@ func prepareCLIIdempotency(ctx context.Context, args []string, output io.Writer)
 	if err := operationKey.Validate(); err != nil {
 		return nil, nil, fmt.Errorf("--operation-key: %w", err)
 	}
-	fingerprint, err := idempotency.FingerprintTyped(struct {
-		Command string   `json:"command"`
-		Args    []string `json:"args"`
-	}{Command: command, Args: append([]string(nil), cleaned[2:]...)})
+	var fingerprint [32]byte
+	if command == "eval adaptive seal-admission" {
+		request, loadErr := loadAdaptiveBenchmarkAdmission(cleaned[3:])
+		if loadErr != nil {
+			return nil, nil, loadErr
+		}
+		fingerprint, err = auraeval.AdaptiveBenchmarkAdmissionFingerprint(request)
+	} else {
+		fingerprint, err = idempotency.FingerprintTyped(struct {
+			Command string   `json:"command"`
+			Args    []string `json:"args"`
+		}{
+			Command: command,
+			Args:    append([]string(nil), cleaned[2:]...),
+		})
+	}
 	if err != nil {
 		return nil, nil, err
 	}
@@ -192,7 +222,15 @@ func executeCLIIdempotentParent(ctx context.Context, args []string, stdout, stde
 		return true, 2
 	}
 	defer pool.Close()
-	return true, runCLIIdempotent(ctx, args, stdout, stderr, idempotency.New(pool, idempotency.Config{}), meta.Execute)
+	return true, runCLIIdempotent(
+		ctx,
+		args,
+		stdout,
+		stderr,
+		idempotency.New(pool, idempotency.Config{}),
+		meta.Execute,
+		meta.RecoverExpired,
+	)
 }
 
 func runCLIResetOwner(ctx context.Context, args []string, stdout, stderr io.Writer, execute cliCommandExecutor) int {
@@ -203,7 +241,15 @@ func runCLIResetOwner(ctx context.Context, args []string, stdout, stderr io.Writ
 		return 2
 	}
 	defer registry.Close()
-	return runCLIIdempotent(ctx, args, stdout, stderr, registry, execute)
+	return runCLIIdempotent(
+		ctx,
+		args,
+		stdout,
+		stderr,
+		registry,
+		execute,
+		false,
+	)
 }
 
 func runCLIMigrationOwner(ctx context.Context, args []string, stdout, stderr io.Writer, execute cliCommandExecutor) int {
@@ -215,7 +261,15 @@ func runCLIMigrationOwner(ctx context.Context, args []string, stdout, stderr io.
 	return execute(ctx, appendOperationKey(args, operation.Key.Key), stdout, stderr)
 }
 
-func runCLIIdempotent(ctx context.Context, args []string, stdout, stderr io.Writer, registry cliOperationRegistry, execute cliCommandExecutor) int {
+func runCLIIdempotent(
+	ctx context.Context,
+	args []string,
+	stdout io.Writer,
+	stderr io.Writer,
+	registry cliOperationRegistry,
+	execute cliCommandExecutor,
+	recoverExpired bool,
+) int {
 	operation, ok := idempotency.OperationFromContext(ctx)
 	if !ok || registry == nil || execute == nil {
 		_, _ = fmt.Fprintln(stderr, "operation context unavailable")
@@ -226,6 +280,7 @@ func runCLIIdempotent(ctx context.Context, args []string, stdout, stderr io.Writ
 		_, _ = fmt.Fprintln(stderr, "operation registry unavailable")
 		return 2
 	}
+	claimToken := decision.ClaimToken
 	switch decision.Decision {
 	case idempotency.DecisionAcquired:
 	case idempotency.DecisionReplay:
@@ -237,12 +292,42 @@ func runCLIIdempotent(ctx context.Context, args []string, stdout, stderr io.Writ
 		_, _ = fmt.Fprintln(stderr, "operation key conflicts with changed command arguments")
 		return 2
 	case idempotency.DecisionInProgress:
-		_, _ = fmt.Fprintln(stderr, "operation is still in progress")
-		return 2
+		recoverer, recoverable := registry.(interface {
+			RecoverExpired(context.Context, idempotency.BeginRequest) (
+				idempotency.ClaimToken,
+				bool,
+				error,
+			)
+		})
+		if !recoverExpired || !recoverable {
+			_, _ = fmt.Fprintln(stderr, "operation is still in progress")
+			return 2
+		}
+		recoveredToken, recovered, recoverErr := recoverer.RecoverExpired(
+			ctx,
+			idempotency.BeginRequest{
+				Operation:   operation.Key,
+				Fingerprint: operation.Fingerprint,
+			},
+		)
+		if recoverErr != nil {
+			_, _ = fmt.Fprintln(stderr, "operation registry unavailable")
+			return 2
+		}
+		if !recovered {
+			_, _ = fmt.Fprintln(stderr, "operation is still in progress")
+			return 2
+		}
+		claimToken = recoveredToken
 	case idempotency.DecisionIndeterminate:
 		_, _ = fmt.Fprintln(stderr, "operation outcome is indeterminate; do not retry automatically")
 		return 2
 	default:
+		_, _ = fmt.Fprintln(stderr, "operation registry unavailable")
+		return 2
+	}
+	ctx, err = idempotency.WithClaimToken(ctx, claimToken)
+	if err != nil {
 		_, _ = fmt.Fprintln(stderr, "operation registry unavailable")
 		return 2
 	}
@@ -251,7 +336,9 @@ func runCLIIdempotent(ctx context.Context, args []string, stdout, stderr io.Writ
 	errCapture := &boundedCLIOutput{dst: stderr, limit: maxCLIReplayStreamBytes}
 	exitCode := execute(ctx, appendOperationKey(args, operation.Key.Key), outCapture, errCapture)
 	if exitCode != 0 || outCapture.overflow || errCapture.overflow {
-		if markErr := registry.MarkIndeterminate(ctx, operation.Key, operation.Fingerprint); markErr != nil {
+		if markErr := registry.MarkIndeterminate(
+			ctx, operation.Key, operation.Fingerprint, claimToken,
+		); markErr != nil {
 			_, _ = fmt.Fprintln(stderr, "mark operation indeterminate:", markErr)
 		}
 		if outCapture.overflow || errCapture.overflow {
@@ -264,19 +351,131 @@ func runCLIIdempotent(ctx context.Context, args []string, stdout, stderr io.Writ
 	}
 	body, err := json.Marshal(cliReplayEnvelope{ExitCode: exitCode, Stdout: outCapture.buf.String(), Stderr: errCapture.buf.String()})
 	if err != nil {
-		_ = registry.MarkIndeterminate(ctx, operation.Key, operation.Fingerprint)
+		_ = registry.MarkIndeterminate(
+			ctx, operation.Key, operation.Fingerprint, claimToken,
+		)
 		return 2
+	}
+	result := idempotency.ReplayResult{
+		Body: body, StatusCode: 200,
+		ExpiresAt: time.Now().UTC().Add(cliReplayRetention),
 	}
 	completeErr := registry.Complete(ctx, idempotency.CompleteRequest{
 		Operation: operation.Key, Fingerprint: operation.Fingerprint,
-		Result: idempotency.ReplayResult{Body: body, StatusCode: 200, ExpiresAt: time.Now().UTC().Add(cliReplayRetention)},
+		ClaimToken: claimToken, Result: result,
 	})
+	if errors.Is(completeErr, idempotency.ErrStaleTransition) {
+		reconciled, beginErr := registry.Begin(
+			ctx,
+			idempotency.BeginRequest{
+				Operation:   operation.Key,
+				Fingerprint: operation.Fingerprint,
+			},
+		)
+		if beginErr == nil &&
+			reconciled.Decision == idempotency.DecisionReplay &&
+			equivalentCLIReplay(reconciled.Replay, result) {
+			return 0
+		}
+	}
 	if completeErr != nil {
-		_ = registry.MarkIndeterminate(ctx, operation.Key, operation.Fingerprint)
+		_ = registry.MarkIndeterminate(
+			ctx, operation.Key, operation.Fingerprint, claimToken,
+		)
 		_, _ = fmt.Fprintln(stderr, "operation completion unavailable")
 		return 2
 	}
 	return 0
+}
+
+func executeCLIAdaptiveSealAdmission(
+	ctx context.Context,
+	args []string,
+	stdout io.Writer,
+	stderr io.Writer,
+) int {
+	cleaned, operationKey, err := removeOperationKeyFlag(args)
+	operation, ok := idempotency.OperationFromContext(ctx)
+	if err != nil || !ok || operation.ClaimToken <= 0 ||
+		operationKey != operation.Key.Key {
+		_, _ = fmt.Fprintln(stderr, "operation context unavailable")
+		return 2
+	}
+	if err := runEvalCommand(
+		ctx,
+		cleaned[1:],
+		stdout,
+		newAdaptiveBenchmarkCLI,
+	); err != nil {
+		_, _ = fmt.Fprintln(stderr, err)
+		return 1
+	}
+	return 0
+}
+
+func equivalentCLIReplay(
+	replay *idempotency.ReplayResult,
+	result idempotency.ReplayResult,
+) bool {
+	if replay == nil {
+		return false
+	}
+	replayBody, replayOK := canonicalCLIReplayBody(replay.Body)
+	resultBody, resultOK := canonicalCLIReplayBody(result.Body)
+	return replayOK &&
+		resultOK &&
+		bytes.Equal(replayBody, resultBody) &&
+		replay.Preview == result.Preview &&
+		replay.SidecarRef == result.SidecarRef &&
+		replay.StatusCode == result.StatusCode &&
+		maps.Equal(replay.Headers, result.Headers)
+}
+
+func canonicalCLIReplayBody(body []byte) ([]byte, bool) {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	token, err := decoder.Token()
+	if err != nil || token != json.Delim('{') {
+		return nil, false
+	}
+	seen := make(map[string]struct{}, 3)
+	envelope := cliReplayEnvelope{}
+	for decoder.More() {
+		keyToken, err := decoder.Token()
+		key, ok := keyToken.(string)
+		if err != nil || !ok {
+			return nil, false
+		}
+		if _, duplicate := seen[key]; duplicate {
+			return nil, false
+		}
+		seen[key] = struct{}{}
+		switch key {
+		case "exit_code":
+			err = decoder.Decode(&envelope.ExitCode)
+		case "stdout":
+			err = decoder.Decode(&envelope.Stdout)
+		case "stderr":
+			err = decoder.Decode(&envelope.Stderr)
+		default:
+			return nil, false
+		}
+		if err != nil {
+			return nil, false
+		}
+	}
+	token, err = decoder.Token()
+	if err != nil || token != json.Delim('}') {
+		return nil, false
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return nil, false
+	}
+	if _, ok := seen["exit_code"]; !ok {
+		return nil, false
+	}
+	canonical, err := json.Marshal(envelope)
+	return canonical, err == nil
 }
 
 func executeCLIChild(ctx context.Context, args []string, stdout, stderr io.Writer) int {
@@ -347,9 +546,14 @@ func cliMutationPath(args []string) (string, bool) {
 	if len(args) < 2 {
 		return "", false
 	}
-	command := args[0] + " " + args[1]
-	_, ok := cliMutationCommands[command]
-	return command, ok
+	maxTokens := min(len(args), 3)
+	for tokens := maxTokens; tokens >= 2; tokens-- {
+		command := strings.Join(args[:tokens], " ")
+		if _, ok := cliMutationCommands[command]; ok {
+			return command, true
+		}
+	}
+	return "", false
 }
 
 func cliMutationForArgs(args []string) (cliMutationMeta, bool) {

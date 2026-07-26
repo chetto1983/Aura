@@ -10,42 +10,6 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestStoreGenericRecordAPIsRejectSchema2EventLiterals(t *testing.T) {
-	t.Parallel()
-	store := &Store{}
-	for _, kind := range []EventKind{
-		EventDecision,
-		EventDelivery,
-		EventOutcome,
-		EventCorrection,
-		EventPromotion,
-		EventRollback,
-	} {
-		kind := kind
-		t.Run(string(kind), func(t *testing.T) {
-			t.Parallel()
-			event := Event{
-				ID:          uuid.Must(uuid.NewV7()),
-				OwnerID:     uuid.Must(uuid.NewV7()),
-				AggregateID: "schema-2-bypass",
-				DecisionID:  uuid.Must(uuid.NewV7()),
-				Kind:        kind,
-				Payload:     []byte(`{"schema_version":"2.0"}`),
-			}
-			if _, err := store.Record(context.Background(), event); !errors.Is(err, ErrTypedStoreRequired) {
-				t.Fatalf("Record error = %v, want ErrTypedStoreRequired", err)
-			}
-			if _, _, err := store.RecordTx(
-				context.Background(),
-				nil,
-				event,
-			); !errors.Is(err, ErrTypedStoreRequired) {
-				t.Fatalf("RecordTx error = %v, want ErrTypedStoreRequired", err)
-			}
-		})
-	}
-}
-
 func TestStoreRecordAssignmentUsesTypedConstructor(t *testing.T) {
 	t.Parallel()
 	assignment := validAssignment()
@@ -68,41 +32,6 @@ func TestStoreRecordDeliveryRejectsMissingAssignmentIdentity(t *testing.T) {
 	if !errors.Is(err, ErrAssignmentNotFound) {
 		t.Fatalf("RecordDelivery error = %v, want ErrAssignmentNotFound", err)
 	}
-}
-
-func TestStoreRecordTxRejectsNilDependencies(t *testing.T) {
-	t.Parallel()
-	event, err := NewEvent(EventParams{
-		ID:          uuid.Must(uuid.NewV7()),
-		OwnerID:     uuid.Must(uuid.NewV7()),
-		AggregateID: "nil-record-tx",
-		DecisionID:  uuid.Must(uuid.NewV7()),
-		Kind:        EventDecision,
-		Payload:     []byte(`{"schema_version":"1.0"}`),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	t.Run("store", func(t *testing.T) {
-		var store *Store
-		if _, _, err := store.RecordTx(
-			context.Background(),
-			&sqlc.Queries{},
-			event,
-		); err == nil || !strings.Contains(err.Error(), "store") {
-			t.Fatalf("nil Store RecordTx error = %v, want store dependency error", err)
-		}
-	})
-	t.Run("queries", func(t *testing.T) {
-		if _, _, err := (&Store{}).RecordTx(
-			context.Background(),
-			nil,
-			event,
-		); err == nil || !strings.Contains(err.Error(), "queries") {
-			t.Fatalf("nil queries RecordTx error = %v, want queries dependency error", err)
-		}
-	})
 }
 
 func TestAssignmentFromPersistedRowRejectsBindingAndPayloadMismatches(t *testing.T) {

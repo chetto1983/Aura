@@ -71,6 +71,16 @@ func (a *LlmAgent) execTool(ctx context.Context, tool tools.Tool, mutating bool,
 			return tools.ToolResult{}, derr
 		}
 		operationAcquired = verdict.OperationDecision == idempotency.DecisionAcquired
+		if operationAcquired {
+			claimedCtx, claimErr := idempotency.WithClaimToken(
+				ctx,
+				verdict.OperationClaimToken,
+			)
+			if claimErr != nil {
+				return tools.ToolResult{}, claimErr
+			}
+			ctx = claimedCtx
+		}
 		switch verdict.Decision {
 		case gateway.Deny:
 			denied := &gateway.ErrDenied{Reason: verdict.Reason, Tier: verdict.Tier}

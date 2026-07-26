@@ -21,84 +21,84 @@ func (r *mutablePolicyReader) CurrentPolicy(context.Context) (Policy, error) {
 	return r.policy, r.err
 }
 
-func TestPolicyControllerReadsFreshStateAndDisablesStaleWorkersOnRollback(t *testing.T) {
+func TestPolicyControllerGateModes(t *testing.T) {
+	tests := []struct {
+		name    string
+		mode    PolicyMode
+		observe bool
+	}{
+		{name: "off is disabled", mode: PolicyOff},
+		{name: "rollback is disabled", mode: PolicyRollback},
+		{name: "shadow is observe only", mode: PolicyShadow, observe: true},
+		{name: "canary is observe only", mode: PolicyCanary, observe: true},
+		{name: "active is observe only", mode: PolicyActive, observe: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			policy := Policy{
+				Epoch: 4, Version: "candidate-4", Mode: tt.mode, RolloutBPS: 10_000,
+			}
+			gate, err := NewPolicyController(&mutablePolicyReader{policy: policy}).Gate(t.Context())
+			if err != nil {
+				t.Fatalf("Gate(%s): %v", tt.mode, err)
+			}
+			want := PolicyGate{
+				Epoch: 4, PolicyVersion: "candidate-4", Observe: tt.observe,
+				Reason: string(tt.mode),
+			}
+			if gate != want {
+				t.Fatalf("Gate(%s) = %+v, want %+v", tt.mode, gate, want)
+			}
+		})
+	}
+}
+
+func TestPolicyControllerReadsFreshState(t *testing.T) {
 	reader := &mutablePolicyReader{policy: Policy{
 		Epoch: 7, Version: "candidate-7", Mode: PolicyActive, RolloutBPS: 10_000,
 	}}
-	firstProcess := NewPolicyController(reader)
-	secondProcess := NewPolicyController(reader)
-	decisionID := uuid.Must(uuid.NewV7())
+	controller := NewPolicyController(reader)
 
-	before, err := firstProcess.Gate(context.Background(), decisionID)
+	before, err := controller.Gate(t.Context())
 	if err != nil {
 		t.Fatalf("Gate(active): %v", err)
 	}
-	if !before.Observe || !before.Adapt || before.Epoch != 7 {
-		t.Fatalf("active gate = %+v, want observe+adapt at epoch 7", before)
-	}
-
-	// A different process performs the distributed kill switch. The first process must
-	// not serve a cached active policy on its next decision.
 	reader.policy = Policy{
 		Epoch: 8, Version: "rollback-8", Mode: PolicyRollback, RolloutBPS: 0,
 	}
-	after, err := firstProcess.Gate(context.Background(), uuid.Must(uuid.NewV7()))
+	after, err := controller.Gate(t.Context())
 	if err != nil {
 		t.Fatalf("Gate(rollback): %v", err)
 	}
-	if after.Observe || after.Adapt || after.Epoch != 8 || after.Reason != "rollback" {
-		t.Fatalf("rollback gate = %+v, want completely disabled at epoch 8", after)
-	}
-
-	other, err := secondProcess.Gate(context.Background(), uuid.Must(uuid.NewV7()))
-	if err != nil {
-		t.Fatalf("second Gate(rollback): %v", err)
-	}
-	if other.Adapt || reader.reads != 3 {
-		t.Fatalf("second process gate=%+v reads=%d, want fresh read and no adaptation", other, reader.reads)
+	if !before.Observe || before.Epoch != 7 || after.Observe || after.Epoch != 8 ||
+		after.Reason != string(PolicyRollback) || reader.reads != 2 {
+		t.Fatalf("gates before=%+v after=%+v reads=%d, want fresh rollback state", before, after, reader.reads)
 	}
 }
 
 func TestPolicyControllerFailsClosedWhenAuthoritativeStateIsUnavailable(t *testing.T) {
 	readErr := errors.New("postgres partition")
-	controller := NewPolicyController(&mutablePolicyReader{err: readErr})
-
-	gate, err := controller.Gate(context.Background(), uuid.Must(uuid.NewV7()))
+	gate, err := NewPolicyController(&mutablePolicyReader{err: readErr}).Gate(t.Context())
 	if !errors.Is(err, readErr) {
 		t.Fatalf("Gate error = %v, want %v", err, readErr)
 	}
-	if gate.Observe || gate.Adapt || gate.Reason != "policy_unavailable" {
-		t.Fatalf("unavailable gate = %+v, want baseline-only fail closed", gate)
+	want := PolicyGate{Reason: "policy_unavailable"}
+	if gate != want {
+		t.Fatalf("unavailable gate = %+v, want %+v", gate, want)
 	}
 }
 
-func TestPolicyControllerCanaryAssignmentIsStableAndVersionBound(t *testing.T) {
-	reader := &mutablePolicyReader{policy: Policy{
-		Epoch: 2, Version: "candidate-a", Mode: PolicyCanary, RolloutBPS: 2500,
-	}}
-	controller := NewPolicyController(reader)
-	decisionID := uuid.MustParse("018f1d21-89ab-7abc-8def-0123456789ab")
-
-	first, err := controller.Gate(context.Background(), decisionID)
-	if err != nil {
-		t.Fatal(err)
+func TestPolicyControllerFailsClosedForUnknownMode(t *testing.T) {
+	gate, err := NewPolicyController(&mutablePolicyReader{policy: Policy{
+		Epoch: 9, Version: "candidate-9", Mode: PolicyMode("unknown"),
+	}}).Gate(t.Context())
+	if err == nil || !strings.Contains(err.Error(), "unknown adaptive policy mode") {
+		t.Fatalf("Gate error = %v, want unknown-mode error", err)
 	}
-	second, err := controller.Gate(context.Background(), decisionID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if first.Adapt != second.Adapt || !first.Observe || !second.Observe {
-		t.Fatalf("same decision assignment changed: first=%+v second=%+v", first, second)
-	}
-
-	reader.policy.Version = "candidate-b"
-	changed, err := controller.Gate(context.Background(), decisionID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := canaryAssigned(decisionID, reader.policy.Version, reader.policy.RolloutBPS)
-	if changed.Adapt != want {
-		t.Fatalf("version-bound assignment = %v, want %v", changed.Adapt, want)
+	want := PolicyGate{Epoch: 9, PolicyVersion: "candidate-9", Reason: "invalid_policy"}
+	if gate != want {
+		t.Fatalf("unknown-mode gate = %+v, want %+v", gate, want)
 	}
 }
 

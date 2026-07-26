@@ -50,7 +50,8 @@ configured model and real traffic passes the calibrated promotion gate.
 4. Keep authorization, gateway policy, identity scope, and tool side effects outside
    learned control.
 5. Record propensities and evidence provenance for supported OPE and canaries.
-6. Make turns and adaptive facts atomic in PostgreSQL.
+6. Preserve conversation-store atomicity and persist typed adaptive facts at their
+   causal timing boundaries.
 7. Reuse Aura's Neo4j and agent-memory infrastructure without exposing private
    adaptive nodes through the LLM-facing memory MCP.
 8. Fail to the baseline on missing policy state, partitions, invalid snapshots, or
@@ -169,8 +170,8 @@ request
           ▼
 answer / correction / deterministic evaluator / human rubric
           │
-          ├─ typed immutable event
-          ├─ conversation turn + event in one PostgreSQL transaction
+          ├─ typed immutable fact at its causal timing boundary
+          ├─ conversation turn + cache metric in the conversation transaction
           ├─ leased ordered outbox
           ├─ private Neo4j projection
           └─ offline OPE + closed-cohort promotion gate
@@ -281,22 +282,18 @@ Per-owner/per-aggregate sequencing is atomic and gap-free. Projector workers use
 are projected. Different aggregates may progress concurrently. A stale worker cannot
 acknowledge an expired and reclaimed lease.
 
-### 8.2 Atomic Runner persistence
+### 8.2 Typed persistence timing boundaries
 
-`adaptive.TurnCommitter` uses the same owner-scoped PostgreSQL transaction for:
+Amendment #93.9 retires the generic schema-`1.0` `adaptive.TurnCommitter`.
+Conversation turns and assistant cache metrics retain their existing conversation-store
+transaction, including the normal oversized-content spill and rollback cleanup path.
+The adaptive ledger no longer manufactures a terminal fact merely because a tool or
+assistant turn completed.
 
-- the adaptive event;
-- conversation sequence allocation;
-- the tool or assistant turn;
-- the assistant cache metric.
-
-An exact retry writes neither a duplicate event nor a duplicate turn. An immutable
-event conflict rolls back the companion turn.
-
-Oversized turn content is staged through Aura's spill path before commit. A successful
-transaction retains the staged blob and turn reference; a transaction failure removes
-the staged blob. Live tests cover successful spill, event-conflict rollback, and blob
-cleanup, so large content no longer bypasses the atomic adaptive commit contract.
+Schema-`2.0` facts commit at their causal boundaries: an eligible Assignment before
+learned execution, its Delivery before downstream exposure, and an Outcome only when
+an independent evaluator produces one. Combining them with terminal turn persistence
+would falsify assignment, exposure, or evaluator time.
 
 ### 8.3 Identity deletion
 
@@ -340,20 +337,18 @@ an admission plan for `shadow -> canary`, and a loader-reconstructed closed outc
 report for `canary -> active`. The transition revalidates artifact kind, exact scope,
 hashes, eligibility, and target state in the same transaction.
 
-Canary assignment is designed to hash a point-specific assignment ID and policy
-version into 10,000 stable buckets. The current reasoning hook instead derives one
-`DecisionIDForPoint(requestID, "reasoning")` for every model round in a request, so
-multi-round observations collide semantically. Amendment #93.4 requires the point
-ordinal in every typed assignment ID before canary evidence can be eligible.
+Canary arm assignment uses the store-owned OS-CSPRNG Bernoulli draw and persists its
+receipt; it is never derived by hashing an assignment ID. `AssignmentIDForPoint`
+includes the point ordinal, so repeated model rounds remain distinct; Amendment #93.9
+retires the obsolete request-level `DecisionIDForPoint` predecessor.
 
 ### 8.5 Production composition boundary
 
-Aura's chat boot path now composes the decision hook and atomic turn committer only
-when the authoritative boot policy is `shadow`. The hook records generic observations
-while the static action remains served; no learned snapshot scorer is composed.
-Before every observation or adaptive commit, a fresh policy read gates the path;
-`off`, `rollback`, or a policy-store error falls back to the existing non-adaptive
-persistence path.
+Aura's typed domain adapters are gated by fresh authoritative policy reads. An eligible
+Assignment commits before learned execution and its Delivery before exposure; terminal
+conversation persistence stays on the existing conversation-store path and synthesizes
+no adaptive fact. `off`, `rollback`, or a policy-store error falls back to the static
+path.
 
 `canary` and `active` learned-action serving are deliberately not implemented. If
 either state is encountered at boot, Aura logs the unsupported state and forces the

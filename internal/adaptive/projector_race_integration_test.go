@@ -78,7 +78,7 @@ func TestProjectorWorkerDeletionFenceClosesLiveTOCTOUInterleaving(t *testing.T) 
 	})
 
 	store := NewStore(pool, StoreConfig{})
-	event, err := NewEvent(EventParams{
+	event, err := newLegacyEvent(eventParams{
 		ID: uuid.Must(uuid.NewV7()), OwnerID: owner, AggregateID: "delete-race",
 		DecisionID: uuid.Must(uuid.NewV7()), Kind: EventDecision,
 		Payload: []byte(`{"schema_version":"1.0","domain":"tool"}`),
@@ -86,7 +86,7 @@ func TestProjectorWorkerDeletionFenceClosesLiveTOCTOUInterleaving(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Record(ctx, event); err != nil {
+	if _, err := store.recordLegacyEvent(ctx, event); err != nil {
 		t.Fatalf("Record: %v", err)
 	}
 	graph := &interleavingAdaptiveGraph{
@@ -161,7 +161,7 @@ func TestProjectorWorkerGraphOutagePersistsRetryThenDeadLetterLive(t *testing.T)
 	})
 
 	store := NewStore(pool, StoreConfig{MaxAttempts: 2})
-	event, err := NewEvent(EventParams{
+	event, err := newLegacyEvent(eventParams{
 		ID: uuid.Must(uuid.NewV7()), OwnerID: owner, AggregateID: "graph-outage",
 		DecisionID: uuid.Must(uuid.NewV7()), Kind: EventOutcome,
 		Payload: []byte(`{"schema_version":"1.0","quality_observed":false}`),
@@ -169,7 +169,7 @@ func TestProjectorWorkerGraphOutagePersistsRetryThenDeadLetterLive(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Record(ctx, event); err != nil {
+	if _, err := store.recordLegacyEvent(ctx, event); err != nil {
 		t.Fatalf("Record: %v", err)
 	}
 

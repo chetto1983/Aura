@@ -41,7 +41,9 @@ func (s *scheduledOperationRegistry) Begin(_ context.Context, request idempotenc
 	if s.request == nil {
 		copyRequest := request
 		s.request = &copyRequest
-		return idempotency.BeginDecision{Decision: idempotency.DecisionAcquired}, nil
+		return idempotency.BeginDecision{
+			Decision: idempotency.DecisionAcquired, ClaimToken: 1,
+		}, nil
 	}
 	if s.request.Operation != request.Operation || s.request.Fingerprint != request.Fingerprint {
 		return idempotency.BeginDecision{Decision: idempotency.DecisionConflict}, idempotency.ErrConflict
@@ -58,7 +60,12 @@ func (s *scheduledOperationRegistry) Complete(_ context.Context, request idempot
 	return nil
 }
 
-func (*scheduledOperationRegistry) MarkIndeterminate(context.Context, idempotency.OperationKey, [32]byte) error {
+func (*scheduledOperationRegistry) MarkIndeterminate(
+	context.Context,
+	idempotency.OperationKey,
+	[32]byte,
+	idempotency.ClaimToken,
+) error {
 	return nil
 }
 

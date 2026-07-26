@@ -26,7 +26,12 @@ const httpOperationReplayRetention = 30 * 24 * time.Hour
 type operationRegistry interface {
 	Begin(context.Context, idempotency.BeginRequest) (idempotency.BeginDecision, error)
 	Complete(context.Context, idempotency.CompleteRequest) error
-	MarkIndeterminate(context.Context, idempotency.OperationKey, [32]byte) error
+	MarkIndeterminate(
+		context.Context,
+		idempotency.OperationKey,
+		[32]byte,
+		idempotency.ClaimToken,
+	) error
 }
 
 // mutationKeyPolicy documents where an adapter obtains its caller-stable key.
@@ -204,13 +209,21 @@ func (s *Server) idempotencyMutation(next http.Handler, meta mutationRouteMeta) 
 		if writeIdempotencyDecision(w, decision) {
 			return
 		}
+		operation.ClaimToken = decision.ClaimToken
+		if operation.ClaimToken <= 0 {
+			writeIdempotencyError(w, http.StatusServiceUnavailable, "operation registry unavailable")
+			return
+		}
 		ctx := r.Context()
 		if identityctx.IdentityID(ctx) == "" {
 			ctx = identityctx.WithIdentityID(ctx, identityID)
 		}
 		ctx, err = idempotency.WithOperation(ctx, operation)
 		if err != nil {
-			_ = s.operations.MarkIndeterminate(r.Context(), operation.Key, operation.Fingerprint)
+			_ = s.operations.MarkIndeterminate(
+				r.Context(), operation.Key, operation.Fingerprint,
+				operation.ClaimToken,
+			)
 			writeIdempotencyError(w, http.StatusServiceUnavailable, "operation context unavailable")
 			return
 		}
@@ -219,12 +232,18 @@ func (s *Server) idempotencyMutation(next http.Handler, meta mutationRouteMeta) 
 		if meta.Normalize == "agent_run" {
 			defer func() {
 				if recovered := recover(); recovered != nil {
-					_ = s.operations.MarkIndeterminate(r.Context(), operation.Key, operation.Fingerprint)
+					_ = s.operations.MarkIndeterminate(
+						r.Context(), operation.Key, operation.Fingerprint,
+						operation.ClaimToken,
+					)
 					panic(recovered)
 				}
 			}()
 			next.ServeHTTP(w, r)
-			if err := s.operations.MarkIndeterminate(r.Context(), operation.Key, operation.Fingerprint); err != nil {
+			if err := s.operations.MarkIndeterminate(
+				r.Context(), operation.Key, operation.Fingerprint,
+				operation.ClaimToken,
+			); err != nil {
 				slog.Error("agui: mark streaming mutation indeterminate", "err", err)
 			}
 			return
@@ -233,13 +252,19 @@ func (s *Server) idempotencyMutation(next http.Handler, meta mutationRouteMeta) 
 		captured := newBoundedMutationResponse()
 		defer func() {
 			if recovered := recover(); recovered != nil {
-				_ = s.operations.MarkIndeterminate(r.Context(), operation.Key, operation.Fingerprint)
+				_ = s.operations.MarkIndeterminate(
+					r.Context(), operation.Key, operation.Fingerprint,
+					operation.ClaimToken,
+				)
 				panic(recovered)
 			}
 		}()
 		next.ServeHTTP(captured, r)
 		if captured.overflow || (captured.body.Len() != 0 && !json.Valid(captured.body.Bytes())) {
-			_ = s.operations.MarkIndeterminate(r.Context(), operation.Key, operation.Fingerprint)
+			_ = s.operations.MarkIndeterminate(
+				r.Context(), operation.Key, operation.Fingerprint,
+				operation.ClaimToken,
+			)
 			if captured.overflow {
 				writeIdempotencyError(w, http.StatusInternalServerError, "mutation response exceeded replay limit")
 				return
@@ -252,9 +277,13 @@ func (s *Server) idempotencyMutation(next http.Handler, meta mutationRouteMeta) 
 			Headers: replayableHeaders(captured.header), ExpiresAt: time.Now().UTC().Add(httpOperationReplayRetention),
 		}
 		if err := s.operations.Complete(r.Context(), idempotency.CompleteRequest{
-			Operation: operation.Key, Fingerprint: operation.Fingerprint, Result: result,
+			Operation: operation.Key, Fingerprint: operation.Fingerprint,
+			ClaimToken: operation.ClaimToken, Result: result,
 		}); err != nil {
-			_ = s.operations.MarkIndeterminate(r.Context(), operation.Key, operation.Fingerprint)
+			_ = s.operations.MarkIndeterminate(
+				r.Context(), operation.Key, operation.Fingerprint,
+				operation.ClaimToken,
+			)
 			writeIdempotencyError(w, http.StatusServiceUnavailable, "operation completion unavailable")
 			return
 		}

@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"go.opentelemetry.io/otel"
 
@@ -39,11 +41,48 @@ type ExpiryReport struct {
 
 type operationQueries interface {
 	TryStartOperation(context.Context, sqlc.TryStartOperationParams) (int64, error)
+	TryRecoverExpiredOperation(context.Context, sqlc.TryRecoverExpiredOperationParams) (int64, error)
 	GetOperation(context.Context, sqlc.GetOperationParams) (sqlc.GetOperationRow, error)
 	CompleteOperation(context.Context, sqlc.CompleteOperationParams) (int64, error)
 	MarkOperationIndeterminate(context.Context, sqlc.MarkOperationIndeterminateParams) (int64, error)
 	ListExpiredReplayBodies(context.Context, sqlc.ListExpiredReplayBodiesParams) ([]sqlc.ListExpiredReplayBodiesRow, error)
 	ClearExpiredReplayBody(context.Context, sqlc.ClearExpiredReplayBodyParams) (int64, error)
+}
+
+// RecoverExpired atomically renews only the exact expired in-progress operation.
+func (s *Store) RecoverExpired(
+	ctx context.Context,
+	request BeginRequest,
+) (ClaimToken, bool, error) {
+	if err := request.Validate(); err != nil {
+		return 0, false, err
+	}
+	now := s.now().UTC()
+	identityID, _ := operationUUID(request.Operation.IdentityID)
+	generation, err := s.queries.TryRecoverExpiredOperation(
+		ctx,
+		sqlc.TryRecoverExpiredOperationParams{
+			LeaseExpiresAt: timestamp(now.Add(s.leaseDuration)),
+			RetryAfter:     timestamp(now.Add(s.retryAfter)),
+			Now:            timestamp(now),
+			IdentityID:     identityID,
+			OperationScope: string(request.Operation.Scope),
+			OperationKey:   request.Operation.Key,
+			PayloadHash:    append([]byte(nil), request.Fingerprint[:]...),
+		},
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, fmt.Errorf("recover expired idempotency operation: %w", err)
+	}
+	if generation <= 0 {
+		return 0, false, fmt.Errorf(
+			"recover expired idempotency operation: invalid claim token",
+		)
+	}
+	return ClaimToken(generation), true, nil
 }
 
 // Store owns atomic operation acquisition, terminal transitions, replay, and
@@ -104,18 +143,19 @@ func (s *Store) Begin(ctx context.Context, request BeginRequest) (decision Begin
 		params.AuditRequestID, _ = operationUUID(request.Audit.RequestID)
 		params.AuditToolCallID = optionalText(request.Audit.ToolCallID)
 	}
-	affected, err := s.queries.TryStartOperation(ctx, params)
+	generation, err := s.queries.TryStartOperation(ctx, params)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return s.readExistingDecision(ctx, request, identityID, now)
+	}
 	if err != nil {
 		return BeginDecision{}, fmt.Errorf("begin idempotency operation: %w", err)
 	}
-	switch affected {
-	case 1:
-		return BeginDecision{Decision: DecisionAcquired}, nil
-	case 0:
-		return s.readExistingDecision(ctx, request, identityID, now)
-	default:
-		return BeginDecision{}, fmt.Errorf("begin idempotency operation: unexpected affected row count")
+	if generation <= 0 {
+		return BeginDecision{}, fmt.Errorf("begin idempotency operation: invalid claim token")
 	}
+	return BeginDecision{
+		Decision: DecisionAcquired, ClaimToken: ClaimToken(generation),
+	}, nil
 }
 
 func (s *Store) readExistingDecision(ctx context.Context, request BeginRequest, identityID pgtype.UUID, now time.Time) (BeginDecision, error) {
@@ -197,6 +237,7 @@ func (s *Store) Complete(ctx context.Context, request CompleteRequest) (err erro
 		ReplayExpiresAt: timestamp(request.Result.ExpiresAt.UTC()), Now: timestamp(now), IdentityID: identityID,
 		OperationScope: string(request.Operation.Scope), OperationKey: request.Operation.Key,
 		PayloadHash: append([]byte(nil), request.Fingerprint[:]...),
+		ClaimToken:  int64(request.ClaimToken),
 	})
 	if err != nil {
 		return fmt.Errorf("complete idempotency operation: %w", err)
@@ -206,15 +247,24 @@ func (s *Store) Complete(ctx context.Context, request CompleteRequest) (err erro
 
 // MarkIndeterminate makes ambiguous work terminal without permitting replay or
 // reacquisition. The fingerprint and in-progress state must both still match.
-func (s *Store) MarkIndeterminate(ctx context.Context, operation OperationKey, fingerprint [32]byte) (err error) {
+func (s *Store) MarkIndeterminate(
+	ctx context.Context,
+	operation OperationKey,
+	fingerprint [32]byte,
+	claimToken ClaimToken,
+) (err error) {
 	defer func() { s.telemetry.recordIndeterminate(ctx, err) }()
 	if err := (BeginRequest{Operation: operation, Fingerprint: fingerprint}).Validate(); err != nil {
 		return err
+	}
+	if claimToken <= 0 {
+		return fmt.Errorf("idempotency claim token is required")
 	}
 	identityID, _ := operationUUID(operation.IdentityID)
 	affected, err := s.queries.MarkOperationIndeterminate(ctx, sqlc.MarkOperationIndeterminateParams{
 		Now: timestamp(s.now().UTC()), IdentityID: identityID, OperationScope: string(operation.Scope),
 		OperationKey: operation.Key, PayloadHash: append([]byte(nil), fingerprint[:]...),
+		ClaimToken: int64(claimToken),
 	})
 	if err != nil {
 		return fmt.Errorf("mark idempotency operation indeterminate: %w", err)

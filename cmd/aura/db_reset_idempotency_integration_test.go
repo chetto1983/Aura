@@ -364,6 +364,7 @@ WHERE identity_id = $1 AND operation_scope = $2 AND operation_key = $3`,
 				completeResult <- completer.Complete(ctx, idempotency.CompleteRequest{
 					Operation:   operation.Key,
 					Fingerprint: operation.Fingerprint,
+					ClaimToken:  decision.ClaimToken,
 					Result: idempotency.ReplayResult{
 						Body:       []byte(`{"ok":true}`),
 						StatusCode: 200,

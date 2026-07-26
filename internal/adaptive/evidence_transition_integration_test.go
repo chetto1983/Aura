@@ -11,6 +11,8 @@ import (
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/chetto1983/aura/internal/idempotency"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -57,8 +59,14 @@ func TestEvidenceStoreSealsAdmissionRecoversCommitAndTransitionsPolicy(
 		ActorID: ownerID, Capability: "adaptive.evidence.seal",
 	}
 	store := NewEvidenceStore(pool)
-	registerAdmissionDependencies(
-		t, ctx, store, ownerID, cohort, sealer, artifacts,
+	operationCtx := admissionOperationContext(
+		t,
+		ctx,
+		pool,
+		"transition-admission",
+		ownerID,
+		cohort.ID(),
+		artifacts,
 	)
 
 	originalTransact := store.transact
@@ -77,22 +85,29 @@ func TestEvidenceStoreSealsAdmissionRecoversCommitAndTransitionsPolicy(
 		return commitUnknown
 	}
 	admission, err := store.SealCanaryAdmission(
-		ctx, ownerID, cohort.ID(), sealer,
+		operationCtx, ownerID, cohort.ID(), sealer,
+		admissionTestManifestSHA256(), artifacts,
 	)
 	if err != nil {
 		t.Fatalf("SealCanaryAdmission commit recovery: %v", err)
 	}
 	store.transact = originalTransact
 	retried, err := store.SealCanaryAdmission(
-		ctx, ownerID, cohort.ID(), sealer,
+		operationCtx, ownerID, cohort.ID(), sealer,
+		admissionTestManifestSHA256(), artifacts,
 	)
 	if err != nil {
 		t.Fatalf("SealCanaryAdmission retry: %v", err)
 	}
 	admissionSHA256, _ := admission.SHA256()
 	retriedSHA256, _ := retried.SHA256()
+	admissionCanonical, admissionCanonicalErr := admission.CanonicalJSON()
+	retriedCanonical, retriedCanonicalErr := retried.CanonicalJSON()
 	if admission.EvidenceID != retried.EvidenceID ||
-		admissionSHA256 != retriedSHA256 {
+		admissionSHA256 != retriedSHA256 ||
+		admissionCanonicalErr != nil ||
+		retriedCanonicalErr != nil ||
+		!bytes.Equal(admissionCanonical, retriedCanonical) {
 		t.Fatal("admission exact retry changed durable evidence")
 	}
 
@@ -167,11 +182,18 @@ func TestEvidenceStoreSealsClosedOutcomeFromStoredFacts(t *testing.T) {
 		ActorID: ownerID, Capability: "adaptive.evidence.seal",
 	}
 	evidenceStore := NewEvidenceStore(pool)
-	registerAdmissionDependencies(
-		t, ctx, evidenceStore, ownerID, cohort, sealer, artifacts,
+	operationCtx := admissionOperationContext(
+		t,
+		ctx,
+		pool,
+		"outcome-prerequisite-admission",
+		ownerID,
+		cohort.ID(),
+		artifacts,
 	)
 	admission, err := evidenceStore.SealCanaryAdmission(
-		ctx, ownerID, cohort.ID(), sealer,
+		operationCtx, ownerID, cohort.ID(), sealer,
+		admissionTestManifestSHA256(), artifacts,
 	)
 	if err != nil {
 		t.Fatalf("seal prerequisite admission: %v", err)
@@ -324,54 +346,82 @@ func TestEvidenceStoreSealsClosedOutcomeFromStoredFacts(t *testing.T) {
 	}
 }
 
-func registerAdmissionDependencies(
+func admissionOperationContext(
 	t *testing.T,
 	ctx context.Context,
-	store *EvidenceStore,
+	pool *pgxpool.Pool,
+	key string,
 	ownerID uuid.UUID,
-	cohort *FocalCohort,
-	sealer EvidenceSealer,
-	artifacts []EvidenceArtifactRegistration,
-) {
+	cohortID uuid.UUID,
+	registrations []EvidenceArtifactRegistration,
+) context.Context {
 	t.Helper()
-	for _, artifact := range artifacts {
-		if err := store.RegisterCohortArtifact(
-			ctx, ownerID, cohort.ID(), sealer, artifact,
-		); err != nil {
-			t.Fatalf("register %s: %v", artifact.Ref.Kind, err)
-		}
-	}
-	approval := OperatorApproval{
-		SchemaID: "aura.adaptive.operator-approval/v1", Revision: 1,
-		ApprovalID: uuid.Must(uuid.NewV7()).String(),
-		ActorID:    ownerID.String(), Capability: "adaptive.evidence.seal",
-		TargetState: string(PolicyCanary), OwnerID: ownerID.String(),
-		CohortID: cohort.ID().String(), CohortSHA256: cohort.SHA256(),
-		PolicyEpoch:      cohort.Scope().PolicyEpoch,
-		PolicyVersion:    cohort.Scope().PolicyVersion,
-		ApprovedAt:       time.Now().UTC().Truncate(time.Microsecond),
-		SourceRequestID:  uuid.Must(uuid.NewV7()).String(),
-		ProvenanceSHA256: repeatedSHA("f"),
-	}
-	canonical, err := approval.CanonicalJSON()
+	return admissionOperationContextForManifest(
+		t,
+		ctx,
+		pool,
+		key,
+		admissionTestManifestSHA256(),
+		ownerID,
+		cohortID,
+		registrations,
+	)
+}
+
+func admissionOperationContextForManifest(
+	t *testing.T,
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	key string,
+	manifestSHA256 string,
+	ownerID uuid.UUID,
+	cohortID uuid.UUID,
+	registrations []EvidenceArtifactRegistration,
+) context.Context {
+	t.Helper()
+	fingerprint, err := AdmissionOperationFingerprint(
+		manifestSHA256,
+		ownerID,
+		cohortID,
+		registrations,
+	)
 	if err != nil {
-		t.Fatalf("canonicalize approval: %v", err)
+		t.Fatalf("fingerprint admission operation: %v", err)
 	}
-	if err := store.RegisterCohortArtifact(
-		ctx, ownerID, cohort.ID(), sealer,
-		EvidenceArtifactRegistration{
-			Ref: ChildArtifactRef{
-				SchemaID: ChildArtifactRefSchemaID, Revision: 1,
-				Kind:             "operator_approval",
-				ArtifactSchemaID: "aura.adaptive.operator-approval/v1",
-				ArtifactRevision: 1, ArtifactID: approval.ApprovalID,
-				ArtifactSHA256: sha256Hex(canonical),
-			},
-			Canonical: canonical,
+	operation := idempotency.Operation{
+		Key: idempotency.OperationKey{
+			IdentityID: identityctx.CLIServiceIdentity,
+			Scope:      idempotency.ScopeCLICommand,
+			Key:        key,
 		},
-	); err != nil {
-		t.Fatalf("register operator approval: %v", err)
+		Fingerprint: fingerprint,
 	}
+	decision, err := idempotency.New(
+		pool,
+		idempotency.Config{},
+	).Begin(
+		ctx,
+		idempotency.BeginRequest{
+			Operation: operation.Key, Fingerprint: operation.Fingerprint,
+		},
+	)
+	if err != nil || decision.Decision != idempotency.DecisionAcquired {
+		t.Fatalf("begin admission operation = %#v, %v", decision, err)
+	}
+	operation.ClaimToken = decision.ClaimToken
+	trusted := identityctx.WithIdentityID(
+		ctx,
+		identityctx.CLIServiceIdentity,
+	)
+	operationCtx, err := idempotency.WithOperation(trusted, operation)
+	if err != nil {
+		t.Fatalf("attach admission operation: %v", err)
+	}
+	return operationCtx
+}
+
+func admissionTestManifestSHA256() string {
+	return repeatedSHA("e")
 }
 
 func admissionEvidenceFixture(

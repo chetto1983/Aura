@@ -420,12 +420,12 @@ func (d *detachOpsRegistry) Begin(_ context.Context, req idempotency.BeginReques
 		return idempotency.BeginDecision{Decision: idempotency.DecisionInProgress, RetryAfter: time.Second}, nil
 	}
 	d.begun[req.Operation] = true
-	return idempotency.BeginDecision{Decision: idempotency.DecisionAcquired}, nil
+	return idempotency.BeginDecision{Decision: idempotency.DecisionAcquired, ClaimToken: 1}, nil
 }
 
 func (d *detachOpsRegistry) Complete(context.Context, idempotency.CompleteRequest) error { return nil }
 
-func (d *detachOpsRegistry) MarkIndeterminate(_ context.Context, op idempotency.OperationKey, _ [32]byte) error {
+func (d *detachOpsRegistry) MarkIndeterminate(_ context.Context, op idempotency.OperationKey, _ [32]byte, _ idempotency.ClaimToken) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.marked[op] = true

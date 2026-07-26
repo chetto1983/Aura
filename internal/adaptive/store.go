@@ -68,20 +68,6 @@ func NewStore(pool *pgxpool.Pool, cfg StoreConfig) *Store {
 	return &Store{pool: pool, maxAttempts: maxAttempts}
 }
 
-// Record appends one immutable adaptive fact in an owner-scoped transaction.
-// A transaction-scoped advisory lock serializes retries for the same event UUID,
-// preventing an idempotent race from consuming an aggregate sequence number.
-func (s *Store) Record(ctx context.Context, event Event) (int64, error) {
-	if err := rejectGenericSchema2Event(event); err != nil {
-		return 0, err
-	}
-	sequence, err := s.recordValidated(ctx, event)
-	if err != nil {
-		return 0, fmt.Errorf("record adaptive event %s: %w", event.ID, err)
-	}
-	return sequence, nil
-}
-
 func (s *Store) recordValidated(ctx context.Context, event Event) (int64, error) {
 	if s == nil || s.pool == nil {
 		return 0, errors.New("adaptive store requires a database pool")
@@ -93,22 +79,6 @@ func (s *Store) recordValidated(ctx context.Context, event Event) (int64, error)
 		return err
 	})
 	return sequence, err
-}
-
-// RecordTx is Record's transaction-inner form. duplicate is true only for an
-// exact idempotent replay; callers that atomically pair an event with another
-// write should skip that companion write on duplicate.
-func (s *Store) RecordTx(ctx context.Context, q *sqlc.Queries, event Event) (sequence int64, duplicate bool, err error) {
-	if err := rejectGenericSchema2Event(event); err != nil {
-		return 0, false, err
-	}
-	if s == nil {
-		return 0, false, errors.New("adaptive RecordTx requires a store")
-	}
-	if q == nil {
-		return 0, false, errors.New("adaptive RecordTx requires database queries")
-	}
-	return s.recordValidatedTx(ctx, q, event)
 }
 
 func (s *Store) recordValidatedTx(

@@ -57,8 +57,10 @@ func TestIdempotencyOperationsQueryContract(t *testing.T) {
 
 	queries := compactSQL(t, "queries/idempotency_operations.sql")
 	for _, name := range []string{
-		"-- name: trystartoperation :execrows",
+		"-- name: trystartoperation :one",
+		"-- name: tryrecoverexpiredoperation :one",
 		"-- name: getoperation :one",
+		"-- name: lockoperationreceipt :one",
 		"-- name: completeoperation :execrows",
 		"-- name: markoperationindeterminate :execrows",
 		"-- name: listexpiredreplaybodies :many",
@@ -70,8 +72,35 @@ func TestIdempotencyOperationsQueryContract(t *testing.T) {
 	}
 
 	assertSQLSectionContains(t, queries, "trystartoperation", "on conflict (identity_id, operation_scope, operation_key) do nothing")
-	assertSQLSectionContains(t, queries, "completeoperation", "state = 'in_progress' and payload_hash =")
-	assertSQLSectionContains(t, queries, "markoperationindeterminate", "state = 'in_progress' and payload_hash =")
+	assertSQLSectionContains(t, queries, "trystartoperation", "returning version")
+	recoverExpired := sqlSection(queries, "tryrecoverexpiredoperation")
+	for _, want := range []string{
+		"set lease_expires_at = sqlc.arg(lease_expires_at)",
+		"retry_after = sqlc.arg(retry_after)",
+		"updated_at = sqlc.arg(now)",
+		"version = version + 1",
+		"state = 'in_progress'",
+		"payload_hash = sqlc.arg(payload_hash)",
+		"lease_expires_at <= sqlc.arg(now)",
+		"returning version",
+	} {
+		if !strings.Contains(recoverExpired, want) {
+			t.Errorf("TryRecoverExpiredOperation query missing %q", want)
+		}
+	}
+	lockReceipt := sqlSection(queries, "lockoperationreceipt")
+	wantLockReceipt := "lockoperationreceipt :one -- this must run on transaction-bound queries because autocommit releases the row lock when the statement returns. select identity_id, operation_scope, operation_key, payload_hash, state, version, created_at from aura.idempotency_operations where identity_id = sqlc.arg(identity_id) and operation_scope = sqlc.arg(operation_scope) and operation_key = sqlc.arg(operation_key) for update;"
+	if strings.TrimSpace(lockReceipt) != wantLockReceipt {
+		t.Errorf(
+			"LockOperationReceipt query = %q, want exact PK row lock %q",
+			lockReceipt,
+			wantLockReceipt,
+		)
+	}
+	for _, name := range []string{"completeoperation", "markoperationindeterminate"} {
+		assertSQLSectionContains(t, queries, name, "state = 'in_progress' and payload_hash =")
+		assertSQLSectionContains(t, queries, name, "version = sqlc.arg(claim_token)")
+	}
 	assertSQLSectionContains(t, queries, "listexpiredreplaybodies", "order by replay_expires_at asc, identity_id, operation_scope, operation_key limit")
 	assertSQLSectionContains(t, queries, "clearexpiredreplaybody", "set replay_body = null, replay_preview = null, replay_sidecar_ref = null")
 	assertSQLSectionContains(t, queries, "clearexpiredreplaybody", "replay_cleared_at = sqlc.arg(cleared_at)")

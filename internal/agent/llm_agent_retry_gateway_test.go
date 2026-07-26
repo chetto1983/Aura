@@ -183,7 +183,9 @@ func (r *replayingOperationRegistry) Begin(_ context.Context, request idempotenc
 	if r.completed != nil {
 		return idempotency.BeginDecision{Decision: idempotency.DecisionReplay, Replay: r.completed}, nil
 	}
-	return idempotency.BeginDecision{Decision: idempotency.DecisionAcquired}, nil
+	return idempotency.BeginDecision{
+		Decision: idempotency.DecisionAcquired, ClaimToken: 1,
+	}, nil
 }
 
 func (r *replayingOperationRegistry) Complete(_ context.Context, request idempotency.CompleteRequest) error {
@@ -195,7 +197,12 @@ func (r *replayingOperationRegistry) Complete(_ context.Context, request idempot
 	return nil
 }
 
-func (r *replayingOperationRegistry) MarkIndeterminate(context.Context, idempotency.OperationKey, [32]byte) error {
+func (r *replayingOperationRegistry) MarkIndeterminate(
+	context.Context,
+	idempotency.OperationKey,
+	[32]byte,
+	idempotency.ClaimToken,
+) error {
 	r.marked++
 	return nil
 }

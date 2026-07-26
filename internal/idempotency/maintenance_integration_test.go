@@ -35,7 +35,9 @@ func TestMaintenanceRegistryPostgresContract(t *testing.T) {
 		duplicate := openMaintenanceRegistry(t, ctx, migrateURL, now)
 		request := maintenanceRequest(t, "replay-"+uuid.NewString())
 
-		assertMaintenanceDecision(t, ctx, owner, request, DecisionAcquired)
+		acquired := assertMaintenanceDecision(
+			t, ctx, owner, request, DecisionAcquired,
+		)
 		blocked, err := duplicate.Begin(ctx, request)
 		if err != nil || blocked.Decision != DecisionInProgress || blocked.RetryAfter <= 0 || blocked.RetryAfter > MaxRetryAfter {
 			t.Fatalf("duplicate Begin=%+v err=%v", blocked, err)
@@ -49,7 +51,10 @@ func TestMaintenanceRegistryPostgresContract(t *testing.T) {
 		}
 
 		result := ReplayResult{Body: []byte(`{"status":"reset"}`), ExpiresAt: now.Add(time.Hour)}
-		completion := CompleteRequest{Operation: request.Operation, Fingerprint: request.Fingerprint, Result: result}
+		completion := CompleteRequest{
+			Operation: request.Operation, Fingerprint: request.Fingerprint,
+			ClaimToken: acquired.ClaimToken, Result: result,
+		}
 		if err := owner.Complete(ctx, completion); err != nil {
 			t.Fatal(err)
 		}
@@ -60,7 +65,9 @@ func TestMaintenanceRegistryPostgresContract(t *testing.T) {
 		if err := owner.Complete(ctx, completion); !errors.Is(err, ErrStaleTransition) {
 			t.Fatalf("second Complete error=%v, want stale transition", err)
 		}
-		if err := owner.MarkIndeterminate(ctx, request.Operation, request.Fingerprint); !errors.Is(err, ErrStaleTransition) {
+		if err := owner.MarkIndeterminate(
+			ctx, request.Operation, request.Fingerprint, acquired.ClaimToken,
+		); !errors.Is(err, ErrStaleTransition) {
 			t.Fatalf("completed MarkIndeterminate error=%v, want stale transition", err)
 		}
 
@@ -81,8 +88,12 @@ func TestMaintenanceRegistryPostgresContract(t *testing.T) {
 		owner := openMaintenanceRegistry(t, ctx, migrateURL, now)
 		duplicate := openMaintenanceRegistry(t, ctx, migrateURL, now)
 		request := maintenanceRequest(t, "indeterminate-"+uuid.NewString())
-		assertMaintenanceDecision(t, ctx, owner, request, DecisionAcquired)
-		if err := owner.MarkIndeterminate(ctx, request.Operation, request.Fingerprint); err != nil {
+		acquired := assertMaintenanceDecision(
+			t, ctx, owner, request, DecisionAcquired,
+		)
+		if err := owner.MarkIndeterminate(
+			ctx, request.Operation, request.Fingerprint, acquired.ClaimToken,
+		); err != nil {
 			t.Fatal(err)
 		}
 		assertMaintenanceDecision(t, ctx, duplicate, request, DecisionIndeterminate)
@@ -134,12 +145,15 @@ func TestMaintenanceRegistryPostgresContract(t *testing.T) {
 		}
 		completion := CompleteRequest{
 			Operation: request.Operation, Fingerprint: request.Fingerprint,
-			Result: ReplayResult{Body: []byte(`{"ok":true}`), ExpiresAt: now.Add(time.Hour)},
+			ClaimToken: 1,
+			Result:     ReplayResult{Body: []byte(`{"ok":true}`), ExpiresAt: now.Add(time.Hour)},
 		}
 		if err := registry.Complete(ctx, completion); err == nil || err.Error() != "maintenance registry only accepts CLI operations" {
 			t.Fatalf("Complete error=%v", err)
 		}
-		if err := registry.MarkIndeterminate(ctx, request.Operation, request.Fingerprint); err == nil || err.Error() != "maintenance registry only accepts CLI operations" {
+		if err := registry.MarkIndeterminate(
+			ctx, request.Operation, request.Fingerprint, 1,
+		); err == nil || err.Error() != "maintenance registry only accepts CLI operations" {
 			t.Fatalf("MarkIndeterminate error=%v", err)
 		}
 		if _, err := registry.Begin(ctx, BeginRequest{}); err == nil {
@@ -148,7 +162,7 @@ func TestMaintenanceRegistryPostgresContract(t *testing.T) {
 		if err := registry.Complete(ctx, CompleteRequest{}); err == nil {
 			t.Fatal("Complete with empty request succeeded")
 		}
-		if err := registry.MarkIndeterminate(ctx, OperationKey{}, [32]byte{}); err == nil {
+		if err := registry.MarkIndeterminate(ctx, OperationKey{}, [32]byte{}, 0); err == nil {
 			t.Fatal("MarkIndeterminate with empty request succeeded")
 		}
 	})
@@ -185,12 +199,22 @@ func maintenanceRequest(t *testing.T, key string) BeginRequest {
 	}
 }
 
-func assertMaintenanceDecision(t *testing.T, ctx context.Context, registry *MaintenanceRegistry, request BeginRequest, want Decision) {
+func assertMaintenanceDecision(
+	t *testing.T,
+	ctx context.Context,
+	registry *MaintenanceRegistry,
+	request BeginRequest,
+	want Decision,
+) BeginDecision {
 	t.Helper()
 	decision, err := registry.Begin(ctx, request)
 	if err != nil || decision.Decision != want {
 		t.Fatalf("Begin=%+v err=%v, want %s", decision, err, want)
 	}
+	if want == DecisionAcquired && decision.ClaimToken <= 0 {
+		t.Fatalf("acquired Begin=%+v lacks claim token", decision)
+	}
+	return decision
 }
 
 func assertDisposableMaintenanceDatabase(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {

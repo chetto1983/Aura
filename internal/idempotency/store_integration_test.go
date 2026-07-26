@@ -49,6 +49,10 @@ func TestStorePostgresContract(t *testing.T) {
 				}
 				switch decision.Decision {
 				case DecisionAcquired:
+					if decision.ClaimToken <= 0 {
+						errs <- fmt.Errorf("acquired without claim token")
+						return
+					}
 					acquired.Add(1)
 				case DecisionInProgress:
 					if decision.RetryAfter != 5*time.Second {
@@ -71,9 +75,12 @@ func TestStorePostgresContract(t *testing.T) {
 
 	t.Run("completed replay and conflict", func(t *testing.T) {
 		req := integrationRequest(t, localIdentityID, "replay-"+uuid.NewString())
-		mustAcquire(t, ctx, store, req)
+		claimToken := mustAcquire(t, ctx, store, req)
 		result := ReplayResult{Body: []byte(`{"status":"ok"}`), Preview: "ok", SidecarRef: "replays/ok", ExpiresAt: now.Add(time.Hour)}
-		if err := store.Complete(ctx, CompleteRequest{Operation: req.Operation, Fingerprint: req.Fingerprint, Result: result}); err != nil {
+		if err := store.Complete(ctx, CompleteRequest{
+			Operation: req.Operation, Fingerprint: req.Fingerprint,
+			ClaimToken: claimToken, Result: result,
+		}); err != nil {
 			t.Fatal(err)
 		}
 		replay, err := store.Begin(ctx, req)
@@ -91,10 +98,103 @@ func TestStorePostgresContract(t *testing.T) {
 		}
 	})
 
+	t.Run("expired recovery requires exact fingerprint and renews once", func(t *testing.T) {
+		req := integrationRequest(t, localIdentityID, "recover-"+uuid.NewString())
+		mustAcquire(t, ctx, store, req)
+		if token, recovered, err := store.RecoverExpired(ctx, req); err != nil || recovered || token != 0 {
+			t.Fatalf("unexpired recovery = %d/%t, %v, want zero/false/nil", token, recovered, err)
+		}
+		if _, err := migrate.Exec(
+			ctx,
+			`UPDATE aura.idempotency_operations
+			    SET lease_expires_at = $1
+			  WHERE identity_id = $2
+			    AND operation_scope = $3
+			    AND operation_key = $4`,
+			now.Add(-time.Second),
+			req.Operation.IdentityID,
+			req.Operation.Scope,
+			req.Operation.Key,
+		); err != nil {
+			t.Fatal(err)
+		}
+		changed := req
+		changed.Fingerprint[0] ^= 0xff
+		if token, recovered, err := store.RecoverExpired(
+			ctx,
+			changed,
+		); err != nil || recovered || token != 0 {
+			t.Fatalf(
+				"changed recovery = %d/%t, %v, want zero/false/nil",
+				token,
+				recovered,
+				err,
+			)
+		}
+		if token, recovered, err := store.RecoverExpired(ctx, req); err != nil || !recovered || token <= 0 {
+			t.Fatalf("expired recovery = %d/%t, %v, want positive/true/nil", token, recovered, err)
+		}
+		if token, recovered, err := store.RecoverExpired(ctx, req); err != nil || recovered || token != 0 {
+			t.Fatalf("second recovery = %d/%t, %v, want zero/false/nil", token, recovered, err)
+		}
+	})
+
+	t.Run("recovery fences stale terminal transitions", func(t *testing.T) {
+		req := integrationRequest(t, localIdentityID, "fenced-recovery-"+uuid.NewString())
+		oldClaim := mustAcquire(t, ctx, store, req)
+		if _, err := migrate.Exec(
+			ctx,
+			`UPDATE aura.idempotency_operations
+			    SET lease_expires_at = $1
+			  WHERE identity_id = $2
+			    AND operation_scope = $3
+			    AND operation_key = $4`,
+			now.Add(-time.Second),
+			req.Operation.IdentityID,
+			req.Operation.Scope,
+			req.Operation.Key,
+		); err != nil {
+			t.Fatal(err)
+		}
+		winnerClaim, recovered, err := store.RecoverExpired(ctx, req)
+		if err != nil || !recovered || winnerClaim <= oldClaim {
+			t.Fatalf(
+				"recovery = %d/%t/%v, want newer token than %d",
+				winnerClaim, recovered, err, oldClaim,
+			)
+		}
+		result := ReplayResult{
+			Body: []byte(`{"winner":true}`), ExpiresAt: now.Add(time.Hour),
+		}
+		if err := store.Complete(ctx, CompleteRequest{
+			Operation: req.Operation, Fingerprint: req.Fingerprint,
+			ClaimToken: oldClaim, Result: result,
+		}); !errors.Is(err, ErrStaleTransition) {
+			t.Fatalf("old owner Complete error=%v, want stale transition", err)
+		}
+		if err := store.MarkIndeterminate(
+			ctx, req.Operation, req.Fingerprint, oldClaim,
+		); !errors.Is(err, ErrStaleTransition) {
+			t.Fatalf("old owner MarkIndeterminate error=%v, want stale transition", err)
+		}
+		if err := store.Complete(ctx, CompleteRequest{
+			Operation: req.Operation, Fingerprint: req.Fingerprint,
+			ClaimToken: winnerClaim, Result: result,
+		}); err != nil {
+			t.Fatalf("recovered winner Complete: %v", err)
+		}
+		replay, err := store.Begin(ctx, req)
+		if err != nil || replay.Decision != DecisionReplay {
+			t.Fatalf("winner replay=%+v err=%v", replay, err)
+		}
+	})
+
 	t.Run("indeterminate is terminal and stale completion is rejected", func(t *testing.T) {
 		req := integrationRequest(t, localIdentityID, "indeterminate-"+uuid.NewString())
-		mustAcquire(t, ctx, store, req)
-		if err := store.MarkIndeterminate(ctx, req.Operation, req.Fingerprint); err != nil {
+		claimToken := mustAcquire(t, ctx, store, req)
+		if err := store.MarkIndeterminate(
+			ctx, req.Operation, req.Fingerprint, claimToken,
+		); err != nil {
 			t.Fatal(err)
 		}
 		decision, err := store.Begin(ctx, req)
@@ -102,7 +202,10 @@ func TestStorePostgresContract(t *testing.T) {
 			t.Fatalf("Begin=%+v err=%v", decision, err)
 		}
 		result := ReplayResult{Body: []byte(`{"late":true}`), ExpiresAt: now.Add(time.Hour)}
-		if err := store.Complete(ctx, CompleteRequest{Operation: req.Operation, Fingerprint: req.Fingerprint, Result: result}); !errors.Is(err, ErrStaleTransition) {
+		if err := store.Complete(ctx, CompleteRequest{
+			Operation: req.Operation, Fingerprint: req.Fingerprint,
+			ClaimToken: claimToken, Result: result,
+		}); !errors.Is(err, ErrStaleTransition) {
 			t.Fatalf("late Complete error=%v", err)
 		}
 	})
@@ -113,8 +216,8 @@ func TestStorePostgresContract(t *testing.T) {
 			t.Fatal(err)
 		}
 		key := "shared-" + uuid.NewString()
-		mustAcquire(t, ctx, store, integrationRequest(t, localIdentityID, key))
-		mustAcquire(t, ctx, store, integrationRequest(t, otherID, key))
+		_ = mustAcquire(t, ctx, store, integrationRequest(t, localIdentityID, key))
+		_ = mustAcquire(t, ctx, store, integrationRequest(t, otherID, key))
 	})
 
 	t.Run("expiry cutoff and bounded batch preserve metadata", func(t *testing.T) {
@@ -125,9 +228,12 @@ func TestStorePostgresContract(t *testing.T) {
 			req := integrationRequest(t, localIdentityID, fmt.Sprintf("expiry-%d-%s", i, uuid.NewString()))
 			audit := &AuditLink{ConversationID: uuid.NewString(), RequestID: uuid.NewString(), ToolCallID: fmt.Sprintf("call-%d", i)}
 			req.Audit = audit
-			mustAcquire(t, ctx, store, req)
+			claimToken := mustAcquire(t, ctx, store, req)
 			result := ReplayResult{Body: []byte(fmt.Sprintf(`{"row":%d}`, i)), Preview: "kept-metadata", ExpiresAt: expiry}
-			if err := store.Complete(ctx, CompleteRequest{Operation: req.Operation, Fingerprint: req.Fingerprint, Result: result}); err != nil {
+			if err := store.Complete(ctx, CompleteRequest{
+				Operation: req.Operation, Fingerprint: req.Fingerprint,
+				ClaimToken: claimToken, Result: result,
+			}); err != nil {
 				t.Fatal(err)
 			}
 			requests[i] = req
@@ -167,12 +273,15 @@ func TestStorePostgresContract(t *testing.T) {
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				req := integrationRequest(t, localIdentityID, "wall-clock-expiry-"+tc.name+"-"+uuid.NewString())
-				mustAcquire(t, ctx, store, req)
+				claimToken := mustAcquire(t, ctx, store, req)
 				result := ReplayResult{
 					Body: []byte(`{"surface":"http-or-tool"}`), StatusCode: 202,
 					Headers: map[string]string{"Location": "/operations/retained"}, ExpiresAt: tc.expiresAt,
 				}
-				if err := store.Complete(ctx, CompleteRequest{Operation: req.Operation, Fingerprint: req.Fingerprint, Result: result}); err != nil {
+				if err := store.Complete(ctx, CompleteRequest{
+					Operation: req.Operation, Fingerprint: req.Fingerprint,
+					ClaimToken: claimToken, Result: result,
+				}); err != nil {
 					t.Fatal(err)
 				}
 				var bodyRetained, notCleared bool
@@ -261,12 +370,19 @@ func integrationRequest(t *testing.T, identityID, key string) BeginRequest {
 	return BeginRequest{Operation: OperationKey{IdentityID: identityID, Scope: ScopeHTTPMutation, Key: key}, Fingerprint: fingerprint}
 }
 
-func mustAcquire(t *testing.T, ctx context.Context, store *Store, req BeginRequest) {
+func mustAcquire(
+	t *testing.T,
+	ctx context.Context,
+	store *Store,
+	req BeginRequest,
+) ClaimToken {
 	t.Helper()
 	decision, err := store.Begin(ctx, req)
-	if err != nil || decision.Decision != DecisionAcquired {
+	if err != nil || decision.Decision != DecisionAcquired ||
+		decision.ClaimToken <= 0 {
 		t.Fatalf("Begin=%+v err=%v", decision, err)
 	}
+	return decision.ClaimToken
 }
 
 func assertReplayMetadata(t *testing.T, ctx context.Context, pool *pgxpool.Pool, req BeginRequest, wantCleared bool) {

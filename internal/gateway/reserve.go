@@ -57,7 +57,11 @@ func (g *Gateway) beginOperation(ctx context.Context, spec tools.Spec, rawArgs j
 	if beginErr != nil && !errors.Is(beginErr, idempotency.ErrConflict) {
 		return Verdict{Decision: Deny, Tier: tier, Reason: "operation registry unavailable"}, false
 	}
-	verdict := Verdict{Decision: Deny, Tier: tier, OperationDecision: decision.Decision}
+	verdict := Verdict{
+		Decision: Deny, Tier: tier,
+		OperationDecision:   decision.Decision,
+		OperationClaimToken: decision.ClaimToken,
+	}
 	switch decision.Decision {
 	case idempotency.DecisionAcquired:
 		verdict.Decision = Allow
@@ -117,7 +121,8 @@ func (g *Gateway) CompleteOperation(ctx context.Context, result tools.ToolResult
 	}
 	replayResult := boundedOperationReplay(result)
 	return g.operations.Complete(ctx, idempotency.CompleteRequest{
-		Operation: operation.Key, Fingerprint: operation.Fingerprint, Result: replayResult,
+		Operation: operation.Key, Fingerprint: operation.Fingerprint,
+		ClaimToken: operation.ClaimToken, Result: replayResult,
 	})
 }
 
@@ -131,7 +136,9 @@ func (g *Gateway) MarkOperationIndeterminate(ctx context.Context) error {
 	if !ok {
 		return errors.New("mark operation indeterminate: trusted operation context missing")
 	}
-	return g.operations.MarkIndeterminate(ctx, operation.Key, operation.Fingerprint)
+	return g.operations.MarkIndeterminate(
+		ctx, operation.Key, operation.Fingerprint, operation.ClaimToken,
+	)
 }
 
 func boundedOperationReplay(result tools.ToolResult) idempotency.ReplayResult {

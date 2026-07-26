@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
@@ -17,6 +18,7 @@ var errFakeQuery = errors.New("fake idempotency query failure")
 
 type fakeOperationQueries struct {
 	tryStart      tryStartQuery
+	recover       recoverExpiredOperationQuery
 	get           getOperationQuery
 	complete      completeOperationQuery
 	indeterminate markIndeterminateQuery
@@ -25,6 +27,7 @@ type fakeOperationQueries struct {
 }
 
 type tryStartQuery func(context.Context, sqlc.TryStartOperationParams) (int64, error)
+type recoverExpiredOperationQuery func(context.Context, sqlc.TryRecoverExpiredOperationParams) (int64, error)
 type getOperationQuery func(context.Context, sqlc.GetOperationParams) (sqlc.GetOperationRow, error)
 type completeOperationQuery func(context.Context, sqlc.CompleteOperationParams) (int64, error)
 type markIndeterminateQuery func(context.Context, sqlc.MarkOperationIndeterminateParams) (int64, error)
@@ -36,6 +39,16 @@ func (f *fakeOperationQueries) TryStartOperation(ctx context.Context, arg sqlc.T
 		return 0, errors.New("unexpected TryStartOperation")
 	}
 	return f.tryStart(ctx, arg)
+}
+
+func (f *fakeOperationQueries) TryRecoverExpiredOperation(
+	ctx context.Context,
+	arg sqlc.TryRecoverExpiredOperationParams,
+) (int64, error) {
+	if f.recover == nil {
+		return 0, errors.New("unexpected TryRecoverExpiredOperation")
+	}
+	return f.recover(ctx, arg)
 }
 
 func (f *fakeOperationQueries) GetOperation(ctx context.Context, arg sqlc.GetOperationParams) (sqlc.GetOperationRow, error) {
@@ -89,7 +102,7 @@ func TestStoreBeginFirstAcquisition(t *testing.T) {
 		if got, want := arg.RetryAfter.Time, now.Add(3*time.Second); !got.Equal(want) {
 			t.Fatalf("retry_after=%v, want %v", got, want)
 		}
-		return 1, nil
+		return 7, nil
 	}}
 	store := newStore(queries, Config{Now: func() time.Time { return now }, LeaseDuration: 2 * time.Minute, RetryAfter: 3 * time.Second})
 
@@ -97,7 +110,8 @@ func TestStoreBeginFirstAcquisition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Decision != DecisionAcquired || got.Replay != nil || got.RetryAfter != 0 {
+	if got.Decision != DecisionAcquired || got.ClaimToken != ClaimToken(7) ||
+		got.Replay != nil || got.RetryAfter != 0 {
 		t.Fatalf("Begin()=%+v, want acquired", got)
 	}
 }
@@ -141,7 +155,9 @@ func TestStoreBeginExistingOperationDecisions(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			queries := &fakeOperationQueries{
-				tryStart: func(context.Context, sqlc.TryStartOperationParams) (int64, error) { return 0, nil },
+				tryStart: func(context.Context, sqlc.TryStartOperationParams) (int64, error) {
+					return 0, pgx.ErrNoRows
+				},
 				get: func(context.Context, sqlc.GetOperationParams) (sqlc.GetOperationRow, error) {
 					return tc.row, nil
 				},
@@ -167,7 +183,9 @@ func TestStoreBeginExistingOperationDecisions(t *testing.T) {
 func TestStoreBeginFailedConflictReadNeverInfersOwnership(t *testing.T) {
 	req := testBeginRequest(t, "read-failure")
 	queries := &fakeOperationQueries{
-		tryStart: func(context.Context, sqlc.TryStartOperationParams) (int64, error) { return 0, nil },
+		tryStart: func(context.Context, sqlc.TryStartOperationParams) (int64, error) {
+			return 0, pgx.ErrNoRows
+		},
 		get: func(context.Context, sqlc.GetOperationParams) (sqlc.GetOperationRow, error) {
 			return sqlc.GetOperationRow{}, errFakeQuery
 		},
@@ -181,29 +199,109 @@ func TestStoreBeginFailedConflictReadNeverInfersOwnership(t *testing.T) {
 	}
 }
 
+func TestStoreRecoverExpiredRequiresExactOperationAndRenewsLease(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 7, 26, 14, 0, 0, 0, time.UTC)
+	request := testBeginRequest(t, "recover-expired")
+	queries := &fakeOperationQueries{
+		recover: func(
+			_ context.Context,
+			arg sqlc.TryRecoverExpiredOperationParams,
+		) (int64, error) {
+			if arg.OperationScope != string(request.Operation.Scope) ||
+				arg.OperationKey != request.Operation.Key ||
+				!bytes.Equal(arg.PayloadHash, request.Fingerprint[:]) ||
+				!arg.Now.Time.Equal(now) ||
+				!arg.LeaseExpiresAt.Time.Equal(now.Add(2*time.Minute)) ||
+				!arg.RetryAfter.Time.Equal(now.Add(3*time.Second)) {
+				t.Fatalf("recovery parameters = %#v", arg)
+			}
+			return 8, nil
+		},
+	}
+	store := newStore(queries, Config{
+		Now: func() time.Time { return now }, LeaseDuration: 2 * time.Minute,
+		RetryAfter: 3 * time.Second,
+	})
+	claimToken, recovered, err := store.RecoverExpired(t.Context(), request)
+	if err != nil {
+		t.Fatalf("RecoverExpired: %v", err)
+	}
+	if !recovered || claimToken != ClaimToken(8) {
+		t.Fatalf("RecoverExpired = %d/%t, want 8/true", claimToken, recovered)
+	}
+}
+
+func TestStoreRecoverExpiredDoesNotAcquireUnexpiredOrChangedOperation(
+	t *testing.T,
+) {
+	t.Parallel()
+	request := testBeginRequest(t, "not-recoverable")
+	store := newStore(&fakeOperationQueries{
+		recover: func(
+			context.Context,
+			sqlc.TryRecoverExpiredOperationParams,
+		) (int64, error) {
+			return 0, pgx.ErrNoRows
+		},
+	}, Config{})
+	claimToken, recovered, err := store.RecoverExpired(t.Context(), request)
+	if err != nil {
+		t.Fatalf("RecoverExpired: %v", err)
+	}
+	if recovered || claimToken != 0 {
+		t.Fatalf("RecoverExpired = %d/%t, want zero/false", claimToken, recovered)
+	}
+}
+
+func TestStoreRecoverExpiredRejectsInvalidClaimToken(t *testing.T) {
+	t.Parallel()
+	request := testBeginRequest(t, "invalid-recovery-count")
+	store := newStore(&fakeOperationQueries{
+		recover: func(
+			context.Context,
+			sqlc.TryRecoverExpiredOperationParams,
+		) (int64, error) {
+			return 0, nil
+		},
+	}, Config{})
+	if _, _, err := store.RecoverExpired(t.Context(), request); err == nil {
+		t.Fatal("RecoverExpired accepted an invalid claim token")
+	}
+}
+
 func TestStoreTerminalTransitionsAreConditional(t *testing.T) {
 	now := time.Date(2026, 7, 21, 10, 0, 0, 0, time.UTC)
 	req := testBeginRequest(t, "terminal")
 	result := ReplayResult{Body: []byte(`{"ok":true}`), Preview: "ok", SidecarRef: "replays/one", StatusCode: 202, Headers: map[string]string{"Location": "/operations/one"}, ExpiresAt: now.Add(time.Hour)}
 	queries := &fakeOperationQueries{
 		complete: func(_ context.Context, arg sqlc.CompleteOperationParams) (int64, error) {
-			if !bytes.Equal(arg.PayloadHash, req.Fingerprint[:]) || arg.ReplayBytes <= int64(len(result.Body)+len(result.Preview)+len(result.SidecarRef)) || arg.ReplayStatusCode.Int16 != 202 || !bytes.Contains(arg.ReplayHeaders, []byte("/operations/one")) {
+			if arg.ClaimToken != 9 ||
+				!bytes.Equal(arg.PayloadHash, req.Fingerprint[:]) ||
+				arg.ReplayBytes <= int64(len(result.Body)+len(result.Preview)+len(result.SidecarRef)) ||
+				arg.ReplayStatusCode.Int16 != 202 ||
+				!bytes.Contains(arg.ReplayHeaders, []byte("/operations/one")) {
 				t.Fatalf("completion parameters=%+v", arg)
 			}
 			return 1, nil
 		},
 		indeterminate: func(_ context.Context, arg sqlc.MarkOperationIndeterminateParams) (int64, error) {
-			if !bytes.Equal(arg.PayloadHash, req.Fingerprint[:]) {
-				t.Fatal("indeterminate transition omitted fingerprint")
+			if arg.ClaimToken != 9 || !bytes.Equal(arg.PayloadHash, req.Fingerprint[:]) {
+				t.Fatal("indeterminate transition omitted fingerprint or claim token")
 			}
 			return 0, nil
 		},
 	}
 	store := newStore(queries, Config{Now: func() time.Time { return now }})
-	if err := store.Complete(context.Background(), CompleteRequest{Operation: req.Operation, Fingerprint: req.Fingerprint, Result: result}); err != nil {
+	if err := store.Complete(context.Background(), CompleteRequest{
+		Operation: req.Operation, Fingerprint: req.Fingerprint,
+		ClaimToken: ClaimToken(9), Result: result,
+	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.MarkIndeterminate(context.Background(), req.Operation, req.Fingerprint); !errors.Is(err, ErrStaleTransition) {
+	if err := store.MarkIndeterminate(
+		context.Background(), req.Operation, req.Fingerprint, ClaimToken(9),
+	); !errors.Is(err, ErrStaleTransition) {
 		t.Fatalf("MarkIndeterminate error=%v, want stale transition", err)
 	}
 }
@@ -214,10 +312,16 @@ func TestStoreRejectsInvalidInputBeforePersistence(t *testing.T) {
 	if _, err := store.Begin(context.Background(), BeginRequest{}); err == nil {
 		t.Fatal("Begin accepted invalid request")
 	}
+	if _, _, err := store.RecoverExpired(
+		context.Background(),
+		BeginRequest{},
+	); err == nil {
+		t.Fatal("RecoverExpired accepted invalid request")
+	}
 	if err := store.Complete(context.Background(), CompleteRequest{}); err == nil {
 		t.Fatal("Complete accepted invalid request")
 	}
-	if err := store.MarkIndeterminate(context.Background(), OperationKey{}, [32]byte{}); err == nil {
+	if err := store.MarkIndeterminate(context.Background(), OperationKey{}, [32]byte{}, 0); err == nil {
 		t.Fatal("MarkIndeterminate accepted invalid request")
 	}
 }

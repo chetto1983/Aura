@@ -27,6 +27,7 @@ type maintenanceOperationRow struct {
 	replayExpiresAt *time.Time
 	retryAfter      time.Time
 	leaseExpiresAt  time.Time
+	version         int64
 }
 
 // MaintenanceRegistry keeps destructive maintenance ownership outside the
@@ -74,6 +75,7 @@ CREATE TABLE IF NOT EXISTS public.aura_maintenance_operations (
     replay_expires_at timestamptz,
     retry_after       timestamptz NOT NULL,
     lease_expires_at  timestamptz NOT NULL,
+    version           bigint      NOT NULL DEFAULT 1,
     created_at        timestamptz NOT NULL,
     updated_at        timestamptz NOT NULL,
     PRIMARY KEY (identity_id, operation_scope, operation_key)
@@ -84,6 +86,11 @@ CREATE TABLE IF NOT EXISTS public.aura_maintenance_operations (
 ALTER TABLE public.aura_maintenance_operations
 ADD COLUMN IF NOT EXISTS lease_expires_at timestamptz`); err != nil {
 		return fmt.Errorf("add maintenance recovery lease: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+ALTER TABLE public.aura_maintenance_operations
+ADD COLUMN IF NOT EXISTS version bigint NOT NULL DEFAULT 1`); err != nil {
+		return fmt.Errorf("add maintenance claim generation: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `
 UPDATE public.aura_maintenance_operations
@@ -134,22 +141,32 @@ func (r *MaintenanceRegistry) Begin(ctx context.Context, request BeginRequest) (
 	}()
 
 	if hasOwnerLock {
-		tag, err := r.conn.Exec(ctx, `
+		var generation int64
+		err := r.conn.QueryRow(ctx, `
 INSERT INTO public.aura_maintenance_operations (
     identity_id, operation_scope, operation_key, payload_hash, state,
     retry_after, lease_expires_at, created_at, updated_at
 ) VALUES ($1, $2, $3, $4, 'in_progress', $5, $6, $7, $7)
-ON CONFLICT (identity_id, operation_scope, operation_key) DO NOTHING`,
+ON CONFLICT (identity_id, operation_scope, operation_key) DO NOTHING
+RETURNING version`,
 			request.Operation.IdentityID, request.Operation.Scope, request.Operation.Key,
-			request.Fingerprint[:], now.Add(defaultRetryAfter), now.Add(maintenanceRecoveryLease), now)
-		if err != nil {
+			request.Fingerprint[:], now.Add(defaultRetryAfter), now.Add(maintenanceRecoveryLease), now,
+		).Scan(&generation)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return BeginDecision{}, fmt.Errorf("begin maintenance operation: %w", err)
 		}
-		if tag.RowsAffected() == 1 {
+		if err == nil {
+			if generation <= 0 {
+				return BeginDecision{}, errors.New(
+					"begin maintenance operation: invalid claim token",
+				)
+			}
 			// The owner keeps this session lock until Close, independently of the
 			// client-facing retry hint and durable crash-recovery lease.
 			releaseOwnerLock = false
-			return BeginDecision{Decision: DecisionAcquired}, nil
+			return BeginDecision{
+				Decision: DecisionAcquired, ClaimToken: ClaimToken(generation),
+			}, nil
 		}
 	}
 
@@ -171,15 +188,18 @@ ON CONFLICT (identity_id, operation_scope, operation_key) DO NOTHING`,
 	if hasOwnerLock && row.state == StateInProgress && !row.leaseExpiresAt.After(now) {
 		tag, err := r.conn.Exec(ctx, `
 UPDATE public.aura_maintenance_operations
-SET state = 'indeterminate', updated_at = $1
+SET state = 'indeterminate', updated_at = $1, version = version + 1
 WHERE identity_id = $2 AND operation_scope = $3 AND operation_key = $4
-	  AND payload_hash = $5 AND state = 'in_progress' AND lease_expires_at <= $1`,
-			now, request.Operation.IdentityID, request.Operation.Scope, request.Operation.Key, request.Fingerprint[:])
+	  AND payload_hash = $5 AND state = 'in_progress' AND lease_expires_at <= $1
+	  AND version = $6`,
+			now, request.Operation.IdentityID, request.Operation.Scope,
+			request.Operation.Key, request.Fingerprint[:], row.version)
 		if err != nil {
 			return BeginDecision{}, fmt.Errorf("expire maintenance operation: %w", err)
 		}
 		if tag.RowsAffected() == 1 {
 			row.state = StateIndeterminate
+			row.version++
 		} else {
 			// Complete may have won the conditional transition. Re-read its receipt
 			// rather than returning the stale in-progress snapshot.
@@ -254,11 +274,19 @@ func (r *MaintenanceRegistry) readOperation(ctx context.Context, operation Opera
 	var row maintenanceOperationRow
 	var state string
 	err := r.conn.QueryRow(ctx, `
-SELECT payload_hash, state, replay_body, replay_expires_at, retry_after, lease_expires_at
+SELECT payload_hash, state, replay_body, replay_expires_at, retry_after, lease_expires_at, version
 FROM public.aura_maintenance_operations
 WHERE identity_id = $1 AND operation_scope = $2 AND operation_key = $3`,
 		operation.IdentityID, operation.Scope, operation.Key,
-	).Scan(&row.payloadHash, &state, &row.replayBody, &row.replayExpiresAt, &row.retryAfter, &row.leaseExpiresAt)
+	).Scan(
+		&row.payloadHash,
+		&state,
+		&row.replayBody,
+		&row.replayExpiresAt,
+		&row.retryAfter,
+		&row.leaseExpiresAt,
+		&row.version,
+	)
 	row.state = State(state)
 	return row, err
 }
@@ -273,11 +301,13 @@ func (r *MaintenanceRegistry) Complete(ctx context.Context, request CompleteRequ
 	}
 	tag, err := r.conn.Exec(ctx, `
 UPDATE public.aura_maintenance_operations
-SET state = 'completed', replay_body = $1, replay_expires_at = $2, updated_at = $3
+SET state = 'completed', replay_body = $1, replay_expires_at = $2,
+    updated_at = $3, version = version + 1
 WHERE identity_id = $4 AND operation_scope = $5 AND operation_key = $6
-  AND payload_hash = $7 AND state = 'in_progress'`,
+  AND payload_hash = $7 AND state = 'in_progress' AND version = $8`,
 		request.Result.Body, request.Result.ExpiresAt.UTC(), r.now().UTC(),
-		request.Operation.IdentityID, request.Operation.Scope, request.Operation.Key, request.Fingerprint[:])
+		request.Operation.IdentityID, request.Operation.Scope, request.Operation.Key,
+		request.Fingerprint[:], int64(request.ClaimToken))
 	if err != nil {
 		return fmt.Errorf("complete maintenance operation: %w", err)
 	}
@@ -285,19 +315,28 @@ WHERE identity_id = $4 AND operation_scope = $5 AND operation_key = $6
 }
 
 // MarkIndeterminate prevents automatic re-execution after an ambiguous reset.
-func (r *MaintenanceRegistry) MarkIndeterminate(ctx context.Context, operation OperationKey, fingerprint [32]byte) error {
+func (r *MaintenanceRegistry) MarkIndeterminate(
+	ctx context.Context,
+	operation OperationKey,
+	fingerprint [32]byte,
+	claimToken ClaimToken,
+) error {
 	if err := (BeginRequest{Operation: operation, Fingerprint: fingerprint}).Validate(); err != nil {
 		return err
 	}
 	if operation.Scope != ScopeCLICommand {
 		return errors.New("maintenance registry only accepts CLI operations")
 	}
+	if claimToken <= 0 {
+		return errors.New("idempotency claim token is required")
+	}
 	tag, err := r.conn.Exec(ctx, `
 UPDATE public.aura_maintenance_operations
-SET state = 'indeterminate', updated_at = $1
+SET state = 'indeterminate', updated_at = $1, version = version + 1
 WHERE identity_id = $2 AND operation_scope = $3 AND operation_key = $4
-  AND payload_hash = $5 AND state = 'in_progress'`,
-		r.now().UTC(), operation.IdentityID, operation.Scope, operation.Key, fingerprint[:])
+  AND payload_hash = $5 AND state = 'in_progress' AND version = $6`,
+		r.now().UTC(), operation.IdentityID, operation.Scope, operation.Key,
+		fingerprint[:], int64(claimToken))
 	if err != nil {
 		return fmt.Errorf("mark maintenance operation indeterminate: %w", err)
 	}

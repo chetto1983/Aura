@@ -18,6 +18,7 @@ func TestCLIMutationCoverageHasCompleteIdempotencyMetadata(t *testing.T) {
 		"chat new", "chat resume", "chat archive", "chat delete", "chat rename",
 		"documents backfill", "task schedule", "task cancel", "task run_now", "task approve",
 		"identity grant", "identity revoke", "mcp install", "mcp remove", "skills create", "skills delete",
+		"eval adaptive seal-admission",
 	} {
 		if _, ok := cliMutationCommands[command]; !ok {
 			t.Errorf("mutating command %q is absent from the idempotency inventory", command)

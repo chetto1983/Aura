@@ -80,30 +80,30 @@ func TestStoreRecordDeliveryLocksOwnerBeforeAssignment(t *testing.T) {
 	}
 }
 
-func TestStoreGenericWritersLockOwnerBeforeEvent(t *testing.T) {
+func TestStoreValidatedWritersLockOwnerBeforeEvent(t *testing.T) {
 	pool := adaptiveIntegrationPool(t)
 	tests := []struct {
 		name  string
 		build func(*testing.T, *pgxpool.Pool, uuid.UUID, *Store) (uuid.UUID, func(context.Context) (int64, error))
 	}{
 		{
-			name: "Record",
+			name: "recordValidated",
 			build: func(t *testing.T, _ *pgxpool.Pool, owner uuid.UUID, store *Store) (uuid.UUID, func(context.Context) (int64, error)) {
 				event := typedSchema1Event(t, owner)
 				return event.ID, func(ctx context.Context) (int64, error) {
-					return store.Record(ctx, event)
+					return store.recordLegacyEvent(ctx, event)
 				}
 			},
 		},
 		{
-			name: "RecordTx",
+			name: "recordValidatedTx",
 			build: func(t *testing.T, pool *pgxpool.Pool, owner uuid.UUID, store *Store) (uuid.UUID, func(context.Context) (int64, error)) {
 				event := typedSchema1Event(t, owner)
 				return event.ID, func(ctx context.Context) (int64, error) {
 					var sequence int64
 					err := db.WithIdentityTx(ctx, pool, owner.String(), func(q *sqlc.Queries) error {
 						var recordErr error
-						sequence, _, recordErr = store.RecordTx(ctx, q, event)
+						sequence, _, recordErr = store.recordLegacyEventTx(ctx, q, event)
 						return recordErr
 					})
 					return sequence, err
@@ -202,7 +202,7 @@ func TestStoreGenericWritersLockOwnerBeforeEvent(t *testing.T) {
 
 func typedSchema1Event(t *testing.T, owner uuid.UUID) Event {
 	t.Helper()
-	event, err := NewEvent(EventParams{
+	event, err := newLegacyEvent(eventParams{
 		ID:          uuid.Must(uuid.NewV7()),
 		OwnerID:     owner,
 		AggregateID: "owner-lock-" + uuid.Must(uuid.NewV7()).String(),

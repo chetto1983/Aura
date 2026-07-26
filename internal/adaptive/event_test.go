@@ -8,12 +8,12 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestNewEventCanonicalizesPayloadHash(t *testing.T) {
+func TestNewLegacyEventCanonicalizesPayloadHash(t *testing.T) {
 	t.Parallel()
 	owner := uuid.Must(uuid.NewV7())
 	decision := uuid.Must(uuid.NewV7())
 
-	first, err := NewEvent(EventParams{
+	first, err := newLegacyEvent(eventParams{
 		ID:          uuid.Must(uuid.NewV7()),
 		OwnerID:     owner,
 		AggregateID: "turn-42",
@@ -22,9 +22,9 @@ func TestNewEventCanonicalizesPayloadHash(t *testing.T) {
 		Payload:     json.RawMessage(`{"schema_version":"1.0","b":2,"a":1}`),
 	})
 	if err != nil {
-		t.Fatalf("NewEvent(first): %v", err)
+		t.Fatalf("newLegacyEvent(first): %v", err)
 	}
-	second, err := NewEvent(EventParams{
+	second, err := newLegacyEvent(eventParams{
 		ID:          first.ID,
 		OwnerID:     owner,
 		AggregateID: "turn-42",
@@ -33,7 +33,7 @@ func TestNewEventCanonicalizesPayloadHash(t *testing.T) {
 		Payload:     json.RawMessage("{\n \"a\": 1, \"schema_version\": \"1.0\", \"b\": 2\n}"),
 	})
 	if err != nil {
-		t.Fatalf("NewEvent(second): %v", err)
+		t.Fatalf("newLegacyEvent(second): %v", err)
 	}
 	if !bytes.Equal(first.Payload, second.Payload) {
 		t.Fatalf("canonical payload mismatch:\nfirst: %s\nsecond: %s", first.Payload, second.Payload)
@@ -43,9 +43,9 @@ func TestNewEventCanonicalizesPayloadHash(t *testing.T) {
 	}
 }
 
-func TestNewEventRejectsUnscopedOrUnversionedPayload(t *testing.T) {
+func TestNewLegacyEventRejectsUnscopedOrUnversionedPayload(t *testing.T) {
 	t.Parallel()
-	valid := EventParams{
+	valid := eventParams{
 		ID:          uuid.Must(uuid.NewV7()),
 		OwnerID:     uuid.Must(uuid.NewV7()),
 		AggregateID: "turn-42",
@@ -55,15 +55,15 @@ func TestNewEventRejectsUnscopedOrUnversionedPayload(t *testing.T) {
 	}
 	tests := []struct {
 		name   string
-		mutate func(*EventParams)
+		mutate func(*eventParams)
 	}{
-		{name: "missing owner", mutate: func(p *EventParams) { p.OwnerID = uuid.Nil }},
-		{name: "missing aggregate", mutate: func(p *EventParams) { p.AggregateID = "" }},
-		{name: "missing decision", mutate: func(p *EventParams) { p.DecisionID = uuid.Nil }},
-		{name: "unknown kind", mutate: func(p *EventParams) { p.Kind = EventKind("surprise") }},
-		{name: "missing schema version", mutate: func(p *EventParams) { p.Payload = json.RawMessage(`{"value":1}`) }},
-		{name: "invalid json", mutate: func(p *EventParams) { p.Payload = json.RawMessage(`{`) }},
-		{name: "multiple json values", mutate: func(p *EventParams) {
+		{name: "missing owner", mutate: func(p *eventParams) { p.OwnerID = uuid.Nil }},
+		{name: "missing aggregate", mutate: func(p *eventParams) { p.AggregateID = "" }},
+		{name: "missing decision", mutate: func(p *eventParams) { p.DecisionID = uuid.Nil }},
+		{name: "unknown kind", mutate: func(p *eventParams) { p.Kind = EventKind("surprise") }},
+		{name: "missing schema version", mutate: func(p *eventParams) { p.Payload = json.RawMessage(`{"value":1}`) }},
+		{name: "invalid json", mutate: func(p *eventParams) { p.Payload = json.RawMessage(`{`) }},
+		{name: "multiple json values", mutate: func(p *eventParams) {
 			p.Payload = json.RawMessage(`{"schema_version":"1.0"} {"schema_version":"2.0"}`)
 		}},
 	}
@@ -73,16 +73,16 @@ func TestNewEventRejectsUnscopedOrUnversionedPayload(t *testing.T) {
 			t.Parallel()
 			p := valid
 			tt.mutate(&p)
-			if _, err := NewEvent(p); err == nil {
-				t.Fatal("NewEvent error = nil, want rejection")
+			if _, err := newLegacyEvent(p); err == nil {
+				t.Fatal("newLegacyEvent error = nil, want rejection")
 			}
 		})
 	}
 }
 
-func TestNewEventKeepsSchema1ReadableButRejectsTypedAndFutureEvidence(t *testing.T) {
+func TestNewLegacyEventRejectsTypedAndFutureEvidence(t *testing.T) {
 	t.Parallel()
-	valid := EventParams{
+	valid := eventParams{
 		ID:          uuid.Must(uuid.NewV7()),
 		OwnerID:     uuid.Must(uuid.NewV7()),
 		AggregateID: "turn-42",
@@ -93,15 +93,15 @@ func TestNewEventKeepsSchema1ReadableButRejectsTypedAndFutureEvidence(t *testing
 	for _, kind := range []EventKind{EventDecision, EventOutcome, EventCorrection} {
 		params := valid
 		params.Kind = kind
-		if _, err := NewEvent(params); err != nil {
-			t.Fatalf("NewEvent(%s schema 1.0): %v", kind, err)
+		if _, err := newLegacyEvent(params); err != nil {
+			t.Fatalf("newLegacyEvent(%s schema 1.0): %v", kind, err)
 		}
 		for _, version := range []string{"2.0", "3.0", "future"} {
 			params = valid
 			params.Kind = kind
 			params.Payload = json.RawMessage(`{"schema_version":"` + version + `"}`)
-			if _, err := NewEvent(params); err == nil {
-				t.Fatalf("NewEvent accepted generic %s schema %q", kind, version)
+			if _, err := newLegacyEvent(params); err == nil {
+				t.Fatalf("newLegacyEvent accepted generic %s schema %q", kind, version)
 			}
 		}
 	}

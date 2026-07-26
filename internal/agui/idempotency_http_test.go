@@ -25,7 +25,9 @@ func (m *memoryHTTPRegistry) Begin(_ context.Context, request idempotency.BeginR
 	if m.request == nil {
 		copyRequest := request
 		m.request = &copyRequest
-		return idempotency.BeginDecision{Decision: idempotency.DecisionAcquired}, nil
+		return idempotency.BeginDecision{
+			Decision: idempotency.DecisionAcquired, ClaimToken: 1,
+		}, nil
 	}
 	if m.request.Operation != request.Operation || m.request.Fingerprint != request.Fingerprint {
 		return idempotency.BeginDecision{Decision: idempotency.DecisionConflict}, idempotency.ErrConflict
@@ -37,7 +39,9 @@ func (m *memoryHTTPRegistry) Begin(_ context.Context, request idempotency.BeginR
 }
 
 func (m *memoryHTTPRegistry) Complete(_ context.Context, request idempotency.CompleteRequest) error {
-	if m.request == nil || m.request.Operation != request.Operation || m.request.Fingerprint != request.Fingerprint {
+	if m.request == nil || m.request.Operation != request.Operation ||
+		m.request.Fingerprint != request.Fingerprint ||
+		request.ClaimToken != 1 {
 		return errors.New("unexpected completion")
 	}
 	result := request.Result
@@ -45,7 +49,12 @@ func (m *memoryHTTPRegistry) Complete(_ context.Context, request idempotency.Com
 	return nil
 }
 
-func (m *memoryHTTPRegistry) MarkIndeterminate(context.Context, idempotency.OperationKey, [32]byte) error {
+func (m *memoryHTTPRegistry) MarkIndeterminate(
+	context.Context,
+	idempotency.OperationKey,
+	[32]byte,
+	idempotency.ClaimToken,
+) error {
 	m.marked++
 	return nil
 }
@@ -95,7 +104,7 @@ func TestWriteIdempotencyDecisionHTTPMapping(t *testing.T) {
 		wantReplay bool
 		wantHeader string
 	}{
-		{name: "acquired", decision: idempotency.BeginDecision{Decision: idempotency.DecisionAcquired}, wantStatus: http.StatusOK},
+		{name: "acquired", decision: idempotency.BeginDecision{Decision: idempotency.DecisionAcquired, ClaimToken: 1}, wantStatus: http.StatusOK},
 		{name: "replay", decision: idempotency.BeginDecision{Decision: idempotency.DecisionReplay, Replay: &idempotency.ReplayResult{Body: replayBody, StatusCode: http.StatusAccepted, Headers: map[string]string{"Location": "/api/conversations/conv-1"}, ExpiresAt: time.Now().Add(time.Hour)}}, wantHandle: true, wantStatus: http.StatusAccepted, wantReplay: true, wantHeader: "/api/conversations/conv-1"},
 		{name: "expired result", decision: idempotency.BeginDecision{Decision: idempotency.DecisionResultExpired}, wantHandle: true, wantStatus: http.StatusGone},
 		{name: "conflict", decision: idempotency.BeginDecision{Decision: idempotency.DecisionConflict}, wantHandle: true, wantStatus: http.StatusConflict},

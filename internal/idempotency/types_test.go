@@ -183,7 +183,7 @@ func TestOperationBeginDecisionValidation(t *testing.T) {
 
 	replay := ReplayResult{Body: json.RawMessage(`{"status":"ok"}`), ExpiresAt: time.Now().UTC().Add(time.Hour)}
 	valid := []BeginDecision{
-		{Decision: DecisionAcquired},
+		{Decision: DecisionAcquired, ClaimToken: ClaimToken(1)},
 		{Decision: DecisionReplay, Replay: &replay},
 		{Decision: DecisionInProgress, RetryAfter: time.Second},
 		{Decision: DecisionIndeterminate},
@@ -200,7 +200,9 @@ func TestOperationBeginDecisionValidation(t *testing.T) {
 		{},
 		{Decision: Decision("unknown")},
 		{Decision: DecisionReplay},
+		{Decision: DecisionAcquired},
 		{Decision: DecisionAcquired, RetryAfter: time.Second},
+		{Decision: DecisionConflict, ClaimToken: ClaimToken(1)},
 		{Decision: DecisionInProgress},
 		{Decision: DecisionInProgress, RetryAfter: MaxRetryAfter + time.Nanosecond},
 		{Decision: DecisionConflict, Replay: &replay},
@@ -223,7 +225,7 @@ func TestOperationRequestsValidateNestedContracts(t *testing.T) {
 	if err := (BeginRequest{Operation: key, Fingerprint: fingerprint, Audit: &audit}).Validate(); err != nil {
 		t.Fatalf("valid BeginRequest: %v", err)
 	}
-	if err := (CompleteRequest{Operation: key, Fingerprint: fingerprint, Result: replay}).Validate(); err != nil {
+	if err := (CompleteRequest{Operation: key, Fingerprint: fingerprint, ClaimToken: ClaimToken(1), Result: replay}).Validate(); err != nil {
 		t.Fatalf("valid CompleteRequest: %v", err)
 	}
 
@@ -235,6 +237,9 @@ func TestOperationRequestsValidateNestedContracts(t *testing.T) {
 	}
 	if err := (CompleteRequest{Operation: key, Fingerprint: fingerprint}).Validate(); err == nil {
 		t.Error("invalid CompleteRequest result accepted")
+	}
+	if err := (CompleteRequest{Operation: key, Fingerprint: fingerprint, Result: replay}).Validate(); err == nil {
+		t.Error("zero CompleteRequest claim token accepted")
 	}
 	if !errors.Is(ErrConflict, ErrConflict) {
 		t.Error("ErrConflict must support errors.Is")

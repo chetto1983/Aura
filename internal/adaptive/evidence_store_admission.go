@@ -1,6 +1,7 @@
 package adaptive
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -9,9 +10,23 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/chetto1983/aura/internal/idempotency"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+)
+
+var admissionCohortArtifactKinds = []string{
+	"interference_plan",
+	"look_plan",
+	"quality_outcome_model",
+	"harm_outcome_model",
+	"ope_plan",
+}
+
+// ErrCanaryAdmissionConflict rejects any non-identical seal after admission.
+var ErrCanaryAdmissionConflict = errors.New(
+	"adaptive canary admission conflicts with existing evidence",
 )
 
 func sealCanaryAdmissionTx(
@@ -20,6 +35,9 @@ func sealCanaryAdmissionTx(
 	ownerID uuid.UUID,
 	cohortID uuid.UUID,
 	sealer EvidenceSealer,
+	manifestSHA256 string,
+	registrations []EvidenceArtifactRegistration,
+	operation idempotency.Operation,
 ) (CanaryAdmissionEvidence, error) {
 	if err := lockAdaptiveOwnerTx(ctx, queries, ownerID); err != nil {
 		return CanaryAdmissionEvidence{}, err
@@ -38,48 +56,111 @@ func sealCanaryAdmissionTx(
 	if !cohort.randomizationEligible() {
 		return CanaryAdmissionEvidence{}, ErrCohortV1RandomizationUnsupported
 	}
-	document := cohort.v2.document
-	refs := []ChildArtifactRef{
-		document.InterferencePlanRef, document.LookPlanRef,
-		document.QualityOutcomeModelRef, document.HarmOutcomeModelRef,
-		document.OPEPlanRef,
+	ordered, err := validateAdmissionRegistrations(cohort, registrations)
+	if err != nil {
+		return CanaryAdmissionEvidence{}, err
 	}
-	for _, ref := range refs {
-		if _, err := loadEvidenceArtifactTx(
-			ctx, queries, ownerID, cohortID, ref,
+	semanticFingerprint, err := AdmissionOperationFingerprint(
+		manifestSHA256,
+		ownerID,
+		cohortID,
+		ordered,
+	)
+	if err != nil {
+		return CanaryAdmissionEvidence{}, err
+	}
+	operationIdentityID, err := uuid.Parse(operation.Key.IdentityID)
+	if err != nil {
+		return CanaryAdmissionEvidence{}, errors.New(
+			"adaptive admission operation identity is invalid",
+		)
+	}
+	operationRow, err := queries.LockOperationReceipt(
+		ctx,
+		sqlc.LockOperationReceiptParams{
+			IdentityID:     dbUUID(operationIdentityID),
+			OperationScope: string(operation.Key.Scope),
+			OperationKey:   operation.Key.Key,
+		},
+	)
+	if err != nil {
+		return CanaryAdmissionEvidence{}, errors.New(
+			"adaptive admission operation receipt is unavailable",
+		)
+	}
+	receipt, err := validateAdmissionOperationReceipt(
+		operation,
+		operationRow,
+		semanticFingerprint,
+	)
+	if err != nil {
+		return CanaryAdmissionEvidence{}, err
+	}
+	approvalRegistration, err := buildOperatorApprovalRegistration(
+		cohort,
+		sealer,
+		ordered,
+		receipt,
+	)
+	if err != nil {
+		return CanaryAdmissionEvidence{}, err
+	}
+	existing, err := existingCanaryAdmissionRetryTx(
+		ctx,
+		queries,
+		ownerID,
+		cohortID,
+		cohort,
+		sealer,
+		approvalRegistration,
+	)
+	if err != nil {
+		return CanaryAdmissionEvidence{}, err
+	}
+	if existing != nil {
+		return *existing, nil
+	}
+	for _, registration := range ordered {
+		if err := storeEvidenceArtifactTx(
+			ctx,
+			queries,
+			ownerID,
+			cohortID,
+			sealer,
+			registration,
 		); err != nil {
 			return CanaryAdmissionEvidence{}, err
 		}
 	}
-	approvals, err := queries.ListAdaptiveEvidenceArtifactsByKind(
+	if err := storeEvidenceArtifactTx(
 		ctx,
-		sqlc.ListAdaptiveEvidenceArtifactsByKindParams{
-			OwnerID: dbUUID(ownerID), CohortID: dbUUID(cohortID),
-			Kind: "operator_approval",
-		},
+		queries,
+		ownerID,
+		cohortID,
+		sealer,
+		approvalRegistration,
+	); err != nil {
+		return CanaryAdmissionEvidence{}, err
+	}
+	storedApproval, err := loadEvidenceArtifactTx(
+		ctx,
+		queries,
+		ownerID,
+		cohortID,
+		approvalRegistration.Ref,
 	)
-	if err != nil || len(approvals) != 1 {
-		return CanaryAdmissionEvidence{}, errors.New(
-			"adaptive admission requires one stored operator approval",
-		)
+	if err != nil {
+		return CanaryAdmissionEvidence{}, err
 	}
-	approval, err := DecodeOperatorApproval(approvals[0].Artifact)
-	if err != nil || approval.OwnerID != ownerID.String() ||
-		approval.CohortID != cohortID.String() ||
-		approval.CohortSHA256 != cohort.SHA256() ||
-		approval.PolicyEpoch != document.PolicyEpoch ||
-		approval.PolicyVersion != document.PolicyVersion {
-		return CanaryAdmissionEvidence{}, errors.New(
-			"stored adaptive operator approval is invalid",
-		)
+	if _, err := validateOperatorApprovalRegistration(
+		cohort,
+		sealer,
+		storedApproval,
+	); err != nil {
+		return CanaryAdmissionEvidence{}, err
 	}
-	approvalRef := ChildArtifactRef{
-		SchemaID: ChildArtifactRefSchemaID, Revision: 1,
-		Kind:             "operator_approval",
-		ArtifactSchemaID: "aura.adaptive.operator-approval/v1",
-		ArtifactRevision: 1, ArtifactID: approval.ApprovalID,
-		ArtifactSHA256: hex.EncodeToString(approvals[0].Sha256),
-	}
+	document := cohort.v2.document
+	approvalRef := approvalRegistration.Ref
 	randomizationCanonical, err := cohort.canonicalRandomizationPlanArtifact()
 	if err != nil {
 		return CanaryAdmissionEvidence{}, err
@@ -90,18 +171,6 @@ func sealCanaryAdmissionTx(
 			Ref: document.RandomizationPlanRef, Canonical: randomizationCanonical,
 		},
 	); err != nil {
-		return CanaryAdmissionEvidence{}, err
-	}
-	existing, err := queries.GetAdaptiveSealedAdmission(
-		ctx,
-		sqlc.GetAdaptiveSealedAdmissionParams{
-			OwnerID: dbUUID(ownerID), CohortID: dbUUID(cohortID),
-		},
-	)
-	if err == nil {
-		return admissionEvidenceFromRow(existing, ownerID, cohortID)
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
 		return CanaryAdmissionEvidence{}, err
 	}
 	evaluators, err := json.Marshal(document.Evaluators)
@@ -160,6 +229,89 @@ func sealCanaryAdmissionTx(
 		BodySHA256:       bodySHA256, Body: body,
 	}
 	return persistAdmissionEvidenceTx(ctx, queries, evidence)
+}
+
+func existingCanaryAdmissionRetryTx(
+	ctx context.Context,
+	queries *sqlc.Queries,
+	ownerID uuid.UUID,
+	cohortID uuid.UUID,
+	cohort *FocalCohort,
+	sealer EvidenceSealer,
+	expectedApproval EvidenceArtifactRegistration,
+) (*CanaryAdmissionEvidence, error) {
+	row, err := queries.GetAdaptiveSealedAdmission(
+		ctx,
+		sqlc.GetAdaptiveSealedAdmissionParams{
+			OwnerID:  dbUUID(ownerID),
+			CohortID: dbUUID(cohortID),
+		},
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	existing, err := admissionEvidenceFromRow(row, ownerID, cohortID)
+	if err != nil ||
+		existing.Body.OperatorApprovalRef != expectedApproval.Ref {
+		return nil, ErrCanaryAdmissionConflict
+	}
+	storedApproval, err := loadEvidenceArtifactTx(
+		ctx,
+		queries,
+		ownerID,
+		cohortID,
+		existing.Body.OperatorApprovalRef,
+	)
+	if err != nil {
+		return nil, ErrCanaryAdmissionConflict
+	}
+	if _, err := validateOperatorApprovalRegistration(
+		cohort,
+		sealer,
+		storedApproval,
+	); err != nil ||
+		!bytes.Equal(storedApproval.Canonical, expectedApproval.Canonical) {
+		return nil, ErrCanaryAdmissionConflict
+	}
+	return &existing, nil
+}
+
+func validateAdmissionRegistrations(
+	cohort *FocalCohort,
+	registrations []EvidenceArtifactRegistration,
+) ([]EvidenceArtifactRegistration, error) {
+	if len(registrations) != len(admissionCohortArtifactKinds) {
+		return nil, errors.New(
+			"adaptive admission requires five cohort artifacts",
+		)
+	}
+	ordered := make(
+		[]EvidenceArtifactRegistration,
+		len(admissionCohortArtifactKinds),
+	)
+	for index, registration := range registrations {
+		if registration.Ref.Kind != admissionCohortArtifactKinds[index] {
+			return nil, errors.New(
+				"adaptive admission cohort artifact order is invalid",
+			)
+		}
+		if err := registration.validate(
+			admissionCohortArtifactKinds...,
+		); err != nil {
+			return nil, err
+		}
+		if err := validateAdmissionCohortArtifact(
+			cohort,
+			registration,
+		); err != nil {
+			return nil, err
+		}
+		ordered[index] = registration
+	}
+	return ordered, nil
 }
 
 func persistAdmissionEvidenceTx(

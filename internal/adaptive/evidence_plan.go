@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"slices"
 	"time"
+
+	"github.com/chetto1983/aura/internal/idempotency"
+	"github.com/google/uuid"
 )
 
 const (
@@ -199,6 +202,60 @@ func DecodeOperatorApproval(payload []byte) (OperatorApproval, error) {
 type EvidenceArtifactRegistration struct {
 	Ref       ChildArtifactRef
 	Canonical []byte
+}
+
+// ValidateAdmissionArtifactRegistration applies the registered typed contract.
+func ValidateAdmissionArtifactRegistration(
+	registration EvidenceArtifactRegistration,
+) error {
+	return registration.validate(admissionCohortArtifactKinds...)
+}
+
+// AdmissionOperationFingerprint binds the complete immutable admission intent.
+func AdmissionOperationFingerprint(
+	manifestSHA256 string,
+	ownerID uuid.UUID,
+	cohortID uuid.UUID,
+	registrations []EvidenceArtifactRegistration,
+) ([32]byte, error) {
+	if !validSHA256(manifestSHA256) || ownerID == uuid.Nil ||
+		cohortID == uuid.Nil ||
+		len(registrations) != len(admissionCohortArtifactKinds) {
+		return [32]byte{}, errors.New(
+			"adaptive admission fingerprint input is invalid",
+		)
+	}
+	type artifactFingerprint struct {
+		Ref    ChildArtifactRef `json:"ref"`
+		SHA256 string           `json:"sha256"`
+	}
+	artifacts := make([]artifactFingerprint, len(registrations))
+	for index, registration := range registrations {
+		if registration.Ref.Kind != admissionCohortArtifactKinds[index] ||
+			ValidateAdmissionArtifactRegistration(registration) != nil {
+			return [32]byte{}, errors.New(
+				"adaptive admission fingerprint artifact is invalid",
+			)
+		}
+		artifacts[index] = artifactFingerprint{
+			Ref: registration.Ref, SHA256: sha256Hex(registration.Canonical),
+		}
+	}
+	return idempotency.FingerprintTyped(struct {
+		Command        string                `json:"command"`
+		Confirmation   string                `json:"confirmation"`
+		ManifestSHA256 string                `json:"manifest_sha256"`
+		OwnerID        string                `json:"owner_id"`
+		CohortID       string                `json:"cohort_id"`
+		Artifacts      []artifactFingerprint `json:"artifacts"`
+	}{
+		Command:        "aura eval adaptive seal-admission",
+		Confirmation:   "--confirm-operator-approval",
+		ManifestSHA256: manifestSHA256,
+		OwnerID:        ownerID.String(),
+		CohortID:       cohortID.String(),
+		Artifacts:      artifacts,
+	})
 }
 
 func (registration EvidenceArtifactRegistration) validate(allowedKinds ...string) error {

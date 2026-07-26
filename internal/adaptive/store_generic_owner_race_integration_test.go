@@ -150,7 +150,7 @@ func TestStoreDeletionFenceClosesRecordWaitAndUUIDRecreationRace(t *testing.T) {
 		); err != nil {
 			t.Fatalf("recreate owner: %v", err)
 		}
-		if _, err := store.Record(ctx, event); !errors.Is(err, ErrOwnerTombstoned) {
+		if _, err := store.recordLegacyEvent(ctx, event); !errors.Is(err, ErrOwnerTombstoned) {
 			t.Fatalf("Record after owner recreation error = %v, want ErrOwnerTombstoned", err)
 		}
 		assertGenericRaceFencedAndEmpty(t, ctx, pool, owner, event)
@@ -206,7 +206,7 @@ func registerAdaptiveOwnerCleanup(t *testing.T, owner uuid.UUID) {
 
 func genericRaceEvent(t *testing.T, owner uuid.UUID, aggregate string) Event {
 	t.Helper()
-	event, err := NewEvent(EventParams{
+	event, err := newLegacyEvent(eventParams{
 		ID:          uuid.Must(uuid.NewV7()),
 		OwnerID:     owner,
 		AggregateID: "generic-race-" + aggregate,
@@ -227,7 +227,7 @@ func recordGenericEventAsync(
 ) <-chan typedDeliveryRecordResult {
 	done := make(chan typedDeliveryRecordResult, 1)
 	go func() {
-		sequence, err := store.Record(ctx, event)
+		sequence, err := store.recordLegacyEvent(ctx, event)
 		select {
 		case done <- typedDeliveryRecordResult{sequence: sequence, err: err}:
 		case <-ctx.Done():

@@ -73,7 +73,7 @@ func TestStoreRecordOrdersAndRejectsPayloadConflict(t *testing.T) {
 
 	store := NewStore(pool, StoreConfig{MaxAttempts: 3})
 	decision := uuid.Must(uuid.NewV7())
-	first, err := NewEvent(EventParams{
+	first, err := newLegacyEvent(eventParams{
 		ID: uuid.Must(uuid.NewV7()), OwnerID: owner, AggregateID: "request-1",
 		DecisionID: decision, Kind: EventDecision,
 		Payload: []byte(`{"schema_version":"1.0","action":"off"}`),
@@ -81,7 +81,7 @@ func TestStoreRecordOrdersAndRejectsPayloadConflict(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := NewEvent(EventParams{
+	second, err := newLegacyEvent(eventParams{
 		ID: uuid.Must(uuid.NewV7()), OwnerID: owner, AggregateID: "request-1",
 		DecisionID: decision, Kind: EventOutcome,
 		Payload: []byte(`{"schema_version":"1.0","quality":1}`),
@@ -90,23 +90,23 @@ func TestStoreRecordOrdersAndRejectsPayloadConflict(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	seq1, err := store.Record(ctx, first)
+	seq1, err := store.recordLegacyEvent(ctx, first)
 	if err != nil {
 		t.Fatalf("Record(first): %v", err)
 	}
-	seq2, err := store.Record(ctx, second)
+	seq2, err := store.recordLegacyEvent(ctx, second)
 	if err != nil {
 		t.Fatalf("Record(second): %v", err)
 	}
 	if seq1 != 1 || seq2 != 2 {
 		t.Fatalf("sequences = %d,%d, want 1,2", seq1, seq2)
 	}
-	retrySeq, err := store.Record(ctx, first)
+	retrySeq, err := store.recordLegacyEvent(ctx, first)
 	if err != nil || retrySeq != seq1 {
 		t.Fatalf("idempotent Record(first) = (%d,%v), want (%d,nil)", retrySeq, err, seq1)
 	}
 
-	conflict, err := NewEvent(EventParams{
+	conflict, err := newLegacyEvent(eventParams{
 		ID: first.ID, OwnerID: owner, AggregateID: "request-1",
 		DecisionID: decision, Kind: EventDecision,
 		Payload: []byte(`{"schema_version":"1.0","action":"high"}`),
@@ -114,7 +114,7 @@ func TestStoreRecordOrdersAndRejectsPayloadConflict(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Record(ctx, conflict); !errors.Is(err, ErrPayloadConflict) {
+	if _, err := store.recordLegacyEvent(ctx, conflict); !errors.Is(err, ErrPayloadConflict) {
 		t.Fatalf("conflicting duplicate error = %v, want ErrPayloadConflict", err)
 	}
 
@@ -140,7 +140,7 @@ func TestAdaptiveRuntimeCannotMutateFactsDeleteRowsOrBypassSequenceAllocator(t *
 		_, _ = pool.Exec(context.Background(), `DELETE FROM aura.identities WHERE id=$1`, owner)
 	})
 	store := NewStore(pool, StoreConfig{MaxAttempts: 3})
-	event, err := NewEvent(EventParams{
+	event, err := newLegacyEvent(eventParams{
 		ID: uuid.Must(uuid.NewV7()), OwnerID: owner, AggregateID: "immutable-ledger",
 		DecisionID: uuid.Must(uuid.NewV7()), Kind: EventDecision,
 		Payload: []byte(`{"schema_version":"1.0","action":"static"}`),
@@ -148,7 +148,7 @@ func TestAdaptiveRuntimeCannotMutateFactsDeleteRowsOrBypassSequenceAllocator(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Record(ctx, event); err != nil {
+	if _, err := store.recordLegacyEvent(ctx, event); err != nil {
 		t.Fatalf("Record: %v", err)
 	}
 
@@ -195,7 +195,7 @@ func TestAdaptiveRuntimeCannotMutateFactsDeleteRowsOrBypassSequenceAllocator(t *
 		t.Fatalf("MarkProjected through operational columns: %v", err)
 	}
 
-	nextEvent, err := NewEvent(EventParams{
+	nextEvent, err := newLegacyEvent(eventParams{
 		ID: uuid.Must(uuid.NewV7()), OwnerID: owner, AggregateID: "immutable-ledger",
 		DecisionID: uuid.Must(uuid.NewV7()), Kind: EventOutcome,
 		Payload: []byte(`{"schema_version":"1.0","quality_observed":false}`),
@@ -203,7 +203,7 @@ func TestAdaptiveRuntimeCannotMutateFactsDeleteRowsOrBypassSequenceAllocator(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sequence, err := store.Record(ctx, nextEvent); err != nil || sequence != 2 {
+	if sequence, err := store.recordLegacyEvent(ctx, nextEvent); err != nil || sequence != 2 {
 		t.Fatalf("second Record sequence = %d err %v, want 2/nil", sequence, err)
 	}
 }
@@ -227,7 +227,7 @@ func TestAdaptiveOutboxRLSHidesAndRejectsCrossOwnerRows(t *testing.T) {
 
 	store := NewStore(pool, StoreConfig{})
 	for _, owner := range []uuid.UUID{ownerA, ownerB} {
-		event, err := NewEvent(EventParams{
+		event, err := newLegacyEvent(eventParams{
 			ID: uuid.Must(uuid.NewV7()), OwnerID: owner, AggregateID: "rls-proof",
 			DecisionID: uuid.Must(uuid.NewV7()), Kind: EventDecision,
 			Payload: []byte(`{"schema_version":"1.0","domain":"tool"}`),
@@ -235,7 +235,7 @@ func TestAdaptiveOutboxRLSHidesAndRejectsCrossOwnerRows(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := store.Record(ctx, event); err != nil {
+		if _, err := store.recordLegacyEvent(ctx, event); err != nil {
 			t.Fatalf("Record(%s): %v", owner, err)
 		}
 	}
@@ -284,7 +284,7 @@ func TestStoreRejectsRecreatedDeletedOwner(t *testing.T) {
 
 	store := NewStore(pool, StoreConfig{})
 	decision := uuid.Must(uuid.NewV7())
-	event, err := NewEvent(EventParams{
+	event, err := newLegacyEvent(eventParams{
 		ID: uuid.Must(uuid.NewV7()), OwnerID: owner, AggregateID: "request-before-delete",
 		DecisionID: decision, Kind: EventDecision,
 		Payload: []byte(`{"schema_version":"1.0","action":"off"}`),
@@ -292,7 +292,7 @@ func TestStoreRejectsRecreatedDeletedOwner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Record(ctx, event); err != nil {
+	if _, err := store.recordLegacyEvent(ctx, event); err != nil {
 		t.Fatalf("Record(before delete): %v", err)
 	}
 	if _, err := pool.Exec(ctx, `DELETE FROM aura.identities WHERE id=$1`, owner); err != nil {
@@ -324,7 +324,7 @@ WHERE table_schema='aura'
 		owner, name+"-recreated"); err != nil {
 		t.Fatalf("recreate owner UUID: %v", err)
 	}
-	after, err := NewEvent(EventParams{
+	after, err := newLegacyEvent(eventParams{
 		ID: uuid.Must(uuid.NewV7()), OwnerID: owner, AggregateID: "request-after-delete",
 		DecisionID: uuid.Must(uuid.NewV7()), Kind: EventDecision,
 		Payload: []byte(`{"schema_version":"1.0","action":"high"}`),
@@ -332,7 +332,7 @@ WHERE table_schema='aura'
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Record(ctx, after); !errors.Is(err, ErrOwnerTombstoned) {
+	if _, err := store.recordLegacyEvent(ctx, after); !errors.Is(err, ErrOwnerTombstoned) {
 		t.Fatalf("Record(after owner recreation) error = %v, want ErrOwnerTombstoned", err)
 	}
 }
@@ -354,7 +354,7 @@ func TestStoreClaimsAcrossWorkersPreserveAggregateOrderAndLeaseOwnership(t *test
 	base := time.Now().UTC().Add(-time.Minute)
 	makeEvent := func(aggregate string, offset time.Duration) Event {
 		t.Helper()
-		event, err := NewEvent(EventParams{
+		event, err := newLegacyEvent(eventParams{
 			ID: uuid.Must(uuid.NewV7()), OwnerID: owner, AggregateID: aggregate,
 			DecisionID: uuid.Must(uuid.NewV7()), Kind: EventOutcome,
 			Payload:   []byte(`{"schema_version":"1.0","quality":1}`),
@@ -369,7 +369,7 @@ func TestStoreClaimsAcrossWorkersPreserveAggregateOrderAndLeaseOwnership(t *test
 	a2 := makeEvent("aggregate-a", time.Second)
 	b1 := makeEvent("aggregate-b", 2*time.Second)
 	for _, event := range []Event{a1, a2, b1} {
-		if _, err := store.Record(ctx, event); err != nil {
+		if _, err := store.recordLegacyEvent(ctx, event); err != nil {
 			t.Fatalf("Record(%s): %v", event.AggregateID, err)
 		}
 	}
@@ -451,7 +451,7 @@ func TestStoreRetryTransitionsPendingThenDeadLetterWithTypedTimestamp(t *testing
 	})
 
 	store := NewStore(pool, StoreConfig{MaxAttempts: 2})
-	event, err := NewEvent(EventParams{
+	event, err := newLegacyEvent(eventParams{
 		ID: uuid.Must(uuid.NewV7()), OwnerID: owner, AggregateID: "retry-dead-letter",
 		DecisionID: uuid.Must(uuid.NewV7()), Kind: EventOutcome,
 		Payload: []byte(`{"schema_version":"1.0","quality_observed":false}`),
@@ -459,7 +459,7 @@ func TestStoreRetryTransitionsPendingThenDeadLetterWithTypedTimestamp(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Record(ctx, event); err != nil {
+	if _, err := store.recordLegacyEvent(ctx, event); err != nil {
 		t.Fatalf("Record: %v", err)
 	}
 

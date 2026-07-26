@@ -36,7 +36,12 @@ type reservationStore interface {
 type operationRegistry interface {
 	Begin(context.Context, idempotency.BeginRequest) (idempotency.BeginDecision, error)
 	Complete(context.Context, idempotency.CompleteRequest) error
-	MarkIndeterminate(context.Context, idempotency.OperationKey, [32]byte) error
+	MarkIndeterminate(
+		context.Context,
+		idempotency.OperationKey,
+		[32]byte,
+		idempotency.ClaimToken,
+	) error
 }
 
 // Decision is the gateway's verdict on a single tool dispatch.
@@ -81,6 +86,8 @@ type Verdict struct {
 	// OperationDecision records the shared registry outcome. Acquired tells the
 	// executor it owns completion/indeterminate transition responsibility.
 	OperationDecision idempotency.Decision
+	// OperationClaimToken fences terminal writes to the acquired generation.
+	OperationClaimToken idempotency.ClaimToken
 }
 
 // ReservationKey is the ledger triple the decision-fact is keyed on. It is ALWAYS

@@ -3,7 +3,6 @@
 package adaptive
 
 import (
-	"bytes"
 	"context"
 	"strings"
 	"testing"
@@ -157,20 +156,77 @@ func assertAdaptiveEvidenceMigrationPresence(
 	}
 }
 
-func TestEvidenceStorePersistsAndVerifiesCohortChildArtifact(t *testing.T) {
+func TestEvidenceStoreAtomicAdmissionRequiresCapabilityWithoutPartialWrites(
+	t *testing.T,
+) {
 	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
 	t.Cleanup(cancel)
 	pool, migrateURL := schema2MigrationDatabase(
-		t, ctx, "aura_evidence_store", shippedMigrationSteps(t),
+		t, ctx, "aura_evidence_capability", shippedMigrationSteps(t),
 	)
 	ownerID := uuid.Must(uuid.NewV7())
 	if _, err := pool.Exec(
 		ctx,
 		`INSERT INTO aura.identities (id, name, kind)
 		 VALUES ($1, $2, 'user')`,
-		ownerID, "evidence-store-"+ownerID.String(),
+		ownerID, "evidence-capability-"+ownerID.String(),
 	); err != nil {
 		t.Fatalf("seed evidence owner: %v", err)
+	}
+	snapshot := focalCohortSnapshotForOwner(t, ownerID)
+	if err := NewSnapshotStore(pool).Save(ctx, snapshot); err != nil {
+		t.Fatalf("save evidence snapshot: %v", err)
+	}
+	cohort, registrations := admissionEvidenceFixture(
+		t,
+		ownerID,
+		snapshot,
+	)
+	if err := NewCohortStore(pool, NewStore(pool, StoreConfig{})).
+		Save(ctx, cohort); err != nil {
+		t.Fatalf("save evidence cohort: %v", err)
+	}
+	operationCtx := admissionOperationContext(
+		t,
+		ctx,
+		pool,
+		"missing-capability",
+		ownerID,
+		cohort.ID(),
+		registrations,
+	)
+	_, err := NewEvidenceStore(pool).SealCanaryAdmission(
+		operationCtx,
+		ownerID,
+		cohort.ID(),
+		EvidenceSealer{
+			ActorID: ownerID, Capability: "adaptive.evidence.seal",
+		},
+		admissionTestManifestSHA256(),
+		registrations,
+	)
+	if err == nil || !strings.Contains(
+		err.Error(),
+		"adaptive evidence sealer capability is unavailable",
+	) {
+		t.Fatalf("SealCanaryAdmission error = %v, want capability denial", err)
+	}
+	migrationPool, err := db.Open(ctx, &db.Config{URL: migrateURL})
+	if err != nil {
+		t.Fatalf("open migration pool: %v", err)
+	}
+	t.Cleanup(migrationPool.Close)
+	var artifacts int
+	if err := migrationPool.QueryRow(
+		ctx,
+		`SELECT count(*) FROM aura.adaptive_evidence_artifacts
+		  WHERE owner_id = $1`,
+		ownerID,
+	).Scan(&artifacts); err != nil {
+		t.Fatalf("count unauthorized artifacts: %v", err)
+	}
+	if artifacts != 0 {
+		t.Fatalf("unauthorized artifact rows = %d, want zero", artifacts)
 	}
 	if _, err := pool.Exec(
 		ctx,
@@ -178,59 +234,29 @@ func TestEvidenceStorePersistsAndVerifiesCohortChildArtifact(t *testing.T) {
 		 VALUES ($1, 'adaptive.evidence.seal')`,
 		ownerID,
 	); err != nil {
-		t.Fatalf("grant evidence sealer capability: %v", err)
+		t.Fatalf("grant evidence capability: %v", err)
 	}
-	snapshot := focalCohortSnapshotForOwner(t, ownerID)
-	if err := NewSnapshotStore(pool).Save(ctx, snapshot); err != nil {
-		t.Fatalf("save snapshot: %v", err)
+	if _, err := NewEvidenceStore(pool).SealCanaryAdmission(
+		operationCtx,
+		ownerID,
+		cohort.ID(),
+		EvidenceSealer{
+			ActorID: ownerID, Capability: "adaptive.evidence.seal",
+		},
+		admissionTestManifestSHA256(),
+		registrations,
+	); err != nil {
+		t.Fatalf("SealCanaryAdmission after capability grant: %v", err)
 	}
-	cluster, err := NewInterferenceCluster(ownerID.String(), ownerID.String())
-	if err != nil {
-		t.Fatalf("derive interference cluster schema: %v", err)
-	}
-	interference := validInterferencePlanArtifact()
-	interference.ClusterSchemaSHA256 = cluster.SchemaSHA256
-	canonical, err := interference.CanonicalJSON()
-	if err != nil {
-		t.Fatalf("canonicalize interference plan: %v", err)
-	}
-	refs := validCohortV2ChildRefs()
-	refs.InterferencePlan.ArtifactSHA256 = sha256Hex(canonical)
-	base := randomizedFocalCohortForSnapshot(
-		t, snapshot, time.Now().UTC().Add(time.Hour),
-		[]BlockKey{BlockOwner, BlockTimeBlock},
+	assertAdmissionRowCounts(
+		t,
+		ctx,
+		migrationPool,
+		ownerID,
+		cohort.ID(),
+		7,
+		1,
 	)
-	cohort, err := NewRandomizedFocalCohort(base.spec, snapshot, refs)
-	if err != nil {
-		t.Fatalf("build cohort with stored child: %v", err)
-	}
-	if err := NewCohortStore(pool, NewStore(pool, StoreConfig{})).
-		Save(ctx, cohort); err != nil {
-		t.Fatalf("save cohort: %v", err)
-	}
-	sealer := EvidenceSealer{
-		ActorID: ownerID, Capability: "adaptive.evidence.seal",
-	}
-	registration := EvidenceArtifactRegistration{
-		Ref: refs.InterferencePlan, Canonical: canonical,
-	}
-	store := NewEvidenceStore(pool)
-	if err := store.RegisterCohortArtifact(
-		ctx, ownerID, cohort.ID(), sealer, registration,
-	); err != nil {
-		t.Fatalf("RegisterCohortArtifact: %v", err)
-	}
-	if err := store.RegisterCohortArtifact(
-		ctx, ownerID, cohort.ID(), sealer, registration,
-	); err != nil {
-		t.Fatalf("RegisterCohortArtifact retry: %v", err)
-	}
-
-	migrationPool, err := db.Open(ctx, &db.Config{URL: migrateURL})
-	if err != nil {
-		t.Fatalf("open migration pool: %v", err)
-	}
-	t.Cleanup(migrationPool.Close)
 	var legacyRemoved, directInsert, transitionExecute bool
 	if err := migrationPool.QueryRow(
 		ctx,
@@ -246,87 +272,192 @@ func TestEvidenceStorePersistsAndVerifiesCohortChildArtifact(t *testing.T) {
 		      'aura.apply_adaptive_policy_transition(uuid,bigint,uuid,integer,text)',
 		      'EXECUTE'
 		    )`,
-	).Scan(&legacyRemoved, &directInsert, &transitionExecute); err != nil {
+	).Scan(
+		&legacyRemoved,
+		&directInsert,
+		&transitionExecute,
+	); err != nil {
 		t.Fatalf("read adaptive evidence privileges: %v", err)
 	}
 	if !legacyRemoved || directInsert || !transitionExecute {
 		t.Fatalf(
 			"evidence privileges legacy=%t insert=%t transition=%t",
-			legacyRemoved, directInsert, transitionExecute,
+			legacyRemoved,
+			directInsert,
+			transitionExecute,
 		)
 	}
-	var stored []byte
-	var storedSHA256 string
-	var documentMatches bool
-	if err := migrationPool.QueryRow(
+}
+
+func TestEvidenceStoreAtomicAdmissionValidatesReceiptAndIgnoresForeignApproval(
+	t *testing.T,
+) {
+	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
+	t.Cleanup(cancel)
+	pool, migrateURL := schema2MigrationDatabase(
+		t, ctx, "aura_evidence_store", shippedMigrationSteps(t),
+	)
+	ownerID := uuid.Must(uuid.NewV7())
+	if _, err := pool.Exec(
 		ctx,
-		`SELECT artifact, encode(sha256, 'hex'),
-		        artifact_json = convert_from($1, 'UTF8')::jsonb
-		   FROM aura.adaptive_evidence_artifacts
-		  WHERE id = $2 AND owner_id = $3 AND cohort_id = $4
-		    AND kind = 'interference_plan'`,
-		canonical, refs.InterferencePlan.ArtifactID, ownerID, cohort.ID(),
-	).Scan(&stored, &storedSHA256, &documentMatches); err != nil {
-		t.Fatalf("read stored cohort child: %v", err)
+		`INSERT INTO aura.identities (id, name, kind)
+		 VALUES ($1, $2, 'user')`,
+		ownerID, "evidence-store-"+ownerID.String(),
+	); err != nil {
+		t.Fatalf("seed evidence owner: %v", err)
 	}
-	if !bytes.Equal(stored, canonical) ||
-		storedSHA256 != refs.InterferencePlan.ArtifactSHA256 ||
-		!documentMatches {
+	snapshot := focalCohortSnapshotForOwner(t, ownerID)
+	if err := NewSnapshotStore(pool).Save(ctx, snapshot); err != nil {
+		t.Fatalf("save snapshot: %v", err)
+	}
+	cohort, artifacts := admissionEvidenceFixture(t, ownerID, snapshot)
+	if err := NewCohortStore(pool, NewStore(pool, StoreConfig{})).
+		Save(ctx, cohort); err != nil {
+		t.Fatalf("save admission cohort: %v", err)
+	}
+	sealer := EvidenceSealer{
+		ActorID: ownerID, Capability: "adaptive.evidence.seal",
+	}
+	store := NewEvidenceStore(pool)
+	migrationPool, err := db.Open(ctx, &db.Config{URL: migrateURL})
+	if err != nil {
+		t.Fatalf("open migration pool: %v", err)
+	}
+	t.Cleanup(migrationPool.Close)
+	if _, err := pool.Exec(
+		ctx,
+		`INSERT INTO aura.capability_grants (identity_id, capability)
+		 VALUES ($1, 'adaptive.evidence.seal')`,
+		ownerID,
+	); err != nil {
+		t.Fatalf("grant evidence sealer capability: %v", err)
+	}
+	if _, err := store.SealCanaryAdmission(
+		ctx,
+		ownerID,
+		cohort.ID(),
+		sealer,
+		admissionTestManifestSHA256(),
+		artifacts,
+	); err == nil {
+		t.Fatal("SealCanaryAdmission accepted a missing operation")
+	}
+	assertAdmissionRowCounts(t, ctx, migrationPool, ownerID, cohort.ID(), 0, 0)
+
+	unrelatedOperation := admissionOperationContextForManifest(
+		t,
+		ctx,
+		pool,
+		"unrelated-semantic-receipt",
+		repeatedSHA("d"),
+		ownerID,
+		cohort.ID(),
+		artifacts,
+	)
+	if _, err := store.SealCanaryAdmission(
+		unrelatedOperation,
+		ownerID,
+		cohort.ID(),
+		sealer,
+		admissionTestManifestSHA256(),
+		artifacts,
+	); err == nil {
+		t.Fatal("SealCanaryAdmission accepted a valid unrelated receipt")
+	}
+	assertAdmissionRowCounts(t, ctx, migrationPool, ownerID, cohort.ID(), 0, 0)
+
+	foreignApproval := OperatorApproval{
+		SchemaID: "aura.adaptive.operator-approval/v1", Revision: 1,
+		ApprovalID: uuid.Must(uuid.NewV7()).String(),
+		ActorID:    ownerID.String(), Capability: "adaptive.evidence.seal",
+		TargetState: string(PolicyCanary), OwnerID: ownerID.String(),
+		CohortID: cohort.ID().String(), CohortSHA256: cohort.SHA256(),
+		PolicyEpoch:      cohort.Scope().PolicyEpoch,
+		PolicyVersion:    cohort.Scope().PolicyVersion,
+		ApprovedAt:       time.Now().UTC().Truncate(time.Microsecond),
+		SourceRequestID:  uuid.Must(uuid.NewV7()).String(),
+		ProvenanceSHA256: repeatedSHA("f"),
+	}
+	foreignCanonical, err := foreignApproval.CanonicalJSON()
+	if err != nil {
+		t.Fatalf("canonicalize foreign approval: %v", err)
+	}
+	if _, err := migrationPool.Exec(
+		ctx,
+		`INSERT INTO aura.adaptive_evidence_artifacts (
+		   id, owner_id, cohort_id, kind, schema_id, revision,
+		   sha256, artifact, artifact_json
+		 ) VALUES (
+		   $1, $2, $3, 'operator_approval',
+		   'aura.adaptive.operator-approval/v1', 1,
+		   pg_catalog.sha256($4), $4, convert_from($4, 'UTF8')::jsonb
+		 )`,
+		foreignApproval.ApprovalID,
+		ownerID,
+		cohort.ID(),
+		foreignCanonical,
+	); err != nil {
+		t.Fatalf("seed foreign legacy approval: %v", err)
+	}
+	operationCtx := admissionOperationContext(
+		t,
+		ctx,
+		pool,
+		"foreign-approval",
+		ownerID,
+		cohort.ID(),
+		artifacts,
+	)
+	admission, err := store.SealCanaryAdmission(
+		operationCtx,
+		ownerID,
+		cohort.ID(),
+		sealer,
+		admissionTestManifestSHA256(),
+		artifacts,
+	)
+	if err != nil {
+		t.Fatalf("SealCanaryAdmission: %v", err)
+	}
+	if admission.Body.OperatorApprovalRef.ArtifactID ==
+		foreignApproval.ApprovalID {
+		t.Fatal("foreign approval poisoned the derived approval reference")
+	}
+	assertAdmissionRowCounts(t, ctx, migrationPool, ownerID, cohort.ID(), 8, 1)
+}
+
+func assertAdmissionRowCounts(
+	t *testing.T,
+	ctx context.Context,
+	pool interface {
+		QueryRow(context.Context, string, ...any) pgx.Row
+	},
+	ownerID uuid.UUID,
+	cohortID uuid.UUID,
+	wantArtifacts int,
+	wantEvidence int,
+) {
+	t.Helper()
+	var artifacts, evidence int
+	if err := pool.QueryRow(
+		ctx,
+		`SELECT
+		   (SELECT count(*) FROM aura.adaptive_evidence_artifacts
+		     WHERE owner_id = $1 AND cohort_id = $2),
+		   (SELECT count(*) FROM aura.adaptive_sealed_evidence
+		     WHERE owner_id = $1 AND cohort_id = $2)`,
+		ownerID,
+		cohortID,
+	).Scan(&artifacts, &evidence); err != nil {
+		t.Fatalf("count admission rows: %v", err)
+	}
+	if artifacts != wantArtifacts || evidence != wantEvidence {
 		t.Fatalf(
-			"stored child = (%s, %q, %t), want exact canonical artifact",
-			stored, storedSHA256, documentMatches,
+			"admission artifact/evidence rows = %d/%d, want %d/%d",
+			artifacts,
+			evidence,
+			wantArtifacts,
+			wantEvidence,
 		)
-	}
-
-	if _, err := migrationPool.Exec(
-		ctx,
-		`ALTER TABLE aura.adaptive_evidence_artifacts DISABLE TRIGGER USER`,
-	); err != nil {
-		t.Fatalf("disable evidence artifact triggers: %v", err)
-	}
-	t.Cleanup(func() {
-		if _, err := migrationPool.Exec(
-			context.Background(),
-			`ALTER TABLE aura.adaptive_evidence_artifacts ENABLE TRIGGER USER`,
-		); err != nil {
-			t.Errorf("enable evidence artifact triggers: %v", err)
-		}
-	})
-	tampered := []byte(
-		`{"schema_id":"aura.adaptive.interference-plan/v1","revision":1,"cluster_schema_id":"aura.adaptive.interference-cluster/conversation/v1","cluster_revision":1,"cluster_schema_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","cluster_keys":["owner_id","evaluation_conversation_id"],"carryover_scope":"session","randomized_focal_units_per_cluster":1,"within_cluster_rule":"arbitrary_carryover_one_focal","between_cluster_assumption":"no_treatment_induced_cross_conversation_interference","shared_state_rule":"read_only_or_versioned","fold_unit":"interference_cluster","resampling_unit":"interference_cluster"}`,
-	)
-	if _, err := migrationPool.Exec(
-		ctx,
-		`UPDATE aura.adaptive_evidence_artifacts
-		    SET sha256 = pg_catalog.sha256($1),
-		        artifact = $1,
-		        artifact_json = convert_from($1, 'UTF8')::jsonb
-		  WHERE id = $2`,
-		tampered, refs.InterferencePlan.ArtifactID,
-	); err != nil {
-		t.Fatalf("tamper stored cohort child: %v", err)
-	}
-
-	_, err = store.SealCanaryAdmission(
-		ctx, ownerID, cohort.ID(), sealer,
-	)
-	if err == nil ||
-		!strings.Contains(
-			err.Error(),
-			"persisted adaptive evidence cohort artifact is invalid",
-		) {
-		t.Fatalf("SealCanaryAdmission error = %v, want invalid stored child", err)
-	}
-	var sealed int
-	if err := migrationPool.QueryRow(
-		ctx,
-		`SELECT count(*) FROM aura.adaptive_sealed_evidence
-		  WHERE owner_id = $1 AND cohort_id = $2`,
-		ownerID, cohort.ID(),
-	).Scan(&sealed); err != nil {
-		t.Fatalf("count sealed evidence: %v", err)
-	}
-	if sealed != 0 {
-		t.Fatalf("sealed evidence rows = %d, want none after child corruption", sealed)
 	}
 }

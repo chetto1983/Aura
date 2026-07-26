@@ -1,5 +1,6 @@
 // Aura entry point. Sub-commands:
 //
+//	aura eval adaptive <sub> - verify cohorts or seal admission
 //	aura serve              — run the long-lived agent runtime (default in production)
 //	aura shell              — interactive REPL against the agent loop
 //	aura agent dry-run      — drive a mock LoopAgent through the Budget tree, one Event per JSON line (SC#4)
@@ -87,6 +88,8 @@ func main() {
 		runDocs(os.Args[2:])
 	case "documents":
 		runDocuments(os.Args[2:])
+	case "eval":
+		runEval(os.Args[2:])
 	case "identity":
 		runIdentity(os.Args[2:])
 	case "paused-states":
@@ -150,7 +153,7 @@ func runMCPDispatch(args []string) {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|doctor|chat <sub>|config <sub>|identity <sub>|paused-states <sub>|task <sub>|retention <plan|apply>|skills <sub>|agent <sub>|swarm-demo|web <doctor|tool ...>|tools|mcp <sub>|memory <sub>|db <sub>|neo4j <sub>|objectstore <sub>|docs <sub>|documents backfill|version}")
+	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|doctor|chat <sub>|config <sub>|identity <sub>|paused-states <sub>|task <sub>|retention <plan|apply>|skills <sub>|agent <sub>|swarm-demo|web <doctor|tool ...>|tools|mcp <sub>|memory <sub>|db <sub>|neo4j <sub>|objectstore <sub>|docs <sub>|documents backfill|eval adaptive <sub>|version}")
 }
 
 func buildRegistry() *tools.Registry {

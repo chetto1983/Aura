@@ -105,7 +105,9 @@ func TestOutcomeRecorderPersistsIdempotentOutcomeAndLinearCorrections(t *testing
 	assertAdaptiveNextSequence(t, pool, owner, assignment.RequestID.String(), 5)
 }
 
-func TestOutcomeRecorderBindsPersistedAssignmentAndBenchmarkAdapters(t *testing.T) {
+func TestOutcomeRecorderBindsPersistedAssignmentAndRegisteredEvaluators(
+	t *testing.T,
+) {
 	pool := adaptiveIntegrationPool(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
@@ -133,28 +135,20 @@ func TestOutcomeRecorderBindsPersistedAssignmentAndBenchmarkAdapters(t *testing.
 	); !errors.Is(err, ErrOutcomeAssignmentMismatch) {
 		t.Fatalf("provider mismatch error = %v, want ErrOutcomeAssignmentMismatch", err)
 	}
-	deterministicAdapter, err := NewDeterministicBenchmarkEvaluator(recorder, deterministic)
-	if err != nil {
-		t.Fatal(err)
-	}
-	judgeAdapter, err := NewCalibratedJudgeBenchmarkEvaluator(recorder, judge)
-	if err != nil {
-		t.Fatal(err)
-	}
-	deterministicOutcome := validOutcomeObservation(assignment, judge)
-	if sequence, err := deterministicAdapter.Record(
+	deterministicOutcome := validOutcomeObservation(assignment, deterministic)
+	if sequence, err := recorder.RecordOutcome(
 		ctx,
 		deterministicOutcome,
 	); err != nil || sequence != 2 {
-		t.Fatalf("deterministic adapter = (%d, %v), want (2, nil)", sequence, err)
+		t.Fatalf("deterministic outcome = (%d, %v), want (2, nil)", sequence, err)
 	}
-	judgeOutcome := validOutcomeObservation(assignment, deterministic)
+	judgeOutcome := validOutcomeObservation(assignment, judge)
 	judgeOutcome.SourceObservationID = uuid.Must(uuid.NewV7())
-	if sequence, err := judgeAdapter.Record(
+	if sequence, err := recorder.RecordOutcome(
 		ctx,
 		judgeOutcome,
 	); err != nil || sequence != 3 {
-		t.Fatalf("judge adapter = (%d, %v), want (3, nil)", sequence, err)
+		t.Fatalf("judge outcome = (%d, %v), want (3, nil)", sequence, err)
 	}
 	assertAdaptiveNextSequence(t, pool, owner, assignment.RequestID.String(), 4)
 }

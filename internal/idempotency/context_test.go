@@ -16,6 +16,7 @@ func TestOperationContextRoundTripIsImmutable(t *testing.T) {
 	op := Operation{
 		Key:         OperationKey{IdentityID: identityctx.LocalOperatorIdentity, Scope: ScopeHTTPMutation, Key: "web-key-1"},
 		Fingerprint: fingerprint,
+		ClaimToken:  ClaimToken(7),
 		Correlation: "request-1",
 	}
 	trusted := identityctx.WithIdentityID(context.Background(), identityctx.LocalOperatorIdentity)
@@ -50,6 +51,7 @@ func TestOperationContextValidationEdges(t *testing.T) {
 	tests := []Operation{
 		{Key: valid.Key},
 		{Key: OperationKey{IdentityID: identityctx.LocalOperatorIdentity, Scope: ScopeCLICommand}, Fingerprint: valid.Fingerprint},
+		{Key: valid.Key, Fingerprint: valid.Fingerprint, ClaimToken: ClaimToken(-1)},
 		{Key: valid.Key, Fingerprint: valid.Fingerprint, Correlation: "bad\ncorrelation"},
 		{Key: valid.Key, Fingerprint: valid.Fingerprint, Correlation: strings.Repeat("x", MaxOperationKeyBytes+1)},
 	}
@@ -76,6 +78,34 @@ func TestOperationContextRejectsTrustedIdentityMismatch(t *testing.T) {
 	})
 	if !errors.Is(err, ErrIdentityMismatch) {
 		t.Fatalf("error = %v, want ErrIdentityMismatch", err)
+	}
+}
+
+func TestOperationContextAddsValidatedClaimToken(t *testing.T) {
+	t.Parallel()
+
+	trusted := identityctx.WithIdentityID(context.Background(), identityctx.LocalOperatorIdentity)
+	ctx, err := WithOperation(trusted, Operation{
+		Key: OperationKey{
+			IdentityID: identityctx.LocalOperatorIdentity,
+			Scope:      ScopeCLICommand,
+			Key:        "cli-key-1",
+		},
+		Fingerprint: [32]byte{1},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := WithClaimToken(ctx, ClaimToken(9))
+	if err != nil {
+		t.Fatalf("WithClaimToken: %v", err)
+	}
+	operation, ok := OperationFromContext(claimed)
+	if !ok || operation.ClaimToken != ClaimToken(9) {
+		t.Fatalf("claimed operation = %+v, present = %v", operation, ok)
+	}
+	if _, err := WithClaimToken(ctx, 0); !errors.Is(err, ErrOperationContext) {
+		t.Fatalf("WithClaimToken(0) error = %v, want ErrOperationContext", err)
 	}
 }
 

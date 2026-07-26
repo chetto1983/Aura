@@ -39,13 +39,15 @@ func TestEvidenceStoreSealCanaryAdmissionRequiresTrustedStore(t *testing.T) {
 			ActorID:    uuid.MustParse("11111111-1111-4111-8111-111111111111"),
 			Capability: "adaptive.evidence.seal",
 		},
+		repeatedSHA("a"),
+		nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "database pool") {
 		t.Fatalf("SealCanaryAdmission error = %v, want missing trusted store", err)
 	}
 }
 
-func TestEvidenceSealerRejectsCallerSelectedCapability(t *testing.T) {
+func TestEvidenceSealerRejectsTransitionCapability(t *testing.T) {
 	t.Parallel()
 
 	sealer := EvidenceSealer{
@@ -55,6 +57,6 @@ func TestEvidenceSealerRejectsCallerSelectedCapability(t *testing.T) {
 	if err := sealer.validate(
 		uuid.MustParse("11111111-1111-4111-8111-111111111111"),
 	); err == nil {
-		t.Fatal("sealer accepted a transition capability for outcome sealing")
+		t.Fatal("sealer accepted a transition capability for evidence sealing")
 	}
 }

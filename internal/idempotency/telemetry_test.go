@@ -12,6 +12,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/obs"
+	"github.com/jackc/pgx/v5"
 	"go.opentelemetry.io/otel"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -117,16 +118,16 @@ func emitTransitionMetricFixtures(t *testing.T, now time.Time, request BeginRequ
 		wantErr       error
 	}{
 		{name: "complete", complete: func(context.Context, sqlc.CompleteOperationParams) (int64, error) { return 1, nil }, invoke: func(store *Store) error {
-			return store.Complete(context.Background(), CompleteRequest{Operation: request.Operation, Fingerprint: request.Fingerprint, Result: result})
+			return store.Complete(context.Background(), CompleteRequest{Operation: request.Operation, Fingerprint: request.Fingerprint, ClaimToken: 1, Result: result})
 		}},
 		{name: "complete error", complete: func(context.Context, sqlc.CompleteOperationParams) (int64, error) { return 0, errFakeQuery }, invoke: func(store *Store) error {
-			return store.Complete(context.Background(), CompleteRequest{Operation: request.Operation, Fingerprint: request.Fingerprint, Result: result})
+			return store.Complete(context.Background(), CompleteRequest{Operation: request.Operation, Fingerprint: request.Fingerprint, ClaimToken: 1, Result: result})
 		}, wantErr: errFakeQuery},
 		{name: "mark indeterminate", indeterminate: func(context.Context, sqlc.MarkOperationIndeterminateParams) (int64, error) { return 1, nil }, invoke: func(store *Store) error {
-			return store.MarkIndeterminate(context.Background(), request.Operation, request.Fingerprint)
+			return store.MarkIndeterminate(context.Background(), request.Operation, request.Fingerprint, 1)
 		}},
 		{name: "mark indeterminate error", indeterminate: func(context.Context, sqlc.MarkOperationIndeterminateParams) (int64, error) { return 0, errFakeQuery }, invoke: func(store *Store) error {
-			return store.MarkIndeterminate(context.Background(), request.Operation, request.Fingerprint)
+			return store.MarkIndeterminate(context.Background(), request.Operation, request.Fingerprint, 1)
 		}, wantErr: errFakeQuery},
 	}
 	for _, test := range tests {
@@ -139,7 +140,9 @@ func emitTransitionMetricFixtures(t *testing.T, now time.Time, request BeginRequ
 	}
 }
 
-func noAcquire(context.Context, sqlc.TryStartOperationParams) (int64, error) { return 0, nil }
+func noAcquire(context.Context, sqlc.TryStartOperationParams) (int64, error) {
+	return 0, pgx.ErrNoRows
+}
 
 func existingRow(request BeginRequest, state State, retry, expires time.Time) getOperationQuery {
 	return func(context.Context, sqlc.GetOperationParams) (sqlc.GetOperationRow, error) {

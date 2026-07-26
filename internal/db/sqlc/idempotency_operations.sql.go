@@ -70,7 +70,9 @@ SET state = 'completed',
 WHERE identity_id = $9
   AND operation_scope = $10
   AND operation_key = $11
-  AND state = 'in_progress' AND payload_hash = $12
+  AND state = 'in_progress'
+  AND payload_hash = $12
+  AND version = $13
 `
 
 type CompleteOperationParams struct {
@@ -86,6 +88,7 @@ type CompleteOperationParams struct {
 	OperationScope   string             `json:"operation_scope"`
 	OperationKey     string             `json:"operation_key"`
 	PayloadHash      []byte             `json:"payload_hash"`
+	ClaimToken       int64              `json:"claim_token"`
 }
 
 func (q *Queries) CompleteOperation(ctx context.Context, arg CompleteOperationParams) (int64, error) {
@@ -102,6 +105,7 @@ func (q *Queries) CompleteOperation(ctx context.Context, arg CompleteOperationPa
 		arg.OperationScope,
 		arg.OperationKey,
 		arg.PayloadHash,
+		arg.ClaimToken,
 	)
 	if err != nil {
 		return 0, err
@@ -258,6 +262,54 @@ func (q *Queries) ListExpiredReplayBodies(ctx context.Context, arg ListExpiredRe
 	return items, nil
 }
 
+const lockOperationReceipt = `-- name: LockOperationReceipt :one
+SELECT
+    identity_id,
+    operation_scope,
+    operation_key,
+    payload_hash,
+    state,
+    version,
+    created_at
+FROM aura.idempotency_operations
+WHERE identity_id = $1
+  AND operation_scope = $2
+  AND operation_key = $3
+FOR UPDATE
+`
+
+type LockOperationReceiptParams struct {
+	IdentityID     pgtype.UUID `json:"identity_id"`
+	OperationScope string      `json:"operation_scope"`
+	OperationKey   string      `json:"operation_key"`
+}
+
+type LockOperationReceiptRow struct {
+	IdentityID     pgtype.UUID        `json:"identity_id"`
+	OperationScope string             `json:"operation_scope"`
+	OperationKey   string             `json:"operation_key"`
+	PayloadHash    []byte             `json:"payload_hash"`
+	State          string             `json:"state"`
+	Version        int64              `json:"version"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+// This must run on transaction-bound Queries because autocommit releases the row lock when the statement returns.
+func (q *Queries) LockOperationReceipt(ctx context.Context, arg LockOperationReceiptParams) (LockOperationReceiptRow, error) {
+	row := q.db.QueryRow(ctx, lockOperationReceipt, arg.IdentityID, arg.OperationScope, arg.OperationKey)
+	var i LockOperationReceiptRow
+	err := row.Scan(
+		&i.IdentityID,
+		&i.OperationScope,
+		&i.OperationKey,
+		&i.PayloadHash,
+		&i.State,
+		&i.Version,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const markOperationIndeterminate = `-- name: MarkOperationIndeterminate :execrows
 UPDATE aura.idempotency_operations
 SET state = 'indeterminate',
@@ -267,7 +319,9 @@ SET state = 'indeterminate',
 WHERE identity_id = $2
   AND operation_scope = $3
   AND operation_key = $4
-  AND state = 'in_progress' AND payload_hash = $5
+  AND state = 'in_progress'
+  AND payload_hash = $5
+  AND version = $6
 `
 
 type MarkOperationIndeterminateParams struct {
@@ -276,6 +330,7 @@ type MarkOperationIndeterminateParams struct {
 	OperationScope string             `json:"operation_scope"`
 	OperationKey   string             `json:"operation_key"`
 	PayloadHash    []byte             `json:"payload_hash"`
+	ClaimToken     int64              `json:"claim_token"`
 }
 
 func (q *Queries) MarkOperationIndeterminate(ctx context.Context, arg MarkOperationIndeterminateParams) (int64, error) {
@@ -285,6 +340,7 @@ func (q *Queries) MarkOperationIndeterminate(ctx context.Context, arg MarkOperat
 		arg.OperationScope,
 		arg.OperationKey,
 		arg.PayloadHash,
+		arg.ClaimToken,
 	)
 	if err != nil {
 		return 0, err
@@ -292,7 +348,47 @@ func (q *Queries) MarkOperationIndeterminate(ctx context.Context, arg MarkOperat
 	return result.RowsAffected(), nil
 }
 
-const tryStartOperation = `-- name: TryStartOperation :execrows
+const tryRecoverExpiredOperation = `-- name: TryRecoverExpiredOperation :one
+UPDATE aura.idempotency_operations
+SET lease_expires_at = $1,
+    retry_after = $2,
+    updated_at = $3,
+    version = version + 1
+WHERE identity_id = $4
+  AND operation_scope = $5
+  AND operation_key = $6
+  AND state = 'in_progress'
+  AND payload_hash = $7
+  AND lease_expires_at <= $3
+RETURNING version
+`
+
+type TryRecoverExpiredOperationParams struct {
+	LeaseExpiresAt pgtype.Timestamptz `json:"lease_expires_at"`
+	RetryAfter     pgtype.Timestamptz `json:"retry_after"`
+	Now            pgtype.Timestamptz `json:"now"`
+	IdentityID     pgtype.UUID        `json:"identity_id"`
+	OperationScope string             `json:"operation_scope"`
+	OperationKey   string             `json:"operation_key"`
+	PayloadHash    []byte             `json:"payload_hash"`
+}
+
+func (q *Queries) TryRecoverExpiredOperation(ctx context.Context, arg TryRecoverExpiredOperationParams) (int64, error) {
+	row := q.db.QueryRow(ctx, tryRecoverExpiredOperation,
+		arg.LeaseExpiresAt,
+		arg.RetryAfter,
+		arg.Now,
+		arg.IdentityID,
+		arg.OperationScope,
+		arg.OperationKey,
+		arg.PayloadHash,
+	)
+	var version int64
+	err := row.Scan(&version)
+	return version, err
+}
+
+const tryStartOperation = `-- name: TryStartOperation :one
 INSERT INTO aura.idempotency_operations (
     identity_id,
     operation_scope,
@@ -321,6 +417,7 @@ INSERT INTO aura.idempotency_operations (
     $10
 )
 ON CONFLICT (identity_id, operation_scope, operation_key) DO NOTHING
+RETURNING version
 `
 
 type TryStartOperationParams struct {
@@ -337,7 +434,7 @@ type TryStartOperationParams struct {
 }
 
 func (q *Queries) TryStartOperation(ctx context.Context, arg TryStartOperationParams) (int64, error) {
-	result, err := q.db.Exec(ctx, tryStartOperation,
+	row := q.db.QueryRow(ctx, tryStartOperation,
 		arg.IdentityID,
 		arg.OperationScope,
 		arg.OperationKey,
@@ -349,8 +446,7 @@ func (q *Queries) TryStartOperation(ctx context.Context, arg TryStartOperationPa
 		arg.AuditToolCallID,
 		arg.Now,
 	)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
+	var version int64
+	err := row.Scan(&version)
+	return version, err
 }

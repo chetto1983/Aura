@@ -97,6 +97,10 @@ func (s State) CanTransitionTo(next State) bool {
 // the external effect; all other values are observational outcomes.
 type Decision string
 
+// ClaimToken is the durable fencing generation assigned to acquired work.
+// Terminal transitions must present the exact token returned by acquisition.
+type ClaimToken int64
+
 // DecisionAcquired and the other decisions are the complete Begin outcome set.
 const (
 	DecisionAcquired      Decision = "acquired"
@@ -241,6 +245,7 @@ func (r BeginRequest) Validate() error {
 // BeginDecision is the typed result of an acquisition attempt.
 type BeginDecision struct {
 	Decision   Decision
+	ClaimToken ClaimToken
 	Replay     *ReplayResult
 	RetryAfter time.Duration
 }
@@ -248,19 +253,23 @@ type BeginDecision struct {
 // Validate rejects decision metadata inconsistent with its variant.
 func (d BeginDecision) Validate() error {
 	switch d.Decision {
-	case DecisionAcquired, DecisionIndeterminate, DecisionConflict, DecisionResultExpired:
-		if d.Replay != nil || d.RetryAfter != 0 {
+	case DecisionAcquired:
+		if d.ClaimToken <= 0 || d.Replay != nil || d.RetryAfter != 0 {
+			return fmt.Errorf("idempotency acquired decision is incomplete")
+		}
+	case DecisionIndeterminate, DecisionConflict, DecisionResultExpired:
+		if d.ClaimToken != 0 || d.Replay != nil || d.RetryAfter != 0 {
 			return fmt.Errorf("idempotency decision carries incompatible metadata")
 		}
 	case DecisionReplay:
-		if d.Replay == nil || d.RetryAfter != 0 {
+		if d.ClaimToken != 0 || d.Replay == nil || d.RetryAfter != 0 {
 			return fmt.Errorf("idempotency replay decision is incomplete")
 		}
 		if err := d.Replay.Validate(); err != nil {
 			return err
 		}
 	case DecisionInProgress:
-		if d.Replay != nil || d.RetryAfter <= 0 || d.RetryAfter > MaxRetryAfter {
+		if d.ClaimToken != 0 || d.Replay != nil || d.RetryAfter <= 0 || d.RetryAfter > MaxRetryAfter {
 			return fmt.Errorf("idempotency in-progress retry guidance is invalid")
 		}
 	default:
@@ -273,6 +282,7 @@ func (d BeginDecision) Validate() error {
 type CompleteRequest struct {
 	Operation   OperationKey
 	Fingerprint [32]byte
+	ClaimToken  ClaimToken
 	Result      ReplayResult
 }
 
@@ -283,6 +293,9 @@ func (r CompleteRequest) Validate() error {
 	}
 	if isZeroFingerprint(r.Fingerprint) {
 		return fmt.Errorf("idempotency payload fingerprint is required")
+	}
+	if r.ClaimToken <= 0 {
+		return fmt.Errorf("idempotency claim token is required")
 	}
 	return r.Result.Validate()
 }

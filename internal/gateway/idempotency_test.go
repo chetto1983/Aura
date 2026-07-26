@@ -15,11 +15,12 @@ import (
 )
 
 type fakeOperationRegistry struct {
-	decision idempotency.BeginDecision
-	beginErr error
-	begins   []idempotency.BeginRequest
-	complete []idempotency.CompleteRequest
-	marked   []idempotency.OperationKey
+	decision  idempotency.BeginDecision
+	beginErr  error
+	begins    []idempotency.BeginRequest
+	complete  []idempotency.CompleteRequest
+	marked    []idempotency.OperationKey
+	markToken []idempotency.ClaimToken
 }
 
 func (f *fakeOperationRegistry) Begin(_ context.Context, request idempotency.BeginRequest) (idempotency.BeginDecision, error) {
@@ -32,8 +33,14 @@ func (f *fakeOperationRegistry) Complete(_ context.Context, request idempotency.
 	return nil
 }
 
-func (f *fakeOperationRegistry) MarkIndeterminate(_ context.Context, operation idempotency.OperationKey, _ [32]byte) error {
+func (f *fakeOperationRegistry) MarkIndeterminate(
+	_ context.Context,
+	operation idempotency.OperationKey,
+	_ [32]byte,
+	claimToken idempotency.ClaimToken,
+) error {
 	f.marked = append(f.marked, operation)
+	f.markToken = append(f.markToken, claimToken)
 	return nil
 }
 
@@ -76,7 +83,7 @@ func TestGatewayIdempotencyDecisionsPrecedePolicyReservation(t *testing.T) {
 		wantAllow  bool
 		wantReplay bool
 	}{
-		{name: "acquired", decision: idempotency.BeginDecision{Decision: idempotency.DecisionAcquired}, wantAllow: true},
+		{name: "acquired", decision: idempotency.BeginDecision{Decision: idempotency.DecisionAcquired, ClaimToken: 1}, wantAllow: true},
 		{name: "completed replay", decision: idempotency.BeginDecision{Decision: idempotency.DecisionReplay, Replay: &idempotency.ReplayResult{Body: replayBody, ExpiresAt: time.Now().Add(time.Hour)}}, wantAllow: true, wantReplay: true},
 		{name: "changed payload conflict", decision: idempotency.BeginDecision{Decision: idempotency.DecisionConflict}},
 		{name: "fresh in progress", decision: idempotency.BeginDecision{Decision: idempotency.DecisionInProgress, RetryAfter: time.Second}},
@@ -119,6 +126,11 @@ func TestGatewayOperationCompletionAndIndeterminateLifecycle(t *testing.T) {
 
 	args := json.RawMessage(`{"action":"restore","name":"calc"}`)
 	ctx := gatewayOperationContext(t, "lifecycle-key", args)
+	var err error
+	ctx, err = idempotency.WithClaimToken(ctx, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
 	registry := &fakeOperationRegistry{}
 	g := New(config.ProfileSingleUserHardened, nil)
 	g.SetOperationRegistry(registry)
@@ -134,6 +146,9 @@ func TestGatewayOperationCompletionAndIndeterminateLifecycle(t *testing.T) {
 	if len(registry.complete) != 1 {
 		t.Fatalf("complete calls = %d, want 1", len(registry.complete))
 	}
+	if registry.complete[0].ClaimToken != 7 {
+		t.Fatalf("complete claim token = %d, want 7", registry.complete[0].ClaimToken)
+	}
 	replay := registry.complete[0].Result
 	if len(replay.Preview) != idempotency.MaxReplayPreviewBytes || len(replay.SidecarRef) != idempotency.MaxSidecarRefBytes || len(replay.Body) == 0 {
 		t.Fatalf("bounded replay = %+v", replay)
@@ -141,7 +156,8 @@ func TestGatewayOperationCompletionAndIndeterminateLifecycle(t *testing.T) {
 	if err := g.MarkOperationIndeterminate(ctx); err != nil {
 		t.Fatalf("MarkOperationIndeterminate: %v", err)
 	}
-	if len(registry.marked) != 1 || registry.marked[0].Key != "lifecycle-key" {
+	if len(registry.marked) != 1 || registry.marked[0].Key != "lifecycle-key" ||
+		registry.markToken[0] != 7 {
 		t.Fatalf("marked operations = %+v", registry.marked)
 	}
 
