@@ -164,7 +164,7 @@ func (client *adaptiveBenchmarkObservedClient) Stream(
 	} else {
 		stream, err = client.delegate.Stream(ctx, request)
 	}
-	if err != nil || len(request.Tools) == 0 {
+	if err != nil {
 		return stream, err
 	}
 	return adaptiveBenchmarkGuardModelToolCalls(ctx, request, stream), nil

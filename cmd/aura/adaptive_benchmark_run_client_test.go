@@ -15,7 +15,7 @@ func TestAdaptiveBenchmarkObservedClientDelegatesWithRequestObserver(
 ) {
 	t.Parallel()
 	delegate := &adaptiveBenchmarkLLMClientFake{
-		stream: make(chan llm.Chunk),
+		stream: adaptiveBenchmarkClosedChunkStream(),
 		order:  []string{},
 	}
 	client, err := newAdaptiveBenchmarkObservedClient(delegate)
@@ -37,7 +37,7 @@ func TestAdaptiveBenchmarkObservedClientDelegatesWithRequestObserver(
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}
-	if stream != delegate.stream ||
+	if stream == nil ||
 		observedRequestID != "request-7" ||
 		!reflect.DeepEqual(delegate.request, request) ||
 		!reflect.DeepEqual(delegate.order, []string{"observe", "delegate"}) {
@@ -66,7 +66,7 @@ func TestAdaptiveBenchmarkObservedClientFailsExactlyOneTransport(
 ) {
 	t.Parallel()
 	delegate := &adaptiveBenchmarkLLMClientFake{
-		stream: make(chan llm.Chunk),
+		stream: adaptiveBenchmarkClosedChunkStream(),
 	}
 	client, err := newAdaptiveBenchmarkObservedClient(delegate)
 	if err != nil {
@@ -95,7 +95,7 @@ func TestAdaptiveBenchmarkObservedClientFailsTransportUntilScopeClears(
 ) {
 	t.Parallel()
 	delegate := &adaptiveBenchmarkLLMClientFake{
-		stream: make(chan llm.Chunk),
+		stream: adaptiveBenchmarkClosedChunkStream(),
 	}
 	client, err := newAdaptiveBenchmarkObservedClient(delegate)
 	if err != nil {
@@ -131,13 +131,13 @@ func TestAdaptiveBenchmarkObservedClientInterceptsScopedStream(
 ) {
 	t.Parallel()
 	delegate := &adaptiveBenchmarkLLMClientFake{
-		stream: make(chan llm.Chunk),
+		stream: adaptiveBenchmarkClosedChunkStream(),
 	}
 	client, err := newAdaptiveBenchmarkObservedClient(delegate)
 	if err != nil {
 		t.Fatal(err)
 	}
-	intercepted := make(chan llm.Chunk)
+	intercepted := adaptiveBenchmarkClosedChunkStream()
 	interceptorCalls := 0
 	clear, err := client.SetStreamInterceptor(
 		func(
@@ -155,12 +155,12 @@ func TestAdaptiveBenchmarkObservedClientInterceptsScopedStream(
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stream != intercepted ||
+	if stream == nil ||
 		interceptorCalls != 1 ||
 		delegate.calls != 0 {
 		t.Fatalf(
-			"intercepted stream/calls/delegate = %v/%d/%d",
-			stream == intercepted,
+			"intercepted stream_non_nil/calls/delegate = %v/%d/%d",
+			stream != nil,
 			interceptorCalls,
 			delegate.calls,
 		)
@@ -171,10 +171,10 @@ func TestAdaptiveBenchmarkObservedClientInterceptsScopedStream(
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stream != delegate.stream || delegate.calls != 1 {
+	if stream == nil || delegate.calls != 1 {
 		t.Fatalf(
-			"delegate stream/calls after clear = %v/%d",
-			stream == delegate.stream,
+			"delegate stream_non_nil/calls after clear = %v/%d",
+			stream != nil,
 			delegate.calls,
 		)
 	}
@@ -185,13 +185,13 @@ func TestAdaptiveBenchmarkObservedClientInterceptorClearIsGenerationSafe(
 ) {
 	t.Parallel()
 	delegate := &adaptiveBenchmarkLLMClientFake{
-		stream: make(chan llm.Chunk),
+		stream: adaptiveBenchmarkClosedChunkStream(),
 	}
 	client, err := newAdaptiveBenchmarkObservedClient(delegate)
 	if err != nil {
 		t.Fatal(err)
 	}
-	firstStream := make(chan llm.Chunk)
+	firstStream := adaptiveBenchmarkClosedChunkStream()
 	clearFirst, err := client.SetStreamInterceptor(
 		func(
 			context.Context,
@@ -203,7 +203,7 @@ func TestAdaptiveBenchmarkObservedClientInterceptorClearIsGenerationSafe(
 	if err != nil {
 		t.Fatal(err)
 	}
-	secondStream := make(chan llm.Chunk)
+	secondStream := adaptiveBenchmarkClosedChunkStream()
 	clearSecond, err := client.SetStreamInterceptor(
 		func(
 			context.Context,
@@ -221,10 +221,10 @@ func TestAdaptiveBenchmarkObservedClientInterceptorClearIsGenerationSafe(
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stream != secondStream || delegate.calls != 0 {
+	if stream == nil || delegate.calls != 0 {
 		t.Fatalf(
-			"stale clear stream/delegate = %v/%d",
-			stream == secondStream,
+			"stale clear stream_non_nil/delegate = %v/%d",
+			stream != nil,
 			delegate.calls,
 		)
 	}
@@ -242,7 +242,7 @@ func TestAdaptiveBenchmarkObservedClientTransportFailurePrecedesInterceptor(
 ) {
 	t.Parallel()
 	delegate := &adaptiveBenchmarkLLMClientFake{
-		stream: make(chan llm.Chunk),
+		stream: adaptiveBenchmarkClosedChunkStream(),
 	}
 	client, err := newAdaptiveBenchmarkObservedClient(delegate)
 	if err != nil {
@@ -255,7 +255,7 @@ func TestAdaptiveBenchmarkObservedClientTransportFailurePrecedesInterceptor(
 			llm.Request,
 		) (<-chan llm.Chunk, error) {
 			interceptorCalls++
-			return make(chan llm.Chunk), nil
+			return adaptiveBenchmarkClosedChunkStream(), nil
 		},
 	); err != nil {
 		t.Fatal(err)
@@ -317,6 +317,27 @@ func TestAdaptiveBenchmarkObservedClientRejectsUndeclaredToolBeforeDispatch(
 	if _, ok := <-stream; ok {
 		t.Fatal("guard emitted content after rejected tool call")
 	}
+
+	emptySource := make(chan llm.Chunk, 1)
+	emptySource <- llm.Chunk{ToolCall: &call}
+	close(emptySource)
+	emptyClient, err := newAdaptiveBenchmarkObservedClient(
+		&adaptiveBenchmarkLLMClientFake{stream: emptySource},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	emptyStream, err := emptyClient.Stream(t.Context(), llm.Request{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	emptyChunk := <-emptyStream
+	if !errors.Is(
+		emptyChunk.Err,
+		errAdaptiveBenchmarkModelToolCallRejected,
+	) {
+		t.Fatalf("empty-manifest chunk = %#v", emptyChunk)
+	}
 }
 
 func TestAdaptiveBenchmarkObservedClientRejectsInvalidFailureState(
@@ -350,6 +371,12 @@ type adaptiveBenchmarkLLMClientFake struct {
 	request llm.Request
 	order   []string
 	calls   int
+}
+
+func adaptiveBenchmarkClosedChunkStream() chan llm.Chunk {
+	stream := make(chan llm.Chunk)
+	close(stream)
+	return stream
 }
 
 func (client *adaptiveBenchmarkLLMClientFake) Stream(
