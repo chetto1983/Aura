@@ -184,7 +184,10 @@ test.describe('Phase 28 Plan 06 - Onboarding wizard (desktop + mobile)', () => {
     await dialog.getByRole('textbox', { name: 'Name', exact: true }).fill(OPERATOR_NAME);
     await dialog.getByRole('combobox', { name: 'Language' }).selectOption('it');
     await dialog.getByRole('textbox', { name: 'Where you are' }).fill('Caraglio');
-    await dialog.getByRole('textbox', { name: 'Time zone' }).fill('Europe/Rome');
+    // combobox, not textbox: the time-zone input carries a `list` attribute for the IANA
+    // datalist (asserted in SeedProfileForm.test.tsx), and HTML-AAM maps input[list] to
+    // combobox. The unit test queries by label so it never saw the role; only a browser did.
+    await dialog.getByRole('combobox', { name: 'Time zone' }).fill('Europe/Rome');
     await dialog.getByRole('textbox', { name: 'What you do' }).fill('founder');
     await dialog.getByRole('textbox', { name: 'Organisation' }).fill('PmSync');
     await page.getByRole('button', { name: 'Continue' }).click();
