@@ -36,6 +36,14 @@ func (g *GraphStore) Project(ctx context.Context, record OutboxRecord) error {
 	}
 	rows, err := g.writer.Write(ctx, `
 MERGE (u:User {identifier: $owner_id})
+ON CREATE SET
+  u.id = $owner_id,
+  u.created_at = datetime($created_at),
+  u.attributes_json = '{}'
+ON MATCH SET
+  u.id = coalesce(u.id, $owner_id),
+  u.created_at = coalesce(u.created_at, datetime($created_at)),
+  u.attributes_json = coalesce(u.attributes_json, '{}')
 MERGE (episode:AdaptiveEpisode {id: $aggregate_id})
 ON CREATE SET
   episode.owner_id = $owner_id,

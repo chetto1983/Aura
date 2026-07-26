@@ -800,7 +800,15 @@ jobs:
       - name: Compile the memory_integration tier (always — no-skip-as-green floor)
         # The tier ALWAYS compiles in CI (the cheap, always-green floor proving the
         # tagged files never rot), even before the sidecar is up.
-        run: go vet -tags memory_integration ./internal/agent/mcptools/ ./cmd/aura/ ./internal/agent/
+        run: |
+          go vet -tags memory_integration ./internal/agent/mcptools/ ./cmd/aura/ ./internal/agent/
+          go vet -tags 'adaptive_live db_integration' ./internal/adaptive/
+
+      - name: Install mcp-neo4j-cypher (private adaptive graph interface)
+        run: |
+          pipx install 'mcp-neo4j-cypher==0.6.0'
+          pipx inject --force 'mcp-neo4j-cypher' 'fastmcp==2.13.3'
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Restore llama.cpp embedding model cache
         uses: actions/cache@v6
@@ -862,6 +870,9 @@ jobs:
         # rebuilt sidecar. -p 1 keeps the shared Neo4j graph writes serialized.
         # -race matches every other live tier (db/web/knowledge/telegram — WR-02).
         run: go test -race -tags memory_integration -count=1 -p 1 ./internal/agent/mcptools/ ./cmd/aura/ ./internal/agent/
+
+      - name: Live adaptive projector compatibility and recall-neutrality tier
+        run: go test -race -tags 'adaptive_live db_integration' -count=1 -p 1 ./internal/adaptive/
 
       - name: Tear down
         if: always()

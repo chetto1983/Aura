@@ -38,19 +38,20 @@ import (
 // chatEnv is the booted composition root shared by every chat subcommand: the
 // config, the open pool, the three Stores, and the Runner that drives the REPL.
 type chatEnv struct {
-	cfg              *config.Config
-	pool             *pgxpool.Pool
-	conv             *conversations.Store
-	pause            *askuser.Store
-	identity         *identity.Store
-	run              *runner.Runner
-	client           llm.Client
-	reg              *tools.Registry
-	gateway          *gateway.Gateway
-	operations       *idempotency.Store
-	toolInvocations  *toolinvocations.Store // the append-only ledger the gateway reserves + the reconciler sweeps
-	deleteReconciler *runner.DeleteReconciler
-	assets           *assets.Service
+	cfg               *config.Config
+	pool              *pgxpool.Pool
+	conv              *conversations.Store
+	pause             *askuser.Store
+	identity          *identity.Store
+	run               *runner.Runner
+	client            llm.Client
+	reg               *tools.Registry
+	gateway           *gateway.Gateway
+	operations        *idempotency.Store
+	toolInvocations   *toolinvocations.Store // the append-only ledger the gateway reserves + the reconciler sweeps
+	deleteReconciler  *runner.DeleteReconciler
+	adaptiveProjector *adaptiveProjectorRuntime
+	assets            *assets.Service
 	// shareSvc is the WEBSHARE-02/03 share lifecycle (buildShareService, share_service_wiring.go,
 	// serve-only — nil under `aura chat`). Backs three composition-root seams at once: the HTTP
 	// surface (via SetShareService's adapter), the D-15 delete cascade (chat.run.SetShareRevoker),
@@ -69,6 +70,13 @@ type chatEnv struct {
 func (e *chatEnv) close() {
 	if e.deleteReconciler != nil {
 		e.deleteReconciler.Stop()
+	}
+	if e.adaptiveProjector != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := e.adaptiveProjector.Stop(ctx); err != nil {
+			fmt.Fprintln(os.Stderr, "warn: adaptive projector shutdown:", err)
+		}
+		cancel()
 	}
 	if e.toolHandles.BackgroundShells != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -233,6 +241,15 @@ func releaseBootResources(pool interface{ Close() }, closers []func() error) {
 // is disarmed only by the happy-path success flag, after which chatEnv.close owns the
 // lifecycle.
 func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool) (*chatEnv, error) {
+	return assembleChatEnvWithAdaptiveGraphClient(ctx, cfg, pool, nil)
+}
+
+func assembleChatEnvWithAdaptiveGraphClient(
+	ctx context.Context,
+	cfg *config.Config,
+	pool *pgxpool.Pool,
+	openAdaptiveGraph adaptiveGraphClientOpener,
+) (*chatEnv, error) {
 	var mcpClosers []func() error
 	success := false
 	defer func() {
@@ -364,8 +381,17 @@ func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool
 		Embedder: embeddingClient(cfg, documentHTTPClient(cfg)),
 	}
 	run := runner.New(deps)
+	adaptiveProjector, err := buildAdaptiveProjectorRuntime(
+		ctx,
+		&cfg.Neo4j,
+		pool,
+		openAdaptiveGraph,
+	)
+	if err != nil {
+		return nil, err
+	}
 	success = true // disarm the close-on-error guard; chatEnv.close now owns the lifecycle.
-	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, gateway: gw, operations: operations, toolInvocations: toolInvocationStore, deleteReconciler: runner.NewDeleteReconciler(run, time.Minute), toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter}, nil
+	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, gateway: gw, operations: operations, toolInvocations: toolInvocationStore, deleteReconciler: runner.NewDeleteReconciler(run, time.Minute), adaptiveProjector: adaptiveProjector, toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter}, nil
 }
 
 func openSettingsOverlayPool(ctx context.Context) (*pgxpool.Pool, bool, error) {

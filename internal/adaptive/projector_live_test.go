@@ -3,10 +3,13 @@
 package adaptive
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +18,29 @@ import (
 	"github.com/chetto1983/aura/internal/mcp"
 	"github.com/google/uuid"
 )
+
+type liveMemoryWriteEvidence struct {
+	ID    string `json:"id"`
+	Error string `json:"error"`
+}
+
+type liveMemoryRecallEvidence struct {
+	Context        string `json:"context"`
+	HasContext     bool   `json:"has_context"`
+	Error          string `json:"error"`
+	RecallMetadata struct {
+		Results           json.RawMessage `json:"results"`
+		CorpusEpochBefore *uint64         `json:"corpus_epoch_before"`
+		CorpusEpochAfter  *uint64         `json:"corpus_epoch_after"`
+		Coherent          bool            `json:"coherent"`
+	} `json:"recall_metadata"`
+}
+
+type liveMemoryRecallResult struct {
+	Kind  string `json:"kind"`
+	ID    string `json:"id"`
+	Order int    `json:"order"`
+}
 
 func TestAdaptiveProjectorLiveReusesMemoryUserWithoutMemoryRecallLeak(t *testing.T) {
 	pool := adaptiveIntegrationPool(t)
@@ -39,27 +65,39 @@ func TestAdaptiveProjectorLiveReusesMemoryUserWithoutMemoryRecallLeak(t *testing
 	defer func() { _ = client.Close() }()
 
 	owner := uuid.Must(uuid.NewV7())
-	marker := "ADAPTIVE-PRIVATE-" + owner.String()
+	adaptiveMarker := "ADAPTIVE-PRIVATE-" + owner.String()
+	memoryMarker := "MEMORY-EVIDENCE-" + owner.String()
 	if _, err := pool.Exec(ctx,
 		`INSERT INTO aura.identities (id, name, kind) VALUES ($1, $2, 'user')`,
 		owner, "adaptive-live-"+owner.String()); err != nil {
 		t.Fatalf("seed owner: %v", err)
 	}
 	graph := NewGraphStore(client)
-	t.Cleanup(func() {
+	preferenceID := ""
+	defer func() {
 		_ = graph.PurgeOwner(context.Background(), owner)
+		if preferenceID != "" {
+			_, _ = client.Write(context.Background(), `
+MATCH (u:User {identifier:$owner_id})-[owns:HAS_PREFERENCE]->
+      (preference:Preference {id:$preference_id})
+DELETE owns
+DETACH DELETE preference
+`, map[string]any{
+				"owner_id": owner.String(), "preference_id": preferenceID,
+			})
+		}
 		_, _ = client.Write(context.Background(),
 			`MATCH (u:User {identifier:$owner_id}) WHERE NOT (u)--() DETACH DELETE u`,
 			map[string]any{"owner_id": owner.String()})
 		_, _ = pool.Exec(context.Background(), `DELETE FROM aura.identities WHERE id=$1`, owner)
-	})
+	}()
 
 	store := NewStore(pool, StoreConfig{})
 	event, err := NewEvent(EventParams{
 		ID: uuid.Must(uuid.NewV7()), OwnerID: owner, AggregateID: uuid.Must(uuid.NewV7()).String(),
 		DecisionID: uuid.Must(uuid.NewV7()), Kind: EventDecision,
 		Payload: []byte(fmt.Sprintf(
-			`{"schema_version":"1.0","domain":"tool","private_marker":%q}`, marker,
+			`{"schema_version":"1.0","domain":"tool","private_marker":%q}`, adaptiveMarker,
 		)),
 	})
 	if err != nil {
@@ -67,6 +105,10 @@ func TestAdaptiveProjectorLiveReusesMemoryUserWithoutMemoryRecallLeak(t *testing
 	}
 	if _, err := store.Record(ctx, event); err != nil {
 		t.Fatalf("Record: %v", err)
+	}
+	records, err := store.ListAggregate(ctx, owner, event.AggregateID)
+	if err != nil || len(records) != 1 {
+		t.Fatalf("ListAggregate = %d records, %v", len(records), err)
 	}
 	projector := NewProjector(store, graph, ProjectorConfig{WorkerID: "adaptive-live"})
 	didWork, err := projector.ProjectOne(ctx)
@@ -76,13 +118,19 @@ func TestAdaptiveProjectorLiveReusesMemoryUserWithoutMemoryRecallLeak(t *testing
 	rows, err := client.Read(ctx, `
 MATCH (u:User {identifier:$owner_id})-[:HAS_ADAPTIVE_EPISODE]->
       (:AdaptiveEpisode)-[:HAS_ADAPTIVE_EVENT]->(event:AdaptiveEvent {id:$event_id})
-RETURN event.id AS id
+RETURN event.id AS id, u.id AS user_id, u.created_at AS created_at,
+       u.attributes_json AS attributes_json
 `, map[string]any{"owner_id": owner.String(), "event_id": event.ID.String()})
 	if err != nil {
 		t.Fatalf("read projected graph: %v", err)
 	}
 	if len(rows) != 1 {
 		t.Fatalf("projected graph rows = %d, want 1", len(rows))
+	}
+	for _, field := range []string{"user_id", "created_at", "attributes_json"} {
+		if rows[0][field] == nil {
+			t.Fatalf("project-first User.%s is null: %v", field, rows[0])
+		}
 	}
 
 	endpoint := strings.TrimSpace(os.Getenv("AURA_AGENT_MEMORY_MCP_URL"))
@@ -100,29 +148,172 @@ RETURN event.id AS id
 		_ = memory.Close()
 		http.DefaultClient.CloseIdleConnections()
 	}()
-	contextText, err := memory.CallTool(ctx, "memory_get_context", map[string]any{
-		"user_identifier": owner.String(), "include_reasoning": true,
+	writeText, err := memory.CallTool(ctx, "memory_add_preference", map[string]any{
+		"user_identifier": owner.String(),
+		"category":        "adaptive_projector_live",
+		"preference":      memoryMarker,
+		"context":         "Task 9 compatible User projection proof",
+		"metadata": map[string]any{
+			"source": "aura-task9-live", "test_owner_id": owner.String(),
+		},
 	})
 	if err != nil {
-		t.Fatalf("memory_get_context: %v", err)
+		t.Fatalf("owner-scoped memory_add_preference: %v", err)
 	}
-	if strings.Contains(contextText, marker) || strings.Contains(contextText, event.ID.String()) {
-		t.Fatalf("private adaptive event leaked through agent-memory context: %s", contextText)
+	var writeEvidence liveMemoryWriteEvidence
+	if err := json.Unmarshal([]byte(writeText), &writeEvidence); err != nil {
+		t.Fatalf("decode memory write evidence: %v: %s", err, writeText)
+	}
+	if writeEvidence.Error != "" {
+		t.Fatalf("memory write evidence = %+v", writeEvidence)
+	}
+	if parsed, err := uuid.Parse(writeEvidence.ID); err != nil || parsed == uuid.Nil {
+		t.Fatalf("memory write returned invalid preference ID %q", writeEvidence.ID)
+	}
+	preferenceID = writeEvidence.ID
+
+	beforeRecall, beforeResults := callLiveLongTermRecall(
+		t, ctx, memory, owner, memoryMarker,
+	)
+	if !containsLiveRecallResult(beforeResults, preferenceID) {
+		t.Fatalf("returned memory evidence omits preference %s: %+v", preferenceID, beforeResults)
+	}
+	if strings.Contains(beforeRecall.Context, adaptiveMarker) ||
+		strings.Contains(beforeRecall.Context, event.ID.String()) {
+		t.Fatalf("private adaptive event leaked through agent-memory context: %s", beforeRecall.Context)
+	}
+
+	agentMemoryAttributes := `{"source":"agent-memory","preserve":true}`
+	if _, err := client.Write(ctx, `
+MATCH (u:User {identifier:$owner_id})
+SET u.id = null,
+    u.created_at = null,
+    u.attributes_json = $attributes_json
+`, map[string]any{
+		"owner_id": owner.String(), "attributes_json": agentMemoryAttributes,
+	}); err != nil {
+		t.Fatalf("prepare legacy-null User repair: %v", err)
+	}
+	if err := graph.Project(ctx, records[0]); err != nil {
+		t.Fatalf("idempotent reproject: %v", err)
+	}
+
+	afterRecall, afterResults := callLiveLongTermRecall(
+		t, ctx, memory, owner, memoryMarker,
+	)
+	if beforeRecall.RecallMetadata.CorpusEpochAfter == nil ||
+		afterRecall.RecallMetadata.CorpusEpochAfter == nil ||
+		*beforeRecall.RecallMetadata.CorpusEpochAfter !=
+			*afterRecall.RecallMetadata.CorpusEpochAfter {
+		t.Fatalf(
+			"adaptive User repair advanced corpus epoch: before=%v after=%v",
+			beforeRecall.RecallMetadata.CorpusEpochAfter,
+			afterRecall.RecallMetadata.CorpusEpochAfter,
+		)
+	}
+	if !bytes.Equal(
+		beforeRecall.RecallMetadata.Results,
+		afterRecall.RecallMetadata.Results,
+	) || !reflect.DeepEqual(beforeResults, afterResults) {
+		t.Fatalf(
+			"reproject changed recalled IDs/order: before=%s after=%s",
+			beforeRecall.RecallMetadata.Results,
+			afterRecall.RecallMetadata.Results,
+		)
+	}
+
+	survivors, err := client.Read(ctx, `
+MATCH (u:User {identifier:$owner_id})-[:HAS_ADAPTIVE_EPISODE]->
+      (:AdaptiveEpisode)-[:HAS_ADAPTIVE_EVENT]->(event:AdaptiveEvent {id:$event_id})
+MATCH (u)-[:HAS_PREFERENCE]->(preference:Preference {id:$preference_id})
+RETURN u.id AS user_id, u.created_at AS created_at,
+       u.attributes_json AS attributes_json,
+       event.id AS event_id, preference.id AS preference_id
+`, map[string]any{
+		"owner_id": owner.String(), "event_id": event.ID.String(),
+		"preference_id": preferenceID,
+	})
+	if err != nil {
+		t.Fatalf("verify reproject survivors: %v", err)
+	}
+	if len(survivors) != 1 ||
+		survivors[0]["user_id"] == nil ||
+		survivors[0]["created_at"] == nil ||
+		survivors[0]["attributes_json"] != agentMemoryAttributes {
+		t.Fatalf("reproject overwrote or lost shared/private state: %v", survivors)
 	}
 
 	if err := graph.PurgeOwner(ctx, owner); err != nil {
 		t.Fatalf("PurgeOwner: %v", err)
 	}
 	remaining, err := client.Read(ctx,
-		`MATCH (u:User {identifier:$owner_id}) OPTIONAL MATCH (e:AdaptiveEpisode {owner_id:$owner_id})
-		 RETURN u.identifier AS user, e.id AS adaptive`,
-		map[string]any{"owner_id": owner.String()})
+		`MATCH (u:User {identifier:$owner_id})-[:HAS_PREFERENCE]->(p:Preference {id:$preference_id})
+		 OPTIONAL MATCH (e:AdaptiveEpisode {owner_id:$owner_id})
+		 RETURN u.identifier AS user, p.id AS preference, e.id AS adaptive`,
+		map[string]any{
+			"owner_id": owner.String(), "preference_id": preferenceID,
+		})
 	if err != nil {
 		t.Fatalf("verify purge: %v", err)
 	}
-	if len(remaining) != 1 {
-		t.Fatalf("purge should retain exactly the shared memory User, rows=%v", remaining)
+	if len(remaining) != 1 || remaining[0]["preference"] != preferenceID ||
+		remaining[0]["adaptive"] != nil {
+		t.Fatalf("purge must retain shared User memory only, rows=%v", remaining)
 	}
+}
+
+func callLiveLongTermRecall(
+	t *testing.T,
+	ctx context.Context,
+	memory mcp.Transport,
+	owner uuid.UUID,
+	query string,
+) (liveMemoryRecallEvidence, []liveMemoryRecallResult) {
+	t.Helper()
+	text, err := memory.CallTool(ctx, "memory_get_context", map[string]any{
+		"user_identifier":    owner.String(),
+		"query":              query,
+		"include_short_term": false,
+		"include_long_term":  true,
+		"include_reasoning":  false,
+		"max_items":          4,
+	})
+	if err != nil {
+		t.Fatalf("owner-scoped memory_get_context: %v", err)
+	}
+	var evidence liveMemoryRecallEvidence
+	if err := json.Unmarshal([]byte(text), &evidence); err != nil {
+		t.Fatalf("decode recall evidence: %v: %s", err, text)
+	}
+	metadata := evidence.RecallMetadata
+	if evidence.Error != "" || !evidence.HasContext ||
+		!strings.Contains(evidence.Context, query) ||
+		!metadata.Coherent ||
+		metadata.CorpusEpochBefore == nil ||
+		metadata.CorpusEpochAfter == nil ||
+		*metadata.CorpusEpochBefore == 0 ||
+		*metadata.CorpusEpochBefore != *metadata.CorpusEpochAfter {
+		t.Fatalf("ineligible recall evidence: %s", text)
+	}
+	var results []liveMemoryRecallResult
+	if err := json.Unmarshal(metadata.Results, &results); err != nil {
+		t.Fatalf("decode ordered recall results: %v: %s", err, metadata.Results)
+	}
+	for order, result := range results {
+		if result.Order != order {
+			t.Fatalf("recall result order[%d] = %d", order, result.Order)
+		}
+	}
+	return evidence, results
+}
+
+func containsLiveRecallResult(results []liveMemoryRecallResult, id string) bool {
+	for _, result := range results {
+		if result.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func envOrValue(key, fallback string) string {

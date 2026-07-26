@@ -63,3 +63,27 @@ func TestGraphStoreReusesMemoryUserButKeepsAdaptiveNodesPrivate(t *testing.T) {
 		t.Fatalf("adaptive purge must not delete the shared agent-memory User: %s", purge)
 	}
 }
+
+func TestGraphStoreProjectUsesAgentMemoryCompatibleUserUpsert(t *testing.T) {
+	writer := &recordingGraphWriter{rows: []map[string]any{{"id": "event-1"}}}
+	record := OutboxRecord{
+		ID: uuid.Must(uuid.NewV7()), OwnerID: uuid.Must(uuid.NewV7()),
+		AggregateID: "request-compatible-user", Sequence: 1,
+		DecisionID: uuid.Must(uuid.NewV7()), Kind: EventDecision,
+		Payload:     []byte(`{"schema_version":"1.0","domain":"tool"}`),
+		PayloadHash: make([]byte, 32), CreatedAt: time.Now().UTC(),
+	}
+
+	if err := NewGraphStore(writer).Project(context.Background(), record); err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+	query := writer.calls[0].query
+	for _, required := range []string{
+		"ON CREATE SET\n  u.id = $owner_id,\n  u.created_at = datetime($created_at),\n  u.attributes_json = '{}'",
+		"ON MATCH SET\n  u.id = coalesce(u.id, $owner_id),\n  u.created_at = coalesce(u.created_at, datetime($created_at)),\n  u.attributes_json = coalesce(u.attributes_json, '{}')",
+	} {
+		if !strings.Contains(query, required) {
+			t.Fatalf("agent-memory-compatible User upsert missing %q:\n%s", required, query)
+		}
+	}
+}

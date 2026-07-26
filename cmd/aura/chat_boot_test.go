@@ -267,11 +267,22 @@ func TestAssembleChatEnvWiresProductionDynamicRecallControl(t *testing.T) {
 	cfg.MemoryRecall = true
 	cfg.MemoryRecallMaxItems = 8
 
-	env, err := assembleChatEnv(context.Background(), cfg, pool)
+	var projectorOrder []string
+	env, err := assembleChatEnvWithAdaptiveGraphClient(
+		context.Background(),
+		cfg,
+		pool,
+		func(context.Context, *knowledge.Config) (adaptiveGraphClient, error) {
+			return &adaptiveProjectorClientSpy{order: &projectorOrder}, nil
+		},
+	)
 	if err != nil {
 		t.Fatalf("assembleChatEnv: %v", err)
 	}
 	t.Cleanup(env.close)
+	if env.adaptiveProjector == nil {
+		t.Fatal("production composition has no adaptive projector")
+	}
 
 	control := reflect.ValueOf(env.run).
 		Elem().
