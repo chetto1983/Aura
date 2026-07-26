@@ -210,17 +210,15 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	// The Phase-28 ONBD-01/02 onboarding wizard. start + provision are the CREATE
 	// mutations: interposed with RequireCapability(identity.create) exactly like POST
 	// /agent/run, so the gate fires AFTER RequireAuth binds the principal (an operator
-	// without identity.create is 403 with no session/identity created). step +
-	// telegram-status are non-create — the session is authz'd at start — so they delegate
-	// straight to the AG-UI handler and inherit RequireAuth from the whole-mux wrap. All
-	// four are method+path-specific so they win longest-pattern precedence over the "/"
-	// embed catch-all; the "/api/" fallback exclusion already returns them as backend routes.
+	// without identity.create is 403 with no session/identity created). status, the
+	// seed-form submit and telegram-status are self-scoped, so they delegate straight to
+	// the AG-UI handler and inherit RequireAuth from the whole-mux wrap. All five are
+	// method+path-specific so they win longest-pattern precedence over the "/" embed
+	// catch-all; the "/api/" fallback exclusion already returns them as backend routes.
 	mux.Handle(onboardingStatusRoute, aguiHandler)
-	mux.Handle(onboardingProfileStartRoute, aguiHandler)
-	mux.Handle(onboardingProfileCompleteRoute, aguiHandler)
+	mux.Handle(onboardingProfileSubmitRoute, aguiHandler)
 	mux.Handle(onboardingStartRoute, agui.RequireCapability(aguiHandler, auth, identityCreateCapability))
 	mux.Handle(onboardingProvisionRoute, agui.RequireCapability(aguiHandler, auth, identityCreateCapability))
-	mux.Handle(onboardingStepRoute, aguiHandler)
 	mux.Handle(onboardingTgStatusRoute, aguiHandler)
 	// The Phase-36 (MUSR-01 / D-03/D-26/D-28) admin/user-distinction mounts live in
 	// serve_webui_musr.go to keep this file under the 600-LOC ceiling: GET /api/me

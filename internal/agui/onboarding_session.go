@@ -4,9 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
-	"strings"
 	"sync"
 	"time"
 
@@ -19,12 +17,10 @@ import (
 // constant string.
 const wildcardCapability = "*"
 
-// onboarding_session.go is the server-held onboarding session store (ONBD-02 / D-03 /
-// RESEARCH §Hard Problem 4): the 5-step LoopAgent runs over REST, so the
-// onboarding.Session — which carries the accumulated, LLM-extracted Answers + the
-// DraftAgentMD — MUST live server-side, keyed by an opaque sessionToken, across the
-// stateless step POSTs. A replayed step therefore does NOT re-invoke the LLM (the
-// session has already advanced its Step pointer + flipped its prompted latch).
+// onboarding_session.go is the server-held onboarding session store (ONBD-01): the
+// identity-provisioning wizard spans several stateless POSTs (start → provision →
+// telegram-status poll), so the creator id, the capability options offered at start and
+// the minted Telegram token MUST live server-side, keyed by an opaque sessionToken.
 //
 // The store mirrors internal/skills/loader.go's goroutine-free TTL discipline
 // (loader.go:17,113-127): a mutex-guarded map with a per-entry idle TTL swept LAZILY on
@@ -34,7 +30,7 @@ const wildcardCapability = "*"
 //
 // The session never holds a secret: the Authula password arrives in the provision
 // request body (hashed immediately, never persisted), so the entry carries only the
-// interview state + the creator id + the offered capability options.
+// creator id + the offered capability options + the mint token.
 
 // defaultOnboardingSessionTTL is the onboarding session idle window (RESEARCH §Hard Problem 4): an
 // abandoned wizard's session expires and is swept on the next access, and — because the
@@ -47,14 +43,12 @@ const defaultOnboardingSessionTTL = 15 * time.Minute
 // distinct from (and never derived from) the Authula session cookie.
 const sessionTokenBytes = 32
 
-// sessionEntry is one live wizard's server-held state: the wrapped onboarding.Session
-// (the interview state machine carrying Answers + DraftAgentMD), the creating operator's
-// identity id (the D-06 subset-of-creator re-validation + the audit actor), the
-// capability options offered at start (the creator's grants minus '*'), the
-// provisioned flag, Telegram onboarding token, and the idle-expiry deadline.
+// sessionEntry is one live wizard's server-held state: the creating operator's identity
+// id (the D-06 subset-of-creator re-validation + the audit actor), the capability options
+// offered at start (the creator's grants minus '*'), the provisioned flag, Telegram
+// onboarding token, and the idle-expiry deadline.
 type sessionEntry struct {
 	mu                sync.Mutex
-	session           *onboarding.Session
 	creatorIdentityID string
 	capabilityOptions []string
 	provisioned       bool
@@ -158,8 +152,9 @@ func (st *sessionStore) len() int {
 }
 
 // ---------------------------------------------------------------------------
-// OnboardingService implementation (the interview side: StartSession + Step).
-// The provisioning saga (Provision/TelegramStatus) lives in onboarding_provision.go.
+// OnboardingService implementation (the seed side: StartSession + the seed mapper).
+// The provisioning saga (Provision/TelegramStatus) and SubmitProfile live in
+// onboarding_provision.go.
 // ---------------------------------------------------------------------------
 
 // Typed sentinels the handlers (onboarding_api.go) map onto HTTP status codes. They are
@@ -182,15 +177,6 @@ var (
 	errOnboardingForbidden = errors.New("onboarding: missing required capability")
 )
 
-// AnswerExtractor is the consumer-side narrow port for the one-shot per-answer LLM
-// extraction (ONBD-02). *onboarding.LLMAnswerExtractor satisfies it. It is called EXACTLY
-// once per inbound free-text answer; replay/edit never call it (the no-duplicate-LLM-turn
-// guarantee — RESEARCH §Hard Problem 4). Declared as an interface so tests inject a
-// call-counting fake and the composition root wires the real extractor.
-type AnswerExtractor interface {
-	Extract(ctx context.Context, step onboarding.Step, raw string) (onboarding.Answers, error)
-}
-
 // RecoverySetupWriter persists the recovery challenge into aura.identity_recovery during
 // provisioning, after the identity exists and before Telegram minting.
 type RecoverySetupWriter interface {
@@ -198,17 +184,16 @@ type RecoverySetupWriter interface {
 }
 
 // onboardingService is the concrete OnboardingService: the goroutine-free TTL session
-// store + the interview driver (StartSession/Step) + the provisioning saga (Provision/
+// store + the seed write (SubmitProfile) + the provisioning saga (Provision/
 // TelegramStatus, onboarding_provision.go). It is built at the composition root
 // (cmd/aura/serve.go) over the daemon's existing seams and wired via SetOnboardingService.
 // Each dependency is a narrow consumer-side port so the service is unit-testable with
 // fakes and the agui package stays free of the telegram import (which would cycle, since
 // internal/channels/telegram imports internal/agui).
 type onboardingService struct {
-	sessions  *sessionStore
-	caps      CapabilitySource
-	extractor AnswerExtractor
-	profiles  onboarding.ProfileMemoryStore
+	sessions *sessionStore
+	caps     CapabilitySource
+	profiles onboarding.ProfileMemoryStore
 
 	// provisioning ports (onboarding_provision.go): the Authula core, the atomic aura-leg
 	// writer + its compensation, recovery challenge writer, Telegram mint/poll/compensation,
@@ -227,7 +212,7 @@ type onboardingService struct {
 	// Phase-36 resource legs + journaling (onboarding_provision_resources.go /
 	// saga_journal.go): the forward-recovery journal, the per-identity Garage bucket/key
 	// leg, and the per-identity filesystem-roots leg. All OPTIONAL (nil disables that leg /
-	// journaling) so the pre-cutover + interview-only + unit-test paths are unchanged.
+	// journaling) so the pre-cutover + seed-only + unit-test paths are unchanged.
 	journal     SagaJournal
 	objectStore ObjectStoreProvisioner
 	filesystem  FilesystemProvisioner
@@ -244,12 +229,11 @@ type onboardingService struct {
 
 // OnboardingDeps bundles the narrow ports the composition root (cmd/aura/serve.go) wires
 // into the service via NewOnboardingService. The provisioning side requires Authula,
-// AuraLeg, Recovery, Telegram, and BotUsername before it writes; the interview side
-// (StartSession/Step) needs only Capabilities + Extractor + Profiles.
+// AuraLeg, Recovery, Telegram, and BotUsername before it writes; the seed side
+// (StartSession/SubmitProfile) needs only Capabilities + Profiles.
 type OnboardingDeps struct {
 	TTL          time.Duration
 	Capabilities CapabilitySource
-	Extractor    AnswerExtractor
 	Profiles     onboarding.ProfileMemoryStore
 	Authula      AuthulaCore
 	AuraLeg      AuraLegWriter
@@ -285,7 +269,6 @@ func newOnboardingService(d OnboardingDeps) *onboardingService {
 	return &onboardingService{
 		sessions:        newSessionStore(d.TTL),
 		caps:            d.Capabilities,
-		extractor:       d.Extractor,
 		profiles:        d.Profiles,
 		authula:         d.Authula,
 		auraLeg:         d.AuraLeg,
@@ -301,11 +284,11 @@ func newOnboardingService(d OnboardingDeps) *onboardingService {
 }
 
 // StartSession mints a server-held onboarding session for the creating operator and
-// returns the first step + the D-06 capability picker options: the creator's OWN grants
-// with the '*' wildcard excluded (ONBD-01a). A wildcard creator may grant any named
-// capability through the service backstop, but never '*' itself; the picker still omits
-// '*' because it is system-managed. The capability gate (identity.create) is enforced on
-// the route mount, so reaching here means the creator is authorized to create identities.
+// returns the D-06 capability picker options: the creator's OWN grants with the '*'
+// wildcard excluded (ONBD-01a). A wildcard creator may grant any named capability through
+// the service backstop, but never '*' itself; the picker still omits '*' because it is
+// system-managed. The capability gate (identity.create) is enforced on the route mount, so
+// reaching here means the creator is authorized to create identities.
 func (s *onboardingService) StartSession(ctx context.Context, creatorIdentityID string) (OnboardingStart, error) {
 	if creatorIdentityID == "" {
 		return OnboardingStart{}, errOnboardingForbidden
@@ -316,60 +299,16 @@ func (s *onboardingService) StartSession(ctx context.Context, creatorIdentityID 
 	}
 	options := filterWildcard(grants)
 	// The session is for the identity being provisioned; its id is assigned at provision
-	// (the saga creates the row). Until then the session carries a neutral placeholder name
-	// and accumulates the interview Answers + the creator id.
-	entry := &sessionEntry{
-		session:           onboarding.NewSession("", "new-identity"),
+	// (the saga creates the row). Until then the entry carries only the creator id and the
+	// offered options — the profile seed arrives with the provision body.
+	token, err := s.sessions.put(&sessionEntry{
 		creatorIdentityID: creatorIdentityID,
 		capabilityOptions: options,
-	}
-	// Prime the first prompt so the wizard renders the identity step immediately. Restart
-	// on a fresh session is a full reset that returns the StepIdentity question and leaves
-	// the session at StepIdentity/StatusActive (session.go restart→question(StepIdentity)).
-	first, err := entry.session.Apply(onboarding.Input{Intent: onboarding.IntentRestart})
+	})
 	if err != nil {
 		return OnboardingStart{}, err
 	}
-	token, err := s.sessions.put(entry)
-	if err != nil {
-		return OnboardingStart{}, err
-	}
-	return OnboardingStart{
-		SessionToken:      token,
-		Step:              string(entry.session.Step),
-		Content:           first.Content,
-		Status:            string(entry.session.Status),
-		CapabilityOptions: options,
-	}, nil
-}
-
-// StartProfileSession mints the same server-held interview session for the current
-// authenticated identity. Unlike StartSession, this is not an identity-provisioning flow:
-// no capability picker is exposed and no identity.create grant is required.
-func (s *onboardingService) StartProfileSession(_ context.Context, requesterIdentityID string) (OnboardingStart, error) {
-	if requesterIdentityID == "" {
-		return OnboardingStart{}, errOnboardingForbidden
-	}
-	entry := &sessionEntry{
-		session:           onboarding.NewSession(requesterIdentityID, requesterIdentityID),
-		creatorIdentityID: requesterIdentityID,
-		capabilityOptions: []string{},
-	}
-	first, err := entry.session.Apply(onboarding.Input{Intent: onboarding.IntentRestart})
-	if err != nil {
-		return OnboardingStart{}, err
-	}
-	token, err := s.sessions.put(entry)
-	if err != nil {
-		return OnboardingStart{}, err
-	}
-	return OnboardingStart{
-		SessionToken:      token,
-		Step:              string(entry.session.Step),
-		Content:           first.Content,
-		Status:            string(entry.session.Status),
-		CapabilityOptions: []string{},
-	}, nil
+	return OnboardingStart{SessionToken: token, CapabilityOptions: options}, nil
 }
 
 func (s *onboardingService) sessionForRequester(token, requesterIdentityID string) (*sessionEntry, error) {
@@ -386,111 +325,17 @@ func (s *onboardingService) sessionForRequester(token, requesterIdentityID strin
 	return entry, nil
 }
 
-// Step applies one onboarding intent to the server-held session and returns the per-step
-// contract. On an answer carrying free text it runs the LLM extractor EXACTLY once, merges
-// the structured facts into the Input, and applies it (advancing the step). On edit it
-// passes the structured answer overrides straight through (NO extraction, NO re-prompt —
-// the session re-renders the draft deterministically via ExtractDraft). On skip/confirm it
-// applies directly. A terminal session yields a clean terminal status (ErrTerminal handled,
-// not a 500). An empty answer is recorded empty without error (the session's mergeAnswers
-// no-ops on empty).
-func (s *onboardingService) Step(ctx context.Context, requesterIdentityID, token string, in OnboardingStepRequest) (OnboardingStepResponse, error) {
-	entry, err := s.sessionForRequester(token, requesterIdentityID)
-	if err != nil {
-		return OnboardingStepResponse{}, err
-	}
-	entry.mu.Lock()
-	defer entry.mu.Unlock()
-	if entry.provisioned {
-		return OnboardingStepResponse{}, errOnboardingSessionNotFound
-	}
-
-	input := onboarding.Input{Intent: onboarding.Intent(in.Intent)}
-	switch in.Intent {
-	case "answer":
-		// EXACTLY ONE LLM extraction per inbound free-text answer (RESEARCH §Hard Problem
-		// 4). A blank answer is recorded empty (no extraction needed). The extractor never
-		// errors (raw-text fallback), so a transport hiccup still advances the interview.
-		if strings.TrimSpace(in.Text) != "" && s.extractor != nil {
-			extracted, err := s.extractor.Extract(ctx, entry.session.Step, in.Text)
-			if err != nil {
-				return OnboardingStepResponse{}, err
-			}
-			input.Answers = extracted
-		}
-		input.Text = in.Text
-	case "edit":
-		// An edit restates facts: pass the structured overrides through; the session
-		// re-renders the draft from the SAME accumulated Answers via ExtractDraft — no
-		// per-answer LLM turn, no re-prompt.
-		if in.Answers != nil {
-			input.Answers = in.Answers.toOnboarding()
-		}
-	case "skip", "confirm":
-		// Applied directly; no extraction.
-	}
-
-	transition, err := entry.session.Apply(input)
-	if err != nil {
-		// A terminal session is a clean terminal status, not a server error.
-		if errors.Is(err, onboarding.ErrTerminal) {
-			return s.projectStep(entry, transition), nil
-		}
-		// ErrDraftRequired / ErrInvalidIntent are client mistakes → escalation-class 400
-		// is wrong; surface as a sanitized 400 via the escalation sentinel's sibling. Use
-		// a plain sanitized error so the handler renders a 502-safe message; but a
-		// draft-required confirm is really a 400. Map both to the escalation 400 path.
-		if errors.Is(err, onboarding.ErrDraftRequired) || errors.Is(err, onboarding.ErrInvalidIntent) {
-			return OnboardingStepResponse{}, ErrOnboardingEscalation
-		}
-		return OnboardingStepResponse{}, err
-	}
-	return s.projectStep(entry, transition), nil
-}
-
-// projectStep renders the per-step response from the live session + the transition. The
-// draft/preferences are surfaced once a draft exists (the draft + review steps).
-func (s *onboardingService) projectStep(entry *sessionEntry, t onboarding.Transition) OnboardingStepResponse {
-	resp := OnboardingStepResponse{
-		Content: t.Content,
-		Step:    string(entry.session.Step),
-		Status:  string(entry.session.Status),
-	}
-	if strings.TrimSpace(entry.session.DraftAgentMD) != "" {
-		resp.Draft = entry.session.DraftAgentMD
-		resp.Preferences = marshalPreferences(entry.session.Preferences)
-	}
-	return resp
-}
-
-// marshalPreferences renders the session's structured preferences as a JSON string for the
-// step response (an encode failure yields "{}", never a partial body).
-func marshalPreferences(p onboarding.Preferences) string {
-	raw, err := json.Marshal(p)
-	if err != nil {
-		return "{}"
-	}
-	return string(raw)
-}
-
-// toOnboarding maps the wire edit payload onto onboarding.Answers (empty fields ignored by
-// the session's replace semantics).
-func (a OnboardingAnswers) toOnboarding() onboarding.Answers {
+// toAnswers maps the typed seed form onto onboarding.Answers. It is a straight field
+// copy with no normalization: the name stored must be byte-identical to the name typed
+// (Amendment #95's whole reason for existing), so nothing here trims, folds or rewrites.
+func (s OnboardingSeed) toAnswers() onboarding.Answers {
 	return onboarding.Answers{
-		Name:           a.Name,
-		Role:           a.Role,
-		Company:        a.Company,
-		Location:       a.Location,
-		Lang:           a.Lang,
-		Timezone:       a.Timezone,
-		TonePreference: a.TonePreference,
-		ResponseLength: a.ResponseLength,
-		Expertise:      a.Expertise,
-		Stack:          a.Stack,
-		Projects:       a.Projects,
-		Goals:          a.Goals,
-		Interests:      a.Interests,
-		People:         a.People,
+		Name:     s.Name,
+		Role:     s.Role,
+		Company:  s.Company,
+		Location: s.Location,
+		Lang:     s.Lang,
+		Timezone: s.Timezone,
 	}
 }
 

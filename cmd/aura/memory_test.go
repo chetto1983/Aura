@@ -12,6 +12,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/mcp"
+	"github.com/chetto1983/aura/internal/onboarding"
 )
 
 // recordingMemoryMCPServer is a streamable-HTTP MCP fake (modeled on
@@ -19,12 +20,19 @@ import (
 // for tools/call, records the requested RAW tool name and returns a deterministic
 // text result. It is the unit-tier stand-in for the live agent-memory sidecar — the
 // real seed/read + reasoning-trace round-trip lives in 15-04's memory_integration tier.
+// initializes/deletes count MCP SESSIONS at the wire, not calls made through a Go seam:
+// a streamable-HTTP session is opened by exactly one `initialize` and closed by exactly
+// one `DELETE`, so those two counters are the direct evidence for Amendment #95's
+// "the whole submission opens ONE MCP session, asserted on the transport".
 type recordingMemoryMCPServer struct {
 	*httptest.Server
-	mu        sync.Mutex
-	lastTool  string
-	lastArgs  map[string]any
-	cannedTxt string
+	mu          sync.Mutex
+	lastTool    string
+	lastArgs    map[string]any
+	cannedTxt   string
+	initializes int
+	deletes     int
+	calls       []recordedCall
 }
 
 func newRecordingMemoryMCPServer(t *testing.T) *recordingMemoryMCPServer {
@@ -32,6 +40,9 @@ func newRecordingMemoryMCPServer(t *testing.T) *recordingMemoryMCPServer {
 	rec := &recordingMemoryMCPServer{cannedTxt: "canned-memory-result"}
 	rec.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodDelete {
+			rec.mu.Lock()
+			rec.deletes++
+			rec.mu.Unlock()
 			w.WriteHeader(http.StatusOK)
 			return
 		}
@@ -47,6 +58,9 @@ func newRecordingMemoryMCPServer(t *testing.T) *recordingMemoryMCPServer {
 		}
 		switch req.Method {
 		case "initialize":
+			rec.mu.Lock()
+			rec.initializes++
+			rec.mu.Unlock()
 			w.Header().Set("Mcp-Session-Id", "sess-memory")
 			writeMemoryRPC(t, w, req.ID, map[string]any{"protocolVersion": "2025-06-18"})
 		case "notifications/initialized":
@@ -64,6 +78,7 @@ func newRecordingMemoryMCPServer(t *testing.T) *recordingMemoryMCPServer {
 			rec.mu.Lock()
 			rec.lastTool = params.Name
 			rec.lastArgs = params.Arguments
+			rec.calls = append(rec.calls, recordedCall{tool: params.Name, args: params.Arguments})
 			rec.mu.Unlock()
 			writeMemoryRPC(t, w, req.ID, map[string]any{
 				"content": []map[string]any{{"type": "text", "text": rec.cannedTxt}},
@@ -87,6 +102,19 @@ func (rec *recordingMemoryMCPServer) args() map[string]any {
 	rec.mu.Lock()
 	defer rec.mu.Unlock()
 	return rec.lastArgs
+}
+
+// sessions reports the MCP handshakes and session teardowns observed at the wire.
+func (rec *recordingMemoryMCPServer) sessions() (initializes, deletes int) {
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+	return rec.initializes, rec.deletes
+}
+
+func (rec *recordingMemoryMCPServer) recordedCalls() []recordedCall {
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+	return append([]recordedCall(nil), rec.calls...)
 }
 
 // writeMemoryRPC runs on httptest handler goroutines — t.Fatalf is illegal off the
@@ -367,4 +395,61 @@ func TestScopeMemoryArgs(t *testing.T) {
 			t.Fatalf("explicit scope was overwritten: %v", got["user_identifier"])
 		}
 	})
+}
+
+// TestStoreConfirmedOpensOneMCPSessionForTheWholeSubmission is Amendment #95's acceptance
+// gate, asserted ON THE TRANSPORT rather than inferred: the store drives the REAL
+// openMemoryMCP against the streamable-HTTP fake, and the fake counts protocol events. A
+// full seed maps to nine tools/call requests; those must ride ONE `initialize` and end in
+// ONE session `DELETE`. Before this change each write opened, handshook, called and closed
+// its own session — nine handshakes, the "1000 chiamate" the directive names.
+func TestStoreConfirmedOpensOneMCPSessionForTheWholeSubmission(t *testing.T) {
+	rec := newRecordingMemoryMCPServer(t)
+	withMemoryServerAt(t, rec.URL)
+
+	store := newMemoryProfileStore()
+	if err := store.StoreConfirmed(context.Background(), "id-uuid", fullSeedAnswers); err != nil {
+		t.Fatalf("StoreConfirmed: %v", err)
+	}
+
+	initializes, deletes := rec.sessions()
+	if initializes != 1 {
+		t.Errorf("MCP handshakes = %d, want exactly 1 for the whole submission", initializes)
+	}
+	if deletes != 1 {
+		t.Errorf("MCP session teardowns = %d, want exactly 1", deletes)
+	}
+	calls := rec.recordedCalls()
+	if len(calls) != 9 {
+		t.Fatalf("tools/call requests = %d, want 9 over that single session", len(calls))
+	}
+	for _, c := range calls {
+		if c.args["user_identifier"] != "id-uuid" {
+			t.Errorf("wire call %q missing user_identifier scope: %#v", c.tool, c.args)
+		}
+		if c.tool == "memory_store_message" {
+			t.Error("onboarding wrote a :Message node at the wire (Amendment #95 deletes the raw-draft net)")
+		}
+	}
+	if calls[len(calls)-1].args["predicate"] != onboarding.PredicateOnboardingCompleted {
+		t.Errorf("last wire call = %#v, want the completion sentinel", calls[len(calls)-1].args)
+	}
+}
+
+// TestStoreSkippedOpensOneMCPSession pins the cheap-skip path at the same wire level: one
+// handshake, one tools/call, one teardown.
+func TestStoreSkippedOpensOneMCPSession(t *testing.T) {
+	rec := newRecordingMemoryMCPServer(t)
+	withMemoryServerAt(t, rec.URL)
+
+	if err := newMemoryProfileStore().StoreSkipped(context.Background(), "id-uuid"); err != nil {
+		t.Fatalf("StoreSkipped: %v", err)
+	}
+	initializes, deletes := rec.sessions()
+	if initializes != 1 || deletes != 1 {
+		t.Errorf("skip sessions = %d initialize / %d delete, want 1/1", initializes, deletes)
+	}
+	if got := len(rec.recordedCalls()); got != 1 {
+		t.Errorf("skip tools/call requests = %d, want 1", got)
+	}
 }

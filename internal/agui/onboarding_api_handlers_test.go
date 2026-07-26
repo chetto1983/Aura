@@ -11,12 +11,11 @@ import (
 )
 
 // onboarding_api_handlers_test.go covers the thin REST adapters onboarding_api.go exposes
-// beyond the interview start/step (which onboarding_api_test.go already covers): the
-// profile-start / provision / profile-complete / telegram-status handlers, the persisted
-// onboarding-status read model, and the writeOnboardingError sentinel→HTTP mapping. Every
-// case drives the real handler through a fake OnboardingService so the DI seams, the 503
-// unwired paths, the 401 no-principal paths, and the error projection are all exercised
-// without a live saga.
+// beyond start (which onboarding_api_test.go already covers): the seed-submit / provision /
+// telegram-status handlers, the persisted onboarding-status read model, and the
+// writeOnboardingError sentinel→HTTP mapping. Every case drives the real handler through a
+// fake OnboardingService so the DI seams, the 503 unwired paths, the 401 no-principal
+// paths, and the error projection are all exercised without a live saga.
 
 // fakeOnboardingStatusSource is a scriptable OnboardingStatusSource: it returns a fixed
 // status (or error) and records the identity it was asked about so the self-scoped read is
@@ -98,89 +97,85 @@ func TestHandleOnboardingStatus(t *testing.T) {
 	})
 }
 
-func TestHandleProfileOnboardingStart(t *testing.T) {
+// TestHandleProfileSubmit covers the ONE stateless seed route that replaced the interview's
+// profile-start + {token}/profile pair (Amendment #95): unwired 503, malformed body 400,
+// over-cap field 400 (both before the service is reached), the sentinel→HTTP projection,
+// and a happy path proving the decoded seed and the authenticated principal both reach the
+// service.
+func TestHandleProfileSubmit(t *testing.T) {
+	post := func(t *testing.T, h http.Handler, body string) *http.Response {
+		t.Helper()
+		srv := httptest.NewServer(h)
+		t.Cleanup(srv.Close)
+		resp, err := http.Post(srv.URL+"/api/onboarding/profile", "application/json", strings.NewReader(body))
+		if err != nil {
+			t.Fatalf("POST profile: %v", err)
+		}
+		t.Cleanup(func() { _ = resp.Body.Close() })
+		return resp
+	}
+
 	t.Run("503 unwired", func(t *testing.T) {
-		rec := httptest.NewRecorder()
-		(&Server{}).handleProfileOnboardingStart(rec, httptest.NewRequest(http.MethodPost, "/api/onboarding/profile/start", nil))
-		if rec.Code != http.StatusServiceUnavailable {
-			t.Fatalf("status = %d, want 503", rec.Code)
+		s := NewServer(&scriptedRunner{}, nil, ServerConfig{})
+		if got := post(t, withTestPrincipal(s.Mux(), testLocalID), `{}`).StatusCode; got != http.StatusServiceUnavailable {
+			t.Fatalf("status = %d, want 503", got)
 		}
 	})
 
 	t.Run("401 without principal", func(t *testing.T) {
 		s := &Server{onboarding: &fakeOnboarding{}}
 		rec := httptest.NewRecorder()
-		s.handleProfileOnboardingStart(rec, httptest.NewRequest(http.MethodPost, "/api/onboarding/profile/start", nil))
+		s.handleProfileSubmit(rec, httptest.NewRequest(http.MethodPost, "/api/onboarding/profile", strings.NewReader(`{}`)))
 		if rec.Code != http.StatusUnauthorized {
 			t.Fatalf("status = %d, want 401", rec.Code)
 		}
 	})
 
+	t.Run("400 before the service", func(t *testing.T) {
+		for name, body := range map[string]string{
+			"malformed body": `{"name":`,
+			"overlong name":  `{"name":"` + strings.Repeat("a", onboardingSeedFieldMaxLen+1) + `"}`,
+		} {
+			t.Run(name, func(t *testing.T) {
+				fake := &fakeOnboarding{}
+				if got := post(t, onboardingTestServer(t, fake), body).StatusCode; got != http.StatusBadRequest {
+					t.Fatalf("status = %d, want 400", got)
+				}
+				if fake.gotRequester != "" {
+					t.Fatalf("service was called on an invalid body (requester=%q)", fake.gotRequester)
+				}
+			})
+		}
+	})
+
 	t.Run("error maps through writeOnboardingError", func(t *testing.T) {
-		s := &Server{onboarding: &fakeOnboarding{profileErr: errOnboardingForbidden}}
-		rec := httptest.NewRecorder()
-		req := withPrincipal(httptest.NewRequest(http.MethodPost, "/api/onboarding/profile/start", nil), testLocalID)
-		s.handleProfileOnboardingStart(rec, req)
-		if rec.Code != http.StatusForbidden {
-			t.Fatalf("status = %d, want 403", rec.Code)
+		fake := &fakeOnboarding{profileErr: errOnboardingForbidden}
+		if got := post(t, onboardingTestServer(t, fake), `{}`).StatusCode; got != http.StatusForbidden {
+			t.Fatalf("status = %d, want 403", got)
 		}
 	})
 
-	t.Run("200 returns start payload", func(t *testing.T) {
-		fake := &fakeOnboarding{profileStart: OnboardingStart{SessionToken: "p-1", Step: "identity", Content: "hi", Status: "active"}}
-		s := &Server{onboarding: fake}
-		rec := httptest.NewRecorder()
-		req := withPrincipal(httptest.NewRequest(http.MethodPost, "/api/onboarding/profile/start", nil), testLocalID)
-		s.handleProfileOnboardingStart(rec, req)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
-		}
-		var got OnboardingStart
-		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-			t.Fatalf("decode: %v", err)
-		}
-		if got.SessionToken != "p-1" {
-			t.Fatalf("start = %+v, want token p-1", got)
-		}
-	})
-}
-
-func TestHandleProfileOnboardingComplete(t *testing.T) {
-	t.Run("503 unwired", func(t *testing.T) {
-		s := NewServer(&scriptedRunner{}, nil, ServerConfig{})
-		srv := httptest.NewServer(withTestPrincipal(s.Mux(), testLocalID))
-		t.Cleanup(srv.Close)
-		resp, err := http.Post(srv.URL+"/api/onboarding/tok/profile", "application/json", nil)
-		if err != nil {
-			t.Fatalf("POST profile complete: %v", err)
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusServiceUnavailable {
-			t.Fatalf("status = %d, want 503", resp.StatusCode)
-		}
-	})
-
-	t.Run("200 routes token + returns completion", func(t *testing.T) {
-		fake := &fakeOnboarding{profileDone: OnboardingProfileComplete{Completed: true, DeepLink: "https://t.me/AuraBot?start=x", QRSVG: "<svg/>"}}
-		srv := httptest.NewServer(onboardingTestServer(t, fake))
-		t.Cleanup(srv.Close)
-		resp, err := http.Post(srv.URL+"/api/onboarding/tok-42/profile", "application/json", nil)
-		if err != nil {
-			t.Fatalf("POST profile complete: %v", err)
-		}
-		defer resp.Body.Close()
+	t.Run("200 routes the seed + principal", func(t *testing.T) {
+		fake := &fakeOnboarding{profileDone: OnboardingProfileComplete{
+			Completed: true, SessionToken: "poll-1", DeepLink: "https://t.me/AuraBot?start=x", QRSVG: "<svg/>",
+		}}
+		resp := post(t, onboardingTestServer(t, fake),
+			`{"name":"Davide","lang":"it","location":"Caraglio","timezone":"Europe/Rome","role":"founder","company":"PmSync"}`)
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("status = %d, want 200", resp.StatusCode)
 		}
-		if fake.gotToken != "tok-42" || fake.gotRequester != testLocalID {
-			t.Fatalf("service got requester=%q token=%q, want principal/tok-42", fake.gotRequester, fake.gotToken)
+		if fake.gotRequester != testLocalID {
+			t.Fatalf("service got requester=%q, want the bound principal", fake.gotRequester)
+		}
+		if fake.gotSeed != fullSeed {
+			t.Fatalf("service got seed = %+v, want the submitted form", fake.gotSeed)
 		}
 		var got OnboardingProfileComplete
 		if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
-		if !got.Completed || got.DeepLink == "" {
-			t.Fatalf("completion = %+v, want completed with deep-link", got)
+		if !got.Completed || got.SessionToken != "poll-1" || got.DeepLink == "" {
+			t.Fatalf("completion = %+v, want completed with a pollable token and deep-link", got)
 		}
 	})
 }

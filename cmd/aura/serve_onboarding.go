@@ -19,7 +19,6 @@ import (
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/identity"
-	"github.com/chetto1983/aura/internal/onboarding"
 	"github.com/chetto1983/aura/internal/webauth"
 )
 
@@ -30,13 +29,13 @@ import (
 // (capability picker + the atomic aura-leg write + compensation + the immutable audit
 // row), the Authula provider's CoreServices (Leg B), the Telegram Store (Leg C mint + the
 // status poll + pending-token compensation), the recovery adapter (identity_recovery),
-// and the LLM extractor + profile store (the interview). The adapters keep the agui
+// and the profile memory store (the deterministic seed write). The adapters keep the agui
 // package free of the telegram import (which would cycle).
 //
-// buildOnboardingService is best-effort: an interview-only service still answers
-// start/step and provision answers a sanitized backend-unavailable error if Authula,
-// Telegram, recovery storage, or bot username are unavailable — never aborting daemon
-// boot (the SetGovernanceProviders precedent).
+// buildOnboardingService is best-effort: a seed-only service still answers start and
+// provision answers a sanitized backend-unavailable error if Authula, Telegram, recovery
+// storage, or bot username are unavailable — never aborting daemon boot (the
+// SetGovernanceProviders precedent).
 
 // authulaCoreAdapter satisfies agui.AuthulaCore over Authula's CoreServices, replicating
 // the verified DisableSignUp-bypassing create sequence (RESEARCH §Authula): PasswordService
@@ -234,15 +233,14 @@ func (a recoverySetupAdapter) UpsertRecovery(ctx context.Context, identityID, qu
 	})
 }
 
-// buildOnboardingService assembles the OnboardingService best-effort. The interview side
-// (capability picker + LLM extraction + profile write) is always wired when a pool exists;
-// the provisioning saga is wired when the composition root supplies an Authula provider.
+// buildOnboardingService assembles the OnboardingService best-effort. The self-service
+// side (capability picker + the deterministic seed write) is always wired; the
+// provisioning saga is wired when the composition root supplies an Authula provider.
 // The Telegram bot username is resolved live (a best-effort getMe); an empty username
 // leaves provisioning unavailable so no identity/recovery/token writes occur.
 func buildOnboardingService(ctx context.Context, chat *chatEnv, authulaProvider *webauth.Provider) agui.OnboardingService {
 	deps := agui.OnboardingDeps{
 		Capabilities: chat.identity,
-		Extractor:    onboarding.NewLLMAnswerExtractor(chat.client, chat.cfg.LLM.Model),
 		Profiles:     newMemoryProfileStore(),
 	}
 	if chat.pool != nil {

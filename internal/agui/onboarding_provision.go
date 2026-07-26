@@ -11,7 +11,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/chetto1983/aura/internal/identity"
-	"github.com/chetto1983/aura/internal/onboarding"
 )
 
 // onboarding_provision.go is the ordered cross-store provisioning saga (ONBD-01a/01b /
@@ -39,8 +38,8 @@ import (
 //	5. one immutable identity_audit row (a tiny final db.WithTx AFTER Leg C); on failure
 //	   DeletePending + DeleteIdentity + COMP_B so a rolled-back flow has none.
 //
-// Then (ONBD-02) the confirmed interview Agent.md is written for the NEW identity id; a
-// skipped interview writes nothing. The Telegram CONSUME is async (the user scans later);
+// Then (ONBD-02) the profile seed carried in the provision body is written for the NEW
+// identity id; a blank seed writes nothing. The Telegram CONSUME is async (the user scans later);
 // an unscanned token simply expires (1h TTL) — "identity created" = B+A+recovery+C+audit committed.
 
 // onboardingTokenTTL is the Telegram onboarding-token lifetime (matches the setup wizard's
@@ -117,8 +116,8 @@ type TelegramMint interface {
 	PendingConsumed(ctx context.Context, onboardingToken string) (bool, error)
 }
 
-// errProvisioningUnavailable is returned when a provisioning port is unwired (an
-// interview-only deployment). The handler renders it as a sanitized 502.
+// errProvisioningUnavailable is returned when a provisioning port is unwired (a
+// seed-form-only deployment). The handler renders it as a sanitized 502.
 var errProvisioningUnavailable = errors.New("onboarding: provisioning backend not configured")
 
 // errIsolationDisabled is returned when provisioning is attempted while the documents-plane
@@ -131,8 +130,8 @@ var errIsolationDisabled = errors.New("onboarding: enable AURA_MUSR_ISOLATION be
 // Provision runs the ordered cross-store saga at the wizard's final "Create" confirm
 // (ONBD-01a/01b / RESEARCH §Hard Problem 1). It is the ONLY place the cross-store writes
 // happen, so an abandoned wizard (session expired before this call) leaves ZERO rows. On
-// success it persists the confirmed interview Agent.md for the new identity (ONBD-02) and
-// returns the Telegram deep-link + a server-rendered QR (the bot token never leaks). The
+// success it seeds the new identity's memory graph from the request's typed seed form
+// (ONBD-02, Amendment #95 Correction #95.1 item 3) and returns the Telegram deep-link + a server-rendered QR (the bot token never leaks). The
 // password is hashed immediately and never echoed/logged.
 func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, token string, in OnboardingProvisionRequest) (OnboardingProvisionResponse, error) {
 	if err := validateOnboardingProvision(in); err != nil {
@@ -251,7 +250,7 @@ func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, 
 	// ---- 3b. RESOURCE LEGS: Garage bucket/key (D-08) + per-identity filesystem roots
 	// (D-20/D-21) — eager, journaled, idempotent. They self-compensate on their OWN
 	// failure; compResources reverses BOTH if a LATER leg (Telegram/audit) fails. Unwired
-	// ports skip their leg (pre-cutover / interview-only deployment). ----
+	// ports skip their leg (pre-cutover / seed-form-only deployment). ----
 	compResources, err := s.provisionResourceLegs(ctx, run, identityID)
 	if err != nil {
 		if derr := s.auraLeg.DeleteIdentity(context.WithoutCancel(ctx), identityName); derr != nil {
@@ -301,17 +300,16 @@ func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, 
 	}
 	run.done(ctx, sagaStepAudit)
 
-	// ---- 6. SUCCESS — record the mint token + persist the confirmed interview Agent.md ----
+	// ---- 6. SUCCESS — record the mint token + seed the new identity's graph ----
 	// Record the minted onboarding token on the live session entry so the telegram-status
 	// poll can read it back via PendingConsumed. Mark the session provisioned so retry /
 	// double-submit attempts cannot run the saga a second time.
 	entry.onboardingToken = onboardingToken
 	entry.provisioned = true
-	// A confirmed interview wrote DraftAgentMD + StatusCompleted into the session; a skipped
-	// interview leaves no draft → no profile (the AC: skip writes no profile). This is
-	// idempotent + best-effort: a profile write failure does NOT roll back the (committed)
-	// loginable identity — the profile is re-seedable on first interaction.
-	s.persistProfile(ctx, entry, identityID)
+	// Seed the new identity's graph from the form the creator filled; a blank seed writes
+	// nothing, so the new operator still sees their own first-run form. Best-effort: a
+	// profile write failure does NOT roll back the (committed) loginable identity.
+	s.persistProfile(ctx, in.Seed, identityID)
 
 	resp := OnboardingProvisionResponse{IdentityID: identityID}
 	if botName := s.resolveBotName(ctx); in.LinkTelegram && botName != "" {
@@ -355,55 +353,65 @@ func (s *onboardingService) TelegramStatus(ctx context.Context, requesterIdentit
 
 // CreateTelegramLink mints a one-hour Telegram link for the already-authenticated
 // identity and stores a tiny poll session so Settings can check PendingConsumed without
-// re-running the full profile onboarding interview.
+// re-submitting the profile seed form.
 func (s *onboardingService) CreateTelegramLink(ctx context.Context, requesterIdentityID string) (OnboardingTelegramLink, error) {
 	if requesterIdentityID == "" {
 		return OnboardingTelegramLink{}, errOnboardingForbidden
 	}
-	onboardingToken, deepLink, qrSVG, err := s.mintTelegramLink(ctx, requesterIdentityID)
+	_, sessionToken, deepLink, qrSVG, err := s.mintPollableLink(ctx, requesterIdentityID)
 	if err != nil {
-		return OnboardingTelegramLink{}, err
-	}
-	entry := &sessionEntry{
-		creatorIdentityID: requesterIdentityID,
-		onboardingToken:   onboardingToken,
-		// This is not an interview session. Marking it provisioned makes step,
-		// provision, and profile-complete reject the token while TelegramStatus can
-		// still poll the pending Telegram row.
-		provisioned: true,
-	}
-	sessionToken, err := s.sessions.put(entry)
-	if err != nil {
-		if derr := s.telegram.DeletePending(context.WithoutCancel(ctx), onboardingToken); derr != nil {
-			slog.Error("onboarding: COMP_C (delete telegram pending) after settings session failure failed", "step", "compensate")
-		}
 		return OnboardingTelegramLink{}, err
 	}
 	return OnboardingTelegramLink{SessionToken: sessionToken, DeepLink: deepLink, QRSVG: qrSVG}, nil
 }
 
-// CompleteProfile persists the current authenticated identity's profile interview and
-// mints the required Telegram recovery link for that already-created operator. A
-// confirmed draft writes Agent.md; an explicit skip writes metadata so the shell does not
-// reopen onboarding on every login. Telegram is minted before the profile marker is
-// written, so a failed Telegram setup cannot leave first-run onboarding marked done.
-func (s *onboardingService) CompleteProfile(ctx context.Context, requesterIdentityID, token string) (OnboardingProfileComplete, error) {
-	entry, err := s.sessionForRequester(token, requesterIdentityID)
+// mintPollableLink mints the Telegram deep-link + QR for an already-created identity and
+// parks a provisioned-only session entry so TelegramStatus can poll PendingConsumed. The
+// entry is marked provisioned because it carries no wizard state: provision must reject
+// the token while the poll still resolves it. Shared by CreateTelegramLink (Settings) and
+// SubmitProfile (first run), which need the identical mint + park pair.
+func (s *onboardingService) mintPollableLink(ctx context.Context, identityID string) (onboardingToken, sessionToken, deepLink, qrSVG string, err error) {
+	onboardingToken, deepLink, qrSVG, err = s.mintTelegramLink(ctx, identityID)
 	if err != nil {
-		return OnboardingProfileComplete{}, err
+		return "", "", "", "", err
 	}
-	entry.mu.Lock()
-	defer entry.mu.Unlock()
-	if entry.provisioned {
-		return OnboardingProfileComplete{}, errOnboardingSessionNotFound
+	sessionToken, err = s.sessions.put(&sessionEntry{
+		creatorIdentityID: identityID,
+		onboardingToken:   onboardingToken,
+		provisioned:       true,
+	})
+	if err != nil {
+		if derr := s.telegram.DeletePending(context.WithoutCancel(ctx), onboardingToken); derr != nil {
+			slog.Error("onboarding: COMP_C (delete telegram pending) after settings session failure failed", "step", "compensate")
+		}
+		return "", "", "", "", err
 	}
-	if s.profiles == nil || entry.session == nil {
+	return onboardingToken, sessionToken, deepLink, qrSVG, nil
+}
+
+// SubmitProfile writes the current identity's typed seed form into the memory graph and,
+// where Telegram is available, mints the recovery link, in ONE stateless call (Amendment
+// #95 — there is no session, no accumulated state and no LLM). A seed whose every field is
+// blank is a skip: only the skip sentinel is written, so the agent still builds the profile
+// from use.
+//
+// Telegram is a NICETY on this path, never a gate. Amendment #95 requires skipping to stay
+// available and cheap on EVERY deployment, and an instance with no bot token can never mint
+// a link — failing the call there would leave the skip sentinel unwritten and re-open
+// first-run setup on every login forever. A mint that does succeed still happens BEFORE the
+// profile write, and its pending row is compensated if that write fails, so a link never
+// outlives the submission that produced it.
+func (s *onboardingService) SubmitProfile(ctx context.Context, requesterIdentityID string, seed OnboardingSeed) (OnboardingProfileComplete, error) {
+	if requesterIdentityID == "" {
+		return OnboardingProfileComplete{}, errOnboardingForbidden
+	}
+	if s.profiles == nil {
 		return OnboardingProfileComplete{}, errProvisioningUnavailable
 	}
-
-	onboardingToken, deepLink, qrSVG, err := s.mintTelegramLink(ctx, requesterIdentityID)
+	onboardingToken, sessionToken, deepLink, qrSVG, err := s.mintPollableLink(ctx, requesterIdentityID)
 	if err != nil {
-		return OnboardingProfileComplete{}, err
+		slog.Warn("onboarding: no telegram link for seed submission, continuing without one", "step", "telegram")
+		onboardingToken, sessionToken, deepLink, qrSVG = "", "", "", ""
 	}
 	compTelegram := func() {
 		if onboardingToken == "" || s.telegram == nil {
@@ -414,32 +422,21 @@ func (s *onboardingService) CompleteProfile(ctx context.Context, requesterIdenti
 		}
 	}
 
-	switch entry.session.Status {
-	case onboarding.StatusCompleted:
-		draft := strings.TrimSpace(entry.session.DraftAgentMD)
-		if draft == "" {
-			compTelegram()
-			return OnboardingProfileComplete{}, ErrOnboardingEscalation
-		}
-		if err := s.profiles.StoreConfirmed(ctx, requesterIdentityID, entry.session.Answers, entry.session.DraftAgentMD); err != nil {
-			compTelegram()
-			return OnboardingProfileComplete{}, provisionFail("profile write", err)
-		}
-		entry.onboardingToken = onboardingToken
-		entry.provisioned = true
-		return OnboardingProfileComplete{Completed: true, DeepLink: deepLink, QRSVG: qrSVG}, nil
-	case onboarding.StatusSkipped:
+	out := OnboardingProfileComplete{SessionToken: sessionToken, DeepLink: deepLink, QRSVG: qrSVG}
+	if seed.blank() {
 		if err := s.profiles.StoreSkipped(ctx, requesterIdentityID); err != nil {
 			compTelegram()
 			return OnboardingProfileComplete{}, provisionFail("profile skip write", err)
 		}
-		entry.onboardingToken = onboardingToken
-		entry.provisioned = true
-		return OnboardingProfileComplete{Skipped: true, DeepLink: deepLink, QRSVG: qrSVG}, nil
-	default:
-		compTelegram()
-		return OnboardingProfileComplete{}, ErrOnboardingEscalation
+		out.Skipped = true
+		return out, nil
 	}
+	if err := s.profiles.StoreConfirmed(ctx, requesterIdentityID, seed.toAnswers()); err != nil {
+		compTelegram()
+		return OnboardingProfileComplete{}, provisionFail("profile write", err)
+	}
+	out.Completed = true
+	return out, nil
 }
 
 // resolveBotName returns the CURRENT Telegram bot username. A wired live resolver
@@ -516,18 +513,16 @@ func (s *onboardingService) validateNoEscalation(ctx context.Context, creator st
 	return nil
 }
 
-// persistProfile writes the confirmed interview Agent.md for the new identity (ONBD-02). A
-// skipped/incomplete interview (no draft) writes nothing. Best-effort: a write failure is
-// logged but does NOT fail the (already-committed) provision — the profile is re-seedable.
-func (s *onboardingService) persistProfile(ctx context.Context, entry *sessionEntry, identityID string) {
-	if s.profiles == nil || entry == nil || entry.session == nil {
+// persistProfile seeds the NEW identity's graph from the seed the creator filled in the
+// provision body (ONBD-02 / Correction #95.1 item 3). A blank seed writes NOTHING — not
+// even a sentinel — so the new identity still gets its own first-run form on first login.
+// Best-effort: a write failure is logged but does NOT fail the (already-committed)
+// provision, because the profile is re-seedable.
+func (s *onboardingService) persistProfile(ctx context.Context, seed OnboardingSeed, identityID string) {
+	if s.profiles == nil || seed.blank() {
 		return
 	}
-	draft := strings.TrimSpace(entry.session.DraftAgentMD)
-	if draft == "" {
-		return // skipped / unconfirmed interview → no profile
-	}
-	if err := s.profiles.StoreConfirmed(ctx, identityID, entry.session.Answers, entry.session.DraftAgentMD); err != nil {
+	if err := s.profiles.StoreConfirmed(ctx, identityID, seed.toAnswers()); err != nil {
 		slog.Warn("onboarding: persist profile failed", "step", "profile")
 	}
 }

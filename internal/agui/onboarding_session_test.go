@@ -4,8 +4,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/chetto1983/aura/internal/onboarding"
 )
 
 // onboarding_session_test.go covers the goroutine-free TTL session store (ONBD-02 /
@@ -33,7 +31,6 @@ func (c *fixedClock) advance(d time.Duration) {
 
 func newTestSession() *sessionEntry {
 	return &sessionEntry{
-		session:           onboarding.NewSession("00000000-0000-0000-0000-0000000000aa", "newbie"),
 		creatorIdentityID: "00000000-0000-0000-0000-000000000001",
 		capabilityOptions: []string{"agent.run"},
 	}
@@ -60,8 +57,8 @@ func TestSessionTTL(t *testing.T) {
 		if !ok || got == nil {
 			t.Fatalf("get(%q) miss after put", token)
 		}
-		if got.session.Step != onboarding.StepIdentity {
-			t.Errorf("session step = %q, want %q", got.session.Step, onboarding.StepIdentity)
+		if got.creatorIdentityID != "00000000-0000-0000-0000-000000000001" {
+			t.Errorf("session creator = %q, want the stored creator", got.creatorIdentityID)
 		}
 	})
 

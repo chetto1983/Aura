@@ -27,13 +27,13 @@ type OnboardingState struct {
 	Skipped   bool
 }
 
-// ProfileMemoryStore persists the confirmed/skipped onboarding profile into the
+// ProfileMemoryStore persists the submitted/skipped onboarding seed into the
 // agent-memory graph and reads the completion sentinel back. It is the Amendment #87
 // replacement for the on-disk profile.Store: the concrete implementation (cmd/aura)
 // drives the memory MCP and MUST scope every call to the identity. Both the web (agui)
 // and Telegram onboarding paths depend on this one port.
 type ProfileMemoryStore interface {
-	StoreConfirmed(ctx context.Context, identityID string, a Answers, rawDraft string) error
+	StoreConfirmed(ctx context.Context, identityID string, a Answers) error
 	StoreSkipped(ctx context.Context, identityID string) error
 	Status(ctx context.Context, identityID string) (OnboardingState, error)
 }
@@ -61,7 +61,7 @@ type MemoryPreference struct {
 	Context    string
 }
 
-// ProfileMemory is the deterministic memory projection of a confirmed interview:
+// ProfileMemory is the deterministic memory projection of a submitted seed:
 // entities first (so facts resolve them by name), then facts, then preferences —
 // mirroring the shape a real agent emits organically (conv 03b9c7c2).
 type ProfileMemory struct {
@@ -70,10 +70,11 @@ type ProfileMemory struct {
 	Preferences []MemoryPreference
 }
 
-// MapProfile deterministically projects confirmed interview Answers into memory writes.
-// It is pure (no I/O) so it is unit-tested without the memory sidecar; the interview
-// already ran the per-step LLM extraction, so no further LLM call is needed
-// (Amendment #87). Empty fields produce no write.
+// MapProfile deterministically projects the seed Answers into memory writes. It is pure
+// (no I/O) so it is unit-tested without the memory sidecar, and it is the ONLY thing
+// between the typed form and the graph — no LLM call anywhere on this path, so the name
+// stored is byte-identical to the name typed (Amendment #95). Empty fields produce no
+// write.
 func MapProfile(a Answers) ProfileMemory {
 	subject := nz(a.Name)
 	if subject == "" {

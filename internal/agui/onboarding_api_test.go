@@ -6,52 +6,17 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/onboarding"
 )
 
-// onboarding_api_test.go covers the interview side (Task 1): the one-LLM-extraction-per-
-// step guarantee (TestNoDuplicatePrompt), the D-06 capability picker (creator grants minus
-// '*'), the skip/empty-answer behaviors, and the thin REST handlers (start/step) through
-// the real Server.Mux with a fake service. The provisioning saga is covered in
-// onboarding_provision_test.go.
-
-// countingExtractor is a call-counting answerExtractor: it records how many times Extract
-// is invoked so the no-duplicate-LLM-turn property is provable. It returns a fixed Answers
-// keyed off the step so the session advances deterministically.
-type countingExtractor struct {
-	mu    sync.Mutex
-	calls int
-}
-
-func (e *countingExtractor) Extract(_ context.Context, step onboarding.Step, raw string) (onboarding.Answers, error) {
-	e.mu.Lock()
-	e.calls++
-	e.mu.Unlock()
-	switch step {
-	case onboarding.StepIdentity:
-		return onboarding.Answers{Name: "Davide"}, nil
-	case onboarding.StepWork:
-		return onboarding.Answers{Expertise: []string{"backend"}, Stack: []string{"Go"}}, nil
-	case onboarding.StepProjects:
-		return onboarding.Answers{Projects: []string{"Aura"}}, nil
-	case onboarding.StepSocial:
-		return onboarding.Answers{Interests: []string{"AI"}}, nil
-	case onboarding.StepStyle:
-		return onboarding.Answers{TonePreference: "friendly", ResponseLength: "normal"}, nil
-	default:
-		return onboarding.Answers{CustomInstructions: raw}, nil
-	}
-}
-
-func (e *countingExtractor) count() int {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	return e.calls
-}
+// onboarding_api_test.go covers the seed side (Amendment #95): the D-06 capability picker
+// (creator grants minus '*'), the stateless seed submit (SubmitProfile) including the
+// derived skip, and the thin REST handlers through the real Server.Mux with a fake
+// service. The provisioning saga is covered in onboarding_provision_test.go.
 
 // fakeCaps is a CapabilitySource returning a fixed grant set for any identity.
 type fakeCaps struct {
@@ -63,20 +28,31 @@ func (f fakeCaps) ListCapabilities(_ context.Context, _ string) ([]string, error
 	return f.grants, f.err
 }
 
-// recordingProfileWriter records profile-store calls (by identity) so "skip writes no
-// profile" and "confirm writes one" stay provable. Both StoreConfirmed and StoreSkipped
-// count as a write (each persists a sentinel); a no-draft persistProfile writes nothing.
+// recordingProfileWriter records profile-store calls (by identity) plus the Answers the
+// mapper will consume, so "a blank seed writes only the skip sentinel", "the write is
+// scoped to the caller" and "the name is byte-identical to the one typed" stay provable.
 type recordingProfileWriter struct {
-	writes []string
+	writes    []string
+	confirmed []onboarding.Answers
+	skipped   []string
+	err       error
 }
 
-func (w *recordingProfileWriter) StoreConfirmed(_ context.Context, identity string, _ onboarding.Answers, _ string) error {
+func (w *recordingProfileWriter) StoreConfirmed(_ context.Context, identity string, a onboarding.Answers) error {
+	if w.err != nil {
+		return w.err
+	}
 	w.writes = append(w.writes, identity)
+	w.confirmed = append(w.confirmed, a)
 	return nil
 }
 
 func (w *recordingProfileWriter) StoreSkipped(_ context.Context, identity string) error {
+	if w.err != nil {
+		return w.err
+	}
 	w.writes = append(w.writes, identity)
+	w.skipped = append(w.skipped, identity)
 	return nil
 }
 
@@ -84,74 +60,30 @@ func (w *recordingProfileWriter) Status(context.Context, string) (onboarding.Onb
 	return onboarding.OnboardingState{}, nil
 }
 
-func newInterviewService(ext AnswerExtractor, caps CapabilitySource, pw onboarding.ProfileMemoryStore) *onboardingService {
+// newSeedService builds the concrete service with only the seed-side ports wired (plus the
+// Telegram mint SubmitProfile requires), mirroring a deployment without the provisioning
+// saga.
+func newSeedService(caps CapabilitySource, pw onboarding.ProfileMemoryStore, tg TelegramMint) *onboardingService {
 	return newOnboardingService(OnboardingDeps{
 		Capabilities: caps,
-		Extractor:    ext,
 		Profiles:     pw,
+		Telegram:     tg,
+		BotUsername:  "AuraBot",
 	})
 }
 
-// TestNoDuplicatePrompt proves exactly one LLM extraction per free-text answer, no second
-// turn on replay, and an edit re-renders the draft without a re-prompt (mock the LLM,
-// count calls). This is the core ONBD-02 / RESEARCH §Hard Problem 4 guarantee.
-func TestNoDuplicatePrompt(t *testing.T) {
-	ext := &countingExtractor{}
-	svc := newInterviewService(ext, fakeCaps{grants: []string{"agent.run"}}, &recordingProfileWriter{})
-	ctx := context.Background()
-
-	start, err := svc.StartSession(ctx, "creator-1")
-	if err != nil {
-		t.Fatalf("StartSession: %v", err)
-	}
-	tok := start.SessionToken
-
-	// Walk the 5 interview steps with a free-text answer each → exactly 5 extractions.
-	for i, text := range []string{"Davide", "backend dev, Go", "Aura", "AI agents", "friendly, short"} {
-		resp, err := svc.Step(ctx, "creator-1", tok, OnboardingStepRequest{Intent: "answer", Text: text})
-		if err != nil {
-			t.Fatalf("step %d: %v", i, err)
-		}
-		_ = resp
-	}
-	if got := ext.count(); got != 5 {
-		t.Fatalf("LLM extractions = %d, want exactly 5 (one per free-text answer)", got)
-	}
-
-	// We are now at the draft step (StatusDraft). An edit must NOT trigger a 6th extraction
-	// (it re-renders deterministically from the SAME answers).
-	editResp, err := svc.Step(ctx, "creator-1", tok, OnboardingStepRequest{
-		Intent:  "edit",
-		Answers: &OnboardingAnswers{TonePreference: "direct"},
-	})
-	if err != nil {
-		t.Fatalf("edit: %v", err)
-	}
-	if got := ext.count(); got != 5 {
-		t.Fatalf("after edit LLM extractions = %d, want still 5 (edit must not re-prompt)", got)
-	}
-	if strings.TrimSpace(editResp.Draft) == "" {
-		t.Error("edit must return a re-rendered draft")
-	}
-
-	// A confirm completes without any extraction.
-	confirmResp, err := svc.Step(ctx, "creator-1", tok, OnboardingStepRequest{Intent: "confirm"})
-	if err != nil {
-		t.Fatalf("confirm: %v", err)
-	}
-	if got := ext.count(); got != 5 {
-		t.Fatalf("after confirm LLM extractions = %d, want still 5", got)
-	}
-	if confirmResp.Status != string(onboarding.StatusCompleted) {
-		t.Errorf("confirm status = %q, want %q", confirmResp.Status, onboarding.StatusCompleted)
-	}
+// fullSeed is the amendment's worked example: every field of the typed form filled.
+var fullSeed = OnboardingSeed{
+	Name: "Davide", Lang: "it", Location: "Caraglio",
+	Timezone: "Europe/Rome", Role: "founder", Company: "PmSync",
 }
 
 // TestOnboardingStartCapabilityOptions proves the picker excludes '*': a creator holding
-// '*' plus two named caps offers only the two named caps (no-escalation D-06).
+// '*' plus two named caps offers only the two named caps (no-escalation D-06). It also
+// pins that start carries nothing but the token + options — the interview's step/content/
+// status fields are gone (Amendment #95).
 func TestOnboardingStartCapabilityOptions(t *testing.T) {
-	svc := newInterviewService(&countingExtractor{},
-		fakeCaps{grants: []string{"*", "agent.run", "graph.read"}}, &recordingProfileWriter{})
+	svc := newSeedService(fakeCaps{grants: []string{"*", "agent.run", "graph.read"}}, &recordingProfileWriter{}, &fakeTelegram{})
 	start, err := svc.StartSession(context.Background(), "creator-1")
 	if err != nil {
 		t.Fatalf("StartSession: %v", err)
@@ -168,122 +100,229 @@ func TestOnboardingStartCapabilityOptions(t *testing.T) {
 			t.Errorf("unexpected capability option %q", c)
 		}
 	}
-	if start.Step != string(onboarding.StepIdentity) {
-		t.Errorf("first step = %q, want %q", start.Step, onboarding.StepIdentity)
-	}
-	if strings.TrimSpace(start.Content) == "" {
-		t.Error("start must return the first prompt content")
+	if start.SessionToken == "" {
+		t.Error("start must mint a session token")
 	}
 }
 
-// TestOnboardingStepSkip proves a skip ends the interview (StatusSkipped) and writes no
-// profile (the file write happens only on a confirmed interview at provision time).
-func TestOnboardingStepSkip(t *testing.T) {
-	pw := &recordingProfileWriter{}
-	svc := newInterviewService(&countingExtractor{}, fakeCaps{grants: []string{"agent.run"}}, pw)
-	ctx := context.Background()
-	start, err := svc.StartSession(ctx, "creator-1")
-	if err != nil {
-		t.Fatalf("StartSession: %v", err)
+// TestSeedToAnswersMapsEverySixFields pins the wire→domain mapping field by field, and
+// that it is a straight copy: an LLM-free path means the stored name is byte-identical to
+// the typed one (the defect Amendment #95 exists for).
+func TestSeedToAnswersMapsEverySixFields(t *testing.T) {
+	got := fullSeed.toAnswers()
+	want := onboarding.Answers{
+		Name: "Davide", Role: "founder", Company: "PmSync",
+		Location: "Caraglio", Lang: "it", Timezone: "Europe/Rome",
 	}
-	resp, err := svc.Step(ctx, "creator-1", start.SessionToken, OnboardingStepRequest{Intent: "skip"})
-	if err != nil {
-		t.Fatalf("skip: %v", err)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("toAnswers = %+v, want %+v", got, want)
 	}
-	if resp.Status != string(onboarding.StatusSkipped) {
-		t.Errorf("skip status = %q, want %q", resp.Status, onboarding.StatusSkipped)
+	// Every other Answers field must stay zero-valued: MapProfile's empty-field guards are
+	// what keep the submission at nine writes.
+	if len(got.Expertise)+len(got.Stack)+len(got.Projects)+len(got.Goals)+len(got.Interests)+len(got.People)+len(got.Vetoes) != 0 {
+		t.Errorf("toAnswers populated a non-seed slice field: %+v", got)
 	}
-	if len(pw.writes) != 0 {
-		t.Errorf("skip wrote a profile (%v); skip must write none", pw.writes)
+	if got.TonePreference != "" || got.ResponseLength != "" || got.CustomInstructions != "" ||
+		got.VoiceMode != nil || got.CanProactiveMessage != nil {
+		t.Errorf("toAnswers populated a non-seed style field: %+v", got)
 	}
 }
 
-func TestProfileOnboardingCompleteWritesCurrentIdentityProfile(t *testing.T) {
-	pw := &recordingProfileWriter{}
-	tg := &fakeTelegram{}
-	svc := newOnboardingService(OnboardingDeps{
-		Capabilities: fakeCaps{grants: []string{"agent.run"}},
-		Extractor:    &countingExtractor{},
-		Profiles:     pw,
-		Telegram:     tg,
-		BotUsername:  "AuraBot",
-	})
-	ctx := context.Background()
-	start, err := svc.StartProfileSession(ctx, "operator-1")
-	if err != nil {
-		t.Fatalf("StartProfileSession: %v", err)
-	}
-	for _, text := range []string{"Davide", "backend dev, Go", "Aura", "AI agents", "friendly, short"} {
-		if _, err := svc.Step(ctx, "operator-1", start.SessionToken, OnboardingStepRequest{Intent: "answer", Text: text}); err != nil {
-			t.Fatalf("answer: %v", err)
+// TestSeedToAnswersPreservesNameVerbatim proves nothing on the path trims, folds or
+// rewrites the typed name — including the surrounding whitespace and accents an LLM
+// extractor would have normalized away.
+func TestSeedToAnswersPreservesNameVerbatim(t *testing.T) {
+	for _, name := range []string{"Davide", " Davide ", "DAVIDE", "José-María", "李雷"} {
+		if got := (OnboardingSeed{Name: name}).toAnswers().Name; got != name {
+			t.Errorf("toAnswers(%q).Name = %q, want byte-identical", name, got)
 		}
 	}
-	if _, err := svc.Step(ctx, "operator-1", start.SessionToken, OnboardingStepRequest{Intent: "confirm"}); err != nil {
-		t.Fatalf("confirm: %v", err)
+}
+
+// TestOnboardingSeedBlank pins the derived skip signal: only an all-whitespace seed is a
+// skip, and any single filled field makes it a confirm.
+func TestOnboardingSeedBlank(t *testing.T) {
+	if !(OnboardingSeed{}).blank() {
+		t.Error("zero seed must be blank")
 	}
-	done, err := svc.CompleteProfile(ctx, "operator-1", start.SessionToken)
-	if err != nil {
-		t.Fatalf("CompleteProfile: %v", err)
+	if !(OnboardingSeed{Name: "  ", Lang: "\t", Location: " ", Timezone: " ", Role: " ", Company: " "}).blank() {
+		t.Error("all-whitespace seed must be blank")
 	}
-	if !done.Completed || done.Skipped {
-		t.Fatalf("CompleteProfile = %+v, want completed", done)
-	}
-	if !strings.HasPrefix(done.DeepLink, "https://t.me/AuraBot?start=") || strings.TrimSpace(done.QRSVG) == "" {
-		t.Fatalf("CompleteProfile Telegram link = deepLink:%q qr:%t, want deep-link and QR", done.DeepLink, strings.TrimSpace(done.QRSVG) != "")
-	}
-	if tg.mintedCount() != 1 {
-		t.Fatalf("telegram pending tokens = %d, want 1", tg.mintedCount())
-	}
-	if len(pw.writes) != 1 || pw.writes[0] != "operator-1" {
-		t.Fatalf("profile writes = %v, want current operator", pw.writes)
+	for name, seed := range map[string]OnboardingSeed{
+		"name":     {Name: "Davide"},
+		"lang":     {Lang: "it"},
+		"location": {Location: "Caraglio"},
+		"timezone": {Timezone: "Europe/Rome"},
+		"role":     {Role: "founder"},
+		"company":  {Company: "PmSync"},
+	} {
+		if seed.blank() {
+			t.Errorf("seed with only %s set must not be blank", name)
+		}
 	}
 }
 
-func TestProfileOnboardingCompleteWritesSkippedMetadata(t *testing.T) {
+// TestValidateOnboardingSeedRejectsOverlongFields proves every field is capped, so an
+// oversized body is a clean 400 rather than an entity name nobody can read back.
+func TestValidateOnboardingSeedRejectsOverlongFields(t *testing.T) {
+	if err := validateOnboardingSeed(fullSeed); err != nil {
+		t.Fatalf("valid seed rejected: %v", err)
+	}
+	cases := map[string]OnboardingSeed{
+		"name":     {Name: strings.Repeat("a", onboardingSeedFieldMaxLen+1)},
+		"role":     {Role: strings.Repeat("a", onboardingSeedFieldMaxLen+1)},
+		"company":  {Company: strings.Repeat("a", onboardingSeedFieldMaxLen+1)},
+		"location": {Location: strings.Repeat("a", onboardingSeedFieldMaxLen+1)},
+		"lang":     {Lang: strings.Repeat("a", onboardingLangMaxLen+1)},
+		"timezone": {Timezone: strings.Repeat("a", onboardingTimezoneMaxLen+1)},
+	}
+	for field, seed := range cases {
+		if err := validateOnboardingSeed(seed); err == nil {
+			t.Errorf("overlong %s accepted, want rejection", field)
+		}
+	}
+	// The cap is inclusive: exactly-at-the-limit is valid.
+	if err := validateOnboardingSeed(OnboardingSeed{Name: strings.Repeat("a", onboardingSeedFieldMaxLen)}); err != nil {
+		t.Errorf("name at the cap rejected: %v", err)
+	}
+}
+
+// TestValidateOnboardingSeedRequiresANameOnceAnythingIsFilled pins the one conditional
+// requirement. MapProfile keys every fact off the name and falls back to the placeholder
+// subject "operator" when it is empty, so a nameless-but-filled seed would write
+// `operator works_for PmSync` with no PERSON entity for it to resolve against — the
+// orphan shape Amendment #95 exists to end. A blank seed stays valid: that is the skip.
+func TestValidateOnboardingSeedRequiresANameOnceAnythingIsFilled(t *testing.T) {
+	if err := validateOnboardingSeed(OnboardingSeed{}); err != nil {
+		t.Fatalf("a blank seed is the skip and must stay valid: %v", err)
+	}
+	for name, seed := range map[string]OnboardingSeed{
+		"role only":     {Role: "founder"},
+		"company only":  {Company: "PmSync"},
+		"location only": {Location: "Caraglio"},
+		"lang only":     {Lang: "it"},
+		"blank name":    {Name: "   ", Role: "founder"},
+	} {
+		if err := validateOnboardingSeed(seed); err == nil {
+			t.Errorf("%s was accepted without a name — those facts would land under the placeholder subject", name)
+		}
+	}
+	if err := validateOnboardingSeed(OnboardingSeed{Name: "Davide", Role: "founder"}); err != nil {
+		t.Errorf("a named seed rejected: %v", err)
+	}
+}
+
+// TestSubmitProfileWritesSeedUnderRequesterScope proves the full form is written for the
+// AUTHENTICATED caller (never a token-carried identity), that the mapped Answers reach the
+// store verbatim, and that the response carries the Telegram link the completion screen
+// needs.
+func TestSubmitProfileWritesSeedUnderRequesterScope(t *testing.T) {
 	pw := &recordingProfileWriter{}
 	tg := &fakeTelegram{}
-	svc := newOnboardingService(OnboardingDeps{
-		Capabilities: fakeCaps{grants: []string{"agent.run"}},
-		Extractor:    &countingExtractor{},
-		Profiles:     pw,
-		Telegram:     tg,
-		BotUsername:  "AuraBot",
-	})
-	ctx := context.Background()
-	start, err := svc.StartProfileSession(ctx, "operator-1")
+	svc := newSeedService(fakeCaps{grants: []string{"agent.run"}}, pw, tg)
+
+	done, err := svc.SubmitProfile(context.Background(), "operator-1", fullSeed)
 	if err != nil {
-		t.Fatalf("StartProfileSession: %v", err)
+		t.Fatalf("SubmitProfile: %v", err)
 	}
-	if _, err := svc.Step(ctx, "operator-1", start.SessionToken, OnboardingStepRequest{Intent: "skip"}); err != nil {
-		t.Fatalf("skip: %v", err)
-	}
-	done, err := svc.CompleteProfile(ctx, "operator-1", start.SessionToken)
-	if err != nil {
-		t.Fatalf("CompleteProfile: %v", err)
-	}
-	if done.Completed || !done.Skipped {
-		t.Fatalf("CompleteProfile = %+v, want skipped", done)
+	if !done.Completed || done.Skipped {
+		t.Fatalf("SubmitProfile = %+v, want completed", done)
 	}
 	if !strings.HasPrefix(done.DeepLink, "https://t.me/AuraBot?start=") || strings.TrimSpace(done.QRSVG) == "" {
-		t.Fatalf("CompleteProfile Telegram link = deepLink:%q qr:%t, want deep-link and QR", done.DeepLink, strings.TrimSpace(done.QRSVG) != "")
+		t.Fatalf("Telegram link = deepLink:%q qr:%t, want deep-link and QR", done.DeepLink, strings.TrimSpace(done.QRSVG) != "")
 	}
 	if tg.mintedCount() != 1 {
 		t.Fatalf("telegram pending tokens = %d, want 1", tg.mintedCount())
 	}
 	if len(pw.writes) != 1 || pw.writes[0] != "operator-1" {
-		t.Fatalf("profile writes = %v, want current operator skip marker", pw.writes)
+		t.Fatalf("profile writes = %v, want exactly the current operator", pw.writes)
+	}
+	if len(pw.confirmed) != 1 || !reflect.DeepEqual(pw.confirmed[0], fullSeed.toAnswers()) {
+		t.Fatalf("stored answers = %+v, want the submitted seed verbatim", pw.confirmed)
+	}
+	if len(pw.skipped) != 0 {
+		t.Fatalf("a filled seed wrote the skip sentinel: %v", pw.skipped)
+	}
+}
+
+// TestSubmitProfileBlankSeedWritesOnlySkipSentinel proves the derived skip: submitting
+// nothing costs exactly one store call (the sentinel), so the agent still builds the
+// profile from use.
+func TestSubmitProfileBlankSeedWritesOnlySkipSentinel(t *testing.T) {
+	pw := &recordingProfileWriter{}
+	tg := &fakeTelegram{}
+	svc := newSeedService(fakeCaps{grants: []string{"agent.run"}}, pw, tg)
+
+	done, err := svc.SubmitProfile(context.Background(), "operator-1", OnboardingSeed{})
+	if err != nil {
+		t.Fatalf("SubmitProfile: %v", err)
+	}
+	if done.Completed || !done.Skipped {
+		t.Fatalf("SubmitProfile = %+v, want skipped", done)
+	}
+	if !strings.HasPrefix(done.DeepLink, "https://t.me/AuraBot?start=") {
+		t.Fatalf("skip must still mint the Telegram link, got %q", done.DeepLink)
+	}
+	if len(pw.confirmed) != 0 {
+		t.Fatalf("blank seed wrote a profile: %+v", pw.confirmed)
+	}
+	if len(pw.skipped) != 1 || pw.skipped[0] != "operator-1" {
+		t.Fatalf("skip sentinel writes = %v, want exactly the current operator", pw.skipped)
+	}
+}
+
+// TestSubmitProfileReturnsPollableSessionToken proves the returned token resolves through
+// TelegramStatus for the SAME identity and nobody else — that token is what replaces the
+// deleted /profile/start round-trip.
+func TestSubmitProfileReturnsPollableSessionToken(t *testing.T) {
+	tg := &fakeTelegram{}
+	svc := newSeedService(fakeCaps{grants: []string{"agent.run"}}, &recordingProfileWriter{}, tg)
+
+	done, err := svc.SubmitProfile(context.Background(), "operator-1", fullSeed)
+	if err != nil {
+		t.Fatalf("SubmitProfile: %v", err)
+	}
+	if done.SessionToken == "" {
+		t.Fatal("SubmitProfile returned no pollable session token")
+	}
+	status, err := svc.TelegramStatus(context.Background(), "operator-1", done.SessionToken)
+	if err != nil {
+		t.Fatalf("TelegramStatus before consume: %v", err)
+	}
+	if status.Linked {
+		t.Fatal("TelegramStatus before consume = linked, want false")
+	}
+	tg.consumed = true
+	if status, err = svc.TelegramStatus(context.Background(), "operator-1", done.SessionToken); err != nil || !status.Linked {
+		t.Fatalf("TelegramStatus after consume = %+v err=%v, want linked", status, err)
+	}
+	if _, err := svc.TelegramStatus(context.Background(), "operator-2", done.SessionToken); !errors.Is(err, errOnboardingForbidden) {
+		t.Fatalf("mismatched requester status err = %v, want forbidden", err)
+	}
+}
+
+// TestSubmitProfileRejectsAnonymousAndUnwired proves the two guards ahead of any write: no
+// authenticated principal is forbidden, and an unwired profile store is the sanitized
+// backend-unavailable error — neither mints a Telegram token.
+func TestSubmitProfileRejectsAnonymousAndUnwired(t *testing.T) {
+	tg := &fakeTelegram{}
+	svc := newSeedService(fakeCaps{grants: []string{"agent.run"}}, &recordingProfileWriter{}, tg)
+	if _, err := svc.SubmitProfile(context.Background(), "", fullSeed); !errors.Is(err, errOnboardingForbidden) {
+		t.Fatalf("anonymous submit err = %v, want forbidden", err)
+	}
+
+	bare := newSeedService(fakeCaps{grants: []string{"agent.run"}}, nil, tg)
+	if _, err := bare.SubmitProfile(context.Background(), "operator-1", fullSeed); !errors.Is(err, errProvisioningUnavailable) {
+		t.Fatalf("unwired profile store err = %v, want provisioning-unavailable", err)
+	}
+	if tg.mintedCount() != 0 {
+		t.Fatalf("a rejected submit minted %d telegram token(s), want 0", tg.mintedCount())
 	}
 }
 
 func TestCreateTelegramLinkMintsCurrentIdentityRecoveryQR(t *testing.T) {
 	tg := &fakeTelegram{}
-	svc := newOnboardingService(OnboardingDeps{
-		Capabilities: fakeCaps{grants: []string{"agent.run"}},
-		Extractor:    &countingExtractor{},
-		Profiles:     &recordingProfileWriter{},
-		Telegram:     tg,
-		BotUsername:  "AuraBot",
-	})
+	svc := newSeedService(fakeCaps{grants: []string{"agent.run"}}, &recordingProfileWriter{}, tg)
 
 	link, err := svc.CreateTelegramLink(context.Background(), "operator-1")
 	if err != nil {
@@ -316,61 +355,6 @@ func TestCreateTelegramLinkMintsCurrentIdentityRecoveryQR(t *testing.T) {
 	}
 	if _, err := svc.TelegramStatus(context.Background(), "operator-2", link.SessionToken); !errors.Is(err, errOnboardingForbidden) {
 		t.Fatalf("mismatched requester status err = %v, want forbidden", err)
-	}
-}
-
-// TestOnboardingStepEmptyAnswer proves an empty answer is recorded without error and
-// without an LLM extraction (the session no-ops on empty).
-func TestOnboardingStepEmptyAnswer(t *testing.T) {
-	ext := &countingExtractor{}
-	svc := newInterviewService(ext, fakeCaps{grants: []string{"agent.run"}}, &recordingProfileWriter{})
-	ctx := context.Background()
-	start, err := svc.StartSession(ctx, "creator-1")
-	if err != nil {
-		t.Fatalf("StartSession: %v", err)
-	}
-	resp, err := svc.Step(ctx, "creator-1", start.SessionToken, OnboardingStepRequest{Intent: "answer", Text: "   "})
-	if err != nil {
-		t.Fatalf("empty answer: %v", err)
-	}
-	if ext.count() != 0 {
-		t.Errorf("empty answer triggered %d extraction(s), want 0", ext.count())
-	}
-	// The step still advances (an empty identity answer moves to the work step).
-	if resp.Step != string(onboarding.StepWork) {
-		t.Errorf("after empty identity answer step = %q, want %q", resp.Step, onboarding.StepWork)
-	}
-}
-
-// TestOnboardingStepUnknownSession proves a missing/expired token is the typed
-// session-not-found sentinel (mapped to 404 by the handler).
-func TestOnboardingStepUnknownSession(t *testing.T) {
-	svc := newInterviewService(&countingExtractor{}, fakeCaps{grants: []string{"agent.run"}}, &recordingProfileWriter{})
-	_, err := svc.Step(context.Background(), "creator-1", "nope", OnboardingStepRequest{Intent: "answer", Text: "x"})
-	if err == nil {
-		t.Fatal("unknown session must error")
-	}
-	if !strings.Contains(err.Error(), "session not found") {
-		t.Errorf("err = %v, want session-not-found", err)
-	}
-}
-
-// TestOnboardingStepRejectsMismatchedRequester proves the opaque session token is not a
-// bearer credential by itself: the current authenticated principal must match the
-// identity that started the session, and a rejected request must not invoke extraction.
-func TestOnboardingStepRejectsMismatchedRequester(t *testing.T) {
-	ext := &countingExtractor{}
-	svc := newInterviewService(ext, fakeCaps{grants: []string{"agent.run"}}, &recordingProfileWriter{})
-	start, err := svc.StartSession(context.Background(), "creator-1")
-	if err != nil {
-		t.Fatalf("StartSession: %v", err)
-	}
-	_, err = svc.Step(context.Background(), "creator-2", start.SessionToken, OnboardingStepRequest{Intent: "answer", Text: "x"})
-	if !errors.Is(err, errOnboardingForbidden) {
-		t.Fatalf("mismatched requester err = %v, want forbidden", err)
-	}
-	if ext.count() != 0 {
-		t.Fatalf("mismatched requester invoked extraction %d time(s), want 0", ext.count())
 	}
 }
 
@@ -410,7 +394,7 @@ func TestOnboardingStartHandler503(t *testing.T) {
 // TestOnboardingStartHandler proves the start handler returns the service's start payload.
 func TestOnboardingStartHandler(t *testing.T) {
 	fake := &fakeOnboarding{start: OnboardingStart{
-		SessionToken: "tok-1", Step: "identity", Content: "hi", Status: "active",
+		SessionToken:      "tok-1",
 		CapabilityOptions: []string{"agent.run"},
 	}}
 	srv := httptest.NewServer(onboardingTestServer(t, fake))
@@ -429,54 +413,5 @@ func TestOnboardingStartHandler(t *testing.T) {
 	}
 	if got.SessionToken != "tok-1" || len(got.CapabilityOptions) != 1 {
 		t.Errorf("start payload = %+v", got)
-	}
-}
-
-// TestOnboardingStepHandlerValidation proves the step handler rejects an unknown intent
-// (400) and routes the {sessionToken} path param to the service.
-func TestOnboardingStepHandlerValidation(t *testing.T) {
-	fake := &fakeOnboarding{stepResp: OnboardingStepResponse{Content: "next", Step: "work", Status: "active"}}
-	srv := httptest.NewServer(onboardingTestServer(t, fake))
-	t.Cleanup(srv.Close)
-
-	// Unknown intent → 400, service not called.
-	badResp, err := http.Post(srv.URL+"/api/onboarding/tok-9/step", "application/json",
-		strings.NewReader(`{"intent":"bogus"}`))
-	if err != nil {
-		t.Fatalf("POST step bad: %v", err)
-	}
-	defer badResp.Body.Close()
-	if badResp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("unknown intent = %d, want 400", badResp.StatusCode)
-	}
-
-	// Valid intent → 200, token routed.
-	okResp, err := http.Post(srv.URL+"/api/onboarding/tok-9/step", "application/json",
-		strings.NewReader(`{"intent":"answer","text":"hi"}`))
-	if err != nil {
-		t.Fatalf("POST step ok: %v", err)
-	}
-	defer okResp.Body.Close()
-	if okResp.StatusCode != http.StatusOK {
-		t.Fatalf("valid step = %d, want 200", okResp.StatusCode)
-	}
-	if fake.gotToken != "tok-9" || fake.gotIntent != "answer" || fake.gotRequester != "00000000-0000-0000-0000-000000000001" {
-		t.Errorf("service got requester=%q token=%q intent=%q, want principal/tok-9/answer", fake.gotRequester, fake.gotToken, fake.gotIntent)
-	}
-}
-
-// TestOnboardingStepHandlerNotFound proves the session-not-found sentinel maps to 404.
-func TestOnboardingStepHandlerNotFound(t *testing.T) {
-	fake := &fakeOnboarding{stepErr: errOnboardingSessionNotFound}
-	srv := httptest.NewServer(onboardingTestServer(t, fake))
-	t.Cleanup(srv.Close)
-	resp, err := http.Post(srv.URL+"/api/onboarding/gone/step", "application/json",
-		strings.NewReader(`{"intent":"answer","text":"hi"}`))
-	if err != nil {
-		t.Fatalf("POST step: %v", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("expired session = %d, want 404", resp.StatusCode)
 	}
 }

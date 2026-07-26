@@ -38,7 +38,7 @@ type FilesystemProvisioner interface {
 // identity, journaled and idempotent. It returns a compensation that reverses BOTH legs
 // (idempotent) for the caller to invoke if a LATER leg (Telegram / audit) fails. On its
 // OWN failure it compensates the partial work it did (so the caller only compensates the
-// earlier legs) and returns the error. Unwired ports (nil) skip that leg — an interview-
+// earlier legs) and returns the error. Unwired ports (nil) skip that leg — a seed-form-
 // only or not-yet-cutover deployment provisions no resources (backward compatible).
 func (s *onboardingService) provisionResourceLegs(ctx context.Context, run *sagaRun, identityID string) (compResources func(), err error) {
 	// Compensation reverses whatever this call provisioned, in reverse order, best-effort

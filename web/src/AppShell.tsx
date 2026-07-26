@@ -43,7 +43,7 @@ const DocumentsWorkspace = lazy(() => import('./documents/DocumentsWorkspace'));
 const SettingsWorkspace = lazy(() => import('./settings/SettingsWorkspace'));
 
 const OnboardingWizard = lazy(() => import('./onboarding/OnboardingWizard'));
-const ProfileOnboardingWizard = lazy(() => import('./onboarding/ProfileOnboardingWizard'));
+const FirstRunSetup = lazy(() => import('./onboarding/FirstRunSetup'));
 
 const CHAT_SHELL_LAYOUT_ID = 'aura-chat-shell-v3';
 const CHAT_SHELL_PANEL_IDS = ['chat-navigation', 'chat-workspace'];
@@ -551,7 +551,7 @@ export function AppShell() {
             </div>
           }
         >
-          <ProfileOnboardingWizard
+          <FirstRunSetup
             onClose={() => {
               setProfileOnboardingOpen(false);
             }}

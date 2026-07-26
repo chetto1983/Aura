@@ -143,7 +143,7 @@ func (c *commands) dispatchRich(ctx context.Context, chatID int64, text string) 
 	case "/search":
 		return true, c.searchRich(ctx, chatID, arg)
 	case "/onboard":
-		return true, textReply("Uso: /onboard avvia o riavvia il profilo Agent.md in questa chat Telegram.")
+		return true, textReply("Il profilo si imposta dal pannello web (Impostazioni → Profilo): un modulo con nome, lingua, dove sei e cosa fai. Da lì in poi tengo la memoria aggiornata da sola mentre lavoriamo.")
 	case "/new":
 		return true, textReply("In Telegram questa chat resta un thread continuo. Per ricominciare da capo usa /clear; per aprire o gestire conversazioni separate usa l'app o la CLI.")
 	case "/list":
@@ -172,7 +172,7 @@ const helpText = "Comandi Aura:\n" +
 	"/cancel - annulla il turno in corso\n" +
 	"/cost - mostra la spesa cumulativa di oggi\n" +
 	"/search <testo> - cerca nei turni salvati\n" +
-	"/onboard - avvia o riavvia il profilo Agent.md\n" +
+	"/onboard - indica dove impostare il profilo nel pannello web\n" +
 	"/new - spiega il thread continuo Telegram\n" +
 	"/list - indica dove sfogliare le conversazioni\n" +
 	"/reset - annulla il turno; non cancella lo storico\n" +

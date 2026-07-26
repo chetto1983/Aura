@@ -78,26 +78,21 @@ type CapabilitySource interface {
 	ListCapabilities(ctx context.Context, identityID string) ([]string, error)
 }
 
-// OnboardingService is the server-held provisioning + interview surface the onboarding
+// OnboardingService is the server-held provisioning + seed surface the onboarding
 // wizard handlers (Plan 05) consume: start a session (returns the D-06 capability picker
-// options = the creator's grants minus '*'), apply one step intent to the server-held
-// session (exactly one LLM extraction per free-text answer — RESEARCH §Hard Problem 4),
-// run the ordered cross-store provisioning saga at the final confirm (RESEARCH §Hard
-// Problem 1 — orphan-free on abandonment because the saga ONLY runs here), and poll the
-// Telegram link over PendingConsumed (REST, not SSE — D-03). The concrete service (the
-// goroutine-free TTL session store + the saga) is built in onboarding_service.go and
-// wired at the composition root via SetOnboardingService; a Server with it unwired
-// answers the onboarding routes 503. The handlers depend only on these methods (D-A2-02
-// narrow seam), never the concrete service.
+// options = the creator's grants minus '*'), run the ordered cross-store provisioning
+// saga at the final confirm (RESEARCH §Hard Problem 1 — orphan-free on abandonment
+// because the saga ONLY runs here), write the current identity's typed profile seed, and
+// poll the Telegram link over PendingConsumed (REST, not SSE — D-03). The concrete
+// service (the goroutine-free TTL session store + the saga) is built in
+// onboarding_session.go and wired at the composition root via SetOnboardingService; a
+// Server with it unwired answers the onboarding routes 503. The handlers depend only on
+// these methods (D-A2-02 narrow seam), never the concrete service.
 type OnboardingService interface {
 	// StartSession mints a server-held onboarding session keyed by an opaque token for
-	// the creating operator and returns the first step + the capability picker options
-	// (the creator's grants with '*' excluded — ONBD-01a / D-06).
+	// the creating operator and returns the capability picker options (the creator's
+	// grants with '*' excluded — ONBD-01a / D-06).
 	StartSession(ctx context.Context, creatorIdentityID string) (OnboardingStart, error)
-	// Step applies one onboarding intent (answer/confirm/edit/skip) to the server-held
-	// session: an answer carrying free text runs the LLM extractor EXACTLY once, then
-	// advances the session; replay/edit emit no second LLM turn (ONBD-02 / D-03).
-	Step(ctx context.Context, requesterIdentityID, token string, in OnboardingStepRequest) (OnboardingStepResponse, error)
 	// Provision runs the ordered cross-store saga (Leg B Authula -> Leg A aura tx ->
 	// recovery challenge -> Leg C Telegram mint -> one immutable audit row) with per-leg
 	// compensation + the three-way no-escalation re-validation, and returns the Telegram deep-link + server-rendered QR
@@ -108,17 +103,14 @@ type OnboardingService interface {
 	// (ONBD-01b / R6).
 	TelegramStatus(ctx context.Context, requesterIdentityID, token string) (OnboardingTelegramStatus, error)
 	// CreateTelegramLink mints a current-identity Telegram deep-link + QR without
-	// running the full profile interview again. It returns a session token that can be
-	// polled through TelegramStatus.
+	// re-submitting the profile seed. It returns a session token that can be polled
+	// through TelegramStatus.
 	CreateTelegramLink(ctx context.Context, requesterIdentityID string) (OnboardingTelegramLink, error)
-	// StartProfileSession starts the same profile interview for the already-authenticated
-	// requester. It is current-user setup, not identity provisioning, so it does not
-	// expose capability grants or require identity.create.
-	StartProfileSession(ctx context.Context, requesterIdentityID string) (OnboardingStart, error)
-	// CompleteProfile persists the terminal current-user profile interview as the
-	// requester's Agent.md profile, or records an explicit skip so first-run setup stops
-	// reopening.
-	CompleteProfile(ctx context.Context, requesterIdentityID, token string) (OnboardingProfileComplete, error)
+	// SubmitProfile is the ONE deterministic seed write (Amendment #95): the whole typed
+	// form arrives in a single stateless call, is mapped to entity/fact/preference writes
+	// with NO LLM anywhere on the path, and mints the Telegram link the completion screen
+	// polls. An entirely blank seed records only the skip sentinel.
+	SubmitProfile(ctx context.Context, requesterIdentityID string, seed OnboardingSeed) (OnboardingProfileComplete, error)
 }
 
 // SetGovernanceProviders wires the read-only governance board providers (GOV-01/02/03).
@@ -127,7 +119,7 @@ type OnboardingService interface {
 // NewServer callers/tests stay unchanged (D-A2-02 narrow seam).
 func (s *Server) SetGovernanceProviders(p GovernanceProviders) { s.governance = p }
 
-// SetOnboardingService wires the onboarding provisioning + interview service (ONBD-01/
+// SetOnboardingService wires the onboarding provisioning + seed service (ONBD-01/
 // 02). Set by the daemon composition root after NewServer; until set, the onboarding
 // routes (registered in Plan 05) answer 503. Kept off the constructor so existing
 // NewServer callers/tests stay unchanged (D-A2-02 narrow seam).

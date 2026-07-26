@@ -76,6 +76,86 @@ func TestMapProfileEmptyAndSubjectFallback(t *testing.T) {
 	}
 }
 
+// TestMapProfileSeedFormProjection pins the exact projection of the Amendment #95 seed
+// form — the six typed fields and nothing else. It is the arithmetic behind "a full
+// submission is nine tool calls": 3 entities + 4 facts + 1 preference, plus the sentinel
+// the store stamps. It also proves the name survives byte-identically, which is the whole
+// reason the LLM interview was removed.
+func TestMapProfileSeedFormProjection(t *testing.T) {
+	t.Parallel()
+	pm := MapProfile(Answers{
+		Name: "Davide", Lang: "it", Location: "Caraglio",
+		Timezone: "Europe/Rome", Role: "founder", Company: "PmSync",
+	})
+
+	if len(pm.Entities) != 3 || len(pm.Facts) != 4 || len(pm.Preferences) != 1 {
+		t.Fatalf("seed projection = %d entities / %d facts / %d preferences, want 3/4/1: %#v",
+			len(pm.Entities), len(pm.Facts), len(pm.Preferences), pm)
+	}
+	if pm.Entities[0].Name != "Davide" || pm.Entities[0].EntityType != "PERSON" {
+		t.Errorf("entity[0] = %#v, want the typed name as PERSON", pm.Entities[0])
+	}
+	if len(pm.Entities[0].Aliases) != 1 || pm.Entities[0].Aliases[0] != "Davide" {
+		t.Errorf("PERSON aliases = %v, want the typed name verbatim", pm.Entities[0].Aliases)
+	}
+	if pm.Entities[1].Name != "PmSync" || pm.Entities[2].Name != "Caraglio" {
+		t.Errorf("entities = %#v, want PmSync ORGANIZATION and Caraglio LOCATION", pm.Entities)
+	}
+
+	want := map[string]string{
+		"role": "founder", "works_for": "PmSync",
+		"located_in": "Caraglio", "timezone": "Europe/Rome",
+	}
+	for _, f := range pm.Facts {
+		if f.Subject != "Davide" {
+			t.Errorf("fact %q subject = %q, want the typed name byte-identical", f.Predicate, f.Subject)
+		}
+		if want[f.Predicate] != f.ObjectValue {
+			t.Errorf("fact %q = %q, want %q", f.Predicate, f.ObjectValue, want[f.Predicate])
+		}
+		delete(want, f.Predicate)
+	}
+	if len(want) != 0 {
+		t.Errorf("missing facts: %v", want)
+	}
+	if !hasPref(pm, catCommunicationStyle, "Preferred language: it") {
+		t.Errorf("preferences = %#v, want the language preference", pm.Preferences)
+	}
+}
+
+// TestMapProfileNamePreservedVerbatim pins the mapper's only normalization (surrounding
+// whitespace) and proves it never case-folds, transliterates or truncates — the "David"
+// for "Davide" defect must be unrepresentable on this path.
+func TestMapProfileNamePreservedVerbatim(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"Davide", "José-María", "Anne-Marie O'Brien", "李雷"} {
+		pm := MapProfile(Answers{Name: name, Role: "dev"})
+		if pm.Entities[0].Name != name {
+			t.Errorf("entity name = %q, want byte-identical %q", pm.Entities[0].Name, name)
+		}
+		if pm.Facts[0].Subject != name {
+			t.Errorf("fact subject = %q, want byte-identical %q", pm.Facts[0].Subject, name)
+		}
+	}
+}
+
+// TestMapProfileBooleanPreferencesOffArm covers onOff's `false` branch: a boolean the
+// operator explicitly turned OFF must still produce a preference (a nil pointer means
+// "unset" and produces none — the two are not the same).
+func TestMapProfileBooleanPreferencesOffArm(t *testing.T) {
+	t.Parallel()
+	off := false
+	pm := MapProfile(Answers{Name: "Davide", VoiceMode: &off, CanProactiveMessage: &off})
+	if !hasPref(pm, catSystem, "Voice mode: off") || !hasPref(pm, catSystem, "Proactive messaging: off") {
+		t.Fatalf("preferences = %#v, want both booleans recorded as off", pm.Preferences)
+	}
+
+	unset := MapProfile(Answers{Name: "Davide"})
+	if len(unset.Preferences) != 0 {
+		t.Errorf("nil booleans produced %#v, want no preference (unset != off)", unset.Preferences)
+	}
+}
+
 func hasPref(pm ProfileMemory, cat, pref string) bool {
 	for _, p := range pm.Preferences {
 		if p.Category == cat && p.Preference == pref {

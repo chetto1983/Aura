@@ -60,29 +60,3 @@ func (t *Telegram) onSearchCallback() tele.HandlerFunc {
 		return nil
 	}
 }
-
-func (t *Telegram) onProfileCallback(daemonCtx context.Context) tele.HandlerFunc {
-	return func(c tele.Context) error {
-		cb := c.Callback()
-		if cb == nil || cb.Message == nil || cb.Message.Chat == nil {
-			return nil
-		}
-		if !t.requireLinkedCallback(daemonCtx, c, cb) {
-			return nil
-		}
-		chatID := cb.Message.Chat.ID
-		out, handled := t.profileForDispatch().handleCallback(daemonCtx, chatID, cb.Data)
-		if !handled {
-			_ = c.Respond(&tele.CallbackResponse{Text: "Non disponibile"})
-			return nil
-		}
-		ack := out.ack
-		if ack == "" {
-			ack = "Ricevuto"
-		}
-		_ = c.Respond(&tele.CallbackResponse{Text: ack})
-		t.disarmCallbackKeyboard(c.Bot(), cb.Message)
-		t.replyProfile(c, out)
-		return nil
-	}
-}

@@ -10,7 +10,6 @@ func TestProvisionAbandonedLeavesNothing(t *testing.T) {
 	au, leg, tg := &fakeAuthula{}, &fakeAuraLeg{}, &fakeTelegram{}
 	svc := newOnboardingService(OnboardingDeps{
 		Capabilities: fakeCaps{grants: []string{"identity.create"}},
-		Extractor:    &countingExtractor{},
 		Profiles:     &recordingProfileWriter{},
 		Authula:      au, AuraLeg: leg, Telegram: tg, BotUsername: "AuraBot", Recovery: &fakeRecoveryStore{},
 	})

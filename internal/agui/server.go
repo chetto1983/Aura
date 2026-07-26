@@ -391,10 +391,13 @@ func (s *Server) Mux() http.Handler {
 	// their handlers; the parent-mux mount (RequireAuth on /api/me, RequireCapability(
 	// governance.write) on the admin routes) lives in cmd/aura/serve_webui_musr.go.
 	s.registerAuditRoutes(mux)
-	// ONBD-01/02 onboarding wizard routes (Phase 28 plan 28-05): POST /api/onboarding/start
-	// + /{token}/step + /{token}/provision + GET /{token}/telegram-status. Colocated with
-	// their handlers; the parent-mux mount (RequireCapability(identity.create) on start +
-	// provision, RequireAuth on step + telegram-status) lives in cmd/aura/serve_webui.go.
+	// ONBD-01/02 onboarding routes: POST /api/onboarding/start + /{token}/provision (the
+	// identity-provisioning saga) and GET /api/onboarding/status + POST /api/onboarding/
+	// profile + GET /{token}/telegram-status (self-scoped). Colocated with their handlers;
+	// the parent-mux mount lives in cmd/aura/serve_webui.go and gates ONLY start + provision
+	// with RequireCapability(identity.create) — status, the Amendment #95 seed-form submit
+	// and telegram-status carry NO capability gate and inherit RequireAuth from the whole-mux
+	// wrap, because each acts only on the caller's own identity.
 	s.registerOnboardingRoutes(mux)
 	// Authula password-reset routes: public credential-recovery JSON endpoints. These
 	// handlers intentionally do not read a principal; Authula/session auth happens after

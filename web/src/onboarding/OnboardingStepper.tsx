@@ -7,19 +7,12 @@ import { stepState, type Phase } from './onboardingWizardModel';
 // className). Color is never the only encoding: the active step carries an accent dot AND a
 // data-state="active" / aria-current="step"; the mobile indicator is text.
 
-const STEP_KEYS: readonly Phase[] = [
-  'credentials',
-  'capabilities',
-  'interview',
-  'review',
-  'complete',
-];
+const STEP_KEYS: readonly Phase[] = ['credentials', 'capabilities', 'review', 'complete'];
 
 // The 'complete' phase's stepper label is the Telegram step (the final post-create surface).
 const STEP_LABEL_KEY: Record<Phase, string> = {
   credentials: 'onboarding.steps.credentials',
   capabilities: 'onboarding.steps.capabilities',
-  interview: 'onboarding.steps.interview',
   review: 'onboarding.steps.review',
   complete: 'onboarding.steps.telegram',
 };

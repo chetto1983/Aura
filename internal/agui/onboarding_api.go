@@ -9,22 +9,22 @@ import (
 )
 
 // onboarding_api.go is the thin REST adapter over the server-held OnboardingService
-// (ONBD-01/02). Four routes under the /api/ carve-out:
+// (ONBD-01/02). Five routes under the /api/ carve-out:
 //
-//   POST /api/onboarding/start                         (RequireCapability identity.create)
-//   POST /api/onboarding/{sessionToken}/step           (RequireAuth — session authz'd at start)
-//   POST /api/onboarding/{sessionToken}/provision      (RequireCapability identity.create)
+//   GET  /api/onboarding/status                         (RequireAuth)
+//   POST /api/onboarding/profile                        (RequireAuth — the seed form)
+//   POST /api/onboarding/start                          (RequireCapability identity.create)
+//   POST /api/onboarding/{sessionToken}/provision       (RequireCapability identity.create)
 //   GET  /api/onboarding/{sessionToken}/telegram-status (RequireAuth)
 //
 // The parent-mux mount (the capability gate on start+provision, the whole-origin
-// RequireAuth on all four) lives in cmd/aura/serve_webui.go. There is NO business logic
-// here: every handler size-caps the body (MaxBytesReader), decodes→400, validates the
-// intent enum / field lengths→sanitized-400, reads the authenticated principal as the
-// creating operator, then makes ONE service call. The one-LLM-extraction-per-step
-// guarantee, the cross-store saga + compensation, the no-escalation re-validation, the QR
-// render, and the no-secret-leak logging all live in the service (onboarding_service.go /
-// onboarding_provision.go), mirroring graph_api.go's "handler parses, the seam does the
-// work" split.
+// RequireAuth on all five) lives in cmd/aura/serve_webui.go. There is NO business logic
+// here: every handler size-caps the body (MaxBytesReader), decodes→400, validates field
+// lengths→sanitized-400, reads the authenticated principal as the creating operator, then
+// makes ONE service call. The cross-store saga + compensation, the no-escalation
+// re-validation, the QR render, and the no-secret-leak logging all live in the service
+// (onboarding_session.go / onboarding_provision.go), mirroring graph_api.go's "handler
+// parses, the seam does the work" split.
 
 // onboarding* body/field caps bound the untrusted wizard input before it reaches the
 // service (V5 length-cap). Email/password/capability-name lengths are generous but finite
@@ -32,83 +32,60 @@ import (
 // grammar is re-checked at the identity store (GrantCapability), so these are defense-in-
 // depth, not the sole control.
 const (
-	onboardingTextMaxLen             = 8192
 	onboardingEmailMaxLen            = 320 // RFC 5321 max email length
 	onboardingPasswordMaxLen         = 1024
 	onboardingSecurityQuestionMaxLen = 256
 	onboardingSecurityAnswerMaxLen   = 512
 	onboardingCapNameMaxLen          = 64 // identity.capNameRe upper bound
 	onboardingMaxCaps                = 64
+	onboardingSeedFieldMaxLen        = 256
+	onboardingLangMaxLen             = 32
+	onboardingTimezoneMaxLen         = 64
 )
 
-// validOnboardingIntents is the closed step-intent set the wizard drives. Anything else
-// is a clean 400 (never reaches the session state machine).
-var validOnboardingIntents = map[string]bool{
-	"answer":  true,
-	"confirm": true,
-	"edit":    true,
-	"skip":    true,
-}
-
-// OnboardingStart is the POST /start response: the opaque session token, the first step +
-// its prompt content + status, and the D-06 capability picker options (the creator's
-// grants with '*' excluded).
+// OnboardingStart is the POST /start response: the opaque session token and the D-06
+// capability picker options (the creator's grants with '*' excluded).
 type OnboardingStart struct {
 	SessionToken      string   `json:"sessionToken"`
-	Step              string   `json:"step"`
-	Content           string   `json:"content"`
-	Status            string   `json:"status"`
 	CapabilityOptions []string `json:"capabilityOptions"`
 }
 
-// OnboardingStepRequest is the POST /{token}/step body: an intent plus optional free text
-// (for an answer) and optional structured answer overrides (for an edit).
-type OnboardingStepRequest struct {
-	Intent  string             `json:"intent"`
-	Text    string             `json:"text,omitempty"`
-	Answers *OnboardingAnswers `json:"answers,omitempty"`
+// OnboardingSeed is the typed first-run profile form (Amendment #95). It is ONE wire type
+// serving both flows — the self-service POST /api/onboarding/profile body and the
+// `seed` object provisioning carries for the identity it creates — so there is one
+// validator and one mapper. Every field is optional; an entirely blank seed is a skip.
+type OnboardingSeed struct {
+	Name     string `json:"name,omitempty"`
+	Lang     string `json:"lang,omitempty"`
+	Location string `json:"location,omitempty"`
+	Timezone string `json:"timezone,omitempty"`
+	Role     string `json:"role,omitempty"`
+	Company  string `json:"company,omitempty"`
 }
 
-// OnboardingAnswers is the structured edit/correction payload (an edit restates facts).
-// It mirrors the subset of onboarding.Answers a wizard form edits; empty fields are
-// ignored by the session's replace semantics.
-type OnboardingAnswers struct {
-	Name           string   `json:"name,omitempty"`
-	Role           string   `json:"role,omitempty"`
-	Company        string   `json:"company,omitempty"`
-	Location       string   `json:"location,omitempty"`
-	Lang           string   `json:"lang,omitempty"`
-	Timezone       string   `json:"timezone,omitempty"`
-	TonePreference string   `json:"tonePreference,omitempty"`
-	ResponseLength string   `json:"responseLength,omitempty"`
-	Expertise      []string `json:"expertise,omitempty"`
-	Stack          []string `json:"stack,omitempty"`
-	Projects       []string `json:"projects,omitempty"`
-	Goals          []string `json:"goals,omitempty"`
-	Interests      []string `json:"interests,omitempty"`
-	People         []string `json:"people,omitempty"`
-}
-
-// OnboardingStepResponse is the per-step contract (D-03 / RESEARCH §Hard Problem 4):
-// {content, step, status, draft?, preferences?}.
-type OnboardingStepResponse struct {
-	Content     string `json:"content"`
-	Step        string `json:"step"`
-	Status      string `json:"status"`
-	Draft       string `json:"draft,omitempty"`
-	Preferences string `json:"preferences,omitempty"`
+// blank reports whether every field is empty after trimming — the derived skip signal
+// (there is no `skip` boolean, so "skip" and "a filled name" cannot both be encoded).
+func (s OnboardingSeed) blank() bool {
+	return strings.TrimSpace(s.Name) == "" &&
+		strings.TrimSpace(s.Lang) == "" &&
+		strings.TrimSpace(s.Location) == "" &&
+		strings.TrimSpace(s.Timezone) == "" &&
+		strings.TrimSpace(s.Role) == "" &&
+		strings.TrimSpace(s.Company) == ""
 }
 
 // OnboardingProvisionRequest is the POST /{token}/provision body: the new login email +
 // the write-only initial password, the requested capability set (re-validated server-side
-// as a subset of the creator's grants with no '*'), and whether to mint a Telegram link.
+// as a subset of the creator's grants with no '*'), whether to mint a Telegram link, and
+// the optional profile seed written into the NEW identity's graph.
 type OnboardingProvisionRequest struct {
-	Email            string   `json:"email"`
-	Password         string   `json:"password"`
-	SecurityQuestion string   `json:"securityQuestion"`
-	SecurityAnswer   string   `json:"securityAnswer"`
-	Capabilities     []string `json:"capabilities"`
-	LinkTelegram     bool     `json:"linkTelegram"`
+	Email            string         `json:"email"`
+	Password         string         `json:"password"`
+	SecurityQuestion string         `json:"securityQuestion"`
+	SecurityAnswer   string         `json:"securityAnswer"`
+	Capabilities     []string       `json:"capabilities"`
+	LinkTelegram     bool           `json:"linkTelegram"`
+	Seed             OnboardingSeed `json:"seed"`
 }
 
 // OnboardingProvisionResponse is the saga success result: the new identity id, and (when
@@ -143,13 +120,15 @@ type OnboardingStatus struct {
 	Skipped   bool `json:"skipped"`
 }
 
-// OnboardingProfileComplete is returned after the profile-only onboarding flow
-// is completed or skipped.
+// OnboardingProfileComplete is returned after the seed form is submitted or skipped.
+// SessionToken is the freshly-minted Telegram poll session the completion screen feeds to
+// GET /api/onboarding/{sessionToken}/telegram-status, so no pre-mint round-trip is needed.
 type OnboardingProfileComplete struct {
-	Completed bool   `json:"completed"`
-	Skipped   bool   `json:"skipped"`
-	DeepLink  string `json:"deepLink,omitempty"`
-	QRSVG     string `json:"qrSvg,omitempty"`
+	Completed    bool   `json:"completed"`
+	Skipped      bool   `json:"skipped"`
+	SessionToken string `json:"sessionToken,omitempty"`
+	DeepLink     string `json:"deepLink,omitempty"`
+	QRSVG        string `json:"qrSvg,omitempty"`
 }
 
 // OnboardingStatusSource exposes persisted onboarding completion state to the
@@ -164,16 +143,14 @@ func (s *Server) SetOnboardingStatusSource(source OnboardingStatusSource) {
 	s.onboardingStatus = source
 }
 
-// registerOnboardingRoutes mounts the four onboarding routes on the supplied mux using Go
+// registerOnboardingRoutes mounts the five onboarding routes on the supplied mux using Go
 // 1.22 method-pattern routing — SPECIFIC method+path siblings under the /api/ carve-out,
 // never a bare /api/ (which would shadow /api/integrations/). The parent-mux mount (the
 // capability gate on start+provision) lives in cmd/aura/serve_webui.go.
 func (s *Server) registerOnboardingRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/onboarding/status", s.handleOnboardingStatus)
-	mux.HandleFunc("POST /api/onboarding/profile/start", s.handleProfileOnboardingStart)
+	mux.HandleFunc("POST /api/onboarding/profile", s.handleProfileSubmit)
 	mux.HandleFunc("POST /api/onboarding/start", s.handleOnboardingStart)
-	mux.HandleFunc("POST /api/onboarding/{sessionToken}/step", s.handleOnboardingStep)
-	mux.HandleFunc("POST /api/onboarding/{sessionToken}/profile", s.handleProfileOnboardingComplete)
 	mux.HandleFunc("POST /api/onboarding/{sessionToken}/provision", s.handleOnboardingProvision)
 	mux.HandleFunc("GET /api/onboarding/{sessionToken}/telegram-status", s.handleTelegramStatus)
 }
@@ -196,22 +173,13 @@ func (s *Server) handleOnboardingStatus(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, status)
 }
 
-func (s *Server) handleProfileOnboardingStart(w http.ResponseWriter, r *http.Request) {
-	if s.onboarding == nil {
-		http.Error(w, "onboarding service not configured", http.StatusServiceUnavailable)
-		return
-	}
-	requester, ok := principalIdentityID(r)
-	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	start, err := s.onboarding.StartProfileSession(r.Context(), requester)
-	if err != nil {
-		s.writeOnboardingError(w, err)
-		return
-	}
-	writeJSON(w, start)
+// handleProfileSubmit serves POST /api/onboarding/profile (Amendment #95): the whole seed
+// form arrives in ONE stateless body — there is no session token, no accumulated state and
+// no LLM call. An entirely blank seed is a skip (derived in the service, never a flag).
+func (s *Server) handleProfileSubmit(w http.ResponseWriter, r *http.Request) {
+	handleOnboardingMutation(s, w, r, validateOnboardingSeed, func(ctx context.Context, requester, _ string, req OnboardingSeed) (OnboardingProfileComplete, error) {
+		return s.onboarding.SubmitProfile(ctx, requester, req)
+	})
 }
 
 // handleOnboardingStart serves POST /api/onboarding/start (ONBD-01a / D-06): it reads the
@@ -237,18 +205,6 @@ func (s *Server) handleOnboardingStart(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, start)
 }
 
-// handleOnboardingStep serves POST /api/onboarding/{sessionToken}/step (ONBD-02 / D-03):
-// it size-caps + decodes the body, validates the intent enum + field lengths, then makes
-// one service Step call. The service loads the session by token (a missing/expired token
-// is a sanitized 404), runs the LLM extractor exactly once on a free-text answer, applies
-// the intent, and projects {content, step, status, draft?, preferences?}. A terminal
-// session is a clean terminal status, NOT a 500.
-func (s *Server) handleOnboardingStep(w http.ResponseWriter, r *http.Request) {
-	handleOnboardingMutation(s, w, r, validateOnboardingStep, func(ctx context.Context, requester, token string, req OnboardingStepRequest) (OnboardingStepResponse, error) {
-		return s.onboarding.Step(ctx, requester, token, req)
-	})
-}
-
 // handleOnboardingProvision serves POST /api/onboarding/{sessionToken}/provision
 // (ONBD-01a/01b): it size-caps + decodes the body, validates email/password/capability
 // lengths, then runs the cross-store saga via one service Provision call. The capability
@@ -258,12 +214,6 @@ func (s *Server) handleOnboardingStep(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleOnboardingProvision(w http.ResponseWriter, r *http.Request) {
 	handleOnboardingMutation(s, w, r, validateOnboardingProvision, func(ctx context.Context, requester, token string, req OnboardingProvisionRequest) (OnboardingProvisionResponse, error) {
 		return s.onboarding.Provision(ctx, requester, token, req)
-	})
-}
-
-func (s *Server) handleProfileOnboardingComplete(w http.ResponseWriter, r *http.Request) {
-	handleOnboardingSessionRequest(s, w, r, func(ctx context.Context, requester, token string) (OnboardingProfileComplete, error) {
-		return s.onboarding.CompleteProfile(ctx, requester, token)
 	})
 }
 
@@ -344,15 +294,30 @@ func handleOnboardingSessionRequest[Resp any](
 	writeJSON(w, resp)
 }
 
-// validateOnboardingStep enforces the step body contract before it reaches the service: a
-// known intent and bounded text/answer fields. It returns a sanitized error so a 400 body
-// leaks nothing.
-func validateOnboardingStep(req OnboardingStepRequest) error {
-	if !validOnboardingIntents[req.Intent] {
-		return errors.New("onboarding: unknown intent")
+// validateOnboardingSeed bounds every seed field before it reaches the mapper, and enforces
+// the ONE conditional requirement: a seed that says anything must say WHO. MapProfile keys
+// every fact off the name and falls back to the placeholder subject "operator" when it is
+// empty, so a nameless-but-filled seed would write `operator works_for PmSync` with no
+// PERSON entity for it to resolve against — the orphan/duplicate shape Amendment #95 exists
+// to end. An entirely blank seed stays legitimate: it is the skip.
+func validateOnboardingSeed(seed OnboardingSeed) error {
+	for _, f := range []struct {
+		value string
+		max   int
+	}{
+		{seed.Name, onboardingSeedFieldMaxLen},
+		{seed.Role, onboardingSeedFieldMaxLen},
+		{seed.Company, onboardingSeedFieldMaxLen},
+		{seed.Location, onboardingSeedFieldMaxLen},
+		{seed.Lang, onboardingLangMaxLen},
+		{seed.Timezone, onboardingTimezoneMaxLen},
+	} {
+		if len(f.value) > f.max {
+			return errors.New("onboarding: profile field too long")
+		}
 	}
-	if len(req.Text) > onboardingTextMaxLen {
-		return errors.New("onboarding: text too long")
+	if !seed.blank() && strings.TrimSpace(seed.Name) == "" {
+		return errors.New("onboarding: a name is required once any other profile field is filled")
 	}
 	return nil
 }
@@ -385,7 +350,7 @@ func validateOnboardingProvision(req OnboardingProvisionRequest) error {
 			return errors.New("onboarding: capability name too long")
 		}
 	}
-	return nil
+	return validateOnboardingSeed(req.Seed)
 }
 
 // writeOnboardingError maps a service error onto the right HTTP status with a sanitized

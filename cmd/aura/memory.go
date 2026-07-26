@@ -340,21 +340,29 @@ func callMemoryTool(ctx context.Context, tool string, args map[string]any, out i
 	return writeln(out, text)
 }
 
-// callMemoryToolText is the text-returning core of callMemoryTool (shared with the
-// runner's L4 archival-recall seam, serve_adapters.go). It resolves the managed memory
-// sidecar, opens it over streamable-HTTP, and calls the RAW tool name, returning the
-// tool's text result. A 20s timeout fails fast on a dead sidecar (T-15-03-03).
-func callMemoryToolText(ctx context.Context, tool string, args map[string]any) (string, error) {
+// openMemoryMCP resolves the managed memory sidecar and opens ONE connection to it. The
+// returned Transport carries its MCP session across every CallTool until Close, so a
+// caller with several writes to make (the onboarding seed) handshakes once instead of
+// once per write (Amendment #95). The caller owns the Close.
+func openMemoryMCP(ctx context.Context) (mcp.Transport, error) {
 	server, ok, err := effectiveManagedMCPServer(memoryServerName)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if !ok {
-		return "", fmt.Errorf("memory MCP server is not configured or is disabled; the managed %q recipe must be mounted", memoryServerName)
+		return nil, fmt.Errorf("memory MCP server is not configured or is disabled; the managed %q recipe must be mounted", memoryServerName)
 	}
+	return mcp.OpenServer(ctx, memoryServerName, server)
+}
+
+// callMemoryToolText is the text-returning core of callMemoryTool (shared with the
+// runner's L4 archival-recall seam, serve_adapters.go). It opens the managed memory
+// sidecar for ONE call of the RAW tool name and returns the tool's text result. A 20s
+// timeout fails fast on a dead sidecar (T-15-03-03).
+func callMemoryToolText(ctx context.Context, tool string, args map[string]any) (string, error) {
 	callCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	cli, err := mcp.OpenServer(callCtx, memoryServerName, server)
+	cli, err := openMemoryMCP(callCtx)
 	if err != nil {
 		return "", err
 	}

@@ -3,25 +3,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '../../i18n/i18n'; // side-effect: initialise i18next so t() resolves keys
-import type {
-  OnboardingProvisionResponse,
-  OnboardingStart,
-  OnboardingStepResponse,
-} from '../onboardingApi';
+import type { OnboardingProvisionResponse, OnboardingStart } from '../onboardingApi';
 
 // OnboardingWizard test — the full-screen wizard shell + data layer. onboardingApi is mocked so the
-// suite can drive the linear flow (credentials → capabilities → interview → review → complete), the
-// start loading/error/error-auth contract, and the no-leak password invariant (the entered
-// password value is never re-rendered as visible text anywhere in the wizard, T-28-06-01).
+// suite can drive the linear flow (credentials + seed → capabilities → review → complete), the
+// start loading/error/error-auth contract, the no-leak password invariant (the entered password
+// value is never re-rendered as visible text anywhere, T-28-06-01), and Amendment #95's
+// requirement that the typed seed reaches /provision byte-identical.
 
 const startOnboarding = vi.fn();
-const stepOnboarding = vi.fn();
 const provisionOnboarding = vi.fn();
 const fetchTelegramStatus = vi.fn();
 
 vi.mock('../onboardingApi', () => ({
   startOnboarding: (...a: unknown[]) => startOnboarding(...a) as Promise<OnboardingStart>,
-  stepOnboarding: (...a: unknown[]) => stepOnboarding(...a) as Promise<OnboardingStepResponse>,
   provisionOnboarding: (...a: unknown[]) =>
     provisionOnboarding(...a) as Promise<OnboardingProvisionResponse>,
   fetchTelegramStatus: (...a: unknown[]) =>
@@ -32,12 +27,11 @@ const { default: OnboardingWizard } = await import('../OnboardingWizard');
 
 const SESSION_TOKEN = 'sess-abc123';
 const PASSWORD = 'Sup3r-Secret-PW-987';
+// A non-ASCII name proves the wire value is the typed value, not a normalised one.
+const OPERATOR_NAME = 'José-María';
 
 const START: OnboardingStart = {
   sessionToken: SESSION_TOKEN,
-  step: 'identity',
-  content: 'What should Aura call you?',
-  status: 'active',
   capabilityOptions: ['skills.read', 'scheduler.read'],
 };
 
@@ -53,7 +47,7 @@ function renderWizard(onClose = vi.fn()) {
   });
 }
 
-async function fillCredentialsAndAdvance() {
+async function fillCredentials() {
   await waitFor(() => {
     expect(screen.getByText('New operator credentials')).toBeTruthy();
   });
@@ -68,14 +62,32 @@ async function fillCredentialsAndAdvance() {
     target: { value: 'First school?' },
   });
   fireEvent.change(screen.getByLabelText('Security answer'), { target: { value: 'blue' } });
-  // The Continue CTA (the credentials-phase WizardNav next button).
+}
+
+function fillSeed() {
+  fireEvent.change(screen.getByLabelText('Name'), { target: { value: OPERATOR_NAME } });
+  fireEvent.change(screen.getByLabelText('Language'), { target: { value: 'it' } });
+  fireEvent.change(screen.getByLabelText('Where you are'), { target: { value: 'Caraglio' } });
+  fireEvent.change(screen.getByLabelText('Time zone'), { target: { value: 'Europe/Rome' } });
+  fireEvent.change(screen.getByLabelText('What you do'), { target: { value: 'founder' } });
+  fireEvent.change(screen.getByLabelText('Organisation'), { target: { value: 'PmSync' } });
+}
+
+async function advanceToReview() {
+  await fillCredentials();
   fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+  await waitFor(() => {
+    expect(screen.getByText('Capabilities for the new identity')).toBeTruthy();
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+  await waitFor(() => {
+    expect(screen.getByText('Review and create')).toBeTruthy();
+  });
 }
 
 describe('OnboardingWizard', () => {
   beforeEach(() => {
     startOnboarding.mockReset();
-    stepOnboarding.mockReset();
     provisionOnboarding.mockReset();
     fetchTelegramStatus.mockReset();
     fetchTelegramStatus.mockResolvedValue({ linked: false });
@@ -129,16 +141,8 @@ describe('OnboardingWizard', () => {
     expect(startOnboarding).toHaveBeenCalledTimes(2);
   });
 
-  it('drives the full flow to the Identity-created completion and never re-renders the password', async () => {
+  it('carries the typed seed into /provision byte-identical and completes without an interview', async () => {
     startOnboarding.mockResolvedValue(START);
-    // The interview: one answer advances to a terminal draft-confirmed flow. To keep the test
-    // focused on the shell, the first answer returns a terminal completed status.
-    stepOnboarding.mockResolvedValue({
-      content: 'Profile confirmed.',
-      step: 'draft',
-      status: 'completed',
-      draft: '# Agent.md',
-    });
     provisionOnboarding.mockResolvedValue({
       identityId: 'id-1',
       deepLink: 'https://t.me/AuraBot?start=onb-xyz',
@@ -147,20 +151,16 @@ describe('OnboardingWizard', () => {
 
     const { container } = renderWizard();
 
-    await fillCredentialsAndAdvance();
+    await fillCredentials();
+    fillSeed();
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
-    // Capabilities phase.
+    // Capabilities phase — the interview phase no longer exists between it and review.
     await waitFor(() => {
       expect(screen.getByText('Capabilities for the new identity')).toBeTruthy();
     });
+    expect(screen.queryByLabelText('Your answer')).toBeNull();
     fireEvent.click(screen.getByRole('checkbox', { name: /skills.read/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-
-    // Interview phase — answer once → the mock returns a terminal status → advance to review.
-    await waitFor(() => {
-      expect(screen.getByLabelText('Your answer')).toBeTruthy();
-    });
-    fireEvent.change(screen.getByLabelText('Your answer'), { target: { value: 'Call me Dav' } });
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
     // Review phase.
@@ -168,40 +168,79 @@ describe('OnboardingWizard', () => {
       expect(screen.getByText('Review and create')).toBeTruthy();
     });
     expect(screen.getByText('new@example.com')).toBeTruthy();
-    // The chosen capability is shown.
     expect(screen.getAllByText('skills.read').length).toBeGreaterThan(0);
 
     // The entered password value must NEVER appear as visible text anywhere (no-leak).
     expect(container.textContent).not.toContain(PASSWORD);
 
-    // Create → /provision → completion.
     fireEvent.click(screen.getByRole('button', { name: 'Create identity' }));
     await waitFor(() => {
       expect(screen.getByText('Identity created')).toBeTruthy();
     });
-    // The provision result's deep-link + QR flow into the Telegram step (optional-chaining wired).
     const link = await screen.findByRole('link', { name: 'Open in Telegram' });
     expect(link.getAttribute('href')).toBe('https://t.me/AuraBot?start=onb-xyz');
     expect(screen.getByRole('img', { name: 'QR code to link Telegram' })).toBeTruthy();
-    expect(provisionOnboarding).toHaveBeenCalledWith(
-      SESSION_TOKEN,
-      expect.objectContaining({
-        email: 'new@example.com',
-        password: PASSWORD,
-        securityQuestion: 'First school?',
-        securityAnswer: 'blue',
-        capabilities: ['skills.read'],
-        linkTelegram: true,
-      }),
-    );
-    // Still no password in the DOM at completion.
+
+    expect(provisionOnboarding).toHaveBeenCalledWith(SESSION_TOKEN, {
+      email: 'new@example.com',
+      password: PASSWORD,
+      securityQuestion: 'First school?',
+      securityAnswer: 'blue',
+      capabilities: ['skills.read'],
+      linkTelegram: true,
+      seed: {
+        name: OPERATOR_NAME,
+        lang: 'it',
+        location: 'Caraglio',
+        timezone: 'Europe/Rome',
+        role: 'founder',
+        company: 'PmSync',
+      },
+    });
     expect(container.textContent).not.toContain(PASSWORD);
   });
 
-  it('navigates back from capabilities to credentials (Back)', async () => {
+  it('provisions with an EMPTY seed when the optional fields are left blank', async () => {
+    startOnboarding.mockResolvedValue(START);
+    provisionOnboarding.mockResolvedValue({ identityId: 'id-1' });
+
+    renderWizard();
+    await advanceToReview();
+    fireEvent.click(screen.getByRole('button', { name: 'Create identity' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Identity created')).toBeTruthy();
+    });
+    expect(provisionOnboarding).toHaveBeenCalledWith(
+      SESSION_TOKEN,
+      expect.objectContaining({ seed: {} }),
+    );
+    // No link was minted → the no-link note, not a broken CTA.
+    expect(screen.getByText('No Telegram link was generated for this identity.')).toBeTruthy();
+  });
+
+  it('blocks Continue while a seed field exceeds its server cap, and shows the inline error', async () => {
     startOnboarding.mockResolvedValue(START);
     renderWizard();
-    await fillCredentialsAndAdvance();
+    await fillCredentials();
+
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'x'.repeat(257) } });
+    expect(screen.getByLabelText('Name').getAttribute('aria-invalid')).toBe('true');
+    expect(screen.getByRole('alert').textContent).toContain('too long');
+    expect(screen.getByRole('button', { name: 'Continue' }).hasAttribute('disabled')).toBe(true);
+
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Davide' } });
+    // aria-invalid is OMITTED when valid, never rendered as "false".
+    expect(screen.getByLabelText('Name').hasAttribute('aria-invalid')).toBe(false);
+    expect(screen.getByRole('button', { name: 'Continue' }).hasAttribute('disabled')).toBe(false);
+  });
+
+  it('navigates back from capabilities to credentials (Back) and keeps the seed', async () => {
+    startOnboarding.mockResolvedValue(START);
+    renderWizard();
+    await fillCredentials();
+    fillSeed();
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     await waitFor(() => {
       expect(screen.getByText('Capabilities for the new identity')).toBeTruthy();
     });
@@ -209,63 +248,11 @@ describe('OnboardingWizard', () => {
     await waitFor(() => {
       expect(screen.getByText('New operator credentials')).toBeTruthy();
     });
-  });
-
-  it('drives confirm then edit through the wizard (intent confirm/edit) before terminal', async () => {
-    startOnboarding.mockResolvedValue(START);
-    // 1st answer → draft (active draft); confirm → completed terminal.
-    stepOnboarding
-      .mockResolvedValueOnce({
-        content: 'Draft ready.',
-        step: 'draft',
-        status: 'draft',
-        draft: '# Agent.md\n\nName: Dav',
-      })
-      .mockResolvedValueOnce({
-        content: 'Draft updated.',
-        step: 'draft',
-        status: 'draft',
-        draft: '# Agent.md\n\nName: Davide',
-      })
-      .mockResolvedValueOnce({ content: 'done', step: 'draft', status: 'completed' });
-    provisionOnboarding.mockResolvedValue({ identityId: 'id-1' });
-
-    renderWizard();
-    await fillCredentialsAndAdvance();
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' })); // caps → interview
-
-    await waitFor(() => {
-      expect(screen.getByLabelText('Your answer')).toBeTruthy();
-    });
-    fireEvent.change(screen.getByLabelText('Your answer'), { target: { value: 'Dav' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' })); // answer → draft
-
-    // Draft mode: edit the draft (intent edit → re-renders).
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Edit answer' })).toBeTruthy();
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Edit answer' }));
-    fireEvent.change(screen.getByLabelText('Preferred name'), { target: { value: 'Davide' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
-    await waitFor(() => {
-      expect(screen.getByText(/Name: Davide/)).toBeTruthy();
-    });
-    expect(stepOnboarding).toHaveBeenCalledWith(SESSION_TOKEN, {
-      intent: 'edit',
-      answers: { name: 'Davide' },
-    });
-
-    // Confirm → terminal → review.
-    fireEvent.click(screen.getByRole('button', { name: 'Looks right — continue' }));
-    await waitFor(() => {
-      expect(screen.getByText('Review and create')).toBeTruthy();
-    });
-    expect(stepOnboarding).toHaveBeenCalledWith(SESSION_TOKEN, { intent: 'confirm' });
+    expect(screen.getByLabelText<HTMLInputElement>('Name').value).toBe(OPERATOR_NAME);
   });
 
   it('always provisions with Telegram enabled because recovery depends on it', async () => {
     startOnboarding.mockResolvedValue(START);
-    stepOnboarding.mockResolvedValue({ content: 'done', step: 'draft', status: 'skipped' });
     provisionOnboarding.mockResolvedValue({
       identityId: 'id-1',
       deepLink: 'https://t.me/AuraBot?start=onb-xyz',
@@ -273,16 +260,7 @@ describe('OnboardingWizard', () => {
     });
 
     renderWizard();
-    await fillCredentialsAndAdvance();
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' })); // caps → interview
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Skip this step' })).toBeTruthy();
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Skip this step' }));
-
-    await waitFor(() => {
-      expect(screen.getByText('Review and create')).toBeTruthy();
-    });
+    await advanceToReview();
     expect(screen.getByText('Required for password reset')).toBeTruthy();
     expect(screen.queryByRole('checkbox')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Create identity' }));
@@ -293,11 +271,7 @@ describe('OnboardingWizard', () => {
     expect(await screen.findByRole('link', { name: 'Open in Telegram' })).toBeTruthy();
     expect(provisionOnboarding).toHaveBeenCalledWith(
       SESSION_TOKEN,
-      expect.objectContaining({
-        securityQuestion: 'First school?',
-        securityAnswer: 'blue',
-        linkTelegram: true,
-      }),
+      expect.objectContaining({ linkTelegram: true, seed: {} }),
     );
   });
 
@@ -314,29 +288,25 @@ describe('OnboardingWizard', () => {
 
   it('maps a 403 from /provision to the no-permission copy (constructive CTA, distinct error)', async () => {
     startOnboarding.mockResolvedValue(START);
-    stepOnboarding.mockResolvedValue({
-      content: 'done',
-      step: 'draft',
-      status: 'skipped',
-    });
     provisionOnboarding.mockRejectedValue(new Error('HTTP 403'));
 
     renderWizard();
-    await fillCredentialsAndAdvance();
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' })); // skip caps → interview
-
-    await waitFor(() => {
-      expect(screen.getByLabelText('Your answer')).toBeTruthy();
-    });
-    // Skip the interview → terminal → review.
-    fireEvent.click(screen.getByRole('button', { name: 'Skip this step' }));
-    await waitFor(() => {
-      expect(screen.getByText('Review and create')).toBeTruthy();
-    });
-
+    await advanceToReview();
     fireEvent.click(screen.getByRole('button', { name: 'Create identity' }));
     await waitFor(() => {
       expect(screen.getByText("You don't have permission to create an identity.")).toBeTruthy();
+    });
+  });
+
+  it('routes a 401 from /provision to the auth-expired state', async () => {
+    startOnboarding.mockResolvedValue(START);
+    provisionOnboarding.mockRejectedValue(new Error('HTTP 401'));
+
+    renderWizard();
+    await advanceToReview();
+    fireEvent.click(screen.getByRole('button', { name: 'Create identity' }));
+    await waitFor(() => {
+      expect(screen.getByText('Your session expired. Sign in again to continue.')).toBeTruthy();
     });
   });
 });

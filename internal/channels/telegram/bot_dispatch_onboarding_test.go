@@ -10,7 +10,6 @@ import (
 	tele "gopkg.in/telebot.v4"
 
 	"github.com/chetto1983/aura/internal/askuser"
-	profileflow "github.com/chetto1983/aura/internal/onboarding"
 )
 
 // TestOnTextStartPayloadRoutesToOnboarding proves a Telegram deep link
@@ -89,7 +88,11 @@ func TestOnTextStartPayloadActivatesSenderThenAllowsChat(t *testing.T) {
 	}
 }
 
-func TestOnTextFirstLinkedNoProfileStartsProfileOnboardingNoTurn(t *testing.T) {
+// TestOnTextSeedNudgeIsAdditiveNotInsteadOfTheTurn is the behaviour Amendment #95 changes:
+// the interview used to SWALLOW the operator's first message to ask its first question.
+// The nudge must be sent alongside the turn, never instead of it — a pointer that eats the
+// message it interrupts is hostile.
+func TestOnTextSeedNudgeIsAdditiveNotInsteadOfTheTurn(t *testing.T) {
 	t.Parallel()
 	rt := &recordingTurn{}
 	tg := dispatchChannel(t, rt, func(d *Deps) {
@@ -107,51 +110,53 @@ func TestOnTextFirstLinkedNoProfileStartsProfileOnboardingNoTurn(t *testing.T) {
 	if err := handle(msgContext(bot, msg)); err != nil {
 		t.Fatalf("onText(first linked message): %v", err)
 	}
+	tg.wg.Wait()
 
-	if calls, _ := rt.snapshot(); calls != 0 {
-		t.Fatalf("first profile onboarding message must not drive a turn, got %d calls", calls)
+	calls, msgs := rt.snapshot()
+	if calls != 1 || len(msgs) != 1 || msgs[0] != "ciao Aura" {
+		t.Fatalf("nudged turn = %d calls %v, want the operator's message still run", calls, msgs)
 	}
 	texts := bot.sentTexts()
-	if len(texts) != 1 || !strings.Contains(texts[0], "chiami") {
-		t.Fatalf("first profile onboarding reply = %v, want identity question", texts)
+	if len(texts) == 0 || !strings.Contains(texts[0], "Impostazioni") {
+		t.Fatalf("first reply = %v, want the seed-form nudge", texts)
 	}
 }
 
-func TestOnTextActiveProfileReplyDoesNotDriveTurn(t *testing.T) {
+// TestOnTextSeedNudgeSilentForAnOnboardedIdentity proves the common path costs nothing: an
+// operator who already submitted (or skipped) the cockpit form sees only their turn.
+func TestOnTextSeedNudgeSilentForAnOnboardedIdentity(t *testing.T) {
 	t.Parallel()
 	rt := &recordingTurn{}
+	store := newFakeMemoryStore()
+	store.markCompleted(profileAccount().IdentityID)
 	tg := dispatchChannel(t, rt, func(d *Deps) {
 		d.Cost = &fakeCost{}
 		d.Search = &fakeSearch{}
-		d.Profile = newFakeMemoryStore()
+		d.Profile = store
 		d.profileAccounts = profileAccountFake{acct: profileAccount()}
 	})
 
 	bot := &dispatchBot{}
-	handle := tg.onText(context.Background())
-	first := chatMsg(42)
-	first.Sender = &tele.User{ID: 555}
-	first.Text = "ciao Aura"
-	if err := handle(msgContext(bot, first)); err != nil {
-		t.Fatalf("onText(first): %v", err)
+	msg := chatMsg(42)
+	msg.Sender = &tele.User{ID: 555}
+	msg.Text = "ciao Aura"
+	if err := tg.onText(context.Background())(msgContext(bot, msg)); err != nil {
+		t.Fatalf("onText: %v", err)
 	}
-	answer := chatMsg(42)
-	answer.Sender = &tele.User{ID: 555}
-	answer.Text = "Davide"
-	if err := handle(msgContext(bot, answer)); err != nil {
-		t.Fatalf("onText(profile answer): %v", err)
-	}
+	tg.wg.Wait()
 
-	if calls, _ := rt.snapshot(); calls != 0 {
-		t.Fatalf("active profile onboarding reply must not drive a turn, got %d calls", calls)
+	if calls, _ := rt.snapshot(); calls != 1 {
+		t.Fatalf("onboarded identity turns = %d, want 1", calls)
 	}
-	texts := bot.sentTexts()
-	if len(texts) != 2 || !strings.Contains(texts[1], "competenze") { //nolint:misspell // Italian user-facing prompt
-		t.Fatalf("active profile onboarding replies = %v, want work question second", texts)
+	if texts := bot.sentTexts(); len(texts) != 0 {
+		t.Fatalf("onboarded identity was nudged: %v", texts)
 	}
 }
 
-func TestOnTextOnboardRestartsProfileOnboardingNoTurn(t *testing.T) {
+// TestOnTextOnboardCommandPointsAtTheCockpitForm proves /onboard is served by the generic
+// command dispatcher (its interview special case is gone) and that its copy names the
+// cockpit form rather than the Agent.md artifact Amendment #87 deleted.
+func TestOnTextOnboardCommandPointsAtTheCockpitForm(t *testing.T) {
 	t.Parallel()
 	rt := &recordingTurn{}
 	store := newFakeMemoryStore()
@@ -175,8 +180,11 @@ func TestOnTextOnboardRestartsProfileOnboardingNoTurn(t *testing.T) {
 		t.Fatalf("/onboard must not drive a turn, got %d calls", calls)
 	}
 	texts := bot.sentTexts()
-	if len(texts) != 1 || !strings.Contains(texts[0], "chiami") {
-		t.Fatalf("/onboard reply = %v, want restarted identity prompt", texts)
+	if len(texts) != 1 || !strings.Contains(texts[0], "Impostazioni") {
+		t.Fatalf("/onboard reply = %v, want a pointer at the cockpit profile form", texts)
+	}
+	if strings.Contains(texts[0], "Agent.md") {
+		t.Fatalf("/onboard still promises an Agent.md artifact: %q", texts[0])
 	}
 }
 
@@ -284,26 +292,16 @@ func (s *activationAccountStore) GetAccountByTelegramID(_ context.Context, teleg
 	return acct, nil
 }
 
-// fakeAnswerExtractor is a minimal profileflow.AnswerExtractor for wiring tests.
-type fakeAnswerExtractor struct{}
-
-func (fakeAnswerExtractor) Extract(_ context.Context, _ profileflow.Step, _ string) (profileflow.Answers, error) {
-	return profileflow.Answers{}, nil
-}
-
-// TestBuildDispatchWiresAnswerExtractor guards that buildDispatch sets the
-// extractor on the eagerly-built profileOnboarding so profileForDispatch's
-// early-return path delivers an extractor-carrying instance to production.
-// Without the t.profile.extractor assignment in buildDispatch, this test fails.
-func TestBuildDispatchWiresAnswerExtractor(t *testing.T) {
+// TestBuildDispatchWiresProfileStore guards that buildDispatch builds the profileOnboarding
+// over the wired Deps.Profile, so profileForDispatch's early-return path delivers a
+// store-carrying instance to production (a nil store makes the nudge silently inert).
+func TestBuildDispatchWiresProfileStore(t *testing.T) {
 	t.Parallel()
-	fake := fakeAnswerExtractor{}
 	tg := dispatchChannel(t, &recordingTurn{}, func(d *Deps) {
-		d.AnswerExtractor = fake
+		d.Profile = newFakeMemoryStore()
+		d.profileAccounts = profileAccountFake{acct: profileAccount()}
 	})
-	// profileForDispatch returns the pre-built t.profile when it is non-nil (the
-	// production path taken after buildDispatch). The extractor must be set.
-	if tg.profileForDispatch().extractor == nil {
-		t.Fatal("buildDispatch must wire AnswerExtractor onto the profileOnboarding; extractor is nil (onboarding LLM extraction is silently inert in production)")
+	if tg.profileForDispatch().store == nil {
+		t.Fatal("buildDispatch must wire Deps.Profile onto the profileOnboarding; the seed-form nudge is silently inert without it")
 	}
 }

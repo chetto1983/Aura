@@ -50,37 +50,28 @@ func (fakeSchedulerBoard) UpdateTask(context.Context, string, cron.UpdateTaskPar
 }
 
 // fakeOnboarding is the scriptable OnboardingService fake shared by the seam test and the
-// onboarding-handler tests (onboarding_api_test.go). It satisfies the full Plan-05
-// interface (StartSession/Step/Provision/TelegramStatus + the embedded CapabilitySource)
-// and records the routed token/intent so the thin handlers can be asserted.
+// onboarding-handler tests (onboarding_api_test.go). It satisfies the full interface
+// (StartSession/Provision/TelegramStatus/CreateTelegramLink/SubmitProfile + the embedded
+// CapabilitySource) and records the routed token/requester/seed so the thin handlers can
+// be asserted.
 type fakeOnboarding struct {
 	start        OnboardingStart
 	startErr     error
-	stepResp     OnboardingStepResponse
-	stepErr      error
 	gotToken     string
 	gotRequester string
-	gotIntent    string
+	gotSeed      OnboardingSeed
 	provResp     OnboardingProvisionResponse
 	provErr      error
 	statusResp   OnboardingTelegramStatus
 	statusErr    error
 	linkResp     OnboardingTelegramLink
 	linkErr      error
-	profileStart OnboardingStart
 	profileErr   error
 	profileDone  OnboardingProfileComplete
 }
 
 func (f *fakeOnboarding) StartSession(context.Context, string) (OnboardingStart, error) {
 	return f.start, f.startErr
-}
-
-func (f *fakeOnboarding) Step(_ context.Context, requester, token string, in OnboardingStepRequest) (OnboardingStepResponse, error) {
-	f.gotRequester = requester
-	f.gotToken = token
-	f.gotIntent = in.Intent
-	return f.stepResp, f.stepErr
 }
 
 func (f *fakeOnboarding) Provision(_ context.Context, requester, token string, _ OnboardingProvisionRequest) (OnboardingProvisionResponse, error) {
@@ -100,13 +91,9 @@ func (f *fakeOnboarding) CreateTelegramLink(_ context.Context, requester string)
 	return f.linkResp, f.linkErr
 }
 
-func (f *fakeOnboarding) StartProfileSession(context.Context, string) (OnboardingStart, error) {
-	return f.profileStart, f.profileErr
-}
-
-func (f *fakeOnboarding) CompleteProfile(_ context.Context, requester, token string) (OnboardingProfileComplete, error) {
+func (f *fakeOnboarding) SubmitProfile(_ context.Context, requester string, seed OnboardingSeed) (OnboardingProfileComplete, error) {
 	f.gotRequester = requester
-	f.gotToken = token
+	f.gotSeed = seed
 	return f.profileDone, f.profileErr
 }
 

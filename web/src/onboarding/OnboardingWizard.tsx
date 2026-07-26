@@ -3,10 +3,10 @@ import { useTranslation } from 'react-i18next';
 import { CapabilityPicker } from './CapabilityPicker';
 import { CredentialStep } from './CredentialStep';
 import { OnboardingCenteredState, OnboardingDialog } from './OnboardingDialog';
-import { InterviewStep } from './InterviewStep';
 import { OnboardingStepper } from './OnboardingStepper';
 import { OnboardingWizardNav } from './OnboardingWizardNav';
 import { ReviewStep } from './ReviewStep';
+import { SeedProfileForm } from './SeedProfileForm';
 import { TelegramLinkStep } from './TelegramLinkStep';
 import {
   credentialsValid,
@@ -14,6 +14,7 @@ import {
   isForbiddenError,
   phaseIndex as phaseIndexOf,
   provisionErrorKind,
+  seedValid,
   type Phase,
   type ProvisionErrorKind,
 } from './onboardingWizardModel';
@@ -21,18 +22,20 @@ import {
   provisionOnboarding,
   startOnboarding,
   type OnboardingProvisionResponse,
+  type OnboardingSeed,
   type OnboardingStart,
-  type OnboardingStepResponse,
 } from './onboardingApi';
-import { useOnboardingStepDispatch } from './onboardingStepDispatch';
 import { Button } from '@/components/ui/button';
 
 // OnboardingWizard is the lazy default export the AppShell mounts as a FULL-SCREEN overlay (D-04 —
 // NOT a governance tab, NOT a MODES entry). It runs the linear flow over the Plan-05 endpoints:
-//   credentials → capabilities → interview (5-step LoopAgent /step) → review → create (/provision)
+//   credentials (+ the Amendment-#95 seed form) → capabilities → review → create (/provision)
 //   → Telegram link (deep-link + QR + /telegram-status poll) + completion.
+// The seed rides along in the /provision body so the NEW identity's graph is seeded at creation;
+// the fields are optional, and an empty seed provisions an identity that gets its own first-run
+// form on first login.
 // It holds the sessionToken from /start and the accumulated inputs (email/password/recovery/
-// capabilities), and reuses the GraphExplorer ViewStatus + error-auth contract: a /start that
+// capabilities/seed), and reuses the GraphExplorer ViewStatus + error-auth contract: a /start that
 // REJECTS with HTTP 401 renders a VISIBLE auth-error (never a blank), any other failure the error
 // state with retry (T-28-06-04). Secrets never render: the password is write-only (CredentialStep)
 // and the bot token never enters the DOM (TelegramLinkStep renders only the deep-link + QR).
@@ -63,8 +66,7 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
   const [capabilityOptions, setCapabilityOptions] = useState<readonly string[]>([]);
   const [selectedCaps, setSelectedCaps] = useState<ReadonlySet<string>>(new Set());
 
-  const [interview, setInterview] = useState<OnboardingStepResponse | undefined>(undefined);
-  const [stepBusy, setStepBusy] = useState(false);
+  const [seed, setSeed] = useState<OnboardingSeed>({});
 
   const [provisioning, setProvisioning] = useState(false);
   const [provisionError, setProvisionError] = useState<ProvisionErrorKind | undefined>(undefined);
@@ -87,7 +89,6 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
         if (cancelled) return;
         setSessionToken(start.sessionToken);
         setCapabilityOptions(start.capabilityOptions);
-        setInterview({ content: start.content, step: start.step, status: start.status });
         setStartStatus('ready');
       } catch (err) {
         if (cancelled) return;
@@ -119,24 +120,6 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
     });
   }, []);
 
-  const handleStepTerminal = useCallback(() => {
-    setPhase('review');
-  }, []);
-
-  const handleStepError = useCallback((err: unknown) => {
-    setStartStatus(
-      isAuthError(err) ? 'error-auth' : isForbiddenError(err) ? 'error-forbidden' : 'error',
-    );
-  }, []);
-
-  const dispatchStep = useOnboardingStepDispatch({
-    sessionToken,
-    setBusy: setStepBusy,
-    onResponse: setInterview,
-    onTerminal: handleStepTerminal,
-    onError: handleStepError,
-  });
-
   const create = useCallback(async () => {
     if (sessionToken === '') return;
     setProvisioning(true);
@@ -149,6 +132,7 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
         securityAnswer,
         capabilities: [...selectedCaps],
         linkTelegram: true,
+        seed,
       });
       setProvisionResult(result);
       // Password lives only until the saga ran; clear it so it cannot linger in state.
@@ -165,15 +149,11 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
     } finally {
       setProvisioning(false);
     }
-  }, [sessionToken, email, password, securityQuestion, securityAnswer, selectedCaps]);
+  }, [sessionToken, email, password, securityQuestion, securityAnswer, selectedCaps, seed]);
 
-  const canAdvanceCredentials = credentialsValid(
-    email,
-    password,
-    confirmPassword,
-    securityQuestion,
-    securityAnswer,
-  );
+  const canAdvanceCredentials =
+    credentialsValid(email, password, confirmPassword, securityQuestion, securityAnswer) &&
+    seedValid(seed);
   const phaseIndex = phaseIndexOf(phase);
 
   const overlay = (children: ReactNode) => (
@@ -232,6 +212,7 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
                 onSecurityQuestionChange={setSecurityQuestion}
                 onSecurityAnswerChange={setSecurityAnswer}
               />
+              <SeedProfileForm value={seed} onChange={setSeed} />
               <OnboardingWizardNav
                 onBack={onClose}
                 backLabel={t('onboarding.cancel')}
@@ -257,31 +238,12 @@ export default function OnboardingWizard({ onClose }: OnboardingWizardProps) {
                 }}
                 backLabel={t('onboarding.back')}
                 onNext={() => {
-                  setPhase('interview');
+                  setPhase('review');
                 }}
                 nextLabel={t('onboarding.cta.continue')}
                 nextDisabled={false}
               />
             </>
-          ) : null}
-
-          {phase === 'interview' && interview !== undefined ? (
-            <InterviewStep
-              step={interview}
-              busy={stepBusy}
-              onAnswer={(text) => {
-                void dispatchStep('answer', text);
-              }}
-              onConfirm={() => {
-                void dispatchStep('confirm');
-              }}
-              onEdit={(answers) => {
-                void dispatchStep('edit', undefined, answers);
-              }}
-              onSkip={() => {
-                void dispatchStep('skip');
-              }}
-            />
           ) : null}
 
           {phase === 'review' ? (

@@ -48,7 +48,6 @@ import (
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/identity"
-	"github.com/chetto1983/aura/internal/onboarding"
 )
 
 // --- REAL aura-leg + telegram adapters over the live pool (package agui can import
@@ -382,14 +381,13 @@ func (e *liveSagaEnv) service(t *testing.T, au AuthulaCore, leg AuraLegWriter, t
 	t.Helper()
 	svc := newOnboardingService(OnboardingDeps{
 		Capabilities: identity.New(e.pool),
-		Extractor:    &countingExtractor{},
 		Profiles:     &recordingProfileWriter{},
 		Authula:      au, AuraLeg: leg, Telegram: tg, BotUsername: "AuraBotTest",
 		Recovery: e.recovery,
 		// Isolation ON so the live saga clears the CR-01 provision-time refusal gate.
 		MUSRIsolation: true,
 	})
-	entry := &sessionEntry{session: onboarding.NewSession("", "new-identity"), creatorIdentityID: e.creator}
+	entry := &sessionEntry{creatorIdentityID: e.creator}
 	token, err := svc.sessions.put(entry)
 	if err != nil {
 		t.Fatalf("put session: %v", err)

@@ -376,11 +376,12 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// Wire the Phase-28 onboarding wizard + provisioning saga (ONBD-01/02). Built
 	// best-effort over the daemon's existing seams (the identity Store for the capability
 	// picker + the aura-leg write, the Authula provider's CoreServices for Leg B, the
-	// recovery adapter, the Telegram Store for Leg C mint/status/compensation, and the LLM
-	// extractor + profile store for the interview). A missing provisioning piece,
-	// including bot username, fails before writes and MUST NOT abort boot.
-	// The mounts (RequireCapability on start+provision, RequireAuth on step+telegram-
-	// status) live in serve_webui.go.
+	// recovery adapter, the Telegram Store for Leg C mint/status/compensation, and the
+	// memory-backed profile store the Amendment #95 seed form writes through). A missing
+	// provisioning piece, including bot username, fails before writes and MUST NOT abort boot.
+	// The mounts live in serve_webui.go: RequireCapability(identity.create) on start +
+	// provision ONLY; status, the seed-form submit (POST /api/onboarding/profile) and
+	// telegram-status are self-scoped and carry RequireAuth alone.
 	aguiServer.SetOnboardingService(buildOnboardingService(ctx, chat, onboardingAuthulaProvider))
 	aguiServer.SetOnboardingStatusSource(newOnboardingStatusAdapter(chat))
 	wireBootstrapService(aguiServer, chat.pool, authulaProvider)

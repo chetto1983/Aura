@@ -35,7 +35,6 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/identityctx"
-	"github.com/chetto1983/aura/internal/onboarding"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/chetto1983/aura/internal/setup"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -95,7 +94,6 @@ func buildTelegramDeps(chat *chatEnv, tgCfg telegram.Config) telegram.Deps {
 		ChatRateLimitMS:    tgCfg.ChatRateLimitMS,
 		ShowReasoning:      chat.cfg.LLM.ShowReasoning,
 		ReasoningFIFORunes: tgCfg.ReasoningFIFORunes,
-		AnswerExtractor:    onboarding.NewLLMAnswerExtractor(chat.client, chat.cfg.LLM.Model),
 	}
 }
 

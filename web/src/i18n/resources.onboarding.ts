@@ -21,19 +21,51 @@ export const onboardingEn = {
     progress: 'Step {{current}} of {{total}}',
     cta: {
       continue: 'Continue',
-      confirm: 'Looks right — continue',
-      edit: 'Edit answer',
-      applyEdit: 'Save changes',
-      skip: 'Skip this step',
       provision: 'Create identity',
       provisionInFlight: 'Creating identity…',
     },
     steps: {
       credentials: 'Credentials',
       capabilities: 'Capabilities',
-      interview: 'Interview',
       review: 'Review',
       telegram: 'Telegram',
+    },
+    seed: {
+      heading: 'About the operator',
+      intro:
+        'Aura writes these straight into its memory graph — no interview, no model in the loop. Every field is optional; leave them blank and Aura will learn them from use instead.',
+      tooLong: 'That value is too long. Shorten it and try again.',
+      name: {
+        label: 'Name',
+        help: 'How Aura should address you. Stored exactly as typed.',
+        placeholder: 'Davide',
+        required: 'Add your name — everything else you fill in is stored about it.',
+      },
+      lang: {
+        label: 'Language',
+        help: 'The language Aura replies in.',
+        unset: 'Not specified',
+      },
+      location: {
+        label: 'Where you are',
+        help: 'City or region. Becomes a place Aura can reason about.',
+        placeholder: 'Caraglio',
+      },
+      timezone: {
+        label: 'Time zone',
+        help: 'Used for schedules and reminders.',
+        placeholder: 'Europe/Rome',
+      },
+      role: {
+        label: 'What you do',
+        help: 'Your role, in your own words.',
+        placeholder: 'founder',
+      },
+      company: {
+        label: 'Organisation',
+        help: 'Company, team, or project you work with.',
+        placeholder: 'PmSync',
+      },
     },
     credentials: {
       heading: 'New operator credentials',
@@ -54,14 +86,6 @@ export const onboardingEn = {
       hint: "You can grant only capabilities you hold. Full-access (`*`) can't be granted.",
       none: 'You hold no grantable capabilities. The new identity will be created with none.',
     },
-    interview: {
-      answerLabel: 'Your answer',
-      answerPlaceholder: 'Type your answer',
-      emptyAnswer: 'No answer recorded for this step.',
-      draftHeading: 'Profile draft',
-      editNameLabel: 'Preferred name',
-      editRoleLabel: 'Role or correction',
-    },
     telegram: {
       deepLinkCta: 'Open in Telegram',
       qrCaption: 'Or scan to link Telegram',
@@ -69,7 +93,6 @@ export const onboardingEn = {
       linked: 'Telegram linked',
       waiting: 'Waiting for the link to be scanned…',
       expired: 'This link expired. Generate a new one to continue.',
-      skip: 'Skip Telegram for now',
       none: 'No Telegram link was generated for this identity.',
     },
     review: {
@@ -82,7 +105,7 @@ export const onboardingEn = {
     },
     complete: {
       heading: 'Identity created',
-      body: 'The new identity can now sign in. Its Agent.md profile has been saved.',
+      body: 'The new identity can now sign in. Anything you entered above is already in its memory.',
       done: 'Done',
     },
     error: {
@@ -100,27 +123,7 @@ export const onboardingEn = {
       steps: {
         identity: {
           label: 'About you',
-          help: 'Name, role, team, location, timezone, and preferred language.',
-        },
-        work: {
-          label: 'Work stack',
-          help: 'Core expertise, tools, systems, and technical environment.',
-        },
-        projects: {
-          label: 'Projects and goals',
-          help: 'Active projects, priorities, deadlines, and what success looks like.',
-        },
-        social: {
-          label: 'People and interests',
-          help: 'Recurring collaborators, stakeholders, topics, and personal context.',
-        },
-        style: {
-          label: 'Response style',
-          help: 'Tone, answer length, language, and voice preferences.',
-        },
-        draft: {
-          label: 'Review profile',
-          help: 'Confirm the generated Agent.md profile or edit details before saving.',
+          help: 'A handful of typed fields Aura saves straight to memory. All optional.',
         },
         runtime: {
           label: 'Model and token setup',
@@ -130,17 +133,6 @@ export const onboardingEn = {
           label: 'Telegram integration',
           help: 'Connect the Telegram bot Aura uses for the recovery link and chat channel, then scan the pairing QR.',
         },
-      },
-      prompts: {
-        identity:
-          'Tell Aura what to call you, your role, team or company, location, timezone, and preferred language.',
-        work: 'Share your main areas of expertise and the tools or stack you use most often.',
-        projects: 'List what you are working on now and the goals Aura should remember.',
-        social:
-          'Add recurring collaborators, stakeholders, interests, and topics Aura should keep in context.',
-        style:
-          'Describe how Aura should respond: tone, answer length, language, and whether voice replies are useful.',
-        draft: 'Review the generated Agent.md profile. Confirm it, edit it, or skip profile setup.',
       },
       runtime: {
         save: 'Save and continue',
@@ -162,14 +154,16 @@ export const onboardingEn = {
         alreadyConfigured: 'Telegram bot @{{bot}} is already configured.',
         continue: 'Continue',
         errorSave: "Couldn't save the token. Try again.",
+        skip: 'Skip Telegram setup',
       },
       skipSetup: 'Skip profile setup',
       saving: 'Saving profile...',
       saveError: "Couldn't save the profile. Try again.",
       completeHeading: 'Profile ready',
-      completeBody: 'Aura can now use your Agent.md profile across the operator cockpit.',
+      completeBody:
+        'What you entered is now in Aura’s memory, and Aura keeps it up to date as you work.',
       skippedBody:
-        'Profile setup was skipped. Aura will ask again only when you restart first-run setup.',
+        'Profile setup was skipped. Aura will build your profile from how you work instead.',
     },
   },
 } as const;
@@ -189,19 +183,51 @@ export const onboardingIt = {
     progress: 'Passaggio {{current}} di {{total}}',
     cta: {
       continue: 'Continua',
-      confirm: 'Va bene — continua',
-      edit: 'Modifica risposta',
-      applyEdit: 'Salva modifiche',
-      skip: 'Salta questo passaggio',
       provision: 'Crea identità',
       provisionInFlight: 'Creazione identità…',
     },
     steps: {
       credentials: 'Credenziali',
       capabilities: 'Capacità',
-      interview: 'Intervista',
       review: 'Riepilogo',
       telegram: 'Telegram',
+    },
+    seed: {
+      heading: "Chi è l'operatore",
+      intro:
+        'Aura scrive questi dati direttamente nel suo grafo di memoria — nessuna intervista, nessun modello di mezzo. Ogni campo è facoltativo: se li lasci vuoti, Aura li imparerà dall’uso.',
+      tooLong: 'Valore troppo lungo. Accorcialo e riprova.',
+      name: {
+        label: 'Nome',
+        help: 'Come Aura deve chiamarti. Salvato esattamente come lo scrivi.',
+        placeholder: 'Davide',
+        required: 'Aggiungi il tuo nome — tutto il resto viene salvato riferito a lui.',
+      },
+      lang: {
+        label: 'Lingua',
+        help: 'La lingua in cui Aura risponde.',
+        unset: 'Non specificata',
+      },
+      location: {
+        label: 'Dove sei',
+        help: 'Città o zona. Diventa un luogo su cui Aura può ragionare.',
+        placeholder: 'Caraglio',
+      },
+      timezone: {
+        label: 'Fuso orario',
+        help: 'Usato per pianificazioni e promemoria.',
+        placeholder: 'Europe/Rome',
+      },
+      role: {
+        label: 'Cosa fai',
+        help: 'Il tuo ruolo, con parole tue.',
+        placeholder: 'founder',
+      },
+      company: {
+        label: 'Organizzazione',
+        help: 'Azienda, team o progetto con cui lavori.',
+        placeholder: 'PmSync',
+      },
     },
     credentials: {
       heading: 'Credenziali del nuovo operatore',
@@ -222,14 +248,6 @@ export const onboardingIt = {
       hint: "Puoi concedere solo le capacità che possiedi. L'accesso completo (`*`) non è concedibile.",
       none: 'Non possiedi capacità concedibili. La nuova identità verrà creata senza nessuna.',
     },
-    interview: {
-      answerLabel: 'La tua risposta',
-      answerPlaceholder: 'Scrivi la tua risposta',
-      emptyAnswer: 'Nessuna risposta registrata per questo passaggio.',
-      draftHeading: 'Bozza del profilo',
-      editNameLabel: 'Nome preferito',
-      editRoleLabel: 'Ruolo o correzione',
-    },
     telegram: {
       deepLinkCta: 'Apri in Telegram',
       qrCaption: 'Oppure scansiona per collegare Telegram',
@@ -237,7 +255,6 @@ export const onboardingIt = {
       linked: 'Telegram collegato',
       waiting: 'In attesa della scansione del link…',
       expired: 'Questo link è scaduto. Generane uno nuovo per continuare.',
-      skip: 'Salta Telegram per ora',
       none: 'Nessun link Telegram è stato generato per questa identità.',
     },
     review: {
@@ -250,7 +267,7 @@ export const onboardingIt = {
     },
     complete: {
       heading: 'Identità creata',
-      body: 'La nuova identità può ora accedere. Il suo profilo Agent.md è stato salvato.',
+      body: 'La nuova identità può ora accedere. Quello che hai inserito è già nella sua memoria.',
       done: 'Fatto',
     },
     profile: {
@@ -263,27 +280,7 @@ export const onboardingIt = {
       steps: {
         identity: {
           label: 'Chi sei',
-          help: 'Nome, ruolo, team, luogo, fuso orario e lingua preferita.',
-        },
-        work: {
-          label: 'Stack di lavoro',
-          help: 'Competenze principali, strumenti, sistemi e ambiente tecnico.',
-        },
-        projects: {
-          label: 'Progetti e obiettivi',
-          help: 'Progetti attivi, priorita, scadenze e risultati attesi.',
-        },
-        social: {
-          label: 'Persone e interessi',
-          help: 'Collaboratori ricorrenti, stakeholder, temi e contesto personale.',
-        },
-        style: {
-          label: 'Stile risposta',
-          help: 'Tono, lunghezza, lingua e preferenze voce.',
-        },
-        draft: {
-          label: 'Revisione profilo',
-          help: 'Conferma il profilo Agent.md generato o modifica i dettagli prima del salvataggio.',
+          help: 'Pochi campi che Aura salva direttamente in memoria. Tutti facoltativi.',
         },
         runtime: {
           label: 'Configurazione modello e token',
@@ -293,17 +290,6 @@ export const onboardingIt = {
           label: 'Integrazione Telegram',
           help: 'Collega il bot Telegram che Aura usa per il link di recupero e il canale chat, poi scansiona il QR di abbinamento.',
         },
-      },
-      prompts: {
-        identity:
-          'Di ad Aura come chiamarti, il tuo ruolo, team o azienda, luogo, fuso orario e lingua preferita.',
-        work: 'Condividi competenze principali e strumenti o stack che usi piu spesso.',
-        projects: 'Elenca cosa stai seguendo ora e gli obiettivi che Aura deve ricordare.',
-        social:
-          'Aggiungi collaboratori ricorrenti, stakeholder, interessi e temi che Aura deve tenere in contesto.',
-        style:
-          'Descrivi come Aura deve rispondere: tono, lunghezza, lingua e se le risposte vocali sono utili.',
-        draft: 'Rivedi il profilo Agent.md generato. Confermalo, modificalo o salta il profilo.',
       },
       runtime: {
         save: 'Salva e continua',
@@ -325,14 +311,16 @@ export const onboardingIt = {
         alreadyConfigured: 'Il bot Telegram @{{bot}} è già configurato.',
         continue: 'Continua',
         errorSave: 'Impossibile salvare il token. Riprova.',
+        skip: 'Salta configurazione Telegram',
       },
       skipSetup: 'Salta configurazione profilo',
       saving: 'Salvataggio profilo...',
       saveError: 'Impossibile salvare il profilo. Riprova.',
       completeHeading: 'Profilo pronto',
-      completeBody: 'Aura puo ora usare il tuo profilo Agent.md nella console operatore.',
+      completeBody:
+        'Quello che hai inserito è ora nella memoria di Aura, che lo tiene aggiornato mentre lavori.',
       skippedBody:
-        'Configurazione profilo saltata. Aura la richiedera di nuovo solo quando riavvii il primo avvio.',
+        'Configurazione profilo saltata. Aura costruirà il tuo profilo dal modo in cui lavori.',
     },
     error: {
       noCapability: "Non hai i permessi per creare un'identità.",

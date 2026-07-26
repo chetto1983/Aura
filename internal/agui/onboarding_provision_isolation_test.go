@@ -23,7 +23,6 @@ func TestProvisionRefusedWhenIsolationOff(t *testing.T) {
 	// than short-circuited by a missing session.
 	svc := newOnboardingService(OnboardingDeps{
 		Capabilities: fakeCaps{grants: []string{"identity.create"}},
-		Extractor:    &countingExtractor{},
 		Profiles:     &recordingProfileWriter{},
 		Authula:      au, AuraLeg: leg, Telegram: tg, BotUsername: "AuraBot", Recovery: recovery,
 		MUSRIsolation: false,

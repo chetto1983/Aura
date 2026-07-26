@@ -24,7 +24,7 @@ vi.mock('../onboarding/OnboardingWizard', () => ({
   ),
 }));
 
-vi.mock('../onboarding/ProfileOnboardingWizard', () => ({
+vi.mock('../onboarding/FirstRunSetup', () => ({
   default: ({ onClose }: { readonly onClose: () => void }) => (
     <div role="dialog" aria-label="Set up profile">
       <button type="button" onClick={onClose}>

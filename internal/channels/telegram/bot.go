@@ -82,15 +82,10 @@ type Deps struct {
 	// inbound Telegram handlers fail closed except for /start <token> activation.
 	Store *Store
 
-	// Profile persists the confirmed/skipped onboarding profile into the agent-memory
-	// graph via the shared ProfileMemoryStore port (Amendment #87 — Agent.md retired).
-	// Nil means profile onboarding degrades with a user-facing setup message instead of
-	// panicking.
+	// Profile reads the onboarding sentinel back so the channel can point a never-seeded
+	// operator at the cockpit's seed form (Amendment #95 — the interview is gone; the
+	// channel only nudges). Nil disables the nudge entirely.
 	Profile profileflow.ProfileMemoryStore
-
-	// AnswerExtractor parses free-text onboarding answers (Identity/Work/Projects/
-	// Social) into structured fields. Nil → those steps fall back to keyword parsing.
-	AnswerExtractor profileflow.AnswerExtractor
 
 	// Multimodal carries the 9c sidecar wiring (STT/TTS/vision/documents) the media
 	// handlers (OnVoice/OnPhoto/OnDocument) + the TTS-out path read. A zero value
@@ -321,7 +316,7 @@ func botMenuCommands() []tele.Command {
 		{Text: "cancel", Description: "Annulla il turno in corso"},
 		{Text: "cost", Description: "Mostra la spesa cumulativa di oggi"},
 		{Text: "search", Description: "Cerca nei turni salvati"},
-		{Text: "onboard", Description: "Avvia o riavvia il profilo Agent.md"},
+		{Text: "onboard", Description: "Come impostare il tuo profilo"},
 		{Text: "new", Description: "Spiega il thread continuo Telegram"},
 		{Text: "list", Description: "Indica dove sfogliare le conversazioni"},
 		{Text: "reset", Description: "Annulla il turno senza cancellare lo storico"},

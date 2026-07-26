@@ -1,8 +1,8 @@
 // memory_onboarding.go: the Amendment #87 replacement for the on-disk profile.Store.
-// It implements onboarding.ProfileMemoryStore over the managed memory MCP — confirmed
-// interview answers become memory_add_* writes, the raw draft is stored as a message
-// safety net, and completion is a sentinel fact — and reads that sentinel back for
-// /api/onboarding/status.
+// It implements onboarding.ProfileMemoryStore over the managed memory MCP — the seed
+// form's mapped Answers become memory_add_* writes and completion is a sentinel fact —
+// and reads that sentinel back for /api/onboarding/status. Amendment #95: the whole
+// submission rides ONE MCP session, and no :Message node is written.
 package main
 
 import (
@@ -11,90 +11,118 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/chetto1983/aura/internal/mcp"
 	"github.com/chetto1983/aura/internal/onboarding"
 )
 
+const (
+	// memorySubmissionTimeout budgets the WHOLE seed submission, not one write: a full seed
+	// maps to nine sequential tool calls over a single connection, so the per-call 20s of
+	// callMemoryToolText would be the wrong shape here (a slow sidecar would trip on write 2
+	// while write 1 still counted against nothing).
+	memorySubmissionTimeout = 60 * time.Second
+	// memoryOneCallTimeout keeps the single-call paths (the skip sentinel, the status read
+	// every authenticated page load makes) on callMemoryToolText's original per-call budget.
+	// Sharing the submission budget here would silently triple how long a dead sidecar can
+	// hang a read.
+	memoryOneCallTimeout = 20 * time.Second
+)
+
 // memoryProfileStore drives the memory MCP. Every call carries user_identifier =
-// identityID: callMemoryToolText does NOT inject it (only the agent bridge does), so a
-// bare call would land in the memory server's fail-open GLOBAL scope and leak across
-// tenants in MUSR mode (mirrors serve_recall.go). The call + now seams make it
-// daemon-free unit-testable.
+// identityID: the transport does NOT inject it (only the agent bridge does), so a bare
+// call would land in the memory server's fail-open GLOBAL scope and leak across tenants
+// in MUSR mode (mirrors serve_recall.go). The open + now seams make it daemon-free
+// unit-testable.
 type memoryProfileStore struct {
-	call func(ctx context.Context, tool string, args map[string]any) (string, error)
+	open func(ctx context.Context) (mcp.Transport, error)
 	now  func() time.Time
 }
 
 func newMemoryProfileStore() *memoryProfileStore {
 	return &memoryProfileStore{
-		call: callMemoryToolText,
+		open: openMemoryMCP,
 		now:  func() time.Time { return time.Now().UTC() },
 	}
 }
 
-func (m *memoryProfileStore) StoreConfirmed(ctx context.Context, identityID string, a onboarding.Answers, rawDraft string) error {
+// StoreConfirmed maps the seed onto entity/fact/preference writes and stamps the
+// completion sentinel LAST, all over ONE MCP session (Amendment #95's "one connection
+// for the whole submission" — nine writes used to mean nine handshakes).
+func (m *memoryProfileStore) StoreConfirmed(ctx context.Context, identityID string, a onboarding.Answers) error {
 	if identityID == "" {
 		return fmt.Errorf("onboarding memory store: empty identity")
 	}
-	pm := onboarding.MapProfile(a)
-	for _, e := range pm.Entities {
-		args := map[string]any{"name": e.Name, "entity_type": e.EntityType}
-		if e.Description != "" {
-			args["description"] = e.Description
+	return m.withSession(ctx, memorySubmissionTimeout, func(ctx context.Context, cli mcp.Transport) error {
+		pm := onboarding.MapProfile(a)
+		for _, e := range pm.Entities {
+			args := map[string]any{"name": e.Name, "entity_type": e.EntityType}
+			if e.Description != "" {
+				args["description"] = e.Description
+			}
+			if len(e.Aliases) > 0 {
+				args["aliases"] = e.Aliases
+			}
+			if err := m.write(ctx, cli, identityID, "memory_add_entity", args); err != nil {
+				return err
+			}
 		}
-		if len(e.Aliases) > 0 {
-			args["aliases"] = e.Aliases
+		for _, f := range pm.Facts {
+			if err := m.write(ctx, cli, identityID, "memory_add_fact", map[string]any{
+				"subject": f.Subject, "predicate": f.Predicate, "object_value": f.ObjectValue,
+			}); err != nil {
+				return err
+			}
 		}
-		if err := m.write(ctx, identityID, "memory_add_entity", args); err != nil {
-			return err
+		for _, p := range pm.Preferences {
+			args := map[string]any{"category": p.Category, "preference": p.Preference}
+			if p.Context != "" {
+				args["context"] = p.Context
+			}
+			if err := m.write(ctx, cli, identityID, "memory_add_preference", args); err != nil {
+				return err
+			}
 		}
-	}
-	for _, f := range pm.Facts {
-		if err := m.write(ctx, identityID, "memory_add_fact", map[string]any{
-			"subject": f.Subject, "predicate": f.Predicate, "object_value": f.ObjectValue,
-		}); err != nil {
-			return err
-		}
-	}
-	for _, p := range pm.Preferences {
-		args := map[string]any{"category": p.Category, "preference": p.Preference}
-		if p.Context != "" {
-			args["context"] = p.Context
-		}
-		if err := m.write(ctx, identityID, "memory_add_preference", args); err != nil {
-			return err
-		}
-	}
-	if rawDraft != "" {
-		// Raw answers safety net (extraction is lossy — verbatim keeps the details the
-		// deterministic mapper generalized away).
-		if err := m.write(ctx, identityID, "memory_store_message", map[string]any{
-			"content": rawDraft, "role": "user",
-		}); err != nil {
-			return err
-		}
-	}
-	return m.writeSentinel(ctx, identityID, onboarding.PredicateOnboardingCompleted)
+		return m.writeSentinel(ctx, cli, identityID, onboarding.PredicateOnboardingCompleted)
+	})
 }
 
 func (m *memoryProfileStore) StoreSkipped(ctx context.Context, identityID string) error {
 	if identityID == "" {
 		return fmt.Errorf("onboarding memory store: empty identity")
 	}
-	return m.writeSentinel(ctx, identityID, onboarding.PredicateOnboardingSkipped)
+	return m.withSession(ctx, memoryOneCallTimeout, func(ctx context.Context, cli mcp.Transport) error {
+		return m.writeSentinel(ctx, cli, identityID, onboarding.PredicateOnboardingSkipped)
+	})
+}
+
+// withSession opens one memory MCP connection, runs fn over it, and closes it. budget
+// covers the whole body, so every call fn makes shares one deadline.
+func (m *memoryProfileStore) withSession(ctx context.Context, budget time.Duration, fn func(context.Context, mcp.Transport) error) error {
+	sessCtx, cancel := context.WithTimeout(ctx, budget)
+	defer cancel()
+	cli, err := m.open(sessCtx)
+	if err != nil {
+		return fmt.Errorf("onboarding memory session: %w", err)
+	}
+	defer func() { _ = cli.Close() }()
+	return fn(sessCtx, cli)
 }
 
 // writeSentinel records the onboarding-complete/skip marker as a fact whose subject is
 // the identity UUID (never the operator name), so Status reads it back cleanly.
-func (m *memoryProfileStore) writeSentinel(ctx context.Context, identityID, predicate string) error {
-	return m.write(ctx, identityID, "memory_add_fact", map[string]any{
+func (m *memoryProfileStore) writeSentinel(ctx context.Context, cli mcp.Transport, identityID, predicate string) error {
+	return m.write(ctx, cli, identityID, "memory_add_fact", map[string]any{
 		"subject": identityID, "predicate": predicate, "object_value": m.now().Format(time.RFC3339),
 	})
 }
 
 // write sets the mandatory user_identifier scope on EVERY memory call (fail-open guard).
-func (m *memoryProfileStore) write(ctx context.Context, identityID, tool string, args map[string]any) error {
+// It calls the transport directly, bypassing scopeMemoryArgs — this stamp is the ONLY
+// thing keeping these writes out of the memory server's GLOBAL scope, so every write on
+// this path must go through here.
+func (m *memoryProfileStore) write(ctx context.Context, cli mcp.Transport, identityID, tool string, args map[string]any) error {
 	args["user_identifier"] = identityID
-	if _, err := m.call(ctx, tool, args); err != nil {
+	if _, err := cli.CallTool(ctx, tool, args); err != nil {
 		return fmt.Errorf("onboarding memory %s: %w", tool, err)
 	}
 	return nil
@@ -106,8 +134,13 @@ func (m *memoryProfileStore) Status(ctx context.Context, identityID string) (onb
 	if identityID == "" {
 		return onboarding.OnboardingState{}, nil
 	}
-	text, err := m.call(ctx, "memory_get_facts", map[string]any{
-		"subject": identityID, "user_identifier": identityID,
+	var text string
+	err := m.withSession(ctx, memoryOneCallTimeout, func(ctx context.Context, cli mcp.Transport) error {
+		out, err := cli.CallTool(ctx, "memory_get_facts", map[string]any{
+			"subject": identityID, "user_identifier": identityID,
+		})
+		text = out
+		return err
 	})
 	if err != nil {
 		return onboarding.OnboardingState{}, err

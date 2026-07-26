@@ -252,18 +252,16 @@ const identityCreateCapability = "identity.create"
 // onboarding* are the Phase-28 ONBD-01/02 onboarding wizard routes. start + provision are
 // the CREATE mutations — interposed with RequireCapability(identity.create) exactly like
 // POST /agent/run (the method+path-specific pattern wins Go 1.22 longest-pattern precedence
-// and fires AFTER RequireAuth binds the principal). step + telegram-status are non-create
-// (the session is authz'd at start) and inherit RequireAuth from the whole-mux wrap with NO
-// capability gate. All four are SPECIFIC method+path siblings under the "/api/" exclusion
+// and fires AFTER RequireAuth binds the principal). status, the seed-form submit and
+// telegram-status are self-scoped and inherit RequireAuth from the whole-mux wrap with NO
+// capability gate. All five are SPECIFIC method+path siblings under the "/api/" exclusion
 // carve-out — NEVER a bare "/api/" (which would shadow /api/integrations/, T-28-05).
 const (
-	onboardingStatusRoute          = "GET /api/onboarding/status"
-	onboardingProfileStartRoute    = "POST /api/onboarding/profile/start"
-	onboardingProfileCompleteRoute = "POST /api/onboarding/{sessionToken}/profile"
-	onboardingStartRoute           = "POST /api/onboarding/start"
-	onboardingStepRoute            = "POST /api/onboarding/{sessionToken}/step"
-	onboardingProvisionRoute       = "POST /api/onboarding/{sessionToken}/provision"
-	onboardingTgStatusRoute        = "GET /api/onboarding/{sessionToken}/telegram-status"
+	onboardingStatusRoute        = "GET /api/onboarding/status"
+	onboardingProfileSubmitRoute = "POST /api/onboarding/profile"
+	onboardingStartRoute         = "POST /api/onboarding/start"
+	onboardingProvisionRoute     = "POST /api/onboarding/{sessionToken}/provision"
+	onboardingTgStatusRoute      = "GET /api/onboarding/{sessionToken}/telegram-status"
 )
 
 // approvalsResolveRoute is the mutating resume/decline/cancel endpoint (APRV-02).
