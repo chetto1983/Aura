@@ -227,7 +227,17 @@ Per-call overhead measured inside the container: fixed prompt + system 1,928 cha
 
 Highest-leverage move, zero new dependencies: **gate extraction on content** so the 1,257-token prefix is not burned on `"ciao"`. Free cleanup regardless: set `enable_spacy=False` / `enable_gliner=False` so two stages stop being built and failing per message.
 
-**D-3 — GLiNER: measured, not estimated (2026-07-26).**
+**D-3 — GLiNER: measured, not estimated (2026-07-26). → DECIDED: do not adopt.**
+
+> **Operator decision, 2026-07-26: "se non porta niente lasciamo così".** Correct on the
+> goal that prompted the evaluation. GLiNER is more *accurate* than what runs today (7/7
+> types vs the LLM's habit of typing a person as an OBJECT — M-6), but accuracy was not the
+> ask: the ask was to stop paying for an LLM call on every message, and it cannot deliver
+> that, because relations and preferences are LLM-only and `stop_on_success=False` means the
+> LLM stage runs regardless. Adopting it would buy +300-400 MB and +119 ms per message for
+> an unchanged token bill. **Revisit only if D-2 is done first** — once extraction is gated
+> on content, a local entity stage has somewhere to plug in. The bench in
+> `extraction-bench/` exists so that revisit costs an hour, not a day.
 
 Run against the sidecar's real configuration — the 15 POLE+O labels from `factory.py:43-60` at the shipped threshold 0.5 — on real Italian: three signal sentences, three verbatim user turns from `conversation_turns`, the weather-header noise, and `"ciao"`. CPU only.
 
@@ -248,7 +258,7 @@ Three results worth keeping:
 
 **What it still does not do.** GLiNER extracts entities only. The LLM stage also produces **relations** (`llm_extractor.py:361-378`) and **preferences** (`:379-390`); `gliner_extractor.py:561` returns `relations=[]` by construction. For a graph memory the relations *are* the product, so flipping `fallback_on_empty=False` to actually skip the LLM would trade them away. GLiNER's honest role is entity extraction **plus** a cheap gate on whether a message contains anything worth paying the LLM for — which is D-2's "gate extraction on content", and where the weather-noise result makes it valuable.
 
-**D-4 — spaCy (stage 1): do NOT enable it. Measured 2026-07-26, same fixtures, same metric.**
+**D-4 — spaCy (stage 1): do NOT enable it. Measured 2026-07-26, same fixtures, same metric. → DECIDED: do not adopt** (same operator call as D-3, and here the measurements agree with it outright rather than merely accepting it — spaCy would make the graph worse, not just cost more).
 
 Recall is the easy half. The half that matters is the **type**, because the entity MERGE key is `{name, type, deduplication_scope}` — a wrong type does not mislabel a node, it **creates a second one that no deduplication can ever collapse**. That is M-6 on the live graph, mechanically: two "David" nodes differing only by `OBJECT` vs `PERSON`.
 
@@ -271,6 +281,8 @@ Recall is the easy half. The half that matters is the **type**, because the enti
 2. **LLM only when there is something to extract** — for relations and preferences, gated on GLiNER having found anything, which requires flipping `stop_on_success` (D-2) since it is currently never consulted.
 
 This does not make the MCP "100%" of the upstream diagram — it makes it correct. Stage 1 as shipped would add duplicates to a graph whose duplicates are the operator's original complaint.
+
+**What D-3/D-4 being closed leaves behind.** Both stages stay off, which is the status quo — but *not* a no-op, because `settings.py:193-194` still defaults both to **enabled** while neither package is installed. So `SpacyEntityExtractor` and `GLiNEREntityExtractor` are built and **throw on every single message**, forever, for zero benefit. Setting `enable_spacy=False` / `enable_gliner=False` costs nothing, changes no behaviour, and removes two exceptions and two log lines per message; it is the one free item these two decisions did not dispose of. The real lever remains **D-2**: gate extraction on content, so the 1,257-token prefix stops being burned on `"ciao"`.
 
 **Wiring cost if adopted:** `extraction/gliner_extractor.py:407-424` calls `GLiNER.from_pretrained(self._model_name)` and then `.to(self.device)`; the ONNX path needs `load_onnx_model=True, onnx_model_file="onnx/model_fp16.onnx"` and the `.to()` guarded (the ORT wrapper is not a torch module). `ExtractionConfig` has no knob for either — new fields required. `pip install gliner` pulls **torch unconditionally** even on the ONNX path, so use `--index-url https://download.pytorch.org/whl/cpu` or the default Linux wheel drags the CUDA build; image delta ≈ +300-400 MB on the current 908 MB.
 
