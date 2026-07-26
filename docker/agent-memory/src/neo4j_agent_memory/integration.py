@@ -17,12 +17,15 @@ Example:
 
 from __future__ import annotations
 
-import asyncio
 import logging
-from datetime import datetime, timezone
-from enum import Enum
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
-from uuid import uuid4
+
+from neo4j_agent_memory.integration_context import (
+    ContextSearchMixin,
+    SessionStrategy,
+    entity_name_fields,
+)
 
 if TYPE_CHECKING:
     from neo4j_agent_memory import MemoryClient
@@ -31,45 +34,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def entity_name_fields(entity: Any) -> dict[str, Any]:
-    """Project an entity's name for the API: the STORED name, never a substitute.
-
-    Every caller-facing read path must project names through here — the MCP tools and
-    resources included. ``tests/test_entity_name_projection.py`` enforces that by banning
-    ``.display_name`` outright across the read surface; a fourth path written by hand is
-    exactly how the defect below survived three fixes.
-
-    ``Entity.display_name`` returns ``canonical_name or name`` — correct for rendering a
-    label, catastrophic on a data interface. Reporting the canonical as "name" made every
-    read lie about what was written: an agent that stored "Davide" was told the entity was
-    called "David" (its resolver-assigned canonical) by add, get and search alike, concluded
-    its write had failed, deleted the node and retried — a loop observed live on 2026-07-25,
-    where the very first write had in fact succeeded.
-
-    The canonical is still useful, so it is surfaced as its own field when it differs —
-    additive information instead of a silent replacement.
-    """
-    fields: dict[str, Any] = {"name": entity.name}
-    canonical = getattr(entity, "canonical_name", None)
-    if canonical and canonical != entity.name:
-        fields["canonical_name"] = canonical
-    return fields
+def _parse_iso_datetime(value: str | None) -> datetime | None:
+    if value is None:
+        return None
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
-class SessionStrategy(str, Enum):
-    """Strategy for resolving session IDs."""
-
-    PER_CONVERSATION = "per_conversation"
-    """New UUID per MemoryIntegration instance (default)."""
-
-    PER_DAY = "per_day"
-    """One session per calendar day: '{user_id}-YYYY-MM-DD'."""
-
-    PERSISTENT = "persistent"
-    """Single persistent session using user_id."""
-
-
-class MemoryIntegration:
+class MemoryIntegration(ContextSearchMixin):
     """High-level convenience wrapper over MemoryClient.
 
     Provides a simplified interface for the three most common operations:
@@ -176,31 +147,6 @@ class MemoryIntegration:
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
         await self.close()
 
-    def resolve_session_id(self, hint: str | None = None) -> str:
-        """Resolve a session ID based on the configured strategy.
-
-        Args:
-            hint: Optional explicit session ID. If provided, always used as-is.
-
-        Returns:
-            The resolved session ID string.
-        """
-        if hint:
-            return hint
-
-        if self._strategy == SessionStrategy.PER_CONVERSATION:
-            if self._conversation_session_id is None:
-                self._conversation_session_id = str(uuid4())
-            return self._conversation_session_id
-
-        if self._strategy == SessionStrategy.PER_DAY:
-            user = self._user_id or "default"
-            date_str = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d")
-            return f"{user}-{date_str}"
-
-        # PERSISTENT
-        return self._user_id or "default"
-
     @property
     def observer(self) -> MemoryObserver | None:
         """Access the observer (set by MCP server lifespan)."""
@@ -210,252 +156,7 @@ class MemoryIntegration:
     def observer(self, value: MemoryObserver | None) -> None:
         self._observer = value
 
-    def _get_preference_detector(self):
-        """Lazy-initialize the preference detector."""
-        if self._preference_detector is None:
-            from neo4j_agent_memory.mcp._preference_detector import PreferenceDetector
-
-            self._preference_detector = PreferenceDetector()
-        return self._preference_detector
-
-    async def _detect_and_store_preferences(
-        self,
-        content: str,
-        session_id: str,
-        user_identifier: str | None = None,
-    ) -> None:
-        """Detect preferences in message content and store them.
-
-        Runs as a fire-and-forget background task. Errors are logged
-        but do not propagate.
-        """
-        try:
-            detector = self._get_preference_detector()
-            detected = detector.detect(content)
-            for pref in detected:
-                sentiment_prefix = "" if pref.sentiment == "positive" else "Dislikes: "
-                await self.client.long_term.add_preference(
-                    category=pref.category,
-                    preference=f"{sentiment_prefix}{pref.preference}",
-                    context=f"Auto-detected from session {session_id}: {pref.source_text[:200]}",
-                    confidence=pref.confidence,
-                    generate_embedding=True,
-                    user_identifier=user_identifier,
-                )
-                logger.debug(
-                    f"Auto-detected preference: [{pref.category}] "
-                    f"{pref.sentiment}: {pref.preference}"
-                )
-        except Exception as e:
-            logger.warning(f"Error in background preference detection: {e}")
-
     # ── Core Operations ──────────────────────────────────────────────
-
-    async def store_message(
-        self,
-        role: str,
-        content: str,
-        *,
-        session_id: str | None = None,
-        metadata: dict[str, Any] | None = None,
-        user_identifier: str | None = None,
-    ) -> dict[str, Any]:
-        """Store a message with automatic entity extraction.
-
-        Args:
-            role: Message role ('user', 'assistant', 'system').
-            content: Message text content.
-            session_id: Explicit session ID (uses strategy if not provided).
-            metadata: Optional metadata to attach.
-
-        Returns:
-            Dict with stored message info (id, session_id, stored flag).
-        """
-        sid = self.resolve_session_id(session_id)
-        try:
-            message = await self.client.short_term.add_message(
-                session_id=sid,
-                role=role,
-                content=content,
-                metadata=metadata,
-                extract_entities=self._auto_extract,
-                generate_embedding=True,
-                user_identifier=user_identifier,
-            )
-
-            # Fire-and-forget: background preference detection for user messages
-            if self._auto_preferences and role == "user":
-                asyncio.create_task(
-                    self._detect_and_store_preferences(content, sid, user_identifier)
-                )
-
-            # Notify observer (for context tracking and compression)
-            if self._observer is not None:
-                asyncio.create_task(
-                    self._observer.on_message_stored(
-                        session_id=sid,
-                        content=content,
-                        message_id=str(message.id),
-                        role=role,
-                    )
-                )
-
-            return {
-                "stored": True,
-                "type": "message",
-                "id": str(message.id),
-                "session_id": sid,
-            }
-        except Exception as e:
-            logger.error(f"Error storing message: {e}")
-            return {"error": str(e)}
-
-    async def get_context(
-        self,
-        *,
-        session_id: str | None = None,
-        query: str | None = None,
-        max_items: int = 10,
-        include_short_term: bool = True,
-        include_long_term: bool = True,
-        include_reasoning: bool = True,
-        user_identifier: str | None = None,
-    ) -> dict[str, Any]:
-        """Get assembled context from all memory types.
-
-        Args:
-            session_id: Explicit session ID (uses strategy if not provided).
-            query: Search query for context retrieval.
-            max_items: Maximum items per memory type.
-            include_short_term: Whether to include conversation history.
-            include_long_term: Whether to include entities/preferences.
-            include_reasoning: Whether to include reasoning traces.
-
-        Returns:
-            Dict with context string and metadata.
-        """
-        sid = self.resolve_session_id(session_id)
-        try:
-            context = await self.client.get_context(
-                query=query or "",
-                session_id=sid,
-                include_short_term=include_short_term,
-                include_long_term=include_long_term,
-                include_reasoning=include_reasoning,
-                max_items=max_items,
-                user_identifier=user_identifier,
-            )
-            return {
-                "session_id": sid,
-                "context": context,
-                "has_context": bool(context),
-            }
-        except Exception as e:
-            logger.error(f"Error getting context: {e}")
-            return {"error": str(e)}
-
-    async def search(
-        self,
-        query: str,
-        *,
-        memory_types: list[str] | None = None,
-        session_id: str | None = None,
-        limit: int = 10,
-        threshold: float = 0.7,
-        user_identifier: str | None = None,
-    ) -> dict[str, Any]:
-        """Search across memory types.
-
-        Args:
-            query: Search query text.
-            memory_types: Types to search ('messages', 'entities', 'preferences', 'traces').
-            session_id: Filter messages by session.
-            limit: Maximum results per type.
-            threshold: Similarity threshold.
-
-        Returns:
-            Dict with results organized by memory type.
-        """
-        if memory_types is None:
-            memory_types = ["messages", "entities", "preferences"]
-
-        results: dict[str, list[dict[str, Any]]] = {}
-
-        try:
-            if "messages" in memory_types:
-                messages = await self.client.short_term.search_messages(
-                    query=query,
-                    session_id=session_id,
-                    limit=limit,
-                    threshold=threshold,
-                    user_identifier=user_identifier,
-                )
-                results["messages"] = [
-                    {
-                        "id": str(msg.id),
-                        "role": msg.role.value if hasattr(msg.role, "value") else str(msg.role),
-                        "content": msg.content,
-                        "timestamp": msg.created_at.isoformat() if msg.created_at else None,
-                        "similarity": msg.metadata.get("similarity") if msg.metadata else None,
-                    }
-                    for msg in messages
-                ]
-
-            if "entities" in memory_types:
-                entities = await self.client.long_term.search_entities(
-                    query=query,
-                    limit=limit,
-                    user_identifier=user_identifier,
-                )
-                results["entities"] = [
-                    {
-                        "id": str(entity.id),
-                        **entity_name_fields(entity),
-                        "type": (
-                            entity.type.value if hasattr(entity.type, "value") else str(entity.type)
-                        ),
-                        "description": entity.description,
-                    }
-                    for entity in entities
-                ]
-
-            if "preferences" in memory_types:
-                preferences = await self.client.long_term.search_preferences(
-                    query=query,
-                    limit=limit,
-                    user_identifier=user_identifier,
-                )
-                results["preferences"] = [
-                    {
-                        "id": str(pref.id),
-                        "category": pref.category,
-                        "preference": pref.preference,
-                        "context": pref.context,
-                    }
-                    for pref in preferences
-                ]
-
-            if "traces" in memory_types:
-                traces = await self.client.reasoning.get_similar_traces(
-                    task=query,
-                    limit=limit,
-                    user_identifier=user_identifier,
-                )
-                results["traces"] = [
-                    {
-                        "id": str(trace.id),
-                        "task": trace.task,
-                        "outcome": trace.outcome,
-                        "success": trace.success,
-                    }
-                    for trace in traces
-                ]
-
-        except Exception as e:
-            logger.error(f"Error in search: {e}")
-            return {"error": str(e)}
-
-        return {"results": results, "query": query}
 
     async def add_entity(
         self,
@@ -590,8 +291,8 @@ class MemoryIntegration:
                 predicate=predicate,
                 obj=object_value,
                 confidence=confidence,
-                valid_from=valid_from,
-                valid_until=valid_until,
+                valid_from=_parse_iso_datetime(valid_from),
+                valid_until=_parse_iso_datetime(valid_until),
                 generate_embedding=True,
                 metadata=metadata,
                 user_identifier=user_identifier,
@@ -799,9 +500,7 @@ class MemoryIntegration:
             "entity": {
                 "id": str(entity.id),
                 **entity_name_fields(entity),
-                "type": (
-                    entity.type.value if hasattr(entity.type, "value") else str(entity.type)
-                ),
+                "type": (entity.type.value if hasattr(entity.type, "value") else str(entity.type)),
                 "subtype": entity.subtype,
                 "description": entity.description,
                 "aliases": entity.aliases,

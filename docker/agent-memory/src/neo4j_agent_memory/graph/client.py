@@ -15,6 +15,18 @@ from neo4j.exceptions import AuthError, ServiceUnavailable
 from neo4j_agent_memory.config.settings import Neo4jConfig
 from neo4j_agent_memory.core.exceptions import ConnectionError
 
+_CORPUS_EPOCH_INCREMENT = """
+MATCH (revision:MemoryCorpusRevision {singleton: 'corpus'})
+SET revision.epoch = revision.epoch + 1,
+    revision.updated_at = datetime()
+RETURN revision.epoch AS epoch
+"""
+
+_CORPUS_EPOCH_READ = """
+MATCH (revision:MemoryCorpusRevision {singleton: 'corpus'})
+RETURN revision.epoch AS epoch
+"""
+
 
 class Neo4jClient:
     """
@@ -146,10 +158,26 @@ class Neo4jClient:
             async def execute_write_tx(tx: AsyncManagedTransaction) -> list[dict[str, Any]]:
                 result = await tx.run(query, parameters or {})
                 data = await result.data()
+                epoch_result = await tx.run(_CORPUS_EPOCH_INCREMENT)
+                epoch_rows = await epoch_result.data()
+                if len(epoch_rows) != 1 or not self._valid_epoch(epoch_rows[0].get("epoch")):
+                    raise RuntimeError("memory corpus epoch singleton is missing or invalid")
                 return data
 
             records = await session.execute_write(execute_write_tx)
             return records
+
+    async def read_corpus_epoch(self) -> int | None:
+        """Return the service-owned corpus epoch, or None when it is unavailable."""
+        rows = await self.execute_read(_CORPUS_EPOCH_READ)
+        if len(rows) != 1:
+            return None
+        epoch = rows[0].get("epoch")
+        return epoch if self._valid_epoch(epoch) else None
+
+    @staticmethod
+    def _valid_epoch(value: Any) -> bool:
+        return isinstance(value, int) and not isinstance(value, bool) and value > 0
 
     async def vector_search(
         self,

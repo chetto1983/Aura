@@ -68,6 +68,7 @@ _PACKAGE = Path(inspect.getfile(integration_module)).parent
 
 CALLER_FACING_SOURCES = [
     _PACKAGE / "integration.py",
+    _PACKAGE / "integration_context.py",
     *sorted((_PACKAGE / "mcp").glob("*.py")),
     *sorted((_PACKAGE / "memory").glob("*.py")),
 ]
@@ -92,7 +93,13 @@ def test_the_class_guard_is_actually_looking_at_something():
     """A guard that scans an empty file set passes forever. Pin what it must cover."""
     names = {p.name for p in CALLER_FACING_SOURCES}
 
-    assert {"integration.py", "_tools.py", "_resources.py", "long_term.py"} <= names
+    assert {
+        "integration.py",
+        "integration_context.py",
+        "_tools.py",
+        "_resources.py",
+        "long_term.py",
+    } <= names
     assert all(p.is_file() for p in CALLER_FACING_SOURCES)
 
 
@@ -123,7 +130,7 @@ def test_the_projection_helper_is_the_one_in_use():
         if "entity_name_fields(" in path.read_text(encoding="utf-8")
     ]
 
-    assert {"integration.py", "_tools.py", "_resources.py"} <= set(users)
+    assert {"integration.py", "integration_context.py", "_tools.py", "_resources.py"} <= set(users)
 
 
 def _ctx(client):
