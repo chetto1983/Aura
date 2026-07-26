@@ -118,6 +118,39 @@ func TestAdaptiveBenchmarkControlDriverBoundsAndClassifiesFailure(
 	}
 }
 
+func TestAdaptiveBenchmarkControlDriverEmitsNonNilEmptyReasonCodes(
+	t *testing.T,
+) {
+	runID := uuid.MustParse("018f0000-0000-7000-8000-000000000012")
+	driver, err := newAdaptiveBenchmarkControlDriverWithOps(
+		runID,
+		adaptiveBenchmarkControlDriverOps{
+			Now: time.Now, Timeout: time.Second,
+			Executors: adaptiveBenchmarkControlExecutorMap(func(
+				context.Context,
+				auraeval.AdaptiveBenchmarkControlCase,
+			) (adaptiveBenchmarkControlExecution, error) {
+				return adaptiveBenchmarkControlExecution{}, nil
+			}),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := driver.RunControl(
+		t.Context(),
+		auraeval.AdaptiveBenchmarkControlCase{
+			ControlID: "negative_control",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ReasonCodes == nil || len(result.ReasonCodes) != 0 {
+		t.Fatalf("ReasonCodes = %#v, want non-nil empty", result.ReasonCodes)
+	}
+}
+
 func TestAdaptiveBenchmarkControlDriverRejectsUnknownControlAndNilReceiver(
 	t *testing.T,
 ) {

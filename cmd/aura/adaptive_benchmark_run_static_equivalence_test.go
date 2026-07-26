@@ -89,6 +89,30 @@ func TestAdaptiveBenchmarkStaticRegistryRemovesEveryAdaptiveControl(
 	}
 }
 
+func TestAdaptiveBenchmarkStaticRegistryAcceptsRestrictedProductionRegistry(
+	t *testing.T,
+) {
+	t.Parallel()
+	full := adaptiveBenchmarkRegistryFixture(t)
+	restricted, err := restrictAdaptiveBenchmarkRegistry(full)
+	if err != nil {
+		t.Fatalf("restrictAdaptiveBenchmarkRegistry: %v", err)
+	}
+
+	static, err := adaptiveBenchmarkStaticRegistry(restricted)
+	if err != nil {
+		t.Fatalf("adaptiveBenchmarkStaticRegistry: %v", err)
+	}
+	staticSkill, ok := static.Get("skill")
+	if !ok {
+		t.Fatal("static registry lacks skill")
+	}
+	skill, ok := staticSkill.(adaptiveBenchmarkRestrictedSkill)
+	if !ok || skill.delegate == nil || skill.delegate.Adaptive != nil {
+		t.Fatalf("static skill = %#v", staticSkill)
+	}
+}
+
 func adaptiveBenchmarkStaticEquivalenceResult() auraeval.AdaptiveBenchmarkDriverResult {
 	return auraeval.AdaptiveBenchmarkDriverResult{
 		ChampionActionID: adaptive.StaticActionID,

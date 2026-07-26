@@ -307,12 +307,21 @@ func (driver *adaptiveBenchmarkAuraDriver) runTurn(
 		)
 		return result, adaptiveBenchmarkPendingEvaluation{}, failureErr
 	}
-	facts, err := driver.recorder.PersistedFacts(
-		ctx,
+	assignmentID, err := driver.recorder.TerminalEffectiveAssignmentID(
 		driver.ownerID,
 		requestID,
 		subject.Domain,
 	)
+	var facts adaptiveBenchmarkPersistedFacts
+	if err == nil {
+		facts, err = driver.recorder.PersistedFactsForAssignment(
+			ctx,
+			driver.ownerID,
+			requestID,
+			subject.Domain,
+			assignmentID,
+		)
+	}
 	if err != nil {
 		result := auraeval.AdaptiveBenchmarkDriverResult{
 			RequestID: requestID.String(),

@@ -17,6 +17,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+const adaptiveBenchmarkMemoryRecallMaxItems = 8
+
+func adaptiveBenchmarkRuntimeConfig(cfg *config.Config) *config.Config {
+	benchmarkCfg := *cfg
+	benchmarkCfg.MemoryRecall = true
+	benchmarkCfg.MemoryRecallMaxItems = adaptiveBenchmarkMemoryRecallMaxItems
+	return &benchmarkCfg
+}
+
 func assembleAdaptiveBenchmarkRuntime(
 	ctx context.Context,
 	cfg *config.Config,
@@ -35,6 +44,7 @@ func assembleAdaptiveBenchmarkRuntime(
 			"adaptive benchmark runtime scope is invalid",
 		)
 	}
+	benchmarkCfg := adaptiveBenchmarkRuntimeConfig(cfg)
 	success := false
 	defer func() {
 		if !success {
@@ -64,7 +74,7 @@ func assembleAdaptiveBenchmarkRuntime(
 	}
 	state, err := assembleAdaptiveBenchmarkRuntimeState(
 		ctx,
-		cfg,
+		benchmarkCfg,
 		pool,
 		request,
 		runID,
@@ -80,7 +90,7 @@ func assembleAdaptiveBenchmarkRuntime(
 		identityctx.CLIServiceIdentity,
 	)
 	controlState, err := newAdaptiveBenchmarkRuntimeReassembler(
-		cfg,
+		benchmarkCfg,
 		controlRequest,
 		runID,
 		model,
@@ -104,7 +114,7 @@ func assembleAdaptiveBenchmarkRuntime(
 	}
 	fixtures, err := installAdaptiveBenchmarkFixtures(
 		ctx,
-		cfg,
+		benchmarkCfg,
 		request.OwnerID,
 		runID,
 		productionAdaptiveBenchmarkFixtureDeps(),
@@ -124,7 +134,7 @@ func assembleAdaptiveBenchmarkRuntime(
 		fixtureCleanup:     fixtures.Cleanup,
 		controlEnvironment: controlEnvironment,
 		reassemble: newAdaptiveBenchmarkRuntimeReassembler(
-			cfg,
+			benchmarkCfg,
 			request,
 			runID,
 			model,
@@ -133,7 +143,7 @@ func assembleAdaptiveBenchmarkRuntime(
 			nil,
 		),
 		forkControl: newAdaptiveBenchmarkRuntimeForker(
-			cfg,
+			benchmarkCfg,
 			request,
 			runID,
 			model,

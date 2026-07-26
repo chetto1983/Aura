@@ -74,11 +74,12 @@ func adaptiveBenchmarkConcurrencyEvidence(
 					),
 				)
 		}
-		facts, err := state.subject.recorder.PersistedFacts(
+		facts, err := state.subject.recorder.PersistedFactsForAssignment(
 			ctx,
 			state.subject.ownerID,
 			snapshot.requestID,
 			state.domain,
+			snapshot.assignmentID,
 		)
 		if err != nil {
 			return auraeval.AdaptiveBenchmarkConcurrencyEvidence{}, nil, err

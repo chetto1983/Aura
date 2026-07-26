@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -56,6 +57,57 @@ func TestAdaptiveBenchmarkTeeRecorderPersistsAndRereadsTypedFacts(t *testing.T) 
 	}
 }
 
+func TestAdaptiveBenchmarkTeeRecorderAcceptsJSONBPayloadReserialization(
+	t *testing.T,
+) {
+	ledger := newAdaptiveBenchmarkLedgerFake()
+	recorder, err := newAdaptiveBenchmarkTeeRecorder(ledger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assignment := adaptiveBenchmarkTestAssignment(
+		t,
+		adaptive.DomainReasoning,
+	)
+	delivery := adaptiveBenchmarkTestDelivery(t, assignment)
+	if _, err := recorder.RecordAssignment(
+		t.Context(),
+		assignment,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := recorder.RecordDelivery(
+		t.Context(),
+		assignment.OwnerID,
+		assignment.AssignmentID,
+		delivery,
+	); err != nil {
+		t.Fatal(err)
+	}
+	var reserialized bytes.Buffer
+	if err := json.Indent(
+		&reserialized,
+		ledger.records[0].Payload,
+		"",
+		"  ",
+	); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Equal(reserialized.Bytes(), ledger.records[0].Payload) {
+		t.Fatal("test fixture did not reserialize the payload")
+	}
+	ledger.records[0].Payload = reserialized.Bytes()
+
+	if _, err := recorder.PersistedFacts(
+		t.Context(),
+		assignment.OwnerID,
+		assignment.RequestID,
+		assignment.Domain,
+	); err != nil {
+		t.Fatalf("PersistedFacts rejected equivalent JSONB payload: %v", err)
+	}
+}
+
 func TestAdaptiveBenchmarkTeeRecorderRejectsPersistedFactDrift(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -65,6 +117,34 @@ func TestAdaptiveBenchmarkTeeRecorderRejectsPersistedFactDrift(t *testing.T) {
 			name: "payload hash",
 			mutate: func(record *adaptive.OutboxRecord) {
 				record.PayloadHash = []byte("tampered")
+			},
+		},
+		{
+			name: "payload semantics",
+			mutate: func(record *adaptive.OutboxRecord) {
+				record.Payload = []byte(
+					`{"schema_version":"tampered"}`,
+				)
+			},
+		},
+		{
+			name: "event identity",
+			mutate: func(record *adaptive.OutboxRecord) {
+				record.ID = uuid.Must(uuid.NewV7())
+			},
+		},
+		{
+			name: "owner identity",
+			mutate: func(record *adaptive.OutboxRecord) {
+				record.OwnerID = uuid.Must(uuid.NewV7())
+			},
+		},
+		{
+			name: "aggregate identity",
+			mutate: func(record *adaptive.OutboxRecord) {
+				record.AggregateID = uuid.Must(
+					uuid.NewV7(),
+				).String()
 			},
 		},
 		{

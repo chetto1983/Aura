@@ -94,6 +94,27 @@ func (reader adaptiveBenchmarkControlPolicyReader) CurrentPolicy(
 	return policy, nil
 }
 
+func adaptiveBenchmarkInstallMemoryMismatchStream(
+	client *adaptiveBenchmarkObservedClient,
+) (func(), error) {
+	if client == nil {
+		return nil, adaptiveBenchmarkControlError(
+			"adaptive benchmark memory mismatch client is unavailable",
+		)
+	}
+	return client.SetStreamInterceptor(
+		func(
+			context.Context,
+			llm.Request,
+		) (<-chan llm.Chunk, error) {
+			return adaptiveBenchmarkChunkStream(
+				llm.Chunk{Text: "benchmark-memory-mismatch-complete"},
+				llm.Chunk{FinishReason: "stop"},
+			), nil
+		},
+	)
+}
+
 func (runtime *adaptiveBenchmarkControlRuntime) runRollbackStatic(
 	ctx context.Context,
 	controlCase auraeval.AdaptiveBenchmarkControlCase,
@@ -292,6 +313,13 @@ func (runtime *adaptiveBenchmarkControlRuntime) runMemoryEpochMismatch(
 	if err != nil {
 		return adaptiveBenchmarkControlExecution{}, err
 	}
+	clearStream, err := adaptiveBenchmarkInstallMemoryMismatchStream(
+		subject.observed,
+	)
+	if err != nil {
+		return adaptiveBenchmarkControlExecution{}, err
+	}
+	defer clearStream()
 	scenario, err := adaptiveBenchmarkControlScenario("m01")
 	if err != nil {
 		return adaptiveBenchmarkControlExecution{}, err

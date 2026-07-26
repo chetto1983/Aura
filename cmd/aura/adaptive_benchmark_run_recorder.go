@@ -3,11 +3,14 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"sync"
 
 	"github.com/chetto1983/aura/internal/adaptive"
+	"github.com/chetto1983/aura/internal/canonicaljson"
 	"github.com/google/uuid"
 )
 
@@ -51,9 +54,10 @@ type adaptiveBenchmarkRecordedDelivery struct {
 type adaptiveBenchmarkTeeRecorder struct {
 	delegate adaptiveBenchmarkLedger
 
-	mu          sync.Mutex
-	assignments map[uuid.UUID]adaptive.Assignment
-	deliveries  map[uuid.UUID]adaptiveBenchmarkRecordedDelivery
+	mu                sync.Mutex
+	assignments       map[uuid.UUID]adaptive.Assignment
+	deliveries        map[uuid.UUID]adaptiveBenchmarkRecordedDelivery
+	deliverySequences map[uuid.UUID]int64
 
 	probeMu sync.Mutex
 	probe   *adaptiveBenchmarkRecorderProbeRegistration
@@ -68,9 +72,10 @@ func newAdaptiveBenchmarkTeeRecorder(
 		)
 	}
 	return &adaptiveBenchmarkTeeRecorder{
-		delegate:    delegate,
-		assignments: make(map[uuid.UUID]adaptive.Assignment),
-		deliveries:  make(map[uuid.UUID]adaptiveBenchmarkRecordedDelivery),
+		delegate:          delegate,
+		assignments:       make(map[uuid.UUID]adaptive.Assignment),
+		deliveries:        make(map[uuid.UUID]adaptiveBenchmarkRecordedDelivery),
+		deliverySequences: make(map[uuid.UUID]int64),
 	}, nil
 }
 
@@ -182,6 +187,7 @@ func (recorder *adaptiveBenchmarkTeeRecorder) RecordDelivery(
 			ownerID: ownerID, requestID: assignment.RequestID,
 			delivery: cloneAdaptiveBenchmarkDelivery(delivery),
 		}
+	recorder.deliverySequences[delivery.AssignmentID] = sequence
 	recorder.mu.Unlock()
 	if probe != nil {
 		fact.Sequence = sequence
@@ -201,11 +207,109 @@ type adaptiveBenchmarkPersistedFacts struct {
 	DeliverySequence   int64
 }
 
+func (recorder *adaptiveBenchmarkTeeRecorder) TerminalEffectiveAssignmentID(
+	ownerID uuid.UUID,
+	requestID uuid.UUID,
+	domain adaptive.Domain,
+) (uuid.UUID, error) {
+	if recorder == nil ||
+		recorder.delegate == nil ||
+		ownerID == uuid.Nil ||
+		requestID == uuid.Nil {
+		return uuid.Nil, errors.New(
+			"adaptive benchmark fact scope is invalid",
+		)
+	}
+	recorder.mu.Lock()
+	defer recorder.mu.Unlock()
+	matchesScope := false
+	assignmentID := uuid.Nil
+	var latestDeliverySequence int64
+	for candidateID, assignment := range recorder.assignments {
+		if assignment.OwnerID != ownerID ||
+			assignment.RequestID != requestID ||
+			assignment.Domain != domain {
+			continue
+		}
+		matchesScope = true
+		delivery, delivered := recorder.deliveries[candidateID]
+		deliverySequence := recorder.deliverySequences[candidateID]
+		if !delivered ||
+			delivery.ownerID != ownerID ||
+			delivery.requestID != requestID ||
+			deliverySequence <= 0 {
+			continue
+		}
+		if deliverySequence == latestDeliverySequence &&
+			assignmentID != candidateID {
+			return uuid.Nil, fmt.Errorf(
+				"%w: adaptive benchmark deliveries share sequence %d",
+				errAdaptiveBenchmarkDeliveryFactMissing,
+				deliverySequence,
+			)
+		}
+		if deliverySequence > latestDeliverySequence {
+			assignmentID = candidateID
+			latestDeliverySequence = deliverySequence
+		}
+	}
+	if assignmentID != uuid.Nil {
+		return assignmentID, nil
+	}
+	if matchesScope {
+		return uuid.Nil, fmt.Errorf(
+			"%w: adaptive benchmark request has no committed delivery",
+			errAdaptiveBenchmarkDeliveryFactMissing,
+		)
+	}
+	return uuid.Nil, fmt.Errorf(
+		"%w: adaptive benchmark request has no %s assignments",
+		errAdaptiveBenchmarkAssignmentFactMissing,
+		domain,
+	)
+}
+
 func (recorder *adaptiveBenchmarkTeeRecorder) PersistedFacts(
 	ctx context.Context,
 	ownerID uuid.UUID,
 	requestID uuid.UUID,
 	domain adaptive.Domain,
+) (adaptiveBenchmarkPersistedFacts, error) {
+	return recorder.persistedFacts(
+		ctx,
+		ownerID,
+		requestID,
+		domain,
+		uuid.Nil,
+	)
+}
+
+func (recorder *adaptiveBenchmarkTeeRecorder) PersistedFactsForAssignment(
+	ctx context.Context,
+	ownerID uuid.UUID,
+	requestID uuid.UUID,
+	domain adaptive.Domain,
+	assignmentID uuid.UUID,
+) (adaptiveBenchmarkPersistedFacts, error) {
+	if assignmentID == uuid.Nil {
+		return adaptiveBenchmarkPersistedFacts{},
+			errors.New("adaptive benchmark fact scope is invalid")
+	}
+	return recorder.persistedFacts(
+		ctx,
+		ownerID,
+		requestID,
+		domain,
+		assignmentID,
+	)
+}
+
+func (recorder *adaptiveBenchmarkTeeRecorder) persistedFacts(
+	ctx context.Context,
+	ownerID uuid.UUID,
+	requestID uuid.UUID,
+	domain adaptive.Domain,
+	assignmentID uuid.UUID,
 ) (adaptiveBenchmarkPersistedFacts, error) {
 	if recorder == nil ||
 		recorder.delegate == nil ||
@@ -216,24 +320,39 @@ func (recorder *adaptiveBenchmarkTeeRecorder) PersistedFacts(
 	}
 	recorder.mu.Lock()
 	var assignment adaptive.Assignment
-	matches := 0
-	for _, candidate := range recorder.assignments {
-		if candidate.OwnerID == ownerID &&
-			candidate.RequestID == requestID &&
-			candidate.Domain == domain {
-			assignment = candidate
-			matches++
+	if assignmentID == uuid.Nil {
+		matches := 0
+		for _, candidate := range recorder.assignments {
+			if candidate.OwnerID == ownerID &&
+				candidate.RequestID == requestID &&
+				candidate.Domain == domain {
+				assignment = candidate
+				matches++
+			}
 		}
-	}
-	if matches != 1 {
-		recorder.mu.Unlock()
-		return adaptiveBenchmarkPersistedFacts{}, fmt.Errorf(
-			"%w: "+
-				"adaptive benchmark request has %d %s assignments",
-			errAdaptiveBenchmarkAssignmentFactMissing,
-			matches,
-			domain,
-		)
+		if matches != 1 {
+			recorder.mu.Unlock()
+			return adaptiveBenchmarkPersistedFacts{}, fmt.Errorf(
+				"%w: "+
+					"adaptive benchmark request has %d %s assignments",
+				errAdaptiveBenchmarkAssignmentFactMissing,
+				matches,
+				domain,
+			)
+		}
+	} else {
+		candidate, ok := recorder.assignments[assignmentID]
+		if !ok ||
+			candidate.OwnerID != ownerID ||
+			candidate.RequestID != requestID ||
+			candidate.Domain != domain {
+			recorder.mu.Unlock()
+			return adaptiveBenchmarkPersistedFacts{}, fmt.Errorf(
+				"%w: adaptive benchmark assignment is outside fact scope",
+				errAdaptiveBenchmarkAssignmentFactMissing,
+			)
+		}
+		assignment = candidate
 	}
 	recorded, ok := recorder.deliveries[assignment.AssignmentID]
 	if !ok ||
@@ -325,7 +444,10 @@ func adaptiveBenchmarkPersistedSequence(
 			record.AggregateID != expected.AggregateID ||
 			record.DecisionID != expected.DecisionID ||
 			record.Kind != expected.Kind ||
-			!bytes.Equal(record.Payload, expected.Payload) ||
+			!adaptiveBenchmarkCanonicalPayloadsEqual(
+				record.Payload,
+				expected.Payload,
+			) ||
 			!bytes.Equal(record.PayloadHash, expected.PayloadHash) {
 			return 0, errors.New(
 				"adaptive benchmark persisted fact drifted",
@@ -340,6 +462,33 @@ func adaptiveBenchmarkPersistedSequence(
 		)
 	}
 	return sequence, nil
+}
+
+func adaptiveBenchmarkCanonicalPayloadsEqual(left []byte, right []byte) bool {
+	leftCanonical, leftErr := adaptiveBenchmarkCanonicalPayload(left)
+	rightCanonical, rightErr := adaptiveBenchmarkCanonicalPayload(right)
+	return leftErr == nil &&
+		rightErr == nil &&
+		bytes.Equal(leftCanonical, rightCanonical)
+}
+
+func adaptiveBenchmarkCanonicalPayload(payload []byte) ([]byte, error) {
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.UseNumber()
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		return nil, err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return nil, errors.New(
+				"adaptive benchmark payload contains multiple JSON values",
+			)
+		}
+		return nil, err
+	}
+	return canonicaljson.Marshal(value)
 }
 
 func cloneAdaptiveBenchmarkAssignment(

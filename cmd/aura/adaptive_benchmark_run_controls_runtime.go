@@ -166,9 +166,7 @@ func (driver *adaptiveBenchmarkControlDriver) RunControl(
 			execution.EvidenceIDs,
 			driver.runID,
 		),
-		ReasonCodes: slices.Clone(
-			execution.ObservedFailureReasonCodes[:0],
-		),
+		ReasonCodes: []string{},
 		ObservedFailureReasonCodes: slices.Clone(
 			execution.ObservedFailureReasonCodes,
 		),

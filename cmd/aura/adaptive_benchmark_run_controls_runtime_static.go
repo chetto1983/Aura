@@ -30,6 +30,31 @@ func adaptiveBenchmarkValidateStaticEquivalence(
 func adaptiveBenchmarkStaticRegistry(
 	full *tools.Registry,
 ) (*tools.Registry, error) {
+	if full != nil {
+		sourceSkill, exists := full.Get("skill")
+		restrictedSkill, restricted :=
+			sourceSkill.(adaptiveBenchmarkRestrictedSkill)
+		if exists && restricted {
+			if restrictedSkill.delegate == nil {
+				return nil, adaptiveBenchmarkControlError(
+					"adaptive benchmark skill catalog is unavailable",
+				)
+			}
+			production := tools.NewRegistry()
+			for _, name := range []string{
+				"text_response",
+				"document_search",
+				"read_tool_output",
+				"tool_search",
+			} {
+				if tool, ok := full.Get(name); ok {
+					production.Register(tool)
+				}
+			}
+			production.Register(restrictedSkill.delegate)
+			full = production
+		}
+	}
 	if _, err := restrictAdaptiveBenchmarkRegistry(full); err != nil {
 		return nil, err
 	}

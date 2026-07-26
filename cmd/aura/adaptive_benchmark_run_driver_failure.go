@@ -37,12 +37,21 @@ func (driver *adaptiveBenchmarkAuraDriver) recoverTurnFailure(
 		)
 		return result, adaptiveBenchmarkPendingEvaluation{}, err
 	}
-	facts, err := driver.recorder.PersistedFacts(
-		ctx,
+	assignmentID, err := driver.recorder.TerminalEffectiveAssignmentID(
 		driver.ownerID,
 		requestID,
 		domain,
 	)
+	var facts adaptiveBenchmarkPersistedFacts
+	if err == nil {
+		facts, err = driver.recorder.PersistedFactsForAssignment(
+			ctx,
+			driver.ownerID,
+			requestID,
+			domain,
+			assignmentID,
+		)
+	}
 	if err != nil {
 		if errors.Is(err, errAdaptiveBenchmarkAssignmentFactMissing) ||
 			errors.Is(err, errAdaptiveBenchmarkDeliveryFactMissing) {
@@ -102,8 +111,7 @@ func (driver *adaptiveBenchmarkAuraDriver) capturedFailureRequestID(
 ) uuid.UUID {
 	driver.recorder.mu.Lock()
 	defer driver.recorder.mu.Unlock()
-	requestID := uuid.Nil
-	matches := 0
+	requestIDs := make(map[uuid.UUID]struct{})
 	for assignmentID, assignment := range driver.recorder.assignments {
 		if _, existed := baseline[assignmentID]; existed ||
 			assignment.OwnerID != driver.ownerID ||
@@ -116,11 +124,13 @@ func (driver *adaptiveBenchmarkAuraDriver) capturedFailureRequestID(
 			delivery.requestID != assignment.RequestID {
 			continue
 		}
-		requestID = assignment.RequestID
-		matches++
+		requestIDs[assignment.RequestID] = struct{}{}
 	}
-	if matches != 1 {
+	if len(requestIDs) != 1 {
 		return uuid.Nil
 	}
-	return requestID
+	for requestID := range requestIDs {
+		return requestID
+	}
+	return uuid.Nil
 }
