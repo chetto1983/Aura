@@ -188,6 +188,13 @@ markers = [
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",
+    # authlib/deprecate.py runs `warnings.simplefilter("always",
+    # AuthlibDeprecationWarning)` at import, inserting its own filter at the head of the
+    # list and overriding the blanket entry above. The category has to be named
+    # explicitly to take it back. Fires because the pinned fastmcp 2.14.7 still imports
+    # `authlib.jose`, which authlib has moved off internally; drop this when fastmcp
+    # follows it to joserfc.
+    "ignore::authlib.deprecate.AuthlibDeprecationWarning",
 ]
 
 [tool.mypy]
