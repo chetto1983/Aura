@@ -448,6 +448,43 @@ func TestAssembleChatEnvAppliesOnePolicyClampToEveryAdaptiveDomain(t *testing.T)
 	}
 }
 
+// An unopenable graph client must not stop `aura serve` from booting: mcp-neo4j-cypher is
+// a Python sidecar the appliance does not require, and a fatal open made the whole process
+// exit 71 on any host without it on PATH. Projection resumes on a later boot; the outbox
+// keeps the events meanwhile.
+func TestAssembleChatEnvBootsWithoutAReachableProjectorGraph(t *testing.T) {
+	pool := unreachablePool(t)
+	cfg := validBootConfig()
+	cfg.SkillsDir = t.TempDir()
+	cfg.SkillExportDir = t.TempDir()
+	cfg.SkillBodyCapBytes = 1 << 20
+	cfg.WorkspaceDir = t.TempDir()
+	var warnings bytes.Buffer
+
+	env, err := assembleChatEnvWithAdaptivePolicy(
+		context.Background(),
+		cfg,
+		pool,
+		func(context.Context, *knowledge.Config) (adaptiveGraphClient, error) {
+			return nil, errors.New(`spawn mcp-neo4j-cypher: executable file not found in $PATH`)
+		},
+		adaptiveBootPolicyReaderFunc(func(context.Context) (adaptive.Policy, error) {
+			return validAdaptiveBootTestPolicy(adaptive.PolicyOff), nil
+		}),
+		&warnings,
+	)
+	if err != nil {
+		t.Fatalf("boot refused an unreachable projector graph: %v", err)
+	}
+	t.Cleanup(env.close)
+	if env.adaptiveProjector != nil {
+		t.Fatal("projector runtime built from an opener that returned an error")
+	}
+	if _, ok := env.reg.Get((&tools.TaskTool{}).Spec().Name); !ok {
+		t.Fatal("an unreachable graph cost the boot its task tool")
+	}
+}
+
 func validAdaptiveBootTestPolicy(mode adaptive.PolicyMode) adaptive.Policy {
 	rolloutBPS := int32(0)
 	switch mode {

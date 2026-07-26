@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -523,6 +524,12 @@ func assembleChatEnvWithOptions(
 		Embedder: embeddingClient(cfg, documentHTTPClient(cfg)),
 	}
 	run := runner.New(deps)
+	// Fail-soft, like every other sidecar dependency at boot (MCP mounts, the embed
+	// probe above): the projector drains an outbox, and its own worker already tolerates
+	// a graph that is unreachable at runtime. Making the OPEN fatal made `aura serve`
+	// refuse to boot on any host without mcp-neo4j-cypher on PATH — a Python sidecar the
+	// appliance does not require. Events stay in the outbox and project once a boot finds
+	// the graph reachable.
 	adaptiveProjector, err := buildAdaptiveProjectorRuntime(
 		ctx,
 		&cfg.Neo4j,
@@ -530,7 +537,9 @@ func assembleChatEnvWithOptions(
 		openAdaptiveGraph,
 	)
 	if err != nil {
-		return nil, err
+		slog.Warn("adaptive projector disabled: private-graph projection is paused until the next boot with a reachable graph",
+			"error", err)
+		adaptiveProjector = nil
 	}
 	success = true // disarm the close-on-error guard; chatEnv.close now owns the lifecycle.
 	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, gateway: gw, reasoningControl: adaptiveControls.reasoning, operations: operations, toolInvocations: toolInvocationStore, deleteReconciler: runner.NewDeleteReconciler(run, time.Minute), adaptiveProjector: adaptiveProjector, toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter}, nil
