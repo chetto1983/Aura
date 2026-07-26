@@ -171,12 +171,12 @@ Merged to `master` at `07ffb56b5` + `70981b87f`. Quality rows re-measured (`186f
 
 The operator's instruction was "mount this MCP and test it as if it were yours". Everything below came out of **creating one test entity and reading it back**; none of it was visible from code review, and the existing 38-test suite was green throughout.
 
-| # | Defect | Status |
-|---|---|---|
+| Defect | Status |
+|---|---|
 | **M-1** Reads projected `canonical_name` as `name` | ✅ closed `df2e055a0` (after `20a4e8d88` + `28fbe5efb` fixed four of the five sites). `memory_get_entity` built its dict elsewhere and was missed; so were the entities-catalog resource and the relationship echo. Confirmed fixed in the live trace: `{"name": "Davide", "canonical_name": "David"}`. The guard no longer checks a literal from the site just fixed — it bans `.display_name` across the whole caller-facing read surface, over the AST, on a file set derived from the package directory, so a read path in a NEW module is covered the day it is written. |
 | **M-2** No update verb | ✅ shipped `20a4e8d88` — `memory_update`, see 1.8. |
 | **M-3** Canonical resolution unscoped | ✅ shipped `20a4e8d88`. `SEARCH_ENTITIES_BY_TYPE` fed the resolver **every** entity of that type in the database, so a fresh "Marco Bianchi" came back canonicalised onto another user's "Davide" — one user's data corrupting another's, and the stranger's name leaking back through the caller's own results. Now scoped to the caller. |
-| **M-4** `*_SCOPED` reads did not scope — **cross-user data leak** | ✅ shipped `20a4e8d88`. Ownership was enforced by a `WHERE` glued directly to an `OPTIONAL MATCH`; in Cypher that constrains the optional pattern, NOT the outer rows, so the filter did nothing. **Conversations (by id and by session), messages, entities, reasoning traces and session lists were readable across users.** Proven on the live graph: querying as a user owning exactly one entity returned another user's entity at score 0.999; after the fix, only its own. Seven queries corrected — six shipped, the seventh added the same day by copying the broken shape, which is how the pattern propagates. The in-memory fake clients the suite uses never execute Cypher and structurally could not catch it; a new structural test parses `queries.py` and fails any `*_SCOPED` query written that way. |
+| **M-4** `*_SCOPED` reads did not scope — **cross-user data leak** | ✅ closed `0b5be1268` (2026-07-26) after **four more copies were found outside the net**. The 07-25 guard discovered its subjects with `[n for n in dir(queries) if n.endswith("_SCOPED")]`, so every copy living in an inline query string — under no naming convention, outside `queries.py` — survived: `_get_entity_neighbors` (`mcp/_tools.py`) and three inside `MemoryClient.get_graph` (`__init__.py`). The `_tools.py` one was the worst of the family — it backs `memory_get_entity(include_neighbors=True)`, which is **default-on**, and it is the only reader in the codebase walking an *untyped, variable-length* path. **Proven on the live deployment graph**: an identity owning nothing, asking for the neighbours of an entity it did not own, got back another user's entity; with the `WITH` inserted, zero rows, and the real owner still sees its own. The guard was rewritten rather than extended — discovery is now an AST walk over every Cypher string literal in the package, and the rule is sharper, because a glued `WHERE` is **not** wrong per se: `CREATE_MESSAGE`, `GET_SESSION_CONTEXT` and `gds._communities_fallback` correctly use one to constrain their own optional pattern, and a blanket ban would have had to "fix" those three by breaking them. The rule that separates them: *a WHERE glued to an OPTIONAL MATCH may only constrain variables that same OPTIONAL MATCH introduces.* Two of the new tests exercise the analysis against the shipped-broken and repaired text, so a guard that cannot detect the bug it exists for now fails loudly. — earlier note: shipped `20a4e8d88`. Ownership was enforced by a `WHERE` glued directly to an `OPTIONAL MATCH`; in Cypher that constrains the optional pattern, NOT the outer rows, so the filter did nothing. **Conversations (by id and by session), messages, entities, reasoning traces and session lists were readable across users.** Proven on the live graph: querying as a user owning exactly one entity returned another user's entity at score 0.999; after the fix, only its own. Seven queries corrected — six shipped, the seventh added the same day by copying the broken shape, which is how the pattern propagates. The in-memory fake clients the suite uses never execute Cypher and structurally could not catch it; a new structural test parses `queries.py` and fails any `*_SCOPED` query written that way. |
 | **M-5** Entities written with no embedding → invisible to `memory_search` | 🔧 in progress. `short_term.py:1141,1325` pass `"embedding": None` hardcoded, never consulting the embedder, so every entity born from message extraction is unsearchable (the operator's own two "David" nodes are). Also: no uniqueness constraint backs the bare `MERGE (e:Entity {name, type, deduplication_scope})`, so concurrent writes can duplicate; and `GET_ENTITIES_WITHOUT_EMBEDDINGS`/`UPDATE_ENTITY_EMBEDDING` exist with **zero callers** — a repair path designed and never wired. |
 | **M-10** `memory_get_entity` searched with `limit=1`, hiding every duplicate | ✅ shipped `4338b0152`. The one tool whose job is to answer about a name reported only the top hit, so an agent asked to clean up duplicates was told about one, corrected it and stopped (round 5). It now looks at a few and lists the rest under `other_matches`, present only when the name really is ambiguous. |
 | **M-9** `memory_forget` succeeds and the entity **stays in the caller's reads** | ✅ shipped `4338b0152` — forget now cuts every edge that puts the entity in THAT caller's scope (ownership + their `MENTIONS`/`APPLIES_TO`/`TOUCHED`), and only theirs: still non-cascading, still never `DETACH DELETE`, node removed only when fully orphaned. Covered by a test that EXECUTES the Cypher against a live Neo4j — the suite's fake clients are why the `*_SCOPED` family shipped green while scoping nothing. Found 2026-07-25 round 5: Forget removes the `HAS_ENTITY` edge and answers `{"deleted": "3700…", "removed_node": false, "note": "unlinked from you; entity kept (still referenced elsewhere)"}` — the non-cascading design from `2ddccf269`, deliberate. But `ENTITY_IN_USER_SCOPE`, which backs every scoped read, also accepts `MENTIONS` — and the message that mentioned it is still the caller's. Measured right after the successful forget: `owned=0, mentioned=1, scope_count=1`. So search, `get_entity`, `get_context` and the recalled-context block can all still surface what the user was told was forgotten, and since MENTIONS is how extraction-born entities exist at all, this is the normal case, not the edge case. Deleting ownership is not forgetting; either forget must also cut the caller's `MENTIONS` edges, or it must stop reporting `deleted`. |
@@ -187,6 +187,106 @@ The operator's instruction was "mount this MCP and test it as if it were yours".
 **Method note.** M-1 through M-4 were found by *using* the tool, M-5/M-6 by reading the graph. The bug class here is uniform: a read that silently returns something other than what it claims (a canonical instead of a name; another user's row instead of yours). Unit tests over fake clients cannot see any of it.
 
 **Open (not started):** the `add_preference` exact-text dedup fallback (`long_term.py:749-775`, shipped `3fb13edee`) was never ported to `add_entity`/`add_fact`, whose dedup is embedding-gated only — with no embedding, dedup silently does not run.
+
+---
+
+## Memory sidecar — second dogfooding pass (2026-07-26)
+
+Same method, same result: everything below came out of *using* the tool and reading the graph, with the suite green throughout. The uniform bug class this time is **queries written against a graph shape no writer produces**, and **the same server addressed by callers who disagree about who is asking**.
+
+### Shipped
+
+| Fix | Commit | What it was |
+|---|---|---|
+| Four surviving M-4 copies + rewritten guard | `0b5be1268` | See the corrected M-4 row above. A live cross-user leak through a default-on tool. |
+| CLI memory calls carried no identity | `52a98688c` | `aura memory store-message` wrote a `:Conversation` with a NULL owner and zero `HAS_CONVERSATION` edges — data owned by nobody, invisible to every scoped read meant to return it. |
+| Operator identity resolved instead of guessed | `8e51183f1` | **The root cause of the split-brain graph.** `identityctx.LocalOperatorIdentity` is documented as "the fail-closed fallback owner" and is not: `serve_auth.go:189` retires it at first login — migrates the Postgres references onto the enrolled identity and **DELETES the row**. Verified: `…0001` is absent from `aura.identities`; the operator is `e3c8eb3b`. The retirement does **not** reach Neo4j, so the memory graph forked — cockpit reading as the enrolled identity, CLI writing as a deleted tenant. `aura memory facts Davide` answered `fact_count: 0` with the facts sitting there. `identity_auth_links` is now the single answer; `scopeMemoryArgs` no longer invents an owner (a fallback that silently picks one cannot tell "no principal yet" from "wiring bug"). |
+| Recall ranked by relevance | `12356a83a` | Search returned everything for any query. |
+| Preferences can say what they are about; extraction scope unforked | `f7ba4a654` | `applies_to`, plus extraction and the agent path deriving the same `deduplication_scope` instead of two that could never merge. |
+| `aura memory` exposes `--about`, `update`, `facts` | `69e03cae6` | Three sidecar capabilities were unreachable from the operator path. `facts` needs both forms because **facts are the one memory kind `memory_search` does not cover** (`integration_context.search` defaults to messages, entities, preferences). |
+| Facts attach to the entity their subject names | `2658d228f` + migration `0006` | `Fact{subject:"Davide"}` and `Entity{name:"Davide"}` were unconnected. Now `(:Fact)-[:ABOUT_SUBJECT]->(:Entity)`, re-resolved when `update_fact` changes the subject, surfaced on `memory_get_entity`. **`ENTITY_IN_USER_SCOPE` deliberately NOT extended** — a scope-granting edge fed by LLM-generated free text is an entity-enumeration oracle; resolution only ever matches entities the caller already owns, so the capability lands with the widening surface untouched. `DELETE_ENTITY_SCOPED` cuts the edge *before* the orphan probe, which is untyped and would otherwise have left `removed_node` permanently false. |
+| Cypher migration splitter cut on `;` inside comments | `29014e941` | Migration 0006 failed on first apply with `Invalid input 'this'` — the tail of an English sentence handed to Neo4j as a statement. |
+| authlib deprecation noise in the suite | `7898ba3cd` | `authlib/deprecate.py` registers its own `always` filter at import, overriding pytest's config. |
+
+### Open — decisions the operator owns
+
+**D-1 — What gets persisted to memory per turn.** Measured on `aura.conversation_turns` (n=398, 2 days, single operator — ratios solid, absolute rate soft):
+
+- **The volume objection does not hold.** Even persisting every turn including tool traffic is ~8,700-8,900 nodes and ~24,000-26,000 edges/month. Trivial for Neo4j.
+- **The cost objection holds, for an unnoticed reason** — see D-2.
+- **The number that decides it:** tool results are **83.5% of all conversational characters**, and their top extracted "entities" are `Vento` 73, `Pioggia` 50, `Nebbia` 28, `Pressione`, `Umidità`, `Percepita` — weather-table column headers scraped from ilmeteo.net — plus `Optional`, `Parameters`, `The` from `tool_search` schema dumps. And **66% of tool calls are `memory__*`**, so storing tool results re-ingests the graph's own output: the `Davide` 92 / `David` 83 split in that text *is* the duplicate the operator complained about, being read back and re-MERGEd.
+- **Recommended: all text turns, tool blocks excluded** (~1,900-2,400 nodes, ~4,800-7,100 edges/month). *Not* "user turns only": 92% of user turns contain zero proper nouns (measured 0.08/turn — `"so?"`, `"ciao"`), so that policy would add ~50 entities/month and never build a traversable graph. The structure is in the assistant's text turns, at 3.91 entities each.
+- Lever already in the code: `short_term.add_message(extraction_mode='skip')` stores with zero extraction cost.
+
+**D-2 — Extraction is 100% paid LLM, and the "fallback" is not one.** Two findings, both verified live:
+
+1. **spaCy and GLiNER are not installed.** `Dockerfile:57` installs `-e ".[mcp,google,openai]"`; the `spacy`/`gliner`/`extraction` extras exist in `pyproject.toml:71-75` and nobody asks for them. But `settings.py:193-194` defaults both to enabled, so the pipeline builds both stages and **both throw on every message** (`Stage 'SpacyEntityExtractor' failed: spaCy is required…` in the live logs). Of the upstream three-stage design, only the paid stage runs.
+2. **`factory.py:277` sets `stop_on_success = not fallback_on_empty`.** With the shipped default `fallback_on_empty=True` that is `False`, and `pipeline.py:482` therefore never breaks early. **The LLM stage is always-on, not a fallback.** Installing local NER without flipping this saves zero tokens.
+
+Per-call overhead measured inside the container: fixed prompt + system 1,928 chars ≈ 521 tok, plus the `ExtractionPayload` JSON schema 2,723 chars ≈ 736 tok = **~1,257 fixed tokens before any content**. A median 44-char user turn is ~12 tokens of payload: **~100:1**. Plus a synchronous OpenRouter round-trip (1-3s) on the turn path.
+
+Highest-leverage move, zero new dependencies: **gate extraction on content** so the 1,257-token prefix is not burned on `"ciao"`. Free cleanup regardless: set `enable_spacy=False` / `enable_gliner=False` so two stages stop being built and failing per message.
+
+**D-3 — GLiNER: measured, not estimated (2026-07-26).**
+
+Run against the sidecar's real configuration — the 15 POLE+O labels from `factory.py:43-60` at the shipped threshold 0.5 — on real Italian: three signal sentences, three verbatim user turns from `conversation_turns`, the weather-header noise, and `"ciao"`. CPU only.
+
+| Build | Entities recalled | False positives | Median latency | Size |
+|---|---|---|---|---|
+| `urchade/gliner_multi-v2.1` (safetensors) | **7/7** | **0** | 212 ms | ~850 MB |
+| `onnx-community/gliner_multi-v2.1` → `onnx/model_fp16.onnx` | **7/7** | **0** | **119 ms** | **553 MB** |
+| `onnx-community/gliner_multi-v2.1` → `onnx/model.onnx` (fp32) | 3/3 spot-check, identical scores | 0 | — | 1.10 GB |
+| `onnx-community/gliner_multi-v2.1` → `onnx/model_quantized.onnx` (int8) | **0/7** | 0 | 44 ms | 333 MB |
+
+Three results worth keeping:
+
+- **The int8 quantized ONNX is silently broken.** It loads, runs 5× faster, and returns **nothing** — no error, no warning beyond a generic `model of type 'gliner' to instantiate a model of type ''`. Anyone benchmarking the default-looking file would conclude the model is useless on Italian. fp16 is the build to use: identical output to the upstream weights, half the size of fp32, and faster than safetensors.
+- **Quality on Italian is not in question.** `Marco Bianchi`=person 0.99, `Acme S.r.l.`=organization 0.73, `Torino`=location 0.92, `Bologna`=location 0.95, `VerifyCorp`=company 0.70.
+- **It emits nothing on the weather-header noise** — the exact text where the LLM extractor produced 13 "entities". As a filter on tool traffic it is precisely right.
+
+**Licensing, verified per-model on the HF API (the *search* endpoint reports apache-2.0 for the v1 repo and is wrong):** `urchade/gliner_multi` is **`cc-by-nc-4.0`** — non-commercial, disqualifying. `urchade/gliner_multi-v2.1` is **apache-2.0**. Both `onnx-community` repos declare no license of their own and inherit from their `base_model`, so **`onnx-community/gliner_multi-v2.1` is the only usable one**.
+
+**What it still does not do.** GLiNER extracts entities only. The LLM stage also produces **relations** (`llm_extractor.py:361-378`) and **preferences** (`:379-390`); `gliner_extractor.py:561` returns `relations=[]` by construction. For a graph memory the relations *are* the product, so flipping `fallback_on_empty=False` to actually skip the LLM would trade them away. GLiNER's honest role is entity extraction **plus** a cheap gate on whether a message contains anything worth paying the LLM for — which is D-2's "gate extraction on content", and where the weather-noise result makes it valuable.
+
+**D-4 — spaCy (stage 1): do NOT enable it. Measured 2026-07-26, same fixtures, same metric.**
+
+Recall is the easy half. The half that matters is the **type**, because the entity MERGE key is `{name, type, deduplication_scope}` — a wrong type does not mislabel a node, it **creates a second one that no deduplication can ever collapse**. That is M-6 on the live graph, mechanically: two "David" nodes differing only by `OBJECT` vs `PERSON`.
+
+| Extractor | Types correct | Miscategorised | Spurious on no-entity text | Median latency |
+|---|---|---|---|---|
+| **`gliner_multi-v2.1` fp16** | **7/7** | **0** | **0** | 119 ms |
+| `it_core_news_sm` | 5/7 | 2 | 3 | 3.9 ms |
+| `it_core_news_lg` | 3/7 (boundary errors) | 3 | 5 | 4.5 ms |
+| `xx_ent_wiki_sm` | 4/7 | 3 | 3 | 2.2 ms |
+| `en_core_web_sm` — **the shipped default** | 3/7 (3 missed outright) | 1 | **16** | 5.2 ms |
+
+- **The shipped default is actively destructive on Italian content.** `en_core_web_sm` invented `Il fornitore`=PERSON, `Ho parlato`=PERSON, `Nella tua memoria il`=PERSON, `Sistema la tua memoria`=PERSON, `mio nome risulta sbagliato e ci sono`=ORG. Sixteen of those across five sentences, each of which would become an `:Entity`. **Installing the extras without also changing `spacy_model` would poison the graph faster than it populates it.**
+- **Even the right Italian model makes the duplicate problem worse, not better.** `it_core_news_sm` is the best of them and still calls `Acme S.r.l.` a PER and `VerifyCorp` a MISC — two guaranteed duplicate nodes out of seven entities.
+- **Bigger is not better**: `it_core_news_lg` (~540 MB) scores *below* `sm` (~13 MB) — `Davide`=MISC, `VerifyCorp`=LOC, `ciao`=MISC, `mandami`=PER, and a `Torino martedi` boundary error.
+- **All four hallucinate on the weather-header noise**, turning the ilmeteo.net column row into `MISC`/`LOC`/`PER` entities. GLiNER emits nothing there. So spaCy does not solve the tool-noise problem — it is the problem, cheaply.
+
+**Revised recommendation for the extraction pipeline.** The upstream three-stage design (spaCy → GLiNER → LLM) is not the right shape for this deployment; the measurements say **two** stages:
+
+1. **`onnx-community/gliner_multi-v2.1`, `onnx/model_fp16.onnx`, CPU** — entities with correct types at 119 ms, no false positives, nothing on tool noise. Leave `enable_spacy=False`.
+2. **LLM only when there is something to extract** — for relations and preferences, gated on GLiNER having found anything, which requires flipping `stop_on_success` (D-2) since it is currently never consulted.
+
+This does not make the MCP "100%" of the upstream diagram — it makes it correct. Stage 1 as shipped would add duplicates to a graph whose duplicates are the operator's original complaint.
+
+**Wiring cost if adopted:** `extraction/gliner_extractor.py:407-424` calls `GLiNER.from_pretrained(self._model_name)` and then `.to(self.device)`; the ONNX path needs `load_onnx_model=True, onnx_model_file="onnx/model_fp16.onnx"` and the `.to()` guarded (the ORT wrapper is not a torch module). `ExtractionConfig` has no knob for either — new fields required. `pip install gliner` pulls **torch unconditionally** even on the ONNX path, so use `--index-url https://download.pytorch.org/whl/cpu` or the default Linux wheel drags the CUDA build; image delta ≈ +300-400 MB on the current 908 MB.
+
+### Open — engineering, not decisions
+
+| # | Finding | Evidence |
+|---|---|---|
+| **M-11** `_link_explicit_mentions` MERGEs entities by bare name, unscoped, unembedded | `short_term.py:685-731`. `MERGE (e:Entity {name, type})` carries **no `deduplication_scope`**, so it cannot match the `{name, type, deduplication_scope}` key every other writer uses — it creates a second node by construction, the same fork closed in `f7ba4a654` but in a function that was not touched. Also sets synthetic non-UUID ids (`$name + ':' + $type`) and no embedding, so the node is invisible to `memory_search`. **Latent, not live**: reachable from `add_message(explicit_mentions=…)`, and the live graph has 0 synthetic ids because nothing passes that argument yet. |
+| **M-12** `_link_preference_to_entity` has the same bare-name MERGE | `long_term.py:895-925`. Attaches a caller's preference to whatever node already carries a name — and `APPLIES_TO` **is** scope-granting in `ENTITY_IN_USER_SCOPE`, so this one hands out read access. This is the pattern the fact linker deliberately did not copy. |
+| **M-13** Shared Preference nodes leak entities across users | `add_preference` (`long_term.py:702`) does not call `_metadata_with_user_scope`, and `_can_dedupe_preference` (`:1697-1705`) reuses any node with identical text when scope is `None`. Two users writing the same sentence land on **one** Preference node, both getting `HAS_PREFERENCE` — and then `(:User B)-[:HAS_PREFERENCE]->(p)-[:APPLIES_TO]->(A's entity)` satisfies `ENTITY_IN_USER_SCOPE`. Facts are single-owner and do not have this shape; preferences do. |
+| **M-14** MCP resources are entirely unscoped | `_resources.py:80,108` — `memory://entities` and `memory://preferences` call the search methods with no `user_identifier` and return every tenant's data. Aura's bridge namespaces and scopes *tools* only (`bridge.go:123-143`); resources bypass it. Not reachable through the current mount, one config change away. |
+| **M-15** `get_related_entities` / `get_entity_relationships` take no `user_identifier` | `long_term.py:1428,2897`. No MCP caller today; library-public and unscoped. |
+| **M-16** `server.py:145` + `_instructions.py:59` advertise `graph_query` | The fork does not register it — the model is told a tool exists that it cannot call, and it is the tool `memory_get_facts` tells it to prefer over. |
+| **M-17** The Neo4j half of identity retirement | `retireLegacyLocalIdentityForAuthulaUser` migrates six Postgres tables and deletes the seed, but nothing rewrites `(:User {identifier: '…0001'})` in the graph. Harmless on this deployment (the husk owns 0 edges) and now unreachable for new writes after `8e51183f1`, but any deployment that wrote memory before first login has an orphaned subgraph and no path back. |
+
+**Method note, repeated because it keeps paying.** The suite's fake clients never execute Cypher, so no unit test in this repo can see any of the scoping defects; and a structural guard keyed on a *naming convention* misses every copy written outside it — which is exactly how M-4 survived a sweep that was believed complete. Discovery mechanisms need their own test.
 
 ---
 
