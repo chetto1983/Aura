@@ -441,6 +441,17 @@ RETURN p
 # embedding-similarity path is skipped (embeddings off/unavailable) so a byte-identical
 # preference is returned instead of duplicated (the operator observed the same
 # preference stored as two nodes).
+FIND_EXACT_FACT = """
+MATCH (:User {identifier: $user_identifier})-[:HAS_FACT]->(f:Fact)
+WHERE f.subject = $subject
+  AND f.predicate = $predicate
+  AND f.object = $object
+  AND coalesce(f.deduplication_scope, 'global') = $deduplication_scope
+  AND f.valid_until IS NULL
+RETURN f
+LIMIT 1
+"""
+
 FIND_EXACT_PREFERENCE = """
 MATCH (:User {identifier: $user_identifier})-[:HAS_PREFERENCE]->(p:Preference {category: $category})
 WHERE p.preference = $preference

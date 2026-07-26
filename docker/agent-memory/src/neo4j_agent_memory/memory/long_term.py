@@ -1,6 +1,7 @@
 """Long-term memory for entities, preferences, and facts."""
 
 import json
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -267,8 +268,38 @@ class EntityType(str, Enum):
     FACT = "FACT"  # -> stored separately
 
 
+logger = logging.getLogger(__name__)
+
 # POLE+O type constants for convenience
 POLEO_TYPES = ["PERSON", "OBJECT", "LOCATION", "EVENT", "ORGANIZATION"]
+
+# The absolute similarity threshold cannot separate results on the deployed embedder.
+# Measured 2026-07-26 against the live graph: the query "kubernetes deployment yaml" scored
+# 0.8863 / 0.8784 / 0.8760 / 0.8659 against four stored preferences — one of which is a home
+# address — while the default threshold is 0.70. Everything passes, and 0.02 separates the best
+# match from the worst. granite-embedding-311m compresses short-text cosines into a narrow high
+# band, so `score >= $threshold` admits the whole corpus and the DB's `ORDER BY score DESC LIMIT`
+# is close to arbitrary. Relevance therefore comes from the reranker, not the threshold: fetch a
+# wider pool, let aura-rerank order it, then truncate. The threshold stays as a coarse floor and
+# is now actually honored end-to-end, but it is no longer what decides what the caller sees.
+# Messages already worked this way (`ShortTermMemory.search_messages`); entities and preferences
+# did not, which is why `memory_search` returned the caller's entire set for any query.
+_RERANK_POOL_FACTOR = 5
+
+
+def _rerank_pool(limit: int) -> int:
+    """Widen the recall pool so the reranker has real candidates to order."""
+    return max(limit * _RERANK_POOL_FACTOR, limit)
+
+
+def _entity_text(entity: "Entity") -> str:
+    """Rerank an entity on the text a human would match it by."""
+    return " ".join(part for part in (entity.name, entity.description) if part)
+
+
+def _preference_text(preference: "Preference") -> str:
+    """Rerank a preference on its statement plus the context that qualifies it."""
+    return " ".join(part for part in (preference.preference, preference.context) if part)
 
 
 def normalize_entity_type(entity_type: str | EntityType) -> str:
@@ -1038,6 +1069,35 @@ class LongTermMemory(BaseMemory[Entity]):
             except Exception:
                 pass  # Vector index may not exist yet; proceed with creation
 
+        # Exact-text fallback, mirroring add_preference's FIND_EXACT_PREFERENCE. The block
+        # above is gated on `embedding is not None`, so with no embedder — or with
+        # generate_embedding=False — deduplication silently did not run at all and an
+        # identical fact was created again. Entities cannot hit this: they MERGE on
+        # {name, type, deduplication_scope} and are backed by entity_name_type_scope_unique.
+        # Facts are CREATEd, so exact repetition needs its own guard. Read-only and
+        # fail-soft: any lookup failure falls through to CREATE and never blocks a write.
+        if user_identifier is not None:
+            try:
+                existing_exact = await self._client.execute_read(
+                    queries.FIND_EXACT_FACT,
+                    {
+                        "user_identifier": user_identifier,
+                        "subject": subject,
+                        "predicate": predicate,
+                        "object": obj,
+                        "deduplication_scope": deduplication_scope or "global",
+                    },
+                )
+                if existing_exact:
+                    existing = self._parse_fact(dict(existing_exact[0]["f"]))
+                    existing.metadata["deduplicated"] = True
+                    return existing
+            except Exception:  # noqa: BLE001 - dedup must never block a write
+                # Logged, not swallowed silently: a malformed stored row makes this fall
+                # through to CREATE, which is exactly the duplicate this guard exists to
+                # prevent, and without a line here that failure is invisible.
+                logger.debug("add_fact: exact-text dedup lookup failed", exc_info=True)
+
         # Create fact
         fact = Fact(
             id=uuid4(),
@@ -1231,13 +1291,15 @@ class LongTermMemory(BaseMemory[Entity]):
 
         query_embedding = await self._embedder.embed(query)
 
+        pinned = len(entities)  # the exact-name hit, if any, never loses its first place
+        pool = _rerank_pool(limit)
         params = {
             "embedding": query_embedding,
-            "limit": limit,
+            "limit": pool,
             "threshold": threshold,
         }
         if user_identifier:
-            params["candidate_limit"] = max(limit * 5, limit)
+            params["candidate_limit"] = max(pool * 5, pool)
             params["user_identifier"] = user_identifier
         results = await self._client.execute_read(
             queries.SEARCH_ENTITIES_BY_EMBEDDING_SCOPED
@@ -1260,10 +1322,11 @@ class LongTermMemory(BaseMemory[Entity]):
             entity.metadata["similarity"] = row["score"]
             entities.append(entity)
             seen_ids.add(entity.id)
-            if len(entities) >= limit:
+            if len(entities) >= pool:
                 break
 
-        return entities
+        reranked = await self.rerank_results(query, entities[pinned:], text_of=_entity_text)
+        return (entities[:pinned] + reranked)[:limit]
 
     async def wait_for_extraction(self, **kwargs: Any) -> bool:
         """No-op readiness check — bolt extraction is synchronous.
@@ -1315,13 +1378,14 @@ class LongTermMemory(BaseMemory[Entity]):
 
         query_embedding = await self._embedder.embed(query)
 
+        pool = _rerank_pool(limit)
         params = {
             "embedding": query_embedding,
-            "limit": limit,
+            "limit": pool,
             "threshold": threshold,
         }
         if user_identifier:
-            params["candidate_limit"] = max(limit * 5, limit)
+            params["candidate_limit"] = max(pool * 5, pool)
             params["user_identifier"] = user_identifier
         results = await self._client.execute_read(
             queries.SEARCH_PREFERENCES_BY_EMBEDDING_SCOPED
@@ -1342,7 +1406,8 @@ class LongTermMemory(BaseMemory[Entity]):
             pref.metadata["similarity"] = row["score"]
             preferences.append(pref)
 
-        return preferences
+        reranked = await self.rerank_results(query, preferences, text_of=_preference_text)
+        return reranked[:limit]
 
     async def get_related_entities(
         self,

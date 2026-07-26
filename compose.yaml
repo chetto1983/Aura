@@ -549,6 +549,14 @@ services:
       NAM_EMBEDDING: openai/${AURA_EMBED_MODEL:-granite-embedding-311m-multilingual-r2}
       OPENAI_API_KEY: ${AURA_MEMORY_EMBED_API_KEY:-local-llama}
       OPENAI_BASE_URL: ${AURA_MEMORY_EMBED_BASE_URL:-http://aura-llama-embed:8081/v1}
+      # Without this the RET-02 recall reranker degrades to identity order and the whole
+      # stage is inert: `rerank()` reads AURA_RERANK_BASE_URL and fail-softs to the input
+      # order when it is empty, silently and by design. It was never set here, so memory
+      # recall shipped as pure embedding order — which cannot discriminate on this
+      # embedder (an unrelated query scores 0.866-0.886 against every stored preference,
+      # against a 0.70 threshold). The cross-encoder separates the same corpus by three
+      # orders of magnitude. Same service the Go retrieve path uses.
+      AURA_RERANK_BASE_URL: ${AURA_MEMORY_RERANK_BASE_URL:-http://aura-rerank:8085}
     command:
       - sh
       - -lc

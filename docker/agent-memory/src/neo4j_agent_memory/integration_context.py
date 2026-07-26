@@ -325,9 +325,13 @@ class ContextSearchMixin:
                     for msg in messages
                 ]
             if "entities" in memory_types:
+                # `threshold` reached search_messages but was dropped here and for
+                # preferences, so the documented tool parameter did nothing for two of the
+                # three default memory types. Inherited from upstream integration.py.
                 entities = await self.client.long_term.search_entities(
                     query=query,
                     limit=limit,
+                    threshold=threshold,
                     user_identifier=user_identifier,
                 )
                 results["entities"] = [
@@ -345,6 +349,7 @@ class ContextSearchMixin:
                 preferences = await self.client.long_term.search_preferences(
                     query=query,
                     limit=limit,
+                    threshold=threshold,
                     user_identifier=user_identifier,
                 )
                 results["preferences"] = [
