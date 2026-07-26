@@ -15,7 +15,7 @@ GO_PACKAGES := $(shell bash scripts/go_packages.sh)
 
 help:
 	@echo "make tools         — go install the quality toolchain (lint/vuln/dupl/mutation/etc.)"
-	@echo "make quality       — pre-push gate: vet build file-size lint deadcode test-race vuln (no containers)"
+	@echo "make quality       — pre-push gate: deadcode vet build file-size lint test-race vuln (no containers)"
 	@echo "make quality-full  — quality + coverage gate (requires the container stack up)"
 	@echo "make sqlc          — regenerate internal/db/sqlc/ from queries/"
 	@echo "make lint          — golangci-lint run ./... (incl. dupl)"
@@ -67,7 +67,7 @@ lint:
 	$(GOBIN)/golangci-lint run $(GO_PACKAGES)
 
 deadcode:
-	$(GOBIN)/deadcode -test $(GO_PACKAGES)
+	bash scripts/deadcode_gate.sh "$(GOBIN)/deadcode" -test $(GO_PACKAGES)
 
 vuln:
 	$(GOBIN)/govulncheck $(GO_PACKAGES)
@@ -85,9 +85,9 @@ coverage-docker:
 	bash scripts/coverage_docker.sh
 
 # Pre-push gate that needs NO containers — fast feedback before a push.
-quality: vet file-size lint deadcode test-race vuln
+quality: deadcode vet file-size lint test-race vuln
 	go build $(GO_PACKAGES)
-	@echo "ok: quality gate passed (vet build file-size lint deadcode test-race vuln)"
+	@echo "ok: quality gate passed (deadcode vet build file-size lint test-race vuln)"
 
 # Full gate including the container-backed coverage floor.
 quality-full: quality coverage

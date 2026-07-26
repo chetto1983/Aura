@@ -78,7 +78,7 @@ jobs:
       - name: deadcode
         run: |
           go install golang.org/x/tools/cmd/deadcode@latest
-          "$(go env GOPATH)/bin/deadcode" -test $(bash scripts/go_packages.sh)
+          bash scripts/deadcode_gate.sh "$(go env GOPATH)/bin/deadcode" -test $(bash scripts/go_packages.sh)
 
       - name: golangci-lint
         run: |
