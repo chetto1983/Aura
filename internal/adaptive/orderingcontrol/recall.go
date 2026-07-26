@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"slices"
-	"strings"
 	"sync"
 	"unicode/utf8"
 
@@ -27,8 +26,8 @@ type dynamicRecall struct {
 	recorder toolEventRecorder
 }
 
-// NewDynamicRecall binds opt-in long-term recall to authoritative policy,
-// immutable snapshots, and delayed schema-2 delivery persistence.
+// NewDynamicRecall binds memory-recall diagnostics to authoritative policy,
+// immutable snapshots, and schema-2 persistence.
 func NewDynamicRecall(
 	pool *pgxpool.Pool,
 	providerID string,
@@ -67,68 +66,40 @@ func (control *dynamicRecall) PrepareDynamicRecall(
 		control.recorder == nil || provider == nil {
 		return nil, nil
 	}
+	if input.MaxItems < 4 ||
+		slices.Equal(
+			input.CandidateActions,
+			[]runner.DynamicRecallAction{runner.DynamicRecallStatic},
+		) {
+		return nil, nil
+	}
 	decision, err := control.source.decideMemoryRecall(ctx, input)
 	if err != nil || decision.Policy.Mode == adaptive.PolicyOff ||
 		decision.Policy.Mode == adaptive.PolicyRollback {
 		return nil, nil
 	}
-	assignment, action, err := newMemoryRecallAssignment(input, decision)
+	assignment, err := newMemoryRecallAssignment(input, decision)
 	if err != nil {
 		return nil, nil
 	}
 	if _, err := control.recorder.RecordAssignment(ctx, assignment); err != nil {
 		return nil, err
 	}
-	limit, ok := dynamicRecallLimit(action)
-	if !ok {
-		return nil, errors.New("dynamic recall assigned a non-provider action")
-	}
-	recall, err := provider(
-		ctx,
-		input.OwnerID.String(),
-		input.Query,
-		limit,
-	)
-	if err != nil {
-		delivery, deliveryErr := newMemoryRecallFallbackDelivery(
-			assignment,
-			adaptive.FallbackStrategyFailed,
-			adaptive.StaticActionID,
-		)
-		if deliveryErr != nil {
-			return nil, deliveryErr
-		}
-		_, recordErr := control.recorder.RecordDelivery(
-			ctx,
-			assignment.OwnerID,
-			assignment.AssignmentID,
-			delivery,
-		)
-		if recordErr != nil {
-			return nil, recordErr
-		}
-		return nil, nil
-	}
 
 	var commitMu sync.Mutex
 	committed := false
 	return &runner.PreparedDynamicRecall{
-		Action: action,
-		Recall: recall,
+		Action: runner.DynamicRecallStatic,
 		Commit: func(
 			ctx context.Context,
-			outcome agent.DynamicTailOutcome,
+			_ agent.DynamicTailOutcome,
 		) error {
 			commitMu.Lock()
 			defer commitMu.Unlock()
 			if committed {
 				return nil
 			}
-			delivery, err := newMemoryRecallDelivery(
-				assignment,
-				recall,
-				outcome,
-			)
+			delivery, err := newMemoryRecallStaticDelivery(assignment)
 			if err != nil {
 				return err
 			}
@@ -149,7 +120,7 @@ func (control *dynamicRecall) PrepareDynamicRecall(
 func newMemoryRecallAssignment(
 	input runner.DynamicRecallInput,
 	decision toolDecision,
-) (adaptive.Assignment, runner.DynamicRecallAction, error) {
+) (adaptive.Assignment, error) {
 	actions := make([]string, len(input.CandidateActions))
 	for index, action := range input.CandidateActions {
 		actions[index] = string(action)
@@ -160,7 +131,7 @@ func newMemoryRecallAssignment(
 			input.CandidateActions,
 			runner.DynamicRecallCatalog(true, input.MaxItems),
 		) {
-		return adaptive.Assignment{}, "", errors.New(
+		return adaptive.Assignment{}, errors.New(
 			"dynamic recall input is not a frozen eligible catalog",
 		)
 	}
@@ -171,17 +142,17 @@ func newMemoryRecallAssignment(
 		actions,
 		decision,
 	); err != nil {
-		return adaptive.Assignment{}, "", err
+		return adaptive.Assignment{}, err
 	}
 	if !slices.Contains(actions, decision.RecommendedAction) {
-		return adaptive.Assignment{}, "", errors.New(
+		return adaptive.Assignment{}, errors.New(
 			"dynamic recall recommendation is not frozen",
 		)
 	}
-	// Memory recall is opt-in configuration. Treat that explicit operator choice
-	// as the deterministic highest configured limit while the global policy
-	// still retains off/rollback authority.
-	action := input.CandidateActions[len(input.CandidateActions)-1]
+	selectionReason, err := diagnosticSelectionReason(decision.Policy.Mode)
+	if err != nil {
+		return adaptive.Assignment{}, err
+	}
 	assignmentID, err := adaptive.AssignmentIDForPoint(
 		input.OwnerID,
 		input.RequestID,
@@ -189,15 +160,18 @@ func newMemoryRecallAssignment(
 		0,
 	)
 	if err != nil {
-		return adaptive.Assignment{}, "", err
+		return adaptive.Assignment{}, err
 	}
-	probabilities := deterministicActionProbabilities(actions, string(action))
+	probabilities := deterministicActionProbabilities(
+		actions,
+		adaptive.StaticActionID,
+	)
 	eligibilityHash, catalogHash, err := actionCatalogHashes(
 		actions,
 		probabilities,
 	)
 	if err != nil {
-		return adaptive.Assignment{}, "", err
+		return adaptive.Assignment{}, err
 	}
 	assignment := adaptive.Assignment{
 		SchemaVersion: adaptive.SchemaVersion2,
@@ -214,10 +188,9 @@ func newMemoryRecallAssignment(
 		CatalogSHA256:       catalogHash,
 		ChampionActionID:    adaptive.StaticActionID,
 		RecommendedActionID: decision.RecommendedAction,
-		IntendedActionID:    string(action),
+		IntendedActionID:    adaptive.StaticActionID,
 		ActionProbabilities: probabilities,
-		SelectionReason:     adaptive.SelectionOperatorOverride,
-		Override:            true,
+		SelectionReason:     selectionReason,
 		Features: map[adaptive.FeatureKey]float64{
 			adaptive.FeatureQueryLength: float64(
 				utf8.RuneCountInString(input.Query),
@@ -226,118 +199,35 @@ func newMemoryRecallAssignment(
 		},
 	}
 	if _, err := adaptive.NewAssignmentEvent(assignment); err != nil {
-		return adaptive.Assignment{}, "", err
+		return adaptive.Assignment{}, err
 	}
-	return assignment, action, nil
+	return assignment, nil
 }
 
-func dynamicRecallLimit(action runner.DynamicRecallAction) (int, bool) {
-	switch action {
-	case runner.DynamicRecallTop4:
-		return 4, true
-	case runner.DynamicRecallTop8:
-		return 8, true
-	default:
-		return 0, false
-	}
-}
-
-func newMemoryRecallDelivery(
+func newMemoryRecallStaticDelivery(
 	assignment adaptive.Assignment,
-	recall runner.DynamicRecall,
-	outcome agent.DynamicTailOutcome,
-) (adaptive.Delivery, error) {
-	if !outcome.Delivered {
-		actual := adaptive.StaticActionID
-		reason := adaptive.FallbackStateInvalid
-		if outcome.FallbackReason == agent.DynamicTailFallbackContextBudget {
-			actual = adaptive.ActionNoneID
-			reason = adaptive.FallbackContextBudget
-		}
-		return newMemoryRecallFallbackDelivery(assignment, reason, actual)
-	}
-	if !recall.Coherent || recall.CorpusEpochBefore == nil ||
-		recall.CorpusEpochAfter == nil ||
-		*recall.CorpusEpochBefore != *recall.CorpusEpochAfter {
-		return adaptive.Delivery{}, errors.New(
-			"dynamic recall delivery corpus epoch is incoherent",
-		)
-	}
-	results := make([]adaptive.MemoryRecallResult, len(recall.Results))
-	for index, result := range recall.Results {
-		results[index] = adaptive.MemoryRecallResult{
-			Kind: adaptive.ResultKind(result.Kind),
-			ID:   result.ID,
-		}
-	}
-	resultIDs, revisions, err := adaptive.NewMemoryRecallDeliveryMetadata(
-		results,
-		adaptive.MemoryRecallRevisionValues{
-			CorpusEpoch: *recall.CorpusEpochBefore,
-			Retriever:   recall.Revisions.Retriever,
-			Reranker:    recall.Revisions.Reranker,
-			Embedding:   recall.Revisions.Embedding,
-			Index:       recall.Revisions.Index,
-		},
-	)
-	if err != nil {
-		return adaptive.Delivery{}, err
-	}
-	probability := float64(1)
-	delivery := adaptive.Delivery{
-		SchemaVersion:    adaptive.SchemaVersion2,
-		AssignmentID:     assignment.AssignmentID,
-		IntendedActionID: assignment.IntendedActionID,
-		ActualActionID:   assignment.IntendedActionID,
-		Status:           adaptive.DeliverySuccess,
-		ExposureKnown:    true, ExposureProbability: &probability,
-		ResultCount: len(resultIDs), ResultIDs: resultIDs,
-		Revisions:       revisions,
-		EffectiveLimits: memoryRecallEffectiveLimits(recall.Limits),
-	}
-	if _, err := adaptive.NewDeliveryEvent(assignment, delivery); err != nil {
-		return adaptive.Delivery{}, err
-	}
-	return delivery, nil
-}
-
-func newMemoryRecallFallbackDelivery(
-	assignment adaptive.Assignment,
-	reason adaptive.FallbackReason,
-	actual string,
 ) (adaptive.Delivery, error) {
 	revisions, err := adaptive.NewRevisionSet()
 	if err != nil {
 		return adaptive.Delivery{}, err
 	}
+	probability := float64(1)
 	delivery := adaptive.Delivery{
-		SchemaVersion:    adaptive.SchemaVersion2,
-		AssignmentID:     assignment.AssignmentID,
-		IntendedActionID: assignment.IntendedActionID,
-		ActualActionID:   actual,
-		Status:           adaptive.DeliveryFallback,
-		FallbackReason:   reason,
-		ResultIDs:        []adaptive.ResultID{},
-		Revisions:        revisions,
-		EffectiveLimits:  map[string]int{},
+		SchemaVersion:       adaptive.SchemaVersion2,
+		AssignmentID:        assignment.AssignmentID,
+		IntendedActionID:    assignment.IntendedActionID,
+		ActualActionID:      adaptive.StaticActionID,
+		Status:              adaptive.DeliverySuccess,
+		ExposureKnown:       true,
+		ExposureProbability: &probability,
+		ResultIDs:           []adaptive.ResultID{},
+		Revisions:           revisions,
+		EffectiveLimits:     map[string]int{"top_k": 0},
 	}
 	if _, err := adaptive.NewDeliveryEvent(assignment, delivery); err != nil {
 		return adaptive.Delivery{}, err
 	}
 	return delivery, nil
-}
-
-func memoryRecallEffectiveLimits(
-	limits map[string]runner.DynamicRecallLimit,
-) map[string]int {
-	effective := make(map[string]int, len(limits)*3)
-	for kind, limit := range limits {
-		prefix := strings.TrimPrefix(kind, "memory_")
-		effective[prefix+"_requested_k"] = limit.RequestedK
-		effective[prefix+"_effective_k"] = limit.EffectiveK
-		effective[prefix+"_count"] = limit.Count
-	}
-	return effective
 }
 
 var _ runner.DynamicRecallControl = (*dynamicRecall)(nil)

@@ -10,7 +10,7 @@ import (
 	"github.com/chetto1983/aura/internal/runner"
 )
 
-func TestDynamicRecallEmptyQueryPersistsProviderSequence(t *testing.T) {
+func TestDynamicRecallEmptyQueryPersistsStaticSequence(t *testing.T) {
 	t.Parallel()
 	input := memoryRecallInput()
 	input.Query = ""
@@ -36,14 +36,11 @@ func TestDynamicRecallEmptyQueryPersistsProviderSequence(t *testing.T) {
 		func(
 			_ context.Context,
 			_ string,
-			query string,
+			_ string,
 			_ int,
 		) (runner.DynamicRecall, error) {
-			order = append(order, "provider")
-			if query != "" {
-				t.Fatalf("provider query = %q, want identity-only empty query", query)
-			}
-			return validControlDynamicRecall(), nil
+			t.Fatal("empty-query shadow called the provider")
+			return runner.DynamicRecall{}, nil
 		},
 	)
 	if err != nil {
@@ -52,7 +49,7 @@ func TestDynamicRecallEmptyQueryPersistsProviderSequence(t *testing.T) {
 	if prepared == nil {
 		t.Fatal("empty-query branch silently fell back to static")
 	}
-	if !slices.Equal(order, []string{"assignment", "provider"}) {
+	if !slices.Equal(order, []string{"assignment"}) {
 		t.Fatalf("pre-commit order = %v", order)
 	}
 	for _, assignment := range recorder.assignments {
@@ -62,11 +59,11 @@ func TestDynamicRecallEmptyQueryPersistsProviderSequence(t *testing.T) {
 	}
 	if err := prepared.Commit(
 		t.Context(),
-		agent.DynamicTailOutcome{Delivered: true},
+		agent.DynamicTailOutcome{},
 	); err != nil {
 		t.Fatalf("Commit: %v", err)
 	}
-	if !slices.Equal(order, []string{"assignment", "provider", "delivery"}) {
+	if !slices.Equal(order, []string{"assignment", "delivery"}) {
 		t.Fatalf("final order = %v", order)
 	}
 }
