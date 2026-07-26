@@ -25,6 +25,21 @@ on:
 permissions:
   contents: read
 
+# `docker compose up -d postgres` interpolates the WHOLE compose.yaml, so every job that
+# touches compose must set each `${VAR:?…}` it declares — even for services this workflow
+# never starts (caddy, garage, searxng, authula, pim-mcp). Missing one aborts `make db-up`
+# at parse time, before a single test compiles. Same block as ci.yml / skills.yml; these
+# are non-secret CI placeholders that only satisfy interpolation.
+env:
+  AURA_ACCESS_TOKEN: ci-not-a-secret
+  AURA_AUTHULA_SECRET: 00000000000000000000000000000000000000000000000000000000000000a1
+  AURA_PIM_MCP_ADMIN_TOKEN: ci-not-a-secret
+  SEARXNG_SECRET: 00000000000000000000000000000000000000000000000000000000000000b2
+  AURA_OBJECTSTORE_ACCESS_KEY: GK000000000000000000000000
+  AURA_OBJECTSTORE_SECRET_KEY: 00000000000000000000000000000000000000000000000000000000000000c3
+  GARAGE_RPC_SECRET: 00000000000000000000000000000000000000000000000000000000000000d4
+  AURA_GARAGE_ADMIN_TOKEN: ci-not-a-secret
+
 concurrency:
   group: adaptive-evidence-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -59,6 +74,14 @@ jobs:
 
       - name: Start Postgres
         run: make db-up
+
+      # `make db-up` yields an EMPTY database. Parts of this suite step migrations by ±1
+      # from the current version (snapshot/randomization/evidence tests), which on a
+      # version-0 database applies migration 0001 instead of the intended head — later
+      # tests then fail on `relation "aura.identities" does not exist`. Migrating to head
+      # first is what every db-touching job in ci.yml already does.
+      - name: aura db migrate
+        run: go run ./cmd/aura db migrate
 
       - name: Run adaptive db_integration suite with race
         run: go test -tags=db_integration -race -count=1 -p 1 ./internal/adaptive/...
