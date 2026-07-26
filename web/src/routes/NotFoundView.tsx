@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 
 // CLIENT-side 404 ONLY. This renders when React Router has no matching client
 // route (a deep link the SPA doesn't know). It is NOT the server's API 404 — the

@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { readCookie, readJSON, stringField, valueOrFallback } from '../auth/authConfig';
 
 // 37F plan 14 — the logout/session-teardown state seam, extracted from AppShell.tsx so the shell

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Search, SearchX } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { highlightSegments } from './searchHighlight';
 import {
   displayTitle,

@@ -1,6 +1,6 @@
 import { Suspense, lazy, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useParams } from 'react-router-dom';
+import { useParams } from 'react-router';
 import { Download, Share2, type LucideIcon } from 'lucide-react';
 import {
   categoryIcon,

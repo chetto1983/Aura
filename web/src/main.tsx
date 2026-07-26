@@ -2,7 +2,7 @@
 import { StrictMode, Suspense, lazy } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Route, Routes } from 'react-router';
 import { RouteSkeletonFallback } from './components/skeleton';
 import { ErrorBoundary } from './ErrorBoundary';
 import { queryClient } from './queryClient';

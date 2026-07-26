@@ -1,6 +1,6 @@
 import { ExternalLink, Inbox } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { isTerminal } from './approvalState';
 import { useApprovals, type Approval } from './useApprovals';
 import { Badge } from '@/components/ui/badge';
