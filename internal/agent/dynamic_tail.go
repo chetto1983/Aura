@@ -50,6 +50,7 @@ type DynamicTailOutcome struct {
 
 // DynamicTail is the exact non-persisted message item guarded at exposure time.
 type DynamicTail struct {
+	ID                string
 	Content           string
 	BeforeCurrentUser bool
 }
@@ -70,6 +71,7 @@ type DynamicTailExposure struct {
 	ValidateRequest       func([]llm.Message, int) error
 	deliveryCommitted     bool
 	disabled              bool
+	bound                 bool
 	boundHistoryPosition  int
 	staticRequestMessages []llm.Message
 }
@@ -78,16 +80,38 @@ func (exposure *DynamicTailExposure) bind(messages []llm.Message) {
 	if exposure == nil {
 		return
 	}
+	exposure.bound = false
 	exposure.boundHistoryPosition = -1
 	for index, message := range messages {
-		if message.Role == llm.RoleUser && message.Content == exposure.Tail.Content {
+		if message.DynamicTailID == exposure.Tail.ID && exposure.Tail.ID != "" {
+			if message.Role != llm.RoleUser ||
+				message.Content != exposure.Tail.Content ||
+				message.ToolCallID != "" || len(message.ToolCalls) != 0 ||
+				message.Name != "" {
+				exposure.boundHistoryPosition = -1
+				return
+			}
+			if exposure.boundHistoryPosition >= 0 {
+				exposure.boundHistoryPosition = -1
+				return
+			}
 			exposure.boundHistoryPosition = index
-			break
 		}
 	}
+	exposure.bound = exposure.boundHistoryPosition >= 0
 }
 
 func (exposure *DynamicTailExposure) validate() error {
+	if err := exposure.validateMetadata(); err != nil {
+		return err
+	}
+	if exposure.Tail.ID == "" || !exposure.bound {
+		return errors.New("dynamic tail identity is not uniquely bound")
+	}
+	return nil
+}
+
+func (exposure *DynamicTailExposure) validateMetadata() error {
 	if exposure == nil || exposure.Commit == nil {
 		return errors.New("dynamic tail delivery port is unavailable")
 	}
@@ -155,7 +179,7 @@ func (exposure *DynamicTailExposure) validate() error {
 // ValidateMetadata lets the runner reject malformed provider responses before
 // they enter context budgeting; the final guard repeats the same validation.
 func (exposure *DynamicTailExposure) ValidateMetadata() error {
-	return exposure.validate()
+	return exposure.validateMetadata()
 }
 
 func validDynamicResultKind(kind string) bool {
@@ -217,14 +241,18 @@ func (a *LlmAgent) guardDynamicTail(
 
 func (a *LlmAgent) attachDynamicTail(request llm.Request) llm.Request {
 	exposure := a.dynamicTail
-	if exposure == nil || exposure.disabled || !exposure.Included {
+	if exposure == nil || exposure.disabled || !exposure.Included ||
+		!exposure.bound {
 		return request
 	}
 	exposure.staticRequestMessages = append(
 		[]llm.Message(nil),
 		request.Messages...,
 	)
-	item := llm.Message{Role: llm.RoleUser, Content: exposure.Tail.Content}
+	item := llm.Message{
+		Role: llm.RoleUser, Content: exposure.Tail.Content,
+		DynamicTailID: exposure.Tail.ID,
+	}
 	index := len(request.Messages)
 	if exposure.Tail.BeforeCurrentUser {
 		index = exposure.boundHistoryPosition
@@ -265,8 +293,8 @@ func placeDynamicTailAtRequestTail(
 	}
 	index := -1
 	for candidate, message := range messages {
-		if message.Role == llm.RoleUser &&
-			message.Content == exposure.Tail.Content {
+		if message.DynamicTailID == exposure.Tail.ID &&
+			exposure.Tail.ID != "" {
 			if index >= 0 {
 				return messages
 			}
@@ -304,18 +332,14 @@ func stripDynamicTail(
 	if exposure == nil {
 		return messages
 	}
-	index := -1
-	for candidate, message := range messages {
-		if message.Role == llm.RoleUser && message.Content == exposure.Tail.Content {
-			index = candidate
-			break
-		}
-	}
-	if index < 0 {
+	if exposure.Tail.ID == "" {
 		return messages
 	}
-	out := make([]llm.Message, 0, len(messages)-1)
-	out = append(out, messages[:index]...)
-	out = append(out, messages[index+1:]...)
+	out := make([]llm.Message, 0, len(messages))
+	for _, message := range messages {
+		if message.DynamicTailID != exposure.Tail.ID {
+			out = append(out, message)
+		}
+	}
 	return out
 }

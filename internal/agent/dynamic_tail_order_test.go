@@ -42,7 +42,10 @@ func TestDynamicTailStaysOutOfAdaptiveRouterUntilDelivery(t *testing.T) {
 		UserTurns: []llm.Message{
 			{Role: llm.RoleUser, Content: "prior genuine user request"},
 			{Role: llm.RoleAssistant, Content: "prior answer"},
-			{Role: llm.RoleUser, Content: exposure.Tail.Content},
+			{
+				Role: llm.RoleUser, Content: exposure.Tail.Content,
+				DynamicTailID: exposure.Tail.ID,
+			},
 		},
 		DynamicTail: exposure,
 	})
@@ -97,6 +100,50 @@ func TestDynamicTailHookRemovalFallbackPreservesCurrentUser(t *testing.T) {
 	}
 	if countDynamicTail(messages, "current user") != 1 {
 		t.Fatalf("static fallback removed current user: %#v", messages)
+	}
+}
+
+func TestDynamicTailFallbackPreservesPersistedDuplicateContent(t *testing.T) {
+	t.Parallel()
+	client := &dynamicTailClient{
+		turns: []dynamicTailTurn{dynamicTailTextTurn("stop", "done")},
+	}
+	exposure := validDynamicTailExposure()
+	exposure.Included = false
+	exposure.Commit = func(_ context.Context, outcome DynamicTailOutcome) error {
+		if outcome.Delivered ||
+			outcome.FallbackReason != DynamicTailFallbackContextBudget {
+			t.Fatalf("fallback outcome = %#v", outcome)
+		}
+		return nil
+	}
+	agent := NewLlmAgent(LlmAgentConfig{
+		Client: client,
+		LLM: llm.Config{
+			Model: "test-model", Provider: "openrouter",
+			ContextWindow: 128_000, MaxTokens: 256, TotalTimeoutSec: 30,
+		},
+		Registry: tools.NewRegistry(), PreviewCap: 1024, RunDir: t.TempDir(),
+		SessionID: uuid.Must(uuid.NewV7()).String(),
+		UserTurns: []llm.Message{
+			{Role: llm.RoleUser, Content: exposure.Tail.Content},
+			{Role: llm.RoleUser, Content: exposure.Tail.Content},
+			{
+				Role: llm.RoleUser, Content: exposure.Tail.Content,
+				DynamicTailID: exposure.Tail.ID,
+			},
+			{Role: llm.RoleUser, Content: "current user"},
+		},
+		DynamicTail: exposure,
+	})
+
+	runDynamicTailAgent(t, agent)
+
+	if got := countDynamicTail(
+		client.requests[0].Messages,
+		exposure.Tail.Content,
+	); got != 2 {
+		t.Fatalf("persisted duplicate count = %d, want 2", got)
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 
 // DynamicTail is one indivisible, non-persisted model-visible reference item.
 type DynamicTail struct {
+	ID                string
 	Content           string
 	BeforeCurrentUser bool
 }
@@ -20,7 +21,8 @@ func usableDynamicTail(
 	enc *tiktoken.Tiktoken,
 	hardCap int,
 ) (*DynamicTail, int) {
-	if tail == nil || strings.TrimSpace(tail.Content) == "" || hardCap <= 0 {
+	if tail == nil || tail.ID == "" || strings.TrimSpace(tail.ID) != tail.ID ||
+		strings.TrimSpace(tail.Content) == "" || hardCap <= 0 {
 		return nil, 0
 	}
 	tokens := countTokens(enc, tail.Content)
@@ -44,7 +46,9 @@ func injectDynamicTail(messages []llm.Message, tail *DynamicTail) []llm.Message 
 			}
 		}
 	}
-	item := llm.Message{Role: llm.RoleUser, Content: tail.Content}
+	item := llm.Message{
+		Role: llm.RoleUser, Content: tail.Content, DynamicTailID: tail.ID,
+	}
 	out := make([]llm.Message, 0, len(messages)+1)
 	out = append(out, messages[:index]...)
 	out = append(out, item)
@@ -59,15 +63,22 @@ func ValidateDynamicTailMessages(
 	tail DynamicTail,
 	hardCap int,
 ) error {
+	if tail.ID == "" || strings.TrimSpace(tail.ID) != tail.ID {
+		return errors.New("dynamic tail identity is invalid")
+	}
 	if strings.TrimSpace(tail.Content) == "" {
 		return errors.New("dynamic tail content is empty")
 	}
 	found := -1
 	for index, message := range messages {
-		if message.Content != tail.Content {
+		if message.DynamicTailID == "" {
 			continue
 		}
-		if message.Role != llm.RoleUser || message.ToolCallID != "" ||
+		if message.DynamicTailID != tail.ID {
+			return errors.New("unexpected dynamic tail identity")
+		}
+		if message.Content != tail.Content || message.Role != llm.RoleUser ||
+			message.ToolCallID != "" ||
 			len(message.ToolCalls) != 0 || message.Name != "" {
 			return errors.New("dynamic tail wire shape changed")
 		}

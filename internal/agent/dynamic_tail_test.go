@@ -298,8 +298,14 @@ func TestDynamicTailPlacementAndFallbackHelpersFailClosed(t *testing.T) {
 	exposure := validDynamicTailExposure()
 	exposure.Tail.BeforeCurrentUser = false
 	messages := []llm.Message{
-		{Role: llm.RoleUser, Content: exposure.Tail.Content},
-		{Role: llm.RoleUser, Content: exposure.Tail.Content},
+		{
+			Role: llm.RoleUser, Content: exposure.Tail.Content,
+			DynamicTailID: exposure.Tail.ID,
+		},
+		{
+			Role: llm.RoleUser, Content: exposure.Tail.Content,
+			DynamicTailID: exposure.Tail.ID,
+		},
 		{Role: llm.RoleUser, Content: "other"},
 	}
 	got := placeDynamicTailAtRequestTail(messages, exposure)
@@ -406,7 +412,10 @@ func newDynamicTailAgent(
 	registry := tools.NewRegistry()
 	registry.Register(modelRoundProbeTool{})
 	userTurns := []llm.Message{
-		{Role: llm.RoleUser, Content: exposure.Tail.Content},
+		{
+			Role: llm.RoleUser, Content: exposure.Tail.Content,
+			DynamicTailID: exposure.Tail.ID,
+		},
 	}
 	if exposure.Tail.BeforeCurrentUser {
 		userTurns = append(userTurns, llm.Message{
@@ -432,6 +441,7 @@ func validDynamicTailExposure() *DynamicTailExposure {
 	after := uint64(42)
 	exposure := &DynamicTailExposure{
 		Tail: DynamicTail{
+			ID:                "dynamic-tail-test",
 			Content:           "<memory>exact recalled bytes</memory>",
 			BeforeCurrentUser: true,
 		},
@@ -467,6 +477,7 @@ func validDynamicTailExposure() *DynamicTailExposure {
 		return conversations.ValidateDynamicTailMessages(
 			messages,
 			conversations.DynamicTail{
+				ID:                exposure.Tail.ID,
 				Content:           exposure.Tail.Content,
 				BeforeCurrentUser: exposure.Tail.BeforeCurrentUser,
 			},

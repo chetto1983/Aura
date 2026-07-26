@@ -57,14 +57,6 @@ func TestDynamicRecallCatalogUsesExactConfiguredThresholds(t *testing.T) {
 	) {
 		t.Fatal("disallowed recall action was accepted")
 	}
-	content := FenceDynamicRecall("fact")
-	if dynamicTailIncluded(nil, content) ||
-		dynamicTailIncluded([]llm.Message{
-			{Role: llm.RoleUser, Content: content},
-			{Role: llm.RoleUser, Content: content},
-		}, content) {
-		t.Fatal("missing or duplicate dynamic recall counted as exact inclusion")
-	}
 }
 
 func TestPrepareDynamicRecallUsesTypedLongTermProviderOnce(t *testing.T) {

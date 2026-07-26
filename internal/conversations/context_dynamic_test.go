@@ -28,6 +28,7 @@ func TestDynamicTailPlacementPreservesStableAlwaysBlock(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			tail := DynamicTail{
+				ID:                "placement-tail",
 				Content:           "<memory>exact recalled bytes</memory>",
 				BeforeCurrentUser: test.beforeUser,
 			}
@@ -67,6 +68,7 @@ func TestDynamicTailEvictsOrdinaryHistoryBeforeWholeItem(t *testing.T) {
 		t.Fatalf("encoder: %v", err)
 	}
 	tail := DynamicTail{
+		ID:                "eviction-tail",
 		Content:           "<memory>" + strings.Repeat("recalled ", 25) + "</memory>",
 		BeforeCurrentUser: true,
 	}
@@ -109,6 +111,7 @@ func TestDynamicTailOversizeIsOmittedWhole(t *testing.T) {
 		t.Fatalf("encoder: %v", err)
 	}
 	tail := DynamicTail{
+		ID:                "oversize-tail",
 		Content:           "<memory>" + strings.Repeat("oversize ", 500) + "</memory>",
 		BeforeCurrentUser: true,
 	}
@@ -135,11 +138,17 @@ func TestDynamicTailOversizeIsOmittedWhole(t *testing.T) {
 
 func TestValidateDynamicTailMessagesRejectsTamperDuplicatePlacementAndCap(t *testing.T) {
 	t.Parallel()
-	tail := DynamicTail{Content: "<memory>exact</memory>", BeforeCurrentUser: true}
+	tail := DynamicTail{
+		ID: "validation-tail", Content: "<memory>exact</memory>",
+		BeforeCurrentUser: true,
+	}
 	cfg := windowFor(1_000)
 	base := []llm.Message{
 		{Role: llm.RoleSystem, Content: "system"},
-		{Role: llm.RoleUser, Content: tail.Content},
+		{
+			Role: llm.RoleUser, Content: tail.Content,
+			DynamicTailID: tail.ID,
+		},
 		{Role: llm.RoleUser, Content: "current"},
 	}
 	if err := ValidateDynamicTailMessages(base, tail, cfg.HardCap()); err != nil {
@@ -151,20 +160,29 @@ func TestValidateDynamicTailMessagesRejectsTamperDuplicatePlacementAndCap(t *tes
 	}{
 		{name: "wire shape", messages: []llm.Message{
 			{Role: llm.RoleSystem, Content: "system"},
-			{Role: llm.RoleAssistant, Content: tail.Content},
+			{
+				Role: llm.RoleAssistant, Content: tail.Content,
+				DynamicTailID: tail.ID,
+			},
 			{Role: llm.RoleUser, Content: "current"},
 		}},
 		{name: "tampered", messages: []llm.Message{
 			{Role: llm.RoleSystem, Content: "system"},
-			{Role: llm.RoleUser, Content: tail.Content + "!"},
+			{
+				Role: llm.RoleUser, Content: tail.Content + "!",
+				DynamicTailID: tail.ID,
+			},
 			{Role: llm.RoleUser, Content: "current"},
 		}},
 		{name: "duplicated", messages: append(append([]llm.Message(nil), base...), llm.Message{
-			Role: llm.RoleUser, Content: tail.Content,
+			Role: llm.RoleUser, Content: tail.Content, DynamicTailID: tail.ID,
 		})},
 		{name: "wrong placement", messages: []llm.Message{
 			{Role: llm.RoleSystem, Content: "system"},
-			{Role: llm.RoleUser, Content: tail.Content},
+			{
+				Role: llm.RoleUser, Content: tail.Content,
+				DynamicTailID: tail.ID,
+			},
 			{Role: llm.RoleAssistant, Content: "not current user"},
 		}},
 	}
@@ -175,11 +193,14 @@ func TestValidateDynamicTailMessagesRejectsTamperDuplicatePlacementAndCap(t *tes
 	); err == nil {
 		t.Fatal("empty dynamic tail error = nil")
 	}
-	resumed := DynamicTail{Content: tail.Content}
+	resumed := DynamicTail{ID: tail.ID, Content: tail.Content}
 	if err := ValidateDynamicTailMessages(
 		[]llm.Message{
 			{Role: llm.RoleSystem, Content: "system"},
-			{Role: llm.RoleUser, Content: tail.Content},
+			{
+				Role: llm.RoleUser, Content: tail.Content,
+				DynamicTailID: tail.ID,
+			},
 		},
 		resumed,
 		0,
@@ -199,7 +220,10 @@ func TestValidateDynamicTailMessagesRejectsTamperDuplicatePlacementAndCap(t *tes
 	if err := ValidateDynamicTailMessages(
 		[]llm.Message{
 			{Role: llm.RoleSystem, Content: strings.Repeat("stable system ", 5_000)},
-			{Role: llm.RoleUser, Content: tail.Content},
+			{
+				Role: llm.RoleUser, Content: tail.Content,
+				DynamicTailID: tail.ID,
+			},
 			{Role: llm.RoleUser, Content: "current"},
 		},
 		tail,
@@ -210,6 +234,17 @@ func TestValidateDynamicTailMessagesRejectsTamperDuplicatePlacementAndCap(t *tes
 	tooSmall := nonSystemTokens - 1
 	if err := ValidateDynamicTailMessages(base, tail, tooSmall); !errors.Is(err, ErrContextWindowExceeded) {
 		t.Fatalf("hard-cap error = %v, want ErrContextWindowExceeded", err)
+	}
+	withPersistedDuplicates := append([]llm.Message{
+		{Role: llm.RoleUser, Content: tail.Content},
+		{Role: llm.RoleUser, Content: tail.Content},
+	}, base...)
+	if err := ValidateDynamicTailMessages(
+		withPersistedDuplicates,
+		tail,
+		0,
+	); err != nil {
+		t.Fatalf("persisted duplicate content changed marker identity: %v", err)
 	}
 }
 

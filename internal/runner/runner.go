@@ -376,7 +376,7 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, input turnInput)
 			dynamicExposure = pendingRecall.exposure
 			dynamicExposure.HardCapTokens = cfg.HardCap()
 			dynamicExposure.Included = dynamicTailIncluded(
-				agentHistory, dynamicExposure.Tail.Content,
+				agentHistory, dynamicExposure.Tail.ID,
 			)
 		}
 

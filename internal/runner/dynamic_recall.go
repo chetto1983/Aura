@@ -172,6 +172,7 @@ func (r *Runner) prepareDynamicRecall(
 		return nil
 	}
 	tail := conversations.DynamicTail{
+		ID:                requestID.String(),
 		Content:           prepared.Recall.Text,
 		BeforeCurrentUser: beforeCurrentUser,
 	}
@@ -179,6 +180,7 @@ func (r *Runner) prepareDynamicRecall(
 		contextTail: tail,
 		exposure: &agent.DynamicTailExposure{
 			Tail: agent.DynamicTail{
+				ID:                tail.ID,
 				Content:           prepared.Recall.Text,
 				BeforeCurrentUser: beforeCurrentUser,
 			},
@@ -266,10 +268,13 @@ func dynamicTailLimits(
 	return converted
 }
 
-func dynamicTailIncluded(messages []llm.Message, content string) bool {
+func dynamicTailIncluded(messages []llm.Message, id string) bool {
+	if id == "" {
+		return false
+	}
 	count := 0
 	for _, message := range messages {
-		if message.Role == llm.RoleUser && message.Content == content {
+		if message.DynamicTailID == id {
 			count++
 		}
 	}

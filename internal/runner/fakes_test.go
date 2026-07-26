@@ -262,7 +262,8 @@ func managedMessagesForFake(
 	messages []llm.Message,
 	cfg conversations.ContextConfig,
 ) []llm.Message {
-	if cfg.DynamicTail == nil || cfg.DynamicTail.Content == "" {
+	if cfg.DynamicTail == nil || cfg.DynamicTail.ID == "" ||
+		cfg.DynamicTail.Content == "" {
 		return messages
 	}
 	index := len(messages)
@@ -278,6 +279,7 @@ func managedMessagesForFake(
 	out = append(out, messages[:index]...)
 	out = append(out, llm.Message{
 		Role: llm.RoleUser, Content: cfg.DynamicTail.Content,
+		DynamicTailID: cfg.DynamicTail.ID,
 	})
 	out = append(out, messages[index:]...)
 	return out
