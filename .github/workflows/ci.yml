@@ -1371,7 +1371,7 @@ jobs:
 
       - name: HARVEST (TEMP — revert after committing the PNGs) upload regenerated calm-prism snapshots
         if: always() && steps.changes.outputs.web == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: calm-prism-snapshots
           path: web/e2e/__screenshots__/chat-calm-prism.spec.ts/
