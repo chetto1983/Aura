@@ -29,6 +29,24 @@ import (
 //     immediately: the whole call is over, not a per-tool blip.
 const maxToolRetries = 2 // up to 3 total attempts for a non-mutating transient failure
 
+// operationBookkeepingTimeout bounds the terminal write that closes an acquired operation
+// claim. It runs on a context detached from the caller's, so it needs a deadline of its own.
+const operationBookkeepingTimeout = 5 * time.Second
+
+// bookkeepingCtx detaches the operation's terminal write from the caller's cancellation.
+//
+// Closing a claim RECORDS work that already happened, so it must not be cancellable by the
+// thing that cancelled the work. With the caller's ctx, an abandoned turn (page reload,
+// dropped SSE, per-call timeout) made tool.Execute fail with ctx.Err() AND made the
+// MarkOperationIndeterminate that follows fail too — the claim then sat in_progress until
+// its lease expired, and every identical retry in between was denied with "operation is in
+// progress". Measured on the live appliance: 17 acquisitions, 6 recorded outcomes, 11 claims
+// leaked. The same detach-then-rebound pattern is already used for the finalize/completion
+// LLM calls (llm_agent_completion.go, llm_agent_finalize.go).
+func bookkeepingCtx(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), operationBookkeepingTimeout)
+}
+
 // toolRetryBaseDelay is the linear-backoff unit (attempt n waits (n+1)·base). A var,
 // not a const, so tests can shrink it without sleeping real backoff windows.
 var toolRetryBaseDelay = 200 * time.Millisecond
@@ -67,10 +85,18 @@ func (a *LlmAgent) execTool(ctx context.Context, tool tools.Tool, mutating bool,
 			ToolCallID:     tools.ToolCallIDFromContext(ctx),
 		}
 		verdict, derr := a.gateway.Decide(ctx, spec, args, key)
+		// Read the claim BEFORE the error check: Decide can acquire the operation and then
+		// fail on the policy reservation that follows it, and returning early here left that
+		// claim with nobody to close it — the second half of the same leak.
+		operationAcquired = verdict.OperationDecision == idempotency.DecisionAcquired
 		if derr != nil {
+			if operationAcquired {
+				bctx, cancel := bookkeepingCtx(ctx)
+				defer cancel()
+				return tools.ToolResult{}, errors.Join(derr, a.gateway.MarkOperationIndeterminate(bctx))
+			}
 			return tools.ToolResult{}, derr
 		}
-		operationAcquired = verdict.OperationDecision == idempotency.DecisionAcquired
 		if operationAcquired {
 			claimedCtx, claimErr := idempotency.WithClaimToken(
 				ctx,
@@ -85,7 +111,9 @@ func (a *LlmAgent) execTool(ctx context.Context, tool tools.Tool, mutating bool,
 		case gateway.Deny:
 			denied := &gateway.ErrDenied{Reason: verdict.Reason, Tier: verdict.Tier}
 			if operationAcquired {
-				return tools.ToolResult{}, errors.Join(denied, a.gateway.MarkOperationIndeterminate(ctx))
+				bctx, cancel := bookkeepingCtx(ctx)
+				defer cancel()
+				return tools.ToolResult{}, errors.Join(denied, a.gateway.MarkOperationIndeterminate(bctx))
 			}
 			return tools.ToolResult{}, denied
 		case gateway.Approve:
@@ -115,11 +143,15 @@ func (a *LlmAgent) execTool(ctx context.Context, tool tools.Tool, mutating bool,
 			if !operationAcquired {
 				return res, err
 			}
+			// Detached from ctx on purpose: the most common way to get here is the caller's
+			// context expiring, which is exactly when the claim MUST still be closed.
+			bctx, cancel := bookkeepingCtx(ctx)
+			defer cancel()
 			if err != nil {
-				return res, errors.Join(err, a.gateway.MarkOperationIndeterminate(ctx))
+				return res, errors.Join(err, a.gateway.MarkOperationIndeterminate(bctx))
 			}
-			if completeErr := a.gateway.CompleteOperation(ctx, res); completeErr != nil {
-				return res, errors.Join(completeErr, a.gateway.MarkOperationIndeterminate(ctx))
+			if completeErr := a.gateway.CompleteOperation(bctx, res); completeErr != nil {
+				return res, errors.Join(completeErr, a.gateway.MarkOperationIndeterminate(bctx))
 			}
 			return res, nil
 		}
