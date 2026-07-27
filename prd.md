@@ -2062,6 +2062,24 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 >
 > **Unchanged:** no new env, no schema change, no new tool, no dependency. Snippets stay HOST-PRIMARY by-path under a non-strict profile (#55/D-01) — this amendment corrects only what the *other* branch was called.
 
+## §Skills — the pending stage is deleted (Amendment #97, 2026-07-27)
+
+> **Amendment #97 (2026-07-27, operator-directed: *"non serve fare approvazione sono tutte cazzate"*, *"qui l'agente è cieco e non va bene"*, *"tutto da cancellare e semplificare"*) — the skills approval stage is REMOVED, for every actor and every action. `save_snippet`, `create`, `update`, `install` and `delete` take effect immediately. SUPERSEDES D-03 ("it NEVER self-activates"), the D-29 pending tuple, and the `ask_user`-resume activation path.**
+>
+> **Direct continuation of Amendment #51 / D-40** ("self-extension senza cerimonia", from *"stop acting like Aura is unsafe"*). #51 and P5 (2026-06-10) removed the ceremony from model-authored `create`/`update` and left everything else staged — not by decision, but because those paths never routed through the same predicate. This finishes the job instead of adding a third rule.
+>
+> **The gate protected nothing.** A snippet is code the agent may already execute this turn: `shell_exec` runs the identical bytes, in the identical per-identity box, unapproved. Staging never withheld execution — only **reuse**. It stood between the model and its own artifact, not between the model and the capability.
+>
+> **What it cost instead — measured live 2026-07-27.** The agent saved `sommadue`, was told *"saved as pending (status=pending_approval). Activate it (operator approval) before reuse"*, and could not use what it had just written. The tool announced success and delivered nothing.
+>
+> **Two things this also repairs, both already-live defects:**
+> 1. `handleSkillDelete` runs the gate, writes an audit row, returns `200 {"status":"pending_approval"}` and **never deletes**. The cockpit's trash icon has therefore always been a lie, and no code anywhere consumes that pending state.
+> 2. A skill written with an empty description passed the write boundary and was then skipped by the loader — the same "reported success, produced nothing" shape, fixed the same day at the write boundary.
+>
+> **Unchanged — the controls that do work stay.** `ValidateForWrite` still runs with `allowBlocklisted=false` (a model path NEVER bypasses the injection blocklist, T-11-03-E1); the audit ledger still records every mutation with its actor, hash and tier; `scoring.ComputeSkillTier` still surfaces `needs_network`/`needs_workspace`. What goes is the *staging*, not the *recording*: the ledger answers "what changed and who did it", which is the question a single-operator box can actually act on.
+>
+> **Surface removed:** the `pending/` stage directory and its boot orphan-reconcile scan, `Activate`/approval-source plumbing, `StatusPendingApproval`, `aura skills approve`, the `ask_user`-resume activation branch, the cockpit's **In attesa** tab and its API stage. `archive`/`restore` SURVIVE — turning a skill off is not an approval, and it stays the reversible alternative to delete. The cockpit's delete becomes a real deletion behind a client-side confirm dialog: no server-side approval, no pending state, one audit row.
+
 ## §Cross-cutting — KV cache invariant CI (amendment #16, Pitfall #3 P0)
 
 Cache poisoning is the highest-risk cross-slice failure mode in Aura. Slice 4 owns the invariant (`messages[0]` byte-identical turn-su-turn) but Slices 1.8, 5, 7e-core, 10, 11e all mutate the message-construction pipeline. Without a cross-slice gate, every capability silently risks planting its own poisoning site. Reference: `reference_aura_cache_poisoning_sites_2026-05-27` (6 sites mapped pre-rewrite — historical record kept as warning).
