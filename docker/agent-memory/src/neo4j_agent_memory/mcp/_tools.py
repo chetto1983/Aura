@@ -33,6 +33,33 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# MCP tool annotation marking a tool as a pure read. It is not decoration: a client's
+# policy layer has no other way to tell a lookup from a mutation, so an unannotated read
+# is indistinguishable from a write and gets treated as one. Aura derives its risk tier
+# straight from this (`spec.Mutating = !Annotations.ReadOnlyHint`), so without it every
+# `memory_search` — asking the graph for the user's own name — stopped the turn for
+# operator approval, which is both absurd and the fastest way to teach an operator to
+# approve without reading.
+#
+# Applied ONLY to tools that cannot write. The add/store/update/forget/relationship/
+# feedback verbs deliberately carry no annotation and stay mutating.
+READ_ONLY = {"readOnlyHint": True}
+
+# The read surface, named once so the guard test and the decorators cannot drift apart.
+READ_ONLY_TOOLS = frozenset(
+    {
+        "memory_search",
+        "memory_get_context",
+        "memory_get_conversation",
+        "memory_list_sessions",
+        "memory_get_entity",
+        "memory_get_facts",
+        "memory_get_entity_history",
+        "memory_get_entity_provenance",
+        "memory_get_reflections",
+    }
+)
+
 # How many same-name entities memory_get_entity looks at. It used to fetch exactly one, so a
 # name with two entities behind it answered about whichever ranked first and said nothing about
 # the other — the operator's "David" existed twice (PERSON and OBJECT) and an agent asked to
@@ -92,7 +119,7 @@ def register_tools(
 def _register_core_tools(mcp: FastMCP) -> None:
     """Register the 8 core profile tools."""
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY)
     async def memory_search(
         ctx: Context,
         query: str,
@@ -126,7 +153,7 @@ def _register_core_tools(mcp: FastMCP) -> None:
         )
         return json.dumps(result, default=str)
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY)
     async def memory_get_context(
         ctx: Context,
         session_id: str | None = None,
@@ -473,7 +500,7 @@ def _register_core_tools(mcp: FastMCP) -> None:
 def _register_extended_tools(mcp: FastMCP) -> None:
     """Register the extended profile tools."""
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY)
     async def memory_get_conversation(
         ctx: Context,
         session_id: str,
@@ -524,7 +551,7 @@ def _register_extended_tools(mcp: FastMCP) -> None:
             logger.error(f"Error in memory_get_conversation: {e}")
             return json.dumps({"error": str(e)})
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY)
     async def memory_list_sessions(
         ctx: Context,
         limit: int = 20,
@@ -580,7 +607,7 @@ def _register_extended_tools(mcp: FastMCP) -> None:
             logger.error(f"Error in memory_list_sessions: {e}")
             return json.dumps({"error": str(e)})
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY)
     async def memory_get_entity(
         ctx: Context,
         name: str,
@@ -691,7 +718,7 @@ def _register_extended_tools(mcp: FastMCP) -> None:
             logger.error(f"Error in memory_get_entity: {e}")
             return json.dumps({"error": str(e)})
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY)
     async def memory_get_facts(
         ctx: Context,
         subject: str | None = None,
@@ -871,7 +898,7 @@ def _register_platinum_tools(mcp: FastMCP) -> None:
             logger.error(f"Error in memory_set_entity_feedback: {e}")
             return json.dumps({"error": str(e)})
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY)
     async def memory_get_entity_history(
         ctx: Context,
         entity_id: str,
@@ -902,7 +929,7 @@ def _register_platinum_tools(mcp: FastMCP) -> None:
             logger.error(f"Error in memory_get_entity_history: {e}")
             return json.dumps({"error": str(e)})
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY)
     async def memory_get_entity_provenance(
         ctx: Context,
         entity_id: str,
@@ -927,7 +954,7 @@ def _register_platinum_tools(mcp: FastMCP) -> None:
             logger.error(f"Error in memory_get_entity_provenance: {e}")
             return json.dumps({"error": str(e)})
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY)
     async def memory_get_reflections(
         ctx: Context,
         session_id: str,
