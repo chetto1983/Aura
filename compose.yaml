@@ -236,6 +236,26 @@ services:
       # creation (ensureImage pull-fail -> Resolve error -> the tool denies) rather than running un-floored.
       AURA_SANDBOX_IMAGE: ${AURA_SANDBOX_IMAGE:-aura-sandbox:latest}
       AURA_SANDBOX_EGRESS_IMAGE: ${AURA_SANDBOX_EGRESS_IMAGE:-aura-egress:latest}
+      # The master switch for everything described above, and it was NOT reachable from here:
+      # AURA_PROFILE was never forwarded to this service, so a compose deployment ran the
+      # `dev` default no matter what the operator put in .env — buildSandboxRouter is
+      # Strict()-gated, so the box, the egress floor and the routed file tools were all
+      # inert on the appliance while the two image knobs above sat there suggesting otherwise.
+      # Kept defaulting to dev so no existing stack changes behaviour on upgrade; a production
+      # appliance sets AURA_PROFILE=single_user_hardened in .env — and must have
+      # AURA_SANDBOX_IMAGE built/pullable first, because a strict host with no box image
+      # fails CLOSED (every routed tool denies) rather than silently running on the host.
+      AURA_PROFILE: ${AURA_PROFILE:-dev}
+      # The remaining AURA_SANDBOX_* knobs, same reason: config reads them, compose never
+      # passed them, so per-box caps and the idle-suspend TTL could not be tuned at all.
+      # IDLE_TTL_SEC=0 means NEVER suspend — the single-user posture, where the box stays
+      # warm (a warm route is ~22ms against ~350ms for an auto-resume) and there is no
+      # co-tenant to reclaim memory from.
+      AURA_SANDBOX_IDLE_TTL_SEC: ${AURA_SANDBOX_IDLE_TTL_SEC:-1800}
+      AURA_SANDBOX_CPU_LIMIT: ${AURA_SANDBOX_CPU_LIMIT:-2}
+      AURA_SANDBOX_MEMORY_LIMIT: ${AURA_SANDBOX_MEMORY_LIMIT:-2147483648}
+      AURA_SANDBOX_PIDS_LIMIT: ${AURA_SANDBOX_PIDS_LIMIT:-512}
+      AURA_SANDBOX_EGRESS_ALLOWLIST: ${AURA_SANDBOX_EGRESS_ALLOWLIST:-}
     ports:
       - "127.0.0.1:${AURA_AGUI_PORT:-9080}:9080"
       - "127.0.0.1:${AURA_SETUP_PORT:-9081}:9081"
