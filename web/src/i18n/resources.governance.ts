@@ -185,7 +185,11 @@ export const governanceEn = {
         trustReasonLabel: 'Reason',
         trustReasonPlaceholder: 'Why are you approving this server?',
         trustConfirm: 'Trust & approve',
-        trustCancel: 'Cancel approval',
+        // Dismisses the reason form; it revokes NOTHING (the handler only clears local
+        // state). "Cancel approval" read as "revoke this server's approval" — a
+        // destructive meaning, on the button sitting next to the one that grants it.
+        // States the outcome instead, like removeCancel/"Keep server" right below.
+        trustCancel: "Don't approve",
         approvedBy: 'Approved by {{actor}} · {{ts}} · "{{reason}}"',
         remove: 'Remove server',
         removeTitle: 'Remove "{{name}}"?',
@@ -455,7 +459,7 @@ export const governanceIt = {
         trustReasonLabel: 'Motivo',
         trustReasonPlaceholder: 'Perché stai approvando questo server?',
         trustConfirm: 'Fidati e approva',
-        trustCancel: 'Annulla approvazione',
+        trustCancel: 'Non approvare',
         approvedBy: 'Approvato da {{actor}} · {{ts}} · "{{reason}}"',
         remove: 'Rimuovi server',
         removeTitle: 'Rimuovere "{{name}}"?',

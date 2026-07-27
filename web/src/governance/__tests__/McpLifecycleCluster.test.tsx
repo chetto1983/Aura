@@ -119,7 +119,9 @@ describe('McpLifecycleCluster (MCPW-02/03)', () => {
     renderCluster();
     fireEvent.click(screen.getByRole('button', { name: 'Trust & approve' }));
     expect(screen.getByLabelText('Reason')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel approval' }));
+    // "Don't approve", not "Cancel approval": this button dismisses the form and calls
+    // nothing — the assertion below is what the old label promised to undo.
+    fireEvent.click(screen.getByRole('button', { name: "Don't approve" }));
     expect(screen.queryByLabelText('Reason')).toBeNull();
     expect(trustMcpServer).not.toHaveBeenCalled();
   });
