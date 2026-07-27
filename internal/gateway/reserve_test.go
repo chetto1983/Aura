@@ -111,11 +111,38 @@ func TestReplayResultMissingSidecar(t *testing.T) {
 	}
 }
 
-// TestReplayResultInFlight proves a rows==0 with NO recorded end (a prior reservation still
-// in-flight / crash-orphaned before its end) returns an in-flight marker, NOT a re-execute.
-func TestReplayResultInFlight(t *testing.T) {
+// TestReserveDeniesAnUnaccountedPriorDispatch pins the rows==0-with-no-recorded-end case at
+// the level that matters. It used to return Allow with a Replay whose Preview was the string
+// "[reservation held: result not yet available]" and a nil error — so the caller returned a
+// SUCCESSFUL tool result for a tool that had never executed. The operator hit it as a write
+// that reported fine and left no file; the agent's own report was "fs_write non ha salvato il
+// file — la scrittura è finita in reservation held".
+//
+// The at-most-once guarantee is unchanged: the effect still does not re-run. What changes is
+// that a call with no recorded outcome is now DENIED rather than reported as done. A denial
+// the model can see and act on beats an invented success it cannot.
+func TestReserveDeniesAnUnaccountedPriorDispatch(t *testing.T) {
+	g := New(config.ProfileSingleUserHardened, &fakeStore{notAcquired: true}) // replayEnd nil
+	v, err := g.reserve(context.Background(), mutatingRiskySpec(), nil, testKey(), scoring.Normal, "")
+	if err != nil {
+		t.Fatalf("reserve returned err=%v, want a verdict", err)
+	}
+	if v.Decision != Deny {
+		t.Fatalf("decision = %q, want deny for a prior dispatch with no recorded end", v.Decision)
+	}
+	if v.Replay != nil {
+		t.Fatal("a denial must carry no replay: there is no outcome to replay")
+	}
+	if !strings.Contains(v.Reason, "not re-run") {
+		t.Errorf("reason = %q, want it to say the tool was not re-run", v.Reason)
+	}
+}
+
+// The defensive branch of replayResult is unreachable through reserve, but if a future caller
+// reintroduces it the wording must not imply the effect happened.
+func TestReplayResultNilEndSaysTheToolDidNotRun(t *testing.T) {
 	res := replayResult(nil)
-	if !strings.Contains(res.Preview, "not yet available") {
-		t.Fatalf("preview = %q, want an in-flight marker", res.Preview)
+	if !strings.Contains(res.Preview, "did NOT run") {
+		t.Fatalf("preview = %q, want it to state the tool did not run", res.Preview)
 	}
 }

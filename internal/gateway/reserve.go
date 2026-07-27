@@ -188,6 +188,21 @@ func (g *Gateway) reserve(ctx context.Context, spec tools.Spec, rawArgs json.Raw
 	if acquired {
 		return Verdict{Decision: Allow, Tier: tier, OperatorID: operatorID}, nil
 	}
+	if replay == nil {
+		// The slot is held by a prior dispatch that never recorded an end — crashed, or a
+		// turn abandoned before its terminal write landed. The effect must NOT run again
+		// (at-most-once), but it must not be reported as done either: this used to return
+		// Allow with a Replay whose Preview was the literal string "[reservation held:
+		// result not yet available]" and a nil error, so the model received a SUCCESSFUL
+		// tool result for a tool that never executed. Aura's own diagnosis of it, verbatim:
+		// "fs_write non ha salvato il file — la scrittura è finita in reservation held e non
+		// è stata effettivamente scritta su disco". A denial is honest; a fabricated success
+		// is the one outcome the model cannot recover from.
+		return Verdict{
+			Decision: Deny, Tier: tier,
+			Reason: "a prior dispatch of this tool call is still unaccounted for; it was not re-run",
+		}, nil
+	}
 	res := replayResult(replay)
 	return Verdict{Decision: Allow, Tier: tier, OperatorID: operatorID, Replay: &res}, nil
 }
@@ -221,13 +236,15 @@ func (g *Gateway) reservationStart(spec tools.Spec, rawArgs json.RawMessage, key
 }
 
 // replayResult rebuilds the tool result from a recorded `end` fact for a rows==0 duplicate.
-// A nil end (the prior reservation is still in-flight / crash-orphaned before its end) is
-// NOT re-executed either — it returns an in-flight marker so the side effect stays
-// at-most-once. A recorded end whose sidecar has been GC'd degrades to the capped preview
-// plus resultExpiredMarker (Pitfall 6), never an error.
+// It is only called with a NON-nil end: an unaccounted-for prior dispatch is denied by
+// reserve rather than replayed, because there is no outcome to replay and inventing one
+// reported a tool that never ran as successful. A recorded end whose sidecar has been GC'd
+// degrades to the capped preview plus resultExpiredMarker (Pitfall 6), never an error.
 func replayResult(end *toolinvocations.Event) tools.ToolResult {
 	if end == nil {
-		return tools.ToolResult{Preview: "[reservation held: result not yet available]"}
+		// Defensive only — reserve filters this case. Kept non-panicking, and worded so a
+		// future caller that reintroduces the path is told the effect did NOT happen.
+		return tools.ToolResult{Preview: "[reservation held: the tool did NOT run and no result was recorded]"}
 	}
 	preview := end.ResultPreview
 	fullPath := end.ResultSidecarPath

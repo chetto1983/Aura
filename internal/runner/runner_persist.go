@@ -18,6 +18,10 @@ import (
 	"github.com/google/uuid"
 )
 
+// ledgerInsertTimeout bounds the tool-invocation ledger write. That write runs on a context
+// detached from the caller's (see persistToolInvocationLedger), so it needs its own deadline.
+const ledgerInsertTimeout = 5 * time.Second
+
 // turnTracker accumulates per-round persistence state: whether the round paused (so
 // the auto-title worker is skipped), the running conversation id, and the round's
 // ask_user pauses. When a round pauses on >=2 ask_user calls the agent rewrites its
@@ -230,7 +234,16 @@ func (r *Runner) persistToolInvocationLedger(ctx context.Context, tr *turnTracke
 		ExitCode:          ti.ExitCode,
 		Meta:              ti.Meta,
 	}
-	if err := r.toolInvocations.Insert(ctx, e); err != nil {
+	// Detached from ctx with a bound of its own. This row is the `end` that closes the
+	// gateway's reservation, and the most common way to reach it is a turn that has just
+	// been abandoned — page reload, dropped SSE, per-call timeout. Writing it on the
+	// caller's context meant the end was lost exactly when it mattered, leaving the `start`
+	// orphaned: the next dispatch of that same (conversation, request, tool_call) then found
+	// the slot held with no recorded outcome. Recording that an effect happened must not be
+	// cancellable by whatever cancelled the turn.
+	insertCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), ledgerInsertTimeout)
+	defer cancel()
+	if err := r.toolInvocations.Insert(insertCtx, e); err != nil {
 		return fmt.Errorf("persist tool invocation %s/%s: %w", ti.ToolName, ti.ToolCallID, err)
 	}
 	return nil
