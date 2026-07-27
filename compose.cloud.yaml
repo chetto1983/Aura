@@ -2,7 +2,12 @@
 # EVERY inference backend in the cloud (OpenRouter). Layer it LAST, and do NOT
 # combine with compose.gpu.yaml / compose.llm.yaml (those are workstation-only):
 #
-#   docker compose -f compose.yaml -f compose.cloud.yaml up -d aura caddy
+#   docker compose -f compose.yaml -f compose.cloud.yaml up -d aura caddy markitdown
+#
+# markitdown is in that list deliberately. It is not a dependency of aura, so the shorter
+# `up -d aura caddy` brings up a stack that looks entirely healthy and then fails every
+# document upload at the extraction hop with
+# `dial tcp: lookup markitdown on 127.0.0.11:53: server misbehaving`.
 #
 # What this override does (all in ONE place — the unified cloud routing):
 #   1. Routes all six modalities to OpenRouter on the running aura:local image
@@ -98,6 +103,26 @@ services:
           --llm-api-base ${AURA_LLM_BASE_URL:-https://openrouter.ai/api/v1} \
           --embedding-dimensions ${AURA_EMBED_DIMENSIONS:-768} \
           --no-auto-preferences
+
+  # Document extraction. markitdown is NOT a dependency of aura, so `up -d aura caddy`
+  # leaves it down and an upload dies at extraction with
+  # `dial tcp: lookup markitdown on 127.0.0.11:53` — the daemon is healthy, the object
+  # store accepted the file, and the pipeline breaks on the next hop. Start it explicitly
+  # (see the header) — this block only fixes where its OCR points.
+  markitdown:
+    environment:
+      # Same omission the rerank knobs had: the base compose points OCR at the local
+      # aura-ocr-vl sidecar, which cannot run GPU-less and never starts here. The client
+      # fail-softs to TEXT-ONLY extraction, so a scanned PDF or a photo ingests as an empty
+      # document — silently, with no error anywhere.
+      AURA_OCR_BASE_URL: https://openrouter.ai/api/v1
+      # gemini-2.5-flash, not the MULTIMODAL_FALLBACK_MODEL the chat path uses. Both are
+      # genuine vision models, but measured on an image reading "AURA-VISION-7391":
+      # gemini returned it exactly, minimax/minimax-m3 returned "AUBA-VISION:7:39:1".
+      # A chat answer survives that; OCR does not — the error becomes the document's text
+      # and every downstream chunk, embedding and citation inherits it.
+      AURA_OCR_MODEL: ${AURA_OCR_MODEL:-google/gemini-2.5-flash}
+      AURA_OCR_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY required in .env}
 
   neo4j:
     environment:
