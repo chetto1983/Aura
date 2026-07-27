@@ -76,14 +76,16 @@ func (f *fakeStore) reserves() []toolinvocations.Event {
 // readOnlySpec is a non-mutating, non-multiplexed tool → classify returns Safe.
 func readOnlySpec() tools.Spec { return tools.Spec{Name: "read_file", Mutating: false} }
 
-// mutatingRiskySpec is a mutating, non-multiplexed tool → classify returns Risky
-// (GateRecommended) so it routes to approve.
-// swarm_spawn, not shell_exec: the generic mutating floor is Normal (an ordinary write must
-// not stop the turn), so a plain Mutating spec no longer reaches the approve path at all and
-// would silently turn every test below into an assertion about nothing. swarm_spawn is Risky
-// unconditionally, for any args including nil, so these tests keep exercising the machinery
-// they were written for.
-func mutatingRiskySpec() tools.Spec { return tools.Spec{Name: "swarm_spawn", Mutating: true} }
+// gatedSpec/gatedArgs are a call that actually reaches the approval path, so the tests
+// below assert the approval machinery rather than nothing: `skill` with action=delete,
+// which classifies Destructive — the ONE tier that stops the turn (see decide.go's gated).
+//
+// It is deliberately not shell_exec (Normal), not swarm_spawn (Normal), and not a Risky
+// call either: Risky no longer gates. If a future change re-widens the gate, these tests
+// keep passing and TestDecideRiskyIsNotGated below is what fails.
+func gatedSpec() tools.Spec { return tools.Spec{Name: "skill", Mutating: true} }
+
+func gatedArgs() json.RawMessage { return json.RawMessage(`{"action":"delete","name":"x"}`) }
 
 // ordinaryWriteSpec is the other side of that line: a mutating, non-multiplexed tool, which
 // is the shape of nearly every write the agent makes (shell_exec, fs_write, an MCP write).
@@ -103,7 +105,7 @@ func TestDecideDevNoOp(t *testing.T) {
 	for _, profile := range []config.RuntimeProfile{config.ProfileDev, config.ProfileLocalTrusted} {
 		store := &fakeStore{}
 		g := New(profile, store)
-		v, err := g.Decide(context.Background(), mutatingRiskySpec(), nil, testKey())
+		v, err := g.Decide(context.Background(), gatedSpec(), gatedArgs(), testKey())
 		if err != nil {
 			t.Fatalf("%s: Decide err: %v", profile, err)
 		}
@@ -120,7 +122,7 @@ func TestDecideDevNoOp(t *testing.T) {
 
 	// A nil *Gateway is an Allow no-op too (dev-parity for tests/standalone).
 	var g *Gateway
-	v, err := g.Decide(context.Background(), mutatingRiskySpec(), nil, testKey())
+	v, err := g.Decide(context.Background(), gatedSpec(), gatedArgs(), testKey())
 	if err != nil || v.Decision != Allow {
 		t.Fatalf("nil gateway: got (%v, %v), want allow/nil", v.Decision, err)
 	}
@@ -227,6 +229,55 @@ func TestDecideMutatingAutoAllowFact(t *testing.T) {
 	}
 	if got := len(store.calls()); got != 0 {
 		t.Fatalf("mutating auto-allow wrote %d decision-fact Inserts, want 0 (reserve is the only durable write)", got)
+	}
+}
+
+// TestDecideRiskyIsNotGated pins where the approval line now sits: under the STRICTEST
+// profile, with a responder present, a RISKY call (skill/create — self-extension) is
+// allowed and reserved without stopping the turn. Only Destructive gates.
+//
+// The regression it guards reached a live appliance: the gate was scoring.GateRecommended
+// (Risky OR Destructive), so authoring a skill, running a task the operator had just asked
+// for, or any action the classifier could not parse all raised an approval prompt. An
+// operator who is asked to approve the expected case learns to answer yes without reading,
+// which is precisely what the prompt exists to prevent.
+func TestDecideRiskyIsNotGated(t *testing.T) {
+	store := &fakeStore{}
+	g := New(config.ProfileSingleUserHardened, store)
+	ctx := WithResponder(context.Background()) // a responder IS available; it is not asked
+
+	args := mustDecideArgs(t, map[string]string{"action": "create", "name": "x"})
+	v, err := g.Decide(ctx, gatedSpec(), args, testKey())
+	if err != nil {
+		t.Fatalf("Decide err: %v", err)
+	}
+	if v.Tier != scoring.Risky {
+		t.Fatalf("tier = %q, want risky (precondition: this test must exercise the Risky arm)", v.Tier)
+	}
+	if v.Decision != Allow {
+		t.Fatalf("decision = %q, want allow (only Destructive stops the turn)", v.Decision)
+	}
+	if v.ApprovalRequest != nil {
+		t.Fatal("a Risky call must not mint an approval request")
+	}
+	// Not gated is not unrecorded: it still takes its durable reservation.
+	if reserved := store.reserves(); len(reserved) != 1 {
+		t.Fatalf("want exactly 1 reservation start for an allowed risky call, got %+v", reserved)
+	}
+}
+
+// TestDecideDestructiveGates is the other side of that line: skill/delete stops the turn.
+func TestDecideDestructiveGates(t *testing.T) {
+	g := New(config.ProfileSingleUserHardened, &fakeStore{})
+	v, err := g.Decide(WithResponder(context.Background()), gatedSpec(), gatedArgs(), testKey())
+	if err != nil {
+		t.Fatalf("Decide err: %v", err)
+	}
+	if v.Tier != scoring.Destructive {
+		t.Fatalf("tier = %q, want destructive", v.Tier)
+	}
+	if v.Decision != Approve || v.ApprovalRequest == nil {
+		t.Fatalf("verdict = %+v, want approve + approval request (deletion is the gated case)", v)
 	}
 }
 

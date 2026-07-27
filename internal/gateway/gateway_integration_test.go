@@ -340,15 +340,16 @@ func TestApprovedCallReservedAndIdempotent(t *testing.T) {
 	g := New(config.ProfileSingleUserHardened, store)
 	convID := seedConversation(t, pool)
 
-	// swarm_spawn is Risky unconditionally (GateRecommended) → the approval path. The resume
-	// carries the operator's resolution, so routeApprove returns Verdict{Allow, OperatorID}.
+	// A call that actually reaches the approval path: skill/delete → Destructive, the one
+	// tier that stops the turn. The resume carries the operator's resolution, so routeApprove
+	// returns Verdict{Allow, OperatorID}.
 	//
-	// NOT shell_exec: the generic mutating floor is Normal, so an ordinary write is allowed
-	// outright and never reaches routeApprove — this test would have kept passing its Allow
-	// assertion while silently asserting nothing about approval at all.
+	// NOT shell_exec and no longer swarm_spawn — both are Normal, so an ordinary write is
+	// allowed outright and never reaches routeApprove. This test would have kept passing its
+	// Allow assertion while silently asserting nothing about approval at all.
 	approvedCtx := WithResolvedApproval(WithResponder(context.Background()),
 		ResolvedApproval{Approved: true, OperatorID: "op-1"})
-	mutatingSpec := tools.Spec{Name: "swarm_spawn", Mutating: true}
+	mutatingSpec := tools.Spec{Name: "skill", Mutating: true}
 
 	// (a) reserve-before-execute for the approved call.
 	key := newKey(convID, "call-approved-1")
@@ -358,7 +359,7 @@ func TestApprovedCallReservedAndIdempotent(t *testing.T) {
 		result: tools.ToolResult{Preview: "approved-output"},
 		onExec: func() { startAtExec = startRowCount(t, pool, key) },
 	}
-	_, v, err := gatedExec(approvedCtx, g, spy, nil, key)
+	_, v, err := gatedExec(approvedCtx, g, spy, skillDeleteArgs, key)
 	if err != nil || v.Decision != Allow {
 		t.Fatalf("approved dispatch = (%+v, %v), want allow", v, err)
 	}
@@ -372,7 +373,7 @@ func TestApprovedCallReservedAndIdempotent(t *testing.T) {
 	// forced reservation INSERT error blocks Execute even post-approval (GATE-03 fail-closed).
 	badKey := newKey(uuid.Must(uuid.NewV7()).String(), "call-approved-fail")
 	blockSpy := &spyTool{spec: mutatingSpec}
-	_, bv, berr := gatedExec(approvedCtx, g, blockSpy, nil, badKey)
+	_, bv, berr := gatedExec(approvedCtx, g, blockSpy, skillDeleteArgs, badKey)
 	if bv.Decision != Deny {
 		t.Fatalf("approved+bad-reservation verdict = %q, want deny", bv.Decision)
 	}
@@ -386,7 +387,7 @@ func TestApprovedCallReservedAndIdempotent(t *testing.T) {
 
 	// (b) retry replays idempotently.
 	insertEnd(t, store, key, "approved-output", "")
-	res, rv, rerr := gatedExec(approvedCtx, g, spy, nil, key)
+	res, rv, rerr := gatedExec(approvedCtx, g, spy, skillDeleteArgs, key)
 	if rerr != nil {
 		t.Fatalf("approved retry err: %v", rerr)
 	}
@@ -445,8 +446,9 @@ func TestReplayMissingSidecar(t *testing.T) {
 	}
 }
 
-// swarmSpawnArgs classifies to Risky (GateRecommended) so it drives the approval path.
-var swarmSpawnArgs = json.RawMessage(`{"goals":["build the thing"]}`)
+// skillDeleteArgs classifies to Destructive — the only tier that stops the turn — so it
+// drives the approval path against the live ledger.
+var skillDeleteArgs = json.RawMessage(`{"action":"delete","name":"obsolete-skill"}`)
 
 // TestGatewayApprovalResumeReentersAndReservesOnce proves D-03 point 2 through the
 // PRODUCTION carrier (the ledger the resume hook writes, NOT a hand-set WithResolvedApproval
@@ -462,12 +464,12 @@ func TestGatewayApprovalResumeReentersAndReservesOnce(t *testing.T) {
 	g := New(config.ProfileSingleUserHardened, store)
 	convID := seedConversation(t, pool)
 
-	mutatingSpec := tools.Spec{Name: "swarm_spawn", Mutating: true}
-	fp := gatewayArgsFingerprint(swarmSpawnArgs)
+	mutatingSpec := tools.Spec{Name: "skill", Mutating: true}
+	fp := gatewayArgsFingerprint(skillDeleteArgs)
 	key := newKey(convID, "call-resume-1")
 
 	// The host-side resume hook recorded the operator's accept (the production carrier).
-	g.RecordResolvedApproval(convID, "swarm_spawn", fp, ResolvedApproval{Approved: true, OperatorID: "op-1"})
+	g.RecordResolvedApproval(convID, "skill", fp, ResolvedApproval{Approved: true, OperatorID: "op-1"})
 
 	startAtExec := -1
 	spy := &spyTool{
@@ -481,7 +483,7 @@ func TestGatewayApprovalResumeReentersAndReservesOnce(t *testing.T) {
 	// (runner.go:551 gateway.WithResponder), so the WR-01 deny-before-Consume gate
 	// (ProfileServerProduction || !responderPresent) is not tripped and the cross-turn Consume
 	// runs. A headless (no-responder) re-drive would correctly deny here (WR-01).
-	_, v, err := gatedExec(WithResponder(context.Background()), g, spy, swarmSpawnArgs, key)
+	_, v, err := gatedExec(WithResponder(context.Background()), g, spy, skillDeleteArgs, key)
 	if err != nil || v.Decision != Allow {
 		t.Fatalf("resumed re-drive = (%+v, %v), want allow via the ledger", v, err)
 	}
@@ -497,8 +499,8 @@ func TestGatewayApprovalResumeReentersAndReservesOnce(t *testing.T) {
 
 	// (2) A retry of the SAME triple (re-recorded approval) replays: rows==0 → Verdict.Replay,
 	// Execute NOT called again (the reservation is the exactly-once guarantee).
-	g.RecordResolvedApproval(convID, "swarm_spawn", fp, ResolvedApproval{Approved: true, OperatorID: "op-1"})
-	res, rv, rerr := gatedExec(WithResponder(context.Background()), g, spy, swarmSpawnArgs, key)
+	g.RecordResolvedApproval(convID, "skill", fp, ResolvedApproval{Approved: true, OperatorID: "op-1"})
+	res, rv, rerr := gatedExec(WithResponder(context.Background()), g, spy, skillDeleteArgs, key)
 	if rerr != nil {
 		t.Fatalf("resumed retry err: %v", rerr)
 	}
@@ -531,12 +533,12 @@ func TestGatewayApprovalDeclineStaysFailClosed(t *testing.T) {
 	pool := migratedPool(t)
 	store := toolinvocations.New(pool)
 	convID := seedConversation(t, pool)
-	mutatingSpec := tools.Spec{Name: "swarm_spawn", Mutating: true}
+	mutatingSpec := tools.Spec{Name: "skill", Mutating: true}
 
 	// (a) hardened + responder, NO ledger approval → Approve + ApprovalRequest, WITHHELD.
 	hardened := New(config.ProfileSingleUserHardened, store)
 	spy := &spyTool{spec: mutatingSpec, result: tools.ToolResult{Preview: "should-not-run"}}
-	res, v, err := gatedExec(WithResponder(context.Background()), hardened, spy, swarmSpawnArgs, newKey(convID, "call-decline-1"))
+	res, v, err := gatedExec(WithResponder(context.Background()), hardened, spy, skillDeleteArgs, newKey(convID, "call-decline-1"))
 	if err != nil {
 		t.Fatalf("withheld approve must not error: %v", err)
 	}
@@ -553,7 +555,7 @@ func TestGatewayApprovalDeclineStaysFailClosed(t *testing.T) {
 	// (b) server_production → Deny (even with a responder), Execute==0.
 	prod := New(config.ProfileServerProduction, store)
 	prodSpy := &spyTool{spec: mutatingSpec}
-	_, pv, perr := gatedExec(WithResponder(context.Background()), prod, prodSpy, swarmSpawnArgs, newKey(convID, "call-decline-2"))
+	_, pv, perr := gatedExec(WithResponder(context.Background()), prod, prodSpy, skillDeleteArgs, newKey(convID, "call-decline-2"))
 	if pv.Decision != Deny {
 		t.Fatalf("production verdict = %q, want deny", pv.Decision)
 	}

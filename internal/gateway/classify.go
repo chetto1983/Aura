@@ -35,23 +35,17 @@ var multiplexedClassifiers = map[string]func(json.RawMessage) scoring.RiskTier{
 // Mutating bit (shell_exec/fs_write and MCP tools with !ReadOnlyHint are already
 // Mutating). It never lowers an unrecognised input below the mutating floor.
 //
-// The generic mutating floor is Normal, NOT Risky. GateRecommended fires from Risky up,
-// so returning Risky for "this tool writes something" made EVERY write stop the turn for
-// operator approval — storing a memory sat in the same bucket as `rm -rf`, and the
-// vocabulary's own `Normal` tier (which exists precisely for ordinary writes) went nearly
-// unused. Normal still reserves, records and audits the call; it just does not interrupt.
+// The generic mutating floor is Normal, NOT Risky: "this tool writes something" is what
+// nearly every tool does, and the vocabulary's own Normal tier exists precisely for it.
 //
-// That is also what the agent is instructed to do (internal/agent/prompt.go: "Destructive
-// or irreversible actions ... require operator approval first"), so the classifier was
-// contradicting the prompt. And a gate that fires on harmless writes does not add safety —
-// it trains an operator to approve without reading, which is exactly what the gate exists
-// to prevent.
-//
-// Everything genuinely dangerous keeps its escalation, none of it goes through this line:
-// skill create/update -> Risky and delete -> Destructive, task run_now -> Risky, an
-// agent_job with a destructive payload -> Destructive, swarm_spawn -> Risky, unparseable
-// or unknown multiplexed actions -> Risky (fail-safe), and shell_exec additionally carries
-// its own destructive-pattern approval in internal/agent/tools.
+// Classification is not enforcement. What a tier does is decided in decide.go, where only
+// Destructive stops the turn: skill delete, an agent_job with a destructive payload, and
+// shell_exec's own destructive-pattern approval in internal/agent/tools. Everything else —
+// skill create/update -> Risky, task run_now -> Risky, an unparseable or unknown
+// multiplexed action -> Risky (fail-safe), swarm_spawn -> Normal — is reserved, recorded
+// and auditable, and the operator is not interrupted for it. That matches what the agent
+// is told (internal/agent/prompt.go: "Destructive or irreversible actions ... require
+// operator approval first"), which the old Risky-gates-everything rule contradicted.
 func classify(spec tools.Spec, rawArgs json.RawMessage) scoring.RiskTier {
 	if fn, ok := multiplexedClassifiers[spec.Name]; ok {
 		return fn(rawArgs)
@@ -141,6 +135,26 @@ func classifyTask(raw json.RawMessage) scoring.RiskTier {
 	return scoring.Risky
 }
 
-// classifySwarmSpawn ignores its goals-only args: a swarm worker turn wields the full
-// tool set, so it is unconditionally Risky (AG-016 parity) and is never de-escalated.
-func classifySwarmSpawn(json.RawMessage) scoring.RiskTier { return scoring.Risky }
+// classifySwarmSpawn ignores its goals-only args and returns Normal: reserved, recorded and
+// audited like any other write, but not an interruption.
+//
+// It was Risky on the reasoning that "a swarm worker turn wields the full tool set". That is
+// true and it is not a reason: the worker's tools are a SUBSET of the parent's — runChild
+// derives Without(parentRegistry, "swarm_spawn") (D-08/D-10) — and the parent already uses
+// every one of them without asking. Spawning grants no authority that was not already in the
+// caller's hands; it fans out the same authority. Nothing escalates, and nothing recurses,
+// because the spawn verb is structurally absent from a worker's registry rather than merely
+// discouraged.
+//
+// The fan-out is bounded on every axis that could run away: AURA_SWARM_MAX_GOALS (8),
+// AURA_SWARM_MAX_CONCURRENT (4), AURA_SWARM_CHILD_TIMEOUT_SEC (120) and a budget preflight,
+// plus the AURA_SWARM_MAX_DEPTH guard behind the structural removal.
+//
+// The AG-016 parity it was modelled on does not transfer. A scheduled agent_job saturates
+// upward because it runs LATER and UNATTENDED — the operator is not there to see it. A swarm
+// runs now, inside a turn the operator just asked for, and they are watching it.
+//
+// What remains is real but is not what an approval prompt fixes: four workers touching one
+// workspace concurrently can interleave in ways a serial parent cannot. That is a concurrency
+// property to bound in the swarm, not a permission to request.
+func classifySwarmSpawn(json.RawMessage) scoring.RiskTier { return scoring.Normal }

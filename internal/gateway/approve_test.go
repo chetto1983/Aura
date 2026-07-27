@@ -20,7 +20,7 @@ func TestApproveHardenedInteractive(t *testing.T) {
 	g := New(config.ProfileSingleUserHardened, store)
 	ctx := WithResponder(context.Background())
 
-	v, err := g.Decide(ctx, mutatingRiskySpec(), nil, testKey())
+	v, err := g.Decide(ctx, gatedSpec(), gatedArgs(), testKey())
 	if err != nil {
 		t.Fatalf("Decide err: %v", err)
 	}
@@ -70,12 +70,12 @@ func TestApproveHardenedLedgerReEntry(t *testing.T) {
 	store := &fakeStore{}
 	g := New(config.ProfileSingleUserHardened, store)
 	ctx := WithResponder(context.Background())
-	args := mustDecideArgs(t, map[string]any{"goals": []string{"build x"}})
+	args := mustDecideArgs(t, map[string]any{"action": "delete", "name": "x"})
 
-	g.RecordResolvedApproval(testKey().ConversationID, mutatingRiskySpec().Name,
+	g.RecordResolvedApproval(testKey().ConversationID, gatedSpec().Name,
 		gatewayArgsFingerprint(args), ResolvedApproval{Approved: true, OperatorID: "op-led"})
 
-	v, err := g.Decide(ctx, mutatingRiskySpec(), args, testKey())
+	v, err := g.Decide(ctx, gatedSpec(), args, testKey())
 	if err != nil {
 		t.Fatalf("Decide err: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestApproveHardenedLedgerReEntry(t *testing.T) {
 	}
 	// The approval is one-shot: a second re-drive with the same args finds no ledger hit
 	// and re-issues the approval-required result (fail-closed).
-	v2, err := g.Decide(ctx, mutatingRiskySpec(), args, testKey())
+	v2, err := g.Decide(ctx, gatedSpec(), args, testKey())
 	if err != nil {
 		t.Fatalf("second Decide err: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestApproveProductionDenies(t *testing.T) {
 	g := New(config.ProfileServerProduction, store)
 	ctx := WithResponder(context.Background()) // even with a responder, production denies
 
-	v, err := g.Decide(ctx, mutatingRiskySpec(), nil, testKey())
+	v, err := g.Decide(ctx, gatedSpec(), gatedArgs(), testKey())
 	if err != nil {
 		t.Fatalf("Decide err: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestApproveHeadlessDenies(t *testing.T) {
 	store := &fakeStore{}
 	g := New(config.ProfileSingleUserHardened, store)
 
-	v, err := g.Decide(context.Background(), mutatingRiskySpec(), nil, testKey())
+	v, err := g.Decide(context.Background(), gatedSpec(), gatedArgs(), testKey())
 	if err != nil {
 		t.Fatalf("Decide err: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestApprovePostResumeAllow(t *testing.T) {
 	ctx := WithResolvedApproval(WithResponder(context.Background()),
 		ResolvedApproval{Approved: true, OperatorID: "op-1"})
 
-	v, err := g.Decide(ctx, mutatingRiskySpec(), nil, testKey())
+	v, err := g.Decide(ctx, gatedSpec(), gatedArgs(), testKey())
 	if err != nil {
 		t.Fatalf("Decide err: %v", err)
 	}
@@ -179,8 +179,9 @@ func TestApproveIsHostSideOnly(t *testing.T) {
 
 	// A crafted "approve"-shaped arg blob must not flip the verdict: only the host's
 	// WithResponder marker (absent here) can reach the interactive branch.
-	modelArgs := mustDecideArgs(t, map[string]any{"decision": "approve", "approved": true})
-	v, _ := g.Decide(context.Background(), mutatingRiskySpec(), modelArgs, testKey())
+	modelArgs := mustDecideArgs(t, map[string]any{
+		"action": "delete", "name": "x", "decision": "approve", "approved": true})
+	v, _ := g.Decide(context.Background(), gatedSpec(), modelArgs, testKey())
 	if v.Decision == Approve || v.Decision == Allow {
 		t.Fatalf("model self-approval leaked: decision = %q", v.Decision)
 	}
@@ -198,9 +199,9 @@ func TestApproveHardenedRecordsChallengeOnIssue(t *testing.T) {
 	store := &fakeStore{}
 	g := New(config.ProfileSingleUserHardened, store)
 	ctx := WithResponder(context.Background())
-	args := mustDecideArgs(t, map[string]any{"goals": []string{"build x"}})
+	args := mustDecideArgs(t, map[string]any{"action": "delete", "name": "x"})
 
-	v, err := g.Decide(ctx, mutatingRiskySpec(), args, testKey())
+	v, err := g.Decide(ctx, gatedSpec(), args, testKey())
 	if err != nil {
 		t.Fatalf("Decide err: %v", err)
 	}
@@ -213,7 +214,7 @@ func TestApproveHardenedRecordsChallengeOnIssue(t *testing.T) {
 	}
 	fp, _ := preview["args_sha256"].(string)
 	wantQ, _ := preview["question"].(string)
-	gotQ, ok := pendingQuestion(g.approvals, testKey().ConversationID, mutatingRiskySpec().Name, fp)
+	gotQ, ok := pendingQuestion(g.approvals, testKey().ConversationID, gatedSpec().Name, fp)
 	if !ok {
 		t.Fatal("approve must record a pending challenge on issue (CR-01)")
 	}
@@ -229,13 +230,13 @@ func TestApproveHardenedRecordsChallengeOnIssue(t *testing.T) {
 func TestRouteApproveProductionDeniesEvenWithLedgerApproval(t *testing.T) {
 	store := &fakeStore{}
 	g := New(config.ProfileServerProduction, store)
-	args := mustDecideArgs(t, map[string]any{"goals": []string{"build x"}})
+	args := mustDecideArgs(t, map[string]any{"action": "delete", "name": "x"})
 	// Inject an approval directly into the ledger (bypassing the record guards) to isolate
 	// the deny-before-Consume ORDERING: if the deny gate ran after Consume, this would Allow.
-	g.approvals.Approve(testKey().ConversationID, mutatingRiskySpec().Name,
+	g.approvals.Approve(testKey().ConversationID, gatedSpec().Name,
 		gatewayArgsFingerprint(args), ResolvedApproval{Approved: true, OperatorID: "x"})
 
-	v, err := g.Decide(WithResponder(context.Background()), mutatingRiskySpec(), args, testKey())
+	v, err := g.Decide(WithResponder(context.Background()), gatedSpec(), args, testKey())
 	if err != nil {
 		t.Fatalf("Decide err: %v", err)
 	}
@@ -252,7 +253,7 @@ func TestRouteApproveProductionDeniesEvenWithLedgerApproval(t *testing.T) {
 // records nothing), so a production run cannot even seed the ledger by any path.
 func TestGatewayApproveChallengeRefusedUnderProduction(t *testing.T) {
 	g := New(config.ProfileServerProduction, &fakeStore{})
-	conv, tool, fp := testKey().ConversationID, mutatingRiskySpec().Name, "fp-prod"
+	conv, tool, fp := testKey().ConversationID, gatedSpec().Name, "fp-prod"
 	g.approvals.Challenge(conv, tool, fp, "q")
 
 	if err := g.ApproveChallenge(conv, tool, fp, "q", ResolvedApproval{Approved: true}); err == nil {

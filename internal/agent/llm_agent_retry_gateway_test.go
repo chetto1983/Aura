@@ -36,8 +36,10 @@ func (f *fakeReserveStore) GetEnd(context.Context, string, string, string) (*too
 	return nil, nil
 }
 
-// spyMutatingTool is a mutating GateRecommended tool (swarm_spawn-shaped) that counts
-// Execute calls so a test can assert the mutating side effect is WITHHELD until approval.
+// spyMutatingTool is a mutating tool that counts Execute calls so a test can assert the
+// side effect is WITHHELD until approval. Driven as skill/delete — Destructive, the one
+// tier that stops the turn (internal/gateway.gated). A Risky or Normal call would be
+// allowed outright and these tests would assert nothing.
 type spyMutatingTool struct {
 	name  string
 	count int
@@ -65,9 +67,9 @@ func (s *spyMutatingTool) Execute(context.Context, json.RawMessage) (tools.ToolR
 func TestExecToolGatewayApprovalWithheldThenReEnters(t *testing.T) {
 	gw := gateway.New(config.ProfileSingleUserHardened, &fakeReserveStore{})
 	a := &LlmAgent{gateway: gw, ledgerConvID: "conv-gw-1"}
-	spy := &spyMutatingTool{name: "swarm_spawn"}
+	spy := &spyMutatingTool{name: "skill"}
 	ctx := gateway.WithResponder(context.Background())
-	args := json.RawMessage(`{"goals":["build the thing"]}`)
+	args := json.RawMessage(`{"action":"delete","name":"obsolete-skill"}`)
 
 	// (1) Withheld: a normal ToolResult, no error, Execute NOT called.
 	res, err := a.execTool(ctx, spy, true, args)
@@ -94,7 +96,7 @@ func TestExecToolGatewayApprovalWithheldThenReEnters(t *testing.T) {
 
 	// (2) Operator accepts (host-side ledger write — the model never writes it). The
 	// re-emit with the SAME args Consumes the approval and executes exactly once.
-	gw.RecordResolvedApproval("conv-gw-1", "swarm_spawn", fp,
+	gw.RecordResolvedApproval("conv-gw-1", "skill", fp,
 		gateway.ResolvedApproval{Approved: true, OperatorID: "op"})
 	res2, err := a.execTool(ctx, spy, true, args)
 	if err != nil {
@@ -113,11 +115,11 @@ func TestExecToolGatewayApprovalWithheldThenReEnters(t *testing.T) {
 // approval-required preview); a hardened+mutating call with NO responder DENIES
 // (fail-closed, Execute 0) — the model relaying via ask_user cannot manufacture a responder.
 func TestExecToolGatewayNoApprovalRequiredPaths(t *testing.T) {
-	args := json.RawMessage(`{"goals":["x"]}`)
+	args := json.RawMessage(`{"action":"delete","name":"x"}`)
 
 	t.Run("dev profile executes", func(t *testing.T) {
 		a := &LlmAgent{gateway: gateway.New(config.ProfileDev, &fakeReserveStore{}), ledgerConvID: "c"}
-		spy := &spyMutatingTool{name: "swarm_spawn"}
+		spy := &spyMutatingTool{name: "skill"}
 		res, err := a.execTool(gateway.WithResponder(context.Background()), spy, true, args)
 		if err != nil || spy.count != 1 {
 			t.Fatalf("dev profile: (count=%d, err=%v), want executed once", spy.count, err)
@@ -138,7 +140,7 @@ func TestExecToolGatewayNoApprovalRequiredPaths(t *testing.T) {
 
 	t.Run("no responder denies fail-closed", func(t *testing.T) {
 		a := &LlmAgent{gateway: gateway.New(config.ProfileSingleUserHardened, &fakeReserveStore{}), ledgerConvID: "c"}
-		spy := &spyMutatingTool{name: "swarm_spawn"}
+		spy := &spyMutatingTool{name: "skill"}
 		_, err := a.execTool(context.Background(), spy, true, args) // no WithResponder
 		var denied *gateway.ErrDenied
 		if !errors.As(err, &denied) {

@@ -17,6 +17,23 @@ import (
 	"github.com/chetto1983/aura/internal/toolinvocations"
 )
 
+// gated reports whether a tier stops the turn for operator approval. ONLY Destructive
+// does — the tier that means "this erases something that does not come back".
+//
+// It used to be scoring.GateRecommended, i.e. Risky OR Destructive, and Risky is where
+// everything ordinary landed: authoring a skill, running a scheduled task the operator
+// just asked for, spawning a swarm, any multiplexed action the classifier could not parse.
+// The operator on the live appliance was answering approval prompts for writes that were
+// the entire point of the request. A prompt that fires on the expected case is not a
+// safety property — it trains the answer "yes" and is then still there, unread, when the
+// one call that mattered arrives.
+//
+// Everything below Destructive is still classified, reserved, recorded and auditable;
+// scoring.GateRecommended still reports the advisory tier for the skills audit trail and
+// the governance UI. What changed is only whether the turn STOPS. shell_exec keeps its own
+// destructive-pattern approval in internal/agent/tools, which this predicate never sees.
+func gated(t scoring.RiskTier) bool { return t == scoring.Destructive }
+
 // Decide is the policy-enforcement point. It returns a Verdict; on Approve the Verdict
 // carries an ApprovalRequest tool result (the caller returns it as a normal tool result,
 // tool.Execute withheld) — the gateway no longer mints a pause sentinel. A nil *Gateway
@@ -46,7 +63,7 @@ func (g *Gateway) Decide(ctx context.Context, spec tools.Spec, rawArgs json.RawM
 	// start row per executed call, the operator_id (when present) folded into that one
 	// start's Meta (GATE-03/04 / D-03 point 2). This is the unified reserve invariant.
 	operatorID := ""
-	if scoring.GateRecommended(tier) {
+	if gated(tier) {
 		v, err := g.routeApprove(ctx, spec, tier, rawArgs, key)
 		if err != nil || v.Decision != Allow {
 			return v, err

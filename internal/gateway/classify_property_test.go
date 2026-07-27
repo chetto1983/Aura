@@ -64,9 +64,9 @@ func TestClassifyParseFailNeverSafe(t *testing.T) {
 		if got := classify(task, truncated); got != scoring.Risky {
 			rt.Fatalf("classify(task, parse-fail) = %q, want Risky", got)
 		}
-		// swarm_spawn ignores its args entirely — always Risky, even on garbage.
-		if got := classify(swarm, truncated); got != scoring.Risky {
-			rt.Fatalf("classify(swarm_spawn, parse-fail) = %q, want Risky", got)
+		// swarm_spawn ignores its args entirely — the tier never moves, garbage included.
+		if got := classify(swarm, truncated); got != scoring.Normal {
+			rt.Fatalf("classify(swarm_spawn, parse-fail) = %q, want Normal", got)
 		}
 	})
 }

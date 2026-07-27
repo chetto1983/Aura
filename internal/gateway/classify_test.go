@@ -94,10 +94,13 @@ func TestClassifyTable(t *testing.T) {
 		{"task/unknown", task, mustArgs(t, map[string]string{"action": "purge"}), scoring.Risky},
 		{"task/parsefail", task, json.RawMessage(`{`), scoring.Risky},
 
-		// swarm_spawn → Risky unconditionally
-		{"swarm/goals", swarm, mustArgs(t, map[string][]string{"goals": {"a", "b"}}), scoring.Risky},
-		{"swarm/empty", swarm, json.RawMessage(`{}`), scoring.Risky},
-		{"swarm/parsefail", swarm, json.RawMessage(`nope`), scoring.Risky},
+		// swarm_spawn → Normal on every input, args included. A worker's tools are a SUBSET
+		// of the parent's (runChild removes swarm_spawn itself), so spawning grants no
+		// authority the caller did not already hold and use ungated; the fan-out is bounded
+		// by the goals/concurrency/timeout caps. It is reserved and audited, not gated.
+		{"swarm/goals", swarm, mustArgs(t, map[string][]string{"goals": {"a", "b"}}), scoring.Normal},
+		{"swarm/empty", swarm, json.RawMessage(`{}`), scoring.Normal},
+		{"swarm/parsefail", swarm, json.RawMessage(`nope`), scoring.Normal},
 
 		// Non-multiplexed fallback: Mutating→Normal, read→Safe.
 		//
