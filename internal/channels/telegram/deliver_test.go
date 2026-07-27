@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
+	"unicode"
 
 	"github.com/jackc/pgx/v5"
 	tele "gopkg.in/telebot.v4"
@@ -20,7 +22,11 @@ import (
 type sendRecorder struct {
 	mu      sync.Mutex
 	sendErr error
-	sends   []recordedSend
+	// failAt makes the Nth send (1-based) fail with sendErr, so the chunked push path
+	// can be driven to a MID-sequence failure — the case where some of the chat has
+	// already received text. 0 means "never fail by position".
+	failAt int
+	sends  []recordedSend
 }
 
 type recordedSend struct {
@@ -32,7 +38,13 @@ type recordedSend struct {
 func (b *sendRecorder) Send(to tele.Recipient, what any, opts ...any) (*tele.Message, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.sendErr != nil {
+	if b.failAt > 0 {
+		// Count the attempt before deciding, so failAt is the attempt's position and a
+		// failure at N still records N-1 successful sends for the assertion.
+		if len(b.sends)+1 == b.failAt {
+			return nil, b.sendErr
+		}
+	} else if b.sendErr != nil {
 		return nil, b.sendErr
 	}
 	text, _ := what.(string)
@@ -212,6 +224,104 @@ func TestDeliver(t *testing.T) {
 		}
 		if res.callCount() != 0 {
 			t.Errorf("resolver calls = %d, want 0 (nil bot must short-circuit before the lookup)", res.callCount())
+		}
+	})
+}
+
+// TestDeliverChunksOverTelegramCap is fix-plan 2.2. The Bot API refuses a message over
+// 4096 characters, so an unsplit push — a long scheduled agent_job summary, typically —
+// was lost in FULL: the interactive renderer has always split, this path never did.
+func TestDeliverChunksOverTelegramCap(t *testing.T) {
+	const validUUID = "11111111-1111-1111-1111-111111111111"
+
+	newChannel := func(bot *sendRecorder) *Telegram {
+		tg := NewChannel(Deps{Offline: true})
+		tg.deliverBot = bot
+		tg.deliverResolver = &stubResolver{acct: Account{TelegramUserID: 4242, IdentityID: validUUID}}
+		// Without this the paced loop pays the real 1s chat rate limit per chunk.
+		tg.deliverSleep = func(time.Duration) {}
+		return tg
+	}
+
+	t.Run("splits a long push and preserves every rune", func(t *testing.T) {
+		t.Parallel()
+		// Multi-byte on purpose: the cap is in RUNES, and a byte-based split would both
+		// miscount the chunks and cut an accented character or an emoji in half.
+		unit := "Però il riepilogo è lungo 🙂 "
+		long := strings.Repeat(unit, 700)
+		if len([]rune(long)) <= telegramTextCap {
+			t.Fatalf("fixture must exceed the cap: %d runes", len([]rune(long)))
+		}
+
+		bot := &sendRecorder{}
+		ok, err := newChannel(bot).Deliver(context.Background(), validUUID, long)
+		if err != nil {
+			t.Fatalf("Deliver: %v", err)
+		}
+		if !ok {
+			t.Error("want delivered=true")
+		}
+
+		sends := bot.recorded()
+		if len(sends) < 2 {
+			t.Fatalf("Send calls = %d, want the text split across several", len(sends))
+		}
+		var joined strings.Builder
+		for i, s := range sends {
+			if n := len([]rune(s.text)); n > telegramTextCap {
+				t.Errorf("chunk %d is %d runes, over the %d cap", i+1, n, telegramTextCap)
+			}
+			if s.to != tele.ChatID(4242) {
+				t.Errorf("chunk %d recipient = %v, want ChatID(4242)", i+1, s.to)
+			}
+			joined.WriteString(s.text)
+		}
+		// The splitter cuts AT a separator and consumes it, so the chunks do not rejoin
+		// to the original byte-for-byte. The invariant that matters is that no
+		// non-whitespace rune was dropped, in order — compare with whitespace removed.
+		dense := func(s string) string {
+			return strings.Map(func(r rune) rune {
+				if unicode.IsSpace(r) {
+					return -1
+				}
+				return r
+			}, s)
+		}
+		if got, want := dense(joined.String()), dense(long); got != want {
+			t.Errorf("rejoined chunks lost content: %d runes vs %d", len([]rune(got)), len([]rune(want)))
+		}
+	})
+
+	t.Run("stops at the first failing chunk and reports its position", func(t *testing.T) {
+		t.Parallel()
+		long := strings.Repeat("a", telegramTextCap*3)
+		bot := &sendRecorder{failAt: 2, sendErr: errors.New("flood limit")}
+
+		ok, err := newChannel(bot).Deliver(context.Background(), validUUID, long)
+		if ok {
+			t.Error("want delivered=false when a chunk fails")
+		}
+		if err == nil {
+			t.Fatal("want an error when a chunk fails")
+		}
+		if !strings.Contains(err.Error(), "chunk 2/") {
+			t.Errorf("error must name the failing chunk position, got %q", err)
+		}
+		// One send recorded: chunk 1 landed, chunk 2 failed, chunk 3 was never attempted.
+		if n := len(bot.recorded()); n != 1 {
+			t.Errorf("recorded sends = %d, want 1 (stop at the failure, do not push the remainder)", n)
+		}
+	})
+
+	t.Run("a short push is still one unsplit send", func(t *testing.T) {
+		t.Parallel()
+		bot := &sendRecorder{}
+		if _, err := newChannel(bot).Deliver(context.Background(), validUUID, "breve"); err != nil {
+			t.Fatalf("Deliver: %v", err)
+		}
+		sends := bot.recorded()
+		if len(sends) != 1 || sends[0].text != "breve" {
+			t.Fatalf("short push = %d send(s) %+v, want exactly one unchanged send", len(sends), sends)
 		}
 	})
 }

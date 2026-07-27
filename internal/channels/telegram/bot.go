@@ -187,6 +187,11 @@ type Telegram struct {
 	// Deliver uses the live bot (read under mu) and t.deps.Store. Not public knobs.
 	deliverBot      botSender
 	deliverResolver accountResolver
+
+	// deliverSleep replaces the inter-chunk wait in Deliver's paced loop. nil (the
+	// production path) waits on a real timer; a multi-chunk test that left it nil would
+	// pay the 1s-per-chunk chat rate limit for every chunk.
+	deliverSleep func(time.Duration)
 }
 
 type hitlReplyKey struct {

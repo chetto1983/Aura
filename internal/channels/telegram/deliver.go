@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	tele "gopkg.in/telebot.v4"
@@ -58,10 +59,55 @@ func (t *Telegram) Deliver(ctx context.Context, identityID, text string) (bool, 
 		}
 		return false, fmt.Errorf("telegram deliver: resolve identity %s: %w", identityID, err)
 	}
-	if _, err := sender.Send(tele.ChatID(acct.TelegramUserID), text); err != nil {
-		return false, fmt.Errorf("telegram deliver: send to %d: %w", acct.TelegramUserID, err)
+	// The Bot API rejects a message over 4096 runes outright, so an unsplit push of a
+	// long agent_job summary was lost in full — the interactive path has always split
+	// (renderer.go), the push path never did. Same splitter, same package: a second one
+	// would drift. splitTelegramText returns nil only for the empty string, where the
+	// single-send behaviour (and its API error) is preserved deliberately.
+	chunks := splitTelegramText(text, telegramTextCap)
+	if len(chunks) == 0 {
+		chunks = []string{text}
+	}
+	for i, chunk := range chunks {
+		if i > 0 {
+			if err := t.paceDeliver(ctx, t.chatRateLimit()); err != nil {
+				return false, fmt.Errorf("telegram deliver: pacing chunk %d/%d to %d: %w", i+1, len(chunks), acct.TelegramUserID, err)
+			}
+		}
+		if _, err := sender.Send(tele.ChatID(acct.TelegramUserID), chunk); err != nil {
+			// Stop at the first failure rather than pushing the remainder: the chat has
+			// already received chunks 1..i, and continuing past a rate-limit rejection
+			// only deepens the hole. The caller's retry re-sends the WHOLE text, so a
+			// mid-sequence failure costs a duplicated prefix — accepted, because the
+			// alternative (per-chunk delivery state) is a durable cursor this push path
+			// has no room for.
+			return false, fmt.Errorf("telegram deliver: send chunk %d/%d to %d: %w", i+1, len(chunks), acct.TelegramUserID, err)
+		}
 	}
 	return true, nil
+}
+
+// paceDeliver waits between chunks so a long split message does not trip Telegram's
+// per-chat flood limit (the renderer paces for the same reason). It is ctx-aware: a
+// cancelled delivery stops mid-sequence instead of sleeping out the remaining chunks.
+// deliverSleep is the unexported test seam — set, it replaces the wait entirely, so a
+// multi-chunk test does not pay the real 1s-per-chunk rate limit.
+func (t *Telegram) paceDeliver(ctx context.Context, d time.Duration) error {
+	if d <= 0 {
+		return nil
+	}
+	if t.deliverSleep != nil {
+		t.deliverSleep(d)
+		return nil
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 // DeliverApproval renders an ACTIONABLE scheduled-task approval prompt to the 1:1 Telegram chat
