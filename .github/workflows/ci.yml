@@ -859,8 +859,14 @@ jobs:
       - name: Bring up Postgres + migrate (default-on managed config reads cfg)
         run: make db-migrate
 
-      - name: Bring up Neo4j + embed sidecar
-        run: make neo4j-up
+      # neo4j-migrate, not neo4j-up: `up` only starts the container, so the Cypher
+      # migrations never ran here and 0005_memory_corpus_revision never created the
+      # `MemoryCorpusRevision {singleton:'corpus'}` node. Every sidecar write bumps that
+      # singleton in its own transaction and fails closed without it — "memory corpus
+      # epoch singleton is missing or invalid". The gap was invisible while the sidecar
+      # could not boot at all. (neo4j-migrate re-runs db-migrate, which is idempotent.)
+      - name: Bring up Neo4j + embed sidecar, and apply the Cypher migrations
+        run: make neo4j-migrate
 
       - name: Start the agent-memory MCP sidecar (cached :local image)
         run: docker compose up -d --no-build aura-agent-memory-mcp

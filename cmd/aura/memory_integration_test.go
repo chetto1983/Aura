@@ -80,10 +80,20 @@ func memoryTierGate(t *testing.T) {
 }
 
 // runMemory captures runMemoryCommand's stdout, failing the test on a CLI error.
+//
+// It resolves the operator identity first because that is what `aura memory` itself does
+// (runMemory, memory.go): runMemoryCommand READS the identity off the context and refuses
+// to invent one, so a bare context here would exercise a path no real invocation takes and
+// fail with "memory call has no identity to scope to". Resolving it also keeps the
+// Postgres lookup — seed vs. enrolled operator — inside what this tier covers.
 func runMemoryCLI(t *testing.T, args ...string) string {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	ctx, err := withOperatorIdentity(ctx)
+	if err != nil {
+		t.Fatalf("resolve operator identity for `aura memory %s`: %v", strings.Join(args, " "), err)
+	}
 	var out bytes.Buffer
 	if err := runMemoryCommand(ctx, args, &out); err != nil {
 		t.Fatalf("aura memory %s: %v", strings.Join(args, " "), err)
