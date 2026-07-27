@@ -340,11 +340,15 @@ func TestApprovedCallReservedAndIdempotent(t *testing.T) {
 	g := New(config.ProfileSingleUserHardened, store)
 	convID := seedConversation(t, pool)
 
-	// shell_exec is mutating + Risky (GateRecommended) → the approval path. The resume
+	// swarm_spawn is Risky unconditionally (GateRecommended) → the approval path. The resume
 	// carries the operator's resolution, so routeApprove returns Verdict{Allow, OperatorID}.
+	//
+	// NOT shell_exec: the generic mutating floor is Normal, so an ordinary write is allowed
+	// outright and never reaches routeApprove — this test would have kept passing its Allow
+	// assertion while silently asserting nothing about approval at all.
 	approvedCtx := WithResolvedApproval(WithResponder(context.Background()),
 		ResolvedApproval{Approved: true, OperatorID: "op-1"})
-	mutatingSpec := tools.Spec{Name: "shell_exec", Mutating: true}
+	mutatingSpec := tools.Spec{Name: "swarm_spawn", Mutating: true}
 
 	// (a) reserve-before-execute for the approved call.
 	key := newKey(convID, "call-approved-1")
