@@ -10,6 +10,7 @@ package usersandbox
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
@@ -85,7 +86,7 @@ func (b *DockerBackend) Suspend(ctx context.Context, h BoxHandle) error {
 	if err := b.suspendEgress(ctx, h.IdentityID); err != nil {
 		return fmt.Errorf("suspend box: %w", err)
 	}
-	if _, err := b.cli.ContainerStop(ctx, h.ContainerID, client.ContainerStopOptions{}); err != nil {
+	if _, err := b.cli.ContainerStop(ctx, h.ContainerID, stopOptions()); err != nil {
 		return fmt.Errorf("suspend box: %w", err)
 	}
 	return nil
@@ -155,10 +156,8 @@ func (b *DockerBackend) findBox(ctx context.Context, name string) (string, error
 		return "", err
 	}
 	for _, c := range res.Items {
-		for _, n := range c.Names {
-			if n == "/"+name {
-				return c.ID, nil
-			}
+		if slices.Contains(c.Names, "/"+name) {
+			return c.ID, nil
 		}
 	}
 	return "", nil
