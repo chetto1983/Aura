@@ -19,14 +19,23 @@ from neo4j_agent_memory.rerank import rerank
 
 
 class _RerankHandler(BaseHTTPRequestHandler):
-    """Canned /v1/rerank responder; status/body are set per test via _set_response."""
+    """Canned /v1/rerank responder; status/body are set per test via _set_response.
+
+    It also records the last request (parsed body + headers) so the cloud-path tests can
+    assert what actually went ON THE WIRE — a model name and an Authorization header are
+    only worth anything if the provider receives them.
+    """
 
     status = 200
     body = b'{"results": []}'
+    last_body: dict | None = None
+    last_headers: dict | None = None
 
     def do_POST(self):  # noqa: N802 - BaseHTTPRequestHandler API
         length = int(self.headers.get("Content-Length", 0))
-        self.rfile.read(length)
+        raw = self.rfile.read(length)
+        _RerankHandler.last_body = json.loads(raw) if raw else None
+        _RerankHandler.last_headers = dict(self.headers)
         self.send_response(self.status)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
@@ -39,6 +48,21 @@ class _RerankHandler(BaseHTTPRequestHandler):
 def _set_response(status: int, body) -> None:
     _RerankHandler.status = status
     _RerankHandler.body = body if isinstance(body, bytes) else json.dumps(body).encode()
+    _RerankHandler.last_body = None
+    _RerankHandler.last_headers = None
+
+
+def _ok_three() -> None:
+    _set_response(
+        200,
+        {
+            "results": [
+                {"index": 0, "relevance_score": 0.10},
+                {"index": 1, "relevance_score": 0.90},
+                {"index": 2, "relevance_score": 0.50},
+            ]
+        },
+    )
 
 
 @pytest.fixture
@@ -101,3 +125,49 @@ def test_rerank_out_of_range_index_returns_identity(rerank_server):
 
 def test_rerank_empty_docs_returns_empty():
     assert rerank("q", [], "http://127.0.0.1:1") == []
+
+
+def test_rerank_defaults_to_local_sidecar_unauthenticated(rerank_server, monkeypatch):
+    """Unconfigured = the local sidecar contract, byte-for-byte: model "aura-rerank",
+    no Authorization. An empty bearer would make the sidecar reject what it accepts."""
+    monkeypatch.delenv("AURA_RERANK_MODEL", raising=False)
+    monkeypatch.delenv("AURA_RERANK_API_KEY", raising=False)
+    _ok_three()
+    assert rerank("q", ["a", "b", "c"], rerank_server) == [1, 2, 0]
+    assert _RerankHandler.last_body["model"] == "aura-rerank"
+    assert "Authorization" not in _RerankHandler.last_headers
+
+
+def test_rerank_cloud_model_and_key_reach_the_wire(rerank_server):
+    """A hosted cross-encoder needs BOTH: the provider picks the model by name and
+    rejects the call without a bearer. Explicit args win over the environment."""
+    _ok_three()
+    order = rerank(
+        "q", ["a", "b", "c"], rerank_server, model="cohere/rerank-4-pro", api_key="sk-test-rr"
+    )
+    assert order == [1, 2, 0]
+    assert _RerankHandler.last_body["model"] == "cohere/rerank-4-pro"
+    assert _RerankHandler.last_headers["Authorization"] == "Bearer sk-test-rr"
+
+
+def test_rerank_reads_model_and_key_from_env(rerank_server, monkeypatch):
+    """compose sets the env and nobody threads arguments through the recall path, so the
+    env fallback is the configuration that actually ships."""
+    monkeypatch.setenv("AURA_RERANK_MODEL", "cohere/rerank-4-pro")
+    monkeypatch.setenv("AURA_RERANK_API_KEY", "sk-env-rr")
+    _ok_three()
+    assert rerank("q", ["a", "b", "c"], rerank_server) == [1, 2, 0]
+    assert _RerankHandler.last_body["model"] == "cohere/rerank-4-pro"
+    assert _RerankHandler.last_headers["Authorization"] == "Bearer sk-env-rr"
+
+
+def test_rerank_blank_env_falls_back_to_sidecar_defaults(rerank_server, monkeypatch):
+    """compose renders an unset ${VAR:-} as an EMPTY string, not an absent variable —
+    so blank must mean "unconfigured", or the base compose defaults would ship a
+    model-less request and an empty bearer to the local sidecar."""
+    monkeypatch.setenv("AURA_RERANK_MODEL", "")
+    monkeypatch.setenv("AURA_RERANK_API_KEY", "")
+    _ok_three()
+    assert rerank("q", ["a", "b", "c"], rerank_server) == [1, 2, 0]
+    assert _RerankHandler.last_body["model"] == "aura-rerank"
+    assert "Authorization" not in _RerankHandler.last_headers

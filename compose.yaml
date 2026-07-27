@@ -557,6 +557,15 @@ services:
       # against a 0.70 threshold). The cross-encoder separates the same corpus by three
       # orders of magnitude. Same service the Go retrieve path uses.
       AURA_RERANK_BASE_URL: ${AURA_MEMORY_RERANK_BASE_URL:-http://aura-rerank:8085}
+      # Local↔cloud swap for the reranker, mirroring the embedder pair above and the Go
+      # side's Config.RerankRoute. Both EMPTY by default = the local aura-rerank sidecar,
+      # which is unauthenticated and answers to the model name "aura-rerank" — so an
+      # existing deployment is byte-unchanged. A GPU-less appliance cannot run that
+      # sidecar at all (see compose.cloud.yaml): there, set the model to a hosted
+      # cross-encoder and reuse the SINGLE OpenRouter key. Sidecar-owned like the embed
+      # pair — the cockpit Settings overlay cannot reach an already-running container.
+      AURA_RERANK_MODEL: ${AURA_MEMORY_RERANK_MODEL:-}
+      AURA_RERANK_API_KEY: ${AURA_MEMORY_RERANK_API_KEY:-}
     command:
       - sh
       - -lc

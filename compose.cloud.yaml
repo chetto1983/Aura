@@ -54,6 +54,17 @@ services:
       OPENAI_BASE_URL: https://openrouter.ai/api/v1
       OPENAI_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY required in .env}
       NAM_EMBEDDING: openai/qwen/qwen3-embedding-8b
+      # --- rerank → OpenRouter, SAME endpoint + model the aura service uses above ---
+      # Without these three the sidecar keeps the base compose's http://aura-rerank:8085,
+      # a service that never starts on a GPU-less box: the client fail-softs to identity
+      # order and memory recall degrades to pure embedding order — silently, one
+      # suppressed log line, looking alive while returning noise (on this embedder an
+      # unrelated query scores 0.87-0.89 against every stored preference, against a 0.70
+      # threshold). Reranking is where recall becomes discriminating, so it must follow
+      # the rest of the stack into the cloud, not be dropped by omission.
+      AURA_RERANK_BASE_URL: https://openrouter.ai/api
+      AURA_RERANK_MODEL: cohere/rerank-4-pro
+      AURA_RERANK_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY required in .env}
     # Re-declare the boot command WITHOUT the aura-llama-embed:8081 wait target
     # (the sidecar is gone; the original loop would block 240s then SystemExit →
     # crash-loop). Everything else is byte-identical to the base compose command.
