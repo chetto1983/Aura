@@ -151,6 +151,10 @@ type Runner struct {
 	// reasoningPersistMaxRunes bounds the per-turn display-only CoT accumulator
 	// (amendment #91); <=0 disables persistence (see Deps.ReasoningPersistMaxRunes).
 	reasoningPersistMaxRunes int
+	// gatewayOwnsToolStarts skips the ledger `start` write because the gateway already makes
+	// it as its reservation. Derived from the injected gateway, never hand-set: see
+	// gateway.OwnsToolStartRows for why a second writer of that row breaks GATE-03/04.
+	gatewayOwnsToolStarts bool
 
 	titleTimeout time.Duration
 	stopTimeout  time.Duration
@@ -229,6 +233,7 @@ func New(d Deps) *Runner {
 		evictAfter:               d.EvictAfter,
 		workspace:                workspace,
 		reasoningPersistMaxRunes: d.ReasoningPersistMaxRunes,
+		gatewayOwnsToolStarts:    d.Gateway.OwnsToolStartRows(),
 		titleTimeout:             titleTimeout,
 		stopTimeout:              stopTimeout,
 		resumeHook:               d.ResumeHook,

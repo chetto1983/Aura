@@ -206,6 +206,26 @@ func (r *Runner) persistToolInvocationLedger(ctx context.Context, tr *turnTracke
 		return nil
 	}
 	ti := ev.Actions.ToolInvocation
+	// The gateway is the sole writer of `start` rows wherever it reserves, and it has to be:
+	// Reserve INSERTs the start under the UNIQUE (conversation_id, request_id, tool_call_id,
+	// event_kind) index with ON CONFLICT DO NOTHING and reads the rows-affected count AS the
+	// idempotency key (GATE-03/04). A second writer of that row destroys the key.
+	//
+	// This observer was that second writer and it won the race: the agent yields start events
+	// BEFORE executing, so the cockpit can show the call as running, which put this row in
+	// first. The gateway then read its own conflict as "someone already holds this slot",
+	// found no end to replay, and refused to run the tool — every mutating tool call under a
+	// strict profile failed that way. Measured on the appliance: each denied call had a start
+	// row with an EMPTY meta, and the gateway's reservationStart always stamps
+	// gateway_verdict/gateway_tier/reservation, so the row was this one's.
+	//
+	// Nothing is lost when it is skipped: the gateway's start carries the same arguments plus
+	// the verdict and tier, and the `end` written below is unchanged. Under dev/local_trusted
+	// the gateway writes nothing at all (SC-4), so the flag is false and this observer stays
+	// the only writer.
+	if ti.Event == agent.ToolInvocationStart && r.gatewayOwnsToolStarts {
+		return nil
+	}
 	e := toolinvocations.Event{
 		ConversationID: tr.convID,
 		RequestID:      ev.RequestID.String(),

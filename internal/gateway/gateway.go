@@ -136,6 +136,19 @@ func New(profile config.RuntimeProfile, store reservationStore) *Gateway {
 	return &Gateway{profile: profile, store: store, approvals: NewGatewayApprovals()}
 }
 
+// OwnsToolStartRows reports whether this gateway writes the ledger's `start` row for a tool
+// call, which it does exactly when it reserves — i.e. under a strict profile.
+//
+// The ledger observer MUST NOT write that row when this is true. Reserve INSERTs the start
+// under the UNIQUE (conversation_id, request_id, tool_call_id, event_kind) index with ON
+// CONFLICT DO NOTHING and reads the rows-affected count AS the idempotency key (GATE-03/04),
+// so a second writer destroys the key: the gateway reads its own conflict as "someone already
+// holds this slot" and refuses to run the tool. Exposed here rather than passed as a separate
+// flag so the fact cannot drift from the behaviour it describes.
+func (g *Gateway) OwnsToolStartRows() bool {
+	return g != nil && g.store != nil && g.profile.Strict()
+}
+
 // SetOperationRegistry wires the one process-wide registry constructed by the
 // composition root. Nil preserves legacy standalone/dev behavior.
 func (g *Gateway) SetOperationRegistry(registry operationRegistry) {
