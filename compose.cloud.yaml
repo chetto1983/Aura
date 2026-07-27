@@ -34,6 +34,11 @@
 #      them without editing this file. The defaults are what an unconfigured appliance gets,
 #      not a fixed policy — the values here were chosen by measurement and are expected to
 #      be revised as models change.
+#      ONE EXCEPTION, and it is deliberate: the two EMBEDDING base URLs have NO default and
+#      the stack refuses to start without them. Every other leg is called once per request;
+#      the reasoning classifier embeds 27 anchors before every single turn, one at a time,
+#      so a cloud embedder costs ~50-75s per turn instead of a few hundred ms. That is too
+#      expensive to be something you get by forgetting a `-f`. See the vars for numbers.
 #
 # Base-URL conventions are VERIFIED against the client code:
 #   embed  → client appends "/v1/embeddings"  → base carries NO /v1  (…/api)
@@ -55,9 +60,27 @@ services:
       searxng:
         condition: service_started
     environment:
-      # --- embeddings → OpenRouter (qwen3-embedding-8b, Matryoshka-truncated to 768) ---
-      AURA_EMBED_BASE_URL: ${AURA_EMBED_BASE_URL:-https://openrouter.ai/api}
-      AURA_EMBED_MODEL: ${AURA_EMBED_MODEL:-qwen/qwen3-embedding-8b}
+      # --- embeddings → NO DEFAULT. State it in .env; the stack refuses to start otherwise.
+      #
+      # This used to default to OpenRouter, and that default cost an afternoon of
+      # debugging. Embeddings are not like the other cloud legs: rerank fires once per
+      # search, STT/TTS/vision only when asked, but the adaptive-reasoning classifier
+      # embeds 27 anchors before EVERY turn, one call at a time. Measured on the appliance
+      # against OpenRouter: 1.4-2.1s per call, so a "ciao, come stai?" spent 76s in the
+      # classifier and 2.7s actually talking to the model. The same turn with the local
+      # sidecar is a few hundred ms.
+      #
+      # What made it dangerous was that it was a DEFAULT. The box runs a local embed
+      # sidecar via compose.local-embed.yaml, but that overlay has to be remembered on
+      # every `up`; drop one `-f` and this line silently sent every embedding to the
+      # cloud, with nothing in the logs to say so — the stack looked healthy and was 25x
+      # slower. A required variable cannot be got wrong by omission in either direction.
+      #
+      #   local  (recommended):  AURA_EMBED_BASE_URL=http://aura-llama-embed:8081
+      #   cloud  (GPU-less box): AURA_EMBED_BASE_URL=https://openrouter.ai/api
+      #                          AURA_EMBED_MODEL=qwen/qwen3-embedding-8b
+      AURA_EMBED_BASE_URL: ${AURA_EMBED_BASE_URL:?set AURA_EMBED_BASE_URL in .env — http://aura-llama-embed:8081 for the local sidecar, https://openrouter.ai/api for cloud embeddings (cloud costs ~1.5-2s PER embedding and the reasoning classifier makes 27 per turn)}
+      AURA_EMBED_MODEL: ${AURA_EMBED_MODEL-}
       AURA_EMBED_DIMENSIONS: "${AURA_EMBED_DIMENSIONS:-768}"
       # --- rerank → OpenRouter (Cohere rerank-4-pro) ---
       AURA_RERANK_BASE_URL: ${AURA_RERANK_BASE_URL:-https://openrouter.ai/api}
@@ -76,11 +99,16 @@ services:
       # Same GPU-less reset: the memory MCP embeds through OpenRouter, not the sidecar.
       aura-llama-embed: !reset null
     environment:
-      # Point the sidecar's OpenAI-compatible embedder at OpenRouter (D-28). The base
-      # compose defaults these to the local sidecar; override to the cloud endpoint.
-      OPENAI_BASE_URL: ${AURA_MEMORY_EMBED_BASE_URL:-https://openrouter.ai/api/v1}
+      # Where the sidecar's OpenAI-compatible embedder points (D-28) — required, for the
+      # same reason as AURA_EMBED_BASE_URL above, and it MUST agree with it: the two write
+      # into the same 768d Neo4j vector index, so a stack that embeds queries with one
+      # model and stored memories with another retrieves noise while looking healthy.
+      #
+      #   local:  AURA_MEMORY_EMBED_BASE_URL=http://aura-llama-embed:8081/v1
+      #   cloud:  AURA_MEMORY_EMBED_BASE_URL=https://openrouter.ai/api/v1
+      OPENAI_BASE_URL: ${AURA_MEMORY_EMBED_BASE_URL:?set AURA_MEMORY_EMBED_BASE_URL in .env — it must match AURA_EMBED_BASE_URL (same 768d index); http://aura-llama-embed:8081/v1 local, https://openrouter.ai/api/v1 cloud}
       OPENAI_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY required in .env}
-      NAM_EMBEDDING: openai/${AURA_EMBED_MODEL:-qwen/qwen3-embedding-8b}
+      NAM_EMBEDDING: openai/${AURA_EMBED_MODEL:-granite-embedding-311m-multilingual-r2}
       # --- rerank → OpenRouter, SAME endpoint + model the aura service uses above ---
       # Without these three the sidecar keeps the base compose's http://aura-rerank:8085,
       # a service that never starts on a GPU-less box: the client fail-softs to identity
