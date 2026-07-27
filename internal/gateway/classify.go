@@ -34,12 +34,30 @@ var multiplexedClassifiers = map[string]func(json.RawMessage) scoring.RiskTier{
 // tool is routed to its per-action classifier; any other tool falls back to its
 // Mutating bit (shell_exec/fs_write and MCP tools with !ReadOnlyHint are already
 // Mutating). It never lowers an unrecognised input below the mutating floor.
+//
+// The generic mutating floor is Normal, NOT Risky. GateRecommended fires from Risky up,
+// so returning Risky for "this tool writes something" made EVERY write stop the turn for
+// operator approval — storing a memory sat in the same bucket as `rm -rf`, and the
+// vocabulary's own `Normal` tier (which exists precisely for ordinary writes) went nearly
+// unused. Normal still reserves, records and audits the call; it just does not interrupt.
+//
+// That is also what the agent is instructed to do (internal/agent/prompt.go: "Destructive
+// or irreversible actions ... require operator approval first"), so the classifier was
+// contradicting the prompt. And a gate that fires on harmless writes does not add safety —
+// it trains an operator to approve without reading, which is exactly what the gate exists
+// to prevent.
+//
+// Everything genuinely dangerous keeps its escalation, none of it goes through this line:
+// skill create/update -> Risky and delete -> Destructive, task run_now -> Risky, an
+// agent_job with a destructive payload -> Destructive, swarm_spawn -> Risky, unparseable
+// or unknown multiplexed actions -> Risky (fail-safe), and shell_exec additionally carries
+// its own destructive-pattern approval in internal/agent/tools.
 func classify(spec tools.Spec, rawArgs json.RawMessage) scoring.RiskTier {
 	if fn, ok := multiplexedClassifiers[spec.Name]; ok {
 		return fn(rawArgs)
 	}
 	if spec.Mutating {
-		return scoring.Risky
+		return scoring.Normal
 	}
 	return scoring.Safe
 }

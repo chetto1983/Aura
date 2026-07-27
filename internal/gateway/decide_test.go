@@ -78,7 +78,16 @@ func readOnlySpec() tools.Spec { return tools.Spec{Name: "read_file", Mutating: 
 
 // mutatingRiskySpec is a mutating, non-multiplexed tool → classify returns Risky
 // (GateRecommended) so it routes to approve.
-func mutatingRiskySpec() tools.Spec { return tools.Spec{Name: "shell_exec", Mutating: true} }
+// swarm_spawn, not shell_exec: the generic mutating floor is Normal (an ordinary write must
+// not stop the turn), so a plain Mutating spec no longer reaches the approve path at all and
+// would silently turn every test below into an assertion about nothing. swarm_spawn is Risky
+// unconditionally, for any args including nil, so these tests keep exercising the machinery
+// they were written for.
+func mutatingRiskySpec() tools.Spec { return tools.Spec{Name: "swarm_spawn", Mutating: true} }
+
+// ordinaryWriteSpec is the other side of that line: a mutating, non-multiplexed tool, which
+// is the shape of nearly every write the agent makes (shell_exec, fs_write, an MCP write).
+func ordinaryWriteSpec() tools.Spec { return tools.Spec{Name: "shell_exec", Mutating: true} }
 
 func testKey() ReservationKey {
 	return ReservationKey{
@@ -114,6 +123,43 @@ func TestDecideDevNoOp(t *testing.T) {
 	v, err := g.Decide(context.Background(), mutatingRiskySpec(), nil, testKey())
 	if err != nil || v.Decision != Allow {
 		t.Fatalf("nil gateway: got (%v, %v), want allow/nil", v.Decision, err)
+	}
+}
+
+// TestDecideOrdinaryWriteIsNotGated pins the classifier's mutating floor: under the STRICTEST
+// single-user profile, an ordinary write executes — reserved and audited — without stopping
+// the turn for approval.
+//
+// The regression it guards is a real one that reached a live appliance: the floor was Risky,
+// GateRecommended fires from Risky up, so every write the agent made — storing a memory,
+// writing a file — required the operator to approve it. A gate that fires on harmless writes
+// does not add safety; it teaches an operator to approve without reading. Genuinely dangerous
+// calls keep their own escalation and are covered by TestClassifyTable and approve_test.go.
+func TestDecideOrdinaryWriteIsNotGated(t *testing.T) {
+	store := &fakeStore{}
+	g := New(config.ProfileSingleUserHardened, store)
+	// A responder IS present: the point is that approval is never REQUESTED, not that it
+	// could not be delivered.
+	ctx := WithResponder(context.Background())
+
+	v, err := g.Decide(ctx, ordinaryWriteSpec(), nil, testKey())
+	if err != nil {
+		t.Fatalf("Decide err: %v", err)
+	}
+	if v.Decision != Allow {
+		t.Fatalf("decision = %q, want allow (an ordinary write must not be gated)", v.Decision)
+	}
+	if v.Tier != scoring.Normal {
+		t.Fatalf("tier = %q, want normal", v.Tier)
+	}
+	if v.ApprovalRequest != nil {
+		t.Fatal("an ordinary write must not mint an approval request")
+	}
+	// Allowed is not unrecorded: the call still takes its durable reservation, so the
+	// difference from the old behaviour is only that the operator is not interrupted.
+	reserved := store.reserves()
+	if len(reserved) != 1 || reserved[0].Event != toolinvocations.EventStart {
+		t.Fatalf("want exactly 1 reservation start for an allowed write, got %+v", reserved)
 	}
 }
 

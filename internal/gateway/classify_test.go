@@ -99,8 +99,15 @@ func TestClassifyTable(t *testing.T) {
 		{"swarm/empty", swarm, json.RawMessage(`{}`), scoring.Risky},
 		{"swarm/parsefail", swarm, json.RawMessage(`nope`), scoring.Risky},
 
-		// non-multiplexed fallback: Mutating→Risky, read→Safe
-		{"shell_exec", tools.Spec{Name: "shell_exec", Mutating: true}, json.RawMessage(`{}`), scoring.Risky},
+		// Non-multiplexed fallback: Mutating→Normal, read→Safe.
+		//
+		// Normal, not Risky, and the difference is the whole point: GateRecommended fires
+		// from Risky up, so a Risky floor made every ordinary write — storing a memory,
+		// writing a file — stop the turn for operator approval. Normal still reserves and
+		// audits; it just does not interrupt. shell_exec keeps its own destructive-pattern
+		// approval in internal/agent/tools, which this line never touched.
+		{"shell_exec", tools.Spec{Name: "shell_exec", Mutating: true}, json.RawMessage(`{}`), scoring.Normal},
+		{"mcp_memory_write", tools.Spec{Name: "memory__memory_add_fact", Mutating: true}, json.RawMessage(`{}`), scoring.Normal},
 		{"fs_read", tools.Spec{Name: "fs_read", Mutating: false}, json.RawMessage(`{}`), scoring.Safe},
 	}
 
