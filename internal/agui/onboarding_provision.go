@@ -532,7 +532,37 @@ func (s *onboardingService) persistProfile(ctx context.Context, seed OnboardingS
 // transport error could echo the password or recovery answer). The returned error carries
 // only the fixed stage + sentinel, never the arbitrary backend message the handler may
 // surface.
-func provisionFail(stage string, _ error) error {
-	slog.Error("onboarding: provisioning step failed", "stage", stage)
+func provisionFail(stage string, err error) error {
+	slog.Error("onboarding: provisioning step failed", "stage", stage, "cause", provisionFailCause(err))
 	return fmt.Errorf("onboarding: %s failed: %w", stage, errProvisioningUnavailable)
+}
+
+// provisionFailCause classifies err into a FIXED vocabulary for the log line. It never
+// returns any part of err.Error(): a backend transport error can carry the DSN, the
+// password or the recovery answer the caller just submitted (T-13-07), which is the whole
+// reason provisionFail drops the error in the first place.
+//
+// Dropping it entirely, though, left the operator with "stage=profile write" and nothing
+// else — the failure said WHICH step broke and refused to say anything about why, so
+// diagnosing a real first-run failure meant reproducing it with external instrumentation.
+// A deadline is not a refusal and neither is a cancelled request; the concrete error TYPE
+// names the layer that broke. None of that is attacker-controlled or caller-supplied.
+func provisionFailCause(err error) string {
+	switch {
+	case err == nil:
+		return "unspecified"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "deadline exceeded"
+	case errors.Is(err, context.Canceled):
+		return "canceled"
+	}
+	// Unwrap past fmt.Errorf wrappers, whose type name says nothing, to the error that
+	// actually failed.
+	for {
+		next := errors.Unwrap(err)
+		if next == nil {
+			return fmt.Sprintf("%T", err)
+		}
+		err = next
+	}
 }
