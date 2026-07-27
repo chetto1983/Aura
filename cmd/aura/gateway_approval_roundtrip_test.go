@@ -26,7 +26,7 @@ import (
 // LoadManagedHistory -> re-Turn cycle over a real Runner (memConvStore is proven faithful
 // for tool_calls args) and asserts that after the operator accepts the relayed
 // gateway_approval ask_user pause (via the production newGatewayResumeHook), the resumed
-// model re-emits the EXACT swarm_spawn call from rehydrated history, its fingerprint
+// model re-emits the EXACT skill/delete call from rehydrated history, its fingerprint
 // MATCHES the recorded ledger key (routeApprove.Consume hits), and the spy tool executes
 // EXACTLY ONCE — NOT a gateway-internal ledger call, but the end-to-end round-trip.
 //
@@ -36,7 +36,7 @@ import (
 // is exercised, not bypassed.
 func TestGatewayApprovalRoundTrip(t *testing.T) {
 	gw := gateway.New(config.ProfileSingleUserHardened, acquireStore{})
-	spy := &spySwarmTool{}
+	spy := &spyDeleteTool{}
 	reg := tools.NewRegistry()
 	reg.Register(spy)
 	reg.Register(tools.AskUser{})
@@ -65,7 +65,7 @@ func TestGatewayApprovalRoundTrip(t *testing.T) {
 		t.Fatalf("new conversation: %v", err)
 	}
 
-	// Round 1: the model emits swarm_spawn -> gets the approval-required result ->
+	// Round 1: the model emits skill/delete -> gets the approval-required result ->
 	// relays it via ask_user -> the turn PAUSES. The mutating action is WITHHELD.
 	paused, err := drainForPause(run.Turn(ctx, convID, strPtr("launch a swarm to build the thing")))
 	if err != nil {
@@ -102,7 +102,7 @@ func TestGatewayApprovalRoundTrip(t *testing.T) {
 		t.Fatalf("submit answers (accept): %v", err)
 	}
 
-	// Round 2 (resume): Turn(convID, nil) rehydrates the verbatim swarm_spawn call, the
+	// Round 2 (resume): Turn(convID, nil) rehydrates the verbatim skill/delete call, the
 	// model re-emits it, routeApprove Consumes the recorded approval (fingerprint match),
 	// the reservation acquires, and the spy tool executes EXACTLY ONCE — no re-pause.
 	paused2, err := drainForPause(run.Turn(ctx, convID, nil))
@@ -135,9 +135,9 @@ func drainForPause(seq iter.Seq2[*agent.Event, error]) (bool, error) {
 func strPtr(s string) *string { return &s }
 
 // roundTripClient is a stateful llm.Client that drives the 4-call round-trip off the
-// rehydrated history alone (never a static script): swarm_spawn -> observe the
+// rehydrated history alone (never a static script): skill/delete -> observe the
 // approval-required result -> relay it via ask_user (copying question + resume_context
-// VERBATIM) -> [operator accepts] -> re-emit the exact swarm_spawn -> text_response.
+// VERBATIM) -> [operator accepts] -> re-emit the exact skill/delete -> text_response.
 type roundTripClient struct {
 	mu    sync.Mutex
 	calls int
@@ -171,10 +171,10 @@ func scriptRoundTripTurn(msgs []llm.Message, n int) agenttest.FakeTurn {
 			return agenttest.ToolCallTurn(agenttest.MakeToolCall("call-ask", "ask_user", string(askArgs)))
 		}
 	}
-	// Fresh user turn OR resumed after accept → emit swarm_spawn with a FRESH tool_call_id
+	// Fresh user turn OR resumed after accept → emit skill/delete with a FRESH tool_call_id
 	// (a re-emit changes the id — the ledger key deliberately excludes it, keying on args).
 	return agenttest.ToolCallTurn(agenttest.MakeToolCall(
-		fmt.Sprintf("call-swarm-%d", n), "swarm_spawn", `{"goals":["build the thing"]}`))
+		fmt.Sprintf("call-skill-%d", n), "skill", `{"action":"delete","name":"obsolete-skill"}`))
 }
 
 // extractApprovalRelay pulls the gateway approval-required JSON out of the (untrusted
@@ -256,24 +256,24 @@ func anyToolResultContains(msgs []llm.Message, marker string) bool {
 	return false
 }
 
-// spySwarmTool is a mutating GateRecommended swarm_spawn tool that counts Execute calls.
-type spySwarmTool struct {
+// spyDeleteTool is a mutating GateRecommended skill/delete tool that counts Execute calls.
+type spyDeleteTool struct {
 	mu    sync.Mutex
 	count int
 }
 
-func (s *spySwarmTool) Spec() tools.Spec {
-	return tools.Spec{Name: "swarm_spawn", Summary: "spawn a swarm (test spy)", Mutating: true}
+func (s *spyDeleteTool) Spec() tools.Spec {
+	return tools.Spec{Name: "skill", Summary: "skill lifecycle (test spy)", Mutating: true}
 }
 
-func (s *spySwarmTool) Execute(context.Context, json.RawMessage) (tools.ToolResult, error) {
+func (s *spyDeleteTool) Execute(context.Context, json.RawMessage) (tools.ToolResult, error) {
 	s.mu.Lock()
 	s.count++
 	s.mu.Unlock()
 	return tools.ToolResult{Preview: "executed"}, nil
 }
 
-func (s *spySwarmTool) Count() int {
+func (s *spyDeleteTool) Count() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.count

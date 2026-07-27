@@ -118,7 +118,17 @@ func BuiltInCatalog() []CatalogEntry {
 					"calculator-mcp-server",
 					"--stdio",
 				},
-				Env:     []string{"PYTHONUNBUFFERED=1"},
+				// UV_OFFLINE pins the mount to the cache the image already warmed at this
+				// exact commit (docker/aura/Dockerfile). Without it uv still queries the
+				// pypi index to re-resolve the dependency set on EVERY mount, even though
+				// every wheel is already cached: on the appliance that burst of parallel
+				// lookups saturated Docker's embedded resolver, the mount failed with
+				// EAI_AGAIN, and the bounded retry ladder then spent minutes before the
+				// boot gave up — so `aura chat` took minutes to start and came up with
+				// zero calculator tools. Offline, the same mount lands in seconds with all
+				// 23 tools. Safe precisely because the ref is an immutable commit: there is
+				// nothing newer to resolve.
+				Env:     []string{"PYTHONUNBUFFERED=1", "UV_OFFLINE=1"},
 				Source:  "recipe:calculator",
 				Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
 				Runtime: mcp.ManagedRuntime{Kind: "local"},

@@ -28,6 +28,7 @@ import (
 	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/idempotency"
 	"github.com/chetto1983/aura/internal/identity"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
@@ -92,15 +93,34 @@ func (e *chatEnv) close() {
 	}
 }
 
-// bootChat builds the composition root (D-A2-05) for the `aura chat` callsites. It
-// wraps the error-returning bootChatEnv (D-15) and translates a boot failure into the
-// CLI's os.Exit convention (a missing API key is the one fail-fast with a friendly
-// line, never a panic). The shared boot itself NEVER calls os.Exit, so `aura serve`
-// can reuse it and handle a transient boot error gracefully (Pitfall 6).
-func bootChat(ctx context.Context) *chatEnv {
-	return bootChatNamed(ctx, "aura chat")
+// bootCLIChat is what every INTERACTIVE CLI entry point uses (D-A2-05): it builds the
+// composition root and scopes the returned ctx to the operator identity.
+//
+// The scoping is not optional. Without a principal on ctx the runner falls back to an
+// identity literally named `local` — the pre-Authula seed, which serve_auth.go DELETES the
+// first time an operator enrolls. An appliance provisioned through onboarding therefore has
+// no `local` row at all, and every CLI conversation call died with
+// `resolve owner identity: get identity "local": identity not found`. It is resolved AFTER
+// the boot on purpose: config validation (a missing API key above all) must still be the
+// first thing an operator hears about.
+//
+// `aura serve` deliberately does NOT come through here — it boots via bootServeChatEnv and
+// carries a real authenticated principal per request (agui.withPrincipal).
+func bootCLIChat(ctx context.Context, label string) (context.Context, *chatEnv) {
+	env := bootChatNamed(ctx, label)
+	identityID, err := identityctx.OperatorIdentity(ctx, env.pool)
+	if err != nil {
+		env.close()
+		fmt.Fprintln(os.Stderr, label+":", err)
+		os.Exit(1)
+	}
+	return identityctx.WithIdentityID(ctx, identityID), env
 }
 
+// bootChatNamed wraps the error-returning bootChatEnv (D-15) and translates a boot
+// failure into the CLI's os.Exit convention (a missing API key is the one fail-fast with
+// a friendly line, never a panic). The shared boot itself NEVER calls os.Exit, so
+// `aura serve` can reuse it and handle a transient boot error gracefully (Pitfall 6).
 func bootChatNamed(ctx context.Context, label string) *chatEnv {
 	env, err := bootChatEnv(ctx)
 	if err != nil {

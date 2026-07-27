@@ -21,8 +21,10 @@ import (
 // OBSERVE whether the hook recorded the approval (a re-entry Allow ⇒ recorded).
 func gatewayApprovalPending(t *testing.T, gw *gateway.Gateway, convID string) (askuser.Pending, tools.Spec, json.RawMessage, gateway.ReservationKey) {
 	t.Helper()
-	spec := tools.Spec{Name: "swarm_spawn", Mutating: true}
-	args := json.RawMessage(`{"goals":["build the thing"]}`)
+	// skill/delete — Destructive, the only tier that stops the turn — so this seed actually
+	// reaches routeApprove instead of being allowed outright.
+	spec := tools.Spec{Name: "skill", Mutating: true}
+	args := json.RawMessage(`{"action":"delete","name":"obsolete-skill"}`)
 	key := gateway.ReservationKey{ConversationID: convID, RequestID: "req-1", ToolCallID: "call-1"}
 
 	v, err := gw.Decide(gateway.WithResponder(context.Background()), spec, args, key)
@@ -119,7 +121,7 @@ func TestGatewayResumeHookRejectsMalformedContext(t *testing.T) {
 		rc   map[string]string
 	}{
 		{"missing tool", map[string]string{"type": "gateway_approval", "args_sha256": "abc"}},
-		{"missing args_sha256", map[string]string{"type": "gateway_approval", "tool": "swarm_spawn"}},
+		{"missing args_sha256", map[string]string{"type": "gateway_approval", "tool": "skill"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := hook(context.Background(), askuser.Pending{

@@ -66,7 +66,7 @@ func runChat(args []string) {
 // chatList prints the persisted conversations with their title + aggregates.
 func chatList(args []string) {
 	ctx := context.Background()
-	env := bootChat(ctx)
+	ctx, env := bootCLIChat(ctx, "aura chat")
 	defer env.close()
 
 	includeArchived := false
@@ -98,7 +98,7 @@ func chatSearch(args []string) {
 		}
 	}
 	ctx := context.Background()
-	env := bootChat(ctx)
+	ctx, env := bootCLIChat(ctx, "aura chat")
 	defer env.close()
 
 	hits, err := env.conv.SearchConversationTurns(ctx, query, limit)
@@ -116,7 +116,7 @@ func chatSetStatus(args []string, status, verb string) {
 		os.Exit(1)
 	}
 	ctx := context.Background()
-	env := bootChat(ctx)
+	ctx, env := bootCLIChat(ctx, "aura chat")
 	defer env.close()
 	if err := env.conv.UpdateStatus(ctx, args[0], status); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -132,7 +132,7 @@ func chatRename(args []string) {
 		os.Exit(1)
 	}
 	ctx := context.Background()
-	env := bootChat(ctx)
+	ctx, env := bootCLIChat(ctx, "aura chat")
 	defer env.close()
 	if err := env.conv.Rename(ctx, args[0], args[1]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -158,7 +158,7 @@ func chatDelete(args []string) {
 		os.Exit(1)
 	}
 	ctx := context.Background()
-	env := bootChat(ctx)
+	ctx, env := bootCLIChat(ctx, "aura chat")
 	defer env.close()
 	// Route through the runner's single delete lifecycle (MUSR-05 / D-22): cancel active
 	// work → expire pauses → evict session tools → terminate background jobs → THEN the
@@ -180,7 +180,7 @@ func chatDelete(args []string) {
 // chatNew starts a brand-new persisted conversation REPL.
 func chatNew(_ []string) {
 	ctx := context.Background()
-	env := bootChat(ctx)
+	ctx, env := bootCLIChat(ctx, "aura chat")
 	defer env.close()
 	convID, err := env.run.NewConversation(ctx)
 	if err != nil {
@@ -194,7 +194,7 @@ func chatNew(_ []string) {
 // active one (resume, no id), then enters the REPL.
 func chatResume(args []string) {
 	ctx := context.Background()
-	env := bootChat(ctx)
+	ctx, env := bootCLIChat(ctx, "aura chat")
 	defer env.close()
 
 	var convID string
