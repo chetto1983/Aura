@@ -326,7 +326,12 @@ describe('ModelSettingsPanel', () => {
     expect(calls.filter((call) => call.startsWith('PUT')).length).toBe(0);
   });
 
-  it('surfaces the error state when a save request fails', async () => {
+  // REWRITTEN, not adjusted: this test asserted that a failed SAVE renders the failed-LOAD
+  // alert, i.e. it pinned the defect. That alert replaces the whole panel, so the operator
+  // lost every edit they had just typed and was told the settings could not be loaded — an
+  // operation that had in fact succeeded. It now asserts the behaviour a save failure owes
+  // the operator: the form survives, and the failure is reported as a save failure.
+  it('reports a failed save without destroying the form or blaming the load', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
@@ -345,7 +350,11 @@ describe('ModelSettingsPanel', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Save runtime settings' }));
 
-    expect(await screen.findByText(LOAD_ERROR_TEXT)).toBeTruthy();
+    const alert = await screen.findByRole('alert');
+    // A non-JSON body leaves only the status, which is still better than silence.
+    expect(alert.textContent).toContain('500');
+    expect(screen.queryByText(LOAD_ERROR_TEXT)).toBeNull();
+    expect(screen.getByDisplayValue('qwen2.5-coder:14b')).toBeTruthy();
   });
 
   it('resets an overridden setting, shows a spinner, and ignores concurrent resets', async () => {
@@ -476,5 +485,69 @@ describe('ModelSettingsPanel', () => {
     });
 
     expect(screen.queryByText(LOAD_ERROR_TEXT)).toBeNull();
+  });
+
+  it('a rejected save keeps the form, shows the server reason, and does not claim a load error', async () => {
+    // The panel used to answer a failed save with setLoadStatus('error'), which swapped the
+    // whole form for the "couldn't LOAD settings" alert: the operator's edits were destroyed
+    // and the message blamed the wrong operation. The server's reason was dropped too, so
+    // nothing said WHICH value was rejected.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        if ((init?.method ?? 'GET') === 'PUT') {
+          return Promise.resolve(
+            new Response(JSON.stringify({ error: 'AURA_LLM_MAX_TOKENS must be an int' }), {
+              status: 400,
+              headers: { 'Content-Type': 'application/json' },
+            }),
+          );
+        }
+        void urlOf(input);
+        return Promise.resolve(jsonResponse(SETTINGS_BODY));
+      }),
+    );
+
+    render(<ModelSettingsPanel />);
+    const field = await screen.findByDisplayValue('4096');
+    fireEvent.change(field, { target: { value: '8192' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save runtime settings' }));
+
+    const alert = await screen.findByRole('alert');
+    // The server's own words, so the rejected value can actually be corrected.
+    expect(alert.textContent).toContain('AURA_LLM_MAX_TOKENS must be an int');
+    // Not the load-error alert, and the form is still standing with the edit intact.
+    expect(screen.queryByText(LOAD_ERROR_TEXT)).toBeNull();
+    expect(screen.getByDisplayValue('8192')).toBeTruthy();
+  });
+
+  it('clears the save error once the operator edits again', async () => {
+    let failNext = true;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+        if ((init?.method ?? 'GET') === 'PUT' && failNext) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ error: 'nope' }), {
+              status: 400,
+              headers: { 'Content-Type': 'application/json' },
+            }),
+          );
+        }
+        return Promise.resolve(jsonResponse(SETTINGS_BODY));
+      }),
+    );
+
+    render(<ModelSettingsPanel />);
+    const field = await screen.findByDisplayValue('4096');
+    fireEvent.change(field, { target: { value: '8192' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save runtime settings' }));
+    await screen.findByRole('alert');
+
+    failNext = false;
+    fireEvent.change(screen.getByDisplayValue('8192'), { target: { value: '16384' } });
+    await waitFor(() => {
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
   });
 });

@@ -60,18 +60,26 @@ services:
         condition: service_healthy
     environment:
       # Back to the sidecar. The client appends /v1/embeddings, so the base carries no /v1.
+      #
+      # FIXED, not ${VAR:-default}, and that is deliberate — the base compose hard-codes it
+      # for the same reason. Inside the compose network the sidecar exists only as
+      # `aura-llama-embed`, while the SAME variable in .env means the host-CLI value
+      # (http://127.0.0.1:8081), which from inside this container is the container itself.
+      # Making it overridable let a perfectly correct .env line silently point the daemon at
+      # nothing. External endpoints below stay overridable; compose-internal DNS does not.
       AURA_EMBED_BASE_URL: http://aura-llama-embed:8081
       # EMPTY on purpose: Config.EmbedRoute treats an unset model as "local sidecar, default
       # model, no auth". Leaving the cloud model name here would keep routing to OpenRouter
       # with the shared key even though the base URL is local.
-      AURA_EMBED_MODEL: ""
-      AURA_EMBED_DIMENSIONS: "768"
+      AURA_EMBED_MODEL: "${AURA_EMBED_MODEL-}"
+      AURA_EMBED_DIMENSIONS: "${AURA_EMBED_DIMENSIONS:-768}"
 
   aura-agent-memory-mcp:
     depends_on:
       aura-llama-embed:
         condition: service_healthy
     environment:
+      # Also fixed: same compose-internal DNS, same collision if .env's host-CLI value won.
       OPENAI_BASE_URL: http://aura-llama-embed:8081/v1
-      OPENAI_API_KEY: local-llama
-      NAM_EMBEDDING: openai/embeddinggemma-300m
+      OPENAI_API_KEY: ${AURA_MEMORY_EMBED_API_KEY:-local-llama}
+      NAM_EMBEDDING: openai/${AURA_MEMORY_EMBED_MODEL:-embeddinggemma-300m}

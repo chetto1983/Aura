@@ -37,9 +37,26 @@ export interface TelegramLinkStatus {
 
 async function readJSON<T>(res: Response): Promise<T> {
   if (!res.ok) {
-    throw new Error(`HTTP ${String(res.status)}`);
+    throw new Error(await readErrorMessage(res));
   }
   return (await res.json()) as T;
+}
+
+// The API answers a rejected write with {"error": "<why>"}, and for a validation failure
+// that string is the only thing that says WHICH value was wrong and how ("must be an int",
+// "unknown setting key"). Collapsing it to "HTTP 400" turned an actionable message into a
+// shrug, and the panel then had nothing worth showing the operator.
+async function readErrorMessage(res: Response): Promise<string> {
+  try {
+    const body: unknown = await res.json();
+    if (body !== null && typeof body === 'object' && 'error' in body) {
+      const message = (body as { readonly error?: unknown }).error;
+      if (typeof message === 'string' && message.trim() !== '') return message;
+    }
+  } catch {
+    // Not JSON at all — a proxy error page, or an empty body. The status is all there is.
+  }
+  return `HTTP ${String(res.status)}`;
 }
 
 export async function fetchSettings(): Promise<SettingsList> {

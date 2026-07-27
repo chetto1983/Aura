@@ -142,6 +142,14 @@ function buildState(list: Awaited<ReturnType<typeof fetchSettings>>): LoadedStat
   return { rows, values, initial, restartRequired: list.restart_required };
 }
 
+// errorMessage pulls the human part out of whatever the API layer threw. settingsApi
+// already unwraps the server's {"error": "..."} body, so for a rejected write this is the
+// validation reason itself ("must be an int") rather than a status code.
+function errorMessage(err: unknown): string {
+  if (err instanceof Error && err.message.trim() !== '') return err.message;
+  return String(err);
+}
+
 function isLocalBaseURL(value: string): boolean {
   const normalized = value.trim().toLowerCase();
   return (
@@ -195,6 +203,8 @@ export function ModelSettingsPanel({
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState<string | undefined>(undefined);
   const [saved, setSaved] = useState(false);
+  // Separate from loadStatus on purpose — a save that fails is not a load that failed.
+  const [saveError, setSaveError] = useState<string | undefined>(undefined);
 
   const reload = useCallback(async () => {
     setLoadStatus('loading');
@@ -245,6 +255,7 @@ export function ModelSettingsPanel({
           },
     );
     setSaved(false);
+    setSaveError(undefined);
   }
 
   async function saveChanges() {
@@ -255,6 +266,7 @@ export function ModelSettingsPanel({
     }
     setSaving(true);
     setSaved(false);
+    setSaveError(undefined);
     try {
       for (const key of dirtyKeys) {
         await putSetting(key, loaded.values[key] ?? '');
@@ -263,8 +275,12 @@ export function ModelSettingsPanel({
       setLoaded(buildState(settings));
       setSaved(true);
       await onComplete?.();
-    } catch {
-      setLoadStatus('error');
+    } catch (err) {
+      // Deliberately NOT setLoadStatus('error'): that swaps the whole panel for the
+      // "couldn't LOAD settings" alert, which throws away everything the operator just
+      // typed and blames the wrong operation. A failed save leaves the form standing, with
+      // the edits intact and the server's reason next to the button that failed.
+      setSaveError(errorMessage(err));
     } finally {
       setSaving(false);
     }
@@ -273,9 +289,14 @@ export function ModelSettingsPanel({
   async function resetSetting(key: SettingsKey) {
     if (resetting !== undefined) return;
     setResetting(key);
+    setSaveError(undefined);
     try {
       await deleteSetting(key);
       await reload();
+    } catch (err) {
+      // Reset had no error handling at all: a rejected delete only cleared the spinner, so
+      // the row went back to looking normal while still holding the old override.
+      setSaveError(errorMessage(err));
     } finally {
       setResetting(undefined);
     }
@@ -420,6 +441,18 @@ export function ModelSettingsPanel({
           {t('settings.saved')}
         </div>
       ) : null}
+
+      {saveError === undefined ? null : (
+        // role="alert" rather than "status": a save the operator believes succeeded but did
+        // not is worth interrupting for, and it carries the server's own reason so the
+        // rejected value can actually be corrected.
+        <div
+          role="alert"
+          className="rounded-md border border-danger bg-danger/10 px-4 py-3 text-[13px] text-danger"
+        >
+          {t('settings.saveError', { message: saveError })}
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-2 border-t border-border pt-5">
         <Button

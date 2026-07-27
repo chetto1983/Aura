@@ -8,6 +8,7 @@ export const settingsEn = {
     restartRequired:
       'Saved changes are in Postgres. Restart Aura to apply them to already-created model clients.',
     saved: 'Runtime settings saved.',
+    saveError: "Couldn't save: {{message}}. Your changes are still here — fix the value and try again.",
     secretPlaceholder: 'Enter a new value',
     identity: {
       heading: 'Identity',
@@ -100,6 +101,7 @@ export const settingsIt = {
     restartRequired:
       'Modifiche salvate in Postgres. Riavvia Aura per applicarle ai client modello gia creati.',
     saved: 'Impostazioni runtime salvate.',
+    saveError: 'Salvataggio non riuscito: {{message}}. Le modifiche sono ancora qui — correggi il valore e riprova.',
     secretPlaceholder: 'Inserisci un nuovo valore',
     identity: {
       heading: 'Identita',
