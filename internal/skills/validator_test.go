@@ -164,6 +164,27 @@ func TestValidateForWrite_StructureChecks(t *testing.T) {
 	}
 }
 
+// TestValidateForWriteRequiresDescription pins the write boundary to the loader's rule.
+// Found live: the model saved a snippet with no description, the save reported pending,
+// `skills approve` reported active, and the loader then skipped it with a WARN — so the
+// snippet existed on disk and was unusable, with both success messages already delivered.
+// A snippet is checked explicitly because its tool schema is where the gap came from.
+func TestValidateForWriteRequiresDescription(t *testing.T) {
+	for _, typ := range []string{TypeInstruction, TypeSnippet} {
+		for _, desc := range []string{"", "   \t\n"} {
+			fm := Frontmatter{Name: "ok", Description: desc, Type: typ}
+			err := ValidateForWrite(fm, "body", defaultBlocklistFixture, 32768, false)
+			if !errors.Is(err, ErrInvalidStructure) {
+				t.Fatalf("%s with description %q: err = %v, want ErrInvalidStructure", typ, desc, err)
+			}
+			// The same shape must be what the loader refuses, or the two gates disagree again.
+			if lerr := validateStructure(fm, "ok", "body", 32768); lerr == nil {
+				t.Fatalf("%s with description %q passes the loader but not the writer", typ, desc)
+			}
+		}
+	}
+}
+
 func TestValidateForWrite_StructureBoundaries(t *testing.T) {
 	if maxSkillDescriptionLen != 1024 {
 		t.Fatalf("maxSkillDescriptionLen = %d, want 1024", maxSkillDescriptionLen)

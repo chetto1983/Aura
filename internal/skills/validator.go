@@ -87,6 +87,13 @@ func ValidateForWrite(fm Frontmatter, body string, blocklist []string, bodyCapBy
 		// the installer, which knows the on-disk dir.
 		return err
 	}
+	// The loader refuses a skill with no description (loader.go validateStructure), so
+	// accepting one here writes an artifact that saves, approves and activates and is
+	// then skipped at load with only a WARN — the model is told twice that it worked.
+	// The write boundary is the only place that can hand the caller a correctable error.
+	if strings.TrimSpace(fm.Description) == "" {
+		return fmt.Errorf("%w: description is required — the loader skips a skill that has none", ErrInvalidStructure)
+	}
 	if len(fm.Description) > maxSkillDescriptionLen {
 		return fmt.Errorf("%w: description %d bytes exceeds %d", ErrInvalidStructure, len(fm.Description), maxSkillDescriptionLen)
 	}
