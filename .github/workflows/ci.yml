@@ -854,7 +854,8 @@ jobs:
             aura-agent-memory-mcp:local \
             sh -lc 'pip install --quiet pytest pytest-asyncio && python -m pytest tests/ -q \
               --ignore=tests/test_corpus_epoch_live_integration.py \
-              --ignore=tests/test_forget_live_scope_integration.py'
+              --ignore=tests/test_forget_live_scope_integration.py \
+              --ignore=tests/test_entity_exact_dedup_live_integration.py'
 
       - name: Bring up Postgres + migrate (default-on managed config reads cfg)
         run: make db-migrate

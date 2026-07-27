@@ -72,7 +72,9 @@ class DeduplicationResult:
         matched_entity_id: ID of the matched entity (if any)
         matched_entity_name: Name of the matched entity (if any)
         similarity_score: Similarity score with matched entity
-        match_type: Type of match ('embedding', 'fuzzy', 'both')
+        match_type: Type of match ('embedding', 'fuzzy', 'both', 'exact_name').
+            'exact_name' is the embedding-free fallback: same name (case- and
+            whitespace-insensitive), same type, same scope.
     """
 
     is_duplicate: bool = False
@@ -602,6 +604,48 @@ class LongTermMemory(BaseMemory[Entity]):
                             user_identifier, str(existing_entity.id)
                         )
                     return existing_entity, dedup_result
+
+        # Exact-name dedup fallback, mirroring add_preference's FIND_EXACT_PREFERENCE and
+        # add_fact's FIND_EXACT_FACT — the one add_entity never had.
+        #
+        # Everything above depends on an embedding, so it decides nothing whenever the
+        # embedder is off or unavailable, when the stored vectors came from a DIFFERENT
+        # model (cross-model vectors are not comparable, so similarity is noise), or when a
+        # real duplicate simply lands below threshold. In all three cases a second node was
+        # created for the same thing. Seen live: "Pmsync" and "PmSync" as two ORGANIZATION
+        # nodes for the same company, after the deployment switched embedders.
+        #
+        # Matching is case- and whitespace-insensitive on the name, but exact on type and
+        # scope — see FIND_SCOPED_ENTITY_BY_NAME_TYPE. A hit returns the EXISTING node and
+        # records the caller's spelling as an alias, so the correction is not lost.
+        # Any lookup failure falls through to CREATE: dedup must never block a write.
+        if deduplicate and user_identifier is not None:
+            try:
+                rows = await self._client.execute_read(
+                    queries.FIND_SCOPED_ENTITY_BY_NAME_TYPE,
+                    {
+                        "user_identifier": user_identifier,
+                        "name": name,
+                        "type": parsed_type,
+                        "deduplication_scope": deduplication_scope or "global",
+                    },
+                )
+            except Exception:
+                rows = []
+            if rows:
+                existing_entity = await self._get_entity_by_id(UUID(str(rows[0]["id"])))
+                if existing_entity is not None:
+                    if name not in existing_entity.aliases and name != existing_entity.name:
+                        await self._add_alias_to_entity(existing_entity.id, name)
+                        existing_entity.aliases.append(name)
+                    await self._link_user_to_entity(user_identifier, str(existing_entity.id))
+                    return existing_entity, DeduplicationResult(
+                        is_duplicate=True,
+                        action="merged",
+                        matched_entity_id=existing_entity.id,
+                        matched_entity_name=existing_entity.name,
+                        match_type="exact_name",
+                    )
 
         # Geocode if this is a LOCATION entity
         location_point: dict[str, float] | None = None

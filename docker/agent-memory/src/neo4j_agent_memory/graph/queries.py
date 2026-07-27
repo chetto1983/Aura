@@ -702,6 +702,31 @@ ORDER BY e.created_at, e.id
 LIMIT 1
 """
 
+# add_entity's exact-name dedup fallback — the entity twin of FIND_EXACT_FACT /
+# FIND_EXACT_PREFERENCE, which add_entity alone never had. Its only dedup was embedding
+# similarity, so whenever the embedding path could not decide, a second node was created:
+# with the embedder unavailable, with vectors from two different models (they are not
+# comparable, so similarity is meaningless), or simply below threshold. Observed live —
+# "Pmsync" and "PmSync" ended up as two ORGANIZATION nodes for the same company.
+#
+# Case- and whitespace-insensitive on the NAME, matching FIND_SCOPED_ENTITY_BY_NAME's
+# stated rule ("this is resolution, not search") and unlike CREATE_ENTITY's MERGE key,
+# which is exact and is what let the capitalisation drift through.
+#
+# TYPE and scope are NOT normalised away: they are part of the MERGE identity, and an
+# entity's type is a real distinction. The operator's own "David" exists as both PERSON
+# and OBJECT and those are two things, not a duplicate — collapsing them here would fix a
+# capitalisation bug by inventing a worse one.
+FIND_SCOPED_ENTITY_BY_NAME_TYPE = """
+MATCH (:User {identifier: $user_identifier})-[:HAS_ENTITY]->(e:Entity)
+WHERE toLower(trim(e.name)) = toLower(trim($name))
+  AND e.type = $type
+  AND coalesce(e.deduplication_scope, 'global') = $deduplication_scope
+RETURN e.id AS id
+ORDER BY e.created_at, e.id
+LIMIT 1
+"""
+
 # LINK_FACT_TO_ENTITY connects a fact to the entity its SUBJECT names, so a fact stops
 # being a string sitting next to the node it talks about. Both sides are matched by id —
 # never MERGEd by name — because the caller resolved the entity within its own scope
