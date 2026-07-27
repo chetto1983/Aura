@@ -116,8 +116,8 @@ func (w *Writer) setUsageStatusInRoot(root, name, status string) error {
 
 // StampUsage bumps use_count + last_used_at on a skill's usage sidecar atomically
 // (D-19). It is the deterministic stamp the CLI `aura skills snippet exec` path calls
-// after a successful by-path run; a model-run stamp via a sandbox_exec /skills-prefix
-// argv hook is a documented fast-follow (D-04 discretion). now is injectable for tests.
+// after a successful by-path run; a model-run stamp hooked off the /skills-prefix argv
+// is a documented fast-follow (D-04 discretion). now is injectable for tests.
 func (w *Writer) StampUsage(name string, now time.Time) error {
 	u, err := w.ReadUsage(name)
 	if err != nil {

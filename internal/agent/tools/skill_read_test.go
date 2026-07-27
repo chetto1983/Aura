@@ -3,15 +3,15 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"regexp"
 	"strings"
 	"testing"
 )
 
 // TestRenderSnippetUseHostFrame asserts the D-01 host-primary contract: the snippet
-// `use` frame instructs a HOST shell_exec by-path run as the PRIMARY action, and only
-// names sandbox_exec as the secondary escalation for an untrusted/one-off run. The old
-// frame made sandbox_exec the primary verb — that literal is superseded by amendment
-// #55 (host shell_exec is the surface the production loop + D-35 eval gate run on).
+// `use` frame instructs a shell_exec by-path run on the path actionUse resolved. The
+// frame names shell_exec and no other tool — the escalation clause it used to carry
+// named a tool deleted on 2026-06-10 (amendment #96).
 func TestRenderSnippetUseHostFrame(t *testing.T) {
 	t.Parallel()
 	const (
@@ -30,19 +30,27 @@ func TestRenderSnippetUseHostFrame(t *testing.T) {
 	if !strings.Contains(frame, instr) {
 		t.Fatalf("frame must carry the docs instructions: %q", frame)
 	}
-	// shell_exec is the PRIMARY verb: it must appear BEFORE sandbox_exec in the frame.
-	shellAt := strings.Index(frame, "shell_exec")
-	sandboxAt := strings.Index(frame, "sandbox_exec")
-	if sandboxAt >= 0 && shellAt > sandboxAt {
-		t.Fatalf("shell_exec must precede sandbox_exec (host-primary, sandbox is escalation): %q", frame)
-	}
-	// The escalation is named but not the primary instruction.
-	if !strings.Contains(frame, "sandbox_exec") {
-		t.Fatalf("frame must still NAME sandbox_exec as the escalation: %q", frame)
-	}
 	// WR-04: the rendered command single-quotes the path so spaces are shell-safe.
 	if !strings.Contains(frame, "'"+host+"'") {
 		t.Fatalf("frame must single-quote the host path for shell safety: %q", frame)
+	}
+}
+
+// TestSnippetFrameNamesNoUnservedTool is the amendment-#96 regression. The frame goes
+// straight into the model's context, so every tool name in it is an instruction the
+// model will act on: `sandbox_exec` outlived its deletion here by seven weeks and cost
+// a failed call each time a snippet was used. Rather than banning one dead literal, the
+// test rejects EVERY tool-shaped token the frame does not intend — inputs are chosen
+// underscore-free, so any snake_case token in the output came from the frame itself.
+func TestSnippetFrameNamesNoUnservedTool(t *testing.T) {
+	t.Parallel()
+	allowed := map[string]bool{"shell_exec": true}
+	frame := renderSnippetUse("Adds two numbers.", "/home/u/skills/calc/calc.py", "python3")
+
+	for _, tok := range regexp.MustCompile(`[a-z][a-z0-9]*(?:_[a-z0-9]+)+`).FindAllString(frame, -1) {
+		if !allowed[tok] {
+			t.Fatalf("frame names %q, which no registry serves; the frame may name only %v: %q", tok, allowed, frame)
+		}
 	}
 }
 
@@ -65,8 +73,8 @@ func TestRenderSnippetUseShellSafePath(t *testing.T) {
 }
 
 // TestActionUseSnippetEmitsHostFrame asserts action=use on an active snippet hands the
-// model the host shell_exec by-path frame (not a sandbox_exec primary frame), via the
-// widened Snippet seam returning a HOST path.
+// model the host shell_exec by-path frame, via the widened Snippet seam returning a
+// HOST path.
 func TestActionUseSnippetEmitsHostFrame(t *testing.T) {
 	t.Parallel()
 	loader := newFakeLoader()
@@ -89,10 +97,5 @@ func TestActionUseSnippetEmitsHostFrame(t *testing.T) {
 	}
 	if !strings.Contains(res.Preview, "/home/u/.aura/skills/export/calc/calc.py") {
 		t.Fatalf("snippet use must carry the host path: %q", res.Preview)
-	}
-	shellAt := strings.Index(res.Preview, "shell_exec")
-	sandboxAt := strings.Index(res.Preview, "sandbox_exec")
-	if sandboxAt >= 0 && shellAt > sandboxAt {
-		t.Fatalf("shell_exec must be the primary verb (precede sandbox_exec): %q", res.Preview)
 	}
 }

@@ -13,17 +13,18 @@ import (
 )
 
 // Sub-slice 7e executable snippets (D-04/D-16/D-19/D-20). A snippet is a skill with
-// type:snippet whose body IS executable code in one of the three sandbox-image
-// languages. It is SAVED through the same gated pending->activate->materialize path
-// as an instruction skill (the gate surfaces needs_network at the RISKY tier, D-20),
-// activates into the ro /skills mount, and is EXECUTED BY PATH via the shipped
-// sandbox_exec (python3 /skills/<name>/<name>.py — NEVER the exec bit, spike 005).
-// There is NO bespoke run code (D-04): action=use returns instructions + the stable
-// in-sandbox path; the model calls sandbox_exec; the CLI `aura skills snippet exec`
-// is the deterministic operator path that stamps usage.
+// type:snippet whose body IS executable code in one of the three supported languages.
+// It is SAVED through the same gated pending->activate->materialize path as an
+// instruction skill (the gate surfaces needs_network at the RISKY tier, D-20) and is
+// EXECUTED BY PATH (python3 <dir>/<name>.py — NEVER the exec bit, spike 005).
+// There is NO bespoke run code (D-04): action=use returns instructions + the path;
+// the model calls shell_exec, which a strict profile routes into the per-identity box
+// without the model choosing or seeing it (amendment #96). The CLI
+// `aura skills snippet exec` is the deterministic operator path that stamps usage.
 
-// SnippetLanguage is the snippet code language enum (D-20). All three are present in
-// the sandbox image (python3 / sh / node), so a snippet in any of them runs by-path.
+// SnippetLanguage is the snippet code language enum (D-20). All three interpreters are
+// present in both execution environments (python3 / sh / node) — the aura image and the
+// per-identity box — so a snippet in any of them runs by-path under either profile.
 type SnippetLanguage string
 
 // The three allowed snippet languages.
@@ -33,9 +34,9 @@ const (
 	LangJS     SnippetLanguage = "js"
 )
 
-// snippetMeta maps a language to its file extension and the interpreter+args the
-// model/CLI passes to sandbox_exec for a by-path invocation. command+the path are
-// the structured argv (NEVER a shell string, NEVER the exec bit, spike 005).
+// snippetMeta maps a language to its file extension and the interpreter the model/CLI
+// prefixes to the path for a by-path invocation. interpreter+path are the structured
+// argv (NEVER a shell string, NEVER the exec bit, spike 005).
 type snippetMeta struct {
 	ext         string
 	interpreter string
@@ -83,9 +84,9 @@ func SnippetCodeFile(name string, lang SnippetLanguage) (string, error) {
 	return name + "." + meta.ext, nil
 }
 
-// SnippetSandboxPath returns the stable in-sandbox path action=use hands out for a
-// snippet: /skills/<name>/<name>.<ext>. It is the by-path target the model passes to
-// sandbox_exec (interpreter + this path).
+// SnippetSandboxPath returns the stable in-box path action=use hands out for a snippet
+// under a strict profile: /skills/<name>/<name>.<ext>. It is the by-path target of the
+// shell_exec call the SandboxRouter routes into the per-identity box (amendment #96).
 func SnippetSandboxPath(name string, lang SnippetLanguage) (string, error) {
 	file, err := SnippetCodeFile(name, lang)
 	if err != nil {
@@ -98,9 +99,9 @@ func SnippetSandboxPath(name string, lang SnippetLanguage) (string, error) {
 // (host-primary): exportDir/<name>/<name>.<ext>. It mirrors SnippetSandboxPath EXACTLY
 // (same snippetMetaByLang ext map, same structured ErrInvalidStructure for an unknown
 // language) but roots the path at AURA_SKILL_EXPORT_DIR via filepath.Join so the path
-// is OS-correct — it is the file the model runs through the host shell_exec, not the
-// in-container /skills mount (which SnippetSandboxPath still serves for the sandbox_exec
-// escalation).
+// is OS-correct — it is the file the model runs through shell_exec on the host, not the
+// in-box /skills mount (which SnippetSandboxPath serves when a strict profile routes the
+// run into the box).
 func SnippetHostPath(name string, lang SnippetLanguage, exportDir string) (string, error) {
 	file, err := SnippetCodeFile(name, lang)
 	if err != nil {
@@ -110,10 +111,9 @@ func SnippetHostPath(name string, lang SnippetLanguage, exportDir string) (strin
 }
 
 // SnippetInvocation resolves a snippet's by-path invocation from a (possibly aliased)
-// language string: the in-sandbox path AND the interpreter the caller passes to
-// sandbox_exec (D-04). It is the CLI/escalation entry point (it accepts the raw
-// frontmatter language and validates the enum). An unknown language is a structured
-// error.
+// language string: the in-box path AND the interpreter the caller prefixes to it (D-04).
+// It is the CLI entry point (it accepts the raw frontmatter language and validates the
+// enum). An unknown language is a structured error.
 func SnippetInvocation(name, language string) (sandboxPath, interpreter string, err error) {
 	lang, meta, lerr := validSnippetLanguage(language)
 	if lerr != nil {
@@ -284,9 +284,9 @@ func renderSnippetDocs(fm Frontmatter, meta snippetMeta) string {
 
 // SnippetUse is what UseSnippet returns: the docs-rendered instructions the model
 // reads + the by-path targets + interpreter so the model assembles the exact run call.
-// HostPath is the D-01 host-primary target (run via shell_exec by path); SandboxPath
-// is the named sandbox_exec escalation target (in-container /skills mount). Both ride
-// so the tool layer frames host-primary while keeping the escalation available.
+// HostPath is the D-01 host-primary target; SandboxPath is the in-box /skills mount.
+// Both ride because the tool layer picks between them by profile — the model runs the
+// one it is handed, through shell_exec, either way (amendment #96).
 type SnippetUse struct {
 	Instructions string
 	HostPath     string
@@ -297,7 +297,7 @@ type SnippetUse struct {
 
 // UseSnippet resolves an ACTIVE snippet for the model (D-01/D-04): it returns the docs
 // body + the HOST export-dir by-path target (the model runs it via shell_exec) + the
-// in-sandbox path (preserved for the sandbox_exec escalation) + the interpreter. The
+// in-box path (handed out instead under a strict profile) + the interpreter. The
 // host path is derived fresh at use-time from w.exportDir (RESEARCH option b) so an
 // already-materialized snippet needs no re-materialization. SanitizeName runs FIRST
 // (T-18-05-T) so a crafted name cannot traverse out of the export dir. It reads the
