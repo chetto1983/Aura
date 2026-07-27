@@ -42,6 +42,10 @@ const (
 	// rfc1918B172 DROP above — it is listed explicitly as defense-in-depth (the D-05
 	// tenancy boundary must never depend on the broader RFC1918 line alone).
 	sharedServicesBridgeCIDR = "172.18.0.0/16"
+
+	// dnsPort is the one destination port the floor accepts ahead of the DROPs, so the box
+	// can reach the RFC1918 resolver Docker gave it (see buildFloorRuleset).
+	dnsPort = "53"
 )
 
 // envFloorRuleset carries the Go-generated filter-table nft floor into the sidecar; the
@@ -128,12 +132,30 @@ func buildEgressSidecar(policy EgressPolicy, boxID string, runtime RuntimeClass)
 // public internet, D-04) with an explicit DROP for the metadata IP, each RFC1918 range, and
 // the shared-services bridge (D-05). It is filter-table ONLY (no nat) so it is identical under
 // runc and gVisor runsc (issue #934 only affects the nat-table FQDN mode).
+//
+// DNS is accepted BEFORE the drops, and that carve-out is what makes D-04 true rather than
+// nominal. A box created by DockerBackend sets no NetworkMode, so it lands on Docker's default
+// bridge — which does NOT provide the 127.0.0.11 embedded resolver; the daemon copies the
+// HOST's upstream nameservers into the box instead, and on a LAN appliance those are RFC1918.
+// Without this the drops eat the box's own DNS: name resolution fails with EPERM while raw IPs
+// still connect, so "full public internet" is reachable by address and unusable by name. Proven
+// on a native-Linux box (resolver 10.166.10.248): `nslookup example.com` → "Operation not
+// permitted", `wget http://example.com` → "bad address", `wget http://<ip>` → HTTP answer.
+//
+// Scoped to the PORT, not to resolver addresses, on purpose: the sidecar shares the box netns
+// but not its mount namespace, so it cannot read the box's /etc/resolv.conf to learn which
+// server to allow. The tenancy boundary is unaffected — port 53 reaches a DNS server, and
+// Postgres/Neo4j/Garage/agent-memory do not serve DNS — and it opens no new exfiltration
+// channel, since D-04 already grants unrestricted PUBLIC egress.
 func buildFloorRuleset(bridgeCIDR string) string {
 	drops := []string{metadataIP, rfc1918Ten, rfc1918B172, rfc1918C192, bridgeCIDR}
 	var b strings.Builder
 	b.WriteString("table ip aura_egress {\n")
 	b.WriteString("\tchain output {\n")
 	b.WriteString("\t\ttype filter hook output priority 0; policy accept;\n")
+	// First match wins in an nftables chain, so these must precede the drops.
+	fmt.Fprintf(&b, "\t\tudp dport %s accept\n", dnsPort)
+	fmt.Fprintf(&b, "\t\ttcp dport %s accept\n", dnsPort)
 	for _, cidr := range drops {
 		fmt.Fprintf(&b, "\t\tip daddr %s counter drop\n", cidr)
 	}

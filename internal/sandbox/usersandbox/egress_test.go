@@ -36,6 +36,22 @@ func TestEgress_FloorRuleset(t *testing.T) {
 	if !strings.Contains(ruleset, "policy accept") {
 		t.Errorf("floor ruleset missing public ACCEPT (policy accept):\n%s", ruleset)
 	}
+	// DNS carve-out, and it must precede the DROPs — nftables takes the FIRST match, so a
+	// rule ordered after `ip daddr 10.0.0.0/8 drop` would never be reached. Without it the
+	// box cannot resolve names at all: Docker hands a default-bridge box the HOST's upstream
+	// resolvers, which are RFC1918 on any LAN, so the drops eat its own DNS and D-04's "full
+	// public internet" becomes reachable-by-IP-only (proven live, TestEgress_FloorDropsInternal).
+	firstDrop := strings.Index(ruleset, "counter drop")
+	for _, accept := range []string{"udp dport 53 accept", "tcp dport 53 accept"} {
+		at := strings.Index(ruleset, accept)
+		if at < 0 {
+			t.Errorf("floor ruleset missing DNS carve-out %q:\n%s", accept, ruleset)
+			continue
+		}
+		if firstDrop >= 0 && at > firstDrop {
+			t.Errorf("DNS carve-out %q must precede the DROPs (first match wins):\n%s", accept, ruleset)
+		}
+	}
 	// Filter-table only — the nat table (gVisor-incompatible, #934) must never appear.
 	if strings.Contains(ruleset, "nat") {
 		t.Errorf("floor ruleset must be filter-table only (no nat, #934):\n%s", ruleset)
@@ -145,8 +161,8 @@ func TestEgress_AllowlistFromPolicy(t *testing.T) {
 func envValue(env []string, key string) string {
 	prefix := key + "="
 	for _, e := range env {
-		if strings.HasPrefix(e, prefix) {
-			return strings.TrimPrefix(e, prefix)
+		if value, found := strings.CutPrefix(e, prefix); found {
+			return value
 		}
 	}
 	return ""
