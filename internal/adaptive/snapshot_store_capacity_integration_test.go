@@ -19,8 +19,12 @@ import (
 )
 
 const (
+	// Postgres-side, and NOT scaled under -race: the database is a separate process the
+	// detector does not slow down, so this bound stays honest either way.
 	maxSnapshotStatementTimeout = 8 * time.Second
-	maxSnapshotEndToEndTimeout  = 20 * time.Second
+	// Wall-clock over the whole Save/Load, so it is scaled under -race
+	// (snapshotTimeoutScale — see race_scale_norace_test.go).
+	maxSnapshotEndToEndTimeout = 20 * time.Second * snapshotTimeoutScale
 )
 
 func TestSnapshotStorePersistsMaximumCardinalityWithinBound(t *testing.T) {
