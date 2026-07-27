@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/textproto"
+	"strings"
 	"time"
 	"unicode"
 
@@ -207,7 +208,7 @@ func (r ReplayResult) Validate() error {
 	if err != nil || len(encodedHeaders) > MaxReplayHeadersBytes {
 		return fmt.Errorf("idempotency replay headers exceed limit")
 	}
-	if err := validateOptionalBoundedText(r.Preview, MaxReplayPreviewBytes); err != nil {
+	if err := validateReplayPreview(r.Preview, MaxReplayPreviewBytes); err != nil {
 		return fmt.Errorf("invalid idempotency replay preview: %w", err)
 	}
 	if err := validateOptionalBoundedText(r.SidecarRef, MaxSidecarRefBytes); err != nil {
@@ -305,6 +306,29 @@ func validateBoundedText(value string, maxBytes int) error {
 		return fmt.Errorf("value is blank")
 	}
 	return validateOptionalBoundedText(value, maxBytes)
+}
+
+// validateReplayPreview bounds the replay preview. It is deliberately NOT
+// validateOptionalBoundedText: that one rejects every unicode control character, which is
+// correct for the two things it guards — an HTTP header value (CRLF injection) and the
+// sidecar path — and wrong for this one, which is arbitrary TOOL OUTPUT.
+//
+// A shell result almost always ends in "\n", so the shared validator refused practically
+// every shell_exec completion. The command had already run by then: the effect happened, the
+// bookkeeping rejected its record, and the agent was handed an error for work that had
+// succeeded. ANSI escapes from coloured output would have been rejected the same way.
+//
+// NUL is the one character genuinely rejected, and on a real constraint rather than taste:
+// Postgres cannot store U+0000 in a text column, so a preview carrying one could never be
+// persisted. Everything else is text the ledger is happy to hold.
+func validateReplayPreview(value string, maxBytes int) error {
+	if len(value) > maxBytes {
+		return fmt.Errorf("value exceeds %d bytes", maxBytes)
+	}
+	if strings.ContainsRune(value, 0) {
+		return fmt.Errorf("value contains a NUL byte, which a text column cannot store")
+	}
+	return nil
 }
 
 func validateOptionalBoundedText(value string, maxBytes int) error {
