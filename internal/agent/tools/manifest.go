@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"encoding/json"
 	"sort"
 	"strings"
 
@@ -84,6 +85,48 @@ func (r *Registry) RenderToolDefs(activated map[string]struct{}) []llm.ToolDef {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Function.Name < out[j].Function.Name })
 	return out
+}
+
+// ManifestEntryJSON is one tool as the offline tooling needs it: the exact fields
+// searchDocument feeds to BM25 and to the embedding bank (Name, Description,
+// Parameters), plus Deferred so a consumer can reproduce the frozen candidate set.
+// Summary rides along for human reading only.
+type ManifestEntryJSON struct {
+	Name        string          `json:"name"`
+	Deferred    bool            `json:"deferred"`
+	Summary     string          `json:"summary,omitempty"`
+	Description string          `json:"description,omitempty"`
+	Parameters  json.RawMessage `json:"parameters,omitempty"`
+}
+
+// RenderJSON dumps the full specs of the live manifest.
+//
+// It exists because the adaptive tool-discovery dataset must derive its expected
+// labels FROM the running registry instead of having them typed by hand. The frozen
+// benchmark dataset was hand-written, and 8 of its 12 tool_discovery scenarios name
+// tools Aura has never had (`weather_now`, `send_email`, `finance_quote`) or use the
+// un-namespaced form of ones it does (`memory_add_preference` vs
+// `memory__memory_add_preference`). The evaluator compares by exact string equality,
+// so those scenarios can never pass under ANY ranking strategy — every arm scores the
+// same zero and the benchmark cannot tell them apart. A label generated from this
+// dump cannot make that mistake.
+//
+// Name/Description/Parameters are exactly what searchDocument consumes, so a consumer
+// can rebuild a byte-identical ranking document offline.
+func (r *Registry) RenderJSON() ([]byte, error) {
+	entries := make([]ManifestEntryJSON, 0, len(r.tools))
+	for _, t := range r.tools {
+		s := t.Spec()
+		entries = append(entries, ManifestEntryJSON{
+			Name:        s.Name,
+			Deferred:    s.Deferred,
+			Summary:     s.Summary,
+			Description: s.Description,
+			Parameters:  s.Parameters,
+		})
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
+	return json.MarshalIndent(entries, "", "  ")
 }
 
 // RenderText is a human-readable rendering of the manifest, useful for boot

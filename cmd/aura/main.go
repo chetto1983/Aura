@@ -64,7 +64,7 @@ func main() {
 	}
 	switch os.Args[1] {
 	case "tools":
-		printTools()
+		printTools(os.Args[2:])
 	case "mcp":
 		runMCPDispatch(os.Args[2:])
 	case "memory":
@@ -477,7 +477,20 @@ func closeMCPServers(closers []func() error) error {
 	}
 }
 
-func printTools() {
+// printTools renders the live manifest. With --json it dumps the full specs instead
+// of the human summary: the adaptive tool-discovery dataset has to derive its expected
+// labels from the running registry rather than have them hand-typed, which is exactly
+// how the frozen benchmark ended up naming tools that do not exist.
+func printTools(args []string) {
+	asJSON := false
+	for _, a := range args {
+		if a == "--json" {
+			asJSON = true
+			continue
+		}
+		fmt.Fprintln(os.Stderr, "usage: aura tools [--json]")
+		os.Exit(1)
+	}
 	// Pool-free manifest path: a nil router keeps every tool host-direct (the manifest never routes).
 	reg, _, closers, err := buildRegistryWithMCP(context.Background(), config.LoadDB(), nil, nil)
 	if err != nil {
@@ -485,5 +498,14 @@ func printTools() {
 		os.Exit(1)
 	}
 	defer func() { _ = closeMCPServers(closers) }()
-	fmt.Print(reg.RenderText())
+	if !asJSON {
+		fmt.Print(reg.RenderText())
+		return
+	}
+	payload, err := reg.RenderJSON()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "tools --json:", err)
+		os.Exit(1)
+	}
+	fmt.Println(string(payload))
 }
