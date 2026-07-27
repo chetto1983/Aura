@@ -1432,3 +1432,76 @@ jobs:
       - name: Tear down
         if: always()
         run: docker compose down
+
+  sandbox-docker-integration:
+    name: Sandbox docker_integration tier (live dockerd, native-Linux egress)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Fix plan 2.6. Until this job existed the docker_integration tier had NEVER run in the
+    # pipeline: every one of its tests compiles and then skips on a host without a reachable
+    # daemon, so the per-identity box lifecycle, the SBX-04 egress floor and the routed host
+    # tools were proven only on an operator's workstation, by hand, when someone remembered.
+    # That is how the CAP_NET_ADMIN cap-assertion bug stayed latent (WR-01).
+    #
+    # This is a GitHub-hosted ubuntu runner: native-Linux dockerd on a non-masquerading
+    # bridge, which is exactly what the egress DROP assertions require (Docker Desktop/WSL
+    # vpnkit NATs around any nftables rule — 37-RESEARCH Pitfall 3), so this job is the ONLY
+    # place those assertions are meaningful. Every gate in the tier t.Fatals under $CI when
+    # the daemon is unreachable or non-Linux, so a skipped tier fails here — it never passes
+    # green (CLAUDE.md no-skip-as-green).
+    #
+    # NOTE: this does NOT make the tier count toward the >=85% owned-surface coverage floor —
+    # scripts/coverage_gate.sh runs the `db_integration neo4j_integration` matrix, so
+    # docker-gated runtime still contributes ZERO coverage and its pure logic still needs
+    # daemon-free unit tests.
+    env:
+      # GitHub sets CI=true already; stated explicitly because the tier's no-skip-as-green
+      # guards key off it and the coupling should be visible at the job, not inferred.
+      CI: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build the aura-egress sidecar image
+        # Tagged :latest deliberately. That tag is the default in three independent places —
+        # config's AURA_SANDBOX_EGRESS_IMAGE, usersandbox.egressSidecarImage, and both egress
+        # tests' image helpers — so building it here runs the tier against the PRODUCTION
+        # default instead of a CI-only override, and drift in any of those defaults surfaces
+        # as a failure rather than being papered over by an env var. ensureImage ImageInspects
+        # before pulling, so this locally-built image is used as-is and never fetched.
+        run: docker build -f docker/aura-egress/Dockerfile -t aura-egress:latest .
+
+      - name: Pre-pull the box images
+        # DockerBackend.ensureImage would pull these on first use; doing it here makes a
+        # registry hiccup a pull failure instead of a confusing box-creation error inside a
+        # test. Both are needed and they are NOT interchangeable: busybox carries the
+        # wget+timeout the egress reachability probes shell out to, python:3-slim backs the
+        # routed-snippet exec. This is also why the job sets no AURA_SANDBOX_IMAGE — one
+        # global override would break whichever package it is not the right image for.
+        run: |
+          docker pull busybox:stable
+          docker pull python:3-slim
+
+      - name: docker_integration tier (box lifecycle + egress floor + routed host tools)
+        # -p 1: the three packages share ONE daemon and each creates and destroys containers,
+        # named volumes and netns-sharing sidecars. Serialising keeps a failure attributable
+        # to one package and keeps the runner's memory envelope predictable.
+        run: |
+          go test -tags docker_integration -count=1 -p 1 \
+            ./internal/sandbox/usersandbox/... ./internal/agent/tools/... ./cmd/aura/...
+
+      - name: Leftover box/sidecar teardown
+        if: always()
+        # The tier's tests Stop what they create. Anything listed here is a teardown gap worth
+        # seeing in the log — printed before removal so it is diagnosable, not silently swept.
+        run: |
+          docker ps -a --filter 'name=aura-box-' --filter 'name=aura-egress-' \
+            --format '{{.Names}}\t{{.Status}}'
+          docker ps -aq --filter 'name=aura-box-' --filter 'name=aura-egress-' | xargs -r docker rm -f
+          docker volume ls -q --filter 'name=aura-box-' | xargs -r docker volume rm -f
