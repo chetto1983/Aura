@@ -283,3 +283,90 @@ func TestMemoryDefaultOn_EnvServersOverrideWins(t *testing.T) {
 		t.Fatalf("memory command = %q, want my-memory-binary (env override wins)", got.Command)
 	}
 }
+
+// TestSidecarRecipesContainerDefaultOn proves the appliance mounts calendar and whatsapp
+// out of the box, like calculator and memory already did.
+//
+// The regression it guards was invisible from the operator's seat: the cockpit's Connect
+// panel pairs the device — scan the QR, WhatsApp reports linked — but pairing is not
+// mounting, and nothing in that flow ran `aura mcp install whatsapp`. A live appliance sat
+// with `paired: true` on the bridge and ZERO WhatsApp tools in the agent, with no error on
+// either side to explain it. Calendar had the identical gap.
+func TestSidecarRecipesContainerDefaultOn(t *testing.T) {
+	for _, name := range []string{"calendar", "whatsapp"} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "servers.json")
+			clearMCPEnv(t, path)
+			t.Setenv("AURA_IN_CONTAINER", "1")
+
+			cfg := LoadDB()
+			if cfg.MCPServersErr != nil {
+				t.Fatalf("loadMCPServers err = %v, want nil", cfg.MCPServersErr)
+			}
+			got, ok := cfg.MCPPolicies[name]
+			if !ok {
+				t.Fatalf("MCPPolicies missing %s in the appliance container — a paired device with no tools is exactly the trap this closes: %#v", name, cfg.MCPPolicies)
+			}
+			want, ok := mcpmanager.LookupCatalog(name)
+			if !ok {
+				t.Fatalf("LookupCatalog(%q) not found", name)
+			}
+			if !reflect.DeepEqual(got, want.Server) {
+				t.Fatalf("%s policy = %#v, want LookupCatalog(%q).Server %#v", name, got, name, want.Server)
+			}
+		})
+	}
+}
+
+// TestSidecarRecipesNotDefaultOnOutsideContainer keeps a dev host clean: these recipes
+// point at compose sidecars that only exist in the appliance stack, so mounting them on a
+// laptop would just log a failed dial every boot.
+func TestSidecarRecipesNotDefaultOnOutsideContainer(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "servers.json")
+	clearMCPEnv(t, path)
+	t.Setenv("AURA_IN_CONTAINER", "")
+
+	cfg := LoadDB()
+	if cfg.MCPServersErr != nil {
+		t.Fatalf("loadMCPServers err = %v, want nil", cfg.MCPServersErr)
+	}
+	for _, name := range []string{"calendar", "whatsapp", "calculator"} {
+		if _, ok := cfg.MCPPolicies[name]; ok {
+			t.Fatalf("%s default-on outside the container: %#v", name, cfg.MCPPolicies)
+		}
+	}
+	// Memory is the deliberate exception: a core capability on every host.
+	if _, ok := cfg.MCPPolicies["memory"]; !ok {
+		t.Fatalf("memory must stay default-on everywhere: %#v", cfg.MCPPolicies)
+	}
+}
+
+// TestWhatsAppDefaultOn_RespectsDisable proves default-on never overrides the operator:
+// an explicit `aura mcp disable whatsapp` still keeps it unmounted.
+func TestWhatsAppDefaultOn_RespectsDisable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "servers.json")
+	clearMCPEnv(t, path)
+	t.Setenv("AURA_IN_CONTAINER", "1")
+
+	disabled := false
+	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
+		"whatsapp": {
+			Type:    mcp.ServerTypeStreamableHTTP,
+			URL:     "http://whatsapp:8080/mcp",
+			Source:  "recipe:whatsapp",
+			Enabled: &disabled,
+			Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
+		},
+	}}
+	if err := mcp.SaveManagedConfig(path, doc); err != nil {
+		t.Fatalf("save managed config: %v", err)
+	}
+
+	cfg := LoadDB()
+	if cfg.MCPServersErr != nil {
+		t.Fatalf("loadMCPServers err = %v, want nil", cfg.MCPServersErr)
+	}
+	if _, ok := cfg.MCPPolicies["whatsapp"]; ok {
+		t.Fatalf("whatsapp mounted despite explicit disable: %#v", cfg.MCPPolicies)
+	}
+}
