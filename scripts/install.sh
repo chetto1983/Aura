@@ -5,7 +5,7 @@
 # Optional env:
 #   AURA_INSTALL_REF=vX.Y.Z
 #   AURA_IMAGE=ghcr.io/chetto1983/aura:vX.Y.Z
-#   POSTGRES_IMAGE=postgres:18.4-alpine3.23
+#   POSTGRES_IMAGE=postgres:18.4-alpine3.24
 #   AURA_INSTALL_DIR=/opt/aura
 
 set -euo pipefail
@@ -265,7 +265,7 @@ ensure_internal_env_secrets() {
   ensure_generated_env_secret AURA_PIM_MCP_ADMIN_TOKEN 32
   ensure_generated_env_secret SEARXNG_SECRET 32
   ensure_objectstore_env_secrets
-  ensure_env_default POSTGRES_IMAGE "${POSTGRES_IMAGE:-postgres:18.4-alpine3.23}"
+  ensure_env_default POSTGRES_IMAGE "${POSTGRES_IMAGE:-postgres:18.4-alpine3.24}"
   ensure_env_default AURA_IMAGE "${AURA_IMAGE:-$DEFAULT_IMAGE}"
 }
 
@@ -304,7 +304,7 @@ write_env_if_missing() {
   umask 077
   cat > .env <<EOF
 POSTGRES_PASSWORD=${pg_pw}
-POSTGRES_IMAGE=${POSTGRES_IMAGE:-postgres:18.4-alpine3.23}
+POSTGRES_IMAGE=${POSTGRES_IMAGE:-postgres:18.4-alpine3.24}
 POSTGRES_USER=aura
 POSTGRES_DB=aura
 POSTGRES_HOST=127.0.0.1

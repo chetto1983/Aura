@@ -25,10 +25,10 @@
 #      `docker build -f docker/aura-egress/Dockerfile -t aura-egress:build .` is deterministic
 #      and needs no network fetch of a third-party repo.
 #
-# Digest-pinned base (D-13), resolved 2026-07-06 from the live registry (same pin as
+# Digest-pinned base (D-13), resolved 2026-07-27 from the live registry (same pin as
 # docker/aura-sandbox/Dockerfile):
-#   debian:bookworm-slim -> sha256:60eac759739651111db372c07be67863818726f754804b8707c90979bda511df
-FROM debian:bookworm-slim@sha256:60eac759739651111db372c07be67863818726f754804b8707c90979bda511df
+#   debian:bookworm-slim -> sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818
+FROM debian:bookworm-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818
 
 # nftables is the ONLY hard dependency of the floor. ca-certificates + curl are kept so a
 # later OpenSandbox FQDN build layer (or a supervisor fetching allow/deny lists) has TLS.

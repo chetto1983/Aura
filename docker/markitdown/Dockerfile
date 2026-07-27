@@ -15,13 +15,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ffmpeg \
 RUN pip install --no-cache-dir \
     "markitdown[all]==0.1.6" \
     "markitdown-ocr==0.1.0" \
-    "openai==1.59.6" \
-    "fastapi==0.115.6" \
-    "uvicorn[standard]==0.34.0" \
-    "python-multipart==0.0.20" \
-    "PyMuPDF==1.24.14" \
+    "openai==2.48.0" \
+    "fastapi==0.140.6" \
+    "uvicorn[standard]==0.51.0" \
+    "python-multipart==0.0.32" \
+    "PyMuPDF==1.28.0" \
     "openpyxl==3.1.5" \
-    "python-docx==1.1.2" \
+    "python-docx==1.2.0" \
     "python-pptx==1.0.2"
 
 WORKDIR /app

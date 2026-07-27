@@ -372,7 +372,7 @@ services:
   # neither starts it nor changes the dev stack — enable with `docker compose --profile sandbox
   # up -d` under a strict profile and set AURA_SANDBOX_DOCKER_HOST=tcp://docker-socket-proxy:2375.
   docker-socket-proxy:
-    image: ${AURA_DOCKER_SOCKET_PROXY_IMAGE:-tecnativa/docker-socket-proxy:0.3.0}
+    image: ${AURA_DOCKER_SOCKET_PROXY_IMAGE:-tecnativa/docker-socket-proxy:v0.5.0}
     container_name: aura-docker-socket-proxy
     profiles: [sandbox]
     restart: unless-stopped
@@ -418,7 +418,7 @@ services:
       retries: 3
 
   postgres:
-    image: ${POSTGRES_IMAGE:-postgres:18.4-alpine3.23}
+    image: ${POSTGRES_IMAGE:-postgres:18.4-alpine3.24}
     container_name: aura-postgres
     restart: unless-stopped
     environment:
@@ -663,7 +663,7 @@ services:
   # SearXNG needs outbound egress to query upstream engines; loopback publishing
   # keeps the service local without cutting off metasearch.
   searxng:
-    image: searxng/searxng:2026.7.19-6da6eee26
+    image: searxng/searxng:2026.7.26-b060c780d
     container_name: aura-searxng
     restart: unless-stopped
     environment:
@@ -938,7 +938,7 @@ services:
       start_period: 15s
 
   tempo:
-    image: grafana/tempo:2.9.0@sha256:65a5789759435f1ef696f1953258b9bbdb18eb571d5ce711ff812d2e128288a4
+    image: grafana/tempo:2.9.4@sha256:3ecdaa1af90b3068e77e4fb4b11d9f26201c3a57d5740d34965a323173a4f1aa
     profiles: [observability]
     restart: unless-stopped
     # The distroless image has no init shell; root is required to initialize a
@@ -964,7 +964,7 @@ services:
       start_period: 10s
 
   grafana:
-    image: grafana/grafana:12.3.3@sha256:9e1e77ade304069aee3196e9a4f210830e96e80ce9a2640891eccc324b152faf
+    image: grafana/grafana:12.3.9@sha256:d4f671be4c5ff415ff9e9e8fd3439db00341ec537411fd8392646c9463d66a7f
     profiles: [observability]
     restart: unless-stopped
     depends_on:

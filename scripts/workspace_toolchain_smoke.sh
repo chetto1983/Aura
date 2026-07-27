@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
 # scripts/workspace_toolchain_smoke.sh — assert the pre-baked document/data toolchain
-# resolves inside the aura container with NO runtime install. The repo scripts/ dir is
-# NOT bind-mounted into the container, so run it by piping over stdin:
-#   docker exec -i aura bash -s < scripts/workspace_toolchain_smoke.sh
+# resolves with NO runtime install. The script is container-agnostic; the repo scripts/ dir
+# is NOT bind-mounted, so run it by piping over stdin at whichever container actually runs
+# the model's shell under the ACTIVE profile:
+#   non-strict (dev/local_trusted) — shell_exec runs in the daemon container:
+#     docker exec -i aura bash -s < scripts/workspace_toolchain_smoke.sh
+#   strict (single_user_hardened/server_production) — shell_exec is routed into the box, so
+#   the daemon container passing here proves NOTHING about what the model can reach:
+#     docker exec -i "$(docker ps --format '{{.Names}}' | grep '^aura-box-' | head -1)" \
+#       bash -s < scripts/workspace_toolchain_smoke.sh
 # Covers Amendment #88 (base: docx/python-docx/openpyxl/pandas/pandoc/file/xxd) and
 # Amendment #88.1 (pptx/xlsx/pdf skills: LibreOffice headless + poppler/qpdf/pdftk/
 # tesseract + the pptx/pdf/excel pip+npm libs).

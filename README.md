@@ -114,7 +114,7 @@ checkout or release directory:
 function New-Hex { -join ((1..32) | ForEach-Object { '{0:x2}' -f (Get-Random -Maximum 256) }) }
 @"
 POSTGRES_PASSWORD=$(New-Hex)
-POSTGRES_IMAGE=postgres:18.4-alpine3.23
+POSTGRES_IMAGE=postgres:18.4-alpine3.24
 POSTGRES_USER=aura
 POSTGRES_DB=aura
 NEO4J_USER=neo4j

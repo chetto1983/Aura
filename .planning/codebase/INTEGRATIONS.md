@@ -54,7 +54,7 @@
   `AURA_VISION_CLOUD` toggles cloud vision.
 
 **Search:**
-- **SearXNG** — `searxng/searxng:2026.5.31-7159b8aed` (`compose.yaml:574`). Env `SEARXNG_URL`,
+- **SearXNG** — `searxng/searxng:2026.7.26-b060c780d` (`compose.yaml:666`). Env `SEARXNG_URL`,
   **empty default on purpose (D-05)** — `internal/config/config.go:400-402` — so `web_search`
   fails *closed* with `web_search_unavailable{searxng_not_configured}` rather than silently
   hitting an unexpected host (`internal/web/searxng.go:86`). Also `SEARXNG_SECRET`.
@@ -104,7 +104,7 @@ records the native-Go-driver ban: every agent-facing Cypher call goes over MCP
 ## Data Storage
 
 **Postgres (primary):**
-- `postgres:18.4-alpine3.23` (`compose.yaml:350`), port `5432`, schema `aura.*`.
+- `postgres:18.4-alpine3.24` (`compose.yaml:421`), port `5432`, schema `aura.*`.
 - Connection: `AURA_DB_URL` (app role), `AURA_DB_MIGRATE_URL` (migrate role),
   `AURA_DB_BOOTSTRAP_URL`; composed by `internal/config` from `POSTGRES_HOST`, `POSTGRES_PORT`,
   `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_SSLMODE`. Roles:
@@ -121,7 +121,7 @@ records the native-Go-driver ban: every agent-facing Cypher call goes over MCP
   gate for the `aura` service.
 
 **Neo4j (graph + vectors):**
-- `neo4j:5.26.26-community` (`compose.yaml:392`) + APOC + GDS. Bolt `7687`, browser `7474`.
+- `neo4j:5.26.28-community` (`compose.yaml:463`) + APOC + GDS. Bolt `7687`, browser `7474`.
 - Connection: `AURA_NEO4J_BOLT_URL`, `AURA_NEO4J_DATABASE`, `NEO4J_USER`, `NEO4J_PASSWORD`.
 - Migrations: **2 Cypher files** — `internal/knowledge/migrations/0001_init.cypher`,
   `0002_documents.cypher`. Runner: `internal/knowledge/migrate.go`.
@@ -137,7 +137,7 @@ records the native-Go-driver ban: every agent-facing Cypher call goes over MCP
   embeddings differently — D-06/QUAL-03).
 
 **Object storage:**
-- **Garage** `dxflrs/garage:v2.0.0` (`compose.yaml:374`) — self-hosted S3-compatible store,
+- **Garage** `dxflrs/garage:v2.3.0` (`compose.yaml:445`) — self-hosted S3-compatible store,
   bootstrapped by the `garage-bootstrap` one-shot service.
 - Backend selector `AURA_OBJECTSTORE_BACKEND` — `garage|filesystem-dev|fake`
   (`internal/config/config.go:128`), default `garage` (`config.go:435`). Implementations:
@@ -260,11 +260,11 @@ Session volume `aura-whatsapp-session`.
   Tool routing: `internal/agent/tools/sandbox_route.go`, `shell_exec_sandbox.go`,
   `send_file_sandbox.go`.
   > **Its `docker_integration` tests never run in CI** — see STACK.md §Test & Tag Matrix.
-- **`docker-socket-proxy`** — `tecnativa/docker-socket-proxy:0.3.0`, `profiles: [sandbox]`
-  (`compose.yaml:306`). **Not started by a default `docker compose up`**; enable with
+- **`docker-socket-proxy`** — `tecnativa/docker-socket-proxy:v0.5.0`, `profiles: [sandbox]`
+  (`compose.yaml:374`). **Not started by a default `docker compose up`**; enable with
   `docker compose --profile sandbox up -d` and set
   `AURA_SANDBOX_DOCKER_HOST=tcp://docker-socket-proxy:2375`. The comment
-  (`compose.yaml:300-302`) frames it as the escalation surface.
+  (`compose.yaml:363-373`) frames it as the escalation surface.
 - **Egress control** — `docker/aura-egress/`, `AURA_EGRESS_ENFORCE`, `AURA_EGRESS_FLOOR_RULESET`.
 - **Shell** — `AURA_SHELL_{MAX_TIMEOUT_MS,OUTPUT_BUF_CAP,BG_MAX,BG_TTL,BG_BUF_CAP,DESTRUCTIVE_PATTERNS}`.
 

@@ -13,10 +13,10 @@
 # has no shell → exit 127; read-only blocks self-extension; USER 65532 forces non-root).
 #
 # Digest-pinned (D-13) so the shared box image is reproducible. Both the debian base and
-# the astral uv image are @sha256-pinned. Resolved 2026-07-06 from the live registry:
-#   debian:bookworm-slim         -> sha256:60eac759739651111db372c07be67863818726f754804b8707c90979bda511df
-#   ghcr.io/astral-sh/uv:0.11.21 -> sha256:ff07b86af50d4d9391d9daf4ff89ce427bc544f9aae87057e69a1cc0aa369946
-FROM debian:bookworm-slim@sha256:60eac759739651111db372c07be67863818726f754804b8707c90979bda511df
+# the astral uv image are @sha256-pinned. Resolved 2026-07-27 from the live registry:
+#   debian:bookworm-slim         -> sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818
+#   ghcr.io/astral-sh/uv:0.11.32 -> sha256:df4cae8f3a96d175e2e5f992e597550000edbe78fdc2594d5cd8de1a217f504c
+FROM debian:bookworm-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818
 
 # --- heavy runtime layer (cache-stable: ordered FIRST so a later tweak re-runs only the
 # small trailing layers, never this ~apt/node/uv layer). D-13 bakes the common runtimes;
@@ -59,11 +59,48 @@ RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
 # uv/uvx as static binaries from the DIGEST-PINNED astral image (sandbox-runtime finding:
 # COPY the binaries, never pip-install uv). uv drives the on-demand long-tail dep installs
 # into the shared warm-cache volume (D-13).
-COPY --from=ghcr.io/astral-sh/uv@sha256:ff07b86af50d4d9391d9daf4ff89ce427bc544f9aae87057e69a1cc0aa369946 /uv /uvx /usr/local/bin/
+COPY --from=ghcr.io/astral-sh/uv@sha256:df4cae8f3a96d175e2e5f992e597550000edbe78fdc2594d5cd8de1a217f504c /uv /uvx /usr/local/bin/
 
 # Pinned MCP server (parity with docker/aura). Debian python is PEP-668 externally-managed
 # -> --break-system-packages (the container IS the boundary; no venv needed at image level).
-RUN pip install --no-cache-dir --break-system-packages mcp-neo4j-cypher==0.6.0 fastmcp==2.13.3
+# The trailing __pycache__ sweep runs INSIDE this layer, not as a later one: a `rm` in a
+# subsequent layer only writes a whiteout, it never shrinks the layer that wrote the bytes.
+RUN pip install --no-cache-dir --break-system-packages mcp-neo4j-cypher==0.6.0 fastmcp==2.13.3 \
+    && find /usr/lib/python3 /usr/local/lib -depth -type d -name __pycache__ -exec rm -rf {} +
+
+# ↓↓ Document/office toolchain — MANDATORY parity with docker/aura/Dockerfile ↓↓
+# Under a strict profile the box, NOT the aura container, is where shell_exec and the skill
+# snippets run. Amendment #88/#88.1 pre-baked this toolchain into the aura image precisely so
+# document tasks stop reinstalling it per turn — and every one of those skills (docx/pptx/xlsx/
+# pdf) breaks the moment the router sends them here instead. Keep the three layers below in
+# lockstep with docker/aura/Dockerfile: a divergence is silent, and it only surfaces as a skill
+# failing on a hardened appliance while it works on a dev host.
+#
+# pandoc converts document formats; file/xxd sniff workspace artifacts. LibreOffice HEADLESS
+# modules only (-writer/-calc/-impress) — the shared `soffice` the skills drive via
+# scripts/office/soffice.py; the GUI suite/-base/-draw stay OUT to cap growth. poppler-utils =
+# pdftoppm/pdftotext, qpdf + pdftk-java = PDF manipulation, tesseract-ocr = pytesseract's
+# backend, fonts-liberation = Arial/Times-metric fonts for faithful render.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        pandoc file xxd \
+        libreoffice-writer libreoffice-calc libreoffice-impress \
+        poppler-utils qpdf pdftk-java tesseract-ocr fonts-liberation \
+    && rm -rf /var/lib/apt/lists/*
+
+# NodeSource Node 24 puts global modules under /usr/lib/node_modules; NODE_PATH must point
+# there so `require('docx')`/`require('pptxgenjs')` resolve from /workspace, not just from the
+# module root. pptxgenjs = the pptx skill's PowerPoint generator.
+RUN npm install -g docx pptxgenjs && npm cache clean --force
+ENV NODE_PATH=/usr/lib/node_modules
+
+# Python document/data stack, same set and same reason as docker/aura/Dockerfile.
+# markitdown[pptx] is quoted so /bin/sh does not glob the [].
+RUN pip install --no-cache-dir --break-system-packages \
+        python-docx python-pptx openpyxl xlsxwriter pandas \
+        pypdf pdfplumber reportlab pdf2image pytesseract \
+        Pillow defusedxml lxml "markitdown[pptx]" \
+    && find /usr/lib/python3 /usr/local/lib -depth -type d -name __pycache__ -exec rm -rf {} +
 
 # Mount points (documented — the ACTUAL mounts are set by the usersandbox translator, not
 # baked here; D-10/D-13):

@@ -68,7 +68,7 @@ fi
 if [ -z "${GITHUB_ACTIONS:-}" ]; then
   COV_POSTGRES="${AURA_COVERAGE_POSTGRES_CONTAINER:-aura-postgres-cov}"
   PG_PORT_TARGET="${AURA_COVERAGE_POSTGRES_PORT:-5433}"
-  COV_POSTGRES_IMAGE="${AURA_COVERAGE_POSTGRES_IMAGE:-${POSTGRES_IMAGE:-postgres:18.4-alpine3.23}}"
+  COV_POSTGRES_IMAGE="${AURA_COVERAGE_POSTGRES_IMAGE:-${POSTGRES_IMAGE:-postgres:18.4-alpine3.24}}"
   docker rm -f "$COV_POSTGRES" >/dev/null 2>&1 || true
   echo "==> provisioning disposable coverage Postgres '$COV_POSTGRES' on 127.0.0.1:${PG_PORT_TARGET}; removed on exit"
   docker run -d --rm --name "$COV_POSTGRES" \

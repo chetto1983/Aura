@@ -71,9 +71,13 @@ RUN install -d /usr/share/postgresql-common/pgdg \
     && apt-get install -y --no-install-recommends postgresql-client-18 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=ghcr.io/astral-sh/uv:0.11.21 /uv /uvx /usr/local/bin/
+COPY --from=ghcr.io/astral-sh/uv:0.11.32 /uv /uvx /usr/local/bin/
 
-RUN pip install --no-cache-dir --break-system-packages mcp-neo4j-cypher==0.6.0 fastmcp==2.13.3
+# The trailing __pycache__ sweep runs INSIDE this layer, not as a later one: a `rm` in a
+# subsequent layer only writes a whiteout, it never shrinks the layer that wrote the bytes.
+# Same reason it is repeated in the other pip layer below rather than folded into one place.
+RUN pip install --no-cache-dir --break-system-packages mcp-neo4j-cypher==0.6.0 fastmcp==2.13.3 \
+    && find /usr/lib/python3 /usr/local/lib -depth -type d -name __pycache__ -exec rm -rf {} +
 
 # calculator: warm uvx at a pinned commit (chetto1983 fork) so it runs with egress
 # blocked — an unpinned HEAD re-fetches and fails offline (Phase 17 AC7).
@@ -114,7 +118,10 @@ RUN apt-get update \
 # `require('pptxgenjs')` resolve from any CWD (the agent runs JS skill snippets from
 # $AURA_WORKSPACE_DIR, not /usr/lib/node_modules). pptxgenjs = the pptx skill's
 # PowerPoint generator.
-RUN npm install -g docx pptxgenjs
+# npm cache clean is in THIS layer for the same reason as the pycache sweeps: the build-time
+# download cache under /root/.npm is otherwise sealed into the image. At RUNTIME /root/.npm is
+# a retained volume (compose), so warm re-installs are unaffected.
+RUN npm install -g docx pptxgenjs && npm cache clean --force
 ENV NODE_PATH=/usr/lib/node_modules
 
 # Python document/data stack pre-baked so skill snippets don't pip install on every
@@ -127,7 +134,8 @@ ENV NODE_PATH=/usr/lib/node_modules
 RUN pip install --no-cache-dir --break-system-packages \
         python-docx python-pptx openpyxl xlsxwriter pandas \
         pypdf pdfplumber reportlab pdf2image pytesseract \
-        Pillow defusedxml lxml "markitdown[pptx]"
+        Pillow defusedxml lxml "markitdown[pptx]" \
+    && find /usr/lib/python3 /usr/local/lib -depth -type d -name __pycache__ -exec rm -rf {} +
 
 ENV AURA_IN_CONTAINER=1
 
