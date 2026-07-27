@@ -24,8 +24,11 @@ import (
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/conversations"
+	"github.com/chetto1983/aura/internal/idempotency"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/obs"
 	"github.com/chetto1983/aura/internal/runner"
+	"github.com/google/uuid"
 )
 
 // newTracer wires the OTel TracerProvider from the AURA_OTEL_* config (flushed by
@@ -128,6 +131,19 @@ func runUserTurn(ctx context.Context, d replDeps, userMsg string, reader *bufio.
 func driveTurn(ctx context.Context, d replDeps, userMsg *string) (paused bool, err error) {
 	turnCtx, cancel, aborted := d.newTurnCtx(ctx)
 	defer cancel()
+
+	// Mint the turn's parent operation. Every tool the agent dispatches derives its own
+	// idempotency child from this one (deriveToolOperationContext), and with no parent there
+	// is no child: under a strict profile the gateway then refuses every mutating call with
+	// "operation context missing". The HTTP ingress and the scheduler already mint theirs;
+	// this REPL — `aura shell`, the primary interactive terminal — did not, so on a strict
+	// deployment it could not run a single mutating tool. Invisible under dev/local_trusted,
+	// where Decide short-circuits before ever looking for an operation.
+	if opCtx, opErr := replTurnOperation(turnCtx); opErr != nil {
+		return false, opErr
+	} else {
+		turnCtx = opCtx
+	}
 
 	answer, finish, usage, sawPause, runErr := renderRunnerTurn(d.out, d.run.Turn(turnCtx, d.convID, userMsg))
 	_ = answer
@@ -335,4 +351,49 @@ func clampExcerpt(s string, start, end int) string {
 		out += "…"
 	}
 	return out
+}
+
+// replTurnOperation mints the per-turn parent operation the tool dispatcher derives its
+// idempotency children from.
+//
+// Scope is CLICommand — the trusted registry entry this ingress belongs to, and one of the
+// four deriveToolOperationContext accepts as a parent. The key is a fresh UUIDv7 per turn
+// rather than a fingerprint of the input: two identical prompts in one session are two
+// separate intents, and keying them the same would make the second turn replay the first
+// turn's tool results instead of running them.
+//
+// The identity comes from the context (the operator resolved at boot) so the operation is
+// owned by the human driving the REPL, not by a service principal.
+func replTurnOperation(ctx context.Context) (context.Context, error) {
+	// No principal, no operation: return the context untouched so a caller without an
+	// identity behaves exactly as before this existed.
+	//
+	// The tempting fallback — stamping CLIServiceIdentity in — is wrong twice over.
+	// WithOperation requires the operation's identity to match the one trusted in the
+	// context, so naming it only in the key fails; and putting it in the context CHANGES THE
+	// TURN'S PRINCIPAL, which the runner then rejects with "context <service-id> does not own
+	// conversation <id>". An operation is not worth silently reassigning who is asking.
+	identityID := identityctx.IdentityID(ctx)
+	if identityID == "" {
+		return ctx, nil
+	}
+	turnID, err := uuid.NewV7()
+	if err != nil {
+		return nil, fmt.Errorf("mint turn operation id: %w", err)
+	}
+	fingerprint, err := idempotency.FingerprintTyped(struct {
+		Version string `json:"version"`
+		TurnID  string `json:"turn_id"`
+	}{Version: "repl-turn-v1", TurnID: turnID.String()})
+	if err != nil {
+		return nil, fmt.Errorf("fingerprint turn operation: %w", err)
+	}
+	return idempotency.WithOperation(ctx, idempotency.Operation{
+		Key: idempotency.OperationKey{
+			IdentityID: identityID,
+			Scope:      idempotency.ScopeCLICommand,
+			Key:        "repl-turn:" + turnID.String(),
+		},
+		Fingerprint: fingerprint,
+	})
 }
