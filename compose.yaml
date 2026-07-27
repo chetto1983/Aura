@@ -179,6 +179,13 @@ services:
       # bearer token. Endpoint targets the in-compose service DNS name garage:3903.
       AURA_GARAGE_ADMIN_ENDPOINT: ${AURA_GARAGE_ADMIN_ENDPOINT:-http://garage:3903}
       AURA_GARAGE_ADMIN_TOKEN: ${AURA_GARAGE_ADMIN_TOKEN:?AURA_GARAGE_ADMIN_TOKEN required in .env}
+      # config.gateGarageRPCSecret makes an empty GARAGE_RPC_SECRET a FATAL violation under
+      # the strict tiers, and this service never received the variable — only the garage
+      # service did. So `AURA_PROFILE=single_user_hardened` put the daemon straight into a
+      # restart loop ("inter-node RPC secret must be set under single_user_hardened") on a
+      # stack whose .env had the secret all along. Invisible until now for the same reason
+      # AURA_PROFILE itself was: under the dev default the gate never runs.
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:?GARAGE_RPC_SECRET required in .env}
       AURA_ASSET_MAX_DOCUMENT_BYTES: ${AURA_ASSET_MAX_DOCUMENT_BYTES:-104857600}
       AURA_ASSET_MAX_IMAGE_BYTES: ${AURA_ASSET_MAX_IMAGE_BYTES:-26214400}
       AURA_ASSET_MAX_AUDIO_BYTES: ${AURA_ASSET_MAX_AUDIO_BYTES:-104857600}
