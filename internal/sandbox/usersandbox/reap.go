@@ -22,11 +22,21 @@ import (
 // while stopped. A Suspend error is terminal for this sweep — the count so far is returned for
 // the handler's summary; the dispatcher records the error and the next tick re-evaluates the
 // rest of the idle set. A nil router is a safe no-op (0 suspended).
+//
+// A non-positive AURA_SANDBOX_IDLE_TTL_SEC DISABLES the sweep, matching every other `<=0 turns
+// it off` knob in the codebase (AURA_MCP_PING_INTERVAL_SEC, AURA_AGUI_SSE_HEARTBEAT_SEC,
+// AURA_REASONING_PERSIST_MAX_RUNES). Without this guard a TTL of 0 makes `now.Sub(last) >= 0`
+// true for EVERY tracked box, so the knob an operator would reach for to mean "never suspend"
+// suspends everything on every tick instead — the single-user appliance case, where the box
+// should simply stay warm and there is no co-tenant to reclaim memory from.
 func (r *SandboxRouter) SuspendIdle(ctx context.Context, now time.Time) (int, error) {
 	if r == nil {
 		return 0, nil
 	}
 	ttl := time.Duration(r.cfg.IdleTTLSec) * time.Second
+	if ttl <= 0 {
+		return 0, nil
+	}
 
 	type idleBox struct {
 		id string

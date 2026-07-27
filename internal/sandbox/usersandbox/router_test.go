@@ -62,7 +62,6 @@ func unitSandboxConfig() config.SandboxConfig {
 // Resolve is called). This is the exact gateway.Decide short-circuit (SC-4 / T-37-05-DEVLEAK).
 func TestRoute_DevNoOp(t *testing.T) {
 	for _, p := range []config.RuntimeProfile{config.ProfileDev, config.ProfileLocalTrusted} {
-		p := p
 		t.Run(string(p), func(t *testing.T) {
 			be := &fakeBackend{t: t, failIfUsed: true}
 			r := NewSandboxRouter(be, p, unitSandboxConfig())
@@ -132,6 +131,38 @@ func TestRoute_LocalFallback(t *testing.T) {
 	}
 	if got := be2.resolved[0].IdentityID; got != authID {
 		t.Fatalf("spec.IdentityID = %q, want the authenticated id %q (never local, never cross-identity)", got, authID)
+	}
+}
+
+// TestSuspendIdle_NonPositiveTTLKeepsBoxesWarm pins the single-user appliance posture: a
+// non-positive AURA_SANDBOX_IDLE_TTL_SEC means NEVER suspend, so the box stays warm and no turn
+// pays a container resume.
+//
+// This is a regression guard for an inverted knob, not a preference. `ttl := IdleTTLSec *
+// time.Second` with IdleTTLSec=0 makes the sweep predicate `now.Sub(last) >= 0` true for EVERY
+// tracked box, so the value an operator reaches for to disable the reaper used to suspend
+// everything on every tick — the exact opposite, and silent. A negative value (the other way
+// people spell "off") did the same.
+func TestSuspendIdle_NonPositiveTTLKeepsBoxesWarm(t *testing.T) {
+	base := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	for _, ttl := range []int{0, -1} {
+		be := &fakeBackend{t: t}
+		cfg := unitSandboxConfig()
+		cfg.IdleTTLSec = ttl
+		r := NewSandboxRouter(be, config.ProfileSingleUserHardened, cfg)
+		r.now = func() time.Time { return base }
+		if _, _, err := r.Route(context.Background()); err != nil {
+			t.Fatalf("ttl=%d: Route err = %v", ttl, err)
+		}
+		// Far past any plausible TTL: still nothing, because the sweep is off.
+		n, err := r.SuspendIdle(context.Background(), base.Add(24*time.Hour))
+		if err != nil {
+			t.Fatalf("ttl=%d: SuspendIdle err = %v", ttl, err)
+		}
+		if n != 0 || len(be.suspended) != 0 {
+			t.Errorf("ttl=%d: sweep suspended %d (recorded %d), want 0 — the reaper must be OFF",
+				ttl, n, len(be.suspended))
+		}
 	}
 }
 
