@@ -274,9 +274,9 @@ func buildBaseRegistryWithAdaptiveControls(
 	// SkillsDir so the gated skill-authoring flow cannot be bypassed.
 	reg.Register(&tools.FSRead{WorkspaceRoot: workspace, Router: sandboxRouter})
 	reg.Register(&tools.FSWrite{WorkspaceRoot: workspace, SkillsDir: cfg.SkillsDir, Router: sandboxRouter})
-	reg.Register(&tools.FSEdit{WorkspaceRoot: workspace, SkillsDir: cfg.SkillsDir})
-	reg.Register(&tools.FSGrep{WorkspaceRoot: workspace})
-	reg.Register(&tools.FSGlob{WorkspaceRoot: workspace})
+	reg.Register(&tools.FSEdit{WorkspaceRoot: workspace, SkillsDir: cfg.SkillsDir, Router: sandboxRouter})
+	reg.Register(&tools.FSGrep{WorkspaceRoot: workspace, Router: sandboxRouter})
+	reg.Register(&tools.FSGlob{WorkspaceRoot: workspace, Router: sandboxRouter})
 	// send_file hands a host file to the user as an attachment (D-05/D-06). Deferred:
 	// the model tool_searches for it when it has a produced/found file to deliver; the
 	// agent loop lifts its artifact Meta onto the AG-UI ArtifactDelta the channel renders.

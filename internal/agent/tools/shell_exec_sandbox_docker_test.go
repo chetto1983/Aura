@@ -69,6 +69,11 @@ func newDockerRouter(t *testing.T, sources usersandbox.SourceResolver) *usersand
 	if err != nil {
 		t.Fatalf("docker client: %v", err)
 	}
+	// Without this the client's keep-alive persistConn goroutines outlive the test and the
+	// package's goleak TestMain fails the WHOLE tier even when every test passes — so the
+	// docker_integration tier could never go green. The sibling usersandbox helper
+	// (docker_backend_integration_test.go) has always closed its client; this one did not.
+	t.Cleanup(func() { _ = cli.Close() })
 	limits := usersandbox.Resources{NanoCPUs: 1_000_000_000, MemoryBytes: 1 << 30, PidsLimit: 256}
 	opts := []usersandbox.Option{}
 	if sources != nil {
