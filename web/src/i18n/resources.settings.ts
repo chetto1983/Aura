@@ -61,6 +61,7 @@ export const settingsEn = {
     fields: {
       primaryModel: 'Primary model',
       primaryBaseUrl: 'Primary base URL',
+      primaryProvider: 'Primary provider',
       openRouterKey: 'OpenRouter API key',
       maxTokens: 'Max response tokens',
       contextWindow: 'Context window tokens',
@@ -155,6 +156,7 @@ export const settingsIt = {
     fields: {
       primaryModel: 'Modello primario',
       primaryBaseUrl: 'URL base primario',
+      primaryProvider: 'Provider primario',
       openRouterKey: 'Chiave API OpenRouter',
       maxTokens: 'Token massimi risposta',
       contextWindow: 'Token finestra contesto',

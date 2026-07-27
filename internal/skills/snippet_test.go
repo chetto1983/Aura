@@ -197,8 +197,8 @@ func TestSaveSnippetTierAndNetworkSurfaced(t *testing.T) {
 
 // TestUseSnippetReturnsPath asserts UseSnippet returns the HOST export-dir path (the
 // D-01 host-primary by-path target the model runs via shell_exec) + interpreter + the
-// docs body for an ACTIVE snippet, and errors for a non-snippet. The sandbox path stays
-// populated for the named sandbox_exec escalation.
+// docs body for an ACTIVE snippet, and errors for a non-snippet. The in-box path stays
+// populated because a strict profile hands that one out instead.
 func TestUseSnippetReturnsPath(t *testing.T) {
 	t.Parallel()
 	w, root := newTestWriter(t)
@@ -225,9 +225,9 @@ func TestUseSnippetReturnsPath(t *testing.T) {
 	if use.HostPath != wantHost {
 		t.Fatalf("HostPath = %q, want %q", use.HostPath, wantHost)
 	}
-	// The sandbox path stays populated for the named sandbox_exec escalation.
+	// The in-box path stays populated: a strict profile hands this one to the model.
 	if use.SandboxPath != "/skills/calc/calc.py" {
-		t.Fatalf("SandboxPath = %q, want /skills/calc/calc.py (escalation path preserved)", use.SandboxPath)
+		t.Fatalf("SandboxPath = %q, want /skills/calc/calc.py (in-box path preserved)", use.SandboxPath)
 	}
 	if use.Interpreter != "python3" {
 		t.Fatalf("Interpreter = %q, want python3", use.Interpreter)

@@ -124,27 +124,26 @@ func (t *SkillTool) actionUse(ctx context.Context, raw json.RawMessage) (ToolRes
 	return NewResult(ctx, UseAuthorityFrame+body)
 }
 
-// renderSnippetUse frames a snippet's HOST by-path invocation for the model (D-01
-// host-primary): the instructions, then the PRIMARY instruction — a shell_exec call
-// running the snippet by path through the host terminal (the surface the production
-// loop and D-35 eval gate use). sandbox_exec is named ONLY as the secondary escalation
-// for an untrusted/one-off run, mirroring shell_exec.go's own Description. The literal
-// command shape ("<interpreter> '<hostPath>'") mirrors the shell_exec arg schema so the
-// model assembles a correct call.
-func renderSnippetUse(instructions, hostPath, interpreter string) string {
+// renderSnippetUse frames a snippet's by-path invocation for the model: the
+// instructions, then a shell_exec call running the snippet at runPath. It names
+// shell_exec and no other tool — actionUse has already chosen runPath (host export
+// dir, or the in-box path under a strict profile), and which side of that boundary
+// the call lands on is the deployment's decision, not the model's (amendment #96).
+// The literal command shape ("<interpreter> '<runPath>'") mirrors the shell_exec arg
+// schema so the model assembles a correct call.
+func renderSnippetUse(instructions, runPath, interpreter string) string {
 	var b strings.Builder
 	b.WriteString(UseAuthorityFrame)
 	if instructions != "" {
 		b.WriteString(instructions)
 		b.WriteString("\n")
 	}
-	fmt.Fprintf(&b, "Run this stored snippet by path with shell_exec: command=%q (append further args as needed). "+
-		"For an untrusted or one-off run you may instead escalate to sandbox_exec.\n",
-		interpreter+" "+shellQuotePath(hostPath))
+	fmt.Fprintf(&b, "Run this stored snippet by path with shell_exec: command=%q (append further args as needed).\n",
+		interpreter+" "+shellQuotePath(runPath))
 	return b.String()
 }
 
-// shellQuotePath makes a host snippet path safe to paste into the shell_exec command
+// shellQuotePath makes a snippet path safe to paste into the shell_exec command
 // the model runs (WR-04). shell_exec ALWAYS runs through bash -c (Git Bash on
 // Windows), where a Windows path with backslashes (C:\Users\...) mangles on \U/\n
 // escapes and a path under a spaced dir (C:\Program Files\...) word-splits. Normalize

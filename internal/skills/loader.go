@@ -241,7 +241,11 @@ func validateStructure(fm Frontmatter, dirName, body string, bodyCap int) error 
 	if err := SanitizeName(fm.Name, dirName); err != nil {
 		return err
 	}
-	if fm.Description == "" {
+	// Trimmed, so the rule matches ValidateForWrite's exactly: a whitespace-only
+	// description is as useless in the manifest as an absent one, and two gates that
+	// disagree about the same field are how an unusable skill gets written, approved
+	// and then silently skipped.
+	if strings.TrimSpace(fm.Description) == "" {
 		return fmt.Errorf("missing description")
 	}
 	if fm.Type != TypeInstruction && fm.Type != TypeSnippet {

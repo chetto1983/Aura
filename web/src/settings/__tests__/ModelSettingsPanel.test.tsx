@@ -188,6 +188,47 @@ describe('ModelSettingsPanel', () => {
     );
   });
 
+  // Regression, found live 2026-07-27: pressing Cloud moved AURA_LLM_BASE_URL to
+  // OpenRouter and left AURA_LLM_PROVIDER on its previous value, so the daemon booted
+  // the llama.cpp adapter against the OpenRouter endpoint. Settings rows overlay the
+  // process env at boot and outrank .env and ~/.aura/llm.json, so nothing downstream
+  // could correct it. Both buttons must move BOTH keys together.
+  it.each([
+    { button: 'Cloud', baseURL: 'https://openrouter.ai/api/v1', provider: 'openrouter' },
+    { button: 'Local', baseURL: 'http://aura-llm:8084/v1', provider: 'llamacpp' },
+  ])('the $button button writes the provider alongside the base URL', async (route) => {
+    const calls: { url: string; method: string; body: string | undefined }[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = urlOf(input);
+        const method = init?.method ?? 'GET';
+        calls.push({ url, method, body: typeof init?.body === 'string' ? init.body : undefined });
+        if (method === 'PUT') return Promise.resolve(jsonResponse({ ok: true }));
+        return Promise.resolve(jsonResponse(SETTINGS_BODY));
+      }),
+    );
+
+    render(<ModelSettingsPanel onComplete={vi.fn()} />);
+    await screen.findByRole('heading', { name: 'Model routing' });
+
+    fireEvent.click(screen.getByRole('button', { name: route.button }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save runtime settings' }));
+
+    expect(await screen.findByText('Runtime settings saved.')).toBeTruthy();
+    const puts = calls.filter((call) => call.method === 'PUT');
+    expect(puts.find((call) => call.url === '/api/settings/AURA_LLM_PROVIDER')?.body).toBe(
+      JSON.stringify({ value: route.provider }),
+    );
+    // The base URL is written only when the button actually moves it. The fixture is
+    // already on cloud, so pressing Cloud writes the provider ALONE — which is the live
+    // shape of the bug: the operator's base URL was right and the provider was stale.
+    const baseURLPut = puts.find((call) => call.url === '/api/settings/AURA_LLM_BASE_URL');
+    if (baseURLPut !== undefined) {
+      expect(baseURLPut.body).toBe(JSON.stringify({ value: route.baseURL }));
+    }
+  });
+
   it('recovers from a load error via retry and surfaces a failing reload', async () => {
     let getCount = 0;
     vi.stubGlobal(

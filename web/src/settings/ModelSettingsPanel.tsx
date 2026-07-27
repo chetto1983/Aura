@@ -3,13 +3,20 @@ import type { ReactNode } from 'react';
 import { Cloud, Cpu, RefreshCw, RotateCcw, Save } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Spinner } from '../components/Spinner';
+import { deleteSetting, fetchSettings, putSetting, type SettingItem } from './settingsApi';
 import {
-  deleteSetting,
-  fetchSettings,
-  putSetting,
-  type SettingItem,
-  type SettingKind,
-} from './settingsApi';
+  ALL_SETTINGS,
+  BACKEND_SETTINGS,
+  CLOUD_PROVIDER,
+  LOCAL_BASE_URL,
+  LOCAL_PROVIDER,
+  OPENROUTER_BASE_URL,
+  PRIMARY_SETTINGS,
+  resolveProvider,
+  TOKEN_SETTINGS,
+  type SettingDef,
+  type SettingsKey,
+} from './modelSettingsDefs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -17,89 +24,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { SecretInput } from '@/components/ui/secret-input';
 import { cn } from '@/lib/utils';
-
-const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
-const LOCAL_BASE_URL = 'http://aura-vllm-chat:8000/v1';
-
-type SettingsKey =
-  | 'AURA_LLM_MODEL'
-  | 'AURA_LLM_BASE_URL'
-  | 'OPENROUTER_API_KEY'
-  | 'AURA_LLM_MAX_TOKENS'
-  | 'AURA_MODEL_CONTEXT_WINDOW'
-  | 'AURA_MODEL_MAX_OUTPUT_TOKENS'
-  | 'AURA_EMBED_MODEL'
-  | 'AURA_EMBED_BASE_URL'
-  | 'AURA_EMBED_DIMENSIONS'
-  | 'AURA_RERANK_MODEL'
-  | 'AURA_RERANK_BASE_URL'
-  | 'AURA_TTS_MODEL'
-  | 'AURA_STT_CLOUD_MODEL'
-  | 'AURA_VISION_CLOUD';
-
-interface SettingDef {
-  readonly key: SettingsKey;
-  readonly kind: SettingKind;
-  readonly secret?: boolean;
-  readonly labelKey: string;
-  readonly placeholder?: string;
-}
-
-const PRIMARY_SETTINGS: readonly SettingDef[] = [
-  {
-    key: 'AURA_LLM_MODEL',
-    kind: 'string',
-    labelKey: 'settings.fields.primaryModel',
-    placeholder: 'deepseek/deepseek-v4-flash:nitro',
-  },
-  {
-    key: 'AURA_LLM_BASE_URL',
-    kind: 'string',
-    labelKey: 'settings.fields.primaryBaseUrl',
-    placeholder: OPENROUTER_BASE_URL,
-  },
-  {
-    key: 'OPENROUTER_API_KEY',
-    kind: 'string',
-    secret: true,
-    labelKey: 'settings.fields.openRouterKey',
-    placeholder: 'sk-or-...',
-  },
-];
-
-const TOKEN_SETTINGS: readonly SettingDef[] = [
-  {
-    key: 'AURA_LLM_MAX_TOKENS',
-    kind: 'int',
-    labelKey: 'settings.fields.maxTokens',
-    placeholder: '4096',
-  },
-  {
-    key: 'AURA_MODEL_CONTEXT_WINDOW',
-    kind: 'int',
-    labelKey: 'settings.fields.contextWindow',
-    placeholder: '1000000',
-  },
-  {
-    key: 'AURA_MODEL_MAX_OUTPUT_TOKENS',
-    kind: 'int',
-    labelKey: 'settings.fields.maxOutputTokens',
-    placeholder: '32768',
-  },
-];
-
-const BACKEND_SETTINGS: readonly SettingDef[] = [
-  { key: 'AURA_EMBED_BASE_URL', kind: 'string', labelKey: 'settings.fields.embedBaseUrl' },
-  { key: 'AURA_EMBED_MODEL', kind: 'string', labelKey: 'settings.fields.embedModel' },
-  { key: 'AURA_EMBED_DIMENSIONS', kind: 'int', labelKey: 'settings.fields.embedDimensions' },
-  { key: 'AURA_RERANK_BASE_URL', kind: 'string', labelKey: 'settings.fields.rerankBaseUrl' },
-  { key: 'AURA_RERANK_MODEL', kind: 'string', labelKey: 'settings.fields.rerankModel' },
-  { key: 'AURA_STT_CLOUD_MODEL', kind: 'string', labelKey: 'settings.fields.sttCloudModel' },
-  { key: 'AURA_TTS_MODEL', kind: 'string', labelKey: 'settings.fields.ttsModel' },
-  { key: 'AURA_VISION_CLOUD', kind: 'bool', labelKey: 'settings.fields.visionCloud' },
-];
-
-const ALL_SETTINGS = [...PRIMARY_SETTINGS, ...TOKEN_SETTINGS, ...BACKEND_SETTINGS] as const;
 
 interface ModelSettingsPanelProps {
   readonly className?: string;
@@ -148,13 +72,6 @@ function buildState(list: Awaited<ReturnType<typeof fetchSettings>>): LoadedStat
 function errorMessage(err: unknown): string {
   if (err instanceof Error && err.message.trim() !== '') return err.message;
   return String(err);
-}
-
-function isLocalBaseURL(value: string): boolean {
-  const normalized = value.trim().toLowerCase();
-  return (
-    normalized !== '' && normalized !== OPENROUTER_BASE_URL && !normalized.includes('openrouter.ai')
-  );
 }
 
 function SettingsFields({
@@ -243,7 +160,10 @@ export function ModelSettingsPanel({
     }).map((def) => def.key);
   }, [loaded]);
 
-  const provider = isLocalBaseURL(loaded?.values.AURA_LLM_BASE_URL ?? '') ? 'local' : 'cloud';
+  const provider = resolveProvider(
+    loaded?.values.AURA_LLM_PROVIDER ?? '',
+    loaded?.values.AURA_LLM_BASE_URL ?? '',
+  );
 
   function setValue(key: SettingsKey, value: string) {
     setLoaded((prev) =>
@@ -355,6 +275,7 @@ export function ModelSettingsPanel({
             aria-pressed={provider === 'cloud'}
             onClick={() => {
               setValue('AURA_LLM_BASE_URL', OPENROUTER_BASE_URL);
+              setValue('AURA_LLM_PROVIDER', CLOUD_PROVIDER);
             }}
           >
             <Cloud aria-hidden="true" />
@@ -366,6 +287,7 @@ export function ModelSettingsPanel({
             aria-pressed={provider === 'local'}
             onClick={() => {
               setValue('AURA_LLM_BASE_URL', LOCAL_BASE_URL);
+              setValue('AURA_LLM_PROVIDER', LOCAL_PROVIDER);
             }}
           >
             <Cpu aria-hidden="true" />
