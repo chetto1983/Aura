@@ -95,6 +95,26 @@ def test_mutation_and_epoch_increment_share_one_managed_transaction():
     assert session.committed
 
 
+def test_schema_ddl_never_shares_a_transaction_with_the_epoch_bump():
+    """Neo4j refuses DDL + write in one transaction.
+
+    Routing ``CREATE CONSTRAINT`` through ``execute_write`` made the bootstrap fail with
+    ``Tried to execute Write query after executing Schema modification``, so the sidecar
+    could not start against a database whose constraints did not exist yet.
+    """
+    transaction = _Transaction()
+    client, session = _client(transaction)
+
+    rows = asyncio.run(
+        client.execute_schema("CREATE CONSTRAINT conversation_id IF NOT EXISTS FOR ...")
+    )
+
+    assert rows == [{"stored": True}]
+    assert len(transaction.queries) == 1
+    assert "MemoryCorpusRevision" not in transaction.queries[0][0]
+    assert session.committed
+
+
 def test_mutation_failure_never_attempts_epoch_increment():
     transaction = _Transaction(mutation_error=RuntimeError("mutation failed"))
     client, session = _client(transaction)

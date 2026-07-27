@@ -167,6 +167,42 @@ class Neo4jClient:
             records = await session.execute_write(execute_write_tx)
             return records
 
+    async def execute_schema(
+        self,
+        query: str,
+        parameters: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Execute a schema modification (CREATE/DROP CONSTRAINT or INDEX).
+
+        Separate from :meth:`execute_write` because Neo4j refuses to mix statement
+        types in one transaction: a DDL statement followed by the corpus-epoch bump
+        fails with ``Neo.ClientError.Transaction.ForbiddenDueToTransactionType``
+        ("Tried to execute Write query after executing Schema modification"). Schema
+        DDL also has nothing to invalidate — the epoch tracks corpus CONTENT, and a
+        constraint does not change what is stored.
+
+        This only bites on a database whose constraints do not exist yet, because
+        the callers short-circuit on ``check_constraint_exists``. That is why it
+        surfaced as a fresh-Neo4j boot failure and not in any long-lived instance.
+
+        Args:
+            query: Cypher DDL string
+            parameters: Query parameters
+
+        Returns:
+            List of result records as dictionaries
+        """
+        async with self._get_session() as session:
+
+            @unit_of_work(metadata={"app": f"neo4j-agent-memory_v{self._package_version}"})
+            async def execute_schema_tx(tx: AsyncManagedTransaction) -> list[dict[str, Any]]:
+                result = await tx.run(query, parameters or {})
+                return await result.data()
+
+            records = await session.execute_write(execute_schema_tx)
+            return records
+
     async def read_corpus_epoch(self) -> int | None:
         """Return the service-owned corpus epoch, or None when it is unavailable."""
         rows = await self.execute_read(_CORPUS_EPOCH_READ)

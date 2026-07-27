@@ -265,7 +265,7 @@ class SchemaManager:
                 return
 
             query = queries.create_constraint_query(constraint_name, label, property_name)
-            await self._client.execute_write(query)
+            await self._client.execute_schema(query)
         except Exception as e:
             raise SchemaError(f"Failed to create constraint {constraint_name}: {e}") from e
 
@@ -290,7 +290,7 @@ class SchemaManager:
                 return
 
             query = queries.create_composite_constraint_query(constraint_name, label, property_names)
-            await self._client.execute_write(query)
+            await self._client.execute_schema(query)
         except Exception as e:
             raise SchemaError(f"Failed to create constraint {constraint_name}: {e}") from e
 
@@ -307,7 +307,7 @@ class SchemaManager:
                 return
 
             query = queries.create_index_query(index_name, label, property_name)
-            await self._client.execute_write(query)
+            await self._client.execute_schema(query)
         except Exception as e:
             raise SchemaError(f"Failed to create index {index_name}: {e}") from e
 
@@ -326,7 +326,7 @@ class SchemaManager:
             query = queries.create_vector_index_query(
                 index_name, label, property_name, self._vector_dimensions
             )
-            await self._client.execute_write(query)
+            await self._client.execute_schema(query)
         except Exception:
             # Vector indexes require Neo4j 5.11+, log warning but don't fail
             # as the package can still work without vector search
@@ -345,7 +345,7 @@ class SchemaManager:
                 return
 
             query = queries.create_point_index_query(index_name, label, property_name)
-            await self._client.execute_write(query)
+            await self._client.execute_schema(query)
         except Exception:
             # Point indexes require Neo4j 5.0+, log warning but don't fail
             pass
@@ -357,14 +357,14 @@ class SchemaManager:
         for constraint in constraints:
             name = constraint["name"]
             if self._is_memory_schema(name):
-                await self._client.execute_write(queries.drop_constraint_query(name))
+                await self._client.execute_schema(queries.drop_constraint_query(name))
 
         # Get all indexes
         indexes = await self._client.execute_read(queries.SHOW_INDEXES)
         for index in indexes:
             name = index["name"]
             if self._is_memory_schema(name):
-                await self._client.execute_write(queries.drop_index_query(name))
+                await self._client.execute_schema(queries.drop_index_query(name))
 
     def _is_memory_schema(self, name: str) -> bool:
         """Check if a schema element belongs to agent memory."""

@@ -841,6 +841,21 @@ jobs:
           cache-from: type=gha,scope=agent-memory-mcp
           cache-to: type=gha,scope=agent-memory-mcp,mode=max
 
+      # The vendored sidecar ships 117 pytest tests that NOTHING in this pipeline ran —
+      # there was no `pytest` anywhere in .github/workflows. That is how a bootstrap that
+      # cannot create its own schema reached master: the failure needs a virgin Neo4j
+      # (the constraint helpers short-circuit on check_constraint_exists), so no
+      # long-lived instance shows it, and no gate looked. Runs in the image just built,
+      # against the checked-out tree, before the sidecar is started below.
+      - name: agent-memory unit tests (pytest, vendored sidecar)
+        run: |
+          docker run --rm \
+            -v "$PWD/docker/agent-memory:/app" -w /app \
+            aura-agent-memory-mcp:local \
+            sh -lc 'pip install --quiet pytest pytest-asyncio && python -m pytest tests/ -q \
+              --ignore=tests/test_corpus_epoch_live_integration.py \
+              --ignore=tests/test_forget_live_scope_integration.py'
+
       - name: Bring up Postgres + migrate (default-on managed config reads cfg)
         run: make db-migrate
 

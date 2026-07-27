@@ -230,7 +230,10 @@ class FakeSchemaClient:
     async def check_index_exists(self, name):
         return True  # not under test here — keep setup_constraints() focused on constraints
 
-    async def execute_write(self, query, params=None):
+    async def execute_schema(self, query, params=None):
+        # DDL goes through the schema path, never execute_write: the latter appends the
+        # corpus-epoch bump, and Neo4j rejects a write in the same transaction as a schema
+        # modification (see tests/test_schema_ddl_transaction_type.py).
         self.created.append(query)
         return []
 
