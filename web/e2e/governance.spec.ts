@@ -210,18 +210,22 @@ test.describe('Phase 28 — Governance boards (desktop + mobile)', () => {
     }
   });
 
-  test('skills lifecycle sub-tabs are a role=tablist with no run/activate row control', async ({
+  test('skills lifecycle is a state-filter group with no run/activate row control', async ({
     page,
   }) => {
     await openGovernance(page);
     await page.getByRole('tab', { name: 'Skills' }).click();
 
-    // The four lifecycle sub-tabs are a nested tablist.
-    const skillsTabs = page.getByRole('tablist', { name: 'Skills' });
-    await expect(skillsTabs.getByRole('tab', { name: 'Active' })).toBeVisible({ timeout: 15000 });
-    await expect(skillsTabs.getByRole('tab', { name: 'Pending' })).toBeVisible();
-    await expect(skillsTabs.getByRole('tab', { name: 'Archived' })).toBeVisible();
-    await expect(skillsTabs.getByRole('tab', { name: 'Audit' })).toBeVisible();
+    // Amendment #97 merged the four lifecycle tabs into ONE list filtered by state: the
+    // stages are a role=group of filter chips ('Pending' went away with the approval
+    // stage), not a nested tablist. Each chip carries its row count, hence the ^ anchors.
+    const filters = page.getByRole('group', { name: 'Filter by state' });
+    await expect(filters.getByRole('button', { name: /^All/ })).toBeVisible({ timeout: 15000 });
+    await expect(filters.getByRole('button', { name: /^Active/ })).toBeVisible();
+    await expect(filters.getByRole('button', { name: /^Archived/ })).toBeVisible();
+
+    // The audit ledger is a toggle in the same toolbar.
+    await expect(page.getByRole('button', { name: 'Audit' })).toBeVisible();
 
     // No run/activate control exists on rows; the one allowed write CTA is "Install skill".
     await expect(page.getByRole('button', { name: /^(run|activate)\b/i })).toHaveCount(0);

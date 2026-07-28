@@ -96,6 +96,8 @@ export function SkillsToolbar({
           type="button"
           variant="outline"
           aria-pressed={auditOpen}
+          aria-label={auditLabel}
+          title={auditLabel}
           onClick={(e) => {
             onToggleAudit(e.currentTarget);
           }}
