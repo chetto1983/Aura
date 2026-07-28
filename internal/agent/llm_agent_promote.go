@@ -40,11 +40,15 @@ func deriveActivated(hist []llm.Message, reg *tools.Registry) map[string]struct{
 	// Wire-valid history always places an assistant tool_call before its RoleTool
 	// result, so one forward pass suffices to pair them.
 	searchCalls := make(map[string]struct{})
+	called := make(map[string]struct{})
+	var lastLoaded []string
 	for _, m := range hist {
 		for _, tc := range m.ToolCalls {
 			if tc.Function.Name == searchTool {
 				searchCalls[tc.ID] = struct{}{}
+				continue
 			}
+			called[tc.Function.Name] = struct{}{}
 		}
 		if m.Role != llm.RoleTool {
 			continue
@@ -52,11 +56,34 @@ func deriveActivated(hist []llm.Message, reg *tools.Registry) map[string]struct{
 		if _, ok := searchCalls[m.ToolCallID]; !ok {
 			continue
 		}
+		lastLoaded = nil
 		for _, name := range loadedSchemas(m.Content) {
 			if tool, ok := reg.Get(name); ok && tool.Spec().Deferred {
-				activated[name] = struct{}{}
+				lastLoaded = append(lastLoaded, name)
 			}
 		}
+	}
+	// USE promotes, a lookup alone does not. Rebuilding the grant from every
+	// tool_search result ever seen made the promoted set grow monotonically: a tool
+	// looked up once and never called kept its full schema in the manifest for the
+	// rest of the conversation. Measured on this deployment, an MCP tool definition
+	// averages ~368 tokens, so a conversation that had accumulated 56 of them was
+	// paying ~20k tokens of manifest EVERY turn — past the point where tool-choice
+	// accuracy is known to collapse, which is what "the agent got worse the longer
+	// we talked" actually was.
+	//
+	// Same split as earendil-works/pi's splitDeferredTools: a tool the model has
+	// actually invoked stays loaded; one it merely searched does not.
+	for name := range called {
+		if tool, ok := reg.Get(name); ok && tool.Spec().Deferred {
+			activated[name] = struct{}{}
+		}
+	}
+	// The most recent lookup is kept regardless, so searching at the end of a turn
+	// and calling at the start of the next still works. Without this the model can
+	// livelock: search, turn boundary, grant gone, search again.
+	for _, name := range lastLoaded {
+		activated[name] = struct{}{}
 	}
 	return activated
 }
