@@ -188,4 +188,41 @@ func TestMaterializeIn_ValidationBranches(t *testing.T) {
 			t.Fatal("MaterializeIn with a symlink source: want tar error, got nil")
 		}
 	})
+
+	t.Run("a too-broad dest fails before any client call", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		if err := os.WriteFile(filepath.Join(root, "SKILL.md"), []byte("x"), 0o644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		// A nil client is the assertion: the guard must reject the dest BEFORE the rm -rf
+		// exec is created, so reaching the daemon at all would panic here.
+		err := MaterializeIn(ctx, nil, h, []MaterializeSource{{HostDir: root, Dest: "/root"}})
+		if err == nil || !strings.Contains(err.Error(), "too broad") {
+			t.Fatalf("MaterializeIn with dest=/root = %v, want a too-broad refusal", err)
+		}
+	})
+}
+
+// TestDestTooBroadToClear pins the guard standing between a SourceResolver typo and an
+// `rm -rf` that erases the box: the box root and the system/home directories are refused,
+// while the Aura-owned trees the backend actually materializes into are allowed.
+//
+// "/skills" is the load-bearing case in BOTH directions — it is the live production dest, so
+// a guard that refuses it silently disables skills in the sandbox, and a depth-based rule
+// would do exactly that.
+func TestDestTooBroadToClear(t *testing.T) {
+	t.Parallel()
+	refused := []string{"", "/", "/root", "/tmp", "/workspace", "/etc", "/usr", "/var", "/home", "/skills/../etc"}
+	for _, p := range refused {
+		if !destTooBroadToClear(p) {
+			t.Errorf("destTooBroadToClear(%q) = false, want it refused", p)
+		}
+	}
+	allowed := []string{"/skills", "/root/.aura/agents", "/root/.aura/pyscripts", "/opt/aura/skills"}
+	for _, p := range allowed {
+		if destTooBroadToClear(p) {
+			t.Errorf("destTooBroadToClear(%q) = true, want it allowed", p)
+		}
+	}
 }

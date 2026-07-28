@@ -248,6 +248,60 @@ func TestResolve_MaterializesInputs(t *testing.T) {
 	}
 }
 
+// TestResolve_MaterializeMirrorsHost proves materialize MIRRORS the host dir rather than
+// merging into it. A tar extract only ever adds, so without the clear step two things
+// survived in the box indefinitely: a skill deleted or archived on the host (the ledger said
+// gone, the sandbox still ran it) and anything the model itself wrote into /skills — an
+// `npx skills add` drops a whole agent-layout tree there, and it then sat beside the real
+// skills, indistinguishable at use time.
+func TestResolve_MaterializeMirrorsHost(t *testing.T) {
+	skipUnlessDockerd(t)
+	cli := newTestDockerClient(t)
+	ctx := context.Background()
+
+	skillsRoot := t.TempDir()
+	writeFixture(t, filepath.Join(skillsRoot, "keeper", "keeper.py"), "print('keeper')\n")
+	writeFixture(t, filepath.Join(skillsRoot, "doomed", "doomed.py"), "print('doomed')\n")
+
+	sources := func(string) []MaterializeSource {
+		return []MaterializeSource{{HostDir: skillsRoot, Dest: "/skills"}}
+	}
+	backend := NewDockerBackend(cli, testBoxImage(), testLimits(), WithMaterializeSources(sources))
+
+	spec := SandboxSpec{IdentityID: uniqueIdentity(t, "mirror")}
+	h, err := backend.Resolve(ctx, spec)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	t.Cleanup(func() { _ = backend.Stop(context.Background(), h) })
+	assertBoxFile(t, cli, h.ContainerID, "/skills/doomed/doomed.py", "doomed")
+
+	// The model self-installs into /skills (what `npx skills add` does), and the operator
+	// deletes a skill on the host. Neither is visible to the other until the next resolve.
+	if _, code := rawExec(t, cli, h.ContainerID, []string{"/bin/sh", "-c",
+		"mkdir -p /skills/.agents/skills/rogue && echo rogue > /skills/.agents/skills/rogue/SKILL.md"}); code != 0 {
+		t.Fatalf("seed rogue self-install: exit %d", code)
+	}
+	if err := os.RemoveAll(filepath.Join(skillsRoot, "doomed")); err != nil {
+		t.Fatalf("delete host skill: %v", err)
+	}
+
+	if err := backend.Suspend(ctx, h); err != nil {
+		t.Fatalf("suspend: %v", err)
+	}
+	if _, err := backend.Resolve(ctx, spec); err != nil {
+		t.Fatalf("resolve (resume): %v", err)
+	}
+
+	// The surviving host skill is still there; the deleted one and the rogue tree are gone.
+	assertBoxFile(t, cli, h.ContainerID, "/skills/keeper/keeper.py", "keeper")
+	for _, gone := range []string{"/skills/doomed", "/skills/.agents"} {
+		if _, code := rawExec(t, cli, h.ContainerID, []string{"/bin/sh", "-c", "test -e " + gone}); code == 0 {
+			t.Errorf("%q must not survive a re-materialize: the box mirrors the host, it does not merge", gone)
+		}
+	}
+}
+
 // writeFixture writes a host fixture file, creating parent dirs.
 func writeFixture(t *testing.T, path, content string) {
 	t.Helper()

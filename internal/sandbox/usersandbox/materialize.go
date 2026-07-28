@@ -18,15 +18,23 @@ import (
 	pathpkg "path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/moby/moby/client"
 )
 
-// MaterializeIn tar-streams each source's host dir into the box, landing its contents under
-// the source's Dest root (e.g. skills at "/skills", so the in-box path equals the one
-// SnippetSandboxPath renders). A missing host dir is skipped (nothing to materialize); a
-// symlink or non-regular file is rejected (no symlink escape — sandbox-runtime guard). It is
-// called from Resolve at BOTH create and resume, and MUST fail Resolve closed on error.
+// MaterializeIn makes each source's Dest root inside the box MIRROR its host dir: the stale
+// dest is cleared, then the host tree is tar-streamed in, landing under Dest (e.g. skills at
+// "/skills", so the in-box path equals the one SnippetSandboxPath renders). A missing host
+// dir is skipped (nothing to materialize); a symlink or non-regular file is rejected (no
+// symlink escape — sandbox-runtime guard). It is called from Resolve at BOTH create and
+// resume, and MUST fail Resolve closed on error.
+//
+// The clear is what makes this a MIRROR rather than a merge, and it is load-bearing twice
+// over. A tar extract only ever adds: without it an archived or deleted skill stayed in the
+// box forever — the ledger said gone, the sandbox still ran it — and anything the model
+// wrote into /skills itself (an `npx skills add` lands a whole agent-layout tree there)
+// accumulated invisibly beside the real skills, indistinguishable from them at use time.
 func MaterializeIn(ctx context.Context, cli *client.Client, h BoxHandle, srcs []MaterializeSource) error {
 	for _, s := range srcs {
 		if strings.TrimSpace(s.HostDir) == "" || strings.TrimSpace(s.Dest) == "" {
@@ -46,6 +54,9 @@ func MaterializeIn(ctx context.Context, cli *client.Client, h BoxHandle, srcs []
 		if err != nil {
 			return fmt.Errorf("materialize tar %q: %w", s.HostDir, err)
 		}
+		if err := clearDest(ctx, cli, h, s.Dest); err != nil {
+			return fmt.Errorf("materialize clear %q: %w", s.Dest, err)
+		}
 		// Extract at "/" with dest-rooted entry names; the daemon MkdirAll's the parents, so
 		// a deep Dest (e.g. /root/.aura/agents) needs no pre-existing directory in the box.
 		if _, err := cli.CopyToContainer(ctx, h.ContainerID, client.CopyToContainerOptions{
@@ -56,6 +67,63 @@ func MaterializeIn(ctx context.Context, cli *client.Client, h BoxHandle, srcs []
 		}
 	}
 	return nil
+}
+
+// clearDest removes dest inside the box so the following extraction mirrors the host rather
+// than merging into it. dest comes from the composition root's SourceResolver, never from a
+// model or a request, but it is the argument of an `rm -rf` inside the box, so it is checked
+// against destTooBroadToClear first: a misconfigured empty or root-ish dest must fail loudly,
+// not erase the box.
+func clearDest(ctx context.Context, cli *client.Client, h BoxHandle, dest string) error {
+	clean := pathpkg.Clean("/" + strings.Trim(strings.TrimSpace(dest), "/"))
+	if destTooBroadToClear(clean) {
+		return fmt.Errorf("refusing to clear box path %q (too broad)", dest)
+	}
+	ec, err := cli.ExecCreate(ctx, h.ContainerID, client.ExecCreateOptions{
+		Cmd: []string{"/bin/sh", "-c", "rm -rf -- " + clean},
+	})
+	if err != nil {
+		return fmt.Errorf("exec create: %w", err)
+	}
+	if _, err := cli.ExecStart(ctx, ec.ID, client.ExecStartOptions{}); err != nil {
+		return fmt.Errorf("exec start: %w", err)
+	}
+	// ExecStart is fire-and-forget: poll ExecInspect until the rm exits so the extraction
+	// cannot race the removal and lose freshly-copied files.
+	for {
+		ins, ierr := cli.ExecInspect(ctx, ec.ID, client.ExecInspectOptions{})
+		if ierr != nil {
+			return fmt.Errorf("exec inspect: %w", ierr)
+		}
+		if !ins.Running {
+			if ins.ExitCode != 0 {
+				return fmt.Errorf("rm -rf %q exited %d", clean, ins.ExitCode)
+			}
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
+
+// destTooBroadToClear rejects the paths an `rm -rf` must never be handed. A materialize dest
+// is a dedicated Aura-owned tree the backend fully owns ("/skills", "/root/.aura/agents"), so
+// the rule is a denylist of roots that belong to someone else: the box root, the standard
+// system directories, and the box's own home/workspace/tmp. A config typo then fails loudly
+// instead of erasing the box out from under the running agent.
+//
+// Depth is deliberately NOT the rule — "/skills", the live dest, is one segment deep.
+func destTooBroadToClear(clean string) bool {
+	switch clean {
+	case "", "/", "/bin", "/boot", "/dev", "/etc", "/home", "/lib", "/lib32", "/lib64",
+		"/media", "/mnt", "/opt", "/proc", "/root", "/run", "/sbin", "/srv", "/sys",
+		"/tmp", "/usr", "/var", "/workspace":
+		return true
+	}
+	return !strings.HasPrefix(clean, "/") || strings.Contains(clean, "..")
 }
 
 // CopyArtifactsOut returns a tar stream of boxPath (a box /workspace artifact) via
