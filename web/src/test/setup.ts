@@ -44,23 +44,22 @@ if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
 // unhandled error and fails the run even though every assertion passed. Give both a minimal
 // rect so scroll-to-selection is a silent no-op instead of a throw.
 if (typeof Range !== 'undefined' && typeof Element !== 'undefined') {
-  const rect = (): DOMRect =>
-    ({
-      x: 0,
-      y: 0,
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      width: 0,
-      height: 0,
-      toJSON: () => ({}),
-    }) as DOMRect;
+  const rect = (): DOMRect => ({
+    x: 0,
+    y: 0,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: 0,
+    height: 0,
+    toJSON: () => ({}),
+  });
   const rectList = (): DOMRectList => {
     const rects = [rect()];
     return Object.assign(rects, {
       item: (index: number): DOMRect | null => rects[index] ?? null,
-    }) as unknown as DOMRectList;
+    });
   };
   for (const proto of [Range.prototype, Element.prototype]) {
     proto.getClientRects = rectList;
