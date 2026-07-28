@@ -44,11 +44,13 @@ type LlmAgent struct {
 	client      llm.Client
 	cfg         llm.Config
 	registry    *tools.Registry
-	// activated is the per-run set of deferred tool names promoted into the callable
-	// manifest by tool_search (Claude Code parity: a deferred tool is not callable
-	// until its schema is loaded). Reset per run (a fresh LlmAgent per turn), written
-	// only in the serial dispatch result loop (promoteFromMeta) and read by
-	// buildRequest and the dispatch gate.
+	// activated is the set of deferred tool names promoted into the callable manifest
+	// by tool_search (Claude Code parity: a deferred tool is not callable until its
+	// schema is loaded). It is CONVERSATION-scoped: a fresh LlmAgent per turn seeds it
+	// from the rehydrated history (deriveActivated), because a tool_search result keeps
+	// the loaded schema visible in the transcript across turns. Written only by
+	// promoteFromMeta in the serial dispatch result loop, and read by buildRequest and
+	// the dispatch gate.
 	activated  map[string]struct{}
 	previewCap int
 	runDir     string
