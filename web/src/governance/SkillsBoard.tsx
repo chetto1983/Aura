@@ -37,6 +37,12 @@ const SkillEditor = lazy(() => import('./SkillEditor').then((m) => ({ default: m
 //
 // The two lifecycle stages are fetched together (the counts need both anyway), so
 // filtering and searching are local: no refetch, no spinner, no stale-tab flicker.
+//
+// The queries DO refetch on window focus, against the SPA-wide default. This board is a
+// view of state other actors change — the agent installs a skill mid-turn, the operator
+// runs `aura skills create` in a terminal — and a board left open on another tab showed
+// a snapshot from whenever it mounted. Coming back to the tab is exactly the moment the
+// answer is expected to be current.
 
 export function SkillsBoard() {
   const { t } = useTranslation();
@@ -56,16 +62,19 @@ export function SkillsBoard() {
     queryKey: ['governance', 'skills', 'active'],
     queryFn: () => fetchSkills('active'),
     retry: false,
+    refetchOnWindowFocus: true,
   });
   const archived = useQuery({
     queryKey: ['governance', 'skills', 'archived'],
     queryFn: () => fetchSkills('archived'),
     retry: false,
+    refetchOnWindowFocus: true,
   });
   const audit = useQuery({
     queryKey: ['governance', 'skills', 'audit'],
     queryFn: fetchSkillsAudit,
     retry: false,
+    refetchOnWindowFocus: true,
     enabled: auditOpen,
   });
 

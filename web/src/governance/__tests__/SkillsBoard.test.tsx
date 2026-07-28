@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { focusManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '../../i18n/i18n';
 import type { AuditRow, SkillRow } from '../governanceApi';
 
@@ -142,6 +142,30 @@ describe('SkillsBoard (GOV-02)', () => {
     const chips = within(group).getAllByRole('button');
     expect(chips.map((c) => c.textContent)).toEqual(['All3', 'Active2', 'Archived1']);
     expect(chips[0]?.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('refetches when the tab regains focus — the agent and the CLI change this list too', async () => {
+    renderBoard();
+    await waitFor(() => {
+      expect(screen.getByText('golang-testing')).toBeTruthy();
+    });
+    const before = fetchSkills.mock.calls.length;
+
+    // A skill installed by the agent mid-turn, or created from a terminal, must show up
+    // when the operator comes back to the board — not only after a reload.
+    stageFixtures(
+      [...ACTIVE, { name: 'hello-world', description: 'installed elsewhere', type: 'instruction' }],
+      ARCHIVED,
+    );
+    // Drive the library's own focus manager: a refetch fires on the TRANSITION back to
+    // focused, and jsdom starts out focused, so a bare visibilitychange is a no-op.
+    focusManager.setFocused(false);
+    focusManager.setFocused(true);
+
+    await waitFor(() => {
+      expect(screen.getByText('hello-world')).toBeTruthy();
+    });
+    expect(fetchSkills.mock.calls.length).toBeGreaterThan(before);
   });
 
   it('has no Pending affordance anywhere — the stage is gone (amendment #97)', async () => {
