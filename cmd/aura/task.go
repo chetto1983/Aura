@@ -24,6 +24,7 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/scoring"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -117,16 +118,31 @@ func taskSchedule(ctx context.Context, cfg *config.Config, args []string) {
 	pool := openTaskPool(ctx, cfg)
 	defer pool.Close()
 
-	id := uuid.Must(uuid.NewV7()).String()
-	_, err = pool.Exec(ctx, `
-		INSERT INTO aura.scheduler_tasks
-			(id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
-			 step_budget, status, next_run_at, notify_route)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-		id, *kind, scheduleKind,
-		nullableText(spec.CronExpr), nullableInt(spec.EveryMinutes), nullableTime(spec.RunAt),
-		spec.TZ, payload, nullableInt(*maxSteps), status, nullableTime(next), nullableText(*notify))
+	// Without this the INSERT omitted identity_id and took the column default 'local'
+	// (migration 0009), which the dispatcher's origin gate reads as "no channel owns this
+	// task" — so a CLI-scheduled reminder could never be delivered to Telegram or any
+	// other channel, silently, no matter what --notify said. Resolve or refuse, the same
+	// posture `aura memory` takes: writing a task under an identity that cannot receive it
+	// is the failure this papers over.
+	identityID, err := identityctx.OperatorIdentity(ctx, pool)
 	if err != nil {
+		fmt.Fprintln(os.Stderr, "aura task schedule: cannot resolve the operator identity to own this task:", err)
+		os.Exit(exitInfra)
+	}
+
+	id := uuid.Must(uuid.NewV7()).String()
+	if err := insertScheduledTask(ctx, pool, scheduledTaskRow{
+		ID:           id,
+		Kind:         *kind,
+		ScheduleKind: scheduleKind,
+		Spec:         spec,
+		Payload:      payload,
+		StepBudget:   *maxSteps,
+		Status:       status,
+		NextRunAt:    next,
+		NotifyRoute:  *notify,
+		IdentityID:   identityID,
+	}); err != nil {
 		fmt.Fprintln(os.Stderr, "aura task schedule:", err)
 		os.Exit(exitInfra)
 	}
@@ -137,6 +153,36 @@ func taskSchedule(ctx context.Context, cfg *config.Config, args []string) {
 	} else if !next.IsZero() {
 		fmt.Printf("next run: %s\n", next.UTC().Format(time.RFC3339))
 	}
+}
+
+// scheduledTaskRow is one row of aura.scheduler_tasks as the CLI writes it. It exists so
+// the INSERT can be exercised without going through flag parsing and os.Exit — the bug it
+// guards (identity_id absent from the column list, so every CLI task defaulted to 'local'
+// and could never be delivered to a channel) was invisible to every test in this package.
+type scheduledTaskRow struct {
+	ID           string
+	Kind         string
+	ScheduleKind string
+	Spec         cron.ScheduleSpec
+	Payload      []byte
+	StepBudget   int
+	Status       string
+	NextRunAt    time.Time
+	NotifyRoute  string
+	IdentityID   string
+}
+
+func insertScheduledTask(ctx context.Context, pool *pgxpool.Pool, row scheduledTaskRow) error {
+	_, err := pool.Exec(ctx, `
+		INSERT INTO aura.scheduler_tasks
+			(id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
+			 step_budget, status, next_run_at, notify_route, identity_id)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+		row.ID, row.Kind, row.ScheduleKind,
+		nullableText(row.Spec.CronExpr), nullableInt(row.Spec.EveryMinutes), nullableTime(row.Spec.RunAt),
+		row.Spec.TZ, row.Payload, nullableInt(row.StepBudget), row.Status, nullableTime(row.NextRunAt),
+		nullableText(row.NotifyRoute), row.IdentityID)
+	return err
 }
 
 // triadToSpec resolves exactly one of --cron/--at/--every to a schedule_kind. An
