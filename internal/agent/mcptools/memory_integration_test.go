@@ -162,11 +162,15 @@ func TestMemoryLiveNoPrincipalBridgeScopesToOperator(t *testing.T) {
 	}
 	// The search must actually have run and returned the facts bucket (not an error
 	// swallowed into a vacuous pass); then, operator-scoped, the foreign fact must NOT
-	// surface. The seeded subject is unique, so its presence in the result is the leak signal.
+	// surface. The leak signal is the seeded fact's OWN marker fields — its predicate
+	// "has_marker" and object "secret" — NOT the subject: memory_search echoes the query
+	// verbatim in a top-level "query" field, so the subject string is always present in the
+	// result and is not a leak signal (asserting it was a false positive — the facts bucket
+	// came back [] and the read was correctly scoped, yet the subject matched the echo).
 	if !strings.Contains(res.Preview, `"facts"`) {
 		t.Fatalf("memory_search did not return the facts bucket — read path is untested: %s", res.Preview)
 	}
-	if strings.Contains(res.Preview, subject) || strings.Contains(res.Preview, "has_marker") {
+	if strings.Contains(res.Preview, "has_marker") || strings.Contains(res.Preview, `"secret"`) {
 		t.Fatalf("no-principal bridge read leaked a foreign user's fact (fail-open NOT closed): %s", res.Preview)
 	}
 
