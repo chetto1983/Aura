@@ -23,9 +23,12 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }
 
-// TestPingEmbed_DimMismatch asserts the Pattern 5 self-test refuses a wrong-dim
-// sidecar with the load-bearing literal error (T-1.07-05). The sidecar is mocked
-// to return a 384-element vector against the default 768.
+// TestPingEmbed_DimMismatch asserts the Pattern 5 self-test refuses a sidecar
+// NARROWER than the contract, with the load-bearing literal error (T-1.07-05).
+// The sidecar is mocked to return a 384-element vector against the default 768.
+//
+// Narrower is the fatal direction: a wider sidecar is the normal MRL case and is
+// accepted, see TestPingEmbed_WiderSidecarIsAccepted.
 func TestPingEmbed_DimMismatch(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -49,12 +52,38 @@ func TestPingEmbed_DimMismatch(t *testing.T) {
 	for _, want := range []string{
 		"embedding sidecar returned dim=384",
 		"AURA_EMBED_DIMENSIONS=768",
-		"refuse to start (Pitfall #7 silent corruption)",
+		"narrower than AURA_EMBED_DIMENSIONS=768",
+		"refuse to start (Pitfall #7 silent corruption",
 		"amendment #18 swap runbook",
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error missing %q\n  got: %v", want, err)
 		}
+	}
+}
+
+// TestPingEmbed_WiderSidecarIsAccepted pins the MRL contract: an embedder whose
+// native width EXCEEDS AURA_EMBED_DIMENSIONS must boot, because the write path
+// Matryoshka-truncates every vector to the index width. Rejecting it would make
+// every MRL-trained embedder unusable — and the llama.cpp sidecar cannot narrow
+// its own output, since it ignores the OpenAI `dimensions` request parameter.
+func TestPingEmbed_WiderSidecarIsAccepted(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		var sb strings.Builder
+		sb.WriteString(`{"data":[{"embedding":[`)
+		for i := range 1024 {
+			if i > 0 {
+				sb.WriteByte(',')
+			}
+			sb.WriteString("0.1")
+		}
+		sb.WriteString(`]}]}`)
+		_, _ = w.Write([]byte(sb.String()))
+	}))
+	defer srv.Close()
+
+	if err := pingEmbed(context.Background(), srv.URL, DefaultEmbedDimensions); err != nil {
+		t.Fatalf("pingEmbed: a 1024-wide sidecar against a 768 index must boot, got %v", err)
 	}
 }
 

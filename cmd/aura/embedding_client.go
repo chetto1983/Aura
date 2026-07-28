@@ -9,7 +9,7 @@ import (
 
 // embeddingClient builds a documents.EmbeddingClient resolving the ONE-knob
 // local↔cloud embed swap (config.EmbedRoute, D-28): AURA_EMBED_MODEL unset → the
-// local granite sidecar with no auth; set → the shared OpenRouter endpoint with
+// local embedding sidecar with no auth; set → the shared OpenRouter endpoint with
 // the single OPENROUTER_API_KEY. Dimensions is the single AURA_EMBED_DIMENSIONS
 // width the client validates and (on the cloud route) requests. Centralized so the
 // four construction sites (chat, docs generator/query, doctor) stay identical.

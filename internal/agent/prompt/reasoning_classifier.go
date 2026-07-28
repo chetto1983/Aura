@@ -83,7 +83,7 @@ var trivialGreetings = map[string]struct{}{
 }
 
 // ReasoningClassifier maps a user turn to a reasoning tier by semantic proximity
-// to the per-tier anchor centroids, using Aura's local granite embedding sidecar.
+// to the per-tier anchor centroids, using Aura's local embedding sidecar.
 // It replaces the per-turn LLM "router" round-trip (the adaptive-reasoning
 // latency root cause) with a single ~10ms local embed + cosine argmax. The
 // centroid/cosine/margin math lives in semindex.Classifier (Centroid mode); this

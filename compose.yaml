@@ -504,12 +504,15 @@ services:
       LLAMA_ARG_HOST: 0.0.0.0
     command:
       - --hf-repo
-      - ${AURA_EMBED_HF_REPO:-SandLogicTechnologies/granite-embedding-311m-multilingual-r2-GGUF}
+      - ${AURA_EMBED_HF_REPO:-Qwen/Qwen3-Embedding-0.6B-GGUF}
       - --hf-file
-      - ${AURA_EMBED_HF_FILE:-granite-embedding-311M-multilingual-r2_Q6_k.gguf}
+      - ${AURA_EMBED_HF_FILE:-Qwen3-Embedding-0.6B-Q8_0.gguf}
       - --embeddings
+      # Pooling is a property of the embedding model, not a house style, and the wrong
+      # choice degrades similarity silently rather than failing. It therefore travels
+      # with the model in .env instead of being hardcoded here.
       - --pooling
-      - cls
+      - ${AURA_EMBED_POOLING:-last}
       - --embd-normalize
       - "2"
       - -ngl
@@ -564,7 +567,7 @@ services:
       # MCP itself can still be pointed at a real key through OPENROUTER_API_KEY.
       NAM_LLM_API_KEY: ${OPENROUTER_API_KEY:-aura-memory-mcp-placeholder-key}
       # Embedder local↔cloud swap (D-28), reusing the SINGLE OpenRouter key + the
-      # SINGLE AURA_EMBED_DIMENSIONS. Defaults preserve the local granite sidecar.
+      # SINGLE AURA_EMBED_DIMENSIONS. Defaults preserve the local embedding sidecar.
       # To go cloud: AURA_EMBED_MODEL=qwen/qwen3-embedding-8b (the openai/ adapter
       # prefix is prepended), AURA_MEMORY_EMBED_BASE_URL=https://openrouter.ai/api/v1,
       # AURA_MEMORY_EMBED_API_KEY=${OPENROUTER_API_KEY}.
@@ -573,7 +576,7 @@ services:
       # OPENAI_BASE_URL / OPENAI_API_KEY below. They are NOT runtime-overridable via
       # the cockpit Settings page — the daemon's os.Setenv overlay cannot reach an
       # already-running sidecar (so they were removed from settings.AllowedKeys).
-      NAM_EMBEDDING: openai/${AURA_EMBED_MODEL:-granite-embedding-311m-multilingual-r2}
+      NAM_EMBEDDING: openai/${AURA_EMBED_MODEL:-qwen3-embedding-0.6b}
       OPENAI_API_KEY: ${AURA_MEMORY_EMBED_API_KEY:-local-llama}
       OPENAI_BASE_URL: ${AURA_MEMORY_EMBED_BASE_URL:-http://aura-llama-embed:8081/v1}
       # Without this the RET-02 recall reranker degrades to identity order and the whole

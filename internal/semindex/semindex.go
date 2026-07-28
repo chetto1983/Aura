@@ -11,7 +11,7 @@ package semindex
 import "context"
 
 // Embedder is the narrow embedding seam the index needs. It matches
-// documents.EmbeddingClient.Embed exactly so the production granite sidecar
+// documents.EmbeddingClient.Embed exactly so the production embedding sidecar
 // client satisfies it without an adapter. Owned here (the shared core) so both
 // the tool ranker and the reasoning classifier depend on one interface;
 // prompt.Embedder becomes a type alias of this (D-01, no-adapter preserved).

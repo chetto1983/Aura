@@ -13,7 +13,7 @@ import (
 // It is short — the probe is a non-fatal liveness log, never a gate on boot.
 const embedHealthCheckTimeout = 3 * time.Second
 
-// wireToolSearchEmbedder wires the granite embedder into the registered tool_search
+// wireToolSearchEmbedder wires the embedder into the registered tool_search
 // hook so free-text tool_search ranks deferred tools by embedding cosine (08.2-03).
 // The embed sidecar is a HARD dependency for tool_search: with it down, tool_search
 // Execute returns an explicit model-visible error (Req-6) — but boot is NOT failed
@@ -38,12 +38,12 @@ func wireToolSearchEmbedder(reg *tools.Registry, embedder prompt.Embedder) {
 		slog.Warn("tool_search semantic ranking disabled: no embedder wired (embed sidecar)")
 		return
 	}
-	// Boot health-check: probe the embed sidecar (granite :8081) once. Log-only —
+	// Boot health-check: probe the embed sidecar (:8081) once. Log-only —
 	// never fatal, never blocks boot.
 	ctx, cancel := context.WithTimeout(context.Background(), embedHealthCheckTimeout)
 	defer cancel()
 	if _, err := embedder.Embed(ctx, []string{"healthcheck"}); err != nil {
-		slog.Warn("embed sidecar unreachable at boot: tool_search free-text ranking will error until it recovers (granite :8081)",
+		slog.Warn("embed sidecar unreachable at boot: tool_search free-text ranking will error until it recovers (:8081)",
 			"error", err)
 	}
 }

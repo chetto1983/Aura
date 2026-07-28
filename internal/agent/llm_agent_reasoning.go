@@ -29,7 +29,7 @@ func (a *LlmAgent) adaptiveReasoningTier(ctx context.Context) (prompt.ReasoningT
 		return prompt.ReasoningTierLow, true
 	}
 
-	// Fast path: the local embedding classifier (granite sidecar, ~10ms) replaces
+	// Fast path: the local embedding classifier (embedding sidecar, ~10ms) replaces
 	// the per-turn LLM router round-trip. On any embed failure it returns false;
 	// when a classifier is wired, degrade to static low reasoning instead of
 	// spending a second network call every turn.

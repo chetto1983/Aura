@@ -538,7 +538,7 @@ func assembleChatEnvWithOptions(
 		ResumeHook:  chainResumeHooks(newShellResumeHook(toolHandles.ShellApprovals), newGatewayResumeHook(gw), newScheduledTaskResumeHook(taskStore)),
 		HookManager: hookManager,
 		Gateway:     gw,
-		// Local embedding-based reasoning-tier classifier (granite sidecar):
+		// Local embedding-based reasoning-tier classifier (embedding sidecar):
 		// replaces the per-turn LLM router round-trip. Empty EmbedURL => the agent
 		// falls back to the LLM router.
 		Embedder: embeddingClient(cfg, documentHTTPClient(cfg)),

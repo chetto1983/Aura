@@ -108,7 +108,7 @@ services:
       #   cloud:  AURA_MEMORY_EMBED_BASE_URL=https://openrouter.ai/api/v1
       OPENAI_BASE_URL: ${AURA_MEMORY_EMBED_BASE_URL:?set AURA_MEMORY_EMBED_BASE_URL in .env — it must match AURA_EMBED_BASE_URL (same 768d index); http://aura-llama-embed:8081/v1 local, https://openrouter.ai/api/v1 cloud}
       OPENAI_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY required in .env}
-      NAM_EMBEDDING: openai/${AURA_EMBED_MODEL:-granite-embedding-311m-multilingual-r2}
+      NAM_EMBEDDING: openai/${AURA_EMBED_MODEL:-qwen3-embedding-0.6b}
       # --- rerank → OpenRouter, SAME endpoint + model the aura service uses above ---
       # Without these three the sidecar keeps the base compose's http://aura-rerank:8085,
       # a service that never starts on a GPU-less box: the client fail-softs to identity

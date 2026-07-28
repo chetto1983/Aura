@@ -9,7 +9,7 @@
 package knowledge
 
 // DefaultEmbedDimensions is the vector width emitted by the repo's default
-// Granite embedding sidecar (granite-embedding-311m-multilingual-r2, 768d) and
+// embedding sidecar under its MRL-truncated AURA_EMBED_DIMENSIONS width, and
 // encoded in the initial Neo4j HNSW index.
 const DefaultEmbedDimensions = 768
 
@@ -24,5 +24,5 @@ type Config struct {
 	ConnectTimeoutSec int    // first-call connect/retry budget
 	EmbedURL          string // OpenAI-compat embeddings base URL (sidecar)
 	EmbedDimensions   int    // contract dim; boot self-test refuses a mismatch
-	EmbedModel        string // AURA_EMBED_MODEL — set to a cloud model (e.g. qwen/qwen3-embedding-8b) to swap embeddings to OpenRouter; empty = local granite sidecar
+	EmbedModel        string // AURA_EMBED_MODEL — set to a hosted model to swap embeddings to OpenRouter; empty = local embedding sidecar
 }

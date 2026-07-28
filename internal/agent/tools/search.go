@@ -27,7 +27,7 @@ func searchDocumentHash(s Spec) string {
 // `select:<name>,<name>` argument or a free-text query to load the full
 // Description+Parameters into context.
 //
-// Free-text queries are ranked SEMANTICALLY by granite-embedding cosine
+// Free-text queries are ranked SEMANTICALLY by embedding cosine
 // (semindex.Ranker, PerItem) over an expanded per-tool search document (the same
 // flattened searchDocument BM25 builds — D-02, spike-056 "bm25doc input"), then
 // capped to max_results. BM25 contributes only as a guarded, intersection-gated
@@ -41,7 +41,7 @@ func searchDocumentHash(s Spec) string {
 type ToolSearch struct {
 	Registry *Registry
 
-	// Embed is the granite-embedding seam used to embed the per-tool search docs
+	// Embed is the embedding seam used to embed the per-tool search docs
 	// and the query (semindex.Embedder; documents.EmbeddingClient satisfies it with
 	// no adapter). Wired by the composition root (runner). nil => free-text ranking
 	// returns an explicit error (Req-6); the select: path still works.
@@ -273,7 +273,7 @@ func (ts *ToolSearch) Execute(ctx context.Context, raw json.RawMessage) (ToolRes
 
 // match resolves a query to tools. The `select:` path resolves any registered tool
 // by exact name and ignores limit (uncapped) — UNCHANGED, needs no embedder. The
-// free-text path ranks deferred-only tools by granite-embedding cosine (semindex)
+// free-text path ranks deferred-only tools by embedding cosine (semindex)
 // with a guarded BM25 tiebreak and returns the top-limit matches. A non-nil error
 // is the embed-sidecar-down INFRA error (Req-6), distinct from an empty result
 // (capability gap).

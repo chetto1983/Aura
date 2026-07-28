@@ -7,7 +7,7 @@ import (
 	"github.com/chetto1983/aura/internal/semindex"
 )
 
-// Free-text tool_search is EMBEDDING-PRIMARY (spike-056): granite-embedding cosine
+// Free-text tool_search is EMBEDDING-PRIMARY (spike-056): embedding cosine
 // over the bm25-doc text is the order. BM25 contributes ONLY as a guarded tiebreak,
 // never as naive RRF — on Aura's dominant Italian-query traffic BM25 has zero signal
 // (Italian query vs English tool description = no lexical overlap), so fusing it as a

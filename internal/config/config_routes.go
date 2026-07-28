@@ -29,9 +29,9 @@ func (c *Config) RerankRoute() (baseURL, apiKey, model string) {
 }
 
 // EmbedRoute resolves the embeddings endpoint as a ONE-knob local↔cloud swap
-// (D-28): with AURA_EMBED_MODEL unset it is the local granite sidecar at
+// (D-28): with AURA_EMBED_MODEL unset it is the local embedding sidecar at
 // Neo4j.EmbedURL with no auth; set AURA_EMBED_MODEL to a cloud model (e.g.
-// qwen/qwen3-embedding-8b) and it routes to the shared OpenRouter endpoint with
+// a hosted embedding model) and it routes to the shared OpenRouter endpoint with
 // the SINGLE OPENROUTER_API_KEY. A non-loopback EmbedURL overrides the OpenRouter
 // base for a custom cloud embedder.
 func (c *Config) EmbedRoute() (baseURL, apiKey, model string) {

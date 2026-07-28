@@ -102,7 +102,7 @@ type Deps struct {
 	ResumeHook            ResumeHook
 	// Embedder wires the local embedding-based reasoning-tier classifier into
 	// each per-turn agent (replaces the LLM router round-trip). nil => the agent
-	// falls back to the LLM router. The composition root passes the granite
+	// falls back to the LLM router. The composition root passes the embedding
 	// sidecar client (documents.EmbeddingClient over Neo4j.EmbedURL).
 	Embedder prompt.Embedder
 	// HookManager is the optional agent extension surface. nil keeps the agent's
@@ -212,7 +212,7 @@ func New(d Deps) *Runner {
 	// Build the static curated-seed reasoning classifier once so its anchors are
 	// amortized across every turn.
 	classifier := prompt.NewReasoningClassifier(d.Embedder)
-	// Wire the SAME granite embedder into the tool_search ranker (08.2-03): free-text
+	// Wire the SAME embedder into the tool_search ranker (08.2-03): free-text
 	// tool_search ranks deferred tools by embedding cosine, so the embed sidecar is a
 	// HARD dependency for tool_search (Req-6). The reasoning classifier keeps its SOFT
 	// LLM-router fallback (risk #9) — the hard-dep is tool_search-only. A non-fatal

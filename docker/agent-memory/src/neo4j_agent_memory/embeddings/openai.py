@@ -1,5 +1,6 @@
 """OpenAI embedding provider."""
 
+import math
 from typing import TYPE_CHECKING
 
 from neo4j_agent_memory.core.exceptions import EmbeddingError
@@ -76,9 +77,40 @@ class OpenAIEmbedder(BaseEmbedder):
                 kwargs["dimensions"] = self._requested_dimensions
 
             response = await client.embeddings.create(**kwargs)
-            return response.data[0].embedding
+            return self._fit(response.data[0].embedding)
         except Exception as e:
             raise EmbeddingError(f"Failed to generate embedding: {e}") from e
+
+    def _fit(self, vector: list[float]) -> list[float]:
+        """Narrow a wider embedding to the configured width (Matryoshka truncation).
+
+        Servers that truncate on their own honour the ``dimensions`` request
+        parameter and return exactly what was asked for, in which case this is a
+        no-op. Local OpenAI-compatible servers may ignore it entirely and always
+        return the model's native width — llama.cpp does: asking for 256 returns the
+        native size unchanged. Without this the caller silently stores vectors wider
+        than the vector index was built for, and every write fails at the database.
+
+        MRL-trained embedders are explicitly trained so a leading slice is itself a
+        valid embedding; the slice is renormalised because it is no longer unit
+        length and cosine over unnormalised vectors skews every score.
+
+        A vector NARROWER than configured is not padded: that means the server is
+        running a different model than the index expects, and hiding it would corrupt
+        the store quietly.
+        """
+        width = self._dimensions
+        if width is None or len(vector) == width:
+            return vector
+        if len(vector) < width:
+            raise EmbeddingError(
+                f"embedding server returned {len(vector)} dimensions, expected {width}"
+            )
+        head = vector[:width]
+        norm = math.sqrt(sum(v * v for v in head))
+        if norm == 0:
+            raise EmbeddingError(f"embedding truncated to {width} all-zero components")
+        return [v / norm for v in head]
 
     async def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """Generate embeddings for multiple texts efficiently."""
@@ -99,7 +131,7 @@ class OpenAIEmbedder(BaseEmbedder):
                 response = await client.embeddings.create(**kwargs)
                 # Sort by index to maintain order
                 sorted_data = sorted(response.data, key=lambda x: x.index)
-                all_embeddings.extend([d.embedding for d in sorted_data])
+                all_embeddings.extend([self._fit(d.embedding) for d in sorted_data])
 
             return all_embeddings
         except Exception as e:

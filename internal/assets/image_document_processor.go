@@ -9,7 +9,7 @@ import (
 
 // ImageDocumentProcessor makes an uploaded image both describable inline AND searchable.
 // It runs the vision summary (Vision) and the searchable document ingest (Document —
-// markitdown OCR -> chunks -> Granite embed -> Neo4j) over the SAME image, then merges
+// markitdown OCR -> chunks -> embed -> Neo4j) over the SAME image, then merges
 // the results. It is fail-soft:
 //   - both succeed  -> StatusSearchable, DocumentID set, vision Summary kept for display;
 //   - no text/OCR   -> StatusComplete, vision Summary only (normal for non-document images);

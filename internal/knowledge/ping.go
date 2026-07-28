@@ -110,9 +110,20 @@ func pingEmbed(ctx context.Context, baseURL string, expectedDim int) error {
 	if len(body.Data) > 0 {
 		actual = len(body.Data[0].Embedding)
 	}
-	if actual != expectedDim {
+	// A sidecar WIDER than the contract is fine and expected: MRL-trained embedders
+	// publish a native width larger than the index, the write path narrows every
+	// vector to expectedDim (documents.truncateMRL, and the same truncation in the
+	// memory sidecar), and the llama.cpp server ignores the OpenAI `dimensions`
+	// parameter so it cannot narrow them for us.
+	//
+	// NARROWER stays fatal, and the reason is worth stating: Neo4j does not reject a
+	// wrongly-sized vector on write. It accepts the node and silently leaves it OUT
+	// of the vector index — observed on 2026-07-28, a Fact written at 1024 into a 768
+	// index, stored without error and invisible to search forever. There is no
+	// runtime signal for that, so boot is the only place to catch it.
+	if actual < expectedDim {
 		return fmt.Errorf(
-			"embedding sidecar returned dim=%d but AURA_EMBED_DIMENSIONS=%d — refuse to start (Pitfall #7 silent corruption); see prd.md amendment #18 swap runbook",
+			"embedding sidecar returned dim=%d, narrower than AURA_EMBED_DIMENSIONS=%d — refuse to start (Pitfall #7 silent corruption: Neo4j accepts a mis-sized vector and drops the node from the index without erroring); see prd.md amendment #18 swap runbook",
 			actual, expectedDim)
 	}
 	return nil

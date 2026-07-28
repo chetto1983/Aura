@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from pydantic import BaseModel, ValidationError
@@ -402,9 +403,40 @@ class OpenAIEmbeddingProvider(_OpenAISDKMixin):
                 raise translated from exc
             # OpenAI does not guarantee response order, so sort by index.
             sorted_data = sorted(response.data, key=lambda d: d.index)
-            all_embeddings.extend(d.embedding for d in sorted_data)
+            all_embeddings.extend(self._fit(d.embedding) for d in sorted_data)
 
         return all_embeddings
+
+    def _fit(self, vector: list[float]) -> list[float]:
+        """Narrow a wider embedding to ``self.dimensions`` (Matryoshka truncation).
+
+        Passing ``dimensions=`` in the request is not enough. OpenAI honours it;
+        self-hosted OpenAI-compatible servers may ignore it and always answer at the
+        model's native width — llama.cpp does, verified: asking for 256 returns the
+        native size unchanged. The mismatch then travels all the way to storage, and
+        Neo4j does NOT reject it: it accepts the node and silently leaves it OUT of
+        the vector index, so the memory is written, looks healthy, and can never be
+        retrieved. Observed on 2026-07-28 with a 1024-wide model against a 768 index.
+
+        MRL-trained embedders are trained so a leading slice is itself a valid
+        embedding; the slice is renormalised because truncation breaks unit length
+        and cosine over unnormalised vectors skews every score.
+
+        Narrower than configured is raised, never padded: that means the server is
+        serving a different model than the index was built for.
+        """
+        width = self.dimensions
+        if not width or len(vector) == width:
+            return vector
+        if len(vector) < width:
+            raise ValueError(
+                f"embedding server returned {len(vector)} dimensions, expected {width}"
+            )
+        head = vector[:width]
+        norm = math.sqrt(sum(v * v for v in head))
+        if norm == 0:
+            raise ValueError(f"embedding truncated to {width} all-zero components")
+        return [v / norm for v in head]
 
     async def embed_one(self, text: str) -> list[float]:
         vectors = await self.embed([text])
