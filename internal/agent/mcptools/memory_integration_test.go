@@ -268,6 +268,14 @@ func TestMemoryLiveMount(t *testing.T) {
 			len(mounted), len(wantModel), len(defs))
 	}
 
+	// Count parity alone can pass with a same-sized but wrong visible set, so require
+	// every model-facing name the live listing yields to be registered by name.
+	for _, name := range wantModel {
+		if _, ok := reg.Get(name); !ok {
+			t.Errorf("model-facing tool %q missing from registry", name)
+		}
+	}
+
 	for _, name := range mounted {
 		if !strings.HasPrefix(name, "memory__") {
 			t.Errorf("mounted tool %q is not namespaced memory__* (D-07)", name)
