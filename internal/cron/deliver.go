@@ -49,10 +49,27 @@ func (d *Dispatch) originGate(identityID, notifyRoute string) bool {
 	if !d.deps.PreferOriginChannel || d.deps.ChannelDeliverer == nil {
 		return false
 	}
-	if (notifyRoute != "" && notifyRoute != "stdout") || identityID == "" || identityID == "local" {
+	if !originPreferring(notifyRoute) || identityID == "" || identityID == "local" {
 		return false
 	}
 	return true
+}
+
+// originPreferring splits the routes that DEFER to the origin channel from the ones that
+// deliberately pre-empt it. whatsapp and email are alternate destinations: choosing one
+// means "send it somewhere else", so they skip the channel (R7). "" and "stdout" defer
+// because neither expresses a destination — the agent auto-fills stdout as the implicit
+// default. "telegram" deferring is the opposite of a fallback: it is the operator asking
+// for the origin channel BY NAME, which the composite Notifier cannot honour (it holds no
+// identity and no channel registry — notify.go), so the only layer that can deliver it is
+// this one.
+func originPreferring(route string) bool {
+	switch route {
+	case "", string(RouteStdout), string(RouteTelegram):
+		return true
+	default:
+		return false
+	}
 }
 
 // deliverToOrigin prefers the origin channel over the per-task Notifier route for a

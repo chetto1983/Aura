@@ -116,7 +116,7 @@ const taskParamsSchema = `{
     "kind": {"type": "string", "enum": ["reminder", "agent_job", "backup_postgres", "backup_neo4j"], "description": "Required when action=schedule. The task kind: reminder (deliver text), agent_job (run an agent turn), backup_postgres/backup_neo4j (database dumps)."},
     "payload": {"type": "object", "description": "Optional when action=schedule. The task payload: for a reminder {\"text\": \"...\"}, for an agent_job {\"goal\": \"...\"}. Scanned for destructive intent (rm/drop/delete) which gates the task to pending_approval."},
     "step_budget": {"type": "integer", "description": "Optional when action=schedule and kind=agent_job. Maximum agent steps for the job run."},
-    "notify": {"type": "string", "enum": ["whatsapp", "email", "stdout"], "description": "Optional when action=schedule. Where the task output is delivered. Defaults to the scheduler default route."},
+    "notify": {"type": "string", "enum": ["whatsapp", "email", "stdout", "telegram"], "description": "Optional when action=schedule. Where the task output is delivered. telegram delivers to the operator's bound Telegram chat; whatsapp and email are self-sends to an external address; stdout is the server-console fallback. Defaults to the scheduler default route."},
     "task_id": {"type": "string", "description": "Required when action=cancel or run_now. The id of the target task."}
   },
   "required": ["action"]
@@ -206,6 +206,14 @@ func (t *TaskTool) actionSchedule(ctx context.Context, raw json.RawMessage) (Too
 		ScheduleKind: a.ScheduleKind,
 		Payload:      a.Payload,
 	})
+	// The JSON-schema enum is advisory: an OpenAI-compat provider may pass anything
+	// through, and a route that survives to the notifier silently degrades to stdout —
+	// i.e. the operator asks for Telegram and the output lands on a console nobody
+	// reads. Reject it here, where the model can still correct itself.
+	if !cron.ValidNotifyRoute(a.Notify) {
+		return ToolResult{}, fmt.Errorf("task schedule: notify %q is not a delivery route (want whatsapp|email|stdout|telegram, or omit it for the default)", a.Notify)
+	}
+
 	status := "active"
 	if scoring.GateRecommended(tier) {
 		status = "pending_approval"

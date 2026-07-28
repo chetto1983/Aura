@@ -85,6 +85,19 @@ func TestDeliverToOrigin(t *testing.T) {
 			want:                want{channelCalled: true, notifierCalled: false},
 		},
 		{
+			// fix-plan 2.1 / operator BUG-2: "telegram" is the OPPOSITE of an alternate
+			// channel — it names the origin channel explicitly, and the composite Notifier
+			// cannot deliver it (it holds no identity and no channel registry). Before this
+			// it fell into the whatsapp/email branch and degraded to stdout, so an operator
+			// whose only live channel is Telegram got scheduled output on a server console.
+			name:                "telegram route defers to origin ⇒ channel + no Notifier",
+			preferOriginChannel: true,
+			notifyRoute:         "telegram",
+			identityID:          ownedIdentity,
+			delivered:           true,
+			want:                want{channelCalled: true, notifierCalled: false},
+		},
+		{
 			// un-owned identity ('local'): the gate falls back to the route BEFORE asking
 			// the channel — no stray channel push for a non-onboarded identity.
 			name:                "no owning channel (local) ⇒ Notifier",

@@ -202,6 +202,7 @@ export function SchedulerEditDialog({ task, open, onClose }: SchedulerEditDialog
               <NativeSelectOption value="">
                 {t('governance.scheduler.edit.notifyDefault')}
               </NativeSelectOption>
+              <NativeSelectOption value="telegram">telegram</NativeSelectOption>
               <NativeSelectOption value="whatsapp">whatsapp</NativeSelectOption>
               <NativeSelectOption value="email">email</NativeSelectOption>
               <NativeSelectOption value="stdout">stdout</NativeSelectOption>

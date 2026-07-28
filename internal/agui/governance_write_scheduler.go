@@ -133,6 +133,13 @@ func (s *Server) handleSchedulerEdit(w http.ResponseWriter, r *http.Request) {
 		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
+	// Reject an unknown route instead of storing it: the notifier degrades anything it
+	// does not recognise to stdout, so a typo in the cockpit dropdown would be accepted
+	// with a 200 and then silently deliver nowhere the operator is looking.
+	if !cron.ValidNotifyRoute(body.Notify) {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": "invalid notify route"})
+		return
+	}
 	spec, next, err := resolveEditSchedule(body)
 	if err != nil {
 		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": sanitizeErr(err)})

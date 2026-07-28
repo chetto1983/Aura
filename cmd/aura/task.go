@@ -82,12 +82,16 @@ func taskSchedule(ctx context.Context, cfg *config.Config, args []string) {
 	maxSteps := fs.Int("max-steps", 0, "agent step budget (kind=agent_job)")
 	kind := fs.String("kind", "", "reminder|agent_job|backup_postgres|backup_neo4j")
 	argsJSON := fs.String("args", "", "JSON payload, e.g. '{\"text\":\"...\"}'")
-	notify := fs.String("notify", "", "whatsapp|email|stdout")
+	notify := fs.String("notify", "", "whatsapp|email|stdout|telegram")
 	tz := fs.String("tz", defaultSchedulerTZ(), "IANA timezone for a cron schedule")
 	_ = fs.Parse(args)
 
 	if *kind == "" {
 		fmt.Fprintln(os.Stderr, "aura task schedule: --kind is required")
+		os.Exit(exitUsage)
+	}
+	if !cron.ValidNotifyRoute(*notify) {
+		fmt.Fprintln(os.Stderr, "aura task schedule: --notify must be whatsapp|email|stdout|telegram")
 		os.Exit(exitUsage)
 	}
 	scheduleKind, runAt := triadToSpec(*cronExpr, *at, *every)

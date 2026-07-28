@@ -29,13 +29,32 @@ import (
 // to AURA_SCHEDULER_NOTIFY_DEFAULT then the stdout sink.
 type NotifyRoute string
 
-// The three delivery routes: WhatsApp + email self-send via MCP (D-19), and the
-// always-available stdout fallback sink.
+// The delivery routes. WhatsApp and email are MCP self-sends (D-19) this composite
+// performs itself; stdout is the always-available fallback sink. Telegram is neither:
+// it is a CHANNEL route, delivered one layer up by the Dispatch origin gate through
+// ChannelDeliverer, which is the only place holding the task's identity and the live
+// channel registry. It is listed here because it is a value the enum must accept —
+// reaching this composite WITH it means the origin gate already declined, and
+// sendViaMCP says so rather than mis-sending it as a WhatsApp message.
 const (
 	RouteWhatsApp NotifyRoute = "whatsapp"
 	RouteEmail    NotifyRoute = "email"
 	RouteStdout   NotifyRoute = "stdout"
+	RouteTelegram NotifyRoute = "telegram"
 )
+
+// ValidNotifyRoute is the SINGLE source of truth for the route enum, consumed by every
+// validating caller (the task tool, the cockpit scheduler API, the CLI flag). An empty
+// string is VALID: it means "use the default route". Re-listing the routes at a call
+// site is how one of them ends up accepting a value the others reject.
+func ValidNotifyRoute(route string) bool {
+	switch NotifyRoute(route) {
+	case "", RouteWhatsApp, RouteEmail, RouteStdout, RouteTelegram:
+		return true
+	default:
+		return false
+	}
+}
 
 // The MCP self-send tool bare names each route resolves to. MCP tools are namespaced
 // <server>__<tool> (mcptools/name.go); the resolver adapter matches the bare suffix.
@@ -110,7 +129,7 @@ func (n *compositeNotifier) resolveRoute(route NotifyRoute) NotifyRoute {
 		r = NotifyRoute(strings.TrimSpace(os.Getenv("AURA_SCHEDULER_NOTIFY_DEFAULT")))
 	}
 	switch r {
-	case RouteWhatsApp, RouteEmail, RouteStdout:
+	case RouteWhatsApp, RouteEmail, RouteStdout, RouteTelegram:
 		return r
 	default:
 		return RouteStdout
@@ -121,6 +140,14 @@ func (n *compositeNotifier) resolveRoute(route NotifyRoute) NotifyRoute {
 // tool (nil resolver or no matching MCP server mounted) is an error so the caller
 // falls back to stdout.
 func (n *compositeNotifier) sendViaMCP(ctx context.Context, route NotifyRoute, recipient, text string) error {
+	if route == RouteTelegram {
+		// Telegram never had an MCP self-send; the Dispatch origin gate delivers it. Being
+		// here means that gate declined — no channel owns this identity, the kill-switch is
+		// off, or no deliverer is wired — so the honest answer is undelivered. Notify then
+		// writes the stdout fallback AND returns non-nil, which is the D-22 contract the
+		// dispatcher retries on.
+		return fmt.Errorf("route %s has no MCP self-send: no live channel owns this task's identity", route)
+	}
 	if n.resolver == nil {
 		return fmt.Errorf("no MCP self-send resolver mounted for route %s", route)
 	}
@@ -143,6 +170,13 @@ func buildSend(route NotifyRoute, recipient, text string) (string, json.RawMessa
 	if strings.TrimSpace(recipient) == "" {
 		recipient = strings.TrimSpace(os.Getenv("AURA_SCHEDULER_NOTIFY_RECIPIENT"))
 	}
+	whatsapp := func() (string, json.RawMessage) {
+		args, _ := json.Marshal(map[string]string{
+			"recipient": recipient,
+			"message":   text,
+		})
+		return toolSendMessage, args
+	}
 	switch route {
 	case RouteEmail:
 		args, _ := json.Marshal(map[string]string{
@@ -151,12 +185,14 @@ func buildSend(route NotifyRoute, recipient, text string) (string, json.RawMessa
 			"body":    text,
 		})
 		return toolSendEmail, args
-	default: // whatsapp
-		args, _ := json.Marshal(map[string]string{
-			"recipient": recipient,
-			"message":   text,
-		})
-		return toolSendMessage, args
+	case RouteWhatsApp:
+		return whatsapp()
+	default:
+		// Named explicitly rather than left implicit: this branch used to mean "anything
+		// unrecognized is a WhatsApp message", which would have silently shipped a
+		// telegram-routed notification to WhatsApp. sendViaMCP now refuses telegram before
+		// reaching here, and any future route lands on this same conservative default.
+		return whatsapp()
 	}
 }
 
