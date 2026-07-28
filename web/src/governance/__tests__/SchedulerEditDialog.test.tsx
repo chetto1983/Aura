@@ -43,7 +43,9 @@ describe('SchedulerEditDialog', () => {
     render(<SchedulerEditDialog task={TASK} open onClose={vi.fn()} />, { wrapper });
 
     const select = screen.getByLabelText(/notif/i);
-    const values = Array.from(select.querySelectorAll('option')).map((o) => o.getAttribute('value'));
+    const values = Array.from(select.querySelectorAll('option')).map((o) =>
+      o.getAttribute('value'),
+    );
     // The empty value is "use the scheduler default"; the four named routes must all be
     // reachable, and telegram is the one the operator could not previously choose.
     expect(values).toEqual(expect.arrayContaining(['', 'telegram', 'whatsapp', 'email', 'stdout']));
