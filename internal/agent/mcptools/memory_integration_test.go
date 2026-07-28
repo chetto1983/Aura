@@ -1,10 +1,12 @@
 //go:build memory_integration
 
 // Live memory-MCP mount tier (port of spike 032). Proves Aura's bridge mounts the
-// full agent-memory tool surface against the running, rebuilt sidecar: the mounted
-// count equals the live tools/list count, every mounted spec is non-deferred, and
-// every registered name is namespaced memory__*. NO DenyRisk filter is applied — Pitfall 2:
-// the full surface is D-06, spike-035's mounted=13 blocked=3 was an exploration.
+// MODEL-FACING slice of the live, rebuilt sidecar: every mounted spec is non-deferred
+// and namespaced memory__*, the six model-facing verbs mount, and the tools hidden by
+// cb02109 (hide-from-model, never-remove-from-server) stay OFF the model's registry
+// while remaining served for Aura's own direct CallTool consumers. hiddenFromModel is
+// the single source of truth for the split — this tier asserts the live wiring honours
+// it, it does not re-declare the list.
 //
 // No-skip-as-green (CLAUDE.md): when AURA_AGENT_MEMORY_MCP_URL is unset under $CI the
 // test t.Fatals (a skipped tier fails the gate, never passes it); locally it t.Skips.
@@ -110,6 +112,10 @@ func TestMemoryLiveScopedGraphToolsAcceptUserIdentifier(t *testing.T) {
 // and the foreign fact never surfaces. Before the fix the bridge forwarded the call
 // bare, the server ran its unscoped global query, and this same read returned the
 // foreign fact — the leak this test now pins closed.
+//
+// The read goes through memory__memory_search's 'facts' bucket: cb02109 hid get_facts
+// from the model (its exact-subject lookup is now the first leg of the facts bucket,
+// eed51614), so search is the model-facing tool that exercises the same scoped read.
 func TestMemoryLiveNoPrincipalBridgeScopesToOperator(t *testing.T) {
 	endpoint := memoryEndpointOrGate(t)
 	reapIdleHTTPConns(t)
@@ -142,22 +148,35 @@ func TestMemoryLiveNoPrincipalBridgeScopesToOperator(t *testing.T) {
 		t.Fatalf("MountManagedServer: %v", err)
 	}
 	defer func() { _ = closer() }()
-	tl, ok := reg.Get("memory__memory_get_facts")
+	tl, ok := reg.Get("memory__memory_search")
 	if !ok {
-		t.Fatal("memory__memory_get_facts not mounted")
+		t.Fatal("memory__memory_search not mounted")
 	}
 	execCtx := tools.WithToolCallContext(ctx, "sess", "tc1", t.TempDir(), 8192)
 
-	res, err := tl.Execute(execCtx, json.RawMessage(fmt.Sprintf(`{"subject":%q}`, subject)))
+	// The facts bucket does the exact-subject lookup, user-scoped; querying the foreign
+	// subject with no principal must resolve to the operator and return nothing.
+	res, err := tl.Execute(execCtx, json.RawMessage(fmt.Sprintf(`{"query":%q,"memory_types":["facts"]}`, subject)))
 	if err != nil {
-		t.Fatalf("bridge Execute memory_get_facts: %v", err)
+		t.Fatalf("bridge Execute memory_search: %v", err)
 	}
-	// Operator-scoped read: the foreign fact must NOT surface (no fail-open global leak).
-	if !strings.Contains(res.Preview, `"fact_count": 0`) {
+	// The search must actually have run and returned the facts bucket (not an error
+	// swallowed into a vacuous pass); then, operator-scoped, the foreign fact must NOT
+	// surface. The leak signal is the seeded fact's OWN marker fields — its predicate
+	// "has_marker" and object "secret" — NOT the subject: memory_search echoes the query
+	// verbatim in a top-level "query" field, so the subject string is always present in the
+	// result and is not a leak signal (asserting it was a false positive — the facts bucket
+	// came back [] and the read was correctly scoped, yet the subject matched the echo).
+	if !strings.Contains(res.Preview, `"facts"`) {
+		t.Fatalf("memory_search did not return the facts bucket — read path is untested: %s", res.Preview)
+	}
+	if strings.Contains(res.Preview, "has_marker") || strings.Contains(res.Preview, `"secret"`) {
 		t.Fatalf("no-principal bridge read leaked a foreign user's fact (fail-open NOT closed): %s", res.Preview)
 	}
 
-	// Cross-check the seed really exists under the foreign user (the read is scoped, not empty-by-accident).
+	// Cross-check the seed really exists under the foreign user (the read is scoped, not
+	// empty-by-accident). get_facts stays served for direct callers even though it is hidden
+	// from the model, so this verification path is unaffected by cb02109.
 	verify, err := mcp.OpenServer(ctx, "verify-foreign-fact", server)
 	if err != nil {
 		t.Fatalf("open verify MCP: %v", err)
@@ -199,9 +218,10 @@ func liveMemoryServer(endpoint string) mcp.ManagedServer {
 }
 
 // TestMemoryLiveMount mounts the running agent-memory sidecar through Aura's managed
-// bridge and asserts: mounted count == live tools/list count, every mounted tool is
-// non-deferred by default, and every registered name is memory__*. NO DenyRisk
-// filter (full 16-tool surface, D-06/D-07).
+// bridge and asserts the model-facing split cb02109 installed: mounted count == the
+// number of ADVERTISED tools that modelFacing keeps, every mounted tool is non-deferred
+// and namespaced memory__*, and every tool hidden by hiddenFromModel is absent from the
+// registry while still advertised by the live sidecar (hidden, not removed).
 func TestMemoryLiveMount(t *testing.T) {
 	endpoint := memoryEndpointOrGate(t)
 	reapIdleHTTPConns(t)
@@ -210,7 +230,8 @@ func TestMemoryLiveMount(t *testing.T) {
 
 	server := liveMemoryServer(endpoint)
 
-	// Ground truth: the live tools/list count (spike 032 saw 16).
+	// Ground truth: the live tools/list, partitioned by the SAME modelFacing predicate the
+	// bridge uses, so the expected mount count tracks the code instead of a magic number.
 	cli, err := mcp.OpenServer(ctx, "memory-probe", server)
 	if err != nil {
 		t.Fatalf("open streamable-http memory MCP at %s: %v", endpoint, err)
@@ -221,9 +242,22 @@ func TestMemoryLiveMount(t *testing.T) {
 		t.Fatalf("tools/list: %v", err)
 	}
 	_ = cli.Close()
-	rawCount := len(defs)
-	if rawCount == 0 {
-		t.Fatalf("live sidecar advertised 0 tools — expected the agent-memory surface (16)")
+	if len(defs) == 0 {
+		t.Fatalf("live sidecar advertised 0 tools — expected the agent-memory surface")
+	}
+
+	var wantModel, wantHidden []string
+	for _, d := range defs {
+		if modelFacing("memory", d.Name) {
+			wantModel = append(wantModel, namespacedName("memory", d.Name))
+		} else {
+			wantHidden = append(wantHidden, namespacedName("memory", d.Name))
+		}
+	}
+	// The split must be non-trivial in BOTH directions or the test proves nothing: the six
+	// model verbs must reach the model, and the sidecar must still advertise the hidden set.
+	if len(wantHidden) == 0 {
+		t.Fatalf("live sidecar advertised none of the hidden tools — hide-not-remove is untestable (advertised %d)", len(defs))
 	}
 
 	reg := tools.NewRegistry()
@@ -233,8 +267,17 @@ func TestMemoryLiveMount(t *testing.T) {
 	}
 	defer func() { _ = closer() }()
 
-	if len(mounted) != rawCount {
-		t.Fatalf("mounted %d tools, want %d (live tools/list count) — NO DenyRisk filter must drop nothing", len(mounted), rawCount)
+	if len(mounted) != len(wantModel) {
+		t.Fatalf("mounted %d tools, want %d model-facing (hidden set must stay off the registry, served set is %d)",
+			len(mounted), len(wantModel), len(defs))
+	}
+
+	// Count parity alone can pass with a same-sized but wrong visible set, so require
+	// every model-facing name the live listing yields to be registered by name.
+	for _, name := range wantModel {
+		if _, ok := reg.Get(name); !ok {
+			t.Errorf("model-facing tool %q missing from registry", name)
+		}
 	}
 
 	for _, name := range mounted {
@@ -246,12 +289,20 @@ func TestMemoryLiveMount(t *testing.T) {
 			t.Fatalf("mounted tool %q missing from registry", name)
 		}
 		if tl.Spec().Deferred {
-			t.Errorf("mounted tool %q is Deferred; memory MCP tools must be in the default manifest", name)
+			t.Errorf("mounted tool %q is Deferred; model-facing memory tools must be in the default manifest", name)
+		}
+	}
+
+	// Hidden, not removed: each tool the sidecar still serves but the bridge hides must be
+	// absent from the model's registry (Aura reaches it through direct CallTool instead).
+	for _, name := range wantHidden {
+		if _, ok := reg.Get(name); ok {
+			t.Errorf("hidden tool %q reached the model registry — cb02109 hides it, the sidecar still serves it", name)
 		}
 	}
 
 	// Spot-check the recall tool the agent loop reaches via tool_search is present.
 	if _, ok := reg.Get("memory__memory_search"); !ok {
-		t.Errorf("memory__memory_search not registered — the spike-035 recall tool must mount")
+		t.Errorf("memory__memory_search not registered — the recall tool must mount")
 	}
 }

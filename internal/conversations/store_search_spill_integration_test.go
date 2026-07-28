@@ -25,8 +25,15 @@ func TestSearchSpilledContentExcluded(t *testing.T) {
 	convID := newConversation(t, s)
 	ctx := context.Background()
 
+	// Random (v4) UUIDs, NOT v7: the search is a pg_trgm `content % $1` match at the 0.3
+	// similarity_threshold, and v7 is time-ordered — two tokens minted microseconds apart
+	// share the same ~48-bit timestamp prefix (e.g. "019faa3d2dcb…"). That shared run of
+	// hex made spilltok<ts…> and ctrltok<ts…> trigram-similar enough to clear 0.3, so a
+	// search for the spilled token intermittently returned the inline control turn (flaky
+	// LOOP-10 failure observed 2026-07-28). v4 has no shared prefix, so the two markers
+	// stay well under threshold.
 	uniq := func(prefix string) string {
-		return prefix + strings.ReplaceAll(uuid.Must(uuid.NewV7()).String(), "-", "")
+		return prefix + strings.ReplaceAll(uuid.NewString(), "-", "")
 	}
 	spilledToken := uniq("spilltok")
 	controlToken := uniq("ctrltok")
