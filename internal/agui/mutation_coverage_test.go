@@ -46,11 +46,18 @@ func TestHTTPMutationCoverageHasCompleteIdempotencyMetadata(t *testing.T) {
 func TestEveryRegisteredUnsafeHTTPRouteIsClassified(t *testing.T) {
 	t.Parallel()
 
+	// POSTs that mutate NOTHING. They are POSTs only because they carry a body too large
+	// or too structured for a query string — a replay changes no state, so an idempotency
+	// key would be ceremony over a no-op. Anything added here must be provably write-free:
+	// the skills validate route, for instance, dry-runs the write boundary and is asserted
+	// to leave no skill and no audit row behind
+	// (TestGovernanceWriteSkillsValidateDryRun).
 	readOnlyPOST := map[string]bool{
-		"POST /api/graph/query":             true,
-		"POST /api/settings/telegram/check": true,
-		"POST /api/stt":                     true,
-		"POST /api/tts":                     true,
+		"POST /api/graph/query":                true,
+		"POST /api/settings/telegram/check":    true,
+		"POST /api/stt":                        true,
+		"POST /api/tts":                        true,
+		"POST /api/governance/skills/validate": true,
 	}
 	matcher := regexp.MustCompile(`mux\.Handle(?:Func)?\("((?:POST|PUT|PATCH|DELETE) [^"]+)"`)
 	entries, err := os.ReadDir(".")

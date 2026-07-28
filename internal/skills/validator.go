@@ -112,6 +112,34 @@ func ValidateForWrite(fm Frontmatter, body string, blocklist []string, bodyCapBy
 	return nil
 }
 
+// Field names a write-boundary rejection's input, so an authoring UI can anchor the
+// message to the control the operator has to fix. It is derived from the SENTINEL, not
+// from the message text: the wording is free to change, the classification is not.
+//
+// ErrInvalidStructure covers description, body cap and type at once, so it returns
+// FieldNone — its messages already name what is wrong, and guessing a control to point
+// at would sometimes point at the wrong one.
+const (
+	FieldNone = ""
+	FieldName = "name"
+	FieldBody = "body"
+)
+
+// FieldForWriteError maps a ValidateForWrite rejection onto the input it belongs to.
+// A nil error, or one that is not a write-boundary sentinel, is FieldNone.
+func FieldForWriteError(err error) string {
+	switch {
+	case err == nil:
+		return FieldNone
+	case errors.Is(err, ErrInvalidName):
+		return FieldName
+	case errors.Is(err, ErrBlocklisted):
+		return FieldBody
+	default:
+		return FieldNone
+	}
+}
+
 // ValidateNameAgainstDir is the installer's name+dir chokepoint: it asserts both
 // the grammar AND that the on-disk directory name equals the frontmatter name.
 // The writer (which materializes into a name-derived dir) uses ValidateForWrite;

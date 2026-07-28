@@ -197,13 +197,14 @@ const (
 // bare read). Go 1.22 longest-pattern precedence keeps the {name}/restore + {name}/archive
 // patterns authoritative over the {name} update/delete patterns.
 const (
-	governanceSkillInstallRoute = "POST /api/governance/skills/install"
-	governanceSkillRestoreRoute = "POST /api/governance/skills/{name}/restore"
-	governanceSkillArchiveRoute = "POST /api/governance/skills/{name}/archive"
-	governanceSkillCreateRoute  = "POST /api/governance/skills"
-	governanceSkillUpdateRoute  = "PATCH /api/governance/skills/{name}"
-	governanceSkillDeleteRoute  = "DELETE /api/governance/skills/{name}"
-	governanceSkillCatalogRoute = "GET /api/governance/skills/catalog"
+	governanceSkillInstallRoute  = "POST /api/governance/skills/install"
+	governanceSkillRestoreRoute  = "POST /api/governance/skills/{name}/restore"
+	governanceSkillArchiveRoute  = "POST /api/governance/skills/{name}/archive"
+	governanceSkillCreateRoute   = "POST /api/governance/skills"
+	governanceSkillUpdateRoute   = "PATCH /api/governance/skills/{name}"
+	governanceSkillDeleteRoute   = "DELETE /api/governance/skills/{name}"
+	governanceSkillCatalogRoute  = "GET /api/governance/skills/catalog"
+	governanceSkillValidateRoute = "POST /api/governance/skills/validate"
 )
 
 // connect* are the cockpit "Connect" WhatsApp device-linking routes (connect_api.go). Each

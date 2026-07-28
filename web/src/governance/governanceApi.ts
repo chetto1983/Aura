@@ -443,6 +443,43 @@ export async function archiveSkill(name: string): Promise<void> {
   await postJSON<unknown>(`${GOV_SKILLS_PATH}/${encodeURIComponent(name)}/archive`);
 }
 
+/** The draft an operator is authoring in the editor. `always` puts the skill in the
+ * prompt every turn; the type is instruction (a snippet needs a language and is
+ * authored through `aura skills snippet`). */
+export interface SkillDraft {
+  readonly name: string;
+  readonly description: string;
+  readonly body: string;
+  readonly always: boolean;
+}
+
+/** The write-boundary verdict for a draft. `field` anchors the message to an input
+ * ('name' | 'body'); empty means show it at form level. */
+export interface SkillValidation {
+  readonly ok: boolean;
+  readonly field?: string;
+  readonly message?: string;
+}
+
+/** POST /api/governance/skills/validate — dry-run the write boundary. It writes nothing
+ * and answers 200 even for a rejected draft: a half-typed skill is not a bad request. */
+export function validateSkill(draft: SkillDraft): Promise<SkillValidation> {
+  return postJSON<SkillValidation>(`${GOV_SKILLS_PATH}/validate`, draft);
+}
+
+/** POST /api/governance/skills — create a skill. It is live when this resolves. */
+export function createSkill(draft: SkillDraft): Promise<{ status: string }> {
+  return postJSON<{ status: string }>(GOV_SKILLS_PATH, draft);
+}
+
+/** PATCH /api/governance/skills/{name} — update a skill in place. */
+export function updateSkill(draft: SkillDraft): Promise<{ status: string }> {
+  return patchJSON<{ status: string }>(
+    `${GOV_SKILLS_PATH}/${encodeURIComponent(draft.name)}`,
+    draft,
+  );
+}
+
 /** DELETE /api/governance/skills/{name} — remove the skill for good (204, no body).
  * Unlike archive this is irreversible, which is why the board puts it behind a
  * confirm dialog and never on the row. */

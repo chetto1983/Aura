@@ -98,6 +98,18 @@ func (f *fakeSkillsWrite) Mutate(_ context.Context, _ /*actor*/, action, name, _
 	return "active", nil
 }
 
+// Validate mimics the real adapter's shape: a verdict, never a write. It records nothing
+// in calls on purpose — the test asserts the dry run leaves no trace.
+func (f *fakeSkillsWrite) Validate(name, description, _ string, _ bool) SkillsValidation {
+	if name == "" || strings.ContainsAny(name, " _/") {
+		return SkillsValidation{Field: "name", Message: "invalid skill name: " + name}
+	}
+	if strings.TrimSpace(description) == "" {
+		return SkillsValidation{Message: "invalid skill structure: description is required"}
+	}
+	return SkillsValidation{OK: true}
+}
+
 // Delete makes the removal OBSERVABLE, not just recorded. The previous test asserted only
 // that a call had happened, which is exactly how a delete route that deleted nothing
 // shipped: it recorded the call faithfully and removed nothing.
@@ -146,6 +158,7 @@ func TestGovernanceWriteSkillsUnwired503(t *testing.T) {
 		{http.MethodPost, "/api/governance/skills", `{"name":"x","body":"b"}`},
 		{http.MethodPatch, "/api/governance/skills/x", `{"body":"b"}`},
 		{http.MethodDelete, "/api/governance/skills/x", ""},
+		{http.MethodPost, "/api/governance/skills/validate", `{"name":"x","body":"b"}`},
 		{http.MethodGet, "/api/governance/skills/catalog?q=x", ""},
 	}
 	for _, c := range cases {
@@ -428,6 +441,62 @@ func TestGovernanceWriteSkillsMountCapabilityGate(t *testing.T) {
 			t.Fatalf("no-principal install = %d, want 403", rec.Code)
 		}
 	})
+}
+
+// TestGovernanceWriteSkillsValidateDryRun: the editor's validate route answers a VERDICT
+// and writes nothing. Both halves matter — a rejected draft must be a 200 (the draft is
+// mid-edit by definition, and a 4xx makes "still typing" look like a malformed request),
+// and a route that validated by attempting the write would activate half-typed skills.
+func TestGovernanceWriteSkillsValidateDryRun(t *testing.T) {
+	s, fake := skillsWriteServer(newFakeSkillsWrite())
+
+	ok := doSkillsWrite(t, s, http.MethodPost, "/api/governance/skills/validate",
+		`{"name":"good-skill","description":"does a thing","body":"# body"}`, true)
+	if ok.Code != http.StatusOK {
+		t.Fatalf("valid draft status = %d, want 200", ok.Code)
+	}
+	var okBody SkillsValidation
+	if err := json.Unmarshal(ok.Body.Bytes(), &okBody); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !okBody.OK || okBody.Message != "" {
+		t.Fatalf("valid draft = %+v, want ok with no message", okBody)
+	}
+
+	for _, c := range []struct {
+		name, body, wantField string
+	}{
+		{"bad name", `{"name":"Bad Name","description":"d","body":"b"}`, "name"},
+		{"no description", `{"name":"good-skill","description":"  ","body":"b"}`, ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			rec := doSkillsWrite(t, s, http.MethodPost, "/api/governance/skills/validate", c.body, true)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("rejected draft status = %d, want 200 (a draft is not a bad request)", rec.Code)
+			}
+			var got SkillsValidation
+			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			if got.OK {
+				t.Fatalf("rejected draft reported ok: %+v", got)
+			}
+			if got.Field != c.wantField {
+				t.Fatalf("field = %q, want %q", got.Field, c.wantField)
+			}
+			if got.Message == "" {
+				t.Fatal("a rejection with no message tells the operator nothing")
+			}
+		})
+	}
+
+	// The dry run left no skill behind and cut no mutation.
+	if len(fake.activeNames) != 0 {
+		t.Fatalf("validate created skills: %v", fake.activeNames)
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("validate recorded write calls: %v", fake.calls)
+	}
 }
 
 // contains is a small slice-membership helper for the call-log assertions.

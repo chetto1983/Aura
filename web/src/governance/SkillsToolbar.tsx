@@ -1,4 +1,4 @@
-import { Download, ScrollText, Search } from 'lucide-react';
+import { Download, Plus, ScrollText, Search } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,6 +28,8 @@ export interface SkillsToolbarProps {
   readonly auditOpen: boolean;
   readonly onToggleAudit: (origin: HTMLElement | null) => void;
   readonly onInstall: (origin: HTMLElement | null) => void;
+  /** Open the editor on a blank skill. */
+  readonly onNew: () => void;
 }
 
 export function SkillsToolbar({
@@ -39,9 +41,11 @@ export function SkillsToolbar({
   auditOpen,
   onToggleAudit,
   onInstall,
+  onNew,
 }: SkillsToolbarProps) {
   const { t } = useTranslation();
   const installLabel = t('governance.skills.installSkill');
+  const newLabel = t('governance.skills.newSkill');
   const auditLabel = t('governance.skills.stages.audit');
 
   return (
@@ -104,6 +108,7 @@ export function SkillsToolbar({
         </Button>
         <Button
           type="button"
+          variant="outline"
           aria-label={installLabel}
           title={installLabel}
           className="px-3 sm:px-4"
@@ -114,6 +119,18 @@ export function SkillsToolbar({
           <Download data-icon="inline-start" aria-hidden="true" focusable="false" />
           <span data-action-label className="hidden sm:inline">
             {installLabel}
+          </span>
+        </Button>
+        <Button
+          type="button"
+          aria-label={newLabel}
+          title={newLabel}
+          className="px-3 sm:px-4"
+          onClick={onNew}
+        >
+          <Plus data-icon="inline-start" aria-hidden="true" focusable="false" />
+          <span data-action-label className="hidden sm:inline">
+            {newLabel}
           </span>
         </Button>
       </div>

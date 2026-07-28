@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
-import { Trash2, X } from 'lucide-react';
+import { Pencil, Trash2, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import { baseMarkdownComponents, buildRehypePlugins, remarkPlugins } from '../chat/markdownConfig';
-import { fetchSkillBody, type SkillRow, type SkillStage } from './governanceApi';
+import { fetchSkillBody, type SkillDraft, type SkillRow, type SkillStage } from './governanceApi';
 import { Button } from '@/components/ui/button';
 
 // SkillDetail — the detail pane for a selected skill: the metadata strip, then the SKILL
@@ -24,9 +24,11 @@ export interface SkillDetailProps {
   readonly onClose: () => void;
   /** Opens the delete confirm for this skill. */
   readonly onDelete: (name: string) => void;
+  /** Opens the editor on this skill, seeded with the body already loaded here. */
+  readonly onEdit: (draft: SkillDraft) => void;
 }
 
-export function SkillDetail({ skill, stage, onClose, onDelete }: SkillDetailProps) {
+export function SkillDetail({ skill, stage, onClose, onDelete, onEdit }: SkillDetailProps) {
   const { t } = useTranslation();
   const dash = t('governance.skills.field.none');
   const isActive = stage === 'active';
@@ -105,7 +107,27 @@ export function SkillDetail({ skill, stage, onClose, onDelete }: SkillDetailProp
         />
       </section>
 
-      <footer className="mt-auto flex justify-end border-t border-border pt-4">
+      <footer className="mt-auto flex justify-end gap-2 border-t border-border pt-4">
+        {/* Editing loads the body into the editor, so it is offered only once the body is
+            here — an "Edit" that opened on an empty document would quietly propose
+            replacing the skill with nothing. */}
+        {isActive && body.isSuccess ? (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              onEdit({
+                name: skill.name,
+                description: skill.description,
+                body: body.data,
+                always: skill.always === true,
+              });
+            }}
+          >
+            <Pencil data-icon="inline-start" aria-hidden="true" focusable="false" />
+            {t('governance.skills.editor.edit')}
+          </Button>
+        ) : null}
         <Button
           type="button"
           variant="ghost"

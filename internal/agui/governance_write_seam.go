@@ -120,6 +120,20 @@ type SkillsCatalogHit struct {
 	Installs string `json:"installs"`
 }
 
+// SkillsValidation is the DRY-RUN result of the write-boundary validator: what the save
+// would do, without doing it. Field anchors the message to an input (name/body) when the
+// rejection is attributable to one; an empty Field means show it at form level.
+//
+// It exists so the cockpit editor cannot grow a second, drifting copy of the rules in
+// TypeScript. The operator sees the verdict of the SAME ValidateForWrite that will accept
+// or reject the save — including the config-supplied injection blocklist and body cap,
+// which a browser has no way to know.
+type SkillsValidation struct {
+	OK      bool   `json:"ok"`
+	Field   string `json:"field,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
 // SkillsWriteProvider is the operator-only skills config-mutation surface (SKW-01/02/03).
 // Install fetches, validates and writes the skill, which is active when it returns.
 // Search runs the catalog query behind the external-discovery flag. Restore stats
@@ -140,6 +154,9 @@ type SkillsWriteProvider interface {
 	Delete(ctx context.Context, actorIdentityID, name string) error
 	// Mutate applies a create or update. Delete has its own method above.
 	Mutate(ctx context.Context, actorIdentityID, action, name, description, body string, always bool) (string, error)
+	// Validate dry-runs Mutate's write-boundary checks and writes NOTHING. It takes the
+	// same inputs in the same shape so the answer cannot diverge from the save.
+	Validate(name, description, body string, always bool) SkillsValidation
 }
 
 // GovernanceWriteProviders bundles the Phase-29 write providers so the composition root

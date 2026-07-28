@@ -20,6 +20,9 @@ const fetchSkillBody = vi.fn();
 const archiveSkill = vi.fn();
 const restoreSkill = vi.fn();
 const deleteSkill = vi.fn();
+const validateSkill = vi.fn();
+const createSkill = vi.fn();
+const updateSkill = vi.fn();
 const installSkill = vi.fn();
 const searchSkillCatalog = vi.fn();
 
@@ -30,6 +33,9 @@ vi.mock('../governanceApi', () => ({
   archiveSkill: (...a: unknown[]) => archiveSkill(...a) as Promise<void>,
   restoreSkill: (...a: unknown[]) => restoreSkill(...a) as Promise<void>,
   deleteSkill: (...a: unknown[]) => deleteSkill(...a) as Promise<void>,
+  validateSkill: (...a: unknown[]) => validateSkill(...a) as Promise<unknown>,
+  createSkill: (...a: unknown[]) => createSkill(...a) as Promise<unknown>,
+  updateSkill: (...a: unknown[]) => updateSkill(...a) as Promise<unknown>,
   installSkill: (...a: unknown[]) => installSkill(...a) as Promise<unknown>,
   searchSkillCatalog: (...a: unknown[]) => searchSkillCatalog(...a) as Promise<unknown>,
 }));
@@ -106,6 +112,9 @@ describe('SkillsBoard (GOV-02)', () => {
       archiveSkill,
       restoreSkill,
       deleteSkill,
+      validateSkill,
+      createSkill,
+      updateSkill,
       installSkill,
       searchSkillCatalog,
     ]) {
@@ -271,6 +280,56 @@ describe('SkillsBoard (GOV-02)', () => {
       expect(screen.queryByRole('alertdialog')).toBeNull();
     });
     expect(deleteSkill).not.toHaveBeenCalled();
+  });
+
+  it('opens the editor from the toolbar, and closing it returns to the list', async () => {
+    validateSkill.mockResolvedValue({ ok: true });
+    renderBoard();
+    await waitFor(() => {
+      expect(screen.getByText('golang-testing')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'New skill' }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Save and activate' })).toBeTruthy();
+    });
+    // The editor takes the whole board — the list is not behind it.
+    expect(screen.queryByText('golang-testing')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => {
+      expect(screen.getByText('golang-testing')).toBeTruthy();
+    });
+  });
+
+  it('opens the editor on an existing skill seeded with its loaded body', async () => {
+    validateSkill.mockResolvedValue({ ok: true });
+    fetchSkillBody.mockResolvedValue('## Existing body');
+    renderBoard();
+    await openDetail('golang-testing');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+    await waitFor(() => {
+      expect(screen.getByRole('textbox', { name: 'Name' })).toBeTruthy();
+    });
+    // Editing an existing skill locks the name: it is the directory on disk.
+    expect(screen.getByRole('textbox', { name: 'Name' }).getAttribute('readonly')).not.toBeNull();
+    expect(screen.getByRole('textbox', { name: 'Name' }).getAttribute('value')).toBe(
+      'golang-testing',
+    );
+  });
+
+  it('offers no Edit for an archived skill — there is no body to edit', async () => {
+    renderBoard();
+    await waitFor(() => {
+      expect(screen.getByText('old-skill')).toBeTruthy();
+    });
+    fireEvent.click(screen.getByText('old-skill'));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Delete' })).toBeTruthy();
+    });
+    expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
   });
 
   it('marks the selected master row with aria-pressed', async () => {

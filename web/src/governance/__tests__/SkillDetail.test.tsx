@@ -41,6 +41,7 @@ function renderDetail(props: Partial<Parameters<typeof SkillDetail>[0]> = {}) {
       stage="active"
       onClose={() => undefined}
       onDelete={() => undefined}
+      onEdit={() => undefined}
       {...props}
     />,
     { wrapper: Wrapper },

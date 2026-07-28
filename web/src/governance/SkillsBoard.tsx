@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { BoardLayout } from './BoardLayout';
@@ -16,9 +16,15 @@ import {
   fetchSkillsAudit,
   restoreSkill,
   type AuditRow,
+  type SkillDraft,
   type SkillRow,
   type SkillStage,
 } from './governanceApi';
+
+// Tiptap and its ProseMirror core are the heaviest thing the cockpit can load, and most
+// visits to this board never author anything — so the editor is a chunk of its own,
+// fetched when the operator actually opens it.
+const SkillEditor = lazy(() => import('./SkillEditor').then((m) => ({ default: m.SkillEditor })));
 
 // SkillsBoard (GOV-02, rebuilt for amendment #97) — ONE list of every skill, filtered by
 // state, with the audit ledger behind a toggle.
@@ -42,6 +48,8 @@ export function SkillsBoard() {
   const [auditOpen, setAuditOpen] = useState(false);
   const [collisionName, setCollisionName] = useState<string | undefined>(undefined);
   const [pendingDelete, setPendingDelete] = useState<string | undefined>(undefined);
+  // undefined = not editing; 'new' = authoring; a draft = editing that skill.
+  const [editing, setEditing] = useState<SkillDraft | 'new' | undefined>(undefined);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
 
   const active = useQuery({
@@ -158,6 +166,31 @@ export function SkillsBoard() {
     />
   );
 
+  // The editor takes over the whole board rather than sharing it with the list: authoring
+  // a skill is a task, not a lookup, and the split view has nothing useful to show beside
+  // it.
+  if (editing !== undefined) {
+    return (
+      <Suspense
+        fallback={
+          <p className="p-6 text-[14px] text-text-muted">{t('governance.skills.editor.loading')}</p>
+        }
+      >
+        <SkillEditor
+          {...(editing === 'new' ? {} : { initial: editing })}
+          onClose={() => {
+            setEditing(undefined);
+          }}
+          onSaved={(name) => {
+            setEditing(undefined);
+            invalidateSkills();
+            setSelected(name);
+          }}
+        />
+      </Suspense>
+    );
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <SkillsToolbar
@@ -174,6 +207,9 @@ export function SkillsBoard() {
           restoreFocusRef.current = el;
           closeOverlays();
           setAuditOpen((open) => !open);
+        }}
+        onNew={() => {
+          setEditing('new');
         }}
         onInstall={(el) => {
           restoreFocusRef.current = el;
@@ -218,6 +254,7 @@ export function SkillsBoard() {
                       setSelected(undefined);
                     }}
                     onDelete={setPendingDelete}
+                    onEdit={setEditing}
                   />
                 ) : undefined
               }

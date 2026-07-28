@@ -36,10 +36,14 @@ import (
 // installer fetches + validates + stages; writer is the lifecycle sink
 // (activate/restore/archive/create/update/delete); activeDir is the active-skill root (for an
 // honest post-install destination in the response).
+// blocklist/bodyCapBytes are the SAME config values the Writer was built with, held here
+// so Validate can dry-run the write boundary without reaching back into config.
 type skillsWriteAdapter struct {
-	installer *skills.Installer
-	writer    *skills.Writer
-	activeDir string
+	installer    *skills.Installer
+	writer       *skills.Writer
+	activeDir    string
+	blocklist    []string
+	bodyCapBytes int
 }
 
 // Install fetches the skill through the Task-1 Installer (npx skills add → validate → write),
@@ -123,6 +127,32 @@ func (a skillsWriteAdapter) Mutate(ctx context.Context, actor, action, name, des
 	return status, nil
 }
 
+// Validate dry-runs the write boundary for the cockpit editor. It calls the SAME
+// skills.ValidateForWrite the Writer calls, with the SAME frontmatter shape
+// WriteMutationByName builds (type instruction — the cockpit editor authors instruction
+// skills; a snippet needs a language and goes through SaveSnippet), and the SAME
+// config-supplied blocklist and body cap. Nothing is written and no audit row is cut.
+//
+// allowBlocklisted is false here for the same reason it is false for the model: the D-27
+// operator override belongs to the CLI, where the gate has already shown the operator the
+// matched sequence. An editor that offered "save anyway" would be that override without
+// the gate.
+func (a skillsWriteAdapter) Validate(name, description, body string, always bool) agui.SkillsValidation {
+	fm := skills.Frontmatter{Name: name, Description: description, Type: skills.TypeInstruction, Always: always}
+	err := skills.ValidateForWrite(fm, body, a.blocklist, a.bodyCapBytes, false)
+	if err == nil {
+		return agui.SkillsValidation{OK: true}
+	}
+	// The message goes out verbatim, unlike a backend/FS error: these are authored to be
+	// read by an operator (they name the limit, the measured size, the matched sequence
+	// and its offset) and are computed from the submitted draft alone — no path, no DSN,
+	// no secret can reach them.
+	return agui.SkillsValidation{
+		Field:   skills.FieldForWriteError(err),
+		Message: err.Error(),
+	}
+}
+
 // Delete removes the skill: de-materialized from the /skills mount, gone from the active
 // root, one audit row. Writer.Delete does the real work behind its SanitizeName
 // chokepoint; its status return is discarded because the route answers 204 with no body.
@@ -163,8 +193,10 @@ func buildSkillsWriteProvider(cfg *config.Config, pool *pgxpool.Pool) agui.Skill
 		WorkDir: cfg.RunDir,
 	})
 	return skillsWriteAdapter{
-		installer: installer,
-		writer:    writer,
-		activeDir: cfg.SkillsDir,
+		installer:    installer,
+		writer:       writer,
+		activeDir:    cfg.SkillsDir,
+		blocklist:    cfg.SkillInjectionBlocklist,
+		bodyCapBytes: cfg.SkillBodyCapBytes,
 	}
 }

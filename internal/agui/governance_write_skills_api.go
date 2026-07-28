@@ -40,6 +40,7 @@ func (s *Server) registerGovernanceSkillsWriteRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/governance/skills/install", s.handleSkillInstall)
 	mux.HandleFunc("POST /api/governance/skills/{name}/restore", s.handleSkillRestore)
 	mux.HandleFunc("POST /api/governance/skills/{name}/archive", s.handleSkillArchive)
+	mux.HandleFunc("POST /api/governance/skills/validate", s.handleSkillValidate)
 	mux.HandleFunc("POST /api/governance/skills", s.handleSkillCreate)
 	mux.HandleFunc("PATCH /api/governance/skills/{name}", s.handleSkillUpdate)
 	mux.HandleFunc("DELETE /api/governance/skills/{name}", s.handleSkillDelete)
@@ -148,6 +149,25 @@ func (s *Server) handleSkillDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleSkillValidate serves POST /api/governance/skills/validate: it runs the write
+// boundary against the submitted draft and WRITES NOTHING. The cockpit editor calls it
+// while the operator types so the feedback comes from the code that will accept or reject
+// the save, not from a second copy of the rules living in the browser.
+//
+// It always answers 200 with {ok, field?, message?}. A rejected draft is not an HTTP
+// error — the draft is mid-edit by definition, and a 4xx would make "you are not finished
+// typing" indistinguishable from "the request was malformed".
+func (s *Server) handleSkillValidate(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.beginSkillsWrite(w, r); !ok {
+		return
+	}
+	var body skillMutateBody
+	if !decodeSkillsBody(w, r, &body) {
+		return
+	}
+	writeJSON(w, s.governanceWrite.Skills.Validate(body.Name, body.Description, body.Body, body.Always))
 }
 
 // handleSkillMutate is the shared create/update front door: decode the body, prefer the
