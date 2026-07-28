@@ -1,65 +1,66 @@
 """MCP server instructions for Neo4j Agent Memory.
 
 Server instructions are sent during MCP initialization and injected into
-the LLM's system context by the host. They teach Claude how to use the
+the LLM's system context by the host. They teach the model how to use the
 memory tools effectively.
+
+These describe the LONG-TERM memory surface only, and every tool named here is
+registered in ``_tools.py``. The previous text taught five tools that do not exist
+(``memory_start_trace``, ``memory_record_step``, ``memory_complete_trace``,
+``memory_export_graph``, ``graph_query``). That is worse than saying nothing: a model
+told it has a Cypher escape hatch stops looking for the real repair path and burns
+turns on calls that can only fail.
 """
 
 CORE_INSTRUCTIONS = """\
 You have access to a persistent graph memory backed by Neo4j.
 
-ALWAYS at conversation start:
-  Call memory_get_context to load relevant memories for this session.
+This is LONG-TERM memory. It does not hold the conversation — the host already has
+that — it holds what should outlive it: facts, preferences, and the entities they
+concern. Write to it deliberately, not continuously.
 
-DURING conversation:
-  When the user shares important facts, preferences, or decisions,
-  call memory_store_message to persist them. The server automatically
-  extracts entities and detects preferences from message content.
+WHEN you learn something that should outlive this conversation:
+  A durable fact -> memory_add_fact with subject, predicate, object.
+  Something about how the user wants to be treated -> memory_add_preference with a
+  category, and applies_to when the preference concerns a specific person, place or
+  organization, so it is reachable by structure and not only by wording.
 
-WHEN the user asks what you remember:
-  Call memory_search with relevant keywords to find stored memories
-  across messages, entities, and preferences.
+  Do NOT record the passing shape of this conversation. If it would not matter in a
+  month, it does not belong here.
 
-WHEN the user shares a preference:
-  Call memory_add_preference with the appropriate category and
-  preference text to store it for future reference.
+WHEN you need to recall:
+  memory_search for a free-text lookup across facts, preferences and entities.
+  memory_get_entity when you have a NAME and want what is known about it: its facts,
+  its neighbours in the graph, and — importantly — any duplicates recorded under the
+  same name.
 
-WHEN you learn about a new entity (person, place, organization, etc.):
-  Call memory_add_entity with the entity name and POLE+O type.
+WHEN a memory is wrong, use the verb that matches the intention. They are not
+interchangeable, and picking the wrong one loses information:
 
-WHEN you learn a new fact:
-  Call memory_add_fact with subject, predicate, and object to store
-  the knowledge triple.
+  memory_update   — the content is WRONG, the memory has a right to exist.
+                    Corrects in place, keeps the id, relationships and history,
+                    refreshes the embedding.
 
-Entity types follow POLE+O: Person, Object, Location, Event, Organization.
-Each type supports subtypes for finer classification (e.g., OBJECT:VEHICLE,
-LOCATION:ADDRESS).
+  memory_forget   — it should NEVER HAVE BEEN recorded: test residue, something
+                    captured by mistake, or something the user asked you to erase.
+                    It is removed.
 
-Relationships use UPPER_SNAKE_CASE (e.g., WORKS_AT, LIVES_IN, FOUNDED).
+  Note what is NOT a reason to forget: a memory that is merely out of date. Superseding
+  is a different act from deleting, and deleting the old one throws away the fact that
+  it was ever true.
+
+NEVER correct by re-adding. add_fact and add_preference deduplicate against what is
+already stored and merge into the closest match WITHOUT changing its text, so
+re-adding a corrected version silently re-merges onto the old wording every time. Get
+the node id — from the add_* response, from memory_search, or from memory_get_entity —
+and use memory_update.
+
+Entity types follow POLE+O: Person, Object, Location, Event, Organization, with
+optional subtypes (OBJECT:VEHICLE, LOCATION:ADDRESS). Relationships use
+UPPER_SNAKE_CASE (WORKS_AT, LIVES_IN, FOUNDED).
 """
 
-EXTENDED_INSTRUCTIONS = (
-    CORE_INSTRUCTIONS
-    + """
-FOR complex tasks:
-  Call memory_start_trace to begin recording your reasoning process.
-  Call memory_record_step for each significant decision or action.
-  Call memory_complete_trace when the task is finished.
-
-FOR entity management:
-  Use memory_get_entity for detailed entity info with graph relationships.
-  Use memory_create_relationship to link entities together.
-
-FOR exploring memory:
-  Use memory_get_conversation to retrieve full conversation history.
-  Use memory_list_sessions to see available conversation sessions.
-  Use memory_export_graph for visualization-ready graph data.
-
-FOR advanced queries:
-  Use graph_query to execute read-only Cypher queries against the
-  knowledge graph when the other tools don't cover your needs.
-"""
-)
+EXTENDED_INSTRUCTIONS = CORE_INSTRUCTIONS
 
 
 def get_instructions(profile: str = "extended") -> str:

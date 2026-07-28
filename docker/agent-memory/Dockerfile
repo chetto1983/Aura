@@ -56,4 +56,26 @@ COPY src/ ./src/
 #   docker run --rm --entrypoint pip aura-agent-memory-mcp:local freeze --exclude-editable
 RUN pip install --no-cache-dir -c constraints.txt -e ".[mcp,google,openai]"
 
+# Entity resolution's fuzzy leg. `rapidfuzz` is a soft dependency the library
+# swallows when absent — `CompositeResolver.__init__` does `except Exception: pass`
+# and `_check_for_duplicates` does `except ImportError: pass` — so without it the
+# documented Exact -> Fuzzy -> Semantic chain silently runs as Exact -> Semantic and
+# a single cosine threshold becomes the only identity discriminator. Cheap, pure
+# Python-ext, no model weights: unlike the spaCy/GLiNER/GLiREL extraction stages it
+# costs nothing to carry.
+#
+# The extraction stages are deliberately NOT installed. They only ever run inside
+# `short_term.add_message(extract_entities=...)`, and Aura drives this sidecar as
+# long-term memory only — `add_fact`/`add_preference` write directly and never
+# extract. Carrying them cost 20GB (torch + three model sets) to serve a code path
+# that is never reached. Measured 2026-07-28 before removal, if that decision is ever
+# revisited: the full pipeline was 3.5x slower than the LLM stage alone (45.9s vs
+# 13.0s on the same sentence) and produced one extra entity — a duplicate, the same
+# name under two types, which `match_same_type_only` dedup can never reconcile.
+# Re-adding them also means re-adding `it_core_news_sm` plus the WikiNER rows in
+# SpacyEntityExtractor.DEFAULT_TYPE_MAPPING (without them every non-English PERSON
+# lands as OBJECT), and pinning back to huggingface_hub<1.0 + transformers<5.0
+# because glirel 1.2.1 is abandoned and still expects the pre-1.0 ModelHubMixin.
+RUN pip install --no-cache-dir "rapidfuzz>=3.0.0"
+
 EXPOSE 8080

@@ -2781,6 +2781,51 @@ class LongTermMemory(BaseMemory[Entity]):
             return None
         return rows[0]["deleted_id"], bool(rows[0]["removed_node"])
 
+    async def delete_relationship(
+        self,
+        source_id: UUID | str,
+        target_id: UUID | str,
+        relationship_type: str,
+        *,
+        user_identifier: str,
+    ) -> int | None:
+        """Break a relationship between two entities the caller can see.
+
+        Relationships were the one thing nothing could undo. ``create_relationship``
+        has no inverse, and the resolver/deduplicator write edges on their own —
+        notably ``SAME_AS`` when two entities look alike. A wrong ``SAME_AS`` is not
+        cosmetic: it is how a graph degrades by itself, because the entity it points
+        at becomes an attractor that later writes of the same name merge onto.
+
+        Direction is ignored on purpose. ``SAME_AS`` is a symmetric claim, and a caller
+        who can see the edge should not have to guess which way round it was written.
+
+        Ownership is the same broad read scope ``search_entities`` uses, required on
+        BOTH endpoints: being able to see one half of an edge is not authority to
+        rewrite someone else's graph.
+
+        Returns the number of relationships removed (0 when the edge does not exist),
+        or ``None`` when either endpoint is outside the caller's scope — refused and
+        reported, never a silent no-op.
+        """
+        self._enforce_multi_tenant(user_identifier)
+        if not relationship_type or not relationship_type.replace("_", "").isalnum():
+            # The type is interpolated into the pattern (Neo4j cannot parameterise a
+            # relationship type), so it is validated as a bare identifier first.
+            raise ValueError(f"invalid relationship type {relationship_type!r}")
+        for endpoint in (source_id, target_id):
+            if not await self._entity_in_user_scope(endpoint, user_identifier):
+                return None
+        rows = await self._client.execute_write(
+            f"""
+            MATCH (a:Entity {{id: $source_id}})-[r:`{relationship_type}`]-(b:Entity {{id: $target_id}})
+            DELETE r
+            RETURN count(r) AS removed
+            """,
+            {"source_id": str(source_id), "target_id": str(target_id)},
+        )
+        return int(rows[0]["removed"]) if rows else 0
+
     async def update_entity(
         self,
         entity_id: UUID | str,

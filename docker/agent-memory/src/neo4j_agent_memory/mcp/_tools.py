@@ -137,8 +137,12 @@ def _register_core_tools(mcp: FastMCP) -> None:
         Args:
             query: Natural language search query.
             limit: Maximum results per memory type (default: 10).
-            memory_types: Types to search. Options: 'messages', 'entities',
-                'preferences', 'traces'. Defaults to messages, entities, preferences.
+            memory_types: Types to search. Options: 'facts', 'entities',
+                'preferences', 'messages', 'traces'. Defaults to facts, entities,
+                preferences and messages. An unknown type is REJECTED, not ignored.
+                The 'facts' bucket matches an exact subject first and falls back to
+                semantic similarity, so passing a subject you already know by name
+                returns its facts rather than whatever scored nearest.
             session_id: Filter message search to a specific session.
             threshold: Similarity threshold 0.0-1.0 (default: 0.7).
         """
@@ -343,8 +347,11 @@ def _register_core_tools(mcp: FastMCP) -> None:
     async def memory_forget(
         ctx: Context,
         node_type: str,
-        node_id: str,
+        node_id: str | None = None,
         user_identifier: str | None = None,
+        source_id: str | None = None,
+        target_id: str | None = None,
+        relationship_type: str | None = None,
     ) -> str:
         """Delete (forget) a stored memory the user owns, by id.
 
@@ -356,16 +363,45 @@ def _register_core_tools(mcp: FastMCP) -> None:
         the entity node only if it is fully orphaned afterwards — a shared entity
         (referenced by other messages/preferences) is kept, just unlinked from you.
 
+        Forgetting a 'relationship' is the one case that takes no node_id, since an
+        edge has no id of its own: pass source_id, target_id and relationship_type,
+        in either direction. It exists because edges are written by the system itself
+        — the deduplicator emits SAME_AS between entities it thinks are alike — and a
+        wrong SAME_AS is how the graph degrades on its own: the entity it points at
+        becomes an attractor that later writes of the same name merge onto. Nothing
+        else can break one.
+
         Args:
-            node_type: What to forget — 'preference', 'fact', or 'entity'.
+            node_type: What to forget — 'preference', 'fact', 'entity', or
+                'relationship'.
             node_id: The id of the node to delete (from add_preference/add_fact/
-                add_entity or a get_* / search result).
+                add_entity or a get_* / search result). Not used for 'relationship'.
+            source_id: 'relationship' only — id of one endpoint entity.
+            target_id: 'relationship' only — id of the other endpoint entity.
+            relationship_type: 'relationship' only — e.g. 'SAME_AS', 'RELATED_TO'.
 
         Returns a JSON object: ``{"deleted": <id>}`` on success, or
         ``{"deleted": null, "reason": ...}`` when nothing was removed.
         """
         integration = get_integration(ctx)
         kind = node_type.strip().lower()
+        if kind == "relationship":
+            if not (source_id and target_id and relationship_type):
+                return json.dumps(
+                    {
+                        "deleted": None,
+                        "reason": "forgetting a relationship needs source_id, target_id and relationship_type",
+                    },
+                    default=str,
+                )
+            result = await integration.delete_relationship(
+                source_id, target_id, relationship_type, user_identifier=user_identifier
+            )
+            return json.dumps(result, default=str)
+        if not node_id:
+            return json.dumps(
+                {"deleted": None, "reason": f"forgetting a {kind} needs node_id"}, default=str
+            )
         if kind in ("preference", "pref"):
             result = await integration.delete_preference(
                 node_id, user_identifier=user_identifier
@@ -381,7 +417,7 @@ def _register_core_tools(mcp: FastMCP) -> None:
         else:
             result = {
                 "deleted": None,
-                "reason": f"unsupported node_type {node_type!r}; use 'preference', 'fact', or 'entity'",
+                "reason": f"unsupported node_type {node_type!r}; use 'preference', 'fact', 'entity', or 'relationship'",
             }
         return json.dumps(result, default=str)
 
@@ -404,55 +440,31 @@ def _register_core_tools(mcp: FastMCP) -> None:
         metadata: dict[str, Any] | None = None,
         user_identifier: str | None = None,
     ) -> str:
-        """Correct an existing memory the user owns, by id — the update half of add/forget.
+        """Correct an existing memory in place, by id.
 
-        ``memory_add_entity``, ``memory_add_preference``, and ``memory_add_fact``
-        all resolve/deduplicate what you pass against what already exists and
-        merge into the closest match WITHOUT changing that match's stored
-        text. So re-adding to fix a mistake (e.g. correcting the name 'David'
-        to 'Davide') just re-merges onto the OLD wording every time — add can
-        never rename or reword anything. The only other lever, forgetting and
-        re-adding, throws away the node's id and relationships. This tool
-        edits the existing node directly by id instead, bypassing resolution
-        and deduplication entirely, so it is the correct way to fix a wrong
-        name, description, category, wording, or triple on a memory that
-        already exists — never delete-and-recreate for a correction.
+        Never correct by re-adding. add_entity/add_preference/add_fact resolve what
+        you pass against what exists and merge into the closest match WITHOUT
+        changing its stored text, so a re-add silently lands on the OLD wording every
+        time. Forget-and-re-add works but throws away the id and every relationship.
+        This edits the node directly, bypassing resolution and deduplication.
 
-        Get node_id the same way you would for memory_forget: from the
-        relevant add_* tool's response ('id', or 'matched_entity_id' under
-        'deduplication' when it merged), from a get_* tool, or from a
-        memory_search result.
+        node_id comes from an add_* response ('id', or 'matched_entity_id' under
+        'deduplication' when it merged), from memory_get_entity, or from
+        memory_search. It is the id, never the name or text.
 
-        Only the fields relevant to node_type are used; anything you omit
-        keeps its current value. Changing an entity's name/description, a
-        preference's preference/category/context, or a fact's
-        subject/predicate/object also refreshes that node's embedding, so
-        the matching vector index (entity_embedding_idx,
-        preference_embedding_idx, fact_embedding_idx) doesn't keep returning
-        results under stale wording.
+        Omitted fields keep their current value. Editing an entity's name also syncs
+        its canonical_name, so later writes of that name resolve to the correction
+        instead of re-merging onto the old spelling. Any text change refreshes the
+        node's embedding, so vector search stops returning it under stale wording.
 
         Args:
-            node_type: What to correct — 'preference', 'fact', or 'entity'.
-            node_id: The id of the node to correct (not its name/text).
-            name: [entity] Corrected name, if wrong. Also keeps the entity's
-                internal canonical_name in sync, so future add_entity calls
-                resolve to the corrected spelling instead of the old one.
-            description: [entity] Corrected description, if wrong.
-            aliases: [entity] Replacement list of alternative names, if wrong.
-            subtype: [entity] Corrected subtype, if wrong.
-            preference: [preference] Corrected preference text, if wrong.
-            category: [preference] Corrected category, if wrong.
-            context: [preference] Corrected context, if wrong.
-            subject: [fact] Corrected subject, if wrong.
-            predicate: [fact] Corrected predicate, if wrong.
-            object_value: [fact] Corrected object/value, if wrong.
-            confidence: [preference, fact] Corrected confidence 0.0-1.0, if wrong.
-            metadata: [preference, fact, entity] Metadata fields to merge in.
-
-        Returns a JSON object: ``{"updated": <id>, "fields": [...], "entity"|
-        "preference"|"fact": {...}}`` on success, or ``{"updated": null,
-        "reason": ...}`` when the node does not exist or is outside the
-        caller's scope — never a silent no-op.
+            node_type: 'entity', 'preference', or 'fact'.
+            node_id: Id of the node to correct.
+            name, description, aliases, subtype: entity fields.
+            preference, category, context: preference fields.
+            subject, predicate, object_value: fact fields.
+            confidence: preference or fact.
+            metadata: merged into the node's existing metadata.
         """
         integration = get_integration(ctx)
         kind = node_type.strip().lower()

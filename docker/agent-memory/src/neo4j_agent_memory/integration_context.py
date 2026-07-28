@@ -28,6 +28,11 @@ def entity_name_fields(entity: Any) -> dict[str, Any]:
     return fields
 
 
+# The buckets memory_search can actually serve. Kept next to search() so adding a
+# retrieval path and advertising it can never drift apart.
+_SEARCHABLE = {"messages", "entities", "preferences", "facts", "traces"}
+
+
 class SessionStrategy(str, Enum):
     """Strategy for resolving session IDs."""
 
@@ -303,7 +308,17 @@ class ContextSearchMixin:
         user_identifier: str | None = None,
     ) -> dict[str, Any]:
         if memory_types is None:
-            memory_types = ["messages", "entities", "preferences"]
+            memory_types = ["messages", "entities", "preferences", "facts"]
+        unknown = [t for t in memory_types if t not in _SEARCHABLE]
+        if unknown:
+            # An unrecognised bucket used to return {} — no error, no results, no way
+            # to tell "nothing matched" from "that bucket does not exist". Facts were
+            # unreachable through search for exactly this reason and it stayed
+            # invisible.
+            return {
+                "error": f"unknown memory_types {unknown}; valid: {sorted(_SEARCHABLE)}",
+                "query": query,
+            }
         results: dict[str, list[dict[str, Any]]] = {}
         try:
             if "messages" in memory_types:
@@ -360,6 +375,36 @@ class ContextSearchMixin:
                         "context": pref.context,
                     }
                     for pref in preferences
+                ]
+            if "facts" in memory_types:
+                # Exact subject FIRST, then semantic. A fact's subject is usually a
+                # name the caller already knows ("Davide", "Progetto Zeta"), and the
+                # semantic leg cannot be trusted to find it: on short strings this
+                # embedder scores unrelated pairs within a few hundredths of a real
+                # match, so an exact subject would sit indistinguishable in the noise.
+                facts = await self.client.long_term.get_facts_about(
+                    query, user_identifier=user_identifier
+                )
+                seen = {str(f.id) for f in facts}
+                if len(facts) < limit:
+                    for fact in await self.client.long_term.search_facts(
+                        query=query,
+                        limit=limit - len(facts),
+                        threshold=threshold,
+                        user_identifier=user_identifier,
+                    ):
+                        if str(fact.id) not in seen:
+                            facts.append(fact)
+                            seen.add(str(fact.id))
+                results["facts"] = [
+                    {
+                        "id": str(fact.id),
+                        "subject": fact.subject,
+                        "predicate": fact.predicate,
+                        "object": fact.object,
+                        "confidence": fact.confidence,
+                    }
+                    for fact in facts[:limit]
                 ]
             if "traces" in memory_types:
                 traces = await self.client.reasoning.get_similar_traces(

@@ -409,6 +409,34 @@ class MemoryIntegration(ContextSearchMixin):
             return {"deleted": None, "reason": "not found or not owned by this user"}
         return {"deleted": removed, "type": "fact"}
 
+    async def delete_relationship(
+        self,
+        source_id: str,
+        target_id: str,
+        relationship_type: str,
+        *,
+        user_identifier: str,
+    ) -> dict[str, Any]:
+        """Break an edge between two entities (see
+        :meth:`long_term.LongTermMemory.delete_relationship`)."""
+        try:
+            removed = await self.client.long_term.delete_relationship(
+                source_id,
+                target_id,
+                relationship_type,
+                user_identifier=user_identifier,
+            )
+        except ValueError as e:
+            return {"deleted": None, "reason": str(e)}
+        except Exception as e:
+            logger.error(f"Error deleting relationship: {e}")
+            return {"deleted": None, "error": str(e)}
+        if removed is None:
+            return {"deleted": None, "reason": "one or both entities not visible to this user"}
+        if removed == 0:
+            return {"deleted": None, "reason": "no such relationship between those entities"}
+        return {"deleted": removed, "type": "relationship", "relationship": relationship_type}
+
     async def update_fact(
         self,
         fact_id: str,

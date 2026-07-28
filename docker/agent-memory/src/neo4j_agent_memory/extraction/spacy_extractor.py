@@ -45,10 +45,20 @@ class SpacyEntityExtractor:
     with other extractors (GLiNER, LLM) for full extraction.
     """
 
-    # Mapping from spaCy labels to POLE+O types
+    # Mapping from spaCy labels to POLE+O types.
+    #
+    # Two label sets have to land here. The `*_core_web_*` English pipelines emit
+    # OntoNotes (PERSON, GPE, FAC, WORK_OF_ART, ...); the non-English `*_core_news_*`
+    # pipelines — it, fr, es, nl, ... — emit WikiNER (PER, LOC, ORG, MISC). Only LOC
+    # and ORG are common to both, and an unmapped label does not get dropped: it
+    # falls through to "OBJECT" in `extract()`. Without the WikiNER rows below, every
+    # PERSON found by a non-English model enters the graph as an OBJECT — verified on
+    # it_core_news_sm 3.8.0, which labels "Davide Marchetto" and "Andrea Piemarino"
+    # as PER.
     DEFAULT_TYPE_MAPPING: dict[str, str] = {
         # Person types
-        "PERSON": "PERSON",
+        "PERSON": "PERSON",  # OntoNotes
+        "PER": "PERSON",  # WikiNER
         # Organization types
         "ORG": "ORGANIZATION",
         "NORP": "ORGANIZATION",  # Nationalities, religious, political groups
@@ -59,6 +69,10 @@ class SpacyEntityExtractor:
         # Event types
         "EVENT": "EVENT",
         # Object types (mapped from various spaCy labels)
+        # MISC is WikiNER's catch-all (works, products, nationalities, events). It is
+        # mapped explicitly rather than left to the "OBJECT" fallback so the fallback
+        # keeps meaning "this label is unknown to us", not "this is routine".
+        "MISC": "OBJECT",
         "PRODUCT": "OBJECT",
         "WORK_OF_ART": "OBJECT",
         "LAW": "OBJECT",
