@@ -104,12 +104,36 @@ func (a skillsWriteAdapter) Archive(ctx context.Context, actor, name string) err
 	return a.writer.Archive(ctx, name, skills.ApprovalCLI, skills.AuditActor{ActorID: "operator", IdentityID: actor})
 }
 
-// Mutate wraps Writer.WriteMutationByName for create/update/delete (SKW-01). The actor is
+// Mutate wraps Writer.WriteMutationByName for create/update (SKW-01). The actor is
 // labelled "operator" (not "model"), which is now purely a ledger attribution: every actor
 // takes the same write path and the mutation is live when this returns.
+//
+// It maps the two client-correctable sentinels the way Install already did. Without that
+// mapping an invalid body or a blocklist hit rendered as a sanitized 502 — an operator
+// typo reported as a backend outage, with nothing they could act on.
 func (a skillsWriteAdapter) Mutate(ctx context.Context, actor, action, name, description, body string, always bool) (string, error) {
-	return a.writer.WriteMutationByName(ctx, action, name, description, body, always,
+	status, err := a.writer.WriteMutationByName(ctx, action, name, description, body, always,
 		skills.AuditActor{ActorID: "operator", IdentityID: actor})
+	if err != nil {
+		if errors.Is(err, skills.ErrInvalidStructure) || errors.Is(err, skills.ErrBlocklisted) || errors.Is(err, skills.ErrInvalidName) {
+			return "", fmt.Errorf("%w: %v", agui.ErrSkillInvalidInput, err)
+		}
+		return "", err
+	}
+	return status, nil
+}
+
+// Delete removes the skill: de-materialized from the /skills mount, gone from the active
+// root, one audit row. Writer.Delete does the real work behind its SanitizeName
+// chokepoint; its status return is discarded because the route answers 204 with no body.
+func (a skillsWriteAdapter) Delete(ctx context.Context, actor, name string) error {
+	if _, err := a.writer.Delete(ctx, name, skills.AuditActor{ActorID: "operator", IdentityID: actor}); err != nil {
+		if errors.Is(err, skills.ErrInvalidName) {
+			return fmt.Errorf("%w: %v", agui.ErrSkillInvalidInput, err)
+		}
+		return err
+	}
+	return nil
 }
 
 // toSkillsChecklist projects the skills-package CheckItem list onto the agui wire type.

@@ -140,12 +140,12 @@ func TestAskUser_Execute_ProxiedIDsOptional(t *testing.T) {
 
 func TestAskUser_Execute_ResumeContextParsed(t *testing.T) {
 	_, err := AskUser{}.Execute(context.Background(),
-		json.RawMessage(`{"question":"approve skill?","kind":"approval","resume_context":{"type":"skill_approval","skill_name":"calc"}}`))
+		json.RawMessage(`{"question":"run this command?","kind":"approval","resume_context":{"type":"shell_exec_approval","command_sha256":"abc123"}}`))
 	var pause *ErrAwaitingUserInput
 	if !errors.As(err, &pause) {
 		t.Fatalf("want sentinel, got %v", err)
 	}
-	want := `{"type":"skill_approval","skill_name":"calc"}`
+	want := `{"type":"shell_exec_approval","command_sha256":"abc123"}`
 	if string(pause.ResumeContext) != want {
 		t.Fatalf("resume_context = %s, want %s", pause.ResumeContext, want)
 	}

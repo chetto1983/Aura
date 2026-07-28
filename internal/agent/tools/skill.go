@@ -112,24 +112,24 @@ type skillArgs struct {
 // action (amendment #51 / D-40 — the find-skills always-on skill teaches
 // `npx skills find/add` in the sandbox).
 //
-// HONESTY (AG-011 / AG-044): the descriptions state the ACTUAL single-operator trust
-// boundary, not an unenforced approval gate. Aura runs for one trusted operator on
-// their own host (amendment #50 / D-15c): a model-authored create/update with
-// always:false activates IMMEDIATELY in this container after validation+audit
-// (Claude-Code self-extension parity, P5 2026-06-10). Only always:true changes (which
-// edit the always-on system-prompt block) and delete remain approval-gated. The dead
-// duplicate that claimed "you cannot approve your own changes" was removed (AG-044) —
-// the code never enforced it, so the schema no longer advertises it.
+// HONESTY (AG-011 / AG-044 / amendment #97): the descriptions state the ACTUAL
+// single-operator trust boundary, not an approval ceremony nobody performs. Aura runs
+// for one trusted operator on their own host (amendment #50 / D-15c), so EVERY write
+// action takes effect when it is written — there is no staging stage and no approval
+// step left to describe. This schema is read by the model on every turn; a sentence
+// here that promises an approval is a sentence that teaches the model to wait for
+// something that will never happen, which is exactly how the save-then-cannot-use
+// failure survived.
 const skillParamsSchemaHonest = `{
   "type": "object",
   "properties": {
-    "action": {"type": "string", "enum": ["list", "info", "use", "create", "update", "delete", "save_snippet", "restore", "archive"], "description": "The skill operation: list (show available skills; pass an optional query to rank by relevance); info (read a skill's body for inspection by name); use (apply a skill's instructions, or run a stored snippet by path, by name); create (author a new skill); update (revise an existing skill); delete (remove a skill); save_snippet (store a reusable executable code snippet so you can re-run it by path on a later turn instead of re-authoring it); restore (un-archive a previously archived snippet back to active); archive (de-activate a snippet you no longer need - recoverable with restore). Model-authored create/update with always:false activate immediately in this container after validation and audit; always:true create/update and delete require approval and are staged pending before they take effect. save_snippet stages the snippet as pending too (it activates after operator approval); restore/archive take effect immediately."},
+    "action": {"type": "string", "enum": ["list", "info", "use", "create", "update", "delete", "save_snippet", "restore", "archive"], "description": "The skill operation: list (show available skills; pass an optional query to rank by relevance); info (read a skill's body for inspection by name); use (apply a skill's instructions, or run a stored snippet by path, by name); create (author a new skill); update (revise an existing skill); delete (remove a skill); save_snippet (store a reusable executable code snippet so you can re-run it by path on a later turn instead of re-authoring it); restore (un-archive a previously archived snippet back to active); archive (de-activate a snippet you no longer need - recoverable with restore). Every write action takes effect immediately after validation and audit: a skill you create or update is usable on your next turn, a snippet you save can be run right away with action=use, and a delete removes it. Nothing is staged and nothing waits for approval."},
     "name": {"type": "string", "description": "Required when action=info, use, create, update, delete, save_snippet, restore, or archive. The exact skill/snippet name (lowercase, [a-z0-9-], 1-64 chars) to inspect, apply, author, revise, remove, save, restore, or archive."},
     "description": {"type": "string", "description": "Required when action=create, update or save_snippet. A one-line summary of what the skill/snippet does (shown in the skill manifest, which is how you find it again). A skill saved without one is refused."},
     "body": {"type": "string", "description": "Required when action=create or update. The markdown instructions that make up the skill."},
     "language": {"type": "string", "enum": ["python", "shell", "js"], "description": "Required when action=save_snippet. The language of the snippet code (python, shell, or js)."},
     "code": {"type": "string", "description": "Required when action=save_snippet. The executable snippet body (the code that will be saved and later run by path)."},
-    "always": {"type": "boolean", "description": "Optional when action=create or update. always:false is the in-box auto-activation path for model-authored create/update; always:true changes the always-on prompt block and is approval-gated."},
+    "always": {"type": "boolean", "description": "Optional when action=create or update. always:true injects the skill body into every future turn's always-on prompt block instead of only when you apply it by name — use it only for standing instructions, since it costs context on every turn."},
     "query": {"type": "string", "description": "Optional when action=list (ranks the skill list by relevance when the full manifest is too large to show at once)."}
   },
   "required": ["action"]
@@ -196,14 +196,14 @@ func (t *SkillTool) actionRouter() *ActionRouter {
 			"list": t.actionList,
 			"info": t.actionInfo,
 			"use":  t.actionUse,
-			// Write actions (11-05): validate->gate->pending->ask_user pause (D-02). There
-			// is deliberately NO model-facing approve action — activation is human-only
-			// (D-03): only an ask_user resume or the `aura skills approve` CLI activate.
+			// Write actions (11-05): validate -> write -> materialize -> audit, all in the
+			// one call (amendment #97). There is no approve action because there is
+			// nothing left to approve.
 			"create": t.actionCreate,
 			"update": t.actionUpdate,
 			"delete": t.actionDelete,
-			// Snippet lifecycle (18-03): save_snippet is the UNGATED in-loop save (D-02 —
-			// normal result, NEVER a pause); restore is Archive's inverse; archive is the
+			// Snippet lifecycle (18-03): save_snippet is the in-loop save (a normal result,
+			// NEVER a pause); restore is Archive's inverse; archive is the
 			// manual SAFE-tier de-materialize. (Discovery+install is NOT a tool action —
 			// amendment #51 / D-40: the find-skills always-on skill teaches self-extension
 			// via the skills CLI in the sandbox.)

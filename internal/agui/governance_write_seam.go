@@ -83,22 +83,18 @@ type MCPWriteProvider interface {
 }
 
 // SkillsInstallInfo is the install result the skills install handler projects to the wire
-// (SKW-01/02). It carries everything the operator sees BEFORE activation: the source, the
-// canonical content hash, a body preview, the pending destination, the RISKY risk tier
-// (install is ALWAYS Risky — never "safe"), and the FIVE-item validation checklist. Status
-// is the pending status the sink returned. The install ALSO mints an operator-origin
-// ask_user pause (D-13) that surfaces in /api/approvals — ApprovalToken is that pause token
-// so the UI can deep-link to the approval queue entry.
+// (SKW-01/02): the source, the canonical content hash, a body preview, the active
+// destination, the RISKY risk tier (install is ALWAYS Risky — never "safe"), and the
+// FIVE-item validation checklist that ran. Status is what the sink returned.
 type SkillsInstallInfo struct {
-	Name          string            `json:"name"`
-	Source        string            `json:"source"`
-	ContentHash   string            `json:"content_hash"`
-	Preview       string            `json:"preview"`
-	Destination   string            `json:"destination"`
-	RiskTier      string            `json:"risk_tier"`
-	Status        string            `json:"status"`
-	ApprovalToken string            `json:"approval_token"`
-	Checklist     []SkillsCheckItem `json:"checklist"`
+	Name        string            `json:"name"`
+	Source      string            `json:"source"`
+	ContentHash string            `json:"content_hash"`
+	Preview     string            `json:"preview"`
+	Destination string            `json:"destination"`
+	RiskTier    string            `json:"risk_tier"`
+	Status      string            `json:"status"`
+	Checklist   []SkillsCheckItem `json:"checklist"`
 }
 
 // SkillsCheckItem is one validation-checklist item the UI renders before approval (mirrors
@@ -125,19 +121,24 @@ type SkillsCatalogHit struct {
 }
 
 // SkillsWriteProvider is the operator-only skills config-mutation surface (SKW-01/02/03).
-// Install stages the fetched skill through the EXISTING Writer gate to pending/ and mints
-// the operator-origin ask_user pause (D-13) that surfaces in /api/approvals — it NEVER
-// self-activates (activation is the operator resume only, no model-facing approve). Search
-// runs the catalog query behind the external-discovery flag. Restore stats active/{name}
-// and returns ErrSkillActiveExists BEFORE Writer.Restore (the restore-collision landmine).
-// Archive moves an active skill to archived. Mutate wraps Writer.WriteMutationByName for
-// create/update/delete. Every method is reachable ONLY behind
-// RequireCapability(governance.write) — there is NO model-facing path.
+// Install fetches, validates and writes the skill, which is active when it returns.
+// Search runs the catalog query behind the external-discovery flag. Restore stats
+// active/{name} and returns ErrSkillActiveExists BEFORE Writer.Restore (the
+// restore-collision landmine). Archive moves an active skill to archived — the
+// REVERSIBLE off-switch. Delete removes it for good. Every method is reachable ONLY
+// behind RequireCapability(governance.write) — there is NO model-facing path.
+//
+// Delete is its own method, not a Mutate action, for a reason worth keeping: a delete
+// carries only a name, and routing it through the create/update shape meant synthesising
+// an empty frontmatter around it, which the write-boundary validator then rejected for
+// having no description. The route answered an error and deleted nothing.
 type SkillsWriteProvider interface {
 	Install(ctx context.Context, actorIdentityID, source string) (SkillsInstallInfo, error)
 	Search(ctx context.Context, q string) (SkillsCatalogResult, error)
 	Restore(ctx context.Context, actorIdentityID, name string) error
 	Archive(ctx context.Context, actorIdentityID, name string) error
+	Delete(ctx context.Context, actorIdentityID, name string) error
+	// Mutate applies a create or update. Delete has its own method above.
 	Mutate(ctx context.Context, actorIdentityID, action, name, description, body string, always bool) (string, error)
 }
 

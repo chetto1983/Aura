@@ -117,8 +117,8 @@ func (s *Server) handleSkillArchive(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleSkillCreate serves POST /api/governance/skills (SKW-01): the provider wraps
-// Writer.WriteMutationByName("create", ...) → the gated pending write. The status string
-// (pending_approval / active) is returned.
+// Writer.WriteMutationByName("create", ...), which writes the skill live. The resulting
+// status string is returned.
 func (s *Server) handleSkillCreate(w http.ResponseWriter, r *http.Request) {
 	s.handleSkillMutate(w, r, "create", "")
 }
@@ -129,20 +129,25 @@ func (s *Server) handleSkillUpdate(w http.ResponseWriter, r *http.Request) {
 	s.handleSkillMutate(w, r, "update", r.PathValue("name"))
 }
 
-// handleSkillDelete serves DELETE /api/governance/skills/{name} (SKW-01): the provider wraps
-// Writer.WriteMutationByName("delete", ...). Delete is Destructive-tiered; the body fields
-// are not needed (the name is the path value).
+// handleSkillDelete serves DELETE /api/governance/skills/{name} (SKW-01): the provider
+// removes the skill from the active root and the export dir and writes one audit row.
+// Returns 204 with an empty body, byte-for-byte the shape of handleSkillArchive.
+//
+// It used to route through Mutate("delete", …), which synthesised an empty frontmatter
+// and then failed the description check — answering a sanitized 502 while deleting
+// nothing and recording nothing. A 200 carrying {"status": …} was the shape that let
+// that go unnoticed for as long as it did: the caller had something to read, so it
+// looked like it had worked.
 func (s *Server) handleSkillDelete(w http.ResponseWriter, r *http.Request) {
 	actor, ok := s.beginSkillsWrite(w, r)
 	if !ok {
 		return
 	}
-	status, err := s.governanceWrite.Skills.Mutate(r.Context(), actor, "delete", r.PathValue("name"), "", "", false)
-	if err != nil {
+	if err := s.governanceWrite.Skills.Delete(r.Context(), actor, r.PathValue("name")); err != nil {
 		writeSkillsWriteError(w, err)
 		return
 	}
-	writeJSON(w, map[string]string{"status": status})
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleSkillMutate is the shared create/update front door: decode the body, prefer the

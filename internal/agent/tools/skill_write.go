@@ -17,12 +17,6 @@ import (
 // and a faster, grammar-hinted self-correction for the model.
 var skillNameRe = regexp.MustCompile(`^[a-z0-9-]{1,64}$`)
 
-// statusPendingApproval mirrors skills.StatusPendingApproval across the read-path
-// boundary (the tools package does not import internal/skills): writeAction reflects
-// the writer's returned status to decide whether to pause (still pending) or return a
-// normal result (ungated/active in-box — P5).
-const statusPendingApproval = "pending_approval"
-
 // validWriteName trims whitespace and enforces the skill-name grammar at the tool
 // boundary for every name-bearing write/lifecycle action, so a structurally-invalid
 // name (blank, whitespace-only, "../" traversal) never reaches the writer regardless
@@ -40,15 +34,14 @@ func validWriteName(action, name string) (string, error) {
 }
 
 // This file wires the skill tool's WRITE actions create|update|delete (Slice 7c
-// governance, plan 11-05), replacing the "not yet wired" placeholders from 11-02.
-// Each action validates at the write boundary (NFKC+blocklist HARD reject for the
-// model — D-27, no escape), gates via scoring, lands the mutation in pending/ via
-// the writer seam, and PAUSES the turn via the *ErrAwaitingUserInput sentinel
-// (D-02). There is NO model-facing approve action (D-03): activation happens only
-// via an ask_user resume (skills.ResumeHandler → Writer.Activate) or the
-// `aura skills approve` CLI. In a headless context (no interactive resume) the
-// mutation stays pending and an optional Alerter fires (D-26) — the writer NEVER
-// self-activates, so a model can never extend itself unattended.
+// governance, plan 11-05). Each action validates at the write boundary (NFKC+blocklist
+// HARD reject for the model — D-27, no escape) and the mutation TAKES EFFECT: the
+// writer lands it active + materialized + audited before the call returns (amendment
+// #97). A validation or blocklist failure comes back as a plain tool error so the model
+// self-corrects; nothing here ever pauses the turn.
+//
+// The optional Alerter still fires (D-26), now purely as an operator notification: a
+// human learns a self-extension happened. It does not gate anything.
 //
 // The tools package stays free of an internal/skills import: skillWriter is a
 // consumer-declared seam (golang-structs-interfaces) the live *skills.Writer
@@ -58,37 +51,27 @@ func validWriteName(action, name string) (string, error) {
 // delete handlers dispatch against. The live internal/skills.Writer satisfies it
 // through an adapter wired at registration, keeping internal/agent/tools free of an
 // internal/skills import (the boundary 11-02 established for the read path).
-//
-// WriteMutation validates (model path: allowBlocklisted=false, hard-reject), gates,
-// and lands the skill in pending/ recording the D-29 pending audit tuple; it returns
-// the status string ("pending_approval" for the gated v1 actions) and NEVER
-// activates. A blocklist hit surfaces as a plain error (NOT a pause) so the model
-// self-corrects. The tier is computed by scoring; the seam takes the action enum.
 type skillWriter interface {
-	// WriteMutation lands a create/update/delete mutation in pending/ + audit. name
-	// is the skill name; for delete, frontmatter/body are empty. It returns the
-	// resulting status (StatusPendingApproval) or an error (a blocklist hit, a
-	// validation failure, or an IO/DB failure).
+	// WriteMutation applies a create/update/delete and returns the resulting status.
+	// name is the skill name; for delete, description/body are empty. An error means
+	// nothing was written (a blocklist hit, a validation failure, or an IO/DB failure).
 	WriteMutation(ctx context.Context, action string, name, description, body string, always bool) (status string, err error)
-	// SaveSnippet stages a snippet as pending UNGATED (D-02 — Claude-Code parity, no
-	// ask_user ceremony): it routes straight to the live Writer.SaveSnippet (which still
-	// validates + runs the injection blocklist on the CODE + computes the RISKY tier +
-	// lands pending; it NEVER self-activates). It returns the pending status or an error
-	// (a blocklist/validation reject → the model self-corrects, NEVER a pause).
+	// SaveSnippet writes a snippet and materializes it, so it is runnable by path when
+	// this returns. It still validates and runs the injection blocklist on the CODE; a
+	// reject comes back as an error the model self-corrects from, never a pause.
 	SaveSnippet(ctx context.Context, name, language, code, description string, needsNetwork, needsWorkspace bool) (status string, err error)
 	// Restore unarchives a snippet (archived->active + re-materialize + audit), the
 	// inverse of Archive. It returns the resulting status (active) or an error.
 	Restore(ctx context.Context, name string) (status string, err error)
-	// ArchiveSnippet de-materializes + moves active->archived + audits (SAFE tier, no
-	// gate). It returns a status string or an error.
+	// ArchiveSnippet de-materializes + moves active->archived + audits (SAFE tier). It
+	// returns a status string or an error.
 	ArchiveSnippet(ctx context.Context, name string) (status string, err error)
 }
 
-// skillAlerter is the optional headless-alert seam (D-26): when a gated mutation is
-// proposed in a context with no interactive resume (a swarm worker, a cron job), the
-// tool fires an IMMEDIATE alert so the operator learns a self-extension was attempted
-// even though it can never self-activate. Nil in the interactive REPL (the ask_user
-// pause is the channel) and in unit tests.
+// skillAlerter is the optional alert seam (D-26): the tool fires an IMMEDIATE alert so
+// the operator LEARNS a self-extension happened — in a headless context (a swarm
+// worker, a cron job) that is the only channel they have. It is a notification, not a
+// gate: the mutation is already applied when it fires. Nil in unit tests.
 type skillAlerter interface {
 	AlertPendingSkill(ctx context.Context, name, action string, tier scoring.RiskTier)
 }
@@ -110,36 +93,35 @@ type skillWriteArgs struct {
 	NeedsWorkspace bool   `json:"needs_workspace"`
 }
 
-// actionCreate handles action=create: a model-authored new skill. It validates +
-// gates + lands pending via the writer, then PAUSES via ask_user for human approval
-// (D-02/D-03). A blocklist/validation failure is returned as a tool error (the model
-// self-corrects, D-27), NOT a pause.
+// actionCreate handles action=create: a model-authored new skill. It validates and
+// writes; the skill is usable on this same turn. A blocklist/validation failure is
+// returned as a tool error the model self-corrects from (D-27).
 func (t *SkillTool) actionCreate(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
 	return t.writeAction(ctx, raw, scoring.SkillCreate)
 }
 
-// actionUpdate handles action=update: a model-authored revision of an existing
-// skill. The pending revision is gated while the old version keeps serving; the
-// gate (resume/CLI) shows the operator the change before activation (D-05). Same
-// validate→gate→pending→pause flow as create.
+// actionUpdate handles action=update: a model-authored revision of an existing skill.
+// The revision replaces the old body on disk and in the export dir; the next turn's
+// manifest carries it.
 func (t *SkillTool) actionUpdate(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
 	return t.writeAction(ctx, raw, scoring.SkillUpdate)
 }
 
-// actionDelete handles action=delete: a Destructive-tiered removal. It requires only
-// a name; the writer de-materializes + archives the skill behind the gate. It pauses
-// for approval like create/update (delete is the only Destructive action).
+// actionDelete handles action=delete: a Destructive-tiered removal. It requires only a
+// name; the writer de-materializes the skill and removes it.
+//
+// The tier still matters OUTSIDE this file: under a strict profile the gateway PEP
+// withholds a model-issued delete before the tool runs at all (gateway/decide.go). So
+// "takes effect immediately" is true of this code path and not of the deployed
+// appliance — a difference recorded in the amendment, not papered over here.
 func (t *SkillTool) actionDelete(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
 	return t.writeAction(ctx, raw, scoring.SkillDelete)
 }
 
-// writeAction is the shared create/update/delete flow. It decodes the args, requires
-// the writer seam to be wired, computes the tier for the message + alert, calls the
-// writer (which validates + gates + lands pending; a blocklist hit comes back as a
-// plain error → the model self-corrects, NOT a pause), and on a successful pending
-// write returns the *ErrAwaitingUserInput sentinel so the agent pauses the turn for
-// human approval. There is no model-facing approve (D-03) — this pause is the ONLY
-// model-side step; activation is the resume handler's / CLI's job.
+// writeAction is the shared create/update/delete flow: decode the args, require the
+// writer seam, call it (validation + blocklist rejects come back as plain errors the
+// model self-corrects from), fire the operator alert, and return a normal result. It
+// never pauses the turn.
 func (t *SkillTool) writeAction(ctx context.Context, raw json.RawMessage, action scoring.SkillAction) (ToolResult, error) {
 	var a skillWriteArgs
 	if err := json.Unmarshal(raw, &a); err != nil {
@@ -156,48 +138,27 @@ func (t *SkillTool) writeAction(ctx context.Context, raw json.RawMessage, action
 	// The writer validates at the boundary (model path: allowBlocklisted=false). A
 	// blocklist hit / validation failure returns here as an error — surfaced as a
 	// RoleTool error so the model self-corrects (D-27), never a pause.
-	status, err := t.Writer.WriteMutation(ctx, string(action), name, a.Description, a.Body, a.Always)
-	if err != nil {
+	if _, err := t.Writer.WriteMutation(ctx, string(action), name, a.Description, a.Body, a.Always); err != nil {
 		return ToolResult{}, fmt.Errorf("skill %s %q: %w", action, name, err)
 	}
-	tier := scoring.ComputeSkillTier(action, a.Body)
-
-	// P5 (2026-06-10): in-box self-extension is ungated — the writer auto-activates a
-	// model-authored mutation (container = boundary, Claude-Code parity), returning a
-	// non-pending status. Return a NORMAL result, no human pause; this is now the live
-	// path for create/update/delete (delete de-materializes immediately).
-	if status != statusPendingApproval {
-		if t.Alerter != nil {
-			t.Alerter.AlertPendingSkill(ctx, name, string(action), tier)
-		}
-		return NewResult(ctx, fmt.Sprintf("Skill %s %q is now active (status=%s).", action, name, status))
-	}
-
-	// Defensive fallback: a still-gated context staged this as pending. Fire the
-	// headless alert (D-26) and pause for approval (the model cannot answer — D-03).
+	// The alert (D-26) is an OPERATOR notification, not a gate: it tells a human that a
+	// self-extension happened, and the turn continues either way.
 	if t.Alerter != nil {
-		t.Alerter.AlertPendingSkill(ctx, name, string(action), tier)
+		t.Alerter.AlertPendingSkill(ctx, name, string(action), scoring.ComputeSkillTier(action, a.Body))
 	}
-	question := fmt.Sprintf(
-		"Approve skill %s %q (risk=%s)? It is staged as pending and will NOT take effect until you approve. "+
-			"Approve to activate, or decline to discard the pending change.",
-		action, name, tier,
-	)
-	return ToolResult{}, &ErrAwaitingUserInput{
-		Question: question,
-		Kind:     KindApproval,
-		Priority: skillApprovalPriority(tier),
+	if action == scoring.SkillDelete {
+		return NewResult(ctx, fmt.Sprintf("Skill %q deleted.", name))
 	}
+	return NewResult(ctx, fmt.Sprintf("Skill %s %q is active now — you can use it on this turn.", action, name))
 }
 
-// actionSaveSnippet handles action=save_snippet (D-02 — the in-loop snippet-save path,
-// UNGATED). It is the architectural INVERSE of writeAction: it decodes the args, requires
-// name+language+code, requires the writer seam, calls SaveSnippet (which still validates +
-// runs the injection blocklist on the CODE + lands pending — it NEVER self-activates), and
-// returns a NORMAL result confirming the pending save. It NEVER returns the
-// *ErrAwaitingUserInput sentinel (only ask_user may pause — TestAskUserOnlyPauseConstraint);
-// a validation/blocklist reject comes back as a plain tool error so the model self-corrects.
-// Future per-identity gating of the save lands with capability_grants (Slice 1.7), not here.
+// actionSaveSnippet handles action=save_snippet (D-02 — the in-loop snippet-save path).
+// It decodes the args, requires name+language+code and the writer seam, and calls
+// SaveSnippet, which validates, runs the injection blocklist on the CODE, writes and
+// materializes — so the snippet is runnable by path when this returns. It NEVER returns
+// the *ErrAwaitingUserInput sentinel (only ask_user may pause —
+// TestAskUserOnlyPauseConstraint); a validation/blocklist reject comes back as a plain
+// tool error so the model self-corrects.
 func (t *SkillTool) actionSaveSnippet(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
 	var a skillWriteArgs
 	if err := json.Unmarshal(raw, &a); err != nil {
@@ -221,8 +182,8 @@ func (t *SkillTool) actionSaveSnippet(ctx context.Context, raw json.RawMessage) 
 		return ToolResult{}, fmt.Errorf("skill save_snippet %q: %w", name, err)
 	}
 	return NewResult(ctx, fmt.Sprintf(
-		"Snippet %q saved as pending (status=%s). Activate it (operator approval) before reuse; "+
-			"once active, call action=use to run it by path.", name, status))
+		"Snippet %q saved and ready (status=%s). Call action=use to get its path and interpreter, "+
+			"then run it — no further step is needed.", name, status))
 }
 
 // actionRestore handles action=restore: it unarchives a snippet (archived->active +
@@ -273,12 +234,6 @@ func (t *SkillTool) requireWriteName(raw json.RawMessage, action string) (string
 		return "", fmt.Errorf("skill %s: no writer is wired in this context", action)
 	}
 	return name, nil
-}
-
-// skillApprovalPriority orders a skill-approval pause ahead of routine clarifications
-// when several pauses are pending: a Destructive (delete) gate outranks a Risky one.
-func skillApprovalPriority(tier scoring.RiskTier) int {
-	return ApprovalPriority(tier)
 }
 
 // ApprovalPriority is the shared security-approval FIFO priority (single source of

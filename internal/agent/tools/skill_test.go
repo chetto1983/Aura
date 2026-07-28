@@ -106,41 +106,40 @@ func TestSkillSpecSchemaDiscipline(t *testing.T) {
 	}
 }
 
-func TestSkillToolSchemaStatesActualAutoActivationPolicy(t *testing.T) {
-	t.Parallel()
-	spec := (&SkillTool{}).Spec()
-	schema := string(spec.Parameters)
-	for _, want := range []string{
-		"always:false",
-		"activate immediately",
-		"always:true",
-		"delete require approval",
-	} {
-		if !strings.Contains(schema, want) {
-			t.Fatalf("skill schema does not state %q in the live policy: %s", want, schema)
-		}
-	}
-}
-
-// TestSkillSchemaIsHonestNotDishonest is the AG-011/AG-044 regression: the live
-// skill schema must NOT carry the old dishonest "you cannot approve your own
-// changes" claim (the dead skillParamsSchema const advertised approval-gating that
-// the code never enforces — single-operator in-box auto-activation is the live
-// path). Exactly one schema backs the Spec, and it states the real trust boundary.
-func TestSkillSchemaIsHonestNotDishonest(t *testing.T) {
+// TestSkillSchemaPromisesNoApproval is the amendment #97 regression on the surface the
+// model reads EVERY turn. The schema must state that a write takes effect, and must not
+// contain a single word that teaches the model to wait: that vocabulary is exactly what
+// made it save a snippet, report success, and be unable to use the file it had written.
+//
+// This is the standing guard against the wording creeping back — a schema sentence is
+// cheap to add and invisible until it changes the model's behaviour.
+func TestSkillSchemaPromisesNoApproval(t *testing.T) {
 	t.Parallel()
 	schema := string((&SkillTool{}).Spec().Parameters)
-	for _, dishonest := range []string{
-		"you cannot approve your own changes",
-		"require explicit human approval before they take effect",
+
+	for _, want := range []string{
+		"takes effect immediately",
+		"usable on your next turn",
+		"Nothing is staged and nothing waits for approval",
 	} {
-		if strings.Contains(schema, dishonest) {
-			t.Fatalf("skill schema still carries the dishonest gated claim %q; the live path is in-box auto-activation: %s", dishonest, schema)
+		if !strings.Contains(schema, want) {
+			t.Fatalf("skill schema does not state %q: %s", want, schema)
 		}
 	}
-	// The honest schema names the actual single-operator activation boundary.
-	if !strings.Contains(schema, "activate immediately in this container") {
-		t.Fatalf("skill schema must honestly state in-container auto-activation: %s", schema)
+
+	for _, forbidden := range []string{
+		"you cannot approve your own changes",
+		"require explicit human approval before they take effect",
+		"require approval",
+		"approval-gated",
+		"staged pending",
+		"as pending",
+		"operator approval",
+		"before reuse",
+	} {
+		if strings.Contains(schema, forbidden) {
+			t.Fatalf("skill schema still teaches the model to wait (%q): %s", forbidden, schema)
+		}
 	}
 }
 

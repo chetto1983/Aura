@@ -45,7 +45,7 @@ func (f *fakeSkillWriter) WriteMutation(_ context.Context, action, name, _, body
 	}
 	status := f.status
 	if status == "" {
-		status = "pending_approval"
+		status = "active"
 	}
 	return status, nil
 }
@@ -58,7 +58,7 @@ func (f *fakeSkillWriter) SaveSnippet(_ context.Context, name, language, code, d
 	}
 	status := f.lifecycleState
 	if status == "" {
-		status = "pending_approval"
+		status = "active"
 	}
 	return status, nil
 }
@@ -108,7 +108,9 @@ func execSkill(t *testing.T, tool *SkillTool, args map[string]any) (ToolResult, 
 	if err != nil {
 		t.Fatalf("marshal args: %v", err)
 	}
-	return tool.Execute(context.Background(), json.RawMessage(raw))
+	// Every write action now returns a normal result (nothing pauses), and NewResult
+	// requires the tool-call context — so the helper supplies it.
+	return tool.Execute(withTestToolCallCtx(context.Background()), json.RawMessage(raw))
 }
 
 // TestActionCreateActivates asserts P5 in-box ungating: a model-authored create the
@@ -166,30 +168,6 @@ func TestActionCreateActivePathStillAlertsWhenAlerterWired(t *testing.T) {
 	}
 }
 
-func TestActionCreateAlwaysPendingPauses(t *testing.T) {
-	w := &fakeSkillWriter{status: "pending_approval"}
-	tool := &SkillTool{Writer: w}
-
-	_, err := execSkill(t, tool, map[string]any{
-		"action":      "create",
-		"name":        "always-skill",
-		"description": "always on",
-		"body":        "# instructions",
-		"always":      true,
-	})
-
-	var pause *ErrAwaitingUserInput
-	if !errors.As(err, &pause) {
-		t.Fatalf("always:true create should pause when writer stages it pending, got %v", err)
-	}
-	if !w.gotAlways {
-		t.Fatal("always:true flag was not forwarded to the writer")
-	}
-	if !strings.Contains(pause.Question, "always-skill") {
-		t.Fatalf("pause question should name the skill: %q", pause.Question)
-	}
-}
-
 // TestActionCreateBlocklistedIsToolError asserts a blocklist/validation reject from
 // the writer (the model path) surfaces as a tool ERROR (self-correct), NOT a pause.
 func TestActionCreateBlocklistedIsToolError(t *testing.T) {
@@ -215,49 +193,27 @@ func TestActionCreateBlocklistedIsToolError(t *testing.T) {
 	}
 }
 
-// TestActionDeleteDestructivePriority covers the DEFENSIVE pending fallback: when a
-// still-gated context stages a delete as pending it pauses with the higher
-// (Destructive-tier) priority so a removal outranks a routine Risky approval. The live
-// model path is ungated (TestActionCreateActivates).
-func TestActionDeleteDestructivePriority(t *testing.T) {
-	w := &fakeSkillWriter{}
-	tool := &SkillTool{Writer: w}
-
-	_, err := execSkill(t, tool, map[string]any{"action": "delete", "name": "old-skill"})
-
-	var pause *ErrAwaitingUserInput
-	if !errors.As(err, &pause) {
-		t.Fatalf("delete: want pause, got %v", err)
-	}
-	if pause.Priority != skillApprovalPriority(scoring.Destructive) {
-		t.Errorf("delete priority = %d, want %d", pause.Priority, skillApprovalPriority(scoring.Destructive))
-	}
-	if w.gotAction != "delete" {
-		t.Errorf("writer action = %q, want delete", w.gotAction)
-	}
-}
-
-// TestHeadlessAlertFires covers the DEFENSIVE pending fallback: when a mutation is
-// staged pending, a wired Alerter receives the pending-skill alert (D-26) and the turn
-// pauses. The live model path is ungated (TestActionCreateActivates).
-func TestHeadlessAlertFires(t *testing.T) {
+// TestDeleteAlertsAndReportsRemoval proves a delete is applied and reported as such:
+// the writer receives it, the operator alert fires at the Destructive tier (D-26 — a
+// notification, since nothing gates it here), and the result says deleted rather than
+// "active", which is what it used to claim.
+func TestDeleteAlertsAndReportsRemoval(t *testing.T) {
 	w := &fakeSkillWriter{}
 	al := &fakeSkillAlerter{}
 	tool := &SkillTool{Writer: w, Alerter: al}
 
-	_, err := execSkill(t, tool, map[string]any{
-		"action": "create", "name": "bg-skill", "description": "x", "body": "y",
-	})
-
-	var pause *ErrAwaitingUserInput
-	if !errors.As(err, &pause) {
-		t.Fatalf("create: want pause, got %v", err)
+	res, err := execSkill(t, tool, map[string]any{"action": "delete", "name": "old-skill"})
+	if err != nil {
+		t.Fatalf("delete: %v", err)
 	}
-	if al.alerts != 1 || al.name != "bg-skill" || al.action != "create" {
-		t.Errorf("alert = (%d, %q, %q), want (1, bg-skill, create)", al.alerts, al.name, al.action)
+	if w.gotAction != "delete" || w.gotName != "old-skill" {
+		t.Errorf("writer got (%q,%q), want (delete, old-skill)", w.gotAction, w.gotName)
 	}
-	if al.tier != scoring.Risky {
-		t.Errorf("alert tier = %q, want risky", al.tier)
+	if al.alerts != 1 || al.tier != scoring.Destructive {
+		t.Errorf("delete alert = (%d, %q), want (1, destructive)", al.alerts, al.tier)
+	}
+	if !strings.Contains(strings.ToLower(res.Preview), "deleted") {
+		t.Errorf("delete result = %q, want it to say the skill was deleted", res.Preview)
 	}
 }
 
@@ -325,8 +281,16 @@ func TestSnippetSaveAction(t *testing.T) {
 	if w.saveCalls != 1 || w.saveName != "xlsx-build" || w.saveLanguage != "python" || w.saveCode != "import openpyxl\n" {
 		t.Fatalf("SaveSnippet call = (%d, %q, %q, %q), want (1, xlsx-build, python, code)", w.saveCalls, w.saveName, w.saveLanguage, w.saveCode)
 	}
-	if !strings.Contains(res.Preview, "xlsx-build") || !strings.Contains(res.Preview, "pending") {
-		t.Fatalf("save result should confirm the pending save: %q", res.Preview)
+	// The result must point the model at the next step it can actually take. The old
+	// wording ("saved as pending — activate it before reuse") described a step nobody
+	// performs, so the model believed the snippet was unusable.
+	if !strings.Contains(res.Preview, "xlsx-build") || !strings.Contains(res.Preview, "action=use") {
+		t.Fatalf("save result should tell the model it can use the snippet now: %q", res.Preview)
+	}
+	for _, forbidden := range []string{"pending", "approv", "before reuse"} {
+		if strings.Contains(strings.ToLower(res.Preview), forbidden) {
+			t.Fatalf("save result still tells the model to wait (%q): %q", forbidden, res.Preview)
+		}
 	}
 }
 
@@ -576,14 +540,14 @@ func TestLifecycleWriterErrorSurfacesWithContext(t *testing.T) {
 // routine approval when several pauses are pending. (Kills skill_write.go.20:
 // `return 80` blanked to a bare `return` would yield 0, collapsing the ordering.)
 func TestApprovalPriorityIsTierOrdered(t *testing.T) {
-	if got := skillApprovalPriority(scoring.Destructive); got != 80 {
+	if got := ApprovalPriority(scoring.Destructive); got != 80 {
 		t.Errorf("Destructive priority = %d, want 80 (a delete must outrank a routine approval)", got)
 	}
-	if got := skillApprovalPriority(scoring.Risky); got != 60 {
+	if got := ApprovalPriority(scoring.Risky); got != 60 {
 		t.Errorf("Risky priority = %d, want 60", got)
 	}
-	if skillApprovalPriority(scoring.Destructive) <= skillApprovalPriority(scoring.Risky) {
+	if ApprovalPriority(scoring.Destructive) <= ApprovalPriority(scoring.Risky) {
 		t.Errorf("Destructive (%d) must rank strictly above Risky (%d)",
-			skillApprovalPriority(scoring.Destructive), skillApprovalPriority(scoring.Risky))
+			ApprovalPriority(scoring.Destructive), ApprovalPriority(scoring.Risky))
 	}
 }

@@ -37,17 +37,19 @@ func (f *fakeSkillsWrite) Install(_ context.Context, _ /*actor*/, source string)
 	}
 	name := "demo-skill"
 	f.lastInstallName = name
-	// The handler must surface the install as RISKY + the FIVE-item checklist + the pause
-	// token (the operator-origin /api/approvals entry). The fake mirrors the Installer's shape.
+	// The handler must surface the install as RISKY + the FIVE-item checklist. The fake
+	// mirrors the live Installer's shape, including its ACTIVE status: a fake that still
+	// returned "pending_approval" while the adapter returned "active" is how the stale
+	// contract stayed green for a whole phase.
+	f.activeNames[name] = true
 	return SkillsInstallInfo{
-		Name:          name,
-		Source:        source,
-		ContentHash:   "sha256:deadbeef",
-		Preview:       "# demo",
-		Destination:   "/skills/pending/demo-skill",
-		RiskTier:      "RISKY",
-		Status:        "pending_approval",
-		ApprovalToken: "00000000-0000-0000-0000-0000000000f1",
+		Name:        name,
+		Source:      source,
+		ContentHash: "sha256:deadbeef",
+		Preview:     "# demo",
+		Destination: "/skills/active/demo-skill",
+		RiskTier:    "RISKY",
+		Status:      "active",
 		Checklist: []SkillsCheckItem{
 			{Label: "sanitized env", Passed: true},
 			{Label: "SKILL.md parsed", Passed: true},
@@ -92,7 +94,20 @@ func (f *fakeSkillsWrite) Mutate(_ context.Context, _ /*actor*/, action, name, _
 	if f.failWith != nil {
 		return "", f.failWith
 	}
-	return "pending_approval", nil
+	f.activeNames[name] = true
+	return "active", nil
+}
+
+// Delete makes the removal OBSERVABLE, not just recorded. The previous test asserted only
+// that a call had happened, which is exactly how a delete route that deleted nothing
+// shipped: it recorded the call faithfully and removed nothing.
+func (f *fakeSkillsWrite) Delete(_ context.Context, _ /*actor*/, name string) error {
+	f.calls = append(f.calls, "delete:"+name)
+	if f.failWith != nil {
+		return f.failWith
+	}
+	delete(f.activeNames, name)
+	return nil
 }
 
 // skillsWriteServer builds a Server with the fake skills write provider wired (and a nil MCP
@@ -177,11 +192,11 @@ func TestGovernanceWriteSkillsInstallRiskyChecklist(t *testing.T) {
 			t.Errorf("checklist must NOT mention --ignore-scripts: %q", c.Label)
 		}
 	}
-	if info.Status != "pending_approval" {
-		t.Errorf("status = %q, want pending_approval (pending, not active)", info.Status)
+	if info.Status != "active" {
+		t.Errorf("status = %q, want active — an install that returns is usable", info.Status)
 	}
-	if info.ApprovalToken == "" {
-		t.Error("install must carry the operator-origin approval token (the /api/approvals entry)")
+	if strings.Contains(rec.Body.String(), "approval_token") {
+		t.Errorf("install must not carry an approval token: nothing is queued for approval: %s", rec.Body.String())
 	}
 	if info.ContentHash == "" || info.Preview == "" || info.Destination == "" || info.Source == "" {
 		t.Errorf("install must surface source/hash/preview/destination: %+v", info)
@@ -241,8 +256,14 @@ func TestGovernanceWriteSkillsArchive(t *testing.T) {
 	}
 }
 
-// TestGovernanceWriteSkillsCreateUpdateDelete asserts the create/update/delete routes wrap the
-// provider Mutate with the right action+name (the name path-value wins for update/delete).
+// TestGovernanceWriteSkillsCreateUpdateDelete asserts create/update wrap the provider
+// Mutate with the right action+name (the path {name} wins for update), and that DELETE
+// goes to the dedicated Delete method, answers 204 with an EMPTY body, and actually
+// removes the skill from the fake.
+//
+// The removal assertion is the point. The previous version of this test checked only
+// that a call had been recorded — which a route that deletes nothing satisfies
+// perfectly, and did, for as long as it shipped.
 func TestGovernanceWriteSkillsCreateUpdateDelete(t *testing.T) {
 	s, fake := skillsWriteServer(newFakeSkillsWrite())
 
@@ -252,14 +273,54 @@ func TestGovernanceWriteSkillsCreateUpdateDelete(t *testing.T) {
 	if rec := doSkillsWrite(t, s, http.MethodPatch, "/api/governance/skills/made", `{"body":"b2"}`, true); rec.Code != http.StatusOK {
 		t.Fatalf("update = %d, want 200", rec.Code)
 	}
-	if rec := doSkillsWrite(t, s, http.MethodDelete, "/api/governance/skills/made", "", true); rec.Code != http.StatusOK {
-		t.Fatalf("delete = %d, want 200", rec.Code)
+	if !fake.activeNames["made"] {
+		t.Fatal("create/update must leave the skill active in the fake")
+	}
+
+	rec := doSkillsWrite(t, s, http.MethodDelete, "/api/governance/skills/made", "", true)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("delete = %d, want 204: %s", rec.Code, rec.Body.String())
+	}
+	if body := rec.Body.String(); body != "" {
+		t.Errorf("delete must answer with an empty body, got %q", body)
+	}
+	if fake.activeNames["made"] {
+		t.Fatal("delete answered 204 but the skill is still there — the route must actually remove it")
 	}
 	for _, want := range []string{"create:made", "update:made", "delete:made"} {
 		if !contains(fake.calls, want) {
-			t.Errorf("missing mutate call %q in %v", want, fake.calls)
+			t.Errorf("missing provider call %q in %v", want, fake.calls)
 		}
 	}
+}
+
+// TestGovernanceWriteSkillsDeleteErrorMapping covers the delete path's two error shapes,
+// which had NO coverage at all before — precisely how a delete that always failed at a
+// validation check went unnoticed: a client-correctable input is a 400 naming the problem,
+// and a backend failure is a sanitized 502 that leaks no DSN.
+func TestGovernanceWriteSkillsDeleteErrorMapping(t *testing.T) {
+	t.Run("invalid input is a 400", func(t *testing.T) {
+		fake := newFakeSkillsWrite()
+		fake.failWith = fmt.Errorf("%w: bad name", ErrSkillInvalidInput)
+		s, _ := skillsWriteServer(fake)
+		rec := doSkillsWrite(t, s, http.MethodDelete, "/api/governance/skills/nope", "", true)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("delete with invalid input = %d, want 400: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("backend failure is a sanitized 502", func(t *testing.T) {
+		fake := newFakeSkillsWrite()
+		fake.failWith = errors.New("connect postgres://aura:topsecret@db.internal:5432 failed")
+		s, _ := skillsWriteServer(fake)
+		rec := doSkillsWrite(t, s, http.MethodDelete, "/api/governance/skills/nope", "", true)
+		if rec.Code != http.StatusBadGateway {
+			t.Fatalf("delete with a backend failure = %d, want 502", rec.Code)
+		}
+		if strings.Contains(rec.Body.String(), "topsecret") || strings.Contains(rec.Body.String(), "db.internal") {
+			t.Fatalf("delete error leaked a credential/host: %s", rec.Body.String())
+		}
+	})
 }
 
 // TestGovernanceWriteSkillsCatalogFlagGated asserts the catalog GET returns a disabled result
