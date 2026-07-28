@@ -86,6 +86,21 @@ func embedText(ctx context.Context, baseURL, text string) ([]float64, error) {
 	return body.Data[0].Embedding, nil
 }
 
+// embedVec is what every caller here wants: an embedding at the width the vector
+// index was built for. The sidecar answers at the model's NATIVE width, which for an
+// MRL embedder is wider than the index (Qwen3-Embedding-0.6B: 1024 against a 768
+// index), so the write path narrows it — and this harness has to narrow it the same
+// way, or it measures something production never stores. Writing the native vector
+// is not a loud failure: Neo4j accepts the node and silently leaves it out of the
+// index, so recall would collapse with no error anywhere (see pingEmbed).
+func embedVec(ctx context.Context, cfg *Config, text string) ([]float64, error) {
+	vec, err := embedText(ctx, cfg.EmbedURL, text)
+	if err != nil {
+		return nil, err
+	}
+	return TruncateMRL(vec, cfg.EmbedDimensions)
+}
+
 func TestKnowledgeSmoke(t *testing.T) {
 	ctx := context.Background()
 	cfg := smokeConfig(t)
@@ -120,12 +135,9 @@ func TestKnowledgeSmoke(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read %s: %v", f, err)
 		}
-		vec, err := embedText(ctx, cfg.EmbedURL, string(text))
+		vec, err := embedVec(ctx, cfg, string(text))
 		if err != nil {
 			t.Fatalf("embed %s: %v", id, err)
-		}
-		if len(vec) != cfg.EmbedDimensions {
-			t.Fatalf("embed dim=%d, want %d", len(vec), cfg.EmbedDimensions)
 		}
 		if _, err := run(
 			"MERGE (c:Chunk {id: $id}) SET c.text = $text, c.embedding = $emb",
@@ -145,7 +157,7 @@ func TestKnowledgeSmoke(t *testing.T) {
 	// (worse when a prior step DROP+recreated the index). p95 targets steady-state
 	// search latency (the Phase 6b spike basis), so issue several untimed queries
 	// to fully warm the index before measuring (standard benchmark hygiene).
-	if warm, err := embedText(ctx, cfg.EmbedURL, "warmup"); err == nil {
+	if warm, err := embedVec(ctx, cfg, "warmup"); err == nil {
 		for range 5 {
 			ws := driver.NewSession(ctx, neo4j.SessionConfig{DatabaseName: cfg.Database})
 			if wr, err := ws.Run(ctx, "CALL db.index.vector.queryNodes('chunk_embedding', 5, $q) YIELD node RETURN node.id", map[string]any{"q": warm}); err == nil {
@@ -163,7 +175,7 @@ func TestKnowledgeSmoke(t *testing.T) {
 			continue
 		}
 		total++
-		qvec, err := embedText(ctx, cfg.EmbedURL, query)
+		qvec, err := embedVec(ctx, cfg, query)
 		if err != nil {
 			t.Fatalf("embed query %q: %v", query, err)
 		}

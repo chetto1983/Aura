@@ -112,7 +112,7 @@ func pingEmbed(ctx context.Context, baseURL string, expectedDim int) error {
 	}
 	// A sidecar WIDER than the contract is fine and expected: MRL-trained embedders
 	// publish a native width larger than the index, the write path narrows every
-	// vector to expectedDim (documents.truncateMRL, and the same truncation in the
+	// vector to expectedDim (TruncateMRL, and the same truncation in the
 	// memory sidecar), and the llama.cpp server ignores the OpenAI `dimensions`
 	// parameter so it cannot narrow them for us.
 	//

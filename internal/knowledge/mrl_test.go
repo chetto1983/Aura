@@ -1,4 +1,4 @@
-package documents
+package knowledge
 
 import (
 	"math"
@@ -25,7 +25,7 @@ func TestTruncateMRL(t *testing.T) {
 	t.Run("already at width is returned untouched", func(t *testing.T) {
 		t.Parallel()
 		in := []float64{3, 4}
-		got, err := truncateMRL(in, 2)
+		got, err := TruncateMRL(in, 2)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -38,7 +38,7 @@ func TestTruncateMRL(t *testing.T) {
 
 	t.Run("wider vector keeps the leading components and is renormalised", func(t *testing.T) {
 		t.Parallel()
-		got, err := truncateMRL([]float64{3, 4, 99, 99}, 2)
+		got, err := TruncateMRL([]float64{3, 4, 99, 99}, 2)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -58,7 +58,7 @@ func TestTruncateMRL(t *testing.T) {
 		for i := range in {
 			in[i] = float64(i%7) + 1
 		}
-		got, err := truncateMRL(in, 768)
+		got, err := TruncateMRL(in, 768)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -71,7 +71,7 @@ func TestTruncateMRL(t *testing.T) {
 	t.Run("narrower than the index is refused rather than padded", func(t *testing.T) {
 		t.Parallel()
 		// Padding would let a mismatched model write silently corrupt vectors.
-		if _, err := truncateMRL(make([]float64, 512), 768); err == nil {
+		if _, err := TruncateMRL(make([]float64, 512), 768); err == nil {
 			t.Fatal("want an error for a vector narrower than the configured width")
 		}
 	})
@@ -81,7 +81,7 @@ func TestTruncateMRL(t *testing.T) {
 		// Renormalising would divide by zero; a zero vector is never a valid embedding.
 		in := make([]float64, 8)
 		in[7] = 1
-		if _, err := truncateMRL(in, 4); err == nil {
+		if _, err := TruncateMRL(in, 4); err == nil {
 			t.Fatal("want an error when every retained component is zero")
 		}
 	})
