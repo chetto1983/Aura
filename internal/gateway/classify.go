@@ -56,11 +56,17 @@ func classify(spec tools.Spec, rawArgs json.RawMessage) scoring.RiskTier {
 	return scoring.Safe
 }
 
-// skillFixedTiers allow-lists the skill actions that de-escalate below the mutating
-// floor to a FIXED tier: the reads (list/info/use) to Safe, and the snippet-lifecycle
-// writes (restore/archive/save_snippet) to Normal. It deliberately OMITS
-// create/update/delete — those are the only actions routed to scoring.ComputeSkillTier
-// (skillScoredActions); routing a read there would gate it (the D-02c landmine).
+// skillFixedTiers pins the skill actions whose tier does not depend on a body: the reads
+// (list/info/use) to Safe, the snippet-lifecycle writes (restore/archive/save_snippet) to
+// Normal, and install to Risky. It deliberately OMITS create/update/delete — those are the
+// only actions routed to scoring.ComputeSkillTier (skillScoredActions); routing a read
+// there would gate it (the D-02c landmine).
+//
+// install is Risky, and pinned rather than left to the unknown-action fallback (which is
+// also Risky): a tier that holds only because nothing claimed the action is a tier that
+// changes the day someone touches the fallback. It fetches third-party code and lands it
+// active — persistent self-modification from a supply-chain input, which is the tier's own
+// definition. It is not Destructive: an install adds a skill and takes nothing away.
 var skillFixedTiers = map[string]scoring.RiskTier{
 	"list":         scoring.Safe,
 	"info":         scoring.Safe,
@@ -68,11 +74,11 @@ var skillFixedTiers = map[string]scoring.RiskTier{
 	"restore":      scoring.Normal,
 	"archive":      scoring.Normal,
 	"save_snippet": scoring.Normal,
+	"install":      scoring.Risky,
 }
 
 // skillScoredActions are the ONLY skill actions scored by scoring.ComputeSkillTier
-// (create/update → Risky, delete → Destructive). The dead `install` action (removed
-// per amendment #51 / D-40) is intentionally absent.
+// (create/update → Risky, delete → Destructive).
 var skillScoredActions = map[string]bool{"create": true, "update": true, "delete": true}
 
 // classifySkill de-escalates the enumerated skill reads/snippet-lifecycle actions and

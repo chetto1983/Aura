@@ -89,8 +89,6 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"AURA_AUTHULA_RATE_LIMIT_MAX: ${AURA_AUTHULA_RATE_LIMIT_MAX:-30}",
 		"AURA_AUTHULA_OPERATOR_IDENTITY: ${AURA_AUTHULA_OPERATOR_IDENTITY:-}",
 		"AURA_EMBED_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda",
-		"AURA_EMBED_HF_REPO:-SandLogicTechnologies/granite-embedding-311m-multilingual-r2-GGUF",
-		"AURA_EMBED_HF_FILE:-granite-embedding-311M-multilingual-r2_Q6_k.gguf",
 		"AURA_EMBED_NGL:-99",
 		"LLAMA_ARG_HOST: 0.0.0.0",
 		"aura-migrate:",
@@ -143,6 +141,16 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 	// switches models via AURA_LLM_MODEL / .env without touching this contract.
 	if !regexp.MustCompile(`AURA_LLM_MODEL: \$\{AURA_LLM_MODEL:-[^}]+\}`).MatchString(compose) {
 		t.Fatalf("compose.yaml missing env-overridable AURA_LLM_MODEL default pattern (AURA_LLM_MODEL: ${AURA_LLM_MODEL:-...})")
+	}
+	// The embedding sidecar's repo/file follow the same rule, for the same reason: which
+	// model embeds is a deployment decision (it changed the day the graph stopped
+	// discriminating), and pinning the tag here only guarantees this contract goes red
+	// every time someone makes that decision. What the image contract owes is that a
+	// default EXISTS and the operator can override it from .env.
+	for _, knob := range []string{"AURA_EMBED_HF_REPO", "AURA_EMBED_HF_FILE"} {
+		if !regexp.MustCompile(`\$\{` + knob + `:-[^}]+\}`).MatchString(compose) {
+			t.Fatalf("compose.yaml missing env-overridable %s default pattern (${%s:-...})", knob, knob)
+		}
 	}
 	if strings.Count(compose, "0.0.0.0:${AURA_HTTPS_PORT:-443}:443") != 1 {
 		t.Fatalf("compose.yaml should publish only caddy on non-loopback 443")
