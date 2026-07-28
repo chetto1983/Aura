@@ -66,6 +66,13 @@ type skillWriter interface {
 	// ArchiveSnippet de-materializes + moves active->archived + audits (SAFE tier). It
 	// returns a status string or an error.
 	ArchiveSnippet(ctx context.Context, name string) (status string, err error)
+	// Install fetches a skill from the open ecosystem (owner/repo, a URL, a path),
+	// validates it at the write boundary and lands it ACTIVE + materialized + audited,
+	// returning the installed name. It exists so self-extension is a tool call rather
+	// than a shell procedure: `npx skills add` run from a terminal writes into whatever
+	// directory it happens to be standing in, which the loader does not scan — the model
+	// then reports an install that Aura never saw.
+	Install(ctx context.Context, source string) (name string, err error)
 }
 
 // skillAlerter is the optional alert seam (D-26): the tool fires an IMMEDIATE alert so
@@ -91,6 +98,8 @@ type skillWriteArgs struct {
 	Code           string `json:"code"`
 	NeedsNetwork   bool   `json:"needs_network"`
 	NeedsWorkspace bool   `json:"needs_workspace"`
+	// Source is the action=install fetch target: owner/repo, a URL, or a path.
+	Source string `json:"source"`
 }
 
 // actionCreate handles action=create: a model-authored new skill. It validates and
@@ -116,6 +125,38 @@ func (t *SkillTool) actionUpdate(ctx context.Context, raw json.RawMessage) (Tool
 // appliance — a difference recorded in the amendment, not papered over here.
 func (t *SkillTool) actionDelete(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
 	return t.writeAction(ctx, raw, scoring.SkillDelete)
+}
+
+// actionInstall handles action=install: fetch a skill from the open ecosystem and land
+// it, validated and audited, where the loader actually scans.
+//
+// It exists because the alternative was a shell procedure. `npx skills add` installs
+// into `<cwd>/.agents/skills/<name>` — a directory nothing in Aura reads — so the model
+// ran it, saw "Installation complete", found the skill missing from `skill action=list`,
+// and started copying files around by hand. Every step of that was reasonable and the
+// whole of it was wasted: the tool never had a way to say "install this".
+func (t *SkillTool) actionInstall(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
+	var a skillWriteArgs
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return ToolResult{}, fmt.Errorf("skill install args: %w", err)
+	}
+	source := strings.TrimSpace(a.Source)
+	if source == "" {
+		return ToolResult{}, fmt.Errorf("skill install: source is required (owner/repo, a URL, or a path)")
+	}
+	if t.Writer == nil {
+		return ToolResult{}, fmt.Errorf("skill install: no writer is wired in this context")
+	}
+
+	name, err := t.Writer.Install(ctx, source)
+	if err != nil {
+		return ToolResult{}, fmt.Errorf("skill install %q: %w", source, err)
+	}
+	if t.Alerter != nil {
+		t.Alerter.AlertPendingSkill(ctx, name, "install", scoring.Risky)
+	}
+	return NewResult(ctx, fmt.Sprintf(
+		"Skill %q installed from %s and active now — use it on this turn with action=use.", name, source))
 }
 
 // writeAction is the shared create/update/delete flow: decode the args, require the

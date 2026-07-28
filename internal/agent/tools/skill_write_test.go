@@ -35,6 +35,23 @@ type fakeSkillWriter struct {
 	archiveCalls   int
 	lifecycleErr   error  // scripted error for the snippet lifecycle calls
 	lifecycleState string // scripted status string returned by the lifecycle calls
+	installSource  string
+	installName    string
+	installCalls   int
+	installErr     error
+}
+
+func (f *fakeSkillWriter) Install(_ context.Context, source string) (string, error) {
+	f.installCalls++
+	f.installSource = source
+	if f.installErr != nil {
+		return "", f.installErr
+	}
+	name := f.installName
+	if name == "" {
+		name = "installed-skill"
+	}
+	return name, nil
 }
 
 func (f *fakeSkillWriter) WriteMutation(_ context.Context, action, name, _, body string, always bool) (string, error) {

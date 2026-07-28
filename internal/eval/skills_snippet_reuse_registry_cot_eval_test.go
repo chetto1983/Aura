@@ -54,7 +54,7 @@ func buildSnippetReuseRegistry(cfg *config.Config, workspace, skillsRoot, export
 			Blocklist:    cfg.SkillInjectionBlocklist,
 			BodyCapBytes: cfg.SkillBodyCapBytes,
 		})
-		skillTool.Writer = skilladapters.NewWriter(w)
+		skillTool.Writer = skilladapters.NewWriter(w, nil)
 	}
 	reg.Register(skillTool)
 	return reg

@@ -311,7 +311,15 @@ func newSkillToolWithAdaptive(
 	}
 	if writerPool != nil {
 		w := newSkillWriter(cfg, writerPool)
-		tool.Writer = skilladapters.NewWriter(w)
+		// The model's install path is the SAME Installer the cockpit uses — one fetch +
+		// validate + audit implementation, not a second one that could drift.
+		installer := skills.NewInstaller(skills.InstallerConfig{
+			Writer:       w,
+			Blocklist:    cfg.SkillInjectionBlocklist,
+			BodyCapBytes: cfg.SkillBodyCapBytes,
+			WorkDir:      cfg.RunDir,
+		})
+		tool.Writer = skilladapters.NewWriter(w, installer)
 	}
 	return tool
 }

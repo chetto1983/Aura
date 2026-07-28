@@ -15,6 +15,7 @@ package skilladapters
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/skills"
@@ -92,13 +93,17 @@ func (a *Loader) Snippet(name string) (instructions, hostPath, sandboxPath, inte
 // tool's create/update/delete/save_snippet/restore/archive actions dispatch against.
 // The model is the actor on this path (allowBlocklisted=false is enforced inside the
 // live Writer's WriteMutation).
+// installer is optional: a nil one makes action=install a clear error instead of a
+// panic, the same posture a nil Writer already has on the pool-free manifest paths.
 type Writer struct {
-	w *skills.Writer
+	w         *skills.Writer
+	installer *skills.Installer
 }
 
-// NewWriter builds the writer adapter over the live *skills.Writer.
-func NewWriter(w *skills.Writer) *Writer {
-	return &Writer{w: w}
+// NewWriter builds the writer adapter over the live *skills.Writer and the Installer
+// that backs action=install. The installer may be nil (no install action available).
+func NewWriter(w *skills.Writer, installer *skills.Installer) *Writer {
+	return &Writer{w: w, installer: installer}
 }
 
 // WriteMutation maps the tool's string-keyed call onto the live Writer, labeling the
@@ -146,4 +151,22 @@ func (a *Writer) ArchiveSnippet(ctx context.Context, name string) (string, error
 		return "", err
 	}
 	return "archived", nil
+}
+
+// Install maps the tool's install call onto the live Installer — the SAME fetch →
+// validate → write → materialize → audit path the cockpit install button runs, with the
+// actor labelled "model". It returns the installed name so the tool can name it back.
+//
+// Routing the model through the Installer rather than through a terminal is the whole
+// point: the CLI would land the tree in its working directory, outside every loader
+// root, and the model would truthfully report an install of something Aura cannot load.
+func (a *Writer) Install(ctx context.Context, source string) (string, error) {
+	if a.installer == nil {
+		return "", fmt.Errorf("install %q: no installer is wired in this context", source)
+	}
+	info, err := a.installer.Install(ctx, source, modelActor)
+	if err != nil {
+		return "", err
+	}
+	return info.Name, nil
 }

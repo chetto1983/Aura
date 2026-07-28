@@ -19,7 +19,7 @@ family, run the search below FIRST; hand-code only when it comes up empty.
 
 ## How to search
 
-Run the skills CLI in your terminal:
+Run the skills CLI in your terminal — it only prints, it installs nothing:
 
     npx skills find <query>
 
@@ -38,20 +38,27 @@ Run the skills CLI in your terminal:
 
 ## How to install and use
 
-Install your chosen skill so it persists and loads. Your skills home is `~/.aura/skills/export`
-(the directory the loader scans for installed skills); install there so the skill survives
-across sessions and is loadable by name:
+Install with the skill tool, never with the CLI:
 
-    cd ~/.aura/skills/export && npx skills add <owner/repo> --skill <skill-name> --copy -y
+    skill action=install source=<owner/repo>
 
-The skill lands under `~/.aura/skills/export/.agents/skills/<skill-name>/`. Then:
+Add the skill name when a repository ships several: `source=<owner/repo>@<skill-name>`.
 
-1. Read its `SKILL.md` and follow the instructions it gives you.
-2. Run any bundled scripts BY PATH with the interpreter (e.g.
-   `python3 ~/.aura/skills/export/.agents/skills/<name>/scripts/...`) — never rely on the
-   exec bit.
+That one call fetches the skill, validates it and puts it in your library — it is listed
+by `skill action=list` and usable with `skill action=use` on this same turn. No approval
+round-trip, nothing to wait for.
 
-No approval round-trip is needed — install directly in your terminal.
+**Do not install with `npx skills add`.** It writes into whatever directory your shell is
+standing in, which is not the library: the CLI prints "Installation complete" and the
+skill does not exist as far as Aura is concerned. If you have already run it, do not try
+to move the files into the skills mount — that mount is a read-only mirror and any copy
+you make there is erased on the next refresh. Just run the install action.
+
+After installing:
+
+1. Read the skill with `skill action=info name=<name>` and follow what it says.
+2. Run any bundled script BY PATH with its interpreter (e.g. `python3 <path>`) — never
+   rely on the exec bit.
 
 ## If nothing fits
 

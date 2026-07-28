@@ -18,13 +18,18 @@ import (
 // tool would hide the very manifest the model searches.
 //
 // This tool wires the READ actions list|info|use, the authoring actions
-// create|update|delete (gated, pending→approve), and the snippet-lifecycle actions
-// save_snippet|restore|archive (18-03): save_snippet stages a reusable snippet UNGATED
+// create|update|delete (each live on write — amendment #97), install (fetch a
+// third-party skill into the library), and the snippet-lifecycle actions
+// save_snippet|restore|archive (18-03): save_snippet stores a reusable snippet UNGATED
 // (D-02 — normal result, never a pause), restore un-archives a snippet, archive
-// de-materializes one (SAFE tier). Discovery+install of third-party skills is NOT a
-// tool concern (amendment #51 / D-40): the always-on find-skills skill teaches the
-// model to self-extend via `npx skills find/add` in the sandbox, so the catalog client
-// + native installer + their tool actions were deleted.
+// de-materializes one (SAFE tier).
+//
+// install came back (amendment #51 / D-40 had removed it in favour of teaching the
+// model `npx skills find/add`): the CLI installs into the directory it is standing in,
+// which is not a loader root, so the taught procedure ended in "Installation complete"
+// followed by a skill that does not exist as far as Aura is concerned. Discovery still
+// belongs to the CLI — `npx skills find` only prints — but the install has to come back
+// through the Installer that validates, writes and audits.
 //
 // The live loader is injected at registration via the consumer-declared skillLoader
 // seam below (golang-structs-interfaces: the consumer owns the interface), so this
@@ -108,9 +113,8 @@ type skillArgs struct {
 // a root enum 400s OpenAI-compat providers (DeepSeek). The `action` property does
 // carry an enum (a property-level enum on a string is wire-safe), as does the
 // `language` property for save_snippet. The snippet-lifecycle actions
-// (save_snippet/restore/archive) are wired (18-03). Discovery+install is NOT a tool
-// action (amendment #51 / D-40 — the find-skills always-on skill teaches
-// `npx skills find/add` in the sandbox).
+// (save_snippet/restore/archive) are wired (18-03), and so is install — the model needs
+// a way to add a skill that ends with the skill actually loaded.
 //
 // HONESTY (AG-011 / AG-044 / amendment #97): the descriptions state the ACTUAL
 // single-operator trust boundary, not an approval ceremony nobody performs. Aura runs
@@ -123,10 +127,11 @@ type skillArgs struct {
 const skillParamsSchemaHonest = `{
   "type": "object",
   "properties": {
-    "action": {"type": "string", "enum": ["list", "info", "use", "create", "update", "delete", "save_snippet", "restore", "archive"], "description": "The skill operation: list (show available skills; pass an optional query to rank by relevance); info (read a skill's body for inspection by name); use (apply a skill's instructions, or run a stored snippet by path, by name); create (author a new skill); update (revise an existing skill); delete (remove a skill); save_snippet (store a reusable executable code snippet so you can re-run it by path on a later turn instead of re-authoring it); restore (un-archive a previously archived snippet back to active); archive (de-activate a snippet you no longer need - recoverable with restore). Every write action takes effect immediately after validation and audit: a skill you create or update is usable on your next turn, a snippet you save can be run right away with action=use, and a delete removes it. Nothing is staged and nothing waits for approval."},
+    "action": {"type": "string", "enum": ["list", "info", "use", "install", "create", "update", "delete", "save_snippet", "restore", "archive"], "description": "The skill operation: list (show available skills; pass an optional query to rank by relevance); info (read a skill's body for inspection by name); use (apply a skill's instructions, or run a stored snippet by path, by name); install (fetch a skill from the open ecosystem into your library - give it source, e.g. owner/repo); create (author a new skill); update (revise an existing skill); delete (remove a skill); save_snippet (store a reusable executable code snippet so you can re-run it by path on a later turn instead of re-authoring it); restore (un-archive a previously archived snippet back to active); archive (de-activate a snippet you no longer need - recoverable with restore). Every write action takes effect immediately after validation and audit: a skill you create, update or install is usable on this same turn, a snippet you save can be run right away with action=use, and a delete removes it. Nothing is staged and nothing waits for approval. Never install a skill by running the skills CLI in a terminal - that writes outside the library and the skill will not load."},
     "name": {"type": "string", "description": "Required when action=info, use, create, update, delete, save_snippet, restore, or archive. The exact skill/snippet name (lowercase, [a-z0-9-], 1-64 chars) to inspect, apply, author, revise, remove, save, restore, or archive."},
     "description": {"type": "string", "description": "Required when action=create, update or save_snippet. A one-line summary of what the skill/snippet does (shown in the skill manifest, which is how you find it again). A skill saved without one is refused."},
     "body": {"type": "string", "description": "Required when action=create or update. The markdown instructions that make up the skill."},
+    "source": {"type": "string", "description": "Required when action=install. Where to fetch the skill from: owner/repo (optionally owner/repo@skill-name), a URL, or a local path."},
     "language": {"type": "string", "enum": ["python", "shell", "js"], "description": "Required when action=save_snippet. The language of the snippet code (python, shell, or js)."},
     "code": {"type": "string", "description": "Required when action=save_snippet. The executable snippet body (the code that will be saved and later run by path)."},
     "always": {"type": "boolean", "description": "Optional when action=create or update. always:true injects the skill body into every future turn's always-on prompt block instead of only when you apply it by name — use it only for standing instructions, since it costs context on every turn."},
@@ -202,11 +207,16 @@ func (t *SkillTool) actionRouter() *ActionRouter {
 			"create": t.actionCreate,
 			"update": t.actionUpdate,
 			"delete": t.actionDelete,
+			// install runs the SAME Installer the cockpit uses: fetch, validate, land it
+			// active, audit. It used to be deliberately absent (amendment #51 / D-40 left
+			// self-extension to the find-skills always-on skill and the CLI) — but a CLI
+			// install writes into the directory it is standing in, not into the loader's
+			// roots, so the loop the model was taught could not close. A skill you cannot
+			// install through the tool is a skill Aura never learns about.
+			"install": t.actionInstall,
 			// Snippet lifecycle (18-03): save_snippet is the in-loop save (a normal result,
 			// NEVER a pause); restore is Archive's inverse; archive is the
-			// manual SAFE-tier de-materialize. (Discovery+install is NOT a tool action —
-			// amendment #51 / D-40: the find-skills always-on skill teaches self-extension
-			// via the skills CLI in the sandbox.)
+			// manual SAFE-tier de-materialize.
 			"save_snippet": t.actionSaveSnippet,
 			"restore":      t.actionRestore,
 			"archive":      t.actionArchive,

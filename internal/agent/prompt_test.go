@@ -149,18 +149,24 @@ func TestPrompt_WorkspaceDoctrine(t *testing.T) {
 	}
 }
 
-// TestPrompt_NoSupersededSkillRouting is the #51 supersession guard: the §Skills
-// section must NOT teach the deleted action=catalog/action=install routing (those
-// tool actions are gone; discovery+install is the always-on find-skills skill).
-func TestPrompt_NoSupersededSkillRouting(t *testing.T) {
-	for _, superseded := range []string{"action=catalog", "action=install"} {
-		if strings.Contains(SystemPrompt, superseded) {
-			t.Errorf("SystemPrompt reintroduced superseded routing %q (#51 removed it)", superseded)
-		}
+// TestPrompt_SkillInstallRoutingIsTheTool: the §Skills section must route INSTALL
+// through the tool and must not send the model to the CLI for it.
+//
+// This guard used to assert the opposite — #51 had deleted action=install and handed
+// self-extension to `npx skills add`. That was tested and wrong in production: the CLI
+// installs into its working directory, which is not a loader root, so the model followed
+// the instruction, read "Installation complete", and owned a skill Aura could not load.
+// action=catalog stays superseded: discovery really is the CLI's job, because
+// `npx skills find` only prints.
+func TestPrompt_SkillInstallRoutingIsTheTool(t *testing.T) {
+	if strings.Contains(SystemPrompt, "action=catalog") {
+		t.Error("SystemPrompt reintroduced action=catalog (#51 removed it; discovery is the CLI)")
 	}
-	// The shrunk section must point at the always-on discovery skill.
-	if !strings.Contains(SystemPrompt, "always-on") {
-		t.Error("the §Skills section must name an always-on skill as the discovery/install teaching")
+	if !strings.Contains(SystemPrompt, "skill action=install") {
+		t.Error("the §Skills section must route install through the tool, not the terminal")
+	}
+	if !strings.Contains(SystemPrompt, "NEVER install by running the skills CLI") {
+		t.Error("the §Skills section must warn the model off the CLI install that cannot work")
 	}
 }
 

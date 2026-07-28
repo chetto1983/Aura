@@ -119,7 +119,9 @@ func TestSkillSchemaPromisesNoApproval(t *testing.T) {
 
 	for _, want := range []string{
 		"takes effect immediately",
-		"usable on your next turn",
+		// "this same turn", not "your next turn": a write lands before the call returns,
+		// so telling the model to wait a turn is a weaker promise than the truth.
+		"usable on this same turn",
 		"Nothing is staged and nothing waits for approval",
 	} {
 		if !strings.Contains(schema, want) {

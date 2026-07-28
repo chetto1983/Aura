@@ -99,7 +99,7 @@ func liveWriterAdapter(t *testing.T, pool *pgxpool.Pool) (*Writer, string) {
 		ArchiveDir:   filepath.Join(root, "archived"),
 		BodyCapBytes: 32768,
 	})
-	return NewWriter(live), root
+	return NewWriter(live, nil), root
 }
 
 // uniqueName yields a per-test skill name within the [a-z0-9-] grammar.

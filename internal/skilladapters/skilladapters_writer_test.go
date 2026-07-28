@@ -25,13 +25,13 @@ func newWriterAdapter(t *testing.T) (*Writer, string) {
 		Blocklist:    []string{"<|im_start|>"},
 		BodyCapBytes: 32768,
 	})
-	return NewWriter(live), root
+	return NewWriter(live, nil), root
 }
 
 func TestNewWriterRetainsLiveWriter(t *testing.T) {
 	t.Parallel()
 	live := skills.NewWriter(skills.WriterConfig{ActiveDir: t.TempDir()})
-	a := NewWriter(live)
+	a := NewWriter(live, nil)
 	if a.w != live {
 		t.Error("NewWriter did not retain the live *skills.Writer")
 	}
