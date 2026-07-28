@@ -18,21 +18,20 @@ import (
 // messages[1] protection in internal/conversations, the live exec in the sandbox-agent
 // — is covered by those packages' own tests; these assert the SKILLS-side contract):
 //
-//   - TestHaikuFlow: a model-authored always:true skill, once active (the create→approve
-//     promotion the resume handler / CLI drive), renders into the messages[1] always-block
-//     (RenderAlwaysBlock) — the byte-stable, alphabetical, header-led block the runner
-//     injects as the protected seq=2 turn so the next turn carries the haiku instruction.
-//   - TestSnippetReuse: a saved snippet, once active, resolves to the SAME stable
+//   - TestHaikuFlow: a model-authored always:true skill renders into the messages[1]
+//     always-block (RenderAlwaysBlock) — the byte-stable, alphabetical, header-led block
+//     the runner injects as the protected seq=2 turn so the NEXT turn carries the haiku
+//     instruction. Since amendment #97 that next turn is the one right after the write.
+//   - TestSnippetReuse: a saved snippet resolves to the SAME stable
 //     /skills/<name>/<name>.<ext> by-path invocation on every UseSnippet call (the
 //     deterministic reuse the model/CLI exec against — interpreter + path, never the exec
 //     bit).
 
-// activateOnDisk simulates the create→approve promotion at the FS level (the loader
-// scans the active root; pending→active is a dir move). It writes the SKILL.md + any
-// code file directly into the active root so the unit smoke exercises the loader +
-// render contract WITHOUT the live audit tx (db_integration) — the activation audit row
-// is asserted by TestWriterActivateAuditRow (db_integration).
-func activateOnDisk(t *testing.T, activeRoot, name string, fm Frontmatter, body string, codeFile, code string) {
+// writeOnDisk places a skill in the active root the way a write leaves it (amendment
+// #97: the write IS the effect — there is no promotion step to simulate). It writes the
+// SKILL.md + any code file directly so the unit smoke exercises the loader + render
+// contract WITHOUT the live audit tx; the audit row is asserted under db_integration.
+func writeOnDisk(t *testing.T, activeRoot, name string, fm Frontmatter, body string, codeFile, code string) {
 	t.Helper()
 	dir := filepath.Join(activeRoot, name)
 	if err := os.MkdirAll(dir, 0o750); err != nil {
@@ -48,29 +47,28 @@ func activateOnDisk(t *testing.T, activeRoot, name string, fm Frontmatter, body 
 	}
 }
 
-// TestHaikuFlow is the create→approve→messages[1]→next-turn smoke (D-35). An author
-// creates an always:true "haiku" skill; once approved (active on disk), the loader picks
-// it up and RenderAlwaysBlock emits its body into the byte-stable messages[1] block — so
-// the very next assembled turn steers the model into haiku mode. A non-always skill in
-// the same root MUST NOT leak into the block.
+// TestHaikuFlow is the create→messages[1]→next-turn smoke (D-35). An author creates an
+// always:true "haiku" skill; the loader picks it up and RenderAlwaysBlock emits its body
+// into the byte-stable messages[1] block — so the very next assembled turn steers the
+// model into haiku mode. A non-always skill in the same root MUST NOT leak into the block.
 func TestHaikuFlow(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 
 	const haikuBody = "Respond ONLY in haiku: three lines, 5-7-5 syllables. No prose."
-	activateOnDisk(t, root, "haiku",
+	writeOnDisk(t, root, "haiku",
 		Frontmatter{Name: "haiku", Description: "answer in haiku", Type: TypeInstruction, Always: true},
 		haikuBody, "", "")
 	// A second, NON-always skill that must stay out of the always-block.
-	activateOnDisk(t, root, "verbose",
+	writeOnDisk(t, root, "verbose",
 		Frontmatter{Name: "verbose", Description: "be verbose", Type: TypeInstruction, Always: false},
 		"Write long, detailed answers.", "", "")
 
 	loader := NewLoader(Config{Roots: []string{root}})
 	loaded := loader.List()
 
-	// The active always:true skill is loaded with Always=true (the create→approve result
-	// the loader sees on the next turn).
+	// The written always:true skill is loaded with Always=true — what the loader sees on
+	// the turn after the write.
 	var haiku *Skill
 	for i := range loaded {
 		if loaded[i].Name == "haiku" {
@@ -108,9 +106,8 @@ func TestHaikuFlow(t *testing.T) {
 	}
 }
 
-// TestSnippetReuse is the snippet save→by-path reuse smoke (D-35). A snippet is saved
-// (write-boundary validated, the gate decision is RISKY) and, once active, resolves to
-// the SAME stable /skills by-path invocation on every UseSnippet call — the
+// TestSnippetReuse is the snippet save→by-path reuse smoke (D-35). A saved snippet
+// resolves to the SAME stable /skills by-path invocation on every UseSnippet call — the
 // deterministic reuse the model/CLI exec against (interpreter + path). The live exec +
 // usage stamp are TestSnippetExec (sandbox_integration); this asserts the by-path
 // resolution + reuse without the container.
@@ -118,22 +115,12 @@ func TestSnippetReuse(t *testing.T) {
 	t.Parallel()
 	w, root := newTestWriter(t)
 
-	// Save (FS round-trip; the nil-pool audit tx is exercised by the db_integration tier,
-	// so we save the pending tree directly through writePendingSnippet — the same bytes
-	// SaveSnippet writes — to keep this smoke LLM-free AND DB-free).
+	// Place the snippet where a SaveSnippet leaves it — the active root the Writer scans
+	// (<root>/active, newTestWriter) — writing the same bytes SaveSnippet writes, so this
+	// smoke stays LLM-free AND DB-free (the audit tx is the db_integration tier's job).
 	const code = "print('reuse-ok 42')\n"
 	fm := Frontmatter{Name: "calc", Description: "adds", Type: TypeSnippet, Language: "python"}
-	if err := w.writePendingSnippet("calc", fm, renderSnippetDocs(fm, snippetMetaByLang[LangPython]), code, "py"); err != nil {
-		t.Fatalf("writePendingSnippet: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(root, "pending", "calc", "calc.py")); err != nil {
-		t.Fatalf("pending snippet code file missing: %v", err)
-	}
-
-	// Approve → active (the FS promotion the resume handler / CLI drive; the audit row is
-	// db_integration). Place the active snippet directly so the unit smoke is DB-free. The
-	// Writer's active root is <root>/active (newTestWriter), the same dir UseSnippet reads.
-	activateOnDisk(t, filepath.Join(root, "active"), "calc", fm, renderSnippetDocs(fm, snippetMetaByLang[LangPython]), "calc.py", code)
+	writeOnDisk(t, filepath.Join(root, "active"), "calc", fm, renderSnippetDocs(fm, snippetMetaByLang[LangPython]), "calc.py", code)
 
 	// First use: the by-path invocation the model execs against.
 	u1, err := w.UseSnippet("calc")

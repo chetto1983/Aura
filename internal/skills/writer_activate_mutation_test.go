@@ -3,8 +3,9 @@
 // Mutation-hardening tests for writer_activate.go (Phase 18 Gate-3 spot-check). These
 // pin the lifecycle behaviours go-mutesting found unguarded:
 //
-//   - the Delete pending-dir cleanup actually runs (a no-op'd RemoveAll leaves a stale
-//     pending tree the boot scan would re-surface);
+//   - Delete actually removes BOTH the active dir and the export subtree (a no-op'd
+//     RemoveAll leaves the skill loadable, or leaves it in the sandbox's /skills mount
+//     after the ledger says it is gone);
 //   - SetAlways actually persists the flipped always flag to the active SKILL.md (a
 //     skipped assignment silently no-ops the operator's `aura skills always` command);
 //   - every lifecycle audit wrap (activate/archive/restore/delete/set-always) surfaces
@@ -29,55 +30,53 @@ import (
 	"github.com/google/uuid"
 )
 
-// TestWriteMutationModelActorUngated proves P5 (2026-06-10): a MODEL-authored mutation
-// (actor "model") is ungated in-box — WriteMutation auto-activates it (StatusActive) and
-// materializes it into the active dir, instead of staging pending. The operator CLI path
-// (actor "cli") keeps its gate (StatusPendingApproval, not materialized). The container is
-// the boundary (Phase 17), so self-extension needs no human approval (Claude-Code parity).
-func TestWriteMutationModelActorGatePolicy(t *testing.T) {
+// TestWriteMutationTakesEffectForEveryActor is amendment #97's core claim: the actor no
+// longer selects a code path. A model-authored skill, a model-authored always:true skill
+// (which enters every future turn's messages[1] block) and an operator-authored one all
+// land active AND materialized into the export dir the sandbox mounts, and each records
+// its own actor in the ledger — the only place that distinction now survives.
+func TestWriteMutationTakesEffectForEveryActor(t *testing.T) {
 	w, root := newMutationWriter(t)
 	ctx := context.Background()
+	store := NewAuditStore(w.pool)
 
-	modelName := "model" + uuid.Must(uuid.NewV7()).String()[:8]
-	status, err := w.WriteMutation(ctx, scoring.SkillCreate,
-		Frontmatter{Name: modelName, Description: "d", Type: TypeInstruction}, "# body",
-		AuditActor{ActorID: ActorModel})
-	if err != nil {
-		t.Fatalf("model WriteMutation: %v", err)
+	cases := []struct {
+		label  string
+		always bool
+		actor  string
+	}{
+		{label: "model", actor: ActorModel},
+		{label: "always", always: true, actor: ActorModel},
+		{label: "operator", actor: "cli"},
 	}
-	if status != StatusActive {
-		t.Fatalf("model path status = %q, want %q (ungated auto-activate)", status, StatusActive)
-	}
-	if _, statErr := os.Stat(filepath.Join(root, "active", modelName, "SKILL.md")); statErr != nil {
-		t.Fatalf("model skill must be materialized into the active dir: %v", statErr)
-	}
-
-	alwaysName := "always" + uuid.Must(uuid.NewV7()).String()[:8]
-	statusAlways, err := w.WriteMutation(ctx, scoring.SkillCreate,
-		Frontmatter{Name: alwaysName, Description: "d", Type: TypeInstruction, Always: true}, "# body",
-		AuditActor{ActorID: ActorModel})
-	if err != nil {
-		t.Fatalf("model always WriteMutation: %v", err)
-	}
-	if statusAlways != StatusPendingApproval {
-		t.Fatalf("model always path status = %q, want %q (always-on stays gated)", statusAlways, StatusPendingApproval)
-	}
-	if _, statErr := os.Stat(filepath.Join(root, "active", alwaysName, "SKILL.md")); !os.IsNotExist(statErr) {
-		t.Fatalf("model always skill must stay pending (not materialized); active present (stat err=%v)", statErr)
-	}
-
-	cliName := "cli" + uuid.Must(uuid.NewV7()).String()[:8]
-	status2, err := w.WriteMutation(ctx, scoring.SkillCreate,
-		Frontmatter{Name: cliName, Description: "d", Type: TypeInstruction}, "# body",
-		AuditActor{ActorID: "cli"})
-	if err != nil {
-		t.Fatalf("cli WriteMutation: %v", err)
-	}
-	if status2 != StatusPendingApproval {
-		t.Fatalf("cli path status = %q, want %q (still gated)", status2, StatusPendingApproval)
-	}
-	if _, statErr := os.Stat(filepath.Join(root, "active", cliName, "SKILL.md")); !os.IsNotExist(statErr) {
-		t.Fatalf("cli skill must stay pending (not materialized); active present (stat err=%v)", statErr)
+	for _, c := range cases {
+		t.Run(c.label, func(t *testing.T) {
+			name := c.label + uuid.Must(uuid.NewV7()).String()[:8]
+			status, err := w.WriteMutation(ctx, scoring.SkillCreate,
+				Frontmatter{Name: name, Description: "d", Type: TypeInstruction, Always: c.always}, "# body",
+				AuditActor{ActorID: c.actor})
+			if err != nil {
+				t.Fatalf("WriteMutation: %v", err)
+			}
+			if status != StatusActive {
+				t.Fatalf("status = %q, want %q", status, StatusActive)
+			}
+			for _, dir := range []string{"active", "export"} {
+				if _, statErr := os.Stat(filepath.Join(root, dir, name, "SKILL.md")); statErr != nil {
+					t.Fatalf("skill must land in %s/: %v", dir, statErr)
+				}
+			}
+			rows, lerr := store.List(ctx, AuditFilter{SkillName: name})
+			if lerr != nil {
+				t.Fatalf("List: %v", lerr)
+			}
+			if len(rows) != 1 {
+				t.Fatalf("audit rows = %d, want exactly 1", len(rows))
+			}
+			if rows[0].ActorID != c.actor {
+				t.Errorf("audit actor_id = %q, want %q — the ledger is the only record of who acted", rows[0].ActorID, c.actor)
+			}
+		})
 	}
 }
 
@@ -113,33 +112,28 @@ func seedActiveSkill(t *testing.T, root, name string, always bool) {
 	}
 }
 
-// TestDeleteRemovesPendingCopy proves Delete removes the pending/<name> copy as well as
-// the active one (a half-deleted skill — active gone, pending lingering — would be
-// re-surfaced by the boot scan as a phantom pending mutation). Kills
-// writer_activate.go.19: the `os.RemoveAll(pending/<name>)` call no-op'd, leaving the
-// pending tree behind.
-func TestDeleteRemovesPendingCopy(t *testing.T) {
+// TestDeleteRemovesActiveAndExport proves Delete removes BOTH halves of a live skill:
+// the active dir the loader scans and the export subtree the sandbox mounts read-only. A
+// skipped RemoveAll leaves the skill loadable; a skipped Dematerialize leaves it runnable
+// inside the box after the ledger says it is gone. Kills writer_activate.go's active-dir
+// removal and its Dematerialize call.
+func TestDeleteRemovesActiveAndExport(t *testing.T) {
 	w, root := newMutationWriter(t)
 	name := "del" + uuid.Must(uuid.NewV7()).String()[:8]
 
 	seedActiveSkill(t, root, name, false)
-	pendingDir := filepath.Join(root, "pending", name)
-	if err := os.MkdirAll(pendingDir, 0o750); err != nil {
-		t.Fatalf("seed pending dir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(pendingDir, "SKILL.md"), []byte("---\nname: x\n---\nbody"), 0o600); err != nil {
-		t.Fatalf("seed pending SKILL.md: %v", err)
+	if err := Materialize(name, filepath.Join(root, "active", name), filepath.Join(root, "export")); err != nil {
+		t.Fatalf("seed export copy: %v", err)
 	}
 
 	if _, err := w.Delete(context.Background(), name, AuditActor{ActorID: "cli"}); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 
-	if _, statErr := os.Stat(pendingDir); !os.IsNotExist(statErr) {
-		t.Fatalf("Delete must remove the pending/<name> copy too; pending dir still present (stat err=%v)", statErr)
-	}
-	if _, statErr := os.Stat(filepath.Join(root, "active", name)); !os.IsNotExist(statErr) {
-		t.Fatalf("Delete must remove the active dir; still present (stat err=%v)", statErr)
+	for _, dir := range []string{"active", "export"} {
+		if _, statErr := os.Stat(filepath.Join(root, dir, name)); !os.IsNotExist(statErr) {
+			t.Fatalf("Delete must remove %s/%s (stat err=%v)", dir, name, statErr)
+		}
 	}
 }
 

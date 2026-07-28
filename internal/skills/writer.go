@@ -12,17 +12,21 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Writer is the durable, auditable, gate-aware skill write primitive (Slice 7c).
-// It is the seam 11-05 (governance/ask_user resume), 11-06 (installer), and 11-07
-// (snippets) consume. A model-authored mutation lands in `pending/<name>/` on disk
-// and records ONE audit row (the D-29 pending tuple) inside db.WithTx; it never
-// self-activates (T-11-04-E1 — Activate is a SEPARATE method only the resume
-// handler / CLI call). Materialization to the export dir happens ONLY on activation
-// (D-17). The status strings mirror the scheduler's pending_approval contract.
+// Writer is the durable, auditable skill write primitive (Slice 7c). It is the seam
+// 11-06 (installer) and 11-07 (snippets) consume, and the sink behind the model tool,
+// the CLI and the cockpit.
+//
+// Amendment #97: a mutation TAKES EFFECT WHEN IT IS WRITTEN. The skill lands in the
+// active root the loader scans AND is materialized into the export dir (D-17) in the
+// same call — there is no staging stage, no approval step, and nothing that reports
+// success while doing nothing. What remains as control is the write boundary
+// (ValidateForWrite, allowBlocklisted=false), the loader's own blocklist scan, and
+// the append-only audit ledger — which is why writeActive commits the audit row
+// BEFORE the skill becomes visible.
 type Writer struct {
 	pool       *pgxpool.Pool
-	pendingDir string // <root>/pending — where gated mutations land before approval
-	activeDir  string // <root> active root the loader scans (pending/active live as siblings)
+	pendingDir string // legacy staging root, still read by the Activate/resume path this amendment retires
+	activeDir  string // <root> active root the loader scans (archived/.staging live as siblings)
 	exportDir  string // AURA_SKILL_EXPORT_DIR — the /skills ro-mount source (D-17)
 	archiveDir string // <root>/archived — de-materialized, retained skills
 
@@ -57,11 +61,15 @@ func NewWriter(cfg WriterConfig) *Writer {
 	}
 }
 
-// Status constants returned by WriteMutation, mirroring the scheduler's contract.
-const (
-	StatusPendingApproval = "pending_approval"
-	StatusActive          = "active"
-)
+// StatusActive is what every write path returns. After amendment #97 there is no
+// second status to distinguish: a skill that was written is live.
+const StatusActive = "active"
+
+// stagingDirName is the sibling directory writeActive stages into before renaming a
+// skill into place. The leading dot puts it outside the skill-name grammar
+// (^[a-z0-9-]{1,64}$), so neither the loader nor the TTL sweep — both of which run
+// every candidate through SanitizeName — can mistake it for a skill.
+const stagingDirName = ".staging"
 
 // AuditActor carries the identity attribution for an audit row (D-05): ActorID is
 // the free-form actor label (e.g. "model", "cli", a swarm worker id); IdentityID is
@@ -72,159 +80,54 @@ type AuditActor struct {
 }
 
 // ActorModel is the actor label the in-loop skill tool uses (mirrored by the
-// cmd/aura skillWriterAdapter). A model-authored non-always mutation is ungated
-// in-box, but model-authored always:true skills stay gated because they enter every
-// future turn's messages[1] block.
+// cmd/aura skillWriterAdapter). After amendment #97 it no longer selects a code path
+// — every actor writes the same way — but it stays the ledger's answer to WHO changed
+// a skill, which is the only place that answer now survives.
 const ActorModel = "model"
 
-// WriteMutation is the model-facing create/update/install/delete entry point. It:
-//  1. computes the tier via scoring.ComputeSkillTier (create/update/install→Risky,
-//     delete→Destructive) and gate via scoring.GateRecommended;
-//  2. validates the frontmatter+body at the write boundary (ValidateForWrite,
-//     allowBlocklisted=false — model paths NEVER bypass the blocklist, T-11-03-E1);
-//  3. computes the canonical content_hash (D-23 recovery path);
-//  4. writes the skill into pending/<name>/ atomically (temp dir + rename) BEFORE
-//     the tx (the orphan is reconciled by the boot scan, mirroring the conversations
-//     sidecar-spill-before-tx pattern, T-11-04-I1);
-//  5. records ONE audit row — the D-29 pending tuple (NULL,NULL,true,false) — inside
-//     db.WithTx (the tx is the audit INSERT; the FS write is reconcilable).
+// WriteMutation is the create/update/delete entry point the model tool, the CLI and
+// the cockpit share. It validates the frontmatter + body at the write boundary
+// (allowBlocklisted=false — no actor bypasses the blocklist, T-11-03-E1), computes the
+// canonical content_hash (D-23 recovery path), and lands the skill active +
+// materialized + audited in one call (writeActive).
 //
-// It returns StatusPendingApproval whenever the gate fires (always, for the four
-// gated actions). It NEVER activates or materializes — that is Activate's job.
+// Delete is routed FIRST, before the validator. It carries only a name — the caller
+// synthesises an empty frontmatter around it — so running it through a description
+// check made the cockpit's DELETE route fail on a field a delete does not have,
+// answering 502 without deleting anything or recording a row. Delete self-guards the
+// only input it has (SanitizeName, inside Writer.Delete).
 func (w *Writer) WriteMutation(ctx context.Context, action scoring.SkillAction, fm Frontmatter, body string, actor AuditActor) (status string, err error) {
-	tier := scoring.ComputeSkillTier(action, body)
-	gate := scoring.GateRecommended(tier)
-	// P5 (2026-06-10): ordinary in-box self-extension is ungated. always:true is
-	// deliberately excluded: it changes the always-on prompt block for every future
-	// turn, so it remains human-reviewed.
-	if modelMutationBypassesGate(action, fm, actor) {
-		gate = false
+	if action == scoring.SkillDelete {
+		return w.Delete(ctx, fm.Name, actor)
 	}
-
 	if err := ValidateForWrite(fm, body, w.blocklist, w.bodyCapBytes, false); err != nil {
 		return "", fmt.Errorf("write mutation %q: %w", fm.Name, err)
 	}
 
-	hash := HashSkillFiles(map[string][]byte{"SKILL.md": skillFileBytes(fm, body)})
-
-	if action == scoring.SkillDelete {
-		// Delete is a de-materialize + archive + audit, not a pending write.
-		if !gate {
-			return w.Delete(ctx, fm.Name, actor)
-		}
-		if err := db.WithTx(ctx, w.pool, func(q *sqlc.Queries) error {
-			return InsertAuditTx(ctx, q, AuditInsert{
-				ActorID:         actor.ActorID,
-				IdentityID:      actor.IdentityID,
-				SkillName:       fm.Name,
-				Action:          AuditDelete,
-				ContentHash:     hash,
-				ApprovalSource:  ApprovalNone,
-				GateRecommended: true,
-				GateTaken:       false,
-			})
-		}); err != nil {
-			return "", fmt.Errorf("delete skill %q: audit: %w", fm.Name, err)
-		}
-		return StatusPendingApproval, nil
-	}
-
-	if err := w.writePending(fm.Name, fm, body); err != nil {
+	files := map[string][]byte{"SKILL.md": skillFileBytes(fm, body)}
+	audit := actorAudit(fm.Name, auditActionFor(action), HashSkillFiles(files), actor)
+	if err := w.writeActive(ctx, fm.Name, writeFilesInto(files), audit); err != nil {
 		return "", fmt.Errorf("write mutation %q: %w", fm.Name, err)
 	}
-
-	if !gate {
-		// No gated action reaches here today (all four gate). Kept for the auto path:
-		// promote + materialize + audit the activation tuple. Unreachable in v1.
-		if aerr := w.Activate(ctx, fm.Name, ApprovalAuto, "", actor); aerr != nil {
-			return "", aerr
-		}
-		return StatusActive, nil
-	}
-
-	// The D-29 pending tuple: gate recommended, gate not yet taken.
-	if err := db.WithTx(ctx, w.pool, func(q *sqlc.Queries) error {
-		return InsertAuditTx(ctx, q, AuditInsert{
-			ActorID:         actor.ActorID,
-			IdentityID:      actor.IdentityID,
-			SkillName:       fm.Name,
-			Action:          auditActionFor(action),
-			ContentHash:     hash,
-			ApprovalSource:  ApprovalNone,
-			GateRecommended: true,
-			GateTaken:       false,
-		})
-	}); err != nil {
-		return "", fmt.Errorf("write mutation %q: audit: %w", fm.Name, err)
-	}
-	return StatusPendingApproval, nil
+	return StatusActive, nil
 }
 
-func modelMutationBypassesGate(action scoring.SkillAction, fm Frontmatter, actor AuditActor) bool {
-	switch action {
-	case scoring.SkillCreate, scoring.SkillUpdate:
-		return actor.ActorID == ActorModel && !fm.Always
-	default:
-		return false
-	}
-}
-
-// WriteInstallPending lands an installed skill (a possibly-multi-file tree already
-// staged symlink-stripped + always-stripped on disk by the Installer) into pending/
-// <name>/ and records the D-29 pending audit tuple with action=install and the
-// installer's precomputed canonical hash. It is the installer's pending+audit sink
-// (11-06): the install is a gated mutation that NEVER self-activates (D-03) —
-// activation is the operator / ask_user resume path. Unlike WriteMutation (single
-// SKILL.md), this promotes the whole staged tree so bundled files travel into pending.
-func (w *Writer) WriteInstallPending(ctx context.Context, fm Frontmatter, body, stagedDir, hash string, actor AuditActor) (string, error) {
-	if w.pendingDir == "" {
-		return "", fmt.Errorf("install pending: pending dir not configured")
-	}
-	if !skillNameRe.MatchString(fm.Name) || !filepath.IsLocal(fm.Name) {
-		return "", fmt.Errorf("install pending: %w: %q must match %s and be local", ErrInvalidName, fm.Name, skillNameRe.String())
-	}
-	if err := os.MkdirAll(w.pendingDir, 0o750); err != nil {
-		return "", fmt.Errorf("install pending: mkdir pending root: %w", err)
-	}
-	dst := filepath.Join(w.pendingDir, fm.Name)
-	// Promote the staged tree into pending/<name>/ atomically: copy into a sibling
-	// temp dir (symlink-stripped) then rename, mirroring writePending's crash safety.
-	tmp, err := os.MkdirTemp(w.pendingDir, ".install-tmp-*")
-	if err != nil {
-		return "", fmt.Errorf("install pending: mkdir temp: %w", err)
-	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = os.RemoveAll(tmp)
+// WriteInstall lands an installed skill — a possibly-multi-file tree the Installer has
+// already staged symlink-stripped and always-stripped on disk — as ACTIVE, recording
+// the install audit row with the installer's precomputed canonical hash. Unlike
+// WriteMutation (a single SKILL.md) it promotes the WHOLE staged tree, so bundled
+// scripts and assets travel with the skill.
+func (w *Writer) WriteInstall(ctx context.Context, fm Frontmatter, stagedDir, hash string, actor AuditActor) (string, error) {
+	fill := func(dir string) error {
+		if err := copyTreeNoSymlinks(stagedDir, dir); err != nil {
+			return fmt.Errorf("copy staged tree: %w", err)
 		}
-	}()
-	if err := copyTreeNoSymlinks(stagedDir, tmp); err != nil {
-		return "", fmt.Errorf("install pending: copy staged tree: %w", err)
+		return nil
 	}
-	if err := os.RemoveAll(dst); err != nil {
-		return "", fmt.Errorf("install pending: clear stale pending %q: %w", fm.Name, err)
+	if err := w.writeActive(ctx, fm.Name, fill, actorAudit(fm.Name, AuditInstall, hash, actor)); err != nil {
+		return "", fmt.Errorf("install %q: %w", fm.Name, err)
 	}
-	if err := os.Rename(tmp, dst); err != nil {
-		return "", fmt.Errorf("install pending: rename into place: %w", err)
-	}
-	committed = true
-
-	if err := db.WithTx(ctx, w.pool, func(q *sqlc.Queries) error {
-		return InsertAuditTx(ctx, q, AuditInsert{
-			ActorID:         actor.ActorID,
-			IdentityID:      actor.IdentityID,
-			SkillName:       fm.Name,
-			Action:          AuditInstall,
-			ContentHash:     hash,
-			ApprovalSource:  ApprovalNone,
-			GateRecommended: true,
-			GateTaken:       false,
-		})
-	}); err != nil {
-		return "", fmt.Errorf("install pending %q: audit: %w", fm.Name, err)
-	}
-	return StatusPendingApproval, nil
+	return StatusActive, nil
 }
 
 // WriteMutationByName is the string-keyed entry point the CLI and the model-tool
@@ -238,29 +141,42 @@ func (w *Writer) WriteMutationByName(ctx context.Context, action, name, descript
 }
 
 // WriteMutationCLI is the operator-authored convenience used by `aura skills
-// create|update`: it labels the actor "cli" and stages the mutation as pending.
+// create|update`: it labels the actor "cli" and writes the mutation live.
 func (w *Writer) WriteMutationCLI(ctx context.Context, action, name, description, body string, always bool) (string, error) {
 	return w.WriteMutationByName(ctx, action, name, description, body, always, AuditActor{ActorID: "cli"})
 }
 
-// writePending materializes the skill into pending/<name>/SKILL.md atomically: it
-// writes into a sibling temp dir then renames it into place, so a crash mid-write
-// never leaves a half-written pending skill the loader could read.
-func (w *Writer) writePending(name string, fm Frontmatter, body string) error {
-	if w.pendingDir == "" {
-		return fmt.Errorf("pending dir not configured")
+// writeActive lands a skill as ACTIVE and records its audit row. The ORDER of the
+// four steps is the safety story of amendment #97, and it is deliberate:
+//
+//	stage under <active>/.staging → commit the audit tx → rename into place → materialize
+//
+// Before #97 the pre-tx write went to pending/, where an orphan was invisible and
+// harmless. The identical write now lands in the root the loader scans and reaches the
+// model's manifest within one cache TTL, while the append-only ledger is the ONLY
+// surviving record of who changed what. So the tx commits FIRST: a crash after it
+// leaves an audit row for a skill that does not exist — detectable and harmless —
+// where the reverse leaves a live, model-visible, unrecorded mutation.
+//
+// fill populates the staging dir: an explicit file map for create/update/snippet, a
+// symlink-stripped tree copy for install.
+func (w *Writer) writeActive(ctx context.Context, name string, fill func(dir string) error, audit AuditInsert) error {
+	// The name chokepoint (D-30) runs BEFORE the name is joined into a path that
+	// promoteDir and Materialize both turn into an os.RemoveAll.
+	if err := SanitizeName(name, name); err != nil {
+		return err
 	}
-	if !skillNameRe.MatchString(name) || !filepath.IsLocal(name) {
-		return fmt.Errorf("%w: %q must match %s and be local", ErrInvalidName, name, skillNameRe.String())
+	if w.activeDir == "" {
+		return fmt.Errorf("active dir not configured")
 	}
-	if err := os.MkdirAll(w.pendingDir, 0o750); err != nil {
-		return fmt.Errorf("mkdir pending root: %w", err)
+	staging := filepath.Join(w.activeDir, stagingDirName)
+	if err := os.MkdirAll(staging, 0o750); err != nil {
+		return fmt.Errorf("mkdir staging root: %w", err)
 	}
-	tmp, err := os.MkdirTemp(w.pendingDir, ".skill-tmp-*")
+	tmp, err := os.MkdirTemp(staging, "skill-*")
 	if err != nil {
-		return fmt.Errorf("mkdir temp: %w", err)
+		return fmt.Errorf("mkdir staging dir: %w", err)
 	}
-	// On any failure, best-effort clean the temp dir.
 	committed := false
 	defer func() {
 		if !committed {
@@ -268,19 +184,64 @@ func (w *Writer) writePending(name string, fm Frontmatter, body string) error {
 		}
 	}()
 
-	if err := os.WriteFile(filepath.Join(tmp, "SKILL.md"), skillFileBytes(fm, body), 0o600); err != nil {
-		return fmt.Errorf("write SKILL.md: %w", err)
+	if err := fill(tmp); err != nil {
+		return err
+	}
+	if err := db.WithTx(ctx, w.pool, func(q *sqlc.Queries) error {
+		return InsertAuditTx(ctx, q, audit)
+	}); err != nil {
+		return fmt.Errorf("audit: %w", err)
 	}
 
-	final := filepath.Join(w.pendingDir, name)
-	if err := os.RemoveAll(final); err != nil { // replace any stale pending of the same name
-		return fmt.Errorf("clear stale pending %q: %w", name, err)
-	}
-	if err := os.Rename(tmp, final); err != nil {
-		return fmt.Errorf("rename pending into place: %w", err)
+	dst := filepath.Join(w.activeDir, name)
+	if err := promoteDir(tmp, dst); err != nil {
+		return fmt.Errorf("rename into the active root: %w", err)
 	}
 	committed = true
+	if err := Materialize(name, dst, w.exportDir); err != nil {
+		return fmt.Errorf("materialize: %w", err)
+	}
 	return nil
+}
+
+// writeFilesInto returns a writeActive fill that writes an explicit file map. The file
+// names are writer-controlled (SKILL.md, <name>.<ext>) over a SanitizeName-validated
+// staging dir.
+func writeFilesInto(files map[string][]byte) func(dir string) error {
+	return func(dir string) error {
+		for name, data := range files {
+			if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
+				return fmt.Errorf("write %s: %w", name, err)
+			}
+		}
+		return nil
+	}
+}
+
+// actorAudit builds the audit row every ACTOR-initiated write records.
+//
+// Two constants here are load-bearing and must not be "corrected":
+//
+//   - approval_source no longer means how a mutation was approved — after #97 nothing
+//     is approved. It distinguishes an actor-initiated write ('cli') from a system
+//     sweep ('auto'). WHO acted is actor_id, which still carries ActorModel for a
+//     model-authored mutation; without that distinction the ledger would read as if an
+//     operator had made every change.
+//   - gate_recommended stays true although no gate is recommended any more: the 0010
+//     skill_audit_d29_coherence CHECK admits no ('cli',NULL,false,true) tuple, so
+//     writing false raises SQLSTATE 23514 at runtime — under db_integration only, never
+//     at compile time. Writer.Delete has always written exactly this tuple.
+func actorAudit(name string, action AuditAction, hash string, actor AuditActor) AuditInsert {
+	return AuditInsert{
+		ActorID:         actor.ActorID,
+		IdentityID:      actor.IdentityID,
+		SkillName:       name,
+		Action:          action,
+		ContentHash:     hash,
+		ApprovalSource:  ApprovalCLI,
+		GateRecommended: true,
+		GateTaken:       true,
+	}
 }
 
 // skillFileBytes renders a SKILL.md from frontmatter + body. The frontmatter is the

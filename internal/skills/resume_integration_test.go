@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/chetto1983/aura/internal/scoring"
 	"github.com/google/uuid"
 )
 
@@ -37,10 +36,7 @@ func TestResumeAcceptActivates(t *testing.T) {
 	h := NewResumeHandler(w)
 
 	name := "ra-" + uuid.Must(uuid.NewV7()).String()[:8]
-	fm := Frontmatter{Name: name, Description: "d", Type: TypeInstruction}
-	if _, err := w.WriteMutation(t.Context(), scoring.SkillCreate, fm, "body", AuditActor{ActorID: "cli"}); err != nil {
-		t.Fatalf("WriteMutation: %v", err)
-	}
+	seedPendingSkill(t, root, Frontmatter{Name: name, Description: "d", Type: TypeInstruction})
 
 	token := uuid.Must(uuid.NewV7()).String()
 	seedPausedState(t, w.pool, token)
@@ -74,13 +70,7 @@ func TestResumeDeclineDiscards(t *testing.T) {
 	h := NewResumeHandler(w)
 
 	name := "rd-" + uuid.Must(uuid.NewV7()).String()[:8]
-	fm := Frontmatter{Name: name, Description: "d", Type: TypeInstruction}
-	if _, err := w.WriteMutation(t.Context(), scoring.SkillCreate, fm, "body", AuditActor{ActorID: "cli"}); err != nil {
-		t.Fatalf("WriteMutation: %v", err)
-	}
-	if _, serr := os.Stat(filepath.Join(root, "pending", name)); serr != nil {
-		t.Fatalf("pending skill not staged: %v", serr)
-	}
+	seedPendingSkill(t, root, Frontmatter{Name: name, Description: "d", Type: TypeInstruction})
 
 	token := uuid.Must(uuid.NewV7()).String()
 	seedPausedState(t, w.pool, token)

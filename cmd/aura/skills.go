@@ -149,9 +149,9 @@ func skillsInfo(_ context.Context, args []string) {
 	fmt.Printf("name: %s\ndescription: %s\nalways: %v\ntype: %s\n\n%s\n", s.Name, s.Description, s.Always, s.Type, s.Body)
 }
 
-// skillsWrite stages a create/update mutation as pending (the operator can then
-// approve it). The CLI is operator-authored: it still validates + gates, lands in
-// pending, and reports the resulting status. --always marks an always-on skill.
+// skillsWrite applies a create/update mutation. The CLI is operator-authored: it
+// validates at the write boundary and the skill is live when the command returns
+// (amendment #97). --always marks an always-on skill.
 func skillsWrite(ctx context.Context, args []string, action string) {
 	if len(args) < 1 {
 		fmt.Fprintf(os.Stderr, "usage: aura skills %s <name> --desc <d> --body <b> [--always]\n", action)
@@ -174,11 +174,11 @@ func skillsWrite(ctx context.Context, args []string, action string) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	fmt.Printf("ok: %s %q staged (status=%s) — approve with `aura skills approve %s`\n", action, name, status, name)
+	fmt.Printf("ok: %s %q %s\n", action, name, status)
 }
 
-// skillsDelete stages a Destructive delete (operator-authored). It de-materializes +
-// archives the skill behind the gate, recording the cli audit row.
+// skillsDelete removes a skill (operator-authored): it de-materializes it from the
+// /skills mount, removes the active dir, and records the cli audit row.
 func skillsDelete(ctx context.Context, args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "usage: aura skills delete <name>")

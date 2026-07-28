@@ -18,14 +18,13 @@ import (
 // the EXISTING Phase-11 primitives — the live Writer (the lifecycle sink) + the Task-1
 // Installer (the npx-skills fetch→validate→stage transport).
 //
-// Install posture (Claude-Code parity, operator directive 2026-06-21): a cockpit install
-// ACTIVATES directly — no approval pause, no staging ceremony, no "stage for approval"
-// two-step. The Installer fetches + validates + stages the tree to pending/, then the adapter
-// immediately promotes it to active via Writer.Activate (the SAME primitive the
-// `aura skills approve` CLI uses: ApprovalCLI, no token). The security keep is intrinsic and
-// invisible: the loader-level injection blocklist + the five write-boundary validations run on
-// every body before activation, and the container is the blast boundary. There is no
-// model/agent path here — the route is operator-only behind RequireCapability(governance.write).
+// Install posture (Claude-Code parity, operator directive 2026-06-21; amendment #97): a cockpit
+// install ACTIVATES directly — no approval pause, no staging ceremony, no two-step. The Writer
+// itself lands the fetched tree active + materialized + audited, so the adapter has no promotion
+// step of its own to perform. The security keep is intrinsic and invisible: the loader-level
+// injection blocklist + the five write-boundary validations run on every body, and the container
+// is the blast boundary. There is no model/agent path here — the route is operator-only behind
+// RequireCapability(governance.write).
 //
 // SKW-03 restore-collision guard: the restore handler maps the provider's ErrSkillActiveExists
 // sentinel to 409 — the provider stat'd active/{name} and returned the sentinel BEFORE
@@ -43,11 +42,11 @@ type skillsWriteAdapter struct {
 	activeDir string
 }
 
-// Install fetches the skill through the Task-1 Installer (npx skills add → validate → stage to
-// pending/) and then ACTIVATES it directly via Writer.Activate (Claude-Code parity: no approval
-// pause). It returns the SkillsInstallInfo (source/hash/preview, the active destination, status
-// "active", the five validation checks that ran). An empty source is rejected with
-// ErrSkillInvalidInput → 400; an invalid structure / blocklist hit is a client-correctable 400.
+// Install fetches the skill through the Task-1 Installer (npx skills add → validate → write),
+// which since amendment #97 lands it active + materialized + audited in one call. It returns
+// the SkillsInstallInfo (source/hash/preview, the active destination, status "active", the five
+// validation checks that ran). An empty source is rejected with ErrSkillInvalidInput → 400; an
+// invalid structure / blocklist hit is a client-correctable 400.
 func (a skillsWriteAdapter) Install(ctx context.Context, actor, source string) (agui.SkillsInstallInfo, error) {
 	if source == "" {
 		return agui.SkillsInstallInfo{}, fmt.Errorf("%w: install source is empty", agui.ErrSkillInvalidInput)
@@ -60,13 +59,6 @@ func (a skillsWriteAdapter) Install(ctx context.Context, actor, source string) (
 		if errors.Is(err, skills.ErrInvalidStructure) || errors.Is(err, skills.ErrBlocklisted) {
 			return agui.SkillsInstallInfo{}, fmt.Errorf("%w: %v", agui.ErrSkillInvalidInput, err)
 		}
-		return agui.SkillsInstallInfo{}, err
-	}
-
-	// Direct activation (operator-direct, ApprovalCLI, no pause token) — the SAME primitive
-	// `aura skills approve` uses. Promotes pending/<name> → active/<name>, materializes into the
-	// live loader, and audits the operator-direct activation. No approval pause is minted.
-	if err := a.writer.Activate(ctx, info.Name, skills.ApprovalCLI, "", auditActor); err != nil {
 		return agui.SkillsInstallInfo{}, err
 	}
 
@@ -113,8 +105,8 @@ func (a skillsWriteAdapter) Archive(ctx context.Context, actor, name string) err
 }
 
 // Mutate wraps Writer.WriteMutationByName for create/update/delete (SKW-01). The actor is
-// labelled "operator" (not "model") so the in-box model-bypass never applies — every
-// operator-authored mutation stays gated/pending exactly like the CLI path.
+// labelled "operator" (not "model"), which is now purely a ledger attribution: every actor
+// takes the same write path and the mutation is live when this returns.
 func (a skillsWriteAdapter) Mutate(ctx context.Context, actor, action, name, description, body string, always bool) (string, error) {
 	return a.writer.WriteMutationByName(ctx, action, name, description, body, always,
 		skills.AuditActor{ActorID: "operator", IdentityID: actor})

@@ -41,15 +41,21 @@ const (
 	AuditCleanupPending AuditAction = "cleanup_pending_stale"
 )
 
-// ApprovalSource enumerates how a gated mutation was approved. NULL (the empty
-// string here) is the pending row that has not yet exercised its gate.
+// ApprovalSource named how a gated mutation was approved. After amendment #97 removed
+// the approval stage it no longer means that: the only distinction the live writes draw
+// is ACTOR-INITIATED ('cli') vs SYSTEM SWEEP ('auto'). WHO acted is actor_id, which
+// still carries ActorModel for a model-authored mutation — read a row's source without
+// its actor and every change looks like the operator's.
+//
+// The column keeps its full enum because aura.skill_audit is append-only: pre-#97
+// history carries NULL and 'ask_user' sources that must still deserialise.
 type ApprovalSource string
 
-// The four approval sources, mirroring the D-29 matrix rows (none=pending).
+// The four approval sources, mirroring the D-29 matrix rows.
 const (
-	ApprovalNone    ApprovalSource = ""         // pending — gate not yet exercised
-	ApprovalAskUser ApprovalSource = "ask_user" // user approved/rejected via resume
-	ApprovalCLI     ApprovalSource = "cli"      // operator CLI approve / --allow-blocklisted
+	ApprovalNone    ApprovalSource = ""         // pre-#97 rows whose gate was never exercised
+	ApprovalAskUser ApprovalSource = "ask_user" // approval/rejection via the resume path this amendment retires
+	ApprovalCLI     ApprovalSource = "cli"      // actor-initiated write (model, operator or CLI)
 	ApprovalAuto    ApprovalSource = "auto"     // system sweep (auto_archive / cleanup_pending_stale)
 )
 

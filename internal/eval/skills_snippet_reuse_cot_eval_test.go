@@ -9,7 +9,7 @@
 // r.Reply (artifact-not-reply discipline, feedback_probe_must_verify_artifact_not_reply).
 //
 // PITFALL 5 (never measure the authoring run): the gate PRE-SEEDS an active xlsx-builder
-// snippet (Writer.SaveSnippet → Activate → materialized into the export dir) BEFORE the
+// snippet (Writer.SaveSnippet — which materializes into the export dir) BEFORE the
 // run, then measures the SINGLE reuse run as the steady state. Pre-seeding is the
 // sanctioned steady-state shaper per the 18-04 plan ("pre-seed the snippet active, then
 // measure ONE reuse run as the steady state").
@@ -215,8 +215,8 @@ func newReuseHarness(t *testing.T) *reuseHarness {
 	appCfg := config.LoadDB()
 	workspace := newInspectableWorkspace(t)
 	// The skills root + export dir are t.TempDir-rooted (the snippet is pre-seeded fresh
-	// each run, no cross-run state). The loader scans skillsRoot; Activate materializes into
-	// exportDir; the host by-path frame points at exportDir/<name>/<name>.py.
+	// each run, no cross-run state). The loader scans skillsRoot; the write materializes
+	// into exportDir; the host by-path frame points at exportDir/<name>/<name>.py.
 	skillsRoot := t.TempDir()
 	exportDir := t.TempDir()
 
@@ -272,8 +272,9 @@ func newReuseHarness(t *testing.T) *reuseHarness {
 	}
 }
 
-// preseedSnippet saves + activates the reusable xlsx-builder snippet so it is ACTIVE
-// (manifest-visible + materialized for host by-path use) before the reuse run (Pitfall 5).
+// preseedSnippet saves the reusable xlsx-builder snippet so it is ACTIVE (manifest-visible
+// + materialized for host by-path use) before the reuse run (Pitfall 5). Since amendment
+// #97 the save alone does that — there is no activation step to follow it with.
 func (h *reuseHarness) preseedSnippet(t *testing.T, ctx context.Context) {
 	t.Helper()
 	actor := skills.AuditActor{ActorID: "operator"}
@@ -284,9 +285,6 @@ func (h *reuseHarness) preseedSnippet(t *testing.T, ctx context.Context) {
 			NeedsNetwork: true,
 		}, actor); err != nil {
 		t.Fatalf("preseed: SaveSnippet: %v", err)
-	}
-	if err := h.writer.Activate(ctx, reuseSnippetName, skills.ApprovalCLI, "", actor); err != nil {
-		t.Fatalf("preseed: Activate: %v", err)
 	}
 	hostPath, _, err := skills.SnippetHostInvocation(reuseSnippetName, "python", h.exportDir)
 	if err != nil {

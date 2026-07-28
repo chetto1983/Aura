@@ -3,7 +3,7 @@
 // Integration tests for the skilladapters Writer success paths — the audit-tx
 // branches that require a live Postgres pool (db.WithTx → pool.Begin). These cover
 // the three success-return statements unit tests cannot reach with a nil pool:
-// SaveSnippet's pending status, Restore's active status, and ArchiveSnippet's
+// SaveSnippet's active status, Restore's active status, and ArchiveSnippet's
 // "archived" status. The Loader-adapter and Writer-adapter PRE-tx branches are
 // covered by the unit tier (skilladapters_loader_test.go / skilladapters_writer_test.go).
 //
@@ -89,7 +89,7 @@ func migratedPool(t *testing.T) *pgxpool.Pool {
 
 // liveWriterAdapter builds a Writer adapter over a real *skills.Writer with the live
 // pool, rooted under a temp dir so each test owns its own pending/active/export/archive.
-func liveWriterAdapter(t *testing.T, pool *pgxpool.Pool) (*Writer, *skills.Writer, string) {
+func liveWriterAdapter(t *testing.T, pool *pgxpool.Pool) (*Writer, string) {
 	t.Helper()
 	root := t.TempDir()
 	live := skills.NewWriter(skills.WriterConfig{
@@ -100,7 +100,7 @@ func liveWriterAdapter(t *testing.T, pool *pgxpool.Pool) (*Writer, *skills.Write
 		ArchiveDir:   filepath.Join(root, "archived"),
 		BodyCapBytes: 32768,
 	})
-	return NewWriter(live), live, root
+	return NewWriter(live), root
 }
 
 // uniqueName yields a per-test skill name within the [a-z0-9-] grammar.
@@ -108,12 +108,12 @@ func uniqueName(prefix string) string {
 	return prefix + uuid.Must(uuid.NewV7()).String()[:8]
 }
 
-// TestWriteMutationCreateActivatesInBox proves the model-path create (always:false)
-// bypasses the gate, materializes in-box, and returns the active status through the
-// adapter (the db.WithTx audit-tx success branch).
-func TestWriteMutationCreateActivatesInBox(t *testing.T) {
+// TestWriteMutationCreateLandsUsable proves the model-path create materializes in-box
+// and returns the active status through the adapter (the db.WithTx audit-tx success
+// branch).
+func TestWriteMutationCreateLandsUsable(t *testing.T) {
 	pool := migratedPool(t)
-	a, _, root := liveWriterAdapter(t, pool)
+	a, root := liveWriterAdapter(t, pool)
 	name := uniqueName("create-")
 
 	status, err := a.WriteMutation(context.Background(), "create", name, "an in-box skill", "Do the thing.", false)
@@ -121,35 +121,34 @@ func TestWriteMutationCreateActivatesInBox(t *testing.T) {
 		t.Fatalf("WriteMutation create: %v", err)
 	}
 	if status != skills.StatusActive {
-		t.Fatalf("WriteMutation create status = %q, want %q (in-box auto-activation)", status, skills.StatusActive)
+		t.Fatalf("WriteMutation create status = %q, want %q", status, skills.StatusActive)
 	}
-	// In-box activation materializes the skill into the export dir.
+	// The write materializes the skill into the export dir.
 	if _, statErr := os.Stat(filepath.Join(root, "export", name, "SKILL.md")); statErr != nil {
 		t.Errorf("after in-box create the export SKILL.md is missing: %v", statErr)
 	}
 }
 
-// TestSaveSnippetStagesPending proves SaveSnippet validates, writes pending, records
-// the audit tuple, and returns the pending status string (the SaveSnippet success
-// branch). needs_network/needs_workspace ride through onto the staged frontmatter.
-func TestSaveSnippetStagesPending(t *testing.T) {
+// TestSaveSnippetLandsUsable proves SaveSnippet validates, writes, records the audit
+// tuple and returns the active status through the adapter. The export copy is the
+// assertion that matters: it is the file UseSnippet hands the model, so a snippet that
+// saved without it is one the model is told to run and cannot.
+func TestSaveSnippetLandsUsable(t *testing.T) {
 	pool := migratedPool(t)
-	a, _, root := liveWriterAdapter(t, pool)
+	a, root := liveWriterAdapter(t, pool)
 	name := uniqueName("snip-")
 
 	status, err := a.SaveSnippet(context.Background(), name, "python", "print('"+name+"')\n", "a saved snippet", true, false)
 	if err != nil {
 		t.Fatalf("SaveSnippet: %v", err)
 	}
-	if status != skills.StatusPendingApproval {
-		t.Fatalf("SaveSnippet status = %q, want %q (snippets stage pending)", status, skills.StatusPendingApproval)
+	if status != skills.StatusActive {
+		t.Fatalf("SaveSnippet status = %q, want %q", status, skills.StatusActive)
 	}
-	// The snippet's code file lands under pending/<name>/ (it NEVER self-activates).
-	if _, statErr := os.Stat(filepath.Join(root, "pending", name, name+".py")); statErr != nil {
-		t.Errorf("after SaveSnippet the pending code file is missing: %v", statErr)
-	}
-	if _, statErr := os.Stat(filepath.Join(root, "export", name)); !os.IsNotExist(statErr) {
-		t.Errorf("SaveSnippet must NOT materialize into the export dir (stat err=%v)", statErr)
+	for _, dir := range []string{"active", "export"} {
+		if _, statErr := os.Stat(filepath.Join(root, dir, name, name+".py")); statErr != nil {
+			t.Errorf("after SaveSnippet the %s code file is missing: %v", dir, statErr)
+		}
 	}
 }
 
@@ -158,16 +157,13 @@ func TestSaveSnippetStagesPending(t *testing.T) {
 // de-materialized) then restores (returns the active status, re-materialized).
 func TestArchiveThenRestoreRoundTrips(t *testing.T) {
 	pool := migratedPool(t)
-	a, live, root := liveWriterAdapter(t, pool)
+	a, root := liveWriterAdapter(t, pool)
 	ctx := context.Background()
 	name := uniqueName("life-")
 
-	// Save the snippet (pending) then activate it so it lives under active/ + export/.
+	// Save the snippet: it lives under active/ + export/ the moment this returns.
 	if _, err := a.SaveSnippet(ctx, name, "python", "print('"+name+"')\n", "lifecycle snippet", false, false); err != nil {
 		t.Fatalf("SaveSnippet: %v", err)
-	}
-	if err := live.Activate(ctx, name, skills.ApprovalCLI, "", skills.AuditActor{ActorID: "cli"}); err != nil {
-		t.Fatalf("Activate: %v", err)
 	}
 
 	// Archive through the adapter: returns "archived" and de-materializes the export dir.

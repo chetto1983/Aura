@@ -7,16 +7,14 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/chetto1983/aura/internal/db"
-	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/scoring"
 )
 
 // Sub-slice 7e executable snippets (D-04/D-16/D-19/D-20). A snippet is a skill with
 // type:snippet whose body IS executable code in one of the three supported languages.
-// It is SAVED through the same gated pending->activate->materialize path as an
-// instruction skill (the gate surfaces needs_network at the RISKY tier, D-20) and is
-// EXECUTED BY PATH (python3 <dir>/<name>.py — NEVER the exec bit, spike 005).
+// It is SAVED through the same write-and-materialize path as an instruction skill
+// (amendment #97 — the save IS the effect) and is EXECUTED BY PATH
+// (python3 <dir>/<name>.py — NEVER the exec bit, spike 005).
 // There is NO bespoke run code (D-04): action=use returns instructions + the path;
 // the model calls shell_exec, which a strict profile routes into the per-identity box
 // without the model choosing or seeing it (amendment #96). The CLI
@@ -143,9 +141,11 @@ func SnippetHostInvocation(name, language, exportDir string) (hostPath, interpre
 	return path, meta.interpreter, nil
 }
 
-// SnippetSaveResult is what SaveSnippet returns: the pending/active status, the
-// computed risk tier, and whether needs_network was surfaced at the RISKY tier (D-20/
-// D-37). The caller (CLI / tool adapter) frames these for the operator/model.
+// SnippetSaveResult is what SaveSnippet returns: the resulting status, the computed
+// risk tier, and whether needs_network was surfaced at the RISKY tier (D-20/D-37).
+// The tier and the needs_* flags stopped branching with amendment #97 — they are
+// reported, not enforced. The caller (CLI / tool adapter) frames them for the
+// operator/model.
 type SnippetSaveResult struct {
 	Status         string
 	Tier           scoring.RiskTier
@@ -154,15 +154,16 @@ type SnippetSaveResult struct {
 	NeedsWorkspace bool
 }
 
-// SaveSnippet stages a snippet (a type:snippet skill) as pending, gated like any
-// model mutation (D-02): it validates the language enum + the write boundary, computes
-// the RISKY tier (create), surfaces needs_network/needs_workspace, writes the SKILL.md
-// (frontmatter + docs body) AND the <name>.<ext> code file into pending/<name>/
-// atomically BEFORE the audit tx, then records the D-29 pending tuple. It NEVER
-// self-activates (D-03) — activation (CLI approve / ask_user resume) materializes the
-// snippet into the ro /skills mount. The supplied body is the executable code; the
-// frontmatter's optional inputs_schema/outputs_desc/deps/tags ride through for use's
-// docs rendering (D-20, validator-tolerated).
+// SaveSnippet writes a snippet (a type:snippet skill) and makes it usable in the same
+// call: it validates the language enum + the write boundary, computes the RISKY tier,
+// surfaces needs_network/needs_workspace, and lands BOTH the SKILL.md (frontmatter +
+// docs body) and the <name>.<ext> code file active + materialized + audited.
+//
+// Materializing here is what closes the loop the model actually needs: UseSnippet
+// hands back a path under exportDir, so a snippet that was written but not exported is
+// one the model is told to run and cannot. The supplied body is the executable code;
+// the frontmatter's optional inputs_schema/outputs_desc/deps/tags ride through for
+// use's docs rendering (D-20, validator-tolerated).
 func (w *Writer) SaveSnippet(ctx context.Context, name, language, code string, fm Frontmatter, actor AuditActor) (SnippetSaveResult, error) {
 	lang, meta, err := validSnippetLanguage(language)
 	if err != nil {
@@ -183,75 +184,22 @@ func (w *Writer) SaveSnippet(ctx context.Context, name, language, code string, f
 	tier := scoring.ComputeSkillTier(scoring.SkillCreate, code)
 	docsBody := renderSnippetDocs(fm, meta)
 
-	if werr := w.writePendingSnippet(name, fm, docsBody, code, meta.ext); werr != nil {
+	files := map[string][]byte{
+		"SKILL.md":            skillFileBytes(fm, docsBody),
+		name + "." + meta.ext: []byte(code),
+	}
+	audit := actorAudit(name, AuditCreate, HashSkillFiles(files), actor)
+	if werr := w.writeActive(ctx, name, writeFilesInto(files), audit); werr != nil {
 		return SnippetSaveResult{}, fmt.Errorf("save snippet %q: %w", name, werr)
 	}
 
-	hash := HashSkillFiles(map[string][]byte{
-		"SKILL.md":            skillFileBytes(fm, docsBody),
-		name + "." + meta.ext: []byte(code),
-	})
-	if aerr := db.WithTx(ctx, w.pool, func(q *sqlc.Queries) error {
-		return InsertAuditTx(ctx, q, AuditInsert{
-			ActorID:         actor.ActorID,
-			IdentityID:      actor.IdentityID,
-			SkillName:       name,
-			Action:          AuditCreate,
-			ContentHash:     hash,
-			ApprovalSource:  ApprovalNone,
-			GateRecommended: true,
-			GateTaken:       false,
-		})
-	}); aerr != nil {
-		return SnippetSaveResult{}, fmt.Errorf("save snippet %q: audit: %w", name, aerr)
-	}
-
 	return SnippetSaveResult{
-		Status:         StatusPendingApproval,
+		Status:         StatusActive,
 		Tier:           tier,
 		Language:       lang,
 		NeedsNetwork:   fm.NeedsNetwork,
 		NeedsWorkspace: fm.NeedsWorkspace,
 	}, nil
-}
-
-// writePendingSnippet atomically writes a snippet's SKILL.md + <name>.<ext> code file
-// into pending/<name>/ via a sibling temp dir + rename (the writePending crash-safety
-// idiom), so a crash mid-write never leaves a half-written snippet.
-func (w *Writer) writePendingSnippet(name string, fm Frontmatter, docsBody, code, ext string) error {
-	if w.pendingDir == "" {
-		return fmt.Errorf("pending dir not configured")
-	}
-	if err := os.MkdirAll(w.pendingDir, 0o750); err != nil {
-		return fmt.Errorf("mkdir pending root: %w", err)
-	}
-	tmp, err := os.MkdirTemp(w.pendingDir, "."+name+"-tmp-*")
-	if err != nil {
-		return fmt.Errorf("mkdir temp: %w", err)
-	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = os.RemoveAll(tmp)
-		}
-	}()
-
-	if err := os.WriteFile(filepath.Join(tmp, "SKILL.md"), skillFileBytes(fm, docsBody), 0o600); err != nil {
-		return fmt.Errorf("write SKILL.md: %w", err)
-	}
-	if err := os.WriteFile(filepath.Join(tmp, name+"."+ext), []byte(code), 0o600); err != nil {
-		return fmt.Errorf("write snippet code: %w", err)
-	}
-
-	final := filepath.Join(w.pendingDir, name)
-	if err := os.RemoveAll(final); err != nil {
-		return fmt.Errorf("clear stale pending %q: %w", name, err)
-	}
-	if err := os.Rename(tmp, final); err != nil {
-		return fmt.Errorf("rename pending into place: %w", err)
-	}
-	committed = true
-	return nil
 }
 
 // renderSnippetDocs builds the SKILL.md body a snippet carries: a human/model-facing

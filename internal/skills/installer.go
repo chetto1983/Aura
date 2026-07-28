@@ -20,9 +20,9 @@ import (
 // the skills.sh catalog, stages the fetched tree to a temp dir, ANSI-strips the
 // output, parses the staged SKILL.md, computes the canonical content hash, runs the
 // EXISTING five-item write-boundary checklist (ValidateForWrite), and hands off to
-// the EXISTING pending+audit sink (Writer.WriteInstallPending) — which lands the
-// staged tree in pending/<name>/ and records the D-29 install audit row WITHOUT
-// self-activating (D-03). Activation is the operator approval resume only.
+// the write sink (Writer.WriteInstall) — which lands the staged tree in active/<name>/,
+// materializes it into the /skills mount, and records the install audit row. Since
+// amendment #97 an install is live when it returns; there is no approval step.
 //
 // Install runs WITH install scripts PERMITTED — NO script-disabling flag is ever passed
 // (D-06/D-07, the post-D-09 amendment): Aura runs inside a container, so the container
@@ -110,11 +110,11 @@ type CheckItem struct {
 	Passed bool   `json:"passed"`
 }
 
-// InstallInfo is the install result the handler/UI surfaces BEFORE activation: the
-// source the operator installed from, the canonical content hash, a body preview, the
-// pending destination, the RISKY risk tier (install is ALWAYS Risky — never "safe"),
-// and the five-item validation checklist. Status is the pending status the sink
-// returned. Name is the staged skill's frontmatter name.
+// InstallInfo is the install result the handler/UI surfaces: the source the operator
+// installed from, the canonical content hash, a body preview, the active destination,
+// the RISKY risk tier (install is ALWAYS Risky — never "safe"), and the five-item
+// validation checklist. Status is what the sink returned. Name is the staged skill's
+// frontmatter name.
 type InstallInfo struct {
 	Name        string      `json:"name"`
 	Source      string      `json:"source"`
@@ -142,7 +142,7 @@ const previewCapBytes = 2048
 // Install fetches a skill from source via `npx skills add <source> -y` (scripts
 // PERMITTED, container-isolated — no script-disabling flag), stages the fetched tree, parses
 // the staged SKILL.md, computes the canonical hash, runs the five-item checklist, then
-// hands off to Writer.WriteInstallPending -> StatusPendingApproval. It NEVER activates.
+// hands off to Writer.WriteInstall, which lands it active + materialized + audited.
 // An empty/blank source is rejected with a safe error before any subprocess runs.
 func (i *Installer) Install(ctx context.Context, source string, actor AuditActor) (InstallInfo, error) {
 	source = strings.TrimSpace(source)
@@ -208,7 +208,7 @@ func (i *Installer) Install(ctx context.Context, source string, actor AuditActor
 		return InstallInfo{}, fmt.Errorf("install %q: %w", source, err)
 	}
 
-	status, err := i.writer.WriteInstallPending(ctx, fm, body, stagedDir, hash, actor)
+	status, err := i.writer.WriteInstall(ctx, fm, stagedDir, hash, actor)
 	if err != nil {
 		return InstallInfo{}, fmt.Errorf("install %q: %w", source, err)
 	}
@@ -219,7 +219,7 @@ func (i *Installer) Install(ctx context.Context, source string, actor AuditActor
 		Source:      source,
 		ContentHash: hash,
 		Preview:     previewBody(body),
-		Destination: filepath.Join(i.writer.pendingDir, fm.Name),
+		Destination: filepath.Join(i.writer.activeDir, fm.Name),
 		RiskTier:    string(tier),
 		Status:      status,
 		Checklist:   installChecklist(),
@@ -258,10 +258,10 @@ func externalDiscoveryEnabled() bool {
 }
 
 // installChecklist is the FIVE-item validation checklist the UI surfaces (post-D-09;
-// no script-disabling item). A staged skill that reached WriteInstallPending passed
-// every write-boundary check (ValidateForWrite ran with allowBlocklisted=false), so
-// all five are marked passed; a failing check returns an error from Install before this
-// list is built, so the operator never sees a half-passed install staged.
+// no script-disabling item). A staged skill that reached WriteInstall passed every
+// write-boundary check (ValidateForWrite ran with allowBlocklisted=false), so all five
+// are marked passed; a failing check returns an error from Install before this list is
+// built, so the operator never sees a half-passed install.
 func installChecklist() []CheckItem {
 	return []CheckItem{
 		{Label: "sanitized env (no secret leakage into the staged tree)", Passed: true},

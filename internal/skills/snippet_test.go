@@ -141,8 +141,8 @@ func TestSaveSnippetRejectsBadLanguage(t *testing.T) {
 	if !errors.Is(err, ErrInvalidStructure) {
 		t.Fatalf("SaveSnippet(ruby) = %v, want ErrInvalidStructure", err)
 	}
-	if _, statErr := os.Stat(filepath.Join(root, "pending", "bad")); statErr == nil {
-		t.Fatal("a rejected snippet must not create a pending dir")
+	if _, statErr := os.Stat(filepath.Join(root, "active", "bad")); statErr == nil {
+		t.Fatal("a rejected snippet must not land in the active root")
 	}
 }
 
@@ -158,40 +158,36 @@ func TestSaveSnippetRejectsBlocklistedCode(t *testing.T) {
 	}
 }
 
-// TestSaveSnippetTierAndNetworkSurfaced asserts a create-tiered snippet save is RISKY
-// and needs_network is surfaced in the result (D-20/D-37). The audit INSERT is nil-pool
-// here, so the test stops at the gate decision by writing pending then asserting the FS
-// state — the DB tx is exercised by the db_integration tier. To avoid the nil-pool
-// audit panic we assert the tier/network surfacing via the pure scoring + a direct
-// writePendingSnippet round-trip, mirroring writer_test's nil-pool discipline.
+// TestSaveSnippetTierAndNetworkSurfaced asserts a snippet save is classified RISKY and
+// that needs_network is surfaced (D-20/D-37). Since amendment #97 neither branches — the
+// tier is reported to the operator/model, not enforced — so this pins the classification
+// and the two-file write shape. The audit tx is the db_integration tier's job, so the FS
+// half is asserted through the staging fill directly, mirroring writer_test's nil-pool
+// discipline.
 func TestSaveSnippetTierAndNetworkSurfaced(t *testing.T) {
 	t.Parallel()
-	// Pure gate decision (no DB): create is RISKY and gate-recommended.
-	tier := scoring.ComputeSkillTier(scoring.SkillCreate, "print(1)")
-	if tier != scoring.Risky {
+	if tier := scoring.ComputeSkillTier(scoring.SkillCreate, "print(1)"); tier != scoring.Risky {
 		t.Fatalf("snippet save tier = %q, want risky", tier)
 	}
-	if !scoring.GateRecommended(tier) {
-		t.Fatal("snippet save must be gate-recommended")
-	}
 
-	// FS round-trip of the pending write (no audit tx): the SKILL.md + code file land.
-	w, root := newTestWriter(t)
 	fm := Frontmatter{Name: "neton", Description: "needs net", Type: TypeSnippet, Language: "python", NeedsNetwork: true}
-	if err := w.writePendingSnippet("neton", fm, "docs", "import urllib", "py"); err != nil {
-		t.Fatalf("writePendingSnippet: %v", err)
+	dir := t.TempDir()
+	fill := writeFilesInto(map[string][]byte{
+		"SKILL.md": skillFileBytes(fm, "docs"),
+		"neton.py": []byte("import urllib"),
+	})
+	if err := fill(dir); err != nil {
+		t.Fatalf("stage snippet files: %v", err)
 	}
-	pendDir := filepath.Join(root, "pending", "neton")
-	if _, err := os.Stat(filepath.Join(pendDir, "SKILL.md")); err != nil {
-		t.Fatalf("pending SKILL.md missing: %v", err)
+	if _, err := os.Stat(filepath.Join(dir, "SKILL.md")); err != nil {
+		t.Fatalf("staged SKILL.md missing: %v", err)
 	}
-	codePath := filepath.Join(pendDir, "neton.py")
-	data, err := os.ReadFile(codePath)
+	data, err := os.ReadFile(filepath.Join(dir, "neton.py"))
 	if err != nil {
-		t.Fatalf("pending code file missing: %v", err)
+		t.Fatalf("staged code file missing: %v", err)
 	}
 	if string(data) != "import urllib" {
-		t.Fatalf("pending code = %q, want the saved code", string(data))
+		t.Fatalf("staged code = %q, want the saved code", string(data))
 	}
 }
 

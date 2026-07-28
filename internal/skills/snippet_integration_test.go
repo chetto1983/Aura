@@ -1,9 +1,12 @@
 //go:build db_integration
 
-// Live by-path snippet exec E2E (SC#4): save -> activate -> materialize into the host
-// export dir -> exec BY PATH via the host interpreter (os/exec) -> output captured ->
-// usage stamped. It exercises the FULL 7e snippet runtime against the live stack on the
-// HOST (the host terminal is the execution surface; no container), not a fake.
+// Live by-path snippet exec E2E (SC#4): save -> materialize into the host export dir ->
+// exec BY PATH via the host interpreter (os/exec) -> output captured -> usage stamped. It
+// exercises the FULL 7e snippet runtime against the live stack on the HOST (the host
+// terminal is the execution surface; no container), not a fake.
+//
+// Since amendment #97 this is the layer's acceptance test: a saved snippet is runnable
+// with no step in between.
 //
 // Requires the DB stack up AND the export dir set, plus python3 on PATH (present on the
 // CI ubuntu runner):
@@ -28,8 +31,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// TestSnippetExec is the SC#4 by-path exec proof: the snippet is saved, activated
-// (materialized into the host export dir), resolved to its host path, and run BY PATH
+// TestSnippetExec is the SC#4 by-path exec proof: the snippet is saved (which
+// materializes it into the host export dir), resolved to its host path, and run BY PATH
 // (python3 <exportDir>/<name>/<name>.py) on the host. The marker stdout proves the file
 // is visible + executable; the usage stamp proves the deterministic operator stamp (D-19).
 func TestSnippetExec(t *testing.T) {
@@ -61,15 +64,13 @@ func TestSnippetExec(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SaveSnippet: %v", err)
 	}
-	if res.Status != StatusPendingApproval {
-		t.Fatalf("SaveSnippet status = %q, want pending_approval", res.Status)
+	if res.Status != StatusActive {
+		t.Fatalf("SaveSnippet status = %q, want %q", res.Status, StatusActive)
 	}
 
-	// Activate via the CLI source (operator approve) — materializes into the host export dir.
-	if err := w.Activate(ctx, name, ApprovalCLI, "", AuditActor{ActorID: "cli"}); err != nil {
-		t.Fatalf("Activate: %v", err)
-	}
-
+	// NO activation step: the save materialized into the host export dir. This is the
+	// exact failure amendment #97 was raised from — the agent saved a snippet, was told it
+	// was pending, and could not run the file it had just written.
 	use, err := w.UseSnippet(name)
 	if err != nil {
 		t.Fatalf("UseSnippet: %v", err)

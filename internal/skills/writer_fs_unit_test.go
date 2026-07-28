@@ -25,8 +25,8 @@ func TestWriteMutationByNameRejectsInvalidName(t *testing.T) {
 			t.Errorf("WriteMutationCLI(%q) = %v, want ErrInvalidName", bad, err)
 		}
 	}
-	if entries, _ := os.ReadDir(filepath.Join(root, "pending")); len(entries) != 0 {
-		t.Fatalf("a rejected mutation must not write into pending, got %v", entries)
+	if entries, _ := os.ReadDir(filepath.Join(root, "active")); len(entries) != 0 {
+		t.Fatalf("a rejected mutation must not write into the active root, got %v", entries)
 	}
 }
 
@@ -42,78 +42,104 @@ func TestWriteMutationCLIRejectsBlocklisted(t *testing.T) {
 	}
 }
 
-// TestWriteMutationPendingDirUnconfigured proves WriteMutation surfaces the writePending
-// "pending dir not configured" error for a valid, gated, non-delete mutation when the
-// writer has no pending dir — the FS-write failure returns before the audit tx (nil pool
-// never touched).
-func TestWriteMutationPendingDirUnconfigured(t *testing.T) {
+// TestWriteMutationActiveDirUnconfigured proves WriteMutation surfaces writeActive's
+// "active dir not configured" error for a valid mutation when the writer has no active
+// root — the failure returns before the audit tx (the nil pool is never touched).
+func TestWriteMutationActiveDirUnconfigured(t *testing.T) {
 	t.Parallel()
 	w, _ := newTestWriter(t)
-	w.pendingDir = ""
+	w.activeDir = ""
 	fm := Frontmatter{Name: "calc", Description: "d", Type: TypeInstruction}
-	// Operator actor + non-always create still gates (only model+non-always bypasses), so
-	// the path reaches writePending then returns its unconfigured error pre-tx.
 	_, err := w.WriteMutation(t.Context(), scoring.SkillCreate, fm, "body", AuditActor{ActorID: "cli"})
-	if err == nil || !strings.Contains(err.Error(), "pending dir not configured") {
-		t.Fatalf("WriteMutation w/o pending dir = %v, want configured error", err)
+	if err == nil || !strings.Contains(err.Error(), "active dir not configured") {
+		t.Fatalf("WriteMutation w/o active dir = %v, want configured error", err)
 	}
 }
 
 // TestWriteMutationDeleteRejectsInvalidName proves the delete branch of WriteMutation
-// self-guards the name grammar through Delete's SanitizeName (a traversal name never
-// reaches os.RemoveAll); the gated-delete-pending audit branch is db_integration-gated,
-// but the bad-name reject is pre-tx.
+// self-guards the name grammar through Delete's own SanitizeName, so a traversal name
+// never reaches os.RemoveAll. Delete is routed BEFORE ValidateForWrite (a delete carries
+// no description to validate), so Delete's guard — not the validator's — is what has to
+// hold here.
 func TestWriteMutationDeleteRejectsInvalidName(t *testing.T) {
 	t.Parallel()
 	w, _ := newTestWriter(t)
 	fm := Frontmatter{Name: "../escape", Description: "d", Type: TypeInstruction}
-	// Model-authored delete stays gated, so the gated branch is taken; but the upstream
-	// ValidateForWrite name check rejects "../escape" first.
 	if _, err := w.WriteMutation(t.Context(), scoring.SkillDelete, fm, "body", AuditActor{ActorID: ActorModel}); !errors.Is(err, ErrInvalidName) {
 		t.Fatalf("WriteMutation delete with bad name = %v, want ErrInvalidName", err)
 	}
 }
 
-// TestWritePendingUnconfigured proves writePending refuses to write without a pending dir
-// (the explicit guard the WriteMutation/SaveSnippet paths rely on).
-func TestWritePendingUnconfigured(t *testing.T) {
-	t.Parallel()
-	w, _ := newTestWriter(t)
-	w.pendingDir = ""
-	if err := w.writePending("calc", Frontmatter{Name: "calc"}, "body"); err == nil || !strings.Contains(err.Error(), "pending dir not configured") {
-		t.Fatalf("writePending w/o dir = %v, want configured error", err)
-	}
-}
-
-func TestWritePendingRejectsInvalidNameAtFSBoundary(t *testing.T) {
+// TestWriteMutationDeleteNeedsNoDescription is the regression for the live 502: the
+// cockpit's DELETE route synthesises a frontmatter carrying only the name, so routing
+// delete through the description-requiring validator made the route fail on a field a
+// delete does not have — answering an error without deleting anything or recording a
+// row. A no-description delete must get PAST validation and reach Delete, which here
+// fails at the nil-pool audit tx, not at ErrInvalidStructure.
+func TestWriteMutationDeleteNeedsNoDescription(t *testing.T) {
 	t.Parallel()
 	w, root := newTestWriter(t)
-	for _, bad := range []string{"../escape", "a/b", `a\b`, "Bad_Name", ""} {
-		if err := w.writePending(bad, Frontmatter{Name: bad}, "body"); !errors.Is(err, ErrInvalidName) {
-			t.Errorf("writePending(%q) = %v, want ErrInvalidName", bad, err)
+	writeFile(t, filepath.Join(root, "active", "doomed", "SKILL.md"), "---\nname: doomed\n---\nbody")
+	writeFile(t, filepath.Join(root, "export", "doomed", "SKILL.md"), "---\nname: doomed\n---\nbody")
+
+	err := deletePastValidation(t, w, Frontmatter{Name: "doomed"})
+	if errors.Is(err, ErrInvalidStructure) {
+		t.Fatalf("a delete must not be validated as if it carried frontmatter, got %v", err)
+	}
+	for _, dir := range []string{"active", "export"} {
+		if _, statErr := os.Stat(filepath.Join(root, dir, "doomed")); !os.IsNotExist(statErr) {
+			t.Fatalf("delete must remove %s/doomed (stat err=%v)", dir, statErr)
 		}
 	}
-	if entries, _ := os.ReadDir(filepath.Join(root, "pending")); len(entries) != 0 {
-		t.Fatalf("invalid direct writePending calls must not write into pending, got %v", entries)
+}
+
+// deletePastValidation runs a delete over a nil-pool writer and returns the outcome
+// BEFORE the audit tx: nil when the call got past validation and did its FS removal (the
+// nil-pool db.WithTx then panics, which we recover and treat as "reached the tx"), or the
+// validation error when a check rejected it first. Same idiom as installPastValidation.
+func deletePastValidation(t *testing.T, w *Writer, fm Frontmatter) (err error) {
+	t.Helper()
+	defer func() {
+		if r := recover(); r != nil {
+			err = nil
+		}
+	}()
+	_, err = w.WriteMutation(t.Context(), scoring.SkillDelete, fm, "", AuditActor{ActorID: "operator"})
+	return err
+}
+
+// TestWriteActiveRejectsInvalidNameAtFSBoundary is the D-30 chokepoint at the FS
+// boundary: writeActive re-validates the name it is about to join into a path that
+// promoteDir and Materialize both turn into an os.RemoveAll. Nothing may be staged.
+func TestWriteActiveRejectsInvalidNameAtFSBoundary(t *testing.T) {
+	t.Parallel()
+	w, root := newTestWriter(t)
+	fill := writeFilesInto(map[string][]byte{"SKILL.md": []byte("body")})
+	for _, bad := range []string{"../escape", "a/b", `a\b`, "Bad_Name", ""} {
+		if err := w.writeActive(t.Context(), bad, fill, AuditInsert{}); !errors.Is(err, ErrInvalidName) {
+			t.Errorf("writeActive(%q) = %v, want ErrInvalidName", bad, err)
+		}
+	}
+	if entries, _ := os.ReadDir(filepath.Join(root, "active")); len(entries) != 0 {
+		t.Fatalf("an invalid writeActive must stage nothing, got %v", entries)
 	}
 }
 
-func TestWriteInstallPendingRejectsInvalidNameAtFSBoundary(t *testing.T) {
+func TestWriteInstallRejectsInvalidNameAtFSBoundary(t *testing.T) {
 	t.Parallel()
 	w, root := newTestWriter(t)
-	_, err := w.WriteInstallPending(
+	_, err := w.WriteInstall(
 		t.Context(),
 		Frontmatter{Name: "../escape", Description: "d", Type: TypeInstruction},
-		"body",
 		filepath.Join(root, "stage"),
 		"sha256:test",
 		AuditActor{ActorID: "cli"},
 	)
 	if !errors.Is(err, ErrInvalidName) {
-		t.Fatalf("WriteInstallPending traversal name = %v, want ErrInvalidName", err)
+		t.Fatalf("WriteInstall traversal name = %v, want ErrInvalidName", err)
 	}
-	if entries, _ := os.ReadDir(filepath.Join(root, "pending")); len(entries) != 0 {
-		t.Fatalf("invalid install must not write into pending, got %v", entries)
+	if entries, _ := os.ReadDir(filepath.Join(root, "active")); len(entries) != 0 {
+		t.Fatalf("an invalid install must write nothing into the active root, got %v", entries)
 	}
 }
 

@@ -4,8 +4,8 @@
 // the migrations applied through 0010 (see audit_store_integration_test.go header for
 // the env + invocation). No-skip-as-green: the shared envOrSkip t.Fatals under $CI, so
 // a skipped tier can never report falsely green. This is the Task-1 live-PG backstop —
-// a real Install through WriteInstallPending appends EXACTLY ONE skill_audit install row
-// (newest-first), the staged tree lands in pending/, and the active loader never sees it.
+// a real Install through WriteInstall appends EXACTLY ONE skill_audit install row
+// (newest-first), the tree lands active + materialized, and the loader sees it.
 package skills
 
 import (
@@ -22,8 +22,8 @@ import (
 
 // fakeAddIntegration is the db_integration analog of fakeAdd: it stages a SKILL.md tree
 // under <dir>/.claude/skills/<name>/ exactly as `npx skills add` would, so the transport
-// runs end to end (strip→stage→parse→hash→validate→WriteInstallPending) WITHOUT a real
-// network call, while the hand-off DOES exercise the live db.WithTx audit INSERT.
+// runs end to end (strip→stage→parse→hash→validate→WriteInstall) WITHOUT a real network
+// call, while the hand-off DOES exercise the live db.WithTx audit INSERT.
 func fakeAddIntegration(name, body string) CommandRunner {
 	return func(_ context.Context, dir, _ string, _ ...string) (string, error) {
 		skillDir := filepath.Join(dir, ".claude", "skills", name)
@@ -39,10 +39,15 @@ func fakeAddIntegration(name, body string) CommandRunner {
 }
 
 // TestInstallerAuditAppendOnly proves the Task-1 no-skip-as-green backstop: a real
-// Install through WriteInstallPending appends exactly ONE skill_audit install row
-// (newest-first, the D-29 pending tuple: NULL source/token, gate_recommended=true,
-// gate_taken=false), the staged tree lands in pending/<name>/, and the active loader
-// does NOT see the pending skill (it scans active/ only).
+// Install through WriteInstall appends exactly ONE skill_audit install row (newest-first,
+// the actor tuple: 'cli' source, NULL token, gate_recommended=true, gate_taken=true), the
+// tree lands in active/<name>/ AND in the export dir the sandbox mounts, and the loader
+// SEES it — which after amendment #97 is the whole point: an install that returns is an
+// install the model can use on the next turn.
+//
+// The board-visible Name is asserted here too (it was its own repro file when installs
+// still went to a staging tab): a skills.sh install must surface its human frontmatter
+// name, never a UUID/identifier.
 func TestInstallerAuditAppendOnly(t *testing.T) {
 	pool := migratedPool(t)
 	root := t.TempDir()
@@ -69,8 +74,14 @@ func TestInstallerAuditAppendOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Install: %v", err)
 	}
-	if info.Status != StatusPendingApproval {
-		t.Fatalf("Install status = %q, want %q (pending, never self-activated)", info.Status, StatusPendingApproval)
+	if info.Status != StatusActive {
+		t.Fatalf("Install status = %q, want %q", info.Status, StatusActive)
+	}
+	if info.Name != name {
+		t.Errorf("Install Name = %q, want the human frontmatter name %q (a UUID here is the reported board bug)", info.Name, name)
+	}
+	if info.Destination != filepath.Join(root, "active", name) {
+		t.Errorf("Install Destination = %q, want the active dir", info.Destination)
 	}
 	if info.RiskTier != "risky" {
 		t.Errorf("install must be RISKY, got %q", info.RiskTier)
@@ -79,18 +90,24 @@ func TestInstallerAuditAppendOnly(t *testing.T) {
 		t.Error("install must carry a canonical content hash")
 	}
 
-	// The staged tree landed in pending/<name>/.
-	if _, serr := os.Stat(filepath.Join(root, "pending", name, "SKILL.md")); serr != nil {
-		t.Errorf("staged skill missing from pending/: %v", serr)
+	// The tree landed active AND materialized into the export dir the sandbox mounts.
+	for _, dir := range []string{"active", "export"} {
+		if _, serr := os.Stat(filepath.Join(root, dir, name, "SKILL.md")); serr != nil {
+			t.Errorf("installed skill missing from %s/: %v", dir, serr)
+		}
 	}
 
-	// The active loader does NOT see the pending skill (it scans active/ only).
+	// The loader SEES it: the install is usable on the next turn, with its human name.
 	loader := NewLoader(Config{Roots: []string{filepath.Join(root, "active")}, Blocklist: []string{"<|im_start|>"}})
-	if _, ok := loader.Get(name); ok {
-		t.Fatalf("pending skill %q must NOT be visible to the active loader", name)
+	loaded, ok := loader.Get(name)
+	if !ok {
+		t.Fatalf("installed skill %q must be visible to the loader", name)
+	}
+	if loaded.Name != name {
+		t.Errorf("loaded skill Name = %q, want the human name %q", loaded.Name, name)
 	}
 
-	// Exactly ONE install audit row, newest-first, with the D-29 pending tuple.
+	// Exactly ONE install audit row, newest-first, with the actor tuple.
 	rows, err := store.List(t.Context(), AuditFilter{SkillName: name})
 	if err != nil {
 		t.Fatalf("List: %v", err)
@@ -99,11 +116,11 @@ func TestInstallerAuditAppendOnly(t *testing.T) {
 	for _, r := range rows {
 		if r.Action == AuditInstall {
 			installRows++
-			if r.ApprovalSource != ApprovalNone || r.PausedStateToken != "" {
-				t.Errorf("install row tuple = (%q,%q), want NULL source+token (pending)", r.ApprovalSource, r.PausedStateToken)
+			if r.ApprovalSource != ApprovalCLI || r.PausedStateToken != "" {
+				t.Errorf("install row tuple = (%q,%q), want ('cli', NULL token)", r.ApprovalSource, r.PausedStateToken)
 			}
-			if !r.GateRecommended || r.GateTaken {
-				t.Errorf("install row gate = (rec=%v,taken=%v), want (true,false)", r.GateRecommended, r.GateTaken)
+			if !r.GateRecommended || !r.GateTaken {
+				t.Errorf("install row gate = (rec=%v,taken=%v), want (true,true)", r.GateRecommended, r.GateTaken)
 			}
 			if r.ContentHash != info.ContentHash {
 				t.Errorf("install row hash = %q, want %q", r.ContentHash, info.ContentHash)
@@ -130,12 +147,13 @@ func skillAuditSQLState(err error) string {
 
 // TestSkillAuditAppendOnly is the both-ledgers append-only backstop (SPEC Prohibition #4 /
 // T-29-05-02): the SKILL side, mirroring internal/mcp/manager TestMCPAuditAppendOnly. It
-// drives the real lifecycle (install → activate → archive → restore) over the Writer/
-// Installer — each appends EXACTLY ONE row of the expected action newest-first — and then
-// proves aura.skill_audit is immutable: UPDATE/DELETE/TRUNCATE as aura_app each raise
+// drives the real lifecycle (install → archive → restore) over the Writer/Installer —
+// each appends EXACTLY ONE row of the expected action newest-first — and then proves
+// aura.skill_audit is immutable: UPDATE/DELETE/TRUNCATE as aura_app each raise
 // insufficient_privilege (42501), and every row survives. (NOTE: restore audits as the
 // EXISTING 'activate' action — there is deliberately no 'restore' constant; see
-// writer_activate.go Restore.)
+// writer_activate.go Restore. Since amendment #97 the install activates itself, so there
+// is no separate activation step in the lifecycle.)
 func TestSkillAuditAppendOnly(t *testing.T) {
 	pool := migratedPool(t)
 	store := NewAuditStore(pool)
@@ -158,13 +176,9 @@ func TestSkillAuditAppendOnly(t *testing.T) {
 		BodyCapBytes: 32768,
 	})
 
-	// install → one install row (pending).
+	// install → one install row; the skill is active when this returns.
 	if _, err := inst.Install(t.Context(), "owner/"+name, AuditActor{ActorID: "operator", IdentityID: "local"}); err != nil {
 		t.Fatalf("Install: %v", err)
-	}
-	// activate (operator approval, CLI source — no token needed) → one activate row.
-	if err := w.Activate(t.Context(), name, ApprovalCLI, "", AuditActor{ActorID: "cli", IdentityID: "local"}); err != nil {
-		t.Fatalf("Activate: %v", err)
 	}
 	// archive → one archive row.
 	if err := w.Archive(t.Context(), name, ApprovalCLI, AuditActor{ActorID: "cli", IdentityID: "local"}); err != nil {
@@ -189,12 +203,12 @@ func TestSkillAuditAppendOnly(t *testing.T) {
 	if counts[AuditArchive] != 1 {
 		t.Errorf("archive rows = %d, want exactly 1", counts[AuditArchive])
 	}
-	// activate + restore both record as 'activate' (no 'restore' action constant).
-	if counts[AuditActivate] != 2 {
-		t.Errorf("activate rows (activate + restore) = %d, want exactly 2", counts[AuditActivate])
+	// restore records as 'activate' (no 'restore' action constant).
+	if counts[AuditActivate] != 1 {
+		t.Errorf("activate rows (the restore) = %d, want exactly 1", counts[AuditActivate])
 	}
-	if len(rows) != 4 {
-		t.Fatalf("lifecycle rows = %d, want exactly 4 (install+activate+archive+restore)", len(rows))
+	if len(rows) != 3 {
+		t.Fatalf("lifecycle rows = %d, want exactly 3 (install+archive+restore)", len(rows))
 	}
 	// Newest-first: restore (the last action, recorded as activate) leads.
 	if rows[0].Action != AuditActivate {
@@ -223,7 +237,7 @@ func TestSkillAuditAppendOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List after mutation attempts: %v", err)
 	}
-	if len(after) != 4 {
-		t.Fatalf("skill_audit rows tampered or removed: want 4 surviving rows, got %d", len(after))
+	if len(after) != 3 {
+		t.Fatalf("skill_audit rows tampered or removed: want 3 surviving rows, got %d", len(after))
 	}
 }

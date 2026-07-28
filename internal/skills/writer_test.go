@@ -10,10 +10,10 @@ import (
 	"github.com/chetto1983/aura/internal/scoring"
 )
 
-// newTestWriter builds a Writer with FS dirs under t.TempDir() and a NIL pool. The
-// nil pool is fine for the FS-only paths exercised here (writePending, the gate
-// decision, content_hash); the audit-INSERT-in-WithTx path is exercised by the
-// db_integration test.
+// newTestWriter builds a Writer with FS dirs under t.TempDir() and a NIL pool. The nil
+// pool is fine for everything that fails BEFORE writeActive's audit tx (validation, the
+// name chokepoint, staging, content_hash); the tx itself and everything after it is
+// exercised by the db_integration tests.
 func newTestWriter(t *testing.T) (*Writer, string) {
 	t.Helper()
 	root := t.TempDir()
@@ -29,9 +29,11 @@ func newTestWriter(t *testing.T) (*Writer, string) {
 	return w, root
 }
 
-// TestWriterGateRecommendation asserts the create/update/install/delete tier+gate
-// mapping comes from scoring (not a hand-rolled tier): all four gate.
-func TestWriterGateRecommendation(t *testing.T) {
+// TestWriterRiskTier asserts the create/update/install/delete tier mapping still comes
+// from scoring (not a hand-rolled tier). Since amendment #97 the tier no longer selects
+// a code path in the writer — it is reported to the operator/model — so this pins the
+// classification only.
+func TestWriterRiskTier(t *testing.T) {
 	cases := []struct {
 		action scoring.SkillAction
 		tier   scoring.RiskTier
@@ -45,31 +47,14 @@ func TestWriterGateRecommendation(t *testing.T) {
 		if got := scoring.ComputeSkillTier(c.action, ""); got != c.tier {
 			t.Errorf("ComputeSkillTier(%s): want %s, got %s", c.action, c.tier, got)
 		}
-		if !scoring.GateRecommended(scoring.ComputeSkillTier(c.action, "")) {
-			t.Errorf("GateRecommended(%s): want true (all four gate)", c.action)
-		}
-	}
-}
-
-func TestModelMutationBypassesGateExceptAlwaysOn(t *testing.T) {
-	actor := AuditActor{ActorID: ActorModel}
-	if !modelMutationBypassesGate(scoring.SkillCreate, Frontmatter{Name: "ordinary"}, actor) {
-		t.Fatal("model-authored non-always skill should keep the in-box fast path")
-	}
-	if modelMutationBypassesGate(scoring.SkillCreate, Frontmatter{Name: "always", Always: true}, actor) {
-		t.Fatal("model-authored always:true skill must stay gated")
-	}
-	if modelMutationBypassesGate(scoring.SkillCreate, Frontmatter{Name: "cli"}, AuditActor{ActorID: "cli"}) {
-		t.Fatal("operator-authored skill mutations must stay gated")
-	}
-	if modelMutationBypassesGate(scoring.SkillDelete, Frontmatter{Name: "delete-me"}, actor) {
-		t.Fatal("model-authored delete must stay gated")
 	}
 }
 
 // TestWriterRejectsBlocklistedBody proves a model-authored body containing a
-// blocklisted injection sequence is hard-rejected (allowBlocklisted=false) BEFORE
-// any FS write — no pending dir is created.
+// blocklisted injection sequence is hard-rejected (allowBlocklisted=false) BEFORE any
+// FS write. With the write now immediate, "before any FS write" means the skill must
+// appear in NEITHER the active root the loader scans NOR the export dir the sandbox
+// mounts — the blocklist is one of the two controls left standing.
 func TestWriterRejectsBlocklistedBody(t *testing.T) {
 	w, root := newTestWriter(t)
 	fm := Frontmatter{Name: "evil", Description: "d", Type: TypeInstruction}
@@ -78,8 +63,10 @@ func TestWriterRejectsBlocklistedBody(t *testing.T) {
 	if !errors.Is(err, ErrBlocklisted) {
 		t.Fatalf("blocklisted body: want ErrBlocklisted, got %v", err)
 	}
-	if _, statErr := os.Stat(filepath.Join(root, "pending", "evil")); !os.IsNotExist(statErr) {
-		t.Errorf("a rejected mutation must not write pending/evil (stat err=%v)", statErr)
+	for _, dir := range []string{"active", "export"} {
+		if _, statErr := os.Stat(filepath.Join(root, dir, "evil")); !os.IsNotExist(statErr) {
+			t.Errorf("a rejected mutation must not write %s/evil (stat err=%v)", dir, statErr)
+		}
 	}
 }
 
@@ -142,60 +129,33 @@ func TestDeleteRejectsBadName(t *testing.T) {
 	}
 }
 
-// TestWriterPendingWrite proves writePending lands a SKILL.md in pending/<name>/
-// atomically and the rendered file round-trips through the loader's parser with the
-// same name/description/type.
-func TestWriterPendingWrite(t *testing.T) {
-	w, root := newTestWriter(t)
-	fm := Frontmatter{Name: "fmt-skill", Description: `uses: a colon`, Type: TypeInstruction}
-	body := "Do the thing."
-
-	if err := w.writePending("fmt-skill", fm, body); err != nil {
-		t.Fatalf("writePending: %v", err)
-	}
-	raw, err := os.ReadFile(filepath.Join(root, "pending", "fmt-skill", "SKILL.md"))
-	if err != nil {
-		t.Fatalf("read pending SKILL.md: %v", err)
-	}
-	gotFM, gotBody, perr := parseFrontmatter(raw)
-	if perr != nil {
-		t.Fatalf("rendered SKILL.md does not parse: %v\n%s", perr, raw)
-	}
-	if gotFM.Name != "fmt-skill" || gotFM.Description != "uses: a colon" || gotFM.Type != TypeInstruction {
-		t.Errorf("round-trip frontmatter mismatch: %+v", gotFM)
-	}
-	if gotBody != body {
-		t.Errorf("round-trip body: want %q, got %q", body, gotBody)
-	}
-	// No leftover temp dirs (the rename committed; the temp was renamed, not removed).
-	entries, _ := os.ReadDir(filepath.Join(root, "pending"))
-	for _, e := range entries {
-		if e.Name() != "fmt-skill" {
-			t.Errorf("leftover entry in pending dir: %q", e.Name())
-		}
-	}
-}
-
-func TestWriteInstallPendingPreAuditFailures(t *testing.T) {
+// TestWriteInstallPreAuditFailures proves a WriteInstall that fails BEFORE the audit tx
+// (an unconfigured active root, a missing staged tree) surfaces its own diagnostic and
+// leaves nothing behind: the staging dir is swept, so a failed install can never leave a
+// half-copied tree where the loader would find it on the next scan.
+func TestWriteInstallPreAuditFailures(t *testing.T) {
 	w, root := newTestWriter(t)
 	fm := Frontmatter{Name: "installer", Description: "d", Type: TypeInstruction}
 
-	w.pendingDir = ""
-	if _, err := w.WriteInstallPending(t.Context(), fm, "body", filepath.Join(root, "staged"), "sha256:test", AuditActor{ActorID: "cli"}); err == nil || !strings.Contains(err.Error(), "pending dir not configured") {
-		t.Fatalf("WriteInstallPending without pendingDir = %v, want configured error", err)
+	w.activeDir = ""
+	if _, err := w.WriteInstall(t.Context(), fm, filepath.Join(root, "staged"), "sha256:test", AuditActor{ActorID: "cli"}); err == nil || !strings.Contains(err.Error(), "active dir not configured") {
+		t.Fatalf("WriteInstall without activeDir = %v, want configured error", err)
 	}
 
-	w.pendingDir = filepath.Join(root, "pending")
-	_, err := w.WriteInstallPending(t.Context(), fm, "body", filepath.Join(root, "missing-staged"), "sha256:test", AuditActor{ActorID: "cli"})
+	w.activeDir = filepath.Join(root, "active")
+	_, err := w.WriteInstall(t.Context(), fm, filepath.Join(root, "missing-staged"), "sha256:test", AuditActor{ActorID: "cli"})
 	if err == nil || !strings.Contains(err.Error(), "copy staged tree") {
-		t.Fatalf("WriteInstallPending with missing staged tree = %v, want copy error", err)
+		t.Fatalf("WriteInstall with a missing staged tree = %v, want copy error", err)
 	}
-	entries, readErr := os.ReadDir(w.pendingDir)
+	staging, readErr := os.ReadDir(filepath.Join(w.activeDir, stagingDirName))
 	if readErr != nil {
-		t.Fatalf("read pending dir: %v", readErr)
+		t.Fatalf("read staging dir: %v", readErr)
 	}
-	if len(entries) != 0 {
-		t.Fatalf("failed install pending write left temp entries: %v", entries)
+	if len(staging) != 0 {
+		t.Fatalf("a failed install left staged entries behind: %v", staging)
+	}
+	if entries, _ := os.ReadDir(w.activeDir); len(entries) != 1 {
+		t.Fatalf("a failed install must leave only the (empty) staging root in active/, got %v", entries)
 	}
 }
 

@@ -152,9 +152,9 @@ func (w *Writer) Restore(ctx context.Context, name string, src ApprovalSource, a
 	return nil
 }
 
-// Delete is the Destructive-tiered removal: de-materialize, remove the skill dir
-// (active and pending), and record a delete audit row. It is invoked by
-// WriteMutation for action=delete and by the CLI.
+// Delete is the Destructive-tiered removal: de-materialize (the /skills mount), remove
+// the active skill dir, and record ONE delete audit row. It is what WriteMutation
+// routes action=delete to, and what the CLI and the cockpit call.
 func (w *Writer) Delete(ctx context.Context, name string, actor AuditActor) (string, error) {
 	// Validate the name grammar BEFORE joining it into a path (chokepoint, D-30): the
 	// only live caller (WriteMutation) sanitizes upstream, but this self-guards the
@@ -171,14 +171,7 @@ func (w *Writer) Delete(ctx context.Context, name string, actor AuditActor) (str
 	if err := os.RemoveAll(activeDir); err != nil {
 		return "", fmt.Errorf("delete %q: remove active: %w", name, err)
 	}
-	if w.pendingDir != "" {
-		_ = os.RemoveAll(filepath.Join(w.pendingDir, name))
-	}
 
-	// Delete gates (Destructive) but the mutation itself is recorded as a CLI/system
-	// action when it actually executes; WriteMutation routes the gated proposal here
-	// after the gate is taken. The pending tuple is recorded by WriteMutation for the
-	// non-delete actions; delete records its taken row directly with the cli source.
 	if err := w.auditActivationLike(ctx, name, AuditDelete, hash, ApprovalCLI, actor); err != nil {
 		return "", fmt.Errorf("delete %q: audit: %w", name, err)
 	}

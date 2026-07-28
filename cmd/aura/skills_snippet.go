@@ -76,7 +76,7 @@ func skillsSnippetSave(ctx context.Context, args []string) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	fmt.Printf("ok: snippet %q saved (status=%s, lang=%s, tier=%s) — approve with `aura skills approve %s`\n",
+	fmt.Printf("ok: snippet %q saved (status=%s, lang=%s, tier=%s) — run it with `aura skills snippet exec %s`\n",
 		name, res.Status, res.Language, res.Tier, name)
 	if res.NeedsNetwork {
 		fmt.Println("  needs_network: true (RISKY tier; the enforced egress proxy is Phase-8)")

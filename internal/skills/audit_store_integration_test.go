@@ -250,11 +250,15 @@ func migrateToVersion(t *testing.T, ctx context.Context, migrateURL string, targ
 	return db.MigrateSteps(ctx, migrateURL, steps)
 }
 
-// TestWriterPendingAuditRow proves the writer's WriteMutation lands a pending skill
-// on disk AND records the D-29 pending tuple (NULL approval_source, NULL token,
-// gate_recommended=true, gate_taken=false) inside db.WithTx — the (NULL,NULL,
-// true,false) matrix row — with the content_hash recorded (D-23).
-func TestWriterPendingAuditRow(t *testing.T) {
+// TestWriterActiveAuditRow proves WriteMutation lands the skill where it takes effect —
+// the active root AND the export dir the sandbox mounts — and records EXACTLY ONE audit
+// row carrying the actor tuple ('cli' source, NULL token, gate_recommended=true,
+// gate_taken=true) inside db.WithTx, with the content_hash recorded (D-23).
+//
+// gate_recommended stays true although nothing is gated: the 0010 coherence CHECK admits
+// no ('cli',NULL,false,true) tuple, so this assertion is what stops a well-meaning
+// "cleanup" from turning that constant into a runtime 23514 in production.
+func TestWriterActiveAuditRow(t *testing.T) {
 	pool := migratedPool(t)
 	store := NewAuditStore(pool)
 	root := t.TempDir()
@@ -274,11 +278,17 @@ func TestWriterPendingAuditRow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WriteMutation: %v", err)
 	}
-	if status != StatusPendingApproval {
-		t.Errorf("status: want %s, got %s", StatusPendingApproval, status)
+	if status != StatusActive {
+		t.Errorf("status: want %s, got %s", StatusActive, status)
 	}
-	if _, serr := os.Stat(filepath.Join(root, "pending", name, "SKILL.md")); serr != nil {
-		t.Errorf("pending SKILL.md not written: %v", serr)
+	for _, dir := range []string{"active", "export"} {
+		if _, serr := os.Stat(filepath.Join(root, dir, name, "SKILL.md")); serr != nil {
+			t.Errorf("%s SKILL.md not written: %v", dir, serr)
+		}
+	}
+	// The staging dir is swept on success — a committed write leaves no residue behind.
+	if entries, _ := os.ReadDir(filepath.Join(root, "active", stagingDirName)); len(entries) != 0 {
+		t.Errorf("staging dir must be empty after a committed write, got %v", entries)
 	}
 
 	rows, err := store.List(t.Context(), AuditFilter{SkillName: name})
@@ -289,8 +299,8 @@ func TestWriterPendingAuditRow(t *testing.T) {
 		t.Fatalf("want 1 audit row, got %d", len(rows))
 	}
 	r := rows[0]
-	if r.ApprovalSource != ApprovalNone || r.PausedStateToken != "" || !r.GateRecommended || r.GateTaken {
-		t.Errorf("D-29 pending tuple mismatch: src=%q token=%q gateRec=%v gateTaken=%v",
+	if r.ApprovalSource != ApprovalCLI || r.PausedStateToken != "" || !r.GateRecommended || !r.GateTaken {
+		t.Errorf("actor tuple mismatch: src=%q token=%q gateRec=%v gateTaken=%v",
 			r.ApprovalSource, r.PausedStateToken, r.GateRecommended, r.GateTaken)
 	}
 	if r.Action != AuditCreate || r.ContentHash == "" {
@@ -316,9 +326,7 @@ func TestWriterActivateAuditRow(t *testing.T) {
 
 	name := "act-" + uuid.Must(uuid.NewV7()).String()[:8]
 	fm := Frontmatter{Name: name, Description: "d", Type: TypeInstruction}
-	if _, err := w.WriteMutation(t.Context(), scoring.SkillCreate, fm, "body", AuditActor{ActorID: "cli"}); err != nil {
-		t.Fatalf("WriteMutation: %v", err)
-	}
+	seedPendingSkill(t, root, fm)
 
 	token := uuid.Must(uuid.NewV7()).String()
 	seedPausedState(t, pool, token)
@@ -346,6 +354,20 @@ func TestWriterActivateAuditRow(t *testing.T) {
 	}
 	if !sawActivate {
 		t.Error("no activate audit row recorded")
+	}
+}
+
+// seedPendingSkill writes pending/<name>/SKILL.md by hand. No write path stages a skill
+// any more (amendment #97), but Activate/DiscardPending still have to cope with whatever
+// a pre-#97 deploy left in that directory — so the tests that cover them seed it.
+func seedPendingSkill(t *testing.T, root string, fm Frontmatter) {
+	t.Helper()
+	dir := filepath.Join(root, "pending", fm.Name)
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatalf("seed pending dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), skillFileBytes(fm, "body"), 0o600); err != nil {
+		t.Fatalf("seed pending SKILL.md: %v", err)
 	}
 }
 

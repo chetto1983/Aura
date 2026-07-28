@@ -9,16 +9,16 @@ import (
 	"time"
 )
 
-// TestSaveSnippetWritePendingFailureSurfaces proves SaveSnippet returns the
-// writePendingSnippet error (no audit tx reached) when the pending dir is unconfigured —
-// a valid language + clean code pass the pre-write gates, then the FS write fails pre-tx.
-func TestSaveSnippetWritePendingFailureSurfaces(t *testing.T) {
+// TestSaveSnippetWriteFailureSurfaces proves SaveSnippet returns writeActive's error (no
+// audit tx reached) when the active root is unconfigured — a valid language + clean code
+// pass the pre-write gates, then the staging step fails pre-tx.
+func TestSaveSnippetWriteFailureSurfaces(t *testing.T) {
 	t.Parallel()
 	w, _ := newTestWriter(t)
-	w.pendingDir = ""
+	w.activeDir = ""
 	_, err := w.SaveSnippet(t.Context(), "calc", "python", "print(1)", Frontmatter{Description: "adds"}, AuditActor{ActorID: "cli"})
-	if err == nil || !strings.Contains(err.Error(), "pending dir not configured") {
-		t.Fatalf("SaveSnippet w/o pending dir = %v, want configured error", err)
+	if err == nil || !strings.Contains(err.Error(), "active dir not configured") {
+		t.Fatalf("SaveSnippet w/o active dir = %v, want configured error", err)
 	}
 }
 
@@ -33,19 +33,8 @@ func TestSaveSnippetRejectsOversizedCode(t *testing.T) {
 	if !errors.Is(err, ErrInvalidStructure) {
 		t.Fatalf("SaveSnippet oversized code = %v, want ErrInvalidStructure", err)
 	}
-	if _, statErr := os.Stat(filepath.Join(root, "pending", "big")); statErr == nil {
-		t.Fatal("a rejected oversized snippet must not create a pending dir")
-	}
-}
-
-// TestWritePendingSnippetUnconfigured proves the snippet pending writer refuses to write
-// without a configured pending dir (the explicit guard SaveSnippet relies on).
-func TestWritePendingSnippetUnconfigured(t *testing.T) {
-	t.Parallel()
-	w, _ := newTestWriter(t)
-	w.pendingDir = ""
-	if err := w.writePendingSnippet("calc", Frontmatter{Name: "calc"}, "docs", "code", "py"); err == nil || !strings.Contains(err.Error(), "pending dir not configured") {
-		t.Fatalf("writePendingSnippet w/o dir = %v, want configured error", err)
+	if _, statErr := os.Stat(filepath.Join(root, "active", "big")); statErr == nil {
+		t.Fatal("a rejected oversized snippet must not land in the active root")
 	}
 }
 

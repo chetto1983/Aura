@@ -42,13 +42,10 @@ func TestSkillTTLSweep(t *testing.T) {
 	now := time.Now().UTC()
 	ttl := 90 * 24 * time.Hour
 
-	// Save + activate both snippets (materializes them into the export dir).
+	// Save both snippets: each is active + materialized into the export dir on return.
 	for _, name := range []string{stale, fresh} {
 		if _, err := w.SaveSnippet(ctx, name, "python", "print('"+name+"')\n", Frontmatter{Description: "d"}, AuditActor{ActorID: "cli"}); err != nil {
 			t.Fatalf("SaveSnippet %q: %v", name, err)
-		}
-		if err := w.Activate(ctx, name, ApprovalCLI, "", AuditActor{ActorID: "cli"}); err != nil {
-			t.Fatalf("Activate %q: %v", name, err)
 		}
 	}
 

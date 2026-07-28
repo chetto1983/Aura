@@ -21,8 +21,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// TestRestoreSnippetRoundTrip proves Restore is Archive's inverse: a Save+Activate then
-// Archive then Restore round-trips the active dir + the export-dir materialization back,
+// TestRestoreSnippetRoundTrip proves Restore is Archive's inverse: a Save then Archive
+// then Restore round-trips the active dir + the export-dir materialization back,
 // flips the sidecar status to "active", and writes a cli-tuple audit row recorded as
 // AuditActivate (NOT a new 'restore' action — that constant does not exist and the CHECK
 // would reject it).
@@ -43,12 +43,9 @@ func TestRestoreSnippetRoundTrip(t *testing.T) {
 
 	name := "restore" + uuid.Must(uuid.NewV7()).String()[:8]
 
-	// Save + activate the snippet (materializes it into the export dir).
+	// Save the snippet: it is active + materialized into the export dir on return.
 	if _, err := w.SaveSnippet(ctx, name, "python", "print('"+name+"')\n", Frontmatter{Description: "d"}, AuditActor{ActorID: "cli"}); err != nil {
 		t.Fatalf("SaveSnippet: %v", err)
-	}
-	if err := w.Activate(ctx, name, ApprovalCLI, "", AuditActor{ActorID: "cli"}); err != nil {
-		t.Fatalf("Activate: %v", err)
 	}
 
 	// Archive it: de-materialized from the export dir, moved active->archived.
