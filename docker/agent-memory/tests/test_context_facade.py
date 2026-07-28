@@ -8,12 +8,38 @@ from uuid import UUID
 from neo4j_agent_memory.integration import MemoryIntegration, SessionStrategy
 
 
+def _fact(suffix, subject, predicate, obj):
+    return SimpleNamespace(
+        id=UUID(f"30000000-0000-0000-0000-00000000000{suffix}"),
+        subject=subject,
+        predicate=predicate,
+        object=obj,
+        confidence=0.9,
+    )
+
+
 class _LongTerm:
-    def __init__(self):
+    def __init__(self, exact_facts=None, semantic_facts=None):
         self.stored_preferences = []
+        self.fact_calls = []
+        self._exact_facts = exact_facts if exact_facts is not None else [
+            _fact(1, "Davide", "lives_in", "Torino")
+        ]
+        self._semantic_facts = semantic_facts if semantic_facts is not None else [
+            _fact(1, "Davide", "lives_in", "Torino"),
+            _fact(2, "Davide", "works_on", "Aura"),
+        ]
 
     async def add_preference(self, **kwargs):
         self.stored_preferences.append(kwargs)
+
+    async def get_facts_about(self, subject, *, user_identifier=None, **_kwargs):
+        self.fact_calls.append(("exact", subject, user_identifier))
+        return list(self._exact_facts)
+
+    async def search_facts(self, *, query, limit, threshold=0.7, user_identifier=None):
+        self.fact_calls.append(("semantic", query, limit))
+        return list(self._semantic_facts)
 
     async def search_entities(self, **_kwargs):
         return [
@@ -85,8 +111,8 @@ class _Reasoning:
         return [SimpleNamespace(id="trace-1", task="task", outcome="ok", success=True)]
 
 
-def _integration(*, fail_store=False, strategy=SessionStrategy.PERSISTENT):
-    long_term = _LongTerm()
+def _integration(*, fail_store=False, strategy=SessionStrategy.PERSISTENT, long_term=None):
+    long_term = long_term if long_term is not None else _LongTerm()
     client = SimpleNamespace(
         long_term=long_term,
         short_term=_ShortTerm(fail_store),
@@ -155,13 +181,51 @@ def test_search_all_types_and_error_path():
     assert result["results"]["entities"][0]["canonical_name"] == "David"
 
     default_result = asyncio.run(integration.search("profile"))
-    assert set(default_result["results"]) == {"messages", "entities", "preferences"}
+    assert set(default_result["results"]) == {"messages", "entities", "preferences", "facts"}
+
+    assert "unknown memory_types ['nope']" in asyncio.run(
+        integration.search("profile", memory_types=["nope"])
+    )["error"]
 
     async def fail(**_kwargs):
         raise RuntimeError("search failed")
 
     integration.client.short_term.search_messages = fail
     assert "search failed" in asyncio.run(integration.search("profile"))["error"]
+
+
+def test_facts_bucket_puts_exact_subject_first_and_only_tops_up_to_the_limit():
+    integration, long_term = _integration()
+
+    result = asyncio.run(
+        integration.search(
+            "Davide",
+            memory_types=["facts"],
+            limit=10,
+            user_identifier="owner-1",
+        )
+    )["results"]["facts"]
+
+    # Exact subject leg runs first and scoped; the semantic leg only asks for the
+    # remaining slots, and the fact both legs return is not counted twice.
+    assert long_term.fact_calls == [
+        ("exact", "Davide", "owner-1"),
+        ("semantic", "Davide", 9),
+    ]
+    assert [f["object"] for f in result] == ["Torino", "Aura"]
+    assert result[0]["predicate"] == "lives_in"
+
+    filled = _LongTerm(
+        exact_facts=[
+            _fact(1, "Davide", "lives_in", "Torino"),
+            _fact(2, "Davide", "works_on", "Aura"),
+        ]
+    )
+    integration, _ = _integration(long_term=filled)
+    single = asyncio.run(integration.search("Davide", memory_types=["facts"], limit=1))
+    # Exact already fills the limit: no semantic call at all, and the surplus is cut.
+    assert [call[0] for call in filled.fact_calls] == ["exact"]
+    assert [f["object"] for f in single["results"]["facts"]] == ["Torino"]
 
 
 def test_missing_revisions_and_empty_long_term_are_usable_but_ineligible():
