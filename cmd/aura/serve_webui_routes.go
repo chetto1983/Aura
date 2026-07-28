@@ -144,15 +144,20 @@ const (
 // registry + per-row live probe, the skills lifecycle + audit ledger, the scheduler tasks
 // + run history). Like the graph routes they are SPECIFIC method+path siblings under the
 // "/api/" exclusion carve-out — NEVER a bare "/api/" (which would shadow the integrations
-// proxy, T-28-02-05). All six delegate to the AG-UI handler (the routes live on
+// proxy, T-28-02-05). All seven delegate to the AG-UI handler (the routes live on
 // Server.Mux) and are interposed with RequireCapability(governance.read). These reads run
 // after RequireAuth binds the principal. There is no write/PATCH/DELETE governance
 // surface; onboarding create has its own identity.create gate.
+//
+// A route registered on Server.Mux but NOT listed here is unreachable — it falls through
+// to the SPA catch-all and answers index.html, not the handler. The pair is the contract:
+// agui registers, this mounts it behind its capability.
 const (
 	governanceMCPListRoute     = "GET /api/governance/mcp"
 	governanceMCPProbeRoute    = "GET /api/governance/mcp/{name}/probe"
 	governanceSkillsRoute      = "GET /api/governance/skills"
 	governanceSkillsAuditRoute = "GET /api/governance/skills/audit"
+	governanceSkillsBodyRoute  = "GET /api/governance/skills/{name}/body"
 	governanceSchedulerRoute   = "GET /api/governance/scheduler"
 	governanceSchedRunsRoute   = "GET /api/governance/scheduler/{id}/runs"
 )

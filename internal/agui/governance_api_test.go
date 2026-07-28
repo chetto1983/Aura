@@ -12,7 +12,6 @@ import (
 
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/mcp"
-	"github.com/chetto1983/aura/internal/skills"
 )
 
 // scriptedMCPBoard is a configurable MCPBoardProvider for the governance-api tests: it
@@ -32,49 +31,6 @@ func (b *scriptedMCPBoard) Probe(ctx context.Context, name string, server mcp.Ma
 		return b.probe(ctx, name, server)
 	}
 	return mcp.ProbeResult{Name: name, OK: true}
-}
-
-// scriptedSkillsBoard is a configurable SkillsBoardProvider: canned active/stage skills,
-// the audit rows, and optional per-call errors. stageCalls records the requested stage so
-// the per-stage routing can be asserted.
-type scriptedSkillsBoard struct {
-	active     []skills.Skill
-	staged     map[string][]skills.StageSkill
-	stageErr   error
-	audit      []skills.AuditRow
-	auditErr   error
-	auditLimit int
-	auditSince time.Time
-}
-
-func (b *scriptedSkillsBoard) ActiveSkills() []skills.Skill { return b.active }
-
-// SkillBody resolves a body from the SAME active snapshot ActiveSkills lists, so the fake
-// preserves the list ⊆ resolvable invariant the real skillsBoardAdapter guarantees (both
-// delegate to one loader snapshot — Pitfall 2). An unknown name → ("", false).
-func (b *scriptedSkillsBoard) SkillBody(name string) (string, bool) {
-	for _, sk := range b.active {
-		if sk.Name == name {
-			return sk.Body, true
-		}
-	}
-	return "", false
-}
-
-func (b *scriptedSkillsBoard) ArchivedSkills() ([]skills.StageSkill, error) {
-	if b.stageErr != nil {
-		return nil, b.stageErr
-	}
-	return b.staged[skills.StageArchived], nil
-}
-
-func (b *scriptedSkillsBoard) AuditLog(_ context.Context, f skills.AuditFilter) ([]skills.AuditRow, error) {
-	b.auditLimit = f.Limit
-	b.auditSince = f.Since
-	if b.auditErr != nil {
-		return nil, b.auditErr
-	}
-	return b.audit, nil
 }
 
 // govServer builds a Server with the supplied governance providers wired (any may be nil)
@@ -279,95 +235,6 @@ func TestMCPProbeErrorSanitized(t *testing.T) {
 	}
 	if strings.Contains(rec.Body.String(), "10.0.0.9") || strings.Contains(rec.Body.String(), ":p@") {
 		t.Fatalf("probe error leaked a credential/host: %s", rec.Body.String())
-	}
-}
-
-// TestGovernanceSkillsStages: the two remaining stages list the correct sets and an
-// archived row carries NO action field (T-28-02-04 — non-runnable by construction).
-func TestGovernanceSkillsStages(t *testing.T) {
-	board := &scriptedSkillsBoard{
-		active: []skills.Skill{{Name: "active-one", Description: "a", Type: "instruction"}},
-		staged: map[string][]skills.StageSkill{
-			skills.StageArchived: {{Name: "archived-one", Description: "ar", Type: "snippet", Language: "python", ContentHash: "abc"}},
-		},
-	}
-	s := govServer(GovernanceProviders{Skills: board})
-
-	// Default (no ?stage) → active.
-	def := doGov(t, s, http.MethodGet, "/api/governance/skills")
-	if !strings.Contains(def.Body.String(), "active-one") {
-		t.Fatalf("default stage must be active, got %s", def.Body.String())
-	}
-
-	archived := doGov(t, s, http.MethodGet, "/api/governance/skills?stage=archived")
-	if archived.Code != http.StatusOK {
-		t.Fatalf("archived status = %d, want 200", archived.Code)
-	}
-	if !strings.Contains(archived.Body.String(), "archived-one") {
-		t.Fatalf("archived stage missing its skill: %s", archived.Body.String())
-	}
-	// An archived row must carry NO action/run/activate control.
-	for _, banned := range []string{`"action"`, `"run"`, `"activate"`, `"runnable"`} {
-		if strings.Contains(archived.Body.String(), banned) {
-			t.Fatalf("archived row exposed a %s control (must be non-runnable): %s", banned, archived.Body.String())
-		}
-	}
-	// An archived body must never be serialized.
-	if strings.Contains(strings.ToLower(archived.Body.String()), `"body"`) {
-		t.Fatalf("archived row leaked a body field: %s", archived.Body.String())
-	}
-}
-
-// TestGovernanceSkillsUnknownStage: an unknown stage is a clean 400 — including
-// "pending", which amendment #97 removed. The wire must reject the retired name rather
-// than quietly answer with something else.
-func TestGovernanceSkillsUnknownStage(t *testing.T) {
-	s := govServer(GovernanceProviders{Skills: &scriptedSkillsBoard{}})
-	for _, stage := range []string{"bogus", "pending"} {
-		rec := doGov(t, s, http.MethodGet, "/api/governance/skills?stage="+stage)
-		if rec.Code != http.StatusBadRequest {
-			t.Fatalf("stage=%s status = %d, want 400", stage, rec.Code)
-		}
-	}
-}
-
-// TestGovernanceSkillsAuditNewestFirst: the audit endpoint returns the store rows in the
-// order the store yields them (newest-first by contract) and applies the default limit.
-func TestGovernanceSkillsAuditNewestFirst(t *testing.T) {
-	now := time.Now().UTC()
-	board := &scriptedSkillsBoard{
-		audit: []skills.AuditRow{
-			{
-				ID:               "newest",
-				IdentityID:       "secret-identity",
-				SkillName:        "s",
-				Action:           skills.AuditAction("create"),
-				PausedStateToken: "11111111-1111-1111-1111-111111111111",
-				CreatedAt:        now,
-			},
-			{ID: "older", SkillName: "s", Action: skills.AuditAction("update"), CreatedAt: now.Add(-time.Hour)},
-		},
-	}
-	s := govServer(GovernanceProviders{Skills: board})
-	rec := doGov(t, s, http.MethodGet, "/api/governance/skills/audit")
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", rec.Code)
-	}
-	var resp struct {
-		Rows []struct {
-			ID string `json:"ID"`
-		} `json:"rows"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("decode audit body: %v", err)
-	}
-	if len(resp.Rows) != 2 || resp.Rows[0].ID != "newest" {
-		t.Fatalf("audit rows not newest-first as the store yielded: %+v", resp.Rows)
-	}
-	for _, banned := range []string{"PausedStateToken", "11111111-1111-1111-1111-111111111111", "IdentityID", "secret-identity"} {
-		if strings.Contains(rec.Body.String(), banned) {
-			t.Fatalf("audit DTO leaked %q: %s", banned, rec.Body.String())
-		}
 	}
 }
 

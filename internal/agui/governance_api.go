@@ -72,14 +72,18 @@ type mcpServerRow struct {
 }
 
 // skillRow is one GOV-02 skills-governance row. It is the projection shared by the active
-// tab (from skills.Skill) and the archived tab (from skills.StageSkill). A field
+// list (from skills.Skill) and the archived list (from skills.StageSkill). A field
 // with no source on a given stage renders as "" (A2: never fabricated) and the omitempty
 // keys drop. CRITICALLY there is no run/activate/action field — an archived row is
 // non-runnable by construction (T-28-02-04 / GOV-02 prohibition #1).
+//
+// Always is the frontmatter always-block flag: it costs context on EVERY turn, so the
+// board marks it on the row rather than burying it one click deep in the detail.
 type skillRow struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Type        string `json:"type"`
+	Always      bool   `json:"always,omitempty"`
 	Language    string `json:"language,omitempty"`
 	ContentHash string `json:"contentHash,omitempty"`
 }
@@ -138,7 +142,7 @@ type schedulerRunRow struct {
 	CompletedAt       time.Time `json:"CompletedAt"`
 }
 
-// registerGovernanceRoutes mounts the six read-only governance routes on the supplied mux
+// registerGovernanceRoutes mounts the seven read-only governance routes on the supplied mux
 // using Go 1.22 method-pattern routing. They are SPECIFIC method+path siblings under the
 // /api/ carve-out — never a bare /api/ (which would shadow /api/integrations/). The
 // parent-mux mount behind RequireAuth lives in cmd/aura/serve_webui.go.
@@ -147,6 +151,7 @@ func (s *Server) registerGovernanceRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/governance/mcp/{name}/probe", s.handleMCPProbe)
 	mux.HandleFunc("GET /api/governance/skills", s.handleSkillsList)
 	mux.HandleFunc("GET /api/governance/skills/audit", s.handleSkillsAudit)
+	mux.HandleFunc("GET /api/governance/skills/{name}/body", s.handleSkillBody)
 	mux.HandleFunc("GET /api/governance/scheduler", s.handleSchedulerList)
 	mux.HandleFunc("GET /api/governance/scheduler/{id}/runs", s.handleSchedulerRuns)
 }
@@ -288,7 +293,31 @@ func (s *Server) handleSkillsList(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// stageActive names the active lifecycle tab (the Loader snapshot), the default stage when
+// handleSkillBody serves GET /api/governance/skills/{name}/body (GOV-02): the markdown
+// body of ONE active skill, so the cockpit detail can show what the skill actually tells
+// the agent to do — the one thing you open that pane for, and the one thing the metadata
+// projection never carried.
+//
+// It resolves through SkillBody, which reads the SAME loader snapshot ActiveSkills lists,
+// so the answerable set is exactly the active set: an archived (or unknown) name → 404,
+// never a path read. That keeps GOV-02 prohibition #1 intact — an out-of-manifest body
+// stays unreadable — while an ACTIVE body is already in the model's context every turn,
+// so showing it to an authenticated governance.read operator exposes nothing new.
+func (s *Server) handleSkillBody(w http.ResponseWriter, r *http.Request) {
+	if s.governance.Skills == nil {
+		http.Error(w, "skills board not configured", http.StatusServiceUnavailable)
+		return
+	}
+	name := r.PathValue("name")
+	body, ok := s.governance.Skills.SkillBody(name)
+	if !ok {
+		http.Error(w, "skill not found", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, map[string]string{"name": name, "body": body})
+}
+
+// stageActive names the active lifecycle stage (the Loader snapshot), the default stage when
 // ?stage is absent. The archived stage name lives in the skills package
 // (skills.StageArchived) so the reader and the board agree on one vocabulary.
 const stageActive = "active"
@@ -302,6 +331,7 @@ func activeSkillRows(loaded []skills.Skill) []skillRow {
 			Name:        sk.Name,
 			Description: sk.Description,
 			Type:        sk.Type,
+			Always:      sk.Always,
 			Language:    sk.Language,
 		})
 	}

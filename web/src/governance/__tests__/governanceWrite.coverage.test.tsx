@@ -70,10 +70,9 @@ const INSTALL_INFO: SkillsInstallInfo = {
   source: 'owner/repo',
   content_hash: 'sha256:deadbeef',
   preview: '# demo',
-  destination: '/skills/pending/demo',
+  destination: '/skills/demo',
   risk_tier: 'RISKY',
-  status: 'pending_approval',
-  approval_token: '00000000-0000-0000-0000-0000000000f1',
+  status: 'active',
   checklist: [{ label: 'parsed', passed: true }],
 };
 

@@ -53,11 +53,14 @@ export interface McpProbeResult {
 }
 
 /** One skills lifecycle row (GET /api/governance/skills?stage=…). There is NO
- * action/run field by construction — a pending row is non-runnable (GOV-02). */
+ * action/run field by construction — the row carries metadata, and the lifecycle
+ * verbs live on the board (GOV-02). `always` marks a skill that enters the prompt
+ * every turn; the server omits the key when false. */
 export interface SkillRow {
   readonly name: string;
   readonly description: string;
   readonly type: string;
+  readonly always?: boolean;
   readonly language?: string;
   readonly contentHash?: string;
 }
@@ -110,7 +113,10 @@ export interface SchedulerRun {
   readonly CompletedAt: string;
 }
 
-export type SkillStage = 'active' | 'pending' | 'archived';
+/** The two lifecycle stages a skill can be in. Amendment #97 retired 'pending': a
+ * written skill is live, so there is no longer a stage where a skill exists but does
+ * not work. The server 400s the retired name rather than quietly answering. */
+export type SkillStage = 'active' | 'archived';
 
 // --- Phase-29 write layer (mirrors getJSON; never a discriminated union — a non-200,
 // INCLUDING 401/404/409, THROWS `Error("HTTP <n>")` so the mutation surfaces a visible
@@ -211,6 +217,16 @@ export async function fetchSkills(stage: SkillStage): Promise<readonly SkillRow[
     `${GOV_SKILLS_PATH}?stage=${encodeURIComponent(stage)}`,
   );
   return body.skills ?? [];
+}
+
+/** GET /api/governance/skills/{name}/body — the markdown body of ONE ACTIVE skill:
+ * what it actually tells the agent to do. An archived or unknown name throws
+ * `Error("HTTP 404")` — only the active set is readable. */
+export async function fetchSkillBody(name: string): Promise<string> {
+  const body = await getJSON<{ body?: string }>(
+    `${GOV_SKILLS_PATH}/${encodeURIComponent(name)}/body`,
+  );
+  return body.body ?? '';
 }
 
 /** GET /api/governance/skills/audit — the append-only ledger, newest-first. */
@@ -380,7 +396,6 @@ export interface SkillsInstallInfo {
   readonly destination: string;
   readonly risk_tier: string;
   readonly status: string;
-  readonly approval_token: string;
   readonly checklist: readonly SkillsCheckItem[];
 }
 
@@ -426,6 +441,13 @@ export async function restoreSkill(name: string): Promise<void> {
 /** POST /api/governance/skills/{name}/archive — archive an active skill (reversible). */
 export async function archiveSkill(name: string): Promise<void> {
   await postJSON<unknown>(`${GOV_SKILLS_PATH}/${encodeURIComponent(name)}/archive`);
+}
+
+/** DELETE /api/governance/skills/{name} — remove the skill for good (204, no body).
+ * Unlike archive this is irreversible, which is why the board puts it behind a
+ * confirm dialog and never on the row. */
+export async function deleteSkill(name: string): Promise<void> {
+  await deleteJSON<unknown>(`${GOV_SKILLS_PATH}/${encodeURIComponent(name)}`);
 }
 
 // === Cockpit "Connect" — WhatsApp device-linking (connect_api.go) ===

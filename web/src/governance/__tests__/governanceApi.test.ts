@@ -148,10 +148,10 @@ describe('governanceApi same-origin throwing fetch', () => {
     const fetchMock = okJSON({ skills: [{ name: 's', description: '', type: 'instruction' }] });
     vi.stubGlobal('fetch', fetchMock);
 
-    const rows = await fetchSkills('pending');
+    const rows = await fetchSkills('archived');
     expect(rows).toHaveLength(1);
     const [url] = fetchMock.mock.calls[0] as unknown as [string];
-    expect(url).toBe('/api/governance/skills?stage=pending');
+    expect(url).toBe('/api/governance/skills?stage=archived');
   });
 
   it('fetchSkillsAudit unwraps {rows}', async () => {

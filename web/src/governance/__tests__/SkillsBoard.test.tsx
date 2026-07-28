@@ -5,23 +5,31 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '../../i18n/i18n';
 import type { AuditRow, SkillRow } from '../governanceApi';
 
-// SkillsBoard test (GOV-02 / T-28-03-02). It mocks governanceApi to drive the four lifecycle
-// sub-tabs and asserts the read-only enforcement: a PENDING row carries NO run/activate/install
-// control (only a select-to-view button), the four tabs are a role=tablist, and the audit tab
-// lists rows newest-first.
+// SkillsBoard test (GOV-02, rebuilt for amendment #97). The board is ONE list of both
+// lifecycle stages with state filters, an audit toggle, an inline reversible verb per row,
+// and a delete that is only reachable through the detail behind a confirm.
+//
+// The load-bearing assertions here are the safety ones: 'pending' is gone from the wire and
+// the UI, archive fires with no ceremony, and delete NEVER calls the API until the confirm
+// is accepted — a destructive verb that fires on the first click is exactly the bug this
+// design exists to prevent.
 
 const fetchSkills = vi.fn();
 const fetchSkillsAudit = vi.fn();
+const fetchSkillBody = vi.fn();
 const archiveSkill = vi.fn();
 const restoreSkill = vi.fn();
+const deleteSkill = vi.fn();
 const installSkill = vi.fn();
 const searchSkillCatalog = vi.fn();
 
 vi.mock('../governanceApi', () => ({
   fetchSkills: (...a: unknown[]) => fetchSkills(...a) as Promise<readonly SkillRow[]>,
   fetchSkillsAudit: (...a: unknown[]) => fetchSkillsAudit(...a) as Promise<readonly AuditRow[]>,
+  fetchSkillBody: (...a: unknown[]) => fetchSkillBody(...a) as Promise<string>,
   archiveSkill: (...a: unknown[]) => archiveSkill(...a) as Promise<void>,
   restoreSkill: (...a: unknown[]) => restoreSkill(...a) as Promise<void>,
+  deleteSkill: (...a: unknown[]) => deleteSkill(...a) as Promise<void>,
   installSkill: (...a: unknown[]) => installSkill(...a) as Promise<unknown>,
   searchSkillCatalog: (...a: unknown[]) => searchSkillCatalog(...a) as Promise<unknown>,
 }));
@@ -30,10 +38,18 @@ const { SkillsBoard } = await import('../SkillsBoard');
 
 const ACTIVE: SkillRow[] = [
   { name: 'golang-testing', description: 'Go test patterns', type: 'instruction' },
+  { name: 'find-skills', description: 'discover skills', type: 'instruction', always: true },
 ];
-const PENDING: SkillRow[] = [
-  { name: 'pending-skill', description: 'awaiting review', type: 'executable', language: 'python' },
+const ARCHIVED: SkillRow[] = [
+  { name: 'old-skill', description: 'retired', type: 'snippet', language: 'python' },
 ];
+
+/** Route the mocked stage fetch to the right fixture. */
+function stageFixtures(active: SkillRow[] = ACTIVE, archived: SkillRow[] = ARCHIVED) {
+  fetchSkills.mockImplementation((stage: string) =>
+    Promise.resolve(stage === 'archived' ? archived : active),
+  );
+}
 
 function auditRow(
   over: Partial<AuditRow> & Pick<AuditRow, 'ID' | 'CreatedAt' | 'SkillName'>,
@@ -64,66 +80,201 @@ function Wrapper({ children, qc }: { children: ReactNode; qc: QueryClient }) {
   return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
 }
 
+function renderBoard() {
+  return render(<SkillsBoard />, {
+    wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
+  });
+}
+
+/** Open the detail for a named skill and wait for it to render. */
+async function openDetail(name: string) {
+  await waitFor(() => {
+    expect(screen.getByText(name)).toBeTruthy();
+  });
+  fireEvent.click(screen.getByText(name));
+  await waitFor(() => {
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeTruthy();
+  });
+}
+
 describe('SkillsBoard (GOV-02)', () => {
   beforeEach(() => {
-    fetchSkills.mockReset();
-    fetchSkillsAudit.mockReset();
-    archiveSkill.mockReset();
-    restoreSkill.mockReset();
-    installSkill.mockReset();
-    searchSkillCatalog.mockReset();
+    for (const m of [
+      fetchSkills,
+      fetchSkillsAudit,
+      fetchSkillBody,
+      archiveSkill,
+      restoreSkill,
+      deleteSkill,
+      installSkill,
+      searchSkillCatalog,
+    ]) {
+      m.mockReset();
+    }
+    fetchSkillBody.mockResolvedValue('# body');
+    stageFixtures();
   });
   afterEach(() => {
     vi.clearAllMocks();
   });
 
-  it('renders the four lifecycle sub-tabs as a role=tablist with roving aria-selected/tabindex', async () => {
-    fetchSkills.mockResolvedValue(ACTIVE);
+  it('lists both stages in one list and counts them per filter', async () => {
+    renderBoard();
 
-    render(<SkillsBoard />, {
-      wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
-    });
-
-    const tablist = screen.getByRole('tablist', { name: 'Skills' });
-    expect(tablist.getAttribute('data-slot')).toBe('tabs-list');
-    expect(tablist.className).toContain('grid-cols-4');
-    expect(tablist.className).toContain('min-w-0');
-    expect(tablist.className).toContain('flex-1');
-    const tabs = within(tablist).getAllByRole('tab');
-    expect(tabs.map((t) => t.textContent)).toEqual(['Active', 'Pending', 'Archived', 'Audit']);
-    expect(tabs.every((t) => t.getAttribute('data-slot') === 'tabs-trigger')).toBe(true);
-    expect(tabs.every((t) => t.className.includes('min-w-0'))).toBe(true);
-    expect(
-      tabs.every((t) => t.querySelector('[data-tab-label]')?.className.includes('truncate')),
-    ).toBe(true);
-    const installButton = screen.getByRole('button', { name: 'Install skill' });
-    expect(installButton.getAttribute('title')).toBe('Install skill');
-    expect(installButton.querySelector('[data-action-label]')?.className).toContain('hidden');
-
-    // Active is selected by default (roving tabindex 0); the others are -1 and not selected.
-    const activeTab = screen.getByRole('tab', { name: 'Active' });
-    const pendingTab = screen.getByRole('tab', { name: 'Pending' });
-    expect(activeTab.getAttribute('aria-selected')).toBe('true');
-    expect(activeTab.getAttribute('tabindex')).toBe('0');
-    expect(pendingTab.getAttribute('aria-selected')).toBe('false');
-    expect(pendingTab.getAttribute('tabindex')).toBe('-1');
-
-    // Selecting Pending flips the roving state.
-    fireEvent.click(pendingTab);
     await waitFor(() => {
-      expect(pendingTab.getAttribute('aria-selected')).toBe('true');
+      expect(screen.getByText('golang-testing')).toBeTruthy();
     });
-    expect(pendingTab.getAttribute('tabindex')).toBe('0');
-    expect(activeTab.getAttribute('tabindex')).toBe('-1');
+    // Active and archived rows coexist — no tab to switch between them.
+    expect(screen.getByText('old-skill')).toBeTruthy();
+    expect(fetchSkills).toHaveBeenCalledWith('active');
+    expect(fetchSkills).toHaveBeenCalledWith('archived');
+
+    const group = screen.getByRole('group', { name: 'Filter by state' });
+    const chips = within(group).getAllByRole('button');
+    expect(chips.map((c) => c.textContent)).toEqual(['All3', 'Active2', 'Archived1']);
+    expect(chips[0]?.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('has no Pending affordance anywhere — the stage is gone (amendment #97)', async () => {
+    renderBoard();
+    await waitFor(() => {
+      expect(screen.getByText('golang-testing')).toBeTruthy();
+    });
+
+    expect(screen.queryByRole('tab')).toBeNull();
+    expect(screen.queryByText(/Pending/i)).toBeNull();
+    expect(screen.queryByText('Pending — inactive and cannot be run.')).toBeNull();
+    // The retired stage is never requested from the server (it answers 400).
+    expect(fetchSkills.mock.calls.flat()).not.toContain('pending');
+  });
+
+  it('filters the list by state without refetching', async () => {
+    renderBoard();
+    await waitFor(() => {
+      expect(screen.getByText('old-skill')).toBeTruthy();
+    });
+    const callsBefore = fetchSkills.mock.calls.length;
+
+    fireEvent.click(screen.getByRole('button', { name: /^Active2$/ }));
+    await waitFor(() => {
+      expect(screen.queryByText('old-skill')).toBeNull();
+    });
+    expect(screen.getByText('golang-testing')).toBeTruthy();
+    expect(fetchSkills.mock.calls.length).toBe(callsBefore);
+
+    fireEvent.click(screen.getByRole('button', { name: /^Archived1$/ }));
+    await waitFor(() => {
+      expect(screen.getByText('old-skill')).toBeTruthy();
+    });
+    expect(screen.queryByText('golang-testing')).toBeNull();
+  });
+
+  it('searches by name and description', async () => {
+    renderBoard();
+    await waitFor(() => {
+      expect(screen.getByText('golang-testing')).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText('Search skills…'), {
+      target: { value: 'retired' },
+    });
+    await waitFor(() => {
+      expect(screen.queryByText('golang-testing')).toBeNull();
+    });
+    // Matched on the DESCRIPTION, not the name.
+    expect(screen.getByText('old-skill')).toBeTruthy();
+
+    fireEvent.change(screen.getByPlaceholderText('Search skills…'), {
+      target: { value: 'nothing-matches-this' },
+    });
+    await waitFor(() => {
+      expect(screen.getByText('No skills yet')).toBeTruthy();
+    });
+  });
+
+  it('marks an always-on skill on its row', async () => {
+    renderBoard();
+    await waitFor(() => {
+      expect(screen.getByText('find-skills')).toBeTruthy();
+    });
+    const row = screen.getByText('find-skills').closest('[role="listitem"]');
+    expect(within(row as HTMLElement).getByText('Always')).toBeTruthy();
+  });
+
+  it('archives an active skill from the row with no confirmation', async () => {
+    archiveSkill.mockResolvedValue(undefined);
+    renderBoard();
+    await waitFor(() => {
+      expect(screen.getByText('golang-testing')).toBeTruthy();
+    });
+
+    const row = screen.getByText('golang-testing').closest('[role="listitem"]');
+    fireEvent.click(within(row as HTMLElement).getByRole('button', { name: 'Archive skill' }));
+    await waitFor(() => {
+      expect(archiveSkill).toHaveBeenCalledWith('golang-testing');
+    });
+    // Archive is reversible, so it asks nothing.
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('restores an archived skill; a colliding restore (409) shows the inline safe error', async () => {
+    renderBoard();
+    await waitFor(() => {
+      expect(screen.getByText('old-skill')).toBeTruthy();
+    });
+
+    restoreSkill.mockRejectedValueOnce(new Error('HTTP 409'));
+    fireEvent.click(screen.getByRole('button', { name: 'Restore skill' }));
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeTruthy();
+    });
+    expect(restoreSkill).toHaveBeenCalledWith('old-skill');
+
+    restoreSkill.mockResolvedValueOnce(undefined);
+    fireEvent.click(screen.getByRole('button', { name: 'Restore skill' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
+  });
+
+  it('never deletes without the confirm — and deletes with it', async () => {
+    deleteSkill.mockResolvedValue(undefined);
+    renderBoard();
+    await openDetail('golang-testing');
+
+    // Delete is NOT on the row: the only Delete control is the detail's.
+    expect(screen.getAllByRole('button', { name: 'Delete' })).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    const dialog = await screen.findByRole('alertdialog');
+    // Opening the dialog must not have deleted anything yet.
+    expect(deleteSkill).not.toHaveBeenCalled();
+    // The confirm names the skill and offers the reversible alternative in the copy.
+    expect(within(dialog).getByText('Delete “golang-testing”?')).toBeTruthy();
+    expect(within(dialog).getByText(/archive it instead/)).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+    await waitFor(() => {
+      expect(deleteSkill).toHaveBeenCalledWith('golang-testing');
+    });
+  });
+
+  it('cancelling the confirm deletes nothing', async () => {
+    renderBoard();
+    await openDetail('golang-testing');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+    });
+    expect(deleteSkill).not.toHaveBeenCalled();
   });
 
   it('marks the selected master row with aria-pressed', async () => {
-    fetchSkills.mockResolvedValue(ACTIVE);
-
-    render(<SkillsBoard />, {
-      wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
-    });
-
+    renderBoard();
     await waitFor(() => {
       expect(screen.getByText('golang-testing')).toBeTruthy();
     });
@@ -136,254 +287,80 @@ describe('SkillsBoard (GOV-02)', () => {
     });
   });
 
-  it('pending rows render with NO run/activate/install control (T-28-03-02)', async () => {
-    fetchSkills.mockImplementation((stage: string) =>
-      Promise.resolve(stage === 'pending' ? PENDING : ACTIVE),
-    );
-
-    render(<SkillsBoard />, {
-      wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
-    });
-
-    // Switch to the pending tab.
-    fireEvent.click(screen.getByRole('tab', { name: 'Pending' }));
-    await waitFor(() => {
-      expect(screen.getByText('pending-skill')).toBeTruthy();
-    });
-
-    // The pending note is shown, and a PENDING ROW carries NO run/activate/execute/enable
-    // affordance. The board-level "Install skill" CTA (which STAGES to pending → approval, never
-    // activates a pending skill) is the one allowed install action and is excluded here; the
-    // pending-note sentence ("…cannot be run.") must not be mistaken for a control.
-    expect(screen.getAllByText('Pending — inactive and cannot be run.').length).toBeGreaterThan(0);
-    expect(
-      screen.queryByRole('button', { name: /^(run|activate|enable|execute|disable)\b/i }),
-    ).toBeNull();
-    // No per-row Archive/Restore on a pending row (those are active/archived controls only).
-    expect(screen.queryByRole('button', { name: 'Archive skill' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Restore skill' })).toBeNull();
-  });
-
-  it('the audit tab lists ledger rows newest-first', async () => {
-    fetchSkills.mockResolvedValue(ACTIVE);
+  it('shows the ledger behind the Audit toggle, newest-first', async () => {
     fetchSkillsAudit.mockResolvedValue(AUDIT);
-
-    render(<SkillsBoard />, {
-      wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
+    renderBoard();
+    await waitFor(() => {
+      expect(screen.getByText('golang-testing')).toBeTruthy();
     });
+    // The ledger is not fetched until it is asked for.
+    expect(fetchSkillsAudit).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Audit' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Audit' }));
     await waitFor(() => {
       expect(screen.getByText('newer-skill')).toBeTruthy();
     });
 
-    // The newest row (newer-skill, 2026-06-19) precedes the older one in DOM order.
     const items = screen.getAllByRole('listitem');
     const text = items.map((li) => li.textContent ?? '').join('||');
-    const newerIdx = text.indexOf('newer-skill');
-    const olderIdx = text.indexOf('older-skill');
-    expect(newerIdx).toBeGreaterThanOrEqual(0);
-    expect(olderIdx).toBeGreaterThan(newerIdx);
-
-    // Each audit row renders its action, actor, and created-at (kills the AuditList field mutants).
+    expect(text.indexOf('older-skill')).toBeGreaterThan(text.indexOf('newer-skill'));
     expect(screen.getAllByText('install').length).toBeGreaterThan(0);
     expect(screen.getAllByText('local').length).toBeGreaterThan(0);
     expect(screen.getByText('2026-06-19T10:00:00Z')).toBeTruthy();
+
+    // Toggling back returns to the list.
+    fireEvent.click(screen.getByRole('button', { name: 'Audit' }));
+    await waitFor(() => {
+      expect(screen.getByText('golang-testing')).toBeTruthy();
+    });
   });
 
-  it('shows the empty state for an empty stage', async () => {
-    fetchSkills.mockResolvedValue([]);
+  it('shows the audit-empty copy when the ledger is empty', async () => {
+    fetchSkillsAudit.mockResolvedValue([]);
+    renderBoard();
 
-    render(<SkillsBoard />, {
-      wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
+    fireEvent.click(screen.getByRole('button', { name: 'Audit' }));
+    await waitFor(() => {
+      expect(screen.getByText('No audit entries yet.')).toBeTruthy();
     });
+  });
+
+  it('shows the empty state when there are no skills at all', async () => {
+    stageFixtures([], []);
+    renderBoard();
 
     await waitFor(() => {
       expect(screen.getByText('No skills yet')).toBeTruthy();
     });
   });
 
-  it('shows the audit-empty copy when the ledger is empty', async () => {
-    fetchSkills.mockResolvedValue(ACTIVE);
-    fetchSkillsAudit.mockResolvedValue([]);
-
-    render(<SkillsBoard />, {
-      wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
-    });
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Audit' }));
-    await waitFor(() => {
-      expect(screen.getByText('No audit entries yet.')).toBeTruthy();
-    });
-  });
-
-  it('opens a read-only detail (with the pending note) when a pending row is selected', async () => {
-    fetchSkills.mockImplementation((stage: string) =>
-      Promise.resolve(stage === 'pending' ? PENDING : ACTIVE),
-    );
-
-    render(<SkillsBoard />, {
-      wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
-    });
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Pending' }));
-    await waitFor(() => {
-      expect(screen.getByText('pending-skill')).toBeTruthy();
-    });
-    fireEvent.click(screen.getByText('pending-skill'));
-
-    // Detail shows the language metadata (read-only) — still no run/activate control (the only
-    // buttons are the tabs, the board-level Install-skill staging CTA, the row-select, and the
-    // detail close ✕).
-    await waitFor(() => {
-      expect(screen.getAllByText('python').length).toBeGreaterThan(0);
-    });
-    expect(
-      screen.queryByRole('button', { name: /^(run|activate|enable|execute|disable)\b/i }),
-    ).toBeNull();
-  });
-
-  it('renders a visible auth-error when the stage fetch 401s', async () => {
+  it('renders a visible auth-error when a stage fetch 401s', async () => {
     fetchSkills.mockRejectedValue(new Error('HTTP 401'));
-
-    render(<SkillsBoard />, {
-      wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
-    });
+    renderBoard();
 
     await waitFor(() => {
       expect(screen.getByText('Your session expired. Sign in again to continue.')).toBeTruthy();
     });
   });
 
-  it('the active-skill detail renders dashes for missing language/content-hash and closes', async () => {
-    // ACTIVE has no language/contentHash → the detail shows the "—" placeholder for both.
-    fetchSkills.mockResolvedValue(ACTIVE);
-
-    render(<SkillsBoard />, {
-      wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
-    });
-
-    await waitFor(() => {
-      expect(screen.getByText('golang-testing')).toBeTruthy();
-    });
-    fireEvent.click(screen.getByText('golang-testing'));
-
-    await waitFor(() => {
-      // Type label resolves; the missing language/hash render as the dash placeholder.
-      expect(screen.getByText('Go test patterns')).toBeTruthy();
-    });
-    expect(screen.getAllByText('—').length).toBeGreaterThan(0);
-
-    // Close returns to the detail-empty state (no pending note on an active skill). Both the
-    // detail ✕ and the lg:hidden backdrop carry "Close"; the detail ✕ is first in DOM order.
-    const closeButton = screen.getAllByRole('button', { name: 'Close' })[0];
-    if (closeButton === undefined) throw new Error('close button not found');
-    fireEvent.click(closeButton);
-    await waitFor(() => {
-      expect(screen.getByText('Select a row to see details')).toBeTruthy();
-    });
-  });
-
-  it('roams the sub-tabs with the arrow keys (both directions)', async () => {
-    fetchSkills.mockResolvedValue(ACTIVE);
-    fetchSkillsAudit.mockResolvedValue([]);
-
-    render(<SkillsBoard />, {
-      wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
-    });
-
-    const activeTab = screen.getByRole('tab', { name: 'Active' });
-    // ArrowLeft from the first wraps to the last (Audit).
-    fireEvent.keyDown(activeTab, { key: 'ArrowLeft' });
-    await waitFor(() => {
-      expect(screen.getByRole('tab', { name: 'Audit' }).getAttribute('aria-selected')).toBe('true');
-    });
-    // ArrowRight from Audit wraps back to Active.
-    fireEvent.keyDown(screen.getByRole('tab', { name: 'Audit' }), { key: 'ArrowRight' });
-    await waitFor(() => {
-      expect(activeTab.getAttribute('aria-selected')).toBe('true');
-    });
-  });
-
-  it('renders a fully-populated skill detail (type + language + content hash, no dashes)', async () => {
-    const full: SkillRow[] = [
-      {
-        name: 'rich-skill',
-        description: 'fully described',
-        type: 'executable',
-        language: 'go',
-        contentHash: 'deadbeefcafe',
-      },
-    ];
-    fetchSkills.mockResolvedValue(full);
-
-    render(<SkillsBoard />, {
-      wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
-    });
-
-    await waitFor(() => {
-      expect(screen.getByText('rich-skill')).toBeTruthy();
-    });
-    fireEvent.click(screen.getByText('rich-skill'));
-
-    await waitFor(() => {
-      expect(screen.getByText('go')).toBeTruthy();
-    });
-    // The content hash now renders both as per-row metadata AND in the detail (Phase-29
-    // SkillsBoard surfaces the hash on the row too) — at least one occurrence is present.
-    expect(screen.getAllByText('deadbeefcafe').length).toBeGreaterThan(0);
-    expect(screen.getByText('fully described')).toBeTruthy();
-    // A fully-populated skill detail renders no dash placeholder.
-    expect(screen.queryByText('—')).toBeNull();
-  });
-
-  it('the audit tab shows the board error + retry when the ledger fetch fails (non-401)', async () => {
-    fetchSkills.mockResolvedValue(ACTIVE);
-    fetchSkillsAudit.mockRejectedValueOnce(new Error('HTTP 502'));
-
-    render(<SkillsBoard />, {
-      wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
-    });
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Audit' }));
+  it('shows the board error + retry when a stage fetch fails (non-401)', async () => {
+    fetchSkills
+      .mockRejectedValueOnce(new Error('HTTP 502'))
+      .mockRejectedValueOnce(new Error('HTTP 502'));
+    renderBoard();
     await waitFor(() => {
       expect(screen.getByRole('alert')).toBeTruthy();
     });
 
-    // Retry re-runs the audit query → now it succeeds and the ledger renders.
-    fetchSkillsAudit.mockResolvedValueOnce(AUDIT);
+    stageFixtures();
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     await waitFor(() => {
-      expect(screen.getByText('newer-skill')).toBeTruthy();
+      expect(screen.getByText('golang-testing')).toBeTruthy();
     });
   });
 
-  it('the archived tab fetches the archived stage', async () => {
-    fetchSkills.mockImplementation((stage: string) =>
-      Promise.resolve(
-        stage === 'archived'
-          ? ([{ name: 'old-skill', description: 'retired', type: 'instruction' }] as SkillRow[])
-          : ACTIVE,
-      ),
-    );
-
-    render(<SkillsBoard />, {
-      wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
-    });
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Archived' }));
-    await waitFor(() => {
-      expect(screen.getByText('old-skill')).toBeTruthy();
-    });
-    expect(fetchSkills).toHaveBeenCalledWith('archived');
-  });
-
-  it('opens the install panel from the install CTA (reachable on any tab)', async () => {
-    fetchSkills.mockResolvedValue(ACTIVE);
-
-    render(<SkillsBoard />, {
-      wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
-    });
+  it('opens the install panel from the install CTA', async () => {
+    renderBoard();
     await waitFor(() => {
       expect(screen.getByText('golang-testing')).toBeTruthy();
     });
@@ -393,8 +370,6 @@ describe('SkillsBoard (GOV-02)', () => {
     expect(installButton.querySelector('svg[data-icon="inline-start"]')).not.toBeNull();
     fireEvent.click(installButton);
 
-    // The no-ceremony install panel: catalog search + an `Install` CTA (no RISKY banner,
-    // no validation-checklist heading).
     await waitFor(() => {
       expect(screen.getByPlaceholderText('Search the skills.sh catalog')).toBeTruthy();
     });
@@ -402,75 +377,24 @@ describe('SkillsBoard (GOV-02)', () => {
     expect(screen.queryByText('Validation checklist')).toBeNull();
   });
 
-  it('archives an active skill via the row Archive control', async () => {
-    fetchSkills.mockResolvedValue(ACTIVE);
-    archiveSkill.mockResolvedValue(undefined);
-
-    render(<SkillsBoard />, {
-      wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
-    });
+  it('renders the row action and type chip with shadcn primitives', async () => {
+    renderBoard();
     await waitFor(() => {
       expect(screen.getByText('golang-testing')).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Archive skill' }));
-    await waitFor(() => {
-      expect(archiveSkill).toHaveBeenCalledWith('golang-testing');
-    });
-  });
-
-  it('renders the archive action and type chip with shadcn primitives', async () => {
-    fetchSkills.mockResolvedValue(ACTIVE);
-
-    render(<SkillsBoard />, {
-      wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
-    });
-    await waitFor(() => {
-      expect(screen.getByText('golang-testing')).toBeTruthy();
-    });
-
-    const archiveButton = screen.getByRole('button', { name: 'Archive skill' });
+    const row = screen.getByText('golang-testing').closest('[role="listitem"]');
+    const archiveButton = within(row as HTMLElement).getByRole('button', { name: 'Archive skill' });
     expect(archiveButton.getAttribute('data-slot')).toBe('button');
     expect(archiveButton.className).toContain('h-[44px]');
     expect(archiveButton.className).toContain('w-[44px]');
     expect(archiveButton.className).not.toContain('shadow-[');
     expect(archiveButton.querySelector('svg[data-icon="icon"]')).not.toBeNull();
-    expect(screen.getByText('instruction').getAttribute('data-slot')).toBe('badge');
     expect(
-      screen.getByText('golang-testing').closest('[role="listitem"]')?.className,
-    ).not.toContain('shadow-[');
-  });
-
-  it('restores an archived skill; a colliding restore (409) shows the inline safe error', async () => {
-    fetchSkills.mockImplementation((stage: string) =>
-      Promise.resolve(
-        stage === 'archived'
-          ? ([{ name: 'dup-skill', description: 'retired', type: 'instruction' }] as SkillRow[])
-          : ACTIVE,
-      ),
-    );
-
-    render(<SkillsBoard />, {
-      wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
-    });
-    fireEvent.click(screen.getByRole('tab', { name: 'Archived' }));
-    await waitFor(() => {
-      expect(screen.getByText('dup-skill')).toBeTruthy();
-    });
-
-    // First restore collides (a 409 from a name-colliding active skill) → the inline error.
-    restoreSkill.mockRejectedValueOnce(new Error('HTTP 409'));
-    fireEvent.click(screen.getByRole('button', { name: 'Restore skill' }));
-    await waitFor(() => {
-      expect(screen.getByRole('alert')).toBeTruthy();
-    });
-    expect(restoreSkill).toHaveBeenCalledWith('dup-skill');
-
-    // A subsequent successful restore clears the inline error (collisionName reset).
-    restoreSkill.mockResolvedValueOnce(undefined);
-    fireEvent.click(screen.getByRole('button', { name: 'Restore skill' }));
-    await waitFor(() => {
-      expect(screen.queryByRole('alert')).toBeNull();
-    });
+      within(row as HTMLElement)
+        .getByText('instruction')
+        .getAttribute('data-slot'),
+    ).toBe('badge');
+    expect(row?.className).not.toContain('shadow-[');
   });
 });

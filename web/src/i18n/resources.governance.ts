@@ -205,19 +205,39 @@ export const governanceEn = {
     skills: {
       emptyHeading: 'No skills yet',
       emptyBody:
-        'No skills in this stage. Install one with Install skill from a repo, URL, or the skills.sh catalog — it stages for approval first.',
+        'Nothing matches. Install a skill from a repo, URL, or the skills.sh catalog — it is active as soon as it lands.',
       installSkill: 'Install skill',
       archive: 'Archive skill',
       restore: 'Restore skill',
       collidingRestore:
         'An active skill named "{{name}}" already exists. Archive or rename it first.',
+      searchLabel: 'Search skills',
+      searchPlaceholder: 'Search skills…',
+      filterLabel: 'Filter by state',
+      filter: {
+        all: 'All',
+        active: 'Active',
+        archived: 'Archived',
+      },
+      alwaysTag: 'Always',
+      alwaysNote: 'Always on — this skill enters the prompt every turn and costs context.',
+      bodyHeading: 'What it tells the agent',
+      bodyLoading: 'Loading the skill body…',
+      bodyEmpty: 'This skill has no body.',
+      bodyArchived: 'An archived skill is not loaded, so its body is not readable here.',
+      bodyError: "Couldn't load the skill body. Try again.",
+      delete: {
+        action: 'Delete',
+        title: 'Delete “{{name}}”?',
+        body: 'The skill is removed for good and the agent loses this capability. To just switch it off, archive it instead — that can be undone.',
+        cancel: 'Cancel',
+        confirm: 'Delete',
+      },
       stages: {
         active: 'Active',
-        pending: 'Pending',
         archived: 'Archived',
         audit: 'Audit',
       },
-      pendingNote: 'Pending — inactive and cannot be run.',
       auditEmpty: 'No audit entries yet.',
       install: {
         heading: 'Install skill',
@@ -256,6 +276,7 @@ export const governanceEn = {
       },
       field: {
         type: 'Type',
+        state: 'State',
         language: 'Language',
         contentHash: 'Content hash',
         description: 'Description',
@@ -475,19 +496,39 @@ export const governanceIt = {
     skills: {
       emptyHeading: 'Ancora nessuna competenza',
       emptyBody:
-        'Nessuna competenza in questa fase. Installane una con Installa skill da un repo, un URL o il catalogo skills.sh — viene prima messa in coda per approvazione.',
+        'Nessun risultato. Installa una skill da un repo, un URL o il catalogo skills.sh — è attiva appena arriva.',
       installSkill: 'Installa skill',
       archive: 'Archivia skill',
       restore: 'Ripristina skill',
       collidingRestore:
         'Esiste già una skill attiva chiamata "{{name}}". Archiviala o rinominala prima.',
+      searchLabel: 'Cerca skill',
+      searchPlaceholder: 'Cerca skill…',
+      filterLabel: 'Filtra per stato',
+      filter: {
+        all: 'Tutte',
+        active: 'Attive',
+        archived: 'Archiviate',
+      },
+      alwaysTag: 'Sempre',
+      alwaysNote: 'Sempre attiva — entra nel prompt a ogni turno e costa contesto.',
+      bodyHeading: "Cosa dice all'agente",
+      bodyLoading: 'Caricamento del corpo della skill…',
+      bodyEmpty: 'Questa skill non ha un corpo.',
+      bodyArchived: 'Una skill archiviata non è caricata, quindi il suo corpo non è leggibile qui.',
+      bodyError: 'Impossibile caricare il corpo della skill. Riprova.',
+      delete: {
+        action: 'Elimina',
+        title: 'Eliminare «{{name}}»?',
+        body: "La skill viene rimossa definitivamente e l'agente perde questa capacità. Se vuoi solo spegnerla, archiviala: si può ripristinare quando vuoi.",
+        cancel: 'Annulla',
+        confirm: 'Elimina',
+      },
       stages: {
         active: 'Attive',
-        pending: 'In attesa',
         archived: 'Archiviate',
         audit: 'Audit',
       },
-      pendingNote: 'In attesa — inattiva e non eseguibile.',
       auditEmpty: 'Ancora nessuna voce di audit.',
       install: {
         heading: 'Installa skill',
@@ -526,6 +567,7 @@ export const governanceIt = {
       },
       field: {
         type: 'Tipo',
+        state: 'Stato',
         language: 'Linguaggio',
         contentHash: 'Hash contenuto',
         description: 'Descrizione',

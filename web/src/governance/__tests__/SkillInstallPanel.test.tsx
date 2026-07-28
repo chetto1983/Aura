@@ -46,7 +46,6 @@ const activeInstall: SkillsInstallInfo = {
   destination: '/var/lib/aura/skills/xlsx',
   risk_tier: 'RISKY',
   status: 'active',
-  approval_token: '',
   checklist: [{ label: 'parsed', passed: true }],
 };
 
