@@ -41,7 +41,14 @@ export function SkillDetail({ skill, stage, onClose, onDelete, onEdit }: SkillDe
   });
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-scroll overscroll-contain p-4 [scrollbar-gutter:stable]">
+    // No scroll container here on purpose: BoardLayout's <aside> owns the scrolling for
+    // all three boards. This pane used to declare its own (h-full + overflow-y-scroll +
+    // overscroll-contain) and it worked only on lg, where the grid gives the aside a
+    // definite height. On the mobile sheet the aside is fixed with max-h, so its height is
+    // auto, so h-full here resolved to auto too: the pane had nothing to scroll, while
+    // overscroll-contain still blocked the wheel/touch from chaining up to the aside that
+    // COULD scroll. The visible bar dragged, the content did not move.
+    <div className="flex flex-col gap-4 p-4">
       <header className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <h3 className="break-words font-display text-[20px] font-semibold text-text">

@@ -165,12 +165,19 @@ describe('SkillDetail', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('uses a stable vertical scroll pane for mobile sheet content', () => {
+  // This used to assert the opposite — that the pane declares its own scroll container —
+  // and the assertion is why the bug shipped: jsdom has no layout, so a class string can
+  // claim a pane scrolls while in the browser it has nothing to scroll. On the mobile
+  // sheet the pane's height resolved to auto, so `overflow-y-scroll` produced a scroll
+  // container with no overflow and `overscroll-contain` on it swallowed every wheel and
+  // touch gesture instead of chaining them to the aside that could scroll: the bar was
+  // draggable and the content would not move. The scrolling belongs to BoardLayout's
+  // aside, which is bounded in both regimes.
+  it('does not declare a nested scroll container (BoardLayout owns the scrolling)', () => {
     const { container } = renderDetail();
 
     const pane = container.firstElementChild;
-    expect(pane?.className).toContain('overflow-y-scroll');
-    expect(pane?.className).toContain('overscroll-contain');
-    expect(pane?.className).toContain('[scrollbar-gutter:stable]');
+    expect(pane?.className).not.toContain('overflow-y-scroll');
+    expect(pane?.className).not.toContain('overscroll-contain');
   });
 });

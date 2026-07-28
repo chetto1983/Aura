@@ -336,20 +336,35 @@ test.describe('Phase 29 — Governance write flow (desktop + mobile)', () => {
     assertNoSeriousAxe(await runAxe(page), 'skill-install-panel');
   });
 
-  test('archive moves an active skill to the archived tab; restore moves it back', async ({
-    page,
-  }) => {
+  test('archiving flips the row in place; the state filter is what hides it', async ({ page }) => {
     const state = freshState();
     await openGovernance(page, state);
     await page.getByRole('tab', { name: 'Skills' }).click();
-    await expect(page.getByText('golang-testing')).toBeVisible({ timeout: 15000 });
+    const row = page.getByRole('listitem').filter({ hasText: 'golang-testing' });
+    await expect(row).toBeVisible({ timeout: 15000 });
 
-    await page.getByRole('button', { name: 'Archive skill' }).click();
-    // The active list no longer holds it.
-    await expect(page.getByText('golang-testing')).toBeHidden({ timeout: 15000 });
+    await row.getByRole('button', { name: 'Archive skill' }).click();
+    // Amendment #97 merged the lifecycle tabs into ONE list, so archiving no longer moves
+    // the row anywhere: it flips the row's stage in place — the verb becomes Restore and
+    // the Archived tag appears. Asserting the row VANISHES would re-pin the old two-tab
+    // board, where the operator had to go looking for what they just archived.
+    await expect(row.getByRole('button', { name: 'Restore skill' })).toBeVisible({
+      timeout: 15000,
+    });
+    await expect(row.getByText('Archived')).toBeVisible();
 
-    await page.getByRole('tab', { name: 'Archived' }).click();
-    await expect(page.getByText('golang-testing')).toBeVisible({ timeout: 15000 });
+    // Hiding it is the state filter's job now. The counts move with the row.
+    await page.getByRole('button', { name: /^Active/ }).click();
+    await expect(row).toHaveCount(0);
+    await page.getByRole('button', { name: /^Archived/ }).click();
+    await expect(row).toBeVisible();
+
+    // Restore is symmetric, and equally in place.
+    await page.getByRole('button', { name: /^All/ }).click();
+    await row.getByRole('button', { name: 'Restore skill' }).click();
+    await expect(row.getByRole('button', { name: 'Archive skill' })).toBeVisible({
+      timeout: 15000,
+    });
   });
 
   test('a colliding restore shows the safe inline error (no overwrite)', async ({ page }) => {
@@ -357,14 +372,15 @@ test.describe('Phase 29 — Governance write flow (desktop + mobile)', () => {
     state.collideOnRestore = true;
     await openGovernance(page, state);
     await page.getByRole('tab', { name: 'Skills' }).click();
-    await page.getByRole('tab', { name: 'Archived' }).click();
-    await expect(page.getByText('retired-skill')).toBeVisible({ timeout: 15000 });
+    // No tab to cross any more — an archived row sits in the same list, tagged.
+    const row = page.getByRole('listitem').filter({ hasText: 'retired-skill' });
+    await expect(row).toBeVisible({ timeout: 15000 });
 
-    await page.getByRole('button', { name: 'Restore skill' }).click();
-    // The inline safe error (role=alert) surfaces; the archived skill row is untouched
-    // (scope to the row button to avoid the alert text, which also contains the name).
-    await expect(page.getByRole('alert')).toBeVisible({ timeout: 15000 });
-    await expect(page.getByRole('button', { name: /retired-skill/ })).toBeVisible();
+    await row.getByRole('button', { name: 'Restore skill' }).click();
+    // The inline safe error (role=alert) surfaces on the row itself, and the row keeps its
+    // archived verb: a collision must never silently overwrite the active skill.
+    await expect(row.getByRole('alert')).toBeVisible({ timeout: 15000 });
+    await expect(row.getByRole('button', { name: 'Restore skill' })).toBeVisible();
   });
 
   test('the remove confirmation dialog has action-specific labels (Remove / Keep)', async ({

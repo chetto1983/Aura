@@ -109,9 +109,16 @@ export function BoardLayout({
       <aside
         ref={sheetRef}
         aria-label={detailLabel}
-        className={`min-h-0 lg:col-start-3 lg:static lg:block lg:overflow-y-auto lg:bg-surface ${
+        // The aside is the ONE scroll container for the detail on both regimes, and
+        // overscroll-contain belongs here rather than on the pane inside it: on the
+        // scroller it does what it is for (the page behind the sheet stays put), while on
+        // a nested pane that cannot scroll it silently eats the gesture instead — a
+        // container with no scrollable overflow counts as permanently at its scroll
+        // boundary, so `contain` blocks chaining to the ancestor that COULD scroll
+        // (Chrome 144 extended this to non-scrollable containers).
+        className={`min-h-0 lg:col-start-3 lg:static lg:block lg:overflow-y-auto lg:overscroll-contain lg:bg-surface lg:[scrollbar-gutter:stable] ${
           detailOpen
-            ? 'fixed inset-x-0 bottom-0 z-40 max-h-[78svh] overflow-y-auto rounded-t-xl border-t border-border bg-surface shadow-2xl lg:inset-auto lg:z-auto lg:max-h-none lg:rounded-none lg:border-t-0 lg:shadow-none'
+            ? 'fixed inset-x-0 bottom-0 z-40 max-h-[78svh] overflow-y-auto overscroll-contain rounded-t-xl border-t border-border bg-surface shadow-2xl lg:inset-auto lg:z-auto lg:max-h-none lg:rounded-none lg:border-t-0 lg:shadow-none'
             : 'hidden lg:block'
         }`}
       >
