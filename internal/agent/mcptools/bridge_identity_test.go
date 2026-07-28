@@ -11,7 +11,10 @@ import (
 )
 
 func TestBridgedMemoryToolInjectsContextUserIdentifier(t *testing.T) {
-	srv := &fakeServer{defs: []mcp.ToolDef{{Name: "memory_store_message", Description: "Store memory."}}, callText: "ok"}
+	// A MODEL-FACING memory tool: memory_store_message is bridged no more (see
+	// hiddenFromModel), and this test is about identity injection, not about which
+	// tools reach the model.
+	srv := &fakeServer{defs: []mcp.ToolDef{{Name: "memory_add_fact", Description: "Store a fact."}}, callText: "ok"}
 	got, err := Bridge(context.Background(), "memory", srv)
 	if err != nil {
 		t.Fatalf("Bridge: %v", err)
@@ -19,7 +22,7 @@ func TestBridgedMemoryToolInjectsContextUserIdentifier(t *testing.T) {
 	ctx := identityctx.WithIdentityID(context.Background(), "identity-1")
 	ctx = tools.WithToolCallContext(ctx, "sess", "tc1", t.TempDir(), 2048)
 
-	_, err = got[0].Execute(ctx, json.RawMessage(`{"content":"hello","role":"user","user_identifier":"spoofed"}`))
+	_, err = got[0].Execute(ctx, json.RawMessage(`{"subject":"a","predicate":"b","object_value":"c","user_identifier":"spoofed"}`))
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}

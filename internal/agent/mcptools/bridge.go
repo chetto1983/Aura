@@ -223,11 +223,58 @@ func bridgeFromDefs(namespace string, srv Server, defs []mcp.ToolDef) ([]tools.T
 func bridgeTools(namespace string, srv Server, defs []mcp.ToolDef, callTimeout time.Duration) []tools.Tool {
 	out := make([]tools.Tool, 0, len(defs))
 	for _, d := range defs {
+		if !modelFacing(namespace, d.Name) {
+			continue
+		}
 		bt := &bridgedTool{srv: srv, name: d.Name, callTimeout: callTimeout}
 		bt.storeSpec(specFromToolDef(namespace, d))
 		out = append(out, bt)
 	}
 	return out
+}
+
+// hiddenFromModel lists MCP tools Aura mounts but does NOT put in front of the model,
+// per namespace.
+//
+// An MCP server has two consumers here and they want different surfaces. Aura's own Go
+// code calls tools directly through mcp.Transport.CallTool — onboarding writes the
+// profile, reads its status back, the recall path assembles context, `aura memory`
+// drives the CLI — and those calls never touch this registry. The model's surface is
+// built HERE. Deleting a tool server-side to slim the model's menu therefore breaks the
+// host instead: doing exactly that took onboarding down on 2026-07-28 with
+// "Unknown tool: memory_get_facts". Hide, never remove.
+//
+// The memory server is mounted as LONG-TERM memory. What the model gets is one verb per
+// intention — write deliberately (add_fact, add_preference), read (search, get_entity),
+// correct (update, forget). The rest stays reachable for Aura and invisible to the model:
+//
+//   - the short-term half (store_message, get_context, get_conversation, list_sessions):
+//     Aura already owns the conversation in Postgres, and the memory server keeps a
+//     single global session, so its "history" mixes unrelated conversations.
+//   - add_entity and create_relationship: entities and edges follow from what is
+//     written, they are not something the model should assert directly — and add_entity
+//     is the path whose resolver produced the wrong canonical names in the live graph.
+//   - get_facts: subsumed by search's facts bucket, which does the same exact-subject
+//     lookup and falls back to semantic.
+var hiddenFromModel = map[string]map[string]struct{}{
+	"memory": {
+		"memory_store_message":       {},
+		"memory_get_context":         {},
+		"memory_get_conversation":    {},
+		"memory_list_sessions":       {},
+		"memory_add_entity":          {},
+		"memory_create_relationship": {},
+		"memory_get_facts":           {},
+	},
+}
+
+func modelFacing(namespace, tool string) bool {
+	hidden, ok := hiddenFromModel[namespace]
+	if !ok {
+		return true
+	}
+	_, blocked := hidden[tool]
+	return !blocked
 }
 
 func specFromToolDef(namespace string, d mcp.ToolDef) tools.Spec {
