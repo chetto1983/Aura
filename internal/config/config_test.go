@@ -209,8 +209,8 @@ func TestLoad_DefaultsApplied(t *testing.T) {
 	if cfg.RunDir == "" {
 		t.Error("RunDir: want a non-empty default path, got empty")
 	}
-	if cfg.ToolPreviewCap != 2048 {
-		t.Errorf("ToolPreviewCap: want 2048 default, got %d", cfg.ToolPreviewCap)
+	if cfg.ToolPreviewCap != defaultToolPreviewCapBytes {
+		t.Errorf("ToolPreviewCap: want the %d default, got %d", defaultToolPreviewCapBytes, cfg.ToolPreviewCap)
 	}
 }
 

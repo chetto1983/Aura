@@ -10,8 +10,11 @@ import (
 )
 
 // defaultReadLimit is the byte window read_tool_output returns when limit is
-// omitted, aligned to the preview cap (D-27/A4 — BYTES, not lines).
-const defaultReadLimit = 2048
+// omitted, aligned to the preview cap (D-27/A4 — BYTES, not lines). Paging in
+// 2 KB windows out of a sidecar that only exists because the output was LARGE
+// meant the model paid a round-trip per window; the window now matches what a
+// first-class result is allowed to be.
+const defaultReadLimit = 30000
 
 const maxReadToolOutputLimit = defaultReadLimit * 8
 
@@ -32,7 +35,7 @@ func (ReadToolOutput) Spec() Spec {
   "properties": {
     "tool_call_id": {"type": "string", "description": "The tool_call_id whose full output to page (from a truncated preview footer)."},
     "offset": {"type": "integer", "description": "Start byte offset into the full output (default 0). Units are BYTES, not lines."},
-    "limit": {"type": "integer", "description": "Maximum number of BYTES to return (default 2048). Units are BYTES, not lines."}
+    "limit": {"type": "integer", "description": "Maximum number of BYTES to return. Units are BYTES, not lines."}
   },
   "required": ["tool_call_id"]
 }`)

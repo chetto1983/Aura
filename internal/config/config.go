@@ -23,15 +23,6 @@ import (
 	"github.com/joho/godotenv"
 )
 
-// OTel exporter knob defaults (D-05/D-06). The default OTLP target silent-drops
-// without a collector; "none" is a true no-op provider.
-const (
-	defaultOtelExporter         = "otlp"
-	defaultOtelEndpoint         = "localhost:4317"
-	defaultObjectStoreAccessKey = "GK000000000000000000000000"
-	defaultObjectStoreSecretKey = "0000000000000000000000000000000000000000000000000000000000000000"
-)
-
 // Config is the root composite. Subsystem configs live in their packages.
 type Config struct {
 	DB             db.Config
@@ -409,7 +400,7 @@ func loadBase() *Config {
 		MCPServersErr:  mcpServersErr,
 		RunDir:         runDir,
 		RunDirErr:      runDirErr,
-		ToolPreviewCap: envutil.IntDefault("AURA_CONTEXT_PREVIEW_CAP_BYTES", 2048),
+		ToolPreviewCap: envutil.IntDefault("AURA_CONTEXT_PREVIEW_CAP_BYTES", defaultToolPreviewCapBytes),
 		OtelExporter:   envDefault("AURA_OTEL_EXPORTER", defaultOtelExporter),
 		OtelEndpoint:   envDefault("AURA_OTEL_ENDPOINT", defaultOtelEndpoint),
 		MetricsBind:    envDefault("AURA_METRICS_BIND", "127.0.0.1:9464"),

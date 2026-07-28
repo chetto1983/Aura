@@ -86,7 +86,7 @@ func knobRegistry() []KnobSpec {
 		{Name: "AURA_MCP_LEGACY_ENV_COMPAT", Kind: KindBool, Default: "false"},
 
 		// --- Tier B: int/bool reliability knobs read in internal/config (F-016 surface) ---
-		{Name: "AURA_CONTEXT_PREVIEW_CAP_BYTES", Kind: KindInt, Default: "2048"},
+		{Name: "AURA_CONTEXT_PREVIEW_CAP_BYTES", Kind: KindInt, Default: "30000"},
 		{Name: "AURA_CONVERSATION_TURN_CAP_BYTES", Kind: KindInt, Default: "65536"},
 		{Name: "AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS", Kind: KindInt, Default: "10"},
 		{Name: "AURA_HISTORY_HARD_CAP_TURNS", Kind: KindInt, Default: "50"},

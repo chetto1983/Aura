@@ -113,7 +113,10 @@ func TestReadToolOutput_UnknownID(t *testing.T) {
 
 // Test 3 (Req#7 defaults): offset omitted -> 0; limit omitted -> defaultReadLimit.
 func TestReadToolOutput_Defaults(t *testing.T) {
-	content := strings.Repeat("k", 10_000)
+	// Sized OFF the constant, not off a literal: the fixture only exercises the default
+	// window if it is larger than the window, and the window is a tunable.
+	total := defaultReadLimit * 2
+	content := strings.Repeat("k", total)
 	ctx := seedSidecar(t, "sess-r3", "call-r3", content)
 
 	res, err := ReadToolOutput{}.Execute(ctx, []byte(`{"tool_call_id":"call-r3"}`))
@@ -121,7 +124,7 @@ func TestReadToolOutput_Defaults(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 	// Default window is defaultReadLimit bytes starting at 0.
-	if !strings.Contains(res.Preview, fmt.Sprintf("showing bytes 0-%d of 10000", defaultReadLimit)) {
+	if !strings.Contains(res.Preview, fmt.Sprintf("showing bytes 0-%d of %d", defaultReadLimit, total)) {
 		t.Fatalf("default window footer wrong: %q", res.Preview)
 	}
 }
@@ -194,7 +197,7 @@ func TestReadToolOutput_LimitOneNotDefaulted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	// Exactly 1 byte returned, footer reports the 0-1 window — not the 0-2048 default.
+	// Exactly 1 byte returned, footer reports the 0-1 window — not the default window.
 	if res.Bytes != 1 {
 		t.Fatalf("Bytes = %d, want 1 (limit=1 must not default)", res.Bytes)
 	}
@@ -203,27 +206,40 @@ func TestReadToolOutput_LimitOneNotDefaulted(t *testing.T) {
 	}
 }
 
-// TestReadToolOutput_DefaultLimitIs2048 pins the default window to the literal
-// 2048 bytes (D-27/A4), killing a defaultReadLimit 2048→2047/2049 mutant. The
-// assertion uses a hard-coded literal, NOT the defaultReadLimit constant, so it
-// does not move with the mutation.
-func TestReadToolOutput_DefaultLimitIs2048(t *testing.T) {
-	content := strings.Repeat("d", 10_000)
+// TestReadToolOutputDefaultWindowValue is the ONE place the number is written down. Every
+// other assertion derives from the constant, so retuning the window touches this test and
+// nothing else — but an off-by-one mutation of defaultReadLimit still dies here, which is
+// what the old hard-coded literal existed for (D-27/A4). Scattering the literal instead
+// bought the same mutation coverage and a test whose NAME went stale on the first retune.
+func TestReadToolOutputDefaultWindowValue(t *testing.T) {
+	if defaultReadLimit != 30000 {
+		t.Fatalf("defaultReadLimit = %d, want 30000 — retuning it is a deliberate contract change: update this pin and say why in the commit", defaultReadLimit)
+	}
+}
+
+// TestReadToolOutput_OmittedLimitUsesTheDefaultWindow pins that an omitted limit returns
+// exactly one default window and advertises the next offset. It used to be named after the
+// value (…Is2048) and assert the literal — so retuning the window renamed a passing test
+// into a lie. The contract is "one window, correctly reported", not the number.
+func TestReadToolOutput_OmittedLimitUsesTheDefaultWindow(t *testing.T) {
+	total := defaultReadLimit * 2
+	content := strings.Repeat("d", total)
 	ctx := seedSidecar(t, "sess-r8", "call-r8", content)
 	res, err := ReadToolOutput{}.Execute(ctx, []byte(`{"tool_call_id":"call-r8"}`))
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if res.Bytes != 2048 {
-		t.Fatalf("default window = %d bytes, want exactly 2048", res.Bytes)
+	if res.Bytes != defaultReadLimit {
+		t.Fatalf("default window = %d bytes, want exactly defaultReadLimit (%d)", res.Bytes, defaultReadLimit)
 	}
-	if !strings.Contains(res.Preview, "showing bytes 0-2048 of 10000, next offset 2048") {
-		t.Fatalf("default window footer must be the literal 2048: %q", res.Preview)
+	want := fmt.Sprintf("showing bytes 0-%d of %d, next offset %d", defaultReadLimit, total, defaultReadLimit)
+	if !strings.Contains(res.Preview, want) {
+		t.Fatalf("default window footer = %q, want it to contain %q", res.Preview, want)
 	}
 }
 
 func TestReadToolOutput_ClampsHugeLimit(t *testing.T) {
-	content := strings.Repeat("z", 100_000)
+	content := strings.Repeat("z", maxReadToolOutputLimit*2)
 	ctx := seedSidecar(t, "sess-limit", "call-limit", content)
 	res, err := ReadToolOutput{}.Execute(ctx, []byte(`{"tool_call_id":"call-limit","limit":999999999}`))
 	if err != nil {
