@@ -126,32 +126,34 @@ func TestInstallAuditRow(t *testing.T) {
 	}
 }
 
-// TestAuditCoherence proves the D-29 CHECK rejects an incoherent tuple (approved
-// with no token: ask_user + NULL token must violate the constraint) while the four
-// coherent shapes all insert.
+// TestAuditCoherence proves the D-29 CHECK still admits EXACTLY its four coherent tuples
+// and rejects an incoherent one, even though Aura now writes only two of the four.
+//
+// The 'ask_user' arms are the reason this test does not shrink with the code: those rows
+// exist in every pre-#97 deployment's ledger, the table is append-only, so the constraint
+// must keep accepting them. Since AuditInsert no longer carries a pause token (#97), the
+// coherent ask_user row is inserted with a raw Exec — 0018 dropped the token's FK, so any
+// UUID satisfies the CHECK — while the INCOHERENT arm still goes through the store,
+// which is the path that must reject it.
 func TestAuditCoherence(t *testing.T) {
 	pool := migratedPool(t)
 	store := NewAuditStore(pool)
 	ctx := context.Background()
 	base := "coh-" + uuid.Must(uuid.NewV7()).String()[:8]
 
-	token := uuid.Must(uuid.NewV7()).String()
-	seedPausedState(t, pool, token)
-
 	// Incoherent: ask_user approval with a NULL paused_state_token — D-29 forbids it.
 	_, err := store.InsertAudit(ctx, AuditInsert{
 		ActorID: "model", SkillName: base, Action: AuditActivate,
-		ContentHash: "h", ApprovalSource: ApprovalAskUser,
-		GateRecommended: true, GateTaken: true, // token intentionally empty
+		ContentHash: "h", ApprovalSource: ApprovalSource("ask_user"),
+		GateRecommended: true, GateTaken: true, // token intentionally absent
 	})
 	if !errors.Is(err, ErrAuditIncoherent) {
 		t.Fatalf("incoherent ask_user+NULL-token: want ErrAuditIncoherent, got %v", err)
 	}
 
-	// The four coherent shapes.
+	// The three shapes the store can still express.
 	coherent := []AuditInsert{
 		{ActorID: "model", SkillName: base, Action: AuditCreate, ContentHash: "h", GateRecommended: true, GateTaken: false},
-		{ActorID: "user", SkillName: base, Action: AuditActivate, ContentHash: "h", ApprovalSource: ApprovalAskUser, PausedStateToken: token, GateRecommended: true, GateTaken: true},
 		{ActorID: "cli", SkillName: base, Action: AuditActivate, ContentHash: "h", ApprovalSource: ApprovalCLI, GateRecommended: true, GateTaken: true},
 		{ActorID: "system", SkillName: base, Action: AuditAutoArchive, ContentHash: "h", ApprovalSource: ApprovalAuto, GateRecommended: false, GateTaken: true},
 	}
@@ -159,6 +161,17 @@ func TestAuditCoherence(t *testing.T) {
 		if _, err := store.InsertAudit(ctx, in); err != nil {
 			t.Fatalf("coherent row %d (%s): %v", i, in.ApprovalSource, err)
 		}
+	}
+
+	// The fourth: a historical ask_user row with its token, written raw.
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO aura.skill_audit
+		   (actor_id, identity_id, skill_name, action, content_hash,
+		    approval_source, paused_state_token, gate_recommended, gate_taken)
+		 VALUES ('user', 'local', $1, 'activate', 'h', 'ask_user', $2, true, true)`,
+		base, uuid.Must(uuid.NewV7()).String(),
+	); err != nil {
+		t.Fatalf("historical ask_user row must still satisfy the coherence CHECK: %v", err)
 	}
 }
 
@@ -264,7 +277,6 @@ func TestWriterActiveAuditRow(t *testing.T) {
 	root := t.TempDir()
 	w := NewWriter(WriterConfig{
 		Pool:         pool,
-		PendingDir:   filepath.Join(root, "pending"),
 		ActiveDir:    filepath.Join(root, "active"),
 		ExportDir:    filepath.Join(root, "export"),
 		ArchiveDir:   filepath.Join(root, "archived"),
@@ -305,92 +317,6 @@ func TestWriterActiveAuditRow(t *testing.T) {
 	}
 	if r.Action != AuditCreate || r.ContentHash == "" {
 		t.Errorf("audit row: want action=create + non-empty content_hash, got action=%q hash=%q", r.Action, r.ContentHash)
-	}
-}
-
-// TestWriterActivateAuditRow proves Activate moves pending→active, materializes into
-// the export dir, and records the D-29 ask_user approved tuple (token NOT NULL).
-func TestWriterActivateAuditRow(t *testing.T) {
-	pool := migratedPool(t)
-	store := NewAuditStore(pool)
-	root := t.TempDir()
-	exportDir := filepath.Join(root, "export")
-	w := NewWriter(WriterConfig{
-		Pool:       pool,
-		PendingDir: filepath.Join(root, "pending"),
-		ActiveDir:  filepath.Join(root, "active"),
-		ExportDir:  exportDir,
-		ArchiveDir: filepath.Join(root, "archived"),
-		Blocklist:  []string{"<|im_start|>"},
-	})
-
-	name := "act-" + uuid.Must(uuid.NewV7()).String()[:8]
-	fm := Frontmatter{Name: name, Description: "d", Type: TypeInstruction}
-	seedPendingSkill(t, root, fm)
-
-	token := uuid.Must(uuid.NewV7()).String()
-	seedPausedState(t, pool, token)
-	if err := w.Activate(t.Context(), name, ApprovalAskUser, token, AuditActor{ActorID: "user"}); err != nil {
-		t.Fatalf("Activate: %v", err)
-	}
-
-	// Materialized into the export dir (the /skills mount source).
-	if _, serr := os.Stat(filepath.Join(exportDir, name, "SKILL.md")); serr != nil {
-		t.Errorf("active skill not materialized into export dir: %v", serr)
-	}
-	// The activate audit row carries the approved tuple.
-	rows, err := store.List(t.Context(), AuditFilter{SkillName: name})
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
-	var sawActivate bool
-	for _, r := range rows {
-		if r.Action == AuditActivate {
-			sawActivate = true
-			if r.ApprovalSource != ApprovalAskUser || r.PausedStateToken != token || !r.GateTaken {
-				t.Errorf("activate tuple: src=%q token=%q gateTaken=%v", r.ApprovalSource, r.PausedStateToken, r.GateTaken)
-			}
-		}
-	}
-	if !sawActivate {
-		t.Error("no activate audit row recorded")
-	}
-}
-
-// seedPendingSkill writes pending/<name>/SKILL.md by hand. No write path stages a skill
-// any more (amendment #97), but Activate/DiscardPending still have to cope with whatever
-// a pre-#97 deploy left in that directory — so the tests that cover them seed it.
-func seedPendingSkill(t *testing.T, root string, fm Frontmatter) {
-	t.Helper()
-	dir := filepath.Join(root, "pending", fm.Name)
-	if err := os.MkdirAll(dir, 0o750); err != nil {
-		t.Fatalf("seed pending dir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), skillFileBytes(fm, "body"), 0o600); err != nil {
-		t.Fatalf("seed pending SKILL.md: %v", err)
-	}
-}
-
-// seedPausedState inserts a minimal paused_states row so an ask_user audit row's
-// FK (paused_state_token) resolves. Cleaned up via t.Cleanup (cascade-free; the
-// audit rows referencing it are append-only, so leave both — a fresh token per run
-// keeps the suite isolated).
-func seedPausedState(t *testing.T, pool *pgxpool.Pool, token string) {
-	t.Helper()
-	const seededLocalConv = "00000000-0000-0000-0000-000000000001"
-	convID := uuid.Must(uuid.NewV7()).String()
-	if _, err := pool.Exec(context.Background(),
-		"INSERT INTO aura.conversations (id, identity_id, model, status) VALUES ($1, $2, 'test-model', 'active')",
-		convID, seededLocalConv,
-	); err != nil {
-		t.Fatalf("seed conversation for paused_state: %v", err)
-	}
-	if _, err := pool.Exec(context.Background(),
-		`INSERT INTO aura.paused_states (token, conversation_id, kind, question, tool_call_id)
-		 VALUES ($1, $2, 'approval', 'approve?', 'tc-1')`,
-		token, convID,
-	); err != nil {
-		t.Fatalf("seed paused_state: %v", err)
 	}
 }
 

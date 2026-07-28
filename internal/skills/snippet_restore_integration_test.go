@@ -34,7 +34,6 @@ func TestRestoreSnippetRoundTrip(t *testing.T) {
 	export := filepath.Join(root, "export")
 	w := NewWriter(WriterConfig{
 		Pool:         pool,
-		PendingDir:   filepath.Join(root, "pending"),
 		ActiveDir:    filepath.Join(root, "active"),
 		ExportDir:    export,
 		ArchiveDir:   filepath.Join(root, "archived"),
@@ -108,10 +107,9 @@ func TestRestoreErrorsWhenArchiveDirUnset(t *testing.T) {
 
 	root := t.TempDir()
 	w := NewWriter(WriterConfig{
-		Pool:       pool,
-		PendingDir: filepath.Join(root, "pending"),
-		ActiveDir:  filepath.Join(root, "active"),
-		ExportDir:  filepath.Join(root, "export"),
+		Pool:      pool,
+		ActiveDir: filepath.Join(root, "active"),
+		ExportDir: filepath.Join(root, "export"),
 		// ArchiveDir deliberately unset.
 		BodyCapBytes: 32768,
 	})

@@ -11,11 +11,7 @@ import (
 // Production code uses InsertAuditTx so audit rows participate in caller-owned
 // transactions.
 func (s *AuditStore) InsertAudit(ctx context.Context, in AuditInsert) (AuditRow, error) {
-	params, err := in.toParams()
-	if err != nil {
-		return AuditRow{}, fmt.Errorf("insert skill audit: %w", err)
-	}
-	row, err := s.q.InsertSkillAudit(ctx, params)
+	row, err := s.q.InsertSkillAudit(ctx, in.toParams())
 	if err != nil {
 		return AuditRow{}, fmt.Errorf("insert skill audit %q: %w", in.SkillName, classifyAuditErr(err))
 	}

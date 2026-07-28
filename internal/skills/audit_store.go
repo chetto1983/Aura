@@ -28,17 +28,19 @@ import (
 // 0010 CHECK on aura.skill_audit.action.
 type AuditAction string
 
-// The eight audit actions, mirroring the 0010 action CHECK: the four model-facing
-// mutations, activate/archive, and the two system sweep actions.
+// The audit actions Aura still writes. The 0010 CHECK admits one more —
+// 'cleanup_pending_stale', which recorded a declined pending mutation — and it stays
+// admitted because the ledger is append-only and pre-#97 rows carry it. Nothing writes
+// it now, so it has no constant here; 'activate' survives as a WRITTEN constant because
+// Restore records under it (see writer_activate.go Restore).
 const (
-	AuditCreate         AuditAction = "create"
-	AuditUpdate         AuditAction = "update"
-	AuditDelete         AuditAction = "delete"
-	AuditInstall        AuditAction = "install"
-	AuditActivate       AuditAction = "activate"
-	AuditArchive        AuditAction = "archive"
-	AuditAutoArchive    AuditAction = "auto_archive"
-	AuditCleanupPending AuditAction = "cleanup_pending_stale"
+	AuditCreate      AuditAction = "create"
+	AuditUpdate      AuditAction = "update"
+	AuditDelete      AuditAction = "delete"
+	AuditInstall     AuditAction = "install"
+	AuditActivate    AuditAction = "activate"
+	AuditArchive     AuditAction = "archive"
+	AuditAutoArchive AuditAction = "auto_archive"
 )
 
 // ApprovalSource named how a gated mutation was approved. After amendment #97 removed
@@ -47,16 +49,18 @@ const (
 // still carries ActorModel for a model-authored mutation — read a row's source without
 // its actor and every change looks like the operator's.
 //
-// The column keeps its full enum because aura.skill_audit is append-only: pre-#97
-// history carries NULL and 'ask_user' sources that must still deserialise.
+// The DB column keeps its full enum because aura.skill_audit is append-only: pre-#97
+// history carries NULL and 'ask_user' sources that must still deserialise, and those
+// rows can never be rewritten. Only the WRITTEN set is enumerated below.
 type ApprovalSource string
 
-// The four approval sources, mirroring the D-29 matrix rows.
+// The approval sources Aura still writes. 'ask_user' is deliberately absent: it named
+// the resume approval #97 removed, so nothing produces it any more — but the CHECK
+// still admits it and auditFromRow still projects it for historical rows.
 const (
-	ApprovalNone    ApprovalSource = ""         // pre-#97 rows whose gate was never exercised
-	ApprovalAskUser ApprovalSource = "ask_user" // approval/rejection via the resume path this amendment retires
-	ApprovalCLI     ApprovalSource = "cli"      // actor-initiated write (model, operator or CLI)
-	ApprovalAuto    ApprovalSource = "auto"     // system sweep (auto_archive / cleanup_pending_stale)
+	ApprovalNone ApprovalSource = ""     // pre-#97 rows whose gate was never exercised
+	ApprovalCLI  ApprovalSource = "cli"  // actor-initiated write (model, operator or CLI)
+	ApprovalAuto ApprovalSource = "auto" // system sweep (auto_archive)
 )
 
 // Sentinel errors so callers classify failures without string matching. The
@@ -104,6 +108,11 @@ type AuditRow struct {
 // writer, inside db.WithTx) supplies a D-29-coherent tuple; an incoherent tuple is
 // rejected by the DB CHECK (ErrAuditIncoherent). IdentityID defaults to "local"
 // when empty (the single-user scaffold).
+//
+// There is no PausedStateToken here: with the approval stage gone (#97) no write path
+// has a pause to point at, so every new row leaves the column NULL. The column and its
+// READ projection stay — the ledger is append-only, and pre-#97 rows carry real tokens
+// that must keep deserialising.
 type AuditInsert struct {
 	ActorID           string
 	IdentityID        string
@@ -111,7 +120,6 @@ type AuditInsert struct {
 	Action            AuditAction
 	ContentHash       string
 	ApprovalSource    ApprovalSource
-	PausedStateToken  string // canonical UUID string, or "" for NULL
 	GateRecommended   bool
 	GateTaken         bool
 	BlocklistOverride bool
@@ -119,7 +127,7 @@ type AuditInsert struct {
 
 // toParams converts an AuditInsert to the generated InsertSkillAuditParams,
 // applying the NULL boundary mapping for the optional columns.
-func (a AuditInsert) toParams() (sqlc.InsertSkillAuditParams, error) {
+func (a AuditInsert) toParams() sqlc.InsertSkillAuditParams {
 	identity := a.IdentityID
 	if identity == "" {
 		identity = "local"
@@ -128,14 +136,6 @@ func (a AuditInsert) toParams() (sqlc.InsertSkillAuditParams, error) {
 	if a.ApprovalSource != ApprovalNone {
 		src = pgtype.Text{String: string(a.ApprovalSource), Valid: true}
 	}
-	var token pgtype.UUID
-	if a.PausedStateToken != "" {
-		u, err := uuid.Parse(a.PausedStateToken)
-		if err != nil {
-			return sqlc.InsertSkillAuditParams{}, fmt.Errorf("invalid paused_state_token %q: %w", a.PausedStateToken, err)
-		}
-		token = pgtype.UUID{Bytes: u, Valid: true}
-	}
 	return sqlc.InsertSkillAuditParams{
 		ActorID:           a.ActorID,
 		IdentityID:        identity,
@@ -143,22 +143,18 @@ func (a AuditInsert) toParams() (sqlc.InsertSkillAuditParams, error) {
 		Action:            string(a.Action),
 		ContentHash:       a.ContentHash,
 		ApprovalSource:    src,
-		PausedStateToken:  token,
+		PausedStateToken:  pgtype.UUID{},
 		GateRecommended:   a.GateRecommended,
 		GateTaken:         a.GateTaken,
 		BlocklistOverride: a.BlocklistOverride,
-	}, nil
+	}
 }
 
 // InsertAuditTx appends one audit row using a tx-bound Queries (the writer's
 // db.WithTx closure passes it), so the INSERT participates in the surrounding
 // atomic write.
 func InsertAuditTx(ctx context.Context, q *sqlc.Queries, in AuditInsert) error {
-	params, err := in.toParams()
-	if err != nil {
-		return fmt.Errorf("insert skill audit (tx): %w", err)
-	}
-	if _, err := q.InsertSkillAudit(ctx, params); err != nil {
+	if _, err := q.InsertSkillAudit(ctx, in.toParams()); err != nil {
 		return fmt.Errorf("insert skill audit %q (tx): %w", in.SkillName, classifyAuditErr(err))
 	}
 	return nil

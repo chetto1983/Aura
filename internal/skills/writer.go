@@ -25,22 +25,19 @@ import (
 // BEFORE the skill becomes visible.
 type Writer struct {
 	pool       *pgxpool.Pool
-	pendingDir string // legacy staging root, still read by the Activate/resume path this amendment retires
 	activeDir  string // <root> active root the loader scans (archived/.staging live as siblings)
-	exportDir  string // AURA_SKILL_EXPORT_DIR — the /skills ro-mount source (D-17)
+	exportDir  string // AURA_SKILL_EXPORT_DIR — the /skills mount source (D-17)
 	archiveDir string // <root>/archived — de-materialized, retained skills
 
 	blocklist    []string
 	bodyCapBytes int
 }
 
-// WriterConfig configures a Writer. PendingDir/ActiveDir/ArchiveDir default to
-// <ActiveDir>/pending and <ActiveDir>/archived siblings when only ActiveDir is set
-// is NOT done here — the caller (composition root) supplies explicit paths so the
-// loader's scan roots and the writer's dirs stay in agreement.
+// WriterConfig configures a Writer. The caller (composition root) supplies explicit
+// paths — ArchiveDir is NOT derived from ActiveDir here — so the loader's scan roots
+// and the writer's dirs stay in agreement.
 type WriterConfig struct {
 	Pool         *pgxpool.Pool
-	PendingDir   string
 	ActiveDir    string
 	ExportDir    string
 	ArchiveDir   string
@@ -52,7 +49,6 @@ type WriterConfig struct {
 func NewWriter(cfg WriterConfig) *Writer {
 	return &Writer{
 		pool:         cfg.Pool,
-		pendingDir:   cfg.PendingDir,
 		activeDir:    cfg.ActiveDir,
 		exportDir:    cfg.ExportDir,
 		archiveDir:   cfg.ArchiveDir,

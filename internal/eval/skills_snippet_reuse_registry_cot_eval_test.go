@@ -48,7 +48,6 @@ func buildSnippetReuseRegistry(cfg *config.Config, workspace, skillsRoot, export
 	if pool != nil {
 		w := skills.NewWriter(skills.WriterConfig{
 			Pool:         pool,
-			PendingDir:   filepath.Join(skillsRoot, "pending"),
 			ActiveDir:    skillsRoot,
 			ExportDir:    exportDir,
 			ArchiveDir:   filepath.Join(skillsRoot, "archived"),

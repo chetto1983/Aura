@@ -263,23 +263,19 @@ func TestSnippetIsStaleNeverUsedFallsBackToMtime(t *testing.T) {
 	}
 }
 
-// TestResumeAndDiscardPendingRejectBadName proves the ask_user resume channel funnels both
-// accept and decline through the name chokepoint: an invalid name is rejected before any
-// activation/discard FS or audit work (the accept path delegates to Activate, decline to
-// DiscardPending — both SanitizeName first).
-func TestResumeAndDiscardPendingRejectBadName(t *testing.T) {
+// TestSaveSnippetRejectsBadNameBeforeAnyWrite keeps the name chokepoint pinned on the
+// snippet path now that the resume channel is gone (#97): a traversal-shaped name is
+// rejected before any FS or audit work, so nothing is staged and the nil pool is never
+// reached.
+func TestSaveSnippetRejectsBadNameBeforeAnyWrite(t *testing.T) {
 	t.Parallel()
-	w, _ := newTestWriter(t)
-	h := NewResumeHandler(w)
+	w, root := newTestWriter(t)
 	for _, bad := range []string{"../escape", "Bad_Name", "a/b", ""} {
-		if err := h.Resume(t.Context(), ResumeAccept, bad, "tok", AuditActor{ActorID: "cli"}); !errors.Is(err, ErrInvalidName) {
-			t.Errorf("Resume(accept,%q) = %v, want ErrInvalidName", bad, err)
+		if _, err := w.SaveSnippet(t.Context(), bad, "python", "print(1)", Frontmatter{Description: "d"}, AuditActor{ActorID: "cli"}); !errors.Is(err, ErrInvalidName) {
+			t.Errorf("SaveSnippet(%q) = %v, want ErrInvalidName", bad, err)
 		}
-		if err := h.Resume(t.Context(), ResumeDecline, bad, "tok", AuditActor{ActorID: "cli"}); !errors.Is(err, ErrInvalidName) {
-			t.Errorf("Resume(decline,%q) = %v, want ErrInvalidName", bad, err)
-		}
-		if err := w.DiscardPending(t.Context(), bad, ApprovalCLI, "", AuditActor{ActorID: "cli"}); !errors.Is(err, ErrInvalidName) {
-			t.Errorf("DiscardPending(%q) = %v, want ErrInvalidName", bad, err)
-		}
+	}
+	if entries, _ := os.ReadDir(filepath.Join(root, "active")); len(entries) != 0 {
+		t.Fatalf("a rejected snippet name must write nothing, got %v", entries)
 	}
 }

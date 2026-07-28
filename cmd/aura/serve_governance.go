@@ -96,14 +96,13 @@ func addContainerRecipeRows(doc *mcp.ManagedConfig) {
 	}
 }
 
-// skillsBoardAdapter satisfies agui.SkillsBoardProvider over the active Loader, the Wave-0
-// per-stage reader, and the audit store. ActiveSkills lists the loaded active skills;
-// StageSkills reads pending/archived metadata (never a body, GOV-02 prohibition #1);
+// skillsBoardAdapter satisfies agui.SkillsBoardProvider over the active Loader, the
+// archived-stage reader, and the audit store. ActiveSkills lists the loaded active skills;
+// ArchivedSkills reads archived metadata (never a body, GOV-02 prohibition #1);
 // AuditLog reads the append-only ledger newest-first.
 type skillsBoardAdapter struct {
 	loader     *skills.Loader
 	audit      *skills.AuditStore
-	pendingDir string
 	archiveDir string
 }
 
@@ -118,8 +117,8 @@ func (a skillsBoardAdapter) SkillBody(name string) (string, bool) {
 	return sk.Body, ok
 }
 
-func (a skillsBoardAdapter) StageSkills(stage string) ([]skills.StageSkill, error) {
-	return skills.ListStage(a.pendingDir, a.archiveDir, stage)
+func (a skillsBoardAdapter) ArchivedSkills() ([]skills.StageSkill, error) {
+	return skills.ListArchived(a.archiveDir)
 }
 
 func (a skillsBoardAdapter) AuditLog(ctx context.Context, filter skills.AuditFilter) ([]skills.AuditRow, error) {
@@ -129,7 +128,7 @@ func (a skillsBoardAdapter) AuditLog(ctx context.Context, filter skills.AuditFil
 // buildGovernanceProviders assembles the three read-only board providers best-effort over
 // the daemon's existing seams. The MCP board reads the managed config (a load failure
 // leaves the MCP board nil → 503, never fatal); the skills board reuses the SAME loader
-// roots + pending/archived dirs the CLI and model path use (newSkillWriter), with the
+// roots + archive dir the CLI and model path use (newSkillWriter), with the
 // audit store over the shared pool; the scheduler board is the cron Store directly (it
 // already satisfies the interface). A nil pool leaves the pool-backed boards unset. None
 // of these aborts boot — a governance-board outage is not a daemon outage.
@@ -148,7 +147,6 @@ func buildGovernanceProviders(cfg *config.Config, pool *pgxpool.Pool, store agui
 		providers.Skills = skillsBoardAdapter{
 			loader:     skills.NewLoader(skills.Config{Roots: skillLoaderRoots(cfg), BodyCapBytes: cfg.SkillBodyCapBytes, Blocklist: cfg.SkillInjectionBlocklist}),
 			audit:      skills.NewAuditStore(pool),
-			pendingDir: filepath.Join(cfg.SkillsDir, "pending"),
 			archiveDir: filepath.Join(cfg.SkillsDir, "archived"),
 		}
 	}

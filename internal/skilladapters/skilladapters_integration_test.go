@@ -94,7 +94,6 @@ func liveWriterAdapter(t *testing.T, pool *pgxpool.Pool) (*Writer, string) {
 	root := t.TempDir()
 	live := skills.NewWriter(skills.WriterConfig{
 		Pool:         pool,
-		PendingDir:   filepath.Join(root, "pending"),
 		ActiveDir:    filepath.Join(root, "active"),
 		ExportDir:    filepath.Join(root, "export"),
 		ArchiveDir:   filepath.Join(root, "archived"),

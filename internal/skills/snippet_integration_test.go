@@ -46,7 +46,6 @@ func TestSnippetExec(t *testing.T) {
 	root := t.TempDir()
 	w := NewWriter(WriterConfig{
 		Pool:         pool,
-		PendingDir:   filepath.Join(root, "pending"),
 		ActiveDir:    filepath.Join(root, "active"),
 		ExportDir:    exportDir,
 		ArchiveDir:   filepath.Join(root, "archived"),

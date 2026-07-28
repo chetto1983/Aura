@@ -87,7 +87,6 @@ func newMutationWriter(t *testing.T) (*Writer, string) {
 	root := t.TempDir()
 	w := NewWriter(WriterConfig{
 		Pool:         migratedPool(t),
-		PendingDir:   filepath.Join(root, "pending"),
 		ActiveDir:    filepath.Join(root, "active"),
 		ExportDir:    filepath.Join(root, "export"),
 		ArchiveDir:   filepath.Join(root, "archived"),
@@ -192,21 +191,14 @@ func TestLifecycleAuditFailureSurfaces(t *testing.T) {
 		assertAuditWrap(t, err, "set always")
 	})
 
-	t.Run("activate", func(t *testing.T) {
-		w, root := newMutationWriter(t)
-		name := "actaud" + uuid.Must(uuid.NewV7()).String()[:8]
-		// Seed a pending skill so the promote+materialize succeed before the audit tx.
-		pendingDir := filepath.Join(root, "pending", name)
-		if err := os.MkdirAll(pendingDir, 0o750); err != nil {
-			t.Fatalf("seed pending: %v", err)
-		}
-		fm := Frontmatter{Name: name, Description: "d", Type: TypeInstruction}
-		if err := os.WriteFile(filepath.Join(pendingDir, "SKILL.md"), skillFileBytes(fm, "body"), 0o600); err != nil {
-			t.Fatalf("seed pending SKILL.md: %v", err)
-		}
+	t.Run("write mutation", func(t *testing.T) {
+		w, _ := newMutationWriter(t)
+		name := "wraud" + uuid.Must(uuid.NewV7()).String()[:8]
 		w.pool.Close()
-		err := w.Activate(context.Background(), name, ApprovalCLI, "", AuditActor{ActorID: "cli"})
-		assertAuditWrap(t, err, "activate")
+		_, err := w.WriteMutation(context.Background(), scoring.SkillCreate,
+			Frontmatter{Name: name, Description: "d", Type: TypeInstruction}, "body",
+			AuditActor{ActorID: "cli"})
+		assertAuditWrap(t, err, "write mutation")
 	})
 
 	t.Run("archive", func(t *testing.T) {
@@ -258,10 +250,9 @@ func assertAuditWrap(t *testing.T, err error, action string) {
 func TestRestoreArchiveDirUnsetMessage(t *testing.T) {
 	root := t.TempDir()
 	w := NewWriter(WriterConfig{
-		Pool:       migratedPool(t),
-		PendingDir: filepath.Join(root, "pending"),
-		ActiveDir:  filepath.Join(root, "active"),
-		ExportDir:  filepath.Join(root, "export"),
+		Pool:      migratedPool(t),
+		ActiveDir: filepath.Join(root, "active"),
+		ExportDir: filepath.Join(root, "export"),
 		// ArchiveDir deliberately unset.
 		BodyCapBytes: 32768,
 	})

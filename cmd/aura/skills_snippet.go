@@ -1,7 +1,7 @@
-// `aura skills snippet {save|exec}` (Slice 7e, plan 11-07). save stages an
-// executable snippet (a type:snippet skill) as pending, gated like any mutation
-// (the operator then `approve`s it). exec is the DETERMINISTIC operator path that
-// runs an ACTIVE snippet BY PATH on the HOST (the materialized export-dir file) via
+// `aura skills snippet {save|exec}` (Slice 7e, plan 11-07). save writes an executable
+// snippet (a type:snippet skill) and materializes it, so it is runnable the moment the
+// command returns. exec is the DETERMINISTIC operator path that runs an ACTIVE
+// snippet BY PATH on the HOST (the materialized export-dir file) via
 // os/exec AND stamps the usage sidecar (D-04/D-19). exec resolves the host path +
 // interpreter via Writer.UseSnippet — the same materialized file the model runs
 // through shell_exec.
@@ -42,9 +42,10 @@ func skillsSnippet(ctx context.Context, args []string) {
 	}
 }
 
-// skillsSnippetSave stages a snippet as pending. --lang is the required language enum;
-// --code is the executable code; --desc is the manifest description; --needs-network /
-// --needs-workspace surface in the SAVE gate (D-20/D-37). The operator then approves it.
+// skillsSnippetSave writes a snippet and makes it runnable. --lang is the required
+// language enum; --code is the executable code; --desc is the manifest description;
+// --needs-network / --needs-workspace are surfaced on the result (D-20/D-37) — since
+// amendment #97 they are reported to the operator, not enforced by a gate.
 func skillsSnippetSave(ctx context.Context, args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, snippetUsage)

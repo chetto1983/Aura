@@ -6,21 +6,19 @@ import (
 	"path/filepath"
 )
 
-// stage_reader.go is the GOV-02 per-stage metadata reader for the skills board's
-// pending/archived tabs. It is DELIBERATELY separate from the Loader: the Loader only
-// scans the active roots and is the one path that mounts a body into LLM context
-// (loader.go loadSkillDir). This reader parses frontmatter for display ONLY and NEVER
-// returns or mounts a body — a pending/archived skill cannot cross into context by
-// construction (T-28-01-03 / GOV-02 prohibition #1). The board renders StageSkill
-// metadata; the body stays on disk.
+// stage_reader.go is the GOV-02 metadata reader for the skills board's archived tab.
+// It is DELIBERATELY separate from the Loader: the Loader only scans the active roots
+// and is the one path that mounts a body into LLM context (loader.go loadSkillDir).
+// This reader parses frontmatter for display ONLY and NEVER returns or mounts a body —
+// an archived skill cannot cross into context by construction (T-28-01-03 / GOV-02
+// prohibition #1). The board renders StageSkill metadata; the body stays on disk.
+//
+// Archived is the only stage left to read: amendment #97 deleted the pending one.
 
-// Stage names the lifecycle directory a skill currently lives in (board tabs).
-const (
-	StagePending  = "pending"
-	StageArchived = "archived"
-)
+// StageArchived is the wire value of the archived tab's ?stage= query parameter.
+const StageArchived = "archived"
 
-// StageSkill is the display metadata for one pending/archived skill — never its body.
+// StageSkill is the display metadata for one archived skill — never its body.
 // ContentHash is Aura's canonical content hash over the skill's files (the same hash
 // recorded on audit rows); empty when the dir cannot be hashed (logged-skip upstream).
 type StageSkill struct {
@@ -31,30 +29,19 @@ type StageSkill struct {
 	ContentHash string `json:"content_hash,omitempty"`
 }
 
-// ListStage lists the metadata of every skill under the requested stage directory.
-// stage selects which dir to read: "pending" → pendingDir, "archived" → archiveDir.
-// It os.ReadDir's the stage dir, parses each <name>/SKILL.md via parseFrontmatter, and
-// projects display metadata + a content hash. A non-existent stage dir is an empty list
-// (not an error — a fresh install has no pending/archived skills). A malformed or
-// symlinked entry is skipped (never fatal), mirroring the loader's scan safety. It NEVER
-// calls the loader mount path, so a pending body never enters an LLM context.
-func ListStage(pendingDir, archiveDir, stage string) ([]StageSkill, error) {
-	var dir string
-	switch stage {
-	case StagePending:
-		dir = pendingDir
-	case StageArchived:
-		dir = archiveDir
-	default:
-		return nil, fmt.Errorf("unknown skills stage %q (want %q or %q)", stage, StagePending, StageArchived)
-	}
-
+// ListArchived lists the metadata of every archived skill. It os.ReadDir's the archive
+// dir, parses each <name>/SKILL.md via parseFrontmatter, and projects display metadata +
+// a content hash. A non-existent archive dir is an empty list (not an error — a fresh
+// install has archived nothing). A malformed or symlinked entry is skipped (never fatal),
+// mirroring the loader's scan safety. It NEVER calls the loader mount path, so an
+// archived body never enters an LLM context.
+func ListArchived(dir string) ([]StageSkill, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return []StageSkill{}, nil
 		}
-		return nil, fmt.Errorf("read stage dir %q: %w", dir, err)
+		return nil, fmt.Errorf("read archive dir %q: %w", dir, err)
 	}
 
 	out := make([]StageSkill, 0, len(entries))

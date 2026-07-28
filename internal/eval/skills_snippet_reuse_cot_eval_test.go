@@ -258,7 +258,6 @@ func newReuseHarness(t *testing.T) *reuseHarness {
 
 	writer := skills.NewWriter(skills.WriterConfig{
 		Pool:         pool,
-		PendingDir:   filepath.Join(skillsRoot, "pending"),
 		ActiveDir:    skillsRoot,
 		ExportDir:    exportDir,
 		ArchiveDir:   filepath.Join(skillsRoot, "archived"),

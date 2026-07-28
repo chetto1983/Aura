@@ -29,7 +29,6 @@ func TestSkillTTLSweep(t *testing.T) {
 	export := filepath.Join(root, "export")
 	w := NewWriter(WriterConfig{
 		Pool:         pool,
-		PendingDir:   filepath.Join(root, "pending"),
 		ActiveDir:    filepath.Join(root, "active"),
 		ExportDir:    export,
 		ArchiveDir:   filepath.Join(root, "archived"),

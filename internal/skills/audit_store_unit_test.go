@@ -5,7 +5,6 @@ import (
 	"errors"
 	"math"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
@@ -117,83 +116,50 @@ func assignDest(dest, values []any) error {
 
 // TestAuditInsertToParamsNullBoundary asserts the AuditInsert -> sqlc params boundary
 // mapping: identity defaults to "local" when empty, ApprovalNone maps to a NULL (invalid)
-// pgtype.Text, an empty token maps to a NULL pgtype.UUID, and a valid token round-trips
-// into the UUID bytes. This is the pure NULL-boundary contract the real-PG tier only
-// exercises with valid tokens.
+// pgtype.Text, and paused_state_token is ALWAYS written NULL — since amendment #97 no
+// write path has a pause to point at, and the column survives only for the read
+// projection of pre-#97 rows.
 func TestAuditInsertToParamsNullBoundary(t *testing.T) {
 	t.Parallel()
-	tok := uuid.New()
-	in := AuditInsert{
-		ActorID:          "model",
-		SkillName:        "calc",
-		Action:           AuditActivate,
-		ContentHash:      "sha256:deadbeef",
-		ApprovalSource:   ApprovalAskUser,
-		PausedStateToken: tok.String(),
-		GateRecommended:  true,
-		GateTaken:        true,
-	}
-	p, err := in.toParams()
-	if err != nil {
-		t.Fatalf("toParams: %v", err)
-	}
+	p := AuditInsert{
+		ActorID:         "model",
+		SkillName:       "calc",
+		Action:          AuditActivate,
+		ContentHash:     "sha256:deadbeef",
+		ApprovalSource:  ApprovalCLI,
+		GateRecommended: true,
+		GateTaken:       true,
+	}.toParams()
 	if p.IdentityID != "local" {
 		t.Fatalf("empty identity must default to local, got %q", p.IdentityID)
 	}
-	if !p.ApprovalSource.Valid || p.ApprovalSource.String != "ask_user" {
-		t.Fatalf("approval source mapping = %+v, want valid ask_user", p.ApprovalSource)
+	if !p.ApprovalSource.Valid || p.ApprovalSource.String != "cli" {
+		t.Fatalf("approval source mapping = %+v, want valid cli", p.ApprovalSource)
 	}
-	if !p.PausedStateToken.Valid || uuid.UUID(p.PausedStateToken.Bytes) != tok {
-		t.Fatalf("token mapping = %+v, want valid %s", p.PausedStateToken, tok)
+	if p.PausedStateToken.Valid {
+		t.Fatalf("a new row must never carry a pause token, got %+v", p.PausedStateToken)
 	}
 	if p.Action != string(AuditActivate) {
 		t.Fatalf("action = %q, want activate", p.Action)
 	}
 
-	// The pending tuple: NULL approval source, NULL token, explicit identity preserved.
-	pending := AuditInsert{IdentityID: "alice", SkillName: "x", Action: AuditCreate, ApprovalSource: ApprovalNone}
-	pp, err := pending.toParams()
-	if err != nil {
-		t.Fatalf("toParams pending: %v", err)
-	}
+	// ApprovalNone maps to a NULL source; an explicit identity survives.
+	pp := AuditInsert{IdentityID: "alice", SkillName: "x", Action: AuditCreate, ApprovalSource: ApprovalNone}.toParams()
 	if pp.IdentityID != "alice" {
 		t.Fatalf("explicit identity must survive, got %q", pp.IdentityID)
 	}
 	if pp.ApprovalSource.Valid {
 		t.Fatalf("ApprovalNone must map to a NULL approval source, got %+v", pp.ApprovalSource)
 	}
-	if pp.PausedStateToken.Valid {
-		t.Fatalf("empty token must map to a NULL UUID, got %+v", pp.PausedStateToken)
-	}
 }
 
-// TestAuditInsertToParamsRejectsBadToken pins the invalid-UUID branch of toParams — a
-// malformed PausedStateToken is a structured error BEFORE any DB round-trip. The
-// real-PG tier never reaches this (the writer always passes a canonical UUID), so it is
-// only reachable here.
-func TestAuditInsertToParamsRejectsBadToken(t *testing.T) {
-	t.Parallel()
-	in := AuditInsert{SkillName: "x", Action: AuditActivate, PausedStateToken: "not-a-uuid"}
-	_, err := in.toParams()
-	if err == nil || !strings.Contains(err.Error(), "invalid paused_state_token") {
-		t.Fatalf("toParams with bad token = %v, want an invalid-token error", err)
-	}
-}
-
-// TestInsertAuditTxBranches drives InsertAuditTx through a fake DBTX: a bad token short-
-// circuits before the query (toParams error), a NULL-violating SQLSTATE classifies as the
-// coherence sentinel, the privilege SQLSTATE classifies as the immutable sentinel, and a
-// successful scan returns nil.
+// TestInsertAuditTxBranches drives InsertAuditTx through a fake DBTX: a NULL-violating
+// SQLSTATE classifies as the coherence sentinel, the privilege SQLSTATE classifies as the
+// immutable sentinel, and a successful scan returns nil.
 func TestInsertAuditTxBranches(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	goodRow := auditRowValues(uuid.New(), time.Now(), "model", "local", "calc", "create", "sha256:x", "", true, false, false)
-
-	// toParams failure: returns before touching the fake.
-	q := sqlc.New(&fakeDBTX{})
-	if err := InsertAuditTx(ctx, q, AuditInsert{SkillName: "x", Action: AuditCreate, PausedStateToken: "bad"}); err == nil {
-		t.Fatal("InsertAuditTx with bad token must error before the query")
-	}
 
 	// 23514 check violation -> ErrAuditIncoherent.
 	f := &fakeDBTX{queryRowVal: &fakeRow{scanErr: &pgconn.PgError{Code: "23514", Message: "coherence"}}}
@@ -283,8 +249,11 @@ func TestAuditStoreListProjectsRows(t *testing.T) {
 		t.Fatalf("since arg = %v, want bound timestamptz %s", f.queryArgs[2], since)
 	}
 
-	// Row 0: non-NULL approval source + token project onto plain strings.
-	if out[0].ApprovalSource != ApprovalAskUser {
+	// Row 0: non-NULL approval source + token project onto plain strings. The literal
+	// "ask_user" is deliberate: no constant names it any more (#97 removed the approval
+	// it stood for), but the ledger is append-only and pre-#97 rows carrying it must keep
+	// deserialising — that is what this row is.
+	if out[0].ApprovalSource != ApprovalSource("ask_user") {
 		t.Fatalf("row0 approval source = %q, want ask_user", out[0].ApprovalSource)
 	}
 	if out[0].PausedStateToken != tok.String() {

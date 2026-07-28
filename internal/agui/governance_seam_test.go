@@ -26,7 +26,7 @@ func (fakeSkillsBoard) ActiveSkills() []skills.Skill { return nil }
 func (fakeSkillsBoard) SkillBody(string) (string, bool) {
 	return "", false
 }
-func (fakeSkillsBoard) StageSkills(string) ([]skills.StageSkill, error) {
+func (fakeSkillsBoard) ArchivedSkills() ([]skills.StageSkill, error) {
 	return nil, nil
 }
 func (fakeSkillsBoard) AuditLog(context.Context, skills.AuditFilter) ([]skills.AuditRow, error) {

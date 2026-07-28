@@ -19,7 +19,6 @@ func newTestWriter(t *testing.T) (*Writer, string) {
 	root := t.TempDir()
 	w := NewWriter(WriterConfig{
 		Pool:         nil,
-		PendingDir:   filepath.Join(root, "pending"),
 		ActiveDir:    filepath.Join(root, "active"),
 		ExportDir:    filepath.Join(root, "export"),
 		ArchiveDir:   filepath.Join(root, "archived"),
@@ -78,18 +77,6 @@ func TestSetAlwaysRejectsBadName(t *testing.T) {
 	for _, bad := range []string{"../escape", "Bad_Name", "a/b", ""} {
 		if err := w.SetAlways(t.Context(), bad, true, AuditActor{ActorID: "cli"}); !errors.Is(err, ErrInvalidName) {
 			t.Errorf("SetAlways(%q): want ErrInvalidName, got %v", bad, err)
-		}
-	}
-}
-
-func TestActivateAndDiscardPendingRejectBadName(t *testing.T) {
-	w, _ := newTestWriter(t)
-	for _, bad := range []string{"../escape", "Bad_Name", "a/b", ""} {
-		if err := w.Activate(t.Context(), bad, ApprovalCLI, "", AuditActor{ActorID: "cli"}); !errors.Is(err, ErrInvalidName) {
-			t.Errorf("Activate(%q): want ErrInvalidName, got %v", bad, err)
-		}
-		if err := w.DiscardPending(t.Context(), bad, ApprovalCLI, "", AuditActor{ActorID: "cli"}); !errors.Is(err, ErrInvalidName) {
-			t.Errorf("DiscardPending(%q): want ErrInvalidName, got %v", bad, err)
 		}
 	}
 }
@@ -163,9 +150,6 @@ func TestLifecycleMethodsSurfacePreAuditFilesystemErrors(t *testing.T) {
 	w, _ := newTestWriter(t)
 	actor := AuditActor{ActorID: "cli"}
 
-	if err := w.Activate(t.Context(), "missing", ApprovalCLI, "", actor); err == nil || !strings.Contains(err.Error(), "hash pending") {
-		t.Fatalf("Activate missing pending = %v, want hash pending error", err)
-	}
 	if err := w.Archive(t.Context(), "missing", ApprovalCLI, actor); err == nil || !strings.Contains(err.Error(), "move to archived") {
 		t.Fatalf("Archive missing active = %v, want move error", err)
 	}

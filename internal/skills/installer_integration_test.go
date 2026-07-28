@@ -53,7 +53,6 @@ func TestInstallerAuditAppendOnly(t *testing.T) {
 	root := t.TempDir()
 	w := NewWriter(WriterConfig{
 		Pool:         pool,
-		PendingDir:   filepath.Join(root, "pending"),
 		ActiveDir:    filepath.Join(root, "active"),
 		ExportDir:    filepath.Join(root, "export"),
 		ArchiveDir:   filepath.Join(root, "archived"),
@@ -160,7 +159,6 @@ func TestSkillAuditAppendOnly(t *testing.T) {
 	root := t.TempDir()
 	w := NewWriter(WriterConfig{
 		Pool:         pool,
-		PendingDir:   filepath.Join(root, "pending"),
 		ActiveDir:    filepath.Join(root, "active"),
 		ExportDir:    filepath.Join(root, "export"),
 		ArchiveDir:   filepath.Join(root, "archived"),

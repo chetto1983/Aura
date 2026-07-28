@@ -61,11 +61,11 @@ func (b *scriptedSkillsBoard) SkillBody(name string) (string, bool) {
 	return "", false
 }
 
-func (b *scriptedSkillsBoard) StageSkills(stage string) ([]skills.StageSkill, error) {
+func (b *scriptedSkillsBoard) ArchivedSkills() ([]skills.StageSkill, error) {
 	if b.stageErr != nil {
 		return nil, b.stageErr
 	}
-	return b.staged[stage], nil
+	return b.staged[skills.StageArchived], nil
 }
 
 func (b *scriptedSkillsBoard) AuditLog(_ context.Context, f skills.AuditFilter) ([]skills.AuditRow, error) {
@@ -282,14 +282,13 @@ func TestMCPProbeErrorSanitized(t *testing.T) {
 	}
 }
 
-// TestGovernanceSkillsStages: the three stages list the correct sets and pending rows
-// carry NO action field (T-28-02-04 — non-runnable by construction).
+// TestGovernanceSkillsStages: the two remaining stages list the correct sets and an
+// archived row carries NO action field (T-28-02-04 — non-runnable by construction).
 func TestGovernanceSkillsStages(t *testing.T) {
 	board := &scriptedSkillsBoard{
 		active: []skills.Skill{{Name: "active-one", Description: "a", Type: "instruction"}},
 		staged: map[string][]skills.StageSkill{
-			skills.StagePending:  {{Name: "pending-one", Description: "p", Type: "snippet", Language: "python", ContentHash: "abc"}},
-			skills.StageArchived: {{Name: "archived-one", Description: "ar", Type: "instruction"}},
+			skills.StageArchived: {{Name: "archived-one", Description: "ar", Type: "snippet", Language: "python", ContentHash: "abc"}},
 		},
 	}
 	s := govServer(GovernanceProviders{Skills: board})
@@ -300,36 +299,35 @@ func TestGovernanceSkillsStages(t *testing.T) {
 		t.Fatalf("default stage must be active, got %s", def.Body.String())
 	}
 
-	pending := doGov(t, s, http.MethodGet, "/api/governance/skills?stage=pending")
-	if pending.Code != http.StatusOK {
-		t.Fatalf("pending status = %d, want 200", pending.Code)
-	}
-	if !strings.Contains(pending.Body.String(), "pending-one") {
-		t.Fatalf("pending stage missing its skill: %s", pending.Body.String())
-	}
-	// A pending row must carry NO action/run/activate field.
-	for _, banned := range []string{`"action"`, `"run"`, `"activate"`, `"runnable"`} {
-		if strings.Contains(pending.Body.String(), banned) {
-			t.Fatalf("pending row exposed a %s control (must be non-runnable): %s", banned, pending.Body.String())
-		}
-	}
-	// A pending body must never be serialized.
-	if strings.Contains(strings.ToLower(pending.Body.String()), `"body"`) {
-		t.Fatalf("pending row leaked a body field: %s", pending.Body.String())
-	}
-
 	archived := doGov(t, s, http.MethodGet, "/api/governance/skills?stage=archived")
+	if archived.Code != http.StatusOK {
+		t.Fatalf("archived status = %d, want 200", archived.Code)
+	}
 	if !strings.Contains(archived.Body.String(), "archived-one") {
 		t.Fatalf("archived stage missing its skill: %s", archived.Body.String())
 	}
+	// An archived row must carry NO action/run/activate control.
+	for _, banned := range []string{`"action"`, `"run"`, `"activate"`, `"runnable"`} {
+		if strings.Contains(archived.Body.String(), banned) {
+			t.Fatalf("archived row exposed a %s control (must be non-runnable): %s", banned, archived.Body.String())
+		}
+	}
+	// An archived body must never be serialized.
+	if strings.Contains(strings.ToLower(archived.Body.String()), `"body"`) {
+		t.Fatalf("archived row leaked a body field: %s", archived.Body.String())
+	}
 }
 
-// TestGovernanceSkillsUnknownStage: an unknown stage is a clean 400.
+// TestGovernanceSkillsUnknownStage: an unknown stage is a clean 400 — including
+// "pending", which amendment #97 removed. The wire must reject the retired name rather
+// than quietly answer with something else.
 func TestGovernanceSkillsUnknownStage(t *testing.T) {
 	s := govServer(GovernanceProviders{Skills: &scriptedSkillsBoard{}})
-	rec := doGov(t, s, http.MethodGet, "/api/governance/skills?stage=bogus")
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400", rec.Code)
+	for _, stage := range []string{"bogus", "pending"} {
+		rec := doGov(t, s, http.MethodGet, "/api/governance/skills?stage="+stage)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("stage=%s status = %d, want 400", stage, rec.Code)
+		}
 	}
 }
 
@@ -515,9 +513,12 @@ func TestGovernanceBackendErrorSanitized(t *testing.T) {
 			target: "/api/governance/skills/audit",
 		},
 		{
+			// stage=archived, NOT a retired stage name: a 400 would short-circuit before
+			// the provider is reached and this leak assertion would silently pass on an
+			// error the handler never rendered.
 			name:   "skills-stage",
 			server: govServer(GovernanceProviders{Skills: &scriptedSkillsBoard{stageErr: leak}}),
-			target: "/api/governance/skills?stage=pending",
+			target: "/api/governance/skills?stage=archived",
 		},
 		{
 			name:   "scheduler-list",

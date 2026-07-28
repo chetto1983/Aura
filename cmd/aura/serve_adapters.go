@@ -316,32 +316,6 @@ func newSkillToolWithAdaptive(
 	return tool
 }
 
-func newSkillResumeHook(cfg *config.Config, pool *pgxpool.Pool) runner.ResumeHook {
-	if cfg == nil || cfg.SkillsDir == "" || pool == nil {
-		return nil
-	}
-	h := skills.NewResumeHandler(newSkillWriter(cfg, pool))
-	return func(ctx context.Context, pending askuser.Pending, resp runner.ResponseInput) error {
-		if pending.Kind != tools.KindApproval || len(pending.ResumeContext) == 0 {
-			return nil
-		}
-		var rc struct {
-			Type      string `json:"type"`
-			SkillName string `json:"skill_name"`
-		}
-		if err := json.Unmarshal(pending.ResumeContext, &rc); err != nil {
-			return fmt.Errorf("skill resume context: %w", err)
-		}
-		if rc.Type != "skill_approval" {
-			return nil
-		}
-		if rc.SkillName == "" {
-			return fmt.Errorf("skill resume context: missing skill_name")
-		}
-		return h.Resume(ctx, resp.Action, rc.SkillName, pending.Token, skills.AuditActor{ActorID: "local"})
-	}
-}
-
 func chainResumeHooks(hooks ...runner.ResumeHook) runner.ResumeHook {
 	filtered := make([]runner.ResumeHook, 0, len(hooks))
 	for _, hook := range hooks {

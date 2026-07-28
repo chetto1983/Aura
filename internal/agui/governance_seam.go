@@ -43,7 +43,7 @@ type MCPBoardProvider interface {
 type SkillsBoardProvider interface {
 	ActiveSkills() []skills.Skill
 	SkillBody(name string) (string, bool)
-	StageSkills(stage string) ([]skills.StageSkill, error)
+	ArchivedSkills() ([]skills.StageSkill, error)
 	AuditLog(ctx context.Context, filter skills.AuditFilter) ([]skills.AuditRow, error)
 }
 

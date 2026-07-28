@@ -72,9 +72,9 @@ type mcpServerRow struct {
 }
 
 // skillRow is one GOV-02 skills-governance row. It is the projection shared by the active
-// tab (from skills.Skill) and the pending/archived tabs (from skills.StageSkill). A field
+// tab (from skills.Skill) and the archived tab (from skills.StageSkill). A field
 // with no source on a given stage renders as "" (A2: never fabricated) and the omitempty
-// keys drop. CRITICALLY there is no run/activate/action field — a pending row is
+// keys drop. CRITICALLY there is no run/activate/action field — an archived row is
 // non-runnable by construction (T-28-02-04 / GOV-02 prohibition #1).
 type skillRow struct {
 	Name        string `json:"name"`
@@ -258,11 +258,12 @@ func (s *Server) probeDeadline() time.Duration {
 	return defaultProbeTimeout
 }
 
-// handleSkillsList serves GET /api/governance/skills?stage=active|pending|archived (GOV-02):
-// the active tab reads the Loader snapshot; pending/archived read the per-stage metadata
-// reader (never a mounted body — GOV-02 prohibition #1). Pending/archived rows carry NO
-// action/run field by construction (the projection has none). An unknown stage → 400; an
-// empty stage → 200 {skills: []}. An unwired provider → 503; a backend error → sanitized 502.
+// handleSkillsList serves GET /api/governance/skills?stage=active|archived (GOV-02): the
+// active tab reads the Loader snapshot; archived reads the metadata reader (never a
+// mounted body — GOV-02 prohibition #1). Archived rows carry NO action/run field by
+// construction (the projection has none). An unknown stage → 400, which now includes the
+// retired "pending"; an empty stage → active. An unwired provider → 503; a backend error
+// → sanitized 502.
 func (s *Server) handleSkillsList(w http.ResponseWriter, r *http.Request) {
 	if s.governance.Skills == nil {
 		http.Error(w, "skills board not configured", http.StatusServiceUnavailable)
@@ -275,8 +276,8 @@ func (s *Server) handleSkillsList(w http.ResponseWriter, r *http.Request) {
 	switch stage {
 	case stageActive:
 		writeJSON(w, map[string]any{"skills": activeSkillRows(s.governance.Skills.ActiveSkills())})
-	case skills.StagePending, skills.StageArchived:
-		staged, err := s.governance.Skills.StageSkills(stage)
+	case skills.StageArchived:
+		staged, err := s.governance.Skills.ArchivedSkills()
 		if err != nil {
 			writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": sanitizeErr(err)})
 			return
@@ -288,8 +289,8 @@ func (s *Server) handleSkillsList(w http.ResponseWriter, r *http.Request) {
 }
 
 // stageActive names the active lifecycle tab (the Loader snapshot), the default stage when
-// ?stage is absent. The pending/archived stage names live in the skills package
-// (skills.StagePending/StageArchived) so the reader and the board agree on one vocabulary.
+// ?stage is absent. The archived stage name lives in the skills package
+// (skills.StageArchived) so the reader and the board agree on one vocabulary.
 const stageActive = "active"
 
 // activeSkillRows projects the loaded active skills onto the board row shape — the body is

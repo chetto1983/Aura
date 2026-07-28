@@ -108,7 +108,6 @@ var cliMutationCommands = map[string]cliMutationMeta{
 	"paused-states purge":       cliMutationMetaFor("paused_states_purge"),
 	"retention apply":           cliMutationMetaFor("retention_apply"),
 	"skills always":             cliMutationMetaFor("skill_always"),
-	"skills approve":            cliMutationMetaFor("skill_approve"),
 	"skills create":             cliMutationMetaFor("skill_create"),
 	"skills delete":             cliMutationMetaFor("skill_delete"),
 	"skills update":             cliMutationMetaFor("skill_update"),

@@ -1,18 +1,16 @@
 // skills subcommand dispatcher for `aura skills {list|info|create|update|delete|
-// approve|always|snippet|audit}` (Slice 7c governance, plan 11-05). Hand-rolled
-// switch tree mirroring runIdentity/runTask (cmd/aura/identity.go), NOT cobra —
-// go.mod has no spf13/cobra and the codebase uses nested switch dispatchers;
-// CLAUDE.md mandates following existing patterns. The install/catalog legs were
-// removed in plan 11-09 (amendment #51 / D-40): discovery+install is the find-skills
-// always-on skill driving `npx skills` in the sandbox, not a CLI/tool leg.
+// always|snippet|audit}` (Slice 7c governance, plan 11-05). Hand-rolled switch tree
+// mirroring runIdentity/runTask (cmd/aura/identity.go), NOT cobra — go.mod has no
+// spf13/cobra and the codebase uses nested switch dispatchers; CLAUDE.md mandates
+// following existing patterns. The install/catalog legs were removed in plan 11-09
+// (amendment #51 / D-40): discovery+install is the find-skills always-on skill
+// driving `npx skills` in the sandbox, not a CLI/tool leg.
 //
-// This is the operator-side governance channel (D-03): `approve <name>` activates a
-// pending skill via Writer.Activate with the CLI approval source (the human-only
-// activation path the MODEL can never reach); `audit` lists the append-only
-// aura.skill_audit rows. create/update/delete stage a pending mutation (operator
-// can then `approve` it); delete is the Destructive removal. The audit purge path
-// SURFACES the role error (aura_app holds SELECT+INSERT only — no DELETE/TRUNCATE),
-// proving the append-only ledger at the CLI boundary (SC#2).
+// This is the operator-side governance channel. create/update/delete apply
+// immediately (amendment #97 — there is no approve command, because there is nothing
+// to approve); `audit` lists the append-only aura.skill_audit rows. The audit purge
+// path SURFACES the role error (aura_app holds SELECT+INSERT only — no
+// DELETE/TRUNCATE), proving the append-only ledger at the CLI boundary (SC#2).
 package main
 
 import (
@@ -30,7 +28,7 @@ import (
 )
 
 const skillsUsage = "usage: aura skills {list|info <name>|create <name> --desc <d> --body <b> [--always]|" +
-	"update <name> --desc <d> --body <b> [--always]|delete <name>|approve <name>|" +
+	"update <name> --desc <d> --body <b> [--always]|delete <name>|" +
 	"always <name> {on|off}|snippet {save <name> --lang <l> --code <c> [--desc <d>] [--needs-network]|exec <name> [args...]}|" +
 	"audit [--skill <name>] [--since <RFC3339>]}"
 
@@ -50,14 +48,13 @@ func (e *skillsEnv) close() {
 }
 
 // newSkillWriter builds the live Writer from config: the active root is SkillsDir,
-// with pending/ and archived/ as siblings (the loader scans SkillsDir; the writer's
-// dirs stay in agreement), and the export dir is SkillExportDir (the /skills mount
-// source). It is the SAME wiring the composition root uses so the CLI and the model
-// path operate on one set of dirs.
+// with archived/ as a sibling (the loader scans SkillsDir; the writer's dirs stay in
+// agreement), and the export dir is SkillExportDir (the /skills mount source). It is
+// the SAME wiring the composition root uses so the CLI and the model path operate on
+// one set of dirs.
 func newSkillWriter(cfg *config.Config, pool *pgxpool.Pool) *skills.Writer {
 	return skills.NewWriter(skills.WriterConfig{
 		Pool:         pool,
-		PendingDir:   filepath.Join(cfg.SkillsDir, "pending"),
 		ActiveDir:    cfg.SkillsDir,
 		ExportDir:    cfg.SkillExportDir,
 		ArchiveDir:   filepath.Join(cfg.SkillsDir, "archived"),
@@ -93,8 +90,6 @@ func runSkills(args []string) {
 		skillsWrite(ctx, args[1:], skillsActionUpdate)
 	case "delete":
 		skillsDelete(ctx, args[1:])
-	case "approve":
-		skillsApprove(ctx, args[1:])
 	case "always":
 		skillsAlways(ctx, args[1:])
 	case "snippet":
@@ -193,23 +188,6 @@ func skillsDelete(ctx context.Context, args []string) {
 	fmt.Printf("ok: deleted %q\n", args[0])
 }
 
-// skillsApprove activates a pending skill via the operator CLI channel (D-03):
-// Writer.Activate with the cli approval source (NULL token + gate_taken=true). This
-// is the human-only activation the model can never reach.
-func skillsApprove(ctx context.Context, args []string) {
-	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: aura skills approve <name>")
-		os.Exit(1)
-	}
-	env := bootSkills(ctx)
-	defer env.close()
-	if err := env.w.Activate(ctx, args[0], skills.ApprovalCLI, "", skills.AuditActor{ActorID: "cli"}); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	fmt.Printf("ok: approved %q (now active)\n", args[0])
-}
-
 // skillsAlways re-enables (on) or disables (off) the always:true flag on an ACTIVE
 // skill (D-10): the operator-only path that re-enables the always-on flag the
 // installer stripped unconditionally.
@@ -266,9 +244,12 @@ func skillsAudit(ctx context.Context, args []string) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(w, "CREATED\tSKILL\tACTION\tSOURCE\tGATE_TAKEN\tHASH")
 	for _, r := range rows {
+		// A NULL source is a pre-#97 row whose approval gate was never exercised; it is
+		// rendered as "-" rather than a status word, because "pending" no longer names
+		// anything a reader could act on.
 		src := string(r.ApprovalSource)
 		if src == "" {
-			src = "(pending)"
+			src = "-"
 		}
 		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%v\t%s\n",
 			r.CreatedAt.UTC().Format(time.RFC3339), r.SkillName, r.Action, src, r.GateTaken, shortHash(r.ContentHash))

@@ -535,7 +535,7 @@ func assembleChatEnvWithOptions(
 		AlwaysBlock:              alwaysBlockProvider(cfg),
 		// The gateway resume hook records an operator's accept of a relayed gateway_approval
 		// pause into the SAME gateway instance (gw) the runner's PEP reads (D-03 point 2).
-		ResumeHook:  chainResumeHooks(newSkillResumeHook(cfg, pool), newShellResumeHook(toolHandles.ShellApprovals), newGatewayResumeHook(gw), newScheduledTaskResumeHook(taskStore)),
+		ResumeHook:  chainResumeHooks(newShellResumeHook(toolHandles.ShellApprovals), newGatewayResumeHook(gw), newScheduledTaskResumeHook(taskStore)),
 		HookManager: hookManager,
 		Gateway:     gw,
 		// Local embedding-based reasoning-tier classifier (granite sidecar):
