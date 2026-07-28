@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { focusFirstDescendant, trapTabKey } from '../a11y/focusTrap';
+import { useBoardMasterWidth } from './useBoardMasterWidth';
 
 // BoardLayout — the master-list + detail shell shared by all three governance boards. Desktop
 // (lg) is a two-column grid: the master list on the left, the detail pane on the right (showing
@@ -32,6 +33,7 @@ export function BoardLayout({
 }: BoardLayoutProps) {
   const { t } = useTranslation();
   const sheetRef = useRef<HTMLDivElement | null>(null);
+  const masterWidth = useBoardMasterWidth();
 
   // Focus trap + restore for the MOBILE bottom sheet only (lg renders the detail as a static
   // column where trapping would be wrong). When the sheet opens on a narrow viewport, move focus
@@ -74,18 +76,40 @@ export function BoardLayout({
   }, [detailOpen, onCloseDetail, restoreFocusRef]);
 
   return (
-    <div className="relative flex h-full min-h-0 flex-col lg:grid lg:grid-cols-[20rem_minmax(0,1fr)]">
+    <div
+      className="relative flex h-full min-h-0 flex-col lg:grid lg:grid-cols-[var(--board-master-w)_auto_minmax(0,1fr)]"
+      style={{ '--board-master-w': `${String(masterWidth.width)}px` } as React.CSSProperties}
+    >
       {/* MASTER list — dominant on mobile, the left column on lg. */}
-      <div className="min-h-0 flex-1 overflow-y-auto lg:col-start-1 lg:border-r lg:border-border">
-        {master}
-      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto lg:col-start-1">{master}</div>
+
+      {/* The resize handle is its own grid track so it never overlaps either column: drag it,
+          or focus it and use the arrow keys (Shift for a bigger step, Home/End for the bounds).
+          It is a <button> carrying role="separator" — the WAI-ARIA window-splitter pattern
+          wants a FOCUSABLE separator, and starting from a natively-focusable element is what
+          keeps the keyboard contract from rotting into an unreachable div. The rule below has
+          no model for that pattern and reads "separator" as decorative. */}
+      {/* eslint-disable jsx-a11y/no-interactive-element-to-noninteractive-role */}
+      <button
+        type="button"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={t('governance.resizeList')}
+        aria-valuenow={masterWidth.width}
+        aria-valuemin={masterWidth.min}
+        aria-valuemax={masterWidth.max}
+        onPointerDown={masterWidth.onPointerDown}
+        onKeyDown={masterWidth.onKeyDown}
+        className="hidden lg:col-start-2 lg:block lg:w-px lg:cursor-col-resize lg:bg-border lg:outline-none lg:ring-inset hover:lg:bg-border-strong focus-visible:lg:ring-2 focus-visible:lg:ring-ring"
+      />
+      {/* eslint-enable jsx-a11y/no-interactive-element-to-noninteractive-role */}
 
       {/* DETAIL — desktop right column (detail-empty when nothing selected); mobile bottom sheet
           on selection. ONE instance (no duplicate DOM). */}
       <aside
         ref={sheetRef}
         aria-label={detailLabel}
-        className={`min-h-0 lg:col-start-2 lg:static lg:block lg:overflow-y-auto lg:bg-surface ${
+        className={`min-h-0 lg:col-start-3 lg:static lg:block lg:overflow-y-auto lg:bg-surface ${
           detailOpen
             ? 'fixed inset-x-0 bottom-0 z-40 max-h-[78svh] overflow-y-auto rounded-t-xl border-t border-border bg-surface shadow-2xl lg:inset-auto lg:z-auto lg:max-h-none lg:rounded-none lg:border-t-0 lg:shadow-none'
             : 'hidden lg:block'

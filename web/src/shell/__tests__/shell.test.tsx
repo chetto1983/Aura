@@ -31,18 +31,18 @@ function SurfaceProbe() {
       <button
         type="button"
         onClick={() => {
-          setSurface('tree');
-        }}
-      >
-        tree
-      </button>
-      <button
-        type="button"
-        onClick={() => {
           setSurface('graph');
         }}
       >
         graph
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          setSurface('documents');
+        }}
+      >
+        documents
       </button>
     </>
   );
@@ -169,16 +169,12 @@ describe('shell utilities', () => {
     expect(onRight).toHaveBeenCalledTimes(1);
   });
 
-  it('useSurfaceIntent ignores stored future surfaces and only persists live surfaces', () => {
-    // 'displays' is still a future (non-live) surface — a stored future surface is ignored
-    // and clicking another future surface ('tree') does not switch. ('graph' is live as of
-    // Phase 27, covered by the live-switch case below.)
+  it('useSurfaceIntent falls back to chat for a surface that no longer exists', () => {
+    // 'displays' was a nav entry once; a browser that stored it must land on chat rather
+    // than on a surface with nothing behind it.
     localStorage.setItem('aura.shell.surface', 'displays');
     render(<SurfaceProbe />);
     expect(screen.getByText('chat')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'tree' }));
-    expect(screen.getByText('chat')).toBeTruthy();
-    expect(localStorage.getItem('aura.shell.surface')).toBe('displays');
   });
 
   it('useSurfaceIntent switches to + persists the live graph surface (Phase 27)', () => {
@@ -190,7 +186,7 @@ describe('shell utilities', () => {
     expect(localStorage.getItem('aura.shell.surface')).toBe('graph');
   });
 
-  it('desktop mode control exposes future modes disabled, while the mobile dock shows live modes only', () => {
+  it('desktop and mobile navs list the same real surfaces, none of them disabled', () => {
     const selected: SurfaceIntent[] = [];
     render(
       <>
@@ -211,14 +207,12 @@ describe('shell utilities', () => {
 
     const primary = within(screen.getByRole('navigation', { name: 'Primary' }));
     const mobile = within(screen.getByRole('navigation', { name: 'Modes' }));
-    const treeButton = primary.getByRole('button', { name: 'Tree' });
     const graphButton = primary.getByRole('button', { name: 'Graph' });
     const settingsButton = primary.getByRole('button', { name: 'Settings' });
     expect(primary.getByRole('button', { name: 'Chat' }).getAttribute('data-slot')).toBe('button');
     expect(mobile.getByRole('button', { name: 'Chat' }).getAttribute('data-slot')).toBe('button');
     expect(primary.getByRole('button', { name: 'Chat' }).getAttribute('aria-current')).toBe('page');
     expect(mobile.getByRole('button', { name: 'Chat' }).getAttribute('aria-current')).toBe('page');
-    expect(treeButton.getAttribute('aria-disabled')).toBe('true');
     expect(screen.getByRole('navigation', { name: 'Primary' }).className).toContain(
       'overflow-x-auto',
     );
@@ -230,8 +224,12 @@ describe('shell utilities', () => {
     expect(mobileNav.className).toContain('flex');
     expect(mobileNav.className).toContain('overflow-hidden');
     expect(primary.getByRole('button', { name: 'Governance' }).className).toContain('shrink-0');
-    expect(mobile.queryByRole('button', { name: 'Tree' })).toBeNull();
-    expect(mobile.queryByRole('button', { name: 'Displays' })).toBeNull();
+    // The retired placeholders are gone from BOTH navs — a disabled tab is a promise the
+    // product never kept.
+    for (const gone of ['Tree', 'Displays']) {
+      expect(primary.queryByRole('button', { name: gone })).toBeNull();
+      expect(mobile.queryByRole('button', { name: gone })).toBeNull();
+    }
     expect(
       mobile.getAllByRole('button').every((button) => button.className.includes('min-w-[44px]')),
     ).toBe(true);
@@ -267,7 +265,6 @@ describe('shell utilities', () => {
     expect(
       mobile.getByRole('button', { name: 'Settings' }).getAttribute('aria-disabled'),
     ).toBeNull();
-    fireEvent.click(treeButton);
     fireEvent.click(graphButton);
     fireEvent.click(settingsButton);
     expect(selected).toEqual(['graph', 'settings']);

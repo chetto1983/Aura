@@ -12,6 +12,7 @@ export const skillsEn = {
     'Nothing matches. Install a skill from a repo, URL, or the skills.sh catalog — it is active as soon as it lands.',
   installSkill: 'Install skill',
   archive: 'Archive skill',
+  deleteSkill: 'Delete skill',
   restore: 'Restore skill',
   collidingRestore: 'An active skill named "{{name}}" already exists. Archive or rename it first.',
   searchLabel: 'Search skills',
@@ -134,6 +135,7 @@ export const skillsIt = {
     'Nessun risultato. Installa una skill da un repo, un URL o il catalogo skills.sh — è attiva appena arriva.',
   installSkill: 'Installa skill',
   archive: 'Archivia skill',
+  deleteSkill: 'Elimina skill',
   restore: 'Ripristina skill',
   collidingRestore:
     'Esiste già una skill attiva chiamata "{{name}}". Archiviala o rinominala prima.',

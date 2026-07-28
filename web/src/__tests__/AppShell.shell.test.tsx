@@ -152,7 +152,7 @@ describe('AppShell', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Italiano' }));
 
     expect(screen.getByRole('navigation', { name: 'Principale' })).toBeTruthy();
-    expect(screen.getAllByText('Albero').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Documenti').length).toBeGreaterThan(0);
     // The left aside now hosts the conversation manager (replaced the placeholder
     // section labels); its heading is localised.
     expect(screen.getByText('Conversazioni')).toBeTruthy();

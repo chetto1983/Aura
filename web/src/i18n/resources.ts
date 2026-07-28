@@ -50,11 +50,9 @@ export const resources = {
         logout: 'Sign out',
         modes: {
           chat: 'Chat',
-          tree: 'Tree',
           graph: 'Graph',
           governance: 'Governance',
           documents: 'Documents',
-          displays: 'Displays',
           settings: 'Settings',
         },
         modesCompact: {
@@ -64,7 +62,6 @@ export const resources = {
           documents: 'Docs',
           settings: 'Settings',
         },
-        modeUnavailable: 'Coming soon',
       },
       chat: {
         scrollToBottom: 'Scroll to bottom',
@@ -315,11 +312,9 @@ export const resources = {
         logout: 'Disconnetti',
         modes: {
           chat: 'Chat',
-          tree: 'Albero',
           graph: 'Grafo',
           governance: 'Governance',
           documents: 'Documenti',
-          displays: 'Display',
           settings: 'Impostazioni',
         },
         modesCompact: {
@@ -329,7 +324,6 @@ export const resources = {
           documents: 'Doc',
           settings: 'Imp.',
         },
-        modeUnavailable: 'In arrivo',
       },
       chat: {
         scrollToBottom: 'Vai in fondo',

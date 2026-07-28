@@ -15,6 +15,7 @@ export const governanceEn = {
     loading: 'Loading…',
     retry: 'Retry',
     closeAria: 'Close',
+    resizeList: 'Resize the list column',
     detailEmpty: 'Select a row to see details',
     error:
       "Couldn't load this board. The service may be unavailable. Retry, or check the runtime status.",
@@ -216,6 +217,7 @@ export const governanceIt = {
     loading: 'Caricamento…',
     retry: 'Riprova',
     closeAria: 'Chiudi',
+    resizeList: 'Ridimensiona la colonna elenco',
     detailEmpty: 'Seleziona una riga per i dettagli',
     error:
       'Impossibile caricare questa scheda. Il servizio potrebbe non essere disponibile. Riprova, o controlla lo stato del runtime.',

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { FileText, MessageSquareText, Network, Settings, ShieldCheck } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { LIVE_MODES, type SurfaceIntent } from './modes';
+import { MODES, type SurfaceIntent } from './modes';
 import { Button } from '@/components/ui/button';
 
 const modeIcons = {
@@ -10,21 +10,21 @@ const modeIcons = {
   governance: ShieldCheck,
   documents: FileText,
   settings: Settings,
-} as const satisfies Record<(typeof LIVE_MODES)[number], typeof MessageSquareText>;
+} as const satisfies Record<SurfaceIntent, typeof MessageSquareText>;
 
 interface MobileAppSidebarProps {
   readonly activeMode: SurfaceIntent;
   readonly onModeSelect: (mode: SurfaceIntent) => void;
   readonly children: ReactNode;
   // Visible live modes (MUSR-01 capability-gated by AppShell); defaults to the full live set.
-  readonly modes?: readonly (typeof LIVE_MODES)[number][];
+  readonly modes?: readonly SurfaceIntent[];
 }
 
 export function MobileAppSidebar({
   activeMode,
   onModeSelect,
   children,
-  modes = LIVE_MODES,
+  modes = MODES,
 }: MobileAppSidebarProps) {
   const { t } = useTranslation();
   return (

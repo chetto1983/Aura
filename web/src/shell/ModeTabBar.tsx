@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { FileText, MessageSquareText, Network, Settings, ShieldCheck } from 'lucide-react';
-import { LIVE_MODES, type SurfaceIntent } from './modes';
+import { MODES, type SurfaceIntent } from './modes';
 import { Button } from '@/components/ui/button';
 
 const modeIcons = {
@@ -9,17 +9,17 @@ const modeIcons = {
   governance: ShieldCheck,
   documents: FileText,
   settings: Settings,
-} satisfies Record<(typeof LIVE_MODES)[number], typeof MessageSquareText>;
+} satisfies Record<SurfaceIntent, typeof MessageSquareText>;
 
 export function ModeTabBar({
   active,
   onSelect,
-  modes = LIVE_MODES,
+  modes = MODES,
 }: {
   readonly active: SurfaceIntent;
   readonly onSelect: (mode: SurfaceIntent) => void;
-  // Visible live modes (MUSR-01 capability-gated by AppShell); defaults to the full live set.
-  readonly modes?: readonly (typeof LIVE_MODES)[number][] | undefined;
+  // Visible modes (MUSR-01 capability-gated by AppShell); defaults to the full set.
+  readonly modes?: readonly SurfaceIntent[] | undefined;
 }) {
   const { t } = useTranslation();
   return (

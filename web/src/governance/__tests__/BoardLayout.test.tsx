@@ -170,4 +170,36 @@ describe('BoardLayout', () => {
       expect(screen.queryByRole('button', { name: 'detail-first' })).toBeNull();
     });
   });
+  it('the master column resizes by keyboard and remembers the width', () => {
+    setViewport(false);
+    localStorage.removeItem('aura.governance.masterWidth');
+    const { unmount } = render(<Harness />);
+
+    const handle = screen.getByRole('separator', { name: 'Resize the list column' });
+    const before = Number(handle.getAttribute('aria-valuenow'));
+    fireEvent.keyDown(handle, { key: 'ArrowRight' });
+    const after = Number(handle.getAttribute('aria-valuenow'));
+    expect(after).toBeGreaterThan(before);
+    expect(localStorage.getItem('aura.governance.masterWidth')).toBe(String(after));
+
+    // The width survives a remount — a column you had to widen once should not snap back
+    // every time you open the board.
+    unmount();
+    render(<Harness />);
+    expect(
+      screen
+        .getByRole('separator', { name: 'Resize the list column' })
+        .getAttribute('aria-valuenow'),
+    ).toBe(String(after));
+  });
+
+  it('clamps a stored width so a narrow viewport never loses the detail pane', () => {
+    setViewport(false);
+    localStorage.setItem('aura.governance.masterWidth', '5000');
+    render(<Harness />);
+    const handle = screen.getByRole('separator', { name: 'Resize the list column' });
+    expect(Number(handle.getAttribute('aria-valuenow'))).toBe(
+      Number(handle.getAttribute('aria-valuemax')),
+    );
+  });
 });

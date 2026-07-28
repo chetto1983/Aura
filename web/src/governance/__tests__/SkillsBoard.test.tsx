@@ -251,7 +251,7 @@ describe('SkillsBoard (GOV-02)', () => {
     renderBoard();
     await openDetail('golang-testing');
 
-    // Delete is NOT on the row: the only Delete control is the detail's.
+    // Delete is reachable from the detail; the row has its own (see the row test below).
     expect(screen.getAllByRole('button', { name: 'Delete' })).toHaveLength(1);
 
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
@@ -261,6 +261,28 @@ describe('SkillsBoard (GOV-02)', () => {
     // The confirm names the skill and offers the reversible alternative in the copy.
     expect(within(dialog).getByText('Delete “golang-testing”?')).toBeTruthy();
     expect(within(dialog).getByText(/archive it instead/)).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+    await waitFor(() => {
+      expect(deleteSkill).toHaveBeenCalledWith('golang-testing');
+    });
+  });
+
+  it('deletes from the row too, and still only behind the confirm', async () => {
+    deleteSkill.mockResolvedValue(undefined);
+    renderBoard();
+    await waitFor(() => {
+      expect(screen.getByText('golang-testing')).toBeTruthy();
+    });
+
+    const row = screen.getByText('golang-testing').closest('[role="listitem"]');
+    fireEvent.click(within(row as HTMLElement).getByRole('button', { name: 'Delete skill' }));
+
+    const dialog = await screen.findByRole('alertdialog');
+    // The row click opened the confirm and deleted nothing yet — the distance from the
+    // list was never the protection; the confirm is.
+    expect(deleteSkill).not.toHaveBeenCalled();
+    expect(within(dialog).getByText('Delete “golang-testing”?')).toBeTruthy();
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
     await waitFor(() => {

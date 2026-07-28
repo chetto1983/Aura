@@ -12,7 +12,7 @@ import { Drawer } from './shell/Drawer';
 import { MobileAppSidebar } from './shell/MobileAppSidebar';
 import { ShellHeader } from './shell/ShellHeader';
 import type { SurfaceIntent } from './shell/modes';
-import { LIVE_MODES, MODES, isAdminMode, visibleModes } from './shell/modes';
+import { MODES, isAdminMode, visibleModes } from './shell/modes';
 import { useEdgeSwipe } from './shell/useEdgeSwipe';
 import { useSurfaceIntent } from './shell/useSurfaceIntent';
 import { useSurfaceRestore } from './shell/useSurfaceRestore';
@@ -62,7 +62,7 @@ export function AppShell() {
   // is bounced back to chat once capabilities resolve (fail-closed while loading).
   const { isAdmin, isLoading: capabilitiesLoading, contextWindow } = useCapabilities();
   const desktopModes = visibleModes(MODES, isAdmin);
-  const liveModes = visibleModes(LIVE_MODES, isAdmin);
+  const liveModes = visibleModes(MODES, isAdmin);
   useEffect(() => {
     if (!capabilitiesLoading && !isAdmin && isAdminMode(surface)) {
       setSurface('chat');

@@ -160,6 +160,7 @@ export function SkillsBoard() {
         setCollisionName(undefined);
         restoreMutation.mutate(name);
       }}
+      onDelete={setPendingDelete}
       archivePending={archiveMutation.isPending}
       restorePending={restoreMutation.isPending}
       collisionName={collisionName}
