@@ -36,6 +36,7 @@ func NewLlmAgent(cfg LlmAgentConfig) *LlmAgent {
 		cfg:               cfg.LLM,
 		registry:          cfg.Registry,
 		activated:         deriveActivated(hist, cfg.Registry),
+		everLoaded:        deriveEverLoaded(hist, cfg.Registry),
 		previewCap:        cfg.PreviewCap,
 		runDir:            cfg.RunDir,
 		sessionID:         cfg.SessionID,

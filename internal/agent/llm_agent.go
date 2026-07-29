@@ -51,7 +51,18 @@ type LlmAgent struct {
 	// the loaded schema visible in the transcript across turns. Written only by
 	// promoteFromMeta in the serial dispatch result loop, and read by buildRequest and
 	// the dispatch gate.
-	activated  map[string]struct{}
+	activated map[string]struct{}
+	// everLoaded is every deferred tool whose schema has been READ in this conversation,
+	// with no expiry — a superset of activated, and deliberately NOT part of the manifest.
+	// It exists because the dispatch gate was asking the wrong question. "Is this tool in
+	// the manifest right now?" bounces a call the model made in good faith: the transcript
+	// still shows the schema it read three turns ago, so its arguments are grounded, but
+	// the grant had lapsed under the use-promotes rule. That cost a whole wasted LLM
+	// round trip every time the model looked up two tools and used one. The question worth
+	// asking is "are these arguments grounded in a schema the model actually saw?", and
+	// this set answers exactly that while activated keeps doing its own job of holding the
+	// manifest down.
+	everLoaded map[string]struct{}
 	previewCap int
 	runDir     string
 	sessionID  string

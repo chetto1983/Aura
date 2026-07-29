@@ -2,6 +2,7 @@ package conversations
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
@@ -55,6 +56,10 @@ var readToolOutputCallIDRe = regexp.MustCompile(`read_tool_output\(tool_call_id=
 // are retrievable via read_tool_output — the only case where L1 may rewrite a tool
 // turn to a pointer (M-01).
 const spillFooterMarker = "[output truncated:"
+
+// toolSearchName mirrors agent.searchTool. It is duplicated rather than imported because
+// internal/agent depends on this package, not the other way round.
+const toolSearchName = "tool_search"
 
 // ErrContextWindowExceeded is returned by ApplyContextLadder when the history is
 // still over the L2 hard cap after L1 (and L2.5 cannot reduce it — e.g. only the
@@ -351,10 +356,19 @@ func applyL1(turns []Turn, evictAfter int) []Turn {
 	}
 	maxSeq := out[len(out)-1].Seq
 	threshold := maxSeq - evictAfter
+	protected := toolSearchResultIDs(out)
 	for i := range out {
 		t := &out[i]
 		if t.Seq == 1 || t.Role != llm.RoleTool {
 			continue // never the system turn; only tool turns
+		}
+		if _, isSearch := protected[t.ToolCallID]; isSearch {
+			// A tool_search result is not an ordinary tool output: it is where the schema
+			// of a loaded deferred tool LIVES. Evicting it to a pointer takes away the
+			// arguments the model needs to call that tool — and the pointer it gets back
+			// says to page it via read_tool_output, which is itself a tool call. Cheaper
+			// and honest to keep it: these results are small (one spec) and few.
+			continue
 		}
 		if t.Seq < threshold && isSidecarBacked(*t) {
 			// Preserve the spill-id pointer minted by tools.NewResult; old rows that
@@ -364,6 +378,34 @@ func applyL1(turns []Turn, evictAfter int) []Turn {
 		}
 	}
 	return out
+}
+
+// toolSearchResultIDs returns the tool_call ids answered by a tool_search result, by
+// pairing each assistant turn's tool_calls with the RoleTool turn that carries the same id
+// — the same anchoring agent.deriveActivated uses, and for the same reason: matching on
+// result TEXT would let any tool mint an exemption by echoing a spec block.
+func toolSearchResultIDs(turns []Turn) map[string]struct{} {
+	ids := make(map[string]struct{})
+	for _, t := range turns {
+		if len(t.ToolCalls) == 0 {
+			continue
+		}
+		var calls []struct {
+			ID       string `json:"id"`
+			Function struct {
+				Name string `json:"name"`
+			} `json:"function"`
+		}
+		if err := json.Unmarshal(t.ToolCalls, &calls); err != nil {
+			continue
+		}
+		for _, c := range calls {
+			if c.Function.Name == toolSearchName {
+				ids[c.ID] = struct{}{}
+			}
+		}
+	}
+	return ids
 }
 
 // isSidecarBacked reports whether a RoleTool turn's full content is retrievable via
