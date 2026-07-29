@@ -29,15 +29,16 @@ func MountServer(processCtx, handshakeCtx context.Context, reg *tools.Registry, 
 // closer for the underlying transport. processCtx/handshakeCtx follow MountServer's
 // two-context contract (Pitfall #2).
 func MountManagedServer(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, server mcp.ManagedServer) (closer func() error, names []string, err error) {
+	policy := bridgePolicy{memory: mcp.IsSharedAdminGoverned(server)}
 	if isStreamableHTTPManagedServer(server) {
-		return mountManagedHTTP(processCtx, handshakeCtx, reg, name, server)
+		return mountManagedHTTP(processCtx, handshakeCtx, reg, name, server, policy)
 	}
 
 	cfg, err := managedStdioConfig(name, server)
 	if err != nil {
 		return nil, nil, err
 	}
-	return mountStdio(processCtx, handshakeCtx, reg, name, cfg)
+	return mountStdioWithPolicy(processCtx, handshakeCtx, reg, name, cfg, policy)
 }
 
 // mountManagedHTTP is the streamable-HTTP mirror of mountStdio: it opens the raw
@@ -50,7 +51,7 @@ func MountManagedServer(processCtx, handshakeCtx context.Context, reg *tools.Reg
 // An HTTP client has no subprocess, so the wrapper's open closure ignores
 // processCtx and re-opens via mcp.OpenServer bounded by handshakeCtx alone; the
 // parameter is kept for signature uniformity with mountStdio/openMCPClient.
-func mountManagedHTTP(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, server mcp.ManagedServer) (closer func() error, names []string, err error) {
+func mountManagedHTTP(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, server mcp.ManagedServer, policy bridgePolicy) (closer func() error, names []string, err error) {
 	srv, err := mcp.OpenServer(handshakeCtx, name, server)
 	if err != nil {
 		return nil, nil, err
@@ -65,7 +66,7 @@ func mountManagedHTTP(processCtx, handshakeCtx context.Context, reg *tools.Regis
 	wrapper.setOpen(func(_, handshakeCtx context.Context) (reconnectingClient, error) {
 		return mcp.OpenServer(handshakeCtx, name, server)
 	})
-	names, err = MountWithDefs(reg, name, wrapper, defs)
+	names, err = mountWithDefsPolicy(reg, name, wrapper, defs, policy)
 	if err != nil {
 		_ = wrapper.Close()
 		return nil, nil, fmt.Errorf("mount %q: %w", name, err)
@@ -83,6 +84,10 @@ func mountManagedHTTP(processCtx, handshakeCtx context.Context, reg *tools.Regis
 // tools' Server, so every CALL after a successful mount gets the normal
 // reconnect-on-transport-error behavior.
 func mountStdio(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, cfg mcp.ServerConfig) (closer func() error, names []string, err error) {
+	return mountStdioWithPolicy(processCtx, handshakeCtx, reg, name, cfg, defaultBridgePolicy(name))
+}
+
+func mountStdioWithPolicy(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, cfg mcp.ServerConfig, policy bridgePolicy) (closer func() error, names []string, err error) {
 	cli, err := mcp.OpenWithHandshakeContext(processCtx, handshakeCtx, name, cfg)
 	if err != nil {
 		return nil, nil, err
@@ -94,7 +99,7 @@ func mountStdio(processCtx, handshakeCtx context.Context, reg *tools.Registry, n
 	}
 	srv := newReconnectingServer(name, cfg, cli)
 	srv.setProcessContext(processCtx)
-	names, err = MountWithDefs(reg, name, srv, defs)
+	names, err = mountWithDefsPolicy(reg, name, srv, defs, policy)
 	if err != nil {
 		_ = srv.Close()
 		return nil, nil, fmt.Errorf("mount %q: %w", name, err)

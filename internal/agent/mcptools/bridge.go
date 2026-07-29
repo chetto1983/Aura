@@ -15,7 +15,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
-	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/mcp"
 	"github.com/chetto1983/aura/internal/obs"
 )
@@ -51,6 +50,7 @@ type bridgedTool struct {
 	srv         Server
 	name        string
 	callTimeout time.Duration
+	policy      bridgePolicy
 	spec        atomic.Value
 }
 
@@ -68,7 +68,7 @@ func (b *bridgedTool) refreshSpec(d mcp.ToolDef) {
 	spec.Summary = summary
 	spec.Description = description
 	spec.Parameters = params
-	spec.Deferred = defaultDeferredForNamespace(namespaceFromSpecName(spec.Name))
+	spec.Deferred = b.policy.defaultDeferred()
 	spec.Mutating = !d.Annotations.ReadOnlyHint
 	applyMCPOperationMetadata(&spec)
 	if oldMutating != spec.Mutating {
@@ -120,50 +120,6 @@ func (b *bridgedTool) Execute(ctx context.Context, raw json.RawMessage) (tools.T
 	return b.newUntrustedResult(ctx, text)
 }
 
-func (b *bridgedTool) withMemoryUserIdentifier(ctx context.Context, args map[string]any) map[string]any {
-	spec := b.Spec()
-	if namespaceFromSpecName(spec.Name) != "memory" || !acceptsUserIdentifier(spec.Parameters) {
-		return args
-	}
-	// The memory server is fail-OPEN: a tool call with no user_identifier runs its
-	// unscoped/global query and returns EVERY tenant's memory. So a no-principal call
-	// (CLI, unauthenticated path) must NOT be forwarded bare — fall back to the seeded
-	// local operator identity so the call is always tenant-scoped. This mirrors the
-	// document-ingest convention (documents.OperatorIdentity), keeping the operator's
-	// memory and documents under one :User.identifier and closing the fail-open gap.
-	identityID := identityctx.IdentityID(ctx)
-	if identityID == "" {
-		identityID = identityctx.LocalOperatorIdentity
-	}
-	if args == nil {
-		args = make(map[string]any, 1)
-	}
-	args["user_identifier"] = identityID
-	return args
-}
-
-// acceptsUserIdentifier reads the answer off the tool's OWN advertised schema instead of a
-// hand-kept name list. The list silently omitted memory_update when that verb shipped, so the
-// sidecar received user_identifier=null and answered "not found or not owned by this user" —
-// on the operator's own entity, which they own by a direct HAS_ENTITY edge (observed live
-// 2026-07-25: every update the agent attempted was refused, and it fell back to add_*, which
-// duplicates instead of correcting). A list that must be edited in a second repo whenever a
-// verb is added is a list that will be forgotten again; the schema cannot drift from the tool.
-//
-// An absent or unparseable schema injects ANYWAY: the memory server is fail-OPEN, so an
-// unscoped call returns every tenant's memory. Between "reject an argument the tool may not
-// take" and "leak another user's memory", the safe default is to scope.
-func acceptsUserIdentifier(parameters json.RawMessage) bool {
-	var schema struct {
-		Properties map[string]json.RawMessage `json:"properties"`
-	}
-	if err := json.Unmarshal(parameters, &schema); err != nil || schema.Properties == nil {
-		return true
-	}
-	_, ok := schema.Properties["user_identifier"]
-	return ok
-}
-
 func (b *bridgedTool) newUntrustedResult(ctx context.Context, text string) (tools.ToolResult, error) {
 	res, err := tools.NewResult(ctx, text)
 	if err != nil {
@@ -209,11 +165,15 @@ func Bridge(ctx context.Context, namespace string, srv Server) ([]tools.Tool, er
 // srv (the reconnecting wrapper) for every CALL after mount, so runtime
 // reconnect-on-transport-error is unaffected.
 func bridgeFromDefs(namespace string, srv Server, defs []mcp.ToolDef) ([]tools.Tool, error) {
+	return bridgeFromDefsWithPolicy(namespace, srv, defs, defaultBridgePolicy(namespace))
+}
+
+func bridgeFromDefsWithPolicy(namespace string, srv Server, defs []mcp.ToolDef, policy bridgePolicy) ([]tools.Tool, error) {
 	callTimeout, err := configuredMCPCallTimeout()
 	if err != nil {
 		return nil, err
 	}
-	bridged := bridgeTools(namespace, srv, defs, callTimeout)
+	bridged := bridgeToolsWithPolicy(namespace, srv, defs, callTimeout, policy)
 	if tracker, ok := srv.(interface{ trackBridgedTools([]tools.Tool) }); ok {
 		tracker.trackBridgedTools(bridged)
 	}
@@ -221,70 +181,34 @@ func bridgeFromDefs(namespace string, srv Server, defs []mcp.ToolDef) ([]tools.T
 }
 
 func bridgeTools(namespace string, srv Server, defs []mcp.ToolDef, callTimeout time.Duration) []tools.Tool {
+	return bridgeToolsWithPolicy(namespace, srv, defs, callTimeout, defaultBridgePolicy(namespace))
+}
+
+func bridgeToolsWithPolicy(namespace string, srv Server, defs []mcp.ToolDef, callTimeout time.Duration, policy bridgePolicy) []tools.Tool {
 	out := make([]tools.Tool, 0, len(defs))
 	for _, d := range defs {
-		if !modelFacing(namespace, d.Name) {
+		if !policy.modelFacing(d.Name) {
 			continue
 		}
-		bt := &bridgedTool{srv: srv, name: d.Name, callTimeout: callTimeout}
-		bt.storeSpec(specFromToolDef(namespace, d))
+		bt := &bridgedTool{srv: srv, name: d.Name, callTimeout: callTimeout, policy: policy}
+		bt.storeSpec(specFromToolDefWithPolicy(namespace, d, policy))
 		out = append(out, bt)
 	}
 	return out
 }
 
-// hiddenFromModel lists MCP tools Aura mounts but does NOT put in front of the model,
-// per namespace.
-//
-// An MCP server has two consumers here and they want different surfaces. Aura's own Go
-// code calls tools directly through mcp.Transport.CallTool — onboarding writes the
-// profile, reads its status back, the recall path assembles context, `aura memory`
-// drives the CLI — and those calls never touch this registry. The model's surface is
-// built HERE. Deleting a tool server-side to slim the model's menu therefore breaks the
-// host instead: doing exactly that took onboarding down on 2026-07-28 with
-// "Unknown tool: memory_get_facts". Hide, never remove.
-//
-// The memory server is mounted as LONG-TERM memory. What the model gets is one verb per
-// intention — write deliberately (add_fact, add_preference), read (search, get_entity),
-// correct (update, forget). The rest stays reachable for Aura and invisible to the model:
-//
-//   - the short-term half (store_message, get_context, get_conversation, list_sessions):
-//     Aura already owns the conversation in Postgres, and the memory server keeps a
-//     single global session, so its "history" mixes unrelated conversations.
-//   - add_entity and create_relationship: entities and edges follow from what is
-//     written, they are not something the model should assert directly — and add_entity
-//     is the path whose resolver produced the wrong canonical names in the live graph.
-//   - get_facts: subsumed by search's facts bucket, which does the same exact-subject
-//     lookup and falls back to semantic.
-var hiddenFromModel = map[string]map[string]struct{}{
-	"memory": {
-		"memory_store_message":       {},
-		"memory_get_context":         {},
-		"memory_get_conversation":    {},
-		"memory_list_sessions":       {},
-		"memory_add_entity":          {},
-		"memory_create_relationship": {},
-		"memory_get_facts":           {},
-	},
-}
-
-func modelFacing(namespace, tool string) bool {
-	hidden, ok := hiddenFromModel[namespace]
-	if !ok {
-		return true
-	}
-	_, blocked := hidden[tool]
-	return !blocked
-}
-
 func specFromToolDef(namespace string, d mcp.ToolDef) tools.Spec {
+	return specFromToolDefWithPolicy(namespace, d, defaultBridgePolicy(namespace))
+}
+
+func specFromToolDefWithPolicy(namespace string, d mcp.ToolDef, policy bridgePolicy) tools.Spec {
 	params, summary, description := specFieldsFromToolDef(d)
 	spec := tools.Spec{
 		Name:        namespacedName(namespace, d.Name),
 		Summary:     summary,
 		Description: description,
 		Parameters:  params,
-		Deferred:    defaultDeferredForNamespace(namespace),
+		Deferred:    policy.defaultDeferred(),
 		Mutating:    !d.Annotations.ReadOnlyHint,
 	}
 	applyMCPOperationMetadata(&spec)
@@ -304,7 +228,7 @@ func applyMCPOperationMetadata(spec *tools.Spec) {
 }
 
 func defaultDeferredForNamespace(namespace string) bool {
-	return namespace != "memory"
+	return defaultBridgePolicy(namespace).defaultDeferred()
 }
 
 func namespaceFromSpecName(name string) string {
@@ -483,6 +407,14 @@ func Mount(ctx context.Context, reg *tools.Registry, namespace string, srv Serve
 // bounded handshake ctx — see bridgeFromDefs for why that ordering matters.
 func MountWithDefs(reg *tools.Registry, namespace string, srv Server, defs []mcp.ToolDef) ([]string, error) {
 	bridged, err := bridgeFromDefs(namespace, srv, defs)
+	if err != nil {
+		return nil, err
+	}
+	return finishMount(reg, srv, bridged)
+}
+
+func mountWithDefsPolicy(reg *tools.Registry, namespace string, srv Server, defs []mcp.ToolDef, policy bridgePolicy) ([]string, error) {
+	bridged, err := bridgeFromDefsWithPolicy(namespace, srv, defs, policy)
 	if err != nil {
 		return nil, err
 	}

@@ -118,6 +118,9 @@ func LoadManagedConfig(path string) (ManagedConfig, error) {
 		return ManagedConfig{}, fmt.Errorf("parse %s: %w", path, err)
 	}
 	normalizeManagedConfig(&doc)
+	if err := validateManagedServers(doc.MCPServers); err != nil {
+		return ManagedConfig{}, err
+	}
 	return doc, nil
 }
 
@@ -252,6 +255,7 @@ func normalizeManagedConfig(doc *ManagedConfig) {
 // type, or an explicit type<->trust mismatch) fails validation with Classify's
 // own error, so it can never be saved and never reaches OpenServer.
 func validateManagedServers(in map[string]ManagedServer) error {
+	memoryName := ""
 	for name, cfg := range in {
 		if strings.TrimSpace(name) == "" {
 			return fmt.Errorf("MCP managed config: server name cannot be empty")
@@ -285,6 +289,12 @@ func validateManagedServers(in map[string]ManagedServer) error {
 		}
 		if cfg.Trust.Class != "" && !isKnownTrust(cfg.Trust.Class) {
 			return fmt.Errorf("MCP managed config: server %q has unknown trust class %q", name, cfg.Trust.Class)
+		}
+		if IsSharedAdminGoverned(cfg) {
+			if memoryName != "" {
+				return fmt.Errorf("MCP managed config: duplicate memory recipe sources %q and %q", memoryName, name)
+			}
+			memoryName = name
 		}
 	}
 	return nil
