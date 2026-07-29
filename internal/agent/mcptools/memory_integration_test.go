@@ -18,6 +18,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -183,6 +184,81 @@ func TestMemoryLiveStoresOnboardingProfileInOneHostCall(t *testing.T) {
 		if !strings.Contains(facts, `"fact_count": 1`) {
 			t.Fatalf("profile fact %q was not committed: %s", factSubject, facts)
 		}
+	}
+}
+
+func TestMemoryLiveProfileRejectionIsTypedAndHasNoEffect(t *testing.T) {
+	endpoint := memoryEndpointOrGate(t)
+	reapIdleHTTPConns(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+
+	cli, err := mcp.OpenServer(ctx, "memory-profile-rejection-probe", liveMemoryServer(endpoint))
+	if err != nil {
+		t.Fatalf("open streamable-http memory MCP at %s: %v", endpoint, err)
+	}
+	defer func() { _ = cli.Close() }()
+
+	uid := fmt.Sprintf("rejected-profile-%d", time.Now().UnixNano())
+	subject := "Rejected Profile Subject " + uid
+	_, err = cli.CallTool(ctx, "memory_store_profile", map[string]any{
+		"entities": []map[string]any{{
+			"name": "Rejected Profile Entity " + uid, "entity_type": "PERSON",
+		}},
+		"facts": []map[string]any{{
+			"subject": subject, "predicate": "has_marker", "object_value": "must-not-exist",
+		}},
+		"preferences":          []map[string]any{},
+		"completion_predicate": "unsupported_completion",
+		"completion_value":     time.Now().UTC().Format(time.RFC3339Nano),
+		"user_identifier":      uid,
+	})
+	var toolErr *mcp.ToolCallError
+	if !errors.As(err, &toolErr) {
+		t.Fatalf("memory_store_profile error = %T %v, want *mcp.ToolCallError", err, err)
+	}
+	if toolErr.Outcome != mcp.ToolOutcomeRejected || toolErr.Effect != mcp.ToolEffectNone {
+		t.Fatalf("memory_store_profile outcome/effect = %s/%s, want rejected/none", toolErr.Outcome, toolErr.Effect)
+	}
+	if toolErr.Code != "tool_rejected" {
+		t.Fatalf("memory_store_profile code = %q, want tool_rejected", toolErr.Code)
+	}
+
+	facts, err := cli.CallTool(ctx, "memory_get_facts", map[string]any{
+		"subject": subject, "user_identifier": uid,
+	})
+	if err != nil {
+		t.Fatalf("memory_get_facts after rejection: %v", err)
+	}
+	if !strings.Contains(facts, `"fact_count": 0`) || strings.Contains(facts, "must-not-exist") {
+		t.Fatalf("rejected profile had a graph effect: %s", facts)
+	}
+}
+
+func TestMemoryLiveLegacyErrorCannotBecomeSuccess(t *testing.T) {
+	endpoint := memoryEndpointOrGate(t)
+	reapIdleHTTPConns(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+
+	cli, err := mcp.OpenServer(ctx, "memory-legacy-error-probe", liveMemoryServer(endpoint))
+	if err != nil {
+		t.Fatalf("open streamable-http memory MCP at %s: %v", endpoint, err)
+	}
+	defer func() { _ = cli.Close() }()
+
+	_, err = cli.CallTool(ctx, "memory_get_facts", map[string]any{
+		"user_identifier": fmt.Sprintf("legacy-error-%d", time.Now().UnixNano()),
+	})
+	var toolErr *mcp.ToolCallError
+	if !errors.As(err, &toolErr) {
+		t.Fatalf("memory_get_facts error = %T %v, want *mcp.ToolCallError", err, err)
+	}
+	if toolErr.Outcome != mcp.ToolOutcomeError || toolErr.Effect != mcp.ToolEffectUnknown {
+		t.Fatalf("memory_get_facts outcome/effect = %s/%s, want error/unknown", toolErr.Outcome, toolErr.Effect)
+	}
+	if toolErr.Code != "memory_operation_failed" {
+		t.Fatalf("memory_get_facts code = %q, want memory_operation_failed", toolErr.Code)
 	}
 }
 

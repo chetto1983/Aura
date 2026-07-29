@@ -44,6 +44,10 @@ type operationRegistry interface {
 	) error
 }
 
+type rejectionRegistry interface {
+	MarkRejected(context.Context, idempotency.RejectRequest) error
+}
+
 // Decision is the gateway's verdict on a single tool dispatch.
 type Decision string
 
@@ -88,6 +92,9 @@ type Verdict struct {
 	OperationDecision idempotency.Decision
 	// OperationClaimToken fences terminal writes to the acquired generation.
 	OperationClaimToken idempotency.ClaimToken
+	// OperationRejection is non-nil when a prior deterministic no-effect
+	// failure is replayed. It is returned as an error, never as ToolResult.
+	OperationRejection *idempotency.ReplayResult
 }
 
 // ReservationKey is the ledger triple the decision-fact is keyed on. It is ALWAYS
@@ -106,6 +113,18 @@ type ReservationKey struct {
 type ErrDenied struct {
 	Reason string
 	Tier   scoring.RiskTier
+}
+
+// ErrOperationRejected is the replay of a terminal domain rejection.
+type ErrOperationRejected struct {
+	Reason string
+}
+
+func (e *ErrOperationRejected) Error() string {
+	if e == nil || e.Reason == "" {
+		return "operation was rejected"
+	}
+	return "operation was rejected: " + e.Reason
 }
 
 // Error renders the denial as a control-plane string the model sees as a tool error.

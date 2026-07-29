@@ -12,6 +12,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/idempotency"
+	"github.com/chetto1983/aura/internal/mcp"
 )
 
 // Tool-execution retry seam (parity item P2 — the "error hook"). A non-mutating
@@ -107,6 +108,13 @@ func (a *LlmAgent) execTool(ctx context.Context, tool tools.Tool, mutating bool,
 			}
 			ctx = claimedCtx
 		}
+		if verdict.OperationDecision == idempotency.DecisionRejected {
+			reason := verdict.Reason
+			if verdict.OperationRejection != nil && verdict.OperationRejection.Preview != "" {
+				reason = verdict.OperationRejection.Preview
+			}
+			return tools.ToolResult{}, &gateway.ErrOperationRejected{Reason: reason}
+		}
 		switch verdict.Decision {
 		case gateway.Deny:
 			denied := &gateway.ErrDenied{Reason: verdict.Reason, Tier: verdict.Tier}
@@ -148,6 +156,10 @@ func (a *LlmAgent) execTool(ctx context.Context, tool tools.Tool, mutating bool,
 			bctx, cancel := bookkeepingCtx(ctx)
 			defer cancel()
 			if err != nil {
+				var toolCallErr *mcp.ToolCallError
+				if errors.As(err, &toolCallErr) && toolCallErr.DeterministicNoEffect() {
+					return res, errors.Join(err, a.gateway.RejectOperation(bctx, toolCallErr))
+				}
 				return res, errors.Join(err, a.gateway.MarkOperationIndeterminate(bctx))
 			}
 			if completeErr := a.gateway.CompleteOperation(bctx, res); completeErr != nil {

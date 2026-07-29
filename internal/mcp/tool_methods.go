@@ -47,7 +47,7 @@ func callToolWith(ctx context.Context, serverName, toolName string, args map[str
 		return "", fmt.Errorf("mcp %q: call %s: %w", serverName, toolName, derr)
 	}
 	if isErr {
-		return "", fmt.Errorf("mcp %q: tool %s reported error: %s", serverName, toolName, text)
+		return "", decodeToolCallError(serverName, toolName, text)
 	}
 	return text, nil
 }

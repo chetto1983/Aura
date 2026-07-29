@@ -67,7 +67,8 @@ SELECT
     created_at,
     updated_at,
     completed_at,
-    indeterminate_at
+    indeterminate_at,
+    rejected_at
 FROM aura.idempotency_operations
 WHERE identity_id = sqlc.arg(identity_id)
   AND operation_scope = sqlc.arg(operation_scope)
@@ -123,6 +124,27 @@ WHERE identity_id = sqlc.arg(identity_id)
   AND payload_hash = sqlc.arg(payload_hash)
   AND version = sqlc.arg(claim_token);
 
+-- name: MarkOperationRejected :execrows
+UPDATE aura.idempotency_operations
+SET state = 'rejected',
+    replay_body = sqlc.narg(replay_body),
+    replay_preview = sqlc.narg(replay_preview),
+    replay_sidecar_ref = NULL,
+    replay_status_code = NULL,
+    replay_headers = NULL,
+    replay_cleared_at = NULL,
+    replay_bytes = sqlc.arg(replay_bytes),
+    replay_expires_at = sqlc.arg(replay_expires_at),
+    rejected_at = sqlc.arg(now),
+    updated_at = sqlc.arg(now),
+    version = version + 1
+WHERE identity_id = sqlc.arg(identity_id)
+  AND operation_scope = sqlc.arg(operation_scope)
+  AND operation_key = sqlc.arg(operation_key)
+  AND state = 'in_progress'
+  AND payload_hash = sqlc.arg(payload_hash)
+  AND version = sqlc.arg(claim_token);
+
 -- name: ListExpiredReplayBodies :many
 SELECT
     identity_id,
@@ -131,7 +153,7 @@ SELECT
     replay_bytes,
     replay_expires_at
 FROM aura.idempotency_operations
-WHERE state = 'completed'
+WHERE state IN ('completed', 'rejected')
   AND replay_expires_at <= sqlc.arg(before)
   AND (replay_body IS NOT NULL OR replay_preview IS NOT NULL OR replay_sidecar_ref IS NOT NULL
        OR replay_status_code IS NOT NULL OR replay_headers IS NOT NULL)
@@ -152,7 +174,7 @@ SET replay_body = NULL,
 WHERE identity_id = sqlc.arg(identity_id)
   AND operation_scope = sqlc.arg(operation_scope)
   AND operation_key = sqlc.arg(operation_key)
-  AND state = 'completed'
+  AND state IN ('completed', 'rejected')
   AND replay_expires_at <= sqlc.arg(before)
   AND (replay_body IS NOT NULL OR replay_preview IS NOT NULL OR replay_sidecar_ref IS NOT NULL
        OR replay_status_code IS NOT NULL OR replay_headers IS NOT NULL);

@@ -187,6 +187,8 @@ func TestOperationBeginDecisionValidation(t *testing.T) {
 		{Decision: DecisionReplay, Replay: &replay},
 		{Decision: DecisionInProgress, RetryAfter: time.Second},
 		{Decision: DecisionIndeterminate},
+		{Decision: DecisionRejected},
+		{Decision: DecisionRejected, Replay: &replay},
 		{Decision: DecisionConflict},
 		{Decision: DecisionResultExpired},
 	}
@@ -227,6 +229,9 @@ func TestOperationRequestsValidateNestedContracts(t *testing.T) {
 	}
 	if err := (CompleteRequest{Operation: key, Fingerprint: fingerprint, ClaimToken: ClaimToken(1), Result: replay}).Validate(); err != nil {
 		t.Fatalf("valid CompleteRequest: %v", err)
+	}
+	if err := (RejectRequest{Operation: key, Fingerprint: fingerprint, ClaimToken: ClaimToken(1), Result: replay}).Validate(); err != nil {
+		t.Fatalf("valid RejectRequest: %v", err)
 	}
 
 	if err := (BeginRequest{Operation: key}).Validate(); err == nil {

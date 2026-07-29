@@ -191,8 +191,7 @@ func TestMountManagedServer_HTTPBranchInfersFromBareURL(t *testing.T) {
 // connection mid-request — a genuine ErrTransport-classified failure (client.Do
 // itself errors), not a JSON-RPC application error. The mounted tool is
 // mutating, so the first Execute surfaces the existing no-replay transport
-// error inline (mirroring TestReconnectServerSecondTransportFailureIsInlineToolError's
-// stdio-side contract byte-for-byte); a SECOND, independent Execute is then
+// error through Execute; a SECOND, independent Execute is then
 // served by the reconnected client, proving mountManagedHTTP's setOpen closure
 // (mcp.OpenServer re-dialing the same URL) actually replaced the dead transport
 // instead of the tools staying dead until reboot (the residual gap this task
@@ -267,12 +266,9 @@ func TestMountManagedServer_HTTPBranchReconnectsOnUse(t *testing.T) {
 	}
 
 	ctx := tools.WithToolCallContext(context.Background(), "sess", "call-1", t.TempDir(), 2048)
-	res, err := tool.Execute(ctx, json.RawMessage(`{}`))
-	if err != nil {
-		t.Fatalf("first Execute (transport failure) must surface as inline content, got Go error %v", err)
-	}
-	if !strings.Contains(res.Preview, "not replayed") {
-		t.Fatalf("first Execute preview = %q, want inline no-replay transport failure", res.Preview)
+	_, err = tool.Execute(ctx, json.RawMessage(`{}`))
+	if err == nil || !strings.Contains(err.Error(), "not replayed") {
+		t.Fatalf("first Execute = %v, want propagated no-replay transport failure", err)
 	}
 	if got := initCount.Load(); got != 2 {
 		t.Fatalf("want exactly 2 initialize round-trips (initial mount + one reconnect), got %d", got)

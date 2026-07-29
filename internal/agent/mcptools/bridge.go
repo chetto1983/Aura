@@ -88,10 +88,9 @@ func (b *bridgedTool) refreshSpec(d mcp.ToolDef) {
 	b.spec.Store(spec)
 }
 
-// Execute unmarshals the model's args, calls the MCP tool, and threads the text
-// content through tools.NewResult. A tool-level failure is returned to the model
-// as inline `error: ...` content so it self-corrects, not as a loop-fatal Go
-// error; only a missing tool-call context propagates as a Go error.
+// Execute unmarshals the model's args, calls the MCP tool, and threads successful
+// text through tools.NewResult. MCP isError=true remains a Go error so the agent
+// loop can render an error observation without completing idempotency as success.
 func (b *bridgedTool) Execute(ctx context.Context, raw json.RawMessage) (tools.ToolResult, error) {
 	ctx, end := mcpBridgeBoundary.Start(ctx)
 	var observeErr error
@@ -115,7 +114,7 @@ func (b *bridgedTool) Execute(ctx context.Context, raw json.RawMessage) (tools.T
 	text, err := b.srv.CallTool(callCtx, b.name, args)
 	if err != nil {
 		observeErr = err
-		return b.newUntrustedResult(ctx, capMCPErrorContent(err))
+		return tools.ToolResult{}, boundedMCPError(err)
 	}
 	return b.newUntrustedResult(ctx, text)
 }
@@ -323,6 +322,24 @@ func capMCPErrorContent(err error) string {
 	}
 	limit := max(maxMCPErrorPreviewBytes-len(mcpErrorTruncated), 0)
 	return truncateUTF8Bytes(text, limit) + mcpErrorTruncated
+}
+
+type boundedBridgeError struct {
+	cause   error
+	message string
+}
+
+func (e *boundedBridgeError) Error() string { return e.message }
+func (e *boundedBridgeError) Unwrap() error { return e.cause }
+
+func boundedMCPError(err error) error {
+	if err == nil {
+		return nil
+	}
+	text := capMCPErrorContent(err)
+	return &boundedBridgeError{
+		cause: err, message: strings.TrimPrefix(text, "error: "),
+	}
 }
 
 func frameMCPSummary(raw string, params json.RawMessage) string {

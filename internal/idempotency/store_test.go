@@ -22,6 +22,7 @@ type fakeOperationQueries struct {
 	get           getOperationQuery
 	complete      completeOperationQuery
 	indeterminate markIndeterminateQuery
+	rejected      markRejectedQuery
 	listExpired   listExpiredQuery
 	clearExpired  clearExpiredQuery
 }
@@ -31,6 +32,7 @@ type recoverExpiredOperationQuery func(context.Context, sqlc.TryRecoverExpiredOp
 type getOperationQuery func(context.Context, sqlc.GetOperationParams) (sqlc.GetOperationRow, error)
 type completeOperationQuery func(context.Context, sqlc.CompleteOperationParams) (int64, error)
 type markIndeterminateQuery func(context.Context, sqlc.MarkOperationIndeterminateParams) (int64, error)
+type markRejectedQuery func(context.Context, sqlc.MarkOperationRejectedParams) (int64, error)
 type listExpiredQuery func(context.Context, sqlc.ListExpiredReplayBodiesParams) ([]sqlc.ListExpiredReplayBodiesRow, error)
 type clearExpiredQuery func(context.Context, sqlc.ClearExpiredReplayBodyParams) (int64, error)
 
@@ -70,6 +72,13 @@ func (f *fakeOperationQueries) MarkOperationIndeterminate(ctx context.Context, a
 		return 0, errors.New("unexpected MarkOperationIndeterminate")
 	}
 	return f.indeterminate(ctx, arg)
+}
+
+func (f *fakeOperationQueries) MarkOperationRejected(ctx context.Context, arg sqlc.MarkOperationRejectedParams) (int64, error) {
+	if f.rejected == nil {
+		return 0, errors.New("unexpected MarkOperationRejected")
+	}
+	return f.rejected(ctx, arg)
 }
 
 func (f *fakeOperationQueries) ListExpiredReplayBodies(ctx context.Context, arg sqlc.ListExpiredReplayBodiesParams) ([]sqlc.ListExpiredReplayBodiesRow, error) {
@@ -146,6 +155,8 @@ func TestStoreBeginExistingOperationDecisions(t *testing.T) {
 		}(), want: DecisionResultExpired},
 		{name: "fresh in progress", row: testRow(req, StateInProgress, now.Add(17*time.Second), time.Time{}), want: DecisionInProgress, wantRetry: 17 * time.Second},
 		{name: "terminal indeterminate", row: testRow(req, StateIndeterminate, now, time.Time{}), want: DecisionIndeterminate},
+		{name: "terminal rejected replay", row: testRow(req, StateRejected, now, expires), want: DecisionRejected, wantReplay: true},
+		{name: "terminal rejected expired", row: testRow(req, StateRejected, now, now), want: DecisionRejected},
 		{name: "different fingerprint conflicts", row: func() sqlc.GetOperationRow {
 			row := testRow(req, StateInProgress, now, time.Time{})
 			row.PayloadHash[0] ^= 0xff
@@ -291,6 +302,13 @@ func TestStoreTerminalTransitionsAreConditional(t *testing.T) {
 			}
 			return 0, nil
 		},
+		rejected: func(_ context.Context, arg sqlc.MarkOperationRejectedParams) (int64, error) {
+			if arg.ClaimToken != 9 || !bytes.Equal(arg.PayloadHash, req.Fingerprint[:]) ||
+				arg.ReplayBytes == 0 {
+				t.Fatal("rejected transition omitted replay, fingerprint, or claim token")
+			}
+			return 1, nil
+		},
 	}
 	store := newStore(queries, Config{Now: func() time.Time { return now }})
 	if err := store.Complete(context.Background(), CompleteRequest{
@@ -303,6 +321,12 @@ func TestStoreTerminalTransitionsAreConditional(t *testing.T) {
 		context.Background(), req.Operation, req.Fingerprint, ClaimToken(9),
 	); !errors.Is(err, ErrStaleTransition) {
 		t.Fatalf("MarkIndeterminate error=%v, want stale transition", err)
+	}
+	if err := store.MarkRejected(context.Background(), RejectRequest{
+		Operation: req.Operation, Fingerprint: req.Fingerprint,
+		ClaimToken: ClaimToken(9), Result: result,
+	}); err != nil {
+		t.Fatalf("MarkRejected: %v", err)
 	}
 }
 
@@ -323,6 +347,9 @@ func TestStoreRejectsInvalidInputBeforePersistence(t *testing.T) {
 	}
 	if err := store.MarkIndeterminate(context.Background(), OperationKey{}, [32]byte{}, 0); err == nil {
 		t.Fatal("MarkIndeterminate accepted invalid request")
+	}
+	if err := store.MarkRejected(context.Background(), RejectRequest{}); err == nil {
+		t.Fatal("MarkRejected accepted invalid request")
 	}
 }
 
@@ -379,7 +406,7 @@ func testRow(req BeginRequest, state State, retry, expires time.Time) sqlc.GetOp
 		PayloadHash: append([]byte(nil), req.Fingerprint[:]...), State: string(state),
 		RetryAfter: pgtype.Timestamptz{Time: retry, Valid: !retry.IsZero()},
 	}
-	if state == StateCompleted {
+	if state == StateCompleted || state == StateRejected {
 		row.ReplayBody = []byte(`{"ok":true}`)
 		row.ReplayPreview = pgtype.Text{String: "ok", Valid: true}
 		row.ReplaySidecarRef = pgtype.Text{String: "replays/one", Valid: true}

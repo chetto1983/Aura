@@ -537,6 +537,8 @@ type AuraIdempotencyOperations struct {
 	ReplayHeaders       []byte             `json:"replay_headers"`
 	// Terminal marker distinguishing expired replay material from a valid completed response.
 	ReplayClearedAt pgtype.Timestamptz `json:"replay_cleared_at"`
+	// Terminal time for a deterministic no-effect domain rejection; unlike indeterminate, it is safely replayed as an error.
+	RejectedAt pgtype.Timestamptz `json:"rejected_at"`
 }
 
 // Identity scaffolding (Slice 1.7). Single-user: one seeded `local`/system row with the fixed UUID ...001.

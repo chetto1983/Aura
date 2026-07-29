@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from neo4j_agent_memory.integration import MemoryIntegration
+from neo4j_agent_memory.memory.atomic import AtomicMutationError
 
 
 class _Graph:
@@ -109,25 +110,20 @@ def test_add_and_delete_facades_cover_success_absence_and_error():
     long_term.delete_preference = _raise_async
     long_term.delete_fact = _raise_async
     long_term.delete_entity = _raise_async
-    assert "error" in asyncio.run(integration.add_entity("Davide", "PERSON"))
-    assert "error" in asyncio.run(integration.add_preference("food", "pasta"))
-    assert "error" in asyncio.run(integration.add_fact("Aura", "is", "ready"))
-    assert "error" in asyncio.run(
-        integration.delete_preference("preference-1", user_identifier="owner")
-    )
-    assert "error" in asyncio.run(
-        integration.delete_fact("fact-1", user_identifier="owner")
-    )
-    assert "error" in asyncio.run(
-        integration.delete_entity("entity-1", user_identifier="owner")
-    )
-    assert "error" in asyncio.run(
-        integration.update_preference("preference-1", user_identifier="owner")
-    )
-    assert "error" in asyncio.run(integration.update_fact("fact-1", user_identifier="owner"))
-    assert "error" in asyncio.run(
-        integration.update_entity("entity-1", user_identifier="owner")
-    )
+    failures = [
+        lambda: integration.add_entity("Davide", "PERSON"),
+        lambda: integration.add_preference("food", "pasta"),
+        lambda: integration.add_fact("Aura", "is", "ready"),
+        lambda: integration.delete_preference("preference-1", user_identifier="owner"),
+        lambda: integration.delete_fact("fact-1", user_identifier="owner"),
+        lambda: integration.delete_entity("entity-1", user_identifier="owner"),
+        lambda: integration.update_preference("preference-1", user_identifier="owner"),
+        lambda: integration.update_fact("fact-1", user_identifier="owner"),
+        lambda: integration.update_entity("entity-1", user_identifier="owner"),
+    ]
+    for failure in failures:
+        with pytest.raises(AtomicMutationError, match="memory mutation failed"):
+            asyncio.run(failure())
 
 
 def test_entity_enrichment_is_deferred_until_after_the_atomic_write():

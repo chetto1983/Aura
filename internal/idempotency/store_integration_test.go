@@ -98,6 +98,45 @@ func TestStorePostgresContract(t *testing.T) {
 		}
 	})
 
+	t.Run("rejected replay is terminal and preserves the typed error", func(t *testing.T) {
+		req := integrationRequest(t, localIdentityID, "rejected-"+uuid.NewString())
+		claimToken := mustAcquire(t, ctx, store, req)
+		result := ReplayResult{
+			Body:    []byte(`{"outcome":"rejected","code":"invalid_argument","message":"subject is required","effect":"none"}`),
+			Preview: "subject is required", ExpiresAt: now.Add(time.Hour),
+		}
+		if err := store.MarkRejected(ctx, RejectRequest{
+			Operation: req.Operation, Fingerprint: req.Fingerprint,
+			ClaimToken: claimToken, Result: result,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		rejected, err := store.Begin(ctx, req)
+		if err != nil || rejected.Decision != DecisionRejected ||
+			rejected.Replay == nil || !sameJSON(rejected.Replay.Body, result.Body) {
+			t.Fatalf("rejected replay=%+v err=%v", rejected, err)
+		}
+		var state string
+		var rejectedAt bool
+		if err := app.QueryRow(ctx, `
+			SELECT state, rejected_at IS NOT NULL
+			FROM aura.idempotency_operations
+			WHERE identity_id=$1 AND operation_scope=$2 AND operation_key=$3`,
+			req.Operation.IdentityID, req.Operation.Scope, req.Operation.Key,
+		).Scan(&state, &rejectedAt); err != nil {
+			t.Fatal(err)
+		}
+		if state != string(StateRejected) || !rejectedAt {
+			t.Fatalf("state/rejected_at=%s/%t, want rejected/true", state, rejectedAt)
+		}
+		if err := store.Complete(ctx, CompleteRequest{
+			Operation: req.Operation, Fingerprint: req.Fingerprint,
+			ClaimToken: claimToken, Result: result,
+		}); !errors.Is(err, ErrStaleTransition) {
+			t.Fatalf("late Complete error=%v, want stale transition", err)
+		}
+	})
+
 	t.Run("expired recovery requires exact fingerprint and renews once", func(t *testing.T) {
 		req := integrationRequest(t, localIdentityID, "recover-"+uuid.NewString())
 		mustAcquire(t, ctx, store, req)

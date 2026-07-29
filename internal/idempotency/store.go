@@ -45,6 +45,7 @@ type operationQueries interface {
 	GetOperation(context.Context, sqlc.GetOperationParams) (sqlc.GetOperationRow, error)
 	CompleteOperation(context.Context, sqlc.CompleteOperationParams) (int64, error)
 	MarkOperationIndeterminate(context.Context, sqlc.MarkOperationIndeterminateParams) (int64, error)
+	MarkOperationRejected(context.Context, sqlc.MarkOperationRejectedParams) (int64, error)
 	ListExpiredReplayBodies(context.Context, sqlc.ListExpiredReplayBodiesParams) ([]sqlc.ListExpiredReplayBodiesRow, error)
 	ClearExpiredReplayBody(context.Context, sqlc.ClearExpiredReplayBodyParams) (int64, error)
 }
@@ -173,16 +174,23 @@ func (s *Store) readExistingDecision(ctx context.Context, request BeginRequest, 
 		return BeginDecision{}, fmt.Errorf("read existing idempotency operation: %w", err)
 	}
 	switch state {
-	case StateCompleted:
+	case StateCompleted, StateRejected:
 		if !row.ReplayExpiresAt.Valid {
-			return BeginDecision{}, fmt.Errorf("read existing idempotency operation: completed replay expiry is missing")
+			return BeginDecision{}, fmt.Errorf("read existing idempotency operation: terminal replay expiry is missing")
 		}
+		rejected := state == StateRejected
 		// Expiry is an authorization boundary, independent of physical GC. Never
 		// emit retained HTTP/tool/CLI bytes at or after the durable deadline.
 		if !row.ReplayExpiresAt.Time.After(now) {
+			if rejected {
+				return BeginDecision{Decision: DecisionRejected}, nil
+			}
 			return BeginDecision{Decision: DecisionResultExpired}, nil
 		}
 		if row.ReplayClearedAt.Valid || (len(row.ReplayBody) == 0 && !row.ReplayPreview.Valid && !row.ReplaySidecarRef.Valid && !row.ReplayStatusCode.Valid && len(row.ReplayHeaders) == 0) {
+			if rejected {
+				return BeginDecision{Decision: DecisionRejected}, nil
+			}
 			return BeginDecision{Decision: DecisionResultExpired}, nil
 		}
 		headers := map[string]string(nil)
@@ -196,6 +204,9 @@ func (s *Store) readExistingDecision(ctx context.Context, request BeginRequest, 
 			SidecarRef: textValue(row.ReplaySidecarRef), StatusCode: int(row.ReplayStatusCode.Int16),
 			Headers: headers, ExpiresAt: row.ReplayExpiresAt.Time,
 		}}
+		if rejected {
+			decision.Decision = DecisionRejected
+		}
 		if err := decision.Validate(); err != nil {
 			return BeginDecision{}, fmt.Errorf("read existing idempotency operation: %w", err)
 		}
@@ -268,6 +279,31 @@ func (s *Store) MarkIndeterminate(
 	})
 	if err != nil {
 		return fmt.Errorf("mark idempotency operation indeterminate: %w", err)
+	}
+	return requireOneTransition(affected)
+}
+
+// MarkRejected makes a deterministic no-effect domain failure terminal and
+// retains its bounded error envelope for subsequent callers.
+func (s *Store) MarkRejected(ctx context.Context, request RejectRequest) (err error) {
+	defer func() { s.telemetry.recordRejected(ctx, err) }()
+	if err := request.Validate(); err != nil {
+		return err
+	}
+	now := s.now().UTC()
+	identityID, _ := operationUUID(request.Operation.IdentityID)
+	affected, err := s.queries.MarkOperationRejected(ctx, sqlc.MarkOperationRejectedParams{
+		ReplayBody:      append([]byte(nil), request.Result.Body...),
+		ReplayPreview:   optionalText(request.Result.Preview),
+		ReplayBytes:     int64(len(request.Result.Body) + len(request.Result.Preview)),
+		ReplayExpiresAt: timestamp(request.Result.ExpiresAt.UTC()),
+		Now:             timestamp(now), IdentityID: identityID,
+		OperationScope: string(request.Operation.Scope), OperationKey: request.Operation.Key,
+		PayloadHash: append([]byte(nil), request.Fingerprint[:]...),
+		ClaimToken:  int64(request.ClaimToken),
+	})
+	if err != nil {
+		return fmt.Errorf("mark idempotency operation rejected: %w", err)
 	}
 	return requireOneTransition(affected)
 }

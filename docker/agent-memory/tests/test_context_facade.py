@@ -5,7 +5,10 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from uuid import UUID
 
+import pytest
+
 from neo4j_agent_memory.integration import MemoryIntegration, SessionStrategy
+from neo4j_agent_memory.memory.atomic import AtomicMutationError
 
 
 class _Graph:
@@ -170,7 +173,8 @@ def test_store_message_runs_existing_background_paths_and_reports_errors():
     assert integration.observer is observer
 
     failing, _ = _integration(fail_store=True)
-    assert "store failed" in asyncio.run(failing.store_message("user", "hello"))["error"]
+    with pytest.raises(AtomicMutationError, match="memory mutation failed"):
+        asyncio.run(failing.store_message("user", "hello"))
 
 
 def test_search_all_types_and_error_path():

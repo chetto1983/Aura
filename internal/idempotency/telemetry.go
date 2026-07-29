@@ -42,6 +42,8 @@ func (t *idempotencyTelemetry) recordBegin(ctx context.Context, decision BeginDe
 		t.record(ctx, "idempotency_reserve", "in_progress", "in_progress")
 	case DecisionIndeterminate:
 		t.record(ctx, "idempotency_reserve", "indeterminate", "indeterminate")
+	case DecisionRejected:
+		t.record(ctx, "idempotency_replay", "rejected", "rejected")
 	case DecisionConflict:
 		t.record(ctx, "idempotency_reserve", "failed", "conflict")
 	default:
@@ -63,6 +65,14 @@ func (t *idempotencyTelemetry) recordIndeterminate(ctx context.Context, err erro
 		return
 	}
 	t.record(ctx, "idempotency_complete", "indeterminate", "indeterminate")
+}
+
+func (t *idempotencyTelemetry) recordRejected(ctx context.Context, err error) {
+	if err != nil {
+		t.record(ctx, "idempotency_complete", "failed", "error")
+		return
+	}
+	t.record(ctx, "idempotency_complete", "rejected", "rejected")
 }
 
 func (t *idempotencyTelemetry) record(ctx context.Context, operation, state, outcome string) {

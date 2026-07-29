@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import json
 from typing import TYPE_CHECKING, Any
 
 from fastmcp import Context
 
 from neo4j_agent_memory.mcp._common import get_integration
+from neo4j_agent_memory.mcp.outcomes import render_result
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
@@ -104,4 +104,4 @@ def register_host_tools(mcp: FastMCP) -> None:
             }
 
         result = await integration.client.graph.execute_write_unit(store)
-        return json.dumps(result)
+        return render_result(result)

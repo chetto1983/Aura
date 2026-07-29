@@ -190,12 +190,9 @@ func TestReconnectServerRetriesAndRefreshesToolSearch(t *testing.T) {
 
 	tool, _ := reg.Get(names[0])
 	callCtx := tools.WithToolCallContext(context.Background(), "sess", "call-1", t.TempDir(), 2048)
-	res, err := tool.Execute(callCtx, json.RawMessage(`{}`))
-	if err != nil {
-		t.Fatalf("Execute after reconnect: %v", err)
-	}
-	if !strings.Contains(res.Preview, "not replayed") {
-		t.Fatalf("preview = %q, want no-replay transport error", res.Preview)
+	_, err = tool.Execute(callCtx, json.RawMessage(`{}`))
+	if err == nil || !strings.Contains(err.Error(), "not replayed") {
+		t.Fatalf("Execute after reconnect = %v, want no-replay error", err)
 	}
 	if opens != 1 || !initial.closed {
 		t.Fatalf("reconnect did not close/reopen exactly once: opens=%d closed=%v", opens, initial.closed)
@@ -218,7 +215,7 @@ func TestReconnectServerRetriesAndRefreshesToolSearch(t *testing.T) {
 	}
 }
 
-func TestReconnectServerSecondTransportFailureIsInlineToolError(t *testing.T) {
+func TestReconnectServerSecondTransportFailurePropagates(t *testing.T) {
 	oldOpen := openMCPClient
 	t.Cleanup(func() { openMCPClient = oldOpen })
 
@@ -240,12 +237,9 @@ func TestReconnectServerSecondTransportFailureIsInlineToolError(t *testing.T) {
 		t.Fatalf("Bridge: %v", err)
 	}
 	ctx := tools.WithToolCallContext(context.Background(), "sess", "call-1", t.TempDir(), 2048)
-	res, err := bridged[0].Execute(ctx, json.RawMessage(`{}`))
-	if err != nil {
-		t.Fatalf("second transport failure must be inline content, got Go error %v", err)
-	}
-	if !strings.HasPrefix(res.Preview, "error: ") || !strings.Contains(res.Preview, "not replayed") {
-		t.Fatalf("preview = %q, want inline no-replay transport failure", res.Preview)
+	_, err = bridged[0].Execute(ctx, json.RawMessage(`{}`))
+	if err == nil || !strings.Contains(err.Error(), "not replayed") {
+		t.Fatalf("second transport failure = %v, want propagated no-replay error", err)
 	}
 	if initial.callCount != 1 || reopened.callCount != 0 {
 		t.Fatalf("call replay policy mismatch: initial=%d reopened=%d", initial.callCount, reopened.callCount)
@@ -313,13 +307,10 @@ func TestBridgedToolExecuteAppliesConfiguredCallTimeout(t *testing.T) {
 	ctx := tools.WithToolCallContext(context.Background(), "sess", "tc1", t.TempDir(), 2048)
 
 	start := time.Now()
-	res, err := got[0].Execute(ctx, json.RawMessage(`{"container_id":"abc"}`))
+	_, err := got[0].Execute(ctx, json.RawMessage(`{"container_id":"abc"}`))
 	elapsed := time.Since(start)
-	if err != nil {
-		t.Fatalf("Execute should return tool failures inline, got Go error %v", err)
-	}
-	if !strings.Contains(res.Preview, context.DeadlineExceeded.Error()) {
-		t.Fatalf("preview = %q, want deadline exceeded inline", res.Preview)
+	if err == nil || !strings.Contains(err.Error(), context.DeadlineExceeded.Error()) {
+		t.Fatalf("Execute error = %v, want propagated deadline exceeded", err)
 	}
 	if elapsed > 500*time.Millisecond {
 		t.Fatalf("configured call timeout was not applied; elapsed=%v", elapsed)
@@ -394,17 +385,14 @@ func TestBridgedTool_RoutesRawName(t *testing.T) {
 	}
 }
 
-func TestBridgedTool_Execute_ErrorAsContent(t *testing.T) {
+func TestBridgedTool_Execute_PropagatesError(t *testing.T) {
 	srv := &fakeServer{defs: sandboxDefs(), callErr: context.DeadlineExceeded}
 	got, _ := Bridge(context.Background(), "sb", srv)
 	ctx := tools.WithToolCallContext(context.Background(), "sess", "tc1", t.TempDir(), 2048)
 
-	res, err := got[0].Execute(ctx, json.RawMessage(`{"container_id":"abc"}`))
-	if err != nil {
-		t.Fatalf("a tool-level failure must be content, not a Go error; got %v", err)
-	}
-	if !strings.HasPrefix(res.Preview, "error: ") {
-		t.Fatalf("preview should carry the error as content, got %q", res.Preview)
+	_, err := got[0].Execute(ctx, json.RawMessage(`{"container_id":"abc"}`))
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("tool-level failure = %v, want propagated deadline", err)
 	}
 }
 

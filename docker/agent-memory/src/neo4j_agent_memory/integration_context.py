@@ -147,7 +147,9 @@ class ContextSearchMixin:
             }
         except Exception as exc:
             logger.error("Error storing message: %s", exc)
-            return {"error": str(exc)}
+            from neo4j_agent_memory.memory.atomic import AtomicMutationError
+
+            raise AtomicMutationError() from exc
 
     async def get_context(
         self,

@@ -81,6 +81,9 @@ func (g *Gateway) beginOperation(ctx context.Context, spec tools.Spec, rawArgs j
 		verdict.Reason = "operation is in progress"
 	case idempotency.DecisionIndeterminate:
 		verdict.Reason = "operation outcome is indeterminate"
+	case idempotency.DecisionRejected:
+		verdict.Reason = "operation was rejected"
+		verdict.OperationRejection = decision.Replay
 	case idempotency.DecisionResultExpired:
 		verdict.Reason = "operation completed but replay result expired"
 	default:
@@ -141,6 +144,29 @@ func (g *Gateway) MarkOperationIndeterminate(ctx context.Context) error {
 	)
 }
 
+// RejectOperation records a deterministic no-effect tool failure. Registries
+// predating the rejected state fail closed to indeterminate.
+func (g *Gateway) RejectOperation(ctx context.Context, toolErr error) error {
+	if g == nil || g.operations == nil {
+		return nil
+	}
+	operation, ok := idempotency.OperationFromContext(ctx)
+	if !ok {
+		return errors.New("reject operation: trusted operation context missing")
+	}
+	registry, ok := g.operations.(rejectionRegistry)
+	if !ok {
+		return g.operations.MarkIndeterminate(
+			ctx, operation.Key, operation.Fingerprint, operation.ClaimToken,
+		)
+	}
+	replay := boundedOperationRejection(toolErr)
+	return registry.MarkRejected(ctx, idempotency.RejectRequest{
+		Operation: operation.Key, Fingerprint: operation.Fingerprint,
+		ClaimToken: operation.ClaimToken, Result: replay,
+	})
+}
+
 func boundedOperationReplay(result tools.ToolResult) idempotency.ReplayResult {
 	copyResult := result
 	copyResult.Preview = boundedString(copyResult.Preview, idempotency.MaxReplayPreviewBytes)
@@ -151,6 +177,22 @@ func boundedOperationReplay(result tools.ToolResult) idempotency.ReplayResult {
 	}
 	return idempotency.ReplayResult{
 		Body: body, Preview: copyResult.Preview, SidecarRef: copyResult.FullPath,
+		ExpiresAt: time.Now().UTC().Add(operationReplayRetention),
+	}
+}
+
+func boundedOperationRejection(toolErr error) idempotency.ReplayResult {
+	preview := "tool rejected operation"
+	if toolErr != nil {
+		preview = boundedString(toolErr.Error(), idempotency.MaxReplayPreviewBytes)
+	}
+	body, err := json.Marshal(toolErr)
+	if err != nil || len(body) == 0 || len(body) > idempotency.MaxReplayBodyBytes ||
+		string(body) == "{}" {
+		body, _ = json.Marshal(map[string]string{"error": preview})
+	}
+	return idempotency.ReplayResult{
+		Body: body, Preview: preview,
 		ExpiresAt: time.Now().UTC().Add(operationReplayRetention),
 	}
 }

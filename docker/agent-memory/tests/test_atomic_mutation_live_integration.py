@@ -12,6 +12,7 @@ from pydantic import SecretStr
 from neo4j_agent_memory.config.settings import Neo4jConfig
 from neo4j_agent_memory.graph.client import Neo4jClient
 from neo4j_agent_memory.integration import MemoryIntegration
+from neo4j_agent_memory.memory.atomic import AtomicMutationError
 from neo4j_agent_memory.memory.long_term import LongTermMemory
 
 pytestmark = pytest.mark.integration
@@ -57,15 +58,15 @@ async def test_preference_fault_rolls_back_node_validity_owner_and_epoch(fail_af
 
         graph.execute_write = fail_after
         try:
-            result = await integration.add_preference(
-                category,
-                "atomic rollback fixture",
-                user_identifier=owner,
-            )
+            with pytest.raises(AtomicMutationError, match="memory mutation failed"):
+                await integration.add_preference(
+                    category,
+                    "atomic rollback fixture",
+                    user_identifier=owner,
+                )
         finally:
             graph.execute_write = original_write
 
-        assert result["error"] == f"injected failure after write {fail_after_write}"
         rows = await graph.execute_read(
             """
             OPTIONAL MATCH (p:Preference {category: $category})

@@ -25,7 +25,7 @@ SET replay_body = NULL,
 WHERE identity_id = $2
   AND operation_scope = $3
   AND operation_key = $4
-  AND state = 'completed'
+  AND state IN ('completed', 'rejected')
   AND replay_expires_at <= $5
   AND (replay_body IS NOT NULL OR replay_preview IS NOT NULL OR replay_sidecar_ref IS NOT NULL
        OR replay_status_code IS NOT NULL OR replay_headers IS NOT NULL)
@@ -137,7 +137,8 @@ SELECT
     created_at,
     updated_at,
     completed_at,
-    indeterminate_at
+    indeterminate_at,
+    rejected_at
 FROM aura.idempotency_operations
 WHERE identity_id = $1
   AND operation_scope = $2
@@ -174,6 +175,7 @@ type GetOperationRow struct {
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
 	CompletedAt         pgtype.Timestamptz `json:"completed_at"`
 	IndeterminateAt     pgtype.Timestamptz `json:"indeterminate_at"`
+	RejectedAt          pgtype.Timestamptz `json:"rejected_at"`
 }
 
 func (q *Queries) GetOperation(ctx context.Context, arg GetOperationParams) (GetOperationRow, error) {
@@ -203,6 +205,7 @@ func (q *Queries) GetOperation(ctx context.Context, arg GetOperationParams) (Get
 		&i.UpdatedAt,
 		&i.CompletedAt,
 		&i.IndeterminateAt,
+		&i.RejectedAt,
 	)
 	return i, err
 }
@@ -215,7 +218,7 @@ SELECT
     replay_bytes,
     replay_expires_at
 FROM aura.idempotency_operations
-WHERE state = 'completed'
+WHERE state IN ('completed', 'rejected')
   AND replay_expires_at <= $1
   AND (replay_body IS NOT NULL OR replay_preview IS NOT NULL OR replay_sidecar_ref IS NOT NULL
        OR replay_status_code IS NOT NULL OR replay_headers IS NOT NULL)
@@ -335,6 +338,60 @@ type MarkOperationIndeterminateParams struct {
 
 func (q *Queries) MarkOperationIndeterminate(ctx context.Context, arg MarkOperationIndeterminateParams) (int64, error) {
 	result, err := q.db.Exec(ctx, markOperationIndeterminate,
+		arg.Now,
+		arg.IdentityID,
+		arg.OperationScope,
+		arg.OperationKey,
+		arg.PayloadHash,
+		arg.ClaimToken,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const markOperationRejected = `-- name: MarkOperationRejected :execrows
+UPDATE aura.idempotency_operations
+SET state = 'rejected',
+    replay_body = $1,
+    replay_preview = $2,
+    replay_sidecar_ref = NULL,
+    replay_status_code = NULL,
+    replay_headers = NULL,
+    replay_cleared_at = NULL,
+    replay_bytes = $3,
+    replay_expires_at = $4,
+    rejected_at = $5,
+    updated_at = $5,
+    version = version + 1
+WHERE identity_id = $6
+  AND operation_scope = $7
+  AND operation_key = $8
+  AND state = 'in_progress'
+  AND payload_hash = $9
+  AND version = $10
+`
+
+type MarkOperationRejectedParams struct {
+	ReplayBody      []byte             `json:"replay_body"`
+	ReplayPreview   pgtype.Text        `json:"replay_preview"`
+	ReplayBytes     int64              `json:"replay_bytes"`
+	ReplayExpiresAt pgtype.Timestamptz `json:"replay_expires_at"`
+	Now             pgtype.Timestamptz `json:"now"`
+	IdentityID      pgtype.UUID        `json:"identity_id"`
+	OperationScope  string             `json:"operation_scope"`
+	OperationKey    string             `json:"operation_key"`
+	PayloadHash     []byte             `json:"payload_hash"`
+	ClaimToken      int64              `json:"claim_token"`
+}
+
+func (q *Queries) MarkOperationRejected(ctx context.Context, arg MarkOperationRejectedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markOperationRejected,
+		arg.ReplayBody,
+		arg.ReplayPreview,
+		arg.ReplayBytes,
+		arg.ReplayExpiresAt,
 		arg.Now,
 		arg.IdentityID,
 		arg.OperationScope,

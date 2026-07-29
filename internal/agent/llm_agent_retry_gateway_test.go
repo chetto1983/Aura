@@ -13,6 +13,7 @@ import (
 	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/idempotency"
 	"github.com/chetto1983/aura/internal/identityctx"
+	"github.com/chetto1983/aura/internal/mcp"
 	"github.com/chetto1983/aura/internal/toolinvocations"
 )
 
@@ -178,12 +179,18 @@ type replayingOperationRegistry struct {
 	completed   *idempotency.ReplayResult
 	completeErr error
 	marked      int
+	rejected    *idempotency.ReplayResult
 }
 
 func (r *replayingOperationRegistry) Begin(_ context.Context, request idempotency.BeginRequest) (idempotency.BeginDecision, error) {
 	r.begins = append(r.begins, request)
 	if r.completed != nil {
 		return idempotency.BeginDecision{Decision: idempotency.DecisionReplay, Replay: r.completed}, nil
+	}
+	if r.rejected != nil {
+		return idempotency.BeginDecision{
+			Decision: idempotency.DecisionRejected, Replay: r.rejected,
+		}, nil
 	}
 	return idempotency.BeginDecision{
 		Decision: idempotency.DecisionAcquired, ClaimToken: 1,
@@ -207,6 +214,91 @@ func (r *replayingOperationRegistry) MarkIndeterminate(
 ) error {
 	r.marked++
 	return nil
+}
+
+func (r *replayingOperationRegistry) MarkRejected(
+	_ context.Context,
+	request idempotency.RejectRequest,
+) error {
+	result := request.Result
+	r.rejected = &result
+	return nil
+}
+
+type rejectingMutatingTool struct {
+	count int
+}
+
+func (t *rejectingMutatingTool) Spec() tools.Spec {
+	return tools.Spec{
+		Name: "skill", Mutating: true,
+		OperationScope:      tools.OperationScopeAgent,
+		OperationNormalizer: tools.OperationNormalizerCanonical,
+		ReplayPolicy:        tools.ReplayToolResult,
+	}
+}
+
+func (t *rejectingMutatingTool) Execute(
+	context.Context,
+	json.RawMessage,
+) (tools.ToolResult, error) {
+	t.count++
+	return tools.ToolResult{}, &mcp.ToolCallError{
+		Server: "memory", Tool: "memory_add_fact",
+		Outcome: mcp.ToolOutcomeRejected, Code: "invalid_argument",
+		Message: "subject is required", Effect: mcp.ToolEffectNone,
+	}
+}
+
+func TestExecToolReplaysDeterministicDomainRejectionAsError(t *testing.T) {
+	t.Parallel()
+
+	registry := &replayingOperationRegistry{}
+	gw := gateway.New(config.ProfileSingleUserHardened, &fakeReserveStore{})
+	gw.SetOperationRegistry(registry)
+	a := &LlmAgent{
+		gateway:      gw,
+		ledgerConvID: "11111111-1111-1111-1111-111111111111",
+	}
+	tool := &rejectingMutatingTool{}
+	args := json.RawMessage(`{"action":"restore","name":"calc"}`)
+	fingerprint, err := tools.OperationFingerprint(tool.Spec(), args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	op := idempotency.Operation{
+		Key: idempotency.OperationKey{
+			IdentityID: identityctx.LocalOperatorIdentity,
+			Scope:      idempotency.ScopeAgentTool, Key: "rejected-operation",
+		},
+		Fingerprint: fingerprint,
+	}
+	ctx, err := idempotency.WithOperation(
+		identityctx.WithIdentityID(context.Background(), identityctx.LocalOperatorIdentity),
+		op,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx = tools.WithRequestID(ctx, "22222222-2222-2222-2222-222222222222")
+	ctx = tools.WithToolCallContext(ctx, "session-1", "call-1", t.TempDir(), 4096)
+
+	var toolCallErr *mcp.ToolCallError
+	if _, err := a.execTool(ctx, tool, true, args); !errors.As(err, &toolCallErr) {
+		t.Fatalf("first error = %v, want typed MCP ToolCallError", err)
+	}
+	if registry.rejected == nil || registry.completed != nil || registry.marked != 0 {
+		t.Fatalf("terminal state rejected=%t completed=%t indeterminate=%d",
+			registry.rejected != nil, registry.completed != nil, registry.marked)
+	}
+
+	var replayErr *gateway.ErrOperationRejected
+	if _, err := a.execTool(ctx, tool, true, args); !errors.As(err, &replayErr) {
+		t.Fatalf("replay error = %v, want terminal rejection", err)
+	}
+	if tool.count != 1 {
+		t.Fatalf("tool effects = %d, want one rejected attempt and no replay", tool.count)
+	}
 }
 
 func TestExecToolRetryReusesOperationWhileAuditIDsChange(t *testing.T) {

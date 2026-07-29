@@ -292,6 +292,7 @@ type Querier interface {
 	MarkNotificationDelivered(ctx context.Context, id pgtype.UUID) error
 	MarkNotificationFailed(ctx context.Context, arg MarkNotificationFailedParams) error
 	MarkOperationIndeterminate(ctx context.Context, arg MarkOperationIndeterminateParams) (int64, error)
+	MarkOperationRejected(ctx context.Context, arg MarkOperationRejectedParams) (int64, error)
 	MarkPausedStateResumed(ctx context.Context, arg MarkPausedStateResumedParams) (int64, error)
 	MarkUnknownRecovery(ctx context.Context, id pgtype.UUID) error
 	NextAdaptiveAggregateSequence(ctx context.Context, arg NextAdaptiveAggregateSequenceParams) (int64, error)

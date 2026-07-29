@@ -268,15 +268,15 @@ func TestCapMCPErrorContent(t *testing.T) {
 	}
 	ctx := tools.WithToolCallContext(context.Background(), "sess", "tc1", t.TempDir(), maxMCPErrorPreviewBytes*4)
 
-	res, err := got[0].Execute(ctx, json.RawMessage(`{}`))
-	if err != nil {
-		t.Fatalf("Execute: %v", err)
+	_, err = got[0].Execute(ctx, json.RawMessage(`{}`))
+	if err == nil {
+		t.Fatal("Execute returned nil error")
 	}
-	if len(res.Preview) > maxMCPErrorPreviewBytes {
-		t.Fatalf("error preview exceeded cap: len=%d cap=%d", len(res.Preview), maxMCPErrorPreviewBytes)
+	if len(err.Error()) > maxMCPErrorPreviewBytes {
+		t.Fatalf("error exceeded cap: len=%d cap=%d", len(err.Error()), maxMCPErrorPreviewBytes)
 	}
-	if !strings.HasSuffix(res.Preview, mcpErrorTruncated) {
-		t.Fatalf("capped error should carry truncation marker, got suffix %.40q", res.Preview[len(res.Preview)-40:])
+	if !strings.HasSuffix(err.Error(), mcpErrorTruncated) {
+		t.Fatalf("capped error should carry truncation marker, got suffix %.40q", err.Error()[len(err.Error())-40:])
 	}
 }
 

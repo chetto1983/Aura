@@ -67,8 +67,8 @@ func (s Scope) Validate() error {
 	return nil
 }
 
-// State is the durable lifecycle of a public operation. Completed and
-// indeterminate are terminal; ambiguous work is never reacquired.
+// State is the durable lifecycle of a public operation. Completed, rejected,
+// and indeterminate are terminal; ambiguous work is never reacquired.
 type State string
 
 // StateInProgress and the terminal states are the only durable registry states.
@@ -76,13 +76,14 @@ const (
 	StateInProgress    State = "in_progress"
 	StateCompleted     State = "completed"
 	StateIndeterminate State = "indeterminate"
+	StateRejected      State = "rejected"
 )
 
 // ParseState accepts only the exact durable state vocabulary.
 func ParseState(raw string) (State, error) {
 	state := State(raw)
 	switch state {
-	case StateInProgress, StateCompleted, StateIndeterminate:
+	case StateInProgress, StateCompleted, StateIndeterminate, StateRejected:
 		return state, nil
 	default:
 		return "", fmt.Errorf("invalid idempotency operation state")
@@ -91,7 +92,8 @@ func ParseState(raw string) (State, error) {
 
 // CanTransitionTo permits only an owned in-progress operation to become terminal.
 func (s State) CanTransitionTo(next State) bool {
-	return s == StateInProgress && (next == StateCompleted || next == StateIndeterminate)
+	return s == StateInProgress &&
+		(next == StateCompleted || next == StateIndeterminate || next == StateRejected)
 }
 
 // Decision describes what a caller may do after Begin. Only acquired permits
@@ -109,6 +111,7 @@ const (
 	DecisionResultExpired Decision = "completed_result_expired"
 	DecisionInProgress    Decision = "in_progress"
 	DecisionIndeterminate Decision = "indeterminate"
+	DecisionRejected      Decision = "rejected"
 	DecisionConflict      Decision = "conflict"
 )
 
@@ -262,6 +265,15 @@ func (d BeginDecision) Validate() error {
 		if d.ClaimToken != 0 || d.Replay != nil || d.RetryAfter != 0 {
 			return fmt.Errorf("idempotency decision carries incompatible metadata")
 		}
+	case DecisionRejected:
+		if d.ClaimToken != 0 || d.RetryAfter != 0 {
+			return fmt.Errorf("idempotency rejected decision carries incompatible metadata")
+		}
+		if d.Replay != nil {
+			if err := d.Replay.Validate(); err != nil {
+				return err
+			}
+		}
 	case DecisionReplay:
 		if d.ClaimToken != 0 || d.Replay == nil || d.RetryAfter != 0 {
 			return fmt.Errorf("idempotency replay decision is incomplete")
@@ -299,6 +311,20 @@ func (r CompleteRequest) Validate() error {
 		return fmt.Errorf("idempotency claim token is required")
 	}
 	return r.Result.Validate()
+}
+
+// RejectRequest records a deterministic no-effect error for safe error replay.
+type RejectRequest struct {
+	Operation   OperationKey
+	Fingerprint [32]byte
+	ClaimToken  ClaimToken
+	Result      ReplayResult
+}
+
+// Validate applies the same ownership, fencing, and bounded replay contract as
+// completion while retaining a distinct terminal state.
+func (r RejectRequest) Validate() error {
+	return CompleteRequest(r).Validate()
 }
 
 func validateBoundedText(value string, maxBytes int) error {

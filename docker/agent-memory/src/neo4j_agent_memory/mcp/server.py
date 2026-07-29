@@ -104,12 +104,14 @@ try:
                     }
 
         auth = None
-        middleware = None
+        from neo4j_agent_memory.mcp.outcomes import AuraDomainOutcomeMiddleware
+
+        middleware = [AuraDomainOutcomeMiddleware()]
         if auth_secret is not None:
             from neo4j_agent_memory.mcp.auth import build_aura_auth
 
             auth, identity_middleware = build_aura_auth(auth_secret)
-            middleware = [identity_middleware]
+            middleware.append(identity_middleware)
 
         mcp = FastMCP(
             server_name,
