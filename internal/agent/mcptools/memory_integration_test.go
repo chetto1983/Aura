@@ -400,8 +400,9 @@ func TestMemoryLiveMount(t *testing.T) {
 	}
 
 	var wantModel, wantHidden []string
+	policy := defaultBridgePolicy("memory")
 	for _, d := range defs {
-		if modelFacing("memory", d.Name) {
+		if policy.modelFacing(d.Name) {
 			wantModel = append(wantModel, namespacedName("memory", d.Name))
 		} else {
 			wantHidden = append(wantHidden, namespacedName("memory", d.Name))
