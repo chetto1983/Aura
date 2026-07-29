@@ -160,14 +160,22 @@ func (m *HookManager) BeforeModel(ctx context.Context, req *llm.Request) (*Model
 	if m == nil {
 		return nil, nil
 	}
+	if req == nil {
+		return nil, fmt.Errorf("before_model hook received a nil request")
+	}
 	for i, h := range m.hooks {
+		before := cloneModelRequest(req)
 		var res *ModelHookResult
 		err := recoverHook("before_model", func() error {
 			var e error
 			res, e = h.BeforeModel(ctx, req)
 			return e
 		})
+		if err == nil {
+			err = validateModelHookMutation(&before, req)
+		}
 		if err != nil {
+			*req = cloneModelRequest(&before)
 			if aborted := m.hookFault(i, "before_model", err); aborted != nil {
 				return nil, aborted
 			}

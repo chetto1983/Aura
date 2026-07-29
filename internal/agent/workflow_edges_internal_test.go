@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
@@ -12,9 +13,15 @@ import (
 // textOnceClient is a minimal llm.Client that streams a single text answer then a
 // stop finish — enough to drive one agent turn without importing agenttest (which
 // would close an import cycle in a white-box test).
-type textOnceClient struct{ text string }
+type textOnceClient struct {
+	text   string
+	called *bool
+}
 
 func (c textOnceClient) Stream(_ context.Context, _ llm.Request) (<-chan llm.Chunk, error) {
+	if c.called != nil {
+		*c.called = true
+	}
 	ch := make(chan llm.Chunk, 2)
 	ch <- llm.Chunk{Text: c.text}
 	ch <- llm.Chunk{FinishReason: "stop"}
@@ -41,17 +48,14 @@ func (prefixMutatingHook) AfterTool(context.Context, llm.ToolCall, tools.ToolRes
 }
 func (prefixMutatingHook) OnTurnEnd(context.Context, HookTurn) error { return nil }
 
-// AG-031: a BeforeModel hook that rewrites messages[0] busts the provider cache;
-// the real agent Run loop detects the prefix drift after the hook and increments
-// the prefix_drift metric (without changing messages[0] itself). This drives the
-// actual wiring, not just the helper.
-func TestPrefixDrift_DetectedAfterHookRewrite(t *testing.T) {
-	before := metricInt(metrics.legacy.prefixDriftTotal)
-
+// CTX-003: the real Run loop rejects a protected prefix rewrite before the
+// provider sees any request.
+func TestBeforeModelProtectedPrefixRewriteAbortsBeforeStream(t *testing.T) {
+	called := false
 	reg := tools.NewRegistry()
 	reg.Register(tools.TextResponse{})
 	a := NewLlmAgent(LlmAgentConfig{
-		Client:      textOnceClient{text: "done"},
+		Client:      textOnceClient{text: "done", called: &called},
 		LLM:         llm.Config{Model: "m", Provider: "p", TotalTimeoutSec: 30},
 		Registry:    reg,
 		PreviewCap:  2048,
@@ -66,13 +70,17 @@ func TestPrefixDrift_DetectedAfterHookRewrite(t *testing.T) {
 	}
 	ic := InvocationContext{Ctx: context.Background(), RequestID: uuid.Must(uuid.NewV7()), Budget: b}
 
+	var gotErr error
 	for _, runErr := range a.Run(ic) {
 		if runErr != nil {
-			t.Fatalf("Run: %v", runErr)
+			gotErr = runErr
 		}
 	}
-	if got := metricInt(metrics.legacy.prefixDriftTotal) - before; got < 1 {
-		t.Fatalf("prefix_drift metric delta = %d, want >=1 (AG-031 wiring)", got)
+	if gotErr == nil || !strings.Contains(gotErr.Error(), "protected") {
+		t.Fatalf("Run error = %v, want protected-field rejection", gotErr)
+	}
+	if called {
+		t.Fatal("provider stream was called after a protected hook rewrite")
 	}
 }
 

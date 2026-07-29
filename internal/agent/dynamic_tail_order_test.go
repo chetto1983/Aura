@@ -66,19 +66,19 @@ func TestDynamicTailStaysOutOfAdaptiveRouterUntilDelivery(t *testing.T) {
 	}
 }
 
-func TestDynamicTailHookRemovalFallbackPreservesCurrentUser(t *testing.T) {
+func TestDynamicTailFailOpenHookRemovalRestoresCurrentUser(t *testing.T) {
 	t.Parallel()
 	client := &dynamicTailClient{
 		turns: []dynamicTailTurn{dynamicTailTextTurn("stop", "done")},
 	}
 	exposure := validDynamicTailExposure()
 	exposure.Commit = func(_ context.Context, outcome DynamicTailOutcome) error {
-		if outcome.Delivered || outcome.FallbackReason != DynamicTailFallbackInvalid {
-			t.Fatalf("fallback outcome = %#v", outcome)
+		if !outcome.Delivered || outcome.FallbackReason != "" {
+			t.Fatalf("delivery outcome = %#v", outcome)
 		}
 		return nil
 	}
-	hook := NewHookManager(dynamicTailMutatingHook{mutate: func(request *llm.Request) {
+	hook := NewHookManagerWithPolicy(FailOpen, dynamicTailMutatingHook{mutate: func(request *llm.Request) {
 		filtered := request.Messages[:0]
 		for _, message := range request.Messages {
 			if message.Content != exposure.Tail.Content {
@@ -92,14 +92,14 @@ func TestDynamicTailHookRemovalFallbackPreservesCurrentUser(t *testing.T) {
 	runDynamicTailAgent(t, agent)
 
 	if len(client.requests) != 1 {
-		t.Fatalf("requests = %d, want one static fallback", len(client.requests))
+		t.Fatalf("requests = %d, want one restored request", len(client.requests))
 	}
 	messages := client.requests[0].Messages
-	if countDynamicTail(messages, exposure.Tail.Content) != 0 {
-		t.Fatalf("static fallback leaked dynamic tail: %#v", messages)
+	if countDynamicTail(messages, exposure.Tail.Content) != 1 {
+		t.Fatalf("restored request lost dynamic tail: %#v", messages)
 	}
 	if countDynamicTail(messages, "current user") != 1 {
-		t.Fatalf("static fallback removed current user: %#v", messages)
+		t.Fatalf("restored request removed current user: %#v", messages)
 	}
 }
 

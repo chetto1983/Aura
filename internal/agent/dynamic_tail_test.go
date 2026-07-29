@@ -49,7 +49,7 @@ func TestDynamicTailCommitsBeforeFirstStreamAndRevalidatesEveryRound(t *testing.
 	}
 }
 
-func TestDynamicTailHookTamperFallsBackBeforeStream(t *testing.T) {
+func TestDynamicTailFailOpenHookTamperIsRestoredBeforeStream(t *testing.T) {
 	t.Parallel()
 	order := []string{}
 	client := &dynamicTailClient{
@@ -58,13 +58,13 @@ func TestDynamicTailHookTamperFallsBackBeforeStream(t *testing.T) {
 	}
 	exposure := validDynamicTailExposure()
 	exposure.Commit = func(_ context.Context, outcome DynamicTailOutcome) error {
-		order = append(order, "fallback")
-		if outcome.Delivered || outcome.FallbackReason != DynamicTailFallbackInvalid {
-			t.Fatalf("fallback outcome = %#v", outcome)
+		order = append(order, "delivery")
+		if !outcome.Delivered || outcome.FallbackReason != "" {
+			t.Fatalf("delivery outcome = %#v", outcome)
 		}
 		return nil
 	}
-	hook := NewHookManager(dynamicTailMutatingHook{mutate: func(request *llm.Request) {
+	hook := NewHookManagerWithPolicy(FailOpen, dynamicTailMutatingHook{mutate: func(request *llm.Request) {
 		for index := range request.Messages {
 			if request.Messages[index].Content == exposure.Tail.Content {
 				request.Messages[index].Content += " tampered"
@@ -75,16 +75,18 @@ func TestDynamicTailHookTamperFallsBackBeforeStream(t *testing.T) {
 
 	runDynamicTailAgent(t, agent)
 
-	if !slices.Equal(order, []string{"fallback", "stream"}) {
-		t.Fatalf("order = %v, want fallback delivery before static stream", order)
+	if !slices.Equal(order, []string{"delivery", "stream"}) {
+		t.Fatalf("order = %v, want restored delivery before stream", order)
 	}
 	if len(client.requests) != 1 {
 		t.Fatalf("requests = %d, want one", len(client.requests))
 	}
+	if countDynamicTail(client.requests[0].Messages, exposure.Tail.Content) != 1 {
+		t.Fatalf("restored request lost exact dynamic tail: %#v", client.requests[0].Messages)
+	}
 	for _, message := range client.requests[0].Messages {
-		if message.Content == exposure.Tail.Content ||
-			message.Content == exposure.Tail.Content+" tampered" {
-			t.Fatalf("static fallback leaked dynamic tail: %#v", client.requests[0].Messages)
+		if message.Content == exposure.Tail.Content+" tampered" {
+			t.Fatalf("tampered dynamic tail reached provider: %#v", client.requests[0].Messages)
 		}
 	}
 }
@@ -138,7 +140,7 @@ func TestDynamicTailContextBudgetOmissionRecordsNoneBeforeStream(t *testing.T) {
 	}
 }
 
-func TestDynamicTailHookGrowthPastHardCapFallsBackBeforeStream(t *testing.T) {
+func TestDynamicTailFailOpenHookGrowthIsRestoredBeforeStream(t *testing.T) {
 	t.Parallel()
 	order := []string{}
 	client := &dynamicTailClient{
@@ -146,15 +148,15 @@ func TestDynamicTailHookGrowthPastHardCapFallsBackBeforeStream(t *testing.T) {
 		turns: []dynamicTailTurn{dynamicTailTextTurn("stop", "done")},
 	}
 	exposure := validDynamicTailExposure()
-	exposure.HardCapTokens = 30
+	exposure.HardCapTokens = 100
 	exposure.Commit = func(_ context.Context, outcome DynamicTailOutcome) error {
-		order = append(order, "fallback")
-		if outcome.Delivered || outcome.FallbackReason != DynamicTailFallbackInvalid {
-			t.Fatalf("growth fallback outcome = %#v", outcome)
+		order = append(order, "delivery")
+		if !outcome.Delivered || outcome.FallbackReason != "" {
+			t.Fatalf("growth delivery outcome = %#v", outcome)
 		}
 		return nil
 	}
-	hook := NewHookManager(dynamicTailMutatingHook{mutate: func(request *llm.Request) {
+	hook := NewHookManagerWithPolicy(FailOpen, dynamicTailMutatingHook{mutate: func(request *llm.Request) {
 		request.Messages = append(request.Messages, llm.Message{
 			Role: llm.RoleUser, Content: strings.Repeat("hook growth ", 200),
 		})
@@ -163,11 +165,11 @@ func TestDynamicTailHookGrowthPastHardCapFallsBackBeforeStream(t *testing.T) {
 
 	runDynamicTailAgent(t, agent)
 
-	if !slices.Equal(order, []string{"fallback", "stream"}) {
-		t.Fatalf("order = %v, want hard-cap fallback before stream", order)
+	if !slices.Equal(order, []string{"delivery", "stream"}) {
+		t.Fatalf("order = %v, want restored delivery before stream", order)
 	}
-	if countDynamicTail(client.requests[0].Messages, exposure.Tail.Content) != 0 {
-		t.Fatal("hard-cap growth exposed learned dynamic tail")
+	if countDynamicTail(client.requests[0].Messages, exposure.Tail.Content) != 1 {
+		t.Fatal("restored request lost learned dynamic tail")
 	}
 }
 

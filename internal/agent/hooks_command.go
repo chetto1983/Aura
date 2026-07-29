@@ -196,11 +196,13 @@ func (h *CommandHook) BeforeModel(ctx context.Context, req *llm.Request) (*Model
 			return nil, cerr
 		}
 		if decision.Request != nil {
-			if verr := validateHookRequest(decision.Request); verr != nil {
+			if verr := validateHookRequestRewrite(req, decision.Request); verr != nil {
 				return nil, fmt.Errorf("command hook %q rejected before_model rewrite: %w", h.name, verr)
 			}
 			h.recordRewrite("before_model", "request")
-			*req = *decision.Request
+			req.Temperature = decision.Request.Temperature
+			req.MaxTokens = decision.Request.MaxTokens
+			req.Reasoning = cloneModelRequest(decision.Request).Reasoning
 			return nil, nil
 		}
 		h.recordRewrite("before_model", "content")
@@ -380,6 +382,13 @@ func validateHookRequest(req *llm.Request) error {
 		}
 	}
 	return nil
+}
+
+func validateHookRequestRewrite(current, replacement *llm.Request) error {
+	if err := validateHookRequest(replacement); err != nil {
+		return err
+	}
+	return validateCommandModelHookMutation(current, replacement)
 }
 
 // validateHookToolRewrite bounds a before_tool rewrite payload (AG-003).

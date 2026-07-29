@@ -19,8 +19,8 @@ import (
 )
 
 func TestCommandHook_BeforeModelRewrite(t *testing.T) {
-	h := newTestCommandHook(t, "rewrite_model", 2*time.Second, trustedHookHash(t))
-	req := llm.Request{Model: "original-model"}
+	h := newTestCommandHook(t, "rewrite_sampling", 2*time.Second, trustedHookHash(t))
+	req := llm.Request{Model: "original-model", MaxTokens: 128, Temperature: 0.2}
 
 	res, err := h.BeforeModel(context.Background(), &req)
 	if err != nil {
@@ -29,8 +29,24 @@ func TestCommandHook_BeforeModelRewrite(t *testing.T) {
 	if res != nil {
 		t.Fatalf("BeforeModel result = %+v, want in-place rewrite", res)
 	}
-	if got := req.Model; got != "hook-model" {
-		t.Fatalf("model = %q, want hook-model", got)
+	if req.MaxTokens != 256 || req.Temperature != 0.7 {
+		t.Fatalf("sampling rewrite = max_tokens %d temperature %v", req.MaxTokens, req.Temperature)
+	}
+	if req.Model != "original-model" {
+		t.Fatalf("protected model changed to %q", req.Model)
+	}
+}
+
+func TestCommandHook_BeforeModelProtectedRewriteRejected(t *testing.T) {
+	h := newTestCommandHook(t, "rewrite_model", 2*time.Second, trustedHookHash(t))
+	req := llm.Request{Model: "original-model"}
+
+	_, err := h.BeforeModel(context.Background(), &req)
+	if err == nil || !strings.Contains(err.Error(), "protected") {
+		t.Fatalf("BeforeModel error = %v, want protected-field rejection", err)
+	}
+	if req.Model != "original-model" {
+		t.Fatalf("protected model changed to %q", req.Model)
 	}
 }
 
@@ -135,7 +151,7 @@ func TestCommandHookManagerFromEnv_BuildsRunnableHook(t *testing.T) {
 		"name":"env-command-hook",
 		"command":` + quoteJSON(exe) + `,
 		"args":["-test.run=TestCommandHookHelperProcess"],
-		"env":["AURA_HOOK_HELPER=1","AURA_HOOK_MODE=rewrite_model"],
+		"env":["AURA_HOOK_HELPER=1","AURA_HOOK_MODE=rewrite_sampling"],
 		"expected_sha256":` + quoteJSON(trustedHookHash(t)) + `,
 		"timeout_ms":2000
 	}]`
@@ -159,10 +175,10 @@ func TestCommandHookManagerFromEnv_BuildsRunnableHook(t *testing.T) {
 		t.Fatalf("BeforeModel through env hook: %v", err)
 	}
 	if res != nil {
-		t.Fatalf("rewrite_model should mutate the request in place, got result %+v", res)
+		t.Fatalf("rewrite_sampling should mutate the request in place, got result %+v", res)
 	}
-	if got := req.Model; got != "hook-model" {
-		t.Fatalf("request model = %q, want env command hook rewrite", got)
+	if req.MaxTokens != 256 || req.Temperature != 0.7 {
+		t.Fatalf("request sampling = max_tokens %d temperature %v", req.MaxTokens, req.Temperature)
 	}
 }
 
@@ -182,6 +198,15 @@ func TestCommandHookHelperProcess(t *testing.T) {
 		os.Exit(2)
 	}
 	switch mode {
+	case "rewrite_sampling":
+		if event.Event != "before_model" || event.Request == nil {
+			fmt.Fprintf(os.Stderr, "unexpected event: %+v\n", event)
+			os.Exit(2)
+		}
+		req := *event.Request
+		req.MaxTokens = 256
+		req.Temperature = 0.7
+		writeHookDecision(agent.CommandHookDecision{Decision: "rewrite", Request: &req})
 	case "rewrite_model":
 		if event.Event != "before_model" || event.Request == nil {
 			fmt.Fprintf(os.Stderr, "unexpected event: %+v\n", event)
