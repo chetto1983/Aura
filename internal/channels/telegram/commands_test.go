@@ -285,7 +285,10 @@ func TestCostEqualsCLI(t *testing.T) {
 	if !handled {
 		t.Fatal("/cost must be handled")
 	}
-	want, ok := llm.CostUSD(prices, "deepseek/deepseek-v4-flash:exacto", be.prompt, be.completion, nil)
+	want, ok := llm.CostUSD(prices, "deepseek/deepseek-v4-flash:exacto", llm.Usage{
+		PromptTokens:     be.prompt,
+		CompletionTokens: be.completion,
+	})
 	if !ok {
 		t.Fatal("fixture must produce a real cost")
 	}

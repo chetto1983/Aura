@@ -401,8 +401,13 @@ func TestConfigFileOverlayAllFields(t *testing.T) {
 	if p := cfg.Prices["file/model"]; p.InputPer1M != 1.5 || p.OutputPer1M != 2.5 {
 		t.Errorf("price overlay = %+v, want 1.5/2.5", p)
 	}
-	if _, ok := cfg.Prices["deepseek/deepseek-v4-flash:nitro"]; !ok {
-		t.Error("seeded price entry dropped by the entry-by-entry overlay")
+	// Amendment #93 removed the hardcoded seed, so Load starts from an empty map and the
+	// "entry-by-entry, not wholesale replace" property is no longer observable here —
+	// with nothing to merge onto, a replace and a merge are the same result. The
+	// invariant moved to where a pre-existing entry now exists: see
+	// TestResolvePricingDoesNotClobberAnOperatorOverride in pricing_source_test.go.
+	if len(cfg.Prices) != 1 {
+		t.Errorf("Prices = %+v, want only the file-supplied entry (no hardcoded seed)", cfg.Prices)
 	}
 }
 

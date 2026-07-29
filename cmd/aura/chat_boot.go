@@ -497,6 +497,16 @@ func assembleChatEnvWithOptions(
 	if err != nil {
 		return nil, fmt.Errorf("command hooks: %w", err)
 	}
+	// Resolve the configured model's fallback rate from the live catalogue (amendment
+	// #93 — there is no hardcoded seed to go stale). Never fatal: an unreadable price
+	// list must not stop a boot that can still serve turns, and the provider's own
+	// usage.cost stays the preferred source either way (D-18).
+	switch err := cfg.LLM.ResolvePricing(ctx); {
+	case err == nil, errors.Is(err, llm.ErrPricingNotApplicable):
+	default:
+		slog.Warn("model pricing unresolved: a turn whose wire usage omits cost will render n/a rather than a guess",
+			"model", cfg.LLM.Model, "err", err)
+	}
 	client := newLLMClient(cfg.LLM)
 	if options.clientTransform != nil {
 		client, err = options.clientTransform(client)

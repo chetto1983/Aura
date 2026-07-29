@@ -125,9 +125,12 @@ func costHonest(cfg llm.Config, c *turnCapture) bool {
 	if c.usage.PromptTokens <= 0 || c.usage.CompletionTokens < 0 {
 		return false
 	}
-	usd, ok := llm.CostUSD(cfg.Prices, cfg.Model, c.usage.PromptTokens, c.usage.CompletionTokens, c.usage.Cost)
+	usd, ok := llm.CostUSD(cfg.Prices, cfg.Model, c.usage)
 	if !ok {
-		return false // unknown model — but the seeded default IS known, so this is a fail
+		// Unresolved model. Since amendment #93 removed the hardcoded seed this also
+		// fires when ResolvePricing could not reach /models, so a harness that scores
+		// this must have resolved pricing (or received a provider cost) first.
+		return false
 	}
 	// never a fabricated $0 for the known model
 	return usd != "$0.000000" && usd != "n/a"

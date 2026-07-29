@@ -297,12 +297,12 @@ func toolInvocationTimestamp(ti *agent.ToolInvocation, fallback time.Time) time.
 // failed turn while the conversation history already contains the answer.
 func (r *Runner) persistAssistantAnswer(ctx context.Context, tr *turnTracker, ev *agent.Event) error {
 	u := usageFromStateDelta(ev.Actions.StateDelta)
-	// Prefer the provider's wire-reported cost (D-18); fall back to the seeded price
-	// table (D-23) when the provider omits it, so a priced turn never persists $0 while
-	// the displayed footer (same llm.CostUSD precedence) shows the table price. A
-	// genuinely unknown model (no table entry) stays 0.0 — the honest numeric "n/a".
+	// Prefer the provider's wire-reported cost (D-18); fall back to the rate resolved
+	// at boot from /models (D-23, amendment #93) when the provider omits it, so a priced
+	// turn never persists $0 while the displayed footer (same llm.CostUSD precedence)
+	// shows the computed price. An unresolved model stays 0.0 — the honest numeric "n/a".
 	cost := 0.0
-	if v, ok := llm.CostUSDValue(r.cfg.Prices, r.cfg.Model, u.PromptTokens, u.CompletionTokens, u.Cost); ok {
+	if v, ok := llm.CostUSDValue(r.cfg.Prices, r.cfg.Model, u); ok {
 		cost = v
 	}
 	reasoning, reasoningDurationMS := tr.persistedReasoning()

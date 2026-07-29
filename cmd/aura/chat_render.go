@@ -143,10 +143,10 @@ func renderToolActivity(w io.Writer, calls []llm.ToolCall) {
 
 // costFooter renders the per-turn footer (D-11): `· {tok} tok ({in} in / {out}
 // out) · ${usd} · {lat}s`. USD comes from llm.CostUSD (provider cost preferred,
-// price-table fallback, honest "n/a" for an unknown model — never $0).
+// resolved-rate fallback, honest "n/a" for an unresolved model — never $0).
 func costFooter(prices map[string]llm.Price, model string, usage llm.Usage, latencySec float64) string {
 	total := usage.PromptTokens + usage.CompletionTokens
-	usd, _ := llm.CostUSD(prices, model, usage.PromptTokens, usage.CompletionTokens, usage.Cost)
+	usd, _ := llm.CostUSD(prices, model, usage)
 	return fmt.Sprintf("\x1b[2m· %d tok (%d in / %d out) · %s · %.1fs\x1b[0m",
 		total, usage.PromptTokens, usage.CompletionTokens, usd, latencySec)
 }

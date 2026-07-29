@@ -185,7 +185,7 @@ func runScenario(t *testing.T, ctx context.Context, client llm.Client, cfg llm.C
 	m.totalMS = c.totalMS
 	m.outputTPS = completionTPS(c.usage.CompletionTokens, c.firstByteMS, c.totalMS)
 	m.goroutineDelta = runtime.NumGoroutine() - gBaseline
-	usd, _ := llm.CostUSD(cfg.Prices, cfg.Model, c.usage.PromptTokens, c.usage.CompletionTokens, c.usage.Cost)
+	usd, _ := llm.CostUSD(cfg.Prices, cfg.Model, c.usage)
 	m.costUSD = usd
 
 	// ---- secret_redaction (Critical, every scenario) ----

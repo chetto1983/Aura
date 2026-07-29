@@ -198,7 +198,10 @@ func load(allowEmptyKey bool) (*Config, error) {
 			"HTTP-Referer": headerReferer,
 			"X-Title":      headerTitle,
 		},
-		Prices: defaultPrices(),
+		// Empty by construction (amendment #93): rates are resolved at runtime by
+		// ResolvePricing, and ~/.aura/llm.json `prices` still overlays onto this map
+		// below. Load never touches the network, so an unresolved model renders "n/a".
+		Prices: map[string]Price{},
 	}
 
 	// Tier 2: .env / environment supplies the API key under its canonical name.

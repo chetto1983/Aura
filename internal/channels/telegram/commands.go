@@ -234,7 +234,15 @@ func (c *commands) cost(ctx context.Context) string {
 	if err != nil {
 		return "Costo non disponibile per ora."
 	}
-	display, _ := llm.CostUSD(c.deps.Prices, c.deps.Model, prompt, completion, provider)
+	// The DB aggregation carries no cached-token count, so cache reads price at the full
+	// input rate here — an over-report on a cache-heavy account (measured 2.7x). This is
+	// why the figure belongs to GET /key's usage_daily, which is the real charge; this
+	// estimate stands only until that lands.
+	display, _ := llm.CostUSD(c.deps.Prices, c.deps.Model, llm.Usage{
+		PromptTokens:     prompt,
+		CompletionTokens: completion,
+		Cost:             provider,
+	})
 	return fmt.Sprintf("Spesa di oggi: %s (%d token in, %d token out)", display, prompt, completion)
 }
 
