@@ -37,6 +37,7 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/envutil"
+	"github.com/chetto1983/aura/internal/mcp"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 	"github.com/chetto1983/aura/internal/swarm"
 	"github.com/chetto1983/aura/internal/web"
@@ -386,7 +387,15 @@ func buildRegistryWithMCPAndAdaptiveControls(
 		handshakeCtx, cancel := context.WithTimeout(ctx, mountTimeout)
 		mountOnce := func(c context.Context) (func() error, []string, error) {
 			if _, managed := cfg.MCPPolicies[name]; managed {
-				return mcptools.MountManagedServer(ctx, c, reg, name, cfg.MCPPolicies[name])
+				server := cfg.MCPPolicies[name]
+				return mcptools.MountManagedServerWithEgress(
+					ctx,
+					c,
+					reg,
+					name,
+					server,
+					mcp.RuntimeEgressPolicy(cfg.Profile.Strict(), server),
+				)
 			}
 			return mcptools.MountServer(ctx, c, reg, name, cfg.MCPServers[name])
 		}

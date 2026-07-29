@@ -200,7 +200,7 @@ func (a mcpWriteAdapter) load() (mcp.ManagedConfig, error) {
 func (a mcpWriteAdapter) probe(ctx context.Context, name string, server mcp.ManagedServer) *mcp.ProbeResult {
 	pctx, cancel := context.WithTimeout(ctx, mcpProbeTimeout)
 	defer cancel()
-	res := mcp.ProbeServer(pctx, name, server)
+	res := probeManagedMCPServer(pctx, name, server)
 	return &res
 }
 

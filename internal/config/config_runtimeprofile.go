@@ -15,8 +15,8 @@ package config
 import "strings"
 
 // RuntimeProfile is the runtime deployment posture (D-01) read from AURA_PROFILE.
-// It selects the strictness the config-validation pass applies; it does NOT itself
-// enforce any runtime capability (Tool Gateway / Phase 35+). Unset → dev (D-03).
+// It selects config-validation strictness and composition-root runtime posture,
+// including MCP egress enforcement. Unset → dev (D-03).
 type RuntimeProfile string
 
 const (

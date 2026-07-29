@@ -315,6 +315,43 @@ func TestHTTPTimeout(t *testing.T) {
 	}
 }
 
+func TestHTTPStrictRecipeRedirectCannotChangePrivateAuthority(t *testing.T) {
+	var targetReached bool
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		targetReached = true
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer target.Close()
+
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		http.Redirect(w, r, target.URL+"/mcp", http.StatusTemporaryRedirect)
+	}))
+	defer origin.Close()
+
+	server := ManagedServer{
+		Type:   ServerTypeStreamableHTTP,
+		URL:    origin.URL,
+		Source: "recipe:calendar",
+		Trust:  ManagedTrust{Class: TrustTrustedRecipe},
+	}
+	_, err := OpenServerWithEgress(
+		context.Background(),
+		"redirect",
+		server,
+		EgressPolicyForManagedServer(true, server),
+	)
+	if err == nil || !strings.Contains(err.Error(), "redirect") {
+		t.Fatalf("strict alternate-authority redirect error = %v", err)
+	}
+	if targetReached {
+		t.Fatal("strict redirect reached the alternate private authority")
+	}
+}
+
 func TestHTTPCloseBoundedOnUnresponsiveDelete(t *testing.T) {
 	release := make(chan struct{})
 	srv := httptest.NewServer(httpInitHandler(t, "session-close", func(w http.ResponseWriter, r *http.Request) {

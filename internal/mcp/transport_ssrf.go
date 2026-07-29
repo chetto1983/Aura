@@ -10,13 +10,11 @@ import (
 	"time"
 )
 
-// transport_ssrf.go is the enforce-only Layer-2 SSRF defense (T-31-SSRF-02). It is
-// installed by OpenHTTP ONLY when cfg.Enforce is set and the caller supplied no
-// http.Client; under dev OpenHTTP keeps http.DefaultClient unchanged (keep-alives
-// intact, zero behaviour/perf change). The dialContext resolves+classifies+pins the
-// target and dials ONLY the pinned IP (no second lookup can rebind it); the
-// net.Dialer.Control hook re-classifies the post-resolution IP right before connect,
-// defeating a DNS rebind between resolve and dial. Mirrors internal/web/transport.go.
+// transport_ssrf.go is the strict-policy Layer-2 SSRF defense (T-31-SSRF-02).
+// OpenHTTP installs it when the resolved EgressPolicy is enforced and no test
+// client was injected. The dialContext resolves+classifies+pins the target and
+// dials ONLY the pinned IP; the Control hook re-classifies the post-resolution
+// IP immediately before connect. Mirrors internal/web/transport.go.
 
 const mcpDialConnectTimeout = 10 * time.Second
 
@@ -25,24 +23,25 @@ const mcpDialConnectTimeout = 10 * time.Second
 type dialFunc func(ctx context.Context, network, addr string) (net.Conn, error)
 
 type hardenedDialer struct {
-	res  resolver
-	dial dialFunc
+	res    resolver
+	dial   dialFunc
+	policy EgressPolicy
 }
 
 // newHardenedDialer composes the hardened dialer. dial may be nil — a real net.Dialer
 // whose Control hook re-checks the post-resolution IP is used then.
 func newHardenedDialer(res resolver, dial dialFunc) *hardenedDialer {
-	hd := &hardenedDialer{res: res, dial: dial}
-	if hd.dial == nil {
-		hd.dial = (&net.Dialer{Timeout: mcpDialConnectTimeout, Control: hd.control}).DialContext
-	}
-	return hd
+	return newHardenedDialerWithPolicy(res, dial, EgressPolicy{enforcePrivate: true})
+}
+
+func newHardenedDialerWithPolicy(res resolver, dial dialFunc, policy EgressPolicy) *hardenedDialer {
+	return &hardenedDialer{res: res, dial: dial, policy: policy}
 }
 
 // newHardenedHTTPClient builds the enforce-only SSRF-hardened http.Client. Keep-
 // alives are disabled so a pinned-IP connection is never reused across hosts.
-func newHardenedHTTPClient(res resolver) *http.Client {
-	hd := newHardenedDialer(res, nil)
+func newHardenedHTTPClient(res resolver, policy EgressPolicy) *http.Client {
+	hd := newHardenedDialerWithPolicy(res, nil, policy)
 	return &http.Client{
 		Transport: &http.Transport{
 			DialContext:       hd.dialContext,
@@ -66,22 +65,33 @@ func (h *hardenedDialer) dialContext(ctx context.Context, network, addr string) 
 	if len(ips) == 0 {
 		return nil, fmt.Errorf("ssrf: resolve %q: no addresses", host)
 	}
-	var pinned netip.Addr
-	for _, ip := range ips {
-		if reason, blocked := classify(ip); blocked {
-			return nil, fmt.Errorf("ssrf: blocked dial %s (%s)", ip, reason)
-		}
-		if !pinned.IsValid() {
-			pinned = ip.Unmap()
-		}
+	authority := canonicalDialAuthority(host, port)
+	pinned, err := validateResolvedTarget(h.policy, authority, ips)
+	if err != nil {
+		return nil, err
 	}
-	return h.dial(ctx, network, net.JoinHostPort(pinned.String(), port))
+	pinnedAddress := net.JoinHostPort(pinned.String(), port)
+	if h.dial != nil {
+		return h.dial(ctx, network, pinnedAddress)
+	}
+	allowPrivate := h.policy.allowsPrivateAuthority(authority)
+	dialer := &net.Dialer{
+		Timeout: mcpDialConnectTimeout,
+		Control: func(network, address string, conn syscall.RawConn) error {
+			return h.controlAddress(network, address, conn, allowPrivate)
+		},
+	}
+	return dialer.DialContext(ctx, network, pinnedAddress)
 }
 
 // control runs AFTER resolution and BEFORE connect (address is the post-resolution
 // ip:port), re-classifying the dialed IP so a rebind to a private/metadata target is
 // rejected even on a path that dialed by name. Fail-closed on an unparseable host.
 func (h *hardenedDialer) control(_ string, address string, _ syscall.RawConn) error {
+	return h.controlAddress("", address, nil, false)
+}
+
+func (h *hardenedDialer) controlAddress(_ string, address string, _ syscall.RawConn, allowPrivate bool) error {
 	host, _, err := net.SplitHostPort(address)
 	if err != nil {
 		return fmt.Errorf("ssrf: bad dial address %q", address)
@@ -90,7 +100,11 @@ func (h *hardenedDialer) control(_ string, address string, _ syscall.RawConn) er
 	if perr != nil {
 		return fmt.Errorf("ssrf: unparseable dial ip %q", host)
 	}
-	if reason, blocked := classify(ip); blocked {
+	reason, blocked := classify(ip)
+	if metadataAddress(ip) {
+		return fmt.Errorf("ssrf: blocked rebind to %s (%s)", host, reason)
+	}
+	if blocked && (!allowPrivate || !recipePrivateReason(reason)) {
 		return fmt.Errorf("ssrf: blocked rebind to %s (%s)", host, reason)
 	}
 	return nil

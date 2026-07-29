@@ -78,3 +78,32 @@ func TestHardenedControlRejectsRebind(t *testing.T) {
 		})
 	}
 }
+
+func TestHardenedDialerAllowsExactTrustedPrivateAuthority(t *testing.T) {
+	rec := &recordingDial{}
+	server := ManagedServer{
+		Type:   ServerTypeStreamableHTTP,
+		URL:    "http://sidecar.test:8080/mcp/",
+		Source: "recipe:whatsapp",
+		Trust:  ManagedTrust{Class: TrustTrustedRecipe},
+	}
+	res := fakeResolver{ips: map[string][]netip.Addr{
+		"sidecar.test": mustAddrs(t, "172.18.0.5"),
+	}}
+	hd := newHardenedDialerWithPolicy(res, rec.dial, EgressPolicyForManagedServer(true, server))
+	_, err := hd.dialContext(context.Background(), "tcp", "sidecar.test:8080")
+	if !errors.Is(err, errRecordingDial) {
+		t.Fatalf("exact trusted private dial error = %v, want recording sentinel", err)
+	}
+	if rec.addr != "172.18.0.5:8080" {
+		t.Fatalf("dialed %q, want pinned recipe destination", rec.addr)
+	}
+
+	rec.addr = ""
+	if _, err := hd.dialContext(context.Background(), "tcp", "sidecar.test:8081"); err == nil {
+		t.Fatal("alternate private port reached inner dial")
+	}
+	if rec.addr != "" {
+		t.Fatalf("alternate private port dialed %q", rec.addr)
+	}
+}

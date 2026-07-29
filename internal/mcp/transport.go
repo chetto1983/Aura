@@ -23,6 +23,13 @@ type Transport interface {
 // falling through to stdio Open -- the highest-priority SC1 gate: a rejected
 // server must never reach a stdio subprocess spawn (D-02, closes F-027).
 func OpenServer(ctx context.Context, name string, server ManagedServer) (Transport, error) {
+	return OpenServerWithEgress(ctx, name, server, RuntimeEgressPolicy(false, server))
+}
+
+// OpenServerWithEgress is OpenServer with a composition-root-resolved network
+// policy. Runtime entry points use it so strict profiles cannot be weakened by
+// an environment toggle; direct/dev callers retain OpenServer's legacy default.
+func OpenServerWithEgress(ctx context.Context, name string, server ManagedServer, egress EgressPolicy) (Transport, error) {
 	serverType, _, err := Classify(server)
 	if err != nil {
 		return nil, fmt.Errorf("mcp open %q: %w", name, err)
@@ -45,16 +52,16 @@ func OpenServer(ctx context.Context, name string, server ManagedServer) (Transpo
 			BearerToken:          bearer,
 			BearerTokenSource:    bearerSource,
 			ToolIdentityArgument: identityArgument,
-			Enforce:              ssrfEnforceFromEnv(),
+			EgressPolicy:         egress,
 		})
 	}
 	return Open(ctx, name, ServerConfig{Command: server.Command, Args: server.Args, Env: server.Env})
 }
 
 // ssrfEnforceFromEnv reads the AURA_MCP_SSRF_ENFORCE knob (AURA_<DOMAIN>_<UNIT>).
-// Default OFF: an unset/empty/false value keeps dev byte-behaviour-identical
-// (loopback + private compose-DNS sidecars reachable, http.DefaultClient retained).
-// Phase 33 (PROF-01/PROF-04) will bind this to the runtime profile.
+// Default OFF: an unset/empty/false value keeps lenient profiles compatible with
+// local sidecars. RuntimeEgressPolicy ORs this with strict-profile enforcement,
+// so the knob can tighten a lenient profile but cannot weaken a strict one.
 func ssrfEnforceFromEnv() bool {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("AURA_MCP_SSRF_ENFORCE"))) {
 	case "1", "true", "yes", "on":

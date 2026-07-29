@@ -80,6 +80,41 @@ func TestWriteRuntimeCheckReachableHTTPEndpointOK(t *testing.T) {
 	}
 }
 
+func TestStrictRuntimeProfileOwnsManagedMCPEgress(t *testing.T) {
+	for _, profile := range []string{"single_user_hardened", "server_production"} {
+		t.Run(profile, func(t *testing.T) {
+			t.Setenv("AURA_PROFILE", profile)
+			t.Setenv("AURA_MCP_SSRF_ENFORCE", "false")
+
+			srv := newMCPHTTPTestServer(t)
+			defer srv.Close()
+			remote := mcp.ManagedServer{
+				Type:   mcp.ServerTypeStreamableHTTP,
+				URL:    srv.URL,
+				Source: "operator:remote",
+				Trust:  mcp.ManagedTrust{Class: mcp.TrustRemoteHTTP},
+			}
+			if policy := runtimeMCPEgressPolicy(remote); !policy.Enforced() {
+				t.Fatal("strict runtime profile was weakened by AURA_MCP_SSRF_ENFORCE=false")
+			}
+			if _, err := openManagedMCPTransport(context.Background(), "remote", remote); err == nil || !strings.Contains(err.Error(), "blocked target") {
+				t.Fatalf("strict remote/private open error = %v, want SSRF rejection", err)
+			}
+
+			recipe := remote
+			recipe.Source = "recipe:calendar"
+			recipe.Trust = mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe}
+			client, err := openManagedMCPTransport(context.Background(), "calendar", recipe)
+			if err != nil {
+				t.Fatalf("exact trusted recipe destination rejected under strict profile: %v", err)
+			}
+			if err := client.Close(); err != nil {
+				t.Fatalf("Close trusted recipe: %v", err)
+			}
+		})
+	}
+}
+
 // TestWriteRuntimeCheckZeroToolsHTTPEndpointOK proves a reachable HTTP server with
 // zero advertised tools still probes OK=true (ToolCount 0 is not a failure).
 func TestWriteRuntimeCheckZeroToolsHTTPEndpointOK(t *testing.T) {

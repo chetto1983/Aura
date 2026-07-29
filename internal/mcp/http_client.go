@@ -32,11 +32,9 @@ var errHTTPSessionExpired = errors.New("mcp http session expired")
 // HTTPConfig declares how to reach a Streamable-HTTP MCP server: its endpoint URL
 // plus optional static headers, bearer token, and an override http.Client.
 //
-// Enforce gates ONLY the private/loopback-range SSRF block (the scheme + cloud-
-// metadata barrier is always on). Its zero value (false) is the dev-permissive
-// policy: loopback + compose-DNS private sidecars stay reachable and the default
-// http.DefaultClient is retained. AllowHosts is the enforce-mode sidecar allow-list
-// (lowercased hostnames that bypass the resolved-IP block); it is unused under dev.
+// EgressPolicy is resolved from the runtime profile plus typed managed-server
+// source/trust. Its zero value is the dev-permissive posture, while the
+// scheme/cloud-metadata barrier remains unconditional.
 type HTTPConfig struct {
 	URL                  string
 	Headers              map[string]string
@@ -44,8 +42,7 @@ type HTTPConfig struct {
 	BearerTokenSource    func(context.Context) (string, error)
 	ToolIdentityArgument string
 	Client               *http.Client
-	Enforce              bool
-	AllowHosts           map[string]struct{}
+	EgressPolicy         EgressPolicy
 }
 
 // HTTPClient speaks the Streamable-HTTP MCP transport to one remote server,
@@ -76,21 +73,22 @@ func OpenHTTP(ctx context.Context, name string, cfg HTTPConfig) (*HTTPClient, er
 	}
 	// SSRF barrier (SEC-08 / T-31-SSRF): validate the endpoint BEFORE it becomes
 	// c.endpoint so the c.client.Do(req) sink consumes a parsed+scheme+metadata-
-	// checked value. The scheme/metadata block is unconditional; the private-range
-	// block is gated on cfg.Enforce (zero value = dev-permissive).
-	validated, err := guardEndpoint(ctx, cfg.URL, cfg.Enforce, cfg.AllowHosts, net.DefaultResolver)
+	// checked value. The scheme/metadata block is unconditional; private-range
+	// handling comes from the resolved profile/source egress policy.
+	validated, err := guardEndpointWithPolicy(ctx, cfg.URL, cfg.EgressPolicy, net.DefaultResolver)
 	if err != nil {
 		return nil, fmt.Errorf("mcp %q: %w", name, err)
 	}
 	httpClient := cfg.Client
 	if httpClient == nil {
 		httpClient = http.DefaultClient
-		if cfg.Enforce {
-			// Hardened Layer-2 (DNS-rebinding defense) only under enforce; dev keeps
-			// http.DefaultClient unchanged (keep-alives intact, no behaviour change).
-			httpClient = newHardenedHTTPClient(net.DefaultResolver)
+		if cfg.EgressPolicy.Enforced() {
+			// Hardened Layer-2 pins strict-policy dials. Lenient policy keeps the
+			// default transport; both paths still receive redirect validation below.
+			httpClient = newHardenedHTTPClient(net.DefaultResolver, cfg.EgressPolicy)
 		}
 	}
+	httpClient = withMCPRedirectGuard(httpClient, cfg.EgressPolicy, net.DefaultResolver)
 	c := &HTTPClient{
 		name:            name,
 		endpoint:        validated.String(),
@@ -105,6 +103,24 @@ func OpenHTTP(ctx context.Context, name string, cfg HTTPConfig) (*HTTPClient, er
 		return nil, err
 	}
 	return c, nil
+}
+
+func withMCPRedirectGuard(base *http.Client, policy EgressPolicy, res resolver) *http.Client {
+	cloned := *base
+	previous := base.CheckRedirect
+	cloned.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if _, err := guardEndpointWithPolicy(req.Context(), req.URL.String(), policy, res); err != nil {
+			return fmt.Errorf("mcp redirect blocked: %w", err)
+		}
+		if previous != nil {
+			return previous(req, via)
+		}
+		if len(via) >= 10 {
+			return fmt.Errorf("mcp redirect stopped after %d hops", len(via))
+		}
+		return nil
+	}
+	return &cloned
 }
 
 func (c *HTTPClient) initialize(ctx context.Context) (err error) {

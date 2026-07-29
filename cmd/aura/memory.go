@@ -352,7 +352,7 @@ func openMemoryMCP(ctx context.Context) (mcp.Transport, error) {
 	if !ok {
 		return nil, fmt.Errorf("memory MCP server is not configured or is disabled; the managed %q recipe must be mounted", memoryServerName)
 	}
-	return mcp.OpenServer(ctx, memoryServerName, server)
+	return openManagedMCPTransport(ctx, memoryServerName, server)
 }
 
 // callMemoryToolText is the text-returning core of callMemoryTool (shared with the

@@ -45,6 +45,12 @@ type ProbeResult struct {
 // It is exported so cmd/aura's `mcp doctor` (package main) can render its text output
 // from the same structured probe the governance handler consumes.
 func ProbeServer(ctx context.Context, name string, server ManagedServer) ProbeResult {
+	return ProbeServerWithEgress(ctx, name, server, RuntimeEgressPolicy(false, server))
+}
+
+// ProbeServerWithEgress performs the same live probe using a composition-root
+// policy, keeping diagnostics on the identical network boundary as agent mounts.
+func ProbeServerWithEgress(ctx context.Context, name string, server ManagedServer, egress EgressPolicy) ProbeResult {
 	res := ProbeResult{Name: name}
 
 	// A stdio server with no launch command cannot be dialed; an HTTP server is keyed by
@@ -55,7 +61,7 @@ func ProbeServer(ctx context.Context, name string, server ManagedServer) ProbeRe
 		return res
 	}
 
-	client, err := OpenServer(ctx, name, server)
+	client, err := OpenServerWithEgress(ctx, name, server, egress)
 	if err != nil {
 		res.Detail = "dial failed"
 		res.Err = RedactSecrets(err.Error())

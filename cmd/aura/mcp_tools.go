@@ -74,6 +74,19 @@ func effectiveMCPServer(name string) (mcp.ServerConfig, error) {
 	return server, nil
 }
 
+func runtimeMCPEgressPolicy(server mcp.ManagedServer) mcp.EgressPolicy {
+	cfg := config.LoadDB()
+	return mcp.RuntimeEgressPolicy(cfg.Profile.Strict(), server)
+}
+
+func openManagedMCPTransport(ctx context.Context, name string, server mcp.ManagedServer) (mcp.Transport, error) {
+	return mcp.OpenServerWithEgress(ctx, name, server, runtimeMCPEgressPolicy(server))
+}
+
+func probeManagedMCPServer(ctx context.Context, name string, server mcp.ManagedServer) mcp.ProbeResult {
+	return mcp.ProbeServerWithEgress(ctx, name, server, runtimeMCPEgressPolicy(server))
+}
+
 func openAndListMCPTools(ctx context.Context, name string, cfg mcp.ServerConfig) (*mcp.Client, []mcp.ToolDef, error) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
@@ -97,7 +110,7 @@ func openAndListManagedMCPTools(ctx context.Context, name string, server mcp.Man
 		err error
 	)
 	if strings.TrimSpace(server.Type) == mcp.ServerTypeStreamableHTTP || strings.TrimSpace(server.URL) != "" {
-		cli, err = mcp.OpenServer(ctx, name, server)
+		cli, err = openManagedMCPTransport(ctx, name, server)
 	} else {
 		cfg, cfgErr := mcpmanager.RuntimeLaunchConfig(name, server)
 		if cfgErr != nil {

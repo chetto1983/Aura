@@ -82,9 +82,16 @@ type resolver interface {
 	LookupNetIP(ctx context.Context, network, host string) ([]netip.Addr, error)
 }
 
-// metadataReason reports whether a block reason belongs to the cloud-metadata /
-// link-local class that is denied in EVERY profile (the unconditional barrier).
-func metadataReason(reason string) bool { return reason == "link_local" }
+// metadataAddress reports cloud-metadata/link-local destinations denied in every
+// profile. The explicit IPv6 prefix check runs before the broader private class
+// can hide fd00:ec2::/32 behind netip.Addr.IsPrivate.
+func metadataAddress(ip netip.Addr) bool {
+	if !ip.IsValid() {
+		return false
+	}
+	ip = ip.Unmap()
+	return ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || mcpMetadataV6Pfx.Contains(ip)
+}
 
 // guardEndpoint validates a raw MCP endpoint URL and returns the parsed *url.URL or
 // an error. Five steps, the first three UNCONDITIONAL (they break the CodeQL taint
@@ -93,12 +100,28 @@ func metadataReason(reason string) bool { return reason == "link_local" }
 //  1. parse + non-empty host;
 //  2. scheme ∈ allowedSchemes;
 //  3. host ∉ metadataHostBlocklist;
-//  4. under enforce, an allow-listed host short-circuits (configured sidecar);
-//     otherwise resolve and classify EVERY record — under enforce reject on ANY
-//     blocked record (fail closed, never cherry-pick a public IP from a mixed set),
-//     under dev reject ONLY the metadata/link-local class (loopback + private pass);
+//  4. resolve and classify EVERY record; strict mode rejects private targets except
+//     the exact authority of a trusted built-in recipe, and rejects mixed DNS even
+//     for that recipe; dev rejects metadata/link-local while allowing local sidecars;
 //  5. return the validated URL.
 func guardEndpoint(ctx context.Context, raw string, enforce bool, allowHosts map[string]struct{}, res resolver) (*url.URL, error) {
+	policy := EgressPolicy{enforcePrivate: enforce}
+	if enforce && len(allowHosts) > 0 {
+		if u, err := url.Parse(strings.TrimSpace(raw)); err == nil {
+			if _, ok := allowHosts[normalizeEgressHost(u.Hostname())]; ok {
+				if authority, authorityErr := canonicalURLAuthority(u); authorityErr == nil {
+					policy.allowedPrivateAuthorities = map[string]struct{}{authority: {}}
+				}
+			}
+		}
+	}
+	return guardEndpointWithPolicy(ctx, raw, policy, res)
+}
+
+// guardEndpointWithPolicy validates one initial or redirect URL against the fully
+// resolved runtime/source policy. It resolves every candidate even for an allowed
+// recipe so metadata and mixed-address DNS cannot hide behind the allow entry.
+func guardEndpointWithPolicy(ctx context.Context, raw string, policy EgressPolicy, res resolver) (*url.URL, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
 		return nil, fmt.Errorf("ssrf: parse url: %w", err)
@@ -113,10 +136,9 @@ func guardEndpoint(ctx context.Context, raw string, enforce bool, allowHosts map
 	if _, bad := metadataHostBlocklist[host]; bad {
 		return nil, fmt.Errorf("ssrf: blocked metadata host %q", u.Hostname())
 	}
-	if enforce {
-		if _, ok := allowHosts[host]; ok {
-			return u, nil
-		}
+	authority, err := canonicalURLAuthority(u)
+	if err != nil {
+		return nil, fmt.Errorf("ssrf: authority: %w", err)
 	}
 	ips, err := res.LookupNetIP(ctx, "ip", u.Hostname())
 	if err != nil {
@@ -125,14 +147,48 @@ func guardEndpoint(ctx context.Context, raw string, enforce bool, allowHosts map
 	if len(ips) == 0 {
 		return nil, fmt.Errorf("ssrf: resolve %q: no addresses", u.Hostname())
 	}
-	for _, ip := range ips {
-		reason, blocked := classify(ip)
-		if !blocked {
-			continue
-		}
-		if enforce || metadataReason(reason) {
-			return nil, fmt.Errorf("ssrf: blocked target %s (%s)", ip, reason)
-		}
+	if _, err := validateResolvedTarget(policy, authority, ips); err != nil {
+		return nil, err
 	}
 	return u, nil
+}
+
+// validateResolvedTarget applies the same classification to initial lookup and
+// pinned dial. It rejects mixed public/private answers even for a trusted recipe.
+func validateResolvedTarget(policy EgressPolicy, authority string, ips []netip.Addr) (netip.Addr, error) {
+	allowPrivate := policy.allowsPrivateAuthority(authority)
+	var pinned netip.Addr
+	var sawPublic, sawBlocked bool
+	for _, ip := range ips {
+		ip = ip.Unmap()
+		reason, blocked := classify(ip)
+		if !blocked {
+			sawPublic = true
+			if !pinned.IsValid() {
+				pinned = ip
+			}
+			continue
+		}
+		sawBlocked = true
+		if metadataAddress(ip) {
+			return netip.Addr{}, fmt.Errorf("ssrf: blocked target %s (%s)", ip, reason)
+		}
+		if policy.enforcePrivate && (!allowPrivate || !recipePrivateReason(reason)) {
+			return netip.Addr{}, fmt.Errorf("ssrf: blocked target %s (%s)", ip, reason)
+		}
+		if !pinned.IsValid() {
+			pinned = ip
+		}
+	}
+	if policy.enforcePrivate && sawPublic && sawBlocked {
+		return netip.Addr{}, fmt.Errorf("ssrf: mixed public/private DNS answer for %s", authority)
+	}
+	if !pinned.IsValid() {
+		return netip.Addr{}, fmt.Errorf("ssrf: no usable address for %s", authority)
+	}
+	return pinned, nil
+}
+
+func recipePrivateReason(reason string) bool {
+	return reason == "loopback" || reason == "private"
 }

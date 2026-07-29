@@ -40,8 +40,7 @@ type Config struct {
 
 	// Phase 33 (Slice runtime-profiles) deployment posture. Distinct from the
 	// Agent.md per-identity ProfileDir below (RESEARCH Pitfall 1). Selects the
-	// config-validation strictness tier; it does NOT itself enforce any runtime
-	// capability (Tool Gateway / Phase 35+).
+	// config-validation strictness tier and composition-root runtime posture.
 	Profile RuntimeProfile // AURA_PROFILE — runtime deployment profile, default dev (D-01/D-03)
 
 	// Phase 4 (Slice 1.8) conversation + context-management tuning knobs.

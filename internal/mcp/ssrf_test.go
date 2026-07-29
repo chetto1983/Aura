@@ -203,3 +203,58 @@ func TestGuardEndpoint(t *testing.T) {
 		})
 	}
 }
+
+func TestStrictManagedEgressAllowsOnlyExactTrustedRecipeAuthority(t *testing.T) {
+	server := ManagedServer{
+		Type:   ServerTypeStreamableHTTP,
+		URL:    "http://sidecar.test:8080/mcp/",
+		Source: "recipe:calendar",
+		Trust:  ManagedTrust{Class: TrustTrustedRecipe},
+	}
+	policy := EgressPolicyForManagedServer(true, server)
+	res := fakeResolver{ips: map[string][]netip.Addr{
+		"sidecar.test": mustAddrs(t, "172.18.0.5"),
+	}}
+
+	if _, err := guardEndpointWithPolicy(context.Background(), server.URL, policy, res); err != nil {
+		t.Fatalf("exact trusted recipe authority rejected: %v", err)
+	}
+	if _, err := guardEndpointWithPolicy(context.Background(), "http://sidecar.test:8081/mcp/", policy, res); err == nil {
+		t.Fatal("alternate private port inherited recipe authorization")
+	}
+
+	remote := server
+	remote.Source = "operator:remote"
+	remote.Trust = ManagedTrust{Class: TrustRemoteHTTP}
+	if _, err := guardEndpointWithPolicy(
+		context.Background(),
+		remote.URL,
+		EgressPolicyForManagedServer(true, remote),
+		res,
+	); err == nil {
+		t.Fatal("remote_http received an implicit private destination allowance")
+	}
+}
+
+func TestStrictManagedEgressRejectsMixedDNSAndMetadataEvenForRecipe(t *testing.T) {
+	server := ManagedServer{
+		Type:   ServerTypeStreamableHTTP,
+		URL:    "http://sidecar.test:8080/mcp/",
+		Source: SourceRecipeMemory,
+		Trust:  ManagedTrust{Class: TrustTrustedRecipe},
+	}
+	policy := EgressPolicyForManagedServer(true, server)
+	cases := map[string][]netip.Addr{
+		"mixed public private": mustAddrs(t, "93.184.216.34", "172.18.0.5"),
+		"ipv4 metadata":        mustAddrs(t, "169.254.169.254"),
+		"ipv6 metadata":        mustAddrs(t, "fd00:ec2::254"),
+	}
+	for name, ips := range cases {
+		t.Run(name, func(t *testing.T) {
+			res := fakeResolver{ips: map[string][]netip.Addr{"sidecar.test": ips}}
+			if _, err := guardEndpointWithPolicy(context.Background(), server.URL, policy, res); err == nil {
+				t.Fatal("strict trusted recipe accepted an adversarial DNS result")
+			}
+		})
+	}
+}

@@ -37,7 +37,7 @@ type mcpBoardAdapter struct {
 func (a mcpBoardAdapter) Servers() mcp.ManagedConfig { return a.doc }
 
 func (a mcpBoardAdapter) Probe(ctx context.Context, name string, server mcp.ManagedServer) mcp.ProbeResult {
-	return mcp.ProbeServer(ctx, name, server)
+	return probeManagedMCPServer(ctx, name, server)
 }
 
 func governanceMCPBoardConfig(cfg *config.Config) (mcp.ManagedConfig, error) {

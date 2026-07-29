@@ -29,9 +29,22 @@ func MountServer(processCtx, handshakeCtx context.Context, reg *tools.Registry, 
 // closer for the underlying transport. processCtx/handshakeCtx follow MountServer's
 // two-context contract (Pitfall #2).
 func MountManagedServer(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, server mcp.ManagedServer) (closer func() error, names []string, err error) {
+	return MountManagedServerWithEgress(
+		processCtx,
+		handshakeCtx,
+		reg,
+		name,
+		server,
+		mcp.RuntimeEgressPolicy(false, server),
+	)
+}
+
+// MountManagedServerWithEgress mounts a managed server with the network policy
+// resolved by the composition root from its runtime profile.
+func MountManagedServerWithEgress(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, server mcp.ManagedServer, egress mcp.EgressPolicy) (closer func() error, names []string, err error) {
 	policy := bridgePolicy{memory: mcp.IsSharedAdminGoverned(server)}
 	if isStreamableHTTPManagedServer(server) {
-		return mountManagedHTTP(processCtx, handshakeCtx, reg, name, server, policy)
+		return mountManagedHTTP(processCtx, handshakeCtx, reg, name, server, policy, egress)
 	}
 
 	cfg, err := managedStdioConfig(name, server)
@@ -51,8 +64,8 @@ func MountManagedServer(processCtx, handshakeCtx context.Context, reg *tools.Reg
 // An HTTP client has no subprocess, so the wrapper's open closure ignores
 // processCtx and re-opens via mcp.OpenServer bounded by handshakeCtx alone; the
 // parameter is kept for signature uniformity with mountStdio/openMCPClient.
-func mountManagedHTTP(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, server mcp.ManagedServer, policy bridgePolicy) (closer func() error, names []string, err error) {
-	srv, err := mcp.OpenServer(handshakeCtx, name, server)
+func mountManagedHTTP(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, server mcp.ManagedServer, policy bridgePolicy, egress mcp.EgressPolicy) (closer func() error, names []string, err error) {
+	srv, err := mcp.OpenServerWithEgress(handshakeCtx, name, server, egress)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -64,7 +77,7 @@ func mountManagedHTTP(processCtx, handshakeCtx context.Context, reg *tools.Regis
 	wrapper := newReconnectingServer(name, mcp.ServerConfig{}, srv)
 	wrapper.setProcessContext(processCtx)
 	wrapper.setOpen(func(_, handshakeCtx context.Context) (reconnectingClient, error) {
-		return mcp.OpenServer(handshakeCtx, name, server)
+		return mcp.OpenServerWithEgress(handshakeCtx, name, server, egress)
 	})
 	names, err = mountWithDefsPolicy(reg, name, wrapper, defs, policy)
 	if err != nil {
