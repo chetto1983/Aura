@@ -9,13 +9,40 @@ P0-P3/INFO model. All line locations refer to the audited working tree.
 |---|---:|---|
 | P0 open | 0 | — |
 | P0 remediated and verified | 2 | SEC-001, SEC-002 |
-| P1 | 16 | MCP-001–004, ARC-001, PRIV-001, MEM-001–002, CON-001, CTX-001–005, OBS-001, TST-001 |
+| P1 open | 4 | CON-001, CTX-004, OBS-001, TST-001 |
+| P1 remediated and verified | 12 | MCP-001–004, ARC-001, PRIV-001, MEM-001–002, CTX-001–003, CTX-005 |
 | P2 | 11 | REL-001, SEC-003, MEM-003–005, CTX-006, MCP-005–007, ARC-002–003 |
 | INFO | 1 | PERF-001 |
 
-Post-remediation status: 2 REMEDIATED/VERIFIED. At the audit cutoff the status
-was 29 CONFIRMED, 0 HIGH-CONFIDENCE, 0 SUSPECTED, 1 NOT ASSESSABLE.
-Confidence remains 29 High, 1 Medium, 0 Low.
+Post-remediation status: 14 REMEDIATED/VERIFIED and 15 CONFIRMED findings; the
+single INFO item remains NOT ASSESSABLE. At the audit cutoff the status was 29
+CONFIRMED, 0 HIGH-CONFIDENCE, 0 SUSPECTED, 1 NOT ASSESSABLE. Confidence remains
+29 High, 1 Medium, 0 Low.
+
+## P1 remediation ledger
+
+This ledger records only fixes that were committed and validated by
+2026-07-29. Findings absent from the ledger remain open.
+
+| Finding | Status | Commit | Verification summary |
+|---|---|---|---|
+| CTX-001 | REMEDIATED / VERIFIED | `caaf33ae4` | Exact model-only user-context regression, full Go tests, vet, build, and lint passed. |
+| MCP-001 | REMEDIATED / VERIFIED | `9976f12c1` | Source-bound policy, alias/duplicate policy, bridge scope, and focused Go gates passed. |
+| CTX-002 | REMEDIATED / VERIFIED | `36bc8535c` | Active-round boundary and overflow regressions plus focused Go gates passed. |
+| CTX-003 | REMEDIATED / VERIFIED | `c3ef04e6b` | Protected hook mutation/reorder/inflation regressions plus focused Go gates passed. |
+| CTX-005 | REMEDIATED / VERIFIED | `423cccaf5` | Startup validation rejects impossible token budgets; focused Go gates passed. |
+| MEM-002 | REMEDIATED / VERIFIED | `3b021257c` | Superseded-preference recall regression and Agent Memory gates passed. |
+| MCP-002 | REMEDIATED / VERIFIED | `94e373d4b` | Deadline-selectable acquisition/close, race coverage, vet, and build passed. |
+| MCP-003 | REMEDIATED / VERIFIED | `e7d01a319` | Strict-profile per-hop egress and trusted-sidecar regression gates passed. |
+| ARC-001 | REMEDIATED / VERIFIED | `cfb907f77` | Knowledge transport now reuses the hardened MCP substrate; lifecycle and credential regressions passed. |
+| PRIV-001 | REMEDIATED / VERIFIED | `9ee2e109f` | Fail-closed purge wiring, shared-node preservation, retry/postcondition tests, vet, race, and build passed. |
+| MEM-001 | REMEDIATED / LIVE-VERIFIED | `40e6e0e90` | Fault-injected rollback coverage and authenticated live graph mutation checks passed. |
+| MCP-004 | REMEDIATED / LIVE-VERIFIED | `c6bb6f09b` | Typed rejection/error replay, zero-effect rejection, full Python gates, Go race/vet/build, Windows hooks, and authenticated live tests passed on image `REV=c6bb6f09b`. |
+
+The live Agent Memory baseline was intentionally reset under PRD Amendment
+#101 and rebuilt with the native 1024-dimensional embedding contract in
+`12085a518`. Neo4j migrations, all vector indexes, authenticated MCP
+write/recall, and stored embedding width were verified after the reset.
 
 ## [SEC-001] Unauthenticated memory MCP exposes global and forgeable tenant scope
 
@@ -76,7 +103,7 @@ Confidence remains 29 High, 1 Medium, 0 Low.
 
 ## [MCP-001] Memory recipe alias bypasses scoping and surface policy
 
-- Status: CONFIRMED
+- Status: REMEDIATED / VERIFIED (2026-07-29)
 - Severity: P1
 - Confidence / domain / horizon: High / MCP, isolation / Immediate
 - Affected components: managed recipe identity, CLI/governance install, bridge namespace, tool discovery.
@@ -94,7 +121,7 @@ Confidence remains 29 High, 1 Medium, 0 Low.
 
 ## [MCP-002] MCP session lock wait ignores cancellation
 
-- Status: CONFIRMED
+- Status: REMEDIATED / VERIFIED (2026-07-29)
 - Severity: P1
 - Confidence / domain / horizon: High / MCP, reliability / Short-term
 - Affected components: stdio/HTTP clients and shutdown.
@@ -112,7 +139,7 @@ Confidence remains 29 High, 1 Medium, 0 Low.
 
 ## [MCP-003] Strict runtime profiles do not enable complete MCP SSRF policy
 
-- Status: CONFIRMED
+- Status: REMEDIATED / VERIFIED (2026-07-29)
 - Severity: P1
 - Confidence / domain / horizon: High / MCP, network security / Immediate
 - Affected components: HTTP transport, runtime profiles, allow-host policy.
@@ -130,7 +157,7 @@ Confidence remains 29 High, 1 Medium, 0 Low.
 
 ## [ARC-001] Active knowledge client bypasses common MCP hardening
 
-- Status: CONFIRMED
+- Status: REMEDIATED / VERIFIED (2026-07-29)
 - Severity: P1
 - Confidence / domain / horizon: High / Architecture, MCP, secrets / Immediate
 - Affected components: `internal/knowledge/client.go`, chat/serve/provisioning consumers.
@@ -148,7 +175,7 @@ Confidence remains 29 High, 1 Medium, 0 Low.
 
 ## [PRIV-001] Production deprovisioning retains Agent Memory and conversations
 
-- Status: CONFIRMED
+- Status: REMEDIATED / VERIFIED (2026-07-29)
 - Severity: P1
 - Confidence / domain / horizon: High / Privacy, lifecycle / Immediate
 - Affected components: deprovision saga, Agent Memory graph, conversations, identity deletion.
@@ -166,7 +193,7 @@ Confidence remains 29 High, 1 Medium, 0 Low.
 
 ## [MEM-001] Logical memory mutations are not atomic
 
-- Status: CONFIRMED
+- Status: REMEDIATED / LIVE-VERIFIED (2026-07-29)
 - Severity: P1
 - Confidence / domain / horizon: High / Memory integrity, reliability / Short-term
 - Affected components: long/short-term writes, graph client, onboarding.
@@ -184,7 +211,7 @@ Confidence remains 29 High, 1 Medium, 0 Low.
 
 ## [MCP-004] Domain errors become successful idempotent MCP results
 
-- Status: CONFIRMED
+- Status: REMEDIATED / LIVE-VERIFIED (2026-07-29)
 - Severity: P1
 - Confidence / domain / horizon: High / MCP contract, data integrity, observability / Immediate
 - Affected components: Agent Memory integration, Go bridge, gateway registry, onboarding.
@@ -220,7 +247,7 @@ Confidence remains 29 High, 1 Medium, 0 Low.
 
 ## [CTX-001] Model-only user context substitution mutates a copy
 
-- Status: CONFIRMED
+- Status: REMEDIATED / VERIFIED (2026-07-29)
 - Severity: P1
 - Confidence / domain / horizon: High / Context correctness / Immediate
 - Affected components: `currentRoundModelHistory`, AG-UI run/detach callers, runner, LLM request.
@@ -238,7 +265,7 @@ Confidence remains 29 High, 1 Medium, 0 Low.
 
 ## [CTX-002] Resume truncation can delete the current unresolved round
 
-- Status: CONFIRMED
+- Status: REMEDIATED / VERIFIED (2026-07-29)
 - Severity: P1
 - Confidence / domain / horizon: High / Context correctness / Immediate
 - Affected components: L2.5 round eviction and runner resume.
@@ -256,7 +283,7 @@ Confidence remains 29 High, 1 Medium, 0 Low.
 
 ## [CTX-003] BeforeModel hooks can rewrite protected request state
 
-- Status: CONFIRMED
+- Status: REMEDIATED / VERIFIED (2026-07-29)
 - Severity: P1
 - Confidence / domain / horizon: High / Context security / Immediate
 - Affected components: hook API/command hooks, system prefix, final request.
@@ -292,7 +319,7 @@ Confidence remains 29 High, 1 Medium, 0 Low.
 
 ## [CTX-005] Token configuration can disable or under-reserve protection
 
-- Status: CONFIRMED
+- Status: REMEDIATED / VERIFIED (2026-07-29)
 - Severity: P1
 - Confidence / domain / horizon: High / Configuration, token safety / Immediate
 - Affected components: LLM config loading and context hard cap.
@@ -310,7 +337,7 @@ Confidence remains 29 High, 1 Medium, 0 Low.
 
 ## [MEM-002] Superseded preferences remain eligible for recall
 
-- Status: CONFIRMED
+- Status: REMEDIATED / VERIFIED (2026-07-29)
 - Severity: P1
 - Confidence / domain / horizon: High / Memory correctness / Immediate
 - Affected components: preference supersession, vector/category search, automatic recall.
