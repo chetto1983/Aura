@@ -52,7 +52,7 @@ func TestDispatch_MutatingPanicArmsCompletionGate(t *testing.T) {
 	a, ic := dispatchAgent(t, reg)
 
 	calls := []llm.ToolCall{toolCall("w1", "fs_write_side_effect_panic", `{}`)}
-	done, infraErr := a.dispatch(ic, [8]byte{}, nil, ic.RequestID.String(), calls, llm.Usage{},
+	done, infraErr := a.dispatch(ic, [8]byte{}, nil, ic.RequestID.String(), calls, &turnUsage{},
 		func(*Event, error) bool { return true })
 
 	if infraErr != nil {

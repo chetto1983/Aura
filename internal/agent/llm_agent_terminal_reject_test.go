@@ -145,7 +145,7 @@ func TestDispatch_TerminalRejectExclusivity(t *testing.T) {
 			reg, calls := tc.build(&ran)
 			a, ic := dispatchAgent(t, reg)
 
-			done, infraErr := a.dispatch(ic, [8]byte{}, nil, ic.RequestID.String(), calls, llm.Usage{},
+			done, infraErr := a.dispatch(ic, [8]byte{}, nil, ic.RequestID.String(), calls, &turnUsage{},
 				func(*Event, error) bool { return true })
 
 			if infraErr != nil {
@@ -184,7 +184,7 @@ func TestDispatch_TerminalRejectFinalizesAfterRecoveryExhausted(t *testing.T) {
 		terminalCall("t1", "premature final answer"),
 	}
 	events := 0
-	done, infraErr := a.dispatch(ic, [8]byte{}, nil, ic.RequestID.String(), calls, llm.Usage{},
+	done, infraErr := a.dispatch(ic, [8]byte{}, nil, ic.RequestID.String(), calls, &turnUsage{},
 		func(*Event, error) bool { events++; return true })
 
 	if infraErr != nil {
@@ -212,7 +212,7 @@ func TestDispatch_ReadOnlySiblingWithoutTerminalRuns(t *testing.T) {
 	a, ic := dispatchAgent(t, reg)
 
 	calls := []llm.ToolCall{toolCall("r1", "read_fake", `{}`)}
-	done, infraErr := a.dispatch(ic, [8]byte{}, nil, ic.RequestID.String(), calls, llm.Usage{},
+	done, infraErr := a.dispatch(ic, [8]byte{}, nil, ic.RequestID.String(), calls, &turnUsage{},
 		func(*Event, error) bool { return true })
 
 	if infraErr != nil {
@@ -238,7 +238,7 @@ func TestDispatch_SingleTerminalNoSiblingRunsTerminal(t *testing.T) {
 	a, ic := dispatchAgent(t, reg)
 
 	calls := []llm.ToolCall{terminalCall("t1", "the final answer")}
-	done, infraErr := a.dispatch(ic, [8]byte{}, nil, ic.RequestID.String(), calls, llm.Usage{},
+	done, infraErr := a.dispatch(ic, [8]byte{}, nil, ic.RequestID.String(), calls, &turnUsage{},
 		func(*Event, error) bool { return true })
 
 	if infraErr != nil {
