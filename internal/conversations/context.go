@@ -409,14 +409,10 @@ func readToolOutputPointer(spillID string) string {
 	return fmt.Sprintf("[tool output evicted to save context; page it back via read_tool_output(tool_call_id=%q)]", spillID)
 }
 
-// dropOldestPairs removes oldest conversational rounds after the protected head
-// until the history fits hardCap or no droppable round remains. The historical
+// dropOldestPairs removes complete historical rounds after the protected head
+// while preserving the final user-led active round byte-for-byte. The historical
 // name/signature stays because rot-event accounting consumes its count.
 func dropOldestPairs(enc *tiktoken.Tiktoken, turns []Turn, hardCap int) ([]Turn, int) {
-	// Split off the PROTECTED head: a leading system turn (seq=1) AND the messages[1]
-	// always-block (seq=2, D-07 / Pitfall 3) if present. Neither is ever dropped — the
-	// always-block is protected exactly like the system L0 turn so a long conversation
-	// never silently loses an always-on skill.
 	start := 0
 	if len(turns) > 0 && turns[0].Seq == 1 && turns[0].Role == llm.RoleSystem {
 		start = 1
@@ -424,29 +420,45 @@ func dropOldestPairs(enc *tiktoken.Tiktoken, turns []Turn, hardCap int) ([]Turn,
 	if len(turns) > start && isAlwaysBlock(turns[start]) {
 		start++
 	}
-	system := turns[:start]
+	head := turns[:start]
 	body := append([]Turn(nil), turns[start:]...)
 
+	activeAt := 0
+	for i := len(body) - 1; i >= 0; i-- {
+		if body[i].Role == llm.RoleUser {
+			activeAt = i
+			break
+		}
+	}
+	history := body[:activeAt]
+	active := body[activeAt:]
+
 	pairsDropped := 0
-	for len(body) >= 2 {
-		current := append(append([]Turn(nil), system...), body...)
+	for len(history) > 0 {
+		current := make([]Turn, 0, len(head)+len(history)+len(active))
+		current = append(current, head...)
+		current = append(current, history...)
+		current = append(current, active...)
 		if totalTokens(enc, current) <= hardCap {
 			break
 		}
 		var dropped bool
-		body, dropped = dropOldestRound(body)
+		history, dropped = dropOldestRound(history)
 		if !dropped {
 			break
 		}
 		pairsDropped++
 	}
-	for len(body) > 0 && body[0].Role == llm.RoleTool {
-		body = body[1:]
+	for len(history) > 0 && history[0].Role == llm.RoleTool {
+		history = history[1:]
 		if pairsDropped == 0 {
 			pairsDropped = 1
 		}
 	}
-	reduced := append(append([]Turn(nil), system...), body...)
+	reduced := make([]Turn, 0, len(head)+len(history)+len(active))
+	reduced = append(reduced, head...)
+	reduced = append(reduced, history...)
+	reduced = append(reduced, active...)
 	return reduced, pairsDropped
 }
 

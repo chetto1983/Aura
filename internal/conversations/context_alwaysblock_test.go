@@ -36,7 +36,14 @@ func TestAlwaysBlockSurvivesL25Reduction(t *testing.T) {
 		t.Fatalf("want >=21 turns (system + 20), got %d", len(turns))
 	}
 
-	cfg := windowFor(120) // a tight hard cap so L2.5 fires hard
+	injected := injectAlwaysBlock(turns, alwaysContent)
+	protected := []Turn{
+		injected[0],
+		injected[1],
+		injected[len(injected)-2],
+		injected[len(injected)-1],
+	}
+	cfg := windowFor(totalTokens(enc, protected))
 	cfg.AlwaysBlock = alwaysContent
 
 	emit := &fakeRotEmitter{}

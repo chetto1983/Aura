@@ -32,7 +32,14 @@ func TestProfileSkillsBlockSurvivesL25Reduction(t *testing.T) {
 		)
 	}
 
-	cfg := windowFor(120)
+	injected := injectAlwaysBlock(turns, block)
+	protected := []Turn{
+		injected[0],
+		injected[1],
+		injected[len(injected)-2],
+		injected[len(injected)-1],
+	}
+	cfg := windowFor(totalTokens(enc, protected))
 	cfg.AlwaysBlock = block
 	emit := &fakeRotEmitter{}
 

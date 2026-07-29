@@ -10,6 +10,7 @@ package conversations
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"strings"
 	"sync"
@@ -452,25 +453,31 @@ func TestDropOldestPairs_EmptyAndSystemArms(t *testing.T) {
 	}
 }
 
-// TestDropOldestPairs_TwoBodyLoopEnters pins the `for len(body) >= 2` bound
-// (context.go:191). A no-system 2-turn body that is over the cap must be dropped
-// (dropped==1, body emptied); the `>= 2` -> `> 2` survivor would never enter the
-// loop on a 2-element body and leave dropped==0.
-func TestDropOldestPairs_TwoBodyLoopEnters(t *testing.T) {
+// TestDropOldestPairs_OnlyActiveRoundIsNeverDropped is the CTX-002 regression:
+// a resumed/current round is required provider state, not historical compaction
+// material. If it alone exceeds the cap, the caller must fail explicitly.
+func TestDropOldestPairs_OnlyActiveRoundIsNeverDropped(t *testing.T) {
 	enc := mustEncoderRaw(t)
 	big := strings.Repeat("word ", 300)
 	body := []Turn{
 		{Seq: 2, Role: llm.RoleUser, Content: big},
 		{Seq: 3, Role: llm.RoleAssistant, Content: big},
 	}
-	// hardCap below the 2-turn total forces the single droppable pair out.
 	hc := totalTokens(enc, body) - 100
 	red, drop := dropOldestPairs(enc, body, hc)
-	if drop != 1 {
-		t.Fatalf("an over-cap 2-turn body must enter the loop and drop its pair, dropped=%d", drop)
+	if drop != 0 {
+		t.Fatalf("the active round was counted as dropped: %d", drop)
 	}
-	if len(red) != 0 {
-		t.Fatalf("dropping the only pair must empty the body, got %d turns", len(red))
+	if len(red) != len(body) || red[0].Content != body[0].Content || red[1].Content != body[1].Content {
+		t.Fatalf("the active round changed: got=%+v want=%+v", red, body)
+	}
+
+	emit := &fakeRotEmitter{}
+	if _, err := applyContextLadder(context.Background(), "conv", body, windowFor(hc), enc, emit); !errors.Is(err, ErrContextWindowExceeded) {
+		t.Fatalf("oversized active round error = %v, want ErrContextWindowExceeded", err)
+	}
+	if len(emit.calls) != 0 {
+		t.Fatalf("failed active-round reduction emitted %d rot events", len(emit.calls))
 	}
 }
 
