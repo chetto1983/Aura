@@ -12,7 +12,7 @@ import (
 // Runnable non-terminal calls execute concurrently; shared state changes stay
 // serial and in original call order so the wire contract and cache stability hold.
 func (a *LlmAgent) dispatch(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte, requestID string,
-	calls []llm.ToolCall, usage llm.Usage, yield func(*Event, error) bool,
+	calls []llm.ToolCall, acc *turnUsage, yield func(*Event, error) bool,
 ) (done bool, infraErr error) {
 	// Partition: the FIRST text_response is the terminal; the rest are runnable.
 	// terminalCount also tallies any EXTRA text_response calls so a double-terminal
@@ -48,7 +48,7 @@ func (a *LlmAgent) dispatch(ic InvocationContext, spanID [8]byte, parentSpanID *
 		if a.maybeRecover(terminalTool) {
 			return false, nil
 		}
-		a.finalize(ic, spanID, parentSpanID, requestID, "terminal_exclusivity", yield)
+		a.finalize(ic, spanID, parentSpanID, requestID, "terminal_exclusivity", acc, yield)
 		return true, nil
 	}
 
@@ -80,7 +80,7 @@ func (a *LlmAgent) dispatch(ic InvocationContext, spanID [8]byte, parentSpanID *
 			if a.maybeRecover(call.Function.Name) {
 				return false, nil
 			}
-			a.finalize(ic, spanID, parentSpanID, requestID, reason, yield)
+			a.finalize(ic, spanID, parentSpanID, requestID, reason, acc, yield)
 			return true, nil
 		}
 	}
@@ -145,7 +145,7 @@ func (a *LlmAgent) dispatch(ic InvocationContext, spanID [8]byte, parentSpanID *
 	// Terminal: text_response ends the turn after the batch has run (D-13).
 	if terminalIdx >= 0 && terminalIdx < len(calls) {
 		terminalCall := calls[terminalIdx]
-		return a.runTerminal(ic, spanID, parentSpanID, requestID, terminalCall, usage, yield), nil
+		return a.runTerminal(ic, spanID, parentSpanID, requestID, terminalCall, acc, yield), nil
 	}
 	return false, nil
 }

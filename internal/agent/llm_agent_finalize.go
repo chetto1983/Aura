@@ -111,12 +111,17 @@ const (
 // content-stop path) and yielded as ONE finalEvent whose StateDelta carries the
 // usage delta AND the trip reason keys. The terminal user-facing Event is ALWAYS a
 // non-empty finalEvent, never the iter.Seq2 error slot (L2/D-04).
+// acc carries the usage of the calls the turn already made. The synthesis call below is
+// one MORE billed call, so it is folded in rather than reported alone: finalize is the
+// budget-trip path, i.e. precisely the turns that made the most calls before arriving
+// here, and reporting only the synthesis would understate them the most.
 func (a *LlmAgent) finalize(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte,
-	requestID, reason string, yield func(*Event, error) bool,
+	requestID, reason string, acc *turnUsage, yield func(*Event, error) bool,
 ) {
 	answer, usage := a.synthesizeWithFallback(ic)
+	acc.add(usage)
 	a.history = append(a.history, llm.Message{Role: llm.RoleAssistant, Content: answer})
-	yield(a.finalizeEvent(ic, spanID, parentSpanID, requestID, answer, reason, usage), nil)
+	yield(a.finalizeEvent(ic, spanID, parentSpanID, requestID, answer, reason, acc.total()), nil)
 }
 
 // synthesizeWithFallback runs the tool-free synthesis call, retrying it EXACTLY ONCE

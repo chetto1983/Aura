@@ -240,6 +240,9 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 		// by TestFinalizeOutsideBudget. It is loop-local (never on Budget) so a
 		// parallel branch cannot observe a sibling's bypass.
 		skipBudgetGate := false
+		// Turn-scoped, NOT loop-scoped: every LLM call below folds into it, so the
+		// terminal Event reports what the whole turn cost instead of its last call.
+		var turnU turnUsage
 		for {
 			// 1. Budget gate BEFORE each LLM call — a trip forces recovery-or-
 			// finalization (Req#2/#3). The recovery turn bypasses the gate via
@@ -271,7 +274,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 					continue
 				}
 				turnReason = reason
-				a.finalize(ic, spanID, parentSpanID, requestID, reason, yield)
+				a.finalize(ic, spanID, parentSpanID, requestID, reason, &turnU, yield)
 				return
 			}
 
@@ -370,9 +373,10 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 					}
 					a.history = append(a.history, llm.Message{Role: llm.RoleAssistant, Content: answer})
 					turnReason = "hook_model_response"
+					turnU.add(hookResult.Usage)
 					yield(a.finalEvent(
 						ic, spanID, parentSpanID, requestID, answer,
-						hookResult.FinishReason, hookResult.Usage,
+						hookResult.FinishReason, turnU.total(),
 					), nil)
 					return
 				}
@@ -398,7 +402,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 					// open breaker and falls back to the deterministic stub digest, so the
 					// terminal Event is always non-empty.
 					turnReason = "breaker_open"
-					a.finalize(ic, spanID, parentSpanID, requestID, "breaker_open", yield)
+					a.finalize(ic, spanID, parentSpanID, requestID, "breaker_open", &turnU, yield)
 					return
 				}
 				turnReason = "stream_open_error"
@@ -407,6 +411,9 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			}
 
 			text, calls, finish, usage, stopped, streamErr := a.consume(ch, ic, spanID, parentSpanID, requestID, yield)
+			// Fold THIS call in before any exit path below reads the total. The span keeps
+			// reporting the single call, which is what a span is: one request.
+			turnU.add(usage)
 			setSpanAttrs(span, a.cfg.Model, a.cfg.Provider, requestID, usage)
 			span.End()
 			cancel()
@@ -465,7 +472,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 						continue
 					}
 					turnReason = "empty_response"
-					a.finalize(ic, spanID, parentSpanID, requestID, "empty_response", yield)
+					a.finalize(ic, spanID, parentSpanID, requestID, "empty_response", &turnU, yield)
 					return
 				}
 				answer := normalizeContentStopAnswer(text)
@@ -482,7 +489,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				}
 				a.history = append(a.history, llm.Message{Role: llm.RoleAssistant, Content: answer})
 				turnReason = "content_stop"
-				yield(a.finalEvent(ic, spanID, parentSpanID, requestID, answer, finish, usage), nil)
+				yield(a.finalEvent(ic, spanID, parentSpanID, requestID, answer, finish, turnU.total()), nil)
 				return
 			}
 
@@ -492,7 +499,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			switch a.classifyToolTruncation(finish) {
 			case truncationFinalize:
 				turnReason = "tool_args_truncated"
-				a.finalize(ic, spanID, parentSpanID, requestID, "tool_args_truncated", yield)
+				a.finalize(ic, spanID, parentSpanID, requestID, "tool_args_truncated", &turnU, yield)
 				return
 			case truncationContinue:
 				continue
@@ -509,7 +516,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				return
 			}
 			a.history = append(a.history, llm.Message{Role: llm.RoleAssistant, ToolCalls: calls})
-			done, infraErr := a.dispatch(ic, spanID, parentSpanID, requestID, calls, usage, yield)
+			done, infraErr := a.dispatch(ic, spanID, parentSpanID, requestID, calls, &turnU, yield)
 			if infraErr != nil {
 				turnReason = "dispatch_infra_error"
 				yield(nil, infraErr)

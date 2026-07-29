@@ -25,7 +25,7 @@ import (
 // finalEvent (done=true). The runnable siblings have already executed this turn, so —
 // unlike the old sequential path — there are never later siblings left to synthesize.
 func (a *LlmAgent) runTerminal(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte,
-	requestID string, call llm.ToolCall, usage llm.Usage, yield func(*Event, error) bool,
+	requestID string, call llm.ToolCall, acc *turnUsage, yield func(*Event, error) bool,
 ) (done bool) {
 	answer, perr := parseTextResponse(call.Function.Arguments)
 	if perr != nil {
@@ -38,7 +38,7 @@ func (a *LlmAgent) runTerminal(ic InvocationContext, spanID [8]byte, parentSpanI
 		return !yield(a.toolPreviewEvent(ic, spanID, parentSpanID, call.ID, "completion gate: not done"), nil)
 	}
 	a.history = append(a.history, llm.Message{Role: llm.RoleAssistant, Content: answer})
-	yield(a.finalEvent(ic, spanID, parentSpanID, requestID, answer, "stop", usage), nil)
+	yield(a.finalEvent(ic, spanID, parentSpanID, requestID, answer, "stop", acc.total()), nil)
 	return true
 }
 
