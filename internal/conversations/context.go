@@ -423,9 +423,11 @@ func dropOldestPairs(enc *tiktoken.Tiktoken, turns []Turn, hardCap int) ([]Turn,
 	head := turns[:start]
 	body := append([]Turn(nil), turns[start:]...)
 
+	// Read-only scan, so ranging over the yielded copy is safe here — unlike a loop that
+	// assigns into the element, where slices.Backward's copy would swallow the write.
 	activeAt := 0
-	for i := len(body) - 1; i >= 0; i-- {
-		if body[i].Role == llm.RoleUser {
+	for i, turn := range slices.Backward(body) {
+		if turn.Role == llm.RoleUser {
 			activeAt = i
 			break
 		}

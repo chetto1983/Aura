@@ -37,10 +37,6 @@ func (p bridgePolicy) modelFacing(tool string) bool {
 	return !hidden
 }
 
-func modelFacing(namespace, tool string) bool {
-	return defaultBridgePolicy(namespace).modelFacing(tool)
-}
-
 func (b *bridgedTool) withMemoryUserIdentifier(ctx context.Context, args map[string]any) map[string]any {
 	if !b.policy.memory || !acceptsUserIdentifier(b.Spec().Parameters) {
 		return args

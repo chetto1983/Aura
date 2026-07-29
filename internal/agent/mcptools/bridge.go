@@ -227,17 +227,6 @@ func applyMCPOperationMetadata(spec *tools.Spec) {
 	spec.ReplayPolicy = ""
 }
 
-func defaultDeferredForNamespace(namespace string) bool {
-	return defaultBridgePolicy(namespace).defaultDeferred()
-}
-
-func namespaceFromSpecName(name string) string {
-	if before, _, ok := strings.Cut(name, "__"); ok {
-		return before
-	}
-	return ""
-}
-
 func specFieldsFromToolDef(d mcp.ToolDef) (json.RawMessage, string, string) {
 	params := emptyObjectSchema
 	if schema := strings.TrimSpace(string(d.InputSchema)); schema != "" && schema != "null" {

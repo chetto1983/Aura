@@ -14,7 +14,7 @@ func TestDropOldestPairs_ActiveRoundByteIdentityProperty(t *testing.T) {
 		historicalRounds := rapid.IntRange(0, 20).Draw(t, "historical_rounds")
 		turns := []Turn{{Seq: 1, Role: llm.RoleSystem, Content: "stable-system"}}
 		seq := 2
-		for i := 0; i < historicalRounds; i++ {
+		for range historicalRounds {
 			turns = append(turns,
 				Turn{Seq: seq, Role: llm.RoleUser, Content: rapid.StringMatching(`[a-z]{1,80}`).Draw(t, "old_user")},
 				Turn{Seq: seq + 1, Role: llm.RoleAssistant, Content: rapid.StringMatching(`[a-z]{1,80}`).Draw(t, "old_assistant")},
