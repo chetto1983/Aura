@@ -22,7 +22,8 @@ func TestBridgeHidesNonModelFacingMemoryTools(t *testing.T) {
 		"memory_get_entity", "memory_update", "memory_forget",
 		// hidden: still served, still callable by Aura, absent from the manifest
 		"memory_store_message", "memory_get_context", "memory_get_conversation",
-		"memory_list_sessions", "memory_add_entity", "memory_create_relationship",
+		"memory_list_sessions", "memory_add_entity", "memory_store_profile",
+		"memory_create_relationship",
 		"memory_get_facts",
 	}
 	defs := make([]mcp.ToolDef, 0, len(all))
@@ -50,7 +51,8 @@ func TestBridgeHidesNonModelFacingMemoryTools(t *testing.T) {
 	for _, unwanted := range []string{
 		"memory__memory_store_message", "memory__memory_get_context",
 		"memory__memory_get_conversation", "memory__memory_list_sessions",
-		"memory__memory_add_entity", "memory__memory_create_relationship",
+		"memory__memory_add_entity", "memory__memory_store_profile",
+		"memory__memory_create_relationship",
 		"memory__memory_get_facts",
 	} {
 		if _, ok := got[unwanted]; ok {

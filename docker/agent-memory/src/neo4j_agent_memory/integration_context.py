@@ -112,8 +112,9 @@ class ContextSearchMixin:
         user_identifier: str | None = None,
     ) -> dict[str, Any]:
         sid = self.resolve_session_id(session_id)
-        try:
-            message = await self.client.short_term.add_message(
+
+        async def store():
+            return await self.client.short_term.add_message(
                 session_id=sid,
                 role=role,
                 content=content,
@@ -122,6 +123,9 @@ class ContextSearchMixin:
                 generate_embedding=True,
                 user_identifier=user_identifier,
             )
+
+        try:
+            message = await self.client.graph.execute_write_unit(store)
             if self._auto_preferences and role == "user":
                 asyncio.create_task(
                     self._detect_and_store_preferences(content, sid, user_identifier)

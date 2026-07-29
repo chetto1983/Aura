@@ -119,6 +119,7 @@ try:
             middleware=middleware,
         )
 
+        from neo4j_agent_memory.mcp._host_tools import register_host_tools
         from neo4j_agent_memory.mcp._prompts import register_prompts
         from neo4j_agent_memory.mcp._resources import register_resources
         from neo4j_agent_memory.mcp._tools import register_tools
@@ -128,6 +129,7 @@ try:
         # client; default to bolt (no Platinum).
         register_platinum = settings is not None and settings.backend == "nams"
         register_tools(mcp, profile=profile, register_platinum=register_platinum)
+        register_host_tools(mcp)
         if auth_secret is None:
             register_resources(mcp, profile=profile)
         register_prompts(mcp, profile=profile)
@@ -225,6 +227,7 @@ try:
                 middleware=middleware,
             )
 
+            from neo4j_agent_memory.mcp._host_tools import register_host_tools
             from neo4j_agent_memory.mcp._prompts import register_prompts
             from neo4j_agent_memory.mcp._resources import register_resources
             from neo4j_agent_memory.mcp._tools import register_tools
@@ -233,6 +236,7 @@ try:
             # is NAMS-backed.
             register_platinum = memory_client._settings.backend == "nams"
             register_tools(self._mcp, profile=profile, register_platinum=register_platinum)
+            register_host_tools(self._mcp)
             if auth_secret is None:
                 register_resources(self._mcp, profile=profile)
             register_prompts(self._mcp, profile=profile)

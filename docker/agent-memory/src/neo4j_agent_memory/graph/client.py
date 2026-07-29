@@ -1,7 +1,10 @@
 """Async Neo4j client wrapper."""
 
+import logging
+from collections.abc import Awaitable, Callable
+from contextvars import ContextVar
 from importlib.metadata import PackageNotFoundError, version
-from typing import Any
+from typing import Any, TypeVar
 
 from neo4j import (
     AsyncDriver,
@@ -15,6 +18,8 @@ from neo4j.exceptions import AuthError, ServiceUnavailable
 from neo4j_agent_memory.config.settings import Neo4jConfig
 from neo4j_agent_memory.core.exceptions import ConnectionError
 
+logger = logging.getLogger(__name__)
+
 _CORPUS_EPOCH_INCREMENT = """
 MATCH (revision:MemoryCorpusRevision {singleton: 'corpus'})
 SET revision.epoch = revision.epoch + 1,
@@ -26,6 +31,9 @@ _CORPUS_EPOCH_READ = """
 MATCH (revision:MemoryCorpusRevision {singleton: 'corpus'})
 RETURN revision.epoch AS epoch
 """
+
+_T = TypeVar("_T")
+_PostCommitAction = Callable[[], Awaitable[None]]
 
 
 class Neo4jClient:
@@ -49,6 +57,14 @@ class Neo4jClient:
             self._package_version = version("neo4j-agent-memory")
         except PackageNotFoundError:
             self._package_version = "0.0.0"
+        self._write_transaction: ContextVar[AsyncManagedTransaction | None] = ContextVar(
+            f"neo4j_write_transaction_{id(self)}",
+            default=None,
+        )
+        self._post_commit_actions: ContextVar[list[_PostCommitAction] | None] = ContextVar(
+            f"neo4j_post_commit_actions_{id(self)}",
+            default=None,
+        )
 
     async def connect(self) -> None:
         """
@@ -126,6 +142,11 @@ class Neo4jClient:
         Returns:
             List of result records as dictionaries
         """
+        transaction = self._write_transaction.get()
+        if transaction is not None:
+            result = await transaction.run(query, parameters or {})
+            return await result.data()
+
         async with self._get_session() as session:
 
             @unit_of_work(metadata={"app": f"neo4j-agent-memory_v{self._package_version}"})
@@ -152,20 +173,55 @@ class Neo4jClient:
         Returns:
             List of result records as dictionaries
         """
+        transaction = self._write_transaction.get()
+        if transaction is not None:
+            result = await transaction.run(query, parameters or {})
+            return await result.data()
+
+        async def write() -> list[dict[str, Any]]:
+            return await self.execute_write(query, parameters)
+
+        return await self.execute_write_unit(write)
+
+    async def execute_write_unit(self, work: Callable[[], Awaitable[_T]]) -> _T:
+        """Execute every nested graph write as one managed transaction."""
+        if self._write_transaction.get() is not None:
+            return await work()
+
         async with self._get_session() as session:
 
             @unit_of_work(metadata={"app": f"neo4j-agent-memory_v{self._package_version}"})
-            async def execute_write_tx(tx: AsyncManagedTransaction) -> list[dict[str, Any]]:
-                result = await tx.run(query, parameters or {})
-                data = await result.data()
-                epoch_result = await tx.run(_CORPUS_EPOCH_INCREMENT)
-                epoch_rows = await epoch_result.data()
-                if len(epoch_rows) != 1 or not self._valid_epoch(epoch_rows[0].get("epoch")):
-                    raise RuntimeError("memory corpus epoch singleton is missing or invalid")
-                return data
+            async def execute_write_tx(
+                tx: AsyncManagedTransaction,
+            ) -> tuple[_T, tuple[_PostCommitAction, ...]]:
+                transaction_token = self._write_transaction.set(tx)
+                actions_token = self._post_commit_actions.set([])
+                try:
+                    value = await work()
+                    epoch_result = await tx.run(_CORPUS_EPOCH_INCREMENT)
+                    epoch_rows = await epoch_result.data()
+                    if len(epoch_rows) != 1 or not self._valid_epoch(epoch_rows[0].get("epoch")):
+                        raise RuntimeError("memory corpus epoch singleton is missing or invalid")
+                    return value, tuple(self._post_commit_actions.get() or ())
+                finally:
+                    self._post_commit_actions.reset(actions_token)
+                    self._write_transaction.reset(transaction_token)
 
-            records = await session.execute_write(execute_write_tx)
-            return records
+            value, actions = await session.execute_write(execute_write_tx)
+
+        for action in actions:
+            try:
+                await action()
+            except Exception:
+                logger.warning("post-commit memory enrichment failed", exc_info=True)
+        return value
+
+    def defer_after_commit(self, action: _PostCommitAction) -> None:
+        """Queue derived work for after the active transaction commits."""
+        actions = self._post_commit_actions.get()
+        if actions is None:
+            raise RuntimeError("post-commit action requires an active write unit")
+        actions.append(action)
 
     async def execute_schema(
         self,

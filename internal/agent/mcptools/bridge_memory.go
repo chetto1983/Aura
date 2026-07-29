@@ -25,6 +25,7 @@ var memoryHiddenFromModel = map[string]struct{}{
 	"memory_get_conversation":    {},
 	"memory_list_sessions":       {},
 	"memory_add_entity":          {},
+	"memory_store_profile":       {},
 	"memory_create_relationship": {},
 	"memory_get_facts":           {},
 }

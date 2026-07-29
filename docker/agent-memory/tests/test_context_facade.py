@@ -8,6 +8,11 @@ from uuid import UUID
 from neo4j_agent_memory.integration import MemoryIntegration, SessionStrategy
 
 
+class _Graph:
+    async def execute_write_unit(self, work):
+        return await work()
+
+
 def _fact(suffix, subject, predicate, obj):
     return SimpleNamespace(
         id=UUID(f"30000000-0000-0000-0000-00000000000{suffix}"),
@@ -114,6 +119,7 @@ class _Reasoning:
 def _integration(*, fail_store=False, strategy=SessionStrategy.PERSISTENT, long_term=None):
     long_term = long_term if long_term is not None else _LongTerm()
     client = SimpleNamespace(
+        graph=_Graph(),
         long_term=long_term,
         short_term=_ShortTerm(fail_store),
         reasoning=_Reasoning(),

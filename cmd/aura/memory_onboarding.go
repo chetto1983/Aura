@@ -16,10 +16,8 @@ import (
 )
 
 const (
-	// memorySubmissionTimeout budgets the WHOLE seed submission, not one write: a full seed
-	// maps to nine sequential tool calls over a single connection, so the per-call 20s of
-	// callMemoryToolText would be the wrong shape here (a slow sidecar would trip on write 2
-	// while write 1 still counted against nothing).
+	// memorySubmissionTimeout covers embedding and one atomic graph transaction for the
+	// complete profile rather than the shorter status-read budget.
 	memorySubmissionTimeout = 60 * time.Second
 	// memoryOneCallTimeout keeps the single-call paths (the skip sentinel, the status read
 	// every authenticated page load makes) on callMemoryToolText's original per-call budget.
@@ -45,44 +43,20 @@ func newMemoryProfileStore() *memoryProfileStore {
 	}
 }
 
-// StoreConfirmed maps the seed onto entity/fact/preference writes and stamps the
-// completion sentinel LAST, all over ONE MCP session (Amendment #95's "one connection
-// for the whole submission" — nine writes used to mean nine handshakes).
+// StoreConfirmed sends the deterministic profile through one host-only atomic memory
+// operation. The completion sentinel commits in the same graph transaction.
 func (m *memoryProfileStore) StoreConfirmed(ctx context.Context, identityID string, a onboarding.Answers) error {
 	if identityID == "" {
 		return fmt.Errorf("onboarding memory store: empty identity")
 	}
 	return m.withSession(ctx, memorySubmissionTimeout, func(ctx context.Context, cli mcp.Transport) error {
-		pm := onboarding.MapProfile(a)
-		for _, e := range pm.Entities {
-			args := map[string]any{"name": e.Name, "entity_type": e.EntityType}
-			if e.Description != "" {
-				args["description"] = e.Description
-			}
-			if len(e.Aliases) > 0 {
-				args["aliases"] = e.Aliases
-			}
-			if err := m.write(ctx, cli, identityID, "memory_add_entity", args); err != nil {
-				return err
-			}
-		}
-		for _, f := range pm.Facts {
-			if err := m.write(ctx, cli, identityID, "memory_add_fact", map[string]any{
-				"subject": f.Subject, "predicate": f.Predicate, "object_value": f.ObjectValue,
-			}); err != nil {
-				return err
-			}
-		}
-		for _, p := range pm.Preferences {
-			args := map[string]any{"category": p.Category, "preference": p.Preference}
-			if p.Context != "" {
-				args["context"] = p.Context
-			}
-			if err := m.write(ctx, cli, identityID, "memory_add_preference", args); err != nil {
-				return err
-			}
-		}
-		return m.writeSentinel(ctx, cli, identityID, onboarding.PredicateOnboardingCompleted)
+		return m.writeProfile(
+			ctx,
+			cli,
+			identityID,
+			onboarding.MapProfile(a),
+			onboarding.PredicateOnboardingCompleted,
+		)
 	})
 }
 
@@ -91,7 +65,13 @@ func (m *memoryProfileStore) StoreSkipped(ctx context.Context, identityID string
 		return fmt.Errorf("onboarding memory store: empty identity")
 	}
 	return m.withSession(ctx, memoryOneCallTimeout, func(ctx context.Context, cli mcp.Transport) error {
-		return m.writeSentinel(ctx, cli, identityID, onboarding.PredicateOnboardingSkipped)
+		return m.writeProfile(
+			ctx,
+			cli,
+			identityID,
+			onboarding.ProfileMemory{},
+			onboarding.PredicateOnboardingSkipped,
+		)
 	})
 }
 
@@ -108,22 +88,44 @@ func (m *memoryProfileStore) withSession(ctx context.Context, budget time.Durati
 	return fn(sessCtx, cli)
 }
 
-// writeSentinel records the onboarding-complete/skip marker as a fact whose subject is
-// the identity UUID (never the operator name), so Status reads it back cleanly.
-func (m *memoryProfileStore) writeSentinel(ctx context.Context, cli mcp.Transport, identityID, predicate string) error {
-	return m.write(ctx, cli, identityID, "memory_add_fact", map[string]any{
-		"subject": identityID, "predicate": predicate, "object_value": m.now().Format(time.RFC3339),
+func (m *memoryProfileStore) writeProfile(
+	ctx context.Context,
+	cli mcp.Transport,
+	identityID string,
+	profile onboarding.ProfileMemory,
+	completionPredicate string,
+) error {
+	entities := make([]map[string]any, 0, len(profile.Entities))
+	for _, entity := range profile.Entities {
+		entities = append(entities, map[string]any{
+			"name": entity.Name, "entity_type": entity.EntityType,
+			"description": entity.Description, "aliases": entity.Aliases,
+		})
+	}
+	facts := make([]map[string]any, 0, len(profile.Facts))
+	for _, fact := range profile.Facts {
+		facts = append(facts, map[string]any{
+			"subject": fact.Subject, "predicate": fact.Predicate, "object_value": fact.ObjectValue,
+		})
+	}
+	preferences := make([]map[string]any, 0, len(profile.Preferences))
+	for _, preference := range profile.Preferences {
+		preferences = append(preferences, map[string]any{
+			"category":   preference.Category,
+			"preference": preference.Preference,
+			"context":    preference.Context,
+		})
+	}
+	_, err := cli.CallTool(ctx, "memory_store_profile", map[string]any{
+		"entities":             entities,
+		"facts":                facts,
+		"preferences":          preferences,
+		"completion_predicate": completionPredicate,
+		"completion_value":     m.now().Format(time.RFC3339),
+		"user_identifier":      identityID,
 	})
-}
-
-// write sets the mandatory user_identifier scope on EVERY memory call (fail-open guard).
-// It calls the transport directly, bypassing scopeMemoryArgs — this stamp is the ONLY
-// thing keeping these writes out of the memory server's GLOBAL scope, so every write on
-// this path must go through here.
-func (m *memoryProfileStore) write(ctx context.Context, cli mcp.Transport, identityID, tool string, args map[string]any) error {
-	args["user_identifier"] = identityID
-	if _, err := cli.CallTool(ctx, tool, args); err != nil {
-		return fmt.Errorf("onboarding memory %s: %w", tool, err)
+	if err != nil {
+		return fmt.Errorf("onboarding memory profile: %w", err)
 	}
 	return nil
 }

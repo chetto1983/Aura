@@ -95,6 +95,82 @@ def test_mutation_and_epoch_increment_share_one_managed_transaction():
     assert session.committed
 
 
+def test_logical_mutation_shares_one_transaction_and_one_epoch_increment():
+    transaction = _Transaction()
+    client, session = _client(transaction)
+
+    async def write_preference_with_owner():
+        await client.execute_write("CREATE (:Preference {id: $id})", {"id": "p-1"})
+        await client.execute_write(
+            "MATCH (p:Preference {id: $id}) MERGE (:User)-[:HAS_PREFERENCE]->(p)",
+            {"id": "p-1"},
+        )
+        return "stored"
+
+    result = asyncio.run(client.execute_write_unit(write_preference_with_owner))
+
+    assert result == "stored"
+    assert len(transaction.queries) == 3
+    assert sum("MemoryCorpusRevision" in query for query, _ in transaction.queries) == 1
+    assert session.committed
+
+
+def test_derived_work_runs_only_after_commit_and_without_the_transaction():
+    transaction = _Transaction()
+    client, session = _client(transaction)
+    observed: list[tuple[bool, object]] = []
+
+    async def after_commit():
+        observed.append((session.committed, client._write_transaction.get()))
+
+    async def write():
+        client.defer_after_commit(after_commit)
+        await client.execute_write("CREATE (:Entity {id: $id})", {"id": "e-1"})
+
+    asyncio.run(client.execute_write_unit(write))
+
+    assert observed == [(True, None)]
+
+
+def test_derived_work_is_discarded_when_the_transaction_rolls_back():
+    transaction = _Transaction()
+    client, session = _client(transaction)
+    observed: list[str] = []
+
+    async def after_commit():
+        observed.append("ran")
+
+    async def write():
+        client.defer_after_commit(after_commit)
+        raise RuntimeError("transaction failed")
+
+    with pytest.raises(RuntimeError, match="transaction failed"):
+        asyncio.run(client.execute_write_unit(write))
+
+    assert observed == []
+    assert not session.committed
+
+
+def test_derived_work_failure_does_not_relabel_a_committed_mutation(caplog):
+    transaction = _Transaction()
+    client, session = _client(transaction)
+
+    async def after_commit():
+        raise RuntimeError("derived failure")
+
+    async def write():
+        client.defer_after_commit(after_commit)
+        await client.execute_write("CREATE (:Entity {id: $id})", {"id": "e-1"})
+        return "stored"
+
+    with caplog.at_level("WARNING"):
+        result = asyncio.run(client.execute_write_unit(write))
+
+    assert result == "stored"
+    assert session.committed
+    assert "post-commit memory enrichment failed" in caplog.text
+
+
 def test_schema_ddl_never_shares_a_transaction_with_the_epoch_bump():
     """Neo4j refuses DDL + write in one transaction.
 

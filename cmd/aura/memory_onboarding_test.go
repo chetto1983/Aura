@@ -86,8 +86,8 @@ func fakeStore() (*memoryProfileStore, *openCounter) {
 	return m, oc
 }
 
-// fullSeedAnswers is the amendment's worked example: the six typed fields, which
-// MapProfile projects onto 3 entities + 4 facts + 1 preference, plus the sentinel = 9.
+// fullSeedAnswers projects onto 3 entities + 4 facts + 1 preference plus the sentinel,
+// all carried by one atomic host operation.
 var fullSeedAnswers = onboarding.Answers{
 	Name: "Davide", Lang: "it", Location: "Caraglio",
 	Timezone: "Europe/Rome", Role: "founder", Company: "PmSync",
@@ -99,26 +99,51 @@ func TestStoreConfirmedScopesEveryCallAndEndsWithSentinel(t *testing.T) {
 		t.Fatalf("StoreConfirmed: %v", err)
 	}
 	calls := oc.transport.recorded()
-	if len(calls) != 9 {
-		t.Fatalf("memory calls = %d, want 9 (3 entities + 4 facts + 1 preference + 1 sentinel)", len(calls))
+	if len(calls) != 1 {
+		t.Fatalf("memory calls = %d, want one atomic profile call", len(calls))
 	}
-	// EVERY call must carry user_identifier = identityID. This stamp is the ONLY thing
-	// keeping these writes out of the memory server's fail-open GLOBAL scope, because the
-	// path calls the transport directly and so bypasses scopeMemoryArgs.
-	for _, c := range calls {
-		if c.args["user_identifier"] != "id-uuid" {
-			t.Errorf("call %q missing user_identifier=id-uuid: %#v", c.tool, c.args)
-		}
+	call := calls[0]
+	if call.tool != "memory_store_profile" {
+		t.Errorf("tool = %q, want memory_store_profile", call.tool)
 	}
-	if calls[0].tool != "memory_add_entity" {
-		t.Errorf("first call = %q, want memory_add_entity (entities before the facts that name them)", calls[0].tool)
+	if call.args["user_identifier"] != "id-uuid" {
+		t.Errorf("call missing user_identifier=id-uuid: %#v", call.args)
 	}
-	last := calls[len(calls)-1]
-	if last.tool != "memory_add_fact" || last.args["predicate"] != onboarding.PredicateOnboardingCompleted {
-		t.Errorf("last call = %q pred=%v, want completed sentinel", last.tool, last.args["predicate"])
+	if call.args["completion_predicate"] != onboarding.PredicateOnboardingCompleted {
+		t.Errorf("completion predicate = %v, want completed", call.args["completion_predicate"])
 	}
-	if last.args["subject"] != "id-uuid" {
-		t.Errorf("sentinel subject = %v, want identity UUID", last.args["subject"])
+	if got := len(profileItems(t, call.args, "entities")); got != 3 {
+		t.Errorf("entities = %d, want 3", got)
+	}
+	if got := len(profileItems(t, call.args, "facts")); got != 4 {
+		t.Errorf("facts = %d, want 4", got)
+	}
+	if got := len(profileItems(t, call.args, "preferences")); got != 1 {
+		t.Errorf("preferences = %d, want 1", got)
+	}
+}
+
+func TestStoreConfirmedUsesOneAtomicProfileMutation(t *testing.T) {
+	m, oc := fakeStore()
+	if err := m.StoreConfirmed(context.Background(), "id-uuid", fullSeedAnswers); err != nil {
+		t.Fatalf("StoreConfirmed: %v", err)
+	}
+	calls := oc.transport.recorded()
+	if len(calls) != 1 {
+		t.Fatalf("memory calls = %d, want one atomic profile mutation", len(calls))
+	}
+	if calls[0].tool != "memory_store_profile" {
+		t.Fatalf("tool = %q, want memory_store_profile", calls[0].tool)
+	}
+	if calls[0].args["user_identifier"] != "id-uuid" {
+		t.Fatalf("profile mutation scope = %v, want id-uuid", calls[0].args["user_identifier"])
+	}
+	if calls[0].args["completion_predicate"] != onboarding.PredicateOnboardingCompleted {
+		t.Fatalf(
+			"completion predicate = %v, want %s",
+			calls[0].args["completion_predicate"],
+			onboarding.PredicateOnboardingCompleted,
+		)
 	}
 }
 
@@ -131,15 +156,14 @@ func TestStoreConfirmedStoresTheNameByteIdentically(t *testing.T) {
 		if err := m.StoreConfirmed(context.Background(), "id-uuid", onboarding.Answers{Name: name}); err != nil {
 			t.Fatalf("StoreConfirmed(%q): %v", name, err)
 		}
-		calls := oc.transport.recorded()
-		if calls[0].tool != "memory_add_entity" || calls[0].args["name"] != name {
-			t.Fatalf("stored entity name = %v, want byte-identical %q", calls[0].args["name"], name)
+		call := oc.transport.recorded()[0]
+		entities := profileItems(t, call.args, "entities")
+		if len(entities) != 1 || entities[0]["name"] != name {
+			t.Fatalf("stored entity = %#v, want byte-identical name %q", entities, name)
 		}
-		// The PERSON entity is the subject of every fact the mapper emits.
-		for _, c := range calls[1:] {
-			if c.tool == "memory_add_fact" && c.args["predicate"] != onboarding.PredicateOnboardingCompleted &&
-				c.args["subject"] != name {
-				t.Errorf("fact %v subject = %v, want the typed name %q", c.args["predicate"], c.args["subject"], name)
+		for _, fact := range profileItems(t, call.args, "facts") {
+			if fact["subject"] != name {
+				t.Errorf("fact %v subject = %v, want the typed name %q", fact["predicate"], fact["subject"], name)
 			}
 		}
 	}
@@ -186,8 +210,15 @@ func TestStoreSkippedWritesOnlySkippedSentinel(t *testing.T) {
 		t.Fatalf("StoreSkipped calls = %d, want 1 — skipping stays cheap", len(calls))
 	}
 	c := calls[0]
-	if c.tool != "memory_add_fact" || c.args["predicate"] != onboarding.PredicateOnboardingSkipped || c.args["user_identifier"] != "id-uuid" {
+	if c.tool != "memory_store_profile" ||
+		c.args["completion_predicate"] != onboarding.PredicateOnboardingSkipped ||
+		c.args["user_identifier"] != "id-uuid" {
 		t.Errorf("skip sentinel = %#v", c.args)
+	}
+	for _, key := range []string{"entities", "facts", "preferences"} {
+		if got := len(profileItems(t, c.args, key)); got != 0 {
+			t.Errorf("skip %s = %d, want 0", key, got)
+		}
 	}
 	if oc.opens != 1 || oc.transport.closeCount() != 1 {
 		t.Errorf("skip opened %d / closed %d sessions, want 1/1", oc.opens, oc.transport.closeCount())
@@ -207,9 +238,7 @@ func TestStoreConfirmedEmptyIdentityRefused(t *testing.T) {
 	}
 }
 
-// TestStoreConfirmedSurfacesSessionAndWriteFailures pins the two failure legs: an
-// unreachable sidecar fails at open, and a rejected write aborts the remaining ones (a
-// partially-seeded graph with a completion sentinel would be worse than none).
+// TestStoreConfirmedSurfacesSessionAndWriteFailures pins open and atomic-call failures.
 func TestStoreConfirmedSurfacesSessionAndWriteFailures(t *testing.T) {
 	t.Run("open failure", func(t *testing.T) {
 		m := &memoryProfileStore{
@@ -290,4 +319,13 @@ func containsToolCall(calls []recordedCall, tool string) bool {
 		}
 	}
 	return false
+}
+
+func profileItems(t *testing.T, args map[string]any, key string) []map[string]any {
+	t.Helper()
+	items, ok := args[key].([]map[string]any)
+	if !ok {
+		t.Fatalf("%s = %#v, want []map[string]any", key, args[key])
+	}
+	return items
 }

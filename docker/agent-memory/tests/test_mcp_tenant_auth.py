@@ -145,7 +145,8 @@ def test_authenticated_agent_memory_server_has_no_unscoped_resources():
     resources, templates, tools = asyncio.run(inspect_server())
     assert resources == {}
     assert templates == {}
-    assert len(tools) == 13
+    assert len(tools) == 14
+    assert "memory_store_profile" in tools
 
 
 def test_auth_secret_must_be_cryptographically_nontrivial():

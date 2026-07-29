@@ -133,6 +133,59 @@ func TestMemoryLiveScopedGraphToolsAcceptUserIdentifier(t *testing.T) {
 	}
 }
 
+func TestMemoryLiveStoresOnboardingProfileInOneHostCall(t *testing.T) {
+	endpoint := memoryEndpointOrGate(t)
+	reapIdleHTTPConns(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+
+	cli, err := mcp.OpenServer(ctx, "memory-atomic-profile-probe", liveMemoryServer(endpoint))
+	if err != nil {
+		t.Fatalf("open streamable-http memory MCP at %s: %v", endpoint, err)
+	}
+	defer func() { _ = cli.Close() }()
+
+	uid := fmt.Sprintf("atomic-profile-%d", time.Now().UnixNano())
+	subject := "Atomic Profile Subject " + uid
+	result, err := cli.CallTool(ctx, "memory_store_profile", map[string]any{
+		"entities": []map[string]any{{
+			"name": "Atomic Profile Entity " + uid, "entity_type": "PERSON",
+		}},
+		"facts": []map[string]any{{
+			"subject": subject, "predicate": "has_marker", "object_value": "complete",
+		}},
+		"preferences": []map[string]any{{
+			"category": "validation", "preference": "atomic profile " + uid,
+		}},
+		"completion_predicate": "onboarding_completed",
+		"completion_value":     time.Now().UTC().Format(time.RFC3339Nano),
+		"user_identifier":      uid,
+	})
+	if err != nil {
+		t.Fatalf("memory_store_profile: %v", err)
+	}
+	for _, want := range []string{
+		`"stored": true`, `"entities": 1`, `"facts": 1`,
+		`"preferences": 1`, `"completion_predicate": "onboarding_completed"`,
+	} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("memory_store_profile result missing %s: %s", want, result)
+		}
+	}
+
+	for _, factSubject := range []string{subject, uid} {
+		facts, callErr := cli.CallTool(ctx, "memory_get_facts", map[string]any{
+			"subject": factSubject, "user_identifier": uid,
+		})
+		if callErr != nil {
+			t.Fatalf("memory_get_facts(%q): %v", factSubject, callErr)
+		}
+		if !strings.Contains(facts, `"fact_count": 1`) {
+			t.Fatalf("profile fact %q was not committed: %s", factSubject, facts)
+		}
+	}
+}
+
 func TestMemoryLiveRejectsUnauthenticatedAndPayloadForgedIdentity(t *testing.T) {
 	endpoint := memoryEndpointOrGate(t)
 	reapIdleHTTPConns(t)

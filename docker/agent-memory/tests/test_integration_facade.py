@@ -8,21 +8,41 @@ import pytest
 from neo4j_agent_memory.integration import MemoryIntegration
 
 
+class _Graph:
+    def __init__(self):
+        self.actions = []
+
+    async def execute_write_unit(self, work):
+        result = await work()
+        actions, self.actions = self.actions, []
+        for action in actions:
+            await action()
+        return result
+
+    def defer_after_commit(self, action):
+        self.actions.append(action)
+
+
 class _LongTerm:
     def __init__(self):
         self.fail = False
+        self._enrichment_service = None
+        self.entity_kwargs = {}
 
     def _result(self, value):
         if self.fail:
             raise RuntimeError("facade failed")
         return value
 
-    async def add_entity(self, **_kwargs):
+    async def add_entity(self, **kwargs):
+        self.entity_kwargs = kwargs
         entity = SimpleNamespace(
             id="entity-1",
             name="Davide",
             canonical_name="David",
             type=SimpleNamespace(value="PERSON"),
+            description="Aura builder",
+            confidence=1.0,
         )
         dedup = SimpleNamespace(action="created", matched_entity_name=None, similarity_score=0.0)
         return self._result((entity, dedup))
@@ -44,7 +64,7 @@ class _LongTerm:
 
 
 def test_lifecycle_with_borrowed_client_and_unconnected_guard():
-    borrowed = SimpleNamespace(long_term=_LongTerm())
+    borrowed = SimpleNamespace(long_term=_LongTerm(), graph=_Graph())
     integration = MemoryIntegration(client=borrowed)
     asyncio.run(integration.connect())
     asyncio.run(integration.close())
@@ -57,7 +77,7 @@ def test_lifecycle_with_borrowed_client_and_unconnected_guard():
 
 def test_add_and_delete_facades_cover_success_absence_and_error():
     long_term = _LongTerm()
-    integration = MemoryIntegration(client=SimpleNamespace(long_term=long_term))
+    integration = MemoryIntegration(client=SimpleNamespace(long_term=long_term, graph=_Graph()))
 
     assert asyncio.run(integration.add_entity("Davide", "PERSON"))["deduplication"][
         "action"
@@ -108,6 +128,37 @@ def test_add_and_delete_facades_cover_success_absence_and_error():
     assert "error" in asyncio.run(
         integration.update_entity("entity-1", user_identifier="owner")
     )
+
+
+def test_entity_enrichment_is_deferred_until_after_the_atomic_write():
+    events = []
+
+    class _Enrichment:
+        is_running = True
+
+        async def enqueue(self, **kwargs):
+            events.append(("enriched", kwargs["entity_id"]))
+
+    class _ObservedGraph(_Graph):
+        async def execute_write_unit(self, work):
+            result = await work()
+            events.append(("committed", result["id"]))
+            actions, self.actions = self.actions, []
+            for action in actions:
+                await action()
+            return result
+
+    long_term = _LongTerm()
+    long_term._enrichment_service = _Enrichment()
+    integration = MemoryIntegration(
+        client=SimpleNamespace(long_term=long_term, graph=_ObservedGraph())
+    )
+
+    result = asyncio.run(integration.add_entity("Davide", "PERSON"))
+
+    assert result["id"] == "entity-1"
+    assert long_term.entity_kwargs["enrich"] is False
+    assert events == [("committed", "entity-1"), ("enriched", "entity-1")]
 
 
 async def _async_value(value):

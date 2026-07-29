@@ -26,6 +26,7 @@ from neo4j_agent_memory.integration_context import (
     SessionStrategy,
     entity_name_fields,
 )
+from neo4j_agent_memory.memory.atomic import atomic_memory_mutation
 
 if TYPE_CHECKING:
     from neo4j_agent_memory import MemoryClient
@@ -167,6 +168,7 @@ class MemoryIntegration(ContextSearchMixin):
 
     # ── Core Operations ──────────────────────────────────────────────
 
+    @atomic_memory_mutation
     async def add_entity(
         self,
         name: str,
@@ -195,6 +197,7 @@ class MemoryIntegration(ContextSearchMixin):
             Dict with entity info and deduplication result.
         """
         try:
+            enrichment = getattr(self.client.long_term, "_enrichment_service", None)
             entity, dedup_result = await self.client.long_term.add_entity(
                 name=name,
                 entity_type=entity_type,
@@ -204,7 +207,20 @@ class MemoryIntegration(ContextSearchMixin):
                 metadata=metadata,
                 generate_embedding=True,
                 user_identifier=user_identifier,
+                enrich=False,
             )
+            if enrichment is not None and enrichment.is_running:
+
+                async def enrich() -> None:
+                    await enrichment.enqueue(
+                        entity_id=entity.id,
+                        entity_name=entity.name,
+                        entity_type=entity.type,
+                        context=entity.description,
+                        confidence=entity.confidence,
+                    )
+
+                self.client.graph.defer_after_commit(enrich)
             result: dict[str, Any] = {
                 "stored": True,
                 "type": "entity",
@@ -225,6 +241,7 @@ class MemoryIntegration(ContextSearchMixin):
             logger.error(f"Error adding entity: {e}")
             return {"error": str(e)}
 
+    @atomic_memory_mutation
     async def add_preference(
         self,
         category: str,
@@ -277,6 +294,7 @@ class MemoryIntegration(ContextSearchMixin):
             logger.error(f"Error adding preference: {e}")
             return {"error": str(e)}
 
+    @atomic_memory_mutation
     async def add_fact(
         self,
         subject: str,
@@ -326,6 +344,7 @@ class MemoryIntegration(ContextSearchMixin):
             logger.error(f"Error adding fact: {e}")
             return {"error": str(e)}
 
+    @atomic_memory_mutation
     async def delete_preference(
         self,
         preference_id: str,
@@ -348,6 +367,7 @@ class MemoryIntegration(ContextSearchMixin):
             return {"deleted": None, "reason": "not found or not owned by this user"}
         return {"deleted": removed, "type": "preference"}
 
+    @atomic_memory_mutation
     async def update_preference(
         self,
         preference_id: str,
@@ -391,6 +411,7 @@ class MemoryIntegration(ContextSearchMixin):
             },
         }
 
+    @atomic_memory_mutation
     async def delete_fact(
         self,
         fact_id: str,
@@ -409,6 +430,7 @@ class MemoryIntegration(ContextSearchMixin):
             return {"deleted": None, "reason": "not found or not owned by this user"}
         return {"deleted": removed, "type": "fact"}
 
+    @atomic_memory_mutation
     async def delete_relationship(
         self,
         source_id: str,
@@ -437,6 +459,7 @@ class MemoryIntegration(ContextSearchMixin):
             return {"deleted": None, "reason": "no such relationship between those entities"}
         return {"deleted": removed, "type": "relationship", "relationship": relationship_type}
 
+    @atomic_memory_mutation
     async def update_fact(
         self,
         fact_id: str,
@@ -478,6 +501,7 @@ class MemoryIntegration(ContextSearchMixin):
             },
         }
 
+    @atomic_memory_mutation
     async def delete_entity(
         self,
         entity_id: str,
@@ -508,6 +532,7 @@ class MemoryIntegration(ContextSearchMixin):
             ),
         }
 
+    @atomic_memory_mutation
     async def update_entity(
         self,
         entity_id: str,

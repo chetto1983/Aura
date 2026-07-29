@@ -16,9 +16,14 @@ class _LongTerm:
         return SimpleNamespace(id="fact-1")
 
 
+class _Graph:
+    async def execute_write_unit(self, work):
+        return await work()
+
+
 def test_integration_parses_iso_fact_validity_before_storage():
     long_term = _LongTerm()
-    integration = MemoryIntegration(client=SimpleNamespace(long_term=long_term))
+    integration = MemoryIntegration(client=SimpleNamespace(long_term=long_term, graph=_Graph()))
 
     result = asyncio.run(
         integration.add_fact(

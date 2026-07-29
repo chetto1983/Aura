@@ -399,11 +399,8 @@ func TestScopeMemoryArgs(t *testing.T) {
 	})
 }
 
-// TestStoreConfirmedOpensOneMCPSessionForTheWholeSubmission asserts #95's
-// performance invariant under #98.1: one transport and one initialize, with no
-// stateful session or DELETE, carries all nine tools/call requests. Before #95,
-// each write opened, handshook, called and closed
-// its own session — nine handshakes, the "1000 chiamate" the directive names.
+// TestStoreConfirmedOpensOneMCPSessionForTheWholeSubmission asserts the wire
+// boundary: one transport, initialize, and host-only atomic tools/call.
 func TestStoreConfirmedOpensOneMCPSessionForTheWholeSubmission(t *testing.T) {
 	rec := newRecordingMemoryMCPServer(t)
 	withMemoryServerAt(t, rec.URL)
@@ -421,19 +418,18 @@ func TestStoreConfirmedOpensOneMCPSessionForTheWholeSubmission(t *testing.T) {
 		t.Errorf("MCP session teardowns = %d, want 0 in authenticated stateless mode", deletes)
 	}
 	calls := rec.recordedCalls()
-	if len(calls) != 9 {
-		t.Fatalf("tools/call requests = %d, want 9 over that single session", len(calls))
+	if len(calls) != 1 {
+		t.Fatalf("tools/call requests = %d, want one atomic profile call", len(calls))
 	}
-	for _, c := range calls {
-		if c.args["user_identifier"] != "id-uuid" {
-			t.Errorf("wire call %q missing user_identifier scope: %#v", c.tool, c.args)
-		}
-		if c.tool == "memory_store_message" {
-			t.Error("onboarding wrote a :Message node at the wire (Amendment #95 deletes the raw-draft net)")
-		}
+	call := calls[0]
+	if call.tool != "memory_store_profile" {
+		t.Errorf("wire tool = %q, want memory_store_profile", call.tool)
 	}
-	if calls[len(calls)-1].args["predicate"] != onboarding.PredicateOnboardingCompleted {
-		t.Errorf("last wire call = %#v, want the completion sentinel", calls[len(calls)-1].args)
+	if call.args["user_identifier"] != "id-uuid" {
+		t.Errorf("wire call missing user_identifier scope: %#v", call.args)
+	}
+	if call.args["completion_predicate"] != onboarding.PredicateOnboardingCompleted {
+		t.Errorf("wire call = %#v, want the completion sentinel", call.args)
 	}
 }
 
