@@ -81,7 +81,13 @@ RUN pip install --no-cache-dir --break-system-packages mcp-neo4j-cypher==0.6.0 f
 
 # calculator: warm uvx at a pinned commit (chetto1983 fork) so it runs with egress
 # blocked — an unpinned HEAD re-fetches and fails offline (Phase 17 AC7).
-RUN uvx --from "calculator-mcp-server@git+https://github.com/chetto1983/calculator-mcp-server.git@46a1e66709bc387e8c223f15ec25fb5ae3a1af08" \
+#
+# mcp is pinned too, and that is the whole point: pinning only the source commit left the
+# dependency tree floating, so the "reproducible" build broke the day mcp 2.0.0 shipped and
+# dropped mcp.server.fastmcp, which calculator_server.py imports. The fork needs
+# mcp[cli]>=1.27.0, so 1.29.0 — the last stable 1.x — is the only version satisfying both.
+RUN uvx --with "mcp==1.29.0" \
+        --from "calculator-mcp-server@git+https://github.com/chetto1983/calculator-mcp-server.git@46a1e66709bc387e8c223f15ec25fb5ae3a1af08" \
         -- calculator-mcp-server --help >/dev/null
 
 # mail recipe retired: the calendar PIM sidecar (forked calendar-mcp →
