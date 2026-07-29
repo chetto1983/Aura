@@ -95,45 +95,21 @@ type CatalogEntry struct {
 }
 
 // BuiltInCatalog returns the curated set of shipped MCP server recipes
-// (calculator, calendar, memory, whatsapp), sorted by name. The standalone mail
-// recipe was retired once the calendar recipe became the unified PIM sidecar
-// (forked calendar-mcp) — its send/search email tools subsume mail-mcp.
+// (calendar, memory, whatsapp), sorted by name. The standalone mail recipe was
+// retired once the calendar recipe became the unified PIM sidecar (forked
+// calendar-mcp) — its send/search email tools subsume mail-mcp.
+//
+// The calculator recipe was retired too. It was the only recipe whose runtime
+// depended on a uv cache warmed at image build time, and that dependency could not
+// be made to hold: the aura service mounts a named volume over /root/.cache/uv for
+// the host-direct shell_exec path, and a named volume is seeded ONCE at creation and
+// never refreshed, so the warmed cache was invisible to every image built after it.
+// With UV_OFFLINE=1 there was no network to fall back to, the stdio server died
+// during initialize, and the host reported it as "recv: unexpected EOF" — a transport
+// fault it was not. What it bought (symbolic math, stats, matrices) the agent already
+// reaches through shell_exec and python.
 func BuiltInCatalog() []CatalogEntry {
 	entries := []CatalogEntry{
-		{
-			Name:       "calculator",
-			Summary:    "calculator-mcp-server over stdio via uvx",
-			Source:     "recipe:calculator",
-			TrustClass: mcp.TrustTrustedRecipe,
-			Runtime:    "local",
-			Server: mcp.ManagedServer{
-				Command: "uvx",
-				Args: []string{
-					"--from",
-					// Pinned commit so uvx reuses the warm-cached git checkout
-					// offline; an unpinned HEAD re-fetches and fails with egress
-					// blocked (Phase 17 AC7).
-					"calculator-mcp-server@git+https://github.com/chetto1983/calculator-mcp-server.git@46a1e66709bc387e8c223f15ec25fb5ae3a1af08",
-					"--",
-					"calculator-mcp-server",
-					"--stdio",
-				},
-				// UV_OFFLINE pins the mount to the cache the image already warmed at this
-				// exact commit (docker/aura/Dockerfile). Without it uv still queries the
-				// pypi index to re-resolve the dependency set on EVERY mount, even though
-				// every wheel is already cached: on the appliance that burst of parallel
-				// lookups saturated Docker's embedded resolver, the mount failed with
-				// EAI_AGAIN, and the bounded retry ladder then spent minutes before the
-				// boot gave up — so `aura chat` took minutes to start and came up with
-				// zero calculator tools. Offline, the same mount lands in seconds with all
-				// 23 tools. Safe precisely because the ref is an immutable commit: there is
-				// nothing newer to resolve.
-				Env:     []string{"PYTHONUNBUFFERED=1", "UV_OFFLINE=1"},
-				Source:  "recipe:calculator",
-				Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
-				Runtime: mcp.ManagedRuntime{Kind: "local"},
-			},
-		},
 		{
 			// Aura PIM sidecar (forked calendar-mcp → chetto1983/aura-pim-mcp):
 			// unified mail + calendar + contacts over MCP-over-HTTP. The agent mounts

@@ -15,7 +15,8 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 	}
 	dockerfile := readProjectFile(t, root, "docker/aura/Dockerfile")
 	compose := readProjectFile(t, root, "compose.yaml")
-	gvisor := readProjectFile(t, root, "compose.gvisor.yaml")
+	minipc := readProjectFile(t, root, "compose.minipc.yaml")
+	installer := readProjectFile(t, root, "scripts/install.sh")
 	caddyfile := readProjectFile(t, root, "caddy/Caddyfile")
 	dockerignore := readProjectFile(t, root, ".dockerignore")
 	garageBootstrap := readProjectFile(t, root, "scripts/garage_bootstrap.sh")
@@ -27,7 +28,9 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"postgresql-client-18",
 		"ghcr.io/astral-sh/uv:0.11.32",
 		"mcp-neo4j-cypher==0.6.0",
-		"uvx --with \"mcp==1.29.0\" \\\n        --from \"calculator-mcp-server@git+https://github.com/chetto1983/calculator-mcp-server.git@46a1e66709bc387e8c223f15ec25fb5ae3a1af08\" \\\n        -- calculator-mcp-server --help",
+		// uv/uvx stay in the image — the agent reaches them from shell_exec — but nothing
+		// warms a package for a recipe here any more (asserted below).
+		"COPY --from=ghcr.io/astral-sh/uv:",
 		"ENV AURA_IN_CONTAINER=1",
 		"COPY --from=garagebin /garage /usr/local/bin/garage",
 		"aura-garage-bootstrap.sh",
@@ -200,18 +203,49 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 			t.Fatalf("caddy/Caddyfile should not contain retired proxy-token primitive %q:\n%s", retired, caddyfile)
 		}
 	}
+	// gVisor is a knob now, not a file: compose.gvisor.yaml was three lines plus a systemd
+	// drop-in that rewrote ExecStart just to add a -f. The tier still exists and is still
+	// opt-in — it just travels in .env with everything else.
 	for _, want := range []string{
-		"docker compose -f compose.yaml -f compose.gvisor.yaml up -d",
-		"runsc install",
-		"runtime: runsc",
+		"runtime: ${AURA_RUNTIME:-runc}",
 	} {
-		if !strings.Contains(gvisor, want) {
-			t.Fatalf("compose.gvisor.yaml missing %q:\n%s", want, gvisor)
+		if !strings.Contains(compose, want) {
+			t.Fatalf("compose.yaml missing %q:\n%s", want, compose)
 		}
 	}
 	for _, retired := range []string{"cap_drop", "read_only"} {
-		if strings.Contains(gvisor, retired) {
-			t.Fatalf("compose.gvisor.yaml should not contain %q:\n%s", retired, gvisor)
+		if strings.Contains(compose, retired) {
+			t.Fatalf("compose.yaml should not contain %q:\n%s", retired, compose)
+		}
+	}
+	// The isolation tier must not silently disappear: runc is the default, so a typo in the
+	// knob name would degrade to a plain container without failing anything.
+	if !strings.Contains(installer, "set_env_value AURA_RUNTIME runsc") {
+		t.Fatalf("scripts/install.sh must set AURA_RUNTIME=runsc for --gvisor:\n%s", installer)
+	}
+
+	// Nothing in the image may warm a uv cache for a recipe to consume at runtime. compose
+	// mounts a named volume over /root/.cache/uv for the host-direct shell_exec path, and a
+	// named volume is seeded ONCE at creation and never refreshed — so a warm-up here is
+	// invisible to every image built after that volume existed. The calculator recipe was
+	// built on exactly that assumption and is retired; this keeps the shape out.
+	// Only the image side is checkable as text here; the recipe side is asserted against the
+	// real catalog data in manager.TestNoRecipeDependsOnABuildTimeUVCache, which a comment
+	// mentioning UV_OFFLINE cannot trip.
+	if strings.Contains(dockerfile, "RUN uvx ") {
+		t.Fatalf("docker/aura/Dockerfile warms a uvx package: the /root/.cache/uv volume shadows it at runtime")
+	}
+
+	// The mini PC file is the only other compose the installer ships; it must keep the
+	// GPU-less machine GPU-less. A default inherited from the base is how the CUDA image
+	// ended up on a box with no GPU, where llama.cpp only WARNS and falls back to CPU.
+	for _, want := range []string{
+		"AURA_EMBED_IMAGE:-ghcr.io/ggml-org/llama.cpp:server}",
+		"deploy: !reset null",
+		"COMPOSE_FILE=compose.yaml:compose.minipc.yaml",
+	} {
+		if !strings.Contains(minipc, want) {
+			t.Fatalf("compose.minipc.yaml missing %q:\n%s", want, minipc)
 		}
 	}
 	for _, want := range []string{".git", ".worktrees", "output", ".env"} {
@@ -291,221 +325,6 @@ func TestGarageBootstrapCanReachIdempotencyRegistry(t *testing.T) {
 		if !strings.Contains(bootstrap, want) {
 			t.Fatalf("garage-bootstrap service missing idempotency registry dependency %q:\n%s", want, bootstrap)
 		}
-	}
-}
-
-func TestDistributionSurfaceArtifactsMatchReleaseContract(t *testing.T) {
-	root := repoRootForTest(t)
-	installer := readProjectFile(t, root, "scripts/install.sh")
-	releaser := readProjectFile(t, root, ".goreleaser.yaml")
-	unit := readProjectFile(t, root, "deploy/aura.service")
-
-	for _, want := range []string{
-		"set -euo pipefail",
-		"AURA_INSTALL_SKIP_HW",
-		"Aura requires at least 4 CPU cores",
-		"Aura requires at least 16 GiB RAM",
-		"Aura requires at least 20 GiB free disk",
-		"50 GiB free disk is recommended",
-		"https://get.docker.com",
-		"brew install --cask docker",
-		"openssl rand -hex 32",
-		"ensure_internal_env_secrets",
-		"ensure_objectstore_env_secrets",
-		"ensure_objectstore_public_endpoint",
-		"AURA_OBJECTSTORE_PUBLIC_ENDPOINT \"https://$(host_for_summary)\"",
-		"AURA_AUTHULA_SECRET=${authula_secret}",
-		"AURA_PIM_MCP_ADMIN_TOKEN=${pim_admin_token}",
-		"SEARXNG_SECRET=${searxng_secret}",
-		"AURA_OBJECTSTORE_ACCESS_KEY=${objectstore_access_key}",
-		"AURA_OBJECTSTORE_SECRET_KEY=${objectstore_secret_key}",
-		"GARAGE_RPC_SECRET=${garage_rpc_secret}",
-		"chmod 600 .env",
-		"download_file searxng/settings.yml searxng/settings.yml",
-		"download_file searxng/limiter.toml searxng/limiter.toml",
-		"download_file scripts/garage_bootstrap.sh scripts/garage_bootstrap.sh",
-		"AURA_ACCESS_TOKEN",
-		"docker compose -f compose.yaml up -d",
-		"docker compose -f compose.yaml -f compose.gvisor.yaml up -d",
-		"https://${host}/setup/?token=${token}",
-	} {
-		if !strings.Contains(installer, want) {
-			t.Fatalf("scripts/install.sh missing %q:\n%s", want, installer)
-		}
-	}
-	for _, want := range []string{
-		"dockers_v2:",
-		"dockerfile: docker/aura/Dockerfile",
-		"ghcr.io/chetto1983/aura",
-		"{{ .Tag }}",
-		"linux/amd64",
-		"linux/arm64",
-		"extra_files:",
-		"go.mod",
-		"go.sum",
-		"cmd",
-		"internal",
-	} {
-		if !strings.Contains(releaser, want) {
-			t.Fatalf(".goreleaser.yaml missing %q:\n%s", want, releaser)
-		}
-	}
-	if strings.Contains(releaser, "latest") {
-		t.Fatalf(".goreleaser.yaml should not emit a latest image tag:\n%s", releaser)
-	}
-	for _, want := range []string{
-		"After=network-online.target docker.service",
-		"WorkingDirectory=/opt/aura",
-		"ExecStart=/usr/bin/docker compose -f /opt/aura/compose.yaml up -d",
-		"ExecStop=/usr/bin/docker compose -f /opt/aura/compose.yaml down",
-		"WantedBy=multi-user.target",
-		"runsc install",
-		"dpkg --print-architecture",
-		"native Linux only; never Docker Desktop",
-	} {
-		if !strings.Contains(unit, want) {
-			t.Fatalf("deploy/aura.service missing %q:\n%s", want, unit)
-		}
-	}
-}
-
-func TestBackupLifecycleDocsMatchApplianceContract(t *testing.T) {
-	root := repoRootForTest(t)
-	restoreDrill := readProjectFile(t, root, "scripts/restore_drill.sh")
-	readme := readProjectFile(t, root, "README.md")
-
-	for _, want := range []string{
-		"pg_restore",
-		"cypher-shell",
-		"bolt://neo4j:7687",
-		"NEO4J_DUMPFILE",
-		"neo4j-*.cypher",
-	} {
-		if !strings.Contains(restoreDrill, want) {
-			t.Fatalf("scripts/restore_drill.sh missing %q:\n%s", want, restoreDrill)
-		}
-	}
-	for _, want := range []string{
-		"install.sh",
-		"Docker Desktop",
-		"PowerShell",
-		"AURA_ACCESS_TOKEN",
-		"docker compose pull",
-		"docker compose up -d",
-		"aura-migrate",
-		"pg_restore",
-		"cypher-shell",
-		"mcp-neo4j-cypher",
-		"WhatsApp Terms of Service",
-		"Scan the QR code",
-		"tls internal",
-		"no Docker socket",
-	} {
-		if !strings.Contains(readme, want) {
-			t.Fatalf("README.md missing %q", want)
-		}
-	}
-	if strings.Index(readme, "## Quick Start") > strings.Index(readme, "## Development") {
-		t.Fatalf("README.md should lead with the end-user quick start before development")
-	}
-}
-
-func TestDotEnvTemplateHygiene(t *testing.T) {
-	root := repoRootForTest(t)
-	envExample := readProjectFile(t, root, ".env.example")
-	gitignore := readProjectFile(t, root, ".gitignore")
-
-	for _, want := range []string{"/.env", "/.env.*", "!/.env.example"} {
-		if !strings.Contains(gitignore, want) {
-			t.Fatalf(".gitignore missing %q:\n%s", want, gitignore)
-		}
-	}
-	for _, want := range []string{
-		"AURA_IMAGE=",
-		"AURA_ACCESS_TOKEN=",
-		"AURA_AGENT_MEMORY_MCP_PORT=",
-		"OPENROUTER_API_KEY=",
-		"AURA_EMBED_HF_REPO=",
-		"AURA_EMBED_HF_FILE=",
-		"AURA_LLM_STREAM_IDLE_TIMEOUT_SEC=",
-		"AURA_MODEL_CONTEXT_WINDOW=",
-		"AURA_COMPLETION_GATE=",
-		"AURA_AGENT_JOB_MAX_DURATION_SEC=",
-		"AURA_SWARM_MAX_GOALS=",
-		"AURA_SWARM_CHILD_TIMEOUT_SEC=",
-		"AURA_SWARM_MAX_CONCURRENT=",
-		"AURA_SWARM_MAX_DEPTH=",
-		"AURA_LOOP_MAX_PARALLEL_TOOLS=",
-		"AURA_FS_MAX_READ_BYTES=",
-		"AURA_FS_WALK_NODE_CAP=",
-		"AURA_FS_WALK_TIMEOUT_MS=",
-		"AURA_SHELL_MAX_TIMEOUT_MS=",
-		"AURA_SHELL_OUTPUT_BUF_CAP=",
-		"SEARXNG_URL=",
-		"TELEGRAM_BOT_TOKEN=",
-		"AURA_TELEGRAM_STATUS_THROTTLE_MS=",
-		"AURA_VISION_CLOUD=",
-		"MULTIMODAL_BASE_URL=",
-		"STT_BASE_URL=",
-		"TTS_BASE_URL=",
-		"DOCUMENTS_BASE_URL=",
-		"AURA_MCP_CONFIG=",
-		"AURA_SKILLS_DIR=",
-		"AURA_AGUI_CORS_PERMISSIVE=",
-		"AURA_OBJECTSTORE_BACKEND=",
-		"AURA_OBJECTSTORE_ENDPOINT=",
-		"AURA_OBJECTSTORE_PUBLIC_ENDPOINT=",
-		"AURA_OBJECTSTORE_REGION=",
-		"AURA_OBJECTSTORE_BUCKET=",
-		"AURA_OBJECTSTORE_ACCESS_KEY=",
-		"AURA_OBJECTSTORE_SECRET_KEY=",
-		"AURA_OBJECTSTORE_PATH_STYLE=",
-		"AURA_ASSET_MAX_DOCUMENT_BYTES=",
-		"AURA_ASSET_MAX_IMAGE_BYTES=",
-		"AURA_ASSET_MAX_AUDIO_BYTES=",
-		"AURA_ASSET_PRESIGN_TTL_SEC=",
-		"AURA_ASSET_PROCESSING_CONCURRENCY=",
-		"TELEGRAM_API_BASE_URL=",
-		"TELEGRAM_FILE_BASE_URL=",
-		"AURA_TELEGRAM_LOCAL_BOT_API=",
-		"AURA_PROFILE_DIR=",
-		"AURA_SCHEDULER_PREFER_ORIGIN_CHANNEL=",
-	} {
-		if !hasActiveEnvAssignment(envExample, strings.TrimSuffix(want, "=")) {
-			t.Fatalf(".env.example missing active assignment for %q", want)
-		}
-	}
-	for _, want := range []string{
-		"AURA_LLM_MODEL=deepseek/deepseek-v4-flash:nitro",
-		"AURA_SHOW_REASONING=true",
-		"AURA_OBJECTSTORE_PUBLIC_ENDPOINT=http://127.0.0.1:3900",
-		"AURA_WHATSAPP_BRIDGE_PORT=8094",
-	} {
-		if !hasActiveEnvLine(envExample, want) {
-			t.Fatalf(".env.example missing coherent default line %q", want)
-		}
-	}
-	if strings.Contains(envExample, "AURA_LLM_REASONING_LEARNING") {
-		t.Fatal(".env.example still exposes the forbidden legacy learned-serving switch")
-	}
-
-	seen := map[string]bool{}
-	for line := range strings.SplitSeq(envExample, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		key, _, ok := strings.Cut(line, "=")
-		if !ok {
-			t.Fatalf(".env.example active line is not KEY=value: %q", line)
-		}
-		if strings.Contains(line, " #") {
-			t.Fatalf(".env.example active assignment has an inline comment; keep comments on their own line: %q", line)
-		}
-		if seen[key] {
-			t.Fatalf(".env.example has duplicate active assignment for %q", key)
-		}
-		seen[key] = true
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/mcp"
+	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 )
 
 func withTempMCPConfig(t *testing.T) string {
@@ -22,26 +23,31 @@ func withTempMCPConfig(t *testing.T) string {
 	return path
 }
 
-func TestMCPInstallCalculatorWritesRecipe(t *testing.T) {
+// `aura mcp install <recipe>` must write the catalog row verbatim. This ran against the
+// calculator until that recipe was retired (see mcpmanager.BuiltInCatalog); calendar is the
+// stand-in, and the assertion is now against LookupCatalog rather than a copied literal —
+// the old hardcoded arg string went stale on the first legitimate bump.
+func TestMCPInstallWritesRecipeVerbatim(t *testing.T) {
 	path := withTempMCPConfig(t)
 
 	var out bytes.Buffer
-	if err := runMCPCommand(context.Background(), nil, []string{"install", "calculator"}, &out); err != nil {
-		t.Fatalf("mcp install calculator: %v", err)
+	if err := runMCPCommand(context.Background(), nil, []string{"install", "calendar"}, &out); err != nil {
+		t.Fatalf("mcp install calendar: %v", err)
 	}
 
 	doc, err := mcp.LoadManagedConfig(path)
 	if err != nil {
 		t.Fatalf("load managed config: %v", err)
 	}
-	calc := doc.MCPServers["calculator"]
-	if calc.Command != "uvx" {
-		t.Fatalf("calculator command = %q, want uvx", calc.Command)
+	want, ok := mcpmanager.LookupCatalog("calendar")
+	if !ok {
+		t.Fatal("LookupCatalog(\"calendar\") not found")
 	}
-	if strings.Join(calc.Args, " ") != "--from calculator-mcp-server@git+https://github.com/chetto1983/calculator-mcp-server.git@46a1e66709bc387e8c223f15ec25fb5ae3a1af08 -- calculator-mcp-server --stdio" {
-		t.Fatalf("calculator args not recipe-shaped: %#v", calc.Args)
+	got := doc.MCPServers["calendar"]
+	if got.URL != want.Server.URL || got.Type != want.Server.Type || got.Source != want.Server.Source {
+		t.Fatalf("calendar row = %#v, want the catalog recipe %#v", got, want.Server)
 	}
-	if !strings.Contains(out.String(), "ok: installed calculator") {
+	if !strings.Contains(out.String(), "ok: installed calendar") {
 		t.Fatalf("install output missing success line:\n%s", out.String())
 	}
 }
@@ -57,7 +63,7 @@ func TestMCPRecipesListsBuiltins(t *testing.T) {
 	}
 	got := out.String()
 	// mail retired — the calendar PIM sidecar subsumes it.
-	for _, want := range []string{"calculator", "whatsapp", "calendar", "memory", "trusted_recipe"} {
+	for _, want := range []string{"whatsapp", "calendar", "memory", "trusted_recipe"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("recipes output missing %q:\n%s", want, got)
 		}
@@ -371,20 +377,26 @@ func TestMCPDoctorAndToolsStartConfiguredServer(t *testing.T) {
 func TestMCPManagerMockE2EProfileRecipeBlockedAndTools(t *testing.T) {
 	path := withTempMCPConfig(t)
 	var out bytes.Buffer
-	if err := runMCPCommand(context.Background(), nil, []string{"install", "calculator"}, &out); err != nil {
-		t.Fatalf("install calculator: %v", err)
+	// Install a real recipe purely to inherit trusted_recipe — `mcp add` would land
+	// untrusted and never mount — then rewrite the row into the stdio helper process. The
+	// URL/Type reset matters: calendar ships as streamable_http, and a leftover URL would
+	// win over Command. (This used to install the calculator recipe, now retired.)
+	if err := runMCPCommand(context.Background(), nil, []string{"install", "calendar"}, &out); err != nil {
+		t.Fatalf("install calendar: %v", err)
 	}
 	doc, err := mcp.LoadManagedConfig(path)
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}
-	calc := doc.MCPServers["calculator"]
+	calc := doc.MCPServers["calendar"]
+	calc.Type = ""
+	calc.URL = ""
 	calc.Command = os.Args[0]
 	calc.Args = []string{"-test.run=TestMCPServerHelperProcess", "--"}
 	calc.Env = []string{"AURA_MCP_HELPER=1"}
-	doc.MCPServers["calculator"] = calc
+	doc.MCPServers["calendar"] = calc
 	if err := mcp.SaveManagedConfig(path, doc); err != nil {
-		t.Fatalf("save fake calculator: %v", err)
+		t.Fatalf("save fake stdio server: %v", err)
 	}
 
 	out.Reset()
@@ -392,7 +404,7 @@ func TestMCPManagerMockE2EProfileRecipeBlockedAndTools(t *testing.T) {
 		t.Fatalf("profile create: %v", err)
 	}
 	out.Reset()
-	if err := runMCPCommand(context.Background(), nil, []string{"profile", "add", "e2e", "calculator"}, &out); err != nil {
+	if err := runMCPCommand(context.Background(), nil, []string{"profile", "add", "e2e", "calendar"}, &out); err != nil {
 		t.Fatalf("profile add: %v", err)
 	}
 	out.Reset()
@@ -405,11 +417,11 @@ func TestMCPManagerMockE2EProfileRecipeBlockedAndTools(t *testing.T) {
 	}
 
 	out.Reset()
-	if err := runMCPCommand(context.Background(), nil, []string{"tools", "calculator"}, &out); err != nil {
-		t.Fatalf("tools calculator: %v", err)
+	if err := runMCPCommand(context.Background(), nil, []string{"tools", "calendar"}, &out); err != nil {
+		t.Fatalf("tools calendar: %v", err)
 	}
 	if got := out.String(); !strings.Contains(got, "calculate\tmounted\tEvaluate a mathematical expression.") {
-		t.Fatalf("tools calculator output missing mounted row:\n%s", got)
+		t.Fatalf("tools calendar output missing mounted row:\n%s", got)
 	}
 
 	out.Reset()
@@ -417,7 +429,7 @@ func TestMCPManagerMockE2EProfileRecipeBlockedAndTools(t *testing.T) {
 		t.Fatalf("status --json: %v", err)
 	}
 	got := out.String()
-	for _, want := range []string{`"name":"blocked"`, `"startupState":"blocked"`, `"name":"calculator"`, `"profiles":["default","e2e"]`} {
+	for _, want := range []string{`"name":"blocked"`, `"startupState":"blocked"`, `"name":"calendar"`, `"profiles":["default","e2e"]`} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("status json missing %q:\n%s", want, got)
 		}

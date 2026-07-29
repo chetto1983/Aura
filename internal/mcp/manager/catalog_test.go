@@ -17,7 +17,11 @@ func TestCatalogIncludesTrustedRecipesAndCalendarHTTPRecipe(t *testing.T) {
 		names = append(names, entry.Name)
 	}
 	// The standalone mail recipe was retired — the calendar PIM sidecar subsumes it.
-	wantNames := []string{"calculator", "calendar", "memory", "whatsapp"}
+	// The calculator recipe was retired too: it was the only one whose runtime depended on
+	// a uv cache warmed at image build time, and compose mounts a named volume over
+	// /root/.cache/uv, which is seeded once and never refreshed — so no later image could
+	// reach its own warm cache. See BuiltInCatalog.
+	wantNames := []string{"calendar", "memory", "whatsapp"}
 	if !reflect.DeepEqual(names, wantNames) {
 		t.Fatalf("catalog names = %#v, want %#v", names, wantNames)
 	}
@@ -241,33 +245,19 @@ func containsString(values []string, want string) bool {
 	return slices.Contains(values, want)
 }
 
-// TestCatalogCalculatorMountsOffline pins the pair that makes the calculator recipe mount
-// at all on a machine with a slow or contended DNS resolver: the ref is an immutable commit
-// (so there is nothing newer to resolve) AND UV_OFFLINE tells uv not to go looking anyway.
-//
-// The regression it guards reached a live appliance. The image warms this exact ref, but uv
-// still queried the pypi index for the dependency set on every mount; that burst of parallel
-// lookups saturated Docker's embedded resolver, the mount died with EAI_AGAIN, and the
-// bounded retry ladder then burned minutes before boot gave up — leaving the agent with zero
-// calculator tools and `aura chat` taking minutes to start.
-func TestCatalogCalculatorMountsOffline(t *testing.T) {
-	calc, ok := LookupCatalog("calculator")
-	if !ok {
-		t.Fatal("calculator recipe missing")
-	}
-	var offline bool
-	for _, kv := range calc.Server.Env {
-		if kv == "UV_OFFLINE=1" {
-			offline = true
+// No recipe may depend on a uv cache warmed at image build time. That was the calculator's
+// design and it could not hold: the aura service mounts a named volume over /root/.cache/uv
+// for the host-direct shell_exec path, a named volume is seeded ONCE at creation and never
+// refreshed, so every image built after that moment warmed a cache the container could not
+// see. Paired with UV_OFFLINE=1 there was no network to fall back to, the stdio server died
+// during initialize, and the host surfaced it as "recv: unexpected EOF" — which reads like a
+// transport fault and is not one. The recipe is retired; this keeps the shape from coming
+// back under another name.
+func TestNoRecipeDependsOnABuildTimeUVCache(t *testing.T) {
+	for _, entry := range BuiltInCatalog() {
+		if slices.Contains(entry.Server.Env, "UV_OFFLINE=1") {
+			t.Fatalf("recipe %q sets UV_OFFLINE=1, so it can only resolve from a build-time uv cache — "+
+				"which the /root/.cache/uv volume shadows on every image after the first", entry.Name)
 		}
-	}
-	if !offline {
-		t.Fatalf("calculator Env = %#v, want UV_OFFLINE=1 (mount must resolve from the image's warm cache)", calc.Server.Env)
-	}
-	// Offline is only safe while the ref is immutable: an unpinned HEAD would have nothing
-	// to resolve against in the cache and would fail the mount outright.
-	joined := strings.Join(calc.Server.Args, " ")
-	if !strings.Contains(joined, "@46a1e66709bc387e8c223f15ec25fb5ae3a1af08") {
-		t.Fatalf("calculator Args = %#v, want the pinned commit UV_OFFLINE depends on", calc.Server.Args)
 	}
 }

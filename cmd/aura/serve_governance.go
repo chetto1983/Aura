@@ -14,7 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-var governanceVisibleContainerRecipes = []string{"calculator", "calendar", "whatsapp"}
+var governanceVisibleContainerRecipes = []string{"calendar", "whatsapp"}
 
 // serve_governance.go wires the composition-root adapters for the Phase-28 read-only
 // governance boards (GOV-01/02/03). The agui consumer declares the narrow board

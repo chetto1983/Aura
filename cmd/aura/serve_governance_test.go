@@ -18,7 +18,7 @@ func TestGovernanceMCPBoardIncludesContainerRecipes(t *testing.T) {
 	}
 
 	doc := providers.MCP.Servers()
-	for _, name := range []string{"calculator", "calendar", "whatsapp"} {
+	for _, name := range []string{"calendar", "whatsapp"} {
 		server, ok := doc.MCPServers[name]
 		if !ok {
 			t.Fatalf("MCP board missing container recipe %q: %#v", name, doc.MCPServers)

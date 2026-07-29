@@ -79,16 +79,12 @@ COPY --from=ghcr.io/astral-sh/uv:0.11.32 /uv /uvx /usr/local/bin/
 RUN pip install --no-cache-dir --break-system-packages mcp-neo4j-cypher==0.6.0 fastmcp==2.13.3 \
     && find /usr/lib/python3 /usr/local/lib -depth -type d -name __pycache__ -exec rm -rf {} +
 
-# calculator: warm uvx at a pinned commit (chetto1983 fork) so it runs with egress
-# blocked — an unpinned HEAD re-fetches and fails offline (Phase 17 AC7).
-#
-# mcp is pinned too, and that is the whole point: pinning only the source commit left the
-# dependency tree floating, so the "reproducible" build broke the day mcp 2.0.0 shipped and
-# dropped mcp.server.fastmcp, which calculator_server.py imports. The fork needs
-# mcp[cli]>=1.27.0, so 1.29.0 — the last stable 1.x — is the only version satisfying both.
-RUN uvx --with "mcp==1.29.0" \
-        --from "calculator-mcp-server@git+https://github.com/chetto1983/calculator-mcp-server.git@46a1e66709bc387e8c223f15ec25fb5ae3a1af08" \
-        -- calculator-mcp-server --help >/dev/null
+# uv/uvx above stay: the agent reaches them from shell_exec for Python work. What is gone
+# is the calculator warm-up that used to live here. Warming a uv cache at build time cannot
+# work for a recipe in THIS image: compose mounts a named volume over /root/.cache/uv, and a
+# named volume is seeded once at creation and never refreshed, so every image built after
+# the volume existed warmed a cache nobody could see. With UV_OFFLINE=1 on the mount there
+# was no network to fall back to. See manager.BuiltInCatalog for the retirement.
 
 # mail recipe retired: the calendar PIM sidecar (forked calendar-mcp →
 # chetto1983/aura-pim-mcp, a separate compose service) now provides email

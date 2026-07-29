@@ -42,10 +42,16 @@ func TestMemoryDefaultOn(t *testing.T) {
 	}
 }
 
-// TestCalculatorContainerDefaultOn proves the Aura appliance mounts the
-// warm-cached calculator recipe by default in-container, without requiring a
-// prior `aura mcp install calculator`.
-func TestCalculatorContainerDefaultOn(t *testing.T) {
+// These four cover the container default-on semantics. They used to run against the
+// calculator recipe, which is retired (see mcpmanager.BuiltInCatalog); calendar carries
+// them now because it is the other in-container default-on whose sidecar ships in the same
+// compose file. The semantics under test are the recipe-independent part: default-on
+// injects, an explicit disable still wins, an env override still wins, and an
+// operator-customized row is never overwritten.
+
+// TestCalendarContainerDefaultOn proves the Aura appliance mounts the calendar recipe by
+// default in-container, without requiring a prior `aura mcp install calendar`.
+func TestCalendarContainerDefaultOn(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "servers.json")
 	clearMCPEnv(t, path)
 	t.Setenv("AURA_IN_CONTAINER", "1")
@@ -54,30 +60,30 @@ func TestCalculatorContainerDefaultOn(t *testing.T) {
 	if cfg.MCPServersErr != nil {
 		t.Fatalf("loadMCPServers err = %v, want nil", cfg.MCPServersErr)
 	}
-	got, ok := cfg.MCPPolicies["calculator"]
+	got, ok := cfg.MCPPolicies["calendar"]
 	if !ok {
-		t.Fatalf("MCPPolicies missing calculator in Aura container: %#v", cfg.MCPPolicies)
+		t.Fatalf("MCPPolicies missing calendar in Aura container: %#v", cfg.MCPPolicies)
 	}
-	want, ok := mcpmanager.LookupCatalog("calculator")
+	want, ok := mcpmanager.LookupCatalog("calendar")
 	if !ok {
-		t.Fatal("LookupCatalog(\"calculator\") not found")
+		t.Fatal("LookupCatalog(\"calendar\") not found")
 	}
 	if !reflect.DeepEqual(got, want.Server) {
-		t.Fatalf("calculator policy = %#v, want LookupCatalog(\"calculator\").Server %#v", got, want.Server)
+		t.Fatalf("calendar policy = %#v, want LookupCatalog(\"calendar\").Server %#v", got, want.Server)
 	}
 }
 
-func TestCalculatorDefaultOn_RespectsDisable(t *testing.T) {
+func TestCalendarDefaultOn_RespectsDisable(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "servers.json")
 	clearMCPEnv(t, path)
 	t.Setenv("AURA_IN_CONTAINER", "1")
 
 	disabled := false
 	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
-		"calculator": {
-			Command: "uvx",
-			Args:    []string{"calculator-mcp-server", "--stdio"},
-			Source:  "recipe:calculator",
+		"calendar": {
+			Type:    mcp.ServerTypeStreamableHTTP,
+			URL:     "http://aura-pim-mcp:8080/",
+			Source:  "recipe:calendar",
 			Enabled: &disabled,
 			Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
 		},
@@ -90,53 +96,53 @@ func TestCalculatorDefaultOn_RespectsDisable(t *testing.T) {
 	if cfg.MCPServersErr != nil {
 		t.Fatalf("loadMCPServers err = %v, want nil", cfg.MCPServersErr)
 	}
-	if _, ok := cfg.MCPPolicies["calculator"]; ok {
-		t.Fatalf("calculator mounted despite explicit disable: %#v", cfg.MCPPolicies)
+	if _, ok := cfg.MCPPolicies["calendar"]; ok {
+		t.Fatalf("calendar mounted despite explicit disable: %#v", cfg.MCPPolicies)
 	}
 }
 
-// TestCalculatorContainerDefaultOn_EnvServersOverrideWins proves an
-// AURA_MCP_SERVERS_JSON entry named "calculator" wins in-container — the inject
-// lands AFTER the envServers delete loop and must not re-add the recipe default.
-func TestCalculatorContainerDefaultOn_EnvServersOverrideWins(t *testing.T) {
+// TestCalendarContainerDefaultOn_EnvServersOverrideWins proves an AURA_MCP_SERVERS_JSON
+// entry named "calendar" wins in-container — the inject lands AFTER the envServers delete
+// loop and must not re-add the recipe default.
+func TestCalendarContainerDefaultOn_EnvServersOverrideWins(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "servers.json")
 	clearMCPEnv(t, path)
 	t.Setenv("AURA_IN_CONTAINER", "1")
 	t.Setenv(
 		"AURA_MCP_SERVERS_JSON",
-		`{"mcpServers":{"calculator":{"command":"my-calc","args":["--stdio"]}}}`,
+		`{"mcpServers":{"calendar":{"command":"my-pim","args":["--stdio"]}}}`,
 	)
 
 	cfg := LoadDB()
 	if cfg.MCPServersErr != nil {
 		t.Fatalf("loadMCPServers err = %v, want nil", cfg.MCPServersErr)
 	}
-	if _, ok := cfg.MCPPolicies["calculator"]; ok {
-		t.Fatalf("calculator should not be a policy when overridden by AURA_MCP_SERVERS_JSON: %#v", cfg.MCPPolicies)
+	if _, ok := cfg.MCPPolicies["calendar"]; ok {
+		t.Fatalf("calendar should not be a policy when overridden by AURA_MCP_SERVERS_JSON: %#v", cfg.MCPPolicies)
 	}
-	got, ok := cfg.MCPServers["calculator"]
+	got, ok := cfg.MCPServers["calendar"]
 	if !ok {
-		t.Fatalf("AURA_MCP_SERVERS_JSON calculator override not in MCPServers: %#v", cfg.MCPServers)
+		t.Fatalf("AURA_MCP_SERVERS_JSON calendar override not in MCPServers: %#v", cfg.MCPServers)
 	}
-	if got.Command != "my-calc" {
-		t.Fatalf("calculator command = %q, want my-calc (env override wins)", got.Command)
+	if got.Command != "my-pim" {
+		t.Fatalf("calendar command = %q, want my-pim (env override wins)", got.Command)
 	}
 }
 
-// TestCalculatorContainerDefaultOn_RespectsExplicitInstall proves an
-// operator-customized calculator entry wins in-container — the default-on inject
-// sees the existing managed/policy row and does not overwrite the custom args.
-func TestCalculatorContainerDefaultOn_RespectsExplicitInstall(t *testing.T) {
+// TestCalendarContainerDefaultOn_RespectsExplicitInstall proves an operator-customized
+// calendar entry wins in-container — the default-on inject sees the existing managed/policy
+// row and does not overwrite the custom URL.
+func TestCalendarContainerDefaultOn_RespectsExplicitInstall(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "servers.json")
 	clearMCPEnv(t, path)
 	t.Setenv("AURA_IN_CONTAINER", "1")
 
 	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
-		"calculator": {
-			Command: "uvx",
-			Args:    []string{"calculator-mcp-server", "--stdio", "--operator-flag"},
-			Source:  "recipe:calculator",
-			Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
+		"calendar": {
+			Type:   mcp.ServerTypeStreamableHTTP,
+			URL:    "http://operator-pim:9999/custom/",
+			Source: "recipe:calendar",
+			Trust:  mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
 		},
 	}}
 	if err := mcp.SaveManagedConfig(path, doc); err != nil {
@@ -147,12 +153,12 @@ func TestCalculatorContainerDefaultOn_RespectsExplicitInstall(t *testing.T) {
 	if cfg.MCPServersErr != nil {
 		t.Fatalf("loadMCPServers err = %v, want nil", cfg.MCPServersErr)
 	}
-	got, ok := cfg.MCPPolicies["calculator"]
+	got, ok := cfg.MCPPolicies["calendar"]
 	if !ok {
-		t.Fatalf("explicit calculator install not mounted: %#v", cfg.MCPPolicies)
+		t.Fatalf("explicit calendar install not mounted: %#v", cfg.MCPPolicies)
 	}
-	if len(got.Args) != 3 || got.Args[2] != "--operator-flag" {
-		t.Fatalf("calculator args = %#v, want operator-customized (explicit wins)", got.Args)
+	if got.URL != "http://operator-pim:9999/custom/" {
+		t.Fatalf("calendar URL = %q, want the operator-customized one (explicit wins)", got.URL)
 	}
 }
 

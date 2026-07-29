@@ -15,17 +15,18 @@ import (
 // default-on only inside the Aura appliance image, where each one's backing sidecar
 // is a declared compose service of the same stack.
 const (
-	memoryRecipeName     = "memory"
-	calculatorRecipeName = "calculator"
-	calendarRecipeName   = "calendar"
-	whatsappRecipeName   = "whatsapp"
+	memoryRecipeName   = "memory"
+	calendarRecipeName = "calendar"
+	whatsappRecipeName = "whatsapp"
 )
 
 // containerDefaultOnRecipes mount out of the box inside the appliance image.
 //
-// calculator: the image warm-caches the pinned uvx package, so the stdio server starts
-// without egress at first use. Local dev stays install-on-demand — a non-container host
-// may not have uvx at all.
+// calculator used to be here, on the premise that the image warm-caches its uvx package
+// so the stdio server starts without egress. The premise was false: the aura service
+// mounts a named volume over /root/.cache/uv, a named volume is seeded once and never
+// refreshed, so the warmed cache was invisible to every later image. See
+// manager.BuiltInCatalog for the full account of why the recipe is gone.
 //
 // calendar + whatsapp: their sidecars (aura-pim-mcp, aura-whatsapp) ship in the same
 // compose file as the agent, so on the appliance they are always present. They were
@@ -36,7 +37,7 @@ const (
 // had zero WhatsApp tools, with no error anywhere to explain the gap. Same for Calendar.
 // Being on the list does not force them: an explicit `aura mcp disable whatsapp` still
 // wins, and a missing sidecar fail-softs to a WARN drop at mount like any other server.
-var containerDefaultOnRecipes = []string{calculatorRecipeName, calendarRecipeName, whatsappRecipeName}
+var containerDefaultOnRecipes = []string{calendarRecipeName, whatsappRecipeName}
 
 // loadMCPServers composes the runtime MCP server set from the managed config doc, the
 // AURA_MCP_SERVERS_JSON env override, and the default-on memory recipe (D-08). It returns the
