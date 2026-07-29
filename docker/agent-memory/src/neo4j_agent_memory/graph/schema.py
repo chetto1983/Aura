@@ -1,6 +1,5 @@
 """Neo4j schema management for indexes and constraints."""
 
-import logging
 import re
 from typing import TYPE_CHECKING
 
@@ -19,11 +18,10 @@ if TYPE_CHECKING:
 # Matches names like ``Person``, ``Person_v2``, ``Client``. We deliberately
 # disallow backticks so the caller cannot break out of the quoted label.
 _SAFE_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-logger = logging.getLogger(__name__)
 
 
 # Default vector dimensions
-DEFAULT_VECTOR_DIMENSIONS = 1536
+DEFAULT_VECTOR_DIMENSIONS = 1024
 
 
 def _extract_vector_dimensions(options: object) -> int | None:
@@ -31,7 +29,7 @@ def _extract_vector_dimensions(options: object) -> int | None:
 
     Neo4j's vector index ``options`` is a nested map of shape::
 
-        {"indexConfig": {"vector.dimensions": 1536, ...}, ...}
+        {"indexConfig": {"vector.dimensions": 1024, ...}, ...}
 
     Drivers may return the inner map as a ``dict`` or a Neo4j map object.
     Returns ``None`` if the structure does not match or the value is not
@@ -43,7 +41,7 @@ def _extract_vector_dimensions(options: object) -> int | None:
     if not isinstance(config, dict):
         return None
     dims = config.get("vector.dimensions")
-    if isinstance(dims, int) and dims > 0:
+    if type(dims) is int and dims > 0:
         return dims
     return None
 
@@ -196,27 +194,28 @@ class SchemaManager:
         try:
             rows = await self._client.execute_read(queries.SHOW_VECTOR_INDEXES_WITH_OPTIONS)
         except Exception as exc:
-            # Vector indexes require Neo4j 5.11+. On older servers the
-            # ``SHOW VECTOR INDEXES`` syntax fails; skip validation in
-            # that case — :meth:`setup_vector_indexes` already swallows
-            # the equivalent CREATE failure.
-            if getattr(exc, "code", None) == "Neo.ClientError.Statement.SyntaxError":
-                return
-            logger.warning(
-                "Failed to validate vector index dimensions using SHOW VECTOR INDEXES.",
-                exc_info=True,
-            )
-            raise
+            raise SchemaError("Failed to inspect managed vector indexes") from exc
 
         managed_names = {name for name, _, _ in self._MANAGED_VECTOR_INDEXES}
+        managed_rows = {row.get("name"): row for row in rows if row.get("name") in managed_names}
+        missing = sorted(managed_names - managed_rows.keys())
+        invalid = sorted(
+            name
+            for name, row in managed_rows.items()
+            if _extract_vector_dimensions(row.get("options")) is None
+        )
+        if missing or invalid:
+            details = []
+            if missing:
+                details.append(f"missing: {', '.join(missing)}")
+            if invalid:
+                details.append(f"dimension unavailable: {', '.join(invalid)}")
+            raise SchemaError(f"Managed vector schema is incomplete ({'; '.join(details)})")
+
         mismatches: list[tuple[str, int, int]] = []
-        for row in rows:
-            name = row.get("name")
-            if name not in managed_names:
-                continue
+        for name, row in managed_rows.items():
             actual = _extract_vector_dimensions(row.get("options"))
-            if actual is None:
-                continue
+            assert actual is not None
             if actual != expected:
                 mismatches.append((name, expected, actual))
 
@@ -332,10 +331,8 @@ class SchemaManager:
                 index_name, label, property_name, self._vector_dimensions
             )
             await self._client.execute_schema(query)
-        except Exception:
-            # Vector indexes require Neo4j 5.11+, log warning but don't fail
-            # as the package can still work without vector search
-            pass
+        except Exception as e:
+            raise SchemaError(f"Failed to create vector index {index_name}: {e}") from e
 
     async def _create_point_index(
         self,

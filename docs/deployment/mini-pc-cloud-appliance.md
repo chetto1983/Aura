@@ -108,15 +108,15 @@ AURA_LLM_MODEL=deepseek/deepseek-v4-flash:nitro      # or your preferred OpenRou
 AURA_VISION_CLOUD=true
 MULTIMODAL_FALLBACK_MODEL=minimax/minimax-m3         # cloud VL fallback
 
-# ---- Embeddings: keep 768 to match the Neo4j HNSW index (Amendment #18) ----
-AURA_EMBED_DIMENSIONS=768
+# ---- Embeddings: one native width across every Neo4j vector index ----
+AURA_EMBED_DIMENSIONS=1024
 ```
 
 Then choose ONE embedding strategy:
 
-**Option A — local granite on CPU (recommended for a GPU-less box).**
-Free, no per-chunk API latency, natively 768-dim (no truncation risk). The 311M
-model is fine for personal RAG. Just swap the embed sidecar to the CPU image:
+**Option A — local Qwen3-Embedding-0.6B on CPU (recommended for a GPU-less box).**
+Free, no per-chunk API latency, and natively 1024-dimensional. The Compose defaults
+already select this model; only swap the embed sidecar to the CPU image:
 
 ```dotenv
 AURA_EMBED_IMAGE=ghcr.io/ggml-org/llama.cpp:server   # CPU build (NOT :server-cuda)
@@ -127,8 +127,8 @@ AURA_EMBED_NGL=0                                      # no GPU offload
 **Option B — embeddings via OpenRouter (`qwen/qwen3-embedding-4b`).**
 Zero local inference, but every chunk is a paid API call. Verified compatible:
 `EmbedRoute()` swaps to OpenRouter when `AURA_EMBED_MODEL` is set, and the embedder
-sends `dimensions:768` on the cloud route (`internal/documents/embedder.go:44-49`),
-which Qwen3-Embedding-4B (native 2560, MRL 32–2560) truncates to 768.
+sends `dimensions:1024` on the cloud route (`internal/documents/embedder.go:44-49`),
+which Qwen3-Embedding-4B (native 2560, MRL 32–2560) truncates to 1024.
 
 ```dotenv
 AURA_EMBED_MODEL=qwen/qwen3-embedding-4b             # → cloud embed via OPENROUTER_API_KEY
@@ -140,10 +140,10 @@ AURA_EMBED_MODEL=qwen/qwen3-embedding-4b
 # aura-llama-embed (compose.yaml). Keep Option A's CPU image vars set so the sidecar
 # starts healthy and satisfies the dependency (it just goes unused). ⚠️ You MUST run
 # the §6 curl check: if OpenRouter returns 2560 (param not honored) Aura fails LOUD
-# ("embedding N has dimension 2560, want 768") — clean fail, never corruption.
+# ("embedding N has dimension 2560, want 1024") — clean fail, never corruption.
 ```
 
-> **Recommendation:** Option A. On a GPU-less always-on box, local CPU granite is
+> **Recommendation:** Option A. On a GPU-less always-on box, local CPU Qwen3 is
 > simpler, free, has no dimension risk, and the sidecar is actually used. Reach for
 > Option B only if you want literally zero local inference.
 
@@ -194,11 +194,11 @@ docker compose ps --format '{{.Name}}\t{{.Status}}'
 
 # The embedding width MUST match AURA_EMBED_DIMENSIONS and the Neo4j vector indexes.
 #  - Option A (local sidecar): the repo default is Qwen3-Embedding-0.6B, 1024 native.
-#  - Option B (OpenRouter): confirm the provider honors dimensions=768 —
+#  - Option B (OpenRouter): confirm the provider honors dimensions=1024 —
 curl -s https://openrouter.ai/api/v1/embeddings \
   -H "Authorization: Bearer $OPENROUTER_API_KEY" -H "Content-Type: application/json" \
-  -d '{"model":"qwen/qwen3-embedding-4b","input":"ciao","dimensions":768}' \
-  | jq '.data[0].embedding | length'          # MUST print 768 (not 2560)
+  -d '{"model":"qwen/qwen3-embedding-4b","input":"ciao","dimensions":1024}' \
+  | jq '.data[0].embedding | length'          # MUST print 1024 (not 2560)
 
 # Setup wizard / cockpit
 #   https://<mini-pc-ip>/setup/?token=$(grep ^AURA_ACCESS_TOKEN .env | cut -d= -f2)
@@ -219,7 +219,7 @@ loudly either way, so the index is never silently corrupted.
 | aura daemon | ~0.6 GB | `mem_limit 768m` |
 | agent-memory-mcp | ~0.4 GB | Python |
 | garage + whatsapp + pim | ~0.5 GB | aura hard-deps; pim is .NET |
-| embed (CPU granite, Option A) | ~0.5 GB | omit if Option B, but sidecar still runs |
+| embed (CPU Qwen3, Option A) | ~0.7 GB | omit if Option B, but sidecar still runs |
 | Docker + OS (DietPi) | ~1.5 GB | |
 | **Total** | **~5.0–5.5 GB** | fits 8 GB with headroom |
 

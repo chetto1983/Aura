@@ -87,7 +87,7 @@ These recur throughout the code and explain most of the non-obvious decisions:
 │                       toolinvocations · cachemetrics · (OTel spans +      │
 │                       Prometheus/expvar)                                  │
 └──────────────────────────────────────────────────────────────────────────┘
-        Sidecars (out of process): embedding (granite-311m, 768d, GPU via
+        Sidecars (out of process): embedding (Qwen3-Embedding-0.6B, 1024d, GPU via
         llama.cpp), markitdown extractor, OCR/STT/TTS, reranker,
         mcp-neo4j-cypher, MCP recipe servers (calculator/calendar/whatsapp/
         memory), per-user Docker sandboxes, Postgres, Neo4j.
@@ -151,7 +151,7 @@ KV-cache invariant survives fan-out (D-06).
 ```text
 user msg ─▶ Runner loads managed history (L1/L2/L2.5 context ladder)
          ─▶ PromptBuilder.Build: messages[0] (stable) + history + volatile <budget> tail
-         ─▶ adaptiveReasoningTier: local granite-embedding classifier → none|low|high
+         ─▶ adaptiveReasoningTier: local Qwen3-Embedding classifier → none|low|high
          ─▶ LlmAgent.Run loop:
               Budget.ConsumeStep (gate) ─▶ stream open (breaker+retry)
                  ─▶ consume chunks (text / reasoning / tool-call deltas)
@@ -262,7 +262,7 @@ PIM sidecar — its send/search email tools subsume mail-mcp.
   `tool_search`. Brute-force over small immutable banks, no ANN.
 - **Adaptive reasoning router** (`agent/prompt` + `reasoning*`) — instead of a per-turn
   LLM round-trip to decide reasoning effort (the original latency root cause), a local
-  granite-embedding classifier maps the turn to `none|low|high` with a single local
+  Qwen3-Embedding classifier maps the turn to `none|low|high` with a single local
   embed + cosine argmax; on abstention it falls back to the LLM "oracle" router. The design
   target recorded in `reasoning_classifier.go` is ~10 ms CPU at 90% accuracy over a
   60-prompt held-out set. Its curated seeds are the complete serving baseline.
@@ -296,7 +296,7 @@ Cypher, with SQLSTATE-classified errors and pgtype boundary conversion:
   `TestRLSBackstop`).
 - **Neo4j** (`internal/knowledge`) — the LLM-facing runtime interface
   is the `mcp-neo4j-cypher` subprocess over stdio (no native driver for data ops); a
-  separate driver-backed `SchemaExecutor` runs the DDL the MCP layer can't. **HNSW 768-d
+  separate driver-backed `SchemaExecutor` runs the DDL the MCP layer can't. **HNSW 1024-d
   vector index** + fulltext, Cypher migrations audited in Postgres. Holds the document
   graph and private adaptive shadow projections.
 - **`objectstore`** — the S3/filesystem blob seam with per-identity prefixes

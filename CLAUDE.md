@@ -123,7 +123,7 @@ Skills modulari caricate on-demand quando il task le triggera (markdown SKILL.md
 | `neo4j-cypher-skill` | **Slice 0.7 + 11** | Cypher writing/optimization (4.x/5.x/2025.x/2026.x), deprecations |
 | `neo4j-driver-go-skill` | **Slice 0.7** | Go driver native (fallback se mcp-neo4j-cypher non sufficiente) |
 | `neo4j-mcp-skill` | **Slice 0.7** | mcp-neo4j-cypher server (get-schema, read-cypher, write-cypher, list-gds-procedures) |
-| `neo4j-vector-index-skill` | **Slice 0.7 + 11a** | HNSW vector index (CREATE VECTOR INDEX, cosine, dimensions 768d) |
+| `neo4j-vector-index-skill` | **Slice 0.7 + 11a** | HNSW vector index (CREATE VECTOR INDEX, cosine, dimensions 1024d) |
 | `neo4j-graphrag-skill` | **Slice 11d** | GraphRAG retrieval pattern (Microsoft, hybrid BM25+vector+graph) |
 | `neo4j-gds-skill` | **Slice 11c** | Graph algorithms (Leiden community detection, PageRank, ecc.) |
 | `neo4j-modeling-skill` | **Slice 11a** | Schema design (labels vs relationships vs properties) |
@@ -262,7 +262,7 @@ Fix issues before moving on.
 
 - **Postgres** primary (port `5432`): schema `aura.*`, sqlc-generated client, golang-migrate. **40 migrations shippate 0001-0040** (floor on disk `0040_shared_links`).
   - **Migration numbering — regola imperativa.** Il numero si assegna **all'atterraggio = prossimo intero libero quando la PHASE esegue** (ordine-fase, NON ordine-slice). **Prima di creare una migration esegui `ls internal/db/migrations/ | tail -1` e usa il successivo: il numero non si deduce, non si calcola dalla slice, non si copia da questo file** — questo file invecchia, la directory no. I numeri hardcodati nelle sezioni slice del PRD sono **indicativi** e superseduti da questa regola. Fonte di verità: prd.md §Persistence "Migration numbering — fonte di verità".
-- **Neo4j** Community + APOC + GDS (`compose.yaml`): port `7687` bolt, `7474` browser. HNSW vector index 768d cosine. Cypher migrations: **`0001_init`, `0002_documents`** in `internal/knowledge/migrations/` — sequenza separata da Postgres, **stessa regola imperativa**: `ls internal/knowledge/migrations/ | tail -1` prima di aggiungerne una. `mcp-neo4j-cypher` MCP server è l'interfaccia LLM al graph (no native Go adapter).
+- **Neo4j** Community + APOC + GDS (`compose.yaml`): port `7687` bolt, `7474` browser. HNSW vector indexes use the native 1024d cosine contract. Cypher migrations live in `internal/knowledge/migrations/` — sequenza separata da Postgres, **stessa regola imperativa**: `ls internal/knowledge/migrations/ | tail -1` prima di aggiungerne una. `mcp-neo4j-cypher` MCP server è l'interfaccia LLM al graph (no native Go adapter).
 - **Filesystem** per artifact: `$AURA_RUN_DIR/` (sidecar tool results + spillover content) + `~/.aura/agents/<id>/` (Agent.md profile) + `~/.aura/pyscripts/<id>/` (Slice 7e snippets) + `$AURA_SKILLS_DIR/` (skills instruction).
 - **Backup**: Postgres `pg_dump` + Neo4j `neo4j-admin database dump` (vedi PRD §Backup strategy).
 

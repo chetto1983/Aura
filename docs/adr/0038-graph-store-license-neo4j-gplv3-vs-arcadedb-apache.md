@@ -16,7 +16,7 @@
 
 Aura's graph layer is **Neo4j Community Edition (GPLv3)** plus two plugins: **GDS Community**
 (free tier of Graph Data Science) and **APOC Core** (Apache-2.0). Postgres (`aura.*`) is the
-primary store; Neo4j holds the knowledge/agent-memory graph and the 768d HNSW vector index, and
+primary store; Neo4j holds the knowledge/agent-memory graph and the 1024d HNSW vector indexes, and
 `mcp-neo4j-cypher` is the LLM↔graph interface. Aura's own code (Go) talks to Neo4j **only over
 Bolt** — a separate server process, never embedded, never linked.
 

@@ -176,7 +176,7 @@ export AURA_MCP_NEO4J_CYPHER_BIN="${AURA_MCP_NEO4J_CYPHER_BIN:-$(pwd)/scripts/mc
 export AURA_MCP_NEO4J_CONNECT_TIMEOUT_SEC="${AURA_MCP_NEO4J_CONNECT_TIMEOUT_SEC:-20}"
 
 # Embed sidecar.
-export AURA_EMBED_BASE_URL=http://127.0.0.1:8081 AURA_EMBED_DIMENSIONS=768
+export AURA_EMBED_BASE_URL=http://127.0.0.1:8081 AURA_EMBED_DIMENSIONS=1024
 
 # Runtime dirs + no-skip-as-green arm (a tagged tier with unset env t.Fatals under CI).
 export AURA_SKILL_EXPORT_DIR="${AURA_SKILL_EXPORT_DIR:-/tmp/aura-skills-export}"

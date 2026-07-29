@@ -90,7 +90,7 @@ What a technical reviewer should notice — each is implemented and locatable in
 | 6 | **Deterministic context ladder + graph memory** | Long threads stay bounded by a three-tier deterministic ladder — L1 tool-output eviction to sidecar pointers, L2 token budget, L2.5 oldest-pair drop (no LLM call, provider-agnostic) — while salient facts are extracted into the Neo4j graph and recalled on demand (L4), so working context stays small by design rather than by summarizing history. | `conversations/context.go`, `agent/mcptools` (`memory_search`), migration `0017` |
 | 7 | **Bounded, leak-safe agent loops** | A shared budget tree caps steps + wall-clock across an entire agent tree; a two-phase dedup ring kills tool-call loops; parallel fan-out is goroutine-leak-tested. Predictable cost and no runaways. | `agent` (Budget, dedup), `agent/workflow`, `swarm` |
 | 8 | **Adaptive reasoning without an extra round-trip** | A local curated-seed embedding classifier routes each turn to `none/low/high` reasoning instead of spending an LLM round-trip to decide. Per-turn effort can also be fixed explicitly from the cockpit. | `agent/prompt` (classifier), `reasoningtrace`, `semindex` |
-| 9 | **Graph-native memory + two-stage retrieval** | Documents become a searchable Neo4j graph (sparse FTS + **768-d** HNSW vectors, granite-embedding-311m); a reranker sidecar runs a second retrieval stage. | `knowledge`, `documents`, `rerank` |
+| 9 | **Graph-native memory + two-stage retrieval** | Documents become a searchable Neo4j graph (sparse FTS + **1024-d** HNSW vectors, Qwen3-Embedding-0.6B); a reranker sidecar runs a second retrieval stage. | `knowledge`, `documents`, `rerank` |
 | 10 | **Self-extension** | The agent authors, validates, and runs its own skills (instruction + executable snippets) and mounts MCP servers from a curated recipe catalog. | `skills`, `agent/mcptools`, `mcp/manager` |
 | 11 | **Trust boundaries by construction** | MCP output, web pages, and documents are framed/wrapped as untrusted before re-entering the prompt; secrets are redacted at every egress through one shared denylist. | `agent` (trust), `mcptools`, `secret`, `toolinvocations` |
 | 12 | **Embedded operator cockpit** | A Vite/React + assistant-ui web cockpit ships **inside the binary** (embedded dist, no separate deploy): chat, approval center, typed tool display, Neo4j graph explorer, governance boards, MCP config, and skill install. | `webui` (embedded dist), `agui` (AG-UI/SSE) |
@@ -139,7 +139,7 @@ Aura is held to a gate enforced in CI and runnable locally. Stated without round
   no god packages; one concept per package; deferred-tool pattern; consumer-declared
   interfaces to break import cycles; byte-stable cache invariants asserted by a dedicated
   `cache-invariant` CI job.
-- **Persistence** — **40 Postgres migrations** (`0001`..`0040`) + **2 Cypher migrations**,
+- **Persistence** — **40 Postgres migrations** (`0001`..`0040`) + **7 Cypher migrations**,
   two-role DB separation, row-level security, atomic per-turn writes, append-only forensic
   ledgers.
 - **Observability** — OTel spans end-to-end, Prometheus + expvar metrics, panic counters,
@@ -177,7 +177,7 @@ for the sandbox phase.
 - **Footprint** — one Go binary (cockpit embedded) + Docker Compose for Postgres, Neo4j,
   and the sidecars: embedding, reranker, document extractor, and optional OCR/STT/TTS.
 - **Accelerator posture — GPU-first.** The product default offloads the embedding model
-  fully to the GPU (`AURA_EMBED_NGL=99`, granite-embedding-311m-multilingual-r2), and the
+  fully to the GPU (`AURA_EMBED_NGL=99`, Qwen3-Embedding-0.6B), and the
   reranker is a GPU sidecar. The base Compose file is CPU-startable so CI and the
   installer work on accelerator-less hosts, with the GPU layer applied via
   `compose.gpu.yaml` — but **CPU-only is the fallback, not the target**. A deployment

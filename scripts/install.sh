@@ -330,10 +330,11 @@ AURA_BACKUP_DIR=./backups
 SEARXNG_SECRET=${searxng_secret}
 
 AURA_EMBED_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda
-AURA_EMBED_HF_REPO=SandLogicTechnologies/granite-embedding-311m-multilingual-r2-GGUF
-AURA_EMBED_HF_FILE=granite-embedding-311M-multilingual-r2_Q6_k.gguf
+AURA_EMBED_HF_REPO=Qwen/Qwen3-Embedding-0.6B-GGUF
+AURA_EMBED_HF_FILE=Qwen3-Embedding-0.6B-Q8_0.gguf
+AURA_EMBED_POOLING=last
 AURA_EMBED_NGL=99
-AURA_EMBED_DIMENSIONS=768
+AURA_EMBED_DIMENSIONS=1024
 AURA_RERANK_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda
 AURA_RERANK_NGL=99
 

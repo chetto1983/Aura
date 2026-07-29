@@ -38,7 +38,7 @@ default) plus a few local CPU sidecars. It is built as a **product, not a protot
 | **Tests** | ~143k LOC — table-driven · property-based · fuzz · `-race` · `goleak` · mutation |
 | **Test coverage** | owned-surface floor **≥85% per package**, enforced in CI on every push |
 | **CI** | green — build/vet/lint · CodeQL · integration (Postgres / Neo4j) |
-| **Persistence** | Postgres (40 migrations, sqlc, pgx) + Neo4j (HNSW 768-d + APOC + GDS) |
+| **Persistence** | Postgres (40 migrations, sqlc, pgx) + Neo4j (HNSW 1024-d + APOC + GDS) |
 | **Default LLM** | DeepSeek-V4 via OpenRouter — provider-neutral, swap by config |
 | **Status** | v0.0.0 substrate + v1.0.0 web cockpit shipped · v2.0.0 industrial hardening in progress (8/12 phases) |
 
@@ -124,10 +124,11 @@ AURA_IMAGE=ghcr.io/chetto1983/aura:vX.Y.Z
 AURA_ACCESS_TOKEN=$(New-Hex)
 AURA_BACKUP_DIR=./backups
 AURA_EMBED_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda
-AURA_EMBED_HF_REPO=SandLogicTechnologies/granite-embedding-311m-multilingual-r2-GGUF
-AURA_EMBED_HF_FILE=granite-embedding-311M-multilingual-r2_Q6_k.gguf
+AURA_EMBED_HF_REPO=Qwen/Qwen3-Embedding-0.6B-GGUF
+AURA_EMBED_HF_FILE=Qwen3-Embedding-0.6B-Q8_0.gguf
+AURA_EMBED_POOLING=last
 AURA_EMBED_NGL=99
-AURA_EMBED_DIMENSIONS=768
+AURA_EMBED_DIMENSIONS=1024
 AURA_RERANK_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda
 AURA_RERANK_NGL=99
 OPENROUTER_API_KEY=

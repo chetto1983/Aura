@@ -55,7 +55,7 @@ cockpit (Phases 22-30) shipped 2026-06-29 · **v2.0.0** industrial hardening
 | Conversation persistence | Multi-thread, Claude.ai-style; atomic per-turn append | ✅ | `conversations`, `db` |
 | Context-management ladder | L1 microcompact → L2 budget gate → L2.5 oldest-pair drop + rot events | ✅ | `conversations` (`context`) |
 | Document ingestion | PDF/xlsx/DOCX → chunks → Neo4j sparse FTS + async vector embeddings | ✅ | `documents`, `knowledge`, `assets` |
-| Graph + vector store | Neo4j Community + APOC + GDS, **768-d** HNSW (cosine) + fulltext | ✅ | `knowledge` |
+| Graph + vector store | Neo4j Community + APOC + GDS, **1024-d** HNSW (cosine) + fulltext | ✅ | `knowledge` |
 | Rerank | Cross-encoder rerank over hybrid candidates; fail-soft identity degrade | ✅ | `rerank` |
 | Agent-memory MCP | Entities / facts / preferences / sessions via the memory MCP server | ✅ | `mcp/manager` (catalog), `agent/mcptools` |
 | User profile | Per-identity `Agent.md` (atomic writes), injected as a protected block | ✅ | `profile`, `onboarding` |

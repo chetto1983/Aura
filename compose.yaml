@@ -89,7 +89,7 @@ services:
       NEO4J_PASSWORD: ${NEO4J_PASSWORD:?NEO4J_PASSWORD required in .env}
       AURA_NEO4J_DATABASE: ${AURA_NEO4J_DATABASE:-neo4j}
       AURA_EMBED_BASE_URL: http://aura-llama-embed:8081
-      AURA_EMBED_DIMENSIONS: ${AURA_EMBED_DIMENSIONS:-768}
+      AURA_EMBED_DIMENSIONS: ${AURA_EMBED_DIMENSIONS:-1024}
       # RET-01/02: two-stage retrieval rerank stage. Points at the GPU aura-rerank
       # sidecar; client fails soft to RRF/vector order when absent (no hard dep).
       # Hard-coded to the compose-DNS sidecar (like AURA_EMBED_BASE_URL above): the
@@ -322,7 +322,7 @@ services:
       NEO4J_PASSWORD: ${NEO4J_PASSWORD:?NEO4J_PASSWORD required in .env}
       AURA_NEO4J_DATABASE: ${AURA_NEO4J_DATABASE:-neo4j}
       AURA_EMBED_BASE_URL: http://aura-llama-embed:8081
-      AURA_EMBED_DIMENSIONS: ${AURA_EMBED_DIMENSIONS:-768}
+      AURA_EMBED_DIMENSIONS: ${AURA_EMBED_DIMENSIONS:-1024}
     volumes:
       - aura-home:/var/lib/aura
 
@@ -630,7 +630,7 @@ services:
           --user-id aura-local \
           --auth-secret-env AURA_AGENT_MEMORY_MCP_AUTH_SECRET \
           --llm-api-base ${AURA_LLM_BASE_URL:-https://openrouter.ai/api/v1} \
-          --embedding-dimensions ${AURA_EMBED_DIMENSIONS:-768} \
+          --embedding-dimensions ${AURA_EMBED_DIMENSIONS:-1024} \
           --no-auto-preferences
     ports:
       - "127.0.0.1:${AURA_AGENT_MEMORY_MCP_PORT:-8091}:8080"
