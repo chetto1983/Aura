@@ -181,11 +181,11 @@ func TestCapDescriptions_DepthGuard(t *testing.T) {
 	longDesc := strings.Repeat("Z", maxMCPArgDescBytes+200)
 	var sb strings.Builder
 	sb.WriteString(`{"type":"object"`)
-	for i := 0; i < depth; i++ {
+	for range depth {
 		sb.WriteString(`,"x":{"type":"object"`)
 	}
 	sb.WriteString(`,"description":"` + longDesc + `"`)
-	for i := 0; i < depth; i++ {
+	for range depth {
 		sb.WriteString(`}`)
 	}
 	sb.WriteString(`}`)
@@ -300,7 +300,7 @@ func TestFrameMCPSummary_HugeRequiredHintTruncatesHint(t *testing.T) {
 	// Build a required list whose rendered hint exceeds the summary budget (~713
 	// bytes after the fixed prefix+marker), forcing the budget<0 path.
 	required := make([]string, 0, 200)
-	for i := 0; i < 200; i++ {
+	for range 200 {
 		required = append(required, "arg_name_"+strings.Repeat("x", 8))
 	}
 	reqJSON, err := json.Marshal(required)

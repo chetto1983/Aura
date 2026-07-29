@@ -295,13 +295,11 @@ func (t *Telegram) Start(ctx context.Context) error {
 
 	t.bot = bot
 	t.started = true
-	t.wg.Add(1)
-	go func() {
-		defer t.wg.Done()
+	t.wg.Go(func() {
 		// Start blocks consuming updates until Stop gracefully shuts the poller
 		// down (telebot Bot.Stop closes the poller's stop channel).
 		bot.Start()
-	}()
+	})
 	return nil
 }
 

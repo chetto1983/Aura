@@ -122,7 +122,7 @@ func buildNFKCCorpus() []string {
 	}
 	// Pure-benign tail (never collapses) to assert no false positives.
 	for _, b := range benign {
-		for i := 0; i < 100; i++ {
+		for i := range 100 {
 			corpus = append(corpus, b+strings.Repeat(" ok", i%7))
 		}
 	}

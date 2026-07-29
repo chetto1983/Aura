@@ -24,7 +24,7 @@ func seedSinglePause(t *testing.T, r *Runner, conv *fakeConvStore) (string, stri
 	convID := newConvID(t)
 	ctx := context.Background()
 	mustCreate(t, r, convID)
-	if _, err := drain(r.Turn(ctx, convID, userPtr("ask me"))); err != nil {
+	if _, err := drain(r.Turn(ctx, convID, new("ask me"))); err != nil {
 		t.Fatalf("turn: %v", err)
 	}
 	pending, err := r.PendingFor(ctx, convID)
@@ -95,7 +95,7 @@ func TestSubmitAnswers_CancelAutoResolves(t *testing.T) {
 	convID := newConvID(t)
 	ctx := context.Background()
 	mustCreate(t, r, convID)
-	if _, err := drain(r.Turn(ctx, convID, userPtr("go"))); err != nil {
+	if _, err := drain(r.Turn(ctx, convID, new("go"))); err != nil {
 		t.Fatalf("turn: %v", err)
 	}
 	pending, _ := pause.ListPending(ctx, convID)

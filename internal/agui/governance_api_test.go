@@ -50,9 +50,6 @@ func doGov(t *testing.T, s *Server, method, target string) *httptest.ResponseRec
 	return rec
 }
 
-// boolPtr returns a pointer to b (for ManagedServer.Enabled).
-func boolPtr(b bool) *bool { return &b }
-
 // secretMCPDoc is a two-server config: a "zeta" server with a secret env value and a
 // "alpha" server, so the by-name ordering (alpha before zeta) and the no-secret-value
 // assertions can both run off one fixture.
@@ -64,13 +61,13 @@ func secretMCPDoc() mcp.ManagedConfig {
 		MCPServers: map[string]mcp.ManagedServer{
 			"zeta": {
 				Command: "zeta-bin",
-				Enabled: boolPtr(true),
+				Enabled: new(true),
 				Env:     []string{"OPENAI_API_KEY=sk-supersecretvalue", "PUBLIC_FLAG=on"},
 				Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedLocal},
 			},
 			"alpha": {
 				Command: "alpha-bin",
-				Enabled: boolPtr(true),
+				Enabled: new(true),
 				Env:     []string{"PLAIN_SETTING=1"},
 				Source:  "recipe:alpha",
 				Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedLocal},
@@ -165,8 +162,8 @@ func TestGovernanceMCPEmpty(t *testing.T) {
 func TestMCPProbeIsolation(t *testing.T) {
 	board := &scriptedMCPBoard{
 		doc: mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
-			"hung":    {Command: "hung-bin", Enabled: boolPtr(true)},
-			"healthy": {Command: "healthy-bin", Enabled: boolPtr(true)},
+			"hung":    {Command: "hung-bin", Enabled: new(true)},
+			"healthy": {Command: "healthy-bin", Enabled: new(true)},
 		}},
 		probe: func(ctx context.Context, name string, _ mcp.ManagedServer) mcp.ProbeResult {
 			if name == "hung" {

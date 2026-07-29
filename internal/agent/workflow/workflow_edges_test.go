@@ -18,7 +18,7 @@ import (
 func TestParallelAgent_NoLeak_BreakAtEveryIndex(t *testing.T) {
 	defer goleak.VerifyNone(t)
 
-	for breakAt := 0; breakAt < 6; breakAt++ {
+	for breakAt := range 6 {
 		c0 := &slowAgent{name: "c0", n: 50, delay: 5 * time.Millisecond}
 		c1 := &slowAgent{name: "c1", n: 50, delay: 5 * time.Millisecond}
 		c2 := &slowAgent{name: "c2", n: 50, delay: 5 * time.Millisecond}

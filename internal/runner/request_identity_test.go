@@ -79,7 +79,7 @@ func TestTurnMintsRequestIdentityBeforeContextAssemblyAndReusesItEverywhere(t *t
 			},
 		}, err
 	})
-	events, err := drain(r.Turn(context.Background(), convID, userPtr("inspect identity")))
+	events, err := drain(r.Turn(context.Background(), convID, new("inspect identity")))
 	if err != nil {
 		t.Fatalf("Turn: %v", err)
 	}

@@ -70,9 +70,7 @@ func (s *Sweeper) Start(ctx context.Context) {
 	if s.interval <= 0 || s.sweep == nil {
 		return
 	}
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
+	s.wg.Go(func() {
 		ticker := time.NewTicker(s.interval)
 		defer ticker.Stop()
 		for {
@@ -85,7 +83,7 @@ func (s *Sweeper) Start(ctx context.Context) {
 				s.sweep(ctx)
 			}
 		}
-	}()
+	})
 }
 
 // Stop signals the worker to exit and joins it under a bounded wait so a hung tick

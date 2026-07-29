@@ -123,7 +123,7 @@ func TestLlmAgent_StreamErrDoesNotFinalizePartialText(t *testing.T) {
 	fc := agenttest.NewFakeClient(agenttest.TextThenErr(streamErr, "partial answer"))
 	a := newAgent(t, fc, llm.Config{})
 
-	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(2)})))
+	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: new(2)})))
 	if !errors.Is(err, streamErr) {
 		t.Fatalf("Run error = %v, want %v", err, streamErr)
 	}
@@ -142,7 +142,7 @@ func TestLlmAgent_RetryableStreamErrSalvagesOnce(t *testing.T) {
 	)
 	a := newAgent(t, fc, llm.Config{})
 
-	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(3)})))
+	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: new(3)})))
 	if err != nil {
 		t.Fatalf("Run error = %v, want retry success", err)
 	}
@@ -172,7 +172,7 @@ func TestLlmAgent_ForwardsSessionID(t *testing.T) {
 		UserTurns: []llm.Message{{Role: llm.RoleUser, Content: "ciao"}},
 	})
 
-	if _, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(1)}))); err != nil {
+	if _, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: new(1)}))); err != nil {
 		t.Fatalf("Run errored: %v", err)
 	}
 	if got := fc.LastRequest().SessionID; got != sessionID {
@@ -189,7 +189,7 @@ func TestLlmAgent_EventOrder(t *testing.T) {
 		agenttest.WithUsage(agenttest.ToolCallTurn(textResponseCall("c2", "Fatto.")), llm.Usage{PromptTokens: 5, CompletionTokens: 2}),
 	)
 	a := newAgent(t, fc, llm.Config{})
-	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(25)})
 
 	evs, err := collect(a.Run(ic))
 	if err != nil {
@@ -215,7 +215,7 @@ func TestLlmAgent_EmitsToolInvocationStartAndEndMetadata(t *testing.T) {
 		agenttest.ToolCallTurn(textResponseCall("c2", "done")),
 	)
 	a := newAgent(t, fc, llm.Config{})
-	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(4)})))
+	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: new(4)})))
 	if err != nil {
 		t.Fatalf("Run errored: %v", err)
 	}
@@ -270,13 +270,13 @@ func TestLlmAgent_StepCap_Trips(t *testing.T) {
 	turns := make([]agenttest.FakeTurn, 0, maxSteps+2)
 	// maxSteps+1 distinct-arg echoes: maxSteps budgeted + 1 recovery turn (the
 	// recovery turn re-enters the loop and re-trips the exhausted budget).
-	for i := 0; i < maxSteps+1; i++ {
+	for i := range maxSteps + 1 {
 		turns = append(turns, agenttest.ToolCallTurn(agenttest.MakeToolCall("c", "echo", `{"v":"`+string(rune('a'+i))+`"}`)))
 	}
 	turns = append(turns, agenttest.TextChunks("stop", "finale")) // finalize synthesis (first-try)
 	fc := agenttest.NewFakeClient(turns...)
 	a := newAgent(t, fc, llm.Config{})
-	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(maxSteps)})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(maxSteps)})
 
 	evs, err := collect(a.Run(ic))
 	if err != nil {
@@ -314,7 +314,7 @@ func TestLlmAgent_WallclockCap_Trips(t *testing.T) {
 		}
 		return base.Add(2 * time.Hour) // every ConsumeStep check is past the deadline
 	}
-	b, err := agent.NewBudget(agent.BudgetOptions{MaxWallclockSec: ptr(1), Now: clock})
+	b, err := agent.NewBudget(agent.BudgetOptions{MaxWallclockSec: new(1), Now: clock})
 	if err != nil {
 		t.Fatalf("NewBudget: %v", err)
 	}
@@ -338,12 +338,12 @@ func TestLlmAgent_WallclockCap_Trips(t *testing.T) {
 func TestLlmAgent_DedupWindow_Trips(t *testing.T) {
 	recordingProvider(t)
 	turns := make([]agenttest.FakeTurn, 0, 10)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		turns = append(turns, agenttest.ToolCallTurn(agenttest.MakeToolCall("c", "echo", `{"v":"same"}`)))
 	}
 	fc := agenttest.NewFakeClient(turns...)
 	a := newAgent(t, fc, llm.Config{})
-	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(50), DedupWindow: ptr(3)})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(50), DedupWindow: new(3)})
 
 	evs, err := collect(a.Run(ic))
 	if err != nil {
@@ -363,7 +363,7 @@ func TestSpan_PerCall(t *testing.T) {
 		agenttest.WithUsage(agenttest.ToolCallTurn(textResponseCall("c1", "ok")), llm.Usage{PromptTokens: 9, CompletionTokens: 3, CachedTokens: 4}),
 	)
 	a := newAgent(t, fc, llm.Config{})
-	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(25)})
 
 	if _, err := collect(a.Run(ic)); err != nil {
 		t.Fatalf("Run: %v", err)
@@ -395,7 +395,7 @@ func TestMessagesImmutable(t *testing.T) {
 		agenttest.ToolCallTurn(textResponseCall("c2", "done")),
 	)
 	a := newAgent(t, fc, llm.Config{})
-	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(25)})
 	if _, err := collect(a.Run(ic)); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -437,7 +437,7 @@ func TestLlmAgent_ToolError(t *testing.T) {
 		agenttest.ToolCallTurn(textResponseCall("c2", "recovered")),
 	)
 	a := newAgent(t, fc, llm.Config{})
-	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(25)})
 	evs, err := collect(a.Run(ic))
 	if err != nil {
 		t.Fatalf("unknown tool must NOT surface as an error slot: %v", err)
@@ -451,7 +451,7 @@ func TestLlmAgent_ToolError(t *testing.T) {
 	infraErr := errors.New("wire dead")
 	fc2 := agenttest.NewFakeClient(agenttest.FakeTurn{Err: infraErr})
 	a2 := newAgent(t, fc2, llm.Config{})
-	ic2 := newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})
+	ic2 := newIC(t, agent.BudgetOptions{MaxSteps: new(25)})
 	if _, rerr := collect(a2.Run(ic2)); !errors.Is(rerr, infraErr) {
 		t.Errorf("Stream error = %v, want it surfaced in the iter.Seq2 error slot", rerr)
 	}
@@ -469,7 +469,7 @@ func TestLlmAgent_SequentialToolCalls(t *testing.T) {
 		agenttest.ToolCallTurn(textResponseCall("c3", "done")),
 	)
 	a := newAgent(t, fc, llm.Config{})
-	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(25)})
 	if _, err := collect(a.Run(ic)); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -500,7 +500,7 @@ func TestPrefixStable(t *testing.T) {
 		agenttest.ToolCallTurn(textResponseCall("c2", "done")),
 	)
 	a := newAgent(t, fc, llm.Config{})
-	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(25)})
 	if _, err := collect(a.Run(ic)); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -523,7 +523,7 @@ func TestLlmAgent_SecretRedaction(t *testing.T) {
 	)
 	cfg := llm.Config{APIKey: sentinelKey, Model: "m", Provider: "p"}
 	a := newAgent(t, fc, cfg)
-	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(25)})
 
 	evs, err := collect(a.Run(ic))
 	if err != nil && strings.Contains(err.Error(), sentinelKey) {
@@ -550,7 +550,7 @@ func TestLlmAgent_LengthTruncation(t *testing.T) {
 	recordingProvider(t)
 	fc := agenttest.NewFakeClient(agenttest.TextChunks("length", "parziale"))
 	a := newAgent(t, fc, llm.Config{})
-	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(25)})
 	evs, err := collect(a.Run(ic))
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -570,7 +570,7 @@ func TestLlmAgent_ContentStopTextResponsePayloadUnwrapped(t *testing.T) {
 	recordingProvider(t)
 	fc := agenttest.NewFakeClient(agenttest.TextChunks("stop", `{"text":"risposta pulita"}`))
 	a := newAgent(t, fc, llm.Config{})
-	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(25)})
 	evs, err := collect(a.Run(ic))
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -583,6 +583,3 @@ func TestLlmAgent_ContentStopTextResponsePayloadUnwrapped(t *testing.T) {
 		t.Fatalf("final content = %q, want unwrapped text_response.text", got)
 	}
 }
-
-// ptr is a tiny int-pointer helper for BudgetOptions.
-func ptr(n int) *int { return &n }

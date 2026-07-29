@@ -17,7 +17,7 @@ func TestLlmAgent_NoRetryPathStreamsIncrementally(t *testing.T) {
 	fc := agenttest.NewFakeClient(agenttest.TextChunks("stop", "Ciao ", "mondo", "!"))
 	a := newAgent(t, fc, llm.Config{})
 
-	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(2)})))
+	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: new(2)})))
 	if err != nil {
 		t.Fatalf("Run error = %v", err)
 	}
@@ -48,7 +48,7 @@ func TestLlmAgent_MidStreamRetryEmitsDiscardSignal(t *testing.T) {
 	)
 	a := newAgent(t, fc, llm.Config{})
 
-	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(3)})))
+	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: new(3)})))
 	if err != nil {
 		t.Fatalf("Run error = %v, want retry success", err)
 	}

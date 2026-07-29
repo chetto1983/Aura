@@ -142,12 +142,12 @@ func preflightAdaptiveBenchmarkQwen(
 		ModelID:          "qwen",
 		BaseURLClass:     auraeval.AdaptiveBenchmarkBaseURLLoopback,
 		ServerName:       &serverName,
-		ServerVersion:    stringPointer(host.ServerVersion),
-		ServerRevision:   stringPointer(host.ServerRevision),
+		ServerVersion:    new(host.ServerVersion),
+		ServerRevision:   new(host.ServerRevision),
 		ArtifactName:     &artifactName,
-		ArtifactSHA256:   stringPointer(host.ArtifactSHA256),
-		SnapshotRevision: stringPointer(snapshot),
-		ImageDigest:      stringPointer(host.ImageDigest),
+		ArtifactSHA256:   new(host.ArtifactSHA256),
+		SnapshotRevision: new(snapshot),
+		ImageDigest:      new(host.ImageDigest),
 	}, nil
 }
 
@@ -201,8 +201,4 @@ func validateAdaptiveBenchmarkQwenHost(
 		return errors.New("qwen host artifact provenance drifted")
 	}
 	return nil
-}
-
-func stringPointer(value string) *string {
-	return &value
 }

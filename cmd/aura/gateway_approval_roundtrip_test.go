@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"html"
 	"iter"
+	"maps"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -67,7 +69,7 @@ func TestGatewayApprovalRoundTrip(t *testing.T) {
 
 	// Round 1: the model emits skill/delete -> gets the approval-required result ->
 	// relays it via ask_user -> the turn PAUSES. The mutating action is WITHHELD.
-	paused, err := drainForPause(run.Turn(ctx, convID, strPtr("launch a swarm to build the thing")))
+	paused, err := drainForPause(run.Turn(ctx, convID, new("launch a swarm to build the thing")))
 	if err != nil {
 		t.Fatalf("round 1 turn: %v", err)
 	}
@@ -131,8 +133,6 @@ func drainForPause(seq iter.Seq2[*agent.Event, error]) (bool, error) {
 	}
 	return paused, nil
 }
-
-func strPtr(s string) *string { return &s }
 
 // roundTripClient is a stateful llm.Client that drives the 4-call round-trip off the
 // rehydrated history alone (never a static script): skill/delete -> observe the
@@ -237,9 +237,9 @@ func firstJSONObject(s string) (string, bool) {
 }
 
 func lastToolResult(msgs []llm.Message) (string, bool) {
-	for i := len(msgs) - 1; i >= 0; i-- {
-		if msgs[i].Role == llm.RoleTool {
-			return msgs[i].Content, true
+	for _, v := range slices.Backward(msgs) {
+		if v.Role == llm.RoleTool {
+			return v.Content, true
 		}
 	}
 	return "", false
@@ -361,9 +361,7 @@ func (m *rtPauseStore) MarkResumedBatch(_ context.Context, answers map[string]as
 			return askuser.ErrPauseNotFound
 		}
 	}
-	for token, ans := range answers {
-		m.answers[token] = ans
-	}
+	maps.Copy(m.answers, answers)
 	return nil
 }
 

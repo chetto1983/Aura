@@ -19,7 +19,7 @@ func TestLlmAgent_AppendsClockHintFromBudget(t *testing.T) {
 	now := func() time.Time {
 		return time.Date(2026, 6, 9, 12, 34, 56, 0, loc)
 	}
-	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(25), Now: now})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(25), Now: now})
 	if _, err := collect(a.Run(ic)); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -39,7 +39,7 @@ func TestLlmAgent_RetriesTransientStreamOpenError(t *testing.T) {
 		agenttest.ToolCallTurn(textResponseCall("c1", "recovered")),
 	)
 	a := newAgent(t, fc, llm.Config{})
-	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(25)})
 	evs, err := collect(a.Run(ic))
 	if err != nil {
 		t.Fatalf("Run: %v", err)

@@ -113,11 +113,9 @@ func TestStop_ResolveErrorAndWorkerTimeout(t *testing.T) {
 	r.pause = &errPauseStore{fakePauseStore: newFakePauseStore(), listErr: errFake}
 	r.stopTimeout = 10 * time.Millisecond
 	release := make(chan struct{})
-	r.wg.Add(1)
-	go func() {
-		defer r.wg.Done()
+	r.wg.Go(func() {
 		<-release
-	}()
+	})
 	err := r.Stop(context.Background(), newConvID(t))
 	close(release) // let the worker finish so goleak is clean
 	if err == nil {
@@ -414,7 +412,7 @@ func TestTurn_FastGreetingPersistError(t *testing.T) {
 	// The fast path appends the user turn (1st append) then persists the fast assistant
 	// turn via the cache-metric seam; fail that 2nd append.
 	conv.failAppN = 2
-	if _, err := drain(r.Turn(context.Background(), convID, userPtr("ciao"))); err == nil {
+	if _, err := drain(r.Turn(context.Background(), convID, new("ciao"))); err == nil {
 		t.Fatal("expected the fast-reply persistEvent error to surface")
 	}
 }
@@ -431,7 +429,7 @@ func TestTurn_DeferredFlushOnConsumerStop(t *testing.T) {
 	mustCreate(t, r, convID)
 
 	// Stop on the first pause Event (the AG-UI translator behavior).
-	for ev, err := range r.Turn(context.Background(), convID, userPtr("hi")) {
+	for ev, err := range r.Turn(context.Background(), convID, new("hi")) {
 		if err != nil {
 			t.Fatalf("turn error: %v", err)
 		}

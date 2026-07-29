@@ -35,7 +35,7 @@ func (embeddedBpeLoader) LoadTiktokenBpe(string) (map[string]int, error) {
 // loadTiktokenBpe, but over the embedded bytes).
 func parseTiktokenBPE(contents []byte) (map[string]int, error) {
 	ranks := make(map[string]int, 100256)
-	for _, line := range strings.Split(string(contents), "\n") {
+	for line := range strings.SplitSeq(string(contents), "\n") {
 		if line == "" {
 			continue
 		}

@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/agent"
@@ -210,12 +211,7 @@ func dynamicRecallActionAllowed(
 	action DynamicRecallAction,
 	catalog []DynamicRecallAction,
 ) bool {
-	for _, candidate := range catalog {
-		if candidate == action {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(catalog, action)
 }
 
 func validateDynamicRecall(recall DynamicRecall) error {

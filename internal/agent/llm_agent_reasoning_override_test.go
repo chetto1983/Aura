@@ -35,7 +35,7 @@ func TestReasoningOverride(t *testing.T) {
 			ReasoningOverride: llm.ReasoningEffortHigh,
 		})
 
-		if _, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)}))); err != nil {
+		if _, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: new(25)}))); err != nil {
 			t.Fatalf("Run errored: %v", err)
 		}
 		if fc.CallCount() != 1 {
@@ -69,7 +69,7 @@ func TestReasoningOverride(t *testing.T) {
 			ReasoningOverride: llm.ReasoningEffortHigh,
 		})
 
-		if _, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)}))); err != nil {
+		if _, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: new(25)}))); err != nil {
 			t.Fatalf("Run errored: %v", err)
 		}
 		// The adaptive path is OpenRouter-only, so on llama.cpp WITHOUT the override the
@@ -103,7 +103,7 @@ func TestReasoningOverride(t *testing.T) {
 			// ReasoningOverride left zero => auto.
 		})
 
-		if _, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)}))); err != nil {
+		if _, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: new(25)}))); err != nil {
 			t.Fatalf("Run errored: %v", err)
 		}
 		if fc.CallCount() != 2 {

@@ -152,7 +152,7 @@ func TestReasoningClassifier_ConcurrentColdStartSingleFlightsAnchorBuild(t *test
 	c := NewReasoningClassifier(emb)
 	const callers = 8
 	errs := make(chan string, callers)
-	for i := 0; i < callers; i++ {
+	for range callers {
 		go func() {
 			got, ok := c.Classify(context.Background(), "debugga lo script")
 			if !ok || got != ReasoningTierHigh {
@@ -170,7 +170,7 @@ func TestReasoningClassifier_ConcurrentColdStartSingleFlightsAnchorBuild(t *test
 	}
 	time.Sleep(50 * time.Millisecond)
 	close(emb.release)
-	for i := 0; i < callers; i++ {
+	for i := range callers {
 		if got := <-errs; got != "" {
 			t.Fatalf("caller %d got %q, want high", i, got)
 		}

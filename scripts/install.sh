@@ -262,6 +262,7 @@ ensure_internal_env_secrets() {
   ensure_generated_env_secret NEO4J_PASSWORD 32
   ensure_generated_env_secret AURA_ACCESS_TOKEN 32
   ensure_generated_env_secret AURA_AUTHULA_SECRET 32
+  ensure_generated_env_secret AURA_AGENT_MEMORY_MCP_AUTH_SECRET 32
   ensure_generated_env_secret AURA_PIM_MCP_ADMIN_TOKEN 32
   ensure_generated_env_secret SEARXNG_SECRET 32
   ensure_objectstore_env_secrets
@@ -296,6 +297,7 @@ write_env_if_missing() {
   garage_rpc_secret="$(openssl rand -hex 32)"
   garage_admin_token="$(openssl rand -hex 32)"
   authula_secret="$(openssl rand -hex 32)"
+  memory_auth_secret="$(openssl rand -hex 32)"
   pim_admin_token="$(openssl rand -hex 32)"
   searxng_secret="$(openssl rand -hex 32)"
   aura_image="${AURA_IMAGE:-$DEFAULT_IMAGE}"
@@ -317,6 +319,7 @@ AURA_NEO4J_DATABASE=neo4j
 AURA_IMAGE=${aura_image}
 AURA_ACCESS_TOKEN=${access_token}
 AURA_AUTHULA_SECRET=${authula_secret}
+AURA_AGENT_MEMORY_MCP_AUTH_SECRET=${memory_auth_secret}
 AURA_HTTPS_PORT=443
 AURA_AGUI_PORT=9080
 AURA_SETUP_PORT=9081

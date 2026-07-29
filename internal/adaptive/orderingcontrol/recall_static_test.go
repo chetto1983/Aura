@@ -124,7 +124,6 @@ func TestDynamicRecallExogenousStaticSkipsPolicyProviderAndFacts(
 		},
 	}
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			input := memoryRecallInput()
@@ -183,7 +182,6 @@ func TestDynamicRecallUnavailablePolicySkipsProviderAndFacts(t *testing.T) {
 		{name: "read failure", sourceErr: policyReadErr},
 	}
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			input := memoryRecallInput()
@@ -244,7 +242,6 @@ func TestDynamicRecallUnauthorizedServingModesStayStatic(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
-		test := test
 		t.Run(string(test.mode), func(t *testing.T) {
 			t.Parallel()
 			input := memoryRecallInput()

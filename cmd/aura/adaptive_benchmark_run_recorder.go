@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"sync"
 
 	"github.com/chetto1983/aura/internal/adaptive"
@@ -507,9 +508,7 @@ func cloneAdaptiveBenchmarkAssignment(
 		map[adaptive.FeatureKey]float64,
 		len(assignment.Features),
 	)
-	for key, value := range assignment.Features {
-		cloned.Features[key] = value
-	}
+	maps.Copy(cloned.Features, assignment.Features)
 	if assignment.CohortID != nil {
 		value := *assignment.CohortID
 		cloned.CohortID = &value
@@ -533,9 +532,7 @@ func cloneAdaptiveBenchmarkDelivery(
 		map[string]int,
 		len(delivery.EffectiveLimits),
 	)
-	for key, value := range delivery.EffectiveLimits {
-		cloned.EffectiveLimits[key] = value
-	}
+	maps.Copy(cloned.EffectiveLimits, delivery.EffectiveLimits)
 	if delivery.ExposureProbability != nil {
 		value := *delivery.ExposureProbability
 		cloned.ExposureProbability = &value

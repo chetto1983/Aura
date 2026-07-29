@@ -68,7 +68,7 @@ func sensitiveCatalogID(value string) bool {
 		strings.Contains(normalized, "private-summary") {
 		return true
 	}
-	for _, token := range strings.Split(normalized, "-") {
+	for token := range strings.SplitSeq(normalized, "-") {
 		for _, sensitive := range []string{
 			"apikey",
 			"secret",

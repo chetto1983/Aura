@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"time"
 
@@ -242,12 +243,7 @@ func cohortClaimIDPresent(id *uuid.UUID) bool {
 }
 
 func cohortRequiresBlock(blocks []BlockKey, target BlockKey) bool {
-	for _, block := range blocks {
-		if block == target {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(blocks, target)
 }
 
 func cohortClaimTimeBlockStart(claimedAt time.Time, seconds uint64) time.Time {

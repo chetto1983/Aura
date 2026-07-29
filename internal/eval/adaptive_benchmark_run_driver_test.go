@@ -12,7 +12,7 @@ import (
 func TestAdaptiveBenchmarkDriverReceivesNoGold(t *testing.T) {
 	t.Parallel()
 
-	subjectType := reflect.TypeOf(AdaptiveBenchmarkSubject{})
+	subjectType := reflect.TypeFor[AdaptiveBenchmarkSubject]()
 	gotFields := make([]string, subjectType.NumField())
 	for index := range subjectType.NumField() {
 		gotFields[index] = subjectType.Field(index).Name
@@ -47,7 +47,7 @@ func TestAdaptiveBenchmarkDriverReceivesNoGold(t *testing.T) {
 			t.Fatalf("subject drift = %#v, scenario %#v", subject, scenario)
 		}
 	}
-	resultType := reflect.TypeOf(AdaptiveBenchmarkDriverResult{})
+	resultType := reflect.TypeFor[AdaptiveBenchmarkDriverResult]()
 	for _, forbidden := range []string{"Quality", "QualityOutcomeID"} {
 		if _, exposed := resultType.FieldByName(forbidden); exposed {
 			t.Fatalf("turn result exposes pre-evaluated field %q", forbidden)
@@ -193,7 +193,7 @@ func TestRunAdaptiveBenchmarkScenariosRecordsBrokenDriverFacts(t *testing.T) {
 		{
 			name: "cost without provenance",
 			mutate: func(result *AdaptiveBenchmarkDriverResult) {
-				result.CostUSD = benchmarkFloat(0.01)
+				result.CostUSD = new(0.01)
 				result.CostBasis = AdaptiveBenchmarkCostUnknown
 			},
 		},
@@ -205,7 +205,6 @@ func TestRunAdaptiveBenchmarkScenariosRecordsBrokenDriverFacts(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			driver := newAdaptiveBenchmarkDriverFake(
@@ -342,7 +341,6 @@ func TestRunAdaptiveBenchmarkScenariosRecordsTypedTerminalFailures(
 		},
 	}
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			driver := newAdaptiveBenchmarkDriverFake(
@@ -455,7 +453,7 @@ func TestRunAdaptiveBenchmarkScenariosTracksCostProvenance(t *testing.T) {
 	}
 	driver := newAdaptiveBenchmarkDriverFake(benchmarkDatasetFixture(t))
 	driver.mutate = func(result *AdaptiveBenchmarkDriverResult) {
-		result.CostUSD = benchmarkFloat(0.01)
+		result.CostUSD = new(0.01)
 		result.CostBasis = AdaptiveBenchmarkCostPriceTable
 		result.PriceTable = priceTable
 	}
@@ -479,13 +477,13 @@ func TestRunAdaptiveBenchmarkScenariosTracksCostProvenance(t *testing.T) {
 		t,
 		AdaptiveBenchmarkModeProductionShadow,
 	).FrozenInputs
-	inputs.PriceTableID = benchmarkString(priceTable.ID)
-	inputs.PriceTableRevision = benchmarkInt(priceTable.Revision)
-	inputs.PriceTableSHA256 = benchmarkString(priceTable.SHA256)
+	inputs.PriceTableID = new(priceTable.ID)
+	inputs.PriceTableRevision = new(priceTable.Revision)
+	inputs.PriceTableSHA256 = new(priceTable.SHA256)
 	if err := ValidateAdaptiveBenchmarkCostProvenance(run, inputs); err != nil {
 		t.Fatalf("ValidateAdaptiveBenchmarkCostProvenance: %v", err)
 	}
-	inputs.PriceTableSHA256 = benchmarkString(strings.Repeat("8", 64))
+	inputs.PriceTableSHA256 = new(strings.Repeat("8", 64))
 	if err := ValidateAdaptiveBenchmarkCostProvenance(run, inputs); err == nil {
 		t.Fatal("cost provenance accepted a different price-table digest")
 	}
@@ -498,7 +496,7 @@ func TestValidateAdaptiveBenchmarkCostProvenanceRequiresNullTableForProvider(
 
 	driver := newAdaptiveBenchmarkDriverFake(benchmarkDatasetFixture(t))
 	driver.mutate = func(result *AdaptiveBenchmarkDriverResult) {
-		result.CostUSD = benchmarkFloat(0.01)
+		result.CostUSD = new(0.01)
 		result.CostBasis = AdaptiveBenchmarkCostProviderReported
 	}
 	run, err := RunAdaptiveBenchmarkScenarios(
@@ -516,9 +514,9 @@ func TestValidateAdaptiveBenchmarkCostProvenanceRequiresNullTableForProvider(
 	if err := ValidateAdaptiveBenchmarkCostProvenance(run, inputs); err != nil {
 		t.Fatalf("provider cost provenance: %v", err)
 	}
-	inputs.PriceTableID = benchmarkString("forbidden")
-	inputs.PriceTableRevision = benchmarkInt(1)
-	inputs.PriceTableSHA256 = benchmarkString(strings.Repeat("9", 64))
+	inputs.PriceTableID = new("forbidden")
+	inputs.PriceTableRevision = new(1)
+	inputs.PriceTableSHA256 = new(strings.Repeat("9", 64))
 	if err := ValidateAdaptiveBenchmarkCostProvenance(run, inputs); err == nil {
 		t.Fatal("provider-reported cost accepted price-table metadata")
 	}
@@ -537,7 +535,7 @@ func TestValidateAdaptiveBenchmarkCostProvenanceAllowsMixedBases(
 	calls := 0
 	driver := newAdaptiveBenchmarkDriverFake(benchmarkDatasetFixture(t))
 	driver.mutate = func(result *AdaptiveBenchmarkDriverResult) {
-		result.CostUSD = benchmarkFloat(0.01)
+		result.CostUSD = new(0.01)
 		calls++
 		if calls%2 == 0 {
 			result.CostBasis = AdaptiveBenchmarkCostProviderReported
@@ -565,9 +563,9 @@ func TestValidateAdaptiveBenchmarkCostProvenanceAllowsMixedBases(
 		t,
 		AdaptiveBenchmarkModeProductionShadow,
 	).FrozenInputs
-	inputs.PriceTableID = benchmarkString(priceTable.ID)
-	inputs.PriceTableRevision = benchmarkInt(priceTable.Revision)
-	inputs.PriceTableSHA256 = benchmarkString(priceTable.SHA256)
+	inputs.PriceTableID = new(priceTable.ID)
+	inputs.PriceTableRevision = new(priceTable.Revision)
+	inputs.PriceTableSHA256 = new(priceTable.SHA256)
 	if err := ValidateAdaptiveBenchmarkCostProvenance(run, inputs); err != nil {
 		t.Fatalf("mixed cost provenance: %v", err)
 	}

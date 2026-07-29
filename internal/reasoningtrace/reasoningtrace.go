@@ -194,7 +194,7 @@ func defaultPrivateField(key string) bool {
 func traceValueSummary(v any) map[string]any {
 	raw, err := json.Marshal(v)
 	if err != nil {
-		raw = []byte(fmt.Sprintf("%T", v))
+		raw = fmt.Appendf(nil, "%T", v)
 	}
 	sum := sha256.Sum256(raw)
 	out := map[string]any{

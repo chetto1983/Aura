@@ -357,16 +357,14 @@ func applyLlamaCppReasoning(wire *wireRequest, r llm.ReasoningConfig) {
 	case llm.ReasoningEffortNone:
 		wire.ChatTemplateKwargs = map[string]any{"enable_thinking": false}
 	case llm.ReasoningEffortLow:
-		wire.ThinkingBudgetTokens = intPtr(llamaCppBudgetLow)
+		wire.ThinkingBudgetTokens = new(llamaCppBudgetLow)
 	case llm.ReasoningEffortMedium:
-		wire.ThinkingBudgetTokens = intPtr(llamaCppBudgetMid)
+		wire.ThinkingBudgetTokens = new(llamaCppBudgetMid)
 	case llm.ReasoningEffortHigh:
-		wire.ThinkingBudgetTokens = intPtr(llamaCppBudgetHigh)
+		wire.ThinkingBudgetTokens = new(llamaCppBudgetHigh)
 	case llm.ReasoningEffortXHigh:
-		wire.ThinkingBudgetTokens = intPtr(llamaCppBudgetExtra)
+		wire.ThinkingBudgetTokens = new(llamaCppBudgetExtra)
 	case llm.ReasoningEffortMax:
-		wire.ThinkingBudgetTokens = intPtr(llamaCppBudgetMax)
+		wire.ThinkingBudgetTokens = new(llamaCppBudgetMax)
 	}
 }
-
-func intPtr(n int) *int { return &n }

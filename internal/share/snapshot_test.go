@@ -203,10 +203,10 @@ func TestSnapshotSpilledTurnNoSidecarPath(t *testing.T) {
 func TestSnapshotOmitsIdentity(t *testing.T) {
 	for _, v := range []any{Snapshot{}, SnapshotTurn{}, SnapshotArtifact{}, ConvMeta{}} {
 		rt := reflect.TypeOf(v)
-		for i := 0; i < rt.NumField(); i++ {
-			name := strings.ToLower(rt.Field(i).Name)
+		for field := range rt.Fields() {
+			name := strings.ToLower(field.Name)
 			if strings.Contains(name, "identity") || strings.Contains(name, "owner") {
-				t.Fatalf("%s.%s: field name suggests it could carry the owner identity id (L-08)", rt.Name(), rt.Field(i).Name)
+				t.Fatalf("%s.%s: field name suggests it could carry the owner identity id (L-08)", rt.Name(), field.Name)
 			}
 		}
 	}
@@ -242,9 +242,9 @@ func TestSnapshotOmitsIdentity(t *testing.T) {
 func TestSnapshotOmitsReasoning(t *testing.T) {
 	for _, v := range []any{Snapshot{}, SnapshotTurn{}, SnapshotArtifact{}, ConvMeta{}} {
 		rt := reflect.TypeOf(v)
-		for i := 0; i < rt.NumField(); i++ {
-			if strings.Contains(strings.ToLower(rt.Field(i).Name), "reasoning") {
-				t.Fatalf("%s.%s: field name suggests it could carry persisted CoT (amendment #91 point 4)", rt.Name(), rt.Field(i).Name)
+		for field := range rt.Fields() {
+			if strings.Contains(strings.ToLower(field.Name), "reasoning") {
+				t.Fatalf("%s.%s: field name suggests it could carry persisted CoT (amendment #91 point 4)", rt.Name(), field.Name)
 			}
 		}
 	}

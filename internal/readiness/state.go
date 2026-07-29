@@ -2,7 +2,7 @@
 package readiness
 
 import (
-	"sort"
+	"slices"
 	"sync"
 	"time"
 )
@@ -185,6 +185,6 @@ func (s *Snapshot) Reasons() []Code {
 	if schedulerEnabled && (schedulerFailed || schedulerProgress.IsZero() || now.Sub(schedulerProgress) > s.schedulerMaxAge) {
 		reasons = append(reasons, CodeSchedulerStalled)
 	}
-	sort.Slice(reasons, func(i, j int) bool { return reasons[i] < reasons[j] })
+	slices.Sort(reasons)
 	return reasons
 }

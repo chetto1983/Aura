@@ -154,7 +154,6 @@ func TestBudgetBlockFormatting(t *testing.T) {
 		{"exhausted", 3, 0, "<budget>used=3 remaining=0</budget>"},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			hist := seedHistory()

@@ -477,7 +477,7 @@ func TestReconnectServer_ConcurrentTransportFailuresSingleFlight(t *testing.T) {
 	srv := newReconnectingServer("mail", mcp.ServerConfig{Command: "fake"}, initial)
 	const callers = 8
 	errs := make(chan error, callers)
-	for i := 0; i < callers; i++ {
+	for range callers {
 		go func() {
 			defs, err := srv.ListTools(context.Background())
 			if err == nil && (len(defs) != 1 || defs[0].Name != "fresh") {
@@ -494,7 +494,7 @@ func TestReconnectServer_ConcurrentTransportFailuresSingleFlight(t *testing.T) {
 	}
 	time.Sleep(50 * time.Millisecond)
 	close(releaseOpen)
-	for i := 0; i < callers; i++ {
+	for i := range callers {
 		if err := <-errs; err != nil {
 			t.Fatalf("caller %d: %v", i, err)
 		}
@@ -526,7 +526,7 @@ func TestReconnectServer_ReconnectBreakerOpensAfterFailures(t *testing.T) {
 	}
 
 	srv := newReconnectingServer("mail", mcp.ServerConfig{Command: "fake"}, initial)
-	for i := 0; i < mcpReconnectBreakerAfter; i++ {
+	for i := range mcpReconnectBreakerAfter {
 		_, err := srv.ListTools(context.Background())
 		if !errors.Is(err, openErr) {
 			t.Fatalf("failure %d should surface open error, got %v", i+1, err)

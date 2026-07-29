@@ -60,7 +60,7 @@ func TestPrefixDrift_DetectedAfterHookRewrite(t *testing.T) {
 		UserTurns:   []llm.Message{{Role: llm.RoleUser, Content: "hi"}},
 		HookManager: NewHookManager(prefixMutatingHook{}),
 	})
-	b, err := NewBudget(BudgetOptions{MaxSteps: ptrI(4)})
+	b, err := NewBudget(BudgetOptions{MaxSteps: new(4)})
 	if err != nil {
 		t.Fatalf("NewBudget: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestPrefixDrift_DetectedAfterHookRewrite(t *testing.T) {
 // pool; a concurrent ConsumeStep cannot spend the reserved steps, and Release
 // returns them so the parent's synthesis turn can.
 func TestBudgetTryReserveIsAtomic(t *testing.T) {
-	b, err := NewBudget(BudgetOptions{MaxSteps: ptrI(5)})
+	b, err := NewBudget(BudgetOptions{MaxSteps: new(5)})
 	if err != nil {
 		t.Fatalf("NewBudget: %v", err)
 	}
@@ -102,5 +102,3 @@ func TestBudgetTryReserveIsAtomic(t *testing.T) {
 		t.Fatalf("after release Remaining = %d, want 5", got)
 	}
 }
-
-func ptrI(n int) *int { return &n }

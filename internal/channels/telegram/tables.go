@@ -146,8 +146,8 @@ func RenderTablePNG(grid [][]string) ([]byte, error) {
 
 	// Column widths: max measured advance across header (bold) + body cells.
 	colWidth := make([]int, cols)
-	for c := 0; c < cols; c++ {
-		for r := 0; r < rows; r++ {
+	for c := range cols {
+		for r := range rows {
 			f := bodyFace
 			if r == 0 {
 				f = headFace
@@ -183,21 +183,21 @@ func RenderTablePNG(grid [][]string) ([]byte, error) {
 	// Vertical grid lines.
 	x := 0
 	fillRect(img, x, 0, gridLineWidth, imgH, black)
-	for c := 0; c < cols; c++ {
+	for c := range cols {
 		x += gridLineWidth + colWidth[c]
 		fillRect(img, x, 0, gridLineWidth, imgH, black)
 	}
 
 	// Cell text.
 	baselineOffset := metrics.Ascent.Ceil() + cellPadY
-	for r := 0; r < rows; r++ {
+	for r := range rows {
 		f := bodyFace
 		if r == 0 {
 			f = headFace
 		}
 		cellX := gridLineWidth
 		cellY := r * (rowHeight + gridLineWidth)
-		for c := 0; c < cols; c++ {
+		for c := range cols {
 			d := &font.Drawer{
 				Dst:  img,
 				Src:  black,
@@ -262,7 +262,7 @@ func PreBlockTable(grid [][]string) string {
 	var b strings.Builder
 	b.WriteString("```\n")
 	for _, row := range grid {
-		for c := 0; c < cols; c++ {
+		for c := range cols {
 			cell := ""
 			if c < len(row) {
 				cell = row[c]

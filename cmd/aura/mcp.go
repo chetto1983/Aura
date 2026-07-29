@@ -228,7 +228,7 @@ func mcpAdd(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Write
 		Command: command,
 		Args:    commandArgs,
 		Env:     env,
-		Enabled: mcpBoolPtr(enabled),
+		Enabled: new(enabled),
 		Source:  "manual",
 		Trust:   mcp.ManagedTrust{Class: trustClass},
 	}
@@ -331,7 +331,7 @@ func mcpSetEnabled(ctx context.Context, pool *pgxpool.Pool, args []string, enabl
 	if !ok {
 		return fmt.Errorf("MCP server %q not found in managed config", name)
 	}
-	s.Enabled = mcpBoolPtr(enabled)
+	s.Enabled = new(enabled)
 	doc.MCPServers[name] = s
 	action := "disable"
 	state := "disabled"
@@ -507,8 +507,6 @@ func renderMCPCommand(cfg mcp.ServerConfig) string {
 	parts := append([]string{cfg.Command}, cfg.Args...)
 	return strings.Join(parts, " ")
 }
-
-func mcpBoolPtr(v bool) *bool { return &v }
 
 func splitCommandParts(parts []string) (string, []string) {
 	command := ""

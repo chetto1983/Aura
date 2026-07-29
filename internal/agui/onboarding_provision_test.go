@@ -286,7 +286,7 @@ func TestProvisionConcurrentSameSessionSingleCommit(t *testing.T) {
 	const attempts = 8
 	start := make(chan struct{})
 	errs := make(chan error, attempts)
-	for i := 0; i < attempts; i++ {
+	for range attempts {
 		go func() {
 			<-start
 			req := provReq(nil)
@@ -298,7 +298,7 @@ func TestProvisionConcurrentSameSessionSingleCommit(t *testing.T) {
 
 	successes := 0
 	sessionRejected := 0
-	for i := 0; i < attempts; i++ {
+	for range attempts {
 		err := <-errs
 		switch {
 		case err == nil:

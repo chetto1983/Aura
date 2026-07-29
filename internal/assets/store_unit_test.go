@@ -26,15 +26,15 @@ type captureAssetDBTX struct {
 	called bool
 }
 
-func (db *captureAssetDBTX) Exec(context.Context, string, ...interface{}) (pgconn.CommandTag, error) {
+func (db *captureAssetDBTX) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
 	return pgconn.CommandTag{}, errUnitAssetScan
 }
 
-func (db *captureAssetDBTX) Query(context.Context, string, ...interface{}) (pgx.Rows, error) {
+func (db *captureAssetDBTX) Query(context.Context, string, ...any) (pgx.Rows, error) {
 	return nil, errUnitAssetScan
 }
 
-func (db *captureAssetDBTX) QueryRow(_ context.Context, query string, args ...interface{}) pgx.Row {
+func (db *captureAssetDBTX) QueryRow(_ context.Context, query string, args ...any) pgx.Row {
 	db.query = query
 	db.args = append([]any(nil), args...)
 	db.called = true
@@ -43,7 +43,7 @@ func (db *captureAssetDBTX) QueryRow(_ context.Context, query string, args ...in
 
 type assetScanErrorRow struct{}
 
-func (assetScanErrorRow) Scan(...interface{}) error {
+func (assetScanErrorRow) Scan(...any) error {
 	return errUnitAssetScan
 }
 

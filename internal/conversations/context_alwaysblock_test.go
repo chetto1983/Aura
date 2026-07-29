@@ -26,7 +26,7 @@ func TestAlwaysBlockSurvivesL25Reduction(t *testing.T) {
 	// total blows well past a tight hard cap and L2.5 must drop most pairs.
 	body := strings.Repeat("word ", 50)
 	turns := []Turn{{Seq: 1, Role: llm.RoleSystem, Content: systemContent}}
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		turns = append(turns,
 			Turn{Seq: len(turns) + 1, Role: llm.RoleUser, Content: body},
 			Turn{Seq: len(turns) + 2, Role: llm.RoleAssistant, Content: body},

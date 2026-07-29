@@ -67,9 +67,9 @@ func TestIdempotencyKeyValidation(t *testing.T) {
 		value *string
 	}{
 		{name: "missing"},
-		{name: "blank", value: ptrString("   ")},
-		{name: "control", value: ptrString("key\nvalue")},
-		{name: "over limit", value: ptrString(strings.Repeat("k", idempotency.MaxOperationKeyBytes+1))},
+		{name: "blank", value: new("   ")},
+		{name: "control", value: new("key\nvalue")},
+		{name: "over limit", value: new(strings.Repeat("k", idempotency.MaxOperationKeyBytes+1))},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -203,8 +203,6 @@ func TestMutationMuxRequiresKeyBeforeHandler(t *testing.T) {
 		t.Fatalf("status=%d effect calls=%d, want 400 and no effect", rr.Code, run.newConversationCalls)
 	}
 }
-
-func ptrString(v string) *string { return &v }
 
 func TestApprovalResolveForwardsOriginalOperationContext(t *testing.T) {
 	t.Parallel()

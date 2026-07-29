@@ -31,7 +31,6 @@ func TestAssignmentIDForPointRejectsInvalidScope(t *testing.T) {
 		{name: "invalid point", owner: owner, request: request, point: DecisionPoint("reasoning ")},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if _, err := constructor(tt.owner, tt.request, tt.point, 1); err == nil {
@@ -66,7 +65,6 @@ func TestEventIDForSourceRejectsInvalidScope(t *testing.T) {
 		{name: "overlong source", assignmentID: assignmentID, kind: EventDecision, source: strings.Repeat("a", 129)},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if _, err := constructor(tt.assignmentID, tt.kind, tt.source); err == nil {

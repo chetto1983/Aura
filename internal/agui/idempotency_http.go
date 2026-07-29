@@ -383,10 +383,7 @@ func writeIdempotencyDecision(w http.ResponseWriter, decision idempotency.BeginD
 		if retry > idempotency.MaxRetryAfter {
 			retry = idempotency.MaxRetryAfter
 		}
-		seconds := int(math.Ceil(retry.Seconds()))
-		if seconds < 1 {
-			seconds = 1
-		}
+		seconds := max(int(math.Ceil(retry.Seconds())), 1)
 		w.Header().Set("Retry-After", strconv.Itoa(seconds))
 		writeIdempotencyError(w, http.StatusConflict, "operation is still in progress")
 	case idempotency.DecisionIndeterminate:

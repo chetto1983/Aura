@@ -307,7 +307,7 @@ func twoDigit(n int) string {
 
 func nonEmptyLines(s string) []string {
 	var out []string
-	for _, ln := range strings.Split(s, "\n") {
+	for ln := range strings.SplitSeq(s, "\n") {
 		if strings.TrimSpace(ln) != "" {
 			out = append(out, ln)
 		}

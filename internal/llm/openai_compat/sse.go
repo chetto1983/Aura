@@ -70,7 +70,6 @@ func parseSSE(r io.Reader, emit func(llm.Chunk) bool) (parseResult, error) {
 
 	finalize := func() bool {
 		for _, tc := range acc.finalize() {
-			tc := tc
 			if !emit(llm.Chunk{ToolCall: &tc}) {
 				return false
 			}

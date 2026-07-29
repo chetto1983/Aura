@@ -3,6 +3,7 @@ package agui
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/events"
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/types"
@@ -54,17 +55,17 @@ func payloadString(payload any) string {
 // drive the turn (OQ3). It returns nil when there is no user message (a resume-only
 // run continues over the rehydrated history without a fresh user turn).
 func lastUserMessage(msgs []types.Message) (*string, error) {
-	for i := len(msgs) - 1; i >= 0; i-- {
-		if string(msgs[i].Role) != llm.RoleUser {
+	for _, v := range slices.Backward(msgs) {
+		if string(v.Role) != llm.RoleUser {
 			continue
 		}
-		if content, ok := msgs[i].Content.(string); ok {
+		if content, ok := v.Content.(string); ok {
 			if content != "" {
 				return &content, nil
 			}
 			continue
 		}
-		if msgs[i].Content != nil {
+		if v.Content != nil {
 			// The runner currently accepts only text. Reject structured multimodal
 			// user content explicitly instead of silently replaying old history.
 			return nil, errUnsupportedUserMessageContent

@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"text/tabwriter"
 	"time"
 
@@ -278,10 +279,5 @@ func shortHash(h string) string {
 
 // hasFlag reports whether a bare flag (e.g. --always) is present in args.
 func hasFlag(args []string, flag string) bool {
-	for _, a := range args {
-		if a == flag {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(args, flag)
 }

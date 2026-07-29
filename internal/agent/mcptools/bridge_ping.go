@@ -48,10 +48,7 @@ func (s *reconnectingServer) startPingPoll(interval time.Duration) {
 	if interval <= 0 {
 		return
 	}
-	timeout := interval
-	if timeout > maxMCPPingTimeout {
-		timeout = maxMCPPingTimeout
-	}
+	timeout := min(interval, maxMCPPingTimeout)
 
 	s.mu.Lock()
 	if s.closed {

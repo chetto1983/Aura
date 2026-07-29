@@ -125,11 +125,11 @@ func (rational ExactRational) Float64() (float64, error) {
 // MarshalJSON emits the frozen canonical rational object.
 func (rational ExactRational) MarshalJSON() ([]byte, error) {
 	value := rational.normalized()
-	return []byte(fmt.Sprintf(
+	return fmt.Appendf(nil,
 		`{"numerator":%s,"denominator":%s}`,
 		value.Num().String(),
 		value.Denom().String(),
-	)), nil
+	), nil
 }
 
 // UnmarshalJSON rejects unknown, missing, duplicate, and noncanonical fields.

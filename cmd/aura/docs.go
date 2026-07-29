@@ -8,7 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -425,7 +425,7 @@ func percentile(values []time.Duration, p float64) time.Duration {
 		return 0
 	}
 	cp := append([]time.Duration(nil), values...)
-	sort.Slice(cp, func(i, j int) bool { return cp[i] < cp[j] })
+	slices.Sort(cp)
 	idx := int(float64(len(cp)-1) * p)
 	return cp[idx]
 }

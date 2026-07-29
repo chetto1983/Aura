@@ -139,7 +139,7 @@ func runParallelConcurrentAndOrdered(t *testing.T) {
 		SessionID:  uuid.Must(uuid.NewV7()).String(),
 		UserTurns:  []llm.Message{{Role: llm.RoleUser, Content: "vai"}},
 	})
-	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(25)})
 
 	evs, err := collect(a.Run(ic))
 	if err != nil {
@@ -215,7 +215,7 @@ func TestExecuteBatch_PanickingToolSurfacesModelVisibleError(t *testing.T) {
 				UserTurns:  []llm.Message{{Role: llm.RoleUser, Content: "go"}},
 			})
 
-			evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(10)})))
+			evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: new(10)})))
 			if err != nil {
 				t.Fatalf("run errored: %v", err)
 			}
@@ -262,7 +262,7 @@ func TestRunToolAppliesNodeTimeout(t *testing.T) {
 	})
 
 	started := time.Now()
-	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(5)})))
+	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: new(5)})))
 	if err != nil {
 		t.Fatalf("run errored: %v", err)
 	}
@@ -290,7 +290,7 @@ func TestDispatch_ParallelRespectsFanoutCap(t *testing.T) {
 	reg.Register(tracker)
 
 	calls := make([]llm.ToolCall, 0, 5)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		calls = append(calls, agenttest.MakeToolCall("c"+string(rune('1'+i)), "tracking", `{}`))
 	}
 	fc := agenttest.NewFakeClient(
@@ -307,7 +307,7 @@ func TestDispatch_ParallelRespectsFanoutCap(t *testing.T) {
 		UserTurns:  []llm.Message{{Role: llm.RoleUser, Content: "go"}},
 	})
 
-	if _, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)}))); err != nil {
+	if _, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: new(25)}))); err != nil {
 		t.Fatalf("run errored: %v", err)
 	}
 	if got := tracker.max.Load(); got > 2 {

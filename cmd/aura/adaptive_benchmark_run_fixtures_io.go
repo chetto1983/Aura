@@ -283,8 +283,8 @@ func (fixtures *adaptiveBenchmarkFixtureSet) cleanupMemory(
 	ctx context.Context,
 ) error {
 	var cleanupErr error
-	for index := len(fixtures.memoryNodes) - 1; index >= 0; index-- {
-		node := fixtures.memoryNodes[index]
+	for _, v := range slices.Backward(fixtures.memoryNodes) {
+		node := v
 		if err := fixtures.forgetMemory(ctx, node, true); err != nil {
 			cleanupErr = errors.Join(cleanupErr, err)
 			continue

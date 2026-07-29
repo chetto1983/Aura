@@ -2,6 +2,7 @@ package manager
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -237,12 +238,7 @@ func TestLookupCatalogNotFound(t *testing.T) {
 }
 
 func containsString(values []string, want string) bool {
-	for _, value := range values {
-		if value == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(values, want)
 }
 
 // TestCatalogCalculatorMountsOffline pins the pair that makes the calculator recipe mount

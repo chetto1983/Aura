@@ -110,15 +110,13 @@ func (t *Telegram) startTurn(
 		msg := *text
 		userMsg = &msg
 	}
-	t.wg.Add(1)
-	go func() {
-		defer t.wg.Done()
+	t.wg.Go(func() {
 		defer cancel()
 		defer t.cmds.unregisterTurn(chatID)
 		stop := pulseChatAction(turnCtx, notifier, to, tele.Typing) // "Aura is working" for the whole turn
 		defer stop()
 		t.handleTurn(turnCtx, sender, chatID, userMsg, inboundWasVoice)
-	}()
+	})
 }
 
 // scopeTurnToIdentity wraps ctx with the linked user's Aura identity id (D-23/D-24),

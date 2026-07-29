@@ -49,7 +49,7 @@ func TestRanker_DeterministicTieBreak(t *testing.T) {
 		Item{Label: "beta", Vec: []float64{0, 1, 0}},
 		Item{Label: "gamma", Vec: []float64{0, 1, 0}},
 	)
-	for trial := 0; trial < 20; trial++ {
+	for range 20 {
 		got := r.RankVecs([]float64{1, 0, 0}, 3)
 		if len(got) != 3 || got[0].Label != "alpha" || got[1].Label != "beta" || got[2].Label != "gamma" {
 			t.Fatalf("tie-break order = %v; want [alpha beta gamma]", got)
@@ -148,7 +148,7 @@ func TestRanker_ConcurrentAddRank(t *testing.T) {
 	r := NewRanker(&fakeEmbedder{})
 	r.AddVecs(Item{Label: "seed", Vec: []float64{1, 0, 0}})
 	var wg sync.WaitGroup
-	for i := 0; i < 8; i++ {
+	for range 8 {
 		wg.Add(2)
 		go func() { defer wg.Done(); r.AddVecs(Item{Label: "x", Vec: []float64{0, 0, 1}}) }()
 		go func() { defer wg.Done(); _ = r.RankVecs([]float64{1, 0, 0}, 3) }()

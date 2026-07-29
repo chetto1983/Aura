@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"iter"
+	"slices"
 
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/llm"
@@ -25,7 +26,10 @@ func currentRoundModelHistory(history []llm.Message, visibleUserMsg, modelUserMs
 		return history
 	}
 	out := append([]llm.Message(nil), history...)
-	for i := len(out) - 1; i >= 0; i-- {
+	// Index form, deliberately: slices.Backward yields a COPY of each element, so
+	// assigning through the value variable writes to the copy and the slice keeps the
+	// visible text. Must address out[i] to mutate.
+	for i := range slices.Backward(out) {
 		if out[i].Role == llm.RoleUser && out[i].Content == *visibleUserMsg {
 			out[i].Content = *modelUserMsg
 			return out

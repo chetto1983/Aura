@@ -11,14 +11,12 @@ import (
 // The published rate for deepseek/deepseek-v4-flash on 2026-07-29, per 1M tokens.
 var v4flash = llm.Price{InputPer1M: 0.14, OutputPer1M: 0.28, CacheReadPer1M: 0.028}
 
-func ptr(f float64) *float64 { return &f }
-
 func TestCost(t *testing.T) {
 	prices := map[string]llm.Price{"deepseek/deepseek-v4-flash:nitro": v4flash}
 
 	t.Run("provider_cost_present_returns_exact_usd", func(t *testing.T) {
 		got, ok := llm.CostUSD(prices, "any/model", llm.Usage{
-			PromptTokens: 1000, CompletionTokens: 500, Cost: ptr(0.001234),
+			PromptTokens: 1000, CompletionTokens: 500, Cost: new(0.001234),
 		})
 		if !ok {
 			t.Fatal("ok = false, want true when the provider reported a cost")
@@ -111,7 +109,7 @@ func TestCostUSDValue(t *testing.T) {
 
 	t.Run("provider_cost_present_wins", func(t *testing.T) {
 		got, ok := llm.CostUSDValue(prices, "any/model", llm.Usage{
-			PromptTokens: 1000, CompletionTokens: 500, Cost: ptr(0.001234),
+			PromptTokens: 1000, CompletionTokens: 500, Cost: new(0.001234),
 		})
 		if !ok || got != 0.001234 {
 			t.Fatalf("got (%v,%v), want (0.001234,true)", got, ok)

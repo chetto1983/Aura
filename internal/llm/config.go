@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -305,12 +306,8 @@ func overlayFile(cfg *Config, fc *fileConfig) {
 	if fc.MaxOutputTokens != nil {
 		cfg.MaxOutputTokens = *fc.MaxOutputTokens
 	}
-	for k, v := range fc.Headers {
-		cfg.Headers[k] = v
-	}
-	for k, v := range fc.Prices {
-		cfg.Prices[k] = v
-	}
+	maps.Copy(cfg.Headers, fc.Headers)
+	maps.Copy(cfg.Prices, fc.Prices)
 }
 
 // applyEnvOverrides applies AURA_LLM_* env values onto cfg. String knobs use

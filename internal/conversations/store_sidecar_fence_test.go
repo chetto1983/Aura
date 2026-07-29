@@ -77,7 +77,6 @@ func writeSecret(t *testing.T) string {
 func TestReadTurnSidecar_ValidReconstructedRehydrates(t *testing.T) {
 	t.Parallel()
 	for _, ld := range fenceLoaders() {
-		ld := ld
 		t.Run(ld.name, func(t *testing.T) {
 			t.Parallel()
 			runDir := t.TempDir()
@@ -102,7 +101,6 @@ func TestReadTurnSidecar_ValidReconstructedRehydrates(t *testing.T) {
 func TestReadTurnSidecar_PoisonedColumnIgnored(t *testing.T) {
 	t.Parallel()
 	for _, ld := range fenceLoaders() {
-		ld := ld
 		t.Run(ld.name, func(t *testing.T) {
 			t.Parallel()
 			secret := writeSecret(t)
@@ -112,7 +110,6 @@ func TestReadTurnSidecar_PoisonedColumnIgnored(t *testing.T) {
 				"dot-dot-into-secret":   filepath.Join("..", "..", filepath.Base(filepath.Dir(secret)), "SECRET.content"),
 			}
 			for name, col := range poisons {
-				name, col := name, col
 				t.Run(name, func(t *testing.T) {
 					t.Parallel()
 					runDir := t.TempDir() // no reconstructed file exists under here
@@ -132,7 +129,6 @@ func TestReadTurnSidecar_PoisonedColumnIgnored(t *testing.T) {
 func TestReadTurnSidecar_ReadsReconstructedNotColumnTarget(t *testing.T) {
 	t.Parallel()
 	for _, ld := range fenceLoaders() {
-		ld := ld
 		t.Run(ld.name, func(t *testing.T) {
 			t.Parallel()
 			secret := writeSecret(t)
@@ -163,7 +159,6 @@ func TestReadTurnSidecar_ReadsReconstructedNotColumnTarget(t *testing.T) {
 func TestReadTurnSidecar_SymlinkLeafRefused(t *testing.T) {
 	t.Parallel()
 	for _, ld := range fenceLoaders() {
-		ld := ld
 		t.Run(ld.name, func(t *testing.T) {
 			t.Parallel()
 			secret := writeSecret(t)

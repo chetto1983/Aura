@@ -23,7 +23,7 @@ func TestLlmAgent_ReasoningChunk_StreamOnly(t *testing.T) {
 		{FinishReason: "stop"},
 	}})
 	a := newAgent(t, fc, llm.Config{})
-	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(25)})
 
 	evs, err := collect(a.Run(ic))
 	if err != nil {
@@ -72,24 +72,24 @@ func TestLlmAgent_ReasoningChunk_PassthroughWhenShowReasoningEnabled(t *testing.
 		{FinishReason: "stop"},
 	}})
 	a := newAgent(t, fc, llm.Config{ShowReasoning: true})
-	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(25)})
 
 	evs, err := collect(a.Run(ic))
 	if err != nil {
 		t.Fatalf("Run errored: %v", err)
 	}
 
-	var got string
+	var got strings.Builder
 	for _, ev := range evs {
 		if ev.LLMResponse != nil && ev.LLMResponse.Reasoning != "" {
-			got += ev.LLMResponse.Reasoning
+			got.WriteString(ev.LLMResponse.Reasoning)
 			if ev.LLMResponse.Content != "" {
 				t.Errorf("reasoning Event must carry empty Content, got %q", ev.LLMResponse.Content)
 			}
 		}
 	}
-	if got != reasoning {
-		t.Fatalf("ShowReasoning reasoning stream = %q, want %q", got, reasoning)
+	if got.String() != reasoning {
+		t.Fatalf("ShowReasoning reasoning stream = %q, want %q", got.String(), reasoning)
 	}
 
 	last := evs[len(evs)-1]

@@ -29,7 +29,6 @@ func TestPrefixHashSkipsInvalidIndices(t *testing.T) {
 		{"interleaved negative and out-of-range skipped", []int{-3, 0, 7}},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got, err := PrefixHash(msgs, tc.indices)

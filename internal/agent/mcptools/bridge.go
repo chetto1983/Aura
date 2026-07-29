@@ -408,10 +408,7 @@ func capMCPErrorContent(err error) string {
 	if len(text) <= maxMCPErrorPreviewBytes {
 		return text
 	}
-	limit := maxMCPErrorPreviewBytes - len(mcpErrorTruncated)
-	if limit < 0 {
-		limit = 0
-	}
+	limit := max(maxMCPErrorPreviewBytes-len(mcpErrorTruncated), 0)
 	return truncateUTF8Bytes(text, limit) + mcpErrorTruncated
 }
 
@@ -449,10 +446,7 @@ func frameMCPDescription(raw string) string {
 	if len(framed) <= maxMCPDescriptionBytes {
 		return framed
 	}
-	limit := maxMCPDescriptionBytes - len(prefix) - len(marker)
-	if limit < 0 {
-		limit = 0
-	}
+	limit := max(maxMCPDescriptionBytes-len(prefix)-len(marker), 0)
 	return prefix + truncateUTF8Bytes(desc, limit) + marker
 }
 
@@ -553,7 +547,7 @@ func registerBridged(reg *tools.Registry, bridged []tools.Tool) ([]string, error
 
 // firstLine returns the first non-empty trimmed line of s.
 func firstLine(s string) string {
-	for _, ln := range strings.Split(s, "\n") {
+	for ln := range strings.SplitSeq(s, "\n") {
 		if t := strings.TrimSpace(ln); t != "" {
 			return t
 		}

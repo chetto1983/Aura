@@ -29,7 +29,7 @@ func TestRunSessionRingWrapAdvancesFirstSeq(t *testing.T) {
 	ctx := context.Background()
 
 	evs := make([]events.Event, 0, 6)
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		ev := events.NewTextMessageContentEvent("m", fmt.Sprintf("d%d", i))
 		evs = append(evs, ev)
 		if !sess.append(ctx, ev) {
@@ -167,7 +167,7 @@ func TestRunSessionGaplessSubscribeUnderAppendRace(t *testing.T) {
 	appendDone := make(chan struct{})
 	go func() {
 		defer close(appendDone)
-		for i := 0; i < total; i++ {
+		for range total {
 			if !sess.append(ctx, events.NewTextMessageContentEvent("m", "x")) {
 				t.Error("append refused mid-run")
 				return
@@ -177,10 +177,8 @@ func TestRunSessionGaplessSubscribeUnderAppendRace(t *testing.T) {
 
 	var wg sync.WaitGroup
 	errs := make(chan error, nSubs)
-	for i := 0; i < nSubs; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range nSubs {
+		wg.Go(func() {
 			ch, _, ok := sess.subscribeFrom(0)
 			if !ok {
 				errs <- fmt.Errorf("subscribeFrom(0) refused although the ring never wraps here")
@@ -197,7 +195,7 @@ func TestRunSessionGaplessSubscribeUnderAppendRace(t *testing.T) {
 			if want != total+1 {
 				errs <- fmt.Errorf("suffix ended at %d, want %d", want-1, total)
 			}
-		}()
+		})
 	}
 
 	<-appendDone
@@ -220,7 +218,7 @@ func TestRunSessionLifecycleNeverDroppedUnderFullChannel(t *testing.T) {
 	if !ok {
 		t.Fatal("subscribeFrom refused on a fresh session")
 	}
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		if !sess.append(ctx, events.NewTextMessageContentEvent("m", "x")) {
 			t.Fatalf("append %d refused", i)
 		}
@@ -336,7 +334,7 @@ func TestRunSessionTerminalClosesAllChannels(t *testing.T) {
 	if !okA || !okB {
 		t.Fatal("subscribeFrom refused on a live session")
 	}
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if !sess.append(ctx, events.NewTextMessageContentEvent("m", "x")) {
 			t.Fatalf("append %d refused", i)
 		}

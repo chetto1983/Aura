@@ -80,7 +80,7 @@ func TestTurn_WithThreadLockHeld_SkipsReLock(t *testing.T) {
 	defer unlock()
 
 	ctx := WithThreadLockHeld(context.Background())
-	if _, err := drain(r.Turn(ctx, convID, userPtr("hi"))); err != nil {
+	if _, err := drain(r.Turn(ctx, convID, new("hi"))); err != nil {
 		t.Fatalf("turn under a held lock must not deadlock/error: %v", err)
 	}
 	hist, err := conv.LoadHistory(context.Background(), convID)
@@ -177,7 +177,7 @@ func TestRunnerThreadsHookManagerIntoPerTurnAgent(t *testing.T) {
 	convID := newConvID(t)
 	mustCreate(t, r, convID)
 
-	if _, err := drain(r.Turn(context.Background(), convID, userPtr("hi"))); err != nil {
+	if _, err := drain(r.Turn(context.Background(), convID, new("hi"))); err != nil {
 		t.Fatalf("turn with hook manager: %v", err)
 	}
 	if hook.starts != 1 {
@@ -241,7 +241,7 @@ func TestRenderContextBlock_AlwaysBlockComposed(t *testing.T) {
 	})
 	convID := newConvID(t)
 	mustCreate(t, r, convID)
-	if _, err := drain(r.Turn(context.Background(), convID, userPtr("hi"))); err != nil {
+	if _, err := drain(r.Turn(context.Background(), convID, new("hi"))); err != nil {
 		t.Fatalf("turn with an always-block: %v", err)
 	}
 	if got := conv.lastCfg.AlwaysBlock; got != "always-on skill block" {
@@ -258,7 +258,7 @@ func TestTurn_BuildAgentBudgetError(t *testing.T) {
 	r, _, _ := newTestRunner(t, agenttest.NewFakeClient(agenttest.ToolCallTurn(textResponseCall("c1", "x"))))
 	convID := newConvID(t)
 	mustCreate(t, r, convID)
-	if _, err := drain(r.Turn(context.Background(), convID, userPtr("hi"))); err == nil {
+	if _, err := drain(r.Turn(context.Background(), convID, new("hi"))); err == nil {
 		t.Fatal("expected the budget-config error (invalid AURA_LOOP_MAX_STEPS) to surface")
 	}
 }

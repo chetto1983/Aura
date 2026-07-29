@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -501,12 +502,7 @@ func TestMCPToolsIgnoresLegacyPolicyAndMountsAllTools(t *testing.T) {
 }
 
 func containsString(values []string, want string) bool {
-	for _, value := range values {
-		if value == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(values, want)
 }
 
 func newMCPHTTPTestServer(t *testing.T) *httptest.Server {

@@ -140,7 +140,7 @@ func TestSideEffectDigest_IncludesToolsExcludesTerminal(t *testing.T) {
 
 func TestSideEffectDigest_PrefersLatestVerificationEvidence(t *testing.T) {
 	a, _ := synthAgent("s")
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		id := fmt.Sprintf("noise-%02d", i)
 		tc := llm.ToolCall{ID: id, Type: "function"}
 		tc.Function.Name = "skill"

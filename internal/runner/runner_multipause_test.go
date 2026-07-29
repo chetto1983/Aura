@@ -93,7 +93,7 @@ func TestMultiPause_SingleAssistantTurn_CR02(t *testing.T) {
 	ctx := context.Background()
 	mustCreate(t, r, convID)
 
-	if _, err := drain(r.Turn(ctx, convID, userPtr("go"))); err != nil {
+	if _, err := drain(r.Turn(ctx, convID, new("go"))); err != nil {
 		t.Fatalf("turn: %v", err)
 	}
 	if pause.inserts != 2 {

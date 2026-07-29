@@ -73,7 +73,7 @@ func TestSourcesTailInjectedAfterWebSearch(t *testing.T) {
 		agenttest.ToolCallTurn(textResponseCall("c2", "Rome is sunny [1]; Milan is rainy [2].")),
 	)
 	a := newSourcesAgent(t, fc, results)
-	if _, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)}))); err != nil {
+	if _, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: new(25)}))); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if fc.CallCount() != 3 {
@@ -152,7 +152,7 @@ func TestNonWebTurnEmitsNoSourceList(t *testing.T) {
 		agenttest.ToolCallTurn(textResponseCall("c2", "done")),
 	)
 	a := newAgent(t, fc, llm.Config{})
-	if _, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)}))); err != nil {
+	if _, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: new(25)}))); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	for i := range fc.Requests {

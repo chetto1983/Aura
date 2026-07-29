@@ -21,7 +21,7 @@ func TestEmptyResponse_RecoversWithNudge(t *testing.T) {
 		agenttest.TextChunks("stop", "recovered ok"), // the nudged retry answers
 	)
 	a := newAgent(t, fc, llm.Config{})
-	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(10)})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(10)})
 
 	evs, err := collect(a.Run(ic))
 	if err != nil {
@@ -48,7 +48,7 @@ func TestEmptyResponse_TwiceFinalizesNonEmpty(t *testing.T) {
 		agenttest.TextChunks("stop", finalizeAnswer), // finalize synthesis turn
 	)
 	a := newAgent(t, fc, llm.Config{})
-	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(10)})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(10)})
 
 	evs, err := collect(a.Run(ic))
 	if err != nil {

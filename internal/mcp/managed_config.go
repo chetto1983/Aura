@@ -49,15 +49,19 @@ type ManagedProfile struct {
 // Enabled is nil the server is enabled, matching the least-surprising behavior for
 // imported Claude-style config.
 type ManagedServer struct {
-	Command string         `json:"command"`
-	Args    []string       `json:"args,omitempty"`
-	Env     []string       `json:"env,omitempty"`
-	Enabled *bool          `json:"enabled,omitempty"`
-	Source  string         `json:"source,omitempty"`
-	Type    string         `json:"type,omitempty"`
-	URL     string         `json:"url,omitempty"`
-	Trust   ManagedTrust   `json:"trust,omitempty"`
-	Runtime ManagedRuntime `json:"runtime,omitempty"`
+	Command string   `json:"command"`
+	Args    []string `json:"args,omitempty"`
+	Env     []string `json:"env,omitempty"`
+	Enabled *bool    `json:"enabled,omitempty"`
+	Source  string   `json:"source,omitempty"`
+	Type    string   `json:"type,omitempty"`
+	URL     string   `json:"url,omitempty"`
+	// No omitempty on these two: encoding/json ignores it for struct values, so it
+	// never did anything. Dropping it is byte-identical on the wire; switching to
+	// omitzero would NOT be — a zero Trust/Runtime would stop being written to
+	// ~/.aura/mcp/servers.json, which is a format change, not a lint fix.
+	Trust   ManagedTrust   `json:"trust"`
+	Runtime ManagedRuntime `json:"runtime"`
 }
 
 // ManagedTrust records the trust class assigned to a server and the audit trail for

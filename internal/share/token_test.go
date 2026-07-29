@@ -69,7 +69,7 @@ func TestMintUniqueness(t *testing.T) {
 	seenPlaintext := make(map[string]bool, n)
 	seenHash := make(map[[32]byte]bool, n)
 
-	for i := 0; i < n; i++ {
+	for i := range n {
 		plaintext, hash, err := Mint()
 		if err != nil {
 			t.Fatalf("Mint() iteration %d error = %v", i, err)

@@ -344,10 +344,7 @@ func softCap(remaining, fanout int, frac float64) int {
 	if fanout <= 0 {
 		fanout = 1
 	}
-	share := int(math.Ceil(float64(remaining) * frac / float64(fanout)))
-	if share < 1 {
-		share = 1
-	}
+	share := max(int(math.Ceil(float64(remaining)*frac/float64(fanout))), 1)
 	return share
 }
 

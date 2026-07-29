@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -461,8 +462,8 @@ func closeMCPServers(closers []func() error) error {
 	defer cancel()
 
 	var g errgroup.Group
-	for i := len(closers) - 1; i >= 0; i-- {
-		g.Go(closers[i])
+	for _, v := range slices.Backward(closers) {
+		g.Go(v)
 	}
 	done := make(chan error, 1)
 	go func() { done <- g.Wait() }()

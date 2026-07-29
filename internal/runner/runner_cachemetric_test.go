@@ -47,7 +47,7 @@ func TestPersistAssistantAnswer_WritesOneCacheMetric(t *testing.T) {
 	ctx := context.Background()
 	mustCreate(t, r, convID)
 
-	if _, err := drain(r.Turn(ctx, convID, userPtr("hi"))); err != nil {
+	if _, err := drain(r.Turn(ctx, convID, new("hi"))); err != nil {
 		t.Fatalf("turn: %v", err)
 	}
 	if err := r.Stop(ctx, convID); err != nil {
@@ -74,7 +74,7 @@ func TestPersistAssistantAnswer_CacheMetricErrorSurfaces(t *testing.T) {
 	ctx := context.Background()
 	mustCreate(t, r, convID)
 
-	_, err := drain(r.Turn(ctx, convID, userPtr("hi")))
+	_, err := drain(r.Turn(ctx, convID, new("hi")))
 	if err == nil {
 		t.Fatal("want the cache-metric insert error to surface, got nil")
 	}

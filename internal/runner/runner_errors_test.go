@@ -18,7 +18,7 @@ func TestTurn_AppendUserTurnError(t *testing.T) {
 	ctx := context.Background()
 	mustCreate(t, r, convID)
 	conv.appendEr = errFake
-	if _, err := drain(r.Turn(ctx, convID, userPtr("hi"))); err == nil {
+	if _, err := drain(r.Turn(ctx, convID, new("hi"))); err == nil {
 		t.Fatal("expected the append-user-turn error to surface")
 	}
 }
@@ -34,7 +34,7 @@ func TestTurn_CountTurnsErrorDoesNotBlockTurn(t *testing.T) {
 	ctx := context.Background()
 	mustCreate(t, r, convID)
 	conv.countErr = errFake
-	if _, err := drain(r.Turn(ctx, convID, userPtr("hi"))); err != nil {
+	if _, err := drain(r.Turn(ctx, convID, new("hi"))); err != nil {
 		t.Fatalf("turn must not fail on CountTurns: %v", err)
 	}
 }
@@ -57,11 +57,9 @@ func TestStop_WorkerTimeout(t *testing.T) {
 	r, _, _ := newTestRunner(t, agenttest.NewFakeClient())
 	r.stopTimeout = 10 * time.Millisecond
 	release := make(chan struct{})
-	r.wg.Add(1)
-	go func() {
-		defer r.wg.Done()
+	r.wg.Go(func() {
 		<-release
-	}()
+	})
 	err := r.Stop(context.Background(), newConvID(t))
 	close(release) // let the worker finish so goleak is clean
 	if err == nil {
@@ -76,7 +74,7 @@ func TestTurn_RunInfraError(t *testing.T) {
 	convID := newConvID(t)
 	ctx := context.Background()
 	mustCreate(t, r, convID)
-	if _, err := drain(r.Turn(ctx, convID, userPtr("hi"))); err == nil {
+	if _, err := drain(r.Turn(ctx, convID, new("hi"))); err == nil {
 		t.Fatal("expected the agent run error to surface")
 	}
 }
@@ -102,7 +100,7 @@ func TestSubmitAnswers_Cancel(t *testing.T) {
 	convID := newConvID(t)
 	ctx := context.Background()
 	mustCreate(t, r, convID)
-	if _, err := drain(r.Turn(ctx, convID, userPtr("go"))); err != nil {
+	if _, err := drain(r.Turn(ctx, convID, new("go"))); err != nil {
 		t.Fatalf("turn: %v", err)
 	}
 	pending, _ := pause.ListPending(ctx, convID)
@@ -125,7 +123,7 @@ func TestSubmitAnswer_InjectAnswerError(t *testing.T) {
 	convID := newConvID(t)
 	ctx := context.Background()
 	mustCreate(t, r, convID)
-	if _, err := drain(r.Turn(ctx, convID, userPtr("go"))); err != nil {
+	if _, err := drain(r.Turn(ctx, convID, new("go"))); err != nil {
 		t.Fatalf("turn: %v", err)
 	}
 	pending, _ := pause.ListPending(ctx, convID)
@@ -149,7 +147,7 @@ func TestTurn_TerminalAnswerWithCost(t *testing.T) {
 	convID := newConvID(t)
 	ctx := context.Background()
 	mustCreate(t, r, convID)
-	if _, err := drain(r.Turn(ctx, convID, userPtr("hi"))); err != nil {
+	if _, err := drain(r.Turn(ctx, convID, new("hi"))); err != nil {
 		t.Fatalf("turn: %v", err)
 	}
 	c, err := conv.Get(ctx, convID)
@@ -183,7 +181,7 @@ func TestTurn_TerminalAnswerCostFromPriceTable(t *testing.T) {
 	convID := newConvID(t)
 	ctx := context.Background()
 	mustCreate(t, r, convID)
-	if _, err := drain(r.Turn(ctx, convID, userPtr("hi"))); err != nil {
+	if _, err := drain(r.Turn(ctx, convID, new("hi"))); err != nil {
 		t.Fatalf("turn: %v", err)
 	}
 	c, err := conv.Get(ctx, convID)
@@ -207,7 +205,7 @@ func TestPersistPause_AppendError(t *testing.T) {
 	// Fail only the SECOND AppendTurn (the pause assistant turn) — the first is the
 	// user turn that must persist so the pause-persist path is the one that errors.
 	conv.failAppN = 2
-	if _, err := drain(r.Turn(ctx, convID, userPtr("go"))); err == nil {
+	if _, err := drain(r.Turn(ctx, convID, new("go"))); err == nil {
 		t.Fatal("expected the pause persist error to surface")
 	}
 }

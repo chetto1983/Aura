@@ -23,6 +23,7 @@ package agent
 import (
 	"crypto/sha256"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -101,8 +102,8 @@ func (r *dedupRing) push(fp fingerprint) {
 // Caller must hold r.mu.
 func (r *dedupRing) countConsecutive(fp fingerprint) int {
 	n := 0
-	for i := len(r.entries) - 1; i >= 0; i-- {
-		if r.entries[i] != fp {
+	for _, v := range slices.Backward(r.entries) {
+		if v != fp {
 			break
 		}
 		n++
@@ -138,7 +139,7 @@ func (r *dedupRing) isRepeatedCycle(fp fingerprint) bool {
 }
 
 func (r *dedupRing) equalBlocks(a, b, n int) bool {
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if r.entries[a+i] != r.entries[b+i] {
 			return false
 		}
@@ -147,7 +148,7 @@ func (r *dedupRing) equalBlocks(a, b, n int) bool {
 }
 
 func (r *dedupRing) stableBlock(start, n int) bool {
-	for i := 0; i < n; i++ {
+	for i := range n {
 		track, seen := r.results[r.entries[start+i]]
 		if !seen || track.repeats < 1 {
 			return false
@@ -157,12 +158,7 @@ func (r *dedupRing) stableBlock(start, n int) bool {
 }
 
 func (r *dedupRing) containsEntry(fp fingerprint) bool {
-	for _, entry := range r.entries {
-		if entry == fp {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(r.entries, fp)
 }
 
 // BeforeToolCall is the PRE-EXECUTION dedup gate (D-18). The caller passes the
@@ -252,7 +248,7 @@ func (b *Budget) AfterToolResult(name string, argsCanonicalJSON, resultPreview [
 // (D-19). Blank entries are dropped; surrounding whitespace is trimmed.
 func parseExemptTools(csv string) map[string]struct{} {
 	out := make(map[string]struct{})
-	for _, raw := range strings.Split(csv, ",") {
+	for raw := range strings.SplitSeq(csv, ",") {
 		name := strings.TrimSpace(raw)
 		if name != "" {
 			out[name] = struct{}{}

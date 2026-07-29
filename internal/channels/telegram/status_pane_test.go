@@ -295,7 +295,7 @@ func TestStatusPaneCapsReasoningToTelegramLimitWithManyToolsAndCost(t *testing.T
 	t.Parallel()
 	bot := newFakeBot()
 	evs := []events.Event{events.NewRunStartedEvent("t", "r")}
-	for i := 0; i < 40; i++ {
+	for i := range 40 {
 		id := "tool-call-with-long-name-" + strings.Repeat("x", 20) + string(rune('a'+i%26))
 		evs = append(evs,
 			events.NewToolCallStartEvent(id, id),

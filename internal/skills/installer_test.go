@@ -323,8 +323,8 @@ func TestExecCommandEnvDisablesTelemetry(t *testing.T) {
 		prefix := key + "="
 		value := ""
 		for _, entry := range env {
-			if strings.HasPrefix(entry, prefix) {
-				value = strings.TrimPrefix(entry, prefix)
+			if after, ok := strings.CutPrefix(entry, prefix); ok {
+				value = after
 			}
 		}
 		return value

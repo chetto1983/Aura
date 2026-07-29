@@ -81,7 +81,7 @@ func TestFinalize_DedupTrip(t *testing.T) {
 		agenttest.TextChunks("stop", finalizeAnswer), // finalize synthesis
 	)
 	a := newAgent(t, fc, llm.Config{})
-	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(50), DedupWindow: ptr(3)})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(50), DedupWindow: new(3)})
 
 	evs, err := collect(a.Run(ic))
 	if err != nil {
@@ -101,7 +101,7 @@ func TestFinalize_MaxStepsTrip(t *testing.T) {
 		agenttest.TextChunks("stop", finalizeAnswer),                              // recovery turn answers
 	)
 	a := newAgent(t, fc, llm.Config{})
-	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(1)})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(1)})
 
 	evs, err := collect(a.Run(ic))
 	if err != nil {
@@ -134,7 +134,7 @@ func TestFinalizeWallclock(t *testing.T) {
 		}
 		return base.Add(2 * time.Hour) // every ConsumeStep check is past the deadline
 	}
-	b, err := agent.NewBudget(agent.BudgetOptions{MaxWallclockSec: ptr(1), Now: clock})
+	b, err := agent.NewBudget(agent.BudgetOptions{MaxWallclockSec: new(1), Now: clock})
 	if err != nil {
 		t.Fatalf("NewBudget: %v", err)
 	}
@@ -161,7 +161,7 @@ func TestRecovery_TwoTripsOneNudge(t *testing.T) {
 		agenttest.TextChunks("stop", finalizeAnswer), // finalize synthesis
 	)
 	a := newAgent(t, fc, llm.Config{})
-	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(50), DedupWindow: ptr(3)})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(50), DedupWindow: new(3)})
 
 	evs, err := collect(a.Run(ic))
 	if err != nil {
@@ -184,14 +184,14 @@ func TestFinalizeOutsideBudget(t *testing.T) {
 	// N distinct-arg tool turns (no dedup), then a recovery turn that answers, kept
 	// long enough that an off-by-one in the ceiling would over-call the client.
 	turns := make([]agenttest.FakeTurn, 0, maxSteps+3)
-	for i := 0; i < maxSteps; i++ {
+	for i := range maxSteps {
 		turns = append(turns, agenttest.ToolCallTurn(agenttest.MakeToolCall("c", "echo", `{"v":"`+string(rune('a'+i))+`"}`)))
 	}
 	turns = append(turns, agenttest.TextChunks("stop", finalizeAnswer)) // recovery answer
 	turns = append(turns, agenttest.TextChunks("stop", "extra"))        // guard: must NOT be consumed
 	fc := agenttest.NewFakeClient(turns...)
 	a := newAgent(t, fc, llm.Config{})
-	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(maxSteps)})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(maxSteps)})
 
 	if _, err := collect(a.Run(ic)); err != nil {
 		t.Fatalf("Run errored: %v", err)
@@ -224,7 +224,7 @@ func TestFinalizeFallback(t *testing.T) {
 		)
 		fc := agenttest.NewFakeClient(turns...)
 		a := newAgent(t, fc, llm.Config{})
-		ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(50), DedupWindow: ptr(3)})
+		ic := newIC(t, agent.BudgetOptions{MaxSteps: new(50), DedupWindow: new(3)})
 
 		evs, err := collect(a.Run(ic))
 		if err != nil {
@@ -254,7 +254,7 @@ func TestFinalizeFallback(t *testing.T) {
 		)
 		fc := agenttest.NewFakeClient(turns...)
 		a := newAgent(t, fc, llm.Config{})
-		ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(50), DedupWindow: ptr(3)})
+		ic := newIC(t, agent.BudgetOptions{MaxSteps: new(50), DedupWindow: new(3)})
 
 		evs, err := collect(a.Run(ic))
 		if err != nil {
@@ -334,7 +334,7 @@ func TestFinalizeHangingStreamReachesStub(t *testing.T) {
 		SessionID:  uuid.Must(uuid.NewV7()).String(),
 		UserTurns:  []llm.Message{{Role: llm.RoleUser, Content: "ciao"}},
 	})
-	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(50), DedupWindow: ptr(3)})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(50), DedupWindow: new(3)})
 
 	done := make(chan struct{})
 	var evs []*agent.Event

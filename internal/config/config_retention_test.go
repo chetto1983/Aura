@@ -8,7 +8,7 @@ import (
 
 func TestRetentionConfigContractIsRegistered(t *testing.T) {
 	t.Helper()
-	field, ok := reflect.TypeOf(Config{}).FieldByName("Retention")
+	field, ok := reflect.TypeFor[Config]().FieldByName("Retention")
 	if !ok {
 		t.Fatal("Config.Retention is missing")
 	}

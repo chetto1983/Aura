@@ -19,7 +19,7 @@ func captureLogger(buf *bytes.Buffer) *slog.Logger {
 // linesOf splits the captured JSON-lines buffer into non-empty records.
 func linesOf(buf *bytes.Buffer) []string {
 	var out []string
-	for _, l := range strings.Split(buf.String(), "\n") {
+	for l := range strings.SplitSeq(buf.String(), "\n") {
 		if strings.TrimSpace(l) != "" {
 			out = append(out, l)
 		}
@@ -48,7 +48,7 @@ func TestRateLimitedOTelHandler_BurstWithinWindowSuppressed(t *testing.T) {
 	now := time.Unix(0, 0)
 	h := newRateLimitedOTelHandler(captureLogger(&buf), time.Minute, func() time.Time { return now })
 
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		now = now.Add(time.Second) // still inside the 1-minute window
 		h.Handle(errors.New("queue full"))
 	}
@@ -64,7 +64,7 @@ func TestRateLimitedOTelHandler_NextWindowReportsSuppressedCount(t *testing.T) {
 	h := newRateLimitedOTelHandler(captureLogger(&buf), time.Minute, func() time.Time { return now })
 
 	h.Handle(errors.New("first")) // logs (line 1)
-	for i := 0; i < 9; i++ {      // 9 suppressed inside the window
+	for range 9 {                 // 9 suppressed inside the window
 		h.Handle(errors.New("burst"))
 	}
 	now = now.Add(2 * time.Minute) // advance past the window

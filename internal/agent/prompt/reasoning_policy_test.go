@@ -33,7 +33,6 @@ func TestIsReasoningTarget(t *testing.T) {
 		{"empty_is_none", "", "", false, false},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			if got := IsReasoningTarget(tc.provider, tc.baseURL); got != tc.wantAny {
@@ -219,7 +218,6 @@ func TestAdaptiveReasoningTierApplication(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			hist := []llm.Message{

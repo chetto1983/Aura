@@ -392,11 +392,8 @@ func TestSessionKeyIsolationConcurrent(t *testing.T) {
 	const n = 64
 	var wg sync.WaitGroup
 	var aFired, bFired sync.Map // session -> struct{} the cancel recorded
-	for i := 0; i < n; i++ {
-		i := i
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for i := range n {
+		wg.Go(func() {
 			session := fmt.Sprintf("session-%d", i%8) // deliberate reuse across both identities
 			id, fired := idA, &aFired
 			if i%2 == 1 {
@@ -405,7 +402,7 @@ func TestSessionKeyIsolationConcurrent(t *testing.T) {
 			ctx := identityctx.WithIdentityID(context.Background(), id)
 			r.trackSession(ctx, session, func() { fired.Store(id+session, struct{}{}) })
 			r.cancelSession(id, session)
-		}()
+		})
 	}
 	wg.Wait()
 

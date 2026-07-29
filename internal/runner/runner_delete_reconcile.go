@@ -44,9 +44,7 @@ func (r *DeleteReconciler) Start(ctx context.Context) {
 	if _, ok := r.runner.Conv.(reservedDeleteRecoveryStore); !ok {
 		return
 	}
-	r.wg.Add(1)
-	go func() {
-		defer r.wg.Done()
+	r.wg.Go(func() {
 		r.reconcile(ctx)
 		ticker := time.NewTicker(r.interval)
 		defer ticker.Stop()
@@ -60,7 +58,7 @@ func (r *DeleteReconciler) Start(ctx context.Context) {
 				r.reconcile(ctx)
 			}
 		}
-	}()
+	})
 }
 
 // Stop idempotently joins the recovery worker under a bounded wait.

@@ -28,7 +28,7 @@ func TestResumeBatch_DuplicateInjectsExactlyOneAnswerPerPause(t *testing.T) {
 	ctx := context.Background()
 	mustCreate(t, r, convID)
 
-	if _, err := drain(r.Turn(ctx, convID, userPtr("go"))); err != nil {
+	if _, err := drain(r.Turn(ctx, convID, new("go"))); err != nil {
 		t.Fatalf("turn: %v", err)
 	}
 	pending, _ := pause.ListPending(ctx, convID)
@@ -81,7 +81,7 @@ func TestResumeBatch_PartiallyResolvedAppendsNothing(t *testing.T) {
 	convID := newConvID(t)
 	ctx := context.Background()
 	mustCreate(t, r, convID)
-	if _, err := drain(r.Turn(ctx, convID, userPtr("go"))); err != nil {
+	if _, err := drain(r.Turn(ctx, convID, new("go"))); err != nil {
 		t.Fatalf("turn: %v", err)
 	}
 	pending, _ := pause.ListPending(ctx, convID)

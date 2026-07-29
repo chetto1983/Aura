@@ -156,7 +156,7 @@ func TestSearchEqualsCLI(t *testing.T) {
 func TestSearchRichPaginatesResults(t *testing.T) {
 	t.Parallel()
 	hits := make([]conversations.SearchResult, 0, searchPageSize+1)
-	for i := 0; i < searchPageSize+1; i++ {
+	for i := range searchPageSize + 1 {
 		hits = append(hits, conversations.SearchResult{Seq: i + 1, Content: "meteo risultato " + strconv.Itoa(i+1)})
 	}
 	cmds := newTestCommands(commandDeps{Search: &fakeSearch{results: hits}, Cost: &fakeCost{}})

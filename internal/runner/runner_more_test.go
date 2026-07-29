@@ -35,7 +35,7 @@ func TestSubmitAnswers_BatchResolvesAndInjects(t *testing.T) {
 	ctx := context.Background()
 	mustCreate(t, r, convID)
 
-	if _, err := drain(r.Turn(ctx, convID, userPtr("go"))); err != nil {
+	if _, err := drain(r.Turn(ctx, convID, new("go"))); err != nil {
 		t.Fatalf("turn: %v", err)
 	}
 	pending, err := pause.ListPending(ctx, convID)
@@ -92,7 +92,7 @@ func TestSubmitAnswer_Decline(t *testing.T) {
 	ctx := context.Background()
 	mustCreate(t, r, convID)
 
-	if _, err := drain(r.Turn(ctx, convID, userPtr("hi"))); err != nil {
+	if _, err := drain(r.Turn(ctx, convID, new("hi"))); err != nil {
 		t.Fatalf("turn: %v", err)
 	}
 	pending, _ := pause.ListPending(ctx, convID)
@@ -176,7 +176,7 @@ func TestSubmitAnswer_Cancel(t *testing.T) {
 	ctx := context.Background()
 	mustCreate(t, r, convID)
 
-	if _, err := drain(r.Turn(ctx, convID, userPtr("go"))); err != nil {
+	if _, err := drain(r.Turn(ctx, convID, new("go"))); err != nil {
 		t.Fatalf("turn: %v", err)
 	}
 	pending, _ := pause.ListPending(ctx, convID)
@@ -215,7 +215,7 @@ func TestChoicePause_OptionsPersisted(t *testing.T) {
 	ctx := context.Background()
 	mustCreate(t, r, convID)
 
-	if _, err := drain(r.Turn(ctx, convID, userPtr("choose"))); err != nil {
+	if _, err := drain(r.Turn(ctx, convID, new("choose"))); err != nil {
 		t.Fatalf("turn: %v", err)
 	}
 	pending, _ := pause.ListPending(ctx, convID)
@@ -331,7 +331,7 @@ func TestTurn_LoadHistoryError(t *testing.T) {
 	convID := newConvID(t)
 	ctx := context.Background()
 	mustCreate(t, r, convID)
-	if _, err := drain(r.Turn(ctx, convID, userPtr("hi"))); err == nil {
+	if _, err := drain(r.Turn(ctx, convID, new("hi"))); err == nil {
 		t.Fatal("expected the managed-history error to surface")
 	}
 }
@@ -348,7 +348,7 @@ func TestPendingFor_ReturnsFIFO(t *testing.T) {
 	convID := newConvID(t)
 	ctx := context.Background()
 	mustCreate(t, r, convID)
-	if _, err := drain(r.Turn(ctx, convID, userPtr("go"))); err != nil {
+	if _, err := drain(r.Turn(ctx, convID, new("go"))); err != nil {
 		t.Fatalf("turn: %v", err)
 	}
 	pending, err := r.PendingFor(ctx, convID)
@@ -372,7 +372,7 @@ func TestSubmitAnswers_InjectError(t *testing.T) {
 	convID := newConvID(t)
 	ctx := context.Background()
 	mustCreate(t, r, convID)
-	if _, err := drain(r.Turn(ctx, convID, userPtr("go"))); err != nil {
+	if _, err := drain(r.Turn(ctx, convID, new("go"))); err != nil {
 		t.Fatalf("turn: %v", err)
 	}
 	pending, _ := pause.ListPending(ctx, convID)

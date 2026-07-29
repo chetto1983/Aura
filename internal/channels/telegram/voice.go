@@ -91,7 +91,7 @@ func (v *voiceClient) Transcribe(ctx context.Context, bot botFiler, _ tele.Recip
 
 	attempts := 1 + len(v.backoff)
 	var lastErr error
-	for attempt := 0; attempt < attempts; attempt++ {
+	for attempt := range attempts {
 		if attempt > 0 {
 			if !v.sleep(ctx, v.backoff[attempt-1]) {
 				return "", ctx.Err()

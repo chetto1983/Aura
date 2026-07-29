@@ -81,10 +81,9 @@ func (t *turnTracker) persistedReasoning() (string, int64) {
 	if text == "" {
 		return "", 0
 	}
-	d := t.reasoningLast.Sub(t.reasoningFirst).Milliseconds()
-	if d < 0 {
-		d = 0 // defensive: wall clocks can step backwards; never persist a negative duration
-	}
+	d := max(t.reasoningLast.Sub(t.reasoningFirst).Milliseconds(),
+		// defensive: wall clocks can step backwards; never persist a negative duration
+		0)
 	return text, d
 }
 

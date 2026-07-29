@@ -63,7 +63,7 @@ func TestHTTPDecodeSSEResponse(t *testing.T) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		// Decoy event for a different id, a comment line, then the real one.
 		fmt.Fprintf(w, "event: message\n")
-		fmt.Fprintf(w, "data: %s\n\n", mustRaw(t, rpcResp{JSONRPC: "2.0", ID: int64Ptr(999), Result: mustRaw(t, map[string]any{"tools": []any{}})}))
+		fmt.Fprintf(w, "data: %s\n\n", mustRaw(t, rpcResp{JSONRPC: "2.0", ID: new(int64(999)), Result: mustRaw(t, map[string]any{"tools": []any{}})}))
 		fmt.Fprintf(w, ": keep-alive comment\n")
 		fmt.Fprintf(w, "data: %s\n\n", mustRaw(t, rpcResp{JSONRPC: "2.0", ID: &req.ID, Result: mustRaw(t, map[string]any{
 			"content": []map[string]any{{"type": "text", "text": "sse-pong"}}})}))
@@ -107,7 +107,7 @@ func TestHTTPDecodeSSEMissingID(t *testing.T) {
 	srv := httptest.NewServer(httpInitHandler(t, "", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		// Only a mismatched id is ever sent, so the wanted id is never found.
-		fmt.Fprintf(w, "data: %s\n\n", mustRaw(t, rpcResp{JSONRPC: "2.0", ID: int64Ptr(424242), Result: mustRaw(t, map[string]any{})}))
+		fmt.Fprintf(w, "data: %s\n\n", mustRaw(t, rpcResp{JSONRPC: "2.0", ID: new(int64(424242)), Result: mustRaw(t, map[string]any{})}))
 	}))
 	defer srv.Close()
 	c := openHTTPTest(t, srv, HTTPConfig{})
@@ -369,5 +369,3 @@ func TestHTTPCallToolNilArgsAndResultDecodeError(t *testing.T) {
 		t.Fatalf("want envelope decode error, got %v", err)
 	}
 }
-
-func int64Ptr(v int64) *int64 { return &v }

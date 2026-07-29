@@ -475,7 +475,7 @@ func TestServer_DisconnectClosesPump(t *testing.T) {
 	const tid = "88888888-8888-8888-8888-888888888888"
 	// A long turn: enough deltas that the client can cancel mid-stream.
 	evs := make([]*agent.Event, 0, 200)
-	for i := 0; i < 200; i++ {
+	for range 200 {
 		evs = append(evs, &agent.Event{Author: "aura", LLMResponse: &agent.LLMResponse{Content: "x"}})
 	}
 	srv := newTestServer(t, &scriptedRunner{events: evs}, &fakeConvStore{known: map[string]bool{tid: true}})
@@ -501,7 +501,7 @@ func TestServer_DisconnectClosesPump(t *testing.T) {
 	resp.Body.Close()
 
 	// Goroutines return to baseline (poll — teardown is async). goleak TestMain also guards.
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		if runtime.NumGoroutine() <= baseline+2 {
 			return
 		}

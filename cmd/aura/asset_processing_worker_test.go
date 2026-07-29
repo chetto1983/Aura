@@ -98,8 +98,7 @@ func (f *fakeRuntimeIngestionJobQueueWithDepth) CountByStatus(context.Context, s
 func TestRuntimeIngestionWorkerStartStopProcesses(t *testing.T) {
 	processor := &recordingRuntimeIngestionProcessor{done: make(chan struct{})}
 	worker := newRuntimeIngestionWorker(processor, time.Hour)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	worker.Start(ctx)
 	select {

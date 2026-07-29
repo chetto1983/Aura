@@ -13,6 +13,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -259,8 +260,6 @@ func (a *LlmAgent) finalizeEvent(ic InvocationContext, spanID [8]byte, parentSpa
 	requestID, answer, reason string, usage llm.Usage,
 ) *Event {
 	ev := a.finalEvent(ic, spanID, parentSpanID, requestID, answer, "stop", usage)
-	for k, v := range a.terminalBudgetEvent(ic, spanID, parentSpanID, reason).Actions.StateDelta {
-		ev.Actions.StateDelta[k] = v
-	}
+	maps.Copy(ev.Actions.StateDelta, a.terminalBudgetEvent(ic, spanID, parentSpanID, reason).Actions.StateDelta)
 	return ev
 }

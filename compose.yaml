@@ -126,6 +126,7 @@ services:
       AURA_WEB_USER_AGENT: ${AURA_WEB_USER_AGENT:-Aura/0.1 web_fetch}
       AURA_MCP_CONFIG: ${AURA_MCP_CONFIG:-/var/lib/aura/mcp/servers.json}
       AURA_MCP_SERVERS_JSON: ${AURA_MCP_SERVERS_JSON:-}
+      AURA_AGENT_MEMORY_MCP_AUTH_SECRET: ${AURA_AGENT_MEMORY_MCP_AUTH_SECRET:?AURA_AGENT_MEMORY_MCP_AUTH_SECRET required in .env}
       # Docker-daemon/host restarts ignore depends_on ordering, so Aura can boot while the
       # memory MCP sidecar is still waiting on neo4j+postgres healthchecks (60s+). The default
       # 10s mount budget loses that race and the registry freezes with ZERO memory tools until
@@ -561,6 +562,8 @@ services:
       NEO4J_PASSWORD: ${NEO4J_PASSWORD:?NEO4J_PASSWORD required in .env}
       NEO4J_DATABASE: ${AURA_NEO4J_DATABASE:-neo4j}
       NAM_BACKEND: bolt
+      NAM_MEMORY__MULTI_TENANT: "true"
+      AURA_AGENT_MEMORY_MCP_AUTH_SECRET: ${AURA_AGENT_MEMORY_MCP_AUTH_SECRET:?AURA_AGENT_MEMORY_MCP_AUTH_SECRET required in .env}
       NAM_LLM: openai/${AURA_LLM_MODEL:-deepseek/deepseek-v4-flash:nitro}
       # Keep Compose parseable for CI jobs that start unrelated services
       # (postgres, searxng, sidecars) without an OpenRouter secret. The memory
@@ -623,6 +626,7 @@ services:
           --profile extended \
           --session-strategy persistent \
           --user-id aura-local \
+          --auth-secret-env AURA_AGENT_MEMORY_MCP_AUTH_SECRET \
           --llm-api-base ${AURA_LLM_BASE_URL:-https://openrouter.ai/api/v1} \
           --embedding-dimensions ${AURA_EMBED_DIMENSIONS:-768} \
           --no-auto-preferences

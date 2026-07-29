@@ -36,16 +36,14 @@ func TestBudget_ConsumeStep_AtomicDecrement_NoRace(t *testing.T) {
 	b := newTestBudget(1000, 3)
 	var ok int64
 	var wg sync.WaitGroup
-	for i := 0; i < 10; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for j := 0; j < 100; j++ {
+	for range 10 {
+		wg.Go(func() {
+			for range 100 {
 				if got, _ := b.ConsumeStep(); got {
 					atomic.AddInt64(&ok, 1)
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if ok != 1000 {
@@ -60,14 +58,12 @@ func TestBudget_ConsumeStep_ExactlyOneWinner_When_CounterIsOne(t *testing.T) {
 	b := newTestBudget(1, 3)
 	var winners int64
 	var wg sync.WaitGroup
-	for i := 0; i < 100; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 100 {
+		wg.Go(func() {
 			if ok, _ := b.ConsumeStep(); ok {
 				atomic.AddInt64(&winners, 1)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if winners != 1 {
@@ -108,7 +104,7 @@ func TestBudget_ConsumeStep_OverspendRestoresCounter(t *testing.T) {
 
 func TestBudget_Child_SharesStepsCounter(t *testing.T) {
 	b := newTestBudget(25, 3)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		if ok, _ := b.ConsumeStep(); !ok {
 			t.Fatalf("parent consume %d should succeed", i)
 		}
@@ -509,7 +505,7 @@ func TestBudget_Remaining_ClampsNegative(t *testing.T) {
 
 func TestBudget_SoftCapExceeded_RootIsAlwaysFalse(t *testing.T) {
 	b := newTestBudget(10, 3) // root: branchSoftCap == 0
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		b.ConsumeStep()
 	}
 	if b.SoftCapExceeded() {

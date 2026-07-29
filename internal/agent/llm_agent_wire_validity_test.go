@@ -48,7 +48,7 @@ func TestLlmAgent_DedupRecoveryKeepsSiblingToolCallsAnswered(t *testing.T) {
 		agenttest.ToolCallTurn(textResponseCall("c5", "recovered")),
 	)
 	a := newAgent(t, fc, llm.Config{})
-	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(50), DedupWindow: ptr(3)})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(50), DedupWindow: new(3)})
 
 	if _, err := collect(a.Run(ic)); err != nil {
 		t.Fatalf("Run: %v", err)

@@ -143,10 +143,10 @@ func TestSnapshotArtifactAllowlist(t *testing.T) {
 		t.Fatalf("SnapshotArtifact = %+v, want %+v", snap.Artifacts[0], want)
 	}
 
-	rt := reflect.TypeOf(ArtifactMeta{})
-	for i := 0; i < rt.NumField(); i++ {
-		if strings.EqualFold(rt.Field(i).Name, "path") {
-			t.Fatalf("ArtifactMeta must not have a Path field: found %s", rt.Field(i).Name)
+	rt := reflect.TypeFor[ArtifactMeta]()
+	for field := range rt.Fields() {
+		if strings.EqualFold(field.Name, "path") {
+			t.Fatalf("ArtifactMeta must not have a Path field: found %s", field.Name)
 		}
 	}
 }

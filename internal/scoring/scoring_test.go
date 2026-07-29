@@ -86,7 +86,6 @@ func TestScoring(t *testing.T) {
 			{Destructive, true},
 		}
 		for _, tc := range cases {
-			tc := tc
 			t.Run(string(tc.tier), func(t *testing.T) {
 				t.Parallel()
 				if got := GateRecommended(tc.tier); got != tc.want {

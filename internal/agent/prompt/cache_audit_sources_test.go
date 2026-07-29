@@ -2,6 +2,7 @@ package prompt
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/llm"
@@ -24,16 +25,16 @@ func TestCacheAuditSourceListMessages0Stable(t *testing.T) {
 	var want string
 	for turn := 1; turn <= 5; turn++ {
 		// Each turn the registry accumulated one more source — the volatile list grows.
-		sources := ""
+		var sources strings.Builder
 		for n := 1; n <= turn; n++ {
-			sources += fmt.Sprintf("[%d] Source %d — https://src.test/%d\n", n, n, n)
+			fmt.Fprintf(&sources, "[%d] Source %d — https://src.test/%d\n", n, n, n)
 		}
 		budget := Budget{
 			Used:        turn,
 			Remaining:   25 - turn,
 			CurrentTime: "2026-06-18T12:00:00Z",
 			Today:       "2026-06-18",
-			Sources:     sources,
+			Sources:     sources.String(),
 		}
 		req := b.Build(hist, reg, "openrouter", cfg, budget, nil)
 		h0, err := PrefixHash(req.Messages, []int{0})

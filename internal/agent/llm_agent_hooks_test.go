@@ -75,7 +75,7 @@ func TestLlmAgentHooks_NilManagerNoop(t *testing.T) {
 	)
 	a := newHookAgent(t, fc, nil)
 
-	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})))
+	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: new(25)})))
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestLlmAgentHooks_BeforeModelShortCircuitsAfterBudget(t *testing.T) {
 		},
 	}
 	a := newHookAgent(t, agenttest.NewFakeClient(agenttest.TextChunks("stop", "unreached")), agent.NewHookManager(h))
-	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(1)})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(1)})
 
 	evs, err := collect(a.Run(ic))
 	if err != nil {
@@ -121,7 +121,7 @@ func TestLlmAgentHooks_BeforeToolCanRewriteArgsAndAuditUsesRewrite(t *testing.T)
 	)
 	a := newHookAgent(t, fc, agent.NewHookManager(h))
 
-	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})))
+	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: new(25)})))
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestLlmAgentHooks_BeforeToolVetoSkipsExecution(t *testing.T) {
 	)
 	a := newHookAgent(t, fc, agent.NewHookManager(h))
 
-	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})))
+	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: new(25)})))
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -199,7 +199,7 @@ func TestLlmAgentHooks_AfterToolCanRewriteResult(t *testing.T) {
 	)
 	a := newHookAgent(t, fc, agent.NewHookManager(h))
 
-	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})))
+	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: new(25)})))
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -240,7 +240,7 @@ func TestHookManagerFirstNonNilWins(t *testing.T) {
 		},
 	}
 	a := newHookAgent(t, agenttest.NewFakeClient(agenttest.TextChunks("stop", "unreached")), agent.NewHookManager(first, second))
-	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})))
+	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: new(25)})))
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}

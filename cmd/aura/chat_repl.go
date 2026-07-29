@@ -321,10 +321,7 @@ func excerpt(content, query string) string {
 	if idx < 0 {
 		return clampExcerpt(flat, 0, window*2)
 	}
-	start := idx - window
-	if start < 0 {
-		start = 0
-	}
+	start := max(idx-window, 0)
 	end := idx + len(query) + window
 	return clampExcerpt(flat, start, end)
 }

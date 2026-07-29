@@ -76,16 +76,10 @@ func Run(ctx context.Context, rc RunConfig, goals []string) (string, error) {
 	}
 
 	reports := make([]ChildReport, len(goals))
-	concurrent := rc.Cfg.MaxSwarmConcurrent
-	if concurrent < 1 {
-		concurrent = 1
-	}
+	concurrent := max(rc.Cfg.MaxSwarmConcurrent, 1)
 
 	for start := 0; start < len(goals); start += concurrent {
-		end := start + concurrent
-		if end > len(goals) {
-			end = len(goals)
-		}
+		end := min(start+concurrent, len(goals))
 		runWave(ctx, rc, goals, reports, start, end)
 	}
 

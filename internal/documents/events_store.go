@@ -21,7 +21,7 @@ type IngestionEvent struct {
 	Message    string         `json:"message,omitempty"`
 	Detail     map[string]any `json:"detail"`
 	TraceID    string         `json:"trace_id,omitempty"`
-	CreatedAt  time.Time      `json:"created_at,omitempty"`
+	CreatedAt  time.Time      `json:"created_at"`
 }
 
 // AppendIngestionEventRequest carries one event append request.

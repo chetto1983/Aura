@@ -359,7 +359,7 @@ func validToolResultGroup(in []llm.Message, assistantIdx int) bool {
 		}
 		want[call.ID] = false
 	}
-	for j := 0; j < len(calls); j++ {
+	for j := range calls {
 		msg := in[assistantIdx+1+j]
 		if msg.Role != llm.RoleTool {
 			return false

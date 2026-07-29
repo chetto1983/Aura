@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
-	"sort"
+	"slices"
 	"sync"
 	"time"
 
@@ -124,7 +124,7 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 	for code := range reasons {
 		codes = append(codes, code)
 	}
-	sort.Slice(codes, func(i, j int) bool { return codes[i] < codes[j] })
+	slices.Sort(codes)
 	ready := len(codes) == 0
 
 	status := http.StatusOK

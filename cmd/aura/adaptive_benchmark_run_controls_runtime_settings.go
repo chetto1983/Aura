@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 
 	"github.com/chetto1983/aura/internal/config"
@@ -400,10 +401,5 @@ func containsAdaptiveBenchmarkControlEvent(
 	events []string,
 	want string,
 ) bool {
-	for _, event := range events {
-		if event == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(events, want)
 }

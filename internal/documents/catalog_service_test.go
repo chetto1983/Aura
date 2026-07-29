@@ -440,16 +440,16 @@ type recordingCatalogDB struct {
 	args    []any
 }
 
-func (db *recordingCatalogDB) Exec(_ context.Context, sql string, args ...interface{}) (pgconn.CommandTag, error) {
+func (db *recordingCatalogDB) Exec(_ context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 	db.execSQL = sql
 	db.args = append([]any(nil), args...)
 	return pgconn.NewCommandTag("UPDATE 1"), nil
 }
 
-func (db *recordingCatalogDB) Query(context.Context, string, ...interface{}) (pgx.Rows, error) {
+func (db *recordingCatalogDB) Query(context.Context, string, ...any) (pgx.Rows, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (db *recordingCatalogDB) QueryRow(context.Context, string, ...interface{}) pgx.Row {
+func (db *recordingCatalogDB) QueryRow(context.Context, string, ...any) pgx.Row {
 	return nil
 }

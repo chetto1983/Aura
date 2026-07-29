@@ -37,7 +37,7 @@ func TestChat_ToolUsingTurn(t *testing.T) {
 	// The raw RFC3339 timestamp the tool produced must not leak into the prose.
 	if strings.Contains(got, "T") && strings.Contains(got, "Z\n") {
 		// crude check: an RFC3339-ish blob would carry a 'T' + 'Z'; assert no bare timestamp line
-		for _, line := range strings.Split(got, "\n") {
+		for line := range strings.SplitSeq(got, "\n") {
 			if strings.HasSuffix(line, "Z") && strings.Count(line, ":") >= 2 && !strings.Contains(line, "·") {
 				t.Fatalf("raw tool timestamp leaked into prose: %q", line)
 			}
@@ -51,7 +51,7 @@ func TestChat_ToolUsingTurn(t *testing.T) {
 // no assistant message is appended.
 func TestChat_BudgetTrip(t *testing.T) {
 	turns := make([]agenttest.FakeTurn, 0, 10)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		turns = append(turns, agenttest.ToolCallTurn(
 			agenttest.MakeToolCall("c", "current_time", `{"i":`+itoa(i)+`}`)))
 	}

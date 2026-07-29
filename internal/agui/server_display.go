@@ -123,11 +123,11 @@ func isAuraContextEnvelope(prefix string) bool {
 }
 
 func consumeAuraContextBlock(value, closeTag string) (string, bool) {
-	end := strings.Index(value, closeTag)
-	if end < 0 {
+	_, after, ok := strings.Cut(value, closeTag)
+	if !ok {
 		return "", false
 	}
-	return value[end+len(closeTag):], true
+	return after, true
 }
 
 // rederiveDisplays walks the persisted history in order and re-derives a display.Payload

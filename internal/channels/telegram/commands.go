@@ -308,10 +308,7 @@ func paginateSearchLines(lines []string) []string {
 	}
 	pages := make([]string, 0, (len(lines)+searchPageSize-1)/searchPageSize)
 	for start := 0; start < len(lines); start += searchPageSize {
-		end := start + searchPageSize
-		if end > len(lines) {
-			end = len(lines)
-		}
+		end := min(start+searchPageSize, len(lines))
 		pages = append(pages, strings.Join(lines[start:end], "\n"))
 	}
 	return pages
@@ -319,10 +316,7 @@ func paginateSearchLines(lines []string) []string {
 
 func searchMarkup(page, total int) *tele.ReplyMarkup {
 	mk := &tele.ReplyMarkup{}
-	prev := page - 1
-	if prev < 0 {
-		prev = 0
-	}
+	prev := max(page-1, 0)
 	next := page + 1
 	if next >= total {
 		next = total - 1
@@ -383,10 +377,7 @@ func searchExcerpt(content, query string) string {
 	if idx < 0 {
 		return clampExcerpt(flat, 0, window*2)
 	}
-	start := idx - window
-	if start < 0 {
-		start = 0
-	}
+	start := max(idx-window, 0)
 	end := idx + len(query) + window
 	return clampExcerpt(flat, start, end)
 }

@@ -302,7 +302,7 @@ func (r *renderer) deleteStreamed() {
 // text. Empty when the content is table-only.
 func tableCaption(content string) string {
 	var b strings.Builder
-	for _, line := range strings.Split(content, "\n") {
+	for line := range strings.SplitSeq(content, "\n") {
 		if strings.Contains(line, "|") {
 			continue // a table row — rendered in the PNG, not the caption
 		}

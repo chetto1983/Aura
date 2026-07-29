@@ -55,7 +55,7 @@ func TestRunnerThreadsReasoningControlThroughRealMultiRoundTurn(t *testing.T) {
 	if _, err := drain(r.Turn(
 		context.Background(),
 		convID,
-		userPtr("read the time"),
+		new("read the time"),
 	)); err != nil {
 		t.Fatalf("Turn: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestRunnerReinjectsReasoningControlForResumeAgent(t *testing.T) {
 	if _, err := drain(r.Turn(
 		context.Background(),
 		convID,
-		userPtr("run approval"),
+		new("run approval"),
 	)); err != nil {
 		t.Fatalf("initial Turn: %v", err)
 	}

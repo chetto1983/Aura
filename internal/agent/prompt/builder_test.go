@@ -70,7 +70,7 @@ func TestBuildPrefixStable(t *testing.T) {
 		if err != nil {
 			t.Fatalf("PrefixHash: %v", err)
 		}
-		for turn := 0; turn < 20; turn++ {
+		for turn := range 20 {
 			hist = append(hist,
 				llm.Message{Role: llm.RoleAssistant, Content: "answer"},
 				llm.Message{Role: llm.RoleUser, Content: "next"},

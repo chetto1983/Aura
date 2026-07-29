@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"maps"
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
@@ -186,9 +187,7 @@ func toolResultMetaMap(meta *tools.ToolResultMeta) map[string]any {
 		return nil
 	}
 	out := make(map[string]any, len(*meta))
-	for k, v := range *meta {
-		out[k] = v
-	}
+	maps.Copy(out, *meta)
 	return out
 }
 

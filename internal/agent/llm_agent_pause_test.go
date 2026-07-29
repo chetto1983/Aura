@@ -3,6 +3,7 @@ package agent_test
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/agent"
@@ -78,9 +79,9 @@ func countRoleTool(history []llm.Message) int {
 // lastAssistantToolCalls returns the tool_calls of the last assistant message
 // that carried any (the rewritten pause message).
 func lastAssistantToolCalls(history []llm.Message) []llm.ToolCall {
-	for i := len(history) - 1; i >= 0; i-- {
-		if history[i].Role == llm.RoleAssistant && len(history[i].ToolCalls) > 0 {
-			return history[i].ToolCalls
+	for _, v := range slices.Backward(history) {
+		if v.Role == llm.RoleAssistant && len(v.ToolCalls) > 0 {
+			return v.ToolCalls
 		}
 	}
 	return nil

@@ -1,6 +1,7 @@
 package retention
 
 import (
+	"maps"
 	"testing"
 	"time"
 )
@@ -73,9 +74,7 @@ func TestPolicyValidationRejectsUnsafeValues(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			policy := base
 			policy.TTL = map[Class]time.Duration{}
-			for class, ttl := range base.TTL {
-				policy.TTL[class] = ttl
-			}
+			maps.Copy(policy.TTL, base.TTL)
 			tc.mutate(&policy)
 			if err := policy.Validate(); err == nil {
 				t.Fatal("unsafe policy accepted")

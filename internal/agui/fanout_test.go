@@ -29,7 +29,7 @@ func eventSource(threadID, runID string, n int) iter.Seq2[events.Event, error] {
 		if !yield(events.NewTextMessageStartEvent(msgID, events.WithRole("assistant")), nil) {
 			return
 		}
-		for i := 0; i < n; i++ {
+		for range n {
 			if !yield(events.NewTextMessageContentEvent(msgID, "x"), nil) {
 				return
 			}
@@ -50,7 +50,7 @@ func boundaryOverflowSource(afterEndYield chan<- struct{}, continueAfterEnd <-ch
 		if !yield(events.NewTextMessageStartEvent(msgID, events.WithRole("assistant")), nil) {
 			return
 		}
-		for i := 0; i < fanoutBuffer; i++ {
+		for range fanoutBuffer {
 			if !yield(events.NewTextMessageContentEvent(msgID, "x"), nil) {
 				return
 			}
@@ -106,8 +106,7 @@ func TestFanoutSourceErrorYieldsRunError(t *testing.T) {
 	f := NewFanout(sourceError(err))
 	sub := f.Subscribe()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	f.Run(ctx)
 
 	got := drain(sub)
@@ -132,8 +131,7 @@ func TestFanoutSourceErrorRedactedInEventAndTrace(t *testing.T) {
 	f := NewFanout(sourceError(err))
 	sub := f.Subscribe()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	f.Run(ctx)
 
 	got := drain(sub)
@@ -170,8 +168,7 @@ func TestFanoutDistributesToAllSubscribers(t *testing.T) {
 	subB := f.Subscribe()
 	subC := f.Subscribe()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	f.Run(ctx)
 
 	want := n + 4 // RUN_STARTED + MSG_START + n CONTENT + MSG_END + RUN_FINISHED
@@ -200,8 +197,7 @@ func TestFanoutSlowSubscriberDropped(t *testing.T) {
 	f := NewFanout(boundaryOverflowSource(afterEndYield, continueAfterEnd))
 	slow := f.Subscribe()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	f.Run(ctx)
 
 	got := make(chan []events.Event, 1)
@@ -358,8 +354,7 @@ func TestFanoutSourceEndClosesAll(t *testing.T) {
 	a := f.Subscribe()
 	b := f.Subscribe()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	f.Run(ctx)
 
 	// Both channels must close on source end; drain returns and ranges terminate.
@@ -399,8 +394,7 @@ func TestClientSubscriberRoundTrip(t *testing.T) {
 		finalChunk("Ciao", "stop"),
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	// drainAlias's <-chan Event parameter pins the channel element type to the agui.Event
 	// alias: this call compiles only because Subscribe returns <-chan Event, never

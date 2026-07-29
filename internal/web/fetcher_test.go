@@ -244,12 +244,10 @@ func TestFetch_PerHostConcurrencyCap(t *testing.T) {
 	c := fetchClient(t, map[string][]netip.Addr{"page.test": {publicIP}})
 
 	var wg sync.WaitGroup
-	for i := 0; i < perHostLimit+3; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range perHostLimit + 3 {
+		wg.Go(func() {
 			_, _ = c.Fetch(context.Background(), "c", "http://page.test:"+port+"/p")
-		}()
+		})
 	}
 	wg.Wait()
 	if maxObserved.Load() > int32(perHostLimit) {

@@ -40,7 +40,6 @@ func TestParseReasoningRouterTier_CleanJSON(t *testing.T) {
 		{"uppercase value normalized", `{"tier":"HIGH"}`, ReasoningTierHigh},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			if got := ParseReasoningRouterTier(tc.raw); got != tc.want {
@@ -66,7 +65,6 @@ func TestParseReasoningRouterTier_FencedAndPrefixed(t *testing.T) {
 		{"prose both sides", "result => {\"tier\":\"high\"} done", ReasoningTierHigh},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			if got := ParseReasoningRouterTier(tc.raw); got != tc.want {
@@ -95,7 +93,6 @@ func TestParseReasoningRouterTier_BareWordFallback(t *testing.T) {
 		{"json-language-prefixed bare word", "json high", ReasoningTierHigh},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			if got := ParseReasoningRouterTier(tc.raw); got != tc.want {
@@ -131,7 +128,6 @@ func TestParseReasoningRouterTier_Unparseable(t *testing.T) {
 		{"malformed json bareword value", `{"tier": low,}`},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := ParseReasoningRouterTier(tc.raw)
@@ -163,7 +159,6 @@ func TestParseReasoningRouterTier_SynonymsNormalize(t *testing.T) {
 		{"deep", ReasoningTierHigh},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.raw, func(t *testing.T) {
 			t.Parallel()
 			if got := ParseReasoningRouterTier(tc.raw); got != tc.want {

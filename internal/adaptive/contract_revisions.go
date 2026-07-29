@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"strconv"
 )
 
@@ -142,9 +143,7 @@ func (revisions *RevisionSet) UnmarshalJSON(payload []byte) error {
 
 func (revisions RevisionSet) clone() RevisionSet {
 	values := make(map[RevisionKind]Revision, len(revisions.values))
-	for kind, revision := range revisions.values {
-		values[kind] = revision
-	}
+	maps.Copy(values, revisions.values)
 	return RevisionSet{values: values}
 }
 

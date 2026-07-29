@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -250,11 +251,9 @@ func ensureProfileMembership(doc *mcp.ManagedConfig, profile, server string) {
 		doc.Profiles = map[string]mcp.ManagedProfile{}
 	}
 	p := doc.Profiles[profile]
-	for _, existing := range p.Servers {
-		if existing == server {
-			doc.Profiles[profile] = p
-			return
-		}
+	if slices.Contains(p.Servers, server) {
+		doc.Profiles[profile] = p
+		return
 	}
 	p.Servers = append(p.Servers, server)
 	sort.Strings(p.Servers)

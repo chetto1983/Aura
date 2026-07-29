@@ -20,8 +20,7 @@ import (
 func TestHistoryRebuild_StructurallyReasoningFree(t *testing.T) {
 	for _, v := range []any{llm.Message{}, Turn{}} {
 		rt := reflect.TypeOf(v)
-		for i := 0; i < rt.NumField(); i++ {
-			f := rt.Field(i)
+		for f := range rt.Fields() {
 			if strings.Contains(strings.ToLower(f.Name), "reasoning") ||
 				strings.Contains(strings.ToLower(f.Tag.Get("json")), "reasoning") {
 				t.Fatalf("%s.%s: a reasoning-shaped field on the history path breaks amendment #91 point 2 (persisted CoT must never re-enter the LLM context)", rt.Name(), f.Name)

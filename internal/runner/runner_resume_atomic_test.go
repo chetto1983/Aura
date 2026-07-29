@@ -24,7 +24,7 @@ func TestSubmitAnswer_DuplicateResumeInjectsExactlyOneAnswer(t *testing.T) {
 	ctx := context.Background()
 	mustCreate(t, r, convID)
 
-	if _, err := drain(r.Turn(ctx, convID, userPtr("Where am I?"))); err != nil {
+	if _, err := drain(r.Turn(ctx, convID, new("Where am I?"))); err != nil {
 		t.Fatalf("turn 1: %v", err)
 	}
 	pending, err := pause.ListPending(ctx, convID)

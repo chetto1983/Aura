@@ -3,6 +3,7 @@ package agui
 import (
 	"context"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -195,11 +196,8 @@ func (s *Server) handleMCPList(w http.ResponseWriter, _ *http.Request) {
 func mcpProfiles(doc mcp.ManagedConfig, server string) []string {
 	profiles := make([]string, 0, len(doc.Profiles))
 	for profile, cfg := range doc.Profiles {
-		for _, name := range cfg.Servers {
-			if name == server {
-				profiles = append(profiles, profile)
-				break
-			}
+		if slices.Contains(cfg.Servers, server) {
+			profiles = append(profiles, profile)
 		}
 	}
 	sort.Strings(profiles)
@@ -214,8 +212,8 @@ func envChips(env []string) []mcpEnvChip {
 	chips := make([]mcpEnvChip, 0, len(env))
 	for _, entry := range env {
 		key := entry
-		if i := strings.IndexByte(entry, '='); i >= 0 {
-			key = entry[:i]
+		if before, _, ok := strings.Cut(entry, "="); ok {
+			key = before
 		}
 		if key == "" {
 			continue

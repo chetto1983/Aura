@@ -69,7 +69,6 @@ func TestDecodeDeliveryRejectsWrongCapabilitiesAndAssignment(t *testing.T) {
 		{name: "changed assignment", assignment: changedAssignment, results: results, revisions: revisions},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if _, err := DecodeDelivery(
@@ -127,7 +126,6 @@ func TestDecodeDeliveryRejectsMalformedOrUnregisteredWireValues(t *testing.T) {
 		{name: "trailing JSON", payload: valid + ` {}`},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if _, err := DecodeDelivery(

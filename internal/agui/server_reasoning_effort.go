@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"slices"
 
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/runner"
@@ -70,10 +71,5 @@ func (s *Server) applyReasoningEffort(ctx context.Context, w http.ResponseWriter
 // containsEffort reports whether the advertised set carries effort. It backs the Stage-2
 // capability check; the set is small (≤6 levels) so a linear scan is right.
 func containsEffort(set []llm.ReasoningEffort, effort llm.ReasoningEffort) bool {
-	for _, e := range set {
-		if e == effort {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(set, effort)
 }

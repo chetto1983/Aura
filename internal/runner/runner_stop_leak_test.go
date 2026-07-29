@@ -121,7 +121,7 @@ func TestStop_HungWorkerDoesNotLeakWaiterGoroutines(t *testing.T) {
 	// stays non-nil so the re-arm reuses one waiter → no fresh waiter per call. Pre-fix this
 	// grew by ~extraStops.
 	const extraStops = 20
-	for i := 0; i < extraStops; i++ {
+	for range extraStops {
 		_ = r.Stop(ctx, convID)
 	}
 	runtime.Gosched()

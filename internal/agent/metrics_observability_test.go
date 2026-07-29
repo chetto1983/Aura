@@ -154,7 +154,7 @@ func TestTurnOutcomeCounter_RunRecordsExactlyOnce(t *testing.T) {
 		UserTurns:   []llm.Message{{Role: llm.RoleUser, Content: "ciao"}},
 		HookManager: NewHookManager(),
 	})
-	b, err := NewBudget(BudgetOptions{MaxSteps: ptrInt(3)})
+	b, err := NewBudget(BudgetOptions{MaxSteps: new(3)})
 	if err != nil {
 		t.Fatalf("NewBudget: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestToolErrorMetric_UnknownTool(t *testing.T) {
 		SessionID:  "metrics-tool",
 		UserTurns:  []llm.Message{{Role: llm.RoleUser, Content: "ciao"}},
 	})
-	b, err := NewBudget(BudgetOptions{MaxSteps: ptrInt(3)})
+	b, err := NewBudget(BudgetOptions{MaxSteps: new(3)})
 	if err != nil {
 		t.Fatalf("NewBudget: %v", err)
 	}
@@ -302,5 +302,3 @@ func hasOTelLabel(labels []attribute.KeyValue, key, value string) bool {
 	}
 	return false
 }
-
-func ptrInt(v int) *int { return &v }

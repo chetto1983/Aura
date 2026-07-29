@@ -14,6 +14,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -262,8 +263,8 @@ func extractReason(tail string) string {
 // own injected user-role nudges (recovery + completion-veto) so the critic grades
 // against the real request even after a prior nudge.
 func lastUserRequest(history []llm.Message) string {
-	for i := len(history) - 1; i >= 0; i-- {
-		m := history[i]
+	for _, v := range slices.Backward(history) {
+		m := v
 		if m.Role != llm.RoleUser || strings.TrimSpace(m.Content) == "" {
 			continue
 		}

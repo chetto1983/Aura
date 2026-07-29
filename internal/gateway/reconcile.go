@@ -118,9 +118,7 @@ func (r *Reconciler) Start(ctx context.Context) {
 	if r == nil || r.interval <= 0 || r.store == nil {
 		return
 	}
-	r.wg.Add(1)
-	go func() {
-		defer r.wg.Done()
+	r.wg.Go(func() {
 		// Boot one-shot: a daemon that just came up after a crash reconciles the
 		// orphans the crash left before the first tick period elapses (mirrors the
 		// sweeper's boot ScanOrphans one-shot).
@@ -137,7 +135,7 @@ func (r *Reconciler) Start(ctx context.Context) {
 				r.reconcileOrphans(ctx)
 			}
 		}
-	}()
+	})
 }
 
 // Stop signals the worker to exit and joins it under a bounded wait so a hung tick

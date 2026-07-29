@@ -93,14 +93,18 @@ type Asset struct {
 	Metadata          map[string]any `json:"metadata"`
 	ErrorCode         string         `json:"error_code"`
 	ErrorMessage      string         `json:"error_message"`
-	CreatedAt         time.Time      `json:"created_at,omitempty"`
-	UploadedAt        time.Time      `json:"uploaded_at,omitempty"`
-	AcceptedAt        time.Time      `json:"accepted_at,omitempty"`
-	ProcessedAt       time.Time      `json:"processed_at,omitempty"`
-	SearchableAt      time.Time      `json:"searchable_at,omitempty"`
-	CompletedAt       time.Time      `json:"completed_at,omitempty"`
-	DeletedAt         time.Time      `json:"deleted_at,omitempty"`
-	UpdatedAt         time.Time      `json:"updated_at,omitempty"`
+	// No omitempty on the timestamps: encoding/json ignores it for struct values, so
+	// it never suppressed anything and a zero time has always been serialised as
+	// "0001-01-01T00:00:00Z". Dropping it is byte-identical; omitzero would instead
+	// change the response shape for every not-yet-reached lifecycle stage.
+	CreatedAt    time.Time `json:"created_at"`
+	UploadedAt   time.Time `json:"uploaded_at"`
+	AcceptedAt   time.Time `json:"accepted_at"`
+	ProcessedAt  time.Time `json:"processed_at"`
+	SearchableAt time.Time `json:"searchable_at"`
+	CompletedAt  time.Time `json:"completed_at"`
+	DeletedAt    time.Time `json:"deleted_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // CreateRequest carries the fields needed to create a presigned asset record.

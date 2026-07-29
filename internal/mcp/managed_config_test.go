@@ -33,7 +33,7 @@ func TestManagedConfigRoundTripFiltersDisabled(t *testing.T) {
 		"calendar": {
 			Command: "dotnet",
 			Args:    []string{"Calendar.Mcp.dll"},
-			Enabled: boolPtr(false),
+			Enabled: new(false),
 		},
 	}}
 
@@ -268,7 +268,7 @@ func TestProfileServerNamesFallsBackToEnabledServers(t *testing.T) {
 		ActiveProfile: "undefined-profile",
 		MCPServers: map[string]ManagedServer{
 			"a": {Command: "a"},
-			"b": {Command: "b", Enabled: boolPtr(false)},
+			"b": {Command: "b", Enabled: new(false)},
 			"c": {Command: "c"},
 		},
 	}
@@ -502,5 +502,3 @@ func TestLoadManagedConfigNormalizesNilMaps(t *testing.T) {
 		t.Fatalf("Version = %d, want %d", got.Version, ManagedConfigVersion)
 	}
 }
-
-func boolPtr(v bool) *bool { return &v }

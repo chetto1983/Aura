@@ -93,7 +93,7 @@ func TestRun_RecoveryTurnSeversExpiredWallclockDeadline(t *testing.T) {
 		}
 		return base.Add(2 * time.Hour) // every ConsumeStep check reads past the deadline
 	}
-	b, err := agent.NewBudget(agent.BudgetOptions{MaxWallclockSec: ptr(1), Now: clock})
+	b, err := agent.NewBudget(agent.BudgetOptions{MaxWallclockSec: new(1), Now: clock})
 	if err != nil {
 		t.Fatalf("NewBudget: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestRun_NormalTurnHonorsUnexpiredCtxDeadline(t *testing.T) {
 	boundedCtx, cancel := context.WithDeadline(context.Background(), boundedDeadline)
 	defer cancel()
 
-	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(50)})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(50)})
 	ic.Ctx = boundedCtx
 
 	evs, rerr := collect(a.Run(ic))

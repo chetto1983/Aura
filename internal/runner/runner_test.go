@@ -122,8 +122,6 @@ func drain(seq func(yield func(*agent.Event, error) bool)) ([]*agent.Event, erro
 	return evs, firstErr
 }
 
-func userPtr(s string) *string { return &s }
-
 // askUserCall builds a finalized ask_user tool call.
 func askUserCall(id, question, kind string) llm.ToolCall {
 	return agenttest.MakeToolCall(id, "ask_user", `{"question":`+quote(question)+`,"kind":`+quote(kind)+`}`)
@@ -156,7 +154,7 @@ func TestTurn_SingleAskUser_PausesAndWritesOneRow(t *testing.T) {
 	ctx := context.Background()
 	mustCreate(t, r, convID)
 
-	evs, err := drain(r.Turn(ctx, convID, userPtr("hi")))
+	evs, err := drain(r.Turn(ctx, convID, new("hi")))
 	if err != nil {
 		t.Fatalf("turn error: %v", err)
 	}
@@ -184,7 +182,7 @@ func TestTurnScopesToolsToConversationIdentity(t *testing.T) {
 	ctx := context.Background()
 	mustCreate(t, r, convID)
 
-	if _, err := drain(r.Turn(ctx, convID, userPtr("hi"))); err != nil {
+	if _, err := drain(r.Turn(ctx, convID, new("hi"))); err != nil {
 		t.Fatalf("turn: %v", err)
 	}
 	c, err := conv.Get(ctx, convID)
@@ -250,7 +248,7 @@ func TestTurnRejectsMismatchedContextIdentity(t *testing.T) {
 		context.Background(),
 		"00000000-0000-0000-0000-000000000002",
 	)
-	_, err := drain(r.Turn(ctx, convID, userPtr("hi")))
+	_, err := drain(r.Turn(ctx, convID, new("hi")))
 	if err == nil {
 		t.Fatal("turn with mismatched authenticated identity succeeded")
 	}
@@ -276,7 +274,7 @@ func TestSubmitAnswer_ReturnsRemaining(t *testing.T) {
 	ctx := context.Background()
 	mustCreate(t, r, convID)
 
-	if _, err := drain(r.Turn(ctx, convID, userPtr("go"))); err != nil {
+	if _, err := drain(r.Turn(ctx, convID, new("go"))); err != nil {
 		t.Fatalf("turn error: %v", err)
 	}
 	if pause.inserts != 2 {
@@ -323,7 +321,7 @@ func TestResume_NoSilentReRun_SC4(t *testing.T) {
 		t.Fatalf("mark titled: %v", err)
 	}
 
-	if _, err := drain(r.Turn(ctx, convID, userPtr("Where am I?"))); err != nil {
+	if _, err := drain(r.Turn(ctx, convID, new("Where am I?"))); err != nil {
 		t.Fatalf("turn 1: %v", err)
 	}
 	callsAfterTurn1 := client.CallCount()
@@ -391,7 +389,7 @@ func TestTurnPersistsAssistantToolCallsBeforeMutatingToolExecutes(t *testing.T) 
 	ctx := context.Background()
 	mustCreate(t, r, convID)
 
-	if _, err := drain(r.Turn(ctx, convID, userPtr("probe"))); err != nil {
+	if _, err := drain(r.Turn(ctx, convID, new("probe"))); err != nil {
 		t.Fatalf("turn: %v", err)
 	}
 	hist, err := conv.LoadHistory(ctx, convID)
@@ -420,7 +418,7 @@ func TestStop_AutoResolvesAndJoinsWaitGroup(t *testing.T) {
 	ctx := context.Background()
 	mustCreate(t, r, convID)
 
-	if _, err := drain(r.Turn(ctx, convID, userPtr("hi"))); err != nil {
+	if _, err := drain(r.Turn(ctx, convID, new("hi"))); err != nil {
 		t.Fatalf("turn: %v", err)
 	}
 	if pause.unresolvedCount(convID) != 1 {
@@ -441,7 +439,7 @@ func TestTurn_FastGreetingSkipsLLM(t *testing.T) {
 	ctx := context.Background()
 	mustCreate(t, r, convID)
 
-	evs, err := drain(r.Turn(ctx, convID, userPtr("ciao")))
+	evs, err := drain(r.Turn(ctx, convID, new("ciao")))
 	if err != nil {
 		t.Fatalf("turn: %v", err)
 	}
@@ -492,7 +490,7 @@ func TestAutoTitle_FiresAfterSeq3(t *testing.T) {
 	// Pre-seed a system turn so the chat turn brings the count to >=3.
 	seedSystemTurn(t, r, convID)
 
-	if _, err := drain(r.Turn(ctx, convID, userPtr("What's the weather in Rome?"))); err != nil {
+	if _, err := drain(r.Turn(ctx, convID, new("What's the weather in Rome?"))); err != nil {
 		t.Fatalf("turn: %v", err)
 	}
 	// Join the auto-title worker.
@@ -522,7 +520,7 @@ func TestAutoTitle_ErrorLeavesTitleNull(t *testing.T) {
 	mustCreate(t, r, convID)
 	seedSystemTurn(t, r, convID)
 
-	if _, err := drain(r.Turn(ctx, convID, userPtr("hi"))); err != nil {
+	if _, err := drain(r.Turn(ctx, convID, new("hi"))); err != nil {
 		t.Fatalf("turn must not fail on a title error: %v", err)
 	}
 	if err := r.Stop(ctx, convID); err != nil {

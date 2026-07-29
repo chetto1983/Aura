@@ -55,9 +55,9 @@ type Document struct {
 	Metadata        map[string]any `json:"metadata"`
 	ActiveVersionID string         `json:"active_version_id,omitempty"`
 	Status          DocumentStatus `json:"status"`
-	CreatedAt       time.Time      `json:"created_at,omitempty"`
-	UpdatedAt       time.Time      `json:"updated_at,omitempty"`
-	DeletedAt       time.Time      `json:"deleted_at,omitempty"`
+	CreatedAt       time.Time      `json:"created_at"`
+	UpdatedAt       time.Time      `json:"updated_at"`
+	DeletedAt       time.Time      `json:"deleted_at"`
 	// ActiveSizeBytes and ActiveContentType denormalize the active version's
 	// storage facts onto list rows so a document catalog entry is self-sufficient
 	// (size + kind) without an N+1 detail fetch. They are populated only by
@@ -83,8 +83,8 @@ type DocumentVersion struct {
 	StorageObjectID    string    `json:"storage_object_id"`
 	ChunkingConfigHash string    `json:"chunking_config_hash,omitempty"`
 	PipelineConfigHash string    `json:"pipeline_config_hash,omitempty"`
-	CreatedAt          time.Time `json:"created_at,omitempty"`
-	UpdatedAt          time.Time `json:"updated_at,omitempty"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
 }
 
 // DocumentVersionRecord is returned after recording an asset as a logical document version.

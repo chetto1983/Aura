@@ -9,10 +9,10 @@ import (
 
 func TestRevisionValuesRequireTypedConstructorsAndFrozenCatalog(t *testing.T) {
 	t.Parallel()
-	revisionType := reflect.TypeOf(Revision{})
-	for i := range revisionType.NumField() {
-		if revisionType.Field(i).IsExported() {
-			t.Fatalf("Revision field %q is exported", revisionType.Field(i).Name)
+	revisionType := reflect.TypeFor[Revision]()
+	for field := range revisionType.Fields() {
+		if field.IsExported() {
+			t.Fatalf("Revision field %q is exported", field.Name)
 		}
 	}
 	entries := validRevisionCatalogEntries()
@@ -95,7 +95,6 @@ func TestFeatureSchemaDistinguishesContinuousAndIntegerValues(t *testing.T) {
 		{name: "unknown key", key: FeatureKey("private_score"), value: 0.5},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			invalid := validAssignment()

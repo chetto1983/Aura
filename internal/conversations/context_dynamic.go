@@ -3,6 +3,7 @@ package conversations
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/llm"
@@ -39,8 +40,8 @@ func injectDynamicTail(messages []llm.Message, tail *DynamicTail) []llm.Message 
 	}
 	index := len(messages)
 	if tail.BeforeCurrentUser {
-		for candidate := len(messages) - 1; candidate >= 0; candidate-- {
-			if messages[candidate].Role == llm.RoleUser {
+		for candidate, v := range slices.Backward(messages) {
+			if v.Role == llm.RoleUser {
 				index = candidate
 				break
 			}

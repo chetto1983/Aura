@@ -73,7 +73,6 @@ func TestAssignmentAcceptsEveryServingModeContract(t *testing.T) {
 		}},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if _, err := NewAssignmentEvent(tt.build()); err != nil {
@@ -86,9 +85,7 @@ func TestAssignmentAcceptsEveryServingModeContract(t *testing.T) {
 func TestAssignmentAcceptsCanaryAndActiveFailClosedReasons(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []PolicyMode{PolicyCanary, PolicyActive} {
-		mode := mode
 		for _, reason := range failClosedSelectionReasons() {
-			reason := reason
 			t.Run(string(mode)+"_"+string(reason), func(t *testing.T) {
 				t.Parallel()
 				assignment := validAssignment()
@@ -108,7 +105,6 @@ func TestAssignmentAcceptsCanaryAndActiveFailClosedReasons(t *testing.T) {
 func TestAssignmentAcceptsShadowFailClosedReasons(t *testing.T) {
 	t.Parallel()
 	for _, reason := range failClosedSelectionReasons() {
-		reason := reason
 		t.Run(string(reason), func(t *testing.T) {
 			t.Parallel()
 			assignment := validAssignment()
@@ -213,7 +209,6 @@ func TestAssignmentRejectsInvalidModeClaims(t *testing.T) {
 		}},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			assignment := validAssignment()
@@ -248,9 +243,7 @@ func TestAssignmentRejectsPartialRandomClaimsOutsideFocalCanary(t *testing.T) {
 		}},
 	}
 	for _, mode := range modes {
-		mode := mode
 		for _, claim := range claims {
-			claim := claim
 			t.Run(string(mode.mode)+"_"+claim.name, func(t *testing.T) {
 				t.Parallel()
 				assignment := validAssignment()
@@ -322,7 +315,6 @@ func TestDeliveryRejectsIncoherentMemoryMetadata(t *testing.T) {
 		}},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			delivery := coherentMemoryDelivery(assignment.AssignmentID)
@@ -372,7 +364,6 @@ func TestDeliveryRejectsUnknownMemoryKindAndLimit(t *testing.T) {
 		}},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			delivery := validDelivery(assignment.AssignmentID)
@@ -472,7 +463,6 @@ func TestDeliveryRejectsNoneActionResultsOrExposure(t *testing.T) {
 		}},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			delivery := validDelivery(assignment.AssignmentID)

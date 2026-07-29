@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/agent"
@@ -63,9 +64,9 @@ func echoCall(id string) llm.ToolCall { return agenttest.MakeToolCall(id, "echo"
 
 // lastFinal returns the terminal Event (the only one carrying a FinishReason).
 func lastFinal(evs []*agent.Event) *agent.Event {
-	for i := len(evs) - 1; i >= 0; i-- {
-		if evs[i].LLMResponse != nil && evs[i].LLMResponse.FinishReason != "" {
-			return evs[i]
+	for _, v := range slices.Backward(evs) {
+		if v.LLMResponse != nil && v.LLMResponse.FinishReason != "" {
+			return v
 		}
 	}
 	return nil

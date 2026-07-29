@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"maps"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -21,7 +22,6 @@ func TestAdaptiveBenchmarkControlDriverExecutesExactMatrix(t *testing.T) {
 	var callsMu sync.Mutex
 	executors := make(map[string]adaptiveBenchmarkControlExecutor)
 	for _, controlID := range auraeval.AdaptiveBenchmarkControlMatrix() {
-		controlID := controlID
 		executors[controlID] = func(
 			_ context.Context,
 			control auraeval.AdaptiveBenchmarkControlCase,
@@ -254,8 +254,6 @@ func cloneAdaptiveBenchmarkControlExecutors(
 	source map[string]adaptiveBenchmarkControlExecutor,
 ) map[string]adaptiveBenchmarkControlExecutor {
 	cloned := make(map[string]adaptiveBenchmarkControlExecutor, len(source))
-	for controlID, executor := range source {
-		cloned[controlID] = executor
-	}
+	maps.Copy(cloned, source)
 	return cloned
 }

@@ -87,8 +87,7 @@ func newTestPair(t *testing.T) (*Client, func()) {
 	srvStdoutR, srvStdoutW := io.Pipe() // server writes responses -> client reads
 	fs := &fakeServer{in: cliStdinR, out: srvStdoutW}
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() { defer wg.Done(); fs.run() }()
+	wg.Go(func() { ; fs.run() })
 	c := newClientForTest("fake", cliStdinW, srvStdoutR)
 	cleanup := func() {
 		_ = cliStdinW.Close() // unblocks the server decode loop

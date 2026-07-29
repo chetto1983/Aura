@@ -7,6 +7,7 @@ import (
 	"expvar"
 	"iter"
 	"log/slog"
+	"maps"
 	"net/http"
 	"time"
 
@@ -432,9 +433,7 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	status := http.StatusOK
 	body := map[string]any{"ok": true}
 	if s.cfg.HealthDetails != nil {
-		for k, v := range s.cfg.HealthDetails() {
-			body[k] = v
-		}
+		maps.Copy(body, s.cfg.HealthDetails())
 	}
 	if s.cfg.HealthCheck != nil {
 		if err := s.cfg.HealthCheck(r.Context()); err != nil {

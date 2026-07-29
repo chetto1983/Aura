@@ -15,8 +15,8 @@ var tokenPattern = regexp.MustCompile(`(?i)(bearer\s+|(?:api[_-]?key|token|passw
 func String(message string) string {
 	out := secretPattern.ReplaceAllStringFunc(message, func(match string) string {
 		scheme := match
-		if idx := strings.Index(match, "://"); idx >= 0 {
-			scheme = match[:idx]
+		if before, _, ok := strings.Cut(match, "://"); ok {
+			scheme = before
 		}
 		return scheme + "://[redacted]"
 	})

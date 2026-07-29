@@ -142,9 +142,9 @@ func TestParallelAgent_DepthChainBudgetShared_NotFresh(t *testing.T) {
 	const maxSteps = 25
 	var leaves []*agenttest.CountingAgent
 	var mids []agent.Agent
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		var trio []agent.Agent
-		for j := 0; j < 3; j++ {
+		for range 3 {
 			c := &agenttest.CountingAgent{AgentName: "leaf"}
 			leaves = append(leaves, c)
 			trio = append(trio, c)
@@ -182,7 +182,7 @@ func TestParallelAgent_SubAgentExposedAsTool_SharesCounter(t *testing.T) {
 	const maxSteps = 25
 	var counter atomic.Int32
 	var tools []agent.Agent
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		tools = append(tools, &sharedCounterTool{
 			name:    "tool",
 			inner:   &agenttest.CountingAgent{AgentName: "wrapped"},
@@ -367,7 +367,7 @@ func TestParallelAgent_TOCTOUSafe_UnderConcurrentFan(t *testing.T) {
 	const fan = 16
 	var counter atomic.Int32
 	var subs []agent.Agent
-	for i := 0; i < fan; i++ {
+	for range fan {
 		subs = append(subs, &boundedCounter{name: "c", max: 1, counter: &counter})
 	}
 	root := workflow.NewParallel("root", subs...)

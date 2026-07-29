@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
@@ -33,11 +34,11 @@ func (decayTool) Execute(context.Context, json.RawMessage) (tools.ToolResult, er
 // searchResult renders a tool_search result the way ToolSearch.Execute does — a
 // "## <name>" header with a non-empty Parameters body — so loadedSchemas parses it.
 func searchResult(names ...string) string {
-	out := ""
+	var out strings.Builder
 	for _, n := range names {
-		out += "## " + n + "\nParameters:\n  {\"type\":\"object\"}\n\n"
+		out.WriteString("## " + n + "\nParameters:\n  {\"type\":\"object\"}\n\n")
 	}
-	return out
+	return out.String()
 }
 
 func activatedNames(t *testing.T, hist []llm.Message, reg *tools.Registry) []string {

@@ -4,6 +4,7 @@ package web
 
 import (
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -167,12 +168,7 @@ func TestExtractMarkdown_LowContent(t *testing.T) {
 }
 
 func containsStr(ss []string, want string) bool {
-	for _, s := range ss {
-		if s == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(ss, want)
 }
 
 func countStr(ss []string, want string) int {

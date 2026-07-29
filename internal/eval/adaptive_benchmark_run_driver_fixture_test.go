@@ -79,7 +79,7 @@ func recordedAdaptiveBenchmarkEvaluation(
 		Quality: &AdaptiveBenchmarkObservation{
 			EvaluatorID:       AdaptiveBenchmarkEvaluatorID,
 			EvaluatorRevision: AdaptiveBenchmarkEvaluatorRevision,
-			Value:             benchmarkFloat(value),
+			Value:             new(value),
 			Eligible:          true,
 			ReasonCodes:       slices.Clone(record.Evaluation.ReasonCodes),
 		},

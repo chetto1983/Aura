@@ -140,7 +140,6 @@ func TestAdaptiveBenchmarkRestrictedRegistryRejectsMissingOrSpoofedTools(
 		},
 	}
 	for _, testCase := range tests {
-		testCase := testCase
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 			registry := tools.NewRegistry()

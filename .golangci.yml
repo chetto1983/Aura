@@ -22,6 +22,11 @@ linters:
     - gosec
     - revive
     - dupl
+    # modernize: the Go 1.21+ simplifications (min/max, slices/maps helpers,
+    # range-over-int, strings.Cut, any). The IDE surfaced these all along while CI
+    # stayed silent, so the two disagreed about what "clean" means — enabling it
+    # here makes the gate the single answer.
+    - modernize
 
   settings:
     gosec:

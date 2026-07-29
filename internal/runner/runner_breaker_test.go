@@ -25,7 +25,7 @@ func TestRunnerInjectsSharedBreakerIntoEveryTurn(t *testing.T) {
 	convID := newConvID(t)
 	mustCreate(t, r, convID)
 
-	_, _ = drain(r.Turn(context.Background(), convID, userPtr("hi")))
+	_, _ = drain(r.Turn(context.Background(), convID, new("hi")))
 	if client.CallCount() != 0 {
 		t.Fatalf("a turn under the Runner's OPEN shared breaker must not call the provider, calls=%d", client.CallCount())
 	}

@@ -67,10 +67,7 @@ const mdFenceMinLen = 3
 // defect worth guarding against structurally rather than hoping no turn
 // ever contains a fence.
 func fenceForText(text string) string {
-	n := longestBacktickRun(text) + 1
-	if n < mdFenceMinLen {
-		n = mdFenceMinLen
-	}
+	n := max(longestBacktickRun(text)+1, mdFenceMinLen)
 	return strings.Repeat("`", n)
 }
 

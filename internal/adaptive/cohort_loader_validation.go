@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"github.com/google/uuid"
 )
@@ -37,13 +38,7 @@ func validCohortDeliveryWire(assignment Assignment, wire deliveryWire) bool {
 		return false
 	}
 	if wire.ActualActionID != ActionNoneID {
-		eligible := false
-		for _, actionID := range assignment.EligibleActions {
-			if actionID == wire.ActualActionID {
-				eligible = true
-				break
-			}
-		}
+		eligible := slices.Contains(assignment.EligibleActions, wire.ActualActionID)
 		if !eligible {
 			return false
 		}

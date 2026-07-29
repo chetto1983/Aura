@@ -125,14 +125,14 @@ func mdRoleFromLabel(label string) string {
 func parseMarkdownTurns(t *testing.T, md string) []parsedMDTurn {
 	t.Helper()
 	var turns []parsedMDTurn
-	for _, line := range strings.Split(md, "\n") {
+	for line := range strings.SplitSeq(md, "\n") {
 		switch {
 		case strings.HasPrefix(line, "## ") && line != "## Artifacts":
-			idx := strings.Index(line, ". ")
-			if idx == -1 {
+			_, after, ok := strings.Cut(line, ". ")
+			if !ok {
 				t.Fatalf("turn heading missing '. ' separator: %q", line)
 			}
-			turns = append(turns, parsedMDTurn{role: mdRoleFromLabel(line[idx+2:])})
+			turns = append(turns, parsedMDTurn{role: mdRoleFromLabel(after)})
 		case strings.HasPrefix(line, "_Tools used: ") && strings.HasSuffix(line, "_"):
 			if len(turns) == 0 {
 				t.Fatalf("provenance line before any turn heading: %q", line)
@@ -264,10 +264,7 @@ func TestSnapshotMarkdownFenceInjection(t *testing.T) {
 				t.Fatalf("markdown dropped or mangled the turn text entirely: %q not found in %q", c.text, md)
 			}
 			longestInText := longestBacktickRun(c.text)
-			wantFenceLen := longestInText + 1
-			if wantFenceLen < 3 {
-				wantFenceLen = 3
-			}
+			wantFenceLen := max(longestInText+1, 3)
 			wantFence := strings.Repeat("`", wantFenceLen)
 			if !strings.Contains(md, wantFence) {
 				t.Fatalf("markdown fence is not >= %d backticks (longest run in content is %d): %q", wantFenceLen, longestInText, md)

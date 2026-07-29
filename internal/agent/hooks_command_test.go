@@ -226,7 +226,7 @@ func TestCommandHookHelperProcess(t *testing.T) {
 	case "oversized_model_rewrite":
 		req := *event.Request
 		req.Messages = make([]llm.Message, 0, 5000)
-		for i := 0; i < 5000; i++ {
+		for range 5000 {
 			req.Messages = append(req.Messages, llm.Message{Role: llm.RoleUser, Content: "x"})
 		}
 		writeHookDecision(agent.CommandHookDecision{Decision: "rewrite", Request: &req})

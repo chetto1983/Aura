@@ -17,7 +17,7 @@ func TestCancel_InjectError_CR01(t *testing.T) {
 	convID := newConvID(t)
 	ctx := context.Background()
 	mustCreate(t, r, convID)
-	if _, err := drain(r.Turn(ctx, convID, userPtr("go"))); err != nil {
+	if _, err := drain(r.Turn(ctx, convID, new("go"))); err != nil {
 		t.Fatalf("turn: %v", err)
 	}
 	pending, _ := pause.ListPending(ctx, convID)
@@ -43,7 +43,7 @@ func TestCancel_RehydratedHistoryWireValid_CR01(t *testing.T) {
 	ctx := context.Background()
 	mustCreate(t, r, convID)
 
-	if _, err := drain(r.Turn(ctx, convID, userPtr("Where am I?"))); err != nil {
+	if _, err := drain(r.Turn(ctx, convID, new("Where am I?"))); err != nil {
 		t.Fatalf("turn 1: %v", err)
 	}
 	pending, err := pause.ListPending(ctx, convID)
@@ -81,7 +81,7 @@ func TestCancel_RehydratedHistoryWireValid_CR01(t *testing.T) {
 
 	// A subsequent Turn with a fresh user message must build a valid request — the
 	// dangling tool_call would have produced a provider error otherwise.
-	if _, err := drain(r.Turn(ctx, convID, userPtr("Hello again"))); err != nil {
+	if _, err := drain(r.Turn(ctx, convID, new("Hello again"))); err != nil {
 		t.Fatalf("turn after cancel must succeed over wire-valid history: %v", err)
 	}
 	req := client.LastRequest()
@@ -103,7 +103,7 @@ func TestCancelBatch_RehydratedHistoryWireValid_CR01(t *testing.T) {
 	ctx := context.Background()
 	mustCreate(t, r, convID)
 
-	if _, err := drain(r.Turn(ctx, convID, userPtr("go"))); err != nil {
+	if _, err := drain(r.Turn(ctx, convID, new("go"))); err != nil {
 		t.Fatalf("turn: %v", err)
 	}
 	pending, _ := pause.ListPending(ctx, convID)
@@ -152,7 +152,7 @@ func TestStop_RehydratedHistoryWireValid_CR01(t *testing.T) {
 	ctx := context.Background()
 	mustCreate(t, r, convID)
 
-	if _, err := drain(r.Turn(ctx, convID, userPtr("pause then stop"))); err != nil {
+	if _, err := drain(r.Turn(ctx, convID, new("pause then stop"))); err != nil {
 		t.Fatalf("turn: %v", err)
 	}
 	if pause.unresolvedCount(convID) != 1 {
@@ -193,7 +193,7 @@ func TestPause_AssistantTurnPersistedWhenConsumerStopsOnPause(t *testing.T) {
 	// Drive the turn but STOP on the pause Event — mimics the AG-UI translator returning
 	// on the interrupt outcome (yield returns false to runner.Turn → its early return).
 	var sawPause bool
-	for ev, err := range r.Turn(ctx, convID, userPtr("dammi un nome")) {
+	for ev, err := range r.Turn(ctx, convID, new("dammi un nome")) {
 		if err != nil {
 			t.Fatalf("turn: %v", err)
 		}

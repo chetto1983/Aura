@@ -62,7 +62,7 @@ func TestExecuteBatch_PanicRecordsObservabilityMetrics(t *testing.T) {
 	panicBefore := panicobs.Count("execute_batch")
 	toolErrBefore := sumToolErrors(t)
 
-	if _, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(10)}))); err != nil {
+	if _, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: new(10)}))); err != nil {
 		t.Fatalf("run errored: %v", err)
 	}
 

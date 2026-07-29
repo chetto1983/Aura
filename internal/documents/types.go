@@ -49,10 +49,10 @@ type Job struct {
 	SparseChunks   int       `json:"sparse_chunks"`
 	EmbeddedChunks int       `json:"embedded_chunks"`
 	Error          string    `json:"error,omitempty"`
-	CreatedAt      time.Time `json:"created_at,omitempty"`
-	UpdatedAt      time.Time `json:"updated_at,omitempty"`
-	SearchableAt   time.Time `json:"searchable_at,omitempty"`
-	CompletedAt    time.Time `json:"completed_at,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	SearchableAt   time.Time `json:"searchable_at"`
+	CompletedAt    time.Time `json:"completed_at"`
 }
 
 // CreateJobParams carries the fields needed to create a document ingestion job.

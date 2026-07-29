@@ -129,7 +129,6 @@ func TestAssignmentConstructorRejectsMissingBindings(t *testing.T) {
 		{name: "selection reason", mutate: func(a *Assignment) { a.SelectionReason = "" }},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			assignment := validAssignment()
@@ -199,7 +198,6 @@ func TestAssignmentConstructorValidatesFrozenProbabilityCatalogs(t *testing.T) {
 		}},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			assignment := validAssignment()
@@ -302,7 +300,6 @@ func TestAssignmentConstructorRejectsUnsafeIDsAndUnregisteredReasons(t *testing.
 		}},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			assignment := validAssignment()
@@ -325,7 +322,6 @@ func TestAssignmentFeatureRegistryRejectsFingerprintAliases(t *testing.T) {
 		"document_content_hash",
 	}
 	for _, key := range privateAliases {
-		key := key
 		t.Run(key, func(t *testing.T) {
 			t.Parallel()
 			assignment := validAssignment()
@@ -410,7 +406,6 @@ func TestDeliveryConstructorRejectsUnsafeIDsReasonsAndUnregisteredMaps(t *testin
 		}},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			delivery := validDelivery(assignment.AssignmentID)
@@ -455,7 +450,6 @@ func TestDeliveryConstructorValidatesBindingsAndExposure(t *testing.T) {
 		}},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			boundAssignment := assignment
@@ -509,7 +503,6 @@ func TestPrivatePayloadKeysAreRejectedBeforeSerialization(t *testing.T) {
 		"content_fingerprint",
 	}
 	for _, key := range privateKeys {
-		key := key
 		t.Run("assignment_"+key, func(t *testing.T) {
 			t.Parallel()
 			assignment := validAssignment()

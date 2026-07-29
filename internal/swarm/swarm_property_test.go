@@ -24,7 +24,7 @@ func TestSwarmProperties(t *testing.T) {
 		r := newRouter()
 		goals := make([]string, n)
 		want := make([]string, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			sub := fmt.Sprintf("task-%d", i)
 			goals[i] = sub + " body"
 			kind := rapid.SampledFrom(kinds).Draw(rt, fmt.Sprintf("kind-%d", i))

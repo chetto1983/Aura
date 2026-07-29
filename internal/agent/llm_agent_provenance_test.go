@@ -57,7 +57,7 @@ func TestLlmAgent_UntrustedToolOutputIsProvenanceWrappedBeforePrompt(t *testing.
 		UserTurns:  []llm.Message{{Role: llm.RoleUser, Content: "fetch"}},
 	})
 
-	if _, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(4)}))); err != nil {
+	if _, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: new(4)}))); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if len(fc.Requests) < 2 {
@@ -107,7 +107,7 @@ func TestLlmAgent_UntrustedToolResultProvenanceIsWrappedBeforePrompt(t *testing.
 		UserTurns:  []llm.Message{{Role: llm.RoleUser, Content: "read mail"}},
 	})
 
-	if _, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(4)}))); err != nil {
+	if _, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: new(4)}))); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	var toolContent string
@@ -144,7 +144,7 @@ func TestLlmAgent_TrustedToolOutputIsNotWrapped(t *testing.T) {
 		UserTurns:  []llm.Message{{Role: llm.RoleUser, Content: "time"}},
 	})
 
-	if _, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(4)}))); err != nil {
+	if _, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: new(4)}))); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	var toolContent string

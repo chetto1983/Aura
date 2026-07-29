@@ -490,7 +490,7 @@ func TestDotEnvTemplateHygiene(t *testing.T) {
 	}
 
 	seen := map[string]bool{}
-	for _, line := range strings.Split(envExample, "\n") {
+	for line := range strings.SplitSeq(envExample, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
@@ -511,7 +511,7 @@ func TestDotEnvTemplateHygiene(t *testing.T) {
 
 func hasActiveEnvAssignment(contents, key string) bool {
 	prefix := key + "="
-	for _, line := range strings.Split(contents, "\n") {
+	for line := range strings.SplitSeq(contents, "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, prefix) {
 			return true
@@ -521,7 +521,7 @@ func hasActiveEnvAssignment(contents, key string) bool {
 }
 
 func hasActiveEnvLine(contents, want string) bool {
-	for _, line := range strings.Split(contents, "\n") {
+	for line := range strings.SplitSeq(contents, "\n") {
 		line = strings.TrimSpace(line)
 		if line == want {
 			return true

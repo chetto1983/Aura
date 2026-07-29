@@ -124,15 +124,15 @@ func TestStream_PrematureCloseEmitsErrBeforeClose(t *testing.T) {
 	}
 	chunks := drain(ch)
 
-	var text string
+	var text strings.Builder
 	errIndex := -1
 	for i, ck := range chunks {
-		text += ck.Text
+		text.WriteString(ck.Text)
 		if ck.Err != nil {
 			errIndex = i
 		}
 	}
-	if text == "" {
+	if text.String() == "" {
 		t.Fatal("premature fixture emitted no partial text; regression is not exercising truncation")
 	}
 	if errIndex < 0 {
@@ -239,7 +239,7 @@ func TestStream_CancelMidStream(t *testing.T) {
 	}
 closed:
 	// Goroutine count returns to baseline (poll briefly — teardown is async).
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		if runtime.NumGoroutine() <= baseline+1 {
 			return
 		}

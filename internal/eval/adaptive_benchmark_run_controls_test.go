@@ -143,7 +143,6 @@ func TestValidateAdaptiveBenchmarkConcurrencyEvidenceRejectsDrift(
 		},
 	}
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			evidence := adaptiveBenchmarkConcurrencyEvidenceFixture()
@@ -162,9 +161,7 @@ func TestAdaptiveBenchmarkConcurrencyEvidenceCarriesBoundedWaitDeadline(
 ) {
 	t.Parallel()
 
-	if _, ok := reflect.TypeOf(
-		AdaptiveBenchmarkConcurrencyEvidence{},
-	).FieldByName("WaitDeadlineAt"); !ok {
+	if _, ok := reflect.TypeFor[AdaptiveBenchmarkConcurrencyEvidence]().FieldByName("WaitDeadlineAt"); !ok {
 		t.Fatal("concurrency evidence omits a bounded wait deadline")
 	}
 }

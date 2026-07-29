@@ -47,7 +47,6 @@ func TestDecodeAssignmentRejectsUnknownFieldsAndTrailingJSON(t *testing.T) {
 		{name: "trailing JSON", payload: valid + ` {}`},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if _, err := DecodeAssignment([]byte(tt.payload)); err == nil {

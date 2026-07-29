@@ -53,7 +53,7 @@ func TestBudget_Dedup_Period1_TerminatesOnThreeRepeats(t *testing.T) {
 	result := []byte("same-result")
 
 	// Call 1 + 2: no dedup yet (window=3).
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		if dedup, _ := b.BeforeToolCall("tool", args); dedup {
 			t.Fatalf("call %d should not dedup yet", i+1)
 		}
@@ -176,12 +176,12 @@ func TestBudget_Dedup_ResultChanged_SuppressesDedup(t *testing.T) {
 	// even past the window (D-18 fail-safe; volatile results fail SAFE not OPEN).
 	b := newTestBudget(100, 3)
 	args := canon(t, map[string]any{"x": 1})
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		dedup, _ := b.BeforeToolCall("tool", args)
 		if dedup {
 			t.Fatalf("call %d deduped despite changing results (should be progress veto)", i+1)
 		}
-		b.AfterToolResult("tool", args, []byte(fmt.Sprintf("result-%d", i)))
+		b.AfterToolResult("tool", args, fmt.Appendf(nil, "result-%d", i))
 	}
 }
 
@@ -279,9 +279,9 @@ func TestBudget_BeforeAfterToolResult_Concurrent(t *testing.T) {
 	const goroutines = 16
 	const iterations = 200
 	argPool := make([][][]byte, goroutines)
-	for g := 0; g < goroutines; g++ {
+	for g := range goroutines {
 		argPool[g] = make([][]byte, 12)
-		for i := 0; i < 12; i++ {
+		for i := range 12 {
 			argPool[g][i] = canon(t, map[string]any{
 				"g": g,
 				"i": i,
@@ -289,19 +289,16 @@ func TestBudget_BeforeAfterToolResult_Concurrent(t *testing.T) {
 		}
 	}
 	var wg sync.WaitGroup
-	for g := 0; g < goroutines; g++ {
-		g := g
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := 0; i < iterations; i++ {
+	for g := range goroutines {
+		wg.Go(func() {
+			for i := range iterations {
 				args := argPool[g][i%len(argPool[g])]
 				dedup, _ := b.BeforeToolCall("tool", args)
 				if !dedup {
-					b.AfterToolResult("tool", args, []byte(fmt.Sprintf("result-%d", i%3)))
+					b.AfterToolResult("tool", args, fmt.Appendf(nil, "result-%d", i%3))
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 }
@@ -309,7 +306,7 @@ func TestBudget_BeforeAfterToolResult_Concurrent(t *testing.T) {
 func TestDedupRingPush_PrunesEvictedResult(t *testing.T) {
 	b := newTestBudget(100, 3)
 	var fps []fingerprint
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		args := canon(t, map[string]any{"i": i})
 		fp := computeFingerprint("tool", args)
 		fps = append(fps, fp)
@@ -337,7 +334,7 @@ func TestBudget_Child_DistinctDedupRing(t *testing.T) {
 	args := canon(t, map[string]any{"x": 1})
 	res := []byte("r")
 	// Saturate the parent ring to the dedup threshold.
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		parent.BeforeToolCall("tool", args)
 		parent.AfterToolResult("tool", args, res)
 	}
@@ -353,7 +350,7 @@ func TestBudget_Dedup_ExemptTool_NeverDedups(t *testing.T) {
 	b.exemptTools = map[string]struct{}{"poll": {}}
 	args := canon(t, map[string]any{"x": 1})
 	res := []byte("same")
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		if dedup, _ := b.BeforeToolCall("poll", args); dedup {
 			t.Fatalf("exempt tool deduped on call %d (D-19 allowlist violated)", i+1)
 		}
@@ -404,7 +401,7 @@ func TestBudget_Dedup_ExemptToolIgnoresExistingDedupState(t *testing.T) {
 	args := canon(t, map[string]any{"cursor": "next"})
 	result := []byte("same-result")
 
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		if dedup, _ := b.BeforeToolCall("poll", args); dedup {
 			t.Fatalf("warmup poll call %d must not dedup", i+1)
 		}
@@ -513,16 +510,14 @@ func TestBudget_Property_TotalConsumedNeverExceedsMax(t *testing.T) {
 
 		var ok int64
 		var wg sync.WaitGroup
-		for g := 0; g < goroutines; g++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for i := 0; i < attemptsPer; i++ {
+		for range goroutines {
+			wg.Go(func() {
+				for range attemptsPer {
 					if got, _ := b.ConsumeStep(); got {
 						atomic.AddInt64(&ok, 1)
 					}
 				}
-			}()
+			})
 		}
 		wg.Wait()
 

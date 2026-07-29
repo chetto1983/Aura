@@ -37,9 +37,7 @@ func (r *Runner) maybeAutoTitle(turnCtx context.Context, convID string, history 
 	// "nobody mutates history after maybeAutoTitle returns" coupling so a future
 	// in-place mutation cannot race the title worker.
 	hist := append([]llm.Message(nil), history...)
-	r.wg.Add(1)
-	go func() {
-		defer r.wg.Done()
+	r.wg.Go(func() {
 		ctx := context.WithoutCancel(turnCtx) // load-bearing: turnCtx cancels on Turn return
 		ctx, cancel := context.WithTimeout(ctx, r.titleTimeout)
 		defer cancel()
@@ -48,7 +46,7 @@ func (r *Runner) maybeAutoTitle(turnCtx context.Context, convID string, history 
 			return // best-effort: leave the title NULL
 		}
 		_ = r.Conv.SetTitleIfNull(ctx, convID, title)
-	}()
+	})
 }
 
 // declinedContent is the RoleTool body injected when the user declines a pause

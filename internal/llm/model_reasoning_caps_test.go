@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -95,12 +96,7 @@ func effortsEqual(a, b []ReasoningEffort) bool {
 }
 
 func containsEffort(s []ReasoningEffort, e ReasoningEffort) bool {
-	for _, v := range s {
-		if v == e {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(s, e)
 }
 
 // --- Task 2 behavior ---

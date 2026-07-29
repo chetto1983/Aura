@@ -232,7 +232,7 @@ func validatePathPart(value string, allowSlash bool) error {
 	if !allowSlash && strings.Contains(value, "/") {
 		return fmt.Errorf("slash not allowed")
 	}
-	for _, part := range strings.Split(value, "/") {
+	for part := range strings.SplitSeq(value, "/") {
 		if part == "" || part == "." || part == ".." {
 			return fmt.Errorf("unsafe segment %q", part)
 		}

@@ -203,10 +203,10 @@ func TestExactATEBounds_ExhaustiveTinyPotentialSchedulesAreConservative(t *testi
 	const population = 3
 	alpha := MustExactRational(1, 2)
 	caps := DefaultExactInferenceCaps()
-	for treatmentPotential := 0; treatmentPotential < 1<<population; treatmentPotential++ {
-		for controlPotential := 0; controlPotential < 1<<population; controlPotential++ {
+	for treatmentPotential := range 1 << population {
+		for controlPotential := range 1 << population {
 			covered := 0
-			for assignment := 0; assignment < 1<<population; assignment++ {
+			for assignment := range 1 << population {
 				stratum := BinaryATEStratum{
 					AnalysisStratumID: "tiny", Population: population,
 					Treated: bits.OnesCount(uint(assignment)),

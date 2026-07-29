@@ -1,6 +1,7 @@
 package manager
 
 import (
+	"slices"
 	"sort"
 	"strings"
 
@@ -76,11 +77,8 @@ func RedactSecrets(s string) string {
 func profilesForServer(doc mcp.ManagedConfig, server string) []string {
 	names := make([]string, 0, len(doc.Profiles))
 	for profile, cfg := range doc.Profiles {
-		for _, name := range cfg.Servers {
-			if name == server {
-				names = append(names, profile)
-				break
-			}
+		if slices.Contains(cfg.Servers, server) {
+			names = append(names, profile)
 		}
 	}
 	sort.Strings(names)

@@ -39,7 +39,7 @@ func TestTurn_LinearDoesNotTouchBranchLoader(t *testing.T) {
 	convID := newConvID(t)
 	mustCreate(t, r, convID)
 
-	if _, err := drain(r.Turn(context.Background(), convID, userPtr("hi"))); err != nil {
+	if _, err := drain(r.Turn(context.Background(), convID, new("hi"))); err != nil {
 		t.Fatalf("linear Turn must not error: %v", err)
 	}
 	conv.mu.Lock()

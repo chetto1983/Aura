@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -90,8 +91,8 @@ func buildMeterRuntime(ctx context.Context, opts meterOptions) (*meterRuntime, e
 	}
 	// The SDK shuts readers down in registration order. Register the readers in
 	// reverse construction order so OTLP is drained before Prometheus.
-	for i := len(components) - 1; i >= 0; i-- {
-		providerOptions = append(providerOptions, sdkmetric.WithReader(components[i].reader))
+	for _, v := range slices.Backward(components) {
+		providerOptions = append(providerOptions, sdkmetric.WithReader(v.reader))
 	}
 	provider := sdkmetric.NewMeterProvider(providerOptions...)
 	runtime := &meterRuntime{
@@ -148,11 +149,11 @@ func newShutdownStack(shutdowns ...ShutdownFunc) ShutdownFunc {
 	)
 	return func(ctx context.Context) error {
 		once.Do(func() {
-			for i := len(shutdowns) - 1; i >= 0; i-- {
-				if shutdowns[i] == nil {
+			for _, v := range slices.Backward(shutdowns) {
+				if v == nil {
 					continue
 				}
-				err = errors.Join(err, shutdowns[i](ctx))
+				err = errors.Join(err, v(ctx))
 			}
 		})
 		return err

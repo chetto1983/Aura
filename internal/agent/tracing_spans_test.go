@@ -23,7 +23,7 @@ func TestSpan_TurnTreeParenting(t *testing.T) {
 			llm.Usage{PromptTokens: 5, CompletionTokens: 2}),
 	)
 	a := newAgent(t, fc, llm.Config{})
-	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(25)})
 
 	if _, err := collect(a.Run(ic)); err != nil {
 		t.Fatalf("Run errored: %v", err)
@@ -96,7 +96,7 @@ func TestSpan_TurnEndsOnEveryPath(t *testing.T) {
 	rec := recordingProvider(t)
 	fc := agenttest.NewFakeClient(agenttest.TextChunks("stop", "ciao"))
 	a := newAgent(t, fc, llm.Config{})
-	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(25)})
 
 	if _, err := collect(a.Run(ic)); err != nil {
 		t.Fatalf("Run errored: %v", err)

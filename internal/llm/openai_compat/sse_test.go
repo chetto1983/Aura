@@ -49,11 +49,11 @@ func TestStream_ReasoningDualField(t *testing.T) {
 		return out
 	}
 	textOf := func(chunks []llm.Chunk) string {
-		var b string
+		var b strings.Builder
 		for _, c := range chunks {
-			b += c.Text
+			b.WriteString(c.Text)
 		}
-		return b
+		return b.String()
 	}
 	// firstContentIdx returns the index of the first content Chunk (-1 if none).
 	firstContentIdx := func(chunks []llm.Chunk) int {
@@ -130,20 +130,20 @@ func TestStream_ReasoningDualField(t *testing.T) {
 func TestStream_TextStop(t *testing.T) {
 	chunks, res := replayFixture(t, "text_stop.sse")
 
-	var text string
+	var text strings.Builder
 	var finish string
 	for _, c := range chunks {
 		switch {
 		case c.Text != "":
-			text += c.Text
+			text.WriteString(c.Text)
 		case c.FinishReason != "":
 			finish = c.FinishReason
 		case c.ToolCall != nil:
 			t.Errorf("unexpected tool call in a text-only stream: %+v", c.ToolCall)
 		}
 	}
-	if text != "Ciao, come stai?" {
-		t.Errorf("assembled text = %q, want %q", text, "Ciao, come stai?")
+	if text.String() != "Ciao, come stai?" {
+		t.Errorf("assembled text = %q, want %q", text.String(), "Ciao, come stai?")
 	}
 	if finish != "stop" {
 		t.Errorf("finish_reason = %q, want stop", finish)

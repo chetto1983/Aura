@@ -3,6 +3,7 @@ package cron
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -499,12 +500,7 @@ func (s *scriptedDeliverer) textFor(id string) string {
 }
 
 func contains(xs []string, x string) bool {
-	for _, v := range xs {
-		if v == x {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(xs, x)
 }
 
 func failedContains(xs []struct {

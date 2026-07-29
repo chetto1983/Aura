@@ -511,10 +511,7 @@ func applyOPERowFailures(report *EndpointOPEReport, failures map[string]uint64) 
 func markOPEReportIneligible(report *EndpointOPEReport, reason string, count uint64) {
 	report.Eligible = false
 	report.IneligibleReasons = []string{reason}
-	report.IneligibleRowCount = count
-	if report.IneligibleRowCount > report.RowCount {
-		report.IneligibleRowCount = report.RowCount
-	}
+	report.IneligibleRowCount = min(count, report.RowCount)
 	report.IneligibleReasonCounts = []OPEIneligibleReasonCount{{
 		SchemaID: "aura.adaptive.report/ineligible-reason-count/v1",
 		Revision: 1, Reason: reason, Count: count,

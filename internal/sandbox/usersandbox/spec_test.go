@@ -16,7 +16,7 @@ import (
 // is unrepresentable because there is NO field to set, not because a check rejects it;
 // this test fails the moment someone adds one (forcing an SBX-02 review).
 func TestSpec_NoHostExposureFields(t *testing.T) {
-	got := collectSpecFields(reflect.TypeOf(SandboxSpec{}), "")
+	got := collectSpecFields(reflect.TypeFor[SandboxSpec](), "")
 	sort.Strings(got)
 
 	want := []string{
@@ -53,15 +53,14 @@ func TestSpec_NoHostExposureFields(t *testing.T) {
 
 	// Structural guard: SandboxSpec must not reference any moby type — the moby
 	// HostConfig lives ONLY behind toHostConfig (translate.go).
-	assertNoMobyTypes(t, reflect.TypeOf(SandboxSpec{}))
+	assertNoMobyTypes(t, reflect.TypeFor[SandboxSpec]())
 }
 
 // collectSpecFields returns the dotted field names of a struct type, recursing into
 // nested struct fields so an escape cannot hide inside EgressPolicy/Resources.
 func collectSpecFields(t reflect.Type, prefix string) []string {
 	var out []string
-	for i := 0; i < t.NumField(); i++ {
-		f := t.Field(i)
+	for f := range t.Fields() {
 		name := prefix + f.Name
 		out = append(out, name)
 		if f.Type.Kind() == reflect.Struct {
@@ -76,14 +75,14 @@ func collectSpecFields(t reflect.Type, prefix string) []string {
 // must never carry a moby HostConfig/NetworkMode/mount type.
 func assertNoMobyTypes(t *testing.T, typ reflect.Type) {
 	t.Helper()
-	for i := 0; i < typ.NumField(); i++ {
-		ft := typ.Field(i).Type
+	for field := range typ.Fields() {
+		ft := field.Type
 		elem := ft
 		for elem.Kind() == reflect.Pointer || elem.Kind() == reflect.Slice || elem.Kind() == reflect.Array || elem.Kind() == reflect.Map {
 			elem = elem.Elem()
 		}
 		if strings.HasPrefix(elem.PkgPath(), "github.com/moby") {
-			t.Fatalf("SandboxSpec field %q is a moby type %s — host-config types must stay behind toHostConfig (SBX-02)", typ.Field(i).Name, elem.String())
+			t.Fatalf("SandboxSpec field %q is a moby type %s — host-config types must stay behind toHostConfig (SBX-02)", field.Name, elem.String())
 		}
 		if elem.Kind() == reflect.Struct {
 			assertNoMobyTypes(t, elem)
@@ -149,7 +148,7 @@ func TestSpec_RunscOnlyServerProduction(t *testing.T) {
 
 	// (d) RuntimeClass is a typed non-string enum — a free-string runtime is
 	// structurally unrepresentable, so it can never carry "host".
-	if k := reflect.TypeOf(Runc).Kind(); k == reflect.String {
+	if k := reflect.TypeFor[RuntimeClass]().Kind(); k == reflect.String {
 		t.Fatalf("RuntimeClass must NOT be string-backed (a free string could carry \"host\"); got kind %v", k)
 	}
 }

@@ -163,7 +163,7 @@ func TestDetachedRun_SurvivesDisconnectAndLockSpansRun(t *testing.T) {
 	// A long turn — 60 delayed deltas + the final chunk — keeps the run live well
 	// past the disconnect.
 	pair := textTurn("x")
-	for i := 0; i < 60; i++ {
+	for range 60 {
 		run.events = append(run.events, pair[0])
 	}
 	run.events = append(run.events, pair[1])

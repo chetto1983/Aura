@@ -175,14 +175,12 @@ func TestReadinessRepeatedPollsShareOneWedgedProbeGoleak(t *testing.T) {
 	statuses := make(chan int, polls)
 	var wg sync.WaitGroup
 	for range polls {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			<-begin
 			rr := httptest.NewRecorder()
 			s.Mux().ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/readyz", nil))
 			statuses <- rr.Code
-		}()
+		})
 	}
 	close(begin)
 	select {

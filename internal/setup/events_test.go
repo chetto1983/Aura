@@ -82,8 +82,8 @@ func TestEventsSSEEmitsOnboardingCompleted(t *testing.T) {
 	sc := bufio.NewScanner(resp.Body)
 	for sc.Scan() {
 		line := sc.Text()
-		if strings.HasPrefix(line, "data:") {
-			got = strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if after, ok := strings.CutPrefix(line, "data:"); ok {
+			got = strings.TrimSpace(after)
 			break
 		}
 	}

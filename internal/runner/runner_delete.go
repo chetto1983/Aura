@@ -213,7 +213,7 @@ func exportDeleteReservation(ctx context.Context, owner, convID string, expected
 		return "", errors.New("delete lifecycle: stable operation identity is required")
 	}
 	operationIdentity := operation.Key.IdentityID + "\x00" + string(operation.Key.Scope) + "\x00" + operation.Key.Key
-	digest := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%d\x00%s", owner, convID, expected, operationIdentity)))
+	digest := sha256.Sum256(fmt.Appendf(nil, "%s\x00%s\x00%d\x00%s", owner, convID, expected, operationIdentity))
 	return hex.EncodeToString(digest[:]), nil
 }
 

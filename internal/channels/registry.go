@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"sort"
 	"strings"
 	"sync"
@@ -88,9 +89,7 @@ func (r *Registry) StartAll(ctx context.Context) error {
 func (r *Registry) StopAll(ctx context.Context) error {
 	r.mu.Lock()
 	toStop := make(map[string]Channel, len(r.started))
-	for name, ch := range r.started {
-		toStop[name] = ch
-	}
+	maps.Copy(toStop, r.started)
 	r.mu.Unlock()
 
 	var errs []error

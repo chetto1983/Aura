@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -209,9 +210,9 @@ func collectInternal(seq func(yield func(*Event, error) bool)) ([]*Event, error)
 
 func finalInternal(t *testing.T, evs []*Event) string {
 	t.Helper()
-	for i := len(evs) - 1; i >= 0; i-- {
-		if evs[i].LLMResponse != nil && evs[i].LLMResponse.FinishReason != "" {
-			return evs[i].LLMResponse.Content
+	for _, v := range slices.Backward(evs) {
+		if v.LLMResponse != nil && v.LLMResponse.FinishReason != "" {
+			return v.LLMResponse.Content
 		}
 	}
 	t.Fatal("no final event")

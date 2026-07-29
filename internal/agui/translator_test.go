@@ -144,7 +144,7 @@ func TestTranslatorContiguousDeltasCoalesce(t *testing.T) {
 // ONE END, 200 CONTENT, zero empty-delta CONTENT (acceptance criterion).
 func TestTranslator200Deltas(t *testing.T) {
 	in := make([]*agent.Event, 0, 201)
-	for i := 0; i < 200; i++ {
+	for range 200 {
 		in = append(in, chunk("x"))
 	}
 	in = append(in, chunk("")) // a trailing empty delta must NOT add a CONTENT
@@ -457,7 +457,7 @@ func TestTranslatorProperty(t *testing.T) {
 		n := rapid.IntRange(1, 20).Draw(rt, "n")
 		kinds := []string{"chunk", "empty", "tool", "state", "final", "preview", "reasoning", "reasoningEmpty", "artifact"}
 		in := make([]*agent.Event, 0, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			switch rapid.SampledFrom(kinds).Draw(rt, "kind") {
 			case "chunk":
 				in = append(in, chunk(rapid.StringMatching(`[a-z ]{1,8}`).Draw(rt, "delta")))

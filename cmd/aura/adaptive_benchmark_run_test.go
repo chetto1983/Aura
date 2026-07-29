@@ -44,7 +44,6 @@ func TestParseAdaptiveBenchmarkRunArgsAcceptsExactModeMatrix(t *testing.T) {
 		},
 	}
 	for _, testCase := range tests {
-		testCase := testCase
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 			request, err := parseAdaptiveBenchmarkRunArgs(testCase.args)
@@ -139,7 +138,6 @@ func TestParseAdaptiveBenchmarkRunArgsRejectsBeforeExecution(t *testing.T) {
 		},
 	}
 	for _, testCase := range tests {
-		testCase := testCase
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 			if request, err := parseAdaptiveBenchmarkRunArgs(testCase.args); err == nil {

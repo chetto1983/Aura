@@ -111,7 +111,7 @@ func TestLlmAgent_ToolExecuteError(t *testing.T) {
 		SessionID:  uuid.Must(uuid.NewV7()).String(),
 		UserTurns:  []llm.Message{{Role: llm.RoleUser, Content: "vai"}},
 	})
-	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(25)})
 
 	evs, err := collect(a.Run(ic))
 	if err != nil {
@@ -150,7 +150,7 @@ func TestLlmAgent_MalformedTextResponse(t *testing.T) {
 		agenttest.ToolCallTurn(textResponseCall("c3", "ecco la risposta")),
 	)
 	a := newAgentCover(t, fc)
-	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(25)})
 
 	evs, err := collect(a.Run(ic))
 	if err != nil {
@@ -183,7 +183,7 @@ func TestLlmAgent_NonJSONToolArgs(t *testing.T) {
 	reg.Register(tools.TextResponse{})
 	reg.Register(&echoTool{})
 	turns := make([]agenttest.FakeTurn, 0, 6)
-	for i := 0; i < 6; i++ {
+	for range 6 {
 		// Non-JSON arguments: CanonicalArgs falls back to the raw bytes; identical
 		// raw bytes each turn still produce a stable dedup fingerprint.
 		turns = append(turns, agenttest.ToolCallTurn(agenttest.MakeToolCall("c", "echo", `<<not-json>>`)))
@@ -198,7 +198,7 @@ func TestLlmAgent_NonJSONToolArgs(t *testing.T) {
 		SessionID:  uuid.Must(uuid.NewV7()).String(),
 		UserTurns:  []llm.Message{{Role: llm.RoleUser, Content: "vai"}},
 	})
-	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(50), DedupWindow: ptr(2)})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(50), DedupWindow: new(2)})
 
 	evs, err := collect(a.Run(ic))
 	if err != nil {
@@ -223,7 +223,7 @@ func TestLlmAgent_UsageCostPresent(t *testing.T) {
 		),
 	)
 	a := newAgentCover(t, fc)
-	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(25)})
 
 	evs, err := collect(a.Run(ic))
 	if err != nil {
@@ -276,7 +276,7 @@ func TestLlmAgent_DispatchStopsOnToolResult(t *testing.T) {
 		agenttest.ToolCallTurn(textResponseCall("c2", "unreached")),
 	)
 	a := newAgentCover(t, fc)
-	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(25)})
 
 	n := 0
 	for _, err := range a.Run(ic) {
@@ -304,7 +304,7 @@ func TestLlmAgent_DispatchStopsOnParseError(t *testing.T) {
 		agenttest.ToolCallTurn(textResponseCall("c2", "unreached")),
 	)
 	a := newAgentCover(t, fc)
-	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(25)})
 
 	n := 0
 	for ev, err := range a.Run(ic) {
@@ -341,7 +341,7 @@ func TestLlmAgent_ConsumeStopMidStream(t *testing.T) {
 			agenttest.TextChunks("stop", "primo ", "secondo ", "terzo"),
 		)
 		a := newAgentCover(t, fc)
-		ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})
+		ic := newIC(t, agent.BudgetOptions{MaxSteps: new(25)})
 
 		n := 0
 		for ev, err := range a.Run(ic) {
@@ -364,7 +364,7 @@ func TestLlmAgent_ConsumeStopMidStream(t *testing.T) {
 			agenttest.ToolCallTurn(agenttest.MakeToolCall("c1", "echo", `{"v":"x"}`)),
 		)
 		a := newAgentCover(t, fc)
-		ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})
+		ic := newIC(t, agent.BudgetOptions{MaxSteps: new(25)})
 
 		for ev, err := range a.Run(ic) {
 			if err != nil {

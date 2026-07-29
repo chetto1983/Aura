@@ -44,8 +44,8 @@ func renderQRSVG(deepLink string) (string, error) {
 	// White background (the quiet zone + the light modules).
 	fmt.Fprintf(&b, `<rect width="%d" height="%d" fill="#ffffff"/>`, dim, dim)
 	// One black rect per dark module, shifted by the quiet zone.
-	for y := 0; y < size; y++ {
-		for x := 0; x < size; x++ {
+	for y := range size {
+		for x := range size {
 			if !code.Black(x, y) {
 				continue
 			}

@@ -45,8 +45,7 @@ func TestThrottleAcquireBlocksAtLimitReleaseFrees(t *testing.T) {
 	// The third acquire must block while the host holds perHostLimit tokens. Use a
 	// cancellable ctx so the goroutine is guaranteed to unwind even if the assertion
 	// path is not reached (goleak-clean).
-	thirdCtx, cancelThird := context.WithCancel(context.Background())
-	defer cancelThird()
+	thirdCtx := t.Context()
 	got := make(chan bool, 1)
 	go func() {
 		rel, ok := ht.acquire(thirdCtx, "h")
@@ -154,7 +153,7 @@ func TestThrottleConcurrentRace(t *testing.T) {
 	hosts := []string{"h1", "h2", "h3"}
 
 	var wg sync.WaitGroup
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()

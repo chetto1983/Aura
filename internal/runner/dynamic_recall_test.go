@@ -34,7 +34,6 @@ func TestDynamicRecallCatalogUsesExactConfiguredThresholds(t *testing.T) {
 		}},
 	}
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			got := DynamicRecallCatalog(test.enabled, test.max)
@@ -175,7 +174,6 @@ func TestPrepareDynamicRecallFailsClosedOnMetadataOrProviderFailure(t *testing.T
 		}},
 	}
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			r, _, _ := newTestRunner(t, nil)
@@ -224,7 +222,7 @@ func TestDynamicRecallRunnerWiringCoversFreshAndBranchPlacement(t *testing.T) {
 				return drain(r.Turn(
 					context.Background(),
 					conversationID,
-					userPtr("current question"),
+					new("current question"),
 				))
 			},
 			wantQuery:  "current question",

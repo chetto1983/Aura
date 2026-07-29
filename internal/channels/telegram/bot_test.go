@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"iter"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -162,10 +163,5 @@ func TestNameIsTelegram(t *testing.T) {
 }
 
 func containsType(types []events.EventType, want events.EventType) bool {
-	for _, ty := range types {
-		if ty == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(types, want)
 }

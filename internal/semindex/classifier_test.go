@@ -140,7 +140,7 @@ func TestClassifier_ConcurrentAddRank(t *testing.T) {
 	c := NewClassifier(&fakeEmbedder{})
 	c.AddVecs("chat", []float64{1, 0, 0})
 	var wg sync.WaitGroup
-	for i := 0; i < 8; i++ {
+	for range 8 {
 		wg.Add(2)
 		go func() { defer wg.Done(); c.AddVecs("code", []float64{0, 0, 1}) }()
 		go func() { defer wg.Done(); _ = c.RankVecs([]float64{1, 0, 0}) }()

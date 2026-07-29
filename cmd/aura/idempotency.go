@@ -529,10 +529,7 @@ func (w *boundedCLIOutput) Write(p []byte) (int, error) {
 	written, err := w.dst.Write(p)
 	remaining := w.limit - w.buf.Len()
 	if remaining > 0 {
-		copyLen := len(p)
-		if copyLen > remaining {
-			copyLen = remaining
-		}
+		copyLen := min(len(p), remaining)
 		_, _ = w.buf.Write(p[:copyLen])
 	}
 	if len(p) > remaining {

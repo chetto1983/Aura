@@ -101,7 +101,7 @@ func jobRegistry() *tools.Registry {
 // agent's dedup ring never trips), followed by a terminal text_response.
 func loopTurns(n int) []agenttest.FakeTurn {
 	turns := make([]agenttest.FakeTurn, 0, n+1)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		turns = append(turns, agenttest.ToolCallTurn(
 			agenttest.MakeToolCall(fmt.Sprintf("c%d", i), "loop", fmt.Sprintf(`{"n":%d}`, i)),
 		))
@@ -177,7 +177,7 @@ func TestAgentJobStrictMutationDerivesStableChildAndReplays(t *testing.T) {
 		Payload: []byte(`{"goal":"restore the calculator skill"}`), StepBudget: 10,
 		RunID: "run-39", OriginConversationID: "11111111-1111-1111-1111-111111111111",
 	}
-	for attempt := 0; attempt < 2; attempt++ {
+	for attempt := range 2 {
 		handler := AgentJobHandler{Deps: AgentDeps{Client: turns(), Registry: registry, Gateway: policy}}
 		if _, err := handler.Run(ctx, job); err != nil {
 			t.Fatalf("agent_job attempt %d: %v", attempt+1, err)

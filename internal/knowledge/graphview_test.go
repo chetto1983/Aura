@@ -308,7 +308,7 @@ func assertExplicitProjection(t *testing.T, cypher string) {
 		t.Fatalf("nodes/edges must be projected via elementId(...):\n%s", cypher)
 	}
 	// crude RETURN-n guard: a RETURN line that returns a bare single identifier
-	for _, line := range strings.Split(cypher, "\n") {
+	for line := range strings.SplitSeq(cypher, "\n") {
 		trimmed := strings.TrimSpace(line)
 		up := strings.ToUpper(trimmed)
 		if strings.HasPrefix(up, "RETURN N") && !strings.Contains(trimmed, "(") && !strings.Contains(trimmed, ".") {

@@ -83,9 +83,7 @@ func (w *runtimeIngestionWorker) Start(ctx context.Context) {
 	if w == nil || w.processor == nil || w.interval <= 0 {
 		return
 	}
-	w.wg.Add(1)
-	go func() {
-		defer w.wg.Done()
+	w.wg.Go(func() {
 		ticker := time.NewTicker(w.interval)
 		defer ticker.Stop()
 		w.processOnce(ctx)
@@ -99,7 +97,7 @@ func (w *runtimeIngestionWorker) Start(ctx context.Context) {
 				w.processOnce(ctx)
 			}
 		}
-	}()
+	})
 }
 
 func (w *runtimeIngestionWorker) Stop() {

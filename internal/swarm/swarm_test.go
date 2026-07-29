@@ -339,7 +339,7 @@ func TestSwarmMultiPause(t *testing.T) {
 	defer goleak.VerifyNone(t)
 	r := newRouter()
 	goals := make([]string, 5)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		sub := fmt.Sprintf("g%d", i)
 		goals[i] = sub + " task"
 		r.route(sub, outcome{kind: "pause", question: "pick " + sub, options: []string{"a", "b"}})
@@ -375,7 +375,7 @@ func TestSwarmBudgetInheritance(t *testing.T) {
 	const parentBudget = 20
 	r := newRouter()
 	goals := make([]string, 4)
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		sub := fmt.Sprintf("b%d", i)
 		goals[i] = sub + " task"
 		r.route(sub, outcome{kind: "steps", steps: 100, text: "done"}) // greedy: each wants 100 steps

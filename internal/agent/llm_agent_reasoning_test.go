@@ -33,7 +33,7 @@ func TestLlmAgent_AdaptiveReasoningRouterKeepsToolsVisible(t *testing.T) {
 		UserTurns:  []llm.Message{{Role: llm.RoleUser, Content: "che tempo fa domani a Caraglio?"}},
 	})
 
-	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})))
+	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: new(25)})))
 	if err != nil {
 		t.Fatalf("Run errored: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestLlmAgent_AdaptiveReasoningNoneDoesNotDisableTools(t *testing.T) {
 		UserTurns:  []llm.Message{{Role: llm.RoleUser, Content: "ciao"}},
 	})
 
-	if _, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)}))); err != nil {
+	if _, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: new(25)}))); err != nil {
 		t.Fatalf("Run errored: %v", err)
 	}
 	main := fc.Requests[1]
@@ -116,7 +116,7 @@ func TestLlmAgent_AdaptiveReasoningRouterRetriesTransientOpen(t *testing.T) {
 		UserTurns:  []llm.Message{{Role: llm.RoleUser, Content: "debug this production outage"}},
 	})
 
-	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})))
+	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: new(25)})))
 	if err != nil {
 		t.Fatalf("Run errored: %v", err)
 	}
@@ -149,7 +149,7 @@ func TestLlmAgent_AdaptiveReasoningRouterRetryExhaustedFallsBackLow(t *testing.T
 		UserTurns:  []llm.Message{{Role: llm.RoleUser, Content: "debug this production outage"}},
 	})
 
-	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})))
+	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: new(25)})))
 	if err != nil {
 		t.Fatalf("retry exhaustion should fall back to low reasoning and continue, got: %v", err)
 	}
@@ -181,7 +181,7 @@ func TestLlmAgent_AdaptiveReasoningClassifierFailureUsesStaticLow(t *testing.T) 
 		Embedder:   failingReasoningEmbedder{},
 	})
 
-	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})))
+	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: new(25)})))
 	if err != nil {
 		t.Fatalf("Run errored: %v", err)
 	}

@@ -38,7 +38,6 @@ func TestReasoningEffortFromMetadata(t *testing.T) {
 		{name: "json null literal", raw: `null`, want: ""},
 	}
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			if got := reasoningEffortFromMetadata([]byte(tc.raw)); got != tc.want {

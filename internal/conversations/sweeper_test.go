@@ -27,8 +27,7 @@ func TestSweeper_TicksThenStopsClean(t *testing.T) {
 		Sweep:    func(context.Context) { calls.Add(1) },
 	})
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	sw.Start(ctx)
 
 	// Wait for at least a couple of ticks to land.
@@ -128,10 +127,14 @@ func TestSweeper_ReclaimsAgedKeepsFresh(t *testing.T) {
 		// serve wires the full ScanOrphans; this asserts the reclaim semantics it runs).
 		Sweep: func(context.Context) { _ = sweepTmp(runDir) },
 	})
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	sw.Start(ctx)
-	t.Cleanup(sw.Stop)
+	// defer, NOT t.Cleanup: Cleanup functions run AFTER the test function returns, so
+	// they fire after `defer goleak.VerifyNone(t)` above and the worker is still alive
+	// when goleak counts. As a defer registered later it wins the LIFO order and stops
+	// the worker first. t.Context() has the same hazard — it is cancelled just before
+	// Cleanup, i.e. also too late — so the explicit Stop is what makes this correct.
+	defer sw.Stop()
 
 	deadline := time.Now().Add(2 * time.Second)
 	for {

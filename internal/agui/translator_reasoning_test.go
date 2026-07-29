@@ -48,7 +48,7 @@ func TestTranslatorReasoningRunCoalesces(t *testing.T) {
 // zero CONTENT for the trailing empty delta (acceptance criterion).
 func TestTranslator200ReasoningDeltas(t *testing.T) {
 	in := make([]*agent.Event, 0, 201)
-	for i := 0; i < 200; i++ {
+	for range 200 {
 		in = append(in, reasoning("x"))
 	}
 	in = append(in, reasoning("")) // a trailing empty delta must NOT add a CONTENT

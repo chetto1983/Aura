@@ -1,6 +1,7 @@
 package prompt
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/llm"
@@ -56,7 +57,7 @@ func ApplyFixedReasoning(req *llm.Request, provider string, cfg llm.Config, effo
 	if effort == "" || !IsReasoningTarget(provider, cfg.BaseURL) {
 		return
 	}
-	req.Reasoning = llm.ReasoningConfig{Effort: effort, Exclude: boolPtr(!cfg.ShowReasoning)}
+	req.Reasoning = llm.ReasoningConfig{Effort: effort, Exclude: new(!cfg.ShowReasoning)}
 }
 
 // IsOpenRouterReasoningTarget reports whether provider/baseURL is the OpenRouter
@@ -106,7 +107,7 @@ func IsReasoningTarget(provider, baseURL string) bool {
 // tokens are generated and billed either way (exclude only gates the text), so
 // surfacing reasoning costs only the bandwidth of the deltas, not extra tokens.
 func (t ReasoningTier) reasoning(showReasoning bool) llm.ReasoningConfig {
-	exclude := boolPtr(!showReasoning)
+	exclude := new(!showReasoning)
 	switch t {
 	case ReasoningTierHigh:
 		return llm.ReasoningConfig{Effort: llm.ReasoningEffortHigh, Exclude: exclude}
@@ -120,8 +121,8 @@ func (t ReasoningTier) reasoning(showReasoning bool) llm.ReasoningConfig {
 // LastGenuineUserContent returns the newest real user request, skipping synthetic
 // budget, workspace, time, recovery, and completion-check nudges.
 func LastGenuineUserContent(history []llm.Message) string {
-	for i := len(history) - 1; i >= 0; i-- {
-		m := history[i]
+	for _, v := range slices.Backward(history) {
+		m := v
 		if m.Role != llm.RoleUser || strings.TrimSpace(m.Content) == "" {
 			continue
 		}
@@ -145,5 +146,3 @@ func isSyntheticUserHint(content string) bool {
 		strings.HasPrefix(trimmed, "Your last response was empty.") ||
 		strings.HasPrefix(trimmed, "Completion check FAILED:")
 }
-
-func boolPtr(v bool) *bool { return &v }

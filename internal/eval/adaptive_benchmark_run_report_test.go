@@ -87,7 +87,6 @@ func TestDecodeAdaptiveBenchmarkReportRejectsNoncanonicalJSON(t *testing.T) {
 		{name: "trailing data", payload: append(canonical, []byte(`{}`)...)},
 	}
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			if _, err := DecodeAdaptiveBenchmarkReport(test.payload); err == nil {
@@ -179,7 +178,7 @@ func TestValidateAdaptiveBenchmarkReportRejectsDriftAndUnsafeEvidence(
 		{
 			name: "passing quality value disagrees",
 			mutate: func(report *AdaptiveBenchmarkReport) {
-				report.Scenarios[0].Quality.Value = benchmarkFloat(0)
+				report.Scenarios[0].Quality.Value = new(float64(0))
 			},
 		},
 		{
@@ -189,7 +188,7 @@ func TestValidateAdaptiveBenchmarkReportRejectsDriftAndUnsafeEvidence(
 				report.Scenarios[0].ReasonCodes = []string{
 					AdaptiveBenchmarkReasonAnswerMismatch,
 				}
-				report.Scenarios[0].Quality.Value = benchmarkFloat(0)
+				report.Scenarios[0].Quality.Value = new(float64(0))
 				report.Scenarios[0].Quality.ReasonCodes = []string{
 					AdaptiveBenchmarkReasonToolMismatch,
 				}
@@ -211,8 +210,8 @@ func TestValidateAdaptiveBenchmarkReportRejectsDriftAndUnsafeEvidence(
 		{
 			name: "cost summary overflow",
 			mutate: func(report *AdaptiveBenchmarkReport) {
-				report.Scenarios[0].CostUSD = benchmarkFloat(math.MaxFloat64)
-				report.Scenarios[1].CostUSD = benchmarkFloat(math.MaxFloat64)
+				report.Scenarios[0].CostUSD = new(math.MaxFloat64)
+				report.Scenarios[1].CostUSD = new(math.MaxFloat64)
 				report.Summary = BuildAdaptiveBenchmarkSummary(report.Scenarios)
 			},
 		},
@@ -254,7 +253,7 @@ func TestValidateAdaptiveBenchmarkReportRejectsDriftAndUnsafeEvidence(
 		{
 			name: "partial price provenance",
 			mutate: func(report *AdaptiveBenchmarkReport) {
-				report.FrozenInputs.PriceTableID = benchmarkString("prices")
+				report.FrozenInputs.PriceTableID = new("prices")
 			},
 		},
 		{
@@ -267,7 +266,7 @@ func TestValidateAdaptiveBenchmarkReportRejectsDriftAndUnsafeEvidence(
 			name: "Qwen artifact drift",
 			mutate: func(report *AdaptiveBenchmarkReport) {
 				report.Model.ArtifactSHA256 =
-					benchmarkString(strings.Repeat("f", 64))
+					new(strings.Repeat("f", 64))
 			},
 		},
 		{
@@ -290,7 +289,6 @@ func TestValidateAdaptiveBenchmarkReportRejectsDriftAndUnsafeEvidence(
 		},
 	}
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			report := validAdaptiveBenchmarkReport(
@@ -366,7 +364,7 @@ func TestAdaptiveBenchmarkVerdictSeparatesPortabilityFromQuality(t *testing.T) {
 	qwen.Scenarios[0].ReasonCodes = []string{
 		AdaptiveBenchmarkReasonAnswerMismatch,
 	}
-	qwen.Scenarios[0].Quality.Value = benchmarkFloat(0)
+	qwen.Scenarios[0].Quality.Value = new(float64(0))
 	qwen.Scenarios[0].Quality.ReasonCodes = []string{
 		AdaptiveBenchmarkReasonAnswerMismatch,
 	}
@@ -395,7 +393,7 @@ func TestAdaptiveBenchmarkVerdictSeparatesPortabilityFromQuality(t *testing.T) {
 	production.Scenarios[0].ReasonCodes = []string{
 		AdaptiveBenchmarkReasonAnswerMismatch,
 	}
-	production.Scenarios[0].Quality.Value = benchmarkFloat(0)
+	production.Scenarios[0].Quality.Value = new(float64(0))
 	production.Scenarios[0].Quality.ReasonCodes = []string{
 		AdaptiveBenchmarkReasonAnswerMismatch,
 	}
@@ -470,7 +468,7 @@ func TestAdaptiveBenchmarkPromotionEvidenceRejectsPortabilityStructurally(
 	production.Scenarios[0].ReasonCodes = []string{
 		AdaptiveBenchmarkReasonAnswerMismatch,
 	}
-	production.Scenarios[0].Quality.Value = benchmarkFloat(0)
+	production.Scenarios[0].Quality.Value = new(float64(0))
 	production.Scenarios[0].Quality.ReasonCodes = []string{
 		AdaptiveBenchmarkReasonAnswerMismatch,
 	}

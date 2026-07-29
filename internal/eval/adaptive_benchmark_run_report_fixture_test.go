@@ -51,16 +51,16 @@ func validAdaptiveBenchmarkReport(
 		}
 		scenarios = append(scenarios, AdaptiveBenchmarkScenarioRecord{
 			ScenarioID: scenario.ScenarioID, Domain: scenario.Domain,
-			RequestID: benchmarkString(
+			RequestID: new(
 				benchmarkUUID("request-" + scenario.ScenarioID),
 			),
-			AssignmentID: benchmarkString(
+			AssignmentID: new(
 				benchmarkUUID("assignment-" + scenario.ScenarioID),
 			),
-			DeliveryEventID: benchmarkString(
+			DeliveryEventID: new(
 				benchmarkUUID("delivery-" + scenario.ScenarioID),
 			),
-			QualityOutcomeID: benchmarkString(
+			QualityOutcomeID: new(
 				benchmarkUUID("quality-" + scenario.ScenarioID),
 			),
 			ChampionActionID:    adaptive.StaticActionID,
@@ -71,7 +71,7 @@ func validAdaptiveBenchmarkReport(
 			Quality: &AdaptiveBenchmarkObservation{
 				EvaluatorID:       AdaptiveBenchmarkEvaluatorID,
 				EvaluatorRevision: AdaptiveBenchmarkEvaluatorRevision,
-				Value:             benchmarkFloat(1), Eligible: true,
+				Value:             new(float64(1)), Eligible: true,
 				ReasonCodes: []string{},
 			},
 			PromptTokens: 1, CompletionTokens: 1, TotalTokens: 2,
@@ -110,8 +110,8 @@ func validAdaptiveBenchmarkReport(
 		Environment: AdaptiveBenchmarkEnvironment{
 			OS: "linux", Arch: "amd64", AuraVersion: "task10-test",
 			GoVersion: "go1.26.5", MigrationHead: "0077",
-			Neo4jRevision:       benchmarkString("neo4j-2026.07"),
-			AgentMemoryRevision: benchmarkString("agent-memory-2026.07"),
+			Neo4jRevision:       new("neo4j-2026.07"),
+			AgentMemoryRevision: new("agent-memory-2026.07"),
 		},
 		Model: validAdaptiveBenchmarkModel(mode),
 		FrozenInputs: AdaptiveBenchmarkFrozenInputs{
@@ -124,8 +124,8 @@ func validAdaptiveBenchmarkReport(
 			ActionCatalogsSHA256: AdaptiveBenchmarkActionCatalogsSHA256(),
 			PolicyVersion:        "task10-shadow-v1",
 			PolicySHA256:         strings.Repeat("2", 64),
-			SnapshotID:           benchmarkString(benchmarkUUID("snapshot")),
-			SnapshotSHA256:       benchmarkString(strings.Repeat("3", 64)),
+			SnapshotID:           new(benchmarkUUID("snapshot")),
+			SnapshotSHA256:       new(strings.Repeat("3", 64)),
 			Seed:                 AdaptiveBenchmarkSeed,
 		},
 		Scenarios: scenarios, Controls: controls,
@@ -142,15 +142,15 @@ func validAdaptiveBenchmarkModel(
 		return AdaptiveBenchmarkModel{
 			ProviderID: "llamacpp", ModelID: "qwen",
 			BaseURLClass:   AdaptiveBenchmarkBaseURLLoopback,
-			ServerName:     benchmarkString("llama.cpp"),
-			ServerVersion:  benchmarkString("b9994"),
-			ServerRevision: benchmarkString("14d3ba45f"),
-			ArtifactName:   benchmarkString(AdaptiveBenchmarkQwenArtifactName),
-			ArtifactSHA256: benchmarkString(
+			ServerName:     new("llama.cpp"),
+			ServerVersion:  new("b9994"),
+			ServerRevision: new("14d3ba45f"),
+			ArtifactName:   new(AdaptiveBenchmarkQwenArtifactName),
+			ArtifactSHA256: new(
 				AdaptiveBenchmarkQwenArtifactSHA256,
 			),
-			SnapshotRevision: benchmarkString("unsloth-revision"),
-			ImageDigest: benchmarkString(
+			SnapshotRevision: new("unsloth-revision"),
+			ImageDigest: new(
 				"sha256:" + strings.Repeat("4", 64),
 			),
 		}
@@ -172,16 +172,4 @@ func benchmarkCatalogForDomain(domain adaptive.Domain) []string {
 
 func benchmarkUUID(name string) string {
 	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(name)).String()
-}
-
-func benchmarkString(value string) *string {
-	return &value
-}
-
-func benchmarkFloat(value float64) *float64 {
-	return &value
-}
-
-func benchmarkInt(value int) *int {
-	return &value
 }

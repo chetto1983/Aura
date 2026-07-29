@@ -48,7 +48,7 @@ func TestShareArtifactKeyShape(t *testing.T) {
 // never share/-prefixed, and distinct share ids yield distinct prefixes
 // (T-37F-05).
 func TestShareKeyNamespaceDisjoint(t *testing.T) {
-	for i := 0; i < 200; i++ {
+	for range 200 {
 		shareA := uuid.New()
 		shareB := uuid.New()
 		snapshotID := uuid.New()
@@ -73,7 +73,7 @@ func TestShareKeyNamespaceDisjoint(t *testing.T) {
 // every artifact key sits under its share's ShareKeyPrefix, so revoke's
 // List(prefix)+Delete reclaims every byte (T-37F-07).
 func TestShareArtifactKeyUnderPrefix(t *testing.T) {
-	for i := 0; i < 200; i++ {
+	for range 200 {
 		shareID := uuid.New()
 		snapshotID := uuid.New()
 		assetID := uuid.New()

@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -244,10 +245,5 @@ func TestServeListenerErrServerClosedIsCleanDuringDrain(t *testing.T) {
 }
 
 func containsReadinessCode(codes []readiness.Code, want readiness.Code) bool {
-	for _, code := range codes {
-		if code == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(codes, want)
 }

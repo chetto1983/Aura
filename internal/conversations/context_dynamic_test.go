@@ -24,7 +24,6 @@ func TestDynamicTailPlacementPreservesStableAlwaysBlock(t *testing.T) {
 		{name: "resumed turn at tail", beforeUser: false, wantIndex: 5},
 	}
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			tail := DynamicTail{
@@ -208,7 +207,6 @@ func TestValidateDynamicTailMessagesRejectsTamperDuplicatePlacementAndCap(t *tes
 		t.Fatalf("valid resumed tail: %v", err)
 	}
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			if err := ValidateDynamicTailMessages(test.messages, tail, cfg.HardCap()); err == nil {

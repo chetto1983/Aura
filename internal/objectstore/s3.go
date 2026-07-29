@@ -193,10 +193,7 @@ func (s *S3Store) List(ctx context.Context, req ListRequest) ([]ObjectInfo, erro
 			ContinuationToken: token,
 		}
 		if req.Limit > 0 {
-			remaining := req.Limit - len(out)
-			if remaining > math.MaxInt32 {
-				remaining = math.MaxInt32
-			}
+			remaining := min(req.Limit-len(out), math.MaxInt32)
 			input.MaxKeys = aws.Int32(int32(remaining)) //nolint:gosec // clamped to int32 above.
 		}
 		resp, err := s.client.ListObjectsV2(ctx, input)

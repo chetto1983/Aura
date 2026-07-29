@@ -116,7 +116,7 @@ func TestSessionStoreLazySweepReclaims(t *testing.T) {
 	st := newSessionStore(15 * time.Minute)
 	st.now = clk.now
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		if _, err := st.put(newTestSession()); err != nil {
 			t.Fatalf("put %d: %v", i, err)
 		}
@@ -139,22 +139,20 @@ func TestSessionStoreLazySweepReclaims(t *testing.T) {
 func TestSessionStoreConcurrent(t *testing.T) {
 	st := newSessionStore(time.Hour)
 	var wg sync.WaitGroup
-	for i := 0; i < 64; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 64 {
+		wg.Go(func() {
 			token, err := st.put(newTestSession())
 			if err != nil {
 				t.Errorf("put: %v", err)
 				return
 			}
-			for j := 0; j < 8; j++ {
+			for range 8 {
 				if _, ok := st.get(token); !ok {
 					t.Errorf("get(%q) miss under concurrency", token)
 					return
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if n := st.len(); n != 64 {

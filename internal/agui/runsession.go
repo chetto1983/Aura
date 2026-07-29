@@ -156,10 +156,7 @@ func (s *RunSession) subscribeFrom(fromSeq int64) (<-chan seqEvent, func(), bool
 		return nil, nil, false
 	}
 	start := fromSeq + 1
-	replay := s.nextSeq - start
-	if replay < 0 {
-		replay = 0
-	}
+	replay := max(s.nextSeq-start, 0)
 	ch := make(chan seqEvent, int(replay)+s.subBuffer)
 	for seq := s.nextSeq - replay; seq < s.nextSeq; seq++ {
 		ch <- s.ring[(s.head-int(s.nextSeq-seq)+len(s.ring))%len(s.ring)]

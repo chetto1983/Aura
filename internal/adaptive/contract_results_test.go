@@ -18,10 +18,10 @@ const (
 
 func TestResultIDHasNoExternallyConstructibleFields(t *testing.T) {
 	t.Parallel()
-	resultType := reflect.TypeOf(ResultID{})
-	for i := range resultType.NumField() {
-		if resultType.Field(i).IsExported() {
-			t.Fatalf("ResultID field %q is exported", resultType.Field(i).Name)
+	resultType := reflect.TypeFor[ResultID]()
+	for field := range resultType.Fields() {
+		if field.IsExported() {
+			t.Fatalf("ResultID field %q is exported", field.Name)
 		}
 	}
 }
@@ -47,7 +47,6 @@ func TestUUIDResultConstructorsRequireCanonicalUUIDs(t *testing.T) {
 		},
 	}
 	for _, tt := range constructors {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			result, err := tt.new(tt.id)

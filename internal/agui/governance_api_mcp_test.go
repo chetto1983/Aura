@@ -54,7 +54,7 @@ func TestEnvChips_KeyExtractionAcrossUnionCases(t *testing.T) {
 // stringList→inline `append([]string{}, ...)` swap from regressing to a nil-based copy.
 func TestGovernanceMCPEmptyAllowlistIsArrayNotNull(t *testing.T) {
 	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
-		"nonet": {Command: "nonet-bin", Enabled: boolPtr(true)}, // no Runtime.Network → empty allowlist
+		"nonet": {Command: "nonet-bin", Enabled: new(true)}, // no Runtime.Network → empty allowlist
 	}}
 	s := govServer(GovernanceProviders{MCP: &scriptedMCPBoard{doc: doc}})
 	rec := doGov(t, s, http.MethodGet, "/api/governance/mcp")

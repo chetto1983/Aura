@@ -181,11 +181,11 @@ func TestCloseMCPServers_ConcurrentBoundedShutdown(t *testing.T) {
 	t.Setenv("AURA_MCP_SHUTDOWN_TIMEOUT", "2")
 
 	const n = 5
-	var calls int32
+	var calls atomic.Int32
 	closers := make([]func() error, n)
 	for i := range closers {
 		closers[i] = func() error {
-			atomic.AddInt32(&calls, 1)
+			calls.Add(1)
 			time.Sleep(300 * time.Millisecond)
 			return nil
 		}
@@ -196,7 +196,7 @@ func TestCloseMCPServers_ConcurrentBoundedShutdown(t *testing.T) {
 		t.Fatalf("closeMCPServers: %v", err)
 	}
 	elapsed := time.Since(start)
-	if got := atomic.LoadInt32(&calls); got != n {
+	if got := calls.Load(); got != n {
 		t.Fatalf("want all %d closers invoked, got %d", n, got)
 	}
 	if elapsed > 900*time.Millisecond {

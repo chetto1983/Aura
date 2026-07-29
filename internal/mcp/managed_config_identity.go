@@ -42,8 +42,10 @@ var (
 // defined in the shared catalog. A nil Enabled leaves the shared default; an empty
 // Trust.Class leaves the shared trust.
 type IdentityServerPref struct {
-	Enabled *bool        `json:"enabled,omitempty"`
-	Trust   ManagedTrust `json:"trust,omitempty"`
+	Enabled *bool `json:"enabled,omitempty"`
+	// See ManagedServer.Trust: omitempty is inert on a struct value, so dropping it
+	// is byte-identical, while omitzero would change what gets persisted.
+	Trust ManagedTrust `json:"trust"`
 }
 
 // IdentityMCPConfig is the per-identity MCP overlay stored at

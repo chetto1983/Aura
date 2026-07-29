@@ -3,6 +3,7 @@ package agui
 import (
 	"context"
 	"errors"
+	"maps"
 	"sync"
 	"testing"
 )
@@ -116,9 +117,7 @@ func (j *fakeJournal) CompletedSteps(_ context.Context, sagaID string) (map[stri
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	out := map[string]bool{}
-	for k, v := range j.done[sagaID] {
-		out[k] = v
-	}
+	maps.Copy(out, j.done[sagaID])
 	return out, nil
 }
 

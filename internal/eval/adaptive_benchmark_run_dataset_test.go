@@ -170,7 +170,6 @@ func TestLoadAdaptiveBenchmarkDatasetRejectsNoncanonicalJSON(t *testing.T) {
 		{name: "trailing data", payload: canonical + `{}`},
 	}
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			if _, err := LoadAdaptiveBenchmarkDataset(
@@ -210,7 +209,6 @@ func TestLoadAdaptiveBenchmarkDatasetRejectsRegisteredCorpusMutation(
 		},
 	}
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			mutated := strings.Replace(
@@ -431,7 +429,6 @@ func TestEvaluateAdaptiveBenchmarkScenarioUsesExactRegisteredNormalizers(
 		},
 	}
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			got, err := EvaluateAdaptiveBenchmarkScenario(

@@ -1,5 +1,7 @@
 package adaptive
 
+import "maps"
+
 func canonicalAssignment(assignment Assignment) Assignment {
 	assignment.EligibleActions = append([]string(nil), assignment.EligibleActions...)
 	assignment.ActionProbabilities = append(
@@ -22,9 +24,7 @@ func canonicalDelivery(delivery Delivery) Delivery {
 	delivery.ResultIDs = append([]ResultID{}, delivery.ResultIDs...)
 	delivery.Revisions = delivery.Revisions.clone()
 	limits := make(map[string]int, len(delivery.EffectiveLimits))
-	for key, value := range delivery.EffectiveLimits {
-		limits[key] = value
-	}
+	maps.Copy(limits, delivery.EffectiveLimits)
 	delivery.EffectiveLimits = limits
 	return delivery
 }

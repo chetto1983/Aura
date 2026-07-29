@@ -8,6 +8,7 @@ package knowledge
 
 import (
 	"encoding/json"
+	"slices"
 	"sort"
 )
 
@@ -95,10 +96,8 @@ func deriveCitations(nodes map[string]*GraphNode, edges map[string]*GraphEdge) {
 		if name == "" {
 			name = neighbor
 		}
-		for _, existing := range n.Citations {
-			if existing == name {
-				return
-			}
+		if slices.Contains(n.Citations, name) {
+			return
 		}
 		n.Citations = append(n.Citations, name)
 	}

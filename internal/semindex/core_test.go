@@ -24,7 +24,6 @@ func TestCosine(t *testing.T) {
 		{"empty equal length", []float64{}, []float64{}, 0},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			if got := cosine(tc.a, tc.b); !approxEq(got, tc.want) {
@@ -118,7 +117,6 @@ func TestMargin(t *testing.T) {
 		{"negative scores", []float64{-0.2, -0.5}, 0.3},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			if got := margin(tc.scores); !approxEq(got, tc.want) {

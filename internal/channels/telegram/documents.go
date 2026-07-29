@@ -88,16 +88,14 @@ func (d *documentsClient) Convert(ctx context.Context, payload []byte, fileName 
 		return ConvertResult{Status: ConvertRefused, Message: documentRefuseMessage}, nil
 
 	case len(payload) > asyncTierMinBytes:
-		d.wg.Add(1)
 		// Detach from the request ctx: the async conversion outlives the inbound
 		// handler call. Stop drains the goroutine via wg (goleak-clean).
-		go func() {
-			defer d.wg.Done()
+		d.wg.Go(func() {
 			md, err := d.postConvert(context.WithoutCancel(ctx), payload, fileName)
 			if onAsync != nil {
 				onAsync(fileName, md, err)
 			}
-		}()
+		})
 		return ConvertResult{Status: ConvertAsync}, nil
 
 	default:

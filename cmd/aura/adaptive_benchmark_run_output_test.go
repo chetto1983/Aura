@@ -68,7 +68,6 @@ func TestWriteAdaptiveBenchmarkReportRejectsUnsafeOutputAndEmptyPayload(
 		},
 		{name: "file", path: file, payload: []byte("{}")},
 	} {
-		testCase := testCase
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 			if path, err := writeAdaptiveBenchmarkReport(

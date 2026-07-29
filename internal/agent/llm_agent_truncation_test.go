@@ -28,7 +28,7 @@ func TestToolArgsTruncated_NudgesNotDispatched(t *testing.T) {
 		agenttest.TextChunks("stop", "recovered ok"), // the nudged retry answers cleanly
 	)
 	a := newAgent(t, fc, llm.Config{})
-	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(10)})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(10)})
 
 	evs, err := collect(a.Run(ic))
 	if err != nil {
@@ -59,7 +59,7 @@ func TestToolArgsTruncated_TwiceFinalizes(t *testing.T) {
 		agenttest.TextChunks("stop", finalizeAnswer), // finalize synthesis turn
 	)
 	a := newAgent(t, fc, llm.Config{})
-	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(10)})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(10)})
 
 	evs, err := collect(a.Run(ic))
 	if err != nil {

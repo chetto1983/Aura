@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -501,10 +502,5 @@ func TestGovernanceWriteSkillsValidateDryRun(t *testing.T) {
 
 // contains is a small slice-membership helper for the call-log assertions.
 func contains(ss []string, want string) bool {
-	for _, s := range ss {
-		if s == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(ss, want)
 }

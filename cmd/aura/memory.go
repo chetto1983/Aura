@@ -308,7 +308,7 @@ func parseMemoryField(kind, name, value string) (any, error) {
 
 func splitCommaList(value string) []string {
 	var items []string
-	for _, item := range strings.Split(value, ",") {
+	for item := range strings.SplitSeq(value, ",") {
 		if trimmed := strings.TrimSpace(item); trimmed != "" {
 			items = append(items, trimmed)
 		}

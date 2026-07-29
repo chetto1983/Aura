@@ -3,6 +3,8 @@ package runner
 import (
 	"context"
 	"errors"
+	"maps"
+	"slices"
 	"sort"
 	"sync"
 
@@ -268,8 +270,8 @@ func managedMessagesForFake(
 	}
 	index := len(messages)
 	if cfg.DynamicTail.BeforeCurrentUser {
-		for candidate := len(messages) - 1; candidate >= 0; candidate-- {
-			if messages[candidate].Role == llm.RoleUser {
+		for candidate, v := range slices.Backward(messages) {
+			if v.Role == llm.RoleUser {
 				index = candidate
 				break
 			}
@@ -442,9 +444,7 @@ func (f *fakePauseStore) MarkResumedBatch(_ context.Context, answers map[string]
 			return askuser.ErrPauseNotFound
 		}
 	}
-	for token, ans := range answers {
-		f.answers[token] = ans
-	}
+	maps.Copy(f.answers, answers)
 	return nil
 }
 

@@ -21,14 +21,14 @@ func writeSharedCatalog(t *testing.T) string {
 		"calculator": {
 			Command: "uvx",
 			Args:    []string{"calculator-mcp-server", "--stdio"},
-			Enabled: boolPtr(true),
+			Enabled: new(true),
 			Source:  "recipe:calculator",
 			Trust:   ManagedTrust{Class: TrustTrustedRecipe},
 		},
 		"memory": {
 			Type:    ServerTypeStreamableHTTP,
 			URL:     "http://127.0.0.1:8091/mcp/",
-			Enabled: boolPtr(true),
+			Enabled: new(true),
 			Source:  SourceRecipeMemory,
 			Trust:   ManagedTrust{Class: TrustTrustedRecipe},
 		},
@@ -38,7 +38,7 @@ func writeSharedCatalog(t *testing.T) string {
 		"weather": {
 			Type:    ServerTypeStreamableHTTP,
 			URL:     "https://weather.example.test/mcp/",
-			Enabled: boolPtr(true),
+			Enabled: new(true),
 			Source:  "recipe:weather",
 			Trust:   ManagedTrust{Class: TrustRemoteHTTP},
 		},
@@ -213,7 +213,7 @@ func TestClassBSharedServerNotUserToggleable(t *testing.T) {
 	// Even a hand-written overlay pref for memory is ignored by mount (defense in depth).
 	if err := SaveIdentityMCPConfig("alice", IdentityMCPConfig{
 		Preferences: map[string]IdentityServerPref{
-			"memory": {Enabled: boolPtr(false)},
+			"memory": {Enabled: new(false)},
 		},
 	}); err != nil {
 		t.Fatalf("SaveIdentityMCPConfig: %v", err)

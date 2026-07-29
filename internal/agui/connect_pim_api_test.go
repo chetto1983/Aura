@@ -87,9 +87,9 @@ func connectPIMServer(baseURL, token string) *httptest.Server {
 // reloadOnChange makes the account briefly invisible) and returns the eventual 200 — the
 // create→start race fix.
 func TestPIMGoogleStartRetriesTransient404(t *testing.T) {
-	var calls int32
+	var calls atomic.Int32
 	sidecar := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		if atomic.AddInt32(&calls, 1) <= 2 {
+		if calls.Add(1) <= 2 {
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = io.WriteString(w, `{"error":"Account not found."}`)
 			return
@@ -114,7 +114,7 @@ func TestPIMGoogleStartRetriesTransient404(t *testing.T) {
 	if !strings.Contains(string(body), "accounts.google.com") {
 		t.Fatalf("google/start body not passed through after retry: %q", body)
 	}
-	if got := atomic.LoadInt32(&calls); got < 3 {
+	if got := calls.Load(); got < 3 {
 		t.Fatalf("expected >=3 sidecar calls (2x404 + 200), got %d", got)
 	}
 }

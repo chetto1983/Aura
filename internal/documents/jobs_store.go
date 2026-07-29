@@ -22,14 +22,14 @@ type IngestionJob struct {
 	AttemptCount   int            `json:"attempt_count"`
 	MaxAttempts    int            `json:"max_attempts"`
 	LockedBy       string         `json:"locked_by,omitempty"`
-	LockedUntil    time.Time      `json:"locked_until,omitempty"`
-	NextAttemptAt  time.Time      `json:"next_attempt_at,omitempty"`
+	LockedUntil    time.Time      `json:"locked_until"`
+	NextAttemptAt  time.Time      `json:"next_attempt_at"`
 	Payload        map[string]any `json:"payload"`
 	ErrorCode      string         `json:"error_code,omitempty"`
 	ErrorMessage   string         `json:"error_message,omitempty"`
-	CreatedAt      time.Time      `json:"created_at,omitempty"`
-	UpdatedAt      time.Time      `json:"updated_at,omitempty"`
-	CompletedAt    time.Time      `json:"completed_at,omitempty"`
+	CreatedAt      time.Time      `json:"created_at"`
+	UpdatedAt      time.Time      `json:"updated_at"`
+	CompletedAt    time.Time      `json:"completed_at"`
 }
 
 // CreateIngestionJobRequest carries a durable job enqueue request.

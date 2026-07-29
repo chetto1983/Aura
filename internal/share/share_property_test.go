@@ -72,7 +72,7 @@ var allMsgKinds = []msgKind{kindUser, kindAssistantPlain, kindAssistantTool, kin
 func genHostileHistory(rt *rapid.T) ([]llm.Message, []string) {
 	n := rapid.IntRange(2, 12).Draw(rt, "n_messages")
 	kinds := make([]msgKind, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		kinds[i] = rapid.SampledFrom(allMsgKinds).Draw(rt, fmt.Sprintf("kind-%d", i))
 	}
 
@@ -125,7 +125,7 @@ func genHostileHistory(rt *rapid.T) ([]llm.Message, []string) {
 func genArtifacts(rt *rapid.T) []ArtifactMeta {
 	n := rapid.IntRange(0, 3).Draw(rt, "n_artifacts")
 	out := make([]ArtifactMeta, 0, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		out = append(out, ArtifactMeta{
 			AssetID:   fmt.Sprintf("asset-%d", i),
 			FileName:  fmt.Sprintf("file-%d.txt", i),

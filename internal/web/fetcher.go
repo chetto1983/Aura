@@ -91,7 +91,7 @@ func (c *Client) Fetch(ctx context.Context, convID, rawURL string) (Page, error)
 // whole hop sequence: a retryable failure triggers exactly one re-attempt within
 // the deadline (D-42).
 func (c *Client) fetchBody(ctx context.Context, convID string, start *url.URL) ([]byte, *url.URL, error) {
-	for attempt := 0; attempt < 2; attempt++ {
+	for attempt := range 2 {
 		body, finalURL, err := c.doHops(ctx, convID, start)
 		if err == nil {
 			return body, finalURL, nil
@@ -111,7 +111,7 @@ func (c *Client) fetchBody(ctx context.Context, convID string, start *url.URL) (
 // never dialed. On a 2xx it gates Content-Type and size, then returns the body.
 func (c *Client) doHops(ctx context.Context, convID string, current *url.URL) ([]byte, *url.URL, error) {
 	reqCtx := withConvID(ctx, convID)
-	for hop := 0; hop < maxRedirectHops; hop++ {
+	for range maxRedirectHops {
 		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, current.String(), nil)
 		if err != nil {
 			return nil, nil, err

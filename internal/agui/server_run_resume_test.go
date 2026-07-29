@@ -131,7 +131,7 @@ func TestRunEvents_ResumeAfterDisconnect(t *testing.T) {
 	const tid = "32323232-3232-3232-3232-323232323232"
 	run := &detachLockRunner{}
 	pair := textTurn("x")
-	for i := 0; i < 30; i++ {
+	for range 30 {
 		run.events = append(run.events, pair[0])
 	}
 	run.events = append(run.events, pair[1])
@@ -194,7 +194,7 @@ func TestRunEvents_ReplayGap410(t *testing.T) {
 	const tid = "33333333-3333-3333-3333-333333333333"
 	run := &scriptedRunner{}
 	pair := textTurn("x")
-	for i := 0; i < 8; i++ {
+	for range 8 {
 		run.events = append(run.events, pair[0])
 	}
 	run.events = append(run.events, pair[1])
@@ -447,7 +447,7 @@ func TestRunIdempotencyInterplay(t *testing.T) {
 	const tid = "37373737-3737-3737-3737-373737373737"
 	run := &scriptedRunner{delay: 20 * time.Millisecond}
 	pair := textTurn("x")
-	for i := 0; i < 30; i++ {
+	for range 30 {
 		run.events = append(run.events, pair[0])
 	}
 	run.events = append(run.events, pair[1])

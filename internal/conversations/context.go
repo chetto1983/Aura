@@ -7,6 +7,7 @@ import (
 	"html"
 	"log/slog"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -99,10 +100,7 @@ type ContextConfig struct {
 // positive smallWindowHardCapFloor so L2.5 truncation stays active. A degenerate
 // ContextWindow <= 0 still yields 0.
 func (c ContextConfig) hardCap() int {
-	out := c.MaxOutputTokens
-	if out < l2MinOutputReservation {
-		out = l2MinOutputReservation
-	}
+	out := max(c.MaxOutputTokens, l2MinOutputReservation)
 	cap := c.ContextWindow - out - l2HeadroomTokens - c.ProviderErrorReserveTokens
 	if cap <= 0 {
 		cap = smallWindowHardCapFloor(c.ContextWindow)
@@ -387,11 +385,11 @@ func readToolOutputSpillID(content, fallback string) string {
 		return fallback
 	}
 	matches := readToolOutputCallIDRe.FindAllStringSubmatch(unescaped[footerAt:], -1)
-	for i := len(matches) - 1; i >= 0; i-- {
-		if len(matches[i]) != 2 {
+	for _, v := range slices.Backward(matches) {
+		if len(v) != 2 {
 			continue
 		}
-		id, err := strconv.Unquote(matches[i][1])
+		id, err := strconv.Unquote(v[1])
 		if err == nil && id != "" {
 			return id
 		}

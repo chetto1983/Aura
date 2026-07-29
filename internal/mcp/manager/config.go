@@ -2,6 +2,7 @@ package manager
 
 import (
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 
@@ -54,9 +55,7 @@ func ImportProfile(base *mcp.ManagedConfig, incoming mcp.ManagedConfig, opts Imp
 	if base.Version == 0 {
 		base.Version = mcp.ManagedConfigVersion
 	}
-	for name, profile := range incoming.Profiles {
-		base.Profiles[name] = profile
-	}
+	maps.Copy(base.Profiles, incoming.Profiles)
 
 	names := make([]string, 0, len(incoming.MCPServers))
 	for name := range incoming.MCPServers {

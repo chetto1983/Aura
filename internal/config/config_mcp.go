@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"strings"
 
@@ -58,17 +59,13 @@ func loadMCPServers() (map[string]mcp.ServerConfig, map[string]mcp.ManagedServer
 		return nil, nil, err
 	}
 	policies := make(map[string]mcp.ManagedServer, len(runnableManaged))
-	for name, server := range runnableManaged {
-		policies[name] = server
-	}
+	maps.Copy(policies, runnableManaged)
 	envServers, err := parseMCPServersJSON(os.Getenv("AURA_MCP_SERVERS_JSON"))
 	if err != nil {
 		return nil, nil, err
 	}
 	out := make(map[string]mcp.ServerConfig, len(managedServers)+len(envServers))
-	for name, cfg := range managedServers {
-		out[name] = cfg
-	}
+	maps.Copy(out, managedServers)
 	for name, cfg := range envServers {
 		out[name] = cfg
 		delete(policies, name)
