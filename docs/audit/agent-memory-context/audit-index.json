@@ -1,0 +1,340 @@
+{
+  "schema_version": "1.1",
+  "audit_name": "Aura Agent Memory MCP and Context Engine Industrial Read-Only Audit",
+  "audit_timestamp_utc": "2026-07-29T08:55:35Z",
+  "evidence_cutoff_utc": "2026-07-29T08:36:17Z",
+  "repository": {
+    "root": "D:\\Aura",
+    "branch": "master",
+    "revision": "5c151cf9541ff9946057361f97e757677d82cac8",
+    "audited_state": "current dirty working tree including pre-existing user-owned changes",
+    "initial_status_entries": 246,
+    "pre_output_status_entries": 248,
+    "final_total_status_entries": 254,
+    "final_status_entries_excluding_output": 253,
+    "pre_output_filtered_status_sha256": "b987f7e4d0ff3a204fbfce66faadd584df644187b750b8c42b5503d3d535eacd",
+    "final_filtered_status_sha256": "14648e0bb616bb627bc6d779854fca39323c7a4949b8c01e5cb3d4be044c96d1",
+    "filtered_status_matches_pre_output": false,
+    "output_directory_existed_at_baseline": false,
+    "concurrent_user_owned_changes_observed": true,
+    "atomic_snapshot": false
+  },
+  "audited_scope": [
+    "Vendored Agent Memory image, configuration, MCP server, tools, resources, prompts, observer, memory implementations, graph schema/queries, consolidation, and tests",
+    "Aura MCP catalog, manager, configuration, common transports, bridge, reconnect, tool discovery, gateway/idempotency, CLI, onboarding, and direct recall",
+    "Conversation persistence, context acquisition, ladder, token budgeting, dynamic recall, prompt assembly, hooks, tool loops, final synthesis, and exact LLM transport",
+    "Concurrency, retry, timeout, cancellation, restart, backpressure, performance evidence, and failure amplification",
+    "Authentication, authorization, tenant/session isolation, prompt injection, memory poisoning, secrets, PII, retention, deletion, and SSRF",
+    "CI, tests, readiness, health, metrics, alerts, runbooks, quality snapshots, PRD, and design documents"
+  ],
+  "excluded_actions": [
+    "No production services were started or stopped",
+    "No migrations, package installs, upgrades, formatters, or generators were run",
+    "No source, configuration, schema, prompt, dependency, or lockfile was modified",
+    "No branch or commit was created",
+    "No persistent integration data was queried or changed"
+  ],
+  "agents_and_workstreams": [
+    {
+      "agent": "lead",
+      "role": "Audit orchestrator",
+      "workstreams": [
+        "baseline and scope",
+        "inventory and independent evidence checks",
+        "finding reconciliation and severity",
+        "safe focused validation",
+        "target architecture and roadmap",
+        "report generation and integrity verification"
+      ]
+    },
+    {
+      "agent": "architecture_mcp",
+      "runtime_name": "Ampere",
+      "roles": [
+        "Agent A - Repository Mapper and Architecture Analyst",
+        "Agent B - MCP Protocol and Contract Specialist"
+      ],
+      "mode": "parallel, strictly read-only"
+    },
+    {
+      "agent": "memory_context",
+      "runtime_name": "Hilbert",
+      "roles": [
+        "Agent C - Agent Memory Lifecycle Specialist",
+        "Agent D - Context Engine and Token-Budget Specialist"
+      ],
+      "mode": "parallel, strictly read-only"
+    },
+    {
+      "agent": "reliability_security_qa",
+      "runtime_name": "Galileo",
+      "roles": [
+        "Agent E - Concurrency, Reliability, and Performance Specialist",
+        "Agent F - Security and Privacy Specialist",
+        "Agent G - QA, Observability, and Operability Specialist"
+      ],
+      "mode": "parallel, strictly read-only"
+    }
+  ],
+  "representative_files_inspected": [
+    "CLAUDE.md",
+    "prd.md",
+    "compose.yaml",
+    ".env.example",
+    ".github/workflows/ci.yml",
+    "docker/agent-memory/Dockerfile",
+    "docker/agent-memory/src/neo4j_agent_memory/config/settings.py",
+    "docker/agent-memory/src/neo4j_agent_memory/mcp/server.py",
+    "docker/agent-memory/src/neo4j_agent_memory/mcp/_tools.py",
+    "docker/agent-memory/src/neo4j_agent_memory/mcp/_resources.py",
+    "docker/agent-memory/src/neo4j_agent_memory/mcp/_observer.py",
+    "docker/agent-memory/src/neo4j_agent_memory/integration.py",
+    "docker/agent-memory/src/neo4j_agent_memory/integration_context.py",
+    "docker/agent-memory/src/neo4j_agent_memory/memory/long_term.py",
+    "docker/agent-memory/src/neo4j_agent_memory/memory/short_term.py",
+    "docker/agent-memory/src/neo4j_agent_memory/memory/consolidation.py",
+    "docker/agent-memory/src/neo4j_agent_memory/graph/client.py",
+    "docker/agent-memory/src/neo4j_agent_memory/graph/queries.py",
+    "docker/agent-memory/src/neo4j_agent_memory/graph/schema.py",
+    "docker/agent-memory/src/neo4j_agent_memory/core/memory.py",
+    "internal/mcp/client.go",
+    "internal/mcp/http_client.go",
+    "internal/mcp/transport.go",
+    "internal/mcp/transport_ssrf.go",
+    "internal/mcp/managed_config.go",
+    "internal/mcp/managed_config_identity.go",
+    "internal/mcp/manager/catalog.go",
+    "internal/agent/mcptools/bridge.go",
+    "internal/agent/mcptools/bridge_reconnect.go",
+    "internal/agent/mcptools/mount.go",
+    "internal/agent/mcptools/timeout.go",
+    "internal/agent/tools/spec.go",
+    "internal/agent/tools/search.go",
+    "internal/agent/tools/result.go",
+    "internal/agent/tools/swarm_spawn.go",
+    "internal/agent/llm_agent.go",
+    "internal/agent/llm_agent_dispatch.go",
+    "internal/agent/llm_agent_finalize.go",
+    "internal/agent/hooks.go",
+    "internal/agent/hooks_command.go",
+    "internal/agent/prompt/builder.go",
+    "internal/conversations/context.go",
+    "internal/conversations/context_dynamic.go",
+    "internal/conversations/store.go",
+    "internal/runner/runner.go",
+    "internal/runner/turn_model_context.go",
+    "internal/runner/dynamic_recall.go",
+    "internal/runner/runner_test.go",
+    "internal/llm/config.go",
+    "internal/llm/openai_compat/client.go",
+    "internal/gateway/reserve.go",
+    "internal/knowledge/client.go",
+    "internal/agui/deprovision.go",
+    "internal/readiness/state.go",
+    "internal/retention/policy.go",
+    "cmd/aura/main.go",
+    "cmd/aura/mcp.go",
+    "cmd/aura/memory.go",
+    "cmd/aura/memory_onboarding.go",
+    "cmd/aura/serve_recall.go",
+    "cmd/aura/serve_provisioning.go",
+    "observability/prometheus/rules/aura-recording.yml",
+    "observability/prometheus/rules/aura-alerts.yml",
+    "observability/runbooks/aura-llm-tools.md",
+    "docs/superpowers/specs/2026-07-28-memory-surface-design.md",
+    "docs/aura-quality-snapshot.md"
+  ],
+  "commands_executed": [
+    {
+      "command": "git status --short",
+      "purpose": "capture baseline and integrity checkpoints",
+      "mutation": false
+    },
+    {
+      "command": "git rev-parse HEAD",
+      "purpose": "record repository revision",
+      "mutation": false
+    },
+    {
+      "command": "git branch --show-current",
+      "purpose": "record branch",
+      "mutation": false
+    },
+    {
+      "command": "git diff -- <targeted-path>",
+      "purpose": "distinguish audited working-tree behavior from HEAD",
+      "mutation": false
+    },
+    {
+      "command": "rg --files and targeted rg -n -C searches",
+      "purpose": "inventory files, symbols, callers, consumers, tests, and absent wiring",
+      "mutation": false
+    },
+    {
+      "command": "Get-Content -Raw/-LiteralPath and narrow line reads",
+      "purpose": "inspect repository instructions, source, configuration, tests, and documentation",
+      "mutation": false
+    },
+    {
+      "command": "$env:GOCACHE='D:\\tmp\\aura-agent-memory-audit-gocache'; go test ./internal/runner -run '^TestTurnWithModelUserMessagePersistsVisibleTextAndSendsModelContext$' -count=1",
+      "purpose": "validate CTX-001 using an isolated build cache",
+      "mutation": false,
+      "result": "failed in 43.7 seconds: LLM request did not include model-context user message"
+    },
+    {
+      "command": "Get-Content -Raw audit-index.json | ConvertFrom-Json",
+      "purpose": "validate generated JSON",
+      "mutation": false
+    }
+  ],
+  "findings": {
+    "total": 30,
+    "by_severity": {
+      "P0": {
+        "count": 2,
+        "ids": [
+          "SEC-001",
+          "SEC-002"
+        ]
+      },
+      "P1": {
+        "count": 16,
+        "ids": [
+          "MCP-001",
+          "MCP-002",
+          "MCP-003",
+          "ARC-001",
+          "PRIV-001",
+          "MEM-001",
+          "MCP-004",
+          "CON-001",
+          "CTX-001",
+          "CTX-002",
+          "CTX-003",
+          "CTX-004",
+          "CTX-005",
+          "MEM-002",
+          "OBS-001",
+          "TST-001"
+        ]
+      },
+      "P2": {
+        "count": 11,
+        "ids": [
+          "REL-001",
+          "SEC-003",
+          "MEM-003",
+          "MEM-004",
+          "MEM-005",
+          "CTX-006",
+          "MCP-005",
+          "MCP-006",
+          "ARC-002",
+          "ARC-003",
+          "MCP-007"
+        ]
+      },
+      "P3": {
+        "count": 0,
+        "ids": []
+      },
+      "INFO": {
+        "count": 1,
+        "ids": [
+          "PERF-001"
+        ]
+      }
+    },
+    "by_domain": {
+      "SEC": 3,
+      "MCP": 7,
+      "ARC": 3,
+      "PRIV": 1,
+      "MEM": 5,
+      "CON": 1,
+      "CTX": 6,
+      "OBS": 1,
+      "TST": 1,
+      "REL": 1,
+      "PERF": 1
+    },
+    "by_status": {
+      "CONFIRMED": 29,
+      "HIGH-CONFIDENCE": 0,
+      "SUSPECTED": 0,
+      "NOT ASSESSABLE": 1
+    },
+    "by_confidence": {
+      "High": 29,
+      "Medium": 1,
+      "Low": 0
+    }
+  },
+  "readiness": {
+    "overall_score": 3.4,
+    "scale": "0.0-10.0",
+    "recommendation": "NO-GO",
+    "basis": "original audit cutoff; retained after P0 remediation because P1 findings remain open",
+    "release_blockers": [
+      "CTX-001",
+      "MCP-004",
+      "PRIV-001"
+    ]
+  },
+  "post_audit_remediation": {
+    "timestamp_utc": "2026-07-29T09:49:20Z",
+    "scope": "all P0 findings",
+    "open_p0_count": 0,
+    "verified_p0_count": 2,
+    "verified_ids": [
+      "SEC-001",
+      "SEC-002"
+    ],
+    "implementation_revision": "30e1d8a98",
+    "real_agent_gate_revision": "3ba6fb4b4",
+    "scoped_score": 10.0,
+    "scoped_recommendation": "GO",
+    "real_agent": {
+      "provider": "openrouter",
+      "model": "deepseek/deepseek-v4-flash:nitro",
+      "test": "TestMemoryRealAgentRecall",
+      "result": "PASS"
+    },
+    "evidence_document": "12-p0-remediation-evidence.md"
+  },
+  "output_documents": [
+    "README.md",
+    "00-executive-summary.md",
+    "01-scope-methodology-and-evidence.md",
+    "02-current-state-architecture.md",
+    "03-agent-memory-mcp-audit.md",
+    "04-context-engine-audit.md",
+    "05-concurrency-reliability-performance.md",
+    "06-security-and-privacy.md",
+    "07-testing-observability-operability.md",
+    "08-findings-register.md",
+    "09-target-architecture.md",
+    "10-prioritized-roadmap.md",
+    "11-open-questions-and-required-evidence.md",
+    "12-p0-remediation-evidence.md",
+    "audit-index.json"
+  ],
+  "known_limitations": [
+    "No live service or persistent graph was inspected; existing affected-data volume is unknown",
+    "Deployed network policy, FastMCP framework limits, and actual runtime profiles were not available",
+    "Current-model production-scale performance and retrieval quality are not assessable from valid evidence",
+    "Only one focused existing test was safe and necessary to run; broader live suites were not executed",
+    "User-owned working-tree files changed concurrently, so the audit is not an atomic snapshot",
+    "Line numbers can move as the pre-existing uncommitted work continues"
+  ],
+  "integrity": {
+    "specialist_writes": 0,
+    "audit_writes_outside_output_directory": 0,
+    "source_or_configuration_modified_by_audit": false,
+    "pre_existing_user_changes_cleaned_or_overwritten": false,
+    "final_check_completed": true,
+    "output_status": "?? docs/audit/agent-memory-context/",
+    "outside_output_status_changed_during_report_write": true,
+    "outside_output_change_attribution": "Concurrent user-owned activity; audit command history contains no write action outside the approved output directory"
+  }
+}
