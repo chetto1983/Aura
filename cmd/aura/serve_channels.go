@@ -85,6 +85,7 @@ func buildTelegramDeps(chat *chatEnv, tgCfg telegram.Config) telegram.Deps {
 		Assets:             chat.assets,
 		Search:             chat.conv,
 		Cost:               newTodayCost(chat.pool),
+		Spend:              &chat.cfg.LLM,
 		Clear:              telegramClearAdapter{run: chat.run},
 		Prices:             chat.cfg.LLM.Prices,
 		Model:              chat.cfg.LLM.Model,

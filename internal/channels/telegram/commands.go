@@ -39,6 +39,15 @@ type costBackend interface {
 	TodayUsage(ctx context.Context) (promptTokens, completionTokens int, providerCost *float64, err error)
 }
 
+// spendBackend reports what the PROVIDER says this API key has cost. *llm.Config
+// satisfies it directly. It is preferred over costBackend because the two answer
+// different questions: the token aggregation covers only requests that reached turn
+// persistence, so vision, rerank, embeddings and the completion critic are invisible to
+// it, while GET /key bills every one of them. A nil backend keeps the old estimate.
+type spendBackend interface {
+	Spend(ctx context.Context) (llm.Spend, error)
+}
+
 // clearBackend is the consumer-side seam over the locked conversation hard-delete
 // (conversations.Store.Delete). /clear deletes the chat's conversation row, which
 // cascades to its turns, pending pauses, cache metrics and tool invocations and
@@ -65,6 +74,7 @@ const (
 type commandDeps struct {
 	Search searchBackend
 	Cost   costBackend
+	Spend  spendBackend
 	Clear  clearBackend
 	Prices map[string]llm.Price
 	Model  string
@@ -224,9 +234,16 @@ func (c *commands) clear(ctx context.Context, chatID int64) string {
 	return "Conversazione cancellata. Ricominciamo da capo."
 }
 
-// cost renders today's cumulative spend using the SAME llm.CostUSD the CLI footer
-// uses over the reused token aggregation (cross-slice invariant: Telegram == CLI).
+// cost renders today's spend. It prefers what the provider actually billed this key
+// (GET /key) and falls back to the token-derived estimate only when that is unreachable,
+// because the two are not equally true: the estimate sees only turn-persisted requests
+// and prices cache reads at the full input rate, which over-reported by 2.7x on the
+// measured traffic mix. When the provider figure is used, the token counts still ride
+// along — they explain the number rather than producing it.
 func (c *commands) cost(ctx context.Context) string {
+	if spend, err := c.spendFromProvider(ctx); err == nil {
+		return spend
+	}
 	if c.deps.Cost == nil {
 		return "Costo non disponibile."
 	}
@@ -234,16 +251,27 @@ func (c *commands) cost(ctx context.Context) string {
 	if err != nil {
 		return "Costo non disponibile per ora."
 	}
-	// The DB aggregation carries no cached-token count, so cache reads price at the full
-	// input rate here — an over-report on a cache-heavy account (measured 2.7x). This is
-	// why the figure belongs to GET /key's usage_daily, which is the real charge; this
-	// estimate stands only until that lands.
 	display, _ := llm.CostUSD(c.deps.Prices, c.deps.Model, llm.Usage{
 		PromptTokens:     prompt,
 		CompletionTokens: completion,
 		Cost:             provider,
 	})
-	return fmt.Sprintf("Spesa di oggi: %s (%d token in, %d token out)", display, prompt, completion)
+	return fmt.Sprintf("Spesa di oggi (stimata): %s (%d token in, %d token out)", display, prompt, completion)
+}
+
+// spendFromProvider renders the billed figure, or an error the caller degrades from.
+// A local backend bills nothing, so it is treated as "no provider figure" rather than a
+// failure, and the estimate below it stays the honest answer.
+func (c *commands) spendFromProvider(ctx context.Context) (string, error) {
+	if c.deps.Spend == nil {
+		return "", llm.ErrSpendUnavailable
+	}
+	s, err := c.deps.Spend.Spend(ctx)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("Spesa di oggi: $%.4f\nQuesta settimana: $%.4f · Questo mese: $%.4f · In totale: $%.4f",
+		s.Daily, s.Weekly, s.Monthly, s.Total), nil
 }
 
 // searchRich reuses conversations.SearchConversationTurns byte-for-byte and renders

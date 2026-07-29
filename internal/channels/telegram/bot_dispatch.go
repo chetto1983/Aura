@@ -63,6 +63,7 @@ func (t *Telegram) buildDispatch() {
 	t.cmds = newCommands(commandDeps{
 		Search: t.deps.Search,
 		Cost:   t.deps.Cost,
+		Spend:  t.deps.Spend,
 		Clear:  t.deps.Clear,
 		Prices: t.deps.Prices,
 		Model:  t.deps.Model,

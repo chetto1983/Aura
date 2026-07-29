@@ -109,6 +109,9 @@ type Deps struct {
 	// command to an "unavailable" reply (never a panic).
 	Search searchBackend
 	Cost   costBackend
+	// Spend is the provider-billed figure /cost prefers over the token estimate; nil
+	// keeps the estimate. *llm.Config satisfies it.
+	Spend  spendBackend
 	Clear  clearBackend
 	Prices map[string]llm.Price
 	Model  string
