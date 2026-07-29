@@ -192,8 +192,8 @@ docker compose ps
 # All expected services healthy
 docker compose ps --format '{{.Name}}\t{{.Status}}'
 
-# Embedding dimension MUST be 768 (whichever embed option you chose)
-#  - Option A (local CPU granite): granite is natively 768.
+# The embedding width MUST match AURA_EMBED_DIMENSIONS and the Neo4j vector indexes.
+#  - Option A (local sidecar): the repo default is Qwen3-Embedding-0.6B, 1024 native.
 #  - Option B (OpenRouter): confirm the provider honors dimensions=768 —
 curl -s https://openrouter.ai/api/v1/embeddings \
   -H "Authorization: Bearer $OPENROUTER_API_KEY" -H "Content-Type: application/json" \

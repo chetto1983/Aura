@@ -494,7 +494,10 @@ services:
       retries: 20
       start_period: 90s   # APOC + GDS auto-download takes time on first boot
 
-  # ↓↓ Slice 0.7 — Granite OpenAI-compat embedding sidecar ↓↓
+  # ↓↓ Slice 0.7 — OpenAI-compat embedding sidecar ↓↓
+  # The model is NOT part of this comment on purpose: it travels in .env (repo default
+  # below is Qwen3-Embedding-0.6B, 1024-d native, pooling last). Naming a model here is
+  # what let "Granite" survive two swaps and describe a sidecar that no longer ran it.
   # Default compose must start on CPU-only CI/installer hosts; layer compose.gpu.yaml
   # when the operator wants Docker to reserve NVIDIA devices for this service.
   aura-llama-embed:
@@ -523,7 +526,7 @@ services:
       - -t
       - "4"                                    # CPU thread cap for orchestration work; harmless under GPU offload
       - -ub
-      - "2048"                                 # manual chunks exceeded 1024 tokens in the Granite run
+      - "2048"                                 # measured: manual chunks exceed 1024 tokens
     ports:
       - "127.0.0.1:8081:8081"
     volumes:
@@ -535,7 +538,6 @@ services:
       retries: 30
       start_period: 300s                       # first-boot HF model download can exceed 4 minutes
 
-  # Phase 15 spike — Granite 97M multilingual embeddings for agent-memory MCP.
   # Phase 15 spike — Neo4j Labs agent-memory MCP, colocated on the compose
   # network so the Python Neo4j driver talks to `neo4j:7687` directly instead of
   # the Windows-published `127.0.0.1:7687` port. Aura can mount it as streamable

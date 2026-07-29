@@ -1,7 +1,7 @@
 // Health probes for the graph substrate (Pattern 5). Ping runs two checks: the
 // MCP/Neo4j liveness call (dbms.components, asserts a 5.26.x kernel) and the
 // embed-sidecar dim self-test. The dim self-test is the ONLY place the
-// AURA_EMBED_DIMENSIONS=768 contract becomes operational (Amendment #18 /
+// AURA_EMBED_DIMENSIONS contract becomes operational (Amendment #18 /
 // Pitfall #5): a sidecar returning the wrong dimension would silently corrupt
 // the HNSW index, so we refuse to start on mismatch with a load-bearing error.
 package knowledge

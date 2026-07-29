@@ -5,6 +5,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/chetto1983/aura/internal/knowledge"
 )
 
 // clearPostgresEnv zeroes every Postgres-related env var so each test runs from
@@ -427,8 +429,15 @@ func TestEmbedDimensions_RequiredNonZero(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
-	if cfg.Neo4j.EmbedDimensions != 768 {
-		t.Errorf("EmbedDimensions: want non-zero contract default 768, got %d", cfg.Neo4j.EmbedDimensions)
+	// Anchored to the constant, not to a literal: the width has moved 384 -> 768 -> 1024
+	// and each move broke this assertion without saying anything about the behaviour —
+	// which is that an unset env must not leave the contract dim at zero.
+	if cfg.Neo4j.EmbedDimensions != knowledge.DefaultEmbedDimensions {
+		t.Errorf("EmbedDimensions: want the contract default %d, got %d",
+			knowledge.DefaultEmbedDimensions, cfg.Neo4j.EmbedDimensions)
+	}
+	if cfg.Neo4j.EmbedDimensions == 0 {
+		t.Error("EmbedDimensions must never default to zero — a zero width disables the boot self-test")
 	}
 }
 

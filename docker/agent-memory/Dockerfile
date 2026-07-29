@@ -19,8 +19,10 @@
 # Base + install shape mirror docker/markitdown/Dockerfile (the canonical in-repo
 # pinned-pip sidecar) and the fork's own deploy/cloudrun/Dockerfile. The compose
 # `command:` already drives the full `neo4j-agent-memory mcp serve …` invocation
-# (--profile extended --session-strategy persistent --embedding-dimensions 384
-# --no-auto-preferences), so this image deliberately carries no CMD — it only needs
+# (--profile extended --session-strategy persistent --embedding-dimensions
+# $AURA_EMBED_DIMENSIONS --no-auto-preferences) — the width is NOT restated here, since
+# the "384" this line used to claim had been false since the sidecar moved to 768.
+# This image deliberately carries no CMD — it only needs
 # the `neo4j-agent-memory` entry point installed.
 FROM python:3.11-slim
 

@@ -10,6 +10,7 @@ package knowledge
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -25,7 +26,7 @@ func TestMain(m *testing.M) {
 
 // TestPingEmbed_DimMismatch asserts the Pattern 5 self-test refuses a sidecar
 // NARROWER than the contract, with the load-bearing literal error (T-1.07-05).
-// The sidecar is mocked to return a 384-element vector against the default 768.
+// The sidecar is mocked to return a 384-element vector against DefaultEmbedDimensions.
 //
 // Narrower is the fatal direction: a wider sidecar is the normal MRL case and is
 // accepted, see TestPingEmbed_WiderSidecarIsAccepted.
@@ -49,10 +50,12 @@ func TestPingEmbed_DimMismatch(t *testing.T) {
 	if err == nil {
 		t.Fatal("pingEmbed: want error on dim mismatch, got nil")
 	}
+	// The expected width is derived from the constant, not spelled out: this assertion
+	// used to hardcode 768 and broke the moment the default width moved, which says
+	// nothing about the behaviour under test.
 	for _, want := range []string{
 		"embedding sidecar returned dim=384",
-		"AURA_EMBED_DIMENSIONS=768",
-		"narrower than AURA_EMBED_DIMENSIONS=768",
+		fmt.Sprintf("narrower than AURA_EMBED_DIMENSIONS=%d", DefaultEmbedDimensions),
 		"refuse to start (Pitfall #7 silent corruption",
 		"amendment #18 swap runbook",
 	} {

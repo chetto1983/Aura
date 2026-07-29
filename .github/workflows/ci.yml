@@ -321,7 +321,7 @@ jobs:
       AURA_MCP_NEO4J_CYPHER_BIN: mcp-neo4j-cypher
       AURA_MCP_NEO4J_CONNECT_TIMEOUT_SEC: "10"
       AURA_EMBED_BASE_URL: http://127.0.0.1:8081
-      AURA_EMBED_DIMENSIONS: "768"
+      AURA_EMBED_DIMENSIONS: "1024"
       # The post-flip enforcement state the acceptance gate runs under (D-13): scoped
       # fail-closed retrieval is active, so B's document_search is empty and A sees own.
       AURA_MUSR_ISOLATION: "true"
@@ -381,7 +381,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: /tmp/aura-ci-cache/llama.cpp
-          key: llama-cpp-granite-311m-768d-q6-${{ runner.os }}-v1
+          key: llama-cpp-qwen3-embedding-0.6b-1024d-q8-${{ runner.os }}-v1
 
       - name: Restore Neo4j plugin cache
         uses: actions/cache@v6
@@ -544,7 +544,7 @@ jobs:
       AURA_MCP_NEO4J_CYPHER_BIN: mcp-neo4j-cypher
       AURA_MCP_NEO4J_CONNECT_TIMEOUT_SEC: "10"
       AURA_EMBED_BASE_URL: http://127.0.0.1:8081
-      AURA_EMBED_DIMENSIONS: "768"
+      AURA_EMBED_DIMENSIONS: "1024"
       # The host export dir the writer materializes ACTIVE snippets into; the SC#4
       # by-path snippet exec (now db_integration, host python3) runs them from here, so
       # the coverage gate's internal/skills tier RUNS instead of a falsely-green skip.
@@ -589,7 +589,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: /tmp/aura-ci-cache/llama.cpp
-          key: llama-cpp-granite-311m-768d-q6-${{ runner.os }}-v1
+          key: llama-cpp-qwen3-embedding-0.6b-1024d-q8-${{ runner.os }}-v1
 
       - name: Restore Neo4j plugin cache
         uses: actions/cache@v6
@@ -815,7 +815,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: /tmp/aura-ci-cache/llama.cpp
-          key: llama-cpp-granite-311m-768d-q6-${{ runner.os }}-v1
+          key: llama-cpp-qwen3-embedding-0.6b-1024d-q8-${{ runner.os }}-v1
 
       - name: Restore Neo4j plugin cache
         uses: actions/cache@v6

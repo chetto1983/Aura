@@ -388,8 +388,11 @@ func TestPing_Unit(t *testing.T) {
 		t.Error("Ping: want error on version mismatch")
 	}
 	// Good MCP version but embed sidecar returns the wrong dim -> Ping fails on probe.
+	// The contract width is DefaultEmbedDimensions+1, not a literal: the mock emits
+	// exactly DefaultEmbedDimensions, so any hardcoded number here stops being "wider"
+	// the moment the default catches up with it — which is how this test broke.
 	c, _ = newFakeClient(componentsResp("5.26.26"), "")
-	if _, err := Ping(context.Background(), c, &Config{EmbedURL: embedSrv.URL, EmbedDimensions: 1024}); err == nil ||
+	if _, err := Ping(context.Background(), c, &Config{EmbedURL: embedSrv.URL, EmbedDimensions: DefaultEmbedDimensions + 1}); err == nil ||
 		!strings.Contains(err.Error(), "refuse to start") {
 		t.Errorf("Ping: want embed dim-mismatch error, got %v", err)
 	}
