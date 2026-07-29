@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/settings"
 )
 
@@ -170,6 +171,17 @@ func (s *Server) handlePutSetting(w http.ResponseWriter, r *http.Request) {
 	if err := validateSettingValue(meta.Kind, body.Value); err != nil {
 		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
+	}
+	if isLLMTokenSetting(key) {
+		rows, err := s.settings.List(r.Context())
+		if err != nil {
+			writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": "settings store unavailable"})
+			return
+		}
+		if err := validatePendingLLMTokenSetting(rows, key, body.Value); err != nil {
+			writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
 	}
 	row, err := s.settings.Upsert(r.Context(), key, body.Value, actor)
 	if err != nil {
@@ -320,6 +332,51 @@ func validateSettingValue(kind settings.Kind, value string) error {
 		if _, err := strconv.ParseBool(value); err != nil {
 			return errInvalidBool
 		}
+	}
+	return nil
+}
+
+func isLLMTokenSetting(key string) bool {
+	switch key {
+	case "AURA_LLM_MAX_TOKENS",
+		"AURA_MODEL_CONTEXT_WINDOW",
+		"AURA_MODEL_MAX_OUTPUT_TOKENS":
+		return true
+	default:
+		return false
+	}
+}
+
+func validatePendingLLMTokenSetting(rows []sqlc.AuraSettings, key, value string) error {
+	cfg, err := llm.LoadAllowEmptyKey()
+	if err != nil {
+		return err
+	}
+	for _, row := range rows {
+		if isLLMTokenSetting(row.Key) {
+			if err := applyLLMTokenSetting(cfg, row.Key, row.Value); err != nil {
+				return err
+			}
+		}
+	}
+	if err := applyLLMTokenSetting(cfg, key, value); err != nil {
+		return err
+	}
+	return cfg.Validate()
+}
+
+func applyLLMTokenSetting(cfg *llm.Config, key, value string) error {
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return errInvalidInt
+	}
+	switch key {
+	case "AURA_LLM_MAX_TOKENS":
+		cfg.MaxTokens = parsed
+	case "AURA_MODEL_CONTEXT_WINDOW":
+		cfg.ContextWindow = parsed
+	case "AURA_MODEL_MAX_OUTPUT_TOKENS":
+		cfg.MaxOutputTokens = parsed
 	}
 	return nil
 }

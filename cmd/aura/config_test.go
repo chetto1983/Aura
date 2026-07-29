@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/chetto1983/aura/internal/llm"
 )
 
 // withTempHome points HOME (and USERPROFILE on Windows) at a temp dir so
@@ -75,6 +77,31 @@ func TestConfig_SetNumericValidation(t *testing.T) {
 	}
 	if err := setConfigKey(raw, "llm.temperature", "0.3"); err != nil {
 		t.Fatalf("setConfigKey valid float: %v", err)
+	}
+	for _, key := range []string{"llm.max_tokens", "llm.context_window", "llm.max_output_tokens"} {
+		if err := setConfigKey(raw, key, "0"); err == nil {
+			t.Fatalf("setConfigKey accepted nonpositive %s", key)
+		}
+	}
+}
+
+func TestValidateConfigCandidateRejectsInvalidTokenCombination(t *testing.T) {
+	cfg := &llm.Config{
+		ContextWindow:   128_000,
+		MaxTokens:       4096,
+		MaxOutputTokens: 32_768,
+	}
+	cases := []struct {
+		key, value string
+	}{
+		{"llm.max_output_tokens", "4095"},
+		{"llm.context_window", "33000"},
+		{"llm.max_tokens", "32769"},
+	}
+	for _, tc := range cases {
+		if err := validateConfigCandidate(cfg, tc.key, tc.value); err == nil {
+			t.Errorf("validateConfigCandidate(%q,%q) accepted invalid token budget", tc.key, tc.value)
+		}
 	}
 }
 

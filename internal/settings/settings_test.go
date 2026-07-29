@@ -80,8 +80,8 @@ func TestOverlayEnvFeedsRuntimeConfig(t *testing.T) {
 		{Key: "AURA_LLM_BASE_URL", Value: "https://settings-llm.example/v1"},
 		{Key: "OPENROUTER_API_KEY", Value: "sk-settings-overlay"},
 		{Key: "AURA_LLM_MAX_TOKENS", Value: "1111"},
-		{Key: "AURA_MODEL_CONTEXT_WINDOW", Value: "2222"},
-		{Key: "AURA_MODEL_MAX_OUTPUT_TOKENS", Value: "333"},
+		{Key: "AURA_MODEL_CONTEXT_WINDOW", Value: "64000"},
+		{Key: "AURA_MODEL_MAX_OUTPUT_TOKENS", Value: "4096"},
 		{Key: "AURA_EMBED_MODEL", Value: "settings/embed-model"},
 		{Key: "AURA_EMBED_BASE_URL", Value: "https://settings-embed.example"},
 		{Key: "AURA_EMBED_DIMENSIONS", Value: "444"},
@@ -112,11 +112,11 @@ func TestOverlayEnvFeedsRuntimeConfig(t *testing.T) {
 	if got := cfg.LLM.MaxTokens; got != 1111 {
 		t.Errorf("LLM.MaxTokens = %d, want 1111", got)
 	}
-	if got := cfg.LLM.ContextWindow; got != 2222 {
-		t.Errorf("LLM.ContextWindow = %d, want 2222", got)
+	if got := cfg.LLM.ContextWindow; got != 64000 {
+		t.Errorf("LLM.ContextWindow = %d, want 64000", got)
 	}
-	if got := cfg.LLM.MaxOutputTokens; got != 333 {
-		t.Errorf("LLM.MaxOutputTokens = %d, want 333", got)
+	if got := cfg.LLM.MaxOutputTokens; got != 4096 {
+		t.Errorf("LLM.MaxOutputTokens = %d, want 4096", got)
 	}
 	if got := cfg.Neo4j.EmbedModel; got != "settings/embed-model" {
 		t.Errorf("Neo4j.EmbedModel = %q, want overlaid settings embed model", got)

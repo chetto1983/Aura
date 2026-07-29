@@ -149,6 +149,49 @@ func TestHandlePutSetting(t *testing.T) {
 	})
 }
 
+func TestHandlePutSettingRejectsInvalidLLMTokenBudget(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", t.TempDir())
+	t.Setenv("OPENROUTER_API_KEY", "")
+	t.Setenv("AURA_LLM_MAX_TOKENS", "")
+	t.Setenv("AURA_MODEL_CONTEXT_WINDOW", "")
+	t.Setenv("AURA_MODEL_MAX_OUTPUT_TOKENS", "")
+	t.Chdir(t.TempDir())
+
+	cases := []struct {
+		name  string
+		rows  []sqlc.AuraSettings
+		key   string
+		value string
+	}{
+		{"zero max tokens", nil, "AURA_LLM_MAX_TOKENS", "0"},
+		{"negative context", nil, "AURA_MODEL_CONTEXT_WINDOW", "-1"},
+		{"under reserved output", []sqlc.AuraSettings{
+			{Key: "AURA_LLM_MAX_TOKENS", Value: "5000"},
+		}, "AURA_MODEL_MAX_OUTPUT_TOKENS", "4096"},
+		{"no prompt budget", []sqlc.AuraSettings{
+			{Key: "AURA_LLM_MAX_TOKENS", Value: "1"},
+			{Key: "AURA_MODEL_MAX_OUTPUT_TOKENS", Value: "1"},
+		}, "AURA_MODEL_CONTEXT_WINDOW", "33000"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := &fakeSettingsStore{rows: tc.rows}
+			s := &Server{settings: store}
+			rr, r := putReq(t, tc.key, tc.value, "op-1")
+
+			s.handlePutSetting(rr, r)
+
+			if rr.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400: %s", rr.Code, rr.Body.String())
+			}
+			if len(store.upserted) != 0 {
+				t.Fatalf("invalid token budget persisted: %v", store.upserted)
+			}
+		})
+	}
+}
+
 func TestHandleCheckTelegramAvailability(t *testing.T) {
 	const secret = "123456:telegram-secret"
 	var probedToken string

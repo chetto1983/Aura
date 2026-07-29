@@ -45,7 +45,7 @@ func runConfig(args []string) {
 
 func configUsage() {
 	fmt.Fprintln(os.Stderr, "usage: aura config {show|get <key>|set <key> <value>|validate [--profile <p>] [--json]}")
-	fmt.Fprintln(os.Stderr, "  keys: llm.provider llm.model llm.base_url llm.temperature llm.max_tokens llm.adaptive_reasoning llm.total_timeout_sec llm.connect_timeout_sec")
+	fmt.Fprintln(os.Stderr, "  keys: llm.provider llm.model llm.base_url llm.temperature llm.max_tokens llm.context_window llm.max_output_tokens llm.adaptive_reasoning llm.total_timeout_sec llm.connect_timeout_sec")
 	fmt.Fprintln(os.Stderr, "  validate: lint the effective config against a runtime profile; non-zero exit if any Fatal violation")
 }
 
@@ -116,6 +116,17 @@ func configSet(args []string) {
 		configUsage()
 		os.Exit(1)
 	}
+	if isConfigTokenKey(key) {
+		cfg, loadErr := loadLLMConfigTolerant()
+		if loadErr != nil {
+			fmt.Fprintln(os.Stderr, "config set:", loadErr)
+			os.Exit(1)
+		}
+		if err := validateConfigCandidate(cfg, key, value); err != nil {
+			fmt.Fprintln(os.Stderr, "config set:", err)
+			os.Exit(1)
+		}
+	}
 	if err := writeConfigFile(path, raw); err != nil {
 		fmt.Fprintln(os.Stderr, "config set:", err)
 		os.Exit(1)
@@ -165,6 +176,10 @@ func getConfigKey(cfg *llm.Config, key string) (string, bool) {
 		return strconv.FormatFloat(cfg.Temperature, 'g', -1, 64), true
 	case "llm.max_tokens":
 		return strconv.Itoa(cfg.MaxTokens), true
+	case "llm.context_window":
+		return strconv.Itoa(cfg.ContextWindow), true
+	case "llm.max_output_tokens":
+		return strconv.Itoa(cfg.MaxOutputTokens), true
 	case "llm.adaptive_reasoning":
 		return strconv.FormatBool(cfg.AdaptiveReasoning), true
 	case "llm.total_timeout_sec":
@@ -195,7 +210,15 @@ func setConfigKey(raw map[string]json.RawMessage, key, value string) error {
 		}
 		raw["temperature"] = jsonNumber(strconv.FormatFloat(f, 'g', -1, 64))
 	case "llm.max_tokens":
-		if err := setIntKey(raw, "max_tokens", value); err != nil {
+		if err := setPositiveIntKey(raw, "max_tokens", value); err != nil {
+			return err
+		}
+	case "llm.context_window":
+		if err := setPositiveIntKey(raw, "context_window", value); err != nil {
+			return err
+		}
+	case "llm.max_output_tokens":
+		if err := setPositiveIntKey(raw, "max_output_tokens", value); err != nil {
 			return err
 		}
 	case "llm.adaptive_reasoning":
@@ -227,6 +250,47 @@ func setIntKey(raw map[string]json.RawMessage, jsonKey, value string) error {
 	}
 	raw[jsonKey] = jsonNumber(strconv.Itoa(n))
 	return nil
+}
+
+func setPositiveIntKey(raw map[string]json.RawMessage, jsonKey, value string) error {
+	n, err := strconv.Atoi(value)
+	if err != nil {
+		return fmt.Errorf("%s %q: not a valid integer", jsonKey, value)
+	}
+	if n <= 0 {
+		return fmt.Errorf("%s %d: must be positive", jsonKey, n)
+	}
+	raw[jsonKey] = jsonNumber(strconv.Itoa(n))
+	return nil
+}
+
+func isConfigTokenKey(key string) bool {
+	switch key {
+	case "llm.max_tokens", "llm.context_window", "llm.max_output_tokens":
+		return true
+	default:
+		return false
+	}
+}
+
+func validateConfigCandidate(cfg *llm.Config, key, value string) error {
+	if !isConfigTokenKey(key) {
+		return nil
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return err
+	}
+	candidate := *cfg
+	switch key {
+	case "llm.max_tokens":
+		candidate.MaxTokens = parsed
+	case "llm.context_window":
+		candidate.ContextWindow = parsed
+	case "llm.max_output_tokens":
+		candidate.MaxOutputTokens = parsed
+	}
+	return candidate.Validate()
 }
 
 func jsonString(s string) json.RawMessage {

@@ -85,6 +85,11 @@ const (
 // sentinel, so callers compare with errors.Is rather than the string.
 var ErrMissingAPIKey = errors.New("llm: API key is empty (set OPENROUTER_API_KEY in .env or the environment)")
 
+const (
+	minOutputReservation = 20_000
+	promptHeadroomTokens = 13_000
+)
+
 // Config is the resolved LLM configuration (D-22). APIKey is a plain field set
 // only by Load and read only at request-build time; the struct has no String()
 // or custom log representation, so a %+v dump exposes it — callers MUST NOT log
@@ -136,6 +141,37 @@ type Config struct {
 	// (llamacpp target never sets the wire key regardless of this knob).
 	// AURA_LLM_OPENROUTER_MIDDLE_OUT.
 	OpenRouterMiddleOut bool
+}
+
+// Validate rejects token settings that would disable context protection or
+// reserve less output than the provider request may consume.
+func (c Config) Validate() error {
+	switch {
+	case c.ContextWindow <= 0:
+		return fmt.Errorf("llm: invalid context_window %d: must be positive", c.ContextWindow)
+	case c.MaxTokens <= 0:
+		return fmt.Errorf("llm: invalid max_tokens %d: must be positive", c.MaxTokens)
+	case c.MaxOutputTokens <= 0:
+		return fmt.Errorf("llm: invalid max_output_tokens %d: must be positive", c.MaxOutputTokens)
+	case c.MaxOutputTokens < c.MaxTokens:
+		return fmt.Errorf(
+			"llm: invalid max_output_tokens %d: must be >= max_tokens %d",
+			c.MaxOutputTokens,
+			c.MaxTokens,
+		)
+	}
+	reservedOutput := max(c.MaxOutputTokens, minOutputReservation)
+	promptBudget := c.ContextWindow - reservedOutput - promptHeadroomTokens
+	if promptBudget <= 0 {
+		return fmt.Errorf(
+			"llm: invalid prompt budget %d: context_window %d must exceed output reserve %d plus headroom %d",
+			promptBudget,
+			c.ContextWindow,
+			reservedOutput,
+			promptHeadroomTokens,
+		)
+	}
+	return nil
 }
 
 // fileConfig mirrors the JSON shape of ~/.aura/llm.json. Every field is a
@@ -226,6 +262,9 @@ func load(allowEmptyKey bool) (*Config, error) {
 	cfg.CompletionCriticModel = os.Getenv(envCompletionCriticModel)
 	cfg.OpenRouterMiddleOut = envBool(envOpenRouterMiddleOut, false)
 
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 	if cfg.APIKey == "" && !allowEmptyKey {
 		return nil, ErrMissingAPIKey
 	}
