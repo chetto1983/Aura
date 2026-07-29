@@ -135,31 +135,24 @@ func TestClient_StderrRedaction(t *testing.T) {
 // binds params structurally and never concatenates them into the query body
 // (T-1.07-01): the query is passed verbatim, the param rides arguments.params.
 func TestCypherClient_RejectsConcatenatedInjection(t *testing.T) {
-	c := &Client{}
+	c, transport := newFakeClient(`[]`, "")
 	const query = "MERGE (c:Chunk {id: $id}) RETURN c"
 	injection := "x'); DROP DATABASE neo4j; //"
-	req := c.buildRequest(query, map[string]any{"id": injection}, true)
-
-	params, ok := req.Params.(map[string]any)
-	if !ok {
-		t.Fatalf("req.Params is not a map: %T", req.Params)
+	if _, err := c.Cypher(context.Background(), query, map[string]any{"id": injection}, true); err != nil {
+		t.Fatalf("Cypher: %v", err)
 	}
-	args, ok := params["arguments"].(map[string]any)
-	if !ok {
-		t.Fatalf("arguments is not a map: %T", params["arguments"])
+	if transport.lastArgs["query"] != query {
+		t.Errorf("query was mutated: want %q, got %q", query, transport.lastArgs["query"])
 	}
-	if args["query"] != query {
-		t.Errorf("query was mutated: want %q, got %q", query, args["query"])
-	}
-	bound, ok := args["params"].(map[string]any)
+	bound, ok := transport.lastArgs["params"].(map[string]any)
 	if !ok {
-		t.Fatalf("arguments.params is not a map: %T", args["params"])
+		t.Fatalf("arguments.params is not a map: %T", transport.lastArgs["params"])
 	}
 	if bound["id"] != injection {
 		t.Errorf("injection not bound as a param: got %v", bound["id"])
 	}
-	if params["name"] != toolWrite {
-		t.Errorf("write call should use %q, got %v", toolWrite, params["name"])
+	if transport.lastName != toolWrite {
+		t.Errorf("write call should use %q, got %v", toolWrite, transport.lastName)
 	}
 }
 

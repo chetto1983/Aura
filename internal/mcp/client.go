@@ -79,9 +79,10 @@ func IsTransportError(err error) bool {
 // ServerConfig declares how to launch one stdio MCP server (Claude-Desktop shape).
 // Env entries ("KEY=value") are explicit operator-declared child environment.
 type ServerConfig struct {
-	Command string   `json:"command"`
-	Args    []string `json:"args,omitempty"`
-	Env     []string `json:"env,omitempty"`
+	Command     string        `json:"command"`
+	Args        []string      `json:"args,omitempty"`
+	Env         []string      `json:"env,omitempty"`
+	CallTimeout time.Duration `json:"-"`
 }
 
 // ToolAnnotations carries optional trust/action hints advertised by an MCP
@@ -112,6 +113,7 @@ type Client struct {
 	stdoutCloseOnce sync.Once
 	closeOnce       sync.Once
 	closeErr        error
+	callTimeout     time.Duration
 	nextID          atomic.Int64
 }
 
@@ -178,6 +180,7 @@ func OpenWithHandshakeContext(processCtx, handshakeCtx context.Context, name str
 		stdout:       newStdioScanner(stdoutPipe, maxFrame),
 		stdoutCloser: stdoutPipe,
 		stderr:       stderr,
+		callTimeout:  cfg.CallTimeout,
 	}
 	if err := c.initializeContext(handshakeCtx); err != nil {
 		_ = c.Close()
@@ -300,6 +303,8 @@ func (c *Client) initializeContext(ctx context.Context) (err error) {
 func (c *Client) ListTools(ctx context.Context) (defs []ToolDef, err error) {
 	ctx, end := stdioListBoundary.Start(ctx)
 	defer end.PanicSafe(&err)
+	ctx, cancel := c.boundCallContext(ctx)
+	defer cancel()
 	callCtx, release, err := c.gate.acquire(ctx)
 	if err != nil {
 		return nil, err
@@ -314,6 +319,8 @@ func (c *Client) ListTools(ctx context.Context) (defs []ToolDef, err error) {
 func (c *Client) CallTool(ctx context.Context, name string, args map[string]any) (text string, err error) {
 	ctx, end := stdioCallBoundary.Start(ctx)
 	defer end.PanicSafe(&err)
+	ctx, cancel := c.boundCallContext(ctx)
+	defer cancel()
 	callCtx, release, err := c.gate.acquire(ctx)
 	if err != nil {
 		return "", err
@@ -327,6 +334,8 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 func (c *Client) Ping(ctx context.Context) (err error) {
 	ctx, end := stdioPingBoundary.Start(ctx)
 	defer end.PanicSafe(&err)
+	ctx, cancel := c.boundCallContext(ctx)
+	defer cancel()
 	callCtx, release, err := c.gate.acquire(ctx)
 	if err != nil {
 		return err
@@ -337,6 +346,13 @@ func (c *Client) Ping(ctx context.Context) (err error) {
 		return fmt.Errorf("mcp %q: ping: %w", c.name, err)
 	}
 	return nil
+}
+
+func (c *Client) boundCallContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if c.callTimeout > 0 {
+		return context.WithTimeout(ctx, c.callTimeout)
+	}
+	return context.WithCancel(ctx)
 }
 
 // roundtrip writes one request and reads the matching response, skipping any

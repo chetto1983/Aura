@@ -26,7 +26,7 @@ func TestOpenKeepsProcessAliveAfterConnectTimeout(t *testing.T) {
 		User:              "neo4j",
 		Password:          "test-password",
 		Database:          "neo4j",
-		MCPBinary:         writeFakeMCPLauncher(t),
+		MCPBinary:         writeFakeMCPLauncher(t, "test-password"),
 		ConnectTimeoutSec: 1,
 	}
 	c, err := Open(context.Background(), cfg)
@@ -49,20 +49,20 @@ func TestOpenKeepsProcessAliveAfterConnectTimeout(t *testing.T) {
 	}
 }
 
-func writeFakeMCPLauncher(t *testing.T) string {
+func writeFakeMCPLauncher(t *testing.T, expectedPassword string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "fake-mcp")
 	exe := os.Args[0]
 	if runtime.GOOS == "windows" {
 		path += ".cmd"
 		exe = strings.ReplaceAll(exe, `"`, `""`)
-		body := fmt.Sprintf("@echo off\r\nset %s=1\r\n\"%s\" -test.run=TestOpenKeepsProcessAliveAfterConnectTimeout -- %%*\r\n", fakeMCPEnv, exe)
+		body := fmt.Sprintf("@echo off\r\nset %s=1\r\nset AURA_EXPECTED_NEO4J_PASSWORD=%s\r\n\"%s\" -test.run=TestOpenKeepsProcessAliveAfterConnectTimeout -- %%*\r\n", fakeMCPEnv, expectedPassword, exe)
 		if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
 			t.Fatalf("write fake MCP launcher: %v", err)
 		}
 		return path
 	}
-	body := fmt.Sprintf("#!/bin/sh\n%s=1 exec %s -test.run=TestOpenKeepsProcessAliveAfterConnectTimeout -- \"$@\"\n", fakeMCPEnv, shellQuote(exe))
+	body := fmt.Sprintf("#!/bin/sh\n%s=1 AURA_EXPECTED_NEO4J_PASSWORD=%s exec %s -test.run=TestOpenKeepsProcessAliveAfterConnectTimeout -- \"$@\"\n", fakeMCPEnv, shellQuote(expectedPassword), shellQuote(exe))
 	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
 		t.Fatalf("write fake MCP launcher: %v", err)
 	}
@@ -74,10 +74,24 @@ func shellQuote(s string) string {
 }
 
 func runFakeMCPServer() {
+	expectedPassword := os.Getenv("AURA_EXPECTED_NEO4J_PASSWORD")
+	if expectedPassword == "" || os.Getenv("NEO4J_PASSWORD") != expectedPassword {
+		fmt.Fprintln(os.Stderr, "password was not delivered through NEO4J_PASSWORD")
+		os.Exit(7)
+	}
+	for _, arg := range os.Args {
+		if strings.Contains(arg, expectedPassword) {
+			fmt.Fprintln(os.Stderr, "password leaked through subprocess argv")
+			os.Exit(8)
+		}
+	}
 	scanner := bufio.NewScanner(os.Stdin)
 	enc := json.NewEncoder(os.Stdout)
 	for scanner.Scan() {
-		var req rpcReq
+		var req struct {
+			ID     int64  `json:"id"`
+			Method string `json:"method"`
+		}
 		if err := json.Unmarshal(scanner.Bytes(), &req); err != nil {
 			continue
 		}

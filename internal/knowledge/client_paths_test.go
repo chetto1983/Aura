@@ -1,14 +1,11 @@
-// Unit-safe branch coverage (NO build tag) for the MCP client and pure helpers.
-// The client is constructed with fake stdin/stdout (this file is package
-// knowledge, so unexported fields are reachable), which exercises every
-// Cypher/initialize/decode error path without spawning a real subprocess.
+// Unit-safe branch coverage (NO build tag) for the knowledge adapter and pure
+// helpers. Framing/process/lifecycle branches live in internal/mcp tests.
 package knowledge
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -17,7 +14,7 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/chetto1983/aura/internal/boundedbuffer"
+	"github.com/chetto1983/aura/internal/mcp"
 )
 
 // errDirFS is an fs.FS whose Open always fails, so fs.ReadDir errors.
@@ -25,44 +22,38 @@ type errDirFS struct{}
 
 func (errDirFS) Open(string) (fs.File, error) { return nil, errors.New("open failed") }
 
-// fakeStdin is an io.WriteCloser whose Write can be forced to fail — either
-// always (writeErr) or on the Nth write (failOnWriteN, 1-based).
-type fakeStdin struct {
-	buf          bytes.Buffer
-	writeErr     error
-	failOnWriteN int
-	writes       int
-	closed       bool
+type fakeCypherTransport struct {
+	result   string
+	err      error
+	lastName string
+	lastArgs map[string]any
+	closed   bool
 }
 
-func (f *fakeStdin) Write(p []byte) (int, error) {
-	f.writes++
-	if f.writeErr != nil {
-		return 0, f.writeErr
+func (f *fakeCypherTransport) CallTool(
+	ctx context.Context,
+	name string,
+	args map[string]any,
+) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
 	}
-	if f.failOnWriteN != 0 && f.writes == f.failOnWriteN {
-		return 0, errors.New("write failed")
-	}
-	return f.buf.Write(p)
+	f.lastName, f.lastArgs = name, args
+	return f.result, f.err
 }
 
-func (f *fakeStdin) Close() error { f.closed = true; return nil }
+func (f *fakeCypherTransport) Close() error {
+	f.closed = true
+	return nil
+}
 
-// newFakeClient wires a Client to canned stdout bytes and a capturable stdin.
-func newFakeClient(stdout, password string) (*Client, *fakeStdin) {
-	in := &fakeStdin{}
-	c := &Client{
-		stdin:    in,
-		stdout:   bufio.NewReader(strings.NewReader(stdout)),
-		stderr:   boundedbuffer.New(0),
-		password: password,
-	}
-	return c, in
+func newFakeClient(result, password string) (*Client, *fakeCypherTransport) {
+	transport := &fakeCypherTransport{result: result}
+	return &Client{transport: transport, password: password}, transport
 }
 
 func TestCypher_Happy(t *testing.T) {
-	resp := `{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"[{\"one\":1}]"}],"isError":false}}` + "\n"
-	c, in := newFakeClient(resp, "")
+	c, transport := newFakeClient(`[{"one":1}]`, "")
 	raw, err := c.Cypher(context.Background(), "RETURN 1", nil, false)
 	if err != nil {
 		t.Fatalf("Cypher: %v", err)
@@ -71,45 +62,20 @@ func TestCypher_Happy(t *testing.T) {
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("decodeRows: rows=%v err=%v", rows, err)
 	}
-	if !strings.Contains(in.buf.String(), `"tools/call"`) {
-		t.Errorf("request not written to stdin: %q", in.buf.String())
+	if transport.lastName != toolRead || transport.lastArgs["query"] != "RETURN 1" {
+		t.Fatalf("transport call = %q %#v", transport.lastName, transport.lastArgs)
 	}
 }
 
-func TestCypher_RPCError(t *testing.T) {
-	resp := `{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"boom password=secret"}}` + "\n"
-	c, _ := newFakeClient(resp, "secret")
+func TestCypher_TransportErrorIsRedactedAndFailClosed(t *testing.T) {
+	c, transport := newFakeClient("", "secret")
+	transport.err = fmt.Errorf("%w: boom password=secret", mcp.ErrTransport)
 	_, err := c.Cypher(context.Background(), "RETURN 1", nil, false)
-	if err == nil || !strings.Contains(err.Error(), "cypher error -32000") {
-		t.Fatalf("want rpc error, got %v", err)
+	if err == nil || !mcp.IsTransportError(err) || !strings.Contains(err.Error(), crashHint) {
+		t.Fatalf("want fail-closed transport error, got %v", err)
 	}
 	if strings.Contains(err.Error(), "secret") {
-		t.Errorf("rpc error leaked password: %v", err)
-	}
-}
-
-func TestCypher_RecvEOF(t *testing.T) {
-	c, _ := newFakeClient("", "") // empty stdout -> immediate EOF
-	_, err := c.Cypher(context.Background(), "RETURN 1", nil, false)
-	if err == nil || !strings.Contains(err.Error(), crashHint) {
-		t.Fatalf("want crash hint on recv EOF, got %v", err)
-	}
-}
-
-func TestCypher_SendError(t *testing.T) {
-	c, in := newFakeClient("", "")
-	in.writeErr = errors.New("pipe broken")
-	_, err := c.Cypher(context.Background(), "RETURN 1", nil, true)
-	if err == nil || !strings.Contains(err.Error(), crashHint) {
-		t.Fatalf("want crash hint on send error, got %v", err)
-	}
-}
-
-func TestCypher_BadJSON(t *testing.T) {
-	c, _ := newFakeClient("not-json\n", "")
-	_, err := c.Cypher(context.Background(), "RETURN 1", nil, false)
-	if err == nil || !strings.Contains(err.Error(), "decode cypher response") {
-		t.Fatalf("want decode error, got %v", err)
+		t.Errorf("transport error leaked password: %v", err)
 	}
 }
 
@@ -122,86 +88,13 @@ func TestCypher_ContextCancelled(t *testing.T) {
 	}
 }
 
-func TestInitialize_Happy(t *testing.T) {
-	resp := `{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2024-11-05"}}` + "\n"
-	c, in := newFakeClient(resp, "")
-	if err := c.initialize(); err != nil {
-		t.Fatalf("initialize: %v", err)
-	}
-	if !strings.Contains(in.buf.String(), `"initialize"`) || !strings.Contains(in.buf.String(), "notifications/initialized") {
-		t.Errorf("handshake messages missing: %q", in.buf.String())
-	}
-}
-
-func TestInitialize_SkipsBlankLinesAndNotifications(t *testing.T) {
-	resp := "\n" +
-		`{"jsonrpc":"2.0","method":"notifications/message","params":{"level":"info"}}` + "\n" +
-		`{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2024-11-05"}}` + "\n"
-	c, in := newFakeClient(resp, "")
-	if err := c.initialize(); err != nil {
-		t.Fatalf("initialize with legal interleaved protocol noise: %v", err)
-	}
-	if !strings.Contains(in.buf.String(), "notifications/initialized") {
-		t.Errorf("initialized notification missing: %q", in.buf.String())
-	}
-}
-
-func TestCypher_SkipsBlankLinesAndNotifications(t *testing.T) {
-	resp := "\r\n" +
-		`{"jsonrpc":"2.0","method":"notifications/message","params":{"level":"info"}}` + "\n" +
-		`{"jsonrpc":"2.0","id":1,"result":{"content":[],"isError":false}}` + "\n"
-	c, _ := newFakeClient(resp, "")
-	result, err := c.Cypher(context.Background(), "RETURN 1", nil, false)
-	if err != nil {
-		t.Fatalf("Cypher with legal interleaved protocol noise: %v", err)
-	}
-	if !strings.Contains(string(result), `"isError":false`) {
-		t.Fatalf("result = %s, want MCP result payload", result)
-	}
-}
-
-func TestInitialize_ServerError(t *testing.T) {
-	resp := `{"jsonrpc":"2.0","id":1,"error":{"code":-1,"message":"nope"}}` + "\n"
-	c, _ := newFakeClient(resp, "")
-	if err := c.initialize(); err == nil || !strings.Contains(err.Error(), "initialize error") {
-		t.Fatalf("want initialize error, got %v", err)
-	}
-}
-
-func TestInitialize_RecvEOF(t *testing.T) {
-	c, _ := newFakeClient("", "")
-	if err := c.initialize(); err == nil || !strings.Contains(err.Error(), crashHint) {
-		t.Fatalf("want crash hint, got %v", err)
-	}
-}
-
-func TestInitialize_BadJSON(t *testing.T) {
-	c, _ := newFakeClient("garbage\n", "")
-	if err := c.initialize(); err == nil || !strings.Contains(err.Error(), "decode initialize") {
-		t.Fatalf("want decode error, got %v", err)
-	}
-}
-
-func TestInitialize_NotificationSendError(t *testing.T) {
-	// Write 1 (initialize) succeeds, response reads OK, write 2 (notification) fails.
-	in := &fakeStdin{failOnWriteN: 2}
-	c := &Client{
-		stdin:  in,
-		stdout: bufio.NewReader(strings.NewReader(`{"jsonrpc":"2.0","id":1,"result":{}}` + "\n")),
-		stderr: boundedbuffer.New(0),
-	}
-	if err := c.initialize(); err == nil || !strings.Contains(err.Error(), "initialized notification") {
-		t.Fatalf("want initialized-notification send error, got %v", err)
-	}
-}
-
-func TestClose_NilCmd(t *testing.T) {
-	c, in := newFakeClient("", "")
+func TestCloseDelegatesToCommonTransport(t *testing.T) {
+	c, transport := newFakeClient("", "")
 	if err := c.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	if !in.closed {
-		t.Error("Close did not close stdin")
+	if !transport.closed {
+		t.Error("Close did not delegate to the common transport")
 	}
 }
 
@@ -228,37 +121,6 @@ func TestOpen_SpawnFailure(t *testing.T) {
 	_, err := Open(context.Background(), cfg)
 	if err == nil || !strings.Contains(err.Error(), "PATH check: pip install mcp-neo4j-cypher") {
 		t.Fatalf("want spawn-failure install hint, got %v", err)
-	}
-}
-
-func TestStderrTail(t *testing.T) {
-	c := &Client{stderr: boundedbuffer.New(0), password: "topsecret"}
-	if c.stderrTail() != "" {
-		t.Error("empty stderr should yield empty tail")
-	}
-	_, _ = c.stderr.Write([]byte("auth failed password=topsecret extra"))
-	tail := c.stderrTail()
-	if strings.Contains(tail, "topsecret") {
-		t.Errorf("stderrTail leaked secret: %q", tail)
-	}
-	// Truncation: >200 bytes keeps only the suffix.
-	c2 := &Client{stderr: boundedbuffer.New(0)}
-	_, _ = c2.stderr.Write(bytes.Repeat([]byte("x"), 500))
-	if len(c2.stderrTail()) > 210 {
-		t.Errorf("stderrTail not truncated: len=%d", len(c2.stderrTail()))
-	}
-}
-
-func TestBoundedStderrBufferKeepsTail(t *testing.T) {
-	buf := boundedbuffer.New(64)
-	_, _ = buf.Write(bytes.Repeat([]byte("a"), 120))
-	_, _ = buf.Write([]byte("NEO4J-END"))
-	if got := buf.Len(); got > 64 {
-		t.Fatalf("buffer len = %d, want <= 64", got)
-	}
-	c := &Client{stderr: buf}
-	if tail := c.stderrTail(); !strings.Contains(tail, "NEO4J-END") {
-		t.Fatalf("stderr tail lost newest bytes: %q", tail)
 	}
 }
 
@@ -327,10 +189,9 @@ func TestPingEmbed_ErrorBranches(t *testing.T) {
 	}
 }
 
-// componentsResp builds a canned dbms.components MCP result line.
+// componentsResp builds the text returned by the dbms.components MCP tool.
 func componentsResp(version string) string {
-	inner := `[{\"name\":\"Neo4j Kernel\",\"versions\":[\"` + version + `\"],\"edition\":\"community\"}]`
-	return `{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"` + inner + `"}],"isError":false}}` + "\n"
+	return `[{"name":"Neo4j Kernel","versions":["` + version + `"],"edition":"community"}]`
 }
 
 func TestPingMCP_Branches(t *testing.T) {
@@ -350,12 +211,12 @@ func TestPingMCP_Branches(t *testing.T) {
 		t.Errorf("wrong version: want unexpected, got %v", err)
 	}
 	// empty rows -> "no ... version row".
-	c, _ = newFakeClient(`{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"[]"}],"isError":false}}`+"\n", "")
+	c, _ = newFakeClient(`[]`, "")
 	if _, err := pingMCP(context.Background(), c); err == nil || !strings.Contains(err.Error(), "no Neo4j Kernel version") {
 		t.Errorf("empty rows: want no-version error, got %v", err)
 	}
 	// malformed content payload -> decodeRows error surfaces from pingMCP.
-	c, _ = newFakeClient(`{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"not-an-array"}],"isError":false}}`+"\n", "")
+	c, _ = newFakeClient(`not-an-array`, "")
 	if _, err := pingMCP(context.Background(), c); err == nil {
 		t.Error("malformed rows: want decode error from pingMCP")
 	}

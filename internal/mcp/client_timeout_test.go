@@ -63,6 +63,39 @@ func TestStdioCallToolContextTimeoutUnblocksClose(t *testing.T) {
 	}
 }
 
+func TestStdioConfiguredCallTimeoutBoundsBackgroundCaller(t *testing.T) {
+	cliStdinR, cliStdinW := io.Pipe()
+	srvStdoutR, srvStdoutW := io.Pipe()
+	c := newClientForTest("configured-timeout", cliStdinW, srvStdoutR)
+	c.callTimeout = 25 * time.Millisecond
+
+	serverDone := make(chan struct{})
+	releaseServer := make(chan struct{})
+	go func() {
+		defer close(serverDone)
+		dec := json.NewDecoder(cliStdinR)
+		var req map[string]any
+		if dec.Decode(&req) == nil {
+			<-releaseServer
+		}
+	}()
+
+	start := time.Now()
+	_, err := c.CallTool(context.Background(), "hang", nil)
+	if !errors.Is(err, context.DeadlineExceeded) || !IsTransportError(err) {
+		t.Fatalf("configured timeout error = %v, want transport deadline", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("configured call timeout returned after %v", elapsed)
+	}
+
+	close(releaseServer)
+	_ = c.Close()
+	_ = cliStdinR.Close()
+	_ = srvStdoutW.Close()
+	<-serverDone
+}
+
 func TestStdioCallToolTimeoutDoesNotAffectIndependentClient(t *testing.T) {
 	cliStdinR, cliStdinW := io.Pipe()
 	srvStdoutR, srvStdoutW := io.Pipe()

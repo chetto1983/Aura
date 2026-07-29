@@ -90,6 +90,39 @@ func TestPing_ReturnsServerVersion(t *testing.T) {
 	}
 }
 
+func TestCypherReadWriteThroughCommonTransport(t *testing.T) {
+	ctx := context.Background()
+	client := openTestMCP(ctx, t)
+	defer client.Close()
+	id := "arc001-" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	defer func() {
+		_, _ = client.Write(
+			context.Background(),
+			"MATCH (n:AuraARC001Probe {id: $id}) DETACH DELETE n",
+			map[string]any{"id": id},
+		)
+	}()
+
+	if _, err := client.Write(
+		ctx,
+		"MERGE (n:AuraARC001Probe {id: $id}) RETURN n.id AS id",
+		map[string]any{"id": id},
+	); err != nil {
+		t.Fatalf("live write through common MCP transport: %v", err)
+	}
+	rows, err := client.Read(
+		ctx,
+		"MATCH (n:AuraARC001Probe {id: $id}) RETURN n.id AS id",
+		map[string]any{"id": id},
+	)
+	if err != nil {
+		t.Fatalf("live read through common MCP transport: %v", err)
+	}
+	if len(rows) != 1 || rows[0]["id"] != id {
+		t.Fatalf("live read rows = %#v, want id %q", rows, id)
+	}
+}
+
 // TestPing_Full exercises the composed Ping (MCP version check + embed dim probe).
 func TestPing_Full(t *testing.T) {
 	ctx := context.Background()
@@ -201,15 +234,13 @@ func TestMCPCrash_FailsAura(t *testing.T) {
 	mcp := openTestMCP(ctx, t)
 	defer mcp.Close()
 
-	// Warm the channel, then kill the subprocess mid-session (D-06 scenario).
+	// Warm the channel, then terminate the common transport mid-session (D-06).
 	if _, err := mcp.Cypher(ctx, "RETURN 1 AS one", nil, false); err != nil {
 		t.Fatalf("warm-up cypher: %v", err)
 	}
-	if err := mcp.cmd.Process.Kill(); err != nil {
-		t.Fatalf("kill mcp subprocess: %v", err)
+	if err := mcp.Close(); err != nil {
+		t.Fatalf("close mcp transport: %v", err)
 	}
-	// Give the OS a moment to tear down the pipe.
-	time.Sleep(200 * time.Millisecond)
 
 	_, err := mcp.Cypher(ctx, "RETURN 1 AS one", nil, false)
 	if err == nil {
