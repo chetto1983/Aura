@@ -38,12 +38,14 @@ var errHTTPSessionExpired = errors.New("mcp http session expired")
 // http.DefaultClient is retained. AllowHosts is the enforce-mode sidecar allow-list
 // (lowercased hostnames that bypass the resolved-IP block); it is unused under dev.
 type HTTPConfig struct {
-	URL         string
-	Headers     map[string]string
-	BearerToken string
-	Client      *http.Client
-	Enforce     bool
-	AllowHosts  map[string]struct{}
+	URL                  string
+	Headers              map[string]string
+	BearerToken          string
+	BearerTokenSource    func(context.Context) (string, error)
+	ToolIdentityArgument string
+	Client               *http.Client
+	Enforce              bool
+	AllowHosts           map[string]struct{}
 }
 
 // HTTPClient speaks the Streamable-HTTP MCP transport to one remote server,
@@ -54,6 +56,8 @@ type HTTPClient struct {
 	endpoint        string
 	headers         map[string]string
 	bearerToken     string
+	bearerSource    func(context.Context) (string, error)
+	identityArg     string
 	client          *http.Client
 	sessionID       string
 	protocolVersion string
@@ -90,6 +94,8 @@ func OpenHTTP(ctx context.Context, name string, cfg HTTPConfig) (*HTTPClient, er
 		endpoint:        validated.String(),
 		headers:         cfg.Headers,
 		bearerToken:     cfg.BearerToken,
+		bearerSource:    cfg.BearerTokenSource,
+		identityArg:     strings.TrimSpace(cfg.ToolIdentityArgument),
 		client:          httpClient,
 		protocolVersion: httpProtocolVersion,
 	}
@@ -148,6 +154,20 @@ func (c *HTTPClient) CallTool(ctx context.Context, name string, args map[string]
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
+	if c.identityArg != "" {
+		rawIdentity, ok := args[c.identityArg]
+		identity, stringOK := rawIdentity.(string)
+		identity = strings.TrimSpace(identity)
+		if !ok || !stringOK || identity == "" {
+			return "", fmt.Errorf(
+				"mcp %q: tool %q requires non-empty %s",
+				c.name,
+				name,
+				c.identityArg,
+			)
+		}
+		ctx = withBearerSubject(ctx, identity)
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return callToolWith(ctx, c.name, name, args, c.roundtripLocked)
@@ -183,7 +203,9 @@ func (c *HTTPClient) Close() error {
 	if err != nil {
 		return err
 	}
-	c.decorate(req, true)
+	if err := c.decorate(ctx, req, true); err != nil {
+		return err
+	}
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return err
@@ -247,7 +269,9 @@ func (c *HTTPClient) post(ctx context.Context, payload any, includeProtocol bool
 	if err != nil {
 		return nil, err
 	}
-	c.decorate(req, includeProtocol)
+	if err := c.decorate(ctx, req, includeProtocol); err != nil {
+		return nil, err
+	}
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("%w: http post: %w", ErrTransport, err)
@@ -286,7 +310,11 @@ func (c *HTTPClient) post(ctx context.Context, payload any, includeProtocol bool
 	return resp, nil
 }
 
-func (c *HTTPClient) decorate(req *http.Request, includeProtocol bool) {
+func (c *HTTPClient) decorate(
+	ctx context.Context,
+	req *http.Request,
+	includeProtocol bool,
+) error {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	for key, value := range c.headers {
@@ -295,12 +323,20 @@ func (c *HTTPClient) decorate(req *http.Request, includeProtocol bool) {
 	if c.bearerToken != "" {
 		req.Header.Set("Authorization", "Bearer "+c.bearerToken)
 	}
+	if c.bearerSource != nil {
+		token, err := c.bearerSource(ctx)
+		if err != nil {
+			return fmt.Errorf("create bearer token: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 	if c.sessionID != "" {
 		req.Header.Set("Mcp-Session-Id", c.sessionID)
 	}
 	if includeProtocol && c.protocolVersion != "" {
 		req.Header.Set("MCP-Protocol-Version", c.protocolVersion)
 	}
+	return nil
 }
 
 func decodeHTTPRPC(body io.ReadCloser, wantID int64, contentType string) (json.RawMessage, error) {

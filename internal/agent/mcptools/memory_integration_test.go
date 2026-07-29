@@ -14,6 +14,9 @@ package mcptools
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -25,6 +28,31 @@ import (
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/mcp"
 )
+
+func memoryIntegrationToken(t *testing.T, subject string) string {
+	t.Helper()
+	secret := os.Getenv("AURA_AGENT_MEMORY_MCP_AUTH_SECRET")
+	if len(secret) < 32 {
+		t.Fatal("AURA_AGENT_MEMORY_MCP_AUTH_SECRET must be at least 32 bytes")
+	}
+	now := time.Now().UTC().Unix()
+	header, err := json.Marshal(map[string]string{"alg": "HS256", "typ": "JWT"})
+	if err != nil {
+		t.Fatalf("marshal JWT header: %v", err)
+	}
+	claims, err := json.Marshal(map[string]any{
+		"sub": subject, "iss": "aura", "aud": "agent-memory",
+		"scope": "memory:access", "iat": now, "exp": now + 60,
+	})
+	if err != nil {
+		t.Fatalf("marshal JWT claims: %v", err)
+	}
+	unsigned := base64.RawURLEncoding.EncodeToString(header) + "." +
+		base64.RawURLEncoding.EncodeToString(claims)
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte(unsigned))
+	return unsigned + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
 
 // reapIdleHTTPConns drains the shared http.DefaultClient's idle keep-alive
 // connections at test end. The live streamable-HTTP MCP transport (mcp.OpenServer)
@@ -102,6 +130,130 @@ func TestMemoryLiveScopedGraphToolsAcceptUserIdentifier(t *testing.T) {
 	}
 	if !strings.Contains(otherText, `"fact_count": 0`) {
 		t.Fatalf("memory_get_facts leaked scoped fact to another user: %s", otherText)
+	}
+}
+
+func TestMemoryLiveRejectsUnauthenticatedAndPayloadForgedIdentity(t *testing.T) {
+	endpoint := memoryEndpointOrGate(t)
+	reapIdleHTTPConns(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+
+	if unauthenticated, err := mcp.OpenHTTP(ctx, "memory-unauthenticated", mcp.HTTPConfig{
+		URL: endpoint,
+	}); err == nil {
+		_ = unauthenticated.Close()
+		t.Fatal("unauthenticated Agent Memory initialize succeeded")
+	} else if !strings.Contains(err.Error(), "unauthorized (401)") {
+		t.Fatalf("unauthenticated initialize error = %v, want 401", err)
+	}
+
+	alice := fmt.Sprintf("auth-alice-%d", time.Now().UnixNano())
+	bob := alice + "-bob"
+	subject := "Forged Scope Probe " + alice
+	aliceClient, err := mcp.OpenHTTP(ctx, "memory-auth-alice", mcp.HTTPConfig{
+		URL: endpoint, BearerToken: memoryIntegrationToken(t, alice),
+	})
+	if err != nil {
+		t.Fatalf("open Alice static-token client: %v", err)
+	}
+	defer func() { _ = aliceClient.Close() }()
+
+	addedText, err := aliceClient.CallTool(ctx, "memory_add_fact", map[string]any{
+		"subject": subject, "predicate": "has_marker", "object_value": "alice-only",
+		"user_identifier": bob,
+	})
+	if err != nil {
+		t.Fatalf("forged-body add_fact: %v", err)
+	}
+	var added struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(addedText), &added); err != nil || added.ID == "" {
+		t.Fatalf("decode added fact %q: id=%q err=%v", addedText, added.ID, err)
+	}
+	defer func() {
+		_, _ = aliceClient.CallTool(context.Background(), "memory_forget", map[string]any{
+			"node_type": "fact", "node_id": added.ID, "user_identifier": bob,
+		})
+	}()
+
+	aliceRead, err := aliceClient.CallTool(ctx, "memory_get_facts", map[string]any{
+		"subject": subject, "user_identifier": bob,
+	})
+	if err != nil || !strings.Contains(aliceRead, `"fact_count": 1`) {
+		t.Fatalf("Alice token did not read Alice-owned forged-body write: err=%v body=%s", err, aliceRead)
+	}
+
+	bobClient, err := mcp.OpenHTTP(ctx, "memory-auth-bob", mcp.HTTPConfig{
+		URL: endpoint, BearerToken: memoryIntegrationToken(t, bob),
+	})
+	if err != nil {
+		t.Fatalf("open Bob static-token client: %v", err)
+	}
+	defer func() { _ = bobClient.Close() }()
+	bobRead, err := bobClient.CallTool(ctx, "memory_get_facts", map[string]any{
+		"subject": subject, "user_identifier": alice,
+	})
+	if err != nil {
+		t.Fatalf("Bob forged-body read: %v", err)
+	}
+	if !strings.Contains(bobRead, `"fact_count": 0`) || strings.Contains(bobRead, "alice-only") {
+		t.Fatalf("Bob token crossed tenant boundary: %s", bobRead)
+	}
+}
+
+func TestMemoryLiveSameSessionIDIsTenantIsolated(t *testing.T) {
+	endpoint := memoryEndpointOrGate(t)
+	reapIdleHTTPConns(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+
+	client, err := mcp.OpenServer(ctx, "memory-short-term-isolation", liveMemoryServer(endpoint))
+	if err != nil {
+		t.Fatalf("open memory MCP: %v", err)
+	}
+	defer func() { _ = client.Close() }()
+
+	run := fmt.Sprintf("%d", time.Now().UnixNano())
+	sessionID := "shared-session-" + run
+	alice := "short-alice-" + run
+	bob := "short-bob-" + run
+	aliceMarker := "ALICE-ONLY-" + run
+	bobMarker := "BOB-ONLY-" + run
+	for _, write := range []struct {
+		owner  string
+		marker string
+	}{
+		{owner: alice, marker: aliceMarker},
+		{owner: bob, marker: bobMarker},
+	} {
+		text, callErr := client.CallTool(ctx, "memory_store_message", map[string]any{
+			"session_id": sessionID, "role": "user", "content": write.marker,
+			"user_identifier": write.owner,
+		})
+		if callErr != nil || !strings.Contains(text, `"stored": true`) {
+			t.Fatalf("store %s: err=%v body=%s", write.owner, callErr, text)
+		}
+	}
+
+	aliceConversation, err := client.CallTool(ctx, "memory_get_conversation", map[string]any{
+		"session_id": sessionID, "user_identifier": alice,
+	})
+	if err != nil {
+		t.Fatalf("get Alice conversation: %v", err)
+	}
+	bobConversation, err := client.CallTool(ctx, "memory_get_conversation", map[string]any{
+		"session_id": sessionID, "user_identifier": bob,
+	})
+	if err != nil {
+		t.Fatalf("get Bob conversation: %v", err)
+	}
+	if !strings.Contains(aliceConversation, aliceMarker) || strings.Contains(aliceConversation, bobMarker) {
+		t.Fatalf("Alice conversation crossed tenant boundary: %s", aliceConversation)
+	}
+	if !strings.Contains(bobConversation, bobMarker) || strings.Contains(bobConversation, aliceMarker) {
+		t.Fatalf("Bob conversation crossed tenant boundary: %s", bobConversation)
 	}
 }
 
@@ -211,9 +363,10 @@ func memoryEndpointOrGate(t *testing.T) string {
 
 func liveMemoryServer(endpoint string) mcp.ManagedServer {
 	return mcp.ManagedServer{
-		Type:  mcp.ServerTypeStreamableHTTP,
-		URL:   endpoint,
-		Trust: mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
+		Type:   mcp.ServerTypeStreamableHTTP,
+		URL:    endpoint,
+		Source: mcp.SourceRecipeMemory,
+		Trust:  mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
 	}
 }
 

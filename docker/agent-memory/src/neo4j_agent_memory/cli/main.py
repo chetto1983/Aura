@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -958,6 +959,11 @@ def mcp():
     help="Disable automatic preference detection.",
 )
 @click.option(
+    "--auth-secret-env",
+    default=None,
+    help="Environment variable containing the Aura HS256 service secret.",
+)
+@click.option(
     "--llm",
     envvar="NAM_LLM",
     default=None,
@@ -1035,6 +1041,7 @@ def mcp_serve(
     user_id: str | None,
     observation_threshold: int,
     no_auto_preferences: bool,
+    auth_secret_env: str | None,
     llm: str | None,
     llm_api_key: str | None,
     llm_api_base: str | None,
@@ -1065,6 +1072,11 @@ def mcp_serve(
     """
     # Resolve backend: explicit --backend wins; otherwise infer from env.
     resolved_backend = backend or ("nams" if api_key else "bolt")
+    auth_secret = None
+    if auth_secret_env:
+        auth_secret = os.environ.get(auth_secret_env)
+        if not auth_secret:
+            raise click.ClickException(f"{auth_secret_env} must be set and non-empty")
 
     if resolved_backend == "nams":
         if not api_key:
@@ -1116,6 +1128,7 @@ def mcp_serve(
             backend=resolved_backend,
             nams_api_key=api_key,
             nams_endpoint=endpoint,
+            auth_secret=auth_secret,
         )
     )
 

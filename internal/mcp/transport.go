@@ -29,11 +29,23 @@ func OpenServer(ctx context.Context, name string, server ManagedServer) (Transpo
 	}
 	if serverType == ServerTypeStreamableHTTP {
 		headers, bearer := httpAuthFromEnv(server.Env)
+		var bearerSource func(context.Context) (string, error)
+		identityArgument := ""
+		if strings.TrimSpace(server.Source) == SourceRecipeMemory {
+			source, sourceErr := newMemoryJWTSource(os.Getenv(memoryAuthSecretEnv))
+			if sourceErr != nil {
+				return nil, fmt.Errorf("mcp open %q: %w", name, sourceErr)
+			}
+			bearerSource = source.token
+			identityArgument = "user_identifier"
+		}
 		return OpenHTTP(ctx, name, HTTPConfig{
-			URL:         server.URL,
-			Headers:     headers,
-			BearerToken: bearer,
-			Enforce:     ssrfEnforceFromEnv(),
+			URL:                  server.URL,
+			Headers:              headers,
+			BearerToken:          bearer,
+			BearerTokenSource:    bearerSource,
+			ToolIdentityArgument: identityArgument,
+			Enforce:              ssrfEnforceFromEnv(),
 		})
 	}
 	return Open(ctx, name, ServerConfig{Command: server.Command, Args: server.Args, Env: server.Env})

@@ -3,7 +3,7 @@
 import json
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import timezone, datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID, uuid4
@@ -1235,6 +1235,48 @@ class ShortTermMemory(BaseMemory[Message]):
         and ``user_identifier`` is denormalized onto the Conversation
         node for fast filtering.
         """
+        if user_identifier is not None:
+            if conversation_id:
+                requested_id = UUID(str(conversation_id))
+                results = await self._client.execute_read(
+                    queries.GET_CONVERSATION_SCOPED,
+                    {
+                        "id": str(requested_id),
+                        "user_identifier": user_identifier,
+                    },
+                )
+                if not results:
+                    raise PermissionError(
+                        f"conversation {requested_id} is not owned by {user_identifier}"
+                    )
+                return requested_id
+
+            results = await self._client.execute_read(
+                queries.GET_CONVERSATION_BY_SESSION_SCOPED,
+                {
+                    "session_id": session_id,
+                    "user_identifier": user_identifier,
+                },
+            )
+            if results:
+                return UUID(results[0]["c"]["id"])
+
+            new_id = uuid4()
+            results = await self._client.execute_write(
+                queries.ENSURE_CONVERSATION_SCOPED,
+                {
+                    "id": str(new_id),
+                    "session_id": session_id,
+                    "title": None,
+                    "user_identifier": user_identifier,
+                },
+            )
+            if not results:
+                raise PermissionError(
+                    f"conversation session {session_id!r} has conflicting ownership"
+                )
+            return UUID(results[0]["c"]["id"])
+
         if conversation_id:
             return UUID(str(conversation_id))
 
@@ -1244,14 +1286,7 @@ class ShortTermMemory(BaseMemory[Message]):
         )
 
         if results:
-            existing_id = UUID(results[0]["c"]["id"])
-            # If the caller now supplies a user_identifier and it wasn't
-            # already attached, idempotently wire it up. Cheap and avoids
-            # surprise when an existing conversation gets its first
-            # user-scoped write.
-            if user_identifier is not None:
-                await self._link_user_to_conversation(user_identifier, existing_id)
-            return existing_id
+            return UUID(results[0]["c"]["id"])
 
         # Create new conversation
         new_id = uuid4()
@@ -1263,32 +1298,7 @@ class ShortTermMemory(BaseMemory[Message]):
                 "title": None,
             },
         )
-        if user_identifier is not None:
-            await self._link_user_to_conversation(user_identifier, new_id)
         return new_id
-
-    async def _link_user_to_conversation(self, user_identifier: str, conversation_id: UUID) -> None:
-        """Idempotently write ``(:User)-[:HAS_CONVERSATION]->(:Conversation)``.
-
-        Also denormalizes ``user_identifier`` onto the Conversation node
-        so per-user queries are indexable via the (existing)
-        ``conversation_session_idx`` plus a property-equality filter,
-        without an extra MATCH on :User.
-        """
-        await self._client.execute_write(
-            """
-            MERGE (u:User {identifier: $user_identifier})
-            ON CREATE SET u.id = $user_identifier, u.created_at = datetime()
-            WITH u
-            MATCH (c:Conversation {id: $conversation_id})
-            MERGE (u)-[:HAS_CONVERSATION]->(c)
-            SET c.user_identifier = $user_identifier
-            """,
-            {
-                "user_identifier": user_identifier,
-                "conversation_id": str(conversation_id),
-            },
-        )
 
     async def _get_last_message_id(self, conversation_id: UUID) -> str | None:
         """Get the ID of the last message in a conversation (one without outgoing NEXT_MESSAGE)."""

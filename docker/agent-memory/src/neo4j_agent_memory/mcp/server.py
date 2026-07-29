@@ -33,6 +33,7 @@ try:
         user_id: str | None = None,
         observation_threshold: int = 30000,
         auto_preferences: bool = True,
+        auth_secret: str | None = None,
     ) -> FastMCP:
         """Create a configured FastMCP server.
 
@@ -52,6 +53,8 @@ try:
                 observational memory compression (default: 30000).
             auto_preferences: Whether to auto-detect preferences from
                 user messages (default: True).
+            auth_secret: Aura HS256 service secret. Authenticated mode binds
+                every tool call to the token subject and hides global resources.
 
         Returns:
             Configured FastMCP server instance.
@@ -100,10 +103,20 @@ try:
                         "observer": observer,
                     }
 
+        auth = None
+        middleware = None
+        if auth_secret is not None:
+            from neo4j_agent_memory.mcp.auth import build_aura_auth
+
+            auth, identity_middleware = build_aura_auth(auth_secret)
+            middleware = [identity_middleware]
+
         mcp = FastMCP(
             server_name,
             instructions=get_instructions(profile),
             lifespan=lifespan,
+            auth=auth,
+            middleware=middleware,
         )
 
         from neo4j_agent_memory.mcp._prompts import register_prompts
@@ -115,7 +128,8 @@ try:
         # client; default to bolt (no Platinum).
         register_platinum = settings is not None and settings.backend == "nams"
         register_tools(mcp, profile=profile, register_platinum=register_platinum)
-        register_resources(mcp, profile=profile)
+        if auth_secret is None:
+            register_resources(mcp, profile=profile)
         register_prompts(mcp, profile=profile)
 
         return mcp
@@ -155,6 +169,7 @@ try:
             user_id: str | None = None,
             observation_threshold: int = 30000,
             auto_preferences: bool = True,
+            auth_secret: str | None = None,
         ):
             """Initialize the MCP server with a pre-connected client.
 
@@ -166,6 +181,7 @@ try:
                 user_id: User identifier for session strategies.
                 observation_threshold: Token threshold for observer compression.
                 auto_preferences: Whether to auto-detect preferences.
+                auth_secret: Optional Aura HS256 service secret.
             """
             self._client = memory_client
 
@@ -193,10 +209,20 @@ try:
                     "observer": observer,
                 }
 
+            auth = None
+            middleware = None
+            if auth_secret is not None:
+                from neo4j_agent_memory.mcp.auth import build_aura_auth
+
+                auth, identity_middleware = build_aura_auth(auth_secret)
+                middleware = [identity_middleware]
+
             self._mcp = FastMCP(
                 server_name,
                 instructions=get_instructions(profile),
                 lifespan=_preconnected_lifespan,
+                auth=auth,
+                middleware=middleware,
             )
 
             from neo4j_agent_memory.mcp._prompts import register_prompts
@@ -207,7 +233,8 @@ try:
             # is NAMS-backed.
             register_platinum = memory_client._settings.backend == "nams"
             register_tools(self._mcp, profile=profile, register_platinum=register_platinum)
-            register_resources(self._mcp, profile=profile)
+            if auth_secret is None:
+                register_resources(self._mcp, profile=profile)
             register_prompts(self._mcp, profile=profile)
 
         async def run(self) -> None:
@@ -244,6 +271,7 @@ try:
         backend: str = "bolt",
         nams_api_key: str | None = None,
         nams_endpoint: str | None = None,
+        auth_secret: str | None = None,
     ) -> None:
         """Run the MCP server with Neo4j connection.
 
@@ -270,6 +298,7 @@ try:
             embedding: Provider string for embeddings (e.g. 'BAAI/bge-small-en-v1.5').
             embedding_dimensions: Override for embedding dimensions when the
                 model is not in the defaults lookup table.
+            auth_secret: Optional Aura HS256 service secret.
         """
         from pydantic import SecretStr
 
@@ -328,12 +357,18 @@ try:
             user_id=user_id,
             observation_threshold=observation_threshold,
             auto_preferences=auto_preferences,
+            auth_secret=auth_secret,
         )
 
         if transport == "sse":
             await server.run_async(transport="sse", host=host, port=port)
         elif transport == "http":
-            await server.run_async(transport="http", host=host, port=port)
+            await server.run_async(
+                transport="http",
+                host=host,
+                port=port,
+                stateless_http=auth_secret is not None,
+            )
         else:
             await server.run_async(transport="stdio")
 
@@ -430,8 +465,18 @@ def main() -> None:
         default=False,
         help="Disable automatic preference detection from user messages",
     )
+    parser.add_argument(
+        "--auth-secret-env",
+        default=None,
+        help="Environment variable containing the Aura HS256 service secret",
+    )
 
     args = parser.parse_args()
+    auth_secret = None
+    if args.auth_secret_env:
+        auth_secret = os.environ.get(args.auth_secret_env)
+        if not auth_secret:
+            parser.error(f"{args.auth_secret_env} must be set and non-empty")
 
     asyncio.run(
         run_server(
@@ -447,6 +492,7 @@ def main() -> None:
             user_id=args.user_id,
             observation_threshold=args.observation_threshold,
             auto_preferences=not args.no_auto_preferences,
+            auth_secret=auth_secret,
         )
     )
 

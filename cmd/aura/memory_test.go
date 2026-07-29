@@ -20,10 +20,9 @@ import (
 // for tools/call, records the requested RAW tool name and returns a deterministic
 // text result. It is the unit-tier stand-in for the live agent-memory sidecar — the
 // real seed/read + reasoning-trace round-trip lives in 15-04's memory_integration tier.
-// initializes/deletes count MCP SESSIONS at the wire, not calls made through a Go seam:
-// a streamable-HTTP session is opened by exactly one `initialize` and closed by exactly
-// one `DELETE`, so those two counters are the direct evidence for Amendment #95's
-// "the whole submission opens ONE MCP session, asserted on the transport".
+// initializes/deletes pin Amendment #98.1's authenticated stateless transport:
+// one transport initializes once for a whole submission, receives no session ID,
+// and therefore emits no session DELETE.
 type recordingMemoryMCPServer struct {
 	*httptest.Server
 	mu          sync.Mutex
@@ -61,7 +60,6 @@ func newRecordingMemoryMCPServer(t *testing.T) *recordingMemoryMCPServer {
 			rec.mu.Lock()
 			rec.initializes++
 			rec.mu.Unlock()
-			w.Header().Set("Mcp-Session-Id", "sess-memory")
 			writeMemoryRPC(t, w, req.ID, map[string]any{"protocolVersion": "2025-06-18"})
 		case "notifications/initialized":
 			w.WriteHeader(http.StatusAccepted)
@@ -143,6 +141,10 @@ func writeMemoryRPC(t *testing.T, w http.ResponseWriter, id *int64, result any) 
 // it is runnable, not blocked).
 func withMemoryServerAt(t *testing.T, url string) {
 	t.Helper()
+	t.Setenv(
+		"AURA_AGENT_MEMORY_MCP_AUTH_SECRET",
+		"memory-command-test-secret-that-is-at-least-32-bytes",
+	)
 	path := withTempMCPConfig(t)
 	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
 		memoryServerName: {
@@ -397,11 +399,10 @@ func TestScopeMemoryArgs(t *testing.T) {
 	})
 }
 
-// TestStoreConfirmedOpensOneMCPSessionForTheWholeSubmission is Amendment #95's acceptance
-// gate, asserted ON THE TRANSPORT rather than inferred: the store drives the REAL
-// openMemoryMCP against the streamable-HTTP fake, and the fake counts protocol events. A
-// full seed maps to nine tools/call requests; those must ride ONE `initialize` and end in
-// ONE session `DELETE`. Before this change each write opened, handshook, called and closed
+// TestStoreConfirmedOpensOneMCPSessionForTheWholeSubmission asserts #95's
+// performance invariant under #98.1: one transport and one initialize, with no
+// stateful session or DELETE, carries all nine tools/call requests. Before #95,
+// each write opened, handshook, called and closed
 // its own session — nine handshakes, the "1000 chiamate" the directive names.
 func TestStoreConfirmedOpensOneMCPSessionForTheWholeSubmission(t *testing.T) {
 	rec := newRecordingMemoryMCPServer(t)
@@ -416,8 +417,8 @@ func TestStoreConfirmedOpensOneMCPSessionForTheWholeSubmission(t *testing.T) {
 	if initializes != 1 {
 		t.Errorf("MCP handshakes = %d, want exactly 1 for the whole submission", initializes)
 	}
-	if deletes != 1 {
-		t.Errorf("MCP session teardowns = %d, want exactly 1", deletes)
+	if deletes != 0 {
+		t.Errorf("MCP session teardowns = %d, want 0 in authenticated stateless mode", deletes)
 	}
 	calls := rec.recordedCalls()
 	if len(calls) != 9 {
@@ -436,8 +437,8 @@ func TestStoreConfirmedOpensOneMCPSessionForTheWholeSubmission(t *testing.T) {
 	}
 }
 
-// TestStoreSkippedOpensOneMCPSession pins the cheap-skip path at the same wire level: one
-// handshake, one tools/call, one teardown.
+// TestStoreSkippedOpensOneMCPSession pins the stateless cheap-skip path at the
+// same wire level: one initialize, one tools/call, no teardown.
 func TestStoreSkippedOpensOneMCPSession(t *testing.T) {
 	rec := newRecordingMemoryMCPServer(t)
 	withMemoryServerAt(t, rec.URL)
@@ -446,8 +447,8 @@ func TestStoreSkippedOpensOneMCPSession(t *testing.T) {
 		t.Fatalf("StoreSkipped: %v", err)
 	}
 	initializes, deletes := rec.sessions()
-	if initializes != 1 || deletes != 1 {
-		t.Errorf("skip sessions = %d initialize / %d delete, want 1/1", initializes, deletes)
+	if initializes != 1 || deletes != 0 {
+		t.Errorf("skip transport = %d initialize / %d delete, want 1/0", initializes, deletes)
 	}
 	if got := len(rec.recordedCalls()); got != 1 {
 		t.Errorf("skip tools/call requests = %d, want 1", got)

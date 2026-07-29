@@ -45,9 +45,11 @@ RETURN c
 
 GET_CONVERSATION_SCOPED = """
 MATCH (c:Conversation {id: $id})
-OPTIONAL MATCH (u:User {identifier: $user_identifier})-[:HAS_CONVERSATION]->(c)
-WITH c, u
-WHERE c.user_identifier = $user_identifier OR u IS NOT NULL
+OPTIONAL MATCH (u:User)-[:HAS_CONVERSATION]->(c)
+WITH c, collect(DISTINCT u.identifier) AS owners
+WHERE size(owners) = 1
+  AND owners[0] = $user_identifier
+  AND (c.user_identifier IS NULL OR c.user_identifier = $user_identifier)
 RETURN c
 """
 
@@ -60,12 +62,34 @@ LIMIT 1
 
 GET_CONVERSATION_BY_SESSION_SCOPED = """
 MATCH (c:Conversation {session_id: $session_id})
-OPTIONAL MATCH (u:User {identifier: $user_identifier})-[:HAS_CONVERSATION]->(c)
-WITH c, u
-WHERE c.user_identifier = $user_identifier OR u IS NOT NULL
+OPTIONAL MATCH (u:User)-[:HAS_CONVERSATION]->(c)
+WITH c, collect(DISTINCT u.identifier) AS owners
+WHERE size(owners) = 1
+  AND owners[0] = $user_identifier
+  AND (c.user_identifier IS NULL OR c.user_identifier = $user_identifier)
 RETURN c
 ORDER BY c.created_at DESC
 LIMIT 1
+"""
+
+ENSURE_CONVERSATION_SCOPED = """
+MERGE (u:User {identifier: $user_identifier})
+ON CREATE SET u.id = $user_identifier, u.created_at = datetime()
+MERGE (c:Conversation {
+    user_identifier: $user_identifier,
+    session_id: $session_id
+})
+ON CREATE SET c.id = $id,
+              c.title = $title,
+              c.created_at = datetime(),
+              c.updated_at = datetime()
+WITH u, c
+OPTIONAL MATCH (owner:User)-[:HAS_CONVERSATION]->(c)
+WITH u, c, collect(DISTINCT owner.identifier) AS owners
+WHERE size(owners) = 0
+   OR (size(owners) = 1 AND owners[0] = $user_identifier)
+MERGE (u)-[:HAS_CONVERSATION]->(c)
+RETURN c
 """
 
 LIST_CONVERSATIONS = """

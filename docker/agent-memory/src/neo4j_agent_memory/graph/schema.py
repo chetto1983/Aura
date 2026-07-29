@@ -110,6 +110,11 @@ class SchemaManager:
     # tuple of properties works on Community Edition (unlike ``NODE KEY``,
     # which is Enterprise-only — see queries.create_composite_constraint_query).
     _COMPOSITE_CONSTRAINTS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+        (
+            "conversation_user_session_unique",
+            "Conversation",
+            ("user_identifier", "session_id"),
+        ),
         # Entity creation MERGEs on exactly this triple
         # (query_builder.build_create_entity_query / queries.CREATE_ENTITY).
         # Without a constraint backing that key, two concurrent writers can
