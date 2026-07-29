@@ -1,7 +1,8 @@
 import type { SettingKind } from './settingsApi';
 
 export const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
-// The local chat server in compose.llm.yaml, not the vLLM sidecar this used to name:
+// The local chat server, the `localllm` compose profile, not the vLLM sidecar this
+// used to name:
 // `aura-vllm-chat` resolves nowhere in any compose file, so the Local button wrote a
 // base URL pointing at a host that does not exist.
 export const LOCAL_BASE_URL = 'http://aura-llm:8084/v1';

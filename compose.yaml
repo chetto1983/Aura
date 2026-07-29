@@ -16,6 +16,13 @@ services:
     pull_policy: never
     container_name: aura
     restart: unless-stopped
+    # Tier di isolamento opzionale (PRD amendment #63): AURA_RUNTIME=runsc mette gVisor
+    # sotto il container. Era un compose.gvisor.yaml di tre righe piu' un drop-in systemd
+    # che riscriveva ExecStart per aggiungere un -f; come variabile e' la stessa cosa senza
+    # un file e senza un comando da ricordare. Richiede provisioning dell'host PRIMA
+    # (runsc registrato in /etc/docker/daemon.json + reload del daemon), altrimenti il
+    # container non parte: e' native-Linux only, su Docker Desktop non esiste.
+    runtime: ${AURA_RUNTIME:-runc}
     mem_limit: ${AURA_MEM_LIMIT:-768m}
     cpus: ${AURA_CPUS:-1.0}
     pids_limit: ${AURA_PIDS_LIMIT:-512}
@@ -531,6 +538,18 @@ services:
       - "127.0.0.1:8081:8081"
     volumes:
       - aura-llama-embed:/root/.cache/llama.cpp
+    # The GPU reservation lives HERE, not in an overlay. It used to be a separate
+    # compose.gpu.yaml, and the day someone ran `docker compose up -d` without it the
+    # CUDA image started anyway and silently fell back to CPU — "no usable GPU found" is
+    # a warning, not an error, so nothing failed and embeddings just got ~8x slower.
+    # A GPU-less host removes it via compose.minipc.yaml, which is an explicit act.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8081/health || exit 1"]
       interval: 10s
@@ -915,6 +934,87 @@ services:
       retries: 12
       start_period: 20s
 
+  # Optional LOCAL chat-LLM — run Aura fully offline on llama.cpp instead of OpenRouter.
+  # Opt-in via profile, not via a fourth compose file:
+  #   COMPOSE_PROFILES=localllm docker compose up -d
+  # then point the daemon at it in .env (the profile can gate a SERVICE, not another
+  # service's env, so this half stays explicit):
+  #   AURA_LLM_BASE_URL=http://aura-llm:8084/v1
+  #   AURA_LLM_MODEL=qwen3-8b
+  # Host-side `go run ./cmd/aura` is unaffected unless you export the same two.
+  aura-llm:
+    profiles: [localllm]
+    image: ${AURA_LLM_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda}
+    container_name: aura-llm
+    restart: unless-stopped
+    environment:
+      LLAMA_ARG_HOST: 0.0.0.0
+      # llama.cpp --hf-repo downloads into the HF hub cache ($HF_HOME/hub), NOT
+      # /root/.cache/llama.cpp. Point HF_HOME at the persisted volume below so the
+      # ~6GB GGUF survives container recreates (otherwise every --force-recreate,
+      # e.g. a context-size change, re-downloads the whole model).
+      HF_HOME: /root/.cache/llama.cpp
+    command:
+      - --hf-repo
+      - ${AURA_LLM_HF_REPO:-unsloth/Qwen3-8B-GGUF}
+      - --hf-file
+      - ${AURA_LLM_HF_FILE:-Qwen3-8B-UD-Q4_K_XL.gguf}
+      - -a
+      - ${AURA_LLM_ALIAS:-qwen3-8b}
+      - --port
+      - "8084"
+      - -ngl
+      - "${AURA_LLM_NGL:-99}"          # full GPU offload
+      - -c
+      - "${AURA_LLM_CTX:-131072}"       # 128K context — the stable ceiling on a 12GB
+                                        # RTX 3060 for Qwythos-9B-v2 (Q4 weights + BF16
+                                        # mmproj + q8_0 KV). MEASURED: 256K saturates VRAM
+                                        # (132MB free), 1M needs ~16-20GB KV → OOM. The
+                                        # 3:1 hybrid (Gated-DeltaNet SSM : full-attn) keeps
+                                        # KV small, but 1M still exceeds this GPU. Bump
+                                        # AURA_LLM_CTX on bigger VRAM (e.g. DGX Spark).
+                                        # Native ctx is 16384; YaRN (below) scales up.
+      - -np
+      - "${AURA_LLM_PARALLEL:-1}"       # ONE slot so -c is the full context, not c/np
+      - --rope-scaling
+      - yarn                            # Qwythos card: >16384 up to 1M needs YaRN
+      - --yarn-orig-ctx
+      - "16384"
+      - --flash-attn
+      - "on"                            # required for quantized KV cache
+      - --cache-type-k
+      - "${AURA_LLM_KV_QUANT:-q8_0}"    # 8-bit KV cache (halves KV VRAM)
+      - --cache-type-v
+      - "${AURA_LLM_KV_QUANT:-q8_0}"
+      - --jinja                         # model chat template → Qwen3 tool-calling
+      - --reasoning-format
+      - deepseek                        # surface Qwen3 <think> as reasoning_content (Aura accept-both #33)
+      # VERIFIED: Aura's per-turn adaptive reasoning is an OpenRouter `reasoning:{}`
+      # object llama.cpp ignores, so thinking policy lives HERE, server-side.
+      - --reasoning
+      - "${AURA_LLM_REASONING:-auto}"   # on|off|auto — auto = Qwen3 template default (thinks)
+      - --reasoning-budget
+      - "${AURA_LLM_REASONING_BUDGET:--1}"  # thinking token cap: -1 unrestricted, 0 off, N to bound latency
+      - -t
+      - "4"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    ports:
+      - "127.0.0.1:${AURA_LLM_PORT:-8084}:8084"
+    volumes:
+      - aura-llm:/root/.cache/llama.cpp
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8084/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 900s                # first-boot GGUF download (~5.5GB) can be slow
+
   # Optional local observability pack. Prometheus and Tempo join Aura's network
   # namespace so the loopback-only metrics listener and OTLP receiver remain
   # private. Grafana alone is published, and only on host loopback.
@@ -1014,6 +1114,7 @@ volumes:
   aura-neo4j:
   aura-neo4j-plugins:
   aura-llama-embed:
+  aura-llm:
   aura-whatsapp-session:
   caddy-data:
   aura-ocr-vl:

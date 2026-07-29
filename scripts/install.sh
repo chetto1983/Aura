@@ -22,7 +22,7 @@ usage() {
 usage: install.sh [--appliance] [--gvisor] [--dir PATH]
 
   --appliance  install and enable the systemd aura.service unit
-  --gvisor     provision runsc and enable the compose.gvisor.yaml override
+  --gvisor     provision runsc and set AURA_RUNTIME=runsc in .env
   --dir PATH   installation directory (default: /opt/aura on Linux)
 EOF
 }
@@ -391,19 +391,8 @@ install_systemd_unit() {
   fi
 
   as_root cp deploy/aura.service /etc/systemd/system/aura.service
-  if [ "$GVISOR" -eq 1 ]; then
-    as_root mkdir -p /etc/systemd/system/aura.service.d
-    tmp_dropin="$(mktemp)"
-    cat > "$tmp_dropin" <<'EOF'
-[Service]
-ExecStart=
-ExecStart=/usr/bin/docker compose -f /opt/aura/compose.yaml -f /opt/aura/compose.gvisor.yaml up -d
-ExecStop=
-ExecStop=/usr/bin/docker compose -f /opt/aura/compose.yaml -f /opt/aura/compose.gvisor.yaml down
-EOF
-    as_root cp "$tmp_dropin" /etc/systemd/system/aura.service.d/gvisor.conf
-    rm -f "$tmp_dropin"
-  fi
+  # Nessun drop-in per gVisor: il runtime e' AURA_RUNTIME in .env, quindi l'unit di base
+  # va bene identica in entrambi i casi.
   as_root systemctl daemon-reload
   as_root systemctl enable --now aura.service
 }
@@ -431,7 +420,7 @@ fi
 
 cd "$INSTALL_DIR"
 download_file compose.yaml compose.yaml
-download_file compose.gvisor.yaml compose.gvisor.yaml
+download_file compose.minipc.yaml compose.minipc.yaml
 download_file caddy/Caddyfile caddy/Caddyfile
 download_file deploy/aura.service deploy/aura.service
 download_file searxng/settings.yml searxng/settings.yml
@@ -443,16 +432,23 @@ write_env_if_missing
 
 ensure_objectstore_public_endpoint
 
+# Quale stack e quale runtime: entrambi finiscono in .env, non in un -f. Cosi' ogni
+# comando successivo — il nostro, quello di systemd, quello che l'operatore digita a mano
+# sei mesi dopo — vede la stessa configurazione senza doversi ricordare niente.
+if [ "$APPLIANCE" -eq 1 ]; then
+  set_env_value COMPOSE_FILE compose.yaml:compose.minipc.yaml
+  set_env_value AURA_EMBED_NGL 0
+fi
+if [ "$GVISOR" -eq 1 ]; then
+  set_env_value AURA_RUNTIME runsc
+fi
+
 aura_image="$(env_value AURA_IMAGE)"
 if [ "${aura_image}" != "aura:local" ]; then
   docker pull "$aura_image"
 fi
 
-if [ "$GVISOR" -eq 1 ]; then
-  docker compose -f compose.yaml -f compose.gvisor.yaml up -d
-else
-  docker compose -f compose.yaml up -d
-fi
+docker compose up -d
 install_systemd_unit
 
 token="$(env_value AURA_ACCESS_TOKEN)"

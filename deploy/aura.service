@@ -2,7 +2,7 @@
 #
 # Install:
 #   sudo install -d /opt/aura
-#   sudo cp compose.yaml compose.gvisor.yaml /opt/aura/
+#   sudo cp compose.yaml compose.minipc.yaml /opt/aura/
 #   sudo cp -r caddy /opt/aura/
 #   sudo cp deploy/aura.service /etc/systemd/system/aura.service
 #   sudo systemctl daemon-reload
@@ -18,9 +18,14 @@
 #   sudo apt-get update && sudo apt-get install -y runsc
 #   sudo runsc install
 #   sudo systemctl reload docker
-# Then add a systemd drop-in that appends `-f /opt/aura/compose.gvisor.yaml`.
+# Then set AURA_RUNTIME=runsc in /opt/aura/.env — nessun drop-in e nessun -f: questa
+# unit resta identica nei due casi.
 # gVisor requires Linux 4.14.77+ and supports amd64/arm64; it is a transparent
 # isolation boundary, not capability stripping.
+#
+# Su appliance senza GPU aggiungere anche, sempre in /opt/aura/.env:
+#   COMPOSE_FILE=compose.yaml:compose.minipc.yaml
+#   AURA_EMBED_NGL=0
 
 [Unit]
 Description=Aura appliance compose stack
@@ -33,8 +38,12 @@ Requires=docker.service
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=/opt/aura
-ExecStart=/usr/bin/docker compose -f /opt/aura/compose.yaml up -d
-ExecStop=/usr/bin/docker compose -f /opt/aura/compose.yaml down
+# Nessun -f: un -f esplicito VINCE su COMPOSE_FILE, quindi cablarlo qui farebbe ignorare
+# in silenzio compose.minipc.yaml sulle appliance — che e' precisamente il guasto muto
+# che questa impostazione esiste per rendere impossibile. Il set di file lo decide
+# COMPOSE_FILE in /opt/aura/.env, letto da WorkingDirectory.
+ExecStart=/usr/bin/docker compose up -d
+ExecStop=/usr/bin/docker compose down
 TimeoutStartSec=0
 TimeoutStopSec=120
 
