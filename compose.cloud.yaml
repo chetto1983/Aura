@@ -48,9 +48,12 @@
 services:
   aura:
     depends_on:
-      # aura-llama-embed is the CUDA embed sidecar; it cannot run on a GPU-less box.
-      # Reset the hard service_healthy dependency so the stack never waits on it.
-      aura-llama-embed: !reset null
+      # The embed sidecar is NO LONGER dropped here. It used to be, because the base
+      # compose pinned the CUDA image — but image and layer offload have been env knobs
+      # for a while (AURA_EMBED_IMAGE + AURA_EMBED_NGL), so the same service runs on a
+      # GPU-less box as the CPU build. Keeping it means this overlay no longer needs a
+      # SECOND overlay to put it back, which is what made "drop one -f and every
+      # embedding silently goes to the cloud" possible in the first place.
       # These two back document ingestion and web search. Neither was a dependency of
       # anything, so `up -d aura caddy` simply never started them and the feature failed at
       # the first hop with a DNS error against a service that was never asked to exist.
@@ -60,28 +63,36 @@ services:
       searxng:
         condition: service_started
     environment:
-      # --- embeddings → NO DEFAULT. State it in .env; the stack refuses to start otherwise.
+      # --- embeddings → the LOCAL sidecar, by default and on purpose.
       #
-      # This used to default to OpenRouter, and that default cost an afternoon of
-      # debugging. Embeddings are not like the other cloud legs: rerank fires once per
-      # search, STT/TTS/vision only when asked, but the adaptive-reasoning classifier
-      # embeds 27 anchors before EVERY turn, one call at a time. Measured on the appliance
-      # against OpenRouter: 1.4-2.1s per call, so a "ciao, come stai?" spent 76s in the
-      # classifier and 2.7s actually talking to the model. The same turn with the local
-      # sidecar is a few hundred ms.
+      # Embeddings are not like the other cloud legs: rerank fires once per search,
+      # STT/TTS/vision only when asked, but the adaptive-reasoning classifier embeds 27
+      # anchors before EVERY turn, one call at a time. Measured on the appliance:
       #
-      # What made it dangerous was that it was a DEFAULT. The box runs a local embed
-      # sidecar via compose.local-embed.yaml, but that overlay has to be remembered on
-      # every `up`; drop one `-f` and this line silently sent every embedding to the
-      # cloud, with nothing in the logs to say so — the stack looked healthy and was 25x
-      # slower. A required variable cannot be got wrong by omission in either direction.
+      #   OpenRouter (qwen3-embedding-8b)  3.9s - 43.3s per call, median ~27s
+      #   local sidecar on CPU             21ms - 44ms
       #
-      #   local  (recommended):  AURA_EMBED_BASE_URL=http://aura-llama-embed:8081
-      #   cloud  (GPU-less box): AURA_EMBED_BASE_URL=https://openrouter.ai/api
-      #                          AURA_EMBED_MODEL=qwen/qwen3-embedding-8b
-      AURA_EMBED_BASE_URL: ${AURA_EMBED_BASE_URL:?set AURA_EMBED_BASE_URL in .env — http://aura-llama-embed:8081 for the local sidecar, https://openrouter.ai/api for cloud embeddings (cloud costs ~1.5-2s PER embedding and the reasoning classifier makes 27 per turn)}
+      # Three orders of magnitude, times 27 per turn. A "ciao, come stai?" spent 76s in
+      # the classifier and 2.7s talking to the model.
+      #
+      # This used to be a REQUIRED variable, because before that it defaulted to
+      # OpenRouter and the default cost an afternoon of debugging. Required fixed the
+      # wrong half of the problem: the real hazard was that the local sidecar lived in a
+      # SEPARATE overlay you had to remember on every `up`. Now the sidecar is always
+      # present, so the safe route can simply BE the default, and cloud embeddings are
+      # something you opt into by writing the URL down:
+      #
+      #   AURA_EMBED_CLOUD_BASE_URL=https://openrouter.ai/api
+      #   AURA_EMBED_MODEL=qwen/qwen3-embedding-8b
+      #
+      # The opt-in knob is deliberately NOT called AURA_EMBED_BASE_URL. That name is
+      # already the HOST-CLI value in .env (http://127.0.0.1:8081), and inside this
+      # container 127.0.0.1 is the container itself — so honouring it here would let a
+      # perfectly correct .env line silently point the daemon at nothing. A separate name
+      # cannot collide. Compose-internal DNS, no /v1 (the client appends /v1/embeddings).
+      AURA_EMBED_BASE_URL: ${AURA_EMBED_CLOUD_BASE_URL:-http://aura-llama-embed:8081}
       AURA_EMBED_MODEL: ${AURA_EMBED_MODEL-}
-      AURA_EMBED_DIMENSIONS: "${AURA_EMBED_DIMENSIONS:-768}"
+      AURA_EMBED_DIMENSIONS: "${AURA_EMBED_DIMENSIONS:-1024}"
       # --- rerank → OpenRouter (Cohere rerank-4-pro) ---
       AURA_RERANK_BASE_URL: ${AURA_RERANK_BASE_URL:-https://openrouter.ai/api}
       AURA_RERANK_MODEL: ${AURA_RERANK_MODEL:-cohere/rerank-4-pro}
@@ -95,19 +106,26 @@ services:
       MULTIMODAL_FALLBACK_MODEL: ${MULTIMODAL_FALLBACK_MODEL:-minimax/minimax-m3}
 
   aura-agent-memory-mcp:
-    depends_on:
-      # Same GPU-less reset: the memory MCP embeds through OpenRouter, not the sidecar.
-      aura-llama-embed: !reset null
     environment:
-      # Where the sidecar's OpenAI-compatible embedder points (D-28) — required, for the
-      # same reason as AURA_EMBED_BASE_URL above, and it MUST agree with it: the two write
-      # into the same 768d Neo4j vector index, so a stack that embeds queries with one
-      # model and stored memories with another retrieves noise while looking healthy.
+      # Where the sidecar's OpenAI-compatible embedder points (D-28). It MUST agree with
+      # AURA_EMBED_BASE_URL above: the two write into the SAME Neo4j vector index, so a
+      # stack that embeds queries with one model and stored memories with another
+      # retrieves noise while looking healthy. Defaulting both to the local sidecar is how
+      # they stay in agreement without an operator remembering to move them together.
       #
-      #   local:  AURA_MEMORY_EMBED_BASE_URL=http://aura-llama-embed:8081/v1
-      #   cloud:  AURA_MEMORY_EMBED_BASE_URL=https://openrouter.ai/api/v1
-      OPENAI_BASE_URL: ${AURA_MEMORY_EMBED_BASE_URL:?set AURA_MEMORY_EMBED_BASE_URL in .env — it must match AURA_EMBED_BASE_URL (same 768d index); http://aura-llama-embed:8081/v1 local, https://openrouter.ai/api/v1 cloud}
-      OPENAI_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY required in .env}
+      # This leg is why the split-overlay design leaked: it kept pointing at OpenRouter
+      # even on runs where the aura service had been put back on the local sidecar.
+      #
+      # GOING CLOUD TAKES BOTH VARIABLES, and they are two because compose has no
+      # ${VAR:+...} form to derive this one from the other (it differs only by the
+      # trailing /v1). Set one without the other and the stack embeds queries with one
+      # model and stored memories with another against the SAME index — it returns noise
+      # and looks healthy. The DEFAULTS agree, which is the half that used to be wrong:
+      #
+      #   AURA_EMBED_CLOUD_BASE_URL=https://openrouter.ai/api
+      #   AURA_MEMORY_EMBED_BASE_URL=https://openrouter.ai/api/v1
+      OPENAI_BASE_URL: ${AURA_MEMORY_EMBED_BASE_URL:-http://aura-llama-embed:8081/v1}
+      OPENAI_API_KEY: ${AURA_MEMORY_EMBED_API_KEY:-${OPENROUTER_API_KEY:-local-llama}}
       NAM_EMBEDDING: openai/${AURA_EMBED_MODEL:-qwen3-embedding-0.6b}
       # --- rerank → OpenRouter, SAME endpoint + model the aura service uses above ---
       # Without these three the sidecar keeps the base compose's http://aura-rerank:8085,
@@ -120,39 +138,13 @@ services:
       AURA_RERANK_BASE_URL: ${AURA_MEMORY_RERANK_BASE_URL:-https://openrouter.ai/api}
       AURA_RERANK_MODEL: ${AURA_MEMORY_RERANK_MODEL:-cohere/rerank-4-pro}
       AURA_RERANK_API_KEY: ${AURA_MEMORY_RERANK_API_KEY:-${OPENROUTER_API_KEY:?OPENROUTER_API_KEY required in .env}}
-    # Re-declare the boot command WITHOUT the aura-llama-embed:8081 wait target
-    # (the sidecar is gone; the original loop would block 240s then SystemExit →
-    # crash-loop). Everything else is byte-identical to the base compose command.
-    command:
-      - sh
-      - -lc
-      - |
-        python - <<'PY'
-        import socket
-        import time
-
-        targets = [("neo4j", 7687)]
-        deadline = time.monotonic() + 240
-        for host, port in targets:
-            while True:
-                try:
-                    with socket.create_connection((host, port), 5):
-                        break
-                except OSError as exc:
-                    if time.monotonic() >= deadline:
-                        raise SystemExit(f"timed out waiting for {host}:{port}: {exc}")
-                    time.sleep(2)
-        PY
-        exec neo4j-agent-memory mcp serve \
-          --transport http \
-          --host 0.0.0.0 \
-          --port 8080 \
-          --profile extended \
-          --session-strategy persistent \
-          --user-id aura-local \
-          --llm-api-base ${AURA_LLM_BASE_URL:-https://openrouter.ai/api/v1} \
-          --embedding-dimensions ${AURA_EMBED_DIMENSIONS:-768} \
-          --no-auto-preferences
+    # NO command override here any more. It existed only to delete the
+    # aura-llama-embed:8081 wait target, because this overlay used to delete the sidecar
+    # itself and the base loop would then block 240s and SystemExit into a crash-loop.
+    # The sidecar now always runs, so the base command is correct as written — and a
+    # duplicated 30-line boot script that had to stay "byte-identical except one tuple"
+    # is exactly the kind of copy that drifts. The embedding width it passes comes from
+    # AURA_EMBED_DIMENSIONS, which is set above.
 
   # Document extraction. markitdown is NOT a dependency of aura, so `up -d aura caddy`
   # leaves it down and an upload dies at extraction with
