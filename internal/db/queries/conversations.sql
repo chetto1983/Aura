@@ -95,6 +95,21 @@ WHERE identity_id = sqlc.arg(identity_id)
   AND (sqlc.arg(include_archived)::boolean OR status = 'active')
 ORDER BY last_active_at DESC;
 
+-- name: ListConversationIDsForIdentityPurge :many
+SELECT id
+FROM aura.conversations
+WHERE identity_id = sqlc.arg(identity_id)
+ORDER BY id;
+
+-- name: DeleteConversationsForIdentityPurge :execrows
+DELETE FROM aura.conversations
+WHERE identity_id = sqlc.arg(identity_id);
+
+-- name: CountConversationsForIdentityPurge :one
+SELECT count(*)
+FROM aura.conversations
+WHERE identity_id = sqlc.arg(identity_id);
+
 -- name: DeleteConversationForIdentity :execrows
 -- Owner-scoped hard delete (Phase 36 MUSR-01 / D-06): affects a row ONLY when the caller
 -- owns it. rows-affected==0 lets the handler split 403 (a known-foreign id) from 404.

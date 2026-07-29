@@ -57,6 +57,7 @@ type Querier interface {
 	ConversationDeleteCompleted(ctx context.Context, arg ConversationDeleteCompletedParams) (bool, error)
 	CountBenchmarkSettingsOverrideRows(ctx context.Context, runID pgtype.UUID) (int32, error)
 	CountBenchmarkSettingsRestoreMismatches(ctx context.Context, runID pgtype.UUID) (int32, error)
+	CountConversationsForIdentityPurge(ctx context.Context, identityID pgtype.UUID) (int64, error)
 	CountIngestionJobsByStatus(ctx context.Context, status string) (int64, error)
 	// Current durable work that has not reached a terminal completed/failed item state.
 	// This query owns the restart-safe backlog gauge; transition counters are not state.
@@ -80,6 +81,7 @@ type Querier interface {
 	// owns it. rows-affected==0 lets the handler split 403 (a known-foreign id) from 404.
 	DeleteConversationForIdentity(ctx context.Context, arg DeleteConversationForIdentityParams) (int64, error)
 	DeleteConversationForIdentityIfReservation(ctx context.Context, arg DeleteConversationForIdentityIfReservationParams) (int64, error)
+	DeleteConversationsForIdentityPurge(ctx context.Context, identityID pgtype.UUID) (int64, error)
 	DeleteDocumentTags(ctx context.Context, documentID pgtype.UUID) error
 	DeleteExpiredTelegramSetupPending(ctx context.Context) (int64, error)
 	DeleteIdentity(ctx context.Context, name string) error
@@ -216,6 +218,7 @@ type Querier interface {
 	ListCacheMetricsSince(ctx context.Context, since pgtype.Timestamptz) ([]AuraCacheMetrics, error)
 	ListCapabilities(ctx context.Context, identityID pgtype.UUID) ([]AuraCapabilityGrants, error)
 	ListContextRotEvents(ctx context.Context, conversationID pgtype.UUID) ([]AuraContextRotEvents, error)
+	ListConversationIDsForIdentityPurge(ctx context.Context, identityID pgtype.UUID) ([]pgtype.UUID, error)
 	ListConversations(ctx context.Context, includeArchived bool) ([]AuraConversations, error)
 	// Owner-scoped conversation list (Phase 36 MUSR-01): ListConversations restricted to one
 	// identity. identity_id is NOT NULL (0005) so every conversation is attributable.

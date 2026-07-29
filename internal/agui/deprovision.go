@@ -2,6 +2,7 @@ package agui
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 )
@@ -174,6 +175,14 @@ func (d *Deprovisioner) Deactivate(ctx context.Context, identityID string) error
 // (kind=deprovision), idempotent, and resumable — a re-run skips the steps the journal
 // marks done and re-runs the rest until the identity is fully removed with no orphans.
 func (d *Deprovisioner) Purge(ctx context.Context, target DeprovisionTarget) error {
+	if d.deps.IdentityDelete != nil && target.IdentityName != "" {
+		switch {
+		case d.deps.Conversations == nil:
+			return fmt.Errorf("deprovision preflight: conversation purger is required before identity deletion")
+		case d.deps.Graph == nil:
+			return fmt.Errorf("deprovision preflight: memory graph purger is required before identity deletion")
+		}
+	}
 	run := newSagaRun(ctx, d.deps.Journal, sagaKindDeprovision, target.IdentityID)
 
 	if d.deps.Conversations != nil {

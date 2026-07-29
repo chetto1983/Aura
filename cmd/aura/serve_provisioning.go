@@ -14,6 +14,7 @@ import (
 	"github.com/chetto1983/aura/internal/adaptive"
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/idroot"
 	"github.com/chetto1983/aura/internal/knowledge"
@@ -339,23 +340,31 @@ func buildProvisioningPorts(chat *chatEnv) (agui.ObjectStoreProvisioner, agui.Fi
 // buildDeprovisioner assembles the D-27 de-provisioning saga over the chat-reachable ports.
 // A nil pool yields an empty Deprovisioner whose PurgeExpired is a safe no-op (nil
 // Deactivator). AdaptiveGraph is wired independently because Aura owns those private
-// labels and can delete them without touching agent-memory's shared :User. AuthulaDelete +
-// Conversations/Graph/Sessions/Jobs remain nil because those providers are built later in
-// serve boot or have no one-line composition-root
-// reuse here. Every nil plane is fail-closed-secure — Task 3 denies the deactivated identity
-// at the auth boundary, so any retained plane is inert (recorded as a data-retention
-// follow-up in 36-14-SUMMARY). The identity FK-cascade delete (IdentityDelete) already drops
-// capability_grants + identity_auth_links + identity_object_store.
+// labels and can delete them without touching agent-memory's shared :User. The owned
+// Postgres conversation plane and Agent Memory graph plane are mandatory: deprovision
+// refuses identity deletion unless both adapters acknowledge a verified purge.
+// AuthulaDelete/Sessions/Jobs remain separate lifecycle work because those providers are
+// assembled after this seam. The identity FK cascade still drops grants, auth links, and
+// object-store ownership.
 func buildDeprovisioner(chat *chatEnv) *agui.Deprovisioner {
-	if chat == nil || chat.pool == nil {
+	if chat == nil || chat.pool == nil || chat.cfg == nil {
 		return agui.NewDeprovisioner(agui.DeprovisionDeps{})
 	}
 	objProv, fsProv, jrnl := buildProvisioningPorts(chat)
+	convStore := chat.conv
+	if convStore == nil {
+		convStore = conversations.New(chat.pool, conversations.Config{
+			RunDir:       chat.cfg.RunDir,
+			TurnCapBytes: chat.cfg.ConversationTurnCapBytes,
+		})
+	}
 	return agui.NewDeprovisioner(agui.DeprovisionDeps{
 		Journal:        jrnl,
 		Deactivator:    identityDeactivatorAdapter{pool: chat.pool},
+		Conversations:  conversationPurgeAdapter{store: convStore},
 		AdaptiveFence:  adaptiveIdentityFenceAdapter{pool: chat.pool},
 		AdaptiveGraph:  adaptiveGraphPurgeAdapter{cfg: &chat.cfg.Neo4j},
+		Graph:          memoryGraphPurgeAdapter{cfg: &chat.cfg.Neo4j},
 		ObjectStore:    objProv,
 		Filesystem:     fsProv,
 		IdentityDelete: auraLegAdapter{pool: chat.pool},

@@ -232,6 +232,43 @@ func TestDeprovisionPurgeResumable(t *testing.T) {
 	}
 }
 
+func TestDeprovisionPurgeRequiresOwnedDataPlanesBeforeAnyStep(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*DeprovisionDeps)
+	}{
+		{
+			name: "conversation purger",
+			mutate: func(deps *DeprovisionDeps) {
+				deps.Conversations = nil
+			},
+		},
+		{
+			name: "memory graph purger",
+			mutate: func(deps *DeprovisionDeps) {
+				deps.Graph = nil
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			deps, f := fullDeprovisionDeps()
+			tt.mutate(&deps)
+
+			err := NewDeprovisioner(deps).Purge(context.Background(), targetFor(testIdentityID))
+			if err == nil {
+				t.Fatalf("Purge without %s succeeded", tt.name)
+			}
+			if f.conv.count()+f.graph.count()+f.fence.count()+f.adaptive.count() != 0 {
+				t.Fatal("purge executed a data-plane step before required-port preflight")
+			}
+			if f.iddel.count() != 0 || f.authdel.count() != 0 {
+				t.Fatal("identity deletion ran without verified conversation and graph purgers")
+			}
+		})
+	}
+}
+
 // TestPurgeExpiredScansAndPurges proves the scheduled entry lists the grace-elapsed
 // identities and purges each.
 func TestPurgeExpiredScansAndPurges(t *testing.T) {

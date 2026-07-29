@@ -74,6 +74,19 @@ func (q *Queries) ConversationDeleteCompleted(ctx context.Context, arg Conversat
 	return completed, err
 }
 
+const countConversationsForIdentityPurge = `-- name: CountConversationsForIdentityPurge :one
+SELECT count(*)
+FROM aura.conversations
+WHERE identity_id = $1
+`
+
+func (q *Queries) CountConversationsForIdentityPurge(ctx context.Context, identityID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countConversationsForIdentityPurge, identityID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createConversation = `-- name: CreateConversation :one
 INSERT INTO aura.conversations (id, identity_id, model, status, metadata)
 VALUES ($1, $2, $3, 'active', $4)
@@ -177,6 +190,19 @@ func (q *Queries) DeleteConversationForIdentityIfReservation(ctx context.Context
 		arg.Reservation,
 		arg.Worker,
 	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteConversationsForIdentityPurge = `-- name: DeleteConversationsForIdentityPurge :execrows
+DELETE FROM aura.conversations
+WHERE identity_id = $1
+`
+
+func (q *Queries) DeleteConversationsForIdentityPurge(ctx context.Context, identityID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteConversationsForIdentityPurge, identityID)
 	if err != nil {
 		return 0, err
 	}
@@ -302,6 +328,33 @@ func (q *Queries) GetConversationVersionForIdentity(ctx context.Context, arg Get
 	var snapshot_version int64
 	err := row.Scan(&snapshot_version)
 	return snapshot_version, err
+}
+
+const listConversationIDsForIdentityPurge = `-- name: ListConversationIDsForIdentityPurge :many
+SELECT id
+FROM aura.conversations
+WHERE identity_id = $1
+ORDER BY id
+`
+
+func (q *Queries) ListConversationIDsForIdentityPurge(ctx context.Context, identityID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listConversationIDsForIdentityPurge, identityID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []pgtype.UUID{}
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listConversations = `-- name: ListConversations :many
