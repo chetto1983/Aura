@@ -39,7 +39,7 @@ func configuredMCPPingInterval() time.Duration {
 
 // startPingPoll starts the background poller when interval > 0. Both mount
 // branches (mountStdio and the streamable-HTTP branch of MountManagedServer)
-// call this right after a successful MountWithDefs, so a proactively-detected
+// call this right after a successful mountWithDefsPolicy, so a proactively-detected
 // dead server self-heals via reconnectAfterTransport instead of waiting for the
 // next tool call to fail. A no-op on an already-closed server (a mount whose
 // registration failed after this would be reachable only via a future bug, but

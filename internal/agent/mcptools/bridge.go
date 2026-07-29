@@ -150,7 +150,7 @@ func Bridge(ctx context.Context, namespace string, srv Server) ([]tools.Tool, er
 }
 
 // bridgeFromDefs bridges PRE-LISTED defs, skipping the srv.ListTools round-trip
-// Bridge itself makes. MountWithDefs (the initial-mount path) uses this so the
+// Bridge itself makes. mountWithDefsPolicy (the initial-mount path) uses this so the
 // FIRST discovery listing goes through the raw transport's own ctx bound instead
 // of through a reconnectingServer wrapper: reconnectingServer.ListTools treats any
 // transport error (including a caller's ctx deadline expiring) as a cue to
@@ -400,19 +400,6 @@ func truncateUTF8Bytes(s string, maxBytes int) string {
 // registration. It still refuses to clobber an existing tool name.
 func Mount(ctx context.Context, reg *tools.Registry, namespace string, srv Server) ([]string, error) {
 	bridged, err := Bridge(ctx, namespace, srv)
-	if err != nil {
-		return nil, err
-	}
-	return finishMount(reg, srv, bridged)
-}
-
-// MountWithDefs mounts PRE-LISTED defs (skipping the ListTools round-trip Mount
-// itself performs) into reg under namespace, all-or-nothing, wiring the same
-// refresh hook Mount does. Used by the initial-mount path (MountServer/
-// MountManagedServer) with defs already fetched from the raw transport under a
-// bounded handshake ctx — see bridgeFromDefs for why that ordering matters.
-func MountWithDefs(reg *tools.Registry, namespace string, srv Server, defs []mcp.ToolDef) ([]string, error) {
-	bridged, err := bridgeFromDefs(namespace, srv, defs)
 	if err != nil {
 		return nil, err
 	}
