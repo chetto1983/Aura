@@ -47,14 +47,10 @@ func TestConfiguredMCPCallTimeout(t *testing.T) {
 			t.Fatalf("0 should return default %v, got %v", defaultMCPCallTimeout, d)
 		}
 	})
-	t.Run("minus one disables the deadline", func(t *testing.T) {
+	t.Run("minus one is rejected", func(t *testing.T) {
 		t.Setenv(envMCPCallTimeoutSec, "-1")
-		d, err := configuredMCPCallTimeout()
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if d != 0 {
-			t.Fatalf("-1 should disable the deadline (return 0), got %v", d)
+		if _, err := configuredMCPCallTimeout(); err == nil {
+			t.Fatal("-1 must not permit an unbounded MCP call")
 		}
 	})
 	t.Run("non-numeric is an error", func(t *testing.T) {
@@ -90,29 +86,17 @@ func TestBridge_BadTimeoutEnvFailsBeforeListTools(t *testing.T) {
 	}
 }
 
-// TestBridgedTool_Execute_NoDeadlineWhenTimeoutMinusOne covers Execute's
-// timeout==0 branch: with the deadline explicitly disabled the call still routes
-// through and returns the scripted text (no WithTimeout wrapper is applied).
-func TestBridgedTool_Execute_NoDeadlineWhenTimeoutMinusOne(t *testing.T) {
+// TestBridge_TimeoutMinusOneFailsBeforeListTools covers the Amendment #100
+// finite-deadline contract: the former infinite timeout is rejected at mount.
+func TestBridge_TimeoutMinusOneFailsBeforeListTools(t *testing.T) {
 	t.Setenv(envMCPCallTimeoutSec, "-1")
-	var sawDeadline bool
 	srv := &fakeServer{defs: sandboxDefs(), callText: "ok"}
-	srv.CallToolFunc = func(ctx context.Context, _ string, _ map[string]any) (string, error) {
-		_, sawDeadline = ctx.Deadline()
-		return "ok", nil
+	got, err := Bridge(context.Background(), "sb", srv)
+	if err == nil || got != nil {
+		t.Fatalf("Bridge(-1) = (%v, %v), want nil tools and validation error", got, err)
 	}
-	got, _ := Bridge(context.Background(), "sb", srv)
-	ctx := tools.WithToolCallContext(context.Background(), "sess", "tc1", t.TempDir(), 2048)
-
-	res, err := got[0].Execute(ctx, json.RawMessage(`{"container_id":"abc"}`))
-	if err != nil {
-		t.Fatalf("Execute: %v", err)
-	}
-	if res.Preview != "ok" {
-		t.Fatalf("preview = %q, want ok", res.Preview)
-	}
-	if sawDeadline {
-		t.Fatal("timeout=-1 must NOT install a context deadline")
+	if srv.lastName != "" {
+		t.Fatalf("server reached despite invalid infinite timeout: %q", srv.lastName)
 	}
 }
 

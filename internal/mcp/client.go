@@ -5,10 +5,11 @@
 // in the mcpServers config.
 //
 // It generalizes the single-purpose mcp-neo4j-cypher client (internal/knowledge):
-// the framing (one JSON object per line, serialized via mu since a stdio pipe pair
-// cannot interleave) is identical, but the server, tool set, and arguments are not
-// hard-coded. Unlike that client, readResponse skips interleaved notifications
-// (e.g. logging) so a chatty server cannot desync the request/response stream.
+// the framing (one JSON object per line, serialized via a context-selectable
+// session gate since a stdio pipe pair cannot interleave) is identical, but the
+// server, tool set, and arguments are not hard-coded. Unlike that client,
+// readResponse skips interleaved notifications (e.g. logging) so a chatty server
+// cannot desync the request/response stream.
 //
 // A subprocess crash is surfaced as a wrapped error; the bridge decides policy.
 package mcp
@@ -106,7 +107,7 @@ type Client struct {
 	stdout          *bufio.Scanner
 	stdoutCloser    io.Closer
 	stderr          *boundedbuffer.Buffer
-	mu              sync.Mutex
+	gate            sessionGate
 	stdinCloseOnce  sync.Once
 	stdoutCloseOnce sync.Once
 	closeOnce       sync.Once
@@ -299,12 +300,12 @@ func (c *Client) initializeContext(ctx context.Context) (err error) {
 func (c *Client) ListTools(ctx context.Context) (defs []ToolDef, err error) {
 	ctx, end := stdioListBoundary.Start(ctx)
 	defer end.PanicSafe(&err)
-	if err := ctx.Err(); err != nil {
+	callCtx, release, err := c.gate.acquire(ctx)
+	if err != nil {
 		return nil, err
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return listToolsWith(ctx, c.name, c.roundtripContext)
+	defer release()
+	return listToolsWith(callCtx, c.name, c.roundtripContext)
 }
 
 // CallTool invokes one tool and returns its concatenated text content. A tool that
@@ -313,12 +314,12 @@ func (c *Client) ListTools(ctx context.Context) (defs []ToolDef, err error) {
 func (c *Client) CallTool(ctx context.Context, name string, args map[string]any) (text string, err error) {
 	ctx, end := stdioCallBoundary.Start(ctx)
 	defer end.PanicSafe(&err)
-	if err := ctx.Err(); err != nil {
+	callCtx, release, err := c.gate.acquire(ctx)
+	if err != nil {
 		return "", err
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return callToolWith(ctx, c.name, name, args, c.roundtripContext)
+	defer release()
+	return callToolWith(callCtx, c.name, name, args, c.roundtripContext)
 }
 
 // Ping issues an MCP ping round-trip to confirm the subprocess is alive and
@@ -326,12 +327,12 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 func (c *Client) Ping(ctx context.Context) (err error) {
 	ctx, end := stdioPingBoundary.Start(ctx)
 	defer end.PanicSafe(&err)
-	if err := ctx.Err(); err != nil {
+	callCtx, release, err := c.gate.acquire(ctx)
+	if err != nil {
 		return err
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	_, err = c.roundtripContext(ctx, "ping", map[string]any{})
+	defer release()
+	_, err = c.roundtripContext(callCtx, "ping", map[string]any{})
 	if err != nil {
 		return fmt.Errorf("mcp %q: ping: %w", c.name, err)
 	}
@@ -339,7 +340,8 @@ func (c *Client) Ping(ctx context.Context) (err error) {
 }
 
 // roundtrip writes one request and reads the matching response, skipping any
-// interleaved notifications. Caller holds mu (except initialize, pre-share).
+// interleaved notifications. Caller owns the session gate (except initialize,
+// which runs before the client is shared).
 func (c *Client) roundtrip(method string, params any) (json.RawMessage, error) {
 	return c.roundtripContext(context.Background(), method, params)
 }
@@ -487,8 +489,15 @@ func (c *Client) Close() error {
 }
 
 func (c *Client) close() error {
+	closeCtx, cancel := context.WithTimeout(context.Background(), closeWaitTimeout)
+	defer cancel()
+	c.gate.beginClose()
 	c.closeStdin()
 	defer c.closeStdout()
+	if err := c.gate.waitIdle(closeCtx); err != nil {
+		c.killProcess()
+		return fmt.Errorf("mcp %q: close active request: %w", c.name, err)
+	}
 	if c.cmd == nil {
 		return nil
 	}
@@ -497,7 +506,7 @@ func (c *Client) close() error {
 	select {
 	case err := <-done:
 		return err
-	case <-time.After(closeWaitTimeout):
+	case <-closeCtx.Done():
 		c.killProcess()
 		return <-done // Wait must still be drained after Kill to release resources
 	}

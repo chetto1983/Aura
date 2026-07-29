@@ -61,7 +61,9 @@ type HTTPClient struct {
 	client          *http.Client
 	sessionID       string
 	protocolVersion string
-	mu              sync.Mutex
+	gate            sessionGate
+	closeOnce       sync.Once
+	closeErr        error
 	nextID          atomic.Int64
 }
 
@@ -108,9 +110,12 @@ func OpenHTTP(ctx context.Context, name string, cfg HTTPConfig) (*HTTPClient, er
 func (c *HTTPClient) initialize(ctx context.Context) (err error) {
 	ctx, end := httpInitializeBoundary.Start(ctx)
 	defer end.PanicSafe(&err)
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.initializeLocked(ctx)
+	callCtx, release, err := c.gate.acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
+	return c.initializeLocked(callCtx)
 }
 
 func (c *HTTPClient) initializeLocked(ctx context.Context) error {
@@ -138,12 +143,12 @@ func (c *HTTPClient) initializeLocked(ctx context.Context) error {
 func (c *HTTPClient) ListTools(ctx context.Context) (defs []ToolDef, err error) {
 	ctx, end := httpListBoundary.Start(ctx)
 	defer end.PanicSafe(&err)
-	if err := ctx.Err(); err != nil {
+	callCtx, release, err := c.gate.acquire(ctx)
+	if err != nil {
 		return nil, err
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return listToolsWith(ctx, c.name, c.roundtripLocked)
+	defer release()
+	return listToolsWith(callCtx, c.name, c.roundtripLocked)
 }
 
 // CallTool invokes one tool (tools/call) and returns its concatenated text
@@ -168,9 +173,12 @@ func (c *HTTPClient) CallTool(ctx context.Context, name string, args map[string]
 		}
 		ctx = withBearerSubject(ctx, identity)
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return callToolWith(ctx, c.name, name, args, c.roundtripLocked)
+	callCtx, release, err := c.gate.acquire(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer release()
+	return callToolWith(callCtx, c.name, name, args, c.roundtripLocked)
 }
 
 // Ping issues an MCP ping round-trip to confirm the remote server is reachable and
@@ -178,12 +186,12 @@ func (c *HTTPClient) CallTool(ctx context.Context, name string, args map[string]
 func (c *HTTPClient) Ping(ctx context.Context) (err error) {
 	ctx, end := httpPingBoundary.Start(ctx)
 	defer end.PanicSafe(&err)
-	if err := ctx.Err(); err != nil {
+	callCtx, release, err := c.gate.acquire(ctx)
+	if err != nil {
 		return err
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if _, err := c.roundtripLocked(ctx, "ping", map[string]any{}); err != nil {
+	defer release()
+	if _, err := c.roundtripLocked(callCtx, "ping", map[string]any{}); err != nil {
 		return fmt.Errorf("mcp %q: ping: %w", c.name, err)
 	}
 	return nil
@@ -192,13 +200,22 @@ func (c *HTTPClient) Ping(ctx context.Context) (err error) {
 // Close terminates the MCP session with an HTTP DELETE when one is open; a server
 // that does not support session deletion (405/404) is treated as already closed.
 func (c *HTTPClient) Close() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.closeOnce.Do(func() {
+		c.closeErr = c.close()
+	})
+	return c.closeErr
+}
+
+func (c *HTTPClient) close() error {
+	ctx, cancel := context.WithTimeout(context.Background(), httpCloseTimeout)
+	defer cancel()
+	c.gate.beginClose()
+	if err := c.gate.waitIdle(ctx); err != nil {
+		return fmt.Errorf("mcp %q: close active request: %w", c.name, err)
+	}
 	if c.sessionID == "" {
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), httpCloseTimeout)
-	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.endpoint, nil)
 	if err != nil {
 		return err
