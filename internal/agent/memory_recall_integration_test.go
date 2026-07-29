@@ -13,6 +13,7 @@ package agent_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -24,6 +25,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent/agenttest"
 	"github.com/chetto1983/aura/internal/agent/mcptools"
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/mcp"
 	"github.com/google/uuid"
@@ -69,12 +71,14 @@ func TestMemoryLoopRecall(t *testing.T) {
 
 	tag := fmt.Sprintf("AURA-P15-IT-recall-%d", time.Now().UnixNano())
 	sessionID := strings.ToLower(tag) + "-session"
-	message := tag + " The agent loop must recall this memory via the live MCP bridge."
+	userID := strings.ToLower(tag) + "-user"
+	ctx = identityctx.WithIdentityID(ctx, userID)
 
 	server := mcp.ManagedServer{
-		Type:  mcp.ServerTypeStreamableHTTP,
-		URL:   endpoint,
-		Trust: mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
+		Type:   mcp.ServerTypeStreamableHTTP,
+		URL:    endpoint,
+		Source: mcp.SourceRecipeMemory,
+		Trust:  mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
 	}
 
 	// Seed the tagged memory through the live sidecar.
@@ -82,16 +86,30 @@ func TestMemoryLoopRecall(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open seed MCP at %s: %v", endpoint, err)
 	}
-	if _, err := seed.CallTool(ctx, "memory_store_message", map[string]any{
-		"content":    message,
-		"role":       "user",
-		"session_id": sessionID,
-		"metadata":   map[string]any{"phase": "15", "tag": tag},
-	}); err != nil {
-		_ = seed.Close()
-		t.Fatalf("seed memory_store_message: %v", err)
+	defer func() { _ = seed.Close() }()
+	addedText, err := seed.CallTool(ctx, "memory_add_fact", map[string]any{
+		"subject":         "Agent loop validation " + tag,
+		"predicate":       "has_exact_recall_marker",
+		"object_value":    tag,
+		"user_identifier": userID,
+		"metadata":        map[string]any{"phase": "15", "tag": tag},
+	})
+	if err != nil {
+		t.Fatalf("seed memory_add_fact: %v", err)
 	}
-	_ = seed.Close()
+	var added struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(addedText), &added); err != nil || added.ID == "" {
+		t.Fatalf("decode seeded fact %q: id=%q err=%v", addedText, added.ID, err)
+	}
+	defer func() {
+		_, _ = seed.CallTool(context.Background(), "memory_forget", map[string]any{
+			"node_type":       "fact",
+			"node_id":         added.ID,
+			"user_identifier": userID,
+		})
+	}()
 
 	// Build the registry the way the loop does: the discovery tools + the live
 	// memory MCP surface mounted Deferred/namespaced via the real bridge.
@@ -108,7 +126,7 @@ func TestMemoryLoopRecall(t *testing.T) {
 		t.Fatalf("mounted 0 memory tools — the live surface must expose memory__memory_search")
 	}
 
-	searchArgs := fmt.Sprintf(`{"query":%q,"limit":5,"memory_types":["messages"],"session_id":%q,"threshold":0}`, tag, sessionID)
+	searchArgs := fmt.Sprintf(`{"query":%q,"limit":5,"memory_types":["facts"],"threshold":0}`, tag)
 	fake := agenttest.NewFakeClient(
 		agenttest.ToolCallTurn(agenttest.MakeToolCall("call_search_spec", "tool_search", `{"query":"select:memory__memory_search"}`)),
 		agenttest.ToolCallTurn(agenttest.MakeToolCall("call_memory_search", "memory__memory_search", searchArgs)),
