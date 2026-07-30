@@ -334,14 +334,14 @@ func TestProvisionLoginIsolatedRun(t *testing.T) {
 	}
 
 	// ── Break-glass (MUSR-06 / D-16): the host-only mint produces a WORKING reset token. ──
-	token, err := mintBreakGlassToken(ctx, pool, idC)
+	token, err := mintBreakGlassToken(ctx, pool, idC, passwordResetTestPepper)
 	if err != nil {
 		t.Fatalf("mintBreakGlassToken: %v", err)
 	}
 	if token == "" {
 		t.Fatal("mintBreakGlassToken returned an empty token")
 	}
-	gotID, err := resolveResetTokenHash(ctx, sqlc.New(pool), agui.HashLookupToken(token))
+	gotID, err := resolveResetTokenHash(ctx, sqlc.New(pool), agui.HashLookupToken(token, passwordResetTestPepper))
 	if err != nil {
 		t.Fatalf("resolve break-glass token: %v", err)
 	}

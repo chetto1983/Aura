@@ -13,10 +13,11 @@ import (
 func TestPasswordResetRoutes(t *testing.T) {
 	store := newFakePasswordResetStore(t)
 	svc := NewPasswordResetService(PasswordResetDeps{
-		Store:     store,
-		Messenger: &fakeRecoveryMessenger{},
-		Resetter:  &fakePasswordResetter{},
-		Clock:     func() time.Time { return time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC) },
+		Store:       store,
+		Messenger:   &fakeRecoveryMessenger{},
+		Resetter:    &fakePasswordResetter{},
+		Clock:       func() time.Time { return time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC) },
+		TokenPepper: testResetTokenPepper,
 	})
 	s := NewServer(&scriptedRunner{}, nil, ServerConfig{})
 	s.SetPasswordResetService(svc)
@@ -78,9 +79,10 @@ func TestPasswordResetRoutes(t *testing.T) {
 func TestPasswordResetCompleteSamePasswordRoute(t *testing.T) {
 	store := newFakePasswordResetStore(t)
 	svc := NewPasswordResetService(PasswordResetDeps{
-		Store:     store,
-		Messenger: &fakeRecoveryMessenger{},
-		Resetter:  &fakePasswordResetter{err: ErrPasswordResetSamePassword},
+		Store:       store,
+		Messenger:   &fakeRecoveryMessenger{},
+		Resetter:    &fakePasswordResetter{err: ErrPasswordResetSamePassword},
+		TokenPepper: testResetTokenPepper,
 	})
 	s := NewServer(&scriptedRunner{}, nil, ServerConfig{})
 	s.SetPasswordResetService(svc)

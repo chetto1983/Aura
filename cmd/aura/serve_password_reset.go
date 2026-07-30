@@ -22,7 +22,8 @@ import (
 )
 
 type recoveryStoreAdapter struct {
-	pool *pgxpool.Pool
+	pool   *pgxpool.Pool
+	pepper []byte
 }
 
 const (
@@ -146,7 +147,7 @@ func (a recoveryStoreAdapter) VerifyChallenge(ctx context.Context, identityID, c
 		return "", err
 	}
 	if _, err := tq.InsertPasswordResetToken(ctx, sqlc.InsertPasswordResetTokenParams{
-		TokenHash:   agui.HashLookupToken(token),
+		TokenHash:   agui.HashLookupToken(token, a.pepper),
 		ChallengeID: consumed.ID,
 		IdentityID:  consumed.IdentityID,
 		ExpiresAt:   pgtype.Timestamptz{Time: time.Now().Add(10 * time.Minute), Valid: true},
@@ -464,8 +465,8 @@ type passwordResetCoreProvider interface {
 	CoreServices() *authulaservices.CoreServices
 }
 
-func wirePasswordResetService(server passwordResetServer, pool *pgxpool.Pool, deliverer recoveryCodeDeliverer, provider passwordResetCoreProvider) bool {
-	if isNilPasswordResetDependency(server) || pool == nil || isNilPasswordResetDependency(deliverer) || isNilPasswordResetDependency(provider) {
+func wirePasswordResetService(server passwordResetServer, pool *pgxpool.Pool, deliverer recoveryCodeDeliverer, provider passwordResetCoreProvider, pepper []byte) bool {
+	if isNilPasswordResetDependency(server) || pool == nil || isNilPasswordResetDependency(deliverer) || isNilPasswordResetDependency(provider) || len(pepper) == 0 {
 		return false
 	}
 	core := provider.CoreServices()
@@ -473,9 +474,10 @@ func wirePasswordResetService(server passwordResetServer, pool *pgxpool.Pool, de
 		return false
 	}
 	server.SetPasswordResetService(agui.NewPasswordResetService(agui.PasswordResetDeps{
-		Store:     recoveryStoreAdapter{pool: pool},
-		Messenger: telegramRecoveryMessenger{deliverer: deliverer},
-		Resetter:  authulaPasswordResetter{core: core, pool: pool},
+		Store:       recoveryStoreAdapter{pool: pool, pepper: append([]byte(nil), pepper...)},
+		Messenger:   telegramRecoveryMessenger{deliverer: deliverer},
+		Resetter:    authulaPasswordResetter{core: core, pool: pool},
+		TokenPepper: pepper,
 	}))
 	return true
 }

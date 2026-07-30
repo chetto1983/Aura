@@ -94,7 +94,7 @@ func TestMintBreakGlassTokenRoundTrip(t *testing.T) {
 	}
 
 	// Mint the break-glass token.
-	token, err := mintBreakGlassToken(ctx, pool, resolved.ID)
+	token, err := mintBreakGlassToken(ctx, pool, resolved.ID, passwordResetTestPepper)
 	if err != nil {
 		t.Fatalf("mintBreakGlassToken: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestMintBreakGlassTokenRoundTrip(t *testing.T) {
 	}
 
 	// The returned plaintext token is a WORKING token: its hash validates.
-	gotID, err := resolveResetTokenHash(ctx, sqlc.New(pool), agui.HashLookupToken(token))
+	gotID, err := resolveResetTokenHash(ctx, sqlc.New(pool), agui.HashLookupToken(token, passwordResetTestPepper))
 	if err != nil {
 		t.Fatalf("resolveResetTokenHash on minted token: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestMintBreakGlassTokenRoundTrip(t *testing.T) {
 	}
 
 	// A non-existent identity fails closed (challenge FK to aura.identities).
-	if _, err := mintBreakGlassToken(ctx, pool, uuid.New().String()); err == nil {
+	if _, err := mintBreakGlassToken(ctx, pool, uuid.New().String(), passwordResetTestPepper); err == nil {
 		t.Fatal("mintBreakGlassToken for an unknown identity succeeded, want fail-closed error")
 	} else if errors.Is(err, context.Canceled) {
 		t.Fatalf("unexpected cancellation: %v", err)

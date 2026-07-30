@@ -17,6 +17,8 @@ import (
 	"github.com/chetto1983/aura/internal/db/sqlc"
 )
 
+var passwordResetTestPepper = []byte("test-reset-token-pepper-32-bytes!")
+
 func TestRecoveryCodeMessageIsNeutralAndContainsCode(t *testing.T) {
 	msg := recoveryCodeMessage("ABC12345")
 
@@ -45,7 +47,7 @@ func TestAuthulaPasswordResetterRejectsMissingCore(t *testing.T) {
 func TestConsumeResetTokenHashUsesAlreadyHashedToken(t *testing.T) {
 	identityID := uuid.New()
 	challengeID := uuid.New()
-	tokenHash := agui.HashLookupToken("raw-reset-token")
+	tokenHash := agui.HashLookupToken("raw-reset-token", passwordResetTestPepper)
 	queries := &fakePasswordResetTokenQueries{
 		wantTokenHash: tokenHash,
 		token: sqlc.AuraPasswordResetTokens{
@@ -70,7 +72,7 @@ func TestConsumeResetTokenHashUsesAlreadyHashedToken(t *testing.T) {
 }
 
 func TestConsumeResetTokenHashIncrementsAttemptsOnInvalidToken(t *testing.T) {
-	tokenHash := agui.HashLookupToken("raw-reset-token")
+	tokenHash := agui.HashLookupToken("raw-reset-token", passwordResetTestPepper)
 	queries := &fakePasswordResetTokenQueries{
 		wantTokenHash: tokenHash,
 		getErr:        pgx.ErrNoRows,
@@ -88,7 +90,7 @@ func TestConsumeResetTokenHashIncrementsAttemptsOnInvalidToken(t *testing.T) {
 func TestClaimResetTokenHashConsumesWhileTokenIsValid(t *testing.T) {
 	identityID := uuid.New()
 	challengeID := uuid.New()
-	tokenHash := agui.HashLookupToken("raw-reset-token")
+	tokenHash := agui.HashLookupToken("raw-reset-token", passwordResetTestPepper)
 	token := sqlc.AuraPasswordResetTokens{
 		TokenHash:   tokenHash,
 		ChallengeID: pgtype.UUID{Bytes: challengeID, Valid: true},
@@ -142,7 +144,7 @@ func TestWirePasswordResetServiceRequiresAllDependencies(t *testing.T) {
 	provider := fakePasswordResetCoreProvider{core: &authulaservices.CoreServices{}}
 	pool := &pgxpool.Pool{}
 
-	if !wirePasswordResetService(server, pool, deliverer, provider) {
+	if !wirePasswordResetService(server, pool, deliverer, provider, passwordResetTestPepper) {
 		t.Fatal("wirePasswordResetService returned false with pool, deliverer, and Authula provider")
 	}
 	if server.service == nil {
@@ -162,7 +164,7 @@ func TestWirePasswordResetServiceRequiresAllDependencies(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			server := &fakePasswordResetServer{}
-			if wirePasswordResetService(server, tc.pool, tc.deliverer, tc.provider) {
+			if wirePasswordResetService(server, tc.pool, tc.deliverer, tc.provider, passwordResetTestPepper) {
 				t.Fatal("wirePasswordResetService returned true for incomplete dependencies")
 			}
 			if server.service != nil {
@@ -170,6 +172,16 @@ func TestWirePasswordResetServiceRequiresAllDependencies(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("missing token pepper", func(t *testing.T) {
+		server := &fakePasswordResetServer{}
+		if wirePasswordResetService(server, pool, deliverer, provider, nil) {
+			t.Fatal("wirePasswordResetService returned true without a reset-token pepper")
+		}
+		if server.service != nil {
+			t.Fatal("SetPasswordResetService was called without a reset-token pepper")
+		}
+	})
 }
 
 func TestWirePasswordResetServiceTreatsTypedNilProviderAsMissing(t *testing.T) {
@@ -178,7 +190,7 @@ func TestWirePasswordResetServiceTreatsTypedNilProviderAsMissing(t *testing.T) {
 	pool := &pgxpool.Pool{}
 	var provider *panicPasswordResetCoreProvider
 
-	if wirePasswordResetService(server, pool, deliverer, provider) {
+	if wirePasswordResetService(server, pool, deliverer, provider, passwordResetTestPepper) {
 		t.Fatal("wirePasswordResetService returned true for typed nil provider")
 	}
 	if server.service != nil {

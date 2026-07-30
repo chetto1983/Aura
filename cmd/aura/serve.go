@@ -385,7 +385,16 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	aguiServer.SetOnboardingService(buildOnboardingService(ctx, chat, onboardingAuthulaProvider))
 	aguiServer.SetOnboardingStatusSource(newOnboardingStatusAdapter(chat))
 	wireBootstrapService(aguiServer, chat.pool, authulaProvider)
-	wirePasswordResetService(aguiServer, chat.pool, reg, authulaProvider)
+	var resetTokenPepper []byte
+	if authulaProvider != nil {
+		resetTokenPepper, err = agui.DeriveResetTokenPepper(chat.cfg.AuthulaSecret)
+		if err != nil {
+			closeAuthulaProviders(authulaProvider, onboardingAuthulaProvider)
+			chat.close()
+			return nil, fmt.Errorf("derive password-reset token pepper: %w", err)
+		}
+	}
+	wirePasswordResetService(aguiServer, chat.pool, reg, authulaProvider, resetTokenPepper)
 	serveHandler, err := newServeHandler(aguiServer.Mux(), auth, authulaProvider)
 	if err != nil {
 		closeAuthulaProviders(authulaProvider, onboardingAuthulaProvider)

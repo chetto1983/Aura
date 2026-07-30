@@ -1,10 +1,13 @@
 package agui
 
 import (
+	"crypto/hkdf"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -15,6 +18,7 @@ import (
 )
 
 const recoveryAnswerHashVersion = "argon2id-v1"
+const resetTokenPepperInfo = "aura-reset-token-pepper-v1"
 
 // RecoveryHasher hashes and verifies normalized security-question answers.
 type RecoveryHasher struct{}
@@ -63,10 +67,31 @@ func VerifyOpaqueSecret(secret, encoded string) bool {
 	return verifyArgon2id(secret, encoded)
 }
 
-// HashLookupToken hashes only high-entropy random reset tokens, not user-chosen secrets.
-func HashLookupToken(token string) string {
-	sum := sha256.Sum256([]byte(token))
-	return base64.RawURLEncoding.EncodeToString(sum[:])
+// HashLookupToken computes the deterministic DB lookup key for a high-entropy
+// reset token. The server-side pepper prevents a DB-only leak from producing
+// useful token hashes while preserving primary-key lookup semantics.
+func HashLookupToken(token string, pepper []byte) string {
+	mac := hmac.New(sha256.New, pepper)
+	_, _ = mac.Write([]byte(token))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+// DeriveResetTokenPepper expands Authula's configured 32-byte secret into a
+// domain-separated HMAC key. Invalid input fails closed; no default key exists.
+func DeriveResetTokenPepper(secretHex string) ([]byte, error) {
+	secret := strings.TrimSpace(secretHex)
+	if len(secret) != 64 {
+		return nil, errors.New("AURA_AUTHULA_SECRET must be 64 hex characters (32 bytes)")
+	}
+	raw, err := hex.DecodeString(secret)
+	if err != nil {
+		return nil, fmt.Errorf("AURA_AUTHULA_SECRET must be valid hex: %w", err)
+	}
+	pepper, err := hkdf.Key(sha256.New, raw, nil, resetTokenPepperInfo, 32)
+	if err != nil {
+		return nil, fmt.Errorf("derive reset token pepper: %w", err)
+	}
+	return pepper, nil
 }
 
 func hashArgon2id(secret string) (string, error) {

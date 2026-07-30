@@ -19,8 +19,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"text/tabwriter"
 
+	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/identity"
@@ -38,6 +40,15 @@ func runIdentity(args []string) {
 	// Identity is a DB-only domain — use the LLM-free config load so `aura identity`
 	// does not require OPENROUTER_API_KEY.
 	cfg := config.LoadDB()
+	var recoveryPepper []byte
+	if args[0] == "recover" {
+		var err error
+		recoveryPepper, err = deriveIdentityRecoveryPepper(cfg.AuthulaSecret)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	}
 	ctx := context.Background()
 
 	pool, err := db.Open(ctx, &cfg.DB)
@@ -58,13 +69,24 @@ func runIdentity(args []string) {
 	case "revoke":
 		identityRevoke(ctx, store, args[1:])
 	case "recover":
-		identityRecover(ctx, store, pool, args[1:])
+		identityRecover(ctx, store, pool, recoveryPepper, args[1:])
 	case "recover-operator":
 		identityRecoverOperator(ctx, pool, cfg, args[1:])
 	default:
 		fmt.Fprintln(os.Stderr, identityUsage)
 		os.Exit(1)
 	}
+}
+
+func deriveIdentityRecoveryPepper(authulaSecret string) ([]byte, error) {
+	if strings.TrimSpace(authulaSecret) == "" {
+		return nil, fmt.Errorf("identity recover: AURA_AUTHULA_SECRET is required")
+	}
+	pepper, err := agui.DeriveResetTokenPepper(authulaSecret)
+	if err != nil {
+		return nil, fmt.Errorf("identity recover: invalid AURA_AUTHULA_SECRET: %w", err)
+	}
+	return pepper, nil
 }
 
 func identityList(ctx context.Context, store *identity.Store) {

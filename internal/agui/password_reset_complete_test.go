@@ -8,14 +8,17 @@ import (
 	"time"
 )
 
+var testResetTokenPepper = []byte("test-reset-token-pepper-32-bytes!")
+
 func TestPasswordResetVerifyAndComplete(t *testing.T) {
 	store := newFakePasswordResetStore(t)
 	resetter := &fakePasswordResetter{}
 	svc := NewPasswordResetService(PasswordResetDeps{
-		Store:     store,
-		Messenger: &fakeRecoveryMessenger{},
-		Resetter:  resetter,
-		Clock:     func() time.Time { return time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC) },
+		Store:       store,
+		Messenger:   &fakeRecoveryMessenger{},
+		Resetter:    resetter,
+		Clock:       func() time.Time { return time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC) },
+		TokenPepper: testResetTokenPepper,
 	})
 
 	verify, err := svc.Verify(context.Background(), PasswordResetVerifyRequest{
@@ -50,10 +53,10 @@ func TestPasswordResetVerifyAndComplete(t *testing.T) {
 	if resetter.identityID != store.record.IdentityID || resetter.password != "new-pass-123" {
 		t.Fatalf("resetter got identity=%q password=%q", resetter.identityID, resetter.password)
 	}
-	if store.claimedTokenHash != HashLookupToken(store.resetToken) {
+	if store.claimedTokenHash != HashLookupToken(store.resetToken, testResetTokenPepper) {
 		t.Fatalf("claimed token hash = %q, want exact HashLookupToken(resetToken)", store.claimedTokenHash)
 	}
-	if store.consumedTokenHash != HashLookupToken(store.resetToken) {
+	if store.consumedTokenHash != HashLookupToken(store.resetToken, testResetTokenPepper) {
 		t.Fatalf("consumed token hash = %q, want exact HashLookupToken(resetToken)", store.consumedTokenHash)
 	}
 	if len(store.events) != 2 || store.events[1].Event != "reset_complete" {
@@ -67,9 +70,10 @@ func TestPasswordResetCompleteDoesNotMutateWhenTokenClaimDenied(t *testing.T) {
 	store.claimErr = ErrPasswordResetDenied
 	resetter := &fakePasswordResetter{}
 	svc := NewPasswordResetService(PasswordResetDeps{
-		Store:     store,
-		Messenger: &fakeRecoveryMessenger{},
-		Resetter:  resetter,
+		Store:       store,
+		Messenger:   &fakeRecoveryMessenger{},
+		Resetter:    resetter,
+		TokenPepper: testResetTokenPepper,
 	})
 
 	_, err := svc.Complete(context.Background(), PasswordResetCompleteRequest{
@@ -91,9 +95,10 @@ func TestPasswordResetCompleteDoesNotConsumeTokenWhenResetterFails(t *testing.T)
 	store := newFakePasswordResetStore(t)
 	resetter := &fakePasswordResetter{err: errors.New("authula unavailable for new-pass-123")}
 	svc := NewPasswordResetService(PasswordResetDeps{
-		Store:     store,
-		Messenger: &fakeRecoveryMessenger{},
-		Resetter:  resetter,
+		Store:       store,
+		Messenger:   &fakeRecoveryMessenger{},
+		Resetter:    resetter,
+		TokenPepper: testResetTokenPepper,
 	})
 
 	_, err := svc.Complete(context.Background(), PasswordResetCompleteRequest{
@@ -103,7 +108,7 @@ func TestPasswordResetCompleteDoesNotConsumeTokenWhenResetterFails(t *testing.T)
 	if !errors.Is(err, errPasswordResetUnavailable) {
 		t.Fatalf("Complete err = %v, want unavailable", err)
 	}
-	if store.claimedTokenHash != HashLookupToken(store.resetToken) {
+	if store.claimedTokenHash != HashLookupToken(store.resetToken, testResetTokenPepper) {
 		t.Fatalf("claimed token hash = %q, want exact HashLookupToken(resetToken)", store.claimedTokenHash)
 	}
 	if store.consumedTokenHash != "" {
@@ -127,9 +132,10 @@ func TestPasswordResetCompleteIgnoresAuditFailureAfterPasswordUpdate(t *testing.
 	store.eventErr = errors.New("audit unavailable")
 	resetter := &fakePasswordResetter{}
 	svc := NewPasswordResetService(PasswordResetDeps{
-		Store:     store,
-		Messenger: &fakeRecoveryMessenger{},
-		Resetter:  resetter,
+		Store:       store,
+		Messenger:   &fakeRecoveryMessenger{},
+		Resetter:    resetter,
+		TokenPepper: testResetTokenPepper,
 	})
 
 	complete, err := svc.Complete(context.Background(), PasswordResetCompleteRequest{
@@ -145,7 +151,7 @@ func TestPasswordResetCompleteIgnoresAuditFailureAfterPasswordUpdate(t *testing.
 	if resetter.password != "new-pass-123" {
 		t.Fatalf("password was not updated before audit failure, got %q", resetter.password)
 	}
-	if store.consumedTokenHash != HashLookupToken(store.resetToken) {
+	if store.consumedTokenHash != HashLookupToken(store.resetToken, testResetTokenPepper) {
 		t.Fatalf("consumed token hash = %q, want exact HashLookupToken(resetToken)", store.consumedTokenHash)
 	}
 	if len(store.events) != 1 || store.events[0].Event != "reset_complete" {

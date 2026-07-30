@@ -1,6 +1,7 @@
 package agui
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
 	"strings"
 	"testing"
@@ -120,15 +121,60 @@ func TestOpaqueSecretRejectsEmptySecret(t *testing.T) {
 	}
 }
 
-func TestHashLookupTokenIsDeterministicAndNonReversible(t *testing.T) {
+func TestHashLookupToken(t *testing.T) {
 	token := "4PRDJ00sx9pu-pXfPIU7R35AqkWQurXieK8Kdbx1bUs"
-	a := HashLookupToken(token)
-	b := HashLookupToken(token)
+	pepperA := []byte("pepper-a")
+	pepperB := []byte("pepper-b")
+	a := HashLookupToken(token, pepperA)
+	b := HashLookupToken(token, pepperA)
 	if a != b {
 		t.Fatal("lookup token hash must be deterministic")
 	}
+	if got := HashLookupToken(token, pepperB); got == a {
+		t.Fatal("lookup token hash must change with the pepper")
+	}
 	if strings.Contains(a, token) {
 		t.Fatal("lookup token hash leaked raw token")
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(a)
+	if err != nil || len(decoded) != sha256.Size {
+		t.Fatalf("lookup hash is not canonical base64url SHA-256 output: len=%d err=%v", len(decoded), err)
+	}
+	old := sha256.Sum256([]byte(token))
+	if a == base64.RawURLEncoding.EncodeToString(old[:]) {
+		t.Fatal("lookup token hash is the old unkeyed SHA-256 value")
+	}
+}
+
+func TestDeriveResetTokenPepper(t *testing.T) {
+	secretA := strings.Repeat("01", 32)
+	secretB := strings.Repeat("02", 32)
+	a, err := DeriveResetTokenPepper(secretA)
+	if err != nil {
+		t.Fatalf("DeriveResetTokenPepper(valid): %v", err)
+	}
+	if len(a) != 32 {
+		t.Fatalf("derived pepper length = %d, want 32", len(a))
+	}
+	again, err := DeriveResetTokenPepper("  " + secretA + "  ")
+	if err != nil {
+		t.Fatalf("DeriveResetTokenPepper(trimmed valid): %v", err)
+	}
+	if string(a) != string(again) {
+		t.Fatal("derived pepper must be deterministic")
+	}
+	b, err := DeriveResetTokenPepper(secretB)
+	if err != nil {
+		t.Fatalf("DeriveResetTokenPepper(second valid): %v", err)
+	}
+	if string(a) == string(b) {
+		t.Fatal("different Authula secrets must derive different peppers")
+	}
+
+	for _, secret := range []string{"", "short", strings.Repeat("z", 64), strings.Repeat("01", 31)} {
+		if _, err := DeriveResetTokenPepper(secret); err == nil {
+			t.Fatalf("DeriveResetTokenPepper(%q) succeeded, want error", secret)
+		}
 	}
 }
 

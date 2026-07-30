@@ -96,6 +96,8 @@ type PasswordResetDeps struct {
 	Messenger RecoveryMessenger
 	Resetter  PasswordResetter
 	Clock     func() time.Time
+	// TokenPepper is the HKDF-derived HMAC key for reset-token DB lookups.
+	TokenPepper []byte
 }
 
 // PasswordResetService implements Telegram-code plus recovery-answer password reset.
@@ -104,6 +106,7 @@ type PasswordResetService struct {
 	messenger RecoveryMessenger
 	resetter  PasswordResetter
 	clock     func() time.Time
+	pepper    []byte
 }
 
 // PasswordResetStartRequest is the public request to start a reset challenge.
@@ -169,6 +172,7 @@ func NewPasswordResetService(d PasswordResetDeps) *PasswordResetService {
 		messenger: d.Messenger,
 		resetter:  d.Resetter,
 		clock:     clock,
+		pepper:    append([]byte(nil), d.TokenPepper...),
 	}
 }
 
@@ -315,7 +319,7 @@ func (s *PasswordResetService) Complete(ctx context.Context, in PasswordResetCom
 	if strings.TrimSpace(in.ResetToken) == "" {
 		return PasswordResetCompleteResponse{}, ErrPasswordResetDenied
 	}
-	tokenHash := HashLookupToken(in.ResetToken)
+	tokenHash := HashLookupToken(in.ResetToken, s.pepper)
 	claim, err := s.store.ClaimResetTokenHash(ctx, tokenHash)
 	if err != nil {
 		if errors.Is(err, ErrPasswordResetDenied) {
@@ -372,7 +376,7 @@ func (s *PasswordResetService) readyForVerify() bool {
 }
 
 func (s *PasswordResetService) readyForComplete() bool {
-	return s != nil && s.store != nil && s.resetter != nil
+	return s != nil && s.store != nil && s.resetter != nil && len(s.pepper) > 0
 }
 
 func (s *PasswordResetService) now() time.Time {

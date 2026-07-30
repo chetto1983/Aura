@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -28,7 +29,10 @@ func TestBreakGlassTokenTTLIsShortLived(t *testing.T) {
 func TestBreakGlassChallengeParams(t *testing.T) {
 	identityID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 	now := time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC)
-	codeHash := agui.HashLookupToken("throwaway-challenge-secret")
+	codeHash, err := agui.HashOpaqueSecret("throwaway-challenge-secret")
+	if err != nil {
+		t.Fatalf("HashOpaqueSecret: %v", err)
+	}
 
 	got := breakGlassChallengeParams(identityID, codeHash, now)
 
@@ -55,7 +59,7 @@ func TestBreakGlassTokenParams(t *testing.T) {
 	challengeID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 	identityID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 	now := time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC)
-	tokenHash := agui.HashLookupToken("raw-break-glass-token")
+	tokenHash := agui.HashLookupToken("raw-break-glass-token", passwordResetTestPepper)
 
 	got := breakGlassTokenParams(tokenHash, challengeID, identityID, now)
 
@@ -76,5 +80,29 @@ func TestBreakGlassTokenParams(t *testing.T) {
 	}
 	if !got.ExpiresAt.Valid || !got.ExpiresAt.Time.Equal(now.Add(breakGlassTokenTTL)) {
 		t.Fatalf("ExpiresAt = %+v, want %s", got.ExpiresAt, now.Add(breakGlassTokenTTL))
+	}
+}
+
+func TestIdentityRecoverPepperGuard(t *testing.T) {
+	for _, secret := range []string{"", "   ", "short", strings.Repeat("z", 64)} {
+		if _, err := deriveIdentityRecoveryPepper(secret); err == nil {
+			t.Fatalf("deriveIdentityRecoveryPepper(%q) succeeded, want fail-closed error", secret)
+		} else if !strings.Contains(err.Error(), "AURA_AUTHULA_SECRET") {
+			t.Fatalf("guard error = %q, want actionable knob name", err)
+		}
+	}
+
+	pepper, err := deriveIdentityRecoveryPepper(strings.Repeat("01", 32))
+	if err != nil {
+		t.Fatalf("deriveIdentityRecoveryPepper(valid): %v", err)
+	}
+	if len(pepper) != 32 {
+		t.Fatalf("derived pepper length = %d, want 32", len(pepper))
+	}
+}
+
+func TestMintBreakGlassTokenRequiresPepper(t *testing.T) {
+	if _, err := mintBreakGlassToken(t.Context(), nil, uuid.NewString(), nil); err == nil {
+		t.Fatal("mintBreakGlassToken without pepper succeeded")
 	}
 }

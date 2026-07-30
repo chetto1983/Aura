@@ -102,9 +102,10 @@ func TestPasswordResetCompleteRejectsSamePassword(t *testing.T) {
 	store := newFakePasswordResetStore(t)
 	resetter := &fakePasswordResetter{err: ErrPasswordResetSamePassword}
 	svc := NewPasswordResetService(PasswordResetDeps{
-		Store:     store,
-		Messenger: &fakeRecoveryMessenger{},
-		Resetter:  resetter,
+		Store:       store,
+		Messenger:   &fakeRecoveryMessenger{},
+		Resetter:    resetter,
+		TokenPepper: testResetTokenPepper,
 	})
 
 	_, err := svc.Complete(context.Background(), PasswordResetCompleteRequest{

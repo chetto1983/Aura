@@ -9,6 +9,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -34,7 +35,7 @@ const breakGlassAuditEvent = "break_glass_token_minted"
 // identityRecover implements `aura identity recover <name>`. It resolves the
 // identity by name and mints a short-lived hashed reset token, printing the
 // one-time plaintext token to stdout. An unknown name exits non-zero.
-func identityRecover(ctx context.Context, store *identity.Store, pool *pgxpool.Pool, args []string) {
+func identityRecover(ctx context.Context, store *identity.Store, pool *pgxpool.Pool, pepper []byte, args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, identityUsage)
 		os.Exit(1)
@@ -45,7 +46,7 @@ func identityRecover(ctx context.Context, store *identity.Store, pool *pgxpool.P
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	token, err := mintBreakGlassToken(ctx, pool, id.ID)
+	token, err := mintBreakGlassToken(ctx, pool, id.ID, pepper)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -59,15 +60,18 @@ func identityRecover(ctx context.Context, store *identity.Store, pool *pgxpool.P
 // reusing the 0023 challenge+token infra exactly (the serve_password_reset.go
 // shape): it creates the parent challenge row the token FK requires, consumes it,
 // inserts the hashed token, and records a neutral audit event — all atomically.
-// Returns the one-time PLAINTEXT token; only its sha256 hash is persisted.
-func mintBreakGlassToken(ctx context.Context, pool *pgxpool.Pool, identityID string) (string, error) {
+// Returns the one-time PLAINTEXT token; only its peppered HMAC is persisted.
+func mintBreakGlassToken(ctx context.Context, pool *pgxpool.Pool, identityID string, pepper []byte) (string, error) {
+	if len(pepper) == 0 {
+		return "", errors.New("identity recover: reset-token pepper is required")
+	}
 	uid, err := parsePasswordResetIdentityID(identityID)
 	if err != nil {
 		return "", err
 	}
 	pgID := pgtype.UUID{Bytes: uid, Valid: true}
 
-	// The plaintext token handed to the operator; only HashLookupToken(token) is stored.
+	// The plaintext token handed to the operator; only its peppered lookup hash is stored.
 	token, err := newPasswordResetToken()
 	if err != nil {
 		return "", err
@@ -93,7 +97,11 @@ func mintBreakGlassToken(ctx context.Context, pool *pgxpool.Pool, identityID str
 	}()
 	tq := sqlc.New(tx)
 
-	challenge, err := tq.InsertPasswordResetChallenge(ctx, breakGlassChallengeParams(pgID, agui.HashLookupToken(challengeSecret), now))
+	challengeHash, err := agui.HashOpaqueSecret(challengeSecret)
+	if err != nil {
+		return "", err
+	}
+	challenge, err := tq.InsertPasswordResetChallenge(ctx, breakGlassChallengeParams(pgID, challengeHash, now))
 	if err != nil {
 		return "", err
 	}
@@ -101,7 +109,7 @@ func mintBreakGlassToken(ctx context.Context, pool *pgxpool.Pool, identityID str
 	if err != nil {
 		return "", err
 	}
-	if _, err := tq.InsertPasswordResetToken(ctx, breakGlassTokenParams(agui.HashLookupToken(token), consumed.ID, consumed.IdentityID, now)); err != nil {
+	if _, err := tq.InsertPasswordResetToken(ctx, breakGlassTokenParams(agui.HashLookupToken(token, pepper), consumed.ID, consumed.IdentityID, now)); err != nil {
 		return "", err
 	}
 	if _, err := tq.InsertIdentityRecoveryAudit(ctx, sqlc.InsertIdentityRecoveryAuditParams{
