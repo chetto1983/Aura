@@ -326,15 +326,71 @@ class ContextSearchMixin:
                 "query": query,
             }
         results: dict[str, list[dict[str, Any]]] = {}
+
+        async def search_facts() -> list[Any]:
+            # Exact subject FIRST, then semantic. A fact's subject is usually a
+            # name the caller already knows ("Davide", "Progetto Zeta"), and the
+            # semantic leg cannot be trusted to find it: on short strings this
+            # embedder scores unrelated pairs within a few hundredths of a real
+            # match, so an exact subject would sit indistinguishable in the noise.
+            facts = await self.client.long_term.get_facts_about(
+                query, user_identifier=user_identifier
+            )
+            seen = {str(f.id) for f in facts}
+            if len(facts) < limit:
+                for fact in await self.client.long_term.search_facts(
+                    query=query,
+                    limit=limit - len(facts),
+                    threshold=threshold,
+                    user_identifier=user_identifier,
+                ):
+                    if str(fact.id) not in seen:
+                        facts.append(fact)
+                        seen.add(str(fact.id))
+            return facts[:limit]
+
         try:
+            calls = {}
             if "messages" in memory_types:
-                messages = await self.client.short_term.search_messages(
+                calls["messages"] = self.client.short_term.search_messages(
                     query=query,
                     session_id=session_id,
                     limit=limit,
                     threshold=threshold,
                     user_identifier=user_identifier,
                 )
+            if "entities" in memory_types:
+                calls["entities"] = self.client.long_term.search_entities(
+                    query=query,
+                    limit=limit,
+                    threshold=threshold,
+                    user_identifier=user_identifier,
+                )
+            if "preferences" in memory_types:
+                calls["preferences"] = self.client.long_term.search_preferences(
+                    query=query,
+                    limit=limit,
+                    threshold=threshold,
+                    user_identifier=user_identifier,
+                )
+            if "facts" in memory_types:
+                calls["facts"] = search_facts()
+            if "traces" in memory_types:
+                calls["traces"] = self.client.reasoning.get_similar_traces(
+                    task=query,
+                    limit=limit,
+                    user_identifier=user_identifier,
+                )
+            raw = dict(
+                zip(
+                    calls,
+                    await asyncio.gather(*calls.values()),
+                    strict=True,
+                )
+            )
+
+            if "messages" in memory_types:
+                messages = raw["messages"]
                 results["messages"] = [
                     {
                         "id": str(msg.id),
@@ -349,12 +405,7 @@ class ContextSearchMixin:
                 # `threshold` reached search_messages but was dropped here and for
                 # preferences, so the documented tool parameter did nothing for two of the
                 # three default memory types. Inherited from upstream integration.py.
-                entities = await self.client.long_term.search_entities(
-                    query=query,
-                    limit=limit,
-                    threshold=threshold,
-                    user_identifier=user_identifier,
-                )
+                entities = raw["entities"]
                 results["entities"] = [
                     {
                         "id": str(entity.id),
@@ -367,12 +418,7 @@ class ContextSearchMixin:
                     for entity in entities
                 ]
             if "preferences" in memory_types:
-                preferences = await self.client.long_term.search_preferences(
-                    query=query,
-                    limit=limit,
-                    threshold=threshold,
-                    user_identifier=user_identifier,
-                )
+                preferences = raw["preferences"]
                 results["preferences"] = [
                     {
                         "id": str(pref.id),
@@ -383,25 +429,7 @@ class ContextSearchMixin:
                     for pref in preferences
                 ]
             if "facts" in memory_types:
-                # Exact subject FIRST, then semantic. A fact's subject is usually a
-                # name the caller already knows ("Davide", "Progetto Zeta"), and the
-                # semantic leg cannot be trusted to find it: on short strings this
-                # embedder scores unrelated pairs within a few hundredths of a real
-                # match, so an exact subject would sit indistinguishable in the noise.
-                facts = await self.client.long_term.get_facts_about(
-                    query, user_identifier=user_identifier
-                )
-                seen = {str(f.id) for f in facts}
-                if len(facts) < limit:
-                    for fact in await self.client.long_term.search_facts(
-                        query=query,
-                        limit=limit - len(facts),
-                        threshold=threshold,
-                        user_identifier=user_identifier,
-                    ):
-                        if str(fact.id) not in seen:
-                            facts.append(fact)
-                            seen.add(str(fact.id))
+                facts = raw["facts"]
                 results["facts"] = [
                     {
                         "id": str(fact.id),
@@ -410,14 +438,10 @@ class ContextSearchMixin:
                         "object": fact.object,
                         "confidence": fact.confidence,
                     }
-                    for fact in facts[:limit]
+                    for fact in facts
                 ]
             if "traces" in memory_types:
-                traces = await self.client.reasoning.get_similar_traces(
-                    task=query,
-                    limit=limit,
-                    user_identifier=user_identifier,
-                )
+                traces = raw["traces"]
                 results["traces"] = [
                     {
                         "id": str(trace.id),

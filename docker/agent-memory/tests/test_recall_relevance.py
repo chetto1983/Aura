@@ -24,6 +24,7 @@ ranked third, because that text never names Davide.
 
 from __future__ import annotations
 
+import asyncio
 from uuid import UUID
 
 import pytest
@@ -197,6 +198,50 @@ async def test_context_search_forwards_the_threshold_to_every_memory_type():
     assert calls["messages"]["threshold"] == 0.93
     assert calls["entities"]["threshold"] == 0.93
     assert calls["preferences"]["threshold"] == 0.93
+
+
+async def test_context_search_starts_independent_default_buckets_concurrently():
+    """One slow backend leg must not serialize all four default recall buckets."""
+    started: set[str] = set()
+    gate = asyncio.Event()
+
+    async def wait_for_peers(kind: str):
+        started.add(kind)
+        if len(started) == 4:
+            gate.set()
+        await gate.wait()
+        return []
+
+    class _ShortTerm:
+        async def search_messages(self, **_kwargs):
+            return await wait_for_peers("messages")
+
+    class _LongTerm:
+        async def search_entities(self, **_kwargs):
+            return await wait_for_peers("entities")
+
+        async def search_preferences(self, **_kwargs):
+            return await wait_for_peers("preferences")
+
+        async def get_facts_about(self, *_args, **_kwargs):
+            return await wait_for_peers("facts")
+
+        async def search_facts(self, **_kwargs):
+            return []
+
+    class _Client:
+        short_term = _ShortTerm()
+        long_term = _LongTerm()
+
+    class _Integration(ContextSearchMixin):
+        @property
+        def client(self):
+            return _Client()
+
+    result = await asyncio.wait_for(_Integration().search("q"), timeout=0.5)
+
+    assert set(result["results"]) == {"messages", "entities", "preferences", "facts"}
+    assert started == {"messages", "entities", "preferences", "facts"}
 
 
 async def test_add_fact_deduplicates_identical_text_without_an_embedder():
