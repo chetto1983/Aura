@@ -30,7 +30,7 @@ Interpret creatively and make unexpected choices that feel genuinely designed fo
 
 
 
-Persistence: Postgres `aura.*` schema (**40 migrations shippate 0001-0040**, floor on disk `0040_shared_links` — + Neo4j Cypher **0001-0002** `0001_init`/`0002_documents`). **Il numero di una nuova migration NON si deduce mai: `ls internal/db/migrations/ | tail -1` (o `ls internal/knowledge/migrations/ | tail -1` per il Cypher) è l'unica fonte del prossimo slot libero.** `mcp-neo4j-cypher` MCP server è l'interfaccia LLM al graph.
+Persistence: Postgres `aura.*` schema + Neo4j Cypher migrations. **Il numero e il floor di una nuova migration NON si deducono mai né si copiano da questo file: `ls internal/db/migrations/ | tail -1` (o `ls internal/knowledge/migrations/ | tail -1` per il Cypher) è l'unica fonte del prossimo slot libero.** `mcp-neo4j-cypher` MCP server è l'interfaccia LLM al graph.
 
 ## Slice Q&A discipline (3 gate sequenziali, mandatory)
 
@@ -260,7 +260,7 @@ Fix issues before moving on.
 
 ## Persistence
 
-- **Postgres** primary (port `5432`): schema `aura.*`, sqlc-generated client, golang-migrate. **40 migrations shippate 0001-0040** (floor on disk `0040_shared_links`).
+- **Postgres** primary (port `5432`): schema `aura.*`, sqlc-generated client, golang-migrate. Il conteggio/floor corrente si legge dalla directory, mai da una cifra hardcoded in questo documento.
   - **Migration numbering — regola imperativa.** Il numero si assegna **all'atterraggio = prossimo intero libero quando la PHASE esegue** (ordine-fase, NON ordine-slice). **Prima di creare una migration esegui `ls internal/db/migrations/ | tail -1` e usa il successivo: il numero non si deduce, non si calcola dalla slice, non si copia da questo file** — questo file invecchia, la directory no. I numeri hardcodati nelle sezioni slice del PRD sono **indicativi** e superseduti da questa regola. Fonte di verità: prd.md §Persistence "Migration numbering — fonte di verità".
 - **Neo4j** Community + APOC + GDS (`compose.yaml`): port `7687` bolt, `7474` browser. HNSW vector indexes use the native 1024d cosine contract. Cypher migrations live in `internal/knowledge/migrations/` — sequenza separata da Postgres, **stessa regola imperativa**: `ls internal/knowledge/migrations/ | tail -1` prima di aggiungerne una. `mcp-neo4j-cypher` MCP server è l'interfaccia LLM al graph (no native Go adapter).
 - **Filesystem** per artifact: `$AURA_RUN_DIR/` (sidecar tool results + spillover content) + `~/.aura/agents/<id>/` (Agent.md profile) + `~/.aura/pyscripts/<id>/` (Slice 7e snippets) + `$AURA_SKILLS_DIR/` (skills instruction).
