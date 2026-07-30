@@ -41,6 +41,19 @@ _INTENTIONALLY_UNDOCUMENTED = {
     "memory_store_message",
     "memory_get_conversation",
     "memory_list_sessions",
+    # Registered here, but Aura's bridge drops them before the model ever sees them
+    # (``memoryHiddenFromModel`` in internal/agent/mcptools/bridge_memory.go): Aura
+    # assembles its own context window, and memory_search already covers fact lookup.
+    # Teaching either would be an instruction the model cannot act on — which is the
+    # failure this whole module is about, one language over.
+    #
+    # NOTE ON AUTHORITY. This file can only see the sidecar. The rule that actually
+    # matters — "every tool the BRIDGE exposes is taught, and nothing else" — spans two
+    # languages and is enforced in TestEveryTaughtMemoryToolReachesTheModel /
+    # TestEveryModelFacingMemoryToolIsTaught in internal/agent/mcptools. If this set and
+    # that deny list disagree, the Go tests are right and this one is stale.
+    "memory_get_context",
+    "memory_get_facts",
 }
 
 

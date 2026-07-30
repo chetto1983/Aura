@@ -46,11 +46,6 @@ WHEN you need to recall:
   memory_get_entity when you have a NAME and want what is known about it: its facts,
   its neighbours in the graph, and — importantly — any duplicates recorded under the
   same name.
-  memory_get_facts when you want the facts themselves: by exact subject, or by semantic
-  query when you do not know how the subject was worded.
-  memory_get_context when you want the assembled picture across memory types rather
-  than one lookup — it is the expensive one, so prefer a targeted search when you know
-  what you are looking for.
 
 WHEN a memory is wrong, use the verb that matches the intention. They are not
 interchangeable, and picking the wrong one loses information:

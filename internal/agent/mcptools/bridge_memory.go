@@ -25,15 +25,32 @@ func (bridgePolicy) defaultDeferred() bool {
 	return true
 }
 
+// memoryHiddenFromModel is a deliberately SMALL deny list, not a curated surface: the
+// sidecar's own long-term tools reach the model, and only what Aura owns elsewhere or does
+// not want written by hand stays out. Everything here is Deferred like the rest, so hiding
+// buys nothing on the per-turn manifest — it costs only when tool_search would have
+// returned it. Hiding is therefore a claim that the model is BETTER OFF unable to call it.
+//
+// memory_add_entity and memory_create_relationship used to be on this list and are not
+// anymore. They were the only two tools that create a node and an edge, and without them
+// the long-term graph could not be built at all: measured on the live deployment
+// 2026-07-30, 22 of 26 facts had no ABOUT_SUBJECT edge, and an agent asked to register a
+// client wrote three dangling facts, reported them as "collegati al nodo nel grafo", and
+// was wrong — the fact writer deliberately does not mint entities
+// (_link_fact_to_subject_entity), so with no add_entity nothing ever creates one. Hiding
+// them did not save a manifest; it removed the graph from the graph memory.
 var memoryHiddenFromModel = map[string]struct{}{
-	"memory_store_message":       {},
-	"memory_get_context":         {},
-	"memory_get_conversation":    {},
-	"memory_list_sessions":       {},
-	"memory_add_entity":          {},
-	"memory_store_profile":       {},
-	"memory_create_relationship": {},
-	"memory_get_facts":           {},
+	// Short-term surface: Aura's own host persists every turn to Postgres. A second
+	// copy through the sidecar is a second write and a second bill.
+	"memory_store_message":    {},
+	"memory_get_conversation": {},
+	"memory_list_sessions":    {},
+	// Aura assembles its own context window; memory_get_context would compete with it.
+	"memory_get_context": {},
+	// memory_search already covers fact lookup for the model.
+	"memory_get_facts": {},
+	// Onboarding-owned atomic write, driven by Aura's own flow, never by hand.
+	"memory_store_profile": {},
 }
 
 func (p bridgePolicy) modelFacing(tool string) bool {
