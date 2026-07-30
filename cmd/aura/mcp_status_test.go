@@ -165,6 +165,13 @@ func TestWriteRuntimeCheckBoundedByProbeTimeout(t *testing.T) {
 	}
 }
 
+func TestMCPInspectionUsesConfiguredProbeTimeout(t *testing.T) {
+	t.Setenv("AURA_MCP_PROBE_TIMEOUT", "1")
+	if got := mcpInspectionTimeout(); got != time.Second {
+		t.Fatalf("mcp inspection timeout = %v, want configured 1s probe budget", got)
+	}
+}
+
 // TestMCPStatusReflectsLiveHTTPProbe proves `aura mcp status` (D-17) surfaces the
 // live probe result additively alongside SnapshotStatus's config-derived columns:
 // a reachable HTTP server's probe column reports ok, a dead one reports a failure —

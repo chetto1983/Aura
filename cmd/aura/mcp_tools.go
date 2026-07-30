@@ -88,7 +88,7 @@ func probeManagedMCPServer(ctx context.Context, name string, server mcp.ManagedS
 }
 
 func openAndListMCPTools(ctx context.Context, name string, cfg mcp.ServerConfig) (*mcp.Client, []mcp.ToolDef, error) {
-	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, mcpInspectionTimeout())
 	defer cancel()
 	cli, err := mcp.Open(ctx, name, cfg)
 	if err != nil {
@@ -103,7 +103,7 @@ func openAndListMCPTools(ctx context.Context, name string, cfg mcp.ServerConfig)
 }
 
 func openAndListManagedMCPTools(ctx context.Context, name string, server mcp.ManagedServer) (mcp.Transport, []mcp.ToolDef, error) {
-	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, mcpInspectionTimeout())
 	defer cancel()
 	var (
 		cli mcp.Transport
@@ -127,6 +127,14 @@ func openAndListManagedMCPTools(ctx context.Context, name string, server mcp.Man
 		return nil, nil, err
 	}
 	return cli, defs, nil
+}
+
+// mcpInspectionTimeout keeps single-server tools/doctor on the same operator-owned
+// budget as status and doctor --all. A separate hard-coded 20s deadline made the
+// timeout knob ineffective precisely on the interactive diagnostics used for a hung
+// server.
+func mcpInspectionTimeout() time.Duration {
+	return resolveMCPProbeTimeout()
 }
 
 func firstMCPDescriptionLine(s string) string {

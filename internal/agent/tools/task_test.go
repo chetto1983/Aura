@@ -211,8 +211,8 @@ func TestTaskScheduleInvalidCronRejectedBeforePersist(t *testing.T) {
 
 func TestTaskList(t *testing.T) {
 	store := &fakeTaskStore{listRows: []ScheduledTask{
-		{ID: "t1", Kind: "reminder", ScheduleKind: "cron", Status: "active", NextRunAt: time.Date(2030, 1, 1, 9, 30, 0, 0, time.UTC)},
-		{ID: "t2", Kind: "agent_job", ScheduleKind: "every", Status: "pending_approval"},
+		{ID: "t1", Kind: "reminder", ScheduleKind: "cron", Status: "active", NextRunAt: time.Date(2030, 1, 1, 9, 30, 0, 0, time.UTC), Payload: `{"text":"renew passport"}`, NotifyRoute: "telegram"},
+		{ID: "t2", Kind: "agent_job", ScheduleKind: "every", Status: "pending_approval", Payload: `{"goal":"review stale preferences"}`},
 		// active with a zero (NULL) next_run_at → unschedulable (WR-01).
 		{ID: "t3", Kind: "reminder", ScheduleKind: "at", Status: "active"},
 	}}
@@ -233,6 +233,23 @@ func TestTaskList(t *testing.T) {
 	}
 	if !strings.Contains(res.Preview, "2030-01-01T09:30:00Z") {
 		t.Errorf("list must show next_run_at, got %q", res.Preview)
+	}
+	if !strings.Contains(res.Preview, `payload={"text":"renew passport"}`) ||
+		!strings.Contains(res.Preview, "notify=telegram") ||
+		!strings.Contains(res.Preview, `payload={"goal":"review stale preferences"}`) {
+		t.Errorf("list must expose enough semantic detail to correlate memories and tasks, got %q", res.Preview)
+	}
+}
+
+func TestTaskPayloadPreviewIsSingleLineAndBounded(t *testing.T) {
+	t.Parallel()
+
+	got := taskPayloadPreview(strings.Repeat("x", taskPayloadPreviewRunes+20) + "\nsecret")
+	if strings.Contains(got, "\n") {
+		t.Fatalf("task payload preview contains a newline: %q", got)
+	}
+	if len([]rune(got)) != taskPayloadPreviewRunes+3 || !strings.HasSuffix(got, "...") {
+		t.Fatalf("task payload preview length/suffix = %d/%q", len([]rune(got)), got[len(got)-3:])
 	}
 }
 

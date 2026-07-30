@@ -46,6 +46,8 @@ type ScheduledTask struct {
 	Status       string // active | pending_approval | cancelled | ...
 	NextRunAt    time.Time
 	RiskTier     string
+	Payload      string
+	NotifyRoute  string
 }
 
 // CreateTaskInput carries a resolved, validated task the tool asks the store to
@@ -400,9 +402,27 @@ func renderTaskList(rows []ScheduledTask) string {
 		if !r.NextRunAt.IsZero() {
 			next = r.NextRunAt.UTC().Format(time.RFC3339)
 		}
-		fmt.Fprintf(&b, "  %s  kind=%s  %s  next=%s%s\n", r.ID, r.Kind, r.ScheduleKind, next, flag)
+		fmt.Fprintf(&b, "  %s  kind=%s  %s  next=%s%s", r.ID, r.Kind, r.ScheduleKind, next, flag)
+		if payload := taskPayloadPreview(r.Payload); payload != "" {
+			fmt.Fprintf(&b, "  payload=%s", payload)
+		}
+		if r.NotifyRoute != "" {
+			fmt.Fprintf(&b, "  notify=%s", r.NotifyRoute)
+		}
+		b.WriteByte('\n')
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+const taskPayloadPreviewRunes = 500
+
+func taskPayloadPreview(payload string) string {
+	payload = strings.Join(strings.Fields(payload), " ")
+	runes := []rune(payload)
+	if len(runes) <= taskPayloadPreviewRunes {
+		return payload
+	}
+	return string(runes[:taskPayloadPreviewRunes]) + "..."
 }
 
 func (t *TaskTool) actionCancel(ctx context.Context, raw json.RawMessage) (ToolResult, error) {

@@ -28,6 +28,7 @@ import (
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/gateway"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 	"github.com/chetto1983/aura/internal/scoring"
@@ -138,9 +139,10 @@ func (s *cronTaskStore) CreateScheduledTask(ctx context.Context, in tools.Create
 	// Snapshot the owning identity ONCE at schedule time (transactional-outbox /
 	// Klaviyo pattern, Fork 1 / D-01): a later-deleted origin conversation still
 	// resolves the same owning channel, and the dispatcher (20-03) reads
-	// task.IdentityID directly with zero lookup. An empty identityID defaults to
-	// 'local' in cron.Store (store.go:115-118).
-	identityID := ""
+	// task.IdentityID directly with zero lookup. The invocation identity is the
+	// fallback only when no origin conversation exists; an unscoped call fails
+	// closed instead of falling through cron.Store's legacy `local` default.
+	identityID := identityctx.IdentityID(ctx)
 	if in.OriginConversationID != "" && s.conv != nil {
 		conv, err := s.conv.Get(ctx, in.OriginConversationID)
 		switch {
@@ -153,6 +155,9 @@ func (s *cronTaskStore) CreateScheduledTask(ctx context.Context, in tools.Create
 			// so the operator sees the failure instead of a misrouted reminder.
 			return tools.ScheduledTask{}, fmt.Errorf("resolve origin identity: %w", err)
 		}
+	}
+	if identityID == "" {
+		return tools.ScheduledTask{}, errors.New("schedule task requires an identity")
 	}
 	created, err := s.store.CreateTask(ctx, cron.CreateTaskParams{
 		Kind: cron.TaskKind(in.Kind),
@@ -186,11 +191,16 @@ func (s *cronTaskStore) CreateScheduledTask(ctx context.Context, in tools.Create
 // ListScheduledTasks returns active + pending_approval tasks (the LLM-facing list,
 // mirroring the CLI taskList query).
 func (s *cronTaskStore) ListScheduledTasks(ctx context.Context) ([]tools.ScheduledTask, error) {
+	identityID, err := taskIdentity(ctx)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, kind, schedule_kind, status, next_run_at
+		SELECT id, kind, schedule_kind, status, next_run_at, payload, coalesce(notify_route, '')
 		FROM aura.scheduler_tasks
-		WHERE status IN ('active', 'pending_approval')
-		ORDER BY next_run_at ASC NULLS LAST, id ASC`)
+		WHERE identity_id = $1::uuid
+		  AND status IN ('active', 'pending_approval')
+		ORDER BY next_run_at ASC NULLS LAST, id ASC`, identityID)
 	if err != nil {
 		return nil, fmt.Errorf("list scheduled tasks: %w", err)
 	}
@@ -200,12 +210,14 @@ func (s *cronTaskStore) ListScheduledTasks(ctx context.Context) ([]tools.Schedul
 	for rows.Next() {
 		var t tools.ScheduledTask
 		var next *time.Time
-		if err := rows.Scan(&t.ID, &t.Kind, &t.ScheduleKind, &t.Status, &next); err != nil {
+		var payload []byte
+		if err := rows.Scan(&t.ID, &t.Kind, &t.ScheduleKind, &t.Status, &next, &payload, &t.NotifyRoute); err != nil {
 			return nil, fmt.Errorf("scan scheduled task: %w", err)
 		}
 		if next != nil {
 			t.NextRunAt = *next
 		}
+		t.Payload = string(payload)
 		out = append(out, t)
 	}
 	if err := rows.Err(); err != nil {
@@ -214,19 +226,41 @@ func (s *cronTaskStore) ListScheduledTasks(ctx context.Context) ([]tools.Schedul
 	return out, nil
 }
 
-// CancelScheduledTask soft-cancels via cron.Store (status='cancelled').
+// CancelScheduledTask soft-cancels only inside the identity carried by the tool call.
 func (s *cronTaskStore) CancelScheduledTask(ctx context.Context, id string) error {
-	return s.store.CancelTask(ctx, id)
+	identityID, err := taskIdentity(ctx)
+	if err != nil {
+		return err
+	}
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE aura.scheduler_tasks
+		SET status = 'cancelled', updated_at = now()
+		WHERE id = $1::uuid
+		  AND identity_id = $2::uuid
+		  AND status IN ('active', 'pending_approval')`, id, identityID)
+	if err != nil {
+		return fmt.Errorf("cancel task %s: %w", id, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("task %s is not active or not owned by this identity", id)
+	}
+	return nil
 }
 
 // RunScheduledTaskNow flips an active task's next_run_at to now so the next tick
 // claims it. A pending_approval task is refused — approval is the only path out of
 // pending_approval (D-13: run_now must not bypass the gate).
 func (s *cronTaskStore) RunScheduledTaskNow(ctx context.Context, id string) error {
+	identityID, err := taskIdentity(ctx)
+	if err != nil {
+		return err
+	}
 	tag, err := s.pool.Exec(ctx, `
 		UPDATE aura.scheduler_tasks
 		SET next_run_at = now(), updated_at = now()
-		WHERE id = $1 AND status = 'active'`, id)
+		WHERE id = $1::uuid
+		  AND identity_id = $2::uuid
+		  AND status = 'active'`, id, identityID)
 	if err != nil {
 		return fmt.Errorf("run_now task %s: %w", id, err)
 	}
@@ -236,13 +270,27 @@ func (s *cronTaskStore) RunScheduledTaskNow(ctx context.Context, id string) erro
 	return nil
 }
 
+func taskIdentity(ctx context.Context) (string, error) {
+	identityID := identityctx.IdentityID(ctx)
+	if identityID == "" {
+		return "", errors.New("scheduled task operation requires an identity")
+	}
+	return identityID, nil
+}
+
 // ApproveScheduledTask is the only transition out of pending_approval (T-10-13): it
 // flips status to active so the gated task can fire.
 func (s *cronTaskStore) ApproveScheduledTask(ctx context.Context, id string) error {
+	identityID, err := taskIdentity(ctx)
+	if err != nil {
+		return err
+	}
 	tag, err := s.pool.Exec(ctx, `
 		UPDATE aura.scheduler_tasks
 		SET status = 'active', updated_at = now()
-		WHERE id = $1 AND status = 'pending_approval'`, id)
+		WHERE id = $1::uuid
+		  AND identity_id = $2::uuid
+		  AND status = 'pending_approval'`, id, identityID)
 	if err != nil {
 		return fmt.Errorf("approve task %s: %w", id, err)
 	}

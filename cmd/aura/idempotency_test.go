@@ -223,6 +223,33 @@ func TestCLIMutationPathUsesLongestExactAdaptiveCommand(t *testing.T) {
 	}
 }
 
+func TestCLIMutationPathIncludesMemoryUpdate(t *testing.T) {
+	t.Parallel()
+
+	command, mutating := cliMutationPath([]string{
+		"memory", "update", "preference", "pref-1", "preference=corrected",
+	})
+	if !mutating || command != "memory update" {
+		t.Fatalf("memory update mutation = %q/%t, want exact idempotent command", command, mutating)
+	}
+}
+
+func TestMemoryCommandKeepsPreparedInvocationContext(t *testing.T) {
+	t.Parallel()
+
+	ctx, _, err := prepareCLIIdempotency(context.Background(), []string{
+		"memory", "update", "entity", "entity-1", "name=corrected",
+		"--operation-key", "memory-update-key",
+	}, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	operation, ok := idempotency.OperationFromContext(ctx)
+	if !ok || operation.Key.Key != "memory-update-key" {
+		t.Fatalf("memory update operation = %#v/%t, want prepared replay identity", operation, ok)
+	}
+}
+
 func TestPrepareCLIIdempotencyRejectsOperationKeyForAdaptiveVerify(
 	t *testing.T,
 ) {

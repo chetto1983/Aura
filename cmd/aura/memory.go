@@ -38,7 +38,7 @@ const memoryUsage = "usage: aura memory {search <query>|context <query>|sessions
 	"forget <preference|fact|entity> <node-id>}"
 
 func runMemory(args []string) {
-	ctx, err := withOperatorIdentity(context.Background())
+	ctx, err := withOperatorIdentity(cliInvocationContext)
 	if err == nil {
 		err = runMemoryCommand(ctx, args, os.Stdout)
 	}

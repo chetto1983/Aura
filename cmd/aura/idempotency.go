@@ -101,6 +101,7 @@ var cliMutationCommands = map[string]cliMutationMeta{
 	"memory forget":             cliMutationMetaFor("memory_forget"),
 	"memory relationship":       cliMutationMetaFor("memory_relationship"),
 	"memory store-message":      cliMutationMetaFor("memory_store_message"),
+	"memory update":             cliMutationMetaFor("memory_update"),
 	"neo4j cypher":              cliMutationMetaFor("neo4j_cypher"),
 	"neo4j migrate":             cliMutationMetaFor("neo4j_migrate"),
 	"neo4j reset":               cliMutationMetaFor("neo4j_reset"),
