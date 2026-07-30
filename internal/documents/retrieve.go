@@ -264,7 +264,7 @@ func (s *Service) vectorSeed(ctx context.Context, vector []float64, req SearchRe
 	query := s.selectVectorSeedQuery(req.DocumentID != "")
 	rows, err := s.Knowledge.Read(ctx, query, map[string]any{
 		"query_vector":    vector,
-		"candidate_limit": seedCandidateLimit,
+		"candidate_limit": retrievalCandidateLimit(req.Limit),
 		"document_id":     req.DocumentID,
 		"identity":        req.IdentityID,
 	})
