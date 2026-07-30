@@ -129,7 +129,7 @@ Share/export a conversation or artifact (parity with Claude's "Condividi"/link),
 ### Security & Supply-Chain (SEC)
 
 - [ ] **SEC-01**: Aura's configured secrets are redacted before persistence at every at-rest surface (turn body, spill, tool-result sidecar); unknown secret-like values in tool output remain agent working data at rest and are pattern-redacted only on the outbound surface (display, export, ledger, trace). Full reasoning-trace mode requires an explicit production warning/fail-fast, retention config, and encrypted sink. *(F-021)*
-- [ ] **SEC-02**: Permissive/wildcard CORS is replaced by explicit origin allowlists, refused when auth is disabled except under an explicit dev profile, sets `Vary: Origin`, and keeps allowed methods in sync with registered routes. *(F-022)*
+- [ ] **SEC-02**: Wildcard/permissive CORS is removed; the cockpit is served same-origin only and emits no CORS headers. Introducing a cross-origin consumer later requires an explicit credentialed allowlist and a re-evaluation of the `auth.go` SameSite/CSRF posture. *(F-022)*
 - [ ] **SEC-03**: The integration validation console refuses non-loopback bind unless an explicit unsafe flag + authentication are configured (logs a warning). *(F-047)*
 - [ ] **SEC-04**: A prompt-injection / tool-policy-bypass regression suite asserts that injected shell/file/network/MCP requests are DENIED under `server_production`. *(F-019 security part)*
 - [ ] **SEC-05**: CI publishes an SBOM (syft / cyclonedx-gomod), `govulncheck` is a blocking gate, and all third-party Actions + tool versions are SHA/exact pinned; a workflow-lint gate rejects `@latest`/semver-floating refs. *(F-051)*
