@@ -19,6 +19,7 @@ from neo4j_agent_memory.mcp.capacity import (
     MAX_HTTP_BODY_BYTES,
     MAX_RESPONSE_BYTES,
     MemoryCapacityMiddleware,
+    _encoded_size,
     capacity_http_middleware,
 )
 from neo4j_agent_memory.mcp.server import create_mcp_server
@@ -113,6 +114,12 @@ def test_capacity_rejects_oversized_results_with_unknown_effect():
 
     assert _envelope(raised.value)["code"] == "capacity_response_exceeded"
     assert _envelope(raised.value)["effect"] == "unknown"
+
+
+def test_capacity_counts_fastmcp_two_tool_result_content():
+    result = ToolResult("x" * (MAX_RESPONSE_BYTES + 1))
+
+    assert _encoded_size(result) > MAX_RESPONSE_BYTES
 
 
 def test_capacity_enforces_per_tenant_rate_limit():

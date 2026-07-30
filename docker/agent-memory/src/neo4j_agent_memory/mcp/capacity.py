@@ -308,7 +308,29 @@ def _bound_property(name: str, schema: dict[str, Any]) -> None:
 def _encoded_size(value: Any) -> int:
     if hasattr(value, "model_dump"):
         value = value.model_dump(mode="json")
+    elif hasattr(value, "content") or hasattr(value, "structured_content"):
+        # FastMCP 2.x ToolResult is a plain Python object, while FastMCP 3.x
+        # exposes a serializable model. Measuring repr(ToolResult) under 2.x
+        # only counted the object address and let arbitrarily large responses
+        # bypass the production cap.
+        value = {
+            "content": _jsonable(getattr(value, "content", None)),
+            "structuredContent": _jsonable(
+                getattr(value, "structured_content", None)
+            ),
+            "_meta": _jsonable(getattr(value, "meta", None)),
+        }
     return len(json.dumps(value, default=str, separators=(",", ":")).encode("utf-8"))
+
+
+def _jsonable(value: Any) -> Any:
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json")
+    if isinstance(value, dict):
+        return {str(key): _jsonable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(item) for item in value]
+    return value
 
 
 class RequestBodyLimitMiddleware:
