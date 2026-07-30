@@ -15,7 +15,7 @@ type recordingCatalog struct {
 	err    error
 }
 
-func (c *recordingCatalog) SetDocumentStatus(_ context.Context, id string, status DocumentStatus, reason string) error {
+func (c *recordingCatalog) SetSearchDocumentStatus(_ context.Context, id string, status DocumentStatus, reason string) error {
 	c.calls++
 	c.id, c.status, c.reason = id, status, reason
 	return c.err
@@ -49,7 +49,7 @@ func TestEmbeddingFailureMarksTheDocumentNotReady(t *testing.T) {
 			t.Fatal("Process returned nil on a failing embedder")
 		}
 		if cat.calls != 1 {
-			t.Fatalf("SetDocumentStatus called %d times, want 1", cat.calls)
+			t.Fatalf("SetSearchDocumentStatus called %d times, want 1", cat.calls)
 		}
 		if cat.id != "doc-1" || cat.status != DocumentStatusFailed {
 			t.Fatalf("marked %q as %q, want doc-1 as %q", cat.id, cat.status, DocumentStatusFailed)
@@ -83,7 +83,7 @@ func TestEmbeddingFailureMarksTheDocumentNotReady(t *testing.T) {
 			t.Fatalf("Process = %v, want nil", err)
 		}
 		if cat.calls != 0 {
-			t.Fatalf("SetDocumentStatus called %d times on success, want 0", cat.calls)
+			t.Fatalf("SetSearchDocumentStatus called %d times on success, want 0", cat.calls)
 		}
 	})
 

@@ -33,8 +33,12 @@ type EmbeddingIndexer interface {
 // ready, the cockpit still said ready, and the only symptom reached the operator as an
 // agent answering a question about their own spreadsheet with unrelated rows. Optional:
 // a nil setter keeps the old behaviour, so callers that do not wire it are unaffected.
+//
+// The id is the SEARCH document id (doc_<hex>) — the only one the worker holds. Naming it
+// is not pedantry: the first implementation took the catalog's uuid instead, so every call
+// failed to parse and the guarantee above never once fired in production.
 type DocumentStatusSetter interface {
-	SetDocumentStatus(ctx context.Context, documentID string, status DocumentStatus, reason string) error
+	SetSearchDocumentStatus(ctx context.Context, searchDocumentID string, status DocumentStatus, reason string) error
 }
 
 // EmbeddingWorker asynchronously embeds document chunks after sparse indexing.
@@ -157,17 +161,17 @@ func (w *EmbeddingWorker) Process(ctx context.Context, doc ExtractedDocument) (e
 // record it is swallowed on purpose: the embedding error is what the caller must see, and
 // losing the status update on top of it would only replace one message with a worse one.
 // Best-effort, but never silent — the WARN carries the cause either way.
-func (w *EmbeddingWorker) markDocumentDegraded(ctx context.Context, documentID string, cause error) {
+func (w *EmbeddingWorker) markDocumentDegraded(ctx context.Context, searchDocumentID string, cause error) {
 	reason := fmt.Sprintf("embedding failed, semantic search unavailable for this document: %v", cause)
 	slog.Warn("documents: embedding failed; marking document not ready",
-		"document_id", documentID, "err", cause)
+		"document_id", searchDocumentID, "err", cause)
 	if w.Catalog == nil {
 		return
 	}
 	// WithoutCancel: the caller's ctx is usually already cancelled by the failure that got
 	// us here, and a status nobody wrote is exactly the silence this fixes.
-	if err := w.Catalog.SetDocumentStatus(context.WithoutCancel(ctx), documentID, DocumentStatusFailed, reason); err != nil {
-		slog.Warn("documents: could not mark document failed", "document_id", documentID, "err", err)
+	if err := w.Catalog.SetSearchDocumentStatus(context.WithoutCancel(ctx), searchDocumentID, DocumentStatusFailed, reason); err != nil {
+		slog.Warn("documents: could not mark document failed", "document_id", searchDocumentID, "err", err)
 	}
 }
 

@@ -3,11 +3,13 @@ package documents
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/objectstore"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -209,12 +211,27 @@ func (s *PostgresCatalogStore) GetDocument(ctx context.Context, identityID, docu
 	return DocumentDetail{Document: doc, Versions: versions}, nil
 }
 
-// SetDocumentStatus corrects one document's status without touching anything else, and
-// without an identity: a background worker knows which document it failed on, not who owns
-// it. UpdateDocument cannot serve this — it needs identity_id and rewrites every column, so
-// a narrow correction would have to invent scope, title and tags to make it.
-func (s *PostgresCatalogStore) SetDocumentStatus(ctx context.Context, documentID string, status DocumentStatus, reason string) error {
-	pgDocumentID, err := pgUUID("document_id", documentID)
+// ErrDocumentNotCatalogued reports that a search document has no row in aura.documents.
+// It is the normal state of a CLI-ingested document: the catalog is written only by the
+// asset upload chain, so `aura docs ingest` produces graph chunks and a job ledger row and
+// nothing the cockpit's document list can see.
+var ErrDocumentNotCatalogued = errors.New("documents: search document is not in the catalog")
+
+// SetSearchDocumentStatus corrects one catalogued document's status without touching
+// anything else, and without an identity: a background worker knows which document it
+// failed on, not who owns it. UpdateDocument cannot serve this — it needs identity_id and
+// rewrites every column, so a narrow correction would have to invent scope, title and tags
+// to make it.
+//
+// The argument is the SEARCH document id (doc_<hex>, derived from file content), which is
+// the only id an embedding worker holds. It is a different namespace from the catalog's
+// uuid primary key, and passing one where the other was expected is how the "a dead
+// embedding never stays ready" guarantee silently never fired: uuid.Parse rejected the
+// string, the worker swallowed the error into a WARN, and the catalog kept saying ready.
+// The mapping lives in metadata->>'search_document_id', written by
+// CatalogService.RecordAssetVersion and read the same way by the ownership backfill.
+func (s *PostgresCatalogStore) SetSearchDocumentStatus(ctx context.Context, searchDocumentID string, status DocumentStatus, reason string) error {
+	pgDocumentID, err := s.catalogIDForSearchDocument(ctx, searchDocumentID)
 	if err != nil {
 		return err
 	}
@@ -226,6 +243,33 @@ func (s *PostgresCatalogStore) SetDocumentStatus(ctx context.Context, documentID
 		return fmt.Errorf("set document status: %w", err)
 	}
 	return nil
+}
+
+// catalogIDForSearchDocument resolves the catalog uuid a search document was recorded
+// under. Newest first: a re-uploaded file keeps its content-derived search id, so the same
+// string can name several catalog rows over time and only the live one may be corrected.
+func (s *PostgresCatalogStore) catalogIDForSearchDocument(ctx context.Context, searchDocumentID string) (pgtype.UUID, error) {
+	if strings.TrimSpace(searchDocumentID) == "" {
+		return pgtype.UUID{}, fmt.Errorf("search_document_id is empty")
+	}
+	if s.db == nil {
+		return pgtype.UUID{}, fmt.Errorf("catalog store has no database handle")
+	}
+	var id string
+	err := s.db.QueryRow(ctx, `
+SELECT id::text
+FROM aura.documents
+WHERE metadata->>'search_document_id' = $1
+  AND deleted_at IS NULL
+ORDER BY created_at DESC
+LIMIT 1`, searchDocumentID).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return pgtype.UUID{}, fmt.Errorf("%w: %s", ErrDocumentNotCatalogued, searchDocumentID)
+	}
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("resolve catalog document for %s: %w", searchDocumentID, err)
+	}
+	return pgUUID("document_id", id)
 }
 
 // SoftDeleteDocument marks one logical document deleted for an identity.
