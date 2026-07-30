@@ -8,6 +8,107 @@ import (
 	"testing"
 )
 
+func TestConsoleBindGuard(t *testing.T) {
+	tests := []struct {
+		name         string
+		addr         string
+		unsafe       bool
+		token        string
+		wantAuth     bool
+		wantErrMatch string
+	}{
+		{name: "IPv4 loopback", addr: "127.0.0.1:9099"},
+		{name: "localhost", addr: "localhost:9099"},
+		{name: "IPv6 loopback", addr: "[::1]:9099"},
+		{name: "wildcard denied by default", addr: ":9099", wantErrMatch: "--unsafe-non-loopback"},
+		{name: "IPv4 wildcard denied by default", addr: "0.0.0.0:9099", wantErrMatch: "--unsafe-non-loopback"},
+		{name: "remote denied by default", addr: "192.0.2.1:9099", wantErrMatch: "--unsafe-non-loopback"},
+		{name: "unsafe requires token", addr: "0.0.0.0:9099", unsafe: true, wantErrMatch: "AURA_INTEGRATIONS_CONSOLE_TOKEN"},
+		{name: "unsafe remote requires token", addr: "192.0.2.1:9099", unsafe: true, wantErrMatch: "AURA_INTEGRATIONS_CONSOLE_TOKEN"},
+		{name: "unsafe with token enables auth", addr: "0.0.0.0:9099", unsafe: true, token: "console-secret", wantAuth: true},
+		{name: "malformed denied by default", addr: "not-an-address", wantErrMatch: "--unsafe-non-loopback"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotAuth, err := consoleBindGuard(tt.addr, tt.unsafe, tt.token)
+			if tt.wantErrMatch == "" {
+				if err != nil {
+					t.Fatalf("consoleBindGuard() error = %v", err)
+				}
+				if gotAuth != tt.wantAuth {
+					t.Fatalf("consoleBindGuard() require auth = %v, want %v", gotAuth, tt.wantAuth)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErrMatch) {
+				t.Fatalf("consoleBindGuard() error = %v, want containing %q", err, tt.wantErrMatch)
+			}
+			if strings.Contains(err.Error(), tt.token) && tt.token != "" {
+				t.Fatal("consoleBindGuard() leaked the configured token")
+			}
+		})
+	}
+}
+
+func TestConsoleTokenAuth(t *testing.T) {
+	const token = "console-secret"
+	handler := consoleTokenAuth(token, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	tests := []struct {
+		name       string
+		auth       string
+		header     string
+		wantStatus int
+	}{
+		{name: "missing", wantStatus: http.StatusUnauthorized},
+		{name: "wrong bearer", auth: "Bearer wrong", wantStatus: http.StatusUnauthorized},
+		{name: "malformed bearer", auth: token, wantStatus: http.StatusUnauthorized},
+		{name: "valid bearer", auth: "Bearer " + token, wantStatus: http.StatusNoContent},
+		{name: "valid console header", header: token, wantStatus: http.StatusNoContent},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			if tt.auth != "" {
+				req.Header.Set("Authorization", tt.auth)
+			}
+			if tt.header != "" {
+				req.Header.Set("X-Aura-Console-Token", tt.header)
+			}
+			rec := httptest.NewRecorder()
+
+			handler.ServeHTTP(rec, req)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d", rec.Code, tt.wantStatus)
+			}
+			if tt.wantStatus == http.StatusUnauthorized {
+				if got := rec.Header().Get("WWW-Authenticate"); got != "Bearer" {
+					t.Fatalf("WWW-Authenticate = %q, want Bearer", got)
+				}
+			}
+		})
+	}
+}
+
+func TestMCPConsoleRefusesUnauthenticatedNetworkBind(t *testing.T) {
+	t.Setenv("AURA_INTEGRATIONS_CONSOLE_TOKEN", "")
+	var out strings.Builder
+
+	err := mcpConsole([]string{"--addr", "0.0.0.0:9099"}, &out)
+
+	if err == nil || !strings.Contains(err.Error(), "--unsafe-non-loopback") {
+		t.Fatalf("mcpConsole() error = %v, want explicit unsafe-bind refusal", err)
+	}
+	if out.Len() != 0 {
+		t.Fatalf("mcpConsole() output = %q, want no ready banner before bind validation", out.String())
+	}
+}
+
 func TestConsoleHandlerServesPageAndMountsProxy(t *testing.T) {
 	ts := httptest.NewServer(newConsoleHandler())
 	t.Cleanup(ts.Close)
