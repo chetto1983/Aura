@@ -209,6 +209,25 @@ func (s *PostgresCatalogStore) GetDocument(ctx context.Context, identityID, docu
 	return DocumentDetail{Document: doc, Versions: versions}, nil
 }
 
+// SetDocumentStatus corrects one document's status without touching anything else, and
+// without an identity: a background worker knows which document it failed on, not who owns
+// it. UpdateDocument cannot serve this — it needs identity_id and rewrites every column, so
+// a narrow correction would have to invent scope, title and tags to make it.
+func (s *PostgresCatalogStore) SetDocumentStatus(ctx context.Context, documentID string, status DocumentStatus, reason string) error {
+	pgDocumentID, err := pgUUID("document_id", documentID)
+	if err != nil {
+		return err
+	}
+	if _, err := s.q.SetDocumentStatus(ctx, sqlc.SetDocumentStatusParams{
+		ID:     pgDocumentID,
+		Status: string(status),
+		Reason: reason,
+	}); err != nil {
+		return fmt.Errorf("set document status: %w", err)
+	}
+	return nil
+}
+
 // SoftDeleteDocument marks one logical document deleted for an identity.
 func (s *PostgresCatalogStore) SoftDeleteDocument(ctx context.Context, identityID, documentID string) (Document, error) {
 	pgDocumentID, err := pgUUID("document_id", documentID)

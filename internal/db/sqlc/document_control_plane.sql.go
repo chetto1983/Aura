@@ -805,6 +805,44 @@ func (q *Queries) RetryIngestionJob(ctx context.Context, arg RetryIngestionJobPa
 	return i, err
 }
 
+const setDocumentStatus = `-- name: SetDocumentStatus :one
+UPDATE aura.documents
+SET status = $2,
+    metadata = jsonb_set(metadata, '{status_reason}', to_jsonb($3::text), true),
+    updated_at = now()
+WHERE id = $1
+  AND deleted_at IS NULL
+RETURNING id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at
+`
+
+type SetDocumentStatusParams struct {
+	ID     pgtype.UUID `json:"id"`
+	Status string      `json:"status"`
+	Reason string      `json:"reason"`
+}
+
+// Narrow status write for background workers, which know the document but not the
+// identity that owns it. UpdateDocument above needs identity_id and rewrites every column,
+// so a worker could not use it to correct a single field without inventing the rest.
+func (q *Queries) SetDocumentStatus(ctx context.Context, arg SetDocumentStatusParams) (AuraDocuments, error) {
+	row := q.db.QueryRow(ctx, setDocumentStatus, arg.ID, arg.Status, arg.Reason)
+	var i AuraDocuments
+	err := row.Scan(
+		&i.ID,
+		&i.IdentityID,
+		&i.Scope,
+		&i.Title,
+		&i.Tags,
+		&i.Metadata,
+		&i.ActiveVersionID,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
 const softDeleteDocument = `-- name: SoftDeleteDocument :one
 UPDATE aura.documents
 SET

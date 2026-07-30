@@ -48,6 +48,18 @@ WHERE id = $1
   AND deleted_at IS NULL
 RETURNING *;
 
+-- Narrow status write for background workers, which know the document but not the
+-- identity that owns it. UpdateDocument above needs identity_id and rewrites every column,
+-- so a worker could not use it to correct a single field without inventing the rest.
+-- name: SetDocumentStatus :one
+UPDATE aura.documents
+SET status = $2,
+    metadata = jsonb_set(metadata, '{status_reason}', to_jsonb(sqlc.arg(reason)::text), true),
+    updated_at = now()
+WHERE id = $1
+  AND deleted_at IS NULL
+RETURNING *;
+
 -- name: UpdateDocumentTags :one
 UPDATE aura.documents
 SET

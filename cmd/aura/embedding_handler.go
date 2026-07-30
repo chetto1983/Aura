@@ -34,6 +34,10 @@ func (h runtimeDocumentEmbeddingHandler) HandleIngestionJob(ctx context.Context,
 				EmbeddingModel:   model,
 				EmbeddingVersion: version,
 			},
+			// Without this the document keeps the "ready" it was given the moment its bytes
+			// landed, even when every embedding attempt failed — which is how a 118-chunk
+			// spreadsheet with zero vectors still advertised itself as searchable.
+			Catalog: documents.NewPostgresCatalogStore(h.pool),
 		},
 	}
 	return handler.HandleIngestionJob(ctx, job)

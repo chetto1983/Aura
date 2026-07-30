@@ -532,8 +532,17 @@ services:
       - "8081"
       - -t
       - "4"                                    # CPU thread cap for orchestration work; harmless under GPU offload
+      # -c was never set, so llama.cpp used its 4096 default while -ub 2048 sat right next
+      # to a comment saying chunks exceed 1024 tokens. A spreadsheet chunks into ~8 KB rows
+      # (~2.1k tokens), which alone overruns -ub, and a batch of them overran -c: the
+      # sidecar answered HTTP 400 "exceeds the available context size", the embed job
+      # dead-lettered after 5 attempts, and the document stayed "ready" with zero
+      # embeddings. Aura now caps a request by BYTES (defaultEmbeddingBatchBytes); these
+      # two make sure the sidecar can accept what it sends, with room to spare.
+      - -c
+      - "${AURA_EMBED_CTX:-32768}"
       - -ub
-      - "2048"                                 # measured: manual chunks exceed 1024 tokens
+      - "${AURA_EMBED_UBATCH:-4096}"           # >= the largest SINGLE chunk: embeddings need the whole sequence in one ubatch
     ports:
       - "127.0.0.1:8081:8081"
     volumes:
