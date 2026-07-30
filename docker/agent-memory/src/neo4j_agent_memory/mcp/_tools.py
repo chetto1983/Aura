@@ -822,6 +822,9 @@ def _register_extended_tools(mcp: FastMCP) -> None:
                 limit=1,
                 user_identifier=user_identifier,
             )
+            source_entities = [
+                entity for entity in source_entities if _names_collide(entity, source_name)
+            ]
             if not source_entities:
                 return json.dumps(
                     {"error": f"Source entity '{source_name}' not found in knowledge graph."}
@@ -833,6 +836,9 @@ def _register_extended_tools(mcp: FastMCP) -> None:
                 limit=1,
                 user_identifier=user_identifier,
             )
+            target_entities = [
+                entity for entity in target_entities if _names_collide(entity, target_name)
+            ]
             if not target_entities:
                 return json.dumps(
                     {"error": f"Target entity '{target_name}' not found in knowledge graph."}

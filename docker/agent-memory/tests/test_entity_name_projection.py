@@ -289,3 +289,68 @@ def test_get_entity_does_not_report_the_nearest_unrelated_entity():
     )
 
     assert payload == {"found": False, "name": "Forgotten Harbor"}
+
+
+class _RelationshipClient:
+    def __init__(self, search_results):
+        self._search_results = iter(search_results)
+        self.relationships = []
+        self.long_term = SimpleNamespace(
+            search_entities=self._search,
+            add_relationship=self._add_relationship,
+        )
+
+    async def _search(self, **_kwargs):
+        return next(self._search_results)
+
+    async def _add_relationship(self, **kwargs):
+        self.relationships.append(kwargs)
+        return SimpleNamespace(id=uuid4())
+
+
+def _relationship_tool():
+    mcp = FastMCP("relationship-lookup-guard")
+    register_tools(mcp, profile="extended")
+    return _run(mcp.get_tools())["memory_create_relationship"]
+
+
+def test_create_relationship_rejects_unrelated_semantic_source_match():
+    client = _RelationshipClient([[_entity("RoboManual", None)]])
+
+    payload = json.loads(
+        _run(
+            _relationship_tool().fn(
+                _ctx(client),
+                source_name="Forgotten Harbor",
+                target_name="Nimbus",
+                relationship_type="VISITED",
+            )
+        )
+    )
+
+    assert payload == {
+        "error": "Source entity 'Forgotten Harbor' not found in knowledge graph."
+    }
+    assert client.relationships == []
+
+
+def test_create_relationship_rejects_unrelated_semantic_target_match():
+    client = _RelationshipClient(
+        [[_entity("Caldera", None)], [_entity("RoboManual", None)]]
+    )
+
+    payload = json.loads(
+        _run(
+            _relationship_tool().fn(
+                _ctx(client),
+                source_name="Caldera",
+                target_name="Forgotten Harbor",
+                relationship_type="VISITED",
+            )
+        )
+    )
+
+    assert payload == {
+        "error": "Target entity 'Forgotten Harbor' not found in knowledge graph."
+    }
+    assert client.relationships == []
