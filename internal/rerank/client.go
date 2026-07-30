@@ -8,8 +8,9 @@
 // error, non-2xx, decode error, result/doc length mismatch, or an out-of-range
 // index — returns the input order unchanged (identity) with a nil error. A
 // missing or GPU-absent sidecar therefore degrades retrieval to the upstream
-// RRF/vector order and never blocks the caller. The degradation is logged at
-// most once per process, and the log never carries document text or secrets.
+// RRF/vector order and never blocks the caller. Every call records a bounded
+// success/error counter and duration; the warning is rate-limited to once per
+// process and never carries document text or secrets.
 package rerank
 
 import (
@@ -91,6 +92,7 @@ type RerankClient struct {
 	cache         map[[sha256.Size]byte]rerankCacheEntry
 	cacheSequence uint64
 	now           func() time.Time
+	telemetry     *rerankTelemetry
 }
 
 // Rerank reorders docs by descending relevance for query, POSTing to
@@ -99,13 +101,24 @@ type RerankClient struct {
 // index) returns identity(docs) with a nil error and logs once. An empty docs
 // slice returns an empty result with no HTTP call. The error result is reserved
 // for future use; the current implementation never returns a non-nil error so a
-// caller can treat rerank as strictly best-effort.
+// caller can treat rerank as strictly best-effort. Degradation remains
+// machine-visible through Scored.Degraded and the rerank call metrics.
 func (c *RerankClient) Rerank(ctx context.Context, query string, docs []string) ([]Scored, error) {
+	started := time.Now()
+	outcome, errorClass := "success", "none"
+	defer func() {
+		c.activeTelemetry().record(ctx, time.Since(started), outcome, errorClass)
+	}()
+	failSoft := func(reason, class string) []Scored {
+		outcome, errorClass = "error", class
+		return degrade(docs, reason)
+	}
 	if len(docs) == 0 {
+		outcome = "skipped"
 		return identity(docs), nil
 	}
 	if strings.TrimSpace(c.BaseURL) == "" {
-		return degrade(docs, "base URL empty (rerank disabled)"), nil
+		return failSoft("base URL empty (rerank disabled)", "unavailable"), nil
 	}
 
 	body, err := json.Marshal(map[string]any{
@@ -114,7 +127,7 @@ func (c *RerankClient) Rerank(ctx context.Context, query string, docs []string) 
 		"documents": truncatedDocs(docs),
 	})
 	if err != nil {
-		return degrade(docs, "request marshal failed"), nil
+		return failSoft("request marshal failed", "internal"), nil
 	}
 	cacheMaterial := append(
 		[]byte(strings.TrimRight(c.BaseURL, "/")+"\x00"),
@@ -126,7 +139,7 @@ func (c *RerankClient) Rerank(ctx context.Context, query string, docs []string) 
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(c.BaseURL, "/")+"/v1/rerank", bytes.NewReader(body))
 	if err != nil {
-		return degrade(docs, "request build failed"), nil
+		return failSoft("request build failed", "invalid"), nil
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if c.APIKey != "" {
@@ -139,11 +152,11 @@ func (c *RerankClient) Rerank(ctx context.Context, query string, docs []string) 
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return degrade(docs, "sidecar transport error"), nil
+		return failSoft("sidecar transport error", rerankTransportErrorClass(err)), nil
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode/100 != 2 {
-		return degrade(docs, "sidecar non-2xx status"), nil
+		return failSoft("sidecar non-2xx status", "unavailable"), nil
 	}
 
 	var decoded struct {
@@ -153,16 +166,16 @@ func (c *RerankClient) Rerank(ctx context.Context, query string, docs []string) 
 		} `json:"results"`
 	}
 	if err = json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
-		return degrade(docs, "sidecar decode error"), nil
+		return failSoft("sidecar decode error", "invalid"), nil
 	}
 	if len(decoded.Results) != len(docs) {
-		return degrade(docs, "result/doc length mismatch"), nil
+		return failSoft("result/doc length mismatch", "invalid"), nil
 	}
 
 	out := make([]Scored, 0, len(decoded.Results))
 	for _, r := range decoded.Results {
 		if r.Index < 0 || r.Index >= len(docs) {
-			return degrade(docs, "out-of-range result index"), nil
+			return failSoft("out-of-range result index", "invalid"), nil
 		}
 		out = append(out, Scored{Index: r.Index, Document: docs[r.Index], Score: r.RelevanceScore})
 	}

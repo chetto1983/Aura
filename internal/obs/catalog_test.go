@@ -44,6 +44,8 @@ retention_disk_utilization|aura.retention.disk.utilization|aura_retention_disk_u
 ingestion_jobs|aura.ingestion.job|aura_ingestion_job_total|counter|1|outcome|Total durable ingestion job terminal outcomes.|
 ingestion_embed_duration|aura.ingestion.embed.duration|aura_ingestion_embed_duration_seconds|histogram|s|outcome|Embedding worker per-document processing duration.|0.01,0.05,0.1,0.25,0.5,1,2.5,5,10,30,60,120
 ingestion_queue_depth|aura.ingestion.queue.depth|aura_ingestion_queue_depth_items|gauge|items||Current durable queued ingestion job backlog.|
+rerank_calls|aura.rerank.call|aura_rerank_call_total|counter|1|outcome,error_class|Total rerank calls, including explicit fail-soft degradation.|
+rerank_duration|aura.rerank.call.duration|aura_rerank_call_duration_seconds|histogram|s|outcome|Rerank call duration, including cache hits and degraded calls.|0.001,0.005,0.01,0.025,0.05,0.1,0.25,0.5,1,2.5,5,10,30,60
 `
 
 func TestCatalogDescriptorGolden(t *testing.T) {
