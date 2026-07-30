@@ -1713,34 +1713,32 @@ class LongTermMemory(BaseMemory[Entity]):
             if not _node_matches_scope(entity_data, deduplication_scope):
                 continue
 
-            # Check fuzzy matching if enabled
-            fuzzy_score = None
-            if config.use_fuzzy_matching:
-                try:
-                    from rapidfuzz import fuzz
+            # Embedding proximity is retrieval evidence, not identity evidence.
+            # The deployed embedder scored unrelated Italian person names above
+            # flag_threshold, creating a pending SAME_AS edge for every new person.
+            # Require an independent lexical name match before either flagging or
+            # merging. If rapidfuzz is unavailable, fail closed by declining the
+            # semantic candidate; the exact-name fallback in add_entity still handles
+            # deterministic duplicates without this optional dependency.
+            if not config.use_fuzzy_matching:
+                continue
+            try:
+                from rapidfuzz import fuzz
+            except ImportError:
+                continue
 
-                    # Check against name and canonical name
-                    name_score = fuzz.ratio(name.lower(), entity_data["name"].lower()) / 100
-                    canonical_name = entity_data.get("canonical_name") or entity_data["name"]
-                    canonical_score = fuzz.ratio(name.lower(), canonical_name.lower()) / 100
-                    fuzzy_score = max(name_score, canonical_score)
+            name_score = fuzz.ratio(name.lower(), entity_data["name"].lower()) / 100
+            canonical_name = entity_data.get("canonical_name") or entity_data["name"]
+            canonical_score = fuzz.ratio(name.lower(), canonical_name.lower()) / 100
+            fuzzy_score = max(name_score, canonical_score)
+            if fuzzy_score < config.fuzzy_threshold:
+                continue
 
-                    # Combine embedding and fuzzy scores
-                    if fuzzy_score >= config.fuzzy_threshold:
-                        # Boost score if both match
-                        combined_score = (score + fuzzy_score) / 2
-                        if combined_score > best_score:
-                            best_score = combined_score
-                            best_match = entity_data
-                            match_type = "both"
-                        continue
-                except ImportError:
-                    pass
-
-            if score > best_score:
-                best_score = score
+            combined_score = (score + fuzzy_score) / 2
+            if combined_score > best_score:
+                best_score = combined_score
                 best_match = entity_data
-                match_type = "embedding"
+                match_type = "both"
 
         if best_match is None:
             return DeduplicationResult()
