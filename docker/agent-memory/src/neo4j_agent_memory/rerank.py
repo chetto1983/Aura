@@ -28,8 +28,13 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 import urllib.error
 import urllib.request
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +49,63 @@ _RERANK_KEY_ENV = "AURA_RERANK_API_KEY"
 _RERANK_MODEL = "aura-rerank"
 
 _warned = False
+
+
+@dataclass
+class RerankEvidence:
+    """Thread-safe per-recall evidence shared through async and worker contexts."""
+
+    _items: list[tuple[str, str]] = field(default_factory=list)
+    _lock: threading.Lock = field(default_factory=threading.Lock)
+
+    def record(self, model: str, status: str) -> None:
+        if status not in {"applied", "disabled", "degraded"}:
+            raise ValueError(f"invalid rerank status: {status}")
+        with self._lock:
+            self._items.append((model, status))
+
+    def snapshot(self) -> list[tuple[str, str]]:
+        with self._lock:
+            return list(self._items)
+
+
+_evidence: ContextVar[RerankEvidence | None] = ContextVar(
+    "aura_rerank_evidence",
+    default=None,
+)
+
+
+@contextmanager
+def capture_rerank_evidence() -> Iterator[RerankEvidence]:
+    """Capture reranker outcomes from concurrent searches in the current recall."""
+    evidence = RerankEvidence()
+    token = _evidence.set(evidence)
+    try:
+        yield evidence
+    finally:
+        _evidence.reset(token)
+
+
+def record_rerank_evidence(status: str, model: str | None = None) -> None:
+    """Record one observed reranker outcome when a recall capture is active."""
+    evidence = _evidence.get()
+    if evidence is not None:
+        evidence.record((model or rerank_model()).strip() or _RERANK_MODEL, status)
+
+
+def summarize_rerank_evidence(evidence: RerankEvidence) -> tuple[str, str]:
+    """Return the exact model and conservative aggregate status for one recall."""
+    items = evidence.snapshot()
+    if not items:
+        return rerank_model(), "disabled"
+    models = sorted({model for model, _ in items})
+    model = models[0] if len(models) == 1 else "mixed:" + ",".join(models)
+    statuses = {status for _, status in items}
+    if len(models) != 1 or "degraded" in statuses:
+        return model, "degraded"
+    if "disabled" in statuses:
+        return model, "disabled"
+    return model, "applied"
 
 
 def rerank_base_url() -> str:
@@ -80,13 +142,19 @@ def rerank(
     identity = list(range(count))
     if count == 0:
         return identity
+    resolved_model = (model if model is not None else rerank_model()).strip() or _RERANK_MODEL
     resolved = (base_url if base_url is not None else rerank_base_url()).strip()
     if not resolved:
-        return _degrade(identity, "base URL empty (rerank disabled)")
+        return _degrade(
+            identity,
+            "base URL empty (rerank disabled)",
+            resolved_model,
+            status="disabled",
+        )
 
     payload = json.dumps(
         {
-            "model": (model if model is not None else rerank_model()).strip() or _RERANK_MODEL,
+            "model": resolved_model,
             "query": query[:_MAX_DOC_CHARS],
             "documents": [_truncate(doc) for doc in docs],
         }
@@ -106,31 +174,36 @@ def rerank(
     try:
         with urllib.request.urlopen(request, timeout=_RERANK_TIMEOUT) as response:
             if response.status // 100 != 2:
-                return _degrade(identity, "sidecar non-2xx status")
+                return _degrade(identity, "sidecar non-2xx status", resolved_model)
             raw = response.read()
     except urllib.error.HTTPError:
-        return _degrade(identity, "sidecar non-2xx status")
+        return _degrade(identity, "sidecar non-2xx status", resolved_model)
     except (urllib.error.URLError, OSError, TimeoutError):
-        return _degrade(identity, "sidecar transport error")
+        return _degrade(identity, "sidecar transport error", resolved_model)
 
     try:
         results = json.loads(raw)["results"]
     except (ValueError, KeyError, TypeError):
-        return _degrade(identity, "sidecar decode error")
+        return _degrade(identity, "sidecar decode error", resolved_model)
     if not isinstance(results, list) or len(results) != count:
-        return _degrade(identity, "result/doc length mismatch")
+        return _degrade(identity, "result/doc length mismatch", resolved_model)
 
     scored: list[tuple[int, float]] = []
+    seen: set[int] = set()
     for item in results:
         try:
             index = int(item["index"])
             score = float(item["relevance_score"])
         except (KeyError, TypeError, ValueError):
-            return _degrade(identity, "sidecar decode error")
+            return _degrade(identity, "sidecar decode error", resolved_model)
         if index < 0 or index >= count:
-            return _degrade(identity, "out-of-range result index")
+            return _degrade(identity, "out-of-range result index", resolved_model)
+        if index in seen:
+            return _degrade(identity, "duplicate result index", resolved_model)
+        seen.add(index)
         scored.append((index, score))
     scored.sort(key=lambda pair: pair[1], reverse=True)
+    record_rerank_evidence("applied", resolved_model)
     return [index for index, _ in scored]
 
 
@@ -140,9 +213,16 @@ def _truncate(doc: str) -> str:
     return doc[:_MAX_DOC_CHARS]
 
 
-def _degrade(identity: list[int], reason: str) -> list[int]:
+def _degrade(
+    identity: list[int],
+    reason: str,
+    model: str,
+    *,
+    status: str = "degraded",
+) -> list[int]:
     """Log the fail-soft reason once per process (no doc text/secrets); return identity."""
     global _warned
+    record_rerank_evidence(status, model)
     if not _warned:
         _warned = True
         logger.warning(

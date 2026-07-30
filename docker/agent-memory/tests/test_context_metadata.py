@@ -5,10 +5,15 @@ from types import SimpleNamespace
 from uuid import UUID
 
 from neo4j_agent_memory.integration import MemoryIntegration, SessionStrategy
-from neo4j_agent_memory.memory.long_term import Entity, LongTermMemory, Preference
+from neo4j_agent_memory.memory.long_term import Entity, Preference
+from neo4j_agent_memory.rerank import record_rerank_evidence
 
-PREFERENCE_ID = UUID("10000000-0000-0000-0000-000000000001")
-ENTITY_ID = UUID("20000000-0000-0000-0000-000000000002")
+PREFERENCE_IDS = [
+    UUID(f"10000000-0000-0000-0000-00000000000{index}") for index in range(1, 4)
+]
+ENTITY_IDS = [
+    UUID(f"20000000-0000-0000-0000-00000000000{index}") for index in range(1, 4)
+]
 
 
 class _EpochReader:
@@ -25,24 +30,29 @@ class _EpochReader:
 
 
 class _LongTerm:
-    def __init__(self):
+    def __init__(self, reranker_status="applied"):
         self.preference_calls = 0
         self.entity_calls = 0
+        self.reranker_status = reranker_status
+        self.preference_started = asyncio.Event()
+        self.entity_started = asyncio.Event()
         self.preferences = [
             Preference(
-                id=PREFERENCE_ID,
+                id=preference_id,
                 category="food",
-                preference="fresh pasta",
-                context="Sunday lunch",
+                preference=f"fresh pasta {index}",
+                context="Sunday lunch [trusted]",
             )
+            for index, preference_id in enumerate(PREFERENCE_IDS, start=1)
         ]
         self.entities = [
             Entity(
-                id=ENTITY_ID,
-                name="Davide",
+                id=entity_id,
+                name=f"Davide {index}",
                 type="PERSON",
-                description="Aura operator",
+                description="Aura\noperator",
             )
+            for index, entity_id in enumerate(ENTITY_IDS, start=1)
         ]
 
     async def search_preferences(self, query, *, limit, user_identifier):
@@ -50,6 +60,9 @@ class _LongTerm:
         assert query == "profile"
         assert limit == 4
         assert user_identifier == "owner-1"
+        self.preference_started.set()
+        await asyncio.wait_for(self.entity_started.wait(), timeout=0.25)
+        record_rerank_evidence(self.reranker_status, "aura-rerank")
         return self.preferences
 
     async def search_entities(self, query, *, limit, user_identifier):
@@ -57,13 +70,16 @@ class _LongTerm:
         assert query == "profile"
         assert limit == 4
         assert user_identifier == "owner-1"
+        self.entity_started.set()
+        await asyncio.wait_for(self.preference_started.wait(), timeout=0.25)
+        record_rerank_evidence(self.reranker_status, "aura-rerank")
         return self.entities
 
 
 class _MemoryClient:
-    def __init__(self, epochs=(7, 7)):
+    def __init__(self, epochs=(7, 7), reranker_status="applied"):
         self._client = _EpochReader(epochs)
-        self.long_term = _LongTerm()
+        self.long_term = _LongTerm(reranker_status)
         self.delegated_calls = 0
         self._settings = SimpleNamespace(
             embedding=SimpleNamespace(
@@ -96,23 +112,32 @@ def _long_term_only(client: _MemoryClient):
     )
 
 
-def test_long_term_only_context_is_byte_compatible_and_retrieved_once():
+def test_long_term_only_context_is_concurrent_capped_and_provenance_exact():
     client = _MemoryClient()
     result = _long_term_only(client)
     assert client.long_term.preference_calls == 1
     assert client.long_term.entity_calls == 1
-
-    direct_source = _LongTerm()
-    direct = LongTermMemory(SimpleNamespace())
-    direct.search_preferences = direct_source.search_preferences
-    direct.search_entities = direct_source.search_entities
-    expected_long_term = asyncio.run(
-        direct.get_context("profile", max_items=4, user_identifier="owner-1")
-    )
-
-    assert result["context"] == f"## Relevant Knowledge\n{expected_long_term}"
-    assert direct_source.preference_calls == 1
-    assert direct_source.entity_calls == 1
+    metadata = result["recall_metadata"]
+    assert len(metadata["results"]) == 4
+    assert metadata["results"] == [
+        {"kind": "memory_preference", "id": str(PREFERENCE_IDS[0]), "order": 0},
+        {"kind": "memory_entity", "id": str(ENTITY_IDS[0]), "order": 1},
+        {"kind": "memory_preference", "id": str(PREFERENCE_IDS[1]), "order": 2},
+        {"kind": "memory_entity", "id": str(ENTITY_IDS[1]), "order": 3},
+    ]
+    markers = [
+        line.split("]", 1)[0] + "]"
+        for line in result["context"].splitlines()
+        if line.startswith("- [memory_")
+    ]
+    assert markers == [
+        f"- [memory_preference:{PREFERENCE_IDS[0]}]",
+        f"- [memory_entity:{ENTITY_IDS[0]}]",
+        f"- [memory_preference:{PREFERENCE_IDS[1]}]",
+        f"- [memory_entity:{ENTITY_IDS[1]}]",
+    ]
+    assert "Sunday lunch {trusted}" in result["context"]
+    assert "Aura operator" in result["context"]
     assert client.delegated_calls == 0
 
 
@@ -123,19 +148,22 @@ def test_long_term_only_context_emits_ordered_typed_safe_metadata():
 
     metadata = result["recall_metadata"]
     assert metadata["results"] == [
-        {"kind": "memory_preference", "id": str(PREFERENCE_ID), "order": 0},
-        {"kind": "memory_entity", "id": str(ENTITY_ID), "order": 1},
+        {"kind": "memory_preference", "id": str(PREFERENCE_IDS[0]), "order": 0},
+        {"kind": "memory_entity", "id": str(ENTITY_IDS[0]), "order": 1},
+        {"kind": "memory_preference", "id": str(PREFERENCE_IDS[1]), "order": 2},
+        {"kind": "memory_entity", "id": str(ENTITY_IDS[1]), "order": 3},
     ]
     assert metadata["limits"] == {
-        "memory_preference": {"requested_k": 4, "effective_k": 4, "count": 1},
-        "memory_entity": {"requested_k": 4, "effective_k": 4, "count": 1},
+        "memory_preference": {"requested_k": 4, "effective_k": 2, "count": 2},
+        "memory_entity": {"requested_k": 4, "effective_k": 2, "count": 2},
     }
     assert metadata["revisions"] == {
         "retriever": "neo4j-agent-memory-long-term-v1",
-        "reranker": "none-v1",
+        "reranker": "aura-rerank",
         "embedding": "openai/embedding-fixture-v1@3",
         "index": "entity_embedding_idx+preference_embedding_idx@3",
     }
+    assert metadata["reranker_status"] == "applied"
     assert metadata["corpus_epoch_before"] == 7
     assert metadata["corpus_epoch_after"] == 7
     assert metadata["coherent"] is True
@@ -155,6 +183,13 @@ def test_unequal_or_missing_epochs_keep_static_context_but_are_ineligible():
         assert result["has_context"] is True
         assert "fresh pasta" in result["context"]
         assert result["recall_metadata"]["coherent"] is False
+        assert result["recall_metadata"]["adaptive_eligible"] is False
+
+
+def test_disabled_or_degraded_reranking_is_reported_and_ineligible():
+    for status in ("disabled", "degraded"):
+        result = _long_term_only(_MemoryClient(reranker_status=status))
+        assert result["recall_metadata"]["reranker_status"] == status
         assert result["recall_metadata"]["adaptive_eligible"] is False
 
 

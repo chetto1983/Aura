@@ -15,7 +15,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _RETRIEVER_REVISION = "neo4j-agent-memory-long-term-v1"
-_RERANKER_REVISION = "none-v1"
 
 
 def entity_name_fields(entity: Any) -> dict[str, Any]:
@@ -143,54 +142,64 @@ class ContextSearchMixin:
         user_identifier: str | None,
     ) -> dict[str, Any]:
         before = await self._read_corpus_epoch()
-        preferences = await self.client.long_term.search_preferences(
-            query,
-            limit=max_items,
-            user_identifier=user_identifier,
+        from neo4j_agent_memory.rerank import (
+            capture_rerank_evidence,
+            summarize_rerank_evidence,
         )
-        entities = await self.client.long_term.search_entities(
-            query,
-            limit=max_items,
-            user_identifier=user_identifier,
-        )
+
+        with capture_rerank_evidence() as rerank_evidence:
+            preferences, entities = await asyncio.gather(
+                self.client.long_term.search_preferences(
+                    query,
+                    limit=max_items,
+                    user_identifier=user_identifier,
+                ),
+                self.client.long_term.search_entities(
+                    query,
+                    limit=max_items,
+                    user_identifier=user_identifier,
+                ),
+            )
+        reranker_revision, reranker_status = summarize_rerank_evidence(rerank_evidence)
         after = await self._read_corpus_epoch()
 
-        long_term_context = self._format_long_term(preferences, entities)
+        selected = self._interleave_long_term(preferences, entities, max_items)
+        long_term_context = self._format_long_term(selected)
         context = f"## Relevant Knowledge\n{long_term_context}" if long_term_context else ""
-        revisions = self._recall_revisions()
+        revisions = self._recall_revisions(reranker_revision)
         coherent = before is not None and before == after
+        counts = {
+            "memory_preference": sum(kind == "memory_preference" for kind, _ in selected),
+            "memory_entity": sum(kind == "memory_entity" for kind, _ in selected),
+        }
         metadata = {
             "results": [
-                *[
-                    {"kind": "memory_preference", "id": str(pref.id), "order": order}
-                    for order, pref in enumerate(preferences)
-                ],
-                *[
-                    {
-                        "kind": "memory_entity",
-                        "id": str(entity.id),
-                        "order": len(preferences) + order,
-                    }
-                    for order, entity in enumerate(entities)
-                ],
+                {"kind": kind, "id": str(item.id), "order": order}
+                for order, (kind, item) in enumerate(selected)
             ],
             "limits": {
                 "memory_preference": {
                     "requested_k": max_items,
-                    "effective_k": max_items,
-                    "count": len(preferences),
+                    "effective_k": counts["memory_preference"],
+                    "count": counts["memory_preference"],
                 },
                 "memory_entity": {
                     "requested_k": max_items,
-                    "effective_k": max_items,
-                    "count": len(entities),
+                    "effective_k": counts["memory_entity"],
+                    "count": counts["memory_entity"],
                 },
             },
             "revisions": revisions,
+            "reranker_status": reranker_status,
             "corpus_epoch_before": before,
             "corpus_epoch_after": after,
             "coherent": coherent,
-            "adaptive_eligible": coherent and all(revisions.values()),
+            "adaptive_eligible": (
+                bool(selected)
+                and coherent
+                and reranker_status == "applied"
+                and all(revisions.values())
+            ),
         }
         return {
             "session_id": sid,
@@ -210,7 +219,7 @@ class ContextSearchMixin:
             logger.warning("Memory corpus epoch read failed", exc_info=True)
             return None
 
-    def _recall_revisions(self) -> dict[str, str | None]:
+    def _recall_revisions(self, reranker_revision: str) -> dict[str, str | None]:
         settings = getattr(self.client, "_settings", None)
         embedding = getattr(settings, "embedding", None)
         model = getattr(embedding, "model", None)
@@ -228,29 +237,62 @@ class ContextSearchMixin:
         )
         return {
             "retriever": _RETRIEVER_REVISION,
-            "reranker": _RERANKER_REVISION,
+            "reranker": reranker_revision,
             "embedding": embedding_revision,
             "index": index_revision,
         }
 
     @staticmethod
-    def _format_long_term(preferences: list[Any], entities: list[Any]) -> str:
-        parts: list[str] = []
-        if preferences:
-            parts.append("### User Preferences")
-            for pref in preferences:
-                line = f"- [{pref.category}] {pref.preference}"
+    def _interleave_long_term(
+        preferences: list[Any],
+        entities: list[Any],
+        maximum: int,
+    ) -> list[tuple[str, Any]]:
+        if maximum <= 0:
+            return []
+        selected: list[tuple[str, Any]] = []
+        for index in range(max(len(preferences), len(entities))):
+            if index < len(preferences):
+                selected.append(("memory_preference", preferences[index]))
+            if len(selected) >= maximum:
+                break
+            if index < len(entities):
+                selected.append(("memory_entity", entities[index]))
+            if len(selected) >= maximum:
+                break
+        return selected
+
+    @classmethod
+    def _format_long_term(cls, selected: list[tuple[str, Any]]) -> str:
+        if not selected:
+            return ""
+        parts = ["### Retrieved Memory"]
+        for kind, item in selected:
+            marker = f"[{kind}:{item.id}]"
+            if kind == "memory_preference":
+                line = (
+                    f"- {marker} [{cls._single_line(item.category)}] "
+                    f"{cls._single_line(item.preference)}"
+                )
+                pref = item
                 if pref.context:
-                    line += f" (context: {pref.context})"
+                    line += f" (context: {cls._single_line(pref.context)})"
                 parts.append(line)
-        if entities:
-            parts.append("\n### Relevant Entities")
-            for entity in entities:
-                line = f"- {entity.name} ({entity.full_type})"
+            else:
+                entity = item
+                line = (
+                    f"- {marker} {cls._single_line(entity.name)} "
+                    f"({cls._single_line(entity.full_type)})"
+                )
                 if entity.description:
-                    line += f": {entity.description}"
+                    line += f": {cls._single_line(entity.description)}"
                 parts.append(line)
         return "\n".join(parts)
+
+    @staticmethod
+    def _single_line(value: Any) -> str:
+        """Keep model-visible provenance markers unique and values on one line."""
+        return " ".join(str(value).replace("[", "{").replace("]", "}").split())
 
     async def search(
         self,

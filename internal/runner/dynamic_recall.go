@@ -18,9 +18,9 @@ type DynamicRecallAction string
 const (
 	// DynamicRecallStatic serves without the Agent Memory provider.
 	DynamicRecallStatic DynamicRecallAction = "static"
-	// DynamicRecallTop4 retrieves at most four results per long-term kind.
+	// DynamicRecallTop4 retrieves at most four aggregate long-term results.
 	DynamicRecallTop4 DynamicRecallAction = "long_term_top_4"
-	// DynamicRecallTop8 retrieves at most eight results per long-term kind.
+	// DynamicRecallTop8 retrieves at most eight aggregate long-term results.
 	DynamicRecallTop8 DynamicRecallAction = "long_term_top_8"
 )
 

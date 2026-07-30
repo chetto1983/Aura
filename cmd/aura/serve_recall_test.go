@@ -50,7 +50,13 @@ func TestDynamicRecallProviderUsesSelectedLongTermLimitOnce(t *testing.T) {
 	if string(gotArgs) != string(expectedArgs) {
 		t.Fatalf("args = %s, want %s", gotArgs, expectedArgs)
 	}
-	if recall.Text != runner.FenceDynamicRecall("remembered fact") {
+	if recall.Text != runner.FenceDynamicRecall(
+		"## Relevant Knowledge\n### Retrieved Memory\n"+
+			"- [memory_preference:018fbc5a-6e3f-7ed0-8a04-7cfae67e61ef] "+
+			"remembered preference\n"+
+			"- [memory_entity:018fbc5a-7cb4-75e8-b204-a681980e3b31] "+
+			"remembered entity",
+	) {
 		t.Fatalf("fenced text = %q", recall.Text)
 	}
 	if len(recall.Results) != 2 ||
@@ -193,6 +199,65 @@ func TestDynamicRecallProviderRejectsTransportAndResponseEdges(t *testing.T) {
 				1,
 			),
 		},
+		{
+			name: "too many aggregate results",
+			response: strings.Replace(
+				validMemoryRecallJSON(t),
+				`"results":[`,
+				`"results":[
+				{"kind":"memory_preference","id":"018fbc5a-1111-7111-8111-111111111111","order":0},
+				{"kind":"memory_entity","id":"018fbc5a-2222-7222-8222-222222222222","order":1},
+				{"kind":"memory_preference","id":"018fbc5a-3333-7333-8333-333333333333","order":2},
+				{"kind":"memory_entity","id":"018fbc5a-4444-7444-8444-444444444444","order":3},
+				{"kind":"memory_entity","id":"018fbc5a-5555-7555-8555-555555555555","order":4},`,
+				1,
+			),
+		},
+		{
+			name: "result order mismatch",
+			response: strings.Replace(
+				validMemoryRecallJSON(t),
+				`"order":1`,
+				`"order":3`,
+				1,
+			),
+		},
+		{
+			name: "result count mismatch",
+			response: strings.Replace(
+				validMemoryRecallJSON(t),
+				`"count":1`,
+				`"count":2`,
+				1,
+			),
+		},
+		{
+			name: "effective limit mismatch",
+			response: strings.Replace(
+				validMemoryRecallJSON(t),
+				`"effective_k":1`,
+				`"effective_k":4`,
+				1,
+			),
+		},
+		{
+			name: "reranker did not apply",
+			response: strings.Replace(
+				validMemoryRecallJSON(t),
+				`"reranker_status":"applied"`,
+				`"reranker_status":"degraded"`,
+				1,
+			),
+		},
+		{
+			name: "context provenance mismatch",
+			response: strings.Replace(
+				validMemoryRecallJSON(t),
+				`[memory_entity:018fbc5a-7cb4-75e8-b204-a681980e3b31]`,
+				`[memory_entity:018fbc5a-aaaaaaaa-75e8-b204-a681980e3b31]`,
+				1,
+			),
+		},
 		{name: "trailing value", response: validMemoryRecallJSON(t) + `{}`},
 		{name: "trailing malformed data", response: validMemoryRecallJSON(t) + `x`},
 	}
@@ -220,7 +285,7 @@ func validMemoryRecallJSON(t *testing.T) string {
 	t.Helper()
 	return `{
 		"session_id":"owner-1",
-		"context":"remembered fact",
+		"context":"## Relevant Knowledge\n### Retrieved Memory\n- [memory_preference:018fbc5a-6e3f-7ed0-8a04-7cfae67e61ef] remembered preference\n- [memory_entity:018fbc5a-7cb4-75e8-b204-a681980e3b31] remembered entity",
 		"has_context":true,
 		"recall_metadata":{
 			"results":[
@@ -228,15 +293,16 @@ func validMemoryRecallJSON(t *testing.T) string {
 				{"kind":"memory_entity","id":"018fbc5a-7cb4-75e8-b204-a681980e3b31","order":1}
 			],
 			"limits":{
-				"memory_preference":{"requested_k":4,"effective_k":4,"count":1},
-				"memory_entity":{"requested_k":4,"effective_k":4,"count":1}
+				"memory_preference":{"requested_k":4,"effective_k":1,"count":1},
+				"memory_entity":{"requested_k":4,"effective_k":1,"count":1}
 			},
 			"revisions":{
 				"retriever":"neo4j-long-term-v1",
-				"reranker":"none-v1",
+				"reranker":"aura-rerank",
 				"embedding":"qwen2b@7",
 				"index":"entity_idx@7"
 			},
+			"reranker_status":"applied",
 			"corpus_epoch_before":7,
 			"corpus_epoch_after":7,
 			"coherent":true,

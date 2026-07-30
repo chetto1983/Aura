@@ -15,7 +15,11 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from neo4j_agent_memory.rerank import rerank
+from neo4j_agent_memory.rerank import (
+    capture_rerank_evidence,
+    rerank,
+    summarize_rerank_evidence,
+)
 
 
 class _RerankHandler(BaseHTTPRequestHandler):
@@ -171,3 +175,19 @@ def test_rerank_blank_env_falls_back_to_sidecar_defaults(rerank_server, monkeypa
     assert rerank("q", ["a", "b", "c"], rerank_server) == [1, 2, 0]
     assert _RerankHandler.last_body["model"] == "aura-rerank"
     assert "Authorization" not in _RerankHandler.last_headers
+
+
+def test_rerank_evidence_reports_applied_disabled_and_degraded(rerank_server):
+    _ok_three()
+    with capture_rerank_evidence() as applied:
+        rerank("q", ["a", "b", "c"], rerank_server, model="fixture-reranker")
+    assert summarize_rerank_evidence(applied) == ("fixture-reranker", "applied")
+
+    with capture_rerank_evidence() as disabled:
+        rerank("q", ["a", "b"], "", model="fixture-reranker")
+    assert summarize_rerank_evidence(disabled) == ("fixture-reranker", "disabled")
+
+    _set_response(503, b'{"error": "unavailable"}')
+    with capture_rerank_evidence() as degraded:
+        rerank("q", ["a", "b"], rerank_server, model="fixture-reranker")
+    assert summarize_rerank_evidence(degraded) == ("fixture-reranker", "degraded")
