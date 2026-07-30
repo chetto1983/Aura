@@ -125,4 +125,13 @@ describe('app skeletons', () => {
     render(<RouteSkeletonFallback />);
     expect(screen.getByText('Loading page...')).toBeTruthy();
   });
+
+  it('updates a visible route fallback when the language changes', async () => {
+    window.history.pushState({}, '', '/login');
+    render(<RouteSkeletonFallback />);
+    expect(screen.getByText('Loading sign-in...')).toBeTruthy();
+
+    await i18n.changeLanguage('it');
+    expect(screen.getByText('Caricamento accesso...')).toBeTruthy();
+  });
 });

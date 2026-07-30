@@ -1,4 +1,4 @@
-import i18n from '../../i18n/i18n';
+import { useTranslation } from 'react-i18next';
 import {
   SkeletonAvatar,
   SkeletonBlock,
@@ -210,12 +210,13 @@ export function NotFoundViewSkeleton({ label = 'Loading page...' }: AnnouncedSke
 }
 
 export function RouteSkeletonFallback() {
+  const { t } = useTranslation();
   const path = window.location.pathname;
   if (path === '/login') {
-    return <LoginPageSkeleton label={i18n.t('skeleton.login')} />;
+    return <LoginPageSkeleton label={t('skeleton.login')} />;
   }
   if (path === '/') {
-    return <AppShellSkeleton label={i18n.t('skeleton.shell')} />;
+    return <AppShellSkeleton label={t('skeleton.shell')} />;
   }
-  return <NotFoundViewSkeleton label={i18n.t('skeleton.page')} />;
+  return <NotFoundViewSkeleton label={t('skeleton.page')} />;
 }

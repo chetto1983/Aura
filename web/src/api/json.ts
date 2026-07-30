@@ -10,6 +10,10 @@ export class HttpError extends Error {
   }
 }
 
+export function isTrue(value: unknown): boolean {
+  return value === true;
+}
+
 export async function getJSON<T>(url: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(url, {
     headers: { Accept: 'application/json' },

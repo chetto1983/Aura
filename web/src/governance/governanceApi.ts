@@ -12,7 +12,7 @@
 // `Error("HTTP <n>")`), and every `{name}` path segment is encodeURIComponent'd. The MCP
 // probe is a per-server GET keyed by name so each row resolves independently (T-28-03-05).
 
-import { getJSON } from '../api/json';
+import { getJSON, isTrue } from '../api/json';
 
 export const GOV_MCP_PATH = '/api/governance/mcp';
 export const GOV_SKILLS_PATH = '/api/governance/skills';
@@ -507,20 +507,16 @@ export interface WhatsAppConnectStatus {
   readonly qrAvailable: boolean;
 }
 
-export function boolValue(value: unknown): boolean {
-  return value === true;
-}
-
 /** GET /api/connect/whatsapp/status — the device-link state. Rejects on a non-200 (incl. 401/
  * 503 bridge-unconfigured) so the connect section shows the offline/error note. */
 export async function whatsappConnectStatus(): Promise<WhatsAppConnectStatus> {
   const raw = await getJSON<Record<string, unknown>>('/api/connect/whatsapp/status');
   return {
     state: stringValue(raw.state),
-    paired: boolValue(raw.paired),
+    paired: isTrue(raw.paired),
     jid: stringValue(raw.jid),
-    connected: boolValue(raw.connected),
-    qrAvailable: boolValue(raw.qr_available),
+    connected: isTrue(raw.connected),
+    qrAvailable: isTrue(raw.qr_available),
   };
 }
 

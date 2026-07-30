@@ -336,9 +336,10 @@ describe('SkillsBoard (GOV-02)', () => {
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'New skill' }));
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Save and activate' })).toBeTruthy();
-    });
+    // Coverage runs 200+ files concurrently; allow the intentionally lazy Tiptap chunk to resolve.
+    expect(
+      await screen.findByRole('button', { name: 'Save and activate' }, { timeout: 10_000 }),
+    ).toBeTruthy();
     // The editor takes the whole board — the list is not behind it.
     expect(screen.queryByText('golang-testing')).toBeNull();
 

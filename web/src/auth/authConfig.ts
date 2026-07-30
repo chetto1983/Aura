@@ -2,6 +2,8 @@
 // Used by both AppShell (logout target) and LoginPage (sign-in flow); kept in one
 // module so the authula provider-detection logic is defined exactly once.
 
+import { isTrue } from '../api/json';
+
 export async function readJSON(res: Response): Promise<unknown> {
   const text = await res.text();
   if (text.trim() === '') return {};
@@ -17,7 +19,7 @@ export function stringField(source: unknown, key: string): string {
 export function booleanField(source: unknown, key: string): boolean {
   if (source === null || typeof source !== 'object') return false;
   const value = (source as Record<string, unknown>)[key];
-  return value === true || value === 'true';
+  return isTrue(value) || value === 'true';
 }
 
 export function valueOrFallback(value: string, fallback: string): string {
