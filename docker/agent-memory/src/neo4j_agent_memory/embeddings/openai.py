@@ -1,6 +1,9 @@
 """OpenAI embedding provider."""
 
+import asyncio
+import hashlib
 import math
+from collections import OrderedDict
 from typing import TYPE_CHECKING
 
 from neo4j_agent_memory.core.exceptions import EmbeddingError
@@ -28,6 +31,7 @@ class OpenAIEmbedder(BaseEmbedder):
         api_key: str | None = None,
         dimensions: int | None = None,
         batch_size: int = 100,
+        cache_size: int = 512,
     ):
         """
         Initialize OpenAI embedder.
@@ -37,12 +41,19 @@ class OpenAIEmbedder(BaseEmbedder):
             api_key: OpenAI API key (uses OPENAI_API_KEY env var if not provided)
             dimensions: Optional dimension reduction (for text-embedding-3-* models)
             batch_size: Maximum texts per API call
+            cache_size: Maximum completed single-text embeddings retained in memory
         """
+        if cache_size < 0:
+            raise ValueError("cache_size must be non-negative")
         self._model = model
         self._api_key = api_key
         self._requested_dimensions = dimensions
         self._batch_size = batch_size
+        self._cache_size = cache_size
         self._client: AsyncOpenAI | None = None
+        self._cache: OrderedDict[bytes, tuple[float, ...]] = OrderedDict()
+        self._inflight: dict[bytes, asyncio.Task[list[float]]] = {}
+        self._cache_lock = asyncio.Lock()
 
         # Determine dimensions
         if dimensions is not None:
@@ -69,6 +80,39 @@ class OpenAIEmbedder(BaseEmbedder):
 
     async def embed(self, text: str) -> list[float]:
         """Generate embedding for a single text."""
+        if self._cache_size == 0:
+            return await self._embed_uncached(text)
+
+        key = hashlib.sha256(text.encode("utf-8")).digest()
+        async with self._cache_lock:
+            cached = self._cache.get(key)
+            if cached is not None:
+                self._cache.move_to_end(key)
+                return list(cached)
+            task = self._inflight.get(key)
+            if task is None:
+                task = asyncio.create_task(self._embed_uncached(text))
+                self._inflight[key] = task
+
+        try:
+            vector = await task
+        except BaseException:
+            async with self._cache_lock:
+                if self._inflight.get(key) is task:
+                    self._inflight.pop(key, None)
+            raise
+
+        async with self._cache_lock:
+            if self._inflight.get(key) is task:
+                self._inflight.pop(key, None)
+            self._cache[key] = tuple(vector)
+            self._cache.move_to_end(key)
+            while len(self._cache) > self._cache_size:
+                self._cache.popitem(last=False)
+        return list(vector)
+
+    async def _embed_uncached(self, text: str) -> list[float]:
+        """Generate one embedding without consulting the bounded process cache."""
         client = self._ensure_client()
 
         try:
