@@ -16,6 +16,7 @@ retention change, because the structure comes from writes the agent already perf
 
 from __future__ import annotations
 
+from neo4j_agent_memory.graph import queries
 from neo4j_agent_memory.memory.long_term import LongTermMemory, _NamedEntityRef
 
 
@@ -30,7 +31,10 @@ class RecordingClient:
         return self.read_rows
 
     async def execute_write(self, query, params=None):
-        self.writes.append((query, params or {}))
+        params = params or {}
+        self.writes.append((query, params))
+        if query == queries.CREATE_PREFERENCE:
+            return [{"p": {**params, "created_at": None}}]
         return []
 
 

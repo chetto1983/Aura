@@ -17,7 +17,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chetto1983/aura/internal/agent/agenttest"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/google/uuid"
@@ -417,7 +416,7 @@ func TestNewRunDirSweeper_ProductionConstructor(t *testing.T) {
 // internal generateTitle body is covered in title_unit_test.go).
 func TestGenerateTitle_ExportedDelegate(t *testing.T) {
 	t.Parallel()
-	client := agenttest.NewFakeClient(agenttest.TextChunks("stop", "A Tidy Title"))
+	client := titleTextClient("stop", "A Tidy Title")
 	history := []llm.Message{{Role: llm.RoleUser, Content: "explain the budget loop"}}
 	got, err := GenerateTitle(context.Background(), client, "m", history)
 	if err != nil {

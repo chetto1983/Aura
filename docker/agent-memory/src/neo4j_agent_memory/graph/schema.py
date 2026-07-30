@@ -115,6 +115,16 @@ class SchemaManager:
         # Without a constraint backing that key, two concurrent writers can
         # both miss the MERGE match and both CREATE, producing duplicates.
         ("entity_name_type_scope_unique", "Entity", ("name", "type", "deduplication_scope")),
+        (
+            "preference_canonical_scope_unique",
+            "Preference",
+            ("canonical_key", "deduplication_scope"),
+        ),
+        (
+            "fact_canonical_scope_unique",
+            "Fact",
+            ("canonical_key", "deduplication_scope"),
+        ),
     )
 
     async def setup_indexes(self) -> None:

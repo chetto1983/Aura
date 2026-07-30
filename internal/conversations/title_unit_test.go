@@ -1,5 +1,5 @@
 // Unit tier (no build tag): the best-effort auto-title worker body, driven by the
-// scripted agenttest.FakeClient (no network). Proves a success path produces a
+// scripted local fake client (no network). Proves a success path produces a
 // title and a stream-error path returns an error the caller treats as "leave NULL".
 package conversations
 
@@ -7,11 +7,57 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 
-	"github.com/chetto1983/aura/internal/agent/agenttest"
 	"github.com/chetto1983/aura/internal/llm"
 )
+
+type titleTestTurn struct {
+	chunks  []llm.Chunk
+	openErr error
+}
+
+type titleTestClient struct {
+	mu       sync.Mutex
+	turns    []titleTestTurn
+	requests []llm.Request
+}
+
+func (c *titleTestClient) Stream(_ context.Context, req llm.Request) (<-chan llm.Chunk, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.requests = append(c.requests, req)
+	turn := c.turns[0]
+	c.turns = c.turns[1:]
+	if turn.openErr != nil {
+		return nil, turn.openErr
+	}
+	ch := make(chan llm.Chunk, len(turn.chunks))
+	for _, chunk := range turn.chunks {
+		ch <- chunk
+	}
+	close(ch)
+	return ch, nil
+}
+
+func (c *titleTestClient) LastRequest() llm.Request {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.requests[len(c.requests)-1]
+}
+
+func titleTextClient(reason string, text ...string) *titleTestClient {
+	chunks := make([]llm.Chunk, 0, len(text))
+	for index, part := range text {
+		chunk := llm.Chunk{Text: part}
+		if index == len(text)-1 {
+			chunk.FinishReason = reason
+		}
+		chunks = append(chunks, chunk)
+	}
+	return &titleTestClient{turns: []titleTestTurn{{chunks: chunks}}}
+}
 
 func titleHistory() []llm.Message {
 	return []llm.Message{
@@ -25,9 +71,7 @@ func titleHistory() []llm.Message {
 // non-empty title.
 func TestGenerateTitle_Success(t *testing.T) {
 	t.Parallel()
-	client := agenttest.NewFakeClient(
-		agenttest.TextChunks("stop", "  \"Refactor the budget loop\"  "),
-	)
+	client := titleTextClient("stop", "  \"Refactor the budget loop\"  ")
 	got, err := generateTitle(context.Background(), client, "test-model", titleHistory())
 	if err != nil {
 		t.Fatalf("generateTitle: %v", err)
@@ -56,7 +100,7 @@ func TestGenerateTitle_Success(t *testing.T) {
 func TestGenerateTitle_StreamError(t *testing.T) {
 	t.Parallel()
 	boom := errors.New("provider down")
-	client := agenttest.NewFakeClient(agenttest.FakeTurn{Err: boom})
+	client := &titleTestClient{turns: []titleTestTurn{{openErr: boom}}}
 	_, err := generateTitle(context.Background(), client, "test-model", titleHistory())
 	if err == nil {
 		t.Fatal("generateTitle: want error on stream failure, got nil")
@@ -69,7 +113,10 @@ func TestGenerateTitle_StreamError(t *testing.T) {
 func TestGenerateTitle_TerminalStreamError(t *testing.T) {
 	t.Parallel()
 	boom := errors.New("stream disconnected")
-	client := agenttest.NewFakeClient(agenttest.TextThenErr(boom, "Partial title"))
+	client := &titleTestClient{turns: []titleTestTurn{{chunks: []llm.Chunk{
+		{Text: "Partial title"},
+		{Err: boom},
+	}}}}
 	_, err := generateTitle(context.Background(), client, "test-model", titleHistory())
 	if !errors.Is(err, boom) {
 		t.Fatalf("generateTitle: terminal stream error = %v, want wrapped %v", err, boom)
@@ -78,7 +125,7 @@ func TestGenerateTitle_TerminalStreamError(t *testing.T) {
 
 func TestGenerateTitle_LengthIsIncomplete(t *testing.T) {
 	t.Parallel()
-	client := agenttest.NewFakeClient(agenttest.TextChunks("length", "Partial title"))
+	client := titleTextClient("length", "Partial title")
 	if _, err := generateTitle(context.Background(), client, "test-model", titleHistory()); err == nil {
 		t.Fatal("generateTitle: length-truncated stream must not persist a partial title")
 	}
@@ -88,7 +135,7 @@ func TestGenerateTitle_LengthIsIncomplete(t *testing.T) {
 // "empty result" error (not an empty title written to the DB).
 func TestGenerateTitle_EmptyResult(t *testing.T) {
 	t.Parallel()
-	client := agenttest.NewFakeClient(agenttest.TextChunks("stop", "   \n  "))
+	client := titleTextClient("stop", "   \n  ")
 	if _, err := generateTitle(context.Background(), client, "test-model", titleHistory()); err == nil {
 		t.Error("generateTitle: want error on empty result, got nil")
 	}

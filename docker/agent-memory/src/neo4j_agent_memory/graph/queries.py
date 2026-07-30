@@ -446,17 +446,19 @@ RETURN count(e) AS count
 """
 
 CREATE_PREFERENCE = """
-CREATE (p:Preference {
-    id: $id,
-    category: $category,
-    preference: $preference,
-    context: $context,
-    confidence: $confidence,
-    embedding: $embedding,
-    deduplication_scope: $deduplication_scope,
-    created_at: datetime(),
-    metadata: $metadata
+MERGE (p:Preference {
+    canonical_key: $canonical_key,
+    deduplication_scope: $deduplication_scope
 })
+ON CREATE SET
+    p.id = $id,
+    p.category = $category,
+    p.preference = $preference,
+    p.context = $context,
+    p.confidence = $confidence,
+    p.embedding = $embedding,
+    p.created_at = datetime(),
+    p.metadata = $metadata
 RETURN p
 """
 
@@ -518,19 +520,21 @@ LIMIT $limit
 """
 
 CREATE_FACT = """
-CREATE (f:Fact {
-    id: $id,
-    subject: $subject,
-    predicate: $predicate,
-    object: $object,
-    confidence: $confidence,
-    embedding: $embedding,
-    deduplication_scope: $deduplication_scope,
-    valid_from: $valid_from,
-    valid_until: $valid_until,
-    created_at: datetime(),
-    metadata: $metadata
+MERGE (f:Fact {
+    canonical_key: $canonical_key,
+    deduplication_scope: $deduplication_scope
 })
+ON CREATE SET
+    f.id = $id,
+    f.subject = $subject,
+    f.predicate = $predicate,
+    f.object = $object,
+    f.confidence = $confidence,
+    f.embedding = $embedding,
+    f.valid_from = $valid_from,
+    f.valid_until = $valid_until,
+    f.created_at = datetime(),
+    f.metadata = $metadata
 RETURN f
 """
 
@@ -1395,6 +1399,8 @@ SET p.preference = COALESCE($preference, p.preference),
     p.context = COALESCE($context, p.context),
     p.confidence = COALESCE($confidence, p.confidence),
     p.metadata = COALESCE($metadata, p.metadata),
+    p.canonical_key = $canonical_key,
+    p.deduplication_scope = $deduplication_scope,
     p.updated_at = datetime()
 RETURN p
 """
@@ -1417,6 +1423,8 @@ SET f.subject = COALESCE($subject, f.subject),
     f.object = COALESCE($object, f.object),
     f.confidence = COALESCE($confidence, f.confidence),
     f.metadata = COALESCE($metadata, f.metadata),
+    f.canonical_key = $canonical_key,
+    f.deduplication_scope = $deduplication_scope,
     f.updated_at = datetime()
 RETURN f
 """

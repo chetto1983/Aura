@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/llm/openai_compat"
 	"github.com/chetto1983/aura/internal/reasoningtrace"
@@ -19,6 +20,14 @@ const (
 )
 
 func (a *LlmAgent) streamWithOpenRetry(ctx context.Context, req llm.Request, requestID string) (<-chan llm.Chunk, error) {
+	if _, err := conversations.ValidateFinalRequestBudget(req, a.cfg); err != nil {
+		reasoningtrace.Record("agent_request_budget_rejected", map[string]any{
+			"request_id": requestID,
+			"thread_id":  a.sessionID,
+			"error":      err.Error(),
+		})
+		return nil, err
+	}
 	var lastErr error
 	for attempt := 1; attempt <= streamOpenMaxAttempts; attempt++ {
 		if a.breaker != nil {

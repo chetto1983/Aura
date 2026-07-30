@@ -305,6 +305,12 @@ async def _test_update_preference_edits_text_and_refreshes_embedding():
     # add_preference embeds "{category}: {preference}"; the merged post-update
     # text (old category + new preference) is what gets re-embedded.
     assert embedder.calls == ["food: Loves sushi"]
+    update_params = next(
+        params for query, params in client.writes
+        if query == queries.UPDATE_PREFERENCE_FIELDS_SCOPED
+    )
+    assert update_params["canonical_key"]
+    assert update_params["deduplication_scope"] == '{"user_identifier":"identity-1"}'
 
 
 def test_update_preference_refuses_unowned_preference():
@@ -474,6 +480,12 @@ async def _test_update_fact_edits_object_and_refreshes_embedding():
 
     # add_fact embeds "{subject} {predicate} {object}".
     assert embedder.calls == ["Davide risiede_a Caraglio"]
+    update_params = next(
+        params for query, params in client.writes
+        if query == queries.UPDATE_FACT_FIELDS_SCOPED
+    )
+    assert update_params["canonical_key"]
+    assert update_params["deduplication_scope"] == '{"user_identifier":"identity-1"}'
 
 
 def test_update_fact_refuses_unowned_fact():

@@ -1,7 +1,9 @@
 """Long-term memory for entities, preferences, and facts."""
 
+import hashlib
 import json
 import logging
+import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -221,6 +223,22 @@ def _node_matches_scope(data: dict[str, Any], deduplication_scope: str | None) -
 
 def _normalized_text(value: str | None) -> str:
     return " ".join((value or "").casefold().split())
+
+
+def _canonical_memory_key(*values: str | None) -> str:
+    """Hash normalized fields without losing their boundaries.
+
+    NFKC makes canonically-equivalent Unicode and presentation forms stable;
+    casefold + whitespace collapse removes harmless visual drift. JSON keeps
+    ("ab", "c") distinct from ("a", "bc") before SHA-256 bounds the Neo4j
+    uniqueness key to a fixed size.
+    """
+    normalized = [
+        " ".join(unicodedata.normalize("NFKC", value or "").casefold().split())
+        for value in values
+    ]
+    payload = json.dumps(normalized, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _to_python_datetime(neo4j_datetime) -> datetime:
@@ -784,6 +802,7 @@ class LongTermMemory(BaseMemory[Entity]):
         """
         self._enforce_multi_tenant(user_identifier)
 
+        metadata = _metadata_with_user_scope(metadata, user_identifier)
         deduplication_scope = _deduplication_scope(metadata)
 
         # Generate embedding
@@ -870,7 +889,7 @@ class LongTermMemory(BaseMemory[Entity]):
         )
 
         # Store preference
-        await self._client.execute_write(
+        stored_rows = await self._client.execute_write(
             queries.CREATE_PREFERENCE,
             {
                 "id": str(pref.id),
@@ -881,8 +900,19 @@ class LongTermMemory(BaseMemory[Entity]):
                 "embedding": pref.embedding,
                 "metadata": _serialize_metadata(pref.metadata),
                 "deduplication_scope": deduplication_scope or "global",
+                "canonical_key": _canonical_memory_key(
+                    pref.category,
+                    pref.preference,
+                    pref.context,
+                ),
             },
         )
+        if not stored_rows:
+            raise RuntimeError("canonical preference MERGE returned no node")
+        stored = self._parse_preference(dict(stored_rows[0]["p"]))
+        if stored.id != pref.id:
+            stored.metadata["deduplicated"] = True
+        pref = stored
 
         # Set bi-temporal validity bounds on the new preference. ``valid_from``
         # is now; ``valid_until`` stays null until ``supersede_preference``
@@ -1172,7 +1202,7 @@ class LongTermMemory(BaseMemory[Entity]):
         )
 
         # Store fact
-        await self._client.execute_write(
+        stored_rows = await self._client.execute_write(
             queries.CREATE_FACT,
             {
                 "id": str(fact.id),
@@ -1185,8 +1215,21 @@ class LongTermMemory(BaseMemory[Entity]):
                 "valid_until": fact.valid_until.isoformat() if fact.valid_until else None,
                 "metadata": _serialize_metadata(fact.metadata),
                 "deduplication_scope": deduplication_scope or "global",
+                "canonical_key": _canonical_memory_key(
+                    fact.subject,
+                    fact.predicate,
+                    fact.object,
+                    fact.valid_from.isoformat() if fact.valid_from else None,
+                    fact.valid_until.isoformat() if fact.valid_until else None,
+                ),
             },
         )
+        if not stored_rows:
+            raise RuntimeError("canonical fact MERGE returned no node")
+        stored = self._parse_fact(dict(stored_rows[0]["f"]))
+        if stored.id != fact.id:
+            stored.metadata["deduplicated"] = True
+        fact = stored
         if user_identifier is not None:
             await self._link_user_to_fact(user_identifier, str(fact.id))
             await self._link_fact_to_subject_entity(
@@ -2565,22 +2608,22 @@ class LongTermMemory(BaseMemory[Entity]):
         if confidence is not None and confidence != current.confidence:
             changed_fields.append("confidence")
 
-        metadata_param: str | None = None
+        storage_metadata = _metadata_with_user_scope(current.metadata, user_identifier) or {}
         if metadata is not None:
-            storage_metadata = {**current.metadata, **metadata}
-            metadata_param = _serialize_metadata(storage_metadata)
+            storage_metadata = {**storage_metadata, **metadata}
             changed_fields.append("metadata")
+        metadata_param = _serialize_metadata(storage_metadata)
 
         if not changed_fields:
             return current, changed_fields
 
+        merged_preference = preference if preference is not None else current.preference
+        merged_category = category if category is not None else current.category
+        merged_context = context if context is not None else current.context
         embedding: list[float] | None = None
         if self._embedder is not None and any(
             f in changed_fields for f in ("preference", "category", "context")
         ):
-            merged_preference = preference if preference is not None else current.preference
-            merged_category = category if category is not None else current.category
-            merged_context = context if context is not None else current.context
             text = f"{merged_category}: {merged_preference}"
             if merged_context:
                 text += f" ({merged_context})"
@@ -2596,6 +2639,13 @@ class LongTermMemory(BaseMemory[Entity]):
                 "context": context,
                 "confidence": confidence,
                 "metadata": metadata_param,
+                "canonical_key": _canonical_memory_key(
+                    merged_category,
+                    merged_preference,
+                    merged_context,
+                ),
+                "deduplication_scope": _deduplication_scope(storage_metadata)
+                or "global",
             },
         )
 
@@ -2690,22 +2740,22 @@ class LongTermMemory(BaseMemory[Entity]):
         if confidence is not None and confidence != current.confidence:
             changed_fields.append("confidence")
 
-        metadata_param: str | None = None
+        storage_metadata = _metadata_with_user_scope(current.metadata, user_identifier) or {}
         if metadata is not None:
-            storage_metadata = {**current.metadata, **metadata}
-            metadata_param = _serialize_metadata(storage_metadata)
+            storage_metadata = {**storage_metadata, **metadata}
             changed_fields.append("metadata")
+        metadata_param = _serialize_metadata(storage_metadata)
 
         if not changed_fields:
             return current, changed_fields
 
+        merged_subject = subject if subject is not None else current.subject
+        merged_predicate = predicate if predicate is not None else current.predicate
+        merged_object = obj if obj is not None else current.object
         embedding: list[float] | None = None
         if self._embedder is not None and any(
             f in changed_fields for f in ("subject", "predicate", "object")
         ):
-            merged_subject = subject if subject is not None else current.subject
-            merged_predicate = predicate if predicate is not None else current.predicate
-            merged_object = obj if obj is not None else current.object
             embedding = await self._embedder.embed(
                 f"{merged_subject} {merged_predicate} {merged_object}"
             )
@@ -2720,6 +2770,15 @@ class LongTermMemory(BaseMemory[Entity]):
                 "object": obj,
                 "confidence": confidence,
                 "metadata": metadata_param,
+                "canonical_key": _canonical_memory_key(
+                    merged_subject,
+                    merged_predicate,
+                    merged_object,
+                    current.valid_from.isoformat() if current.valid_from else None,
+                    current.valid_until.isoformat() if current.valid_until else None,
+                ),
+                "deduplication_scope": _deduplication_scope(storage_metadata)
+                or "global",
             },
         )
 
