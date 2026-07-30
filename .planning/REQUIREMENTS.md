@@ -144,7 +144,7 @@ Share/export a conversation or artifact (parity with Claude's "Condividi"/link),
 - [x] **OPS-02**: Scheduler shutdown separates stop-admission from in-flight job-work contexts with an explicit drain deadline; SIGTERM during a long job does not immediately cancel it. *(F-042)*
 - [x] **OPS-03**: The systemd stop timeout exceeds the longest configured handler duration (or backups are atomically promoted); a kill during backup never promotes a partial artifact. *(F-043)*
 - [ ] **OPS-04**: A load (k6/vegeta) + chaos (toxiproxy: DB outage, MCP timeout storm, object-store outage, process-kill-during-write) harness runs in CI under no-skip-as-green discipline and defines supported concurrency + degradation behavior. *(F-019 load/chaos part)*
-- [ ] **OPS-05**: A capability-evaluation suite (golden + adversarial + chaos scenarios for shell/files/MCP/memory/pause-resume/error/workflow classes) publishes a CI pass/fail report; live-LLM tiers are gated per the no-unsolicited-paid-runs rule. *(F-019)*
+- [x] **OPS-05**: A capability-evaluation suite (golden + adversarial + chaos scenarios for shell/files/MCP/memory/pause-resume/error/workflow classes) publishes a CI pass/fail report; live-LLM tiers are gated per the no-unsolicited-paid-runs rule. *(F-019)*
 - [ ] **OPS-06**: ADRs exist for loop semantics, tool policy, memory provenance, MCP trust, deployment profiles, and the sandbox decision; a release-readiness checklist gates security/load/backup/observability/rollback. *(F-025, F-026)*
 
 ### Honest 10/10 Release Evidence (REL — cross-cutting)

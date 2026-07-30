@@ -114,6 +114,34 @@ jobs:
         # A2 seam builds/tests under the pure-Go (no-CGO) posture.
         run: CGO_ENABLED=0 go test -count=1 ./internal/webauth ./internal/agui ./cmd/aura ./internal/config
 
+  capability-eval:
+    name: Deterministic capability evaluation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Capability harness self-test
+        run: PYTHONPATH=scripts python -m unittest scripts/capability_eval_test.py
+
+      - name: Golden + adversarial + failure scenarios
+        run: python scripts/capability_eval.py --race
+
+      - name: Upload capability report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: capability-eval
+          path: artifacts/production-readiness/capability-eval.json
+          if-no-files-found: error
+
   cache-invariant:
     name: KV-cache prefix invariant gate (Postgres-free)
     runs-on: ubuntu-latest
