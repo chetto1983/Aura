@@ -11,7 +11,6 @@ from uuid import uuid4
 
 if TYPE_CHECKING:
     from neo4j_agent_memory import MemoryClient
-    from neo4j_agent_memory.mcp._observer import MemoryObserver
 
 logger = logging.getLogger(__name__)
 
@@ -48,9 +47,6 @@ class ContextSearchMixin:
     _conversation_session_id: str | None
     _user_id: str | None
     _auto_extract: bool
-    _auto_preferences: bool
-    _preference_detector: Any
-    _observer: MemoryObserver | None
 
     @property
     def client(self) -> MemoryClient:
@@ -67,40 +63,6 @@ class ContextSearchMixin:
             user = self._user_id or "default"
             return f"{user}-{datetime.now(tz=timezone.utc):%Y-%m-%d}"
         return self._user_id or "default"
-
-    def _get_preference_detector(self):
-        if self._preference_detector is None:
-            from neo4j_agent_memory.mcp._preference_detector import PreferenceDetector
-
-            self._preference_detector = PreferenceDetector()
-        return self._preference_detector
-
-    async def _detect_and_store_preferences(
-        self,
-        content: str,
-        session_id: str,
-        user_identifier: str | None = None,
-    ) -> None:
-        try:
-            detector = self._get_preference_detector()
-            for pref in detector.detect(content):
-                sentiment_prefix = "" if pref.sentiment == "positive" else "Dislikes: "
-                await self.client.long_term.add_preference(
-                    category=pref.category,
-                    preference=f"{sentiment_prefix}{pref.preference}",
-                    context=f"Auto-detected from session {session_id}: {pref.source_text[:200]}",
-                    confidence=pref.confidence,
-                    generate_embedding=True,
-                    user_identifier=user_identifier,
-                )
-                logger.debug(
-                    "Auto-detected preference: [%s] %s: %s",
-                    pref.category,
-                    pref.sentiment,
-                    pref.preference,
-                )
-        except Exception as exc:
-            logger.warning("Error in background preference detection: %s", exc)
 
     async def store_message(
         self,
@@ -126,19 +88,6 @@ class ContextSearchMixin:
 
         try:
             message = await self.client.graph.execute_write_unit(store)
-            if self._auto_preferences and role == "user":
-                asyncio.create_task(
-                    self._detect_and_store_preferences(content, sid, user_identifier)
-                )
-            if self._observer is not None:
-                asyncio.create_task(
-                    self._observer.on_message_stored(
-                        session_id=sid,
-                        content=content,
-                        message_id=str(message.id),
-                        role=role,
-                    )
-                )
             return {
                 "stored": True,
                 "type": "message",

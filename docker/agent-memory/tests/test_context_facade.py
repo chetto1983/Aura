@@ -93,27 +93,6 @@ class _ShortTerm:
         ]
 
 
-class _Observer:
-    def __init__(self):
-        self.messages = []
-
-    async def on_message_stored(self, **kwargs):
-        self.messages.append(kwargs)
-
-
-class _Detector:
-    def detect(self, _content):
-        return [
-            SimpleNamespace(
-                sentiment="negative",
-                category="food",
-                preference="olives",
-                source_text="I dislike olives",
-                confidence=0.8,
-            )
-        ]
-
-
 class _Reasoning:
     async def get_similar_traces(self, **_kwargs):
         return [SimpleNamespace(id="trace-1", task="task", outcome="ok", success=True)]
@@ -133,7 +112,6 @@ def _integration(*, fail_store=False, strategy=SessionStrategy.PERSISTENT, long_
         client=client,
         session_strategy=strategy,
         user_id="owner-1",
-        auto_preferences=True,
     )
     return integration, long_term
 
@@ -151,26 +129,25 @@ def test_session_strategies_and_explicit_hint():
     assert persistent.resolve_session_id() == "owner-1"
 
 
-def test_store_message_runs_existing_background_paths_and_reports_errors():
-    integration, long_term = _integration()
-    integration._preference_detector = _Detector()
-    observer = _Observer()
-    integration.observer = observer
+def test_store_message_completes_without_post_return_tasks_and_reports_errors():
+    integration, _ = _integration()
 
     async def exercise():
+        before = asyncio.all_tasks()
         result = await integration.store_message(
             "user",
             "I dislike olives",
             user_identifier="owner-1",
         )
-        await asyncio.sleep(0)
-        return result
+        leaked = asyncio.all_tasks() - before
+        for task in leaked:
+            task.cancel()
+        await asyncio.gather(*leaked, return_exceptions=True)
+        return result, leaked
 
-    result = asyncio.run(exercise())
+    result, leaked = asyncio.run(exercise())
     assert result["id"] == "message-1"
-    assert long_term.stored_preferences[0]["preference"] == "Dislikes: olives"
-    assert observer.messages[0]["message_id"] == "message-1"
-    assert integration.observer is observer
+    assert leaked == set()
 
     failing, _ = _integration(fail_store=True)
     with pytest.raises(AtomicMutationError, match="memory mutation failed"):

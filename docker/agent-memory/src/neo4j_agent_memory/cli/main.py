@@ -947,18 +947,6 @@ def mcp():
     help="User ID for per_day/persistent session strategies.",
 )
 @click.option(
-    "--observation-threshold",
-    type=int,
-    default=30000,
-    help="Token threshold for observational memory compression.",
-)
-@click.option(
-    "--no-auto-preferences",
-    is_flag=True,
-    default=False,
-    help="Disable automatic preference detection.",
-)
-@click.option(
     "--auth-secret-env",
     default=None,
     help="Environment variable containing the Aura HS256 service secret.",
@@ -1039,8 +1027,6 @@ def mcp_serve(
     profile: str,
     session_strategy: str,
     user_id: str | None,
-    observation_threshold: int,
-    no_auto_preferences: bool,
     auth_secret_env: str | None,
     llm: str | None,
     llm_api_key: str | None,
@@ -1118,8 +1104,6 @@ def mcp_serve(
             profile=profile,
             session_strategy=session_strategy,
             user_id=user_id,
-            observation_threshold=observation_threshold,
-            auto_preferences=not no_auto_preferences,
             llm=llm,
             llm_api_key=llm_api_key,
             llm_api_base=llm_api_base,

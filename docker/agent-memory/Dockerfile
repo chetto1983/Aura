@@ -20,7 +20,7 @@
 # pinned-pip sidecar) and the fork's own deploy/cloudrun/Dockerfile. The compose
 # `command:` already drives the full `neo4j-agent-memory mcp serve …` invocation
 # (--profile extended --session-strategy persistent --embedding-dimensions
-# $AURA_EMBED_DIMENSIONS --no-auto-preferences). The deployment contract is 1024;
+# $AURA_EMBED_DIMENSIONS). The deployment contract is 1024;
 # Compose remains its single executable source instead of duplicating a CLI default here.
 # This image deliberately carries no CMD — it only needs
 # the `neo4j-agent-memory` entry point installed.

@@ -2,7 +2,7 @@
 
 Provides a simplified interface over MemoryClient that both the MCP server
 and create-context-graph templates can consume. Handles session identity
-resolution, automatic entity extraction, and preference detection.
+resolution and automatic entity extraction.
 
 Example:
     from neo4j_agent_memory import MemoryIntegration
@@ -32,7 +32,6 @@ from neo4j_agent_memory.memory.write_evidence import fact_subject_entity
 
 if TYPE_CHECKING:
     from neo4j_agent_memory import MemoryClient
-    from neo4j_agent_memory.mcp._observer import MemoryObserver
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +71,6 @@ class MemoryIntegration(ContextSearchMixin):
         session_strategy: How to resolve session IDs.
         user_id: User identifier for per_day and persistent strategies.
         auto_extract: Whether to extract entities from stored messages.
-        auto_preferences: Whether to detect preferences from user messages.
     """
 
     def __init__(
@@ -86,7 +84,6 @@ class MemoryIntegration(ContextSearchMixin):
         session_strategy: SessionStrategy | str = SessionStrategy.PER_CONVERSATION,
         user_id: str | None = None,
         auto_extract: bool = True,
-        auto_preferences: bool = True,
     ):
         self._client = client
         self._owns_client = client is None
@@ -100,16 +97,9 @@ class MemoryIntegration(ContextSearchMixin):
         self._strategy = session_strategy
         self._user_id = user_id
         self._auto_extract = auto_extract
-        self._auto_preferences = auto_preferences
 
         # Per-conversation session ID (generated on first resolve)
         self._conversation_session_id: str | None = None
-
-        # Preference detector (lazy-initialized)
-        self._preference_detector = None
-
-        # Observer (set externally by the MCP server lifespan)
-        self._observer: MemoryObserver | None = None
 
     @property
     def client(self) -> MemoryClient:
@@ -163,15 +153,6 @@ class MemoryIntegration(ContextSearchMixin):
         exc_tb: TracebackType | None,
     ) -> None:
         await self.close()
-
-    @property
-    def observer(self) -> MemoryObserver | None:
-        """Access the observer (set by MCP server lifespan)."""
-        return self._observer
-
-    @observer.setter
-    def observer(self, value: MemoryObserver | None) -> None:
-        self._observer = value
 
     # ── Core Operations ──────────────────────────────────────────────
 

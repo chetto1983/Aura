@@ -31,8 +31,6 @@ try:
         profile: str = "extended",
         session_strategy: str = "per_conversation",
         user_id: str | None = None,
-        observation_threshold: int = 30000,
-        auto_preferences: bool = True,
         auth_secret: str | None = None,
     ) -> FastMCP:
         """Create a configured FastMCP server.
@@ -49,10 +47,6 @@ try:
             session_strategy: Session ID strategy - 'per_conversation',
                 'per_day', or 'persistent'.
             user_id: User identifier for per_day and persistent strategies.
-            observation_threshold: Token count threshold for triggering
-                observational memory compression (default: 30000).
-            auto_preferences: Whether to auto-detect preferences from
-                user messages (default: True).
             auth_secret: Aura HS256 service secret. Authenticated mode binds
                 every tool call to the token subject and hides global resources.
 
@@ -66,41 +60,20 @@ try:
 
             @asynccontextmanager
             async def lifespan(server: FastMCP):
-                """Manage MemoryClient, MemoryIntegration, and Observer lifecycle."""
+                """Manage MemoryClient and MemoryIntegration lifecycle."""
                 from neo4j_agent_memory import MemoryClient as _MemoryClient
                 from neo4j_agent_memory.integration import MemoryIntegration
-                from neo4j_agent_memory.mcp._observer import MemoryObserver
 
                 async with _MemoryClient(settings) as client:
-                    # Wire the configured LLMProvider (if any) into the
-                    # observer so reflections are produced by the same
-                    # provider the rest of the server uses. Falls back to
-                    # keyword extraction when settings.llm is a legacy
-                    # LLMConfig (not a Provider instance).
-                    from neo4j_agent_memory.llm.protocol import (
-                        LLMProvider as _LLMProvider,
-                    )
-
-                    llm_for_observer = (
-                        settings.llm if isinstance(settings.llm, _LLMProvider) else None
-                    )
-                    observer = MemoryObserver(
-                        client,
-                        threshold_tokens=observation_threshold,
-                        llm_provider=llm_for_observer,
-                    )
                     integration = MemoryIntegration(
                         client,
                         session_strategy=session_strategy,
                         user_id=user_id,
                         auto_extract=True,
-                        auto_preferences=auto_preferences,
                     )
-                    integration.observer = observer
                     yield {
                         "client": client,
                         "integration": integration,
-                        "observer": observer,
                     }
 
         auth = None
@@ -171,8 +144,6 @@ try:
             profile: str = "extended",
             session_strategy: str = "per_conversation",
             user_id: str | None = None,
-            observation_threshold: int = 30000,
-            auto_preferences: bool = True,
             auth_secret: str | None = None,
         ):
             """Initialize the MCP server with a pre-connected client.
@@ -183,34 +154,24 @@ try:
                 profile: Tool profile - 'core' or 'extended'.
                 session_strategy: Session ID strategy.
                 user_id: User identifier for session strategies.
-                observation_threshold: Token threshold for observer compression.
-                auto_preferences: Whether to auto-detect preferences.
                 auth_secret: Optional Aura HS256 service secret.
             """
             self._client = memory_client
 
             from neo4j_agent_memory.integration import MemoryIntegration
             from neo4j_agent_memory.mcp._instructions import get_instructions
-            from neo4j_agent_memory.mcp._observer import MemoryObserver
 
-            observer = MemoryObserver(
-                memory_client,
-                threshold_tokens=observation_threshold,
-            )
             integration = MemoryIntegration(
                 memory_client,
                 session_strategy=session_strategy,
                 user_id=user_id,
-                auto_preferences=auto_preferences,
             )
-            integration.observer = observer
 
             @asynccontextmanager
             async def _preconnected_lifespan(server: FastMCP):
                 yield {
                     "client": memory_client,
                     "integration": integration,
-                    "observer": observer,
                 }
 
             auth = None
@@ -267,8 +228,6 @@ try:
         profile: str = "extended",
         session_strategy: str = "per_conversation",
         user_id: str | None = None,
-        observation_threshold: int = 30000,
-        auto_preferences: bool = True,
         llm: str | None = None,
         llm_api_key: str | None = None,
         llm_api_base: str | None = None,
@@ -294,8 +253,6 @@ try:
             profile: Tool profile ('core' or 'extended').
             session_strategy: Session ID strategy.
             user_id: User identifier for session strategies.
-            observation_threshold: Token threshold for observer compression.
-            auto_preferences: Whether to auto-detect preferences.
             llm: Provider string for the LLM (e.g. 'anthropic/claude-3-5-sonnet-latest').
                 When ``None`` the existing default (OpenAI gpt-4o-mini via the
                 lenient fallback in :class:`MemorySettings`) is used.
@@ -361,8 +318,6 @@ try:
             profile=profile,
             session_strategy=session_strategy,
             user_id=user_id,
-            observation_threshold=observation_threshold,
-            auto_preferences=auto_preferences,
             auth_secret=auth_secret,
         )
 
@@ -460,18 +415,6 @@ def main() -> None:
         help="User ID for per_day/persistent session strategies",
     )
     parser.add_argument(
-        "--observation-threshold",
-        type=int,
-        default=30000,
-        help="Token threshold for observational memory compression (default: 30000)",
-    )
-    parser.add_argument(
-        "--no-auto-preferences",
-        action="store_true",
-        default=False,
-        help="Disable automatic preference detection from user messages",
-    )
-    parser.add_argument(
         "--auth-secret-env",
         default=None,
         help="Environment variable containing the Aura HS256 service secret",
@@ -496,8 +439,6 @@ def main() -> None:
             profile=args.profile,
             session_strategy=args.session_strategy,
             user_id=args.user_id,
-            observation_threshold=args.observation_threshold,
-            auto_preferences=not args.no_auto_preferences,
             auth_secret=auth_secret,
         )
     )

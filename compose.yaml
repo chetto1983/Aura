@@ -722,8 +722,7 @@ services:
           --user-id aura-local \
           --auth-secret-env AURA_AGENT_MEMORY_MCP_AUTH_SECRET \
           --llm-api-base ${AURA_LLM_BASE_URL:-https://openrouter.ai/api/v1} \
-          --embedding-dimensions ${AURA_EMBED_DIMENSIONS:-1024} \
-          --no-auto-preferences
+          --embedding-dimensions ${AURA_EMBED_DIMENSIONS:-1024}
     ports:
       - "127.0.0.1:${AURA_AGENT_MEMORY_MCP_PORT:-8091}:8080"
     healthcheck:
