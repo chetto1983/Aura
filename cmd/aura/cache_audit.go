@@ -96,15 +96,16 @@ func cacheAuditMain(ctx context.Context, _ []string, out, errOut io.Writer) int 
 
 // reportHashes prints `request NN: <hex>` for each request's messages[0] and asserts
 // every hash is identical. When a request ALSO carries a messages[1] always-on skill
-// block (D-07) and/or the non-deferred skill tool's manifest-in-Description (D-06) it
+// block (D-07) and/or the exposed skill tool's manifest-in-Description (D-06) it
 // prints `messages1 NN: <hex>` / `skillman NN: <hex>` and asserts those streams are
 // byte-stable too. The messages[0] invariant is checked FIRST and is unconditional (the
 // original CAP-04 gate); the messages[1]/skill streams are emitted only when present, so
 // a synthetic request list with no skills still exercises the messages[0] mutation path.
-// The real 20-turn replay wires a fixed skill set, so all three streams ARE present and
-// the script's per-stream 22-line count enforces it (no-skip-as-green). The first drift
-// in ANY stream returns exitMutation with the matching wording; this is the seam the
-// Go-level negative tests drive directly.
+// The real 20-turn replay wires a fixed skill set, so messages[0] and messages[1] are
+// always present. `skillman` is absent while skill is deferred and reappears if that
+// tool becomes always-active again. The first drift in any emitted stream returns
+// exitMutation with the matching wording; this is the seam the Go-level negative tests
+// drive directly.
 func reportHashes(reqs []llm.Request, out, errOut io.Writer) int {
 	prev0, set0 := "", false
 	prev1, set1 := "", false
@@ -139,8 +140,8 @@ func reportHashes(reqs []llm.Request, out, errOut io.Writer) int {
 			prev1, set1 = h1, true
 		}
 
-		// skill manifest-in-Description (D-06) — only when the non-deferred skill tool is
-		// present in this request's tools.
+		// skill manifest-in-Description (D-06) — only when the skill tool is exposed in
+		// this request's tools.
 		if hMan, ok := skillManifestHash(req); ok {
 			_, _ = fmt.Fprintf(out, "skillman %02d: %s\n", i+1, hMan)
 			if setMan && hMan != prevMan {
@@ -168,10 +169,10 @@ func replayAudit(ctx context.Context, turns []fixtureTurn, errOut io.Writer) ([]
 	}
 	defer func() { _ = os.RemoveAll(runDir) }()
 
-	// Fixed deterministic skill set (Phase 11): one always:true skill (feeds the
-	// messages[1] skill block) + one regular skill (feeds the manifest-in-Description).
-	// These are byte-stable inputs, so a turn-stable runner must produce a
-	// byte-stable messages[1] + skill Description across all 20 turns.
+	// Fixed deterministic skill set (Phase 11): one always:true skill feeds the
+	// messages[1] block and one regular skill feeds the deferred tool description if
+	// skill is exposed. These byte-stable inputs must remain byte-stable whenever
+	// their corresponding request stream is present.
 	auditCfg, cleanupSkills, serr := setupAuditSkills(runDir)
 	if serr != nil {
 		_, _ = fmt.Fprintln(errOut, "cache-audit: setup fixed skill set:", serr)
@@ -181,12 +182,12 @@ func replayAudit(ctx context.Context, turns []fixtureTurn, errOut io.Writer) ([]
 
 	// buildRegistry already wires a default `skill` tool AND a network-backed
 	// web_search tool; the audit replaces BOTH with deterministic stand-ins (a fixed
-	// skill set → byte-stable Description; a fake search engine → a stable source
+	// skill set → byte-stable deferred Description; a fake search engine → a stable source
 	// list with NO network). Dropping them first keeps Register fail-loud (B-14).
 	// The fake web_search drives the D-05 source-list tail-inject fixture (turn-08):
 	// the volatile numbered list must ride the tail copy and NEVER mutate messages[0].
 	reg := tools.Without(buildRegistry(), skillManifestName, "web_search")
-	reg.Register(newSkillTool(auditCfg, nil, nil))              // non-deferred; manifest rides its Description (D-06); nil router (audit fixture is host-direct)
+	reg.Register(newSkillTool(auditCfg, nil, nil))              // deferred like production; nil router (audit fixture is host-direct)
 	reg.Register(&tools.WebSearch{Engine: auditSearchEngine{}}) // deterministic, network-free
 
 	client := agenttest.NewFakeClient(scriptTurns(turns)...)
@@ -255,16 +256,16 @@ func hashMessages1(req llm.Request) (string, error) {
 	return prompt.PrefixHash(req.Messages, []int{1})
 }
 
-// skillManifestName is the non-deferred skill tool whose Description carries the
-// turn-stable manifest (D-06). The audit hashes its ToolDef to assert the
-// manifest-in-Description never drifts turn-to-turn.
+// skillManifestName is the deferred skill tool whose Description carries the
+// turn-stable manifest when exposed (D-06). The audit hashes its ToolDef to assert
+// the manifest-in-Description never drifts turn-to-turn.
 const skillManifestName = "skill"
 
 // skillManifestHash fingerprints the skill tool's ToolDef (its manifest-in-Description,
 // D-06) from req.Tools via the same canonicaljson the prefix hash uses, returning
-// ok=false when the request carries no skill tool (a synthetic test request). The skill
-// tool is non-deferred so its full Description is in every real request's tools array;
-// with a fixed skill set it must be byte-stable across all turns.
+// ok=false when the request carries no skill tool. The tool is deferred in production,
+// so the default replay emits no `skillman` stream; if it is exposed again, a fixed
+// skill set must make the stream byte-stable across all turns.
 func skillManifestHash(req llm.Request) (string, bool) {
 	for i := range req.Tools {
 		if req.Tools[i].Function.Name != skillManifestName {
@@ -281,10 +282,9 @@ func skillManifestHash(req llm.Request) (string, bool) {
 }
 
 // setupAuditSkills materializes a FIXED deterministic skill set under runDir: one
-// always:true skill (the messages[1] skill source) and one regular skill (the
-// manifest-in-Description source). It returns a *config.Config pointing at those dirs,
-// plus a cleanup. The set never changes during the replay, so a turn-stable runner
-// produces a byte-stable messages[1] + skill Description.
+// always:true skill (the messages[1] source) and one regular skill (the deferred
+// manifest-in-Description source when exposed). It returns a *config.Config pointing at
+// those dirs, plus a cleanup. The set never changes during the replay.
 func setupAuditSkills(runDir string) (*config.Config, func(), error) {
 	skillsDir := filepath.Join(runDir, "skills")
 	exportDir := filepath.Join(runDir, "skills-export")

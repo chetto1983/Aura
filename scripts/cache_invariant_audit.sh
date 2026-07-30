@@ -15,17 +15,19 @@
 # turn (turn-08) so the volatile numbered source list rides the tail-inject — the gate
 # proves it leaves messages[0] byte-identical.
 #
-# Phase 11 (D-06/D-07) extends the audit to THREE byte-stable streams over the same
-# 20-turn replay with a FIXED skill set loaded:
+# Phase 11 (D-06/D-07) extends the audit to two required byte-stable streams and
+# one conditional stream over the same 20-turn replay with a FIXED skill set loaded:
 #   - `request NN:`   — messages[0] (the system prompt; the CAP-04 invariant)
 #   - `messages1 NN:` - messages[1] (the profile-first Agent.md + always-on skill block)
-#   - `skillman NN:`  — the non-deferred skill tool's manifest-in-Description (D-06)
-# A turn-stable runner keeps all three byte-identical across every turn. The wrapper
-# independently counts + diffs each stream; the Go subcommand asserts the same.
+#   - `skillman NN:`  — the skill tool's manifest-in-Description when that deferred
+#     tool is exposed in req.Tools (D-06)
+# A turn-stable runner keeps every emitted stream byte-identical. The first two must
+# contain every request. `skillman` must contain either zero requests (the production
+# deferred state) or every request (if skill becomes always-active again).
 #
 # NO-SKIP-AS-GREEN (CLAUDE.md): an EMPTY / 0-line / fewer-than-20-line run is a
-# HARD failure, never a silent pass. The `| grep -c . || true` guard makes an empty
-# capture abort with the hand-written diagnostic below instead of a bare pipefail.
+# HARD failure, never a silent pass. A partially emitted conditional `skillman`
+# stream is also a hard failure.
 #
 # Exit codes mirror the subcommand: 0 pass / 1 messages[0] mutation / 2 fixture
 # corrupt — the wrapper forwards the subcommand's exit code and stderr verbatim
@@ -116,11 +118,16 @@ while IFS= read -r line; do
   esac
 done <<< "$OUT"
 
-# NO-SKIP-AS-GREEN: each stream MUST have emitted exactly EXPECTED_REQUESTS lines.
+# NO-SKIP-AS-GREEN: required streams must cover every request. The conditional
+# deferred-tool stream must be wholly absent or cover every request.
 [[ "$count0"   -eq "$EXPECTED_REQUESTS" ]] || fail "expected ${EXPECTED_REQUESTS} 'request NN: <hex>' lines (messages[0]), got ${count0} (empty/short output is never a silent pass)"
 [[ "$count1"   -eq "$EXPECTED_REQUESTS" ]] || fail "expected ${EXPECTED_REQUESTS} 'messages1 NN: <hex>' lines (messages[1] profile/skills block), got ${count1} (empty/short output is never a silent pass)"
-[[ "$countMan" -eq "$EXPECTED_REQUESTS" ]] || fail "expected ${EXPECTED_REQUESTS} 'skillman NN: <hex>' lines (skill manifest-in-Description), got ${countMan} (empty/short output is never a silent pass)"
+[[ "$countMan" -eq 0 || "$countMan" -eq "$EXPECTED_REQUESTS" ]] || fail "expected either 0 deferred 'skillman NN: <hex>' lines or ${EXPECTED_REQUESTS} always-active lines, got ${countMan} (partial coverage is never green)"
 
 echo "ok (cache invariant gate): ${EXPECTED_REQUESTS} identical messages[0] hashes (${first0})"
 echo "ok (cache invariant gate): ${EXPECTED_REQUESTS} identical messages[1] profile/skills hashes (${first1})"
-echo "ok (cache invariant gate): ${EXPECTED_REQUESTS} identical skill manifest-in-Description hashes (${firstMan})"
+if [[ "$countMan" -eq 0 ]]; then
+  echo "ok (cache invariant gate): skill is deferred; manifest-in-Description absent from all ${EXPECTED_REQUESTS} requests"
+else
+  echo "ok (cache invariant gate): ${EXPECTED_REQUESTS} identical skill manifest-in-Description hashes (${firstMan})"
+fi

@@ -24,7 +24,7 @@ TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 # --- Case 1: a mutated messages[0] MUST make the gate exit non-zero with `mutated`.
-# Emit 22 `request NN: <hex>` lines where request 03 carries a different hash.
+# Emit 23 `request NN: <hex>` lines where request 03 carries a different hash.
 # the prefix poisoning a future slice (1.8b/7e/10/11e) could introduce.
 POISON_BIN="$TMP_DIR/poisoned-cache-audit"
 cat >"$POISON_BIN" <<'POISON'
@@ -51,6 +51,7 @@ echo "request 19: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 echo "request 20: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 echo "request 21: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 echo "request 22: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+echo "request 23: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 POISON
 chmod +x "$POISON_BIN"
 
@@ -91,5 +92,35 @@ if [[ "$EMPTY_CODE" -eq 0 ]]; then
   exit 1
 fi
 echo "ok (SC#5 case 2): empty cache-audit output -> gate exit ${EMPTY_CODE} (no-skip-as-green)"
+
+# --- Case 3: a conditional stream is all-or-nothing. One `skillman` line among
+# 23 requests must fail rather than silently claiming coverage.
+PARTIAL_BIN="$TMP_DIR/partial-skillman-cache-audit"
+cat >"$PARTIAL_BIN" <<'PARTIAL'
+#!/usr/bin/env bash
+for i in $(seq -w 1 23); do
+  echo "request ${i}: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  echo "messages1 ${i}: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+done
+echo "skillman 01: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+PARTIAL
+chmod +x "$PARTIAL_BIN"
+
+set +e
+PARTIAL_OUT="$(AURA_CACHE_AUDIT_BIN="$PARTIAL_BIN" bash "$WRAPPER" 2>&1)"
+PARTIAL_CODE=$?
+set -e
+
+if [[ "$PARTIAL_CODE" -eq 0 ]]; then
+  echo "FAIL (SC#5): the gate exited 0 on partial skillman coverage." >&2
+  printf '%s\n' "$PARTIAL_OUT" >&2
+  exit 1
+fi
+if ! printf '%s\n' "$PARTIAL_OUT" | grep -q 'partial coverage is never green'; then
+  echo "FAIL (SC#5): partial skillman coverage failed without the expected diagnostic." >&2
+  printf '%s\n' "$PARTIAL_OUT" >&2
+  exit 1
+fi
+echo "ok (SC#5 case 3): partial skillman stream -> gate exit ${PARTIAL_CODE}"
 
 echo "==> cache_invariant_negative_test: PASS (the gate is NOT silently green)"

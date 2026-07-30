@@ -9,13 +9,12 @@ import (
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 )
 
-// SkillTool is the ONE non-deferred skills verb the model sees (D-01/D-05). A
-// single manifest entry — name "skill" — fronts the whole skills grammar via an
+// SkillTool is the deferred skills verb the model discovers on demand (D-01/D-05).
+// A single manifest entry — name "skill" — fronts the whole skills grammar via an
 // `action` enum dispatched through an ActionRouter, mirroring the `task` tool
-// (the pre-rewrite N-tool god-class is the anti-pattern this replaces). It is
-// NON-deferred (D-05): the skill manifest the model needs to pick a skill rides in
-// this tool's Description, so the spec must always be visible — a deferred skill
-// tool would hide the very manifest the model searches.
+// (the pre-rewrite N-tool god-class is the anti-pattern this replaces). The full
+// skill manifest rides in this tool's Description after tool_search exposes it;
+// the default manifest carries only the deferred summary.
 //
 // This tool wires the READ actions list|info|use, the authoring actions
 // create|update|delete (each live on write — amendment #97), install (fetch a
@@ -140,9 +139,9 @@ const skillParamsSchemaHonest = `{
   "required": ["action"]
 }`
 
-// Spec returns the non-deferred manifest entry (D-05). The Description IS the
-// turn-stable, alphabetical skill manifest (D-06) computed from the loader
-// snapshot — the model reads it to choose a skill, then calls action=use.
+// Spec returns the deferred manifest entry (D-05). The Description is the
+// turn-stable, alphabetical skill manifest (D-06) exposed on demand from the
+// loader snapshot.
 func (t *SkillTool) Spec() Spec {
 	return Spec{
 		Name:        "skill",
