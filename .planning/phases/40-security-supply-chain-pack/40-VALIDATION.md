@@ -5,16 +5,15 @@ slug: security-supply-chain-pack
 # audit-milestone §5.5 distinguishes NOT-VALIDATED (draft) from PARTIAL (validated + nyquist_compliant: false) (#2117)
 status: validated
 nyquist_compliant: true
-wave_0_complete: false
+wave_0_complete: true
 created: 2026-07-22
 ---
 
 # Phase 40 — Validation Strategy
 
-> Per-phase validation *contract* for feedback sampling during execution — what WILL be measured, not a
-> results report. Transcribed from 40-RESEARCH.md's "Validation Architecture" and keyed to the real task
-> IDs + `<verify><automated>` commands of the nine plans (40-01..40-09). No coverage numbers are asserted
-> here; the owned-surface ≥85% floor is enforced by `scripts/coverage_gate.sh` at phase close.
+> Per-phase validation contract and execution record, keyed to the real task IDs and automated commands
+> of plans 40-01..40-09. The SEC-04 rows were reconciled on 2026-07-30 after a production divergence proved
+> that `ReadOnlyHint` alone did not distinguish ordinary MCP mutations from irreversible external effects.
 
 ---
 
@@ -46,8 +45,8 @@ created: 2026-07-22
 | 40-01-01 | 01 | 1 | SEC-09 | T-40-01-STALE / T-40-01-OVERCLAIM | REQUIREMENTS/ROADMAP/PRD SEC-09 amended to keyed-hash-or-documented-FP before any code (D-08) | docs/grep | `grep -q "keyed hash" .planning/REQUIREMENTS.md` | ✅ | ✅ passed |
 | 40-01-02 | 01 | 1 | SEC-01 | T-40-01-OVERCLAIM | SEC-01 scoped to configured-secrets-at-rest, unknown secrets outbound-only (D-10b) | docs/grep | `grep -qi "configured secrets" .planning/REQUIREMENTS.md` | ✅ | ✅ passed |
 | 40-01-03 | 01 | 1 | SEC-02 | T-40-01-STALE | SEC-02 amended to same-origin-only, PRD CORS text superseded (D-14b) | docs/grep | `grep -qi "same-origin only" .planning/REQUIREMENTS.md` | ✅ | ✅ passed |
-| 40-02-01 | 02 | 1 | SEC-04 | T-40-02-EOP / T-40-02-OVERBLOCK | Injected shell/file/mutating-MCP calls denied under `server_production`; Allow negative-controls pass (D-01/D-03) | unit | `go test ./internal/gateway/ -run TestInjectionSuite -count=1` | ❌ W0 | ⬜ pending |
-| 40-02-02 | 02 | 1 | SEC-04 | T-40-02-FALSECLAIM | LLM injection-resistance eval tier builds under `cot_eval`, never CI-wired (D-04) | build + manual | `go build -tags cot_eval ./internal/eval/ && go vet -tags cot_eval ./internal/eval/` | ❌ W0 | ⬜ pending |
+| 40-02-01 | 02 | 1 | SEC-04 | T-40-02-EOP / T-40-02-OVERBLOCK | 9 irreversible effects denied; 5 ordinary contained mutations use idempotency without approval; 4 reads allowed under `server_production` | unit | `go test ./internal/gateway/ -run TestInjectionSuite -count=1` | ✅ | ✅ passed |
+| 40-02-02 | 02 | 1 | SEC-04 | T-40-02-FALSECLAIM | LLM injection-resistance eval tier builds under `cot_eval`, never CI-wired; paid live execution remains manual | build + manual | `go build -tags cot_eval ./internal/eval/ && go vet -tags cot_eval ./internal/eval/` | ✅ | ✅ build/vet passed |
 | 40-03-01 | 03 | 1 | SEC-06 | T-40-03-SMUGGLE / T-40-03-UNKNOWN | `strictDecodeJSON` rejects trailing-JSON / unknown-field / oversize / wrong content-type; per-route `allowEmpty` (D-16/D-16b) | unit | `go test ./internal/agui/ -run TestStrictDecodeJSON -count=1` | ✅ | ✅ passed |
 | 40-03-02 | 03 | 1 | SEC-06 | T-40-03-SMUGGLE | Privileged routes, including scheduler edit, reject trailing JSON and unknown fields | unit (httptest) | `go test ./internal/agui/ -run 'Test(PrivilegedRouteDecoders|GovernanceRouteDecoders)' -count=1` | ✅ | ✅ passed |
 | 40-04-01 | 04 | 1 | SEC-03 | T-40-04-EXPOSE | Console refuses non-loopback bind unless `--unsafe-non-loopback` AND `AURA_INTEGRATIONS_CONSOLE_TOKEN` (D-15) | unit | `go test ./cmd/aura/ -run TestConsoleBindGuard -count=1` | ✅ | ✅ passed |
@@ -62,9 +61,9 @@ created: 2026-07-22
 | 40-08-01 | 08 | 3 | SEC-09 | T-40-08-FORGE / T-40-08-REUSE | `HashLookupToken` = peppered HMAC-SHA-256; `DeriveResetTokenPepper` HKDF, fails closed on non-64-hex (D-06) | unit | `go test ./internal/agui/ -run 'TestHashLookupToken\|TestDeriveResetTokenPepper' -count=1` | ✅ | ✅ passed |
 | 40-08-02 | 08 | 3 | SEC-09 | T-40-08-KEYABSENCE | Real Postgres mint→lookup round-trip resolves the same identity post-pepper | db_integration | `go test -tags db_integration -race -p 1 ./cmd/aura/ -run TestMintBreakGlassTokenRoundTrip` | ✅ | ✅ passed |
 | 40-08-03 | 08 | 3 | SEC-09 | T-40-08-DOA / T-40-08-FIXEDSALT | Break-glass pepper threaded + presence guard; CodeQL security-and-quality clears `recovery_hash.go` (D-06b/D-07/D-08) | unit + CodeQL | `go test ./cmd/aura/ -run 'TestBreakGlass\|TestIdentityRecover' -count=1` | ✅ | ✅ passed |
-| 40-09-01 | 09 | 3 | SEC-01 | T-40-09-CLEARTEXT / T-40-09-NONCE / T-40-09-KEYREUSE | Encrypted sink: fresh nonce/record, HKDF key, fail-closed on missing key, no plaintext path (D-13) | unit | `go test ./internal/tracesink/ -run TestSink -count=1 && go test -race ./internal/tracesink/ -count=1` | ❌ W0 | ⬜ pending |
-| 40-09-02 | 09 | 3 | SEC-01 | T-40-09-LEAK | reasoningtrace uses canonical `secret` predicate + folds `redact.String`; `AURA_DB_URL` value + literal DSN redacted (D-11) | unit | `go test ./internal/reasoningtrace/ -run TestRecordRedaction -count=1 && go test -race ./internal/reasoningtrace/ -count=1` | ✅ | ⬜ pending |
-| 40-09-03 | 09 | 3 | SEC-01 | T-40-09-PRODON | `gateReasoningTraceFull` Fatal unless `AURA_TRACE_FULL_ACK=1` under `Strict()`; 3 knobs registered (D-12) | unit | `go test ./internal/config/ -run TestGateReasoningTraceFull -count=1` | ✅ | ⬜ pending |
+| 40-09-01 | 09 | 3 | SEC-01 | T-40-09-CLEARTEXT / T-40-09-NONCE / T-40-09-KEYREUSE | Encrypted sink: fresh nonce/record, HKDF key, fail-closed on missing key, no plaintext path (D-13) | unit | `go test ./internal/tracesink/ -run TestSink -count=1 && go test -race ./internal/tracesink/ -count=1` | ✅ | ✅ passed |
+| 40-09-02 | 09 | 3 | SEC-01 | T-40-09-LEAK | reasoningtrace uses canonical `secret` predicate + folds `redact.String`; `AURA_DB_URL` value + literal DSN redacted (D-11) | unit | `go test ./internal/reasoningtrace/ -run TestRecordRedaction -count=1 && go test -race ./internal/reasoningtrace/ -count=1` | ✅ | ✅ passed |
+| 40-09-03 | 09 | 3 | SEC-01 | T-40-09-PRODON | `gateReasoningTraceFull` Fatal unless `AURA_TRACE_FULL_ACK=1` under `Strict()`; 3 knobs registered (D-12) | unit | `go test ./internal/config/ -run TestGateReasoningTraceFull -count=1` | ✅ | ✅ passed |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky.  File Exists: ✅ = test file present (edit/extend) · ❌ W0 = Wave-0 scaffold below.*
 
@@ -72,17 +71,16 @@ created: 2026-07-22
 
 ## Wave 0 Requirements
 
-New test/support files that must be scaffolded before their task's automated verify can run. Execution creates
-them — this is why `wave_0_complete: false` (honest: the files are not yet written):
+All Wave-0 test/support files now exist:
 
-- [ ] `internal/gateway/injection_suite_test.go` — SEC-04 deterministic policy-denial gate (40-02-01)
-- [ ] `internal/eval/injection_cot_eval.go` + `_test.go` — SEC-04 D-04 LLM-resistance tier, manual `cot_eval` tag (40-02-02)
-- [ ] `internal/agui/strict_decode.go` + `strict_decode_test.go` — SEC-06 D-16/D-16b centralized helper (40-03-01)
-- [ ] `internal/agui/strict_decode_routes_test.go` — SEC-06 per-route trailing-JSON regression (40-03-02)
-- [ ] `internal/secret/redact_exact.go` + `_test.go` — SEC-01 D-10 inbound exact-match detector (40-06-01)
-- [ ] `internal/conversations/store_append_redaction_test.go` — SEC-01 `db_integration` round-trip: turn + spill + `.result` (40-06-02)
-- [ ] `internal/tracesink/sink.go` + `_test.go` — SEC-01 D-13 encrypted sink, new package (40-09-01)
-- [ ] `scripts/workflow_pin_gate.sh` + `workflow_pin_gate_test.sh` — SEC-05 D-19 shell gate + fixture self-test (40-05-03)
+- [x] `internal/gateway/injection_suite_test.go` — SEC-04 deterministic policy-denial gate (40-02-01)
+- [x] `internal/eval/injection_cot_eval.go` + `_test.go` — SEC-04 D-04 LLM-resistance tier, manual `cot_eval` tag (40-02-02)
+- [x] `internal/agui/strict_decode.go` + `strict_decode_test.go` — SEC-06 D-16/D-16b centralized helper (40-03-01)
+- [x] `internal/agui/strict_decode_routes_test.go` — SEC-06 per-route trailing-JSON regression (40-03-02)
+- [x] `internal/secret/redact_exact.go` + `_test.go` — SEC-01 D-10 inbound exact-match detector (40-06-01)
+- [x] `internal/conversations/store_append_redaction_test.go` — SEC-01 `db_integration` round-trip: turn + spill + `.result` (40-06-02)
+- [x] `internal/tracesink/sink.go` + `_test.go` — SEC-01 D-13 encrypted sink, new package (40-09-01)
+- [x] `scripts/workflow_pin_gate.sh` + `workflow_pin_gate_test.sh` — SEC-05 D-19 shell gate + fixture self-test (40-05-03)
 
 **Framework install:** none — `go.uber.org/goleak` and `testing` are already wired project-wide.
 

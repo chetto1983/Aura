@@ -102,7 +102,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 - [x] **Phase 39: Idempotency + Observability Pack** — `OBS-01..06` (F-008/017/020/023/024/049) (completed 2026-07-22)
   - Goal: idempotent mutating tools + production observability surface (allocate from the live migration head; verified head `0042`, expected Phase 39 slots `0043+`; historical `0026` is already used and must not be reused).
   - Success: (1) `/readyz` fails on unhealthy DB/listener/migration/scheduler, Compose healthcheck probes `/readyz`; (2) OTel metric path emits LLM/tool/MCP/DB/scheduler metrics, alert YAML + Grafana JSON validate in CI; (3) sidecar/trace cleanup works with retention + dry-run + active-conversation exclusion; (4) learning stores enforce a bounded retention cap.
-- [ ] **Phase 40: Security & Supply-Chain Pack** — `SEC-01..07`, `QUAL`(decode-body unify) (F-019-sec/021/022/047/051/052)
+- [x] **Phase 40: Security & Supply-Chain Pack** — `SEC-01..07`, `QUAL`(decode-body unify) (F-019-sec/021/022/047/051/052) (completed 2026-07-30)
   - Goal: close security + supply-chain findings; prove prompt-injection denial under production.
   - Success: (1) injected shell/file/network/MCP requests DENIED under `server_production` (regression suite); (2) secret-like values redacted before persistence, permissive CORS refused when auth disabled (except dev); (3) CI publishes SBOM, govulncheck blocks high-severity, all Actions SHA-pinned; (4) privileged JSON routes reject trailing/unknown-field/empty/wrong-content-type bodies.
 - [ ] **Phase 41: Production Ops + Capability-Eval + Honest 10/10 Closeout** — `OPS-01..06`, `REL-01..03` (F-019/025/042/043 + evidence bar)
@@ -743,7 +743,7 @@ Plans:
 **Wave 1** *(independent — amendments + no-op-under-dev seams)*
 
 - [x] 40-01-PLAN.md — REQUIREMENTS/ROADMAP/PRD amendments: SEC-09 keyed-hash-or-FP, SEC-01 configured-secrets-at-rest, SEC-02 same-origin (D-08/D-10b/D-14b)
-- [ ] 40-02-PLAN.md — SEC-04 deterministic policy-denial gate + LLM injection-resistance cot_eval tier
+- [x] 40-02-PLAN.md — SEC-04 graduated MCP risk classification + deterministic enforcement gate + manual LLM injection-resistance cot_eval tier
 - [x] 40-03-PLAN.md — SEC-06 centralized strict-JSON decode helper + six privileged routes wired
 - [x] 40-04-PLAN.md — SEC-03 validation-console loopback bind guard + unsafe+token escalation
 - [x] 40-05-PLAN.md — SEC-05 SHA-pin Actions/tools + SBOM (archive+source) + workflow-pin gate
