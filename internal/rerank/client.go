@@ -16,6 +16,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -41,6 +42,15 @@ const defaultRerankModel = "aura-rerank"
 // headroom for a cold first call without wedging a caller.
 const rerankTimeout = 30 * time.Second
 
+// Successful reranks are deterministic for the endpoint/model/query/document
+// payload. Keeping a short, bounded score cache avoids repeating seconds of GPU
+// work when a user retries the exact same retrieval request. Fail-soft responses
+// are deliberately never cached.
+const (
+	rerankCacheTTL        = 5 * time.Minute
+	rerankCacheMaxEntries = 256
+)
+
 // warnOnce guards the single degraded-path warning per process so a sidecar that
 // is down for an entire run logs once, not once per retrieval.
 var warnOnce sync.Once
@@ -54,6 +64,17 @@ type Scored struct {
 	Degraded bool
 }
 
+type cachedScore struct {
+	Index int
+	Score float64
+}
+
+type rerankCacheEntry struct {
+	Scores  []cachedScore
+	Expires time.Time
+	Access  uint64
+}
+
 // RerankClient calls Aura's optional OpenAI-style rerank endpoint (/v1/rerank),
 // mirroring documents.EmbeddingClient construction. A nil Client uses a default
 // http.Client with rerankTimeout. APIKey is the config-only local↔cloud swap
@@ -65,6 +86,11 @@ type RerankClient struct {
 	Model   string
 	APIKey  string
 	Client  *http.Client
+
+	cacheMu       sync.Mutex
+	cache         map[[sha256.Size]byte]rerankCacheEntry
+	cacheSequence uint64
+	now           func() time.Time
 }
 
 // Rerank reorders docs by descending relevance for query, POSTing to
@@ -89,6 +115,14 @@ func (c *RerankClient) Rerank(ctx context.Context, query string, docs []string) 
 	})
 	if err != nil {
 		return degrade(docs, "request marshal failed"), nil
+	}
+	cacheMaterial := append(
+		[]byte(strings.TrimRight(c.BaseURL, "/")+"\x00"),
+		body...,
+	)
+	cacheKey := sha256.Sum256(cacheMaterial)
+	if cached, ok := c.cached(cacheKey, docs); ok {
+		return cached, nil
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(c.BaseURL, "/")+"/v1/rerank", bytes.NewReader(body))
 	if err != nil {
@@ -133,7 +167,87 @@ func (c *RerankClient) Rerank(ctx context.Context, query string, docs []string) 
 		out = append(out, Scored{Index: r.Index, Document: docs[r.Index], Score: r.RelevanceScore})
 	}
 	slices.SortStableFunc(out, func(a, b Scored) int { return cmp.Compare(b.Score, a.Score) })
+	c.storeCached(cacheKey, out)
 	return out, nil
+}
+
+// cached reconstructs documents from the current call: the bounded cache retains
+// only indices and scores, never full user document text.
+func (c *RerankClient) cached(
+	key [sha256.Size]byte,
+	docs []string,
+) ([]Scored, bool) {
+	now := c.cacheNow()
+	c.cacheMu.Lock()
+	defer c.cacheMu.Unlock()
+
+	entry, ok := c.cache[key]
+	if !ok {
+		return nil, false
+	}
+	if !entry.Expires.After(now) || len(entry.Scores) != len(docs) {
+		delete(c.cache, key)
+		return nil, false
+	}
+	c.cacheSequence++
+	entry.Access = c.cacheSequence
+	c.cache[key] = entry
+
+	out := make([]Scored, len(entry.Scores))
+	for i, cached := range entry.Scores {
+		if cached.Index < 0 || cached.Index >= len(docs) {
+			delete(c.cache, key)
+			return nil, false
+		}
+		out[i] = Scored{
+			Index: cached.Index, Document: docs[cached.Index], Score: cached.Score,
+		}
+	}
+	return out, true
+}
+
+func (c *RerankClient) storeCached(
+	key [sha256.Size]byte,
+	scored []Scored,
+) {
+	now := c.cacheNow()
+	scores := make([]cachedScore, len(scored))
+	for i, score := range scored {
+		scores[i] = cachedScore{Index: score.Index, Score: score.Score}
+	}
+
+	c.cacheMu.Lock()
+	defer c.cacheMu.Unlock()
+	if c.cache == nil {
+		c.cache = make(map[[sha256.Size]byte]rerankCacheEntry)
+	}
+	for candidate, entry := range c.cache {
+		if !entry.Expires.After(now) {
+			delete(c.cache, candidate)
+		}
+	}
+	if _, exists := c.cache[key]; !exists && len(c.cache) >= rerankCacheMaxEntries {
+		var victim [sha256.Size]byte
+		var oldest uint64
+		first := true
+		for candidate, entry := range c.cache {
+			if first || entry.Access < oldest {
+				victim, oldest, first = candidate, entry.Access, false
+			}
+		}
+		delete(c.cache, victim)
+	}
+	c.cacheSequence++
+	c.cache[key] = rerankCacheEntry{
+		Scores: scores, Expires: now.Add(rerankCacheTTL), Access: c.cacheSequence,
+	}
+}
+
+func (c *RerankClient) cacheNow() time.Time {
+	if c.now != nil {
+		return c.now()
+	}
+	return time.Now()
 }
 
 // identity returns docs in input order with score 0 — the fail-soft no-op

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // wireRequest mirrors the JSON body the client POSTs to /v1/rerank so a stub can
@@ -80,6 +81,119 @@ func TestRerankReordersByScoreDescending(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("scored[%d] = %#v, want %#v", i, got[i], want[i])
 		}
+	}
+}
+
+func TestRerankCachesSuccessfulIdenticalRequest(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"results": []map[string]any{
+				{"index": 1, "relevance_score": 0.9},
+				{"index": 0, "relevance_score": 0.4},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	docs := []string{"first document", "second document"}
+	c := &RerankClient{BaseURL: srv.URL, Client: srv.Client()}
+	first, err := c.Rerank(t.Context(), "same query", docs)
+	if err != nil {
+		t.Fatalf("first Rerank err = %v, want nil", err)
+	}
+	second, err := c.Rerank(t.Context(), "same query", docs)
+	if err != nil {
+		t.Fatalf("second Rerank err = %v, want nil", err)
+	}
+	if calls != 1 {
+		t.Fatalf("identical successful requests reached the sidecar %d times, want 1", calls)
+	}
+	if len(second) != 2 || second[0].Index != 1 ||
+		second[0].Document != docs[1] || second[0].Score != first[0].Score {
+		t.Fatalf("cached result = %#v, want the original ordering, score, and current document", second)
+	}
+}
+
+func TestRerankDoesNotCacheFailures(t *testing.T) {
+	warnOnce = sync.Once{}
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"results": []map[string]any{
+				{"index": 1, "relevance_score": 0.8},
+				{"index": 0, "relevance_score": 0.2},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	docs := []string{"a", "b"}
+	c := &RerankClient{BaseURL: srv.URL, Client: srv.Client()}
+	first, err := c.Rerank(t.Context(), "retryable query", docs)
+	if err != nil {
+		t.Fatalf("first Rerank err = %v, want nil (fail-soft)", err)
+	}
+	assertIdentity(t, first, docs)
+	second, err := c.Rerank(t.Context(), "retryable query", docs)
+	if err != nil {
+		t.Fatalf("second Rerank err = %v, want nil", err)
+	}
+	if calls != 2 {
+		t.Fatalf("failed response was cached; sidecar calls = %d, want 2", calls)
+	}
+	if len(second) != 2 || second[0].Index != 1 || second[0].Degraded {
+		t.Fatalf("retry result = %#v, want the successful rerank response", second)
+	}
+}
+
+func TestRerankCacheExpiresAndSeparatesQueries(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"results": []map[string]any{
+				{"index": 0, "relevance_score": float64(calls) / 10},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	now := time.Date(2026, 7, 30, 12, 0, 0, 0, time.UTC)
+	c := &RerankClient{
+		BaseURL: srv.URL,
+		Client:  srv.Client(),
+		now:     func() time.Time { return now },
+	}
+	docs := []string{"document"}
+	if _, err := c.Rerank(t.Context(), "first query", docs); err != nil {
+		t.Fatalf("first Rerank err = %v", err)
+	}
+	if _, err := c.Rerank(t.Context(), "second query", docs); err != nil {
+		t.Fatalf("different-query Rerank err = %v", err)
+	}
+	if calls != 2 {
+		t.Fatalf("different queries shared a cache entry; sidecar calls = %d, want 2", calls)
+	}
+	if _, err := c.Rerank(t.Context(), "first query", docs); err != nil {
+		t.Fatalf("cached Rerank err = %v", err)
+	}
+	if calls != 2 {
+		t.Fatalf("unexpired request missed cache; sidecar calls = %d, want 2", calls)
+	}
+
+	now = now.Add(rerankCacheTTL + time.Nanosecond)
+	if _, err := c.Rerank(t.Context(), "first query", docs); err != nil {
+		t.Fatalf("expired Rerank err = %v", err)
+	}
+	if calls != 3 {
+		t.Fatalf("expired request stayed cached; sidecar calls = %d, want 3", calls)
 	}
 }
 
