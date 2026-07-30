@@ -217,6 +217,9 @@ func TestPostgresJobStoreUpdateProgressBindsCounts(t *testing.T) {
 	if len(fake.queryArgs) != 4 {
 		t.Fatalf("updateProgress args = %#v", fake.queryArgs)
 	}
+	if !strings.Contains(fake.queryRowSQL, "error = NULL") {
+		t.Fatalf("successful progress must clear a stale error:\n%s", fake.queryRowSQL)
+	}
 	if fake.queryArgs[2] != int32(7) || fake.queryArgs[3] != int32(7) {
 		t.Fatalf("count args = %#v", fake.queryArgs)
 	}

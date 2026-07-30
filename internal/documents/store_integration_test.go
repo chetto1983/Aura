@@ -98,8 +98,13 @@ func TestPostgresJobStoreRoundTrip(t *testing.T) {
 	if err != nil || extracting.Status != JobExtracting {
 		t.Fatalf("UpdateStatus extracting = (%#v, %v)", extracting, err)
 	}
+	failed, err := store.UpdateStatus(ctx, created.ID, JobFailed, "transient extractor failure")
+	if err != nil || failed.Error == "" {
+		t.Fatalf("UpdateStatus failed = (%#v, %v)", failed, err)
+	}
 	searchable, err := store.UpdateProgress(ctx, created.ID, JobSearchable, 3, 0)
-	if err != nil || searchable.Status != JobSearchable || searchable.SparseChunks != 3 || searchable.SearchableAt.IsZero() {
+	if err != nil || searchable.Status != JobSearchable || searchable.SparseChunks != 3 ||
+		searchable.Error != "" || searchable.SearchableAt.IsZero() {
 		t.Fatalf("UpdateProgress searchable = (%#v, %v)", searchable, err)
 	}
 	complete, err := store.UpdateProgress(ctx, created.ID, JobComplete, 3, 3)

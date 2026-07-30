@@ -197,6 +197,7 @@ SET
     status = $2,
     sparse_chunks = $3,
     embedded_chunks = $4,
+    error = NULL,
     updated_at = now(),
     searchable_at = CASE WHEN $2 = 'searchable' AND searchable_at IS NULL THEN now() ELSE searchable_at END,
     completed_at = CASE WHEN $2 = 'complete' AND completed_at IS NULL THEN now() ELSE completed_at END
