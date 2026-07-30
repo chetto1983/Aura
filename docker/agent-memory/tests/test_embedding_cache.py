@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 
+from neo4j_agent_memory.embeddings.base import adapt_to_legacy_embedder
 from neo4j_agent_memory.embeddings.openai import OpenAIEmbedder
 
 
@@ -45,3 +46,30 @@ async def test_embedding_cache_is_bounded():
     await embedder.embed("one")
 
     assert backend.calls == 4, "the oldest entry must be evicted"
+
+
+class _ProtocolProvider:
+    dimensions = 2
+    model = "openai/test"
+
+    def __init__(self):
+        self.calls = 0
+
+    async def embed(self, texts):
+        self.calls += 1
+        await asyncio.sleep(0)
+        return [[0.6, 0.8] for _ in texts]
+
+    async def embed_one(self, text):
+        return (await self.embed([text]))[0]
+
+
+async def test_live_provider_adapter_coalesces_identical_single_text_calls():
+    provider = _ProtocolProvider()
+    embedder = adapt_to_legacy_embedder(provider)
+
+    vectors = await asyncio.gather(*(embedder.embed("Davide") for _ in range(4)))
+    warm = await embedder.embed("Davide")
+
+    assert provider.calls == 1
+    assert vectors == [warm] * 4

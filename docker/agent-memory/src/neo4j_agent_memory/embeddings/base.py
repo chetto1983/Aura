@@ -14,8 +14,11 @@
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from collections import OrderedDict
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Protocol, runtime_checkable
 
 
@@ -84,6 +87,54 @@ class BaseEmbedder(ABC):
         Subclasses should override for better performance.
         """
         return [await self.embed(text) for text in texts]
+
+
+class _SingleEmbeddingCache:
+    """Bounded LRU plus single-flight for deterministic single-text embeddings."""
+
+    def __init__(self, max_size: int = 512) -> None:
+        if max_size < 0:
+            raise ValueError("cache size must be non-negative")
+        self._max_size = max_size
+        self._completed: OrderedDict[bytes, tuple[float, ...]] = OrderedDict()
+        self._inflight: dict[bytes, asyncio.Task[list[float]]] = {}
+        self._lock = asyncio.Lock()
+
+    async def get_or_create(
+        self,
+        text: str,
+        create: Callable[[], Awaitable[list[float]]],
+    ) -> list[float]:
+        if self._max_size == 0:
+            return await create()
+
+        key = hashlib.sha256(text.encode("utf-8")).digest()
+        async with self._lock:
+            cached = self._completed.get(key)
+            if cached is not None:
+                self._completed.move_to_end(key)
+                return list(cached)
+            task = self._inflight.get(key)
+            if task is None:
+                task = asyncio.create_task(create())
+                self._inflight[key] = task
+
+        try:
+            vector = await task
+        except BaseException:
+            async with self._lock:
+                if self._inflight.get(key) is task:
+                    self._inflight.pop(key, None)
+            raise
+
+        async with self._lock:
+            if self._inflight.get(key) is task:
+                self._inflight.pop(key, None)
+            self._completed[key] = tuple(vector)
+            self._completed.move_to_end(key)
+            while len(self._completed) > self._max_size:
+                self._completed.popitem(last=False)
+        return list(vector)
 
 
 class _EmbedderToProviderAdapter:
@@ -165,6 +216,7 @@ class _ProviderToEmbedderAdapter:
 
     def __init__(self, provider: object) -> None:
         self._provider = provider
+        self._single_cache = _SingleEmbeddingCache()
         # Forward the canonical attributes downstream code reads.
         self.model = getattr(provider, "model", type(provider).__name__)
 
@@ -173,7 +225,10 @@ class _ProviderToEmbedderAdapter:
         return self._provider.dimensions  # type: ignore[attr-defined]
 
     async def embed(self, text: str) -> list[float]:
-        return await self._provider.embed_one(text)  # type: ignore[attr-defined]
+        return await self._single_cache.get_or_create(
+            text,
+            lambda: self._provider.embed_one(text),  # type: ignore[attr-defined]
+        )
 
     async def embed_batch(self, texts: list[str]) -> list[list[float]]:
         return await self._provider.embed(texts)  # type: ignore[attr-defined]
