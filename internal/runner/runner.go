@@ -80,6 +80,7 @@ type Deps struct {
 	Breaker      *llm.Breaker
 	RunDir       string
 	PreviewCap   int
+	HistoryCap   int
 	EvictAfter   int    // AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS — L1 eviction age
 	Workspace    string // shell workspace announced per turn (#52/D-41); "" → the process cwd
 	TitleTimeout time.Duration
@@ -146,6 +147,7 @@ type Runner struct {
 	breaker    *llm.Breaker // SHARED process-lifetime LLM circuit breaker, injected into every per-turn agent (B-05)
 	runDir     string
 	previewCap int
+	historyCap int
 	evictAfter int
 	workspace  string // the shell workspace path the per-turn tail hint announces (#52/D-41)
 	// reasoningPersistMaxRunes bounds the per-turn display-only CoT accumulator
@@ -230,6 +232,7 @@ func New(d Deps) *Runner {
 		cfg:                      d.LLM,
 		runDir:                   d.RunDir,
 		previewCap:               d.PreviewCap,
+		historyCap:               d.HistoryCap,
 		evictAfter:               d.EvictAfter,
 		workspace:                workspace,
 		reasoningPersistMaxRunes: d.ReasoningPersistMaxRunes,

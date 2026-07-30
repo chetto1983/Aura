@@ -108,6 +108,7 @@ func adaptiveBenchmarkStaticRunner(env *chatEnv) (*runner.Runner, error) {
 		Client: env.client, Registry: registry, LLM: cfg.LLM,
 		RunDir: cfg.RunDir, Workspace: cfg.WorkspaceDir,
 		PreviewCap:               cfg.ToolPreviewCap,
+		HistoryCap:               cfg.HistoryHardCapTurns,
 		EvictAfter:               cfg.ContextToolEvictAfterTurns,
 		ReasoningPersistMaxRunes: cfg.ReasoningPersistMaxRunes,
 		RecallMaxItems:           cfg.MemoryRecallMaxItems,

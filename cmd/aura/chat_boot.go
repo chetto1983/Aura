@@ -538,6 +538,7 @@ func assembleChatEnvWithOptions(
 		// process-cwd fallback (runner.New still falls back to os.Getwd if this is "").
 		Workspace:  cfg.WorkspaceDir,
 		PreviewCap: cfg.ToolPreviewCap,
+		HistoryCap: cfg.HistoryHardCapTurns,
 		EvictAfter: cfg.ContextToolEvictAfterTurns,
 		// Amendment #91 (fix-plan 1.12): bounded display-only CoT persistence cap.
 		ReasoningPersistMaxRunes: cfg.ReasoningPersistMaxRunes,

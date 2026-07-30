@@ -311,6 +311,45 @@ func (s *Store) loadTurns(ctx context.Context, conversationID string) ([]Turn, e
 	return out, nil
 }
 
+func (s *Store) loadRecentTurns(
+	ctx context.Context,
+	conversationID string,
+	hardCap int,
+) ([]Turn, error) {
+	id, err := parseUUID("conversation_id", conversationID)
+	if err != nil {
+		return nil, fmt.Errorf("load recent turns: %w", err)
+	}
+	rows, err := s.q.ListRecentTurnsBySeq(
+		ctx,
+		sqlc.ListRecentTurnsBySeqParams{
+			TargetConversationID: id,
+			HardCap:              int32(hardCap),
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("load recent turns %s: %w", conversationID, err)
+	}
+	out := make([]Turn, 0, len(rows))
+	for _, row := range rows {
+		turn := turnFromRow(sqlc.ListTurnsBySeqRow(row))
+		if turn.ContentSidecarPath != "" {
+			data, readErr := s.readTurnSidecar(conversationID, turn.Seq)
+			if readErr != nil {
+				return nil, fmt.Errorf(
+					"load recent turns %s seq %d: read sidecar: %w",
+					conversationID,
+					turn.Seq,
+					readErr,
+				)
+			}
+			turn.Content = string(data)
+		}
+		out = append(out, turn)
+	}
+	return out, nil
+}
+
 // readTurnSidecar reads a spilled turn's content through an os.Root fenced to the
 // run dir (LOOP-05 / F-005 / D-08). The DB content_sidecar_path column is a
 // did-spill FLAG only: the on-disk path is RECONSTRUCTED from (runDir, convID, seq)

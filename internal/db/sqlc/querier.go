@@ -252,6 +252,14 @@ type Querier interface {
 	ListPendingPausedStates(ctx context.Context, conversationID pgtype.UUID) ([]AuraPausedStates, error)
 	ListRecentDocumentIngestJobs(ctx context.Context, limit int32) ([]AuraDocumentIngestJobs, error)
 	ListRecentPausedStates(ctx context.Context, limit int32) ([]AuraPausedStates, error)
+	// Managed branch-history query: cap recursive parent traversal itself, then add the
+	// protected system head in a separate O(1) lookup. This keeps branch reconstruction
+	// bounded without losing messages[0].
+	ListRecentTurnsByBranchPath(ctx context.Context, arg ListRecentTurnsByBranchPathParams) ([]ListRecentTurnsByBranchPathRow, error)
+	// Managed-history query: retain the earliest system head plus only the newest rows
+	// that fit the declared aggregate hard cap. The database, sidecar reads, and tokenizer
+	// therefore all see O(hard_cap) rows instead of every turn ever persisted.
+	ListRecentTurnsBySeq(ctx context.Context, arg ListRecentTurnsBySeqParams) ([]ListRecentTurnsBySeqRow, error)
 	ListReservedConversationDeletes(ctx context.Context, arg ListReservedConversationDeletesParams) ([]ListReservedConversationDeletesRow, error)
 	ListRunsForTask(ctx context.Context, arg ListRunsForTaskParams) ([]AuraAgentJobRuns, error)
 	ListSettings(ctx context.Context) ([]AuraSettings, error)

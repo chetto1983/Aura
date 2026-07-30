@@ -204,6 +204,203 @@ func (q *Queries) ListBranchLeaves(ctx context.Context, conversationID pgtype.UU
 	return items, nil
 }
 
+const listRecentTurnsByBranchPath = `-- name: ListRecentTurnsByBranchPath :many
+WITH RECURSIVE path AS (
+    SELECT ct.conversation_id, ct.seq, ct.role, ct.content, ct.content_sidecar_path,
+           ct.tool_call_id, ct.tool_calls, ct.created_at, ct.input_tokens, ct.output_tokens,
+           ct.cached_tokens, ct.branch_id, ct.parent_seq, 1::int AS depth
+    FROM aura.conversation_turns ct
+    WHERE ct.conversation_id = $1
+      AND ct.seq = $2
+    UNION ALL
+    SELECT t.conversation_id, t.seq, t.role, t.content, t.content_sidecar_path,
+           t.tool_call_id, t.tool_calls, t.created_at, t.input_tokens, t.output_tokens,
+           t.cached_tokens, t.branch_id, t.parent_seq, p.depth + 1
+    FROM aura.conversation_turns t
+    JOIN path p
+      ON t.conversation_id = p.conversation_id
+     AND t.seq = p.parent_seq
+    WHERE p.depth < GREATEST($3::int, 1)
+),
+head AS (
+    SELECT ct.conversation_id, ct.seq, ct.role, ct.content, ct.content_sidecar_path,
+           ct.tool_call_id, ct.tool_calls, ct.created_at, ct.input_tokens,
+           ct.output_tokens, ct.cached_tokens
+    FROM aura.conversation_turns ct
+    WHERE ct.conversation_id = $1
+      AND ct.role = 'system'
+    ORDER BY ct.seq ASC
+    LIMIT 1
+),
+recent AS (
+    SELECT path.conversation_id, path.seq, path.role, path.content,
+           path.content_sidecar_path, path.tool_call_id, path.tool_calls,
+           path.created_at, path.input_tokens, path.output_tokens, path.cached_tokens
+    FROM path
+    WHERE path.role <> 'system'
+    ORDER BY path.depth ASC
+    LIMIT GREATEST(
+        $3::int - (SELECT count(*)::int FROM head),
+        0
+    )
+)
+SELECT bounded.conversation_id, bounded.seq, bounded.role, bounded.content,
+       bounded.content_sidecar_path, bounded.tool_call_id, bounded.tool_calls,
+       bounded.created_at, bounded.input_tokens, bounded.output_tokens,
+       bounded.cached_tokens
+FROM (
+    SELECT conversation_id, seq, role, content, content_sidecar_path, tool_call_id, tool_calls, created_at, input_tokens, output_tokens, cached_tokens FROM head
+    UNION ALL
+    SELECT conversation_id, seq, role, content, content_sidecar_path, tool_call_id, tool_calls, created_at, input_tokens, output_tokens, cached_tokens FROM recent
+) AS bounded
+ORDER BY bounded.seq ASC
+`
+
+type ListRecentTurnsByBranchPathParams struct {
+	TargetConversationID pgtype.UUID `json:"target_conversation_id"`
+	LeafSeq              int32       `json:"leaf_seq"`
+	HardCap              int32       `json:"hard_cap"`
+}
+
+type ListRecentTurnsByBranchPathRow struct {
+	ConversationID     pgtype.UUID        `json:"conversation_id"`
+	Seq                int32              `json:"seq"`
+	Role               string             `json:"role"`
+	Content            pgtype.Text        `json:"content"`
+	ContentSidecarPath pgtype.Text        `json:"content_sidecar_path"`
+	ToolCallID         pgtype.Text        `json:"tool_call_id"`
+	ToolCalls          []byte             `json:"tool_calls"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	InputTokens        int32              `json:"input_tokens"`
+	OutputTokens       int32              `json:"output_tokens"`
+	CachedTokens       int32              `json:"cached_tokens"`
+}
+
+// Managed branch-history query: cap recursive parent traversal itself, then add the
+// protected system head in a separate O(1) lookup. This keeps branch reconstruction
+// bounded without losing messages[0].
+func (q *Queries) ListRecentTurnsByBranchPath(ctx context.Context, arg ListRecentTurnsByBranchPathParams) ([]ListRecentTurnsByBranchPathRow, error) {
+	rows, err := q.db.Query(ctx, listRecentTurnsByBranchPath, arg.TargetConversationID, arg.LeafSeq, arg.HardCap)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListRecentTurnsByBranchPathRow{}
+	for rows.Next() {
+		var i ListRecentTurnsByBranchPathRow
+		if err := rows.Scan(
+			&i.ConversationID,
+			&i.Seq,
+			&i.Role,
+			&i.Content,
+			&i.ContentSidecarPath,
+			&i.ToolCallID,
+			&i.ToolCalls,
+			&i.CreatedAt,
+			&i.InputTokens,
+			&i.OutputTokens,
+			&i.CachedTokens,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRecentTurnsBySeq = `-- name: ListRecentTurnsBySeq :many
+WITH head AS (
+    SELECT ct.conversation_id, ct.seq, ct.role, ct.content, ct.content_sidecar_path,
+           ct.tool_call_id, ct.tool_calls, ct.created_at, ct.input_tokens,
+           ct.output_tokens, ct.cached_tokens
+    FROM aura.conversation_turns ct
+    WHERE ct.conversation_id = $1
+      AND ct.role = 'system'
+    ORDER BY ct.seq ASC
+    LIMIT 1
+),
+recent AS (
+    SELECT ct.conversation_id, ct.seq, ct.role, ct.content, ct.content_sidecar_path,
+           ct.tool_call_id, ct.tool_calls, ct.created_at, ct.input_tokens,
+           ct.output_tokens, ct.cached_tokens
+    FROM aura.conversation_turns ct
+    WHERE ct.conversation_id = $1
+      AND ct.role <> 'system'
+    ORDER BY ct.seq DESC
+    LIMIT GREATEST(
+        $2::int - (SELECT count(*)::int FROM head),
+        0
+    )
+)
+SELECT bounded.conversation_id, bounded.seq, bounded.role, bounded.content,
+       bounded.content_sidecar_path, bounded.tool_call_id, bounded.tool_calls,
+       bounded.created_at, bounded.input_tokens, bounded.output_tokens,
+       bounded.cached_tokens
+FROM (
+    SELECT conversation_id, seq, role, content, content_sidecar_path, tool_call_id, tool_calls, created_at, input_tokens, output_tokens, cached_tokens FROM head
+    UNION ALL
+    SELECT conversation_id, seq, role, content, content_sidecar_path, tool_call_id, tool_calls, created_at, input_tokens, output_tokens, cached_tokens FROM recent
+) AS bounded
+ORDER BY bounded.seq ASC
+`
+
+type ListRecentTurnsBySeqParams struct {
+	TargetConversationID pgtype.UUID `json:"target_conversation_id"`
+	HardCap              int32       `json:"hard_cap"`
+}
+
+type ListRecentTurnsBySeqRow struct {
+	ConversationID     pgtype.UUID        `json:"conversation_id"`
+	Seq                int32              `json:"seq"`
+	Role               string             `json:"role"`
+	Content            pgtype.Text        `json:"content"`
+	ContentSidecarPath pgtype.Text        `json:"content_sidecar_path"`
+	ToolCallID         pgtype.Text        `json:"tool_call_id"`
+	ToolCalls          []byte             `json:"tool_calls"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	InputTokens        int32              `json:"input_tokens"`
+	OutputTokens       int32              `json:"output_tokens"`
+	CachedTokens       int32              `json:"cached_tokens"`
+}
+
+// Managed-history query: retain the earliest system head plus only the newest rows
+// that fit the declared aggregate hard cap. The database, sidecar reads, and tokenizer
+// therefore all see O(hard_cap) rows instead of every turn ever persisted.
+func (q *Queries) ListRecentTurnsBySeq(ctx context.Context, arg ListRecentTurnsBySeqParams) ([]ListRecentTurnsBySeqRow, error) {
+	rows, err := q.db.Query(ctx, listRecentTurnsBySeq, arg.TargetConversationID, arg.HardCap)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListRecentTurnsBySeqRow{}
+	for rows.Next() {
+		var i ListRecentTurnsBySeqRow
+		if err := rows.Scan(
+			&i.ConversationID,
+			&i.Seq,
+			&i.Role,
+			&i.Content,
+			&i.ContentSidecarPath,
+			&i.ToolCallID,
+			&i.ToolCalls,
+			&i.CreatedAt,
+			&i.InputTokens,
+			&i.OutputTokens,
+			&i.CachedTokens,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSpilledSeqsForConversation = `-- name: ListSpilledSeqsForConversation :many
 SELECT seq
 FROM aura.conversation_turns

@@ -48,7 +48,7 @@ type Config struct {
 	// Non-fatal envutil.IntDefault fallbacks (an ad-hoc tweak typo falls back, not boots-fatal).
 	ConversationTurnCapBytes   int  // AURA_CONVERSATION_TURN_CAP_BYTES — content > this spills to a sidecar file
 	ContextToolEvictAfterTurns int  // AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS — L1 microcompact eviction age
-	HistoryHardCapTurns        int  // AURA_HISTORY_HARD_CAP_TURNS — L2.5 picobot hard rolling buffer cap
+	HistoryHardCapTurns        int  // AURA_HISTORY_HARD_CAP_TURNS — aggregate rows fetched before the context ladder
 	RunDirWarnThresholdBytes   int  // AURA_RUN_DIR_WARN_THRESHOLD_BYTES — boot du WARN threshold (audit-only)
 	RunDirSweepIntervalSec     int  // AURA_RUN_DIR_SWEEP_INTERVAL_SEC — periodic sidecar-sweep cadence in `serve` (M-06); <=0 disables the worker (boot sweep still runs)
 	MemoryRecall               bool // AURA_CONTEXT_MEMORY_RECALL — opt-in L4 archival-memory recall injection (default off)

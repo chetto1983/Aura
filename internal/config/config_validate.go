@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/envutil"
@@ -91,6 +92,7 @@ func (c *Config) ValidateProfile(p RuntimeProfile) []Violation {
 	vs = append(vs, c.gateRunDir()...)
 	vs = append(vs, c.gateWebBind()...)
 	vs = append(vs, reparsePass(p)...)
+	vs = append(vs, gateHistoryHardCap()...)
 	vs = append(vs, c.gateObjectStoreCreds(p)...)
 	vs = append(vs, c.gateGarageRPCSecret(p)...)
 	vs = append(vs, c.gateReplication(p)...)
@@ -102,6 +104,25 @@ func (c *Config) ValidateProfile(p RuntimeProfile) []Violation {
 	vs = append(vs, c.gateObjectStoreEndpoint(p)...)
 	vs = append(vs, c.gateRetention()...)
 	return vs
+}
+
+func gateHistoryHardCap() []Violation {
+	raw, configured := os.LookupEnv("AURA_HISTORY_HARD_CAP_TURNS")
+	if !configured {
+		return nil
+	}
+	value, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil {
+		return nil // reparsePass reports the malformed integer.
+	}
+	if value < 4 || value > 1000 {
+		return []Violation{{
+			Knob: "AURA_HISTORY_HARD_CAP_TURNS",
+			Sev:  Fatal,
+			Msg:  "must be between 4 and 1000 aggregate persisted turns",
+		}}
+	}
+	return nil
 }
 
 func (c *Config) gateRetention() []Violation {

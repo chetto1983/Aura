@@ -23,6 +23,44 @@ FROM aura.conversation_turns
 WHERE conversation_id = $1
 ORDER BY seq ASC;
 
+-- name: ListRecentTurnsBySeq :many
+-- Managed-history query: retain the earliest system head plus only the newest rows
+-- that fit the declared aggregate hard cap. The database, sidecar reads, and tokenizer
+-- therefore all see O(hard_cap) rows instead of every turn ever persisted.
+WITH head AS (
+    SELECT ct.conversation_id, ct.seq, ct.role, ct.content, ct.content_sidecar_path,
+           ct.tool_call_id, ct.tool_calls, ct.created_at, ct.input_tokens,
+           ct.output_tokens, ct.cached_tokens
+    FROM aura.conversation_turns ct
+    WHERE ct.conversation_id = sqlc.arg(target_conversation_id)
+      AND ct.role = 'system'
+    ORDER BY ct.seq ASC
+    LIMIT 1
+),
+recent AS (
+    SELECT ct.conversation_id, ct.seq, ct.role, ct.content, ct.content_sidecar_path,
+           ct.tool_call_id, ct.tool_calls, ct.created_at, ct.input_tokens,
+           ct.output_tokens, ct.cached_tokens
+    FROM aura.conversation_turns ct
+    WHERE ct.conversation_id = sqlc.arg(target_conversation_id)
+      AND ct.role <> 'system'
+    ORDER BY ct.seq DESC
+    LIMIT GREATEST(
+        sqlc.arg(hard_cap)::int - (SELECT count(*)::int FROM head),
+        0
+    )
+)
+SELECT bounded.conversation_id, bounded.seq, bounded.role, bounded.content,
+       bounded.content_sidecar_path, bounded.tool_call_id, bounded.tool_calls,
+       bounded.created_at, bounded.input_tokens, bounded.output_tokens,
+       bounded.cached_tokens
+FROM (
+    SELECT * FROM head
+    UNION ALL
+    SELECT * FROM recent
+) AS bounded
+ORDER BY bounded.seq ASC;
+
 -- name: CountTurns :one
 SELECT count(*) AS turn_count
 FROM aura.conversation_turns
@@ -100,6 +138,60 @@ SELECT path.conversation_id, path.seq, path.role, path.content, path.content_sid
        path.output_tokens, path.cached_tokens
 FROM path
 ORDER BY path.seq ASC;
+
+-- name: ListRecentTurnsByBranchPath :many
+-- Managed branch-history query: cap recursive parent traversal itself, then add the
+-- protected system head in a separate O(1) lookup. This keeps branch reconstruction
+-- bounded without losing messages[0].
+WITH RECURSIVE path AS (
+    SELECT ct.conversation_id, ct.seq, ct.role, ct.content, ct.content_sidecar_path,
+           ct.tool_call_id, ct.tool_calls, ct.created_at, ct.input_tokens, ct.output_tokens,
+           ct.cached_tokens, ct.branch_id, ct.parent_seq, 1::int AS depth
+    FROM aura.conversation_turns ct
+    WHERE ct.conversation_id = sqlc.arg(target_conversation_id)
+      AND ct.seq = sqlc.arg(leaf_seq)
+    UNION ALL
+    SELECT t.conversation_id, t.seq, t.role, t.content, t.content_sidecar_path,
+           t.tool_call_id, t.tool_calls, t.created_at, t.input_tokens, t.output_tokens,
+           t.cached_tokens, t.branch_id, t.parent_seq, p.depth + 1
+    FROM aura.conversation_turns t
+    JOIN path p
+      ON t.conversation_id = p.conversation_id
+     AND t.seq = p.parent_seq
+    WHERE p.depth < GREATEST(sqlc.arg(hard_cap)::int, 1)
+),
+head AS (
+    SELECT ct.conversation_id, ct.seq, ct.role, ct.content, ct.content_sidecar_path,
+           ct.tool_call_id, ct.tool_calls, ct.created_at, ct.input_tokens,
+           ct.output_tokens, ct.cached_tokens
+    FROM aura.conversation_turns ct
+    WHERE ct.conversation_id = sqlc.arg(target_conversation_id)
+      AND ct.role = 'system'
+    ORDER BY ct.seq ASC
+    LIMIT 1
+),
+recent AS (
+    SELECT path.conversation_id, path.seq, path.role, path.content,
+           path.content_sidecar_path, path.tool_call_id, path.tool_calls,
+           path.created_at, path.input_tokens, path.output_tokens, path.cached_tokens
+    FROM path
+    WHERE path.role <> 'system'
+    ORDER BY path.depth ASC
+    LIMIT GREATEST(
+        sqlc.arg(hard_cap)::int - (SELECT count(*)::int FROM head),
+        0
+    )
+)
+SELECT bounded.conversation_id, bounded.seq, bounded.role, bounded.content,
+       bounded.content_sidecar_path, bounded.tool_call_id, bounded.tool_calls,
+       bounded.created_at, bounded.input_tokens, bounded.output_tokens,
+       bounded.cached_tokens
+FROM (
+    SELECT * FROM head
+    UNION ALL
+    SELECT * FROM recent
+) AS bounded
+ORDER BY bounded.seq ASC;
 
 -- name: SetTurnBranchPointers :exec
 -- D-09 (CHAT-05): set a turn's branch/parent pointers. The branch-write seam plan 25-07

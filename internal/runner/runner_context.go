@@ -31,6 +31,7 @@ func (r *Runner) contextConfig(
 		ContextWindow:              r.cfg.ContextWindow,
 		MaxOutputTokens:            r.cfg.MaxOutputTokens,
 		ToolEvictAfterTurns:        r.evictAfter,
+		HistoryHardCapTurns:        r.historyCap,
 		AlwaysBlock:                r.renderContextBlock(),
 		ProviderErrorReserveTokens: llm.ProviderErrorReserveTokens(r.cfg),
 		DynamicTail:                dynamicTail,

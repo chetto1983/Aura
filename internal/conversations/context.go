@@ -31,6 +31,12 @@ const l2MinOutputReservation = 20000
 // l2WarnRatio is the fraction of the hard cap at which L2 logs a WARN.
 const l2WarnRatio = 0.75
 
+const (
+	defaultHistoryHardCapTurns = 50
+	minHistoryHardCapTurns     = 4
+	maxHistoryHardCapTurns     = 1000
+)
+
 // rotActionHardDropPairs is the context_rot_events.action value written when L2.5
 // drops oldest user/assistant pairs (amendment #22).
 const rotActionHardDropPairs = "hard_drop_pairs"
@@ -74,6 +80,10 @@ type ContextConfig struct {
 	ContextWindow       int
 	MaxOutputTokens     int
 	ToolEvictAfterTurns int
+	// HistoryHardCapTurns bounds rows fetched, sidecars rehydrated, and turns
+	// tokenized before the L1/L2 ladder. The protected system head counts toward
+	// this aggregate cap.
+	HistoryHardCapTurns int
 	// AlwaysBlock is the rendered messages[1] always-on skill block (D-07). When
 	// non-empty the ladder injects it as a PROTECTED user-role turn immediately after
 	// the system L0 turn — counted toward the budget but never evicted by L1/L2.5
@@ -199,12 +209,15 @@ func (s *Store) ListContextRotEvents(ctx context.Context, conversationID string)
 
 // LoadManagedHistory loads the raw turns and applies the L1/L2/L2.5 ladder, the
 // entry point the Runner calls (D-A2-06: the ladder is applied in/around
-// LoadHistory). It uses the Store as the rot emitter. It loads the FULL seq-ordered
-// history (loadTurns / ListTurnsBySeq), so a non-branched conversation stays
-// byte-identical to the pre-0017 linear case (D-09 foundation: the branch path walk is
-// the explicit-leaf LoadManagedHistoryForBranch; this default path is unchanged).
+// LoadHistory). It uses the Store as the rot emitter. The database retains the
+// protected system head and returns only the configured newest rows, bounding query,
+// sidecar, and tokenizer work before the ladder runs.
 func (s *Store) LoadManagedHistory(ctx context.Context, conversationID string, cfg ContextConfig) ([]llm.Message, error) {
-	turns, err := s.loadTurns(ctx, conversationID)
+	turns, err := s.loadRecentTurns(
+		ctx,
+		conversationID,
+		normalizeHistoryTurnCap(cfg.HistoryHardCapTurns),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -212,8 +225,9 @@ func (s *Store) LoadManagedHistory(ctx context.Context, conversationID string, c
 }
 
 // LoadManagedHistoryForBranch is the path-aware variant (D-09 / CHAT-05): it walks the
-// SELECTED branch path (leaf -> root via parent_seq, returned root -> leaf) and feeds
-// that deterministic turn list into the SAME L1/L2/L2.5 ladder. A leafSeq <= 0 selects
+// SELECTED branch path (leaf -> root via parent_seq, returned root -> leaf) with
+// recursion bounded by HistoryHardCapTurns, then feeds that deterministic turn list
+// into the SAME L1/L2/L2.5 ladder. A leafSeq <= 0 selects
 // the conversation's canonical branch leaf, so the default selection reconstructs the
 // linear history (the 0017 backfill chains the canonical branch parent_seq = seq-1).
 // The protected head (system seq=1 + the always-block) is rebuilt by the ladder
@@ -227,11 +241,23 @@ func (s *Store) LoadManagedHistoryForBranch(ctx context.Context, conversationID 
 		}
 		leafSeq = leaf
 	}
-	turns, err := s.loadBranchTurns(ctx, conversationID, leafSeq)
+	turns, err := s.loadRecentBranchTurns(
+		ctx,
+		conversationID,
+		leafSeq,
+		normalizeHistoryTurnCap(cfg.HistoryHardCapTurns),
+	)
 	if err != nil {
 		return nil, err
 	}
 	return s.managedFromTurns(ctx, conversationID, turns, cfg)
+}
+
+func normalizeHistoryTurnCap(value int) int {
+	if value < minHistoryHardCapTurns || value > maxHistoryHardCapTurns {
+		return defaultHistoryHardCapTurns
+	}
+	return value
 }
 
 // managedFromTurns applies the deterministic L1/L2/L2.5 ladder to an already-loaded

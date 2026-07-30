@@ -236,6 +236,7 @@ func TestRenderContextBlock_AlwaysBlockComposed(t *testing.T) {
 		Registry:        reg,
 		LLM:             llm.Config{Model: "test-model", ContextWindow: 1000000, MaxOutputTokens: 32768},
 		AlwaysBlock:     func() string { return "always-on skill block" },
+		HistoryCap:      7,
 		TitleTimeout:    time.Second,
 		StopTimeout:     time.Second,
 	})
@@ -246,6 +247,9 @@ func TestRenderContextBlock_AlwaysBlockComposed(t *testing.T) {
 	}
 	if got := conv.lastCfg.AlwaysBlock; got != "always-on skill block" {
 		t.Fatalf("LoadManagedHistory cfg.AlwaysBlock = %q; want the composed always-block", got)
+	}
+	if got := conv.lastCfg.HistoryHardCapTurns; got != 7 {
+		t.Fatalf("LoadManagedHistory cfg.HistoryHardCapTurns = %d; want 7", got)
 	}
 }
 

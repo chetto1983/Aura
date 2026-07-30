@@ -46,6 +46,21 @@ func TestConfigValidate(t *testing.T) {
 	}
 }
 
+func TestConfigValidateRejectsNonPositiveHistoryHardCap(t *testing.T) {
+	t.Setenv("AURA_HISTORY_HARD_CAP_TURNS", "0")
+	cfg := &Config{
+		DB:                           db.Config{URL: "postgres://u:p@h:5432/db"},
+		Neo4j:                        knowledge.Config{Password: "neo-secret"},
+		Profile:                      ProfileServerProduction,
+		AGUIBind:                     "127.0.0.1:9080",
+		ObjectStoreReplicationFactor: 2,
+	}
+	violations := cfg.ValidateProfile(ProfileServerProduction)
+	if !hasViolation(violations, "AURA_HISTORY_HARD_CAP_TURNS", Fatal) {
+		t.Fatalf("non-positive history cap violations = %#v", violations)
+	}
+}
+
 // hasViolation reports whether vs contains a Violation naming knob at severity sev.
 func hasViolation(vs []Violation, knob string, sev Severity) bool {
 	for _, v := range vs {

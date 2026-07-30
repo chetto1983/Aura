@@ -113,3 +113,62 @@ func TestBranchManaged_ProtectedHeadAcrossBranches(t *testing.T) {
 		t.Errorf("wrong branch leaves through ladder: A=%q B=%q", last(histA), last(histB))
 	}
 }
+
+func TestManagedHistoryHardCapBoundsLinearAndBranchQueries(t *testing.T) {
+	pool := migratedPool(t)
+	s := newStore(t, pool)
+	convID := newConversation(t, s)
+	ctx := context.Background()
+
+	turns := []AppendTurnParams{
+		{ConversationID: convID, Seq: 1, Role: llm.RoleSystem, Content: "system"},
+		{ConversationID: convID, Seq: 2, Role: llm.RoleUser, Content: "old user"},
+		{ConversationID: convID, Seq: 3, Role: llm.RoleAssistant, Content: "old answer"},
+		{ConversationID: convID, Seq: 4, Role: llm.RoleUser, Content: "middle user"},
+		{ConversationID: convID, Seq: 5, Role: llm.RoleAssistant, Content: "middle answer"},
+		{ConversationID: convID, Seq: 6, Role: llm.RoleUser, Content: "latest user"},
+		{ConversationID: convID, Seq: 7, Role: llm.RoleAssistant, Content: "latest answer"},
+	}
+	for _, turn := range turns {
+		if err := s.AppendTurn(ctx, turn); err != nil {
+			t.Fatalf("AppendTurn seq %d: %v", turn.Seq, err)
+		}
+	}
+	chainCanonical(t, s, convID, 1, 2, 3, 4, 5, 6, 7)
+
+	cfg := branchCtxCfg()
+	cfg.HistoryHardCapTurns = 5
+	linear, err := s.LoadManagedHistory(ctx, convID, cfg)
+	if err != nil {
+		t.Fatalf("linear managed history: %v", err)
+	}
+	branch, err := s.LoadManagedHistoryForBranch(ctx, convID, 7, cfg)
+	if err != nil {
+		t.Fatalf("branch managed history: %v", err)
+	}
+	for name, history := range map[string][]llm.Message{
+		"linear": linear,
+		"branch": branch,
+	} {
+		if len(history) != 5 {
+			t.Fatalf("%s history length = %d, want 5", name, len(history))
+		}
+		got := []string{
+			history[0].Content,
+			history[1].Content,
+			history[2].Content,
+			history[3].Content,
+			history[4].Content,
+		}
+		want := []string{
+			"system",
+			"middle user",
+			"middle answer",
+			"latest user",
+			"latest answer",
+		}
+		if fmt.Sprint(got) != fmt.Sprint(want) {
+			t.Fatalf("%s history = %v, want %v", name, got, want)
+		}
+	}
+}
