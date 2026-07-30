@@ -571,8 +571,8 @@ func TestMemoryLiveMount(t *testing.T) {
 		if !ok {
 			t.Fatalf("mounted tool %q missing from registry", name)
 		}
-		if tl.Spec().Deferred {
-			t.Errorf("mounted tool %q is Deferred; model-facing memory tools must be in the default manifest", name)
+		if !tl.Spec().Deferred {
+			t.Errorf("mounted tool %q is always active; model-facing memory tools must be discovered through tool_search", name)
 		}
 	}
 
@@ -584,7 +584,7 @@ func TestMemoryLiveMount(t *testing.T) {
 		}
 	}
 
-	// Spot-check the recall tool the agent loop reaches via tool_search is present.
+	// Spot-check the deferred recall tool the agent loop reaches via tool_search is present.
 	if _, ok := reg.Get("memory__memory_search"); !ok {
 		t.Errorf("memory__memory_search not registered — the recall tool must mount")
 	}
