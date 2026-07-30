@@ -13,7 +13,7 @@ func TestAdaptiveBenchmarkRuntimeConfigEnablesFrozenMemoryRecall(
 		MemoryRecall:         false,
 		MemoryRecallMaxItems: 3,
 	}
-	if provider := dynamicRecallProvider(cfg); provider != nil {
+	if provider := dynamicRecallProvider(cfg, nil); provider != nil {
 		t.Fatal("default config unexpectedly enables memory recall")
 	}
 
@@ -24,7 +24,7 @@ func TestAdaptiveBenchmarkRuntimeConfigEnablesFrozenMemoryRecall(
 	}
 	if !benchmarkCfg.MemoryRecall ||
 		benchmarkCfg.MemoryRecallMaxItems != 8 ||
-		dynamicRecallProvider(benchmarkCfg) == nil {
+		dynamicRecallProvider(benchmarkCfg, &memoryReadinessClient{}) == nil {
 		t.Fatalf(
 			"benchmark memory recall = %v/%d",
 			benchmarkCfg.MemoryRecall,

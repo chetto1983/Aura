@@ -541,7 +541,7 @@ func assembleChatEnvWithOptions(
 		EvictAfter: cfg.ContextToolEvictAfterTurns,
 		// Amendment #91 (fix-plan 1.12): bounded display-only CoT persistence cap.
 		ReasoningPersistMaxRunes: cfg.ReasoningPersistMaxRunes,
-		DynamicRecallProvider:    dynamicRecallProvider(cfg),
+		DynamicRecallProvider:    dynamicRecallProvider(cfg, toolHandles.Memory),
 		DynamicRecallControl:     adaptiveControls.memoryRecall,
 		ReasoningControl:         adaptiveControls.reasoning,
 		RecallMaxItems:           cfg.MemoryRecallMaxItems,

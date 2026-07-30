@@ -15,6 +15,8 @@ const (
 	CodePostgresUnavailable Code = "postgres_unavailable"
 	// CodeNeo4jUnavailable reports a failed Neo4j readiness probe.
 	CodeNeo4jUnavailable Code = "neo4j_unavailable"
+	// CodeMemoryUnavailable reports a failed required Agent Memory capability probe.
+	CodeMemoryUnavailable Code = "memory_unavailable"
 	// CodeListenerUnavailable reports a listener that is not serving.
 	CodeListenerUnavailable Code = "listener_unavailable"
 	// CodeMigrationIncompatible reports a runtime schema that is not at head.

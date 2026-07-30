@@ -10,6 +10,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/chetto1983/aura/internal/agent/mcptools"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/runner"
 )
@@ -38,8 +39,14 @@ type memoryRecallMetadata struct {
 	AdaptiveEligible  bool                                 `json:"adaptive_eligible"`
 }
 
-func dynamicRecallProvider(cfg *config.Config) runner.DynamicRecallProvider {
-	return dynamicRecallProviderWithCall(cfg, callMemoryToolText)
+func dynamicRecallProvider(
+	cfg *config.Config,
+	client mcptools.HostClient,
+) runner.DynamicRecallProvider {
+	if client == nil {
+		return nil
+	}
+	return dynamicRecallProviderWithCall(cfg, client.CallTool)
 }
 
 func dynamicRecallProviderWithCall(

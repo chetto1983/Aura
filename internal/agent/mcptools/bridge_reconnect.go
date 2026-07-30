@@ -173,6 +173,24 @@ func (s *reconnectingServer) CallTool(ctx context.Context, name string, args map
 	return retry.CallTool(ctx, name, args)
 }
 
+func (s *reconnectingServer) Ping(ctx context.Context) error {
+	client, err := s.currentClient()
+	if err != nil {
+		return err
+	}
+	if err := client.Ping(ctx); !mcp.IsTransportError(err) {
+		return err
+	}
+	defs, retry, err := s.reconnectAfterTransport(ctx, client)
+	if err != nil {
+		return err
+	}
+	if defs != nil {
+		return nil
+	}
+	return retry.Ping(ctx)
+}
+
 // toolIsReadOnly fails closed for unknown/untracked tools. Only an advertised,
 // currently read-only descriptor may reconnect and reissue automatically.
 func (s *reconnectingServer) toolIsReadOnly(name string) bool {

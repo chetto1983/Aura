@@ -9,6 +9,14 @@ import (
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 )
 
+// HostClient is the process-owned, non-model-facing view of a mounted MCP
+// transport. It shares the mounted bridge's auth, breaker, reconnect, egress, and
+// shutdown lifecycle.
+type HostClient interface {
+	Server
+	Ping(context.Context) error
+}
+
 // MountServer spawns one stdio MCP server, mounts all advertised tools into reg,
 // and returns a closer that shuts the subprocess down. On any failure (spawn,
 // tools/list, name collision) it returns an error and leaves reg untouched / the
@@ -42,16 +50,31 @@ func MountManagedServer(processCtx, handshakeCtx context.Context, reg *tools.Reg
 // MountManagedServerWithEgress mounts a managed server with the network policy
 // resolved by the composition root from its runtime profile.
 func MountManagedServerWithEgress(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, server mcp.ManagedServer, egress mcp.EgressPolicy) (closer func() error, names []string, err error) {
+	closer, names, _, err = MountManagedServerHostWithEgress(
+		processCtx,
+		handshakeCtx,
+		reg,
+		name,
+		server,
+		egress,
+	)
+	return closer, names, err
+}
+
+// MountManagedServerHostWithEgress is MountManagedServerWithEgress plus the
+// process-owned host view used by trusted daemon integrations such as automatic
+// Memory recall and readiness.
+func MountManagedServerHostWithEgress(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, server mcp.ManagedServer, egress mcp.EgressPolicy) (closer func() error, names []string, host HostClient, err error) {
 	policy := managedBridgePolicy(server)
 	if isStreamableHTTPManagedServer(server) {
-		return mountManagedHTTP(processCtx, handshakeCtx, reg, name, server, policy, egress)
+		return mountManagedHTTPHost(processCtx, handshakeCtx, reg, name, server, policy, egress)
 	}
 
 	cfg, err := managedStdioConfig(name, server)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	return mountStdioWithPolicy(processCtx, handshakeCtx, reg, name, cfg, policy)
+	return mountStdioWithPolicyHost(processCtx, handshakeCtx, reg, name, cfg, policy)
 }
 
 // mountManagedHTTP is the streamable-HTTP mirror of mountStdio: it opens the raw
@@ -64,15 +87,15 @@ func MountManagedServerWithEgress(processCtx, handshakeCtx context.Context, reg 
 // An HTTP client has no subprocess, so the wrapper's open closure ignores
 // processCtx and re-opens via mcp.OpenServer bounded by handshakeCtx alone; the
 // parameter is kept for signature uniformity with mountStdio/openMCPClient.
-func mountManagedHTTP(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, server mcp.ManagedServer, policy bridgePolicy, egress mcp.EgressPolicy) (closer func() error, names []string, err error) {
+func mountManagedHTTPHost(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, server mcp.ManagedServer, policy bridgePolicy, egress mcp.EgressPolicy) (closer func() error, names []string, host HostClient, err error) {
 	srv, err := mcp.OpenServerWithEgress(handshakeCtx, name, server, egress)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	defs, err := srv.ListTools(handshakeCtx)
 	if err != nil {
 		_ = srv.Close()
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	wrapper := newReconnectingServer(name, mcp.ServerConfig{}, srv)
 	wrapper.setProcessContext(processCtx)
@@ -82,11 +105,11 @@ func mountManagedHTTP(processCtx, handshakeCtx context.Context, reg *tools.Regis
 	names, err = mountWithDefsPolicy(reg, name, wrapper, defs, policy)
 	if err != nil {
 		_ = wrapper.Close()
-		return nil, nil, fmt.Errorf("mount %q: %w", name, err)
+		return nil, nil, nil, fmt.Errorf("mount %q: %w", name, err)
 	}
 	wrapper.trackAcceptedDefs(defs)
 	wrapper.startPingPoll(configuredMCPPingInterval())
-	return wrapper.Close, names, nil
+	return wrapper.Close, names, wrapper, nil
 }
 
 // mountStdio is the shared stdio mount body for MountServer and MountManagedServer's
@@ -102,25 +125,37 @@ func mountStdio(processCtx, handshakeCtx context.Context, reg *tools.Registry, n
 }
 
 func mountStdioWithPolicy(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, cfg mcp.ServerConfig, policy bridgePolicy) (closer func() error, names []string, err error) {
+	closer, names, _, err = mountStdioWithPolicyHost(
+		processCtx,
+		handshakeCtx,
+		reg,
+		name,
+		cfg,
+		policy,
+	)
+	return closer, names, err
+}
+
+func mountStdioWithPolicyHost(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, cfg mcp.ServerConfig, policy bridgePolicy) (closer func() error, names []string, host HostClient, err error) {
 	cli, err := mcp.OpenWithHandshakeContext(processCtx, handshakeCtx, name, cfg)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	defs, err := cli.ListTools(handshakeCtx)
 	if err != nil {
 		_ = cli.Close()
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	srv := newReconnectingServer(name, cfg, cli)
 	srv.setProcessContext(processCtx)
 	names, err = mountWithDefsPolicy(reg, name, srv, defs, policy)
 	if err != nil {
 		_ = srv.Close()
-		return nil, nil, fmt.Errorf("mount %q: %w", name, err)
+		return nil, nil, nil, fmt.Errorf("mount %q: %w", name, err)
 	}
 	srv.trackAcceptedDefs(defs)
 	srv.startPingPoll(configuredMCPPingInterval())
-	return srv.Close, names, nil
+	return srv.Close, names, srv, nil
 }
 
 // isStreamableHTTPManagedServer resolves server's transport via the single

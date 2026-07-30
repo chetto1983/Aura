@@ -166,6 +166,7 @@ type runtimeToolHandles struct {
 	BackgroundShells *tools.BackgroundShells
 	ShellApprovals   *tools.ShellApprovals
 	DocumentSearch   *docsToolSearcher
+	Memory           mcptools.HostClient
 	// ShellPoll / ShellKill are retained so serve boot can wire their .Caps to the live
 	// capability store (VERIF-7 / D-18): the pool-free manifest paths construct them with a
 	// nil Caps (owner-only fail-closed), and serve.go sets Caps = the identity store once it
@@ -388,9 +389,24 @@ func buildRegistryWithMCPAndAdaptiveControls(
 		// healthy server (whose subprocess lives on ctx) is never killed once this
 		// server's mount deadline elapses (Pitfall #2).
 		handshakeCtx, cancel := context.WithTimeout(ctx, mountTimeout)
+		var mountedHost mcptools.HostClient
 		mountOnce := func(c context.Context) (func() error, []string, error) {
 			if _, managed := cfg.MCPPolicies[name]; managed {
 				server := cfg.MCPPolicies[name]
+				if mcp.IsSharedAdminGoverned(server) {
+					closer, names, host, mountErr := mcptools.MountManagedServerHostWithEgress(
+						ctx,
+						c,
+						reg,
+						name,
+						server,
+						mcp.RuntimeEgressPolicy(cfg.Profile.Strict(), server),
+					)
+					if mountErr == nil {
+						mountedHost = host
+					}
+					return closer, names, mountErr
+				}
 				return mcptools.MountManagedServerWithEgress(
 					ctx,
 					c,
@@ -412,6 +428,9 @@ func buildRegistryWithMCPAndAdaptiveControls(
 		// sidecar) is visible in the boot log rather than indistinguishable from a
 		// silent success — the signal that was missing when memory mounted 0 tools.
 		slog.Info("mcp mounted", "server", name, "tools", len(mounted))
+		if mountedHost != nil {
+			handles.Memory = mountedHost
+		}
 		closers = append(closers, closer)
 	}
 	return reg, handles, closers, nil

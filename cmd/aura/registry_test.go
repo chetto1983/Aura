@@ -259,6 +259,34 @@ func TestBuildRegistryWithMCP_MountsManagedStreamableHTTPServer(t *testing.T) {
 	}
 }
 
+func TestBuildRegistryWithMCPRetainsManagedMemoryHost(t *testing.T) {
+	t.Setenv(
+		"AURA_AGENT_MEMORY_MCP_AUTH_SECRET",
+		"managed-memory-host-test-secret-at-least-32-bytes",
+	)
+	server := newMCPHTTPTestServer(t)
+	defer server.Close()
+	cfg := &config.Config{
+		MCPPolicies: map[string]mcp.ManagedServer{
+			"memory": {
+				Type:   mcp.ServerTypeStreamableHTTP,
+				URL:    server.URL,
+				Source: mcp.SourceRecipeMemory,
+				Trust:  mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
+			},
+		},
+	}
+
+	_, handles, closers, err := buildRegistryWithMCP(context.Background(), cfg, nil, nil)
+	if err != nil {
+		t.Fatalf("buildRegistryWithMCP: %v", err)
+	}
+	defer func() { _ = closeMCPServers(closers) }()
+	if handles.Memory == nil {
+		t.Fatal("managed memory mount did not retain its process-owned host client")
+	}
+}
+
 func TestMCPServerHelperProcess(t *testing.T) {
 	if os.Getenv("AURA_MCP_HELPER") != "1" {
 		return

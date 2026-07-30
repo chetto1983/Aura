@@ -191,7 +191,7 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 // in the agui handler bounds both probes. A dependency handle that is absent (nil pool)
 // is omitted rather than reported as a false failure.
 func serveReadinessProbes(chat *chatEnv) []agui.ReadinessProbe {
-	probes := make([]agui.ReadinessProbe, 0, 2)
+	probes := make([]agui.ReadinessProbe, 0, 3)
 	if chat.pool != nil {
 		probes = append(probes, agui.ReadinessProbe{
 			Name:  "postgres",
@@ -204,5 +204,8 @@ func serveReadinessProbes(chat *chatEnv) []agui.ReadinessProbe {
 		Code:  readiness.CodeNeo4jUnavailable,
 		Check: func(ctx context.Context) error { return knowledge.VerifyConnectivity(ctx, &chat.cfg.Neo4j) },
 	})
+	if probe, required := memoryReadinessProbe(chat); required {
+		probes = append(probes, probe)
+	}
 	return probes
 }

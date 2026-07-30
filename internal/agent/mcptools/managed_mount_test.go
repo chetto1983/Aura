@@ -41,6 +41,10 @@ func httpMCPServer(t *testing.T, defs []mcp.ToolDef) *httptest.Server {
 			w.WriteHeader(http.StatusAccepted)
 		case "tools/list":
 			writeManagedRPC(t, w, req.ID, map[string]any{"tools": defs})
+		case "tools/call":
+			writeManagedRPC(t, w, req.ID, map[string]any{
+				"content": []map[string]any{{"type": "text", "text": "host-ok"}},
+			})
 		default:
 			t.Errorf("unexpected method %q", req.Method)
 			http.Error(w, "unexpected", http.StatusBadRequest)
@@ -48,6 +52,35 @@ func httpMCPServer(t *testing.T, defs []mcp.ToolDef) *httptest.Server {
 	}))
 	t.Cleanup(srv.Close)
 	return srv
+}
+
+func TestMountManagedServerReturnsProcessOwnedHostClient(t *testing.T) {
+	httpSrv := httpMCPServer(t, managedDefs())
+	reg := tools.NewRegistry()
+	server := mcp.ManagedServer{Type: mcp.ServerTypeStreamableHTTP, URL: httpSrv.URL}
+
+	closer, _, host, err := MountManagedServerHostWithEgress(
+		context.Background(),
+		context.Background(),
+		reg,
+		"docs",
+		server,
+		mcp.RuntimeEgressPolicy(false, server),
+	)
+	if err != nil {
+		t.Fatalf("MountManagedServerHostWithEgress: %v", err)
+	}
+	t.Cleanup(func() { _ = closer() })
+	if host == nil {
+		t.Fatal("successful managed mount returned a nil host client")
+	}
+	text, err := host.CallTool(context.Background(), "read_doc", map[string]any{})
+	if err != nil {
+		t.Fatalf("host CallTool: %v", err)
+	}
+	if text != "host-ok" {
+		t.Fatalf("host CallTool = %q, want host-ok", text)
+	}
 }
 
 func writeManagedRPC(t *testing.T, w http.ResponseWriter, id *int64, result any) {

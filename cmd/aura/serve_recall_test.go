@@ -148,7 +148,7 @@ func TestDynamicRecallProviderIsDisabledBelowMinimumCatalog(t *testing.T) {
 			t.Fatalf("provider = %#v, want nil", provider)
 		}
 	}
-	if provider := dynamicRecallProvider(&config.Config{}); provider != nil {
+	if provider := dynamicRecallProvider(&config.Config{}, &memoryReadinessClient{}); provider != nil {
 		t.Fatalf("production disabled provider = %#v, want nil", provider)
 	}
 }
