@@ -135,7 +135,10 @@ services:
       AURA_WEB_CACHE_PERSISTENT: ${AURA_WEB_CACHE_PERSISTENT:-false}
       AURA_WEB_SEARCH_TIMEOUT_SEC: ${AURA_WEB_SEARCH_TIMEOUT_SEC:-20}
       AURA_WEB_FETCH_TIMEOUT_SEC: ${AURA_WEB_FETCH_TIMEOUT_SEC:-10}
-      AURA_WEB_USER_AGENT: ${AURA_WEB_USER_AGENT:-Aura/0.1 web_fetch}
+      # Empty on purpose: the binary's compiled default governs (config.go
+      # defaultWebUserAgent). A self-declaring bot UA is refused at the connection
+      # layer by manufacturer sites and surfaced in production as a fetch timeout.
+      AURA_WEB_USER_AGENT: ${AURA_WEB_USER_AGENT:-}
       AURA_MCP_CONFIG: ${AURA_MCP_CONFIG:-/var/lib/aura/mcp/servers.json}
       AURA_MCP_SERVERS_JSON: ${AURA_MCP_SERVERS_JSON:-}
       AURA_AGENT_MEMORY_MCP_AUTH_SECRET: ${AURA_AGENT_MEMORY_MCP_AUTH_SECRET:?AURA_AGENT_MEMORY_MCP_AUTH_SECRET required in .env}

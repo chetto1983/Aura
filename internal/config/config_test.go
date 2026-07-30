@@ -497,8 +497,14 @@ func TestWebDefaults_AppliedAndNotFatal(t *testing.T) {
 	if cfg.WebFetchTimeoutSec != 10 {
 		t.Errorf("WebFetchTimeoutSec: want default 10, got %d", cfg.WebFetchTimeoutSec)
 	}
-	if cfg.WebUserAgent != "Aura/0.x web_fetch" {
-		t.Errorf("WebUserAgent: want default %q, got %q", "Aura/0.x web_fetch", cfg.WebUserAgent)
+	// The default UA must present as a browser. A self-declaring bot UA is refused
+	// at the connection layer by manufacturer/news sites, which production saw as a
+	// fetch timeout on every br-automation.com call (see defaultWebUserAgent).
+	if cfg.WebUserAgent != defaultWebUserAgent {
+		t.Errorf("WebUserAgent: want default %q, got %q", defaultWebUserAgent, cfg.WebUserAgent)
+	}
+	if !strings.Contains(cfg.WebUserAgent, "Mozilla/") {
+		t.Errorf("WebUserAgent default must present as a browser, got %q", cfg.WebUserAgent)
 	}
 
 	// Load() with a placeholder LLM key must also load the web fields without error.

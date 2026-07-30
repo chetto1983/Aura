@@ -65,7 +65,7 @@ type Config struct {
 	WebCachePersistent   bool   // AURA_WEB_CACHE_PERSISTENT — opt-in disk cache; default false = in-memory (D-32)
 	WebSearchTimeoutSec  int    // AURA_WEB_SEARCH_TIMEOUT_SEC — search wall-clock deadline (D-14)
 	WebFetchTimeoutSec   int    // AURA_WEB_FETCH_TIMEOUT_SEC — fetch wall-clock deadline (D-23)
-	WebUserAgent         string // AURA_WEB_USER_AGENT — Aura-specific UA, no browser spoof (D-34/D-35)
+	WebUserAgent         string // AURA_WEB_USER_AGENT — see defaultWebUserAgent
 
 	// Phase 9 (Slice 3) swarm knobs (D-11/D-12/D-13). All non-fatal
 	// envutil.IntDefault fallbacks — a typo falls back rather than booting fatal.
@@ -392,7 +392,7 @@ func loadBase() *Config {
 		workspaceDir = defaultWorkspaceDir()
 	}
 
-	return &Config{
+	cfg := &Config{
 		DB: db.Config{
 			URL:          appURL,
 			MigrateURL:   migrateURL,
@@ -431,16 +431,6 @@ func loadBase() *Config {
 		MemoryRecall:               envutil.BoolDefault("AURA_CONTEXT_MEMORY_RECALL", false),
 		MemoryRecallMaxItems:       envutil.IntDefault("AURA_CONTEXT_MEMORY_RECALL_MAX_ITEMS", 8),
 		ReasoningPersistMaxRunes:   envutil.IntDefault("AURA_REASONING_PERSIST_MAX_RUNES", 65536),
-
-		// Phase 7 web knobs. SEARXNG_URL has an empty default on purpose (D-05):
-		// missing is fail-closed at call time, never a boot error.
-		SearxngURL:           os.Getenv("SEARXNG_URL"),
-		WebDNSPinTTLSec:      envutil.IntDefault("AURA_WEB_DNS_PIN_TTL_SEC", 60),
-		WebFetchMaxBodyBytes: envutil.IntDefault("AURA_WEB_FETCH_MAX_BODY_BYTES", 5_000_000),
-		WebCachePersistent:   envutil.BoolDefault("AURA_WEB_CACHE_PERSISTENT", false),
-		WebSearchTimeoutSec:  envutil.IntDefault("AURA_WEB_SEARCH_TIMEOUT_SEC", 20),
-		WebFetchTimeoutSec:   envutil.IntDefault("AURA_WEB_FETCH_TIMEOUT_SEC", 10),
-		WebUserAgent:         envDefault("AURA_WEB_USER_AGENT", "Aura/0.x web_fetch"),
 
 		MaxSwarmGoals:        envutil.IntDefault("AURA_SWARM_MAX_GOALS", 8),
 		SwarmChildTimeoutSec: envutil.IntDefault("AURA_SWARM_CHILD_TIMEOUT_SEC", 120),
@@ -554,6 +544,8 @@ func loadBase() *Config {
 		// Amendment #88 fixed working root (AURA_WORKSPACE_DIR).
 		WorkspaceDir: workspaceDir,
 	}
+	applyWebDefaults(cfg)
+	return cfg
 }
 
 // composeDSN returns "" when password is empty so callers can detect an
