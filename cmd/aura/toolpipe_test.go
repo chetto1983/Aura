@@ -27,6 +27,38 @@ func (toolPipeEcho) Execute(ctx context.Context, args json.RawMessage) (tools.To
 	return tools.NewResult(ctx, string(args))
 }
 
+type toolPipeLargeResult struct{}
+
+func (toolPipeLargeResult) Spec() tools.Spec {
+	return tools.Spec{
+		Name:        "large",
+		Summary:     "large",
+		Description: "large",
+		Parameters:  json.RawMessage(`{"type":"object"}`),
+	}
+}
+
+func (toolPipeLargeResult) Execute(context.Context, json.RawMessage) (tools.ToolResult, error) {
+	preview := "start-" + strings.Repeat("x", 640) + "-end"
+	return tools.ToolResult{Preview: preview, Bytes: len(preview)}, nil
+}
+
+type toolPipeRejectedResult struct{}
+
+func (toolPipeRejectedResult) Spec() tools.Spec {
+	return tools.Spec{
+		Name:        "rejected",
+		Summary:     "rejected",
+		Description: "rejected",
+		Parameters:  json.RawMessage(`{"type":"object"}`),
+	}
+}
+
+func (toolPipeRejectedResult) Execute(context.Context, json.RawMessage) (tools.ToolResult, error) {
+	const preview = `{"error":"timeout","message":"fetch timed out"}`
+	return tools.ToolResult{Preview: preview, Bytes: len(preview)}, nil
+}
+
 func TestRunToolPipeCommandUsesRuntimeAndCloses(t *testing.T) {
 	registry := tools.NewRegistry()
 	registry.Register(toolPipeEcho{})
@@ -50,7 +82,9 @@ func TestRunToolPipeCommandUsesRuntimeAndCloses(t *testing.T) {
 	if !closed {
 		t.Fatal("runtime was not closed")
 	}
-	if got := output.String(); !strings.Contains(got, "[echo] OK") || strings.Contains(got, "parse error") {
+	if got := output.String(); !strings.Contains(got, `"tool":"echo"`) ||
+		!strings.Contains(got, `"status":"ok"`) ||
+		strings.Contains(got, `"status":"parse_error"`) {
 		t.Fatalf("output = %q", got)
 	}
 }
@@ -112,5 +146,51 @@ func TestRunToolPipeCommandReturnsOpenAndCloseErrors(t *testing.T) {
 	)
 	if !errors.Is(err, closeErr) {
 		t.Fatalf("close err = %v", err)
+	}
+}
+
+func TestRunToolPipeCommandEmitsCompleteBoundedPreviewAndMetrics(t *testing.T) {
+	registry := tools.NewRegistry()
+	registry.Register(toolPipeLargeResult{})
+	var output bytes.Buffer
+	err := runToolPipeCommand(
+		t.Context(),
+		nil,
+		strings.NewReader(`{"tool":"large","args":{}}`+"\n"),
+		&output,
+		&config.Config{ToolPreviewCap: 30_000},
+		func(context.Context, *config.Config) (toolPipeRuntime, error) {
+			return toolPipeRuntime{Registry: registry, Context: t.Context()}, nil
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "-end") {
+		t.Fatalf("direct runner applied a second preview cap: %q", output.String())
+	}
+	for _, field := range []string{`"status":"ok"`, `"bytes":650`, `"truncated":false`, `"duration_ms":`} {
+		if !strings.Contains(output.String(), field) {
+			t.Fatalf("direct runner output missing %s: %q", field, output.String())
+		}
+	}
+}
+
+func TestRunToolPipeCommandDistinguishesModelVisibleRejection(t *testing.T) {
+	registry := tools.NewRegistry()
+	registry.Register(toolPipeRejectedResult{})
+	var output bytes.Buffer
+	err := executeToolPipe(
+		t.Context(),
+		strings.NewReader(`{"tool":"rejected","args":{}}`+"\n"),
+		&output,
+		&config.Config{ToolPreviewCap: 30_000},
+		registry,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), `"status":"rejected"`) {
+		t.Fatalf("model-visible rejection rendered as success: %q", output.String())
 	}
 }

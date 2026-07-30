@@ -2349,7 +2349,7 @@ Entrambi alimentati da un container SearXNG self-hosted (estensione del
 - [ ] **SSRF defense: DNS-rebinding protection** — `safeDialContext` risolve host → valida IP contro blocklist → dial esplicito su IP risolto, NON re-lookup tra resolve e dial.
 - [ ] **SSRF defense: HTTP redirect interception (audit round 1 P0)** — `http.Client.CheckRedirect` custom che ri-valida ogni Location header contro la blocklist. Test: `web_fetch("https://safe.example.com/r")` che ridirige a `http://169.254.169.254/` → rifiutato al redirect step, NON al primo dial.
 - [ ] Raw-body download ceiling: `AURA_WEB_FETCH_MAX_BODY_BYTES = 5_000_000` (5 MB; era `AURA_WEB_RESPONSE_CAP_BYTES = 24000`, rinominato + ri-defaultato 2026-06-02 dopo il Gate-3 di Slice 5 — il vecchio default 24KB, dimensionato come un numero markdown, rigettava ogni pagina reale con `response_too_large` PRIMA dell'estrazione readability). Hard limit anti-DOS del body HTTP grezzo applicato in `gateAndRead` prima di qualunque preview/sidecar logic. Distinto da `AURA_CONTEXT_PREVIEW_CAP_BYTES` (preview/sidecar threshold del markdown LLM-facing via `tools.NewResult`) per semantica.
-- [ ] Timeout HTTP: SearXNG 20s, direct_fetch 30s, entrambi config-overrideable.
+- [ ] Timeout HTTP: SearXNG 20s, direct_fetch 10s, entrambi config-overrideable. `[AMENDED #104]`
 - [ ] Readability filter: pagine con <250 char di main content → ritornano `{warning: "low-content page"}` invece di noise.
 - [ ] **Riusa il `ToolResult` pattern di Slice 1**: web_fetch su page grande (>2 KiB) → preview + sidecar file; modello può fare `read_tool_output(id, offset, limit)` per estrarre fette.
 
@@ -5610,7 +5610,7 @@ finché non c'è approval (agente via ask_user OPPURE utente via CLI). Audit log
 Aura ha 4 cap distinti con **semantica diversa** — non un valore unico polimorfico. Tutti env-overrideable, default tarati per chat tipica.
 
 ```text
-AURA_CONTEXT_PREVIEW_CAP_BYTES = 2048
+AURA_CONTEXT_PREVIEW_CAP_BYTES = 30000
   Quanto di un output può entrare nel prompt context senza spillover.
   Usato da:
     - Slice 1 ToolResult: se Bytes > cap → sidecar in $AURA_RUN_DIR/<session>/<tool_call>.result,
@@ -5729,7 +5729,7 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_CONFIG_DIR` | `~/.aura/` | path | 1 | Config root (contiene `llm.json`). |
 | `AURA_RUN_DIR` | `<os.UserCacheDir>/aura` | path | 1 | Runtime sidecar dir (default = cache dir, es. `~/.cache/aura`; fallback `<os.TempDir>/aura`. Corretto vs `~/.aura/run/` stale — amendment #28). |
 | `AURA_RUN_DIR_WARN_THRESHOLD_BYTES` | `1073741824` (1 GiB) | cap | 1 | Boot warn threshold. |
-| `AURA_CONTEXT_PREVIEW_CAP_BYTES` | `2048` | cap | 1 | ToolResult preview boundary. |
+| `AURA_CONTEXT_PREVIEW_CAP_BYTES` | `30000` | cap | 1 | ToolResult preview boundary; larger results spill once and remain pageable. |
 | `AURA_CONTEXT_RESERVE_TOKENS` | `13000` | cap | 1.8b | Context window reserve. |
 | `AURA_CONTEXT_MAX_OUTPUT_TOKENS` | `20000` | cap | 1.8b | Max output tokens enforced. |
 | `AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS` | `10` | cap | 1.8b | Microcompact L1 threshold. |
@@ -5760,6 +5760,7 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_SWARM_CHILD_TIMEOUT_SEC` | `120` | cap | 9 | **Per-worker ctx deadline (amendment #44, D-11)**: each swarm child runs under a `context.WithTimeout` of this many seconds; a timeout produces a `{status:"failed", error:"timeout"}` report entry, siblings unaffected. The shared `Budget` wallclock (`AURA_LOOP_MAX_WALLCLOCK_SEC`) remains the global ceiling. `_SEC` suffix per the naming convention below. |
 | `AURA_WEB_FETCH_ALLOW_LOOPBACK` | `0` (false) | operative | 5 | Permit loopback URLs in web_fetch. |
 | `AURA_WEB_FETCH_ALLOW_HOSTS` | `` (empty) | operative | 5 | CSV allowed hosts override. |
+| `AURA_WEB_FETCH_TIMEOUT_SEC` | `10` | cap | 5 | One wall-clock budget for direct fetch DNS, connect, redirects, retry, body read, and extraction (amendment #104). |
 | `AURA_RISK_ALERT_THRESHOLD` | `risky` | cap | RBG | Notifier IMMEDIATE alert threshold (≥ tier). |
 | `AURA_SCHEDULER_TZ` | `Europe/Rome` | operative | 6 | Default IANA timezone per i task `cron` privi di un `tz` esplicito (amendment #46, D-06/D-07). DST-safe: il DB resta UTC, solo il calcolo di `next_run_at` è tz-aware. |
 | `AURA_SCHEDULER_NOTIFY_DEFAULT` | `stdout` | operative | 6 | Route di notifica fallback globale ∈ `{whatsapp, email, stdout, telegram}` (amendment #46, D-19/D-20; `telegram` aggiunta dal fix-plan 2.1 / BUG-2). La route per-task `notify` nel payload la sovrascrive. `whatsapp`/`email` sono self-send MCP eseguiti dal composite Notifier; **`telegram` NON lo è** — è consegnata dall'origin gate del dispatcher via `ChannelDeliverer` (l'unico strato che ha identity + channel registry), quindi richiede un account Telegram collegato e `AURA_SCHEDULER_PREFER_ORIGIN_CHANNEL` attivo. `cron.ValidNotifyRoute` è la fonte di verità unica dell'enum per tool, API cockpit e CLI. |

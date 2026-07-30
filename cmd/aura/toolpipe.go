@@ -26,6 +26,18 @@ type toolPipeRuntime struct {
 
 type toolPipeRuntimeFactory func(context.Context, *config.Config) (toolPipeRuntime, error)
 
+type toolPipeRecord struct {
+	Tool            string `json:"tool,omitempty"`
+	Status          string `json:"status"`
+	DurationMS      int64  `json:"duration_ms"`
+	Preview         string `json:"preview,omitempty"`
+	Bytes           int    `json:"bytes"`
+	Truncated       bool   `json:"truncated"`
+	Error           string `json:"error,omitempty"`
+	Calls           int    `json:"calls"`
+	TotalDurationMS int64  `json:"total_duration_ms"`
+}
+
 func runToolPipe(args []string) {
 	cfg := config.LoadDB()
 	err := runToolPipeCommand(
@@ -134,6 +146,7 @@ func executeToolPipe(
 ) error {
 	sc := bufio.NewScanner(in)
 	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
+	enc := json.NewEncoder(out)
 
 	var total time.Duration
 	n := 0
@@ -147,14 +160,18 @@ func executeToolPipe(
 			Args json.RawMessage `json:"args"`
 		}
 		if err := json.Unmarshal([]byte(line), &call); err != nil {
-			if _, writeErr := fmt.Fprintf(out, "[parse error] %v\n", err); writeErr != nil {
-				return writeErr
+			if encodeErr := enc.Encode(toolPipeRecord{
+				Status: "parse_error", Error: err.Error(),
+			}); encodeErr != nil {
+				return encodeErr
 			}
 			continue
 		}
 		tool, ok := registry.Get(call.Tool)
 		if !ok {
-			if _, err := fmt.Fprintf(out, "[%s] UNKNOWN TOOL\n", call.Tool); err != nil {
+			if err := enc.Encode(toolPipeRecord{
+				Tool: call.Tool, Status: "unknown",
+			}); err != nil {
 				return err
 			}
 			continue
@@ -172,22 +189,37 @@ func executeToolPipe(
 		duration := time.Since(start)
 		total += duration
 		if err != nil {
-			if _, writeErr := fmt.Fprintf(out, "[%s] ERR %dms: %v\n", call.Tool, duration.Milliseconds(), err); writeErr != nil {
-				return writeErr
+			if encodeErr := enc.Encode(toolPipeRecord{
+				Tool: call.Tool, Status: "error",
+				DurationMS: duration.Milliseconds(), Error: err.Error(),
+			}); encodeErr != nil {
+				return encodeErr
 			}
 			continue
 		}
-		preview := res.Preview
-		if len(preview) > 500 {
-			preview = preview[:500] + "…"
-		}
-		if _, err := fmt.Fprintf(out, "[%s] OK %dms: %s\n", call.Tool, duration.Milliseconds(), preview); err != nil {
+		if err := enc.Encode(toolPipeRecord{
+			Tool: call.Tool, Status: toolPipeResultStatus(res.Preview),
+			DurationMS: duration.Milliseconds(), Preview: res.Preview,
+			Bytes: res.Bytes, Truncated: res.Truncated,
+		}); err != nil {
 			return err
 		}
 	}
 	if err := sc.Err(); err != nil {
 		return fmt.Errorf("read toolpipe input: %w", err)
 	}
-	_, err := fmt.Fprintf(out, "=== TOTAL TOOL TIME: %dms across %d calls ===\n", total.Milliseconds(), n)
-	return err
+	return enc.Encode(toolPipeRecord{
+		Status: "summary", Calls: n, TotalDurationMS: total.Milliseconds(),
+	})
+}
+
+func toolPipeResultStatus(preview string) string {
+	var outcome struct {
+		Error string `json:"error"`
+	}
+	if json.Unmarshal([]byte(preview), &outcome) == nil &&
+		strings.TrimSpace(outcome.Error) != "" {
+		return "rejected"
+	}
+	return "ok"
 }

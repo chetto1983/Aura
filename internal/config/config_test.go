@@ -494,8 +494,8 @@ func TestWebDefaults_AppliedAndNotFatal(t *testing.T) {
 	if cfg.WebSearchTimeoutSec != 20 {
 		t.Errorf("WebSearchTimeoutSec: want default 20, got %d", cfg.WebSearchTimeoutSec)
 	}
-	if cfg.WebFetchTimeoutSec != 30 {
-		t.Errorf("WebFetchTimeoutSec: want default 30, got %d", cfg.WebFetchTimeoutSec)
+	if cfg.WebFetchTimeoutSec != 10 {
+		t.Errorf("WebFetchTimeoutSec: want default 10, got %d", cfg.WebFetchTimeoutSec)
 	}
 	if cfg.WebUserAgent != "Aura/0.x web_fetch" {
 		t.Errorf("WebUserAgent: want default %q, got %q", "Aura/0.x web_fetch", cfg.WebUserAgent)

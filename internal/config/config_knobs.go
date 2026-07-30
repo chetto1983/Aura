@@ -98,7 +98,7 @@ func knobRegistry() []KnobSpec {
 		{Name: "AURA_WEB_FETCH_MAX_BODY_BYTES", Kind: KindInt, Default: "5000000"},
 		{Name: "AURA_WEB_CACHE_PERSISTENT", Kind: KindBool, Default: "false"},
 		{Name: "AURA_WEB_SEARCH_TIMEOUT_SEC", Kind: KindInt, Default: "20"},
-		{Name: "AURA_WEB_FETCH_TIMEOUT_SEC", Kind: KindInt, Default: "30"},
+		{Name: "AURA_WEB_FETCH_TIMEOUT_SEC", Kind: KindInt, Default: "10"},
 		{Name: "AURA_SWARM_MAX_GOALS", Kind: KindInt, Default: "8"},
 		{Name: "AURA_SWARM_CHILD_TIMEOUT_SEC", Kind: KindInt, Default: "120"},
 		{Name: "AURA_SWARM_MAX_CONCURRENT", Kind: KindInt, Default: "4"},

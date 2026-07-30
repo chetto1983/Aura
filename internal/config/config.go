@@ -439,7 +439,7 @@ func loadBase() *Config {
 		WebFetchMaxBodyBytes: envutil.IntDefault("AURA_WEB_FETCH_MAX_BODY_BYTES", 5_000_000),
 		WebCachePersistent:   envutil.BoolDefault("AURA_WEB_CACHE_PERSISTENT", false),
 		WebSearchTimeoutSec:  envutil.IntDefault("AURA_WEB_SEARCH_TIMEOUT_SEC", 20),
-		WebFetchTimeoutSec:   envutil.IntDefault("AURA_WEB_FETCH_TIMEOUT_SEC", 30),
+		WebFetchTimeoutSec:   envutil.IntDefault("AURA_WEB_FETCH_TIMEOUT_SEC", 10),
 		WebUserAgent:         envDefault("AURA_WEB_USER_AGENT", "Aura/0.x web_fetch"),
 
 		MaxSwarmGoals:        envutil.IntDefault("AURA_SWARM_MAX_GOALS", 8),
