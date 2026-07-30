@@ -25,6 +25,7 @@ import (
 	"path"
 	"path/filepath"
 
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/google/uuid"
@@ -40,6 +41,9 @@ const (
 	StatusActive   = "active"
 	StatusArchived = "archived"
 	StatusDeleted  = "deleted"
+
+	// DefaultTurnCapBytes is the default inline turn-content ceiling.
+	DefaultTurnCapBytes = 64 * 1024
 )
 
 // ErrConversationNotFound is a missing conversation lookup — a sentinel so callers
@@ -78,7 +82,7 @@ type Store struct {
 // symlink-safely; a nil Cleaner keeps the os.RemoveAll fallback.
 type Config struct {
 	RunDir       string // $AURA_RUN_DIR — sidecar root
-	TurnCapBytes int    // AURA_CONVERSATION_TURN_CAP_BYTES (65536)
+	TurnCapBytes int    // AURA_CONVERSATION_TURN_CAP_BYTES
 	Cleaner      ConversationCleaner
 }
 
@@ -87,7 +91,7 @@ type Config struct {
 func New(pool *pgxpool.Pool, cfg Config) *Store {
 	cap := cfg.TurnCapBytes
 	if cap <= 0 {
-		cap = 65536
+		cap = DefaultTurnCapBytes
 	}
 	return &Store{pool: pool, q: sqlc.New(pool), runDir: cfg.RunDir, turnCapBytes: cap, cleaner: cfg.Cleaner}
 }
@@ -148,11 +152,11 @@ type CreateParams struct {
 
 // Create persists a new active conversation and returns its projection.
 func (s *Store) Create(ctx context.Context, p CreateParams) (Conversation, error) {
-	id, err := parseUUID("id", p.ID)
+	id, err := db.ParseUUID("id", p.ID)
 	if err != nil {
 		return Conversation{}, fmt.Errorf("create conversation: %w", err)
 	}
-	identityID, err := parseUUID("identity_id", p.IdentityID)
+	identityID, err := db.ParseUUID("identity_id", p.IdentityID)
 	if err != nil {
 		return Conversation{}, fmt.Errorf("create conversation: %w", err)
 	}
@@ -170,7 +174,7 @@ func (s *Store) Create(ctx context.Context, p CreateParams) (Conversation, error
 
 // Get fetches one conversation, mapping a missing row to ErrConversationNotFound.
 func (s *Store) Get(ctx context.Context, conversationID string) (Conversation, error) {
-	id, err := parseUUID("id", conversationID)
+	id, err := db.ParseUUID("id", conversationID)
 	if err != nil {
 		return Conversation{}, fmt.Errorf("get conversation: %w", err)
 	}
@@ -206,7 +210,7 @@ func (s *Store) UpdateStatus(ctx context.Context, conversationID, status string)
 	default:
 		return fmt.Errorf("update status: invalid status %q", status)
 	}
-	id, err := parseUUID("id", conversationID)
+	id, err := db.ParseUUID("id", conversationID)
 	if err != nil {
 		return fmt.Errorf("update status: %w", err)
 	}
@@ -218,7 +222,7 @@ func (s *Store) UpdateStatus(ctx context.Context, conversationID, status string)
 
 // Rename sets the conversation title unconditionally (the CLI `aura chat rename`).
 func (s *Store) Rename(ctx context.Context, conversationID, title string) error {
-	id, err := parseUUID("id", conversationID)
+	id, err := db.ParseUUID("id", conversationID)
 	if err != nil {
 		return fmt.Errorf("rename: %w", err)
 	}
@@ -235,7 +239,7 @@ func (s *Store) Rename(ctx context.Context, conversationID, title string) error 
 // auto-title worker drives this — D-A5-01). A repeat call after the title is set
 // is a no-op (the WHERE title IS NULL filters it).
 func (s *Store) SetTitleIfNull(ctx context.Context, conversationID, title string) error {
-	id, err := parseUUID("id", conversationID)
+	id, err := db.ParseUUID("id", conversationID)
 	if err != nil {
 		return fmt.Errorf("set title: %w", err)
 	}
@@ -252,7 +256,7 @@ func (s *Store) SetTitleIfNull(ctx context.Context, conversationID, title string
 // uses it for non-fatal bookkeeping such as auto-title eligibility; append sequence
 // allocation happens inside AppendTurn's transaction.
 func (s *Store) CountTurns(ctx context.Context, conversationID string) (int, error) {
-	id, err := parseUUID("id", conversationID)
+	id, err := db.ParseUUID("id", conversationID)
 	if err != nil {
 		return 0, fmt.Errorf("count turns: %w", err)
 	}
@@ -287,7 +291,7 @@ func (s *Store) LoadHistory(ctx context.Context, conversationID string) ([]llm.M
 // loadTurns fetches the ordered Turn projections, rehydrating sidecar-spilled
 // content from disk. Shared by LoadHistory and the context ladder.
 func (s *Store) loadTurns(ctx context.Context, conversationID string) ([]Turn, error) {
-	id, err := parseUUID("conversation_id", conversationID)
+	id, err := db.ParseUUID("conversation_id", conversationID)
 	if err != nil {
 		return nil, fmt.Errorf("load turns: %w", err)
 	}
@@ -316,7 +320,7 @@ func (s *Store) loadRecentTurns(
 	conversationID string,
 	hardCap int,
 ) ([]Turn, error) {
-	id, err := parseUUID("conversation_id", conversationID)
+	id, err := db.ParseUUID("conversation_id", conversationID)
 	if err != nil {
 		return nil, fmt.Errorf("load recent turns: %w", err)
 	}
@@ -473,7 +477,7 @@ func normalizeSearchLimit(limit int) int32 {
 // as an error the caller may log), NOT a rolled-back delete — the boot orphan scan
 // reconciles a leftover dir at next start (SPEC Req#12).
 func (s *Store) Delete(ctx context.Context, conversationID string) error {
-	id, err := parseUUID("id", conversationID)
+	id, err := db.ParseUUID("id", conversationID)
 	if err != nil {
 		return fmt.Errorf("delete conversation: %w", err)
 	}

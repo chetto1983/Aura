@@ -14,8 +14,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const postgresTextNULReplacement = "[NUL]"
-
 // conversationFromRow projects a generated conversations row onto the domain type,
 // converting the pgtype wrappers (Pitfall 5) at the boundary: pgtype.Text title ->
 // (TitleSet, Title), pgtype.Numeric total_cost_usd -> float64.
@@ -134,13 +132,6 @@ func (s *Store) maybeSpill(conversationID string, seq int, content string) (pgty
 	return pgtype.Text{}, pgtype.Text{String: path, Valid: true}, nil
 }
 
-func postgresTextSafe(s string) string {
-	if !strings.ContainsRune(s, '\x00') {
-		return s
-	}
-	return strings.ReplaceAll(s, "\x00", postgresTextNULReplacement)
-}
-
 // turnSidecarPath builds the validated <run_dir>/conversations/<id>/<seq>.content
 // path, rejecting traversal-shaped ids BEFORE filepath.Join (T-04-13, mirrors
 // tools/result.go sidecarPath).
@@ -196,16 +187,6 @@ func validateID(kind, id string) error {
 		}
 	}
 	return nil
-}
-
-// parseUUID converts a canonical UUID string into the pgtype.UUID the generated
-// queries expect (mirrors internal/identity.parseUUID + internal/askuser).
-func parseUUID(field, s string) (pgtype.UUID, error) {
-	u, err := uuid.Parse(s)
-	if err != nil {
-		return pgtype.UUID{}, fmt.Errorf("invalid %s %q: %w", field, s, err)
-	}
-	return pgtype.UUID{Bytes: u, Valid: true}, nil
 }
 
 // decodeToolCalls unmarshals the tool_calls jsonb into []llm.ToolCall. A separate

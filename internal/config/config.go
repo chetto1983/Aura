@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 
+	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/envutil"
 	"github.com/chetto1983/aura/internal/idroot"
@@ -423,7 +424,7 @@ func loadBase() *Config {
 		Profile:   ParseProfile(os.Getenv("AURA_PROFILE")),
 		Retention: loadRetentionConfig(ParseProfile(os.Getenv("AURA_PROFILE"))),
 
-		ConversationTurnCapBytes:   envutil.IntDefault("AURA_CONVERSATION_TURN_CAP_BYTES", 65536),
+		ConversationTurnCapBytes:   envutil.IntDefault("AURA_CONVERSATION_TURN_CAP_BYTES", conversations.DefaultTurnCapBytes),
 		ContextToolEvictAfterTurns: envutil.IntDefault("AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS", 10),
 		HistoryHardCapTurns:        envutil.IntDefault("AURA_HISTORY_HARD_CAP_TURNS", 50),
 		RunDirWarnThresholdBytes:   envutil.IntDefault("AURA_RUN_DIR_WARN_THRESHOLD_BYTES", 1073741824),

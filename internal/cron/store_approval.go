@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 )
 
@@ -34,7 +35,7 @@ func (s *Store) ListDueApprovalReminders(ctx context.Context, cutoff time.Time, 
 // at most once per cadence. Stamped after EVERY attempt (delivered or not) — Amendment
 // #92 point 4 — so a permanently-failing channel cannot spam the tick.
 func (s *Store) MarkApprovalReminded(ctx context.Context, id string) error {
-	u, err := parseUUID(id)
+	u, err := db.ParseUUID("uuid", id)
 	if err != nil {
 		return err
 	}

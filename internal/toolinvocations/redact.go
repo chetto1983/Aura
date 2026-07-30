@@ -2,8 +2,9 @@ package toolinvocations
 
 import (
 	"regexp"
-	"strings"
 	"unicode/utf8"
+
+	"github.com/chetto1983/aura/internal/db"
 )
 
 // WR-02: the append-only aura.tool_invocations ledger captures the VERBATIM tool
@@ -35,7 +36,6 @@ const (
 	ResultPreviewCapBytes = 2 * 1024
 
 	redactedPlaceholder = "[REDACTED]"
-	nulReplacement      = "[NUL]"
 	// capMarker is appended when a value is truncated to its byte cap, so a reader
 	// can tell a capped value from one that happened to end at the boundary.
 	capMarker = "…[capped]"
@@ -83,18 +83,11 @@ func RedactForLedger(s string, capBytes int) string {
 	if s == "" {
 		return ""
 	}
-	capped := capUTF8(postgresTextSafe(s), capBytes)
+	capped := capUTF8(db.PostgresTextSafe(s), capBytes)
 	for _, p := range secretPatterns {
 		capped = p.re.ReplaceAllString(capped, redactedPlaceholder)
 	}
 	return capped
-}
-
-func postgresTextSafe(s string) string {
-	if !strings.ContainsRune(s, '\x00') {
-		return s
-	}
-	return strings.ReplaceAll(s, "\x00", nulReplacement)
 }
 
 // capUTF8 truncates s to at most capBytes bytes WITHOUT splitting a multi-byte

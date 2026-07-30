@@ -162,7 +162,7 @@ func TestAppendTurn_AtomicRollback(t *testing.T) {
 
 	before := countTurns(t, pool, convID)
 
-	id, _ := parseUUID("id", convID)
+	id, _ := db.ParseUUID("id", convID)
 	injected := errors.New("injected failure between INSERT and UPDATE")
 	err := db.WithTx(ctx, pool, func(q *sqlc.Queries) error {
 		if ierr := q.InsertConversationTurn(ctx, sqlc.InsertConversationTurnParams{

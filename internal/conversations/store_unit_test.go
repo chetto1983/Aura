@@ -193,8 +193,8 @@ func TestParseTiktokenBPE_Malformed(t *testing.T) {
 func TestNewStore_DefaultCap(t *testing.T) {
 	t.Parallel()
 	s := New(nil, Config{RunDir: "/x", TurnCapBytes: 0})
-	if s.turnCapBytes != 65536 {
-		t.Errorf("zero cap must fall back to 65536, got %d", s.turnCapBytes)
+	if s.turnCapBytes != DefaultTurnCapBytes {
+		t.Errorf("zero cap must fall back to %d, got %d", DefaultTurnCapBytes, s.turnCapBytes)
 	}
 }
 

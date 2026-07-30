@@ -117,11 +117,11 @@ type InsertParams struct {
 // as text — NOT a uuid (CR-01): the swarm report carries no uuid for a model to relay,
 // so parsing one here would fail the documented happy path.
 func (s *Store) InsertTx(ctx context.Context, q *sqlc.Queries, p InsertParams) error {
-	token, err := parseUUID("token", p.Token)
+	token, err := db.ParseUUID("token", p.Token)
 	if err != nil {
 		return fmt.Errorf("insert paused state: %w", err)
 	}
-	convID, err := parseUUID("conversation_id", p.ConversationID)
+	convID, err := db.ParseUUID("conversation_id", p.ConversationID)
 	if err != nil {
 		return fmt.Errorf("insert paused state: %w", err)
 	}
@@ -157,7 +157,7 @@ func (s *Store) Insert(ctx context.Context, p InsertParams) error {
 
 // GetByToken fetches one pause by token, mapping a missing row to ErrPauseNotFound.
 func (s *Store) GetByToken(ctx context.Context, token string) (Pending, error) {
-	id, err := parseUUID("token", token)
+	id, err := db.ParseUUID("token", token)
 	if err != nil {
 		return Pending{}, fmt.Errorf("get paused state: %w", err)
 	}
@@ -176,7 +176,7 @@ func (s *Store) GetByToken(ctx context.Context, token string) (Pending, error) {
 // tiebreaker is mandatory: rows inserted in one tx share created_at = now()
 // (RESEARCH Pitfall 4), so without it the order would be non-deterministic.
 func (s *Store) ListPending(ctx context.Context, conversationID string) ([]Pending, error) {
-	convID, err := parseUUID("conversation_id", conversationID)
+	convID, err := db.ParseUUID("conversation_id", conversationID)
 	if err != nil {
 		return nil, fmt.Errorf("list pending: %w", err)
 	}
@@ -275,7 +275,7 @@ func (s *Store) ListRecent(ctx context.Context, limit int) ([]Record, error) {
 // claim a pause in the SAME tx as the resume-answer turn append (D-03), so a claim and
 // its answer commit all-or-nothing.
 func (s *Store) MarkResumedTx(ctx context.Context, q *sqlc.Queries, token string, ans ResumeAnswer) error {
-	id, err := parseUUID("token", token)
+	id, err := db.ParseUUID("token", token)
 	if err != nil {
 		return fmt.Errorf("mark resumed: %w", err)
 	}
@@ -321,7 +321,7 @@ func (s *Store) MarkResumedBatchTx(ctx context.Context, q *sqlc.Queries, answers
 	}
 	sort.Strings(tokens)
 	for _, token := range tokens {
-		id, err := parseUUID("token", token)
+		id, err := db.ParseUUID("token", token)
 		if err != nil {
 			return fmt.Errorf("mark resumed batch: %w", err)
 		}
@@ -357,7 +357,7 @@ func (s *Store) MarkResumedBatch(ctx context.Context, answers map[string]ResumeA
 // open pending for a conversation with the auto-terminated marker, atomically. It
 // leaves zero resumed_at IS NULL rows for that conversation.
 func (s *Store) AutoResolveForConversation(ctx context.Context, conversationID string) error {
-	convID, err := parseUUID("conversation_id", conversationID)
+	convID, err := db.ParseUUID("conversation_id", conversationID)
 	if err != nil {
 		return fmt.Errorf("auto-resolve: %w", err)
 	}
@@ -428,14 +428,4 @@ func decodeResumedAnswer(token string, raw []byte) (string, error) {
 		return "", fmt.Errorf("decode resumed_answer for %s: %w", token, err)
 	}
 	return ans.Content, nil
-}
-
-// parseUUID converts a canonical UUID string into the pgtype.UUID the generated
-// queries expect (mirrors internal/identity.parseUUID).
-func parseUUID(field, s string) (pgtype.UUID, error) {
-	u, err := uuid.Parse(s)
-	if err != nil {
-		return pgtype.UUID{}, fmt.Errorf("invalid %s %q: %w", field, s, err)
-	}
-	return pgtype.UUID{Bytes: u, Valid: true}, nil
 }

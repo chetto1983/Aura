@@ -34,10 +34,7 @@ func TestScoring(t *testing.T) {
 			{"reminder every_hour = Normal (+1)", TaskArgs{Kind: "reminder", ScheduleKind: "every_hour"}, Normal},
 			{"agent_job every_minute = Risky (+1)", TaskArgs{Kind: "agent_job", ScheduleKind: "every_minute"}, Risky},
 			{"agent_job silent = Risky (+1)", TaskArgs{Kind: "agent_job", ScheduleKind: "daily", Silent: true}, Risky},
-			{"agent_job reasoning tier = Risky (+1)", TaskArgs{Kind: "agent_job", ScheduleKind: "daily", AgentTier: "reasoning"}, Risky},
-			{"agent_job worker tier = Normal (no bump)", TaskArgs{Kind: "agent_job", ScheduleKind: "daily", AgentTier: "worker"}, Normal},
-			{"agent_job chat tier = Normal (no bump)", TaskArgs{Kind: "agent_job", ScheduleKind: "daily", AgentTier: "chat"}, Normal},
-			{"agent_job silent + every_minute saturates to Destructive", TaskArgs{Kind: "agent_job", ScheduleKind: "every_minute", Silent: true, AgentTier: "reasoning"}, Destructive},
+			{"agent_job silent + every_minute saturates to Destructive", TaskArgs{Kind: "agent_job", ScheduleKind: "every_minute", Silent: true}, Destructive},
 			{"agent_job destructive payload + modifiers stays Destructive", TaskArgs{Kind: "agent_job", ScheduleKind: "every_minute", Silent: true, Payload: []byte("rm -rf")}, Destructive},
 		}
 		for _, tc := range cases {

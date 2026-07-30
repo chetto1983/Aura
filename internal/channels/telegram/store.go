@@ -82,7 +82,7 @@ type ConsumeParams struct {
 
 // InsertPending persists one pending onboarding token (UX-03 mint side).
 func (s *Store) InsertPending(ctx context.Context, p InsertPendingParams) error {
-	idID, err := parseUUID("identity_id", p.IdentityID)
+	idID, err := db.ParseUUID("identity_id", p.IdentityID)
 	if err != nil {
 		return fmt.Errorf("insert telegram setup pending: %w", err)
 	}
@@ -186,7 +186,7 @@ func (s *Store) GetAccountByTelegramID(ctx context.Context, telegramUserID int64
 // use a single errors.Is(err, pgx.ErrNoRows) branch to mean "not my user" for both
 // the no-account case AND the 'local' case (Pitfall 6), never surfacing an error.
 func (s *Store) GetAccountByIdentity(ctx context.Context, identityID string) (Account, error) {
-	idID, err := parseUUID("identity_id", identityID)
+	idID, err := db.ParseUUID("identity_id", identityID)
 	if err != nil {
 		return Account{}, fmt.Errorf("get telegram account by identity %q: %w", identityID, pgx.ErrNoRows)
 	}
@@ -247,16 +247,6 @@ func accountFromRow(r sqlc.AuraTelegramAccounts) Account {
 // boundary discipline).
 func textOrNull(s string) pgtype.Text {
 	return pgtype.Text{String: s, Valid: s != ""}
-}
-
-// parseUUID converts a canonical UUID string into the pgtype.UUID the generated
-// queries expect (mirrors internal/identity.parseUUID / askuser.parseUUID).
-func parseUUID(field, s string) (pgtype.UUID, error) {
-	u, err := uuid.Parse(s)
-	if err != nil {
-		return pgtype.UUID{}, fmt.Errorf("invalid %s %q: %w", field, s, err)
-	}
-	return pgtype.UUID{Bytes: u, Valid: true}, nil
 }
 
 // isUniqueViolation classifies a pgx error as SQLSTATE 23505 via errors.As +

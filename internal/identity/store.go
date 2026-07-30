@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"regexp"
 
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -109,7 +110,7 @@ func (s *Store) GetIdentityByName(ctx context.Context, name string) (Identity, e
 // GetIdentityByID fetches one identity by UUID. A missing row is reported as
 // ErrIdentityNotFound (wrapped) rather than the raw pgx.ErrNoRows.
 func (s *Store) GetIdentityByID(ctx context.Context, identityID string) (Identity, error) {
-	id, err := parseUUID(identityID)
+	id, err := db.ParseUUID("identity id", identityID)
 	if err != nil {
 		return Identity{}, fmt.Errorf("get identity by id: %w", err)
 	}
@@ -137,7 +138,7 @@ func (s *Store) DeleteIdentity(ctx context.Context, name string) error {
 // the exact capability. The generated query does the wildcard-or-exact match in
 // SQL; only a real DB failure returns a non-nil error.
 func (s *Store) HasCapability(ctx context.Context, identityID, capability string) (bool, error) {
-	id, err := parseUUID(identityID)
+	id, err := db.ParseUUID("identity id", identityID)
 	if err != nil {
 		return false, fmt.Errorf("has capability: %w", err)
 	}
@@ -153,7 +154,7 @@ func (s *Store) HasCapability(ctx context.Context, identityID, capability string
 // the D-06 capability picker) is the handler's job, not the store's. An identity
 // with no grants yields an empty slice; an invalid UUID is a wrapped error.
 func (s *Store) ListCapabilities(ctx context.Context, identityID string) ([]string, error) {
-	id, err := parseUUID(identityID)
+	id, err := db.ParseUUID("identity id", identityID)
 	if err != nil {
 		return nil, fmt.Errorf("list capabilities: %w", err)
 	}
@@ -224,17 +225,7 @@ func (s *Store) validateGrantInput(identityID, capability string) (pgtype.UUID, 
 	if err := ValidateCapabilityName(capability); err != nil {
 		return pgtype.UUID{}, err
 	}
-	return parseUUID(identityID)
-}
-
-// parseUUID converts a canonical UUID string into the pgtype.UUID the generated
-// queries expect.
-func parseUUID(s string) (pgtype.UUID, error) {
-	u, err := uuid.Parse(s)
-	if err != nil {
-		return pgtype.UUID{}, fmt.Errorf("invalid identity id %q: %w", s, err)
-	}
-	return pgtype.UUID{Bytes: u, Valid: true}, nil
+	return db.ParseUUID("identity id", identityID)
 }
 
 // isUniqueViolation classifies a pgx error as SQLSTATE 23505 via errors.As +

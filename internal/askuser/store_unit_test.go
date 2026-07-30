@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -54,11 +55,11 @@ func TestDecodeResumedAnswerRejectsNonObject(t *testing.T) {
 }
 
 func TestFromRowCarriesResumeContext(t *testing.T) {
-	tok, err := parseUUID("token", "11111111-1111-1111-1111-111111111111")
+	tok, err := db.ParseUUID("token", "11111111-1111-1111-1111-111111111111")
 	if err != nil {
 		t.Fatal(err)
 	}
-	conv, err := parseUUID("conversation_id", "22222222-2222-2222-2222-222222222222")
+	conv, err := db.ParseUUID("conversation_id", "22222222-2222-2222-2222-222222222222")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,11 +80,11 @@ func TestFromRowCarriesResumeContext(t *testing.T) {
 // TestParseUUID_RejectsMalformed covers the boundary parse failure each Store
 // method funnels through before any DB round-trip.
 func TestParseUUID_RejectsMalformed(t *testing.T) {
-	if _, err := parseUUID("token", "not-a-uuid"); err == nil {
+	if _, err := db.ParseUUID("token", "not-a-uuid"); err == nil {
 		t.Fatal("parseUUID(bad): want error, got nil")
 	}
 	good := "00000000-0000-0000-0000-000000000001"
-	pg, err := parseUUID("token", good)
+	pg, err := db.ParseUUID("token", good)
 	if err != nil {
 		t.Fatalf("parseUUID(good): %v", err)
 	}

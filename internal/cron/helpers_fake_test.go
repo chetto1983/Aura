@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -123,14 +124,14 @@ func TestUUIDHelpers(t *testing.T) {
 
 	// parseUUID: valid string round-trips; invalid errors.
 	const valid = "11111111-1111-1111-1111-111111111111"
-	pu, err := parseUUID(valid)
+	pu, err := db.ParseUUID("uuid", valid)
 	if err != nil || !pu.Valid {
 		t.Fatalf("parseUUID(valid) = %#v, %v", pu, err)
 	}
 	if uuid.UUID(pu.Bytes).String() != valid {
 		t.Fatalf("parseUUID round-trip mismatch: %s", uuid.UUID(pu.Bytes).String())
 	}
-	if _, err := parseUUID("not-a-uuid"); err == nil {
+	if _, err := db.ParseUUID("uuid", "not-a-uuid"); err == nil {
 		t.Fatal("parseUUID must reject a malformed string")
 	}
 

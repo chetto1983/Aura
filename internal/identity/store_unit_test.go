@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
@@ -92,7 +93,7 @@ func TestParseUUID(t *testing.T) {
 	t.Run("valid round-trips", func(t *testing.T) {
 		t.Parallel()
 		const want = "00000000-0000-0000-0000-000000000001"
-		u, err := parseUUID(want)
+		u, err := db.ParseUUID("identity id", want)
 		if err != nil {
 			t.Fatalf("parseUUID: %v", err)
 		}
@@ -102,7 +103,7 @@ func TestParseUUID(t *testing.T) {
 	})
 	t.Run("invalid errors", func(t *testing.T) {
 		t.Parallel()
-		if _, err := parseUUID("nope"); err == nil {
+		if _, err := db.ParseUUID("identity id", "nope"); err == nil {
 			t.Fatal("parseUUID(nope): want error, got nil")
 		}
 	})

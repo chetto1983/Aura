@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/pkoukk/tiktoken-go"
@@ -149,7 +150,7 @@ type rotEmitter interface {
 
 // insertContextRotEvent records one L2.5 hard-drop audit row (Store impl).
 func (s *Store) insertContextRotEvent(ctx context.Context, conversationID string, pairsDropped, before, after int) error {
-	id, err := parseUUID("conversation_id", conversationID)
+	id, err := db.ParseUUID("conversation_id", conversationID)
 	if err != nil {
 		return fmt.Errorf("context rot event: %w", err)
 	}
@@ -182,7 +183,7 @@ type RotEvent struct {
 // migration — read-only projection at the pgtype boundary). A malformed id is a
 // parse error the caller maps to a clean 404.
 func (s *Store) ListContextRotEvents(ctx context.Context, conversationID string) ([]RotEvent, error) {
-	id, err := parseUUID("conversation_id", conversationID)
+	id, err := db.ParseUUID("conversation_id", conversationID)
 	if err != nil {
 		return nil, fmt.Errorf("list context rot events: %w", err)
 	}

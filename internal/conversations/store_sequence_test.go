@@ -8,6 +8,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/pgnumeric"
@@ -84,7 +85,7 @@ func TestAppendAssistantTurnWithCacheMetric_AutoSeqAllocatesMetricSeq(t *testing
 	convID := newConversation(t, s)
 	ctx := context.Background()
 
-	id, err := parseUUID("conversation_id", convID)
+	id, err := db.ParseUUID("conversation_id", convID)
 	if err != nil {
 		t.Fatalf("parse conv id: %v", err)
 	}

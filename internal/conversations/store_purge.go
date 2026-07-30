@@ -14,7 +14,7 @@ import (
 // before the database transaction leaves rows that identify every remaining tree,
 // while repeating a successful directory removal is harmless.
 func (s *Store) PurgeConversations(ctx context.Context, identityID string) error {
-	owner, err := parseUUID("identity_id", identityID)
+	owner, err := db.ParseUUID("identity_id", identityID)
 	if err != nil {
 		return fmt.Errorf("purge conversations: %w", err)
 	}

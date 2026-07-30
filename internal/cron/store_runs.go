@@ -22,7 +22,7 @@ import (
 // so the INSERT shares the advisory-lock session (claim.go). It mirrors InsertRun
 // but binds the generated query to conn instead of the pool.
 func (s *Store) insertRunOnConn(ctx context.Context, conn *pgxpool.Conn, taskID string, stepBudget int) (Run, error) {
-	tu, err := parseUUID(taskID)
+	tu, err := db.ParseUUID("uuid", taskID)
 	if err != nil {
 		return Run{}, fmt.Errorf("insert run on conn: %w", err)
 	}
@@ -58,7 +58,7 @@ func (s *Store) setMissedSinceOnConn(ctx context.Context, conn *pgxpool.Conn, ru
 // GetRun fetches one run by id. A missing row is ErrTaskNotFound (wrapped) —
 // reusing the package's not-found sentinel rather than a run-specific one.
 func (s *Store) GetRun(ctx context.Context, id string) (Run, error) {
-	u, err := parseUUID(id)
+	u, err := db.ParseUUID("uuid", id)
 	if err != nil {
 		return Run{}, fmt.Errorf("get run: %w", err)
 	}
@@ -82,7 +82,7 @@ const defaultRunHistoryLimit = 25
 // int32 range so an out-of-range page never wraps negative (parity with DueTasks /
 // SweepDueNotifications, CodeQL go/incorrect-integer-conversion). It mutates nothing.
 func (s *Store) ListRunsForTask(ctx context.Context, taskID string, limit, offset int) ([]Run, error) {
-	tu, err := parseUUID(taskID)
+	tu, err := db.ParseUUID("uuid", taskID)
 	if err != nil {
 		return nil, fmt.Errorf("list runs for task: %w", err)
 	}
@@ -190,7 +190,7 @@ func (s *Store) ScanStaleRuns(ctx context.Context, staleSeconds float64) ([]Stal
 // InsertPendingNotification persists a notification that must be delivered by a
 // later scheduler sweep: either a quiet-hours defer or a failed MCP self-send.
 func (s *Store) InsertPendingNotification(ctx context.Context, p InsertPendingNotificationParams) (PendingNotification, error) {
-	runID, err := parseUUID(p.RunID)
+	runID, err := db.ParseUUID("uuid", p.RunID)
 	if err != nil {
 		return PendingNotification{}, fmt.Errorf("insert pending notification: %w", err)
 	}
@@ -254,7 +254,7 @@ func (s *Store) SweepDueNotifications(ctx context.Context, attemptBound, limit i
 
 // MarkNotificationDelivered records a successful sweep delivery.
 func (s *Store) MarkNotificationDelivered(ctx context.Context, id string) error {
-	u, err := parseUUID(id)
+	u, err := db.ParseUUID("uuid", id)
 	if err != nil {
 		return fmt.Errorf("mark notification delivered: %w", err)
 	}
@@ -268,7 +268,7 @@ func (s *Store) MarkNotificationDelivered(ctx context.Context, id string) error 
 // retry counter. Once attempts reaches the dispatcher bound, the sweep stops
 // re-selecting the row.
 func (s *Store) MarkNotificationFailed(ctx context.Context, id, lastErr string) error {
-	u, err := parseUUID(id)
+	u, err := db.ParseUUID("uuid", id)
 	if err != nil {
 		return fmt.Errorf("mark notification failed: %w", err)
 	}
@@ -282,7 +282,7 @@ func (s *Store) MarkNotificationFailed(ctx context.Context, id, lastErr string) 
 // it stays in agent_job_runs forever (no DELETE grant) as the repudiation trail for
 // a run whose worker died mid-flight.
 func (s *Store) MarkUnknownRecovery(ctx context.Context, runID string) error {
-	u, err := parseUUID(runID)
+	u, err := db.ParseUUID("uuid", runID)
 	if err != nil {
 		return fmt.Errorf("mark unknown_recovery: %w", err)
 	}

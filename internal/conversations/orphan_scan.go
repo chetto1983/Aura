@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -132,7 +133,7 @@ func scanConversationOrphans(ctx context.Context, q *sqlc.Queries, runDir string
 // sidecar against an unknown/partial set. Per-entry rm/lstat failures are WARN-logged
 // and recovered next scan (the same posture as removeOrphan).
 func reconcileLiveConversationSidecars(ctx context.Context, q *sqlc.Queries, dir, conversationID string) error {
-	id, err := parseUUID("id", conversationID)
+	id, err := db.ParseUUID("id", conversationID)
 	if err != nil {
 		return nil // validateID already passed upstream; a non-uuid here cannot be a live row
 	}
@@ -205,7 +206,7 @@ func parseContentSeq(name string) (int, bool) {
 // conversationExists reports whether a conversations row exists for the id. A
 // missing row (pgx.ErrNoRows) is "does not exist", not an error.
 func conversationExists(ctx context.Context, q *sqlc.Queries, conversationID string) (bool, error) {
-	id, err := parseUUID("id", conversationID)
+	id, err := db.ParseUUID("id", conversationID)
 	if err != nil {
 		return false, nil // unparseable → cannot be a live row → treat as orphan
 	}

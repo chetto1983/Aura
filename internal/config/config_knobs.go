@@ -17,6 +17,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/chetto1983/aura/internal/conversations"
 )
 
 // KnobKind classifies a KnobSpec so the generic re-parse pass can pick the right
@@ -91,7 +93,7 @@ func knobRegistry() []KnobSpec {
 
 		// --- Tier B: int/bool reliability knobs read in internal/config (F-016 surface) ---
 		{Name: "AURA_CONTEXT_PREVIEW_CAP_BYTES", Kind: KindInt, Default: "30000"},
-		{Name: "AURA_CONVERSATION_TURN_CAP_BYTES", Kind: KindInt, Default: "65536"},
+		{Name: "AURA_CONVERSATION_TURN_CAP_BYTES", Kind: KindInt, Default: strconv.Itoa(conversations.DefaultTurnCapBytes)},
 		{Name: "AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS", Kind: KindInt, Default: "10"},
 		{Name: "AURA_HISTORY_HARD_CAP_TURNS", Kind: KindInt, Default: "50"},
 		{Name: "AURA_RUN_DIR_WARN_THRESHOLD_BYTES", Kind: KindInt, Default: "1073741824"},

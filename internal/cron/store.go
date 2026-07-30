@@ -166,7 +166,7 @@ func (s *Store) CreateTask(ctx context.Context, p CreateTaskParams) (Task, error
 
 // GetTask fetches one task by id. A missing row is ErrTaskNotFound (wrapped).
 func (s *Store) GetTask(ctx context.Context, id string) (Task, error) {
-	u, err := parseUUID(id)
+	u, err := db.ParseUUID("uuid", id)
 	if err != nil {
 		return Task{}, fmt.Errorf("get task: %w", err)
 	}
@@ -196,7 +196,7 @@ func (s *Store) ListActiveTasks(ctx context.Context) ([]Task, error) {
 // CancelTask soft-cancels a task (status='cancelled'). Cancelling an absent id is
 // a no-op (the UPDATE affects zero rows, no error).
 func (s *Store) CancelTask(ctx context.Context, id string) error {
-	u, err := parseUUID(id)
+	u, err := db.ParseUUID("uuid", id)
 	if err != nil {
 		return fmt.Errorf("cancel task: %w", err)
 	}
@@ -208,7 +208,7 @@ func (s *Store) CancelTask(ctx context.Context, id string) error {
 
 // UpdateNextRunAt advances a task's next fire (post-run reschedule).
 func (s *Store) UpdateNextRunAt(ctx context.Context, id string, next time.Time) error {
-	u, err := parseUUID(id)
+	u, err := db.ParseUUID("uuid", id)
 	if err != nil {
 		return fmt.Errorf("update next_run_at: %w", err)
 	}
@@ -220,7 +220,7 @@ func (s *Store) UpdateNextRunAt(ctx context.Context, id string, next time.Time) 
 
 // InsertRun opens a new running agent_job_runs row for taskID.
 func (s *Store) InsertRun(ctx context.Context, taskID string, stepBudget int) (Run, error) {
-	tu, err := parseUUID(taskID)
+	tu, err := db.ParseUUID("uuid", taskID)
 	if err != nil {
 		return Run{}, fmt.Errorf("insert run: %w", err)
 	}
@@ -240,7 +240,7 @@ func (s *Store) InsertRun(ctx context.Context, taskID string, stepBudget int) (R
 // failure between the two never leaves a claimed task that will never fire again
 // (or a fired task with no run row). Returns the opened run.
 func (s *Store) CreateRunAndAdvance(ctx context.Context, taskID string, stepBudget int, next time.Time) (Run, error) {
-	tu, err := parseUUID(taskID)
+	tu, err := db.ParseUUID("uuid", taskID)
 	if err != nil {
 		return Run{}, fmt.Errorf("create run and advance: %w", err)
 	}
@@ -265,7 +265,7 @@ func (s *Store) CreateRunAndAdvance(ctx context.Context, taskID string, stepBudg
 // Heartbeat bumps last_heartbeat_at on a run row (called on the held conn in
 // 10-03; this Store method serves the non-held path and tests).
 func (s *Store) Heartbeat(ctx context.Context, runID string) error {
-	u, err := parseUUID(runID)
+	u, err := db.ParseUUID("uuid", runID)
 	if err != nil {
 		return fmt.Errorf("heartbeat: %w", err)
 	}
@@ -288,7 +288,7 @@ type CompleteRunParams struct {
 // UNIQUE constraint (23505); that is swallowed as ErrAlreadyRunning so an
 // at-least-once redelivery never double-records a completion (SC#2 idempotency).
 func (s *Store) CompleteRun(ctx context.Context, p CompleteRunParams) error {
-	u, err := parseUUID(p.RunID)
+	u, err := db.ParseUUID("uuid", p.RunID)
 	if err != nil {
 		return fmt.Errorf("complete run: %w", err)
 	}
@@ -352,14 +352,6 @@ func runFromRow(r sqlc.AuraAgentJobRuns) Run {
 
 func newUUID() pgtype.UUID {
 	return pgtype.UUID{Bytes: uuid.Must(uuid.NewV7()), Valid: true}
-}
-
-func parseUUID(s string) (pgtype.UUID, error) {
-	u, err := uuid.Parse(s)
-	if err != nil {
-		return pgtype.UUID{}, fmt.Errorf("invalid uuid %q: %w", s, err)
-	}
-	return pgtype.UUID{Bytes: u, Valid: true}, nil
 }
 
 func uuidOrNull(s string) pgtype.UUID {

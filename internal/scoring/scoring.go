@@ -32,7 +32,6 @@ type TaskArgs struct {
 	Kind         string // reminder | agent_job | backup_postgres | backup_neo4j
 	ScheduleKind string // oneoff | daily | every_hour | every_minute | ...
 	Silent       bool
-	AgentTier    string // worker | chat | reasoning (only for agent_job)
 	Payload      []byte // raw, scanned for destructive keywords
 }
 
@@ -112,9 +111,6 @@ func taskModifierBumps(a TaskArgs) int {
 		bumps++
 	}
 	if a.Silent {
-		bumps++
-	}
-	if a.Kind == "agent_job" && a.AgentTier == "reasoning" {
 		bumps++
 	}
 	return bumps

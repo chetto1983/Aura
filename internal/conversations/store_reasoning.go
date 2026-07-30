@@ -3,6 +3,8 @@ package conversations
 import (
 	"context"
 	"fmt"
+
+	"github.com/chetto1983/aura/internal/db"
 )
 
 // TurnReasoning is the DISPLAY-ONLY projection of one answer-shaped assistant
@@ -24,7 +26,7 @@ type TurnReasoning struct {
 // repairToolMessagePairs never drops, adds, or reorders such messages, so the two
 // ordered lists are index-aligned by construction (pinned in agui's attach tests).
 func (s *Store) ListTurnReasoning(ctx context.Context, conversationID string) ([]TurnReasoning, error) {
-	id, err := parseUUID("conversation_id", conversationID)
+	id, err := db.ParseUUID("conversation_id", conversationID)
 	if err != nil {
 		return nil, fmt.Errorf("list turn reasoning: %w", err)
 	}

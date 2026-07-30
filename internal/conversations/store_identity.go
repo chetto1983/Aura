@@ -28,11 +28,11 @@ import (
 // OR an id owned by another identity) to ErrConversationNotFound — the handler's 404 (a
 // read hides foreign existence, D-06).
 func (s *Store) GetForIdentity(ctx context.Context, conversationID, identityID string) (Conversation, error) {
-	id, err := parseUUID("id", conversationID)
+	id, err := db.ParseUUID("id", conversationID)
 	if err != nil {
 		return Conversation{}, fmt.Errorf("get conversation: %w", err)
 	}
-	owner, err := parseUUID("identity_id", identityID)
+	owner, err := db.ParseUUID("identity_id", identityID)
 	if err != nil {
 		return Conversation{}, fmt.Errorf("get conversation: %w", err)
 	}
@@ -62,7 +62,7 @@ func (s *Store) GetForIdentity(ctx context.Context, conversationID, identityID s
 // ListForIdentity returns the identity's conversations ordered by last_active_at DESC
 // (deleted rows always excluded; includeArchived adds archived rows).
 func (s *Store) ListForIdentity(ctx context.Context, identityID string, includeArchived bool) ([]Conversation, error) {
-	owner, err := parseUUID("identity_id", identityID)
+	owner, err := db.ParseUUID("identity_id", identityID)
 	if err != nil {
 		return nil, fmt.Errorf("list conversations: %w", err)
 	}
@@ -91,11 +91,11 @@ func (s *Store) ListForIdentity(ctx context.Context, identityID string, includeA
 // down its sidecar tree. It returns rows-affected: 0 = not owned (the handler splits
 // 403/404 via a pool existence probe), 1 = deleted.
 func (s *Store) DeleteForIdentity(ctx context.Context, conversationID, identityID string) (int64, error) {
-	id, err := parseUUID("id", conversationID)
+	id, err := db.ParseUUID("id", conversationID)
 	if err != nil {
 		return 0, fmt.Errorf("delete conversation: %w", err)
 	}
-	owner, err := parseUUID("identity_id", identityID)
+	owner, err := db.ParseUUID("identity_id", identityID)
 	if err != nil {
 		return 0, fmt.Errorf("delete conversation: %w", err)
 	}
@@ -123,11 +123,11 @@ func (s *Store) DeleteForIdentity(ctx context.Context, conversationID, identityI
 // VersionForIdentity returns the monotonic version advanced by every exported
 // conversation, turn, or thread-asset mutation.
 func (s *Store) VersionForIdentity(ctx context.Context, conversationID, identityID string) (int64, error) {
-	id, err := parseUUID("id", conversationID)
+	id, err := db.ParseUUID("id", conversationID)
 	if err != nil {
 		return 0, err
 	}
-	owner, err := parseUUID("identity_id", identityID)
+	owner, err := db.ParseUUID("identity_id", identityID)
 	if err != nil {
 		return 0, err
 	}
@@ -147,11 +147,11 @@ func (s *Store) VersionForIdentity(ctx context.Context, conversationID, identity
 // any in-memory or external teardown. Every snapshot writer is DB-guarded against a
 // reserved conversation, including writers in another server process.
 func (s *Store) ReserveDeleteForIdentityIfVersion(ctx context.Context, conversationID, identityID string, expected int64, reservation string) (int64, error) {
-	id, err := parseUUID("id", conversationID)
+	id, err := db.ParseUUID("id", conversationID)
 	if err != nil {
 		return 0, err
 	}
-	owner, err := parseUUID("identity_id", identityID)
+	owner, err := db.ParseUUID("identity_id", identityID)
 	if err != nil {
 		return 0, err
 	}
@@ -184,11 +184,11 @@ const ExportDeleteRecoveryGrace = 3 * time.Minute
 // ClaimDeleteTeardown crosses the irreversible boundary and leases execution
 // to one worker while the operation reservation remains the durable authority.
 func (s *Store) ClaimDeleteTeardown(ctx context.Context, conversationID, identityID, reservation, worker string, leaseExpiresAt time.Time) (int64, error) {
-	id, err := parseUUID("id", conversationID)
+	id, err := db.ParseUUID("id", conversationID)
 	if err != nil {
 		return 0, err
 	}
-	owner, err := parseUUID("identity_id", identityID)
+	owner, err := db.ParseUUID("identity_id", identityID)
 	if err != nil {
 		return 0, err
 	}
@@ -208,11 +208,11 @@ func (s *Store) ClaimDeleteTeardown(ctx context.Context, conversationID, identit
 // ReleaseDeleteLease makes a failed attempt immediately retryable without ever
 // releasing the operation reservation after teardown has started.
 func (s *Store) ReleaseDeleteLease(ctx context.Context, conversationID, identityID, reservation, worker string) (int64, error) {
-	id, err := parseUUID("id", conversationID)
+	id, err := db.ParseUUID("id", conversationID)
 	if err != nil {
 		return 0, err
 	}
-	owner, err := parseUUID("identity_id", identityID)
+	owner, err := db.ParseUUID("identity_id", identityID)
 	if err != nil {
 		return 0, err
 	}
@@ -230,11 +230,11 @@ func (s *Store) ReleaseDeleteLease(ctx context.Context, conversationID, identity
 
 // ReleaseReservedDelete removes a fence only before teardown has started.
 func (s *Store) ReleaseReservedDelete(ctx context.Context, conversationID, identityID, reservation string) (int64, error) {
-	id, err := parseUUID("id", conversationID)
+	id, err := db.ParseUUID("id", conversationID)
 	if err != nil {
 		return 0, err
 	}
-	owner, err := parseUUID("identity_id", identityID)
+	owner, err := db.ParseUUID("identity_id", identityID)
 	if err != nil {
 		return 0, err
 	}
@@ -281,11 +281,11 @@ func (s *Store) ListReservedDeletes(ctx context.Context, limit int32) ([]Reserve
 // reservation. A matching row remains while another worker is active or retryable;
 // absence means its reservation committed the delete, never a version conflict.
 func (s *Store) ConversationDeleteCompleted(ctx context.Context, conversationID, identityID, reservation string) (bool, error) {
-	id, err := parseUUID("id", conversationID)
+	id, err := db.ParseUUID("id", conversationID)
 	if err != nil {
 		return false, err
 	}
-	owner, err := parseUUID("identity_id", identityID)
+	owner, err := db.ParseUUID("identity_id", identityID)
 	if err != nil {
 		return false, err
 	}
@@ -303,11 +303,11 @@ func (s *Store) ConversationDeleteCompleted(ctx context.Context, conversationID,
 // DeleteForIdentityIfReservation is the only persistence delete that can remove a
 // reserved conversation. The token proves this lifecycle owns the committed fence.
 func (s *Store) DeleteForIdentityIfReservation(ctx context.Context, conversationID, identityID, reservation, worker string) (int64, error) {
-	id, err := parseUUID("id", conversationID)
+	id, err := db.ParseUUID("id", conversationID)
 	if err != nil {
 		return 0, err
 	}
-	owner, err := parseUUID("identity_id", identityID)
+	owner, err := db.ParseUUID("identity_id", identityID)
 	if err != nil {
 		return 0, err
 	}
@@ -337,11 +337,11 @@ func (s *Store) UpdateStatusForIdentity(ctx context.Context, conversationID, ide
 	default:
 		return 0, fmt.Errorf("update status: invalid status %q", status)
 	}
-	id, err := parseUUID("id", conversationID)
+	id, err := db.ParseUUID("id", conversationID)
 	if err != nil {
 		return 0, fmt.Errorf("update status: %w", err)
 	}
-	owner, err := parseUUID("identity_id", identityID)
+	owner, err := db.ParseUUID("identity_id", identityID)
 	if err != nil {
 		return 0, fmt.Errorf("update status: %w", err)
 	}
@@ -367,11 +367,11 @@ func (s *Store) UpdateStatusForIdentity(ctx context.Context, conversationID, ide
 // RenameForIdentity sets the conversation title only when identityID owns it. Returns
 // rows-affected (0 = not owned).
 func (s *Store) RenameForIdentity(ctx context.Context, conversationID, identityID, title string) (int64, error) {
-	id, err := parseUUID("id", conversationID)
+	id, err := db.ParseUUID("id", conversationID)
 	if err != nil {
 		return 0, fmt.Errorf("rename: %w", err)
 	}
-	owner, err := parseUUID("identity_id", identityID)
+	owner, err := db.ParseUUID("identity_id", identityID)
 	if err != nil {
 		return 0, fmt.Errorf("rename: %w", err)
 	}
@@ -401,11 +401,11 @@ func (s *Store) RenameForIdentity(ctx context.Context, conversationID, identityI
 // upstream (plan 06's two-stage governance); this method is the dumb owner-scoped writer,
 // mirroring RenameForIdentity — no schema migration (the metadata column exists since 0005).
 func (s *Store) UpdateReasoningEffortForIdentity(ctx context.Context, conversationID, identityID, effort string) (int64, error) {
-	id, err := parseUUID("id", conversationID)
+	id, err := db.ParseUUID("id", conversationID)
 	if err != nil {
 		return 0, fmt.Errorf("update reasoning effort: %w", err)
 	}
-	owner, err := parseUUID("identity_id", identityID)
+	owner, err := db.ParseUUID("identity_id", identityID)
 	if err != nil {
 		return 0, fmt.Errorf("update reasoning effort: %w", err)
 	}

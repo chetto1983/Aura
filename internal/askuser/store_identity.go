@@ -23,7 +23,7 @@ import (
 // pause across ALL of identityID's conversations, in the same total FIFO order. limit<=0
 // falls back to 100 (mirrors ListPendingAll).
 func (s *Store) ListPendingAllForIdentity(ctx context.Context, identityID string, limit int) ([]Pending, error) {
-	owner, err := parseUUID("identity_id", identityID)
+	owner, err := db.ParseUUID("identity_id", identityID)
 	if err != nil {
 		return nil, fmt.Errorf("list pending (all, identity): %w", err)
 	}
@@ -58,11 +58,11 @@ func (s *Store) ListPendingAllForIdentity(ctx context.Context, identityID string
 // Runner: a hit ⇒ the caller owns the pause (proceed); ErrPauseNotFound ⇒ the handler
 // probes unscoped existence to split 403 (a known-foreign token) from 404.
 func (s *Store) GetByTokenForIdentity(ctx context.Context, token, identityID string) (Pending, error) {
-	id, err := parseUUID("token", token)
+	id, err := db.ParseUUID("token", token)
 	if err != nil {
 		return Pending{}, fmt.Errorf("get paused state: %w", err)
 	}
-	owner, err := parseUUID("identity_id", identityID)
+	owner, err := db.ParseUUID("identity_id", identityID)
 	if err != nil {
 		return Pending{}, fmt.Errorf("get paused state: %w", err)
 	}

@@ -42,7 +42,7 @@ var CanonicalBranchID = uuid.UUID{}
 // canonical branch (the 0017 backfill produces parent_seq = seq-1) yields the linear
 // history (Pitfall 3: only body turns differ per branch; the head stays byte-identical).
 func (s *Store) CanonicalBranchLeaf(ctx context.Context, conversationID string) (int, error) {
-	id, err := parseUUID("conversation_id", conversationID)
+	id, err := db.ParseUUID("conversation_id", conversationID)
 	if err != nil {
 		return 0, fmt.Errorf("canonical branch leaf: %w", err)
 	}
@@ -61,7 +61,7 @@ func (s *Store) CanonicalBranchLeaf(ctx context.Context, conversationID string) 
 // 0 (or a seq not present) yields an empty path. The new code is ONLY the parent/branch
 // pointer walk; turnFromRow / sidecar rehydration are reused unchanged.
 func (s *Store) loadBranchTurns(ctx context.Context, conversationID string, leafSeq int) ([]Turn, error) {
-	id, err := parseUUID("conversation_id", conversationID)
+	id, err := db.ParseUUID("conversation_id", conversationID)
 	if err != nil {
 		return nil, fmt.Errorf("load branch turns: %w", err)
 	}
@@ -104,7 +104,7 @@ func (s *Store) loadRecentBranchTurns(
 	leafSeq int,
 	hardCap int,
 ) ([]Turn, error) {
-	id, err := parseUUID("conversation_id", conversationID)
+	id, err := db.ParseUUID("conversation_id", conversationID)
 	if err != nil {
 		return nil, fmt.Errorf("load recent branch turns: %w", err)
 	}
@@ -185,7 +185,7 @@ func (s *Store) LoadBranchHistory(ctx context.Context, conversationID string, le
 // turn. parentSeq <= 0 writes a NULL parent (a branch root). It validates the ids at the
 // boundary (Pitfall 5) and routes through the SetTurnBranchPointers sqlc query.
 func (s *Store) SetBranchPointers(ctx context.Context, conversationID string, seq int, branchID uuid.UUID, parentSeq int) error {
-	id, err := parseUUID("conversation_id", conversationID)
+	id, err := db.ParseUUID("conversation_id", conversationID)
 	if err != nil {
 		return fmt.Errorf("set branch pointers: %w", err)
 	}
@@ -211,7 +211,7 @@ func (s *Store) SetBranchPointers(ctx context.Context, conversationID string, se
 // picker stays hidden until an edit/regenerate forks a sibling. The order is stable
 // (canonical branch first, then by seq).
 func (s *Store) ListBranches(ctx context.Context, conversationID string) ([]Branch, error) {
-	id, err := parseUUID("conversation_id", conversationID)
+	id, err := db.ParseUUID("conversation_id", conversationID)
 	if err != nil {
 		return nil, fmt.Errorf("list branches: %w", err)
 	}
@@ -244,7 +244,7 @@ func (s *Store) ListBranches(ctx context.Context, conversationID string) ([]Bran
 // messages[0] head is unchanged by construction — only body turns differ per branch
 // (Pitfall 3 / the CAP-04 cache invariant). divergeSeq must exist (→ ErrTurnNotFound).
 func (s *Store) ForkBranch(ctx context.Context, conversationID string, divergeSeq int, role, content string) (int, uuid.UUID, error) {
-	id, err := parseUUID("conversation_id", conversationID)
+	id, err := db.ParseUUID("conversation_id", conversationID)
 	if err != nil {
 		return 0, uuid.UUID{}, fmt.Errorf("fork branch: %w", err)
 	}

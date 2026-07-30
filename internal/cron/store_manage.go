@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 )
 
@@ -45,7 +46,7 @@ func (s *Store) ListManageableTasks(ctx context.Context) ([]Task, error) {
 // ApproveTask flips a pending_approval task to active. A task that is not awaiting
 // approval (already active, cancelled, or absent) is ErrTaskNotFound.
 func (s *Store) ApproveTask(ctx context.Context, id string) error {
-	u, err := parseUUID(id)
+	u, err := db.ParseUUID("uuid", id)
 	if err != nil {
 		return fmt.Errorf("approve task: %w", err)
 	}
@@ -62,7 +63,7 @@ func (s *Store) ApproveTask(ctx context.Context, id string) error {
 // RunTaskNow advances an active task's next fire to now so the next tick claims it. A
 // non-active task (pending/cancelled/absent) is ErrTaskNotFound.
 func (s *Store) RunTaskNow(ctx context.Context, id string) error {
-	u, err := parseUUID(id)
+	u, err := db.ParseUUID("uuid", id)
 	if err != nil {
 		return fmt.Errorf("run task now: %w", err)
 	}
@@ -88,7 +89,7 @@ type UpdateTaskParams struct {
 // UpdateTask rewrites a task's schedule + payload + notify route (the cockpit edit). Only
 // an active/pending row updates; a cancelled/completed/absent task is ErrTaskNotFound.
 func (s *Store) UpdateTask(ctx context.Context, id string, p UpdateTaskParams) error {
-	u, err := parseUUID(id)
+	u, err := db.ParseUUID("uuid", id)
 	if err != nil {
 		return fmt.Errorf("update task: %w", err)
 	}

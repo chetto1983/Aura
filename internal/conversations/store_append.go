@@ -130,7 +130,7 @@ func (s *Store) AppendTurnTx(ctx context.Context, q *sqlc.Queries, p AppendTurnP
 	// Reject a would-be spill BEFORE appendTurnWrites so maybeSpill never writes a sidecar
 	// this no-cleanup tx path could orphan on rollback (WR-01). The length test mirrors
 	// maybeSpill exactly (postgresTextSafe applied, compared against turnCapBytes).
-	if len(postgresTextSafe(secret.RedactConfigured(p.Content))) > s.turnCapBytes {
+	if len(db.PostgresTextSafe(secret.RedactConfigured(p.Content))) > s.turnCapBytes {
 		return fmt.Errorf("append turn tx %s seq %d: %w", p.ConversationID, p.Seq, ErrContentSpillUnsupported)
 	}
 	turn, agg, err := s.appendTurnWrites(p)
@@ -203,7 +203,7 @@ func (s *Store) AppendAssistantTurnWithCacheMetric(ctx context.Context, p Append
 }
 
 func (s *Store) allocateTurnSeq(ctx context.Context, q *sqlc.Queries, conversationID string) (int, error) {
-	id, err := parseUUID("conversation_id", conversationID)
+	id, err := db.ParseUUID("conversation_id", conversationID)
 	if err != nil {
 		return 0, fmt.Errorf("allocate turn seq: %w", err)
 	}
@@ -221,11 +221,11 @@ func (s *Store) allocateTurnSeq(ctx context.Context, q *sqlc.Queries, conversati
 }
 
 func (s *Store) appendTurnWrites(p AppendTurnParams) (sqlc.InsertConversationTurnParams, sqlc.UpdateConversationAggregatesParams, error) {
-	convID, err := parseUUID("conversation_id", p.ConversationID)
+	convID, err := db.ParseUUID("conversation_id", p.ConversationID)
 	if err != nil {
 		return sqlc.InsertConversationTurnParams{}, sqlc.UpdateConversationAggregatesParams{}, fmt.Errorf("append turn: %w", err)
 	}
-	safeContent := postgresTextSafe(secret.RedactConfigured(p.Content))
+	safeContent := db.PostgresTextSafe(secret.RedactConfigured(p.Content))
 	content, sidecarPath, err := s.maybeSpill(p.ConversationID, p.Seq, safeContent)
 	if err != nil {
 		return sqlc.InsertConversationTurnParams{}, sqlc.UpdateConversationAggregatesParams{}, fmt.Errorf("append turn %s seq %d: %w", p.ConversationID, p.Seq, err)
@@ -248,7 +248,7 @@ func (s *Store) appendTurnWrites(p AppendTurnParams) (sqlc.InsertConversationTur
 		CachedTokens:       int32(p.CachedTokens),
 		// Display-only CoT (amendment #91): rune-bounded upstream so it never spills;
 		// NUL-scrubbed like content (model text can carry \x00, which pg text rejects).
-		Reasoning:           optionalText(postgresTextSafe(p.Reasoning)),
+		Reasoning:           optionalText(db.PostgresTextSafe(p.Reasoning)),
 		ReasoningDurationMs: optionalInt8(p.ReasoningDurationMS),
 	}
 	agg := sqlc.UpdateConversationAggregatesParams{
