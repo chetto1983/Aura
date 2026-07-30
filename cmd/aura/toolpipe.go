@@ -4,34 +4,137 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/conversations"
+	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/identityctx"
 )
 
-// runToolPipe is a NON-LLM harness for measuring Aura's tool-layer latency in
-// isolation. It builds the SAME tool registry the agent uses (buildBaseRegistry)
-// and executes NDJSON tool calls read from stdin — one JSON object per line,
-// {"tool":"fs_write","args":{...}} — printing each call's wall-clock and a total.
-// Blank lines and lines starting with '#' are ignored. It deliberately drives the
-// real tool Execute paths (fs_write, shell_exec, fs_read, …) with no model loop,
-// so the number it prints is pure tool cost, not agent-roundtrip overhead.
-func runToolPipe(_ []string) {
-	cfg := config.LoadDB()
-	reg := buildBaseRegistry(cfg, nil)
-	ctx := context.Background()
+type toolPipeRuntime struct {
+	Registry *tools.Registry
+	Context  context.Context
+	Close    func() error
+}
 
-	sc := bufio.NewScanner(os.Stdin)
-	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024) // allow large file-content args
+type toolPipeRuntimeFactory func(context.Context, *config.Config) (toolPipeRuntime, error)
+
+func runToolPipe(args []string) {
+	cfg := config.LoadDB()
+	err := runToolPipeCommand(
+		context.Background(),
+		args,
+		os.Stdin,
+		os.Stdout,
+		cfg,
+		openProductionToolPipeRuntime,
+	)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "toolpipe:", err)
+		os.Exit(exitInfra)
+	}
+}
+
+func openProductionToolPipeRuntime(ctx context.Context, cfg *config.Config) (toolPipeRuntime, error) {
+	if cfg == nil {
+		return toolPipeRuntime{}, errors.New("configuration is nil")
+	}
+	pool, err := db.Open(ctx, &cfg.DB)
+	if err != nil {
+		return toolPipeRuntime{}, fmt.Errorf("open Postgres: %w", err)
+	}
+	identityID, err := identityctx.OperatorIdentity(ctx, pool)
+	if err != nil {
+		pool.Close()
+		return toolPipeRuntime{}, fmt.Errorf("resolve operator identity: %w", err)
+	}
+	convStore := conversations.New(pool, conversations.Config{
+		RunDir:       cfg.RunDir,
+		TurnCapBytes: cfg.ConversationTurnCapBytes,
+	})
+	taskStore := newCronTaskStore(pool, convStore)
+	registry, _, mcpClosers, err := buildRegistryWithMCP(
+		ctx,
+		cfg,
+		taskStore,
+		buildSandboxRouter(cfg),
+	)
+	if err != nil {
+		pool.Close()
+		return toolPipeRuntime{}, fmt.Errorf("build production registry: %w", err)
+	}
+	return toolPipeRuntime{
+		Registry: registry,
+		Context:  identityctx.WithIdentityID(ctx, identityID),
+		Close: func() error {
+			err := closeMCPServers(mcpClosers)
+			pool.Close()
+			return err
+		},
+	}, nil
+}
+
+func runToolPipeCommand(
+	ctx context.Context,
+	args []string,
+	in io.Reader,
+	out io.Writer,
+	cfg *config.Config,
+	open toolPipeRuntimeFactory,
+) (returnErr error) {
+	manifestJSON := len(args) == 1 && args[0] == "--manifest-json"
+	if len(args) != 0 && !manifestJSON {
+		return errors.New("usage: aura toolpipe [--manifest-json]")
+	}
+	runtime, err := open(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	if runtime.Close != nil {
+		defer func() {
+			returnErr = errors.Join(returnErr, runtime.Close())
+		}()
+	}
+	if runtime.Registry == nil {
+		return errors.New("production registry is nil")
+	}
+	if runtime.Context == nil {
+		runtime.Context = ctx
+	}
+	if manifestJSON {
+		payload, err := runtime.Registry.RenderJSON()
+		if err != nil {
+			return fmt.Errorf("render production manifest: %w", err)
+		}
+		_, err = fmt.Fprintln(out, string(payload))
+		return err
+	}
+	return executeToolPipe(runtime.Context, in, out, cfg, runtime.Registry)
+}
+
+// executeToolPipe bypasses only the model loop. Registry composition, identity,
+// stores, MCP transports, routing, and tool Execute paths remain production ones.
+func executeToolPipe(
+	ctx context.Context,
+	in io.Reader,
+	out io.Writer,
+	cfg *config.Config,
+	registry *tools.Registry,
+) error {
+	sc := bufio.NewScanner(in)
+	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
 
 	var total time.Duration
 	n := 0
 	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
+		line := strings.TrimPrefix(strings.TrimSpace(sc.Text()), "\ufeff")
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
@@ -40,29 +143,47 @@ func runToolPipe(_ []string) {
 			Args json.RawMessage `json:"args"`
 		}
 		if err := json.Unmarshal([]byte(line), &call); err != nil {
-			fmt.Printf("[parse error] %v\n", err)
+			if _, writeErr := fmt.Fprintf(out, "[parse error] %v\n", err); writeErr != nil {
+				return writeErr
+			}
 			continue
 		}
-		tool, ok := reg.Get(call.Tool)
+		tool, ok := registry.Get(call.Tool)
 		if !ok {
-			fmt.Printf("[%s] UNKNOWN TOOL\n", call.Tool)
+			if _, err := fmt.Fprintf(out, "[%s] UNKNOWN TOOL\n", call.Tool); err != nil {
+				return err
+			}
 			continue
 		}
 		n++
-		tctx := tools.WithToolCallContext(ctx, "toolpipe", fmt.Sprintf("pipe-%d", n), cfg.RunDir, cfg.ToolPreviewCap)
+		tctx := tools.WithToolCallContext(
+			ctx,
+			"toolpipe",
+			fmt.Sprintf("pipe-%d", n),
+			cfg.RunDir,
+			cfg.ToolPreviewCap,
+		)
 		start := time.Now()
 		res, err := tool.Execute(tctx, []byte(call.Args))
-		dur := time.Since(start)
-		total += dur
+		duration := time.Since(start)
+		total += duration
 		if err != nil {
-			fmt.Printf("[%s] ERR %dms: %v\n", call.Tool, dur.Milliseconds(), err)
+			if _, writeErr := fmt.Fprintf(out, "[%s] ERR %dms: %v\n", call.Tool, duration.Milliseconds(), err); writeErr != nil {
+				return writeErr
+			}
 			continue
 		}
 		preview := res.Preview
 		if len(preview) > 500 {
 			preview = preview[:500] + "…"
 		}
-		fmt.Printf("[%s] OK %dms: %s\n", call.Tool, dur.Milliseconds(), preview)
+		if _, err := fmt.Fprintf(out, "[%s] OK %dms: %s\n", call.Tool, duration.Milliseconds(), preview); err != nil {
+			return err
+		}
 	}
-	fmt.Printf("=== TOTAL TOOL TIME: %dms across %d calls ===\n", total.Milliseconds(), n)
+	if err := sc.Err(); err != nil {
+		return fmt.Errorf("read toolpipe input: %w", err)
+	}
+	_, err := fmt.Fprintf(out, "=== TOTAL TOOL TIME: %dms across %d calls ===\n", total.Milliseconds(), n)
+	return err
 }
