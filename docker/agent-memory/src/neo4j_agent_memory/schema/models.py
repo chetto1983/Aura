@@ -182,66 +182,6 @@ class TraceOutcome(BaseModel):
     )
 
 
-class ConsolidationCandidate(BaseModel):
-    """A single candidate action identified by a consolidation primitive.
-
-    Used by :class:`ConsolidationReport.candidates` to describe what
-    *would* happen in a dry-run, or what *did* happen in a real run.
-    """
-
-    kind: str = Field(
-        description=(
-            "What action this represents. Examples: 'dedupe_entity_pair', "
-            "'summarize_trace', 'supersede_preference'."
-        ),
-    )
-    description: str = Field(description="Human-readable summary")
-    payload: dict[str, Any] = Field(
-        default_factory=dict,
-        description="Operation-specific details (entity IDs, trace ID, etc.)",
-    )
-    action_taken: bool = Field(
-        default=False,
-        description=(
-            "True if the consolidation actually mutated the graph, "
-            "False if dry_run was set or the candidate was below threshold."
-        ),
-    )
-
-
-class ConsolidationReport(BaseModel):
-    """Result of a consolidation primitive.
-
-    Returned by ``client.consolidation.dedupe_entities()``,
-    ``summarize_long_traces()``, etc. When ``dry_run`` is True the
-    report describes candidates only — no writes happen. When False,
-    the report records what was mutated and a corresponding
-    ``:ConsolidationRun`` audit node is created in Neo4j.
-    """
-
-    kind: str = Field(description="Consolidation kind, e.g. 'dedupe_entities'")
-    dry_run: bool = Field(
-        default=True,
-        description="True if no mutations occurred",
-    )
-    candidates: list[ConsolidationCandidate] = Field(
-        default_factory=list,
-        description="Per-candidate breakdown",
-    )
-    run_id: str | None = Field(
-        default=None,
-        description=("ID of the ``:ConsolidationRun`` audit node, set when ``dry_run=False``."),
-    )
-
-    @property
-    def candidate_count(self) -> int:
-        return len(self.candidates)
-
-    @property
-    def actions_taken(self) -> int:
-        return sum(1 for c in self.candidates if c.action_taken)
-
-
 class AdoptionLabelReport(BaseModel):
     """Per-label result of :meth:`SchemaManager.adopt_existing_graph`.
 

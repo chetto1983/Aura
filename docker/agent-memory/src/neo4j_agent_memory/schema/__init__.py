@@ -3,8 +3,6 @@
 from neo4j_agent_memory.schema.models import (
     AdoptionLabelReport,
     AdoptionReport,
-    ConsolidationCandidate,
-    ConsolidationReport,
     EntityRef,
     EntitySchemaConfig,
     EntityTypeConfig,
@@ -28,8 +26,6 @@ __all__ = [
     # Models
     "AdoptionLabelReport",
     "AdoptionReport",
-    "ConsolidationCandidate",
-    "ConsolidationReport",
     "EntityRef",
     "EntitySchemaConfig",
     "EntityTypeConfig",

@@ -50,7 +50,6 @@ if TYPE_CHECKING:
         ShortTermProtocol,
     )
     from neo4j_agent_memory.memory.buffered import BufferedWriter
-    from neo4j_agent_memory.memory.consolidation import ConsolidationMemory
     from neo4j_agent_memory.memory.eval import EvalMemory
     from neo4j_agent_memory.memory.users import UserMemory
     from neo4j_agent_memory.nams.client import NamsBackend
@@ -417,7 +416,6 @@ class MemoryClient:
         # in the common (bolt) case.
         self._users: UserMemory | Any = None
         self._buffered: BufferedWriter | Any = None
-        self._consolidation: ConsolidationMemory | Any = None
         self._eval: EvalMemory | None = None
 
     async def __aenter__(self) -> "MemoryClient":
@@ -546,11 +544,6 @@ class MemoryClient:
             max_pending=self._settings.memory.max_pending,
         )
 
-        # Consolidation primitives (dry-runnable hygiene jobs).
-        from neo4j_agent_memory.memory.consolidation import ConsolidationMemory
-
-        self._consolidation = ConsolidationMemory(self._client)
-
         # Evaluation harness.
         from neo4j_agent_memory.memory.eval import EvalMemory
 
@@ -592,7 +585,7 @@ class MemoryClient:
         * #18 — Fail-fast auth probe (one lightweight authenticated
           request) when ``nams.validate_on_connect=True``.
         * #13 — Bolt-only accessors (``users``, ``buffered``,
-          ``consolidation``, ``schema.adopt_existing_graph``) become
+          ``schema.adopt_existing_graph``) become
           ``_NamsUnsupported`` sentinels that raise ``NotSupportedError``
           on any method call.
         """
@@ -628,12 +621,6 @@ class MemoryClient:
             message="Buffered writes are bolt-only. NAMS commits writes "
             "server-side and exposes them as soon as the request returns.",
         )
-        self._consolidation = _NamsUnsupported(
-            accessor="consolidation",
-            message="Consolidation hygiene jobs are bolt-only. NAMS handles "
-            "deduplication and archival server-side.",
-        )
-
         # Evaluation harness works on both backends — it uses the public
         # protocol surface only.
         from neo4j_agent_memory.memory.eval import EvalMemory
@@ -693,7 +680,6 @@ class MemoryClient:
             self._query = None
             self._users = None
             self._buffered = None
-            self._consolidation = None
             return
 
         # Bolt path — preserved unchanged.
@@ -813,22 +799,6 @@ class MemoryClient:
         if self._eval is None:
             raise NotConnectedError("Client not connected. Use 'async with' or call connect().")
         return self._eval
-
-    @property
-    def consolidation(self) -> "ConsolidationMemory":
-        """
-        Access consolidation primitives — dry-runnable hygiene jobs:
-
-        * ``dedupe_entities()`` — entity SAME_AS merging.
-        * ``summarize_long_traces()`` — flag traces with many steps.
-        * ``detect_superseded_preferences()`` — auto-supersede near-duplicates.
-        * ``archive_expired_conversations()`` — TTL-based archival.
-
-        All default to ``dry_run=True``; pass ``dry_run=False`` to mutate.
-        """
-        if self._consolidation is None:
-            raise NotConnectedError("Client not connected. Use 'async with' or call connect().")
-        return self._consolidation
 
     @property
     def buffered(self) -> "BufferedWriter":

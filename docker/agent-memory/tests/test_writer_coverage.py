@@ -65,7 +65,6 @@ def test_every_result_affecting_writer_family_routes_through_execute_write():
             PACKAGE / "memory" / "long_term.py"
         ),
         "buffered": PACKAGE / "memory" / "buffered.py",
-        "consolidation": PACKAGE / "memory" / "consolidation.py",
         "reasoning_touched_edges": PACKAGE / "memory" / "reasoning.py",
         "user": PACKAGE / "memory" / "users.py",
     }

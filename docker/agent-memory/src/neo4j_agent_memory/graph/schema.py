@@ -93,9 +93,6 @@ class SchemaManager:
             ("tool_call_id", "ToolCall", "id"),
             # Multi-tenant (v0.4)
             ("user_identifier", "User", "identifier"),
-            # Hygiene + privacy (v0.5)
-            ("consolidation_run_id", "ConsolidationRun", "id"),
-            ("memory_read_audit_id", "MemoryReadAudit", "id"),
         ]
 
         for constraint_name, label, property_name in constraints:
@@ -140,10 +137,6 @@ class SchemaManager:
             ("trace_success_idx", "ReasoningTrace", "success"),
             ("trace_error_kind_idx", "ReasoningTrace", "error_kind"),
             ("tool_call_status_idx", "ToolCall", "status"),
-            # Hygiene (v0.5)
-            ("conversation_archived_idx", "Conversation", "archived"),
-            ("consolidation_run_kind_idx", "ConsolidationRun", "kind"),
-            ("memory_read_audit_kind_idx", "MemoryReadAudit", "kind"),
         ]
 
         for index_name, label, property_name in indexes:
@@ -382,8 +375,6 @@ class SchemaManager:
             "task_",
             "step_",
             "user_",
-            "consolidation_",
-            "memory_read_",
         ]
         return any(name.startswith(prefix) for prefix in memory_prefixes)
 

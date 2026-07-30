@@ -2,8 +2,8 @@
 
 Phase 5 of the v0.4 plan: when ``MemoryClient`` is configured with
 ``backend="nams"``, the bolt-only accessors (``client.users``,
-``client.buffered``, ``client.consolidation``, parts of
-``client.schema``) cannot be wired to real impls. Returning a sentinel
+``client.buffered``, parts of ``client.schema``) cannot be wired to real
+impls. Returning a sentinel
 :class:`_NamsUnsupported` keeps the accessor contract uniform — property
 access is harmless (allows introspection), only method calls raise
 :class:`NotSupportedError`.

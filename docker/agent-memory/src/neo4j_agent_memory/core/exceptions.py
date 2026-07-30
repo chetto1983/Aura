@@ -104,8 +104,7 @@ class NotSupportedError(MemoryError):
     Use cases:
 
     * Bolt-only features called on a NAMS-backed client
-      (e.g. ``client.consolidation.dedupe_entities()``,
-      ``client.graph``, ``client.schema.adopt_existing_graph()``).
+      (e.g. ``client.graph``, ``client.schema.adopt_existing_graph()``).
     * Platinum-tier methods called on a bolt-backed client
       (e.g. ``client.long_term.set_entity_feedback(...)``).
     * Server-declared unsupported operations (HTTP 405/501 from NAMS).

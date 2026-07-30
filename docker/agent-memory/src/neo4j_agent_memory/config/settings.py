@@ -315,26 +315,6 @@ class MemoryConfig(BaseModel):
             "blocks until a worker drains an item."
         ),
     )
-    # Conversation hygiene (v0.5)
-    conversation_ttl_days: int | None = Field(
-        default=None,
-        ge=1,
-        description=(
-            "When set, ``client.consolidation.archive_expired_conversations()``"
-            " marks Conversation nodes older than this many days as archived."
-        ),
-    )
-    # Privacy (v0.5)
-    audit_read: bool = Field(
-        default=False,
-        description=(
-            "When True, ``client.consolidation.audit_reads(...)`` records a "
-            ":MemoryReadAudit node for the supplied query string. Off by "
-            "default — auditing every read is opt-in."
-        ),
-    )
-
-
 class SearchConfig(BaseModel):
     """Search configuration."""
 
