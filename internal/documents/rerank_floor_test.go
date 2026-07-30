@@ -48,6 +48,13 @@ func TestDropBelowRelevanceFloor(t *testing.T) {
 			t.Fatal("no rerank scores means no opinion: dropping here would gate seed " +
 				"scores (Lucene, cosine, term counts) that share no scale with [0,1]")
 		}
+		degraded := []rerank.Scored{
+			{Index: 0, Score: 0, Degraded: true},
+			{Index: 1, Score: 0, Degraded: true},
+		}
+		if got := dropBelowRelevanceFloor(seeds, seeds, degraded, 0.5); len(got) != 2 {
+			t.Fatal("a failed reranker has no relevance opinion and must keep the seed set")
+		}
 	})
 
 	t.Run("a length or index mismatch never drops", func(t *testing.T) {

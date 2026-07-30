@@ -45,12 +45,13 @@ const rerankTimeout = 30 * time.Second
 // is down for an entire run logs once, not once per retrieval.
 var warnOnce sync.Once
 
-// Scored is one reranked document: its original Index in the input slice, the
-// original (untruncated) Document text, and the sidecar relevance Score.
+// Scored is one reranked document. Degraded distinguishes fail-soft identity
+// output from a successful sidecar response whose genuine relevance score is zero.
 type Scored struct {
 	Index    int
 	Document string
 	Score    float64
+	Degraded bool
 }
 
 // RerankClient calls Aura's optional OpenAI-style rerank endpoint (/v1/rerank),
@@ -140,7 +141,9 @@ func (c *RerankClient) Rerank(ctx context.Context, query string, docs []string) 
 func identity(docs []string) []Scored {
 	out := make([]Scored, 0, len(docs))
 	for i, d := range docs {
-		out = append(out, Scored{Index: i, Document: d, Score: 0})
+		out = append(out, Scored{
+			Index: i, Document: d, Score: 0, Degraded: true,
+		})
 	}
 	return out
 }

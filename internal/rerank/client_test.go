@@ -37,8 +37,12 @@ func assertIdentity(t *testing.T, got []Scored, docs []string) {
 		t.Fatalf("identity len = %d, want %d (%#v)", len(got), len(docs), got)
 	}
 	for i := range docs {
-		if got[i].Index != i || got[i].Document != docs[i] || got[i].Score != 0 {
-			t.Fatalf("identity[%d] = %#v, want {Index:%d Document:%q Score:0}", i, got[i], i, docs[i])
+		if got[i].Index != i || got[i].Document != docs[i] ||
+			got[i].Score != 0 || !got[i].Degraded {
+			t.Fatalf(
+				"identity[%d] = %#v, want {Index:%d Document:%q Score:0 Degraded:true}",
+				i, got[i], i, docs[i],
+			)
 		}
 	}
 }

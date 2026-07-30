@@ -126,6 +126,9 @@ func dropBelowRelevanceFloor(
 	}
 	keep := make(map[string]struct{}, len(scored))
 	for _, sc := range scored {
+		if sc.Degraded {
+			return ordered
+		}
 		if sc.Index < 0 || sc.Index >= len(seeds) || sc.Score < floor {
 			continue
 		}
