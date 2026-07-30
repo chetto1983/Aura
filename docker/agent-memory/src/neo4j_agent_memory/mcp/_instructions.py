@@ -20,10 +20,23 @@ that — it holds what should outlive it: facts, preferences, and the entities t
 concern. Write to it deliberately, not continuously.
 
 WHEN you learn something that should outlive this conversation:
-  A durable fact -> memory_add_fact with subject, predicate, object.
+  A durable fact -> memory_add_fact with subject, predicate, object. When the SUBJECT
+  names a person, place, organization, event or object, call memory_add_entity for it
+  FIRST, with its POLE+O type. A fact attaches to the entity its subject names only if
+  that entity already exists; nothing is minted on your behalf, because fact subjects
+  are not always names — some are identity UUIDs, and one entity per UUID would fill
+  the graph with nodes no one meant to create. So the choice is yours to make, and it
+  is the difference between a fact that is reachable by structure and a string sitting
+  beside the node it talks about: without the entity, memory_get_entity("ZOPPI SRL")
+  finds nothing even though you just stored two facts about it.
   Something about how the user wants to be treated -> memory_add_preference with a
   category, and applies_to when the preference concerns a specific person, place or
   organization, so it is reachable by structure and not only by wording.
+  Two entities that relate to each other -> memory_create_relationship with the two
+  NAMES and an UPPER_SNAKE_CASE type. This is the only tool that builds an edge between
+  entities, and edges are what make the graph answer questions a search cannot: "which
+  clients did this person handle" is a traversal, not a phrase to match. A graph of
+  entities with no relationships is a list.
 
   Do NOT record the passing shape of this conversation. If it would not matter in a
   month, it does not belong here.
@@ -33,6 +46,11 @@ WHEN you need to recall:
   memory_get_entity when you have a NAME and want what is known about it: its facts,
   its neighbours in the graph, and — importantly — any duplicates recorded under the
   same name.
+  memory_get_facts when you want the facts themselves: by exact subject, or by semantic
+  query when you do not know how the subject was worded.
+  memory_get_context when you want the assembled picture across memory types rather
+  than one lookup — it is the expensive one, so prefer a targeted search when you know
+  what you are looking for.
 
 WHEN a memory is wrong, use the verb that matches the intention. They are not
 interchangeable, and picking the wrong one loses information:
