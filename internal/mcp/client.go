@@ -88,7 +88,8 @@ type ServerConfig struct {
 // ToolAnnotations carries optional trust/action hints advertised by an MCP
 // server for one tool.
 type ToolAnnotations struct {
-	ReadOnlyHint bool `json:"readOnlyHint"`
+	ReadOnlyHint    bool  `json:"readOnlyHint"`
+	DestructiveHint *bool `json:"destructiveHint"`
 }
 
 // ToolDef is one entry from tools/list: the LLM-facing name, description, raw

@@ -49,7 +49,7 @@ func TestHTTPInitializeSessionProtocolAndListTools(t *testing.T) {
 					"name":        "echo",
 					"description": "Echo text",
 					"inputSchema": map[string]any{"type": "object"},
-					"annotations": map[string]any{"readOnlyHint": true},
+					"annotations": map[string]any{"readOnlyHint": true, "destructiveHint": false},
 				},
 			}})
 		default:
@@ -72,6 +72,9 @@ func TestHTTPInitializeSessionProtocolAndListTools(t *testing.T) {
 	}
 	if !tools[0].Annotations.ReadOnlyHint {
 		t.Fatalf("annotations = %#v, want readOnlyHint", tools[0].Annotations)
+	}
+	if tools[0].Annotations.DestructiveHint == nil || *tools[0].Annotations.DestructiveHint {
+		t.Fatalf("annotations = %#v, want explicit destructiveHint=false", tools[0].Annotations)
 	}
 	if !sawInitialized || !sawSessionHeader || !sawProtocolHeader {
 		t.Fatalf("headers/notification: initialized=%v session=%v protocol=%v", sawInitialized, sawSessionHeader, sawProtocolHeader)

@@ -42,7 +42,7 @@ func MountManagedServer(processCtx, handshakeCtx context.Context, reg *tools.Reg
 // MountManagedServerWithEgress mounts a managed server with the network policy
 // resolved by the composition root from its runtime profile.
 func MountManagedServerWithEgress(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, server mcp.ManagedServer, egress mcp.EgressPolicy) (closer func() error, names []string, err error) {
-	policy := bridgePolicy{memory: mcp.IsSharedAdminGoverned(server)}
+	policy := managedBridgePolicy(server)
 	if isStreamableHTTPManagedServer(server) {
 		return mountManagedHTTP(processCtx, handshakeCtx, reg, name, server, policy, egress)
 	}

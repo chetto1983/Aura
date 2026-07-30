@@ -48,6 +48,9 @@ func (g *Gateway) Decide(ctx context.Context, spec tools.Spec, rawArgs json.RawM
 	if g == nil || !g.profile.Strict() {
 		return Verdict{Decision: Allow, Reason: "no-op (dev/local_trusted)"}, nil
 	}
+	if spec.Destructive {
+		spec.Mutating = true
+	}
 	tier := classify(spec, rawArgs)
 	if !spec.Mutating {
 		// D-01e: a read-only tool call under a strict profile is a recorded decision-fact

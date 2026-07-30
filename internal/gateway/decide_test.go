@@ -281,6 +281,48 @@ func TestDecideDestructiveGates(t *testing.T) {
 	}
 }
 
+func TestDecideDestructiveMCPGatesWithoutBlockingOrdinaryMCPWrites(t *testing.T) {
+	tests := []struct {
+		name         string
+		spec         tools.Spec
+		wantDecision Decision
+		wantTier     scoring.RiskTier
+	}{
+		{
+			name: "external send",
+			spec: tools.Spec{
+				Name: "whatsapp__send_message", Mutating: true, Destructive: true,
+			},
+			wantDecision: Approve,
+			wantTier:     scoring.Destructive,
+		},
+		{
+			name: "reversible update",
+			spec: tools.Spec{
+				Name: "calendar__update_event", Mutating: true,
+			},
+			wantDecision: Allow,
+			wantTier:     scoring.Normal,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &fakeStore{}
+			g := New(config.ProfileSingleUserHardened, store)
+			v, err := g.Decide(WithResponder(context.Background()), tt.spec, json.RawMessage(`{}`), testKey())
+			if err != nil {
+				t.Fatalf("Decide: %v", err)
+			}
+			if v.Decision != tt.wantDecision || v.Tier != tt.wantTier {
+				t.Fatalf("verdict = %+v, want %s/%s", v, tt.wantDecision, tt.wantTier)
+			}
+			if tt.wantDecision == Allow && len(store.reserves()) != 1 {
+				t.Fatalf("ordinary mutation reservations = %d, want 1", len(store.reserves()))
+			}
+		})
+	}
+}
+
 func mustDecideArgs(t *testing.T, v any) json.RawMessage {
 	t.Helper()
 	raw, err := json.Marshal(v)

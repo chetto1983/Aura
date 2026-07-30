@@ -8,7 +8,8 @@ import (
 )
 
 type bridgePolicy struct {
-	memory bool
+	memory       bool
+	recipeSource string
 }
 
 func defaultBridgePolicy(namespace string) bridgePolicy {

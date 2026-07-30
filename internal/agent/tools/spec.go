@@ -50,6 +50,11 @@ type Spec struct {
 	// design: shell_exec is Mutating even though `ls` does not mutate, because the
 	// agent cannot know statically whether a command writes.
 	Mutating bool
+	// Destructive marks a mutating operation whose effect is destructive or
+	// externally irreversible and therefore must be withheld for operator policy.
+	// It is runtime-only. The gateway saturates it upward to Mutating so a
+	// contradictory descriptor cannot bypass the approval path.
+	Destructive bool
 	// Multiplexed marks a tool that fronts several sub-actions behind one
 	// `action`-style discriminator (skill/task/swarm_spawn). It is a descriptor
 	// HINT for the policy gateway, NOT policy itself: the gateway's boot-guard uses

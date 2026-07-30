@@ -111,6 +111,7 @@ func TestClassifyTable(t *testing.T) {
 		// approval in internal/agent/tools, which this line never touched.
 		{"shell_exec", tools.Spec{Name: "shell_exec", Mutating: true}, json.RawMessage(`{}`), scoring.Normal},
 		{"mcp_memory_write", tools.Spec{Name: "memory__memory_add_fact", Mutating: true}, json.RawMessage(`{}`), scoring.Normal},
+		{"mcp_external_send", tools.Spec{Name: "whatsapp__send_message", Mutating: true, Destructive: true}, json.RawMessage(`{}`), scoring.Destructive},
 		{"fs_read", tools.Spec{Name: "fs_read", Mutating: false}, json.RawMessage(`{}`), scoring.Safe},
 	}
 

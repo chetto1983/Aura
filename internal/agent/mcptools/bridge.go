@@ -64,18 +64,26 @@ func (b *bridgedTool) refreshSpec(d mcp.ToolDef) {
 	params, summary, description := specFieldsFromToolDef(d)
 	spec := b.Spec()
 	oldMutating := spec.Mutating
+	oldDestructive := spec.Destructive
 	oldRequired := requiredArgNames(spec.Parameters)
 	spec.Summary = summary
 	spec.Description = description
 	spec.Parameters = params
 	spec.Deferred = b.policy.defaultDeferred()
-	spec.Mutating = !d.Annotations.ReadOnlyHint
+	spec.Mutating, spec.Destructive = mcpToolRisk(b.policy, d)
 	applyMCPOperationMetadata(&spec)
 	if oldMutating != spec.Mutating {
 		slog.Warn("mcp tool mutating flag changed on reconnect",
 			"tool", spec.Name,
 			"old_mutating", oldMutating,
 			"new_mutating", spec.Mutating,
+		)
+	}
+	if oldDestructive != spec.Destructive {
+		slog.Warn("mcp tool destructive flag changed on reconnect",
+			"tool", spec.Name,
+			"old_destructive", oldDestructive,
+			"new_destructive", spec.Destructive,
 		)
 	}
 	if newRequired := requiredArgNames(params); !sameStrings(oldRequired, newRequired) {
@@ -201,13 +209,15 @@ func specFromToolDef(namespace string, d mcp.ToolDef) tools.Spec {
 
 func specFromToolDefWithPolicy(namespace string, d mcp.ToolDef, policy bridgePolicy) tools.Spec {
 	params, summary, description := specFieldsFromToolDef(d)
+	mutating, destructive := mcpToolRisk(policy, d)
 	spec := tools.Spec{
 		Name:        namespacedName(namespace, d.Name),
 		Summary:     summary,
 		Description: description,
 		Parameters:  params,
 		Deferred:    policy.defaultDeferred(),
-		Mutating:    !d.Annotations.ReadOnlyHint,
+		Mutating:    mutating,
+		Destructive: destructive,
 	}
 	applyMCPOperationMetadata(&spec)
 	return spec
