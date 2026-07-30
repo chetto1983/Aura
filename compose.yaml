@@ -539,8 +539,16 @@ services:
       # dead-lettered after 5 attempts, and the document stayed "ready" with zero
       # embeddings. Aura now caps a request by BYTES (defaultEmbeddingBatchBytes); these
       # two make sure the sidecar can accept what it sends, with room to spare.
+      # -c is PER SLOT and llama.cpp defaults to 4 of them, so it multiplies. A first
+      # attempt at 32768 asked for 131k tokens of KV, ~9 GB, which does not fit the 4 GB
+      # A2000 — and because -ngl 99 is set explicitly, llama.cpp abandoned its auto-fit
+      # ("n_gpu_layers already set by user to 99, abort") and ran on CPU at ~300 tok/s
+      # instead of failing. One slot at 8192 is ~50 MB of KV, comfortably above the 6k
+      # tokens the byte budget (defaultEmbeddingBatchBytes) can send in one request.
+      - -np
+      - "${AURA_EMBED_SLOTS:-1}"
       - -c
-      - "${AURA_EMBED_CTX:-32768}"
+      - "${AURA_EMBED_CTX:-8192}"
       - -ub
       - "${AURA_EMBED_UBATCH:-4096}"           # >= the largest SINGLE chunk: embeddings need the whole sequence in one ubatch
     ports:
