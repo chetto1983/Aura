@@ -43,6 +43,12 @@ func TestGenerateTitle_Success(t *testing.T) {
 	if !strings.Contains(req.Messages[1].Content, "refactor the budget loop") {
 		t.Errorf("title prompt must include the user turn, got %q", req.Messages[1].Content)
 	}
+	if req.ToolChoice != "none" {
+		t.Errorf("title request tool choice = %q, want none", req.ToolChoice)
+	}
+	if req.Reasoning.Effort != llm.ReasoningEffortNone {
+		t.Errorf("title request reasoning effort = %q, want none", req.Reasoning.Effort)
+	}
 }
 
 // TestGenerateTitle_StreamError: a stream error is returned (the caller leaves the
@@ -57,6 +63,24 @@ func TestGenerateTitle_StreamError(t *testing.T) {
 	}
 	if !errors.Is(err, boom) {
 		t.Errorf("error must wrap the stream failure, got %v", err)
+	}
+}
+
+func TestGenerateTitle_TerminalStreamError(t *testing.T) {
+	t.Parallel()
+	boom := errors.New("stream disconnected")
+	client := agenttest.NewFakeClient(agenttest.TextThenErr(boom, "Partial title"))
+	_, err := generateTitle(context.Background(), client, "test-model", titleHistory())
+	if !errors.Is(err, boom) {
+		t.Fatalf("generateTitle: terminal stream error = %v, want wrapped %v", err, boom)
+	}
+}
+
+func TestGenerateTitle_LengthIsIncomplete(t *testing.T) {
+	t.Parallel()
+	client := agenttest.NewFakeClient(agenttest.TextChunks("length", "Partial title"))
+	if _, err := generateTitle(context.Background(), client, "test-model", titleHistory()); err == nil {
+		t.Fatal("generateTitle: length-truncated stream must not persist a partial title")
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
@@ -42,10 +43,17 @@ func (r *Runner) maybeAutoTitle(turnCtx context.Context, convID string, history 
 		ctx, cancel := context.WithTimeout(ctx, r.titleTimeout)
 		defer cancel()
 		title, gerr := conversations.GenerateTitle(ctx, r.client, r.cfg.Model, hist)
-		if gerr != nil || title == "" {
-			return // best-effort: leave the title NULL
+		if gerr != nil {
+			slog.Warn("runner: auto-title generation failed", "conv", convID, "err", gerr)
+			return
 		}
-		_ = r.Conv.SetTitleIfNull(ctx, convID, title)
+		if title == "" {
+			slog.Warn("runner: auto-title generation returned an empty title", "conv", convID)
+			return
+		}
+		if err := r.Conv.SetTitleIfNull(ctx, convID, title); err != nil {
+			slog.Warn("runner: auto-title persistence failed", "conv", convID, "err", err)
+		}
 	})
 }
 

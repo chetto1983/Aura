@@ -48,14 +48,26 @@ func generateTitle(ctx context.Context, client llm.Client, model string, history
 		},
 		Temperature: 0.3,
 		MaxTokens:   32,
+		Reasoning:   llm.ReasoningConfig{Effort: llm.ReasoningEffortNone},
+		ToolChoice:  "none",
 	}
 	ch, err := client.Stream(ctx, req)
 	if err != nil {
 		return "", fmt.Errorf("generate title: stream: %w", err)
 	}
 	var b strings.Builder
+	var finishReason string
 	for chunk := range ch { // drain fully (interface contract)
+		if chunk.Err != nil {
+			return "", fmt.Errorf("generate title: stream: %w", chunk.Err)
+		}
 		b.WriteString(chunk.Text)
+		if chunk.FinishReason != "" {
+			finishReason = chunk.FinishReason
+		}
+	}
+	if finishReason != "stop" {
+		return "", fmt.Errorf("generate title: incomplete stream (finish_reason=%q)", finishReason)
 	}
 	title := sanitizeTitle(b.String())
 	if title == "" {
