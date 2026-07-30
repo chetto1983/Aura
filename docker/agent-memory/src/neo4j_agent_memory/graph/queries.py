@@ -1316,6 +1316,17 @@ DETACH DELETE f
 RETURN deleted_id
 """
 
+DELETE_ENTITY_RELATIONSHIP_SCOPED = """
+MATCH (a:Entity {id: $source_id})-[r]-(b:Entity {id: $target_id})
+WHERE type(r) = $relationship_type
+   OR (
+       type(r) = 'RELATED_TO'
+       AND coalesce(r.type, r.relation_type) = $relationship_type
+   )
+DELETE r
+RETURN count(r) AS removed
+"""
+
 # Entity forget is deliberately NON-cascading. Ownership is the direct HAS_ENTITY edge
 # only (a mere MENTION must not authorize deletion). We UNLINK the caller's ownership
 # edge, then delete the entity node ONLY when it is fully orphaned afterwards (no

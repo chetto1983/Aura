@@ -38,6 +38,11 @@ class _RecordingClient:
         return self._rows
 
 
+class _RelationshipClient(_RecordingClient):
+    async def execute_read(self, _query, _params=None):
+        return [{"scope_count": 1}]
+
+
 def test_forget_cuts_every_edge_that_grants_the_caller_read_scope():
     """The rule stated as a set relation, so a new scope edge cannot be silently missed."""
     granted = {rel for rel in SCOPE_GRANTING if rel in queries.ENTITY_IN_USER_SCOPE}
@@ -86,3 +91,28 @@ def test_delete_entity_reports_whether_the_node_survived():
     query, params = client.writes[0]
     assert query == queries.DELETE_ENTITY_SCOPED
     assert params == {"entity_id": str(entity_id), "user_identifier": "identity-1"}
+
+
+def test_delete_relationship_matches_the_public_semantic_type():
+    source_id = uuid4()
+    target_id = uuid4()
+    client = _RelationshipClient([{"removed": 1}])
+
+    removed = _run(
+        LongTermMemory(client).delete_relationship(
+            source_id,
+            target_id,
+            "VISITED",
+            user_identifier="identity-1",
+        )
+    )
+
+    assert removed == 1
+    query, params = client.writes[0]
+    assert "type(r) = $relationship_type" in query
+    assert "coalesce(r.type, r.relation_type)" in query
+    assert params == {
+        "source_id": str(source_id),
+        "target_id": str(target_id),
+        "relationship_type": "VISITED",
+    }

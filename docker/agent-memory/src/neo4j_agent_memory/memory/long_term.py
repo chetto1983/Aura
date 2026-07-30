@@ -4,7 +4,7 @@ import json
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import timezone, datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
@@ -2817,12 +2817,12 @@ class LongTermMemory(BaseMemory[Entity]):
             if not await self._entity_in_user_scope(endpoint, user_identifier):
                 return None
         rows = await self._client.execute_write(
-            f"""
-            MATCH (a:Entity {{id: $source_id}})-[r:`{relationship_type}`]-(b:Entity {{id: $target_id}})
-            DELETE r
-            RETURN count(r) AS removed
-            """,
-            {"source_id": str(source_id), "target_id": str(target_id)},
+            queries.DELETE_ENTITY_RELATIONSHIP_SCOPED,
+            {
+                "source_id": str(source_id),
+                "target_id": str(target_id),
+                "relationship_type": relationship_type,
+            },
         )
         return int(rows[0]["removed"]) if rows else 0
 
