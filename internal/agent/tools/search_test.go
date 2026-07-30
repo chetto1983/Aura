@@ -517,17 +517,22 @@ func TestToolSearch_EmbedSidecarDownReturnsExplicitError(t *testing.T) {
 	}
 }
 
-// TestToolSearch_NilEmbedderErrorsFreeTextButSelectWorks (Req-6 + D-02): with NO
-// embedder wired, the free-text path returns an explicit error (it has no ranker),
-// while the `select:` exact-name path still resolves tools (it needs no embedder).
-func TestToolSearch_NilEmbedderErrorsFreeTextButSelectWorks(t *testing.T) {
+// TestToolSearch_NilEmbedderUsesLexicalFallbackAndSelectWorks: every production
+// registry composition must support discovery. Without a runner-owned embedder,
+// free text uses the deterministic Summary/schema BM25 index; exact select stays
+// unchanged.
+func TestToolSearch_NilEmbedderUsesLexicalFallbackAndSelectWorks(t *testing.T) {
 	reg := NewRegistry()
 	reg.Register(bm25Tool{name: "web_fetch", desc: "retrieve a url"})
 	ts := &ToolSearch{Registry: reg} // no Embed
 	ctx := ctxWith(t, "sess-nil", "call-nil")
 
-	if _, err := ts.Execute(ctx, []byte(`{"query":"fetch a web page"}`)); err == nil {
-		t.Error("free-text query with no embedder must error (hard dependency), got nil")
+	freeText, err := ts.Execute(ctx, []byte(`{"query":"fetch a web page"}`))
+	if err != nil {
+		t.Fatalf("free-text lexical fallback failed: %v", err)
+	}
+	if !strings.Contains(freeText.Preview, "## web_fetch") {
+		t.Errorf("free-text fallback failed to resolve web_fetch: %q", freeText.Preview)
 	}
 
 	res, err := ts.Execute(ctx, []byte(`{"query":"select:web_fetch"}`))

@@ -84,6 +84,34 @@ func TestUnderscoreSpacing(t *testing.T) {
 	}
 }
 
+func TestSummaryBM25IgnoresCrossToolDescriptionContamination(t *testing.T) {
+	corpus := []Spec{
+		{
+			Name:        "document_search",
+			Summary:     "Search the user's uploaded and indexed documents.",
+			Description: "This is not for the public web; use web_search for that.",
+			Parameters:  json.RawMessage(`{"type":"object"}`),
+			Deferred:    true,
+		},
+		{
+			Name:        "web_search",
+			Summary:     "Search the current public web for prices, news, and specifications.",
+			Description: "Run a metasearch query.",
+			Parameters:  json.RawMessage(`{"type":"object"}`),
+			Deferred:    true,
+		},
+	}
+	ranked := newSummaryBM25Index(corpus).rank(
+		"web search for product specifications",
+	)
+	if len(ranked) == 0 {
+		t.Fatal("summary index returned no match")
+	}
+	if got := corpus[ranked[0].doc].Name; got != "web_search" {
+		t.Fatalf("summary index top result = %q, want web_search", got)
+	}
+}
+
 // TestSearchDocument: nested param names + descriptions are recursively indexed,
 // the output is byte-stable across repeated calls (sorted property keys), and a
 // malformed Parameters payload degrades to Name+Description without panicking.

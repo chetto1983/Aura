@@ -32,6 +32,19 @@ type schemaNode struct {
 // a query "fetch web" matches a tool named web_fetch (D-02 leverage point). On a
 // malformed Parameters payload it degrades to Name+Description — never panics.
 func searchDocument(s Spec) string {
+	return buildSearchDocument(s, s.Description)
+}
+
+// summarySearchDocument is the production no-network retrieval document. Long
+// tool descriptions contain routing cross-references to other tools, so indexing
+// them makes a disclaimer such as "not the public web; use web_search" rank the
+// wrong tool for "web search". Summary keeps the capability signal while schema
+// names/descriptions preserve argument-level discovery.
+func summarySearchDocument(s Spec) string {
+	return buildSearchDocument(s, s.Summary)
+}
+
+func buildSearchDocument(s Spec, capability string) string {
 	var parts []string
 	push := func(p string) {
 		if p = strings.TrimSpace(p); p != "" {
@@ -40,7 +53,7 @@ func searchDocument(s Spec) string {
 	}
 	push(s.Name)
 	push(strings.ReplaceAll(s.Name, "_", " "))
-	push(s.Description)
+	push(capability)
 	var node schemaNode
 	if err := json.Unmarshal(s.Parameters, &node); err == nil {
 		appendSchema(node, push)
@@ -94,6 +107,17 @@ type bm25Index struct {
 }
 
 func newBM25Index(specs []Spec) *bm25Index {
+	return newBM25IndexWithDocument(specs, searchDocument)
+}
+
+func newSummaryBM25Index(specs []Spec) *bm25Index {
+	return newBM25IndexWithDocument(specs, summarySearchDocument)
+}
+
+func newBM25IndexWithDocument(
+	specs []Spec,
+	document func(Spec) string,
+) *bm25Index {
 	idx := &bm25Index{
 		tf:    make([]map[string]int, len(specs)),
 		docLn: make([]int, len(specs)),
@@ -102,7 +126,7 @@ func newBM25Index(specs []Spec) *bm25Index {
 	df := make(map[string]int)
 	var totalLen int
 	for i, s := range specs {
-		terms := tokenize(searchDocument(s))
+		terms := tokenize(document(s))
 		tf := make(map[string]int, len(terms))
 		for _, t := range terms {
 			tf[t]++

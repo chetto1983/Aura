@@ -194,8 +194,24 @@ func (ts *ToolSearch) rankFrozen(
 	if len(frozen.specs) == 0 {
 		return nil, nil
 	}
-	if action == ToolDiscoveryBM25 {
-		index := newBM25Index(frozen.specs)
+	if action != ToolDiscoveryBM25 &&
+		action != ToolDiscoverySemantic &&
+		action != ToolDiscoveryStatic {
+		return nil, fmt.Errorf(
+			"tool discovery strategy %q is not registered",
+			action,
+		)
+	}
+	if action == ToolDiscoveryBM25 || ts.Embed == nil {
+		var index *bm25Index
+		if ts.Embed == nil {
+			// Production registry compositions do not all have a runner-owned
+			// embedder. Use the deterministic Summary/schema index instead of
+			// making free-text discovery an always-failing capability.
+			index = newSummaryBM25Index(frozen.specs)
+		} else {
+			index = newBM25Index(frozen.specs)
+		}
 		ranked := index.rank(query)
 		if len(ranked) > limit {
 			ranked = ranked[:limit]
@@ -205,12 +221,6 @@ func (ts *ToolSearch) rankFrozen(
 			out = append(out, frozen.byName[frozen.specs[score.doc].Name])
 		}
 		return out, nil
-	}
-	if action != ToolDiscoverySemantic && action != ToolDiscoveryStatic {
-		return nil, fmt.Errorf(
-			"tool discovery strategy %q is not registered",
-			action,
-		)
 	}
 	ranker, bm25Names, err := ts.ensureBank(ctx, query, frozen)
 	if err != nil {

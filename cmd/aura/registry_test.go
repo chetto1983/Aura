@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -41,6 +42,34 @@ func TestBuildRegistry_CoreToolsPresent(t *testing.T) {
 		if _, ok := reg.Get(name); !ok {
 			t.Errorf("production registry is missing core tool %q", name)
 		}
+	}
+}
+
+func TestBuildBaseRegistryToolSearchWorksWithoutEmbedder(t *testing.T) {
+	cfg := &config.Config{
+		WorkspaceDir: t.TempDir(),
+	}
+	reg := buildBaseRegistry(cfg, nil)
+	registered, ok := reg.Get((&tools.ToolSearch{}).Spec().Name)
+	if !ok {
+		t.Fatal("tool_search is not registered")
+	}
+	search, ok := registered.(*tools.ToolSearch)
+	if !ok {
+		t.Fatalf("tool_search type = %T", registered)
+	}
+	ctx := tools.WithToolCallContext(
+		context.Background(), "registry-test", "tool-search", t.TempDir(), 4096,
+	)
+	result, err := search.Execute(
+		ctx,
+		json.RawMessage(`{"query":"search the current web for prices or news"}`),
+	)
+	if err != nil {
+		t.Fatalf("production tool_search free-text query failed: %v", err)
+	}
+	if !strings.Contains(result.Preview, "## web_search") {
+		t.Fatalf("tool_search result omitted web_search: %q", result.Preview)
 	}
 }
 
