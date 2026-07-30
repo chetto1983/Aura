@@ -68,6 +68,11 @@ func newDocumentRetrievalService(deps documentServiceDeps) *documents.Service {
 			Model:   rerankModel,
 			APIKey:  rerankKey,
 		},
+		// One measured confidence floor governs both membership and the decision to
+		// trust rerank ordering. Above it, RRF blends seed and cross-encoder rank so
+		// a single non-monotonic demotion cannot bury a strong seed.
+		RerankThreshold: deps.cfg.RerankRelevanceFloor,
+		RerankBlend:     true,
 		// D-13 path selector: on ⇒ the six scoped queries fail closed on foreign/empty
 		// identity; off (default) ⇒ the pre-existing unscoped path. Both the Service and
 		// its Searcher carry the flag so dense, sparse-fallback, and expand seeds scope
@@ -95,6 +100,8 @@ func newDocumentCLIService(deps documentServiceDeps) *documents.Service {
 	svc.Knowledge = retrieval.Knowledge
 	svc.QueryEmbedder = retrieval.QueryEmbedder
 	svc.Reranker = retrieval.Reranker
+	svc.RerankThreshold = retrieval.RerankThreshold
+	svc.RerankBlend = retrieval.RerankBlend
 	svc.RetrievalRevisions = retrieval.RetrievalRevisions
 	svc.RelevanceFloor = retrieval.RelevanceFloor
 	return svc

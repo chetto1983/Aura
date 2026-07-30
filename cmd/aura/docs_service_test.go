@@ -17,8 +17,6 @@ import (
 // wires it too).
 var unsetDocumentServiceFields = map[string]string{
 	"Clock":           "test-only wall-clock seam; production stamps times through Service.now → time.Now",
-	"RerankThreshold": "non-monotonic rerank guard, unset in the runtime compositions too — wiring it here would change live rerank behaviour",
-	"RerankBlend":     "same guard as RerankThreshold, same reason",
 	"RetrievalHealth": "pre-I/O snapshot consumed only by FreezeRetrievalPlans; Retrieve derives health from the collaborators that are actually wired",
 }
 

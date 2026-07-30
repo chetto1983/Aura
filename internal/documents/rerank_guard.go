@@ -26,9 +26,10 @@ const rrfK = 60
 //     result, or a top score below threshold all keep the seed order verbatim;
 //   - otherwise the reranked order is returned with the rerank scores attached.
 //
-// With blend=true it returns blendRerankOrders(seed, scored): a stable reciprocal-rank
-// fusion of seed rank and rerank rank, so one low-confidence demotion softly blends
-// instead of hard-keeping seed — a strong seed hit can never be buried.
+// With blend=true and a top score at or above the threshold, it returns
+// blendRerankOrders(seed, scored): a stable reciprocal-rank fusion of seed rank
+// and rerank rank, so one demotion cannot bury a strong seed. A score below the
+// threshold keeps the seed order in either mode.
 //
 // It mirrors the search_fusion guarded-tiebreak discipline (apply the secondary signal
 // only when confident; keep the primary order otherwise) and performs no I/O.
@@ -36,11 +37,11 @@ func applyRerankGuard(seed []SearchHit, scored []rerank.Scored, threshold float6
 	if len(scored) != len(seed) || len(seed) < 2 {
 		return seed
 	}
-	if blend {
-		return blendRerankOrders(seed, scored)
-	}
 	if scored[0].Score < threshold {
 		return seed // non-monotonic guard: top score too weak to trust the reorder
+	}
+	if blend {
+		return blendRerankOrders(seed, scored)
 	}
 	reordered := make([]SearchHit, 0, len(seed))
 	changed := false

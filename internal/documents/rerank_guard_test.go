@@ -135,3 +135,21 @@ func TestBlendOutOfRangeIndexKeepsSeed(t *testing.T) {
 		t.Fatalf("order = %s, want seed order on out-of-range blend index", ids)
 	}
 }
+
+func TestBlendBelowThresholdKeepsSeed(t *testing.T) {
+	seed := []SearchHit{
+		mkHit("chunk-0", 0.9),
+		mkHit("chunk-1", 0.5),
+		mkHit("chunk-2", 0.1),
+	}
+	scored := []rerank.Scored{
+		{Index: 2, Score: 0.009},
+		{Index: 1, Score: 0.008},
+		{Index: 0, Score: 0.007},
+	}
+
+	got := applyRerankGuard(seed, scored, 0.01, true)
+	if ids := chunkIDs(got); ids != "chunk-0,chunk-1,chunk-2" {
+		t.Fatalf("blend order = %s, want seed order below the confidence floor", ids)
+	}
+}
