@@ -138,7 +138,7 @@ RETURN event.id AS id, u.id AS user_id, u.created_at AS created_at,
 		endpoint = "http://127.0.0.1:8091/mcp/"
 	}
 	memory, err := mcp.OpenServer(ctx, "adaptive-memory-isolation", mcp.ManagedServer{
-		Type: mcp.ServerTypeStreamableHTTP, URL: endpoint,
+		Type: mcp.ServerTypeStreamableHTTP, URL: endpoint, Source: mcp.SourceRecipeMemory,
 		Trust: mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
 	})
 	if err != nil {
