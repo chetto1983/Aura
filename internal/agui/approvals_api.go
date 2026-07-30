@@ -120,9 +120,8 @@ func (s *Server) handleResolveApproval(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "approval not found", http.StatusNotFound)
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxRunBodyBytes)
-	var body resolveBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	body, err := decodeResolveBody(w, r)
+	if err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
@@ -189,6 +188,12 @@ func outcomeString(o runner.ResolveOutcome) string {
 	default:
 		return "continue"
 	}
+}
+
+func decodeResolveBody(w http.ResponseWriter, r *http.Request) (resolveBody, error) {
+	var body resolveBody
+	err := strictDecodeJSON(w, r, &body, decodeOpts{})
+	return body, err
 }
 
 // resolveAction maps the HTTP verb to the askuser three-action model, returning false

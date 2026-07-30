@@ -1,7 +1,10 @@
 package agui
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
+	"net/http"
 
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/types"
 )
@@ -23,10 +26,40 @@ type runAgentRequest struct {
 	}
 }
 
+func strictDecodeRunAgentRequest(w http.ResponseWriter, r *http.Request) (runAgentRequest, error) {
+	var raw json.RawMessage
+	if err := strictDecodeJSON(w, r, &raw, decodeOpts{}); err != nil {
+		return runAgentRequest{}, err
+	}
+	return decodeRunAgentRequest(json.NewDecoder(bytes.NewReader(raw)))
+}
+
 func decodeRunAgentRequest(dec *json.Decoder) (runAgentRequest, error) {
 	var raw json.RawMessage
 	if err := dec.Decode(&raw); err != nil {
 		return runAgentRequest{}, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return runAgentRequest{}, err
+	}
+	for key := range fields {
+		if !runAgentFieldAllowed(key) {
+			return runAgentRequest{}, fmt.Errorf("json: unknown field %q", key)
+		}
+	}
+	if aura, ok := fields["aura"]; ok {
+		var auraFields map[string]json.RawMessage
+		if err := json.Unmarshal(aura, &auraFields); err != nil {
+			return runAgentRequest{}, err
+		}
+		for key := range auraFields {
+			switch key {
+			case "attachment_ids", "skill", "effort":
+			default:
+				return runAgentRequest{}, fmt.Errorf("json: unknown field %q in aura", key)
+			}
+		}
 	}
 	var in types.RunAgentInput
 	if err := json.Unmarshal(raw, &in); err != nil {
@@ -43,4 +76,18 @@ func decodeRunAgentRequest(dec *json.Decoder) (runAgentRequest, error) {
 		return runAgentRequest{}, err
 	}
 	return runAgentRequest{RunAgentInput: in, Aura: ext.Aura}, nil
+}
+
+func runAgentFieldAllowed(key string) bool {
+	switch key {
+	case "threadId", "thread_id",
+		"runId", "run_id",
+		"parentRunId", "parent_run_id",
+		"state", "messages", "tools", "context",
+		"forwardedProps", "forwarded_props",
+		"resume", "aura":
+		return true
+	default:
+		return false
+	}
 }

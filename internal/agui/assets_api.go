@@ -2,7 +2,6 @@ package agui
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"net/http"
 	"strconv"
@@ -77,9 +76,8 @@ func (s *Server) handleAssetPresign(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxRunBodyBytes)
-	var body assetPresignBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	body, err := decodeAssetPresignBody(w, r)
+	if err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
@@ -98,6 +96,12 @@ func (s *Server) handleAssetPresign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, resp)
+}
+
+func decodeAssetPresignBody(w http.ResponseWriter, r *http.Request) (assetPresignBody, error) {
+	var body assetPresignBody
+	err := strictDecodeJSON(w, r, &body, decodeOpts{})
+	return body, err
 }
 
 func (s *Server) handleAssetFinalize(w http.ResponseWriter, r *http.Request) {

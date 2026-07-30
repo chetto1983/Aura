@@ -2,7 +2,6 @@ package agui
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -226,7 +225,7 @@ func handleOnboardingMutation[Req any, Resp any](
 ) {
 	var req Req
 	token, requester, ok := s.prepareOnboardingMutation(w, r, func() error {
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := decodeOnboardingBody(w, r, &req); err != nil {
 			return errors.New("invalid request body")
 		}
 		return validate(req)
@@ -242,13 +241,16 @@ func handleOnboardingMutation[Req any, Resp any](
 	writeJSON(w, resp)
 }
 
+func decodeOnboardingBody[Req any](w http.ResponseWriter, r *http.Request, req *Req) error {
+	return strictDecodeJSON(w, r, req, decodeOpts{})
+}
+
 func (s *Server) prepareOnboardingMutation(w http.ResponseWriter, r *http.Request, decodeAndValidate func() error) (string, string, bool) {
 	if s.onboarding == nil {
 		http.Error(w, "onboarding service not configured", http.StatusServiceUnavailable)
 		return "", "", false
 	}
 	token := r.PathValue("sessionToken")
-	r.Body = http.MaxBytesReader(w, r.Body, maxRunBodyBytes)
 	if err := decodeAndValidate(); err != nil {
 		http.Error(w, sanitizeErr(err), http.StatusBadRequest)
 		return "", "", false

@@ -1,7 +1,6 @@
 package agui
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 
@@ -21,8 +20,7 @@ import (
 // resume entries, drives Runner.Turn over the last user message, and streams the translated
 // AG-UI events as SSE. The body is size-capped (T-12-12); a malformed/empty payload is a 400.
 func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, maxRunBodyBytes)
-	req, err := decodeRunAgentRequest(json.NewDecoder(r.Body))
+	req, err := strictDecodeRunAgentRequest(w, r)
 	if err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return

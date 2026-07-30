@@ -14,7 +14,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"time"
 
@@ -127,9 +126,8 @@ func (s *Server) handleSchedulerEdit(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var body schedulerEditBody
-	dec := json.NewDecoder(io.LimitReader(r.Body, schedulerEditBodyCap))
-	if err := dec.Decode(&body); err != nil {
+	body, err := decodeSchedulerEditBody(w, r)
+	if err != nil {
 		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
@@ -162,6 +160,12 @@ func (s *Server) handleSchedulerEdit(w http.ResponseWriter, r *http.Request) {
 		"status":      task.Status,
 		"next_run_at": next.UTC().Format(time.RFC3339),
 	})
+}
+
+func decodeSchedulerEditBody(w http.ResponseWriter, r *http.Request) (schedulerEditBody, error) {
+	var body schedulerEditBody
+	err := strictDecodeJSON(w, r, &body, decodeOpts{maxBytes: schedulerEditBodyCap})
+	return body, err
 }
 
 // resolveEditSchedule validates the at|every|cron grammar via the shipped cron engine and

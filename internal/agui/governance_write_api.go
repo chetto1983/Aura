@@ -1,9 +1,7 @@
 package agui
 
 import (
-	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"strings"
 
@@ -191,9 +189,7 @@ func (s *Server) beginMCPWrite(w http.ResponseWriter, r *http.Request) (string, 
 // body. An empty body is allowed (the verb-only enable/disable use no body; trust/install
 // validate downstream in the provider).
 func decodeMCPBody(w http.ResponseWriter, r *http.Request, dst any) bool {
-	r.Body = http.MaxBytesReader(w, r.Body, maxRunBodyBytes)
-	dec := json.NewDecoder(r.Body)
-	if err := dec.Decode(dst); err != nil && !errors.Is(err, io.EOF) {
+	if err := strictDecodeJSON(w, r, dst, decodeOpts{allowEmpty: true}); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return false
 	}
