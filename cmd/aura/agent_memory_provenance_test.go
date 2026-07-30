@@ -1,6 +1,7 @@
 package main
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -72,6 +73,23 @@ func TestAgentMemoryDistributionProvenanceIsComplete(t *testing.T) {
 	} {
 		if !strings.Contains(workflow, want) {
 			t.Errorf("memory integration workflow missing %q", want)
+		}
+	}
+}
+
+func TestAgentMemoryWorkflowAuthSecretRemainsAString(t *testing.T) {
+	root := repoRootForTest(t)
+	quotedSecret := regexp.MustCompile(
+		`(?m)^\s*AURA_AGENT_MEMORY_MCP_AUTH_SECRET:\s+"[^"]{32,}"\s*$`,
+	)
+	for _, workflow := range []string{
+		".github/workflows/ci.yml",
+		".github/workflows/skills.yml",
+		".github/workflows/adaptive.yml",
+	} {
+		contents := readProjectFile(t, root, workflow)
+		if !quotedSecret.MatchString(contents) {
+			t.Errorf("%s must quote the Agent Memory auth secret so YAML cannot coerce it to a number", workflow)
 		}
 	}
 }
