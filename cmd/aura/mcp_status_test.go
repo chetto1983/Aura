@@ -34,7 +34,7 @@ func newMCPHTTPTestServerWithTools(t *testing.T, tools []map[string]any) *httpte
 		switch req.Method {
 		case "initialize":
 			w.Header().Set("Mcp-Session-Id", "session-status-test")
-			writeMCPHTTPResult(t, w, req.ID, map[string]any{"protocolVersion": "2025-06-18"})
+			writeMCPHTTPResult(t, w, req.ID, mcpInitializeResult("2025-06-18", "status-test"))
 		case "notifications/initialized":
 			w.WriteHeader(http.StatusAccepted)
 		case "tools/list":

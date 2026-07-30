@@ -538,7 +538,7 @@ func newMCPHTTPTestServer(t *testing.T) *httptest.Server {
 		switch req.Method {
 		case "initialize":
 			w.Header().Set("Mcp-Session-Id", "session-remote")
-			writeMCPHTTPResult(t, w, req.ID, map[string]any{"protocolVersion": "2025-06-18"})
+			writeMCPHTTPResult(t, w, req.ID, mcpInitializeResult("2025-06-18", "remote-test"))
 		case "notifications/initialized":
 			w.WriteHeader(http.StatusAccepted)
 		case "tools/list":

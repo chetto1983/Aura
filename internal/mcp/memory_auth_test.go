@@ -88,7 +88,7 @@ func TestOpenServerMemorySignsServiceAndTenantRequests(t *testing.T) {
 			w.Header().Set("Mcp-Session-Id", "tenant-auth-session")
 			writeHTTPRPC(t, w, req.ID, map[string]any{
 				"protocolVersion": httpProtocolVersion,
-				"capabilities":    map[string]any{},
+				"capabilities":    map[string]any{"tools": map[string]any{}},
 				"serverInfo":      map[string]any{"name": "memory", "version": "1"},
 			})
 			return

@@ -36,7 +36,7 @@ func httpInitHandler(t *testing.T, sessionID string, next http.HandlerFunc) http
 			if sessionID != "" {
 				w.Header().Set("Mcp-Session-Id", sessionID)
 			}
-			writeHTTPRPC(t, w, req.ID, map[string]any{"protocolVersion": "2025-06-18"})
+			writeHTTPRPC(t, w, req.ID, initializeFixture("2025-06-18", "http-fixture"))
 		case "notifications/initialized":
 			w.WriteHeader(http.StatusAccepted)
 		default:

@@ -34,14 +34,16 @@ const (
 )
 
 type reconnectingServer struct {
-	mu               sync.Mutex
-	name             string
-	cfg              mcp.ServerConfig
-	client           reconnectingClient
-	bridged          map[string]*bridgedTool
-	refreshHook      func()
-	closed           bool
-	reconnectTimeout time.Duration
+	mu                sync.Mutex
+	name              string
+	cfg               mcp.ServerConfig
+	client            reconnectingClient
+	bridged           map[string]*bridgedTool
+	acceptedToolNames map[string]struct{}
+	toolSetDriftErr   error
+	refreshHook       func()
+	closed            bool
+	reconnectTimeout  time.Duration
 	// open is the pluggable replacement-open seam: openReplacement calls s.open
 	// instead of openMCPClient directly, so the SAME breaker/backoff/two-context
 	// reopen/no-replay machinery serves both mount branches. The stdio
@@ -81,11 +83,12 @@ type reconnectingServer struct {
 
 func newReconnectingServer(name string, cfg mcp.ServerConfig, client reconnectingClient) *reconnectingServer {
 	s := &reconnectingServer{
-		name:             name,
-		cfg:              cfg,
-		client:           client,
-		bridged:          map[string]*bridgedTool{},
-		reconnectTimeout: defaultMCPReconnectTimeout,
+		name:              name,
+		cfg:               cfg,
+		client:            client,
+		bridged:           map[string]*bridgedTool{},
+		acceptedToolNames: map[string]struct{}{},
+		reconnectTimeout:  defaultMCPReconnectTimeout,
 	}
 	s.open = func(processCtx, handshakeCtx context.Context) (reconnectingClient, error) {
 		return openMCPClient(processCtx, handshakeCtx, s.name, s.cfg)
@@ -208,6 +211,42 @@ func (s *reconnectingServer) trackBridgedTools(bridged []tools.Tool) {
 	}
 }
 
+func (s *reconnectingServer) trackAcceptedDefs(defs []mcp.ToolDef) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.acceptedToolNames = toolNameSet(defs)
+}
+
+func (s *reconnectingServer) validateReconnectToolSet(defs []mcp.ToolDef) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.validateReconnectToolSetLocked(defs)
+}
+
+func (s *reconnectingServer) validateReconnectToolSetLocked(defs []mcp.ToolDef) error {
+	if len(s.acceptedToolNames) == 0 {
+		return nil
+	}
+	next := toolNameSet(defs)
+	if len(next) != len(defs) || len(next) != len(s.acceptedToolNames) {
+		return fmt.Errorf("%w: mcp %q tool set changed; restart required", mcp.ErrTransport, s.name)
+	}
+	for name := range s.acceptedToolNames {
+		if _, ok := next[name]; !ok {
+			return fmt.Errorf("%w: mcp %q tool set changed; restart required", mcp.ErrTransport, s.name)
+		}
+	}
+	return nil
+}
+
+func toolNameSet(defs []mcp.ToolDef) map[string]struct{} {
+	names := make(map[string]struct{}, len(defs))
+	for _, def := range defs {
+		names[def.Name] = struct{}{}
+	}
+	return names
+}
+
 func (s *reconnectingServer) setRefreshHook(hook func()) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -230,6 +269,9 @@ func (s *reconnectingServer) refreshSpecsLocked(defs []mcp.ToolDef) {
 func (s *reconnectingServer) currentClient() (reconnectingClient, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.toolSetDriftErr != nil {
+		return nil, s.toolSetDriftErr
+	}
 	if s.closed || s.client == nil {
 		return nil, fmt.Errorf("%w: mcp %q is closed", mcp.ErrTransport, s.name)
 	}
@@ -294,13 +336,22 @@ func (s *reconnectingServer) reconnectAfterTransport(
 			next = nil
 			err = fmt.Errorf("%w: mcp %q is closed", mcp.ErrTransport, s.name)
 		} else if err == nil {
-			s.client = next
-			s.refreshSpecsLocked(defs)
-			s.reconnectFailures = 0
-			s.breakerOpenUntil = time.Time{}
-			s.nextReconnectAfter = time.Time{}
-			closeFailed = failed != nil && failed != next
-		} else {
+			if driftErr := s.validateReconnectToolSetLocked(defs); driftErr != nil {
+				closeNext = next
+				defs = nil
+				next = nil
+				err = driftErr
+				s.toolSetDriftErr = driftErr
+			} else {
+				s.client = next
+				s.refreshSpecsLocked(defs)
+				s.reconnectFailures = 0
+				s.breakerOpenUntil = time.Time{}
+				s.nextReconnectAfter = time.Time{}
+				closeFailed = failed != nil && failed != next
+			}
+		}
+		if err != nil && !s.closed {
 			s.recordReconnectFailureLocked(time.Now(), err)
 		}
 		s.lastReconnectDefs = defs

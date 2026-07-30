@@ -143,12 +143,11 @@ func (c *HTTPClient) initializeLocked(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("mcp %q: initialize: %w", c.name, err)
 	}
-	var initResult struct {
-		ProtocolVersion string `json:"protocolVersion"`
+	negotiated, err := validateInitializeResult(res)
+	if err != nil {
+		return fmt.Errorf("mcp %q: initialize contract: %w", c.name, err)
 	}
-	if err := json.Unmarshal(res, &initResult); err == nil && strings.TrimSpace(initResult.ProtocolVersion) != "" {
-		c.protocolVersion = initResult.ProtocolVersion
-	}
+	c.protocolVersion = negotiated
 	if err := c.notifyLocked(ctx, "notifications/initialized"); err != nil {
 		return fmt.Errorf("mcp %q: initialized notification: %w", c.name, err)
 	}

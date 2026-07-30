@@ -39,8 +39,12 @@ func newSidecarRestartServer(t *testing.T) (*httptest.Server, *sidecarRestartSer
 			id := fmt.Sprintf("session-%d", state.initializes.Add(1))
 			state.live.Store(id)
 			w.Header().Set("Mcp-Session-Id", id)
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%d,"result":{"protocolVersion":"2025-06-18","capabilities":{}}}`, req.ID)
+			writeHTTPRPC(
+				t,
+				w,
+				req.ID,
+				initializeFixture("2025-06-18", "recovery-fixture"),
+			)
 			return
 		}
 

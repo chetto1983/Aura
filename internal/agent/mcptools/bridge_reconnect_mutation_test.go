@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -181,6 +182,57 @@ func TestReconnectServer_RefreshHookFiresOnChangedSpec(t *testing.T) {
 
 	if called != 1 {
 		t.Fatalf("refresh hook must fire once when a bridged spec changed, fired %d", called)
+	}
+}
+
+func TestReconnectServerRejectsToolSetDrift(t *testing.T) {
+	t.Parallel()
+	srv := newReconnectingServer("mail", mcp.ServerConfig{}, &errReconnectClient{})
+	srv.trackAcceptedDefs([]mcp.ToolDef{{Name: "send"}, {Name: "list"}})
+
+	if err := srv.validateReconnectToolSet([]mcp.ToolDef{{Name: "list"}, {Name: "send"}}); err != nil {
+		t.Fatalf("same tool set rejected: %v", err)
+	}
+	for _, tc := range []struct {
+		name string
+		defs []mcp.ToolDef
+	}{
+		{"added", []mcp.ToolDef{{Name: "list"}, {Name: "send"}, {Name: "archive"}}},
+		{"removed", []mcp.ToolDef{{Name: "send"}}},
+		{"renamed", []mcp.ToolDef{{Name: "list"}, {Name: "deliver"}}},
+		{"duplicate", []mcp.ToolDef{{Name: "list"}, {Name: "list"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if err := srv.validateReconnectToolSet(tc.defs); err == nil ||
+				!strings.Contains(err.Error(), "tool set changed") {
+				t.Fatalf("drift error = %v, want restart-required tool-set error", err)
+			}
+		})
+	}
+}
+
+func TestReconnectServerSuppressesReplacementAfterToolSetDrift(t *testing.T) {
+	initial := &errReconnectClient{
+		listErrs: []error{fmt.Errorf("pipe: %w", mcp.ErrTransport)},
+	}
+	fresh := &fakeReconnectClient{defs: []mcp.ToolDef{{Name: "send"}, {Name: "archive"}}}
+	restore := stubOpenMCPClient(t, fresh)
+	defer restore()
+
+	srv := newReconnectingServer("mail", mcp.ServerConfig{Command: "fake"}, initial)
+	srv.trackAcceptedDefs([]mcp.ToolDef{{Name: "send"}})
+
+	if _, err := srv.ListTools(context.Background()); err == nil ||
+		!strings.Contains(err.Error(), "restart required") {
+		t.Fatalf("drift reconnect error = %v, want restart required", err)
+	}
+	if !fresh.closed {
+		t.Fatal("drifted replacement client was not closed")
+	}
+	if _, err := srv.CallTool(context.Background(), "send", nil); err == nil ||
+		!strings.Contains(err.Error(), "restart required") {
+		t.Fatalf("stale bridged call error = %v, want suppressed server", err)
 	}
 }
 

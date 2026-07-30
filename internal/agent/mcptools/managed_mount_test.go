@@ -36,7 +36,7 @@ func httpMCPServer(t *testing.T, defs []mcp.ToolDef) *httptest.Server {
 		switch req.Method {
 		case "initialize":
 			w.Header().Set("Mcp-Session-Id", "sess-managed")
-			writeManagedRPC(t, w, req.ID, map[string]any{"protocolVersion": "2025-06-18"})
+			writeManagedRPC(t, w, req.ID, managedInitializeResult())
 		case "notifications/initialized":
 			w.WriteHeader(http.StatusAccepted)
 		case "tools/list":
@@ -63,6 +63,14 @@ func writeManagedRPC(t *testing.T, w http.ResponseWriter, id *int64, result any)
 		"result":  json.RawMessage(raw),
 	}); err != nil {
 		t.Fatalf("encode rpc: %v", err)
+	}
+}
+
+func managedInitializeResult() map[string]any {
+	return map[string]any{
+		"protocolVersion": "2025-06-18",
+		"capabilities":    map[string]any{"tools": map[string]any{}},
+		"serverInfo":      map[string]any{"name": "managed-fixture", "version": "1.0.0"},
 	}
 }
 
@@ -216,7 +224,7 @@ func TestMountManagedServer_HTTPBranchReconnectsOnUse(t *testing.T) {
 		case "initialize":
 			n := initCount.Add(1)
 			w.Header().Set("Mcp-Session-Id", fmt.Sprintf("sess-%d", n))
-			writeManagedRPC(t, w, req.ID, map[string]any{"protocolVersion": "2025-06-18"})
+			writeManagedRPC(t, w, req.ID, managedInitializeResult())
 		case "notifications/initialized":
 			w.WriteHeader(http.StatusAccepted)
 		case "tools/list":

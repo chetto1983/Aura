@@ -293,7 +293,9 @@ func (c *Client) initializeContext(ctx context.Context) (err error) {
 	if err != nil {
 		return fmt.Errorf("mcp %q: initialize: %w", c.name, err)
 	}
-	_ = res
+	if _, err := validateInitializeResult(res); err != nil {
+		return fmt.Errorf("mcp %q: initialize contract: %w", c.name, err)
+	}
 	if err := c.notify("notifications/initialized"); err != nil {
 		return fmt.Errorf("mcp %q: initialized notification: %w", c.name, err)
 	}

@@ -37,7 +37,9 @@ func (f *fakeServer) run() {
 		switch method {
 		case "initialize":
 			f.write(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{
-				"protocolVersion": protocolVersion, "serverInfo": map[string]any{"name": "fake"}}})
+				"protocolVersion": protocolVersion,
+				"capabilities":    map[string]any{"tools": map[string]any{}},
+				"serverInfo":      map[string]any{"name": "fake", "version": "1.0.0"}}})
 		case "notifications/initialized":
 			// no response
 		case "tools/list":

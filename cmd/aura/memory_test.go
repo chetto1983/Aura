@@ -61,7 +61,7 @@ func newRecordingMemoryMCPServer(t *testing.T) *recordingMemoryMCPServer {
 			rec.mu.Lock()
 			rec.initializes++
 			rec.mu.Unlock()
-			writeMemoryRPC(t, w, req.ID, map[string]any{"protocolVersion": "2025-06-18"})
+			writeMemoryRPC(t, w, req.ID, mcpInitializeResult("2025-06-18", "memory-test"))
 		case "notifications/initialized":
 			w.WriteHeader(http.StatusAccepted)
 		case "tools/list":

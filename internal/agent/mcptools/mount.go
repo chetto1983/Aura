@@ -84,6 +84,7 @@ func mountManagedHTTP(processCtx, handshakeCtx context.Context, reg *tools.Regis
 		_ = wrapper.Close()
 		return nil, nil, fmt.Errorf("mount %q: %w", name, err)
 	}
+	wrapper.trackAcceptedDefs(defs)
 	wrapper.startPingPoll(configuredMCPPingInterval())
 	return wrapper.Close, names, nil
 }
@@ -117,6 +118,7 @@ func mountStdioWithPolicy(processCtx, handshakeCtx context.Context, reg *tools.R
 		_ = srv.Close()
 		return nil, nil, fmt.Errorf("mount %q: %w", name, err)
 	}
+	srv.trackAcceptedDefs(defs)
 	srv.startPingPoll(configuredMCPPingInterval())
 	return srv.Close, names, nil
 }

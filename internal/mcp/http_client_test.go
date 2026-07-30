@@ -37,7 +37,7 @@ func TestHTTPInitializeSessionProtocolAndListTools(t *testing.T) {
 				t.Fatalf("initialize should not send protocol header before negotiation")
 			}
 			w.Header().Set("Mcp-Session-Id", "session-1")
-			writeHTTPRPC(t, w, req.ID, map[string]any{"protocolVersion": "2025-06-18", "serverInfo": map[string]any{"name": "http-fixture"}})
+			writeHTTPRPC(t, w, req.ID, initializeFixture("2025-06-18", "http-fixture"))
 		case "notifications/initialized":
 			sawInitialized = true
 			w.WriteHeader(http.StatusAccepted)
@@ -144,7 +144,7 @@ func TestHTTPCallToolSendsAuthHeaders(t *testing.T) {
 			return
 		}
 		if req.Method == "initialize" {
-			writeHTTPRPC(t, w, req.ID, map[string]any{"protocolVersion": "2025-06-18"})
+			writeHTTPRPC(t, w, req.ID, initializeFixture("2025-06-18", "auth-fixture"))
 			return
 		}
 		writeHTTPRPC(t, w, req.ID, map[string]any{"content": []map[string]any{{"type": "text", "text": "pong"}}})
@@ -177,7 +177,7 @@ func TestHTTPSession404ResetsSession(t *testing.T) {
 		switch req.Method {
 		case "initialize":
 			w.Header().Set("Mcp-Session-Id", "expired")
-			writeHTTPRPC(t, w, req.ID, map[string]any{"protocolVersion": "2025-06-18"})
+			writeHTTPRPC(t, w, req.ID, initializeFixture("2025-06-18", "reset-fixture"))
 		case "notifications/initialized":
 			w.WriteHeader(http.StatusAccepted)
 		default:
@@ -224,7 +224,7 @@ func TestHTTPSessionExpiredReinitializesAndRetriesCallTool(t *testing.T) {
 			}
 			mu.Unlock()
 			w.Header().Set("Mcp-Session-Id", sessionID)
-			writeHTTPRPC(t, w, req.ID, map[string]any{"protocolVersion": "2025-06-18"})
+			writeHTTPRPC(t, w, req.ID, initializeFixture("2025-06-18", "retry-fixture"))
 		case "notifications/initialized":
 			w.WriteHeader(http.StatusAccepted)
 		case "tools/call":
@@ -281,7 +281,7 @@ func TestHTTPRPCErrorAndContextCancel(t *testing.T) {
 			return
 		}
 		if req.Method == "initialize" {
-			writeHTTPRPC(t, w, req.ID, map[string]any{"protocolVersion": "2025-06-18"})
+			writeHTTPRPC(t, w, req.ID, initializeFixture("2025-06-18", "error-fixture"))
 			return
 		}
 		writeHTTPRPCError(t, w, req.ID, -32601, "no tools")

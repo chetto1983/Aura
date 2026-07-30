@@ -85,7 +85,7 @@ func TestHelperProcess(t *testing.T) {
 		id := req["id"]
 		switch method {
 		case "initialize":
-			writeHelper(writer, map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"protocolVersion": protocolVersion}})
+			writeHelper(writer, map[string]any{"jsonrpc": "2.0", "id": id, "result": initializeFixture(protocolVersion, "stdio-helper")})
 		case "notifications/initialized":
 			// no response
 		case "tools/list":

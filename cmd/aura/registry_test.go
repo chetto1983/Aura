@@ -279,10 +279,11 @@ func runRegistryTestMCPServer(in io.Reader, out io.Writer) {
 		id, hasID := req["id"]
 		switch method {
 		case "initialize":
-			_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{
-				"protocolVersion": "2024-11-05",
-				"serverInfo":      map[string]any{"name": "calculator-test"},
-			}})
+			_ = enc.Encode(map[string]any{
+				"jsonrpc": "2.0",
+				"id":      id,
+				"result":  mcpInitializeResult("2024-11-05", "calculator-test"),
+			})
 		case "notifications/initialized":
 		case "tools/list":
 			if os.Getenv("AURA_MCP_HELPER_MODE") == "hang" {

@@ -107,7 +107,7 @@ func TestMCPProbe_HTTPEndpointDialsAndCountsTools(t *testing.T) {
 		switch req.Method {
 		case "initialize":
 			w.Header().Set("Mcp-Session-Id", "probe-1")
-			writeHTTPRPC(t, w, req.ID, map[string]any{"protocolVersion": "2025-06-18"})
+			writeHTTPRPC(t, w, req.ID, initializeFixture("2025-06-18", "probe-fixture"))
 		case "notifications/initialized":
 			w.WriteHeader(http.StatusAccepted)
 		case "tools/list":

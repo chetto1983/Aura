@@ -100,7 +100,11 @@ func runFakeMCPServer() {
 			_ = enc.Encode(map[string]any{
 				"jsonrpc": "2.0",
 				"id":      req.ID,
-				"result":  map[string]any{"protocolVersion": "2024-11-05"},
+				"result": map[string]any{
+					"protocolVersion": "2024-11-05",
+					"capabilities":    map[string]any{"tools": map[string]any{}},
+					"serverInfo":      map[string]any{"name": "knowledge-helper", "version": "1.0.0"},
+				},
 			})
 		case "notifications/initialized":
 			continue
