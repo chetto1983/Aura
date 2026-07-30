@@ -74,6 +74,12 @@ func newDocumentRetrievalService(deps documentServiceDeps) *documents.Service {
 		// together. The caller supplies req.IdentityID.
 		MUSRIsolation:      deps.musrIsolation(),
 		RetrievalRevisions: deps.revisions,
+		// Without a floor no query can return zero results: the vector seed is a
+		// k-nearest-neighbour index, so the k nearest chunks always exist however far
+		// away they are. Measured 2026-07-30, that is why a question about a B&R servo
+		// motor came back with rows from a customer spreadsheet, carrying the
+		// reranker's own verdict of 0.00079 that nothing was allowed to act on.
+		RelevanceFloor: deps.cfg.RerankRelevanceFloor,
 	}
 }
 
@@ -90,6 +96,7 @@ func newDocumentCLIService(deps documentServiceDeps) *documents.Service {
 	svc.QueryEmbedder = retrieval.QueryEmbedder
 	svc.Reranker = retrieval.Reranker
 	svc.RetrievalRevisions = retrieval.RetrievalRevisions
+	svc.RelevanceFloor = retrieval.RelevanceFloor
 	return svc
 }
 

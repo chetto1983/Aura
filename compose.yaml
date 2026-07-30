@@ -103,6 +103,11 @@ services:
       # host-oriented .env value (127.0.0.1:8085, for the host-run `aura` CLI) must
       # NOT leak into the container, where loopback does not reach the sidecar.
       AURA_RERANK_BASE_URL: http://aura-rerank:8085
+      # Retrieval floor: hits the reranker scores below this are dropped, so
+      # document_search can answer "nothing here" instead of the least-bad chunk.
+      # Cohere's rerank guidance is that this number is domain-specific and must be
+      # read off a measured distribution, never assumed — the value ships as a knob.
+      AURA_RERANK_RELEVANCE_FLOOR: ${AURA_RERANK_RELEVANCE_FLOOR:-0.01}
       AURA_OTEL_EXPORTER: ${AURA_OTEL_EXPORTER:-none}
       AURA_OTEL_ENDPOINT: ${AURA_OTEL_ENDPOINT:-localhost:4317}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}

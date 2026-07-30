@@ -230,6 +230,22 @@ type Config struct {
 	RerankBaseURL string // AURA_RERANK_BASE_URL — local rerank sidecar base, default http://127.0.0.1:8085
 	RerankModel   string // AURA_RERANK_MODEL — set to a cloud model (cohere/rerank-4-fast) to swap to OpenRouter; empty = local sidecar
 
+	// RerankRelevanceFloor drops retrieval hits the reranker scored below it, so
+	// document_search can answer "I have nothing" instead of the least-bad chunk. Zero
+	// disables it. Cohere's own rerank guidance is that this number is domain-specific
+	// and must be picked from a measured distribution (30-50 representative queries),
+	// never assumed: scores are in [0,1] but NOT linear.
+	//
+	// 0.01 is measured, not chosen. Live on 2026-07-30, questions the corpus cannot
+	// answer scored 0.000057-0.00079 and the chunk carrying a real answer scored 0.0586
+	// — a 74x gap with nothing in it. 0.5 was tried first and is WRONG here: it also
+	// dropped the real answer, and the agent then denied a client that is in the file.
+	// The reason the real answer scores only 0.0586 is that the reranker sees the first
+	// 480 characters of a ~6400-character chunk (maxRerankDocChars, itself load-bearing
+	// because the sidecar 500s past ~512 tokens), and the answering row is outside that
+	// window. Shrink the unit and this floor can rise; until then it must stay low.
+	RerankRelevanceFloor float64 // AURA_RERANK_RELEVANCE_FLOOR
+
 	// Phase 36 multi-user identity-isolation rollout switch (D-13). MUSRIsolation is
 	// the documents-retrieval scoped-vs-unscoped query-PATH selector that plan 05
 	// consumes: ON = fail-closed EXISTS enforcement (a document read is scoped to the
@@ -518,8 +534,9 @@ func loadBase() *Config {
 		CalendarMCPURL:        envDefault("AURA_PIM_MCP_URL", "http://aura-pim-mcp:8080"),
 		CalendarMCPAdminToken: envDefault("AURA_PIM_MCP_ADMIN_TOKEN", "changeme-aura-pim-local"),
 
-		RerankBaseURL: envDefault("AURA_RERANK_BASE_URL", "http://127.0.0.1:8085"),
-		RerankModel:   os.Getenv("AURA_RERANK_MODEL"),
+		RerankBaseURL:        envDefault("AURA_RERANK_BASE_URL", "http://127.0.0.1:8085"),
+		RerankRelevanceFloor: envutil.FloatDefault("AURA_RERANK_RELEVANCE_FLOOR", 0.01),
+		RerankModel:          os.Getenv("AURA_RERANK_MODEL"),
 
 		// Phase 36 identity-isolation rollout switch (D-13). Default OFF so plan 12's
 		// deploy-flag-off step is safe; plan 05 is the documents-retrieval consumer.

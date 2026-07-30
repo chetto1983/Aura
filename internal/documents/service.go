@@ -48,11 +48,18 @@ type Service struct {
 
 	// Two-stage retrieval (RET-02) collaborators, all optional. When Reranker is
 	// nil, Retrieve degrades to the sparse fulltext Search path with no regression.
-	Knowledge          KnowledgeClient    // raw graph client for the vector seed + 1-hop expand
-	QueryEmbedder      EmbeddingGenerator // embeds the query text into a 768d seed vector
-	Reranker           Reranker           // reorders seed chunks by relevance (fail-soft)
-	RerankThreshold    float64            // non-monotonic guard: keep seed order when the top rerank score is below this
-	RerankBlend        bool               // non-monotonic guard: blend seed rank + rerank rank (RRF) instead of the hard threshold gate
+	Knowledge       KnowledgeClient    // raw graph client for the vector seed + 1-hop expand
+	QueryEmbedder   EmbeddingGenerator // embeds the query text into a 768d seed vector
+	Reranker        Reranker           // reorders seed chunks by relevance (fail-soft)
+	RerankThreshold float64            // non-monotonic guard: keep seed order when the top rerank score is below this
+	RerankBlend     bool               // non-monotonic guard: blend seed rank + rerank rank (RRF) instead of the hard threshold gate
+
+	// RelevanceFloor drops hits the reranker scored below it, so retrieval can answer
+	// "I have nothing" — the one answer no stage was previously able to give. Distinct
+	// from RerankThreshold: that one decides whether to trust the rerank ORDER, this one
+	// decides MEMBERSHIP. Zero disables it, which is also the behaviour with no reranker
+	// wired, since the floor reads rerank scores and nothing else.
+	RelevanceFloor     float64
 	RetrievalRevisions RetrievalRevisions
 	RetrievalHealth    *RetrievalDependencyHealth
 

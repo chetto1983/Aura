@@ -95,3 +95,47 @@ func blendRerankOrders(seed []SearchHit, scored []rerank.Scored) []SearchHit {
 	}
 	return out
 }
+
+// dropBelowRelevanceFloor removes hits the reranker judged irrelevant. It is the stage
+// the pipeline did not have, and its absence is why a question about a B&R servo motor
+// came back with rows from a customer spreadsheet: measured on the live deployment
+// 2026-07-30, the reranker scored that hit 0.00079 — its own verdict of "irrelevant" —
+// and nothing anywhere was allowed to act on it. The seed cannot decline either: a
+// vector index is k-nearest-neighbour, so the k nearest chunks always exist however far
+// away they are, and the fulltext index matches on any shared token (the token that
+// matched was "B", against "B & B IMPIANTI"). Without this stage no query can ever
+// return zero results, which is the same as saying the tool cannot say "I have nothing".
+//
+// Membership and ORDER are deliberately separate concerns. applyRerankGuard decides
+// whether to trust the reranker's ORDER; this decides who is in the set at all. Keeping
+// them apart is what makes the floor safe: the guard may hand back the seed order
+// verbatim, in which case the hits carry seed scores (Lucene, cosine, or a term count)
+// on scales no single float could gate. So the floor reads the RERANK scores directly,
+// never Score on the returned hit, and does nothing at all when the reranker did not run.
+//
+// floor <= 0 disables it, which is also what happens when no reranker is wired: a
+// deployment without the sidecar keeps exactly today's behaviour.
+func dropBelowRelevanceFloor(
+	ordered []SearchHit,
+	seeds []SearchHit,
+	scored []rerank.Scored,
+	floor float64,
+) []SearchHit {
+	if floor <= 0 || len(scored) == 0 || len(scored) != len(seeds) {
+		return ordered
+	}
+	keep := make(map[string]struct{}, len(scored))
+	for _, sc := range scored {
+		if sc.Index < 0 || sc.Index >= len(seeds) || sc.Score < floor {
+			continue
+		}
+		keep[seeds[sc.Index].ChunkID] = struct{}{}
+	}
+	survivors := make([]SearchHit, 0, len(ordered))
+	for _, hit := range ordered {
+		if _, ok := keep[hit.ChunkID]; ok {
+			survivors = append(survivors, hit)
+		}
+	}
+	return survivors
+}

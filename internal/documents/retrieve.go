@@ -174,7 +174,8 @@ func (s *Service) executeRetrievalRerank(
 	if err != nil {
 		return nil, fmt.Errorf("documents: rerank retrieval: %w", err)
 	}
-	return applyRerankGuard(seeds, scored, s.RerankThreshold, s.RerankBlend), nil
+	ordered := applyRerankGuard(seeds, scored, s.RerankThreshold, s.RerankBlend)
+	return dropBelowRelevanceFloor(ordered, seeds, scored, s.RelevanceFloor), nil
 }
 
 func (s *Service) executeRetrievalExpand(
@@ -299,7 +300,8 @@ func (s *Service) rerankSeeds(ctx context.Context, query string, seeds []SearchH
 	if !ok {
 		return seeds
 	}
-	return applyRerankGuard(seeds, scored, s.RerankThreshold, s.RerankBlend)
+	ordered := applyRerankGuard(seeds, scored, s.RerankThreshold, s.RerankBlend)
+	return dropBelowRelevanceFloor(ordered, seeds, scored, s.RelevanceFloor)
 }
 
 // rerankScores is the I/O half of the two-stage rerank: it runs the reranker over the
