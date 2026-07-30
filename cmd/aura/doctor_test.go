@@ -347,6 +347,28 @@ func TestDoctorProbeMCPServersReachable(t *testing.T) {
 	}
 }
 
+func TestDoctorProbeMCPServersUsesResolvedRuntimeConfig(t *testing.T) {
+	withTempMCPConfig(t)
+	srv := newMCPHTTPTestServer(t)
+	defer srv.Close()
+
+	cfg := &config.Config{MCPPolicies: map[string]mcp.ManagedServer{
+		"default-on": {
+			Type:   mcp.ServerTypeStreamableHTTP,
+			URL:    srv.URL,
+			Source: "recipe:test",
+			Trust:  mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
+		},
+	}}
+	detail, err := defaultDoctorProbeMCPServers(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail != "1/1 HTTP MCP servers reachable" {
+		t.Fatalf("detail = %q, want resolved default-on server", detail)
+	}
+}
+
 // TestDoctorProbeMCPServersUnreachableNamesServer proves a dead HTTP MCP server
 // fails the check and names the unreachable server in the aggregated error.
 func TestDoctorProbeMCPServersUnreachableNamesServer(t *testing.T) {

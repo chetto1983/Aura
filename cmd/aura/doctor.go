@@ -165,18 +165,11 @@ func defaultDoctorProbeMCPBinary(_ context.Context, cfg *config.Config) (string,
 // via mcp.ProbeServer, bounded per-server by AURA_MCP_PROBE_TIMEOUT. It deliberately
 // does NOT probe doctorProbeMCPBinary's target (the unrelated Neo4j-Cypher sidecar
 // binary, RESEARCH Pitfall #11) and does NOT dial disabled, trust-blocked, or stdio
-// servers: RunnableManagedServers already filters out disabled/blocked (a server the
-// operator turned off or hasn't approved is never dialed here either), and the
-// streamable_http filter below drops stdio (D-18 scopes this check to the
-// dead-HTTP-endpoint problem the CLI/status surfaces share). A single unreachable
-// server fails only its own name in the aggregated detail, never the others
-// (isolation) — the managed config itself is loaded fresh, independent of cfg.
-func defaultDoctorProbeMCPServers(ctx context.Context, _ *config.Config) (string, error) {
-	doc, _, err := loadManagedMCPConfig()
-	if err != nil {
-		return "", err
-	}
-	runnable, err := mcpmanager.RunnableManagedServers(doc)
+// servers: the resolved runtime policy already excludes disabled/blocked entries,
+// and the streamable_http filter below drops stdio. A single unreachable server
+// fails only its own name in the aggregated detail, never the others.
+func defaultDoctorProbeMCPServers(ctx context.Context, cfg *config.Config) (string, error) {
+	runnable, err := doctorRuntimeMCPServers(cfg)
 	if err != nil {
 		return "", err
 	}
@@ -206,6 +199,20 @@ func defaultDoctorProbeMCPServers(ctx context.Context, _ *config.Config) (string
 		return "", fmt.Errorf("%d/%d HTTP MCP servers unreachable: %s", len(unreachable), len(names), strings.Join(unreachable, ", "))
 	}
 	return fmt.Sprintf("%d/%d HTTP MCP servers reachable", len(names), len(names)), nil
+}
+
+func doctorRuntimeMCPServers(cfg *config.Config) (map[string]mcp.ManagedServer, error) {
+	if cfg != nil && cfg.MCPServersErr != nil {
+		return nil, cfg.MCPServersErr
+	}
+	if cfg != nil && (cfg.MCPPolicies != nil || cfg.MCPServers != nil) {
+		return cfg.MCPPolicies, nil
+	}
+	doc, _, err := loadManagedMCPConfig()
+	if err != nil {
+		return nil, err
+	}
+	return mcpmanager.RunnableManagedServers(doc)
 }
 
 func doctorProbeLLMKey(context.Context, *config.Config) (string, error) {
