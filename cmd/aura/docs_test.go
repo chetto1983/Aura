@@ -67,6 +67,41 @@ func TestDocsSearchPrintsHits(t *testing.T) {
 	}
 }
 
+func TestDocsSearchAcceptsDocumentedTrailingFlags(t *testing.T) {
+	svc := &fakeDocsService{
+		hits: []documents.SearchHit{{DocumentID: "doc-1", ChunkID: "chunk-1", Text: "hello"}},
+	}
+	var out bytes.Buffer
+	args := []string{"search", "hello", "world", "--document-id", "doc-1", "--limit", "3"}
+	if err := runDocsCommand(t.Context(), args, &out, fakeDocsFactory(svc)); err != nil {
+		t.Fatal(err)
+	}
+	var decoded struct {
+		Query string `json:"query"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Query != "hello world" {
+		t.Fatalf("query = %q, want flags excluded", decoded.Query)
+	}
+	if svc.retrieveReq.DocumentID != "doc-1" || svc.retrieveReq.Limit != 3 {
+		t.Fatalf("retrieve request = %#v", svc.retrieveReq)
+	}
+}
+
+func TestDocsSearchRejectsUnknownTrailingFlag(t *testing.T) {
+	err := runDocsCommand(
+		t.Context(),
+		[]string{"search", "hello", "--unknown", "value"},
+		&bytes.Buffer{},
+		fakeDocsFactory(&fakeDocsService{}),
+	)
+	if err == nil || !strings.Contains(err.Error(), "unknown flag") {
+		t.Fatalf("err = %v, want unknown flag", err)
+	}
+}
+
 // TestDocsSearchThreadsTheOperatorIdentity guards the half of the fix a shape assertion
 // cannot see. With AURA_MUSR_ISOLATION on, Searcher.Search and every scoped seed query
 // return before any I/O when IdentityID is empty, so a field-identical service that

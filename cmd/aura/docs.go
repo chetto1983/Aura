@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -103,16 +104,9 @@ func docsIngest(ctx context.Context, args []string, out io.Writer, factory docsS
 }
 
 func docsSearch(ctx context.Context, args []string, out io.Writer, factory docsServiceFactory) error {
-	fs := flag.NewFlagSet("docs search", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	documentID := fs.String("document-id", "", "document id")
-	limit := fs.Int("limit", 8, "limit")
-	if err := fs.Parse(args); err != nil {
+	query, documentID, limit, err := parseDocsSearchArgs(args)
+	if err != nil {
 		return err
-	}
-	query := strings.Join(fs.Args(), " ")
-	if strings.TrimSpace(query) == "" {
-		return fmt.Errorf("docs search requires <query>")
 	}
 	svc, closeFn, err := factory(ctx)
 	if err != nil {
@@ -121,7 +115,7 @@ func docsSearch(ctx context.Context, args []string, out io.Writer, factory docsS
 	defer closeFn()
 
 	start := time.Now()
-	hits, err := svc.Retrieve(ctx, docsSearchRequest(ctx, query, *documentID, *limit))
+	hits, err := svc.Retrieve(ctx, docsSearchRequest(ctx, query, documentID, limit))
 	if err != nil {
 		return err
 	}
@@ -130,6 +124,47 @@ func docsSearch(ctx context.Context, args []string, out io.Writer, factory docsS
 		"hits":         hits,
 		"retrieval_ms": time.Since(start).Milliseconds(),
 	})
+}
+
+func parseDocsSearchArgs(args []string) (query, documentID string, limit int, err error) {
+	limit = 8
+	var queryParts []string
+	for i := 0; i < len(args); i++ {
+		name, inlineValue, hasInlineValue := strings.Cut(args[i], "=")
+		switch name {
+		case "--document-id", "--limit":
+			value := inlineValue
+			if !hasInlineValue {
+				i++
+				if i >= len(args) || strings.HasPrefix(args[i], "--") {
+					return "", "", 0, fmt.Errorf("%s requires a value", name)
+				}
+				value = args[i]
+			}
+			if strings.TrimSpace(value) == "" {
+				return "", "", 0, fmt.Errorf("%s requires a value", name)
+			}
+			if name == "--document-id" {
+				documentID = value
+				continue
+			}
+			parsed, parseErr := strconv.Atoi(value)
+			if parseErr != nil || parsed <= 0 {
+				return "", "", 0, fmt.Errorf("--limit requires a positive integer, got %q", value)
+			}
+			limit = parsed
+		default:
+			if strings.HasPrefix(name, "-") {
+				return "", "", 0, fmt.Errorf("unknown flag %q", name)
+			}
+			queryParts = append(queryParts, args[i])
+		}
+	}
+	query = strings.Join(queryParts, " ")
+	if strings.TrimSpace(query) == "" {
+		return "", "", 0, fmt.Errorf("docs search requires <query>")
+	}
+	return query, documentID, limit, nil
 }
 
 func docsStatus(ctx context.Context, args []string, out io.Writer, factory docsServiceFactory) error {
