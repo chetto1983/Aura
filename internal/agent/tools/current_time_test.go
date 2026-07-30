@@ -68,10 +68,4 @@ func TestCurrentTime_MalformedArgs(t *testing.T) {
 	}
 }
 
-func TestCurrentTime_Deferred(t *testing.T) {
-	if (CurrentTime{}).Spec().Deferred {
-		t.Fatal("current_time must be Deferred:false")
-	}
-}
-
 var _ Tool = CurrentTime{}

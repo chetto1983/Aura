@@ -121,11 +121,12 @@ func TestFilesystemToolSpecsDescribeOperationalContracts(t *testing.T) {
 		wantDeferred bool
 	}{
 		{
-			name:        "read",
-			tool:        &FSRead{},
-			wantName:    "fs_read",
-			wantSummary: "Read a file from disk.",
-			wantPhrases: []string{"1-based `offset`", "Read a file with this tool BEFORE editing", "large result pages"},
+			name:         "read",
+			tool:         &FSRead{},
+			wantName:     "fs_read",
+			wantSummary:  "Read a file from disk.",
+			wantPhrases:  []string{"1-based `offset`", "Read a file with this tool BEFORE editing", "large result pages"},
+			wantDeferred: true,
 		},
 		{
 			name:         "edit",
@@ -137,12 +138,13 @@ func TestFilesystemToolSpecsDescribeOperationalContracts(t *testing.T) {
 			wantDeferred: true,
 		},
 		{
-			name:        "write",
-			tool:        &FSWrite{},
-			wantName:    "fs_write",
-			wantSummary: "Write a file to disk (create or overwrite).",
-			wantPhrases: []string{"COMPLETE `content`", "prefer fs_edit", "Always report the absolute path"},
-			wantMutate:  true,
+			name:         "write",
+			tool:         &FSWrite{},
+			wantName:     "fs_write",
+			wantSummary:  "Write a file to disk (create or overwrite).",
+			wantPhrases:  []string{"COMPLETE `content`", "prefer fs_edit", "Always report the absolute path"},
+			wantMutate:   true,
+			wantDeferred: true,
 		},
 		{
 			name:         "glob",
@@ -172,7 +174,13 @@ func TestFilesystemToolSpecsDescribeOperationalContracts(t *testing.T) {
 				t.Fatalf("Summary = %q, want %q", spec.Summary, tt.wantSummary)
 			}
 			if spec.Deferred != tt.wantDeferred {
-				t.Fatalf("Deferred = %v, want %v (only fs_read/fs_write stay always-visible; glob/grep/edit are deferred, discoverable via tool_search — operator directive)", spec.Deferred, tt.wantDeferred)
+				// All five are deferred now. fs_read/fs_write used to be exempt by operator
+				// directive, and the operator reversed it once the bill was on the table:
+				// keeping two of the five visible did not help discovery, it just made those
+				// two the default answer for jobs the other three were better at, at 560
+				// tokens a turn. The whole always-active budget is pinned in
+				// TestOnlyFourToolsAreAlwaysActive.
+				t.Fatalf("Deferred = %v, want %v", spec.Deferred, tt.wantDeferred)
 			}
 			if spec.Mutating != tt.wantMutate {
 				t.Fatalf("Mutating = %v, want %v", spec.Mutating, tt.wantMutate)

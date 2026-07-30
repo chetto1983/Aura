@@ -132,7 +132,9 @@ func (t *TaskTool) Spec() Spec {
 			"When the operator asks for recurring or future work (a daily summary, a morning digest, a periodic check, a reminder), schedule it here instead of trying to do it now: a reminder delivers its payload text; an agent_job runs a fresh agent turn AT FIRE TIME with the goal in its payload, so you do NOT need the job's tools available now — the job resolves its own tools when it runs. Put the operator's intent in the payload goal and schedule it. " +
 			"Destructive payloads (rm/drop/delete) are routed to pending_approval and require operator approval outside this model-facing tool before they fire.",
 		Parameters: json.RawMessage(taskParamsSchema),
-		Deferred:   false,
+		// Deferred: 795 token per una capacita' che entra in gioco solo quando l'operatore
+		// chiede lavoro ricorrente o futuro — una frazione dei turni.
+		Deferred: true,
 		// D-02/D-02d: the task verb multiplexes schedule/list/cancel/run_now behind one
 		// `action` enum, so it is the fail-closed Mutating floor and carries the
 		// Multiplexed hint the gateway boot-guard reads.

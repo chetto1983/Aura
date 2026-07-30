@@ -15,8 +15,14 @@ func defaultBridgePolicy(namespace string) bridgePolicy {
 	return bridgePolicy{memory: namespace == "memory"}
 }
 
-func (p bridgePolicy) defaultDeferred() bool {
-	return !p.memory
+// defaultDeferred is now true for EVERY bridged server, memory included. Memory used to be
+// the exception, on the theory that recall is too central to hide. Measured, that exception
+// cost ~2.7k tokens of manifest on every single turn — six full schemas, carried to answer
+// "ok" — which is 20% of the fixed prefix for a capability the model reaches through
+// tool_search like any other. The 14 calendar and 14 whatsapp tools were already deferred
+// and are no less central to their domains.
+func (bridgePolicy) defaultDeferred() bool {
+	return true
 }
 
 var memoryHiddenFromModel = map[string]struct{}{

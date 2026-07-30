@@ -66,7 +66,9 @@ func (t *TodoTool) Spec() Spec {
   },
   "required": ["todos"]
 }`),
-		Deferred: false,
+		// Deferred: 250 token per la lista di lavoro, che serve nei task lunghi e mai nelle
+		// risposte brevi.
+		Deferred: true,
 	}
 }
 

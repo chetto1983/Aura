@@ -28,8 +28,11 @@ func TestMemoryBridgePolicy_AliasKeepsIsolationAndHiddenSurface(t *testing.T) {
 	if got := search.Spec().Name; got != "mem__memory_search" {
 		t.Fatalf("aliased model name = %q, want mem__memory_search", got)
 	}
-	if search.Spec().Deferred {
-		t.Fatal("memory alias search is deferred; source policy must keep memory tools visible")
+	// Deferred like every other bridged server now: the memory exception cost ~2.7k
+	// tokens of manifest on every turn. What this test still owns is the ALIAS and the
+	// hidden-surface filter, which are unaffected.
+	if !search.Spec().Deferred {
+		t.Fatal("memory alias search must be deferred like every other bridged tool")
 	}
 
 	ctx := identityctx.WithIdentityID(context.Background(), "tenant-a")

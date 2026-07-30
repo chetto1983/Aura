@@ -149,7 +149,10 @@ func (t *SkillTool) Spec() Spec {
 		Summary:     "List, inspect, and apply skills that extend your capabilities.",
 		Description: t.manifestDescription(),
 		Parameters:  json.RawMessage(skillParamsSchemaHonest),
-		Deferred:    false,
+		// Deferred: 1.638 token, il singolo tool piu' caro del manifest e il 12% di OGNI
+		// prompt, pagato anche per rispondere "ok". Le skill sono un'azione deliberata, non
+		// un riflesso: il costo di un tool_search quando servono e' irrisorio in confronto.
+		Deferred: true,
 		// D-02/D-02d: the skill verb multiplexes read + authoring + snippet-lifecycle
 		// actions behind one `action` enum, so it is the fail-closed Mutating floor and
 		// carries the Multiplexed hint the gateway boot-guard reads. The classifier

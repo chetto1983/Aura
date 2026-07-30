@@ -72,9 +72,14 @@ func TestCacheAudit_AllEqual_Exit0(t *testing.T) {
 		t.Fatalf("cacheAuditMain exit %d, want 0 (stderr=%q)", code, errOut.String())
 	}
 	wantRequests := cacheFixtureRequestCount(t)
-	// Each stream (messages[0] "request", messages[1] "messages1", skill manifest
-	// "skillman") must have exactly wantRequests internally-identical hashes.
-	for _, prefix := range []string{"request", "messages1", "skillman"} {
+	// "skillman" is no longer in this list. That stream exists only while the skill tool
+	// is non-deferred, because the hazard it guards — a manifest rendered INTO the tool
+	// Description, mutating between turns and invalidating the prefix — needs the tool to
+	// be in req.Tools at all. skill is deferred now (1.638 tokens, the priciest single
+	// entry in the manifest), so the stream is legitimately empty. The invariant is kept
+	// below as consistency-if-present, so re-activating skill re-arms the check instead of
+	// silently losing it.
+	for _, prefix := range []string{"request", "messages1"} {
 		lines := linesWithPrefix(out.String(), prefix+" ")
 		if len(lines) != wantRequests {
 			t.Fatalf("stream %q: want exactly %d hash lines, got %d:\n%s", prefix, wantRequests, len(lines), out.String())
@@ -83,6 +88,17 @@ func TestCacheAudit_AllEqual_Exit0(t *testing.T) {
 		for i, ln := range lines {
 			if h := hashOfLine(t, ln); h != first {
 				t.Fatalf("stream %q line %d hash %q != first %q (a drift the gate must catch)", prefix, i+1, h, first)
+			}
+		}
+	}
+	// Consistency-if-present, so the manifest-in-Description guard re-arms by itself the
+	// day skill goes back to always-active, instead of quietly staying unchecked.
+	if lines := linesWithPrefix(out.String(), "skillman "); len(lines) > 0 {
+		first := hashOfLine(t, lines[0])
+		for i, ln := range lines {
+			if h := hashOfLine(t, ln); h != first {
+				t.Fatalf("skillman line %d hash %q != first %q: the manifest rendered into the "+
+					"skill Description mutated between turns and busted the prefix", i+1, h, first)
 			}
 		}
 	}

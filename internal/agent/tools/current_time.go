@@ -29,7 +29,8 @@ func (CurrentTime) Spec() Spec {
 		Summary:     "Get the current date and time as an RFC-3339 string.",
 		Description: "Returns the current instant formatted as RFC-3339. With no argument it returns UTC; pass an IANA timezone name (e.g. 'Europe/Rome') to get the time in that zone with its UTC offset.",
 		Parameters:  params,
-		Deferred:    false,
+		// Deferred: barato per 103 token e usato di rado. Il modello lo trova per nome.
+		Deferred: true,
 	}
 }
 

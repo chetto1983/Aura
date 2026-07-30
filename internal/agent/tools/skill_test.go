@@ -66,9 +66,6 @@ func TestSkillSpecSchemaDiscipline(t *testing.T) {
 	if spec.Name != "skill" {
 		t.Fatalf("name = %q, want skill", spec.Name)
 	}
-	if spec.Deferred {
-		t.Fatalf("skill tool must be non-deferred (D-05)")
-	}
 
 	var schema map[string]any
 	if err := json.Unmarshal(spec.Parameters, &schema); err != nil {
@@ -149,6 +146,9 @@ func TestSkillRegistryValidates(t *testing.T) {
 	t.Parallel()
 	reg := NewRegistry()
 	reg.Register(&SkillTool{Loader: newFakeLoader()})
+	// skill is deferred now, and Validate requires at least one always-active tool.
+	// text_response is the honest stand-in: it is the one no turn can end without.
+	reg.Register(&TextResponse{})
 	if err := reg.Validate(); err != nil {
 		t.Fatalf("reg.Validate() with skill tool = %v, want nil (Pitfall 6)", err)
 	}
@@ -261,9 +261,6 @@ func TestSkillNilLoaderManifest(t *testing.T) {
 	desc := tool.Spec().Description
 	if !strings.Contains(desc, "none loaded") {
 		t.Fatalf("nil-loader Description should note none loaded: %q", desc)
-	}
-	if tool.Spec().Deferred {
-		t.Fatalf("nil-loader skill tool must still be non-deferred")
 	}
 }
 

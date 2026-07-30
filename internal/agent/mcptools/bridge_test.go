@@ -147,9 +147,12 @@ func TestBridge_MemoryNamespaceToolsAreNotDeferredByDefault(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("want 2 memory tools, got %d", len(got))
 	}
+	// The memory namespace lost its non-deferred exception: six full schemas in every
+	// request bought ~2.7k tokens to answer "ok", for a capability the model reaches via
+	// tool_search exactly like the 14 calendar and 14 whatsapp tools already did.
 	for _, tool := range got {
-		if tool.Spec().Deferred {
-			t.Fatalf("%s Deferred = true, want false for the default memory MCP surface", tool.Spec().Name)
+		if !tool.Spec().Deferred {
+			t.Fatalf("%s Deferred = false; every bridged tool is deferred", tool.Spec().Name)
 		}
 	}
 }

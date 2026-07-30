@@ -10,9 +10,6 @@ func TestTodoWriteSpec(t *testing.T) {
 	if s.Name != "todo_write" {
 		t.Fatalf("name = %q, want todo_write", s.Name)
 	}
-	if s.Deferred {
-		t.Fatal("todo_write should be non-deferred (a core planning verb)")
-	}
 }
 
 func TestTodoWrite_StoresAndRenders(t *testing.T) {

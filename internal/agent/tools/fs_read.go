@@ -40,7 +40,10 @@ func (t *FSRead) Spec() Spec {
 		Summary:     "Read a file from disk.",
 		Description: "Read a file from the host filesystem and return its contents. `path` is absolute or workspace-relative. By default the whole file is returned; for a long file pass a 1-based `offset` plus a `limit` to read a targeted range instead of pulling the whole file into context. A large result pages to a sidecar you read with read_tool_output rather than flooding the conversation. Read a file with this tool BEFORE editing it — fs_edit matches the exact bytes returned here. A missing or empty file returns an explicit error/notice, never silent empty content. Prefer these structured file tools over shell cat/grep so results come back structured and large files page. Example: {\"path\":\"cmd/aura/main.go\"} for a whole file, or {\"path\":\"app.log\",\"offset\":2000,\"limit\":200} to read just a window.",
 		Parameters:  params,
-		Deferred:    false,
+		// Deferred con fs_edit/fs_glob/fs_grep, che lo erano gia': tenere due dei cinque
+		// tool di filesystem sempre visibili spingeva a ripiegare su quelli invece del piu'
+		// specifico. O tutti o nessuno, e nessuno costa meno.
+		Deferred: true,
 	}
 }
 

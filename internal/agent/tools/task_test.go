@@ -52,9 +52,6 @@ func (f *fakeTaskStore) RunScheduledTaskNow(_ context.Context, id string) error 
 func TestTaskSchema(t *testing.T) {
 	spec := (&TaskTool{}).Spec()
 
-	if spec.Deferred {
-		t.Error("task tool must be non-deferred (D-11, core verb)")
-	}
 	if spec.Name != "task" {
 		t.Errorf("Name = %q, want %q", spec.Name, "task")
 	}
@@ -354,10 +351,13 @@ func TestActionScheduleCapturesOrigin(t *testing.T) {
 }
 
 // TestRegistryValidatesWithTaskTool mirrors the Phase 9 ValidatesWithSwarmSpawn
-// precedent: a registry holding the non-deferred task tool passes Validate().
+// precedent. task is deferred now (its 795 tokens buy a capability that matters in a
+// fraction of turns), so the registry needs a real always-active tool to satisfy
+// Validate: text_response, which is the one no turn can end without.
 func TestRegistryValidatesWithTaskTool(t *testing.T) {
 	reg := NewRegistry()
 	reg.Register(&TaskTool{Store: &fakeTaskStore{}})
+	reg.Register(&TextResponse{})
 	reg.Register(&ToolSearch{Registry: reg})
 	if err := reg.Validate(); err != nil {
 		t.Fatalf("registry with the non-deferred task tool must validate: %v", err)

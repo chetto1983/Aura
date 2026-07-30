@@ -95,12 +95,15 @@ func (t *DocumentSearch) Spec() Spec {
   },
   "required": ["query"]
 }`),
-		// Always-visible (NOT deferred): document_search is the headline "chat with your
-		// documents" capability. Hiding it behind tool_search made the agent default to the
-		// visible fs_glob/fs_grep for uploaded-document questions and never discover retrieval
-		// (the live upload->chat regression). Senior agentic-RAG systems (elysia, Neo4j
-		// llm-graph-builder, LibreChat) keep retrieval permanently visible; mirror that.
-		Deferred: false,
+		// Deferred again, with the regression that un-deferred it in mind. Hiding retrieval
+		// behind tool_search once made the agent answer document questions with the VISIBLE
+		// fs_glob/fs_grep and never discover it — the live upload->chat regression. What
+		// changed is that fs_glob/fs_grep are no longer visible either: with only the four
+		// primitives always on, there is no plausible-looking wrong tool left to grab, which
+		// is what actually caused that miss. If retrieval regresses again, this is the first
+		// line to revisit — and the fix is the <documents> prompt block naming it, not a
+		// permanent 391-token seat in every manifest.
+		Deferred: true,
 	}
 }
 
