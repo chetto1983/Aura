@@ -77,9 +77,13 @@ try:
                     }
 
         auth = None
+        from neo4j_agent_memory.mcp.capacity import MemoryCapacityMiddleware
         from neo4j_agent_memory.mcp.outcomes import AuraDomainOutcomeMiddleware
 
-        middleware = [AuraDomainOutcomeMiddleware()]
+        middleware = [
+            AuraDomainOutcomeMiddleware(),
+            MemoryCapacityMiddleware(),
+        ]
         if auth_secret is not None:
             from neo4j_agent_memory.mcp.auth import build_aura_auth
 
@@ -175,12 +179,18 @@ try:
                 }
 
             auth = None
-            middleware = None
+            from neo4j_agent_memory.mcp.capacity import MemoryCapacityMiddleware
+            from neo4j_agent_memory.mcp.outcomes import AuraDomainOutcomeMiddleware
+
+            middleware = [
+                AuraDomainOutcomeMiddleware(),
+                MemoryCapacityMiddleware(),
+            ]
             if auth_secret is not None:
                 from neo4j_agent_memory.mcp.auth import build_aura_auth
 
                 auth, identity_middleware = build_aura_auth(auth_secret)
-                middleware = [identity_middleware]
+                middleware.append(identity_middleware)
 
             self._mcp = FastMCP(
                 server_name,
@@ -215,7 +225,14 @@ try:
                 host: Host to bind to.
                 port: Port to listen on.
             """
-            await self._mcp.run_async(transport="sse", host=host, port=port)
+            from neo4j_agent_memory.mcp.capacity import capacity_http_middleware
+
+            await self._mcp.run_async(
+                transport="sse",
+                host=host,
+                port=port,
+                middleware=capacity_http_middleware(),
+            )
 
     async def run_server(
         neo4j_uri: str,
@@ -322,13 +339,23 @@ try:
         )
 
         if transport == "sse":
-            await server.run_async(transport="sse", host=host, port=port)
+            from neo4j_agent_memory.mcp.capacity import capacity_http_middleware
+
+            await server.run_async(
+                transport="sse",
+                host=host,
+                port=port,
+                middleware=capacity_http_middleware(),
+            )
         elif transport == "http":
+            from neo4j_agent_memory.mcp.capacity import capacity_http_middleware
+
             await server.run_async(
                 transport="http",
                 host=host,
                 port=port,
                 stateless_http=auth_secret is not None,
+                middleware=capacity_http_middleware(),
             )
         else:
             await server.run_async(transport="stdio")

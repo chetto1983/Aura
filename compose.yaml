@@ -596,6 +596,9 @@ services:
     pull_policy: never
     container_name: aura-agent-memory-mcp
     restart: unless-stopped
+    cpus: 2.0
+    mem_limit: 2g
+    pids_limit: 256
     depends_on:
       neo4j:
         condition: service_healthy
