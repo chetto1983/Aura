@@ -2,6 +2,7 @@ package documents
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -74,7 +75,7 @@ func TestEmbeddingFailureMarksTheDocumentNotReady(t *testing.T) {
 		}
 	})
 
-	t.Run("success leaves the status alone", func(t *testing.T) {
+	t.Run("success marks the catalog ready", func(t *testing.T) {
 		t.Parallel()
 		cat := &recordingCatalog{}
 		w := degradedWorker(&fakeEmbeddingGenerator{}, &fakeEmbeddingIndexer{}, cat)
@@ -82,8 +83,23 @@ func TestEmbeddingFailureMarksTheDocumentNotReady(t *testing.T) {
 		if err := w.Process(context.Background(), oneChunkDoc()); err != nil {
 			t.Fatalf("Process = %v, want nil", err)
 		}
-		if cat.calls != 0 {
-			t.Fatalf("SetSearchDocumentStatus called %d times on success, want 0", cat.calls)
+		if cat.calls != 1 || cat.id != "doc-1" || cat.status != DocumentStatusReady || cat.reason != "" {
+			t.Fatalf("catalog success update = calls:%d id:%q status:%q reason:%q", cat.calls, cat.id, cat.status, cat.reason)
+		}
+	})
+
+	t.Run("ready transition failure keeps the durable job retryable", func(t *testing.T) {
+		t.Parallel()
+		want := errors.New("catalog unavailable")
+		cat := &recordingCatalog{err: want}
+		w := degradedWorker(&fakeEmbeddingGenerator{}, &fakeEmbeddingIndexer{}, cat)
+
+		err := w.Process(context.Background(), oneChunkDoc())
+		if !errors.Is(err, want) {
+			t.Fatalf("Process error = %v, want catalog transition failure", err)
+		}
+		if cat.calls != 1 || cat.status != DocumentStatusReady {
+			t.Fatalf("catalog retryable update = calls:%d status:%q", cat.calls, cat.status)
 		}
 	})
 

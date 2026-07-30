@@ -25,8 +25,8 @@ type EmbeddingIndexer interface {
 	UpsertEmbeddings(ctx context.Context, documentID string, chunks []EmbeddedChunk, status JobStatus, embeddedCount int) (int, error)
 }
 
-// DocumentStatusSetter narrows the catalog to the one thing the embedding worker needs:
-// telling the truth about a document whose vector half never landed.
+// DocumentStatusSetter narrows the catalog to the one lifecycle field the embedding
+// worker owns: ready only after all vectors land, failed when they cannot.
 //
 // It exists because a document was marked "ready" the moment its bytes arrived, and
 // nothing ever revisited that. When embedding then failed for good, the catalog still said
@@ -46,8 +46,7 @@ type EmbeddingWorker struct {
 	Jobs      JobStore
 	Generator EmbeddingGenerator
 	Indexer   EmbeddingIndexer
-	// Catalog is optional; when set, a terminal embedding failure marks the document so
-	// "ready" never outlives the retrieval it promises.
+	// Catalog is optional; when set, it follows the terminal embedding outcome.
 	Catalog DocumentStatusSetter
 	// BatchSize caps chunks per request; BatchBytes caps their combined size. Whichever
 	// binds first wins, and the byte cap is the one that matters for wide rows.
@@ -153,6 +152,18 @@ func (w *EmbeddingWorker) Process(ctx context.Context, doc ExtractedDocument) (e
 			job, _ = w.Jobs.UpdateProgress(ctx, job.ID, status, job.SparseChunks, embeddedTotal)
 		}
 		start = end
+	}
+	return w.markDocumentReady(ctx, doc.ID)
+}
+
+func (w *EmbeddingWorker) markDocumentReady(ctx context.Context, searchDocumentID string) error {
+	if w.Catalog == nil {
+		return nil
+	}
+	if err := w.Catalog.SetSearchDocumentStatus(
+		context.WithoutCancel(ctx), searchDocumentID, DocumentStatusReady, "",
+	); err != nil {
+		return fmt.Errorf("mark document ready: %w", err)
 	}
 	return nil
 }

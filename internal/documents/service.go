@@ -33,6 +33,12 @@ type EmbedQueue interface {
 	Enqueue(ctx context.Context, doc ExtractedDocument) error
 }
 
+// IngestCatalog owns the CLI-only logical catalog lifecycle for a search document.
+type IngestCatalog interface {
+	CreateDocument(context.Context, CreateDocumentRequest) (Document, error)
+	SetSearchDocumentStatus(ctx context.Context, searchDocumentID string, status DocumentStatus, reason string) error
+}
+
 // Clock returns the current time; tests inject it for deterministic timestamps.
 type Clock func() time.Time
 
@@ -43,6 +49,7 @@ type Service struct {
 	Indexer   SparseIndexer
 	Searcher  SearchBackend
 	Embedder  EmbedQueue
+	Catalog   IngestCatalog
 	Clock     Clock
 	MaxBytes  int64
 
@@ -140,20 +147,56 @@ func (s *Service) IngestPath(ctx context.Context, req IngestRequest, path string
 	if err != nil {
 		return s.failJob(ctx, job, err)
 	}
+	if s.Catalog != nil && strings.TrimSpace(req.IdentityID) != "" {
+		title := strings.TrimSpace(doc.Title)
+		if title == "" {
+			title = req.FileName
+		}
+		_, err = s.Catalog.CreateDocument(ctx, CreateDocumentRequest{
+			IdentityID: req.IdentityID,
+			Scope:      DocumentScopeLibrary,
+			Title:      title,
+			Status:     DocumentStatusProcessing,
+			Metadata: map[string]any{
+				"search_document_id": doc.ID,
+				"document_job_id":    job.ID,
+				"source_id":          req.SourceID,
+				"source_kind":        req.SourceKind,
+			},
+		})
+		if err != nil {
+			return s.failJob(ctx, job, fmt.Errorf("catalog CLI document: %w", err))
+		}
+	}
 	indexed, err := s.Indexer.UpsertSparse(ctx, doc)
 	if err != nil {
+		s.markCatalogFailed(ctx, doc.ID, err)
 		return s.failJob(ctx, job, err)
 	}
 	job, err = s.Jobs.UpdateProgress(ctx, job.ID, JobSearchable, indexed, 0)
 	if err != nil {
+		s.markCatalogFailed(ctx, doc.ID, err)
 		return &job, err
 	}
 	if s.Embedder != nil {
 		if err := s.Embedder.Enqueue(context.WithoutCancel(ctx), doc); err != nil {
 			slog.Warn("documents: embed enqueue dropped", "document_id", doc.ID, "source_id", req.SourceID, "err", err)
+			s.markCatalogFailed(ctx, doc.ID, err)
 		}
 	}
 	return &job, nil
+}
+
+func (s *Service) markCatalogFailed(ctx context.Context, documentID string, cause error) {
+	if s.Catalog == nil {
+		return
+	}
+	reason := fmt.Sprintf("document ingest failed: %v", cause)
+	if err := s.Catalog.SetSearchDocumentStatus(
+		context.WithoutCancel(ctx), documentID, DocumentStatusFailed, reason,
+	); err != nil {
+		slog.Warn("documents: could not mark CLI catalog document failed", "document_id", documentID, "err", err)
+	}
 }
 
 // Search delegates to the configured document search backend.

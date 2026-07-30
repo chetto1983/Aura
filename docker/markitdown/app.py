@@ -239,6 +239,7 @@ def _extract_pdf(path: str) -> dict:
 def _extract_xlsx(path: str) -> dict:
     try:
         from openpyxl import load_workbook
+        from openpyxl.utils import get_column_letter
     except Exception:
         raise HTTPException(status_code=503, detail="xlsx extractor unavailable")
 
@@ -251,14 +252,14 @@ def _extract_xlsx(path: str) -> dict:
             row_end = 0
             for row_index, row in enumerate(ws.iter_rows(), start=1):
                 cells = []
-                for cell in row:
+                for column_index, cell in enumerate(row, start=1):
                     value = cell.value
                     if value is None:
                         continue
                     text = str(value).strip()
                     if not text:
                         continue
-                    cells.append(f"{cell.coordinate}: {text}")
+                    cells.append(f"{get_column_letter(column_index)}{row_index}: {text}")
                 if not cells:
                     continue
                 if row_start == 0:

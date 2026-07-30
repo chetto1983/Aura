@@ -88,7 +88,9 @@ func docsIngest(ctx context.Context, args []string, out io.Writer, factory docsS
 	defer closeFn()
 
 	start := time.Now()
-	job, err := svc.IngestPath(ctx, documents.IngestRequest{SourceID: *sourceID, SourceKind: *sourceKind}, fs.Arg(0))
+	job, err := svc.IngestPath(ctx, documents.IngestRequest{
+		SourceID: *sourceID, SourceKind: *sourceKind, IdentityID: identityctx.IdentityID(ctx),
+	}, fs.Arg(0))
 	if err != nil {
 		return err
 	}

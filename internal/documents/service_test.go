@@ -44,6 +44,60 @@ func TestServiceMakesDocumentSearchableBeforeEmbedding(t *testing.T) {
 	}
 }
 
+func TestServiceCatalogsOwnedCLIIngestBeforeEmbedding(t *testing.T) {
+	path := writeNamedTempFile(t, "manual.pdf", "payload")
+	catalog := &fakeIngestCatalog{}
+	service := &Service{
+		Jobs:      newFakeJobStore(),
+		Extractor: &fakeExtractor{resp: oneChunkResponse()},
+		Indexer:   &fakeSparseIndexer{count: 1},
+		Embedder:  &fakeEmbedQueue{},
+		Catalog:   catalog,
+		Clock:     func() time.Time { return time.Unix(10, 0) },
+	}
+
+	job, err := service.IngestPath(t.Context(), IngestRequest{
+		SourceID: "cli", IdentityID: "00000000-0000-0000-0000-000000000001",
+	}, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if catalog.created.IdentityID != "00000000-0000-0000-0000-000000000001" {
+		t.Fatalf("catalog identity = %q", catalog.created.IdentityID)
+	}
+	if catalog.created.Status != DocumentStatusProcessing {
+		t.Fatalf("catalog status = %q, want processing until embeddings land", catalog.created.Status)
+	}
+	if catalog.created.Metadata["search_document_id"] != job.DocumentID ||
+		catalog.created.Metadata["document_job_id"] != job.ID {
+		t.Fatalf("catalog provenance = %#v", catalog.created.Metadata)
+	}
+}
+
+func TestServiceFailsOwnedCLIIngestWhenCatalogWriteFails(t *testing.T) {
+	path := writeNamedTempFile(t, "manual.pdf", "payload")
+	indexer := &fakeSparseIndexer{count: 1}
+	service := &Service{
+		Jobs:      newFakeJobStore(),
+		Extractor: &fakeExtractor{resp: oneChunkResponse()},
+		Indexer:   indexer,
+		Catalog:   &fakeIngestCatalog{err: errors.New("catalog unavailable")},
+	}
+
+	job, err := service.IngestPath(t.Context(), IngestRequest{
+		SourceID: "cli", IdentityID: "00000000-0000-0000-0000-000000000001",
+	}, path)
+	if err == nil || !strings.Contains(err.Error(), "catalog CLI document") {
+		t.Fatalf("IngestPath error = %v, want catalog failure", err)
+	}
+	if job == nil || job.Status != JobFailed {
+		t.Fatalf("job = %#v, want failed ledger state", job)
+	}
+	if len(indexer.docs) != 0 {
+		t.Fatal("sparse index ran before the required CLI catalog write")
+	}
+}
+
 func TestServiceIngestPathStaysFailSoftAndWarnsWhenEmbedEnqueueDrops(t *testing.T) {
 	path := writeNamedTempFile(t, "manual.pdf", "payload")
 	jobs := newFakeJobStore()
@@ -260,6 +314,20 @@ func (f *fakeSparseIndexer) UpsertSparse(_ context.Context, doc ExtractedDocumen
 type fakeEmbedQueue struct {
 	docs []ExtractedDocument
 	err  error
+}
+
+type fakeIngestCatalog struct {
+	created CreateDocumentRequest
+	err     error
+}
+
+func (f *fakeIngestCatalog) CreateDocument(_ context.Context, req CreateDocumentRequest) (Document, error) {
+	f.created = req
+	return Document{ID: "catalog-1"}, f.err
+}
+
+func (f *fakeIngestCatalog) SetSearchDocumentStatus(context.Context, string, DocumentStatus, string) error {
+	return f.err
 }
 
 func (f *fakeEmbedQueue) Enqueue(_ context.Context, doc ExtractedDocument) error {

@@ -89,13 +89,17 @@ func newDocumentRetrievalService(deps documentServiceDeps) *documents.Service {
 }
 
 // newDocumentCLIService composes `aura docs`, which both ingests AND retrieves, so it is
-// exactly the union of the two runtime halves. Before this it was neither: it set five
+// the union of the two runtime halves plus the CLI-only logical catalog writer. Before this it set five
 // fields of fifteen, so `docs bench` printed an industrial score for a retrieval pipeline
 // that was never built. The union is derived rather than re-listed so no field is written
 // twice; docs_service_test.go is what keeps it a union, asserting structurally that every
 // field a runtime half sets is set here too.
 func newDocumentCLIService(deps documentServiceDeps) *documents.Service {
 	svc := newDocumentIngestService(deps)
+	// Asset/channel ingestion records an immutable asset version later in its own
+	// pipeline. Only a local CLI file lacks that recorder, so only this composition
+	// creates the logical catalog row directly.
+	svc.Catalog = documents.NewPostgresCatalogStore(deps.pool)
 	retrieval := newDocumentRetrievalService(deps)
 	svc.Knowledge = retrieval.Knowledge
 	svc.QueryEmbedder = retrieval.QueryEmbedder

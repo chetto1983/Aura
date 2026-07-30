@@ -44,6 +44,18 @@ func TestDocsIngestPrintsSearchableJob(t *testing.T) {
 	}
 }
 
+func TestDocsIngestThreadsTheOperatorIdentity(t *testing.T) {
+	const operator = "00000000-0000-0000-0000-000000000001"
+	svc := &fakeDocsService{ingestJob: &documents.Job{ID: "job-1"}}
+	ctx := identityctx.WithIdentityID(t.Context(), operator)
+	if err := runDocsCommand(ctx, []string{"ingest", "manual.pdf"}, &bytes.Buffer{}, fakeDocsFactory(svc)); err != nil {
+		t.Fatal(err)
+	}
+	if svc.ingestReq.IdentityID != operator {
+		t.Fatalf("ingest identity = %q, want %q", svc.ingestReq.IdentityID, operator)
+	}
+}
+
 func TestDocsSearchPrintsHits(t *testing.T) {
 	svc := &fakeDocsService{
 		hits: []documents.SearchHit{{DocumentID: "doc-1", ChunkID: "chunk-1", Text: "hello"}},
@@ -170,12 +182,14 @@ func fakeDocsFactory(svc *fakeDocsService) docsServiceFactory {
 
 type fakeDocsService struct {
 	ingestJob   *documents.Job
+	ingestReq   documents.IngestRequest
 	statusJob   *documents.Job
 	hits        []documents.SearchHit
 	retrieveReq documents.SearchRequest
 }
 
-func (f *fakeDocsService) IngestPath(context.Context, documents.IngestRequest, string) (*documents.Job, error) {
+func (f *fakeDocsService) IngestPath(_ context.Context, req documents.IngestRequest, _ string) (*documents.Job, error) {
+	f.ingestReq = req
 	return f.ingestJob, nil
 }
 
