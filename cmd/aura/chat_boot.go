@@ -87,6 +87,9 @@ func (e *chatEnv) close() {
 		defer cancel()
 		_ = e.toolHandles.BackgroundShells.Shutdown(ctx)
 	}
+	if e.toolHandles.DocumentSearch != nil {
+		_ = e.toolHandles.DocumentSearch.Close()
+	}
 	_ = closeMCPServers(e.mcpClosers)
 	if e.pool != nil {
 		e.pool.Close()

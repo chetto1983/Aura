@@ -165,6 +165,7 @@ func buildRegistry() *tools.Registry {
 type runtimeToolHandles struct {
 	BackgroundShells *tools.BackgroundShells
 	ShellApprovals   *tools.ShellApprovals
+	DocumentSearch   *docsToolSearcher
 	// ShellPoll / ShellKill are retained so serve boot can wire their .Caps to the live
 	// capability store (VERIF-7 / D-18): the pool-free manifest paths construct them with a
 	// nil Caps (owner-only fail-closed), and serve.go sets Caps = the identity store once it
@@ -242,8 +243,10 @@ func buildBaseRegistryWithAdaptiveControls(
 	// already SSRF-guarded — passing sandboxRouter here would be a scope error.
 	reg.Register(&tools.WebSearch{Engine: webEngine})
 	reg.Register(&tools.WebFetch{Engine: webEngine}) // manifest auto-sorts (web_fetch < web_search); never hand-order
+	documentSearch := &docsToolSearcher{cfg: cfg}
+	handles.DocumentSearch = documentSearch
 	reg.Register(&tools.DocumentSearch{
-		Searcher: docsToolSearcher{cfg: cfg},
+		Searcher: documentSearch,
 		Adaptive: adaptiveControls.documentRetrieval,
 	})
 	// shell_exec is the full host terminal — THE execution surface (amendment #50 / D-15c).

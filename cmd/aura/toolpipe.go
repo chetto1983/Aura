@@ -60,7 +60,7 @@ func openProductionToolPipeRuntime(ctx context.Context, cfg *config.Config) (too
 		TurnCapBytes: cfg.ConversationTurnCapBytes,
 	})
 	taskStore := newCronTaskStore(pool, convStore)
-	registry, _, mcpClosers, err := buildRegistryWithMCP(
+	registry, handles, mcpClosers, err := buildRegistryWithMCP(
 		ctx,
 		cfg,
 		taskStore,
@@ -74,7 +74,11 @@ func openProductionToolPipeRuntime(ctx context.Context, cfg *config.Config) (too
 		Registry: registry,
 		Context:  identityctx.WithIdentityID(ctx, identityID),
 		Close: func() error {
-			err := closeMCPServers(mcpClosers)
+			var documentErr error
+			if handles.DocumentSearch != nil {
+				documentErr = handles.DocumentSearch.Close()
+			}
+			err := errors.Join(documentErr, closeMCPServers(mcpClosers))
 			pool.Close()
 			return err
 		},
