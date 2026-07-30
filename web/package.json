@@ -97,6 +97,12 @@
   },
   "overrides": {
     "qs": "6.15.2",
+    "minimatch@^3.1.2": {
+      "brace-expansion": "1.1.17"
+    },
+    "minimatch@^10.2.0": {
+      "brace-expansion": "5.0.8"
+    },
     "eslint-plugin-jsx-a11y": {
       "eslint": "$eslint"
     }
