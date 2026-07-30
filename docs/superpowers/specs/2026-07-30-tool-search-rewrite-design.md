@@ -189,6 +189,86 @@ regenerated and grown as traffic accumulates.
   tools). Layer 1 covers it whenever the model knows the names, which the measured
   traffic says it usually does.
 
+## Adversarial review (partial)
+
+Five hostile reviews were dispatched; **one returned before the review was closed**.
+Its findings are recorded here. The literature, production-repo, methodology and
+scaling reviews did **not** deliver verdicts and remain open — in particular a
+methodology check that had begun investigating whether the embedder is
+deterministic, which if it is not would require re-measuring the 50% figure.
+
+### Confirmed by external evidence
+
+**Retrieval recall is the ceiling, and it is the thing nobody measures.** Stacklok:
+*"if the correct tool doesn't appear in the search results, even the best model
+cannot select it."* Independent replications of Anthropic's own server-side tool
+search score far below the vendor number — Arcade at 4,027 tools: regex 56%,
+BM25 64% ([arcade.dev](https://www.arcade.dev/blog/anthropic-tool-search-4000-tools-test/));
+Stacklok at 2,792 tools: 34% selection / 48% retrieval
+([stacklok.com](https://stacklok.com/blog/stackloks-mcp-optimizer-vs-anthropics-tool-search-tool-a-head-to-head-comparison/)).
+Both are vendor-authored and sell a competing retrieval layer — treat the direction
+as evidence, not the magnitudes. This makes the gate the most important part of
+this design, not the least.
+
+**An empty result must not read as an error-free success.** Anthropic's API returns
+an empty `tool_references` array silently on no match. This is the same hazard as
+the mount-race incident recorded above, and confirms Layer 1's requirement to
+distinguish *name not registered* from *no lexical match* from *registry not
+loaded*.
+
+**Any message naming a deferred tool must also name the load step.** Claude Code
+shipped this defect twice ([#62372](https://github.com/anthropics/claude-code/issues/62372),
+[#78360](https://github.com/anthropics/claude-code/issues/78360)) — a nudge or error
+string names a deferred tool, the model calls it directly, and misfires on the
+first call every time. Cheap invariant worth adding: lint reminder/error strings
+for deferred tool names.
+
+**The endogeneity has a measured cost elsewhere.**
+[claude-code#60052](https://github.com/anthropics/claude-code/issues/60052): *"the
+model sometimes skips the ToolSearch step (because it 'knows' the tool name from
+context), which causes a first-call failure followed by a retry."* This is the same
+mechanism that produces Aura's 62% `select:` rate.
+
+### Where Aura is already safe
+
+Tool-name shadowing by a later registration (factor-q#177, ClotoCore#283 — an MCP
+server silently replacing a sandboxed built-in) does not apply: `Registry.Register`
+panics on a duplicate name. Namespacing is already `<server>__<tool>`.
+
+### Two risks this review surfaced that the design does not yet answer
+
+**1. The always-visible name catalog is a documented footgun, and Layer 1 depends
+on it.** `sourceOrientation` embeds the live tool-name list into `tool_search`'s
+Description. hermes-agent#72560 reports exactly this shape failing: the search
+tool's own description advertises removed tools and omits newly added ones, and
+because the description is dynamic it is cache-invalidating. Aura's code argues the
+output is byte-stable because the registry is immutable per run — but an MCP mount
+changes the registry between runs, which is precisely the drift case. Layer 1's hit
+rate is a direct function of this catalog being present and correct. **This needs
+resolving before implementation**: either the catalog stays and its staleness and
+cache cost are measured, or it moves out of the tool schema into a turn-level
+context block.
+
+**2. Indexing `Summary` keeps the index attacker-controlled, and BM25 is trivially
+stuffable.** MCP tool summaries come from the server. MCPTox
+([arXiv:2508.14925](https://arxiv.org/abs/2508.14925)) measures up to 72.8% attack
+success across 45 live servers and 353 real tools, with refusal rates under 3% —
+and finds *more capable models are more susceptible*. A malicious server can put
+`"web search file read shell execute send message"` in a summary and capture the
+top rank for every query, at zero cost, under BM25. The existing `"untrusted MCP
+server summary data: "` prefix warns the model but does nothing to the ranker. This
+design does not make the exposure worse than the current one (Description is
+equally server-controlled), but it does not fix it either, and a lexical ranker is
+easier to game than a dense one. Worth an explicit decision rather than silence.
+
+**3. The discovery tool must never be droppable.**
+[claude-code#77083](https://github.com/anthropics/claude-code/issues/77083):
+post-compaction the manifest collapsed to exactly the last `tool_search` result
+set — and `tool_search` itself was dropped, leaving no path to reload anything, with
+no error surfaced. Aura keeps `tool_search` non-deferred and `Registry.Validate`
+excludes it from the actionable count, so the static case is covered; the
+compaction path should be checked against `native ∪ loaded`.
+
 ## Explicitly out of scope
 
 The deferred-tool grant still travels as markdown: `Execute` writes
