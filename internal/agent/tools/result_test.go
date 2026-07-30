@@ -9,6 +9,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"github.com/chetto1983/aura/internal/secret"
 	"pgregory.net/rapid"
 )
 
@@ -58,6 +59,46 @@ func TestNewResult_LargeSpills(t *testing.T) {
 
 // Test 2 (Req#6 small): a ≤cap output writes no sidecar and the history content
 // equals the raw preview, FullPath empty.
+func TestNewResult_RedactsConfiguredSecrets(t *testing.T) {
+	configured := "configured-tool-secret-0123456789"
+	discovered := "agent-discovered-secret-9876543210"
+	secret.ConfigureExactRedactor([]string{"AURA_TOOL_TOKEN=" + configured})
+	t.Cleanup(func() { secret.ConfigureExactRedactor(os.Environ()) })
+
+	runDir := t.TempDir()
+	content := configured + "\n" + discovered + "\n" + strings.Repeat("x", testCap)
+	ctx := ctxWithRunDir("sess-redact", "call-redact", runDir)
+	res, err := NewResult(ctx, content)
+	if err != nil {
+		t.Fatalf("NewResult: %v", err)
+	}
+	full, err := os.ReadFile(res.FullPath)
+	if err != nil {
+		t.Fatalf("read sidecar: %v", err)
+	}
+	if strings.Contains(string(full), configured) {
+		t.Fatalf("configured secret persisted in sidecar: %q", full)
+	}
+	if !strings.Contains(string(full), secret.ConfiguredValuePlaceholder) {
+		t.Fatalf("sidecar missing configured-secret placeholder: %q", full)
+	}
+	if !strings.Contains(string(full), discovered) {
+		t.Fatalf("agent-discovered working data was over-redacted: %q", full)
+	}
+	if res.Bytes != len(full) {
+		t.Fatalf("result bytes = %d, sidecar bytes = %d; redaction broke offsets", res.Bytes, len(full))
+	}
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(res.FullPath)
+		if err != nil {
+			t.Fatalf("stat sidecar: %v", err)
+		}
+		if got := info.Mode().Perm(); got != 0o600 {
+			t.Fatalf("sidecar permissions = %#o, want 0600", got)
+		}
+	}
+}
+
 func TestNewResultReservingTail_LargeKeepsFooter(t *testing.T) {
 	runDir := t.TempDir()
 	body := strings.Repeat("body-", testCap)

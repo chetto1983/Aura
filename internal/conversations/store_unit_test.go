@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/secret"
 )
 
 func TestDisplayTitle(t *testing.T) {
@@ -214,6 +215,54 @@ func TestAppendTurnWrites_PostgresTextSafeContent(t *testing.T) {
 	}
 	if !strings.Contains(turn.Content.String, "[NUL]") {
 		t.Fatalf("turn content missing replacement marker: %q", turn.Content.String)
+	}
+}
+
+func TestAppendTurnWrites_RedactsConfiguredSecretsInlineAndSpill(t *testing.T) {
+	configured := "configured-conversation-secret-0123456789"
+	discovered := "agent-discovered-secret-9876543210"
+	secret.ConfigureExactRedactor([]string{"AURA_DB_TOKEN=" + configured})
+	t.Cleanup(func() { secret.ConfigureExactRedactor(os.Environ()) })
+
+	const conversationID = "00000000-0000-0000-0000-000000000001"
+	inlineStore := New(nil, Config{RunDir: t.TempDir(), TurnCapBytes: 1024})
+	inline, _, err := inlineStore.appendTurnWrites(AppendTurnParams{
+		ConversationID: conversationID,
+		Seq:            1,
+		Role:           llm.RoleTool,
+		Content:        configured + " " + discovered,
+	})
+	if err != nil {
+		t.Fatalf("append inline: %v", err)
+	}
+	if strings.Contains(inline.Content.String, configured) ||
+		!strings.Contains(inline.Content.String, secret.ConfiguredValuePlaceholder) {
+		t.Fatalf("inline content was not redacted: %q", inline.Content.String)
+	}
+	if !strings.Contains(inline.Content.String, discovered) {
+		t.Fatalf("inline agent-discovered data was over-redacted: %q", inline.Content.String)
+	}
+
+	spillStore := New(nil, Config{RunDir: t.TempDir(), TurnCapBytes: 32})
+	spilled, _, err := spillStore.appendTurnWrites(AppendTurnParams{
+		ConversationID: conversationID,
+		Seq:            2,
+		Role:           llm.RoleTool,
+		Content:        configured + " " + discovered,
+	})
+	if err != nil {
+		t.Fatalf("append spill: %v", err)
+	}
+	raw, err := os.ReadFile(spilled.ContentSidecarPath.String)
+	if err != nil {
+		t.Fatalf("read spill sidecar: %v", err)
+	}
+	if strings.Contains(string(raw), configured) ||
+		!strings.Contains(string(raw), secret.ConfiguredValuePlaceholder) {
+		t.Fatalf("spill sidecar was not redacted: %q", raw)
+	}
+	if !strings.Contains(string(raw), discovered) {
+		t.Fatalf("spilled agent-discovered data was over-redacted: %q", raw)
 	}
 }
 

@@ -750,7 +750,7 @@ Plans:
 
 **Wave 2** *(depends on amendments)*
 
-- [ ] 40-06-PLAN.md — SEC-01 inbound exact-match configured-secret redaction at both at-rest surfaces [depends_on 40-01]
+- [x] 40-06-PLAN.md — SEC-01 inbound exact-match configured-secret redaction at both at-rest surfaces [depends_on 40-01]
 - [x] 40-07-PLAN.md — SEC-02 same-origin CORS removal + config-surface deletion [depends_on 40-01]
 
 **Wave 3** *(depends on the config/serve.go seams)*

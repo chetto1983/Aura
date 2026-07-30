@@ -20,6 +20,7 @@ import (
 	"github.com/chetto1983/aura/internal/knowledge"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/mcp"
+	"github.com/chetto1983/aura/internal/secret"
 	"github.com/joho/godotenv"
 )
 
@@ -355,6 +356,7 @@ func LoadDB() *Config {
 // fail-fast) on top; LoadDB returns this as-is so DB-only commands skip the key.
 func loadBase() *Config {
 	_ = godotenv.Load() // best-effort; missing .env is not fatal
+	secret.ConfigureExactRedactor(os.Environ())
 
 	pgUser := envDefault("POSTGRES_USER", "aura")
 	pgPassword := os.Getenv("POSTGRES_PASSWORD")

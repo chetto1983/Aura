@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/chetto1983/aura/internal/secret"
 	"github.com/google/uuid"
 )
 
@@ -114,5 +115,20 @@ func TestAppendTurnTx_InlineAtCap(t *testing.T) {
 		ConversationID: convID, Seq: 5, Role: "tool", Content: strings.Repeat("x", 8),
 	}); err != nil {
 		t.Fatalf("AppendTurnTx(at-cap content): want inline success, got %v", err)
+	}
+}
+
+func TestAppendTurnTx_AppliesRedactionBeforeSpillGuard(t *testing.T) {
+	configured := strings.Repeat("configured-secret-", 4)
+	secret.ConfigureExactRedactor([]string{"AURA_DB_TOKEN=" + configured})
+	t.Cleanup(func() { secret.ConfigureExactRedactor(os.Environ()) })
+
+	capBytes := len(secret.ConfiguredValuePlaceholder)
+	s := &Store{q: sqlc.New(&fakeDBTX{}), runDir: t.TempDir(), turnCapBytes: capBytes}
+	convID := uuid.Must(uuid.NewV7()).String()
+	if err := s.AppendTurnTx(context.Background(), sqlc.New(&fakeDBTX{}), AppendTurnParams{
+		ConversationID: convID, Seq: 5, Role: "tool", Content: configured,
+	}); err != nil {
+		t.Fatalf("AppendTurnTx must measure the redacted content before the spill guard: %v", err)
 	}
 }

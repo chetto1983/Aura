@@ -9,6 +9,7 @@ import (
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/pgnumeric"
+	"github.com/chetto1983/aura/internal/secret"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -129,7 +130,7 @@ func (s *Store) AppendTurnTx(ctx context.Context, q *sqlc.Queries, p AppendTurnP
 	// Reject a would-be spill BEFORE appendTurnWrites so maybeSpill never writes a sidecar
 	// this no-cleanup tx path could orphan on rollback (WR-01). The length test mirrors
 	// maybeSpill exactly (postgresTextSafe applied, compared against turnCapBytes).
-	if len(postgresTextSafe(p.Content)) > s.turnCapBytes {
+	if len(postgresTextSafe(secret.RedactConfigured(p.Content))) > s.turnCapBytes {
 		return fmt.Errorf("append turn tx %s seq %d: %w", p.ConversationID, p.Seq, ErrContentSpillUnsupported)
 	}
 	turn, agg, err := s.appendTurnWrites(p)
@@ -224,7 +225,7 @@ func (s *Store) appendTurnWrites(p AppendTurnParams) (sqlc.InsertConversationTur
 	if err != nil {
 		return sqlc.InsertConversationTurnParams{}, sqlc.UpdateConversationAggregatesParams{}, fmt.Errorf("append turn: %w", err)
 	}
-	safeContent := postgresTextSafe(p.Content)
+	safeContent := postgresTextSafe(secret.RedactConfigured(p.Content))
 	content, sidecarPath, err := s.maybeSpill(p.ConversationID, p.Seq, safeContent)
 	if err != nil {
 		return sqlc.InsertConversationTurnParams{}, sqlc.UpdateConversationAggregatesParams{}, fmt.Errorf("append turn %s seq %d: %w", p.ConversationID, p.Seq, err)

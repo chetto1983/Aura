@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"time"
 	"unicode/utf8"
+
+	"github.com/chetto1983/aura/internal/secret"
 )
 
 // ToolCallContext carries the per-Execute identifiers the spillover helper needs
@@ -139,6 +141,7 @@ func NewResult(ctx context.Context, content string) (ToolResult, error) {
 	if !ok {
 		return ToolResult{}, fmt.Errorf("tools.NewResult: missing tool-call context (call WithToolCallContext first)")
 	}
+	content = secret.RedactConfigured(content)
 	total := len(content)
 	if total <= tc.cap {
 		return ToolResult{Preview: content, Bytes: total, Truncated: false}, nil
@@ -188,6 +191,8 @@ func NewResultReservingTail(ctx context.Context, body, footer string) (ToolResul
 	if !ok {
 		return ToolResult{}, fmt.Errorf("tools.NewResultReservingTail: missing tool-call context (call WithToolCallContext first)")
 	}
+	body = secret.RedactConfigured(body)
+	footer = secret.RedactConfigured(footer)
 	content := body + footer
 	total := len(content)
 	if total <= tc.cap {
