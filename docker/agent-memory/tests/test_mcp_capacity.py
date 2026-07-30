@@ -19,6 +19,7 @@ from neo4j_agent_memory.mcp.capacity import (
     MAX_HTTP_BODY_BYTES,
     MAX_RESPONSE_BYTES,
     MemoryCapacityMiddleware,
+    RequestBodyLimitMiddleware,
     _encoded_size,
     capacity_http_middleware,
 )
@@ -179,3 +180,39 @@ def test_http_body_cap_rejects_content_length_before_route_execution():
 
     assert response.status_code == 413
     assert called is False
+
+
+def test_http_body_cap_preserves_disconnect_after_replaying_the_body():
+    upstream = [
+        {"type": "http.request", "body": b"{}", "more_body": False},
+        {"type": "http.disconnect"},
+    ]
+    upstream_calls = 0
+
+    async def receive():
+        nonlocal upstream_calls
+        upstream_calls += 1
+        return upstream.pop(0)
+
+    async def downstream(_scope, wrapped_receive, _send):
+        assert await wrapped_receive() == {
+            "type": "http.request",
+            "body": b"{}",
+            "more_body": False,
+        }
+        assert await wrapped_receive() == {"type": "http.disconnect"}
+
+    middleware = RequestBodyLimitMiddleware(downstream)
+    asyncio.run(
+        middleware(
+            {
+                "type": "http",
+                "method": "POST",
+                "headers": [(b"content-length", b"2")],
+            },
+            receive,
+            lambda _message: None,
+        )
+    )
+
+    assert upstream_calls == 2

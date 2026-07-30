@@ -376,7 +376,7 @@ class RequestBodyLimitMiddleware:
         async def replay() -> dict:
             if messages:
                 return messages.pop(0)
-            return {"type": "http.disconnect"}
+            return await receive()
 
         await self._app(scope, replay, send)
 
