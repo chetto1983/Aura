@@ -217,6 +217,18 @@ func classifyTransportErr(err error) error {
 	if errors.As(err, &ie) {
 		return ie // SSRF/blocked — non-retryable, sanitized by the caller
 	}
+	// A peer-side stream reset is DETERMINISTIC, not transient: the same request
+	// from the same client earns the same RST_STREAM every time. Retrying it only
+	// spends the deadline and then reports `timeout`, hiding the real cause — the
+	// exact failure that made 6 production web_fetch calls look like network
+	// trouble when the peer was in fact refusing the User-Agent in 0.15s.
+	if peerResetStream(err) {
+		return &WebError{
+			Code:    CodeHTTPError,
+			Reason:  ReasonPeerResetStream,
+			Message: "the site closed the connection without answering",
+		}
+	}
 	// Wrap (don't replace) errRetryable so the one-retry loop still matches it via
 	// errors.Is, while the underlying deadline/net-timeout survives for classifyFetchErr
 	// to surface as CodeTimeout instead of a generic http_error (the retry guard already
@@ -235,6 +247,30 @@ func (c *Client) classifyFetchErr(err error) error {
 		return &WebError{Code: CodeTimeout, Message: "fetch timed out"}
 	}
 	return &WebError{Code: CodeHTTPError, Message: "fetch failed"}
+}
+
+// peerResetStream reports whether err is the peer tearing down an established
+// HTTP/2 stream. net/http vendors its own copy of x/net/http2, so http2.StreamError
+// is not importable and the error text is the only signal available — matching on
+// the protocol's own constant names, not on prose, so this is stable across Go
+// releases in a way a natural-language match would not be.
+func peerResetStream(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	for _, marker := range []string{
+		"INTERNAL_ERROR", // RST_STREAM code 2 — the WAF refusal shape
+		"stream error",   // http2 stream-level failure envelope
+		"PROTOCOL_ERROR", // RST_STREAM code 1
+		"REFUSED_STREAM", // RST_STREAM code 7
+		"http2: server sent GOAWAY",
+	} {
+		if strings.Contains(s, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // isNetTimeout reports whether err is a net.Error timeout.

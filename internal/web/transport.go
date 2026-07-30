@@ -64,6 +64,16 @@ func newHardenedTransport(g *guard, dial dialFunc, ua string) *hardenedTransport
 		Transport: &http.Transport{
 			DialContext:       ht.dialContext,
 			DisableKeepAlives: true,
+			// Setting DialContext silently disables Go's automatic HTTP/2 upgrade,
+			// so without this every web_fetch spoke HTTP/1.1. That is not merely
+			// slower — it changes the FAILURE mode. A WAF refusing the client
+			// answers h2 with RST_STREAM in ~0.2s (a real, reportable error), while
+			// over HTTP/1.1 it simply never answers and the fetch burns the whole
+			// deadline before reporting `timeout` with the cause discarded. That is
+			// exactly how six br-automation.com fetches looked like network trouble.
+			// SSRF containment is unaffected: dialContext still pins the resolved IP
+			// and the Control hook still re-checks it, whatever the ALPN protocol.
+			ForceAttemptHTTP2: true,
 		},
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 			return http.ErrUseLastResponse // never auto-follow (D-29)

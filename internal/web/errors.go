@@ -27,6 +27,14 @@ const (
 	ReasonPrivateOrMetadata    = "private_or_metadata_target"
 	ReasonRedirectToBlocked    = "redirect_to_blocked_target"
 	ReasonInvalidTarget        = "invalid_target"
+	// ReasonPeerResetStream is the peer tearing down an established HTTP/2 stream
+	// (RST_STREAM, typically INTERNAL_ERROR) after TLS completed and the request
+	// headers were sent — the shape a WAF uses to refuse a client it dislikes
+	// without spending an HTTP status on it. It names a CLASS, carries no host or
+	// IP, and exists because this failure previously surfaced as `timeout`: the
+	// peer reset in 0.15s, the retry loop and the transport burned the whole
+	// 10s deadline, and the cause was discarded. See defaultWebUserAgent.
+	ReasonPeerResetStream = "peer_reset_stream"
 )
 
 // WebError is the ONLY error shape the model ever sees. It is deliberately flat
