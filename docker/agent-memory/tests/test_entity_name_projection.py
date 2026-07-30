@@ -256,7 +256,9 @@ def test_get_entity_discloses_the_other_entities_with_that_name():
     """
     duplicate = _entity("David", None)
     duplicate.type = "OBJECT"
-    client = _ManyMatchesClient([_entity("Davide", "Davide"), duplicate])
+    canonical = _entity("Davide", "Davide")
+    canonical.aliases = ["David"]
+    client = _ManyMatchesClient([canonical, duplicate])
 
     payload = json.loads(
         _run(_get_entity_tool().fn(_ctx(client), name="David", include_neighbors=False))
@@ -276,3 +278,14 @@ def test_get_entity_stays_quiet_when_the_name_is_unambiguous():
     )
 
     assert "other_matches" not in payload
+
+
+def test_get_entity_does_not_report_the_nearest_unrelated_entity():
+    """A by-name lookup must not turn a semantic neighbor into an exact fact."""
+    client = _ManyMatchesClient([_entity("RoboManual", None)])
+
+    payload = json.loads(
+        _run(_get_entity_tool().fn(_ctx(client), name="Forgotten Harbor", include_neighbors=False))
+    )
+
+    assert payload == {"found": False, "name": "Forgotten Harbor"}

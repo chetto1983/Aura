@@ -25,8 +25,8 @@ from fastmcp import Context
 # (including tests/unit/mcp/test_fastmcp_tools.py).
 from neo4j_agent_memory.core.query import is_read_only_query as _is_read_only_query  # noqa: F401
 from neo4j_agent_memory.integration import entity_name_fields
-from neo4j_agent_memory.memory.long_term import _normalized_text
 from neo4j_agent_memory.mcp._common import get_client, get_integration
+from neo4j_agent_memory.memory.long_term import _normalized_text
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
@@ -659,6 +659,7 @@ def _register_extended_tools(mcp: FastMCP) -> None:
                 limit=_MAX_ENTITY_NAME_MATCHES,
                 user_identifier=user_identifier,
             )
+            entities = [entity for entity in entities if _names_collide(entity, name)]
 
             if not entities:
                 return json.dumps({"found": False, "name": name})
