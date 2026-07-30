@@ -335,29 +335,58 @@ difetto di tutto questo documento, arrivata fino all'operatore.
 La causa immediata è R-39 ed è chiusa. Resta aperto che nulla le impedisca di affermare una
 proprietà strutturale senza verificarla.
 
-### R-41 · P1 · Il tipo di relazione non sopravvive alla scrittura
+### ~~R-41~~ · **RITIRATA** — il tipo di relazione È conservato e traversabile
 
-Chiesto `FOLLOWS`, il grafo contiene `RELATED_TO`. Il sidecar normalizza a un tipo generico,
-quindi *"chi segue chi"* e *"chi è collegato a chi"* collassano — ed è **esattamente** la
-distinzione che serve alla domanda-guida del piano (*"quali clienti segue X"*). Un arco
-generico è meglio di nessun arco, non è ancora una traversata utile.
+> **Sbagliata, e la sbagliavo io.** Avevo scritto che il tipo collassa perché la mia query
+> proiettava `type(r)`, che in Neo4j è sempre l'etichetta dell'arco. Il tipo semantico vive
+> in `r.type`, **dentro il pattern del MERGE**:
+> `MERGE (e1)-[r:RELATED_TO {type: $relation_type}]->(e2)`
+> ([queries.py:548](docker/agent-memory/src/neo4j_agent_memory/graph/queries.py#L548)) —
+> quindi `FOLLOWS` e `WORKS_AT` sono **archi distinti**, non lo stesso arco sovrascritto.
+>
+> Verificato in due modi. Sonda Cypher diretta: due tipi fra la stessa coppia coesistono, e
+> `MATCH ()-[r:RELATED_TO {type:'FOLLOWS'}]->()` ne restituisce esattamente 1. E poi
+> end-to-end con l'agente, che è la prova che conta:
+>
+> ```
+> da           etichetta     tipo_semantico   verso
+> CARLO NERI   RELATED_TO    FOLLOWS          DELTA PROBE SRL
+> ```
+>
+> *"Quali clienti segue X"* **è** una traversata: si filtra sulla proprietà. Il modello dati
+> è corretto; era la mia proiezione a essere incompleta.
 
-### R-42 · P1 · La deduplicazione propone di fondere due persone diverse, per coseno
+### R-42 · **P0** · Ogni nuova persona viene proposta come fusione con l'operatore
 
-**[catturato dal grafo vivo 2026-07-30T12:21Z]**
+**[misurato due volte su due, grafo vivo 2026-07-30]**
 
 ```
 da            verso     metodo      confidenza  stato
 MARIA VERDI   Davide    embedding   0.8749      pending
+CARLO NERI    Davide    embedding   0.8915      pending
 ```
 
-Due nomi di persona italiani distinti, coseno 0,87, arco `SAME_AS` scritto nel grafo. È
-`pending`, quindi esiste un gate — ma la coppia è stata **proposta**, e la proposta vive
-nello stesso grafo che l'agente legge.
+Non è un caso isolato: **due entità `:Person` create, due archi `SAME_AS` verso `Davide`**,
+entrambi per similarità di embedding sopra 0,87. Nomi di persona italiani non correlati.
+Alzato a P0 dalla prima stesura, che lo trattava come una proposta singola.
+
+**Perché è grave, e non lo dico io.** La doc di `memory_forget` nel sidecar lo scrive:
+
+> *"the deduplicator emits SAME_AS between entities it thinks are alike — and a wrong SAME_AS
+> is how the graph degrades on its own: the entity it points at becomes an **attractor** that
+> later writes of the same name merge onto. Nothing else can break one."*
+
+Quindi il meccanismo di degrado è **documentato dall'autore**, lo strumento per romperlo
+esiste ed è esposto al modello (`memory_forget` con `node_type='relationship'`) — e **niente
+si accorge** che vada usato. Uno `status: "pending"` che nessuno legge non è un gate.
 
 Si salda con le **42 ragioni sociali duplicate** di `Clienti.xlsx` (R-36): se la chiave di
-identità è il nome e l'arbitro è il coseno, entità distinte si fondono. Su un grafo clienti
-è l'errore che non si vede finché non risponde male. **La chiave dev'essere il codice.**
+identità è il nome e l'arbitro è il coseno, entità distinte si fondono. Su un grafo clienti è
+l'errore che non si vede finché non risponde male. **La chiave dev'essere il codice.**
+
+Il numero che manca prima di scegliere la soglia: la distribuzione delle confidenze su coppie
+note-distinte contro coppie note-uguali, sul corpus vero. 0,87 su due nomi non correlati dice
+che l'embedder non separa i nomi propri — non che la soglia va alzata di un po'.
 
 ---
 
