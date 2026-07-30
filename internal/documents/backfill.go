@@ -153,7 +153,9 @@ MATCH (d:Document {id: pair.document_id})
 MERGE (u:User {identifier: pair.identity})
   ON CREATE SET u.id = pair.identity, u.created_at = datetime()
 MERGE (u)-[:HAS_DOCUMENT]->(d)
-RETURN count(*) AS count
+WITH count(*) AS count
+` + advanceDocumentCorpusRevisionQuery + `
+RETURN count
 `
 
 // backfillOrphanEdgeQuery attaches every still-unowned :Document to the operator (D-12 net).
@@ -166,5 +168,7 @@ WHERE NOT EXISTS { (:User)-[:HAS_DOCUMENT]->(d) }
 MERGE (u:User {identifier: $operator})
   ON CREATE SET u.id = $operator, u.created_at = datetime()
 MERGE (u)-[:HAS_DOCUMENT]->(d)
-RETURN count(d) AS count
+WITH count(d) AS count
+` + advanceDocumentCorpusRevisionQuery + `
+RETURN count
 `

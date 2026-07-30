@@ -51,6 +51,7 @@ func TestMemoryGraphPurgeDeletesOwnedPlanesAndVerifies(t *testing.T) {
 	for _, required := range []string{
 		"HAS_CONVERSATION", "HAS_PREFERENCE", "HAS_FACT", "HAS_TRACE",
 		"PERFORMED_READ", "HAS_DOCUMENT", "HAS_ENTITY", "MemoryCorpusRevision",
+		"DocumentCorpusRevision",
 	} {
 		if !strings.Contains(client.writeQuery, required) {
 			t.Errorf("purge query does not cover %s", required)

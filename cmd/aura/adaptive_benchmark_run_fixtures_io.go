@@ -343,7 +343,13 @@ func (fixtures *adaptiveBenchmarkFixtureSet) cleanupDocuments(
 	if len(fixtures.chunkIDs) != 0 {
 		_, err := fixtures.graph.Write(
 			ctx,
-			`MATCH (c:Chunk) WHERE c.id IN $ids DETACH DELETE c`,
+			`MATCH (c:Chunk) WHERE c.id IN $ids
+DETACH DELETE c
+WITH count(c) AS deleted
+MERGE (revision:DocumentCorpusRevision {singleton: 'corpus'})
+ON CREATE SET revision.epoch = 0, revision.created_at = datetime()
+SET revision.epoch = revision.epoch + 1, revision.updated_at = datetime()
+RETURN deleted`,
 			map[string]any{"ids": slices.Clone(fixtures.chunkIDs)},
 		)
 		cleanupErr = errors.Join(cleanupErr, err)
@@ -351,7 +357,13 @@ func (fixtures *adaptiveBenchmarkFixtureSet) cleanupDocuments(
 	if len(fixtures.documentIDs) != 0 {
 		_, err := fixtures.graph.Write(
 			ctx,
-			`MATCH (d:Document) WHERE d.id IN $ids DETACH DELETE d`,
+			`MATCH (d:Document) WHERE d.id IN $ids
+DETACH DELETE d
+WITH count(d) AS deleted
+MERGE (revision:DocumentCorpusRevision {singleton: 'corpus'})
+ON CREATE SET revision.epoch = 0, revision.created_at = datetime()
+SET revision.epoch = revision.epoch + 1, revision.updated_at = datetime()
+RETURN deleted`,
 			map[string]any{"ids": slices.Clone(fixtures.documentIDs)},
 		)
 		cleanupErr = errors.Join(cleanupErr, err)

@@ -109,11 +109,10 @@ func documentMaxBytes(cfg *config.Config) int64 {
 	return int64(cfg.AssetMaxDocumentBytes)
 }
 
-// defaultRetrievalRevisions is the shipped revision set for the retrieval plan catalog.
-// CorpusEpoch is absent because nothing sources one yet — which is why
-// FreezeRetrievalPlans currently fails validateRetrievalRevisions on every call. Retrieve
-// does not validate revisions, so the path `aura docs` and the document_search fallback
-// take is unaffected.
+// defaultRetrievalRevisions is the shipped implementation revision set for the
+// retrieval-plan catalog. The live corpus epoch is deliberately not a static
+// default: docsToolSearcher reads it from Neo4j immediately before freezing and
+// brackets execution with the same service-owned revision.
 func defaultRetrievalRevisions() documents.RetrievalRevisions {
 	return documents.RetrievalRevisions{
 		Parser: "documents-parser-v1", Chunker: "documents-chunker-v1",

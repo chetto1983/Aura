@@ -139,6 +139,7 @@ func (backend adaptiveDocumentBackend) Retrieve(
 }
 
 func (backend adaptiveDocumentBackend) FreezeRetrievalPlans(
+	_ context.Context,
 	req documents.SearchRequest,
 ) (documents.FrozenRetrievalPlans, error) {
 	if backend.events != nil {

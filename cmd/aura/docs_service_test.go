@@ -94,6 +94,7 @@ func driftTestDeps() documentServiceDeps {
 		},
 		DocumentsBaseURL:      "http://markitdown.test",
 		RerankBaseURL:         "http://rerank.test",
+		RerankRelevanceFloor:  0.1,
 		AssetMaxDocumentBytes: 104857600,
 		MultimodalTimeoutSec:  120,
 		MUSRIsolation:         true,

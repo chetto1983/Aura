@@ -182,6 +182,13 @@ MERGE (revision:MemoryCorpusRevision {singleton: 'corpus'})
 ON CREATE SET revision.epoch = 0
 SET revision.epoch = revision.epoch + 1,
     revision.updated_at = datetime()
+WITH conversations, messages, preferences, facts, traces, steps, entities,
+     documents, chunks
+MERGE (document_revision:DocumentCorpusRevision {singleton: 'corpus'})
+ON CREATE SET document_revision.epoch = 0,
+              document_revision.created_at = datetime()
+SET document_revision.epoch = document_revision.epoch + 1,
+    document_revision.updated_at = datetime()
 RETURN size(conversations) AS conversations,
        size(messages) AS messages,
        size(preferences) AS preferences,

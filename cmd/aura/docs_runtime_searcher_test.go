@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/config"
@@ -10,14 +11,27 @@ import (
 
 type recordingDocumentKnowledgeClient struct {
 	closeCalls int
+	epochReads []any
+	readIndex  int
 }
 
-func (*recordingDocumentKnowledgeClient) Read(
-	context.Context,
-	string,
-	map[string]any,
+func (c *recordingDocumentKnowledgeClient) Read(
+	_ context.Context,
+	query string,
+	_ map[string]any,
 ) ([]map[string]any, error) {
-	return nil, nil
+	if !strings.Contains(query, "DocumentCorpusRevision") {
+		return nil, nil
+	}
+	if c.readIndex >= len(c.epochReads) {
+		return nil, nil
+	}
+	value := c.epochReads[c.readIndex]
+	c.readIndex++
+	if err, ok := value.(error); ok {
+		return nil, err
+	}
+	return []map[string]any{{"epoch": value}}, nil
 }
 
 func (*recordingDocumentKnowledgeClient) Write(

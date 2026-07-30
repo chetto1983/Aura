@@ -196,6 +196,15 @@ func (f FrozenRetrievalPlans) CatalogRevision() string {
 	return f.catalogRevision
 }
 
+// CorpusEpoch returns the service-owned corpus revision shared by every
+// candidate, or zero for an invalid/empty catalog.
+func (f FrozenRetrievalPlans) CorpusEpoch() uint64 {
+	if len(f.plans) == 0 {
+		return 0
+	}
+	return f.plans[0].Revisions.CorpusEpoch
+}
+
 // Plan finds a plan by its frozen identifier.
 func (f FrozenRetrievalPlans) Plan(id string) (RetrievalPlan, bool) {
 	for _, plan := range f.plans {

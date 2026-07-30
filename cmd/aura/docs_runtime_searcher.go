@@ -46,15 +46,20 @@ func (s *docsToolSearcher) Retrieve(
 }
 
 func (s *docsToolSearcher) FreezeRetrievalPlans(
+	ctx context.Context,
 	req documents.SearchRequest,
 ) (documents.FrozenRetrievalPlans, error) {
 	if s == nil || s.cfg == nil {
 		return documents.FrozenRetrievalPlans{},
 			fmt.Errorf("document search config is nil")
 	}
+	revisions, err := s.currentRetrievalRevisions(ctx)
+	if err != nil {
+		return documents.FrozenRetrievalPlans{}, err
+	}
 	health := configuredRetrievalHealth(s.cfg)
 	service := &documents.Service{
-		RetrievalRevisions: s.frozenRetrievalRevisions(),
+		RetrievalRevisions: revisions,
 		RetrievalHealth:    &health,
 		MUSRIsolation:      s.cfg.MUSRIsolation,
 	}
@@ -67,11 +72,21 @@ func (s *docsToolSearcher) ExecuteRetrievalPlan(
 	planID string,
 	req documents.SearchRequest,
 ) (documents.RetrievalResult, error) {
+	if err := s.verifyFrozenCorpusEpoch(ctx, frozen); err != nil {
+		return documents.RetrievalResult{}, err
+	}
 	service, err := s.retrievalService(ctx)
 	if err != nil {
 		return documents.RetrievalResult{}, err
 	}
-	return service.ExecuteRetrievalPlan(ctx, frozen, planID, req)
+	result, err := service.ExecuteRetrievalPlan(ctx, frozen, planID, req)
+	if err != nil {
+		return documents.RetrievalResult{}, err
+	}
+	if err := s.verifyFrozenCorpusEpoch(ctx, frozen); err != nil {
+		return documents.RetrievalResult{}, err
+	}
+	return result, nil
 }
 
 func (s *docsToolSearcher) retrievalService(
@@ -135,6 +150,48 @@ func (s *docsToolSearcher) frozenRetrievalRevisions() documents.RetrievalRevisio
 		return *s.retrievalRevisions
 	}
 	return defaultRetrievalRevisions()
+}
+
+func (s *docsToolSearcher) currentRetrievalRevisions(
+	ctx context.Context,
+) (documents.RetrievalRevisions, error) {
+	graph, err := s.graphClient(ctx)
+	if err != nil {
+		return documents.RetrievalRevisions{}, err
+	}
+	epoch, err := documents.ReadDocumentCorpusEpoch(ctx, graph)
+	if err != nil {
+		return documents.RetrievalRevisions{}, err
+	}
+	revisions := s.frozenRetrievalRevisions()
+	revisions.CorpusEpoch = epoch
+	return revisions, nil
+}
+
+func (s *docsToolSearcher) verifyFrozenCorpusEpoch(
+	ctx context.Context,
+	frozen documents.FrozenRetrievalPlans,
+) error {
+	want := frozen.CorpusEpoch()
+	if want == 0 {
+		return fmt.Errorf("document retrieval plan has no corpus epoch")
+	}
+	graph, err := s.graphClient(ctx)
+	if err != nil {
+		return err
+	}
+	got, err := documents.ReadDocumentCorpusEpoch(ctx, graph)
+	if err != nil {
+		return err
+	}
+	if got != want {
+		return fmt.Errorf(
+			"document corpus changed during retrieval: epoch %d, frozen %d",
+			got,
+			want,
+		)
+	}
+	return nil
 }
 
 func configuredRetrievalHealth(

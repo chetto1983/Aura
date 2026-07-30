@@ -9,8 +9,11 @@ import (
 )
 
 func TestDocsToolSearcherFailsClosedWithoutCorpusEpoch(t *testing.T) {
-	searcher := docsToolSearcher{cfg: &config.Config{}}
-	_, err := searcher.FreezeRetrievalPlans(documents.SearchRequest{
+	searcher := docsToolSearcher{
+		cfg:   configuredDocumentRetrievalTestConfig(),
+		graph: &recordingDocumentKnowledgeClient{},
+	}
+	_, err := searcher.FreezeRetrievalPlans(t.Context(), documents.SearchRequest{
 		Query:      "q",
 		IdentityID: "00000000-0000-0000-0000-000000000001",
 	})
@@ -27,16 +30,11 @@ func TestDocsToolSearcherFreezesConfiguredImmutableRevisions(t *testing.T) {
 		Reranker: "aura-rerank-v1", Retriever: "aura-retrieval-plan-v1",
 	}
 	searcher := docsToolSearcher{
-		cfg: &config.Config{
-			Neo4j: knowledge.Config{
-				BoltURL:  "bolt://neo4j.test:7687",
-				EmbedURL: "http://embed.test",
-			},
-			RerankBaseURL: "http://rerank.test",
-		},
+		cfg:                configuredDocumentRetrievalTestConfig(),
+		graph:              &recordingDocumentKnowledgeClient{epochReads: []any{int64(9)}},
 		retrievalRevisions: &revisions,
 	}
-	frozen, err := searcher.FreezeRetrievalPlans(documents.SearchRequest{
+	frozen, err := searcher.FreezeRetrievalPlans(t.Context(), documents.SearchRequest{
 		Query: "q", DocumentID: "doc-7",
 		IdentityID: "00000000-0000-0000-0000-000000000001", Limit: 5,
 	})
@@ -47,5 +45,42 @@ func TestDocsToolSearcherFreezesConfiguredImmutableRevisions(t *testing.T) {
 		if plan.Revisions != revisions {
 			t.Fatalf("plan revisions = %+v", plan.Revisions)
 		}
+	}
+}
+
+func TestDocsToolSearcherRejectsCorpusDriftAroundExecution(t *testing.T) {
+	for name, epochs := range map[string][]any{
+		"before execution": {int64(9), int64(10)},
+		"while executing":  {int64(9), int64(9), int64(10)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			searcher := docsToolSearcher{
+				cfg:   configuredDocumentRetrievalTestConfig(),
+				graph: &recordingDocumentKnowledgeClient{epochReads: epochs},
+			}
+			req := documents.SearchRequest{
+				Query: "q", IdentityID: "00000000-0000-0000-0000-000000000001",
+			}
+			frozen, err := searcher.FreezeRetrievalPlans(t.Context(), req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = searcher.ExecuteRetrievalPlan(
+				t.Context(), frozen, documents.RetrievalPlanSparse, req,
+			)
+			if err == nil {
+				t.Fatal("corpus drift was accepted")
+			}
+		})
+	}
+}
+
+func configuredDocumentRetrievalTestConfig() *config.Config {
+	return &config.Config{
+		Neo4j: knowledge.Config{
+			BoltURL:  "bolt://neo4j.test:7687",
+			EmbedURL: "http://embed.test",
+		},
+		RerankBaseURL: "http://rerank.test",
 	}
 }

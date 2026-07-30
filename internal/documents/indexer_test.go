@@ -55,6 +55,26 @@ func TestIndexerSetsDocumentSearchableAfterChunkWrites(t *testing.T) {
 	}
 }
 
+func TestEveryDocumentMutationAdvancesCorpusRevision(t *testing.T) {
+	for name, query := range map[string]string{
+		"document":   documentUpsertQuery,
+		"chunks":     chunkUpsertQuery,
+		"next-chunk": nextChunkUpsertQuery,
+		"searchable": documentSearchableQuery,
+		"embedding":  embeddingUpsertQuery,
+		"deactivate": documentDeactivateQuery,
+		"backfill":   backfillOwnerEdgeQuery,
+		"orphan":     backfillOrphanEdgeQuery,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if !strings.Contains(query, "DocumentCorpusRevision") ||
+				!strings.Contains(query, "revision.epoch + 1") {
+				t.Fatalf("mutation does not advance the document corpus revision:\n%s", query)
+			}
+		})
+	}
+}
+
 // TestIndexerNormalizesEmptyIdentityToOperator locks LO-03: an empty ingest identity is
 // attributed to the operator (local UUID …001) before the ownership MERGE — never
 // (:User {identifier:""}), which would orphan the doc from everyone post-flip — while a real
@@ -247,7 +267,8 @@ func TestIndexerWritesSequentialNextChunkEdges(t *testing.T) {
 	}
 	// Idempotent edge upsert: MERGE the relationship, never CREATE (re-ingest
 	// must not duplicate edges).
-	if !strings.Contains(call.query, "MERGE") || strings.Contains(call.query, "CREATE") {
+	if !strings.Contains(call.query, "MERGE (a)-[:NEXT_CHUNK]->(b)") ||
+		strings.Contains(call.query, "CREATE (a)-[:NEXT_CHUNK]->(b)") {
 		t.Fatalf("NEXT_CHUNK query must MERGE (idempotent) and not CREATE:\n%s", call.query)
 	}
 	pairs, ok := call.params["pairs"].([]map[string]any)

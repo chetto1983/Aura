@@ -12,6 +12,13 @@ const defaultSparseBatchSize = 250
 const defaultEmbeddingModel = "default"
 const defaultEmbeddingVersion = "v1"
 
+const advanceDocumentCorpusRevisionQuery = `
+MERGE (revision:DocumentCorpusRevision {singleton: 'corpus'})
+ON CREATE SET revision.epoch = 0, revision.created_at = datetime()
+SET revision.epoch = revision.epoch + 1,
+    revision.updated_at = datetime()
+`
+
 // KnowledgeClient is the subset of Neo4j knowledge operations used by indexing.
 type KnowledgeClient interface {
 	Read(ctx context.Context, query string, params map[string]any) ([]map[string]any, error)
@@ -260,6 +267,8 @@ MERGE (u:User {identifier: $identity})
 WITH u
 MATCH (d:Document {id: $document.id})
 MERGE (u)-[:HAS_DOCUMENT]->(d)
+WITH d
+` + advanceDocumentCorpusRevisionQuery + `
 RETURN d.id AS document_id
 `
 
@@ -284,7 +293,9 @@ SET
   c.updated_at = datetime(),
   c.created_at = coalesce(c.created_at, datetime())
 MERGE (d)-[:HAS_CHUNK]->(c)
-RETURN count(c) AS chunks
+WITH count(c) AS chunks
+` + advanceDocumentCorpusRevisionQuery + `
+RETURN chunks
 `
 
 // nextChunkUpsertQuery links consecutive chunks into a reading-order chain. It
@@ -296,7 +307,9 @@ UNWIND $pairs AS pair
 MATCH (a:Chunk {id: pair.prev})
 MATCH (b:Chunk {id: pair.next})
 MERGE (a)-[:NEXT_CHUNK]->(b)
-RETURN count(*) AS chunks
+WITH count(*) AS chunks
+` + advanceDocumentCorpusRevisionQuery + `
+RETURN chunks
 `
 
 const documentSearchableQuery = `
@@ -307,6 +320,8 @@ SET
   d.active = true,
   d.deleted_at = NULL,
   d.updated_at = datetime()
+WITH d
+` + advanceDocumentCorpusRevisionQuery + `
 RETURN d.id AS document_id
 `
 
@@ -328,6 +343,8 @@ SET
   d.active = true,
   d.deleted_at = NULL,
   d.updated_at = datetime()
+WITH embedded
+` + advanceDocumentCorpusRevisionQuery + `
 RETURN embedded AS embedded
 `
 
@@ -343,5 +360,7 @@ SET
   c.active = false,
   c.deleted_at = datetime(),
   c.updated_at = datetime()
-RETURN count(c) AS chunks
+WITH count(c) AS chunks
+` + advanceDocumentCorpusRevisionQuery + `
+RETURN chunks
 `

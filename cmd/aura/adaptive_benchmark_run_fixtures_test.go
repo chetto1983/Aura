@@ -96,6 +96,11 @@ func TestInstallAdaptiveBenchmarkFixturesBuildsIndependentAliasesAndCleans(
 			memory,
 		)
 	}
+	for _, query := range graph.writeQueries {
+		if !strings.Contains(query, "DocumentCorpusRevision") {
+			t.Fatalf("benchmark document mutation omitted corpus revision:\n%s", query)
+		}
+	}
 }
 
 func TestInstallAdaptiveBenchmarkFixturesCleansPartialSeedFailure(
@@ -225,8 +230,9 @@ func TestAdaptiveBenchmarkChatEnvironmentCleanupFailurePreventsSuccess(
 }
 
 type adaptiveBenchmarkFixtureGraphFake struct {
-	remaining int64
-	closed    bool
+	remaining    int64
+	closed       bool
+	writeQueries []string
 }
 
 func (graph *adaptiveBenchmarkFixtureGraphFake) Write(
@@ -234,6 +240,7 @@ func (graph *adaptiveBenchmarkFixtureGraphFake) Write(
 	query string,
 	params map[string]any,
 ) ([]map[string]any, error) {
+	graph.writeQueries = append(graph.writeQueries, query)
 	switch {
 	case strings.Contains(query, "MERGE (c:Chunk"):
 		chunks, _ := params["chunks"].([]map[string]any)

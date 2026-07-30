@@ -19,6 +19,7 @@ type DocumentSearchBackend interface {
 
 type versionedDocumentSearchBackend interface {
 	FreezeRetrievalPlans(
+		context.Context,
 		documents.SearchRequest,
 	) (documents.FrozenRetrievalPlans, error)
 	ExecuteRetrievalPlan(
@@ -162,7 +163,7 @@ func (t *DocumentSearch) retrieve(
 	if t.Adaptive == nil || !ok {
 		return t.Searcher.Retrieve(ctx, req)
 	}
-	frozen, err := backend.FreezeRetrievalPlans(req)
+	frozen, err := backend.FreezeRetrievalPlans(ctx, req)
 	if err != nil {
 		return t.Searcher.Retrieve(ctx, req)
 	}
