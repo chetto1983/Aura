@@ -30,8 +30,7 @@ const maxRunBodyBytes = 1 << 20
 var errUnsupportedUserMessageContent = errors.New("agui: last user message content must be a non-empty string; multimodal input is not supported on this endpoint")
 
 // ServerConfig carries the AG-UI server knobs the daemon resolves from config
-// (AURA_AGUI_*). CORSPermissive gates the `Access-Control-Allow-Origin: *` header
-// (default restrictive, T-12-13); BufferCap is the cap of the per-connection SSE
+// (AURA_AGUI_*). BufferCap is the cap of the per-connection SSE
 // pump channel (drop-on-full, never block the Loop, T-12-09). A non-positive
 // BufferCap falls back to the fanout default. SSEHeartbeatSec is the idle SSE-comment
 // keepalive interval in seconds (fix-plan 1.3 Tier A, AURA_AGUI_SSE_HEARTBEAT_SEC);
@@ -42,7 +41,6 @@ var errUnsupportedUserMessageContent = errors.New("agui: last user message conte
 // backends (PG + Neo4j) are reachable. An empty list reports ready (the daemon was
 // started without gated deps).
 type ServerConfig struct {
-	CORSPermissive  bool
 	BufferCap       int
 	SSEHeartbeatSec int
 	HealthCheck     func(context.Context) error
@@ -308,10 +306,8 @@ func parseEffortSymbol(symbol string) (effort llm.ReasoningEffort, isFixed, ok b
 	}
 }
 
-// Mux registers the two routes using Go 1.22+ method-pattern routing (no chi/gorilla
-// — matches the no-router codebase posture). When CORSPermissive is on (the dev knob)
-// the handler is wrapped in withCORS so a browser cross-origin POST works end to end:
-// the preflight OPTIONS is answered and ACAO is set on every response, including errors.
+// Mux registers routes using Go 1.22+ method-pattern routing (no chi/gorilla).
+// The cockpit and privileged APIs are same-origin only and emit no CORS grants.
 func (s *Server) Mux() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
@@ -419,14 +415,14 @@ func (s *Server) Mux() http.Handler {
 	// cmd/aura/serve_webui.go.
 	s.registerConnectPIMRoutes(mux)
 	if s.operations == nil {
-		return s.withCORS(mux)
+		return mux
 	}
 	guarded := http.NewServeMux()
 	for pattern, meta := range httpMutationRoutes {
 		guarded.Handle(pattern, s.idempotencyMutation(mux, meta))
 	}
 	guarded.Handle("/", mux)
-	return s.withCORS(guarded)
+	return guarded
 }
 
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {

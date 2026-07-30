@@ -191,7 +191,7 @@ Today's web-auth is **stdlib-only, stateless HMAC-signed-cookie auth** (Phase 24
 - **`buildAuthDeps`** (`serve_auth.go:54-65`): builds `AuthDeps` from `chat.cfg.WebAuthSecret`; `identityCheckerAdapter` (`serve_auth.go:31-45`) bridges `*identity.Store`→`agui.identityChecker`; `resolveLocalIdentityID` (`serve_channels.go:233-244`) = `GetIdentityByName(ctx,"local")`, fail-soft.
 - **Wiring** (`bootServe`, `serve.go:277-294`): `newServeHandler(aguiServer.Mux(), auth)` then `GuardWebBind(cfg.AGUIBind, cfg.WebAuthSecret, cfg.WebTrustProxy)`; one `http.Server` for the whole cockpit (AG-UI gateway + SPA on one bind).
 - **`GuardWebBind`** (`config.go:229-245`): loopback always boots with no credential; non-loopback boots only if `AURA_WEB_AUTH_SECRET != ""` **or** `AURA_WEB_TRUST_PROXY=true`; otherwise refuses to start (`exitInfra`). **Wildcards `0.0.0.0`/`::` are treated as non-loopback.** Note: with trust-proxy set, `SecretConfigured` can be false → `RequireAuth` is a full pass-through and Aura reads no proxy identity header.
-- Env: `AURA_AGUI_BIND` (default `127.0.0.1:9080`), `AURA_WEB_AUTH_SECRET`, `AURA_WEB_TRUST_PROXY`, `AURA_AGUI_CORS_PERMISSIVE`.
+- Env: `AURA_AGUI_BIND` (default `127.0.0.1:9080`), `AURA_WEB_AUTH_SECRET`, `AURA_WEB_TRUST_PROXY`. The cockpit is same-origin only.
 
 ### 2.3 `cmd/aura/serve_webui.go` — route table & protection
 

@@ -131,26 +131,6 @@ func TestGateReplication(t *testing.T) {
 	}
 }
 
-// TestGateCORS locks A2/D-15/F-022: permissive CORS is Fatal under BOTH strict tiers
-// and OK under the lenient tiers.
-func TestGateCORS(t *testing.T) {
-	for _, p := range allProfiles {
-		t.Run(string(p), func(t *testing.T) {
-			on := (&Config{AGUICORSPermissive: true}).gateCORS(p)
-			if p.Strict() {
-				if !hasViolation(on, "AURA_AGUI_CORS_PERMISSIVE", Fatal) {
-					t.Errorf("permissive CORS under %s must be Fatal naming AURA_AGUI_CORS_PERMISSIVE, got %+v", p, on)
-				}
-			} else if len(on) != 0 {
-				t.Errorf("lenient tier %s must allow permissive CORS, got %+v", p, on)
-			}
-			if off := (&Config{AGUICORSPermissive: false}).gateCORS(p); len(off) != 0 {
-				t.Errorf("restrictive CORS under %s must yield no violation, got %+v", p, off)
-			}
-		})
-	}
-}
-
 // TestGateDestructiveShell locks D-11/D-15/F-002: explicit `off` is Fatal under
 // server_production ONLY (single_user_hardened ALLOWS it, A3); it reads the raw env
 // value (case-insensitive) and never imports the tools leaf.
@@ -304,7 +284,6 @@ func TestValidateProfile(t *testing.T) {
 			ObjectStoreAccessKey:         defaultObjectStoreAccessKey,
 			ObjectStoreSecretKey:         defaultObjectStoreSecretKey,
 			GarageRPCSecret:              "",
-			AGUICORSPermissive:           true,
 			ObjectStoreReplicationFactor: 1,
 			AuthulaSecret:                "",
 		}
@@ -321,7 +300,7 @@ func TestValidateProfile(t *testing.T) {
 
 		wantKnobs := []string{
 			"AURA_OBJECTSTORE_ACCESS_KEY", "AURA_OBJECTSTORE_SECRET_KEY", "GARAGE_RPC_SECRET",
-			"AURA_AGUI_CORS_PERMISSIVE", "AURA_OBJECTSTORE_REPLICATION_FACTOR",
+			"AURA_OBJECTSTORE_REPLICATION_FACTOR",
 			"AURA_AUTHULA_SECRET", "AURA_SHELL_DESTRUCTIVE_PATTERNS", "AURA_MUSR_ISOLATION",
 		}
 		for _, k := range wantKnobs {
@@ -370,7 +349,6 @@ func TestValidateProfile(t *testing.T) {
 			ObjectStoreAccessKey:         "GKrealoperatorkey0000000001",
 			ObjectStoreSecretKey:         "realoperatorsecretvalue000000000000000000000000000000000000000000",
 			GarageRPCSecret:              "deadbeefrpcsecret",
-			AGUICORSPermissive:           false,
 			ObjectStoreReplicationFactor: 3,
 			AuthulaSecret:                "32byteshexsecretvalueforauthula0",
 			MUSRIsolation:                true,

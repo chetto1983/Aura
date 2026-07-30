@@ -11,7 +11,7 @@ import (
 // server_run_resume.go carries the two run-scoped routes of fix-plan 1.3 Tier B
 // (amendment #90 points 3-4): the read-only SSE resume GET /agent/runs/{runID}/events
 // and the explicit-Stop mutation POST /agent/runs/{runID}/cancel. Both mount inside
-// the agui mux, so they inherit the parent RequireAuth whole-origin gate and withCORS
+// the agui mux, so they inherit the parent RequireAuth whole-origin gate
 // exactly like /agent/run — zero bespoke auth here (§3.4). While the registry is nil
 // (flag off) both answer 404, hiding the surface entirely (§7.1).
 

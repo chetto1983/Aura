@@ -241,7 +241,7 @@ Registry: `internal/channels/registry.go`, `channel.go`, `deliver.go`. Enablemen
   dispatch, onboarding, compaction, AG-UI subscription (`agui_subscriber.go`).
 
 **Web cockpit (AG-UI SPA)** — `internal/agui/` + `internal/webui/` (embedded Vite build).
-- Env: `AURA_AGUI_BIND`, `AURA_AGUI_BUFFER_CAP`, `AURA_AGUI_CORS_PERMISSIVE`,
+- Env: `AURA_AGUI_BIND`, `AURA_AGUI_BUFFER_CAP`,
   `AURA_SERVE_SHUTDOWN_GRACE_SEC`.
 - Ingress: **Caddy 2** (`compose.yaml:330`), HTTPS termination, `AURA_ACCESS_TOKEN`-gated.
 

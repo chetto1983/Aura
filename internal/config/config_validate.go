@@ -11,8 +11,8 @@
 // gates (each mirroring GuardWebBind — `config:`-prefixed, NAMING the offending
 // knob, never echoing its VALUE) that encode the D-09..D-16 profile rule matrix:
 // the strict set (single_user_hardened + server_production, via RuntimeProfile.Strict)
-// rejects sample object-store creds, an empty Garage RPC secret, permissive CORS and
-// an absent web-auth secret; server_production additionally rejects a single-replica
+// rejects sample object-store creds, an empty Garage RPC secret and an absent
+// web-auth secret; server_production additionally rejects a single-replica
 // object store and a disabled destructive-shell gate (the hardened↔prod differentiator,
 // D-11/D-15). The gates REFUSE and NAME — they never silently coerce an operator value
 // to a "safe" one (D-05).
@@ -94,7 +94,6 @@ func (c *Config) ValidateProfile(p RuntimeProfile) []Violation {
 	vs = append(vs, c.gateObjectStoreCreds(p)...)
 	vs = append(vs, c.gateGarageRPCSecret(p)...)
 	vs = append(vs, c.gateReplication(p)...)
-	vs = append(vs, c.gateCORS(p)...)
 	vs = append(vs, c.gateDestructiveShell(p)...)
 	vs = append(vs, c.gateWebAuth(p)...)
 	vs = append(vs, c.gateMUSRIsolation(p)...)
@@ -200,20 +199,6 @@ func (c *Config) gateReplication(p RuntimeProfile) []Violation {
 	}
 	if c.ObjectStoreReplicationFactor < 2 {
 		return []Violation{{Knob: "AURA_OBJECTSTORE_REPLICATION_FACTOR", Sev: Fatal, Msg: fmt.Sprintf("must be >= 2 for durability under server_production, got %d", c.ObjectStoreReplicationFactor)}}
-	}
-	return nil
-}
-
-// gateCORS forbids permissive CORS (`Access-Control-Allow-Origin: *`) under BOTH
-// strict tiers (A2/D-15): permissive CORS on an authenticated cockpit surface is a
-// spoofing/EoP vector (F-022). single_user_hardened forbids it too, for consistency
-// with prod (cheap). Lenient tiers return no violation (dev-only permissive CORS).
-func (c *Config) gateCORS(p RuntimeProfile) []Violation {
-	if !p.Strict() {
-		return nil
-	}
-	if c.AGUICORSPermissive {
-		return []Violation{{Knob: "AURA_AGUI_CORS_PERMISSIVE", Sev: Fatal, Msg: "permissive CORS is forbidden under " + string(p)}}
 	}
 	return nil
 }

@@ -3,7 +3,7 @@ package config
 import "testing"
 
 // config_agui_test.go locks the AG-UI gateway knob loads: the Phase 12 (Slice 8b)
-// bind/CORS/buffer/heartbeat set (moved out of config_test.go on the Tier B touch
+// bind/buffer/heartbeat set (moved out of config_test.go on the Tier B touch
 // so that file stays under the 600-LOC cap, refactor-on-touch) plus the fix-plan
 // 1.3 Tier B AURA_AGUI_RUN_* detached-run bundle (amendment #90 point 9). Unset →
 // documented defaults; set → overrides. The loopback bind default is the
@@ -16,9 +16,6 @@ func TestAGUIConfigDefaultsAndOverrides(t *testing.T) {
 	cfg := LoadDB()
 	if cfg.AGUIBind != "127.0.0.1:9080" {
 		t.Errorf("AGUIBind default = %q, want 127.0.0.1:9080", cfg.AGUIBind)
-	}
-	if cfg.AGUICORSPermissive {
-		t.Error("AGUICORSPermissive default = true, want false (restrictive)")
 	}
 	if cfg.AGUIBufferCap != 64 {
 		t.Errorf("AGUIBufferCap default = %d, want 64", cfg.AGUIBufferCap)
@@ -45,7 +42,6 @@ func TestAGUIConfigDefaultsAndOverrides(t *testing.T) {
 	}
 
 	t.Setenv("AURA_AGUI_BIND", "127.0.0.1:9999")
-	t.Setenv("AURA_AGUI_CORS_PERMISSIVE", "true")
 	t.Setenv("AURA_AGUI_BUFFER_CAP", "128")
 	t.Setenv("AURA_AGUI_SSE_HEARTBEAT_SEC", "5")
 	t.Setenv("AURA_AGUI_RUN_DETACH", "false")
@@ -56,9 +52,6 @@ func TestAGUIConfigDefaultsAndOverrides(t *testing.T) {
 	cfg = LoadDB()
 	if cfg.AGUIBind != "127.0.0.1:9999" {
 		t.Errorf("AGUIBind override = %q, want 127.0.0.1:9999", cfg.AGUIBind)
-	}
-	if !cfg.AGUICORSPermissive {
-		t.Error("AGUICORSPermissive override = false, want true")
 	}
 	if cfg.AGUIBufferCap != 128 {
 		t.Errorf("AGUIBufferCap override = %d, want 128", cfg.AGUIBufferCap)

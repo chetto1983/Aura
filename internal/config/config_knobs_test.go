@@ -86,9 +86,6 @@ func TestKnobRegistry(t *testing.T) {
 	if k, ok := byName["AURA_OBJECTSTORE_REPLICATION_FACTOR"]; !ok || k.Kind != KindInt {
 		t.Errorf("AURA_OBJECTSTORE_REPLICATION_FACTOR present=%v kind=%d, want present KindInt (%d)", ok, k.Kind, KindInt)
 	}
-	if k, ok := byName["AURA_AGUI_CORS_PERMISSIVE"]; !ok || k.Kind != KindBool {
-		t.Errorf("AURA_AGUI_CORS_PERMISSIVE present=%v kind=%d, want present KindBool (%d)", ok, k.Kind, KindBool)
-	}
 	if k, ok := byName["AURA_AGUI_RUN_DETACH"]; !ok || k.Kind != KindBool {
 		t.Errorf("AURA_AGUI_RUN_DETACH present=%v kind=%d, want present KindBool (%d)", ok, k.Kind, KindBool)
 	}
@@ -158,12 +155,12 @@ func TestReparsePass(t *testing.T) {
 		{"int garbage / hardened ⇒ Fatal", ProfileSingleUserHardened, "AURA_OBJECTSTORE_REPLICATION_FACTOR", "two", set, true, Fatal},
 		{"int garbage / dev ⇒ Warn", ProfileDev, "AURA_AGUI_BUFFER_CAP", "notanumber", set, true, Warn},
 		{"int garbage / local_trusted ⇒ Warn", ProfileLocalTrusted, "AURA_AGUI_BUFFER_CAP", "notanumber", set, true, Warn},
-		{"bool garbage / production ⇒ Fatal", ProfileServerProduction, "AURA_AGUI_CORS_PERMISSIVE", "yesnt", set, true, Fatal},
+		{"bool garbage / production ⇒ Fatal", ProfileServerProduction, "AURA_MCP_LEGACY_ENV_COMPAT", "yesnt", set, true, Fatal},
 		{"bool garbage / dev ⇒ Warn", ProfileDev, "AURA_VISION_CLOUD", "maybe", set, true, Warn},
 		{"enum garbage / production ⇒ Fatal", ProfileServerProduction, "AURA_PROFILE", "bogus_tier", set, true, Fatal},
 		{"enum garbage / dev ⇒ Warn", ProfileDev, "AURA_PROFILE", "bogus_tier", set, true, Warn},
 		{"valid int ⇒ none", ProfileServerProduction, "AURA_AGUI_BUFFER_CAP", "128", set, false, Warn},
-		{"valid bool ⇒ none", ProfileServerProduction, "AURA_AGUI_CORS_PERMISSIVE", "true", set, false, Warn},
+		{"valid bool ⇒ none", ProfileServerProduction, "AURA_MCP_LEGACY_ENV_COMPAT", "true", set, false, Warn},
 		{"valid enum ⇒ none", ProfileServerProduction, "AURA_PROFILE", string(ProfileLocalTrusted), set, false, Warn},
 		{"whitespace ⇒ none (uses default)", ProfileServerProduction, "AURA_AGUI_BUFFER_CAP", "   ", set, false, Warn},
 		// WR-01: a whitespace-PADDED but non-empty int silently falls back at runtime

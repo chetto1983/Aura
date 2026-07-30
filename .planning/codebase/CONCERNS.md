@@ -34,7 +34,7 @@ The risk register says `Open`; the code says otherwise. Confirmed fixed in this 
 | R-008 | Listener failure hidden by healthcheck | `/readyz` implemented (`cmd/aura/serve.go:372-376`) and wired into the Compose healthcheck (`compose.yaml:226`) |
 | R-011/R-026 | Background shell jobs lack TTL / predictable IDs | `internal/agent/tools/shell_bg.go:27-28,47-49` — 1h default TTL reaper + `(identity,session)` owner binding (MUSR-03/04) |
 | R-012 | `fs_write` non-atomic | `internal/agent/tools/fs.go:123-152` — `atomicWriteFile` temp+`os.Rename`; reused by `fs_edit.go:88` |
-| R-020 | Permissive CORS production misconfig | `internal/config/config_validate.go:190-199` — `gateCORS` Fatal under **both** strict tiers |
+| R-020 | Permissive CORS production misconfig | Closed permanently: the CORS middleware and runtime knob were removed; `internal/agui.Server.Mux` is same-origin only |
 
 **The register itself is the tech debt.** It is a 4-week-stale artifact that reads as current. See
 *Documentation rot* below — this is the same root cause.

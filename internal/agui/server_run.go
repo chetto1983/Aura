@@ -117,9 +117,6 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
-	// ACAO is set centrally by withCORS when CORSPermissive is on (WR-05) so it is present
-	// on the error responses above too, not only this 200 stream.
-
 	turn := s.run.Turn(ctx, in.ThreadID, modelUserMsg)
 	if userMsg != nil && modelUserMsg != nil && *userMsg != *modelUserMsg {
 		if split, ok := s.run.(modelUserMessageRunner); ok {

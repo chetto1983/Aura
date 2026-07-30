@@ -105,15 +105,13 @@ type Config struct {
 	// defaults to loopback but may be ANY address — WEB-02/D-06 lifted the historical
 	// hardcoded-loopback restriction (amendment #35) and replaced it with the boot-time
 	// GuardWebBind policy (loopback always boots; a non-loopback bind requires a web-auth
-	// credential). AGUICORSPermissive gates the `Access-Control-Allow-Origin: *` header
-	// (default restrictive, dev-only). AGUIBufferCap caps the per-connection SSE pump
+	// credential). AGUIBufferCap caps the per-connection SSE pump
 	// channel (drop-on-full, never blocks the Loop). AGUISSEHeartbeatSec is the idle
 	// SSE-comment keepalive interval (fix-plan 1.3 Tier A): a periodic `:hb\n\n` comment
 	// frame keeps a quiet connection's TCP path warm against an intermediary idle
 	// timeout; <=0 disables it (no ticker allocated, agui.heartbeatIntervalFromConfig).
 	// All non-fatal envDefault fallbacks.
 	AGUIBind            string // AURA_AGUI_BIND — cockpit HTTP bind (any address; non-loopback gated by GuardWebBind)
-	AGUICORSPermissive  bool   // AURA_AGUI_CORS_PERMISSIVE — dev-only permissive CORS (default restrictive)
 	AGUIBufferCap       int    // AURA_AGUI_BUFFER_CAP — SSE/fanout subscriber buffer cap (default 64)
 	AGUISSEHeartbeatSec int    // AURA_AGUI_SSE_HEARTBEAT_SEC — idle SSE-comment heartbeat interval seconds; <=0 disables (fix-plan 1.3 Tier A, default 15)
 	// AGUIRun bundles the AURA_AGUI_RUN_* detached-run knobs (fix-plan 1.3 Tier B,
@@ -454,7 +452,6 @@ func loadBase() *Config {
 		// may now be any address, with GuardWebBind enforcing the non-loopback credential
 		// policy at boot (D-05).
 		AGUIBind:            envDefault("AURA_AGUI_BIND", "127.0.0.1:9080"),
-		AGUICORSPermissive:  envutil.BoolDefault("AURA_AGUI_CORS_PERMISSIVE", false),
 		AGUIBufferCap:       envutil.IntDefault("AURA_AGUI_BUFFER_CAP", 64),
 		AGUISSEHeartbeatSec: envutil.IntDefault("AURA_AGUI_SSE_HEARTBEAT_SEC", 15),
 		AGUIRun:             loadAGUIRunConfig(),

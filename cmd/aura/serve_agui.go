@@ -37,7 +37,6 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 	// auth or AURA_WEB_TRUST_PROXY is set, so the auth boundary — not a hardcoded
 	// bind — is the compensating control.
 	serverCfg := agui.ServerConfig{
-		CORSPermissive:  chat.cfg.AGUICORSPermissive,
 		BufferCap:       chat.cfg.AGUIBufferCap,
 		SSEHeartbeatSec: chat.cfg.AGUISSEHeartbeatSec,
 		// Detached-run knobs (fix-plan 1.3 Tier B, amendment #90), resolved like

@@ -182,7 +182,7 @@ func (d AuthDeps) isPublicPath(p string) bool {
 
 // RequireAuth gates the WHOLE origin (D-03) except the public paths. When auth is not
 // configured (SecretConfigured==false, loopback dev) it returns `next` unchanged — a
-// no-op pass-through (mirrors server.go withCORS), safe because the Plan-01 boot guard
+// no-op pass-through, safe because the Plan-01 boot guard
 // only permits an unconfigured secret on a loopback bind. When active it:
 //  1. lets isPublicPath requests + GET /healthz through (login + assets + liveness);
 //     GET /readyz is allowed only for same-process loopback orchestrator probes;

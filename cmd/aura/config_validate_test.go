@@ -20,8 +20,8 @@ const (
 
 // setUnsafeServerProductionEnv composes an intentionally-unsafe server_production
 // posture via t.Setenv: the required DB/Neo4j secrets ARE present so the run reaches
-// the profile gates, but the sample object-store creds, an empty RPC secret, permissive
-// CORS, a single replica, a disabled destructive-shell gate and an empty web-auth secret
+// the profile gates, but the sample object-store creds, an empty RPC secret, a single
+// replica, a disabled destructive-shell gate and an empty web-auth secret
 // each trip a Fatal gate (plan 04). A loopback AGUI bind avoids an unrelated web-bind
 // violation. loadBase() loads .env best-effort; t.Setenv values win (godotenv never
 // overrides an already-set var), so the posture is deterministic on any host.
@@ -33,7 +33,6 @@ func setUnsafeServerProductionEnv(t *testing.T) {
 	t.Setenv("AURA_OBJECTSTORE_ACCESS_KEY", sampleObjectStoreAccessKey)
 	t.Setenv("AURA_OBJECTSTORE_SECRET_KEY", sampleObjectStoreSecretKey)
 	t.Setenv("GARAGE_RPC_SECRET", "")
-	t.Setenv("AURA_AGUI_CORS_PERMISSIVE", "true")
 	t.Setenv("AURA_OBJECTSTORE_REPLICATION_FACTOR", "1")
 	t.Setenv("AURA_SHELL_DESTRUCTIVE_PATTERNS", "off")
 	t.Setenv("AURA_AUTHULA_SECRET", "")
@@ -51,7 +50,6 @@ func setBenignDevEnv(t *testing.T) {
 	t.Setenv("AURA_OBJECTSTORE_ACCESS_KEY", "GKrealoperatorkey0000000001")
 	t.Setenv("AURA_OBJECTSTORE_SECRET_KEY", "realoperatorsecretvalue0000000000000000000000000000000000000000ab")
 	t.Setenv("GARAGE_RPC_SECRET", "deadbeefrpcsecret")
-	t.Setenv("AURA_AGUI_CORS_PERMISSIVE", "false")
 	t.Setenv("AURA_OBJECTSTORE_REPLICATION_FACTOR", "1")
 	t.Setenv("AURA_SHELL_DESTRUCTIVE_PATTERNS", "")
 	t.Setenv("AURA_AUTHULA_SECRET", "")
@@ -63,7 +61,6 @@ func setBenignDevEnv(t *testing.T) {
 var offendingKnobs = []string{
 	"AURA_OBJECTSTORE_ACCESS_KEY",
 	"AURA_OBJECTSTORE_SECRET_KEY",
-	"AURA_AGUI_CORS_PERMISSIVE",
 	"AURA_OBJECTSTORE_REPLICATION_FACTOR",
 	"GARAGE_RPC_SECRET",
 	"AURA_AUTHULA_SECRET",

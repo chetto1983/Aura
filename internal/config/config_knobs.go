@@ -74,15 +74,13 @@ func knobRegistry() []KnobSpec {
 		{Name: "AURA_OBJECTSTORE_ENDPOINT", Kind: KindString, Default: "http://127.0.0.1:3900"},
 		{Name: "AURA_OBJECTSTORE_REPLICATION_FACTOR", Kind: KindInt, Default: "1"},
 		{Name: "AURA_AGUI_BIND", Kind: KindString, Default: "127.0.0.1:9080"},
-		{Name: "AURA_AGUI_CORS_PERMISSIVE", Kind: KindBool, Default: "false"},
 		{Name: "AURA_SHELL_DESTRUCTIVE_PATTERNS", Kind: KindString, Default: ""},
 		{Name: "AURA_WEB_TRUST_PROXY", Kind: KindBool, Default: "false"},
 
 		// Phase 38 MCP governance hardening (D-14/D-15/MCPH-08): the legacy
 		// AURA_MCP_SERVERS_JSON env override is production-gated by gateMCPLegacyEnv
 		// (config_validate.go) unless this compat flag explicitly opts in. KindBool so a
-		// malformed value is FLAGGED (not silently absorbed) under a strict tier, matching
-		// AURA_AGUI_CORS_PERMISSIVE's registration shape.
+		// malformed value is FLAGGED (not silently absorbed) under a strict tier.
 		{Name: "AURA_MCP_LEGACY_ENV_COMPAT", Kind: KindBool, Default: "false"},
 
 		// --- Tier B: int/bool reliability knobs read in internal/config (F-016 surface) ---
