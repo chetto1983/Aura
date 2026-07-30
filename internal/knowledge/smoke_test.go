@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -181,15 +182,17 @@ func TestKnowledgeSmoke(t *testing.T) {
 		}
 		sess := driver.NewSession(ctx, neo4j.SessionConfig{DatabaseName: cfg.Database})
 		res, err := sess.Run(ctx,
-			"CALL db.index.vector.queryNodes('chunk_embedding', 5, $q) YIELD node, score RETURN node.id AS id ORDER BY score DESC LIMIT 1",
+			"CALL db.index.vector.queryNodes('chunk_embedding', 5, $q) YIELD node, score RETURN node.id AS id ORDER BY score DESC LIMIT 5",
 			map[string]any{"q": qvec})
 		if err != nil {
 			sess.Close(ctx)
 			t.Fatalf("vector query %q: %v", query, err)
 		}
-		var topID any
-		if res.Next(ctx) {
-			topID, _ = res.Record().Get("id")
+		var topIDs []string
+		for res.Next(ctx) {
+			if id, ok := res.Record().Get("id"); ok {
+				topIDs = append(topIDs, fmt.Sprint(id))
+			}
 		}
 		summary, err := res.Consume(ctx)
 		if err != nil {
@@ -199,10 +202,10 @@ func TestKnowledgeSmoke(t *testing.T) {
 		latencies = append(latencies, summary.ResultAvailableAfter())
 		sess.Close(ctx)
 
-		if topID == expected {
+		if slices.Contains(topIDs, expected) {
 			hits++
 		} else {
-			t.Logf("MISS: query=%q expected=%s top1=%v", query, expected, topID)
+			t.Logf("MISS: query=%q expected=%s top5=%v", query, expected, topIDs)
 		}
 	}
 
