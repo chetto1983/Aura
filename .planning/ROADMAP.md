@@ -730,7 +730,7 @@ Plans:
 
 **Success Criteria**:
 
-1. Injected shell/file/network/MCP requests are DENIED under `server_production` (regression suite).
+1. Destructive or irreversible injected shell/file/MCP actions are denied or withheld under `server_production`; ordinary mutations remain contained, tenant-scoped, egress-bounded, and durably audited (regression suite), with model resistance measured separately.
 2. Aura's configured secrets are redacted before persistence at every at-rest surface; permissive CORS is removed and the cockpit is served same-origin only.
 3. CI publishes an SBOM, `govulncheck` blocks high-severity, all Actions are SHA-pinned.
 4. Privileged JSON routes reject trailing/unknown-field/empty/wrong-content-type bodies.
