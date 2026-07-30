@@ -2,6 +2,7 @@ package swarm
 
 import (
 	"context"
+	"errors"
 
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/tools"
@@ -38,7 +39,8 @@ func NewRunnerAdapter(cfg config.Config) *RunnerAdapter {
 func (a *RunnerAdapter) Run(ctx context.Context, goals []string) (tools.ToolResult, error) {
 	sc, ok := agent.SwarmContext(ctx)
 	if !ok {
-		return tools.NewResult(ctx, "error: swarm context unavailable — swarm_spawn must be dispatched by the agent loop")
+		return tools.ToolResult{}, errors.New(
+			"swarm context unavailable: swarm_spawn must be dispatched by the agent loop")
 	}
 
 	rc := RunConfig{

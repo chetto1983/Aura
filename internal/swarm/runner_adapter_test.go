@@ -2,7 +2,6 @@ package swarm
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/agent"
@@ -17,17 +16,14 @@ func withToolCtx(ctx context.Context, t *testing.T) context.Context {
 	return tools.WithToolCallContext(ctx, "sess-adapter", "call-adapter", t.TempDir(), 2048)
 }
 
-// TestRunnerAdapterMissingContext asserts a dispatch outside the agent loop (no
-// swarm context on the ctx) is a model-readable inline error, not a panic.
+// TestRunnerAdapterMissingContext pins Amendment #103: a dispatch outside the
+// agent loop is a typed execution error, never an OK result containing error text.
 func TestRunnerAdapterMissingContext(t *testing.T) {
 	defer goleak.VerifyNone(t)
 	a := NewRunnerAdapter(testRunConfig(t, newRouter(), 25).Cfg)
-	res, err := a.Run(withToolCtx(context.Background(), t), []string{"x"})
-	if err != nil {
-		t.Fatalf("missing context must be inline, not a Go error: %v", err)
-	}
-	if !strings.Contains(res.Preview, "swarm context unavailable") {
-		t.Fatalf("preview = %q, want a swarm-context-unavailable error", res.Preview)
+	_, err := a.Run(withToolCtx(context.Background(), t), []string{"x"})
+	if err == nil {
+		t.Fatal("missing context must return an execution error")
 	}
 }
 
