@@ -377,3 +377,37 @@ func TestReaderErrorPropagates(t *testing.T) {
 		t.Fatalf("err = %v, want %v", err, sentinel)
 	}
 }
+
+// TestCaptionPrefersFileNameOverTitle pins the coalesce ORDER, not merely the membership,
+// of the two Document caption properties. The order is the whole fix: the extractor writes
+// the upload temp basename into `title` for every format without an embedded title, so a
+// list containing both properties in the wrong order still captions a spreadsheet node
+// `tmpfl5h6p91.xlsx` while its inspector panel reads `file_name: Clienti.xlsx`.
+//
+// It asserts on the generated Cypher because the coalesce is evaluated server-side — Go
+// never sees the resolution, only the expression it ships. The live counterpart that proves
+// the resolution itself is TestGraphViewLive_DocumentCaptionIsFileName.
+func TestCaptionPrefersFileNameOverTitle(t *testing.T) {
+	expr := captionExpr("d")
+	fileIdx := strings.Index(expr, "d.file_name")
+	titleIdx := strings.Index(expr, "d.title")
+	if fileIdx < 0 {
+		t.Fatalf("caption expression must consult d.file_name — a Document has no name/canonical_name, so without it the caption falls through to a possibly-temp title: %s", expr)
+	}
+	if titleIdx < 0 {
+		t.Fatalf("caption expression must still consult d.title as the fallback for documents with no file_name: %s", expr)
+	}
+	if fileIdx > titleIdx {
+		t.Fatalf("d.file_name must precede d.title in the coalesce, otherwise a temp-basename title wins over the operator's own file name: %s", expr)
+	}
+}
+
+// TestCaptionOrderIsEntityFirst guards the property added above from displacing the Entity
+// caption: an :Entity carries both `name` and, when it is also a :Document, no file_name —
+// so `name` must keep winning or every memory entity re-renders as something else.
+func TestCaptionOrderIsEntityFirst(t *testing.T) {
+	expr := captionExpr("n")
+	if strings.Index(expr, "n.name") > strings.Index(expr, "n.file_name") {
+		t.Fatalf("n.name must precede n.file_name so an :Entity keeps captioning by its own name: %s", expr)
+	}
+}

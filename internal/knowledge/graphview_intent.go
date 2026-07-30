@@ -28,10 +28,20 @@ const captionMaxChars = 140
 // `identifier` is deliberately absent: it is the :User node's UUID, so consulting it would
 // reintroduce exactly the unreadable id this list exists to remove. A User with no caption
 // renders as its label instead.
+//
+// `file_name` precedes `title` for a reason the canvas made visible: the extractor derives a
+// Document's `title` from the basename of the UPLOAD TEMP FILE for every format that has no
+// embedded document title (xlsx, docx, pptx, csv), so the operator saw a node captioned
+// `tmpfl5h6p91.xlsx` next to an inspector panel reading `file_name: Clienti.xlsx`. `file_name`
+// carries the name the operator actually chose and is correct on every Document in the live
+// graph; `title` is better ONLY when it is a real embedded title (a PDF's), and that case
+// still wins for the nodes that have no file_name at all. Ordering the reliable property
+// first makes the caption robust to a bad title instead of merely hoping the title is good.
 var captionProperties = []string{
 	"name", "canonical_name", // Entity
 	"preference", // Preference
-	"title",      // Document
+	"file_name",  // Document — the operator's own name for it, always correct
+	"title",      // Document fallback — a real embedded title, or a temp basename
 	"predicate",  // Fact
 	"content",    // Message
 	"query",      // ReasoningStep
