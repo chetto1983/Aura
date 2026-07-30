@@ -55,7 +55,7 @@ func TestLiveE2E_PauseResume(t *testing.T) {
 	defer cancel()
 	convID := h.newLiveConversation(t, ctx)
 
-	evs, err := drain(h.r.Turn(ctx, convID, userPtr(approvalInducer)))
+	evs, err := drain(h.r.Turn(ctx, convID, new(approvalInducer)))
 	if err != nil {
 		t.Fatalf("SC#1 pause turn: %v", err)
 	}
@@ -207,7 +207,7 @@ func TestLiveE2E_ThreeSimultaneous(t *testing.T) {
 	defer cancel()
 	convID := h.newLiveConversation(t, ctx)
 
-	if _, err := drain(h.r.Turn(ctx, convID, userPtr(threeSimultaneousInducer))); err != nil {
+	if _, err := drain(h.r.Turn(ctx, convID, new(threeSimultaneousInducer))); err != nil {
 		t.Fatalf("SC#2 pause turn: %v", err)
 	}
 
@@ -295,7 +295,7 @@ func TestLiveE2E_AutoTitleAndCost(t *testing.T) {
 	// per-turn usage is persisted by the Runner regardless of whether the round itself
 	// errored mid-stream (a logged, non-fatal condition, like SC#4).
 	for i, p := range prompts {
-		if _, err := drain(h.r.Turn(ctx, convID, userPtr(p))); err != nil {
+		if _, err := drain(h.r.Turn(ctx, convID, new(p))); err != nil {
 			t.Logf("SC#3 turn %d: live model round errored (%v) — continuing", i+1, err)
 		}
 	}
@@ -387,7 +387,7 @@ func (h *liveHarness) awaitAutoTitle(t *testing.T, ctx context.Context, convID s
 		}
 		if attempt < maxAttempts {
 			t.Logf("SC#3: title still NULL after attempt %d — re-firing the auto-title worker", attempt)
-			if _, err := drain(h.r.Turn(ctx, convID, userPtr("Briefly, anything else notable about those two cities?"))); err != nil {
+			if _, err := drain(h.r.Turn(ctx, convID, new("Briefly, anything else notable about those two cities?"))); err != nil {
 				t.Fatalf("SC#3 retry turn (attempt %d): %v", attempt, err)
 			}
 		}
@@ -425,7 +425,7 @@ func TestLiveE2E_SearchSimilarity(t *testing.T) {
 	// already durable. So a per-turn LLM error is logged, not fatal: it must not turn
 	// a search-ordering test into a network-flake failure.
 	for i, p := range prompts {
-		if _, err := drain(h.r.Turn(ctx, convID, userPtr(p))); err != nil {
+		if _, err := drain(h.r.Turn(ctx, convID, new(p))); err != nil {
 			t.Logf("SC#4 turn %d: live model round errored (%v) — the user turn is already persisted, continuing", i+1, err)
 		}
 	}

@@ -30,7 +30,7 @@ func TestResumeBatch_ConcurrentDuplicate_Integration(t *testing.T) {
 	convID := newIntegrationConversation(t, pool, convStore)
 	ctx := context.Background()
 
-	if _, err := drain(r.Turn(ctx, convID, userPtr("go"))); err != nil {
+	if _, err := drain(r.Turn(ctx, convID, new("go"))); err != nil {
 		t.Fatalf("turn: %v", err)
 	}
 	pending, err := r.PendingFor(ctx, convID)

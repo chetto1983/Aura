@@ -34,7 +34,7 @@ func TestFlushPause_HappyExposesPauseAndTurnAtomically_Integration(t *testing.T)
 	convID := newIntegrationConversation(t, pool, convStore)
 	ctx := context.Background()
 
-	if _, err := drain(r.Turn(ctx, convID, userPtr("go"))); err != nil {
+	if _, err := drain(r.Turn(ctx, convID, new("go"))); err != nil {
 		t.Fatalf("turn: %v", err)
 	}
 	pending, err := r.PendingFor(ctx, convID)
@@ -121,7 +121,7 @@ func TestFlushPause_FailureHidesPauseAndTurn_Integration(t *testing.T) {
 
 	// The Turn pauses; flushPause → faulty CommitPause → tx rolls back → the flush error
 	// surfaces on the iterator.
-	if _, err := drain(r.Turn(ctx, convID, userPtr("go"))); err == nil {
+	if _, err := drain(r.Turn(ctx, convID, new("go"))); err == nil {
 		t.Fatal("want the injected flush failure to surface on the turn iterator")
 	}
 

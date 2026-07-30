@@ -32,7 +32,7 @@ func TestResumeSingle_AppendFailureAfterClaimRollsBack_Integration(t *testing.T)
 	ctx := context.Background()
 
 	// Drive a real Turn to a pause (exercises the atomic flushPause/CommitPause path).
-	if _, err := drain(r.Turn(ctx, convID, userPtr("where am I?"))); err != nil {
+	if _, err := drain(r.Turn(ctx, convID, new("where am I?"))); err != nil {
 		t.Fatalf("turn: %v", err)
 	}
 	pending, err := r.PendingFor(ctx, convID)
@@ -100,7 +100,7 @@ func TestResumeSingle_DuplicateIsAtomic_Integration(t *testing.T) {
 	convID := newIntegrationConversation(t, pool, convStore)
 	ctx := context.Background()
 
-	if _, err := drain(r.Turn(ctx, convID, userPtr("where am I?"))); err != nil {
+	if _, err := drain(r.Turn(ctx, convID, new("where am I?"))); err != nil {
 		t.Fatalf("turn: %v", err)
 	}
 	pending, err := r.PendingFor(ctx, convID)
