@@ -19,6 +19,7 @@ export function useReasoningEffort(
   threadId: string,
   hydratedEffort: string | undefined,
   levels: readonly string[],
+  capabilitiesSettled: boolean,
 ): ReasoningEffortSeam {
   const [effort, setEffort] = useState('auto');
   const [hydratedKey, setHydratedKey] = useState<string | null>(null);
@@ -35,10 +36,11 @@ export function useReasoningEffort(
     if (next !== effort) setEffort(next);
   }
 
-  // Clamp a value the active model does not advertise back to 'auto' once the advertised levels
-  // arrive (they load asynchronously after mount). 'auto' is always in the set, so the clamp is a
-  // safe floor and converges in one extra render — it never leaves the selector unrenderable.
-  if (levels.length > 0 && !levels.includes(effort)) {
+  // Clamp only after the capability request settles. Before that, levels is the conservative
+  // {auto,off} loading floor; clamping a persisted "high" against that provisional set races the
+  // conversation fetch and permanently loses the stored value before the real levels arrive.
+  // 'auto' is always in the settled set, so the clamp remains a safe, convergent floor.
+  if (capabilitiesSettled && levels.length > 0 && !levels.includes(effort)) {
     setEffort('auto');
   }
 

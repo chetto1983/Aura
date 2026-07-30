@@ -7,6 +7,7 @@ import {
   REASONING_CAPABILITIES_FLOOR,
   REASONING_CAPABILITIES_PATH,
 } from '../api';
+import { useReasoningCapabilities } from '../useReasoningCapabilities';
 import { useReasoningEffort } from '../useReasoningEffort';
 
 // reasoningEffort.test.ts is the WEBMODEL-01/03 state+wire unit gate: the run-body effort fold
@@ -111,10 +112,35 @@ describe('fetchReasoningCapabilities', () => {
   });
 });
 
+describe('useReasoningCapabilities', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('distinguishes the provisional floor from a settled capability response', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(
+          jsonResponse({ levels: ['auto', 'off', 'high'], default: 'auto', detected: true }),
+        ),
+      ),
+    );
+    const { result } = renderHook(() => useReasoningCapabilities());
+    expect(result.current).toEqual({ ...REASONING_CAPABILITIES_FLOOR, settled: false });
+    await waitFor(() => {
+      expect(result.current).toEqual({
+        levels: ['auto', 'off', 'high'],
+        default: 'auto',
+        detected: true,
+        settled: true,
+      });
+    });
+  });
+});
+
 describe('useReasoningEffort', () => {
   it('hydrates the persisted per-conversation value on thread open', async () => {
     const { result } = renderHook(() =>
-      useReasoningEffort('conv-1', 'high', ['auto', 'off', 'low', 'high']),
+      useReasoningEffort('conv-1', 'high', ['auto', 'off', 'low', 'high'], true),
     );
     await waitFor(() => {
       expect(result.current.effort).toBe('high');
@@ -122,14 +148,16 @@ describe('useReasoningEffort', () => {
   });
 
   it('hydrates auto when the stored value is empty/absent', async () => {
-    const { result } = renderHook(() => useReasoningEffort('conv-1', '', ['auto', 'off']));
+    const { result } = renderHook(() => useReasoningEffort('conv-1', '', ['auto', 'off'], true));
     await waitFor(() => {
       expect(result.current.effort).toBe('auto');
     });
   });
 
   it('clamps a stored value the active model does not advertise back to auto (D-13)', async () => {
-    const { result } = renderHook(() => useReasoningEffort('conv-1', 'high', ['auto', 'off']));
+    const { result } = renderHook(() =>
+      useReasoningEffort('conv-1', 'high', ['auto', 'off'], true),
+    );
     await waitFor(() => {
       expect(result.current.effort).toBe('auto');
     });
@@ -137,7 +165,7 @@ describe('useReasoningEffort', () => {
 
   it('keeps a manual pick — there is NO send-time reset (unlike the pinned skill)', () => {
     const { result } = renderHook(() =>
-      useReasoningEffort('conv-1', 'auto', ['auto', 'off', 'high']),
+      useReasoningEffort('conv-1', 'auto', ['auto', 'off', 'high'], true),
     );
     act(() => {
       result.current.setEffort('high');
@@ -148,7 +176,7 @@ describe('useReasoningEffort', () => {
   it('re-hydrates when a different thread opens', async () => {
     const { result, rerender } = renderHook(
       ({ id, eff }: { id: string; eff: string }) =>
-        useReasoningEffort(id, eff, ['auto', 'off', 'high']),
+        useReasoningEffort(id, eff, ['auto', 'off', 'high'], true),
       { initialProps: { id: 'conv-1', eff: 'high' } },
     );
     await waitFor(() => {
@@ -157,6 +185,22 @@ describe('useReasoningEffort', () => {
     rerender({ id: 'conv-2', eff: 'off' });
     await waitFor(() => {
       expect(result.current.effort).toBe('off');
+    });
+  });
+
+  it('does not clamp persisted high against the provisional loading floor', async () => {
+    const { result, rerender } = renderHook(
+      ({ levels, settled }: { levels: string[]; settled: boolean }) =>
+        useReasoningEffort('conv-1', 'high', levels, settled),
+      { initialProps: { levels: ['auto', 'off'], settled: false } },
+    );
+    await waitFor(() => {
+      expect(result.current.effort).toBe('high');
+    });
+
+    rerender({ levels: ['auto', 'off', 'low', 'high'], settled: true });
+    await waitFor(() => {
+      expect(result.current.effort).toBe('high');
     });
   });
 });

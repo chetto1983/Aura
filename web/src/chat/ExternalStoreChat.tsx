@@ -119,7 +119,12 @@ export function ExternalStoreChat({
   const hydratedEffort = conversation?.ReasoningEffort;
   /** RS-07 §4.2: a set live_run_id means a detached run is in flight for this thread. */
   const liveRunId = conversation?.live_run_id;
-  const { effort, setEffort } = useReasoningEffort(threadId, hydratedEffort, reasoningCaps.levels);
+  const { effort, setEffort } = useReasoningEffort(
+    threadId,
+    hydratedEffort,
+    reasoningCaps.levels,
+    reasoningCaps.settled,
+  );
 
   const invalidateRuntimeReads = useCallback(
     (id = threadId) => {

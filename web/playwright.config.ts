@@ -65,6 +65,11 @@ const AURA_BINARY =
 // mobile-safari project is enabled against it; otherwise it is omitted (so CI, which has
 // no proxy, runs chromium + mobile-chrome only and stays green).
 const HTTPS_ORIGIN = process.env.AURA_E2E_HTTPS_ORIGIN;
+// CI runners provide branded Chrome and keep exercising that production-adjacent channel. Local
+// WSL environments may only have Playwright's managed Chromium, so this explicit opt-in removes
+// the channel override without changing the default/CI browser matrix.
+const CHROMIUM_CHANNEL =
+  process.env.AURA_E2E_USE_BUNDLED_CHROMIUM === 'true' ? {} : { channel: 'chrome' as const };
 
 export default defineConfig({
   testDir: './e2e',
@@ -96,8 +101,8 @@ export default defineConfig({
   // Source Explorer sheet, pagination) is validated on all three so the cockpit holds
   // on a touch viewport, not just desktop.
   projects: [
-    { name: 'chrome', use: { ...devices['Desktop Chrome'], channel: 'chrome' } },
-    { name: 'mobile-chrome', use: { ...devices['Pixel 5'], channel: 'chrome' } },
+    { name: 'chrome', use: { ...devices['Desktop Chrome'], ...CHROMIUM_CHANNEL } },
+    { name: 'mobile-chrome', use: { ...devices['Pixel 5'], ...CHROMIUM_CHANNEL } },
     // mobile-safari is enabled only when an HTTPS origin is provided (the __Host-/Secure
     // cookie needs https for WebKit — see HTTPS_ORIGIN above). It overrides baseURL to the
     // TLS proxy and ignores the self-signed cert.
