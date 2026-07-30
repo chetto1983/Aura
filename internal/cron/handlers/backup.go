@@ -52,8 +52,8 @@ type neo4jDumper func(context.Context, neo4jDumpRequest) error
 // BackupHandler dumps a database from inside the Aura box without a Docker socket.
 //
 // Postgres uses network pg_dump against the migrate-role DSN. Neo4j uses APOC over
-// Bolt and writes cypher-shell-compatible statements. Both variants write directly
-// into AURA_BACKUP_DIR, which compose bind-mounts to the host-visible backup dir.
+// Bolt and writes cypher-shell-compatible statements. Both variants promote a
+// completed sibling partial into AURA_BACKUP_DIR atomically.
 type BackupHandler struct {
 	Variant     BackupVariant
 	pgDumper    pgDumper
@@ -84,18 +84,42 @@ func (h BackupHandler) Run(ctx context.Context, job Job) (string, error) {
 	}
 
 	dest := filepath.Join(dir, h.dumpFilename(time.Now().UTC()))
+	partial, err := createBackupPartial(dir, filepath.Base(dest))
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = os.Remove(partial) }()
 	runCtx, cancel := context.WithTimeout(ctx, backupMaxDuration)
 	defer cancel()
 
-	if err := h.dump(runCtx, dest); err != nil {
+	if err := h.dump(runCtx, partial); err != nil {
 		return "", err
 	}
-	if _, statErr := os.Stat(dest); statErr != nil {
-		return "", fmt.Errorf("backup %s: dump not found at %s after backup: %w", h.Variant, dest, statErr)
+	if _, statErr := os.Stat(partial); statErr != nil {
+		return "", fmt.Errorf("backup %s: dump not found at %s after backup: %w", h.Variant, partial, statErr)
+	}
+	if err := os.Rename(partial, dest); err != nil {
+		return "", fmt.Errorf("backup %s: promote partial artifact: %w", h.Variant, err)
 	}
 
 	swept := sweepRetention(dir, h.filePrefix(), h.retention())
 	return fmt.Sprintf("backup %s ok -> %s (pruned %d old dump(s))", h.Variant, dest, swept), nil
+}
+
+func createBackupPartial(dir, finalName string) (string, error) {
+	file, err := os.CreateTemp(dir, "."+finalName+"-*.partial")
+	if err != nil {
+		return "", fmt.Errorf("backup: create partial artifact: %w", err)
+	}
+	name := file.Name()
+	if err := file.Close(); err != nil {
+		_ = os.Remove(name)
+		return "", fmt.Errorf("backup: close partial artifact: %w", err)
+	}
+	if err := os.Remove(name); err != nil {
+		return "", fmt.Errorf("backup: prepare partial artifact: %w", err)
+	}
+	return name, nil
 }
 
 func (h BackupHandler) dump(ctx context.Context, dest string) error {

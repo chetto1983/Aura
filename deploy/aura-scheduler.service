@@ -31,9 +31,9 @@ Type=simple
 ExecStart=/usr/local/bin/aura serve
 # Graceful shutdown (D-15): SIGTERM cancels the root ctx; the in-flight tick finishes
 # and joins its workers, then the MCP closers reverse-close — goleak-clean. Give the
-# longest handler (a backup dump, MaxDuration 30m) room to drain before SIGKILL.
+# longest handler (a backup dump, MaxDuration 30m) plus terminal-write grace before SIGKILL.
 KillSignal=SIGTERM
-TimeoutStopSec=120
+TimeoutStopSec=1860
 # Restart on a crash (D-16 ops posture); a clean SIGTERM exit (code 0) is NOT a restart.
 Restart=on-failure
 RestartSec=5

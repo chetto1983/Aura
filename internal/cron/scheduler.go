@@ -196,6 +196,9 @@ func (s *Scheduler) Start(ctx context.Context) error {
 	// claims + heartbeats + dispatches each ONCE, carrying MissedSince, and does NOT
 	// reschedule (catchUpMissed already did).
 	for _, m := range missed {
+		if ctx.Err() != nil {
+			break
+		}
 		s.runMissed(ctx, m)
 	}
 	if err == nil && ctx.Err() == nil {
@@ -249,10 +252,16 @@ func (s *Scheduler) tick(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("tick due tasks: %w", err)
 	}
+	if ctx.Err() != nil {
+		return nil
+	}
 
 	sem := make(chan struct{}, s.maxConcurrent)
 	var wg sync.WaitGroup
 	for _, task := range due {
+		if ctx.Err() != nil {
+			break
+		}
 		wg.Add(1)
 		sem <- struct{}{}
 		go func(task Task) {
@@ -262,6 +271,9 @@ func (s *Scheduler) tick(ctx context.Context) error {
 		}(task)
 	}
 	wg.Wait()
+	if ctx.Err() != nil {
+		return nil
+	}
 	if sweeper, ok := s.dispatch.(notificationSweeper); ok {
 		if err := sweeper.sweepNotifications(ctx); err != nil {
 			return fmt.Errorf("tick sweep notifications: %w", err)
@@ -301,6 +313,7 @@ func (s *Scheduler) LastTick() time.Time {
 // dispatches (10-05 handlers via the Dispatcher seam; nil = claim-and-release
 // probe), then releases the lock + conn regardless of outcome.
 func (s *Scheduler) runOne(ctx context.Context, task Task) {
+	ctx = admittedJobContext(ctx)
 	claim, err := s.claim(ctx, task)
 	if err != nil {
 		if errors.Is(err, ErrAlreadyRunning) {
@@ -342,6 +355,7 @@ func (s *Scheduler) runOne(ctx context.Context, task Task) {
 // lost lock (another booting worker already caught it up) is a benign skip — the
 // catch-up is at-most-once across the cluster by the same advisory-lock singleton.
 func (s *Scheduler) runMissed(ctx context.Context, m MissedTask) {
+	ctx = admittedJobContext(ctx)
 	claim, err := s.claim(ctx, m.Task)
 	if err != nil {
 		if errors.Is(err, ErrAlreadyRunning) {
@@ -366,6 +380,13 @@ func (s *Scheduler) runMissed(ctx context.Context, m MissedTask) {
 			slog.Warn("scheduler catch-up dispatch failed", "task", m.Task.ID, "run", claim.RunID, "err", err)
 		}
 	}
+}
+
+func admittedJobContext(ctx context.Context) context.Context {
+	if ctx == nil {
+		return context.Background()
+	}
+	return context.WithoutCancel(ctx)
 }
 
 // reschedule advances a skipped/overdue task's next_run_at to its next fire so the

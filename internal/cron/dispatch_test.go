@@ -21,7 +21,13 @@ type fakeHandler struct {
 	gotCtx  context.Context
 }
 
-func (h *fakeHandler) Meta() HandlerMeta { return h.meta }
+func (h *fakeHandler) Meta() HandlerMeta {
+	meta := h.meta
+	if meta.MaxDuration <= 0 {
+		meta.MaxDuration = time.Second
+	}
+	return meta
+}
 
 func (h *fakeHandler) Run(ctx context.Context, job Job) (string, error) {
 	h.ran = true

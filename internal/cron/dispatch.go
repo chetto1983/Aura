@@ -160,6 +160,10 @@ func NewDispatch(handlers map[TaskKind]Handler, deps DispatchDeps) *Dispatch {
 // silent drop, D-21). The held conn (claim.go) keeps the advisory lock for the run's
 // lifetime; CompleteRun writes through the pool but the lock is unaffected.
 func (d *Dispatch) Dispatch(ctx context.Context, task Task, c *Claim) (err error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx = context.WithoutCancel(ctx)
 	ctx, end := schedulerJobBoundary.Start(ctx)
 	defer end.PanicSafe(&err)
 	ctx, err = scheduledOperationContext(ctx, task, c)
@@ -174,8 +178,17 @@ func (d *Dispatch) Dispatch(ctx context.Context, task Task, c *Claim) (err error
 		return err
 	}
 
+	maxDuration := h.Meta().MaxDuration
+	if maxDuration <= 0 {
+		err := fmt.Errorf("handler for kind %q has invalid max duration %s", task.Kind, maxDuration)
+		d.complete(ctx, task, c.RunID, "failed", "", err)
+		d.notify(ctx, task, c.RunID, "", err)
+		return err
+	}
+	runCtx, cancel := context.WithTimeout(ctx, maxDuration)
+	defer cancel()
 	job := Job{Payload: task.Payload, StepBudget: task.StepBudget, RunID: c.RunID, MissedSince: c.MissedSince, OriginConversationID: task.OriginConversationID}
-	summary, runErr := h.Run(ctx, job)
+	summary, runErr := h.Run(runCtx, job)
 
 	status := "completed"
 	if runErr != nil {

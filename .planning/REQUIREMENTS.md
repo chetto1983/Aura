@@ -141,8 +141,8 @@ Share/export a conversation or artifact (parity with Claude's "Condividi"/link),
 ### Production Operations, Scale & Capability Evaluation (OPS)
 
 - [ ] **OPS-01**: Backup/restore for Postgres + Neo4j + sidecars + object store is automated and **drilled** with measured, documented RPO/RTO; the drill accounts for Neo4j 5.26 Community offline-only backup (`neo4j-admin database dump/load`). *(F-019 ops part)*
-- [ ] **OPS-02**: Scheduler shutdown separates stop-admission from in-flight job-work contexts with an explicit drain deadline; SIGTERM during a long job does not immediately cancel it. *(F-042)*
-- [ ] **OPS-03**: The systemd stop timeout exceeds the longest configured handler duration (or backups are atomically promoted); a kill during backup never promotes a partial artifact. *(F-043)*
+- [x] **OPS-02**: Scheduler shutdown separates stop-admission from in-flight job-work contexts with an explicit drain deadline; SIGTERM during a long job does not immediately cancel it. *(F-042)*
+- [x] **OPS-03**: The systemd stop timeout exceeds the longest configured handler duration (or backups are atomically promoted); a kill during backup never promotes a partial artifact. *(F-043)*
 - [ ] **OPS-04**: A load (k6/vegeta) + chaos (toxiproxy: DB outage, MCP timeout storm, object-store outage, process-kill-during-write) harness runs in CI under no-skip-as-green discipline and defines supported concurrency + degradation behavior. *(F-019 load/chaos part)*
 - [ ] **OPS-05**: A capability-evaluation suite (golden + adversarial + chaos scenarios for shell/files/MCP/memory/pause-resume/error/workflow classes) publishes a CI pass/fail report; live-LLM tiers are gated per the no-unsolicited-paid-runs rule. *(F-019)*
 - [ ] **OPS-06**: ADRs exist for loop semantics, tool policy, memory provenance, MCP trust, deployment profiles, and the sandbox decision; a release-readiness checklist gates security/load/backup/observability/rollback. *(F-025, F-026)*

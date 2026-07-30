@@ -24,6 +24,37 @@ type recordingDispatcher struct {
 	hold  time.Duration // optional artificial work so concurrency is observable
 }
 
+type drainingDispatcher struct {
+	started                chan struct{}
+	release                chan struct{}
+	canceled               atomic.Bool
+	dispatches             atomic.Int32
+	notificationSweeps     atomic.Int32
+	approvalReminderSweeps atomic.Int32
+}
+
+func (d *drainingDispatcher) Dispatch(ctx context.Context, _ Task, _ *Claim) error {
+	d.dispatches.Add(1)
+	close(d.started)
+	select {
+	case <-d.release:
+		return nil
+	case <-ctx.Done():
+		d.canceled.Store(true)
+		return ctx.Err()
+	}
+}
+
+func (d *drainingDispatcher) sweepNotifications(context.Context) error {
+	d.notificationSweeps.Add(1)
+	return nil
+}
+
+func (d *drainingDispatcher) sweepApprovalReminders(context.Context) error {
+	d.approvalReminderSweeps.Add(1)
+	return nil
+}
+
 func newRecordingDispatcher(hold time.Duration) *recordingDispatcher {
 	return &recordingDispatcher{ran: map[string]int{}, hold: hold}
 }
@@ -135,6 +166,57 @@ func TestSchedulerStartGracefulShutdown(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("Start did not return on ctx cancel (leaked tick loop)")
+	}
+}
+
+func TestSchedulerCancellationStopsAdmissionAndDrainsClaimedJob(t *testing.T) {
+	now := time.Now().UTC()
+	pool := migratedPool(t)
+	store := New(pool)
+	disp := &drainingDispatcher{started: make(chan struct{}), release: make(chan struct{})}
+	s := NewScheduler(pool, store, SchedulerConfig{
+		Now:           func() time.Time { return now },
+		MaxConcurrent: 1,
+		TickInterval:  10 * time.Millisecond,
+		Dispatch:      disp,
+	})
+	seedDueTask(t, s, now)
+	seedDueTask(t, s, now)
+
+	admissionCtx, stopAdmission := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- s.Start(admissionCtx) }()
+	select {
+	case <-disp.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("scheduler never admitted the due task")
+	}
+
+	stopAdmission()
+	time.Sleep(50 * time.Millisecond)
+	if disp.canceled.Load() {
+		t.Fatal("admission cancellation propagated into an already claimed job")
+	}
+	close(disp.release)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Start returned %v after drained job", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Start did not join the drained job")
+	}
+	if got := disp.canceled.Load(); got {
+		t.Fatal("claimed job observed admission cancellation before completing")
+	}
+	if got := disp.dispatches.Load(); got != 1 {
+		t.Fatalf("dispatch count after admission cancellation = %d, want only the admitted job", got)
+	}
+	if got := disp.notificationSweeps.Load(); got != 0 {
+		t.Fatalf("notification sweeps after admission cancellation = %d, want 0", got)
+	}
+	if got := disp.approvalReminderSweeps.Load(); got != 0 {
+		t.Fatalf("approval-reminder sweeps after admission cancellation = %d, want 0", got)
 	}
 }
 
