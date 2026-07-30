@@ -327,6 +327,10 @@ type Querier interface {
 	// reuses this EXACT query; only the excerpt rendering differs per channel.
 	SearchConversationTurns(ctx context.Context, arg SearchConversationTurnsParams) ([]SearchConversationTurnsRow, error)
 	SetConversationTitleIfNull(ctx context.Context, arg SetConversationTitleIfNullParams) error
+	// Narrow status write for background workers, which know the document but not the
+	// identity that owns it. UpdateDocument above needs identity_id and rewrites every column,
+	// so a worker could not use it to correct a single field without inventing the rest.
+	SetDocumentStatus(ctx context.Context, arg SetDocumentStatusParams) (AuraDocuments, error)
 	// D-09 (CHAT-05): set a turn's branch/parent pointers. The branch-write seam plan 25-07
 	// uses when an edit/regenerate forks a new sibling branch off an existing parent turn.
 	SetTurnBranchPointers(ctx context.Context, arg SetTurnBranchPointersParams) error
