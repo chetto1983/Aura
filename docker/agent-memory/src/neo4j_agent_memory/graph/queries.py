@@ -473,7 +473,7 @@ WHERE f.subject = $subject
   AND f.predicate = $predicate
   AND f.object = $object
   AND coalesce(f.deduplication_scope, 'global') = $deduplication_scope
-  AND f.valid_until IS NULL
+  AND f[$valid_until_property] IS NULL
 RETURN f
 LIMIT 1
 """
@@ -482,7 +482,7 @@ FIND_EXACT_PREFERENCE = """
 MATCH (:User {identifier: $user_identifier})-[:HAS_PREFERENCE]->(p:Preference {category: $category})
 WHERE p.preference = $preference
   AND coalesce(p.deduplication_scope, 'global') = $deduplication_scope
-  AND p.valid_until IS NULL
+  AND p[$valid_until_property] IS NULL
 RETURN p
 LIMIT 1
 """

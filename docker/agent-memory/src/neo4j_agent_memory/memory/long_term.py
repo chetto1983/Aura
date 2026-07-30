@@ -851,11 +851,11 @@ class LongTermMemory(BaseMemory[Entity]):
 
         # Exact-text dedup fallback. The embedding path above is skipped when
         # generate_embedding is off or the embedder is unavailable, which would
-        # otherwise CREATE a byte-identical duplicate of an existing preference (the
+        # otherwise attempt a byte-identical duplicate of an existing preference (the
         # operator observed the same preference stored as two nodes). Return the
         # existing LIVE preference for this user with the same category + exact text +
         # scope instead of minting a second one. Any lookup failure falls through to
-        # CREATE (never blocks a write).
+        # the constraint-backed MERGE (never blocks a write).
         if user_identifier is not None:
             try:
                 existing_exact = await self._client.execute_read(
@@ -865,6 +865,7 @@ class LongTermMemory(BaseMemory[Entity]):
                         "category": category,
                         "preference": preference,
                         "deduplication_scope": deduplication_scope or "global",
+                        "valid_until_property": "valid_until",
                     },
                 )
                 if existing_exact:
@@ -1164,8 +1165,8 @@ class LongTermMemory(BaseMemory[Entity]):
         # generate_embedding=False — deduplication silently did not run at all and an
         # identical fact was created again. Entities cannot hit this: they MERGE on
         # {name, type, deduplication_scope} and are backed by entity_name_type_scope_unique.
-        # Facts are CREATEd, so exact repetition needs its own guard. Read-only and
-        # fail-soft: any lookup failure falls through to CREATE and never blocks a write.
+        # Facts use a constraint-backed MERGE, while this lookup preserves metadata and
+        # avoids an unnecessary write. Fail-soft: a lookup failure falls through to MERGE.
         if user_identifier is not None:
             try:
                 existing_exact = await self._client.execute_read(
@@ -1176,6 +1177,7 @@ class LongTermMemory(BaseMemory[Entity]):
                         "predicate": predicate,
                         "object": obj,
                         "deduplication_scope": deduplication_scope or "global",
+                        "valid_until_property": "valid_until",
                     },
                 )
                 if existing_exact:

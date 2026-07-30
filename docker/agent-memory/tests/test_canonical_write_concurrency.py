@@ -119,6 +119,13 @@ def test_schema_has_canonical_preference_and_fact_uniqueness_constraints():
     )
 
 
+def test_exact_fallback_uses_dynamic_validity_property_without_schema_warning():
+    assert "f[$valid_until_property] IS NULL" in queries.FIND_EXACT_FACT
+    assert "p[$valid_until_property] IS NULL" in queries.FIND_EXACT_PREFERENCE
+    assert ".valid_until IS NULL" not in queries.FIND_EXACT_FACT
+    assert ".valid_until IS NULL" not in queries.FIND_EXACT_PREFERENCE
+
+
 def _config_or_skip() -> Neo4jConfig:
     uri = os.environ.get("NEO4J_TEST_URI") or os.environ.get("NEO4J_URI")
     password = os.environ.get("NEO4J_TEST_PASSWORD") or os.environ.get("NEO4J_PASSWORD")
