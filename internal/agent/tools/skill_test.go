@@ -10,9 +10,10 @@ import (
 
 // fakeSkillLoader is a deterministic in-memory skillLoader for the tool tests.
 type fakeSkillLoader struct {
-	skills   []SkillMeta
-	bodies   map[string]string
-	snippets map[string]fakeSnippet // name -> snippet by-path resolution (D-04)
+	skills        []SkillMeta
+	bodies        map[string]string
+	snippets      map[string]fakeSnippet // name -> snippet by-path resolution (D-04)
+	invalidations int
 }
 
 type fakeSnippet struct {
@@ -23,6 +24,8 @@ type fakeSnippet struct {
 }
 
 func (f *fakeSkillLoader) List() []SkillMeta { return f.skills }
+
+func (f *fakeSkillLoader) Invalidate() { f.invalidations++ }
 
 func (f *fakeSkillLoader) Body(name string) (string, bool) {
 	b, ok := f.bodies[name]

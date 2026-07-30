@@ -60,6 +60,12 @@ func (a *Loader) Body(name string) (string, bool) {
 	return s.Body, true
 }
 
+// Invalidate makes a completed model-path write visible to the next read action
+// in the same turn.
+func (a *Loader) Invalidate() {
+	a.loader.Invalidate()
+}
+
 // ManifestDescription renders the turn-stable, alphabetical, cap-bounded manifest
 // the skill tool's Description shows (D-06/D-09).
 func (a *Loader) ManifestDescription() string {

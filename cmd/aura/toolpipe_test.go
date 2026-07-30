@@ -10,6 +10,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/google/uuid"
 )
 
 type toolPipeEcho struct{}
@@ -57,6 +58,32 @@ func (toolPipeRejectedResult) Spec() tools.Spec {
 func (toolPipeRejectedResult) Execute(context.Context, json.RawMessage) (tools.ToolResult, error) {
 	const preview = `{"error":"timeout","message":"fetch timed out"}`
 	return tools.ToolResult{Preview: preview, Bytes: len(preview)}, nil
+}
+
+type toolPipeTaskStore struct {
+	originConversationID string
+}
+
+func (s *toolPipeTaskStore) CreateScheduledTask(
+	_ context.Context,
+	in tools.CreateTaskInput,
+) (tools.ScheduledTask, error) {
+	s.originConversationID = in.OriginConversationID
+	return tools.ScheduledTask{
+		ID: "00000000-0000-0000-0000-000000000001",
+	}, nil
+}
+
+func (*toolPipeTaskStore) ListScheduledTasks(context.Context) ([]tools.ScheduledTask, error) {
+	return nil, nil
+}
+
+func (*toolPipeTaskStore) CancelScheduledTask(context.Context, string) error {
+	return nil
+}
+
+func (*toolPipeTaskStore) RunScheduledTaskNow(context.Context, string) error {
+	return nil
 }
 
 func TestRunToolPipeCommandUsesRuntimeAndCloses(t *testing.T) {
@@ -192,5 +219,31 @@ func TestRunToolPipeCommandDistinguishesModelVisibleRejection(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), `"status":"rejected"`) {
 		t.Fatalf("model-visible rejection rendered as success: %q", output.String())
+	}
+}
+
+func TestExecuteToolPipeUsesValidSyntheticConversationID(t *testing.T) {
+	store := &toolPipeTaskStore{}
+	registry := tools.NewRegistry()
+	registry.Register(&tools.TaskTool{Store: store})
+	var output bytes.Buffer
+	err := executeToolPipe(
+		t.Context(),
+		strings.NewReader(
+			`{"tool":"task","args":{"action":"schedule","schedule_kind":"at","at":"2030-01-01T09:30:00Z","kind":"reminder","payload":{"text":"audit"},"notify":"stdout"}}`+"\n",
+		),
+		&output,
+		&config.Config{ToolPreviewCap: 30_000},
+		registry,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := uuid.Parse(store.originConversationID); err != nil {
+		t.Fatalf(
+			"toolpipe origin conversation ID = %q, want valid UUID: %v",
+			store.originConversationID,
+			err,
+		)
 	}
 }

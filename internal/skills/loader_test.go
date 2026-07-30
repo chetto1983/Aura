@@ -89,6 +89,25 @@ func TestLoaderTTLCache(t *testing.T) {
 	}
 }
 
+func TestLoaderInvalidateRefreshesBeforeTTL(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeSkill(t, root, "one", skillMD("one", "First skill."))
+
+	l := NewLoader(Config{Roots: []string{root}, CacheTTL: time.Hour})
+	if len(l.List()) != 1 {
+		t.Fatal("initial List() should see one skill")
+	}
+	writeSkill(t, root, "two", skillMD("two", "Second skill."))
+	if len(l.List()) != 1 {
+		t.Fatal("fixture did not remain cached before invalidation")
+	}
+	l.Invalidate()
+	if len(l.List()) != 2 {
+		t.Fatal("Invalidate did not make the new skill visible immediately")
+	}
+}
+
 func TestLoaderSymlinkStripped(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink creation requires elevation on Windows; the Lstat-no-follow guard is exercised on POSIX/CI")

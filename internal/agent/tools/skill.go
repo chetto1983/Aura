@@ -95,6 +95,19 @@ type skillLoader interface {
 	Snippet(name string) (instructions, hostPath, sandboxPath, interpreter string, ok bool)
 }
 
+// skillLoaderInvalidator is optional so deterministic test/read-only loaders do
+// not need cache semantics. The live adapter implements it to make a successful
+// write visible to info/use/list in the same turn.
+type skillLoaderInvalidator interface {
+	Invalidate()
+}
+
+func (t *SkillTool) invalidateLoader() {
+	if loader, ok := t.Loader.(skillLoaderInvalidator); ok {
+		loader.Invalidate()
+	}
+}
+
 // skillArgs is the wire shape of the skill tool arguments. Only `action` is
 // required at the schema root (D-10); `name` and `query` are per-action and their
 // requirements are documented in the schema field descriptions, never as a root

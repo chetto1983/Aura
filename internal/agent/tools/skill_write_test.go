@@ -162,6 +162,24 @@ func TestActionCreateActivates(t *testing.T) {
 	}
 }
 
+func TestActionCreateInvalidatesLoaderForSameTurnRead(t *testing.T) {
+	w := &fakeSkillWriter{status: "active"}
+	loader := newFakeLoader()
+	tool := &SkillTool{Writer: w, Loader: loader}
+
+	if _, err := execSkill(t, tool, map[string]any{
+		"action":      "create",
+		"name":        "same-turn-skill",
+		"description": "usable immediately",
+		"body":        "# instructions",
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if loader.invalidations != 1 {
+		t.Fatalf("loader invalidations = %d, want 1 after successful create", loader.invalidations)
+	}
+}
+
 func TestActionCreateActivePathStillAlertsWhenAlerterWired(t *testing.T) {
 	w := &fakeSkillWriter{status: "active"}
 	al := &fakeSkillAlerter{}

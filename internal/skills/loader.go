@@ -108,6 +108,16 @@ func (l *Loader) Get(name string) (Skill, bool) {
 	return s, ok
 }
 
+// Invalidate expires the cached snapshot immediately. The next List/Get rescans
+// synchronously, which makes a completed Writer mutation visible in the same
+// agent turn instead of waiting for the normal one-second cache TTL.
+func (l *Loader) Invalidate() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.scanned = false
+	l.scannedAt = time.Time{}
+}
+
 // refreshLocked re-scans the roots when the snapshot is absent or older than the
 // TTL. Caller holds l.mu. The lazy-on-read design keeps the loader goroutine-free.
 func (l *Loader) refreshLocked() {

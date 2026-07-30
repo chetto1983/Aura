@@ -26,6 +26,11 @@ type toolPipeRuntime struct {
 
 type toolPipeRuntimeFactory func(context.Context, *config.Config) (toolPipeRuntime, error)
 
+// toolPipeSessionID is a valid, reserved UUID used only by the direct production
+// runner. Conversation-aware tools may parse the session as a UUID; the old
+// literal "toolpipe" made task scheduling fail before it reached the real store.
+const toolPipeSessionID = "00000000-0000-0000-0000-000000000042"
+
 type toolPipeRecord struct {
 	Tool            string `json:"tool,omitempty"`
 	Status          string `json:"status"`
@@ -179,7 +184,7 @@ func executeToolPipe(
 		n++
 		tctx := tools.WithToolCallContext(
 			ctx,
-			"toolpipe",
+			toolPipeSessionID,
 			fmt.Sprintf("pipe-%d", n),
 			cfg.RunDir,
 			cfg.ToolPreviewCap,

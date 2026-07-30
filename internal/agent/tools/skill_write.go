@@ -152,6 +152,7 @@ func (t *SkillTool) actionInstall(ctx context.Context, raw json.RawMessage) (Too
 	if err != nil {
 		return ToolResult{}, fmt.Errorf("skill install %q: %w", source, err)
 	}
+	t.invalidateLoader()
 	if t.Alerter != nil {
 		t.Alerter.AlertPendingSkill(ctx, name, "install", scoring.Risky)
 	}
@@ -182,6 +183,7 @@ func (t *SkillTool) writeAction(ctx context.Context, raw json.RawMessage, action
 	if _, err := t.Writer.WriteMutation(ctx, string(action), name, a.Description, a.Body, a.Always); err != nil {
 		return ToolResult{}, fmt.Errorf("skill %s %q: %w", action, name, err)
 	}
+	t.invalidateLoader()
 	// The alert (D-26) is an OPERATOR notification, not a gate: it tells a human that a
 	// self-extension happened, and the turn continues either way.
 	if t.Alerter != nil {
@@ -222,6 +224,7 @@ func (t *SkillTool) actionSaveSnippet(ctx context.Context, raw json.RawMessage) 
 	if err != nil {
 		return ToolResult{}, fmt.Errorf("skill save_snippet %q: %w", name, err)
 	}
+	t.invalidateLoader()
 	return NewResult(ctx, fmt.Sprintf(
 		"Snippet %q saved and ready (status=%s). Call action=use to get its path and interpreter, "+
 			"then run it — no further step is needed.", name, status))
@@ -239,6 +242,7 @@ func (t *SkillTool) actionRestore(ctx context.Context, raw json.RawMessage) (Too
 	if rerr != nil {
 		return ToolResult{}, fmt.Errorf("skill restore %q: %w", name, rerr)
 	}
+	t.invalidateLoader()
 	return NewResult(ctx, fmt.Sprintf(
 		"Snippet %q restored (status=%s) — re-materialized into the skills dir; call action=use to run it by path.", name, status))
 }
@@ -256,6 +260,7 @@ func (t *SkillTool) actionArchive(ctx context.Context, raw json.RawMessage) (Too
 	if aerr != nil {
 		return ToolResult{}, fmt.Errorf("skill archive %q: %w", name, aerr)
 	}
+	t.invalidateLoader()
 	return NewResult(ctx, fmt.Sprintf(
 		"Snippet %q archived (status=%s) — de-materialized; restore it with action=restore if needed.", name, status))
 }
