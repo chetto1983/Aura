@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/documents"
+	"github.com/chetto1983/aura/internal/identityctx"
 )
 
 func TestDocsCommandRequiresSubcommand(t *testing.T) {
@@ -61,8 +62,53 @@ func TestDocsSearchPrintsHits(t *testing.T) {
 	if decoded.Query != "hello" || len(decoded.Hits) != 1 {
 		t.Fatalf("decoded = %#v", decoded)
 	}
-	if svc.searchReq.Limit != 5 {
-		t.Fatalf("limit = %d", svc.searchReq.Limit)
+	if svc.retrieveReq.Limit != 5 {
+		t.Fatalf("limit = %d", svc.retrieveReq.Limit)
+	}
+}
+
+// TestDocsSearchThreadsTheOperatorIdentity guards the half of the fix a shape assertion
+// cannot see. With AURA_MUSR_ISOLATION on, Searcher.Search and every scoped seed query
+// return before any I/O when IdentityID is empty, so a field-identical service that
+// forgot the principal is still a no-op that exits 0 with zero hits.
+func TestDocsSearchThreadsTheOperatorIdentity(t *testing.T) {
+	const operator = "00000000-0000-0000-0000-000000000001"
+	svc := &fakeDocsService{}
+	ctx := identityctx.WithIdentityID(t.Context(), operator)
+	if err := runDocsCommand(ctx, []string{"search", "hello"}, &bytes.Buffer{}, fakeDocsFactory(svc)); err != nil {
+		t.Fatal(err)
+	}
+	if svc.retrieveReq.IdentityID != operator {
+		t.Fatalf("retrieve identity = %q, want the resolved operator %q", svc.retrieveReq.IdentityID, operator)
+	}
+}
+
+func TestDocsBenchScoresZeroHitsAndThreadsTheOperatorIdentity(t *testing.T) {
+	const operator = "00000000-0000-0000-0000-000000000001"
+	svc := &fakeDocsService{
+		ingestJob: &documents.Job{ID: "job-1", DocumentID: "doc-1", FileName: "manual.pdf", SparseChunks: 3},
+	}
+	var out bytes.Buffer
+	ctx := identityctx.WithIdentityID(t.Context(), operator)
+	args := []string{"bench", "--query", "hello", "manual.pdf"}
+	if err := runDocsCommand(ctx, args, &out, fakeDocsFactory(svc)); err != nil {
+		t.Fatal(err)
+	}
+	var decoded struct {
+		Hits  int     `json:"hits"`
+		Score float64 `json:"industrial_score"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if svc.retrieveReq.IdentityID != operator || svc.retrieveReq.DocumentID != "doc-1" {
+		t.Fatalf("bench retrieve request = %#v", svc.retrieveReq)
+	}
+	if decoded.Hits != 0 {
+		t.Fatalf("hits = %d, want the reported 0", decoded.Hits)
+	}
+	if decoded.Score > 75 {
+		t.Fatalf("industrial_score = %.1f for a retrieval that returned nothing", decoded.Score)
 	}
 }
 
@@ -88,18 +134,18 @@ func fakeDocsFactory(svc *fakeDocsService) docsServiceFactory {
 }
 
 type fakeDocsService struct {
-	ingestJob *documents.Job
-	statusJob *documents.Job
-	hits      []documents.SearchHit
-	searchReq documents.SearchRequest
+	ingestJob   *documents.Job
+	statusJob   *documents.Job
+	hits        []documents.SearchHit
+	retrieveReq documents.SearchRequest
 }
 
 func (f *fakeDocsService) IngestPath(context.Context, documents.IngestRequest, string) (*documents.Job, error) {
 	return f.ingestJob, nil
 }
 
-func (f *fakeDocsService) Search(_ context.Context, req documents.SearchRequest) ([]documents.SearchHit, error) {
-	f.searchReq = req
+func (f *fakeDocsService) Retrieve(_ context.Context, req documents.SearchRequest) ([]documents.SearchHit, error) {
+	f.retrieveReq = req
 	return f.hits, nil
 }
 

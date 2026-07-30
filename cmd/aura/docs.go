@@ -15,24 +15,35 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/documents"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/knowledge"
-	"github.com/chetto1983/aura/internal/rerank"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const docsUsage = "usage: aura docs {ingest <path> [--source-id cli] [--source-kind local]|search <query> [--document-id id] [--limit 8]|status <job-id>|list [--limit 20]|bench <path> --query <query>}"
 
+// docsCLIService is the retrieval surface `aura docs` drives. It exposes Retrieve, NOT
+// Search: Service.Search is a bare delegation to the sparse fulltext backend, while
+// Retrieve is the two-stage pipeline production actually executes — the document_search
+// tool falls back to it whenever FreezeRetrievalPlans errors, which today is always.
+// Benching Search timed the seed stage alone and called it retrieval.
 type docsCLIService interface {
 	IngestPath(ctx context.Context, req documents.IngestRequest, path string) (*documents.Job, error)
-	Search(ctx context.Context, req documents.SearchRequest) ([]documents.SearchHit, error)
+	Retrieve(ctx context.Context, req documents.SearchRequest) ([]documents.SearchHit, error)
 	GetJob(ctx context.Context, id string) (*documents.Job, error)
 	ListJobs(ctx context.Context, limit int) ([]documents.Job, error)
 }
 
+var _ docsCLIService = (*documents.Service)(nil)
+
 type docsServiceFactory func(context.Context) (docsCLIService, func(), error)
 
 func runDocs(args []string) {
-	if err := runDocsCommand(context.Background(), args, os.Stdout, newDocsService); err != nil {
+	ctx, err := withOperatorIdentity(context.Background())
+	if err == nil {
+		err = runDocsCommand(ctx, args, os.Stdout, newDocsService)
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -110,7 +121,7 @@ func docsSearch(ctx context.Context, args []string, out io.Writer, factory docsS
 	defer closeFn()
 
 	start := time.Now()
-	hits, err := svc.Search(ctx, documents.SearchRequest{Query: query, DocumentID: *documentID, Limit: *limit})
+	hits, err := svc.Retrieve(ctx, docsSearchRequest(ctx, query, *documentID, *limit))
 	if err != nil {
 		return err
 	}
@@ -184,9 +195,10 @@ func docsBench(ctx context.Context, args []string, out io.Writer, factory docsSe
 	timeToSearchable := time.Since(ingestStart)
 
 	var latencies []time.Duration
+	var hits []documents.SearchHit
 	for range 5 {
 		start := time.Now()
-		if _, err = svc.Search(ctx, documents.SearchRequest{Query: *query, DocumentID: job.DocumentID, Limit: 8}); err != nil {
+		if hits, err = svc.Retrieve(ctx, docsSearchRequest(ctx, *query, job.DocumentID, 8)); err != nil {
 			return err
 		}
 		latencies = append(latencies, time.Since(start))
@@ -196,10 +208,26 @@ func docsBench(ctx context.Context, args []string, out io.Writer, factory docsSe
 		"file":                  job.FileName,
 		"size_bytes":            job.SizeBytes,
 		"chunks":                job.SparseChunks,
+		"hits":                  len(hits),
 		"time_to_searchable_ms": timeToSearchable.Milliseconds(),
 		"retrieval_p95_ms":      p95.Milliseconds(),
-		"industrial_score":      industrialScore(timeToSearchable, p95, job.SparseChunks),
+		"industrial_score":      industrialScore(timeToSearchable, p95, job.SparseChunks, len(hits)),
 	})
+}
+
+// docsSearchRequest builds a CLI retrieval request. The identity is load-bearing, not
+// bookkeeping: with AURA_MUSR_ISOLATION on, Searcher.Search and every scoped seed query
+// fail closed on an empty principal and return before any I/O — which is why `aura docs
+// search` used to print zero hits in zero milliseconds and exit 0, and why the benched
+// retrieval p95 was the p95 of a short circuit. runDocs resolves the operator once onto
+// the context, the way the document_search tool reads it from identityctx.
+func docsSearchRequest(ctx context.Context, query, documentID string, limit int) documents.SearchRequest {
+	return documents.SearchRequest{
+		Query:      query,
+		DocumentID: documentID,
+		Limit:      limit,
+		IdentityID: identityctx.IdentityID(ctx),
+	}
 }
 
 func newDocsService(ctx context.Context) (docsCLIService, func(), error) {
@@ -213,15 +241,13 @@ func newDocsService(ctx context.Context) (docsCLIService, func(), error) {
 		pool.Close()
 		return nil, nil, err
 	}
-	baseURL := documentsBaseURL(cfg)
-	httpClient := documentHTTPClient(cfg)
-	svc := &documents.Service{
-		Jobs:          documents.NewPostgresJobStore(pool),
-		Extractor:     &documents.ExtractClient{BaseURL: baseURL, Client: httpClient},
-		Indexer:       &documents.Indexer{Client: mcp},
-		Searcher:      &documents.Searcher{Client: mcp, MUSRIsolation: cfg.MUSRIsolation},
-		MUSRIsolation: cfg.MUSRIsolation,
-	}
+	svc := newDocumentCLIService(documentServiceDeps{
+		cfg:       cfg,
+		pool:      pool,
+		graph:     mcp,
+		maxBytes:  documentMaxBytes(cfg),
+		revisions: defaultRetrievalRevisions(),
+	})
 	return svc, func() {
 		_ = mcp.Close()
 		pool.Close()
@@ -235,11 +261,7 @@ type runtimeDocumentIngestor struct {
 }
 
 func newRuntimeDocumentIngestor(cfg *config.Config, pool *pgxpool.Pool) *runtimeDocumentIngestor {
-	var maxBytes int64
-	if cfg != nil {
-		maxBytes = int64(cfg.AssetMaxDocumentBytes)
-	}
-	return &runtimeDocumentIngestor{cfg: cfg, pool: pool, MaxBytes: maxBytes}
+	return &runtimeDocumentIngestor{cfg: cfg, pool: pool, MaxBytes: documentMaxBytes(cfg)}
 }
 
 func (i *runtimeDocumentIngestor) IngestPath(ctx context.Context, req documents.IngestRequest, path string) (*documents.Job, error) {
@@ -251,14 +273,9 @@ func (i *runtimeDocumentIngestor) IngestPath(ctx context.Context, req documents.
 		return nil, err
 	}
 	defer func() { _ = mcp.Close() }()
-	svc := &documents.Service{
-		Jobs:      documents.NewPostgresJobStore(i.pool),
-		Extractor: &documents.ExtractClient{BaseURL: documentsBaseURL(i.cfg), Client: documentHTTPClient(i.cfg)},
-		Indexer:   &documents.Indexer{Client: mcp},
-		Searcher:  &documents.Searcher{Client: mcp},
-		Embedder:  runtimeEmbeddingQueue{cfg: i.cfg, pool: i.pool},
-		MaxBytes:  i.MaxBytes,
-	}
+	svc := newDocumentIngestService(documentServiceDeps{
+		cfg: i.cfg, pool: i.pool, graph: mcp, maxBytes: i.MaxBytes,
+	})
 	return svc.IngestPath(ctx, req, path)
 }
 
@@ -350,25 +367,9 @@ func (s docsToolSearcher) openRetrievalService(
 	if err != nil {
 		return nil, nil, err
 	}
-	// One-knob local↔cloud rerank swap (D-28): AURA_RERANK_MODEL set → shared
-	// OpenRouter endpoint + the single OPENROUTER_API_KEY; unset → local sidecar.
-	rerankBase, rerankKey, rerankModel := s.cfg.RerankRoute()
-	svc := &documents.Service{
-		Searcher:      &documents.Searcher{Client: mcp, MUSRIsolation: s.cfg.MUSRIsolation},
-		Knowledge:     mcp,
-		QueryEmbedder: embeddingClient(s.cfg, documentHTTPClient(s.cfg)),
-		Reranker: &rerank.RerankClient{
-			BaseURL: rerankBase,
-			Model:   rerankModel,
-			APIKey:  rerankKey,
-		},
-		// D-13 path selector: on ⇒ the six scoped queries fail closed on foreign/empty
-		// identity; off (default) ⇒ the pre-existing unscoped path. Both the Service and
-		// its Searcher carry the flag so dense, sparse-fallback, and expand seeds scope
-		// together. The document_search tool supplies req.IdentityID from identityctx.
-		MUSRIsolation:      s.cfg.MUSRIsolation,
-		RetrievalRevisions: s.frozenRetrievalRevisions(),
-	}
+	svc := newDocumentRetrievalService(documentServiceDeps{
+		cfg: s.cfg, graph: mcp, revisions: s.frozenRetrievalRevisions(),
+	})
 	return svc, func() { _ = mcp.Close() }, nil
 }
 
@@ -376,11 +377,7 @@ func (s docsToolSearcher) frozenRetrievalRevisions() documents.RetrievalRevision
 	if s.retrievalRevisions != nil {
 		return *s.retrievalRevisions
 	}
-	return documents.RetrievalRevisions{
-		Parser: "documents-parser-v1", Chunker: "documents-chunker-v1",
-		Embedding: "qwen3-embedding-v1", Index: "neo4j-chunk-index-v1",
-		Reranker: "aura-rerank-v1", Retriever: "aura-retrieval-plan-v1",
-	}
+	return defaultRetrievalRevisions()
 }
 
 func configuredRetrievalHealth(
@@ -430,10 +427,17 @@ func percentile(values []time.Duration, p float64) time.Duration {
 	return cp[idx]
 }
 
-func industrialScore(searchable, retrievalP95 time.Duration, chunks int) float64 {
+// industrialScore grades one ingest + retrieval round trip. The hits term is not
+// cosmetic: without it the score printed 74 for a pipeline that returned nothing at all,
+// because a retrieval short-circuiting before any I/O looks exactly like a fast one. The
+// weights mirror liveIndustrialScore in internal/documents/document_ingest_live_test.go.
+func industrialScore(searchable, retrievalP95 time.Duration, chunks, hits int) float64 {
 	score := 100.0
 	if chunks == 0 {
 		score -= 40
+	}
+	if hits == 0 {
+		score -= 25
 	}
 	if searchable > 3*time.Second {
 		score -= float64((searchable - 3*time.Second).Milliseconds()) / 1000

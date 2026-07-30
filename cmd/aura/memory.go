@@ -50,7 +50,9 @@ func runMemory(args []string) {
 }
 
 // withOperatorIdentity resolves who this CLI invocation writes and reads as, and seeds it
-// on the context so every memory call downstream is scoped to one answer.
+// on the context so every downstream call is scoped to one answer. `aura memory` and
+// `aura docs` both take it: memory to own what it writes, docs because with
+// AURA_MUSR_ISOLATION on an empty principal owns nothing and retrieval fails closed.
 //
 // It costs a Postgres round-trip on a command that otherwise only needs the sidecar. That
 // is the honest price: the identity lives in Postgres, and the alternative — the hardcoded
@@ -61,7 +63,7 @@ func withOperatorIdentity(ctx context.Context) (context.Context, error) {
 	cfg := config.LoadDB()
 	pool, err := db.Open(ctx, &cfg.DB)
 	if err != nil {
-		return nil, fmt.Errorf("aura memory needs Postgres to resolve the operator identity: %w", err)
+		return nil, fmt.Errorf("resolving the operator identity needs Postgres: %w", err)
 	}
 	defer pool.Close()
 	identityID, err := identityctx.OperatorIdentity(ctx, pool)
