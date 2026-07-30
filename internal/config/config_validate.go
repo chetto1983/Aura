@@ -95,6 +95,7 @@ func (c *Config) ValidateProfile(p RuntimeProfile) []Violation {
 	vs = append(vs, c.gateGarageRPCSecret(p)...)
 	vs = append(vs, c.gateReplication(p)...)
 	vs = append(vs, c.gateDestructiveShell(p)...)
+	vs = append(vs, c.gateReasoningTraceFull(p)...)
 	vs = append(vs, c.gateWebAuth(p)...)
 	vs = append(vs, c.gateMUSRIsolation(p)...)
 	vs = append(vs, c.gateMCPLegacyEnv(p)...)
@@ -216,6 +217,26 @@ func (c *Config) gateDestructiveShell(p RuntimeProfile) []Violation {
 	raw := strings.TrimSpace(os.Getenv("AURA_SHELL_DESTRUCTIVE_PATTERNS"))
 	if strings.EqualFold(raw, "off") {
 		return []Violation{{Knob: "AURA_SHELL_DESTRUCTIVE_PATTERNS", Sev: Fatal, Msg: "destructive-shell gate must not be disabled (off) under server_production"}}
+	}
+	return nil
+}
+
+// gateReasoningTraceFull requires an explicit acknowledgement before a strict
+// deployment enables detailed reasoning traces. Encryption is independently
+// fail-closed at the sink, so this gate never coerces the requested mode.
+func (c *Config) gateReasoningTraceFull(p RuntimeProfile) []Violation {
+	if !p.Strict() {
+		return nil
+	}
+	if !strings.EqualFold(strings.TrimSpace(os.Getenv("AURA_REASONING_TRACE")), "full") {
+		return nil
+	}
+	if strings.TrimSpace(os.Getenv("AURA_TRACE_FULL_ACK")) != "1" {
+		return []Violation{{
+			Knob: "AURA_REASONING_TRACE",
+			Sev:  Fatal,
+			Msg:  "full trace requires AURA_TRACE_FULL_ACK=1 under " + string(p),
+		}}
 	}
 	return nil
 }

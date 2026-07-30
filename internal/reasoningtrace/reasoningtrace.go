@@ -15,26 +15,31 @@ import (
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
+
+	outboundredact "github.com/chetto1983/aura/internal/redact"
+	"github.com/chetto1983/aura/internal/secret"
+	"github.com/chetto1983/aura/internal/tracesink"
 )
 
 // Env is the switch that enables JSONL reasoning trace output.
 const Env = "AURA_REASONING_TRACE"
 const fileEnv = "AURA_REASONING_TRACE_FILE"
 const maxBytesEnv = "AURA_REASONING_TRACE_MAX_BYTES"
+const encryptKeyEnv = "AURA_TRACE_ENCRYPT_KEY"
 
 // defaultMaxTraceBytes caps the active JSONL trace before it rotates to a single
 // .1 backup, so an always-on trace cannot grow the run dir without bound (M-06).
 const defaultMaxTraceBytes int64 = 8 << 20 // 8 MiB
 
 // defaultMaxFieldBytes caps individual trace fields before env-secret redaction.
-// AURA_REASONING_TRACE=full is an explicit operator debug mode that may persist
-// plaintext prompts/history to disk; it still applies this cap to avoid runaway
-// JSONL rows.
+// AURA_REASONING_TRACE=full is an explicit operator debug mode. Full records
+// still apply this cap and are persisted only through the encrypted sink.
 const defaultMaxFieldBytes = 4096
 
 var (
 	mu                 sync.Mutex
 	optionalSuppressed atomic.Bool
+	fullSinkWarned     atomic.Bool
 )
 
 // SetOptionalSuppressed lets the bounded disk observer pause debug trace files
@@ -49,16 +54,15 @@ func Enabled() bool {
 		return false
 	}
 	switch strings.ToLower(strings.TrimSpace(os.Getenv(Env))) {
-	case "1", "true", "yes", "on", "full":
+	case "1", "true", "yes", "on", "summary", "full":
 		return true
 	default:
 		return false
 	}
 }
 
-// FullEnabled reports whether the operator requested verbatim trace payloads.
-// This mode is intentionally loud because prompt/history fields can contain PII,
-// credentials typed by the user, and profile data.
+// FullEnabled reports whether the operator requested detailed trace payloads.
+// The payload is still redacted and is persisted only as encrypted records.
 func FullEnabled() bool {
 	return strings.EqualFold(strings.TrimSpace(os.Getenv(Env)), "full")
 }
@@ -94,7 +98,7 @@ func Record(stage string, fields map[string]any) {
 	row := make(map[string]any, traceRowCap(len(fields)))
 	row["ts"] = time.Now().UTC().Format(time.RFC3339Nano)
 	row["pid"] = os.Getpid()
-	row["stage"] = stage
+	row["stage"] = redactString(capTraceString(stage))
 	for k, v := range fields {
 		row[k] = redactValueForKey(k, v)
 	}
@@ -103,15 +107,28 @@ func Record(stage string, fields map[string]any) {
 		slog.Warn("reasoning trace: marshal failed", "stage", stage, "err", err)
 		return
 	}
-	line = []byte(redactString(string(line)))
+	// Values received one exact-match pass before marshal. Apply the outbound
+	// credential-pattern pass exactly once to the serialized persistence row.
+	line = []byte(outboundredact.String(string(line)))
 	p := Path()
 	mu.Lock()
 	defer mu.Unlock()
+	rotateIfOversized(p)
+	if FullEnabled() {
+		sink, err := tracesink.New(p, os.Getenv(encryptKeyEnv))
+		if err != nil {
+			warnFullSinkOnce("reasoning trace: encrypted sink unavailable; record dropped", p, err)
+			return
+		}
+		if err := sink.Write(line); err != nil {
+			warnFullSinkOnce("reasoning trace: encrypted write failed; record dropped", p, err)
+		}
+		return
+	}
 	if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
 		slog.Warn("reasoning trace: mkdir failed", "path", p, "err", err)
 		return
 	}
-	rotateIfOversized(p)
 	// #nosec G304 -- AURA_REASONING_TRACE_FILE is an operator-controlled debug destination.
 	f, err := os.OpenFile(p, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
@@ -121,6 +138,12 @@ func Record(stage string, fields map[string]any) {
 	defer func() { _ = f.Close() }()
 	if _, err := f.Write(append(line, '\n')); err != nil {
 		slog.Warn("reasoning trace: write failed", "path", p, "err", err)
+	}
+}
+
+func warnFullSinkOnce(message, path string, err error) {
+	if fullSinkWarned.CompareAndSwap(false, true) {
+		slog.Warn(message, "path", path, "err", err)
 	}
 }
 
@@ -235,14 +258,10 @@ func redactString(s string) string {
 		if !ok || len(value) < 8 {
 			continue
 		}
-		upper := strings.ToUpper(name)
-		if !strings.Contains(upper, "KEY") &&
-			!strings.Contains(upper, "TOKEN") &&
-			!strings.Contains(upper, "PASSWORD") &&
-			!strings.Contains(upper, "SECRET") {
+		if !secret.IsSecretEnvVar(name, value) {
 			continue
 		}
-		s = strings.ReplaceAll(s, value, "[REDACTED_"+upper+"]")
+		s = strings.ReplaceAll(s, value, "[REDACTED_"+strings.ToUpper(name)+"]")
 	}
 	return s
 }

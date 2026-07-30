@@ -76,6 +76,12 @@ func knobRegistry() []KnobSpec {
 		{Name: "AURA_AGUI_BIND", Kind: KindString, Default: "127.0.0.1:9080"},
 		{Name: "AURA_SHELL_DESTRUCTIVE_PATTERNS", Kind: KindString, Default: ""},
 		{Name: "AURA_WEB_TRUST_PROXY", Kind: KindBool, Default: "false"},
+		// Reasoning trace accepts legacy truthy spellings as well as summary/full,
+		// so it remains a string knob; the strict-profile full-mode policy is
+		// enforced by gateReasoningTraceFull.
+		{Name: "AURA_REASONING_TRACE", Kind: KindString, Default: "off"},
+		{Name: "AURA_TRACE_FULL_ACK", Kind: KindBool, Default: "false"},
+		{Name: "AURA_TRACE_ENCRYPT_KEY", Kind: KindString, Default: "", Secret: true},
 
 		// Phase 38 MCP governance hardening (D-14/D-15/MCPH-08): the legacy
 		// AURA_MCP_SERVERS_JSON env override is production-gated by gateMCPLegacyEnv

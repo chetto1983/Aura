@@ -68,11 +68,13 @@ func TestRecord_DefaultOmitsVerbatimHistoryAndUser(t *testing.T) {
 	}
 }
 
-func TestRecord_FullModeAllowsVerbatimHistory(t *testing.T) {
+func TestRecord_FullModeWritesOnlyEncryptedHistory(t *testing.T) {
 	dir := t.TempDir()
-	p := filepath.Join(dir, "trace.jsonl")
+	p := filepath.Join(dir, "trace.enc")
 	t.Setenv(Env, "full")
 	t.Setenv(fileEnv, p)
+	t.Setenv("AURA_TRACE_FULL_ACK", "1")
+	t.Setenv("AURA_TRACE_ENCRYPT_KEY", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
 
 	Record("agent_request_built", map[string]any{
 		"history": []map[string]any{
@@ -84,8 +86,67 @@ func TestRecord_FullModeAllowsVerbatimHistory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile(%s): %v", p, err)
 	}
-	if !strings.Contains(string(raw), "full mode plaintext") {
-		t.Fatalf("full trace did not preserve explicit history: %s", raw)
+	if strings.Contains(string(raw), "full mode plaintext") || json.Valid(bytesTrimSpace(raw)) {
+		t.Fatalf("full trace was persisted as plaintext JSON: %q", raw)
+	}
+}
+
+func TestRecord_FullModeWithoutKeyFailsClosed(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "trace.enc")
+	t.Setenv(Env, "full")
+	t.Setenv(fileEnv, p)
+	t.Setenv("AURA_TRACE_FULL_ACK", "1")
+	t.Setenv("AURA_TRACE_ENCRYPT_KEY", "")
+
+	Record("agent_request_built", map[string]any{"history": "must never reach plaintext"})
+
+	if _, err := os.Stat(p); !os.IsNotExist(err) {
+		t.Fatalf("full trace without an encryption key created %s (err=%v)", p, err)
+	}
+}
+
+func TestRecordRedaction(t *testing.T) {
+	const configuredDSN = "postgres://configured:password@db.internal/aura"
+	const literalDSN = "postgres://typed:credential@external.example/private"
+	const escapedSecret = "line-one\n\"quoted-secret\""
+	p := filepath.Join(t.TempDir(), "trace.jsonl")
+	t.Setenv(Env, "summary")
+	t.Setenv(fileEnv, p)
+	t.Setenv("AURA_DB_URL", configuredDSN)
+	t.Setenv("AURA_SERVICE_TOKEN", escapedSecret)
+
+	Record("redaction", map[string]any{
+		"configured": configuredDSN,
+		"free_text":  "upstream error: " + literalDSN,
+		"escaped":    "prefix " + escapedSecret,
+		"marker":     "[REDACTED_EXISTING_TOKEN] [capped]",
+	})
+
+	raw, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatalf("ReadFile(%s): %v", p, err)
+	}
+	got := string(raw)
+	for _, leak := range []string{
+		configuredDSN, "configured:password", literalDSN, "typed:credential",
+		"quoted-secret", `\"quoted-secret\"`,
+	} {
+		if strings.Contains(got, leak) {
+			t.Fatalf("trace leaked %q: %s", leak, got)
+		}
+	}
+	if !strings.Contains(got, "[REDACTED_AURA_DB_URL]") {
+		t.Fatalf("configured-value placeholder missing: %s", got)
+	}
+	if !strings.Contains(got, "[REDACTED_AURA_SERVICE_TOKEN]") {
+		t.Fatalf("escaped configured-value placeholder missing: %s", got)
+	}
+	if !strings.Contains(got, "postgres://[redacted]") {
+		t.Fatalf("literal DSN pattern redaction missing: %s", got)
+	}
+	if strings.Count(got, "[REDACTED_EXISTING_TOKEN]") != 1 ||
+		strings.Count(got, "[capped]") != 1 {
+		t.Fatalf("existing redaction markers were altered or duplicated: %s", got)
 	}
 }
 

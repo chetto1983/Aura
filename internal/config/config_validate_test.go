@@ -162,6 +162,39 @@ func TestGateDestructiveShell(t *testing.T) {
 	}
 }
 
+// TestGateReasoningTraceFull locks SEC-01/D-12: detailed trace remains available
+// to lenient local profiles, while strict profiles require an explicit operator
+// acknowledgement before boot.
+func TestGateReasoningTraceFull(t *testing.T) {
+	tests := []struct {
+		name      string
+		profile   RuntimeProfile
+		mode      string
+		ack       string
+		wantFatal bool
+	}{
+		{name: "dev full is a no-op", profile: ProfileDev, mode: "full", wantFatal: false},
+		{name: "local trusted full is a no-op", profile: ProfileLocalTrusted, mode: "full", wantFatal: false},
+		{name: "hardened full without ack", profile: ProfileSingleUserHardened, mode: "full", wantFatal: true},
+		{name: "production full without ack", profile: ProfileServerProduction, mode: " full ", wantFatal: true},
+		{name: "production full with ack", profile: ProfileServerProduction, mode: "FULL", ack: "1", wantFatal: false},
+		{name: "production summary needs no ack", profile: ProfileServerProduction, mode: "summary", wantFatal: false},
+		{name: "production off needs no ack", profile: ProfileServerProduction, mode: "off", wantFatal: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("AURA_REASONING_TRACE", tc.mode)
+			t.Setenv("AURA_TRACE_FULL_ACK", tc.ack)
+			vs := (&Config{}).gateReasoningTraceFull(tc.profile)
+			got := hasViolation(vs, "AURA_REASONING_TRACE", Fatal)
+			if got != tc.wantFatal {
+				t.Fatalf("gateReasoningTraceFull(%s), mode=%q ack=%q: Fatal=%v, want %v (%+v)",
+					tc.profile, tc.mode, tc.ack, got, tc.wantFatal, vs)
+			}
+		})
+	}
+}
+
 // TestGateWebAuth locks D-10/D-11: an empty AURA_AUTHULA_SECRET is Fatal under the
 // strict tiers and OK under the lenient ones.
 func TestGateWebAuth(t *testing.T) {

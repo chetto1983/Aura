@@ -39,7 +39,7 @@ func readRows(t *testing.T, p string) []map[string]any {
 }
 
 func TestEnabled(t *testing.T) {
-	truthy := []string{"1", "true", "yes", "on", "full", "TRUE", "On", " yes ", "Full"}
+	truthy := []string{"1", "true", "yes", "on", "summary", "full", "TRUE", "On", " yes ", "Full"}
 	for _, v := range truthy {
 		t.Run("on/"+strings.TrimSpace(v), func(t *testing.T) {
 			t.Setenv(Env, v)
@@ -290,16 +290,19 @@ func TestRecord_RedactsSecretsInValuesAndKeys(t *testing.T) {
 	}
 }
 
-// TestRedactValue exercises the type switch directly, including the passthrough
-// default branch and recursion through slices and maps.
+// TestRedactValue exercises the recursive exact-value pass. Pattern redaction
+// happens separately and exactly once after JSON marshal.
 func TestRedactValue(t *testing.T) {
 	const secret = "anothersecretvalue999"
 	t.Setenv("SVC_ACCESS_TOKEN", secret)
 
-	t.Run("string_redacted", func(t *testing.T) {
-		got := redactValue("bearer " + secret)
-		if s := got.(string); strings.Contains(s, secret) {
-			t.Fatalf("string not redacted: %q", s)
+	t.Run("string_capped", func(t *testing.T) {
+		got := redactValue(strings.Repeat("x", defaultMaxFieldBytes+100)).(string)
+		if len(got) > defaultMaxFieldBytes {
+			t.Fatalf("string len=%d, want <=%d", len(got), defaultMaxFieldBytes)
+		}
+		if !strings.Contains(got, "[trace field truncated]") {
+			t.Fatalf("truncation marker missing: %q", got)
 		}
 	})
 	t.Run("slice_recursed", func(t *testing.T) {
@@ -307,19 +310,13 @@ func TestRedactValue(t *testing.T) {
 		if len(got) != 3 {
 			t.Fatalf("slice len=%d, want 3", len(got))
 		}
-		if strings.Contains(got[0].(string), secret) {
-			t.Fatalf("slice element not redacted: %v", got[0])
-		}
-		if got[1] != "ok" || got[2] != 42 {
+		if strings.Contains(got[0].(string), secret) || got[1] != "ok" || got[2] != 42 {
 			t.Fatalf("non-secret slice elements altered: %v", got)
 		}
 	})
 	t.Run("map_recursed", func(t *testing.T) {
 		got := redactValue(map[string]any{"key": secret, "n": 1}).(map[string]any)
-		if strings.Contains(got["key"].(string), secret) {
-			t.Fatalf("map value not redacted: %v", got["key"])
-		}
-		if got["n"] != 1 {
+		if strings.Contains(got["key"].(string), secret) || got["n"] != 1 {
 			t.Fatalf("non-secret map value altered: %v", got["n"])
 		}
 	})

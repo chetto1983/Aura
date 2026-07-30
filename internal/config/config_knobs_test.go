@@ -46,13 +46,14 @@ func TestKnobRegistry(t *testing.T) {
 		}
 	}
 
-	// Exactly the five secret knobs are flagged Secret (drives plan-05 redaction).
+	// Exactly the six secret knobs are flagged Secret (drives rendered redaction).
 	wantSecret := map[string]bool{
 		"AURA_OBJECTSTORE_ACCESS_KEY": true,
 		"AURA_OBJECTSTORE_SECRET_KEY": true,
 		"GARAGE_RPC_SECRET":           true,
 		"AURA_GARAGE_ADMIN_TOKEN":     true,
 		"AURA_AUTHULA_SECRET":         true,
+		"AURA_TRACE_ENCRYPT_KEY":      true,
 	}
 	gotSecret := map[string]bool{}
 	for _, k := range reg {
@@ -61,7 +62,7 @@ func TestKnobRegistry(t *testing.T) {
 		}
 	}
 	if !reflect.DeepEqual(gotSecret, wantSecret) {
-		t.Errorf("secret knob set = %v, want exactly the four secret knobs %v", gotSecret, wantSecret)
+		t.Errorf("secret knob set = %v, want exactly the six secret knobs %v", gotSecret, wantSecret)
 	}
 
 	// AURA_PROFILE is the KindEnum row spelling the four runtime profiles.
@@ -91,6 +92,12 @@ func TestKnobRegistry(t *testing.T) {
 	}
 	if k, ok := byName["AURA_AGUI_RUN_BUFFER_EVENTS"]; !ok || k.Kind != KindInt {
 		t.Errorf("AURA_AGUI_RUN_BUFFER_EVENTS present=%v kind=%d, want present KindInt (%d)", ok, k.Kind, KindInt)
+	}
+	if k, ok := byName["AURA_REASONING_TRACE"]; !ok || k.Kind != KindString {
+		t.Errorf("AURA_REASONING_TRACE present=%v kind=%d, want present KindString (%d)", ok, k.Kind, KindString)
+	}
+	if k, ok := byName["AURA_TRACE_FULL_ACK"]; !ok || k.Kind != KindBool {
+		t.Errorf("AURA_TRACE_FULL_ACK present=%v kind=%d, want present KindBool (%d)", ok, k.Kind, KindBool)
 	}
 
 	// No Tier C knob (agent-tools/loop/llm) leaked into the Tier A+B cut (D-16).

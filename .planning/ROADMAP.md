@@ -756,7 +756,7 @@ Plans:
 **Wave 3** *(depends on the config/serve.go seams)*
 
 - [x] 40-08-PLAN.md — SEC-09 HMAC-pepper HashLookupToken + threading + break-glass guard [depends_on 40-01, 40-07]
-- [ ] 40-09-PLAN.md — SEC-01 reasoningtrace redaction fix + full-trace prod gate + encrypted sink [depends_on 40-01, 40-07]
+- [x] 40-09-PLAN.md — SEC-01 reasoningtrace redaction fix + full-trace prod gate + encrypted sink [depends_on 40-01, 40-07]
 
 #### Phase 41: Production Ops + Capability-Eval + Honest 10/10 Closeout
 
