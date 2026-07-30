@@ -93,3 +93,19 @@ func TestAgentMemoryWorkflowAuthSecretRemainsAString(t *testing.T) {
 		}
 	}
 }
+
+func TestAgentMemoryReadinessWarmsRetrievalModels(t *testing.T) {
+	compose := readProjectFile(t, repoRootForTest(t), "compose.yaml")
+	memoryService := composeServiceBlock(t, compose, "aura-agent-memory-mcp")
+
+	for _, want := range []string{
+		"warm_json",
+		`"/embeddings"`,
+		`"/v1/rerank"`,
+		`"Aura readiness warmup"`,
+	} {
+		if !strings.Contains(memoryService, want) {
+			t.Errorf("Agent Memory startup must warm retrieval dependency %q", want)
+		}
+	}
+}

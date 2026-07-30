@@ -647,8 +647,12 @@ services:
       - -lc
       - |
         python - <<'PY'
+        import json
+        import os
         import socket
         import time
+        import urllib.error
+        import urllib.request
 
         targets = [("neo4j", 7687), ("aura-llama-embed", 8081)]
         deadline = time.monotonic() + 240
@@ -661,6 +665,51 @@ services:
                     if time.monotonic() >= deadline:
                         raise SystemExit(f"timed out waiting for {host}:{port}: {exc}")
                     time.sleep(2)
+
+        def warm_json(label, url, payload, token="", required=False):
+            body = json.dumps(payload).encode("utf-8")
+            headers = {"Content-Type": "application/json"}
+            if token:
+                headers["Authorization"] = "Bearer " + token
+            deadline = time.monotonic() + 30
+            while True:
+                try:
+                    request = urllib.request.Request(
+                        url, data=body, headers=headers, method="POST"
+                    )
+                    with urllib.request.urlopen(request, timeout=10) as response:
+                        response.read()
+                    print(f"warmed {label}", flush=True)
+                    return
+                except (urllib.error.URLError, OSError, TimeoutError) as exc:
+                    if time.monotonic() >= deadline:
+                        if required:
+                            raise SystemExit(f"failed to warm required {label}: {exc}")
+                        print(f"warning: optional {label} warmup failed: {exc}", flush=True)
+                        return
+                    time.sleep(2)
+
+        embedding_base = os.environ["OPENAI_BASE_URL"].rstrip("/")
+        embedding_model = os.environ["NAM_EMBEDDING"].rsplit("/", 1)[-1]
+        warm_json(
+            "embedding model",
+            embedding_base + "/embeddings",
+            {"model": embedding_model, "input": "Aura readiness warmup"},
+            os.environ.get("OPENAI_API_KEY", ""),
+            required=True,
+        )
+        rerank_base = os.environ.get("AURA_RERANK_BASE_URL", "").rstrip("/")
+        if rerank_base:
+            warm_json(
+                "rerank model",
+                rerank_base + "/v1/rerank",
+                {
+                    "model": os.environ.get("AURA_RERANK_MODEL") or "aura-rerank",
+                    "query": "Aura readiness warmup",
+                    "documents": ["Aura memory", "unrelated document"],
+                },
+                os.environ.get("AURA_RERANK_API_KEY", ""),
+            )
         PY
         exec neo4j-agent-memory mcp serve \
           --transport http \
