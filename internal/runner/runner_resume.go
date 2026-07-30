@@ -44,15 +44,17 @@ func (r *Runner) maybeAutoTitle(turnCtx context.Context, convID string, history 
 		defer cancel()
 		title, gerr := conversations.GenerateTitle(ctx, r.client, r.cfg.Model, hist)
 		if gerr != nil {
-			slog.Warn("runner: auto-title generation failed", "conv", convID, "err", gerr)
+			// Do not attach convID or gerr: both may contain user/provider-controlled text,
+			// which would let control characters forge adjacent text-handler log records.
+			slog.Warn("runner: auto-title generation failed")
 			return
 		}
 		if title == "" {
-			slog.Warn("runner: auto-title generation returned an empty title", "conv", convID)
+			slog.Warn("runner: auto-title generation returned an empty title")
 			return
 		}
 		if err := r.Conv.SetTitleIfNull(ctx, convID, title); err != nil {
-			slog.Warn("runner: auto-title persistence failed", "conv", convID, "err", err)
+			slog.Warn("runner: auto-title persistence failed")
 		}
 	})
 }
