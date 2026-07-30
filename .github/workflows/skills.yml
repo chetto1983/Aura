@@ -75,10 +75,10 @@ jobs:
       CI: "true"
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
           cache: true
@@ -131,7 +131,7 @@ jobs:
         env:
           GOFLAGS: "-tags=db_integration"
         run: |
-          go install github.com/avito-tech/go-mutesting/cmd/go-mutesting@latest
+          go install github.com/avito-tech/go-mutesting/cmd/go-mutesting@v0.0.0-20251226130216-48d0401f00fb
           MUT="$(go env GOPATH)/bin/go-mutesting"
           # validator.go is the HARD gate (pure write-boundary primitive, reliably scored).
           # writer.go is ADVISORY: its db_integration-gated killing tests do not re-run reliably

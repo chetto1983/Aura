@@ -746,7 +746,7 @@ Plans:
 - [ ] 40-02-PLAN.md — SEC-04 deterministic policy-denial gate + LLM injection-resistance cot_eval tier
 - [x] 40-03-PLAN.md — SEC-06 centralized strict-JSON decode helper + six privileged routes wired
 - [x] 40-04-PLAN.md — SEC-03 validation-console loopback bind guard + unsafe+token escalation
-- [ ] 40-05-PLAN.md — SEC-05 SHA-pin Actions/tools + SBOM (archive+source) + workflow-pin gate
+- [x] 40-05-PLAN.md — SEC-05 SHA-pin Actions/tools + SBOM (archive+source) + workflow-pin gate
 
 **Wave 2** *(depends on amendments)*
 

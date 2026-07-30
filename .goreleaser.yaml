@@ -46,6 +46,15 @@ archives:
 checksum:
   name_template: "checksums.txt"
 
+# Publish CycloneDX/SPDX-compatible Syft inventories for both consumer
+# archives and the source archive. The release workflow installs a SHA-pinned
+# Syft binary before invoking GoReleaser.
+sboms:
+  - id: archive
+    artifacts: archive
+  - id: source
+    artifacts: source
+
 dockers_v2:
   - id: aura-image
     ids:
