@@ -241,9 +241,9 @@ func memoryRelationshipArgs(args []string) (string, map[string]any, error) {
 		return "", nil, fmt.Errorf("memory relationship requires <from> <type> <to>")
 	}
 	return "memory_create_relationship", map[string]any{
-		"from_entity":       args[0],
+		"source_name":       args[0],
 		"relationship_type": args[1],
-		"to_entity":         args[2],
+		"target_name":       args[2],
 	}, nil
 }
 

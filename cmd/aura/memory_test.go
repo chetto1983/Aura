@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -188,7 +189,7 @@ func TestMemoryVerbMapping(t *testing.T) {
 		{"get-entity", []string{"get-entity", "Mario Rossi"}, "memory_get_entity", "name", "Mario Rossi"},
 		{"facts-by-subject", []string{"facts", "Mario Rossi"}, "memory_get_facts", "subject", "Mario Rossi"},
 		{"facts-semantic", []string{"facts", "--like", "dove abita"}, "memory_get_facts", "query", "dove abita"},
-		{"relationship", []string{"relationship", "Mario", "KNOWS", "Luigi"}, "memory_create_relationship", "from_entity", "Mario"},
+		{"relationship", []string{"relationship", "Mario", "KNOWS", "Luigi"}, "memory_create_relationship", "source_name", "Mario"},
 		{"update-entity", []string{"update", "entity", "ent-1", "name=Davide"}, "memory_update", "name", "Davide"},
 		{"update-fact", []string{"update", "fact", "f-1", "object_value=Bologna"}, "memory_update", "node_id", "f-1"},
 		{"forget-preference", []string{"forget", "preference", "pref-123"}, "memory_forget", "node_id", "pref-123"},
@@ -217,6 +218,26 @@ func TestMemoryVerbMapping(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestMemoryRelationshipUsesAdvertisedSchema(t *testing.T) {
+	t.Parallel()
+
+	tool, args, err := memoryRelationshipArgs([]string{"Mario", "KNOWS", "Luigi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tool != "memory_create_relationship" {
+		t.Fatalf("tool = %q, want memory_create_relationship", tool)
+	}
+	want := map[string]any{
+		"source_name":       "Mario",
+		"relationship_type": "KNOWS",
+		"target_name":       "Luigi",
+	}
+	if !reflect.DeepEqual(args, want) {
+		t.Fatalf("args = %#v, want %#v", args, want)
 	}
 }
 
