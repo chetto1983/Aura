@@ -731,7 +731,7 @@ Plans:
 **Success Criteria**:
 
 1. Injected shell/file/network/MCP requests are DENIED under `server_production` (regression suite).
-2. Secret-like values are redacted before persistence; permissive CORS is refused when auth is disabled (except dev).
+2. Aura's configured secrets are redacted before persistence at every at-rest surface; permissive CORS is refused when auth is disabled (except dev).
 3. CI publishes an SBOM, `govulncheck` blocks high-severity, all Actions are SHA-pinned.
 4. Privileged JSON routes reject trailing/unknown-field/empty/wrong-content-type bodies.
 5. The high CodeQL `go/weak-sensitive-data-hashing` finding at `internal/agui/recovery_hash.go` is remediated with a keyed hash (HMAC-SHA-256 with a server-side pepper) where CodeQL accepts it, or dismissed as a documented false positive for a 256-bit CSPRNG token with no limited input space, such that the alert resolves (SEC-09).

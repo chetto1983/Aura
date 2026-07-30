@@ -128,7 +128,7 @@ Share/export a conversation or artifact (parity with Claude's "Condividi"/link),
 
 ### Security & Supply-Chain (SEC)
 
-- [ ] **SEC-01**: Tool output and traces redact secret-like values before persistence; full reasoning-trace mode requires an explicit production warning/fail-fast + retention config + optional encrypted sink. *(F-021)*
+- [ ] **SEC-01**: Aura's configured secrets are redacted before persistence at every at-rest surface (turn body, spill, tool-result sidecar); unknown secret-like values in tool output remain agent working data at rest and are pattern-redacted only on the outbound surface (display, export, ledger, trace). Full reasoning-trace mode requires an explicit production warning/fail-fast, retention config, and encrypted sink. *(F-021)*
 - [ ] **SEC-02**: Permissive/wildcard CORS is replaced by explicit origin allowlists, refused when auth is disabled except under an explicit dev profile, sets `Vary: Origin`, and keeps allowed methods in sync with registered routes. *(F-022)*
 - [ ] **SEC-03**: The integration validation console refuses non-loopback bind unless an explicit unsafe flag + authentication are configured (logs a warning). *(F-047)*
 - [ ] **SEC-04**: A prompt-injection / tool-policy-bypass regression suite asserts that injected shell/file/network/MCP requests are DENIED under `server_production`. *(F-019 security part)*
