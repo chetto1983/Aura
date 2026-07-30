@@ -369,6 +369,7 @@ func readProjectFile(t *testing.T, root, rel string) string {
 
 func composeServiceBlock(t *testing.T, compose, name string) string {
 	t.Helper()
+	compose = strings.ReplaceAll(compose, "\r\n", "\n")
 	startRe := regexp.MustCompile(`(?m)^  ` + regexp.QuoteMeta(name) + `:\n`)
 	loc := startRe.FindStringIndex(compose)
 	if loc == nil {
