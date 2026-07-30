@@ -472,7 +472,8 @@ func decodeToolResult(result json.RawMessage) (text string, isError bool, err er
 			Type string `json:"type"`
 			Text string `json:"text"`
 		} `json:"content"`
-		IsError bool `json:"isError"`
+		StructuredContent json.RawMessage `json:"structuredContent"`
+		IsError           bool            `json:"isError"`
 	}
 	if err := json.Unmarshal(result, &env); err != nil {
 		return "", false, fmt.Errorf("decode tool result envelope: %w", err)
@@ -483,7 +484,11 @@ func decodeToolResult(result json.RawMessage) (text string, isError bool, err er
 			b.WriteString(part.Text)
 		}
 	}
-	return strings.TrimRight(b.String(), "\n"), env.IsError, nil
+	text = strings.TrimRight(b.String(), "\n")
+	if !env.IsError && explicitDomainFailure(env.StructuredContent, text) {
+		env.IsError = true
+	}
+	return text, env.IsError, nil
 }
 
 // closeWaitTimeout bounds how long Close waits for a server to exit after its
