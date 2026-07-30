@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
+from types import TracebackType
 from typing import TYPE_CHECKING, Any
 
 from neo4j_agent_memory.integration_context import (
@@ -27,6 +28,7 @@ from neo4j_agent_memory.integration_context import (
     entity_name_fields,
 )
 from neo4j_agent_memory.memory.atomic import atomic_memory_mutation
+from neo4j_agent_memory.memory.write_evidence import fact_subject_entity
 
 if TYPE_CHECKING:
     from neo4j_agent_memory import MemoryClient
@@ -154,7 +156,12 @@ class MemoryIntegration(ContextSearchMixin):
         await self.connect()
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         await self.close()
 
     @property
@@ -251,7 +258,7 @@ class MemoryIntegration(ContextSearchMixin):
         confidence: float = 1.0,
         metadata: dict[str, Any] | None = None,
         user_identifier: str | None = None,
-        applies_to: list | None = None,
+        applies_to: list[Any] | None = None,
     ) -> dict[str, Any]:
         """Record a user preference.
 
@@ -334,11 +341,17 @@ class MemoryIntegration(ContextSearchMixin):
                 metadata=metadata,
                 user_identifier=user_identifier,
             )
+            linked_subject_entity = await fact_subject_entity(
+                self.client.graph,
+                fact_id=str(fact.id),
+                user_identifier=user_identifier,
+            )
             return {
                 "stored": True,
                 "type": "fact",
                 "id": str(fact.id) if hasattr(fact, "id") else None,
                 "triple": f"{subject} -> {predicate} -> {object_value}",
+                "linked_subject_entity": linked_subject_entity,
             }
         except Exception as e:
             logger.error(f"Error adding fact: {e}")

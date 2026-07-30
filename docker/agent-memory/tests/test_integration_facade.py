@@ -12,6 +12,7 @@ from neo4j_agent_memory.memory.atomic import AtomicMutationError
 class _Graph:
     def __init__(self):
         self.actions = []
+        self.read_rows = []
 
     async def execute_write_unit(self, work):
         result = await work()
@@ -22,6 +23,9 @@ class _Graph:
 
     def defer_after_commit(self, action):
         self.actions.append(action)
+
+    async def execute_read(self, _query, _parameters):
+        return self.read_rows
 
 
 class _LongTerm:
@@ -78,13 +82,27 @@ def test_lifecycle_with_borrowed_client_and_unconnected_guard():
 
 def test_add_and_delete_facades_cover_success_absence_and_error():
     long_term = _LongTerm()
-    integration = MemoryIntegration(client=SimpleNamespace(long_term=long_term, graph=_Graph()))
+    graph = _Graph()
+    integration = MemoryIntegration(client=SimpleNamespace(long_term=long_term, graph=graph))
 
     assert asyncio.run(integration.add_entity("Davide", "PERSON"))["deduplication"][
         "action"
     ] == "created"
     assert asyncio.run(integration.add_preference("food", "pasta"))["id"] == "preference-1"
-    assert asyncio.run(integration.add_fact("Aura", "is", "ready"))["id"] == "fact-1"
+    unlinked_fact = asyncio.run(
+        integration.add_fact("Aura", "is", "ready", user_identifier="owner")
+    )
+    assert unlinked_fact["id"] == "fact-1"
+    assert unlinked_fact["linked_subject_entity"] is None
+
+    graph.read_rows = [{"id": "entity-42", "name": "Aura"}]
+    linked_fact = asyncio.run(
+        integration.add_fact("Aura", "is", "ready", user_identifier="owner")
+    )
+    assert linked_fact["linked_subject_entity"] == {
+        "id": "entity-42",
+        "name": "Aura",
+    }
     assert asyncio.run(
         integration.delete_preference("preference-1", user_identifier="owner")
     )["deleted"] == "preference-1"

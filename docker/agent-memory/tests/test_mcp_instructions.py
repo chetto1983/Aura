@@ -134,6 +134,14 @@ def test_fact_subjects_are_taught_to_carry_an_entity() -> None:
     )
 
 
+def test_graph_claims_are_limited_to_returned_evidence() -> None:
+    """A successful write cannot prove graph structure that its result did not report."""
+    text = _instruction_text()
+    assert "A successful write proves only the fields in its returned result" in text
+    assert "linked_subject_entity" in text
+    assert "memory_get_entity" in text
+
+
 def test_platinum_tools_are_never_taught_on_this_deployment() -> None:
     """The four NAMS-Platinum tools must not appear in the instructions.
 

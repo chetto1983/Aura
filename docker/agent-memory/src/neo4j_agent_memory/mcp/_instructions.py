@@ -41,6 +41,12 @@ WHEN you learn something that should outlive this conversation:
   Do NOT record the passing shape of this conversation. If it would not matter in a
   month, it does not belong here.
 
+A successful write proves only the fields in its returned result. In particular,
+memory_add_fact reports linked_subject_entity as either the exact entity it attached to
+or null. Never infer that a fact created an entity or an edge when that field is null.
+Before reporting any graph property not present in a write result, read it with
+memory_get_entity and state only the entities, facts and neighbours that read returns.
+
 WHEN you need to recall:
   memory_search for a free-text lookup across facts, preferences and entities.
   memory_get_entity when you have a NAME and want what is known about it: its facts,
