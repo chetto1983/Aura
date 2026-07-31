@@ -151,24 +151,14 @@ Share/export a conversation or artifact (parity with Claude's "Condividi"/link),
 
 - [x] **REL-01**: Every new tier (unit/integration/smoke/load/chaos/injection) actually runs in CI — no skip-as-green; skip helpers `t.Fatal` under `$CI`.
 - [x] **REL-02**: Owned-surface coverage stays ≥85%; mutation testing ≥70% killed on the gateway, identity-isolation, profile-validation, and sandbox files.
-- [x] **REL-03**: The production-readiness score reaches a defensible 10/10 with a written evidence bundle (two-identity live E2E, prompt-injection-denied-under-production, drilled DR with RPO/RTO, honest `/readyz`, effective-behavior profile validation) — score bounded by weakest evidence, not green-check count.
+- [ ] **REL-03**: The production-readiness score reaches a defensible 10/10 with a written evidence bundle (two-identity live E2E, prompt-injection-denied-under-production, drilled DR with RPO/RTO, honest `/readyz`, effective-behavior profile validation) — score bounded by weakest evidence, not green-check count. *(Open: the current-only audit register still contains release blockers.)*
 
-### Industrial Conversation Compaction (IC)
+### Industrial Conversation Compaction (IC) — Removed
 
-- [x] **IC-01**: Provider capability registry and exact fail-closed token budget model.
-- [x] **IC-02**: Semantic-unit selection, atomic recent tail, disjoint manifests, and typed L1 edits.
-- [x] **IC-03**: Pure proactive L2.4 decision seam before any allowed L2.5 fallback.
-- [x] **IC-04**: Durable stable-ID claims, leases, out-of-transaction inference, and serializable CAS finalize.
-- [x] **IC-05**: Branch-aware immutable checkpoint generations, versioned digests, active pointer, and deterministic reconstruction.
-- [x] **IC-06**: Safe structured summarization, unresolved-authority ledger, and non-authoritative internal rendering.
-- [x] **IC-07**: Unified manual/lifecycle/proactive/overflow coordinator with bounded non-destructive failures.
-- [ ] **IC-08**: Typed content parts, authorized immutable links, provider projection, artifact durability and reachability GC.
-- [x] **IC-09**: Four-generation recursion cap, deterministic drift gates, and hierarchical canonical rebase.
-- [x] **IC-10**: Separate durable-memory candidate, promotion, retrieval, consent, retention, regional and deletion lifecycle.
-- [x] **IC-11**: Active/LKG/bounded-rebuild recovery, compatible preview/restore, quarantine and disaster recovery.
-- [x] **IC-12**: Owner-gated CLI, REPL, Telegram, AG-UI and accessible web operations parity.
-- [x] **IC-13**: Redacted observability, 500+200 evaluation corpus, numerical promotion gates, staged canaries and automatic rollback.
-- [x] **IC-14**: Backwards-compatible additive migrations, activation-disabled slices, full CI/security/privacy/rollback evidence, and legacy retirement.
+PRD Amendment #86 removed the dark Phase 42 durable-compaction engine and its
+`IC-01..14` contract from current v2.0.0 scope. The historical plans and
+requirements are retained only in Git/milestone evidence; the shipped anti-rot path
+is L4 archival graph recall. Reimplementation requires a new PRD amendment.
 
 ### Code Quality Cleanup (QUAL)
 
@@ -236,11 +226,11 @@ Suggested phase mapping (roadmapper finalizes; phases continue at 31+). Every re
 | SEC | SEC-07 (F-015), SEC-08 | CI `./...` hygiene + CodeQL SSRF (pulled forward) | Phase 31 |
 | OPS | OPS-01..06 | F-019(ops), F-025, F-042, F-043 | Phase 41 |
 | REL | REL-01..03 | (cross-cutting evidence bar) | Phase 41 / all |
-| IC | IC-01..14 | Industrial provider-portable conversation context lifecycle | Phase 42 |
 
 **Coverage:**
 
 - v2.0.0 requirements: 81 total (PROF 6, LOOP 11, GATE 4, MUSR 6, SBX 5, WEBART 8, WEBVOICE 4, WEBSKILL 3, WEBMODEL 3, WEBSHARE 4, MCPH 9, OBS 6, SEC 9, OPS 6, REL 3, QUAL 5) — the WEB* groups are product-gap requirements (no audit F-finding; findings-mapped count unchanged), the cockpit-web parity cluster from the voice/artifact/skill audit: WEBART 37A/37B artifacts, WEBVOICE 37C voice, WEBSKILL 37D skill-picker, WEBMODEL 37E reasoning-effort selector (effort-only per 37E-01/D-01), WEBSHARE 37F sharing/export
+- Removed historical requirements: IC-01..14 (Phase 42), superseded by PRD Amendment #86 and excluded from the current total.
 - Security/production audit findings mapped: 51 / 51 (F-001..F-052, F-044 intentionally absent) ✓
 - CodeQL-surfaced findings (outside the F-series): 2 / 2 — SEC-08 SSRF (`internal/mcp/http_client.go`) → Phase 31, SEC-09 weak-hash (`internal/agui/recovery_hash.go`) → Phase 40 ✓
 - Quality/maintainability audit: `docs/audit/quality/` (4-slice, ~64 findings) → QUAL-01..05 + routed to security phases ✓
@@ -248,4 +238,4 @@ Suggested phase mapping (roadmapper finalizes; phases continue at 31+). Every re
 
 ---
 *Requirements defined: 2026-06-29*
-*Last updated: 2026-07-31 after Phase 41 evidence-gate closeout*
+*Last updated: 2026-07-31 after Phase 42 scope reconciliation and Phase 41 release-evidence review*

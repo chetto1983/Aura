@@ -4,7 +4,7 @@
 
 - ✅ **v0.0.0 Substrate** — Phases 0–21 (shipped 2026-06-15) — full details in [`milestones/v0.0.0-ROADMAP.md`](milestones/v0.0.0-ROADMAP.md)
 - ✅ **v1.0.0 Aura Deep Search Web Cockpit** — Phases 22–30 (shipped 2026-06-29) — full details in [`milestones/v1.0.0-ROADMAP.md`](milestones/v1.0.0-ROADMAP.md)
-- 🔨 **v2.0.0 Industrial Hardening & Multi-User Production** — Phases 31–42 (in planning) — close the 51-finding security audit + the ~64-finding quality audit to an honest 10/10 via stabilization/cleanup + per-user full-capability sandbox + multi-user identity isolation + ToolGateway + observability/security/ops industrialization
+- ⛔ **v2.0.0 Industrial Hardening & Multi-User Production** — Phases 31–43 + 37A–37F (release verification blocked) — implementation is complete; current audit and exact-candidate release evidence remain the closure gate
 
 ## Phases
 
@@ -68,7 +68,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 
 </details>
 
-### 🔨 v2.0.0 Industrial Hardening & Multi-User Production (Phases 31–42) — IN PLANNING
+### ⛔ v2.0.0 Industrial Hardening & Multi-User Production (Phases 31–43 + 37A–37F) — RELEASE VERIFICATION BLOCKED
 
 **Goal:** Close the entire 2026-06-21 industrial audit (51 findings, F-001..F-052) **AND** the maintainability/architecture audit (`docs/audit/quality/`, ~64 findings) to an **honest 10/10** production-readiness (from 4.6/10) — via a per-user full-capability sandbox (Docker, resolving F-001 without stripping the full-host surface), multi-user identity isolation (no RBAC), Authula cutover, a central ToolGateway, observability/security/ops industrialization, and an upfront code-quality cleanup. Every hardening behavior is a **no-op under `dev`/`local_trusted`** — the operator's daily full-host experience is unchanged; hardening activates under `server_production`. Dependency rule: stabilize+cleanup → profiles + ledger → gateway → identity → sandbox → MCP → idempotency/obs → security → ops/eval. Requirements + traceability in [`REQUIREMENTS.md`](REQUIREMENTS.md); research in [`research/SUMMARY.md`](research/SUMMARY.md); quality audit in [`../docs/audit/quality/`](../../docs/audit/quality/README.md).
 
@@ -105,12 +105,14 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 - [x] **Phase 40: Security & Supply-Chain Pack** — `SEC-01..07`, `QUAL`(decode-body unify) (F-019-sec/021/022/047/051/052) (completed 2026-07-30)
   - Goal: close security + supply-chain findings; prove prompt-injection denial under production.
   - Success: (1) injected shell/file/network/MCP requests DENIED under `server_production` (regression suite); (2) secret-like values redacted before persistence, permissive CORS refused when auth disabled (except dev); (3) CI publishes SBOM, govulncheck blocks high-severity, all Actions SHA-pinned; (4) privileged JSON routes reject trailing/unknown-field/empty/wrong-content-type bodies.
-- [x] **Phase 41: Production Ops + Capability-Eval + Honest 10/10 Closeout** — `OPS-01..06`, `REL-01..03` (F-019/025/042/043 + evidence bar) (completed 2026-07-31)
+- [ ] **Phase 41: Production Ops + Capability-Eval + Honest 10/10 Closeout** — `OPS-01..06`, `REL-01..03` (F-019/025/042/043 + evidence bar; implementation complete, release evidence open)
   - Goal: drilled backup/DR, ops-lifecycle hardening, capability-eval + load/chaos harness, honest-10/10 evidence bundle.
   - Success: (1) drilled DR restore with measured RPO/RTO (Neo4j-Community offline-dump caveat documented); (2) scheduler drain + systemd stop budget prove no partial-backup promotion on SIGTERM/kill; (3) load + chaos harness runs in CI (no-skip-as-green) + capability-eval pass/fail report; (4) ADRs + release-readiness checklist + production-readiness evidence bundle → defensible 10/10.
-- [x] **Phase 42: Industrial Conversation Compaction** — `IC-01..14` (completed 2026-07-14)
-  - Goal: provider-portable context lifecycle with semantic-first compaction, immutable evidence, branch-aware recovery, typed artifacts, separated durable memory, operations surfaces, and measured rollout.
-  - Success: exact fail-closed budgets; L2.4-before-L2.5; durable claim/CAS checkpoints and bounded recovery; safe typed summaries/artifacts/memory; all surfaces; 500+200 evaluation corpus and staged rollback-gated rollout.
+
+> **Phase 42 retired (PRD Amendment #86, 2026-07-20):** the dark durable-compaction
+> engine and requirements `IC-01..14` are removed from current v2.0.0 scope. Historical
+> plans remain evidence of the superseded implementation, not active work or release
+> requirements. L4 archival graph recall is the shipped anti-rot path.
 
 > **Host-constrained tier decision (2026-07-31):** load/chaos and four-plane DR are blocking and drilled for the supported single-node Compose profile. gVisor-default, the 32 GB sandbox envelope, and the FQDN-allowlist appliance image remain explicit DGX/hardware-tier evidence under ADRs 0037/0044; they are not silently counted as green and do not block the Compose/runc release score.
 >
@@ -764,9 +766,11 @@ Plans:
 
 **Requirements:** OPS-01, OPS-02, OPS-03, OPS-04, OPS-05, OPS-06, REL-01, REL-02, REL-03
 
-**Status:** Complete 2026-07-31. Exact-candidate reports are freshness- and SHA-bound by
-`scripts/release_readiness_gate.py`; GitHub release publication additionally requires the
-successful `Production readiness bundle` check for that same commit.
+**Status:** Implementation complete; release closeout remains open. Exact-candidate reports
+are freshness- and SHA-bound by `scripts/release_readiness_gate.py`, and the current-only
+register in `docs/audit/README.md` still contains blocking findings. GitHub release
+publication additionally requires the successful `Production readiness bundle` check for
+that same commit.
 
 **Success Criteria**:
 
@@ -775,35 +779,14 @@ successful `Production readiness bundle` check for that same commit.
 3. A load + chaos harness runs in CI (no-skip-as-green) + a capability-eval pass/fail report.
 4. ADRs + a release-readiness checklist + a production-readiness evidence bundle → a defensible 10/10.
 
-#### Phase 42: Industrial Conversation Compaction
+#### Phase 42: Industrial Conversation Compaction — Retired
 
-**Goal:** Deliver the complete provider-portable context lifecycle from the approved Section 17 design: compact before destructive loss, preserve immutable canonical evidence and semantic recent continuity, support distributed recursive checkpoints and bounded recovery, keep typed artifacts and durable memory governed separately, and enable only through numerical safety, quality, privacy, and rollback gates.
+**Status:** Removed from current scope by PRD Amendment #86 on 2026-07-20.
 
-**Requirements:** IC-01..14 (see [`42-SPEC.md`](phases/42-llm-conversation-compaction/42-SPEC.md) and [`42-TRACEABILITY.md`](phases/42-llm-conversation-compaction/42-TRACEABILITY.md))
-
-**Depends on:** shipped conversation/context, provider, assets, identity/privacy, database, AG-UI, and web foundations. Every slice is additive, backwards-readable, activation-disabled, and rollback-compatible.
-
-**Success Criteria**:
-
-1. Exact provider/model budgeting and semantic-unit selection trigger proactive L2.4 before any allowed L2.5 event and preserve a bounded atomic recent tail.
-2. Durable claim/infer/finalize, immutable branch generations, CAS active pointer, deterministic reconstruction, last-known-good recovery, preview/restore, and quarantine pass independent-process tests.
-3. Structured non-authoritative summaries, typed content parts, recursive rebase, and separately governed durable memory pass authority, artifact, security, privacy, deletion, and rollback gates.
-4. CLI, REPL, Telegram, AG-UI, and accessible web surfaces share one coordinator; the 500+200 corpus meets every Section 17.13 threshold before deterministic staged activation.
-
-**Plans:** 10/10 plans complete
-
-Plans:
-
-- [x] 42-01-PLAN.md — [wave 1 / slice 1] provider capabilities, exact budgets, semantic units, recent tail, L1 contracts, redacted shadow telemetry
-- [x] 42-02-PLAN.md — [wave 2 / slice 1] additive schema, distributed claims, immutable manifests, CAS pointer, deterministic reconstruction and bounded recovery
-- [x] 42-03-PLAN.md — [wave 3 / slice 2] structured summarizer, authority ledger, adversarial validator, manual coordinator, preview and restore
-- [x] 42-04-PLAN.md — [wave 4 / slice 3] typed content parts, artifact durability/reachability, provider projection and typed L1
-- [x] 42-05-PLAN.md — [wave 5 / slices 4-5] atomic L2.4-before-L2.5 ladder, bounded overflow, recursive rebase, corruption recovery and canary controls
-- [x] 42-06-PLAN.md — [wave 6 / slice 6] separate durable-memory privacy lifecycle and security review
-- [x] 42-07-PLAN.md — [wave 7 / slice 7] common CLI/REPL/Telegram/AG-UI surfaces and accessible web recovery UX
-- [x] 42-08-PLAN.md — [wave 7 / rollout persistence] additive schema, sqlc queries, durable scoped state, immutable evidence, CAS and atomic LKG rollback
-- [x] 42-09-PLAN.md — [wave 8 / rollout control] evaluator-to-store/controller-to-effective-config-to-coordinator wiring and distributed rollback fences
-- [x] 42-10-PLAN.md — [wave 9 / terminal gate] 500+200 corpus, blocking CI matrix, operations runbook and acceptance evidence
+The durable-compaction engine was dark end-to-end and was removed in favor of the
+already-shipped L4 archival graph-recall path. `IC-01..14` and the ten Phase 42 plans
+are historical evidence only; they are not current requirements and must not be
+reimplemented without a new PRD amendment.
 
 ## Progress
 
@@ -811,7 +794,7 @@ Plans:
 | --------- | ------ | ----- | ------ | --------- |
 | v0.0.0 Substrate | 0–21 (24 phases) | 144/144 | ✅ Shipped | 2026-06-15 |
 | v1.0.0 Aura Deep Search Web Cockpit | 22–30 (9 phases) | 45/45 | ✅ Shipped | 2026-06-29 |
-| v2.0.0 Industrial Hardening & Multi-User Production | 31–42 (13 phases, incl. 37A) | 0/— | 🔨 In planning | — |
+| v2.0.0 Industrial Hardening & Multi-User Production | 31–43 + 37A–37F | implementation complete | ⛔ Release verification blocked | — |
 
 ### Phase 43: Operator break-glass recovery and forgot-password E2E
 
