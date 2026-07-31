@@ -12,14 +12,14 @@ import (
 )
 
 const searchDocumentDigests = `-- name: SearchDocumentDigests :many
-SELECT id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, digest_tsv, ts_rank(digest_tsv, websearch_to_tsquery('simple', $1::text)) AS rank
+SELECT id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, digest_tsv, ts_rank(digest_tsv, websearch_to_tsquery('simple', unaccent('unaccent'::regdictionary, $1::text))) AS rank
 FROM aura.documents
 WHERE identity_id = $2
   AND deleted_at IS NULL
   AND status <> 'deleted'
   AND (
     $1::text = ''
-    OR digest_tsv @@ websearch_to_tsquery('simple', $1::text)
+    OR digest_tsv @@ websearch_to_tsquery('simple', unaccent('unaccent'::regdictionary, $1::text))
   )
 ORDER BY rank DESC, updated_at DESC
 LIMIT $3
@@ -56,6 +56,18 @@ type SearchDocumentDigestsRow struct {
 //
 // A blank query is not an error: it lists the library newest-first, which is what
 // "the file I just uploaded" means.
+//
+// The query is UNACCENTED, not run through aura.searchable_text: the index already
+// holds both the written and the folded form, so folding the query is enough to
+// meet it. Passing the query through searchable_text instead emits every variant
+// as a separate term, and websearch_to_tsquery ANDs them — measured, that dropped
+// an accented query from 0.15 to 0.0002 by requiring both spellings at once.
+//
+// KNOWN LIMIT: 'simple' does no stemming, so "venditori" does not match a digest
+// that says "venditore". That is the accepted price of not picking one language's
+// stemmer for a mixed corpus (measured: a single stemmer halved recall). A library
+// is tens of documents and the agent can rephrase; if this starts costing, fold
+// plurals inside aura.searchable_text rather than reaching for a stemmer.
 func (q *Queries) SearchDocumentDigests(ctx context.Context, arg SearchDocumentDigestsParams) ([]SearchDocumentDigestsRow, error) {
 	rows, err := q.db.Query(ctx, searchDocumentDigests, arg.Query, arg.IdentityID, arg.RowLimit)
 	if err != nil {

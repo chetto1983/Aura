@@ -82,6 +82,27 @@ func TestBuiltinToolSpecsAreWellFormed(t *testing.T) {
 			if s.Deferred && len(strings.TrimSpace(s.Description)) < 40 {
 				t.Errorf("deferred tool has a thin Description (%d bytes) — defeats tool_search legibility", len(s.Description))
 			}
+
+			// A Mutating spec must declare ALL of its operation metadata.
+			// OperationFingerprint rejects a partial one with "tool operation
+			// metadata is incomplete", which makes the tool fail on EVERY call —
+			// and it fails at dispatch, so nothing short of a live run finds it.
+			// document_describe shipped with Mutating alone and the agent retried
+			// it four times against a write that could never land.
+			if s.Mutating {
+				if s.OperationScope == "" {
+					t.Error("Mutating tool has no OperationScope")
+				}
+				if s.OperationNormalizer == "" {
+					t.Error("Mutating tool has no OperationNormalizer")
+				}
+				if s.ReplayPolicy == "" {
+					t.Error("Mutating tool has no ReplayPolicy")
+				}
+				if _, err := OperationFingerprint(s, json.RawMessage(`{}`)); err != nil {
+					t.Errorf("OperationFingerprint refuses this spec: %v", err)
+				}
+			}
 		})
 	}
 }

@@ -58,7 +58,13 @@ func (t *DocumentDescribe) Spec() Spec {
   },
   "required": ["document_id", "description"]
 }`),
-		Mutating: true,
+		// A Mutating spec MUST carry all four fields: OperationFingerprint refuses a
+		// partially-declared one with "tool operation metadata is incomplete", and
+		// the tool then fails on every call. Caught live — the model retried four
+		// times and the description never landed.
+		Mutating:       true,
+		OperationScope: OperationScopeAgent, OperationNormalizer: OperationNormalizerCanonical,
+		ReplayPolicy: ReplayToolResult,
 		// Deferred: a deliberate follow-up to having read a file. document_open's
 		// description is where the model learns it exists, at the moment it becomes
 		// relevant.
