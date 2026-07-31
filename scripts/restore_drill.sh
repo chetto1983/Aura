@@ -59,6 +59,7 @@ SIDECAR_SOURCE_VOLUME=""
 SIDECAR_TARGET_VOLUME="aura-dr-sidecars-${RUN_ID}"
 SIDECAR_FIXTURE="drill-${RUN_ID}"
 SOURCE_FIXTURE_CREATED=0
+SIDECAR_SOURCE_VOLUME_CREATED=0
 TARGET_DB_CREATED=0
 
 cleanup() {
@@ -73,6 +74,9 @@ cleanup() {
     "$DOCKER" run --rm -e "FIXTURE=${SIDECAR_FIXTURE}" \
       -v "${SIDECAR_SOURCE_VOLUME}:/source" alpine:3.22 \
       sh -eu -c 'rm -rf "/source/runs/$FIXTURE"' >/dev/null 2>&1
+  fi
+  if [ "$SIDECAR_SOURCE_VOLUME_CREATED" = "1" ] && [ -n "$SIDECAR_SOURCE_VOLUME" ]; then
+    "$DOCKER" volume rm "$SIDECAR_SOURCE_VOLUME" >/dev/null 2>&1
   fi
   "$DOCKER" volume rm "$SIDECAR_TARGET_VOLUME" >/dev/null 2>&1
   rm -rf "$WORK_DIR"
@@ -120,12 +124,12 @@ NEO4J_PASSWORD="$NEO4J_PASS" AURA_DR_RUN_ID="$RUN_ID" \
   bash scripts/neo4j_offline_drill.sh "$WORK_DIR/neo4j" "$WORK_DIR/neo4j.json"
 
 echo "==> DR plane 3/4: conversation sidecar archive -> disposable volume"
-SIDECAR_SOURCE_VOLUME="$("$DOCKER" volume ls -q \
-  --filter label=com.docker.compose.project=aura \
-  --filter label=com.docker.compose.volume=aura-home | head -n 1)"
-if [ -z "$SIDECAR_SOURCE_VOLUME" ]; then
-  echo "restore drill: compose aura-home volume not found" >&2
-  exit 1
+SIDECAR_SOURCE_VOLUME="$(
+  "$DOCKER" compose config --format json | dr_compose_volume_name aura-home
+)"
+if ! "$DOCKER" volume inspect "$SIDECAR_SOURCE_VOLUME" >/dev/null 2>&1; then
+  "$DOCKER" volume create "$SIDECAR_SOURCE_VOLUME" >/dev/null
+  SIDECAR_SOURCE_VOLUME_CREATED=1
 fi
 "$DOCKER" run --rm -e "FIXTURE=${SIDECAR_FIXTURE}" -e "HASH=${FIXTURE_HASH}" \
   -v "${SIDECAR_SOURCE_VOLUME}:/source" alpine:3.22 \
@@ -143,6 +147,10 @@ SIDECAR_ARCHIVE_BYTES="$(wc -c <"$WORK_DIR/sidecars.tgz" | tr -d '[:space:]')"
   -v "${SIDECAR_SOURCE_VOLUME}:/source" alpine:3.22 \
   sh -eu -c 'rm -rf "/source/runs/$FIXTURE"' >/dev/null
 SOURCE_FIXTURE_CREATED=0
+if [ "$SIDECAR_SOURCE_VOLUME_CREATED" = "1" ]; then
+  "$DOCKER" volume rm "$SIDECAR_SOURCE_VOLUME" >/dev/null
+  SIDECAR_SOURCE_VOLUME_CREATED=0
+fi
 
 "$DOCKER" volume create "$SIDECAR_TARGET_VOLUME" >/dev/null
 SIDECAR_RESTORE_START_NS="$(date +%s%N)"

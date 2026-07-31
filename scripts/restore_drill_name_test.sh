@@ -19,4 +19,17 @@ if [ "${#long}" -ne 24 ]; then
   exit 1
 fi
 
+volume="$(
+  printf '%s' '{"volumes":{"aura-home":{"name":"ci-aura_home"}}}' \
+    | dr_compose_volume_name aura-home
+)"
+if [ "$volume" != "ci-aura_home" ]; then
+  echo "restore-drill-name-test: resolved Compose volume as $volume" >&2
+  exit 1
+fi
+if printf '%s' '{"volumes":{}}' | dr_compose_volume_name aura-home >/dev/null 2>&1; then
+  echo "restore-drill-name-test: missing Compose volume passed" >&2
+  exit 1
+fi
+
 echo "restore-drill-name-test: pass"

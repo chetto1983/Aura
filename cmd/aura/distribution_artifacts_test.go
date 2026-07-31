@@ -99,6 +99,8 @@ func TestBackupLifecycleDocsMatchApplianceContract(t *testing.T) {
 	for _, want := range []string{
 		"pg_restore",
 		"bash scripts/neo4j_offline_drill.sh",
+		"dr_compose_volume_name aura-home",
+		"SIDECAR_SOURCE_VOLUME_CREATED",
 		"scripts/objectstore_drill.go",
 		`"checksum_ok": True`,
 		`"cleanup_ok": True`,
