@@ -248,7 +248,12 @@ func buildBaseRegistryWithAdaptiveControls(
 	// manifest always lists it (Spec reads no dependency); with no pool it fails
 	// loudly at call time rather than being silently absent, which is how the
 	// upload->chat regression happened once already.
-	reg.Register(&tools.DocumentSearch{Library: newDocumentLibrary(taskStorePool(ts))})
+	library := newDocumentLibrary(taskStorePool(ts))
+	reg.Register(&tools.DocumentSearch{Library: library})
+	// document_describe is how the library learns: nothing reads a document at
+	// upload any more, so the description is written by the agent after it has
+	// actually opened the file.
+	reg.Register(&tools.DocumentDescribe{Documents: library})
 	// shell_exec is the full host terminal — THE execution surface (amendment #50 / D-15c).
 	// Deferred so simple chat/web turns do not carry a giant shell schema in the hot manifest.
 	// Amendment #88: workspace is the fixed /workspace working root (cfg.WorkspaceDir),

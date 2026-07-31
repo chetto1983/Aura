@@ -96,17 +96,22 @@ UPDATE aura.documents
 SET digest = $1,
     updated_at = now()
 WHERE id = $2
+  AND identity_id = $3
   AND deleted_at IS NULL
 RETURNING id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, digest_tsv
 `
 
 type SetDocumentDigestParams struct {
-	Digest string      `json:"digest"`
-	ID     pgtype.UUID `json:"id"`
+	Digest     string      `json:"digest"`
+	ID         pgtype.UUID `json:"id"`
+	IdentityID pgtype.UUID `json:"identity_id"`
 }
 
+// Identity-scoped: this is a WRITE reachable from a tool call, so a document id
+// alone must never be enough to overwrite what someone else's library says about
+// their file. A non-owner gets no rows, which the caller reports as not-found.
 func (q *Queries) SetDocumentDigest(ctx context.Context, arg SetDocumentDigestParams) (AuraDocuments, error) {
-	row := q.db.QueryRow(ctx, setDocumentDigest, arg.Digest, arg.ID)
+	row := q.db.QueryRow(ctx, setDocumentDigest, arg.Digest, arg.ID, arg.IdentityID)
 	var i AuraDocuments
 	err := row.Scan(
 		&i.ID,

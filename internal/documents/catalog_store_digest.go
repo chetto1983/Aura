@@ -3,27 +3,56 @@ package documents
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // SetDigest records what a document IS, for the only question the index still
-// answers: which file to open. Keyed by the SEARCH document id, because that is
-// the id the ingestion path holds when the digest is built.
-func (s *PostgresCatalogStore) SetDigest(ctx context.Context, searchDocumentID, digest string) error {
-	id, err := s.catalogIDForSearchDocument(ctx, searchDocumentID)
+// answers: which file to open.
+//
+// documentID may be either namespace — the `doc_<hex>` search id a retrieval hit
+// carries, or the catalog uuid — because the caller holds whichever its own
+// caller gave it. The write is identity-scoped in SQL: a document id alone must
+// never be enough to overwrite what another person's library says about their
+// file, and this is reachable from a tool call.
+func (s *PostgresCatalogStore) SetDigest(ctx context.Context, identityID, documentID, digest string) error {
+	pgIdentityID, err := pgUUID("identity_id", identityID)
+	if err != nil {
+		return err
+	}
+	id, err := s.digestTargetID(ctx, documentID)
 	if err != nil {
 		return err
 	}
 	if _, err := s.q.SetDocumentDigest(ctx, sqlc.SetDocumentDigestParams{
-		ID:     id,
-		Digest: digest,
+		ID:         id,
+		IdentityID: pgIdentityID,
+		Digest:     digest,
 	}); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("%w: %s", ErrDocumentNotCatalogued, documentID)
+		}
 		return fmt.Errorf("set document digest: %w", err)
 	}
 	return nil
+}
+
+// digestTargetID accepts either id namespace, same as OpenService does.
+func (s *PostgresCatalogStore) digestTargetID(ctx context.Context, documentID string) (pgtype.UUID, error) {
+	documentID = strings.TrimSpace(documentID)
+	if documentID == "" {
+		return pgtype.UUID{}, fmt.Errorf("document_id is required")
+	}
+	if _, err := uuid.Parse(documentID); err == nil {
+		return pgUUID("document_id", documentID)
+	}
+	return s.catalogIDForSearchDocument(ctx, documentID)
 }
 
 // SearchDigests ranks one identity's library by ts_rank over the weighted

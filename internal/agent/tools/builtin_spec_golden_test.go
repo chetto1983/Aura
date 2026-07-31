@@ -37,6 +37,7 @@ func builtinTools() []Tool {
 		// left document_index outside it; both belong here.
 		&DocumentIndex{},
 		&DocumentOpen{},
+		&DocumentDescribe{},
 		&SwarmSpawn{},
 	}
 }

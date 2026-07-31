@@ -1,8 +1,12 @@
 -- name: SetDocumentDigest :one
+-- Identity-scoped: this is a WRITE reachable from a tool call, so a document id
+-- alone must never be enough to overwrite what someone else's library says about
+-- their file. A non-owner gets no rows, which the caller reports as not-found.
 UPDATE aura.documents
 SET digest = sqlc.arg(digest),
     updated_at = now()
 WHERE id = sqlc.arg(id)
+  AND identity_id = sqlc.arg(identity_id)
   AND deleted_at IS NULL
 RETURNING *;
 

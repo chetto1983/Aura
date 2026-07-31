@@ -35,3 +35,16 @@ func (l *documentLibrary) SearchDigests(
 	}
 	return documents.NewPostgresCatalogStore(l.pool).SearchDigests(ctx, identityID, query, limit)
 }
+
+// SetDigest backs document_describe: the agent writes what it saw after opening
+// a file, and that becomes what the library ranks on. Identity-scoped in SQL.
+func (l *documentLibrary) SetDigest(
+	ctx context.Context,
+	identityID, documentID, description string,
+) error {
+	if l == nil || l.pool == nil {
+		return fmt.Errorf("document library is not configured: no database pool")
+	}
+	return documents.NewPostgresCatalogStore(l.pool).
+		SetDigest(ctx, identityID, documentID, description)
+}

@@ -344,6 +344,9 @@ type Querier interface {
 	// "the file I just uploaded" means.
 	SearchDocumentDigests(ctx context.Context, arg SearchDocumentDigestsParams) ([]SearchDocumentDigestsRow, error)
 	SetConversationTitleIfNull(ctx context.Context, arg SetConversationTitleIfNullParams) error
+	// Identity-scoped: this is a WRITE reachable from a tool call, so a document id
+	// alone must never be enough to overwrite what someone else's library says about
+	// their file. A non-owner gets no rows, which the caller reports as not-found.
 	SetDocumentDigest(ctx context.Context, arg SetDocumentDigestParams) (AuraDocuments, error)
 	// Narrow status write for background workers, which know the document but not the
 	// identity that owns it. UpdateDocument above needs identity_id and rewrites every column,
