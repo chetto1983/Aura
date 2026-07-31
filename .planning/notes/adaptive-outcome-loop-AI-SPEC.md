@@ -1,4 +1,4 @@
-# AI-SPEC — Phase 44: Adaptive Outcome Loop (Aura impara dai propri errori)
+# AI-SPEC — Future Adaptive Outcome Loop (Aura impara dai propri errori)
 
 > AI design contract. Consumed by `gsd-planner` and `gsd-eval-auditor`.
 > Locks the failure-signal contract, the credit-assignment rule, the reward shape and the
