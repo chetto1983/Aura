@@ -237,20 +237,18 @@ def validate_rollback(report: dict[str, Any]) -> dict[str, Any]:
 
 def validate_audit(report: dict[str, Any]) -> dict[str, Any]:
     require(report.get("passed") is True, "audit: report did not pass")
+    require(report.get("release_ready") is True, "audit: release_ready is not true")
     counts = report.get("counts")
     require(isinstance(counts, dict), "audit: counts missing")
-    allowed = {"closed", "superseded", "retired", "external_blocked", "open"}
+    allowed = {"external_blocked", "open"}
     invalid = set(counts) - allowed
     require(not invalid, f"audit: invalid states {sorted(invalid)}")
-    require(counts.get("open") == 0, "audit: open findings remain")
-    require(report.get("undisclosed_findings") == 0, "audit: undisclosed findings remain")
-    score = report.get("score")
-    require(isinstance(score, (int, float)) and score > 9.8, "audit: score must exceed 9.8")
-    blockers = report.get("external_blockers")
-    require(isinstance(blockers, list), "audit: external blockers must be disclosed")
-    external_count = counts.get("external_blocked", 0)
-    require(len(blockers) == external_count, "audit: external blocker count mismatch")
-    return {"score": score, "external_blocked": external_count}
+    open_total = report.get("open_total")
+    require(open_total == 0, "audit: current unresolved issues remain")
+    issues = report.get("issues")
+    require(isinstance(issues, list) and not issues, "audit: issue list must be empty")
+    require(sum(counts.values()) == open_total, "audit: state counts do not match open_total")
+    return {"open_total": open_total, "external_blocked": counts.get("external_blocked", 0)}
 
 
 VALIDATORS: list[tuple[str, str, Callable[[dict[str, Any]], dict[str, Any]]]] = [
