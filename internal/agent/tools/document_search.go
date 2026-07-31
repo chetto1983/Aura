@@ -83,7 +83,11 @@ func (t *DocumentSearch) Spec() Spec {
 			"file I uploaded', 'the manual/spreadsheet/PDF', or asks what a document says/contains/lists, call " +
 			"document_search FIRST. Results are chunks with document id, chunk id, file name, locator (page, " +
 			"sheet/rows, or section), relevance score, and text — cite them. Set document_id to scope to one " +
-			"specific indexed document (e.g. the attachment's document_id). This is for the user's OWN files, NOT " +
+			"specific indexed document (e.g. the attachment's document_id). When the answer needs the WHOLE file " +
+			"rather than a passage — any count, sum, average, maximum, grouping or 'how many' over a spreadsheet or " +
+			"table, or any conversion — take the document_id from these hits and call document_open instead: it " +
+			"writes the original file into /workspace so you can compute the exact answer. Chunked table text " +
+			"cannot answer an aggregate at any relevance. This is for the user's OWN files, NOT " +
 			"the public web (use web search/fetch for that). Files YOU create live on the filesystem under " +
 			"/workspace — search those with fs_read/fs_grep, and make one searchable here by indexing it with " +
 			"document_index. Example: {\"query\":\"safety valve pressure rating\",\"limit\":5}.",

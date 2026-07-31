@@ -300,9 +300,18 @@ func buildBaseRegistryWithAdaptiveControls(
 	// already use for send_file/channel ingestion — reused here rather than
 	// duplicated, since its IngestPath signature already satisfies
 	// tools.DocumentIndexBackend byte-for-byte.
+	// document_open is the same bridge in reverse, and needs the same live pool:
+	// it walks a retrieval hit's document id back through the catalog to the asset
+	// and writes the ORIGINAL file into /workspace/documents/. Retrieval answers
+	// "what does it say"; a spreadsheet question is usually "how many", which no
+	// chunk contains at any relevance — so the agent gets the file and computes.
 	if pool := taskStorePool(ts); pool != nil {
 		reg.Register(&tools.DocumentIndex{
 			Indexer:       newRuntimeDocumentIngestor(cfg, pool),
+			WorkspaceRoot: workspace,
+		})
+		reg.Register(&tools.DocumentOpen{
+			Documents:     newRuntimeDocumentOpener(cfg, pool),
 			WorkspaceRoot: workspace,
 		})
 	}

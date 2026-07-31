@@ -334,6 +334,12 @@ type fakeCatalogStore struct {
 	detail           DocumentDetail
 	deleteIdentityID string
 	deleteDocumentID string
+	// getIdentityID/getDocumentID/getErr let a test assert WHICH identity a lookup
+	// was scoped to, and simulate the not-found a non-owner receives. Additive:
+	// zero values keep the previous always-succeeds behaviour.
+	getIdentityID string
+	getDocumentID string
+	getErr        error
 }
 
 func (f *fakeCatalogStore) CreateDocument(_ context.Context, req CreateDocumentRequest) (Document, error) {
@@ -370,6 +376,10 @@ func (f *fakeCatalogStore) ListDocuments(_ context.Context, req ListDocumentsReq
 }
 
 func (f *fakeCatalogStore) GetDocument(_ context.Context, identityID, documentID string) (DocumentDetail, error) {
+	f.getIdentityID, f.getDocumentID = identityID, documentID
+	if f.getErr != nil {
+		return DocumentDetail{}, f.getErr
+	}
 	if f.detail.Document.ID != "" {
 		return f.detail, nil
 	}

@@ -245,6 +245,18 @@ func (s *PostgresCatalogStore) SetSearchDocumentStatus(ctx context.Context, sear
 	return nil
 }
 
+// CatalogIDForSearchDocument resolves the catalog uuid behind a `doc_<hex>` search id.
+// Exported for OpenService, which must reach the original asset starting from the only id
+// a retrieval hit carries; it is the same lookup SetSearchDocumentStatus does, and holds no
+// identity gate of its own — the caller applies one (GetDocument) before using the result.
+func (s *PostgresCatalogStore) CatalogIDForSearchDocument(ctx context.Context, searchDocumentID string) (string, error) {
+	id, err := s.catalogIDForSearchDocument(ctx, searchDocumentID)
+	if err != nil {
+		return "", err
+	}
+	return uuidString(id), nil
+}
+
 // catalogIDForSearchDocument resolves the catalog uuid a search document was recorded
 // under. Newest first: a re-uploaded file keeps its content-derived search id, so the same
 // string can name several catalog rows over time and only the live one may be corrected.
