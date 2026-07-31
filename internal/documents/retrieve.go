@@ -166,6 +166,7 @@ func (s *Service) executeRetrievalRerank(
 	if len(seeds) < 2 {
 		return seeds, nil
 	}
+	seeds = focusSeeds(seeds, query)
 	texts := make([]string, len(seeds))
 	for index := range seeds {
 		texts[index] = seeds[index].Text
@@ -314,6 +315,7 @@ func (s *Service) selectVectorSeedQuery(perDocument bool) string {
 // score, an identity result, or a length/index mismatch all keep the original seed
 // order — the guard owns that decision so Retrieve and GraphRAG share one implementation.
 func (s *Service) rerankSeeds(ctx context.Context, query string, seeds []SearchHit) []SearchHit {
+	seeds = focusSeeds(seeds, query)
 	scored, ok := s.rerankScores(ctx, query, seeds)
 	if !ok {
 		return seeds
