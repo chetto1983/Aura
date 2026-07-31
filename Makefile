@@ -41,7 +41,7 @@ help:
 	@echo "make neo4j-status  — aura neo4j status"
 	@echo "make neo4j-reset   — DESTRUCTIVE: drop all indexes + MATCH (n) DETACH DELETE (dev only, AURA_RESET_YES=1)"
 	@echo "make smoke         — scripts/neo4j_smoke.sh (Italian recall@5 5/5 + p95 <= 30ms)"
-	@echo "make restore-drill — scripts/restore_drill.sh (pg_dump -> pg_restore, asserts < 90s)"
+	@echo "make restore-drill — four-plane DR drill with measured RPO/RTO"
 
 # Bootstrap the quality toolchain into $GOPATH/bin. golangci-lint is pinned to the
 # CI version (.github/workflows/ci.yml) for local/CI parity; the rest track latest.
@@ -183,5 +183,6 @@ neo4j-reset:
 smoke: neo4j-migrate
 	bash scripts/neo4j_smoke.sh
 
-restore-drill: db-up
+restore-drill: neo4j-migrate
+	bash scripts/garage_bootstrap.sh
 	bash scripts/restore_drill.sh
