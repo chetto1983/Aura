@@ -16,7 +16,7 @@ class RollbackRehearsalTest(unittest.TestCase):
             candidate_image="aura:candidate",
             compose_file=root / "compose.yaml",
             health_url="http://127.0.0.1:9080/healthz",
-            ready_url="http://127.0.0.1:9080/readyz",
+            container="aura",
             timeout_seconds=30.0,
             output=root / "rollback-report.json",
         )
@@ -41,7 +41,7 @@ class RollbackRehearsalTest(unittest.TestCase):
                     rollback_rehearsal, "candidate_commit", return_value="a" * 40
                 ),
                 mock.patch.object(rollback_rehearsal, "run_for_image", command),
-                mock.patch.object(rollback_rehearsal, "wait_endpoints"),
+                mock.patch.object(rollback_rehearsal, "wait_deployment"),
             ):
                 report = rollback_rehearsal.run_rehearsal(args)
 
@@ -90,7 +90,7 @@ class RollbackRehearsalTest(unittest.TestCase):
                     rollback_rehearsal, "candidate_commit", return_value="b" * 40
                 ),
                 mock.patch.object(rollback_rehearsal, "run_for_image", command),
-                mock.patch.object(rollback_rehearsal, "wait_endpoints"),
+                mock.patch.object(rollback_rehearsal, "wait_deployment"),
             ):
                 with self.assertRaisesRegex(RuntimeError, "previous image failed"):
                     rollback_rehearsal.run_rehearsal(args)
@@ -111,6 +111,24 @@ class RollbackRehearsalTest(unittest.TestCase):
             ):
                 with self.assertRaisesRegex(ValueError, "distinct"):
                     rollback_rehearsal.run_rehearsal(self.args(root))
+
+    def test_container_health_requires_healthy_status(self) -> None:
+        completed = mock.Mock(returncode=0, stdout="healthy\n", stderr="")
+        with mock.patch.object(
+            rollback_rehearsal.subprocess, "run", return_value=completed
+        ):
+            self.assertEqual(
+                rollback_rehearsal.container_health("aura", pathlib.Path(".")),
+                "healthy",
+            )
+        completed.stdout = "starting\n"
+        with mock.patch.object(
+            rollback_rehearsal.subprocess, "run", return_value=completed
+        ):
+            self.assertEqual(
+                rollback_rehearsal.container_health("aura", pathlib.Path(".")),
+                "starting",
+            )
 
 
 if __name__ == "__main__":

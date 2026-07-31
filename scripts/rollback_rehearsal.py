@@ -92,10 +92,45 @@ def wait_endpoint(url: str, deadline: float) -> None:
     raise RuntimeError(f"endpoint {url} did not become healthy: {last_error}")
 
 
-def wait_endpoints(health_url: str, ready_url: str, timeout: float) -> None:
+def container_health(container: str, repo: pathlib.Path) -> str:
+    completed = subprocess.run(
+        [
+            "docker",
+            "inspect",
+            "--format",
+            "{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}",
+            container,
+        ],
+        cwd=repo,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        timeout=15,
+    )
+    if completed.returncode != 0:
+        return "missing"
+    return completed.stdout.strip()
+
+
+def wait_deployment(
+    health_url: str,
+    container: str,
+    timeout: float,
+    repo: pathlib.Path,
+) -> None:
     deadline = time.monotonic() + timeout
     wait_endpoint(health_url, deadline)
-    wait_endpoint(ready_url, deadline)
+    last_status = "not attempted"
+    while time.monotonic() < deadline:
+        last_status = container_health(container, repo)
+        if last_status == "healthy":
+            return
+        time.sleep(1)
+    raise RuntimeError(
+        f"container {container} readiness healthcheck did not become healthy: "
+        f"{last_status}"
+    )
 
 
 def run_rehearsal(args: argparse.Namespace) -> dict[str, Any]:
@@ -122,6 +157,7 @@ def run_rehearsal(args: argparse.Namespace) -> dict[str, Any]:
         "config_started": False,
         "migrations_compatible": False,
         "readiness_healthy": False,
+        "readiness_source": f"docker:{args.container}/.State.Health",
         "candidate_restored": False,
     }
     migration_status = compose_command(args.compose_file, MIGRATION_STATUS_ARGS)
@@ -130,25 +166,33 @@ def run_rehearsal(args: argparse.Namespace) -> dict[str, Any]:
     try:
         run_for_image(args.candidate_image, migration_status, repo)
         run_for_image(args.candidate_image, deploy, repo)
-        wait_endpoints(args.health_url, args.ready_url, args.timeout_seconds)
+        wait_deployment(
+            args.health_url, args.container, args.timeout_seconds, repo
+        )
 
         run_for_image(args.previous_image, migration_status, repo)
         report["migrations_compatible"] = True
         run_for_image(args.previous_image, deploy, repo)
         report["config_started"] = True
-        wait_endpoints(args.health_url, args.ready_url, args.timeout_seconds)
+        wait_deployment(
+            args.health_url, args.container, args.timeout_seconds, repo
+        )
         report["readiness_healthy"] = True
 
         run_for_image(args.candidate_image, migration_status, repo)
         run_for_image(args.candidate_image, deploy, repo)
-        wait_endpoints(args.health_url, args.ready_url, args.timeout_seconds)
+        wait_deployment(
+            args.health_url, args.container, args.timeout_seconds, repo
+        )
         candidate_is_final = True
         report["candidate_restored"] = True
         report["passed"] = True
     finally:
         if not candidate_is_final:
             run_for_image(args.candidate_image, deploy, repo)
-            wait_endpoints(args.health_url, args.ready_url, args.timeout_seconds)
+            wait_deployment(
+                args.health_url, args.container, args.timeout_seconds, repo
+            )
     return report
 
 
@@ -162,9 +206,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--health-url", default="http://127.0.0.1:9080/healthz"
     )
-    parser.add_argument(
-        "--ready-url", default="http://127.0.0.1:9080/readyz"
-    )
+    parser.add_argument("--container", default="aura")
     parser.add_argument("--timeout-seconds", type=float, default=300.0)
     parser.add_argument(
         "--output",
