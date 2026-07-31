@@ -56,8 +56,19 @@ func TestAdaptiveBenchmarkRestrictedRegistryExposesOnlyReadOnlySurface(
 	if err != nil {
 		t.Fatalf("restricted tool_search: %v", err)
 	}
-	if strings.Contains(result.Preview, "shell_exec") {
-		t.Fatalf("tool_search exposed removed tool: %q", result.Preview)
+	if !strings.Contains(
+		result.Preview,
+		`"shell_exec" is not a registered tool.`,
+	) {
+		t.Fatalf("tool_search did not reject removed tool by name: %q", result.Preview)
+	}
+	if strings.Contains(result.Preview, "## shell_exec\n") {
+		t.Fatalf("tool_search exposed removed tool schema: %q", result.Preview)
+	}
+	if result.Meta != nil {
+		if activated, ok := (*result.Meta)[tools.MetaActivatedTools]; ok {
+			t.Fatalf("tool_search activated removed tool: %#v", activated)
+		}
 	}
 }
 
