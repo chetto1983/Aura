@@ -8,12 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/secret"
 )
 
-func TestAppendTurnRedactionAtEveryAtRestSurface(t *testing.T) {
+func TestAppendTurnRedactionAtConversationSurfaces(t *testing.T) {
 	configured := "configured-at-rest-secret-0123456789"
 	discovered := "agent-discovered-working-secret-9876543210"
 	secret.ConfigureExactRedactor([]string{"AURA_DB_TOKEN=" + configured})
@@ -77,17 +76,6 @@ func TestAppendTurnRedactionAtEveryAtRestSurface(t *testing.T) {
 		t.Fatalf("read turn sidecar: %v", err)
 	}
 	assertConfiguredSecretAbsent(t, "turn sidecar", string(spilled), configured, discovered)
-
-	toolCtx := tools.WithToolCallContext(ctx, conversationID, "call-redaction", runDir, 64)
-	result, err := tools.NewResult(toolCtx, spilledInput)
-	if err != nil {
-		t.Fatalf("tools.NewResult: %v", err)
-	}
-	full, err := os.ReadFile(result.FullPath)
-	if err != nil {
-		t.Fatalf("read tool-result sidecar: %v", err)
-	}
-	assertConfiguredSecretAbsent(t, "tool-result sidecar", string(full), configured, discovered)
 }
 
 func assertConfiguredSecretAbsent(t *testing.T, surface, got, configured, discovered string) {

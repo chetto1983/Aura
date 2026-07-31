@@ -56,6 +56,8 @@ pre-push:
     # gates whose only job is a final "still compiles + no dead code" check before the network.
     build:
       run: bash -c 'go build $(bash scripts/go_packages.sh)'
+    tagged-tier-compile:
+      run: bash scripts/tagged_tier_compile.sh
     deadcode:
       # No inner quotes: lefthook mangles double quotes nested in the single-quoted
       # `bash -c '…'` string, which failed the gate closed at ~0.2s without ever running it.

@@ -67,6 +67,12 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Tagged tier compile gate self-test
+        run: bash scripts/tagged_tier_compile_test.sh
+
+      - name: Compile every discovered Aura tier
+        run: bash scripts/tagged_tier_compile.sh
+
       - name: go vet
         run: go vet $(bash scripts/go_packages.sh)
 

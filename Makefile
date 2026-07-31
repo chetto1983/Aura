@@ -6,7 +6,7 @@
 # sqlc CLI: install with `go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1`
 # (v1.27.0 panics on Windows hosts via wazero out-of-bounds; v1.31.1 verified clean).
 
-.PHONY: help tools sqlc lint vet deadcode vuln coverage coverage-docker quality quality-full test test-race file-size web-freshness web-lint web-test web-mutation web-quality db-up db-migrate db-status db-reset neo4j-up neo4j-migrate neo4j-status neo4j-reset smoke restore-drill load-chaos
+.PHONY: help tools sqlc lint vet deadcode vuln coverage coverage-docker quality quality-full test test-race tagged-tier-compile file-size web-freshness web-lint web-test web-mutation web-quality db-up db-migrate db-status db-reset neo4j-up neo4j-migrate neo4j-status neo4j-reset smoke restore-drill load-chaos
 
 # Resolve go-installed tool binaries even when $GOPATH/bin is not on PATH
 # (common in a fresh WSL login shell). Falls back to a bare name on PATH.
@@ -26,6 +26,7 @@ help:
 	@echo "make coverage-docker — like coverage, but mcp-neo4j-cypher runs in a container (no host install; needs stack up)"
 	@echo "make test          — go test ./... (unit tier, no build tags)"
 	@echo "make test-race     — go test -race ./... (unit tier with race detector)"
+	@echo "make tagged-tier-compile — compile every discovered Aura integration/live/eval tier"
 	@echo "make file-size     — enforce 600-LOC cap via scripts/check-file-size.sh"
 	@echo "make web-freshness — rebuild web/ + assert committed internal/webui/dist is fresh (D-05)"
 	@echo "make web-lint      — frontend static gate: eslint --max-warnings=0 + tsc + prettier --check"
@@ -99,6 +100,10 @@ test:
 
 test-race:
 	go test -race -count=1 $(GO_PACKAGES)
+
+tagged-tier-compile:
+	bash scripts/tagged_tier_compile_test.sh
+	bash scripts/tagged_tier_compile.sh
 
 file-size:
 	bash scripts/check-file-size.sh
