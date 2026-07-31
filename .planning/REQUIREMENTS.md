@@ -229,7 +229,7 @@ Suggested phase mapping (roadmapper finalizes; phases continue at 31+). Every re
 
 **Coverage:**
 
-- v2.0.0 requirements: 81 total (PROF 6, LOOP 11, GATE 4, MUSR 6, SBX 5, WEBART 8, WEBVOICE 4, WEBSKILL 3, WEBMODEL 3, WEBSHARE 4, MCPH 9, OBS 6, SEC 9, OPS 6, REL 3, QUAL 5) — the WEB* groups are product-gap requirements (no audit F-finding; findings-mapped count unchanged), the cockpit-web parity cluster from the voice/artifact/skill audit: WEBART 37A/37B artifacts, WEBVOICE 37C voice, WEBSKILL 37D skill-picker, WEBMODEL 37E reasoning-effort selector (effort-only per 37E-01/D-01), WEBSHARE 37F sharing/export
+- v2.0.0 requirements: 92 total (PROF 6, LOOP 11, GATE 4, MUSR 6, SBX 5, WEBART 8, WEBVOICE 4, WEBSKILL 3, WEBMODEL 3, WEBSHARE 4, MCPH 9, OBS 6, SEC 9, OPS 6, REL 3, QUAL 5) — the WEB* groups are product-gap requirements (no audit F-finding; findings-mapped count unchanged), the cockpit-web parity cluster from the voice/artifact/skill audit: WEBART 37A/37B artifacts, WEBVOICE 37C voice, WEBSKILL 37D skill-picker, WEBMODEL 37E reasoning-effort selector (effort-only per 37E-01/D-01), WEBSHARE 37F sharing/export
 - Removed historical requirements: IC-01..14 (Phase 42), superseded by PRD Amendment #86 and excluded from the current total.
 - Security/production audit findings mapped: 51 / 51 (F-001..F-052, F-044 intentionally absent) ✓
 - CodeQL-surfaced findings (outside the F-series): 2 / 2 — SEC-08 SSRF (`internal/mcp/http_client.go`) → Phase 31, SEC-09 weak-hash (`internal/agui/recovery_hash.go`) → Phase 40 ✓
