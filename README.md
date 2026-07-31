@@ -251,7 +251,10 @@ aura version            build metadata
 ## Development
 
 For source builds, install Go from [`go.mod`](go.mod), Docker, and a POSIX shell.
-On Windows, WSL is the recommended development environment.
+Linux is the supported source-build and quality-gate runtime. On Windows, use WSL;
+the native Windows Go binary is not a release target because Windows ACLs are not
+represented by POSIX `FileMode` bits. Docker Desktop remains supported for running
+the shipped Linux Compose appliance.
 
 ```bash
 git clone https://github.com/chetto1983/Aura.git
