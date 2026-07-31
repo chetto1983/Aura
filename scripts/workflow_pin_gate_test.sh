@@ -13,13 +13,13 @@ steps:
   - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567 # v7.0.0
   - run: go install example.com/tool@v1.2.3
 YAML
-"$gate" "$fixture_root/valid" >/dev/null
+bash "$gate" "$fixture_root/valid" >/dev/null
 
 cat >"$fixture_root/floating/ci.yml" <<'YAML'
 steps:
   - uses: owner/action/subpath@v4
 YAML
-if "$gate" "$fixture_root/floating" >/dev/null 2>&1; then
+if bash "$gate" "$fixture_root/floating" >/dev/null 2>&1; then
   echo "workflow-pin-gate-test: floating multi-segment action passed" >&2
   exit 1
 fi
@@ -30,7 +30,7 @@ steps:
   - run: |
       go install example.com/tool@latest
 YAML
-if "$gate" "$fixture_root/latest" >/dev/null 2>&1; then
+if bash "$gate" "$fixture_root/latest" >/dev/null 2>&1; then
   echo "workflow-pin-gate-test: go install @latest inside run block passed" >&2
   exit 1
 fi
