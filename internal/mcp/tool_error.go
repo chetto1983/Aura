@@ -60,6 +60,13 @@ func decodeToolCallError(serverName, toolName, text string) *ToolCallError {
 		Outcome: ToolOutcomeError, Code: "mcp_tool_error",
 		Message: boundedToolCallErrorText(text), Effect: ToolEffectUnknown,
 	}
+	if message, ok := whatsappMissingChatMessage(serverName, toolName, text); ok {
+		toolErr.Outcome = ToolOutcomeRejected
+		toolErr.Code = "not_found"
+		toolErr.Message = message
+		toolErr.Effect = ToolEffectNone
+		return toolErr
+	}
 	var envelope struct {
 		Outcome ToolOutcome `json:"outcome"`
 		Code    string      `json:"code"`
@@ -84,6 +91,25 @@ func decodeToolCallError(serverName, toolName, text string) *ToolCallError {
 	toolErr.Code = boundedToolCallErrorText(envelope.Code)
 	toolErr.Message = boundedToolCallErrorText(envelope.Message)
 	return toolErr
+}
+
+// whatsappMissingChatMessage translates the sidecar's return-annotation validation failure.
+// Both tools return None for a legitimate miss despite advertising dict[str, Any], so FastMCP
+// exposes a Pydantic implementation detail instead of the domain outcome.
+func whatsappMissingChatMessage(serverName, toolName, text string) (string, bool) {
+	if serverName != "whatsapp" ||
+		!strings.Contains(text, "validation error for DictModel") ||
+		!strings.Contains(text, "input_value=None") {
+		return "", false
+	}
+	switch toolName {
+	case "get_chat":
+		return "WhatsApp chat not found", true
+	case "get_direct_chat_by_contact":
+		return "WhatsApp direct chat not found", true
+	default:
+		return "", false
+	}
 }
 
 func boundedToolCallErrorText(value string) string {
