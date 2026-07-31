@@ -230,15 +230,33 @@ func (s *Service) seedHits(ctx context.Context, req SearchRequest) ([]SearchHit,
 	if s.MUSRIsolation && req.IdentityID == "" {
 		return nil, nil
 	}
+	var dense []SearchHit
 	if vector, ok := s.queryVector(ctx, req.Query); ok {
-		if hits, err := s.vectorSeed(ctx, vector, req); err == nil && len(hits) > 0 {
-			return hits, nil
+		if hits, err := s.vectorSeed(ctx, vector, req); err == nil {
+			dense = hits
 		}
 	}
 	if s.Searcher == nil {
+		if len(dense) > 0 {
+			return dense, nil
+		}
 		return nil, fmt.Errorf("documents: retrieve has no searcher for seed fallback")
 	}
-	return s.Searcher.Search(ctx, req)
+	// The lexical leg runs even when the dense one returned hits. It used to be a
+	// FALLBACK — reached only when dense came back empty — which meant an exact name
+	// was never looked up as a string as long as the embedding found something that
+	// felt close. Measured on the live corpus: `document_search "ZOPPI SRL"` returned
+	// seven chunks at cosine .85 and none of them contained ZOPPI, while the fulltext
+	// index put the one chunk that did at rank 1 with a 3x margin. One extra indexed
+	// query costs milliseconds against a stage that already spends seconds.
+	lexical, err := s.Searcher.Search(ctx, req)
+	if err != nil {
+		if len(dense) > 0 {
+			return dense, nil
+		}
+		return nil, err
+	}
+	return fuseSeeds(lexical, dense), nil
 }
 
 // queryVector embeds the query into a single seed vector, reporting ok=false (so the

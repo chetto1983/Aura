@@ -224,6 +224,7 @@ func TestExecuteRetrievalPlanOwnsEverySupportedRoute(t *testing.T) {
 		wantEmbed     int
 		wantRerank    int
 		wantExpansion bool
+		rerankScored  []rerank.Scored
 	}{
 		{
 			name: "sparse", planID: RetrievalPlanSparse,
@@ -244,10 +245,24 @@ func TestExecuteRetrievalPlanOwnsEverySupportedRoute(t *testing.T) {
 			wantEmbed: 1, wantRerank: 1, wantExpansion: true,
 		},
 		{
-			name:     "static preserves the pre-adaptive route",
+			// The static plan is the production route, and it now seeds BOTH legs.
+			// It used to seed dense only, with lexical reachable solely as an
+			// empty-result fallback, so an exact name was never looked up as a
+			// string: live, "ZOPPI SRL" returned seven chunks at cosine .85 and none
+			// of them contained ZOPPI, while the fulltext index held the one that did
+			// at rank 1. Four seeds reach the reranker here, not two.
+			name:     "static fuses the lexical and dense legs",
 			planID:   RetrievalPlanStatic,
-			wantHits: "vector-1,vector-0", wantContext: "context-0",
-			wantEmbed: 1, wantRerank: 1, wantExpansion: true,
+			wantHits: "vector-0,sparse-0", wantContext: "context-0",
+			wantSearch: 1, wantEmbed: 1, wantRerank: 1, wantExpansion: true,
+			// Seed order is [sparse-0 vector-0 sparse-1 vector-1]: both legs tie at
+			// rank 0, and the tie breaks toward the leg that matched the literal.
+			// The reranker then picks across legs, which is the whole point of
+			// fusing before it runs.
+			rerankScored: []rerank.Scored{
+				{Index: 1, Score: 0.99}, {Index: 0, Score: 0.9},
+				{Index: 2, Score: 0.5}, {Index: 3, Score: 0.4},
+			},
 		},
 	}
 	for _, test := range tests {
@@ -266,9 +281,13 @@ func TestExecuteRetrievalPlanOwnsEverySupportedRoute(t *testing.T) {
 				{DocumentID: "doc-7", ChunkID: "sparse-1"},
 			}}
 			embedder := &fakeQueryEmbedder{vector: []float64{0.1}}
-			reranker := &fakeReranker{scored: []rerank.Scored{
-				{Index: 1, Score: 0.99}, {Index: 0, Score: 0.8},
-			}}
+			scored := test.rerankScored
+			if scored == nil {
+				scored = []rerank.Scored{
+					{Index: 1, Score: 0.99}, {Index: 0, Score: 0.8},
+				}
+			}
+			reranker := &fakeReranker{scored: scored}
 			service := retrievalPlanTestService()
 			service.Searcher = searcher
 			service.Knowledge = knowledge
