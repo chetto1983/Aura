@@ -144,6 +144,20 @@ func TestBackupLifecycleDocsMatchApplianceContract(t *testing.T) {
 	}
 }
 
+func TestProductionReadinessProvidesDaemonBootContract(t *testing.T) {
+	root := repoRootForTest(t)
+	workflow := readProjectFile(t, root, ".github/workflows/production-readiness.yml")
+
+	for _, want := range []string{
+		"OPENROUTER_API_KEY: readiness-degraded-no-network",
+		"Candidate to previous to candidate rollback rehearsal",
+	} {
+		if !strings.Contains(workflow, want) {
+			t.Fatalf(".github/workflows/production-readiness.yml missing %q", want)
+		}
+	}
+}
+
 func TestDotEnvTemplateHygiene(t *testing.T) {
 	root := repoRootForTest(t)
 	envExample := readProjectFile(t, root, ".env.example")

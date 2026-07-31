@@ -78,16 +78,22 @@ def run_for_image(image: str, command: list[str], repo: pathlib.Path) -> None:
         )
 
 
+def probe_endpoint(url: str) -> tuple[bool, str]:
+    try:
+        with urllib.request.urlopen(url, timeout=3) as response:
+            if response.status == 200:
+                return True, "HTTP 200"
+            return False, f"HTTP {response.status}"
+    except (OSError, urllib.error.URLError) as exc:
+        return False, str(exc)
+
+
 def wait_endpoint(url: str, deadline: float) -> None:
     last_error = "not attempted"
     while time.monotonic() < deadline:
-        try:
-            with urllib.request.urlopen(url, timeout=3) as response:
-                if response.status == 200:
-                    return
-                last_error = f"HTTP {response.status}"
-        except (OSError, urllib.error.URLError) as exc:
-            last_error = str(exc)
+        healthy, last_error = probe_endpoint(url)
+        if healthy:
+            return
         time.sleep(1)
     raise RuntimeError(f"endpoint {url} did not become healthy: {last_error}")
 
@@ -113,6 +119,20 @@ def container_health(container: str, repo: pathlib.Path) -> str:
     return completed.stdout.strip()
 
 
+def container_logs(container: str, repo: pathlib.Path) -> str:
+    completed = subprocess.run(
+        ["docker", "logs", "--tail", "120", container],
+        cwd=repo,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+        timeout=15,
+    )
+    detail = completed.stdout.strip()
+    return detail[-4000:] if detail else "no container logs available"
+
+
 def wait_deployment(
     health_url: str,
     container: str,
@@ -120,17 +140,28 @@ def wait_deployment(
     repo: pathlib.Path,
 ) -> None:
     deadline = time.monotonic() + timeout
-    wait_endpoint(health_url, deadline)
+    terminal_states = {"dead", "exited", "missing", "removing", "unhealthy"}
+    last_endpoint = "not attempted"
     last_status = "not attempted"
-    while time.monotonic() < deadline:
+    while True:
+        endpoint_healthy, last_endpoint = probe_endpoint(health_url)
         last_status = container_health(container, repo)
-        if last_status == "healthy":
+        if endpoint_healthy and last_status == "healthy":
             return
+        if last_status in terminal_states:
+            raise RuntimeError(
+                f"container {container} stopped before readiness "
+                f"(state={last_status}, endpoint={last_endpoint}):\n"
+                f"{container_logs(container, repo)}"
+            )
+        if time.monotonic() >= deadline:
+            raise RuntimeError(
+                f"deployment did not become healthy "
+                f"(container={container}, state={last_status}, "
+                f"endpoint={last_endpoint}):\n"
+                f"{container_logs(container, repo)}"
+            )
         time.sleep(1)
-    raise RuntimeError(
-        f"container {container} readiness healthcheck did not become healthy: "
-        f"{last_status}"
-    )
 
 
 def run_rehearsal(args: argparse.Namespace) -> dict[str, Any]:

@@ -130,6 +130,38 @@ class RollbackRehearsalTest(unittest.TestCase):
                 "starting",
             )
 
+    def test_wait_deployment_fails_fast_with_container_logs(self) -> None:
+        with (
+            mock.patch.object(
+                rollback_rehearsal,
+                "wait_endpoint",
+                side_effect=RuntimeError("endpoint refused"),
+            ),
+            mock.patch.object(
+                rollback_rehearsal.urllib.request,
+                "urlopen",
+                side_effect=OSError("connection refused"),
+            ),
+            mock.patch.object(
+                rollback_rehearsal, "container_health", return_value="exited"
+            ),
+            mock.patch.object(
+                rollback_rehearsal,
+                "container_logs",
+                create=True,
+                return_value="OPENROUTER_API_KEY is required",
+            ),
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError, "OPENROUTER_API_KEY is required"
+            ):
+                rollback_rehearsal.wait_deployment(
+                    "http://127.0.0.1:9080/healthz",
+                    "aura",
+                    30.0,
+                    pathlib.Path("."),
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
