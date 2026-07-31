@@ -1,64 +1,41 @@
-# Aura Industrial Audit
+# Aura current audit state
 
-> **Current status (2026-07-31):** this directory's historical registers are
-> reconciled in
-> [definitive-closure-ledger-2026-07-31.md](definitive-closure-ledger-2026-07-31.md).
-> Its machine gate covers 209/209 IDs with zero undisclosed `open` rows. Three
-> provider/device delivery checks remain explicitly `external_blocked` and are
-> not counted as passed.
+Date: 2026-07-31
+Policy: PRD Amendment #106.5
 
-Audit date: 2026-06-21
+This directory contains current unresolved state only. Historical audits,
+closed findings, plans, handoffs, experiments, and scores were retired from the
+working tree by explicit operator direction. Their last complete tree is
+recoverable from Git commit
+`fb8c40c0f53fa958665845d7e7217d0aa4d9796a`.
 
-Audited repository: `D:\Aura`
+## Current verdict
 
-Reference context inspected: `D:\tmp` (`adk-go-study`, `agent-memory`, `agent-infra-sandbox`, `go-swarm`, and Aura smoke/log artifacts). These paths were used only as supporting context and were not treated as production source.
+- Audit disclosure gate: **PASS** when all rows below are present and valid.
+- Release readiness: **NO-GO** while any row remains.
+- Current unresolved: **8** — 5 external constraints and 3 owned follow-ups.
+- No current implementation score is published. The archived 10.0 closure
+  score and 9.8 direct-tool score are historical evidence, not release
+  certification.
 
-Subagent update: six read-only module explorers were spawned on 2026-06-21 for agent loop/runner, tools/security, persistence/memory, MCP/governance, AG-UI/Web/API, and infrastructure/operations. A seventh testing/CI explorer was attempted but the agent-thread limit was reached, so the testing/CI slice was covered locally.
+## Unresolved issues
 
-## Scope
+| ID | State | Current evidence | Closure condition | Owner |
+|---|---|---|---|---|
+| EXT-001 | external_blocked | Calendar MCP has no authorized provider account; direct calls fail closed | Connect a dedicated test account and complete reversible create, read, update, and delete | Operator |
+| EXT-002 | external_blocked | Email MCP has no authorized sender account or designated recipient | Connect a test account and verify one authorized delivery receipt | Operator |
+| EXT-003 | external_blocked | WhatsApp bridge is healthy but remains `waiting_qr` and unpaired | Pair an authorized test device and complete message, reaction, file, audio, and media round trips | Operator |
+| EXT-004 | external_blocked | GHCR version `845339375`, digest `sha256:764b4b3e58ebb1e627c54b6c10a0e9889b43caa53cb06728d12803ca53415628`, is untagged but GitHub refuses API deletion after more than 5,000 downloads; all known tags are absent | GitHub Support deletes the protected public package version and a packages-authorized query verifies zero versions | GitHub Support |
+| EXT-005 | external_blocked | Native `send_file` reached the correct contextual guard but has no authorized channel delivery receipt | Deliver one reversible fixture through an authorized channel and verify the receipt and cleanup | Operator |
+| REL-009 | open | Every pre-current Aura image is retired and no distinct approved immutable rollback baseline exists | Promote a compatible immutable baseline, then pass a real distinct-image rollback and candidate restoration | Release owner |
+| TST-002 | open | WSL primary `cmd/aura` suite passes; native Windows reports `0666` for the owner-only artifact permission assertion | Make the contract platform-correct or formally remove native Windows from the supported execution matrix, then pass the declared tier | Runtime maintainer |
+| UX-001 | open | Two WhatsApp not-found reads return technically correct but user-hostile Pydantic `DictModel` text | Normalize both errors to stable user-facing messages and pass focused direct-call regressions | WhatsApp sidecar maintainer |
 
-This audit reviewed Aura as an industrial agent-loop system: the LLM loop, tool/action execution, memory and context persistence, AG-UI serving path, MCP integration, shell/filesystem capabilities, configuration, secrets, observability, testing, deployment posture, and production-readiness gaps.
+## Machine check
 
-The audit was evidence-based and used source paths and line locations where possible. No production source code was modified. Only documentation files were created under `docs/audit`.
+```bash
+PYTHONPATH=scripts python3 scripts/audit_closure_gate.py
+```
 
-## How To Read This Audit
-
-- Start with `executive-summary.md` for score, top risks, and immediate actions.
-- Read `bug-report.md` for evidence-backed correctness, reliability, and security findings.
-- Read `security-audit.md` for trust boundaries, prompt-injection surfaces, sandboxing, and secret-handling risks.
-- Read `architecture-review.md` and `target-architecture.md` for current and proposed designs.
-- Use `industrialization-roadmap.md` and `action-plan.md` as the engineering backlog.
-- Use `risk-register.md` and `audit-index.json` for tracking and automation.
-- Use `proposed-patches.md` for code-level remediation guidance. These patches are recommendations only and were not applied.
-- Use `subagent-review.md` for the delegated module review summary and delta findings.
-
-## Methodology Notes
-
-Confirmed issues are labeled with evidence. Items that require live deployment validation, external threat modeling, or operational data are marked as `NEEDS CONFIRMATION` or `UNKNOWN`.
-
-The repository contains meaningful production-oriented work already: bounded loop budgets, per-call LLM timeouts, bounded parallel tool execution, panic recovery in parallel tools, result sidecars with previewing, auth gates for AG-UI routes, MCP process timeouts, tool-result provenance tagging, and a nontrivial test suite. The gaps below are the remaining blockers for treating Aura as a serious industrial production system rather than a powerful local trusted-operator runtime.
-
-## Production Readiness Snapshot
-
-Production readiness score: **4.6 / 10**
-
-Findings:
-
-- P0: 0
-- P1: 10
-- P2: 28
-- P3: 13
-- Total: 51
-
-## Most Important Findings
-
-1. Shell and filesystem tools intentionally operate with full host privileges and no workspace capability boundary (`internal/agent/tools/shell_exec.go`, `internal/agent/tools/fs.go`).
-2. Copying `.env.example` disables the default destructive shell approval gate because it sets `AURA_SHELL_DESTRUCTIVE_PATTERNS=` (`.env.example`, `internal/agent/tools/shell_exec_env.go`).
-3. A terminal `text_response` can be emitted with runnable sibling tools, and the tools execute before the final response (`internal/agent/llm_agent_dispatch.go`, `internal/agent/llm_agent.go`).
-4. Human-in-the-loop resume claim and answer append are not fully atomic across single and batch paths (`internal/runner/runner_resume.go`).
-5. Conversation sidecar rehydration trusts a DB-stored path instead of reconstructing and fencing the path (`internal/conversations/store.go`, `internal/conversations/store_branch.go`).
-6. Command hooks default to fail-open, which is unsafe for security gates (`internal/agent/hooks.go`, `internal/agent/hooks_command.go`).
-7. Object-store and Garage credentials use static development defaults without production validation (`internal/config/config.go`, `compose.yaml`, `scripts/garage_bootstrap.sh`).
-8. AG-UI listener failure can be logged while the daemon/container keeps running and the Compose healthcheck remains green (`cmd/aura/serve.go`, `compose.yaml`).
-9. Managed MCP entries with both `url` and `command` can be classified as remote HTTP trust while opened as stdio command execution (`internal/mcp/manager/runtime.go`, `internal/mcp/managed_config.go`, `internal/agent/mcptools/mount.go`, `internal/mcp/transport.go`).
-10. AG-UI conversation and approval APIs are not consistently scoped to authenticated identity (`internal/agui/conversations_api.go`, `internal/agui/approvals_api.go`, `internal/runner/runner_conversation.go`).
+The disclosure gate passing does not make the release publishable. Its report
+must emit `release_ready:false` until this table is empty.

@@ -7,8 +7,10 @@ import hashlib
 import json
 import pathlib
 import re
+import subprocess
 import sys
 from collections import Counter
+from collections.abc import Iterable
 from typing import Any
 
 from evidence_metadata import FULL_GIT_SHA, candidate_commit
@@ -18,26 +20,28 @@ class GateError(RuntimeError):
     pass
 
 
-FINDING_ID = re.compile(
-    r"\b(?:"
-    r"F-\d{3}|QA-[A-D]-\d{2}|R-\d{2}|BUG-\d[A-Za-z]?|VW-\d{2}|EXT-\d{3}|"
-    r"(?:ARC|CON|CTX|MCP|MEM|OBS|PERF|PRIV|REL|SEC|TST)-\d{3}"
-    r")\b"
+ISSUE_ID = re.compile(r"(?:EXT|REL|TST|UX)-\d{3}")
+ALLOWED_STATES = {"external_blocked", "open"}
+REQUIRED_CURRENT_IDS = frozenset(
+    {
+        "EXT-001",
+        "EXT-002",
+        "EXT-003",
+        "EXT-004",
+        "EXT-005",
+        "REL-009",
+        "TST-002",
+        "UX-001",
+    }
 )
-ALLOWED_STATES = {"closed", "superseded", "retired", "external_blocked", "open"}
-DEFAULT_SOURCES = (
-    "docs/audit/bug-report.md",
-    "docs/audit/quality/slice-A-agent-core.md",
-    "docs/audit/quality/slice-B-persistence.md",
-    "docs/audit/quality/slice-C-transport-web.md",
-    "docs/audit/quality/slice-D-frontend-ops.md",
-    "docs/audit/agent-memory-context/08-findings-register.md",
-    "docs/audit/retrieval-findings-register-2026-07-30.md",
-    "docs/audit/operator-reported-runtime-bugs-2026-07-18.md",
-    "docs/audit/consolidated-fix-plan-2026-07-20.md",
-    "docs/audit/verify-work-runtime-findings-2026-07-18.md",
-    "docs/audit/direct-production-tool-audit-2026-07-30.md",
-)
+EXPECTED_AUDIT_PATHS = frozenset({"docs/audit/README.md"})
+REGISTER_HEADER = [
+    "ID",
+    "State",
+    "Current evidence",
+    "Closure condition",
+    "Owner",
+]
 
 
 def require(condition: bool, message: str) -> None:
@@ -45,100 +49,97 @@ def require(condition: bool, message: str) -> None:
         raise GateError(message)
 
 
-def source_findings(sources: list[pathlib.Path]) -> tuple[set[str], list[dict[str, str]]]:
-    findings: set[str] = set()
-    records = []
-    for source in sources:
-        require(source.is_file(), f"source register missing: {source}")
-        raw = source.read_bytes()
-        ids = set(FINDING_ID.findall(raw.decode("utf-8")))
-        require(ids, f"source register has no finding IDs: {source}")
-        findings.update(ids)
-        records.append(
-            {
-                "path": source.as_posix(),
-                "sha256": hashlib.sha256(raw).hexdigest(),
-                "finding_count": str(len(ids)),
-            }
-        )
-    return findings, records
-
-
-def parse_ledger(path: pathlib.Path) -> list[dict[str, str]]:
-    require(path.is_file(), f"ledger missing: {path}")
+def parse_register(path: pathlib.Path) -> list[dict[str, str]]:
+    require(path.is_file(), f"current audit register missing: {path}")
     rows = []
+    header_seen = False
     for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
-        if len(cells) != 4 or FINDING_ID.fullmatch(cells[0]) is None:
+        if cells == REGISTER_HEADER:
+            header_seen = True
             continue
-        finding_id, state, evidence, verification = cells
-        require(state in ALLOWED_STATES, f"{finding_id}: invalid state {state!r}")
-        require(bool(evidence), f"{finding_id}: evidence is blank")
-        require(bool(verification), f"{finding_id}: verification is blank")
+        if not header_seen or not line.lstrip().startswith("|"):
+            continue
+        if len(cells) == 5 and all(set(cell) <= {"-", ":"} for cell in cells):
+            continue
+        require(len(cells) == 5, f"current issue row {line_number} has {len(cells)} cells")
+        require(
+            ISSUE_ID.fullmatch(cells[0]) is not None,
+            f"current issue row {line_number} has invalid ID {cells[0]!r}",
+        )
+        issue_id, state, evidence, closure_condition, owner = cells
+        require(state in ALLOWED_STATES, f"{issue_id}: invalid state {state!r}")
+        require(bool(evidence), f"{issue_id}: evidence is blank")
+        require(bool(closure_condition), f"{issue_id}: closure condition is blank")
+        require(bool(owner), f"{issue_id}: owner is blank")
         rows.append(
             {
-                "id": finding_id,
+                "id": issue_id,
                 "state": state,
                 "evidence": evidence,
-                "verification": verification,
+                "closure_condition": closure_condition,
+                "owner": owner,
                 "line": str(line_number),
             }
         )
-    require(rows, "ledger has no finding rows")
+    require(header_seen, "current issue table header missing")
     return rows
+
+
+def validate_tracked_audit_paths(paths: Iterable[str]) -> None:
+    actual = frozenset(path.strip().replace("\\", "/") for path in paths if path.strip())
+    stale = sorted(actual - EXPECTED_AUDIT_PATHS)
+    missing = sorted(EXPECTED_AUDIT_PATHS - actual)
+    require(not stale, f"historical audit paths remain tracked: {stale}")
+    require(not missing, f"current audit paths missing: {missing}")
+
+
+def tracked_audit_paths(repo: pathlib.Path) -> list[str]:
+    result = subprocess.run(
+        ["git", "ls-files", "docs/audit"],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    require(result.returncode == 0, f"git ls-files failed: {result.stderr.strip()}")
+    return result.stdout.splitlines()
 
 
 def run_gate(
     *,
-    sources: list[pathlib.Path],
-    ledger: pathlib.Path,
+    register: pathlib.Path,
     output: pathlib.Path,
     candidate: str,
-    minimum_score: float,
+    required_ids: frozenset[str] = REQUIRED_CURRENT_IDS,
 ) -> dict[str, Any]:
     require(FULL_GIT_SHA.fullmatch(candidate) is not None, "candidate must be a full Git SHA")
-    expected, source_records = source_findings(sources)
-    rows = parse_ledger(ledger)
+    rows = parse_register(register)
     counts_by_id = Counter(row["id"] for row in rows)
-    duplicates = sorted(finding_id for finding_id, count in counts_by_id.items() if count > 1)
-    require(not duplicates, f"duplicate ledger findings: {duplicates}")
-    actual = set(counts_by_id)
-    missing = sorted(expected - actual)
-    unknown = sorted(actual - expected)
-    require(not missing, f"missing ledger findings: {missing}")
-    require(not unknown, f"unknown ledger findings: {unknown}")
+    duplicates = sorted(issue_id for issue_id, count in counts_by_id.items() if count > 1)
+    require(not duplicates, f"duplicate current issues: {duplicates}")
+
+    actual_ids = set(counts_by_id)
+    missing = sorted(required_ids - actual_ids)
+    unknown = sorted(actual_ids - required_ids)
+    require(not missing, f"missing current issues: {missing}")
+    require(not unknown, f"unknown current issues: {unknown}")
 
     counts = Counter(row["state"] for row in rows)
-    open_ids = sorted(row["id"] for row in rows if row["state"] == "open")
-    require(not open_ids, f"open findings remain: {open_ids}")
-    external = sorted(
-        row["id"] for row in rows if row["state"] == "external_blocked"
-    )
-    scored = len(rows) - len(external)
-    require(scored > 0, "no scored findings remain")
-    completed = scored - counts["open"]
-    score = completed * 10 / scored
-    require(
-        score > minimum_score,
-        f"audit score {score:.3f} does not exceed {minimum_score:.3f}",
-    )
     normalized_counts = {state: counts[state] for state in sorted(ALLOWED_STATES)}
     report = {
         "schema_version": 1,
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
         "candidate_commit": candidate,
         "passed": True,
-        "score": score,
-        "total_findings": len(rows),
-        "scored_findings": scored,
+        "release_ready": not rows,
+        "open_total": len(rows),
         "counts": normalized_counts,
-        "undisclosed_findings": 0,
-        "external_blockers": external,
-        "ledger": {
-            "path": ledger.as_posix(),
-            "sha256": hashlib.sha256(ledger.read_bytes()).hexdigest(),
+        "issues": rows,
+        "register": {
+            "path": register.as_posix(),
+            "sha256": hashlib.sha256(register.read_bytes()).hexdigest(),
         },
-        "sources": source_records,
     }
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
@@ -147,17 +148,11 @@ def run_gate(
 
 def parse_args() -> argparse.Namespace:
     repo = pathlib.Path(__file__).resolve().parents[1]
-    parser = argparse.ArgumentParser(description="Verify Aura's definitive audit ledger")
+    parser = argparse.ArgumentParser(description="Verify Aura's current unresolved audit register")
     parser.add_argument(
-        "--source",
-        action="append",
+        "--register",
         type=pathlib.Path,
-        help="canonical finding register; repeatable",
-    )
-    parser.add_argument(
-        "--ledger",
-        type=pathlib.Path,
-        default=repo / "docs/audit/definitive-closure-ledger-2026-07-31.md",
+        default=repo / "docs/audit/README.md",
     )
     parser.add_argument(
         "--output",
@@ -165,30 +160,27 @@ def parse_args() -> argparse.Namespace:
         default=repo / "artifacts/production-readiness/audit-closure-report.json",
     )
     parser.add_argument("--candidate", default=candidate_commit(repo))
-    parser.add_argument("--minimum-score", type=float, default=9.8)
     args = parser.parse_args()
-    if args.source is None:
-        args.source = [repo / path for path in DEFAULT_SOURCES]
+    args.repo = repo
     return args
 
 
 def main() -> int:
     args = parse_args()
     try:
+        validate_tracked_audit_paths(tracked_audit_paths(args.repo))
         report = run_gate(
-            sources=[path.resolve() for path in args.source],
-            ledger=args.ledger.resolve(),
+            register=args.register.resolve(),
             output=args.output.resolve(),
             candidate=args.candidate,
-            minimum_score=args.minimum_score,
         )
     except (GateError, OSError, UnicodeError) as exc:
         print(f"audit-closure-gate: FAIL: {exc}", file=sys.stderr)
         return 1
     print(
-        f"audit-closure-gate: PASS: {report['total_findings']} findings, "
-        f"{report['counts']['external_blocked']} external blockers excluded, "
-        f"score {report['score']:.1f}/10"
+        f"audit-closure-gate: PASS disclosure; {report['open_total']} current unresolved, "
+        f"{report['counts']['external_blocked']} external, "
+        f"release_ready={str(report['release_ready']).lower()}"
     )
     return 0
 

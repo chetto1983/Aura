@@ -46,7 +46,7 @@ rollback rehearsal, runs the ten-report gate, and uploads the immutable bundle. 
 | disaster recovery | `dr-report.json` | Postgres, Neo4j offline, sidecars, and Garage restored and checksum-verified |
 | observability | `observability-report.json` | negative fixtures, runtime smoke, live health/readiness, dashboards, alerts, runbooks pass |
 | rollback | `rollback-report.json` | distinct image digests; previous config starts; migrations compatible; candidate restored healthy |
-| audit | `audit-closure-report.json` | no undisclosed `open`; `external_blocked` rows disclosed and excluded from score |
+| audit | `audit-closure-report.json` | current-only register is empty; `release_ready:true`; zero `open` or `external_blocked` rows |
 
 ## Operational checks
 
@@ -58,7 +58,7 @@ rollback rehearsal, runs the ten-report gate, and uploads the immutable bundle. 
 - [ ] `/healthz`, `/readyz`, dashboards, alerts, and runbook links checked.
 - [ ] Rollback command, image digest, database compatibility, and responsible operator recorded.
 - [ ] External connector blockers and accepted risks disclosed.
-- [ ] Definitive score computed only from executed evidence and exceeds the PRD threshold.
+- [ ] Current audit register is empty; historical scores are not reused as release evidence.
 
 ## Rollback rule
 

@@ -154,16 +154,13 @@ def valid_evidence() -> dict[str, dict[str, object]]:
         ),
         "audit-closure-report.json": common(
             passed=True,
-            score=9.9,
+            release_ready=True,
+            open_total=0,
             counts={
-                "closed": 200,
-                "superseded": 12,
-                "retired": 8,
-                "external_blocked": 3,
+                "external_blocked": 0,
                 "open": 0,
             },
-            undisclosed_findings=0,
-            external_blockers=["calendar-delivery", "email-delivery", "whatsapp-delivery"],
+            issues=[],
         ),
     }
 
@@ -245,13 +242,17 @@ class ReleaseReadinessGateTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("missing", result.stderr)
 
-    def test_disclosed_external_blockers_are_not_scored_as_passed_findings(self) -> None:
-        result = self.run_gate(valid_evidence())
-        self.assertEqual(result.returncode, 0, result.stderr)
-        audit = next(
-            item for item in result.report["evidence"] if item["gate"] == "audit"  # type: ignore[attr-defined]
+    def test_current_open_items_block_release(self) -> None:
+        evidence = valid_evidence()
+        evidence["audit-closure-report.json"].update(
+            release_ready=False,
+            open_total=1,
+            counts={"external_blocked": 1, "open": 0},
+            issues=[{"id": "EXT-001", "state": "external_blocked"}],
         )
-        self.assertEqual(audit["external_blocked"], 3)
+        result = self.run_gate(evidence)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("release_ready", result.stderr)
 
 
 if __name__ == "__main__":

@@ -18,9 +18,12 @@ Tutte le fasi 0–13, 15, 16, 18, 19, 20 sono chiuse (`[x]` in ROADMAP). Restano
 1. Chiudere il **live sign-off di Phase 14** (CDP Telegram harness → `reference_cdp_telegram_live_test_harness.md`), poi flippare ROADMAP + aggiungere la riga UX-05 in `docs/aura-quality-snapshot.md`.
 2. `/gsd-spec-phase 17` → plan → execute (Packaging).
 
-## Milestone appena chiusa — audit-closure (2026-06-13)
+## Audit corrente
 
-`docs/audit/`: **38 CLOSED / 0 PARTIAL / 0 OPEN / 2 TRACKED** (R-26, R-40). CodeQL 0 alert aperti. CI completamente verde (CI + CodeQL + Skills + nuova lane `windows-unit`). Dettaglio in [docs/audit/reconciliation-2026-06-13.md](docs/audit/reconciliation-2026-06-13.md).
+`docs/audit/` mantiene solo lo stato non risolto corrente: **8 righe**,
+di cui **5 vincoli esterni** e **3 follow-up owned**. La release resta
+**NO-GO** finché la tabella non è vuota. Dettaglio:
+[docs/audit/README.md](docs/audit/README.md).
 
 ## Salute repo
 
