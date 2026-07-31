@@ -180,6 +180,8 @@ func TestRetiredAuraImagesFailClosed(t *testing.T) {
 		"packages: write",
 		"DELETE_ALL_AURA_IMAGES",
 		`packages/container/aura/versions`,
+		"Delete failed for version",
+		"remaining remote Aura versions",
 		`jq -e 'length == 0'`,
 	} {
 		if !strings.Contains(retirement, want) {

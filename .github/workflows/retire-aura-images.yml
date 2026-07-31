@@ -55,11 +55,16 @@ jobs:
             /tmp/aura-versions-before.json
 
           jq -r '.[].id' /tmp/aura-versions-before.json | while read -r version_id; do
-            gh api --method DELETE \
+            if ! gh api --method DELETE \
               -H "X-GitHub-Api-Version: 2022-11-28" \
-              "$endpoint/$version_id"
+              "$endpoint/$version_id" 2> "/tmp/aura-delete-$version_id.txt"; then
+              echo "Delete failed for version $version_id:" >&2
+              cat "/tmp/aura-delete-$version_id.txt" >&2
+            fi
           done
 
           list_versions > /tmp/aura-versions-after.json
+          jq -r '.[] | "remaining remote Aura versions: id=\(.id) digest=\(.name) tags=\(.metadata.container.tags | join(","))"' \
+            /tmp/aura-versions-after.json >&2
           jq -e 'length == 0' /tmp/aura-versions-after.json
           echo "All remote Aura appliance image versions are absent."
