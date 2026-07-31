@@ -1,5 +1,11 @@
 # Risk Register
 
+> **Historical snapshot (2026-06-21).** The `Open` labels below describe the
+> original audit cutoff and are not current status. Every finding is reconciled
+> one by one in
+> [definitive-closure-ledger-2026-07-31.md](definitive-closure-ledger-2026-07-31.md);
+> use that ledger for current disposition and verification evidence.
+
 | ID | Title | Severity | Probability | Impact | Affected area | Mitigation | Status |
 |---|---|---:|---:|---:|---|---|---|
 | R-001 | Full-host shell/filesystem authority | P1 | High | Critical | Tool execution, security | Add ToolGateway, sandboxing, workspace fences, production deny-by-default | Open |
