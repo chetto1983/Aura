@@ -179,6 +179,28 @@ files, so no external message or media could be delivered.
     output, and uses a browser-compatible default User-Agent. The actual B&R
     pages that timed out now return full technical data.
 
+## Release E2E findings closed during exact-candidate certification
+
+- **REL-002 (`closed`)**: the workflow-pin self-test executed a tracked
+  `100644` helper directly. It now invokes the helper through `bash`; the
+  Ubuntu runner executes both the negative self-test and the real pin gate.
+- **REL-003 (`closed`)**: the tagged-tier self-test had the same
+  Windows/WSL-only executable-bit assumption. All fixture invocations now use
+  `bash`; Ubuntu compiles 29 tiers across 37 packages.
+- **REL-004 (`closed`)**: the four-plane DR orchestrator directly executed the
+  extracted Neo4j offline helper. The orchestrator and its distribution
+  contract now require `bash scripts/neo4j_offline_drill.sh`.
+- **REL-005 (`closed`)**: the sidecar DR plane assumed an already-created
+  `aura-home` volume and a fixed Compose label. It now resolves the engine name
+  from `docker compose config --format json`, creates a disposable source only
+  when absent, and removes only volumes it created. Local and GitHub four-plane
+  drills checksum-verified all planes.
+- **REL-006 (`closed`)**: the production-readiness workflow migrated correctly
+  but booted the daemon with an empty `OPENROUTER_API_KEY`, so the intentional
+  fail-fast config stopped the candidate before health. The workflow now
+  provides a non-secret degraded-test key, and rollback readiness fails early
+  with bounded container logs when a container exits.
+
 ## Remaining gates and quality notes
 
 - **EXT-001 (`external_blocked`)**: Calendar provider success needs an

@@ -217,6 +217,11 @@ all source registers to the exact candidate commit by SHA-256.
 | VW-02 | closed | `e8c1fa39` semantic JSON compare | DB integration scheduler test |
 | VW-03 | closed | production-resolved MCP probe timeout | doctor direct timeout evidence |
 | VW-04 | closed | `431d2a8de` package-aware tagged compile | 29 tiers across 37 packages |
+| REL-002 | closed | `28851f7b6` portable workflow-pin self-test | Ubuntu self-test and real pin gate |
+| REL-003 | closed | `962e94180` portable tagged-tier self-test | Ubuntu 29-tier / 37-package compile |
+| REL-004 | closed | `accb7b8c3` explicit Neo4j helper shell | four-plane DR reaches offline dump/load |
+| REL-005 | closed | `febfeb35c` Compose-resolved sidecar source volume | local and GitHub four-plane checksum drill |
+| REL-006 | closed | readiness daemon boot env and fail-fast diagnostics | workflow contract and rollback diagnostic tests |
 | EXT-001 | external_blocked | no authorized Calendar provider account | 14 direct calls; no-account failures honest |
 | EXT-002 | external_blocked | no authorized email test account/recipient | send-email failed closed without delivery |
 | EXT-003 | external_blocked | WhatsApp bridge waiting for QR pairing | 14 direct calls; unpaired failures honest |
