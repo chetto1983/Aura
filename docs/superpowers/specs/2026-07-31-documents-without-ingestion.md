@@ -82,6 +82,29 @@ agent is asked paraphrased recall questions whose words are NOT the facts' words
 being called. A failure here stops phase 3 — deleting Neo4j while recall is
 broken would leave her with nothing.
 
+**RUN 2026-08-01: FAILED. Phase 3 is blocked.** Asked a paraphrased recall
+question, the agent called `memory_search` six times and `memory_get_entity`
+three, and every one returned "memory operation failed". Two causes, both found
+in the sidecar logs:
+
+1. **Aura's memory is not on ArcadeDB.** The mounted `memory` MCP server is
+   `agent-memory-mcp`, configured with `NEO4J_URI=bolt://neo4j:7687`. The
+   ArcadeDB memory built on 2026-07-31 is reachable from a developer session but
+   is not wired into the agent. So this phase is not "validate ArcadeDB recall",
+   it is "move memory to ArcadeDB first" — a slice of its own, and a bigger one
+   than this spec assumed.
+2. **The embedding layer has drifted apart.** `agent-memory-mcp` embeds through
+   `OPENAI_BASE_URL=http://aura-llama-embed:8081/v1`; that container is in a
+   restart loop, unable to download `Qwen/Qwen3-Embedding-0.6B-GGUF` (no network)
+   and unable to bind 8081 because a hand-started `aura-embed-gemma` holds it.
+   That replacement is NOT in the compose project — it sits on the default
+   `bridge` network with no compose labels, so no service can reach it by name,
+   and its own healthcheck probes port 8080 while it serves on 8081. Exactly the
+   `*_BASE_URL` drift class: it degrades silently and only a live run shows it.
+
+Neither is caused by this migration, and neither can be worked around by
+deleting more code. Phase 3 stands down until memory answers.
+
 ### Phase 3 — remove Neo4j
 
 Measured at spec time:
