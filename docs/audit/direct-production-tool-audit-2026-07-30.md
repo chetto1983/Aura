@@ -179,7 +179,7 @@ files, so no external message or media could be delivered.
     output, and uses a browser-compatible default User-Agent. The actual B&R
     pages that timed out now return full technical data.
 
-## Release E2E findings closed during exact-candidate certification
+## Release E2E findings reconciled during exact-candidate certification
 
 - **REL-002 (`closed`)**: the workflow-pin self-test executed a tracked
   `100644` helper directly. It now invokes the helper through `bash`; the
@@ -200,11 +200,14 @@ files, so no external message or media could be delivered.
   fail-fast config stopped the candidate before health. The workflow now
   provides a non-secret degraded-test key, and rollback readiness fails early
   with bounded container logs when a container exits.
-- **REL-007 (`closed`)**: the current Authula-ready Compose configuration was
-  not boot-compatible with the legacy web-auth guard in the approved previous
-  image. The loopback-only rollback workflow now explicitly trusts its local
-  CI boundary, allowing both generations to boot without weakening the
-  production Compose default.
+- **REL-007 (`retired`)**: the real rollback rehearsal in run `30611852234`
+  disproved the legacy-image boot contract. PRD Amendment #106.4 retires every
+  pre-current Aura appliance image instead of introducing a compatibility
+  bypass for an invalid rollback target.
+- **REL-008 (`closed`)**: production readiness now accepts only an explicit
+  immutable `image@sha256` rollback input and rejects every known retired
+  digest. A separately confirmed retirement workflow deletes every cancellable
+  Aura package version and fails closed if any version remains.
 
 ## Remaining gates and quality notes
 
@@ -215,6 +218,12 @@ files, so no external message or media could be delivered.
 - **EXT-003 (`external_blocked`)**: WhatsApp delivery/media success needs the
   operator to scan the available QR
   with an authorized test device.
+- **EXT-004 (`external_blocked`)**: GitHub deleted every cancellable GHCR Aura
+  version but refuses deletion of the final untagged public version because it
+  has more than 5,000 downloads. Runs `30613864410` and `30614126554` exhausted
+  deletable versions and identified exact version `845339375`, digest
+  `sha256:764b4b3e58ebb1e627c54b6c10a0e9889b43caa53cb06728d12803ca53415628`;
+  all known tags are absent. Definitive removal requires GitHub Support.
 - Native `send_file` still needs a real channel delivery receipt for full E2E.
 - The WhatsApp sidecar returns technical Pydantic `DictModel` text for two
   not-found reads. Failure status is correct; message quality should be improved

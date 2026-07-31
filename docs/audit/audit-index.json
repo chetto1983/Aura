@@ -3,9 +3,11 @@
   "superseded_by": "docs/audit/definitive-closure-ledger-2026-07-31.md",
   "current_reconciliation": {
     "date": "2026-07-31",
-    "total_findings": 209,
+    "total_findings": 217,
+    "scored_findings": 213,
     "open": 0,
-    "external_blocked": 3,
+    "external_blocked": 4,
+    "implementation_score": 10.0,
     "machine_gate": "scripts/audit_closure_gate.py"
   },
   "audit_date": "2026-06-21",
