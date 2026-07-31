@@ -50,7 +50,7 @@ func (t *FSGrep) Spec() Spec {
 }`)
 	return Spec{
 		Name:        "fs_grep",
-		Summary:     "Search file contents with a regexp.",
+		Summary:     "Find text inside file contents with a regexp (grep).",
 		Description: "Search file CONTENTS across a directory tree with an RE2 regular expression; returns matching lines as `path:line: text`. `pattern` is the regex; optionally restrict to a `path` (file or directory, default workspace root) and a filename `glob` (e.g. `*.go`). Binary files, hidden dot-directories (.git, .cache, …) and node_modules/vendor/__pycache__ are skipped — to search a hidden or vendored tree pass it as the explicit `path`; results cap at max_results (default 200). Use this for content search instead of shell grep so matches come back structured. To find files by NAME use fs_glob; to read a known range use fs_read.",
 		Parameters:  params,
 		// Deferred: filesystem content-search is a long-tail capability discoverable via

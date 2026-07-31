@@ -6,116 +6,82 @@ import (
 	"strings"
 	"sync"
 	"testing"
-
-	"github.com/chetto1983/aura/internal/semindex"
 )
 
-// TestGuardedTiebreak_PromotesConfidentBM25Hit: when BM25 returns a SMALL set (≤5)
-// and the hit is inside embedding's top-15, the guard promotes it above an embedding
-// near-tie. Proves the tiebreak actually FIRES (not just no-ops).
-func TestGuardedTiebreak_PromotesConfidentBM25Hit(t *testing.T) {
-	t.Setenv("AURA_TOOLSEARCH_FUSION", "guarded")
-	emb := []semindex.Scored{
-		{Label: "alpha", Score: 0.80},
-		{Label: "beta", Score: 0.79}, // near-tie with alpha
-	}
-	// BM25 confidently prefers beta (small result-set, beta in embedding top-15).
-	out := guardedTiebreak(emb, []string{"beta"})
-	if out[0].Label != "beta" {
-		t.Fatalf("guarded tiebreak did not promote the confident BM25 hit: got %s first", out[0].Label)
-	}
-}
-
-// TestGuardedTiebreak_NoOpWhenFlooded: a large BM25 result-set (>5 = noisy) is a
-// strict no-op; the embedding order is returned unchanged (spike-056: a flooding BM25
-// has no confident signal). Also covers the kill-switch and out-of-top-15 cases.
-func TestGuardedTiebreak_NoOpWhenFlooded(t *testing.T) {
-	t.Setenv("AURA_TOOLSEARCH_FUSION", "guarded")
-	emb := []semindex.Scored{{Label: "alpha", Score: 0.80}, {Label: "beta", Score: 0.79}}
-
-	flooded := []string{"beta", "c", "d", "e", "f", "g"} // 6 > 5 -> no-op
-	if out := guardedTiebreak(emb, flooded); out[0].Label != "alpha" {
-		t.Errorf("flooded BM25 must be a no-op, got %s first", out[0].Label)
-	}
-	// A confident BM25 hit OUTSIDE embedding's top-15 is ignored (intersection gate).
-	wide := make([]semindex.Scored, 0, 20)
-	for i := range 20 {
-		wide = append(wide, semindex.Scored{Label: fmt.Sprintf("t%02d", i), Score: 1.0 - float64(i)*0.01})
-	}
-	if out := guardedTiebreak(wide, []string{"t19"}); out[0].Label != "t00" {
-		t.Errorf("BM25 hit outside top-15 must be ignored, got %s first", out[0].Label)
-	}
-	// Kill-switch off => unchanged regardless.
-	t.Setenv("AURA_TOOLSEARCH_FUSION", "off")
-	if out := guardedTiebreak(emb, []string{"beta"}); out[0].Label != "alpha" {
-		t.Errorf("fusion off must be a no-op, got %s first", out[0].Label)
-	}
-}
-
-// TestToolSearch_IncrementalMountEmbedsOnlyDelta (Req-3 / D-03): the FIRST search
-// embeds every deferred tool (N); after N more deferred tools are registered and
-// InvalidateIndex() fires (the MCP-mount seam), the NEXT search embeds ONLY the N
-// additions (exactly N more Embed-texts, not a full re-embed of 2N), and the new
-// tools are immediately searchable. Asserts the embedded-text counter, the load-bearing
-// "delta only" cost guarantee.
-func TestToolSearch_IncrementalMountEmbedsOnlyDelta(t *testing.T) {
+// TestToolSearch_MountMakesNewToolsSearchable: after an MCP mount registers more
+// deferred tools, InvalidateIndex (the zero-arg bridge seam) drops the index and the
+// next search ranks over the enlarged set. This used to assert an incremental
+// re-embed budget; the index is now rebuilt outright, because rebuilding it is CPU
+// only and the delta bookkeeping existed solely to avoid re-embedding over a network.
+func TestToolSearch_MountMakesNewToolsSearchable(t *testing.T) {
 	reg := NewRegistry()
 	const n = 4
 	for i := range n {
-		reg.Register(bm25Tool{name: fmt.Sprintf("alpha_%d", i), desc: fmt.Sprintf("alpha capability number %d", i)})
+		reg.Register(bm25Tool{name: fmt.Sprintf("alpha_%d", i), summary: fmt.Sprintf("alpha capability number %d", i)})
 	}
-	emb := &bagEmbedder{}
-	ts := &ToolSearch{Registry: reg, Embed: emb}
+	ts := &ToolSearch{Registry: reg}
 	ctx := ctxWith(t, "sess-delta", "call-delta")
 
-	// First search embeds all N deferred tools.
 	if _, err := ts.Execute(ctx, []byte(`{"query":"alpha capability"}`)); err != nil {
 		t.Fatalf("first Execute: %v", err)
 	}
-	emb.mu.Lock()
-	afterFirst := emb.embedded
-	emb.mu.Unlock()
-	// N tools + 1 query embed.
-	if afterFirst != n+1 {
-		t.Fatalf("first search embedded %d texts, want %d (N tools + 1 query)", afterFirst, n+1)
-	}
 
-	// Mount N MORE deferred tools, then signal the delta via the zero-arg hook.
 	for i := range n {
-		reg.Register(bm25Tool{name: fmt.Sprintf("beta_%d", i), desc: fmt.Sprintf("beta gadget number %d", i)})
+		reg.Register(bm25Tool{name: fmt.Sprintf("beta_%d", i), summary: fmt.Sprintf("beta gadget number %d", i)})
 	}
 	ts.InvalidateIndex()
 
-	if _, err := ts.Execute(ctx, []byte(`{"query":"beta gadget number 0"}`)); err != nil {
-		t.Fatalf("post-mount Execute: %v", err)
-	}
-	emb.mu.Lock()
-	delta := emb.embedded - afterFirst
-	emb.mu.Unlock()
-	// EXACTLY the N new tools + 1 query embed — NOT a full re-embed of 2N.
-	if delta != n+1 {
-		t.Fatalf("post-mount search embedded %d new texts, want %d (N delta tools + 1 query, NOT a full re-embed)", delta, n+1)
-	}
-
-	// The newly-mounted tools are immediately searchable.
 	res, err := ts.Execute(ctx, []byte(`{"query":"beta gadget number 2","max_results":1}`))
 	if err != nil {
 		t.Fatalf("search for new tool: %v", err)
 	}
 	if !strings.Contains(res.Preview, "## beta_2") {
-		t.Fatalf("newly-mounted beta_2 was not searchable after the delta embed: %q", res.Preview)
+		t.Fatalf("newly-mounted beta_2 was not searchable after the mount: %q", res.Preview)
+	}
+}
+
+// TestToolSearch_StaleIndexIsNotServedAfterMount: registering tools WITHOUT the
+// invalidate signal must not surface them — and the signal must make them surface.
+// This is the failure the old delta bookkeeping could hide: an index that answers
+// from a set the registry no longer has.
+func TestToolSearch_StaleIndexIsNotServedAfterMount(t *testing.T) {
+	reg := NewRegistry()
+	reg.Register(bm25Tool{name: "alpha_tool", summary: "alpha capability"})
+	ts := &ToolSearch{Registry: reg}
+	ctx := ctxWith(t, "sess-stale", "call-stale")
+
+	if _, err := ts.Execute(ctx, []byte(`{"query":"alpha capability"}`)); err != nil {
+		t.Fatalf("warm the index: %v", err)
+	}
+	reg.Register(bm25Tool{name: "gamma_tool", summary: "gamma widget"})
+
+	res, err := ts.Execute(ctx, []byte(`{"query":"gamma widget"}`))
+	if err != nil {
+		t.Fatalf("pre-invalidate Execute: %v", err)
+	}
+	if strings.Contains(res.Preview, "## gamma_tool") {
+		t.Fatal("a tool registered without InvalidateIndex was served from a stale index")
+	}
+
+	ts.InvalidateIndex()
+	res, err = ts.Execute(ctx, []byte(`{"query":"gamma widget"}`))
+	if err != nil {
+		t.Fatalf("post-invalidate Execute: %v", err)
+	}
+	if !strings.Contains(res.Preview, "## gamma_tool") {
+		t.Fatalf("InvalidateIndex did not pick up the new tool: %q", res.Preview)
 	}
 }
 
 // TestToolSearch_ConcurrentMountAndSearch (Req-3 / risk #5): InvalidateIndex (the
 // write-append path) and Execute (the read path) racing concurrently must be
-// -race clean — the semindex.Ranker RWMutex + the ToolSearch mutex cover the bank.
+// -race clean: one mutex covers the index pointer and the slices aligned to it.
 func TestToolSearch_ConcurrentMountAndSearch(t *testing.T) {
 	reg := NewRegistry()
 	for i := range 6 {
-		reg.Register(bm25Tool{name: fmt.Sprintf("tool_%d", i), desc: fmt.Sprintf("capability number %d", i)})
+		reg.Register(bm25Tool{name: fmt.Sprintf("tool_%d", i), summary: fmt.Sprintf("capability number %d", i)})
 	}
-	ts := &ToolSearch{Registry: reg, Embed: &bagEmbedder{}}
+	ts := &ToolSearch{Registry: reg}
 	ctx := ctxWith(t, "sess-conc", "call-conc")
 
 	var wg sync.WaitGroup
@@ -146,10 +112,10 @@ func TestToolSearch_ConcurrentMountAndSearch(t *testing.T) {
 // of the Description (or messages[0]) would poison the OpenRouter implicit cache.
 func TestToolSearch_CacheInvariantAcrossNQueries(t *testing.T) {
 	ts, ctx := newSearch(t,
-		bm25Tool{name: "web_fetch", desc: "retrieve a url and render markdown"},
-		bm25Tool{name: "calculator", desc: "evaluate arithmetic expressions"},
-		bm25Tool{name: "calendar", desc: "list meetings and appointments"},
-		bm25Tool{name: "github__create_issue", desc: "open an issue"},
+		bm25Tool{name: "web_fetch", summary: "retrieve a url and render markdown"},
+		bm25Tool{name: "calculator", summary: "evaluate arithmetic expressions"},
+		bm25Tool{name: "calendar", summary: "list meetings and appointments"},
+		bm25Tool{name: "github__create_issue", summary: "open an issue"},
 	)
 	baseline := ts.Spec().Description
 	queries := []string{

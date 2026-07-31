@@ -266,16 +266,6 @@ func newAdaptiveBenchmarkOfflineControls(
 		)
 	}
 	controls := adaptiveControlSet{
-		toolDiscovery: orderingcontrol.NewOfflineToolDiscovery(
-			bundle.PolicyReader(
-				ownerID,
-				adaptive.DomainToolDiscovery,
-			),
-			bundle,
-			recorder,
-			providerID,
-			modelID,
-		),
 		skillRouting: orderingcontrol.NewOfflineSkillRouting(
 			bundle.PolicyReader(
 				ownerID,
@@ -317,8 +307,7 @@ func newAdaptiveBenchmarkOfflineControls(
 			modelID,
 		),
 	}
-	if controls.toolDiscovery == nil ||
-		controls.skillRouting == nil ||
+	if controls.skillRouting == nil ||
 		controls.documentRetrieval == nil ||
 		controls.memoryRecall == nil ||
 		controls.reasoning == nil {

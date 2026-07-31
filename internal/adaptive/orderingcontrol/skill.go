@@ -28,12 +28,12 @@ type skillDecisionSource interface {
 
 type skillRouting struct {
 	source   skillDecisionSource
-	recorder toolEventRecorder
+	recorder EventRecorder
 }
 
 func newSkillRouting(
 	source skillDecisionSource,
-	recorder toolEventRecorder,
+	recorder EventRecorder,
 ) *skillRouting {
 	if source == nil || recorder == nil {
 		return nil

@@ -61,16 +61,17 @@ func (t *SkillTool) actionList(ctx context.Context, raw json.RawMessage) (ToolRe
 }
 
 // rankSkills ranks the skills by BM25 over a "name description" search document
-// per skill, reusing the in-process bm25Index (bm25.go). The skills are projected
-// into synthetic Specs (Name+Description) so the shared ranker scores them; the
-// returned slice is index-aligned back to the input skills via the ranked doc id.
+// per skill, reusing the in-process bm25Index (bm25.go). A skill's description is
+// its one-line capability blurb, so it goes in the Spec field the ranker indexes as
+// the retrieval document; the returned slice is index-aligned back to the input
+// skills via the ranked doc id.
 func rankSkills(skills []SkillMeta, query string) []SkillMeta {
 	if len(skills) == 0 {
 		return nil
 	}
 	specs := make([]Spec, len(skills))
 	for i, s := range skills {
-		specs[i] = Spec{Name: s.Name, Description: s.Description}
+		specs[i] = Spec{Name: s.Name, Summary: s.Description}
 	}
 	idx := newBM25Index(specs)
 	out := make([]SkillMeta, 0, len(skills))

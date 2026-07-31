@@ -18,15 +18,6 @@ func TestOfflineOrderingRejectsFeatureSchemaDriftForEveryDomain(
 		run      func(*testing.T, []adaptive.FeatureKey) error
 	}{
 		{
-			name: "tool discovery",
-			expected: []adaptive.FeatureKey{
-				adaptive.FeatureCandidateCount,
-				adaptive.FeatureQueryLength,
-				adaptive.FeatureRetrievalLimit,
-			},
-			run: rejectToolFeatureSchema,
-		},
-		{
 			name: "skill routing",
 			expected: []adaptive.FeatureKey{
 				adaptive.FeatureQueryLength,
@@ -90,23 +81,6 @@ func TestOfflineOrderingRejectsFeatureSchemaDriftForEveryDomain(
 	}
 }
 
-func rejectToolFeatureSchema(
-	t *testing.T,
-	keys []adaptive.FeatureKey,
-) error {
-	t.Helper()
-	input := toolInput()
-	decision := toolShadowDecision(t, input)
-	decision.Snapshot = snapshotWithFeatureKeys(
-		t,
-		decision.Snapshot,
-		keys,
-	)
-	source := offlineFeatureSource(t, decision)
-	_, err := source.decideToolDiscovery(t.Context(), input)
-	return err
-}
-
 func rejectSkillFeatureSchema(
 	t *testing.T,
 	keys []adaptive.FeatureKey,
@@ -160,7 +134,7 @@ func rejectRecallFeatureSchema(
 
 func offlineFeatureSource(
 	t *testing.T,
-	decision toolDecision,
+	decision skillDecision,
 ) *runtimeSource {
 	t.Helper()
 	policy := decision.Policy

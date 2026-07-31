@@ -220,7 +220,6 @@ func New(d Deps) *Runner {
 	// LLM-router fallback (risk #9) — the hard-dep is tool_search-only. A non-fatal
 	// boot health-check logs an unreachable sidecar but never fails boot, so an
 	// MCP-free `aura chat` is not coupled to embed availability (Open-Q #2).
-	wireToolSearchEmbedder(d.Registry, d.Embedder)
 	r := &Runner{
 		Conv:                     d.Conv,
 		pause:                    d.Pause,

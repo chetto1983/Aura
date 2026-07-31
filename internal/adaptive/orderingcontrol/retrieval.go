@@ -22,12 +22,12 @@ type retrievalDecisionSource interface {
 
 type documentRetrieval struct {
 	source   retrievalDecisionSource
-	recorder toolEventRecorder
+	recorder EventRecorder
 }
 
 func newDocumentRetrieval(
 	source retrievalDecisionSource,
-	recorder toolEventRecorder,
+	recorder EventRecorder,
 ) *documentRetrieval {
 	if source == nil || recorder == nil {
 		return nil

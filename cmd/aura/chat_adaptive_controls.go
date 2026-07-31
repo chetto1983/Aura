@@ -17,7 +17,6 @@ import (
 )
 
 type adaptiveControlSet struct {
-	toolDiscovery     tools.ToolDiscoveryControl
 	skillRouting      tools.SkillRoutingControl
 	documentRetrieval tools.DocumentRetrievalControl
 	memoryRecall      runner.DynamicRecallControl
@@ -35,9 +34,6 @@ func newAdaptiveControlSet(
 		return adaptiveControlSet{}
 	}
 	return adaptiveControlSet{
-		toolDiscovery: orderingcontrol.NewToolDiscovery(
-			pool, providerID, modelID,
-		),
 		skillRouting: orderingcontrol.NewSkillRouting(
 			pool, providerID, modelID,
 		),

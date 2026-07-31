@@ -73,48 +73,6 @@ func TestBuildBaseRegistryToolSearchWorksWithoutEmbedder(t *testing.T) {
 	}
 }
 
-func TestBuildBaseRegistryWiresToolDiscoveryOnlyWithLivePool(t *testing.T) {
-	cfg := &config.Config{
-		LLM: llm.Config{
-			Provider: "openrouter",
-			Model:    "production-model",
-		},
-		WorkspaceDir: t.TempDir(),
-	}
-	assertAdaptive := func(
-		t *testing.T,
-		reg *tools.Registry,
-		want bool,
-	) {
-		t.Helper()
-		registered, ok := reg.Get((&tools.ToolSearch{}).Spec().Name)
-		if !ok {
-			t.Fatal("tool_search is not registered")
-		}
-		search, ok := registered.(*tools.ToolSearch)
-		if !ok {
-			t.Fatalf("tool_search type = %T", registered)
-		}
-		if (search.Adaptive != nil) != want {
-			t.Fatalf(
-				"adaptive tool discovery wired = %t, want %t",
-				search.Adaptive != nil,
-				want,
-			)
-		}
-	}
-
-	assertAdaptive(t, buildBaseRegistry(cfg, nil), false)
-	assertAdaptive(
-		t,
-		buildBaseRegistry(
-			cfg,
-			newCronTaskStore(new(pgxpool.Pool), nil),
-		),
-		true,
-	)
-}
-
 func TestNewSkillToolWiresAdaptiveRoutingOnlyWithLivePool(t *testing.T) {
 	cfg := &config.Config{
 		LLM: llm.Config{

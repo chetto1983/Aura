@@ -245,11 +245,15 @@ var adaptiveBenchmarkActionCatalogs = []AdaptiveBenchmarkActionCatalog{
 		},
 	},
 	{
+		// The tool-discovery domain is RETIRED: tool_search resolves names and ranks
+		// lexically, so there is one strategy and nothing left to assign between. The
+		// row stays because the ledger still holds rows stamped with this domain and
+		// a report over them must decode; nothing constructs a control for it.
 		Domain: adaptive.DomainToolDiscovery,
 		ActionIDs: []string{
-			tools.ToolDiscoveryBM25,
-			tools.ToolDiscoverySemantic,
-			tools.ToolDiscoveryStatic,
+			"bm25",
+			"semantic",
+			"static",
 		},
 	},
 	{

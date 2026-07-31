@@ -14,7 +14,6 @@ import (
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // SnapshotLoader reads one immutable snapshot by owner and deterministic ID.
@@ -93,44 +92,6 @@ func newRuntimeSourceForEnvironment(
 		providerID: providerID, modelID: modelID,
 		environment: environment,
 	}
-}
-
-// NewToolDiscovery binds typed discovery decisions to authoritative runtime
-// policy, immutable snapshots, and schema-2 ledger persistence.
-func NewToolDiscovery(
-	pool *pgxpool.Pool,
-	providerID string,
-	modelID string,
-) tools.ToolDiscoveryControl {
-	if pool == nil {
-		return nil
-	}
-	return newToolDiscovery(
-		newRuntimeSource(
-			adaptive.NewPolicyStore(pool),
-			adaptive.NewSnapshotStore(pool),
-			providerID,
-			modelID,
-		),
-		adaptive.NewStore(pool, adaptive.StoreConfig{}),
-	)
-}
-
-func (source *runtimeSource) decideToolDiscovery(
-	ctx context.Context,
-	input tools.ToolDiscoveryInput,
-) (toolDecision, error) {
-	return source.decideOrdering(
-		ctx,
-		input.OwnerID,
-		adaptive.DomainToolDiscovery,
-		adaptive.PointToolDiscovery,
-		map[adaptive.FeatureKey]float64{
-			adaptive.FeatureCandidateCount: float64(len(input.CandidateIDs)),
-			adaptive.FeatureQueryLength:    float64(input.QueryLength),
-			adaptive.FeatureRetrievalLimit: float64(input.MaxResults),
-		},
-	)
 }
 
 func (source *runtimeSource) decideSkillRouting(

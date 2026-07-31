@@ -46,7 +46,7 @@ func TestOfflineOrderingConstructorsAreReadOnlyAtConstruction(t *testing.T) {
 	recorder := &recordingToolEvents{}
 
 	controls := []any{
-		NewOfflineToolDiscovery(
+		NewOfflineSkillRouting(
 			reader, loader, recorder, "openrouter", "production-model",
 		),
 		NewOfflineSkillRouting(
@@ -81,7 +81,6 @@ func TestOfflineOrderingConstructorsEmitOfflineStaticContracts(t *testing.T) {
 		name string
 		run  func(*testing.T) (adaptive.Assignment, adaptive.Assignment)
 	}{
-		{name: "tool discovery", run: runOfflineToolDiscovery},
 		{name: "skill routing", run: runOfflineSkillRouting},
 		{name: "document retrieval", run: runOfflineDocumentRetrieval},
 		{name: "memory recall", run: runOfflineMemoryRecall},
@@ -104,26 +103,30 @@ func TestOfflineOrderingConstructorsEmitOfflineStaticContracts(t *testing.T) {
 	}
 }
 
-func TestOfflineToolDiscoveryDriftFallsBackWithoutAdaptiveExposure(
+// Drift between the recorded policy and the live inputs must fall back to the
+// static order WITHOUT persisting any adaptive exposure. The check belongs to the
+// shared control machinery; skill routing carries it now that the tool-discovery
+// arm is retired.
+func TestOfflineOrderingDriftFallsBackWithoutAdaptiveExposure(
 	t *testing.T,
 ) {
 	tests := []struct {
 		name   string
 		mutate func(
 			*testing.T,
-			*tools.ToolDiscoveryInput,
-			*toolDecision,
+			*tools.SkillRoutingInput,
+			*skillDecision,
 			*string,
 			*string,
 		)
-		configure func(*testing.T, toolDecision) json.RawMessage
+		configure func(*testing.T, skillDecision) json.RawMessage
 	}{
 		{
 			name: "owner",
 			mutate: func(
 				_ *testing.T,
-				input *tools.ToolDiscoveryInput,
-				_ *toolDecision,
+				input *tools.SkillRoutingInput,
+				_ *skillDecision,
 				_ *string,
 				_ *string,
 			) {
@@ -134,8 +137,8 @@ func TestOfflineToolDiscoveryDriftFallsBackWithoutAdaptiveExposure(
 			name: "provider",
 			mutate: func(
 				_ *testing.T,
-				_ *tools.ToolDiscoveryInput,
-				_ *toolDecision,
+				_ *tools.SkillRoutingInput,
+				_ *skillDecision,
 				provider *string,
 				_ *string,
 			) {
@@ -146,8 +149,8 @@ func TestOfflineToolDiscoveryDriftFallsBackWithoutAdaptiveExposure(
 			name: "model",
 			mutate: func(
 				_ *testing.T,
-				_ *tools.ToolDiscoveryInput,
-				_ *toolDecision,
+				_ *tools.SkillRoutingInput,
+				_ *skillDecision,
 				_ *string,
 				model *string,
 			) {
@@ -158,19 +161,18 @@ func TestOfflineToolDiscoveryDriftFallsBackWithoutAdaptiveExposure(
 			name: "catalog",
 			mutate: func(
 				t *testing.T,
-				input *tools.ToolDiscoveryInput,
-				decision *toolDecision,
+				input *tools.SkillRoutingInput,
+				decision *skillDecision,
 				_ *string,
 				_ *string,
 			) {
-				decision.Snapshot = toolSnapshot(
+				// An action set that no longer matches the domain's own
+				// catalog is drift: drop one action from it.
+				decision.Snapshot = skillDriftSnapshot(
 					t,
 					*input,
 					decision.Snapshot.FeatureSchema(),
-					[]string{
-						tools.ToolDiscoverySemantic,
-						tools.ToolDiscoveryStatic,
-					},
+					[]string{tools.SkillRoutingStatic},
 				)
 			},
 		},
@@ -178,19 +180,19 @@ func TestOfflineToolDiscoveryDriftFallsBackWithoutAdaptiveExposure(
 			name: "feature",
 			mutate: func(
 				t *testing.T,
-				input *tools.ToolDiscoveryInput,
-				decision *toolDecision,
+				input *tools.SkillRoutingInput,
+				decision *skillDecision,
 				_ *string,
 				_ *string,
 			) {
-				decision.Snapshot = toolSnapshot(
+				decision.Snapshot = skillDriftSnapshot(
 					t,
 					*input,
 					[]adaptive.SnapshotFeatureDefinition{{
 						Key:   adaptive.FeatureRecallLimit,
 						Scale: 1,
 					}},
-					toolActionCatalog,
+					skillActionCatalog,
 				)
 			},
 		},
@@ -198,15 +200,15 @@ func TestOfflineToolDiscoveryDriftFallsBackWithoutAdaptiveExposure(
 			name: "snapshot",
 			mutate: func(
 				_ *testing.T,
-				_ *tools.ToolDiscoveryInput,
-				_ *toolDecision,
+				_ *tools.SkillRoutingInput,
+				_ *skillDecision,
 				_ *string,
 				_ *string,
 			) {
 			},
 			configure: func(
 				t *testing.T,
-				decision toolDecision,
+				decision skillDecision,
 			) json.RawMessage {
 				var config map[string]any
 				if err := json.Unmarshal(
@@ -227,8 +229,8 @@ func TestOfflineToolDiscoveryDriftFallsBackWithoutAdaptiveExposure(
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			input := toolInput()
-			decision := toolShadowDecision(t, input)
+			input := skillInput()
+			decision := skillShadowDecision(t, input)
 			provider, model := decision.ProviderID, decision.ModelID
 			test.mutate(t, &input, &decision, &provider, &model)
 			policy := decision.Policy
@@ -237,7 +239,7 @@ func TestOfflineToolDiscoveryDriftFallsBackWithoutAdaptiveExposure(
 				policy.Config = test.configure(t, decision)
 			}
 			recorder := &recordingToolEvents{}
-			control := NewOfflineToolDiscovery(
+			control := NewOfflineSkillRouting(
 				policyReaderFunc(func(
 					context.Context,
 				) (adaptive.Policy, error) {
@@ -254,7 +256,7 @@ func TestOfflineToolDiscoveryDriftFallsBackWithoutAdaptiveExposure(
 				provider,
 				model,
 			)
-			ids, err := control.OrderToolDiscovery(
+			ids, err := control.OrderSkillRouting(
 				t.Context(),
 				input,
 				func(
@@ -280,45 +282,6 @@ func TestOfflineToolDiscoveryDriftFallsBackWithoutAdaptiveExposure(
 			}
 		})
 	}
-}
-
-func runOfflineToolDiscovery(
-	t *testing.T,
-) (adaptive.Assignment, adaptive.Assignment) {
-	t.Helper()
-	input := toolInput()
-	decision := toolShadowDecision(t, input)
-	recorder := offlineRecorderForDecision(t, decision)
-	control := NewOfflineToolDiscovery(
-		recorder.reader,
-		recorder.loader,
-		recorder.events,
-		decision.ProviderID,
-		decision.ModelID,
-	)
-	if _, err := control.OrderToolDiscovery(
-		t.Context(),
-		input,
-		func(context.Context, string) ([]string, error) {
-			return []string{"calculator"}, nil
-		},
-	); err != nil {
-		t.Fatal(err)
-	}
-	productionDecision, err := newRuntimeSource(
-		recorder.reader,
-		recorder.loader,
-		decision.ProviderID,
-		decision.ModelID,
-	).decideToolDiscovery(t.Context(), input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	production, err := newToolAssignment(input, productionDecision)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return recorder.onlyAssignment(t), production
 }
 
 func runOfflineSkillRouting(
@@ -539,9 +502,9 @@ func assertStaticContractBytes(
 	}
 }
 
-func toolSnapshot(
+func skillDriftSnapshot(
 	t *testing.T,
-	input tools.ToolDiscoveryInput,
+	input tools.SkillRoutingInput,
 	features []adaptive.SnapshotFeatureDefinition,
 	actionIDs []string,
 ) *adaptive.PolicySnapshot {
@@ -553,12 +516,12 @@ func toolSnapshot(
 	snapshot, err := adaptive.NewPolicySnapshot(adaptive.SnapshotSpec{
 		Scope: adaptive.SnapshotScope{
 			OwnerID:       uuid.MustParse(input.OwnerID),
-			Domain:        adaptive.DomainToolDiscovery,
-			Point:         adaptive.PointToolDiscovery,
+			Domain:        adaptive.DomainSkillRouting,
+			Point:         adaptive.PointSkillRouting,
 			ProviderID:    "openrouter",
 			ModelID:       "production-model",
 			PolicyVersion: "policy-v1",
-			TrainingCutoff: toolShadowDecision(t, input).
+			TrainingCutoff: skillShadowDecision(t, input).
 				Snapshot.Scope().TrainingCutoff,
 		},
 		ChampionActionID: adaptive.StaticActionID,

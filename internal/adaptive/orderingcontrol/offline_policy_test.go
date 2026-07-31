@@ -9,6 +9,9 @@ import (
 	"github.com/chetto1983/aura/internal/agent/tools"
 )
 
+// The offline policy boundary is shared by every ordering domain; skill routing
+// stands in for it since the tool-discovery arm was retired with the embedding
+// ranker it used to A/B.
 func TestOfflineOrderingRejectsServingPolicyBeforeSnapshotOrFacts(
 	t *testing.T,
 ) {
@@ -23,8 +26,8 @@ func TestOfflineOrderingRejectsServingPolicyBeforeSnapshotOrFacts(
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			input := toolInput()
-			decision := toolShadowDecision(t, input)
+			input := skillInput()
+			decision := skillShadowDecision(t, input)
 			policy := decision.Policy
 			policy.Mode = test.mode
 			policy.RolloutBPS = test.rolloutBPS
@@ -33,14 +36,14 @@ func TestOfflineOrderingRejectsServingPolicyBeforeSnapshotOrFacts(
 				snapshot: decision.Snapshot,
 			}
 			recorder := &recordingToolEvents{}
-			control := NewOfflineToolDiscovery(
+			control := NewOfflineSkillRouting(
 				&countingPolicyReader{policy: policy},
 				loader,
 				recorder,
 				decision.ProviderID,
 				decision.ModelID,
 			)
-			got, err := control.OrderToolDiscovery(
+			got, err := control.OrderSkillRouting(
 				t.Context(),
 				input,
 				func(
@@ -74,22 +77,22 @@ func TestOfflineOrderingDisabledPolicyStaysStaticWithoutFacts(t *testing.T) {
 		adaptive.PolicyRollback,
 	} {
 		t.Run(string(mode), func(t *testing.T) {
-			input := toolInput()
-			decision := toolShadowDecision(t, input)
+			input := skillInput()
+			decision := skillShadowDecision(t, input)
 			policy := decision.Policy
 			policy.Mode = mode
 			loader := &countingSnapshotLoader{
 				snapshot: decision.Snapshot,
 			}
 			recorder := &recordingToolEvents{}
-			control := NewOfflineToolDiscovery(
+			control := NewOfflineSkillRouting(
 				&countingPolicyReader{policy: policy},
 				loader,
 				recorder,
 				decision.ProviderID,
 				decision.ModelID,
 			)
-			if _, err := control.OrderToolDiscovery(
+			if _, err := control.OrderSkillRouting(
 				t.Context(),
 				input,
 				func(
@@ -116,8 +119,8 @@ func TestOfflineOrderingDisabledPolicyStaysStaticWithoutFacts(t *testing.T) {
 }
 
 func TestProductionOrderingStillAcceptsCanaryRollout(t *testing.T) {
-	input := toolInput()
-	decision := toolShadowDecision(t, input)
+	input := skillInput()
+	decision := skillShadowDecision(t, input)
 	policy := decision.Policy
 	policy.Mode = adaptive.PolicyCanary
 	policy.RolloutBPS = 500
@@ -129,7 +132,7 @@ func TestProductionOrderingStillAcceptsCanaryRollout(t *testing.T) {
 		decision.ProviderID,
 		decision.ModelID,
 	)
-	got, err := source.decideToolDiscovery(t.Context(), input)
+	got, err := source.decideSkillRouting(t.Context(), input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +144,7 @@ func TestProductionOrderingStillAcceptsCanaryRollout(t *testing.T) {
 	}
 }
 
-var _ tools.ToolDiscoveryControl = NewOfflineToolDiscovery(
+var _ tools.SkillRoutingControl = NewOfflineSkillRouting(
 	&countingPolicyReader{},
 	&countingSnapshotLoader{},
 	&recordingToolEvents{},

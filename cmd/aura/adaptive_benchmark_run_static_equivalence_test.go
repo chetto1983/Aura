@@ -59,9 +59,6 @@ func TestAdaptiveBenchmarkStaticRegistryRemovesEveryAdaptiveControl(
 ) {
 	t.Parallel()
 	full := adaptiveBenchmarkRegistryFixture(t)
-	search, _ := full.Get("tool_search")
-	search.(*tools.ToolSearch).Adaptive =
-		adaptiveBenchmarkToolDiscoveryControlStub{}
 	documentSearch, _ := full.Get("document_search")
 	documentSearch.(*tools.DocumentSearch).Adaptive =
 		adaptiveBenchmarkDocumentRetrievalControlStub{}
@@ -73,17 +70,14 @@ func TestAdaptiveBenchmarkStaticRegistryRemovesEveryAdaptiveControl(
 	if err != nil {
 		t.Fatalf("adaptiveBenchmarkStaticRegistry: %v", err)
 	}
-	staticSearch, _ := static.Get("tool_search")
 	staticDocumentSearch, _ := static.Get("document_search")
 	staticSkill, _ := static.Get("skill")
 	restrictedSkill := staticSkill.(adaptiveBenchmarkRestrictedSkill)
-	if staticSearch.(*tools.ToolSearch).Adaptive != nil ||
-		staticDocumentSearch.(*tools.DocumentSearch).Adaptive != nil ||
+	if staticDocumentSearch.(*tools.DocumentSearch).Adaptive != nil ||
 		restrictedSkill.delegate.Adaptive != nil {
 		t.Fatal("static baseline registry retained an adaptive control")
 	}
-	if search.(*tools.ToolSearch).Adaptive == nil ||
-		documentSearch.(*tools.DocumentSearch).Adaptive == nil ||
+	if documentSearch.(*tools.DocumentSearch).Adaptive == nil ||
 		skill.(*tools.SkillTool).Adaptive == nil {
 		t.Fatal("static baseline registry mutated the shadow registry")
 	}
@@ -125,16 +119,6 @@ func adaptiveBenchmarkStaticEquivalenceResult() auraeval.AdaptiveBenchmarkDriver
 			{ActionID: adaptive.StaticActionID, Probability: 1},
 		},
 	}
-}
-
-type adaptiveBenchmarkToolDiscoveryControlStub struct{}
-
-func (adaptiveBenchmarkToolDiscoveryControlStub) OrderToolDiscovery(
-	context.Context,
-	tools.ToolDiscoveryInput,
-	tools.ToolDiscoveryExecutor,
-) ([]string, error) {
-	panic("static baseline invoked adaptive tool discovery")
 }
 
 type adaptiveBenchmarkSkillRoutingControlStub struct{}

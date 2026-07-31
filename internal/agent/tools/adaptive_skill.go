@@ -3,11 +3,22 @@ package tools
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"slices"
 )
+
+// adaptivePointOrdinal derives a stable per-call ordinal from the request and
+// tool-call IDs, so an assignment is reproducible for the same point without the
+// query text ever crossing the adaptive port.
+func adaptivePointOrdinal(ctx context.Context) uint32 {
+	sum := sha256.Sum256([]byte(
+		RequestIDFromContext(ctx) + "\x00" + ToolCallIDFromContext(ctx),
+	))
+	return binary.BigEndian.Uint32(sum[:4])
+}
 
 // Skill-routing actions are the frozen strategy IDs accepted by the typed
 // adaptive adapter. Static preserves the existing queried-list BM25 order.

@@ -20,7 +20,7 @@ func orderFromControl[Input any](
 	input Input,
 	execute func(context.Context, string) ([]string, error),
 	decide func(context.Context, Input) (toolDecision, error),
-	recorder toolEventRecorder,
+	recorder EventRecorder,
 	newAssignment func(
 		Input,
 		toolDecision,
@@ -58,7 +58,7 @@ func orderAdaptive(
 	ctx context.Context,
 	execute func(context.Context, string) ([]string, error),
 	decide orderingDecisionFunc,
-	recorder toolEventRecorder,
+	recorder EventRecorder,
 	newAssignment orderingAssignmentFunc,
 	newDelivery orderingDeliveryFunc,
 ) ([]string, error) {

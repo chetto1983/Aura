@@ -63,9 +63,6 @@ func adaptiveBenchmarkStaticRegistry(
 	documentSearch := sourceDocument.(*tools.DocumentSearch)
 	sourceSkill, _ := full.Get("skill")
 	skill := sourceSkill.(*tools.SkillTool)
-	sourceSearch, _ := full.Get("tool_search")
-	search := sourceSearch.(*tools.ToolSearch)
-
 	static := tools.NewRegistry()
 	static.Register(textResponse)
 	static.Register(&tools.DocumentSearch{Searcher: documentSearch.Searcher})
@@ -74,7 +71,7 @@ func adaptiveBenchmarkStaticRegistry(
 	}
 	staticSkill := &tools.SkillTool{Loader: skill.Loader}
 	static.Register(adaptiveBenchmarkRestrictedSkill{delegate: staticSkill})
-	static.Register(&tools.ToolSearch{Registry: static, Embed: search.Embed})
+	static.Register(&tools.ToolSearch{Registry: static})
 	if err := static.Validate(); err != nil {
 		return nil, err
 	}

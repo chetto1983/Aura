@@ -35,8 +35,8 @@ func (fn snapshotLoaderFunc) Load(
 }
 
 func TestRuntimeSourceLoadsExactScopedSnapshot(t *testing.T) {
-	input := toolInput()
-	decision := toolShadowDecision(t, input)
+	input := skillInput()
+	decision := skillShadowDecision(t, input)
 	scope := decision.Snapshot.Scope()
 	config, err := json.Marshal(map[string]any{
 		"owner_id":        scope.OwnerID,
@@ -78,9 +78,9 @@ func TestRuntimeSourceLoadsExactScopedSnapshot(t *testing.T) {
 		scope.ModelID,
 	)
 
-	got, err := source.decideToolDiscovery(t.Context(), input)
+	got, err := source.decideSkillRouting(t.Context(), input)
 	if err != nil {
-		t.Fatalf("decideToolDiscovery: %v", err)
+		t.Fatalf("decideSkillRouting: %v", err)
 	}
 	if loaded != 1 || got.Snapshot != decision.Snapshot ||
 		got.Policy.Version != policy.Version ||
@@ -111,8 +111,8 @@ func TestRuntimeSourceLoadsExactSkillRoutingSnapshot(t *testing.T) {
 }
 
 func TestRuntimeSourceRejectsPolicyScopeDrift(t *testing.T) {
-	input := toolInput()
-	decision := toolShadowDecision(t, input)
+	input := skillInput()
+	decision := skillShadowDecision(t, input)
 	config := json.RawMessage(`{
 		"owner_id":"00000000-0000-0000-0000-000000000001",
 		"domain":"skill_routing",
@@ -141,9 +141,9 @@ func TestRuntimeSourceRejectsPolicyScopeDrift(t *testing.T) {
 		"production-model",
 	)
 
-	if _, err := source.decideToolDiscovery(
+	if _, err := source.decideSkillRouting(
 		t.Context(),
-		tools.ToolDiscoveryInput{
+		tools.SkillRoutingInput{
 			OwnerID: input.OwnerID, RequestID: input.RequestID,
 			CandidateIDs: input.CandidateIDs,
 		},
@@ -153,15 +153,15 @@ func TestRuntimeSourceRejectsPolicyScopeDrift(t *testing.T) {
 }
 
 func TestRuntimeSourceFailsClosedAtPolicyAndSnapshotBoundaries(t *testing.T) {
-	input := toolInput()
-	decision := toolShadowDecision(t, input)
+	input := skillInput()
+	decision := skillShadowDecision(t, input)
 	validPolicy := decision.Policy
 	validPolicy.Config = runtimePolicyConfigJSON(t, decision)
 	boundaryErr := errors.New("boundary failed")
 
 	t.Run("unavailable", func(t *testing.T) {
 		var source *runtimeSource
-		if _, err := source.decideToolDiscovery(
+		if _, err := source.decideSkillRouting(
 			t.Context(),
 			input,
 		); err == nil {
@@ -183,7 +183,7 @@ func TestRuntimeSourceFailsClosedAtPolicyAndSnapshotBoundaries(t *testing.T) {
 			"openrouter",
 			"production-model",
 		)
-		if _, err := source.decideToolDiscovery(
+		if _, err := source.decideSkillRouting(
 			t.Context(),
 			input,
 		); !errors.Is(err, boundaryErr) {
@@ -208,7 +208,7 @@ func TestRuntimeSourceFailsClosedAtPolicyAndSnapshotBoundaries(t *testing.T) {
 			"openrouter",
 			"production-model",
 		)
-		got, err := source.decideToolDiscovery(t.Context(), input)
+		got, err := source.decideSkillRouting(t.Context(), input)
 		if err != nil || got.Policy.Mode != adaptive.PolicyOff {
 			t.Fatalf("disabled decision = (%+v, %v)", got, err)
 		}
@@ -217,7 +217,7 @@ func TestRuntimeSourceFailsClosedAtPolicyAndSnapshotBoundaries(t *testing.T) {
 		policy := validPolicy
 		policy.Mode = adaptive.PolicyMode("invalid")
 		source := runtimeSourceForPolicy(policy, decision.Snapshot)
-		if _, err := source.decideToolDiscovery(
+		if _, err := source.decideSkillRouting(
 			t.Context(),
 			input,
 		); err == nil {
@@ -228,7 +228,7 @@ func TestRuntimeSourceFailsClosedAtPolicyAndSnapshotBoundaries(t *testing.T) {
 		source := runtimeSourceForPolicy(validPolicy, decision.Snapshot)
 		invalid := input
 		invalid.OwnerID = "not-a-uuid"
-		if _, err := source.decideToolDiscovery(
+		if _, err := source.decideSkillRouting(
 			t.Context(),
 			invalid,
 		); err == nil {
@@ -239,7 +239,7 @@ func TestRuntimeSourceFailsClosedAtPolicyAndSnapshotBoundaries(t *testing.T) {
 		policy := validPolicy
 		policy.Config = json.RawMessage(`{"unknown":true}`)
 		source := runtimeSourceForPolicy(policy, decision.Snapshot)
-		if _, err := source.decideToolDiscovery(
+		if _, err := source.decideSkillRouting(
 			t.Context(),
 			input,
 		); err == nil {
@@ -261,7 +261,7 @@ func TestRuntimeSourceFailsClosedAtPolicyAndSnapshotBoundaries(t *testing.T) {
 			"openrouter",
 			"production-model",
 		)
-		if _, err := source.decideToolDiscovery(
+		if _, err := source.decideSkillRouting(
 			t.Context(),
 			input,
 		); !errors.Is(err, boundaryErr) {
@@ -281,7 +281,7 @@ func TestRuntimeSourceFailsClosedAtPolicyAndSnapshotBoundaries(t *testing.T) {
 		}
 		policy.Config = payload
 		source := runtimeSourceForPolicy(policy, decision.Snapshot)
-		if _, err := source.decideToolDiscovery(
+		if _, err := source.decideSkillRouting(
 			t.Context(),
 			input,
 		); err == nil {
@@ -294,15 +294,15 @@ func TestRuntimeSourceHelpersRejectInvalidArtifacts(t *testing.T) {
 	if newRuntimeSource(nil, nil, "", "") != nil {
 		t.Fatal("invalid source dependencies were accepted")
 	}
-	if NewToolDiscovery(nil, "openrouter", "model") != nil {
-		t.Fatal("nil pool produced a discovery control")
+	if NewSkillRouting(nil, "openrouter", "model") != nil {
+		t.Fatal("nil pool produced a routing control")
 	}
-	if NewToolDiscovery(
+	if NewSkillRouting(
 		new(pgxpool.Pool),
 		"openrouter",
 		"model",
 	) == nil {
-		t.Fatal("live pool did not produce a discovery control")
+		t.Fatal("live pool did not produce a routing control")
 	}
 	if _, err := decodeRuntimePolicyConfig(
 		[]byte(`{} {}`),
@@ -318,12 +318,12 @@ func TestRuntimeSourceHelpersRejectInvalidArtifacts(t *testing.T) {
 	); err == nil {
 		t.Fatal("nil snapshot was accepted")
 	}
-	input := toolInput()
-	decision := toolShadowDecision(t, input)
+	input := skillInput()
+	decision := skillShadowDecision(t, input)
 	if _, err := snapshotFeatureValues(
 		decision.Snapshot,
 		map[adaptive.FeatureKey]float64{
-			adaptive.FeatureCandidateCount: 2,
+			adaptive.FeatureSkillCandidateCount: 2,
 		},
 	); err == nil {
 		t.Fatal("incomplete feature projection was accepted")
@@ -332,7 +332,7 @@ func TestRuntimeSourceHelpersRejectInvalidArtifacts(t *testing.T) {
 
 func runtimePolicyConfigJSON(
 	t *testing.T,
-	decision toolDecision,
+	decision skillDecision,
 ) json.RawMessage {
 	t.Helper()
 	scope := decision.Snapshot.Scope()

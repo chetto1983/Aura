@@ -2,24 +2,13 @@ package tools
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
-
-	"github.com/chetto1983/aura/internal/semindex"
 )
-
-// searchDocumentHash is the per-tool content fingerprint the bank keys on so an
-// MCP reconnect that re-advertises a tool with a CHANGED description is detected
-// and re-embedded (AG-020), rather than silently keeping the stale vector.
-func searchDocumentHash(s Spec) string {
-	sum := sha256.Sum256([]byte(searchDocument(s)))
-	return hex.EncodeToString(sum[:8])
-}
 
 // ToolSearch is the built-in hook tool that lets the LLM fetch full specs of
 // deferred tools. The pattern mirrors Claude Code's ToolSearch behavior: the
@@ -27,65 +16,38 @@ func searchDocumentHash(s Spec) string {
 // `select:<name>,<name>` argument or a free-text query to load the full
 // Description+Parameters into context.
 //
-// Free-text queries are ranked SEMANTICALLY by embedding cosine
-// (semindex.Ranker, PerItem) over an expanded per-tool search document (the same
-// flattened searchDocument BM25 builds — D-02, spike-056 "bm25doc input"), then
-// capped to max_results. BM25 contributes only as a guarded, intersection-gated
-// tiebreak (search_fusion.go). The `select:` path resolves any registered tool by
-// exact name and stays uncapped — a different mechanism (load-by-name).
+// Resolution is exact names first, lexical ranking second (see match). Both are
+// in-process and allocation-cheap: discovery costs no network call, so it cannot
+// fail, cannot go stale against a sidecar, and cannot vary between two identical
+// queries. It replaced an embedding ranker that cost 330-440 ms per query and
+// answered 50% of the measured production queries correctly against this one's 96%
+// — dense retrieval wins on corpora of hundreds of tools, and this one holds 54.
 //
-// This is a NON-DEFERRED tool — always visible — so the model can find it
-// without recursion. The embed sidecar is a HARD dependency for free-text ranking
-// (Req-6): with it down, Execute returns an explicit model-visible error (never an
-// empty/garbage ranking). The `select:` path needs no embedder.
+// This is a NON-DEFERRED tool — always visible — so the model can find it without
+// recursion.
 type ToolSearch struct {
 	Registry *Registry
 
-	// Embed is the embedding seam used to embed the per-tool search docs
-	// and the query (semindex.Embedder; documents.EmbeddingClient satisfies it with
-	// no adapter). Wired by the composition root (runner). nil => free-text ranking
-	// returns an explicit error (Req-6); the select: path still works.
-	Embed semindex.Embedder
-	// Adaptive coordinates typed assignment and delivery for free-text discovery.
-	// Exact select: calls never cross this port.
-	Adaptive ToolDiscoveryControl
-
 	mu     sync.Mutex
-	ranker *semindex.Ranker // embedding bank over the deferred searchDocument texts
-	bm25   *bm25Index       // kept for the guarded tiebreak (search_fusion.go)
-	// banked maps each embedded tool Name to its searchDocument hash, so the
-	// MCP-mount refresh (InvalidateIndex) can embed ONLY new tools (D-03) AND detect
-	// when an EXISTING tool's description changed on reconnect (AG-020): a changed
-	// hash triggers a full ranker rebuild so the stale vector is replaced. New tools
-	// stay an incremental append; only an actual description change pays a rebuild.
-	banked map[string]string
-	specs  []Spec // bm25-aligned deferred specs (sorted by Name)
-
+	bm25   *bm25Index      // lexical index over the deferred retrieval documents
+	specs  []Spec          // bm25-aligned deferred specs (sorted by Name)
+	byName map[string]Tool // bm25-aligned name -> tool
 }
 
 const defaultMaxResults = 5
 
 // InvalidateIndex signals that the deferred tool set may have changed (an MCP
 // reconnect advertised new specs). It stays a ZERO-ARG signal (the bridge seam is
-// unchanged): ToolSearch detects the delta itself on the next search by diffing the
-// registry's deferred names against the embedded bank, and embeds ONLY the additions
-// (D-03 incremental re-embed — exactly N new Embed calls per N-tool mount). The BM25
-// tiebreak index is dropped so it rebuilds over the current deferred set.
+// unchanged) and now costs one dropped pointer: the next search rebuilds the whole
+// index over the current deferred set, which is a few hundred microseconds of pure
+// CPU. The incremental-delta bookkeeping it used to carry existed only because a
+// rebuild meant re-embedding every tool over the network.
 func (ts *ToolSearch) InvalidateIndex() {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
-	// The embedding bank survives invalidation: the next search embeds only the
-	// newly-advertised tools and appends them. Only the BM25 index (cheap to rebuild)
-	// and the bm25-aligned spec slice are dropped.
-	//
-	// WR-01 FIX (AG-020): the bank now keys each tool Name to its searchDocument
-	// HASH. ensureBank compares the live hash against the banked hash on the next
-	// search; a tool whose description CHANGED on reconnect (same Name, new doc)
-	// triggers a one-time full ranker rebuild so its stale vector is replaced. New
-	// tools (new Name) still embed incrementally (D-03); only an actual
-	// description-change pays the rebuild, which is reconnect-rare.
 	ts.bm25 = nil
 	ts.specs = nil
+	ts.byName = nil
 }
 
 type toolSearchArgs struct {
@@ -99,7 +61,7 @@ func (ts *ToolSearch) Spec() Spec {
   "properties": {
     "query": {
       "type": "string",
-      "description": "Either 'select:Name1,Name2' to load specific tools by name, or a natural-language phrase ranked by semantic similarity over deferred tool names, descriptions, and parameters. Example: a phrase like 'search the current web for prices or news' or 'send a file to the user'; or 'select:web_fetch,web_search' to load specific tools by exact name."
+      "description": "Either 'select:Name1,Name2' to load specific tools by name, or a natural-language phrase matched by keyword against deferred tool names, summaries, and argument names. Example: a phrase like 'search the current web for prices or news' or 'send a file to the user'; or 'select:web_fetch,web_search' to load specific tools by exact name."
     },
     "max_results": {
       "type": "integer",
@@ -118,8 +80,8 @@ func (ts *ToolSearch) Spec() Spec {
 }
 
 const toolSearchLeadIn = "# Tool discovery\n\n" +
-	"Searches deferred-tool metadata by semantic similarity and loads matching tool schemas for the next model call. " +
-	"Use 'select:Name1,Name2' for direct selection, or a natural-language phrase ranked over deferred tool names, descriptions, and parameters. " +
+	"Searches deferred-tool metadata by keyword and loads matching tool schemas for the next model call. " +
+	"Use 'select:Name1,Name2' for direct selection — several names at once, uncapped — or a natural-language phrase ranked over deferred tool names, summaries, and argument names. " +
 	"Some tools are not provided upfront; use this tool (`tool_search`) to discover and load them.\n\n" +
 	"You have access to deferred tools from the following sources:\n"
 
@@ -131,7 +93,8 @@ const toolSearchLeadIn = "# Tool discovery\n\n" +
 // now ride the host terminal (`npx skills find/add`), taught by find-skills-aura.
 //
 // This is the CAPABILITY-GAP path (no tool matched the query) — distinct from the
-// INFRA-ERROR path (embed sidecar down), which returns an explicit error from Execute.
+// NAMING path (a select: named a tool that is not registered), which reports the bad
+// name and the closest registered ones.
 const noMatchOrientation = "no matching tools. " +
 	"If the capability you need is a packaged task family (spreadsheets, documents, file formats, integrations, recurring workflows), " +
 	"the always-on find-skills skill teaches how to discover and install skills from the open ecosystem in your terminal — " +
@@ -202,8 +165,8 @@ func sourceOrientation(reg *Registry) string {
 // the loaded tools: the matched names ride the result Meta under MetaActivatedTools,
 // which the runner reads to make them callable (with their schema) on the next turn —
 // the schema-load-before-call parity (a deferred tool is hidden from the callable set
-// until tool_search loads it here). The no-match orientation path and the embed-sidecar
-// infra-error path load nothing and therefore set no promotion Meta.
+// until tool_search loads it here). The no-match orientation and unknown-name paths
+// load nothing and therefore set no promotion Meta.
 func (ts *ToolSearch) Execute(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
 	var args toolSearchArgs
 	if err := json.Unmarshal(raw, &args); err != nil {
@@ -222,21 +185,13 @@ func (ts *ToolSearch) Execute(ctx context.Context, raw json.RawMessage) (ToolRes
 		limit = *args.MaxResults
 	}
 
-	var matches []Tool
-	var err error
-	if strings.HasPrefix(q, "select:") {
-		matches, err = ts.match(ctx, q, limit)
-	} else {
-		matches, err = ts.orderFreeText(ctx, q, limit)
-	}
-	if err != nil {
-		// Req-6 INFRA-ERROR path: the embed sidecar is a hard dependency for free-text
-		// ranking — surface an explicit, model-visible, retryable error. This is
-		// DISTINCT from the capability-gap path below (no tool matched): a down sidecar
-		// must never masquerade as "no matching tools" or an empty/garbage ranking.
-		return ToolResult{}, fmt.Errorf("tool_search: semantic ranking unavailable (embed sidecar): %w", err)
-	}
+	matches, unknown := ts.match(q, limit)
 	if len(matches) == 0 {
+		if len(unknown) > 0 {
+			// NAMING error, not a capability gap: the tools the model asked for do
+			// not exist under those names. Say which, and what does exist.
+			return NewResult(ctx, ts.unknownNameReport(unknown))
+		}
 		// Orientation tail (amendment #49): the no-result moment IS the capability
 		// gap — route the model into the skills system instead of ad-hoc code. The
 		// string is a fixed literal (per-turn result, not a manifest surface; no
@@ -245,6 +200,13 @@ func (ts *ToolSearch) Execute(ctx context.Context, raw json.RawMessage) (ToolRes
 	}
 
 	var b strings.Builder
+	// A partially-good select: loads what exists AND reports what does not, FIRST:
+	// several full specs overflow the preview cap and page out to the sidecar, so a
+	// report appended after them is the part the model never reads.
+	if len(unknown) > 0 {
+		b.WriteString(ts.unknownNameReport(unknown))
+		b.WriteString("\n")
+	}
 	names := make([]string, 0, len(matches))
 	for _, t := range matches {
 		s := t.Spec()
@@ -260,7 +222,7 @@ func (ts *ToolSearch) Execute(ctx context.Context, raw json.RawMessage) (ToolRes
 	// Full-promotion parity: attach the loaded tool names on the result Meta so the
 	// runner promotes them into the callable set (MetaActivatedTools). Set on BOTH the
 	// select: and free-text success paths (they share this tail); NOT on the no-match
-	// orientation path (nothing loaded) nor the infra-error path (they return earlier).
+	// orientation or unknown-name paths, which return earlier having loaded nothing.
 	// This is the schema-load-before-call parity: a deferred tool becomes callable next
 	// turn only after tool_search has loaded its schema here.
 	if res.Meta == nil {
@@ -271,140 +233,166 @@ func (ts *ToolSearch) Execute(ctx context.Context, raw json.RawMessage) (ToolRes
 	return res, nil
 }
 
-// match resolves a query to tools. The `select:` path resolves any registered tool
-// by exact name and ignores limit (uncapped) — UNCHANGED, needs no embedder. The
-// free-text path ranks deferred-only tools by embedding cosine (semindex)
-// with a guarded BM25 tiebreak and returns the top-limit matches. A non-nil error
-// is the embed-sidecar-down INFRA error (Req-6), distinct from an empty result
-// (capability gap).
-func (ts *ToolSearch) match(ctx context.Context, q string, limit int) ([]Tool, error) {
+// match resolves a query to tools, in two layers.
+//
+// Layer 1 is exact name resolution and is uncapped: `select:a,b`, and equally a
+// bare phrase whose every token is a registered tool name — the model reads the
+// full name list off this tool's own description, so it routinely writes the four
+// names it wants as free text and must get those four tools, not a top-5 ranking.
+// Names it got wrong come back as `unknown`, never silently dropped.
+//
+// Layer 2 is the BM25 ranking over deferred tools, capped to limit. There is no
+// layer 3, and no error: discovery is in-process, so the only two outcomes are
+// tools and an empty result, and an empty result is a capability gap.
+func (ts *ToolSearch) match(q string, limit int) (matches []Tool, unknown []string) {
 	if sel, ok := strings.CutPrefix(q, "select:"); ok {
-		names := strings.Split(sel, ",")
-		out := make([]Tool, 0, len(names))
-		for _, n := range names {
-			n = strings.TrimSpace(n)
-			if t, ok := ts.Registry.Get(n); ok {
-				out = append(out, t)
+		return ts.resolveNames(strings.Split(sel, ","))
+	}
+	if names, ok := ts.asNameList(q); ok {
+		return ts.resolveNames(names)
+	}
+	return ts.rankFreeText(q, limit), nil
+}
+
+// asNameList reports whether every token of a free-text query is a registered tool
+// name. It requires ALL of them: one ordinary word means the model wrote a
+// capability phrase that happens to mention a tool, which is a ranking query.
+func (ts *ToolSearch) asNameList(q string) ([]string, bool) {
+	fields := strings.FieldsFunc(q, func(r rune) bool {
+		return r == ',' || r == ' ' || r == '\t' || r == '\n'
+	})
+	if len(fields) == 0 {
+		return nil, false
+	}
+	for _, f := range fields {
+		if _, ok := ts.Registry.Get(f); !ok {
+			return nil, false
+		}
+	}
+	return fields, true
+}
+
+// resolveNames splits requested names into the tools that exist and the names that
+// do not. Order follows the request so the model reads back what it asked for.
+func (ts *ToolSearch) resolveNames(names []string) (found []Tool, unknown []string) {
+	for _, n := range names {
+		n = strings.TrimSpace(n)
+		if n == "" {
+			continue
+		}
+		if t, ok := ts.Registry.Get(n); ok {
+			found = append(found, t)
+			continue
+		}
+		unknown = append(unknown, n)
+	}
+	return found, unknown
+}
+
+// unknownNameReport explains that a requested name is not registered and offers the
+// registered names closest to it. A misspelled name is a naming error the model can
+// fix on the next call; routing it to the skills-install orientation instead is
+// wrong advice, and it was given in production for two tools that existed.
+func (ts *ToolSearch) unknownNameReport(unknown []string) string {
+	var b strings.Builder
+	for _, n := range unknown {
+		fmt.Fprintf(&b, "%q is not a registered tool.", n)
+		if near := ts.nearestNames(n); len(near) > 0 {
+			fmt.Fprintf(&b, " Closest registered names: %s.", strings.Join(near, ", "))
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+const nearestNameSuggestions = 3
+
+// nearestNames ranks registered names by how many tokens they share with the
+// requested one, reusing the ranker's own tokenizer — a misspelling usually keeps
+// the namespace and the verb ("memory__memory_add_entty"), and that is exactly what
+// token overlap recovers. Names sharing nothing are not suggested.
+func (ts *ToolSearch) nearestNames(want string) []string {
+	if ts.Registry == nil {
+		return nil
+	}
+	wantTokens := tokenize(want)
+	type scored struct {
+		name    string
+		overlap int
+	}
+	var candidates []scored
+	for _, t := range ts.Registry.All() {
+		name := t.Spec().Name
+		if name == toolSearchName {
+			continue
+		}
+		have := tokenize(name)
+		overlap := 0
+		for _, w := range wantTokens {
+			if slices.Contains(have, w) {
+				overlap++
 			}
 		}
-		return out, nil
+		if overlap > 0 {
+			candidates = append(candidates, scored{name: name, overlap: overlap})
+		}
 	}
-
-	frozen := ts.freezeDeferredTools()
-	return ts.rankFrozen(ctx, frozen, q, limit, ToolDiscoveryStatic)
+	sort.SliceStable(candidates, func(a, b int) bool {
+		if candidates[a].overlap != candidates[b].overlap {
+			return candidates[a].overlap > candidates[b].overlap
+		}
+		return candidates[a].name < candidates[b].name
+	})
+	out := make([]string, 0, nearestNameSuggestions)
+	for _, c := range candidates[:min(nearestNameSuggestions, len(candidates))] {
+		out = append(out, c.name)
+	}
+	return out
 }
 
-// embedQuery embeds a single free-text query into one vector, surfacing the embedder
-// error verbatim (Req-6). It is the single embed per tool_search call — reused by both
-// ranking stages.
-func (ts *ToolSearch) embedQuery(ctx context.Context, q string) ([]float64, error) {
-	vecs, err := ts.Embed.Embed(ctx, []string{q})
-	if err != nil {
-		return nil, err
-	}
-	if len(vecs) != 1 || len(vecs[0]) == 0 {
-		return nil, nil
-	}
-	return vecs[0], nil
-}
-
-// ensureBank lazily builds (and incrementally extends) the embedding bank over the
-// frozen deferred tools, then returns the ranker and BM25-ranked tool names for
-// the query (the guarded-tiebreak signal). The embedding
-// input is searchDocument(spec) (reused VERBATIM from bm25.go — D-02, NOT the raw
-// description). The bank is keyed by tool Name. On the first call it embeds every
-// deferred tool; on later calls (after an MCP-mount InvalidateIndex) it embeds ONLY
-// the delta — tools whose Name is not yet banked — and appends them (D-03: exactly N
-// new Embed calls per N-tool mount). The BM25 tiebreak index is (re)built over the
-// current deferred set. A nil embedder or an embed error returns an error (Req-6 hard
-// dependency), never a silent empty bank. The BM25 query rank is computed under the
-// lock so it stays aligned with the (sorted) spec slice.
-func (ts *ToolSearch) ensureBank(
-	ctx context.Context,
-	query string,
-	frozen frozenToolCatalog,
-) (*semindex.Ranker, []string, error) {
+// rankFreeText ranks the deferred tools lexically and returns the top-limit. The
+// index is built once and reused until an MCP mount invalidates it, so a query
+// costs a scan of 54 short documents and nothing else.
+func (ts *ToolSearch) rankFreeText(query string, limit int) []Tool {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
+	ts.ensureIndexLocked()
+	if len(ts.specs) == 0 {
+		return nil
+	}
+	ranked := ts.bm25.rank(query)
+	if len(ranked) > limit {
+		ranked = ranked[:limit]
+	}
+	out := make([]Tool, 0, len(ranked))
+	for _, score := range ranked {
+		if tool, ok := ts.byName[ts.specs[score.doc].Name]; ok {
+			out = append(out, tool)
+		}
+	}
+	return out
+}
 
-	// Deferred tools, sorted by Name so equal-score ties break deterministically and
-	// the BM25 index alignment is stable per run (mirror of the prior indexSnapshot).
-	specs := frozen.specs
-	// Empty corpus is a CAPABILITY GAP, not an infra error: there is nothing to embed
-	// or rank regardless of the embedder, so do not require the sidecar here (a
-	// nil ranker drives match's empty -> noMatchOrientation path).
-	if len(specs) == 0 {
-		return nil, nil, nil
+// ensureIndexLocked builds the deferred-tool index if it is missing. Specs are
+// sorted by Name so equal scores break deterministically: the same query returns
+// the same order for the lifetime of a registry.
+func (ts *ToolSearch) ensureIndexLocked() {
+	if ts.bm25 != nil {
+		return
 	}
-
-	// With deferred tools present, the embed sidecar IS required (Req-6 hard dep).
-	if ts.Embed == nil {
-		return nil, nil, fmt.Errorf("no embedder wired")
-	}
-	if ts.ranker == nil {
-		ts.ranker = semindex.NewRanker(ts.Embed)
-		ts.banked = make(map[string]string)
-	}
-
-	// AG-020: detect an EXISTING tool whose description (searchDocument) changed
-	// since it was banked — an MCP reconnect can re-advertise the same Name with a
-	// new description. Because the shared semindex.Ranker is append-only (no replace),
-	// a changed hash forces a full rebuild of the bank so the stale vector is dropped.
-	// This pays a full re-embed only on an actual description change (rare, reconnect
-	// only); the common new-tool path stays the incremental append below.
-	changed := false
-	for _, s := range specs {
-		if h, ok := ts.banked[s.Name]; ok && h != searchDocumentHash(s) {
-			changed = true
-			break
+	all := ts.Registry.All()
+	sort.Slice(all, func(i, j int) bool {
+		return all[i].Spec().Name < all[j].Spec().Name
+	})
+	ts.specs = nil
+	ts.byName = make(map[string]Tool, len(all))
+	for _, tool := range all {
+		spec := tool.Spec()
+		if !spec.Deferred {
+			continue
 		}
+		ts.specs = append(ts.specs, spec)
+		ts.byName[spec.Name] = tool
 	}
-	if changed {
-		ts.ranker = semindex.NewRanker(ts.Embed)
-		ts.banked = make(map[string]string)
-	}
-
-	// Embed ONLY the delta — tools not yet in the bank by Name (D-03 incremental append).
-	var newSpecs []Spec
-	for _, s := range specs {
-		if _, ok := ts.banked[s.Name]; !ok {
-			newSpecs = append(newSpecs, s)
-		}
-	}
-	if len(newSpecs) > 0 {
-		items := make([]semindex.Item, 0, len(newSpecs))
-		texts := make([]string, 0, len(newSpecs))
-		for _, s := range newSpecs {
-			texts = append(texts, searchDocument(s))
-		}
-		vecs, err := ts.Embed.Embed(ctx, texts)
-		if err != nil {
-			return nil, nil, err // Req-6: not cached — a retry re-embeds the delta
-		}
-		for i, s := range newSpecs {
-			if i < len(vecs) {
-				items = append(items, semindex.Item{Label: s.Name, Vec: vecs[i]})
-			}
-		}
-		ts.ranker.AddVecs(items...)
-		for _, s := range newSpecs {
-			ts.banked[s.Name] = searchDocumentHash(s)
-		}
-	}
-
-	if ts.bm25 == nil {
-		ts.bm25 = newBM25Index(specs)
-		ts.specs = specs
-	}
-	// BM25-ranked NAMES for the query (the guarded-tiebreak signal). doc indices map
-	// back to ts.specs (bm25-aligned). Computed here, under the lock, so the index and
-	// the spec slice can never drift apart.
-	scored := ts.bm25.rank(query)
-	bm25Names := make([]string, 0, len(scored))
-	for _, s := range scored {
-		if s.doc < len(ts.specs) {
-			bm25Names = append(bm25Names, ts.specs[s.doc].Name)
-		}
-	}
-	return ts.ranker, bm25Names, nil
+	ts.bm25 = newBM25Index(ts.specs)
 }

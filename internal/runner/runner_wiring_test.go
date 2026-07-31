@@ -2,8 +2,6 @@ package runner
 
 import (
 	"context"
-	"errors"
-	"sync"
 	"testing"
 	"time"
 
@@ -13,33 +11,6 @@ import (
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/llm"
 )
-
-type fakeEmbedder struct {
-	mu  sync.Mutex
-	err error
-	n   int
-}
-
-func (f *fakeEmbedder) Embed(_ context.Context, texts []string) ([][]float64, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.n++
-	if f.err != nil {
-		return nil, f.err
-	}
-	out := make([][]float64, len(texts))
-	for i, text := range texts {
-		seed := float64(len(text)%7) + 1
-		out[i] = []float64{seed, seed / 2, 1}
-	}
-	return out, nil
-}
-
-func (f *fakeEmbedder) calls() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.n
-}
 
 // --- TryLockThread + Turn(threadLockHeld) ---
 
@@ -87,49 +58,6 @@ func TestTurn_WithThreadLockHeld_SkipsReLock(t *testing.T) {
 	if err != nil || len(hist) == 0 {
 		t.Fatalf("turn produced no history: %v (%v)", hist, err)
 	}
-}
-
-// --- wireToolSearchEmbedder embedder paths ---
-
-func TestWireToolSearchEmbedder(t *testing.T) {
-	t.Run("nil registry is a no-op", func(t *testing.T) {
-		wireToolSearchEmbedder(nil, &fakeEmbedder{}) // must not panic
-	})
-	t.Run("registry without tool_search is a no-op", func(t *testing.T) {
-		wireToolSearchEmbedder(tools.NewRegistry(), &fakeEmbedder{})
-	})
-	t.Run("nil embedder logs and leaves Embed nil", func(t *testing.T) {
-		reg := tools.NewRegistry()
-		ts := &tools.ToolSearch{Registry: reg}
-		reg.Register(ts)
-		wireToolSearchEmbedder(reg, nil)
-		if ts.Embed != nil {
-			t.Fatal("a nil embedder must leave tool_search.Embed nil")
-		}
-	})
-	t.Run("a wired embedder is set and health-checked", func(t *testing.T) {
-		reg := tools.NewRegistry()
-		ts := &tools.ToolSearch{Registry: reg}
-		reg.Register(ts)
-		embed := &fakeEmbedder{}
-		wireToolSearchEmbedder(reg, embed)
-		if ts.Embed == nil {
-			t.Fatal("a wired embedder must be set on tool_search")
-		}
-		if embed.calls() == 0 {
-			t.Fatal("the boot health-check must probe the embedder once")
-		}
-	})
-	t.Run("an unreachable embedder logs but does not panic", func(t *testing.T) {
-		reg := tools.NewRegistry()
-		ts := &tools.ToolSearch{Registry: reg}
-		reg.Register(ts)
-		embed := &fakeEmbedder{err: errors.New("sidecar down")}
-		wireToolSearchEmbedder(reg, embed) // health-check error path: log-only, never fatal
-		if ts.Embed == nil {
-			t.Fatal("an unreachable embedder must still be wired (recovers later)")
-		}
-	})
 }
 
 type turnStartProbeHook struct {

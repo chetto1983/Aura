@@ -27,22 +27,29 @@ type schemaNode struct {
 	AnyOf       []schemaNode          `json:"anyOf"`
 }
 
-// searchDocument flattens a tool spec into one whitespace-joined string the BM25
-// scorer indexes. Both the raw Name and its underscore→space form are pushed so
-// a query "fetch web" matches a tool named web_fetch (D-02 leverage point). On a
-// malformed Parameters payload it degrades to Name+Description — never panics.
+// searchDocument flattens a tool spec into the one whitespace-joined string the
+// scorer indexes: the name (weighted), the Summary, and the argument names. Both
+// the raw Name and its underscore→space form are pushed so a query "fetch web"
+// matches a tool named web_fetch (D-02 leverage point). On a malformed Parameters
+// payload it degrades to name+Summary — never panics.
+//
+// The long Description is deliberately NOT indexed. It is written to be read at
+// USE time, so it carries routing advice about neighbouring tools, and a retriever
+// cannot honour negation: document_search's "...NOT the public web (use web
+// search/fetch)" made it the rank-1 answer to "web search for <part> specs" seven
+// times in production. 22 of 54 descriptions name another tool. The retrieval
+// document and the usage document are different documents; this is the retrieval
+// one, and Description still ships verbatim once a tool is loaded.
 func searchDocument(s Spec) string {
-	return buildSearchDocument(s, s.Description)
-}
-
-// summarySearchDocument is the production no-network retrieval document. Long
-// tool descriptions contain routing cross-references to other tools, so indexing
-// them makes a disclaimer such as "not the public web; use web_search" rank the
-// wrong tool for "web search". Summary keeps the capability signal while schema
-// names/descriptions preserve argument-level discovery.
-func summarySearchDocument(s Spec) string {
 	return buildSearchDocument(s, s.Summary)
 }
+
+// nameFieldWeight repeats the name field so it outweighs the schema. BM25 has no
+// notion of fields, and repetition is how a flat index expresses one: measured,
+// "list files matching a glob pattern" ranked fs_grep over fs_glob because fs_grep
+// takes `glob` and `pattern` as arguments while fs_glob merely IS the glob tool. A
+// tool named for the capability is the answer to a query naming that capability.
+const nameFieldWeight = 3
 
 func buildSearchDocument(s Spec, capability string) string {
 	var parts []string
@@ -51,8 +58,10 @@ func buildSearchDocument(s Spec, capability string) string {
 			parts = append(parts, p)
 		}
 	}
-	push(s.Name)
-	push(strings.ReplaceAll(s.Name, "_", " "))
+	for range nameFieldWeight {
+		push(s.Name)
+		push(strings.ReplaceAll(s.Name, "_", " "))
+	}
 	push(capability)
 	var node schemaNode
 	if err := json.Unmarshal(s.Parameters, &node); err == nil {
@@ -61,12 +70,15 @@ func buildSearchDocument(s Spec, capability string) string {
 	return strings.Join(parts, " ")
 }
 
-// appendSchema recursively pushes a schema's description, every property NAME
-// (D-02), and the descriptions of nested objects/arrays/unions. Property keys are
-// sorted so the produced document is byte-stable across runs (map iteration order
-// is otherwise random — determinism matters for snapshot tests, not for scores).
+// appendSchema recursively pushes every property NAME (D-02) — and nothing else.
+// Argument PROSE is excluded for the same reason the tool Description is: it is
+// written to be read at use time, so it discusses neighbouring tools and modes.
+// Measured: shell_exec outranked shell_poll for "check the output of a background
+// command" because its `background` argument is documented in terms of polling for
+// output. Names are the capability signal; sentences about them are not.
+// Property keys are sorted so the document is byte-stable across runs (map
+// iteration order is otherwise random).
 func appendSchema(n schemaNode, push func(string)) {
-	push(n.Description)
 	keys := make([]string, 0, len(n.Properties))
 	for k := range n.Properties {
 		keys = append(keys, k)
@@ -84,10 +96,69 @@ func appendSchema(n schemaNode, push func(string)) {
 	}
 }
 
+// stopWords are English function words. A model writes its discovery query as a
+// sentence ("what time is it", "read a file from disk") while a tool summary is a
+// capability line, so a function word that leaks into two or three summaries earns
+// a HIGH idf for carrying no meaning at all. Measured: "what time is it" ranked
+// web_search first — on "is" and "it" — with current_time only fourth. Dropped from
+// the corpus and the query alike, so no document can win on grammar.
+var stopWords = map[string]struct{}{
+	"a": {}, "about": {}, "above": {}, "after": {}, "again": {}, "against": {},
+	"all": {}, "also": {}, "an": {}, "and": {}, "any": {}, "are": {}, "as": {},
+	"at": {}, "be": {}, "been": {}, "before": {}, "below": {}, "between": {},
+	"both": {}, "but": {}, "by": {}, "can": {}, "do": {}, "does": {},
+	"during": {}, "each": {}, "few": {}, "for": {}, "from": {}, "further": {},
+	"had": {}, "has": {}, "have": {}, "he": {}, "her": {}, "here": {}, "his": {},
+	"how": {}, "i": {}, "if": {}, "in": {}, "into": {}, "is": {}, "it": {},
+	"its": {}, "just": {}, "me": {}, "more": {}, "most": {}, "my": {}, "no": {},
+	"not": {}, "of": {}, "on": {}, "once": {}, "one": {}, "only": {}, "or": {},
+	"other": {}, "our": {}, "out": {}, "over": {}, "own": {}, "please": {},
+	"same": {}, "she": {}, "should": {}, "so": {}, "some": {}, "such": {},
+	"than": {}, "that": {}, "the": {}, "their": {}, "them": {}, "then": {},
+	"there": {}, "these": {}, "they": {}, "this": {}, "those": {}, "through": {},
+	"to": {}, "too": {}, "under": {}, "until": {}, "up": {}, "us": {},
+	"very": {}, "was": {}, "we": {}, "were": {}, "what": {}, "when": {},
+	"where": {}, "which": {}, "while": {}, "who": {}, "why": {}, "will": {},
+	"with": {}, "would": {}, "you": {}, "your": {},
+}
+
+// foldPlural strips the regular English plural so a query written "files" reaches a
+// summary written "file" — measured: "file" and "files" returned disjoint result
+// sets. It stays a suffix rule rather than a real stemmer on purpose: the corpus is
+// 54 short capability lines, and aggressive stemming folds distinct tool verbs
+// (index/indexing, search/searches) into collisions this ranker cannot afford.
+func foldPlural(t string) string {
+	switch {
+	case len(t) > 4 && strings.HasSuffix(t, "ies"):
+		return t[:len(t)-3] + "y"
+	case len(t) > 4 && (strings.HasSuffix(t, "ses") ||
+		strings.HasSuffix(t, "xes") ||
+		strings.HasSuffix(t, "zes") ||
+		strings.HasSuffix(t, "ches") ||
+		strings.HasSuffix(t, "shes")):
+		return t[:len(t)-2]
+	case len(t) > 3 && strings.HasSuffix(t, "s") &&
+		!strings.HasSuffix(t, "ss") && !strings.HasSuffix(t, "us"):
+		return t[:len(t)-1]
+	}
+	return t
+}
+
+// tokenize lowercases, splits on non-alphanumerics, drops function words and folds
+// plurals. Corpus and query pass through the same function, so the index and the
+// query always speak the same vocabulary.
 func tokenize(s string) []string {
-	return strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
+	raw := strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
 		return !(r >= 'a' && r <= 'z') && !(r >= '0' && r <= '9')
 	})
+	out := make([]string, 0, len(raw))
+	for _, t := range raw {
+		if _, skip := stopWords[t]; skip {
+			continue
+		}
+		out = append(out, foldPlural(t))
+	}
+	return out
 }
 
 // scoredDoc pairs a corpus document index with its BM25 score against a query.
@@ -107,17 +178,6 @@ type bm25Index struct {
 }
 
 func newBM25Index(specs []Spec) *bm25Index {
-	return newBM25IndexWithDocument(specs, searchDocument)
-}
-
-func newSummaryBM25Index(specs []Spec) *bm25Index {
-	return newBM25IndexWithDocument(specs, summarySearchDocument)
-}
-
-func newBM25IndexWithDocument(
-	specs []Spec,
-	document func(Spec) string,
-) *bm25Index {
 	idx := &bm25Index{
 		tf:    make([]map[string]int, len(specs)),
 		docLn: make([]int, len(specs)),
@@ -126,7 +186,7 @@ func newBM25IndexWithDocument(
 	df := make(map[string]int)
 	var totalLen int
 	for i, s := range specs {
-		terms := tokenize(document(s))
+		terms := tokenize(searchDocument(s))
 		tf := make(map[string]int, len(terms))
 		for _, t := range terms {
 			tf[t]++

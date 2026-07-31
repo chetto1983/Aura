@@ -112,8 +112,7 @@ func restrictAdaptiveBenchmarkRegistry(
 	if !ok {
 		return nil, errors.New("benchmark registry lacks tool_search")
 	}
-	productionSearch, ok := searchTool.(*tools.ToolSearch)
-	if !ok {
+	if _, ok := searchTool.(*tools.ToolSearch); !ok {
 		return nil, errors.New("benchmark tool_search is not production")
 	}
 
@@ -131,11 +130,7 @@ func restrictAdaptiveBenchmarkRegistry(
 	restricted.Register(adaptiveBenchmarkRestrictedSkill{
 		delegate: productionSkill,
 	})
-	restricted.Register(&tools.ToolSearch{
-		Registry: restricted,
-		Embed:    productionSearch.Embed,
-		Adaptive: productionSearch.Adaptive,
-	})
+	restricted.Register(&tools.ToolSearch{Registry: restricted})
 	if err := restricted.Validate(); err != nil {
 		return nil, fmt.Errorf("validate benchmark registry: %w", err)
 	}

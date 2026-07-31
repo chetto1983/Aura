@@ -3,16 +3,21 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"slices"
+	"strings"
 	"testing"
 
 	"pgregory.net/rapid"
 )
 
-// bm25Tool is a deferred fixture whose Name, Description, and Parameters are all
-// controllable so a ranking test can target each field of searchDocument.
+// bm25Tool is a deferred fixture whose Name, Summary, and Parameters are all
+// controllable so a ranking test can target each field of searchDocument. Its
+// Description is filler that shares no token with any capability text: the
+// retrieval document is built from the Summary, and these tests must fail if that
+// ever silently reverts to the Description.
 type bm25Tool struct {
-	name, desc string
-	params     json.RawMessage
+	name, summary string
+	params        json.RawMessage
 }
 
 func (b bm25Tool) Spec() Spec {
@@ -20,7 +25,13 @@ func (b bm25Tool) Spec() Spec {
 	if len(p) == 0 {
 		p = json.RawMessage(`{"type":"object"}`)
 	}
-	return Spec{Name: b.name, Summary: "s", Description: b.desc, Parameters: p, Deferred: true}
+	return Spec{
+		Name:        b.name,
+		Summary:     b.summary,
+		Description: "usage prose",
+		Parameters:  p,
+		Deferred:    true,
+	}
 }
 func (bm25Tool) Execute(context.Context, json.RawMessage) (ToolResult, error) {
 	return ToolResult{}, nil
@@ -41,9 +52,9 @@ func topName(specs []Spec, query string) string {
 // of words distinctive to one tool's Description ranks the owning tool #1.
 func TestBM25Rank(t *testing.T) {
 	corpus := []Spec{
-		bm25Tool{name: "web_fetch", desc: "retrieve a url and return rendered markdown"}.Spec(),
-		bm25Tool{name: "calculator", desc: "evaluate arithmetic expressions and numbers"}.Spec(),
-		bm25Tool{name: "calendar", desc: "list upcoming meetings and appointments"}.Spec(),
+		bm25Tool{name: "web_fetch", summary: "retrieve a url and return rendered markdown"}.Spec(),
+		bm25Tool{name: "calculator", summary: "evaluate arithmetic expressions and numbers"}.Spec(),
+		bm25Tool{name: "calendar", summary: "list upcoming meetings and appointments"}.Spec(),
 	}
 	cases := []struct {
 		query string
@@ -65,8 +76,8 @@ func TestBM25Rank(t *testing.T) {
 // non-matching tool. Kills the missing-underscore-replace mutant (Pitfall 2).
 func TestUnderscoreSpacing(t *testing.T) {
 	corpus := []Spec{
-		bm25Tool{name: "web_fetch", desc: "retrieve a resource"}.Spec(),
-		bm25Tool{name: "calculator", desc: "arithmetic"}.Spec(),
+		bm25Tool{name: "web_fetch", summary: "retrieve a resource"}.Spec(),
+		bm25Tool{name: "calculator", summary: "arithmetic"}.Spec(),
 	}
 	idx := newBM25Index(corpus)
 	for _, q := range []string{"fetch web", "web fetch"} {
@@ -101,7 +112,7 @@ func TestSummaryBM25IgnoresCrossToolDescriptionContamination(t *testing.T) {
 			Deferred:    true,
 		},
 	}
-	ranked := newSummaryBM25Index(corpus).rank(
+	ranked := newBM25Index(corpus).rank(
 		"web search for product specifications",
 	)
 	if len(ranked) == 0 {
@@ -112,13 +123,14 @@ func TestSummaryBM25IgnoresCrossToolDescriptionContamination(t *testing.T) {
 	}
 }
 
-// TestSearchDocument: nested param names + descriptions are recursively indexed,
-// the output is byte-stable across repeated calls (sorted property keys), and a
-// malformed Parameters payload degrades to Name+Description without panicking.
+// TestSearchDocument: nested param NAMES are recursively indexed and their PROSE
+// is not, the name field is repeated so it outweighs the schema, the output is
+// byte-stable across repeated calls (sorted property keys), and a malformed
+// Parameters payload degrades to Name+Description without panicking.
 func TestSearchDocument(t *testing.T) {
 	spec := bm25Tool{
-		name: "web_fetch",
-		desc: "retrieve a url",
+		name:    "web_fetch",
+		summary: "retrieve a url",
 		params: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -141,11 +153,17 @@ func TestSearchDocument(t *testing.T) {
 			t.Errorf("searchDocument missing param name %q: %q", want, doc)
 		}
 	}
-	// Nested param descriptions are indexed recursively.
-	for _, want := range []string{"absolute", "endpoint", "deadline", "seconds"} {
-		if !containsToken(doc, want) {
-			t.Errorf("searchDocument missing nested description word %q: %q", want, doc)
+	// Argument PROSE is NOT indexed: it is written for use time, so it names
+	// neighbouring tools and modes and drags the wrong tool to rank 1.
+	for _, unwanted := range []string{"absolute", "endpoint", "deadline", "seconds"} {
+		if containsToken(doc, unwanted) {
+			t.Errorf("searchDocument indexed argument prose %q: %q", unwanted, doc)
 		}
+	}
+	// The name field is repeated so a tool named for a capability outranks a tool
+	// that merely takes it as an argument.
+	if got := strings.Count(doc, "web_fetch"); got != nameFieldWeight {
+		t.Errorf("name field appears %d times, want %d: %q", got, nameFieldWeight, doc)
 	}
 	// Determinism: two calls are byte-identical (sorted keys, Pitfall 3).
 	if doc2 := searchDocument(spec); doc != doc2 {
@@ -153,20 +171,22 @@ func TestSearchDocument(t *testing.T) {
 	}
 
 	// Malformed Parameters degrade to Name+Description, no panic.
-	bad := bm25Tool{name: "broken_tool", desc: "still here", params: json.RawMessage(`{not json`)}.Spec()
+	bad := bm25Tool{name: "broken_tool", summary: "still here", params: json.RawMessage(`{not json`)}.Spec()
 	got := searchDocument(bad)
 	if !containsToken(got, "broken") || !containsToken(got, "still") {
 		t.Errorf("malformed schema did not degrade to Name+Description: %q", got)
 	}
 }
 
+// containsToken passes the wanted word through the SAME tokenizer as the document,
+// so a caller may write "options" and still match the folded "option" the index
+// stores.
 func containsToken(doc, tok string) bool {
-	for _, t := range tokenize(doc) {
-		if t == tok {
-			return true
-		}
+	want := tokenize(tok)
+	if len(want) != 1 {
+		return false
 	}
-	return false
+	return slices.Contains(tokenize(doc), want[0])
 }
 
 // TestBM25Properties (rapid): idf is never negative; a query sharing no terms
@@ -174,9 +194,9 @@ func containsToken(doc, tok string) bool {
 // never lowers the score of the doc that owns it.
 func TestBM25Properties(t *testing.T) {
 	corpus := []Spec{
-		bm25Tool{name: "web_fetch", desc: "retrieve url markdown"}.Spec(),
-		bm25Tool{name: "calculator", desc: "evaluate arithmetic"}.Spec(),
-		bm25Tool{name: "calendar", desc: "list meetings"}.Spec(),
+		bm25Tool{name: "web_fetch", summary: "retrieve url markdown"}.Spec(),
+		bm25Tool{name: "calculator", summary: "evaluate arithmetic"}.Spec(),
+		bm25Tool{name: "calendar", summary: "list meetings"}.Spec(),
 	}
 	idx := newBM25Index(corpus)
 

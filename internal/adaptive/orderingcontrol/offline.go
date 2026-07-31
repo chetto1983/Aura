@@ -6,26 +6,6 @@ import (
 	"github.com/chetto1983/aura/internal/runner"
 )
 
-// NewOfflineToolDiscovery composes discovery with immutable run-local inputs.
-func NewOfflineToolDiscovery(
-	policies adaptive.PolicyReader,
-	snapshots SnapshotLoader,
-	recorder EventRecorder,
-	providerID string,
-	modelID string,
-) tools.ToolDiscoveryControl {
-	source := newOfflineRuntimeSource(
-		policies,
-		snapshots,
-		providerID,
-		modelID,
-	)
-	if source == nil || recorder == nil {
-		return nil
-	}
-	return newToolDiscovery(source, recorder)
-}
-
 // NewOfflineSkillRouting composes skill routing with immutable run-local inputs.
 func NewOfflineSkillRouting(
 	policies adaptive.PolicyReader,

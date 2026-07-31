@@ -3,78 +3,17 @@ package tools
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"hash/fnv"
-	"math"
 	"regexp"
 	"strings"
 	"sync"
 	"testing"
 )
 
-// bagEmbedder is a deterministic, sidecar-free fake Embedder used across the
-// tool_search tests. It embeds text as an L2-normalized bag-of-words vector over a
-// fixed hashed vocabulary: each lowercase alphanumeric token sets one dimension, so
-// the cosine between a query and a tool's searchDocument is high exactly when they
-// SHARE tokens. This preserves the keyword-test semantics under the semantic ranker
-// (a query word present in a tool's Name/Description ranks that tool high) WITHOUT a
-// granite sidecar, keeping CI free and deterministic (RESEARCH Wave-0 fixture). The
-// `calls` counter is how Req-3 asserts "exactly N new embeds"; `failQuery`/`failUntil`
-// drive the Req-6 error-surface and transient-recovery tests.
-type bagEmbedder struct {
-	mu        sync.Mutex
-	calls     int  // total Embed invocations (per-call, regardless of batch size)
-	embedded  int  // total texts embedded across all calls (the "N tools" lever)
-	failUntil int  // error for the first failUntil calls (transient-recovery)
-	failQuery bool // error on every call (Req-6 hard-down sidecar)
-}
-
-const bagEmbedDims = 1024
-
-func (f *bagEmbedder) Embed(_ context.Context, texts []string) ([][]float64, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.calls++
-	if f.failQuery || f.calls <= f.failUntil {
-		return nil, errors.New("embed sidecar down")
-	}
-	f.embedded += len(texts)
-	out := make([][]float64, len(texts))
-	for i, t := range texts {
-		out[i] = bagVec(t)
-	}
-	return out, nil
-}
-
-// bagVec is the deterministic bag-of-words vector: one hashed dimension per token,
-// L2-normalized (so cosine = shared-token overlap). Token set mirrors bm25.tokenize.
-func bagVec(text string) []float64 {
-	v := make([]float64, bagEmbedDims)
-	for _, tok := range tokenize(text) {
-		h := fnv.New32a()
-		_, _ = h.Write([]byte(tok))
-		v[h.Sum32()%bagEmbedDims] += 1
-	}
-	var n float64
-	for _, x := range v {
-		n += x * x
-	}
-	if n == 0 {
-		return v
-	}
-	n = math.Sqrt(n)
-	for i := range v {
-		v[i] /= n
-	}
-	return v
-}
-
 // searchableTool is a deferred tool whose Name and Summary share NO common
-// substring, so a keyword can match exactly one of the two fields. This makes
-// the `name || summary` OR-branch in ToolSearch.match observable: a name-only
-// query and a summary-only query each select the tool only if both sides of the
-// OR are evaluated.
+// substring, so a keyword can match exactly one of the two fields. This makes both
+// halves of the retrieval document observable: a name-only query and a
+// summary-only query each select the tool only if that field is indexed.
 type searchableTool struct {
 	name, summary string
 }
@@ -91,21 +30,11 @@ func (searchableTool) Execute(context.Context, json.RawMessage) (ToolResult, err
 
 func newSearch(t *testing.T, tools ...Tool) (*ToolSearch, context.Context) {
 	t.Helper()
-	ts, _, ctx := newSearchWithEmbedder(t, tools...)
-	return ts, ctx
-}
-
-// newSearchWithEmbedder builds a ToolSearch wired to a deterministic bagEmbedder and
-// returns the embedder too, so a test can assert the embed-call count (Req-3) or the
-// error surface (Req-6) by flipping its fail flags.
-func newSearchWithEmbedder(t *testing.T, tools ...Tool) (*ToolSearch, *bagEmbedder, context.Context) {
-	t.Helper()
 	reg := NewRegistry()
 	for _, tl := range tools {
 		reg.Register(tl)
 	}
-	emb := &bagEmbedder{}
-	return &ToolSearch{Registry: reg, Embed: emb}, emb, ctxWith(t, "sess-s", "call-s")
+	return &ToolSearch{Registry: reg}, ctxWith(t, "sess-s", "call-s")
 }
 
 func TestToolSearchSpecIsVisibleAndSchemaIsValid(t *testing.T) {
@@ -139,29 +68,34 @@ func TestToolSearch_KeywordMatchesNameOnly(t *testing.T) {
 	}
 }
 
-// TestToolSearch_KeywordMatchesDescriptionOnly: a keyword present in the
-// Description but NOT the Name still selects the tool. Under D-02 the BM25 search
-// document indexes Name + name-spaced + Description + recursive params — NOT the
-// Summary field (Codex's default_tool_search_text indexes description, not a
-// separate summary). This replaces the prior substring "SummaryOnly" assertion:
-// the searchable secondary field is now Description, per the BM25 contract. Kills
-// the "drop the Description from the search document" mutant.
-func TestToolSearch_KeywordMatchesDescriptionOnly(t *testing.T) {
+// TestToolSearch_DescriptionIsNotIndexed: a word that appears ONLY in a tool's long
+// Description does not retrieve it. The Description is usage prose — it names other
+// tools and states what the tool is NOT for, and a bag-of-words ranker reads those
+// mentions as endorsements. Retrieval runs on the Summary; the Description is still
+// returned in full once a tool is loaded.
+func TestToolSearch_DescriptionIsNotIndexed(t *testing.T) {
 	ts, ctx := newSearch(t,
-		searchableTool{name: "weatherbot", summary: "s1"},
-		searchableTool{name: "ledger", summary: "s2"},
+		searchableTool{name: "ledger", summary: "record accounting entries"},
 	)
-	// "weatherbot"'s Description is "full description of weatherbot"; query a
-	// distinctive Description word that is NOT in either Name.
-	res, err := ts.Execute(ctx, []byte(`{"query":"description weatherbot"}`))
+	// "description" appears only in searchableTool's Description filler.
+	res, err := ts.Execute(ctx, []byte(`{"query":"description"}`))
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if !strings.Contains(res.Preview, "weatherbot") {
-		t.Fatalf("description keyword did not match: %q", res.Preview)
+	if !strings.Contains(res.Preview, "no matching tools") {
+		t.Fatalf("a Description-only word retrieved a tool: %q", res.Preview)
 	}
-	if strings.Contains(res.Preview, "no matching tools") {
-		t.Fatal("description keyword wrongly reported no match (Description dropped from the search document)")
+	// The same tool is still reachable by its capability words.
+	res, err = ts.Execute(ctx, []byte(`{"query":"record accounting entries"}`))
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(res.Preview, "## ledger") {
+		t.Fatalf("summary words did not retrieve the tool: %q", res.Preview)
+	}
+	// ...and the full Description ships with it, which is where that prose belongs.
+	if !strings.Contains(res.Preview, "full description of ledger") {
+		t.Fatalf("loaded spec did not carry the Description: %q", res.Preview)
 	}
 }
 
@@ -223,8 +157,8 @@ func TestToolSearch_PromotesLoadedToolsOnMeta(t *testing.T) {
 
 	t.Run("free_text_path", func(t *testing.T) {
 		ts, ctx := newSearch(t,
-			bm25Tool{name: "calculator", desc: "evaluate arithmetic expressions"},
-			bm25Tool{name: "calendar", desc: "list meetings and appointments"},
+			bm25Tool{name: "calculator", summary: "evaluate arithmetic expressions"},
+			bm25Tool{name: "calendar", summary: "list meetings and appointments"},
 		)
 		res, err := ts.Execute(ctx, []byte(`{"query":"arithmetic expressions","max_results":1}`))
 		if err != nil {
@@ -281,8 +215,8 @@ func countHeadings(preview string) int {
 func TestMaxResults(t *testing.T) {
 	mk := func(i int) Tool {
 		return bm25Tool{
-			name: fmt.Sprintf("widget_%d", i),
-			desc: "shared widget gadget capability",
+			name:    fmt.Sprintf("widget_%d", i),
+			summary: "shared widget gadget capability",
 		}
 	}
 	all := make([]Tool, 0, 8)
@@ -342,7 +276,7 @@ func TestMaxResults(t *testing.T) {
 // (D-03); a select: query DOES resolve a non-deferred tool by exact name (D-05).
 func TestDeferredOnlyFilter(t *testing.T) {
 	ts, ctx := newSearch(t,
-		bm25Tool{name: "deferred_search_target", desc: "shared keyword token apples"},
+		bm25Tool{name: "deferred_search_target", summary: "shared keyword token apples"},
 		nonDeferredTool{name: "active_apples_tool"},
 	)
 
@@ -379,10 +313,10 @@ func TestDeferredOnlyFilter(t *testing.T) {
 // "unsorted source list" mutants.
 func TestToolSearchDescriptionDeterministic(t *testing.T) {
 	ts, _ := newSearch(t,
-		bm25Tool{name: "web_fetch", desc: "retrieve a url"},
-		bm25Tool{name: "github__create_issue", desc: "open an issue"},
-		bm25Tool{name: "github__list_prs", desc: "list pull requests"},
-		bm25Tool{name: "calculator", desc: "evaluate arithmetic"},
+		bm25Tool{name: "web_fetch", summary: "retrieve a url"},
+		bm25Tool{name: "github__create_issue", summary: "open an issue"},
+		bm25Tool{name: "github__list_prs", summary: "list pull requests"},
+		bm25Tool{name: "calculator", summary: "evaluate arithmetic"},
 		nonDeferredTool{name: "active_cap"}, // non-deferred → must NOT appear as a source
 	)
 
@@ -437,7 +371,7 @@ func TestToolSearchDescription_SelfReferentialNoRecursion(t *testing.T) {
 	reg := NewRegistry()
 	ts := &ToolSearch{Registry: reg}
 	reg.Register(ts)
-	reg.Register(bm25Tool{name: "github__create_issue", desc: "open an issue"})
+	reg.Register(bm25Tool{name: "github__create_issue", summary: "open an issue"})
 
 	desc := ts.Spec().Description // must not recurse
 	// tool_search must not appear in the SOURCE list (the "- " lines); the lead-in
@@ -460,8 +394,8 @@ var descClockShape = regexp.MustCompile(`\d{4}-\d{2}-\d{2}|\d{2}:\d{2}:\d{2}`)
 // many goroutines (run under -race). A data race in the lazy build trips here.
 func TestToolSearchConcurrentExecute(t *testing.T) {
 	ts, ctx := newSearch(t,
-		bm25Tool{name: "web_fetch", desc: "retrieve a url"},
-		bm25Tool{name: "calculator", desc: "evaluate arithmetic"},
+		bm25Tool{name: "web_fetch", summary: "retrieve a url"},
+		bm25Tool{name: "calculator", summary: "evaluate arithmetic"},
 	)
 	var wg sync.WaitGroup
 	for range 16 {
@@ -476,119 +410,70 @@ func TestToolSearchConcurrentExecute(t *testing.T) {
 	wg.Wait()
 }
 
-// TestToolSearch_SemanticRanksByEmbedding: a free-text query ranks the tool whose
-// searchDocument shares its tokens #1 under the semantic ranker (semindex over the
-// bag-of-words embedding). Proves the keyword branch now routes through embedding,
-// not BM25 — the headline behavior change.
-func TestToolSearch_SemanticRanksByEmbedding(t *testing.T) {
+// TestToolSearch_RanksByCapabilityWords: a free-text query ranks the tool whose
+// retrieval document shares its words #1.
+func TestToolSearch_RanksByCapabilityWords(t *testing.T) {
 	ts, ctx := newSearch(t,
-		bm25Tool{name: "web_fetch", desc: "retrieve a url and render markdown"},
-		bm25Tool{name: "calculator", desc: "evaluate arithmetic expressions"},
-		bm25Tool{name: "calendar", desc: "list meetings and appointments"},
+		bm25Tool{name: "web_fetch", summary: "retrieve a url and render markdown"},
+		bm25Tool{name: "calculator", summary: "evaluate arithmetic expressions"},
+		bm25Tool{name: "calendar", summary: "list meetings and appointments"},
 	)
 	res, err := ts.Execute(ctx, []byte(`{"query":"arithmetic expressions","max_results":1}`))
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
 	if !strings.Contains(res.Preview, "## calculator") {
-		t.Fatalf("semantic ranker did not put calculator #1 for 'arithmetic expressions': %q", res.Preview)
+		t.Fatalf("ranker did not put calculator #1 for 'arithmetic expressions': %q", res.Preview)
 	}
 }
 
-// TestToolSearch_EmbedSidecarDownReturnsExplicitError (Req-6 INFRA-ERROR): with the
-// embedder erroring, Execute returns a NON-NIL error mentioning the embed sidecar —
-// NEVER the noMatchOrientation capability-gap text, NEVER an empty match list. The
-// hard dependency must be model-visible and distinct from "no matching tools".
-func TestToolSearch_EmbedSidecarDownReturnsExplicitError(t *testing.T) {
-	ts, emb, ctx := newSearchWithEmbedder(t,
-		bm25Tool{name: "web_fetch", desc: "retrieve a url"},
-	)
-	emb.failQuery = true
-
-	res, err := ts.Execute(ctx, []byte(`{"query":"fetch a web page"}`))
-	if err == nil {
-		t.Fatalf("Execute with a down embedder returned nil error; got result %q", res.Preview)
-	}
-	if strings.Contains(res.Preview, "no matching tools") {
-		t.Fatal("a down sidecar masqueraded as the capability-gap (noMatchOrientation) path")
-	}
-	if !strings.Contains(err.Error(), "embed") {
-		t.Errorf("error does not name the embed dependency: %v", err)
-	}
-}
-
-// TestToolSearch_NilEmbedderUsesLexicalFallbackAndSelectWorks: every production
-// registry composition must support discovery. Without a runner-owned embedder,
-// free text uses the deterministic Summary/schema BM25 index; exact select stays
-// unchanged.
-func TestToolSearch_NilEmbedderUsesLexicalFallbackAndSelectWorks(t *testing.T) {
+// TestToolSearch_DiscoveryNeedsNoWiring: a ToolSearch holding nothing but a registry
+// answers both free text and select:. Discovery used to depend on a field the
+// composition root had to remember to set, and exactly one composition set it, so
+// every other one answered "no embedder wired" to every free-text query.
+func TestToolSearch_DiscoveryNeedsNoWiring(t *testing.T) {
 	reg := NewRegistry()
-	reg.Register(bm25Tool{name: "web_fetch", desc: "retrieve a url"})
-	ts := &ToolSearch{Registry: reg} // no Embed
+	reg.Register(bm25Tool{name: "web_fetch", summary: "retrieve a url"})
+	ts := &ToolSearch{Registry: reg}
 	ctx := ctxWith(t, "sess-nil", "call-nil")
 
 	freeText, err := ts.Execute(ctx, []byte(`{"query":"fetch a web page"}`))
 	if err != nil {
-		t.Fatalf("free-text lexical fallback failed: %v", err)
+		t.Fatalf("free-text discovery failed: %v", err)
 	}
 	if !strings.Contains(freeText.Preview, "## web_fetch") {
-		t.Errorf("free-text fallback failed to resolve web_fetch: %q", freeText.Preview)
+		t.Errorf("free-text failed to resolve web_fetch: %q", freeText.Preview)
 	}
 
 	res, err := ts.Execute(ctx, []byte(`{"query":"select:web_fetch"}`))
 	if err != nil {
-		t.Fatalf("select: with no embedder must still work: %v", err)
+		t.Fatalf("select: must resolve by exact name: %v", err)
 	}
 	if !strings.Contains(res.Preview, "## web_fetch") {
-		t.Errorf("select: failed to resolve by exact name without an embedder: %q", res.Preview)
+		t.Errorf("select: failed to resolve by exact name: %q", res.Preview)
 	}
 }
 
-// TestToolSearch_FusionKillSwitchOff (D-02a): AURA_TOOLSEARCH_FUSION=off falls back
-// to pure embedding (the guard never fires). Ranking still works — the env only
-// controls whether the BM25 tiebreak participates, never whether search functions.
-func TestToolSearch_FusionKillSwitchOff(t *testing.T) {
-	t.Setenv("AURA_TOOLSEARCH_FUSION", "off")
-	ts, ctx := newSearch(t,
-		bm25Tool{name: "web_fetch", desc: "retrieve a url and render markdown"},
-		bm25Tool{name: "calculator", desc: "evaluate arithmetic"},
-	)
-	res, err := ts.Execute(ctx, []byte(`{"query":"render markdown","max_results":1}`))
-	if err != nil {
-		t.Fatalf("Execute with fusion off: %v", err)
-	}
-	if !strings.Contains(res.Preview, "## web_fetch") {
-		t.Fatalf("pure-embedding (fusion off) did not rank web_fetch #1: %q", res.Preview)
-	}
-}
-
-// BenchmarkToolSearchRank measures the per-query embed+rank+tiebreak cost (Req-8)
-// over a corpus-sized bank (~64 tools, spike-055's 53–115 range). The bank is
-// pre-warmed so the benchmark times ONLY the query path (embed the query, brute-force
-// cosine over the bank, guarded BM25 tiebreak) — no ANN. The unit benchmark uses the
-// deterministic bagEmbedder so the rank cost is measured FREE (spike-055: 85µs@115
-// tools excluding the granite round-trip); the live ≤20ms TOTAL (embed dominates) is
-// the operator-gated Manual-Only row. Run with `-benchtime=3s` for a stable sample.
+// BenchmarkToolSearchRank measures the per-query rank cost over a corpus-sized
+// registry (~64 tools, spike-055's 53-115 range). The index is pre-warmed so the loop
+// times only the query path. There is no network term left to dominate it.
 func BenchmarkToolSearchRank(b *testing.B) {
 	reg := NewRegistry()
 	const corpus = 64
 	for i := range corpus {
 		reg.Register(bm25Tool{
-			name: fmt.Sprintf("tool_%02d", i),
-			desc: fmt.Sprintf("capability number %d for handling task family %d operations", i, i%7),
+			name:    fmt.Sprintf("tool_%02d", i),
+			summary: fmt.Sprintf("capability number %d for handling task family %d operations", i, i%7),
 		})
 	}
-	ts := &ToolSearch{Registry: reg, Embed: &bagEmbedder{}}
-	ctx := WithToolCallContext(context.Background(), "bench", "bc", b.TempDir(), testCap)
-	// Pre-warm the embedding bank so the loop measures only the query path.
-	if _, err := ts.match(ctx, "warm up the bank", defaultMaxResults); err != nil {
-		b.Fatalf("pre-warm: %v", err)
-	}
+	ts := &ToolSearch{Registry: reg}
+	// Pre-warm the index so the loop measures only the query path.
+	ts.match("warm up the index", defaultMaxResults)
 
 	b.ReportAllocs()
 	for b.Loop() {
-		if _, err := ts.match(ctx, "handling task family operations", defaultMaxResults); err != nil {
-			b.Fatalf("match: %v", err)
+		if matches, _ := ts.match("handling task family operations", defaultMaxResults); len(matches) == 0 {
+			b.Fatal("match returned nothing")
 		}
 	}
 }

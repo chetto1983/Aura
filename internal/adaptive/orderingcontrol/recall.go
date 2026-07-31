@@ -23,7 +23,7 @@ type memoryRecallDecisionSource interface {
 
 type dynamicRecall struct {
 	source   memoryRecallDecisionSource
-	recorder toolEventRecorder
+	recorder EventRecorder
 }
 
 // NewDynamicRecall binds memory-recall diagnostics to authoritative policy,
@@ -49,7 +49,7 @@ func NewDynamicRecall(
 
 func newDynamicRecall(
 	source memoryRecallDecisionSource,
-	recorder toolEventRecorder,
+	recorder EventRecorder,
 ) *dynamicRecall {
 	if source == nil || recorder == nil {
 		return nil

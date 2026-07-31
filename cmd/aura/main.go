@@ -221,7 +221,7 @@ func buildBaseRegistryWithAdaptiveControls(
 	reg := tools.NewRegistry()
 	reg.Register(tools.TextResponse{})
 	reg.Register(&tools.ToolSearch{
-		Registry: reg, Adaptive: adaptiveControls.toolDiscovery,
+		Registry: reg,
 	})
 	reg.Register(&tools.ReadToolOutput{})
 	reg.Register(tools.CurrentTime{})

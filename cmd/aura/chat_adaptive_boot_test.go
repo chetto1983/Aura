@@ -184,8 +184,7 @@ func TestAdaptiveControlSetIsAllOrNothing(t *testing.T) {
 		"openrouter",
 		"production-model",
 	)
-	if enabled.toolDiscovery == nil ||
-		enabled.skillRouting == nil ||
+	if enabled.skillRouting == nil ||
 		enabled.documentRetrieval == nil ||
 		enabled.memoryRecall == nil ||
 		enabled.reasoning == nil {
@@ -194,8 +193,7 @@ func TestAdaptiveControlSetIsAllOrNothing(t *testing.T) {
 }
 
 func adaptiveControlSetEmpty(controls adaptiveControlSet) bool {
-	return controls.toolDiscovery == nil &&
-		controls.skillRouting == nil &&
+	return controls.skillRouting == nil &&
 		controls.documentRetrieval == nil &&
 		controls.memoryRecall == nil &&
 		controls.reasoning == nil
@@ -329,13 +327,8 @@ func assertRegistryAdaptiveState(
 	want bool,
 ) {
 	t.Helper()
-	toolSearchRegistered, ok := reg.Get((&tools.ToolSearch{}).Spec().Name)
-	if !ok {
+	if _, ok := reg.Get((&tools.ToolSearch{}).Spec().Name); !ok {
 		t.Fatal("tool_search is not registered")
-	}
-	toolSearch, ok := toolSearchRegistered.(*tools.ToolSearch)
-	if !ok {
-		t.Fatalf("tool_search type = %T", toolSearchRegistered)
 	}
 	documentRegistered, ok := reg.Get((&tools.DocumentSearch{}).Spec().Name)
 	if !ok {
@@ -354,7 +347,6 @@ func assertRegistryAdaptiveState(
 		t.Fatalf("skill type = %T", skillRegistered)
 	}
 	got := []bool{
-		toolSearch.Adaptive != nil,
 		skill.Adaptive != nil,
 		document.Adaptive != nil,
 	}

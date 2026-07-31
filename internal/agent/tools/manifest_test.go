@@ -158,7 +158,7 @@ func TestFilesystemToolSpecsDescribeOperationalContracts(t *testing.T) {
 			name:         "grep",
 			tool:         &FSGrep{},
 			wantName:     "fs_grep",
-			wantSummary:  "Search file contents with a regexp.",
+			wantSummary:  "Find text inside file contents with a regexp (grep).",
 			wantPhrases:  []string{"Search file CONTENTS", "RE2 regular expression", "To find files by NAME use fs_glob"},
 			wantDeferred: true,
 		},

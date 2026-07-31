@@ -70,58 +70,58 @@ func TestSendFileFailsClosedWhenRootEmptyNonCLI(t *testing.T) {
 	}
 }
 
-// mutableTool lets a test change a tool's description in place to simulate an MCP
-// reconnect re-advertising the same tool name with a new description.
+// mutableTool lets a test change a tool's advertised capability in place to
+// simulate an MCP reconnect re-advertising the same tool name with new wording.
 type mutableTool struct {
-	name string
-	desc string
+	name    string
+	summary string
 }
 
 func (m *mutableTool) Spec() Spec {
-	return Spec{Name: m.name, Summary: "s", Description: m.desc, Parameters: json.RawMessage(`{"type":"object"}`), Deferred: true}
+	return Spec{Name: m.name, Summary: m.summary, Description: "usage prose", Parameters: json.RawMessage(`{"type":"object"}`), Deferred: true}
 }
 
 func (*mutableTool) Execute(context.Context, json.RawMessage) (ToolResult, error) {
 	return ToolResult{}, nil
 }
 
-// AG-020 (WR-01): when an existing tool's description changes and InvalidateIndex
-// fires, the semantic bank re-embeds that tool so its vector is no longer stale.
-func TestToolSearch_DescriptionChangeReEmbeds(t *testing.T) {
+// AG-020 (WR-01): when a registered tool changes its spec and InvalidateIndex
+// fires, the rebuilt index reflects the NEW text — the old one is not served from a
+// cache. On a reconnect an MCP server can re-advertise the same name with different
+// wording, and a stale entry would keep answering for words the tool no longer has.
+func TestToolSearch_SpecChangeIsReindexed(t *testing.T) {
 	reg := NewRegistry()
-	mt := &mutableTool{name: "alpha", desc: "original alpha capability"}
+	mt := &mutableTool{name: "alpha", summary: "original alpha capability"}
 	reg.Register(mt)
-	reg.Register(bm25Tool{name: "beta", desc: "beta gadget"})
-	emb := &bagEmbedder{}
-	ts := &ToolSearch{Registry: reg, Embed: emb}
+	reg.Register(bm25Tool{name: "beta", summary: "beta gadget"})
+	ts := &ToolSearch{Registry: reg}
 	ctx := ctxWith(t, "sess-rehash", "call-rehash")
 
 	if _, err := ts.Execute(ctx, []byte(`{"query":"alpha capability"}`)); err != nil {
 		t.Fatalf("first Execute: %v", err)
 	}
-	emb.mu.Lock()
-	afterFirst := emb.embedded
-	emb.mu.Unlock()
 
-	// Change alpha's description (a reconnect re-advertised it), then invalidate.
-	mt.desc = "completely rewritten zephyr quasar tool"
+	mt.summary = "completely rewritten zephyr quasar tool"
 	ts.InvalidateIndex()
 
-	if _, err := ts.Execute(ctx, []byte(`{"query":"zephyr quasar"}`)); err != nil {
+	res, err := ts.Execute(ctx, []byte(`{"query":"zephyr quasar"}`))
+	if err != nil {
 		t.Fatalf("post-change Execute: %v", err)
 	}
-	emb.mu.Lock()
-	delta := emb.embedded - afterFirst
-	emb.mu.Unlock()
-	// A description change must trigger at least one re-embed of the changed tool
-	// (plus the query embed). A stale append-only bank would embed only the query.
-	if delta < 2 {
-		t.Fatalf("description change did not re-embed the tool (AG-020): delta=%d", delta)
+	if !strings.Contains(res.Preview, "## alpha") {
+		t.Fatalf("the rewritten spec was not reindexed: %q", res.Preview)
+	}
+	// The retired wording no longer retrieves it. The query omits the NAME on
+	// purpose: a tool stays reachable by name forever, so only the capability words
+	// can show whether the old text is still in the index.
+	if res, err = ts.Execute(ctx, []byte(`{"query":"original capability"}`)); err != nil {
+		t.Fatalf("stale-word Execute: %v", err)
+	}
+	if strings.Contains(res.Preview, "## alpha") {
+		t.Fatalf("the stale wording still retrieves the tool: %q", res.Preview)
 	}
 }
 
-// AG-015: finished background shells are reclaimed on Evict (session end), not
-// only on the next start.
 func TestBackgroundShells_EvictReclaimsFinished(t *testing.T) {
 	b := NewBackgroundShells(nil)
 	id, err := b.start(context.Background(), "exit 0", t.TempDir(), nil)
