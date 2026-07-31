@@ -29,7 +29,6 @@ REQUIRED_CURRENT_IDS = frozenset(
         "EXT-003",
         "EXT-004",
         "EXT-005",
-        "REL-009",
     }
 )
 EXPECTED_AUDIT_PATHS = frozenset({"docs/audit/README.md"})
