@@ -152,17 +152,69 @@ out of a library, and nothing more. The routing signal already exists: the
 markitdown sidecar marks tabular chunks `kind: "rows"` (see
 `docker/markitdown/app.py:_table_chunks`).
 
-**Prose does not follow this rule.** On a 30 MB manual, handing over the file
-means the agent re-reads 828 chunks' worth of PDF to answer one question; dense
-retrieval measured 83% there and earns its cost. The split is:
+**Prose was expected to be the exception. Measured, it mostly is not.** The
+29 MB G220 manual, taken the same way:
 
-| content | index holds | agent gets |
-|---|---|---|
-| tabular (`kind: "rows"`) | one digest | the file |
-| prose (`section`/`markdown`) | chunks + vectors, as today | passages |
+| step | cost |
+|---|---|
+| `pdftotext -layout` over 29 MB → 3.57M characters | **2.1 s** |
+| count every distinct fault, alarm and parameter code | **0.21 s** |
+| result | 38 faults, 26 alarms, **616 parameters** |
+
+"How many parameters does this manual document" has no k at which retrieval
+answers it — same shape as the spreadsheet aggregate, on prose. And the file
+carries its own table of contents, so "where is the factory setting of the
+terminal strips" resolves to §7.2.7 p.182 out of the text itself.
+
+What retrieval still does better is **paraphrase**: a literal search for
+`factory reset` returns 0 hits where `factory setting` returns 79. But an agent
+holding the file probed five synonyms in ONE shell call in 0.2 s, where five
+embedding searches are five tool round trips. The advantage is narrower than it
+looks, and it is about ranking, not reach.
+
+So the split is by QUESTION SHAPE, not by content type:
+
+| question | answered by |
+|---|---|
+| "how many / list all / which is the largest" | the file — retrieval scores 0 at every k |
+| "what does it say about X", exact term known | either; the file is cheaper |
+| "what does it say about X", words unknown | retrieval ranks better; the agent can still probe |
 
 Expected saving on the current corpus: ~1.9M characters of stored chunk text and
-~440 embeddings across the six spreadsheets, replaced by six digests.
+~440 embeddings across the six spreadsheets, plus 828 chunks and their vectors
+for the manual — replaced by seven digests. On the document path specifically,
+the embedder and the reranker go to zero. They are NOT removed from Aura: agent
+memory recall still uses them, and picking WHICH document out of a library still
+needs a ranked digest — but a library of tens of digests does not need HNSW.
+
+Corroborating accident: in the live validation run the reranker was degraded
+(`rerank: degraded to identity order — sidecar transport error`) and the answer
+was still exact, because the answer never came from retrieval.
+
+## Part 3 — the converter becomes a tool, not a pipeline stage
+
+Once the agent holds the file, conversion stops being something the ingestion
+pipeline does to a document and becomes something the agent asks for when it
+wants it. Microsoft ships this already:
+[`markitdown-mcp`](https://github.com/microsoft/markitdown/tree/main/packages/markitdown-mcp)
+— one tool, `convert_to_markdown(uri)`, accepting `file:` URIs, over stdio or
+streamable HTTP (`--http --host 127.0.0.1 --port 3001`), installed with a single
+`pip install markitdown-mcp`. A `file:` URI is exactly what `document_open`
+produces.
+
+That is a compose service plus an MCP recipe entry — no Go code, and it retires
+the reason our own `docker/markitdown` FastAPI wrapper exists for the agent
+path. The wrapper still serves ingestion's `/extract` until Part 2 shrinks that
+to a digest.
+
+Its README warns: *"The server does not support authentication, and runs with
+the privileges of the user running it… DO NOT bind the server to other
+interfaces."* Both conditions are already met by Aura's deployment shape —
+sidecars run in the container network and are not published to the host.
+
+Note what this does NOT need: none of the spreadsheet MCP servers surveyed
+above. LibreOffice 7.4.7.2, openpyxl, pandas, PyMuPDF and poppler are already in
+the image, and `shell_exec` already reaches them.
 
 ## Acceptance
 
