@@ -15,6 +15,7 @@ import tempfile
 import time
 import uuid
 
+from evidence_metadata import candidate_commit
 from production_load_chaos_support import (
     MCPFixture,
     REQUIRED_CHAOS_SCENARIOS,
@@ -39,10 +40,12 @@ from production_load_chaos_support import (
 
 def new_reports(args: argparse.Namespace) -> tuple[dict, dict]:
     generated = dt.datetime.now(dt.timezone.utc).isoformat()
+    candidate = candidate_commit()
     return (
         {
             "schema_version": 1,
             "generated_at": generated,
+            "candidate_commit": candidate,
             "passed": False,
             "vegeta_version": VEGETA_VERSION,
             "supported_concurrency": args.workers * 2,
@@ -51,6 +54,7 @@ def new_reports(args: argparse.Namespace) -> tuple[dict, dict]:
         {
             "schema_version": 1,
             "generated_at": generated,
+            "candidate_commit": candidate,
             "passed": False,
             "toxiproxy_version": TOXIPROXY_VERSION,
             "scenarios": [],

@@ -1,4 +1,6 @@
+import argparse
 import json
+import re
 import unittest
 import urllib.request
 
@@ -6,9 +8,17 @@ from production_load_chaos import (
     MCPFixture,
     REQUIRED_CHAOS_SCENARIOS,
     Toxiproxy,
+    new_reports,
     validate_chaos_report,
     validate_load_report,
 )
+
+
+class EvidenceMetadataTest(unittest.TestCase):
+    def test_reports_bind_to_one_full_candidate_commit(self):
+        load, chaos = new_reports(argparse.Namespace(workers=16))
+        self.assertRegex(load["candidate_commit"], re.compile(r"^[0-9a-f]{40}$"))
+        self.assertEqual(load["candidate_commit"], chaos["candidate_commit"])
 
 
 class LoadReportValidationTest(unittest.TestCase):

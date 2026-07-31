@@ -1,10 +1,15 @@
 import json
+import re
 import unittest
 
 import capability_eval
+from evidence_metadata import candidate_commit
 
 
 class CapabilityEvalTests(unittest.TestCase):
+    def test_evidence_metadata_resolves_a_full_candidate_commit(self) -> None:
+        self.assertRegex(candidate_commit(), re.compile(r"^[0-9a-f]{40}$"))
+
     def test_manifest_has_both_polarities_per_class(self) -> None:
         capability_eval.validate_manifest(capability_eval.SCENARIOS)
         self.assertGreaterEqual(len(capability_eval.SCENARIOS), 16)

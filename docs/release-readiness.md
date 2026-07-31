@@ -5,6 +5,25 @@ means the mechanism is implemented. Release approval additionally requires the n
 evidence from the exact candidate commit; a missing, skipped, stale, or blocked required artifact
 is a failed release.
 
+The machine gate is:
+
+```bash
+make evidence-contracts
+make release-readiness
+```
+
+`make release-readiness` accepts only the ten canonical JSON reports in
+`artifacts/production-readiness/`, all bound to the exact full `git rev-parse HEAD`, all newer
+than 24 hours. It emits `release-readiness-report.json` with the SHA-256 of every input so the
+approved bundle cannot be silently replaced.
+
+For a publishable candidate, run the GitHub Actions `Production Readiness` workflow on the
+candidate branch and supply the immutable previously-approved image. Its job downloads only
+successful CI artifacts for that exact SHA, verifies exact-SHA CodeQL, performs the live image
+rollback rehearsal, runs the ten-report gate, and uploads the immutable bundle. The tag-triggered
+`Release` workflow refuses to publish unless that exact commit has a successful
+`Production readiness bundle` check.
+
 ## Architecture decisions
 
 - [x] Agent loop semantics — ADR 0040
@@ -18,16 +37,16 @@ is a failed release.
 
 | Gate | Required evidence | Pass condition |
 |---|---|---|
-| security | CodeQL/govulncheck/workflow-pin/profile-policy jobs | zero unresolved release-blocking alerts; strict profile assertions pass |
-| coverage | owned-surface coverage report | statements ≥85% with no empty/filtered tier |
-| mutation | Go critical-boundary + frontend Stryker reports | killed ≥70% in every named scope |
+| security | `security-report.json` from `security_evidence.py` | exact-SHA CodeQL Go+JS, govulncheck, workflow-pin, strict-profile tests pass |
+| coverage | `coverage-report.json` | statements ≥85% with DB and Neo4j tiers; no empty/filtered tier |
+| mutation | `mutation-report.json` | killed ≥70% separately for gateway, identity, profile, sandbox, and frontend |
 | capability | `capability-eval.json` | every declared scenario executed and passed; zero skip/missing |
 | load | `load-report.json` | supported concurrency met; success ratio and p95 inside declared budget |
 | chaos | `chaos-report.json` | DB, MCP, Garage, and process-kill scenarios executed, degraded truthfully, recovered |
 | disaster recovery | `dr-report.json` | Postgres, Neo4j offline, sidecars, and Garage restored and checksum-verified |
-| observability | observability contract + live `/readyz` evidence | failure reasons honest and alert/runbook links valid |
-| rollback | candidate rollback rehearsal | previous image/config starts, migrations are compatible, readiness returns healthy |
-| audit | dated definitive closure ledger | no undisclosed `open`; `external_blocked` rows excluded from score |
+| observability | `observability-report.json` | negative fixtures, runtime smoke, live health/readiness, dashboards, alerts, runbooks pass |
+| rollback | `rollback-report.json` | distinct image digests; previous config starts; migrations compatible; candidate restored healthy |
+| audit | `audit-closure-report.json` | no undisclosed `open`; `external_blocked` rows disclosed and excluded from score |
 
 ## Operational checks
 

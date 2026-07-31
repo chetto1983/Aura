@@ -61,6 +61,31 @@ jobs:
       - name: Workflow pin gate
         run: bash scripts/workflow_pin_gate.sh
 
+      - name: Production-evidence contract tests
+        run: |
+          PYTHONPATH=scripts python3 -m unittest \
+            scripts/audit_closure_gate_test.py \
+            scripts/capability_eval_test.py \
+            scripts/critical_mutation_gate_test.py \
+            scripts/observability_evidence_test.py \
+            scripts/production_load_chaos_test.py \
+            scripts/release_check_run_gate_test.py \
+            scripts/release_readiness_gate_test.py \
+            scripts/rollback_rehearsal_test.py \
+            scripts/security_evidence_test.py
+          bash scripts/coverage_gate_test.sh
+
+      - name: Definitive audit closure gate
+        run: PYTHONPATH=scripts python3 scripts/audit_closure_gate.py
+
+      - name: Upload definitive audit closure report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: audit-closure
+          path: artifacts/production-readiness/audit-closure-report.json
+          if-no-files-found: error
+
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
@@ -488,6 +513,11 @@ jobs:
       - name: Production load + chaos gate (Vegeta + Toxiproxy)
         run: python3 scripts/production_load_chaos.py --race
 
+      - name: Observability release evidence
+        run: |
+          PYTHONPATH=scripts python3 scripts/observability_evidence.py \
+            --load-report artifacts/production-readiness/load-report.json
+
       - name: Upload load + chaos reports
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -496,6 +526,7 @@ jobs:
           path: |
             artifacts/production-readiness/load-report.json
             artifacts/production-readiness/chaos-report.json
+            artifacts/production-readiness/observability-report.json
           if-no-files-found: error
 
       - name: Four-plane disaster-recovery drill
@@ -696,6 +727,14 @@ jobs:
         # job. NO-SKIP-AS-GREEN: the tagged tiers t.Fatal under $CI when env is
         # unset, so a skipped tier fails the gate rather than passing it green.
         run: bash scripts/coverage_gate.sh
+
+      - name: Upload owned-surface coverage report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: owned-surface-coverage
+          path: artifacts/production-readiness/coverage-report.json
+          if-no-files-found: error
 
   multimodal-integration-test:
     name: Multimodal sidecars (multimodal_integration tier, live STT/TTS)
@@ -1197,48 +1236,52 @@ jobs:
             "${{ github.event.pull_request.head.sha || github.sha }}"
 
   web-mutation:
-    name: Web mutation testing (Stryker >= 70% killed)
+    name: Critical mutation testing (each boundary >= 70% killed)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    # FND-06 industrial gate, frontend parity with the Go mutation spot-check floor.
-    # Stryker mutates the critical web files (stryker.config.json `mutate` list);
-    # `break: 70` makes the run exit non-zero below 70% killed, so a weakened test
-    # suite reds the build instead of merging silently. Path-filtered + backstopped
-    # exactly like the other web jobs (a Go-only PR pays no npm cost).
+    timeout-minutes: 45
+    # REL-02: this is deliberately unconditional. The five independently-scored
+    # boundaries publish one fresh candidate-bound report; no strong scope can
+    # average away a weak one and a Go-only change cannot reuse stale web evidence.
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Detect web changes
-        uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4
-        id: changes
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          filters: |
-            web:
-              - 'web/**'
-              - 'internal/webui/dist/**'
-              - '.github/workflows/ci.yml'
+          go-version-file: go.mod
+          cache: true
 
       - name: Set up Node
-        if: steps.changes.outputs.web == 'true'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: ${{ env.AURA_CI_NODE_VERSION }}
           cache: npm
           cache-dependency-path: web/package-lock.json
 
-      - name: Stryker mutation run (break=70)
-        if: steps.changes.outputs.web == 'true'
+      - name: Install pinned Go mutation runner
+        run: |
+          go install github.com/avito-tech/go-mutesting/cmd/go-mutesting@v0.0.0-20251226130216-48d0401f00fb
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Stryker mutation run with fresh JSON evidence
         run: cd web && npm ci && npm run mutation
 
-      - name: No-skip-as-green backstop (filter must not have misfired)
-        # WR-05: see web-lint — fails if the filter said web==false but a web path
-        # actually changed in the event range. Fail-open on an uncomputable range.
-        if: steps.changes.outputs.web != 'true'
+      - name: Per-boundary Go + frontend mutation gate
         run: |
-          bash scripts/web_filter_backstop.sh \
-            "${{ github.event.pull_request.base.sha || github.event.before }}" \
-            "${{ github.event.pull_request.head.sha || github.sha }}"
+          PYTHONPATH=scripts python3 -m unittest scripts/critical_mutation_gate_test.py
+          PYTHONPATH=scripts python3 scripts/critical_mutation_gate.py
+
+      - name: Upload critical mutation evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: critical-mutation
+          path: |
+            artifacts/production-readiness/mutation-report.json
+            artifacts/production-readiness/mutation-logs/
+            web/reports/mutation/mutation.json
+          if-no-files-found: error
 
   web-dist-freshness:
     name: Web dist freshness (committed internal/webui/dist == fresh build, D-05)

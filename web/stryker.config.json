@@ -40,7 +40,8 @@
   "dryRunTimeoutMinutes": 10,
   "vitest": { "configFile": "vitest.stryker.config.ts" },
   "concurrency": 4,
-  "reporters": ["clear-text", "progress"],
+  "reporters": ["clear-text", "progress", "json"],
+  "jsonReporter": { "fileName": "reports/mutation/mutation.json" },
   "tempDirName": ".stryker-tmp",
   "cleanTempDir": true
 }

@@ -11,6 +11,7 @@ SOURCE_DB="${POSTGRES_DB:-aura}"
 DB_USER="${POSTGRES_USER:-aura}"
 DB_PASS="${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}"
 NEO4J_PASS="${NEO4J_PASSWORD:?NEO4J_PASSWORD required}"
+CANDIDATE_COMMIT="$(git rev-parse HEAD)"
 
 case "$RUN_ID" in
   *[!A-Za-z0-9_-]*) echo "restore drill: unsafe run id" >&2; exit 2 ;;
@@ -172,7 +173,7 @@ echo "==> DR plane 4/4: Garage authenticated export/delete/restore"
   --backup-dir "$WORK_DIR/garage" \
   --output "$WORK_DIR/garage.json"
 
-python3 - "$OUTPUT" "$RUN_ID" \
+python3 - "$OUTPUT" "$RUN_ID" "$CANDIDATE_COMMIT" \
   "$WORK_DIR/postgres.json" "$WORK_DIR/neo4j.json" \
   "$WORK_DIR/sidecars.json" "$WORK_DIR/garage.json" <<'PY'
 import datetime as dt
@@ -182,7 +183,8 @@ import sys
 
 output = pathlib.Path(sys.argv[1])
 run_id = sys.argv[2]
-planes = [json.loads(pathlib.Path(path).read_text(encoding="utf-8")) for path in sys.argv[3:]]
+candidate_commit = sys.argv[3]
+planes = [json.loads(pathlib.Path(path).read_text(encoding="utf-8")) for path in sys.argv[4:]]
 expected = {"postgres", "neo4j", "sidecars", "garage"}
 observed = {plane.get("plane") for plane in planes}
 if observed != expected:
@@ -195,6 +197,7 @@ for plane in planes:
 report = {
     "schema_version": 1,
     "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+    "candidate_commit": candidate_commit,
     "run_id": run_id,
     "passed": True,
     "planes_executed": len(planes),

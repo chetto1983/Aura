@@ -24,6 +24,7 @@ cd "$(git rev-parse --show-toplevel)"
 MIN="${AURA_COVERAGE_MIN:-85}"
 TAGS="${AURA_COVERAGE_TAGS:-db_integration neo4j_integration}"
 PROFILE="${AURA_COVERAGE_PROFILE:-cover_gate.out}"
+REPORT="${AURA_COVERAGE_REPORT:-artifacts/production-readiness/coverage-report.json}"
 
 # Anti-footgun (defense-in-depth; see scripts/coverage_docker.sh + the 2026-07-10
 # data-loss incident): the db_integration tier TRUNCATEs/DELETEs shared auth tables
@@ -100,3 +101,32 @@ awk \
   }
   printf "ok: owned coverage %d/%d (%s%% displayed) >= %s%%\n", covered, total, displayed, min
 }'
+
+python3 - "$REPORT" "$COVERED_STATEMENTS" "$TOTAL_STATEMENTS" "$TAGS" <<'PY'
+import datetime as dt
+import json
+import pathlib
+import subprocess
+import sys
+
+output = pathlib.Path(sys.argv[1])
+covered = int(sys.argv[2])
+total = int(sys.argv[3])
+tags = sys.argv[4].split()
+candidate = subprocess.run(
+    ["git", "rev-parse", "HEAD"], text=True, capture_output=True, check=True
+).stdout.strip()
+report = {
+    "schema_version": 1,
+    "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+    "candidate_commit": candidate,
+    "passed": True,
+    "statements_percent": covered * 100 / total,
+    "covered_statements": covered,
+    "total_statements": total,
+    "tiers_executed": tags,
+    "empty_tiers": 0,
+}
+output.parent.mkdir(parents=True, exist_ok=True)
+output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+PY

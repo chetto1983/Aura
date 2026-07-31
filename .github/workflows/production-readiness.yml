@@ -1,0 +1,161 @@
+name: Production Readiness
+
+on:
+  workflow_dispatch:
+    inputs:
+      previous_image:
+        description: Immutable previously-approved image used for the rollback rehearsal
+        required: true
+        default: ghcr.io/chetto1983/aura:v1.0.1
+        type: string
+
+permissions:
+  actions: read
+  checks: read
+  contents: read
+  packages: read
+
+env:
+  AURA_ACCESS_TOKEN: readiness-not-a-secret
+  AURA_AUTHULA_SECRET: 00000000000000000000000000000000000000000000000000000000000000a1
+  AURA_AGENT_MEMORY_MCP_AUTH_SECRET: "00000000000000000000000000000000000000000000000000000000000000e5"
+  AURA_PIM_MCP_ADMIN_TOKEN: readiness-not-a-secret
+  SEARXNG_SECRET: 00000000000000000000000000000000000000000000000000000000000000b2
+  AURA_OBJECTSTORE_ACCESS_KEY: GK000000000000000000000000
+  AURA_OBJECTSTORE_SECRET_KEY: 00000000000000000000000000000000000000000000000000000000000000c3
+  GARAGE_RPC_SECRET: 00000000000000000000000000000000000000000000000000000000000000d4
+  AURA_GARAGE_ADMIN_TOKEN: readiness-not-a-secret
+  POSTGRES_USER: aura
+  POSTGRES_PASSWORD: readiness-db-password
+  POSTGRES_DB: aura
+  POSTGRES_HOST: 127.0.0.1
+  POSTGRES_PORT: "5432"
+  POSTGRES_SSLMODE: disable
+  NEO4J_USER: neo4j
+  NEO4J_PASSWORD: readiness-neo4j-password
+  AURA_NEO4J_BOLT_URL: bolt://127.0.0.1:7687
+  AURA_NEO4J_DATABASE: neo4j
+  AURA_DB_URL: postgres://aura_app:readiness-db-password@127.0.0.1:5432/aura?sslmode=disable
+  AURA_DB_MIGRATE_URL: postgres://aura_migrate:readiness-db-password@127.0.0.1:5432/aura?sslmode=disable
+  AURA_AGENT_MEMORY_VENDOR_REV: ${{ github.sha }}
+  AURA_CI_LLAMA_CACHE_DIR: /tmp/aura-readiness-cache/llama.cpp
+  AURA_CI_NEO4J_PLUGINS_DIR: /tmp/aura-readiness-cache/neo4j-plugins
+  COMPOSE_FILE: compose.yaml:.github/compose.ci-musr.yaml:.github/compose.ci-cache.yaml
+
+jobs:
+  readiness:
+    name: Production readiness bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Locate successful exact-SHA CI run
+        id: ci
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run_id="$(
+            gh api -X GET "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
+              -f head_sha="$GITHUB_SHA" -f status=success -F per_page=20 \
+              --jq '.workflow_runs | sort_by(.created_at) | last | .id'
+          )"
+          test -n "$run_id"
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+
+      - name: Download exact-SHA CI evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.ci.outputs.run_id }}
+        run: |
+          mkdir -p /tmp/aura-ci-evidence artifacts/production-readiness
+          for artifact in \
+            audit-closure capability-eval production-load-chaos disaster-recovery \
+            owned-surface-coverage critical-mutation
+          do
+            gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" \
+              --name "$artifact" --dir "/tmp/aura-ci-evidence/$artifact"
+          done
+          for report in \
+            audit-closure-report.json capability-eval.json load-report.json \
+            chaos-report.json dr-report.json observability-report.json \
+            coverage-report.json mutation-report.json
+          do
+            mapfile -t matches < <(find /tmp/aura-ci-evidence -type f -name "$report")
+            test "${#matches[@]}" -eq 1
+            cp "${matches[0]}" "artifacts/production-readiness/$report"
+          done
+
+      - name: Exact-SHA CodeQL check inventory
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api -X GET "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs" \
+            -F per_page=100 > /tmp/aura-check-runs.json
+
+      - name: Exact-candidate security evidence
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          PATH="$(go env GOPATH)/bin:$PATH" PYTHONPATH=scripts \
+            python3 scripts/security_evidence.py \
+              --check-runs-json /tmp/aura-check-runs.json
+
+      - name: Build candidate and pull previous image
+        env:
+          PREVIOUS_IMAGE: ${{ inputs.previous_image }}
+          CANDIDATE_IMAGE: aura:candidate-${{ github.sha }}
+        run: |
+          docker pull "$PREVIOUS_IMAGE"
+          docker build --file docker/aura/Dockerfile --tag "$CANDIDATE_IMAGE" .
+          echo "AURA_IMAGE=$CANDIDATE_IMAGE" >> "$GITHUB_ENV"
+
+      - name: Start rollback dependencies and migrate
+        run: |
+          mkdir -p \
+            "$AURA_CI_LLAMA_CACHE_DIR/llama.cpp" \
+            "$AURA_CI_LLAMA_CACHE_DIR/huggingface" \
+            "$AURA_CI_NEO4J_PLUGINS_DIR"
+          chmod -R a+rwX "$AURA_CI_LLAMA_CACHE_DIR" "$AURA_CI_NEO4J_PLUGINS_DIR"
+          make neo4j-migrate
+          docker compose up -d garage
+          docker compose up -d --build \
+            aura-agent-memory-mcp garage-bootstrap whatsapp aura-pim-mcp
+
+      - name: Candidate to previous to candidate rollback rehearsal
+        env:
+          PREVIOUS_IMAGE: ${{ inputs.previous_image }}
+          CANDIDATE_IMAGE: aura:candidate-${{ github.sha }}
+        run: |
+          PYTHONPATH=scripts python3 scripts/rollback_rehearsal.py \
+            --previous-image "$PREVIOUS_IMAGE" \
+            --candidate-image "$CANDIDATE_IMAGE"
+
+      - name: Fail-closed ten-report release gate
+        run: |
+          PYTHONPATH=scripts python3 scripts/release_readiness_gate.py \
+            --evidence-dir artifacts/production-readiness \
+            --candidate "$GITHUB_SHA" \
+            --output artifacts/production-readiness/release-readiness-report.json
+
+      - name: Upload immutable readiness bundle
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: production-readiness-${{ github.sha }}
+          path: artifacts/production-readiness/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Tear down
+        if: always()
+        run: docker compose down --volumes

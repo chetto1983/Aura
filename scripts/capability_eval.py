@@ -15,6 +15,8 @@ import time
 from collections import defaultdict
 from typing import Iterable
 
+from evidence_metadata import candidate_commit
+
 
 @dataclasses.dataclass(frozen=True)
 class Scenario:
@@ -137,6 +139,7 @@ def build_report(race: bool) -> tuple[dict[str, object], bool]:
     report: dict[str, object] = {
         "schema_version": 1,
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "candidate_commit": candidate_commit(),
         "race": race,
         "go_version": go_version,
         "totals": {

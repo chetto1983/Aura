@@ -41,11 +41,13 @@ chmod +x "$TMP/bin/go"
 run_gate() {
   local covered="$1"
   local profile="$TMP/profile-${covered}.out"
+  local report="$TMP/report-${covered}.json"
   PATH="$TMP/bin:$PATH" \
     FAKE_COVERED="$covered" \
     FAKE_TOTAL=31527 \
     AURA_COVERAGE_TAGS=unit \
     AURA_COVERAGE_PROFILE="$profile" \
+    AURA_COVERAGE_REPORT="$report" \
     bash scripts/coverage_gate.sh
 }
 
@@ -65,5 +67,16 @@ if ! grep -q 'ok: owned coverage' <<<"$above_out"; then
     "$above_out" >&2
   exit 1
 fi
+python3 - "$TMP/report-26798.json" <<'PY'
+import json, pathlib, re, sys
+report = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+assert report["passed"] is True
+assert report["covered_statements"] == 26798
+assert report["total_statements"] == 31527
+assert report["statements_percent"] > 85
+assert report["tiers_executed"] == ["unit"]
+assert report["empty_tiers"] == 0
+assert re.fullmatch(r"[0-9a-f]{40}", report["candidate_commit"])
+PY
 
 echo "ok: coverage gate compares the exact statement ratio"

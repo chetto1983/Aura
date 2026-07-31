@@ -13,6 +13,7 @@ on:
 permissions:
   contents: write   # create the release + upload assets
   packages: write   # push the multi-arch image to ghcr.io
+  checks: read      # require the exact-candidate production-readiness check
 
 jobs:
   goreleaser:
@@ -22,6 +23,14 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0   # goreleaser needs full history for the changelog
+
+      - name: Require exact-candidate production readiness
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api -X GET "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs" \
+            -F per_page=100 > /tmp/aura-check-runs.json
+          python3 scripts/release_check_run_gate.py /tmp/aura-check-runs.json
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
