@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/config"
@@ -52,5 +53,29 @@ func TestBuildSandboxRouterWiresEgress(t *testing.T) {
 	}
 	if r := buildSandboxRouter(nonStrict); r != nil {
 		t.Fatal("buildSandboxRouter under a non-strict profile must be nil (host-direct no-op, no WithEgress path)")
+	}
+}
+
+// TestBuildSandboxRouterStrictClientErrorFailsClosed proves the production composition root
+// cannot turn a strict profile into host-direct execution when the Docker client configuration is
+// invalid. The strict router must remain present and Route must report routed=true plus an error,
+// which tells every sandbox-aware tool to deny instead of executing on the host.
+func TestBuildSandboxRouterStrictClientErrorFailsClosed(t *testing.T) {
+	t.Setenv("DOCKER_HOST", "invalid-docker-host")
+	cfg := &config.Config{
+		Profile: config.ProfileServerProduction,
+		Sandbox: config.SandboxConfig{Image: "aura-sandbox:latest"},
+	}
+
+	router := buildSandboxRouter(cfg)
+	if router == nil {
+		t.Fatal("strict Docker client construction failure returned a nil router; that permits host fallback")
+	}
+	handle, routed, err := router.Route(context.Background())
+	if !routed {
+		t.Fatal("strict Docker client construction failure returned routed=false; tool would execute on the host")
+	}
+	if err == nil {
+		t.Fatalf("Route = (%+v, %v, nil), want a containment error", handle, routed)
 	}
 }

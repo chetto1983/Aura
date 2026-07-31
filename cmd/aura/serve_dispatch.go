@@ -47,7 +47,7 @@ func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry, own
 	// The per-identity box router (Phase 37) is built ONCE at composition (assembleChatEnv) and
 	// retained on chat so the SAME instance backs both the box-capable tools (plan 37-07 wiring)
 	// AND this reaper registration — never two routers with divergent box-handle maps. It is nil
-	// under a non-strict profile or a Docker-unavailable host (a safe host-direct no-op everywhere).
+	// only under a non-strict profile; strict Docker composition failures keep a fail-closed router.
 	// A genuinely-nil SandboxReaper interface (not a typed-nil *SandboxRouter) yields the
 	// handler's "disabled (no reaper)" no-op — exactly the identity_purge nil-Purger note.
 	var sandboxReaper handlers.SandboxReaper
@@ -161,22 +161,23 @@ func (a handlerAdapter) Run(ctx context.Context, job cron.Job) (string, error) {
 
 // buildSandboxRouter constructs the per-identity box router at composition, sourced entirely from
 // cfg.Sandbox (37-01). It returns NIL — a safe host-direct no-op everywhere (Route/Strict/
-// SuspendIdle all nil-guard) — under a non-strict profile (the box is interposed ONLY under
-// single_user_hardened / server_production, SC-4) or when a Docker client cannot be constructed (a
-// Docker-unavailable host must never fail boot). Under a strict profile the box gets the always-on
-// egress floor (SBX-04): newSandboxBackend wires usersandbox.WithEgress from cfg.Sandbox.EgressImage,
-// so every routed box carries the DROP-RFC1918/metadata/bridge tenancy sidecar. Because the config
-// default is NON-EMPTY (aura-egress:latest, SC#4) the floor is on-by-default, and box creation is
-// fail-CLOSED when that image is unavailable (ensureImage pull-fail -> Resolve error -> Route
-// routed=true,err -> the tool DENIES) — a strict-profile box never comes up un-floored.
+// SuspendIdle all nil-guard) — only under a non-strict profile (the box is interposed ONLY under
+// single_user_hardened / server_production, SC-4). A strict-profile Docker client construction
+// failure returns a non-nil router with no backend: Route reports routed=true plus an error, so
+// tools deny instead of falling back to the host (GATE-01). With a client, the box gets the
+// always-on egress floor (SBX-04): newSandboxBackend wires usersandbox.WithEgress from
+// cfg.Sandbox.EgressImage, so every routed box carries the DROP-RFC1918/metadata/bridge tenancy
+// sidecar. Because the config default is NON-EMPTY (aura-egress:latest, SC#4) the floor is
+// on-by-default, and box creation is fail-CLOSED when that image is unavailable (ensureImage
+// pull-fail -> Resolve error -> Route routed=true,err -> the tool DENIES).
 func buildSandboxRouter(cfg *config.Config) *usersandbox.SandboxRouter {
 	if cfg == nil || !cfg.Profile.Strict() {
 		return nil // non-strict: host-direct everywhere, no box runtime needed (SC-4)
 	}
 	cli, err := client.New(client.FromEnv) // moby v0.4.1 New negotiates the API version by default (downgrades for older daemons).
 	if err != nil {
-		slog.Warn("aura: docker client unavailable — sandbox routing disabled (host-direct)", "err", err)
-		return nil
+		slog.Error("aura: docker client unavailable — strict sandbox tools will fail closed", "err", err)
+		return usersandbox.NewSandboxRouter(nil, cfg.Profile, cfg.Sandbox)
 	}
 	return usersandbox.NewSandboxRouter(newSandboxBackend(cli, cfg), cfg.Profile, cfg.Sandbox)
 }

@@ -15,6 +15,7 @@ package usersandbox
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -32,11 +33,15 @@ const localIdentityID = "00000000-0000-0000-0000-000000000001"
 // 1e9 nano-CPUs), the container.Resources.NanoCPUs cgroup cap (D-14).
 const nanoCPUsPerCPU = 1_000_000_000
 
+// errBackendUnavailable is returned by a strict router whose provider could not be composed.
+// Keeping the router present preserves the routed=true denial signal and prevents host fallback.
+var errBackendUnavailable = errors.New("strict sandbox backend unavailable")
+
 // SandboxRouter is the per-identity routing seam every strict-profile tool call passes through
 // (SBX-01). It holds the box Backend, the runtime profile that decides contain-vs-host-direct,
 // the AURA_SANDBOX_* config specFor sources the spec from, and a mutex-guarded lastUsed map the
-// idle reaper reads. A nil *SandboxRouter is a safe host-direct no-op everywhere (Route/Strict/
-// SuspendIdle all nil-check), so a Docker-unavailable or lenient-profile boot can wire nil.
+// idle reaper reads. A nil *SandboxRouter is a host-direct no-op reserved for lenient profiles;
+// strict composition failures wire a non-nil router with a nil backend so Route fails closed.
 type SandboxRouter struct {
 	backend Backend
 	profile config.RuntimeProfile
@@ -79,6 +84,9 @@ func (r *SandboxRouter) Strict() bool {
 func (r *SandboxRouter) Route(ctx context.Context) (BoxHandle, bool, error) {
 	if r == nil || !r.profile.Strict() {
 		return BoxHandle{}, false, nil
+	}
+	if r.backend == nil {
+		return BoxHandle{}, true, errBackendUnavailable
 	}
 	id := r.identityID(ctx)
 	h, err := r.backend.Resolve(ctx, r.specFor(id))

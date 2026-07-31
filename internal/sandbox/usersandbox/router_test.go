@@ -102,6 +102,24 @@ func TestRoute_FailClosed(t *testing.T) {
 	}
 }
 
+// TestRoute_MissingBackendFailsClosed covers strict composition failures before a concrete
+// backend exists. A strict router with no backend remains a containment boundary: routed=true
+// plus an error, never the routed=false host-direct signal reserved for lenient profiles.
+func TestRoute_MissingBackendFailsClosed(t *testing.T) {
+	r := NewSandboxRouter(nil, config.ProfileServerProduction, unitSandboxConfig())
+
+	h, routed, err := r.Route(context.Background())
+	if !routed {
+		t.Fatal("routed = false with a missing strict backend, want true so the tool denies")
+	}
+	if err == nil {
+		t.Fatal("Route error = nil with a missing strict backend, want containment error")
+	}
+	if h != (BoxHandle{}) {
+		t.Fatalf("handle = %+v, want zero on missing backend", h)
+	}
+}
+
 // TestRoute_LocalFallback proves the local / no-principal caller keys a `local`-id box (never
 // host), and an authenticated principal keys strictly on its own identity (T-37-05-CROSSID).
 func TestRoute_LocalFallback(t *testing.T) {
