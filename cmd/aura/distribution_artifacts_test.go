@@ -159,6 +159,35 @@ func TestProductionReadinessProvidesDaemonBootContract(t *testing.T) {
 	}
 }
 
+func TestRetiredAuraImagesFailClosed(t *testing.T) {
+	root := repoRootForTest(t)
+	readiness := readProjectFile(t, root, ".github/workflows/production-readiness.yml")
+	retirement := readProjectFile(t, root, ".github/workflows/retire-aura-images.yml")
+
+	if strings.Contains(readiness, "ghcr.io/chetto1983/aura:v1.0.1") {
+		t.Fatal("production readiness must not default to the retired v1.0.1 image")
+	}
+	for _, want := range []string{
+		`required: true`,
+		`^.+@sha256:[0-9a-f]{64}$`,
+		"retired-aura-image-digests.txt",
+	} {
+		if !strings.Contains(readiness, want) {
+			t.Fatalf("production readiness missing retired-image guard %q", want)
+		}
+	}
+	for _, want := range []string{
+		"packages: write",
+		"DELETE_ALL_AURA_IMAGES",
+		`packages/container/aura/versions`,
+		`jq -e 'length == 0'`,
+	} {
+		if !strings.Contains(retirement, want) {
+			t.Fatalf("retirement workflow missing fail-closed contract %q", want)
+		}
+	}
+}
+
 func TestDotEnvTemplateHygiene(t *testing.T) {
 	root := repoRootForTest(t)
 	envExample := readProjectFile(t, root, ".env.example")

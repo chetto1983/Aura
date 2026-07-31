@@ -6,7 +6,6 @@ on:
       previous_image:
         description: Immutable previously-approved image used for the rollback rehearsal
         required: true
-        default: ghcr.io/chetto1983/aura:v1.0.1
         type: string
 
 permissions:
@@ -54,6 +53,20 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+
+      - name: Reject tag-only and retired rollback images
+        env:
+          PREVIOUS_IMAGE: ${{ inputs.previous_image }}
+        run: |
+          if [[ ! "$PREVIOUS_IMAGE" =~ ^.+@sha256:[0-9a-f]{64}$ ]]; then
+            echo "previous_image must be an immutable image@sha256 digest" >&2
+            exit 1
+          fi
+          previous_digest="${PREVIOUS_IMAGE##*@}"
+          if grep -Fxq "$previous_digest" scripts/retired-aura-image-digests.txt; then
+            echo "previous_image digest is explicitly retired" >&2
+            exit 1
+          fi
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
