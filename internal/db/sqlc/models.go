@@ -509,6 +509,9 @@ type AuraDocuments struct {
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+	// What this document IS, in enough words to pick it out of a library: sheets and their column headers with row counts for tabular content, the heading outline for prose. Not the content — document_open hands over the file for that.
+	Digest    string      `json:"digest"`
+	DigestTsv interface{} `json:"digest_tsv"`
 }
 
 // Identity-scoped public-operation state and bounded replay metadata linked optionally to the append-only tool invocation audit tuple.

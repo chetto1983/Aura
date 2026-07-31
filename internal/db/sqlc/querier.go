@@ -334,7 +334,17 @@ type Querier interface {
 	// LOCKED cross-slice contract (D-A5-03 / SPEC Req#13). Telegram /search (Phase 13)
 	// reuses this EXACT query; only the excerpt rendering differs per channel.
 	SearchConversationTurns(ctx context.Context, arg SearchConversationTurnsParams) ([]SearchConversationTurnsRow, error)
+	// Rank a library by what each document IS, to pick WHICH file to open. The
+	// ranking is Postgres' own ts_rank over the weighted title/tags/digest vector —
+	// no embedding, no reranker, no graph. websearch_to_tsquery is used because the
+	// query arrives as a user's sentence, and it degrades a malformed one to terms
+	// instead of raising, which plainto_tsquery does not do as gracefully.
+	//
+	// A blank query is not an error: it lists the library newest-first, which is what
+	// "the file I just uploaded" means.
+	SearchDocumentDigests(ctx context.Context, arg SearchDocumentDigestsParams) ([]SearchDocumentDigestsRow, error)
 	SetConversationTitleIfNull(ctx context.Context, arg SetConversationTitleIfNullParams) error
+	SetDocumentDigest(ctx context.Context, arg SetDocumentDigestParams) (AuraDocuments, error)
 	// Narrow status write for background workers, which know the document but not the
 	// identity that owns it. UpdateDocument above needs identity_id and rewrites every column,
 	// so a worker could not use it to correct a single field without inventing the rest.
