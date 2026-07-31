@@ -4,6 +4,9 @@ set -euo pipefail
 export MSYS_NO_PATHCONV=1
 export MSYS2_ARG_CONV_EXCL='*'
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/restore_drill_lib.sh"
+
 OUTPUT="${AURA_DR_REPORT:-artifacts/production-readiness/dr-report.json}"
 RUN_ID="${AURA_DR_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
 PG_SERVICE="${PG_CONTAINER:-postgres}"
@@ -16,7 +19,11 @@ CANDIDATE_COMMIT="$(git rev-parse HEAD)"
 case "$RUN_ID" in
   *[!A-Za-z0-9_-]*) echo "restore drill: unsafe run id" >&2; exit 2 ;;
 esac
-SAFE_ID="$(printf '%s' "$RUN_ID" | tr -cd 'A-Za-z0-9_' | cut -c1-24)"
+SAFE_ID="$(dr_safe_id "$RUN_ID")"
+if [ -z "$SAFE_ID" ]; then
+  echo "restore drill: run id has no usable identifier characters" >&2
+  exit 2
+fi
 TARGET_DB="aura_dr_${SAFE_ID}"
 FIXTURE_SCHEMA="aura_dr_${SAFE_ID}"
 FIXTURE_HASH="$(printf '%s' "$RUN_ID" | sha256sum | awk '{print $1}')"

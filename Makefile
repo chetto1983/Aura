@@ -147,6 +147,7 @@ evidence-contracts:
 		scripts/rollback_rehearsal_test.py \
 		scripts/security_evidence_test.py
 	bash scripts/coverage_gate_test.sh
+	bash scripts/restore_drill_name_test.sh
 
 critical-mutation:
 	PYTHONPATH=scripts python3 -m unittest scripts/critical_mutation_gate_test.py
