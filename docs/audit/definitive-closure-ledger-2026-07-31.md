@@ -222,6 +222,7 @@ all source registers to the exact candidate commit by SHA-256.
 | REL-004 | closed | `accb7b8c3` explicit Neo4j helper shell | four-plane DR reaches offline dump/load |
 | REL-005 | closed | `febfeb35c` Compose-resolved sidecar source volume | local and GitHub four-plane checksum drill |
 | REL-006 | closed | readiness daemon boot env and fail-fast diagnostics | workflow contract and rollback diagnostic tests |
+| REL-007 | closed | loopback rollback web-auth compatibility env | current and previous image boot contract |
 | EXT-001 | external_blocked | no authorized Calendar provider account | 14 direct calls; no-account failures honest |
 | EXT-002 | external_blocked | no authorized email test account/recipient | send-email failed closed without delivery |
 | EXT-003 | external_blocked | WhatsApp bridge waiting for QR pairing | 14 direct calls; unpaired failures honest |

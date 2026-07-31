@@ -200,6 +200,11 @@ files, so no external message or media could be delivered.
   fail-fast config stopped the candidate before health. The workflow now
   provides a non-secret degraded-test key, and rollback readiness fails early
   with bounded container logs when a container exits.
+- **REL-007 (`closed`)**: the current Authula-ready Compose configuration was
+  not boot-compatible with the legacy web-auth guard in the approved previous
+  image. The loopback-only rollback workflow now explicitly trusts its local
+  CI boundary, allowing both generations to boot without weakening the
+  production Compose default.
 
 ## Remaining gates and quality notes
 
