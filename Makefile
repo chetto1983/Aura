@@ -147,6 +147,7 @@ evidence-contracts:
 		scripts/rollback_rehearsal_test.py \
 		scripts/security_evidence_test.py
 	bash scripts/coverage_gate_test.sh
+	bash scripts/mcp_neo4j_cypher_docker_test.sh
 	bash scripts/restore_drill_name_test.sh
 
 critical-mutation:
