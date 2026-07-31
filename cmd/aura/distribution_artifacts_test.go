@@ -93,17 +93,28 @@ func TestDistributionSurfaceArtifactsMatchReleaseContract(t *testing.T) {
 func TestBackupLifecycleDocsMatchApplianceContract(t *testing.T) {
 	root := repoRootForTest(t)
 	restoreDrill := readProjectFile(t, root, "scripts/restore_drill.sh")
+	neo4jDrill := readProjectFile(t, root, "scripts/neo4j_offline_drill.sh")
 	readme := readProjectFile(t, root, "README.md")
 
 	for _, want := range []string{
 		"pg_restore",
-		"cypher-shell",
-		"bolt://neo4j:7687",
-		"NEO4J_DUMPFILE",
-		"neo4j-*.cypher",
+		"scripts/neo4j_offline_drill.sh",
+		"scripts/objectstore_drill.go",
+		`"checksum_ok": True`,
+		`"cleanup_ok": True`,
 	} {
 		if !strings.Contains(restoreDrill, want) {
 			t.Fatalf("scripts/restore_drill.sh missing %q:\n%s", want, restoreDrill)
+		}
+	}
+	for _, want := range []string{
+		"cypher-shell",
+		"database dump",
+		"database load",
+		`"mode": "offline_dump_load"`,
+	} {
+		if !strings.Contains(neo4jDrill, want) {
+			t.Fatalf("scripts/neo4j_offline_drill.sh missing %q:\n%s", want, neo4jDrill)
 		}
 	}
 	for _, want := range []string{
