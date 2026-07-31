@@ -1,5 +1,9 @@
 # Executive Summary
 
+> **Historical snapshot (2026-06-21).** Do not use the score or open-state
+> language below as current status. The authoritative reconciliation is
+> [definitive-closure-ledger-2026-07-31.md](definitive-closure-ledger-2026-07-31.md).
+
 ## Assessment
 
 Aura is a strong local-first agent platform with serious engineering investment in loop budgeting, tool timeout handling, parallel execution limits, MCP integration, auth-aware Web UI routes, and persistence. It is not yet ready to be operated as an industrial multi-user or high-trust production system.

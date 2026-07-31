@@ -1,5 +1,9 @@
 # Findings Register
 
+> **Historical source register.** This file preserves the 2026-07-29 cutoff.
+> Later Agent Memory remediations are reconciled one by one in
+> [../definitive-closure-ledger-2026-07-31.md](../definitive-closure-ledger-2026-07-31.md).
+
 This is the authoritative deduplicated register. Severity follows the requested
 P0-P3/INFO model. All line locations refer to the audited working tree.
 

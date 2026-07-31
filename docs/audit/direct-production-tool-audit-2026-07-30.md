@@ -181,8 +181,12 @@ files, so no external message or media could be delivered.
 
 ## Remaining gates and quality notes
 
-- Calendar provider success needs an authorized Microsoft/Google test account.
-- WhatsApp delivery/media success needs the operator to scan the available QR
+- **EXT-001 (`external_blocked`)**: Calendar provider success needs an
+  authorized Microsoft/Google test account.
+- **EXT-002 (`external_blocked`)**: email delivery success needs an authorized
+  provider account and designated test recipient.
+- **EXT-003 (`external_blocked`)**: WhatsApp delivery/media success needs the
+  operator to scan the available QR
   with an authorized test device.
 - Native `send_file` still needs a real channel delivery receipt for full E2E.
 - The WhatsApp sidecar returns technical Pydantic `DictModel` text for two

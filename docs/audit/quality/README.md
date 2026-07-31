@@ -1,5 +1,9 @@
 # Aura Codebase Quality Audit (Maintainability / Correctness / Architecture)
 
+> **Historical source register.** The June finding text is preserved for
+> traceability. Current `QA-*` disposition is authoritative only in
+> [../definitive-closure-ledger-2026-07-31.md](../definitive-closure-ledger-2026-07-31.md).
+
 **Date:** 2026-06-29
 **Method:** 4 parallel read-only slice auditors (agent-core / persistence / transport-web / frontend-ops), each covering 6 dimensions (duplication, dead code, not-wired, antipatterns, architecture, test gaps) with Aura-specific false-positive controls (deferred-tool pattern, sqlc-generated code, `//go:embed`, build tags, MCP subprocess wiring, i18n dynamic keys). Synthesis cross-references the security/production audit (`../`, findings F-001..F-052) without re-reporting it.
 **Lens:** maintainability/architecture — distinct from and complementary to the 2026-06-21 production-readiness/security audit in `docs/audit/`.

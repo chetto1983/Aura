@@ -1,5 +1,9 @@
 # Aura — Consolidated Fix Plan
 
+> **Historical execution plan.** Completion status is now machine-reconciled in
+> [definitive-closure-ledger-2026-07-31.md](definitive-closure-ledger-2026-07-31.md);
+> use this file for rationale, not current open-state counting.
+
 Plan date: 2026-07-20
 Supersedes-as-execution-index: `operator-reported-runtime-bugs-2026-07-18.md` (BUG-1..7) + `live-attack-plan-2026-07-18.md` (Waves 0–3).
 

@@ -1,5 +1,9 @@
 # Aura — Operator-Reported Runtime Bug Audit
 
+> **Historical source register.** Current `BUG-*` dispositions are reconciled
+> in
+> [definitive-closure-ledger-2026-07-31.md](definitive-closure-ledger-2026-07-31.md).
+
 Audit date: 2026-07-18
 
 Audited repository: `d:\Repo\Aura` (live stack running: `aura:local` + Postgres 18.4 + Neo4j 5.26 + sidecars).

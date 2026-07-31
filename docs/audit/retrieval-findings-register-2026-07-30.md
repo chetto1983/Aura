@@ -1,5 +1,10 @@
 # Findings register — retrieval, ingest, misura (2026-07-30)
 
+> **Registro sorgente storico.** Gli stati correnti `R-01..R-42`, incluse le
+> decisioni superseded/retired e la postcondizione live di R-08, sono
+> riconciliati in
+> [definitive-closure-ledger-2026-07-31.md](definitive-closure-ledger-2026-07-31.md).
+
 Registro dei findings prodotti dalla fase di ricognizione **in sola lettura** che precede
 l'implementazione dei test T-1/T-8/T-9 di
 [retrieval-e-costi-piano-2026-07-30.md](retrieval-e-costi-piano-2026-07-30.md).

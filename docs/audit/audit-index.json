@@ -1,4 +1,13 @@
 {
+  "historical_snapshot": true,
+  "superseded_by": "docs/audit/definitive-closure-ledger-2026-07-31.md",
+  "current_reconciliation": {
+    "date": "2026-07-31",
+    "total_findings": 209,
+    "open": 0,
+    "external_blocked": 3,
+    "machine_gate": "scripts/audit_closure_gate.py"
+  },
   "audit_date": "2026-06-21",
   "audited_path": "D:\\Aura",
   "reference_paths": [

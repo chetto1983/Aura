@@ -1,5 +1,12 @@
 # Aura Industrial Audit
 
+> **Current status (2026-07-31):** this directory's historical registers are
+> reconciled in
+> [definitive-closure-ledger-2026-07-31.md](definitive-closure-ledger-2026-07-31.md).
+> Its machine gate covers 209/209 IDs with zero undisclosed `open` rows. Three
+> provider/device delivery checks remain explicitly `external_blocked` and are
+> not counted as passed.
+
 Audit date: 2026-06-21
 
 Audited repository: `D:\Aura`

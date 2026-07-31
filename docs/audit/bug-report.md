@@ -1,5 +1,9 @@
 # Bug Report And Correctness Findings
 
+> **Historical source register.** Finding descriptions below preserve the
+> audited 2026-06-21 state. Current one-by-one disposition and evidence live in
+> [definitive-closure-ledger-2026-07-31.md](definitive-closure-ledger-2026-07-31.md).
+
 ## [P1] F-001 Full-host shell and filesystem tools lack an industrial capability boundary
 
 - Evidence:
