@@ -303,21 +303,6 @@ jobs:
           OPENROUTER_API_KEY: ci-degraded-no-network
         run: bash scripts/agui_smoke.sh
 
-      - name: Scheduler chaos (SC#2, CI-ADVISORY — non-blocking, D-05)
-        # The chaos script is the OPERATOR-GATING record (D-05): here it runs as a
-        # non-blocking advisory signal (continue-on-error) so a flaky 3-worker/60s
-        # partition on a shared runner never reds the build, while still exercising the
-        # survivor-pickup + no-duplicate invariant in CI. The migrations are already
-        # applied (db_integration migratedPool + `aura db migrate` above). A faster
-        # partition window keeps the advisory step inside the job budget; the operator
-        # run uses the full 60s.
-        continue-on-error: true
-        env:
-          CHAOS_PARTITION_SEC: "20"
-          CHAOS_SETTLE_SEC: "30"
-          AURA_SCHEDULER_TICK_SECONDS: "3"
-        run: bash scripts/scheduler_chaos.sh
-
   musr-e2e:
     name: MUSR two-identity cross-deny E2E (Postgres + Neo4j + Garage-admin + Authula)
     runs-on: ubuntu-latest
@@ -394,6 +379,14 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+
+      - name: Install pinned Vegeta
+        run: |
+          go install github.com/tsenart/vegeta/v12@v12.13.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Load + chaos harness contract tests
+        run: PYTHONPATH=scripts python3 -m unittest scripts/production_load_chaos_test.py
 
       - name: Compile the musr_e2e tier (always — no-skip-as-green floor)
         # The tagged E2E ALWAYS compiles here (the cheap always-green floor proving the
@@ -485,6 +478,19 @@ jobs:
             -tags 'db_integration neo4j_integration garage_integration authula_integration musr_e2e' \
             -run 'TestTwoIdentityCrossDeny|TestProvisionLoginIsolatedRun' \
             ./cmd/aura/
+
+      - name: Production load + chaos gate (Vegeta + Toxiproxy)
+        run: python3 scripts/production_load_chaos.py --race
+
+      - name: Upload load + chaos reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: production-load-chaos
+          path: |
+            artifacts/production-readiness/load-report.json
+            artifacts/production-readiness/chaos-report.json
+          if-no-files-found: error
 
       - name: Four-plane disaster-recovery drill
         run: bash scripts/restore_drill.sh

@@ -6,7 +6,7 @@
 # sqlc CLI: install with `go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1`
 # (v1.27.0 panics on Windows hosts via wazero out-of-bounds; v1.31.1 verified clean).
 
-.PHONY: help tools sqlc lint vet deadcode vuln coverage coverage-docker quality quality-full test test-race file-size web-freshness web-lint web-test web-mutation web-quality db-up db-migrate db-status db-reset neo4j-up neo4j-migrate neo4j-status neo4j-reset smoke restore-drill
+.PHONY: help tools sqlc lint vet deadcode vuln coverage coverage-docker quality quality-full test test-race file-size web-freshness web-lint web-test web-mutation web-quality db-up db-migrate db-status db-reset neo4j-up neo4j-migrate neo4j-status neo4j-reset smoke restore-drill load-chaos
 
 # Resolve go-installed tool binaries even when $GOPATH/bin is not on PATH
 # (common in a fresh WSL login shell). Falls back to a bare name on PATH.
@@ -42,6 +42,7 @@ help:
 	@echo "make neo4j-reset   — DESTRUCTIVE: drop all indexes + MATCH (n) DETACH DELETE (dev only, AURA_RESET_YES=1)"
 	@echo "make smoke         — scripts/neo4j_smoke.sh (Italian recall@5 5/5 + p95 <= 30ms)"
 	@echo "make restore-drill — four-plane DR drill with measured RPO/RTO"
+	@echo "make load-chaos    — blocking Vegeta + Toxiproxy production gate"
 
 # Bootstrap the quality toolchain into $GOPATH/bin. golangci-lint is pinned to the
 # CI version (.github/workflows/ci.yml) for local/CI parity; the rest track latest.
@@ -186,3 +187,7 @@ smoke: neo4j-migrate
 restore-drill: neo4j-migrate
 	bash scripts/garage_bootstrap.sh
 	bash scripts/restore_drill.sh
+
+load-chaos: neo4j-migrate
+	bash scripts/garage_bootstrap.sh
+	python3 scripts/production_load_chaos.py --race
