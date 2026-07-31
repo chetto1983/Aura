@@ -165,7 +165,6 @@ func buildRegistry() *tools.Registry {
 type runtimeToolHandles struct {
 	BackgroundShells *tools.BackgroundShells
 	ShellApprovals   *tools.ShellApprovals
-	DocumentSearch   *docsToolSearcher
 	Memory           mcptools.HostClient
 	// ShellPoll / ShellKill are retained so serve boot can wire their .Caps to the live
 	// capability store (VERIF-7 / D-18): the pool-free manifest paths construct them with a
@@ -244,12 +243,12 @@ func buildBaseRegistryWithAdaptiveControls(
 	// already SSRF-guarded — passing sandboxRouter here would be a scope error.
 	reg.Register(&tools.WebSearch{Engine: webEngine})
 	reg.Register(&tools.WebFetch{Engine: webEngine}) // manifest auto-sorts (web_fetch < web_search); never hand-order
-	documentSearch := &docsToolSearcher{cfg: cfg}
-	handles.DocumentSearch = documentSearch
-	reg.Register(&tools.DocumentSearch{
-		Searcher: documentSearch,
-		Adaptive: adaptiveControls.documentRetrieval,
-	})
+	// document_search is the library index: it returns DOCUMENTS, and the agent
+	// opens the one it wants with document_open. Registered unconditionally so the
+	// manifest always lists it (Spec reads no dependency); with no pool it fails
+	// loudly at call time rather than being silently absent, which is how the
+	// upload->chat regression happened once already.
+	reg.Register(&tools.DocumentSearch{Library: newDocumentLibrary(taskStorePool(ts))})
 	// shell_exec is the full host terminal — THE execution surface (amendment #50 / D-15c).
 	// Deferred so simple chat/web turns do not carry a giant shell schema in the hot manifest.
 	// Amendment #88: workspace is the fixed /workspace working root (cfg.WorkspaceDir),

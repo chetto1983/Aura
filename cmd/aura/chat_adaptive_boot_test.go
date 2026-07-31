@@ -185,7 +185,6 @@ func TestAdaptiveControlSetIsAllOrNothing(t *testing.T) {
 		"production-model",
 	)
 	if enabled.skillRouting == nil ||
-		enabled.documentRetrieval == nil ||
 		enabled.memoryRecall == nil ||
 		enabled.reasoning == nil {
 		t.Fatal("live adaptive pool omitted one or more typed controls")
@@ -194,7 +193,6 @@ func TestAdaptiveControlSetIsAllOrNothing(t *testing.T) {
 
 func adaptiveControlSetEmpty(controls adaptiveControlSet) bool {
 	return controls.skillRouting == nil &&
-		controls.documentRetrieval == nil &&
 		controls.memoryRecall == nil &&
 		controls.reasoning == nil
 }
@@ -334,8 +332,7 @@ func assertRegistryAdaptiveState(
 	if !ok {
 		t.Fatal("document_search is not registered")
 	}
-	document, ok := documentRegistered.(*tools.DocumentSearch)
-	if !ok {
+	if _, ok := documentRegistered.(*tools.DocumentSearch); !ok {
 		t.Fatalf("document_search type = %T", documentRegistered)
 	}
 	skillRegistered, ok := reg.Get((&tools.SkillTool{}).Spec().Name)
@@ -346,9 +343,10 @@ func assertRegistryAdaptiveState(
 	if !ok {
 		t.Fatalf("skill type = %T", skillRegistered)
 	}
+	// document_search is no longer an adaptive surface: it is the library index,
+	// a ranked SQL read with no plan to freeze or assign.
 	got := []bool{
 		skill.Adaptive != nil,
-		document.Adaptive != nil,
 	}
 	for i, state := range got {
 		if state != want {

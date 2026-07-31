@@ -9,145 +9,88 @@ import (
 	"github.com/chetto1983/aura/internal/documents"
 )
 
-// DocumentSearchBackend retrieves cited document chunks for the document_search
-// tool. Retrieve runs the two-stage pipeline (vector/BM25 seed -> rerank seeds ->
-// 1-hop graph-expand winners) and is fail-soft: with no reranker configured it
-// returns the current sparse-search order (no regression).
-type DocumentSearchBackend interface {
-	Retrieve(ctx context.Context, req documents.SearchRequest) ([]documents.SearchHit, error)
+// DocumentLibrary ranks one identity's documents by what each one IS. It answers
+// "which file", which is the only question an index still has to answer now that
+// document_open can hand over the file itself.
+type DocumentLibrary interface {
+	SearchDigests(ctx context.Context, identityID, query string, limit int) ([]documents.DigestHit, error)
 }
 
-type versionedDocumentSearchBackend interface {
-	FreezeRetrievalPlans(
-		context.Context,
-		documents.SearchRequest,
-	) (documents.FrozenRetrievalPlans, error)
-	ExecuteRetrievalPlan(
-		context.Context,
-		documents.FrozenRetrievalPlans,
-		string,
-		documents.SearchRequest,
-	) (documents.RetrievalResult, error)
-}
-
-// DocumentRetrievalInput is the query-free projection presented to adaptive
-// control. The user's query and document scope remain exogenous execution input.
-type DocumentRetrievalInput struct {
-	OwnerID         string
-	RequestID       string
-	PointOrdinal    uint32
-	QueryLength     int
-	DocumentID      string
-	MaxResults      int
-	PlanIDs         []string
-	CatalogRevision string
-	Frozen          documents.FrozenRetrievalPlans
-}
-
-type DocumentRetrievalExecutor func(
-	context.Context,
-	string,
-) (documents.RetrievalResult, error)
-
-// DocumentRetrievalControl persists assignment and delivery around one frozen
-// plan execution.
-type DocumentRetrievalControl interface {
-	RetrieveDocuments(
-		context.Context,
-		DocumentRetrievalInput,
-		DocumentRetrievalExecutor,
-		DocumentRetrievalExecutor,
-	) (documents.RetrievalResult, error)
-}
-
+// DocumentSearch is the library index.
+//
+// It used to run a two-stage retrieval pipeline — vector/BM25 seed, cross-encoder
+// rerank, 1-hop graph expansion — and return passages. That answered "what does
+// this document say" and could not answer "how many", which is what people
+// actually ask a spreadsheet: measured on a 5889-row customer list, an exact
+// lookup scored 100% and every aggregate scored 0% at every k, because the answer
+// is a property of the whole document and lives in no passage. The same held for
+// a 29 MB manual (616 distinct parameters, no k).
+//
+// So it returns FILES now. The agent picks one and opens it with document_open,
+// then computes with the LibreOffice/python already in its container.
 type DocumentSearch struct {
-	Searcher DocumentSearchBackend
-	Adaptive DocumentRetrievalControl
+	Library DocumentLibrary
 }
 
 type documentSearchArgs struct {
-	Query      string `json:"query"`
-	DocumentID string `json:"document_id"`
-	Limit      int    `json:"limit"`
+	Query string `json:"query"`
+	Limit int    `json:"limit"`
 }
 
 func (t *DocumentSearch) Spec() Spec {
 	return Spec{
 		Name:    "document_search",
-		Summary: "Search the user's uploaded/indexed documents and return cited chunks.",
-		Description: "THE tool for any question about the user's own uploaded or indexed documents/files " +
-			"(PDF, DOCX, PPTX, XLSX, HTML, CSV, MD, TXT, and more). Aura ingests uploaded documents into a " +
-			"searchable Neo4j knowledge base (two-stage retrieval: vector/BM25 seed -> cross-encoder rerank -> " +
-			"graph-expand). Uploaded documents do NOT live on the filesystem — do NOT use fs_glob, fs_grep, or the " +
-			"shell to look for them; they will not be found there. When the user refers to 'this document', 'the " +
-			"file I uploaded', 'the manual/spreadsheet/PDF', or asks what a document says/contains/lists, call " +
-			"document_search FIRST. Results are chunks with document id, chunk id, file name, locator (page, " +
-			"sheet/rows, or section), relevance score, and text — cite them. Set document_id to scope to one " +
-			"specific indexed document (e.g. the attachment's document_id). When the answer needs the WHOLE file " +
-			"rather than a passage — any count, sum, average, maximum, grouping or 'how many' over a spreadsheet or " +
-			"table, or any conversion — take the document_id from these hits and call document_open instead: it " +
-			"writes the original file into /workspace so you can compute the exact answer. Chunked table text " +
-			"cannot answer an aggregate at any relevance. This is for the user's OWN files, NOT " +
-			"the public web (use web search/fetch for that). Files YOU create live on the filesystem under " +
-			"/workspace — search those with fs_read/fs_grep, and make one searchable here by indexing it with " +
-			"document_index. Example: {\"query\":\"safety valve pressure rating\",\"limit\":5}.",
+		Summary: "List the user's uploaded documents, ranked by what each one is, to pick which file to open.",
+		Description: "THE tool for any question about the user's own uploaded documents (PDF, DOCX, XLSX, PPTX, " +
+			"CSV, HTML, MD, TXT, and more). It returns the DOCUMENTS themselves — id, title, tags and a short " +
+			"description of what each contains — NOT their text. Uploaded documents do not live on the filesystem, " +
+			"so fs_glob/fs_grep will not find them; call this first. Then call document_open with the document_id " +
+			"you chose: it writes the real file into /workspace, where you can read, convert and compute on it " +
+			"with shell_exec (LibreOffice, python with openpyxl/pandas, PyMuPDF, pdftotext are all installed). " +
+			"That is how you answer anything needing the whole file — a count, a sum, an average, a maximum, a " +
+			"grouping, 'how many', or a conversion. Leave query empty to list the library, which is what 'the file " +
+			"I just uploaded' means. This lists the user's OWN uploads; files YOU created live on the filesystem " +
+			"under /workspace — read those with fs_read/fs_grep, and add one to this library with document_index. " +
+			"Example: {\"query\":\"customer list with sales reps\"}.",
 		Parameters: json.RawMessage(`{
   "type": "object",
   "properties": {
-    "query": {"type": "string", "description": "Plain text search query."},
-    "document_id": {"type": "string", "description": "Optional indexed document id to restrict search."},
-    "limit": {"type": "integer", "minimum": 1, "maximum": 20, "description": "Maximum hits to return. Default 8."}
-  },
-  "required": ["query"]
+    "query": {"type": "string", "description": "What the document is about, in plain words. Empty lists the whole library, newest first."},
+    "limit": {"type": "integer", "minimum": 1, "maximum": 50, "description": "Maximum documents to return. Default 8."}
+  }
 }`),
-		// Deferred again, with the regression that un-deferred it in mind. Hiding retrieval
-		// behind tool_search once made the agent answer document questions with the VISIBLE
-		// fs_glob/fs_grep and never discover it — the live upload->chat regression. What
-		// changed is that fs_glob/fs_grep are no longer visible either: with only the four
-		// primitives always on, there is no plausible-looking wrong tool left to grab, which
-		// is what actually caused that miss. If retrieval regresses again, this is the first
-		// line to revisit — and the fix is the <documents> prompt block naming it, not a
-		// permanent 391-token seat in every manifest.
+		// Deferred, with the regression that once un-deferred it in mind: hiding
+		// retrieval behind tool_search made the agent answer document questions with
+		// the visible fs_glob/fs_grep and never discover it. What changed is that
+		// fs_glob/fs_grep are no longer visible either — with only the four primitives
+		// always on there is no plausible-looking wrong tool left to grab — and a
+		// deferred tool called by name now gets its schema back in the same step
+		// rather than an errand. If retrieval regresses again, this is the first line
+		// to revisit, and the fix is the <documents> prompt block naming it.
 		Deferred: true,
 	}
 }
 
 func (t *DocumentSearch) Execute(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
-	if t.Searcher == nil {
-		return ToolResult{}, fmt.Errorf("document_search: searcher is not configured")
+	if t.Library == nil {
+		return ToolResult{}, fmt.Errorf("document_search: document library is not configured")
 	}
 	var args documentSearchArgs
-	if err := json.Unmarshal(raw, &args); err != nil {
-		return ToolResult{}, fmt.Errorf("document_search args: %w", err)
-	}
-	args.Query = strings.TrimSpace(args.Query)
-	if args.Query == "" {
-		return ToolResult{}, fmt.Errorf("document_search: query is required")
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &args); err != nil {
+			return ToolResult{}, fmt.Errorf("document_search args: %w", err)
+		}
 	}
 	if args.Limit < 0 {
 		return ToolResult{}, fmt.Errorf("document_search: limit must be positive")
 	}
-	if args.Limit > 20 {
-		args.Limit = 20
-	}
-	req := documents.SearchRequest{
-		Query:      args.Query,
-		DocumentID: strings.TrimSpace(args.DocumentID),
-		Limit:      args.Limit,
-		// Scope retrieval to the authenticated principal, mapping an empty CLI/no-principal
-		// ctx to the seeded `local` UUID (…001) via ownerFromContext — parity with
-		// shell_bg/runner (ME-01). The operator's own documents are owned by the `local`
-		// UUID (documents/backfill.go), so with AURA_MUSR_ISOLATION on the CLI operator still
-		// retrieves them instead of failing closed to zero results, while a web principal
-		// stays scoped to itself. When the flag is off, this id is ignored and the
-		// pre-existing unscoped path runs (D-13).
-		IdentityID: ownerFromContext(ctx),
-	}
-	hits, err := t.retrieve(ctx, req)
+
+	hits, err := t.Library.SearchDigests(
+		ctx, ownerFromContext(ctx), strings.TrimSpace(args.Query), effectiveDocumentLimit(args.Limit))
 	if err != nil {
-		return ToolResult{}, err
+		return ToolResult{}, fmt.Errorf("document_search: %w", err)
 	}
-	out, err := json.Marshal(map[string]any{"hits": hits})
+	out, err := json.Marshal(map[string]any{"documents": hits})
 	if err != nil {
 		return ToolResult{}, fmt.Errorf("document_search: marshal results: %w", err)
 	}
@@ -159,68 +102,12 @@ func (t *DocumentSearch) Execute(ctx context.Context, raw json.RawMessage) (Tool
 	return result, nil
 }
 
-func (t *DocumentSearch) retrieve(
-	ctx context.Context,
-	req documents.SearchRequest,
-) ([]documents.SearchHit, error) {
-	backend, ok := t.Searcher.(versionedDocumentSearchBackend)
-	if t.Adaptive == nil || !ok {
-		return t.Searcher.Retrieve(ctx, req)
-	}
-	frozen, err := backend.FreezeRetrievalPlans(ctx, req)
-	if err != nil {
-		return t.Searcher.Retrieve(ctx, req)
-	}
-	results := make(map[string]documents.RetrievalResult)
-	execute := func(
-		ctx context.Context,
-		planID string,
-	) (documents.RetrievalResult, error) {
-		if result, exists := results[planID]; exists {
-			return result, nil
-		}
-		result, err := backend.ExecuteRetrievalPlan(ctx, frozen, planID, req)
-		if err == nil {
-			results[planID] = result
-		}
-		return result, err
-	}
-	static := func(
-		ctx context.Context,
-		_ string,
-	) (documents.RetrievalResult, error) {
-		return execute(ctx, documents.RetrievalPlanStatic)
-	}
-	result, err := t.Adaptive.RetrieveDocuments(
-		ctx,
-		DocumentRetrievalInput{
-			OwnerID: req.IdentityID, RequestID: RequestIDFromContext(ctx),
-			PointOrdinal: adaptivePointOrdinal(ctx), QueryLength: len(req.Query),
-			DocumentID: req.DocumentID, MaxResults: effectiveDocumentLimit(req.Limit),
-			PlanIDs: frozen.PlanIDs(), CatalogRevision: frozen.CatalogRevision(),
-			Frozen: frozen,
-		},
-		execute,
-		static,
-	)
-	if err != nil || frozen.ValidateResult(result, req) != nil {
-		result, err = static(ctx, documents.RetrievalPlanStatic)
-	}
-	if err != nil {
-		return nil, err
-	}
-	if err := frozen.ValidateResult(result, req); err != nil {
-		return nil, err
-	}
-	return result.Flatten(), nil
-}
-
 func effectiveDocumentLimit(limit int) int {
 	if limit <= 0 {
 		return 8
 	}
-	if limit > 20 {
-		return 20
+	if limit > 50 {
+		return 50
 	}
 	return limit
 }

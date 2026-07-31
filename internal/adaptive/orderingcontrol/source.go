@@ -112,23 +112,6 @@ func (source *runtimeSource) decideSkillRouting(
 	)
 }
 
-func (source *runtimeSource) decideDocumentRetrieval(
-	ctx context.Context,
-	input tools.DocumentRetrievalInput,
-) (toolDecision, error) {
-	return source.decideOrdering(
-		ctx,
-		input.OwnerID,
-		adaptive.DomainKnowledge,
-		adaptive.PointKnowledge,
-		map[adaptive.FeatureKey]float64{
-			adaptive.FeatureCandidateCount: float64(len(input.PlanIDs)),
-			adaptive.FeatureQueryLength:    float64(input.QueryLength),
-			adaptive.FeatureRetrievalLimit: float64(input.MaxResults),
-		},
-	)
-}
-
 func (source *runtimeSource) decideMemoryRecall(
 	ctx context.Context,
 	input runner.DynamicRecallInput,

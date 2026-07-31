@@ -77,7 +77,7 @@ func openProductionToolPipeRuntime(ctx context.Context, cfg *config.Config) (too
 		TurnCapBytes: cfg.ConversationTurnCapBytes,
 	})
 	taskStore := newCronTaskStore(pool, convStore)
-	registry, handles, mcpClosers, err := buildRegistryWithMCP(
+	registry, _, mcpClosers, err := buildRegistryWithMCP(
 		ctx,
 		cfg,
 		taskStore,
@@ -91,11 +91,9 @@ func openProductionToolPipeRuntime(ctx context.Context, cfg *config.Config) (too
 		Registry: registry,
 		Context:  identityctx.WithIdentityID(ctx, identityID),
 		Close: func() error {
-			var documentErr error
-			if handles.DocumentSearch != nil {
-				documentErr = handles.DocumentSearch.Close()
-			}
-			err := errors.Join(documentErr, closeMCPServers(mcpClosers))
+			// document_search holds no client to close since it became the library
+			// index: it reads Postgres through the pool closed just below.
+			err := closeMCPServers(mcpClosers)
 			pool.Close()
 			return err
 		},

@@ -17,10 +17,9 @@ import (
 )
 
 type adaptiveControlSet struct {
-	skillRouting      tools.SkillRoutingControl
-	documentRetrieval tools.DocumentRetrievalControl
-	memoryRecall      runner.DynamicRecallControl
-	reasoning         agent.ReasoningControl
+	skillRouting tools.SkillRoutingControl
+	memoryRecall runner.DynamicRecallControl
+	reasoning    agent.ReasoningControl
 }
 
 func newAdaptiveControlSet(
@@ -35,9 +34,6 @@ func newAdaptiveControlSet(
 	}
 	return adaptiveControlSet{
 		skillRouting: orderingcontrol.NewSkillRouting(
-			pool, providerID, modelID,
-		),
-		documentRetrieval: orderingcontrol.NewDocumentRetrieval(
 			pool, providerID, modelID,
 		),
 		memoryRecall: orderingcontrol.NewDynamicRecall(

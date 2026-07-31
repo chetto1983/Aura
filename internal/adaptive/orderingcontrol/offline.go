@@ -26,26 +26,6 @@ func NewOfflineSkillRouting(
 	return newSkillRouting(source, recorder)
 }
 
-// NewOfflineDocumentRetrieval composes retrieval with immutable run-local inputs.
-func NewOfflineDocumentRetrieval(
-	policies adaptive.PolicyReader,
-	snapshots SnapshotLoader,
-	recorder EventRecorder,
-	providerID string,
-	modelID string,
-) tools.DocumentRetrievalControl {
-	source := newOfflineRuntimeSource(
-		policies,
-		snapshots,
-		providerID,
-		modelID,
-	)
-	if source == nil || recorder == nil {
-		return nil
-	}
-	return newDocumentRetrieval(source, recorder)
-}
-
 // NewOfflineDynamicRecall composes recall with immutable run-local inputs.
 func NewOfflineDynamicRecall(
 	policies adaptive.PolicyReader,

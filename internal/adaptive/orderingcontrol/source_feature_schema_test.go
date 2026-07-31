@@ -26,15 +26,6 @@ func TestOfflineOrderingRejectsFeatureSchemaDriftForEveryDomain(
 			run: rejectSkillFeatureSchema,
 		},
 		{
-			name: "document retrieval",
-			expected: []adaptive.FeatureKey{
-				adaptive.FeatureCandidateCount,
-				adaptive.FeatureQueryLength,
-				adaptive.FeatureRetrievalLimit,
-			},
-			run: rejectRetrievalFeatureSchema,
-		},
-		{
 			name: "memory recall",
 			expected: []adaptive.FeatureKey{
 				adaptive.FeatureQueryLength,
@@ -95,23 +86,6 @@ func rejectSkillFeatureSchema(
 	)
 	source := offlineFeatureSource(t, decision)
 	_, err := source.decideSkillRouting(t.Context(), input)
-	return err
-}
-
-func rejectRetrievalFeatureSchema(
-	t *testing.T,
-	keys []adaptive.FeatureKey,
-) error {
-	t.Helper()
-	input := retrievalInput(t)
-	decision := retrievalShadowDecision(t, input)
-	decision.Snapshot = snapshotWithFeatureKeys(
-		t,
-		decision.Snapshot,
-		keys,
-	)
-	source := offlineFeatureSource(t, decision)
-	_, err := source.decideDocumentRetrieval(t.Context(), input)
 	return err
 }
 

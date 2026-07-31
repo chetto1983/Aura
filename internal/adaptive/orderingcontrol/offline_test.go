@@ -9,7 +9,6 @@ import (
 
 	"github.com/chetto1983/aura/internal/adaptive"
 	"github.com/chetto1983/aura/internal/agent/tools"
-	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/google/uuid"
 )
@@ -52,9 +51,6 @@ func TestOfflineOrderingConstructorsAreReadOnlyAtConstruction(t *testing.T) {
 		NewOfflineSkillRouting(
 			reader, loader, recorder, "openrouter", "production-model",
 		),
-		NewOfflineDocumentRetrieval(
-			reader, loader, recorder, "openrouter", "production-model",
-		),
 		NewOfflineDynamicRecall(
 			reader, loader, recorder, "openrouter", "production-model",
 		),
@@ -82,7 +78,6 @@ func TestOfflineOrderingConstructorsEmitOfflineStaticContracts(t *testing.T) {
 		run  func(*testing.T) (adaptive.Assignment, adaptive.Assignment)
 	}{
 		{name: "skill routing", run: runOfflineSkillRouting},
-		{name: "document retrieval", run: runOfflineDocumentRetrieval},
 		{name: "memory recall", run: runOfflineMemoryRecall},
 	}
 	for _, test := range tests {
@@ -317,57 +312,6 @@ func runOfflineSkillRouting(
 		t.Fatal(err)
 	}
 	production, err := newSkillAssignment(input, productionDecision)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return recorder.onlyAssignment(t), production
-}
-
-func runOfflineDocumentRetrieval(
-	t *testing.T,
-) (adaptive.Assignment, adaptive.Assignment) {
-	t.Helper()
-	input := retrievalInput(t)
-	decision := retrievalShadowDecision(t, input)
-	recorder := offlineRecorderForDecision(t, decision)
-	control := NewOfflineDocumentRetrieval(
-		recorder.reader,
-		recorder.loader,
-		recorder.events,
-		decision.ProviderID,
-		decision.ModelID,
-	)
-	execute := func(
-		context.Context,
-		string,
-	) (documents.RetrievalResult, error) {
-		return documents.RetrievalResult{
-			PlanID: documents.RetrievalPlanStatic,
-			Hits: []documents.SearchHit{{
-				DocumentID: "doc-7",
-				ChunkID:    "chunk-doc-7-000001",
-			}},
-			EffectiveLimit: 5,
-		}, nil
-	}
-	if _, err := control.RetrieveDocuments(
-		t.Context(),
-		input,
-		execute,
-		execute,
-	); err != nil {
-		t.Fatal(err)
-	}
-	productionDecision, err := newRuntimeSource(
-		recorder.reader,
-		recorder.loader,
-		decision.ProviderID,
-		decision.ModelID,
-	).decideDocumentRetrieval(t.Context(), input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	production, err := newRetrievalAssignment(input, productionDecision)
 	if err != nil {
 		t.Fatal(err)
 	}

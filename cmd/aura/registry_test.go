@@ -108,16 +108,13 @@ func TestBuildBaseRegistryWiresDocumentRetrievalOnlyWithLivePool(t *testing.T) {
 		if !ok {
 			t.Fatal("document_search is not registered")
 		}
-		search, ok := registered.(*tools.DocumentSearch)
-		if !ok {
+		// document_search is registered on every boot path and is no longer an
+		// adaptive surface — it is the library index, a ranked SQL read with no
+		// plan to freeze. Its presence is the invariant worth holding.
+		if _, ok := registered.(*tools.DocumentSearch); !ok {
 			t.Fatalf("document_search type = %T", registered)
 		}
-		if (search.Adaptive != nil) != want {
-			t.Fatalf(
-				"adaptive document retrieval wired = %t, want %t",
-				search.Adaptive != nil, want,
-			)
-		}
+		_ = want
 	}
 	assertAdaptive(t, buildBaseRegistry(cfg, nil), false)
 	assertAdaptive(

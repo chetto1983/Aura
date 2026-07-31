@@ -276,16 +276,6 @@ func newAdaptiveBenchmarkOfflineControls(
 			providerID,
 			modelID,
 		),
-		documentRetrieval: orderingcontrol.NewOfflineDocumentRetrieval(
-			bundle.PolicyReader(
-				ownerID,
-				adaptive.DomainKnowledge,
-			),
-			bundle,
-			recorder,
-			providerID,
-			modelID,
-		),
 		memoryRecall: orderingcontrol.NewOfflineDynamicRecall(
 			bundle.PolicyReader(
 				ownerID,
@@ -308,7 +298,6 @@ func newAdaptiveBenchmarkOfflineControls(
 		),
 	}
 	if controls.skillRouting == nil ||
-		controls.documentRetrieval == nil ||
 		controls.memoryRecall == nil ||
 		controls.reasoning == nil {
 		return adaptiveControlSet{}, errors.New(

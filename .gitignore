@@ -6,6 +6,7 @@
 *.test
 *.out
 /aura
+/arcadedb-mcp
 /bin/
 /dist/
 web/node_modules/*
@@ -89,3 +90,7 @@ internal/channels/telegram/testdata/*
 artifacts/*
 .playwright-mcp/*
 .planning/phases/32-quality-cleanup-dead-code-shared-helpers/uat-evidence/phase32-focustrap-dialog.png
+.tmp*
+.audit-build-*
+# transient conversation store written by cmd/aura tests
+cmd/aura/conversations/

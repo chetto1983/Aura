@@ -65,7 +65,7 @@ func adaptiveBenchmarkStaticRegistry(
 	skill := sourceSkill.(*tools.SkillTool)
 	static := tools.NewRegistry()
 	static.Register(textResponse)
-	static.Register(&tools.DocumentSearch{Searcher: documentSearch.Searcher})
+	static.Register(&tools.DocumentSearch{Library: documentSearch.Library})
 	if readOutput, exists := full.Get("read_tool_output"); exists {
 		static.Register(readOutput)
 	}
