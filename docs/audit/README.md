@@ -13,7 +13,7 @@ recoverable from Git commit
 
 - Audit disclosure gate: **PASS** when all rows below are present and valid.
 - Release readiness: **NO-GO** while any row remains.
-- Current unresolved: **8** — 5 external constraints and 3 owned follow-ups.
+- Current unresolved: **6** — 5 external constraints and 1 owned follow-up.
 - No current implementation score is published. The archived 10.0 closure
   score and 9.8 direct-tool score are historical evidence, not release
   certification.
@@ -28,8 +28,6 @@ recoverable from Git commit
 | EXT-004 | external_blocked | GHCR version `845339375`, digest `sha256:764b4b3e58ebb1e627c54b6c10a0e9889b43caa53cb06728d12803ca53415628`, is untagged but GitHub refuses API deletion after more than 5,000 downloads; all known tags are absent | GitHub Support deletes the protected public package version and a packages-authorized query verifies zero versions | GitHub Support |
 | EXT-005 | external_blocked | Native `send_file` reached the correct contextual guard but has no authorized channel delivery receipt | Deliver one reversible fixture through an authorized channel and verify the receipt and cleanup | Operator |
 | REL-009 | open | Every pre-current Aura image is retired and no distinct approved immutable rollback baseline exists | Promote a compatible immutable baseline, then pass a real distinct-image rollback and candidate restoration | Release owner |
-| TST-002 | open | WSL primary `cmd/aura` suite passes; native Windows reports `0666` for the owner-only artifact permission assertion | Make the contract platform-correct or formally remove native Windows from the supported execution matrix, then pass the declared tier | Runtime maintainer |
-| UX-001 | open | Two WhatsApp not-found reads return technically correct but user-hostile Pydantic `DictModel` text | Normalize both errors to stable user-facing messages and pass focused direct-call regressions | WhatsApp sidecar maintainer |
 
 ## Machine check
 
