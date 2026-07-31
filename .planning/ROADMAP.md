@@ -90,7 +90,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 - [x] **Phase 36: Multi-User Identity Isolation + Authula Cutover** — `MUSR-01..06`, `QUAL`(Authula DSN test) (F-012/028/032/039/050)
   - Goal: owner-scope every user-facing store/API/job to the authenticated principal; cut over to Authula (no RBAC). Includes per-identity isolation for MCP config, Garage object-store, and skills dirs (see spike `.planning/spikes/`).
   - Success: (1) two-identity live E2E — B cannot list/get/delete/archive/resolve A's data (404/403), B-created chat owned by B and runs; (2) session B cannot poll/kill session A's shell, jobs expire by TTL; (3) conversation delete evicts all session tool state; (4) Authula default with provisioning + break-glass, no token in URLs.
-- [x] **Phase 37: Per-User Full-Capability Sandbox** — `SBX-01..05` (F-001 sandbox, F-036) (executed; 37-10 closed the SBX-04 composition-root BLOCKER; all 5 SC mechanism-verified; **LIVE-VERIFIED on native-Linux dockerd 2026-07-08 (casaserver)**: SC#1/SC#3 full usersandbox docker_integration suite `ok 79s`, SC#4 egress DROP proven both backend-floor (`TestEgress_FloorDropsInternal`) AND composition-root (`TestBuildSandboxRouter_LaunchesEgressFloor`); operator force-close 2026-07-08. Only genuinely-blocked tiers remain: D-14 32GB soak (impossible on 8GB), gVisor runsc (needs daemon restart), native `-race` (no gcc; green on WSL), FQDN-allowlist image — tracked as REL-03 must-runs) (completed 2026-07-08)
+- [x] **Phase 37: Per-User Full-Capability Sandbox** — `SBX-01..05` (F-001 sandbox, F-036) (executed; 37-10 closed the SBX-04 composition-root BLOCKER; all 5 SC mechanism-verified; **LIVE-VERIFIED on native-Linux dockerd 2026-07-08 (casaserver)**: SC#1/SC#3 full usersandbox docker_integration suite `ok 79s`, SC#4 egress DROP proven both backend-floor (`TestEgress_FloorDropsInternal`) AND composition-root (`TestBuildSandboxRouter_LaunchesEgressFloor`); operator force-close 2026-07-08. The D-14 32GB soak, gVisor `runsc`, and FQDN-allowlist appliance tiers are hardware-scoped DGX evidence, not blockers for the supported single-node Compose/runc release profile per ADRs 0037/0044; WSL native `-race` is green) (completed 2026-07-08)
   - Goal: resolve F-001 — host shell/fs run inside a per-identity full-capability Docker sandbox under hardened/production; host never exposed.
   - Success: (1) under `server_production` shell/fs target the per-identity sandbox, real host filesystem unreachable; (2) Docker-socket/`--privileged`/`--network host`/bind-mounts unrepresentable (test-asserted); (3) cross-identity leakage impossible + idle-TTL lifecycle works; (4) configured egress allowlist cannot reach a disallowed host (default egress = full-internet-minus-internal per D-06, not `--network none`); (5) ADR records container-per-identity (K8s/gVisor-default → DGX) + pre-merge concurrency benchmark on 32GB.
 - [X] **Phase 37A: Web Artifact Delivery Lane** — `WEBART-01..04` (product gap; depends on Phase 37 / 37-07)
@@ -105,14 +105,14 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 - [x] **Phase 40: Security & Supply-Chain Pack** — `SEC-01..07`, `QUAL`(decode-body unify) (F-019-sec/021/022/047/051/052) (completed 2026-07-30)
   - Goal: close security + supply-chain findings; prove prompt-injection denial under production.
   - Success: (1) injected shell/file/network/MCP requests DENIED under `server_production` (regression suite); (2) secret-like values redacted before persistence, permissive CORS refused when auth disabled (except dev); (3) CI publishes SBOM, govulncheck blocks high-severity, all Actions SHA-pinned; (4) privileged JSON routes reject trailing/unknown-field/empty/wrong-content-type bodies.
-- [ ] **Phase 41: Production Ops + Capability-Eval + Honest 10/10 Closeout** — `OPS-01..06`, `REL-01..03` (F-019/025/042/043 + evidence bar)
+- [x] **Phase 41: Production Ops + Capability-Eval + Honest 10/10 Closeout** — `OPS-01..06`, `REL-01..03` (F-019/025/042/043 + evidence bar) (completed 2026-07-31)
   - Goal: drilled backup/DR, ops-lifecycle hardening, capability-eval + load/chaos harness, honest-10/10 evidence bundle.
   - Success: (1) drilled DR restore with measured RPO/RTO (Neo4j-Community offline-dump caveat documented); (2) scheduler drain + systemd stop budget prove no partial-backup promotion on SIGTERM/kill; (3) load + chaos harness runs in CI (no-skip-as-green) + capability-eval pass/fail report; (4) ADRs + release-readiness checklist + production-readiness evidence bundle → defensible 10/10.
 - [x] **Phase 42: Industrial Conversation Compaction** — `IC-01..14` (completed 2026-07-14)
   - Goal: provider-portable context lifecycle with semantic-first compaction, immutable evidence, branch-aware recovery, typed artifacts, separated durable memory, operations surfaces, and measured rollout.
   - Success: exact fail-closed budgets; L2.4-before-L2.5; durable claim/CAS checkpoints and bounded recovery; safe typed summaries/artifacts/memory; all surfaces; 500+200 evaluation corpus and staged rollback-gated rollout.
 
-> **Host-constrained / deferred-tier flag:** Phase 41's load/chaos + DR drills and any gVisor/`server_production` live tiers may carry the same NO-SKIP-AS-GREEN "deferred verification tier" pattern as v1.0.0's 6 deferred items, pending an adequate host (DGX Spark). Decided at the Phase-41/closeout boundary.
+> **Host-constrained tier decision (2026-07-31):** load/chaos and four-plane DR are blocking and drilled for the supported single-node Compose profile. gVisor-default, the 32 GB sandbox envelope, and the FQDN-allowlist appliance image remain explicit DGX/hardware-tier evidence under ADRs 0037/0044; they are not silently counted as green and do not block the Compose/runc release score.
 >
 > **Quality audit now fully phased:** the 4-slice maintainability audit (`docs/audit/quality/`) is taken into the roadmap as **Phase 31** (Wave 0 stabilization) + **Phase 32** (dead-code + shared-helper extraction), with correctness/security-overlapping items distributed into Phases 33 (env catalog), 34 (pool-leak/int32), 36 (Authula DSN), 38 (trust-norm/F-027), and 40 (decode-body/F-052). Nothing left as "refactor-on-touch only".
 >
@@ -763,6 +763,10 @@ Plans:
 **Goal:** Drilled backup/DR, ops-lifecycle hardening, capability-eval + load/chaos harness, honest-10/10 evidence bundle.
 
 **Requirements:** OPS-01, OPS-02, OPS-03, OPS-04, OPS-05, OPS-06, REL-01, REL-02, REL-03
+
+**Status:** Complete 2026-07-31. Exact-candidate reports are freshness- and SHA-bound by
+`scripts/release_readiness_gate.py`; GitHub release publication additionally requires the
+successful `Production readiness bundle` check for that same commit.
 
 **Success Criteria**:
 

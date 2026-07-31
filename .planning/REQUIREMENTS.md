@@ -145,13 +145,13 @@ Share/export a conversation or artifact (parity with Claude's "Condividi"/link),
 - [x] **OPS-03**: The systemd stop timeout exceeds the longest configured handler duration (or backups are atomically promoted); a kill during backup never promotes a partial artifact. *(F-043)*
 - [x] **OPS-04**: A load (k6/vegeta) + chaos (toxiproxy: DB outage, MCP timeout storm, object-store outage, process-kill-during-write) harness runs in CI under no-skip-as-green discipline and defines supported concurrency + degradation behavior. *(F-019 load/chaos part)*
 - [x] **OPS-05**: A capability-evaluation suite (golden + adversarial + chaos scenarios for shell/files/MCP/memory/pause-resume/error/workflow classes) publishes a CI pass/fail report; live-LLM tiers are gated per the no-unsolicited-paid-runs rule. *(F-019)*
-- [ ] **OPS-06**: ADRs exist for loop semantics, tool policy, memory provenance, MCP trust, deployment profiles, and the sandbox decision; a release-readiness checklist gates security/load/backup/observability/rollback. *(F-025, F-026)*
+- [x] **OPS-06**: ADRs exist for loop semantics, tool policy, memory provenance, MCP trust, deployment profiles, and the sandbox decision; a release-readiness checklist gates security/load/backup/observability/rollback. *(F-025, F-026)*
 
 ### Honest 10/10 Release Evidence (REL — cross-cutting)
 
-- [ ] **REL-01**: Every new tier (unit/integration/smoke/load/chaos/injection) actually runs in CI — no skip-as-green; skip helpers `t.Fatal` under `$CI`.
-- [ ] **REL-02**: Owned-surface coverage stays ≥85%; mutation testing ≥70% killed on the gateway, identity-isolation, profile-validation, and sandbox files.
-- [ ] **REL-03**: The production-readiness score reaches a defensible 10/10 with a written evidence bundle (two-identity live E2E, prompt-injection-denied-under-production, drilled DR with RPO/RTO, honest `/readyz`, effective-behavior profile validation) — score bounded by weakest evidence, not green-check count.
+- [x] **REL-01**: Every new tier (unit/integration/smoke/load/chaos/injection) actually runs in CI — no skip-as-green; skip helpers `t.Fatal` under `$CI`.
+- [x] **REL-02**: Owned-surface coverage stays ≥85%; mutation testing ≥70% killed on the gateway, identity-isolation, profile-validation, and sandbox files.
+- [x] **REL-03**: The production-readiness score reaches a defensible 10/10 with a written evidence bundle (two-identity live E2E, prompt-injection-denied-under-production, drilled DR with RPO/RTO, honest `/readyz`, effective-behavior profile validation) — score bounded by weakest evidence, not green-check count.
 
 ### Industrial Conversation Compaction (IC)
 
@@ -248,4 +248,4 @@ Suggested phase mapping (roadmapper finalizes; phases continue at 31+). Every re
 
 ---
 *Requirements defined: 2026-06-29*
-*Last updated: 2026-06-29 after initial definition (post-research)*
+*Last updated: 2026-07-31 after Phase 41 evidence-gate closeout*
