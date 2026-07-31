@@ -117,16 +117,35 @@ func (a *LlmAgent) runTool(ctx context.Context, budget *Budget, call llm.ToolCal
 		return run
 	}
 	// Dispatch gate (full-promotion parity safety net): a deferred tool whose schema
-	// has not been loaded via tool_search is NOT in the callable manifest, so a call to
-	// it is hallucinated. Bounce it back with load-it-first guidance instead of executing
-	// with fabricated arguments — model-visible guidance, not an error span.
+	// has not been loaded via tool_search is NOT in the callable manifest, so its
+	// arguments were written without ever seeing the parameters. Refuse THIS call —
+	// but answer with the schema rather than with an errand.
+	//
+	// The refusal used to say "call tool_search with select:<name>, then call it
+	// again", which cost a whole extra LLM round trip to fetch something the process
+	// was already holding: registry.Get returned the tool one line above. Measured on
+	// a live turn — shell_exec, the most-used tool in the system — the trace read
+	//
+	//	· shell_exec  →  "I need to load shell_exec first"  →  · tool_search  →  · shell_exec
+	//
+	// three model turns to run one command. Handing the schema back collapses that to
+	// two, and the guard is not weakened but strengthened: the retry is written
+	// against the real parameters instead of a name the model had to look up.
+	//
+	// MetaActivatedTools is the same promotion channel tool_search uses, drained by
+	// promoteFromMeta in the SERIAL result loop after executeBatch has joined — so
+	// this stays race-free while dispatch runs concurrently.
 	if a.isDeferredUnloaded(call.Function.Name) {
 		_, span := startToolSpan(ctx, call.Function.Name, false)
 		run.EndedAt = time.Now().UTC()
 		run.Preview = fmt.Sprintf(
-			"error: tool_not_loaded: %q is a deferred tool whose schema is not loaded; call tool_search with query %q to load it, then call %s with the loaded parameters",
-			call.Function.Name, "select:"+call.Function.Name, call.Function.Name)
-		run.Result = tools.ToolResult{Preview: run.Preview, Bytes: len(run.Preview)}
+			"error: tool_not_loaded: %q was called before its schema was read, so the arguments "+
+				"could not be trusted and the call did NOT run. Its schema follows and the tool is "+
+				"now loaded — call %s again using exactly these parameters. Do not call tool_search "+
+				"for it.\n\n%s",
+			call.Function.Name, call.Function.Name, tools.RenderSpec(tool.Spec()))
+		meta := tools.ToolResultMeta{tools.MetaActivatedTools: []string{call.Function.Name}}
+		run.Result = tools.ToolResult{Preview: run.Preview, Bytes: len(run.Preview), Meta: &meta}
 		endToolSpan(span, "")
 		return run
 	}

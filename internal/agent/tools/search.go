@@ -211,7 +211,7 @@ func (ts *ToolSearch) Execute(ctx context.Context, raw json.RawMessage) (ToolRes
 	for _, t := range matches {
 		s := t.Spec()
 		names = append(names, s.Name)
-		fmt.Fprintf(&b, "## %s\n%s\n\nParameters:\n%s\n\n", s.Name, s.Description, string(s.Parameters))
+		b.WriteString(RenderSpec(s))
 	}
 	// A select of many large deferred specs can exceed the preview cap; route
 	// through the shared spillover helper so big manifests page via the sidecar.
@@ -231,6 +231,16 @@ func (ts *ToolSearch) Execute(ctx context.Context, raw json.RawMessage) (ToolRes
 	}
 	(*res.Meta)[MetaActivatedTools] = names
 	return res, nil
+}
+
+// RenderSpec is the one rendering of a deferred tool's schema for the model. It
+// is shared because tool_search is no longer the only place a schema is handed
+// over: the dispatch gate, which refuses a deferred tool called before its schema
+// was read, answers with the schema itself rather than with instructions to go
+// and fetch it — so both surfaces must produce the identical shape, or the model
+// learns two formats for one thing.
+func RenderSpec(s Spec) string {
+	return fmt.Sprintf("## %s\n%s\n\nParameters:\n%s\n\n", s.Name, s.Description, string(s.Parameters))
 }
 
 // match resolves a query to tools, in two layers.
