@@ -14,6 +14,8 @@ graph-backed memory, self-authored skills, and multi-channel access.
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go)](go.mod)
 
+[What is Aura?](#what-is-aura) · [Features](#key-features) · [Architecture](#architecture-one-screen) · [Quick Start](#quick-start) · [Docs](#documentation) · [Development](#development)
+
 </div>
 
 ---
@@ -28,6 +30,14 @@ default) plus a few local CPU sidecars. It is built as a **product, not a protot
 
 > **Strategic context:** Aura is designed to ship as a **DGX Spark + software bundle** for
 > SMBs that want a private, capable assistant on hardware they own.
+
+<div align="center">
+
+<img src="public/cockpit.png" alt="Aura operator cockpit — chat with reasoning, human-in-the-loop approval cards, and a live token/cost footer" width="820" />
+
+<sub>The web cockpit (AG-UI/SSE): streaming chat with reasoning, human-in-the-loop approval &amp; input-required gates, and live token/cost accounting.</sub>
+
+</div>
 
 ## At a glance
 
