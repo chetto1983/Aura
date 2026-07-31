@@ -27,7 +27,9 @@ This is a living document. A new row may start as unmeasured only while its owne
 misses to stable `not_found` outcomes. Transport, mount, trust, reconnect, manager,
 and tool-policy behavior are unchanged, so the row's measured manager result cannot
 move. Fresh witnesses: focused `internal/mcp` regressions, full WSL
-`go test -race ./...`, `go build ./...`, and filtered repository `go vet` all pass.
+`go test -race ./...`, `go build ./...`, and filtered repository `go vet` all pass;
+the disposable Postgres/Neo4j owned-surface matrix is 85.4%, and the touched
+`internal/mcp/tool_error.go` mutation score is 100% (35/35 killed).
 
 | Metric | Target | Last measured | Last value | Owner phase | CI gate path |
 |---|---|---|---|---|---|
