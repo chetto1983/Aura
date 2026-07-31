@@ -150,6 +150,7 @@ func TestProductionReadinessProvidesDaemonBootContract(t *testing.T) {
 
 	for _, want := range []string{
 		"OPENROUTER_API_KEY: readiness-degraded-no-network",
+		`AURA_WEB_TRUST_PROXY: "true"`,
 		"Candidate to previous to candidate rollback rehearsal",
 	} {
 		if !strings.Contains(workflow, want) {
