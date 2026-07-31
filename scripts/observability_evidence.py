@@ -145,12 +145,20 @@ def build_report(candidate: str, checks: list[dict[str, Any]]) -> dict[str, Any]
     }
 
 
+def resolve_powershell() -> str:
+    for executable in ("pwsh", "powershell", "powershell.exe"):
+        resolved = shutil.which(executable)
+        if resolved:
+            return resolved
+    raise RuntimeError(
+        "PowerShell (pwsh or powershell.exe) is required for observability verification"
+    )
+
+
 def collect(args: argparse.Namespace) -> dict[str, Any]:
     repo = pathlib.Path(__file__).resolve().parents[1]
     candidate = candidate_commit(repo)
-    pwsh = shutil.which("pwsh")
-    if not pwsh:
-        raise RuntimeError("pwsh is required for observability verification")
+    pwsh = resolve_powershell()
     timeout = args.command_timeout_seconds
     fixture = command_check(
         "negative_fixtures",

@@ -112,8 +112,16 @@ try {
         param($root)
         $path = Join-Path $root 'compose.yaml'
         $text = Get-Content -LiteralPath $path -Raw
-        $text = [regex]::Replace($text, '(?m)^(    image: prom/prometheus:v3\.13\.1)@sha256:[0-9a-f]{64}$', '$1', 1)
-        [System.IO.File]::WriteAllText($path, $text, [System.Text.UTF8Encoding]::new($false))
+        $mutated = [regex]::Replace(
+            $text,
+            '(?m)^(    image: prom/prometheus:v3\.13\.1)@sha256:[0-9a-f]{64}\r?$',
+            '$1',
+            1
+        )
+        if ($mutated -eq $text) {
+            throw 'fixture mutation source not found in compose.yaml: Prometheus digest'
+        }
+        [System.IO.File]::WriteAllText($path, $mutated, [System.Text.UTF8Encoding]::new($false))
     }
     Assert-NegativeCase -Name 'published-ingestion' -Expected 'Tempo ingestion port 4317 must not be host-published' -Mutate {
         param($root)

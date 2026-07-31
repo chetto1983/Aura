@@ -5,11 +5,23 @@ import json
 import pathlib
 import tempfile
 import unittest
+from unittest import mock
 
 import observability_evidence
 
 
 class ObservabilityEvidenceTest(unittest.TestCase):
+    def test_powershell_falls_back_to_windows_powershell(self) -> None:
+        with mock.patch.object(
+            observability_evidence.shutil,
+            "which",
+            side_effect=[None, r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"],
+        ):
+            self.assertEqual(
+                observability_evidence.resolve_powershell(),
+                r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+            )
+
     def test_report_requires_every_release_check(self) -> None:
         candidate = "a" * 40
         checks = [
