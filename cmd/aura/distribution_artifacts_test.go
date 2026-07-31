@@ -98,7 +98,7 @@ func TestBackupLifecycleDocsMatchApplianceContract(t *testing.T) {
 
 	for _, want := range []string{
 		"pg_restore",
-		"scripts/neo4j_offline_drill.sh",
+		"bash scripts/neo4j_offline_drill.sh",
 		"scripts/objectstore_drill.go",
 		`"checksum_ok": True`,
 		`"cleanup_ok": True`,

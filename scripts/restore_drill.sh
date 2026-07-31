@@ -117,7 +117,7 @@ PY
 
 echo "==> DR plane 2/4: Neo4j Community offline dump -> disposable volume"
 NEO4J_PASSWORD="$NEO4J_PASS" AURA_DR_RUN_ID="$RUN_ID" \
-  scripts/neo4j_offline_drill.sh "$WORK_DIR/neo4j" "$WORK_DIR/neo4j.json"
+  bash scripts/neo4j_offline_drill.sh "$WORK_DIR/neo4j" "$WORK_DIR/neo4j.json"
 
 echo "==> DR plane 3/4: conversation sidecar archive -> disposable volume"
 SIDECAR_SOURCE_VOLUME="$("$DOCKER" volume ls -q \
