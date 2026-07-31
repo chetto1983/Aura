@@ -50,7 +50,12 @@ discover_sources() {
     )
     return
   fi
-  find "$source_root" -type f -name '*.go' -print0
+  local subtree
+  for subtree in cmd internal scripts; do
+    if [[ -d "$source_root/$subtree" ]]; then
+      find "$source_root/$subtree" -type f -name '*.go' -print0
+    fi
+  done
 }
 
 while IFS= read -r -d '' source; do
