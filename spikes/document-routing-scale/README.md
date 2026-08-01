@@ -167,3 +167,46 @@ che il retrieval NON aveva fatto emergere (4/4, nessuna invenzione). Il tetto 4/
 hybrid meglio tarato, K più grande), non il reranker — che qui è già perfetto. Questo
 risponde alla domanda aperta "quanto peso a pgvector vs Tantivy vs reranker":
 l'anello debole misurato è la **gamba densa piccola**, non lo stage di rerank.
+
+## EmbeddingGemma-300M (GGUF) — la previsione si avvera
+
+`embeddinggemma_rerun.py`: rifatta la misura con **EmbeddingGemma-300M** (768d,
+GGUF Q8_0, via llama.cpp — niente torch), coi prompt query/document del modello.
+Da `results_gemma.txt`:
+
+```
+GEMMA-A  passage recall, 8 query PARAFRASATE
+  DENSE-flat   recall@1 6/8  recall@5 8/8  (ceiling@12 8/8)
+  HYBRID-flat  recall@1 5/8  recall@5 5/8  (ceiling@12 8/8)
+  [MiniLM-384d: dense @5 2/8, hybrid @5 4/8, ceiling@12 4/8]
+GEMMA-B  routing concettuale
+  BM25 0.750   GEMMA-dense 0.751   HYBRID 0.532
+```
+
+Sanity sul caso che MiniLM invertiva: `cos(parafrasi, needle-giusto)=0.681` vs
+`0.466` per quello sbagliato (MiniLM: 0.282 vs 0.307, invertito).
+
+**1. La previsione dell'esperimento LLM-reranker si avvera.** Il ceiling di
+retrieval sale da **4/8 → 8/8**: un embedder forte fa emergere *tutte* le needle
+nel top-12. E dense-flat recall@5 sale da 2/8 → **8/8**. Poiché il reranker LLM è
+già perfetto su ciò che il retrieval fa emergere (4/4), la pipeline completa
+**retrieve(Gemma) → rerank(LLM)** ora recupera tutte e 8 le parafrasi. La domanda
+semantica è chiusa: **il collo di bottiglia era l'embedder, e un piccolo modello
+FORTE lo risolve.**
+
+**2. Sorpresa onesta: l'RRF equal-weight PEGGIORA quando una gamba è molto più
+forte.** Con Gemma-dense a 8/8 e BM25 debole sulle parafrasi, l'hybrid *scende* a
+5/8 (@5); nel routing crolla a 0.532. Il BM25 rumoroso, pesato uguale, trascina
+giù un dense forte. Questo **raffina** il "hybrid vince sempre" dei turni scorsi:
+l'hybrid aiuta quando le gambe sono comparabili/entrambe deboli, **danneggia**
+quando una gamba forte è diluita da una debole a peso uguale. Ma il **ceiling@12
+dell'hybrid resta 8/8** — l'unione contiene tutte le needle. → La forma giusta non
+è "RRF come ordine finale", è **retrieve (unione dense+lessicale, ceiling 8/8) →
+RERANK (LLM/cross-encoder) → risposta**. Il rerank fa la precisione; l'RRF fa solo
+generazione di candidati, e va **pesato** (favorire il dense sulle query
+semantiche) o sostituito dal rerank.
+
+**Conclusione del filo semantico:** un embedder piccolo-ma-forte (EmbeddingGemma
+300M) porta il retrieval a 8/8 di ceiling; il reranker LLM già perfetto chiude la
+precisione. Nessun modello enorme necessario. L'unica trappola è l'RRF ingenuo:
+va pesato o rimpiazzato dal rerank sullo stadio di candidate-generation.
