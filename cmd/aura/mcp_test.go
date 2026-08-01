@@ -82,7 +82,7 @@ func TestMCPRecipesListsBuiltins(t *testing.T) {
 	if !strings.Contains(got, `"name":"calendar"`) || !strings.Contains(got, `"http://127.0.0.1:8093/"`) {
 		t.Fatalf("recipes json missing calendar streamable-http recipe:\n%s", got)
 	}
-	if !strings.Contains(got, `"name":"memory"`) || !strings.Contains(got, `"http://127.0.0.1:8091/mcp/"`) {
+	if !strings.Contains(got, `"name":"memory"`) || !strings.Contains(got, `"http://127.0.0.1:8096/mcp/"`) {
 		t.Fatalf("recipes json missing memory streamable-http recipe:\n%s", got)
 	}
 }
