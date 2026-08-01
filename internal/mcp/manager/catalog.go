@@ -10,19 +10,29 @@ import (
 	"github.com/chetto1983/aura/internal/mcp"
 )
 
-// memoryRecipeURL composes the loopback streamable-HTTP URL for the agent-memory
-// sidecar. The port derives from AURA_AGENT_MEMORY_MCP_PORT (the name compose.yaml
-// already uses, AURA_<DOMAIN>_<UNIT> convention), defaulting to 8091 — no new env var.
-// The value is validated as a TCP port (1-65535) before interpolation: anything
-// else (e.g. "8091@evil.example" via the URL userinfo trick) would retarget the
-// loopback-by-construction recipe off-host, so garbage falls back to 8091 (WR-01).
+// memoryRecipeURL composes the loopback streamable-HTTP URL for the memory
+// sidecar — Aura's own ArcadeDB MCP (cmd/arcadedb-mcp), not the neo4j-labs
+// agent-memory fork it replaced.
+//
+// The fork embedded every fact on write and every query on read, through
+// aura-llama-embed. Measured 2026-08-01: with that sidecar in a restart loop the
+// agent called memory_search six times and memory_get_entity three, and every one
+// returned "memory operation failed" — recall was gone, and nothing in the stack
+// said so until a live question was asked. ArcadeDB's memory retrieval is Lucene
+// full-text plus a graph walk: one round trip, no embedder, so recall cannot be
+// taken down by a model download.
+//
+// The port derives from AURA_ARCADEDB_MCP_PORT, defaulting to 8096. It is
+// validated as a TCP port (1-65535) before interpolation: anything else (e.g.
+// "8096@evil.example" via the URL userinfo trick) would retarget the
+// loopback-by-construction recipe off-host, so garbage falls back to 8096 (WR-01).
 func memoryRecipeURL() string {
 	if os.Getenv("AURA_IN_CONTAINER") == "1" {
-		return "http://aura-agent-memory-mcp:8080/mcp/"
+		return "http://aura-arcadedb-mcp:8096/mcp/"
 	}
-	port := strings.TrimSpace(os.Getenv("AURA_AGENT_MEMORY_MCP_PORT"))
+	port := strings.TrimSpace(os.Getenv("AURA_ARCADEDB_MCP_PORT"))
 	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
-		port = "8091"
+		port = "8096"
 	}
 	return fmt.Sprintf("http://127.0.0.1:%s/mcp/", port)
 }
@@ -146,15 +156,18 @@ func BuiltInCatalog() []CatalogEntry {
 			},
 		},
 		{
-			// neo4j-labs agent-memory (Aura fork), the first HTTP recipe. Mounts the
-			// memory__* surface Deferred + namespaced through the existing
-			// MountManagedServer (D-06/D-07). Trusted (NOT remote_http) so it can mount
-			// default-on (D-08); the URL has no launch Command (HTTP recipe). The fork
-			// adds memory_forget (owned-node delete) and drops the redundant
-			// reasoning-trace tools + memory_export_graph (Aura keeps its own reasoning
-			// store).
+			// Aura's own ArcadeDB MCP (cmd/arcadedb-mcp). Mounts the memory__* surface
+			// Deferred + namespaced through the existing MountManagedServer
+			// (D-06/D-07). Trusted (NOT remote_http) so it can mount default-on
+			// (D-08); the URL has no launch Command (HTTP recipe).
+			//
+			// It replaced the neo4j-labs agent-memory fork, which needed an embedding
+			// call on every write and every read and took recall down with it when
+			// that sidecar failed. Bitemporal facts: a fact is never overwritten, its
+			// validity window is closed, so both what is true now and what was true
+			// then stay answerable.
 			Name:       "memory",
-			Summary:    "agent-memory fork (POLE+O facts/preferences + forget) over streamable-HTTP",
+			Summary:    "Aura ArcadeDB memory (bitemporal facts + entities, full-text and graph, no embedder)",
 			Source:     mcp.SourceRecipeMemory,
 			TrustClass: mcp.TrustTrustedRecipe,
 			Runtime:    "local",

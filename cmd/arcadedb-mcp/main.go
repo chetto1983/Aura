@@ -60,9 +60,6 @@ func run(logger *slog.Logger) error {
 	// to run DDL first would pay for it in its own latency and race a sibling.
 	schemaCtx, cancelSchema := context.WithTimeout(context.Background(), defaultShutdownTimeout)
 	err = client.EnsureMemorySchema(schemaCtx)
-	if err == nil {
-		err = client.EnsureDocumentSchema(schemaCtx)
-	}
 	cancelSchema()
 	if err != nil {
 		return err
@@ -131,11 +128,11 @@ func newServer(client *arcadedb.Client, now clock) *mcp.Server {
 	addMemoryEntitiesTool(server, client)
 	addMemoryDigestTool(server, client)
 	addMemoryMergeTool(server, client)
-	addDocumentIngestTool(server, client)
-	addDocumentSearchTool(server, client)
-	addDocumentListTool(server, client)
-	addDocumentReadTool(server, client)
-	addDocumentDeleteTool(server, client)
+	// Documents are NOT here. They live as bytes in Garage with a catalog row in
+	// Postgres, found by document_search and handed over whole by document_open —
+	// measured, chunk retrieval answered every aggregate at 0% for any k. Mounting
+	// a second document_search over ArcadeDB would give the model two tools with
+	// one name and a store that holds nothing.
 	return server
 }
 
