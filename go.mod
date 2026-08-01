@@ -20,9 +20,11 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/joho/godotenv v1.5.1
+	github.com/k8nstantin/go-leiden v0.1.0
 	github.com/mdp/qrterminal/v3 v3.2.1
 	github.com/moby/moby/api v1.55.0
 	github.com/moby/moby/client v0.5.0
+	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/neo4j/neo4j-go-driver/v5 v5.28.4
 	github.com/pkoukk/tiktoken-go v0.1.8
 	github.com/prometheus/client_golang v1.24.1
@@ -43,7 +45,6 @@ require (
 	golang.org/x/sys v0.47.0
 	golang.org/x/term v0.45.0
 	golang.org/x/text v0.40.0
-	golang.org/x/tools v0.48.0
 	gopkg.in/telebot.v4 v4.0.0-beta.10
 	pgregory.net/rapid v1.3.0
 	rsc.io/qr v0.2.0
@@ -114,6 +115,7 @@ require (
 	github.com/goccy/go-json v0.10.6 // indirect
 	github.com/gogs/chardet v0.0.0-20211120154057-b7413eaefb8f // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
+	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
@@ -175,6 +177,7 @@ require (
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/resend/resend-go/v3 v3.7.0 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
+	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/shirou/gopsutil/v4 v4.26.5 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/sony/gobreaker v1.0.0 // indirect
@@ -198,6 +201,7 @@ require (
 	github.com/vmihailenco/msgpack/v5 v5.4.1 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	github.com/wneessen/go-mail v0.7.3 // indirect
+	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.69.0 // indirect
@@ -206,6 +210,8 @@ require (
 	go.uber.org/atomic v1.11.0 // indirect
 	golang.org/x/mod v0.38.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
+	golang.org/x/time v0.15.0 // indirect
+	golang.org/x/tools v0.48.0 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
