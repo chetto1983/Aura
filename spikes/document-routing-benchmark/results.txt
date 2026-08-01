@@ -1,0 +1,55 @@
+corpus: 21 files
+  chunk_flatten index: 22 docs (chunks)
+  card_catalog  index: 21 docs (one per file)
+
+===== chunk_flatten (markitdown baseline) =====
+  overall   R@1=7/20 (35%)   R@3=15/20 (75%)   MRR=0.557
+  by type:
+    AGG       R@1=0/4  R@3=1/4  MRR=0.258
+    AGING     R@1=2/2  R@3=2/2  MRR=1.000
+    CROSSREF  R@1=0/2  R@3=1/2  MRR=0.292
+    EXACT     R@1=1/3  R@3=2/3  MRR=0.511
+    FILTER    R@1=0/2  R@3=2/2  MRR=0.333
+    PROSE     R@1=4/6  R@3=6/6  MRR=0.833
+    TEMPORAL  R@1=0/1  R@3=1/1  MRR=0.333
+
+===== card_catalog (schema fingerprint) =====
+  overall   R@1=8/20 (40%)   R@3=15/20 (75%)   MRR=0.603
+  by type:
+    AGG       R@1=1/4  R@3=2/4  MRR=0.473
+    AGING     R@1=2/2  R@3=2/2  MRR=1.000
+    CROSSREF  R@1=0/2  R@3=0/2  MRR=0.208
+    EXACT     R@1=1/3  R@3=2/3  MRR=0.583
+    FILTER    R@1=0/2  R@3=2/2  MRR=0.333
+    PROSE     R@1=4/6  R@3=6/6  MRR=0.833
+    TEMPORAL  R@1=0/1  R@3=1/1  MRR=0.333
+
+===== per-query (rank of target; lower is better; - = miss) =====
+  type      flat card  query
+  EXACT        1    1  dettaglio della fattura 2026_007
+  EXACT        3    2  voglio vedere la fattura numero 011  <-- card better
+  EXACT        5    4  fattura di febbraio emessa a Bianchi  <-- card better
+  AGG          4    7  quanto abbiamo fatturato in totale ad ACME nel 2026  <-- flat better
+  AGG          3    1  totale IVA del secondo trimestre  <-- card better
+  AGG          4    4  qual e' il totale complessivo fatturato nell'anno
+  AGG          5    2  qual e' la fattura piu alta emessa a Verdi Costruzioni  <-- card better
+  FILTER       3    3  quali fatture non sono state pagate
+  FILTER       3    3  tutte le fatture del cliente Gialli Import
+  AGING        1    1  quali clienti sono in ritardo con i pagamenti
+  AGING        1    1  quanti giorni di ritardo ha Verdi Costruzioni
+  PROSE        1    1  perche Bianchi ha contestato una fattura
+  PROSE        2    2  qual e' il problema con la fattura 2026_006
+  CROSSREF     4    4  quali sono i termini di pagamento di Verdi Costruzioni
+  CROSSREF     3    6  la partita IVA di Rossi SRL  <-- flat better
+  PROSE        2    2  cosa prevede il contratto con ACME
+  PROSE        1    1  qual e' il foro competente del contratto ACME
+  TEMPORAL     3    3  fatture emesse a marzo 2026
+  PROSE        1    1  riepilogo generale dell'anno
+  PROSE        1    1  come sono archiviati i documenti amministrativi
+
+===== answerability: routing is necessary but NOT sufficient =====
+  query: 'importo medio delle fatture non pagate o scadute'
+  open+compute answer: media = 23851.00 EUR  (su 4 fatture)
+  the number 23851.00 appears in a flattened chunk? False
+  -> even a perfect router only finds the FILE; the NUMBER exists
+     in no chunk. Only open+compute (soffice/openpyxl) produces it.
