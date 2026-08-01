@@ -137,3 +137,33 @@ SEM-B  routing su 4 query CONCETTUALI (card catalog)
 Ri-fare SEM-A/SEM-B con **e5-large-1024** (il modello reale) + un reranker, per
 separare "il denso non aiuta" da "il denso *piccolo* non aiuta". È l'unico modo
 per decidere quanto peso dare alla gamba densa vs Tantivy-BM25 nel design finale.
+
+## LLM come reranker — separa retrieval da rerank
+
+"Tu sei un LLM": invece di scaricare e5-large, uso l'LLM in-the-loop (Claude) come
+**reranker** sopra i candidati hybrid top-12, per capire se il gap delle parafrasi
+è dello *stage di rerank* o dello *stage di retrieval*. Auditable:
+`llm_rerank_prep.py` dumpa i top-12 senza marcatore della risposta →
+`llm_rerank_candidates.json`; l'LLM scrive le scelte (con motivazione) in
+`llm_rerank_picks.json`; `llm_rerank_score.py` confronta col ground truth. Da
+`results_llm_rerank.txt`:
+
+```
+candidate-recall ceiling (retrieval):  4/8   <- quante needle il retrieval ha messo nel top-12
+LLM-rerank recovered:                  4/8
+LLM precision on recoverable:          4/4   <- PERFETTO su ciò che era recuperabile
+correct abstentions (needle absent):   4/4   <- astensione su tutte le assenti, zero allucinazioni
+wrong picks:                           0
+```
+
+**Conclusione (la più importante del filo semantico): il reranker LLM è perfetto;
+il collo di bottiglia è il RETRIEVAL.** L'LLM ha recuperato ogni needle che il
+retrieval aveva fatto emergere (4/4) e si è astenuto correttamente su ogni needle
+che il retrieval NON aveva fatto emergere (4/4, nessuna invenzione). Il tetto 4/8
+è fissato dal retrieval (embedder piccolo), non dal reranker. Un reranker forte
+**non può recuperare ciò che il retrieval non ha mai portato su.**
+
+→ **Dove investire è chiaro: la RECALL del retrieval** (embedder forte e5-large-1024,
+hybrid meglio tarato, K più grande), non il reranker — che qui è già perfetto. Questo
+risponde alla domanda aperta "quanto peso a pgvector vs Tantivy vs reranker":
+l'anello debole misurato è la **gamba densa piccola**, non lo stage di rerank.

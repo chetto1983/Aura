@@ -1,0 +1,19 @@
+sec  needle_in_topK  llm_pick  outcome
+12   False           -1        abstain-correct
+23   True            0         RECOVERED
+41   False           -1        abstain-correct
+58   False           -1        abstain-correct
+77   False           -1        abstain-correct
+94   True            0         RECOVERED
+108  True            3         RECOVERED
+129  True            0         RECOVERED
+
+--- summary (8 paraphrased queries) ---
+candidate-recall ceiling (retrieval): 4/8
+LLM-rerank recovered:                 4/8
+LLM precision on recoverable:         4/4
+correct abstentions (needle absent):  4/4
+hallucinated / wrong picks:           0
+
+reading: the reranker is PERFECT on what retrieval surfaced;
+the ceiling (4/8) is set by RETRIEVAL, not by the reranker.
