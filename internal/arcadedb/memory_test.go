@@ -58,7 +58,22 @@ const oneFactRow = `{"result":[{"statement":"Davide lives in Caraglio.","predica
 "subject":"Davide","object":"Caraglio","valid_from":"2026-01-01T00:00:00Z",
 "source_run_id":"run-1","source_memory_ids":["m1"]}]}`
 
-func TestSchemaIsIdempotentAndCarriesNoVectorIndex(t *testing.T) {
+// This test used to assert the OPPOSITE — that the schema carried no vector
+// index at all — on the reasoning that retrieval was the graph plus Lucene and a
+// vector index would reintroduce an embedding call on every read and write.
+//
+// Measurement overruled it. Lexical-only retrieval cannot cross a language
+// boundary, and the facts are written in English while the operator asks in
+// Italian: `analyzer recall Italian English` returned the right fact first,
+// `perche la ricerca testuale rendeva la meta in italiano` returned ZERO. With
+// the dense leg fused in, the same Italian question returns that same fact
+// first, and lexical alone still returns zero on it.
+//
+// The original concern was right about the cost and wrong about the trade: the
+// embedding call is now fail-soft on both paths (a fact writes without its
+// vector, a search falls back to lexical), so the dependency it feared cannot
+// take retrieval down.
+func TestSchemaIsIdempotentAndCarriesTheVectorIndex(t *testing.T) {
 	client, rec := recordingClient(t, `{"result":[]}`)
 	if err := client.EnsureMemorySchema(context.Background()); err != nil {
 		t.Fatalf("EnsureMemorySchema: %v", err)
@@ -69,10 +84,18 @@ func TestSchemaIsIdempotentAndCarriesNoVectorIndex(t *testing.T) {
 		}
 	}
 	all := rec.joined()
-	// Retrieval is the graph plus Lucene; a vector index would reintroduce an
-	// embedding call on every read and every write.
-	if strings.Contains(all, "LSM_VECTOR") || strings.Contains(all, "embedding") {
-		t.Fatalf("schema still carries a vector index:\n%s", all)
+	if !strings.Contains(all, "LSM_VECTOR") {
+		t.Fatalf("the dense leg's index is missing:\n%s", all)
+	}
+	// The width is part of the index definition and the embedder's native size;
+	// a mismatch is rejected at query time, so it belongs in the schema contract.
+	if !strings.Contains(all, `"dimensions": 768`) {
+		t.Errorf("vector index is not declared at the embedder's 768 dimensions:\n%s", all)
+	}
+	// ARRAY_OF_FLOATS, not LIST OF FLOAT: a JSON array bound through the SQL
+	// endpoint arrives as the former, and the latter rejects it at write time.
+	if !strings.Contains(all, "embedding IF NOT EXISTS ARRAY_OF_FLOATS") {
+		t.Errorf("embedding property is not declared as ARRAY_OF_FLOATS:\n%s", all)
 	}
 	if !strings.Contains(all, "ON FACT (statement) FULL_TEXT") {
 		t.Fatalf("full-text index missing:\n%s", all)
@@ -87,7 +110,7 @@ func TestSchemaIsIdempotentAndCarriesNoVectorIndex(t *testing.T) {
 // `end` is reserved by ArcadeDB both as a bare identifier and as a bind
 // parameter name; the schema must never use it.
 func TestSchemaAvoidsReservedWords(t *testing.T) {
-	for _, statement := range memorySchemaStatements() {
+	for _, statement := range append(memorySchemaStatements(), vectorSchemaStatements()...) {
 		lowered := strings.ToLower(statement)
 		for _, reserved := range []string{" end ", ".end ", "(end)", ":end"} {
 			if strings.Contains(lowered, reserved) {

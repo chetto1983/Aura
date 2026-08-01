@@ -65,7 +65,7 @@ func memorySchemaStatements() []string {
 
 // EnsureMemorySchema creates the memory model if it is not already there.
 func (c *Client) EnsureMemorySchema(ctx context.Context) error {
-	for _, statement := range memorySchemaStatements() {
+	for _, statement := range append(memorySchemaStatements(), vectorSchemaStatements()...) {
 		if _, err := c.Command(ctx, statement, nil); err != nil {
 			return fmt.Errorf("arcadedb: ensure memory schema: %w", err)
 		}
@@ -177,6 +177,10 @@ func (c *Client) UpsertFact(ctx context.Context, fact Fact, now time.Time) (Fact
 		"expired_at":        nil,
 		"source_run_id":     fact.SourceRunID,
 		"source_memory_ids": fact.SourceMemoryIDs,
+		// nil when no embedder is configured or the sidecar is down, which stores
+		// the fact without a vector rather than refusing the write. It stays
+		// reachable lexically and EmbedMissingFacts can fill it in later.
+		"embedding": c.embedStatement(ctx, fact.Statement),
 	}
 	if _, err := c.Command(ctx, createFactStatement, params); err != nil {
 		return FactWrite{}, fmt.Errorf("arcadedb: create fact: %w", err)

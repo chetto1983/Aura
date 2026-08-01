@@ -49,6 +49,9 @@ type Client struct {
 	commandURL string
 	authHeader string
 	http       *http.Client
+	// embedder is optional: with none, memory retrieval is the lexical leg alone,
+	// which is the behaviour that shipped and must not regress when it is absent.
+	embedder Embedder
 }
 
 // ServerError is a statement the database refused. Detail carries ArcadeDB's
@@ -205,4 +208,14 @@ func decodeServerError(resp *http.Response) error {
 		failure.Detail = strings.TrimSpace(string(raw))
 	}
 	return failure
+}
+
+// WithEmbedder attaches the dense leg. A nil embedder is legal and leaves
+// retrieval lexical, so a caller can pass whatever configuration produced
+// without branching.
+func (c *Client) WithEmbedder(e Embedder) *Client {
+	if c != nil {
+		c.embedder = e
+	}
+	return c
 }
