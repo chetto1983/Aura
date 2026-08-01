@@ -1,0 +1,4 @@
+# generated corpora — reproducible via generate_*.py, never committed
+**/corpus/
+__pycache__/
+*.pyc

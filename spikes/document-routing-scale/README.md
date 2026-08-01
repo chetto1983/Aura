@@ -1,0 +1,101 @@
+# Spike — Document retrieval at ENTERPRISE SCALE
+
+Follow-up al toy spike (`../document-routing-benchmark`, 21 file). Qui si simula
+il regime che l'operatore ha posto: **~460 file + un documento da ~770 "pagine"**.
+Quattro esperimenti misurano ciò che il giocattolo non poteva. Alcuni risultati
+**contraddicono la narrativa di scala che avevo dato** — riportati comunque, per
+intero. Un benchmark serve a questo.
+
+## Come si esegue
+
+```bash
+pip install openpyxl                 # unica dipendenza (sqlite3 è stdlib)
+python3 generate_scale_corpus.py     # ~460 file + contratto ~770 pagine
+python3 experiments.py               # 4 esperimenti (vedi results_scale.txt)
+```
+
+Deterministico, offline, BM25 fatto a mano. `corpus/` è gitignored (rigenerabile).
+
+## Corpus
+
+400 fatture (40 clienti) + 20 con nomi "sporchi" (`_v2`, `_FINALE`, `(copia)`) +
+registro contabile + 3 report + 40 note che citano fatture + `contratto_quadro.txt`
+(140 articoli, ~770 pagine, 8 "needle" piantati in articoli specifici). Ground
+truth di archi e needle in `corpus/*.json`.
+
+## Risultati (da `results_scale.txt`)
+
+### EXP 1 — routing precision su 465 file (MRR) — *risultato NULLO, onesto*
+```
+                 AGG    BIGDOC  EXACT  NOTE   REPORT  OVERALL
+flatten          0.501  1.000   1.000  1.000  1.000   0.917
+card             0.419  1.000   1.000  1.000  1.000   0.903
+card+role        0.419  1.000   1.000  1.000  1.000   0.903
+```
+**A scala, la rappresentazione (flatten vs card) NON è la leva del routing.**
+Anzi flatten è leggermente meglio (0.917 vs 0.903). EXACT/NOTE/BIGDOC/REPORT sono
+banali per tutti (token forti). L'unico tipo difficile è **AGG**, e lì vince
+flatten. Il mio tag di ruolo appeso alla scheda (`card+role`) **non ha aiutato**
+(identico a `card`): appendere prosa di ruolo non muove il ranking BM25. → La leva
+vera è (a) la **gamba semantica** (embedding, non testabile offline qui) e (b) i
+metadati strutturali usati come **filtro/boost**, non come testo appeso.
+
+### EXP 2 — aggregazione cross-file: open+compute vs ETL+SQL — *conferma FORTE*
+```
+domanda: 'fatturato totale per cliente' su 400 fatture
+risultati identici: True
+open+compute (per query):   1131 ms   (ri-legge 400 file OGNI query)
+ETL build (una volta, ingest): 1189 ms
+SQL query (per query):         0.4 ms   (2550x più veloce)
+```
+**A scala l'aggregazione DEVE essere ETL→SQL, non aprire-N-file-per-query.** Il
+costo di aprire 400 xlsx è ~1.1s *per ogni query*; la stessa risposta in SQL è
+0.4ms, col costo di estrazione pagato **una volta** all'ingest. Questo è il
+risultato più azionabile: lo strutturato-omogeneo va estratto in tabelle Postgres.
+
+### EXP 3 — passaggio nel doc da ~770 pagine: flat vs gerarchico — *ridimensiona la mia tesi*
+```
+1820 chunk flat vs 140 sezioni
+FLAT (intero doc):          recall@1 7/8   recall@5 7/8
+GERARCHICO (sez->chunk):    recall@1 6/8   recall@5 7/8
+```
+**Avevo sostenuto che il flat degrada e il gerarchico regge. NON si riproduce.**
+BM25 flat su 1820 chunk trova bene il needle anche in 770 pagine (i termini del
+needle sono distintivi); il gerarchico ne ha *perso uno* instradando la query alla
+sezione sbagliata — ha aggiunto un punto di fallimento senza servire. Correzione
+onesta: **il problema delle 770 pagine è di context-window** (non le carichi
+intere), *non* di qualità del retrieval per query a keyword — lì il flat basta. La
+gerarchia/RAPTOR paga per query **semantiche** e di **sintesi cross-sezione**, che
+questo harness lessicale non può testare. Ho sovra-venduto la gerarchia.
+
+### EXP 4 — correlazione: blocking prima dell'LLM — *conferma FORTE*
+```
+400 doc   all-pairs O(N^2): 79800
+blocking per CLIENTE -> 1800 coppie (44x riduzione), recall archi stesso-cliente 100%
+archi nota->fattura: 0/40 con chiave cliente (chiave sbagliata), 40/40 con chiave numero-fattura
+```
+**La correlazione a scala NON si fa LLM-ando O(N²) coppie.** Due chiavi di blocking
+deterministiche (cliente, numero-fattura) catturano gli archi strutturali a una
+frazione delle coppie; l'LLM vede solo il residuo semantico.
+
+## Conclusioni corrette (dopo l'autocorrezione)
+
+| Affermazione (turno scorso) | Verdetto dello spike |
+|---|---|
+| Aggregazione a scala → ETL+SQL | **CONFERMATA** (2550x) |
+| Correlazione → blocking, non O(N²) | **CONFERMATA** (44x, recall 100% strutturale) |
+| Routing: la scheda batte il flatten | **FALSIFICATA a scala** — rappresentazione lessicale non è la leva; serve la gamba semantica + filtri strutturali |
+| Doc grande: gerarchico batte flat | **NON riprodotta** — il problema è context-window, non retrieval keyword; la gerarchia paga solo per query semantiche/sintesi (non testabili qui) |
+
+## Cosa questo spike NON prova (e serve un modello per farlo)
+
+Entrambe le sorprese negative (routing, gerarchico) puntano allo **stesso buco**:
+tutto qui è **lessicale** (BM25), nessun embedding offline. La gamba semantica —
+dove card-catalog e gerarchia *dovrebbero* vincere (query concettuali, paraphrase,
+sintesi cross-sezione) — resta non misurata. Prossimo esperimento reale: montare
+un embedder multilingue e ri-fare EXP1 (routing concettuale) ed EXP3 (recall
+semantico nel doc grande) con la gamba vettoriale. Solo allora si può dire se
+Tantivy-BM25 basta o se il valore è tutto nel denso.
+
+I due risultati **forti (ETL+SQL, blocking) sono già azionabili** e reggono a ogni
+scala: sono aritmetica, non euristica.

@@ -1,6 +1,0 @@
-Riepilogo annuale 2026 (bozza)
-
-Nel corso del 2026 sono state emesse 14 fatture verso 5 clienti principali.
-Il cliente con il maggior volume e' ACME SpA. Alcune posizioni restano aperte
-(fatture non pagate o scadute), monitorate nello scadenzario. La contabilita
-completa e riconciliata e' mantenuta nel registro contabilita_2026.

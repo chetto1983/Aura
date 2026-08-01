@@ -1,6 +1,0 @@
-Istruzioni archivio documenti amministrativi
-
-Le fatture emesse sono archiviate singolarmente come file fattura_2026_NNN.
-Il registro contabile contabilita_2026 contiene una riga per ogni fattura e i
-riepiloghi per cliente e per trimestre. L'anagrafica clienti riporta partite
-IVA, indirizzi e termini di pagamento. Lo scadenzario elenca le posizioni aperte.

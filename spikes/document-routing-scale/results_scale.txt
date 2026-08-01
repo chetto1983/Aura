@@ -1,0 +1,28 @@
+
+### EXP 1 - routing precision over 465 files (2393 chunks in flatten) ###
+  MRR by type:      AGG       BIGDOC    EXACT     NOTE      REPORT    OVERALL
+  flatten        0.501     1.000     1.000     1.000     1.000     0.917
+  card           0.419     1.000     1.000     1.000     1.000     0.903
+  card+role      0.419     1.000     1.000     1.000     1.000     0.903
+
+### EXP 2 - cross-file aggregation: open+compute vs ETL+SQL ###
+  question: 'fatturato totale per cliente' over 400 invoice files
+  results identical: True
+  open+compute (per query):     1193.4 ms   (re-reads all 400 files EVERY query)
+  ETL build (once, ingest):     1222.7 ms
+  SQL query (per query):           0.2 ms   (5107x faster than open+compute)
+
+### EXP 3 - passage retrieval in the ~770-page document ###
+  1820 flat chunks vs 140 sections
+  FLAT (whole doc):        recall@1 7/8   recall@5 7/8
+  HIERARCHICAL (sec->chunk): recall@1 6/8   recall@5 7/8
+
+### EXP 4 - correlation edges: blocking before any LLM ###
+  documents: 400   all-pairs (O(N^2)): 79800
+  block by CLIENT key -> candidate pairs: 1800  (44x reduction)
+    same-client edge recall: 100%  (360 edges)
+  note->invoice edges: 40
+    recall under CLIENT blocking:     0/40  (wrong key)
+    recall under INVOICE-ID blocking: 40/40  (right key)
+  -> two deterministic keys (client, invoice-id) capture structural edges;
+     the LLM only scores the residual semantic candidates, not O(N^2) pairs.
