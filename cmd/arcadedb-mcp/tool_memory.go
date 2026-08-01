@@ -132,7 +132,7 @@ func memorySearchHandler(
 		if err != nil {
 			return nil, MemorySearchOutput{}, err
 		}
-		hits, err := client.SearchFacts(ctx, in.Query, in.Limit, asOf)
+		hits, err := client.SearchFactsHybrid(ctx, in.Query, in.Limit, asOf)
 		if err != nil {
 			return nil, MemorySearchOutput{}, fmt.Errorf("memory_search: %w", err)
 		}

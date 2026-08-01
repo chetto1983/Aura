@@ -514,6 +514,79 @@ services:
   # what let "Granite" survive two swaps and describe a sidecar that no longer ran it.
   # Default compose must start on CPU-only CI/installer hosts; layer compose.gpu.yaml
   # when the operator wants Docker to reserve NVIDIA devices for this service.
+  # ↓↓ ArcadeDB — graph substrate for memory + documents ↓↓
+  # This container's only definition used to live in the turing_AgentMemory_MCP compose,
+  # which was deleted with its folder on 2026-07-31. It is Aura's now.
+  # Retrieval is full-text + graph, with an optional dense leg over the sidecar
+  # embedder (LSM_VECTOR + vector.fuse); see internal/arcadedb/memory_vector.go.
+  arcadedb:
+    image: arcadedata/arcadedb:26.7.3
+    container_name: aura-arcadedb
+    restart: unless-stopped
+    mem_limit: 3g
+    environment:
+      ARCADEDB_OPTS_MEMORY: ${ARCADEDB_OPTS_MEMORY:--Xms2G -Xmx2G}
+      # The EMPTY brackets are load-bearing, both of them (measured on 26.7.3, 2026-07-31):
+      #   `…defaultDatabases=aura_memory`              boots clean, logs nothing, creates NOTHING.
+      #   `…defaultDatabases=aura_memory[root:$pw]`    creates the database AND writes
+      #       `"aura_memory":[null]` into root's server-users entry, which SHADOWS its own
+      #       `"*":["admin"]` — root is then locked out of the one database it just made
+      #       ("User 'root' is not allowed to update schema", 403, on the first DDL).
+      #   `…defaultDatabases=aura_memory[]`            creates it and grants nothing extra,
+      #       so root's wildcard admin still applies. This is the only correct form.
+      JAVA_OPTS: >-
+        -Darcadedb.server.rootPassword=${ARCADEDB_PASSWORD:?ARCADEDB_PASSWORD required in .env}
+        -Darcadedb.server.defaultDatabases=${ARCADEDB_DATABASE:-aura_memory}[]
+    ports:
+      - "127.0.0.1:2480:2480"
+    volumes:
+      - aura-arcadedb:/home/arcadedb/databases
+    healthcheck:
+      # /api/v1/ready answers 204 unauthenticated; every other endpoint needs credentials,
+      # so it is the only probe that does not bake the root password into the compose file.
+      # The image has wget and nc, but no curl and no bash.
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:2480/api/v1/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+
+  # Aura's own MCP surface over ArcadeDB (cmd/arcadedb-mcp). It is NOT ArcadeDB's built-in
+  # MCP server: that one ships 10 generic tools in 26.7.3 — no full_text_search, no
+  # hybrid_search, no upsert_entity, whatever the docs page claims — and its `query` tool
+  # takes no bind parameters, which makes it unsafe for user text.
+  arcadedb-mcp:
+    build:
+      context: .
+      dockerfile: docker/arcadedb-mcp/Dockerfile
+    image: ${AURA_ARCADEDB_MCP_IMAGE:-aura-arcadedb-mcp:local}
+    pull_policy: never
+    container_name: aura-arcadedb-mcp
+    restart: unless-stopped
+    mem_limit: 512m
+    pids_limit: 256
+    depends_on:
+      arcadedb:
+        condition: service_healthy
+    environment:
+      ARCADEDB_URL: http://arcadedb:2480
+      ARCADEDB_DATABASE: ${ARCADEDB_DATABASE:-aura_memory}
+      # NOT root. root is the server superuser — it can drop any database and
+      # rewrite security; the memory sidecar needs one database. ArcadeDB scopes a
+      # user per database ("databases": {"aura_memory": ["admin"]}), and the server
+      # enforces it: a user asking for another database gets a SecurityException,
+      # not an empty result. Same shape as the Postgres aura_app/aura_migrate split.
+      ARCADEDB_USER: ${ARCADEDB_APP_USER:-aura_memory}
+      ARCADEDB_PASSWORD: ${ARCADEDB_APP_PASSWORD:?ARCADEDB_APP_PASSWORD required in .env}
+      # The dense leg of memory retrieval. An empty value disables it and leaves
+      # retrieval lexical, which is a supported configuration and not a degraded
+      # one — the search falls back per call, so a sidecar that is merely down
+      # cannot take memory with it.
+      AURA_EMBED_BASE_URL: ${AURA_MEMORY_EMBED_BASE_URL:-http://aura-llama-embed:8081}
+      AURA_EMBED_MODEL: ${AURA_EMBED_MODEL:-}
+    ports:
+      - "127.0.0.1:8096:8096"
+
   aura-llama-embed:
     image: ${AURA_EMBED_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda}
     container_name: aura-llama-embed
@@ -1184,6 +1257,7 @@ services:
       start_period: 20s
 
 volumes:
+  aura-arcadedb:
   aura-home:
   # Amendment #88: the fixed /workspace working root (scripts/artifacts/.toolchain/scratch
   # + the skills symlink), durable across `docker compose up -d --force-recreate aura`.

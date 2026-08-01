@@ -56,6 +56,23 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	// The dense leg is OPTIONAL by construction: NewSidecarEmbedder returns nil
+	// for an empty AURA_EMBED_BASE_URL, and a nil embedder leaves retrieval
+	// lexical. So an operator with no embedding sidecar gets the behaviour that
+	// shipped, and one with a sidecar that is merely DOWN gets it too — the
+	// search falls back per call rather than at boot.
+	embedder := arcadedb.NewSidecarEmbedder(
+		os.Getenv("AURA_EMBED_BASE_URL"),
+		os.Getenv("AURA_EMBED_MODEL"),
+		os.Getenv("AURA_EMBED_API_KEY"),
+		0,
+	)
+	if embedder != nil {
+		client = client.WithEmbedder(embedder)
+		logger.Info("dense retrieval enabled", "embed_url", os.Getenv("AURA_EMBED_BASE_URL"))
+	} else {
+		logger.Info("dense retrieval disabled: no AURA_EMBED_BASE_URL; retrieval is lexical only")
+	}
 	// The schema is created at boot, not on first write: a tool call that has
 	// to run DDL first would pay for it in its own latency and race a sibling.
 	schemaCtx, cancelSchema := context.WithTimeout(context.Background(), defaultShutdownTimeout)
