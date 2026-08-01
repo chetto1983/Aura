@@ -72,7 +72,7 @@ func TestCatalogCalendarURLRejectsNonPortEnv(t *testing.T) {
 }
 
 func TestCatalogIncludesMemoryStreamableHTTPRecipe(t *testing.T) {
-	t.Setenv("AURA_AGENT_MEMORY_MCP_PORT", "") // literal-8091 assertion below; a sourced .env must not skew it (WR-06)
+	t.Setenv("AURA_ARCADEDB_MCP_PORT", "") // literal-8091 assertion below; a sourced .env must not skew it (WR-06)
 	memory, ok := LookupCatalog("memory")
 	if !ok {
 		t.Fatal("memory recipe missing from BuiltInCatalog")
@@ -86,8 +86,8 @@ func TestCatalogIncludesMemoryStreamableHTTPRecipe(t *testing.T) {
 	if memory.Server.Type != mcp.ServerTypeStreamableHTTP {
 		t.Fatalf("memory Server.Type = %q, want %q", memory.Server.Type, mcp.ServerTypeStreamableHTTP)
 	}
-	if memory.Server.URL != "http://127.0.0.1:8091/mcp/" {
-		t.Fatalf("memory Server.URL = %q, want loopback /mcp/ URL", memory.Server.URL)
+	if memory.Server.URL != "http://127.0.0.1:8096/mcp/" {
+		t.Fatalf("memory Server.URL = %q, want the ArcadeDB loopback /mcp/ URL", memory.Server.URL)
 	}
 	if memory.Server.Command != "" {
 		t.Fatalf("memory Server.Command = %q, want empty (HTTP recipe has no launch command)", memory.Server.Command)
@@ -98,19 +98,19 @@ func TestCatalogIncludesMemoryStreamableHTTPRecipe(t *testing.T) {
 }
 
 func TestCatalogMemoryURLHonorsPortEnv(t *testing.T) {
-	t.Setenv("AURA_AGENT_MEMORY_MCP_PORT", "9191")
+	t.Setenv("AURA_ARCADEDB_MCP_PORT", "9191")
 	memory, ok := LookupCatalog("memory")
 	if !ok {
 		t.Fatal("memory recipe missing from BuiltInCatalog")
 	}
 	if memory.Server.URL != "http://127.0.0.1:9191/mcp/" {
-		t.Fatalf("memory Server.URL = %q, want port from AURA_AGENT_MEMORY_MCP_PORT", memory.Server.URL)
+		t.Fatalf("memory Server.URL = %q, want port from AURA_ARCADEDB_MCP_PORT", memory.Server.URL)
 	}
 }
 
 func TestCatalogHTTPRecipeURLsUseComposeDNSInContainer(t *testing.T) {
 	t.Setenv("AURA_IN_CONTAINER", "1")
-	t.Setenv("AURA_AGENT_MEMORY_MCP_PORT", "9191")
+	t.Setenv("AURA_ARCADEDB_MCP_PORT", "9191")
 	t.Setenv("AURA_WHATSAPP_MCP_PORT", "9192")
 	t.Setenv("AURA_PIM_MCP_PORT", "9193")
 
@@ -118,7 +118,7 @@ func TestCatalogHTTPRecipeURLsUseComposeDNSInContainer(t *testing.T) {
 	if !ok {
 		t.Fatal("memory recipe missing from BuiltInCatalog")
 	}
-	if memory.Server.URL != "http://aura-agent-memory-mcp:8080/mcp/" {
+	if memory.Server.URL != "http://aura-arcadedb-mcp:8096/mcp/" {
 		t.Fatalf("memory Server.URL = %q, want compose DNS URL", memory.Server.URL)
 	}
 
@@ -145,12 +145,12 @@ func TestCatalogHTTPRecipeURLsUseComposeDNSInContainer(t *testing.T) {
 func TestCatalogMemoryURLRejectsNonPortEnv(t *testing.T) {
 	for _, bad := range []string{"8091@evil.example", "0", "65536", "-1", "junk", "80 91"} {
 		t.Run(bad, func(t *testing.T) {
-			t.Setenv("AURA_AGENT_MEMORY_MCP_PORT", bad)
+			t.Setenv("AURA_ARCADEDB_MCP_PORT", bad)
 			memory, ok := LookupCatalog("memory")
 			if !ok {
 				t.Fatal("memory recipe missing from BuiltInCatalog")
 			}
-			if memory.Server.URL != "http://127.0.0.1:8091/mcp/" {
+			if memory.Server.URL != "http://127.0.0.1:8096/mcp/" {
 				t.Fatalf("port %q produced URL %q, want fallback 8091 loopback", bad, memory.Server.URL)
 			}
 		})
