@@ -99,3 +99,41 @@ Tantivy-BM25 basta o se il valore è tutto nel denso.
 
 I due risultati **forti (ETL+SQL, blocking) sono già azionabili** e reggono a ogni
 scala: sono aritmetica, non euristica.
+
+## Gamba semantica (chiude il buco) — `semantic_experiments.py`
+
+Montato un embedder multilingue ONNX (`paraphrase-multilingual-MiniLM-L12-v2`,
+384d, via fastembed — niente torch) e ri-misurato con query **parafrasate** (basso
+overlap lessicale), più un **hybrid RRF** (BM25 + denso). Da `results_semantic.txt`:
+
+```
+SEM-A  passage recall nel doc grande, 8 query PARAFRASATE
+  BM25-flat     recall@1 2/8   recall@5 3/8    <- il lessicale crolla sulle parafrasi
+  DENSE-flat    recall@1 2/8   recall@5 2/8    <- il denso PICCOLO non lo salva
+  HYBRID-flat   recall@1 3/8   recall@5 4/8    <- l'hybrid è il migliore
+  DENSE-hier    recall@1 2/8   recall@5 2/8
+
+SEM-B  routing su 4 query CONCETTUALI (card catalog)
+  BM25-card     MRR 0.750
+  DENSE-card    MRR 0.751     <- denso piccolo ~ pari a BM25
+  HYBRID-card   MRR 0.762     <- hybrid marginalmente meglio
+```
+
+**Conclusioni (oneste):**
+1. **L'hybrid (BM25 + denso, RRF) ≥ ogni gamba singola in entrambi i test.** È la
+   configurazione robusta: non "lessicale O denso", ma **fusi**. → conferma
+   pg_search + pgvector *insieme*, non in alternativa.
+2. **Un embedder PICCOLO (384d) NON ribalta le parafrasi**: DENSE-flat era pari o
+   peggio di BM25 su SEM-A. Il salto semantico atteso richiede un modello forte —
+   il contratto reale di Aura è **e5-large 1024d**, molto più capace, **non
+   testato qui** (troppo pesante per l'ambiente). Quindi il risultato denso qui è
+   un *lower bound*, non un verdetto sul denso in generale.
+3. **Le parafrasi sono dure**: anche l'hybrid fa 4/8@5 vs 7/8 delle query
+   lessicali. I veri utenti parafrasano → serve (a) hybrid, (b) embedder forte,
+   (c) un **reranker** (Aura ce l'ha; questo spike lo omette) per ripulire i
+   candidati fusi.
+
+### Cosa resterebbe da misurare
+Ri-fare SEM-A/SEM-B con **e5-large-1024** (il modello reale) + un reranker, per
+separare "il denso non aiuta" da "il denso *piccolo* non aiuta". È l'unico modo
+per decidere quanto peso dare alla gamba densa vs Tantivy-BM25 nel design finale.
