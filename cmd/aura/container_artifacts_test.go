@@ -146,12 +146,18 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 	if !regexp.MustCompile(`AURA_LLM_MODEL: \$\{AURA_LLM_MODEL:-[^}]+\}`).MatchString(compose) {
 		t.Fatalf("compose.yaml missing env-overridable AURA_LLM_MODEL default pattern (AURA_LLM_MODEL: ${AURA_LLM_MODEL:-...})")
 	}
-	// The embedding sidecar's repo/file follow the same rule, for the same reason: which
+	// The embedding sidecar's model follows the same rule, for the same reason: which
 	// model embeds is a deployment decision (it changed the day the graph stopped
-	// discriminating), and pinning the tag here only guarantees this contract goes red
+	// discriminating), and pinning it here only guarantees this contract goes red
 	// every time someone makes that decision. What the image contract owes is that a
 	// default EXISTS and the operator can override it from .env.
-	for _, knob := range []string{"AURA_EMBED_HF_REPO", "AURA_EMBED_HF_FILE"} {
+	//
+	// The knob is AURA_EMBED_MODEL_PATH, not the AURA_EMBED_HF_REPO/HF_FILE pair it
+	// replaced: the sidecar now loads a LOCAL gguf with -m instead of fetching one
+	// with --hf-repo. It has no egress, so a first boot that had to reach
+	// HuggingFace restart-looped on "Could not establish connection" and took the
+	// whole memory path down with it. The contract asserted here is unchanged.
+	for _, knob := range []string{"AURA_EMBED_MODEL_PATH"} {
 		if !regexp.MustCompile(`\$\{` + knob + `:-[^}]+\}`).MatchString(compose) {
 			t.Fatalf("compose.yaml missing env-overridable %s default pattern (${%s:-...})", knob, knob)
 		}

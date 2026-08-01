@@ -521,10 +521,13 @@ services:
     environment:
       LLAMA_ARG_HOST: 0.0.0.0
     command:
-      - --hf-repo
-      - ${AURA_EMBED_HF_REPO:-Qwen/Qwen3-Embedding-0.6B-GGUF}
-      - --hf-file
-      - ${AURA_EMBED_HF_FILE:-Qwen3-Embedding-0.6B-Q8_0.gguf}
+      # A LOCAL path, not --hf-repo: the sidecar has no egress, so a first boot that
+      # has to fetch a GGUF from HuggingFace fails with "Could not establish
+      # connection" and restart-loops. The model is pre-fetched into the cache volume
+      # (docker run --rm -v aura_aura-llama-embed:/cache alpine … curl -o /cache/<file>),
+      # which an appliance install wants anyway.
+      - -m
+      - ${AURA_EMBED_MODEL_PATH:-/root/.cache/llama.cpp/embeddinggemma-300M-Q8_0.gguf}
       - --embeddings
       # Pooling is a property of the embedding model, not a house style, and the wrong
       # choice degrades similarity silently rather than failing. It therefore travels
