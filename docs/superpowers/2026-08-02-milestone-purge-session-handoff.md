@@ -28,7 +28,7 @@
 | **Reasoning tier → industrial** | 🔴 not started | broaden corpus, wire the gate into CI |
 | **Card catalog → ETL → vector** | 🔴 not started | the actual build block |
 
-**Working tree: CLEAN.** Four commits today, ~2,600 files, **−673,000 lines**. Full suite,
+**Working tree: CLEAN.** Five commits today, **2,593 files**, +18,750 / **−779,945 lines**. Full suite,
 vet, golangci-lint (0 issues), `-race` on 18 packages, 1751 web tests, both compose chains
 and the quality gate (8 rows) all green at `acd029d47`.
 
