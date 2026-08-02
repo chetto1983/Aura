@@ -246,7 +246,7 @@ func TestSecretRedactionPredicateUnaffected(t *testing.T) {
 		"AURA_MEMORY_EMBED_API_KEY",
 		"AURA_MEMORY_EMBED_BASE_URL",
 		"OPENROUTER_API_KEY",
-		"NEO4J_PASSWORD",
+		"ARCADEDB_PASSWORD",
 		"AURA_WEB_AUTH_SECRET",
 	} {
 		if !secret.IsSecretEnvKey(key) {

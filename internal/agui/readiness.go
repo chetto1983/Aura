@@ -20,8 +20,8 @@ const ReadinessProbeBudget = 2 * time.Second
 // ReadinessProbe is one named dependency-readiness check the server runs on
 // /readyz. Check returns nil when the dependency is reachable and a non-nil error
 // when it is not. Only Code reaches the response; redacted detail is logged.
-// Probes are injected by the
-// composition root (cmd/aura wires the real PG + Neo4j probes) so they stay
+// Probes are injected by the composition root (cmd/aura wires the Postgres pool
+// ping and a functional search through the mounted memory MCP) so they stay
 // testable and the set is easy to extend without touching the handler.
 type ReadinessProbe struct {
 	Name  string

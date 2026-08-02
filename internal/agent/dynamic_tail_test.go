@@ -466,7 +466,7 @@ func validDynamicTailExposure() *DynamicTailExposure {
 			"memory_entity":     {RequestedK: 4, EffectiveK: 4, Count: 1},
 		},
 		Revisions: DynamicTailRevisions{
-			Retriever: "neo4j-agent-memory-long-term-v1",
+			Retriever: "arcadedb-long-term-v1",
 			Reranker:  "none-v1",
 			Embedding: "ollama-granite-embedding-278m@768",
 			Index:     "entity-embedding-index-v1",

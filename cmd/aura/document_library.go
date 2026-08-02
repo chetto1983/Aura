@@ -12,11 +12,6 @@ import (
 // documents by what each one IS — title, operator tags, and the description of
 // the file — which is the only question the index still answers now that
 // document_open hands over the file itself.
-//
-// It replaced docsToolSearcher, which held a live Neo4j client and ran the
-// two-stage retrieval pipeline (dense/sparse seed, cross-encoder rerank, 1-hop
-// graph expand) to return passages. Measured: passages answer "what does it
-// say" and cannot answer "how many" at any k.
 type documentLibrary struct {
 	pool *pgxpool.Pool
 }

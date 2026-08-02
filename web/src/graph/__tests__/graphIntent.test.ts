@@ -243,7 +243,7 @@ describe('rowsToClientGraph (contract → graphology-ready)', () => {
     expect(n1?.size).toBeGreaterThan(4); // degree 2 → larger than floor
     const n2 = out.nodes.find((n) => n.id === 'n2');
     // A caption-less node shows its LABEL. This assertion previously demanded the node id,
-    // which is a Neo4j elementId: the workspace printed screens of
+    // which is a raw graph record id: the workspace printed screens of
     // "4:4260efd2-fa44-4d3b-b1a9-8ccf7886ae88:21" because every node that was not an Entity
     // arrived without a caption. The old expectation encoded that behaviour as correct.
     expect(n2?.caption).toBe('Entity');

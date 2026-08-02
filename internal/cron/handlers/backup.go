@@ -24,11 +24,8 @@ const (
 
 // BackupVariant selects the database a BackupHandler dumps.
 //
-// Postgres is the only one left. The Neo4j APOC Cypher export went with the graph
-// store: the compose service, its volume and the Bolt credentials the handler read
-// are all gone, so the variant could only fail against a host that is not there.
-// ArcadeDB has no replacement yet — memory lives in one database per identity
-// (internal/arcadedb/tenant.go) and nothing dumps them.
+// Postgres is the only one. ArcadeDB is NOT backed up by anything: memory lives in
+// one database per identity (internal/arcadedb/tenant.go) and no handler dumps them.
 type BackupVariant string
 
 // BackupPostgres selects the Postgres pg_dump backup.
@@ -257,9 +254,9 @@ func backupDir() (string, error) {
 	return dir, nil
 }
 
-// sweepRetention deletes old Postgres .dump files. It still recognises the retired
-// Neo4j .cypher suffix so those artifacts age out of AURA_BACKUP_DIR instead of
-// being stranded there forever by a prefix that no longer matches.
+// sweepRetention deletes old Postgres .dump files. It also matches the retired
+// .cypher suffix so exports left in AURA_BACKUP_DIR by an earlier deployment age
+// out instead of being stranded there forever by a prefix nothing writes any more.
 func sweepRetention(dir, prefix string, window time.Duration) int {
 	entries, err := os.ReadDir(dir)
 	if err != nil {

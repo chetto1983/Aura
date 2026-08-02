@@ -63,7 +63,7 @@ describe('pinnedEdgeReducer', () => {
 });
 
 describe('canvas label helpers', () => {
-  it('compacts Neo4j element IDs and UUID-heavy captions for the WebGL canvas', () => {
+  it('compacts raw graph record IDs and UUID-heavy captions for the WebGL canvas', () => {
     expect(compactCanvasLabel('4:21de867b-135a-43b0-9598-b82a63a99e7d:d:63')).toBe('d:63');
     expect(compactCanvasLabel('21de867b-135a-43b0-9598-b82a63a99e7d')).toBe('21de867b...');
   });

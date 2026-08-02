@@ -19,7 +19,7 @@ const (
 )
 
 // setUnsafeServerProductionEnv composes an intentionally-unsafe server_production
-// posture via t.Setenv: the required DB/Neo4j secrets ARE present so the run reaches
+// posture via t.Setenv: the required DB secret IS present so the run reaches
 // the profile gates, but the sample object-store creds, an empty RPC secret, a single
 // replica, a disabled destructive-shell gate and an empty web-auth secret
 // each trip a Fatal gate (plan 04). A loopback AGUI bind avoids an unrelated web-bind
@@ -28,7 +28,6 @@ const (
 func setUnsafeServerProductionEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("AURA_DB_URL", "postgres://u:p@h:5432/db") // required DB secret present
-	t.Setenv("NEO4J_PASSWORD", "neo-secret")            // required graph secret present
 	t.Setenv("AURA_AGUI_BIND", "127.0.0.1:9080")        // loopback ⇒ no web-bind violation
 	t.Setenv("AURA_OBJECTSTORE_ACCESS_KEY", sampleObjectStoreAccessKey)
 	t.Setenv("AURA_OBJECTSTORE_SECRET_KEY", sampleObjectStoreSecretKey)
@@ -45,7 +44,6 @@ func setUnsafeServerProductionEnv(t *testing.T) {
 func setBenignDevEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("AURA_DB_URL", "postgres://u:p@h:5432/db")
-	t.Setenv("NEO4J_PASSWORD", "neo-secret")
 	t.Setenv("AURA_AGUI_BIND", "127.0.0.1:9080")
 	t.Setenv("AURA_OBJECTSTORE_ACCESS_KEY", "GKrealoperatorkey0000000001")
 	t.Setenv("AURA_OBJECTSTORE_SECRET_KEY", "realoperatorsecretvalue0000000000000000000000000000000000000000ab")

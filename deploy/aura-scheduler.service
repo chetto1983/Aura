@@ -2,9 +2,9 @@
 #
 # `aura serve` is the first long-lived Aura process: it hosts the scheduler tick loop
 # (D-15) that fires reminders, agent_jobs, and nightly backups. It is a NATIVE binary
-# on the host (NOT compose-ized): it shells out to Docker sidecars (pg_dump/neo4j-admin
-# via `docker exec`), spawns MCP subprocesses (mail/WhatsApp self-send, mcp-neo4j-cypher),
-# and reads ~/.aura — all of which want host-process locality.
+# on the host (NOT compose-ized): it shells out to Docker sidecars (`pg_dump` via
+# `docker exec`), spawns MCP subprocesses (mail/WhatsApp self-send), and reads
+# ~/.aura — all of which want host-process locality.
 #
 # Install (per-user systemd; the operator owns ~/.aura + the Docker stack):
 #   mkdir -p ~/.config/systemd/user
@@ -22,7 +22,7 @@
 [Unit]
 Description=Aura scheduler daemon (cron + agent_job queue)
 Documentation=https://github.com/chetto1983/aura
-# The scheduler shells out to the Docker stack for backups + reaches Postgres/Neo4j.
+# The scheduler shells out to the Docker stack for backups + reaches Postgres/ArcadeDB.
 After=network-online.target docker.service
 Wants=network-online.target
 

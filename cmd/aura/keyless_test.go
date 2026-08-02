@@ -36,8 +36,7 @@ func TestServeKeylessBootReachesInfraValidation(t *testing.T) {
 	if errors.Is(err, llm.ErrMissingAPIKey) || strings.Contains(err.Error(), "API key is empty") {
 		t.Fatalf("serve boot must tolerate an empty LLM key and fail later on infra validation, got %v", err)
 	}
-	// POSTGRES_PASSWORD is the whole required-secret gate now: NEO4J_PASSWORD left it
-	// with the graph store, because no code path opens a Bolt connection any more.
+	// POSTGRES_PASSWORD is the whole required-secret gate.
 	if !strings.Contains(err.Error(), "POSTGRES_PASSWORD") {
 		t.Fatalf("bootServe err = %v, want infra validation error", err)
 	}

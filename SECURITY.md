@@ -2,7 +2,7 @@
 
 Aura is an autonomous agent runtime: it executes LLM-directed tool calls, runs
 user/model-supplied code in sandboxed workers, and brokers access to a Postgres
-+ Neo4j knowledge store and external APIs. That makes its security surface
+database, a per-identity ArcadeDB memory store, and external APIs. That makes its security surface
 unusually load-bearing — we take reports seriously.
 
 ## Supported versions
@@ -47,7 +47,8 @@ include it — but never include live credentials or third-party data.
   credential disclosure, or destructive DB operations.
 - **Credential leakage** — secrets (DSNs, API keys, passwords) surfacing in
   logs, errors, events, or MCP traffic. DSN/secret redaction is a documented
-  mitigation (`internal/db` `redactDSN`, `internal/knowledge` secret redaction).
+  mitigation (`internal/db` `redactDSN`, the shared `internal/secret` denylist
+  applied at every egress).
 - **Cypher / SQL injection** through MCP or query construction.
 - **Supply chain** — malicious or vulnerable dependencies (tracked by
   `govulncheck` in CI).
@@ -56,9 +57,10 @@ include it — but never include live credentials or third-party data.
 
 ## Out of scope
 
-- Vulnerabilities in third-party services run as sidecars (Neo4j, the embedding
-  model server, `mcp-neo4j-cypher`) — report those upstream; tell us if Aura's
-  configuration makes them exploitable.
+- Vulnerabilities in third-party services run as sidecars (ArcadeDB, the
+  embedding model server, SearXNG, the MCP recipe servers) — report those
+  upstream; tell us if Aura's configuration makes them exploitable. Aura's own
+  `cmd/arcadedb-mcp` is **in** scope: it is first-party code.
 - Findings that require an already-compromised host or physical access.
 - Missing hardening that is explicitly scheduled in the PRD roadmap rather than
   implemented (note it, but it is not a vulnerability in shipped code).

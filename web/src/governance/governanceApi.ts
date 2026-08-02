@@ -267,7 +267,6 @@ export const USER_MANAGEABLE_KINDS: ReadonlySet<string> = new Set([
   'reminder',
   'agent_job',
   'backup_postgres',
-  'backup_neo4j',
 ]);
 
 export function isUserManageableKind(kind: string): boolean {

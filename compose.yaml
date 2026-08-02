@@ -1,8 +1,7 @@
 # Source: Docker Compose v5 + Postgres 18 docker hub + ArcadeDB 26.7 docs
 # + llama.cpp server docs (verified 2026-06-29).
 # Aura Slice 0.5 lands postgres; Slice 0.7 appends the embed sidecar. The graph
-# plane is ArcadeDB (arcadedb + arcadedb-mcp); Neo4j and the agent-memory sidecar
-# that stored in it were retired with internal/knowledge.
+# plane is ArcadeDB (arcadedb + arcadedb-mcp), one database per identity.
 # Repo-root location per D-02 (NOT sandbox/compose.yaml; vestigial path superseded).
 # .env feeds Compose interpolation. Runtime knobs must be forwarded explicitly
 # below; container-internal service URLs intentionally use Compose DNS rather
@@ -313,10 +312,8 @@ services:
     pull_policy: never
     container_name: aura-migrate
     restart: "no"
-    # Postgres only. The `aura neo4j migrate` half is gone with the Cypher migration
-    # ledger: the graph store Aura owned (internal/knowledge) was retired together with
-    # the neo4j service itself, so this job no longer waits on it or carries bolt
-    # credentials. Memory now lives in ArcadeDB, which needs no migration job.
+    # Postgres only: ArcadeDB's schema is idempotent DDL applied at connect, so there
+    # is no graph half to migrate and this job depends on nothing but the database.
     entrypoint: ["sh", "-lc", "aura db migrate"]
     command: []
     depends_on:
@@ -497,6 +494,20 @@ services:
       - "127.0.0.1:2480:2480"
     volumes:
       - aura-arcadedb:/home/arcadedb/databases
+      # Memory is per-identity: every enrolled user owns a `mem_<uuid>` database, and
+      # nothing outside ArcadeDB knows the full list. So the backup is ArcadeDB's own
+      # AutoBackupSchedulerPlugin rather than a job of ours that would have to enumerate
+      # tenants: dropping backup.json into config/ makes the `defaults` block apply to
+      # EVERY database, which means a tenant created five minutes ago is already covered.
+      # Backups are hot — non-stop, no write blocking (docs: how-to/operations/backup).
+      #
+      # backupDirectory is "./backups" and MUST stay relative and inside the server root:
+      # the manual's own troubleshooting says an absolute path fails with permission
+      # denied (how-to/operations/auto-backup, "Permission denied errors"). Archives land
+      # as backups/<db>/<db>-backup-YYYYMMDD-HHMMSS.zip, so this volume holds one
+      # subdirectory per identity and must be sized for the whole fleet, not one database.
+      - ./docker/arcadedb/backup.json:/home/arcadedb/config/backup.json:ro
+      - aura-arcadedb-backups:/home/arcadedb/backups
     healthcheck:
       # /api/v1/ready answers 204 unauthenticated; every other endpoint needs credentials,
       # so it is the only probe that does not bake the root password into the compose file.
@@ -1083,6 +1094,9 @@ services:
 
 volumes:
   aura-arcadedb:
+  # One subdirectory per identity database, tiered retention (7 daily / 4 weekly /
+  # 6 monthly) — see the arcadedb service for why the scheduler owns this and we do not.
+  aura-arcadedb-backups:
   aura-home:
   # Amendment #88: the fixed /workspace working root (scripts/artifacts/.toolchain/scratch
   # + the skills symlink), durable across `docker compose up -d --force-recreate aura`.

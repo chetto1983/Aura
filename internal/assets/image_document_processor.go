@@ -7,24 +7,25 @@ import (
 	"maps"
 )
 
-// ImageDocumentProcessor makes an uploaded image both describable inline AND searchable.
-// It runs the vision summary (Vision) and the searchable document ingest (Document —
-// markitdown OCR -> chunks -> embed -> Neo4j) over the SAME image, then merges
-// the results. It is fail-soft:
+// ImageDocumentProcessor makes an uploaded image both describable inline AND
+// retrievable. It runs the vision summary (Vision) and the document registration
+// (Document) over the SAME image, then merges the results. It is fail-soft:
 //   - both succeed  -> StatusSearchable, DocumentID set, vision Summary kept for display;
-//   - no text/OCR   -> StatusComplete, vision Summary only (normal for non-document images);
-//   - vision down   -> still searchable via the index, with the index summary as fallback;
+//   - ingest fails  -> StatusComplete, vision Summary only;
+//   - vision down   -> still registered, with the Document leg's summary as fallback;
 //   - both fail     -> error (the service then marks the asset failed).
 //
-// Spike 075 proved the documents pipeline already OCRs+chunks+embeds+indexes images, so the
-// asset layer only had to route an image through it WITHOUT dropping the existing vision
-// summary — hence this composite over the Image slot rather than a modality re-route.
-//
-// Vision and Document run sequentially on purpose: both call the GPU OCR/vision sidecar,
-// and serializing the two calls avoids contending for VRAM on the 4 GB card.
+// The Document leg REGISTERS, it does not extract. Image extensions are on the
+// documents ingest allowlist, so an image gets the catalog row document_search
+// ranks and document_open resolves — and nothing more. No OCR, no chunking, no
+// embedding runs on this path, so the only text describing an image is the vision
+// Summary, until the agent opens the file and writes a digest. That also means the
+// Document leg does not fail on "this image has no text": a non-nil docErr is a
+// real ingest failure (object read, size ceiling, unsupported extension, catalog
+// write), never a verdict about the content.
 type ImageDocumentProcessor struct {
 	Vision   Processor // vision "describe this image" summary (*ImageProcessor)
-	Document Processor // markitdown OCR -> chunks -> Neo4j (*DocumentProcessor)
+	Document Processor // document-catalog registration (*DocumentProcessor)
 }
 
 func (p *ImageDocumentProcessor) ProcessAsset(ctx context.Context, asset Asset) (Result, error) {
@@ -52,8 +53,8 @@ func (p *ImageDocumentProcessor) ProcessAsset(ctx context.Context, asset Asset) 
 			merged.Summary = docRes.Summary
 		}
 	} else {
-		// Not indexable (e.g. an image with no text -> empty OCR -> no chunks). Normal for
-		// non-document images; the vision summary still makes the asset useful in chat.
+		// Ingest failed, so the image has no catalog row and document_open cannot reach
+		// it. The vision summary still makes the asset useful in chat.
 		merged.Metadata["document_indexed"] = false
 		merged.Metadata["document_index_skipped_reason"] = docErr.Error()
 	}

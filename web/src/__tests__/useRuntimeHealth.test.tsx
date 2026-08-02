@@ -25,7 +25,7 @@ describe('useRuntimeHealth', () => {
   it('polls /healthz + /readyz same-origin as JSON every 5s and surfaces both bodies', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const body = urlOf(input).includes('/readyz')
-        ? { ready: true, deps: { postgres: 'ok', neo4j: 'ok' } }
+        ? { ready: true, deps: { postgres: 'ok', memory: 'ok' } }
         : { ok: true, bind_address: '127.0.0.1:9080', build_version: 'dev' };
       return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
     });

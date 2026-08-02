@@ -69,14 +69,14 @@ describe('RuntimeHealthPanel', () => {
             build_version: 'dev',
           },
         },
-        { status: 200, body: { ready: true, deps: { postgres: 'ok', neo4j: 'ok' } } },
+        { status: 200, body: { ready: true, deps: { postgres: 'ok', memory: 'ok' } } },
       );
     });
 
     it('renders a TEXT status label for every row (never colour-only)', async () => {
       renderPanel();
       // Row labels present.
-      for (const label of ['Liveness', 'Readiness', 'Postgres', 'Neo4j', 'Bind address', 'Build']) {
+      for (const label of ['Liveness', 'Readiness', 'Postgres', 'Memory', 'Bind address', 'Build']) {
         await waitFor(() => {
           expect(screen.getByText(label)).toBeTruthy();
         });
@@ -85,7 +85,7 @@ describe('RuntimeHealthPanel', () => {
       await waitFor(() => {
         expect(screen.getByText('Live')).toBeTruthy();
       });
-      // "Ready" appears for /readyz + postgres + neo4j → assert at least one.
+      // "Ready" appears for /readyz + postgres + memory → assert at least one.
       await waitFor(() => {
         expect(screen.getAllByText('Ready').length).toBeGreaterThan(0);
       });
@@ -102,13 +102,13 @@ describe('RuntimeHealthPanel', () => {
   it('marks a not-ready dependency as Degraded (warning, with text)', async () => {
     stubHealth(
       { status: 200, body: { ok: true } },
-      { status: 503, body: { ready: false, deps: { postgres: 'ok', neo4j: 'dial timeout' } } },
+      { status: 503, body: { ready: false, deps: { postgres: 'ok', memory: 'dial timeout' } } },
     );
     renderPanel();
     await waitFor(() => {
       expect(screen.getByText('Readiness')).toBeTruthy();
     });
-    // The not-ready readiness + neo4j dep render the Degraded text label.
+    // The not-ready readiness + memory dep render the Degraded text label.
     await waitFor(() => {
       expect(screen.getAllByText('Degraded').length).toBeGreaterThan(0);
     });
@@ -125,7 +125,7 @@ describe('RuntimeHealthPanel', () => {
       }),
     );
     renderPanel();
-    // Liveness is Live (/healthz ok) but readiness + postgres + neo4j read Unavailable.
+    // Liveness is Live (/healthz ok) but readiness + postgres + memory read Unavailable.
     await waitFor(() => {
       expect(screen.getByText('Live')).toBeTruthy();
     });
@@ -150,7 +150,7 @@ describe('RuntimeHealthPanel', () => {
     await i18n.changeLanguage('it');
     stubHealth(
       { status: 200, body: { ok: true, bind_address: '127.0.0.1:9080', build_version: 'dev' } },
-      { status: 200, body: { ready: true, deps: { postgres: 'ok', neo4j: 'ok' } } },
+      { status: 200, body: { ready: true, deps: { postgres: 'ok', memory: 'ok' } } },
     );
 
     renderPanel();

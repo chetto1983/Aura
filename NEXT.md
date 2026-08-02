@@ -11,7 +11,7 @@ Tutte le fasi 0–13, 15, 16, 18, 19, 20 sono chiuse (`[x]` in ROADMAP). Restano
 | Fase | Stato | Cosa manca |
 |---|---|---|
 | **14 — Onboarding + Agent.md** | implementata, **automated-green**, non chiusa | live Telegram operator sign-off + flip ROADMAP `[ ]`→`[x]` + (eventuale) riga quality-snapshot. Vedi `.planning/phases/14-*/14-VALIDATION.md` (`status: automated_passed_manual_pending`). Codice presente: `internal/onboarding/`, `internal/profile/`, telegram `profile_onboarding.go`. |
-| **17 — Packaging & Distribution** | **non implementata** (l'ultima fase aperta) | esiste solo `17-SPEC.md` (16/16 acceptance non spuntate). Da fare: fat container image (Go + uvx + npx + mcp-neo4j-cypher), `curl\|sh` installer con secret-gen, `aura doctor`, Caddy, D-22 keyless-boot relaxation. |
+| **17 — Packaging & Distribution** | **non implementata** (l'ultima fase aperta) | esiste solo `17-SPEC.md` (16/16 acceptance non spuntate). Da fare: fat container image (Go + uvx + npx), `curl\|sh` installer con secret-gen, `aura doctor`, Caddy, D-22 keyless-boot relaxation. |
 
 ## Next action raccomandata
 

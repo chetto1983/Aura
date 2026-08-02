@@ -329,11 +329,10 @@ AURA_BACKUP_DIR=./backups
 SEARXNG_SECRET=${searxng_secret}
 
 AURA_EMBED_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda
-AURA_EMBED_HF_REPO=Qwen/Qwen3-Embedding-0.6B-GGUF
-AURA_EMBED_HF_FILE=Qwen3-Embedding-0.6B-Q8_0.gguf
+AURA_EMBED_MODEL_PATH=/root/.cache/llama.cpp/embeddinggemma-300M-Q8_0.gguf
 AURA_EMBED_POOLING=last
 AURA_EMBED_NGL=99
-AURA_EMBED_DIMENSIONS=1024
+AURA_EMBED_DIMENSIONS=768
 AURA_RERANK_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda
 AURA_RERANK_NGL=99
 
@@ -344,6 +343,12 @@ AURA_GARAGE_ADMIN_TOKEN=${garage_admin_token}
 
 OPENROUTER_API_KEY=${openrouter_key}
 EOF
+  # The heredoc above is the fresh-install template and it WILL drift: compose
+  # fail-fasts on twelve `:?` variables and interpolates the whole file before it
+  # selects a service, so one missing name aborts every compose invocation. Rather
+  # than list them twice, hand the file to the same idempotent filler the
+  # already-have-a-.env path uses — it only writes keys that are absent.
+  ensure_internal_env_secrets
   chmod 600 .env
 }
 

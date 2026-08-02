@@ -62,7 +62,7 @@ func TestSearch_Live(t *testing.T) {
 	c := liveClient(t)
 
 	queries := []SearchParams{
-		{Query: "Neo4j HNSW vector index", MaxResults: 5},
+		{Query: "ArcadeDB HNSW vector index", MaxResults: 5},
 		{Query: "SearXNG", Domains: []string{"wikipedia.org"}, MaxResults: 5},
 		{Query: "wikipedia", MaxResults: 5}, // high-recall insurance: any upstream engine returns something
 	}

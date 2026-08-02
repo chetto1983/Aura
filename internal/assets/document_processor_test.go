@@ -17,7 +17,9 @@ func TestDocumentProcessorStreamsObjectToIngestPath(t *testing.T) {
 		t.Fatalf("Put: %v", err)
 	}
 	ingest := &recordingIngestor{
-		job: &documents.Job{ID: "job-1", DocumentID: "doc-1", FileName: "manual.pdf", SparseChunks: 3},
+		// SparseChunks stays 0: ingest hard-wires it, so a fixture that sets it green-lights
+		// an output the production path can never produce. This test used to assert 3.
+		job: &documents.Job{ID: "job-1", DocumentID: "doc-1", FileName: "manual.pdf"},
 	}
 	recorder := &recordingVersionRecorder{}
 
@@ -40,8 +42,16 @@ func TestDocumentProcessorStreamsObjectToIngestPath(t *testing.T) {
 	if result.Status != StatusSearchable || result.DocumentID != "doc-1" {
 		t.Fatalf("result = %+v, want searchable doc-1", result)
 	}
-	if result.Metadata["document_job_id"] != "job-1" || result.Metadata["sparse_chunks"] != 3 {
-		t.Fatalf("metadata = %#v, want document job id and sparse chunk count", result.Metadata)
+	if result.Metadata["document_job_id"] != "job-1" {
+		t.Fatalf("metadata = %#v, want the document job id", result.Metadata)
+	}
+	if _, leaked := result.Metadata["sparse_chunks"]; leaked {
+		t.Fatalf("metadata still carries sparse_chunks: %#v", result.Metadata)
+	}
+	// The summary is user-visible on every upload. It used to read "manual.pdf indexed
+	// with 0 searchable chunks" — always zero, because ingest stopped chunking.
+	if !strings.Contains(result.Summary, "manual.pdf") || strings.Contains(result.Summary, "chunk") {
+		t.Fatalf("Summary = %q, want the file named and no chunk count", result.Summary)
 	}
 	if ingest.req.OriginalPath != "object://b/k" {
 		t.Fatalf("OriginalPath = %q, want object://b/k", ingest.req.OriginalPath)

@@ -74,10 +74,9 @@ Telegram:
 Start the local stack pieces that the asset pipeline needs:
 
 ```powershell
-docker compose up -d postgres neo4j garage markitdown aura-ocr-vl aura-stt
+docker compose up -d postgres garage markitdown aura-ocr-vl aura-stt
 bash scripts/garage_bootstrap.sh
 go run ./cmd/aura db migrate
-go run ./cmd/aura neo4j migrate
 ```
 
 The Compose service starts Garage with `docker/garage/garage.toml`.

@@ -16,8 +16,8 @@
 
 ## 1. Contesto e obiettivo
 
-- **Aura**: bot Telegram in Go, agentico, con RAG ibrido, tool calling, memoria a
-  grafo Neo4j, MCP. Provider LLM **OpenAI-compatibile**; runtime **llama.cpp /
+- **Aura**: bot Telegram in Go, agentico, con tool calling, memoria a grafo
+  ArcadeDB (un database per identità), MCP. Provider LLM **OpenAI-compatibile**; runtime **llama.cpp /
   llama-server come sidecar** → cambiare modello = config, non codice.
 - **Ruolo dell'LLM**: **orchestratore** — routing tool + sintesi. NON visione/
   audio/parsing/embedding/estrazione (tutti su specialisti, vedi §3).
@@ -85,21 +85,27 @@ inutile.**
   embedding. **Triplo-uso**: RAG + classifier reasoning-tier + ranking tool_search.
   Load-bearing: se cade, perdi tre sottosistemi.
 
-### Retrieval ibrido (Fase 30 — PIANIFICATA, non ancora nello stack)
-- Documenti: markitdown → Neo4j (full-text + `:NEXT_CHUNK`) → embedding async.
-- Pipeline a due stadi: seed vettore/BM25 → **rerank** → graph-expand.
-- Reranker `aura-rerank` (Qwen3-Reranker-0.6B Q4, GPU-only, fail-soft) — **in
-  `.planning/`, NON nel `compose.yaml` attuale.** Oggi il retrieval gira senza.
-- Eval harness: nDCG@10 / Recall@5 / MRR. Invariante: `messages[0]` mai mutato.
+### Documenti — ABBANDONATO il retrieval a passaggi
+La pipeline a due stadi qui pianificata (seed vettore/BM25 → rerank → graph-expand su
+chunk) **non è stata adottata**: misurata su un elenco clienti da 5889 righe, il lookup
+esatto faceva 100% e **ogni aggregato faceva 0% a ogni k**, perché la risposta è una
+proprietà dell'intero documento e non vive in nessun passaggio. Oggi l'indice risponde
+solo a *quale file*: una riga di catalogo per documento in Postgres, `tsvector` pesato
+(titolo A / tag B / digest C) con GIN. `document_open` consegna il file vero
+nel workspace e l'agente ci calcola sopra con `shell_exec` (LibreOffice, pandas).
+Nessun chunking, nessuna coda di embedding, nessun reranker sul percorso documenti —
+`aura-rerank` resta nel compose ma **non ha più chiamanti**.
 
-### Memoria a grafo (pacchetto Neo4j Labs `agent-memory`, profilo `extended`)
-- Schema **fisso POLE+O**. Estrazione via **spaCy/GLiNER/GLiREL** (specialisti), LLM
-  solo uno stadio.
-- L'LLM chiama **tool strutturati** (`memory_add_entity`, …), **non scrive Cypher**.
-- **Profilo attuale = `extended` (16 tool)** (`--profile extended` nel compose).
-  Core = 6 tool. **La memoria è hard-coded NON-deferibile** (`namespace != "memory"`):
-  provata la deferral, rompe la doctrine (search/write-before-answer ogni turno).
-- `MemorySettings.llm` separato dal chat-LLM (oggi punta anch'esso a V4 Flash).
+### Memoria a grafo (ArcadeDB, `cmd/arcadedb-mcp`)
+- **Un database per identità**, con credenziale propria: lo scoping lo impone il
+  server, non un filtro applicativo, e cancellare una persona è un `drop database`.
+- Fatti **bitemporali**: non si sovrascrive, si chiude la finestra di validità e si
+  supersede — restano rispondibili sia "cos'è vero ora" sia "cos'era vero allora".
+- Recupero a due gambe fuse da `vector.fuse` (RRF, aritmetica nel database):
+  full-text Lucene + denso HNSW 768-d su EmbeddingGemma-300M. La gamba densa serve al
+  caso che il lessicale non può risolvere: domanda in italiano, fatto scritto in inglese.
+- L'LLM chiama **tool strutturati** (`memory_search`, `memory_upsert_fact`, …), **non
+  scrive Cypher**. Il server `memory` è montato default-on e non deferito.
 
 ### tool_search (discovery dei tool deferred)
 - Non-deferred, sempre visibile. Path `select:Name` (esatto) e free-text.

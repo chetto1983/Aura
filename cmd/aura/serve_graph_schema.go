@@ -1,9 +1,7 @@
 // serve_graph_schema.go builds the cockpit's graph view over ArcadeDB.
 //
-// It replaced a boot-time mcp-neo4j-cypher subprocess whose GraphView could draw the
-// canvas. ArcadeDB's cannot: see internal/agui/graph_arcadedb.go for what was lost and
-// why it was not ported. What is wired here is the read that survives — one identity's
-// type catalogue — and it needs no subprocess, no boot-time handle and nothing to close.
+// The view is schema-only — one identity's type catalogue, not a drawable canvas (see
+// agui.ArcadeGraphView). It needs no subprocess, no boot-time handle, nothing to close.
 package main
 
 import (

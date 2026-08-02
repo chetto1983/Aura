@@ -358,7 +358,7 @@ func TestServeSmoke(t *testing.T) {
 	bin := buildSmokeBinary(t)
 
 	t.Run("non-loopback bind without Authula config fail-fasts", func(t *testing.T) {
-		// The daemon validates DB/Neo4j secrets before the auth composition root, so
+		// The daemon validates the DB secret before the auth composition root, so
 		// the live env must be present for the Authula config check to be what trips.
 		smokeEnvOrSkip(t, "AURA_DB_URL")
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

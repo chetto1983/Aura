@@ -11,16 +11,7 @@ import (
 )
 
 // memoryRecipeURL composes the loopback streamable-HTTP URL for the memory
-// sidecar — Aura's own ArcadeDB MCP (cmd/arcadedb-mcp), not the neo4j-labs
-// agent-memory fork it replaced.
-//
-// The fork embedded every fact on write and every query on read, through
-// aura-llama-embed. Measured 2026-08-01: with that sidecar in a restart loop the
-// agent called memory_search six times and memory_get_entity three, and every one
-// returned "memory operation failed" — recall was gone, and nothing in the stack
-// said so until a live question was asked. ArcadeDB's memory retrieval is Lucene
-// full-text plus a graph walk: one round trip, no embedder, so recall cannot be
-// taken down by a model download.
+// sidecar — Aura's own ArcadeDB MCP (cmd/arcadedb-mcp).
 //
 // The port derives from AURA_ARCADEDB_MCP_PORT, defaulting to 8096. It is
 // validated as a TCP port (1-65535) before interpolation: anything else (e.g.
@@ -161,13 +152,11 @@ func BuiltInCatalog() []CatalogEntry {
 			// (D-06/D-07). Trusted (NOT remote_http) so it can mount default-on
 			// (D-08); the URL has no launch Command (HTTP recipe).
 			//
-			// It replaced the neo4j-labs agent-memory fork, which needed an embedding
-			// call on every write and every read and took recall down with it when
-			// that sidecar failed. Bitemporal facts: a fact is never overwritten, its
-			// validity window is closed, so both what is true now and what was true
-			// then stay answerable.
+			// Facts are bitemporal: a fact is never overwritten, its validity window
+			// is closed, so both what is true now and what was true then stay
+			// answerable.
 			Name:       "memory",
-			Summary:    "Aura ArcadeDB memory (bitemporal facts + entities, full-text and graph, no embedder)",
+			Summary:    "Aura ArcadeDB memory (bitemporal facts + entities, full-text and graph retrieval)",
 			Source:     mcp.SourceRecipeMemory,
 			TrustClass: mcp.TrustTrustedRecipe,
 			Runtime:    "local",

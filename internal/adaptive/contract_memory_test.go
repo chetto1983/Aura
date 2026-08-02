@@ -44,7 +44,7 @@ func TestMemoryRecallContractsAcceptFrozenOrderAndLiveMetadata(t *testing.T) {
 		},
 		MemoryRecallRevisionValues{
 			CorpusEpoch: 42,
-			Retriever:   "neo4j-agent-memory-long-term-v1",
+			Retriever:   "arcadedb-long-term-v1",
 			Reranker:    "none-v1",
 			Embedding:   "openai/granite-embedding-v1@768",
 			Index:       "entity_embedding_idx+preference_embedding_idx@768",

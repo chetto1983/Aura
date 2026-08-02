@@ -193,9 +193,8 @@ Compose network with `pg_dump` into `AURA_BACKUP_DIR`:
 ./backups/postgres-YYYYMMDDTHHMMSSZ.dump
 ```
 
-**Memory is NOT backed up.** The nightly Neo4j APOC export went with the Neo4j
-service; ArcadeDB has no equivalent yet, because memory lives in one database per
-identity (`internal/arcadedb/tenant.go`) and nothing dumps them. Snapshot the
+**Memory is NOT backed up.** Memory lives in one ArcadeDB database per identity
+(`internal/arcadedb/tenant.go`) and nothing dumps them. Snapshot the
 `aura-arcadedb` volume out of band until that gap is closed.
 
 Run the restore drill against the current Compose stack:
@@ -234,10 +233,10 @@ Scan the QR code shown in the logs. Aura boot never depends on this service.
 
 ## Retired Host Setup
 
-The host needs no Python MCP runtime at all. `mcp-neo4j-cypher` is gone with the
-graph store that spawned it — memory is served by Aura's own ArcadeDB MCP, a Go
-binary in the image. Old host-level Python installs and the earlier WSL WhatsApp
-MCP install can be removed after migrating to the Compose appliance.
+The host needs no Python MCP runtime at all: memory is served by Aura's own
+ArcadeDB MCP, a Go binary in the image. Old host-level Python installs and the
+earlier WSL WhatsApp MCP install can be removed after migrating to the Compose
+appliance.
 
 ## CLI
 

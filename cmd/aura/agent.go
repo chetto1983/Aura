@@ -1,5 +1,5 @@
 // agent subcommand dispatcher for `aura agent {dry-run}`. Lives in package main
-// alongside cmd/aura/main.go's switch case "agent", mirroring db.go/neo4j.go.
+// alongside cmd/aura/main.go's switch case "agent", mirroring db.go/memory.go.
 //
 // `aura agent dry-run` is the operator-facing cornerstone proof (SC#4): it drives
 // a mock LoopAgent over agenttest.InfiniteToolCallAgent through the real Budget

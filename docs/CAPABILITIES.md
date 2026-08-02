@@ -1,6 +1,6 @@
 # Aura — Capabilities Matrix
 
-**Updated:** 2026-07-17 · Companion to [TECHNICAL_OVERVIEW.md](TECHNICAL_OVERVIEW.md),
+**Updated:** 2026-08-02 · Companion to [TECHNICAL_OVERVIEW.md](TECHNICAL_OVERVIEW.md),
 [ARCHITECTURE.md](ARCHITECTURE.md), [`.planning/codebase/`](../.planning/codebase/).
 
 Status legend: **✅ Shipped** (implemented, and covered by the CI-enforced ≥85%
@@ -40,7 +40,7 @@ cockpit (Phases 22-30) shipped 2026-06-29 · **v2.0.0** industrial hardening
 | Host filesystem | Read / write / edit / grep / glob with walk-budget caps | ✅ | `fs_read/write/edit/grep/glob` |
 | Host shell | Full terminal; background jobs; destructive-command approval; secret redaction | ✅ | `shell_exec`, `shell_poll`, `shell_kill` |
 | Web | SearXNG search + SSRF-hardened fetch → readable markdown | ✅ | `web_search`, `web_fetch` |
-| Document search | Cited retrieval over the Neo4j document graph (rerank-backed) | ✅ | `document_search` |
+| Document library | Ranks the identity's uploads by *what each file is* (Postgres `tsvector` over title/tags/digest) and answers "which file"; the file itself is then materialized into the workspace and computed on with `shell_exec`. Returns documents, never passages. | ✅ | `document_search`, `document_open`, `document_index`, `document_describe` |
 | Scheduling | Schedule / list / cancel / run background tasks + reminders | ✅ | `task` |
 | Self-extension | Author / apply / manage skills + executable snippets | ✅ | `skill` |
 | Working memory | Session-scoped multi-step todo list | ✅ | `todo_write` |
@@ -54,11 +54,13 @@ cockpit (Phases 22-30) shipped 2026-06-29 · **v2.0.0** industrial hardening
 |---|---|---|---|
 | Conversation persistence | Multi-thread, Claude.ai-style; atomic per-turn append | ✅ | `conversations`, `db` |
 | Context-management ladder | L1 microcompact → L2 budget gate → L2.5 oldest-pair drop + rot events | ✅ | `conversations` (`context`) |
-| Document ingestion | PDF/xlsx/DOCX → chunks → Neo4j sparse FTS + async vector embeddings | ✅ | `documents`, `knowledge`, `assets` |
-| Graph + vector store | Neo4j Community + APOC + GDS, **1024-d** HNSW (cosine) + fulltext | ✅ | `knowledge` |
-| Rerank | Cross-encoder rerank over hybrid candidates; fail-soft identity degrade | ✅ | `rerank` |
-| Agent-memory MCP | Entities / facts / preferences / sessions via the memory MCP server | ✅ | `mcp/manager` (catalog), `agent/mcptools` |
+| Document ingestion | Registers a catalog row (title, tags, content hash) per file. Ingestion does **not** read the file: no extraction, no chunking, no embedding. The digest that makes a file findable is written afterwards by `document_describe`, once the agent has actually opened it. | ✅ | `documents`, `assets` |
+| Document index | One catalog row + a weighted `tsvector` (title A / tags B / digest C) with a GIN index, in Postgres. There is no document graph and no passage store. | ✅ | `documents` (`catalog_store_digest`, `digest`), migrations `0080`–`0082` |
+| Memory store | ArcadeDB, **one database per identity**, server-enforced. Bitemporal facts (`valid_from`/`valid_to` + supersede) over an entity graph; retrieval fuses a Lucene full-text leg with a **768-d** HNSW dense leg (EmbeddingGemma-300M) using ArcadeDB's own `vector.fuse` RRF. | ✅ | `arcadedb`, `cmd/arcadedb-mcp` |
+| Agent-memory MCP | `memory_search` · `memory_facts_about` · `memory_entities` · `memory_digest` · `memory_upsert_fact` · `memory_merge_entities` · `memory_forget` · `graph_schema`, mounted default-on from Aura's own `arcadedb-mcp` sidecar | ✅ | `cmd/arcadedb-mcp`, `mcp/manager` (catalog), `agent/mcptools` |
+| Cross-encoder rerank | Sidecar client only (llama.cpp `/v1/rerank`, fail-soft identity degrade). **Nothing calls it**: its one consumer was the two-stage passage-retrieval pipeline, which was removed with the document graph. | 🔭 | `rerank` (orphaned; `AURA_RERANK_*` knobs and the `aura-rerank` Compose service still exist) |
 | User profile | Per-identity `Agent.md` (atomic writes), injected as a protected block | ✅ | `profile`, `onboarding` |
+| Memory graph explorer | Cockpit panel over ArcadeDB's `schema:types` catalogue: which vertex/edge types exist, their properties and record counts — enough for the filters, the legend and an honest empty state. **Schema only**: seed / expand / overview traversal is not implemented, and the response says so in its `query` field rather than returning a silently empty graph. | 🟡 | `agui` (`graph_arcadedb`, `graph_api`) |
 
 ## Identity, isolation & storage
 
@@ -96,7 +98,7 @@ cockpit (Phases 22-30) shipped 2026-06-29 · **v2.0.0** industrial hardening
 | Telegram multi-user routing | Per-user turn scoping at the single `startTurn` choke point | ✅ | `channels/telegram` (`bot_dispatch_turn`), `identityctx` |
 | Setup wizard | Loopback HTTP + QR pairing for a Telegram bot | ✅ | `setup` |
 | AG-UI / SSE | Event-protocol transport (one-way Event → AG-UI bridge) | ✅ | `agui` |
-| Web cockpit | Embedded Vite/React + assistant-ui over AG-UI/SSE: chat, approval center, typed-display router, Neo4j graph explorer, governance boards, settings, onboarding | ✅ | `webui` (`//go:embed all:dist`), `agui`, `web/` |
+| Web cockpit | Embedded Vite/React + assistant-ui over AG-UI/SSE: chat, approval center, typed-display router, memory schema explorer, governance boards, settings, onboarding | ✅ | `webui` (`//go:embed all:dist`), `agui`, `web/` |
 | Connect integrations | Calendar/PIM + WhatsApp pairing from the cockpit | ✅ | `web/src/governance` (`CalendarConnect`, `WhatsAppConnect`) |
 
 ## Self-extension (skills & MCP)
@@ -121,7 +123,7 @@ cockpit (Phases 22-30) shipped 2026-06-29 · **v2.0.0** industrial hardening
 | Onboarding | Interview (LoopAgent) → LLM-extracted facts → standard `Agent.md`; CLI + web | ✅ | `onboarding`, `agui` (`onboarding_session`) |
 | Settings | Allowlisted, typed runtime settings store behind the cockpit settings page | ✅ | `settings`, `web/src/settings` |
 | Risk-Based governance | Qualitative tier scoring for advisory gates | ✅ | `scoring` |
-| Full-stack health | `aura doctor` — Postgres / Neo4j / embedding / sidecar checks | ✅ | `cmd/aura` (`doctor`) |
+| Full-stack health | `aura doctor` — four probes: Postgres ping, embedding sidecar (reports the returned dimension), `OPENROUTER_API_KEY` presence, and a live probe of every enabled runnable MCP server | ✅ | `cmd/aura` (`doctor`) |
 | Forensic ledgers | Append-only, un-deletable tool-invocation + skill + profile audit | ✅ | `toolinvocations`, `skills` (`audit_store`), `db` |
 | Eval harness | Live CoT / tool-use evaluation against the spec dimensions | ✅ | `eval` |
 

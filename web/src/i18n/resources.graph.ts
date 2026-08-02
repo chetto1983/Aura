@@ -1,4 +1,4 @@
-// The `graph.*` i18n feature bundle (Phase 27 Neo4j Graph Explorer) — split out of
+// The `graph.*` i18n feature bundle (Phase 27 Graph Explorer) — split out of
 // resources.ts to keep that file under the 600-LOC cap (CLAUDE.md "no god class"), the
 // resources.display.ts precedent. Every key is from the 27-UI-SPEC §Copywriting Contract.
 // resources.ts spreads graphEn/graphIt into each language's `translation` object. Add every

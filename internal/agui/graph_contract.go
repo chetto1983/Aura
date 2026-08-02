@@ -1,15 +1,9 @@
 // The cockpit graph contract — the JSON shapes GET /api/graph/schema and
 // POST /api/graph/query speak, mirrored field-for-field by web/src/graph/types.ts.
 //
-// These used to live in internal/knowledge next to the Cypher compilers that
-// produced them. They are store-agnostic data — an id, a caption, a label list —
-// but the compilers behind them were not: elementId(), apoc.convert.toJson,
-// apoc.map.removeKey and startNode/endNode are Neo4j and nothing else. When the
-// graph moved to ArcadeDB those compilers died, and a wire contract the frontend
-// depends on must not die with the store that happened to fill it first. So the
-// shapes moved HERE, to the package that serves them, byte-identical: every json
-// tag, every omitempty and the three op string values are carried over unchanged,
-// because the shipped web bundle decodes them and was not rebuilt.
+// The shipped web bundle decodes these and is NOT rebuilt in lockstep with the
+// server, so every json tag, every omitempty and the three op string values are
+// frozen: renaming one breaks the panel silently instead of failing to compile.
 package agui
 
 // Op enum (GraphIntent.Op). The REST layer enum-validates an inbound intent

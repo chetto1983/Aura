@@ -1,6 +1,6 @@
 # Aura — Architecture
 
-**Module:** `github.com/chetto1983/aura` · **Language:** Go 1.26 · **Updated:** 2026-07-17
+**Module:** `github.com/chetto1983/aura` · **Language:** Go 1.26 · **Updated:** 2026-08-02
 
 Aura is a local-first, multi-user-capable AI agent platform written in Go. One static
 binary hosts the agent runtime, the tool surface, the policy enforcement point, the
@@ -79,18 +79,19 @@ These recur throughout the code and explain most of the non-obvious decisions:
 │                       · onboarding · documents · assets · settings ·      │
 │                       eval · runner                                       │
 ├──────────────────────────────────────────────────────────────────────────┤
-│ Persistence           db (+sqlc, Postgres) · knowledge (Neo4j) ·          │
-│                       conversations (+cl100k) · objectstore               │
+│ Persistence           db (+sqlc, Postgres) · arcadedb (per-identity       │
+│                       memory) · conversations (+cl100k) · objectstore     │
 │                       (+garageadmin) · identity · profile · secret        │
 ├──────────────────────────────────────────────────────────────────────────┤
 │ Observability         obs · agent/panicobs · reasoningtrace ·             │
 │                       toolinvocations · cachemetrics · (OTel spans +      │
 │                       Prometheus/expvar)                                  │
 └──────────────────────────────────────────────────────────────────────────┘
-        Sidecars (out of process): embedding (Qwen3-Embedding-0.6B, 1024d, GPU via
-        llama.cpp), markitdown extractor, OCR/STT/TTS, reranker,
-        mcp-neo4j-cypher, MCP recipe servers (calculator/calendar/whatsapp/
-        memory), per-user Docker sandboxes, Postgres, Neo4j.
+        Sidecars (out of process): embedding (EmbeddingGemma-300M, 768d, GPU via
+        llama.cpp — shared by the reasoning classifier and the memory dense leg),
+        markitdown extractor, OCR/STT/TTS, MCP recipe servers (calculator /
+        calendar / whatsapp / memory — memory being Aura's own
+        cmd/arcadedb-mcp), per-user Docker sandboxes, Postgres, ArcadeDB.
 ```
 
 This diagram is **not exhaustive**: `internal/` currently holds 68 packages, and the
@@ -210,15 +211,16 @@ in, `egress.go` applies the network policy, `router_tools.go` exposes `Exec`,
 `reap.go` plus the `sandbox_reap` scheduler kind (migration `0034`) reclaim idle boxes.
 
 > **Coverage caveat — read this before trusting the sandbox.** The container-touching
-> runtime here is `//go:build docker_integration`, and **there is no `docker_integration`
-> job in CI**. The coverage gate runs `db_integration neo4j_integration` only, so those
-> tests *compile and skip* in CI and contribute **zero** coverage: the DockerBackend
-> lifecycle, exec, and egress paths are effectively untested by the pipeline. This is not
-> hypothetical — it is why the CAP_NET_ADMIN capability-assertion bug (WR-01) stayed
-> latent. Daemon-free unit tests for the pure logic (spec/tar builders, path-traversal and
-> symlink guards, nil/disabled early returns) are the only part of this package the gate
-> actually measures, and adding daemon-gated code without them silently drops the
-> owned-surface aggregate below its floor.
+> runtime here is `//go:build docker_integration`. That tier *does* run in CI (job
+> `sandbox-docker-integration`, native-Linux dockerd — the only host where the egress DROP
+> assertions are meaningful), but the coverage gate runs the `db_integration` tag only, so
+> the tier contributes **zero** coverage: the DockerBackend lifecycle, exec, and egress
+> paths have behavioural signal and no coverage credit. Daemon-free unit tests for the pure
+> logic (spec/tar builders, path-traversal and symlink guards, nil/disabled early returns)
+> are the only part of this package the gate actually measures, and adding daemon-gated code
+> without them silently drops the owned-surface aggregate below its floor. Before the
+> `sandbox-docker-integration` job existed the tier never ran anywhere in the pipeline,
+> which is why the CAP_NET_ADMIN capability-assertion bug (WR-01) stayed latent.
 
 ## 5. Tools & MCP
 
@@ -233,7 +235,8 @@ per-conversation sidecar file, paged back via `read_tool_output`.
 Built-in tools span the full operator surface: filesystem (`fs_read/write/edit/grep/glob`),
 the keystone `shell_exec` (full host terminal under lenient profiles, sandbox-routed under
 strict ones, with background jobs via `shell_poll`/`shell_kill`), web (`web_search` over
-SearXNG, `web_fetch` SSRF-hardened), knowledge (`document_search`), orchestration
+SearXNG, `web_fetch` SSRF-hardened), the document library
+(`document_search`/`document_open`/`document_index`/`document_describe`), orchestration
 (`swarm_spawn`), self-extension (`skill`), scheduling (`task`), HITL (`ask_user`), working
 memory (`todo_write`), artifact delivery (`send_file`), and
 `text_response`/`current_time`/`read_tool_output`. Every one of them crosses the gateway
@@ -266,25 +269,30 @@ PIM sidecar — its send/search email tools subsume mail-mcp.
   embed + cosine argmax; on abstention it falls back to the LLM "oracle" router. The design
   target recorded in `reasoning_classifier.go` is ~10 ms CPU at 90% accuracy over a
   60-prompt held-out set. Its curated seeds are the complete serving baseline.
-- **`multimodal` + `rerank`** — the sidecar clients for vision/STT/TTS and for the
-  llama.cpp `/v1/rerank` reranker used to re-order retrieval hits.
+- **`multimodal`** — the sidecar clients for vision/STT/TTS.
+- **`rerank`** — a llama.cpp `/v1/rerank` cross-encoder client with fail-soft degradation.
+  It has **no caller**: its only consumer was the two-stage passage-retrieval pipeline, and
+  passages went away when document retrieval became "hand the agent the file". The package,
+  the `AURA_RERANK_*` knobs and the `aura-rerank` Compose service all still exist.
 - **`scoring`** — pure Risk-Based governance: maps scheduler tasks, skill mutations, and
   gateway classifications to a `Safe|Normal|Risky|Destructive` tier.
 
 ## 7. Persistence
 
-Two stores, each behind a thin per-domain adapter (`Store{q}`) over generated sqlc /
-Cypher, with SQLSTATE-classified errors and pgtype boundary conversion:
+Two stores. Postgres is the system of record, reached through thin per-domain adapters
+(`Store{q}`) over generated sqlc with SQLSTATE-classified errors and pgtype boundary
+conversion; ArcadeDB holds long-term memory and is reached only over MCP.
 
 - **Postgres** (`internal/db`, `internal/db/sqlc`) — pgxpool + golang-migrate, a
   two-role split (`aura_app` runtime vs `aura_migrate` DDL), the `aura.*` schema, and a
-  `WithTx` atomic-write seam. **40 migrations (0001–0040).** Domains include:
+  `WithTx` atomic-write seam. The migration count is not restated here because it moves
+  every phase — `ls internal/db/migrations/ | tail -1` is the only source. Domains include:
   conversations + turns (+ FTS + branches), identity + capabilities + audit + recovery +
   soft-delete, Authula's schema, paused states (HITL), scheduler + agent-job runs, skill
   audit, MCP audit, telegram accounts + setup tokens, tool-invocation ledger, cache
-  metrics, context-rot events, document-ingest jobs + control plane, assets + content
-  parts, object-store bindings, the saga journal,
-  and knowledge-migration audit. DSNs are redacted in every error.
+  metrics, context-rot events, the document catalog (+ its weighted `tsvector`/GIN digest
+  index), assets + content parts, object-store bindings, and the saga journal. DSNs are
+  redacted in every error.
 - **Multi-user isolation** — migration `0032` enables owner-scoped **row-level security**
   on identity-owned tables. `db.WithIdentityTx` sets the `app.current_identity` GUC for
   the transaction; the policy is fail-closed-on-mismatch and permissive-on-unset
@@ -294,18 +302,29 @@ Cypher, with SQLSTATE-classified errors and pgtype boundary conversion:
   bypass for backfills, while `aura_app` is a non-owner, non-superuser, non-BYPASSRLS
   role. Both halves of that assumption are asserted live (`TestAuraAppLacksRLSBypass`,
   `TestRLSBackstop`).
-- **Neo4j** (`internal/knowledge`) — the LLM-facing runtime interface
-  is the `mcp-neo4j-cypher` subprocess over stdio (no native driver for data ops); a
-  separate driver-backed `SchemaExecutor` runs the DDL the MCP layer can't. **HNSW 1024-d
-  vector index** + fulltext, Cypher migrations audited in Postgres. Holds the document
-  graph and private adaptive shadow projections.
+- **ArcadeDB** (`internal/arcadedb`) — long-term memory, and nothing else: no documents, no
+  conversation history. **One database per identity**, and the scoping is server-enforced
+  rather than query-enforced — each identity gets its own ArcadeDB user bound to its own
+  database, so naming the wrong one fails at the server instead of leaking. Facts are
+  **bitemporal**: a fact is never overwritten, its validity window is closed and a successor
+  supersedes it, so both "what is true now" and "what was true then" stay answerable.
+  Retrieval fuses two legs with ArcadeDB's own `vector.fuse` (reciprocal rank fusion, no
+  fusion arithmetic in Go): a Lucene full-text leg and a 768-d `LSM_VECTOR` (HNSW) dense leg
+  over EmbeddingGemma-300M, which exists because a question asked in Italian cannot reach a
+  fact written in English by lexical match alone. The LLM-facing interface is Aura's own
+  `cmd/arcadedb-mcp` sidecar over Streamable-HTTP (`memory_*` + `graph_schema`); the Go
+  package is the HTTP client behind it, and it also backs the private adaptive shadow
+  projection (`adaptive.GraphWriter`, Cypher on ArcadeDB's own engine). There are no graph
+  migrations — `EnsureMemorySchema` is idempotent DDL run at connect, and it doubles as the
+  per-identity database's existence probe.
 - **`objectstore`** — the S3/filesystem blob seam with per-identity prefixes
   (`identity_store.go`) and a Garage admin client for provisioning.
 
 **Conversations** (`internal/conversations`) layers the context-management ladder on top
 of Postgres. The ladder is three deterministic tiers (Amendment #21; `context.go`, no LLM
 call). The dark Phase-42 durable L2.4 compaction engine was removed (Amendment #86); the
-anti-rot core is L4 extractive graph memory (Neo4j), not transcript compaction:
+anti-rot core is L4 extractive graph memory (ArcadeDB, recalled on demand through the
+`memory_*` MCP tools), not transcript compaction:
 
 - **L1 microcompact** — rewrite old tool turns to `read_tool_output` pointers.
 - **L2 budget gate** — the hard token cap (`ContextWindow − max(MaxOutputTokens, 20000) − 13000`).
@@ -318,9 +337,17 @@ Each tier writes a context-rot event. Around the ladder sit an offline tiktoken 
 branch-aware history (`store_branch.go`, migration `0017`), identity-scoped reads
 (`store_identity.go`), best-effort auto-titling, and boot/periodic sidecar GC.
 
-**Documents** (`internal/documents`) is the ingestion pipeline: a markitdown sidecar
-extracts PDF/xlsx/DOCX to chunks, Neo4j holds the sparse FTS + (async-embedded) vectors,
-and `document_search` returns cited chunks. `internal/assets` handles the upload side —
+**Documents** (`internal/documents`) is a *catalog*, not a retrieval pipeline. Ingestion no
+longer reads the file: it writes one row per document (title, tags, content hash) and
+nothing else — no extraction, no chunking, no embedding, no passage store. What makes a
+file findable is its **digest**, written afterwards by `document_describe` once the agent
+has actually opened it, and ranked by a weighted Postgres `tsvector` (title A / tags B /
+digest C) behind a GIN index. `document_search` therefore answers "which file", and
+`document_open` materializes the real file into the workspace so the agent can compute on
+it with `shell_exec`. The two-stage passage pipeline this replaced scored 100% on exact
+lookups and **0% on every aggregate at every k**, because "how many customers in Torino" is
+a property of the whole document and lives in no passage. `internal/assets` handles the
+upload side —
 image/audio/document processors and content parts. **Identity / profile / secret** hold
 the identities + capability grants, the per-identity `Agent.md` profile (atomic writes),
 and the one shared secret-env denylist used at every redaction site.
@@ -388,6 +415,6 @@ second role is as the gateway's reservation store (§4).
   (GATE-01), and an allowed call holds a ledger reservation before it runs (GATE-04).
 - Secrets are redacted at every egress: logs, errors, the tool ledger, MCP child env,
   shell child env, MCP config export — all routed through the one `secret` denylist.
-- The owned-surface coverage floor is ≥85%, CI-enforced across the
-  `db_integration neo4j_integration` matrix. Code reachable only under other build tags
-  (above all `docker_integration`) counts as **uncovered** — see the §4 caveat.
+- The owned-surface coverage floor is ≥85%, CI-enforced over the `db_integration` tag.
+  Code reachable only under other build tags (above all `docker_integration`) counts as
+  **uncovered** even when its tier runs — see the §4 caveat.

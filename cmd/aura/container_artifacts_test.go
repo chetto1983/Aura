@@ -130,11 +130,11 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"driver: nvidia",
 		"capabilities: [gpu]",
 		"start_period: 300s",
-		// The graph plane. ArcadeDB replaced Neo4j (whose heap/JVM pins used to sit
-		// here) and arcadedb-mcp replaced the agent-memory sidecar. The memory sidecar
-		// is a HARD boot dependency — it is mounted into the agent loop at startup and
-		// the in-process mount has no boot-retry — so both the healthcheck and the
-		// `aura` gate on it are part of the image contract, not incidental wiring.
+		// The graph plane: ArcadeDB plus the arcadedb-mcp sidecar in front of it. That
+		// sidecar is a HARD boot dependency — it is mounted into the agent loop at
+		// startup and the in-process mount has no boot-retry — so both the healthcheck
+		// and the `aura` gate on it are part of the image contract, not incidental
+		// wiring.
 		"arcadedb:",
 		"image: arcadedata/arcadedb:26.7.3",
 		"aura-arcadedb:/home/arcadedb/databases",
@@ -288,11 +288,10 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 	}
 }
 
-// The Python MCP runtime used to be pinned into both images and injected in two CI
-// jobs, because Aura's graph client spawned mcp-neo4j-cypher over stdio. That client
-// is gone with internal/knowledge and no recipe in manager.BuiltInCatalog names the
-// package, so the pins invert: the runtime must stay OUT. Asserting its absence is
-// what keeps a dependency nothing can reach from drifting back into the images.
+// REGRESSION GUARD — the banned names below must stay spelled out. Nothing spawns
+// mcp-neo4j-cypher any more and no recipe in manager.BuiltInCatalog names the package,
+// so the Python MCP runtime must stay OUT of both images and out of CI. Asserting the
+// absence is what keeps a dependency nothing can reach from drifting back in.
 func TestRetiredMCPPythonRuntimeStaysOutAndCoverageIsReproducible(t *testing.T) {
 	root := repoRootForTest(t)
 	for _, rel := range []string{
@@ -364,9 +363,9 @@ func TestAuraBootGatesOnTheMemorySidecarThatActuallyServesMemory(t *testing.T) {
 	}
 }
 
-// Neo4j and the agent-memory sidecar it stored in are retired. Their compose services,
-// volumes and vendored build context are gone; asserting they stay gone is what stops a
-// merge from resurrecting a plane no Go code can reach.
+// REGRESSION GUARD — the banned names below must stay spelled out. The retired graph
+// plane's compose services, volumes and vendored build context are gone; asserting they
+// stay gone is what stops a merge from resurrecting a plane no Go code can reach.
 func TestRetiredGraphPlaneStaysOutOfTheComposeDeclarations(t *testing.T) {
 	root := repoRootForTest(t)
 	for _, rel := range []string{

@@ -19,7 +19,7 @@ const editSchedulerTask = vi.fn<(id: string, req: unknown) => Promise<void>>(() 
   Promise.resolve(),
 );
 
-const MANAGEABLE = new Set(['reminder', 'agent_job', 'backup_postgres', 'backup_neo4j']);
+const MANAGEABLE = new Set(['reminder', 'agent_job', 'backup_postgres']);
 
 vi.mock('../governanceApi', () => ({
   fetchSchedulerTasks: (...a: unknown[]) =>
@@ -255,7 +255,7 @@ describe('SchedulerBoard (GOV-03)', () => {
       {
         ...base,
         ID: 'none',
-        Kind: 'backup_neo4j',
+        Kind: 'backup_postgres',
         CronExpr: '',
         EveryMinutes: 0,
         RunAt: '0001-01-01T00:00:00Z',

@@ -62,7 +62,7 @@ func (e *WebSearch) Spec() Spec {
 			"Freshness matters: the general category returns broad web results (good for reference and current structured facts like a live price or a definition) but its snippets can be cached and undated. " +
 			"For the latest developments, breaking news, or anything time-sensitive ('today', 'latest', 'recent'), set category:news together with time_range:day or week, and pass include_metadata:true to read each result's published_at so you can prefer the freshest. " +
 			"You can also narrow with a language hint and a domains allowlist of bare hostnames. " +
-			"Example (reference): {\"query\":\"Neo4j HNSW vector index\",\"max_results\":5}. " +
+			"Example (reference): {\"query\":\"orbital period of Titan\",\"max_results\":5}. " +
 			"Example (latest news): {\"query\":\"EU AI Act\",\"category\":\"news\",\"time_range\":\"day\",\"include_metadata\":true}. " +
 			"Example (domain-scoped): {\"query\":\"site reliability\",\"domains\":[\"wikipedia.org\"]}.",
 		Parameters: params,

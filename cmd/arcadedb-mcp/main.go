@@ -1,12 +1,6 @@
 // Command arcadedb-mcp exposes Aura's graph substrate as an MCP server backed
 // directly by ArcadeDB.
 //
-// It replaces two sidecars that both sat on Neo4j: aura-agent-memory-mcp (a
-// vendored Python fork) and mcp-neo4j-cypher. The tool surface here is designed
-// for Aura rather than filtered down from someone else's -- internal/agent/
-// mcptools/bridge_memory.go currently suppresses three inherited tools and
-// injects a parameter the upstream server documents but never receives.
-//
 // Tools are added one file at a time (tool_*.go); every one is exercised
 // against a live database before the next is written.
 package main

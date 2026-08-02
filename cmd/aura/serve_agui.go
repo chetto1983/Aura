@@ -113,13 +113,11 @@ func wireAGUIServer(chat *chatEnv, store *cron.Store, scheduler *cron.Scheduler,
 	// stack without the calendar sidecar boots fine). The routes mount behind RequireCapability(
 	// governance.write) in serve_webui.go, so the proxy is never an open relay.
 	aguiServer.SetCalendarMCP(chat.cfg.CalendarMCPURL, chat.cfg.CalendarMCPAdminToken)
-	// Wire the read-only graph explorer over ArcadeDB (buildArcadeGraphView). It is now
-	// SCHEMA-ONLY — the canvas is gone with the Neo4j compilers that drew it, see
-	// internal/agui/graph_arcadedb.go. Best-effort as before: an unconfigured memory
-	// server or a missing tenant secret leaves the two /api/graph/* routes at 503 and MUST
-	// NOT abort serve boot. Nothing to close any more — the previous wiring held an
-	// mcp-neo4j-cypher subprocess in chatEnv.mcpClosers; this holds a stateless HTTP
-	// client built per request.
+	// Wire the read-only graph explorer over ArcadeDB (buildArcadeGraphView). It is
+	// SCHEMA-ONLY: one identity's type catalogue, never a drawable canvas — see
+	// agui.ArcadeGraphView. Best-effort — an unconfigured memory server or a missing
+	// tenant secret leaves the two /api/graph/* routes at 503 and MUST NOT abort serve
+	// boot. Nothing to close: the view builds a stateless HTTP client per request.
 	if view := buildArcadeGraphView(chat.cfg); view != nil {
 		aguiServer.SetGraphView(view)
 	}
@@ -182,12 +180,6 @@ func wireAGUIServer(chat *chatEnv, store *cron.Store, scheduler *cron.Scheduler,
 // search through the mounted MCP). The shared global deadline in the agui handler
 // bounds them. A dependency handle that is absent (nil pool) is omitted rather
 // than reported as a false failure.
-//
-// The Neo4j probe is gone with the store. It dialled the graph on every call and,
-// once memory moved to ArcadeDB and documents stopped indexing into a graph,
-// nothing behind it was load-bearing — but it kept timing out and holding /readyz
-// at 503, which took the cockpit down over a dependency the daemon no longer
-// uses.
 func serveReadinessProbes(chat *chatEnv) []agui.ReadinessProbe {
 	probes := make([]agui.ReadinessProbe, 0, 2)
 	if chat.pool != nil {

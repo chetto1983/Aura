@@ -60,8 +60,8 @@ type poolCloseSpy struct{ order *orderRecorder }
 func (p poolCloseSpy) Close() { p.order.add("pool") }
 
 // validBootConfig is the minimal dev-profile config that PASSES cfg.Validate: a
-// non-empty DB DSN + Neo4j password (the two all-tier required secrets) and a
-// loopback web bind. RunDir is left empty so ScanOrphans is a no-op (no pool query).
+// non-empty DB DSN (the all-tier required secret) and a loopback web bind. RunDir is
+// left empty so ScanOrphans is a no-op (no pool query).
 func validBootConfig() *config.Config {
 	return &config.Config{
 		Profile:  config.ProfileDev,

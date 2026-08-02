@@ -107,6 +107,5 @@ func ContainsCredentialURL(s string) bool {
 func dbURLKey(lower string) bool {
 	return strings.Contains(lower, "db_url") ||
 		strings.Contains(lower, "database_url") ||
-		strings.Contains(lower, "postgres_url") ||
-		strings.Contains(lower, "neo4j_url")
+		strings.Contains(lower, "postgres_url")
 }

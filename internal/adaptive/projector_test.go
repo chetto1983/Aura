@@ -73,7 +73,7 @@ func TestProjectorHonorsProjectionRetryAndDeletionRace(t *testing.T) {
 	})
 	t.Run("graph failure is retryable", func(t *testing.T) {
 		queue := &fakeProjectionQueue{record: record}
-		graph := &fakeAdaptiveGraph{err: errors.New("neo4j down")}
+		graph := &fakeAdaptiveGraph{err: errors.New("arcadedb down")}
 		projector := NewProjector(queue, graph, ProjectorConfig{WorkerID: "p2"})
 		if didWork, err := projector.ProjectOne(context.Background()); err == nil || !didWork {
 			t.Fatalf("ProjectOne = (%t,%v), want work + surfaced error", didWork, err)

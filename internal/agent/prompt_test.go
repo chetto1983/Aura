@@ -170,14 +170,16 @@ func TestPrompt_SkillInstallRoutingIsTheTool(t *testing.T) {
 	}
 }
 
-// TestPrompt_DocumentsDoctrine asserts the Amendment #89 <documents> doctrine
-// block: uploaded/indexed documents live in a searchable knowledge base (Neo4j),
-// distinct from /workspace files, routed via document_search/document_index.
+// TestPrompt_DocumentsDoctrine asserts the <documents> doctrine block: an uploaded
+// document is not on the filesystem until it is fetched, document_search names the
+// files, document_open writes one of them into /workspace, and a file the agent
+// wrote becomes findable only once document_index records it.
 func TestPrompt_DocumentsDoctrine(t *testing.T) {
 	for _, needle := range []string{
 		"<documents>",
-		"searchable knowledge base",
-		"document_search FIRST",
+		"NOT on the filesystem",
+		"document_search",
+		"document_open",
 		"document_index",
 	} {
 		if !strings.Contains(SystemPrompt, needle) {

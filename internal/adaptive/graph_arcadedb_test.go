@@ -1,12 +1,11 @@
 //go:build arcadedb_integration
 
-// The adaptive projection, run against the store that replaced Neo4j.
+// The adaptive projection, run against a live ArcadeDB.
 //
-// GraphStore was written for Neo4j and its Cypher was never touched by the
-// migration: MERGE with ON CREATE SET on both nodes and relationships,
-// datetime(), coalesce(), WITH…WHERE chains. Whether ArcadeDB accepts all of it
-// is not a thing to assume — this runs the real projection, the real idempotency
-// path, and the real purge against a live database.
+// GraphStore leans on the wide end of Cypher — MERGE with ON CREATE SET on both
+// nodes and relationships, datetime(), coalesce(), WITH…WHERE chains. How much of
+// that ArcadeDB accepts is not a thing to assume: this runs the real projection,
+// the real idempotency path, and the real purge against a live database.
 //
 //	go test -tags arcadedb_integration -run AdaptiveGraph -v ./internal/adaptive/
 package adaptive

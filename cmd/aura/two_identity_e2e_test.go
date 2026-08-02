@@ -186,10 +186,8 @@ func TestTwoIdentityCrossDeny(t *testing.T) {
 
 	// ── Documents plane: identity-scoped digest search — B empty, A finds own ───────
 	t.Run("documents_cross_deny", func(t *testing.T) {
-		// The graph plane this used to exercise (Neo4j chunks + a HAS_DOCUMENT ownership
-		// edge) is gone: document_search ranks aura.documents and the scoping is the SQL's
-		// own identity predicate. The cross-deny guarantee is unchanged, so the assertion
-		// moves to the store that now owns it.
+		// document_search ranks aura.documents and the scoping is the SQL's own identity
+		// predicate, so the cross-deny assertion belongs to the catalog store.
 		store := documents.NewPostgresCatalogStore(pool)
 		term := "quetzal" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
 		doc, err := store.CreateDocument(ctx, documents.CreateDocumentRequest{

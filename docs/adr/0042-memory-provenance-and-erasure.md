@@ -1,9 +1,9 @@
 # ADR 0042 — Memory provenance and erasure
 
 - **Status:** Accepted
-- **Date:** 2026-07-31
+- **Date:** 2026-07-31 · **Amended:** 2026-08-02 (backing store named below; see ADR 0038)
 - **Requirement:** OPS-06 / F-025
-- **Relates to:** `prd.md` Amendments #61, #62, #103, #106
+- **Relates to:** `prd.md` Amendments #61, #62, #103, #106 · ADR 0038 (graph-store choice)
 
 ## Context
 
@@ -12,8 +12,12 @@ identity, or survive owner deletion unless one component owns provenance and era
 
 ## Decision
 
-Agent Memory is a tenant-scoped MCP capability backed by Neo4j, mounted once and shared by
-model-facing calls, automatic recall, and semantic readiness. Every stored or recalled item carries
+Agent Memory is a tenant-scoped MCP capability, mounted once and shared by
+model-facing calls, automatic recall, and semantic readiness. Tenant scoping is enforced by the
+**store**, not by a query filter: the backing store gives each identity its own database and its
+own credential, so a cross-tenant read is refused by the server rather than being one forgotten
+`WHERE` clause away. Owner erasure is therefore a database drop, not a sweep. (ADR 0038 owns the
+choice of store; the current one is ArcadeDB.) Every stored or recalled item carries
 its immutable kind and ID. Automatic recall enforces one aggregate item cap and reports the exact
 admitted order plus observed reranker outcome; degraded ranking is not adaptive-eligible.
 

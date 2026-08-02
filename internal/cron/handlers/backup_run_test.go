@@ -182,7 +182,7 @@ func TestSweepRetentionPrunesOldKeepsFresh(t *testing.T) {
 	dir := t.TempDir()
 	old := filepath.Join(dir, "postgres-20200101T000000Z.dump")
 	fresh := filepath.Join(dir, "postgres-20260604T000000Z.dump")
-	other := filepath.Join(dir, "neo4j-20200101T000000Z.cypher")
+	other := filepath.Join(dir, "graph-20200101T000000Z.cypher")
 	for _, p := range []string{old, fresh, other} {
 		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
 			t.Fatal(err)
@@ -210,14 +210,14 @@ func TestSweepRetentionPrunesOldKeepsFresh(t *testing.T) {
 	}
 }
 
-// The Neo4j backup variant is retired, but its artifacts outlive it in
-// AURA_BACKUP_DIR. isBackupArtifact still recognises both suffixes so the sweep can
-// age them out instead of stranding them behind a prefix nothing writes any more.
+// Graph exports an earlier deployment left in AURA_BACKUP_DIR outlive the variant
+// that wrote them. isBackupArtifact recognises both suffixes so the sweep can age
+// them out instead of stranding them behind a prefix nothing writes any more.
 func TestSweepRetentionPrunesLegacyDumpAndCypherSuffixes(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	oldDump := filepath.Join(dir, "neo4j-20200101T000000Z.dump")
-	oldCypher := filepath.Join(dir, "neo4j-20200102T000000Z.cypher")
+	oldDump := filepath.Join(dir, "graph-20200101T000000Z.dump")
+	oldCypher := filepath.Join(dir, "graph-20200102T000000Z.cypher")
 	for _, p := range []string{oldDump, oldCypher} {
 		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
 			t.Fatal(err)
@@ -226,8 +226,8 @@ func TestSweepRetentionPrunesLegacyDumpAndCypherSuffixes(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if pruned := sweepRetention(dir, "neo4j", backupRetentionPostgres); pruned != 2 {
-		t.Fatalf("sweep should prune both retired-Neo4j suffixes, got %d", pruned)
+	if pruned := sweepRetention(dir, "graph", backupRetentionPostgres); pruned != 2 {
+		t.Fatalf("sweep should prune both legacy suffixes, got %d", pruned)
 	}
 }
 

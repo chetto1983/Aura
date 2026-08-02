@@ -277,9 +277,8 @@ func TestGateWebBind(t *testing.T) {
 }
 
 // TestGateRequiredSecrets locks the all-tier required-secret gate (O-04): an empty DB
-// DSN is Fatal naming its knob; a set DSN yields nothing. NEO4J_PASSWORD was the second
-// entry here until the graph store was retired — nothing opens a Bolt connection now,
-// so gating boot on it would refuse to start over a secret no code path reads.
+// DSN is Fatal naming its knob; a set DSN yields nothing. The DB DSN is the only entry
+// — a secret no code path reads must never be able to refuse a boot.
 func TestGateRequiredSecrets(t *testing.T) {
 	if vs := (&Config{}).gateRequiredSecrets(); !hasViolation(vs, "POSTGRES_PASSWORD (or AURA_DB_URL)", Fatal) {
 		t.Errorf("empty DB URL must be Fatal naming POSTGRES_PASSWORD, got %+v", vs)

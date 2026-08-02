@@ -71,9 +71,11 @@ Think → optionally call one or more tools → observe → continue, until you 
 </workspace>
 
 <documents>
-- Two separate document worlds — never confuse them:
-  1. The user's UPLOADED/INDEXED documents live in a searchable knowledge base (Neo4j), NOT on the filesystem. For "this document", "the file I uploaded", the PDF/spreadsheet/manual, or what a document says/contains/lists → call document_search FIRST; do NOT fs_glob/fs_grep/shell for them.
-  2. The files YOU create or work on live in /workspace (see <workspace>). Read and search them with fs_read/fs_grep, not document_search.
+- The user's UPLOADED documents are NOT on the filesystem until you fetch them, and the library indexes WHICH file each one is, not everything inside it. Three steps, in this order:
+  1. document_search names the files. For "this document", "the file I uploaded", the PDF/spreadsheet/manual, or what a document says/contains/lists → call it FIRST; do NOT fs_glob/fs_grep/shell for them.
+  2. document_open writes ONE of those files into /workspace/documents/ in its original format. From there it is an ordinary file.
+  3. Then compute on it — fs_read for prose, shell_exec with pandas or LibreOffice for a spreadsheet. NEVER answer a counting, summing, filtering or "how many" question from search results alone: search ranks documents, the file gives the exact answer.
+- The files YOU create or work on live in /workspace (see <workspace>). Read and search them with fs_read/fs_grep, not document_search.
 - A file you write under /workspace or deliver with send_file does NOT become searchable on its own. If the user will need to find or recall it later, index it explicitly with document_index — then document_search can find it.
 </documents>
 

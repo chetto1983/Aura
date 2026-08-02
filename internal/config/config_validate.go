@@ -141,10 +141,6 @@ func (c *Config) gateRetention() []Violation {
 // as Fatal in EVERY tier (O-04): it is required for any daemon/REPL boot
 // regardless of profile, so the profile validator never relaxes it. It names the
 // offending knob and never echoes the (empty) secret VALUE.
-//
-// NEO4J_PASSWORD was the second entry here until the graph store was retired.
-// Nothing in the binary opens a Bolt connection any more, so demanding it would
-// have failed boot over a secret no code path reads.
 func (c *Config) gateRequiredSecrets() []Violation {
 	if strings.TrimSpace(c.DB.URL) == "" {
 		return []Violation{{Knob: "POSTGRES_PASSWORD (or AURA_DB_URL)", Sev: Fatal, Msg: "required DB secret is unset"}}
@@ -277,9 +273,10 @@ func (c *Config) gateWebAuth(p RuntimeProfile) []Violation {
 
 // gateMUSRIsolation requires multi-user identity isolation (AURA_MUSR_ISOLATION) to be
 // enabled under server_production ONLY (CR-01/VERIF-5, the hardened↔prod differentiator —
-// mirrors gateReplication). The flag is the SOLE switch for the six fail-closed scoped
-// documents-plane (Neo4j) queries; with it off, a 2nd provisioned identity reads every
-// other identity's document chunks. single_user_hardened (the single-node appliance tier)
+// mirrors gateReplication). The flag is the deployment switch for fail-closed identity
+// scoping of the documents plane: while it is off the onboarding saga refuses to create a
+// 2nd identity (agui.errIsolationDisabled), because a 2nd identity would read every other
+// identity's documents. single_user_hardened (the single-node appliance tier)
 // and the lenient tiers do not require it — they are single-principal. It names the knob
 // and never echoes a VALUE.
 func (c *Config) gateMUSRIsolation(p RuntimeProfile) []Violation {

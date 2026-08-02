@@ -28,8 +28,8 @@ const egressSidecarImage = "aura-egress:latest"
 const capNetAdmin = "NET_ADMIN"
 
 // Filter-table floor DROP targets (D-05). RFC1918 private ranges + the cloud-metadata IP are
-// the tenancy boundary: a box can reach any PUBLIC host but never another box, agent-memory,
-// Garage, Postgres/Neo4j, or the host LAN at the network layer.
+// the tenancy boundary: a box can reach any PUBLIC host but never another box, Postgres,
+// ArcadeDB, Garage, an MCP sidecar, or the host LAN at the network layer.
 const (
 	metadataIP  = "169.254.169.254/32" // cloud-metadata SSRF sink (T-37-06-METADATA)
 	rfc1918Ten  = "10.0.0.0/8"
@@ -37,7 +37,7 @@ const (
 	rfc1918C192 = "192.168.0.0/16"
 
 	// sharedServicesBridgeCIDR is the Docker shared-services bridge the aura daemon +
-	// Postgres/Neo4j/Garage/agent-memory sit on. Docker's default-address-pool hands user
+	// Postgres/ArcadeDB/Garage/the MCP sidecars sit on. Docker's default-address-pool hands user
 	// networks /16s starting at 172.18.0.0/16, so this range is ALSO covered by the
 	// rfc1918B172 DROP above — it is listed explicitly as defense-in-depth (the D-05
 	// tenancy boundary must never depend on the broader RFC1918 line alone).
@@ -145,7 +145,7 @@ func buildEgressSidecar(policy EgressPolicy, boxID string, runtime RuntimeClass)
 // Scoped to the PORT, not to resolver addresses, on purpose: the sidecar shares the box netns
 // but not its mount namespace, so it cannot read the box's /etc/resolv.conf to learn which
 // server to allow. The tenancy boundary is unaffected — port 53 reaches a DNS server, and
-// Postgres/Neo4j/Garage/agent-memory do not serve DNS — and it opens no new exfiltration
+// Postgres/ArcadeDB/Garage/the MCP sidecars do not serve DNS — and it opens no new exfiltration
 // channel, since D-04 already grants unrestricted PUBLIC egress.
 func buildFloorRuleset(bridgeCIDR string) string {
 	drops := []string{metadataIP, rfc1918Ten, rfc1918B172, rfc1918C192, bridgeCIDR}

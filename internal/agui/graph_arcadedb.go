@@ -15,9 +15,9 @@ import (
 // expanded a clicked node's neighbours and sampled an ownership-scoped
 // relationship overview. All three were parameterized Cypher built out of
 // elementId(), apoc.convert.toJson(), apoc.map.removeKey() and
-// startNode()/endNode() — Neo4j primitives with no ArcadeDB equivalent — so they
-// did not survive the move. Porting them is a rewrite, not a translation, and it
-// is deliberately not attempted here.
+// startNode()/endNode(); ArcadeDB has no APOC and no equivalent built-ins, so
+// re-drawing the canvas is a rewrite, not a translation, and it is deliberately
+// not attempted here.
 //
 // What remains is the type catalogue: which vertex types exist, which edge types,
 // what properties they carry and how many records are in each. That is enough for

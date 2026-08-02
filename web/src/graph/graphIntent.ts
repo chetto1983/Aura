@@ -60,7 +60,7 @@ const FAMILY_RAMP_INDEX: Readonly<Record<LabelFamily, number>> = {
   entity: 6, // desaturated teal/cyan base
 };
 
-/** LABEL_FAMILY classifies a live Neo4j label into a Frame-06 family. The mapping is
+/** LABEL_FAMILY classifies a live graph label into a Frame-06 family. The mapping is
  * label→family (semantic), NOT label→color — the color comes from the shared ramp, so
  * the palette stays brand-derived and reproducible (D-02). */
 const LABEL_FAMILY: Readonly<Record<string, LabelFamily>> = {
@@ -281,7 +281,7 @@ export function toClientIntent(state: IntentState): GraphIntent {
  * nodeDisplayName is the ONE place a node becomes human-readable text, shared by the canvas,
  * the evidence list and the inspector. The server projects a caption from whichever property
  * names each label; when a node genuinely has none — an internal bookkeeping node, or a :User
- * identified only by its UUID — its LABEL is a far better answer than the Neo4j elementId.
+ * identified only by its UUID — its LABEL is a far better answer than the raw record id.
  * Every call site used to fall back to that id, so the workspace showed columns of
  * "4:4260efd2-fa44-4d3b-b1a9-8ccf7886ae88:21" instead of names.
  */

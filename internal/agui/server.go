@@ -38,8 +38,8 @@ var errUnsupportedUserMessageContent = errors.New("agui: last user message conte
 // default — see heartbeatIntervalFromConfig (server_sse.go).
 // ReadinessProbes are the required-dependency checks /readyz runs (O-05/AP-14):
 // /healthz stays a cheap LIVENESS check, /readyz reflects whether the required
-// backends (PG + Neo4j) are reachable. An empty list reports ready (the daemon was
-// started without gated deps).
+// backends (Postgres + memory) are reachable. An empty list reports ready (the
+// daemon was started without gated deps).
 type ServerConfig struct {
 	BufferCap       int
 	SSEHeartbeatSec int

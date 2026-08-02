@@ -2,7 +2,7 @@
 
 *A local-first, provider-neutral AI agent platform in Go.*
 
-**Audience:** technical decision-makers (CTO / engineering due-diligence). **Date:** 2026-07-17.
+**Audience:** technical decision-makers (CTO / engineering due-diligence). **Date:** 2026-08-02.
 **Companion docs:** [ARCHITECTURE.md](ARCHITECTURE.md) · [CAPABILITIES.md](CAPABILITIES.md) · [`.planning/codebase/`](../.planning/codebase/)
 
 ---
@@ -70,8 +70,8 @@ A self-hostable agent platform that closes those gaps:
   local-model deployment is on the roadmap.
 - **Self-extending** — the agent can author and run its own skills, and mount third-party
   capabilities over MCP, so the tool surface grows without a release.
-- **Remembers** — a Postgres + Neo4j memory stores conversations, documents (as a
-  searchable graph), and learned facts, and feeds them back into the agent, with a
+- **Remembers** — Postgres holds conversations and the document catalog; a per-identity
+  ArcadeDB graph holds bitemporal facts and entities. Both feed back into the agent, with a
   deterministic context ladder + on-demand graph-memory recall keeping long threads bounded.
 - **Multi-channel** — the same agent is reachable from a terminal REPL, from Telegram
   (with voice, photo, and document support), and from an embedded web cockpit.
@@ -87,13 +87,13 @@ What a technical reviewer should notice — each is implemented and locatable in
 | 3 | **Per-user full-capability sandbox** | Untrusted or per-tenant work runs in a dedicated Docker box with its own workspace volume, lifecycle/reaping, cross-identity denial, and network egress control — so capability and isolation are not a trade-off. | `sandbox/usersandbox` (`docker_backend*.go`) |
 | 4 | **Deferred-tool + semantic discovery** | The per-turn prompt stays small even with dozens of tools (incl. dynamic MCP tools). The model finds tools via an embedding `tool_search` instead of carrying every spec every turn. Scales the tool surface at near-zero token cost. | `agent/tools` (registry, `tool_search`), `semindex` |
 | 5 | **KV-cache economics** | `messages[0]` is byte-identical across turns and workers; volatile data is appended after history. On a cache-friendly provider this is a large recurring cost saving, observable via `aura cache-stats` and guarded by a dedicated CI job. | `agent/prompt` (builder, hash), `conversations`, CI `cache-invariant` |
-| 6 | **Deterministic context ladder + graph memory** | Long threads stay bounded by a three-tier deterministic ladder — L1 tool-output eviction to sidecar pointers, L2 token budget, L2.5 oldest-pair drop (no LLM call, provider-agnostic) — while salient facts are extracted into the Neo4j graph and recalled on demand (L4), so working context stays small by design rather than by summarizing history. | `conversations/context.go`, `agent/mcptools` (`memory_search`), migration `0017` |
+| 6 | **Deterministic context ladder + graph memory** | Long threads stay bounded by a three-tier deterministic ladder — L1 tool-output eviction to sidecar pointers, L2 token budget, L2.5 oldest-pair drop (no LLM call, provider-agnostic) — while salient facts are extracted into the per-identity ArcadeDB graph and recalled on demand (L4), so working context stays small by design rather than by summarizing history. | `conversations/context.go`, `agent/mcptools` (`memory_search`), migration `0017` |
 | 7 | **Bounded, leak-safe agent loops** | A shared budget tree caps steps + wall-clock across an entire agent tree; a two-phase dedup ring kills tool-call loops; parallel fan-out is goroutine-leak-tested. Predictable cost and no runaways. | `agent` (Budget, dedup), `agent/workflow`, `swarm` |
 | 8 | **Adaptive reasoning without an extra round-trip** | A local curated-seed embedding classifier routes each turn to `none/low/high` reasoning instead of spending an LLM round-trip to decide. Per-turn effort can also be fixed explicitly from the cockpit. | `agent/prompt` (classifier), `reasoningtrace`, `semindex` |
-| 9 | **Graph-native memory + two-stage retrieval** | Documents become a searchable Neo4j graph (sparse FTS + **1024-d** HNSW vectors, Qwen3-Embedding-0.6B); a reranker sidecar runs a second retrieval stage. | `knowledge`, `documents`, `rerank` |
+| 9 | **Bitemporal graph memory, one database per identity** | Memory is an ArcadeDB graph with a database *per identity*, so isolation is enforced by the server (a cross-identity read is a `SecurityException`, not a forgotten `WHERE`) and de-provisioning is a `drop database`. Facts are bitemporal — never overwritten, superseded — so "what is true now" and "what was true then" are both answerable. Recall fuses a Lucene full-text leg with a 768-d HNSW dense leg (EmbeddingGemma-300M) using ArcadeDB's own `vector.fuse` RRF, which is what lets a question in Italian reach a fact written in English. | `arcadedb`, `cmd/arcadedb-mcp` |
 | 10 | **Self-extension** | The agent authors, validates, and runs its own skills (instruction + executable snippets) and mounts MCP servers from a curated recipe catalog. | `skills`, `agent/mcptools`, `mcp/manager` |
 | 11 | **Trust boundaries by construction** | MCP output, web pages, and documents are framed/wrapped as untrusted before re-entering the prompt; secrets are redacted at every egress through one shared denylist. | `agent` (trust), `mcptools`, `secret`, `toolinvocations` |
-| 12 | **Embedded operator cockpit** | A Vite/React + assistant-ui web cockpit ships **inside the binary** (embedded dist, no separate deploy): chat, approval center, typed tool display, Neo4j graph explorer, governance boards, MCP config, and skill install. | `webui` (embedded dist), `agui` (AG-UI/SSE) |
+| 12 | **Embedded operator cockpit** | A Vite/React + assistant-ui web cockpit ships **inside the binary** (embedded dist, no separate deploy): chat, approval center, typed tool display, memory schema explorer, governance boards, MCP config, and skill install. | `webui` (embedded dist), `agui` (AG-UI/SSE) |
 
 ## 5. Capability surface (summary)
 
@@ -101,8 +101,9 @@ Full matrix in [CAPABILITIES.md](CAPABILITIES.md). At a glance:
 
 - **Reasoning & tools** — streaming agent loop; **21 built-in tools** + dynamic MCP tools,
   all mediated by the Gateway.
-- **Knowledge** — document ingestion (PDF/xlsx/DOCX) → cited graph search with rerank;
-  conversation memory with a deterministic context-management ladder.
+- **Knowledge** — a document library that answers *which file* (Postgres full-text over
+  title/tags/digest) and then hands the agent the real file to compute on; bitemporal
+  graph memory in ArcadeDB; conversation memory with a deterministic context ladder.
 - **Web** — SearXNG search + SSRF-hardened fetch → readable markdown.
 - **Automation** — cron scheduler with agent jobs, reminders, and backups.
 - **Channels** — CLI REPL, Telegram (voice/photo/docs/HITL), embedded web cockpit.
@@ -124,14 +125,13 @@ Aura is held to a gate enforced in CI and runnable locally. Stated without round
 - **Test discipline** — table-driven + property-based (gopter/rapid) + fuzzing; race
   detector and `goleak` on concurrent code; mutation spot-checks held to a ≥70%-killed
   floor on each phase's critical files, recorded in the phase `VALIDATION.md`.
-- **Integration tiers — the honest position.** `db_integration` and `neo4j_integration`
-  are the two tiers the coverage gate runs, and they are wired in CI: their skip-helpers
-  `t.Fatal` when the required env is unset under `$CI`, so a silently-skipped tier fails
-  the gate rather than passing it. **`docker_integration` (sandbox lifecycle, exec, and
-  egress) is not one of them** — it needs a Docker daemon, so in CI it compiles and skips,
-  contributing **zero** coverage. Those paths are exercised locally and on WSL/native
-  Linux (Phase 37 was live-verified on native dockerd, 2026-07-08); a native-Linux CI job
-  to close the gap is tracked as **WR-01**. Daemon-gated logic therefore carries
+- **Integration tiers — the honest position.** `db_integration` is the tier the coverage
+  gate runs, and it is wired in CI: its skip-helpers `t.Fatal` when the required env is
+  unset under `$CI`, so a silently-skipped tier fails the gate rather than passing it.
+  **`docker_integration` (sandbox lifecycle, exec, egress) runs in its own CI job on
+  native-Linux dockerd — the only host where the egress DROP assertions mean anything — but
+  it is not in the coverage matrix, so it contributes zero coverage.** Behavioural signal
+  and coverage credit are separate things there, deliberately: daemon-gated logic carries
   daemon-free unit tests for its pure parts so the floor stays meaningful.
 - **Static + supply-chain** — `golangci-lint` (incl. `dupl`), `staticcheck`,
   `govulncheck`, and CodeQL, as CI jobs (`build-and-lint`, `vulncheck`, `codeql`).
@@ -139,9 +139,10 @@ Aura is held to a gate enforced in CI and runnable locally. Stated without round
   no god packages; one concept per package; deferred-tool pattern; consumer-declared
   interfaces to break import cycles; byte-stable cache invariants asserted by a dedicated
   `cache-invariant` CI job.
-- **Persistence** — **40 Postgres migrations** (`0001`..`0040`) + **7 Cypher migrations**,
-  two-role DB separation, row-level security, atomic per-turn writes, append-only forensic
-  ledgers.
+- **Persistence** — a single versioned Postgres migration sequence (`internal/db/migrations/`
+  is the only source of its count), two-role DB separation, row-level security, atomic
+  per-turn writes, append-only forensic ledgers. Memory's ArcadeDB schema is idempotent DDL
+  applied at connect, not a migration ledger.
 - **Observability** — OTel spans end-to-end, Prometheus + expvar metrics, panic counters,
   a redacting reasoning trace, and an un-deletable tool-invocation ledger. Deepening this
   into a full idempotency + observability pack is Phase 39, **open**.
@@ -167,21 +168,24 @@ Aura is held to a gate enforced in CI and runnable locally. Stated without round
 | 40 | Security & supply-chain pack | ⬜ open |
 | 41 | Production ops + capability-eval + **honest 10/10 closeout** | ⬜ open |
 
-Known residual gaps, tracked rather than papered over: the native-Linux `docker_integration`
-CI job (WR-01), a 32 GB sandbox soak envelope and a gVisor `runsc` smoke (both hardware-gated,
-listed as Phase-41 release must-runs), and a `SECURITY.md` threat-mitigation retro-verification
-for the sandbox phase.
+Known residual gaps, tracked rather than papered over: a 32 GB sandbox soak envelope and a
+gVisor `runsc` smoke (both hardware-gated, listed as Phase-41 release must-runs), a
+`SECURITY.md` threat-mitigation retro-verification for the sandbox phase, and the cockpit's
+graph explorer, which is schema-only since memory moved to ArcadeDB — the traversal
+compilers that drew the canvas did not survive the move, and porting them is a rewrite
+rather than a translation.
 
 ## 7. Deployment & operations
 
-- **Footprint** — one Go binary (cockpit embedded) + Docker Compose for Postgres, Neo4j,
-  and the sidecars: embedding, reranker, document extractor, and optional OCR/STT/TTS.
+- **Footprint** — one Go binary (cockpit embedded) + Docker Compose for Postgres, ArcadeDB
+  (+ Aura's `arcadedb-mcp` memory sidecar), and the sidecars: embedding, document
+  extractor, and optional OCR/STT/TTS.
 - **Accelerator posture — GPU-first.** The product default offloads the embedding model
-  fully to the GPU (`AURA_EMBED_NGL=99`, Qwen3-Embedding-0.6B), and the
-  reranker is a GPU sidecar. The base Compose file is CPU-startable so CI and the
-  installer work on accelerator-less hosts, with the GPU layer applied via
-  `compose.gpu.yaml` — but **CPU-only is the fallback, not the target**. A deployment
-  without a GPU runs the retrieval path in a degraded mode. This makes the DGX
+  fully to the GPU (`AURA_EMBED_NGL=99`, EmbeddingGemma-300M at 768d), and that one sidecar
+  serves both the reasoning-tier classifier and memory's dense recall leg. The base Compose
+  file is CPU-startable so CI and the installer work on accelerator-less hosts, with the GPU
+  layer applied via `compose.gpu.yaml` — but **CPU-only is the fallback, not the target**: a
+  deployment without a GPU pays the embed latency on the turn's hot path. This makes the DGX
   Spark-class target the natural fit; it also means "any 16-core mini-PC" is not a
   supported full-capability configuration, and the entry-tier hardware floor is a
   commercial question (see §8), not an engineering one.

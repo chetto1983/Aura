@@ -18,7 +18,7 @@ const base: UseRuntimeHealthResult = {
     status: 200,
     body: { ok: true, bind_address: '127.0.0.1:9080', build_version: 'dev' },
   },
-  readyz: { status: 200, body: { ready: true, deps: { postgres: 'ok', neo4j: 'ok' } } },
+  readyz: { status: 200, body: { ready: true, deps: { postgres: 'ok', memory: 'ok' } } },
   healthzError: false,
   readyzError: false,
   isPending: false,
@@ -77,7 +77,7 @@ describe('RuntimeHealthPanel rendering', () => {
   it('maps a healthy stack to success dots + the right status text', () => {
     set({});
     render(<RuntimeHealthPanel />);
-    for (const label of ['Liveness', 'Readiness', 'Postgres', 'Neo4j']) {
+    for (const label of ['Liveness', 'Readiness', 'Postgres', 'Memory']) {
       expect(dotClass(label)).toContain('bg-success');
     }
     expect(statusOf('Liveness')).toBe('Live');
@@ -95,7 +95,7 @@ describe('RuntimeHealthPanel rendering', () => {
   });
 
   it('maps a not-ready /readyz to a warning Degraded readiness', () => {
-    set({ readyz: { status: 503, body: { ready: false, deps: { postgres: 'ok', neo4j: 'ok' } } } });
+    set({ readyz: { status: 503, body: { ready: false, deps: { postgres: 'ok', memory: 'ok' } } } });
     render(<RuntimeHealthPanel />);
     expect(statusOf('Readiness')).toBe('Degraded');
     expect(dotClass('Readiness')).toContain('bg-warning');
@@ -108,9 +108,9 @@ describe('RuntimeHealthPanel rendering', () => {
     render(<RuntimeHealthPanel />);
     expect(statusOf('Postgres')).toBe('Degraded');
     expect(dotClass('Postgres')).toContain('bg-warning');
-    // neo4j absent from deps → Unknown.
-    expect(statusOf('Neo4j')).toBe('Unknown');
-    expect(dotClass('Neo4j')).toContain('bg-warning');
+    // memory absent from deps → Unknown.
+    expect(statusOf('Memory')).toBe('Unknown');
+    expect(dotClass('Memory')).toContain('bg-warning');
   });
 
   it('renders an em-dash when bind/build are absent from /healthz', () => {

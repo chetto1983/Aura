@@ -61,9 +61,6 @@ RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
 # into the shared warm-cache volume (D-13).
 COPY --from=ghcr.io/astral-sh/uv@sha256:df4cae8f3a96d175e2e5f992e597550000edbe78fdc2594d5cd8de1a217f504c /uv /uvx /usr/local/bin/
 
-# mcp-neo4j-cypher + fastmcp are gone here too (parity with docker/aura): the graph
-# client that spawned the server is retired, and the box never spoke to it anyway.
-
 # ↓↓ Document/office toolchain — MANDATORY parity with docker/aura/Dockerfile ↓↓
 # Under a strict profile the box, NOT the aura container, is where shell_exec and the skill
 # snippets run. Amendment #88/#88.1 pre-baked this toolchain into the aura image precisely so

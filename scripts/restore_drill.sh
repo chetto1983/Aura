@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Three-plane production DR drill: Postgres, sidecars, Garage.
 #
-# The Neo4j offline dump/load plane went with the Neo4j service itself. Aura's graph
-# plane is ArcadeDB now and it has NO restore drill: memory lives in one database per
-# identity (internal/arcadedb/tenant.go) and nothing dumps them yet.
+# The graph plane is NOT drilled. Memory lives in one ArcadeDB database per identity
+# (internal/arcadedb/tenant.go) and nothing dumps them, so there is no restore to
+# rehearse — snapshot the aura-arcadedb volume out of band until that gap is closed.
 set -euo pipefail
 export MSYS_NO_PATHCONV=1
 export MSYS2_ARG_CONV_EXCL='*'

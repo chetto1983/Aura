@@ -297,7 +297,7 @@ func validMemoryRecallJSON(t *testing.T) string {
 				"memory_entity":{"requested_k":4,"effective_k":1,"count":1}
 			},
 			"revisions":{
-				"retriever":"neo4j-long-term-v1",
+				"retriever":"arcadedb-long-term-v1",
 				"reranker":"aura-rerank",
 				"embedding":"qwen2b@7",
 				"index":"entity_idx@7"

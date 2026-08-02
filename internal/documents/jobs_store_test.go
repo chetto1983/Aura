@@ -23,7 +23,7 @@ func TestIngestionJobFromSQLDecodesPayloadAndLeaseFields(t *testing.T) {
 		NextAttemptAt:  pgtype.Timestamptz{Time: time.Unix(10, 0), Valid: true},
 		Payload:        []byte(`{"asset_id":"asset-1"}`),
 		ErrorCode:      "retryable",
-		ErrorMessage:   "neo4j down",
+		ErrorMessage:   "extractor down",
 		CreatedAt:      pgtype.Timestamptz{Time: time.Unix(1, 0), Valid: true},
 		UpdatedAt:      pgtype.Timestamptz{Time: time.Unix(2, 0), Valid: true},
 	}

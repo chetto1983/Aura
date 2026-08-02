@@ -437,10 +437,10 @@ func TestAssembleChatEnvAppliesOnePolicyClampToEveryAdaptiveDomain(t *testing.T)
 	}
 }
 
-// An unopenable graph client must not stop `aura serve` from booting: mcp-neo4j-cypher is
-// a Python sidecar the appliance does not require, and a fatal open made the whole process
-// exit 71 on any host without it on PATH. Projection resumes on a later boot; the outbox
-// keeps the events meanwhile.
+// An unopenable graph client must not stop `aura serve` from booting: the adaptive
+// projection is best-effort, and a fatal open would exit the whole process 71 over a
+// memory server that is merely misconfigured. Projection resumes on a later boot; the
+// outbox keeps the events meanwhile.
 func TestAssembleChatEnvBootsWithoutAReachableProjectorGraph(t *testing.T) {
 	pool := unreachablePool(t)
 	cfg := validBootConfig()
@@ -455,7 +455,7 @@ func TestAssembleChatEnvBootsWithoutAReachableProjectorGraph(t *testing.T) {
 		cfg,
 		pool,
 		func(context.Context, *config.ArcadeDBConfig) (adaptive.GraphWriter, error) {
-			return nil, errors.New(`spawn mcp-neo4j-cypher: executable file not found in $PATH`)
+			return nil, errors.New(`adaptive graph client is not configured`)
 		},
 		adaptiveBootPolicyReaderFunc(func(context.Context) (adaptive.Policy, error) {
 			return validAdaptiveBootTestPolicy(adaptive.PolicyOff), nil

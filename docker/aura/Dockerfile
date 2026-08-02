@@ -73,11 +73,6 @@ RUN install -d /usr/share/postgresql-common/pgdg \
 
 COPY --from=ghcr.io/astral-sh/uv:0.11.32 /uv /uvx /usr/local/bin/
 
-# mcp-neo4j-cypher + fastmcp are gone from this image. They existed for ONE caller:
-# Aura's graph client (internal/knowledge), which spawned the server over stdio. The
-# graph store is retired, no recipe in manager.BuiltInCatalog names the package, and
-# nothing else imports fastmcp — so the layer was weight nothing could reach.
-
 # uv/uvx above stay: the agent reaches them from shell_exec for Python work. What is gone
 # is the calculator warm-up that used to live here. Warming a uv cache at build time cannot
 # work for a recipe in THIS image: compose mounts a named volume over /root/.cache/uv, and a

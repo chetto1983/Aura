@@ -4,12 +4,10 @@
 // substrate behind Aura's MCP-to-agent-tool bridge for stdio MCP servers declared
 // in the mcpServers config.
 //
-// It generalizes the single-purpose mcp-neo4j-cypher client (internal/knowledge):
-// the framing (one JSON object per line, serialized via a context-selectable
-// session gate since a stdio pipe pair cannot interleave) is identical, but the
-// server, tool set, and arguments are not hard-coded. Unlike that client,
-// readResponse skips interleaved notifications (e.g. logging) so a chatty server
-// cannot desync the request/response stream.
+// Requests are serialized through a context-selectable session gate because a
+// stdio pipe pair cannot interleave, and readResponse skips interleaved
+// notifications (e.g. logging) so a chatty server cannot desync the
+// request/response stream.
 //
 // A subprocess crash is surfaced as a wrapped error; the bridge decides policy.
 package mcp

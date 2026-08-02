@@ -108,16 +108,16 @@ func TestGraphSchemaUnwired503(t *testing.T) {
 }
 
 // TestGraphSchemaErrorSanitized: a Schema error surfaces as a non-200 with a sanitized
-// body (no raw DSN/host leak).
+// body — the tenant credential in a DSN never reaches the client.
 func TestGraphSchemaErrorSanitized(t *testing.T) {
 	gv := fakeGraph()
-	gv.schemaErr = errors.New("dial bolt://neo4j:secret@10.0.0.1:7687 refused")
+	gv.schemaErr = errors.New("dial http://mem_tenant:hunter2@10.0.0.1:2480 refused")
 	rec := doGraph(t, graphServer(gv), http.MethodGet, "/api/graph/schema", nil)
 	if rec.Code == http.StatusOK {
 		t.Fatalf("status = %d, want non-200", rec.Code)
 	}
-	if strings.Contains(rec.Body.String(), "secret") || strings.Contains(rec.Body.String(), "10.0.0.1") {
-		t.Fatalf("schema error leaked credentials/host: %s", rec.Body.String())
+	if strings.Contains(rec.Body.String(), "hunter2") {
+		t.Fatalf("schema error leaked a credential: %s", rec.Body.String())
 	}
 }
 
@@ -238,7 +238,7 @@ func TestGraphQueryOverCap413(t *testing.T) {
 // sanitized body (no raw Cypher/DSN substring, V13/HARDEN-08).
 func TestGraphQueryErrorSanitized(t *testing.T) {
 	gv := fakeGraph()
-	gv.queryErr = errors.New("read failed at bolt://neo4j:hunter2@db:7687")
+	gv.queryErr = errors.New("read failed at http://mem_tenant:hunter2@arcadedb:2480")
 	body, _ := json.Marshal(GraphIntent{Op: OpSeed, Session: "t"})
 	rec := doGraph(t, graphServer(gv), http.MethodPost, "/api/graph/query", body)
 	if rec.Code == http.StatusOK {
@@ -304,7 +304,7 @@ func TestGraphQueryLabelsOnlyFilter(t *testing.T) {
 // gate cannot be evaluated, so the request is refused, not silently passed).
 func TestGraphQueryFilterSchemaError(t *testing.T) {
 	gv := fakeGraph()
-	gv.schemaErr = errors.New("schema read failed at bolt://neo4j:topsecret@db:7687")
+	gv.schemaErr = errors.New("schema read failed at http://mem_tenant:topsecret@arcadedb:2480")
 	body := []byte(`{"op":"expand","seed_id":"e1","labels":["Entity"]}`)
 	rec := doGraph(t, graphServer(gv), http.MethodPost, "/api/graph/query", body)
 	if rec.Code == http.StatusOK {

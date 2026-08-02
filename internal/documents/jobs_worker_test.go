@@ -119,7 +119,7 @@ func TestIngestionJobWorkerRetriesHandlerFailure(t *testing.T) {
 		Clock:        func() time.Time { return now },
 		Handlers: map[string]IngestionJobHandler{
 			"asset_process": IngestionJobHandlerFunc(func(context.Context, IngestionJob) error {
-				return errors.New("neo4j down")
+				return errors.New("extractor down")
 			}),
 		},
 	}
@@ -135,7 +135,7 @@ func TestIngestionJobWorkerRetriesHandlerFailure(t *testing.T) {
 		t.Fatalf("retries = %#v", store.retries)
 	}
 	got := store.retries[0]
-	if got.id != "job-1" || got.stage != "extracting" || got.code != "handler_failed" || got.message != "neo4j down" {
+	if got.id != "job-1" || got.stage != "extracting" || got.code != "handler_failed" || got.message != "extractor down" {
 		t.Fatalf("retry update = %#v", got)
 	}
 	if !got.nextAttemptAt.Equal(now.Add(time.Minute)) {

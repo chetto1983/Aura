@@ -199,12 +199,9 @@ endef
 
 # ↓↓ live stack: graph substrate (ArcadeDB + its MCP) + embed sidecar ↓↓
 #
-# The whole `neo4j-*` family is gone with the Neo4j service. `neo4j-migrate` /
-# `neo4j-status` / `neo4j-reset` died first, with Aura's own graph store
-# (internal/knowledge), the `aura neo4j` CLI and the Cypher migration ledger; then
-# `neo4j-up` died with the container itself. Callers that wanted "the live stack a
-# tagged tier needs" now say `db-migrate memory-up`: ArcadeDB needs no migration
-# job, so this target only has to bring the services up healthy.
+# ArcadeDB needs no migration job — its schema is idempotent DDL applied at
+# connect — so this target only brings the services up healthy. A tagged tier that
+# wants the whole live stack asks for `db-migrate memory-up`.
 memory-up:
 	docker compose up -d arcadedb arcadedb-mcp aura-llama-embed
 	$(call wait_compose_healthy,arcadedb)

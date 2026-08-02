@@ -95,10 +95,10 @@ func TestBackupLifecycleDocsMatchApplianceContract(t *testing.T) {
 	restoreDrill := readProjectFile(t, root, "scripts/restore_drill.sh")
 	readme := readProjectFile(t, root, "README.md")
 
-	// Three planes, not four: the Neo4j offline dump/load plane went with the Neo4j
-	// service. ArcadeDB has no restore drill yet — memory lives in one database per
-	// identity and nothing dumps them — so this contract deliberately no longer
-	// claims a graph plane rather than claiming one that does not run.
+	// Three planes: Postgres, the sidecar home volume and the object store. ArcadeDB
+	// has no restore drill — memory lives in one database per identity and nothing
+	// dumps them — so this contract deliberately claims no graph plane rather than
+	// claiming one that does not run.
 	for _, want := range []string{
 		"pg_restore",
 		"dr_compose_volume_name aura-home",

@@ -8,7 +8,7 @@
 // Changes take effect on the next restart (the clients are built at boot).
 //
 // The overlay applies ONLY an allowlist of model-backend keys, so a settings row
-// can never clobber connection/security env (POSTGRES_*, NEO4J_PASSWORD,
+// can never clobber connection/security env (POSTGRES_*, ARCADEDB_PASSWORD,
 // AURA_WEB_AUTH_SECRET).
 package settings
 

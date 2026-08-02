@@ -1,212 +1,227 @@
-# Mini-PC Cloud Appliance — Aura on 8 GB, all models via OpenRouter
+# Mini-PC Appliance — Aura on 8 GB, big models via OpenRouter
 
 Deployment guide for running Aura as a **low-power, always-on appliance** on a
-small mini PC (target: **8 GB RAM, no GPU**) with **all inference in the cloud**
-(OpenRouter). The heavy local-inference stack stays on the workstation; the mini
-PC only runs the orchestration + data plane and calls OpenRouter for chat, vision,
-and (optionally) embeddings.
+small mini PC (target: **8 GB RAM, no GPU**), with the heavy models in the cloud
+(OpenRouter) and the data plane local.
 
-> Companion: the full **local-inference** stack (GPU sidecars, local Qwen3-8B) is
-> for the 32 GB + RTX workstation — see the base `compose.yaml` / `compose.gpu.yaml`
-> / `compose.llm.yaml` and the project memory `aura-wsl-infra-setup`.
+The delta from the workstation stack is one committed file, `compose.minipc.yaml`.
+Read it — it is short, and it is the authority. This page is the procedure around it.
+
+> Companion: the full local-inference stack (GPU sidecars) is the base
+> [`compose.yaml`](../../compose.yaml) on a 32 GB + RTX workstation.
 
 ---
 
 ## 1. Topology
 
 ```
-┌───────────────────────────┐        ┌────────────────────────────────┐
-│  Mini PC — 8 GB, no GPU    │        │  Workstation — 32 GB + RTX 3060 │
-│  ALWAYS-ON APPLIANCE       │        │  LOCAL-INFERENCE / DEV          │
-│                            │        │                                 │
-│  Postgres · Neo4j(tuned)   │        │  full stack + GPU sidecars:     │
-│  aura · agent-memory-mcp   │        │  embed · rerank · ocr · stt ·   │
-│  garage · whatsapp · pim   │        │  tts · markitdown · local       │
-│                            │        │  Qwen3-8B (compose.llm.yaml)    │
-│   chat/vision/​embed ──────┼──▶ OpenRouter ◀──────┼── (optional cloud) │
-└───────────────────────────┘        └────────────────────────────────┘
+┌────────────────────────────────┐        ┌────────────────────────────────┐
+│  Mini PC — 8 GB, no GPU        │        │  Workstation — 32 GB + RTX     │
+│  ALWAYS-ON APPLIANCE           │        │  LOCAL-INFERENCE / DEV         │
+│                                │        │                                │
+│  postgres · arcadedb           │        │  the same stack, plus the GPU  │
+│  arcadedb-mcp · aura           │        │  sidecars: rerank · ocr-vl ·   │
+│  aura-llama-embed (CPU)        │        │  stt · tts                     │
+│  garage · whatsapp · pim       │        │                                │
+│  searxng · markitdown · caddy  │        │                                │
+│                                │        │                                │
+│   chat / vision / stt / tts ───┼──▶ OpenRouter ◀────────┼──  (optional)   │
+└────────────────────────────────┘        └────────────────────────────────┘
 ```
 
-"All cloud" removes the **GPU** load, not the whole footprint — Postgres, Neo4j,
-the `aura` daemon and its sibling MCP sidecars still run locally.
+Going cloud removes the **GPU** load, not the footprint: Postgres, ArcadeDB, the
+`aura` daemon and its sibling MCP sidecars still run locally.
+
+**Embeddings stay local even here**, and that is deliberate. The adaptive-reasoning
+classifier embeds 27 anchors before *every* turn, one call at a time: measured
+21–44 ms locally against 3.9–43.3 s per call via OpenRouter. The cloud is for the
+big models, not for this one.
 
 ---
 
 ## 2. Host OS
 
-The host only needs to run `docker compose` reliably; the containers bring their
-own userland, so host libc/init is invisible to them. What matters: **systemd**
-(Aura's `deploy/aura.service` appliance unit is a systemd unit), **glibc + apt**
-(Aura's docs/tooling assume Debian/Ubuntu), and low idle RAM.
+The host only has to run `docker compose` reliably; the containers bring their own
+userland. What matters: **systemd** (the appliance unit is a systemd unit),
+**glibc + apt** (the tooling assumes Debian/Ubuntu), and low idle RAM.
 
 | Distro | Verdict |
 |---|---|
-| **DietPi** ⭐ | Recommended. Debian-based (systemd/glibc/apt = full compatibility), ~200–400 MB idle, `dietpi-software` installs Docker + compose in one step. Purpose-built for a low-RAM appliance. |
-| **Debian 13 minimal** (netinst, no DE) | Equally safe, boring, bulletproof. ~400–500 MB idle. Pick if you prefer maximum "just works" over shaving RAM. |
-| Ubuntu Server | Only if you want it identical to the workstation; heavier (snapd), no benefit here. |
-| ❌ Alpine / Tiny Core | Great container *bases*, but musl + OpenRC (no systemd) fights the appliance unit + host tooling for a ~270 MB gain — not worth it on 8 GB. |
+| **DietPi** | Recommended. Debian-based, ~200–400 MB idle, `dietpi-software` installs Docker + compose in one step. |
+| **Debian minimal** (netinst, no DE) | Equally safe and boring. ~400–500 MB idle. |
+| Ubuntu Server | Only to match the workstation exactly; heavier (snapd), no benefit here. |
+| Alpine / Tiny Core | Great container *bases*, but musl + OpenRC (no systemd) fights the appliance unit for a ~270 MB gain — not worth it on 8 GB. |
 
-The ~270 MB idle difference between "tiniest" and "minimal Debian" is noise next to
-the ~5 GB workload. **Reliability + compatibility win — use DietPi or Debian minimal.**
+That ~270 MB is noise next to the ~5 GB workload. Reliability wins.
 
 ---
 
 ## 3. Base install
 
 ```bash
-# 1) Install DietPi (or Debian 13 minimal, headless). Then, as root/sudo:
+# 1) DietPi or Debian minimal, headless. Then as root/sudo:
 
 # 2) Docker Engine + compose plugin
-#    DietPi:  dietpi-software  → install "Docker" + "Docker Compose"
+#    DietPi:  dietpi-software  → "Docker" + "Docker Compose"
 #    Debian:  curl -fsSL https://get.docker.com | sh
 docker --version && docker compose version
 
-# 3) Tooling to run host-side migrations (Go) — only if NOT running migrations
-#    inside the aura-migrate container (the appliance runs them automatically).
-sudo apt-get update && sudo apt-get install -y git curl ca-certificates
-
-# 4) Clone the repo onto NATIVE ext4 (never a slow mount)
+# 3) Clone onto NATIVE ext4 (never a slow mount)
 sudo mkdir -p /opt && cd /opt
 git clone <your-aura-remote> aura && cd /opt/aura
 ```
 
-> Migrations: the `aura-migrate` compose service runs `db migrate && neo4j migrate`
-> automatically at stack start, so you do **not** need Go on the mini PC unless you
-> want to run migrations by hand.
+> Migrations run themselves: the one-shot `aura-migrate` service applies the
+> Postgres sequence at stack start, and `aura` gates its own boot on it completing.
+> ArcadeDB has no migration step — its schema is idempotent DDL applied at connect.
+> You do not need Go on the mini PC.
 
 ---
 
 ## 4. Configuration
 
-### 4a. `.env` — generate secrets + set the cloud knobs
+### 4a. Select the overlay — once, in `.env`
 
-Generate the base `.env` exactly as on the workstation (all 9 required secrets):
+```dotenv
+COMPOSE_FILE=compose.yaml:compose.minipc.yaml
+```
+
+From then on `docker compose up -d` is enough, with no `-f` to remember. That is
+the whole point of the variable: an overlay you must pass by hand fails *silently*
+the day you forget it — nothing errors, it just quietly changes where embeddings go
+and whether the GPU is used.
+
+### 4b. Secrets
+
+Easiest path: `scripts/install.sh` generates every one of them and never overwrites
+a value you already set. By hand:
 
 ```bash
 cp .env.example .env
 gen() { openssl rand -hex "$1"; }
 fill() { sed -i "s|^$1=\$|$1=$2|" .env; }
-fill POSTGRES_PASSWORD "$(gen 32)";            fill NEO4J_PASSWORD "$(gen 32)"
-fill AURA_ACCESS_TOKEN "$(gen 32)";            fill AURA_AUTHULA_SECRET "$(gen 32)"
-fill AURA_PIM_MCP_ADMIN_TOKEN "$(gen 32)";     fill SEARXNG_SECRET "$(gen 32)"
-fill AURA_OBJECTSTORE_ACCESS_KEY "GK$(gen 12)"; fill AURA_OBJECTSTORE_SECRET_KEY "$(gen 32)"
+
+fill POSTGRES_PASSWORD "$(gen 32)"
+fill ARCADEDB_PASSWORD "$(gen 32)"
+fill ARCADEDB_APP_PASSWORD "$(gen 32)"
+fill AURA_ARCADEDB_TENANT_SECRET "$(gen 32)"
+fill AURA_ACCESS_TOKEN "$(gen 32)"
+fill AURA_AUTHULA_SECRET "$(gen 32)"
+fill AURA_PIM_MCP_ADMIN_TOKEN "$(gen 32)"
+fill SEARXNG_SECRET "$(gen 32)"
+fill AURA_OBJECTSTORE_ACCESS_KEY "GK$(gen 12)"
+fill AURA_OBJECTSTORE_SECRET_KEY "$(gen 32)"
 fill GARAGE_RPC_SECRET "$(gen 32)"
+fill AURA_GARAGE_ADMIN_TOKEN "$(gen 32)"
 chmod 600 .env
 ```
 
-Then set the cloud-appliance knobs (append / edit in `.env`):
+All twelve use compose's `:?` required form, and compose interpolates the **whole
+file** before it picks a service — so one missing name aborts every `docker compose`
+invocation, including ones that touch none of those containers.
+`docker compose config >/dev/null` is the check.
+
+`AURA_ARCADEDB_TENANT_SECRET` is not an ordinary secret: per-identity ArcadeDB
+credentials are *derived* from it (HMAC-SHA256 over the database name), so nothing
+per-tenant is stored and rotating it invalidates every one of them at once. Plan
+that; do not restart into it.
+
+### 4c. Cloud knobs
 
 ```dotenv
-# ---- REQUIRED: the single cloud key every backend reuses ----
+# The single cloud key every backend reuses
 OPENROUTER_API_KEY=sk-or-...
 
-# ---- Chat LLM → OpenRouter (already the default base) ----
+# Chat
 AURA_LLM_BASE_URL=https://openrouter.ai/api/v1
-AURA_LLM_MODEL=deepseek/deepseek-v4-flash:nitro      # or your preferred OpenRouter chat model
+AURA_LLM_MODEL=deepseek/deepseek-v4-flash:nitro
 
-# ---- Vision → cloud (no local aura-ocr-vl needed) ----
-AURA_VISION_CLOUD=true
-MULTIMODAL_FALLBACK_MODEL=minimax/minimax-m3         # cloud VL fallback
-
-# ---- Embeddings: one native width across every Neo4j vector index ----
-AURA_EMBED_DIMENSIONS=1024
+# The CPU embedding pair. Image and NGL are ONE choice, not two: disagree and the
+# sidecar either fails to start or silently runs on CPU while you believe otherwise.
+AURA_EMBED_IMAGE=ghcr.io/ggml-org/llama.cpp:server
+AURA_EMBED_NGL=0
+AURA_EMBED_DIMENSIONS=768
 ```
 
-Then choose ONE embedding strategy:
+Vision, STT, TTS and rerank are already pointed at OpenRouter by
+`compose.minipc.yaml`, with their four GPU containers **deleted** rather than
+stopped — a declared-but-never-started service is a trap, because a plain
+`docker compose up -d` pulls it, and here that means a 5 GB CUDA image over WiFi
+for a container that will not run.
 
-**Option A — local Qwen3-Embedding-0.6B on CPU (recommended for a GPU-less box).**
-Free, no per-chunk API latency, and natively 1024-dimensional. The Compose defaults
-already select this model; only swap the embed sidecar to the CPU image:
+### 4d. The embedding model file
+
+The sidecar is started with a **local path**, not `--hf-repo`: it has no egress, so
+a first boot that has to fetch from HuggingFace restart-loops. Pre-fetch it into the
+cache volume once:
+
+```bash
+docker volume create aura_aura-llama-embed
+docker run --rm -v aura_aura-llama-embed:/cache alpine sh -c \
+  'apk add --no-cache curl >/dev/null && curl -fsSL -o /cache/embeddinggemma-300M-Q8_0.gguf <gguf-url>'
+```
+
+`AURA_EMBED_MODEL_PATH` defaults to that filename under
+`/root/.cache/llama.cpp/`. The width is **768** — EmbeddingGemma-300M's native size,
+and also the width of memory's dense HNSW index, which refuses a query vector of any
+other length. That refusal is the failure you want; a silent mismatch is not.
+
+### 4e. ArcadeDB heap
+
+`ARCADEDB_OPTS_MEMORY` (default `-Xms2G -Xmx2G`) is a plain `.env` variable, so
+there is no override file to write. On an 8 GB box:
 
 ```dotenv
-AURA_EMBED_IMAGE=ghcr.io/ggml-org/llama.cpp:server   # CPU build (NOT :server-cuda)
-AURA_EMBED_NGL=0                                      # no GPU offload
-# leave AURA_EMBED_MODEL UNSET → EmbedRoute stays local (config_routes.go:38)
+ARCADEDB_OPTS_MEMORY=-Xms512m -Xmx1G
 ```
-
-**Option B — embeddings via OpenRouter (`qwen/qwen3-embedding-4b`).**
-Zero local inference, but every chunk is a paid API call. Verified compatible:
-`EmbedRoute()` swaps to OpenRouter when `AURA_EMBED_MODEL` is set, and the embedder
-sends `dimensions:1024` on the cloud route (`internal/documents/embedder.go:44-49`),
-which Qwen3-Embedding-4B (native 2560, MRL 32–2560) truncates to 1024.
-
-```dotenv
-AURA_EMBED_MODEL=qwen/qwen3-embedding-4b             # → cloud embed via OPENROUTER_API_KEY
-# Also point the memory-MCP sidecar's embedder at the cloud (D-28):
-AURA_MEMORY_EMBED_BASE_URL=https://openrouter.ai/api/v1
-AURA_MEMORY_EMBED_API_KEY=${OPENROUTER_API_KEY}
-AURA_EMBED_MODEL=qwen/qwen3-embedding-4b
-# NOTE: even with cloud embed, the aura/​memory-mcp containers still `depends_on`
-# aura-llama-embed (compose.yaml). Keep Option A's CPU image vars set so the sidecar
-# starts healthy and satisfies the dependency (it just goes unused). ⚠️ You MUST run
-# the §6 curl check: if OpenRouter returns 2560 (param not honored) Aura fails LOUD
-# ("embedding N has dimension 2560, want 1024") — clean fail, never corruption.
-```
-
-> **Recommendation:** Option A. On a GPU-less always-on box, local CPU Qwen3 is
-> simpler, free, has no dimension risk, and the sidecar is actually used. Reach for
-> Option B only if you want literally zero local inference.
-
-### 4b. `compose.cloud.yaml` — tune Neo4j down (heap is the RAM hog)
-
-The Neo4j memory settings are hardcoded in `compose.yaml`, so a tiny override shrinks
-them for 8 GB. (Everything else — embed image/NGL, vision — is `.env`-driven above.)
-
-```yaml
-# compose.cloud.yaml — mini-PC memory tuning. Layer LAST:
-#   docker compose -f compose.yaml -f compose.cloud.yaml up -d aura caddy
-services:
-  neo4j:
-    environment:
-      NEO4J_server_memory_heap_initial__size: 256m
-      NEO4J_server_memory_heap_max__size: 512m
-      NEO4J_server_memory_pagecache_size: 256m
-```
-
-This file is created alongside this guide. **Do NOT** layer `compose.gpu.yaml` or
-`compose.llm.yaml` here — those are workstation-only.
 
 ---
 
 ## 5. Bring-up
 
-The `aura` appliance container has a fixed dependency set it auto-starts: `postgres`,
-`neo4j`, `aura-llama-embed` (CPU per §4a), `aura-agent-memory-mcp`, `garage`(+bootstrap),
-`whatsapp`, `aura-pim-mcp`, and the one-shot `aura-migrate` (runs both migrations).
-The GPU/media sidecars (`rerank`, `ocr-vl`, `stt`, `tts`, `markitdown`) are **not**
-dependencies, so they never start unless you ask for them.
-
 ```bash
 cd /opt/aura
-docker compose -f compose.yaml -f compose.cloud.yaml up -d aura caddy
-# migrations run automatically inside aura-migrate; watch it:
-docker compose logs -f aura-migrate
+docker compose up -d
+docker compose logs -f aura-migrate    # the one-shot Postgres migration
 docker compose ps
 ```
+
+`aura` gates its boot on `postgres`, `aura-llama-embed` and `arcadedb-mcp` being
+**healthy**, and on `aura-migrate` and `garage-bootstrap` having completed. The
+memory sidecar is a hard gate on purpose: memory is mounted into the agent loop at
+startup and the in-process mount has no boot retry, so a sidecar that is merely
+*still starting* yields an agent with zero memory tools until the next restart.
+
+`whatsapp` and `aura-pim-mcp` start with the stack but are `service_started`, never
+`service_healthy` — boot must not block on them, and their connect routes fail soft
+to 503.
 
 ---
 
 ## 6. Acceptance checks
 
 ```bash
-# All expected services healthy
+docker compose config >/dev/null && echo "compose: parses"
 docker compose ps --format '{{.Name}}\t{{.Status}}'
 
-# The embedding width MUST match AURA_EMBED_DIMENSIONS and the Neo4j vector indexes.
-#  - Option A (local sidecar): the repo default is Qwen3-Embedding-0.6B, 1024 native.
-#  - Option B (OpenRouter): confirm the provider honors dimensions=1024 —
-curl -s https://openrouter.ai/api/v1/embeddings \
-  -H "Authorization: Bearer $OPENROUTER_API_KEY" -H "Content-Type: application/json" \
-  -d '{"model":"qwen/qwen3-embedding-4b","input":"ciao","dimensions":1024}' \
-  | jq '.data[0].embedding | length'          # MUST print 1024 (not 2560)
+# Embedding width — MUST print 768
+curl -s http://127.0.0.1:8081/v1/embeddings \
+  -H 'Content-Type: application/json' \
+  -d '{"input":"ciao"}' | jq '.data[0].embedding | length'
 
-# Setup wizard / cockpit
-#   https://<mini-pc-ip>/setup/?token=$(grep ^AURA_ACCESS_TOKEN .env | cut -d= -f2)
+# Memory sidecar liveness
+curl -sf http://127.0.0.1:8096/health && echo " memory: up"
+
+# Full dependency probe
+docker compose exec aura aura doctor
 ```
 
-If the curl prints `2560`, OpenRouter is not passing `dimensions` for that model —
-switch to embed Option A (local CPU) or a model/provider that honors it. Aura fails
-loudly either way, so the index is never silently corrupted.
+`aura doctor` reports four checks: Postgres, the embedding sidecar (printing the
+dimension it got back), the presence of `OPENROUTER_API_KEY`, and a live probe of
+every enabled runnable MCP server.
+
+The setup wizard is at `https://<mini-pc-ip>/setup/` with the `AURA_ACCESS_TOKEN`
+value as its token.
 
 ---
 
@@ -214,36 +229,29 @@ loudly either way, so the index is never silently corrupted.
 
 | Component | ~RAM | Notes |
 |---|---|---|
-| Neo4j (tuned 512m heap / 256m pagecache) | ~1.2 GB | the biggest single consumer |
+| ArcadeDB (`-Xmx1G` per §4e) | ~1.2 GB | the biggest single consumer; `mem_limit 3g` in compose |
 | Postgres | ~0.3 GB | |
-| aura daemon | ~0.6 GB | `mem_limit 768m` |
-| agent-memory-mcp | ~0.4 GB | Python |
-| garage + whatsapp + pim | ~0.5 GB | aura hard-deps; pim is .NET |
-| embed (CPU Qwen3, Option A) | ~0.7 GB | omit if Option B, but sidecar still runs |
+| aura daemon | ~0.6 GB | `AURA_MEM_LIMIT`, default 768m |
+| arcadedb-mcp | ~0.2 GB | `mem_limit 512m`, Go |
+| embed sidecar (CPU EmbeddingGemma-300M) | ~0.6 GB | |
+| garage + whatsapp + pim + searxng + markitdown | ~0.8 GB | pim is .NET |
 | Docker + OS (DietPi) | ~1.5 GB | |
-| **Total** | **~5.0–5.5 GB** | fits 8 GB with headroom |
-
-> Leaner still: run `aura serve` as a **host binary** (Go) against just Postgres +
-> Neo4j + cloud, skipping the garage/whatsapp/pim/memory-mcp sidecars — only do this
-> if you don't need object storage, WhatsApp, calendar, or graph memory.
+| **Total** | **~5.2 GB** | fits 8 GB with headroom |
 
 ---
 
 ## 8. Cost & latency notes
 
-- Every chat turn **and** (Option B) every embedded chunk is a metered OpenRouter
-  call — trade free/instant local inference for API cost + network latency.
-  `qwen/qwen3-embedding-4b` is ~$0.02/M tokens (cheap); chat cost depends on the model.
-- Option A keeps embeddings free/local (only chat + vision are metered) — usually the
-  better economics for an always-on personal assistant.
-- The appliance is loopback-published behind Caddy; expose it on your LAN/VPN, not the
-  public internet, unless you've hardened auth (Authula) — see `compose.yaml` WEB-02.
+- Every chat turn is a metered OpenRouter call. Embeddings are not — they are local,
+  and §1 explains why that is not negotiable on the hot path.
+- The appliance is loopback-published behind Caddy. Expose it on your LAN or VPN,
+  not the public internet, unless Authula auth is configured (see `compose.yaml`
+  WEB-02).
 
 ---
 
 ## 9. See also
 
-- Base runtime: [`compose.yaml`](../../compose.yaml) · GPU: [`compose.gpu.yaml`](../../compose.gpu.yaml) · local LLM: [`compose.llm.yaml`](../../compose.llm.yaml)
+- Base runtime: [`compose.yaml`](../../compose.yaml) · appliance delta: [`compose.minipc.yaml`](../../compose.minipc.yaml)
 - Route resolver (one-knob local↔cloud): [`internal/config/config_routes.go`](../../internal/config/config_routes.go)
-- Embed client (sends `dimensions`, validates width): [`internal/documents/embedder.go`](../../internal/documents/embedder.go)
 - Appliance installer: [`scripts/install.sh`](../../scripts/install.sh) (`--appliance` for the systemd unit)

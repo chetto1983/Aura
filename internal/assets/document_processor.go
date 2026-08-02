@@ -55,8 +55,9 @@ func (p *DocumentProcessor) ProcessAsset(ctx context.Context, asset Asset) (Resu
 		FileName:     asset.FileName,
 		MIMEType:     asset.MIMEType,
 		SizeBytes:    asset.SizeBytes,
-		// Owner identity threads to the (:User)-[:HAS_DOCUMENT]->(:Document) edge the
-		// indexer MERGEs on ingest (Phase 36 MUSR-01). Assets already carry it.
+		// The owner identity scopes the catalog row: retrieval is identity-scoped in SQL,
+		// so a row written without one is owned by nobody and invisible to every read
+		// meant to return it. Assets already carry it.
 		IdentityID: asset.IdentityID,
 	}, path)
 	if err != nil {
@@ -67,13 +68,17 @@ func (p *DocumentProcessor) ProcessAsset(ctx context.Context, asset Asset) (Resu
 			return Result{}, err
 		}
 	}
+	// The summary said "indexed with N searchable chunks" and N was ALWAYS 0: ingest
+	// stopped chunking when the document plane became a catalog, and the count it read
+	// is now hard-wired to zero. It shipped that to the user on every single upload.
+	// What actually happened is the honest sentence, and it is also the one that tells
+	// the agent what to do next.
 	return Result{
 		Status:     StatusSearchable,
 		DocumentID: job.DocumentID,
-		Summary:    fmt.Sprintf("%s indexed with %d searchable chunks.", job.FileName, job.SparseChunks),
+		Summary:    fmt.Sprintf("%s is in the document catalog; open it to read or compute on it.", job.FileName),
 		Metadata: map[string]any{
 			"document_job_id": job.ID,
-			"sparse_chunks":   job.SparseChunks,
 		},
 	}, nil
 }

@@ -140,7 +140,7 @@ export function RuntimeHealthPanel() {
     liveness(healthz, healthzError, t),
     readiness(readyz, readyzError, t),
     dependency(t('health.labels.postgres'), 'postgres', readyz, readyzError, t),
-    dependency(t('health.labels.neo4j'), 'neo4j', readyz, readyzError, t),
+    dependency(t('health.labels.memory'), 'memory', readyz, readyzError, t),
   ];
 
   return (

@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "enabled": true,
+  "backupDirectory": "./backups",
+  "defaults": {
+    "enabled": true,
+    "runOnServer": "$leader",
+    "schedule": {
+      "type": "cron",
+      "expression": "0 0 3 * * ?"
+    },
+    "retention": {
+      "maxFiles": 14,
+      "tiered": {
+        "daily": 7,
+        "weekly": 4,
+        "monthly": 6
+      }
+    }
+  }
+}

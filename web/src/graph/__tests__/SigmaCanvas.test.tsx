@@ -129,7 +129,7 @@ describe('SigmaCanvas (renderer mocked — no WebGL in jsdom)', () => {
     expect(graph.size).toBe(1); // the one edge flowed in
   });
 
-  it('loads parallel Neo4j relationships without crashing the graphology renderer', () => {
+  it('loads parallel graph relationships without crashing the graphology renderer', () => {
     render(
       <SigmaCanvas
         nodes={NODES}

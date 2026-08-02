@@ -471,7 +471,7 @@ func TestStoreRetryTransitionsPendingThenDeadLetterWithTypedTimestamp(t *testing
 	if first == nil || first.ID != event.ID || first.Attempts != 1 {
 		t.Fatalf("first claim = %+v, want event attempt 1", first)
 	}
-	if err := store.Retry(ctx, event.ID, "retry-worker-1", "neo4j_unavailable",
+	if err := store.Retry(ctx, event.ID, "retry-worker-1", "graph_unavailable",
 		firstAt, firstAt.Add(time.Second)); err != nil {
 		t.Fatalf("Retry(first): %v", err)
 	}
@@ -496,7 +496,7 @@ func TestStoreRetryTransitionsPendingThenDeadLetterWithTypedTimestamp(t *testing
 	if second == nil || second.ID != event.ID || second.Attempts != 2 {
 		t.Fatalf("second claim = %+v, want event attempt 2", second)
 	}
-	if err := store.Retry(ctx, event.ID, "retry-worker-2", "neo4j_unavailable",
+	if err := store.Retry(ctx, event.ID, "retry-worker-2", "graph_unavailable",
 		secondAt, secondAt.Add(time.Second)); err != nil {
 		t.Fatalf("Retry(second): %v", err)
 	}

@@ -60,11 +60,11 @@ func TestWebSearch_Success(t *testing.T) {
 	ws := &WebSearch{Engine: eng}
 	ctx := ctxWith(t, "sess-s", "call-s")
 
-	res, err := ws.Execute(ctx, json.RawMessage(`{"query":"neo4j","max_results":5,"category":"news","domains":["wikipedia.org"]}`))
+	res, err := ws.Execute(ctx, json.RawMessage(`{"query":"arcadedb","max_results":5,"category":"news","domains":["wikipedia.org"]}`))
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if eng.gotPar.Query != "neo4j" || eng.gotPar.MaxResults != 5 || eng.gotPar.Category != "news" {
+	if eng.gotPar.Query != "arcadedb" || eng.gotPar.MaxResults != 5 || eng.gotPar.Category != "news" {
 		t.Fatalf("args not threaded to the engine: %+v", eng.gotPar)
 	}
 	if len(eng.gotPar.Domains) != 1 || eng.gotPar.Domains[0] != "wikipedia.org" {

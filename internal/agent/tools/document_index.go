@@ -10,9 +10,10 @@ import (
 	"github.com/chetto1983/aura/internal/documents"
 )
 
-// DocumentIndexBackend ingests a local file into the calling identity's
-// searchable knowledge base — the same pipeline the CLI `aura docs ingest`
-// runs (markitdown extract -> chunk -> Neo4j sparse index -> async embed).
+// DocumentIndexBackend registers a local file in the calling identity's document
+// catalog — the same path the CLI `aura docs ingest` runs. Ingestion does not read
+// the file beyond hashing it: it writes the catalog row document_search ranks and
+// document_open resolves (internal/documents.Service.IngestPath).
 type DocumentIndexBackend interface {
 	IngestPath(ctx context.Context, req documents.IngestRequest, path string) (*documents.Job, error)
 }
@@ -36,9 +37,9 @@ func (t *DocumentIndex) Spec() Spec {
 		Summary: "Index a workspace file into your searchable document knowledge base so document_search can find it.",
 		Description: "Make a file on the filesystem searchable via document_search. Files you produce (a report/" +
 			"spreadsheet/doc under /workspace) or deliver with send_file are NOT searchable on their own — call " +
-			"document_index when the user will need to find, recall, or ask about the file later. It ingests the " +
-			"file into YOUR identity's knowledge base (the same store document_search reads): extract -> chunk -> " +
-			"index. Give an absolute or workspace-relative path INSIDE /workspace. This is for your own local " +
+			"document_index when the user will need to find, recall, or ask about the file later. It registers the " +
+			"file in YOUR identity's document catalog — the same catalog document_search ranks and document_open " +
+			"opens. Give an absolute or workspace-relative path INSIDE /workspace. This is for your own local " +
 			"files; the user's uploaded documents are already indexed automatically. " +
 			"Example: {\"path\":\"artifacts/q3-report.docx\"}.",
 		Parameters: json.RawMessage(`{
@@ -101,10 +102,12 @@ func (t *DocumentIndex) Execute(ctx context.Context, raw json.RawMessage) (ToolR
 	if err != nil {
 		return ToolResult{}, fmt.Errorf("document_index: %w", err)
 	}
+	// No "chunks" field: it reported job.SparseChunks, which ingest hard-wires to 0 now
+	// that a document is one catalog row and not a pile of fragments. A field that is
+	// always zero teaches the model the indexing failed.
 	out, err := json.Marshal(map[string]any{
 		"document_id": job.DocumentID,
 		"file_name":   job.FileName,
-		"chunks":      job.SparseChunks,
 		"status":      job.Status,
 	})
 	if err != nil {

@@ -13,10 +13,10 @@ import (
 // There is no query logic here; the handlers parse, validate, dispatch to the wired
 // GraphView and project to JSON.
 //
-// The GraphView behind them is now schema-only (graph_arcadedb.go): the Cypher compilers
-// that drew the canvas were Neo4j-specific and did not survive the move to ArcadeDB. The
-// validation below is unchanged and still earns its keep — it is the untrusted-input
-// chokepoint for a route that is authenticated but public-facing.
+// The GraphView behind them is schema-only (graph_arcadedb.go): no traversal compiler
+// stands behind /api/graph/query, so it answers every op with the live type catalogue and
+// an empty canvas. The validation below still earns its keep regardless — it is the
+// untrusted-input chokepoint for a route that is authenticated but public-facing.
 //
 // The routes are registered on the agui Server.Mux under the /api/ carve-out; the
 // PARENT-mux mount behind RequireAuth is cmd/aura/serve_webui.go's job (the whole-origin

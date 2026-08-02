@@ -27,7 +27,7 @@ export interface GraphIntent {
   readonly edge_cap?: number;
 }
 
-/** GraphNode mirrors knowledge.GraphNode. id is the Neo4j elementId (de-dupe + edge
+/** GraphNode mirrors agui.GraphNode. id is the store's own record id (de-dupe + edge
  * anchor); entity_type is the POLE+O second color dimension; citations is the derived
  * Document/Source neighbor list (GRAPH-03). */
 export interface GraphNode {

@@ -8,7 +8,7 @@ the PRD won't be merged without a PRD-amendment first.
 ## Prerequisites
 
 - **Go** — the version in [`go.mod`](go.mod) (currently 1.26.x).
-- **Docker** — for the Postgres + Neo4j + embedding-sidecar stack (`compose.yaml`).
+- **Docker** — for the Postgres + ArcadeDB + embedding-sidecar stack (`compose.yaml`).
 - A POSIX shell. **WSL** is the recommended dev environment on Windows — it runs
   the entire gate natively (gcc + make + CGO + the container stack via
   `127.0.0.1`). See `CLAUDE.md` §Quality tooling & gates for the cross-env matrix.
@@ -18,7 +18,7 @@ the PRD won't be merged without a PRD-amendment first.
 ```bash
 make tools         # installs golangci-lint, govulncheck, dupl, lefthook, ...
 lefthook install   # wires the pre-commit / pre-push git hooks
-cp .env.example .env && $EDITOR .env   # set POSTGRES_PASSWORD / NEO4J_PASSWORD
+cp .env.example .env && $EDITOR .env   # set POSTGRES_PASSWORD / ARCADEDB_PASSWORD
 ```
 
 ## The quality gate
@@ -26,9 +26,9 @@ cp .env.example .env && $EDITOR .env   # set POSTGRES_PASSWORD / NEO4J_PASSWORD
 Every change must pass the same gate CI enforces:
 
 ```bash
-make quality        # vet + file-size + lint(+dupl) + deadcode + test-race + vuln + go build  (no containers)
-make neo4j-migrate  # bring the stack up
-make quality-full   # quality + coverage (owned surface >= 85%)
+make quality              # vet + file-size + lint(+dupl) + deadcode + test-race + vuln + go build  (no containers)
+make db-migrate memory-up # bring the stack up (Postgres migrated, ArcadeDB + MCP + embed healthy)
+make quality-full         # quality + coverage (owned surface >= 85%)
 ```
 
 The lefthook hooks run a fast subset automatically: **gofmt/vet/lint/file-size/

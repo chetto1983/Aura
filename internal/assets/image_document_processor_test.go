@@ -68,7 +68,7 @@ func TestImageDocumentProcessor(t *testing.T) {
 	})
 
 	t.Run("both fail -> error", func(t *testing.T) {
-		p := &ImageDocumentProcessor{Vision: cannedProcessor{err: errors.New("vision down")}, Document: cannedProcessor{err: errors.New("neo4j down")}}
+		p := &ImageDocumentProcessor{Vision: cannedProcessor{err: errors.New("vision down")}, Document: cannedProcessor{err: errors.New("index down")}}
 		if _, err := p.ProcessAsset(context.Background(), asset); err == nil {
 			t.Fatal("want error when both vision and index fail")
 		}
