@@ -46,6 +46,11 @@ type Config struct {
 
 // Client issues statements against a single ArcadeDB database.
 type Client struct {
+	// baseURL is the server root. The per-database endpoints below are derived
+	// from it once, but the existence and readiness probes are NOT under
+	// /api/v1/server, so the root has to be kept rather than reconstructed by
+	// trimming a suffix off one of them.
+	baseURL    string
 	queryURL   string
 	commandURL string
 	// serverURL is the database-lifecycle endpoint: create and drop live at the
@@ -103,6 +108,7 @@ func New(cfg Config) (*Client, error) {
 	}
 	credentials := base64.StdEncoding.EncodeToString([]byte(cfg.User + ":" + cfg.Password))
 	return &Client{
+		baseURL:    base,
 		queryURL:   base + "/api/v1/query/" + url.PathEscape(database),
 		commandURL: base + "/api/v1/command/" + url.PathEscape(database),
 		serverURL:  base + "/api/v1/server",
@@ -288,6 +294,86 @@ func (c *Client) DropUser(ctx context.Context, name string) error {
 	return err
 }
 
+// authedGet issues an authenticated GET. Every /api/v1 endpoint is auth-guarded,
+// so the credential travels on the reads too. The caller owns the response body
+// and its own status handling: for the two probes below a non-200 is the ANSWER,
+// not a failure, and a shared helper that folded them together would erase the
+// difference between "refused" and "unreachable".
+func (c *Client) authedGet(ctx context.Context, endpoint string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("arcadedb: build request: %w", err)
+	}
+	req.Header.Set("Authorization", c.authHeader)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("arcadedb: get %s: %w", endpoint, err)
+	}
+	return resp, nil
+}
+
+// DatabaseExists asks the server whether it still holds the named database.
+//
+// GET /api/v1/exists/{database} -> 200 {"result": true|false} (studio api.html,
+// "Check Database Exists"). This is the POSTCONDITION of a purge: DropDatabase
+// returns no rows, so the only proof that the data is gone is the server saying
+// the container is gone. It is a strictly stronger statement than counting the
+// nodes a delete was supposed to reach — there is nothing left to count.
+func (c *Client) DatabaseExists(ctx context.Context, name string) (bool, error) {
+	if strings.TrimSpace(name) == "" {
+		return false, fmt.Errorf("arcadedb: database name must be non-empty")
+	}
+	resp, err := c.authedGet(ctx, c.baseURL+"/api/v1/exists/"+url.PathEscape(name))
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return false, decodeServerError(resp)
+	}
+	var decoded struct {
+		Result *bool `json:"result"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+		return false, fmt.Errorf("arcadedb: decode exists response: %w", err)
+	}
+	if decoded.Result == nil {
+		// A body with no `result` is not "it is gone" — it is an answer we cannot
+		// read, and an erasure proof must not accept one.
+		return false, fmt.Errorf("arcadedb: exists response for %q carries no result", name)
+	}
+	return *decoded.Result, nil
+}
+
+// CredentialAccepted reports whether the server still accepts THIS client's
+// credential.
+//
+// ArcadeDB publishes no list-users endpoint, so a negative bind is the only way
+// to prove `drop user` took. GET /api/v1/ready is the probe ArcadeDB's own
+// user-management tests use for exactly this: an auth-guarded GET that answers
+// 200 when the credential is accepted and 401 when it is not
+// (docs/superpowers/plans/2026-04-10-ha-raft-drop-database-propagation-impl.md,
+// "Task 22").
+//
+// The (bool, error) split is load-bearing: false means REFUSED, an error means
+// the answer is unknown. Collapsing them would read a server that is merely down
+// as a successful purge.
+func (c *Client) CredentialAccepted(ctx context.Context) (bool, error) {
+	resp, err := c.authedGet(ctx, c.baseURL+"/api/v1/ready")
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return true, nil
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return false, nil
+	default:
+		return false, decodeServerError(resp)
+	}
+}
+
 // minSecureVersion is the first ArcadeDB release that authorizes a database
 // created at runtime.
 //
@@ -305,14 +391,9 @@ var minSecureVersion = [3]int{26, 4, 2}
 
 // ServerVersion reports the running server's version string.
 func (c *Client) ServerVersion(ctx context.Context) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.serverURL+"?mode=basic", nil)
+	resp, err := c.authedGet(ctx, c.serverURL+"?mode=basic")
 	if err != nil {
 		return "", err
-	}
-	req.Header.Set("Authorization", c.authHeader)
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("arcadedb: server version: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {

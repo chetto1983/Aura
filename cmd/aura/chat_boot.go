@@ -557,13 +557,12 @@ func assembleChatEnvWithOptions(
 	run := runner.New(deps)
 	// Fail-soft, like every other sidecar dependency at boot (MCP mounts, the embed
 	// probe above): the projector drains an outbox, and its own worker already tolerates
-	// a graph that is unreachable at runtime. Making the OPEN fatal made `aura serve`
-	// refuse to boot on any host without mcp-neo4j-cypher on PATH — a Python sidecar the
-	// appliance does not require. Events stay in the outbox and project once a boot finds
-	// the graph reachable.
+	// a graph that is unreachable at runtime. Making this fatal would let an unconfigured
+	// or unreachable memory server stop `aura serve` from booting at all. Events stay in
+	// the outbox and project once a boot finds the graph reachable.
 	adaptiveProjector, err := buildAdaptiveProjectorRuntime(
 		ctx,
-		&cfg.Neo4j,
+		&cfg.ArcadeDB,
 		pool,
 		openAdaptiveGraph,
 	)

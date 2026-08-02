@@ -74,15 +74,25 @@ type AdaptiveIdentityFencer interface {
 }
 
 // AdaptiveGraphPurger removes only Aura's private adaptive-learning projection from the
-// shared Neo4j deployment. It is deliberately separate from GraphPurger: the adaptive
-// projector reuses agent-memory's :User ownership anchor, but must not delete that shared
-// node or any memory data.
+// SHARED graph database. It is deliberately separate from MemoryPurger: the projection is
+// scoped by an owner_id property inside one shared database, not by a database of its own,
+// so dropping an identity's memory database does not reach it.
 type AdaptiveGraphPurger interface {
 	PurgeAdaptiveGraph(ctx context.Context, identityID string) error
 }
 
+// MemoryPurger erases the identity's long-term memory, which is one ArcadeDB database and
+// one server user (internal/arcadedb/tenant.go). Idempotent: it asserts the postcondition
+// (the database is gone, the credential is refused) rather than the drop's exit code, so a
+// re-run over an already-purged identity converges instead of failing forever.
+type MemoryPurger interface {
+	PurgeMemory(ctx context.Context, identityID string) error
+}
+
 // GraphPurger removes the identity's Neo4j plane: its :Document nodes + :User-[:HAS_DOCUMENT]
-// edges and its memory subgraph node/edges (D-27). Idempotent.
+// edges, plus the memory subgraph written there BEFORE memory moved to ArcadeDB — residue
+// that still belongs to identities provisioned back then and would otherwise outlive them.
+// Idempotent.
 type GraphPurger interface {
 	PurgeGraph(ctx context.Context, identityID string) error
 }
@@ -112,6 +122,7 @@ type DeprovisionDeps struct {
 	Conversations  ConversationPurger
 	AdaptiveFence  AdaptiveIdentityFencer
 	AdaptiveGraph  AdaptiveGraphPurger
+	Memory         MemoryPurger
 	Graph          GraphPurger
 	ObjectStore    ObjectStoreProvisioner
 	Filesystem     FilesystemProvisioner
@@ -179,6 +190,11 @@ func (d *Deprovisioner) Purge(ctx context.Context, target DeprovisionTarget) err
 		switch {
 		case d.deps.Conversations == nil:
 			return fmt.Errorf("deprovision preflight: conversation purger is required before identity deletion")
+		// An unwired memory purger is worse than a failing one: deleting the identity row
+		// cascades the whole Postgres catalog, and the ArcadeDB database that outlives it
+		// has no owner row left to find it by. Nothing would ever sweep it.
+		case d.deps.Memory == nil:
+			return fmt.Errorf("deprovision preflight: memory purger is required before identity deletion")
 		case d.deps.Graph == nil:
 			return fmt.Errorf("deprovision preflight: memory graph purger is required before identity deletion")
 		}
@@ -202,6 +218,13 @@ func (d *Deprovisioner) Purge(ctx context.Context, target DeprovisionTarget) err
 	if d.deps.AdaptiveGraph != nil {
 		if err := run.step(ctx, sagaStepAdaptiveGraph, func(ctx context.Context) error {
 			return d.deps.AdaptiveGraph.PurgeAdaptiveGraph(ctx, target.IdentityID)
+		}); err != nil {
+			return err
+		}
+	}
+	if d.deps.Memory != nil {
+		if err := run.step(ctx, sagaStepMemory, func(ctx context.Context) error {
+			return d.deps.Memory.PurgeMemory(ctx, target.IdentityID)
 		}); err != nil {
 			return err
 		}

@@ -1,6 +1,6 @@
 package main
 
-// `aura memory <verb>` is the operator path into the managed agent-memory sidecar.
+// `aura memory <verb>` is the operator path into the managed memory sidecar.
 // It opens the sidecar over streamable-HTTP and calls the RAW `memory_*` MCP tools
 // directly, bypassing the agent loop. This is the deliberate, explicit write +
 // pull-on-demand recall surface (D-01/D-02/D-03): writes happen only when an operator
@@ -14,10 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"os"
-	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -29,13 +26,18 @@ import (
 
 const memoryServerName = "memory"
 
-const memoryUsage = "usage: aura memory {search <query>|context <query>|sessions|conversation <session-id>|" +
-	"add-entity <name> [type] [description]|add-fact <subject> <predicate> <object>|" +
-	"add-preference <category> <preference> [--about <entity>[,<entity>]]|" +
-	"store-message <session-id> <role> <content>|" +
-	"get-entity <name>|facts <subject>|facts --like <text>|relationship <from> <type> <to>|" +
-	"update <preference|fact|entity> <node-id> <field>=<value>...|" +
-	"forget <preference|fact|entity> <node-id>}"
+// memoryUsage mirrors the memory server's ACTUAL tool surface, one verb per tool.
+// It used to carry thirteen verbs, eleven of which named tools the ArcadeDB memory
+// does not implement — a debug surface that could only fail. The three that went
+// without a replacement (store-message, conversation, sessions) belonged to the
+// previous sidecar's own conversation store; Aura keeps conversations in Postgres
+// and always did, which is why they were hidden from the model to begin with.
+const memoryUsage = "usage: aura memory {search <query> [--as-of <RFC3339>]|" +
+	"facts <entity> [predicate] [--as-of <RFC3339>]|entities|digest|" +
+	"remember <subject> <predicate> <object> <statement> [--supersedes]|" +
+	"merge <duplicate> <survivor>|" +
+	"forget [--entity <name>] [--subject <s> --predicate <p> --object <o>] [--run <id>] [--apply]|" +
+	"schema}"
 
 func runMemory(args []string) {
 	ctx, err := withOperatorIdentity(cliInvocationContext)
@@ -87,10 +89,13 @@ func runMemoryCommand(ctx context.Context, args []string, out io.Writer) error {
 }
 
 // memoryVerbToTool maps an `aura memory <verb>` to its RAW `memory_*` wire tool name
-// plus the call arguments built from the CLI positional args. Fact reads go through
-// `memory_search` / `memory_get_facts`; arbitrary Cypher is NOT exposed here — the
-// unscoped `graph_query` tool was removed (data-exfiltration surface), and the operator
-// runs raw Cypher through `aura neo4j cypher read/write` instead.
+// plus the call arguments built from the CLI positional args. It is ONE VERB PER TOOL
+// on purpose: a verb with no tool behind it is a debug surface that can only fail, and
+// this file carried eleven of them.
+//
+// Arbitrary Cypher is deliberately NOT exposed — the unscoped `graph_query` tool was
+// removed as a data-exfiltration surface, and `graph_schema` covers the legitimate
+// "what types exist" need without it.
 func memoryVerbToTool(verb string, args []string) (string, map[string]any, error) {
 	switch verb {
 	case "search":
@@ -98,237 +103,113 @@ func memoryVerbToTool(verb string, args []string) (string, map[string]any, error
 		if err != nil {
 			return "", nil, err
 		}
-		return "memory_search", map[string]any{"query": q}, nil
-	case "context":
-		q, err := arg(args, 0, "context", "<query>")
-		if err != nil {
-			return "", nil, err
+		call := map[string]any{"query": q}
+		if asOf := takeFlag(&args, "--as-of"); asOf != "" {
+			call["as_of"] = asOf
 		}
-		return "memory_get_context", map[string]any{"query": q}, nil
-	case "sessions":
-		return "memory_list_sessions", map[string]any{}, nil
-	case "conversation":
-		sid, err := arg(args, 0, "conversation", "<session-id>")
-		if err != nil {
-			return "", nil, err
-		}
-		return "memory_get_conversation", map[string]any{"session_id": sid}, nil
-	case "add-entity":
-		return memoryAddEntityArgs(args)
-	case "add-fact":
-		return memoryAddFactArgs(args)
-	case "add-preference":
-		return memoryAddPreferenceArgs(args)
-	case "store-message":
-		return memoryStoreMessageArgs(args)
-	case "get-entity":
-		name, err := arg(args, 0, "get-entity", "<name>")
-		if err != nil {
-			return "", nil, err
-		}
-		return "memory_get_entity", map[string]any{"name": name}, nil
+		return "memory_search", call, nil
 	case "facts":
-		return memoryFactsArgs(args)
-	case "relationship":
-		return memoryRelationshipArgs(args)
-	case "update":
-		return memoryUpdateArgs(args)
+		entity, err := arg(args, 0, "facts", "<entity> [predicate]")
+		if err != nil {
+			return "", nil, err
+		}
+		call := map[string]any{"entity": entity}
+		if asOf := takeFlag(&args, "--as-of"); asOf != "" {
+			call["as_of"] = asOf
+		}
+		if predicate := argOr(args, 1); predicate != "" {
+			call["predicate"] = predicate
+		}
+		return "memory_facts_about", call, nil
+	case "entities":
+		return "memory_entities", map[string]any{}, nil
+	case "digest":
+		return "memory_digest", map[string]any{}, nil
+	case "remember":
+		return memoryRememberArgs(args)
+	case "merge":
+		return memoryMergeArgs(args)
 	case "forget":
 		return memoryForgetArgs(args)
+	case "schema":
+		return "graph_schema", map[string]any{}, nil
 	default:
 		return "", nil, fmt.Errorf("unknown memory verb %q\n%s", verb, memoryUsage)
 	}
 }
 
-func memoryAddEntityArgs(args []string) (string, map[string]any, error) {
-	name, err := arg(args, 0, "add-entity", "<name> [type] [description]")
-	if err != nil {
-		return "", nil, err
+// memoryRememberArgs builds the one write the surface has. The statement is a
+// separate argument rather than derived from the triple because it is what gets
+// indexed and searched, and a restated triple retrieves badly.
+func memoryRememberArgs(args []string) (string, map[string]any, error) {
+	supersedes := takeBoolFlag(&args, "--supersedes")
+	if len(args) < 4 {
+		return "", nil, fmt.Errorf(
+			"memory remember requires <subject> <predicate> <object> <statement> [--supersedes]")
 	}
-	call := map[string]any{"name": name}
-	if t := argOr(args, 1); t != "" {
-		call["entity_type"] = t
-	}
-	if d := strings.Join(args[min(len(args), 2):], " "); d != "" {
-		call["description"] = d
-	}
-	return "memory_add_entity", call, nil
-}
-
-func memoryAddFactArgs(args []string) (string, map[string]any, error) {
-	if len(args) < 3 {
-		return "", nil, fmt.Errorf("memory add-fact requires <subject> <predicate> <object>")
-	}
-	return "memory_add_fact", map[string]any{
-		"subject":      args[0],
-		"predicate":    args[1],
-		"object_value": strings.Join(args[2:], " "),
+	return "memory_upsert_fact", map[string]any{
+		"subject":    args[0],
+		"predicate":  args[1],
+		"object":     args[2],
+		"statement":  strings.Join(args[3:], " "),
+		"supersedes": supersedes,
 	}, nil
 }
 
-func memoryAddPreferenceArgs(args []string) (string, map[string]any, error) {
-	positional, about, err := takeAboutFlag(args)
-	if err != nil {
-		return "", nil, err
-	}
-	if len(positional) < 2 {
-		return "", nil, fmt.Errorf(
-			"memory add-preference requires <category> <preference> [--about <entity>[,<entity>]]")
-	}
-	call := map[string]any{
-		"category":   positional[0],
-		"preference": strings.Join(positional[1:], " "),
-	}
-	if len(about) > 0 {
-		call["applies_to"] = about
-	}
-	return "memory_add_preference", call, nil
-}
-
-// takeAboutFlag pulls `--about a,b` out of the positional args. applies_to is what links
-// a preference to the entities it is ABOUT; without it the preference dangles off the
-// user node and recall can only reach it by wording, never by structure. Every other verb
-// here is positional-only, so this stays a single recognised flag rather than a parser.
-func takeAboutFlag(args []string) (positional []string, about []string, err error) {
-	for i, a := range args {
-		if a != "--about" {
-			continue
-		}
-		if i+1 >= len(args) {
-			return nil, nil, fmt.Errorf("memory add-preference: --about requires <entity>[,<entity>]")
-		}
-		names := splitCommaList(args[i+1])
-		if len(names) == 0 {
-			return nil, nil, fmt.Errorf("memory add-preference: --about requires at least one entity name")
-		}
-		return append(append([]string{}, args[:i]...), args[i+2:]...), names, nil
-	}
-	return args, nil, nil
-}
-
-// memoryFactsArgs maps `facts` to memory_get_facts. Facts are the one memory kind
-// `memory_search` does not cover — its default memory_types are messages, entities and
-// preferences — so without both forms here a stored fact is only reachable by guessing
-// its subject exactly.
-func memoryFactsArgs(args []string) (string, map[string]any, error) {
-	if len(args) > 0 && args[0] == "--like" {
-		text := strings.Join(args[1:], " ")
-		if strings.TrimSpace(text) == "" {
-			return "", nil, fmt.Errorf("memory facts --like requires <text>")
-		}
-		return "memory_get_facts", map[string]any{"query": text}, nil
-	}
-	subject := strings.Join(args, " ")
-	if strings.TrimSpace(subject) == "" {
-		return "", nil, fmt.Errorf("memory facts requires <subject> (or --like <text>)")
-	}
-	return "memory_get_facts", map[string]any{"subject": subject}, nil
-}
-
-func memoryStoreMessageArgs(args []string) (string, map[string]any, error) {
-	if len(args) < 3 {
-		return "", nil, fmt.Errorf("memory store-message requires <session-id> <role> <content>")
-	}
-	return "memory_store_message", map[string]any{
-		"session_id": args[0],
-		"role":       args[1],
-		"content":    strings.Join(args[2:], " "),
-	}, nil
-}
-
-func memoryRelationshipArgs(args []string) (string, map[string]any, error) {
-	if len(args) < 3 {
-		return "", nil, fmt.Errorf("memory relationship requires <from> <type> <to>")
-	}
-	return "memory_create_relationship", map[string]any{
-		"source_name":       args[0],
-		"relationship_type": args[1],
-		"target_name":       args[2],
-	}, nil
-}
-
-// memoryUpdateFields lists, per node type, the fields memory_update accepts and how to
-// parse them. The whitelist is enforced here because the tool uses only the fields that
-// apply to the node type and silently drops the rest: `update fact <id> name=x` would
-// otherwise report a successful update that changed nothing.
-var memoryUpdateFields = map[string]map[string]string{
-	"entity":     {"name": "text", "description": "text", "subtype": "text", "aliases": "list"},
-	"preference": {"preference": "text", "category": "text", "context": "text", "confidence": "number"},
-	"fact":       {"subject": "text", "predicate": "text", "object_value": "text", "confidence": "number"},
-}
-
-// memoryUpdateArgs maps `update` to memory_update — the correction verb. The add_* tools
-// resolve and deduplicate onto the closest existing node WITHOUT rewriting its text, so
-// re-adding can never fix a wrong name or wording; forget-and-re-add loses the node's id
-// and its relationships. This edits by id instead, and refreshes the node's embedding so
-// the vector index stops answering under the old wording.
-func memoryUpdateArgs(args []string) (string, map[string]any, error) {
-	if len(args) < 3 {
-		return "", nil, fmt.Errorf(
-			"memory update requires <preference|fact|entity> <node-id> <field>=<value> [<field>=<value>...]")
-	}
-	nodeType := strings.ToLower(args[0])
-	fields, ok := memoryUpdateFields[nodeType]
-	if !ok {
-		return "", nil, fmt.Errorf(
-			"memory update: unknown node type %q; use preference, fact or entity", args[0])
-	}
-	call := map[string]any{"node_type": nodeType, "node_id": args[1]}
-	for _, assignment := range args[2:] {
-		name, value, found := strings.Cut(assignment, "=")
-		if !found {
-			return "", nil, fmt.Errorf("memory update: %q is not <field>=<value>", assignment)
-		}
-		kind, ok := fields[name]
-		if !ok {
-			return "", nil, fmt.Errorf("memory update: a %s has no field %q; it accepts %s",
-				nodeType, name, strings.Join(slices.Sorted(maps.Keys(fields)), ", "))
-		}
-		parsed, err := parseMemoryField(kind, name, value)
-		if err != nil {
-			return "", nil, err
-		}
-		call[name] = parsed
-	}
-	return "memory_update", call, nil
-}
-
-func parseMemoryField(kind, name, value string) (any, error) {
-	switch kind {
-	case "list":
-		return splitCommaList(value), nil
-	case "number":
-		number, err := strconv.ParseFloat(value, 64)
-		if err != nil {
-			return nil, fmt.Errorf("memory update: %s must be a number, got %q", name, value)
-		}
-		return number, nil
-	default:
-		return value, nil
-	}
-}
-
-func splitCommaList(value string) []string {
-	var items []string
-	for item := range strings.SplitSeq(value, ",") {
-		if trimmed := strings.TrimSpace(item); trimmed != "" {
-			items = append(items, trimmed)
-		}
-	}
-	return items
-}
-
-// memoryForgetArgs maps the `forget` subverb to the memory_forget MCP tool: delete a
-// preference or fact the caller owns, by id. Ownership is enforced server-side (a node
-// the caller does not own is refused, not silently ignored).
-func memoryForgetArgs(args []string) (string, map[string]any, error) {
+func memoryMergeArgs(args []string) (string, map[string]any, error) {
 	if len(args) < 2 {
-		return "", nil, fmt.Errorf("memory forget requires <preference|fact|entity> <node-id>")
+		return "", nil, fmt.Errorf("memory merge requires <duplicate> <survivor>")
 	}
-	return "memory_forget", map[string]any{
-		"node_type": args[0],
-		"node_id":   args[1],
+	return "memory_merge_entities", map[string]any{
+		"source": args[0],
+		"target": args[1],
 	}, nil
+}
+
+// memoryForgetArgs defaults to a DRY RUN. Forgetting is the one irreversible act
+// on this surface — an upsert supersedes and a merge moves facts, but forget
+// destroys — so the operator opts IN to it with --apply.
+func memoryForgetArgs(args []string) (string, map[string]any, error) {
+	apply := takeBoolFlag(&args, "--apply")
+	call := map[string]any{"dry_run": !apply}
+	for _, spec := range []struct{ flag, key string }{
+		{"--entity", "entity"},
+		{"--subject", "subject"},
+		{"--predicate", "predicate"},
+		{"--object", "object"},
+		{"--run", "source_run_id"},
+	} {
+		if v := takeFlag(&args, spec.flag); v != "" {
+			call[spec.key] = v
+		}
+	}
+	if len(call) == 1 {
+		return "", nil, fmt.Errorf(
+			"memory forget needs something to match: --entity, a --subject/--predicate/--object triple, or --run")
+	}
+	return "memory_forget", call, nil
+}
+
+// takeFlag removes "--name value" from args and returns the value.
+func takeFlag(args *[]string, name string) string {
+	for i, a := range *args {
+		if a == name && i+1 < len(*args) {
+			value := (*args)[i+1]
+			*args = append((*args)[:i], (*args)[i+2:]...)
+			return value
+		}
+	}
+	return ""
+}
+
+func takeBoolFlag(args *[]string, name string) bool {
+	for i, a := range *args {
+		if a == name {
+			*args = append((*args)[:i], (*args)[i+1:]...)
+			return true
+		}
+	}
+	return false
 }
 
 // callMemoryTool resolves the managed memory sidecar, opens it over streamable-HTTP,

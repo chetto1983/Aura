@@ -12,7 +12,6 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/cron/handlers"
-	"github.com/chetto1983/aura/internal/knowledge"
 )
 
 // validProvisioningAuthulaSecret is a 64-hex-char (32-byte) AURA_AUTHULA_SECRET for the
@@ -107,20 +106,6 @@ func TestBuildDeprovisionerWiresPurger(t *testing.T) {
 	}
 }
 
-type fakeAdaptiveGraphClient struct {
-	writer adaptive.GraphWriter
-	closed bool
-}
-
-func (f *fakeAdaptiveGraphClient) Write(ctx context.Context, query string, params map[string]any) ([]map[string]any, error) {
-	return f.writer.Write(ctx, query, params)
-}
-
-func (f *fakeAdaptiveGraphClient) Close() error {
-	f.closed = true
-	return nil
-}
-
 type adaptivePurgeWriter struct {
 	queries []string
 	err     error
@@ -131,13 +116,16 @@ func (w *adaptivePurgeWriter) Write(_ context.Context, query string, _ map[strin
 	return nil, w.err
 }
 
-func TestAdaptiveGraphPurgeAdapterFailsClosedAndClosesClient(t *testing.T) {
+// The adaptive purge no longer closes anything — the ArcadeDB writer that replaced
+// the Bolt-over-MCP client holds no subprocess — so the surviving contract is that
+// it writes exactly one owner-scoped delete and fails closed when the graph is
+// unreachable.
+func TestAdaptiveGraphPurgeAdapterFailsClosedOnAnUnreachableGraph(t *testing.T) {
 	writer := &adaptivePurgeWriter{}
-	client := &fakeAdaptiveGraphClient{writer: writer}
 	adapter := adaptiveGraphPurgeAdapter{
-		cfg: &knowledge.Config{BoltURL: "bolt://neo4j:7687"},
-		open: func(context.Context, *knowledge.Config) (adaptiveGraphClient, error) {
-			return client, nil
+		cfg: &config.ArcadeDBConfig{BaseURL: "http://arcadedb:2480", Database: "aura_memory"},
+		open: func(context.Context, *config.ArcadeDBConfig) (adaptive.GraphWriter, error) {
+			return writer, nil
 		},
 	}
 
@@ -147,16 +135,38 @@ func TestAdaptiveGraphPurgeAdapterFailsClosedAndClosesClient(t *testing.T) {
 	if len(writer.queries) != 1 {
 		t.Fatalf("graph writes = %d, want 1", len(writer.queries))
 	}
-	if !client.closed {
-		t.Fatal("adaptive graph client was not closed")
-	}
 
-	openErr := errors.New("neo4j unavailable")
-	adapter.open = func(context.Context, *knowledge.Config) (adaptiveGraphClient, error) {
+	openErr := errors.New("arcadedb unavailable")
+	adapter.open = func(context.Context, *config.ArcadeDBConfig) (adaptive.GraphWriter, error) {
 		return nil, openErr
 	}
 	if err := adapter.PurgeAdaptiveGraph(context.Background(), testAdaptiveIdentityID); !errors.Is(err, openErr) {
 		t.Fatalf("unavailable graph error = %v, want wrapped %v", err, openErr)
+	}
+
+	// An unconfigured adapter must refuse rather than report a purge it never ran.
+	if err := (adaptiveGraphPurgeAdapter{}).PurgeAdaptiveGraph(context.Background(), testAdaptiveIdentityID); err == nil {
+		t.Fatal("an unconfigured adaptive graph purge reported success")
+	}
+}
+
+// openAdaptiveGraphClient is the production seam: it must validate rather than
+// hand back a client that fails on the first projected event.
+func TestOpenAdaptiveGraphClientValidatesItsConfig(t *testing.T) {
+	if _, err := openAdaptiveGraphClient(context.Background(), nil); err == nil {
+		t.Fatal("a nil config produced a graph client")
+	}
+	if _, err := openAdaptiveGraphClient(context.Background(), &config.ArcadeDBConfig{Database: "aura_memory", User: "u"}); err == nil {
+		t.Fatal("an empty base URL produced a graph client")
+	}
+	writer, err := openAdaptiveGraphClient(context.Background(), &config.ArcadeDBConfig{
+		BaseURL: "http://arcadedb:2480", Database: "aura_memory", User: "aura_memory", Password: "pw",
+	})
+	if err != nil {
+		t.Fatalf("openAdaptiveGraphClient: %v", err)
+	}
+	if writer == nil {
+		t.Fatal("a valid config produced no writer")
 	}
 }
 

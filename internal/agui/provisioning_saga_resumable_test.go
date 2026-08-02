@@ -350,6 +350,7 @@ func TestProvisioningSagaResumable(t *testing.T) {
 			AuthulaDelete:  au,
 			Conversations:  &fakeConvPurger{},
 			Graph:          &fakeGraphPurger{},
+			Memory:         &fakeMemoryPurger{},
 		})
 		target := DeprovisionTarget{IdentityID: id, IdentityName: name, AuthulaUserID: user.ID}
 		if err := dep.Purge(ctx, target); err != nil {

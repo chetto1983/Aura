@@ -11,13 +11,11 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/chetto1983/aura/internal/adaptive"
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/idroot"
-	"github.com/chetto1983/aura/internal/knowledge"
 	"github.com/chetto1983/aura/internal/mcp"
 	"github.com/chetto1983/aura/internal/objectstore"
 	"github.com/chetto1983/aura/internal/objectstore/garageadmin"
@@ -55,14 +53,14 @@ var (
 	_ agui.SagaJournal            = sagaJournalAdapter{}
 	_ agui.IdentityDeactivator    = identityDeactivatorAdapter{}
 	_ agui.IdentityDeleter        = auraLegAdapter{}
-	_ agui.AdaptiveIdentityFencer = adaptiveIdentityFenceAdapter{}
-	_ agui.AdaptiveGraphPurger    = adaptiveGraphPurgeAdapter{}
 )
 
 // objectStoreProvisionAdapter, its objectStoreCredentialResolver/objectStoreMinter seams, and
 // EnsureForIdentity/ProvisionObjectStore/DeprovisionObjectStore live in
 // serve_provisioning_objectstore.go (refactor-on-touch split, Amendment #88 Task 3, to keep
-// this file under the 600-LOC cap).
+// this file under the 600-LOC cap). The adaptive-plane adapters
+// (adaptiveIdentityFenceAdapter, adaptiveGraphPurgeAdapter) live in
+// serve_provisioning_adaptive.go for the same reason.
 
 // filesystemProvisionAdapter satisfies agui.FilesystemProvisioner over the REAL per-user
 // config bases (~/.aura/mcp, $AURA_SKILLS_DIR, ~/.aura/pyscripts, ~/.aura/agents), each
@@ -249,62 +247,6 @@ func (a identityDeactivatorAdapter) ResolveTarget(ctx context.Context, identityI
 	return t, nil
 }
 
-type adaptiveGraphClient interface {
-	adaptive.GraphWriter
-	Close() error
-}
-
-type adaptiveIdentityFenceAdapter struct {
-	pool *pgxpool.Pool
-}
-
-func (a adaptiveIdentityFenceAdapter) FenceAdaptiveIdentity(ctx context.Context, identityID string) error {
-	if a.pool == nil {
-		return fmt.Errorf("adaptive identity fence is not configured")
-	}
-	var fenced bool
-	err := a.pool.QueryRow(ctx,
-		`SELECT aura.fence_adaptive_identity($1::uuid)`,
-		identityID,
-	).Scan(&fenced)
-	if err != nil {
-		return fmt.Errorf("fence adaptive identity %q: %w", identityID, err)
-	}
-	if !fenced {
-		return fmt.Errorf("fence adaptive identity %q: identity not found", identityID)
-	}
-	return nil
-}
-
-// adaptiveGraphPurgeAdapter opens a short-lived graph client for the infrequent
-// grace-window purge. Opening at execution time makes Neo4j failure fail closed:
-// the journal records adaptive_graph failed and the later identity-row step is
-// not run, so the next sweep retries rather than orphaning private learning data.
-type adaptiveGraphPurgeAdapter struct {
-	cfg  *knowledge.Config
-	open func(context.Context, *knowledge.Config) (adaptiveGraphClient, error)
-}
-
-func openAdaptiveGraphClient(ctx context.Context, cfg *knowledge.Config) (adaptiveGraphClient, error) {
-	return knowledge.Open(ctx, cfg)
-}
-
-func (a adaptiveGraphPurgeAdapter) PurgeAdaptiveGraph(ctx context.Context, identityID string) error {
-	if a.cfg == nil {
-		return fmt.Errorf("adaptive graph purge is not configured")
-	}
-	open := a.open
-	if open == nil {
-		open = openAdaptiveGraphClient
-	}
-	client, err := open(ctx, a.cfg)
-	if err != nil {
-		return fmt.Errorf("open adaptive graph purge client: %w", err)
-	}
-	defer func() { _ = client.Close() }()
-	return adaptive.NewGraphStore(client).PurgeAdaptiveGraph(ctx, identityID)
-}
-
 // buildProvisioningPorts assembles the three onboarding resource-leg ports. It returns NIL
 // adapters when the pool OR the Garage admin config (endpoint+token) is absent, so an
 // interview-only / pre-cutover deploy provisions nothing (each agui port nil-skips its leg).
@@ -339,13 +281,20 @@ func buildProvisioningPorts(chat *chatEnv) (agui.ObjectStoreProvisioner, agui.Fi
 
 // buildDeprovisioner assembles the D-27 de-provisioning saga over the chat-reachable ports.
 // A nil pool yields an empty Deprovisioner whose PurgeExpired is a safe no-op (nil
-// Deactivator). AdaptiveGraph is wired independently because Aura owns those private
-// labels and can delete them without touching agent-memory's shared :User. The owned
-// Postgres conversation plane and Agent Memory graph plane are mandatory: deprovision
-// refuses identity deletion unless both adapters acknowledge a verified purge.
+// Deactivator). AdaptiveGraph is wired independently of Memory because the adaptive
+// projection is owner-scoped inside the SHARED database, so dropping the identity's own
+// memory database does not reach it. The owned Postgres conversation plane, the ArcadeDB
+// memory plane and the Neo4j document plane are all mandatory: deprovision refuses identity
+// deletion unless each adapter acknowledges a verified purge.
 // AuthulaDelete/Sessions/Jobs remain separate lifecycle work because those providers are
-// assembled after this seam. The identity FK cascade still drops grants, auth links, and
-// object-store ownership.
+// assembled after this seam. The identity FK cascade still drops grants, auth links,
+// object-store ownership, and the whole document catalog (aura.documents.identity_id is
+// ON DELETE CASCADE, migration 0025) — which is why no document leg is wired here.
+//
+// One landmine in that cascade: aura.audit_logs.actor_identity_id is ON DELETE RESTRICT
+// (0025:183). It is dormant only because nothing outside tests writes that table; the first
+// writer added turns every de-provision into a failed identity_row step, AFTER the memory
+// database has already been dropped.
 func buildDeprovisioner(chat *chatEnv) *agui.Deprovisioner {
 	if chat == nil || chat.pool == nil || chat.cfg == nil {
 		return agui.NewDeprovisioner(agui.DeprovisionDeps{})
@@ -363,7 +312,8 @@ func buildDeprovisioner(chat *chatEnv) *agui.Deprovisioner {
 		Deactivator:    identityDeactivatorAdapter{pool: chat.pool},
 		Conversations:  conversationPurgeAdapter{store: convStore},
 		AdaptiveFence:  adaptiveIdentityFenceAdapter{pool: chat.pool},
-		AdaptiveGraph:  adaptiveGraphPurgeAdapter{cfg: &chat.cfg.Neo4j},
+		AdaptiveGraph:  adaptiveGraphPurgeAdapter{cfg: &chat.cfg.ArcadeDB},
+		Memory:         buildArcadeMemoryPurger(chat.cfg),
 		Graph:          memoryGraphPurgeAdapter{cfg: &chat.cfg.Neo4j},
 		ObjectStore:    objProv,
 		Filesystem:     fsProv,

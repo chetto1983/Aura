@@ -101,7 +101,7 @@ func run(logger *slog.Logger) error {
 		logger.Info("no admin credential; databases must be pre-provisioned")
 		admin = nil
 	}
-	credentials, cerr := newTenantCredentials()
+	credentials, cerr := arcadedb.NewTenantCredentials()
 	if cerr != nil {
 		// Fail CLOSED at boot. Falling back to one shared credential would leave
 		// every identity reading the same memory, which is the failure this whole

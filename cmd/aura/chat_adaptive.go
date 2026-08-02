@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/chetto1983/aura/internal/adaptive"
-	"github.com/chetto1983/aura/internal/knowledge"
+	"github.com/chetto1983/aura/internal/config"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -22,43 +22,38 @@ type adaptiveProjectorLifecycle interface {
 	Stop(context.Context) error
 }
 
-type adaptiveGraphClientOpener func(
-	context.Context,
-	*knowledge.Config,
-) (adaptiveGraphClient, error)
-
+// adaptiveProjectorRuntime owns the projector worker's lifecycle, and nothing
+// else. It used to also own the graph client, because the Bolt-over-MCP client
+// held a subprocess that had to be closed in order after the worker stopped. The
+// ArcadeDB writer that replaced it is a stateless HTTP client, so there is no
+// second resource and no ordering left to get wrong.
 type adaptiveProjectorRuntime struct {
 	worker adaptiveProjectorLifecycle
-	client adaptiveGraphClient
 }
 
 func startAdaptiveProjectorRuntime(
 	ctx context.Context,
 	worker adaptiveProjectorLifecycle,
-	client adaptiveGraphClient,
 ) (*adaptiveProjectorRuntime, error) {
-	if worker == nil || client == nil {
+	if worker == nil {
 		return nil, errors.New("adaptive projector runtime is not configured")
 	}
 	if err := worker.Start(ctx); err != nil {
-		return nil, errors.Join(err, client.Close())
+		return nil, err
 	}
-	return &adaptiveProjectorRuntime{worker: worker, client: client}, nil
+	return &adaptiveProjectorRuntime{worker: worker}, nil
 }
 
 func (r *adaptiveProjectorRuntime) Stop(ctx context.Context) error {
 	if r == nil {
 		return nil
 	}
-	if err := r.worker.Stop(ctx); err != nil {
-		return err
-	}
-	return r.client.Close()
+	return r.worker.Stop(ctx)
 }
 
 func buildAdaptiveProjectorRuntime(
 	ctx context.Context,
-	cfg *knowledge.Config,
+	cfg *config.ArcadeDBConfig,
 	pool *pgxpool.Pool,
 	open adaptiveGraphClientOpener,
 ) (*adaptiveProjectorRuntime, error) {
@@ -68,20 +63,20 @@ func buildAdaptiveProjectorRuntime(
 	if open == nil {
 		open = openAdaptiveGraphClient
 	}
-	client, err := open(ctx, cfg)
+	writer, err := open(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("open adaptive projector graph client: %w", err)
 	}
 	projector := adaptive.NewProjector(
 		adaptive.NewStore(pool, adaptive.StoreConfig{}),
-		adaptive.NewGraphStore(client),
+		adaptive.NewGraphStore(writer),
 		adaptive.ProjectorConfig{WorkerID: newAdaptiveProjectorWorkerID()},
 	)
 	worker := adaptive.NewProjectorWorker(
 		projector,
 		adaptive.ProjectorWorkerConfig{},
 	)
-	runtime, err := startAdaptiveProjectorRuntime(ctx, worker, client)
+	runtime, err := startAdaptiveProjectorRuntime(ctx, worker)
 	if err != nil {
 		return nil, fmt.Errorf("start adaptive projector: %w", err)
 	}

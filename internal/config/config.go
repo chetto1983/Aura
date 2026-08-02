@@ -29,6 +29,7 @@ import (
 type Config struct {
 	DB             db.Config
 	Neo4j          knowledge.Config // Slice 0.7 — graph + vector + embed sidecar wiring
+	ArcadeDB       ArcadeDBConfig   // memory server — per-identity databases + the adaptive projection (arcadedb.go)
 	LLM            llm.Config       // Slice 1 — OpenAI-compat client + load-order chain (D-22)
 	MCPServers     map[string]mcp.ServerConfig
 	MCPPolicies    map[string]mcp.ManagedServer
@@ -411,6 +412,7 @@ func loadBase() *Config {
 			EmbedDimensions:   envutil.IntDefault("AURA_EMBED_DIMENSIONS", knowledge.DefaultEmbedDimensions),
 			EmbedModel:        os.Getenv("AURA_EMBED_MODEL"),
 		},
+		ArcadeDB:       loadArcadeDB(),
 		MCPServers:     mcpServers,
 		MCPPolicies:    mcpPolicies,
 		MCPServersErr:  mcpServersErr,

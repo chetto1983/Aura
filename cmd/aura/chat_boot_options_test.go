@@ -6,9 +6,9 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/adaptive"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
-	"github.com/chetto1983/aura/internal/knowledge"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -24,8 +24,8 @@ func TestAssembleChatEnvOptionsApplyRegistryTransformBeforeRunner(t *testing.T) 
 		context.Background(),
 		cfg,
 		pool,
-		func(context.Context, *knowledge.Config) (adaptiveGraphClient, error) {
-			return &adaptiveProjectorClientSpy{order: &projectorOrder}, nil
+		func(context.Context, *config.ArcadeDBConfig) (adaptive.GraphWriter, error) {
+			return &adaptiveProjectorWriterSpy{order: &projectorOrder}, nil
 		},
 		chatEnvAssemblyOptions{
 			adaptiveControls: func(

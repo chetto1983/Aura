@@ -246,3 +246,112 @@ func TestCancelledContextStopsTheRequest(t *testing.T) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
 }
+
+// --- erasure proofs (DatabaseExists / CredentialAccepted) ---
+
+func TestDatabaseExistsReadsTheServersAnswer(t *testing.T) {
+	tests := []struct {
+		name    string
+		status  int
+		body    string
+		want    bool
+		wantErr bool
+	}{
+		{name: "present", status: http.StatusOK, body: `{"result":true}`, want: true},
+		{name: "erased", status: http.StatusOK, body: `{"result":false}`},
+		{name: "refused", status: http.StatusForbidden, body: `{"error":"no"}`, wantErr: true},
+		{name: "malformed", status: http.StatusOK, body: `{"result":`, wantErr: true},
+		// A body with no `result` is unreadable, NOT a "false". Reading it as
+		// erased would certify a purge on an answer the server never gave.
+		{name: "no result field", status: http.StatusOK, body: `{}`, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var seen captured
+			srv := fakeServer(t, tt.status, tt.body, &seen)
+			got, err := mustClient(t, srv.URL).DatabaseExists(context.Background(), "mem_x")
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("exists = %t, want an error", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("DatabaseExists: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("exists = %t, want %t", got, tt.want)
+			}
+			if seen.path != "/api/v1/exists/mem_x" {
+				t.Fatalf("path = %q, want /api/v1/exists/mem_x", seen.path)
+			}
+			if seen.auth == "" {
+				t.Fatal("the existence probe went out unauthenticated")
+			}
+		})
+	}
+}
+
+func TestDatabaseExistsRejectsAnEmptyName(t *testing.T) {
+	srv := fakeServer(t, http.StatusOK, `{"result":true}`, nil)
+	if _, err := mustClient(t, srv.URL).DatabaseExists(context.Background(), "  "); err == nil {
+		t.Fatal("an empty database name was probed")
+	}
+}
+
+func TestDatabaseExistsFailsOnAnUnreachableServer(t *testing.T) {
+	srv := fakeServer(t, http.StatusOK, `{"result":false}`, nil)
+	url := srv.URL
+	srv.Close()
+	if _, err := mustClient(t, url).DatabaseExists(context.Background(), "mem_x"); err == nil {
+		t.Fatal("an unreachable server answered that the database is gone")
+	}
+}
+
+// The (bool, error) split is the point: false means the server REFUSED the
+// credential, an error means the answer is unknown. A server that is merely down
+// must never read as a revoked credential.
+func TestCredentialAcceptedSeparatesRefusalFromUnreachable(t *testing.T) {
+	tests := []struct {
+		name    string
+		status  int
+		want    bool
+		wantErr bool
+	}{
+		{name: "accepted", status: http.StatusOK, want: true},
+		{name: "unauthorized", status: http.StatusUnauthorized},
+		{name: "forbidden", status: http.StatusForbidden},
+		{name: "server error", status: http.StatusInternalServerError, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var seen captured
+			srv := fakeServer(t, tt.status, `{}`, &seen)
+			got, err := mustClient(t, srv.URL).CredentialAccepted(context.Background())
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("accepted = %t, want an error", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("CredentialAccepted: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("accepted = %t, want %t", got, tt.want)
+			}
+			if seen.path != "/api/v1/ready" {
+				t.Fatalf("path = %q, want /api/v1/ready", seen.path)
+			}
+		})
+	}
+}
+
+func TestCredentialAcceptedFailsOnAnUnreachableServer(t *testing.T) {
+	srv := fakeServer(t, http.StatusUnauthorized, `{}`, nil)
+	url := srv.URL
+	srv.Close()
+	if _, err := mustClient(t, url).CredentialAccepted(context.Background()); err == nil {
+		t.Fatal("an unreachable server was read as a revoked credential")
+	}
+}

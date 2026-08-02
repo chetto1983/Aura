@@ -13,7 +13,6 @@ import (
 	"github.com/chetto1983/aura/internal/adaptive"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
-	"github.com/chetto1983/aura/internal/knowledge"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/mcp"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -397,8 +396,8 @@ func TestAssembleChatEnvAppliesOnePolicyClampToEveryAdaptiveDomain(t *testing.T)
 				context.Background(),
 				cfg,
 				pool,
-				func(context.Context, *knowledge.Config) (adaptiveGraphClient, error) {
-					return &adaptiveProjectorClientSpy{order: &projectorOrder}, nil
+				func(context.Context, *config.ArcadeDBConfig) (adaptive.GraphWriter, error) {
+					return &adaptiveProjectorWriterSpy{order: &projectorOrder}, nil
 				},
 				reader,
 				&warnings,
@@ -455,7 +454,7 @@ func TestAssembleChatEnvBootsWithoutAReachableProjectorGraph(t *testing.T) {
 		context.Background(),
 		cfg,
 		pool,
-		func(context.Context, *knowledge.Config) (adaptiveGraphClient, error) {
+		func(context.Context, *config.ArcadeDBConfig) (adaptive.GraphWriter, error) {
 			return nil, errors.New(`spawn mcp-neo4j-cypher: executable file not found in $PATH`)
 		},
 		adaptiveBootPolicyReaderFunc(func(context.Context) (adaptive.Policy, error) {

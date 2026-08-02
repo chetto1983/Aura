@@ -276,8 +276,8 @@ func TestAssembleChatEnvWiresProductionDynamicRecallControl(t *testing.T) {
 		context.Background(),
 		cfg,
 		pool,
-		func(context.Context, *knowledge.Config) (adaptiveGraphClient, error) {
-			return &adaptiveProjectorClientSpy{order: &projectorOrder}, nil
+		func(context.Context, *config.ArcadeDBConfig) (adaptive.GraphWriter, error) {
+			return &adaptiveProjectorWriterSpy{order: &projectorOrder}, nil
 		},
 		adaptiveBootPolicyReaderFunc(func(context.Context) (adaptive.Policy, error) {
 			return validAdaptiveBootTestPolicy(adaptive.PolicyShadow), nil

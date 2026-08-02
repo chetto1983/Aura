@@ -8,7 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chetto1983/aura/internal/knowledge"
+	"github.com/chetto1983/aura/internal/adaptive"
+	"github.com/chetto1983/aura/internal/config"
 )
 
 func TestAdaptiveProjectorWorkerIDIsUniquePerRuntime(t *testing.T) {
@@ -44,12 +45,16 @@ func (s *adaptiveProjectorLifecycleSpy) Stop(context.Context) error {
 	return nil
 }
 
-type adaptiveProjectorClientSpy struct {
-	order  *[]string
-	closes int
+// adaptiveProjectorWriterSpy stands in for the ArcadeDB writer. It has no Close:
+// the projector's graph client is a stateless HTTP client now, so the runtime has
+// nothing to shut down but the worker. The three close-ordering assertions this
+// file used to carry were asserting a resource that no longer exists — they are
+// replaced below by the lifecycle contract that survives.
+type adaptiveProjectorWriterSpy struct {
+	order *[]string
 }
 
-func (*adaptiveProjectorClientSpy) Write(
+func (*adaptiveProjectorWriterSpy) Write(
 	context.Context,
 	string,
 	map[string]any,
@@ -57,22 +62,11 @@ func (*adaptiveProjectorClientSpy) Write(
 	return nil, nil
 }
 
-func (s *adaptiveProjectorClientSpy) Close() error {
-	s.closes++
-	*s.order = append(*s.order, "close")
-	return nil
-}
-
-func TestAdaptiveProjectorRuntimeStartsOnceAndStopsBeforeGraphClose(t *testing.T) {
+func TestAdaptiveProjectorRuntimeStartsOnceAndStopsItsWorker(t *testing.T) {
 	var order []string
 	worker := &adaptiveProjectorLifecycleSpy{order: &order}
-	client := &adaptiveProjectorClientSpy{order: &order}
 
-	runtime, err := startAdaptiveProjectorRuntime(
-		context.Background(),
-		worker,
-		client,
-	)
+	runtime, err := startAdaptiveProjectorRuntime(context.Background(), worker)
 	if err != nil {
 		t.Fatalf("startAdaptiveProjectorRuntime: %v", err)
 	}
@@ -82,34 +76,29 @@ func TestAdaptiveProjectorRuntimeStartsOnceAndStopsBeforeGraphClose(t *testing.T
 	if err := runtime.Stop(context.Background()); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
-	if worker.stops != 1 || client.closes != 1 {
-		t.Fatalf("shutdown calls = stops:%d closes:%d", worker.stops, client.closes)
+	if worker.stops != 1 {
+		t.Fatalf("worker stops = %d, want 1", worker.stops)
 	}
-	if want := []string{"start", "stop", "close"}; !reflect.DeepEqual(order, want) {
+	if want := []string{"start", "stop"}; !reflect.DeepEqual(order, want) {
 		t.Fatalf("lifecycle order = %v, want %v", order, want)
 	}
 }
 
-func TestAdaptiveProjectorRuntimeClosesGraphWhenWorkerStartFails(t *testing.T) {
+// A worker that refuses to start must yield NO runtime: a non-nil one would be
+// stopped at shutdown, calling Stop on a worker that never ran.
+func TestAdaptiveProjectorRuntimeRefusesWhenWorkerStartFails(t *testing.T) {
 	var order []string
 	startErr := errors.New("worker rejected start")
-	worker := &adaptiveProjectorLifecycleSpy{
-		order: &order, startErr: startErr,
-	}
-	client := &adaptiveProjectorClientSpy{order: &order}
+	worker := &adaptiveProjectorLifecycleSpy{order: &order, startErr: startErr}
 
-	runtime, err := startAdaptiveProjectorRuntime(
-		context.Background(),
-		worker,
-		client,
-	)
+	runtime, err := startAdaptiveProjectorRuntime(context.Background(), worker)
 	if runtime != nil || !errors.Is(err, startErr) {
 		t.Fatalf("start result = runtime:%v err:%v, want nil/%v", runtime, err, startErr)
 	}
-	if worker.stops != 0 || client.closes != 1 {
-		t.Fatalf("failed start cleanup = stops:%d closes:%d", worker.stops, client.closes)
+	if worker.stops != 0 {
+		t.Fatalf("failed start called Stop %d times, want 0", worker.stops)
 	}
-	if want := []string{"start", "close"}; !reflect.DeepEqual(order, want) {
+	if want := []string{"start"}; !reflect.DeepEqual(order, want) {
 		t.Fatalf("failed start order = %v, want %v", order, want)
 	}
 }
@@ -117,19 +106,19 @@ func TestAdaptiveProjectorRuntimeClosesGraphWhenWorkerStartFails(t *testing.T) {
 func TestBuildAdaptiveProjectorRuntimeOpensExactlyOneGraphClient(t *testing.T) {
 	pool := unreachablePool(t)
 	defer pool.Close()
-	cfg := &knowledge.Config{BoltURL: "bolt://neo4j:7687"}
+	cfg := &config.ArcadeDBConfig{BaseURL: "http://arcadedb:2480", Database: "aura_memory", User: "aura_memory"}
 	var order []string
-	client := &adaptiveProjectorClientSpy{order: &order}
+	writer := &adaptiveProjectorWriterSpy{order: &order}
 	opens := 0
 	open := func(
 		_ context.Context,
-		got *knowledge.Config,
-	) (adaptiveGraphClient, error) {
+		got *config.ArcadeDBConfig,
+	) (adaptive.GraphWriter, error) {
 		opens++
 		if got != cfg {
 			t.Fatalf("graph config = %p, want %p", got, cfg)
 		}
-		return client, nil
+		return writer, nil
 	}
 
 	runtime, err := buildAdaptiveProjectorRuntime(
@@ -149,20 +138,13 @@ func TestBuildAdaptiveProjectorRuntimeOpensExactlyOneGraphClient(t *testing.T) {
 	if err := runtime.Stop(stopCtx); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
-	if client.closes != 1 {
-		t.Fatalf("graph closes = %d, want 1", client.closes)
-	}
 }
 
+// The projector must be stopped BEFORE the MCP clients it may still be using.
 func TestChatEnvCloseStopsAdaptiveProjectorBeforeOtherMCP(t *testing.T) {
 	var order []string
 	worker := &adaptiveProjectorLifecycleSpy{order: &order}
-	client := &adaptiveProjectorClientSpy{order: &order}
-	runtime, err := startAdaptiveProjectorRuntime(
-		context.Background(),
-		worker,
-		client,
-	)
+	runtime, err := startAdaptiveProjectorRuntime(context.Background(), worker)
 	if err != nil {
 		t.Fatalf("start runtime: %v", err)
 	}
@@ -178,7 +160,7 @@ func TestChatEnvCloseStopsAdaptiveProjectorBeforeOtherMCP(t *testing.T) {
 
 	env.close()
 
-	want := []string{"start", "stop", "close", "mcp-close"}
+	want := []string{"start", "stop", "mcp-close"}
 	if !reflect.DeepEqual(order, want) {
 		t.Fatalf("chat close order = %v, want %v", order, want)
 	}
