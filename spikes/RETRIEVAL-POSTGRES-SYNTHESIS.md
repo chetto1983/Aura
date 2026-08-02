@@ -52,7 +52,8 @@ vettori) e Garage (object store), e risolvere la pessima resa su Excel.
 | D3 | Correlazione documenti? | **Blocking deterministico (cliente, n°fattura) → LLM solo sul residuo** | **44×** riduzione, recall strutturale **100%** (scale EXP4) |
 | D4 | Lessicale vs denso | **Fusi, ma la fusione va PESATA / delegata al rerank** | vedi D7 (RRF ingenuo degrada) |
 | D5 | Grafo (AGE) vs edge-table | **Edge-table** per 1-2 hop; AGE solo per traversal profondi o il cockpit | ragionato; correlazione è 1-2 hop |
-| D6 | Garage | **filesystem** per single-op; **object store** torna giusto a scala (PDF grandi, durabilità) | blast-radius + scale reasoning |
+| D6 | Garage | **Tiered**: `filesystem-dev` per locale/single-op, **Garage per Hetzner/scala** (non rimosso, tierato) | blast-radius + scale reasoning |
+| D9 | Sandbox runtime | DockerBackend attuale per locale; **agent-sandbox (k8s) candidato per Hetzner/MUSR** — con due verifiche bloccanti | vedi §7 |
 | D7 | Reranker vs retrieval — dove sta il collo di bottiglia? | **Il rerank è già perfetto; investi nella RECALL del retrieval** | LLM-reranker 4/4 su recuperabili; ceiling fissato dall'embedder |
 | D8 | Embedder | Un modello **piccolo ma forte** basta (EmbeddingGemma-300M) | ceiling **4/8 → 8/8**, dense@5 **2/8 → 8/8** |
 
@@ -121,9 +122,18 @@ QUERY
     correlati  → edge-expand 1-2 hop su doc_edges (WITH RECURSIVE)
 
 STORE  Postgres unico: pgvector (denso) + pg_search|tsvector (BM25) + tabelle ETL
-       + doc_edges. Object store per i blob (filesystem single-op / S3 a scala).
-       Neo4j: rimosso. Garage: rimosso (astrazione objectstore mantenuta).
+       + doc_edges. Neo4j: rimosso.
+       Object store (astrazione objectstore mantenuta) + Sandbox — TIERED:
+         locale/single-op → objectstore=filesystem-dev · sandbox=DockerBackend attuale
+         Hetzner/scala    → objectstore=Garage (S3)     · sandbox=agent-sandbox (k8s)
 ```
+
+**Nota tiering (D6/D9).** Garage NON è rimosso: è il backend object-store del tier
+Hetzner (`filesystem-dev` resta per il locale). Il sandbox segue lo stesso schema:
+il DockerBackend attuale per il locale, **agent-sandbox** (Kubernetes, Go,
+Apache-2.0, E2B-compatibile, storage S3 → si sposa con Garage) come candidato per
+Hetzner/MUSR. Garage + agent-sandbox si compongono (lo storage S3 di agent-sandbox
+può puntare a Garage).
 
 ## 7. Decisioni ancora aperte (di prodotto, non di ricerca)
 
@@ -137,8 +147,17 @@ STORE  Postgres unico: pgvector (denso) + pg_search|tsvector (BM25) + tabelle ET
 - **Memoria agente POLE+O**: mem0 mostra che il grafo memoria vale ~2pp; per
   single-operator probabilmente non vale — memoria flat pgvector (stile mem0). È la
   parte più graph-shaped: decisione separata.
-- **Garage → filesystem vs S3**: dipende dalla scala di deploy e dalla dimensione
-  media dei documenti.
+- **Garage → filesystem vs S3**: risolto come tiering (D6) — filesystem locale,
+  Garage su Hetzner.
+- **Sandbox: agent-sandbox (D9)** — candidato per il tier Hetzner/MUSR, con **due
+  verifiche bloccanti** prima di committarci:
+  1. **Kubernetes**: agent-sandbox richiede k8s v1.26+. Adottarlo = aggiungere k8s.
+     Ha senso solo se Hetzner è già k8s (k3s ok) o per il multi-tenant. Per il
+     single-op l'attuale DockerBackend basta e non va rippato.
+  2. **Egress control**: il sandbox attuale ha egress control security-load-bearing
+     (storia bug WR-01/CAP_NET_ADMIN). agent-sandbox non lo documenta chiaramente —
+     va verificato che regga l'esecuzione di codice non fidato prima di fidarsene
+     come confine di sicurezza. Pro: E2B-compatibile, MCP-native, storage S3 (→Garage).
 
 ## 8. Non ancora provato / prossimi passi
 
