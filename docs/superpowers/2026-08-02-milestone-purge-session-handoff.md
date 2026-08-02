@@ -1,6 +1,6 @@
 # Session handoff — v2 milestone purge: Neo4j, reranker, adaptive plane, the oracle
 
-**Date:** 2026-08-02 (Sun) · **Branch:** `master` (master-direct) · **HEAD:** `9f9f2d974`
+**Date:** 2026-08-02 (Sun) · **Branch:** `master` (master-direct) · **HEAD:** `acd029d47`
 **Goal in force:** *chiudere tutta la roadmap.*
 
 > Written because `.planning/` was retired this session and the roadmap had nowhere to
@@ -19,16 +19,18 @@
 | **`AURA_MUSR_ISOLATION`** | ✅ KEPT, deliberately — see §refusal | scope the 4 shared planes |
 | **ArcadeDB memory backup** | ✅ SHIPPED + verified live | — |
 | **Embedding model corrected** | ✅ installed live, installer now fetches it | re-embed 24 facts |
-| **Onboarding on bitemporal facts** | 🟡 written, unverified (tree was red) | run `cmd/aura` tests |
-| **Adaptive plane + oracle deletion** | 🔴 IN FLIGHT — agent working, ~314 files staged | let it land, then verify |
-| **`arcadedb_integration` CI job + GIN migration** | 🟡 written, uncommitted | commit with the adaptive landing |
-| **Embedder prefixes + pooling default** | 🟡 written, uncommitted, MEASURED | commit |
+| **Onboarding on bitemporal facts** | ✅ SHIPPED, tests rewritten | — |
+| **Adaptive plane + oracle deletion** | ✅ SHIPPED in `acd029d47`, −83,368 lines | — |
+| **`arcadedb_integration` CI job + GIN migration** | ✅ SHIPPED | — |
+| **Embedder prefixes + pooling default** | ✅ SHIPPED, measured | — |
+| **Installer downloads + verifies the model** | ✅ SHIPPED, run live | — |
 | **RLS hardening** | 🟡 MEASURED on a probe DB, not applied | route 7 writes through `WithTx` |
 | **Reasoning tier → industrial** | 🔴 not started | broaden corpus, wire the gate into CI |
 | **Card catalog → ETL → vector** | 🔴 not started | the actual build block |
 
-**Working tree at handoff: 314 deletions / 40 modified / 4 new, NOT committed.** `go build ./...`
-is clean. Do not commit until the adaptive agent lands and the full suite is green.
+**Working tree: CLEAN.** Four commits today, ~2,600 files, **−673,000 lines**. Full suite,
+vet, golangci-lint (0 issues), `-race` on 18 packages, 1751 web tests, both compose chains
+and the quality gate (8 rows) all green at `acd029d47`.
 
 ---
 
@@ -46,6 +48,14 @@ is clean. Do not commit until the adaptive agent lands and the full suite is gre
 - `9f9f2d974` — reranker leg + `.planning/` + `docs/retrieval-eval.md`. 1543 files,
   −575,456 lines. Migration `0084` drops the Cypher ledger and fixes two `COMMENT ON`
   statements sqlc was copying into generated Go.
+- `acd029d47` — the adaptive plane and the eval oracle. 406 files, −83,368 lines.
+  `internal/adaptive` (175 files), `internal/eval` (44, oracle included), the benchmark
+  machine (73), the recall leg, `benchmark_override`, `adaptive.yml`; migration `0086`
+  drops 12 tables, a trigger and 43 functions. Adaptive REASONING kept and verified live.
+  Rides along: the `arcadedb_integration` CI job (runs, no longer merely compiles),
+  migration `0085` (`fastupdate=off`, 137 pending pages → 0), the embedder task prefixes
+  (86.7% → 93.3% recall@1), the MEAN pooling default, onboarding on bitemporal facts, and
+  an installer that downloads and verifies the embedding model.
 
 ---
 
@@ -127,33 +137,23 @@ literal `403` on a cross-tenant read (proved live). Postgres RLS covers 12 of 59
 
 ## Open work, in the order it should be done
 
-1. **Land the adaptive + oracle deletion.** ~45,500 lines (`internal/adaptive` 62+90 files,
-   `cmd/aura/adaptive_benchmark*`, all of `internal/eval`) + 12 tables. **Keep the reasoning
-   tier**: `internal/agent/prompt/reasoning_*.go`, `internal/reasoningtrace/`,
-   `internal/agent/llm_agent_reasoning.go`, `AURA_LLM_ADAPTIVE_REASONING`. The trap is
-   `chat_boot.go`'s `ReasoningControl: adaptiveControls.reasoning` — the tier reaches the
-   runner *through* an adaptive wrapper.
-2. **Verify the onboarding rewrite.** `memory_store_profile`/`memory_get_facts` are gone;
-   it now writes bitemporal facts one at a time on one MCP session and reads the sentinel
-   with `memory_facts_about`. Single-valued predicates supersede, `knows`/aliases do not.
-   Never ran — `cmd/aura` would not compile.
-3. **Re-embed the 24 facts + 48 entities in `aura_memory`.** Their vectors came from the
+1. **Re-embed the 24 facts + 48 entities in `aura_memory`.** Their vectors came from the
    broken model. Tiny now; it will not stay tiny.
-4. **Reasoning tier → industrial.** Broaden the corpus (documents, memory, English,
+2. **Reasoning tier → industrial.** Broaden the corpus (documents, memory, English,
    multi-clause, near-boundary — English has *no* anchor today), re-measure the floors on the
    broader set, wire `reasoning_live` into CI. Remove the dead `generation` field in
    `reasoning_classifier.go` — nothing ever bumps it.
-5. **RLS.** Route the 7 write paths through `WithTx`, then apply the probe's SQL: strip the
+3. **RLS.** Route the 7 write paths through `WithTx`, then apply the probe's SQL: strip the
    `IS NULL OR` escape, add one `AS RESTRICTIVE` policy per table (restrictive policies AND
    together, so no future permissive policy can widen past them), extend to the document
    tables. NOT `FORCE ROW LEVEL SECURITY` — `aura_migrate` owns the tables and migrations
    must keep writing. Auth/recovery tables stay out: a login looks a token up *before* it
    knows who you are.
-6. **Scope the four shared planes** (see §refusal), then reopen multi-user.
-7. **Telegram → wrapper.** 30 files with a private pipeline (`documents.go`, `photo.go`,
+4. **Scope the four shared planes** (see §refusal), then reopen multi-user.
+5. **Telegram → wrapper.** 30 files with a private pipeline (`documents.go`, `photo.go`,
    `voice.go`, `tts.go`, `sidecar.go`). When the attachment goes to workspace + catalog +
    `document_open` like the cockpit, **markitdown loses its last caller and is deleted**.
-8. **The build block: mechanical card at ingest → ETL → vector on the card.** Today the
+6. **The build block: mechanical card at ingest → ETL → vector on the card.** Today the
    digest is agent-authored, so a file nobody opened has no card and does not exist for the
    index. Card first — everything else rests on it. Web recon (2026-08-02) says: an
    LLM-generated title is worth **+0.42 recall@3**, column narrations 81.0% vs 67.9%, ~5 whole
@@ -162,8 +162,12 @@ literal `403` on a cross-tenant read (proved live). Postgres RLS covers 12 of 59
 
 ## Known-stale, low bleed
 
-- `internal/eval` `Neo4jRevision` field + `prd.md:1683` + PRD amendment #89 still describe
-  the deleted world. (`internal/eval` is being deleted — check whether this resolves itself.)
+- `prd.md:1683` + PRD amendment #89 still describe the deleted world. (`Neo4jRevision`
+  went with `internal/eval`.)
+- `internal/db/queries/knowledge_migrations.sql` queries a table migration 0084 drops, so
+  **`sqlc generate` is broken today**; `models.go`/`querier.go` were hand-edited instead.
+- `internal/idempotency.Store.RecoverExpired` is orphaned — its only caller was
+  `eval adaptive seal-admission`.
 - The coverage gate is **aggregate-only**, not per-package, despite CLAUDE.md saying
   otherwise. `internal/arcadedb` sits at 36.6% and is carried by better packages. 39 of its
   functions have zero coverage, including `CreateDatabase`/`DropUser`/`VerifySecureVersion`.
