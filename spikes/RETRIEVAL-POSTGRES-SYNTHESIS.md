@@ -1,9 +1,11 @@
-# Retrieval = solo Postgres + sandbox — sintesi dello studio
+# Retrieval one-store + sandbox — sintesi dello studio
 
 **Stato:** PROPOSTO, evidence-backed — *non* una decisione approvata. Richiede un
-PRD-amendment prima di qualsiasi codice di produzione (PRD-first principle), e se
-accettato **supererebbe l'ADR 0038** ("keep Neo4j / reject all-Postgres"), che va
-riaperto con l'evidenza qui sotto.
+PRD-amendment prima di qualsiasi codice di produzione (PRD-first principle), e
+**supera l'ADR 0038** ("keep Neo4j / reject all-Postgres, reject ArcadeDB"), che è
+già di fatto riaperto: **il deploy locale è ora su ArcadeDB** (l'alternativa Apache
+che l'ADR aveva scartato). Due architetture candidate — "solo Postgres" (Opzione A)
+e "Postgres + ArcadeDB" (Opzione B, raccomandata) — vedi §3b.
 
 **Branch:** `claude/document-retrieval-postgres-4cadcd` · **Spike:**
 `spikes/document-routing-benchmark/` (toy, 21 file) e
@@ -20,8 +22,11 @@ autocorrezioni fatte strada facendo, e ciò che resta da decidere.
 > "Il retrieve dei documenti, soprattutto Excel, fa schifo. Togliere completamente
 > Garage e Neo4j, usare solo Postgres e sandbox." (+ Tantivy, Apache AGE come idee)
 
-Obiettivo: **un solo datastore (Postgres) + il sandbox**, eliminando Neo4j (grafo +
-vettori) e Garage (object store), e risolvere la pessima resa su Excel.
+Obiettivo: **un solo datastore + il sandbox**, eliminando Neo4j (grafo + vettori) e
+Garage (object store), e risolvere la pessima resa su Excel. *Aggiornamento:*
+l'operatore ha successivamente spostato il **deploy locale su ArcadeDB** (multi-model
+Apache) → il "solo datastore" può essere Postgres (Opzione A) oppure Postgres per il
+control-plane + ArcadeDB per grafo/vettori/FTS/memoria (Opzione B). Vedi §3b.
 
 ## 2. Stato attuale mappato (codice)
 
@@ -51,11 +56,70 @@ vettori) e Garage (object store), e risolvere la pessima resa su Excel.
 | D2 | Aggregazione cross-file a scala? | **ETL righe → tabelle Postgres → SQL** | **2550×** più veloce di open-per-query (scale EXP2) |
 | D3 | Correlazione documenti? | **Blocking deterministico (cliente, n°fattura) → LLM solo sul residuo** | **44×** riduzione, recall strutturale **100%** (scale EXP4) |
 | D4 | Lessicale vs denso | **Fusi, ma la fusione va PESATA / delegata al rerank** | vedi D7 (RRF ingenuo degrada) |
-| D5 | Grafo (AGE) vs edge-table | **Edge-table** per 1-2 hop; AGE solo per traversal profondi o il cockpit | ragionato; correlazione è 1-2 hop |
+| D5 | Correlazione: grafo vs edge-table | Opzione A: **edge-table** (no AGE). Opzione B: **grafo nativo ArcadeDB** (vedi §3b) | ragionato; correlazione è 1-2 hop |
 | D6 | Garage | **Tiered**: `filesystem-dev` per locale/single-op, **Garage per Hetzner/scala** (non rimosso, tierato) | blast-radius + scale reasoning |
 | D9 | Sandbox runtime | DockerBackend attuale per locale; **agent-sandbox (k8s) candidato per Hetzner/MUSR** — con due verifiche bloccanti | vedi §7 |
 | D7 | Reranker vs retrieval — dove sta il collo di bottiglia? | **Il rerank è già perfetto; investi nella RECALL del retrieval** | LLM-reranker 4/4 su recuperabili; ceiling fissato dall'embedder |
 | D8 | Embedder | Un modello **piccolo ma forte** basta (EmbeddingGemma-300M) | ceiling **4/8 → 8/8**, dense@5 **2/8 → 8/8** |
+| D10 | Motore per grafo/vettori/FTS | **Opzione B — ArcadeDB** (multi-model, Apache, Bolt+MCP, near-drop-in Neo4j); Postgres resta il control-plane | §3b; deploy locale già su ArcadeDB |
+| D11 | Isolamento multi-tenant | **ArcadeDB db-per-identità** (fisico) — collassa RLS + `*Scoped` + bucket in uno | §3b; caveat GHSA-fxc7-fm93-6q77 (fixed) |
+
+## 3b. ArcadeDB cambia il quadro — architetture + isolamento (agg. 2026-08)
+
+ArcadeDB (verificato: multi-model — grafo + documento + kv + **Lucene FTS** +
+**vettori HNSW/DiskANN** — openCypher 25, SQL, Gremlin; **Bolt** certificato coi 5
+driver Neo4j incl. Go; **Postgres wire**; **MCP server integrato**; Apache-2.0)
+apre una terza via e riscrive alcune decisioni.
+
+**Le tre architetture:**
+
+| | A — Solo Postgres | **B — Postgres + ArcadeDB** (racc.) | C — Solo ArcadeDB |
+|---|---|---|---|
+| Neo4j | assorbito in PG (pgvector+pg_search+edge-table) | **sostituito da ArcadeDB** (near-drop-in Bolt+Cypher+MCP) | sostituito |
+| Vettori+BM25+grafo | 3 estensioni PG impilate | **un motore nativo solo** | un motore solo |
+| Control-plane (auth/RLS/sqlc/`aura.*`) | Postgres | **Postgres (resta)** | riscritto su ArcadeDB ⚠️ |
+| Rischio | stacking estensioni + ParadeDB ops | **basso** (PG intatto, ArcadeDB near-drop-in) | **alto** (rewrite auth) |
+
+**Reframe delle decisioni sotto Opzione B:**
+- **D5 (correlazione)** → risolta a favore del **grafo nativo** ArcadeDB (edge Cypher,
+  traversal 1-2 hop banale). **Niente AGE, niente join-table.**
+- **pg_search/Tantivy e AGE** → **moot**: ArcadeDB ha Lucene FTS (≈ Tantivy) + grafo +
+  vettori nativi.
+- **Memoria** → **non sei più costretto a flattenare a pgvector**: il grafo costa zero
+  extra (stesso motore), quindi puoi tenere POLE+O se rende, e i **fatti temporali
+  stile Zep** (validità nel tempo, +22pp su LongMemEval) sono naturali. La pressione
+  mem0 "togli il grafo" nasceva dal costo del secondo server (Neo4j) — che con
+  ArcadeDB sparisce. Opzioni memoria non-esclusive: grafo/vettori in ArcadeDB +
+  **memoria a file Markdown** (stile Anthropic memory tool, trasparente, no vector DB)
+  su `/workspace`.
+- **D1/D2/D7/D8** invariati (store-agnostici): Excel→open+compute; aggregazione→ETL+SQL
+  (in Postgres); rerank già perfetto → investi nella recall; embedder forte → ceiling 8/8.
+
+### Isolamento — db-per-identità (il vantaggio chiave di ArcadeDB)
+
+Un server ArcadeDB ospita **molti database, completamente isolati**: niente catalogo
+condiviso, **niente query/join/transazioni cross-database**. Quindi
+**database-per-identità = isolamento fisico imposto dal motore**, che **collassa i tre
+meccanismi attuali** (Postgres RLS + Neo4j query `*Scoped` con filtro ownership D-13 +
+Garage bucket-per-identità) **in uno solo**, ed **elimina la classe di leak** "mi son
+scordato il `WHERE owner_id`" (sparisce tutto il codice `*Scoped`). Provisioning = crea
+db; **deprovisioning = droppa il db** (cancellazione completa, GDPR-friendly).
+
+Split pulito: **Postgres centrale** (auth, registry identità — inerentemente
+cross-identità) + **ArcadeDB db-per-identità** (documenti/chunk/vettori/FTS/grafo/memoria
+del singolo utente) + **object store** per i blob.
+
+**Due caveat onesti:**
+1. **Niente cross-database** è a doppio taglio: i **dati condivisi** (operatore/`local`,
+   catalogo globale) vanno duplicati per-db o mergeati lato Go. OK per il retrieval
+   per-utente; da pianificare per le feature globali.
+2. **Flag sicurezza**: advisory **GHSA-fxc7-fm93-6q77** (cross-database auth bypass —
+   token scoped a un db potevano mutare altri db) — **corretta** (commit `04110c0` +
+   test), ma è un segnale sulla maturità di sicurezza: **pinna una versione ≥ fix**,
+   tieni defense-in-depth, pesa contro le decadi di Postgres RLS.
+
+**Scala**: ideale per decine/centinaia di identità (single-op → MUSR piccolo);
+verificare per decine di migliaia (N db su una JVM).
 
 ## 4. Evidenza — i due spike
 
@@ -121,9 +185,12 @@ QUERY
     tabellare  → SQL (omogeneo) | open+compute soffice/pandas (eterogeneo)
     correlati  → edge-expand 1-2 hop su doc_edges (WITH RECURSIVE)
 
-STORE  Postgres unico: pgvector (denso) + pg_search|tsvector (BM25) + tabelle ETL
-       + doc_edges. Neo4j: rimosso.
-       Object store (astrazione objectstore mantenuta) + Sandbox — TIERED:
+STORE  Opzione A — Postgres unico: pgvector + pg_search|tsvector + tabelle ETL + doc_edges.
+       Opzione B (racc.) — Postgres (control-plane, auth/RLS/sqlc, tabelle ETL)
+                         + ArcadeDB (grafo + vettori + Lucene FTS + memoria),
+                           un database PER IDENTITÀ (isolamento fisico, §3b).
+       Neo4j: rimosso in entrambe. Garage: tierato (D6).
+       Object store + Sandbox — TIERED:
          locale/single-op → objectstore=filesystem-dev · sandbox=DockerBackend attuale
          Hetzner/scala    → objectstore=Garage (S3)     · sandbox=agent-sandbox (k8s)
 ```
@@ -137,16 +204,17 @@ può puntare a Garage).
 
 ## 7. Decisioni ancora aperte (di prodotto, non di ricerca)
 
-- **pg_search (Tantivy) vs tsvector**: meno critico ora — il denso forte porta il
-  grosso del recall. tsvector come baseline, pg_search se il lessicale esatto
-  (nomi/ID/codici) soffre in produzione. Da misurare A/B sul corpus reale.
-- **AGE vs edge-table**: edge-table basta per 1-2 hop. AGE solo se il cockpit graph
-  explorer resta una feature difesa o servono traversal profondi. AGE è Apache-2.0
-  (scioglie il vincolo licenza dell'ADR 0038) ma **pg_search + AGE nello stesso
-  Postgres non è un combo provato** — potresti dover scegliere due estensioni su tre.
-- **Memoria agente POLE+O**: mem0 mostra che il grafo memoria vale ~2pp; per
-  single-operator probabilmente non vale — memoria flat pgvector (stile mem0). È la
-  parte più graph-shaped: decisione separata.
+- **A vs B (il bivio principale)**: solo-Postgres (estensioni impilate) vs
+  Postgres+ArcadeDB (multi-model, near-drop-in Neo4j, isolamento db-per-identità).
+  Dato che il locale è già su ArcadeDB, B è la traiettoria attuale. Sotto B le due
+  voci seguenti diventano **moot**.
+- ~~**pg_search vs tsvector**~~ / ~~**AGE vs edge-table**~~: **moot sotto Opzione B**
+  (ArcadeDB ha Lucene FTS + grafo nativi). Rilevanti solo se si sceglie l'Opzione A.
+- **Memoria agente POLE+O**: sotto A → flat pgvector (mem0-style, il grafo vale ~2pp e
+  non giustifica un secondo motore). Sotto B → **il grafo costa zero** (stesso motore),
+  quindi tienilo se rende; i fatti temporali (Zep, +22pp) sono naturali in ArcadeDB.
+  Ortogonale: **memoria a file Markdown** (Anthropic memory tool) su `/workspace`,
+  trasparente e senza vector DB. Vedi §3b.
 - **Garage → filesystem vs S3**: risolto come tiering (D6) — filesystem locale,
   Garage su Hetzner.
 - **Sandbox (D9) — VERIFICATO (2026-08), esito: NON adottare il repo linkato as-is.**
@@ -205,3 +273,10 @@ Corpus e modelli non tracciati (rigenerabili/scaricabili) — vedi `spikes/.giti
 - **Esterni**: RAPTOR (recursive summary tree), mem0 (graph ~+2pp su LoCoMo),
   ParadeDB `pg_search` (Tantivy-in-Postgres), Apache AGE (Cypher-in-Postgres,
   Apache-2.0), EmbeddingGemma-300M (Google, 768d multilingue).
+- **ArcadeDB**: multi-model Apache-2.0 (grafo+doc+kv+FTS+vettori), HNSW/DiskANN,
+  Lucene FTS, openCypher 25, Bolt (v26.2.1, certificato coi driver Neo4j), Postgres
+  wire, MCP integrato; **isolamento db-per-server** (no cross-db query); advisory
+  **GHSA-fxc7-fm93-6q77** (cross-db auth bypass, fixed `04110c0`).
+- **Memoria (comparativa)**: Letta/MemGPT (core/recall/archival, self-edit), LangGraph
+  (checkpointer + store namespaced + semantic), Anthropic memory tool (file Markdown),
+  Zep/Graphiti (temporal KG, +22pp su LongMemEval vs mem0).
