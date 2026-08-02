@@ -1,6 +1,6 @@
 # Session handoff — v2 milestone purge: Neo4j, reranker, adaptive plane, the oracle
 
-**Date:** 2026-08-02 (Sun) · **Branch:** `master` (master-direct) · **HEAD:** `acd029d47`
+**Date:** 2026-08-02 (Sun) · **Branch:** `master` (master-direct) · **HEAD:** `3341e0cc1`
 **Goal in force:** *chiudere tutta la roadmap.*
 
 > Written because `.planning/` was retired this session and the roadmap had nowhere to
@@ -24,11 +24,14 @@
 | **`arcadedb_integration` CI job + GIN migration** | ✅ SHIPPED | — |
 | **Embedder prefixes + pooling default** | ✅ SHIPPED, measured | — |
 | **Installer downloads + verifies the model** | ✅ SHIPPED, run live | — |
-| **RLS hardening** | 🟡 MEASURED on a probe DB, not applied | route 7 writes through `WithTx` |
-| **Reasoning tier → industrial** | 🔴 not started | broaden corpus, wire the gate into CI |
+| **Memory rescued + `remember` fixed + `memory_reembed`** | ✅ SHIPPED `f0214aad4` | — |
+| **Reasoning tier → industrial** | ✅ SHIPPED `3ee76a666` — 45 prompts, 95%, CI job | one residual case |
+| **RLS fails closed** | ✅ SHIPPED `3341e0cc1` — 10 tables + boot guard | 4 tables need the identity threaded |
+| **Telegram = wrapper, markitdown deleted** | ✅ SHIPPED `3341e0cc1` | — |
+| **Four shared planes** | 🔴 not started | blocks multi-user |
 | **Card catalog → ETL → vector** | 🔴 not started | the actual build block |
 
-**Working tree: CLEAN.** Five commits today, **2,593 files**, +18,750 / **−779,945 lines**. Full suite,
+**Working tree: CLEAN.** Nine commits today, **~2,700 files**, +18,750 / **−779,945 lines**. Full suite,
 vet, golangci-lint (0 issues), `-race` on 18 packages, 1751 web tests, both compose chains
 and the quality gate (8 rows) all green at `acd029d47`.
 
@@ -135,25 +138,42 @@ literal `403` on a cross-tenant read (proved live). Postgres RLS covers 12 of 59
 
 ---
 
+## Later commits
+
+- `f0214aad4` — three chained memory defects: `aura memory remember` never succeeded (no
+  `source_run_id`), NO fact ever got a vector (`EmbedMissingFacts` had zero callers), and
+  24 facts were stranded in the shared database where no scoped read could reach them.
+- `3ee76a666` — the reasoning gate ran nowhere and had saturated. 24→45 prompts, floors
+  90/92→93/93 at a measured 95%, plus a CI job that verifies the model's dense tensors
+  before booting the sidecar.
+- `3341e0cc1` — RLS fail-closed on 10 tables + a boot refusal for BYPASSRLS roles;
+  Telegram reduced to a wrapper and markitdown deleted.
+
 ## Open work, in the order it should be done
 
-1. **Re-embed the 24 facts + 48 entities in `aura_memory`.** Their vectors came from the
+1. **Thread the identity into `conversations.Store` and `askuser.Store`** so the last four
+   permissive-on-unset policies (`conversations`, `conversation_turns`, `paused_states`,
+   `shared_links`) can be tightened. The identity is ALREADY on the context at every write
+   site; the stores just never pass it to `WithIdentityTx`. When `shared_links` is
+   tightened its predicate must be "mine OR live" — `ResolveByToken` is anonymous by design.
+
+2. **Re-embed the 24 facts + 48 entities in `aura_memory`.** Their vectors came from the
    broken model. Tiny now; it will not stay tiny.
-2. **Reasoning tier → industrial.** Broaden the corpus (documents, memory, English,
+3. **Reasoning tier residual.** Broaden the corpus (documents, memory, English,
    multi-clause, near-boundary — English has *no* anchor today), re-measure the floors on the
    broader set, wire `reasoning_live` into CI. Remove the dead `generation` field in
    `reasoning_classifier.go` — nothing ever bumps it.
-3. **RLS.** Route the 7 write paths through `WithTx`, then apply the probe's SQL: strip the
+4. **RLS follow-through.** Route the 7 write paths through `WithTx`, then apply the probe's SQL: strip the
    `IS NULL OR` escape, add one `AS RESTRICTIVE` policy per table (restrictive policies AND
    together, so no future permissive policy can widen past them), extend to the document
    tables. NOT `FORCE ROW LEVEL SECURITY` — `aura_migrate` owns the tables and migrations
    must keep writing. Auth/recovery tables stay out: a login looks a token up *before* it
    knows who you are.
-4. **Scope the four shared planes** (see §refusal), then reopen multi-user.
-5. **Telegram → wrapper.** 30 files with a private pipeline (`documents.go`, `photo.go`,
+5. **Scope the four shared planes** (see §refusal), then reopen multi-user.
+6. **~~Telegram → wrapper~~ DONE.** 30 files with a private pipeline (`documents.go`, `photo.go`,
    `voice.go`, `tts.go`, `sidecar.go`). When the attachment goes to workspace + catalog +
    `document_open` like the cockpit, **markitdown loses its last caller and is deleted**.
-6. **The build block: mechanical card at ingest → ETL → vector on the card.** Today the
+7. **The build block: mechanical card at ingest → ETL → vector on the card.** Today the
    digest is agent-authored, so a file nobody opened has no card and does not exist for the
    index. Card first — everything else rests on it. Web recon (2026-08-02) says: an
    LLM-generated title is worth **+0.42 recall@3**, column narrations 81.0% vs 67.9%, ~5 whole
