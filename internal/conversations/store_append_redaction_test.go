@@ -3,7 +3,6 @@
 package conversations
 
 import (
-	"context"
 	"os"
 	"strings"
 	"testing"
@@ -19,7 +18,7 @@ func TestAppendTurnRedactionAtConversationSurfaces(t *testing.T) {
 	t.Cleanup(func() { secret.ConfigureExactRedactor(os.Environ()) })
 
 	pool := migratedPool(t)
-	tag, err := pool.Exec(context.Background(),
+	tag, err := pool.Exec(ownerCtx(),
 		`INSERT INTO aura.identities (id, name, kind)
 		 VALUES ($1, 'local', 'system') ON CONFLICT (id) DO NOTHING`,
 		localID,
@@ -29,13 +28,13 @@ func TestAppendTurnRedactionAtConversationSurfaces(t *testing.T) {
 	}
 	if tag.RowsAffected() == 1 {
 		t.Cleanup(func() {
-			_, _ = pool.Exec(context.Background(), `DELETE FROM aura.identities WHERE id=$1`, localID)
+			_, _ = pool.Exec(ownerCtx(), `DELETE FROM aura.identities WHERE id=$1`, localID)
 		})
 	}
 	runDir := t.TempDir()
 	store := New(pool, Config{RunDir: runDir, TurnCapBytes: 96})
 	conversationID := newConversation(t, store)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	if err := store.AppendTurn(ctx, AppendTurnParams{
 		ConversationID: conversationID,

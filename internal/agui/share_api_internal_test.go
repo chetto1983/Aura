@@ -10,7 +10,6 @@
 package agui
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -79,7 +78,7 @@ func TestShareInternalRevokedExpired404(t *testing.T) {
 		Tier: "internal", SnapshotID: uuid.Must(uuid.NewV7()), SnapshotBucket: shareAPITestBucket,
 		ExpiresAt: pastShareTime(time.Hour),
 	}
-	if err := env.adapter.store.Insert(context.Background(), expired, nil); err != nil {
+	if err := env.adapter.store.Insert(ownerCtx(), expired, nil); err != nil {
 		t.Fatalf("insert expired link: %v", err)
 	}
 	unknown := shareReq(env.server, http.MethodGet, "/api/shares/"+uuid.Must(uuid.NewV7()).String()+"/data", owner, "")

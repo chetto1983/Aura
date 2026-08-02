@@ -113,7 +113,7 @@ func bootstrapURL(t *testing.T, pwd string) string {
 
 func migratedPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ownerCtx(), 30*time.Second)
 	defer cancel()
 
 	pwd := envOrSkip(t, "POSTGRES_PASSWORD")
@@ -140,14 +140,14 @@ func migratedPool(t *testing.T) *pgxpool.Pool {
 func ensureLocalIdentity(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	var n int
-	if err := pool.QueryRow(context.Background(),
+	if err := pool.QueryRow(ownerCtx(),
 		"SELECT count(*) FROM aura.identities WHERE id = $1", localIdentity).Scan(&n); err != nil {
 		t.Fatalf("check local identity: %v", err)
 	}
 	if n > 0 {
 		return
 	}
-	if _, err := pool.Exec(context.Background(),
+	if _, err := pool.Exec(ownerCtx(),
 		"INSERT INTO aura.identities (id, name, kind) VALUES ($1, 'local', 'system') ON CONFLICT (id) DO NOTHING",
 		localIdentity); err != nil {
 		t.Fatalf("re-seed local identity (wiped by a parallel run?): %v", err)
@@ -157,12 +157,9 @@ func ensureLocalIdentity(t *testing.T, pool *pgxpool.Pool) {
 func seedConversation(t *testing.T, pool *pgxpool.Pool) string {
 	t.Helper()
 	convID := uuid.Must(uuid.NewV7()).String()
-	if _, err := pool.Exec(context.Background(),
+	seedAsOwner(t, pool, localIdentity,
 		"INSERT INTO aura.conversations (id, identity_id, model, status) VALUES ($1, $2, 'test-model', 'active')",
-		convID, localIdentity,
-	); err != nil {
-		t.Fatalf("seed conversation: %v", err)
-	}
+		convID, localIdentity)
 	return convID
 }
 
@@ -178,7 +175,7 @@ func newKey(convID, toolCallID string) ReservationKey {
 func startRowCount(t *testing.T, pool *pgxpool.Pool, key ReservationKey) int {
 	t.Helper()
 	var n int
-	if err := pool.QueryRow(context.Background(),
+	if err := pool.QueryRow(ownerCtx(),
 		`SELECT count(*) FROM aura.tool_invocations
 		 WHERE conversation_id = $1 AND request_id = $2 AND tool_call_id = $3 AND event_kind = 'start'`,
 		key.ConversationID, key.RequestID, key.ToolCallID).Scan(&n); err != nil {
@@ -191,7 +188,7 @@ func startRowCount(t *testing.T, pool *pgxpool.Pool, key ReservationKey) int {
 // writes the real outcome after Execute), so a subsequent Reserve can replay it.
 func insertEnd(t *testing.T, store *toolinvocations.Store, key ReservationKey, preview, sidecar string) {
 	t.Helper()
-	if err := store.Insert(context.Background(), toolinvocations.Event{
+	if err := store.Insert(ownerCtx(), toolinvocations.Event{
 		ConversationID:    key.ConversationID,
 		RequestID:         key.RequestID,
 		ToolCallID:        key.ToolCallID,
@@ -215,7 +212,7 @@ func insertEnd(t *testing.T, store *toolinvocations.Store, key ReservationKey, p
 // tripleEvents returns the start and end rows recorded for one reservation triple.
 func tripleEvents(t *testing.T, store *toolinvocations.Store, key ReservationKey) (starts, ends []toolinvocations.Event) {
 	t.Helper()
-	rows, err := store.ListByConversation(context.Background(), key.ConversationID)
+	rows, err := store.ListByConversation(ownerCtx(), key.ConversationID)
 	if err != nil {
 		t.Fatalf("ListByConversation: %v", err)
 	}
@@ -250,7 +247,7 @@ func TestReserveBeforeExecute(t *testing.T) {
 		onExec: func() { startPresentAtExec = startRowCount(t, pool, key) },
 	}
 
-	_, v, err := gatedExec(context.Background(), g, spy, skillRestoreArgs, key)
+	_, v, err := gatedExec(ownerCtx(), g, spy, skillRestoreArgs, key)
 	if err != nil {
 		t.Fatalf("gatedExec: %v", err)
 	}
@@ -278,7 +275,7 @@ func TestReservationFailBlocks(t *testing.T) {
 	badKey := newKey(uuid.Must(uuid.NewV7()).String(), "call-fail-1")
 
 	spy := &spyTool{spec: tools.Spec{Name: "skill", Mutating: true}}
-	_, v, err := gatedExec(context.Background(), g, spy, skillRestoreArgs, badKey)
+	_, v, err := gatedExec(ownerCtx(), g, spy, skillRestoreArgs, badKey)
 
 	if v.Decision != Deny {
 		t.Fatalf("verdict = %q, want deny (reservation failed)", v.Decision)
@@ -304,7 +301,7 @@ func TestIdempotentReplay(t *testing.T) {
 	spy := &spyTool{spec: tools.Spec{Name: "skill", Mutating: true}, result: tools.ToolResult{Preview: "first-output"}}
 
 	// First dispatch: reserve acquires, Execute runs.
-	if _, v, err := gatedExec(context.Background(), g, spy, skillRestoreArgs, key); err != nil || v.Decision != Allow {
+	if _, v, err := gatedExec(ownerCtx(), g, spy, skillRestoreArgs, key); err != nil || v.Decision != Allow {
 		t.Fatalf("first dispatch = (%+v, %v), want allow", v, err)
 	}
 	if spy.count != 1 {
@@ -314,7 +311,7 @@ func TestIdempotentReplay(t *testing.T) {
 	insertEnd(t, store, key, "first-output", "")
 
 	// Second dispatch, SAME key: rows==0 → replay, Execute NOT called again.
-	res, v, err := gatedExec(context.Background(), g, spy, skillRestoreArgs, key)
+	res, v, err := gatedExec(ownerCtx(), g, spy, skillRestoreArgs, key)
 	if err != nil {
 		t.Fatalf("second dispatch err: %v", err)
 	}
@@ -347,7 +344,7 @@ func TestApprovedCallReservedAndIdempotent(t *testing.T) {
 	// NOT shell_exec and no longer swarm_spawn — both are Normal, so an ordinary write is
 	// allowed outright and never reaches routeApprove. This test would have kept passing its
 	// Allow assertion while silently asserting nothing about approval at all.
-	approvedCtx := WithResolvedApproval(WithResponder(context.Background()),
+	approvedCtx := WithResolvedApproval(WithResponder(ownerCtx()),
 		ResolvedApproval{Approved: true, OperatorID: "op-1"})
 	mutatingSpec := tools.Spec{Name: "skill", Mutating: true}
 
@@ -423,12 +420,12 @@ func TestReplayMissingSidecar(t *testing.T) {
 	spy := &spyTool{spec: tools.Spec{Name: "skill", Mutating: true}, result: tools.ToolResult{Preview: "big-output"}}
 
 	// First dispatch acquires + executes; then record an end pointing at a GC'd sidecar.
-	if _, _, err := gatedExec(context.Background(), g, spy, skillRestoreArgs, key); err != nil {
+	if _, _, err := gatedExec(ownerCtx(), g, spy, skillRestoreArgs, key); err != nil {
 		t.Fatalf("first dispatch: %v", err)
 	}
 	insertEnd(t, store, key, "partial preview", "/nonexistent/definitely-gc-ed.result")
 
-	res, v, err := gatedExec(context.Background(), g, spy, skillRestoreArgs, key)
+	res, v, err := gatedExec(ownerCtx(), g, spy, skillRestoreArgs, key)
 	if err != nil {
 		t.Fatalf("replay with missing sidecar must not error: %v", err)
 	}
@@ -483,7 +480,7 @@ func TestGatewayApprovalResumeReentersAndReservesOnce(t *testing.T) {
 	// (runner.go:551 gateway.WithResponder), so the WR-01 deny-before-Consume gate
 	// (ProfileServerProduction || !responderPresent) is not tripped and the cross-turn Consume
 	// runs. A headless (no-responder) re-drive would correctly deny here (WR-01).
-	_, v, err := gatedExec(WithResponder(context.Background()), g, spy, skillDeleteArgs, key)
+	_, v, err := gatedExec(WithResponder(ownerCtx()), g, spy, skillDeleteArgs, key)
 	if err != nil || v.Decision != Allow {
 		t.Fatalf("resumed re-drive = (%+v, %v), want allow via the ledger", v, err)
 	}
@@ -500,7 +497,7 @@ func TestGatewayApprovalResumeReentersAndReservesOnce(t *testing.T) {
 	// (2) A retry of the SAME triple (re-recorded approval) replays: rows==0 → Verdict.Replay,
 	// Execute NOT called again (the reservation is the exactly-once guarantee).
 	g.RecordResolvedApproval(convID, "skill", fp, ResolvedApproval{Approved: true, OperatorID: "op-1"})
-	res, rv, rerr := gatedExec(WithResponder(context.Background()), g, spy, skillDeleteArgs, key)
+	res, rv, rerr := gatedExec(WithResponder(ownerCtx()), g, spy, skillDeleteArgs, key)
 	if rerr != nil {
 		t.Fatalf("resumed retry err: %v", rerr)
 	}
@@ -538,7 +535,7 @@ func TestGatewayApprovalDeclineStaysFailClosed(t *testing.T) {
 	// (a) hardened + responder, NO ledger approval → Approve + ApprovalRequest, WITHHELD.
 	hardened := New(config.ProfileSingleUserHardened, store)
 	spy := &spyTool{spec: mutatingSpec, result: tools.ToolResult{Preview: "should-not-run"}}
-	res, v, err := gatedExec(WithResponder(context.Background()), hardened, spy, skillDeleteArgs, newKey(convID, "call-decline-1"))
+	res, v, err := gatedExec(WithResponder(ownerCtx()), hardened, spy, skillDeleteArgs, newKey(convID, "call-decline-1"))
 	if err != nil {
 		t.Fatalf("withheld approve must not error: %v", err)
 	}
@@ -555,7 +552,7 @@ func TestGatewayApprovalDeclineStaysFailClosed(t *testing.T) {
 	// (b) server_production → Deny (even with a responder), Execute==0.
 	prod := New(config.ProfileServerProduction, store)
 	prodSpy := &spyTool{spec: mutatingSpec}
-	_, pv, perr := gatedExec(WithResponder(context.Background()), prod, prodSpy, skillDeleteArgs, newKey(convID, "call-decline-2"))
+	_, pv, perr := gatedExec(WithResponder(ownerCtx()), prod, prodSpy, skillDeleteArgs, newKey(convID, "call-decline-2"))
 	if pv.Decision != Deny {
 		t.Fatalf("production verdict = %q, want deny", pv.Decision)
 	}

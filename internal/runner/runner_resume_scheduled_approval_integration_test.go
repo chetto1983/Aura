@@ -50,14 +50,14 @@ func schedulerApprovalHook(pool *pgxpool.Pool) ResumeHook {
 func seedPendingApprovalTask(t *testing.T, pool *pgxpool.Pool, convID string) string {
 	t.Helper()
 	id := uuid.Must(uuid.NewV7()).String()
-	if _, err := pool.Exec(context.Background(), `
+	if _, err := pool.Exec(ownerCtx(), `
 		INSERT INTO aura.scheduler_tasks
 			(id, kind, schedule_kind, every_minutes, status, origin_conversation_id)
 		VALUES ($1, 'agent_job', 'every', 60, 'pending_approval', $2)`, id, convID); err != nil {
 		t.Fatalf("seed pending_approval task: %v", err)
 	}
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), "DELETE FROM aura.scheduler_tasks WHERE id=$1", id)
+		_, _ = pool.Exec(ownerCtx(), "DELETE FROM aura.scheduler_tasks WHERE id=$1", id)
 	})
 	return id
 }
@@ -65,7 +65,7 @@ func seedPendingApprovalTask(t *testing.T, pool *pgxpool.Pool, convID string) st
 func taskStatus(t *testing.T, pool *pgxpool.Pool, taskID string) string {
 	t.Helper()
 	var status string
-	if err := pool.QueryRow(context.Background(),
+	if err := pool.QueryRow(ownerCtx(),
 		"SELECT status FROM aura.scheduler_tasks WHERE id=$1", taskID).Scan(&status); err != nil {
 		t.Fatalf("read task status: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestSubmitAnswer_ScheduledApproval_DirectiveMatchesTaskTransition_Integrati
 				t, pool, agenttest.NewFakeClient(), schedulerApprovalHook(pool))
 			convID := newIntegrationConversation(t, pool, convStore)
 			taskID := seedPendingApprovalTask(t, pool, convID)
-			ctx := context.Background()
+			ctx := ownerCtx()
 
 			// Mint through the REAL sweep path (MintApprovalPause), so the pause is byte-shaped
 			// exactly like the one the backstop pushes to a channel.
@@ -134,7 +134,7 @@ func TestSubmitAnswer_ScheduledApproval_ForeignConversationDoesNotTransition_Int
 	originConv := newIntegrationConversation(t, pool, convStore)
 	foreignConv := newIntegrationConversation(t, pool, convStore)
 	taskID := seedPendingApprovalTask(t, pool, originConv)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	rc, err := json.Marshal(map[string]string{"type": "scheduled_task_approval", "task_id": taskID})
 	if err != nil {

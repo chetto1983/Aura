@@ -12,18 +12,19 @@ type DocumentDescriber interface {
 	SetDigest(ctx context.Context, identityID, documentID, description string) error
 }
 
-// DocumentDescribe is how the library learns.
+// DocumentDescribe is how the library learns what the machine could not measure.
 //
-// Nothing reads a document at upload time any more — the bytes go to storage and
-// the catalog gets a name, tags and a size. That is enough to find `Clienti.xlsx`
-// and useless for `export_2024_final_v3.xlsx`. Rather than pay an extraction
-// pass over every file on the chance someone asks about it, the description is
-// written by the one party who has actually looked: the agent, the first time it
-// opens the file.
+// Every ingested file already carries a CARD, written at ingest from the file
+// itself: sheet names, column headers with their frequent values, sampled rows,
+// or — for a PDF, whose words are glyph indices behind a font encoding — its
+// metadata and page count. So this tool is no longer the author of a document's
+// description. It is the editor: it records what a reader knows and an extractor
+// cannot, and it writes to its OWN column, so a note can never delete the
+// structure the card measured.
 //
-// So this is the counterpart of document_open. Open, look, and say what it was —
-// after which document_search can find that file by its columns, its subject or
-// its period, for every question after this one.
+// The distinction matters at the prompt level, which is why the tool description
+// leads with it: a model that believes an undescribed file is undescribed will
+// spend a turn restating the column headers that are already indexed.
 type DocumentDescribe struct {
 	Documents DocumentDescriber
 }
@@ -40,16 +41,17 @@ type documentDescribeArgs struct {
 func (t *DocumentDescribe) Spec() Spec {
 	return Spec{
 		Name:    "document_describe",
-		Summary: "Record what a document contains, so document_search can find it later by its subject or columns.",
-		Description: "After you open a document and see what is in it, write that down here — it is stored on the " +
-			"document and is what document_search ranks on from then on. Do this whenever you opened a file whose " +
-			"NAME did not say what it holds, or when you learn something about it a future search would need: the " +
-			"sheets and their column headers, the subject, the period covered, the kind of records. Write it in the " +
-			"words the user would search by, not in a summary of the content — the content stays in the file, and " +
-			"document_open hands that over. One or two sentences is right. This replaces the description entirely, " +
-			"so include what still applies. Example: {\"document_id\":\"doc_9f2c\",\"description\":\"Customer list, " +
-			"5889 rows. Columns: area, branch, customer code, company name, town, sales rep. Piedmont and Liguria, " +
-			"2026.\"}.",
+		Summary: "Add what you learned about a document to the description Aura already wrote for it at upload.",
+		Description: "Every document ALREADY has a machine-written description, made from the file when it was " +
+			"uploaded: sheets, column headers, frequent values, sample rows, page counts. document_search returns " +
+			"it and ranks on it, so a file is findable without you. Do NOT restate it. Use this tool only to add " +
+			"what reading the file taught you and the structure could not say: what the document is FOR, the " +
+			"period it covers, the business meaning of a cryptic column or code, or the subject of a PDF (whose " +
+			"text is never read at upload — for those this is the only description there is). This replaces your " +
+			"OWN note in full, not the machine's description, so restate anything of yours that still applies. " +
+			"One or two sentences. Example: {\"document_id\":\"doc_9f2c\",\"description\":\"Customer master for " +
+			"Piedmont and Liguria used for the 2026 sales-rep review; 'Cliente' is the SAP account number and " +
+			"'Filiale Ass.' the branch that owns the account.\"}.",
 		Parameters: json.RawMessage(`{
   "type": "object",
   "properties": {

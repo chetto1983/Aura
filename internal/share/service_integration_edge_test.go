@@ -47,7 +47,7 @@ func TestShareUpdateOwnerGate(t *testing.T) {
 	owner := seedIdentity(t, pool)
 	stranger := seedIdentity(t, pool)
 	conv := seedConversation(t, pool, owner)
-	appendTurn(t, deps.convStore, conv, llm.RoleUser, "hi")
+	appendTurn(t, deps.convStore, owner, conv, llm.RoleUser, "hi")
 
 	res, err := deps.svc.Create(context.Background(), CreateRequest{ConversationID: conv, OwnerIdentityID: owner, Tier: TierInternal})
 	if err != nil {
@@ -67,7 +67,7 @@ func TestShareRevokeOwnerGate(t *testing.T) {
 	owner := seedIdentity(t, pool)
 	stranger := seedIdentity(t, pool)
 	conv := seedConversation(t, pool, owner)
-	appendTurn(t, deps.convStore, conv, llm.RoleUser, "hi")
+	appendTurn(t, deps.convStore, owner, conv, llm.RoleUser, "hi")
 
 	res, err := deps.svc.Create(context.Background(), CreateRequest{ConversationID: conv, OwnerIdentityID: owner, Tier: TierInternal})
 	if err != nil {
@@ -134,7 +134,7 @@ func TestShareCreateArtifactBundleFailure(t *testing.T) {
 	deps := newShareTestService(t, pool, true)
 	owner := seedIdentity(t, pool)
 	conv := seedConversation(t, pool, owner)
-	appendTurn(t, deps.convStore, conv, llm.RoleUser, "hi")
+	appendTurn(t, deps.convStore, owner, conv, llm.RoleUser, "hi")
 
 	assetID := uuid.Must(uuid.NewV7()).String()
 	deps.artifacts.byThread[conv] = []assets.Asset{
@@ -155,7 +155,7 @@ func TestShareUpdateArtifactBundleFailure(t *testing.T) {
 	deps := newShareTestService(t, pool, true)
 	owner := seedIdentity(t, pool)
 	conv := seedConversation(t, pool, owner)
-	appendTurn(t, deps.convStore, conv, llm.RoleUser, "hi")
+	appendTurn(t, deps.convStore, owner, conv, llm.RoleUser, "hi")
 
 	res, err := deps.svc.Create(context.Background(), CreateRequest{ConversationID: conv, OwnerIdentityID: owner, Tier: TierInternal})
 	if err != nil {
@@ -181,7 +181,7 @@ func TestShareRevokeAlreadyRevoked(t *testing.T) {
 	deps := newShareTestService(t, pool, true)
 	owner := seedIdentity(t, pool)
 	conv := seedConversation(t, pool, owner)
-	appendTurn(t, deps.convStore, conv, llm.RoleUser, "hi")
+	appendTurn(t, deps.convStore, owner, conv, llm.RoleUser, "hi")
 
 	res, err := deps.svc.Create(context.Background(), CreateRequest{ConversationID: conv, OwnerIdentityID: owner, Tier: TierInternal})
 	if err != nil {
@@ -205,7 +205,7 @@ func TestShareResolveByTokenBlobMissing(t *testing.T) {
 	deps := newShareTestService(t, pool, true)
 	owner := seedIdentity(t, pool)
 	conv := seedConversation(t, pool, owner)
-	appendTurn(t, deps.convStore, conv, llm.RoleUser, "hi")
+	appendTurn(t, deps.convStore, owner, conv, llm.RoleUser, "hi")
 
 	res, err := deps.svc.Create(context.Background(), CreateRequest{
 		ConversationID: conv, OwnerIdentityID: owner, Tier: TierPublic, ExpiryOption: ExpiryDefault,
@@ -229,7 +229,7 @@ func TestShareResolveInternalBlobMissing(t *testing.T) {
 	deps := newShareTestService(t, pool, true)
 	owner := seedIdentity(t, pool)
 	conv := seedConversation(t, pool, owner)
-	appendTurn(t, deps.convStore, conv, llm.RoleUser, "hi")
+	appendTurn(t, deps.convStore, owner, conv, llm.RoleUser, "hi")
 
 	res, err := deps.svc.Create(context.Background(), CreateRequest{ConversationID: conv, OwnerIdentityID: owner, Tier: TierInternal})
 	if err != nil {

@@ -116,7 +116,7 @@ func assignDest(dest, values []any) error {
 // non-tx methods never touch it).
 func fakeStore(t *testing.T, fake *fakeDBTX) *Store {
 	t.Helper()
-	return &Store{q: sqlc.New(fake), runDir: t.TempDir(), turnCapBytes: 65536}
+	return newFakeStore(&Store{q: sqlc.New(fake), runDir: t.TempDir(), turnCapBytes: 65536})
 }
 
 func mustUUID(t *testing.T) (string, pgtype.UUID) {
@@ -417,7 +417,7 @@ func TestLoadHistory_FakeSidecarRehydrate(t *testing.T) {
 		// A poisoned column path that must be IGNORED — the reader reconstructs the path.
 		turnRowValues(conv, 3, "assistant", "", "/nonexistent/poison.content", "", nil),
 	}}}
-	s := &Store{q: sqlc.New(fake), runDir: dir, turnCapBytes: 65536}
+	s := newFakeStore(&Store{q: sqlc.New(fake), runDir: dir, turnCapBytes: 65536})
 	msgs, err := s.LoadHistory(context.Background(), convID)
 	if err != nil {
 		t.Fatalf("LoadHistory: %v", err)
@@ -437,7 +437,7 @@ func TestLoadHistory_FakeSidecarMissing(t *testing.T) {
 		// Non-empty column = did-spill flag; no file exists at the reconstructed path.
 		turnRowValues(conv, 1, "assistant", "", "did-spill", "", nil),
 	}}}
-	s := &Store{q: sqlc.New(fake), runDir: t.TempDir(), turnCapBytes: 65536}
+	s := newFakeStore(&Store{q: sqlc.New(fake), runDir: t.TempDir(), turnCapBytes: 65536})
 	if _, err := s.LoadHistory(context.Background(), convID); err == nil {
 		t.Error("LoadHistory(missing sidecar): want read error")
 	}
@@ -539,4 +539,15 @@ func TestLoadManagedHistory_FakeLoadError(t *testing.T) {
 		ContextConfig{ContextWindow: 1000, MaxOutputTokens: 1}); !errors.Is(err, boom) {
 		t.Errorf("LoadManagedHistory load error must propagate: %v", err)
 	}
+}
+
+// newFakeStore installs the DB-free transaction seam on a Store literal built over a
+// fakeDBTX: scoped() runs fn straight against the fake's Queries instead of opening a real
+// transaction. pool.Begin needs a concrete *pgxpool.Pool, so without this seam every
+// error-branch unit test in this package would have to become an integration test — and the
+// branches they cover (a Query error, a Scan error, a missing sidecar) are precisely the ones
+// a live database will not produce on demand.
+func newFakeStore(s *Store) *Store {
+	s.scopedTx = func(_ context.Context, _ string, fn func(*sqlc.Queries) error) error { return fn(s.q) }
+	return s
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/db/sqlc"
 )
 
 // TurnReasoning is the DISPLAY-ONLY projection of one answer-shaped assistant
@@ -30,9 +31,16 @@ func (s *Store) ListTurnReasoning(ctx context.Context, conversationID string) ([
 	if err != nil {
 		return nil, fmt.Errorf("list turn reasoning: %w", err)
 	}
-	rows, err := s.q.ListAssistantTurnReasoning(ctx, id)
-	if err != nil {
-		return nil, fmt.Errorf("list turn reasoning %s: %w", conversationID, err)
+	var rows []sqlc.ListAssistantTurnReasoningRow
+	if err := s.scoped(ctx, func(q *sqlc.Queries) error {
+		listed, lErr := q.ListAssistantTurnReasoning(ctx, id)
+		if lErr != nil {
+			return fmt.Errorf("list turn reasoning %s: %w", conversationID, lErr)
+		}
+		rows = listed
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 	out := make([]TurnReasoning, 0, len(rows))
 	for _, r := range rows {

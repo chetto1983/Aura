@@ -30,6 +30,7 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/conversations"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/share"
 	"github.com/google/uuid"
@@ -44,7 +45,7 @@ import (
 // owns, so seedExportConversation registers no separate cleanup of its own.
 func seedShareExportIdentity(t *testing.T, pool *pgxpool.Pool) string {
 	t.Helper()
-	ctx := context.Background()
+	ctx := ownerCtx()
 	name := "share-export-" + t.Name() + "-" + uuid.Must(uuid.NewV7()).String()
 	var id string
 	if err := pool.QueryRow(ctx,
@@ -54,7 +55,7 @@ func seedShareExportIdentity(t *testing.T, pool *pgxpool.Pool) string {
 		t.Fatalf("seed identity: %v", err)
 	}
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), `DELETE FROM aura.identities WHERE id = $1`, id)
+		_, _ = pool.Exec(ownerCtx(), `DELETE FROM aura.identities WHERE id = $1`, id)
 	})
 	return id
 }
@@ -63,7 +64,10 @@ func seedShareExportIdentity(t *testing.T, pool *pgxpool.Pool) string {
 // appends turns in order — returning its id.
 func seedExportConversation(t *testing.T, store *conversations.Store, identityID, title string, turns []conversations.AppendTurnParams) string {
 	t.Helper()
-	ctx := context.Background()
+	// Scoped to identityID, NOT to ownerCtx's seeded local identity: these fixtures belong to
+	// a fresh per-test owner, and since migration 0089 a store call reads and writes as
+	// whoever is on the context.
+	ctx := identityctx.WithIdentityID(context.Background(), identityID)
 	id := uuid.Must(uuid.NewV7()).String()
 	if _, err := store.Create(ctx, conversations.CreateParams{ID: id, IdentityID: identityID, Model: "test-model"}); err != nil {
 		t.Fatalf("create conversation: %v", err)

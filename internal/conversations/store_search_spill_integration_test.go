@@ -3,7 +3,6 @@
 package conversations
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,7 +22,7 @@ func TestSearchSpilledContentExcluded(t *testing.T) {
 	runDir := t.TempDir()
 	s := New(pool, Config{RunDir: runDir, TurnCapBytes: 64}) // tiny cap → force a spill
 	convID := newConversation(t, s)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	// Random (v4) UUIDs, NOT v7: the search is a pg_trgm `content % $1` match at the 0.3
 	// similarity_threshold, and v7 is time-ordered — two tokens minted microseconds apart

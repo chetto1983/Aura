@@ -3,7 +3,6 @@
 package conversations
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,7 +30,7 @@ func TestScanOrphans_RemovesOrphanKeepsLive(t *testing.T) {
 	pool := migratedPool(t)
 	runDir := t.TempDir()
 	s := New(pool, Config{RunDir: runDir, TurnCapBytes: 65536})
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	liveID := newConversation(t, s)
 	liveDir := mkConvDir(t, runDir, liveID)
@@ -56,7 +55,7 @@ func TestScanOrphans_RemovesOrphanKeepsLive(t *testing.T) {
 func TestScanOrphans_SymlinkNotFollowed(t *testing.T) {
 	pool := migratedPool(t)
 	runDir := t.TempDir()
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	// An external dir with a sentinel file that MUST survive.
 	external := t.TempDir()
@@ -91,7 +90,7 @@ func TestScanOrphans_SizeWarnDoesNotPurge(t *testing.T) {
 	pool := migratedPool(t)
 	runDir := t.TempDir()
 	s := New(pool, Config{RunDir: runDir, TurnCapBytes: 65536})
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	liveID := newConversation(t, s)
 	liveDir := mkConvDir(t, runDir, liveID)
@@ -115,7 +114,7 @@ func TestScanOrphans_SizeWarnDoesNotPurge(t *testing.T) {
 func TestScanOrphans_SweepsTmp(t *testing.T) {
 	pool := migratedPool(t)
 	runDir := t.TempDir()
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	tmpRoot := filepath.Join(runDir, "tmp")
 	if err := os.MkdirAll(tmpRoot, 0o755); err != nil {
@@ -155,7 +154,7 @@ func TestScanOrphans_ReconcilesCrashOrphanContentSidecars(t *testing.T) {
 	pool := migratedPool(t)
 	runDir := t.TempDir()
 	s := New(pool, Config{RunDir: runDir, TurnCapBytes: 64}) // tiny cap → force a spill
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	convID := newConversation(t, s)
 	dir := filepath.Join(runDir, "conversations", convID)
@@ -241,7 +240,7 @@ func TestScanOrphans_ReconcilesCrashOrphanContentSidecars(t *testing.T) {
 // a clean no-op.
 func TestScanOrphans_NoRunDirIsNoop(t *testing.T) {
 	pool := migratedPool(t)
-	ctx := context.Background()
+	ctx := ownerCtx()
 	if err := ScanOrphans(ctx, pool, ScanParams{RunDir: ""}); err != nil {
 		t.Errorf("empty run dir must be a no-op, got %v", err)
 	}

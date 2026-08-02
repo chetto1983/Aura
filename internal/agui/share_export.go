@@ -57,7 +57,7 @@ func (s *Server) handleConversationExport(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	history, err := s.conv.LoadHistory(r.Context(), id)
+	history, err := s.conv.LoadHistory(scopedCtx(r.Context()), id)
 	if err != nil {
 		http.Error(w, sanitizeErr(err), http.StatusInternalServerError)
 		return

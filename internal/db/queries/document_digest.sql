@@ -10,10 +10,26 @@ WHERE id = sqlc.arg(id)
   AND deleted_at IS NULL
 RETURNING *;
 
+-- name: SetDocumentCard :one
+-- The machine's own description, written at ingest from the file. Identity-scoped like
+-- the digest above: same table, same reachability, same rule. It deliberately does NOT
+-- touch digest — that column belongs to document_describe, and a re-ingest must not
+-- delete what the agent learned by opening the file.
+UPDATE aura.documents
+SET card = sqlc.arg(card),
+    updated_at = now()
+WHERE id = sqlc.arg(id)
+  AND identity_id = sqlc.arg(identity_id)
+  AND deleted_at IS NULL
+RETURNING *;
+
 -- name: SearchDocumentDigests :many
 -- Rank a library by what each document IS, to pick WHICH file to open. The
--- ranking is Postgres' own ts_rank over the weighted title/tags/digest vector —
--- no embedding, no reranker, no graph. websearch_to_tsquery is used because the
+-- ranking is Postgres' own ts_rank over the weighted title/tags/digest/card
+-- vector — no embedding, no reranker, no graph. The four legs are weighted in
+-- that order (A title, B tags, C the agent's note, D the machine card): the card
+-- makes every file findable from the moment it lands, and never outranks what a
+-- person or the agent said about it. websearch_to_tsquery is used because the
 -- query arrives as a user's sentence, and it degrades a malformed one to terms
 -- instead of raising, which plainto_tsquery does not do as gracefully.
 --

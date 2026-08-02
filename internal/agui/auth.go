@@ -340,6 +340,20 @@ func scopedIdentityID(ctx context.Context) string {
 	return localIdentityID
 }
 
+// scopedCtx returns ctx carrying the request's scoped identity, for the store calls that take
+// only a context — LoadHistory, SearchConversationTurns, ListBranches, SetTitleIfNull and the
+// rot-events read. Their *ForIdentity siblings take the identity as an argument; these have
+// nowhere to put it but the context, and since migration 0089 an unscoped call sees nothing.
+//
+// It is applied per call site rather than as middleware ON PURPOSE: planting an identity on
+// the REQUEST context would make principalFrom report a principal for an unauthenticated
+// request, and RequireAuth/RequireCapability would then admit it. Measured — the middleware
+// version turned every unauthenticated governance 401 into a 200. The identity belongs on the
+// context handed to the store, never on the one the auth gate reads.
+func scopedCtx(ctx context.Context) context.Context {
+	return identityctx.WithIdentityID(ctx, scopedIdentityID(ctx))
+}
+
 // wantsHTML reports whether the request is a browser navigation (an Accept header that
 // prefers text/html) rather than an API/XHR call. RequireAuth redirects a browser GET
 // to the login page but 401s an API request, so a fetch() gets a clean status instead

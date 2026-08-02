@@ -12,7 +12,7 @@ import (
 )
 
 const searchDocumentDigests = `-- name: SearchDocumentDigests :many
-SELECT id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, digest_tsv, ts_rank(digest_tsv, websearch_to_tsquery('simple', unaccent('unaccent'::regdictionary, $1::text))) AS rank
+SELECT id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, card, digest_tsv, ts_rank(digest_tsv, websearch_to_tsquery('simple', unaccent('unaccent'::regdictionary, $1::text))) AS rank
 FROM aura.documents
 WHERE identity_id = $2
   AND deleted_at IS NULL
@@ -44,6 +44,7 @@ type SearchDocumentDigestsRow struct {
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
 	Digest          string             `json:"digest"`
+	Card            string             `json:"card"`
 	DigestTsv       interface{}        `json:"digest_tsv"`
 	Rank            float32            `json:"rank"`
 }
@@ -90,6 +91,7 @@ func (q *Queries) SearchDocumentDigests(ctx context.Context, arg SearchDocumentD
 			&i.UpdatedAt,
 			&i.DeletedAt,
 			&i.Digest,
+			&i.Card,
 			&i.DigestTsv,
 			&i.Rank,
 		); err != nil {
@@ -103,6 +105,48 @@ func (q *Queries) SearchDocumentDigests(ctx context.Context, arg SearchDocumentD
 	return items, nil
 }
 
+const setDocumentCard = `-- name: SetDocumentCard :one
+UPDATE aura.documents
+SET card = $1,
+    updated_at = now()
+WHERE id = $2
+  AND identity_id = $3
+  AND deleted_at IS NULL
+RETURNING id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, card, digest_tsv
+`
+
+type SetDocumentCardParams struct {
+	Card       string      `json:"card"`
+	ID         pgtype.UUID `json:"id"`
+	IdentityID pgtype.UUID `json:"identity_id"`
+}
+
+// The machine's own description, written at ingest from the file. Identity-scoped like
+// the digest above: same table, same reachability, same rule. It deliberately does NOT
+// touch digest — that column belongs to document_describe, and a re-ingest must not
+// delete what the agent learned by opening the file.
+func (q *Queries) SetDocumentCard(ctx context.Context, arg SetDocumentCardParams) (AuraDocuments, error) {
+	row := q.db.QueryRow(ctx, setDocumentCard, arg.Card, arg.ID, arg.IdentityID)
+	var i AuraDocuments
+	err := row.Scan(
+		&i.ID,
+		&i.IdentityID,
+		&i.Scope,
+		&i.Title,
+		&i.Tags,
+		&i.Metadata,
+		&i.ActiveVersionID,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.Digest,
+		&i.Card,
+		&i.DigestTsv,
+	)
+	return i, err
+}
+
 const setDocumentDigest = `-- name: SetDocumentDigest :one
 UPDATE aura.documents
 SET digest = $1,
@@ -110,7 +154,7 @@ SET digest = $1,
 WHERE id = $2
   AND identity_id = $3
   AND deleted_at IS NULL
-RETURNING id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, digest_tsv
+RETURNING id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, card, digest_tsv
 `
 
 type SetDocumentDigestParams struct {
@@ -138,6 +182,7 @@ func (q *Queries) SetDocumentDigest(ctx context.Context, arg SetDocumentDigestPa
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.Digest,
+		&i.Card,
 		&i.DigestTsv,
 	)
 	return i, err

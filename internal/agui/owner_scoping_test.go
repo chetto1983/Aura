@@ -103,10 +103,19 @@ func TestConversationsBranchAPI_ForeignMutateIsHidden(t *testing.T) {
 	}
 }
 
-// TestConversationsAPI_ForeignMutateIs403 proves a delete/archive/rename of a KNOWN-foreign
-// conversation is 403 (a mutate on a resource the caller may not touch — D-06), distinct
-// from the 404 an absent id gets.
-func TestConversationsAPI_ForeignMutateIs403(t *testing.T) {
+// TestConversationsAPI_ForeignMutateIs404 proves a delete/archive/rename of a KNOWN-foreign
+// conversation is 404 — the SAME answer an absent id gets, so the caller cannot tell the two
+// apart.
+//
+// It asserted 403 until migration 0089. D-06 asked for that split, and the handler produced
+// it by probing existence on the unscoped base Get — which only ever worked because the
+// 0032 policy was permissive when app.current_identity was unset. With aura.conversations
+// fail-closed there is no read left that can observe a foreign row, so the distinction is
+// gone at the source, not merely stopped being reported. Rewritten rather than deleted
+// because the case it covers — a mutate of someone else's id — still needs a pinned status,
+// and the safer one is now the only reachable one. It matches what share_api.go already
+// does for share links (SC4 row 6: any error is 404, never 403).
+func TestConversationsAPI_ForeignMutateIs404(t *testing.T) {
 	foreignOwner := uuid.Must(uuid.NewV7()).String()
 	srv := convAPIServer(t, newOwnerConvStore(goodID, foreignOwner))
 
@@ -117,14 +126,14 @@ func TestConversationsAPI_ForeignMutateIs403(t *testing.T) {
 		{http.MethodPost, "/api/conversations/" + goodID + "/rename", `{"title":"x"}`},
 	}
 	for _, c := range cases {
-		if code, body := req(t, srv, c.method, c.path, c.body); code != http.StatusForbidden {
-			t.Errorf("%s %s of a foreign conversation = %d, want 403: %s", c.method, c.path, code, body)
+		if code, body := req(t, srv, c.method, c.path, c.body); code != http.StatusNotFound {
+			t.Errorf("%s %s of a foreign conversation = %d, want 404 (existence hidden): %s", c.method, c.path, code, body)
 		}
 	}
 }
 
 // TestConversationsAPI_AbsentMutateIs404 proves a mutate of an id that does not exist at all
-// is 404 (the existence probe misses), never 403.
+// is 404 — indistinguishable from the foreign case above, which is the point.
 func TestConversationsAPI_AbsentMutateIs404(t *testing.T) {
 	absent := "22222222-2222-2222-2222-222222222222"
 	srv := convAPIServer(t, newOwnerConvStore(goodID, localIdentityID)) // goodID is owned; `absent` is not modeled
@@ -171,23 +180,19 @@ func (o *ownerApprovalStore) GetByTokenForIdentity(_ context.Context, token, ide
 	return askuser.Pending{}, askuser.ErrPauseNotFound
 }
 
-func (o *ownerApprovalStore) GetByToken(_ context.Context, token string) (askuser.Pending, error) {
-	if token == o.token {
-		return askuser.Pending{Token: token}, nil
-	}
-	return askuser.Pending{}, askuser.ErrPauseNotFound
-}
-
-// TestApprovalsAPI_ResolveForeignIs403 proves resolving another identity's approval is 403
-// (a known-foreign mutate) and never reaches the Runner.
-func TestApprovalsAPI_ResolveForeignIs403(t *testing.T) {
+// TestApprovalsAPI_ResolveForeignIs404 proves resolving another identity's approval is 404
+// and never reaches the Runner. It asserted 403 until migration 0089 made
+// aura.paused_states fail closed: the unscoped existence probe that produced the 403 can no
+// longer see a foreign pause, so foreign and unknown collapse to the same answer. What the
+// test still guards is the part that matters — the resolve does not reach SubmitAnswers.
+func TestApprovalsAPI_ResolveForeignIs404(t *testing.T) {
 	token := uuid.Must(uuid.NewV7()).String()
 	foreignOwner := uuid.Must(uuid.NewV7()).String()
 	run := &scriptedRunner{}
 	srv := newResolveTestServer(t, run, &ownerApprovalStore{token: token, owner: foreignOwner})
 
-	if code, body := postResolve(t, srv, token, `{"action":"accept"}`); code != http.StatusForbidden {
-		t.Fatalf("resolve of a foreign approval = %d, want 403: %s", code, body)
+	if code, body := postResolve(t, srv, token, `{"action":"accept"}`); code != http.StatusNotFound {
+		t.Fatalf("resolve of a foreign approval = %d, want 404: %s", code, body)
 	}
 	if run.gotAnswers != nil {
 		t.Errorf("a foreign resolve must not reach SubmitAnswers; got %v", run.gotAnswers)

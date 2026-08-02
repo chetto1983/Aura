@@ -102,7 +102,48 @@ func (c *Config) ValidateProfile(p RuntimeProfile) []Violation {
 	vs = append(vs, c.gateMCPLegacyEnv(p)...)
 	vs = append(vs, c.gateObjectStoreEndpoint(p)...)
 	vs = append(vs, c.gateRetention()...)
+	vs = append(vs, c.gateMultiUserNeedsASandbox(p)...)
 	return vs
+}
+
+// gateMultiUserNeedsASandbox refuses the ONE combination that makes every other
+// isolation control decorative: a second identity on a deployment whose tools run on
+// the host.
+//
+// Four planes are shared deployment-wide and none of them is identity-scoped today:
+//
+//	skills          skillLoaderRoots() returns {<export>/.agents/skills, cfg.SkillsDir}
+//	                with no identity component, and skills.NewSkillToolForIdentity — the
+//	                per-identity primitive — has ZERO production callers. A second
+//	                identity reads and rewrites the operator's library.
+//	host tools      usersandbox.SandboxRouter.Route returns routed=false unless the
+//	                profile is Strict, and ParseProfile maps unset to `dev`. On that
+//	                branch shell_exec and every fs_* run on the host as the daemon user:
+//	                .env, the Postgres/Garage/ArcadeDB credentials, $AURA_RUN_DIR.
+//	aura.settings   keyed by `key` alone — no identity column, no RLS — and it holds
+//	                OPENROUTER_API_KEY.
+//	MCP catalog     unscoped; capability grants are the only control.
+//
+// Running tools on the host is a DELIBERATE product decision for a single-principal
+// appliance, not a defect: the operator's own words are that the full host terminal is
+// the primary surface. The defect would be pairing it with a second identity, because
+// host access defeats the five planes that ARE isolated — per-identity ArcadeDB
+// databases, identity-scoped Postgres rows, Garage objects, conversations, shared links.
+//
+// So this gate does not force a sandbox and does not forbid multi-user. It forbids the
+// PAIR, at any profile, and says which of the two to change.
+func (c *Config) gateMultiUserNeedsASandbox(p RuntimeProfile) []Violation {
+	if c == nil || !c.MUSRIsolation || p.Strict() {
+		return nil
+	}
+	return []Violation{{
+		Knob: "AURA_MUSR_ISOLATION",
+		Sev:  Fatal,
+		Msg: "a second identity needs per-identity tool isolation: set AURA_RUNTIME_PROFILE to " +
+			"single_user_hardened or server_production so shell_exec and fs_* route into a " +
+			"per-identity box, or leave AURA_MUSR_ISOLATION off — under the dev profile every " +
+			"identity shares the host, the skills library, aura.settings and the MCP catalog",
+	}}
 }
 
 func gateHistoryHardCap() []Violation {

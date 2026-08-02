@@ -75,7 +75,7 @@ func (s *Server) handleListBranches(w http.ResponseWriter, r *http.Request) {
 	if !s.ownBranchConvOr404(w, r, id) {
 		return
 	}
-	branches, err := s.conv.ListBranches(r.Context(), id)
+	branches, err := s.conv.ListBranches(scopedCtx(r.Context()), id)
 	if err != nil {
 		writeStoreErr(w, err)
 		return
@@ -131,7 +131,7 @@ func (s *Server) handleEditBranch(w http.ResponseWriter, r *http.Request) {
 	if role == "" {
 		role = "user"
 	}
-	leaf, _, err := s.conv.ForkBranch(r.Context(), id, body.DivergeSeq, role, body.Content)
+	leaf, _, err := s.conv.ForkBranch(scopedCtx(r.Context()), id, body.DivergeSeq, role, body.Content)
 	if err != nil {
 		if errors.Is(err, conversations.ErrTurnNotFound) {
 			http.Error(w, "turn not found", http.StatusNotFound)
@@ -161,7 +161,7 @@ func (s *Server) handleSelectBranch(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	branches, err := s.conv.ListBranches(r.Context(), id)
+	branches, err := s.conv.ListBranches(scopedCtx(r.Context()), id)
 	if err != nil {
 		writeStoreErr(w, err)
 		return
@@ -181,7 +181,7 @@ func (s *Server) handleSelectBranch(w http.ResponseWriter, r *http.Request) {
 // normal turn on the wire — only the loaded history differs.
 func (s *Server) rerunBranch(w http.ResponseWriter, r *http.Request, convID string, leaf int) {
 	ctx := r.Context()
-	if _, err := s.conv.Get(ctx, convID); err != nil {
+	if _, err := s.conv.Get(scopedCtx(ctx), convID); err != nil {
 		if errors.Is(err, conversations.ErrConversationNotFound) {
 			http.Error(w, "thread not found", http.StatusNotFound)
 			return

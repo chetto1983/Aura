@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"io"
 	"time"
 
@@ -214,7 +215,11 @@ func (svc *Service) Create(ctx context.Context, req CreateRequest) (CreateResult
 	}
 
 	// 4. Load history + candidate artifacts; filter to the agent-only allowlist.
-	history, err := svc.conv.LoadHistory(ctx, req.ConversationID)
+	// LoadHistory carries the owner on the CONTEXT because that is its only channel — every
+	// other call here takes the owner as an argument. Since migration 0089 an unscoped read
+	// returns an EMPTY history rather than an error, which would silently mint a share of a
+	// conversation with no turns; the owner is already established above, so name it.
+	history, err := svc.conv.LoadHistory(identityctx.WithIdentityID(ctx, req.OwnerIdentityID), req.ConversationID)
 	if err != nil {
 		return CreateResult{}, fmt.Errorf("create share: load history: %w", err)
 	}
@@ -320,7 +325,7 @@ func (svc *Service) Update(ctx context.Context, shareID, identityID string) (Lin
 	if err != nil {
 		return Link{}, fmt.Errorf("update share %s: %w", shareID, ErrShareNotFound)
 	}
-	history, err := svc.conv.LoadHistory(ctx, convID)
+	history, err := svc.conv.LoadHistory(identityctx.WithIdentityID(ctx, identityID), convID)
 	if err != nil {
 		return Link{}, fmt.Errorf("update share %s: load history: %w", shareID, err)
 	}

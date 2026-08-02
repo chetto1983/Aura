@@ -90,7 +90,7 @@ func TestAppendTurnTx_BadConversationID(t *testing.T) {
 func TestAppendTurnTx_RejectsSpill(t *testing.T) {
 	t.Parallel()
 	runDir := t.TempDir()
-	s := &Store{q: sqlc.New(&fakeDBTX{}), runDir: runDir, turnCapBytes: 8}
+	s := newFakeStore(&Store{q: sqlc.New(&fakeDBTX{}), runDir: runDir, turnCapBytes: 8})
 	convID := uuid.Must(uuid.NewV7()).String()
 	err := s.AppendTurnTx(context.Background(), sqlc.New(&fakeDBTX{}), AppendTurnParams{
 		ConversationID: convID, Seq: 5, Role: "tool", Content: strings.Repeat("x", 9),
@@ -109,7 +109,7 @@ func TestAppendTurnTx_RejectsSpill(t *testing.T) {
 // reject) — the boundary the WR-01 guard shares with maybeSpill (len <= cap is inline).
 func TestAppendTurnTx_InlineAtCap(t *testing.T) {
 	t.Parallel()
-	s := &Store{q: sqlc.New(&fakeDBTX{}), runDir: t.TempDir(), turnCapBytes: 8}
+	s := newFakeStore(&Store{q: sqlc.New(&fakeDBTX{}), runDir: t.TempDir(), turnCapBytes: 8})
 	convID := uuid.Must(uuid.NewV7()).String()
 	if err := s.AppendTurnTx(context.Background(), sqlc.New(&fakeDBTX{}), AppendTurnParams{
 		ConversationID: convID, Seq: 5, Role: "tool", Content: strings.Repeat("x", 8),
@@ -124,7 +124,7 @@ func TestAppendTurnTx_AppliesRedactionBeforeSpillGuard(t *testing.T) {
 	t.Cleanup(func() { secret.ConfigureExactRedactor(os.Environ()) })
 
 	capBytes := len(secret.ConfiguredValuePlaceholder)
-	s := &Store{q: sqlc.New(&fakeDBTX{}), runDir: t.TempDir(), turnCapBytes: capBytes}
+	s := newFakeStore(&Store{q: sqlc.New(&fakeDBTX{}), runDir: t.TempDir(), turnCapBytes: capBytes})
 	convID := uuid.Must(uuid.NewV7()).String()
 	if err := s.AppendTurnTx(context.Background(), sqlc.New(&fakeDBTX{}), AppendTurnParams{
 		ConversationID: convID, Seq: 5, Role: "tool", Content: configured,

@@ -119,15 +119,21 @@ func writeStoreErr(w http.ResponseWriter, err error) {
 }
 
 // writeForeignMutateStatus resolves a not-owned mutate (a *ForIdentity mutate that affected
-// 0 rows) to the D-06 wire status: 403 when the id exists (a known-foreign resource the
-// caller may not mutate) else 404. The existence check is the UNSCOPED base Get — the pool
-// path is permissive-on-unset, so it observes a foreign row — used ONLY to choose the
-// status code, never to return another identity's data.
-func (s *Server) writeForeignMutateStatus(w http.ResponseWriter, r *http.Request, id string) {
-	if _, err := s.conv.Get(r.Context(), id); err == nil {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
+// 0 rows) to 404, whether the id is foreign or absent.
+//
+// D-06 asked for 403-when-known-foreign, and this used to deliver it by probing existence on
+// the UNSCOPED base Get — which worked only because migration 0032's policy was
+// permissive-on-unset and let an identity-less pool read observe a foreign row. Migration
+// 0089 removed that branch, and with it the ability to distinguish the two cases at all:
+// there is no read left in the system that can see a conversation the caller does not own,
+// which is the entire point of the migration. Keeping the probe would have been dark code —
+// a branch that can no longer be reached — and pretending to distinguish them would mean
+// re-opening a cross-tenant read to serve a status code.
+//
+// So the split collapses toward the SAFER side, matching what internal/share/share_api.go
+// already does for share links: "ANY error — foreign id, absent id, store failure — is 404,
+// never 403 (SC4 row 6)". A caller now learns nothing about ids they do not own.
+func (s *Server) writeForeignMutateStatus(w http.ResponseWriter, _ *http.Request, _ string) {
 	http.Error(w, "conversation not found", http.StatusNotFound)
 }
 
@@ -169,7 +175,7 @@ func (s *Server) handleCreateConversation(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if title := normalizeCreateTitle(body.Title); title != "" {
-		if err := s.conv.SetTitleIfNull(r.Context(), id, title); err != nil {
+		if err := s.conv.SetTitleIfNull(scopedCtx(r.Context()), id, title); err != nil {
 			http.Error(w, sanitizeErr(err), http.StatusInternalServerError)
 			return
 		}
@@ -282,7 +288,7 @@ func (s *Server) handleConversationRotEvents(w http.ResponseWriter, r *http.Requ
 		writeStoreErr(w, err)
 		return
 	}
-	events, err := s.conv.ListContextRotEvents(r.Context(), id)
+	events, err := s.conv.ListContextRotEvents(scopedCtx(r.Context()), id)
 	if err != nil {
 		writeStoreErr(w, err)
 		return

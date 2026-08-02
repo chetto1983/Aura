@@ -5,6 +5,7 @@ package runner
 import (
 	"context"
 	"errors"
+	"github.com/jackc/pgx/v5"
 	"testing"
 	"time"
 
@@ -26,7 +27,7 @@ func TestExportDeleteProcessRestartRecoversDurableReservation(t *testing.T) {
 	pool := migratedRunnerPool(t)
 	first, store, _ := newIntegrationRunner(t, pool, agenttest.NewFakeClient())
 	conversationID := newIntegrationConversation(t, pool, store)
-	version, err := store.VersionForIdentity(context.Background(), conversationID, localIdentityID)
+	version, err := store.VersionForIdentity(ownerCtx(), conversationID, localIdentityID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,23 +36,24 @@ func TestExportDeleteProcessRestartRecoversDurableReservation(t *testing.T) {
 	if _, err := first.DeleteConversationLifecycleIfVersion(ctx, localIdentityID, conversationID, version); !errors.Is(err, errSimulatedProcessExitAfterReserve) {
 		t.Fatalf("first process error=%v, want simulated post-reserve exit", err)
 	}
-	if _, err := pool.Exec(context.Background(), `
-		UPDATE aura.conversations
-		SET delete_reserved_at = now() - ($1::bigint * interval '1 second')
-		WHERE id = $2::uuid`, int64((conversations.ExportDeleteRecoveryGrace+time.Minute)/time.Second), conversationID); err != nil {
-		t.Fatalf("age durable reservation past recovery grace: %v", err)
-	}
-	reserved, err := store.ListReservedDeletes(context.Background(), 10)
+	asOwner(t, pool, localIdentityID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ownerCtx(), `
+			UPDATE aura.conversations
+			SET delete_reserved_at = now() - ($1::bigint * interval '1 second')
+			WHERE id = $2::uuid`, int64((conversations.ExportDeleteRecoveryGrace+time.Minute)/time.Second), conversationID)
+		return err
+	})
+	reserved, err := store.ListReservedDeletes(ownerCtx(), 10)
 	if err != nil || len(reserved) != 1 || reserved[0].ConversationID != conversationID || reserved[0].Phase != "reserved" {
 		t.Fatalf("durable reservation after exit=%+v err=%v", reserved, err)
 	}
 
 	restarted, restartedStore, _ := newIntegrationRunner(t, pool, agenttest.NewFakeClient())
-	completed, err := restarted.reconcileReservedConversationDeletes(context.Background(), 10)
+	completed, err := restarted.reconcileReservedConversationDeletes(ownerCtx(), 10)
 	if err != nil || completed != 1 {
 		t.Fatalf("restart recovery completed=%d err=%v", completed, err)
 	}
-	if _, err := restartedStore.GetForIdentity(context.Background(), conversationID, localIdentityID); !errors.Is(err, conversations.ErrConversationNotFound) {
+	if _, err := restartedStore.GetForIdentity(ownerCtx(), conversationID, localIdentityID); !errors.Is(err, conversations.ErrConversationNotFound) {
 		t.Fatalf("conversation survived restart reconciliation: %v", err)
 	}
 }

@@ -60,6 +60,56 @@ func TestServiceCatalogsAnOwnedIngestAsReady(t *testing.T) {
 	}
 }
 
+// The whole point of the card: a file is findable the moment it lands, with no
+// agent having opened it. Before this, ingest wrote a title and nothing else, so
+// document_search could only find documents somebody had already found.
+func TestServiceCardsAnIngestedFileWithoutAnAgentReadingIt(t *testing.T) {
+	path := writeNamedTempFile(t, "clienti.csv", "Area;Localita\nNORD;TORINO\nNORD;TORINO\nSUD;GENOVA\n")
+	catalog := &fakeIngestCatalog{}
+	service := &Service{Jobs: newFakeJobStore(), Catalog: catalog}
+
+	if _, err := service.IngestPath(t.Context(), IngestRequest{
+		SourceID: "cli", IdentityID: "00000000-0000-0000-0000-000000000001",
+	}, path); err != nil {
+		t.Fatal(err)
+	}
+	if catalog.cardTarget != "catalog-1" {
+		t.Fatalf("card written to %q, want the row ingest just created", catalog.cardTarget)
+	}
+	for _, want := range []string{"clienti.csv", "Area, Localita", "TORINO"} {
+		if !strings.Contains(catalog.card, want) {
+			t.Fatalf("card is missing %q:\n%s", want, catalog.card)
+		}
+	}
+}
+
+// A card is how a document is FOUND, not whether it was stored. An unreadable
+// file, or a catalog that refuses the card, must not fail the upload — but it
+// must not be silent either.
+func TestServiceKeepsTheIngestWhenTheCardCannotBeStored(t *testing.T) {
+	path := writeNamedTempFile(t, "manual.pdf", "payload")
+	catalog := &fakeIngestCatalog{setCardErr: errors.New("card column unavailable")}
+	service := &Service{Jobs: newFakeJobStore(), Catalog: catalog}
+
+	var logs bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	job, err := service.IngestPath(t.Context(), IngestRequest{
+		SourceID: "cli", IdentityID: "00000000-0000-0000-0000-000000000001",
+	}, path)
+	if err != nil {
+		t.Fatalf("IngestPath error = %v, want the upload to survive a card failure", err)
+	}
+	if job.Status != JobSearchable {
+		t.Fatalf("status = %s, want %s", job.Status, JobSearchable)
+	}
+	if !strings.Contains(logs.String(), "could not store the document card") {
+		t.Fatalf("the card failure passed silently: %q", logs.String())
+	}
+}
+
 func TestServiceSkipsTheCatalogWithoutAnIdentity(t *testing.T) {
 	path := writeNamedTempFile(t, "manual.pdf", "payload")
 	catalog := &fakeIngestCatalog{}
@@ -225,6 +275,9 @@ type fakeIngestCatalog struct {
 	created      CreateDocumentRequest
 	err          error
 	setStatusErr error
+	setCardErr   error
+	card         string
+	cardTarget   string
 	failedStatus DocumentStatus
 	failedReason string
 }
@@ -232,6 +285,12 @@ type fakeIngestCatalog struct {
 func (f *fakeIngestCatalog) CreateDocument(_ context.Context, req CreateDocumentRequest) (Document, error) {
 	f.created = req
 	return Document{ID: "catalog-1"}, f.err
+}
+
+func (f *fakeIngestCatalog) SetCard(_ context.Context, _, documentID, card string) error {
+	f.cardTarget = documentID
+	f.card = card
+	return f.setCardErr
 }
 
 func (f *fakeIngestCatalog) SetSearchDocumentStatus(_ context.Context, _ string, status DocumentStatus, reason string) error {

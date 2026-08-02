@@ -110,9 +110,14 @@ func TestDocumentDescribeSpec(t *testing.T) {
 	if spec.Name != "document_describe" || !spec.Deferred || !spec.Mutating {
 		t.Fatalf("spec = %q deferred=%v mutating=%v", spec.Name, spec.Deferred, spec.Mutating)
 	}
-	// It only pays off if the model reaches for it after opening a file, so the
-	// description has to say exactly that.
-	for _, want := range []string{"document_search", "open", "search by"} {
+	// REWRITTEN with the tool's role: it used to be the AUTHOR of a document's
+	// description, and the old assertions ("open", "search by") pinned that. Ingest
+	// now writes a card from the file itself, so this tool is the EDITOR — and the
+	// failure mode worth pinning has inverted. It is no longer "the model never
+	// reaches for it after opening a file"; it is "the model believes an undescribed
+	// file is undescribed" and burns a turn restating column headers that are
+	// already indexed. These three phrases are what stop that.
+	for _, want := range []string{"document_search", "machine-written", "restate"} {
 		if !strings.Contains(spec.Description, want) {
 			t.Errorf("description never mentions %q", want)
 		}

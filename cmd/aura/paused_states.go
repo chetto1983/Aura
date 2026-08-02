@@ -19,6 +19,7 @@ import (
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -40,6 +41,18 @@ func runPausedStates(args []string) {
 		os.Exit(1)
 	}
 	defer pool.Close()
+
+	// aura.paused_states is fail-closed since migration 0089: with no principal on the
+	// context this command would print an empty table and purge nothing, which reads as
+	// "there is nothing here" rather than "you did not say who you are". Resolve the
+	// operator the same way `aura memory` does (withOperatorIdentity) — but off the pool
+	// that is already open, instead of opening a second one.
+	identityID, err := identityctx.OperatorIdentity(ctx, pool)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	ctx = identityctx.WithIdentityID(ctx, identityID)
 	store := askuser.New(pool)
 
 	switch args[0] {

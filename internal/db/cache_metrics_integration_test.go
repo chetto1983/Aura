@@ -23,6 +23,7 @@ import (
 	"github.com/chetto1983/aura/internal/cachemetrics"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -63,14 +64,19 @@ func newConversationForMetrics(t *testing.T, pool *pgxpool.Pool) string {
 	t.Helper()
 	ctx := context.Background()
 	id := uuid.Must(uuid.NewV7()).String()
-	if _, err := pool.Exec(ctx,
-		"INSERT INTO aura.conversations (id, identity_id, model, status) VALUES ($1, $2, 'test-model', 'active')",
-		id, seededLocalIdentity,
-	); err != nil {
+	if err := WithIdentityTxRaw(ctx, pool, seededLocalIdentity, func(tx pgx.Tx) error {
+		_, e := tx.Exec(ctx,
+			"INSERT INTO aura.conversations (id, identity_id, model, status) VALUES ($1, $2, 'test-model', 'active')",
+			id, seededLocalIdentity)
+		return e
+	}); err != nil {
 		t.Fatalf("seed conversation: %v", err)
 	}
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), "DELETE FROM aura.conversations WHERE id = $1", id)
+		_ = WithIdentityTxRaw(context.Background(), pool, seededLocalIdentity, func(tx pgx.Tx) error {
+			_, e := tx.Exec(context.Background(), "DELETE FROM aura.conversations WHERE id = $1", id)
+			return e
+		})
 	})
 	return id
 }

@@ -49,7 +49,7 @@ func envOrSkip(t *testing.T, key string) string {
 
 func migratedPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ownerCtx(), 30*time.Second)
 	defer cancel()
 
 	pwd := envOrSkip(t, "POSTGRES_PASSWORD")
@@ -85,7 +85,7 @@ func migratedPool(t *testing.T) *pgxpool.Pool {
 func freshToken(t *testing.T, s *Store, ttl time.Duration) string {
 	t.Helper()
 	tok := uuid.Must(uuid.NewV7()).String()
-	if err := s.InsertPending(context.Background(), InsertPendingParams{
+	if err := s.InsertPending(ownerCtx(), InsertPendingParams{
 		OnboardingToken: tok,
 		IdentityID:      localID,
 		GeneratedBy:     "integration-test",
@@ -94,7 +94,7 @@ func freshToken(t *testing.T, s *Store, ttl time.Duration) string {
 		t.Fatalf("InsertPending: %v", err)
 	}
 	t.Cleanup(func() {
-		_, _ = s.pool.Exec(context.Background(),
+		_, _ = s.pool.Exec(ownerCtx(),
 			"DELETE FROM aura.telegram_setup_pending WHERE onboarding_token = $1", tok)
 	})
 	return tok
@@ -103,7 +103,7 @@ func freshToken(t *testing.T, s *Store, ttl time.Duration) string {
 func cleanupAccount(t *testing.T, s *Store, tgUserID int64) {
 	t.Helper()
 	t.Cleanup(func() {
-		_, _ = s.pool.Exec(context.Background(),
+		_, _ = s.pool.Exec(ownerCtx(),
 			"DELETE FROM aura.telegram_accounts WHERE telegram_user_id = $1", tgUserID)
 	})
 }
@@ -114,7 +114,7 @@ func cleanupAccount(t *testing.T, s *Store, tgUserID int64) {
 func TestOnboardingRoundTrip(t *testing.T) {
 	pool := migratedPool(t)
 	s := New(pool)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	tok := freshToken(t, s, time.Hour)
 	const tgUserID int64 = 9_000_000_001
@@ -171,7 +171,7 @@ func TestOnboardingRoundTrip(t *testing.T) {
 func TestConsumeExpiredToken(t *testing.T) {
 	pool := migratedPool(t)
 	s := New(pool)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	tok := freshToken(t, s, -time.Minute) // already expired
 	_, err := s.ConsumeOnboarding(ctx, ConsumeParams{OnboardingToken: tok, TelegramUserID: 9_000_000_010})
@@ -186,7 +186,7 @@ func TestConsumeExpiredToken(t *testing.T) {
 func TestConsumeUnknownToken(t *testing.T) {
 	pool := migratedPool(t)
 	s := New(pool)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	unknown := uuid.Must(uuid.NewV7()).String()
 	if _, err := s.ConsumeOnboarding(ctx, ConsumeParams{OnboardingToken: unknown, TelegramUserID: 9_000_000_020}); !errors.Is(err, ErrTokenConsumed) {
@@ -204,7 +204,7 @@ func TestConsumeUnknownToken(t *testing.T) {
 func TestDuplicateAccountClassified(t *testing.T) {
 	pool := migratedPool(t)
 	s := New(pool)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	const tgUserID int64 = 9_000_000_030
 	cleanupAccount(t, s, tgUserID)
@@ -234,7 +234,7 @@ func TestDuplicateAccountClassified(t *testing.T) {
 func TestCleanupExpired(t *testing.T) {
 	pool := migratedPool(t)
 	s := New(pool)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	stale := freshToken(t, s, -time.Hour) // expired, unconsumed → swept
 	live := freshToken(t, s, time.Hour)   // not expired → kept
@@ -260,7 +260,7 @@ func TestCleanupExpired(t *testing.T) {
 func TestCountAndList(t *testing.T) {
 	pool := migratedPool(t)
 	s := New(pool)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	before, err := s.CountAccounts(ctx)
 	if err != nil {

@@ -12,10 +12,14 @@ import (
 // property of the whole set and lives in no passage. Since document_open now
 // hands the agent the real file, the index only has to route.
 //
-// Nothing computes a digest at upload time any more: ingestion does not read the
-// file. A digest is written by document_describe, after the agent has actually
-// opened the document — her own note about a file she has read, in the same
-// spirit as a memory fact.
+// Two things answer it, written by two different parties. The CARD is written by
+// the machine at ingest, from the file itself (internal/documents/filecard) —
+// every file has one the moment it lands, which is the difference between a
+// library and a list of things somebody already found. The DIGEST is the agent's
+// own note, written through document_describe after it has opened the file: what
+// a reader knows and an extractor cannot. They are separate columns because
+// document_describe replaces its column outright, and one note must not delete
+// the structure the machine measured.
 
 // DigestHit is one document matched by digest search, with the id document_open
 // takes. It carries no passage: the caller opens the file.
@@ -31,7 +35,11 @@ type DigestHit struct {
 	Title      string   `json:"title"`
 	Tags       []string `json:"tags,omitempty"`
 	Digest     string   `json:"digest"`
-	Rank       float64  `json:"rank"`
+	// Card is what ingest measured about the file. It travels with the hit
+	// because on a fresh library it is the ONLY thing that says what a document
+	// holds, and a caller choosing between eight files needs to see it.
+	Card string  `json:"card,omitempty"`
+	Rank float64 `json:"rank"`
 	// UpdatedAt breaks a tie. It is not decoration: a BLANK query produces the
 	// empty tsquery, so every row ranks 0.0 and the whole page is a tie. Ordering
 	// those by title made "the file I just uploaded" return the alphabetically

@@ -1,9 +1,10 @@
 // Package askuser is the per-domain Store over aura.paused_states (PRD 1.5). It
 // copies the canonical Store pattern proved in internal/identity (D-A4-01):
-// Store{pool,q} over the generated sqlc surface, SQLSTATE-based error
+// Store{pool} over the generated sqlc surface, SQLSTATE-based error
 // classification via errors.As + pgErr.Code (never message matching), sentinel
-// errors, pgtype conversion at the boundary, and db.WithTx for atomic multi-row
-// writes.
+// errors, pgtype conversion at the boundary, and one identity-scoped transaction
+// per call (db.WithCallerIdentityTx) since migration 0089 made aura.paused_states
+// fail closed.
 //
 // Scope is the pause-PERSISTENCE half (SPEC Req#3): FIFO ListPending with a total
 // order + crash recovery + Resume/Batch + Loop.Stop auto-resolve. The Runner
@@ -52,17 +53,24 @@ var (
 	ErrInvalidAnswer = errors.New("invalid resume answer")
 )
 
-// Store wraps a pgx pool and the generated Queries — the canonical shape from
-// internal/identity. Non-tx reads/writes use s.q; multi-row atomic writes
-// (MarkResumedBatch, AutoResolveForConversation) wrap db.WithTx.
+// Store wraps a pgx pool — the canonical shape from internal/identity, minus the
+// pool-bound Queries handle it used to carry. aura.paused_states has been fail-closed
+// since migration 0089, so a statement that does not set app.current_identity sees no
+// pause and can insert none; scoped() is therefore the ONE way this store reaches the
+// table, and the *Tx methods hand the work to a transaction the caller has already scoped.
 type Store struct {
 	pool *pgxpool.Pool
-	q    *sqlc.Queries
 }
 
 // New builds a Store over an open pool.
 func New(pool *pgxpool.Pool) *Store {
-	return &Store{pool: pool, q: sqlc.New(pool)}
+	return &Store{pool: pool}
+}
+
+// scoped runs fn inside a transaction bound to the identity on ctx — the D-07 RLS carrier.
+// See db.WithCallerIdentityTx for where that identity comes from at each entry point.
+func (s *Store) scoped(ctx context.Context, fn func(*sqlc.Queries) error) error {
+	return db.WithCallerIdentityTx(ctx, s.pool, fn)
 }
 
 // Pending is the domain projection of a pending aura.paused_states row — plain Go
@@ -117,19 +125,33 @@ type InsertParams struct {
 // as text — NOT a uuid (CR-01): the swarm report carries no uuid for a model to relay,
 // so parsing one here would fail the documented happy path.
 func (s *Store) InsertTx(ctx context.Context, q *sqlc.Queries, p InsertParams) error {
+	arg, err := insertArgs(p)
+	if err != nil {
+		return err
+	}
+	if err := q.InsertPausedState(ctx, arg); err != nil {
+		return fmt.Errorf("insert paused state %s: %w", p.Token, err)
+	}
+	return nil
+}
+
+// insertArgs validates and projects InsertParams onto the generated params. It is separate
+// from the write so Insert can reject malformed input BEFORE opening a transaction — the
+// parse-before-DB contract TestStore_BadUUID_FailsBeforeDB pins with a nil-pool Store.
+func insertArgs(p InsertParams) (sqlc.InsertPausedStateParams, error) {
 	token, err := db.ParseUUID("token", p.Token)
 	if err != nil {
-		return fmt.Errorf("insert paused state: %w", err)
+		return sqlc.InsertPausedStateParams{}, fmt.Errorf("insert paused state: %w", err)
 	}
 	convID, err := db.ParseUUID("conversation_id", p.ConversationID)
 	if err != nil {
-		return fmt.Errorf("insert paused state: %w", err)
+		return sqlc.InsertPausedStateParams{}, fmt.Errorf("insert paused state: %w", err)
 	}
 	var proxiedChild pgtype.Text
 	if p.ProxiedFromChildID != nil {
 		proxiedChild = pgtype.Text{String: *p.ProxiedFromChildID, Valid: true}
 	}
-	arg := sqlc.InsertPausedStateParams{
+	return sqlc.InsertPausedStateParams{
 		Token:              token,
 		ConversationID:     convID,
 		Kind:               p.Kind,
@@ -140,35 +162,51 @@ func (s *Store) InsertTx(ctx context.Context, q *sqlc.Queries, p InsertParams) e
 		ToolCallID:         p.ToolCallID,
 		ProxiedFromChildID: proxiedChild,
 		ProxiedToolCallID:  pgtype.Text{String: p.ProxiedToolCallID, Valid: p.ProxiedToolCallID != ""},
+	}, nil
+}
+
+// Insert persists one pending pause in a transaction scoped to the identity on ctx. It is a
+// thin wrapper over InsertTx; the parse-before-DB guard in InsertTx still short-circuits
+// malformed input before any pool round-trip. The scoping is not decoration: the 0032
+// BEFORE INSERT trigger fills identity_id by SELECTing the parent conversation, and that
+// lookup is itself owner-filtered, so without the identity the trigger finds nothing and
+// the insert is refused.
+func (s *Store) Insert(ctx context.Context, p InsertParams) error {
+	arg, err := insertArgs(p)
+	if err != nil {
+		return err
 	}
-	if err := q.InsertPausedState(ctx, arg); err != nil {
+	if err := s.scoped(ctx, func(q *sqlc.Queries) error {
+		return q.InsertPausedState(ctx, arg)
+	}); err != nil {
 		return fmt.Errorf("insert paused state %s: %w", p.Token, err)
 	}
 	return nil
 }
 
-// Insert persists one pending pause. It is a thin wrapper over InsertTx bound to the
-// pool's Queries (s.q): a single INSERT auto-commits, so — matching the pre-34-05
-// behavior exactly — it opens no explicit transaction, and the parse-before-DB guard
-// in InsertTx still short-circuits malformed input before any pool round-trip.
-func (s *Store) Insert(ctx context.Context, p InsertParams) error {
-	return s.InsertTx(ctx, s.q, p)
-}
-
-// GetByToken fetches one pause by token, mapping a missing row to ErrPauseNotFound.
+// GetByToken fetches one pause by token, scoped to the identity on ctx, mapping a missing
+// row — unknown token OR a token owned by someone else, which RLS makes indistinguishable —
+// to ErrPauseNotFound.
 func (s *Store) GetByToken(ctx context.Context, token string) (Pending, error) {
 	id, err := db.ParseUUID("token", token)
 	if err != nil {
 		return Pending{}, fmt.Errorf("get paused state: %w", err)
 	}
-	row, err := s.q.GetPausedStateByToken(ctx, id)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return Pending{}, fmt.Errorf("get paused state %s: %w", token, ErrPauseNotFound)
+	var pending Pending
+	if err := s.scoped(ctx, func(q *sqlc.Queries) error {
+		row, gErr := q.GetPausedStateByToken(ctx, id)
+		if gErr != nil {
+			if errors.Is(gErr, pgx.ErrNoRows) {
+				return ErrPauseNotFound
+			}
+			return gErr
 		}
+		pending = fromRow(row)
+		return nil
+	}); err != nil {
 		return Pending{}, fmt.Errorf("get paused state %s: %w", token, err)
 	}
-	return fromRow(row), nil
+	return pending, nil
 }
 
 // ListPending returns the conversation's still-pending pauses (resumed_at IS NULL)
@@ -180,41 +218,49 @@ func (s *Store) ListPending(ctx context.Context, conversationID string) ([]Pendi
 	if err != nil {
 		return nil, fmt.Errorf("list pending: %w", err)
 	}
-	rows, err := s.q.ListPendingPausedStates(ctx, convID)
-	if err != nil {
+	var out []Pending
+	if err := s.scoped(ctx, func(q *sqlc.Queries) error {
+		rows, lErr := q.ListPendingPausedStates(ctx, convID)
+		if lErr != nil {
+			return lErr
+		}
+		out = make([]Pending, 0, len(rows))
+		for _, r := range rows {
+			out = append(out, fromRow(r))
+		}
+		return nil
+	}); err != nil {
 		return nil, fmt.Errorf("list pending for %s: %w", conversationID, err)
-	}
-	out := make([]Pending, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, fromRow(r))
 	}
 	return out, nil
 }
 
-// ListPendingAll returns the still-pending pauses ACROSS ALL conversations
-// (resumed_at IS NULL) in the same total FIFO order as ListPending — priority DESC,
-// created_at ASC, token ASC — capped at limit (APRV-01 / D-04, the approval center's
-// cross-thread read). The token tiebreaker is mandatory for the same reason as
-// ListPending: tx-batched rows share created_at = now() (RESEARCH Pitfall 4), so
-// without it the cross-thread order would be non-deterministic. limit<=0 falls back
-// to 100 (mirroring ListRecent's <=0 guard). It reuses the SAME fromRow projector, so
-// each Pending carries Question/Options/Priority/Kind/ConversationID and the source
-// thread (ProxiedFromChildID) the operator needs to jump to the originating thread.
+// ListPendingAll returns the still-pending pauses ACROSS ALL of the ctx identity's
+// conversations (resumed_at IS NULL) in the same total FIFO order as ListPending — priority
+// DESC, created_at ASC, token ASC — capped at limit (APRV-01 / D-04, the approval center's
+// cross-thread read). "All" means all THREADS, not all tenants: the query carries no owner
+// predicate and RLS is what scopes it, which is the same backstop
+// ListPendingAllForIdentity's explicit predicate sits on top of. The token tiebreaker is
+// mandatory for the same reason as ListPending: tx-batched rows share created_at = now()
+// (RESEARCH Pitfall 4), so without it the cross-thread order would be non-deterministic.
+// limit<=0 falls back to 100 (mirroring ListRecent's <=0 guard). It reuses the SAME fromRow
+// projector, so each Pending carries Question/Options/Priority/Kind/ConversationID and the
+// source thread (ProxiedFromChildID) the operator needs to jump to the originating thread.
 func (s *Store) ListPendingAll(ctx context.Context, limit int) ([]Pending, error) {
-	// Convert inside the proven-safe branch so the int32 narrowing is guarded at the
-	// conversion site (CodeQL go/incorrect-integer-conversion); a non-positive or
-	// overflowing limit falls back to the 100 default (mirroring ListRecent).
-	var lim int32 = 100
-	if limit > 0 && limit <= math.MaxInt32 {
-		lim = int32(limit)
-	}
-	rows, err := s.q.ListAllPendingPausedStates(ctx, lim)
-	if err != nil {
+	lim := normalizeLimit(limit, 100)
+	var out []Pending
+	if err := s.scoped(ctx, func(q *sqlc.Queries) error {
+		rows, lErr := q.ListAllPendingPausedStates(ctx, lim)
+		if lErr != nil {
+			return lErr
+		}
+		out = make([]Pending, 0, len(rows))
+		for _, r := range rows {
+			out = append(out, fromRow(r))
+		}
+		return nil
+	}); err != nil {
 		return nil, fmt.Errorf("list pending (all conversations): %w", err)
-	}
-	out := make([]Pending, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, fromRow(r))
 	}
 	return out, nil
 }
@@ -233,36 +279,38 @@ type Record struct {
 	ResumedAnswer  string // the {action,content} content, or "" when still pending
 }
 
-// ListRecent returns the most-recent paused_states rows (pending + resolved) across
-// all conversations, newest first, for the CLI. limit<=0 falls back to 50.
+// ListRecent returns the most-recent paused_states rows (pending + resolved) across all of
+// the ctx identity's conversations, newest first, for the CLI. limit<=0 falls back to 50.
+// `aura paused-states list` resolves the operator identity onto ctx before calling
+// (cmd/aura/paused_states.go) — with no identity the table is invisible, by design.
 func (s *Store) ListRecent(ctx context.Context, limit int) ([]Record, error) {
-	// Guard the int32 narrowing (QUAL-04a / D-15a) mirroring ListPendingAll: a
-	// non-positive OR int32-overflowing limit falls back to the 50 default so
-	// int32(limit) can never wrap to a negative LIMIT (CodeQL go/incorrect-integer-conversion).
-	var lim int32 = 50
-	if limit > 0 && limit <= math.MaxInt32 {
-		lim = int32(limit)
-	}
-	rows, err := s.q.ListRecentPausedStates(ctx, lim)
-	if err != nil {
+	lim := normalizeLimit(limit, 50)
+	var out []Record
+	if err := s.scoped(ctx, func(q *sqlc.Queries) error {
+		rows, lErr := q.ListRecentPausedStates(ctx, lim)
+		if lErr != nil {
+			return lErr
+		}
+		out = make([]Record, 0, len(rows))
+		for _, r := range rows {
+			rec := Record{
+				Token:          uuid.UUID(r.Token.Bytes).String(),
+				ConversationID: uuid.UUID(r.ConversationID.Bytes).String(),
+				Kind:           r.Kind,
+				Question:       r.Question,
+				Priority:       int(r.Priority),
+				Resumed:        r.ResumedAt.Valid,
+			}
+			answer, dErr := decodeResumedAnswer(rec.Token, r.ResumedAnswer)
+			if dErr != nil {
+				return dErr
+			}
+			rec.ResumedAnswer = answer
+			out = append(out, rec)
+		}
+		return nil
+	}); err != nil {
 		return nil, fmt.Errorf("list recent paused states: %w", err)
-	}
-	out := make([]Record, 0, len(rows))
-	for _, r := range rows {
-		rec := Record{
-			Token:          uuid.UUID(r.Token.Bytes).String(),
-			ConversationID: uuid.UUID(r.ConversationID.Bytes).String(),
-			Kind:           r.Kind,
-			Question:       r.Question,
-			Priority:       int(r.Priority),
-			Resumed:        r.ResumedAt.Valid,
-		}
-		answer, err := decodeResumedAnswer(rec.Token, r.ResumedAnswer)
-		if err != nil {
-			return nil, fmt.Errorf("list recent paused states: %w", err)
-		}
-		rec.ResumedAnswer = answer
-		out = append(out, rec)
 	}
 	return out, nil
 }
@@ -293,13 +341,33 @@ func (s *Store) MarkResumedTx(ctx context.Context, q *sqlc.Queries, token string
 	return nil
 }
 
-// MarkResumed resolves one pause with the AM-02 {action, content} answer. A thin
-// wrapper over MarkResumedTx bound to the pool's Queries (s.q): a single conditional
-// UPDATE auto-commits, so — matching the pre-34-05 behavior — it opens no explicit
-// transaction, and the parse/encode guards short-circuit malformed input before any
-// pool round-trip. An unknown / already-resumed token returns ErrPauseNotFound.
+// MarkResumed resolves one pause with the AM-02 {action, content} answer, in a transaction
+// scoped to the identity on ctx. A thin wrapper over MarkResumedTx; the parse/encode guards
+// short-circuit malformed input before any pool round-trip. An unknown, already-resumed, or
+// foreign token all return ErrPauseNotFound — under fail-closed RLS the conditional UPDATE
+// matches 0 rows in every one of those cases, which is the same answer for the same reason.
 func (s *Store) MarkResumed(ctx context.Context, token string, ans ResumeAnswer) error {
-	return s.MarkResumedTx(ctx, s.q, token, ans)
+	id, err := db.ParseUUID("token", token)
+	if err != nil {
+		return fmt.Errorf("mark resumed: %w", err)
+	}
+	answer, err := encodeAnswer(ans)
+	if err != nil {
+		return fmt.Errorf("mark resumed %s: %w", token, err)
+	}
+	if err := s.scoped(ctx, func(q *sqlc.Queries) error {
+		n, mErr := q.MarkPausedStateResumed(ctx, sqlc.MarkPausedStateResumedParams{Token: id, ResumedAnswer: answer})
+		if mErr != nil {
+			return mErr
+		}
+		if n == 0 {
+			return ErrPauseNotFound
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("mark resumed %s: %w", token, err)
+	}
+	return nil
 }
 
 // MarkResumedBatchTx resolves many pauses using the caller-supplied Queries (bound to
@@ -340,7 +408,7 @@ func (s *Store) MarkResumedBatchTx(ctx context.Context, q *sqlc.Queries, answers
 	return nil
 }
 
-// MarkResumedBatch resolves many pauses atomically (one tx via db.WithTx over
+// MarkResumedBatch resolves many pauses atomically (one identity-scoped tx over
 // MarkResumedBatchTx). Every token must resolve a still-pending row; if any token is
 // unknown/already-resumed the whole batch rolls back with ErrPauseNotFound (no partial
 // resolution). An empty map is a no-op that opens no transaction.
@@ -348,7 +416,7 @@ func (s *Store) MarkResumedBatch(ctx context.Context, answers map[string]ResumeA
 	if len(answers) == 0 {
 		return nil
 	}
-	return db.WithTx(ctx, s.pool, func(q *sqlc.Queries) error {
+	return s.scoped(ctx, func(q *sqlc.Queries) error {
 		return s.MarkResumedBatchTx(ctx, q, answers)
 	})
 }
@@ -365,7 +433,7 @@ func (s *Store) AutoResolveForConversation(ctx context.Context, conversationID s
 	if err != nil {
 		return fmt.Errorf("auto-resolve %s: %w", conversationID, err)
 	}
-	return db.WithTx(ctx, s.pool, func(q *sqlc.Queries) error {
+	return s.scoped(ctx, func(q *sqlc.Queries) error {
 		if err := q.AutoResolvePendingForConversation(ctx, sqlc.AutoResolvePendingForConversationParams{
 			ConversationID: convID,
 			ResumedAnswer:  answer,
@@ -379,10 +447,24 @@ func (s *Store) AutoResolveForConversation(ctx context.Context, conversationID s
 // CleanupResumedOlderThan deletes resolved rows older than the cutoff (a GC the
 // CLI `aura paused-states purge` drives). It never touches pending rows.
 func (s *Store) CleanupResumedOlderThan(ctx context.Context, cutoff pgtype.Timestamptz) error {
-	if err := s.q.CleanupResumedOlderThan(ctx, cutoff); err != nil {
+	if err := s.scoped(ctx, func(q *sqlc.Queries) error {
+		return q.CleanupResumedOlderThan(ctx, cutoff)
+	}); err != nil {
 		return fmt.Errorf("cleanup resumed: %w", err)
 	}
 	return nil
+}
+
+// normalizeLimit narrows a caller-supplied limit onto the int32 the generated LIMIT binds
+// (QUAL-04a / D-15a). A non-positive OR int32-overflowing limit falls back to fallback, so
+// int32(limit) can never wrap to a negative LIMIT — the conversion happens only inside the
+// proven-safe branch (CodeQL go/incorrect-integer-conversion). ListPendingAll and ListRecent
+// share it because they had the identical guard with different defaults.
+func normalizeLimit(limit int, fallback int32) int32 {
+	if limit > 0 && limit <= math.MaxInt32 {
+		return int32(limit)
+	}
+	return fallback
 }
 
 // fromRow projects a generated row onto the domain Pending type. A NULL

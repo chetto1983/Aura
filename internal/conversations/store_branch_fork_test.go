@@ -13,7 +13,6 @@
 package conversations
 
 import (
-	"context"
 	"errors"
 	"testing"
 
@@ -26,7 +25,7 @@ import (
 func seedLinear(t *testing.T, s *Store) string {
 	t.Helper()
 	convID := newConversation(t, s)
-	ctx := context.Background()
+	ctx := ownerCtx()
 	for _, tp := range []AppendTurnParams{
 		{ConversationID: convID, Seq: 1, Role: llm.RoleSystem, Content: "you are aura"},
 		{ConversationID: convID, Seq: 2, Role: llm.RoleUser, Content: "first question"},
@@ -47,7 +46,7 @@ func seedLinear(t *testing.T, s *Store) string {
 func TestBranchFork_EditUserTurnCreatesSibling(t *testing.T) {
 	pool := migratedPool(t)
 	s := newStore(t, pool)
-	ctx := context.Background()
+	ctx := ownerCtx()
 	convID := seedLinear(t, s)
 
 	// The original canonical leaf (assistant turn seq 3) still walks the full linear path.
@@ -113,7 +112,7 @@ func TestBranchFork_EditUserTurnCreatesSibling(t *testing.T) {
 func TestBranchFork_ListsSiblingBranches(t *testing.T) {
 	pool := migratedPool(t)
 	s := newStore(t, pool)
-	ctx := context.Background()
+	ctx := ownerCtx()
 	convID := seedLinear(t, s)
 
 	branches, err := s.ListBranches(ctx, convID)
@@ -158,7 +157,7 @@ func TestBranchFork_ListsSiblingBranches(t *testing.T) {
 func TestBranchFork_UnknownDivergeSeq(t *testing.T) {
 	pool := migratedPool(t)
 	s := newStore(t, pool)
-	ctx := context.Background()
+	ctx := ownerCtx()
 	convID := seedLinear(t, s)
 
 	_, _, err := s.ForkBranch(ctx, convID, 999, llm.RoleUser, "ghost")

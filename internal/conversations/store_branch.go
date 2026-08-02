@@ -42,15 +42,10 @@ var CanonicalBranchID = uuid.UUID{}
 // canonical branch (the 0017 backfill produces parent_seq = seq-1) yields the linear
 // history (Pitfall 3: only body turns differ per branch; the head stays byte-identical).
 func (s *Store) CanonicalBranchLeaf(ctx context.Context, conversationID string) (int, error) {
-	id, err := db.ParseUUID("conversation_id", conversationID)
-	if err != nil {
-		return 0, fmt.Errorf("canonical branch leaf: %w", err)
-	}
-	leaf, err := s.q.CanonicalBranchLeafSeq(ctx, id)
-	if err != nil {
-		return 0, fmt.Errorf("canonical branch leaf %s: %w", conversationID, err)
-	}
-	return int(leaf), nil
+	return scopedSeq(ctx, s, "canonical branch leaf", "conversation_id", conversationID,
+		func(q *sqlc.Queries, id pgtype.UUID) (int32, error) {
+			return q.CanonicalBranchLeafSeq(ctx, id)
+		})
 }
 
 // loadBranchTurns walks the SELECTED branch path (leaf -> root via parent_seq) and
@@ -72,12 +67,19 @@ func (s *Store) loadBranchTurns(ctx context.Context, conversationID string, leaf
 	if leafSeq > 0 && leafSeq <= math.MaxInt32 {
 		seq = int32(leafSeq)
 	}
-	rows, err := s.q.ListTurnsByBranchPath(ctx, sqlc.ListTurnsByBranchPathParams{
-		ConversationID: id,
-		Seq:            seq,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("load branch turns %s leaf %d: %w", conversationID, leafSeq, err)
+	var rows []sqlc.ListTurnsByBranchPathRow
+	if err := s.scoped(ctx, func(q *sqlc.Queries) error {
+		listed, lErr := q.ListTurnsByBranchPath(ctx, sqlc.ListTurnsByBranchPathParams{
+			ConversationID: id,
+			Seq:            seq,
+		})
+		if lErr != nil {
+			return fmt.Errorf("load branch turns %s leaf %d: %w", conversationID, leafSeq, lErr)
+		}
+		rows = listed
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 	out := make([]Turn, 0, len(rows))
 	for _, r := range rows {
@@ -112,21 +114,28 @@ func (s *Store) loadRecentBranchTurns(
 	if leafSeq > 0 && leafSeq <= math.MaxInt32 {
 		seq = int32(leafSeq)
 	}
-	rows, err := s.q.ListRecentTurnsByBranchPath(
-		ctx,
-		sqlc.ListRecentTurnsByBranchPathParams{
-			TargetConversationID: id,
-			LeafSeq:              seq,
-			HardCap:              int32(hardCap),
-		},
-	)
-	if err != nil {
-		return nil, fmt.Errorf(
-			"load recent branch turns %s leaf %d: %w",
-			conversationID,
-			leafSeq,
-			err,
+	var rows []sqlc.ListRecentTurnsByBranchPathRow
+	if err := s.scoped(ctx, func(q *sqlc.Queries) error {
+		listed, lErr := q.ListRecentTurnsByBranchPath(
+			ctx,
+			sqlc.ListRecentTurnsByBranchPathParams{
+				TargetConversationID: id,
+				LeafSeq:              seq,
+				HardCap:              int32(hardCap),
+			},
 		)
+		if lErr != nil {
+			return fmt.Errorf(
+				"load recent branch turns %s leaf %d: %w",
+				conversationID,
+				leafSeq,
+				lErr,
+			)
+		}
+		rows = listed
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 	out := make([]Turn, 0, len(rows))
 	for _, row := range rows {
@@ -193,15 +202,17 @@ func (s *Store) SetBranchPointers(ctx context.Context, conversationID string, se
 	if parentSeq > 0 {
 		parent = pgtype.Int4{Int32: int32(parentSeq), Valid: true}
 	}
-	if err := s.q.SetTurnBranchPointers(ctx, sqlc.SetTurnBranchPointersParams{
-		ConversationID: id,
-		Seq:            int32(seq),
-		BranchID:       pgtype.UUID{Bytes: branchID, Valid: true},
-		ParentSeq:      parent,
-	}); err != nil {
-		return fmt.Errorf("set branch pointers %s seq %d: %w", conversationID, seq, err)
-	}
-	return nil
+	return s.scoped(ctx, func(q *sqlc.Queries) error {
+		if pErr := q.SetTurnBranchPointers(ctx, sqlc.SetTurnBranchPointersParams{
+			ConversationID: id,
+			Seq:            int32(seq),
+			BranchID:       pgtype.UUID{Bytes: branchID, Valid: true},
+			ParentSeq:      parent,
+		}); pErr != nil {
+			return fmt.Errorf("set branch pointers %s seq %d: %w", conversationID, seq, pErr)
+		}
+		return nil
+	})
 }
 
 // ListBranches returns the conversation's navigable branch set — one Branch per leaf
@@ -215,9 +226,16 @@ func (s *Store) ListBranches(ctx context.Context, conversationID string) ([]Bran
 	if err != nil {
 		return nil, fmt.Errorf("list branches: %w", err)
 	}
-	rows, err := s.q.ListBranchLeaves(ctx, id)
-	if err != nil {
-		return nil, fmt.Errorf("list branches %s: %w", conversationID, err)
+	var rows []sqlc.ListBranchLeavesRow
+	if err := s.scoped(ctx, func(q *sqlc.Queries) error {
+		listed, lErr := q.ListBranchLeaves(ctx, id)
+		if lErr != nil {
+			return fmt.Errorf("list branches %s: %w", conversationID, lErr)
+		}
+		rows = listed
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 	out := make([]Branch, 0, len(rows))
 	for _, r := range rows {
@@ -252,7 +270,7 @@ func (s *Store) ForkBranch(ctx context.Context, conversationID string, divergeSe
 	var newSeq int
 	var spilledPath string
 	run := func() error {
-		return db.WithTx(ctx, s.pool, func(q *sqlc.Queries) error {
+		return db.WithCallerIdentityTx(ctx, s.pool, func(q *sqlc.Queries) error {
 			diverge, err := q.GetTurnPointers(ctx, sqlc.GetTurnPointersParams{ConversationID: id, Seq: int32(divergeSeq)})
 			if err != nil {
 				if errors.Is(err, pgx.ErrNoRows) {

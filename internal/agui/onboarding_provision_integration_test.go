@@ -30,7 +30,6 @@ package agui
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"log/slog"
 	"strings"
@@ -44,7 +43,7 @@ func TestProvisionSagaLive(t *testing.T) {
 		au := newStatefulAuthula()
 		svc, tok, email := env.service(t, au, env.auraLeg, env.telegram)
 		t.Cleanup(func() { env.cleanupProvisioned(email) })
-		resp, err := svc.Provision(context.Background(), env.creator, tok, liveProvReq(email, "temp-pw-123"))
+		resp, err := svc.Provision(ownerCtx(), env.creator, tok, liveProvReq(email, "temp-pw-123"))
 		if err != nil {
 			t.Fatalf("Provision: %v", err)
 		}
@@ -88,7 +87,7 @@ func TestProvisionSagaLive(t *testing.T) {
 			svc, tok, email := env.service(t, au, tc.legFn(), tc.tgFn())
 			svc.recovery = tc.recFn()
 			t.Cleanup(func() { env.cleanupProvisioned(email) })
-			if _, err := svc.Provision(context.Background(), env.creator, tok, liveProvReq(email, "temp-pw-123")); err == nil {
+			if _, err := svc.Provision(ownerCtx(), env.creator, tok, liveProvReq(email, "temp-pw-123")); err == nil {
 				t.Fatalf("%s: provision must error", tc.name)
 			}
 			ids, grants, links, tokens, recovery, audit := env.auraOrphans(t, email)
@@ -109,19 +108,19 @@ func TestProvisionIdempotent(t *testing.T) {
 	svc, tok, email := env.service(t, au, env.auraLeg, env.telegram)
 	t.Cleanup(func() { env.cleanupProvisioned(email) })
 
-	if _, err := svc.Provision(context.Background(), env.creator, tok, liveProvReq(email, "temp-pw-123")); err != nil {
+	if _, err := svc.Provision(ownerCtx(), env.creator, tok, liveProvReq(email, "temp-pw-123")); err != nil {
 		t.Fatalf("first provision: %v", err)
 	}
 
 	// Second provision with the SAME email on a fresh session: the Authula pre-check sees
 	// the existing user → ErrOnboardingDuplicate (no write); one identity remains.
 	svc2, tok2, _ := env.service(t, au, env.auraLeg, env.telegram)
-	_, err := svc2.Provision(context.Background(), env.creator, tok2, liveProvReq(email, "temp-pw-123"))
+	_, err := svc2.Provision(ownerCtx(), env.creator, tok2, liveProvReq(email, "temp-pw-123"))
 	if !errors.Is(err, ErrOnboardingDuplicate) {
 		t.Fatalf("double-submit err = %v, want ErrOnboardingDuplicate", err)
 	}
 	var count int
-	if err := env.pool.QueryRow(context.Background(),
+	if err := env.pool.QueryRow(ownerCtx(),
 		`SELECT count(*) FROM aura.identities WHERE name=$1`, email).Scan(&count); err != nil {
 		t.Fatalf("count: %v", err)
 	}
@@ -142,10 +141,10 @@ func TestIdentityAuditImmutable(t *testing.T) {
 	au := newStatefulAuthula()
 	svc, tok, email := env.service(t, au, env.auraLeg, env.telegram)
 	t.Cleanup(func() { env.cleanupProvisioned(email) })
-	if _, err := svc.Provision(context.Background(), env.creator, tok, liveProvReq(email, "temp-pw-123")); err != nil {
+	if _, err := svc.Provision(ownerCtx(), env.creator, tok, liveProvReq(email, "temp-pw-123")); err != nil {
 		t.Fatalf("Provision: %v", err)
 	}
-	ctx := context.Background()
+	ctx := ownerCtx()
 	var auditID string
 	if err := env.pool.QueryRow(ctx,
 		`SELECT id::text FROM aura.identity_audit WHERE new_identity_name=$1`, email).Scan(&auditID); err != nil {
@@ -185,7 +184,7 @@ func TestProvisionNoSecretInLogsLive(t *testing.T) {
 	au := newStatefulAuthula()
 	svc, tok, email := env.service(t, au, env.auraLeg, env.telegram)
 	t.Cleanup(func() { env.cleanupProvisioned(email) })
-	if _, err := svc.Provision(context.Background(), env.creator, tok, liveProvReq(email, secret)); err != nil {
+	if _, err := svc.Provision(ownerCtx(), env.creator, tok, liveProvReq(email, secret)); err != nil {
 		t.Fatalf("Provision: %v", err)
 	}
 	if strings.Contains(buf.String(), secret) {

@@ -64,28 +64,37 @@ func seedRLSIdentity(t *testing.T, pool *pgxpool.Pool, id, name string) {
 	})
 }
 
-// seedRLSConversation inserts a conversation owned by identityID. The INSERT runs on the pool
-// (RLS var unset → the permissive-on-unset branch), proving the legacy write path is intact
-// under RLS.
+// seedRLSConversation inserts a conversation owned by identityID. Since migration 0089 it
+// CANNOT run on the bare pool — aura.conversations is fail closed — so the insert carries
+// the identity. That it succeeds is half the proof: the owner is not locked out of their own
+// table.
 func seedRLSConversation(t *testing.T, pool *pgxpool.Pool, identityID string) string {
 	t.Helper()
 	convID := uuid.Must(uuid.NewV7()).String()
-	if _, err := pool.Exec(context.Background(),
-		"INSERT INTO aura.conversations (id, identity_id, model, status) VALUES ($1, $2, 'rls-test', 'active')",
-		convID, identityID); err != nil {
+	if err := WithIdentityTxRaw(context.Background(), pool, identityID, func(tx pgx.Tx) error {
+		_, e := tx.Exec(context.Background(),
+			"INSERT INTO aura.conversations (id, identity_id, model, status) VALUES ($1, $2, 'rls-test', 'active')",
+			convID, identityID)
+		return e
+	}); err != nil {
 		t.Fatalf("seed conversation for %s: %v", identityID, err)
 	}
 	return convID
 }
 
 // seedRLSPause inserts a pending pause for convID WITHOUT an explicit identity_id, so the
-// 0032 BEFORE INSERT trigger must populate it from the parent conversation's owner.
-func seedRLSPause(t *testing.T, pool *pgxpool.Pool, convID string) string {
+// 0032 BEFORE INSERT trigger must populate it from the parent conversation's owner. The
+// transaction carries ownerID because that trigger's lookup is itself owner-filtered: under
+// 0089 an unscoped insert finds no parent, leaves identity_id NULL, and is refused.
+func seedRLSPause(t *testing.T, pool *pgxpool.Pool, ownerID, convID string) string {
 	t.Helper()
 	token := uuid.Must(uuid.NewV7()).String()
-	if _, err := pool.Exec(context.Background(),
-		"INSERT INTO aura.paused_states (token, conversation_id, kind, question, tool_call_id) VALUES ($1, $2, 'approval', 'ok?', 'call-rls')",
-		token, convID); err != nil {
+	if err := WithIdentityTxRaw(context.Background(), pool, ownerID, func(tx pgx.Tx) error {
+		_, e := tx.Exec(context.Background(),
+			"INSERT INTO aura.paused_states (token, conversation_id, kind, question, tool_call_id) VALUES ($1, $2, 'approval', 'ok?', 'call-rls')",
+			token, convID)
+		return e
+	}); err != nil {
 		t.Fatalf("seed pause for %s: %v", convID, err)
 	}
 	return token
@@ -295,23 +304,26 @@ func TestRLSPausedStatesTriggerAndBackstop(t *testing.T) {
 	seedRLSIdentity(t, pool, idB, "rlsp-b-"+idB[:8])
 	convA := seedRLSConversation(t, pool, idA)
 	convB := seedRLSConversation(t, pool, idB)
-	tokenA := seedRLSPause(t, pool, convA)
-	tokenB := seedRLSPause(t, pool, convB)
+	tokenA := seedRLSPause(t, pool, idA, convA)
+	tokenB := seedRLSPause(t, pool, idB, convB)
 
-	// The trigger populated identity_id from each pause's parent conversation.
-	assertPauseOwner := func(token, wantOwner string) {
+	// The trigger populated identity_id from each pause's parent conversation. The read is
+	// owner-scoped for the same reason the insert is: the table is fail closed.
+	assertPauseOwner := func(owner, token, wantOwner string) {
 		t.Helper()
 		var got string
-		if err := pool.QueryRow(ctx,
-			"SELECT identity_id::text FROM aura.paused_states WHERE token = $1", token).Scan(&got); err != nil {
+		if err := WithIdentityTxRaw(ctx, pool, owner, func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx,
+				"SELECT identity_id::text FROM aura.paused_states WHERE token = $1", token).Scan(&got)
+		}); err != nil {
 			t.Fatalf("read pause %s owner: %v", token, err)
 		}
 		if got != wantOwner {
 			t.Errorf("pause %s identity_id = %q, want %q (trigger did not populate from parent conversation)", token, got, wantOwner)
 		}
 	}
-	assertPauseOwner(tokenA, idA)
-	assertPauseOwner(tokenB, idB)
+	assertPauseOwner(idA, tokenA, idA)
+	assertPauseOwner(idB, tokenB, idB)
 
 	// Backstop: an unscoped cross-thread pending list under A returns only A's pause.
 	seen := map[string]bool{}
@@ -332,5 +344,204 @@ func TestRLSPausedStatesTriggerAndBackstop(t *testing.T) {
 	}
 	if seen[tokenB] {
 		t.Errorf("paused_states RLS leaked foreign pause %s to identity A (isolation broken)", tokenB)
+	}
+}
+
+// TestRLSConversationPlaneFailsClosedWithoutIdentity is the migration-0089 regression proof,
+// written against the exact reading MEASURED on the live deployment on 2026-08-02: connected
+// as aura_app with no app.current_identity set, all 32 conversations and all 648 turns were
+// visible, because the 0032 policies said "NULLIF(current_setting(...), ”) IS NULL OR
+// identity_id = ..." and an unset variable made the first branch true.
+//
+// The read half is the one that regresses silently — a policy that fails open returns MORE
+// rows, never an error — so every case below asserts a COUNT, not just an absence of error.
+func TestRLSConversationPlaneFailsClosedWithoutIdentity(t *testing.T) {
+	pool := rlsMigratedPool(t)
+	ctx := context.Background()
+
+	idA := uuid.Must(uuid.NewV7()).String()
+	idB := uuid.Must(uuid.NewV7()).String()
+	seedRLSIdentity(t, pool, idA, "rlsconv-a-"+idA[:8])
+	seedRLSIdentity(t, pool, idB, "rlsconv-b-"+idB[:8])
+	convA := seedRLSConversation(t, pool, idA)
+	convB := seedRLSConversation(t, pool, idB)
+	seedRLSTurn(t, pool, idA, convA, 1)
+	seedRLSTurn(t, pool, idB, convB, 1)
+	seedRLSPause(t, pool, idA, convA)
+	seedRLSPause(t, pool, idB, convB)
+
+	// 1. No identity: the whole conversation plane is invisible, not merely filtered.
+	for _, table := range []string{"aura.conversations", "aura.conversation_turns", "aura.paused_states"} {
+		var visible int
+		if err := pool.QueryRow(ctx, "SELECT count(*) FROM "+table).Scan(&visible); err != nil {
+			t.Fatalf("count %s with no identity: %v", table, err)
+		}
+		if visible != 0 {
+			t.Errorf("%s returned %d row(s) to a connection with no app.current_identity, want 0 — RLS is failing OPEN", table, visible)
+		}
+	}
+
+	// 2. No identity: writes are refused outright, not silently dropped.
+	if _, err := pool.Exec(ctx,
+		"INSERT INTO aura.conversations (id, identity_id, model, status) VALUES ($1, $2, 'rls-test', 'active')",
+		uuid.Must(uuid.NewV7()).String(), idA); err == nil {
+		t.Error("INSERT into aura.conversations succeeded with no app.current_identity, want a row-level-security refusal")
+	}
+
+	// 3. Under identity A: A sees exactly its own rows and none of B's.
+	if err := WithIdentityTxRaw(ctx, pool, idA, func(tx pgx.Tx) error {
+		for table, want := range map[string]int{
+			"aura.conversations":      1,
+			"aura.conversation_turns": 1,
+			"aura.paused_states":      1,
+		} {
+			var got int
+			if e := tx.QueryRow(ctx, "SELECT count(*) FROM "+table).Scan(&got); e != nil {
+				return e
+			}
+			if got != want {
+				t.Errorf("identity A sees %d row(s) in %s, want exactly its own %d — B's rows leaked, or A is locked out of its own", got, table, want)
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("WithIdentityTxRaw(A) read assertions: %v", err)
+	}
+
+	// 4. A cannot forge a conversation owned by B. Its own transaction: the refused INSERT
+	//    aborts the one it runs in, so folding it into the reads above would turn their
+	//    COMMIT into a rollback and mask what actually happened.
+	if err := WithIdentityTxRaw(ctx, pool, idA, func(tx pgx.Tx) error {
+		_, e := tx.Exec(ctx,
+			"INSERT INTO aura.conversations (id, identity_id, model, status) VALUES ($1, $2, 'rls-test', 'active')",
+			uuid.Must(uuid.NewV7()).String(), idB)
+		return e
+	}); err == nil {
+		t.Error("identity A inserted a conversation owned by identity B, want a row-level-security refusal")
+	}
+
+	// 5. A cannot append a turn to B's conversation either — the child policy names B as the
+	//    parent's owner, so it is not merely deferring to a parent lookup that already failed.
+	if err := WithIdentityTxRaw(ctx, pool, idA, func(tx pgx.Tx) error {
+		_, e := tx.Exec(ctx,
+			"INSERT INTO aura.conversation_turns (conversation_id, seq, role, content) VALUES ($1, 99, 'user', 'forged')",
+			convB)
+		return e
+	}); err == nil {
+		t.Error("identity A appended a turn to identity B's conversation, want a row-level-security refusal")
+	}
+}
+
+// TestRLSSharedLinksResolveAnonymouslyButWriteOwnerOnly pins the ONE table migration 0089
+// deliberately does not fail closed on the read side. A share link is a capability handed to
+// someone who is not the owner, so "mine" would not fail closed here — it would break
+// sharing silently, resolving a valid link to nothing instead of erroring.
+//
+// The three documented non-owner readers are all served by the same predicate: ResolveByToken
+// (anonymous), ResolveLiveByID (any authenticated bearer, D-10) and DueForExpiry (the sweep,
+// which selects rows whose expires_at has ALREADY passed and would find nothing under a
+// liveness-based predicate).
+func TestRLSSharedLinksResolveAnonymouslyButWriteOwnerOnly(t *testing.T) {
+	pool := rlsMigratedPool(t)
+	ctx := context.Background()
+
+	idA := uuid.Must(uuid.NewV7()).String()
+	idB := uuid.Must(uuid.NewV7()).String()
+	seedRLSIdentity(t, pool, idA, "rlsshare-a-"+idA[:8])
+	seedRLSIdentity(t, pool, idB, "rlsshare-b-"+idB[:8])
+	convA := seedRLSConversation(t, pool, idA)
+
+	liveID := uuid.Must(uuid.NewV7()).String()
+	revokedID := uuid.Must(uuid.NewV7()).String()
+	insertShare := func(shareID string, revoked bool) {
+		t.Helper()
+		if err := WithIdentityTxRaw(ctx, pool, idA, func(tx pgx.Tx) error {
+			_, e := tx.Exec(ctx, `
+				INSERT INTO aura.shared_links (id, owner_identity_id, conversation_id, tier, snapshot_id, snapshot_bucket, revoked_at)
+				VALUES ($1, $2, $3, 'internal', $4, 'rls-bucket', CASE WHEN $5 THEN now() ELSE NULL END)`,
+				shareID, idA, convA, uuid.Must(uuid.NewV7()).String(), revoked)
+			return e
+		}); err != nil {
+			t.Fatalf("seed share link %s (revoked=%v): %v", shareID, revoked, err)
+		}
+	}
+	insertShare(liveID, false)
+	insertShare(revokedID, true)
+
+	// 1. Anonymous resolution still works: the unrevoked link is readable with NO identity.
+	//    This is the assertion that catches an over-tightened policy — the failure mode is a
+	//    link that resolves to nothing, which no error would ever report.
+	var anonVisible int
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM aura.shared_links WHERE id = $1", liveID).Scan(&anonVisible); err != nil {
+		t.Fatalf("anonymous resolve by id: %v", err)
+	}
+	if anonVisible != 1 {
+		t.Errorf("an unrevoked share link is invisible to an anonymous reader (%d rows) — ResolveByToken and ResolveLiveByID are broken", anonVisible)
+	}
+
+	// 2. A REVOKED link is not: the widening is bounded to rows the resolvers may serve and
+	//    the expiry sweep must find.
+	var revokedVisible int
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM aura.shared_links WHERE id = $1", revokedID).Scan(&revokedVisible); err != nil {
+		t.Fatalf("anonymous read of a revoked link: %v", err)
+	}
+	if revokedVisible != 0 {
+		t.Errorf("a revoked share link is readable with no identity (%d rows), want 0", revokedVisible)
+	}
+
+	// 3. Writes stay owner-only: nobody can plant a link they do not own, with or without an
+	//    identity set.
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO aura.shared_links (id, owner_identity_id, conversation_id, tier, snapshot_id, snapshot_bucket)
+		VALUES ($1, $2, $3, 'internal', $4, 'rls-bucket')`,
+		uuid.Must(uuid.NewV7()).String(), idA, convA, uuid.Must(uuid.NewV7()).String()); err == nil {
+		t.Error("INSERT into aura.shared_links succeeded with no app.current_identity, want a refusal")
+	}
+	if err := WithIdentityTxRaw(ctx, pool, idB, func(tx pgx.Tx) error {
+		_, e := tx.Exec(ctx, `
+			INSERT INTO aura.shared_links (id, owner_identity_id, conversation_id, tier, snapshot_id, snapshot_bucket)
+			VALUES ($1, $2, $3, 'internal', $4, 'rls-bucket')`,
+			uuid.Must(uuid.NewV7()).String(), idA, convA, uuid.Must(uuid.NewV7()).String())
+		return e
+	}); err == nil {
+		t.Error("identity B inserted a share link owned by identity A, want a row-level-security refusal")
+	}
+
+	// 4. An AUTHENTICATED non-owner sees nothing and can change nothing. The widening in
+	//    point 1 is for a caller with NO identity — the plain-pool resolvers — not for
+	//    everyone: identity B running an owner-scoped query must not observe A's link at all,
+	//    and must not be able to revoke it (the DELETE/UPDATE hole a single FOR ALL policy
+	//    would have left).
+	if err := WithIdentityTxRaw(ctx, pool, idB, func(tx pgx.Tx) error {
+		var seenByB int
+		if e := tx.QueryRow(ctx, "SELECT count(*) FROM aura.shared_links WHERE id = $1", liveID).Scan(&seenByB); e != nil {
+			return e
+		}
+		if seenByB != 0 {
+			t.Errorf("identity B sees %d of identity A's share links under its own identity, want 0", seenByB)
+		}
+		tag, e := tx.Exec(ctx, "UPDATE aura.shared_links SET revoked_at = now() WHERE id = $1", liveID)
+		if e != nil {
+			return e
+		}
+		if tag.RowsAffected() != 0 {
+			t.Errorf("identity B revoked %d of identity A's share links, want 0", tag.RowsAffected())
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("WithIdentityTxRaw(B) revoke attempt: %v", err)
+	}
+}
+
+// seedRLSTurn appends one turn to convID as its owner.
+func seedRLSTurn(t *testing.T, pool *pgxpool.Pool, ownerID, convID string, seq int) {
+	t.Helper()
+	if err := WithIdentityTxRaw(context.Background(), pool, ownerID, func(tx pgx.Tx) error {
+		_, e := tx.Exec(context.Background(),
+			"INSERT INTO aura.conversation_turns (conversation_id, seq, role, content) VALUES ($1, $2, 'user', 'rls turn')",
+			convID, seq)
+		return e
+	}); err != nil {
+		t.Fatalf("seed turn %d for %s: %v", seq, convID, err)
 	}
 }

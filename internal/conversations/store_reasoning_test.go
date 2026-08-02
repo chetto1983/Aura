@@ -18,7 +18,6 @@
 package conversations
 
 import (
-	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -37,7 +36,7 @@ func TestTurnReasoning_PersistedForDisplayNeverInHistory(t *testing.T) {
 	pool := migratedPool(t)
 	s := newStore(t, pool)
 	convID := newConversation(t, s)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	const cot = "PERSISTED-COT-MARKER: the user wants a haiku; count syllables first"
 	var askCall llm.ToolCall

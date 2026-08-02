@@ -117,7 +117,7 @@ func TestDeleteLifecycleRevokesShares(t *testing.T) {
 	pool := migratedRunnerPool(t)
 	convStore := conversations.New(pool, conversations.Config{RunDir: t.TempDir(), TurnCapBytes: 65536})
 	convID := newIntegrationConversation(t, pool, convStore)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	if err := convStore.AppendTurn(ctx, conversations.AppendTurnParams{
 		ConversationID: convID, Role: llm.RoleUser, Content: "hello",
@@ -193,7 +193,7 @@ func TestDeleteLifecycleShareRevokerNil(t *testing.T) {
 	convID := newConvID(t)
 	seedOwnedConversation(t, r, owner, convID)
 
-	affected, err := r.DeleteConversationLifecycle(context.Background(), "", convID)
+	affected, err := r.DeleteConversationLifecycle(ownerCtx(), "", convID)
 	if err != nil {
 		t.Fatalf("lifecycle with nil share revoker: %v", err)
 	}
@@ -216,7 +216,7 @@ func TestDeleteLifecycleShareRevokeFailureDoesNotBlock(t *testing.T) {
 	convID := newConvID(t)
 	seedOwnedConversation(t, r, owner, convID)
 
-	affected, err := r.DeleteConversationLifecycle(context.Background(), "", convID)
+	affected, err := r.DeleteConversationLifecycle(ownerCtx(), "", convID)
 	if err != nil {
 		t.Fatalf("lifecycle: %v", err)
 	}

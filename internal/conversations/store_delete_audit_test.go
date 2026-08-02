@@ -3,7 +3,6 @@
 package conversations
 
 import (
-	"context"
 	"testing"
 
 	"github.com/google/uuid"
@@ -18,14 +17,12 @@ func TestDelete_CascadesPauseReferencedBySkillAudit(t *testing.T) {
 	pool := migratedPool(t)
 	s := newStore(t, pool)
 	convID := newConversation(t, s)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	tok := uuid.Must(uuid.NewV7()).String()
-	if _, err := pool.Exec(ctx,
+	seedAsOwner(t, pool, localID,
 		`INSERT INTO aura.paused_states (token, conversation_id, kind, question, priority, tool_call_id)
-		 VALUES ($1, $2, 'approval', 'approve skill?', 0, 'tc')`, tok, convID); err != nil {
-		t.Fatalf("insert paused_state: %v", err)
-	}
+		 VALUES ($1, $2, 'approval', 'approve skill?', 0, 'tc')`, tok, convID)
 	if _, err := pool.Exec(ctx,
 		`INSERT INTO aura.skill_audit (
 			actor_id, skill_name, action, content_hash, approval_source,

@@ -12,6 +12,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/google/uuid"
 )
 
@@ -21,7 +22,7 @@ import (
 func TestListPendingAll_CrossThread(t *testing.T) {
 	pool := migratedPool(t)
 	s := New(pool)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	convA := newConversation(t, pool)
 	convB := newConversation(t, pool)
@@ -90,7 +91,7 @@ func TestListPendingAll_CrossThread(t *testing.T) {
 func TestListPendingAll_TotalOrderViaTokenTiebreaker(t *testing.T) {
 	pool := migratedPool(t)
 	s := New(pool)
-	ctx := context.Background()
+	ctx := ownerCtx()
 	convA := newConversation(t, pool)
 	convB := newConversation(t, pool)
 
@@ -106,6 +107,13 @@ func TestListPendingAll_TotalOrderViaTokenTiebreaker(t *testing.T) {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
+	}
+	// aura.paused_states is fail-closed (0089) and the 0032 trigger fills identity_id by
+	// reading the parent conversation, which is itself owner-filtered — so the batch tx must
+	// carry the identity before the first insert, exactly as askuser.Store does.
+	if err := db.SetTxIdentity(ctx, tx, localID); err != nil {
+		_ = tx.Rollback(ctx)
+		t.Fatalf("scope tx to %s: %v", localID, err)
 	}
 	for _, r := range rows {
 		if _, err := tx.Exec(ctx,
@@ -157,7 +165,7 @@ func TestListPendingAll_TotalOrderViaTokenTiebreaker(t *testing.T) {
 func TestListPendingAll_LimitDefault(t *testing.T) {
 	pool := migratedPool(t)
 	s := New(pool)
-	ctx := context.Background()
+	ctx := ownerCtx()
 	conv := newConversation(t, pool)
 	const topPriority = 100
 	tok := insertPause(t, s, conv, "approval", "q", topPriority)
@@ -183,7 +191,7 @@ func TestListPendingAll_LimitDefault(t *testing.T) {
 func TestListPendingAll_DBErrorWrapping(t *testing.T) {
 	pool := migratedPool(t)
 	s := New(pool)
-	canceled, cancel := context.WithCancel(context.Background())
+	canceled, cancel := context.WithCancel(ownerCtx())
 	cancel()
 	if _, err := s.ListPendingAll(canceled, 100); err == nil {
 		t.Error("ListPendingAll(canceled): want error, got nil")

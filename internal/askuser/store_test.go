@@ -24,6 +24,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -53,7 +54,7 @@ func envOrSkip(t *testing.T, key string) string {
 
 func migratedPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ownerCtx(), 30*time.Second)
 	defer cancel()
 
 	pwd := envOrSkip(t, "POSTGRES_PASSWORD")
@@ -76,7 +77,7 @@ func migratedPool(t *testing.T) *pgxpool.Pool {
 	if _, err := db.Migrate(ctx, migrateURL); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
-	pool, err := db.Open(ctx, &db.Config{URL: appURL})
+	pool, err := db.Open(ctx, &db.Config{URL: sessionScopedAppURL(t, appURL, localID)})
 	if err != nil {
 		t.Fatalf("Open (aura_app): %v", err)
 	}
@@ -89,13 +90,14 @@ func migratedPool(t *testing.T) *pgxpool.Pool {
 func newConversation(t *testing.T, pool *pgxpool.Pool) string {
 	t.Helper()
 	id := uuid.Must(uuid.NewV7()).String()
-	if _, err := pool.Exec(context.Background(),
+	seedAsOwner(t, pool, localID,
 		"INSERT INTO aura.conversations (id, identity_id, model) VALUES ($1, $2, 'test-model')",
-		id, localID); err != nil {
-		t.Fatalf("insert conversation: %v", err)
-	}
+		id, localID)
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), "DELETE FROM aura.conversations WHERE id = $1", id)
+		_ = db.WithIdentityTxRaw(ownerCtx(), pool, localID, func(tx pgx.Tx) error {
+			_, e := tx.Exec(ownerCtx(), "DELETE FROM aura.conversations WHERE id = $1", id)
+			return e
+		})
 	})
 	return id
 }
@@ -103,7 +105,7 @@ func newConversation(t *testing.T, pool *pgxpool.Pool) string {
 func insertPause(t *testing.T, s *Store, convID, kind, question string, priority int) string {
 	t.Helper()
 	token := uuid.Must(uuid.NewV7()).String()
-	if err := s.Insert(context.Background(), InsertParams{
+	if err := s.Insert(ownerCtx(), InsertParams{
 		Token:          token,
 		ConversationID: convID,
 		Kind:           kind,
@@ -119,7 +121,7 @@ func insertPause(t *testing.T, s *Store, convID, kind, question string, priority
 func countPending(t *testing.T, pool *pgxpool.Pool, convID string) int {
 	t.Helper()
 	var n int
-	if err := pool.QueryRow(context.Background(),
+	if err := pool.QueryRow(ownerCtx(),
 		"SELECT count(*) FROM aura.paused_states WHERE conversation_id = $1 AND resumed_at IS NULL", convID,
 	).Scan(&n); err != nil {
 		t.Fatalf("count pending: %v", err)
@@ -136,7 +138,7 @@ func TestListPending_TotalOrderViaTokenTiebreaker(t *testing.T) {
 	pool := migratedPool(t)
 	s := New(pool)
 	convID := newConversation(t, pool)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	tokens := []string{
 		"33333333-3333-3333-3333-333333333333",
@@ -149,6 +151,12 @@ func TestListPending_TotalOrderViaTokenTiebreaker(t *testing.T) {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
+	}
+	// Scope the batch tx before the first insert: aura.paused_states is fail-closed (0089)
+	// and the 0032 trigger reads the owner-filtered parent conversation to fill identity_id.
+	if err := db.SetTxIdentity(ctx, tx, localID); err != nil {
+		_ = tx.Rollback(ctx)
+		t.Fatalf("scope tx to %s: %v", localID, err)
 	}
 	for _, tok := range tokens {
 		if _, err := tx.Exec(ctx,
@@ -183,7 +191,7 @@ func TestListPending_PriorityDominatesThenCreatedAt(t *testing.T) {
 	pool := migratedPool(t)
 	s := New(pool)
 	convID := newConversation(t, pool)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	lowTok := insertPause(t, s, convID, "approval", "low", 1)
 	highTok := insertPause(t, s, convID, "approval", "high", 90)
@@ -207,7 +215,7 @@ func TestCrashRecovery_FreshStoreSeesPriorRows(t *testing.T) {
 	tok := insertPause(t, s1, convID, "clarification", "still here?", 0)
 
 	s2 := New(pool) // simulates a process restart
-	pending, err := s2.ListPending(context.Background(), convID)
+	pending, err := s2.ListPending(ownerCtx(), convID)
 	if err != nil {
 		t.Fatalf("ListPending (fresh store): %v", err)
 	}
@@ -221,7 +229,7 @@ func TestCrashRecovery_FreshStoreSeesPriorRows(t *testing.T) {
 func TestMarkResumed_InvalidTokenRejected(t *testing.T) {
 	pool := migratedPool(t)
 	s := New(pool)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	unknown := uuid.Must(uuid.NewV7()).String()
 	if err := s.MarkResumed(ctx, unknown, ResumeAnswer{Action: ActionAccept, Content: "x"}); !isPauseNotFound(err) {
@@ -245,7 +253,7 @@ func TestMarkResumedBatch_ResolvesMany(t *testing.T) {
 	pool := migratedPool(t)
 	s := New(pool)
 	convID := newConversation(t, pool)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	t1 := insertPause(t, s, convID, "approval", "a", 0)
 	t2 := insertPause(t, s, convID, "clarification", "b", 0)
@@ -267,7 +275,7 @@ func TestMarkResumedBatch_UnknownTokenRollsBack(t *testing.T) {
 	pool := migratedPool(t)
 	s := New(pool)
 	convID := newConversation(t, pool)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	good := insertPause(t, s, convID, "approval", "a", 0)
 	unknown := uuid.Must(uuid.NewV7()).String()
@@ -291,7 +299,7 @@ func TestMarkResumedBatch_AlreadyResumedRollsBack(t *testing.T) {
 	pool := migratedPool(t)
 	s := New(pool)
 	convID := newConversation(t, pool)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	good := insertPause(t, s, convID, "approval", "a", 0)
 	done := insertPause(t, s, convID, "approval", "b", 0)
@@ -316,7 +324,7 @@ func TestAutoResolveForConversation(t *testing.T) {
 	pool := migratedPool(t)
 	s := New(pool)
 	convID := newConversation(t, pool)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	insertPause(t, s, convID, "approval", "a", 0)
 	insertPause(t, s, convID, "choice", "b", 50)
@@ -345,7 +353,7 @@ func TestGetByToken_RoundTrip(t *testing.T) {
 	pool := migratedPool(t)
 	s := New(pool)
 	convID := newConversation(t, pool)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	tok := insertPause(t, s, convID, "choice", "pick one", 7)
 	got, err := s.GetByToken(ctx, tok)
@@ -371,7 +379,7 @@ func TestInsertProxied(t *testing.T) {
 	pool := migratedPool(t)
 	s := New(pool)
 	convID := newConversation(t, pool)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	childID := "w2"
 	proxiedTok := uuid.Must(uuid.NewV7()).String()
@@ -429,7 +437,7 @@ func TestStoreMethods_DBErrorWrapping(t *testing.T) {
 	s := New(pool)
 	convID := newConversation(t, pool)
 
-	canceled, cancel := context.WithCancel(context.Background())
+	canceled, cancel := context.WithCancel(ownerCtx())
 	cancel()
 
 	valid := uuid.Must(uuid.NewV7()).String()
@@ -459,7 +467,7 @@ func TestCleanupResumedOlderThan(t *testing.T) {
 	pool := migratedPool(t)
 	s := New(pool)
 	convID := newConversation(t, pool)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	resolved := insertPause(t, s, convID, "approval", "old", 0)
 	if err := s.MarkResumed(ctx, resolved, ResumeAnswer{Action: ActionAccept, Content: "ok"}); err != nil {

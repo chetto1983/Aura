@@ -302,34 +302,33 @@ func TestMarkResumedBatchTx_ClaimsInSortedTokenOrder(t *testing.T) {
 	}
 }
 
-// TestListRecent_Int32Guard pins the QUAL-04a int32 narrowing guard: the LIMIT bound to
-// ListRecentPausedStates falls back to 50 for a non-positive OR int32-overflowing input
-// and never wraps to a negative LIMIT. A recording fake captures the int32 actually
-// passed to the generated query.
-func TestListRecent_Int32Guard(t *testing.T) {
+// TestNormalizeLimit_Int32Guard pins the QUAL-04a int32 narrowing guard shared by
+// ListPendingAll and ListRecent: a non-positive OR int32-overflowing limit falls back to the
+// caller's default and never wraps to a negative LIMIT.
+//
+// It targets the pure helper rather than driving ListRecent through a fake sqlc.DBTX, as it
+// used to: aura.paused_states is fail-closed since migration 0089, so ListRecent now runs
+// inside an identity-scoped transaction on a real *pgxpool.Pool and a DBTX fake can no
+// longer stand in for one. The guard is the same guard, tested where it lives.
+func TestNormalizeLimit_Int32Guard(t *testing.T) {
 	cases := []struct {
-		name string
-		in   int
-		want int32
+		name     string
+		in       int
+		fallback int32
+		want     int32
 	}{
-		{"zero", 0, 50},
-		{"negative", -5, 50},
-		{"fifty", 50, 50},
-		{"maxint32", math.MaxInt32, math.MaxInt32},
-		{"overflow", int(int64(math.MaxInt32) + 1), 50},
+		{"zero", 0, 50, 50},
+		{"negative", -5, 50, 50},
+		{"fifty", 50, 50, 50},
+		{"maxint32", math.MaxInt32, 50, math.MaxInt32},
+		{"overflow", int(int64(math.MaxInt32) + 1), 50, 50},
+		{"pending-all default", 0, 100, 100},
+		{"pending-all explicit", 7, 100, 7},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			rec := &recordingDBTX{}
-			s := &Store{q: sqlc.New(rec)} // pool unused: ListRecent reads via s.q only
-			if _, err := s.ListRecent(context.Background(), tc.in); err != nil {
-				t.Fatalf("ListRecent(%d): %v", tc.in, err)
-			}
-			if rec.queryCalls != 1 {
-				t.Fatalf("ListRecent(%d): want exactly 1 query, got %d", tc.in, rec.queryCalls)
-			}
-			if rec.queryLimit != tc.want {
-				t.Errorf("ListRecent(%d): bound LIMIT = %d, want %d (int32 guard)", tc.in, rec.queryLimit, tc.want)
+			if got := normalizeLimit(tc.in, tc.fallback); got != tc.want {
+				t.Errorf("normalizeLimit(%d, %d) = %d, want %d", tc.in, tc.fallback, got, tc.want)
 			}
 		})
 	}

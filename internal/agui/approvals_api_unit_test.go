@@ -39,7 +39,7 @@ func (f *fakeApprovalStore) ListPendingAll(_ context.Context, _ int) ([]askuser.
 }
 
 // Phase 36 owner-scoped surface. ListPendingAllForIdentity mirrors ListPendingAll (the fake
-// models no ownership) so the list-projection/error branches stay covered. GetByToken*
+// models no ownership) so the list-projection/error branches stay covered. GetByTokenForIdentity
 // satisfy the resolve ownership-gate interface; the resolve suites wire approvals=nil (the
 // gate is skipped), so these are not exercised here — the real gate is db_integration.
 func (f *fakeApprovalStore) ListPendingAllForIdentity(_ context.Context, _ string, _ int) ([]askuser.Pending, error) {

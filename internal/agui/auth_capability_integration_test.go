@@ -53,7 +53,7 @@ func (c storeChecker) HasCapability(ctx context.Context, id, capability string) 
 func TestAgentRunCapability(t *testing.T) {
 	pool := migratedPool(t)
 	store := identity.New(pool)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	// The seeded local identity holds the `*` wildcard: HasCapability is true for ANY
 	// capability name, including the agent.run gate name.
@@ -104,7 +104,7 @@ func TestAgentRunCapability(t *testing.T) {
 			t.Fatalf("read ungranted identity id: %v", err)
 		}
 		t.Cleanup(func() {
-			_, _ = pool.Exec(context.Background(), `DELETE FROM aura.identities WHERE id = $1`, ungrantedID)
+			_, _ = pool.Exec(ownerCtx(), `DELETE FROM aura.identities WHERE id = $1`, ungrantedID)
 		})
 
 		rec := httptest.NewRecorder()

@@ -19,6 +19,7 @@ package db
 import (
 	"context"
 	"fmt"
+	"github.com/jackc/pgx/v5"
 	"os"
 	"testing"
 	"time"
@@ -99,10 +100,12 @@ func TestMigrate0017_BranchPointersBackfillAndRoundTrip(t *testing.T) {
 
 	const convID = "11111111-1111-1111-1111-111111111111"
 	const seededIdentity = "00000000-0000-0000-0000-000000000001" // 0004 seed
-	if _, err := app.Exec(ctx,
-		"INSERT INTO aura.conversations (id, identity_id, model) VALUES ($1, $2, 'test-model')",
-		convID, seededIdentity,
-	); err != nil {
+	if err := WithIdentityTxRaw(ctx, app, seededIdentity, func(tx pgx.Tx) error {
+		_, e := tx.Exec(ctx,
+			"INSERT INTO aura.conversations (id, identity_id, model) VALUES ($1, $2, 'test-model')",
+			convID, seededIdentity)
+		return e
+	}); err != nil {
 		t.Fatalf("seed conversation: %v", err)
 	}
 

@@ -251,28 +251,66 @@ func (s *Store) ReleaseReservedDelete(ctx context.Context, conversationID, ident
 
 // ListReservedDeletes returns a bounded cross-owner recovery page. The stored
 // reservation is the authority; recovery never mints or adopts another token.
+//
+// Cross-owner and fail-closed RLS are not contradictory here, but they do dictate the
+// shape: aura.conversations has been invisible without an identity since migration 0089, so
+// this sweep ENUMERATES the owners (aura.identities carries no RLS) and runs the same
+// unscoped recovery query once per owner, each inside that owner's transaction. The
+// alternative — an RLS carve-out letting any connection read reserved rows — would leak
+// cross-tenant existence of a conversation mid-delete to buy nothing this loop does not
+// already give. limit bounds the WHOLE page, not each owner's slice, so a single tenant with
+// a long backlog cannot starve the others out of one tick.
 func (s *Store) ListReservedDeletes(ctx context.Context, limit int32) ([]ReservedDelete, error) {
 	if limit <= 0 {
 		return []ReservedDelete{}, nil
 	}
-	now := time.Now().UTC()
-	rows, err := s.q.ListReservedConversationDeletes(ctx, sqlc.ListReservedConversationDeletesParams{
-		ReservedBefore: pgtype.Timestamptz{Time: now.Add(-ExportDeleteRecoveryGrace), Valid: true},
-		Now:            pgtype.Timestamptz{Time: now, Valid: true},
-		BatchSize:      limit,
-	})
+	owners, err := s.ownerIdentities(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list reserved conversation deletes: %w", err)
 	}
-	deletes := make([]ReservedDelete, 0, len(rows))
-	for _, row := range rows {
-		if !row.DeleteReservation.Valid || !row.DeletePhase.Valid {
-			return nil, errors.New("list reserved conversation deletes: invalid lifecycle row")
+	now := time.Now().UTC()
+	params := sqlc.ListReservedConversationDeletesParams{
+		ReservedBefore: pgtype.Timestamptz{Time: now.Add(-ExportDeleteRecoveryGrace), Valid: true},
+		Now:            pgtype.Timestamptz{Time: now, Valid: true},
+		BatchSize:      limit,
+	}
+	deletes := make([]ReservedDelete, 0, limit)
+	for _, owner := range owners {
+		if int32(len(deletes)) >= limit {
+			break
 		}
-		deletes = append(deletes, ReservedDelete{
-			ConversationID: uuid.UUID(row.ID.Bytes).String(), IdentityID: uuid.UUID(row.IdentityID.Bytes).String(),
-			ExpectedVersion: row.SnapshotVersion, Reservation: row.DeleteReservation.String, Phase: row.DeletePhase.String,
-		})
+		params.BatchSize = limit - int32(len(deletes))
+		ownerDeletes, oErr := s.reservedDeletesForOwner(ctx, owner, params)
+		if oErr != nil {
+			return nil, oErr
+		}
+		deletes = append(deletes, ownerDeletes...)
+	}
+	return deletes, nil
+}
+
+// reservedDeletesForOwner is one owner's slice of the recovery page: the same unscoped
+// query, filtered to that owner by RLS rather than by a predicate.
+func (s *Store) reservedDeletesForOwner(ctx context.Context, owner string, params sqlc.ListReservedConversationDeletesParams) ([]ReservedDelete, error) {
+	var deletes []ReservedDelete
+	if err := db.WithIdentityTx(ctx, s.pool, owner, func(q *sqlc.Queries) error {
+		rows, lErr := q.ListReservedConversationDeletes(ctx, params)
+		if lErr != nil {
+			return fmt.Errorf("list reserved conversation deletes: %w", lErr)
+		}
+		deletes = make([]ReservedDelete, 0, len(rows))
+		for _, row := range rows {
+			if !row.DeleteReservation.Valid || !row.DeletePhase.Valid {
+				return errors.New("list reserved conversation deletes: invalid lifecycle row")
+			}
+			deletes = append(deletes, ReservedDelete{
+				ConversationID: uuid.UUID(row.ID.Bytes).String(), IdentityID: uuid.UUID(row.IdentityID.Bytes).String(),
+				ExpectedVersion: row.SnapshotVersion, Reservation: row.DeleteReservation.String, Phase: row.DeletePhase.String,
+			})
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 	return deletes, nil
 }

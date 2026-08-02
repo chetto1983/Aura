@@ -55,7 +55,7 @@ type AppendTurnParams struct {
 }
 
 // AppendTurn writes one turn AND folds its token/cost delta into the conversation
-// aggregates in a SINGLE db.WithTx transaction (SC-2): a failure between the turn
+// aggregates in a SINGLE db.WithCallerIdentityTx transaction (SC-2): a failure between the turn
 // INSERT and the aggregates UPDATE rolls the whole thing back, leaving no partial
 // turn. When Seq <= 0, the Store row-locks the parent conversation and allocates
 // MAX(seq)+1 inside the same tx so concurrent appenders cannot race. Content over
@@ -71,7 +71,7 @@ func (s *Store) AppendTurn(ctx context.Context, p AppendTurnParams) error {
 		}
 		if err := cleanupSidecarOnTxError(
 			func() error {
-				return db.WithTx(ctx, s.pool, func(q *sqlc.Queries) error {
+				return db.WithCallerIdentityTx(ctx, s.pool, func(q *sqlc.Queries) error {
 					return insertTurnAndAggregates(ctx, q, turn, agg)
 				})
 			},
@@ -87,7 +87,7 @@ func (s *Store) AppendTurn(ctx context.Context, p AppendTurnParams) error {
 	var spilledPath string
 	if err := cleanupSidecarOnTxError(
 		func() error {
-			return db.WithTx(ctx, s.pool, func(q *sqlc.Queries) error {
+			return db.WithCallerIdentityTx(ctx, s.pool, func(q *sqlc.Queries) error {
 				seq, err := s.allocateTurnSeq(ctx, q, p.ConversationID)
 				if err != nil {
 					return err
@@ -110,7 +110,10 @@ func (s *Store) AppendTurn(ctx context.Context, p AppendTurnParams) error {
 
 // AppendTurnTx is the no-spill, tx-inner half of AppendTurn, EXPORTED so the 34-06
 // runner-package ResumeCommitter can span a pause claim (askuser.MarkResumedTx) and the
-// resume/answer turn append in ONE cross-store db.WithTx (D-03). It folds the turn +
+// resume/answer turn append in ONE cross-store transaction (D-03). The caller's transaction
+// must already carry the RLS identity — the committer opens it with
+// db.WithCallerIdentityTx — because aura.conversation_turns is fail-closed (0089) and this
+// method opens no transaction of its own to set it. It folds the turn +
 // aggregate writes with insertTurnAndAggregates using the caller-supplied Queries (bound
 // to the caller's transaction) — it opens NO transaction of its own. It requires a
 // caller-provided Seq > 0 (ErrSeqRequired otherwise): the tx-inner path does not
@@ -154,7 +157,7 @@ func (s *Store) AppendAssistantTurnWithCacheMetric(ctx context.Context, p Append
 		}
 		if err := cleanupSidecarOnTxError(
 			func() error {
-				return db.WithTx(ctx, s.pool, func(q *sqlc.Queries) error {
+				return db.WithCallerIdentityTx(ctx, s.pool, func(q *sqlc.Queries) error {
 					if err := insertTurnAndAggregates(ctx, q, turn, agg); err != nil {
 						return err
 					}
@@ -174,7 +177,7 @@ func (s *Store) AppendAssistantTurnWithCacheMetric(ctx context.Context, p Append
 	var spilledPath string
 	if err := cleanupSidecarOnTxError(
 		func() error {
-			return db.WithTx(ctx, s.pool, func(q *sqlc.Queries) error {
+			return db.WithCallerIdentityTx(ctx, s.pool, func(q *sqlc.Queries) error {
 				seq, err := s.allocateTurnSeq(ctx, q, p.ConversationID)
 				if err != nil {
 					return err

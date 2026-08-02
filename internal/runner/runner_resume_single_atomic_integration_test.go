@@ -3,7 +3,6 @@
 package runner
 
 import (
-	"context"
 	"errors"
 	"testing"
 
@@ -29,7 +28,7 @@ func TestResumeSingle_AppendFailureAfterClaimRollsBack_Integration(t *testing.T)
 	)
 	r, convStore, pauseStore := newIntegrationRunner(t, pool, client)
 	convID := newIntegrationConversation(t, pool, convStore)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	// Drive a real Turn to a pause (exercises the atomic flushPause/CommitPause path).
 	if _, err := drain(r.Turn(ctx, convID, new("where am I?"))); err != nil {
@@ -43,7 +42,7 @@ func TestResumeSingle_AppendFailureAfterClaimRollsBack_Integration(t *testing.T)
 
 	// Fault injection: the REAL MarkResumedTx claim + a forced append failure in ONE tx.
 	answer := askuser.ResumeAnswer{Action: askuser.ActionAccept, Content: "Rome"}
-	injErr := db.WithTx(ctx, pool, func(q *sqlc.Queries) error {
+	injErr := db.WithCallerIdentityTx(ctx, pool, func(q *sqlc.Queries) error {
 		if err := pauseStore.MarkResumedTx(ctx, q, token, answer); err != nil {
 			return err
 		}
@@ -98,7 +97,7 @@ func TestResumeSingle_DuplicateIsAtomic_Integration(t *testing.T) {
 	)
 	r, convStore, _ := newIntegrationRunner(t, pool, client)
 	convID := newIntegrationConversation(t, pool, convStore)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	if _, err := drain(r.Turn(ctx, convID, new("where am I?"))); err != nil {
 		t.Fatalf("turn: %v", err)

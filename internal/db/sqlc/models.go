@@ -243,7 +243,7 @@ type AuraDocumentEmbeddings struct {
 	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
 }
 
-// Durable document ingestion job state. Neo4j stores document/chunk graph data; Postgres tracks lifecycle and progress.
+// Durable document ingestion job state: lifecycle, idempotency and operator-visible progress. Postgres is the only store — a document is one catalog row plus a digest, and the file itself lives in the object store.
 type AuraDocumentIngestJobs struct {
 	ID             pgtype.UUID        `json:"id"`
 	SourceID       string             `json:"source_id"`
@@ -308,7 +308,9 @@ type AuraDocuments struct {
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
 	// What this document IS, in enough words to pick it out of a library: sheets and their column headers with row counts for tabular content, the heading outline for prose. Not the content — document_open hands over the file for that.
-	Digest    string      `json:"digest"`
+	Digest string `json:"digest"`
+	// Machine-written at ingest from the file itself, with no LLM: sheet names, column headers with their frequent values, sampled rows, or the metadata and page count of a format whose text cannot be read without opening it. A proxy for the file, never the file. aura.documents.digest holds the agent's own note instead.
+	Card      string      `json:"card"`
 	DigestTsv interface{} `json:"digest_tsv"`
 }
 

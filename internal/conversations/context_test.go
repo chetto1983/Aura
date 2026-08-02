@@ -3,7 +3,6 @@
 package conversations
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -13,7 +12,7 @@ import (
 func countRotEvents(t *testing.T, s *Store, convID string) int {
 	t.Helper()
 	var n int
-	if err := s.pool.QueryRow(context.Background(),
+	if err := s.pool.QueryRow(ownerCtx(),
 		"SELECT count(*) FROM aura.context_rot_events WHERE conversation_id = $1", convID,
 	).Scan(&n); err != nil {
 		t.Fatalf("count rot events: %v", err)
@@ -26,7 +25,7 @@ func countRotEvents(t *testing.T, s *Store, convID string) int {
 func rotEventAction(t *testing.T, s *Store, convID string) string {
 	t.Helper()
 	var action string
-	if err := s.pool.QueryRow(context.Background(),
+	if err := s.pool.QueryRow(ownerCtx(),
 		"SELECT action FROM aura.context_rot_events WHERE conversation_id = $1 LIMIT 1", convID,
 	).Scan(&action); err != nil {
 		t.Fatalf("read rot event action: %v", err)
@@ -40,7 +39,7 @@ func TestLoadManagedHistory_SC1_NoRotEventOnL1Alone(t *testing.T) {
 	pool := migratedPool(t)
 	s := newStore(t, pool)
 	convID := newConversation(t, s)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	bigTool := strings.Repeat("tool output token ", 4000)
 	turns := []AppendTurnParams{
@@ -78,7 +77,7 @@ func TestLoadManagedHistory_L2_5_WritesRotEvent(t *testing.T) {
 	pool := migratedPool(t)
 	s := newStore(t, pool)
 	convID := newConversation(t, s)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	big := strings.Repeat("word ", 3000)
 	turns := []AppendTurnParams{

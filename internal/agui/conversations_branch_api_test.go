@@ -15,7 +15,6 @@
 package agui
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -42,12 +41,12 @@ func newBranchAPIServer(t *testing.T, store ConversationStore) (*httptest.Server
 // with chained parent pointers and returns its id.
 func seedBranchConversation(t *testing.T, store *conversations.Store) string {
 	t.Helper()
-	ctx := context.Background()
+	ctx := ownerCtx()
 	id := uuid.Must(uuid.NewV7()).String()
 	if _, err := store.Create(ctx, conversations.CreateParams{ID: id, IdentityID: localIdentityID, Model: "test-model"}); err != nil {
 		t.Fatalf("Create conversation: %v", err)
 	}
-	t.Cleanup(func() { _ = store.Delete(context.Background(), id) })
+	t.Cleanup(func() { _ = store.Delete(ownerCtx(), id) })
 	for _, tp := range []conversations.AppendTurnParams{
 		{ConversationID: id, Seq: 1, Role: llm.RoleSystem, Content: "you are aura"},
 		{ConversationID: id, Seq: 2, Role: llm.RoleUser, Content: "first question"},
@@ -112,7 +111,7 @@ func TestBranchEdit_ForksAndReRunsOverSelectedBranch(t *testing.T) {
 	}
 
 	// Full tree: BOTH branches are now queryable (original canonical leaf + forked sibling).
-	branches, err := store.ListBranches(context.Background(), id)
+	branches, err := store.ListBranches(ownerCtx(), id)
 	if err != nil {
 		t.Fatalf("ListBranches: %v", err)
 	}

@@ -79,7 +79,7 @@ func (j liveJournal) CompletedSteps(ctx context.Context, sagaID string) (map[str
 func (j liveJournal) stepStatus(t *testing.T, sagaID, step string) string {
 	t.Helper()
 	var status string
-	err := j.pool.QueryRow(context.Background(),
+	err := j.pool.QueryRow(ownerCtx(),
 		`SELECT status FROM aura.provisioning_saga WHERE saga_id = $1::uuid AND step = $2`, sagaID, step).Scan(&status)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ""
@@ -247,12 +247,12 @@ func seedResumableIdentity(t *testing.T, pool *pgxpool.Pool) (id, name string) {
 	t.Helper()
 	id = uuid.NewString()
 	name = "resumable+" + id[:8] + "@aura.local"
-	if _, err := pool.Exec(context.Background(),
+	if _, err := pool.Exec(ownerCtx(),
 		`INSERT INTO aura.identities (id, name, kind) VALUES ($1::uuid, $2, 'user')`, id, name); err != nil {
 		t.Fatalf("seed identity: %v", err)
 	}
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), `DELETE FROM aura.identities WHERE id=$1`, id)
+		_, _ = pool.Exec(ownerCtx(), `DELETE FROM aura.identities WHERE id=$1`, id)
 	})
 	return id, name
 }
@@ -272,7 +272,7 @@ func newGarageClient(t *testing.T) *garageadmin.Client {
 // symmetry against the live Postgres + Garage stores.
 func TestProvisioningSagaResumable(t *testing.T) {
 	client := newGarageClient(t) // env-gated first (skips before any DB work)
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	ctx, cancel := context.WithTimeout(ownerCtx(), 120*time.Second)
 	t.Cleanup(cancel)
 	pool := disposableLiveSagaPool(t, ctx)
 	store := newLiveIdentityStore(t, pool)
@@ -283,7 +283,7 @@ func TestProvisioningSagaResumable(t *testing.T) {
 		os := newLiveObjectStore(client, store)
 		fs := &liveFilesystem{root: t.TempDir(), failProvision: true}
 		svc := newOnboardingService(OnboardingDeps{Journal: journal, ObjectStore: os, Filesystem: fs})
-		t.Cleanup(func() { _ = os.DeprovisionObjectStore(context.Background(), id) })
+		t.Cleanup(func() { _ = os.DeprovisionObjectStore(ownerCtx(), id) })
 
 		// First run crashes at the filesystem leg: Garage is journaled done, no compensation.
 		if err := svc.resumeResourceProvisioning(ctx, id); err == nil {
@@ -376,7 +376,7 @@ func TestProvisioningSagaResumable(t *testing.T) {
 		if err != nil {
 			t.Fatalf("post-purge CreateBucket probe: %v", err)
 		}
-		t.Cleanup(func() { _ = client.DeleteBucket(context.Background(), newBucketID) })
+		t.Cleanup(func() { _ = client.DeleteBucket(ownerCtx(), newBucketID) })
 		if newBucketID == bucketBefore {
 			t.Fatalf("Garage bucket %q still exists after purge — orphaned", bucketBefore)
 		}

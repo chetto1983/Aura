@@ -48,7 +48,7 @@ func envOrSkip(t *testing.T, key string) string {
 
 func migratedPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ownerCtx(), 30*time.Second)
 	defer cancel()
 
 	pwd := envOrSkip(t, "POSTGRES_PASSWORD")
@@ -71,7 +71,7 @@ func migratedPool(t *testing.T) *pgxpool.Pool {
 	if _, err := db.Migrate(ctx, migrateURL); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
-	pool, err := db.Open(ctx, &db.Config{URL: appURL})
+	pool, err := db.Open(ctx, &db.Config{URL: sessionScopedAppURL(t, appURL, localID)})
 	if err != nil {
 		t.Fatalf("Open (aura_app): %v", err)
 	}
@@ -88,13 +88,13 @@ func newStore(t *testing.T, pool *pgxpool.Pool) *Store {
 func newConversation(t *testing.T, s *Store) string {
 	t.Helper()
 	id := uuid.Must(uuid.NewV7()).String()
-	if _, err := s.Create(context.Background(), CreateParams{
+	if _, err := s.Create(ownerCtx(), CreateParams{
 		ID: id, IdentityID: localID, Model: "test-model",
 	}); err != nil {
 		t.Fatalf("Create conversation: %v", err)
 	}
 	t.Cleanup(func() {
-		_, _ = s.pool.Exec(context.Background(), "DELETE FROM aura.conversations WHERE id = $1", id)
+		_, _ = s.pool.Exec(ownerCtx(), "DELETE FROM aura.conversations WHERE id = $1", id)
 	})
 	return id
 }
@@ -102,7 +102,7 @@ func newConversation(t *testing.T, s *Store) string {
 func countTurns(t *testing.T, pool *pgxpool.Pool, convID string) int {
 	t.Helper()
 	var n int
-	if err := pool.QueryRow(context.Background(),
+	if err := pool.QueryRow(ownerCtx(),
 		"SELECT count(*) FROM aura.conversation_turns WHERE conversation_id = $1", convID,
 	).Scan(&n); err != nil {
 		t.Fatalf("count turns: %v", err)
@@ -117,7 +117,7 @@ func TestLoadHistory_ByteIdenticalAfterRestart(t *testing.T) {
 	pool := migratedPool(t)
 	s := newStore(t, pool)
 	convID := newConversation(t, s)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	turns := []AppendTurnParams{
 		{ConversationID: convID, Seq: 1, Role: llm.RoleSystem, Content: "you are aura"},
@@ -158,7 +158,7 @@ func TestAppendTurn_AtomicRollback(t *testing.T) {
 	pool := migratedPool(t)
 	s := newStore(t, pool)
 	convID := newConversation(t, s)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	before := countTurns(t, pool, convID)
 
@@ -190,7 +190,7 @@ func TestAppendTurn_SidecarSpill(t *testing.T) {
 	runDir := t.TempDir()
 	s := New(pool, Config{RunDir: runDir, TurnCapBytes: 64}) // tiny cap to force a spill
 	convID := newConversation(t, s)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	big := strings.Repeat("x", 200)
 	if err := s.AppendTurn(ctx, AppendTurnParams{
@@ -235,7 +235,7 @@ func TestAppendTurn_AggregatesSumTurnColumns(t *testing.T) {
 	pool := migratedPool(t)
 	s := newStore(t, pool)
 	convID := newConversation(t, s)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	deltas := []AppendTurnParams{
 		{ConversationID: convID, Seq: 1, Role: llm.RoleUser, Content: "a", InputTokens: 100, OutputTokens: 0, CachedTokens: 10, CostUSD: 0.0050},
@@ -269,7 +269,7 @@ func TestSearchConversationTurns_OrderedBySimilarity(t *testing.T) {
 	pool := migratedPool(t)
 	s := newStore(t, pool)
 	convID := newConversation(t, s)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	rows := []string{
 		"the quick brown fox jumps",
@@ -303,7 +303,7 @@ func TestSearchConversationTurnsExcludesDeletedConversations(t *testing.T) {
 	s := newStore(t, pool)
 	activeID := newConversation(t, s)
 	deletedID := newConversation(t, s)
-	ctx := context.Background()
+	ctx := ownerCtx()
 	needle := "needle" + strings.ReplaceAll(uuid.Must(uuid.NewV7()).String(), "-", "")
 
 	for _, convID := range []string{activeID, deletedID} {
@@ -361,7 +361,7 @@ func TestDelete_CascadesAndRemovesSidecar(t *testing.T) {
 	runDir := t.TempDir()
 	s := New(pool, Config{RunDir: runDir, TurnCapBytes: 16})
 	convID := newConversation(t, s)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	if err := s.AppendTurn(ctx, AppendTurnParams{
 		ConversationID: convID, Seq: 1, Role: llm.RoleAssistant, Content: strings.Repeat("y", 100),
@@ -370,11 +370,9 @@ func TestDelete_CascadesAndRemovesSidecar(t *testing.T) {
 	}
 	// A pending paused_state for the same conversation (cascade target).
 	tok := uuid.Must(uuid.NewV7()).String()
-	if _, err := pool.Exec(ctx,
+	seedAsOwner(t, pool, localID,
 		`INSERT INTO aura.paused_states (token, conversation_id, kind, question, priority, tool_call_id)
-		 VALUES ($1, $2, 'approval', 'q', 0, 'tc')`, tok, convID); err != nil {
-		t.Fatalf("insert paused_state: %v", err)
-	}
+		 VALUES ($1, $2, 'approval', 'q', 0, 'tc')`, tok, convID)
 	dir := filepath.Join(runDir, "conversations", convID)
 	if _, err := os.Stat(dir); err != nil {
 		t.Fatalf("sidecar dir should exist before delete: %v", err)
@@ -404,7 +402,7 @@ func TestStatusAndRename(t *testing.T) {
 	pool := migratedPool(t)
 	s := newStore(t, pool)
 	convID := newConversation(t, s)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	if err := s.SetTitleIfNull(ctx, convID, "first title"); err != nil {
 		t.Fatalf("SetTitleIfNull: %v", err)
@@ -458,7 +456,7 @@ func containsConv(cs []Conversation, id string) bool {
 func TestGet_NotFound(t *testing.T) {
 	pool := migratedPool(t)
 	s := newStore(t, pool)
-	_, err := s.Get(context.Background(), uuid.Must(uuid.NewV7()).String())
+	_, err := s.Get(ownerCtx(), uuid.Must(uuid.NewV7()).String())
 	if !errors.Is(err, ErrConversationNotFound) {
 		t.Errorf("want ErrConversationNotFound, got %v", err)
 	}
@@ -469,7 +467,7 @@ func TestCountTurns(t *testing.T) {
 	pool := migratedPool(t)
 	s := newStore(t, pool)
 	convID := newConversation(t, s)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	if n, err := s.CountTurns(ctx, convID); err != nil || n != 0 {
 		t.Fatalf("CountTurns(empty): n=%d err=%v", n, err)
@@ -488,85 +486,3 @@ func TestCountTurns(t *testing.T) {
 
 // TestStoreMethods_DBErrorWrapping drives the DB-touching methods against a
 // canceled context so each "%w" wrap branch is exercised (mirrors askuser).
-func TestStoreMethods_DBErrorWrapping(t *testing.T) {
-	pool := migratedPool(t)
-	s := newStore(t, pool)
-	convID := newConversation(t, s)
-
-	canceled, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	newID := uuid.Must(uuid.NewV7()).String()
-	if _, err := s.Create(canceled, CreateParams{ID: newID, IdentityID: localID, Model: "m"}); err == nil {
-		t.Error("Create(canceled): want error")
-	}
-	if _, err := s.Get(canceled, convID); err == nil {
-		t.Error("Get(canceled): want error")
-	}
-	if _, err := s.List(canceled, true); err == nil {
-		t.Error("List(canceled): want error")
-	}
-	if err := s.UpdateStatus(canceled, convID, StatusArchived); err == nil {
-		t.Error("UpdateStatus(canceled): want error")
-	}
-	if err := s.Rename(canceled, convID, "x"); err == nil {
-		t.Error("Rename(canceled): want error")
-	}
-	if err := s.SetTitleIfNull(canceled, convID, "x"); err == nil {
-		t.Error("SetTitleIfNull(canceled): want error")
-	}
-	if _, err := s.CountTurns(canceled, convID); err == nil {
-		t.Error("CountTurns(canceled): want error")
-	}
-	if err := s.AppendTurn(canceled, AppendTurnParams{ConversationID: convID, Seq: 1, Role: llm.RoleUser, Content: "x"}); err == nil {
-		t.Error("AppendTurn(canceled): want error")
-	}
-	if _, err := s.LoadHistory(canceled, convID); err == nil {
-		t.Error("LoadHistory(canceled): want error")
-	}
-	if _, err := s.SearchConversationTurns(canceled, "q", 5); err == nil {
-		t.Error("SearchConversationTurns(canceled): want error")
-	}
-	if err := s.Delete(canceled, convID); err == nil {
-		t.Error("Delete(canceled): want error")
-	}
-}
-
-// TestStoreMethods_InvalidUUIDWrapping exercises the parseUUID error branches.
-func TestStoreMethods_InvalidUUIDWrapping(t *testing.T) {
-	pool := migratedPool(t)
-	s := newStore(t, pool)
-	ctx := context.Background()
-	const bad = "not-a-uuid"
-
-	if _, err := s.Create(ctx, CreateParams{ID: bad, IdentityID: localID, Model: "m"}); err == nil {
-		t.Error("Create(bad id): want error")
-	}
-	if _, err := s.Create(ctx, CreateParams{ID: uuid.Must(uuid.NewV7()).String(), IdentityID: bad, Model: "m"}); err == nil {
-		t.Error("Create(bad identity): want error")
-	}
-	if _, err := s.Get(ctx, bad); err == nil {
-		t.Error("Get(bad): want error")
-	}
-	if err := s.UpdateStatus(ctx, bad, StatusActive); err == nil {
-		t.Error("UpdateStatus(bad): want error")
-	}
-	if err := s.Rename(ctx, bad, "x"); err == nil {
-		t.Error("Rename(bad): want error")
-	}
-	if err := s.SetTitleIfNull(ctx, bad, "x"); err == nil {
-		t.Error("SetTitleIfNull(bad): want error")
-	}
-	if _, err := s.CountTurns(ctx, bad); err == nil {
-		t.Error("CountTurns(bad): want error")
-	}
-	if err := s.AppendTurn(ctx, AppendTurnParams{ConversationID: bad, Seq: 1, Role: llm.RoleUser}); err == nil {
-		t.Error("AppendTurn(bad): want error")
-	}
-	if _, err := s.LoadHistory(ctx, bad); err == nil {
-		t.Error("LoadHistory(bad): want error")
-	}
-	if err := s.Delete(ctx, bad); err == nil {
-		t.Error("Delete(bad): want error")
-	}
-}

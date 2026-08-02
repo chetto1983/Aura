@@ -3,7 +3,6 @@
 package runner
 
 import (
-	"context"
 	"errors"
 	"sync"
 	"testing"
@@ -28,7 +27,7 @@ func TestResumeBatch_ConcurrentDuplicate_Integration(t *testing.T) {
 	)
 	r, convStore, _ := newIntegrationRunner(t, pool, client)
 	convID := newIntegrationConversation(t, pool, convStore)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	if _, err := drain(r.Turn(ctx, convID, new("go"))); err != nil {
 		t.Fatalf("turn: %v", err)

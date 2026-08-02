@@ -93,12 +93,9 @@ func migratedPool(t *testing.T) *pgxpool.Pool {
 func seedConversation(t *testing.T, pool *pgxpool.Pool) string {
 	t.Helper()
 	convID := uuid.Must(uuid.NewV7()).String()
-	if _, err := pool.Exec(context.Background(),
+	seedAsOwner(t, pool, localIdentity,
 		"INSERT INTO aura.conversations (id, identity_id, model, status) VALUES ($1, $2, 'test-model', 'active')",
-		convID, localIdentity,
-	); err != nil {
-		t.Fatalf("seed conversation: %v", err)
-	}
+		convID, localIdentity)
 	return convID
 }
 

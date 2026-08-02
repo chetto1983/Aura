@@ -28,6 +28,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/conversations"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/objectstore"
 	"github.com/google/uuid"
@@ -109,9 +110,14 @@ func newShareTestService(t *testing.T, pool *pgxpool.Pool, publicEnabled bool) s
 	return shareTestDeps{svc: svc, convStore: convStore, artifacts: artifacts, opener: opener, objects: objects, bucket: bucket}
 }
 
-func appendTurn(t *testing.T, conv *conversations.Store, convID, role, content string) {
+// appendTurn takes the OWNER as well as the conversation because aura.conversation_turns is
+// fail-closed since migration 0089: a write on a bare context does not append to the wrong
+// conversation, it appends to none, and the turn simply is not there when the snapshot is
+// built.
+func appendTurn(t *testing.T, conv *conversations.Store, ownerID, convID, role, content string) {
 	t.Helper()
-	if err := conv.AppendTurn(context.Background(), conversations.AppendTurnParams{
+	ctx := identityctx.WithIdentityID(context.Background(), ownerID)
+	if err := conv.AppendTurn(ctx, conversations.AppendTurnParams{
 		ConversationID: convID, Role: role, Content: content,
 	}); err != nil {
 		t.Fatalf("append turn: %v", err)
@@ -126,14 +132,14 @@ func TestShareSnapshotFrozen(t *testing.T) {
 	deps := newShareTestService(t, pool, true)
 	owner := seedIdentity(t, pool)
 	conv := seedConversation(t, pool, owner)
-	appendTurn(t, deps.convStore, conv, llm.RoleUser, "turn before mint")
+	appendTurn(t, deps.convStore, owner, conv, llm.RoleUser, "turn before mint")
 
 	res, err := deps.svc.Create(context.Background(), CreateRequest{ConversationID: conv, OwnerIdentityID: owner, Tier: TierInternal})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
 
-	appendTurn(t, deps.convStore, conv, llm.RoleUser, "turn added AFTER mint — must never leak")
+	appendTurn(t, deps.convStore, owner, conv, llm.RoleUser, "turn added AFTER mint — must never leak")
 
 	snap, _, err := deps.svc.ResolveInternal(context.Background(), res.Link.ID.String(), owner)
 	if err != nil {
@@ -156,7 +162,7 @@ func TestShareUpdateResnapshot(t *testing.T) {
 	deps := newShareTestService(t, pool, true)
 	owner := seedIdentity(t, pool)
 	conv := seedConversation(t, pool, owner)
-	appendTurn(t, deps.convStore, conv, llm.RoleUser, "turn one")
+	appendTurn(t, deps.convStore, owner, conv, llm.RoleUser, "turn one")
 
 	res, err := deps.svc.Create(context.Background(), CreateRequest{
 		ConversationID: conv, OwnerIdentityID: owner, Tier: TierPublic, ExpiryOption: ExpiryDefault,
@@ -168,7 +174,7 @@ func TestShareUpdateResnapshot(t *testing.T) {
 		t.Fatal("create(public): empty plaintext token")
 	}
 
-	appendTurn(t, deps.convStore, conv, llm.RoleUser, "turn two, added before update")
+	appendTurn(t, deps.convStore, owner, conv, llm.RoleUser, "turn two, added before update")
 
 	updated, err := deps.svc.Update(context.Background(), res.Link.ID.String(), owner)
 	if err != nil {
@@ -194,7 +200,7 @@ func TestShareRevokeDropsBlobs(t *testing.T) {
 	deps := newShareTestService(t, pool, true)
 	owner := seedIdentity(t, pool)
 	conv := seedConversation(t, pool, owner)
-	appendTurn(t, deps.convStore, conv, llm.RoleUser, "hello")
+	appendTurn(t, deps.convStore, owner, conv, llm.RoleUser, "hello")
 
 	res, err := deps.svc.Create(context.Background(), CreateRequest{
 		ConversationID: conv, OwnerIdentityID: owner, Tier: TierPublic, ExpiryOption: ExpiryDefault,
@@ -231,7 +237,7 @@ func TestShareBundledArtifactTokenScoped(t *testing.T) {
 	deps := newShareTestService(t, pool, true)
 	owner := seedIdentity(t, pool)
 	conv := seedConversation(t, pool, owner)
-	appendTurn(t, deps.convStore, conv, llm.RoleUser, "please attach the report")
+	appendTurn(t, deps.convStore, owner, conv, llm.RoleUser, "please attach the report")
 
 	assetID := uuid.Must(uuid.NewV7())
 	body := []byte("pdf bytes")
@@ -286,7 +292,7 @@ func TestShareResolveInternalBearer(t *testing.T) {
 	ownerA := seedIdentity(t, pool)
 	bearerB := seedIdentity(t, pool)
 	conv := seedConversation(t, pool, ownerA)
-	appendTurn(t, deps.convStore, conv, llm.RoleUser, "hi")
+	appendTurn(t, deps.convStore, ownerA, conv, llm.RoleUser, "hi")
 
 	res, err := deps.svc.Create(context.Background(), CreateRequest{ConversationID: conv, OwnerIdentityID: ownerA, Tier: TierInternal})
 	if err != nil {
@@ -314,7 +320,7 @@ func TestShareResolveInternalRejectsPublicTier(t *testing.T) {
 	deps := newShareTestService(t, pool, true)
 	owner := seedIdentity(t, pool)
 	conv := seedConversation(t, pool, owner)
-	appendTurn(t, deps.convStore, conv, llm.RoleUser, "hi")
+	appendTurn(t, deps.convStore, owner, conv, llm.RoleUser, "hi")
 
 	res, err := deps.svc.Create(context.Background(), CreateRequest{
 		ConversationID: conv, OwnerIdentityID: owner, Tier: TierPublic, ExpiryOption: ExpiryDefault,
@@ -336,7 +342,7 @@ func TestShareResolveInternalLazyLiveness(t *testing.T) {
 	deps := newShareTestService(t, pool, true)
 	owner := seedIdentity(t, pool)
 	conv := seedConversation(t, pool, owner)
-	appendTurn(t, deps.convStore, conv, llm.RoleUser, "hi")
+	appendTurn(t, deps.convStore, owner, conv, llm.RoleUser, "hi")
 
 	res, err := deps.svc.Create(context.Background(), CreateRequest{ConversationID: conv, OwnerIdentityID: owner, Tier: TierInternal})
 	if err != nil {
@@ -370,7 +376,7 @@ func TestSharePublicRequiresExpiryService(t *testing.T) {
 	deps := newShareTestService(t, pool, true)
 	owner := seedIdentity(t, pool)
 	conv := seedConversation(t, pool, owner)
-	appendTurn(t, deps.convStore, conv, llm.RoleUser, "hi")
+	appendTurn(t, deps.convStore, owner, conv, llm.RoleUser, "hi")
 
 	_, err := deps.svc.Create(context.Background(), CreateRequest{
 		ConversationID: conv, OwnerIdentityID: owner, Tier: TierPublic,
@@ -396,7 +402,7 @@ func TestSharePublicDeniedWhenKillSwitchOff(t *testing.T) {
 	deps := newShareTestService(t, pool, false)
 	owner := seedIdentity(t, pool)
 	conv := seedConversation(t, pool, owner)
-	appendTurn(t, deps.convStore, conv, llm.RoleUser, "hi")
+	appendTurn(t, deps.convStore, owner, conv, llm.RoleUser, "hi")
 
 	_, err := deps.svc.Create(context.Background(), CreateRequest{
 		ConversationID: conv, OwnerIdentityID: owner, Tier: TierPublic, ExpiryOption: ExpiryDefault,

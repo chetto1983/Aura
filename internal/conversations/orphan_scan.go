@@ -2,7 +2,6 @@ package conversations
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -13,7 +12,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
-	"github.com/jackc/pgx/v5"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -55,10 +54,29 @@ func ScanOrphans(ctx context.Context, pool *pgxpool.Pool, p ScanParams) error {
 	if p.RunDir == "" {
 		return nil // no run dir configured → nothing to reconcile
 	}
-	q := sqlc.New(pool)
 
-	if err := scanConversationOrphans(ctx, q, p.RunDir); err != nil {
+	// Resolving owners is a DB round-trip per identity, so it happens only once there is
+	// something on disk to classify. An empty (or absent) conversations dir — every boot on a
+	// fresh appliance, and every sweep tick on an idle one — touches the database not at all.
+	entries, err := conversationDirEntries(p.RunDir)
+	if err != nil {
 		return err
+	}
+	if len(entries) > 0 {
+		owners, oErr := conversationOwners(ctx, pool)
+		if oErr != nil {
+			return fmt.Errorf("scan orphans: %w", oErr)
+		}
+		reconcile := func(ctx context.Context, owner, dir, conversationID string) error {
+			// As the conversation's OWNER: aura.conversation_turns is fail-closed (0089), and
+			// an empty referenced set would delete every committed sidecar.
+			return db.WithIdentityTx(ctx, pool, owner, func(q *sqlc.Queries) error {
+				return reconcileLiveConversationSidecars(ctx, q, dir, conversationID)
+			})
+		}
+		if sErr := scanConversationOrphans(ctx, entries, owners, reconcile, p.RunDir); sErr != nil {
+			return sErr
+		}
 	}
 	if err := sweepTmp(p.RunDir); err != nil {
 		return err
@@ -67,16 +85,69 @@ func ScanOrphans(ctx context.Context, pool *pgxpool.Pool, p ScanParams) error {
 	return nil
 }
 
-// scanConversationOrphans removes conversations/<id> dirs with no DB row.
-func scanConversationOrphans(ctx context.Context, q *sqlc.Queries, runDir string) error {
+// conversationOwners maps every conversation id in the database to the identity that owns
+// it, by enumerating identities and asking each one for its own ids.
+//
+// The obvious implementation — probe each directory with GetConversation on the pool — is
+// the one this replaces, and it was a data-loss bug waiting for migration 0089: with
+// aura.conversations fail-closed, an unscoped probe answers "no such row" for EVERY
+// conversation, and the scan would then RemoveAll every live tenant's sidecar tree at boot.
+// A scan that reclaims disk must never be able to mistake "I am not allowed to see it" for
+// "it does not exist", so the id set is built from reads that ARE allowed: aura.identities
+// carries no RLS, and each owner's own conversations are visible inside that owner's
+// transaction. It is also fewer queries than before — one per identity instead of one per
+// directory.
+func conversationOwners(ctx context.Context, pool *pgxpool.Pool) (map[string]string, error) {
+	identities, err := listOwnerIdentities(ctx, sqlc.New(pool))
+	if err != nil {
+		return nil, err
+	}
+	owners := make(map[string]string)
+	for _, owner := range identities {
+		ownerUUID, parseErr := db.ParseUUID("identity_id", owner)
+		if parseErr != nil {
+			return nil, fmt.Errorf("owned conversation ids: %w", parseErr)
+		}
+		if txErr := db.WithIdentityTx(ctx, pool, owner, func(q *sqlc.Queries) error {
+			ids, lErr := q.ListConversationIDsForIdentityPurge(ctx, ownerUUID)
+			if lErr != nil {
+				return fmt.Errorf("owned conversation ids for %s: %w", owner, lErr)
+			}
+			for _, id := range ids {
+				if id.Valid {
+					owners[uuid.UUID(id.Bytes).String()] = owner
+				}
+			}
+			return nil
+		}); txErr != nil {
+			return nil, txErr
+		}
+	}
+	return owners, nil
+}
+
+// sidecarReconciler reconciles one LIVE conversation dir's crash-orphaned sidecars, running
+// as that conversation's owner. It is a parameter rather than an inlined query so the
+// dir-walk above it stays a pure filesystem function, testable with no database at all.
+type sidecarReconciler func(ctx context.Context, owner, dir, conversationID string) error
+
+// conversationDirEntries lists $AURA_RUN_DIR/conversations, reporting an absent directory as
+// an empty list rather than an error — nothing has been persisted yet, which is not a fault.
+func conversationDirEntries(runDir string) ([]os.DirEntry, error) {
 	convRoot := filepath.Join(runDir, "conversations")
 	entries, err := os.ReadDir(convRoot)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil // nothing persisted yet
+			return nil, nil
 		}
-		return fmt.Errorf("scan orphans: read %q: %w", convRoot, err)
+		return nil, fmt.Errorf("scan orphans: read %q: %w", convRoot, err)
 	}
+	return entries, nil
+}
+
+// scanConversationOrphans removes conversations/<id> dirs that own no row in `owners`.
+func scanConversationOrphans(ctx context.Context, entries []os.DirEntry, owners map[string]string, reconcile sidecarReconciler, runDir string) error {
+	convRoot := filepath.Join(runDir, "conversations")
 	for _, e := range entries {
 		name := e.Name()
 		full := filepath.Join(convRoot, name)
@@ -104,10 +175,7 @@ func scanConversationOrphans(ctx context.Context, q *sqlc.Queries, runDir string
 			removeOrphan(full)
 			continue
 		}
-		exists, err := conversationExists(ctx, q, name)
-		if err != nil {
-			return fmt.Errorf("scan orphans: existence %q: %w", name, err)
-		}
+		owner, exists := owners[name]
 		if !exists {
 			removeOrphan(full)
 			continue
@@ -115,7 +183,7 @@ func scanConversationOrphans(ctx context.Context, q *sqlc.Queries, runDir string
 		// A LIVE dir: reconcile crash-orphaned <seq>.content files inside it (F-040).
 		// Whole-orphan removal above never reaches these — a crash between the sidecar
 		// write and the DB commit leaves an unreferenced sidecar in a dir that stays.
-		if err := reconcileLiveConversationSidecars(ctx, q, full, name); err != nil {
+		if err := reconcile(ctx, owner, full, name); err != nil {
 			return fmt.Errorf("scan orphans: reconcile %q: %w", name, err)
 		}
 	}
@@ -201,22 +269,6 @@ func parseContentSeq(name string) (int, bool) {
 		return 0, false
 	}
 	return seq, true
-}
-
-// conversationExists reports whether a conversations row exists for the id. A
-// missing row (pgx.ErrNoRows) is "does not exist", not an error.
-func conversationExists(ctx context.Context, q *sqlc.Queries, conversationID string) (bool, error) {
-	id, err := db.ParseUUID("id", conversationID)
-	if err != nil {
-		return false, nil // unparseable → cannot be a live row → treat as orphan
-	}
-	if _, err := q.GetConversation(ctx, id); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return false, nil
-		}
-		return false, err
-	}
-	return true, nil
 }
 
 // removeOrphan RemoveAll's an orphan dir, WARN-logging a failure (recovered next boot).

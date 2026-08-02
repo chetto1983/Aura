@@ -221,6 +221,44 @@ func TestGateWebAuth(t *testing.T) {
 	}
 }
 
+// TestGateMultiUserNeedsASandbox pins the one combination that makes every other
+// isolation control decorative: a second identity on a deployment whose tools run on the
+// host. Four planes are shared and unscoped — the skills library, host shell/fs,
+// aura.settings (which holds OPENROUTER_API_KEY) and the MCP catalog — so host access
+// defeats the five planes that ARE isolated.
+//
+// The gate deliberately forbids the PAIR, not either half: running on the host is the
+// product for a single-principal appliance, and multi-user is fine once tools route into
+// a per-identity box.
+func TestGateMultiUserNeedsASandbox(t *testing.T) {
+	t.Parallel()
+
+	// The dangerous pair, at every non-strict profile.
+	for _, p := range []RuntimeProfile{ProfileDev, ProfileLocalTrusted} {
+		vs := (&Config{MUSRIsolation: true}).gateMultiUserNeedsASandbox(p)
+		if !hasViolation(vs, "AURA_MUSR_ISOLATION", Fatal) {
+			t.Errorf("multi-user under %s must be Fatal, got %+v", p, vs)
+		}
+	}
+
+	// Strict profiles route tools into a per-identity box, so the pair is safe.
+	for _, p := range []RuntimeProfile{ProfileSingleUserHardened, ProfileServerProduction} {
+		if vs := (&Config{MUSRIsolation: true}).gateMultiUserNeedsASandbox(p); len(vs) != 0 {
+			t.Errorf("multi-user under strict %s must pass, got %+v", p, vs)
+		}
+	}
+
+	// Single-principal on the host is the SHIPPED product, not a violation. This
+	// assertion is the one that stops someone "hardening" the gate into refusing the
+	// operator's own appliance.
+	if vs := (&Config{MUSRIsolation: false}).gateMultiUserNeedsASandbox(ProfileDev); len(vs) != 0 {
+		t.Errorf("single-principal dev must pass untouched, got %+v", vs)
+	}
+	if vs := (*Config)(nil).gateMultiUserNeedsASandbox(ProfileDev); len(vs) != 0 {
+		t.Errorf("nil config must not violate, got %+v", vs)
+	}
+}
+
 // TestGateObjectStoreEndpoint locks A6: default bucket + loopback endpoint under
 // server_production are WARN (never Fatal), and only under production.
 func TestGateObjectStoreEndpoint(t *testing.T) {

@@ -52,7 +52,7 @@ func envOrSkip(t *testing.T, key string) string {
 // encoder the real LoadManagedHistory needs.
 func migratedRunnerPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ownerCtx(), 30*time.Second)
 	defer cancel()
 
 	pwd := envOrSkip(t, "POSTGRES_PASSWORD")
@@ -93,7 +93,7 @@ func migratedRunnerPool(t *testing.T) *pgxpool.Pool {
 // defect).
 func seedLocalIdentity(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
-	ctx := context.Background()
+	ctx := ownerCtx()
 	if _, err := pool.Exec(ctx,
 		`INSERT INTO aura.identities (id, name, kind) VALUES ($1, 'local', 'system') ON CONFLICT DO NOTHING`,
 		localIdentityID); err != nil {
@@ -157,16 +157,19 @@ func newIntegrationRunnerWithResumeHook(
 func newIntegrationConversation(t *testing.T, pool *pgxpool.Pool, convStore *conversations.Store) string {
 	t.Helper()
 	id := uuid.Must(uuid.NewV7()).String()
-	if _, err := convStore.Create(context.Background(), conversations.CreateParams{
+	if _, err := convStore.Create(ownerCtx(), conversations.CreateParams{
 		ID: id, IdentityID: localIdentityID, Model: "test-model",
 	}); err != nil {
 		t.Fatalf("create conversation: %v", err)
 	}
 	t.Cleanup(func() {
-		ctx := context.Background()
-		_, _ = pool.Exec(ctx, "DELETE FROM aura.paused_states WHERE conversation_id=$1", id)
-		_, _ = pool.Exec(ctx, "DELETE FROM aura.conversation_turns WHERE conversation_id=$1", id)
-		_, _ = pool.Exec(ctx, "DELETE FROM aura.conversations WHERE id=$1", id)
+		ctx := ownerCtx()
+		_ = db.WithIdentityTxRaw(ctx, pool, localIdentityID, func(tx pgx.Tx) error {
+			_, _ = tx.Exec(ctx, "DELETE FROM aura.paused_states WHERE conversation_id=$1", id)
+			_, _ = tx.Exec(ctx, "DELETE FROM aura.conversation_turns WHERE conversation_id=$1", id)
+			_, e := tx.Exec(ctx, "DELETE FROM aura.conversations WHERE id=$1", id)
+			return e
+		})
 	})
 	return id
 }
@@ -177,10 +180,10 @@ func newIntegrationConversation(t *testing.T, pool *pgxpool.Pool, convStore *con
 func resumedAt(t *testing.T, pool *pgxpool.Pool, token string) *time.Time {
 	t.Helper()
 	var ts *time.Time
-	if err := pool.QueryRow(context.Background(),
-		"SELECT resumed_at FROM aura.paused_states WHERE token=$1", token).Scan(&ts); err != nil {
-		t.Fatalf("query resumed_at for %s: %v", token, err)
-	}
+	asOwner(t, pool, localIdentityID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ownerCtx(),
+			"SELECT resumed_at FROM aura.paused_states WHERE token=$1", token).Scan(&ts)
+	})
 	return ts
 }
 
@@ -188,10 +191,10 @@ func resumedAt(t *testing.T, pool *pgxpool.Pool, token string) *time.Time {
 func countPauseRows(t *testing.T, pool *pgxpool.Pool, convID string) int {
 	t.Helper()
 	var n int
-	if err := pool.QueryRow(context.Background(),
-		"SELECT count(*) FROM aura.paused_states WHERE conversation_id=$1", convID).Scan(&n); err != nil {
-		t.Fatalf("count paused_states: %v", err)
-	}
+	asOwner(t, pool, localIdentityID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ownerCtx(),
+			"SELECT count(*) FROM aura.paused_states WHERE conversation_id=$1", convID).Scan(&n)
+	})
 	return n
 }
 
@@ -205,10 +208,10 @@ func countPauseRows(t *testing.T, pool *pgxpool.Pool, convID string) int {
 func countPersistedToolTurns(t *testing.T, pool *pgxpool.Pool, convID string) int {
 	t.Helper()
 	var n int
-	if err := pool.QueryRow(context.Background(),
-		"SELECT count(*) FROM aura.conversation_turns WHERE conversation_id=$1 AND role='tool'", convID).Scan(&n); err != nil {
-		t.Fatalf("count persisted tool turns: %v", err)
-	}
+	asOwner(t, pool, localIdentityID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ownerCtx(),
+			"SELECT count(*) FROM aura.conversation_turns WHERE conversation_id=$1 AND role='tool'", convID).Scan(&n)
+	})
 	return n
 }
 

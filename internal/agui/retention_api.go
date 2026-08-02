@@ -56,7 +56,7 @@ func (s serverOwnerExportSource) Snapshot(ctx context.Context, ownerID, conversa
 		return ExportSnapshot{}, ErrOwnerExportNotFound
 	}
 	conversationVersion := conversation.SnapshotVersion
-	history, err := s.server.conv.LoadHistory(ctx, conversationID)
+	history, err := s.server.conv.LoadHistory(scopedCtx(ctx), conversationID)
 	if err != nil {
 		releaseOnError()
 		return ExportSnapshot{}, fmt.Errorf("load owner export history: %w", err)

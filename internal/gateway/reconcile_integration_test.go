@@ -32,7 +32,7 @@ func insertAgedStart(t *testing.T, store *toolinvocations.Store, convID string, 
 	t.Helper()
 	requestID = uuid.Must(uuid.NewV7()).String()
 	toolCallID = "call-recon-" + uuid.Must(uuid.NewV7()).String()[:8]
-	if err := store.Insert(context.Background(), toolinvocations.Event{
+	if err := store.Insert(ownerCtx(), toolinvocations.Event{
 		ConversationID: convID,
 		RequestID:      requestID,
 		ToolCallID:     toolCallID,
@@ -51,7 +51,7 @@ func insertAgedStart(t *testing.T, store *toolinvocations.Store, convID string, 
 func rowCountForTriple(t *testing.T, pool *pgxpool.Pool, convID, requestID, toolCallID string) int {
 	t.Helper()
 	var n int
-	if err := pool.QueryRow(context.Background(),
+	if err := pool.QueryRow(ownerCtx(),
 		`SELECT count(*) FROM aura.tool_invocations
 		 WHERE conversation_id = $1 AND request_id = $2 AND tool_call_id = $3`,
 		convID, requestID, toolCallID).Scan(&n); err != nil {
@@ -70,7 +70,7 @@ func TestReconcileAppendsIndeterminateEndForOrphan(t *testing.T) {
 	pool := migratedPool(t)
 	store := toolinvocations.New(pool)
 	convID := seedConversation(t, pool)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	// Aged 1h: older than effectiveGrace(0)=30min → a provable crash-orphan.
 	requestID, toolCallID := insertAgedStart(t, store, convID, time.Hour)
@@ -110,7 +110,7 @@ func TestReconcileInGraceOrphanUntouchedThenSlowToolRealEndWins(t *testing.T) {
 	pool := migratedPool(t)
 	store := toolinvocations.New(pool)
 	convID := seedConversation(t, pool)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	// Aged 25min: younger than effectiveGrace(0)=30min → in-grace, must be skipped.
 	requestID, toolCallID := insertAgedStart(t, store, convID, 25*time.Minute)
@@ -155,7 +155,7 @@ func TestReconcileRechecksBeforeAppendLiveRealEndWins(t *testing.T) {
 	pool := migratedPool(t)
 	store := toolinvocations.New(pool)
 	convID := seedConversation(t, pool)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	requestID, toolCallID := insertAgedStart(t, store, convID, time.Hour)
 	// The real end is already present at reconcile time (simulating an end that landed after
@@ -194,7 +194,7 @@ func TestReconcileStartStopGoleakLive(t *testing.T) {
 	seedConversation(t, pool)
 
 	r := NewReconciler(store, 50*time.Millisecond, 0)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ownerCtx())
 	defer cancel()
 	r.Start(ctx)
 	time.Sleep(120 * time.Millisecond) // let the boot one-shot + at least one tick run

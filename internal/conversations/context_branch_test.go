@@ -11,7 +11,6 @@
 package conversations
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
@@ -31,7 +30,7 @@ func TestBranchManaged_NonBranchedByteIdenticalToLinear(t *testing.T) {
 	pool := migratedPool(t)
 	s := newStore(t, pool)
 	convID := newConversation(t, s)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	turns := []AppendTurnParams{
 		{ConversationID: convID, Seq: 1, Role: llm.RoleSystem, Content: "you are aura"},
@@ -72,7 +71,7 @@ func TestBranchManaged_ProtectedHeadAcrossBranches(t *testing.T) {
 	pool := migratedPool(t)
 	s := newStore(t, pool)
 	convID := newConversation(t, s)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	head := []AppendTurnParams{
 		{ConversationID: convID, Seq: 1, Role: llm.RoleSystem, Content: "you are aura"},
@@ -118,7 +117,7 @@ func TestManagedHistoryHardCapBoundsLinearAndBranchQueries(t *testing.T) {
 	pool := migratedPool(t)
 	s := newStore(t, pool)
 	convID := newConversation(t, s)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	turns := []AppendTurnParams{
 		{ConversationID: convID, Seq: 1, Role: llm.RoleSystem, Content: "system"},

@@ -271,7 +271,7 @@ type liveSagaEnv struct {
 
 func newLiveSagaEnv(t *testing.T) *liveSagaEnv {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	ctx, cancel := context.WithTimeout(ownerCtx(), 90*time.Second)
 	t.Cleanup(cancel)
 	pool := disposableLiveSagaPool(t, ctx)
 
@@ -296,7 +296,7 @@ func newLiveSagaEnv(t *testing.T) *liveSagaEnv {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), `DELETE FROM aura.identities WHERE id=$1`, creatorID)
+		_, _ = pool.Exec(ownerCtx(), `DELETE FROM aura.identities WHERE id=$1`, creatorID)
 	})
 
 	return &liveSagaEnv{
@@ -332,7 +332,7 @@ func disposableLiveSagaPool(t *testing.T, ctx context.Context) *pgxpool.Pool {
 	cleanupNow := true
 	defer func() {
 		if cleanupNow {
-			_, _ = admin.Exec(context.Background(), "DROP DATABASE IF EXISTS "+dbName+" WITH (FORCE)")
+			_, _ = admin.Exec(ownerCtx(), "DROP DATABASE IF EXISTS "+dbName+" WITH (FORCE)")
 			admin.Close()
 		}
 	}()
@@ -363,7 +363,7 @@ func disposableLiveSagaPool(t *testing.T, ctx context.Context) *pgxpool.Pool {
 	t.Cleanup(func() {
 		app.Close()
 		freshAdmin.Close()
-		_, _ = admin.Exec(context.Background(), "DROP DATABASE IF EXISTS "+dbName+" WITH (FORCE)")
+		_, _ = admin.Exec(ownerCtx(), "DROP DATABASE IF EXISTS "+dbName+" WITH (FORCE)")
 		admin.Close()
 	})
 	cleanupNow = false
@@ -403,7 +403,7 @@ func liveProvReq(email, password string) OnboardingProvisionRequest {
 // stores). authulaUsers is the in-memory fake's live-user count.
 func (e *liveSagaEnv) auraOrphans(t *testing.T, email string) (identities, grants, links, tokens, recovery, audit int) {
 	t.Helper()
-	ctx := context.Background()
+	ctx := ownerCtx()
 	if err := e.pool.QueryRow(ctx, `SELECT count(*) FROM aura.identities WHERE name=$1`, email).Scan(&identities); err != nil {
 		t.Fatalf("count identities: %v", err)
 	}
@@ -428,7 +428,7 @@ func (e *liveSagaEnv) auraOrphans(t *testing.T, email string) (identities, grant
 // delete cascades grants + links; the immutable audit row is left — append-only + harmless,
 // keyed by a unique per-run email).
 func (e *liveSagaEnv) cleanupProvisioned(email string) {
-	ctx := context.Background()
+	ctx := ownerCtx()
 	_, _ = e.pool.Exec(ctx, `DELETE FROM aura.telegram_setup_pending WHERE identity_id IN (SELECT id FROM aura.identities WHERE name=$1)`, email)
 	_, _ = e.pool.Exec(ctx, `DELETE FROM aura.identity_recovery WHERE identity_id IN (SELECT id FROM aura.identities WHERE name=$1)`, email)
 	_, _ = e.pool.Exec(ctx, `DELETE FROM aura.identities WHERE name=$1`, email)

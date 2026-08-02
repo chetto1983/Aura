@@ -3,7 +3,6 @@
 package conversations
 
 import (
-	"context"
 	"fmt"
 	"sync"
 	"testing"
@@ -21,7 +20,7 @@ func TestAppendTurn_AutoSeqConcurrentSerializes(t *testing.T) {
 	pool := migratedPool(t)
 	s := newStore(t, pool)
 	convID := newConversation(t, s)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	const writers = 12
 	start := make(chan struct{})
@@ -83,7 +82,7 @@ func TestAppendAssistantTurnWithCacheMetric_AutoSeqAllocatesMetricSeq(t *testing
 	pool := migratedPool(t)
 	s := newStore(t, pool)
 	convID := newConversation(t, s)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	id, err := db.ParseUUID("conversation_id", convID)
 	if err != nil {

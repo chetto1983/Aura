@@ -8,12 +8,12 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/google/uuid"
 )
 
 func TestPurgeConversationsDeletesOnlyOwnerAndArtifacts(t *testing.T) {
-	ctx := context.Background()
 	pool := migratedPool(t)
 	runDir := t.TempDir()
 	store := New(pool, Config{RunDir: runDir, TurnCapBytes: 65536})
@@ -21,6 +21,11 @@ func TestPurgeConversationsDeletesOnlyOwnerAndArtifacts(t *testing.T) {
 	other := uuid.New().String()
 	seedIdentity(t, pool, owner, "purge-owner-"+owner[:8])
 	seedIdentity(t, pool, other, "purge-other-"+other[:8])
+	// Two owners, two contexts: since migration 0089 a store call reads and writes as
+	// whoever is on the context, so a single shared ctx would make the "foreign conversation
+	// survives" half of this test unmeasurable — the foreign row would simply be invisible.
+	ctx := identityctx.WithIdentityID(context.Background(), owner)
+	otherCtx := identityctx.WithIdentityID(context.Background(), other)
 
 	owned, err := store.Create(ctx, CreateParams{
 		ID: uuid.New().String(), IdentityID: owner, Model: "test",
@@ -28,7 +33,7 @@ func TestPurgeConversationsDeletesOnlyOwnerAndArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	foreign, err := store.Create(ctx, CreateParams{
+	foreign, err := store.Create(otherCtx, CreateParams{
 		ID: uuid.New().String(), IdentityID: other, Model: "test",
 	})
 	if err != nil {
@@ -53,7 +58,7 @@ func TestPurgeConversationsDeletesOnlyOwnerAndArtifacts(t *testing.T) {
 	if _, err := store.Get(ctx, owned.ID); err == nil {
 		t.Fatal("owned conversation survived purge")
 	}
-	if _, err := store.Get(ctx, foreign.ID); err != nil {
+	if _, err := store.Get(otherCtx, foreign.ID); err != nil {
 		t.Fatalf("foreign conversation was removed: %v", err)
 	}
 	if _, err := os.Stat(filepath.Dir(artifact)); !os.IsNotExist(err) {

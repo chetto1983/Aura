@@ -151,16 +151,18 @@ func (s *Store) insertContextRotEvent(ctx context.Context, conversationID string
 	if err != nil {
 		return fmt.Errorf("context rot event: %w", err)
 	}
-	if err := s.q.InsertContextRotEvent(ctx, sqlc.InsertContextRotEventParams{
-		ConversationID: id,
-		Action:         rotActionHardDropPairs,
-		PairsDropped:   int32(pairsDropped),
-		TokensBefore:   int32(before),
-		TokensAfter:    int32(after),
-	}); err != nil {
-		return fmt.Errorf("insert context rot event %s: %w", conversationID, err)
-	}
-	return nil
+	return s.scoped(ctx, func(q *sqlc.Queries) error {
+		if iErr := q.InsertContextRotEvent(ctx, sqlc.InsertContextRotEventParams{
+			ConversationID: id,
+			Action:         rotActionHardDropPairs,
+			PairsDropped:   int32(pairsDropped),
+			TokensBefore:   int32(before),
+			TokensAfter:    int32(after),
+		}); iErr != nil {
+			return fmt.Errorf("insert context rot event %s: %w", conversationID, iErr)
+		}
+		return nil
+	})
 }
 
 // RotEvent is the domain projection of one aura.context_rot_events row — the
@@ -184,9 +186,16 @@ func (s *Store) ListContextRotEvents(ctx context.Context, conversationID string)
 	if err != nil {
 		return nil, fmt.Errorf("list context rot events: %w", err)
 	}
-	rows, err := s.q.ListContextRotEvents(ctx, id)
-	if err != nil {
-		return nil, fmt.Errorf("list context rot events %s: %w", conversationID, err)
+	var rows []sqlc.AuraContextRotEvents
+	if err := s.scoped(ctx, func(q *sqlc.Queries) error {
+		listed, lErr := q.ListContextRotEvents(ctx, id)
+		if lErr != nil {
+			return fmt.Errorf("list context rot events %s: %w", conversationID, lErr)
+		}
+		rows = listed
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 	out := make([]RotEvent, 0, len(rows))
 	for _, r := range rows {

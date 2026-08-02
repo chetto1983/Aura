@@ -33,7 +33,7 @@ import (
 // fresh (the next inbound message's EnsureConversation path).
 func TestClearHardDeletesPersistedConversationE2E(t *testing.T) {
 	pool := migratedPool(t)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	conv := conversations.New(pool, conversations.Config{RunDir: t.TempDir()})
 
@@ -42,7 +42,7 @@ func TestClearHardDeletesPersistedConversationE2E(t *testing.T) {
 
 	// Best-effort cleanup: if an assertion fails before /clear runs, don't leak the
 	// row. The happy path deletes it, making this a no-op.
-	t.Cleanup(func() { _ = conv.Delete(context.Background(), cid) })
+	t.Cleanup(func() { _ = conv.Delete(ownerCtx(), cid) })
 
 	if _, err := conv.Create(ctx, conversations.CreateParams{ID: cid, IdentityID: localID, Model: "integration-test"}); err != nil {
 		t.Fatalf("seed Create conversation: %v", err)
@@ -107,12 +107,12 @@ func TestClearHardDeletesPersistedConversationE2E(t *testing.T) {
 // `aura chat delete` depend on).
 func TestToolInvocationsImmutableExceptConversationCascade(t *testing.T) {
 	pool := migratedPool(t)
-	ctx := context.Background()
+	ctx := ownerCtx()
 	conv := conversations.New(pool, conversations.Config{RunDir: t.TempDir()})
 
 	const chatID int64 = 9_100_000_002
 	cid := convID(chatID)
-	t.Cleanup(func() { _ = conv.Delete(context.Background(), cid) })
+	t.Cleanup(func() { _ = conv.Delete(ownerCtx(), cid) })
 
 	if _, err := conv.Create(ctx, conversations.CreateParams{ID: cid, IdentityID: localID, Model: "integration-test"}); err != nil {
 		t.Fatalf("seed Create conversation: %v", err)

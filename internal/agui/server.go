@@ -107,11 +107,11 @@ type ApprovalStore interface {
 	ListPendingAll(ctx context.Context, limit int) ([]askuser.Pending, error)
 	// Phase 36 (MUSR-01 / D-06) owner-scoped surface: ListPendingAllForIdentity is the
 	// principal-scoped approval queue; GetByTokenForIdentity is the ownership gate the
-	// resolve handler consults (a hit ⇒ owned, proceed; a miss ⇒ probe GetByToken for the
-	// 403-vs-404 split). *askuser.Store satisfies these implicitly.
+	// resolve handler consults (a hit ⇒ owned, proceed; a miss ⇒ 404). The unscoped
+	// GetByToken that used to sit here for the 403-vs-404 split is gone with migration
+	// 0089: no read can see another identity's pause, so the probe could only ever miss.
 	ListPendingAllForIdentity(ctx context.Context, identityID string, limit int) ([]askuser.Pending, error)
 	GetByTokenForIdentity(ctx context.Context, token, identityID string) (askuser.Pending, error)
-	GetByToken(ctx context.Context, token string) (askuser.Pending, error)
 }
 
 // Server is the minimal AG-UI HTTP gateway (Slice 8b): POST /agent/run streams a
@@ -472,7 +472,7 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "thread lookup failed", http.StatusInternalServerError)
 		return
 	}
-	hist, err := s.conv.LoadHistory(ctx, id)
+	hist, err := s.conv.LoadHistory(scopedCtx(ctx), id)
 	if err != nil {
 		http.Error(w, sanitizeErr(err), http.StatusInternalServerError)
 		return
@@ -488,7 +488,7 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	// CoT onto the assistant answer messages so the ReasoningDrawer survives reload.
 	// Fail-soft: reasoning is additive display data — a read failure degrades to a
 	// drawer-less snapshot (the NULL-column posture), never a 500 for the whole thread.
-	if reasonings, rerr := s.conv.ListTurnReasoning(ctx, id); rerr != nil {
+	if reasonings, rerr := s.conv.ListTurnReasoning(scopedCtx(ctx), id); rerr != nil {
 		slog.Warn("agui: list turn reasoning (serving snapshot without it)", "thread", id, "err", rerr)
 	} else {
 		attachTurnReasoning(&snap, reasonings)

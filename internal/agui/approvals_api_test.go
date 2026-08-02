@@ -14,7 +14,6 @@
 package agui
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -23,7 +22,9 @@ import (
 
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/conversations"
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -46,13 +47,17 @@ func newApprovalsAPIServer(t *testing.T, pool *pgxpool.Pool, run Runner, approva
 func seedConversationRow(t *testing.T, pool *pgxpool.Pool) string {
 	t.Helper()
 	id := uuid.Must(uuid.NewV7()).String()
-	if _, err := pool.Exec(context.Background(),
+	// aura.conversations is fail-closed (migration 0089): the seed must carry the owner, and
+	// so must the cleanup — a DELETE with no identity matches zero rows and reports success,
+	// which would leave the row behind without failing anything.
+	seedAsOwner(t, pool, localIdentityID,
 		"INSERT INTO aura.conversations (id, identity_id, model) VALUES ($1, $2, 'test-model')",
-		id, localIdentityID); err != nil {
-		t.Fatalf("insert conversation: %v", err)
-	}
+		id, localIdentityID)
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), "DELETE FROM aura.conversations WHERE id = $1", id)
+		_ = db.WithIdentityTxRaw(ownerCtx(), pool, localIdentityID, func(tx pgx.Tx) error {
+			_, e := tx.Exec(ownerCtx(), "DELETE FROM aura.conversations WHERE id = $1", id)
+			return e
+		})
 	})
 	return id
 }
@@ -62,7 +67,7 @@ func seedPause(t *testing.T, store *askuser.Store, pool *pgxpool.Pool, kind, que
 	t.Helper()
 	convID = seedConversationRow(t, pool)
 	token = uuid.Must(uuid.NewV7()).String()
-	if err := store.Insert(context.Background(), askuser.InsertParams{
+	if err := store.Insert(ownerCtx(), askuser.InsertParams{
 		Token:          token,
 		ConversationID: convID,
 		Kind:           kind,
@@ -88,7 +93,7 @@ func TestApprovalsAPI_ListCrossThread(t *testing.T) {
 	// A question echoing a DSN must be redacted in the list projection (V7).
 	convC := seedConversationRow(t, pool)
 	tokC := uuid.Must(uuid.NewV7()).String()
-	if err := store.Insert(context.Background(), askuser.InsertParams{
+	if err := store.Insert(ownerCtx(), askuser.InsertParams{
 		Token:          tokC,
 		ConversationID: convC,
 		Kind:           "approval",

@@ -55,7 +55,7 @@ func envOrSkip(t *testing.T, key string) string {
 
 func migratedPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ownerCtx(), 30*time.Second)
 	defer cancel()
 
 	pwd := envOrSkip(t, "POSTGRES_PASSWORD")
@@ -90,7 +90,7 @@ func migratedPool(t *testing.T) *pgxpool.Pool {
 // the supplied turns, and returns its id (cleaned up at test end).
 func seedConversation(t *testing.T, s *conversations.Store, pool *pgxpool.Pool, turns []conversations.AppendTurnParams) string {
 	t.Helper()
-	ctx := context.Background()
+	ctx := ownerCtx()
 	id := uuid.Must(uuid.NewV7()).String()
 	if _, err := s.Create(ctx, conversations.CreateParams{
 		ID: id, IdentityID: localIdentityID, Model: "test-model",
@@ -98,7 +98,7 @@ func seedConversation(t *testing.T, s *conversations.Store, pool *pgxpool.Pool, 
 		t.Fatalf("Create conversation: %v", err)
 	}
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), "DELETE FROM aura.conversations WHERE id = $1", id)
+		_, _ = pool.Exec(ownerCtx(), "DELETE FROM aura.conversations WHERE id = $1", id)
 	})
 	for i := range turns {
 		turns[i].ConversationID = id

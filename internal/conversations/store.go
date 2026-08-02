@@ -27,6 +27,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -62,18 +63,59 @@ type ConversationCleaner interface {
 }
 
 // Store wraps a pgx pool and the generated Queries — the canonical shape from
-// internal/identity. Non-tx reads/writes use s.q; the atomic per-turn write
-// (AppendTurn) and delete-then-rm wrap db.WithTx / pool ops. runDir is the
-// $AURA_RUN_DIR root the sidecar spill writes under; turnCapBytes is
-// AURA_CONVERSATION_TURN_CAP_BYTES (content over this spills to a sidecar file).
-// cleaner is the optional os.Root cascade injected at boot; when nil, Delete
-// falls back to os.RemoveAll (the pre-2b behavior).
+// internal/identity. runDir is the $AURA_RUN_DIR root the sidecar spill writes
+// under; turnCapBytes is AURA_CONVERSATION_TURN_CAP_BYTES (content over this
+// spills to a sidecar file). cleaner is the optional os.Root cascade injected at
+// boot; when nil, Delete falls back to os.RemoveAll (the pre-2b behavior).
+//
+// Every statement against aura.conversations and aura.conversation_turns goes
+// through scoped(), never through q: migration 0089 made both tables fail closed,
+// so a query outside that seam sees nothing and writes nothing. q is what is LEFT
+// of the old pool-bound surface — the identity-less query handle, kept for the one
+// read that legitimately has no owner (enumerating aura.identities, which carries
+// no RLS, so the cross-tenant sweeps can iterate owners).
 type Store struct {
 	pool         *pgxpool.Pool
 	q            *sqlc.Queries
+	scopedTx     func(context.Context, string, func(*sqlc.Queries) error) error
 	runDir       string
 	turnCapBytes int
 	cleaner      ConversationCleaner
+}
+
+// scoped runs fn inside a transaction bound to the identity on ctx — the D-07 RLS
+// carrier, and the store's ONE way to reach conversation data. See
+// db.WithCallerIdentityTx for where that identity comes from at each entry point.
+//
+// It goes through the scopedTx field rather than calling db.WithCallerIdentityTx directly so
+// the package's DB-free unit tests keep a seam to drive the error branches through: pool.Begin
+// needs a concrete *pgxpool.Pool, which no fake can satisfy. New always installs the real
+// carrier; a Store built any other way is a test double.
+func (s *Store) scoped(ctx context.Context, fn func(*sqlc.Queries) error) error {
+	return s.scopedTx(ctx, identityctx.IdentityID(ctx), fn)
+}
+
+// ownerIdentities lists every identity id, for the two sweeps that must act on behalf of
+// every tenant (ScanOrphans and ListReservedDeletes). aura.identities carries no RLS — it is
+// the login lookup — so this read needs no principal, and running one identity-scoped
+// transaction per owner is what lets those sweeps stay cross-tenant WITHOUT an RLS bypass
+// or a service role. The identity count is small; this is N small queries, not N per row.
+func (s *Store) ownerIdentities(ctx context.Context) ([]string, error) {
+	return listOwnerIdentities(ctx, s.q)
+}
+
+// listOwnerIdentities is the free-function half of ownerIdentities, shared with ScanOrphans
+// (which is a package function over a bare pool, not a Store method).
+func listOwnerIdentities(ctx context.Context, q *sqlc.Queries) ([]string, error) {
+	rows, err := q.ListIdentities(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list owner identities: %w", err)
+	}
+	owners := make([]string, 0, len(rows))
+	for _, r := range rows {
+		owners = append(owners, uuid.UUID(r.ID.Bytes).String())
+	}
+	return owners, nil
 }
 
 // Config carries the Store's filesystem + spill knobs (from config.Config).
@@ -93,7 +135,11 @@ func New(pool *pgxpool.Pool, cfg Config) *Store {
 	if cap <= 0 {
 		cap = DefaultTurnCapBytes
 	}
-	return &Store{pool: pool, q: sqlc.New(pool), runDir: cfg.RunDir, turnCapBytes: cap, cleaner: cfg.Cleaner}
+	s := &Store{pool: pool, q: sqlc.New(pool), runDir: cfg.RunDir, turnCapBytes: cap, cleaner: cfg.Cleaner}
+	s.scopedTx = func(ctx context.Context, identityID string, fn func(*sqlc.Queries) error) error {
+		return db.WithIdentityTx(ctx, pool, identityID, fn)
+	}
+	return s
 }
 
 // Conversation is the domain projection of aura.conversations — plain Go types at
@@ -151,6 +197,11 @@ type CreateParams struct {
 }
 
 // Create persists a new active conversation and returns its projection.
+//
+// It scopes to p.IdentityID, NOT to the context: Create is the statement that DECIDES
+// ownership, so the owner is an input here rather than ambient caller state. The caller is
+// the authority — runner.defaultConversationOwner validates the authenticated principal via
+// GetIdentityByID before it ever reaches this method.
 func (s *Store) Create(ctx context.Context, p CreateParams) (Conversation, error) {
 	id, err := db.ParseUUID("id", p.ID)
 	if err != nil {
@@ -160,44 +211,67 @@ func (s *Store) Create(ctx context.Context, p CreateParams) (Conversation, error
 	if err != nil {
 		return Conversation{}, fmt.Errorf("create conversation: %w", err)
 	}
-	row, err := s.q.CreateConversation(ctx, sqlc.CreateConversationParams{
-		ID:         id,
-		IdentityID: identityID,
-		Model:      p.Model,
-		Metadata:   p.Metadata,
-	})
-	if err != nil {
-		return Conversation{}, fmt.Errorf("create conversation %s: %w", p.ID, err)
+	var conv Conversation
+	if err := s.scopedTx(ctx, p.IdentityID, func(q *sqlc.Queries) error {
+		row, cErr := q.CreateConversation(ctx, sqlc.CreateConversationParams{
+			ID:         id,
+			IdentityID: identityID,
+			Model:      p.Model,
+			Metadata:   p.Metadata,
+		})
+		if cErr != nil {
+			return fmt.Errorf("create conversation %s: %w", p.ID, cErr)
+		}
+		conv = conversationFromRow(row)
+		return nil
+	}); err != nil {
+		return Conversation{}, err
 	}
-	return conversationFromRow(row), nil
+	return conv, nil
 }
 
-// Get fetches one conversation, mapping a missing row to ErrConversationNotFound.
+// Get fetches one conversation owned by the identity on ctx, mapping a missing row —
+// unknown id OR an id owned by someone else, which RLS makes indistinguishable — to
+// ErrConversationNotFound.
 func (s *Store) Get(ctx context.Context, conversationID string) (Conversation, error) {
 	id, err := db.ParseUUID("id", conversationID)
 	if err != nil {
 		return Conversation{}, fmt.Errorf("get conversation: %w", err)
 	}
-	row, err := s.q.GetConversation(ctx, id)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return Conversation{}, fmt.Errorf("get conversation %s: %w", conversationID, ErrConversationNotFound)
+	var conv Conversation
+	if err := s.scoped(ctx, func(q *sqlc.Queries) error {
+		row, gErr := q.GetConversation(ctx, id)
+		if gErr != nil {
+			if errors.Is(gErr, pgx.ErrNoRows) {
+				return fmt.Errorf("get conversation %s: %w", conversationID, ErrConversationNotFound)
+			}
+			return fmt.Errorf("get conversation %s: %w", conversationID, gErr)
 		}
-		return Conversation{}, fmt.Errorf("get conversation %s: %w", conversationID, err)
+		conv = conversationFromRow(row)
+		return nil
+	}); err != nil {
+		return Conversation{}, err
 	}
-	return conversationFromRow(row), nil
+	return conv, nil
 }
 
-// List returns conversations ordered by last_active_at DESC. includeArchived adds
-// archived rows; deleted rows are always excluded (the query filters status).
+// List returns the ctx identity's conversations ordered by last_active_at DESC.
+// includeArchived adds archived rows; deleted rows are always excluded (the query filters
+// status). The query itself carries no owner predicate — RLS is what scopes it.
 func (s *Store) List(ctx context.Context, includeArchived bool) ([]Conversation, error) {
-	rows, err := s.q.ListConversations(ctx, includeArchived)
-	if err != nil {
-		return nil, fmt.Errorf("list conversations: %w", err)
-	}
-	out := make([]Conversation, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, conversationFromRow(r))
+	var out []Conversation
+	if err := s.scoped(ctx, func(q *sqlc.Queries) error {
+		rows, lErr := q.ListConversations(ctx, includeArchived)
+		if lErr != nil {
+			return fmt.Errorf("list conversations: %w", lErr)
+		}
+		out = make([]Conversation, 0, len(rows))
+		for _, r := range rows {
+			out = append(out, conversationFromRow(r))
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 	return out, nil
 }
@@ -214,57 +288,86 @@ func (s *Store) UpdateStatus(ctx context.Context, conversationID, status string)
 	if err != nil {
 		return fmt.Errorf("update status: %w", err)
 	}
-	if err := s.q.UpdateConversationStatus(ctx, sqlc.UpdateConversationStatusParams{ID: id, Status: status}); err != nil {
-		return fmt.Errorf("update status %s -> %s: %w", conversationID, status, err)
+	return s.scoped(ctx, func(q *sqlc.Queries) error {
+		if uErr := q.UpdateConversationStatus(ctx, sqlc.UpdateConversationStatusParams{ID: id, Status: status}); uErr != nil {
+			return fmt.Errorf("update status %s -> %s: %w", conversationID, status, uErr)
+		}
+		return nil
+	})
+}
+
+// setTitle folds Rename and SetTitleIfNull. Both parse the id, open ONE identity-scoped
+// transaction and run a single title statement; only the statement differs, so the
+// statement is the argument. Keeping them as two copies is how a scoping fix gets applied
+// to one and forgotten on the other.
+func (s *Store) setTitle(
+	ctx context.Context,
+	op, conversationID, title string,
+	run func(*sqlc.Queries, pgtype.UUID, pgtype.Text) error,
+) error {
+	id, err := db.ParseUUID("id", conversationID)
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
 	}
-	return nil
+	return s.scoped(ctx, func(q *sqlc.Queries) error {
+		if rErr := run(q, id, pgtype.Text{String: title, Valid: true}); rErr != nil {
+			return fmt.Errorf("%s %s: %w", op, conversationID, rErr)
+		}
+		return nil
+	})
 }
 
 // Rename sets the conversation title unconditionally (the CLI `aura chat rename`).
 func (s *Store) Rename(ctx context.Context, conversationID, title string) error {
-	id, err := db.ParseUUID("id", conversationID)
-	if err != nil {
-		return fmt.Errorf("rename: %w", err)
-	}
-	if err := s.q.RenameConversation(ctx, sqlc.RenameConversationParams{
-		ID:    id,
-		Title: pgtype.Text{String: title, Valid: true},
-	}); err != nil {
-		return fmt.Errorf("rename %s: %w", conversationID, err)
-	}
-	return nil
+	return s.setTitle(ctx, "rename", conversationID, title,
+		func(q *sqlc.Queries, id pgtype.UUID, t pgtype.Text) error {
+			return q.RenameConversation(ctx, sqlc.RenameConversationParams{ID: id, Title: t})
+		})
 }
 
 // SetTitleIfNull idempotently sets the title only when it is still NULL (the
 // auto-title worker drives this — D-A5-01). A repeat call after the title is set
 // is a no-op (the WHERE title IS NULL filters it).
 func (s *Store) SetTitleIfNull(ctx context.Context, conversationID, title string) error {
-	id, err := db.ParseUUID("id", conversationID)
+	return s.setTitle(ctx, "set title", conversationID, title,
+		func(q *sqlc.Queries, id pgtype.UUID, t pgtype.Text) error {
+			return q.SetConversationTitleIfNull(ctx, sqlc.SetConversationTitleIfNullParams{ID: id, Title: t})
+		})
+}
+
+// scopedSeq folds the single-integer reads — CountTurns here and CanonicalBranchLeaf in
+// store_branch.go. Same shape down to the error wrap: parse, one scoped transaction, one
+// query, widen to int.
+func scopedSeq[T ~int32 | ~int64](
+	ctx context.Context,
+	s *Store,
+	op, field, conversationID string,
+	run func(*sqlc.Queries, pgtype.UUID) (T, error),
+) (int, error) {
+	id, err := db.ParseUUID(field, conversationID)
 	if err != nil {
-		return fmt.Errorf("set title: %w", err)
+		return 0, fmt.Errorf("%s: %w", op, err)
 	}
-	if err := s.q.SetConversationTitleIfNull(ctx, sqlc.SetConversationTitleIfNullParams{
-		ID:    id,
-		Title: pgtype.Text{String: title, Valid: true},
+	var value T
+	if err := s.scoped(ctx, func(q *sqlc.Queries) error {
+		got, qErr := run(q, id)
+		if qErr != nil {
+			return fmt.Errorf("%s %s: %w", op, conversationID, qErr)
+		}
+		value = got
+		return nil
 	}); err != nil {
-		return fmt.Errorf("set title %s: %w", conversationID, err)
+		return 0, err
 	}
-	return nil
+	return int(value), nil
 }
 
 // CountTurns returns the number of persisted turns for a conversation. The Runner
 // uses it for non-fatal bookkeeping such as auto-title eligibility; append sequence
 // allocation happens inside AppendTurn's transaction.
 func (s *Store) CountTurns(ctx context.Context, conversationID string) (int, error) {
-	id, err := db.ParseUUID("id", conversationID)
-	if err != nil {
-		return 0, fmt.Errorf("count turns: %w", err)
-	}
-	n, err := s.q.CountTurns(ctx, id)
-	if err != nil {
-		return 0, fmt.Errorf("count turns %s: %w", conversationID, err)
-	}
-	return int(n), nil
+	return scopedSeq(ctx, s, "count turns", "id", conversationID,
+		func(q *sqlc.Queries, id pgtype.UUID) (int64, error) { return q.CountTurns(ctx, id) })
 }
 
 // LoadHistory reconstructs the loop history from conversation_turns ORDER BY seq.
@@ -295,9 +398,16 @@ func (s *Store) loadTurns(ctx context.Context, conversationID string) ([]Turn, e
 	if err != nil {
 		return nil, fmt.Errorf("load turns: %w", err)
 	}
-	rows, err := s.q.ListTurnsBySeq(ctx, id)
-	if err != nil {
-		return nil, fmt.Errorf("load turns %s: %w", conversationID, err)
+	var rows []sqlc.ListTurnsBySeqRow
+	if err := s.scoped(ctx, func(q *sqlc.Queries) error {
+		listed, lErr := q.ListTurnsBySeq(ctx, id)
+		if lErr != nil {
+			return fmt.Errorf("load turns %s: %w", conversationID, lErr)
+		}
+		rows = listed
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 	out := make([]Turn, 0, len(rows))
 	for _, r := range rows {
@@ -324,15 +434,22 @@ func (s *Store) loadRecentTurns(
 	if err != nil {
 		return nil, fmt.Errorf("load recent turns: %w", err)
 	}
-	rows, err := s.q.ListRecentTurnsBySeq(
-		ctx,
-		sqlc.ListRecentTurnsBySeqParams{
-			TargetConversationID: id,
-			HardCap:              int32(hardCap),
-		},
-	)
-	if err != nil {
-		return nil, fmt.Errorf("load recent turns %s: %w", conversationID, err)
+	var rows []sqlc.ListRecentTurnsBySeqRow
+	if err := s.scoped(ctx, func(q *sqlc.Queries) error {
+		listed, lErr := q.ListRecentTurnsBySeq(
+			ctx,
+			sqlc.ListRecentTurnsBySeqParams{
+				TargetConversationID: id,
+				HardCap:              int32(hardCap),
+			},
+		)
+		if lErr != nil {
+			return fmt.Errorf("load recent turns %s: %w", conversationID, lErr)
+		}
+		rows = listed
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 	out := make([]Turn, 0, len(rows))
 	for _, row := range rows {
@@ -387,85 +504,6 @@ func (s *Store) readTurnSidecar(conversationID string, seq int) ([]byte, error) 
 	return root.ReadFile(rel)
 }
 
-// SearchResult is one FTS hit (the app-side excerpt is the CLI/channel's job).
-type SearchResult struct {
-	ConversationID string
-	Seq            int
-	Content        string
-	Similarity     float32
-}
-
-// SearchConversationTurns wraps the LOCKED cross-slice FTS query (SPEC Req#13 /
-// D-A5-03): content % $1 ORDER BY similarity(content,$1) DESC LIMIT $2. The query
-// SQL is the contract Telegram /search (Phase 13) reuses byte-for-byte; this
-// wrapper only projects pgtype at the boundary. The SQL is never rewritten here.
-//
-// LOOP-10 / D-10 boundary: spilled turns (content over the cap) store content=NULL
-// and are therefore EXCLUDED from this search by construction — `content % $1` never
-// matches a NULL. This is a documented+asserted boundary (see maybeSpill and the
-// SearchSpill db_integration test), not an oversight: pg_trgm similarity() is
-// length-normalized, so a >cap (≥64 KiB) body scores ~0 and would never clear the
-// 0.3 threshold even if content were repopulated. The deferred upgrade path is a
-// short-preview column (length-compatible with %) at a future migration, never a
-// rewrite of this locked query.
-func (s *Store) SearchConversationTurns(ctx context.Context, query string, limit int) ([]SearchResult, error) {
-	return s.searchTurns(ctx, query, limit, "")
-}
-
-// searchTurns is the shared FTS body behind SearchConversationTurns (unscoped) and
-// SearchConversationTurnsForIdentity (Phase 36 owner-scoped). The LOCKED sqlc query is
-// NEVER rewritten — ownerFilter is applied Go-side alongside the existing deleted-status
-// skip (a hit whose conversation is not owned by ownerFilter is dropped so an FTS query
-// can never surface another identity's turn content, MUSR-01). ownerFilter == "" keeps
-// the pre-Phase-36 unscoped behavior. The per-hit conversation is cached (status + owner
-// both read from the one projection) so a repeated conversation costs a single Get.
-func (s *Store) searchTurns(ctx context.Context, query string, limit int, ownerFilter string) ([]SearchResult, error) {
-	rows, err := s.q.SearchConversationTurns(ctx, sqlc.SearchConversationTurnsParams{
-		Similarity: query,
-		Limit:      normalizeSearchLimit(limit),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("search conversation turns: %w", err)
-	}
-	out := make([]SearchResult, 0, len(rows))
-	convByID := make(map[string]Conversation)
-	for _, r := range rows {
-		convID := uuid.UUID(r.ConversationID.Bytes).String()
-		conv, ok := convByID[convID]
-		if !ok {
-			loaded, gErr := s.Get(ctx, convID)
-			if gErr != nil {
-				return nil, fmt.Errorf("search conversation turns: load conversation %s: %w", convID, gErr)
-			}
-			conv = loaded
-			convByID[convID] = loaded
-		}
-		if conv.Status == StatusDeleted {
-			continue
-		}
-		if ownerFilter != "" && conv.IdentityID != ownerFilter {
-			continue
-		}
-		out = append(out, SearchResult{
-			ConversationID: convID,
-			Seq:            int(r.Seq),
-			Content:        r.Content.String,
-			Similarity:     r.Sim,
-		})
-	}
-	return out, nil
-}
-
-func normalizeSearchLimit(limit int) int32 {
-	if limit <= 0 {
-		return 20
-	}
-	if limit > 2147483647 {
-		return 2147483647
-	}
-	return int32(limit)
-}
-
 // Delete removes the conversation row (conversation_turns + paused_states cascade
 // via FK ON DELETE CASCADE), then tears down the per-conversation sidecar dir
 // AFTER the DB delete commits. When a Cleaner is wired (2b) the teardown is the
@@ -481,8 +519,13 @@ func (s *Store) Delete(ctx context.Context, conversationID string) error {
 	if err != nil {
 		return fmt.Errorf("delete conversation: %w", err)
 	}
-	if err := s.q.DeleteConversation(ctx, id); err != nil {
-		return fmt.Errorf("delete conversation %s: %w", conversationID, err)
+	if err := s.scoped(ctx, func(q *sqlc.Queries) error {
+		if dErr := q.DeleteConversation(ctx, id); dErr != nil {
+			return fmt.Errorf("delete conversation %s: %w", conversationID, dErr)
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 	return s.purgeConversationArtifacts(conversationID)
 }

@@ -22,8 +22,10 @@ var resumeCommitBoundary = obs.NewGlobalBoundary("github.com/chetto1983/aura/int
 })
 
 // PoolResumeCommitter is the production ResumeCommitter: it owns the shared *pgxpool.Pool
-// and the CONCRETE askuser/conversations Stores, so each method runs ONE db.WithTx that
-// composes their 34-05 tx-accepting methods (D-03). Because aura.paused_states and
+// and the CONCRETE askuser/conversations Stores, so each method runs ONE
+// db.WithCallerIdentityTx that composes their 34-05 tx-accepting methods (D-03). The
+// identity comes from the context — aura.paused_states and aura.conversation_turns are both
+// fail-closed since migration 0089, and the tx-accepting halves set nothing themselves. Because aura.paused_states and
 // aura.conversation_turns live in the SAME generated sqlc package, a single sqlc.New(tx)
 // exposes every query needed to claim a pause AND append its answer turn atomically
 // (D-02) — no ledger, no second durability mechanism. It cannot be unit-faked (db.WithTx
@@ -50,7 +52,7 @@ func NewPoolResumeCommitter(pool *pgxpool.Pool, conv *conversations.Store, pause
 func (p *PoolResumeCommitter) CommitResume(ctx context.Context, claim ResumeClaim) (err error) {
 	ctx, end := resumeCommitBoundary.Start(ctx)
 	defer end.PanicSafe(&err)
-	return db.WithTx(ctx, p.pool, func(q *sqlc.Queries) error {
+	return db.WithCallerIdentityTx(ctx, p.pool, func(q *sqlc.Queries) error {
 		if err := p.pause.MarkResumedTx(ctx, q, claim.Token, claim.Answer); err != nil {
 			return err
 		}
@@ -75,7 +77,7 @@ func (p *PoolResumeCommitter) CommitResumeBatch(ctx context.Context, claims []Re
 	}
 	ordered := append([]ResumeClaim(nil), claims...)
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].Token < ordered[j].Token })
-	return db.WithTx(ctx, p.pool, func(q *sqlc.Queries) error {
+	return db.WithCallerIdentityTx(ctx, p.pool, func(q *sqlc.Queries) error {
 		if err := p.pause.MarkResumedBatchTx(ctx, q, answers); err != nil {
 			return err
 		}
@@ -96,7 +98,7 @@ func (p *PoolResumeCommitter) CommitPause(ctx context.Context, assistantTurn con
 	if len(pauses) == 0 {
 		return nil
 	}
-	return db.WithTx(ctx, p.pool, func(q *sqlc.Queries) error {
+	return db.WithCallerIdentityTx(ctx, p.pool, func(q *sqlc.Queries) error {
 		if err := p.appendAnswerTx(ctx, q, assistantTurn); err != nil {
 			return err
 		}

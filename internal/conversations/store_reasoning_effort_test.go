@@ -18,7 +18,6 @@
 package conversations
 
 import (
-	"context"
 	"testing"
 
 	"github.com/google/uuid"
@@ -30,13 +29,13 @@ import (
 // seedRLSIdentity so a SECOND, real owner exists for the cross-identity deny proof.
 func seedIdentity(t *testing.T, pool *pgxpool.Pool, id, name string) {
 	t.Helper()
-	if _, err := pool.Exec(context.Background(),
+	if _, err := pool.Exec(ownerCtx(),
 		"INSERT INTO aura.identities (id, name, kind) VALUES ($1, $2, 'user') ON CONFLICT DO NOTHING",
 		id, name); err != nil {
 		t.Fatalf("seed identity %s: %v", name, err)
 	}
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), "DELETE FROM aura.identities WHERE id = $1", id)
+		_, _ = pool.Exec(ownerCtx(), "DELETE FROM aura.identities WHERE id = $1", id)
 	})
 }
 
@@ -48,7 +47,7 @@ func TestReasoningEffortRoundTrip(t *testing.T) {
 	pool := migratedPool(t)
 	s := newStore(t, pool)
 	convID := newConversation(t, s) // owned by localID
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	// A fresh conversation has no persisted effort -> "" (the D-07 zero-regression default).
 	if c, err := s.GetForIdentity(ctx, convID, localID); err != nil {
@@ -83,7 +82,7 @@ func TestReasoningEffortForeignIdentityDenied(t *testing.T) {
 	pool := migratedPool(t)
 	s := newStore(t, pool)
 	convID := newConversation(t, s) // owned by localID
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	// The owner sets a known value first.
 	if affected, err := s.UpdateReasoningEffortForIdentity(ctx, convID, localID, "high"); err != nil || affected != 1 {

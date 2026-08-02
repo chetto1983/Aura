@@ -12,7 +12,6 @@ package agui
 
 import (
 	"bytes"
-	"context"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -40,7 +39,7 @@ func TestSharePublicMintWithCapability(t *testing.T) {
 	pool := migratedPool(t)
 	env := newShareAPIEnv(t, pool, true)
 	owner, convID := seedOwnerAndConversation(t, env, oneTurn())
-	if err := identity.New(pool).GrantCapability(context.Background(), owner, "share.public"); err != nil {
+	if err := identity.New(pool).GrantCapability(ownerCtx(), owner, "share.public"); err != nil {
 		t.Fatalf("grant share.public: %v", err)
 	}
 	gated := RequireCapability(env.server.Mux(), AuthDeps{SecretConfigured: true, Identities: storeChecker{store: identity.New(pool)}}, "share.public")
@@ -61,7 +60,7 @@ func TestSharePublicOrgKillSwitch(t *testing.T) {
 	pool := migratedPool(t)
 	env := newShareAPIEnv(t, pool, false) // kill-switch OFF
 	owner, convID := seedOwnerAndConversation(t, env, oneTurn())
-	if err := identity.New(pool).GrantCapability(context.Background(), owner, "share.public"); err != nil {
+	if err := identity.New(pool).GrantCapability(ownerCtx(), owner, "share.public"); err != nil {
 		t.Fatalf("grant share.public: %v", err)
 	}
 	gated := RequireCapability(env.server.Mux(), AuthDeps{SecretConfigured: false}, "share.public")
@@ -79,7 +78,7 @@ func TestShareRevokeThen404(t *testing.T) {
 	pool := migratedPool(t)
 	env := newShareAPIEnv(t, pool, true)
 	owner, convID := seedOwnerAndConversation(t, env, oneTurn())
-	if err := env.convStore.SetTitleIfNull(context.Background(), convID, "Secret Title"); err != nil {
+	if err := env.convStore.SetTitleIfNull(ownerCtx(), convID, "Secret Title"); err != nil {
 		t.Fatalf("set title: %v", err)
 	}
 	link := createShare(t, env, owner, convID, "public", http.StatusCreated)
@@ -115,7 +114,7 @@ func TestShareTokenNoOracle(t *testing.T) {
 		Tier: "public", SnapshotID: uuid.Must(uuid.NewV7()), SnapshotBucket: shareAPITestBucket,
 		ExpiresAt: pastShareTime(time.Hour),
 	}
-	if err := env.adapter.store.Insert(context.Background(), expired, hash[:]); err != nil {
+	if err := env.adapter.store.Insert(ownerCtx(), expired, hash[:]); err != nil {
 		t.Fatalf("insert expired link: %v", err)
 	}
 	unknown := shareReq(env.server, http.MethodGet, "/s/"+uuid.Must(uuid.NewV7()).String()+"/data", "", "")
@@ -164,7 +163,7 @@ func TestSharePublicOpenAuditNoPII(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("resolve status = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
-	rows, err := pool.Query(context.Background(),
+	rows, err := pool.Query(ownerCtx(),
 		"SELECT identity_id, detail FROM aura.share_audit WHERE share_link_id = $1", uuid.MustParse(link.ID))
 	if err != nil {
 		t.Fatalf("query share_audit: %v", err)
@@ -203,7 +202,7 @@ func TestShareTokenNeverLogged(t *testing.T) {
 		t.Fatalf("plaintext token appeared in slog output: %s", logBuf.String())
 	}
 	var detailCount int
-	if err := pool.QueryRow(context.Background(),
+	if err := pool.QueryRow(ownerCtx(),
 		"SELECT count(*) FROM aura.share_audit WHERE detail LIKE $1", "%"+token+"%").Scan(&detailCount); err != nil {
 		t.Fatalf("scan share_audit for token leak: %v", err)
 	}

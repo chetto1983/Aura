@@ -36,7 +36,6 @@
 package agui
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -75,7 +74,7 @@ func TestShareCrossIdentityDeny(t *testing.T) {
 	// both sit behind a Server.assets nil-check that runs BEFORE their own owner/auth gate —
 	// newShareAPIEnv wires the share service only, not this one, so wire it here.
 	env.server.SetAssetService(env.assetsF)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	// --- Identity A: owns conv-A, the conversation every deny-row below targets. ---
 	ownerA := seedShareExportIdentity(t, pool)

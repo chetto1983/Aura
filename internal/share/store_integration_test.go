@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/jackc/pgx/v5"
 	"os"
 	"testing"
 	"time"
@@ -112,12 +113,9 @@ func seedIdentity(t *testing.T, pool *pgxpool.Pool) string {
 func seedConversation(t *testing.T, pool *pgxpool.Pool, identityID string) string {
 	t.Helper()
 	convID := uuid.Must(uuid.NewV7()).String()
-	if _, err := pool.Exec(context.Background(),
+	seedAsOwner(t, pool, identityID,
 		`INSERT INTO aura.conversations (id, identity_id, model, status) VALUES ($1, $2, 'test-model', 'active')`,
-		convID, identityID,
-	); err != nil {
-		t.Fatalf("seed conversation: %v", err)
-	}
+		convID, identityID)
 	return convID
 }
 
@@ -383,12 +381,15 @@ func TestSharedLinksCascade(t *testing.T) {
 		t.Fatalf("insert: %v", err)
 	}
 
-	if _, err := pool.Exec(ctx, `DELETE FROM aura.conversations WHERE id = $1`, conv); err != nil {
-		t.Fatalf("delete conversation: %v", err)
-	}
+	// The DELETE must carry the owner: aura.conversations is fail-closed since migration
+	// 0089, and an unscoped DELETE matches zero rows and reports success — the cascade this
+	// test is about would simply never fire, silently.
+	seedAsOwner(t, pool, owner, `DELETE FROM aura.conversations WHERE id = $1`, conv)
 
 	var count int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM aura.shared_links WHERE id = $1`, link.ID).Scan(&count); err != nil {
+	if err := db.WithIdentityTxRaw(ctx, pool, owner, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT count(*) FROM aura.shared_links WHERE id = $1`, link.ID).Scan(&count)
+	}); err != nil {
 		t.Fatalf("count shared_links: %v", err)
 	}
 	if count != 0 {

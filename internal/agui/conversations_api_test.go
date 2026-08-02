@@ -16,7 +16,6 @@
 package agui
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -80,7 +79,7 @@ func TestConversationsAPI_List(t *testing.T) {
 	archived := seedConversation(t, store, pool, []conversations.AppendTurnParams{
 		{Seq: 1, Role: llm.RoleUser, Content: "old one"},
 	})
-	if err := store.UpdateStatus(context.Background(), archived, conversations.StatusArchived); err != nil {
+	if err := store.UpdateStatus(ownerCtx(), archived, conversations.StatusArchived); err != nil {
 		t.Fatalf("archive seed: %v", err)
 	}
 
@@ -187,7 +186,7 @@ func TestConversationsAPI_Rename(t *testing.T) {
 	if code != http.StatusNoContent {
 		t.Fatalf("rename status = %d, want 204: %s", code, body)
 	}
-	got, err := store.Get(context.Background(), id)
+	got, err := store.Get(ownerCtx(), id)
 	if err != nil {
 		t.Fatalf("get after rename: %v", err)
 	}
@@ -215,7 +214,7 @@ func TestConversationsAPI_ArchiveUnarchive(t *testing.T) {
 	if code != http.StatusNoContent {
 		t.Fatalf("archive status = %d, want 204: %s", code, body)
 	}
-	if got, _ := store.Get(context.Background(), id); got.Status != conversations.StatusArchived {
+	if got, _ := store.Get(ownerCtx(), id); got.Status != conversations.StatusArchived {
 		t.Errorf("status after archive = %q, want archived", got.Status)
 	}
 
@@ -223,7 +222,7 @@ func TestConversationsAPI_ArchiveUnarchive(t *testing.T) {
 	if code != http.StatusNoContent {
 		t.Fatalf("unarchive status = %d, want 204: %s", code, body)
 	}
-	if got, _ := store.Get(context.Background(), id); got.Status != conversations.StatusActive {
+	if got, _ := store.Get(ownerCtx(), id); got.Status != conversations.StatusActive {
 		t.Errorf("status after unarchive = %q, want active", got.Status)
 	}
 }
@@ -242,7 +241,7 @@ func TestConversationsAPI_Delete(t *testing.T) {
 	if code != http.StatusNoContent {
 		t.Fatalf("delete status = %d, want 204: %s", code, body)
 	}
-	if _, err := store.Get(context.Background(), id); err == nil {
+	if _, err := store.Get(ownerCtx(), id); err == nil {
 		t.Errorf("conversation %s still exists after DELETE (Store.Delete not called)", id)
 	}
 }
@@ -256,13 +255,11 @@ func TestConversationsAPI_DeleteWithAuditedPause(t *testing.T) {
 	id := seedConversation(t, store, pool, []conversations.AppendTurnParams{
 		{Seq: 1, Role: llm.RoleUser, Content: "x"},
 	})
-	ctx := context.Background()
+	ctx := ownerCtx()
 	token := uuid.Must(uuid.NewV7()).String()
-	if _, err := pool.Exec(ctx,
+	seedAsOwner(t, pool, localIdentityID,
 		`INSERT INTO aura.paused_states (token, conversation_id, kind, question, priority, tool_call_id)
-		 VALUES ($1, $2, 'approval', 'approve skill?', 0, 'tc')`, token, id); err != nil {
-		t.Fatalf("seed pause: %v", err)
-	}
+		 VALUES ($1, $2, 'approval', 'approve skill?', 0, 'tc')`, token, id)
 	if _, err := pool.Exec(ctx,
 		`INSERT INTO aura.skill_audit (
 			actor_id, skill_name, action, content_hash, approval_source,
@@ -300,7 +297,7 @@ func TestConversationsAPI_RotEvents(t *testing.T) {
 		{Seq: 1, Role: llm.RoleUser, Content: "x"},
 	})
 	// Seed one rot-event row directly so the projection has a row to return.
-	if _, err := pool.Exec(context.Background(),
+	if _, err := pool.Exec(ownerCtx(),
 		`INSERT INTO aura.context_rot_events (conversation_id, action, pairs_dropped, tokens_before, tokens_after)
 		 VALUES ($1, 'hard_drop_pairs', 4, 9000, 5000)`, id); err != nil {
 		t.Fatalf("seed rot event: %v", err)

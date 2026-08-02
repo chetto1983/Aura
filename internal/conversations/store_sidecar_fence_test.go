@@ -45,7 +45,7 @@ func fenceStore(t *testing.T, runDir, columnPath string) (*Store, string) {
 	fake := &fakeDBTX{queryRows: &fakeRows{rows: [][]any{
 		turnRowValues(conv, 2, "assistant", "", columnPath, "", nil),
 	}}}
-	return &Store{q: sqlc.New(fake), runDir: runDir, turnCapBytes: 65536}, convID
+	return newFakeStore(&Store{q: sqlc.New(fake), runDir: runDir, turnCapBytes: 65536}), convID
 }
 
 // writeReconstructed writes body at the exact path readTurnSidecar reconstructs:

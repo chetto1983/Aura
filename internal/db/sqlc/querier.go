@@ -317,6 +317,11 @@ type Querier interface {
 	// plurals inside aura.searchable_text rather than reaching for a stemmer.
 	SearchDocumentDigests(ctx context.Context, arg SearchDocumentDigestsParams) ([]SearchDocumentDigestsRow, error)
 	SetConversationTitleIfNull(ctx context.Context, arg SetConversationTitleIfNullParams) error
+	// The machine's own description, written at ingest from the file. Identity-scoped like
+	// the digest above: same table, same reachability, same rule. It deliberately does NOT
+	// touch digest — that column belongs to document_describe, and a re-ingest must not
+	// delete what the agent learned by opening the file.
+	SetDocumentCard(ctx context.Context, arg SetDocumentCardParams) (AuraDocuments, error)
 	// Identity-scoped: this is a WRITE reachable from a tool call, so a document id
 	// alone must never be enough to overwrite what someone else's library says about
 	// their file. A non-owner gets no rows, which the caller reports as not-found.

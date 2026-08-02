@@ -132,18 +132,19 @@ func (s *Server) handleResolveApproval(w http.ResponseWriter, r *http.Request) {
 	}
 	// Owner gate (MUSR-01 / D-06): resolve only the caller's own approval. The atomic
 	// resume itself stays the Runner's job (SubmitAnswers → MarkResumedTx, never forked);
-	// this gate authorizes it. A miss on the scoped read means the token is not the caller's:
-	// probe unscoped existence to split 403 (a known-foreign token, a mutate on someone
-	// else's approval) from 404 (unknown/already-resolved). Skipped only when the approval
-	// store is unwired (tests); the daemon always wires it via SetApprovalStore.
+	// this gate authorizes it. A miss on the scoped read means the token is not the
+	// caller's, and that is 404 whether it is foreign, unknown, or already resolved.
+	//
+	// It used to be 403-when-foreign, split by an unscoped existence probe. Migration 0089
+	// made aura.paused_states fail closed, so no read in the system can see another
+	// identity's pause any more — the probe could only ever miss, and keeping it would have
+	// been a branch that never fires. The collapse is toward the safer side: a caller learns
+	// nothing about tokens they do not own. Skipped only when the approval store is unwired
+	// (tests); the daemon always wires it via SetApprovalStore.
 	if s.approvals != nil {
 		identity := scopedIdentityID(r.Context())
 		if _, err := s.approvals.GetByTokenForIdentity(r.Context(), token, identity); err != nil {
 			if errors.Is(err, askuser.ErrPauseNotFound) {
-				if _, probeErr := s.approvals.GetByToken(r.Context(), token); probeErr == nil {
-					http.Error(w, "forbidden", http.StatusForbidden)
-					return
-				}
 				http.Error(w, "approval not found or already resolved", http.StatusNotFound)
 				return
 			}

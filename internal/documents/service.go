@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/chetto1983/aura/internal/documents/filecard"
 )
 
 // DefaultMaxIngestBytes is the fallback per-file ingestion size ceiling.
@@ -21,6 +23,7 @@ var ErrFileTooLarge = errors.New("document file too large")
 // IngestCatalog owns the logical catalog lifecycle for an ingested document.
 type IngestCatalog interface {
 	CreateDocument(context.Context, CreateDocumentRequest) (Document, error)
+	SetCard(ctx context.Context, identityID, documentID, card string) error
 	SetSearchDocumentStatus(ctx context.Context, searchDocumentID string, status DocumentStatus, reason string) error
 }
 
@@ -29,12 +32,15 @@ type Clock func() time.Time
 
 // Service registers an ingested file in the document catalog.
 //
-// It no longer reads the file. Extraction, chunking, sparse indexing and chunk
-// embedding all existed to answer "what does this document say" from passages,
-// and that question is now answered by handing the agent the original file
-// (document_open) instead of a ranked fragment of it. What ingestion still owes
-// the rest of the system is the catalog row document_search ranks and
-// document_open resolves — title, tags, digest — so that is all it writes.
+// It does not extract, chunk, or embed. Those existed to answer "what does this
+// document say" from passages, and that question is now answered by handing the
+// agent the original file (document_open) instead of a ranked fragment of it.
+//
+// It does read the file, once, to write a CARD: the structural description
+// document_search ranks on (internal/documents/filecard). Before that card,
+// nothing described a document until an agent had opened it, so an uploaded file
+// nobody had opened could not be found — the library only knew what had already
+// been found some other way.
 type Service struct {
 	Jobs     JobStore
 	Catalog  IngestCatalog
@@ -84,7 +90,7 @@ func (s *Service) IngestPath(ctx context.Context, req IngestRequest, path string
 	if err != nil {
 		return nil, err
 	}
-	if err := s.recordCatalogDocument(ctx, req, documentID, job.ID); err != nil {
+	if err := s.recordCatalogDocument(ctx, req, documentID, job.ID, path); err != nil {
 		return s.failJob(ctx, job, err)
 	}
 	job, err = s.Jobs.UpdateProgress(ctx, job.ID, JobSearchable, 0, 0)
@@ -99,15 +105,15 @@ func (s *Service) IngestPath(ctx context.Context, req IngestRequest, path string
 }
 
 // recordCatalogDocument writes the row document_search ranks and document_open
-// resolves. Both the CLI and the runtime ingestor go through here: an asset
-// upload gets its row from a version recorder, but a local path has none, and
-// without it a file the agent indexed is invisible to the tool that promised it
-// was searchable.
-func (s *Service) recordCatalogDocument(ctx context.Context, req IngestRequest, documentID, jobID string) error {
+// resolves, then the card that makes it findable. Both the CLI and the runtime
+// ingestor go through here: an asset upload gets its row from a version
+// recorder, but a local path has none, and without it a file the agent indexed
+// is invisible to the tool that promised it was searchable.
+func (s *Service) recordCatalogDocument(ctx context.Context, req IngestRequest, documentID, jobID, path string) error {
 	if s.Catalog == nil || strings.TrimSpace(req.IdentityID) == "" {
 		return nil
 	}
-	_, err := s.Catalog.CreateDocument(ctx, CreateDocumentRequest{
+	doc, err := s.Catalog.CreateDocument(ctx, CreateDocumentRequest{
 		IdentityID: req.IdentityID,
 		Scope:      DocumentScopeLibrary,
 		Title:      req.FileName,
@@ -122,7 +128,29 @@ func (s *Service) recordCatalogDocument(ctx context.Context, req IngestRequest, 
 	if err != nil {
 		return fmt.Errorf("catalog document: %w", err)
 	}
+	s.writeCard(ctx, req, doc.ID, path)
 	return nil
+}
+
+// writeCard describes the file and stores the description. It never fails the
+// ingest: a card is how a document is FOUND, not whether it was stored, and
+// refusing an upload because a zip was truncated would trade a real loss for a
+// small one. Nothing is silent either — a file that could not be read says so in
+// its own card, and the reason is logged here.
+func (s *Service) writeCard(ctx context.Context, req IngestRequest, catalogID, path string) {
+	card, err := filecard.Build(filecard.Request{
+		Path:      path,
+		FileName:  req.FileName,
+		SizeBytes: req.SizeBytes,
+	})
+	if err != nil {
+		slog.Warn("documents: file could not be read for its card",
+			"document_id", catalogID, "file_name", req.FileName, "err", err)
+	}
+	if err := s.Catalog.SetCard(ctx, req.IdentityID, catalogID, card.Render()); err != nil {
+		slog.Warn("documents: could not store the document card",
+			"document_id", catalogID, "file_name", req.FileName, "err", err)
+	}
 }
 
 func (s *Service) markCatalogFailed(ctx context.Context, documentID string, cause error) {

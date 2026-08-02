@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -50,19 +51,17 @@ func WithTx(ctx context.Context, pool *pgxpool.Pool, fn func(*sqlc.Queries) erro
 // forgotten *ForIdentity WHERE clause still returns 0 foreign rows (the D-07 backstop the
 // app-level filter is layered on top of, not a replacement for).
 //
-// An empty identityID sets the var to the empty string, and what that means now depends on
-// the table, because migration 0087 split the policy set in two:
+// An empty identityID sets the var to the empty string, which FAILS CLOSED on every
+// owner-scoped table: migration 0087 covers the document plane, capability grants, content
+// parts, the idempotency registry and the per-identity object-store binding; 0089 finished
+// the job on aura.conversations, aura.conversation_turns, aura.paused_states and
+// aura.shared_links. No row is visible and no write is accepted without a principal, which
+// is the point — a caller with no identity must not reach owner-scoped data at all, and is
+// never silently UPGRADED to someone else's rows.
 //
-//   - The tables 0087 covers (aura.documents and its children, aura.capability_grants,
-//     aura.content_parts, aura.idempotency_operations, aura.identity_object_store) FAIL
-//     CLOSED: an empty identity sees no rows and can write none. That is deliberate — a
-//     caller with no principal must not reach owner-scoped data at all.
-//   - The four tables still on their 0032/0041 policies (aura.conversations,
-//     aura.conversation_turns, aura.paused_states, aura.shared_links) are still
-//     permissive-on-unset, because the runner turn loop writes them with no principal. 0087's
-//     header documents what has to change before they can be tightened.
-//
-// Either way a caller with no principal is never silently UPGRADED to someone else's rows.
+// aura.shared_links is the one table whose read side is deliberately wider than "mine": an
+// unrevoked link is readable with no identity, because a share link is a capability handed
+// to someone who is not the owner. Its writes are still owner-only. See migration 0089.
 func WithIdentityTx(ctx context.Context, pool *pgxpool.Pool, identityID string, fn func(*sqlc.Queries) error) (err error) {
 	ctx, end := dbTransactionBoundary.Start(ctx)
 	defer end.PanicSafe(&err)
@@ -85,6 +84,27 @@ func WithIdentityTx(ctx context.Context, pool *pgxpool.Pool, identityID string, 
 		return err
 	}
 	return fn(sqlc.New(tx))
+}
+
+// WithCallerIdentityTx is WithIdentityTx with the identity read from the CONTEXT instead of
+// taken as an argument. identityctx.IdentityID(ctx) is the principal every entry point
+// already puts there: agui.withPrincipal for a web request, bootCLIChat for the CLI,
+// telegram's scopeTurnToIdentity for an inbound message, and runner.scopeContextToConversation
+// for the turn loop.
+//
+// It exists so a store called from all four of those paths does not have to widen every
+// method signature to carry an identity the context is already holding —
+// conversations.Store and askuser.Store are the two, and between them that would have been
+// thirty signatures. Use the explicit WithIdentityTx wherever the identity is a genuine
+// INPUT rather than ambient caller state: conversations.Store.Create scopes to the owner it
+// is being asked to create, not to whoever is asking.
+//
+// A context with no principal sets the empty string, which is fail-closed everywhere (see
+// WithIdentityTx). That is the intended failure mode, not a degradation to be papered over
+// with a default identity: resolve a real owner (identityctx.OperatorIdentity) at the
+// composition root instead.
+func WithCallerIdentityTx(ctx context.Context, pool *pgxpool.Pool, fn func(*sqlc.Queries) error) error {
+	return WithIdentityTx(ctx, pool, identityctx.IdentityID(ctx), fn)
 }
 
 // SetTxIdentity binds app.current_identity to identityID for the remainder of tx. It is the

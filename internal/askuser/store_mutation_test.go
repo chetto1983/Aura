@@ -28,7 +28,7 @@ func TestListRecent_LimitClamp(t *testing.T) {
 	pool := migratedPool(t)
 	s := New(pool)
 	convID := newConversation(t, pool)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	mine := map[string]bool{}
 	for i := 0; i < 3; i++ {
@@ -77,7 +77,7 @@ func TestListRecent_ResolvedAnswerRoundTrip(t *testing.T) {
 	pool := migratedPool(t)
 	s := New(pool)
 	convID := newConversation(t, pool)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	const content = "shipped-it-2026"
 	resolvedTok := insertPause(t, s, convID, "approval", "deploy?", 0)
@@ -121,7 +121,7 @@ func TestListRecent_InvalidResumedAnswerErrors(t *testing.T) {
 	pool := migratedPool(t)
 	s := New(pool)
 	convID := newConversation(t, pool)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	tok := insertPause(t, s, convID, "approval", "deploy?", 0)
 	if err := s.MarkResumed(ctx, tok, ResumeAnswer{Action: ActionAccept, Content: "ok"}); err != nil {
@@ -147,7 +147,7 @@ func TestMarkResumedBatch_InvalidActionWrap(t *testing.T) {
 	pool := migratedPool(t)
 	s := New(pool)
 	convID := newConversation(t, pool)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	good := insertPause(t, s, convID, "approval", "a", 0)
 
@@ -170,7 +170,7 @@ func TestMarkResumedBatch_BadTokenWrap(t *testing.T) {
 	pool := migratedPool(t)
 	s := New(pool)
 
-	err := s.MarkResumedBatch(context.Background(), map[string]ResumeAnswer{"not-a-uuid": {Action: ActionAccept}})
+	err := s.MarkResumedBatch(ownerCtx(), map[string]ResumeAnswer{"not-a-uuid": {Action: ActionAccept}})
 	if err == nil {
 		t.Fatal("batch with a malformed token: want error, got nil")
 	}
@@ -188,7 +188,7 @@ func TestStore_DBErrorWrapMessages(t *testing.T) {
 	s := New(pool)
 	convID := newConversation(t, pool)
 
-	canceled, cancel := context.WithCancel(context.Background())
+	canceled, cancel := context.WithCancel(ownerCtx())
 	cancel()
 
 	valid := uuid.Must(uuid.NewV7()).String()

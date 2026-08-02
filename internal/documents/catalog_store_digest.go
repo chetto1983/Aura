@@ -22,7 +22,41 @@ import (
 // never be enough to overwrite what another person's library says about their
 // file, and this is reachable from a tool call.
 func (s *PostgresCatalogStore) SetDigest(ctx context.Context, identityID, documentID, digest string) error {
-	pgIdentityID, err := pgUUID("identity_id", identityID)
+	return s.setDescription(ctx, identityID, documentID, "digest",
+		func(id, owner pgtype.UUID) error {
+			_, err := s.q.SetDocumentDigest(ctx, sqlc.SetDocumentDigestParams{
+				ID: id, IdentityID: owner, Digest: digest,
+			})
+			return err
+		})
+}
+
+// SetCard records what INGEST measured about a document, from the file itself.
+//
+// It is deliberately a different column and a different call from SetDigest: a
+// re-ingest overwrites the machine's description and must leave the agent's note
+// alone, and document_describe overwrites the note and must leave the structure
+// alone. Same identity gate as SetDigest, for the same reason.
+func (s *PostgresCatalogStore) SetCard(ctx context.Context, identityID, documentID, card string) error {
+	return s.setDescription(ctx, identityID, documentID, "card",
+		func(id, owner pgtype.UUID) error {
+			_, err := s.q.SetDocumentCard(ctx, sqlc.SetDocumentCardParams{
+				ID: id, IdentityID: owner, Card: card,
+			})
+			return err
+		})
+}
+
+// setDescription resolves the two ids both description writes need and turns a
+// no-rows result into not-found. The two writes differ only in the column they
+// touch; sharing the resolution keeps the identity gate in ONE place, which is
+// the part that must not drift between them.
+func (s *PostgresCatalogStore) setDescription(
+	ctx context.Context,
+	identityID, documentID, column string,
+	write func(id, owner pgtype.UUID) error,
+) error {
+	owner, err := pgUUID("identity_id", identityID)
 	if err != nil {
 		return err
 	}
@@ -30,15 +64,11 @@ func (s *PostgresCatalogStore) SetDigest(ctx context.Context, identityID, docume
 	if err != nil {
 		return err
 	}
-	if _, err := s.q.SetDocumentDigest(ctx, sqlc.SetDocumentDigestParams{
-		ID:         id,
-		IdentityID: pgIdentityID,
-		Digest:     digest,
-	}); err != nil {
+	if err := write(id, owner); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("%w: %s", ErrDocumentNotCatalogued, documentID)
 		}
-		return fmt.Errorf("set document digest: %w", err)
+		return fmt.Errorf("set document %s: %w", column, err)
 	}
 	return nil
 }
@@ -56,7 +86,7 @@ func (s *PostgresCatalogStore) digestTargetID(ctx context.Context, documentID st
 }
 
 // SearchDigests ranks one identity's library by ts_rank over the weighted
-// title/tags/digest vector. No embedding, no reranker, no graph — the whole
+// title/tags/digest/card vector. No embedding, no reranker, no graph — the whole
 // retrieval stack this replaces existed to find a PASSAGE, and passages are no
 // longer what the agent needs.
 //
@@ -91,6 +121,7 @@ func (s *PostgresCatalogStore) SearchDigests(
 			Title:      row.Title,
 			Tags:       append([]string(nil), row.Tags...),
 			Digest:     row.Digest,
+			Card:       row.Card,
 			Rank:       float64(row.Rank),
 			UpdatedAt:  row.UpdatedAt.Time,
 		})

@@ -20,6 +20,8 @@ package agui
 import (
 	"context"
 	"fmt"
+	"github.com/chetto1983/aura/internal/db"
+	"github.com/jackc/pgx/v5"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -85,21 +87,29 @@ LIMIT $3 OFFSET $4`
 // The caller (admin audit handler) has already validated identityID is a UUID (required
 // for the $2::uuid cast) and clamped limit/offset.
 func (s *PgAuditStore) ListActivityForIdentity(ctx context.Context, identityID string, limit, offset int) ([]AuditEvent, error) {
-	rows, err := s.pool.Query(ctx, auditActivityQuery, auditIdentityKeys(identityID), identityID, limit, offset)
-	if err != nil {
-		return nil, fmt.Errorf("audit activity for %s: %w", identityID, err)
-	}
-	defer rows.Close()
+	// Scoped to the SUBJECT of the read, not to the caller. The tool leg reaches
+	// aura.tool_invocations through its parent conversation, and since migration 0089 that
+	// join is RLS-filtered: on the caller's own identity an operator inspecting SOMEONE
+	// ELSE's activity would get their mcp/skill rows and silently lose every tool event.
+	// The authorization for this read is the route's capability gate; the identity here is
+	// the row filter, and it is already the query's own predicate.
 	out := make([]AuditEvent, 0, limit)
-	for rows.Next() {
-		var e AuditEvent
-		if err := rows.Scan(&e.Source, &e.Action, &e.Target, &e.Detail, &e.Correlation, &e.DurationMS, &e.CreatedAt); err != nil {
-			return nil, fmt.Errorf("scan audit event: %w", err)
+	if err := db.WithIdentityTxRaw(ctx, s.pool, identityID, func(tx pgx.Tx) error {
+		rows, qErr := tx.Query(ctx, auditActivityQuery, auditIdentityKeys(identityID), identityID, limit, offset)
+		if qErr != nil {
+			return qErr
 		}
-		out = append(out, e)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate audit events: %w", err)
+		defer rows.Close()
+		for rows.Next() {
+			var e AuditEvent
+			if sErr := rows.Scan(&e.Source, &e.Action, &e.Target, &e.Detail, &e.Correlation, &e.DurationMS, &e.CreatedAt); sErr != nil {
+				return fmt.Errorf("scan audit event: %w", sErr)
+			}
+			out = append(out, e)
+		}
+		return rows.Err()
+	}); err != nil {
+		return nil, fmt.Errorf("audit activity for %s: %w", identityID, err)
 	}
 	return out, nil
 }

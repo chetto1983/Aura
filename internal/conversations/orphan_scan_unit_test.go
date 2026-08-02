@@ -20,7 +20,6 @@ import (
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 )
 
 // TestRemoveOrphan_RemovesAndWarns proves removeOrphan deletes an existing dir and
@@ -159,46 +158,9 @@ func captureWarn(t *testing.T, fn func()) string {
 	return buf.String()
 }
 
-// TestConversationExists_Fake covers the three branches: unparseable id (→ false, no
-// error), a found row (→ true), pgx.ErrNoRows (→ false), and a non-ErrNoRows DB error.
-func TestConversationExists_Fake(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-
-	// Unparseable id is treated as a non-row (orphan) without erroring.
-	q := sqlc.New(&fakeDBTX{})
-	if exists, err := conversationExists(ctx, q, "not-a-uuid"); err != nil || exists {
-		t.Errorf("unparseable id: exists=%v err=%v (want false,nil)", exists, err)
-	}
-
-	// A found conversations row → exists.
-	_, idU := mustUUID(t)
-	_, identU := mustUUID(t)
-	qFound := sqlc.New(&fakeDBTX{queryRowVal: &fakeRow{
-		values: conversationRowValues(idU, identU, StatusActive, "m", true, "t"),
-	}})
-	id := uuid.Must(uuid.NewV7()).String()
-	if exists, err := conversationExists(ctx, qFound, id); err != nil || !exists {
-		t.Errorf("found row: exists=%v err=%v (want true,nil)", exists, err)
-	}
-
-	// ErrNoRows → does not exist (not an error).
-	qNone := sqlc.New(&fakeDBTX{queryRowVal: &fakeRow{scanErr: pgx.ErrNoRows}})
-	if exists, err := conversationExists(ctx, qNone, id); err != nil || exists {
-		t.Errorf("no row: exists=%v err=%v (want false,nil)", exists, err)
-	}
-
-	// A real DB failure surfaces as an error.
-	boom := errors.New("db down")
-	qErr := sqlc.New(&fakeDBTX{queryRowVal: &fakeRow{scanErr: boom}})
-	if _, err := conversationExists(ctx, qErr, id); !errors.Is(err, boom) {
-		t.Errorf("DB error must propagate: %v", err)
-	}
-}
-
-// TestScanConversationOrphans_Fake drives the dir-walk against a fake query surface:
-// a dir whose id has no DB row is removed; a dir with a non-id name is reconciled
-// away; a stray file is left alone; and a missing conversations root is a no-op.
+// TestScanConversationOrphans_Fake drives the dir-walk against an EMPTY owner map (no
+// conversation exists): a dir whose id owns no row is removed; a dir with a non-id name is
+// reconciled away; a stray file is left alone; and a missing conversations root is a no-op.
 func TestScanConversationOrphans_Fake(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -226,10 +188,9 @@ func TestScanConversationOrphans_Fake(t *testing.T) {
 		t.Fatalf("write stray: %v", err)
 	}
 
-	// The fake returns ErrNoRows for every existence lookup → every id-named dir is an
-	// orphan. (conversationExists treats an unparseable name as orphan without a query.)
-	q := sqlc.New(&fakeDBTX{queryRowVal: &fakeRow{scanErr: pgx.ErrNoRows}})
-	if err := scanConversationOrphans(ctx, q, runDir); err != nil {
+	// No conversation is owned by anyone → every id-named dir is an orphan. A name that is
+	// not a clean id never reaches the map lookup (validateID rejects it first).
+	if err := scanConversationOrphans(ctx, dirEntries(t, runDir), map[string]string{}, failingReconciler(t), runDir); err != nil {
 		t.Fatalf("scanConversationOrphans: %v", err)
 	}
 
@@ -244,10 +205,9 @@ func TestScanConversationOrphans_Fake(t *testing.T) {
 	}
 }
 
-// TestScanConversationOrphans_KeepsLive proves a dir whose id HAS a DB row survives.
-// A live dir now also runs the crash-orphan .content reconcile (F-040): the fake
-// scripts an empty ListSpilledSeqsForConversation (Query) alongside the existence
-// row (QueryRow), and the empty live dir reconciles to nothing removed.
+// TestScanConversationOrphans_KeepsLive proves a dir whose id IS owned survives, and that
+// the crash-orphan .content reconcile (F-040) is invoked for it with that owner — the walk
+// must never hand a live dir to a reconciler scoped to the wrong identity.
 func TestScanConversationOrphans_KeepsLive(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -259,17 +219,30 @@ func TestScanConversationOrphans_KeepsLive(t *testing.T) {
 		t.Fatalf("mkdir live: %v", err)
 	}
 
-	_, idU := mustUUID(t)
-	_, identU := mustUUID(t)
-	q := sqlc.New(&fakeDBTX{
-		queryRowVal: &fakeRow{values: conversationRowValues(idU, identU, StatusActive, "m", true, "t")},
-		queryRows:   &fakeRows{}, // reconcile: no referenced spilled seqs
-	})
-	if err := scanConversationOrphans(ctx, q, runDir); err != nil {
+	owner := uuid.Must(uuid.NewV7()).String()
+	var gotOwner, gotID string
+	reconcile := func(_ context.Context, o, _, convID string) error {
+		gotOwner, gotID = o, convID
+		return nil
+	}
+	if err := scanConversationOrphans(ctx, dirEntries(t, runDir), map[string]string{liveID: owner}, reconcile, runDir); err != nil {
 		t.Fatalf("scanConversationOrphans: %v", err)
 	}
 	if _, err := os.Stat(liveDir); err != nil {
 		t.Errorf("live conversation dir must survive: %v", err)
+	}
+	if gotOwner != owner || gotID != liveID {
+		t.Errorf("reconcile ran as (%s, %s), want (%s, %s)", gotOwner, gotID, owner, liveID)
+	}
+}
+
+// failingReconciler fails the test if the walk hands it a directory: every dir in the
+// orphan cases is unowned, so the reconcile path must not be reached at all.
+func failingReconciler(t *testing.T) sidecarReconciler {
+	t.Helper()
+	return func(_ context.Context, owner, dir, convID string) error {
+		t.Errorf("reconcile must not run for an orphan dir: owner=%s dir=%s id=%s", owner, dir, convID)
+		return nil
 	}
 }
 
@@ -367,26 +340,33 @@ func TestReconcileLiveConversationSidecars_DBErrorAborts(t *testing.T) {
 // TestScanConversationOrphans_MissingRootIsNoop: no conversations dir yet → no-op.
 func TestScanConversationOrphans_MissingRootIsNoop(t *testing.T) {
 	t.Parallel()
-	q := sqlc.New(&fakeDBTX{})
-	if err := scanConversationOrphans(context.Background(), q, t.TempDir()); err != nil {
+	if err := scanConversationOrphans(context.Background(), nil, map[string]string{}, failingReconciler(t), t.TempDir()); err != nil {
 		t.Errorf("missing conversations root must be a no-op, got %v", err)
 	}
 }
 
-// TestScanConversationOrphans_ExistenceDBError surfaces a real existence-lookup DB
-// failure as a wrapped error that aborts the scan.
-func TestScanConversationOrphans_ExistenceDBError(t *testing.T) {
+// TestScanConversationOrphans_ReconcileErrorAborts surfaces a reconcile failure as a
+// wrapped error that aborts the scan. It replaces the old existence-lookup-error case: the
+// per-directory existence probe is gone (it would answer "absent" for every conversation
+// once RLS fails closed, and RemoveAll every tenant's tree), so the only DB call left inside
+// the walk is the owner-scoped sidecar reconcile.
+func TestScanConversationOrphans_ReconcileErrorAborts(t *testing.T) {
 	t.Parallel()
 	runDir := t.TempDir()
 	convRoot := filepath.Join(runDir, "conversations")
-	dir := filepath.Join(convRoot, uuid.Must(uuid.NewV7()).String())
+	convID := uuid.Must(uuid.NewV7()).String()
+	dir := filepath.Join(convRoot, convID)
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	boom := errors.New("existence query failed")
-	q := sqlc.New(&fakeDBTX{queryRowVal: &fakeRow{scanErr: boom}})
-	if err := scanConversationOrphans(context.Background(), q, runDir); err == nil {
-		t.Error("scanConversationOrphans(existence DB error): want error")
+	boom := errors.New("referenced-seq query failed")
+	reconcile := func(context.Context, string, string, string) error { return boom }
+	owners := map[string]string{convID: uuid.Must(uuid.NewV7()).String()}
+	if err := scanConversationOrphans(context.Background(), dirEntries(t, runDir), owners, reconcile, runDir); !errors.Is(err, boom) {
+		t.Errorf("scanConversationOrphans(reconcile error) = %v, want %v", err, boom)
+	}
+	if _, err := os.Stat(dir); err != nil {
+		t.Errorf("an owned dir must survive a reconcile failure: %v", err)
 	}
 }
 
@@ -437,4 +417,15 @@ func TestInitEncoder_Idempotent(t *testing.T) {
 	if err := InitEncoder(); err != nil {
 		t.Errorf("InitEncoder (second call): %v", err)
 	}
+}
+
+// dirEntries reads the conversations dir the way ScanOrphans does, so the walk tests feed it
+// the same input the production caller does.
+func dirEntries(t *testing.T, runDir string) []os.DirEntry {
+	t.Helper()
+	entries, err := conversationDirEntries(runDir)
+	if err != nil {
+		t.Fatalf("conversationDirEntries(%q): %v", runDir, err)
+	}
+	return entries
 }

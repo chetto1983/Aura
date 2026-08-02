@@ -3,7 +3,6 @@
 package conversations
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -14,7 +13,7 @@ import (
 // serialized into conversation.json advance the same monotonic token used by the
 // delete reservation. A stale exporter therefore preserves the live row.
 func TestExportSnapshotVersionRejectsRenameAndMetadataRaces(t *testing.T) {
-	ctx := context.Background()
+	ctx := ownerCtx()
 	for _, tc := range []struct {
 		name   string
 		mutate func(*Store, string) error
@@ -63,7 +62,7 @@ func TestExportSnapshotVersionRejectsRenameAndMetadataRaces(t *testing.T) {
 // thread assets participate in the token and all snapshot writers are rejected
 // once the matching reservation commits.
 func TestExportSnapshotVersionCoversAssetsAndReservationFreezesWriters(t *testing.T) {
-	ctx := context.Background()
+	ctx := ownerCtx()
 	pool := migratedPool(t)
 	store := newStore(t, pool)
 	conversationID := newConversation(t, store)
@@ -82,7 +81,7 @@ func TestExportSnapshotVersionCoversAssetsAndReservationFreezesWriters(t *testin
 	if err != nil {
 		t.Fatalf("insert thread asset: %v", err)
 	}
-	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM aura.assets WHERE id=$1", assetID) })
+	t.Cleanup(func() { _, _ = pool.Exec(ownerCtx(), "DELETE FROM aura.assets WHERE id=$1", assetID) })
 	afterInsert, err := store.VersionForIdentity(ctx, conversationID, localID)
 	if err != nil || afterInsert <= before {
 		t.Fatalf("asset insert version before/after=%d/%d err=%v", before, afterInsert, err)
@@ -116,7 +115,7 @@ func TestExportSnapshotVersionCoversAssetsAndReservationFreezesWriters(t *testin
 }
 
 func TestExportDeleteLeasePreventsAdoptionAndReservationReleaseAfterTeardown(t *testing.T) {
-	ctx := context.Background()
+	ctx := ownerCtx()
 	store := newStore(t, migratedPool(t))
 	conversationID := newConversation(t, store)
 	version, err := store.VersionForIdentity(ctx, conversationID, localID)
@@ -148,7 +147,7 @@ func TestExportDeleteLeasePreventsAdoptionAndReservationReleaseAfterTeardown(t *
 }
 
 func TestExportDeleteRecoveryEligibilityAndCompletionObservation(t *testing.T) {
-	ctx := context.Background()
+	ctx := ownerCtx()
 	pool := migratedPool(t)
 	store := newStore(t, pool)
 	conversationID := newConversation(t, store)

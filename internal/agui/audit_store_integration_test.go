@@ -14,7 +14,6 @@
 package agui
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -29,11 +28,9 @@ import (
 func seedConversationForIdentity(t *testing.T, pool *pgxpool.Pool, identityID string) string {
 	t.Helper()
 	id := uuid.Must(uuid.NewV7()).String()
-	if _, err := pool.Exec(context.Background(),
+	seedAsOwner(t, pool, identityID,
 		"INSERT INTO aura.conversations (id, identity_id, model) VALUES ($1, $2, 'test-model')",
-		id, identityID); err != nil {
-		t.Fatalf("insert conversation for %s: %v", identityID, err)
-	}
+		id, identityID)
 	return id
 }
 
@@ -41,7 +38,7 @@ func seedConversationForIdentity(t *testing.T, pool *pgxpool.Pool, identityID st
 // proof for the admin audit read.
 func TestPgAuditStoreListActivityForIdentity(t *testing.T) {
 	pool := migratedPool(t)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	idA := uuid.Must(uuid.NewV7()).String()
 	idB := uuid.Must(uuid.NewV7()).String()

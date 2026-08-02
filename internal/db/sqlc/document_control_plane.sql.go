@@ -216,7 +216,7 @@ INSERT INTO aura.documents (
 ) VALUES (
     $1, $2, $3, $4, $5, $6
 )
-RETURNING id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, digest_tsv
+RETURNING id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, card, digest_tsv
 `
 
 type CreateDocumentParams struct {
@@ -251,6 +251,7 @@ func (q *Queries) CreateDocument(ctx context.Context, arg CreateDocumentParams) 
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.Digest,
+		&i.Card,
 		&i.DigestTsv,
 	)
 	return i, err
@@ -492,7 +493,7 @@ func (q *Queries) DeleteDocumentTags(ctx context.Context, documentID pgtype.UUID
 }
 
 const getDocument = `-- name: GetDocument :one
-SELECT id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, digest_tsv
+SELECT id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, card, digest_tsv
 FROM aura.documents
 WHERE id = $1
   AND identity_id = $2
@@ -520,6 +521,7 @@ func (q *Queries) GetDocument(ctx context.Context, arg GetDocumentParams) (AuraD
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.Digest,
+		&i.Card,
 		&i.DigestTsv,
 	)
 	return i, err
@@ -601,7 +603,7 @@ func (q *Queries) ListDocumentVersions(ctx context.Context, documentID pgtype.UU
 }
 
 const listDocuments = `-- name: ListDocuments :many
-SELECT id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, digest_tsv
+SELECT id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, card, digest_tsv
 FROM aura.documents
 WHERE identity_id = $1
   AND deleted_at IS NULL
@@ -654,6 +656,7 @@ func (q *Queries) ListDocuments(ctx context.Context, arg ListDocumentsParams) ([
 			&i.UpdatedAt,
 			&i.DeletedAt,
 			&i.Digest,
+			&i.Card,
 			&i.DigestTsv,
 		); err != nil {
 			return nil, err
@@ -818,7 +821,7 @@ SET status = $2,
     updated_at = now()
 WHERE id = $1
   AND deleted_at IS NULL
-RETURNING id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, digest_tsv
+RETURNING id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, card, digest_tsv
 `
 
 type SetDocumentStatusParams struct {
@@ -846,6 +849,7 @@ func (q *Queries) SetDocumentStatus(ctx context.Context, arg SetDocumentStatusPa
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.Digest,
+		&i.Card,
 		&i.DigestTsv,
 	)
 	return i, err
@@ -860,7 +864,7 @@ SET
 WHERE id = $1
   AND identity_id = $2
   AND deleted_at IS NULL
-RETURNING id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, digest_tsv
+RETURNING id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, card, digest_tsv
 `
 
 type SoftDeleteDocumentParams struct {
@@ -884,6 +888,7 @@ func (q *Queries) SoftDeleteDocument(ctx context.Context, arg SoftDeleteDocument
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.Digest,
+		&i.Card,
 		&i.DigestTsv,
 	)
 	return i, err
@@ -902,7 +907,7 @@ SET
 WHERE id = $1
   AND identity_id = $2
   AND deleted_at IS NULL
-RETURNING id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, digest_tsv
+RETURNING id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, card, digest_tsv
 `
 
 type UpdateDocumentParams struct {
@@ -941,6 +946,7 @@ func (q *Queries) UpdateDocument(ctx context.Context, arg UpdateDocumentParams) 
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.Digest,
+		&i.Card,
 		&i.DigestTsv,
 	)
 	return i, err
@@ -954,7 +960,7 @@ SET
 WHERE id = $1
   AND identity_id = $2
   AND deleted_at IS NULL
-RETURNING id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, digest_tsv
+RETURNING id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, card, digest_tsv
 `
 
 type UpdateDocumentTagsParams struct {
@@ -979,6 +985,7 @@ func (q *Queries) UpdateDocumentTags(ctx context.Context, arg UpdateDocumentTags
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.Digest,
+		&i.Card,
 		&i.DigestTsv,
 	)
 	return i, err

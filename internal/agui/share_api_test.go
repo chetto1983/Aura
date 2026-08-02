@@ -166,7 +166,7 @@ func seedOwnerAndConversation(t *testing.T, env *shareAPIEnv, turns []conversati
 func createShare(t *testing.T, env *shareAPIEnv, owner, convID, tier string, wantStatus int) shareLinkResponse {
 	t.Helper()
 	if tier == "public" {
-		if err := identity.New(env.pool).GrantCapability(context.Background(), owner, "share.public"); err != nil {
+		if err := identity.New(env.pool).GrantCapability(ownerCtx(), owner, "share.public"); err != nil {
 			t.Fatalf("grant share.public for createShare(tier=public): %v", err)
 		}
 	}
@@ -215,7 +215,7 @@ func assertInertAttachment(t *testing.T, rec *httptest.ResponseRecorder) {
 func assertAuditRow(t *testing.T, pool *pgxpool.Pool, shareID, action string) {
 	t.Helper()
 	var count int
-	if err := pool.QueryRow(context.Background(),
+	if err := pool.QueryRow(ownerCtx(),
 		"SELECT count(*) FROM aura.share_audit WHERE share_link_id = $1 AND action = $2",
 		uuid.MustParse(shareID), action).Scan(&count); err != nil {
 		t.Fatalf("count share_audit(%s): %v", action, err)
@@ -270,7 +270,7 @@ func TestShareCreateBodyCap(t *testing.T) {
 	if rec.Code == http.StatusCreated {
 		t.Fatalf("oversized create body was accepted (201) instead of rejected")
 	}
-	links, err := env.adapter.store.ListForConversation(context.Background(), convID, owner)
+	links, err := env.adapter.store.ListForConversation(ownerCtx(), convID, owner)
 	if err != nil {
 		t.Fatalf("list shares for conversation: %v", err)
 	}

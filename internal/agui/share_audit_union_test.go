@@ -12,7 +12,6 @@
 package agui
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -24,7 +23,7 @@ import (
 // PgAuditStore.ListActivityForIdentity with Source == "share" and the expected action/target.
 func TestAuditUnionIncludesShare(t *testing.T) {
 	pool := migratedPool(t)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	identityID := uuid.Must(uuid.NewV7()).String()
 	if _, err := pool.Exec(ctx,
@@ -33,15 +32,13 @@ func TestAuditUnionIncludesShare(t *testing.T) {
 		t.Fatalf("seed identity: %v", err)
 	}
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), "DELETE FROM aura.identities WHERE id = $1", identityID)
+		_, _ = pool.Exec(ownerCtx(), "DELETE FROM aura.identities WHERE id = $1", identityID)
 	})
 
 	convID := uuid.Must(uuid.NewV7()).String()
-	if _, err := pool.Exec(ctx,
+	seedAsOwner(t, pool, identityID,
 		"INSERT INTO aura.conversations (id, identity_id, model) VALUES ($1, $2, 'test-model')",
-		convID, identityID); err != nil {
-		t.Fatalf("seed conversation: %v", err)
-	}
+		convID, identityID)
 
 	shareLinkID := uuid.Must(uuid.NewV7()).String()
 	createdAt := time.Now().UTC().Truncate(time.Second)

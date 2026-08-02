@@ -45,7 +45,7 @@ func TestSearchConversationTurns_FakeStatusFilter(t *testing.T) {
 			},
 			convRow: conversationRowValues(conv, ident, StatusActive, "m", true, "t"),
 		}
-		s := &Store{q: sqlc.New(fake), runDir: t.TempDir(), turnCapBytes: 65536}
+		s := newFakeStore(&Store{q: sqlc.New(fake), runDir: t.TempDir(), turnCapBytes: 65536})
 		out, err := s.SearchConversationTurns(context.Background(), "query", 5)
 		if err != nil {
 			t.Fatalf("SearchConversationTurns: %v", err)
@@ -66,7 +66,7 @@ func TestSearchConversationTurns_FakeStatusFilter(t *testing.T) {
 			searchRows: [][]any{searchRowValues(conv, 1, "secret", 0.95)},
 			convRow:    conversationRowValues(conv, ident, StatusDeleted, "m", true, "t"),
 		}
-		s := &Store{q: sqlc.New(fake), runDir: t.TempDir(), turnCapBytes: 65536}
+		s := newFakeStore(&Store{q: sqlc.New(fake), runDir: t.TempDir(), turnCapBytes: 65536})
 		out, err := s.SearchConversationTurns(context.Background(), "query", 5)
 		if err != nil {
 			t.Fatalf("SearchConversationTurns: %v", err)
@@ -86,7 +86,7 @@ func TestSearchConversationTurns_FakeStatusLookupError(t *testing.T) {
 		searchRows:  [][]any{searchRowValues(conv, 1, "x", 0.5)},
 		convScanErr: errors.New("status load failed"),
 	}
-	s := &Store{q: sqlc.New(fake), runDir: t.TempDir(), turnCapBytes: 65536}
+	s := newFakeStore(&Store{q: sqlc.New(fake), runDir: t.TempDir(), turnCapBytes: 65536})
 	if _, err := s.SearchConversationTurns(context.Background(), "q", 5); err == nil {
 		t.Error("SearchConversationTurns(status lookup error): want error")
 	}
@@ -139,7 +139,7 @@ func TestDelete_FakeNoCleanerRemovesSidecarDir(t *testing.T) {
 	if err := os.MkdirAll(convDir, 0o750); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	s := &Store{q: sqlc.New(&fakeDBTX{}), runDir: runDir, turnCapBytes: 65536}
+	s := newFakeStore(&Store{q: sqlc.New(&fakeDBTX{}), runDir: runDir, turnCapBytes: 65536})
 	if err := s.Delete(context.Background(), id); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestDelete_FakeNoCleanerRemovesSidecarDir(t *testing.T) {
 func TestDelete_FakeDBError(t *testing.T) {
 	t.Parallel()
 	boom := errors.New("delete failed")
-	s := &Store{q: sqlc.New(&fakeDBTX{execErr: boom}), runDir: t.TempDir(), turnCapBytes: 65536}
+	s := newFakeStore(&Store{q: sqlc.New(&fakeDBTX{execErr: boom}), runDir: t.TempDir(), turnCapBytes: 65536})
 	if err := s.Delete(context.Background(), uuid.Must(uuid.NewV7()).String()); !errors.Is(err, boom) {
 		t.Errorf("Delete DB error must propagate: %v", err)
 	}
@@ -165,7 +165,7 @@ func TestDelete_FakeWithCleaner(t *testing.T) {
 	id := uuid.Must(uuid.NewV7()).String()
 
 	ok := &recordingCleaner{}
-	s := &Store{q: sqlc.New(&fakeDBTX{}), runDir: t.TempDir(), turnCapBytes: 65536, cleaner: ok}
+	s := newFakeStore(&Store{q: sqlc.New(&fakeDBTX{}), runDir: t.TempDir(), turnCapBytes: 65536, cleaner: ok})
 	if err := s.Delete(context.Background(), id); err != nil {
 		t.Fatalf("Delete(cleaner): %v", err)
 	}
@@ -174,7 +174,7 @@ func TestDelete_FakeWithCleaner(t *testing.T) {
 	}
 
 	boom := errors.New("purge failed")
-	bad := &Store{q: sqlc.New(&fakeDBTX{}), runDir: t.TempDir(), turnCapBytes: 65536, cleaner: &recordingCleaner{err: boom}}
+	bad := newFakeStore(&Store{q: sqlc.New(&fakeDBTX{}), runDir: t.TempDir(), turnCapBytes: 65536, cleaner: &recordingCleaner{err: boom}})
 	if err := bad.Delete(context.Background(), id); !errors.Is(err, boom) {
 		t.Errorf("cleaner failure must be reported: %v", err)
 	}
@@ -184,7 +184,7 @@ func TestDelete_FakeWithCleaner(t *testing.T) {
 // any DELETE or cleaner cascade.
 func TestDelete_FakeBadUUID(t *testing.T) {
 	t.Parallel()
-	s := &Store{q: sqlc.New(&fakeDBTX{}), runDir: t.TempDir(), turnCapBytes: 65536, cleaner: &recordingCleaner{}}
+	s := newFakeStore(&Store{q: sqlc.New(&fakeDBTX{}), runDir: t.TempDir(), turnCapBytes: 65536, cleaner: &recordingCleaner{}})
 	if err := s.Delete(context.Background(), "not-a-uuid"); err == nil {
 		t.Error("Delete(bad uuid): want error")
 	}

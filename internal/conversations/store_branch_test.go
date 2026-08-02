@@ -14,7 +14,6 @@
 package conversations
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
@@ -30,7 +29,7 @@ func chainCanonical(t *testing.T, s *Store, convID string, seqs ...int) {
 	t.Helper()
 	for _, seq := range seqs {
 		parent := seq - 1 // 0 for the root => NULL parent
-		if err := s.SetBranchPointers(context.Background(), convID, seq, CanonicalBranchID, parent); err != nil {
+		if err := s.SetBranchPointers(ownerCtx(), convID, seq, CanonicalBranchID, parent); err != nil {
 			t.Fatalf("chain canonical seq %d: %v", seq, err)
 		}
 	}
@@ -43,7 +42,7 @@ func TestBranchPath_DeterministicWalk(t *testing.T) {
 	pool := migratedPool(t)
 	s := newStore(t, pool)
 	convID := newConversation(t, s)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	turns := []AppendTurnParams{
 		{ConversationID: convID, Seq: 1, Role: llm.RoleSystem, Content: "you are aura"},
@@ -95,7 +94,7 @@ func TestBranchPath_NonBranchedByteIdenticalToLinear(t *testing.T) {
 	pool := migratedPool(t)
 	s := newStore(t, pool)
 	convID := newConversation(t, s)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	calls := []byte(`[{"id":"call_1","type":"function","function":{"name":"text_response","arguments":"{}"}}]`)
 	turns := []AppendTurnParams{
@@ -143,7 +142,7 @@ func TestBranchPath_ProtectedHeadByteIdenticalAcrossBranches(t *testing.T) {
 	pool := migratedPool(t)
 	s := newStore(t, pool)
 	convID := newConversation(t, s)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	// Shared head: seq 1 (system) -> seq 2 (user). Two assistant branches fork off the
 	// user turn (seq 2): branch A leaf = seq 3, branch B leaf = seq 4, both parent=2.
@@ -202,7 +201,7 @@ func TestBranchPath_EmptyLeafYieldsEmpty(t *testing.T) {
 	pool := migratedPool(t)
 	s := newStore(t, pool)
 	convID := newConversation(t, s)
-	ctx := context.Background()
+	ctx := ownerCtx()
 
 	leaf, err := s.CanonicalBranchLeaf(ctx, convID)
 	if err != nil {
