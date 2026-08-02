@@ -17,7 +17,8 @@ import (
 
 // MemoryEntitiesInput bounds the listing.
 type MemoryEntitiesInput struct {
-	Limit int `json:"limit,omitempty" jsonschema:"how many entities to return; defaults to 50"`
+	UserIdentifier string `json:"user_identifier" jsonschema:"the Aura identity whose memory this is; each identity has its own database and cannot reach another's"`
+	Limit          int    `json:"limit,omitempty" jsonschema:"how many entities to return; defaults to 50"`
 }
 
 // MemoryEntitiesOutput carries the names the memory knows.
@@ -25,7 +26,7 @@ type MemoryEntitiesOutput struct {
 	Entities []arcadedb.EntitySummary `json:"entities"`
 }
 
-func addMemoryEntitiesTool(server *mcp.Server, client *arcadedb.Client) {
+func addMemoryEntitiesTool(server *mcp.Server, tenants *tenants) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:  "memory_entities",
 		Title: "List entities",
@@ -37,6 +38,10 @@ func addMemoryEntitiesTool(server *mcp.Server, client *arcadedb.Client) {
 		_ *mcp.CallToolRequest,
 		in MemoryEntitiesInput,
 	) (*mcp.CallToolResult, MemoryEntitiesOutput, error) {
+		client, err := tenants.For(ctx, in.UserIdentifier)
+		if err != nil {
+			return nil, MemoryEntitiesOutput{}, err
+		}
 		entities, err := client.ListEntities(ctx, in.Limit)
 		if err != nil {
 			return nil, MemoryEntitiesOutput{}, fmt.Errorf("memory_entities: %w", err)
@@ -47,11 +52,12 @@ func addMemoryEntitiesTool(server *mcp.Server, client *arcadedb.Client) {
 
 // MemoryDigestInput shapes the index.
 type MemoryDigestInput struct {
-	Limit          int `json:"limit,omitempty" jsonschema:"how many entities to include; defaults to 50"`
-	FactsPerEntity int `json:"facts_per_entity,omitempty" jsonschema:"how many facts to show per entity; defaults to 3"`
+	UserIdentifier string `json:"user_identifier" jsonschema:"the Aura identity whose memory this is; each identity has its own database and cannot reach another's"`
+	Limit          int    `json:"limit,omitempty" jsonschema:"how many entities to include; defaults to 50"`
+	FactsPerEntity int    `json:"facts_per_entity,omitempty" jsonschema:"how many facts to show per entity; defaults to 3"`
 }
 
-func addMemoryDigestTool(server *mcp.Server, client *arcadedb.Client) {
+func addMemoryDigestTool(server *mcp.Server, tenants *tenants) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:  "memory_digest",
 		Title: "Memory index",
@@ -67,6 +73,10 @@ func addMemoryDigestTool(server *mcp.Server, client *arcadedb.Client) {
 		_ *mcp.CallToolRequest,
 		in MemoryDigestInput,
 	) (*mcp.CallToolResult, arcadedb.DigestResult, error) {
+		client, err := tenants.For(ctx, in.UserIdentifier)
+		if err != nil {
+			return nil, arcadedb.DigestResult{}, err
+		}
 		digest, err := client.Digest(ctx, in.Limit, in.FactsPerEntity)
 		if err != nil {
 			return nil, arcadedb.DigestResult{}, fmt.Errorf("memory_digest: %w", err)
@@ -77,11 +87,12 @@ func addMemoryDigestTool(server *mcp.Server, client *arcadedb.Client) {
 
 // MemoryMergeInput names the duplicate and the survivor.
 type MemoryMergeInput struct {
-	Source string `json:"source" jsonschema:"the duplicate name; it is removed"`
-	Target string `json:"target" jsonschema:"the name that survives and receives the facts"`
+	UserIdentifier string `json:"user_identifier" jsonschema:"the Aura identity whose memory this is; each identity has its own database and cannot reach another's"`
+	Source         string `json:"source" jsonschema:"the duplicate name; it is removed"`
+	Target         string `json:"target" jsonschema:"the name that survives and receives the facts"`
 }
 
-func addMemoryMergeTool(server *mcp.Server, client *arcadedb.Client) {
+func addMemoryMergeTool(server *mcp.Server, tenants *tenants) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:  "memory_merge_entities",
 		Title: "Merge two entities",
@@ -99,6 +110,10 @@ func addMemoryMergeTool(server *mcp.Server, client *arcadedb.Client) {
 		_ *mcp.CallToolRequest,
 		in MemoryMergeInput,
 	) (*mcp.CallToolResult, arcadedb.MergeResult, error) {
+		client, err := tenants.For(ctx, in.UserIdentifier)
+		if err != nil {
+			return nil, arcadedb.MergeResult{}, err
+		}
 		result, err := client.MergeEntities(ctx, in.Source, in.Target)
 		if err != nil {
 			return nil, arcadedb.MergeResult{}, fmt.Errorf("memory_merge_entities: %w", err)

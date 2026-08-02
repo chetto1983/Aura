@@ -205,8 +205,19 @@ func TestDotEnvTemplateHygiene(t *testing.T) {
 		"AURA_ACCESS_TOKEN=",
 		"AURA_AGENT_MEMORY_MCP_PORT=",
 		"OPENROUTER_API_KEY=",
-		"AURA_EMBED_HF_REPO=",
-		"AURA_EMBED_HF_FILE=",
+		// The embed sidecar loads a LOCAL gguf now: it has no egress, and a first
+		// boot that had to fetch one from HuggingFace restart-looped and took
+		// memory down with it. AURA_EMBED_HF_REPO/HF_FILE have no runtime reader —
+		// this list was the only thing keeping them in the template, while
+		// container_artifacts_test.go already required the replacement, so the two
+		// contracts contradicted each other.
+		"AURA_EMBED_MODEL_PATH=",
+		// The three ArcadeDB secrets compose fail-fasts on. compose interpolates
+		// the whole file before selecting a service, so a template missing one of
+		// them aborts every `docker compose` invocation an operator makes.
+		"ARCADEDB_PASSWORD=",
+		"ARCADEDB_APP_PASSWORD=",
+		"AURA_ARCADEDB_TENANT_SECRET=",
 		"AURA_LLM_STREAM_IDLE_TIMEOUT_SEC=",
 		"AURA_MODEL_CONTEXT_WINDOW=",
 		"AURA_COMPLETION_GATE=",

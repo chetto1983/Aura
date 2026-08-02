@@ -313,6 +313,17 @@ func (i *runtimeDocumentIngestor) IngestPath(ctx context.Context, req documents.
 	svc := newDocumentIngestService(documentServiceDeps{
 		cfg: i.cfg, pool: i.pool, graph: mcp, maxBytes: i.MaxBytes,
 	})
+	// The catalog row is this composition's job, for the same reason the CLI's is
+	// (see newDocumentCLIService): an asset upload gets one later from its version
+	// recorder, and a local file has no recorder. This ingestor serves BOTH the
+	// document_index tool and channel ingestion of a path, neither of which has one.
+	//
+	// Without it nothing writes to aura.documents, and document_search reads only
+	// that table — so a file the agent indexed was invisible to the tool whose
+	// description promises it is now searchable, and document_open on the returned
+	// id failed with "not catalogued". Latent until the library replaced chunk
+	// retrieval; a live break the moment it did.
+	svc.Catalog = documents.NewPostgresCatalogStore(i.pool)
 	return svc.IngestPath(ctx, req, path)
 }
 

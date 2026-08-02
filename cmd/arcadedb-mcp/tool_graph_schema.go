@@ -6,8 +6,6 @@ import (
 	"sort"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-
-	"github.com/chetto1983/aura/internal/arcadedb"
 )
 
 // schemaStatement reads ArcadeDB's schema pseudo-type. `records` is the live row
@@ -18,7 +16,11 @@ const schemaStatement = "SELECT name, type, records, properties, indexes FROM sc
 // GraphSchemaInput is deliberately empty: the schema of the connected database
 // is the whole answer, and taking a database name here would let a caller read
 // across tenants.
-type GraphSchemaInput struct{}
+// GraphSchemaInput carries only the identity: the schema is per tenant because
+// the database is.
+type GraphSchemaInput struct {
+	UserIdentifier string `json:"user_identifier" jsonschema:"the Aura identity whose memory this is; each identity has its own database and cannot reach another's"`
+}
 
 // GraphSchemaType is one vertex, edge or document type.
 type GraphSchemaType struct {
@@ -37,7 +39,7 @@ type GraphSchemaOutput struct {
 	Documents []GraphSchemaType `json:"documents,omitempty"`
 }
 
-func addGraphSchemaTool(server *mcp.Server, client *arcadedb.Client) {
+func addGraphSchemaTool(server *mcp.Server, tenants *tenants) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:  "graph_schema",
 		Title: "Graph schema",
@@ -45,17 +47,21 @@ func addGraphSchemaTool(server *mcp.Server, client *arcadedb.Client) {
 			"properties, indexes and live record counts. Call this before writing a " +
 			"query so the type and property names are the real ones.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
-	}, graphSchemaHandler(client))
+	}, graphSchemaHandler(tenants))
 }
 
 func graphSchemaHandler(
-	client *arcadedb.Client,
+	tenants *tenants,
 ) mcp.ToolHandlerFor[GraphSchemaInput, GraphSchemaOutput] {
 	return func(
 		ctx context.Context,
 		_ *mcp.CallToolRequest,
-		_ GraphSchemaInput,
+		in GraphSchemaInput,
 	) (*mcp.CallToolResult, GraphSchemaOutput, error) {
+		client, err := tenants.For(ctx, in.UserIdentifier)
+		if err != nil {
+			return nil, GraphSchemaOutput{}, err
+		}
 		rows, err := client.Query(ctx, schemaStatement, nil)
 		if err != nil {
 			return nil, GraphSchemaOutput{}, fmt.Errorf("graph_schema: %w", err)

@@ -36,12 +36,22 @@ var errHTTPSessionExpired = errors.New("mcp http session expired")
 // source/trust. Its zero value is the dev-permissive posture, while the
 // scheme/cloud-metadata barrier remains unconditional.
 type HTTPConfig struct {
-	URL                  string
-	Headers              map[string]string
-	BearerToken          string
-	BearerTokenSource    func(context.Context) (string, error)
+	URL               string
+	Headers           map[string]string
+	BearerToken       string
+	BearerTokenSource func(context.Context) (string, error)
+	Client            *http.Client
+	// ToolIdentityArgument names the argument every tool call on this server MUST
+	// carry, non-empty. It is a fail-closed guard at the TRANSPORT: a call without
+	// it never reaches the network, so a caller that bypasses the bridge's
+	// schema-driven injection — a readiness probe building its map literally, any
+	// future direct caller — cannot reach a per-identity server unstamped.
+	//
+	// It was removed once, when the memory server's tools did not declare the
+	// argument and injecting it failed every call. The right fix was to make the
+	// tools declare it, not to drop the guard: without it the only thing stamping
+	// identity is convention, and identity is what selects whose data is read.
 	ToolIdentityArgument string
-	Client               *http.Client
 	EgressPolicy         EgressPolicy
 }
 
@@ -54,10 +64,10 @@ type HTTPClient struct {
 	headers         map[string]string
 	bearerToken     string
 	bearerSource    func(context.Context) (string, error)
-	identityArg     string
 	client          *http.Client
 	sessionID       string
 	protocolVersion string
+	identityArg     string
 	gate            sessionGate
 	closeOnce       sync.Once
 	closeErr        error
@@ -95,8 +105,8 @@ func OpenHTTP(ctx context.Context, name string, cfg HTTPConfig) (*HTTPClient, er
 		headers:         cfg.Headers,
 		bearerToken:     cfg.BearerToken,
 		bearerSource:    cfg.BearerTokenSource,
-		identityArg:     strings.TrimSpace(cfg.ToolIdentityArgument),
 		client:          httpClient,
+		identityArg:     strings.TrimSpace(cfg.ToolIdentityArgument),
 		protocolVersion: httpProtocolVersion,
 	}
 	if err := c.initialize(ctx); err != nil {
@@ -174,19 +184,14 @@ func (c *HTTPClient) CallTool(ctx context.Context, name string, args map[string]
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
+	// Fail closed BEFORE the network: a per-identity server must never be asked a
+	// question that does not say whose data it is about.
 	if c.identityArg != "" {
-		rawIdentity, ok := args[c.identityArg]
-		identity, stringOK := rawIdentity.(string)
-		identity = strings.TrimSpace(identity)
-		if !ok || !stringOK || identity == "" {
+		identity, _ := args[c.identityArg].(string)
+		if strings.TrimSpace(identity) == "" {
 			return "", fmt.Errorf(
-				"mcp %q: tool %q requires non-empty %s",
-				c.name,
-				name,
-				c.identityArg,
-			)
+				"mcp %q: tool %q requires a non-empty %s", c.name, name, c.identityArg)
 		}
-		ctx = withBearerSubject(ctx, identity)
 	}
 	callCtx, release, err := c.gate.acquire(ctx)
 	if err != nil {

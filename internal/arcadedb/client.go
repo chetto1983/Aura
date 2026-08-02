@@ -17,6 +17,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -47,6 +48,9 @@ type Config struct {
 type Client struct {
 	queryURL   string
 	commandURL string
+	// serverURL is the database-lifecycle endpoint: create and drop live at the
+	// SERVER, not under a database that may not exist yet.
+	serverURL  string
 	authHeader string
 	http       *http.Client
 	// embedder is optional: with none, memory retrieval is the lexical leg alone,
@@ -101,6 +105,7 @@ func New(cfg Config) (*Client, error) {
 	return &Client{
 		queryURL:   base + "/api/v1/query/" + url.PathEscape(database),
 		commandURL: base + "/api/v1/command/" + url.PathEscape(database),
+		serverURL:  base + "/api/v1/server",
 		authHeader: "Basic " + credentials,
 		http:       &http.Client{Timeout: timeout},
 	}, nil
@@ -218,4 +223,163 @@ func (c *Client) WithEmbedder(e Embedder) *Client {
 		c.embedder = e
 	}
 	return c
+}
+
+// CreateDatabase provisions one database through the SERVER endpoint, which is
+// where database lifecycle lives — the per-database command endpoint cannot make
+// one that does not exist yet. It needs a credential with server rights, so this
+// is the one call the memory sidecar makes as the admin user rather than as the
+// tenant.
+func (c *Client) CreateDatabase(ctx context.Context, name string) ([]map[string]any, error) {
+	return c.serverCommand(ctx, "create database "+name)
+}
+
+// DropDatabase removes one database and everything in it. It is what
+// "purge this identity's memory" means when memory is one database per identity:
+// exact, and with nothing left to sweep.
+func (c *Client) DropDatabase(ctx context.Context, name string) ([]map[string]any, error) {
+	return c.serverCommand(ctx, "drop database "+name)
+}
+
+// serverCommand posts to the server endpoint, whose payload is {"command": …} —
+// not the {"language", "command", "params"} shape every database statement uses.
+func (c *Client) serverCommand(ctx context.Context, command string) ([]map[string]any, error) {
+	body, err := json.Marshal(map[string]any{"command": command})
+	if err != nil {
+		return nil, fmt.Errorf("arcadedb: encode server command: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.serverURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("arcadedb: build server request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", c.authHeader)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("arcadedb: server request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, decodeServerError(resp)
+	}
+	return nil, nil
+}
+
+// CreateUser provisions a server user scoped to the named databases. The
+// databases map is the ONLY way to set that scope: ArcadeDB has no command to
+// widen an existing user's access (`update user` is not a server command, and
+// `ALTER USER` only changes a password), so a user is created with the databases
+// it will ever reach.
+func (c *Client) CreateUser(ctx context.Context, name, password string, databases map[string][]string) error {
+	payload, err := json.Marshal(map[string]any{
+		"name": name, "password": password, "databases": databases,
+	})
+	if err != nil {
+		return fmt.Errorf("arcadedb: encode user: %w", err)
+	}
+	_, err = c.serverCommand(ctx, "create user "+string(payload))
+	return err
+}
+
+// DropUser removes a server user. Paired with DropDatabase it is the whole of
+// "forget this person": the data and the only credential that could read it.
+func (c *Client) DropUser(ctx context.Context, name string) error {
+	_, err := c.serverCommand(ctx, "drop user "+name)
+	return err
+}
+
+// minSecureVersion is the first ArcadeDB release that authorizes a database
+// created at runtime.
+//
+// CVE-2026-44221 (CVSS 9.0, fixed in 26.4.2) was two defects: an uninitialized
+// fileAccessMap treated as permissive, and — the one that matters here —
+// ArcadeDBServer.createDatabase() omitting the security factory, "disabling
+// record-level authorization for newly created databases". Aura's memory creates
+// a database per identity AT RUNTIME and rests its entire isolation on the server
+// refusing a credential scoped elsewhere. On an affected version it would not
+// refuse, and nothing would say so.
+//
+// So the pin in compose.yaml is not enough: a downgrade must be a refusal, not a
+// silent loss of isolation.
+var minSecureVersion = [3]int{26, 4, 2}
+
+// ServerVersion reports the running server's version string.
+func (c *Client) ServerVersion(ctx context.Context) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.serverURL+"?mode=basic", nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", c.authHeader)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("arcadedb: server version: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return "", decodeServerError(resp)
+	}
+	var decoded struct {
+		Version string `json:"version"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+		return "", fmt.Errorf("arcadedb: decode server version: %w", err)
+	}
+	return decoded.Version, nil
+}
+
+// VerifySecureVersion refuses a server old enough to have CVE-2026-44221.
+func (c *Client) VerifySecureVersion(ctx context.Context) error {
+	raw, err := c.ServerVersion(ctx)
+	if err != nil {
+		return err
+	}
+	version, err := parseVersion(raw)
+	if err != nil {
+		return fmt.Errorf("arcadedb: unreadable server version %q: %w", raw, err)
+	}
+	if version.Less(minSecureVersion) {
+		return fmt.Errorf(
+			"arcadedb %s is affected by CVE-2026-44221: a database created at runtime is "+
+				"left unauthorized, which is exactly what per-identity memory relies on. "+
+				"Upgrade to %d.%d.%d or later",
+			raw, minSecureVersion[0], minSecureVersion[1], minSecureVersion[2])
+	}
+	return nil
+}
+
+// version is major/minor/patch. ArcadeDB reports "26.7.3 (build …)" and tags a
+// hotfix as "26.7.3-hotfix", so both the build suffix and a pre-release suffix
+// have to fall away before comparison.
+type version [3]int
+
+func (v version) Less(other [3]int) bool {
+	for i := range v {
+		if v[i] != other[i] {
+			return v[i] < other[i]
+		}
+	}
+	return false
+}
+
+func parseVersion(raw string) (version, error) {
+	field := strings.TrimSpace(raw)
+	if i := strings.IndexAny(field, " ("); i >= 0 {
+		field = field[:i]
+	}
+	if i := strings.IndexAny(field, "-+"); i >= 0 {
+		field = field[:i]
+	}
+	parts := strings.Split(field, ".")
+	if len(parts) < 3 {
+		return version{}, fmt.Errorf("want major.minor.patch, got %q", field)
+	}
+	var out version
+	for i := range out {
+		n, err := strconv.Atoi(parts[i])
+		if err != nil {
+			return version{}, fmt.Errorf("component %d of %q: %w", i, field, err)
+		}
+		out[i] = n
+	}
+	return out, nil
 }

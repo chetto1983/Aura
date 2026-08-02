@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 )
 
 // A digest answers one question — WHICH file is this — and deliberately not
@@ -196,14 +197,24 @@ type DigestHit struct {
 	Tags       []string `json:"tags,omitempty"`
 	Digest     string   `json:"digest"`
 	Rank       float64  `json:"rank"`
+	// UpdatedAt breaks a tie. It is not decoration: a BLANK query produces the
+	// empty tsquery, so every row ranks 0.0 and the whole page is a tie. Ordering
+	// those by title made "the file I just uploaded" return the alphabetically
+	// first of the newest eight — the one question a library must get right.
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// SortDigestHits orders by rank descending, then title, so a tie is stable
-// rather than whatever order the database happened to return.
+// SortDigestHits orders by rank descending, then NEWEST FIRST, then title. It
+// mirrors the SQL's own `ORDER BY rank DESC, updated_at DESC` — this function
+// exists only so a caller assembling hits from elsewhere gets the same order, and
+// it must not contradict the statement it mirrors.
 func SortDigestHits(hits []DigestHit) {
 	sort.SliceStable(hits, func(i, j int) bool {
 		if hits[i].Rank != hits[j].Rank {
 			return hits[i].Rank > hits[j].Rank
+		}
+		if !hits[i].UpdatedAt.Equal(hits[j].UpdatedAt) {
+			return hits[i].UpdatedAt.After(hits[j].UpdatedAt)
 		}
 		return hits[i].Title < hits[j].Title
 	})

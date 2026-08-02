@@ -92,8 +92,12 @@ func (s *PostgresCatalogStore) SearchDigests(
 			Tags:       append([]string(nil), row.Tags...),
 			Digest:     row.Digest,
 			Rank:       float64(row.Rank),
+			UpdatedAt:  row.UpdatedAt.Time,
 		})
 	}
+	// The SQL already returns them in order. This re-sort exists so a caller that
+	// merges hits from more than one source lands on the same order — it must
+	// therefore agree with the statement, not quietly re-alphabetize it.
 	SortDigestHits(hits)
 	return hits, nil
 }

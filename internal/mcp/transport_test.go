@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -166,5 +167,67 @@ func TestOpenServerRejectsMixedTransportBeforeAnyDispatch(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "both url and command") {
 		t.Fatalf("OpenServer(mixed) err = %v, want the Classify rejection message (proves stdio Open was never reached)", err)
+	}
+}
+
+// The guard must be armed by the REAL constructor, not by a struct literal.
+// It was restored once as a field, a check and a test that built HTTPClient
+// directly — all three green while OpenServer set nothing, so the transport
+// asserted a property it did not hold. That is the failure this test exists for.
+func TestOpenServerArmsTheIdentityGuardForMemory(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18","capabilities":{"tools":{}},"serverInfo":{"name":"probe","version":"1"}}}`)
+	}))
+	defer srv.Close()
+
+	transport, err := OpenServer(context.Background(), "memory", ManagedServer{
+		Type:   ServerTypeStreamableHTTP,
+		URL:    srv.URL + "/mcp/",
+		Source: SourceRecipeMemory,
+		Trust:  ManagedTrust{Class: TrustTrustedRecipe},
+	})
+	if err != nil {
+		t.Fatalf("OpenServer: %v", err)
+	}
+	defer func() { _ = transport.Close() }()
+
+	client, ok := transport.(*HTTPClient)
+	if !ok {
+		t.Fatalf("transport = %T, want *HTTPClient", transport)
+	}
+	if client.identityArg != "user_identifier" {
+		t.Fatalf("identityArg = %q; the memory recipe opened with NO identity guard, "+
+			"so any caller can name any identity's database", client.identityArg)
+	}
+	// And it must actually refuse, through the real constructor.
+	if _, err := client.CallTool(context.Background(), "memory_search",
+		map[string]any{"query": "x"}); err == nil {
+		t.Fatal("an unstamped call was accepted by a server opened as the memory recipe")
+	}
+}
+
+// A single-principal sibling must NOT get the guard: its tools declare no
+// identity argument, so arming it would fail every call.
+func TestOpenServerLeavesSinglePrincipalRecipesUnguarded(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18","capabilities":{"tools":{}},"serverInfo":{"name":"probe","version":"1"}}}`)
+	}))
+	defer srv.Close()
+
+	transport, err := OpenServer(context.Background(), "calendar", ManagedServer{
+		Type:   ServerTypeStreamableHTTP,
+		URL:    srv.URL + "/",
+		Source: "recipe:calendar",
+		Trust:  ManagedTrust{Class: TrustTrustedRecipe},
+	})
+	if err != nil {
+		t.Fatalf("OpenServer: %v", err)
+	}
+	defer func() { _ = transport.Close() }()
+	if client, ok := transport.(*HTTPClient); ok && client.identityArg != "" {
+		t.Fatalf("calendar armed the identity guard (%q); its tools declare no such argument",
+			client.identityArg)
 	}
 }

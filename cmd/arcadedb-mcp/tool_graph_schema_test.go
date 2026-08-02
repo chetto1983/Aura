@@ -43,7 +43,7 @@ func schemaClient(t *testing.T, status int, body string) *arcadedb.Client {
 
 func callSchema(t *testing.T, client *arcadedb.Client) (GraphSchemaOutput, error) {
 	t.Helper()
-	_, out, err := graphSchemaHandler(client)(context.Background(), nil, GraphSchemaInput{})
+	_, out, err := graphSchemaHandler(singleTenant(t, client))(context.Background(), nil, GraphSchemaInput{UserIdentifier: testIdentity})
 	return out, err
 }
 
@@ -175,7 +175,7 @@ func TestGraphSchemaWrapsDatabaseFailure(t *testing.T) {
 
 func TestNewServerRegistersTheTools(t *testing.T) {
 	client := schemaClient(t, http.StatusOK, schemaRows)
-	if server := newServer(client, time.Now); server == nil {
+	if server := newServer(singleTenant(t, client), time.Now); server == nil {
 		t.Fatal("newServer returned nil")
 	}
 }

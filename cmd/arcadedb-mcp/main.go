@@ -52,10 +52,9 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	client, err := arcadedb.New(cfg)
-	if err != nil {
-		return err
-	}
+	// cfg is the TENANT template: the resolver overrides User/Password/Database per
+	// identity. No client is opened against it here, because there is no shared
+	// database left to open.
 	// The dense leg is OPTIONAL by construction: NewSidecarEmbedder returns nil
 	// for an empty AURA_EMBED_BASE_URL, and a nil embedder leaves retrieval
 	// lexical. So an operator with no embedding sidecar gets the behaviour that
@@ -68,21 +67,48 @@ func run(logger *slog.Logger) error {
 		0,
 	)
 	if embedder != nil {
-		client = client.WithEmbedder(embedder)
+		// NOT attached to `client`: that one only ever runs DDL as the admin, and
+		// the per-tenant clients the resolver builds get the embedder themselves.
 		logger.Info("dense retrieval enabled", "embed_url", os.Getenv("AURA_EMBED_BASE_URL"))
 	} else {
 		logger.Info("dense retrieval disabled: no AURA_EMBED_BASE_URL; retrieval is lexical only")
 	}
-	// The schema is created at boot, not on first write: a tool call that has
-	// to run DDL first would pay for it in its own latency and race a sibling.
-	schemaCtx, cancelSchema := context.WithTimeout(context.Background(), defaultShutdownTimeout)
-	err = client.EnsureMemorySchema(schemaCtx)
-	cancelSchema()
-	if err != nil {
-		return err
-	}
+	// The schema is NOT created at boot any more: there is no single database to
+	// create it in. Each tenant's database is provisioned on its first call, by
+	// tenants.For, which is also the only place that needs the admin credential.
 
-	server := newServer(client, time.Now)
+	// One database per identity. The admin client exists only to CREATE them; every
+	// read and write goes through a client bound to a single tenant's database, so
+	// isolation is the server's job and not a WHERE clause we must never forget.
+	// TWO credentials, the same split Postgres already has between AURA_DB_URL and
+	// AURA_DB_MIGRATE_URL: the tenant credential reads and writes one database, and
+	// a separate admin credential does DDL. ArcadeDB enforces it — "Only root user
+	// is authorized to execute server commands" is what the tenant user gets if it
+	// tries to create a database, which is the refusal you want.
+	//
+	// No admin credential is a supported configuration: databases must then be
+	// pre-provisioned, and a call for an unknown identity fails rather than
+	// silently creating one.
+	var admin *arcadedb.Client
+	if adminCfg, ok := adminConfigFromEnv(cfg); ok {
+		if adminClient, aerr := arcadedb.New(adminCfg); aerr == nil {
+			admin = adminClient
+			logger.Info("database provisioning enabled", "admin_user", adminCfg.User)
+		} else {
+			logger.Warn("admin credential unusable; databases must be pre-provisioned", "error", aerr)
+		}
+	} else {
+		logger.Info("no admin credential; databases must be pre-provisioned")
+		admin = nil
+	}
+	credentials, cerr := newTenantCredentials()
+	if cerr != nil {
+		// Fail CLOSED at boot. Falling back to one shared credential would leave
+		// every identity reading the same memory, which is the failure this whole
+		// design exists to prevent, and it would do it silently.
+		return fmt.Errorf("memory isolation: %w", cerr)
+	}
+	server := newServer(newTenants(cfg, admin, embedder, credentials), time.Now)
 	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)
 
 	mux := http.NewServeMux()
@@ -131,20 +157,20 @@ func run(logger *slog.Logger) error {
 
 // newServer builds the MCP server and registers every tool. One line per tool,
 // so the surface is readable in one place.
-func newServer(client *arcadedb.Client, now clock) *mcp.Server {
+func newServer(tenants *tenants, now clock) *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    serverName,
 		Title:   "Aura ArcadeDB",
 		Version: serverVersion,
 	}, nil)
-	addGraphSchemaTool(server, client)
-	addMemoryUpsertFactTool(server, client, now)
-	addMemoryFactsAboutTool(server, client)
-	addMemorySearchTool(server, client)
-	addMemoryForgetTool(server, client)
-	addMemoryEntitiesTool(server, client)
-	addMemoryDigestTool(server, client)
-	addMemoryMergeTool(server, client)
+	addGraphSchemaTool(server, tenants)
+	addMemoryUpsertFactTool(server, tenants, now)
+	addMemoryFactsAboutTool(server, tenants)
+	addMemorySearchTool(server, tenants)
+	addMemoryForgetTool(server, tenants)
+	addMemoryEntitiesTool(server, tenants)
+	addMemoryDigestTool(server, tenants)
+	addMemoryMergeTool(server, tenants)
 	// Documents are NOT here. They live as bytes in Garage with a catalog row in
 	// Postgres, found by document_search and handed over whole by document_open —
 	// measured, chunk retrieval answered every aggregate at 0% for any k. Mounting
@@ -180,4 +206,19 @@ func configFromEnv() (arcadedb.Config, string, error) {
 		host = "0.0.0.0"
 	}
 	return cfg, host + ":" + strconv.Itoa(port), nil
+}
+
+// adminConfigFromEnv reads the DDL credential. It is deliberately separate from
+// the tenant one: the whole point of the split is that the credential doing the
+// reading cannot create or drop a database.
+func adminConfigFromEnv(base arcadedb.Config) (arcadedb.Config, bool) {
+	user := strings.TrimSpace(os.Getenv("ARCADEDB_ADMIN_USER"))
+	password := os.Getenv("ARCADEDB_ADMIN_PASSWORD")
+	if user == "" || strings.TrimSpace(password) == "" {
+		return arcadedb.Config{}, false
+	}
+	admin := base
+	admin.User = user
+	admin.Password = password
+	return admin, true
 }

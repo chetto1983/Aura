@@ -184,14 +184,18 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 }
 
 // serveReadinessProbes builds the /readyz probe set over the daemon's required
-// backends (O-05/AP-14): Postgres (the open pool's Ping) and Neo4j (a bounded
-// native-driver connectivity dial). The daemon holds no long-lived graph client —
-// the mcp-neo4j-cypher subprocess is opened only behind the reasoning-learner gate
-// — so the Neo4j probe dials from cfg.Neo4j each call; the shared global deadline
-// in the agui handler bounds both probes. A dependency handle that is absent (nil pool)
-// is omitted rather than reported as a false failure.
+// backends (O-05/AP-14): Postgres (the open pool's Ping) and memory (a functional
+// search through the mounted MCP). The shared global deadline in the agui handler
+// bounds them. A dependency handle that is absent (nil pool) is omitted rather
+// than reported as a false failure.
+//
+// The Neo4j probe is gone with the store. It dialled cfg.Neo4j on every call and,
+// once memory moved to ArcadeDB and documents stopped indexing into a graph,
+// nothing behind it was load-bearing — but it kept timing out and holding /readyz
+// at 503, which took the cockpit down over a dependency the daemon no longer
+// uses.
 func serveReadinessProbes(chat *chatEnv) []agui.ReadinessProbe {
-	probes := make([]agui.ReadinessProbe, 0, 3)
+	probes := make([]agui.ReadinessProbe, 0, 2)
 	if chat.pool != nil {
 		probes = append(probes, agui.ReadinessProbe{
 			Name:  "postgres",
@@ -199,11 +203,6 @@ func serveReadinessProbes(chat *chatEnv) []agui.ReadinessProbe {
 			Check: func(ctx context.Context) error { return chat.pool.Ping(ctx) },
 		})
 	}
-	probes = append(probes, agui.ReadinessProbe{
-		Name:  "neo4j",
-		Code:  readiness.CodeNeo4jUnavailable,
-		Check: func(ctx context.Context) error { return knowledge.VerifyConnectivity(ctx, &chat.cfg.Neo4j) },
-	})
 	if probe, required := memoryReadinessProbe(chat); required {
 		probes = append(probes, probe)
 	}

@@ -15,12 +15,13 @@ import (
 // identity. At least one of source_run_id, entity or subject is required: an
 // empty filter is refused, not read as "all".
 type MemoryForgetInput struct {
-	SourceRunID string `json:"source_run_id,omitempty" jsonschema:"remove everything one run wrote; this is the undo"`
-	Entity      string `json:"entity,omitempty" jsonschema:"remove every fact touching this entity, in either direction, and the entity itself"`
-	Subject     string `json:"subject,omitempty" jsonschema:"remove facts with this subject"`
-	Predicate   string `json:"predicate,omitempty" jsonschema:"narrow to one relation; cannot be used alone"`
-	Object      string `json:"object,omitempty" jsonschema:"narrow to one object; cannot be used alone"`
-	DryRun      bool   `json:"dry_run,omitempty" jsonschema:"count what would be removed without removing it"`
+	UserIdentifier string `json:"user_identifier" jsonschema:"the Aura identity whose memory this is; each identity has its own database and cannot reach another's"`
+	SourceRunID    string `json:"source_run_id,omitempty" jsonschema:"remove everything one run wrote; this is the undo"`
+	Entity         string `json:"entity,omitempty" jsonschema:"remove every fact touching this entity, in either direction, and the entity itself"`
+	Subject        string `json:"subject,omitempty" jsonschema:"remove facts with this subject"`
+	Predicate      string `json:"predicate,omitempty" jsonschema:"narrow to one relation; cannot be used alone"`
+	Object         string `json:"object,omitempty" jsonschema:"narrow to one object; cannot be used alone"`
+	DryRun         bool   `json:"dry_run,omitempty" jsonschema:"count what would be removed without removing it"`
 	// KeepOrphanEntities is negative because pruning is the useful default: an
 	// entity whose last fact just went is a name with nothing attached to it.
 	KeepOrphanEntities bool `json:"keep_orphan_entities,omitempty" jsonschema:"keep entities this removal strips of their last fact"`
@@ -33,7 +34,7 @@ type MemoryForgetOutput struct {
 	DryRun   bool `json:"dry_run,omitempty" jsonschema:"true when nothing was actually removed"`
 }
 
-func addMemoryForgetTool(server *mcp.Server, client *arcadedb.Client) {
+func addMemoryForgetTool(server *mcp.Server, tenants *tenants) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:  "memory_forget",
 		Title: "Forget facts",
@@ -48,17 +49,21 @@ func addMemoryForgetTool(server *mcp.Server, client *arcadedb.Client) {
 			DestructiveHint: new(true),
 			IdempotentHint:  true,
 		},
-	}, memoryForgetHandler(client))
+	}, memoryForgetHandler(tenants))
 }
 
 func memoryForgetHandler(
-	client *arcadedb.Client,
+	tenants *tenants,
 ) mcp.ToolHandlerFor[MemoryForgetInput, MemoryForgetOutput] {
 	return func(
 		ctx context.Context,
 		_ *mcp.CallToolRequest,
 		in MemoryForgetInput,
 	) (*mcp.CallToolResult, MemoryForgetOutput, error) {
+		client, err := tenants.For(ctx, in.UserIdentifier)
+		if err != nil {
+			return nil, MemoryForgetOutput{}, err
+		}
 		result, err := client.Forget(ctx, arcadedb.ForgetFilter{
 			SourceRunID: in.SourceRunID,
 			Entity:      in.Entity,

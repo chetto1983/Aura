@@ -578,6 +578,17 @@ services:
       # not an empty result. Same shape as the Postgres aura_app/aura_migrate split.
       ARCADEDB_USER: ${ARCADEDB_APP_USER:-aura_memory}
       ARCADEDB_PASSWORD: ${ARCADEDB_APP_PASSWORD:?ARCADEDB_APP_PASSWORD required in .env}
+      # DDL only. ArcadeDB refuses server commands to anyone but root, so creating
+      # a new identity's database needs this and nothing else does. Same split as
+      # AURA_DB_URL / AURA_DB_MIGRATE_URL.
+      ARCADEDB_ADMIN_USER: root
+      ARCADEDB_ADMIN_PASSWORD: ${ARCADEDB_PASSWORD:?ARCADEDB_PASSWORD required in .env}
+      # Derivation key for per-identity credentials. Each identity gets its own
+      # database AND its own user, whose password is HMAC(secret, database) — so
+      # nothing per-tenant is stored, and a credential can only be minted for an
+      # identity the sidecar was actually handed. Rotating this invalidates every
+      # tenant credential, so it is a planned operation, not a restart.
+      AURA_ARCADEDB_TENANT_SECRET: ${AURA_ARCADEDB_TENANT_SECRET:?AURA_ARCADEDB_TENANT_SECRET required in .env}
       # The dense leg of memory retrieval. An empty value disables it and leaves
       # retrieval lexical, which is a supported configuration and not a degraded
       # one — the search falls back per call, so a sidecar that is merely down

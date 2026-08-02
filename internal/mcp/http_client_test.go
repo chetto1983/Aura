@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -409,4 +410,40 @@ func mustRaw(t *testing.T, v any) json.RawMessage {
 		t.Fatalf("marshal raw: %v", err)
 	}
 	return data
+}
+
+// A per-identity server must never be asked a question that does not say whose
+// data it is about. This guard was removed once — when the memory tools did not
+// yet declare user_identifier and injecting it failed every call — and removing
+// it left identity stamping to convention alone.
+func TestCallToolRefusesAnUnstampedCallOnAPerIdentityServer(t *testing.T) {
+	t.Parallel()
+	reached := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reached = true
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{}"}]}}`)
+	}))
+	defer srv.Close()
+
+	client := &HTTPClient{
+		name:        "memory",
+		endpoint:    srv.URL,
+		client:      srv.Client(),
+		identityArg: "user_identifier",
+	}
+	for _, args := range []map[string]any{
+		nil,
+		{"query": "x"},
+		{"query": "x", "user_identifier": ""},
+		{"query": "x", "user_identifier": "   "},
+		{"query": "x", "user_identifier": 42},
+	} {
+		if _, err := client.CallTool(context.Background(), "memory_search", args); err == nil {
+			t.Errorf("args %v were accepted", args)
+		}
+	}
+	if reached {
+		t.Fatal("an unstamped call reached the network; the guard must refuse before the request")
+	}
 }

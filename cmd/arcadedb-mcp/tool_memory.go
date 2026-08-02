@@ -16,12 +16,13 @@ type clock func() time.Time
 // MemoryUpsertFactInput mirrors arcadedb.Fact minus the embedding, which the
 // tool computes, and minus created_at, which is always now.
 type MemoryUpsertFactInput struct {
-	Subject   string `json:"subject" jsonschema:"the entity the fact is about"`
-	Predicate string `json:"predicate" jsonschema:"the relation, e.g. lives_in"`
-	Object    string `json:"object" jsonschema:"the entity or value the subject relates to"`
-	Statement string `json:"statement" jsonschema:"the fact in natural language; this is what gets embedded and searched"`
-	ValidFrom string `json:"valid_from,omitempty" jsonschema:"RFC3339 instant when the fact became true; defaults to now"`
-	ValidTo   string `json:"valid_to,omitempty" jsonschema:"RFC3339 instant when the fact stopped being true; omit while it still holds"`
+	UserIdentifier string `json:"user_identifier" jsonschema:"the Aura identity whose memory this is; each identity has its own database and cannot reach another's"`
+	Subject        string `json:"subject" jsonschema:"the entity the fact is about"`
+	Predicate      string `json:"predicate" jsonschema:"the relation, e.g. lives_in"`
+	Object         string `json:"object" jsonschema:"the entity or value the subject relates to"`
+	Statement      string `json:"statement" jsonschema:"the fact in natural language; this is what gets embedded and searched"`
+	ValidFrom      string `json:"valid_from,omitempty" jsonschema:"RFC3339 instant when the fact became true; defaults to now"`
+	ValidTo        string `json:"valid_to,omitempty" jsonschema:"RFC3339 instant when the fact stopped being true; omit while it still holds"`
 	// Supersedes is explicit because some predicates are single-valued
 	// ("lives_in") and others are not ("likes"); guessing gets one of them wrong.
 	Supersedes      bool     `json:"supersedes,omitempty" jsonschema:"close any still-valid fact with the same subject and predicate"`
@@ -35,7 +36,7 @@ type MemoryUpsertFactOutput struct {
 	Superseded int    `json:"superseded" jsonschema:"how many previously-valid facts had their window closed"`
 }
 
-func addMemoryUpsertFactTool(server *mcp.Server, client *arcadedb.Client, now clock) {
+func addMemoryUpsertFactTool(server *mcp.Server, tenants *tenants, now clock) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:  "memory_upsert_fact",
 		Title: "Remember a fact",
@@ -43,11 +44,11 @@ func addMemoryUpsertFactTool(server *mcp.Server, client *arcadedb.Client, now cl
 			"never overwritten: when it is superseded its validity window is closed, so " +
 			"both what is true now and what was true then stay answerable.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false},
-	}, memoryUpsertFactHandler(client, now))
+	}, memoryUpsertFactHandler(tenants, now))
 }
 
 func memoryUpsertFactHandler(
-	client *arcadedb.Client,
+	tenants *tenants,
 	now clock,
 ) mcp.ToolHandlerFor[MemoryUpsertFactInput, MemoryUpsertFactOutput] {
 	return func(
@@ -55,6 +56,10 @@ func memoryUpsertFactHandler(
 		_ *mcp.CallToolRequest,
 		in MemoryUpsertFactInput,
 	) (*mcp.CallToolResult, MemoryUpsertFactOutput, error) {
+		client, err := tenants.For(ctx, in.UserIdentifier)
+		if err != nil {
+			return nil, MemoryUpsertFactOutput{}, err
+		}
 		validFrom, err := parseOptionalTime(in.ValidFrom, "valid_from")
 		if err != nil {
 			return nil, MemoryUpsertFactOutput{}, err
@@ -87,9 +92,10 @@ func memoryUpsertFactHandler(
 
 // MemorySearchInput asks a question of the fact graph.
 type MemorySearchInput struct {
-	Query string `json:"query" jsonschema:"what to look for, in natural language"`
-	Limit int    `json:"limit,omitempty" jsonschema:"how many facts to return; defaults to 5"`
-	AsOf  string `json:"as_of,omitempty" jsonschema:"RFC3339 instant; return the facts that were valid then rather than the ones valid now"`
+	UserIdentifier string `json:"user_identifier" jsonschema:"the Aura identity whose memory this is; each identity has its own database and cannot reach another's"`
+	Query          string `json:"query" jsonschema:"what to look for, in natural language"`
+	Limit          int    `json:"limit,omitempty" jsonschema:"how many facts to return; defaults to 5"`
+	AsOf           string `json:"as_of,omitempty" jsonschema:"RFC3339 instant; return the facts that were valid then rather than the ones valid now"`
 }
 
 // MemorySearchHit is one fact, with the provenance needed to check it.
@@ -109,7 +115,7 @@ type MemorySearchOutput struct {
 	Facts []MemorySearchHit `json:"facts"`
 }
 
-func addMemorySearchTool(server *mcp.Server, client *arcadedb.Client) {
+func addMemorySearchTool(server *mcp.Server, tenants *tenants) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:  "memory_search",
 		Title: "Search facts",
@@ -117,17 +123,21 @@ func addMemorySearchTool(server *mcp.Server, client *arcadedb.Client) {
 			"about. If you do know the entity, call memory_facts_about instead: it is exact. " +
 			"Pass as_of to ask what was true at a past instant instead of what is true now.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
-	}, memorySearchHandler(client))
+	}, memorySearchHandler(tenants))
 }
 
 func memorySearchHandler(
-	client *arcadedb.Client,
+	tenants *tenants,
 ) mcp.ToolHandlerFor[MemorySearchInput, MemorySearchOutput] {
 	return func(
 		ctx context.Context,
 		_ *mcp.CallToolRequest,
 		in MemorySearchInput,
 	) (*mcp.CallToolResult, MemorySearchOutput, error) {
+		client, err := tenants.For(ctx, in.UserIdentifier)
+		if err != nil {
+			return nil, MemorySearchOutput{}, err
+		}
 		asOf, err := parseOptionalTime(in.AsOf, "as_of")
 		if err != nil {
 			return nil, MemorySearchOutput{}, err
@@ -153,13 +163,14 @@ func parseOptionalTime(value, field string) (time.Time, error) {
 
 // MemoryFactsAboutInput asks the graph directly.
 type MemoryFactsAboutInput struct {
-	Entity    string `json:"entity" jsonschema:"the entity to read the facts of, by exact name"`
-	Predicate string `json:"predicate,omitempty" jsonschema:"narrow to one relation, e.g. works_for"`
-	Limit     int    `json:"limit,omitempty" jsonschema:"how many facts to return; defaults to 20"`
-	AsOf      string `json:"as_of,omitempty" jsonschema:"RFC3339 instant; the facts valid then rather than now"`
+	UserIdentifier string `json:"user_identifier" jsonschema:"the Aura identity whose memory this is; each identity has its own database and cannot reach another's"`
+	Entity         string `json:"entity" jsonschema:"the entity to read the facts of, by exact name"`
+	Predicate      string `json:"predicate,omitempty" jsonschema:"narrow to one relation, e.g. works_for"`
+	Limit          int    `json:"limit,omitempty" jsonschema:"how many facts to return; defaults to 20"`
+	AsOf           string `json:"as_of,omitempty" jsonschema:"RFC3339 instant; the facts valid then rather than now"`
 }
 
-func addMemoryFactsAboutTool(server *mcp.Server, client *arcadedb.Client) {
+func addMemoryFactsAboutTool(server *mcp.Server, tenants *tenants) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:  "memory_facts_about",
 		Title: "Facts about an entity",
@@ -167,17 +178,21 @@ func addMemoryFactsAboutTool(server *mcp.Server, client *arcadedb.Client) {
 			"this whenever the question names an entity, and fall back to memory_search only " +
 			"when it does not.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
-	}, memoryFactsAboutHandler(client))
+	}, memoryFactsAboutHandler(tenants))
 }
 
 func memoryFactsAboutHandler(
-	client *arcadedb.Client,
+	tenants *tenants,
 ) mcp.ToolHandlerFor[MemoryFactsAboutInput, MemorySearchOutput] {
 	return func(
 		ctx context.Context,
 		_ *mcp.CallToolRequest,
 		in MemoryFactsAboutInput,
 	) (*mcp.CallToolResult, MemorySearchOutput, error) {
+		client, err := tenants.For(ctx, in.UserIdentifier)
+		if err != nil {
+			return nil, MemorySearchOutput{}, err
+		}
 		asOf, err := parseOptionalTime(in.AsOf, "as_of")
 		if err != nil {
 			return nil, MemorySearchOutput{}, err

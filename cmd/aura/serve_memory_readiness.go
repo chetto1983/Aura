@@ -14,7 +14,10 @@ import (
 	"github.com/chetto1983/aura/internal/readiness"
 )
 
-const memoryReadinessOwner = "00000000-0000-0000-0000-000000000001"
+// memoryReadinessOwner is a synthetic identity that exists only for this probe.
+// Under one-database-per-identity it resolves to its own database, so readiness
+// neither reads nor writes anything a person owns.
+const memoryReadinessOwner = "00000000-0000-0000-0000-0000000000ff"
 
 func memoryReadinessProbe(chat *chatEnv) (agui.ReadinessProbe, bool) {
 	required := false
@@ -43,18 +46,29 @@ func checkMemoryReadiness(ctx context.Context, client mcptools.HostClient) error
 	if client == nil {
 		return errors.New("memory client is unavailable")
 	}
+	// The arguments are the mounted tool's. `memory_types` is gone with the
+	// agent-memory MCP that declared it — the ArcadeDB tool rejects unknown
+	// properties, so leaving it in failed every probe, answered /readyz with 503,
+	// and took the cockpit down over a memory that worked.
+	//
+	// `user_identifier` stays, and now means more than it did: memory is one
+	// DATABASE per identity, so the synthetic readiness owner gets its own, and a
+	// health check cannot read or disturb a real person's memory. This probe
+	// builds its map literally rather than through the bridge, so it has to stamp
+	// the call itself.
 	text, err := client.CallTool(ctx, "memory_search", map[string]any{
 		"query":           "Aura readiness",
-		"memory_types":    []string{"preferences"},
 		"limit":           1,
 		"user_identifier": memoryReadinessOwner,
 	})
 	if err != nil {
 		return fmt.Errorf("memory functional search: %w", err)
 	}
+	// What readiness proves is that the tool ANSWERED in its own shape — a `facts`
+	// array, empty or not. An empty memory is ready; an unparseable answer is not.
 	var response struct {
-		Results map[string]json.RawMessage `json:"results"`
-		Error   string                     `json:"error"`
+		Facts []json.RawMessage `json:"facts"`
+		Error string            `json:"error"`
 	}
 	decoder := json.NewDecoder(bytes.NewBufferString(text))
 	if err := decoder.Decode(&response); err != nil {
@@ -66,13 +80,8 @@ func checkMemoryReadiness(ctx context.Context, client mcptools.HostClient) error
 	if strings.TrimSpace(response.Error) != "" {
 		return errors.New("memory functional search reported a domain failure")
 	}
-	preferences, ok := response.Results["preferences"]
-	if !ok {
-		return errors.New("memory functional search omitted preferences results")
-	}
-	var items []json.RawMessage
-	if err := json.Unmarshal(preferences, &items); err != nil {
-		return errors.New("memory functional search returned malformed preferences")
+	if response.Facts == nil {
+		return errors.New("memory functional search omitted the facts array")
 	}
 	return nil
 }

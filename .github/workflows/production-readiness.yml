@@ -26,6 +26,12 @@ env:
   AURA_OBJECTSTORE_SECRET_KEY: 00000000000000000000000000000000000000000000000000000000000000c3
   GARAGE_RPC_SECRET: 00000000000000000000000000000000000000000000000000000000000000d4
   AURA_GARAGE_ADMIN_TOKEN: readiness-not-a-secret
+  # ArcadeDB backs memory. compose interpolates the WHOLE file before it selects a
+  # service, so a missing one of these aborts every compose invocation in the job —
+  # even the ones that start none of these containers.
+  ARCADEDB_PASSWORD: ci-test-password
+  ARCADEDB_APP_PASSWORD: ci-test-password
+  AURA_ARCADEDB_TENANT_SECRET: "0000000000000000000000000000000000000000000000000000000000000d1"
   POSTGRES_USER: aura
   POSTGRES_PASSWORD: readiness-db-password
   POSTGRES_DB: aura

@@ -263,9 +263,17 @@ ensure_internal_env_secrets() {
   ensure_generated_env_secret AURA_ACCESS_TOKEN 32
   ensure_generated_env_secret AURA_AUTHULA_SECRET 32
   ensure_generated_env_secret AURA_AGENT_MEMORY_MCP_AUTH_SECRET 32
+  # ArcadeDB holds the memory, one database per identity. compose fail-fasts on
+  # all three, and it interpolates the whole file before selecting a service, so
+  # a missing one aborts every compose invocation.
+  ensure_generated_env_secret ARCADEDB_PASSWORD 32
+  ensure_generated_env_secret ARCADEDB_APP_PASSWORD 32
+  ensure_generated_env_secret AURA_ARCADEDB_TENANT_SECRET 32
   ensure_generated_env_secret AURA_PIM_MCP_ADMIN_TOKEN 32
   ensure_generated_env_secret SEARXNG_SECRET 32
   ensure_objectstore_env_secrets
+  ensure_env_default ARCADEDB_APP_USER "aura_memory"
+  ensure_env_default ARCADEDB_DATABASE "aura_memory"
   ensure_env_default POSTGRES_IMAGE "${POSTGRES_IMAGE:-postgres:18.4-alpine3.24}"
   ensure_env_default AURA_IMAGE "${AURA_IMAGE:-$DEFAULT_IMAGE}"
 }

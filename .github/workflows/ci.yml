@@ -25,6 +25,12 @@ env:
   # Phase 36 D-08: compose.yaml makes AURA_GARAGE_ADMIN_TOKEN :?-required on both the aura
   # and garage services, so every compose-touching job needs it set (only musr-e2e did).
   AURA_GARAGE_ADMIN_TOKEN: ci-not-a-secret
+  # ArcadeDB backs memory. compose interpolates the WHOLE file before it selects a
+  # service, so a missing one of these aborts every compose invocation in the job —
+  # even the ones that start none of these containers.
+  ARCADEDB_PASSWORD: ci-test-password
+  ARCADEDB_APP_PASSWORD: ci-test-password
+  AURA_ARCADEDB_TENANT_SECRET: "0000000000000000000000000000000000000000000000000000000000000d1"
   AURA_CI_NODE_VERSION: "24.x"
 
 # Cancel in-flight runs of the same ref when a new push lands (saves runner minutes
@@ -387,6 +393,12 @@ jobs:
       GARAGE_ADMIN_TOKEN: ci-garage-admin-token
       AURA_GARAGE_ADMIN_ENDPOINT: http://127.0.0.1:3903
       AURA_GARAGE_ADMIN_TOKEN: ci-garage-admin-token
+      # ArcadeDB backs memory. compose interpolates the WHOLE file before it selects a
+      # service, so a missing one of these aborts every compose invocation in the job —
+      # even the ones that start none of these containers.
+      ARCADEDB_PASSWORD: ci-test-password
+      ARCADEDB_APP_PASSWORD: ci-test-password
+      AURA_ARCADEDB_TENANT_SECRET: "0000000000000000000000000000000000000000000000000000000000000d1"
       # Garage S3 data plane (per-identity object put/get through the resolver).
       AURA_OBJECTSTORE_BACKEND: garage
       AURA_OBJECTSTORE_ENDPOINT: http://127.0.0.1:3900

@@ -69,6 +69,7 @@ func (r *recordingDB) find(fragment string) (string, map[string]any, bool) {
 
 func validFactInput() MemoryUpsertFactInput {
 	return MemoryUpsertFactInput{
+		UserIdentifier:  testIdentity,
 		Subject:         "Davide",
 		Predicate:       "lives_in",
 		Object:          "Caraglio",
@@ -84,7 +85,7 @@ func upsert(
 	in MemoryUpsertFactInput,
 ) (MemoryUpsertFactOutput, error) {
 	t.Helper()
-	_, out, err := memoryUpsertFactHandler(client, testClock)(
+	_, out, err := memoryUpsertFactHandler(singleTenant(t, client), testClock)(
 		context.Background(), nil, in)
 	return out, err
 }
@@ -221,7 +222,7 @@ func search(
 	in MemorySearchInput,
 ) (MemorySearchOutput, error) {
 	t.Helper()
-	_, out, err := memorySearchHandler(client)(context.Background(), nil, in)
+	_, out, err := memorySearchHandler(singleTenant(t, client))(context.Background(), nil, in)
 	return out, err
 }
 
@@ -231,7 +232,7 @@ const oneFactRow = `{"result":[{"statement":"Davide lives in Caraglio.","predica
 
 func TestSearchUsesTheFullTextIndexAndKeepsProvenance(t *testing.T) {
 	client, rec := newRecordingDB(t, oneFactRow)
-	out, err := search(t, client, MemorySearchInput{Query: "where does Davide live"})
+	out, err := search(t, client, MemorySearchInput{UserIdentifier: testIdentity, Query: "where does Davide live"})
 	if err != nil {
 		t.Fatalf("search: %v", err)
 	}
@@ -254,7 +255,7 @@ func TestSearchUsesTheFullTextIndexAndKeepsProvenance(t *testing.T) {
 // fact wins at rank 1.
 func TestSearchWithoutAsOfStillFiltersToNow(t *testing.T) {
 	client, rec := newRecordingDB(t, oneFactRow)
-	if _, err := search(t, client, MemorySearchInput{Query: "q"}); err != nil {
+	if _, err := search(t, client, MemorySearchInput{UserIdentifier: testIdentity, Query: "q"}); err != nil {
 		t.Fatalf("search: %v", err)
 	}
 	statement, params, ok := rec.find("valid_to IS NULL OR valid_to > :as_of")
@@ -271,7 +272,7 @@ func TestSearchWithoutAsOfStillFiltersToNow(t *testing.T) {
 
 func TestSearchRejectsAMalformedAsOf(t *testing.T) {
 	client, _ := newRecordingDB(t)
-	_, err := search(t, client, MemorySearchInput{Query: "q", AsOf: "last year"})
+	_, err := search(t, client, MemorySearchInput{UserIdentifier: testIdentity, Query: "q", AsOf: "last year"})
 	if err == nil || !strings.Contains(err.Error(), "as_of") {
 		t.Fatalf("err = %v", err)
 	}
@@ -279,7 +280,7 @@ func TestSearchRejectsAMalformedAsOf(t *testing.T) {
 
 func TestSearchOnEmptyGraphReturnsNoFactsNotAnError(t *testing.T) {
 	client, _ := newRecordingDB(t, `{"result":[]}`)
-	out, err := search(t, client, MemorySearchInput{Query: "q"})
+	out, err := search(t, client, MemorySearchInput{UserIdentifier: testIdentity, Query: "q"})
 	if err != nil {
 		t.Fatalf("search: %v", err)
 	}
@@ -295,7 +296,7 @@ func factsAbout(
 	in MemoryFactsAboutInput,
 ) (MemorySearchOutput, error) {
 	t.Helper()
-	_, out, err := memoryFactsAboutHandler(client)(context.Background(), nil, in)
+	_, out, err := memoryFactsAboutHandler(singleTenant(t, client))(context.Background(), nil, in)
 	return out, err
 }
 
@@ -303,7 +304,7 @@ func factsAbout(
 // query string at all.
 func TestFactsAboutWalksTheGraphWithoutRanking(t *testing.T) {
 	client, rec := newRecordingDB(t, oneFactRow)
-	out, err := factsAbout(t, client, MemoryFactsAboutInput{Entity: "Davide"})
+	out, err := factsAbout(t, client, MemoryFactsAboutInput{UserIdentifier: testIdentity, Entity: "Davide"})
 	if err != nil {
 		t.Fatalf("facts_about: %v", err)
 	}
@@ -321,7 +322,7 @@ func TestFactsAboutWalksTheGraphWithoutRanking(t *testing.T) {
 
 func TestFactsAboutNarrowsByPredicate(t *testing.T) {
 	client, rec := newRecordingDB(t, oneFactRow)
-	in := MemoryFactsAboutInput{Entity: "Davide", Predicate: "works_for", Limit: 3}
+	in := MemoryFactsAboutInput{UserIdentifier: testIdentity, Entity: "Davide", Predicate: "works_for", Limit: 3}
 	if _, err := factsAbout(t, client, in); err != nil {
 		t.Fatalf("facts_about: %v", err)
 	}
@@ -336,10 +337,10 @@ func TestFactsAboutNarrowsByPredicate(t *testing.T) {
 
 func TestFactsAboutRejectsAnEmptyEntityAndABadAsOf(t *testing.T) {
 	client, rec := newRecordingDB(t)
-	if _, err := factsAbout(t, client, MemoryFactsAboutInput{Entity: " "}); err == nil {
+	if _, err := factsAbout(t, client, MemoryFactsAboutInput{UserIdentifier: testIdentity, Entity: " "}); err == nil {
 		t.Fatal("expected an error for an empty entity")
 	}
-	if _, err := factsAbout(t, client, MemoryFactsAboutInput{Entity: "Davide", AsOf: "soon"}); err == nil {
+	if _, err := factsAbout(t, client, MemoryFactsAboutInput{UserIdentifier: testIdentity, Entity: "Davide", AsOf: "soon"}); err == nil {
 		t.Fatal("expected an error for a malformed as_of")
 	}
 	if len(rec.statements) != 0 {
