@@ -1,0 +1,7 @@
+### GEMMA-A - big-doc passage recall, PARAPHRASED queries ###
+  DENSE-flat   recall@1 6/8  recall@5 8/8  (ceiling@12 8/8)
+  HYBRID-flat  recall@1 5/8  recall@5 5/8  (ceiling@12 8/8)
+  [MiniLM-384d baseline: dense @5 2/8, hybrid @5 4/8, ceiling@12 4/8]
+### GEMMA-B - routing on CONCEPT queries ###
+  BM25 0.750   GEMMA-dense 0.751   HYBRID 0.532
+  [MiniLM-384d baseline: dense 0.751, hybrid 0.762]

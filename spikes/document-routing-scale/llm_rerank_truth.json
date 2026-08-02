@@ -1,0 +1,42 @@
+[
+ {
+  "section": 12,
+  "needle": "Il recesso anticipato comporta una penale del 15 per cento del residuo.",
+  "gt_candidate_id": null
+ },
+ {
+  "section": 23,
+  "needle": "Gli obblighi di riservatezza permangono per cinque anni dopo la cessazione.",
+  "gt_candidate_id": 0
+ },
+ {
+  "section": 41,
+  "needle": "Per ogni controversia e' competente in via esclusiva il foro di Milano.",
+  "gt_candidate_id": null
+ },
+ {
+  "section": 58,
+  "needle": "La responsabilita e' limitata al valore di dodici mensilita di corrispettivo.",
+  "gt_candidate_id": null
+ },
+ {
+  "section": 77,
+  "needle": "Il subappalto e' ammesso solo previa autorizzazione scritta del committente.",
+  "gt_candidate_id": null
+ },
+ {
+  "section": 94,
+  "needle": "Gli eventi di forza maggiore sospendono i termini per un massimo di novanta giorni.",
+  "gt_candidate_id": 0
+ },
+ {
+  "section": 108,
+  "needle": "Tutti i diritti di proprieta intellettuale restano in capo al committente.",
+  "gt_candidate_id": 3
+ },
+ {
+  "section": 129,
+  "needle": "In caso di ritardo si applicano interessi di mora al tasso legale maggiorato di otto punti.",
+  "gt_candidate_id": 0
+ }
+]

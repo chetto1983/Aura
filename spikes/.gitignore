@@ -1,0 +1,8 @@
+# generated corpora — reproducible via generate_*.py, never committed
+**/corpus/
+# downloaded models + embedding caches + logs — reproducible, large
+**/models/
+__pycache__/
+*.pyc
+*.npy
+*.log

@@ -1,0 +1,14 @@
+
+### SEM-A - big-doc passage recall, PARAPHRASED queries ###
+  embedding 1820 chunks + 140 sections ...
+  (8 paraphrased queries, low lexical overlap with the needle)
+    BM25-flat    recall@1 2/8   recall@5 3/8
+    DENSE-flat   recall@1 2/8   recall@5 2/8
+    HYBRID-flat  recall@1 3/8   recall@5 4/8
+    DENSE-hier   recall@1 2/8   recall@5 2/8
+
+### SEM-B - routing on CONCEPT queries (card catalog) ###
+  embedding 465 cards ...
+    BM25-card    MRR 0.750
+    DENSE-card   MRR 0.751
+    HYBRID-card  MRR 0.762

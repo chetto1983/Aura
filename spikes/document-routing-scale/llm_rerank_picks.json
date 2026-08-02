@@ -1,0 +1,13 @@
+{
+  "_note": "Picks by the LLM-in-the-loop (Claude) acting as reranker over the hybrid top-12. -1 = abstain: no candidate answers the query (correct behaviour when retrieval did not surface the needle — do not hallucinate).",
+  "picks": [
+    {"section": 12,  "pick": -1, "reason": "solo distrattori 'recesso ORDINARIo'; la penale del recesso anticipato non è tra i candidati"},
+    {"section": 23,  "pick": 0,  "reason": "id0 contiene 'obblighi di riservatezza permangono per cinque anni dopo la cessazione'"},
+    {"section": 41,  "pick": -1, "reason": "nessun candidato cita il foro di Milano; solo 'si rinvia al foro e alla normativa generale' (distrattore)"},
+    {"section": 58,  "pick": -1, "reason": "nessun candidato cita 'dodici mensilita'; solo 'responsabilita nei limiti di legge' (distrattore)"},
+    {"section": 77,  "pick": -1, "reason": "nessun candidato cita l'autorizzazione scritta al subappalto; solo 'subappalto soggetto alle regole generali' (distrattore)"},
+    {"section": 94,  "pick": 0,  "reason": "id0 termina con 'Gli eventi di forza maggiore sospendono i termini'"},
+    {"section": 108, "pick": 3,  "reason": "id3 contiene 'Tutti i diritti di proprieta intellettuale restano in capo al committente'"},
+    {"section": 129, "pick": 0,  "reason": "id0 contiene 'In caso di ritardo si applicano interessi di mora al tasso legale maggiorato di otto punti'"}
+  ]
+}
