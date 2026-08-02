@@ -78,7 +78,6 @@ func TestBuildAssetServiceWiresDocumentProcessor(t *testing.T) {
 		AssetMaxAudioBytes:      789,
 		AssetPresignTTLSec:      42,
 		MultimodalTimeoutSec:    7,
-		DocumentsBaseURL:        "http://documents.test",
 		VisionCloud:             true,
 		MultimodalBaseURL:       "http://vision-local.test/v1",
 		MultimodalModel:         "glm-ocr",

@@ -80,11 +80,11 @@ an empty library rather than someone else's.
 
 ## Telegram
 
-When `DocumentIngest` is wired by `aura serve`, Telegram document uploads go
-through the shared asset pipeline and reply when the file is catalogued. The asset
-service stores the original object and records lifecycle state in Postgres.
-(Telegram *conversion* to markdown for inline reading still uses the markitdown
-sidecar — that is the multimodal path, not the ingest path.)
+Telegram document uploads go through the shared asset pipeline — the same one the
+cockpit uses. The asset service stores the original object and records lifecycle
+state in Postgres; the agent then finds the file with `document_search` and reads it
+with `document_open`. The channel has no conversion path of its own: it carries the
+bytes and renders the outcome.
 
 ## Web and asset uploads
 

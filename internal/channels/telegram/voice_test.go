@@ -1,25 +1,17 @@
 package telegram
 
 import (
-	"context"
-	"errors"
 	"io"
-	"mime"
-	"mime/multipart"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 
 	tele "gopkg.in/telebot.v4"
 )
 
-// fileBot is a botFiler/botReactor double: it returns canned OGG bytes for a
-// File download and records every React it is asked to apply (the hard-fail UX
-// asserts on the recorded 😵). It satisfies neither Send nor Edit — the STT path
-// never sends through it (it produces a transcript string for the text path).
+// fileBot is a botFiler/botReactor double: it returns canned bytes for a File
+// download and records every React it is asked to apply (the hard-fail UX asserts on
+// the recorded 😵). It satisfies neither Send nor Edit.
 type fileBot struct {
 	ogg []byte
 
@@ -48,109 +40,15 @@ func (b *fileBot) recordedReactions() []string {
 	return out
 }
 
-// sttHandler builds an httptest handler that asserts the multipart contract (the
-// OGG/Opus bytes arrive in the `file` field, no ffmpeg pre-step) and returns the
-// canned transcript with the given status.
-func sttHandler(t *testing.T, wantOGG []byte, transcript string, status int) http.HandlerFunc {
-	t.Helper()
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			t.Errorf("STT method = %s, want POST", r.Method)
-		}
-		if !strings.HasSuffix(r.URL.Path, "/audio/transcriptions") {
-			t.Errorf("STT path = %s, want .../audio/transcriptions", r.URL.Path)
-		}
-		mediaType, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-		if err != nil || !strings.HasPrefix(mediaType, "multipart/") {
-			t.Errorf("STT Content-Type = %q, want multipart/*", r.Header.Get("Content-Type"))
-		}
-		if status >= 400 {
-			http.Error(w, "boom", status)
-			return
-		}
-		mr := multipart.NewReader(r.Body, params["boundary"])
-		var gotFile []byte
-		var gotLang string
-		for {
-			part, perr := mr.NextPart()
-			if errors.Is(perr, io.EOF) {
-				break
-			}
-			if perr != nil {
-				t.Fatalf("STT multipart read: %v", perr)
-			}
-			switch part.FormName() {
-			case "file":
-				gotFile, _ = io.ReadAll(part)
-			case "language":
-				b, _ := io.ReadAll(part)
-				gotLang = string(b)
-			}
-		}
-		if string(gotFile) != string(wantOGG) {
-			t.Errorf("STT file field = %q, want the OGG bytes %q (no ffmpeg transcode)", gotFile, wantOGG)
-		}
-		// Regression guard (spike-027): the language MUST be pinned so whisper does
-		// not auto-detect a short IT clip as the wrong language (observed 'ja' live).
-		if gotLang != "it" {
-			t.Errorf("STT language field = %q, want %q (pinned, not auto-detect)", gotLang, "it")
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"text":"`+transcript+`"}`)
-	}
-}
-
-func sttTestConfig(base string) MultimodalConfig {
-	return MultimodalConfig{STTBaseURL: base, STTModel: "large-v3-turbo", STTLanguage: "it"}
-}
-
-// TestVoiceTranscribeHappyPath proves the OGG/Opus bytes are POSTed directly
-// (multipart, no ffmpeg) and the transcript text is returned for the text path.
-func TestVoiceTranscribeHappyPath(t *testing.T) {
+// TestReactHardFailAppliesTheEmoji covers what is left of the voice leg in this
+// package after transcription moved to assets.AudioProcessor: the Bot-API reaction,
+// which is Telegram's alone. The retry-then-fail behaviour it used to accompany is
+// now asserted in internal/assets (TestAudioProcessorRetriesThenFails).
+func TestReactHardFailAppliesTheEmoji(t *testing.T) {
 	t.Parallel()
-	ogg := []byte("OggS\x00fake-opus-bytes")
-	srv := httptest.NewServer(sttHandler(t, ogg, "ciao Aura", http.StatusOK))
-	defer srv.Close()
-
-	bot := &fileBot{ogg: ogg}
-	vc := newVoiceClient(sttTestConfig(srv.URL))
-
-	got, err := vc.Transcribe(context.Background(), bot, tele.ChatID(7), &tele.Voice{})
-	if err != nil {
-		t.Fatalf("Transcribe: %v", err)
-	}
-	if got != "ciao Aura" {
-		t.Errorf("transcript = %q, want %q", got, "ciao Aura")
-	}
-}
-
-// TestVoiceTranscribeRetriesThenHardFail proves the 2-retry exp backoff (3 total
-// attempts) and the hard-fail UX (😵 reaction) when the sidecar keeps 5xx'ing.
-func TestVoiceTranscribeRetriesThenHardFail(t *testing.T) {
-	t.Parallel()
-	ogg := []byte("OggS\x00opus")
-	var attempts atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		attempts.Add(1)
-		http.Error(w, "down", http.StatusBadGateway)
-	}))
-	defer srv.Close()
-
-	bot := &fileBot{ogg: ogg}
-	cfg := sttTestConfig(srv.URL)
-	cfg.RetryBackoff = []int{1, 1} // milliseconds: keep the test fast
-	vc := newVoiceClient(cfg)
-
-	_, err := vc.Transcribe(context.Background(), bot, tele.ChatID(7), &tele.Voice{})
-	if err == nil {
-		t.Fatal("a persistent 5xx must hard-fail with an error")
-	}
-	if got := attempts.Load(); got != 3 {
-		t.Errorf("attempts = %d, want 3 (1 + 2 retries)", got)
-	}
-
-	if err := vc.HardFail(bot, tele.ChatID(7), &tele.Message{ID: 1}); err != nil {
-		t.Fatalf("HardFail: %v", err)
+	bot := &fileBot{}
+	if err := reactHardFail(bot, tele.ChatID(7), &tele.Message{ID: 1}); err != nil {
+		t.Fatalf("reactHardFail: %v", err)
 	}
 	react := bot.recordedReactions()
 	if len(react) != 1 || react[0] != hardFailReaction {

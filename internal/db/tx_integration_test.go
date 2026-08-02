@@ -2,9 +2,21 @@
 
 // Integration coverage for WithTx — the single transaction seam every
 // multi-statement write reuses. Drives a real pool through commit, rollback-on-
-// error, panic-rollback-then-repanic, and the Begin-failure early return. Uses
-// aura.knowledge_migrations (aura_app has INSERT) with a reserved 91xx version
-// band so it never collides with shipped migrations or sibling tests.
+// error, panic-rollback-then-repanic, and the Begin-failure early return.
+//
+// It writes aura.mcp_audit under a reserved `withtx-<case>` server_name. It used
+// aura.knowledge_migrations until migration 0084 retired that table with the Cypher
+// migration ledger, which left these three tests failing on SQLSTATE 42P01.
+//
+// mcp_audit is the replacement for a reason and not by luck: WithTx is the PLAIN seam,
+// the one that sets no identity, so the table under it must be one RLS does not scope —
+// every scoped table would refuse the insert and the test would prove the policy instead
+// of the transaction.
+//
+// It is APPEND-ONLY (a trigger rejects DELETE regardless of the grant), so these tests
+// assert a DELTA around each call rather than an absolute count and clean up nothing. An
+// absolute count would pass once and fail on every rerun — which is exactly what the
+// first attempt did.
 //
 // Run via: go test -tags db_integration ./internal/db -run TestWithTx -count=1
 
@@ -41,62 +53,57 @@ func appPoolMigrated(t *testing.T) *pgxpool.Pool {
 	return pool
 }
 
-func countKMVersion(t *testing.T, pool *pgxpool.Pool, version int32) int {
+func countAuditRows(t *testing.T, pool *pgxpool.Pool, marker string) int {
 	t.Helper()
 	var n int
 	if err := pool.QueryRow(context.Background(),
-		"SELECT count(*) FROM aura.knowledge_migrations WHERE version = $1", version).Scan(&n); err != nil {
-		t.Fatalf("count version %d: %v", version, err)
+		"SELECT count(*) FROM aura.mcp_audit WHERE server_name = $1", marker).Scan(&n); err != nil {
+		t.Fatalf("count %s: %v", marker, err)
 	}
 	return n
 }
 
-func cleanupKM(t *testing.T, pool *pgxpool.Pool, versions ...int32) {
-	t.Helper()
-	for _, v := range versions {
-		if _, err := pool.Exec(context.Background(),
-			"DELETE FROM aura.knowledge_migrations WHERE version = $1", v); err != nil {
-			t.Logf("cleanup version %d (best-effort): %v", v, err)
-		}
+// auditRow is the one write these tests make: a reserved marker in server_name, a fixed
+// actor, nothing that any other test reads.
+func auditRow(marker string) sqlc.InsertMcpAuditParams {
+	return sqlc.InsertMcpAuditParams{
+		ActorIdentityID: "withtx-integration",
+		Action:          "probe",
+		ServerName:      marker,
 	}
 }
 
 func TestWithTx_CommitPersists(t *testing.T) {
 	pool := appPoolMigrated(t)
-	const v int32 = 9101
-	cleanupKM(t, pool, v)
-	t.Cleanup(func() { cleanupKM(t, pool, v) })
+	const marker = "withtx-commit"
+	before := countAuditRows(t, pool, marker)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	err := WithTx(ctx, pool, func(q *sqlc.Queries) error {
-		return q.RecordKnowledgeMigration(ctx, sqlc.RecordKnowledgeMigrationParams{
-			Version: v, Name: "withtx_commit", Checksum: "c1",
-		})
+		_, e := q.InsertMcpAudit(ctx, auditRow(marker))
+		return e
 	})
 	if err != nil {
 		t.Fatalf("WithTx (commit path): %v", err)
 	}
-	if got := countKMVersion(t, pool, v); got != 1 {
-		t.Errorf("after commit: want exactly 1 row at version %d, got %d", v, got)
+	if got := countAuditRows(t, pool, marker) - before; got != 1 {
+		t.Errorf("commit added %d rows for %s, want exactly 1", got, marker)
 	}
 }
 
 func TestWithTx_RollbackOnError(t *testing.T) {
 	pool := appPoolMigrated(t)
-	const v int32 = 9102
-	cleanupKM(t, pool, v)
-	t.Cleanup(func() { cleanupKM(t, pool, v) })
+	const marker = "withtx-rollback"
+	before := countAuditRows(t, pool, marker)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	sentinel := errors.New("boom")
 	err := WithTx(ctx, pool, func(q *sqlc.Queries) error {
-		if e := q.RecordKnowledgeMigration(ctx, sqlc.RecordKnowledgeMigrationParams{
-			Version: v, Name: "withtx_rollback", Checksum: "c2",
-		}); e != nil {
+		if _, e := q.InsertMcpAudit(ctx, auditRow(marker)); e != nil {
 			return e
 		}
 		return sentinel
@@ -104,16 +111,15 @@ func TestWithTx_RollbackOnError(t *testing.T) {
 	if !errors.Is(err, sentinel) {
 		t.Fatalf("WithTx (error path): want sentinel boom, got %v", err)
 	}
-	if got := countKMVersion(t, pool, v); got != 0 {
-		t.Errorf("after rollback-on-error: want 0 rows at version %d, got %d", v, got)
+	if got := countAuditRows(t, pool, marker) - before; got != 0 {
+		t.Errorf("rollback-on-error left %d rows for %s, want 0", got, marker)
 	}
 }
 
 func TestWithTx_PanicRollsBackAndRepanics(t *testing.T) {
 	pool := appPoolMigrated(t)
-	const v int32 = 9103
-	cleanupKM(t, pool, v)
-	t.Cleanup(func() { cleanupKM(t, pool, v) })
+	const marker = "withtx-panic"
+	before := countAuditRows(t, pool, marker)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -122,17 +128,15 @@ func TestWithTx_PanicRollsBackAndRepanics(t *testing.T) {
 	func() {
 		defer func() { recovered = recover() }()
 		_ = WithTx(ctx, pool, func(q *sqlc.Queries) error {
-			_ = q.RecordKnowledgeMigration(ctx, sqlc.RecordKnowledgeMigrationParams{
-				Version: v, Name: "withtx_panic", Checksum: "c3",
-			})
+			_, _ = q.InsertMcpAudit(ctx, auditRow(marker))
 			panic("kaboom")
 		})
 	}()
 	if recovered == nil {
 		t.Fatal("WithTx (panic path): panic was swallowed, want it re-raised")
 	}
-	if got := countKMVersion(t, pool, v); got != 0 {
-		t.Errorf("after panic-rollback: want 0 rows at version %d, got %d", v, got)
+	if got := countAuditRows(t, pool, marker) - before; got != 0 {
+		t.Errorf("panic-rollback left %d rows for %s, want 0", got, marker)
 	}
 }
 

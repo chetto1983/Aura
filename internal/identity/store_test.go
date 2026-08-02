@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -83,10 +84,31 @@ func migratedPool(t *testing.T) *pgxpool.Pool {
 // touches the seeded '*' grant.
 func cleanupCap(t *testing.T, pool *pgxpool.Pool, capability string) {
 	t.Helper()
-	if _, err := pool.Exec(context.Background(),
-		"DELETE FROM aura.capability_grants WHERE identity_id = $1 AND capability = $2", localID, capability); err != nil {
+	if err := db.WithIdentityTxRaw(context.Background(), pool, localID, func(tx pgx.Tx) error {
+		_, e := tx.Exec(context.Background(),
+			"DELETE FROM aura.capability_grants WHERE identity_id = $1 AND capability = $2", localID, capability)
+		return e
+	}); err != nil {
 		t.Logf("cleanup grant %q (best-effort): %v", capability, err)
 	}
+}
+
+// countGrants counts capability_grants rows for identityID inside an identity-scoped
+// transaction. aura.capability_grants is fail-closed as of migration 0087, so a count on
+// the bare pool returns 0 whether or not the row exists — which would make every
+// assertion below pass or fail for the wrong reason. extra is an optional additional
+// predicate ("AND capability = $2") with its bound argument.
+func countGrants(t *testing.T, pool *pgxpool.Pool, identityID, extra string, args ...any) int {
+	t.Helper()
+	ctx := context.Background()
+	var n int
+	q := "SELECT count(*) FROM aura.capability_grants WHERE identity_id = $1 " + extra
+	if err := db.WithIdentityTxRaw(ctx, pool, identityID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, q, append([]any{identityID}, args...)...).Scan(&n)
+	}); err != nil {
+		t.Fatalf("count capability_grants: %v", err)
+	}
+	return n
 }
 
 func TestSeed_LocalIdentityAndWildcard(t *testing.T) {
@@ -105,12 +127,7 @@ func TestSeed_LocalIdentityAndWildcard(t *testing.T) {
 	}
 
 	// Exactly one (...001, '*') capability_grants row.
-	var wildcardCount int
-	if err := pool.QueryRow(ctx,
-		"SELECT count(*) FROM aura.capability_grants WHERE identity_id = $1 AND capability = '*'", localID,
-	).Scan(&wildcardCount); err != nil {
-		t.Fatalf("count wildcard grant: %v", err)
-	}
+	wildcardCount := countGrants(t, pool, localID, "AND capability = '*'")
 	if wildcardCount != 1 {
 		t.Errorf("seeded (...001, '*') grant: want exactly 1 row, got %d", wildcardCount)
 	}
@@ -193,12 +210,7 @@ func TestGrantRevoke_Idempotent(t *testing.T) {
 	if err := s.GrantCapability(ctx, localID, cap); err != nil {
 		t.Fatalf("second GrantCapability (idempotent): %v", err)
 	}
-	var n int
-	if err := pool.QueryRow(ctx,
-		"SELECT count(*) FROM aura.capability_grants WHERE identity_id = $1 AND capability = $2", localID, cap,
-	).Scan(&n); err != nil {
-		t.Fatalf("count grants: %v", err)
-	}
+	n := countGrants(t, pool, localID, "AND capability = $2", cap)
 	if n != 1 {
 		t.Errorf("after two grants: want exactly 1 row, got %d", n)
 	}
@@ -210,11 +222,7 @@ func TestGrantRevoke_Idempotent(t *testing.T) {
 	if err := s.RevokeCapability(ctx, localID, cap); err != nil {
 		t.Fatalf("second RevokeCapability (idempotent): %v", err)
 	}
-	if err := pool.QueryRow(ctx,
-		"SELECT count(*) FROM aura.capability_grants WHERE identity_id = $1 AND capability = $2", localID, cap,
-	).Scan(&n); err != nil {
-		t.Fatalf("count grants post-revoke: %v", err)
-	}
+	n = countGrants(t, pool, localID, "AND capability = $2", cap)
 	if n != 0 {
 		t.Errorf("after revoke: want 0 rows, got %d", n)
 	}
@@ -234,12 +242,7 @@ func TestGrantRevoke_WildcardRejected(t *testing.T) {
 	}
 
 	// The seeded wildcard row must still be present (rejection happened before DB).
-	var n int
-	if err := pool.QueryRow(ctx,
-		"SELECT count(*) FROM aura.capability_grants WHERE identity_id = $1 AND capability = '*'", localID,
-	).Scan(&n); err != nil {
-		t.Fatalf("count wildcard after rejection: %v", err)
-	}
+	n := countGrants(t, pool, localID, "AND capability = '*'")
 	if n != 1 {
 		t.Errorf("seeded '*' grant: want still exactly 1 row after rejection, got %d", n)
 	}
@@ -280,12 +283,7 @@ func TestDeleteIdentity_CascadesGrants(t *testing.T) {
 	if err := s.GrantCapability(ctx, id, "cascade.me"); err != nil {
 		t.Fatalf("GrantCapability: %v", err)
 	}
-	var pre int
-	if err := pool.QueryRow(ctx,
-		"SELECT count(*) FROM aura.capability_grants WHERE identity_id = $1", id,
-	).Scan(&pre); err != nil {
-		t.Fatalf("count grants pre-delete: %v", err)
-	}
+	pre := countGrants(t, pool, id, "")
 	if pre == 0 {
 		t.Fatal("setup: expected at least one grant before delete")
 	}
@@ -293,12 +291,7 @@ func TestDeleteIdentity_CascadesGrants(t *testing.T) {
 	if err := s.DeleteIdentity(ctx, name); err != nil {
 		t.Fatalf("DeleteIdentity: %v", err)
 	}
-	var post int
-	if err := pool.QueryRow(ctx,
-		"SELECT count(*) FROM aura.capability_grants WHERE identity_id = $1", id,
-	).Scan(&post); err != nil {
-		t.Fatalf("count grants post-delete: %v", err)
-	}
+	post := countGrants(t, pool, id, "")
 	if post != 0 {
 		t.Errorf("after DeleteIdentity: want 0 cascaded grants, got %d", post)
 	}

@@ -148,6 +148,13 @@ func (a auraLegAdapter) CreateIdentityWithGrants(ctx context.Context, p agui.Aur
 		}
 		return "", fmt.Errorf("create identity: %w", err)
 	}
+	// aura.capability_grants is fail-closed as of migration 0087, so the grants below need
+	// app.current_identity bound to the identity being granted. It only exists as of the
+	// statement above, which is why this is SetTxIdentity inside the open tx rather than
+	// db.WithIdentityTx around it.
+	if err := db.SetTxIdentity(ctx, tx, newID.String()); err != nil {
+		return "", fmt.Errorf("scope aura leg to new identity: %w", err)
+	}
 	for _, cap := range p.Capabilities {
 		// Backstop the no-escalation re-validation at the store edge. Leg A binds raw sqlc
 		// inside this tx, so it must reuse identity.Store's capability grammar helper

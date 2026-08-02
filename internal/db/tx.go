@@ -41,20 +41,28 @@ func WithTx(ctx context.Context, pool *pgxpool.Pool, fn func(*sqlc.Queries) erro
 	return fn(sqlc.New(tx))
 }
 
-// WithIdentityTx is the Phase-36 RLS carrier (D-07): it mirrors WithTx but sets the
-// per-request RLS session var `app.current_identity` to identityID BEFORE running fn,
-// so the owner-isolation policies on aura.conversations / aura.conversation_turns /
-// aura.paused_states (migration 0032) filter every statement in the tx to the caller's
-// rows. `set_config(..., is_local => true)` scopes the setting to THIS transaction only
-// (it resets at COMMIT/ROLLBACK), so it is safe under pgxpool connection reuse — a bare
-// `SET` would leak the identity onto the pooled connection and the next borrower (the
-// T-36-04-E elevation-of-privilege prohibition). An empty identityID sets the var to ”
-// (which the NULLIF-guarded policy treats as "no identity context" → the legacy
-// unscoped path), so a caller with no principal is never silently upgraded.
+// WithIdentityTx is the RLS carrier (D-07): it mirrors WithTx but sets the per-request RLS
+// session var `app.current_identity` to identityID BEFORE running fn, so the owner-isolation
+// policies filter every statement in the tx to the caller's rows. See SetTxIdentity for why
+// the setting is transaction-local.
 //
-// This is the single choke point every owner-scoped web read/mutate routes through, so a
+// This is the single choke point every owner-scoped read/mutate routes through, so a
 // forgotten *ForIdentity WHERE clause still returns 0 foreign rows (the D-07 backstop the
 // app-level filter is layered on top of, not a replacement for).
+//
+// An empty identityID sets the var to the empty string, and what that means now depends on
+// the table, because migration 0087 split the policy set in two:
+//
+//   - The tables 0087 covers (aura.documents and its children, aura.capability_grants,
+//     aura.content_parts, aura.idempotency_operations, aura.identity_object_store) FAIL
+//     CLOSED: an empty identity sees no rows and can write none. That is deliberate — a
+//     caller with no principal must not reach owner-scoped data at all.
+//   - The four tables still on their 0032/0041 policies (aura.conversations,
+//     aura.conversation_turns, aura.paused_states, aura.shared_links) are still
+//     permissive-on-unset, because the runner turn loop writes them with no principal. 0087's
+//     header documents what has to change before they can be tightened.
+//
+// Either way a caller with no principal is never silently UPGRADED to someone else's rows.
 func WithIdentityTx(ctx context.Context, pool *pgxpool.Pool, identityID string, fn func(*sqlc.Queries) error) (err error) {
 	ctx, end := dbTransactionBoundary.Start(ctx)
 	defer end.PanicSafe(&err)
@@ -73,12 +81,24 @@ func WithIdentityTx(ctx context.Context, pool *pgxpool.Pool, identityID string, 
 		}
 		err = tx.Commit(ctx)
 	}()
-	// is_local => true scopes the setting to this tx (resets at COMMIT/ROLLBACK) — never
-	// a bare SET, which would persist on the pooled connection and leak to the next borrower.
-	if _, err = tx.Exec(ctx, `SELECT set_config('app.current_identity', $1, true)`, identityID); err != nil {
+	if err = SetTxIdentity(ctx, tx, identityID); err != nil {
 		return err
 	}
 	return fn(sqlc.New(tx))
+}
+
+// SetTxIdentity binds app.current_identity to identityID for the remainder of tx. It is the
+// single statement the whole RLS carrier reduces to, exported so a composition root that has
+// ALREADY begun a transaction — and only learns the identity inside it, as
+// auraLegAdapter.CreateIdentityWithGrants does when it mints a new identity mid-tx — can opt
+// into the same scoping without opening a second transaction or hand-rolling the SQL.
+//
+// is_local => true scopes the setting to THIS transaction (it resets at COMMIT/ROLLBACK), so it
+// is safe under pgxpool connection reuse. A bare SET would persist on the pooled connection and
+// leak the identity to the next borrower — the T-36-04-E elevation-of-privilege prohibition.
+func SetTxIdentity(ctx context.Context, tx pgx.Tx, identityID string) error {
+	_, err := tx.Exec(ctx, `SELECT set_config('app.current_identity', $1, true)`, identityID)
+	return err
 }
 
 // WithIdentityTxRaw is WithIdentityTx's raw-pgx sibling (Phase 37F): identical transaction
@@ -108,7 +128,7 @@ func WithIdentityTxRaw(ctx context.Context, pool *pgxpool.Pool, identityID strin
 		}
 		err = tx.Commit(ctx)
 	}()
-	if _, err = tx.Exec(ctx, `SELECT set_config('app.current_identity', $1, true)`, identityID); err != nil {
+	if err = SetTxIdentity(ctx, tx, identityID); err != nil {
 		return err
 	}
 	return fn(tx)

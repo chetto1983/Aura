@@ -28,9 +28,10 @@ func buildAssetService(cfg *config.Config, pool *pgxpool.Pool, objectStore objec
 		ProcessingJobs: newRuntimeAssetProcessingQueue(pool),
 		Processors: assets.ProcessorSet{
 			Document: docProcessor,
-			// An uploaded image gets BOTH a vision summary (inline chat) AND searchable
-			// OCR chunks: the document processor OCRs+indexes it via markitdown (spike 075),
-			// the image processor keeps the "describe this image" summary. Fail-soft.
+			// An uploaded image gets a vision summary (inline chat) AND a catalog row so
+			// document_search can name it and document_open can hand the agent the file.
+			// The document leg REGISTERS only — no OCR, no chunking runs here (see
+			// ImageDocumentProcessor). Fail-soft: either leg can be down.
 			Image: &assets.ImageDocumentProcessor{
 				Vision:   imageProc,
 				Document: docProcessor,

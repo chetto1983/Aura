@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/chetto1983/aura/internal/agui"
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/webauth"
@@ -172,6 +173,12 @@ func createAuraFirstOperatorTx(ctx context.Context, tx pgx.Tx, identityName, aut
 			return "", agui.ErrBootstrapAlreadyConfigured
 		}
 		return "", fmt.Errorf("create bootstrap identity: %w", err)
+	}
+	// The wildcard grant below lands in aura.capability_grants, fail-closed as of migration
+	// 0087. The identity is minted one statement above, so the scoping has to happen inside
+	// this tx rather than around it.
+	if err := db.SetTxIdentity(ctx, tx, newID.String()); err != nil {
+		return "", fmt.Errorf("scope bootstrap tx to new identity: %w", err)
 	}
 	if err := q.GrantCapability(ctx, sqlc.GrantCapabilityParams{
 		IdentityID: newPGID,

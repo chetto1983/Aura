@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/chetto1983/aura/internal/multimodal"
 	"github.com/chetto1983/aura/internal/objectstore"
@@ -86,6 +88,88 @@ func TestAudioProcessorReadsObjectAndCallsSTTSidecar(t *testing.T) {
 	}
 	if gotModel != "large-v3-turbo" || gotLanguage != "it" {
 		t.Fatalf("STT fields model/language = %q/%q, want configured values", gotModel, gotLanguage)
+	}
+}
+
+// TestAudioProcessorRetriesThenFails inherits the PRD 2-retry backoff from the
+// Telegram STT client that used to own it: a transient sidecar failure is retried
+// (3 attempts total) before the asset is failed. This is the ONLY place that retry
+// now exists — Telegram ingest calls processAsset inline, so the durable job
+// worker's minute-scale retry never covers a voice note.
+func TestAudioProcessorRetriesThenFails(t *testing.T) {
+	objects := objectstore.NewFake()
+	ref := objectstore.ObjectRef{Bucket: "b", Key: "voice/original"}
+	ogg := []byte("OggS\x00fake-opus")
+	if _, err := objects.Put(context.Background(), ref, strings.NewReader(string(ogg)), objectstore.PutOptions{MIMEType: "audio/ogg", Size: int64(len(ogg))}); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+
+	var attempts atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attempts.Add(1)
+		http.Error(w, "down", http.StatusBadGateway)
+	}))
+	defer srv.Close()
+
+	proc := NewAudioProcessor(objects, multimodal.STTConfig{LocalBaseURL: srv.URL})
+	proc.Backoff = []time.Duration{time.Millisecond, time.Millisecond} // keep the test fast
+
+	_, err := proc.ProcessAsset(context.Background(), Asset{
+		ID:           "asset-1",
+		Modality:     ModalityAudio,
+		ObjectBucket: ref.Bucket,
+		ObjectKey:    ref.Key,
+		FileName:     "voice.ogg",
+		MIMEType:     "audio/ogg",
+	})
+	if err == nil {
+		t.Fatal("a persistent 5xx must fail the asset, not return a silent empty transcript")
+	}
+	if got := attempts.Load(); got != 3 {
+		t.Errorf("STT attempts = %d, want 3 (1 + 2 retries)", got)
+	}
+}
+
+// TestAudioProcessorRecoversOnRetry proves the retry is worth having: a sidecar that
+// fails once then answers still yields the transcript.
+func TestAudioProcessorRecoversOnRetry(t *testing.T) {
+	objects := objectstore.NewFake()
+	ref := objectstore.ObjectRef{Bucket: "b", Key: "voice/original"}
+	ogg := []byte("OggS\x00fake-opus")
+	if _, err := objects.Put(context.Background(), ref, strings.NewReader(string(ogg)), objectstore.PutOptions{MIMEType: "audio/ogg", Size: int64(len(ogg))}); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+
+	var attempts atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if attempts.Add(1) == 1 {
+			http.Error(w, "warming up", http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"text":"ciao Aura"}`)
+	}))
+	defer srv.Close()
+
+	proc := NewAudioProcessor(objects, multimodal.STTConfig{LocalBaseURL: srv.URL})
+	proc.Backoff = []time.Duration{time.Millisecond, time.Millisecond}
+
+	result, err := proc.ProcessAsset(context.Background(), Asset{
+		ID:           "asset-1",
+		Modality:     ModalityAudio,
+		ObjectBucket: ref.Bucket,
+		ObjectKey:    ref.Key,
+		FileName:     "voice.ogg",
+		MIMEType:     "audio/ogg",
+	})
+	if err != nil {
+		t.Fatalf("ProcessAsset after a transient failure: %v", err)
+	}
+	if result.Summary != "ciao Aura" {
+		t.Errorf("summary = %q, want the transcript from the second attempt", result.Summary)
+	}
+	if got := attempts.Load(); got != 2 {
+		t.Errorf("STT attempts = %d, want 2 (recovered on the first retry)", got)
 	}
 }
 

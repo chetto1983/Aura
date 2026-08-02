@@ -439,14 +439,6 @@ type AuraIngestionJobs struct {
 	CompletedAt    pgtype.Timestamptz `json:"completed_at"`
 }
 
-// Audit of applied Cypher migrations. Written by aura neo4j migrate; read by aura neo4j status.
-type AuraKnowledgeMigrations struct {
-	Version   int32              `json:"version"`
-	Name      string             `json:"name"`
-	Checksum  string             `json:"checksum"`
-	AppliedAt pgtype.Timestamptz `json:"applied_at"`
-}
-
 // Append-only MCP-config-mutation audit ledger (Phase 29, MCPW-02). aura_app has SELECT+INSERT only; UPDATE/DELETE raise via a row trigger and TRUNCATE via a statement trigger (Pitfall 3). One immutable row per MCP config mutation, written inside the mutation db.WithTx.
 type AuraMcpAudit struct {
 	ID              pgtype.UUID        `json:"id"`

@@ -6,18 +6,32 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/chetto1983/aura/internal/multimodal"
 	"github.com/chetto1983/aura/internal/objectstore"
 )
 
+// defaultSTTBackoff is the PRD 2-retry exponential backoff (1s, 2s) — three attempts
+// total. It lives here because this processor is now the ONLY inbound speech path:
+// the Telegram channel used to own an identical retry loop around its own STT client,
+// and when its voice notes moved onto the asset pipeline that loop stopped running.
+// Telegram ingest calls processAsset INLINE (ingest_agent.go), so the durable job
+// worker's minute-scale retry never covers it — without this a single transient
+// sidecar blip loses the voice note outright.
+var defaultSTTBackoff = []time.Duration{time.Second, 2 * time.Second}
+
 // AudioProcessor turns an uploaded audio asset into a transcript. The OpenAI-
 // compatible speech-to-text call (local faster-whisper multipart or OpenRouter
 // cloud JSON, with the one config-only swap) lives in internal/multimodal; this
-// processor owns only the objectstore read and the Result mapping.
+// processor owns the objectstore read, the transient-failure retry, and the Result
+// mapping.
 type AudioProcessor struct {
 	Objects objectstore.Store
 	STT     *multimodal.STTClient
+	// Backoff is the per-retry sleep schedule. Nil → defaultSTTBackoff. Tests pin a
+	// fast schedule; a zero-length slice means a single attempt.
+	Backoff []time.Duration
 	// PerIdentityObjects, when set, resolves the ASSET OWNER's per-identity store so the
 	// object read targets the owner's bucket with the owner's creds. Nil → the shared Objects.
 	PerIdentityObjects *ObjectResolverBundle
@@ -46,7 +60,7 @@ func (p *AudioProcessor) ProcessAsset(ctx context.Context, asset Asset) (Result,
 	if err != nil {
 		return Result{}, err
 	}
-	transcript, err := p.STT.Transcribe(ctx, audioBytes, asset.FileName, AudioFormat(asset.MIMEType))
+	transcript, err := p.transcribe(ctx, audioBytes, asset.FileName, AudioFormat(asset.MIMEType))
 	if err != nil {
 		return Result{}, err
 	}
@@ -57,6 +71,45 @@ func (p *AudioProcessor) ProcessAsset(ctx context.Context, asset Asset) (Result,
 			"transcript": transcript,
 		},
 	}, nil
+}
+
+// transcribe runs the STT call, retrying a transient sidecar failure on the backoff
+// schedule and returning the last error once the attempts are exhausted. A cancelled
+// ctx aborts the wait immediately rather than sleeping out the schedule.
+func (p *AudioProcessor) transcribe(ctx context.Context, audio []byte, fileName, format string) (string, error) {
+	backoff := p.Backoff
+	if backoff == nil {
+		backoff = defaultSTTBackoff
+	}
+	var lastErr error
+	for attempt := range 1 + len(backoff) {
+		if attempt > 0 {
+			if !sleepCtx(ctx, backoff[attempt-1]) {
+				return "", ctx.Err()
+			}
+		}
+		transcript, err := p.STT.Transcribe(ctx, audio, fileName, format)
+		if err == nil {
+			return transcript, nil
+		}
+		lastErr = err
+	}
+	return "", fmt.Errorf("asset stt: transcription failed after %d attempts: %w", 1+len(backoff), lastErr)
+}
+
+// sleepCtx waits for d, reporting false if ctx was cancelled during the wait.
+func sleepCtx(ctx context.Context, d time.Duration) bool {
+	if d <= 0 {
+		return ctx.Err() == nil
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
 
 // AudioFormat maps an asset MIME to the container hint the cloud STT JSON route

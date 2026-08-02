@@ -55,7 +55,6 @@ Processor endpoints:
 
 | Variable | Purpose |
 | --- | --- |
-| `DOCUMENTS_BASE_URL` | MarkItDown `/convert` endpoint for document assets |
 | `MULTIMODAL_BASE_URL` and `MULTIMODAL_MODEL` | Local OCR/vision endpoint and model |
 | `AURA_VISION_CLOUD` | Set `true` to route image processing through cloud vision |
 | `STT_BASE_URL`, `STT_MODEL`, `STT_LANGUAGE` | Speech-to-text endpoint, model, and language hint |
@@ -74,7 +73,7 @@ Telegram:
 Start the local stack pieces that the asset pipeline needs:
 
 ```powershell
-docker compose up -d postgres garage markitdown aura-ocr-vl aura-stt
+docker compose up -d postgres garage aura-ocr-vl aura-stt
 bash scripts/garage_bootstrap.sh
 go run ./cmd/aura db migrate
 ```

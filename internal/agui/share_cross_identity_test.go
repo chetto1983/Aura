@@ -42,7 +42,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/chetto1983/aura/internal/conversations"
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/share"
 )
@@ -243,9 +246,14 @@ func TestShareCrossIdentityDeny(t *testing.T) {
 	// pre-existing caller of that helper keeps minting (see its own doc comment) — that
 	// auto-grant must NEVER touch ownerA here, or this row would pass vacuously.
 	t.Run("row8_mint_public_without_capability_403", func(t *testing.T) {
-		if _, err := pool.Exec(ctx,
-			`INSERT INTO aura.capability_grants (identity_id, capability) VALUES ($1::uuid, $2)`,
-			ownerB, sharePublicCapabilityName); err != nil {
+		// Scoped to B: aura.capability_grants is fail-closed as of migration 0087, so the
+		// seed must name whose grant it is.
+		if err := db.WithIdentityTxRaw(ctx, pool, ownerB, func(tx pgx.Tx) error {
+			_, e := tx.Exec(ctx,
+				`INSERT INTO aura.capability_grants (identity_id, capability) VALUES ($1::uuid, $2)`,
+				ownerB, sharePublicCapabilityName)
+			return e
+		}); err != nil {
 			t.Fatalf("seed share.public for B: %v", err)
 		}
 		rec := shareReq(env.server, http.MethodPost, "/api/shares", ownerA,

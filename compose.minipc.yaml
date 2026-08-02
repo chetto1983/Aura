@@ -51,10 +51,8 @@ services:
 
   aura:
     depends_on:
-      # service_started e non service_healthy: qui sono ausiliari, se markitdown o
-      # searxng arrancano l'agente deve comunque salire.
-      markitdown:
-        condition: service_started
+      # service_started e non service_healthy: searxng e' ausiliario, se arranca
+      # l'agente deve comunque salire.
       searxng:
         condition: service_started
     environment:
@@ -68,9 +66,3 @@ services:
       AURA_TTS_MODEL: ${AURA_TTS_MODEL:-hexgrad/kokoro-82m}
       # opus lo produce solo il kokoro locale, che qui non c'è.
       TTS_FORMAT: ${TTS_FORMAT:-mp3}
-
-  markitdown:
-    environment:
-      AURA_OCR_BASE_URL: ${AURA_OCR_BASE_URL:-https://openrouter.ai/api/v1}
-      AURA_OCR_MODEL: ${AURA_OCR_MODEL:-google/gemini-3.5-flash-lite}
-      AURA_OCR_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY required in .env}

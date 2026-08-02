@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/chetto1983/aura/internal/agent"
@@ -97,8 +98,12 @@ func musrProvisionIdentity(t *testing.T, pool *pgxpool.Pool, label string) strin
 		`INSERT INTO aura.identities (id, name, kind) VALUES ($1::uuid, $2, 'user')`, id, name); err != nil {
 		t.Fatalf("provision identity %s: %v", label, err)
 	}
-	if _, err := pool.Exec(ctx,
-		`INSERT INTO aura.capability_grants (identity_id, capability) VALUES ($1::uuid, 'agent.run')`, id); err != nil {
+	// Scoped: aura.capability_grants is fail-closed as of migration 0087.
+	if err := db.WithIdentityTxRaw(ctx, pool, id, func(tx pgx.Tx) error {
+		_, e := tx.Exec(ctx,
+			`INSERT INTO aura.capability_grants (identity_id, capability) VALUES ($1::uuid, 'agent.run')`, id)
+		return e
+	}); err != nil {
 		t.Fatalf("grant agent.run to %s: %v", label, err)
 	}
 	t.Cleanup(func() {

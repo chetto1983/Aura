@@ -81,7 +81,6 @@ func buildTelegramDeps(chat *chatEnv, tgCfg telegram.Config) telegram.Deps {
 		Store:              telegram.New(chat.pool),
 		Profile:            newMemoryProfileStore(),
 		Multimodal:         multimodalConfig(chat.cfg),
-		DocumentIngest:     newRuntimeDocumentIngestor(chat.cfg, chat.pool),
 		Assets:             chat.assets,
 		Search:             chat.conv,
 		Cost:               newTodayCost(chat.pool),
@@ -98,31 +97,25 @@ func buildTelegramDeps(chat *chatEnv, tgCfg telegram.Config) telegram.Deps {
 	}
 }
 
-// multimodalConfig projects the central config.Config multimodal knobs onto the
-// telegram-package MultimodalConfig the media handlers read. The cloud-vision leg
-// (AURA_VISION_CLOUD=true) reuses the LLM client's OpenRouter base + key (the same
-// credential the agent loop uses); the local-vision/STT/TTS/documents legs read
-// the upstream-named sidecar URLs. This is the serve-side mapper the patterns map
-// called for — it lives here (cmd/aura imports both packages) so the telegram
+// multimodalConfig projects the central config.Config TTS knobs onto the
+// telegram-package MultimodalConfig the outbound voice-note path reads. The cloud
+// leg reuses the LLM client's OpenRouter base + key (the same credential the agent
+// loop uses); the local leg reads the upstream-named sidecar URL. This is the
+// serve-side mapper — it lives here (cmd/aura imports both packages) so the telegram
 // package stays free of an internal/config import (the sidecar.go contract).
+//
+// The vision/STT/document knobs are deliberately absent: inbound Telegram media is
+// ingested as assets, and internal/assets is wired with its own vision/STT config by
+// buildAssetService. Projecting them here too would recreate the second pipeline
+// this channel just stopped being.
 func multimodalConfig(cfg *config.Config) telegram.MultimodalConfig {
 	return telegram.MultimodalConfig{
-		VisionCloud:       cfg.VisionCloud,
-		Model:             cfg.LLM.Model,
-		MultimodalBaseURL: cfg.MultimodalBaseURL,
-		MultimodalModel:   cfg.MultimodalModel,
-		FallbackModel:     cfg.MultimodalFallbackModel,
 		OpenRouterBaseURL: cfg.LLM.BaseURL,
 		OpenRouterAPIKey:  cfg.LLM.APIKey,
-		STTBaseURL:        cfg.STTBaseURL,
-		STTModel:          cfg.STTModel,
-		STTLanguage:       cfg.STTLanguage,
-		STTCloudModel:     cfg.STTCloudModel,
 		TTSBaseURL:        cfg.TTSBaseURL,
 		TTSVoice:          cfg.TTSVoice,
 		TTSFormat:         cfg.TTSFormat,
 		TTSModel:          cfg.TTSModel,
-		DocumentsBaseURL:  cfg.DocumentsBaseURL,
 		TimeoutSec:        cfg.MultimodalTimeoutSec,
 	}
 }

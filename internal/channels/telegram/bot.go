@@ -20,7 +20,6 @@ import (
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/channels"
-	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/llm"
 	profileflow "github.com/chetto1983/aura/internal/onboarding"
 )
@@ -39,10 +38,6 @@ var _ channels.Channel = (*Telegram)(nil)
 // synthetic event stream through the real Translate→Fanout path without a live
 // Runner/DB (the bot is exercised Offline).
 type turnDriver func(ctx context.Context, convID string, userMsg *string) iter.Seq2[*agent.Event, error]
-
-type documentIngestor interface {
-	IngestPath(ctx context.Context, req documents.IngestRequest, path string) (*documents.Job, error)
-}
 
 type assetIngress interface {
 	IngestTelegramFile(ctx context.Context, req assets.TelegramIngestRequest) (assets.Asset, error)
@@ -87,19 +82,15 @@ type Deps struct {
 	// channel only nudges). Nil disables the nudge entirely.
 	Profile profileflow.ProfileMemoryStore
 
-	// Multimodal carries the 9c sidecar wiring (STT/TTS/vision/documents) the media
-	// handlers (OnVoice/OnPhoto/OnDocument) + the TTS-out path read. A zero value
-	// means a modality is unconfigured — the handler degrades, never panics. Built
-	// by the composition root from config.Config (serve_channels.go).
+	// Multimodal carries the outbound voice-note (TTS) sidecar wiring. Inbound media
+	// no longer reads it: voice/photo/document all ride the shared asset pipeline,
+	// which owns its own sidecar config. A zero value means TTS is unconfigured and
+	// the auto-speak path no-ops. Built by the composition root (serve_channels.go).
 	Multimodal MultimodalConfig
 
-	// DocumentIngest optionally routes document uploads into Aura's native
-	// document ingestion pipeline. Nil preserves the legacy convert-to-markdown
-	// path used by existing deployments and tests.
-	DocumentIngest documentIngestor
-
-	// Assets routes Telegram media through the shared asset pipeline. Nil preserves
-	// the legacy direct sidecar paths for tests and transitional deployments.
+	// Assets is the shared asset pipeline every inbound attachment goes through. The
+	// composition root always wires it; nil means attachments cannot be accepted at
+	// all (the handler says so — there is no second ingestion path).
 	Assets assetIngress
 
 	// Command backends drive the bot-intercept dispatch (commands.go). Search ==
@@ -164,15 +155,12 @@ type Telegram struct {
 	started bool
 
 	// Per-channel dispatch instances, built ONCE at Start from Deps (never per
-	// message): cmds owns the /command intercept + the per-chat /cancel registry;
-	// the media clients hold their HTTP clients; docs owns the async-convert wg that
-	// Stop drains (goleak-clean). Guarded by mu; read under the handler goroutines.
+	// message): cmds owns the /command intercept + the per-chat /cancel registry; tts
+	// holds the outbound voice-note client. Guarded by mu; read under the handler
+	// goroutines.
 	cmds    *commands
 	onboard *onboarding
 	profile *profileOnboarding
-	voice   *voiceClient
-	photo   *photoClient
-	docs    *documentsClient
 	tts     *ttsClient
 
 	hitlRepliesHandled map[hitlReplyKey]struct{}
@@ -335,7 +323,7 @@ func botMenuCommands() []tele.Command {
 // Stop gracefully shuts the poller down and joins the polling goroutine. It is
 // goleak-clean (Bot.Stop unblocks Bot.Start, the goroutine returns, the WaitGroup
 // drains). Idempotent: a Stop on a never-started channel is a clean no-op.
-func (t *Telegram) Stop(ctx context.Context) error {
+func (t *Telegram) Stop(_ context.Context) error {
 	t.mu.Lock()
 	bot := t.bot
 	started := t.started
@@ -346,15 +334,10 @@ func (t *Telegram) Stop(ctx context.Context) error {
 	}
 	bot.Stop()
 
-	// Drain any in-flight async document-convert goroutines (goleak-clean — the
-	// package TestMain catches a leaked convert goroutine). The poller is already
-	// stopped, so no new conversion is accepted past this point.
-	t.mu.Lock()
-	docs := t.docs
-	t.mu.Unlock()
-	if docs != nil {
-		docs.Stop(ctx)
-	}
+	// The poller is stopped, so no new handler starts. t.wg tracks the in-flight
+	// turns (startTurn spawns them off the poller), and joining it is the whole drain
+	// — attachment ingest is synchronous inside its handler, so there is no separate
+	// background convert queue to wait on any more.
 	t.wg.Wait()
 
 	t.mu.Lock()

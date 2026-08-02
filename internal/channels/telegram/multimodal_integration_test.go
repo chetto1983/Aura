@@ -1,19 +1,24 @@
 //go:build multimodal_integration
 
-// Live multimodal sidecar integration tier (UX-04, NEW). Round-trips the three 9c
-// CPU sidecars end-to-end:
+// Live multimodal sidecar integration tier for the ONE sidecar leg this channel
+// still owns — outbound text-to-speech:
 //
-//	STT_BASE_URL        — aura-stt (faster-whisper), /audio/transcriptions
-//	MULTIMODAL_BASE_URL  — aura-ocr-vl (GLM-OCR), /chat/completions image_url
-//	TTS_BASE_URL        — aura-tts (Kokoro), /audio/speech response_format=opus
+//	TTS_BASE_URL — aura-tts (Kokoro), /audio/speech response_format=opus
+//	STT_BASE_URL — aura-stt (faster-whisper), the read-back half of the audio loop
 //
-// Run via (the 3 sidecars must be up — `make sidecars-up` or compose):
+// Run via (the audio sidecars must be up — `make sidecars-up` or compose):
 //
 //	go test -tags multimodal_integration -race ./internal/channels/telegram
 //
-// The marquee round-trip is TTS→STT: synthesize an Italian phrase to opus via
-// aura-tts, then transcribe it back via aura-stt, asserting the transcript is
-// non-empty (the full audio loop the operator hears, machine-asserted).
+// The marquee round-trip is TTS→STT: synthesize an Italian phrase to opus via the
+// channel's voice-note client, then transcribe it back, asserting the transcript is
+// non-empty (the full audio loop the operator hears, machine-asserted). The STT half
+// goes through the SHARED multimodal client directly: inbound speech is no longer
+// this channel's concern (a voice note is ingested as an asset and transcribed by
+// assets.AudioProcessor), so there is no channel-local STT client to drive.
+//
+// The live vision and document legs left with the clients that used to be here. They
+// belong to the asset pipeline now and are exercised where that pipeline lives.
 //
 // NO-SKIP-AS-GREEN: sidecarEnvOrSkip t.Fatals under $CI when the sidecar base URL
 // is SET but unreachable, so a skipped tier under CI fails rather than passing
@@ -21,15 +26,12 @@
 package telegram
 
 import (
-	"bytes"
 	"context"
-	"image"
-	"image/color"
-	"image/png"
 	"os"
-	"strings"
 	"testing"
 	"time"
+
+	"github.com/chetto1983/aura/internal/multimodal"
 )
 
 // sidecarEnvOrSkip resolves a required sidecar base URL. Unset locally → skip;
@@ -43,23 +45,17 @@ func sidecarEnvOrSkip(t *testing.T, key string) string {
 			t.Fatalf("multimodal_integration requires %s, but it is unset under CI — "+
 				"a skipped sidecar tier must not pass as green; wire it in ci.yml", key)
 		}
-		t.Skipf("multimodal_integration requires %s; bring up the 9c sidecars and set the base URLs", key)
+		t.Skipf("multimodal_integration requires %s; bring up the audio sidecars and set the base URLs", key)
 	}
 	return v
 }
 
-// liveMultimodalConfig builds a MultimodalConfig from the live sidecar env. Each
-// caller pulls only the base URLs it needs (a TTS-only test does not require STT).
-func liveMultimodalConfig() MultimodalConfig {
+// liveTTSConfig builds the channel's TTS config from the live sidecar env.
+func liveTTSConfig() MultimodalConfig {
 	return MultimodalConfig{
-		STTBaseURL:        os.Getenv("STT_BASE_URL"),
-		STTModel:          os.Getenv("STT_MODEL"),
-		MultimodalBaseURL: os.Getenv("MULTIMODAL_BASE_URL"),
-		MultimodalModel:   envOr("MULTIMODAL_MODEL", "glm-ocr"),
-		TTSBaseURL:        os.Getenv("TTS_BASE_URL"),
-		TTSVoice:          envOr("TTS_VOICE", "if_sara"),
-		TTSFormat:         envOr("TTS_FORMAT", "opus"),
-		DocumentsBaseURL:  os.Getenv("DOCUMENTS_BASE_URL"),
+		TTSBaseURL: os.Getenv("TTS_BASE_URL"),
+		TTSVoice:   envOr("TTS_VOICE", "if_sara"),
+		TTSFormat:  envOr("TTS_FORMAT", "opus"),
 		// A live sidecar round-trip can take seconds on CPU; keep the per-request
 		// ceiling generous so a healthy-but-slow synthesis is not aborted mid-read.
 		TimeoutSec: 60,
@@ -80,9 +76,8 @@ func TestLiveTTSThenSTTRoundTrip(t *testing.T) {
 	ttsURL := sidecarEnvOrSkip(t, "TTS_BASE_URL")
 	sttURL := sidecarEnvOrSkip(t, "STT_BASE_URL")
 
-	cfg := liveMultimodalConfig()
+	cfg := liveTTSConfig()
 	cfg.TTSBaseURL = ttsURL
-	cfg.STTBaseURL = sttURL
 
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
@@ -96,33 +91,18 @@ func TestLiveTTSThenSTTRoundTrip(t *testing.T) {
 		t.Fatal("aura-tts returned zero opus bytes — TTS leg produced no audio")
 	}
 
-	transcript, err := newVoiceClient(cfg).postTranscription(ctx, opus)
+	stt := multimodal.NewSTTClient(multimodal.STTConfig{
+		LocalBaseURL: sttURL,
+		LocalModel:   os.Getenv("STT_MODEL"),
+		Language:     envOr("STT_LANGUAGE", "it"),
+		TimeoutSec:   60,
+	})
+	transcript, err := stt.Transcribe(ctx, opus, "voice.ogg", "ogg")
 	if err != nil {
 		t.Fatalf("live aura-stt transcribe: %v", err)
 	}
 	if transcript == "" {
 		t.Fatal("aura-stt returned an empty transcript for a non-trivial opus utterance")
-	}
-}
-
-// TestLivePhotoOCRRoundTrip sends a synthetic PNG to aura-ocr-vl and asserts the
-// description/OCR text is non-empty (the local vision leg, AURA_VISION_CLOUD=false).
-func TestLivePhotoOCRRoundTrip(t *testing.T) {
-	ocrURL := sidecarEnvOrSkip(t, "MULTIMODAL_BASE_URL")
-
-	cfg := liveMultimodalConfig()
-	cfg.VisionCloud = false // local aura-ocr-vl sidecar (the unchanged default)
-	cfg.MultimodalBaseURL = ocrURL
-
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	desc, err := newPhotoClient(cfg).Describe(ctx, syntheticPNG(), "image/png", "Cosa c'è in questa immagine?")
-	if err != nil {
-		t.Fatalf("live aura-ocr-vl Describe: %v", err)
-	}
-	if desc == "" {
-		t.Fatal("aura-ocr-vl returned an empty description for a non-trivial image")
 	}
 }
 
@@ -132,7 +112,7 @@ func TestLivePhotoOCRRoundTrip(t *testing.T) {
 func TestLiveTTSVoiceBytes(t *testing.T) {
 	ttsURL := sidecarEnvOrSkip(t, "TTS_BASE_URL")
 
-	cfg := liveMultimodalConfig()
+	cfg := liveTTSConfig()
 	cfg.TTSBaseURL = ttsURL
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -145,46 +125,4 @@ func TestLiveTTSVoiceBytes(t *testing.T) {
 	if len(opus) == 0 {
 		t.Fatal("aura-tts produced zero opus bytes")
 	}
-}
-
-// TestLiveDocumentConvert sends a small document through the tiered documentsClient
-// to the markitdown sidecar and asserts the ≤5MB SYNC tier returns non-empty
-// markdown carrying the document's text — the UX-04 documents leg, the official
-// microsoft/markitdown lib behind the in-repo docker/markitdown /convert wrapper.
-func TestLiveDocumentConvert(t *testing.T) {
-	docURL := sidecarEnvOrSkip(t, "DOCUMENTS_BASE_URL")
-
-	cfg := liveMultimodalConfig()
-	cfg.DocumentsBaseURL = docURL
-
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
-	doc := []byte("<h1>Relazione Aura</h1>\n<p>Questo è un documento di prova.</p>\n")
-	res, err := newDocumentsClient(cfg).Convert(ctx, doc, "relazione.html", nil)
-	if err != nil {
-		t.Fatalf("live markitdown convert: %v", err)
-	}
-	if res.Status != ConvertSync {
-		t.Fatalf("a small (≤5MB) document must convert synchronously; got status %v", res.Status)
-	}
-	if !strings.Contains(res.Markdown, "Relazione Aura") {
-		t.Fatalf("converted markdown missing the document heading; got %q", res.Markdown)
-	}
-}
-
-// syntheticPNG renders a small solid-color PNG so the OCR round-trip has a real
-// image payload without committing a binary fixture. (The operator exercises a
-// text-bearing photo live; this proves the vision sidecar response leg.)
-func syntheticPNG() []byte {
-	const w, h = 64, 64
-	img := image.NewRGBA(image.Rect(0, 0, w, h))
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
-			img.Set(x, y, color.RGBA{R: 0x20, G: 0x80, B: 0xC0, A: 0xFF})
-		}
-	}
-	var buf bytes.Buffer
-	_ = png.Encode(&buf, img)
-	return buf.Bytes()
 }

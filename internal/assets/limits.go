@@ -2,10 +2,19 @@
 package assets
 
 import (
+	"errors"
 	"fmt"
 	"mime"
 	"path/filepath"
 	"strings"
+)
+
+// Refusal reasons a caller can act on. A channel has to tell "your file is too big"
+// apart from "the object store is down" — the first is the operator's to fix, the
+// second is ours — and it cannot do that against an opaque fmt.Errorf.
+var (
+	ErrAssetTooLarge    = errors.New("asset exceeds the size ceiling")
+	ErrAssetUnsupported = errors.New("unsupported asset type")
 )
 
 type Limits struct {
@@ -16,8 +25,8 @@ type Limits struct {
 
 // documentExts is the asset-upload allowlist for the ModalityDocument path. It MUST
 // stay in sync with the text-document subset of documents.supportedDocumentExt (the
-// ingest/markitdown allowlist) — image formats live on the ModalityImage path, so they
-// are intentionally excluded here. Drift between the two lists silently 400s uploads of
+// ingest allowlist) — image formats live on the ModalityImage path, so they are
+// intentionally excluded here. Drift between the two lists silently 400s uploads of
 // formats the ingest pipeline supports (the pptx/html regression). limits_sync_test.go
 // asserts they match.
 var documentExts = map[string]bool{
@@ -64,21 +73,21 @@ func (l Limits) Validate(modality Modality, fileName string, size int64) error {
 	switch modality {
 	case ModalityDocument:
 		if !documentExts[strings.ToLower(filepath.Ext(fileName))] {
-			return fmt.Errorf("unsupported document type %q", filepath.Ext(fileName))
+			return fmt.Errorf("%w: document type %q", ErrAssetUnsupported, filepath.Ext(fileName))
 		}
 		if size > l.MaxDocumentBytes {
-			return fmt.Errorf("document exceeds %d bytes", l.MaxDocumentBytes)
+			return fmt.Errorf("%w: document exceeds %d bytes", ErrAssetTooLarge, l.MaxDocumentBytes)
 		}
 	case ModalityImage:
 		if size > l.MaxImageBytes {
-			return fmt.Errorf("image exceeds %d bytes", l.MaxImageBytes)
+			return fmt.Errorf("%w: image exceeds %d bytes", ErrAssetTooLarge, l.MaxImageBytes)
 		}
 	case ModalityAudio:
 		if size > l.MaxAudioBytes {
-			return fmt.Errorf("audio exceeds %d bytes", l.MaxAudioBytes)
+			return fmt.Errorf("%w: audio exceeds %d bytes", ErrAssetTooLarge, l.MaxAudioBytes)
 		}
 	default:
-		return fmt.Errorf("unsupported asset modality %q", modality)
+		return fmt.Errorf("%w: asset modality %q", ErrAssetUnsupported, modality)
 	}
 	return nil
 }

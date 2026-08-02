@@ -142,11 +142,32 @@ func (s *Store) HasCapability(ctx context.Context, identityID, capability string
 	if err != nil {
 		return false, fmt.Errorf("has capability: %w", err)
 	}
-	ok, err := s.q.HasCapability(ctx, sqlc.HasCapabilityParams{IdentityID: id, Capability: capability})
+	var ok bool
+	err = s.withIdentity(ctx, identityID, func(q *sqlc.Queries) error {
+		var e error
+		ok, e = q.HasCapability(ctx, sqlc.HasCapabilityParams{IdentityID: id, Capability: capability})
+		return e
+	})
 	if err != nil {
 		return false, fmt.Errorf("has capability %q for %s: %w", capability, identityID, err)
 	}
 	return ok, nil
+}
+
+// withIdentity runs fn with app.current_identity bound to identityID, so aura.capability_grants'
+// fail-closed policies (migration 0087) admit exactly this identity's grants. Every capability
+// method already receives the identity it is asking about, so this is the whole adaptation — the
+// grants table is an authorization surface and must never be readable or writable by a
+// connection that has not said whose grants it means.
+// A pool-less Store is the fake-DBTX construction the package's unit tests use
+// (newFakeStore builds &Store{q: sqlc.New(fake)}); it has no transaction to scope, so it
+// runs fn on the injected Queries directly. Production always goes through New, which
+// always carries the pool.
+func (s *Store) withIdentity(ctx context.Context, identityID string, fn func(*sqlc.Queries) error) error {
+	if s.pool == nil {
+		return fn(s.q)
+	}
+	return db.WithIdentityTx(ctx, s.pool, identityID, fn)
 }
 
 // ListCapabilities returns the identity's granted capability names, ordered by
@@ -158,7 +179,12 @@ func (s *Store) ListCapabilities(ctx context.Context, identityID string) ([]stri
 	if err != nil {
 		return nil, fmt.Errorf("list capabilities: %w", err)
 	}
-	rows, err := s.q.ListCapabilities(ctx, id)
+	var rows []sqlc.AuraCapabilityGrants
+	err = s.withIdentity(ctx, identityID, func(q *sqlc.Queries) error {
+		var e error
+		rows, e = q.ListCapabilities(ctx, id)
+		return e
+	})
 	if err != nil {
 		return nil, fmt.Errorf("list capabilities for %s: %w", identityID, err)
 	}
@@ -179,7 +205,9 @@ func (s *Store) GrantCapability(ctx context.Context, identityID, capability stri
 	if err != nil {
 		return fmt.Errorf("grant capability: %w", err)
 	}
-	if err := s.q.GrantCapability(ctx, sqlc.GrantCapabilityParams{IdentityID: id, Capability: capability}); err != nil {
+	if err := s.withIdentity(ctx, identityID, func(q *sqlc.Queries) error {
+		return q.GrantCapability(ctx, sqlc.GrantCapabilityParams{IdentityID: id, Capability: capability})
+	}); err != nil {
 		if isUniqueViolation(err) {
 			return nil // already granted — idempotent no-op
 		}
@@ -197,7 +225,9 @@ func (s *Store) RevokeCapability(ctx context.Context, identityID, capability str
 	if err != nil {
 		return fmt.Errorf("revoke capability: %w", err)
 	}
-	if err := s.q.RevokeCapability(ctx, sqlc.RevokeCapabilityParams{IdentityID: id, Capability: capability}); err != nil {
+	if err := s.withIdentity(ctx, identityID, func(q *sqlc.Queries) error {
+		return q.RevokeCapability(ctx, sqlc.RevokeCapabilityParams{IdentityID: id, Capability: capability})
+	}); err != nil {
 		return fmt.Errorf("revoke capability %q from %s: %w", capability, identityID, err)
 	}
 	return nil

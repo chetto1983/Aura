@@ -162,7 +162,7 @@ func TestBootChatCompositionRejectsIncompatibleMigrationBeforeAssembly(t *testin
 			}
 
 			env, err := assembleChatEnvAtMigrationHead(
-				context.Background(), cfg, pool, check, assemble,
+				context.Background(), cfg, pool, check, rlsEnforced, assemble,
 			)
 			if env != nil || !errors.Is(err, tt.checkErr) {
 				t.Fatalf("incompatible migration result = env %v err %v", env, err)
@@ -176,6 +176,44 @@ func TestBootChatCompositionRejectsIncompatibleMigrationBeforeAssembly(t *testin
 			assertPoolClosed(t, pool)
 		})
 	}
+}
+
+// rlsEnforced is the injected stand-in for db.VerifyRLSEnforced on the boot paths that
+// are not exercising the RLS gate itself: the real check needs a live Postgres.
+func rlsEnforced(context.Context, *pgxpool.Pool) error { return nil }
+
+// TestBootChatCompositionRefusesRLSBypassRole pins the boot-time refusal that migration
+// 0087's policies cannot enforce themselves: connected as a superuser or a BYPASSRLS
+// role, Postgres skips every policy and the daemon would serve with no tenant isolation
+// and no symptom. Boot must stop, and must release the pool it already opened.
+func TestBootChatCompositionRefusesRLSBypassRole(t *testing.T) {
+	pool := unreachablePool(t)
+	cfg := validBootConfig()
+	cfg.DB.MigrateURL = "postgres://migrate:secret@127.0.0.1:1/aura"
+	assembled := false
+	bypass := fmt.Errorf("%w: connected as \"aura\"", db.ErrRLSBypass)
+
+	env, err := assembleChatEnvAtMigrationHead(
+		context.Background(), cfg, pool,
+		func(context.Context, string) error { return nil },
+		func(_ context.Context, gotPool *pgxpool.Pool) error {
+			if gotPool != pool {
+				t.Errorf("rls checker pool = %p, want the opened pool %p", gotPool, pool)
+			}
+			return bypass
+		},
+		func(context.Context, *config.Config, *pgxpool.Pool) (*chatEnv, error) {
+			assembled = true
+			return &chatEnv{}, nil
+		},
+	)
+	if env != nil || !errors.Is(err, db.ErrRLSBypass) {
+		t.Fatalf("rls bypass boot result = env %v err %v, want nil env and ErrRLSBypass", env, err)
+	}
+	if assembled {
+		t.Fatal("chat environment assembled despite a role that bypasses row-level security")
+	}
+	assertPoolClosed(t, pool)
 }
 
 func TestBootChatCompositionAcceptsCompatibleMigration(t *testing.T) {
@@ -204,7 +242,7 @@ func TestBootChatCompositionAcceptsCompatibleMigration(t *testing.T) {
 	}
 
 	env, err := assembleChatEnvAtMigrationHead(
-		context.Background(), cfg, pool, check, assemble,
+		context.Background(), cfg, pool, check, rlsEnforced, assemble,
 	)
 	if err != nil {
 		t.Fatalf("compatible migration composition: %v", err)

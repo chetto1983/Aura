@@ -7,7 +7,7 @@ import (
 
 // Sentinel-fact predicates that replace the on-disk Metadata.Onboarding{Completed,
 // Skipped} flags (Amendment #87). They are written with subject = the identity UUID so
-// the onboarding-status read is a single memory_get_facts(subject=identityID) scan that
+// the onboarding-status read is a single memory_facts_about(entity=identityID) scan that
 // never collides with the operator's profile facts (whose subject is their name).
 const (
 	PredicateOnboardingCompleted = "onboarding_completed"

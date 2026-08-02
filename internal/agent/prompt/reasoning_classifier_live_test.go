@@ -127,8 +127,19 @@ var liveCorpus = []tierCase{
 	either("nel manuale che ti ho caricato, come si tara il sensore?", "low", "high"),
 	// Left STRICT and currently failing: listing what has been uploaded is a trivial
 	// lookup, and the document seeds added to the `high` tier on 2026-08-02 pull it up.
-	// That is the honest cost of teaching the classifier about document work, it is the
-	// gate's remaining headroom, and it is the case to fix next — not to relabel.
+	//
+	// The obvious fix was TRIED AND REVERTED. A counterweight seed in the `low` tier
+	// ("che documenti ho caricato finora?") does clear this case and lifts none-vs-rest
+	// from 95% to 97% — but it drags "somma gli imponibili di tutte le fatture del 2025"
+	// back down to `low`, and accuracy stays flat at 95%. That is a worse tree even
+	// though one headline number improves: over-rating a file listing wastes reasoning
+	// tokens, while under-rating an aggregate returns a confident WRONG NUMBER. The
+	// metric weights those equally and the operator does not.
+	//
+	// So this stays as the gate's remaining headroom. Fixing it needs a sharper
+	// separation between "what exists" and "compute over what exists" than one more
+	// seed can buy — probably a listing intent the classifier can see without pulling
+	// the document centroid toward lookups.
 	either("che documenti ho caricato?", "none", "low"),
 
 	// --- memory. Writing or recalling a fact is a tool call, not a reasoning problem:

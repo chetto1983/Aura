@@ -13,7 +13,9 @@ Aura's current Telegram surfaces (the system this informs):
   (`renderer.go`, `html.go`, `tables.go`).
 - **HITL inline keyboards** via `ask_user`: approval (Sì/No), choice (2–4 buttons +
   Annulla), clarification (ForceReply) (`hitl.go`, `bot_dispatch.go`).
-- **Multimodal** — voice (STT), photo (OCR/vision), documents (markitdown), TTS-out.
+- **Multimodal** — voice, photo and documents are ingested as assets and processed by
+  the shared pipeline (`internal/assets`); TTS-out (the voice-note reply) is the one
+  media leg the channel still owns.
 - **Just-fixed live bug** — `callback_data` must stay ≤64 bytes; long option values 400
   with `BUTTON_DATA_INVALID`. Aura now embeds the option **index**, resolving it back to
   the value server-side (`hitl.go: choiceMarkup` / `resolveChoiceValue`). This is exactly

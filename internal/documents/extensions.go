@@ -6,9 +6,10 @@ import (
 )
 
 // supportedDocumentExt is the single source-of-truth allowlist of file
-// extensions Aura ingests. Every entry is readable by the markitdown sidecar;
-// the sidecar's generic-markdown fallback covers any other markitdown-readable
-// format, so this set is the gate the CLI, Telegram, and asset paths share.
+// extensions Aura ingests. It is the gate the CLI, Telegram, and asset paths
+// share. Ingest REGISTERS a document in the catalog; it does not convert it, so
+// an entry here means "the agent can open and compute on this", not "a converter
+// can flatten it to markdown".
 var supportedDocumentExt = map[string]struct{}{
 	".pdf":      {},
 	".docx":     {},

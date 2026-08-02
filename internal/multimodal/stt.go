@@ -29,7 +29,8 @@ type STTConfig struct {
 }
 
 // STTClient transcribes audio bytes to text. It is a single attempt — retry/
-// backoff is the caller's concern (telegram retries; the asset pipeline does not).
+// backoff is the caller's concern (assets.AudioProcessor, the one inbound speech
+// path, owns the schedule).
 type STTClient struct {
 	cfg        STTConfig
 	httpClient *http.Client

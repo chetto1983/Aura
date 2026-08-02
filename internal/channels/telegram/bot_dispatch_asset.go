@@ -1,7 +1,14 @@
+// Package telegram — this file is the SINGLE inbound-attachment ingress. Every
+// Telegram voice note, photo and document goes through it onto the shared asset
+// pipeline (assets.Service), the same path a cockpit upload travels: object store →
+// catalog row → the modality's processor → a turn carrying the attachment block.
+// The channel carries bytes and renders outcomes; it does not decide how an
+// attachment is read.
 package telegram
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -21,6 +28,14 @@ func (t *Telegram) ingestTelegramAsset(
 	failCopy string,
 	inboundWasVoice bool,
 ) error {
+	if t.deps.Assets == nil {
+		// The composition root always wires this (serve_channels.go). Reaching here means
+		// the channel was built without an asset service, and there is no second path to
+		// fall back to any more — say so rather than dropping the file silently.
+		slog.Error("telegram: attachment received but no asset service wired", "chat", msg.Chat.ID)
+		t.handleAssetIngressFailure(c, msg, failCopy, inboundWasVoice)
+		return nil
+	}
 	account, err := t.linkedAccountForMessage(ctx, msg)
 	if err != nil {
 		slog.Warn("telegram: resolve linked account for asset", "chat", msg.Chat.ID, "err", err)
@@ -31,7 +46,10 @@ func (t *Telegram) ingestTelegramAsset(
 	if !ok {
 		return nil
 	}
-	rc, err := openTelegramFile(filer, file)
+	// Stream the Telegram file straight into the pipeline — never buffer it here. The
+	// Bot-API getFile ceiling bounds the read upstream (T-13-10-MediaDoS) and the
+	// per-modality cap is enforced by assets.Limits before a byte is stored.
+	rc, err := filer.File(file)
 	if err != nil {
 		slog.Warn("telegram: open asset file failed", "chat", msg.Chat.ID, "err", err)
 		t.handleAssetIngressFailure(c, msg, failCopy, inboundWasVoice)
@@ -52,7 +70,7 @@ func (t *Telegram) ingestTelegramAsset(
 	})
 	if err != nil {
 		slog.Warn("telegram: asset ingest failed", "chat", msg.Chat.ID, "err", err)
-		t.handleAssetIngressFailure(c, msg, failCopy, inboundWasVoice)
+		t.handleAssetIngressFailure(c, msg, refusalCopy(err, failCopy), inboundWasVoice)
 		return nil
 	}
 	// The shared seam composes this asset's attachment block AND the thread's knowledge
@@ -61,11 +79,26 @@ func (t *Telegram) ingestTelegramAsset(
 	return nil
 }
 
+// refusalCopy maps a refused ingest onto copy the operator can act on. The size and
+// format ceilings are the shared pipeline's (assets.Limits), so the ceiling moves in
+// one place and the channel just reports it; anything else is ours to fix and keeps
+// the caller's generic per-modality copy.
+func refusalCopy(err error, failCopy string) string {
+	switch {
+	case errors.Is(err, assets.ErrAssetTooLarge):
+		return assetTooLargeMessage
+	case errors.Is(err, assets.ErrAssetUnsupported):
+		return assetUnsupportedMessage
+	default:
+		return failCopy
+	}
+}
+
 func (t *Telegram) handleAssetIngressFailure(c tele.Context, msg *tele.Message, failCopy string, inboundWasVoice bool) {
 	t.reply(c, failCopy)
-	if inboundWasVoice && t.voice != nil {
+	if inboundWasVoice {
 		if reactor, ok := c.Bot().(botReactor); ok {
-			_ = t.voice.HardFail(reactor, tele.ChatID(msg.Chat.ID), msg)
+			_ = reactHardFail(reactor, tele.ChatID(msg.Chat.ID), msg)
 		}
 	}
 }
@@ -78,9 +111,9 @@ func (t *Telegram) linkedAccountForMessage(ctx context.Context, msg *tele.Messag
 	return accounts.GetAccountByTelegramID(ctx, telegramUserIDFromMessage(msg))
 }
 
-func telegramVoiceFileName(voice *tele.Voice) string {
-	return "voice.ogg"
-}
+// telegramVoiceFileName is the name a voice note is stored under. Telegram voice
+// notes carry no file name and are always OGG/Opus, so it is a constant.
+func telegramVoiceFileName() string { return "voice.ogg" }
 
 func telegramVoiceMIME(voice *tele.Voice) string {
 	if voice != nil && voice.MIME != "" {

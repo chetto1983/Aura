@@ -194,7 +194,6 @@ type Config struct {
 	TTSModel                string // AURA_TTS_MODEL — set to a cloud TTS model (e.g. hexgrad/kokoro-82m) to swap TTS to OpenRouter; empty = local Kokoro sidecar
 	TTSVoice                string // TTS_VOICE — Kokoro voice id (default if_sara)
 	TTSFormat               string // TTS_FORMAT — voice-note audio format (default opus)
-	DocumentsBaseURL        string // DOCUMENTS_BASE_URL — markitdown /convert base (UX-04 documents leg)
 	MultimodalTimeoutSec    int    // MULTIMODAL_TIMEOUT_SEC — per-request sidecar ceiling (default 120s; CPU OCR on a downscaled photo is well under, but vision needs more headroom than STT/TTS)
 	TTSMaxChars             int    // AURA_TTS_MAX_CHARS — soft input cap for POST /api/tts (default 4096, the OpenAI /audio/speech ceiling OpenRouter proxies; a longer input 400s)
 
@@ -487,7 +486,6 @@ func loadBase() *Config {
 		TTSModel:                os.Getenv("AURA_TTS_MODEL"),
 		TTSVoice:                envDefault("TTS_VOICE", "if_sara"),
 		TTSFormat:               envDefault("TTS_FORMAT", "opus"),
-		DocumentsBaseURL:        os.Getenv("DOCUMENTS_BASE_URL"),
 		MultimodalTimeoutSec:    envutil.IntDefault("MULTIMODAL_TIMEOUT_SEC", 120),
 		TTSMaxChars:             envutil.IntDefault("AURA_TTS_MAX_CHARS", 4096),
 

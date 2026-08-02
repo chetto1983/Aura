@@ -36,9 +36,9 @@ func TestPhase13ConfigDefaultsAndOverrides(t *testing.T) {
 		t.Errorf("TTSFormat default = %q, want opus", cfg.TTSFormat)
 	}
 	// URL/model knobs with no default stay empty until the operator wires the sidecars.
-	if cfg.MultimodalBaseURL != "" || cfg.STTBaseURL != "" || cfg.TTSBaseURL != "" || cfg.DocumentsBaseURL != "" {
-		t.Errorf("sidecar base URLs should default empty, got mm=%q stt=%q tts=%q docs=%q",
-			cfg.MultimodalBaseURL, cfg.STTBaseURL, cfg.TTSBaseURL, cfg.DocumentsBaseURL)
+	if cfg.MultimodalBaseURL != "" || cfg.STTBaseURL != "" || cfg.TTSBaseURL != "" {
+		t.Errorf("sidecar base URLs should default empty, got mm=%q stt=%q tts=%q",
+			cfg.MultimodalBaseURL, cfg.STTBaseURL, cfg.TTSBaseURL)
 	}
 
 	t.Setenv("AURA_SETUP_BIND", "0.0.0.0:9099")
@@ -52,7 +52,6 @@ func TestPhase13ConfigDefaultsAndOverrides(t *testing.T) {
 	t.Setenv("TTS_BASE_URL", "http://aura-tts:8880/v1")
 	t.Setenv("TTS_VOICE", "if_other")
 	t.Setenv("TTS_FORMAT", "mp3")
-	t.Setenv("DOCUMENTS_BASE_URL", "http://markitdown:5000")
 
 	cfg = LoadDB()
 	if cfg.SetupBind != "0.0.0.0:9099" {
@@ -78,9 +77,6 @@ func TestPhase13ConfigDefaultsAndOverrides(t *testing.T) {
 	}
 	if cfg.TTSBaseURL != "http://aura-tts:8880/v1" || cfg.TTSVoice != "if_other" || cfg.TTSFormat != "mp3" {
 		t.Errorf("TTS override = %q / %q / %q", cfg.TTSBaseURL, cfg.TTSVoice, cfg.TTSFormat)
-	}
-	if cfg.DocumentsBaseURL != "http://markitdown:5000" {
-		t.Errorf("DocumentsBaseURL override = %q, want http://markitdown:5000", cfg.DocumentsBaseURL)
 	}
 }
 

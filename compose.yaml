@@ -206,7 +206,6 @@ services:
       TTS_BASE_URL: http://aura-tts:8880/v1
       TTS_VOICE: ${TTS_VOICE:-if_sara}
       TTS_FORMAT: ${TTS_FORMAT:-opus}
-      DOCUMENTS_BASE_URL: http://markitdown:8080
       MULTIMODAL_TIMEOUT_SEC: ${MULTIMODAL_TIMEOUT_SEC:-120}
       # Calendar/PIM connect proxy: the Go /api/connect/pim/admin/* proxy forwards to the
       # sidecar's token-gated admin API over the docker network, injecting this admin token.
@@ -703,7 +702,7 @@ services:
       start_period: 20s
 
   # ↓↓ Slice 9c — multimodal CPU sidecars (Phase 13, UX-04) ↓↓
-  # Three thin OpenAI-compat CPU sidecars + markitdown. Aura talks to each over the
+  # Three thin OpenAI-compat CPU sidecars. Aura talks to each over the
   # Docker network (the telegram voice/photo/tts/documents clients), never with Go
   # ML in-process. All loopback-published; operator-started (compose, not boot —
   # T-13-09-SC accept). With AURA_VISION_CLOUD=true the operator simply does not
@@ -767,7 +766,7 @@ services:
     environment:
       LLAMA_ARG_HOST: 0.0.0.0
     # Offloaded by default to free ~2.35GB VRAM for the GPU embed sidecar. On-demand:
-    # `docker compose --profile ocr up -d aura-ocr-vl`. Vision/markitdown paths fail-soft when absent.
+    # `docker compose --profile ocr up -d aura-ocr-vl`. Vision paths fail-soft when absent.
     profiles: [ocr]
     restart: unless-stopped
     command:
@@ -796,35 +795,6 @@ services:
       timeout: 5s
       retries: 12
       start_period: 60s                        # first-boot HF model download
-
-  # markitdown — document → markdown converter. POST /convert (tiered ≤5MB sync /
-  # 5-50MB async / >50MB refuse on the Aura side). DOCUMENTS_BASE_URL points here.
-  # Built in-repo (docker/markitdown): a thin FastAPI /convert over the OFFICIAL
-  # microsoft/markitdown lib — the lib ships no HTTP server, and an unpinned
-  # community image would dodge the supply-chain discipline (cf. the 13-01 deps gate).
-  markitdown:
-    build:
-      context: ./docker/markitdown
-    image: ${AURA_MARKITDOWN_IMAGE:-aura-markitdown:local}
-    pull_policy: never
-    container_name: aura-markitdown
-    restart: unless-stopped
-    environment:
-      # OCR consolidation (Phase 30 follow-up): markitdown OCRs standalone images + scanned-PDF
-      # pages through the SAME GLM-OCR engine (aura-ocr-vl) the chat/vision path uses (MULTIMODAL_*),
-      # so document-ingest and vision share one OCR backend. Fail-soft: unset/unreachable -> text-only.
-      AURA_OCR_BASE_URL: ${AURA_OCR_BASE_URL:-http://aura-ocr-vl:8082/v1}
-      AURA_OCR_MODEL: ${MULTIMODAL_MODEL:-glm-ocr}
-      AURA_OCR_PDF_MAX_PAGES: ${AURA_OCR_PDF_MAX_PAGES:-40}
-      AURA_OCR_TIMEOUT_SEC: ${AURA_OCR_TIMEOUT_SEC:-120}
-    ports:
-      - "127.0.0.1:${AURA_MARKITDOWN_PORT:-8083}:8080"
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 40s                        # first-boot: markitdown[all] import
 
   # Aura PIM sidecar — forked calendar-mcp (chetto1983/aura-pim-mcp @ aura/pim-sidecar):
   # unified mail+calendar+contacts over MCP-over-HTTP (/) + a token-gated admin REST API

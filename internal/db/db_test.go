@@ -19,9 +19,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"go.uber.org/goleak"
 )
+
+// seededOperatorIdentity is the `local` operator seeded by migration 0004.
+const seededOperatorIdentity = "00000000-0000-0000-0000-000000000001"
 
 func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
@@ -181,7 +185,7 @@ func TestMigrate_Phase4_AppliesAndSeeds(t *testing.T) {
 
 	var idCount int
 	if err := app.QueryRow(ctx,
-		"SELECT count(*) FROM aura.identities WHERE id = '00000000-0000-0000-0000-000000000001' AND name = 'local' AND kind = 'system'",
+		"SELECT count(*) FROM aura.identities WHERE id = '"+seededOperatorIdentity+"' AND name = 'local' AND kind = 'system'",
 	).Scan(&idCount); err != nil {
 		t.Fatalf("count seeded identity: %v", err)
 	}
@@ -189,10 +193,17 @@ func TestMigrate_Phase4_AppliesAndSeeds(t *testing.T) {
 		t.Errorf("seeded `local`/system identity: want exactly 1 row, got %d", idCount)
 	}
 
+	// This asserts a SEEDING fact ("did the migration write the wildcard grant?"), so it
+	// reads with app.current_identity bound to the seeded identity. aura.capability_grants
+	// is fail-closed as of migration 0087: on a bare pool connection the row is correctly
+	// invisible, and counting 0 there would say nothing about whether it was seeded.
 	var grantCount int
-	if err := app.QueryRow(ctx,
-		"SELECT count(*) FROM aura.capability_grants WHERE identity_id = '00000000-0000-0000-0000-000000000001' AND capability = '*'",
-	).Scan(&grantCount); err != nil {
+	if err := WithIdentityTxRaw(ctx, app, seededOperatorIdentity, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx,
+			"SELECT count(*) FROM aura.capability_grants WHERE identity_id = $1::uuid AND capability = '*'",
+			seededOperatorIdentity,
+		).Scan(&grantCount)
+	}); err != nil {
 		t.Fatalf("count seeded wildcard grant: %v", err)
 	}
 	if grantCount != 1 {
@@ -343,57 +354,6 @@ func TestRoleSeparation_AppDenied(t *testing.T) {
 			t.Errorf("aura_app: %q error = %q, want SQLSTATE %s (insufficient_privilege)",
 				stmt, err.Error(), insufficientPrivilege)
 		}
-	}
-}
-
-func TestRecordAndListKnowledgeMigrations(t *testing.T) {
-	// Verifies Slice 0.7 handoff: sqlc bindings + aura_app INSERT grant work.
-	// We import the sqlc package only here to keep its surface out of the unit
-	// build. The test inserts a row via aura_app and reads it back.
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	migrateURL := envOrSkip(t, "AURA_DB_MIGRATE_URL")
-	if err := EnsureRoles(ctx, bootstrapURL(t), os.Getenv("POSTGRES_PASSWORD")); err != nil {
-		t.Fatalf("EnsureRoles: %v", err)
-	}
-	if _, err := Migrate(ctx, migrateURL); err != nil {
-		t.Fatalf("Migrate: %v", err)
-	}
-
-	cfg := &Config{URL: envOrSkip(t, "AURA_DB_URL")} // aura_app
-	pool, err := Open(ctx, cfg)
-	if err != nil {
-		t.Fatalf("Open as aura_app: %v", err)
-	}
-	defer pool.Close()
-
-	// Cleanup any prior test row.
-	if _, err := pool.Exec(ctx, "DELETE FROM aura.knowledge_migrations WHERE version >= 9000"); err != nil {
-		t.Logf("cleanup (best-effort): %v", err)
-	}
-
-	// Insert via the generated sqlc binding shape (mirrors what Slice 0.7 will do).
-	if _, err := pool.Exec(ctx,
-		"INSERT INTO aura.knowledge_migrations (version, name, checksum) VALUES ($1, $2, $3)",
-		9001, "test_handoff", "deadbeef"); err != nil {
-		t.Fatalf("INSERT as aura_app: %v", err)
-	}
-
-	var version int32
-	var name, checksum string
-	if err := pool.QueryRow(ctx,
-		"SELECT version, name, checksum FROM aura.knowledge_migrations WHERE version = $1", 9001,
-	).Scan(&version, &name, &checksum); err != nil {
-		t.Fatalf("SELECT as aura_app: %v", err)
-	}
-	if version != 9001 || name != "test_handoff" || checksum != "deadbeef" {
-		t.Errorf("round-trip mismatch: got (%d, %q, %q)", version, name, checksum)
-	}
-
-	// Cleanup.
-	if _, err := pool.Exec(ctx, "DELETE FROM aura.knowledge_migrations WHERE version = 9001"); err != nil {
-		t.Logf("cleanup (best-effort): %v", err)
 	}
 }
 

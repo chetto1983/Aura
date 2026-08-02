@@ -147,7 +147,7 @@ func bootChatEnvWithConfig(ctx context.Context, loadConfig func() (*config.Confi
 		return nil, err
 	}
 	return assembleChatEnvAtMigrationHead(
-		ctx, cfg, pool, db.CheckMigrationHead, assembleChatEnv,
+		ctx, cfg, pool, db.CheckMigrationHead, db.VerifyRLSEnforced, assembleChatEnv,
 	)
 }
 
@@ -158,6 +158,10 @@ func bootChatEnvWithConfig(ctx context.Context, loadConfig func() (*config.Confi
 type dbOpener func(ctx context.Context, cfg *db.Config) (*pgxpool.Pool, error)
 
 type migrationHeadChecker func(context.Context, string) error
+
+// rlsEnforcementChecker matches db.VerifyRLSEnforced. It is injected for the same reason
+// migrationHeadChecker is: the real one needs a live Postgres to answer.
+type rlsEnforcementChecker func(context.Context, *pgxpool.Pool) error
 
 type bootSettingsOps struct {
 	openKeyless func(context.Context) (*pgxpool.Pool, bool, error)
@@ -175,11 +179,20 @@ func assembleChatEnvAtMigrationHead(
 	cfg *config.Config,
 	pool *pgxpool.Pool,
 	check migrationHeadChecker,
+	checkRLS rlsEnforcementChecker,
 	assemble chatEnvAssembler,
 ) (*chatEnv, error) {
 	if err := check(ctx, cfg.DB.MigrateURL); err != nil {
 		releaseBootResources(pool, nil)
 		return nil, fmt.Errorf("postgres migration compatibility: %w", err)
+	}
+	// A superuser or BYPASSRLS role silently voids every owner-isolation policy, so this
+	// refuses to serve rather than serve without tenant isolation. It sits next to the
+	// migration-head gate because both are the same kind of boot-time contract check on a
+	// database the daemon did not provision itself.
+	if err := checkRLS(ctx, pool); err != nil {
+		releaseBootResources(pool, nil)
+		return nil, err
 	}
 	return assemble(ctx, cfg, pool)
 }

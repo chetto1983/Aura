@@ -173,7 +173,6 @@ type Querier interface {
 	// Owner-scoped cross-thread pending list (Phase 36 MUSR-01 / APRV-01): ListAllPendingPausedStates
 	// restricted to one identity's pauses. Same total order (priority DESC, created_at ASC, token ASC).
 	ListAllPendingPausedStatesForIdentity(ctx context.Context, arg ListAllPendingPausedStatesForIdentityParams) ([]AuraPausedStates, error)
-	ListAppliedKnowledgeMigrations(ctx context.Context) ([]AuraKnowledgeMigrations, error)
 	ListAssetsForLibrary(ctx context.Context, arg ListAssetsForLibraryParams) ([]AuraAssets, error)
 	ListAssetsForThread(ctx context.Context, arg ListAssetsForThreadParams) ([]AuraAssets, error)
 	// Amendment #91 (fix-plan 1.12) display-only read: the reasoning columns for every
@@ -272,7 +271,6 @@ type Querier interface {
 	NextAssetEventSeq(ctx context.Context, assetID pgtype.UUID) (int32, error)
 	NextConversationTurnSeq(ctx context.Context, conversationID pgtype.UUID) (int32, error)
 	PromoteAssetToLibrary(ctx context.Context, arg PromoteAssetToLibraryParams) (AuraAssets, error)
-	RecordKnowledgeMigration(ctx context.Context, arg RecordKnowledgeMigrationParams) error
 	RecordRetentionArtifactResult(ctx context.Context, arg RecordRetentionArtifactResultParams) (int64, error)
 	// A byte-identical deterministic plan receives a fresh authorization window only
 	// while it has not crossed the first-apply durability boundary. In-flight and

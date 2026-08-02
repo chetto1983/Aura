@@ -228,7 +228,6 @@ func TestDotEnvTemplateHygiene(t *testing.T) {
 		"MULTIMODAL_BASE_URL=",
 		"STT_BASE_URL=",
 		"TTS_BASE_URL=",
-		"DOCUMENTS_BASE_URL=",
 		"AURA_MCP_CONFIG=",
 		"AURA_SKILLS_DIR=",
 		"AURA_OBJECTSTORE_BACKEND=",

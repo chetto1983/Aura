@@ -26,6 +26,7 @@ import (
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -98,9 +99,14 @@ func seedLocalIdentity(t *testing.T, pool *pgxpool.Pool) {
 		localIdentityID); err != nil {
 		t.Fatalf("seed identity: %v", err)
 	}
-	if _, err := pool.Exec(ctx,
-		`INSERT INTO aura.capability_grants (identity_id, capability) VALUES ($1, '*') ON CONFLICT DO NOTHING`,
-		localIdentityID); err != nil {
+	// Scoped: aura.capability_grants is fail-closed as of migration 0087, so a bare pool
+	// INSERT is refused.
+	if err := db.WithIdentityTxRaw(ctx, pool, localIdentityID, func(tx pgx.Tx) error {
+		_, e := tx.Exec(ctx,
+			`INSERT INTO aura.capability_grants (identity_id, capability) VALUES ($1, '*') ON CONFLICT DO NOTHING`,
+			localIdentityID)
+		return e
+	}); err != nil {
 		t.Fatalf("seed grant: %v", err)
 	}
 }
