@@ -1,4 +1,4 @@
-//go:build db_integration && neo4j_integration && garage_integration && authula_integration && musr_e2e
+//go:build db_integration && garage_integration && authula_integration && musr_e2e
 
 // Harness for the Phase-36 D-29 two-identity cross-deny acceptance E2E (see
 // two_identity_e2e_test.go). It builds the live aura_app pool, provisions throwaway
@@ -7,7 +7,7 @@
 // the D-02 defaultConversationOwner rule (owner = the identityctx principal) over the
 // REAL conversations.Store so MUSR-02 ownership is exercised end to end.
 //
-// The five build tags gate this file to the full live stack; every helper reads its env
+// The four build tags gate this file to the full live stack; every helper reads its env
 // through musrEnvOrSkip (t.Fatal under $CI) so a missing DSN/token fails the job rather
 // than passing a skipped tier green (CLAUDE.md no-skip-as-green).
 package main

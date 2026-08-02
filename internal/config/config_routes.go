@@ -30,19 +30,19 @@ func (c *Config) RerankRoute() (baseURL, apiKey, model string) {
 
 // EmbedRoute resolves the embeddings endpoint as a ONE-knob local↔cloud swap
 // (D-28): with AURA_EMBED_MODEL unset it is the local embedding sidecar at
-// Neo4j.EmbedURL with no auth; set AURA_EMBED_MODEL to a cloud model (e.g.
+// Embed.BaseURL with no auth; set AURA_EMBED_MODEL to a cloud model (e.g.
 // a hosted embedding model) and it routes to the shared OpenRouter endpoint with
-// the SINGLE OPENROUTER_API_KEY. A non-loopback EmbedURL overrides the OpenRouter
-// base for a custom cloud embedder.
+// the SINGLE OPENROUTER_API_KEY. A non-loopback Embed.BaseURL overrides the
+// OpenRouter base for a custom cloud embedder.
 func (c *Config) EmbedRoute() (baseURL, apiKey, model string) {
-	if strings.TrimSpace(c.Neo4j.EmbedModel) == "" {
-		return c.Neo4j.EmbedURL, "", "" // local sidecar, no auth
+	if strings.TrimSpace(c.Embed.Model) == "" {
+		return c.Embed.BaseURL, "", "" // local sidecar, no auth
 	}
-	base := c.Neo4j.EmbedURL
+	base := c.Embed.BaseURL
 	if isLoopbackURL(base) {
 		base = sharedCloudBase(c.LLM.BaseURL)
 	}
-	return base, c.LLM.APIKey, c.Neo4j.EmbedModel
+	return base, c.LLM.APIKey, c.Embed.Model
 }
 
 // sharedCloudBase strips a trailing /v1 from the shared OpenRouter base. The

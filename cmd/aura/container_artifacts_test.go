@@ -27,7 +27,6 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"FROM dxflrs/garage:v2.3.0 AS garagebin",
 		"postgresql-client-18",
 		"ghcr.io/astral-sh/uv:0.11.32",
-		"mcp-neo4j-cypher==0.6.0",
 		// uv/uvx stay in the image — the agent reaches them from shell_exec — but nothing
 		// warms a package for a recipe here any more (asserted below).
 		"COPY --from=ghcr.io/astral-sh/uv:",
@@ -97,7 +96,7 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"LLAMA_ARG_HOST: 0.0.0.0",
 		"aura-migrate:",
 		"service_completed_successfully",
-		"entrypoint: [\"sh\", \"-lc\", \"aura db migrate && aura neo4j migrate\"]",
+		"entrypoint: [\"sh\", \"-lc\", \"aura db migrate\"]",
 		"command: []",
 		"POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}",
 		"AURA_CONFIG_DIR: /var/lib/aura",
@@ -125,16 +124,23 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"/etc/searxng/settings.template.yml",
 		"/etc/searxng/limiter.toml",
 		"__AURA_SEARXNG_SECRET__",
-		"NEO4J_server_memory_heap_initial__size: 512m",
-		"NEO4J_server_jvm_additional: \"--add-modules=jdk.incubator.vector\"",
 		"127.0.0.1:${AURA_GARAGE_PORT:-3900}:3900",
 		"./docker/garage/garage.toml:/etc/garage.toml:ro",
 		"garage-data:",
 		"driver: nvidia",
 		"capabilities: [gpu]",
-		"start_period: 90s",
 		"start_period: 300s",
-		"--profile extended",
+		// The graph plane. ArcadeDB replaced Neo4j (whose heap/JVM pins used to sit
+		// here) and arcadedb-mcp replaced the agent-memory sidecar. The memory sidecar
+		// is a HARD boot dependency — it is mounted into the agent loop at startup and
+		// the in-process mount has no boot-retry — so both the healthcheck and the
+		// `aura` gate on it are part of the image contract, not incidental wiring.
+		"arcadedb:",
+		"image: arcadedata/arcadedb:26.7.3",
+		"aura-arcadedb:/home/arcadedb/databases",
+		"arcadedb-mcp:",
+		"127.0.0.1:8096:8096",
+		"urllib.request.urlopen('http://127.0.0.1:8096/health', timeout=3)",
 	} {
 		if !strings.Contains(compose, want) {
 			t.Fatalf("compose.yaml missing %q", want)
@@ -282,30 +288,35 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 	}
 }
 
-func TestMCPNeo4jRuntimeAndCoverageAreReproducible(t *testing.T) {
+// The Python MCP runtime used to be pinned into both images and injected in two CI
+// jobs, because Aura's graph client spawned mcp-neo4j-cypher over stdio. That client
+// is gone with internal/knowledge and no recipe in manager.BuiltInCatalog names the
+// package, so the pins invert: the runtime must stay OUT. Asserting its absence is
+// what keeps a dependency nothing can reach from drifting back into the images.
+func TestRetiredMCPPythonRuntimeStaysOutAndCoverageIsReproducible(t *testing.T) {
 	root := repoRootForTest(t)
-	const pinnedInstall = "mcp-neo4j-cypher==0.6.0 fastmcp==2.13.3"
 	for _, rel := range []string{
 		"docker/aura/Dockerfile",
 		"docker/aura-sandbox/Dockerfile",
-		"docker/mcp-neo4j-cypher/Dockerfile",
+		".github/workflows/ci.yml",
 	} {
 		contents := readProjectFile(t, root, rel)
-		if !strings.Contains(contents, pinnedInstall) {
-			t.Errorf("%s must pin the compatible FastMCP runtime with %q", rel, pinnedInstall)
+		for _, banned := range []string{"pip install", "pipx install", "pipx inject"} {
+			for line := range strings.SplitSeq(contents, "\n") {
+				if strings.Contains(line, banned) && strings.Contains(line, "mcp-neo4j-cypher") {
+					t.Errorf("%s reinstalls the retired MCP Python runtime: %s", rel, strings.TrimSpace(line))
+				}
+			}
 		}
+	}
+	if _, err := os.Stat(filepath.Join(root, "docker", "mcp-neo4j-cypher")); !os.IsNotExist(err) {
+		t.Errorf("docker/mcp-neo4j-cypher should stay absent after the graph-store retirement, stat err=%v", err)
 	}
 
 	coverageGate := readProjectFile(t, root, "scripts/coverage_gate.sh")
 	goTest := regexp.MustCompile(`(?s)go test .*?-count=1 .*?-covermode=atomic`)
 	if !goTest.MatchString(coverageGate) {
 		t.Error("scripts/coverage_gate.sh must force -count=1 before accepting integration coverage")
-	}
-
-	ci := readProjectFile(t, root, ".github/workflows/ci.yml")
-	const pinnedCIInject = "pipx inject --force mcp-neo4j-cypher fastmcp==2.13.3"
-	if got := strings.Count(ci, pinnedCIInject); got != 2 {
-		t.Errorf("CI must pin FastMCP in both Neo4j jobs: found %d occurrences of %q, want 2", got, pinnedCIInject)
 	}
 }
 
@@ -332,6 +343,52 @@ func TestGarageBootstrapCanReachIdempotencyRegistry(t *testing.T) {
 		if !strings.Contains(bootstrap, want) {
 			t.Fatalf("garage-bootstrap service missing idempotency registry dependency %q:\n%s", want, bootstrap)
 		}
+	}
+}
+
+// The memory sidecar is mounted INTO the agent loop at boot and the in-process mount
+// has no boot-retry, so `aura` starting before it is HEALTHY means an agent with zero
+// memory tools until the next full restart (the 2026-07-22 incident). That gate used to
+// name aura-agent-memory-mcp; when memory moved to arcadedb-mcp the gate did not move
+// with it and arcadedb-mcp had no healthcheck to gate on at all. Pin both halves.
+func TestAuraBootGatesOnTheMemorySidecarThatActuallyServesMemory(t *testing.T) {
+	root := repoRootForTest(t)
+	compose := readProjectFile(t, root, "compose.yaml")
+	aura := composeServiceBlock(t, compose, "aura")
+	if !strings.Contains(aura, "arcadedb-mcp:\n        condition: service_healthy") {
+		t.Fatalf("aura must gate its boot on a HEALTHY arcadedb-mcp:\n%s", aura)
+	}
+	mcpService := composeServiceBlock(t, compose, "arcadedb-mcp")
+	if !strings.Contains(mcpService, "healthcheck:") {
+		t.Fatalf("arcadedb-mcp must declare the healthcheck aura gates on:\n%s", mcpService)
+	}
+}
+
+// Neo4j and the agent-memory sidecar it stored in are retired. Their compose services,
+// volumes and vendored build context are gone; asserting they stay gone is what stops a
+// merge from resurrecting a plane no Go code can reach.
+func TestRetiredGraphPlaneStaysOutOfTheComposeDeclarations(t *testing.T) {
+	root := repoRootForTest(t)
+	for _, rel := range []string{
+		"compose.yaml",
+		"compose.minipc.yaml",
+		".github/compose.ci-cache.yaml",
+	} {
+		contents := readProjectFile(t, root, rel)
+		for _, banned := range []string{
+			"\n  neo4j:\n",
+			"\n  aura-agent-memory-mcp:\n",
+			"aura-neo4j:",
+			"NEO4J_PASSWORD",
+			"AURA_AGENT_MEMORY_MCP_AUTH_SECRET",
+		} {
+			if strings.Contains(strings.ReplaceAll(contents, "\r\n", "\n"), banned) {
+				t.Errorf("%s still declares the retired graph plane: %q", rel, banned)
+			}
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, "docker", "agent-memory")); !os.IsNotExist(err) {
+		t.Errorf("docker/agent-memory should stay absent after the sidecar retirement, stat err=%v", err)
 	}
 }
 

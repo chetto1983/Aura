@@ -15,7 +15,6 @@ import (
 
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/cron"
-	"github.com/chetto1983/aura/internal/knowledge"
 	"github.com/chetto1983/aura/internal/objectstore"
 	"github.com/chetto1983/aura/internal/readiness"
 	"github.com/chetto1983/aura/internal/web"
@@ -28,7 +27,7 @@ import (
 // the remaining auth-dependent providers (onboarding/bootstrap/password-reset)
 // afterward, once the Authula provider exists — those stay in bootServe rather than
 // here so this function needs no auth state (D-A2-02 narrow seam).
-func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, scheduler *cron.Scheduler, readinessState *readiness.Snapshot, ownerExports agui.ExportDestination, shareAPI agui.ShareService, objectStore objectstore.Store) (*agui.Server, *agui.RunRegistry) {
+func wireAGUIServer(chat *chatEnv, store *cron.Store, scheduler *cron.Scheduler, readinessState *readiness.Snapshot, ownerExports agui.ExportDestination, shareAPI agui.ShareService, objectStore objectstore.Store) (*agui.Server, *agui.RunRegistry) {
 	// The AG-UI gateway (Slice 8b) reuses the already-composed Runner + conversations
 	// store; it mounts on the same daemon and shares the graceful ctx-cancel drain
 	// (Assumption A3). The bind may now be non-loopback (WEB-02/D-06 lifted the
@@ -64,11 +63,10 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 			}
 			return details
 		},
-		// /readyz reflects the daemon's REQUIRED backends (O-05/AP-14): Postgres
-		// (the open pool) and Neo4j (a native-driver connectivity dial — the daemon
-		// holds no long-lived graph client, the MCP subprocess is conditional). When
-		// any required dep is unreachable /readyz answers 503 so an orchestrator
-		// stops routing to this instance; /healthz stays cheap process liveness.
+		// /readyz reflects the daemon's REQUIRED backends (O-05/AP-14): Postgres (the
+		// open pool) and memory. When any required dep is unreachable /readyz answers
+		// 503 so an orchestrator stops routing to this instance; /healthz stays cheap
+		// process liveness.
 		ReadinessProbes: serveReadinessProbes(chat),
 	}
 	aguiServer := agui.NewServer(chat.run, chat.conv, serverCfg)
@@ -115,19 +113,15 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 	// stack without the calendar sidecar boots fine). The routes mount behind RequireCapability(
 	// governance.write) in serve_webui.go, so the proxy is never an open relay.
 	aguiServer.SetCalendarMCP(chat.cfg.CalendarMCPURL, chat.cfg.CalendarMCPAdminToken)
-	// Wire the Phase-27 GRAPH-01 read-only graph explorer. Per RESEARCH A7/Open-Q2 the
-	// serve daemon opens ONE boot-time knowledge.Client (the mcp-neo4j-cypher subprocess)
-	// for the gateway lifetime — distinct from other graph clients in
-	// chat.go, which is conditional. Best-effort: a missing binary or a down Neo4j leaves
-	// the two /api/graph/* routes at 503 (SetGraphView never called) and MUST NOT abort
-	// serve boot (a graph-explorer outage is not a daemon outage). On success the client's
-	// Close joins the SAME reverse-close teardown (chatEnv.mcpClosers) that drains the
-	// other MCP subprocesses at shutdown.
-	if gclient, gerr := knowledge.Open(ctx, &chat.cfg.Neo4j); gerr != nil {
-		slog.Warn("aura serve: graph explorer unavailable", "err", gerr)
-	} else {
-		chat.mcpClosers = append(chat.mcpClosers, gclient.Close)
-		aguiServer.SetGraphView(knowledge.NewGraphView(gclient))
+	// Wire the read-only graph explorer over ArcadeDB (buildArcadeGraphView). It is now
+	// SCHEMA-ONLY — the canvas is gone with the Neo4j compilers that drew it, see
+	// internal/agui/graph_arcadedb.go. Best-effort as before: an unconfigured memory
+	// server or a missing tenant secret leaves the two /api/graph/* routes at 503 and MUST
+	// NOT abort serve boot. Nothing to close any more — the previous wiring held an
+	// mcp-neo4j-cypher subprocess in chatEnv.mcpClosers; this holds a stateless HTTP
+	// client built per request.
+	if view := buildArcadeGraphView(chat.cfg); view != nil {
+		aguiServer.SetGraphView(view)
 	}
 	// Wire the Phase-28 read-only governance boards (GOV-01/02/03): the MCP registry +
 	// per-row live probe, the skills lifecycle + audit ledger, the scheduler tasks + run
@@ -189,7 +183,7 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 // bounds them. A dependency handle that is absent (nil pool) is omitted rather
 // than reported as a false failure.
 //
-// The Neo4j probe is gone with the store. It dialled cfg.Neo4j on every call and,
+// The Neo4j probe is gone with the store. It dialled the graph on every call and,
 // once memory moved to ArcadeDB and documents stopped indexing into a graph,
 // nothing behind it was load-bearing — but it kept timing out and holding /readyz
 // at 503, which took the cockpit down over a dependency the daemon no longer

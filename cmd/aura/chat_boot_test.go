@@ -14,7 +14,6 @@ import (
 	"github.com/chetto1983/aura/internal/adaptive"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/db"
-	"github.com/chetto1983/aura/internal/knowledge"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/settings"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -67,7 +66,6 @@ func validBootConfig() *config.Config {
 	return &config.Config{
 		Profile:  config.ProfileDev,
 		DB:       db.Config{URL: "postgres://u:p@127.0.0.1:1/aura"},
-		Neo4j:    knowledge.Config{Password: "graph-secret"},
 		AGUIBind: "127.0.0.1:9080",
 		LLM:      llm.Config{Provider: "openrouter", Model: "test/model"},
 	}

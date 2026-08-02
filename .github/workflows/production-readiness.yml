@@ -19,7 +19,6 @@ env:
   OPENROUTER_API_KEY: readiness-degraded-no-network
   AURA_WEB_TRUST_PROXY: "true"
   AURA_AUTHULA_SECRET: 00000000000000000000000000000000000000000000000000000000000000a1
-  AURA_AGENT_MEMORY_MCP_AUTH_SECRET: "00000000000000000000000000000000000000000000000000000000000000e5"
   AURA_PIM_MCP_ADMIN_TOKEN: readiness-not-a-secret
   SEARXNG_SECRET: 00000000000000000000000000000000000000000000000000000000000000b2
   AURA_OBJECTSTORE_ACCESS_KEY: GK000000000000000000000000
@@ -38,15 +37,9 @@ env:
   POSTGRES_HOST: 127.0.0.1
   POSTGRES_PORT: "5432"
   POSTGRES_SSLMODE: disable
-  NEO4J_USER: neo4j
-  NEO4J_PASSWORD: readiness-neo4j-password
-  AURA_NEO4J_BOLT_URL: bolt://127.0.0.1:7687
-  AURA_NEO4J_DATABASE: neo4j
   AURA_DB_URL: postgres://aura_app:readiness-db-password@127.0.0.1:5432/aura?sslmode=disable
   AURA_DB_MIGRATE_URL: postgres://aura_migrate:readiness-db-password@127.0.0.1:5432/aura?sslmode=disable
-  AURA_AGENT_MEMORY_VENDOR_REV: ${{ github.sha }}
   AURA_CI_LLAMA_CACHE_DIR: /tmp/aura-readiness-cache/llama.cpp
-  AURA_CI_NEO4J_PLUGINS_DIR: /tmp/aura-readiness-cache/neo4j-plugins
   COMPOSE_FILE: compose.yaml:.github/compose.ci-musr.yaml:.github/compose.ci-cache.yaml
 
 jobs:
@@ -144,13 +137,12 @@ jobs:
         run: |
           mkdir -p \
             "$AURA_CI_LLAMA_CACHE_DIR/llama.cpp" \
-            "$AURA_CI_LLAMA_CACHE_DIR/huggingface" \
-            "$AURA_CI_NEO4J_PLUGINS_DIR"
-          chmod -R a+rwX "$AURA_CI_LLAMA_CACHE_DIR" "$AURA_CI_NEO4J_PLUGINS_DIR"
-          make neo4j-migrate
+            "$AURA_CI_LLAMA_CACHE_DIR/huggingface"
+          chmod -R a+rwX "$AURA_CI_LLAMA_CACHE_DIR"
+          make db-migrate memory-up
           docker compose up -d garage
           docker compose up -d --build \
-            aura-agent-memory-mcp garage-bootstrap whatsapp aura-pim-mcp
+            garage-bootstrap whatsapp aura-pim-mcp
 
       - name: Candidate to previous to candidate rollback rehearsal
         env:

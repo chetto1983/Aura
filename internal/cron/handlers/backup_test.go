@@ -2,8 +2,6 @@ package handlers
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -121,129 +119,6 @@ func TestPostgresDumpArgvCarriesNoPayload(t *testing.T) {
 	}
 }
 
-func TestNeo4jDumpRequestFromEnvRequiresPassword(t *testing.T) {
-	t.Setenv("NEO4J_PASSWORD", "")
-	_, err := neo4jDumpRequestFromEnv("/backups/neo4j.cypher")
-	if err == nil {
-		t.Fatal("missing Neo4j password must fail")
-	}
-	if !strings.Contains(err.Error(), "missing password") {
-		t.Fatalf("error should name missing password, got %v", err)
-	}
-}
-
-func TestNeo4jDumpRequestFromEnv(t *testing.T) {
-	t.Setenv("AURA_NEO4J_BOLT_URL", "bolt://neo4j:7687")
-	t.Setenv("NEO4J_USER", "neo4j")
-	t.Setenv("NEO4J_PASSWORD", "graph-secret")
-	t.Setenv("AURA_NEO4J_DATABASE", "neo4j")
-
-	req, err := neo4jDumpRequestFromEnv("/backups/neo4j.cypher")
-	if err != nil {
-		t.Fatalf("neo4jDumpRequestFromEnv: %v", err)
-	}
-	if req.BoltURL != "bolt://neo4j:7687" || req.User != "neo4j" || req.Password != "graph-secret" || req.Database != "neo4j" {
-		t.Fatalf("neo4j request = %+v", req)
-	}
-}
-
-func TestDefaultNeo4jDumperRejectsBadURL(t *testing.T) {
-	req := neo4jDumpRequest{
-		Dest:     filepathForTest(t, "neo4j.cypher"),
-		BoltURL:  "://bad",
-		User:     "neo4j",
-		Password: "secret",
-		Database: "neo4j",
-	}
-	err := defaultNeo4jDumper(context.Background(), req)
-	if err == nil {
-		t.Fatal("bad Neo4j URL must fail")
-	}
-}
-
-func TestDefaultNeo4jDumperConnectionFailure(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-	defer cancel()
-	req := neo4jDumpRequest{
-		Dest:     filepathForTest(t, "neo4j.cypher"),
-		BoltURL:  "bolt://127.0.0.1:1",
-		User:     "neo4j",
-		Password: "secret",
-		Database: "neo4j",
-	}
-	err := defaultNeo4jDumper(ctx, req)
-	if err == nil {
-		t.Fatal("unreachable Neo4j must fail")
-	}
-	if !strings.Contains(err.Error(), "run apoc export") {
-		t.Fatalf("error should name the APOC run failure, got %v", err)
-	}
-}
-
-func TestNeo4jExportQueryStreamsCypherShellStatements(t *testing.T) {
-	t.Parallel()
-	for _, want := range []string{
-		"apoc.export.cypher.all(null",
-		"streamStatements: true",
-		"format: 'cypher-shell'",
-		"cypherStatements",
-	} {
-		if !strings.Contains(neo4jExportCypherAll, want) {
-			t.Fatalf("neo4j export query missing %q:\n%s", want, neo4jExportCypherAll)
-		}
-	}
-}
-
-func TestWriteNeo4jCypherFileWritesStatements(t *testing.T) {
-	dest := filepath.Join(t.TempDir(), "neo4j.cypher")
-	if err := writeNeo4jCypherFile(dest, []string{"CREATE (:One)", "CREATE (:Two)\n"}); err != nil {
-		t.Fatalf("writeNeo4jCypherFile: %v", err)
-	}
-	b, err := os.ReadFile(dest)
-	if err != nil {
-		t.Fatalf("read cypher file: %v", err)
-	}
-	if got, want := string(b), "CREATE (:One)\nCREATE (:Two)\n"; got != want {
-		t.Fatalf("cypher file = %q, want %q", got, want)
-	}
-	if _, err := os.Stat(dest + ".tmp"); !os.IsNotExist(err) {
-		t.Fatalf("temporary cypher file should be gone, stat err=%v", err)
-	}
-}
-
-func TestWriteNeo4jCypherFileAllowsEmptyExport(t *testing.T) {
-	dest := filepath.Join(t.TempDir(), "empty.cypher")
-	if err := writeNeo4jCypherFile(dest, nil); err != nil {
-		t.Fatalf("write empty cypher file: %v", err)
-	}
-	b, err := os.ReadFile(dest)
-	if err != nil {
-		t.Fatalf("read empty cypher file: %v", err)
-	}
-	if len(b) != 0 {
-		t.Fatalf("empty export file length = %d, want 0", len(b))
-	}
-}
-
-func TestWriteNeo4jCypherFileCreateFailure(t *testing.T) {
-	notADir := filepath.Join(t.TempDir(), "file")
-	if err := os.WriteFile(notADir, []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	err := writeNeo4jCypherFile(filepath.Join(notADir, "neo4j.cypher"), []string{"CREATE (:One)"})
-	if err == nil {
-		t.Fatal("writing beneath a non-directory must fail")
-	}
-	if !strings.Contains(err.Error(), "create") {
-		t.Fatalf("error should name create failure, got %v", err)
-	}
-}
-
-func filepathForTest(t *testing.T, name string) string {
-	t.Helper()
-	return filepath.Join(t.TempDir(), name)
-}
-
 func TestMissedBackupAlertFiresOnlyPast24h(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 6, 4, 12, 0, 0, 0, time.UTC)
@@ -254,7 +129,7 @@ func TestMissedBackupAlertFiresOnlyPast24h(t *testing.T) {
 	if MissedBackupAlert(BackupPostgres, now.Add(-12*time.Hour), now) {
 		t.Fatal("a 12h miss must not alert")
 	}
-	if !MissedBackupAlert(BackupNeo4j, now.Add(-25*time.Hour), now) {
+	if !MissedBackupAlert(BackupPostgres, now.Add(-25*time.Hour), now) {
 		t.Fatal("a 25h miss must fire the SC#3 alert")
 	}
 }
@@ -264,9 +139,5 @@ func TestBackupMeta(t *testing.T) {
 	pg := BackupHandler{Variant: BackupPostgres}.Meta()
 	if pg.Kind != KindBackupPostgres || !pg.ReschedulesOnRecovery {
 		t.Fatalf("postgres meta = %+v", pg)
-	}
-	neo := BackupHandler{Variant: BackupNeo4j}.Meta()
-	if neo.Kind != KindBackupNeo4j {
-		t.Fatalf("neo4j meta = %+v", neo)
 	}
 }

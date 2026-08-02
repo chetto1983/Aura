@@ -283,9 +283,9 @@ func buildProvisioningPorts(chat *chatEnv) (agui.ObjectStoreProvisioner, agui.Fi
 // A nil pool yields an empty Deprovisioner whose PurgeExpired is a safe no-op (nil
 // Deactivator). AdaptiveGraph is wired independently of Memory because the adaptive
 // projection is owner-scoped inside the SHARED database, so dropping the identity's own
-// memory database does not reach it. The owned Postgres conversation plane, the ArcadeDB
-// memory plane and the Neo4j document plane are all mandatory: deprovision refuses identity
-// deletion unless each adapter acknowledges a verified purge.
+// memory database does not reach it. The owned Postgres conversation plane and the ArcadeDB
+// memory plane are both mandatory: deprovision refuses identity deletion unless each adapter
+// acknowledges a verified purge.
 // AuthulaDelete/Sessions/Jobs remain separate lifecycle work because those providers are
 // assembled after this seam. The identity FK cascade still drops grants, auth links,
 // object-store ownership, and the whole document catalog (aura.documents.identity_id is
@@ -314,7 +314,6 @@ func buildDeprovisioner(chat *chatEnv) *agui.Deprovisioner {
 		AdaptiveFence:  adaptiveIdentityFenceAdapter{pool: chat.pool},
 		AdaptiveGraph:  adaptiveGraphPurgeAdapter{cfg: &chat.cfg.ArcadeDB},
 		Memory:         buildArcadeMemoryPurger(chat.cfg),
-		Graph:          memoryGraphPurgeAdapter{cfg: &chat.cfg.Neo4j},
 		ObjectStore:    objProv,
 		Filesystem:     fsProv,
 		IdentityDelete: auraLegAdapter{pool: chat.pool},

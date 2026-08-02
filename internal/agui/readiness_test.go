@@ -48,7 +48,7 @@ func TestReadinessProbesRunConcurrently(t *testing.T) {
 		ReadinessState: healthyReadinessState(),
 		ReadinessProbes: []ReadinessProbe{
 			{Name: "postgres", Code: runtimereadiness.CodePostgresUnavailable, Check: check("postgres")},
-			{Name: "neo4j", Code: runtimereadiness.CodeNeo4jUnavailable, Check: check("neo4j")},
+			{Name: "memory", Code: runtimereadiness.CodeMemoryUnavailable, Check: check("memory")},
 		},
 	})
 	done := make(chan *httptest.ResponseRecorder, 1)
@@ -71,8 +71,8 @@ func TestReadinessProbesRunConcurrently(t *testing.T) {
 	if rr := <-done; rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
 	}
-	if !seen["postgres"] || !seen["neo4j"] {
-		t.Fatalf("started probes = %v, want postgres and neo4j", seen)
+	if !seen["postgres"] || !seen["memory"] {
+		t.Fatalf("started probes = %v, want postgres and memory", seen)
 	}
 }
 
@@ -86,7 +86,7 @@ func TestReadinessGlobalDeadlineAndSanitizedSortedReasons(t *testing.T) {
 		ReadinessState: healthyReadinessState(),
 		ReadinessProbes: []ReadinessProbe{
 			{Name: "postgres", Code: runtimereadiness.CodePostgresUnavailable, Check: block},
-			{Name: "neo4j", Code: runtimereadiness.CodeNeo4jUnavailable, Check: block},
+			{Name: "memory", Code: runtimereadiness.CodeMemoryUnavailable, Check: block},
 		},
 	})
 
@@ -108,7 +108,7 @@ func TestReadinessGlobalDeadlineAndSanitizedSortedReasons(t *testing.T) {
 		t.Fatalf("decode readiness body: %v", err)
 	}
 	want := []runtimereadiness.Code{
-		runtimereadiness.CodeNeo4jUnavailable,
+		runtimereadiness.CodeMemoryUnavailable,
 		runtimereadiness.CodePostgresUnavailable,
 	}
 	if body.Status != "unavailable" || !reflect.DeepEqual(body.Reasons, want) {
@@ -265,7 +265,7 @@ func TestHealthzNeverInvokesReadinessProbes(t *testing.T) {
 }
 
 // TestServerReadyz pins O-05: /readyz is a READINESS probe over the required
-// backends (PG + Neo4j). All probes healthy → 200; a failing probe → 503 with a
+// backends (PG + memory). All probes healthy → 200; a failing probe → 503 with a
 // terse body naming the failed dep. /healthz stays a cheap LIVENESS check and is
 // unaffected by a readiness-dep being down.
 func TestServerReadyz(t *testing.T) {
@@ -273,7 +273,7 @@ func TestServerReadyz(t *testing.T) {
 		srv := newTestServerCfg(t, nil, nil, ServerConfig{
 			ReadinessProbes: []ReadinessProbe{
 				{Name: "postgres", Check: func(context.Context) error { return nil }},
-				{Name: "neo4j", Check: func(context.Context) error { return nil }},
+				{Name: "memory", Check: func(context.Context) error { return nil }},
 			},
 		})
 		resp, err := http.Get(srv.URL + "/readyz")
@@ -294,8 +294,8 @@ func TestServerReadyz(t *testing.T) {
 		srv := newTestServerCfg(t, nil, nil, ServerConfig{
 			ReadinessProbes: []ReadinessProbe{
 				{Name: "postgres", Check: func(context.Context) error { return nil }},
-				{Name: "neo4j", Check: func(context.Context) error {
-					return errors.New("neo4j connectivity (bolt://user:secret@host:7687): dial refused")
+				{Name: "memory", Check: func(context.Context) error {
+					return errors.New("memory connectivity (http://user:secret@host:8096/mcp/): dial refused")
 				}},
 			},
 		})
@@ -309,7 +309,7 @@ func TestServerReadyz(t *testing.T) {
 			t.Fatalf("status = %d, want 503: %s", resp.StatusCode, raw)
 		}
 		body := string(raw)
-		if !strings.Contains(body, "neo4j") {
+		if !strings.Contains(body, "memory") {
 			t.Fatalf("503 body must name the failed dep: %s", body)
 		}
 		if !strings.Contains(body, `"ready":false`) {
@@ -334,12 +334,12 @@ func TestServerReadyz(t *testing.T) {
 	})
 
 	t.Run("healthz stays 200 when a readiness dep is down", func(t *testing.T) {
-		// /healthz is liveness: its PG ping passes here, and a down Neo4j readiness
+		// /healthz is liveness: its PG ping passes here, and a down memory readiness
 		// probe must not flip it to 503 (only /readyz reflects readiness deps).
 		srv := newTestServerCfg(t, nil, nil, ServerConfig{
 			HealthCheck: func(context.Context) error { return nil },
 			ReadinessProbes: []ReadinessProbe{
-				{Name: "neo4j", Check: func(context.Context) error { return errors.New("down") }},
+				{Name: "memory", Check: func(context.Context) error { return errors.New("down") }},
 			},
 		})
 		resp, err := http.Get(srv.URL + "/healthz")

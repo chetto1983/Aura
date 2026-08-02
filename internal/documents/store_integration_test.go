@@ -94,11 +94,7 @@ func TestPostgresJobStoreRoundTrip(t *testing.T) {
 	if err != nil || byDoc.ID != created.ID {
 		t.Fatalf("GetByDocumentID = (%#v, %v)", byDoc, err)
 	}
-	extracting, err := store.UpdateStatus(ctx, created.ID, JobExtracting, "")
-	if err != nil || extracting.Status != JobExtracting {
-		t.Fatalf("UpdateStatus extracting = (%#v, %v)", extracting, err)
-	}
-	failed, err := store.UpdateStatus(ctx, created.ID, JobFailed, "transient extractor failure")
+	failed, err := store.UpdateStatus(ctx, created.ID, JobFailed, "transient ingest failure")
 	if err != nil || failed.Error == "" {
 		t.Fatalf("UpdateStatus failed = (%#v, %v)", failed, err)
 	}

@@ -19,9 +19,9 @@
 //
 // Requires POSTGRES_PASSWORD (+ optional PGHOST/PGPORT) and AURA_GARAGE_ADMIN_ENDPOINT +
 // AURA_GARAGE_ADMIN_TOKEN. No-skip-as-green: envOrSkip t.Fatals under $CI when unset. The
-// :User graph plane needs a live Neo4j (neo4j_integration) so it is exercised here via a
-// recording GraphPurger seam (the saga's invocation is asserted); the Neo4j teardown itself
-// is proven under the neo4j_integration tier.
+// adaptive projection needs a live ArcadeDB, so it is exercised here via a recording
+// AdaptiveGraphPurger seam (the saga's invocation is asserted); the teardown itself is
+// proven under the arcadedb_integration tier (internal/adaptive/graph_arcadedb_test.go).
 
 package agui
 
@@ -349,7 +349,6 @@ func TestProvisioningSagaResumable(t *testing.T) {
 			IdentityDelete: liveAuraLeg{pool: pool},
 			AuthulaDelete:  au,
 			Conversations:  &fakeConvPurger{},
-			Graph:          &fakeGraphPurger{},
 			Memory:         &fakeMemoryPurger{},
 		})
 		target := DeprovisionTarget{IdentityID: id, IdentityName: name, AuthulaUserID: user.ID}

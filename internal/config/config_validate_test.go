@@ -7,15 +7,14 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/db"
-	"github.com/chetto1983/aura/internal/knowledge"
 )
 
 // TestConfigValidate covers O-04: required infra secrets are checked at boot so a
 // misconfigured deploy fails fast with a named error instead of a late cryptic
-// auth failure (DB) or a silently degraded graph (empty NEO4J_PASSWORD).
+// auth failure.
 //
 // The full() fixture is a realistic LOADED Config (loopback AGUIBind, Profile dev,
-// replication 1) rather than the old bare {DB, Neo4j}: Validate() is now the unified
+// replication 1) rather than the old bare {DB}: Validate() is now the unified
 // profile-aware contract (it runs the full gate aggregation, not just the two secret
 // checks), so the fixture must reflect a real loaded shape that validates clean under
 // the default lenient tier.
@@ -23,7 +22,6 @@ func TestConfigValidate(t *testing.T) {
 	full := func() *Config {
 		return &Config{
 			DB:                           db.Config{URL: "postgres://u:p@h:5432/db"},
-			Neo4j:                        knowledge.Config{Password: "neo-secret"},
 			Profile:                      ProfileDev,
 			AGUIBind:                     "127.0.0.1:9080",
 			ObjectStoreReplicationFactor: 1,
@@ -34,15 +32,9 @@ func TestConfigValidate(t *testing.T) {
 	}
 
 	c := full()
-	c.Neo4j.Password = ""
-	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "NEO4J_PASSWORD") {
-		t.Fatalf("empty NEO4J_PASSWORD must fail validation naming the var, got %v", err)
-	}
-
-	c2 := full()
-	c2.DB.URL = ""
-	if err := c2.Validate(); err == nil {
-		t.Fatal("empty DB URL (no POSTGRES_PASSWORD / AURA_DB_URL) must fail validation")
+	c.DB.URL = ""
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "POSTGRES_PASSWORD") {
+		t.Fatalf("empty DB URL (no POSTGRES_PASSWORD / AURA_DB_URL) must fail validation naming the var, got %v", err)
 	}
 }
 
@@ -50,7 +42,6 @@ func TestConfigValidateRejectsNonPositiveHistoryHardCap(t *testing.T) {
 	t.Setenv("AURA_HISTORY_HARD_CAP_TURNS", "0")
 	cfg := &Config{
 		DB:                           db.Config{URL: "postgres://u:p@h:5432/db"},
-		Neo4j:                        knowledge.Config{Password: "neo-secret"},
 		Profile:                      ProfileServerProduction,
 		AGUIBind:                     "127.0.0.1:9080",
 		ObjectStoreReplicationFactor: 2,
@@ -286,17 +277,16 @@ func TestGateWebBind(t *testing.T) {
 }
 
 // TestGateRequiredSecrets locks the all-tier required-secret gate (O-04): an empty DB
-// DSN or Neo4j password is Fatal naming its knob; a fully-set Config yields nothing.
+// DSN is Fatal naming its knob; a set DSN yields nothing. NEO4J_PASSWORD was the second
+// entry here until the graph store was retired — nothing opens a Bolt connection now,
+// so gating boot on it would refuse to start over a secret no code path reads.
 func TestGateRequiredSecrets(t *testing.T) {
-	if vs := (&Config{Neo4j: knowledge.Config{Password: "x"}}).gateRequiredSecrets(); !hasViolation(vs, "POSTGRES_PASSWORD (or AURA_DB_URL)", Fatal) {
+	if vs := (&Config{}).gateRequiredSecrets(); !hasViolation(vs, "POSTGRES_PASSWORD (or AURA_DB_URL)", Fatal) {
 		t.Errorf("empty DB URL must be Fatal naming POSTGRES_PASSWORD, got %+v", vs)
 	}
-	if vs := (&Config{DB: db.Config{URL: "postgres://u:p@h/db"}}).gateRequiredSecrets(); !hasViolation(vs, "NEO4J_PASSWORD", Fatal) {
-		t.Errorf("empty Neo4j password must be Fatal naming NEO4J_PASSWORD, got %+v", vs)
-	}
-	full := &Config{DB: db.Config{URL: "postgres://u:p@h/db"}, Neo4j: knowledge.Config{Password: "x"}}
+	full := &Config{DB: db.Config{URL: "postgres://u:p@h/db"}}
 	if vs := full.gateRequiredSecrets(); len(vs) != 0 {
-		t.Errorf("fully-set secrets must yield no violation, got %+v", vs)
+		t.Errorf("a set DB DSN must yield no violation, got %+v", vs)
 	}
 }
 
@@ -325,7 +315,6 @@ func TestValidateProfile(t *testing.T) {
 		t.Setenv("AURA_SHELL_DESTRUCTIVE_PATTERNS", "off")
 		cfg := &Config{
 			DB:                           db.Config{URL: "postgres://u:p@h:5432/db"},
-			Neo4j:                        knowledge.Config{Password: "neo-secret"},
 			Profile:                      ProfileServerProduction,
 			AGUIBind:                     "127.0.0.1:9080",
 			RunDir:                       filepath.Join(t.TempDir(), "runs"),
@@ -374,7 +363,6 @@ func TestValidateProfile(t *testing.T) {
 		t.Setenv("AURA_SWARM_MAX_GOALS", "notanint")
 		dev := &Config{
 			DB:                           db.Config{URL: "postgres://u:p@h:5432/db"},
-			Neo4j:                        knowledge.Config{Password: "neo-secret"},
 			Profile:                      ProfileDev,
 			AGUIBind:                     "127.0.0.1:9080",
 			RunDir:                       filepath.Join(t.TempDir(), "runs"),
@@ -390,7 +378,6 @@ func TestValidateProfile(t *testing.T) {
 		t.Setenv("AURA_SWARM_MAX_GOALS", "notanint")
 		prod := &Config{
 			DB:                           db.Config{URL: "postgres://u:p@h:5432/db"},
-			Neo4j:                        knowledge.Config{Password: "neo-secret"},
 			Profile:                      ProfileServerProduction,
 			AGUIBind:                     "127.0.0.1:9080",
 			RunDir:                       filepath.Join(t.TempDir(), "runs"),

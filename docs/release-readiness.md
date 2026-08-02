@@ -38,12 +38,12 @@ rollback rehearsal, runs the ten-report gate, and uploads the immutable bundle. 
 | Gate | Required evidence | Pass condition |
 |---|---|---|
 | security | `security-report.json` from `security_evidence.py` | exact-SHA CodeQL Go+JS, govulncheck, workflow-pin, strict-profile tests pass |
-| coverage | `coverage-report.json` | statements ≥85% with DB and Neo4j tiers; no empty/filtered tier |
+| coverage | `coverage-report.json` | statements ≥85% with the `db_integration` tier; no empty/filtered tier |
 | mutation | `mutation-report.json` | killed ≥70% separately for gateway, identity, profile, sandbox, and frontend |
 | capability | `capability-eval.json` | every declared scenario executed and passed; zero skip/missing |
 | load | `load-report.json` | supported concurrency met; success ratio and p95 inside declared budget |
 | chaos | `chaos-report.json` | DB, MCP, Garage, and process-kill scenarios executed, degraded truthfully, recovered |
-| disaster recovery | `dr-report.json` | Postgres, Neo4j offline, sidecars, and Garage restored and checksum-verified |
+| disaster recovery | `dr-report.json` | Postgres, sidecars, and Garage restored and checksum-verified (three planes; memory has no drill yet) |
 | observability | `observability-report.json` | negative fixtures, runtime smoke, live health/readiness, dashboards, alerts, runbooks pass |
 | rollback | `rollback-report.json` | distinct image digests; previous config starts; migrations compatible; candidate restored healthy |
 | audit | `audit-closure-report.json` | current-only register is empty; `release_ready:true`; zero `open` or `external_blocked` rows |
@@ -53,7 +53,6 @@ rollback rehearsal, runs the ten-report gate, and uploads the immutable bundle. 
 - [ ] Candidate image digest and source commit recorded.
 - [ ] Secrets/config validated under the intended strict profile.
 - [ ] Backup artifacts are outside the data volumes they protect.
-- [ ] Neo4j maintenance window announced before an operator live dump.
 - [ ] Restore targets are disposable and distinct from live databases/volumes/buckets.
 - [ ] `/healthz`, `/readyz`, dashboards, alerts, and runbook links checked.
 - [ ] Rollback command, image digest, database compatibility, and responsible operator recorded.

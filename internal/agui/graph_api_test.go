@@ -11,40 +11,42 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/chetto1983/aura/internal/knowledge"
 )
 
 // fakeGraphView is a scripted GraphView for the graph-api unit tests: it returns canned
 // schema/result (or scripted errors) and records whether each method was reached (the
 // RequireAuth-gate test asserts the seam is NOT reached without a session).
 type fakeGraphView struct {
-	schema        knowledge.GraphSchema
-	result        knowledge.GraphResult
+	schema        GraphSchema
+	result        GraphResult
 	schemaErr     error
 	queryErr      error
 	schemaCalls   int
 	queryCalls    int
-	gotIntent     knowledge.GraphIntent
+	gotIntent     GraphIntent
 	schemaReached bool
 	queryReached  bool
+	// gotSchemaIdentity records who the schema read was scoped to — the graph store is
+	// one database per identity, so an unstamped read is a cross-tenant read.
+	gotSchemaIdentity string
 }
 
-func (f *fakeGraphView) Schema(context.Context) (knowledge.GraphSchema, error) {
+func (f *fakeGraphView) Schema(_ context.Context, identityID string) (GraphSchema, error) {
 	f.schemaCalls++
 	f.schemaReached = true
+	f.gotSchemaIdentity = identityID
 	if f.schemaErr != nil {
-		return knowledge.GraphSchema{}, f.schemaErr
+		return GraphSchema{}, f.schemaErr
 	}
 	return f.schema, nil
 }
 
-func (f *fakeGraphView) Query(_ context.Context, in knowledge.GraphIntent) (knowledge.GraphResult, error) {
+func (f *fakeGraphView) Query(_ context.Context, in GraphIntent) (GraphResult, error) {
 	f.queryCalls++
 	f.queryReached = true
 	f.gotIntent = in
 	if f.queryErr != nil {
-		return knowledge.GraphResult{}, f.queryErr
+		return GraphResult{}, f.queryErr
 	}
 	return f.result, nil
 }
@@ -52,14 +54,14 @@ func (f *fakeGraphView) Query(_ context.Context, in knowledge.GraphIntent) (know
 // fakeGraph returns a GraphView with a non-empty schema + a small contract result.
 func fakeGraph() *fakeGraphView {
 	return &fakeGraphView{
-		schema: knowledge.GraphSchema{
+		schema: GraphSchema{
 			Labels:   []string{"Entity", "Document", "Conversation"},
 			RelTypes: []string{"MENTIONS", "HAS_MESSAGE"},
 		},
-		result: knowledge.GraphResult{
-			Nodes:  []knowledge.GraphNode{{ID: "e1", Caption: "Aura", Labels: []string{"Entity"}}},
-			Edges:  []knowledge.GraphEdge{{ID: "r1", Source: "e1", Target: "e2", RelType: "MENTIONS"}},
-			Schema: knowledge.GraphSchema{Labels: []string{"Entity"}},
+		result: GraphResult{
+			Nodes:  []GraphNode{{ID: "e1", Caption: "Aura", Labels: []string{"Entity"}}},
+			Edges:  []GraphEdge{{ID: "r1", Source: "e1", Target: "e2", RelType: "MENTIONS"}},
+			Schema: GraphSchema{Labels: []string{"Entity"}},
 			Query:  "MATCH (e:Entity) RETURN e",
 		},
 	}
@@ -88,7 +90,7 @@ func TestGraphSchemaOK(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
-	var got knowledge.GraphSchema
+	var got GraphSchema
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode body: %v", err)
 	}
@@ -123,12 +125,12 @@ func TestGraphSchemaErrorSanitized(t *testing.T) {
 // contract JSON.
 func TestGraphQueryOK(t *testing.T) {
 	gv := fakeGraph()
-	body, _ := json.Marshal(knowledge.GraphIntent{Op: knowledge.OpSeed, Session: "thread-1"})
+	body, _ := json.Marshal(GraphIntent{Op: OpSeed, Session: "thread-1"})
 	rec := doGraph(t, graphServer(gv), http.MethodPost, "/api/graph/query", body)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
 	}
-	var got knowledge.GraphResult
+	var got GraphResult
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode contract: %v", err)
 	}
@@ -141,14 +143,14 @@ func TestGraphQueryOK(t *testing.T) {
 	if got.Query == "" {
 		t.Fatalf("expected the display query to round-trip")
 	}
-	if gv.gotIntent.Op != knowledge.OpSeed || gv.gotIntent.Session != "thread-1" {
+	if gv.gotIntent.Op != OpSeed || gv.gotIntent.Session != "thread-1" {
 		t.Fatalf("normalizer got intent %+v", gv.gotIntent)
 	}
 }
 
 // TestGraphQueryUnwired503: POST /api/graph/query with no GraphView wired is 503.
 func TestGraphQueryUnwired503(t *testing.T) {
-	body, _ := json.Marshal(knowledge.GraphIntent{Op: knowledge.OpSchemaOverview})
+	body, _ := json.Marshal(GraphIntent{Op: OpSchemaOverview})
 	rec := doGraph(t, graphServer(nil), http.MethodPost, "/api/graph/query", body)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503", rec.Code)
@@ -237,7 +239,7 @@ func TestGraphQueryOverCap413(t *testing.T) {
 func TestGraphQueryErrorSanitized(t *testing.T) {
 	gv := fakeGraph()
 	gv.queryErr = errors.New("read failed at bolt://neo4j:hunter2@db:7687")
-	body, _ := json.Marshal(knowledge.GraphIntent{Op: knowledge.OpSeed, Session: "t"})
+	body, _ := json.Marshal(GraphIntent{Op: OpSeed, Session: "t"})
 	rec := doGraph(t, graphServer(gv), http.MethodPost, "/api/graph/query", body)
 	if rec.Code == http.StatusOK {
 		t.Fatalf("status = %d, want non-200", rec.Code)
@@ -259,13 +261,13 @@ func TestGraphQueryValidationBranches(t *testing.T) {
 	}
 	cases := []struct {
 		name   string
-		intent knowledge.GraphIntent
+		intent GraphIntent
 	}{
-		{"seed_id too long", knowledge.GraphIntent{Op: knowledge.OpExpand, SeedID: longID}},
-		{"session too long", knowledge.GraphIntent{Op: knowledge.OpSeed, Session: longID}},
-		{"too many label filters", knowledge.GraphIntent{Op: knowledge.OpExpand, SeedID: "e1", Labels: manyLabels}},
-		{"label token too long", knowledge.GraphIntent{Op: knowledge.OpExpand, SeedID: "e1", Labels: []string{longTok}}},
-		{"rel-type token too long", knowledge.GraphIntent{Op: knowledge.OpExpand, SeedID: "e1", RelTypes: []string{longTok}}},
+		{"seed_id too long", GraphIntent{Op: OpExpand, SeedID: longID}},
+		{"session too long", GraphIntent{Op: OpSeed, Session: longID}},
+		{"too many label filters", GraphIntent{Op: OpExpand, SeedID: "e1", Labels: manyLabels}},
+		{"label token too long", GraphIntent{Op: OpExpand, SeedID: "e1", Labels: []string{longTok}}},
+		{"rel-type token too long", GraphIntent{Op: OpExpand, SeedID: "e1", RelTypes: []string{longTok}}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -325,7 +327,7 @@ func validCookiePost(deps AuthDeps, path string, body []byte) *http.Request {
 	return req
 }
 
-func graphIntentUserID(t *testing.T, in knowledge.GraphIntent) string {
+func graphIntentUserID(t *testing.T, in GraphIntent) string {
 	t.Helper()
 	v := reflect.ValueOf(in)
 	f := v.FieldByName("UserID")
@@ -343,7 +345,7 @@ func TestGraphQueryInjectsAuthenticatedPrincipal(t *testing.T) {
 	gv := fakeGraph()
 	s := graphServer(gv)
 	gated := RequireAuth(s.Mux(), deps)
-	body, _ := json.Marshal(knowledge.GraphIntent{Op: knowledge.OpSeed, Session: "thread-1"})
+	body, _ := json.Marshal(GraphIntent{Op: OpSeed, Session: "thread-1"})
 
 	rec := httptest.NewRecorder()
 	gated.ServeHTTP(rec, validCookiePost(deps, "/api/graph/query", body))
@@ -353,6 +355,49 @@ func TestGraphQueryInjectsAuthenticatedPrincipal(t *testing.T) {
 	}
 	if got := graphIntentUserID(t, gv.gotIntent); got != deps.LocalIdentityID {
 		t.Fatalf("GraphIntent.UserID = %q, want authenticated identity %q", got, deps.LocalIdentityID)
+	}
+}
+
+// TestGraphSchemaScopesToAuthenticatedIdentity: the schema read is per identity because
+// the graph store is one database per identity. An unstamped read would resolve to
+// whatever database the view defaults to, which is how one operator ends up looking at
+// another's memory shape.
+func TestGraphSchemaScopesToAuthenticatedIdentity(t *testing.T) {
+	deps := testDeps("operator-secret")
+	gv := fakeGraph()
+	gated := RequireAuth(graphServer(gv).Mux(), deps)
+
+	rec := httptest.NewRecorder()
+	gated.ServeHTTP(rec, validCookieReq(deps, "/api/graph/schema", false))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
+	}
+	if gv.gotSchemaIdentity != deps.LocalIdentityID {
+		t.Fatalf("schema read scoped to %q, want the authenticated identity %q",
+			gv.gotSchemaIdentity, deps.LocalIdentityID)
+	}
+}
+
+// TestGraphQueryFilterValidationScopesToAuthenticatedIdentity: the filter-validation
+// schema read is the SAME per-identity read, so it must carry the principal too — a
+// filter validated against someone else's label set is both a wrong answer and a leak of
+// which labels exist over there.
+func TestGraphQueryFilterValidationScopesToAuthenticatedIdentity(t *testing.T) {
+	deps := testDeps("operator-secret")
+	gv := fakeGraph()
+	gated := RequireAuth(graphServer(gv).Mux(), deps)
+	body := []byte(`{"op":"expand","seed_id":"e1","labels":["Entity"]}`)
+
+	rec := httptest.NewRecorder()
+	gated.ServeHTTP(rec, validCookiePost(deps, "/api/graph/query", body))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
+	}
+	if gv.gotSchemaIdentity != deps.LocalIdentityID {
+		t.Fatalf("filter-validation schema read scoped to %q, want %q",
+			gv.gotSchemaIdentity, deps.LocalIdentityID)
 	}
 }
 
@@ -381,7 +426,7 @@ func TestGraphRequireAuthGate(t *testing.T) {
 	})
 
 	t.Run("unauthenticated query POST rejected 401", func(t *testing.T) {
-		body, _ := json.Marshal(knowledge.GraphIntent{Op: knowledge.OpSchemaOverview})
+		body, _ := json.Marshal(GraphIntent{Op: OpSchemaOverview})
 		req := httptest.NewRequest(http.MethodPost, "/api/graph/query", bytes.NewReader(body))
 		rec := httptest.NewRecorder()
 		gated.ServeHTTP(rec, req)
@@ -405,7 +450,7 @@ func TestGraphRequireAuthGate(t *testing.T) {
 	})
 
 	t.Run("valid session reaches the query handler", func(t *testing.T) {
-		body, _ := json.Marshal(knowledge.GraphIntent{Op: knowledge.OpSchemaOverview})
+		body, _ := json.Marshal(GraphIntent{Op: OpSchemaOverview})
 		rec := httptest.NewRecorder()
 		gated.ServeHTTP(rec, validCookiePost(deps, "/api/graph/query", body))
 		if rec.Code != http.StatusOK {

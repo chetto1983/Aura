@@ -6,14 +6,12 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/db"
-	"github.com/chetto1983/aura/internal/knowledge"
 	"github.com/chetto1983/aura/internal/mcp"
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 )
@@ -25,11 +23,6 @@ type doctorPostgresPool interface {
 	Close()
 }
 
-type doctorNeo4jClient interface {
-	Read(context.Context, string, map[string]any) ([]map[string]any, error)
-	Close() error
-}
-
 type doctorCheck struct {
 	name        string
 	probe       doctorProbe
@@ -38,18 +31,12 @@ type doctorCheck struct {
 
 var (
 	doctorProbePostgres   doctorProbe = defaultDoctorProbePostgres
-	doctorProbeNeo4j      doctorProbe = defaultDoctorProbeNeo4j
 	doctorProbeEmbed      doctorProbe = defaultDoctorProbeEmbed
-	doctorProbeMCPBinary  doctorProbe = defaultDoctorProbeMCPBinary
 	doctorProbeMCPServers doctorProbe = defaultDoctorProbeMCPServers
 	doctorLookupLLMKey                = func() string { return os.Getenv("OPENROUTER_API_KEY") } //nolint:gosec // boolean presence check only; value is never printed.
-	doctorLookPath                    = exec.LookPath
 	doctorHTTPClient                  = &http.Client{Timeout: 10 * time.Second}
 	doctorOpenPostgres                = func(ctx context.Context, cfg *config.Config) (doctorPostgresPool, error) {
 		return db.Open(ctx, &cfg.DB)
-	}
-	doctorOpenNeo4j = func(ctx context.Context, cfg *config.Config) (doctorNeo4jClient, error) {
-		return knowledge.Open(ctx, &cfg.Neo4j)
 	}
 )
 
@@ -93,9 +80,7 @@ func runDoctorWithConfig(ctx context.Context, out io.Writer, cfg *config.Config)
 func doctorChecks() []doctorCheck {
 	return []doctorCheck{
 		{name: "postgres", probe: doctorProbePostgres, failureCode: exitUnreachable},
-		{name: "neo4j", probe: doctorProbeNeo4j, failureCode: exitUnreachable},
 		{name: "embed", probe: doctorProbeEmbed, failureCode: exitUnreachable},
-		{name: "mcp-neo4j-cypher", probe: doctorProbeMCPBinary, failureCode: exitInfra},
 		{name: "llm_key", probe: doctorProbeLLMKey, failureCode: 0},
 		{name: "mcp", probe: doctorProbeMCPServers, failureCode: exitUnreachable},
 	}
@@ -115,22 +100,6 @@ func defaultDoctorProbePostgres(ctx context.Context, cfg *config.Config) (string
 	return fmt.Sprintf("reachable (%s)", latency.Round(time.Millisecond)), nil
 }
 
-func defaultDoctorProbeNeo4j(ctx context.Context, cfg *config.Config) (string, error) {
-	mcp, err := doctorOpenNeo4j(ctx, cfg)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = mcp.Close() }()
-	rows, err := mcp.Read(ctx, "RETURN 1 AS ok", nil)
-	if err != nil {
-		return "", err
-	}
-	if len(rows) == 0 {
-		return "", fmt.Errorf("RETURN 1 returned no rows")
-	}
-	return "RETURN 1 round-trip OK", nil
-}
-
 func defaultDoctorProbeEmbed(ctx context.Context, cfg *config.Config) (string, error) {
 	client := doctorHTTPClient
 	if client == nil {
@@ -148,26 +117,13 @@ func defaultDoctorProbeEmbed(ctx context.Context, cfg *config.Config) (string, e
 	return fmt.Sprintf("dimension %d", len(vectors[0])), nil
 }
 
-func defaultDoctorProbeMCPBinary(_ context.Context, cfg *config.Config) (string, error) {
-	bin := strings.TrimSpace(cfg.Neo4j.MCPBinary)
-	if bin == "" {
-		return "", fmt.Errorf("AURA_MCP_NEO4J_CYPHER_BIN is empty")
-	}
-	path, err := doctorLookPath(bin)
-	if err != nil {
-		return "", fmt.Errorf("%s not found on PATH: %w", bin, err)
-	}
-	return "found " + path, nil
-}
-
-// defaultDoctorProbeMCPServers is the 6th doctor check (D-16/D-17/D-18, MCPH-09):
-// it live-probes ONLY the enabled + runnable + streamable-HTTP managed MCP servers
-// via mcp.ProbeServer, bounded per-server by AURA_MCP_PROBE_TIMEOUT. It deliberately
-// does NOT probe doctorProbeMCPBinary's target (the unrelated Neo4j-Cypher sidecar
-// binary, RESEARCH Pitfall #11) and does NOT dial disabled, trust-blocked, or stdio
-// servers: the resolved runtime policy already excludes disabled/blocked entries,
-// and the streamable_http filter below drops stdio. A single unreachable server
-// fails only its own name in the aggregated detail, never the others.
+// defaultDoctorProbeMCPServers live-probes ONLY the enabled + runnable +
+// streamable-HTTP managed MCP servers (D-16/D-17/D-18, MCPH-09) via mcp.ProbeServer,
+// bounded per-server by AURA_MCP_PROBE_TIMEOUT. It does NOT dial disabled,
+// trust-blocked, or stdio servers: the resolved runtime policy already excludes
+// disabled/blocked entries, and the streamable_http filter below drops stdio. A
+// single unreachable server fails only its own name in the aggregated detail,
+// never the others.
 func defaultDoctorProbeMCPServers(ctx context.Context, cfg *config.Config) (string, error) {
 	runnable, err := doctorRuntimeMCPServers(cfg)
 	if err != nil {

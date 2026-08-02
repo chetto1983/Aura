@@ -61,12 +61,8 @@ RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
 # into the shared warm-cache volume (D-13).
 COPY --from=ghcr.io/astral-sh/uv@sha256:df4cae8f3a96d175e2e5f992e597550000edbe78fdc2594d5cd8de1a217f504c /uv /uvx /usr/local/bin/
 
-# Pinned MCP server (parity with docker/aura). Debian python is PEP-668 externally-managed
-# -> --break-system-packages (the container IS the boundary; no venv needed at image level).
-# The trailing __pycache__ sweep runs INSIDE this layer, not as a later one: a `rm` in a
-# subsequent layer only writes a whiteout, it never shrinks the layer that wrote the bytes.
-RUN pip install --no-cache-dir --break-system-packages mcp-neo4j-cypher==0.6.0 fastmcp==2.13.3 \
-    && find /usr/lib/python3 /usr/local/lib -depth -type d -name __pycache__ -exec rm -rf {} +
+# mcp-neo4j-cypher + fastmcp are gone here too (parity with docker/aura): the graph
+# client that spawned the server is retired, and the box never spoke to it anyway.
 
 # ↓↓ Document/office toolchain — MANDATORY parity with docker/aura/Dockerfile ↓↓
 # Under a strict profile the box, NOT the aura container, is where shell_exec and the skill

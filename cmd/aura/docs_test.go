@@ -21,11 +21,10 @@ func TestDocsCommandRequiresSubcommand(t *testing.T) {
 func TestDocsIngestPrintsSearchableJob(t *testing.T) {
 	svc := &fakeDocsService{
 		ingestJob: &documents.Job{
-			ID:           "job-1",
-			DocumentID:   "doc-1",
-			Status:       documents.JobSearchable,
-			FileName:     "manual.pdf",
-			SparseChunks: 3,
+			ID:         "job-1",
+			DocumentID: "doc-1",
+			Status:     documents.JobSearchable,
+			FileName:   "manual.pdf",
 		},
 	}
 	var out bytes.Buffer
@@ -58,7 +57,7 @@ func TestDocsIngestThreadsTheOperatorIdentity(t *testing.T) {
 
 func TestDocsSearchPrintsHits(t *testing.T) {
 	svc := &fakeDocsService{
-		hits: []documents.SearchHit{{DocumentID: "doc-1", ChunkID: "chunk-1", Text: "hello"}},
+		hits: []documents.DigestHit{{DocumentID: "doc-1", Title: "manual.pdf", Digest: "hello"}},
 	}
 	var out bytes.Buffer
 	if err := runDocsCommand(t.Context(), []string{"search", "--limit", "5", "hello"}, &out, fakeDocsFactory(svc)); err != nil {
@@ -66,7 +65,7 @@ func TestDocsSearchPrintsHits(t *testing.T) {
 	}
 	var decoded struct {
 		Query string                `json:"query"`
-		Hits  []documents.SearchHit `json:"hits"`
+		Hits  []documents.DigestHit `json:"hits"`
 	}
 	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
 		t.Fatal(err)
@@ -74,14 +73,17 @@ func TestDocsSearchPrintsHits(t *testing.T) {
 	if decoded.Query != "hello" || len(decoded.Hits) != 1 {
 		t.Fatalf("decoded = %#v", decoded)
 	}
-	if svc.retrieveReq.Limit != 5 {
-		t.Fatalf("limit = %d", svc.retrieveReq.Limit)
+	if svc.searchLimit != 5 {
+		t.Fatalf("limit = %d", svc.searchLimit)
 	}
 }
 
 func TestDocsSearchAcceptsDocumentedTrailingFlags(t *testing.T) {
 	svc := &fakeDocsService{
-		hits: []documents.SearchHit{{DocumentID: "doc-1", ChunkID: "chunk-1", Text: "hello"}},
+		hits: []documents.DigestHit{
+			{DocumentID: "doc-1", Title: "manual.pdf"},
+			{DocumentID: "doc-2", Title: "other.pdf"},
+		},
 	}
 	var out bytes.Buffer
 	args := []string{"search", "hello", "world", "--document-id", "doc-1", "--limit", "3"}
@@ -89,7 +91,8 @@ func TestDocsSearchAcceptsDocumentedTrailingFlags(t *testing.T) {
 		t.Fatal(err)
 	}
 	var decoded struct {
-		Query string `json:"query"`
+		Query string                `json:"query"`
+		Hits  []documents.DigestHit `json:"hits"`
 	}
 	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
 		t.Fatal(err)
@@ -97,8 +100,11 @@ func TestDocsSearchAcceptsDocumentedTrailingFlags(t *testing.T) {
 	if decoded.Query != "hello world" {
 		t.Fatalf("query = %q, want flags excluded", decoded.Query)
 	}
-	if svc.retrieveReq.DocumentID != "doc-1" || svc.retrieveReq.Limit != 3 {
-		t.Fatalf("retrieve request = %#v", svc.retrieveReq)
+	if svc.searchLimit != 3 {
+		t.Fatalf("limit = %d", svc.searchLimit)
+	}
+	if len(decoded.Hits) != 1 || decoded.Hits[0].DocumentID != "doc-1" {
+		t.Fatalf("--document-id did not scope the answer: %#v", decoded.Hits)
 	}
 }
 
@@ -115,9 +121,8 @@ func TestDocsSearchRejectsUnknownTrailingFlag(t *testing.T) {
 }
 
 // TestDocsSearchThreadsTheOperatorIdentity guards the half of the fix a shape assertion
-// cannot see. With AURA_MUSR_ISOLATION on, Searcher.Search and every scoped seed query
-// return before any I/O when IdentityID is empty, so a field-identical service that
-// forgot the principal is still a no-op that exits 0 with zero hits.
+// cannot see. The digest query is identity-scoped in SQL, so a service that forgot the
+// principal is a no-op that exits 0 with zero hits.
 func TestDocsSearchThreadsTheOperatorIdentity(t *testing.T) {
 	const operator = "00000000-0000-0000-0000-000000000001"
 	svc := &fakeDocsService{}
@@ -125,42 +130,13 @@ func TestDocsSearchThreadsTheOperatorIdentity(t *testing.T) {
 	if err := runDocsCommand(ctx, []string{"search", "hello"}, &bytes.Buffer{}, fakeDocsFactory(svc)); err != nil {
 		t.Fatal(err)
 	}
-	if svc.retrieveReq.IdentityID != operator {
-		t.Fatalf("retrieve identity = %q, want the resolved operator %q", svc.retrieveReq.IdentityID, operator)
-	}
-}
-
-func TestDocsBenchScoresZeroHitsAndThreadsTheOperatorIdentity(t *testing.T) {
-	const operator = "00000000-0000-0000-0000-000000000001"
-	svc := &fakeDocsService{
-		ingestJob: &documents.Job{ID: "job-1", DocumentID: "doc-1", FileName: "manual.pdf", SparseChunks: 3},
-	}
-	var out bytes.Buffer
-	ctx := identityctx.WithIdentityID(t.Context(), operator)
-	args := []string{"bench", "--query", "hello", "manual.pdf"}
-	if err := runDocsCommand(ctx, args, &out, fakeDocsFactory(svc)); err != nil {
-		t.Fatal(err)
-	}
-	var decoded struct {
-		Hits  int     `json:"hits"`
-		Score float64 `json:"industrial_score"`
-	}
-	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
-		t.Fatal(err)
-	}
-	if svc.retrieveReq.IdentityID != operator || svc.retrieveReq.DocumentID != "doc-1" {
-		t.Fatalf("bench retrieve request = %#v", svc.retrieveReq)
-	}
-	if decoded.Hits != 0 {
-		t.Fatalf("hits = %d, want the reported 0", decoded.Hits)
-	}
-	if decoded.Score > 75 {
-		t.Fatalf("industrial_score = %.1f for a retrieval that returned nothing", decoded.Score)
+	if svc.searchIdentity != operator {
+		t.Fatalf("search identity = %q, want the resolved operator %q", svc.searchIdentity, operator)
 	}
 }
 
 func TestDocsStatusPrintsJob(t *testing.T) {
-	svc := &fakeDocsService{statusJob: &documents.Job{ID: "job-1", Status: documents.JobComplete}}
+	svc := &fakeDocsService{statusJob: &documents.Job{ID: "job-1", Status: documents.JobSearchable}}
 	var out bytes.Buffer
 	if err := runDocsCommand(t.Context(), []string{"status", "job-1"}, &out, fakeDocsFactory(svc)); err != nil {
 		t.Fatal(err)
@@ -169,7 +145,7 @@ func TestDocsStatusPrintsJob(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if decoded.ID != "job-1" || decoded.Status != documents.JobComplete {
+	if decoded.ID != "job-1" || decoded.Status != documents.JobSearchable {
 		t.Fatalf("decoded = %#v", decoded)
 	}
 }
@@ -181,11 +157,13 @@ func fakeDocsFactory(svc *fakeDocsService) docsServiceFactory {
 }
 
 type fakeDocsService struct {
-	ingestJob   *documents.Job
-	ingestReq   documents.IngestRequest
-	statusJob   *documents.Job
-	hits        []documents.SearchHit
-	retrieveReq documents.SearchRequest
+	ingestJob      *documents.Job
+	ingestReq      documents.IngestRequest
+	statusJob      *documents.Job
+	hits           []documents.DigestHit
+	searchIdentity string
+	searchQuery    string
+	searchLimit    int
 }
 
 func (f *fakeDocsService) IngestPath(_ context.Context, req documents.IngestRequest, _ string) (*documents.Job, error) {
@@ -193,8 +171,8 @@ func (f *fakeDocsService) IngestPath(_ context.Context, req documents.IngestRequ
 	return f.ingestJob, nil
 }
 
-func (f *fakeDocsService) Retrieve(_ context.Context, req documents.SearchRequest) ([]documents.SearchHit, error) {
-	f.retrieveReq = req
+func (f *fakeDocsService) SearchDigests(_ context.Context, identityID, query string, limit int) ([]documents.DigestHit, error) {
+	f.searchIdentity, f.searchQuery, f.searchLimit = identityID, query, limit
 	return f.hits, nil
 }
 

@@ -44,8 +44,8 @@ echo "ok (SC#2): 26 lines, terminal Event limit_hit=max_steps"
 echo "==> B4: phase-close coverage floor (>= 85%, CLAUDE.md)"
 # Measure the PHASE-2 statement surface only (SPEC line 110: internal/agent,
 # internal/agent/workflow, internal/canonicaljson, and the cmd/aura DRY-RUN paths).
-# The cmd/aura db.go/neo4j.go/main.go subcommands belong to Slices 0.5/0.7 and are
-# validated by their own integration tiers (Postgres/Neo4j-backed CI jobs); the
+# The cmd/aura db.go/main.go subcommands belong to Slice 0.5 and are validated by
+# their own integration tiers (the Postgres-backed CI jobs); the
 # internal/agent/tools tree is a pre-rewrite skeleton a later slice owns. Including
 # either in a UNIT-coverage gate measures the wrong code, so the profile is filtered
 # to the Phase-2 surface before the floor is applied.

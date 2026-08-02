@@ -259,10 +259,8 @@ ensure_internal_env_secrets() {
     exit 1
   }
   ensure_generated_env_secret POSTGRES_PASSWORD 32
-  ensure_generated_env_secret NEO4J_PASSWORD 32
   ensure_generated_env_secret AURA_ACCESS_TOKEN 32
   ensure_generated_env_secret AURA_AUTHULA_SECRET 32
-  ensure_generated_env_secret AURA_AGENT_MEMORY_MCP_AUTH_SECRET 32
   # ArcadeDB holds the memory, one database per identity. compose fail-fasts on
   # all three, and it interpolates the whole file before selecting a service, so
   # a missing one aborts every compose invocation.
@@ -298,14 +296,12 @@ write_env_if_missing() {
   }
 
   pg_pw="$(openssl rand -hex 32)"
-  neo4j_pw="$(openssl rand -hex 32)"
   access_token="$(openssl rand -hex 32)"
   objectstore_access_key="GK$(openssl rand -hex 12)"
   objectstore_secret_key="$(openssl rand -hex 32)"
   garage_rpc_secret="$(openssl rand -hex 32)"
   garage_admin_token="$(openssl rand -hex 32)"
   authula_secret="$(openssl rand -hex 32)"
-  memory_auth_secret="$(openssl rand -hex 32)"
   pim_admin_token="$(openssl rand -hex 32)"
   searxng_secret="$(openssl rand -hex 32)"
   aura_image="${AURA_IMAGE:-$DEFAULT_IMAGE}"
@@ -320,19 +316,14 @@ POSTGRES_DB=aura
 POSTGRES_HOST=127.0.0.1
 POSTGRES_PORT=5432
 
-NEO4J_USER=neo4j
-NEO4J_PASSWORD=${neo4j_pw}
-AURA_NEO4J_DATABASE=neo4j
-
 AURA_IMAGE=${aura_image}
 AURA_ACCESS_TOKEN=${access_token}
 AURA_AUTHULA_SECRET=${authula_secret}
-AURA_AGENT_MEMORY_MCP_AUTH_SECRET=${memory_auth_secret}
 AURA_HTTPS_PORT=443
 AURA_AGUI_PORT=9080
 AURA_SETUP_PORT=9081
 AURA_WHATSAPP_MCP_PORT=8092
-AURA_AGENT_MEMORY_MCP_PORT=8091
+AURA_ARCADEDB_MCP_PORT=8096
 AURA_PIM_MCP_ADMIN_TOKEN=${pim_admin_token}
 AURA_BACKUP_DIR=./backups
 SEARXNG_SECRET=${searxng_secret}

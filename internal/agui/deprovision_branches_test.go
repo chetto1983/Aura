@@ -21,8 +21,8 @@ func TestPurgeOneResolvesThenPurges(t *testing.T) {
 	if err := d.PurgeOne(context.Background(), testIdentityID); err != nil {
 		t.Fatalf("PurgeOne: %v", err)
 	}
-	if f.conv.count() != 1 || f.graph.count() != 1 {
-		t.Fatalf("PurgeOne data-plane: conversations=%d graph=%d, want 1/1", f.conv.count(), f.graph.count())
+	if f.conv.count() != 1 || f.memory.count() != 1 {
+		t.Fatalf("PurgeOne data-plane: conversations=%d memory=%d, want 1/1", f.conv.count(), f.memory.count())
 	}
 	if f.iddel.count() != 1 || f.authdel.count() != 1 {
 		t.Fatalf("PurgeOne identity/authula delete: id=%d authula=%d, want 1/1", f.iddel.count(), f.authdel.count())
@@ -91,13 +91,13 @@ func TestPurgeExpiredListError(t *testing.T) {
 
 func TestPurgeExpiredSkipsFailedIdentity(t *testing.T) {
 	deps, f := fullDeprovisionDeps()
-	// Two targets; the graph purge fails for BOTH, so each Purge errors and is skipped —
+	// Two targets; the memory purge fails for BOTH, so each Purge errors and is skipped —
 	// PurgeExpired returns 0 purged with no error (the next scan retries).
 	f.deact.purgeable = []DeprovisionTarget{
 		targetFor("a1111111-1111-4111-8111-111111111111"),
 		targetFor("b2222222-2222-4222-8222-222222222222"),
 	}
-	f.graph.err = errors.New("graph purge crash")
+	f.memory.err = errors.New("memory purge crash")
 	d := NewDeprovisioner(deps)
 
 	purged, err := d.PurgeExpired(context.Background(), time.Now().UTC())
@@ -109,6 +109,6 @@ func TestPurgeExpiredSkipsFailedIdentity(t *testing.T) {
 	}
 	// The batch continued past the first failure: the identity delete never ran for either.
 	if f.iddel.count() != 0 {
-		t.Fatalf("identity deletes = %d, want 0 (both purges aborted at the graph leg)", f.iddel.count())
+		t.Fatalf("identity deletes = %d, want 0 (both purges aborted at the memory leg)", f.iddel.count())
 	}
 }

@@ -39,22 +39,22 @@ func newRuntimeAssetProcessingWorker(cfg *config.Config, pool *pgxpool.Pool, ass
 			documents.NewPostgresIngestionJobStore(pool),
 			documents.NewPostgresIngestionEventStore(pool),
 			assets,
-			runtimeDocumentEmbeddingHandler{cfg: cfg, pool: pool},
 			batchSize,
 		),
 		runtimeIngestionPollInterval,
 	)
 }
 
-func newRuntimeProcessingJobWorker(store documents.IngestionJobQueue, events documents.IngestionEventStore, assets acceptedAssetProcessor, embedding documents.IngestionJobHandler, batchSize int) *documents.IngestionJobWorker {
+// newRuntimeProcessingJobWorker dispatches durable ingestion jobs. Asset processing is
+// the only job type left: the document_embed type went away with chunk embedding, and
+// any row still queued under it dead-letters with handler_missing rather than silently
+// disappearing.
+func newRuntimeProcessingJobWorker(store documents.IngestionJobQueue, events documents.IngestionEventStore, assets acceptedAssetProcessor, batchSize int) *documents.IngestionJobWorker {
 	if batchSize <= 0 {
 		batchSize = 1
 	}
 	handlers := map[string]documents.IngestionJobHandler{
 		assetProcessJobType: runtimeAssetProcessHandler{assets: assets},
-	}
-	if embedding != nil {
-		handlers[documents.IngestionJobTypeDocumentEmbed] = embedding
 	}
 	worker := &documents.IngestionJobWorker{
 		Store:         store,

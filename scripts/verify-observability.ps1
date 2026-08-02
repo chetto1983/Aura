@@ -354,7 +354,7 @@ if (-not $SkipContainerTools) {
     Invoke-CheckedTool 'Tempo config validation' docker @('run', '--rm', '--volume', "${tempoRoot}:/etc/tempo:ro", $tempoImage, $tempoConfigArgument, $tempoVerifyArgument) | Out-Null
     Invoke-CheckedTool 'Grafana image validation' docker @('run', '--rm', '--entrypoint', '/usr/share/grafana/bin/grafana', $grafanaImage, '--version') | Out-Null
 
-    $requiredComposeEnv = @('AURA_ACCESS_TOKEN', 'AURA_AUTHULA_SECRET', 'AURA_GARAGE_ADMIN_TOKEN', 'AURA_OBJECTSTORE_ACCESS_KEY', 'AURA_OBJECTSTORE_SECRET_KEY', 'AURA_PIM_MCP_ADMIN_TOKEN', 'GARAGE_RPC_SECRET', 'NEO4J_PASSWORD', 'POSTGRES_PASSWORD', 'SEARXNG_SECRET')
+    $requiredComposeEnv = @('AURA_ACCESS_TOKEN', 'AURA_AUTHULA_SECRET', 'AURA_GARAGE_ADMIN_TOKEN', 'AURA_OBJECTSTORE_ACCESS_KEY', 'AURA_OBJECTSTORE_SECRET_KEY', 'AURA_PIM_MCP_ADMIN_TOKEN', 'GARAGE_RPC_SECRET', 'POSTGRES_PASSWORD', 'SEARXNG_SECRET')
     $restoreEnv = @{}
     try {
         foreach ($name in $requiredComposeEnv) {

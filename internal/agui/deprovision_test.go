@@ -78,10 +78,6 @@ type fakeConvPurger struct{ recordingPort }
 
 func (f *fakeConvPurger) PurgeConversations(_ context.Context, id string) error { return f.record(id) }
 
-type fakeGraphPurger struct{ recordingPort }
-
-func (f *fakeGraphPurger) PurgeGraph(_ context.Context, id string) error { return f.record(id) }
-
 type fakeMemoryPurger struct{ recordingPort }
 
 func (f *fakeMemoryPurger) PurgeMemory(_ context.Context, id string) error { return f.record(id) }
@@ -116,7 +112,6 @@ func fullDeprovisionDeps() (DeprovisionDeps, *deprovFakes) {
 		sess:     &fakeSessions{},
 		jobs:     &fakeJobs{},
 		conv:     &fakeConvPurger{},
-		graph:    &fakeGraphPurger{},
 		memory:   &fakeMemoryPurger{},
 		adaptive: &fakeAdaptiveGraphPurger{},
 		fence:    &fakeAdaptiveIdentityFencer{},
@@ -128,7 +123,7 @@ func fullDeprovisionDeps() (DeprovisionDeps, *deprovFakes) {
 	}
 	deps := DeprovisionDeps{
 		Journal: f.journal, Deactivator: f.deact, Sessions: f.sess, Jobs: f.jobs,
-		Conversations: f.conv, Graph: f.graph, Memory: f.memory, AdaptiveFence: f.fence, AdaptiveGraph: f.adaptive,
+		Conversations: f.conv, Memory: f.memory, AdaptiveFence: f.fence, AdaptiveGraph: f.adaptive,
 		ObjectStore: f.os, Filesystem: f.fs,
 		IdentityDelete: f.iddel, AuthulaDelete: f.authdel,
 	}
@@ -140,7 +135,6 @@ type deprovFakes struct {
 	sess     *fakeSessions
 	jobs     *fakeJobs
 	conv     *fakeConvPurger
-	graph    *fakeGraphPurger
 	memory   *fakeMemoryPurger
 	adaptive *fakeAdaptiveGraphPurger
 	fence    *fakeAdaptiveIdentityFencer
@@ -190,9 +184,9 @@ func TestDeprovisionPurgeReversesEveryLeg(t *testing.T) {
 	if err := d.Purge(context.Background(), targetFor(testIdentityID)); err != nil {
 		t.Fatalf("Purge: %v", err)
 	}
-	if f.conv.count() != 1 || f.graph.count() != 1 || f.memory.count() != 1 || f.fence.count() != 1 || f.adaptive.count() != 1 {
-		t.Fatalf("data-plane purge: conversations=%d graph=%d memory=%d fence=%d adaptive=%d, want 1/1/1/1/1",
-			f.conv.count(), f.graph.count(), f.memory.count(), f.fence.count(), f.adaptive.count())
+	if f.conv.count() != 1 || f.memory.count() != 1 || f.fence.count() != 1 || f.adaptive.count() != 1 {
+		t.Fatalf("data-plane purge: conversations=%d memory=%d fence=%d adaptive=%d, want 1/1/1/1",
+			f.conv.count(), f.memory.count(), f.fence.count(), f.adaptive.count())
 	}
 	if f.os.deprovCalls[testIdentityID] != 1 || f.fs.deprovCalls[testIdentityID] != 1 {
 		t.Fatalf("resource-plane purge: objectstore=%d filesystem=%d, want 1/1",
@@ -202,7 +196,7 @@ func TestDeprovisionPurgeReversesEveryLeg(t *testing.T) {
 		t.Fatalf("identity/authula delete: id=%d authula=%d, want 1/1", f.iddel.count(), f.authdel.count())
 	}
 	sid := sagaID(sagaKindDeprovision, testIdentityID)
-	for _, step := range []string{sagaStepConversations, sagaStepAdaptiveFence, sagaStepAdaptiveGraph, sagaStepMemory, sagaStepGraph, sagaStepObjectStore, sagaStepDirs, sagaStepIdentityRow, sagaStepAuthula} {
+	for _, step := range []string{sagaStepConversations, sagaStepAdaptiveFence, sagaStepAdaptiveGraph, sagaStepMemory, sagaStepObjectStore, sagaStepDirs, sagaStepIdentityRow, sagaStepAuthula} {
 		if !f.journal.stepDone(sid, step) {
 			t.Errorf("deprovision journal step %q not marked done", step)
 		}
@@ -214,28 +208,28 @@ func TestDeprovisionPurgeReversesEveryLeg(t *testing.T) {
 // converging to a fully-purged identity.
 func TestDeprovisionPurgeResumable(t *testing.T) {
 	deps, f := fullDeprovisionDeps()
-	f.graph.err = errors.New("injected: graph purge crash")
+	f.adaptive.err = errors.New("injected: adaptive projection purge crash")
 	d := NewDeprovisioner(deps)
 	target := targetFor(testIdentityID)
 
 	if err := d.Purge(context.Background(), target); err == nil {
-		t.Fatal("want error on the graph-leg failure")
+		t.Fatal("want error on the adaptive-graph-leg failure")
 	}
 	if f.conv.count() != 1 {
 		t.Fatalf("conversations purge before the failure = %d, want 1", f.conv.count())
 	}
-	// Recover: the graph leg now succeeds. The re-run must skip conversations (journal done)
-	// and complete graph + every later leg exactly once.
-	f.graph.err = nil
+	// Recover: the adaptive leg now succeeds. The re-run must skip conversations (journal
+	// done) and complete the adaptive leg + every later leg exactly once.
+	f.adaptive.err = nil
 	if err := d.Purge(context.Background(), target); err != nil {
 		t.Fatalf("resume purge: %v", err)
 	}
 	if f.conv.count() != 1 {
 		t.Fatalf("conversations re-purged on resume (count=%d) — a done step must be skipped", f.conv.count())
 	}
-	if f.graph.count() != 1 || f.iddel.count() != 1 || f.authdel.count() != 1 {
-		t.Fatalf("resume did not converge: graph=%d idDelete=%d authula=%d, want 1/1/1",
-			f.graph.count(), f.iddel.count(), f.authdel.count())
+	if f.adaptive.count() != 1 || f.iddel.count() != 1 || f.authdel.count() != 1 {
+		t.Fatalf("resume did not converge: adaptive=%d idDelete=%d authula=%d, want 1/1/1",
+			f.adaptive.count(), f.iddel.count(), f.authdel.count())
 	}
 }
 
@@ -283,12 +277,6 @@ func TestDeprovisionPurgeRequiresOwnedDataPlanesBeforeAnyStep(t *testing.T) {
 			},
 		},
 		{
-			name: "memory graph purger",
-			mutate: func(deps *DeprovisionDeps) {
-				deps.Graph = nil
-			},
-		},
-		{
 			// Without this the identity row would be deleted — cascading the whole
 			// Postgres catalog — while its ArcadeDB database survived with nothing
 			// left pointing at it.
@@ -307,11 +295,11 @@ func TestDeprovisionPurgeRequiresOwnedDataPlanesBeforeAnyStep(t *testing.T) {
 			if err == nil {
 				t.Fatalf("Purge without %s succeeded", tt.name)
 			}
-			if f.conv.count()+f.graph.count()+f.memory.count()+f.fence.count()+f.adaptive.count() != 0 {
+			if f.conv.count()+f.memory.count()+f.fence.count()+f.adaptive.count() != 0 {
 				t.Fatal("purge executed a data-plane step before required-port preflight")
 			}
 			if f.iddel.count() != 0 || f.authdel.count() != 0 {
-				t.Fatal("identity deletion ran without verified conversation and graph purgers")
+				t.Fatal("identity deletion ran without verified conversation and memory purgers")
 			}
 		})
 	}

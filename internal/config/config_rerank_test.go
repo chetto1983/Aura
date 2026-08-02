@@ -3,7 +3,6 @@ package config
 import (
 	"testing"
 
-	"github.com/chetto1983/aura/internal/knowledge"
 	"github.com/chetto1983/aura/internal/llm"
 )
 
@@ -76,7 +75,7 @@ func TestRerankRoute(t *testing.T) {
 
 func TestEmbedRoute(t *testing.T) {
 	t.Run("local sidecar when model unset", func(t *testing.T) {
-		cfg := &Config{Neo4j: knowledge.Config{EmbedURL: "http://127.0.0.1:8081"}}
+		cfg := &Config{Embed: EmbedConfig{BaseURL: "http://127.0.0.1:8081"}}
 		base, key, model := cfg.EmbedRoute()
 		if base != "http://127.0.0.1:8081" || key != "" || model != "" {
 			t.Fatalf("EmbedRoute local = (%q,%q,%q), want local base with no auth/model", base, key, model)
@@ -85,7 +84,7 @@ func TestEmbedRoute(t *testing.T) {
 
 	t.Run("model swaps loopback base to shared llm route with /v1 stripped", func(t *testing.T) {
 		cfg := &Config{
-			Neo4j: knowledge.Config{EmbedURL: "http://127.0.0.1:8081", EmbedModel: "qwen/qwen3-embedding-8b"},
+			Embed: EmbedConfig{BaseURL: "http://127.0.0.1:8081", Model: "qwen/qwen3-embedding-8b"},
 			LLM:   llm.Config{BaseURL: "https://openrouter.ai/api/v1", APIKey: "shared-key"},
 		}
 		base, key, model := cfg.EmbedRoute()
@@ -98,7 +97,7 @@ func TestEmbedRoute(t *testing.T) {
 
 	t.Run("custom non-loopback embed base wins", func(t *testing.T) {
 		cfg := &Config{
-			Neo4j: knowledge.Config{EmbedURL: "https://embed.example.test", EmbedModel: "custom-embed"},
+			Embed: EmbedConfig{BaseURL: "https://embed.example.test", Model: "custom-embed"},
 			LLM:   llm.Config{BaseURL: "https://openrouter.ai/api/v1", APIKey: "shared-key"},
 		}
 		base, key, model := cfg.EmbedRoute()

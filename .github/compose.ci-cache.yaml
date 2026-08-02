@@ -1,12 +1,7 @@
 # CI-only CPU posture and cache mounts. Keep runtime state volumes (Postgres /
-# Neo4j / Aura data) out of this file: only immutable downloads/plugins are safe
-# to persist between GitHub-hosted runners.
+# ArcadeDB / Aura data) out of this file: only immutable downloads are safe to
+# persist between GitHub-hosted runners.
 services:
-  neo4j:
-    volumes:
-      - aura-neo4j:/data
-      - ${AURA_CI_NEO4J_PLUGINS_DIR:?AURA_CI_NEO4J_PLUGINS_DIR required in CI}:/plugins
-
   aura-llama-embed:
     # compose.yaml deliberately reserves NVIDIA on the local GPU workstation.
     # Hosted runners have no NVIDIA runtime, so CI must select the CPU image and
@@ -16,7 +11,3 @@ services:
     volumes:
       - ${AURA_CI_LLAMA_CACHE_DIR:?AURA_CI_LLAMA_CACHE_DIR required in CI}/llama.cpp:/root/.cache/llama.cpp
       - ${AURA_CI_LLAMA_CACHE_DIR:?AURA_CI_LLAMA_CACHE_DIR required in CI}/huggingface:/root/.cache/huggingface
-
-  aura-agent-memory-mcp:
-    image: aura-agent-memory-mcp:local
-    pull_policy: never

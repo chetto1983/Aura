@@ -12,7 +12,6 @@ import (
 func buildDocumentCatalogService(chat *chatEnv) agui.DocumentCatalogService {
 	return &documents.DeletingCatalog{
 		Catalog: &documents.CatalogService{Store: documents.NewPostgresCatalogStore(chat.pool)},
-		Graph:   runtimeDocumentGraphDeactivator{cfg: chat.cfg},
 		Assets:  runtimeDocumentAssetDeleter{assets: chat.assets},
 	}
 }

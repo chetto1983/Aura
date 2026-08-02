@@ -53,7 +53,7 @@ def validate_coverage(report: dict[str, Any]) -> dict[str, Any]:
     require(report.get("passed") is True, "coverage: report did not pass")
     require(isinstance(percent, (int, float)) and percent >= 85, "coverage: statements < 85%")
     tiers = set(report.get("tiers_executed", []))
-    missing = {"db_integration", "neo4j_integration"} - tiers
+    missing = {"db_integration"} - tiers
     require(not missing, f"coverage: missing tiers {sorted(missing)}")
     require(report.get("empty_tiers") == 0, "coverage: empty or filtered tier")
     return {"statements_percent": percent}
@@ -186,17 +186,17 @@ def validate_dr(report: dict[str, Any]) -> dict[str, Any]:
     indexed = {
         item.get("plane"): item for item in planes if isinstance(item, dict) and item.get("plane")
     }
-    required = {"postgres", "neo4j", "sidecars", "garage"}
+    required = {"postgres", "sidecars", "garage"}
     missing = required - indexed.keys()
     require(not missing, f"disaster recovery: missing planes {sorted(missing)}")
-    require(report.get("planes_executed") == 4, "disaster recovery: executed plane count != 4")
-    require(report.get("planes_required") == 4, "disaster recovery: required plane count != 4")
+    require(report.get("planes_executed") == 3, "disaster recovery: executed plane count != 3")
+    require(report.get("planes_required") == 3, "disaster recovery: required plane count != 3")
     for plane_id in sorted(required):
         plane = indexed[plane_id]
         require(plane.get("restored_items", 0) > 0, f"disaster recovery: {plane_id} empty")
         require(plane.get("checksum_ok") is True, f"disaster recovery: {plane_id} checksum failed")
         require(plane.get("cleanup_ok") is True, f"disaster recovery: {plane_id} cleanup failed")
-    return {"planes": 4}
+    return {"planes": 3}
 
 
 def validate_observability(report: dict[str, Any]) -> dict[str, Any]:

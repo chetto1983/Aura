@@ -10,13 +10,10 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
 
 const (
 	backupRetentionPostgres = 14 * 24 * time.Hour
-	backupRetentionNeo4j    = 7 * 24 * time.Hour
 
 	backupMaxDuration = 30 * time.Minute
 
@@ -25,49 +22,33 @@ const (
 	missedBackupAlertAfter = 24 * time.Hour
 )
 
-const neo4jExportCypherAll = `
-CALL apoc.export.cypher.all(null, {
-  stream: true,
-  streamStatements: true,
-  batchSize: 1000,
-  format: 'cypher-shell'
-})
-YIELD cypherStatements
-RETURN cypherStatements
-`
-
 // BackupVariant selects the database a BackupHandler dumps.
+//
+// Postgres is the only one left. The Neo4j APOC Cypher export went with the graph
+// store: the compose service, its volume and the Bolt credentials the handler read
+// are all gone, so the variant could only fail against a host that is not there.
+// ArcadeDB has no replacement yet — memory lives in one database per identity
+// (internal/arcadedb/tenant.go) and nothing dumps them.
 type BackupVariant string
 
-const (
-	// BackupPostgres selects the Postgres pg_dump backup.
-	BackupPostgres BackupVariant = "postgres"
-	// BackupNeo4j selects the Neo4j APOC Cypher export backup.
-	BackupNeo4j BackupVariant = "neo4j"
-)
+// BackupPostgres selects the Postgres pg_dump backup.
+const BackupPostgres BackupVariant = "postgres"
 
 type pgDumper func(context.Context, postgresDumpRequest) error
-type neo4jDumper func(context.Context, neo4jDumpRequest) error
 
 // BackupHandler dumps a database from inside the Aura box without a Docker socket.
 //
-// Postgres uses network pg_dump against the migrate-role DSN. Neo4j uses APOC over
-// Bolt and writes cypher-shell-compatible statements. Both variants promote a
-// completed sibling partial into AURA_BACKUP_DIR atomically.
+// It runs network pg_dump against the migrate-role DSN and promotes a completed
+// sibling partial into AURA_BACKUP_DIR atomically.
 type BackupHandler struct {
-	Variant     BackupVariant
-	pgDumper    pgDumper
-	neo4jDumper neo4jDumper
+	Variant  BackupVariant
+	pgDumper pgDumper
 }
 
 // Meta declares the backup contract: a missed nightly backup reschedules on
 // recovery and the wall budget is generous because dumps are I/O-bound.
 func (h BackupHandler) Meta() HandlerMeta {
-	kind := KindBackupPostgres
-	if h.Variant == BackupNeo4j {
-		kind = KindBackupNeo4j
-	}
-	return HandlerMeta{Kind: kind, MaxDuration: backupMaxDuration, ReschedulesOnRecovery: true}
+	return HandlerMeta{Kind: KindBackupPostgres, MaxDuration: backupMaxDuration, ReschedulesOnRecovery: true}
 }
 
 // Run executes the fixed backup path, verifies the host-visible artifact exists,
@@ -123,21 +104,6 @@ func createBackupPartial(dir, finalName string) (string, error) {
 }
 
 func (h BackupHandler) dump(ctx context.Context, dest string) error {
-	if h.Variant == BackupNeo4j {
-		req, err := neo4jDumpRequestFromEnv(dest)
-		if err != nil {
-			return err
-		}
-		dump := h.neo4jDumper
-		if dump == nil {
-			dump = defaultNeo4jDumper
-		}
-		if err := dump(ctx, req); err != nil {
-			return fmt.Errorf("backup neo4j: APOC export failed: %w", err)
-		}
-		return nil
-	}
-
 	req, err := postgresDumpRequestFromEnv(dest)
 	if err != nil {
 		return err
@@ -252,142 +218,18 @@ func defaultPostgresDumper(ctx context.Context, req postgresDumpRequest) error {
 	return nil
 }
 
-type neo4jDumpRequest struct {
-	Dest     string
-	BoltURL  string
-	User     string
-	Password string
-	Database string
-}
-
-func neo4jDumpRequestFromEnv(dest string) (neo4jDumpRequest, error) {
-	req := neo4jDumpRequest{
-		Dest:     dest,
-		BoltURL:  envOr("AURA_NEO4J_BOLT_URL", "bolt://neo4j:7687"),
-		User:     envOr("NEO4J_USER", "neo4j"),
-		Password: os.Getenv("NEO4J_PASSWORD"),
-		Database: envOr("AURA_NEO4J_DATABASE", "neo4j"),
-	}
-	return req, req.validate()
-}
-
-func (r neo4jDumpRequest) validate() error {
-	var missing []string
-	if strings.TrimSpace(r.BoltURL) == "" {
-		missing = append(missing, "bolt URL")
-	}
-	if strings.TrimSpace(r.User) == "" {
-		missing = append(missing, "user")
-	}
-	if strings.TrimSpace(r.Password) == "" {
-		missing = append(missing, "password")
-	}
-	if strings.TrimSpace(r.Database) == "" {
-		missing = append(missing, "database")
-	}
-	if len(missing) > 0 {
-		return fmt.Errorf("backup neo4j: missing %s (set AURA_NEO4J_BOLT_URL/NEO4J_*)", strings.Join(missing, ", "))
-	}
-	return nil
-}
-
-func defaultNeo4jDumper(ctx context.Context, req neo4jDumpRequest) error {
-	driver, err := neo4j.NewDriverWithContext(req.BoltURL, neo4j.BasicAuth(req.User, req.Password, ""))
-	if err != nil {
-		return fmt.Errorf("neo4j driver init: %w", err)
-	}
-	defer func() { _ = driver.Close(ctx) }()
-
-	session := driver.NewSession(ctx, neo4j.SessionConfig{
-		DatabaseName: req.Database,
-		AccessMode:   neo4j.AccessModeWrite,
-	})
-	defer func() { _ = session.Close(ctx) }()
-
-	result, err := session.Run(ctx, neo4jExportCypherAll, nil)
-	if err != nil {
-		return fmt.Errorf("run apoc export: %w", err)
-	}
-
-	var statements []string
-	for result.Next(ctx) {
-		raw, ok := result.Record().Get("cypherStatements")
-		if !ok || raw == nil {
-			continue
-		}
-		stmt, ok := raw.(string)
-		if !ok {
-			return fmt.Errorf("cypherStatements has type %T, want string", raw)
-		}
-		statements = append(statements, stmt)
-	}
-	if err := result.Err(); err != nil {
-		return fmt.Errorf("read apoc export: %w", err)
-	}
-	if _, err := result.Consume(ctx); err != nil {
-		return fmt.Errorf("consume apoc export: %w", err)
-	}
-	return writeNeo4jCypherFile(req.Dest, statements)
-}
-
-func writeNeo4jCypherFile(dest string, statements []string) error {
-	tmp := dest + ".tmp"
-	// G304: dest is app-computed from backupDir plus a timestamped filename, not
-	// model/user payload, and the backup must write to the operator-selected dir.
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600) //nolint:gosec
-	if err != nil {
-		return fmt.Errorf("create %s: %w", tmp, err)
-	}
-	success := false
-	defer func() {
-		_ = f.Close()
-		if !success {
-			_ = os.Remove(tmp)
-		}
-	}()
-
-	for _, stmt := range statements {
-		if _, err := f.WriteString(stmt); err != nil {
-			return fmt.Errorf("write %s: %w", tmp, err)
-		}
-		if !strings.HasSuffix(stmt, "\n") {
-			if _, err := f.WriteString("\n"); err != nil {
-				return fmt.Errorf("write newline to %s: %w", tmp, err)
-			}
-		}
-	}
-	if err := f.Close(); err != nil {
-		return fmt.Errorf("close %s: %w", tmp, err)
-	}
-	if err := os.Rename(tmp, dest); err != nil {
-		return fmt.Errorf("rename %s to %s: %w", tmp, dest, err)
-	}
-	success = true
-	return nil
-}
-
 // dumpFilename builds the timestamped dump filename for the variant.
 func (h BackupHandler) dumpFilename(t time.Time) string {
-	suffix := ".dump"
-	if h.Variant == BackupNeo4j {
-		suffix = ".cypher"
-	}
-	return fmt.Sprintf("%s-%s%s", h.filePrefix(), t.Format("20060102T150405Z"), suffix)
+	return fmt.Sprintf("%s-%s.dump", h.filePrefix(), t.Format("20060102T150405Z"))
 }
 
 // filePrefix is the per-variant retention-sweep prefix.
 func (h BackupHandler) filePrefix() string {
-	if h.Variant == BackupNeo4j {
-		return "neo4j"
-	}
 	return "postgres"
 }
 
 // retention is the per-variant rolling window.
 func (h BackupHandler) retention() time.Duration {
-	if h.Variant == BackupNeo4j {
-		return backupRetentionNeo4j
-	}
 	return backupRetentionPostgres
 }
 
@@ -415,8 +257,9 @@ func backupDir() (string, error) {
 	return dir, nil
 }
 
-// sweepRetention deletes old Postgres .dump files and Neo4j .cypher files. It also
-// prunes the legacy Neo4j .dump suffix so old artifacts age out after the model swap.
+// sweepRetention deletes old Postgres .dump files. It still recognises the retired
+// Neo4j .cypher suffix so those artifacts age out of AURA_BACKUP_DIR instead of
+// being stranded there forever by a prefix that no longer matches.
 func sweepRetention(dir, prefix string, window time.Duration) int {
 	entries, err := os.ReadDir(dir)
 	if err != nil {

@@ -89,14 +89,6 @@ type MemoryPurger interface {
 	PurgeMemory(ctx context.Context, identityID string) error
 }
 
-// GraphPurger removes the identity's Neo4j plane: its :Document nodes + :User-[:HAS_DOCUMENT]
-// edges, plus the memory subgraph written there BEFORE memory moved to ArcadeDB — residue
-// that still belongs to identities provisioned back then and would otherwise outlive them.
-// Idempotent.
-type GraphPurger interface {
-	PurgeGraph(ctx context.Context, identityID string) error
-}
-
 // IdentityDeleter hard-deletes the aura identity by name, cascading capability_grants, the
 // identity_auth_link, and the identity_object_store row via FK ON DELETE CASCADE. Idempotent
 // (deleting an absent identity affects zero rows). It is the AuraLegWriter.DeleteIdentity
@@ -123,7 +115,6 @@ type DeprovisionDeps struct {
 	AdaptiveFence  AdaptiveIdentityFencer
 	AdaptiveGraph  AdaptiveGraphPurger
 	Memory         MemoryPurger
-	Graph          GraphPurger
 	ObjectStore    ObjectStoreProvisioner
 	Filesystem     FilesystemProvisioner
 	IdentityDelete IdentityDeleter
@@ -181,8 +172,9 @@ func (d *Deprovisioner) Deactivate(ctx context.Context, identityID string) error
 }
 
 // Purge runs the symmetric reverse saga after the grace window: conversations, then the
-// Neo4j plane, then the Garage bucket+key, then the per-identity dirs, then the aura
-// identity (cascading grants + link + object-store row), then the Authula user. Journaled
+// adaptive projection, then the memory database, then the Garage bucket+key, then the
+// per-identity dirs, then the aura identity (cascading grants + link + object-store row),
+// then the Authula user. Journaled
 // (kind=deprovision), idempotent, and resumable — a re-run skips the steps the journal
 // marks done and re-runs the rest until the identity is fully removed with no orphans.
 func (d *Deprovisioner) Purge(ctx context.Context, target DeprovisionTarget) error {
@@ -195,8 +187,6 @@ func (d *Deprovisioner) Purge(ctx context.Context, target DeprovisionTarget) err
 		// has no owner row left to find it by. Nothing would ever sweep it.
 		case d.deps.Memory == nil:
 			return fmt.Errorf("deprovision preflight: memory purger is required before identity deletion")
-		case d.deps.Graph == nil:
-			return fmt.Errorf("deprovision preflight: memory graph purger is required before identity deletion")
 		}
 	}
 	run := newSagaRun(ctx, d.deps.Journal, sagaKindDeprovision, target.IdentityID)
@@ -225,13 +215,6 @@ func (d *Deprovisioner) Purge(ctx context.Context, target DeprovisionTarget) err
 	if d.deps.Memory != nil {
 		if err := run.step(ctx, sagaStepMemory, func(ctx context.Context) error {
 			return d.deps.Memory.PurgeMemory(ctx, target.IdentityID)
-		}); err != nil {
-			return err
-		}
-	}
-	if d.deps.Graph != nil {
-		if err := run.step(ctx, sagaStepGraph, func(ctx context.Context) error {
-			return d.deps.Graph.PurgeGraph(ctx, target.IdentityID)
 		}); err != nil {
 			return err
 		}

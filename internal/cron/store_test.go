@@ -310,7 +310,7 @@ func TestListUpdateCancelAndHeartbeat(t *testing.T) {
 		t.Fatalf("CreateTask later: %v", err)
 	}
 	t.Cleanup(func() { cleanupTask(t, pool, later.ID) })
-	cancelled, err := s.CreateTask(ctx, CreateTaskParams{Kind: KindBackupNeo4j, Spec: spec, NextRunAt: first.Add(time.Minute)})
+	cancelled, err := s.CreateTask(ctx, CreateTaskParams{Kind: KindBackupPostgres, Spec: spec, NextRunAt: first.Add(time.Minute)})
 	if err != nil {
 		t.Fatalf("CreateTask cancelled: %v", err)
 	}

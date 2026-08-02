@@ -25,7 +25,7 @@ graph-backed memory, self-authored skills, and multi-channel access.
 Aura is a personal AI agent that runs on the user's own machine. A single Go binary
 hosts the agent runtime, a broad tool surface (host shell + filesystem, web, documents,
 scheduling, skills), multi-channel access (CLI, Telegram, AG-UI/SSE web), and a
-Postgres + Neo4j memory — talking to a swappable LLM (DeepSeek-V4 over OpenRouter by
+Postgres + ArcadeDB memory — talking to a swappable LLM (DeepSeek-V4 over OpenRouter by
 default) plus a few local CPU sidecars. It is built as a **product, not a prototype**.
 
 > **Strategic context:** Aura is designed to ship as a **DGX Spark + software bundle** for
@@ -47,8 +47,8 @@ default) plus a few local CPU sidecars. It is built as a **product, not a protot
 | **Size** | ~98k LOC non-test (`cmd` + `internal`, of which ~7k sqlc-generated) · 68 internal packages |
 | **Tests** | ~143k LOC — table-driven · property-based · fuzz · `-race` · `goleak` · mutation |
 | **Test coverage** | owned-surface floor **≥85% per package**, enforced in CI on every push |
-| **CI** | green — build/vet/lint · CodeQL · integration (Postgres / Neo4j) |
-| **Persistence** | Postgres (40 migrations, sqlc, pgx) + Neo4j (HNSW 1024-d + APOC + GDS) |
+| **CI** | green — build/vet/lint · CodeQL · integration (Postgres / ArcadeDB) |
+| **Persistence** | Postgres (sqlc, pgx) + ArcadeDB (graph memory, full-text + LSM vector index) |
 | **Default LLM** | DeepSeek-V4 via OpenRouter — provider-neutral, swap by config |
 | **Status** | v0.0.0 substrate + v1.0.0 web cockpit shipped · v2.0.0 industrial hardening in progress (8/12 phases) |
 
@@ -58,7 +58,7 @@ default) plus a few local CPU sidecars. It is built as a **product, not a protot
 - **Deferred-tool pattern + semantic `tool_search`** — dozens of tools (incl. dynamic MCP tools) stay discoverable at near-zero per-turn token cost.
 - **Adaptive reasoning router** — a local curated-seed embedding classifier picks reasoning effort in ~10 ms.
 - **Full host terminal + filesystem tools** — real operating power, with destructive-command approval gates and secret redaction.
-- **Graph-native memory** — documents become a searchable Neo4j graph (FTS + HNSW vectors); conversations persist with a context-management ladder.
+- **Graph-native memory** — bitemporal facts and entities live in an ArcadeDB graph (full-text + optional dense leg); conversations persist with a context-management ladder.
 - **Self-extension** — the agent authors and runs its own skills, and mounts MCP servers (calculator, calendar, whatsapp, memory).
 - **Multi-channel** — CLI REPL, Telegram (voice/photo/docs/HITL), and a web cockpit over AG-UI/SSE.
 
@@ -70,7 +70,7 @@ Agent runtime      agent (LlmAgent, Budget, Events, hooks) · workflow (Seq/Par/
 Tools & MCP        agent/tools (registry, deferred, tool_search, fs/shell/web/skill) · mcp (+bridge, manager)
 Intelligence       llm (+openai_compat) · semindex (embed-index core) · reasoningtrace · adaptive · scoring
 Capabilities       web · skills · cron · onboarding · documents · eval
-Persistence        db (Postgres+sqlc) · knowledge (Neo4j) · conversations · identity · profile · secret
+Persistence        db (Postgres+sqlc) · arcadedb (graph memory) · conversations · identity · profile · secret
 Observability      obs · panicobs · reasoningtrace · toolinvocations · cachemetrics
 ```
 
@@ -89,7 +89,7 @@ Observability      obs · panicobs · reasoningtrace · toolinvocations · cache
 ## Deployment (Docker Compose appliance)
 
 Aura is a self-hosted agent runtime packaged as a Docker Compose appliance. The
-default stack brings up Aura, Postgres, Neo4j, the local embedding sidecar, Caddy
+default stack brings up Aura, Postgres, ArcadeDB and its MCP, the local embedding sidecar, Caddy
 TLS/token access, and optional MCP siblings.
 
 ## Quick Start
@@ -103,7 +103,7 @@ curl -fsSL https://raw.githubusercontent.com/chetto1983/Aura/vX.Y.Z/scripts/inst
 ```
 
 The installer checks hardware, creates `.env` with generated `POSTGRES_PASSWORD`,
-`NEO4J_PASSWORD`, and `AURA_ACCESS_TOKEN`, downloads the Compose/Caddy assets, and
+the three `ARCADEDB_*` secrets, and `AURA_ACCESS_TOKEN`, downloads the Compose/Caddy assets, and
 starts the stack. Re-running it keeps an existing `.env` intact.
 
 Optional appliance mode installs a systemd unit under `/opt/aura`:
@@ -127,18 +127,17 @@ POSTGRES_PASSWORD=$(New-Hex)
 POSTGRES_IMAGE=postgres:18.4-alpine3.24
 POSTGRES_USER=aura
 POSTGRES_DB=aura
-NEO4J_USER=neo4j
-NEO4J_PASSWORD=$(New-Hex)
-AURA_NEO4J_DATABASE=neo4j
+ARCADEDB_PASSWORD=$(New-Hex)
+ARCADEDB_APP_PASSWORD=$(New-Hex)
+AURA_ARCADEDB_TENANT_SECRET=$(New-Hex)
 AURA_IMAGE=ghcr.io/chetto1983/aura:vX.Y.Z
 AURA_ACCESS_TOKEN=$(New-Hex)
 AURA_BACKUP_DIR=./backups
 AURA_EMBED_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda
-AURA_EMBED_HF_REPO=Qwen/Qwen3-Embedding-0.6B-GGUF
-AURA_EMBED_HF_FILE=Qwen3-Embedding-0.6B-Q8_0.gguf
-AURA_EMBED_POOLING=last
+AURA_EMBED_MODEL_PATH=/root/.cache/llama.cpp/embeddinggemma-300M-Q8_0.gguf
+AURA_EMBED_POOLING=mean
 AURA_EMBED_NGL=99
-AURA_EMBED_DIMENSIONS=1024
+AURA_EMBED_DIMENSIONS=768
 AURA_RERANK_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda
 AURA_RERANK_NGL=99
 OPENROUTER_API_KEY=
@@ -177,7 +176,8 @@ docker compose exec caddy cat /data/caddy/pki/authorities/local/root.crt > aura-
 ## Updates
 
 Update the appliance with Compose. Volumes persist, and the `aura-migrate`
-one-shot runs Postgres and Neo4j migrations before the Aura service starts:
+one-shot runs the Postgres migrations before the Aura service starts (ArcadeDB
+needs none — the MCP creates each identity's database on first use):
 
 ```bash
 docker compose pull
@@ -187,13 +187,16 @@ docker compose up -d
 ## Backup And Restore
 
 Scheduled backups run inside the socketless Aura box. Postgres is dumped over the
-Compose network with `pg_dump`, and Neo4j is exported over Bolt with APOC into
-`AURA_BACKUP_DIR`:
+Compose network with `pg_dump` into `AURA_BACKUP_DIR`:
 
 ```text
 ./backups/postgres-YYYYMMDDTHHMMSSZ.dump
-./backups/neo4j-YYYYMMDDTHHMMSSZ.cypher
 ```
+
+**Memory is NOT backed up.** The nightly Neo4j APOC export went with the Neo4j
+service; ArcadeDB has no equivalent yet, because memory lives in one database per
+identity (`internal/arcadedb/tenant.go`) and nothing dumps them. Snapshot the
+`aura-arcadedb` volume out of band until that gap is closed.
 
 Run the restore drill against the current Compose stack:
 
@@ -204,8 +207,9 @@ set +a
 scripts/restore_drill.sh
 ```
 
-The drill restores Postgres into a temporary `aura_restore_drill` database and
-feeds the latest Neo4j `.cypher` backup through `cypher-shell`.
+The drill has three planes — Postgres into a temporary database, the conversation
+sidecar archive, and Garage — each checksum-verified into a disposable target and
+cleaned up. There is no memory plane; see the gap above.
 
 Manual restore commands:
 
@@ -213,19 +217,9 @@ Manual restore commands:
 docker compose exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" postgres \
   pg_restore -U "${POSTGRES_USER:-aura}" -d "${POSTGRES_DB:-aura}" \
   --clean --if-exists --no-owner --no-acl /backups/postgres-YYYYMMDDTHHMMSSZ.dump
-
-docker compose exec -T neo4j \
-  cypher-shell -a bolt://neo4j:7687 -u "${NEO4J_USER:-neo4j}" -p "$NEO4J_PASSWORD" \
-  -d "${AURA_NEO4J_DATABASE:-neo4j}" "MATCH (n) DETACH DELETE n;"
-
-docker compose exec -T neo4j \
-  cypher-shell -a bolt://neo4j:7687 -u "${NEO4J_USER:-neo4j}" -p "$NEO4J_PASSWORD" \
-  -d "${AURA_NEO4J_DATABASE:-neo4j}" < ./backups/neo4j-YYYYMMDDTHHMMSSZ.cypher
 ```
 
-Neo4j Community has a single writable database in this deployment, so the Neo4j
-restore command rebuilds that graph. Take a fresh backup before restoring over a
-live graph.
+Take a fresh backup before restoring over a live database.
 
 ## Optional WhatsApp MCP
 
@@ -240,10 +234,10 @@ Scan the QR code shown in the logs. Aura boot never depends on this service.
 
 ## Retired Host Setup
 
-The host no longer needs a separate `pip install mcp-neo4j-cypher==0.6.0`; the
-Neo4j MCP runtime is built into the Aura image. Old host-level Python installs and
-the earlier WSL WhatsApp MCP install can be removed after migrating to the Compose
-appliance.
+The host needs no Python MCP runtime at all. `mcp-neo4j-cypher` is gone with the
+graph store that spawned it — memory is served by Aura's own ArcadeDB MCP, a Go
+binary in the image. Old host-level Python installs and the earlier WSL WhatsApp
+MCP install can be removed after migrating to the Compose appliance.
 
 ## CLI
 
@@ -254,7 +248,6 @@ aura agent dry-run      drive a mock LoopAgent through the Budget tree
 aura tools              print the tool manifest
 aura mcp <sub>          managed MCP servers: install | add | list | doctor | tools | enable | disable | remove
 aura db <sub>           Postgres lifecycle: migrate | ping | status | reset
-aura neo4j <sub>        Neo4j lifecycle: migrate | ping | status | reset | cypher
 aura version            build metadata
 ```
 
@@ -272,7 +265,7 @@ cd Aura
 cp .env.example .env
 make tools
 lefthook install
-make neo4j-migrate
+make db-migrate memory-up
 go run ./cmd/aura version
 go run ./cmd/aura agent dry-run --request-id auto
 ```
@@ -281,7 +274,7 @@ Quality gates:
 
 ```bash
 make quality
-make neo4j-migrate
+make db-migrate memory-up
 make quality-full
 ```
 
@@ -292,8 +285,7 @@ make quality-full
 | `make vuln` | `govulncheck` supply-chain scan |
 | `make test-race` | `go test -race ./...` |
 | `make coverage` | owned-surface coverage floor |
-| `make smoke` | retrieval smoke |
-| `make restore-drill` | Postgres plus Neo4j restore drill |
+| `make restore-drill` | three-plane restore drill (Postgres, sidecars, Garage) |
 
 ## Project Layout
 
@@ -301,7 +293,6 @@ make quality-full
 cmd/aura/                CLI entry and subcommands
 internal/agent/          Agent interface, Event, Budget tree, workflow agents
 internal/db/             Postgres: pgx pool, golang-migrate, sqlc bindings
-internal/knowledge/      Neo4j MCP client, Cypher migrations, embedding ping
 internal/config/         environment to typed config
 internal/canonicaljson/  deterministic JSON for dedup fingerprints
 scripts/                 install, smoke, restore drill, coverage, file-size cap
@@ -310,7 +301,7 @@ scripts/                 install, smoke, restore drill, coverage, file-size cap
 
 ## Scope
 
-Aura is PRD-first. Persistence is Postgres plus Neo4j HNSW, with graph access
+Aura is PRD-first. Persistence is Postgres plus an ArcadeDB graph, with graph access
 through MCP for model-facing tools. The default packaged deployment keeps Aura
 socketless: no Docker socket is mounted into the Aura container.
 

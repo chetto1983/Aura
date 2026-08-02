@@ -73,11 +73,10 @@ RUN install -d /usr/share/postgresql-common/pgdg \
 
 COPY --from=ghcr.io/astral-sh/uv:0.11.32 /uv /uvx /usr/local/bin/
 
-# The trailing __pycache__ sweep runs INSIDE this layer, not as a later one: a `rm` in a
-# subsequent layer only writes a whiteout, it never shrinks the layer that wrote the bytes.
-# Same reason it is repeated in the other pip layer below rather than folded into one place.
-RUN pip install --no-cache-dir --break-system-packages mcp-neo4j-cypher==0.6.0 fastmcp==2.13.3 \
-    && find /usr/lib/python3 /usr/local/lib -depth -type d -name __pycache__ -exec rm -rf {} +
+# mcp-neo4j-cypher + fastmcp are gone from this image. They existed for ONE caller:
+# Aura's graph client (internal/knowledge), which spawned the server over stdio. The
+# graph store is retired, no recipe in manager.BuiltInCatalog names the package, and
+# nothing else imports fastmcp — so the layer was weight nothing could reach.
 
 # uv/uvx above stay: the agent reaches them from shell_exec for Python work. What is gone
 # is the calculator warm-up that used to live here. Warming a uv cache at build time cannot
@@ -120,7 +119,7 @@ RUN apt-get update \
 # `require('pptxgenjs')` resolve from any CWD (the agent runs JS skill snippets from
 # $AURA_WORKSPACE_DIR, not /usr/lib/node_modules). pptxgenjs = the pptx skill's
 # PowerPoint generator.
-# npm cache clean is in THIS layer for the same reason as the pycache sweeps: the build-time
+# npm cache clean is in THIS layer for the same reason as the pycache sweep below: the build-time
 # download cache under /root/.npm is otherwise sealed into the image. At RUNTIME /root/.npm is
 # a retained volume (compose), so warm re-installs are unaffected.
 RUN npm install -g docx pptxgenjs && npm cache clean --force
@@ -128,11 +127,13 @@ ENV NODE_PATH=/usr/lib/node_modules
 
 # Python document/data stack pre-baked so skill snippets don't pip install on every
 # invocation. --break-system-packages is required on this Debian image (PEP 668
-# externally-managed env), matching the mcp-neo4j-cypher/fastmcp install above.
+# externally-managed env).
 # python-docx (import `docx`), python-pptx, openpyxl, xlsxwriter, pandas = Office
 # read/write; pypdf/pdfplumber/reportlab/pdf2image/pytesseract = the pdf skill;
 # Pillow/defusedxml/lxml = shared skill helpers; markitdown[pptx] = the pptx skill's
 # reader (pulls python-pptx). markitdown[pptx] quoted so /bin/sh does not glob the [].
+# The trailing __pycache__ sweep runs INSIDE this layer, not as a later one: a `rm` in a
+# subsequent layer only writes a whiteout, it never shrinks the layer that wrote the bytes.
 RUN pip install --no-cache-dir --break-system-packages \
         python-docx python-pptx openpyxl xlsxwriter pandas \
         pypdf pdfplumber reportlab pdf2image pytesseract \

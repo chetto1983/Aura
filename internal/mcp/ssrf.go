@@ -13,8 +13,8 @@ import (
 // classifier, transplanted here (no shared internal/netguard extraction — that is
 // QUAL-03 / Phase 32 scope) with ONE policy change: under dev (enforce=false) the
 // loopback and private classes are PERMITTED so the compose-DNS sidecars
-// (aura-agent-memory-mcp:8080, whatsapp, aura-pim-mcp) and the off-container
-// loopback recipes (127.0.0.1:8091/8092/8093) plus every httptest fixture stay
+// (arcadedb-mcp:8096, whatsapp, aura-pim-mcp) and the off-container
+// loopback recipes (127.0.0.1:8096/8092/8093) plus every httptest fixture stay
 // reachable. The scheme allow-list and the cloud-metadata / link-local block are
 // UNCONDITIONAL: that string-path barrier is what breaks the request-forgery taint
 // flow regardless of profile (no legitimate MCP server lives at the IMDS endpoint).

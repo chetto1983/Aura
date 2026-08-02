@@ -51,7 +51,6 @@ const (
 	sagaStepAdaptiveFence = "adaptive_fence"
 	sagaStepAdaptiveGraph = "adaptive_graph"
 	sagaStepMemory        = "memory"
-	sagaStepGraph         = "graph"
 	sagaStepObjectStore   = "objectstore"
 	sagaStepDirs          = "dirs"
 	sagaStepIdentityRow   = "identity_row"

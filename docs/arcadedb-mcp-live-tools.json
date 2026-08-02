@@ -1,0 +1,605 @@
+[
+  {
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "readOnlyHint": false
+    },
+    "description": "Remove a document and every passage it owns.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "the document id to remove, with all its passages"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "name": "document_delete",
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "removed": {
+          "type": "integer",
+          "description": "passages removed"
+        }
+      },
+      "required": [
+        "id",
+        "removed"
+      ],
+      "additionalProperties": false
+    },
+    "title": "Delete a document"
+  },
+  {
+    "annotations": {
+      "idempotentHint": false,
+      "readOnlyHint": false
+    },
+    "description": "Store a document as a chain of passages. Re-ingesting the same id replaces it, so a corrected file lands cleanly instead of accumulating.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "stable id; re-ingesting the same id replaces the document"
+        },
+        "title": {
+          "type": "string",
+          "description": "human-readable name, used when citing a passage"
+        },
+        "text": {
+          "type": "string",
+          "description": "the document's text, already converted to markdown or plain text"
+        },
+        "source": {
+          "type": "string",
+          "description": "where it came from, e.g. the original filename"
+        },
+        "chunk_runes": {
+          "type": "integer",
+          "description": "target chunk size in characters; defaults to 1200"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "name": "document_ingest",
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "chunks": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "chunks"
+      ],
+      "additionalProperties": false
+    },
+    "title": "Ingest a document"
+  },
+  {
+    "annotations": {
+      "idempotentHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Find passages by their words, with the neighbouring passages so the match can be read and quoted in context.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "the words to look for"
+        },
+        "limit": {
+          "type": "integer",
+          "description": "how many passages to return; defaults to 5"
+        },
+        "no_context": {
+          "type": "boolean",
+          "description": "omit the neighbouring passages"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "additionalProperties": false
+    },
+    "name": "document_search",
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "passages": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "document_id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "ordinal": {
+                "type": "integer"
+              },
+              "text": {
+                "type": "string"
+              },
+              "before": {
+                "type": "string",
+                "description": "the preceding passage"
+              },
+              "after": {
+                "type": "string",
+                "description": "the following passage"
+              }
+            },
+            "required": [
+              "document_id",
+              "ordinal",
+              "text"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "passages"
+      ],
+      "additionalProperties": false
+    },
+    "title": "Search documents"
+  },
+  {
+    "annotations": {
+      "idempotentHint": false,
+      "readOnlyHint": true
+    },
+    "description": "List the vertex, edge and document types in the graph with their properties, indexes and live record counts. Call this before writing a query so the type and property names are the real ones.",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false
+    },
+    "name": "graph_schema",
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "vertices": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "the type name, e.g. Chunk"
+              },
+              "kind": {
+                "type": "string",
+                "description": "vertex, edge or document"
+              },
+              "records": {
+                "type": "integer",
+                "description": "live row count for this type"
+              },
+              "properties": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": "string"
+                },
+                "description": "property names, sorted"
+              },
+              "indexes": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": "string"
+                },
+                "description": "index names covering this type"
+              }
+            },
+            "required": [
+              "name",
+              "kind",
+              "records"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "edges": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "the type name, e.g. Chunk"
+              },
+              "kind": {
+                "type": "string",
+                "description": "vertex, edge or document"
+              },
+              "records": {
+                "type": "integer",
+                "description": "live row count for this type"
+              },
+              "properties": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": "string"
+                },
+                "description": "property names, sorted"
+              },
+              "indexes": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": "string"
+                },
+                "description": "index names covering this type"
+              }
+            },
+            "required": [
+              "name",
+              "kind",
+              "records"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "documents": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "the type name, e.g. Chunk"
+              },
+              "kind": {
+                "type": "string",
+                "description": "vertex, edge or document"
+              },
+              "records": {
+                "type": "integer",
+                "description": "live row count for this type"
+              },
+              "properties": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": "string"
+                },
+                "description": "property names, sorted"
+              },
+              "indexes": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": "string"
+                },
+                "description": "index names covering this type"
+              }
+            },
+            "required": [
+              "name",
+              "kind",
+              "records"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "vertices",
+        "edges"
+      ],
+      "additionalProperties": false
+    },
+    "title": "Graph schema"
+  },
+  {
+    "annotations": {
+      "idempotentHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Read an entity's facts by walking its edges. Exact and cheap: prefer this whenever the question names an entity, and fall back to memory_search only when it does not.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "entity": {
+          "type": "string",
+          "description": "the entity to read the facts of, by exact name"
+        },
+        "predicate": {
+          "type": "string",
+          "description": "narrow to one relation, e.g. works_for"
+        },
+        "limit": {
+          "type": "integer",
+          "description": "how many facts to return; defaults to 20"
+        },
+        "as_of": {
+          "type": "string",
+          "description": "RFC3339 instant; the facts valid then rather than now"
+        }
+      },
+      "required": [
+        "entity"
+      ],
+      "additionalProperties": false
+    },
+    "name": "memory_facts_about",
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "facts": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "statement": {
+                "type": "string"
+              },
+              "predicate": {
+                "type": "string"
+              },
+              "subject": {
+                "type": "string"
+              },
+              "object": {
+                "type": "string"
+              },
+              "valid_from": {
+                "type": "string"
+              },
+              "valid_to": {
+                "type": "string",
+                "description": "absent while the fact still holds"
+              },
+              "source_run_id": {
+                "type": "string"
+              },
+              "source_memory_ids": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "statement",
+              "predicate",
+              "subject",
+              "object"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "facts"
+      ],
+      "additionalProperties": false
+    },
+    "title": "Facts about an entity"
+  },
+  {
+    "annotations": {
+      "idempotentHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Find facts by their words, when you do not know which entity to ask about. If you do know the entity, call memory_facts_about instead: it is exact. Pass as_of to ask what was true at a past instant instead of what is true now.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "what to look for, in natural language"
+        },
+        "limit": {
+          "type": "integer",
+          "description": "how many facts to return; defaults to 5"
+        },
+        "as_of": {
+          "type": "string",
+          "description": "RFC3339 instant; return the facts that were valid then rather than the ones valid now"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "additionalProperties": false
+    },
+    "name": "memory_search",
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "facts": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "statement": {
+                "type": "string"
+              },
+              "predicate": {
+                "type": "string"
+              },
+              "subject": {
+                "type": "string"
+              },
+              "object": {
+                "type": "string"
+              },
+              "valid_from": {
+                "type": "string"
+              },
+              "valid_to": {
+                "type": "string",
+                "description": "absent while the fact still holds"
+              },
+              "source_run_id": {
+                "type": "string"
+              },
+              "source_memory_ids": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "statement",
+              "predicate",
+              "subject",
+              "object"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "facts"
+      ],
+      "additionalProperties": false
+    },
+    "title": "Search facts"
+  },
+  {
+    "annotations": {
+      "idempotentHint": false,
+      "readOnlyHint": false
+    },
+    "description": "Store one fact as a bitemporal edge between two entities. A fact is never overwritten: when it is superseded its validity window is closed, so both what is true now and what was true then stay answerable.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "subject": {
+          "type": "string",
+          "description": "the entity the fact is about"
+        },
+        "predicate": {
+          "type": "string",
+          "description": "the relation, e.g. lives_in"
+        },
+        "object": {
+          "type": "string",
+          "description": "the entity or value the subject relates to"
+        },
+        "statement": {
+          "type": "string",
+          "description": "the fact in natural language; this is what gets embedded and searched"
+        },
+        "valid_from": {
+          "type": "string",
+          "description": "RFC3339 instant when the fact became true; defaults to now"
+        },
+        "valid_to": {
+          "type": "string",
+          "description": "RFC3339 instant when the fact stopped being true; omit while it still holds"
+        },
+        "supersedes": {
+          "type": "boolean",
+          "description": "close any still-valid fact with the same subject and predicate"
+        },
+        "source_run_id": {
+          "type": "string",
+          "description": "which run wrote this; required so everything a run produced can be found and removed"
+        },
+        "source_memory_ids": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "ids of the messages this was derived from"
+        }
+      },
+      "required": [
+        "subject",
+        "predicate",
+        "object",
+        "statement",
+        "source_run_id"
+      ],
+      "additionalProperties": false
+    },
+    "name": "memory_upsert_fact",
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "statement": {
+          "type": "string"
+        },
+        "superseded": {
+          "type": "integer",
+          "description": "how many previously-valid facts had their window closed"
+        }
+      },
+      "required": [
+        "statement",
+        "superseded"
+      ],
+      "additionalProperties": false
+    },
+    "title": "Remember a fact"
+  }
+]

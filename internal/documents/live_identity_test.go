@@ -1,4 +1,4 @@
-//go:build db_integration || document_ingest_live
+//go:build db_integration
 
 package documents
 

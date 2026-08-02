@@ -36,11 +36,11 @@ func liveArcadeMemoryPurger(t *testing.T) (arcadeMemoryPurgeAdapter, *arcadedb.C
 		t.Skip("AURA_ARCADEDB_TENANT_SECRET not set")
 	}
 	base := arcadedb.Config{
-		BaseURL:  envOrDefault("ARCADEDB_URL", "http://127.0.0.1:2480"),
-		Database: envOrDefault("ARCADEDB_DATABASE", "aura_memory"),
+		BaseURL:  arcadeEnvOrDefault("ARCADEDB_URL", "http://127.0.0.1:2480"),
+		Database: arcadeEnvOrDefault("ARCADEDB_DATABASE", "aura_memory"),
 	}
 	adminCfg := base
-	adminCfg.User = envOrDefault("ARCADEDB_ADMIN_USER", "root")
+	adminCfg.User = arcadeEnvOrDefault("ARCADEDB_ADMIN_USER", "root")
 	adminCfg.Password = password
 	admin, err := arcadedb.New(adminCfg)
 	if err != nil {
@@ -53,7 +53,11 @@ func liveArcadeMemoryPurger(t *testing.T) (arcadeMemoryPurgeAdapter, *arcadedb.C
 	return arcadeMemoryPurgeAdapter{admin: admin, base: base, credentials: credentials}, admin
 }
 
-func envOrDefault(name, fallback string) string {
+// arcadeEnvOrDefault is namespaced because cmd/aura's garage_integration tier declares
+// its own envOrDefault: the two tiers compile into the same test binary whenever both
+// tags are on (scripts/tagged_tier_compile.sh takes the union), and a bare name here
+// collided with it.
+func arcadeEnvOrDefault(name, fallback string) string {
 	if v := strings.TrimSpace(os.Getenv(name)); v != "" {
 		return v
 	}

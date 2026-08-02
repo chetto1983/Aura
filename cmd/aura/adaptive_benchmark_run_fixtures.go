@@ -12,17 +12,10 @@ import (
 
 	"github.com/chetto1983/aura/internal/adaptive"
 	"github.com/chetto1983/aura/internal/config"
-	"github.com/chetto1983/aura/internal/documents"
-	"github.com/chetto1983/aura/internal/knowledge"
 	"github.com/google/uuid"
 )
 
 const adaptiveBenchmarkFixtureCleanupTimeout = 60 * time.Second
-
-type adaptiveBenchmarkFixtureGraph interface {
-	documents.KnowledgeClient
-	Close() error
-}
 
 type adaptiveBenchmarkFixtureMemory interface {
 	CallTool(context.Context, string, map[string]any) (string, error)
@@ -30,10 +23,6 @@ type adaptiveBenchmarkFixtureMemory interface {
 }
 
 type adaptiveBenchmarkFixtureDeps struct {
-	openGraph func(
-		context.Context,
-		*knowledge.Config,
-	) (adaptiveBenchmarkFixtureGraph, error)
 	openMemory func(context.Context) (adaptiveBenchmarkFixtureMemory, error)
 }
 
@@ -59,8 +48,7 @@ func newAdaptiveBenchmarkFixtureAliasManifest(
 	)
 	seenAliases := make(map[adaptive.Domain]map[string]struct{}, 2)
 	for _, entry := range entries {
-		if (entry.domain != adaptive.DomainKnowledge &&
-			entry.domain != adaptive.DomainMemoryRecall) ||
+		if entry.domain != adaptive.DomainMemoryRecall ||
 			entry.id == uuid.Nil ||
 			!validAdaptiveBenchmarkFixtureAlias(entry.alias) {
 			return nil, errors.New(
@@ -105,11 +93,8 @@ type adaptiveBenchmarkFixtureMemoryNode struct {
 
 type adaptiveBenchmarkFixtureSet struct {
 	*adaptiveBenchmarkFixtureAliasManifest
-	graph       adaptiveBenchmarkFixtureGraph
 	memory      adaptiveBenchmarkFixtureMemory
 	ownerID     uuid.UUID
-	documentIDs []string
-	chunkIDs    []string
 	memoryNodes []adaptiveBenchmarkFixtureMemoryNode
 
 	cleanupOnce sync.Once
@@ -118,12 +103,6 @@ type adaptiveBenchmarkFixtureSet struct {
 
 func productionAdaptiveBenchmarkFixtureDeps() adaptiveBenchmarkFixtureDeps {
 	return adaptiveBenchmarkFixtureDeps{
-		openGraph: func(
-			ctx context.Context,
-			cfg *knowledge.Config,
-		) (adaptiveBenchmarkFixtureGraph, error) {
-			return knowledge.Open(ctx, cfg)
-		},
 		openMemory: func(
 			ctx context.Context,
 		) (adaptiveBenchmarkFixtureMemory, error) {
@@ -142,25 +121,12 @@ func installAdaptiveBenchmarkFixtures(
 	if cfg == nil ||
 		ownerID == uuid.Nil ||
 		runID == uuid.Nil ||
-		deps.openGraph == nil ||
 		deps.openMemory == nil {
 		return nil, errors.New(
 			"adaptive benchmark fixture dependencies are invalid",
 		)
 	}
-	graph, err := deps.openGraph(ctx, &cfg.Neo4j)
-	if err != nil {
-		return nil, fmt.Errorf("open adaptive benchmark fixture graph: %w", err)
-	}
-	if graph == nil {
-		return nil, errors.New(
-			"open adaptive benchmark fixture graph: unavailable",
-		)
-	}
-	fixtures := &adaptiveBenchmarkFixtureSet{
-		graph:   graph,
-		ownerID: ownerID,
-	}
+	fixtures := &adaptiveBenchmarkFixtureSet{ownerID: ownerID}
 	defer func() {
 		if returnedErr == nil {
 			return
@@ -182,15 +148,10 @@ func installAdaptiveBenchmarkFixtures(
 		)
 	}
 	fixtures.memory = memory
-	entries, err := fixtures.seedDocuments(ctx, ownerID, runID)
+	entries, err := fixtures.seedMemory(ctx, ownerID, runID)
 	if err != nil {
 		return nil, err
 	}
-	memoryEntries, err := fixtures.seedMemory(ctx, ownerID, runID)
-	if err != nil {
-		return nil, err
-	}
-	entries = append(entries, memoryEntries...)
 	manifest, err := newAdaptiveBenchmarkFixtureAliasManifest(entries)
 	if err != nil {
 		return nil, err
@@ -214,14 +175,6 @@ func (fixtures *adaptiveBenchmarkFixtureSet) Cleanup(
 				fixtures.memory.Close(),
 			)
 			fixtures.memory = nil
-		}
-		if fixtures.graph != nil {
-			cleanupErr = errors.Join(
-				cleanupErr,
-				fixtures.cleanupDocuments(ctx),
-				fixtures.graph.Close(),
-			)
-			fixtures.graph = nil
 		}
 		fixtures.cleanupErr = cleanupErr
 	})

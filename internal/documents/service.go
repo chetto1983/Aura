@@ -18,22 +18,7 @@ const DefaultMaxIngestBytes int64 = 50 << 20
 // ErrFileTooLarge is returned when a file exceeds the configured ingest ceiling.
 var ErrFileTooLarge = errors.New("document file too large")
 
-// SparseIndexer stores extracted document text for immediate sparse search.
-type SparseIndexer interface {
-	UpsertSparse(ctx context.Context, doc ExtractedDocument) (int, error)
-}
-
-// SearchBackend executes document search requests.
-type SearchBackend interface {
-	Search(ctx context.Context, req SearchRequest) ([]SearchHit, error)
-}
-
-// EmbedQueue accepts extracted documents for asynchronous embedding.
-type EmbedQueue interface {
-	Enqueue(ctx context.Context, doc ExtractedDocument) error
-}
-
-// IngestCatalog owns the CLI-only logical catalog lifecycle for a search document.
+// IngestCatalog owns the logical catalog lifecycle for an ingested document.
 type IngestCatalog interface {
 	CreateDocument(context.Context, CreateDocumentRequest) (Document, error)
 	SetSearchDocumentStatus(ctx context.Context, searchDocumentID string, status DocumentStatus, reason string) error
@@ -42,60 +27,24 @@ type IngestCatalog interface {
 // Clock returns the current time; tests inject it for deterministic timestamps.
 type Clock func() time.Time
 
-// Service coordinates document extraction, sparse indexing, search, and embedding.
+// Service registers an ingested file in the document catalog.
+//
+// It no longer reads the file. Extraction, chunking, sparse indexing and chunk
+// embedding all existed to answer "what does this document say" from passages,
+// and that question is now answered by handing the agent the original file
+// (document_open) instead of a ranked fragment of it. What ingestion still owes
+// the rest of the system is the catalog row document_search ranks and
+// document_open resolves — title, tags, digest — so that is all it writes.
 type Service struct {
-	Jobs      JobStore
-	Extractor Extractor
-	Indexer   SparseIndexer
-	Searcher  SearchBackend
-	Embedder  EmbedQueue
-	Catalog   IngestCatalog
-	Clock     Clock
-	MaxBytes  int64
-
-	// Two-stage retrieval (RET-02) collaborators, all optional. When Reranker is
-	// nil, Retrieve degrades to the sparse fulltext Search path with no regression.
-	Knowledge       KnowledgeClient    // raw graph client for the vector seed + 1-hop expand
-	QueryEmbedder   EmbeddingGenerator // embeds the query text into a 768d seed vector
-	Reranker        Reranker           // reorders seed chunks by relevance (fail-soft)
-	RerankThreshold float64            // non-monotonic guard: keep seed order when the top rerank score is below this
-	RerankBlend     bool               // non-monotonic guard: blend seed rank + rerank rank (RRF) instead of the hard threshold gate
-
-	// RelevanceFloor drops hits the reranker scored below it, so retrieval can answer
-	// "I have nothing" — the one answer no stage was previously able to give. Distinct
-	// from RerankThreshold: that one decides whether to trust the rerank ORDER, this one
-	// decides MEMBERSHIP. Zero disables it, which is also the behaviour with no reranker
-	// wired, since the floor reads rerank scores and nothing else.
-	RelevanceFloor     float64
-	RetrievalRevisions RetrievalRevisions
-	RetrievalHealth    *RetrievalDependencyHealth
-
-	// timeSource is the monotonic clock GraphRAG times its stages with (RET-04). A
-	// nil value uses time.Now, whose monotonic reading makes elapsed-time subtraction
-	// immune to wall-clock jumps; tests inject a deterministic source. It is distinct
-	// from Clock, which stamps UTC wall-clock document times (UTC strips the monotonic
-	// reading, so Clock must never be used to measure a duration).
-	timeSource func() time.Time
-
-	// MUSRIsolation selects the retrieval query path for the vector seed and 1-hop
-	// expand stages (Phase 36 D-13): on = identity-scoped variants with an unconditional
-	// EXISTS ownership filter (fail closed); off = the pre-existing unscoped queries. It
-	// must be set consistently with the injected Searcher's flag (both from
-	// config.MUSRIsolation) so every seed path — dense, sparse fallback, and expand — is
-	// scoped together. The empty-identity guard in seedHits fails closed before any query.
-	MUSRIsolation bool
+	Jobs     JobStore
+	Catalog  IngestCatalog
+	MaxBytes int64
 }
 
-// IngestPath ingests a local document file and returns once sparse search is ready.
+// IngestPath registers a local document file and returns its searchable job.
 func (s *Service) IngestPath(ctx context.Context, req IngestRequest, path string) (*Job, error) {
 	if s.Jobs == nil {
 		return nil, fmt.Errorf("document service has no job store")
-	}
-	if s.Extractor == nil {
-		return nil, fmt.Errorf("document service has no extractor")
-	}
-	if s.Indexer == nil {
-		return nil, fmt.Errorf("document service has no indexer")
 	}
 	info, err := os.Stat(path)
 	if err != nil {
@@ -135,56 +84,45 @@ func (s *Service) IngestPath(ctx context.Context, req IngestRequest, path string
 	if err != nil {
 		return nil, err
 	}
-	job, err = s.Jobs.UpdateStatus(ctx, job.ID, JobExtracting, "")
+	if err := s.recordCatalogDocument(ctx, req, documentID, job.ID); err != nil {
+		return s.failJob(ctx, job, err)
+	}
+	job, err = s.Jobs.UpdateProgress(ctx, job.ID, JobSearchable, 0, 0)
 	if err != nil {
+		// The catalog row already advertises the document. Leaving it saying "ready"
+		// while its job never reached searchable is the exact silence that once let a
+		// document with nothing behind it look complete to the cockpit and the agent.
+		s.markCatalogFailed(ctx, documentID, err)
 		return &job, err
-	}
-	resp, err := s.Extractor.ExtractFile(ctx, path, req)
-	if err != nil {
-		return s.failJob(ctx, job, err)
-	}
-	doc, err := BuildExtractedDocument(req, contentHash, resp, s.now())
-	if err != nil {
-		return s.failJob(ctx, job, err)
-	}
-	if s.Catalog != nil && strings.TrimSpace(req.IdentityID) != "" {
-		title := strings.TrimSpace(doc.Title)
-		if title == "" {
-			title = req.FileName
-		}
-		_, err = s.Catalog.CreateDocument(ctx, CreateDocumentRequest{
-			IdentityID: req.IdentityID,
-			Scope:      DocumentScopeLibrary,
-			Title:      title,
-			Status:     DocumentStatusProcessing,
-			Metadata: map[string]any{
-				"search_document_id": doc.ID,
-				"document_job_id":    job.ID,
-				"source_id":          req.SourceID,
-				"source_kind":        req.SourceKind,
-			},
-		})
-		if err != nil {
-			return s.failJob(ctx, job, fmt.Errorf("catalog CLI document: %w", err))
-		}
-	}
-	indexed, err := s.Indexer.UpsertSparse(ctx, doc)
-	if err != nil {
-		s.markCatalogFailed(ctx, doc.ID, err)
-		return s.failJob(ctx, job, err)
-	}
-	job, err = s.Jobs.UpdateProgress(ctx, job.ID, JobSearchable, indexed, 0)
-	if err != nil {
-		s.markCatalogFailed(ctx, doc.ID, err)
-		return &job, err
-	}
-	if s.Embedder != nil {
-		if err := s.Embedder.Enqueue(context.WithoutCancel(ctx), doc); err != nil {
-			slog.Warn("documents: embed enqueue dropped", "document_id", doc.ID, "source_id", req.SourceID, "err", err)
-			s.markCatalogFailed(ctx, doc.ID, err)
-		}
 	}
 	return &job, nil
+}
+
+// recordCatalogDocument writes the row document_search ranks and document_open
+// resolves. Both the CLI and the runtime ingestor go through here: an asset
+// upload gets its row from a version recorder, but a local path has none, and
+// without it a file the agent indexed is invisible to the tool that promised it
+// was searchable.
+func (s *Service) recordCatalogDocument(ctx context.Context, req IngestRequest, documentID, jobID string) error {
+	if s.Catalog == nil || strings.TrimSpace(req.IdentityID) == "" {
+		return nil
+	}
+	_, err := s.Catalog.CreateDocument(ctx, CreateDocumentRequest{
+		IdentityID: req.IdentityID,
+		Scope:      DocumentScopeLibrary,
+		Title:      req.FileName,
+		Status:     DocumentStatusReady,
+		Metadata: map[string]any{
+			"search_document_id": documentID,
+			"document_job_id":    jobID,
+			"source_id":          req.SourceID,
+			"source_kind":        req.SourceKind,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("catalog document: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) markCatalogFailed(ctx context.Context, documentID string, cause error) {
@@ -195,16 +133,8 @@ func (s *Service) markCatalogFailed(ctx context.Context, documentID string, caus
 	if err := s.Catalog.SetSearchDocumentStatus(
 		context.WithoutCancel(ctx), documentID, DocumentStatusFailed, reason,
 	); err != nil {
-		slog.Warn("documents: could not mark CLI catalog document failed", "document_id", documentID, "err", err)
+		slog.Warn("documents: could not mark catalog document failed", "document_id", documentID, "err", err)
 	}
-}
-
-// Search delegates to the configured document search backend.
-func (s *Service) Search(ctx context.Context, req SearchRequest) ([]SearchHit, error) {
-	if s.Searcher == nil {
-		return nil, fmt.Errorf("document service has no searcher")
-	}
-	return s.Searcher.Search(ctx, req)
 }
 
 // GetJob returns one document ingestion job by id.
@@ -233,13 +163,6 @@ func (s *Service) failJob(ctx context.Context, job Job, cause error) (*Job, erro
 		job = updated
 	}
 	return &job, cause
-}
-
-func (s *Service) now() time.Time {
-	if s.Clock != nil {
-		return s.Clock()
-	}
-	return time.Now().UTC()
 }
 
 func normalizeIngestRequest(req IngestRequest, path string, size int64) IngestRequest {

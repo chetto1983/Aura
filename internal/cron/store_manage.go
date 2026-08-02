@@ -22,7 +22,7 @@ import (
 // never be operator-mutated.
 func IsUserManageableKind(k TaskKind) bool {
 	switch k {
-	case KindReminder, KindAgentJob, KindBackupPostgres, KindBackupNeo4j:
+	case KindReminder, KindAgentJob, KindBackupPostgres:
 		return true
 	default:
 		return false

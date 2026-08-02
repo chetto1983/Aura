@@ -18,7 +18,7 @@ type ProjectionQueue interface {
 	IsOwnerTombstoned(context.Context, uuid.UUID) (bool, error)
 }
 
-// AdaptiveGraph is the projection boundary for the derived Neo4j view.
+// AdaptiveGraph is the projection boundary for the derived graph view.
 type AdaptiveGraph interface {
 	Project(context.Context, OutboxRecord) error
 	PurgeOwner(context.Context, uuid.UUID) error

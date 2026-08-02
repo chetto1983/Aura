@@ -8,14 +8,13 @@
 //	aura doctor             - aggregate runtime dependency health check
 //	aura tools              — print the tool manifest (active + deferred)
 //	aura db <sub>           — Postgres lifecycle (migrate|ping|status|reset)
-//	aura neo4j <sub>        — Neo4j lifecycle
 //	aura identity <sub>     — identity + capability_grants (list|get|grant|revoke)
 //	aura profile <sub>      — filesystem Agent.md profile (show|add-fact)
 //	aura paused-states <sub>— HITL pause escape hatch (list|purge --before <ISO> --confirm)
 //	aura chat <sub>         — multi-thread conversation REPL (list|new|resume|archive|unarchive|delete|rename|search)
 //	aura version            — print build metadata (version, commit, build date)
 //
-// Tabula-rasa scaffold: `tools`, `agent`, `db`, `neo4j`, `chat`, `shell`, and
+// Tabula-rasa scaffold: `tools`, `agent`, `db`, `chat`, `shell`, and
 // `serve` are wired through the real runtime composition roots. The Phase-1
 // `aura chat` stub + concrete Loop were removed in Slice 0.9 (Plan 02-07);
 // `aura chat` returned in Phase 3 wired to a real LlmAgent.
@@ -81,14 +80,10 @@ func main() {
 		runDoctor(os.Args[2:])
 	case "db":
 		runDB(os.Args[2:])
-	case "neo4j":
-		runNeo4j(os.Args[2:])
 	case "objectstore":
 		runObjectStore(os.Args[2:])
 	case "docs":
 		runDocs(os.Args[2:])
-	case "documents":
-		runDocuments(os.Args[2:])
 	case "eval":
 		runEval(os.Args[2:])
 	case "identity":
@@ -154,7 +149,7 @@ func runMCPDispatch(args []string) {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|doctor|chat <sub>|config <sub>|identity <sub>|paused-states <sub>|task <sub>|retention <plan|apply>|skills <sub>|agent <sub>|swarm-demo|web <doctor|tool ...>|tools|mcp <sub>|memory <sub>|db <sub>|neo4j <sub>|objectstore <sub>|docs <sub>|documents backfill|eval adaptive <sub>|version}")
+	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|doctor|chat <sub>|config <sub>|identity <sub>|paused-states <sub>|task <sub>|retention <plan|apply>|skills <sub>|agent <sub>|swarm-demo|web <doctor|tool ...>|tools|mcp <sub>|memory <sub>|db <sub>|objectstore <sub>|docs <sub>|eval adaptive <sub>|version}")
 }
 
 func buildRegistry() *tools.Registry {

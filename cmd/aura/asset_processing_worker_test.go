@@ -25,7 +25,7 @@ func TestRuntimeAssetProcessingJobWorkerProcessesClaimedAsset(t *testing.T) {
 		}},
 	}
 	processor := &recordingAssetProcessor{}
-	worker := newRuntimeProcessingJobWorker(store, nil, processor, nil, 3)
+	worker := newRuntimeProcessingJobWorker(store, nil, processor, 3)
 
 	processed, err := worker.ProcessOnce(context.Background())
 	if err != nil {
@@ -45,35 +45,37 @@ func TestRuntimeAssetProcessingJobWorkerProcessesClaimedAsset(t *testing.T) {
 	}
 }
 
-func TestRuntimeProcessingJobWorkerProcessesEmbeddingJob(t *testing.T) {
+// TestRuntimeProcessingJobWorkerDeadLettersRetiredEmbeddingJobs pins what happens to
+// document_embed rows still queued from before chunk embedding was removed: they must
+// dead-letter with handler_missing, not vanish.
+func TestRuntimeProcessingJobWorkerDeadLettersRetiredEmbeddingJobs(t *testing.T) {
 	store := &fakeRuntimeIngestionJobQueue{
 		claimed: []documents.IngestionJob{{
 			ID:           "job-1",
-			JobType:      documents.IngestionJobTypeDocumentEmbed,
+			JobType:      "document_embed",
 			Status:       "running",
 			Stage:        "embedding",
 			AttemptCount: 1,
 			MaxAttempts:  3,
 		}},
 	}
-	handler := &recordingIngestionHandler{}
-	worker := newRuntimeProcessingJobWorker(store, nil, &recordingAssetProcessor{}, handler, 2)
+	worker := newRuntimeProcessingJobWorker(store, nil, &recordingAssetProcessor{}, 2)
 
 	processed, err := worker.ProcessOnce(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if processed != 1 || handler.called != 1 {
-		t.Fatalf("processed=%d handler.called=%d", processed, handler.called)
+	if processed != 1 {
+		t.Fatalf("processed = %d", processed)
 	}
-	if len(store.statuses) != 1 || store.statuses[0].status != "succeeded" {
+	if len(store.statuses) != 1 || store.statuses[0].status != "dead_letter" {
 		t.Fatalf("status updates = %#v", store.statuses)
 	}
 }
 
 func TestNewRuntimeProcessingJobWorkerWiresQueueDepthWhenStoreSupportsIt(t *testing.T) {
 	store := &fakeRuntimeIngestionJobQueueWithDepth{}
-	worker := newRuntimeProcessingJobWorker(store, nil, &recordingAssetProcessor{}, nil, 1)
+	worker := newRuntimeProcessingJobWorker(store, nil, &recordingAssetProcessor{}, 1)
 	if worker.QueueDepth == nil {
 		t.Fatal("QueueDepth should be wired when the store implements IngestionQueueDepthSource")
 	}
@@ -81,7 +83,7 @@ func TestNewRuntimeProcessingJobWorkerWiresQueueDepthWhenStoreSupportsIt(t *test
 
 func TestNewRuntimeProcessingJobWorkerLeavesQueueDepthNilWhenUnsupported(t *testing.T) {
 	store := &fakeRuntimeIngestionJobQueue{}
-	worker := newRuntimeProcessingJobWorker(store, nil, &recordingAssetProcessor{}, nil, 1)
+	worker := newRuntimeProcessingJobWorker(store, nil, &recordingAssetProcessor{}, 1)
 	if worker.QueueDepth != nil {
 		t.Fatal("QueueDepth must stay nil (fail-soft) when the store lacks CountByStatus")
 	}
@@ -159,13 +161,4 @@ type recordingRuntimeIngestionProcessor struct {
 func (p *recordingRuntimeIngestionProcessor) ProcessOnce(context.Context) (int, error) {
 	p.once.Do(func() { close(p.done) })
 	return 0, nil
-}
-
-type recordingIngestionHandler struct {
-	called int
-}
-
-func (h *recordingIngestionHandler) HandleIngestionJob(context.Context, documents.IngestionJob) error {
-	h.called++
-	return nil
 }

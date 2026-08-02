@@ -12,31 +12,24 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/config"
-	"github.com/chetto1983/aura/internal/knowledge"
 	"github.com/chetto1983/aura/internal/mcp"
 )
 
 func installDoctorFakeProbes(t *testing.T) {
 	t.Helper()
 	oldPostgres := doctorProbePostgres
-	oldNeo4j := doctorProbeNeo4j
 	oldEmbed := doctorProbeEmbed
-	oldMCPBinary := doctorProbeMCPBinary
 	oldMCPServers := doctorProbeMCPServers
 	oldLLMKey := doctorLookupLLMKey
 	t.Cleanup(func() {
 		doctorProbePostgres = oldPostgres
-		doctorProbeNeo4j = oldNeo4j
 		doctorProbeEmbed = oldEmbed
-		doctorProbeMCPBinary = oldMCPBinary
 		doctorProbeMCPServers = oldMCPServers
 		doctorLookupLLMKey = oldLLMKey
 	})
 
 	doctorProbePostgres = func(context.Context, *config.Config) (string, error) { return "reachable", nil }
-	doctorProbeNeo4j = func(context.Context, *config.Config) (string, error) { return "RETURN 1 ok", nil }
 	doctorProbeEmbed = func(context.Context, *config.Config) (string, error) { return "dimension 768", nil }
-	doctorProbeMCPBinary = func(context.Context, *config.Config) (string, error) { return "found", nil }
 	// Faked like every other doctorProbe: the real defaultDoctorProbeMCPServers reads
 	// AURA_MCP_CONFIG (host state), which these generic pass/fail plumbing tests must
 	// not depend on (same host-state hazard as the literal-8093 fixture fixed in
@@ -59,23 +52,6 @@ func (f *fakeDoctorPostgresPool) Close() {
 	f.closed = true
 }
 
-type fakeDoctorNeo4jClient struct {
-	rows    []map[string]any
-	readErr error
-	closed  bool
-	query   string
-}
-
-func (f *fakeDoctorNeo4jClient) Read(_ context.Context, query string, _ map[string]any) ([]map[string]any, error) {
-	f.query = query
-	return f.rows, f.readErr
-}
-
-func (f *fakeDoctorNeo4jClient) Close() error {
-	f.closed = true
-	return nil
-}
-
 func TestDoctorAllPass(t *testing.T) {
 	installDoctorFakeProbes(t)
 
@@ -88,9 +64,7 @@ func TestDoctorAllPass(t *testing.T) {
 	got := out.String()
 	for _, want := range []string{
 		"PASS postgres:",
-		"PASS neo4j:",
 		"PASS embed:",
-		"PASS mcp-neo4j-cypher:",
 		"PASS llm_key: configured",
 		"PASS mcp:",
 		"status: OK",
@@ -120,28 +94,12 @@ func TestDoctorHardFailures(t *testing.T) {
 			wantLine: "FAIL postgres:",
 		},
 		{
-			name:     "neo4j",
-			wantCode: exitUnreachable,
-			fail: func(err error) {
-				doctorProbeNeo4j = func(context.Context, *config.Config) (string, error) { return "", err }
-			},
-			wantLine: "FAIL neo4j:",
-		},
-		{
 			name:     "embed",
 			wantCode: exitUnreachable,
 			fail: func(err error) {
 				doctorProbeEmbed = func(context.Context, *config.Config) (string, error) { return "", err }
 			},
 			wantLine: "FAIL embed:",
-		},
-		{
-			name:     "mcp binary",
-			wantCode: exitInfra,
-			fail: func(err error) {
-				doctorProbeMCPBinary = func(context.Context, *config.Config) (string, error) { return "", err }
-			},
-			wantLine: "FAIL mcp-neo4j-cypher:",
 		},
 		{
 			name:     "mcp servers",
@@ -219,42 +177,6 @@ func TestDoctorDefaultPostgresProbeNamesEmptyURL(t *testing.T) {
 	}
 }
 
-func TestDoctorDefaultNeo4jProbeRunsRoundTripAndCloses(t *testing.T) {
-	oldOpen := doctorOpenNeo4j
-	t.Cleanup(func() { doctorOpenNeo4j = oldOpen })
-	client := &fakeDoctorNeo4jClient{rows: []map[string]any{{"ok": 1}}}
-	doctorOpenNeo4j = func(context.Context, *config.Config) (doctorNeo4jClient, error) {
-		return client, nil
-	}
-
-	detail, err := defaultDoctorProbeNeo4j(context.Background(), &config.Config{})
-	if err != nil {
-		t.Fatalf("defaultDoctorProbeNeo4j: %v", err)
-	}
-	if detail != "RETURN 1 round-trip OK" {
-		t.Fatalf("detail = %q, want round-trip OK", detail)
-	}
-	if client.query != "RETURN 1 AS ok" {
-		t.Fatalf("query = %q, want RETURN 1 AS ok", client.query)
-	}
-	if !client.closed {
-		t.Fatal("defaultDoctorProbeNeo4j did not close the client")
-	}
-}
-
-func TestDoctorDefaultNeo4jProbeNamesSpawnFailure(t *testing.T) {
-	cfg := &config.Config{Neo4j: knowledge.Config{
-		MCPBinary: "aura-nonexistent-mcp-binary-xyz",
-		BoltURL:   "bolt://127.0.0.1:7687",
-		User:      "neo4j",
-		Database:  "neo4j",
-	}}
-	_, err := defaultDoctorProbeNeo4j(context.Background(), cfg)
-	if err == nil || !strings.Contains(err.Error(), "spawn aura-nonexistent-mcp-binary-xyz") {
-		t.Fatalf("defaultDoctorProbeNeo4j err = %v, want spawn failure", err)
-	}
-}
-
 func TestDoctorDefaultEmbedProbeChecksDimension(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/embeddings" {
@@ -273,7 +195,7 @@ func TestDoctorDefaultEmbedProbeChecksDimension(t *testing.T) {
 	doctorHTTPClient = srv.Client()
 	t.Cleanup(func() { doctorHTTPClient = oldClient })
 
-	cfg := &config.Config{Neo4j: knowledge.Config{EmbedURL: srv.URL, EmbedDimensions: 3}}
+	cfg := &config.Config{Embed: config.EmbedConfig{BaseURL: srv.URL, Dimensions: 3}}
 	detail, err := defaultDoctorProbeEmbed(context.Background(), cfg)
 	if err != nil {
 		t.Fatalf("defaultDoctorProbeEmbed: %v", err)
@@ -283,34 +205,13 @@ func TestDoctorDefaultEmbedProbeChecksDimension(t *testing.T) {
 	}
 }
 
-func TestDoctorDefaultMCPBinaryProbeUsesLookPath(t *testing.T) {
-	oldLookPath := doctorLookPath
-	t.Cleanup(func() { doctorLookPath = oldLookPath })
-	doctorLookPath = func(name string) (string, error) {
-		if name != "mcp-neo4j-cypher" {
-			t.Fatalf("lookPath name = %q", name)
-		}
-		return "/usr/local/bin/mcp-neo4j-cypher", nil
-	}
-
-	detail, err := defaultDoctorProbeMCPBinary(context.Background(), &config.Config{
-		Neo4j: knowledge.Config{MCPBinary: "mcp-neo4j-cypher"},
-	})
-	if err != nil {
-		t.Fatalf("defaultDoctorProbeMCPBinary: %v", err)
-	}
-	if !strings.Contains(detail, "/usr/local/bin/mcp-neo4j-cypher") {
-		t.Fatalf("detail = %q, want resolved path", detail)
-	}
-}
-
-// TestDoctorChecksIncludesMCPServers proves the 6th check (D-16/D-18) is registered
-// in the doctor registry, distinct from the unrelated mcp-neo4j-cypher binary check.
-// Position is not itself a contract, so this scans by name rather than asserting index.
+// TestDoctorChecksIncludesMCPServers proves the managed-MCP check (D-16/D-18) is
+// registered in the doctor registry. Position is not itself a contract, so this scans
+// by name rather than asserting index.
 func TestDoctorChecksIncludesMCPServers(t *testing.T) {
 	checks := doctorChecks()
-	if len(checks) != 6 {
-		t.Fatalf("doctorChecks() len = %d, want 6 (5 pre-existing + the new mcp check)", len(checks))
+	if len(checks) != 4 {
+		t.Fatalf("doctorChecks() len = %d, want 4 (postgres, embed, llm_key, mcp)", len(checks))
 	}
 	for _, c := range checks {
 		if c.name != "mcp" {

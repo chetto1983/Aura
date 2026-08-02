@@ -118,7 +118,7 @@ func TestPrepareCLIIdempotencyUsesDurableServiceIdentity(t *testing.T) {
 	t.Parallel()
 
 	ctx, _, err := prepareCLIIdempotency(context.Background(), []string{
-		"neo4j", "migrate", "--operation-key", "deploy-migration-key",
+		"db", "migrate", "--operation-key", "deploy-migration-key",
 	}, io.Discard)
 	if err != nil {
 		t.Fatal(err)

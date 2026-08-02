@@ -13,7 +13,7 @@ builds:
   - id: aura
     main: ./cmd/aura
     binary: aura
-    # Static, cross-compilable binaries: the runtime deps (pgx, neo4j driver)
+    # Static, cross-compilable binaries: the runtime deps (pgx, the HTTP clients)
     # are pure Go, so CGO is off (CGO is only needed for the -race test tier).
     env:
       - CGO_ENABLED=0

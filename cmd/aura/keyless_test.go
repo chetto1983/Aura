@@ -19,7 +19,6 @@ func isolateKeylessBootEnv(t *testing.T) {
 		"AURA_DB_URL",
 		"AURA_DB_MIGRATE_URL",
 		"AURA_DB_BOOTSTRAP_URL",
-		"NEO4J_PASSWORD",
 		"AURA_MCP_CONFIG",
 		"AURA_MCP_SERVERS_JSON",
 	} {
@@ -37,7 +36,9 @@ func TestServeKeylessBootReachesInfraValidation(t *testing.T) {
 	if errors.Is(err, llm.ErrMissingAPIKey) || strings.Contains(err.Error(), "API key is empty") {
 		t.Fatalf("serve boot must tolerate an empty LLM key and fail later on infra validation, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "POSTGRES_PASSWORD") || !strings.Contains(err.Error(), "NEO4J_PASSWORD") {
+	// POSTGRES_PASSWORD is the whole required-secret gate now: NEO4J_PASSWORD left it
+	// with the graph store, because no code path opens a Bolt connection any more.
+	if !strings.Contains(err.Error(), "POSTGRES_PASSWORD") {
 		t.Fatalf("bootServe err = %v, want infra validation error", err)
 	}
 }

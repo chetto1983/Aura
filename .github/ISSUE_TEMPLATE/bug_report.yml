@@ -21,7 +21,7 @@ body:
       label: Steps to reproduce
       description: Minimal, exact steps. Include the command(s) and any relevant config.
       placeholder: |
-        1. make neo4j-migrate
+        1. make db-migrate memory-up
         2. aura …
         3. …
     validations:

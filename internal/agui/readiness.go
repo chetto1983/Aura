@@ -162,8 +162,8 @@ func readinessCodeForName(name string) readiness.Code {
 	switch name {
 	case "postgres":
 		return readiness.CodePostgresUnavailable
-	case "neo4j":
-		return readiness.CodeNeo4jUnavailable
+	case "memory":
+		return readiness.CodeMemoryUnavailable
 	default:
 		return readiness.CodeDependencyUnavailable
 	}

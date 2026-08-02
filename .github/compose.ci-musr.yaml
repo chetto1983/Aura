@@ -8,7 +8,7 @@
 #   2. publishes 3903 to 127.0.0.1 so the host-run garage_integration + musr_e2e tiers reach
 #      the admin API through AURA_GARAGE_ADMIN_ENDPOINT=http://127.0.0.1:3903.
 #
-# It touches nothing else — Postgres/Neo4j/S3 host publishes come from compose.yaml unchanged.
+# It touches nothing else — Postgres/ArcadeDB/S3 host publishes come from compose.yaml unchanged.
 services:
   garage:
     ports:

@@ -6,24 +6,18 @@ import (
 	"log/slog"
 )
 
-// DocumentGraphDeactivator marks search graph state inactive.
-type DocumentGraphDeactivator interface {
-	DeactivateDocument(ctx context.Context, documentID string) error
-}
-
 // DocumentAssetDeleter removes source assets that advertise a deleted document.
 type DocumentAssetDeleter interface {
 	DeleteDocumentAsset(ctx context.Context, identityID, assetID string) error
 }
 
-// DeleteService coordinates logical document delete with graph lifecycle cleanup.
+// DeleteService coordinates logical document delete with source-asset cleanup.
 type DeleteService struct {
 	Catalog *CatalogService
-	Graph   DocumentGraphDeactivator
 	Assets  DocumentAssetDeleter
 }
 
-// SoftDeleteDocument soft-deletes catalog metadata and deactivates indexed graph nodes.
+// SoftDeleteDocument soft-deletes catalog metadata and removes the source assets.
 func (s *DeleteService) SoftDeleteDocument(ctx context.Context, identityID, documentID string) (Document, error) {
 	if s == nil || s.Catalog == nil {
 		return Document{}, fmt.Errorf("document delete service has no catalog")
@@ -37,18 +31,11 @@ func (s *DeleteService) SoftDeleteDocument(ctx context.Context, identityID, docu
 		return Document{}, err
 	}
 	// The catalog soft-delete above is the authoritative delete the operator sees.
-	// Graph deactivation and asset object cleanup are best-effort reconciliation:
-	// they must NOT fail the operator's delete, because (a) the catalog step already
-	// soft-deletes the document's asset rows, so re-deleting them here returns
-	// "already deleted", and (b) any residue is swept by the storage-orphan tooling.
-	// A cleanup error is logged and swallowed so the delete still succeeds.
-	searchDocumentID, _ := detail.Document.Metadata["search_document_id"].(string)
-	if searchDocumentID != "" && s.Graph != nil {
-		if err := s.Graph.DeactivateDocument(ctx, searchDocumentID); err != nil {
-			slog.Default().Warn("document delete: graph deactivation failed (reconciled by orphan cleanup)",
-				"document_id", documentID, "search_document_id", searchDocumentID, "error", err)
-		}
-	}
+	// Asset object cleanup is best-effort reconciliation: it must NOT fail the
+	// operator's delete, because (a) the catalog step already soft-deletes the
+	// document's asset rows, so re-deleting them here returns "already deleted",
+	// and (b) any residue is swept by the storage-orphan tooling. A cleanup error
+	// is logged and swallowed so the delete still succeeds.
 	if s.Assets != nil {
 		for _, version := range detail.Versions {
 			if version.AssetID == "" {
@@ -63,10 +50,9 @@ func (s *DeleteService) SoftDeleteDocument(ctx context.Context, identityID, docu
 	return deleted, nil
 }
 
-// DeletingCatalog exposes normal catalog operations and routes delete through graph cleanup.
+// DeletingCatalog exposes normal catalog operations and routes delete through asset cleanup.
 type DeletingCatalog struct {
 	Catalog *CatalogService
-	Graph   DocumentGraphDeactivator
 	Assets  DocumentAssetDeleter
 }
 
@@ -106,13 +92,13 @@ func (c *DeletingCatalog) GetDocument(ctx context.Context, identityID, documentI
 	return catalog.GetDocument(ctx, identityID, documentID)
 }
 
-// DeleteDocument soft-deletes the document and deactivates indexed graph state.
+// DeleteDocument soft-deletes the document and removes its source assets.
 func (c *DeletingCatalog) DeleteDocument(ctx context.Context, identityID, documentID string) (Document, error) {
 	catalog, err := c.catalog()
 	if err != nil {
 		return Document{}, err
 	}
-	return (&DeleteService{Catalog: catalog, Graph: c.Graph, Assets: c.Assets}).SoftDeleteDocument(ctx, identityID, documentID)
+	return (&DeleteService{Catalog: catalog, Assets: c.Assets}).SoftDeleteDocument(ctx, identityID, documentID)
 }
 
 func (c *DeletingCatalog) catalog() (*CatalogService, error) {

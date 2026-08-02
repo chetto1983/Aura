@@ -29,7 +29,7 @@ const (
 // TaskArgs is the scheduler-tier input. Built + unit-tested now (D-11) but has
 // NO runtime consumer in Phase 8 — the Scheduler (P10) wires it later (D-12).
 type TaskArgs struct {
-	Kind         string // reminder | agent_job | backup_postgres | backup_neo4j
+	Kind         string // reminder | agent_job | backup_postgres
 	ScheduleKind string // oneoff | daily | every_hour | every_minute | ...
 	Silent       bool
 	Payload      []byte // raw, scanned for destructive keywords
@@ -93,7 +93,7 @@ func baseTaskTier(a TaskArgs) RiskTier {
 		return Destructive
 	}
 	switch a.Kind {
-	case "reminder", "backup_postgres", "backup_neo4j":
+	case "reminder", "backup_postgres":
 		return Safe
 	default:
 		// agent_job and any unrecognised kind default to Normal (parent layer

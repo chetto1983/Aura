@@ -137,19 +137,19 @@ func (c *Config) gateRetention() []Violation {
 	return nil
 }
 
-// gateRequiredSecrets flags an empty REQUIRED infrastructure secret (DB DSN +
-// Neo4j password) as Fatal in EVERY tier (O-04): these are required for any
-// daemon/REPL boot regardless of profile, so the profile validator never relaxes
-// them. It names the offending knob and never echoes the (empty) secret VALUE.
+// gateRequiredSecrets flags an empty REQUIRED infrastructure secret (the DB DSN)
+// as Fatal in EVERY tier (O-04): it is required for any daemon/REPL boot
+// regardless of profile, so the profile validator never relaxes it. It names the
+// offending knob and never echoes the (empty) secret VALUE.
+//
+// NEO4J_PASSWORD was the second entry here until the graph store was retired.
+// Nothing in the binary opens a Bolt connection any more, so demanding it would
+// have failed boot over a secret no code path reads.
 func (c *Config) gateRequiredSecrets() []Violation {
-	var vs []Violation
 	if strings.TrimSpace(c.DB.URL) == "" {
-		vs = append(vs, Violation{Knob: "POSTGRES_PASSWORD (or AURA_DB_URL)", Sev: Fatal, Msg: "required DB secret is unset"})
+		return []Violation{{Knob: "POSTGRES_PASSWORD (or AURA_DB_URL)", Sev: Fatal, Msg: "required DB secret is unset"}}
 	}
-	if strings.TrimSpace(c.Neo4j.Password) == "" {
-		vs = append(vs, Violation{Knob: "NEO4J_PASSWORD", Sev: Fatal, Msg: "required graph secret is unset"})
-	}
-	return vs
+	return nil
 }
 
 // gateRunDir flags a non-absolute AURA_RUN_DIR as Fatal in EVERY tier (F-041/PROF-05):

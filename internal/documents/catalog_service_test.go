@@ -206,7 +206,7 @@ func TestCatalogServiceDeleteDocumentRequiresIdentityAndDocument(t *testing.T) {
 	}
 }
 
-func TestDeleteServiceSoftDeletesAndDeactivatesGraph(t *testing.T) {
+func TestDeleteServiceSoftDeletesAndRemovesSourceAssets(t *testing.T) {
 	store := &fakeCatalogStore{
 		detail: DocumentDetail{Document: Document{
 			ID:         "10000000-0000-0000-0000-000000000001",
@@ -218,11 +218,9 @@ func TestDeleteServiceSoftDeletesAndDeactivatesGraph(t *testing.T) {
 			AssetID: "30000000-0000-0000-0000-000000000001",
 		}}},
 	}
-	graph := &recordingGraphDeactivator{}
 	assets := &recordingAssetDeleter{}
 	svc := &DeleteService{
 		Catalog: &CatalogService{Store: store},
-		Graph:   graph,
 		Assets:  assets,
 	}
 
@@ -236,9 +234,6 @@ func TestDeleteServiceSoftDeletesAndDeactivatesGraph(t *testing.T) {
 	if store.deleteIdentityID != "00000000-0000-0000-0000-000000000001" || store.deleteDocumentID != "10000000-0000-0000-0000-000000000001" {
 		t.Fatalf("delete call identity=%q document=%q", store.deleteIdentityID, store.deleteDocumentID)
 	}
-	if graph.documentID != "doc_search_1" {
-		t.Fatalf("graph deactivated %q", graph.documentID)
-	}
 	if assets.identityID != "00000000-0000-0000-0000-000000000001" || assets.assetID != "30000000-0000-0000-0000-000000000001" {
 		t.Fatalf("asset delete identity=%q asset=%q", assets.identityID, assets.assetID)
 	}
@@ -246,9 +241,9 @@ func TestDeleteServiceSoftDeletesAndDeactivatesGraph(t *testing.T) {
 
 func TestDeleteServiceToleratesCleanupErrors(t *testing.T) {
 	// A real document's assets are already soft-deleted by the catalog step, so the
-	// asset cleanup here returns "already deleted"; likewise graph deactivation may
-	// fail transiently. Neither may fail the operator's delete (regression: the docs
-	// library "delete does nothing" defect where a 404 stuck the confirm dialog).
+	// asset cleanup here returns "already deleted". That must not fail the operator's
+	// delete (regression: the docs library "delete does nothing" defect where a 404
+	// stuck the confirm dialog).
 	store := &fakeCatalogStore{
 		detail: DocumentDetail{Document: Document{
 			ID:         "10000000-0000-0000-0000-000000000001",
@@ -260,9 +255,8 @@ func TestDeleteServiceToleratesCleanupErrors(t *testing.T) {
 			AssetID: "30000000-0000-0000-0000-000000000001",
 		}}},
 	}
-	graph := &recordingGraphDeactivator{err: errors.New("neo4j unavailable")}
 	assets := &recordingAssetDeleter{err: errors.New("asset already deleted")}
-	svc := &DeleteService{Catalog: &CatalogService{Store: store}, Graph: graph, Assets: assets}
+	svc := &DeleteService{Catalog: &CatalogService{Store: store}, Assets: assets}
 
 	doc, err := svc.SoftDeleteDocument(context.Background(),
 		"00000000-0000-0000-0000-000000000001", "10000000-0000-0000-0000-000000000001")
@@ -271,9 +265,6 @@ func TestDeleteServiceToleratesCleanupErrors(t *testing.T) {
 	}
 	if doc.Status != DocumentStatusDeleted {
 		t.Fatalf("deleted doc = %#v", doc)
-	}
-	if graph.documentID != "doc_search_1" {
-		t.Fatalf("graph deactivation not attempted: %q", graph.documentID)
 	}
 	if assets.assetID != "30000000-0000-0000-0000-000000000001" {
 		t.Fatalf("asset cleanup not attempted: %q", assets.assetID)
@@ -421,16 +412,6 @@ func mustCatalogTestUUID(t *testing.T, value string) pgtype.UUID {
 		t.Fatal(err)
 	}
 	return id
-}
-
-type recordingGraphDeactivator struct {
-	documentID string
-	err        error
-}
-
-func (g *recordingGraphDeactivator) DeactivateDocument(_ context.Context, documentID string) error {
-	g.documentID = documentID
-	return g.err
 }
 
 type recordingAssetDeleter struct {

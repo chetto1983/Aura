@@ -255,10 +255,10 @@ func (s *Server) SetShareService(service ShareService) { s.share = service }
 // the constructor so existing NewServer callers/tests stay unchanged (D-A2-02).
 func (s *Server) SetImageProxy(images ImageFetcher) { s.images = images }
 
-// SetGraphView wires the read-only Phase-27 graph normalizer (GRAPH-01) the
-// /api/graph/schema + /api/graph/query routes delegate to. Set by the daemon composition
-// root after NewServer (boot-time knowledge.Client → knowledge.NewGraphView); until set,
-// both routes answer 503 (a missing graph client must not abort serve boot). Kept off the
+// SetGraphView wires the read-only graph view the /api/graph/schema +
+// /api/graph/query routes delegate to. Set by the daemon composition root after
+// NewServer (NewArcadeGraphView over the per-identity memory database); until set, both
+// routes answer 503 (a missing graph store must not abort serve boot). Kept off the
 // constructor so existing NewServer callers/tests stay unchanged (D-A2-02 narrow seam).
 func (s *Server) SetGraphView(gv GraphView) { s.graph = gv }
 

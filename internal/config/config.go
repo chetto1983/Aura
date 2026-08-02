@@ -1,11 +1,10 @@
 // Package config is the thin root composite read by every cmd/aura subcommand.
-// Per CONTEXT.md D-row "Composition": per-subsystem configs (db, knowledge, llm)
-// live in their owning packages; this file only wires the top-level fields and
-// composes credentials from POSTGRES_* primitives.
+// Per CONTEXT.md D-row "Composition": per-subsystem configs (db, llm) live in
+// their owning packages; this file only wires the top-level fields and composes
+// credentials from POSTGRES_* primitives.
 //
-// Slice 0.5 form: DB only. Slice 0.7 added `Neo4j knowledge.Config`; Phase 3
-// (Slice 1) adds `LLM llm.Config` + the AURA_OTEL_* tracing knobs. No new fields
-// land here without an owning slice plan.
+// Slice 0.5 form: DB only. Phase 3 (Slice 1) adds `LLM llm.Config` + the
+// AURA_OTEL_* tracing knobs. No new fields land here without an owning slice plan.
 package config
 
 import (
@@ -18,7 +17,6 @@ import (
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/envutil"
 	"github.com/chetto1983/aura/internal/idroot"
-	"github.com/chetto1983/aura/internal/knowledge"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/mcp"
 	"github.com/chetto1983/aura/internal/secret"
@@ -28,9 +26,9 @@ import (
 // Config is the root composite. Subsystem configs live in their packages.
 type Config struct {
 	DB             db.Config
-	Neo4j          knowledge.Config // Slice 0.7 — graph + vector + embed sidecar wiring
-	ArcadeDB       ArcadeDBConfig   // memory server — per-identity databases + the adaptive projection (arcadedb.go)
-	LLM            llm.Config       // Slice 1 — OpenAI-compat client + load-order chain (D-22)
+	Embed          EmbedConfig    // embedding sidecar wiring (config_embed.go)
+	ArcadeDB       ArcadeDBConfig // memory server — per-identity databases + the adaptive projection (arcadedb.go)
+	LLM            llm.Config     // Slice 1 — OpenAI-compat client + load-order chain (D-22)
 	MCPServers     map[string]mcp.ServerConfig
 	MCPPolicies    map[string]mcp.ManagedServer
 	MCPServersErr  error
@@ -401,16 +399,10 @@ func loadBase() *Config {
 			BootstrapURL: bootstrapURL,
 			Password:     pgPassword,
 		},
-		Neo4j: knowledge.Config{
-			BoltURL:           envDefault("AURA_NEO4J_BOLT_URL", "bolt://127.0.0.1:7687"),
-			User:              envDefault("NEO4J_USER", "neo4j"),
-			Password:          os.Getenv("NEO4J_PASSWORD"),
-			Database:          envDefault("AURA_NEO4J_DATABASE", "neo4j"),
-			MCPBinary:         envDefault("AURA_MCP_NEO4J_CYPHER_BIN", "mcp-neo4j-cypher"),
-			ConnectTimeoutSec: envutil.IntDefault("AURA_MCP_NEO4J_CONNECT_TIMEOUT_SEC", 10),
-			EmbedURL:          envDefault("AURA_EMBED_BASE_URL", "http://127.0.0.1:8081"),
-			EmbedDimensions:   envutil.IntDefault("AURA_EMBED_DIMENSIONS", knowledge.DefaultEmbedDimensions),
-			EmbedModel:        os.Getenv("AURA_EMBED_MODEL"),
+		Embed: EmbedConfig{
+			BaseURL:    envDefault("AURA_EMBED_BASE_URL", "http://127.0.0.1:8081"),
+			Dimensions: envutil.IntDefault("AURA_EMBED_DIMENSIONS", DefaultEmbedDimensions),
+			Model:      os.Getenv("AURA_EMBED_MODEL"),
 		},
 		ArcadeDB:       loadArcadeDB(),
 		MCPServers:     mcpServers,

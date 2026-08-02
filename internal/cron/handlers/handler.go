@@ -32,7 +32,6 @@ const (
 	KindReminder       TaskKind = "reminder"
 	KindAgentJob       TaskKind = "agent_job"
 	KindBackupPostgres TaskKind = "backup_postgres"
-	KindBackupNeo4j    TaskKind = "backup_neo4j"
 	KindSkillTTLSweep  TaskKind = "skill_ttl_sweep"
 )
 

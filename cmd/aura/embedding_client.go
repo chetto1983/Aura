@@ -20,6 +20,6 @@ func embeddingClient(cfg *config.Config, client *http.Client) *documents.Embeddi
 		Model:      model,
 		APIKey:     key,
 		Client:     client,
-		Dimensions: cfg.Neo4j.EmbedDimensions,
+		Dimensions: cfg.Embed.Dimensions,
 	}
 }

@@ -89,7 +89,6 @@ const (
 	RetentionBacklogID           InstrumentID = "retention_backlog"
 	RetentionDiskUtilizationID   InstrumentID = "retention_disk_utilization"
 	IngestionJobsID              InstrumentID = "ingestion_jobs"
-	IngestionEmbedDurationID     InstrumentID = "ingestion_embed_duration"
 	IngestionQueueDepthID        InstrumentID = "ingestion_queue_depth"
 	RerankCallsID                InstrumentID = "rerank_calls"
 	RerankDurationID             InstrumentID = "rerank_duration"
@@ -148,7 +147,6 @@ var descriptors = []Descriptor{
 	gauge(RetentionBacklogID, "aura.retention.backlog", "aura_retention_backlog_items", nil, "Current durable non-terminal retention item backlog.", "items"),
 	gauge(RetentionDiskUtilizationID, "aura.retention.disk.utilization", "aura_retention_disk_utilization_ratio", []AttributeKey{AttributeState}, "Current bounded retention disk utilization ratio.", "1"),
 	count(IngestionJobsID, "aura.ingestion.job", "aura_ingestion_job_total", []AttributeKey{AttributeOutcome}, "Total durable ingestion job terminal outcomes."),
-	histogram(IngestionEmbedDurationID, "aura.ingestion.embed.duration", "aura_ingestion_embed_duration_seconds", []AttributeKey{AttributeOutcome}, "Embedding worker per-document processing duration.", slowDurationBuckets),
 	gauge(IngestionQueueDepthID, "aura.ingestion.queue.depth", "aura_ingestion_queue_depth_items", nil, "Current durable queued ingestion job backlog.", "items"),
 	count(RerankCallsID, "aura.rerank.call", "aura_rerank_call_total", []AttributeKey{AttributeOutcome, AttributeErrorClass}, "Total rerank calls, including explicit fail-soft degradation."),
 	histogram(RerankDurationID, "aura.rerank.call.duration", "aura_rerank_call_duration_seconds", []AttributeKey{AttributeOutcome}, "Rerank call duration, including cache hits and degraded calls.", fastDurationBuckets),
@@ -338,7 +336,7 @@ func ClassifyTool(name string) string {
 		return ToolClassMCP
 	case strings.HasPrefix(name, "cron_") || strings.HasPrefix(name, "scheduler_"):
 		return ToolClassScheduler
-	case strings.HasPrefix(name, "db_") || strings.HasPrefix(name, "sql_") || strings.HasPrefix(name, "postgres_") || strings.HasPrefix(name, "neo4j_"):
+	case strings.HasPrefix(name, "db_") || strings.HasPrefix(name, "sql_") || strings.HasPrefix(name, "postgres_") || strings.HasPrefix(name, "arcadedb_"):
 		return ToolClassData
 	case name == "calculator" || name == "time" || name == "date":
 		return ToolClassBuiltin

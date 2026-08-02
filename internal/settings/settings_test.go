@@ -118,14 +118,14 @@ func TestOverlayEnvFeedsRuntimeConfig(t *testing.T) {
 	if got := cfg.LLM.MaxOutputTokens; got != 4096 {
 		t.Errorf("LLM.MaxOutputTokens = %d, want 4096", got)
 	}
-	if got := cfg.Neo4j.EmbedModel; got != "settings/embed-model" {
-		t.Errorf("Neo4j.EmbedModel = %q, want overlaid settings embed model", got)
+	if got := cfg.Embed.Model; got != "settings/embed-model" {
+		t.Errorf("Embed.Model = %q, want overlaid settings embed model", got)
 	}
-	if got := cfg.Neo4j.EmbedURL; got != "https://settings-embed.example" {
-		t.Errorf("Neo4j.EmbedURL = %q, want overlaid settings embed base URL", got)
+	if got := cfg.Embed.BaseURL; got != "https://settings-embed.example" {
+		t.Errorf("Embed.BaseURL = %q, want overlaid settings embed base URL", got)
 	}
-	if got := cfg.Neo4j.EmbedDimensions; got != 444 {
-		t.Errorf("Neo4j.EmbedDimensions = %d, want 444", got)
+	if got := cfg.Embed.Dimensions; got != 444 {
+		t.Errorf("Embed.Dimensions = %d, want 444", got)
 	}
 	if got := cfg.RerankModel; got != "settings/rerank-model" {
 		t.Errorf("RerankModel = %q, want overlaid settings rerank model", got)

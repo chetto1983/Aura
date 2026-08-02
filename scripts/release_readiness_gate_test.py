@@ -36,7 +36,7 @@ def valid_evidence() -> dict[str, dict[str, object]]:
         "coverage-report.json": common(
             passed=True,
             statements_percent=91.2,
-            tiers_executed=["db_integration", "neo4j_integration"],
+            tiers_executed=["db_integration"],
             empty_tiers=0,
         ),
         "mutation-report.json": common(
@@ -117,8 +117,8 @@ def valid_evidence() -> dict[str, dict[str, object]]:
         ),
         "dr-report.json": common(
             passed=True,
-            planes_executed=4,
-            planes_required=4,
+            planes_executed=3,
+            planes_required=3,
             planes=[
                 {
                     "plane": name,
@@ -126,7 +126,7 @@ def valid_evidence() -> dict[str, dict[str, object]]:
                     "checksum_ok": True,
                     "cleanup_ok": True,
                 }
-                for name in ("postgres", "neo4j", "sidecars", "garage")
+                for name in ("postgres", "sidecars", "garage")
             ],
         ),
         "observability-report.json": common(

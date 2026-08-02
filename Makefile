@@ -6,7 +6,7 @@
 # sqlc CLI: install with `go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1`
 # (v1.27.0 panics on Windows hosts via wazero out-of-bounds; v1.31.1 verified clean).
 
-.PHONY: help tools sqlc lint vet deadcode vuln coverage coverage-docker quality quality-full test test-race tagged-tier-compile file-size web-freshness web-lint web-test web-mutation web-quality evidence-contracts critical-mutation observability-evidence release-readiness db-up db-migrate db-status db-reset neo4j-up neo4j-migrate neo4j-status neo4j-reset smoke restore-drill load-chaos
+.PHONY: help tools sqlc lint vet deadcode vuln coverage coverage-docker quality quality-full test test-race tagged-tier-compile file-size web-freshness web-lint web-test web-mutation web-quality evidence-contracts critical-mutation observability-evidence release-readiness db-up db-migrate db-status db-reset memory-up restore-drill load-chaos
 
 # Resolve go-installed tool binaries even when $GOPATH/bin is not on PATH
 # (common in a fresh WSL login shell). Falls back to a bare name on PATH.
@@ -22,8 +22,8 @@ help:
 	@echo "make deadcode      — deadcode -test ./... (unreachable Go code scan)"
 	@echo "make vet           — go vet ./..."
 	@echo "make vuln          — govulncheck ./... (supply-chain CVE scan)"
-	@echo "make coverage      — owned-surface coverage floor >=85% (scripts/coverage_gate.sh; needs stack + mcp-neo4j-cypher on PATH)"
-	@echo "make coverage-docker — like coverage, but mcp-neo4j-cypher runs in a container (no host install; needs stack up)"
+	@echo "make coverage      — owned-surface coverage floor >=85% (scripts/coverage_gate.sh; needs the stack up)"
+	@echo "make coverage-docker — like coverage, but every database it touches is a DISPOSABLE container"
 	@echo "make test          — go test ./... (unit tier, no build tags)"
 	@echo "make test-race     — go test -race ./... (unit tier with race detector)"
 	@echo "make tagged-tier-compile — compile every discovered Aura integration/live/eval tier"
@@ -41,12 +41,8 @@ help:
 	@echo "make db-migrate    — aura db migrate (role aura_migrate)"
 	@echo "make db-status     — aura db status"
 	@echo "make db-reset      — DESTRUCTIVE: drop+recreate schema aura (dev only, requires AURA_RESET_YES=1)"
-	@echo "make neo4j-up      — docker compose up -d neo4j aura-llama-embed (waits healthy)"
-	@echo "make neo4j-migrate — aura neo4j migrate (applies internal/knowledge/migrations/*.cypher)"
-	@echo "make neo4j-status  — aura neo4j status"
-	@echo "make neo4j-reset   — DESTRUCTIVE: drop all indexes + MATCH (n) DETACH DELETE (dev only, AURA_RESET_YES=1)"
-	@echo "make smoke         — scripts/neo4j_smoke.sh (Italian recall@5 5/5 + p95 <= 30ms)"
-	@echo "make restore-drill — four-plane DR drill with measured RPO/RTO"
+	@echo "make memory-up     — docker compose up -d arcadedb arcadedb-mcp aura-llama-embed (waits healthy)"
+	@echo "make restore-drill — three-plane DR drill with measured RPO/RTO"
 	@echo "make load-chaos    — blocking Vegeta + Toxiproxy production gate"
 
 # Bootstrap the quality toolchain into $GOPATH/bin. golangci-lint is pinned to the
@@ -79,14 +75,14 @@ vuln:
 	$(GOBIN)/govulncheck $(GO_PACKAGES)
 
 # Owned-surface coverage floor (CLAUDE.md >=85%). Integration tiers need the
-# container stack + composed DSNs; bring them up with `make neo4j-migrate` first
-# (or run inside the CI knowledge job that already has the stack).
+# container stack + composed DSNs; bring them up with `make db-migrate memory-up`
+# first (or run inside the CI knowledge job that already has the stack).
 coverage:
 	bash scripts/coverage_gate.sh
 
-# Same owned-surface floor as `coverage`, but mcp-neo4j-cypher runs in a container
-# (docker/mcp-neo4j-cypher) via the AURA_MCP_NEO4J_CYPHER_BIN shim — nothing installed
-# on the host. Needs the stack up (`make neo4j-up`) + creds in .env.
+# Same owned-surface floor as `coverage`, but every database the destructive tiers
+# touch is a DISPOSABLE container, never the live deployment. Needs the embed sidecar
+# up (`make memory-up`) + creds in .env.
 coverage-docker:
 	bash scripts/coverage_docker.sh
 
@@ -147,7 +143,6 @@ evidence-contracts:
 		scripts/rollback_rehearsal_test.py \
 		scripts/security_evidence_test.py
 	bash scripts/coverage_gate_test.sh
-	bash scripts/mcp_neo4j_cypher_docker_test.sh
 	bash scripts/restore_drill_name_test.sh
 
 critical-mutation:
@@ -202,30 +197,25 @@ define wait_compose_healthy
 	done
 endef
 
-# ↓↓ Slice 0.7 — Neo4j + embed sidecar + Italian smoke ↓↓
-neo4j-up:
-	docker compose up -d neo4j aura-llama-embed
-	$(call wait_compose_healthy,neo4j)
+# ↓↓ live stack: graph substrate (ArcadeDB + its MCP) + embed sidecar ↓↓
+#
+# The whole `neo4j-*` family is gone with the Neo4j service. `neo4j-migrate` /
+# `neo4j-status` / `neo4j-reset` died first, with Aura's own graph store
+# (internal/knowledge), the `aura neo4j` CLI and the Cypher migration ledger; then
+# `neo4j-up` died with the container itself. Callers that wanted "the live stack a
+# tagged tier needs" now say `db-migrate memory-up`: ArcadeDB needs no migration
+# job, so this target only has to bring the services up healthy.
+memory-up:
+	docker compose up -d arcadedb arcadedb-mcp aura-llama-embed
+	$(call wait_compose_healthy,arcadedb)
+	$(call wait_compose_healthy,arcadedb-mcp)
 	$(call wait_compose_healthy,aura-llama-embed)
 	@echo "ok"
 
-neo4j-migrate: db-migrate neo4j-up
-	go run ./cmd/aura neo4j migrate
-
-neo4j-status:
-	go run ./cmd/aura neo4j status
-
-neo4j-reset:
-	@[ "$$AURA_RESET_YES" = "1" ] || { echo "refusing — set AURA_RESET_YES=1 to confirm destructive reset"; exit 1; }
-	go run ./cmd/aura neo4j reset --yes
-
-smoke: neo4j-migrate
-	bash scripts/neo4j_smoke.sh
-
-restore-drill: neo4j-migrate
+restore-drill: db-migrate memory-up
 	bash scripts/garage_bootstrap.sh
 	bash scripts/restore_drill.sh
 
-load-chaos: neo4j-migrate
+load-chaos: db-migrate memory-up
 	bash scripts/garage_bootstrap.sh
 	python3 scripts/production_load_chaos.py --race

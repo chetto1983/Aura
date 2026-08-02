@@ -1,6 +1,8 @@
-# Source: Docker Compose v5 + Postgres 18 docker hub + Neo4j 5.26 community docker
-# docs + llama.cpp server docs (verified 2026-06-29).
-# Aura Slice 0.5 lands postgres; Slice 0.7 appends neo4j + aura-llama-embed.
+# Source: Docker Compose v5 + Postgres 18 docker hub + ArcadeDB 26.7 docs
+# + llama.cpp server docs (verified 2026-06-29).
+# Aura Slice 0.5 lands postgres; Slice 0.7 appends the embed sidecar. The graph
+# plane is ArcadeDB (arcadedb + arcadedb-mcp); Neo4j and the agent-memory sidecar
+# that stored in it were retired with internal/knowledge.
 # Repo-root location per D-02 (NOT sandbox/compose.yaml; vestigial path superseded).
 # .env feeds Compose interpolation. Runtime knobs must be forwarded explicitly
 # below; container-internal service URLs intentionally use Compose DNS rather
@@ -37,18 +39,16 @@ services:
         condition: service_completed_successfully
       postgres:
         condition: service_healthy
-      neo4j:
-        condition: service_healthy
       aura-llama-embed:
         condition: service_healthy
       # Memory MCP is mounted INTO the agent loop at boot (recipe:memory, default-on) — unlike the
       # connect-only whatsapp/pim sidecars it is a hard runtime dependency, so it must be HEALTHY
-      # before Aura starts. Otherwise the boot mount races the sidecar's own startup (it waits on
-      # neo4j+embed), fails with "connection refused", and the agent comes up with ZERO memory tools
-      # until the next full restart (the in-process mount has no boot-retry; reconnect-on-use only
-      # recovers an already-mounted server). service_healthy gates Aura on the sidecar's :8080
-      # healthcheck so `docker compose up` after a restart always mounts memory.
-      aura-agent-memory-mcp:
+      # before Aura starts. Otherwise the boot mount races the sidecar's own startup, fails with
+      # "connection refused", and the agent comes up with ZERO memory tools until the next full
+      # restart (the in-process mount has no boot-retry; reconnect-on-use only recovers an
+      # already-mounted server). Memory is arcadedb-mcp now, not the retired agent-memory sidecar:
+      # this gate moved with it, and the healthcheck it waits on was added at the same time.
+      arcadedb-mcp:
         condition: service_healthy
       garage-bootstrap:
         condition: service_completed_successfully
@@ -91,12 +91,8 @@ services:
       AURA_CONTEXT_MEMORY_RECALL_MAX_ITEMS: ${AURA_CONTEXT_MEMORY_RECALL_MAX_ITEMS:-8}
       AURA_HISTORY_HARD_CAP_TURNS: ${AURA_HISTORY_HARD_CAP_TURNS:-50}
       AURA_RUN_DIR_WARN_THRESHOLD_BYTES: ${AURA_RUN_DIR_WARN_THRESHOLD_BYTES:-1073741824}
-      AURA_NEO4J_BOLT_URL: bolt://neo4j:7687
-      NEO4J_USER: neo4j
-      NEO4J_PASSWORD: ${NEO4J_PASSWORD:?NEO4J_PASSWORD required in .env}
-      AURA_NEO4J_DATABASE: ${AURA_NEO4J_DATABASE:-neo4j}
       AURA_EMBED_BASE_URL: http://aura-llama-embed:8081
-      AURA_EMBED_DIMENSIONS: ${AURA_EMBED_DIMENSIONS:-1024}
+      AURA_EMBED_DIMENSIONS: ${AURA_EMBED_DIMENSIONS:-768}
       # RET-01/02: two-stage retrieval rerank stage. Points at the GPU aura-rerank
       # sidecar; client fails soft to RRF/vector order when absent (no hard dep).
       # Hard-coded to the compose-DNS sidecar (like AURA_EMBED_BASE_URL above): the
@@ -141,9 +137,8 @@ services:
       AURA_WEB_USER_AGENT: ${AURA_WEB_USER_AGENT:-}
       AURA_MCP_CONFIG: ${AURA_MCP_CONFIG:-/var/lib/aura/mcp/servers.json}
       AURA_MCP_SERVERS_JSON: ${AURA_MCP_SERVERS_JSON:-}
-      AURA_AGENT_MEMORY_MCP_AUTH_SECRET: ${AURA_AGENT_MEMORY_MCP_AUTH_SECRET:?AURA_AGENT_MEMORY_MCP_AUTH_SECRET required in .env}
       # Docker-daemon/host restarts ignore depends_on ordering, so Aura can boot while the
-      # memory MCP sidecar is still waiting on neo4j+postgres healthchecks (60s+). The default
+      # memory MCP sidecar is still waiting on its own store's healthcheck. The default
       # 10s mount budget loses that race and the registry freezes with ZERO memory tools until
       # the next aura restart (2026-07-22 incident). 180s budget + 40 attempts (5s backoff cap)
       # rides out the sidecar's cold start; the budget is only spent when a sidecar is down.
@@ -318,12 +313,14 @@ services:
     pull_policy: never
     container_name: aura-migrate
     restart: "no"
-    entrypoint: ["sh", "-lc", "aura db migrate && aura neo4j migrate"]
+    # Postgres only. The `aura neo4j migrate` half is gone with the Cypher migration
+    # ledger: the graph store Aura owned (internal/knowledge) was retired together with
+    # the neo4j service itself, so this job no longer waits on it or carries bolt
+    # credentials. Memory now lives in ArcadeDB, which needs no migration job.
+    entrypoint: ["sh", "-lc", "aura db migrate"]
     command: []
     depends_on:
       postgres:
-        condition: service_healthy
-      neo4j:
         condition: service_healthy
     environment:
       AURA_DB_URL: postgres://${AURA_DB_APP_ROLE:-aura_app}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}@postgres:5432/${POSTGRES_DB:-aura}?sslmode=disable
@@ -331,12 +328,6 @@ services:
       AURA_DB_BOOTSTRAP_URL: postgres://${POSTGRES_USER:-aura}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}@postgres:5432/${POSTGRES_DB:-aura}?sslmode=disable
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}
       AURA_CONFIG_DIR: /var/lib/aura
-      AURA_NEO4J_BOLT_URL: bolt://neo4j:7687
-      NEO4J_USER: neo4j
-      NEO4J_PASSWORD: ${NEO4J_PASSWORD:?NEO4J_PASSWORD required in .env}
-      AURA_NEO4J_DATABASE: ${AURA_NEO4J_DATABASE:-neo4j}
-      AURA_EMBED_BASE_URL: http://aura-llama-embed:8081
-      AURA_EMBED_DIMENSIONS: ${AURA_EMBED_DIMENSIONS:-1024}
     volumes:
       - aura-home:/var/lib/aura
 
@@ -473,41 +464,6 @@ services:
       - ./docker/garage/garage.toml:/etc/garage.toml:ro
       - garage-data:/var/lib/garage
 
-  # ↓↓ Slice 0.7 — Neo4j Community + APOC + GDS ↓↓
-  neo4j:
-    image: neo4j:5.26.28-community
-    container_name: aura-neo4j
-    restart: unless-stopped
-    environment:
-      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:?NEO4J_PASSWORD required in .env}
-      # Healthcheck-only mirror: cypher-shell in the healthcheck needs the password
-      # at runtime. NEO4J_AUTH is consumed by the entrypoint and not left in the
-      # shell env, so expose the secret under a non-NEO4J_ name (Neo4j maps every
-      # NEO4J_* var to a config key — this avoids an "unrecognized setting" warning).
-      AURA_NEO4J_HC_PW: ${NEO4J_PASSWORD:?NEO4J_PASSWORD required in .env}
-      NEO4J_PLUGINS: '["apoc","graph-data-science"]'
-      NEO4J_dbms_security_procedures_unrestricted: 'apoc.*,gds.*'
-      NEO4J_server_memory_heap_initial__size: 512m
-      NEO4J_server_memory_heap_max__size: 1G
-      NEO4J_server_memory_pagecache_size: 512m
-      NEO4J_server_jvm_additional: "--add-modules=jdk.incubator.vector"
-      AURA_BACKUP_DIR: /backups
-    ports:
-      - "127.0.0.1:7474:7474"
-      - "127.0.0.1:7687:7687"
-      # Alias for local MCP clients configured to use Aura's Neo4j spike port.
-      - "127.0.0.1:17687:7687"
-    volumes:
-      - aura-neo4j:/data
-      - aura-neo4j-plugins:/plugins
-      - ${AURA_BACKUP_DIR:-./backups}:/backups
-    healthcheck:
-      test: ["CMD-SHELL", "cypher-shell -u neo4j -p \"$$AURA_NEO4J_HC_PW\" --database neo4j 'RETURN 1' || exit 1"]
-      interval: 10s
-      timeout: 10s
-      retries: 20
-      start_period: 90s   # APOC + GDS auto-download takes time on first boot
-
   # ↓↓ Slice 0.7 — OpenAI-compat embedding sidecar ↓↓
   # The model is NOT part of this comment on purpose: it travels in .env (repo default
   # below is Qwen3-Embedding-0.6B, 1024-d native, pooling last). Naming a model here is
@@ -597,6 +553,18 @@ services:
       AURA_EMBED_MODEL: ${AURA_EMBED_MODEL:-}
     ports:
       - "127.0.0.1:8096:8096"
+    healthcheck:
+      # The `aura` service gates its boot on this: memory is mounted INTO the agent
+      # loop at startup and the in-process mount has no boot-retry, so a sidecar that
+      # is merely still starting means an agent with ZERO memory tools until the next
+      # restart. /health is deliberately liveness-only (it does not touch ArcadeDB —
+      # see cmd/arcadedb-mcp/main.go), so an ArcadeDB blip cannot restart this process.
+      # python, not curl/wget: the runtime image is python:3.12-slim, which has neither.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8096/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
 
   aura-llama-embed:
     image: ${AURA_EMBED_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda}
@@ -667,160 +635,6 @@ services:
       timeout: 5s
       retries: 30
       start_period: 300s                       # first-boot HF model download can exceed 4 minutes
-
-  # Phase 15 spike — Neo4j Labs agent-memory MCP, colocated on the compose
-  # network so the Python Neo4j driver talks to `neo4j:7687` directly instead of
-  # the Windows-published `127.0.0.1:7687` port. Aura can mount it as streamable
-  # HTTP at http://127.0.0.1:${AURA_AGENT_MEMORY_MCP_PORT:-8091}/mcp/.
-  aura-agent-memory-mcp:
-    build:
-      context: ./docker/agent-memory
-      args:
-        # Intentionally empty by default: Dockerfile rejects builds unless the
-        # caller supplies the exact Aura revision containing the vendored tree.
-        AURA_AGENT_MEMORY_VENDOR_REV: ${AURA_AGENT_MEMORY_VENDOR_REV:-}
-    image: ${AURA_AGENT_MEMORY_MCP_IMAGE:-aura-agent-memory-mcp:local}
-    pull_policy: never
-    container_name: aura-agent-memory-mcp
-    restart: unless-stopped
-    cpus: 2.0
-    mem_limit: 2g
-    pids_limit: 256
-    depends_on:
-      neo4j:
-        condition: service_healthy
-      aura-llama-embed:
-        condition: service_healthy
-    environment:
-      NEO4J_URI: bolt://neo4j:7687
-      NEO4J_USER: neo4j
-      NEO4J_PASSWORD: ${NEO4J_PASSWORD:?NEO4J_PASSWORD required in .env}
-      NEO4J_DATABASE: ${AURA_NEO4J_DATABASE:-neo4j}
-      NAM_BACKEND: bolt
-      NAM_MEMORY__MULTI_TENANT: "true"
-      AURA_AGENT_MEMORY_MCP_AUTH_SECRET: ${AURA_AGENT_MEMORY_MCP_AUTH_SECRET:?AURA_AGENT_MEMORY_MCP_AUTH_SECRET required in .env}
-      NAM_LLM: openai/${AURA_LLM_MODEL:-deepseek/deepseek-v4-flash:nitro}
-      # Keep Compose parseable for CI jobs that start unrelated services
-      # (postgres, searxng, sidecars) without an OpenRouter secret. The memory
-      # MCP itself can still be pointed at a real key through OPENROUTER_API_KEY.
-      NAM_LLM_API_KEY: ${OPENROUTER_API_KEY:-aura-memory-mcp-placeholder-key}
-      # Embedder local↔cloud swap (D-28), reusing the SINGLE OpenRouter key + the
-      # SINGLE AURA_EMBED_DIMENSIONS. Defaults preserve the local embedding sidecar.
-      # To go cloud: AURA_EMBED_MODEL=qwen/qwen3-embedding-8b (the openai/ adapter
-      # prefix is prepended), AURA_MEMORY_EMBED_BASE_URL=https://openrouter.ai/api/v1,
-      # AURA_MEMORY_EMBED_API_KEY=${OPENROUTER_API_KEY}.
-      # AURA_MEMORY_EMBED_BASE_URL / AURA_MEMORY_EMBED_API_KEY are sidecar-owned
-      # compose/.env vars: this container reads them HERE at start to set
-      # OPENAI_BASE_URL / OPENAI_API_KEY below. They are NOT runtime-overridable via
-      # the cockpit Settings page — the daemon's os.Setenv overlay cannot reach an
-      # already-running sidecar (so they were removed from settings.AllowedKeys).
-      NAM_EMBEDDING: openai/${AURA_EMBED_MODEL:-qwen3-embedding-0.6b}
-      OPENAI_API_KEY: ${AURA_MEMORY_EMBED_API_KEY:-local-llama}
-      OPENAI_BASE_URL: ${AURA_MEMORY_EMBED_BASE_URL:-http://aura-llama-embed:8081/v1}
-      # Without this the RET-02 recall reranker degrades to identity order and the whole
-      # stage is inert: `rerank()` reads AURA_RERANK_BASE_URL and fail-softs to the input
-      # order when it is empty, silently and by design. It was never set here, so memory
-      # recall shipped as pure embedding order — which cannot discriminate on this
-      # embedder (an unrelated query scores 0.866-0.886 against every stored preference,
-      # against a 0.70 threshold). The cross-encoder separates the same corpus by three
-      # orders of magnitude. Same service the Go retrieve path uses.
-      AURA_RERANK_BASE_URL: ${AURA_MEMORY_RERANK_BASE_URL:-http://aura-rerank:8085}
-      # Local↔cloud swap for the reranker, mirroring the embedder pair above and the Go
-      # side's Config.RerankRoute. Both EMPTY by default = the local aura-rerank sidecar,
-      # which is unauthenticated and answers to the model name "aura-rerank" — so an
-      # existing deployment is byte-unchanged. A GPU-less appliance cannot run that
-      # sidecar at all (see compose.cloud.yaml): there, set the model to a hosted
-      # cross-encoder and reuse the SINGLE OpenRouter key. Sidecar-owned like the embed
-      # pair — the cockpit Settings overlay cannot reach an already-running container.
-      AURA_RERANK_MODEL: ${AURA_MEMORY_RERANK_MODEL:-}
-      AURA_RERANK_API_KEY: ${AURA_MEMORY_RERANK_API_KEY:-}
-    command:
-      - sh
-      - -lc
-      - |
-        python - <<'PY'
-        import json
-        import os
-        import socket
-        import time
-        import urllib.error
-        import urllib.request
-
-        targets = [("neo4j", 7687), ("aura-llama-embed", 8081)]
-        deadline = time.monotonic() + 240
-        for host, port in targets:
-            while True:
-                try:
-                    with socket.create_connection((host, port), 5):
-                        break
-                except OSError as exc:
-                    if time.monotonic() >= deadline:
-                        raise SystemExit(f"timed out waiting for {host}:{port}: {exc}")
-                    time.sleep(2)
-
-        def warm_json(label, url, payload, token="", required=False):
-            body = json.dumps(payload).encode("utf-8")
-            headers = {"Content-Type": "application/json"}
-            if token:
-                headers["Authorization"] = "Bearer " + token
-            deadline = time.monotonic() + 30
-            while True:
-                try:
-                    request = urllib.request.Request(
-                        url, data=body, headers=headers, method="POST"
-                    )
-                    with urllib.request.urlopen(request, timeout=10) as response:
-                        response.read()
-                    print(f"warmed {label}", flush=True)
-                    return
-                except (urllib.error.URLError, OSError, TimeoutError) as exc:
-                    if time.monotonic() >= deadline:
-                        if required:
-                            raise SystemExit(f"failed to warm required {label}: {exc}")
-                        print(f"warning: optional {label} warmup failed: {exc}", flush=True)
-                        return
-                    time.sleep(2)
-
-        embedding_base = os.environ["OPENAI_BASE_URL"].rstrip("/")
-        embedding_model = os.environ["NAM_EMBEDDING"].rsplit("/", 1)[-1]
-        warm_json(
-            "embedding model",
-            embedding_base + "/embeddings",
-            {"model": embedding_model, "input": "Aura readiness warmup"},
-            os.environ.get("OPENAI_API_KEY", ""),
-            required=True,
-        )
-        rerank_base = os.environ.get("AURA_RERANK_BASE_URL", "").rstrip("/")
-        if rerank_base:
-            warm_json(
-                "rerank model",
-                rerank_base + "/v1/rerank",
-                {
-                    "model": os.environ.get("AURA_RERANK_MODEL") or "aura-rerank",
-                    "query": "Aura readiness warmup",
-                    "documents": ["Aura memory", "unrelated document"],
-                },
-                os.environ.get("AURA_RERANK_API_KEY", ""),
-            )
-        PY
-        exec neo4j-agent-memory mcp serve \
-          --transport http \
-          --host 0.0.0.0 \
-          --port 8080 \
-          --profile extended \
-          --session-strategy persistent \
-          --user-id aura-local \
-          --auth-secret-env AURA_AGENT_MEMORY_MCP_AUTH_SECRET \
-          --llm-api-base ${AURA_LLM_BASE_URL:-https://openrouter.ai/api/v1} \
-          --embedding-dimensions ${AURA_EMBED_DIMENSIONS:-1024}
-    ports:
-      - "127.0.0.1:${AURA_AGENT_MEMORY_MCP_PORT:-8091}:8080"
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import socket; s=socket.create_connection(('127.0.0.1', 8080), 5); s.close()\""]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 30s
 
   # WhatsApp MCP sibling — forked whatsmeow bridge + FastMCP HTTP front
   # (chetto1983/whatsapp-mcp @ aura/cockpit-connect): the agent mounts the MCP over
@@ -1274,8 +1088,6 @@ volumes:
   # + the skills symlink), durable across `docker compose up -d --force-recreate aura`.
   aura-workspace:
   aura-postgres:
-  aura-neo4j:
-  aura-neo4j-plugins:
   aura-llama-embed:
   aura-llm:
   aura-whatsapp-session:

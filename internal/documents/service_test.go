@@ -9,52 +9,33 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"time"
 )
 
-func TestServiceMakesDocumentSearchableBeforeEmbedding(t *testing.T) {
+func TestServiceMakesADocumentSearchableWithoutReadingIt(t *testing.T) {
 	path := writeNamedTempFile(t, "manual.pdf", "payload")
-	jobs := newFakeJobStore()
-	extractor := &fakeExtractor{resp: oneChunkResponse()}
-	indexer := &fakeSparseIndexer{count: 1}
-	embedder := &fakeEmbedQueue{}
-	service := &Service{
-		Jobs:      jobs,
-		Extractor: extractor,
-		Indexer:   indexer,
-		Embedder:  embedder,
-		Clock:     func() time.Time { return time.Unix(10, 0) },
-	}
+	service := &Service{Jobs: newFakeJobStore()}
 
 	job, err := service.IngestPath(t.Context(), IngestRequest{SourceID: "cli"}, path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if job.Status != JobSearchable {
-		t.Fatalf("status = %s", job.Status)
+		t.Fatalf("status = %s, want %s", job.Status, JobSearchable)
 	}
-	if job.SparseChunks != 1 {
-		t.Fatalf("sparse chunks = %d", job.SparseChunks)
+	if job.DocumentID == "" || !strings.HasPrefix(job.DocumentID, "doc_") {
+		t.Fatalf("document id = %q, want the content-addressed search id", job.DocumentID)
 	}
-	if len(embedder.docs) != 1 {
-		t.Fatalf("embedding queue docs = %d", len(embedder.docs))
-	}
-	if indexer.docs[0].ID != job.DocumentID {
-		t.Fatalf("indexed doc id = %q job doc id = %q", indexer.docs[0].ID, job.DocumentID)
+	// Nothing extracts, so nothing can claim a chunk count. A non-zero one here
+	// would be the old pipeline's number surviving its own deletion.
+	if job.SparseChunks != 0 || job.EmbeddedChunks != 0 {
+		t.Fatalf("job = %#v, want no chunk counts", job)
 	}
 }
 
-func TestServiceCatalogsOwnedCLIIngestBeforeEmbedding(t *testing.T) {
+func TestServiceCatalogsAnOwnedIngestAsReady(t *testing.T) {
 	path := writeNamedTempFile(t, "manual.pdf", "payload")
 	catalog := &fakeIngestCatalog{}
-	service := &Service{
-		Jobs:      newFakeJobStore(),
-		Extractor: &fakeExtractor{resp: oneChunkResponse()},
-		Indexer:   &fakeSparseIndexer{count: 1},
-		Embedder:  &fakeEmbedQueue{},
-		Catalog:   catalog,
-		Clock:     func() time.Time { return time.Unix(10, 0) },
-	}
+	service := &Service{Jobs: newFakeJobStore(), Catalog: catalog}
 
 	job, err := service.IngestPath(t.Context(), IngestRequest{
 		SourceID: "cli", IdentityID: "00000000-0000-0000-0000-000000000001",
@@ -65,8 +46,13 @@ func TestServiceCatalogsOwnedCLIIngestBeforeEmbedding(t *testing.T) {
 	if catalog.created.IdentityID != "00000000-0000-0000-0000-000000000001" {
 		t.Fatalf("catalog identity = %q", catalog.created.IdentityID)
 	}
-	if catalog.created.Status != DocumentStatusProcessing {
-		t.Fatalf("catalog status = %q, want processing until embeddings land", catalog.created.Status)
+	// Ready, not processing: no later stage exists to promote it, so "processing"
+	// would be a status the document never leaves.
+	if catalog.created.Status != DocumentStatusReady {
+		t.Fatalf("catalog status = %q, want ready", catalog.created.Status)
+	}
+	if catalog.created.Title != "manual.pdf" {
+		t.Fatalf("catalog title = %q, want the file name", catalog.created.Title)
 	}
 	if catalog.created.Metadata["search_document_id"] != job.DocumentID ||
 		catalog.created.Metadata["document_job_id"] != job.ID {
@@ -74,77 +60,86 @@ func TestServiceCatalogsOwnedCLIIngestBeforeEmbedding(t *testing.T) {
 	}
 }
 
-func TestServiceFailsOwnedCLIIngestWhenCatalogWriteFails(t *testing.T) {
+func TestServiceSkipsTheCatalogWithoutAnIdentity(t *testing.T) {
 	path := writeNamedTempFile(t, "manual.pdf", "payload")
-	indexer := &fakeSparseIndexer{count: 1}
+	catalog := &fakeIngestCatalog{}
+	service := &Service{Jobs: newFakeJobStore(), Catalog: catalog}
+
+	if _, err := service.IngestPath(t.Context(), IngestRequest{SourceID: "cli"}, path); err != nil {
+		t.Fatal(err)
+	}
+	if catalog.created.IdentityID != "" {
+		t.Fatalf("catalog write happened without an owner: %#v", catalog.created)
+	}
+}
+
+func TestServiceFailsTheJobWhenTheCatalogWriteFails(t *testing.T) {
+	path := writeNamedTempFile(t, "manual.pdf", "payload")
 	service := &Service{
-		Jobs:      newFakeJobStore(),
-		Extractor: &fakeExtractor{resp: oneChunkResponse()},
-		Indexer:   indexer,
-		Catalog:   &fakeIngestCatalog{err: errors.New("catalog unavailable")},
+		Jobs:    newFakeJobStore(),
+		Catalog: &fakeIngestCatalog{err: errors.New("catalog unavailable")},
 	}
 
 	job, err := service.IngestPath(t.Context(), IngestRequest{
 		SourceID: "cli", IdentityID: "00000000-0000-0000-0000-000000000001",
 	}, path)
-	if err == nil || !strings.Contains(err.Error(), "catalog CLI document") {
+	if err == nil || !strings.Contains(err.Error(), "catalog document") {
 		t.Fatalf("IngestPath error = %v, want catalog failure", err)
 	}
 	if job == nil || job.Status != JobFailed {
 		t.Fatalf("job = %#v, want failed ledger state", job)
 	}
-	if len(indexer.docs) != 0 {
-		t.Fatal("sparse index ran before the required CLI catalog write")
+}
+
+// TestServiceMarksTheCatalogFailedWhenTheJobCannotBeMarkedSearchable guards the
+// one window where the catalog row outlives its job: the row is already written
+// and says ready, so a lost status update would leave the library advertising a
+// document whose ingestion never finished.
+func TestServiceMarksTheCatalogFailedWhenTheJobCannotBeMarkedSearchable(t *testing.T) {
+	path := writeNamedTempFile(t, "manual.pdf", "payload")
+	jobs := newFakeJobStore()
+	jobs.progressErr = errors.New("ledger unavailable")
+	catalog := &fakeIngestCatalog{}
+	service := &Service{Jobs: jobs, Catalog: catalog}
+
+	_, err := service.IngestPath(t.Context(), IngestRequest{
+		SourceID: "cli", IdentityID: "00000000-0000-0000-0000-000000000001",
+	}, path)
+	if err == nil || !strings.Contains(err.Error(), "ledger unavailable") {
+		t.Fatalf("IngestPath error = %v, want the ledger failure", err)
+	}
+	if catalog.failedStatus != DocumentStatusFailed {
+		t.Fatalf("catalog status = %q, want failed", catalog.failedStatus)
+	}
+	if !strings.Contains(catalog.failedReason, "ledger unavailable") {
+		t.Fatalf("catalog reason = %q, want the cause named", catalog.failedReason)
 	}
 }
 
-func TestServiceIngestPathStaysFailSoftAndWarnsWhenEmbedEnqueueDrops(t *testing.T) {
+func TestServiceWarnsWhenTheCatalogCannotBeMarkedFailed(t *testing.T) {
 	path := writeNamedTempFile(t, "manual.pdf", "payload")
 	jobs := newFakeJobStore()
-	embedder := &fakeEmbedQueue{err: errors.New("embed queue unavailable")}
-	service := &Service{
-		Jobs:      jobs,
-		Extractor: &fakeExtractor{resp: oneChunkResponse()},
-		Indexer:   &fakeSparseIndexer{count: 1},
-		Embedder:  embedder,
-		Clock:     func() time.Time { return time.Unix(10, 0) },
-	}
+	jobs.progressErr = errors.New("ledger unavailable")
+	service := &Service{Jobs: jobs, Catalog: &fakeIngestCatalog{setStatusErr: errors.New("catalog unavailable")}}
 
 	var logs bytes.Buffer
-	prevLogger := slog.Default()
+	prev := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn})))
-	t.Cleanup(func() { slog.SetDefault(prevLogger) })
+	t.Cleanup(func() { slog.SetDefault(prev) })
 
-	job, err := service.IngestPath(t.Context(), IngestRequest{SourceID: "cli"}, path)
-	if err != nil {
-		t.Fatalf("IngestPath must stay fail-soft on embed enqueue drop, got err = %v", err)
+	if _, err := service.IngestPath(t.Context(), IngestRequest{
+		SourceID: "cli", IdentityID: "00000000-0000-0000-0000-000000000001",
+	}, path); err == nil {
+		t.Fatal("want the ledger failure surfaced")
 	}
-	if job.Status != JobSearchable {
-		t.Fatalf("status = %s, want %s (sparse index unaffected by embed drop)", job.Status, JobSearchable)
-	}
-	if len(embedder.docs) != 1 {
-		t.Fatalf("embedder must still be invoked, docs = %d", len(embedder.docs))
-	}
-	logged := logs.String()
-	if !strings.Contains(logged, "documents: embed enqueue dropped") {
-		t.Fatalf("warn log missing enqueue-drop message: %q", logged)
-	}
-	if !strings.Contains(logged, "document_id="+job.DocumentID) {
-		t.Fatalf("warn log missing document_id attribute: %q", logged)
-	}
-	if !strings.Contains(logged, "source_id=cli") {
-		t.Fatalf("warn log missing source_id attribute: %q", logged)
+	if !strings.Contains(logs.String(), "could not mark catalog document failed") {
+		t.Fatalf("warn log missing: %q", logs.String())
 	}
 }
 
 func TestServiceRefusesFilesOverConfiguredLimit(t *testing.T) {
 	path := writeNamedTempFile(t, "manual.pdf", "payload")
-	service := &Service{
-		Jobs:      newFakeJobStore(),
-		Extractor: &fakeExtractor{resp: oneChunkResponse()},
-		Indexer:   &fakeSparseIndexer{count: 1},
-		MaxBytes:  1,
-	}
+	service := &Service{Jobs: newFakeJobStore(), MaxBytes: 1}
 	_, err := service.IngestPath(t.Context(), IngestRequest{}, path)
 	if !errors.Is(err, ErrFileTooLarge) {
 		t.Fatalf("want ErrFileTooLarge, got %v", err)
@@ -154,11 +149,7 @@ func TestServiceRefusesFilesOverConfiguredLimit(t *testing.T) {
 func TestServiceReusesExistingJobForSameSourceDocumentHash(t *testing.T) {
 	path := writeNamedTempFile(t, "manual.pdf", "payload")
 	jobs := newFakeJobStore()
-	service := &Service{
-		Jobs:      jobs,
-		Extractor: &fakeExtractor{resp: oneChunkResponse()},
-		Indexer:   &fakeSparseIndexer{count: 1},
-	}
+	service := &Service{Jobs: jobs}
 	first, err := service.IngestPath(t.Context(), IngestRequest{SourceID: "cli"}, path)
 	if err != nil {
 		t.Fatal(err)
@@ -175,41 +166,7 @@ func TestServiceReusesExistingJobForSameSourceDocumentHash(t *testing.T) {
 	}
 }
 
-func TestServiceMarksFailedWhenExtractionFails(t *testing.T) {
-	path := writeNamedTempFile(t, "manual.pdf", "payload")
-	jobs := newFakeJobStore()
-	service := &Service{
-		Jobs:      jobs,
-		Extractor: &fakeExtractor{err: errors.New("extract failed")},
-		Indexer:   &fakeSparseIndexer{count: 1},
-	}
-	job, err := service.IngestPath(t.Context(), IngestRequest{}, path)
-	if err == nil || !strings.Contains(err.Error(), "extract failed") {
-		t.Fatalf("want extract error, got %v", err)
-	}
-	if job == nil || job.Status != JobFailed {
-		t.Fatalf("job status = %#v", job)
-	}
-}
-
-func TestServiceMarksFailedWhenSparseIndexingFails(t *testing.T) {
-	path := writeNamedTempFile(t, "manual.pdf", "payload")
-	jobs := newFakeJobStore()
-	service := &Service{
-		Jobs:      jobs,
-		Extractor: &fakeExtractor{resp: oneChunkResponse()},
-		Indexer:   &fakeSparseIndexer{err: errors.New("neo4j failed")},
-	}
-	job, err := service.IngestPath(t.Context(), IngestRequest{}, path)
-	if err == nil || !strings.Contains(err.Error(), "neo4j failed") {
-		t.Fatalf("want index error, got %v", err)
-	}
-	if job == nil || job.Status != JobFailed {
-		t.Fatalf("job status = %#v", job)
-	}
-}
-
-func TestServiceDelegatesSearchGetAndList(t *testing.T) {
+func TestServiceGetsAndListsJobs(t *testing.T) {
 	jobs := newFakeJobStore()
 	job, err := jobs.Create(t.Context(), CreateJobParams{
 		SourceID:    "cli",
@@ -222,16 +179,7 @@ func TestServiceDelegatesSearchGetAndList(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	searcher := &fakeSearchBackend{hits: []SearchHit{{DocumentID: "doc_1", ChunkID: "chunk_1"}}}
-	service := &Service{Jobs: jobs, Searcher: searcher}
-
-	hits, err := service.Search(t.Context(), SearchRequest{Query: "manual"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(hits) != 1 || searcher.requests[0].Query != "manual" {
-		t.Fatalf("search = %#v requests=%#v", hits, searcher.requests)
-	}
+	service := &Service{Jobs: jobs}
 	got, err := service.GetJob(t.Context(), job.ID)
 	if err != nil || got.ID != job.ID {
 		t.Fatalf("GetJob = (%#v, %v)", got, err)
@@ -243,9 +191,6 @@ func TestServiceDelegatesSearchGetAndList(t *testing.T) {
 }
 
 func TestServiceMissingDependencies(t *testing.T) {
-	if _, err := (&Service{}).Search(t.Context(), SearchRequest{Query: "x"}); err == nil {
-		t.Fatal("Search without backend: want error")
-	}
 	if _, err := (&Service{}).GetJob(t.Context(), "job-1"); err == nil {
 		t.Fatal("GetJob without store: want error")
 	}
@@ -255,7 +200,7 @@ func TestServiceMissingDependencies(t *testing.T) {
 }
 
 func TestServiceRejectsUnsupportedAndDirectoryPaths(t *testing.T) {
-	service := &Service{Jobs: newFakeJobStore(), Extractor: &fakeExtractor{resp: oneChunkResponse()}, Indexer: &fakeSparseIndexer{count: 1}}
+	service := &Service{Jobs: newFakeJobStore()}
 	if _, err := service.IngestPath(t.Context(), IngestRequest{}, t.TempDir()); err == nil || !strings.Contains(err.Error(), "directory") {
 		t.Fatalf("directory path error = %v", err)
 	}
@@ -264,15 +209,6 @@ func TestServiceRejectsUnsupportedAndDirectoryPaths(t *testing.T) {
 	blob := writeNamedTempFile(t, "notes.exe", "payload")
 	if _, err := service.IngestPath(t.Context(), IngestRequest{}, blob); err == nil || !strings.Contains(err.Error(), "unsupported") {
 		t.Fatalf("unsupported path error = %v", err)
-	}
-}
-
-func oneChunkResponse() *ExtractorResponse {
-	return &ExtractorResponse{
-		Title: "Manual",
-		Chunks: []ExtractedChunk{
-			{Kind: "page", Text: "hello", Locator: Locator{Page: 1}},
-		},
 	}
 }
 
@@ -285,40 +221,12 @@ func writeNamedTempFile(t *testing.T, name, content string) string {
 	return path
 }
 
-type fakeExtractor struct {
-	resp *ExtractorResponse
-	err  error
-}
-
-func (f *fakeExtractor) ExtractFile(context.Context, string, IngestRequest) (*ExtractorResponse, error) {
-	if f.err != nil {
-		return nil, f.err
-	}
-	return f.resp, nil
-}
-
-type fakeSparseIndexer struct {
-	count int
-	err   error
-	docs  []ExtractedDocument
-}
-
-func (f *fakeSparseIndexer) UpsertSparse(_ context.Context, doc ExtractedDocument) (int, error) {
-	f.docs = append(f.docs, doc)
-	if f.err != nil {
-		return 0, f.err
-	}
-	return f.count, nil
-}
-
-type fakeEmbedQueue struct {
-	docs []ExtractedDocument
-	err  error
-}
-
 type fakeIngestCatalog struct {
-	created CreateDocumentRequest
-	err     error
+	created      CreateDocumentRequest
+	err          error
+	setStatusErr error
+	failedStatus DocumentStatus
+	failedReason string
 }
 
 func (f *fakeIngestCatalog) CreateDocument(_ context.Context, req CreateDocumentRequest) (Document, error) {
@@ -326,31 +234,18 @@ func (f *fakeIngestCatalog) CreateDocument(_ context.Context, req CreateDocument
 	return Document{ID: "catalog-1"}, f.err
 }
 
-func (f *fakeIngestCatalog) SetSearchDocumentStatus(context.Context, string, DocumentStatus, string) error {
-	return f.err
-}
-
-func (f *fakeEmbedQueue) Enqueue(_ context.Context, doc ExtractedDocument) error {
-	f.docs = append(f.docs, doc)
-	return f.err
-}
-
-type fakeSearchBackend struct {
-	hits     []SearchHit
-	err      error
-	requests []SearchRequest
-}
-
-func (f *fakeSearchBackend) Search(_ context.Context, req SearchRequest) ([]SearchHit, error) {
-	f.requests = append(f.requests, req)
-	return f.hits, f.err
+func (f *fakeIngestCatalog) SetSearchDocumentStatus(_ context.Context, _ string, status DocumentStatus, reason string) error {
+	f.failedStatus = status
+	f.failedReason = reason
+	return f.setStatusErr
 }
 
 type fakeJobStore struct {
-	byID    map[string]Job
-	byKey   map[string]string
-	next    int
-	created int
+	byID        map[string]Job
+	byKey       map[string]string
+	next        int
+	created     int
+	progressErr error
 }
 
 func newFakeJobStore() *fakeJobStore {
@@ -415,6 +310,9 @@ func (f *fakeJobStore) UpdateStatus(_ context.Context, id string, status JobStat
 
 func (f *fakeJobStore) UpdateProgress(_ context.Context, id string, status JobStatus, sparseChunks, embeddedChunks int) (Job, error) {
 	job := f.byID[id]
+	if f.progressErr != nil {
+		return job, f.progressErr
+	}
 	job.Status = status
 	job.SparseChunks = sparseChunks
 	job.EmbeddedChunks = embeddedChunks

@@ -16,7 +16,6 @@ permissions:
 env:
   AURA_ACCESS_TOKEN: ci-not-a-secret
   AURA_AUTHULA_SECRET: 00000000000000000000000000000000000000000000000000000000000000a1
-  AURA_AGENT_MEMORY_MCP_AUTH_SECRET: "00000000000000000000000000000000000000000000000000000000000000e5"
   AURA_PIM_MCP_ADMIN_TOKEN: ci-not-a-secret
   SEARXNG_SECRET: 00000000000000000000000000000000000000000000000000000000000000b2
   AURA_OBJECTSTORE_ACCESS_KEY: GK000000000000000000000000
@@ -80,7 +79,6 @@ jobs:
             scripts/rollback_rehearsal_test.py \
             scripts/security_evidence_test.py
           bash scripts/coverage_gate_test.sh
-          bash scripts/mcp_neo4j_cypher_docker_test.sh
           bash scripts/restore_drill_name_test.sh
 
       - name: Definitive audit closure gate
@@ -254,7 +252,7 @@ jobs:
     # Postgres is brought up via `docker compose` (not a GitHub service container)
     # so scripts/restore_drill.sh — which runs all pg ops through
     # `docker compose exec postgres` — works against the same instance the Go
-    # tests use. The compose file reads POSTGRES_* + NEO4J_PASSWORD from the env
+    # tests use. The compose file reads POSTGRES_* from the env
     # block below for interpolation (the whole file is parsed even for one service).
     env:
       POSTGRES_USER: aura
@@ -275,11 +273,6 @@ jobs:
       AURA_AUTHULA_SECRET: 00000000000000000000000000000000000000000000000000000000000000a1
       AURA_E2E_AUTHULA_EMAIL: e2e-operator@example.test
       AURA_E2E_AUTHULA_PASSWORD: ci-e2e-password-123
-      # Slice 0.7: compose.yaml now has a neo4j service with ${NEO4J_PASSWORD:?}
-      # fail-fast. Any `docker compose` invocation (restore_drill.sh uses
-      # `docker compose exec postgres`) parses the whole file, so the var must be
-      # present even for the Postgres-only db job. Production fail-fast is intact.
-      NEO4J_PASSWORD: ci-test-password
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -343,13 +336,13 @@ jobs:
         run: bash scripts/agui_smoke.sh
 
   musr-e2e:
-    name: MUSR two-identity cross-deny E2E (Postgres + Neo4j + Garage-admin + Authula)
+    name: MUSR two-identity cross-deny E2E (Postgres + Garage-admin + Authula)
     runs-on: ubuntu-latest
-    timeout-minutes: 40  # includes the four-plane offline Neo4j DR drill
-    # Phase 36 D-29 acceptance gate. Brings up the FULL live stack (Postgres + Neo4j +
+    timeout-minutes: 40  # includes the three-plane DR drill
+    # Phase 36 D-29 acceptance gate. Brings up the FULL live stack (Postgres +
     # Garage with the Admin API v2 published to loopback + the embedded Authula provider)
     # and runs the two-identity cross-deny E2E with AURA_MUSR_ISOLATION=on (post-flip
-    # enforcement): identity B is denied on every plane (Postgres/Neo4j/Garage/jobs), a
+    # enforcement): identity B is denied on every plane (Postgres/Garage/jobs), a
     # B-created chat is owned by B and runs, provision→login→isolated-run + break-glass work.
     # This reuses the SAME build-tag docker-compose live-stack harness every other tier uses
     # (D-29) — no throwaway per-test container framework. NO-SKIP-AS-GREEN: CI=true + the
@@ -367,14 +360,8 @@ jobs:
       # composed URLs, NOT just the POSTGRES_* primitives (CLAUDE.md no-skip-as-green).
       AURA_DB_URL: postgres://aura_app:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
       AURA_DB_MIGRATE_URL: postgres://aura_migrate:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
-      NEO4J_USER: neo4j
-      NEO4J_PASSWORD: ci-test-password
-      AURA_NEO4J_BOLT_URL: bolt://127.0.0.1:7687
-      AURA_NEO4J_DATABASE: neo4j
-      AURA_MCP_NEO4J_CYPHER_BIN: mcp-neo4j-cypher
-      AURA_MCP_NEO4J_CONNECT_TIMEOUT_SEC: "10"
       AURA_EMBED_BASE_URL: http://127.0.0.1:8081
-      AURA_EMBED_DIMENSIONS: "1024"
+      AURA_EMBED_DIMENSIONS: "768"
       # The post-flip enforcement state the acceptance gate runs under (D-13): scoped
       # fail-closed retrieval is active, so B's document_search is empty and A sees own.
       AURA_MUSR_ISOLATION: "true"
@@ -413,7 +400,6 @@ jobs:
       # the required-secret vars above must be present (they are).
       COMPOSE_FILE: compose.yaml:.github/compose.ci-musr.yaml:.github/compose.ci-cache.yaml
       AURA_CI_LLAMA_CACHE_DIR: /tmp/aura-ci-cache/llama.cpp
-      AURA_CI_NEO4J_PLUGINS_DIR: /tmp/aura-ci-cache/neo4j-plugins
       AURA_SMOKE_P95_MS: "2000"
     steps:
       - name: Checkout
@@ -435,14 +421,9 @@ jobs:
 
       - name: Compile the musr_e2e tier (always — no-skip-as-green floor)
         # The tagged E2E ALWAYS compiles here (the cheap always-green floor proving the
-        # 5-tag file never rots), even before the stack is up.
-        run: go vet -tags 'db_integration neo4j_integration garage_integration authula_integration musr_e2e' ./cmd/aura/
-
-      - name: Install mcp-neo4j-cypher (LLM graph interface, spawned by the client)
-        run: |
-          pipx install mcp-neo4j-cypher==0.6.0
-          pipx inject --force mcp-neo4j-cypher fastmcp==2.13.3
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        # 4-tag file never rots), even before the stack is up. It lost the graph tag
+        # with the graph store: its documents cross-deny now reads the Postgres catalog.
+        run: go vet -tags 'db_integration garage_integration authula_integration musr_e2e' ./cmd/aura/
 
       - name: Restore llama.cpp embedding model cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
@@ -450,19 +431,13 @@ jobs:
           path: /tmp/aura-ci-cache/llama.cpp
           key: llama-cpp-qwen3-embedding-0.6b-1024d-q8-${{ runner.os }}-v1
 
-      - name: Restore Neo4j plugin cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: /tmp/aura-ci-cache/neo4j-plugins
-          key: neo4j-5.26.26-apoc-gds-${{ runner.os }}-v1
-
       - name: Prepare cached Docker bind dirs
         run: |
-          mkdir -p "$AURA_CI_LLAMA_CACHE_DIR/llama.cpp" "$AURA_CI_LLAMA_CACHE_DIR/huggingface" "$AURA_CI_NEO4J_PLUGINS_DIR"
-          chmod -R a+rwX "$AURA_CI_LLAMA_CACHE_DIR" "$AURA_CI_NEO4J_PLUGINS_DIR"
+          mkdir -p "$AURA_CI_LLAMA_CACHE_DIR/llama.cpp" "$AURA_CI_LLAMA_CACHE_DIR/huggingface"
+          chmod -R a+rwX "$AURA_CI_LLAMA_CACHE_DIR"
 
-      - name: Bring up stack + migrate (postgres + neo4j + embed sidecar)
-        run: make neo4j-migrate
+      - name: Bring up stack + migrate (postgres + ArcadeDB + embed sidecar)
+        run: make db-migrate memory-up
 
       - name: Bring up Garage (Admin API v2 on loopback) + assign layout
         run: |
@@ -515,12 +490,12 @@ jobs:
         run: go run ./scripts/authula_seed_e2e.go
 
       - name: Two-identity cross-deny E2E (flag-on enforcement, full live stack)
-        # THE D-29 / MUSR-01 acceptance gate. -p 1 serializes the shared Postgres/Neo4j
-        # writes; -race matches every other live tier. The five tags select the E2E file;
+        # THE D-29 / MUSR-01 acceptance gate. -p 1 serializes the shared Postgres writes;
+        # -race matches every other live tier. The four tags select the E2E file;
         # -run pins the two acceptance tests (other cmd/aura tagged tests are filtered out).
         run: |
           go test -race -count=1 -p 1 \
-            -tags 'db_integration neo4j_integration garage_integration authula_integration musr_e2e' \
+            -tags 'db_integration garage_integration authula_integration musr_e2e' \
             -run 'TestTwoIdentityCrossDeny|TestProvisionLoginIsolatedRun' \
             ./cmd/aura/
 
@@ -591,8 +566,7 @@ jobs:
     # so it runs on the host with CI armed.
     env:
       CI: "true"  # arms the no-skip-as-green guards in ssrf_smoke.sh + envOrSkip
-      NEO4J_PASSWORD: ci-test-password       # compose.yaml parses the whole file
-      POSTGRES_PASSWORD: ci-test-password    # (fail-fast vars present for `compose`)
+      POSTGRES_PASSWORD: ci-test-password    # compose.yaml parses the whole file
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -634,7 +608,7 @@ jobs:
         run: docker compose down
 
   knowledge-integration-test:
-    name: Knowledge integration + smoke (neo4j + sidecar)
+    name: Owned-surface coverage gate (live Postgres + ArcadeDB + embed sidecar)
     runs-on: ubuntu-latest
     timeout-minutes: 25  # guards against a hung model/plugin download
     env:
@@ -646,14 +620,8 @@ jobs:
       POSTGRES_SSLMODE: disable
       AURA_DB_URL: postgres://aura_app:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
       AURA_DB_MIGRATE_URL: postgres://aura_migrate:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
-      NEO4J_USER: neo4j
-      NEO4J_PASSWORD: ci-test-password
-      AURA_NEO4J_BOLT_URL: bolt://127.0.0.1:7687
-      AURA_NEO4J_DATABASE: neo4j
-      AURA_MCP_NEO4J_CYPHER_BIN: mcp-neo4j-cypher
-      AURA_MCP_NEO4J_CONNECT_TIMEOUT_SEC: "10"
       AURA_EMBED_BASE_URL: http://127.0.0.1:8081
-      AURA_EMBED_DIMENSIONS: "1024"
+      AURA_EMBED_DIMENSIONS: "768"
       # The host export dir the writer materializes ACTIVE snippets into; the SC#4
       # by-path snippet exec (now db_integration, host python3) runs them from here, so
       # the coverage gate's internal/skills tier RUNS instead of a falsely-green skip.
@@ -662,21 +630,19 @@ jobs:
       # persisting database/runtime state between hosted runners.
       COMPOSE_FILE: compose.yaml:.github/compose.ci-cache.yaml
       AURA_CI_LLAMA_CACHE_DIR: /tmp/aura-ci-cache/llama.cpp
-      AURA_CI_NEO4J_PLUGINS_DIR: /tmp/aura-ci-cache/neo4j-plugins
       # recall@5 = 5/5 is the hard, hardware-independent correctness gate. p95 is
       # latency-sensitive: a shared runner with a cold HNSW index cannot meet the
       # operator's 30ms SC#5 budget (measured 57ms cold vs 1-8ms warm), so it is
       # bounded generously here — it reports without flaking CI. The strict 30ms
       # default still gates on the operator's known hardware.
       AURA_SMOKE_P95_MS: "2000"
-      # RET-05: the rerank/retrieval live tiers read this endpoint. The aura-rerank
-      # cross-encoder is GPU-MANDATORY (spike 070: CPU is ~70-1000x too slow), and the
-      # standard GitHub runner has no GPU, so the rerank_integration / graphrag_live /
-      # retrieval_eval tiers DEGRADE to a compile floor here (see the "Compile the
-      # rerank/retrieval live tiers" step + the CI tier matrix in
-      # docs/document-ingestion.md). Their test code t.Fatals under $CI when this env is
+      # RET-05: the rerank live tier reads this endpoint. The aura-rerank cross-encoder
+      # is GPU-MANDATORY (spike 070: CPU is ~70-1000x too slow), and the standard GitHub
+      # runner has no GPU, so the rerank_integration tier DEGRADES to a compile floor
+      # here (see the "Compile the rerank live tier" step + the CI tier matrix in
+      # docs/document-ingestion.md). Its test code t.Fatals under $CI when this env is
       # unset (no-skip-as-green), so a GPU runner that DOES bring the sidecar up cannot
-      # silently skip them; on that runner they run live against this endpoint.
+      # silently skip it; on that runner it runs live against this endpoint.
       AURA_RERANK_BASE_URL: http://127.0.0.1:8085
     steps:
       - name: Checkout
@@ -688,58 +654,42 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Install mcp-neo4j-cypher (LLM graph interface, spawned by the client)
-        run: |
-          pipx install mcp-neo4j-cypher==0.6.0
-          pipx inject --force mcp-neo4j-cypher fastmcp==2.13.3
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-
       - name: Restore llama.cpp embedding model cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: /tmp/aura-ci-cache/llama.cpp
           key: llama-cpp-qwen3-embedding-0.6b-1024d-q8-${{ runner.os }}-v1
 
-      - name: Restore Neo4j plugin cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: /tmp/aura-ci-cache/neo4j-plugins
-          key: neo4j-5.26.26-apoc-gds-${{ runner.os }}-v1
-
       - name: Prepare cached Docker bind dirs
         run: |
-          mkdir -p "$AURA_CI_LLAMA_CACHE_DIR/llama.cpp" "$AURA_CI_LLAMA_CACHE_DIR/huggingface" "$AURA_CI_NEO4J_PLUGINS_DIR" "$AURA_SKILL_EXPORT_DIR"
-          chmod -R a+rwX "$AURA_CI_LLAMA_CACHE_DIR" "$AURA_CI_NEO4J_PLUGINS_DIR"
+          mkdir -p "$AURA_CI_LLAMA_CACHE_DIR/llama.cpp" "$AURA_CI_LLAMA_CACHE_DIR/huggingface" "$AURA_SKILL_EXPORT_DIR"
+          chmod -R a+rwX "$AURA_CI_LLAMA_CACHE_DIR"
 
-      - name: Bring up stack + migrate (postgres + neo4j + embed sidecar)
-        run: make neo4j-migrate
+      - name: Bring up stack + migrate (postgres + ArcadeDB + embed sidecar)
+        run: make db-migrate memory-up
 
-      - name: Knowledge integration suite with race
-        run: go test -race -count=1 -tags 'db_integration neo4j_integration' ./internal/knowledge/...
-
-      - name: Compile the rerank/retrieval live tiers (no-rot floor; GPU/fixture run is operator/GPU-host)
-        # RET-05 (spike 070): the cross-encoder reranker is GPU-MANDATORY and the
-        # document live tiers need a PDF fixture, so these tiers do NOT execute on the
-        # GPU-less, fixture-less standard runner. They ALWAYS compile here (the cheap
-        # always-green floor proving the tagged files never rot), and their test code
-        # t.Fatals under $CI when their env (AURA_RERANK_BASE_URL exported above /
-        # AURA_DOC_TEST_PDF) is unset, so a GPU runner with the sidecar up runs them
-        # live and can never silently skip them. The retrieval_eval harness stays a
-        # gated paid/GPU tier — compiled here, never `go test`-run in CI. See the CI
-        # tier matrix + GPU-tier degradation rule in docs/document-ingestion.md.
-        run: |
-          go vet -tags rerank_integration ./internal/rerank/
-          go vet -tags document_ingest_live ./internal/documents/
-          go vet -tags graphrag_live ./internal/documents/
-          go vet -tags retrieval_eval ./internal/eval/
-
-      - name: Italian retrieval smoke (recall@5 hard gate, p95 reported)
-        run: make smoke
+      - name: Compile the rerank live tier (no-rot floor; GPU run is operator/GPU-host)
+        # RET-05 (spike 070): the cross-encoder reranker is GPU-MANDATORY, so this tier
+        # does NOT execute on the GPU-less standard runner. It ALWAYS compiles here (the
+        # cheap always-green floor proving the tagged files never rot), and its test code
+        # t.Fatals under $CI when AURA_RERANK_BASE_URL (exported above) is unset, so a
+        # GPU runner with the sidecar up runs it live and can never silently skip it.
+        #
+        # The document_ingest_live, graphrag_live and retrieval_eval tiers were removed
+        # with the retired graph document plane: they measured chunk extraction, graph-expanded
+        # retrieval and vector-vs-rerank nDCG, none of which exist now that
+        # document_search ranks a Postgres digest and document_open hands over the file.
+        # Vetting a tag no file carries is a green step that proves nothing.
+        run: go vet -tags rerank_integration ./internal/rerank/
 
       - name: Coverage gate (owned surface >= 85%, CLAUDE.md floor)
-        # Reuses the stack + composed DSNs + mcp-neo4j-cypher already wired in this
-        # job. NO-SKIP-AS-GREEN: the tagged tiers t.Fatal under $CI when env is
-        # unset, so a skipped tier fails the gate rather than passing it green.
+        # Reuses the stack + composed DSNs already wired in this job. NO-SKIP-AS-GREEN:
+        # the tagged tiers t.Fatal under $CI when env is unset, so a skipped tier fails
+        # the gate rather than passing it green.
+        #
+        # The internal/knowledge suite and the Italian recall@5 smoke that used to run
+        # above are gone with the graph store: the package, its Cypher migrations and the
+        # HNSW index the smoke measured no longer exist.
         run: bash scripts/coverage_gate.sh
 
       - name: Upload owned-surface coverage report
@@ -757,13 +707,12 @@ jobs:
     # Phase 13 (Slice 9c, UX-04). GitHub-hosted runners have no Nvidia device, so
     # CI live-runs only the CPU-safe audio sidecars (aura-stt/aura-tts). The compile
     # gate below still covers the OCR code path; the full STT/OCR/TTS live tier runs
-    # locally or on a GPU runner. POSTGRES_PASSWORD/NEO4J_PASSWORD are present so the
+    # locally or on a GPU runner. POSTGRES_PASSWORD is present so the
     # whole compose file parses (the fail-fast vars) even though this job starts only
     # the audio sidecars.
     env:
       CI: "true"  # arms the sidecarEnvOrSkip no-skip-as-green guards
       POSTGRES_PASSWORD: ci-test-password
-      NEO4J_PASSWORD: ci-test-password
       # The loopback-published sidecar endpoints the tier reads (compose maps each
       # service to 127.0.0.1; the /v1 suffix matches the OpenAI-compat base).
       STT_BASE_URL: http://127.0.0.1:9000/v1
@@ -866,157 +815,6 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           AURA_E2E_CHAT_ID: ${{ secrets.AURA_E2E_CHAT_ID }}
         run: go test -race -count=1 -tags telegram_integration ./internal/channels/telegram/
-
-  memory-integration-test:
-    name: Memory MCP (memory_integration tier, live agent-memory sidecar)
-    runs-on: ubuntu-latest
-    needs: knowledge-integration-test
-    timeout-minutes: 30  # guards against a hung image build / model warm-up
-    # Phase 15 (Slice 11, memory subsystem). Brings up the agent-memory MCP sidecar
-    # (built reproducibly from docker/agent-memory by plan 15-04) + its Neo4j graph +
-    # the embed sidecar, then runs the memory_integration tier against the LIVE,
-    # rebuilt image: 16-tool Deferred + memory__* mount (D-06/D-07), `aura memory`
-    # seed/read + reasoning-trace round-trip (re-scoped UX-09), agent recall loop
-    # (D-03), and dedup non-merge of a distinct entity (D-10 / spike-034 anti-regression).
-    # NO-SKIP-AS-GREEN: AURA_AGENT_MEMORY_MCP_URL is exported so the tier RUNS; the
-    # tests t.Fatal under $CI when it is unset (a skipped tier fails the gate, never
-    # passes it green — CLAUDE.md). On a FRESH CI Neo4j the sidecar creates its vector
-    # indexes at 384d itself, so no index alignment is needed (the local 768d->384d
-    # drop in 15-05 was a one-off on the operator's accumulated graph).
-    env:
-      CI: "true"  # arms the no-skip-as-green t.Fatal in the tier
-      POSTGRES_USER: aura
-      POSTGRES_PASSWORD: ci-test-password
-      POSTGRES_DB: aura
-      POSTGRES_HOST: 127.0.0.1
-      POSTGRES_PORT: "5432"
-      POSTGRES_SSLMODE: disable
-      AURA_DB_URL: postgres://aura_app:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
-      AURA_DB_MIGRATE_URL: postgres://aura_migrate:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
-      NEO4J_USER: neo4j
-      NEO4J_PASSWORD: ci-test-password
-      AURA_NEO4J_BOLT_URL: bolt://127.0.0.1:7687
-      AURA_NEO4J_DATABASE: neo4j
-      # CI-only compose override: cache immutable downloads/plugins without
-      # persisting database/runtime state between hosted runners.
-      COMPOSE_FILE: compose.yaml:.github/compose.ci-cache.yaml
-      AURA_CI_LLAMA_CACHE_DIR: /tmp/aura-ci-cache/llama.cpp
-      AURA_CI_NEO4J_PLUGINS_DIR: /tmp/aura-ci-cache/neo4j-plugins
-      # The live sidecar endpoint the tier reads (compose publishes the memory service
-      # on 127.0.0.1:8091; the trailing /mcp/ is the streamable-HTTP path).
-      AURA_AGENT_MEMORY_MCP_URL: http://127.0.0.1:8091/mcp/
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Compile the memory_integration tier (always — no-skip-as-green floor)
-        # The tier ALWAYS compiles in CI (the cheap, always-green floor proving the
-        # tagged files never rot), even before the sidecar is up.
-        run: |
-          go vet -tags memory_integration ./internal/agent/mcptools/ ./cmd/aura/ ./internal/agent/
-          go vet -tags 'adaptive_live db_integration' ./internal/adaptive/
-
-      - name: Install mcp-neo4j-cypher (private adaptive graph interface)
-        run: |
-          pipx install 'mcp-neo4j-cypher==0.6.0'
-          pipx inject --force 'mcp-neo4j-cypher' 'fastmcp==2.13.3'
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-
-      - name: Restore llama.cpp embedding model cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: /tmp/aura-ci-cache/llama.cpp
-          key: llama-cpp-qwen3-embedding-0.6b-1024d-q8-${{ runner.os }}-v1
-
-      - name: Restore Neo4j plugin cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: /tmp/aura-ci-cache/neo4j-plugins
-          key: neo4j-5.26.26-apoc-gds-${{ runner.os }}-v1
-
-      - name: Prepare cached Docker bind dirs
-        run: |
-          mkdir -p "$AURA_CI_LLAMA_CACHE_DIR/llama.cpp" "$AURA_CI_LLAMA_CACHE_DIR/huggingface" "$AURA_CI_NEO4J_PLUGINS_DIR"
-          chmod -R a+rwX "$AURA_CI_LLAMA_CACHE_DIR" "$AURA_CI_NEO4J_PLUGINS_DIR"
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
-
-      - name: Build agent-memory MCP image with GHA cache
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
-        with:
-          context: ./docker/agent-memory
-          tags: aura-agent-memory-mcp:local
-          load: true
-          build-args: |
-            AURA_AGENT_MEMORY_VENDOR_REV=${{ github.sha }}
-          cache-from: type=gha,scope=agent-memory-mcp
-          cache-to: type=gha,scope=agent-memory-mcp,mode=max
-
-      # The vendored sidecar ships 117 pytest tests that NOTHING in this pipeline ran —
-      # there was no `pytest` anywhere in .github/workflows. That is how a bootstrap that
-      # cannot create its own schema reached master: the failure needs a virgin Neo4j
-      # (the constraint helpers short-circuit on check_constraint_exists), so no
-      # long-lived instance shows it, and no gate looked. Runs in the image just built,
-      # against the checked-out tree, before the sidecar is started below.
-      - name: agent-memory unit tests (pytest, vendored sidecar)
-        run: |
-          docker run --rm \
-            -v "$PWD/docker/agent-memory:/app" -w /app \
-            aura-agent-memory-mcp:local \
-            sh -lc 'pip install --quiet pytest pytest-asyncio && python -m pytest tests/ -q \
-              --ignore=tests/test_corpus_epoch_live_integration.py \
-              --ignore=tests/test_forget_live_scope_integration.py \
-              --ignore=tests/test_entity_exact_dedup_live_integration.py'
-
-      - name: Bring up Postgres + migrate (default-on managed config reads cfg)
-        run: make db-migrate
-
-      # neo4j-migrate, not neo4j-up: `up` only starts the container, so the Cypher
-      # migrations never ran here and 0005_memory_corpus_revision never created the
-      # `MemoryCorpusRevision {singleton:'corpus'}` node. Every sidecar write bumps that
-      # singleton in its own transaction and fails closed without it — "memory corpus
-      # epoch singleton is missing or invalid". The gap was invisible while the sidecar
-      # could not boot at all. (neo4j-migrate re-runs db-migrate, which is idempotent.)
-      - name: Bring up Neo4j + embed sidecar, and apply the Cypher migrations
-        run: make neo4j-migrate
-
-      - name: Start the agent-memory MCP sidecar (cached :local image)
-        run: docker compose up -d --no-build aura-agent-memory-mcp
-
-      - name: Wait for the memory sidecar healthy
-        run: |
-          ok=""
-          for i in $(seq 1 60); do
-            status="$(docker inspect -f '{{.State.Health.Status}}' aura-agent-memory-mcp 2>/dev/null || echo starting)"
-            echo "aura-agent-memory-mcp health: $status"
-            [ "$status" = "healthy" ] && ok=1 && break
-            sleep 5
-          done
-          if [ -z "$ok" ]; then
-            echo "aura-agent-memory-mcp did not become healthy" >&2
-            docker logs aura-agent-memory-mcp --tail 80 || true
-            exit 1
-          fi
-
-      - name: Live memory_integration tier (16-tool mount + CLI + recall + dedup)
-        # Runs the tagged tests across the three owning packages against the live,
-        # rebuilt sidecar. -p 1 keeps the shared Neo4j graph writes serialized.
-        # -race matches every other live tier (db/web/knowledge/telegram — WR-02).
-        run: go test -race -tags memory_integration -count=1 -p 1 ./internal/agent/mcptools/ ./cmd/aura/ ./internal/agent/
-
-      - name: Live adaptive projector compatibility and recall-neutrality tier
-        run: go test -race -tags 'adaptive_live db_integration' -count=1 -p 1 ./internal/adaptive/
-
-      - name: Tear down
-        if: always()
-        run: docker compose down
 
   calendar-integration-test:
     name: Calendar PIM MCP (calendar_integration tier, live aura-pim-mcp sidecar)
@@ -1364,7 +1162,6 @@ jobs:
       AURA_AUTHULA_RATE_LIMIT_MAX: "1000"
       AURA_E2E_AUTHULA_EMAIL: e2e-operator@example.test
       AURA_E2E_AUTHULA_PASSWORD: ci-e2e-password-123
-      NEO4J_PASSWORD: ci-test-password
       OPENROUTER_API_KEY: ci-degraded-no-network
       AURA_OBJECTSTORE_BACKEND: garage
       AURA_OBJECTSTORE_ENDPOINT: http://127.0.0.1:3900
@@ -1525,7 +1322,6 @@ jobs:
       CI: "true"
       AURA_DB_URL: postgres://aura_app:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
       AURA_DB_MIGRATE_URL: postgres://aura_migrate:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
-      NEO4J_PASSWORD: ci-test-password
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -1574,7 +1370,7 @@ jobs:
     # green (CLAUDE.md no-skip-as-green).
     #
     # NOTE: this does NOT make the tier count toward the >=85% owned-surface coverage floor —
-    # scripts/coverage_gate.sh runs the `db_integration neo4j_integration` matrix, so
+    # scripts/coverage_gate.sh runs the `db_integration` matrix, so
     # docker-gated runtime still contributes ZERO coverage and its pure logic still needs
     # daemon-free unit tests.
     env:

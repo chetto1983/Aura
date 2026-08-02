@@ -349,7 +349,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// landed a new ServerConfig field — CLAUDE.md 600-LOC ceiling). The auth-dependent
 	// wiring (onboarding/bootstrap/password-reset) stays below, once auth/authulaProvider
 	// exist.
-	aguiServer, runRegistry := wireAGUIServer(ctx, chat, store, scheduler, readinessState, ownerExports, shareAPI, objectStore)
+	aguiServer, runRegistry := wireAGUIServer(chat, store, scheduler, readinessState, ownerExports, shareAPI, objectStore)
 	// The embedded operator SPA (internal/webui) mounts additively at "/" on the
 	// SAME loopback server: newServeHandler is a parent mux that keeps the AG-UI
 	// routes authoritative and falls everything else through to the static shell

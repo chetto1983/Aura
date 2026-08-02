@@ -93,12 +93,14 @@ func TestDistributionSurfaceArtifactsMatchReleaseContract(t *testing.T) {
 func TestBackupLifecycleDocsMatchApplianceContract(t *testing.T) {
 	root := repoRootForTest(t)
 	restoreDrill := readProjectFile(t, root, "scripts/restore_drill.sh")
-	neo4jDrill := readProjectFile(t, root, "scripts/neo4j_offline_drill.sh")
 	readme := readProjectFile(t, root, "README.md")
 
+	// Three planes, not four: the Neo4j offline dump/load plane went with the Neo4j
+	// service. ArcadeDB has no restore drill yet — memory lives in one database per
+	// identity and nothing dumps them — so this contract deliberately no longer
+	// claims a graph plane rather than claiming one that does not run.
 	for _, want := range []string{
 		"pg_restore",
-		"bash scripts/neo4j_offline_drill.sh",
 		"dr_compose_volume_name aura-home",
 		"SIDECAR_SOURCE_VOLUME_CREATED",
 		"scripts/objectstore_drill.go",
@@ -110,16 +112,6 @@ func TestBackupLifecycleDocsMatchApplianceContract(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		"cypher-shell",
-		"database dump",
-		"database load",
-		`"mode": "offline_dump_load"`,
-	} {
-		if !strings.Contains(neo4jDrill, want) {
-			t.Fatalf("scripts/neo4j_offline_drill.sh missing %q:\n%s", want, neo4jDrill)
-		}
-	}
-	for _, want := range []string{
 		"install.sh",
 		"Docker Desktop",
 		"PowerShell",
@@ -128,8 +120,6 @@ func TestBackupLifecycleDocsMatchApplianceContract(t *testing.T) {
 		"docker compose up -d",
 		"aura-migrate",
 		"pg_restore",
-		"cypher-shell",
-		"mcp-neo4j-cypher",
 		"WhatsApp Terms of Service",
 		"Scan the QR code",
 		"tls internal",
@@ -203,7 +193,6 @@ func TestDotEnvTemplateHygiene(t *testing.T) {
 	for _, want := range []string{
 		"AURA_IMAGE=",
 		"AURA_ACCESS_TOKEN=",
-		"AURA_AGENT_MEMORY_MCP_PORT=",
 		"OPENROUTER_API_KEY=",
 		// The embed sidecar loads a LOCAL gguf now: it has no egress, and a first
 		// boot that had to fetch one from HuggingFace restart-looped and took

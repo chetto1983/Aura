@@ -115,7 +115,7 @@ const taskParamsSchema = `{
     "at": {"type": "string", "description": "Required when action=schedule and schedule_kind=at. An RFC-3339 instant, e.g. '2030-01-01T09:30:00Z'."},
     "every_minutes": {"type": "integer", "description": "Required when action=schedule and schedule_kind=every. Interval in minutes (minimum 5)."},
     "tz": {"type": "string", "description": "Optional IANA timezone for a cron schedule, e.g. 'Europe/Rome'. Defaults to the scheduler default timezone."},
-    "kind": {"type": "string", "enum": ["reminder", "agent_job", "backup_postgres", "backup_neo4j"], "description": "Required when action=schedule. The task kind: reminder (deliver text), agent_job (run an agent turn), backup_postgres/backup_neo4j (database dumps)."},
+    "kind": {"type": "string", "enum": ["reminder", "agent_job", "backup_postgres"], "description": "Required when action=schedule. The task kind: reminder (deliver text), agent_job (run an agent turn), backup_postgres (database dump)."},
     "payload": {"type": "object", "description": "Optional when action=schedule. The task payload: for a reminder {\"text\": \"...\"}, for an agent_job {\"goal\": \"...\"}. Scanned for destructive intent (rm/drop/delete) which gates the task to pending_approval."},
     "step_budget": {"type": "integer", "description": "Optional when action=schedule and kind=agent_job. Maximum agent steps for the job run."},
     "notify": {"type": "string", "enum": ["whatsapp", "email", "stdout", "telegram"], "description": "Optional when action=schedule. Where the task output is delivered. telegram delivers to the operator's bound Telegram chat; whatsapp and email are self-sends to an external address; stdout is the server-console fallback. Defaults to the scheduler default route."},
@@ -130,7 +130,7 @@ func (t *TaskTool) Spec() Spec {
 	return Spec{
 		Name:    "task",
 		Summary: "Schedule, list, cancel, or run background tasks and reminders.",
-		Description: "Manage scheduled work via a single action enum. action=schedule creates a one-shot (at), interval (every), or cron task of a kind (reminder|agent_job|backup_postgres|backup_neo4j); action=list shows active and awaiting-approval tasks; action=cancel/run_now operate on a task_id. " +
+		Description: "Manage scheduled work via a single action enum. action=schedule creates a one-shot (at), interval (every), or cron task of a kind (reminder|agent_job|backup_postgres); action=list shows active and awaiting-approval tasks; action=cancel/run_now operate on a task_id. " +
 			"When the operator asks for recurring or future work (a daily summary, a morning digest, a periodic check, a reminder), schedule it here instead of trying to do it now: a reminder delivers its payload text; an agent_job runs a fresh agent turn AT FIRE TIME with the goal in its payload, so you do NOT need the job's tools available now — the job resolves its own tools when it runs. Put the operator's intent in the payload goal and schedule it. " +
 			"Destructive payloads (rm/drop/delete) are routed to pending_approval and require operator approval outside this model-facing tool before they fire.",
 		Parameters: json.RawMessage(taskParamsSchema),

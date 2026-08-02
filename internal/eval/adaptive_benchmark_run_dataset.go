@@ -17,7 +17,6 @@ import (
 	"github.com/chetto1983/aura/internal/adaptive"
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/tools"
-	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/runner"
 )
 
@@ -264,13 +263,19 @@ var adaptiveBenchmarkActionCatalogs = []AdaptiveBenchmarkActionCatalog{
 		},
 	},
 	{
+		// The knowledge-retrieval domain is RETIRED, for the same reason and in the
+		// same shape as tool-discovery above: document_search ranks a Postgres digest
+		// and document_open hands over the file, so the five retrieval plans these ids
+		// named no longer exist and nothing constructs a control for them. The row
+		// stays because the ledger still holds rows stamped with this domain and a
+		// report over them must decode.
 		Domain: adaptive.DomainKnowledge,
 		ActionIDs: []string{
-			documents.RetrievalPlanSparse,
-			documents.RetrievalPlanStatic,
-			documents.RetrievalPlanVector,
-			documents.RetrievalPlanVectorRerank,
-			documents.RetrievalPlanVectorRerankExpand,
+			"sparse",
+			"static",
+			"vector",
+			"vector_rerank",
+			"vector_rerank_expand",
 		},
 	},
 	{

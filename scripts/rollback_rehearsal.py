@@ -26,7 +26,7 @@ MIGRATION_STATUS_ARGS = [
     "sh",
     "aura-migrate",
     "-lc",
-    "aura db status && aura neo4j status",
+    "aura db status",
 ]
 DEPLOY_ARGS = [
     "up",

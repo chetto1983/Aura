@@ -1,9 +1,9 @@
-//go:build db_integration && neo4j_integration && garage_integration && authula_integration && musr_e2e
+//go:build db_integration && garage_integration && authula_integration && musr_e2e
 
 // Phase 36 D-29 / MUSR-01 two-identity cross-deny acceptance E2E — the phase keystone.
 // It runs with AURA_MUSR_ISOLATION=on (the post-flip enforcement state) against the FULL
-// live stack (Postgres + RLS, Neo4j ownership edges, Garage Admin API v2 + S3, embedded
-// Authula) and asserts that identity B is denied on EVERY plane while A keeps its data:
+// live stack (Postgres + RLS, Garage Admin API v2 + S3, embedded Authula) and asserts
+// that identity B is denied on EVERY plane while A keeps its data:
 //
 //	Postgres conversations — B gets 404 on an HTTP read of A's thread; the owner-scoped
 //	  store returns not-found (404 source) / rows==0 (403 source); the RLS kernel backstop
@@ -32,13 +32,11 @@ import (
 
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/askuser"
-	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/identityctx"
-	"github.com/chetto1983/aura/internal/knowledge"
 	"github.com/chetto1983/aura/internal/objectstore"
 	"github.com/chetto1983/aura/internal/objectstore/garageadmin"
 )
@@ -186,46 +184,38 @@ func TestTwoIdentityCrossDeny(t *testing.T) {
 		}
 	})
 
-	// ── Documents plane: flag-on scoped search — B empty, A finds own ────────────────
+	// ── Documents plane: identity-scoped digest search — B empty, A finds own ───────
 	t.Run("documents_cross_deny", func(t *testing.T) {
-		cfg := config.LoadDB()
-		mcp, err := knowledge.Open(ctx, &cfg.Neo4j)
-		if err != nil {
-			t.Fatalf("knowledge.Open: %v", err)
-		}
-		docID := "musr-doc-" + uuid.NewString()
+		// The graph plane this used to exercise (Neo4j chunks + a HAS_DOCUMENT ownership
+		// edge) is gone: document_search ranks aura.documents and the scoping is the SQL's
+		// own identity predicate. The cross-deny guarantee is unchanged, so the assertion
+		// moves to the store that now owns it.
+		store := documents.NewPostgresCatalogStore(pool)
 		term := "quetzal" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
-		// Delete the test's Neo4j nodes, THEN close — a t.Cleanup runs AFTER the deferred
-		// Close (cleanup callbacks fire after deferred calls), so it would Write to a closed
-		// client (nil stdin) and SIGSEGV. One defer keeps deletes-before-close ordered.
-		defer func() {
-			c := context.Background()
-			_, _ = mcp.Write(c, "MATCH (d:Document {id:$id}) OPTIONAL MATCH (d)-[:HAS_CHUNK]->(c) DETACH DELETE d,c", map[string]any{"id": docID})
-			_, _ = mcp.Write(c, "MATCH (u:User {identifier:$id}) DETACH DELETE u", map[string]any{"id": idA})
-			_ = mcp.Close()
-		}()
-		doc := documents.ExtractedDocument{
-			ID: docID, SourceID: "src-" + docID, SourceKind: "musr", FileName: "a.txt",
-			MIMEType: "text/plain", ContentHash: "h-" + docID, Title: "A private", IdentityID: idA,
-			Chunks: []documents.Chunk{{
-				ID: docID + "-c0", DocumentID: docID, SourceID: "src-" + docID,
-				ContentHash: "h-" + docID, ChunkHash: "ch-" + docID, ChunkIndex: 0, ChunkCount: 1,
-				Kind: "text", Text: "Confidential: the " + term + " protocol is A's alone.",
-			}},
+		doc, err := store.CreateDocument(ctx, documents.CreateDocumentRequest{
+			IdentityID: idA,
+			Scope:      documents.DocumentScopeLibrary,
+			Title:      "A private " + term,
+			Status:     documents.DocumentStatusReady,
+		})
+		if err != nil {
+			t.Fatalf("A catalog document: %v", err)
 		}
-		if _, err := (&documents.Indexer{Client: mcp}).UpsertSparse(ctx, doc); err != nil {
-			t.Fatalf("A ingest doc: %v", err)
-		}
-		scoped := &documents.Searcher{Client: mcp, MUSRIsolation: true}
-		if hits, err := scoped.Search(ctx, documents.SearchRequest{Query: term, IdentityID: idB, Limit: 5}); err != nil {
+		t.Cleanup(func() {
+			_, _ = pool.Exec(context.Background(), `DELETE FROM aura.documents WHERE id=$1`, doc.ID)
+		})
+
+		if hits, err := store.SearchDigests(ctx, idB, term, 5); err != nil {
 			t.Fatalf("B document_search: %v", err)
 		} else if len(hits) != 0 {
 			t.Errorf("B document_search returned %d hits, want 0 (empty for foreign identity)", len(hits))
 		}
-		if hits, err := scoped.Search(ctx, documents.SearchRequest{Query: term, IdentityID: idA, Limit: 5}); err != nil {
+		hits, err := store.SearchDigests(ctx, idA, term, 5)
+		if err != nil {
 			t.Fatalf("A document_search: %v", err)
-		} else if len(hits) == 0 || hits[0].DocumentID != docID {
-			t.Errorf("A document_search = %d hits, want its own doc %s", len(hits), docID)
+		}
+		if len(hits) == 0 || hits[0].DocumentID != doc.ID {
+			t.Errorf("A document_search = %#v, want its own doc %s", hits, doc.ID)
 		}
 	})
 

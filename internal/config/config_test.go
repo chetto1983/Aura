@@ -5,15 +5,13 @@ import (
 	"os"
 	"strings"
 	"testing"
-
-	"github.com/chetto1983/aura/internal/knowledge"
 )
 
 // clearPostgresEnv zeroes every Postgres-related env var so each test runs from
 // a known baseline regardless of what the host shell sets. It also clears the
 // AURA_LLM_*/AURA_OTEL_* knobs and sets a placeholder OPENROUTER_API_KEY: since
 // Slice 1, config.Load composes llm.Load (which fail-fasts on an empty key), so
-// every Load() needs a non-empty key to reach the DB/Neo4j assertions.
+// every Load() needs a non-empty key to reach the DB/embed assertions.
 func clearPostgresEnv(t *testing.T) {
 	t.Helper()
 	keys := []string{
@@ -22,8 +20,6 @@ func clearPostgresEnv(t *testing.T) {
 		"AURA_DB_APP_ROLE", "AURA_DB_MIGRATE_ROLE",
 		"AURA_DB_URL", "AURA_DB_MIGRATE_URL", "AURA_DB_BOOTSTRAP_URL",
 		"AURA_RUN_DIR", "AURA_CONTEXT_PREVIEW_CAP_BYTES", "AURA_RUN_DIR_SWEEP_INTERVAL_SEC",
-		"NEO4J_USER", "NEO4J_PASSWORD", "AURA_NEO4J_BOLT_URL", "AURA_NEO4J_DATABASE",
-		"AURA_MCP_NEO4J_CYPHER_BIN", "AURA_MCP_NEO4J_CONNECT_TIMEOUT_SEC",
 		"AURA_EMBED_BASE_URL", "AURA_EMBED_DIMENSIONS",
 		"AURA_LLM_MODEL", "AURA_LLM_BASE_URL", "AURA_LLM_TEMPERATURE",
 		"AURA_LLM_MAX_TOKENS", "AURA_LLM_TOTAL_TIMEOUT_SEC", "AURA_LLM_CONNECT_TIMEOUT_SEC",
@@ -345,80 +341,47 @@ func TestComposeDSNEscapesComponents(t *testing.T) {
 	}
 }
 
-// TestLoad_Neo4jDefaultsApplied asserts the Slice 0.7 Neo4j sub-struct composes
-// to the documented defaults when no env is set. Password stays empty (operator
-// secret) so callers fail-fast rather than dialing with a blank credential.
-func TestLoad_Neo4jDefaultsApplied(t *testing.T) {
+// TestLoad_EmbedDefaultsApplied asserts the embed sub-struct composes to the
+// documented defaults when no env is set.
+func TestLoad_EmbedDefaultsApplied(t *testing.T) {
 	clearPostgresEnv(t)
 
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
-	if cfg.Neo4j.BoltURL != "bolt://127.0.0.1:7687" {
-		t.Errorf("Neo4j.BoltURL: want default bolt://127.0.0.1:7687, got %q", cfg.Neo4j.BoltURL)
+	if cfg.Embed.BaseURL != "http://127.0.0.1:8081" {
+		t.Errorf("Embed.BaseURL: want default http://127.0.0.1:8081, got %q", cfg.Embed.BaseURL)
 	}
-	if cfg.Neo4j.User != "neo4j" {
-		t.Errorf("Neo4j.User: want default neo4j, got %q", cfg.Neo4j.User)
-	}
-	if cfg.Neo4j.Password != "" {
-		t.Errorf("Neo4j.Password: want empty (operator secret), got %q", cfg.Neo4j.Password)
-	}
-	if cfg.Neo4j.Database != "neo4j" {
-		t.Errorf("Neo4j.Database: want default neo4j (Community single-DB), got %q", cfg.Neo4j.Database)
-	}
-	if cfg.Neo4j.MCPBinary != "mcp-neo4j-cypher" {
-		t.Errorf("Neo4j.MCPBinary: want default mcp-neo4j-cypher, got %q", cfg.Neo4j.MCPBinary)
-	}
-	if cfg.Neo4j.ConnectTimeoutSec != 10 {
-		t.Errorf("Neo4j.ConnectTimeoutSec: want default 10, got %d", cfg.Neo4j.ConnectTimeoutSec)
-	}
-	if cfg.Neo4j.EmbedURL != "http://127.0.0.1:8081" {
-		t.Errorf("Neo4j.EmbedURL: want default http://127.0.0.1:8081, got %q", cfg.Neo4j.EmbedURL)
+	if cfg.Embed.Model != "" {
+		t.Errorf("Embed.Model: want empty (local sidecar route), got %q", cfg.Embed.Model)
 	}
 }
 
-// TestLoad_Neo4jEnvOverrides asserts every Neo4j field honors its env override.
-func TestLoad_Neo4jEnvOverrides(t *testing.T) {
+// TestLoad_EmbedEnvOverrides asserts every embed field honors its env override.
+func TestLoad_EmbedEnvOverrides(t *testing.T) {
 	clearPostgresEnv(t)
-	t.Setenv("AURA_NEO4J_BOLT_URL", "bolt://neo.internal:7000")
-	t.Setenv("NEO4J_USER", "graphuser")
-	t.Setenv("NEO4J_PASSWORD", "gr@ph-pw")
-	t.Setenv("AURA_NEO4J_DATABASE", "neo4j")
-	t.Setenv("AURA_MCP_NEO4J_CYPHER_BIN", "/opt/bin/mcp-neo4j-cypher")
-	t.Setenv("AURA_MCP_NEO4J_CONNECT_TIMEOUT_SEC", "25")
 	t.Setenv("AURA_EMBED_BASE_URL", "http://embed.internal:9000")
 	t.Setenv("AURA_EMBED_DIMENSIONS", "1024")
+	t.Setenv("AURA_EMBED_MODEL", "qwen/qwen3-embedding-8b")
 
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
-	if cfg.Neo4j.BoltURL != "bolt://neo.internal:7000" {
-		t.Errorf("Neo4j.BoltURL override not applied: %q", cfg.Neo4j.BoltURL)
+	if cfg.Embed.BaseURL != "http://embed.internal:9000" {
+		t.Errorf("Embed.BaseURL override not applied: %q", cfg.Embed.BaseURL)
 	}
-	if cfg.Neo4j.User != "graphuser" {
-		t.Errorf("Neo4j.User override not applied: %q", cfg.Neo4j.User)
+	if cfg.Embed.Dimensions != 1024 {
+		t.Errorf("Embed.Dimensions override not applied: %d", cfg.Embed.Dimensions)
 	}
-	if cfg.Neo4j.Password != "gr@ph-pw" {
-		t.Errorf("Neo4j.Password override not applied: %q", cfg.Neo4j.Password)
-	}
-	if cfg.Neo4j.MCPBinary != "/opt/bin/mcp-neo4j-cypher" {
-		t.Errorf("Neo4j.MCPBinary override not applied: %q", cfg.Neo4j.MCPBinary)
-	}
-	if cfg.Neo4j.ConnectTimeoutSec != 25 {
-		t.Errorf("Neo4j.ConnectTimeoutSec override not applied: %d", cfg.Neo4j.ConnectTimeoutSec)
-	}
-	if cfg.Neo4j.EmbedURL != "http://embed.internal:9000" {
-		t.Errorf("Neo4j.EmbedURL override not applied: %q", cfg.Neo4j.EmbedURL)
-	}
-	if cfg.Neo4j.EmbedDimensions != 1024 {
-		t.Errorf("Neo4j.EmbedDimensions override not applied: %d", cfg.Neo4j.EmbedDimensions)
+	if cfg.Embed.Model != "qwen/qwen3-embedding-8b" {
+		t.Errorf("Embed.Model override not applied: %q", cfg.Embed.Model)
 	}
 }
 
-// TestEmbedDimensions_RequiredNonZero asserts EmbedDimensions defaults to the
-// Granite sidecar contract when AURA_EMBED_DIMENSIONS is unset — a non-zero
+// TestEmbedDimensions_RequiredNonZero asserts Dimensions defaults to the
+// sidecar contract when AURA_EMBED_DIMENSIONS is unset — a non-zero
 // value is required for the Pattern 5 boot self-test to be meaningful. A literal
 // "0" is a deliberate misconfiguration that envutil.IntDefault passes through verbatim
 // (Atoi succeeds); it is caught downstream by the ping dim self-test, not here.
@@ -432,11 +395,11 @@ func TestEmbedDimensions_RequiredNonZero(t *testing.T) {
 	// Anchored to the constant, not to a literal: the width has moved 384 -> 768 -> 1024
 	// and each move broke this assertion without saying anything about the behaviour —
 	// which is that an unset env must not leave the contract dim at zero.
-	if cfg.Neo4j.EmbedDimensions != knowledge.DefaultEmbedDimensions {
-		t.Errorf("EmbedDimensions: want the contract default %d, got %d",
-			knowledge.DefaultEmbedDimensions, cfg.Neo4j.EmbedDimensions)
+	if cfg.Embed.Dimensions != DefaultEmbedDimensions {
+		t.Errorf("Embed.Dimensions: want the contract default %d, got %d",
+			DefaultEmbedDimensions, cfg.Embed.Dimensions)
 	}
-	if cfg.Neo4j.EmbedDimensions == 0 {
+	if cfg.Embed.Dimensions == 0 {
 		t.Error("EmbedDimensions must never default to zero — a zero width disables the boot self-test")
 	}
 }

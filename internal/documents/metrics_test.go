@@ -9,7 +9,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
-func TestIngestionTelemetryRecordsJobOutcomesEmbedDurationAndQueueDepth(t *testing.T) {
+func TestIngestionTelemetryRecordsJobOutcomesAndQueueDepth(t *testing.T) {
 	reader := sdkmetric.NewManualReader()
 	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 	t.Cleanup(func() { _ = provider.Shutdown(context.Background()) })
@@ -18,8 +18,6 @@ func TestIngestionTelemetryRecordsJobOutcomesEmbedDurationAndQueueDepth(t *testi
 	telemetry.recordJobOutcome(context.Background(), ingestionJobStatusSucceeded)
 	telemetry.recordJobOutcome(context.Background(), ingestionJobStatusDeadLetter)
 	telemetry.recordJobOutcome(context.Background(), ingestionJobOutcomeRetryScheduled)
-	telemetry.recordEmbedDuration(context.Background(), 0.25, "success")
-	telemetry.recordEmbedDuration(context.Background(), 1.5, "error")
 	telemetry.recordQueueDepth(context.Background(), 7)
 
 	var resources metricdata.ResourceMetrics
@@ -28,7 +26,6 @@ func TestIngestionTelemetryRecordsJobOutcomesEmbedDurationAndQueueDepth(t *testi
 	}
 
 	outcomes := map[string]int64{}
-	var histogramCount uint64
 	var gaugeValue int64
 	var gaugeSeen bool
 	for _, scope := range resources.ScopeMetrics {
@@ -46,14 +43,6 @@ func TestIngestionTelemetryRecordsJobOutcomesEmbedDurationAndQueueDepth(t *testi
 						}
 					}
 				}
-			case obs.MustDescriptor(obs.IngestionEmbedDurationID).Name:
-				hist, ok := m.Data.(metricdata.Histogram[float64])
-				if !ok {
-					t.Fatalf("embed duration metric type = %T", m.Data)
-				}
-				for _, point := range hist.DataPoints {
-					histogramCount += point.Count
-				}
 			case obs.MustDescriptor(obs.IngestionQueueDepthID).Name:
 				gauge, ok := m.Data.(metricdata.Gauge[int64])
 				if !ok {
@@ -69,9 +58,6 @@ func TestIngestionTelemetryRecordsJobOutcomesEmbedDurationAndQueueDepth(t *testi
 	if outcomes["succeeded"] != 1 || outcomes["dead_letter"] != 1 || outcomes["retry_scheduled"] != 1 {
 		t.Fatalf("outcome counts = %#v", outcomes)
 	}
-	if histogramCount != 2 {
-		t.Fatalf("histogram count = %d, want 2", histogramCount)
-	}
 	if !gaugeSeen || gaugeValue != 7 {
 		t.Fatalf("gauge value = %d seen=%v", gaugeValue, gaugeSeen)
 	}
@@ -82,6 +68,5 @@ func TestRecordIngestionHelpersDoNotPanicAgainstGlobalTelemetry(t *testing.T) {
 	// (noop unless obs.Init was called); this only guards against panics/nil
 	// derefs in the wiring, mirroring how retention exercises its global var.
 	recordIngestionJobOutcome(context.Background(), ingestionJobStatusSucceeded)
-	recordIngestionEmbedDuration(context.Background(), 0.01, "success")
 	recordIngestionQueueDepth(context.Background(), 0)
 }

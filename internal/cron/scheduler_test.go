@@ -332,7 +332,6 @@ func TestReschedulesOnRecoverySeam(t *testing.T) {
 		KindReminder:       true,
 		KindAgentJob:       true,
 		KindBackupPostgres: true,
-		KindBackupNeo4j:    true,
 		KindSkillTTLSweep:  false,
 	}
 	s := NewScheduler(nil, nil, SchedulerConfig{

@@ -214,7 +214,6 @@ def wait_for_daemon(
         tail = log_path.read_text(encoding="utf-8", errors="replace")[-6000:]
         for name in (
             "POSTGRES_PASSWORD",
-            "NEO4J_PASSWORD",
             "AURA_OBJECTSTORE_SECRET_KEY",
             "OPENROUTER_API_KEY",
         ):

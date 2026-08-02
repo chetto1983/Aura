@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Four-plane production DR drill: Postgres, Neo4j offline dump/load, sidecars, Garage.
+# Three-plane production DR drill: Postgres, sidecars, Garage.
+#
+# The Neo4j offline dump/load plane went with the Neo4j service itself. Aura's graph
+# plane is ArcadeDB now and it has NO restore drill: memory lives in one database per
+# identity (internal/arcadedb/tenant.go) and nothing dumps them yet.
 set -euo pipefail
 export MSYS_NO_PATHCONV=1
 export MSYS2_ARG_CONV_EXCL='*'
@@ -13,7 +17,6 @@ PG_SERVICE="${PG_CONTAINER:-postgres}"
 SOURCE_DB="${POSTGRES_DB:-aura}"
 DB_USER="${POSTGRES_USER:-aura}"
 DB_PASS="${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}"
-NEO4J_PASS="${NEO4J_PASSWORD:?NEO4J_PASSWORD required}"
 CANDIDATE_COMMIT="$(git rev-parse HEAD)"
 
 case "$RUN_ID" in
@@ -83,7 +86,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "==> DR plane 1/4: Postgres dump -> isolated database"
+echo "==> DR plane 1/3: Postgres dump -> isolated database"
 FIXTURE_EPOCH="$(date +%s)"
 pg_sql "$SOURCE_DB" \
   "CREATE SCHEMA ${FIXTURE_SCHEMA}; CREATE TABLE ${FIXTURE_SCHEMA}.sentinel (id text PRIMARY KEY, hash text NOT NULL); INSERT INTO ${FIXTURE_SCHEMA}.sentinel VALUES ('${RUN_ID}', '${FIXTURE_HASH}');" \
@@ -119,11 +122,7 @@ path.write_text(json.dumps({
 }, indent=2) + "\n", encoding="utf-8")
 PY
 
-echo "==> DR plane 2/4: Neo4j Community offline dump -> disposable volume"
-NEO4J_PASSWORD="$NEO4J_PASS" AURA_DR_RUN_ID="$RUN_ID" \
-  bash scripts/neo4j_offline_drill.sh "$WORK_DIR/neo4j" "$WORK_DIR/neo4j.json"
-
-echo "==> DR plane 3/4: conversation sidecar archive -> disposable volume"
+echo "==> DR plane 2/3: conversation sidecar archive -> disposable volume"
 SIDECAR_SOURCE_VOLUME="$(
   "$DOCKER" compose config --format json | dr_compose_volume_name aura-home
 )"
@@ -182,15 +181,14 @@ path.write_text(json.dumps({
 }, indent=2) + "\n", encoding="utf-8")
 PY
 
-echo "==> DR plane 4/4: Garage authenticated export/delete/restore"
+echo "==> DR plane 3/3: Garage authenticated export/delete/restore"
 "$GO_BIN" run ./scripts/objectstore_drill.go \
   --prefix "dr/${RUN_ID}/" \
   --backup-dir "$WORK_DIR/garage" \
   --output "$WORK_DIR/garage.json"
 
 python3 - "$OUTPUT" "$RUN_ID" "$CANDIDATE_COMMIT" \
-  "$WORK_DIR/postgres.json" "$WORK_DIR/neo4j.json" \
-  "$WORK_DIR/sidecars.json" "$WORK_DIR/garage.json" <<'PY'
+  "$WORK_DIR/postgres.json" "$WORK_DIR/sidecars.json" "$WORK_DIR/garage.json" <<'PY'
 import datetime as dt
 import json
 import pathlib
@@ -200,7 +198,7 @@ output = pathlib.Path(sys.argv[1])
 run_id = sys.argv[2]
 candidate_commit = sys.argv[3]
 planes = [json.loads(pathlib.Path(path).read_text(encoding="utf-8")) for path in sys.argv[4:]]
-expected = {"postgres", "neo4j", "sidecars", "garage"}
+expected = {"postgres", "sidecars", "garage"}
 observed = {plane.get("plane") for plane in planes}
 if observed != expected:
     raise SystemExit(f"DR report planes {sorted(observed)} != {sorted(expected)}")
@@ -226,4 +224,4 @@ output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 print(json.dumps(report, indent=2))
 PY
 
-echo "ok: four-plane DR drill passed; report=$OUTPUT"
+echo "ok: three-plane DR drill passed; report=$OUTPUT"

@@ -81,7 +81,7 @@ func taskSchedule(ctx context.Context, cfg *config.Config, args []string) {
 	at := fs.String("at", "", "one-shot RFC-3339 instant, e.g. 2030-01-01T09:30:00Z")
 	every := fs.Int("every", 0, "recurring interval in minutes (minimum 5)")
 	maxSteps := fs.Int("max-steps", 0, "agent step budget (kind=agent_job)")
-	kind := fs.String("kind", "", "reminder|agent_job|backup_postgres|backup_neo4j")
+	kind := fs.String("kind", "", "reminder|agent_job|backup_postgres")
 	argsJSON := fs.String("args", "", "JSON payload, e.g. '{\"text\":\"...\"}'")
 	notify := fs.String("notify", "", "whatsapp|email|stdout|telegram")
 	tz := fs.String("tz", defaultSchedulerTZ(), "IANA timezone for a cron schedule")

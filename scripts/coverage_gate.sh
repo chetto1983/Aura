@@ -13,16 +13,20 @@
 #     other packages' tests, like sqlc is generated); its own low self-coverage
 #     dilutes the floor without measuring any owned runtime surface (T-04).
 #
-# Integration tiers REQUIRE the container stack + env (AURA_DB_URL, AURA_DB_MIGRATE_URL,
-# mcp-neo4j-cypher on PATH). Run after `make neo4j-migrate`, or in the CI knowledge
-# job that already has the stack. NO-SKIP-AS-GREEN: the tagged tests t.Fatal under $CI
-# when their env is unset, so a skipped tier cannot pass this gate falsely.
+# Integration tiers REQUIRE the container stack + env (AURA_DB_URL, AURA_DB_MIGRATE_URL).
+# Run after `make db-migrate memory-up`, or in the CI coverage job that has the stack.
+# NO-SKIP-AS-GREEN: the tagged tests t.Fatal under $CI when their env is unset, so a
+# skipped tier cannot pass this gate falsely.
+#
+# The tag set lost the graph tier when Aura's graph store (internal/knowledge) was
+# retired: no file carries that tag any more, so naming it would only suggest a tier
+# that measures something.
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
 MIN="${AURA_COVERAGE_MIN:-85}"
-TAGS="${AURA_COVERAGE_TAGS:-db_integration neo4j_integration}"
+TAGS="${AURA_COVERAGE_TAGS:-db_integration}"
 PROFILE="${AURA_COVERAGE_PROFILE:-cover_gate.out}"
 REPORT="${AURA_COVERAGE_REPORT:-artifacts/production-readiness/coverage-report.json}"
 

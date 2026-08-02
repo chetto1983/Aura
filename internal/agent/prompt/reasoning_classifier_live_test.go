@@ -16,8 +16,8 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent/prompt"
+	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/documents"
-	"github.com/chetto1983/aura/internal/knowledge"
 )
 
 func graniteURL() string {
@@ -55,7 +55,7 @@ func TestReasoningClassifierLive(t *testing.T) {
 	embedder := &documents.EmbeddingClient{
 		BaseURL:    graniteURL(),
 		Client:     &http.Client{Timeout: 30 * time.Second},
-		Dimensions: knowledge.DefaultEmbedDimensions,
+		Dimensions: config.DefaultEmbedDimensions,
 	}
 	defer embedder.Client.CloseIdleConnections() // goleak: drain keep-alive conns
 	c := prompt.NewReasoningClassifier(embedder)

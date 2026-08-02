@@ -144,8 +144,8 @@ cockpit (Phases 22-30) shipped 2026-06-29 · **v2.0.0** industrial hardening
 · `aura task {schedule|list|cancel|run_now|approve|runs|doctor}`
 · `aura skills {list|info|create|update|delete|always|snippet|audit}`
 · `aura mcp <sub>` · `aura memory <sub>` · `aura agent <sub>` · `aura swarm-demo`
-· `aura web {doctor|tool}` · `aura docs {ingest|search|status|list|bench}` · `aura documents backfill`
-· `aura db {migrate|ping|status|reset}` · `aura neo4j {migrate|ping|status|reset|cypher}`
+· `aura web {doctor|tool}` · `aura docs {ingest|search|status|list}`
+· `aura db {migrate|ping|status|reset}`
 · `aura objectstore <sub>` · `aura cache-stats --since=<dur>` · `aura version`
 
 `aura chat` subcommands: `list|new|resume|archive|unarchive|delete|rename|search`.

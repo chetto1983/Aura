@@ -10,7 +10,6 @@ import (
 
 	"github.com/chetto1983/aura/internal/adaptive"
 	"github.com/chetto1983/aura/internal/config"
-	"github.com/chetto1983/aura/internal/knowledge"
 	"github.com/google/uuid"
 )
 
@@ -18,7 +17,6 @@ func TestInstallAdaptiveBenchmarkFixturesBuildsIndependentAliasesAndCleans(
 	t *testing.T,
 ) {
 	t.Parallel()
-	graph := &adaptiveBenchmarkFixtureGraphFake{}
 	memory := &adaptiveBenchmarkFixtureMemoryFake{
 		nodes: make(map[string]string),
 	}
@@ -30,12 +28,6 @@ func TestInstallAdaptiveBenchmarkFixturesBuildsIndependentAliasesAndCleans(
 		ownerID,
 		runID,
 		adaptiveBenchmarkFixtureDeps{
-			openGraph: func(
-				context.Context,
-				*knowledge.Config,
-			) (adaptiveBenchmarkFixtureGraph, error) {
-				return graph, nil
-			},
 			openMemory: func(
 				context.Context,
 			) (adaptiveBenchmarkFixtureMemory, error) {
@@ -46,20 +38,8 @@ func TestInstallAdaptiveBenchmarkFixturesBuildsIndependentAliasesAndCleans(
 	if err != nil {
 		t.Fatalf("installAdaptiveBenchmarkFixtures: %v", err)
 	}
-	if len(fixtures.documentIDs) != len(adaptiveBenchmarkDocumentFixtures) ||
-		len(fixtures.chunkIDs) != len(adaptiveBenchmarkDocumentFixtures) ||
-		len(fixtures.memoryNodes) != len(adaptiveBenchmarkMemoryFixtures) {
+	if len(fixtures.memoryNodes) != len(adaptiveBenchmarkMemoryFixtures) {
 		t.Fatalf("fixture counts drifted: %#v", fixtures)
-	}
-	for index, fixture := range adaptiveBenchmarkDocumentFixtures {
-		id := uuid.MustParse(fixtures.chunkIDs[index])
-		alias, ok := fixtures.ResolveFixtureAlias(
-			adaptive.DomainKnowledge,
-			id,
-		)
-		if !ok || alias != fixture.alias {
-			t.Fatalf("document alias %s=%q,%t", id, alias, ok)
-		}
 	}
 	for _, fixture := range adaptiveBenchmarkMemoryFixtures {
 		id := memory.aliasIDs[fixture.alias]
@@ -84,22 +64,11 @@ func TestInstallAdaptiveBenchmarkFixturesBuildsIndependentAliasesAndCleans(
 	if err := fixtures.Cleanup(t.Context()); err != nil {
 		t.Fatalf("idempotent Cleanup: %v", err)
 	}
-	if !graph.closed ||
-		!memory.closed ||
-		graph.remaining != 0 ||
+	if !memory.closed ||
 		len(memory.nodes) != 0 ||
 		memory.calls != callsAfterCleanup ||
 		memory.forgetScopes != len(adaptiveBenchmarkMemoryFixtures)*2 {
-		t.Fatalf(
-			"cleanup graph=%#v memory=%#v",
-			graph,
-			memory,
-		)
-	}
-	for _, query := range graph.writeQueries {
-		if !strings.Contains(query, "DocumentCorpusRevision") {
-			t.Fatalf("benchmark document mutation omitted corpus revision:\n%s", query)
-		}
+		t.Fatalf("cleanup memory=%#v", memory)
 	}
 }
 
@@ -107,7 +76,6 @@ func TestInstallAdaptiveBenchmarkFixturesCleansPartialSeedFailure(
 	t *testing.T,
 ) {
 	t.Parallel()
-	graph := &adaptiveBenchmarkFixtureGraphFake{}
 	memory := &adaptiveBenchmarkFixtureMemoryFake{
 		nodes:     make(map[string]string),
 		failAddAt: 3,
@@ -118,12 +86,6 @@ func TestInstallAdaptiveBenchmarkFixturesCleansPartialSeedFailure(
 		uuid.Must(uuid.NewV7()),
 		uuid.Must(uuid.NewV7()),
 		adaptiveBenchmarkFixtureDeps{
-			openGraph: func(
-				context.Context,
-				*knowledge.Config,
-			) (adaptiveBenchmarkFixtureGraph, error) {
-				return graph, nil
-			},
 			openMemory: func(
 				context.Context,
 			) (adaptiveBenchmarkFixtureMemory, error) {
@@ -134,15 +96,8 @@ func TestInstallAdaptiveBenchmarkFixturesCleansPartialSeedFailure(
 	if fixtures != nil || err == nil {
 		t.Fatalf("fixtures=%#v error=%v", fixtures, err)
 	}
-	if !graph.closed ||
-		!memory.closed ||
-		graph.remaining != 0 ||
-		len(memory.nodes) != 0 {
-		t.Fatalf(
-			"partial fixtures survived graph=%#v memory=%#v",
-			graph,
-			memory,
-		)
+	if !memory.closed || len(memory.nodes) != 0 {
+		t.Fatalf("partial fixtures survived memory=%#v", memory)
 	}
 }
 
@@ -150,9 +105,9 @@ func TestAdaptiveBenchmarkFixtureManifestRejectsAmbiguity(t *testing.T) {
 	t.Parallel()
 	id := uuid.Must(uuid.NewV7())
 	valid := adaptiveBenchmarkFixtureAliasEntry{
-		domain: adaptive.DomainKnowledge,
+		domain: adaptive.DomainMemoryRecall,
 		id:     id,
-		alias:  "document:fixture",
+		alias:  "fact:fixture",
 	}
 	tests := []struct {
 		name    string
@@ -162,7 +117,7 @@ func TestAdaptiveBenchmarkFixtureManifestRejectsAmbiguity(t *testing.T) {
 		{
 			name: "invalid domain",
 			entries: []adaptiveBenchmarkFixtureAliasEntry{{
-				domain: adaptive.DomainReasoning,
+				domain: adaptive.DomainKnowledge,
 				id:     id,
 				alias:  "fixture",
 			}},
@@ -227,47 +182,6 @@ func TestAdaptiveBenchmarkChatEnvironmentCleanupFailurePreventsSuccess(
 			cleanupCalls,
 		)
 	}
-}
-
-type adaptiveBenchmarkFixtureGraphFake struct {
-	remaining    int64
-	closed       bool
-	writeQueries []string
-}
-
-func (graph *adaptiveBenchmarkFixtureGraphFake) Write(
-	_ context.Context,
-	query string,
-	params map[string]any,
-) ([]map[string]any, error) {
-	graph.writeQueries = append(graph.writeQueries, query)
-	switch {
-	case strings.Contains(query, "MERGE (c:Chunk"):
-		chunks, _ := params["chunks"].([]map[string]any)
-		graph.remaining += int64(len(chunks))
-	case strings.Contains(query, "MERGE (d:Document"):
-		graph.remaining++
-	case strings.Contains(query, "DETACH DELETE c"):
-		ids, _ := params["ids"].([]string)
-		graph.remaining -= int64(len(ids))
-	case strings.Contains(query, "DETACH DELETE d"):
-		ids, _ := params["ids"].([]string)
-		graph.remaining -= int64(len(ids))
-	}
-	return nil, nil
-}
-
-func (graph *adaptiveBenchmarkFixtureGraphFake) Read(
-	context.Context,
-	string,
-	map[string]any,
-) ([]map[string]any, error) {
-	return []map[string]any{{"remaining": graph.remaining}}, nil
-}
-
-func (graph *adaptiveBenchmarkFixtureGraphFake) Close() error {
-	graph.closed = true
-	return nil
 }
 
 type adaptiveBenchmarkFixtureMemoryFake struct {

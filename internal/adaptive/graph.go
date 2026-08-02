@@ -14,9 +14,9 @@ type GraphWriter interface {
 	Write(context.Context, string, map[string]any) ([]map[string]any, error)
 }
 
-// GraphStore projects the authoritative Postgres outbox into the same Neo4j
-// deployment used by agent-memory. It reuses :User as an ownership anchor but
-// deliberately uses private labels that agent-memory's MCP tools do not query.
+// GraphStore projects the authoritative Postgres outbox into ArcadeDB's shared
+// database. It anchors on :User and deliberately uses private labels that the
+// memory tools do not query, so the projection stays invisible to recall.
 type GraphStore struct {
 	writer GraphWriter
 }
@@ -26,7 +26,7 @@ func NewGraphStore(writer GraphWriter) *GraphStore {
 	return &GraphStore{writer: writer}
 }
 
-// Project idempotently writes one immutable outbox record to Neo4j.
+// Project idempotently writes one immutable outbox record to the graph.
 func (g *GraphStore) Project(ctx context.Context, record OutboxRecord) error {
 	if g == nil || g.writer == nil {
 		return errors.New("adaptive graph store requires a writer")
@@ -108,7 +108,7 @@ DETACH DELETE event, episode
 }
 
 // PurgeAdaptiveGraph adapts GraphStore to agui's deprovisioning port without coupling
-// that package to UUID parsing or Neo4j implementation details.
+// that package to UUID parsing or graph-store implementation details.
 func (g *GraphStore) PurgeAdaptiveGraph(ctx context.Context, identityID string) error {
 	ownerID, err := uuid.Parse(identityID)
 	if err != nil {

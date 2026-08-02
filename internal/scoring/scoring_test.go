@@ -22,7 +22,6 @@ func TestScoring(t *testing.T) {
 		}{
 			{"reminder = Safe", TaskArgs{Kind: "reminder", ScheduleKind: "oneoff"}, Safe},
 			{"backup_postgres = Safe", TaskArgs{Kind: "backup_postgres", ScheduleKind: "daily"}, Safe},
-			{"backup_neo4j = Safe", TaskArgs{Kind: "backup_neo4j", ScheduleKind: "daily"}, Safe},
 			{"agent_job = Normal", TaskArgs{Kind: "agent_job", ScheduleKind: "daily"}, Normal},
 			{"unknown kind = Normal", TaskArgs{Kind: "mystery", ScheduleKind: "daily"}, Normal},
 			{"agent_job destructive payload = Destructive", TaskArgs{Kind: "agent_job", ScheduleKind: "daily", Payload: []byte("please rm -rf /workspace")}, Destructive},
