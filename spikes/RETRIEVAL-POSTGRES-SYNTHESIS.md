@@ -149,15 +149,29 @@ può puntare a Garage).
   parte più graph-shaped: decisione separata.
 - **Garage → filesystem vs S3**: risolto come tiering (D6) — filesystem locale,
   Garage su Hetzner.
-- **Sandbox: agent-sandbox (D9)** — candidato per il tier Hetzner/MUSR, con **due
-  verifiche bloccanti** prima di committarci:
-  1. **Kubernetes**: agent-sandbox richiede k8s v1.26+. Adottarlo = aggiungere k8s.
-     Ha senso solo se Hetzner è già k8s (k3s ok) o per il multi-tenant. Per il
-     single-op l'attuale DockerBackend basta e non va rippato.
-  2. **Egress control**: il sandbox attuale ha egress control security-load-bearing
-     (storia bug WR-01/CAP_NET_ADMIN). agent-sandbox non lo documenta chiaramente —
-     va verificato che regga l'esecuzione di codice non fidato prima di fidarsene
-     come confine di sicurezza. Pro: E2B-compatibile, MCP-native, storage S3 (→Garage).
+- **Sandbox (D9) — VERIFICATO (2026-08), esito: NON adottare il repo linkato as-is.**
+  Esistono DUE progetti distinti:
+  - **`agent-sandbox/agent-sandbox`** (quello linkato): ha l'MCP (`/mcp`, SSE) +
+    E2B-compat + 3 endpoint REST (create/get/delete). **Ma il suo `install.yaml`
+    NON contiene alcuna NetworkPolicy/egress/iptables/sidecar** → pod con outbound
+    ILLIMITATO, incluso il metadata server 169.254.169.254 (furto credenziali/SSRF
+    su cloud). Runtime di isolamento **non dichiarato**. → **regressione di
+    sicurezza** vs il DockerBackend attuale (che ha egress control load-bearing,
+    storia WR-01/CAP_NET_ADMIN). "Ha un MCP → niente da inventare" è mezza verità:
+    il plumbing MCP c'è, ma il **confine di sicurezza (egress) è proprio ciò che
+    manca** — la parte difficile la scrivi comunque tu.
+  - **`kubernetes-sigs/agent-sandbox`** (Kubernetes SIG, 3.4k star, Apache-2.0):
+    Sandbox CRD che delega a **runtime sicuri gVisor/Kata via RuntimeClass**
+    (isolamento kernel+network), template a isolamento strict di default. **Ma
+    nessun MCP** — SDK Go/Python.
+  - **Due verifiche restano comunque bloccanti**: (1) richiede Kubernetes (k3s ok)
+    → aggiungerlo ha senso solo se Hetzner è già k8s o per il multi-tenant; per il
+    single-op il DockerBackend attuale basta e non va rippato. (2) qualunque
+    sostituto deve **almeno pareggiare** l'egress control attuale, non regredire.
+  - **Strade pulite**: SIG project (sicurezza vera) + facade MCP/E2B sottile;
+    oppure il repo linkato **hardened** (RuntimeClass gVisor/Kata + NetworkPolicy
+    deny-egress + blocco metadata). Rif. egress-fatto-bene: `mattolson/agent-sandbox`
+    (sidecar proxy + iptables).
 
 ## 8. Non ancora provato / prossimi passi
 
