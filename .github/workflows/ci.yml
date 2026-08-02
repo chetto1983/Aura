@@ -783,6 +783,91 @@ jobs:
         if: always()
         run: docker compose down
 
+  reasoning-tier-test:
+    name: Reasoning tier accuracy (reasoning_live, real embedder)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # The reasoning tier is the ONE adaptive thing Aura kept after the learning plane was
+    # deleted, and it decides how much reasoning budget every turn gets. Its accuracy gate
+    # existed and ran NOWHERE: `grep reasoning_live .github Makefile scripts` was empty. A
+    # gate nobody executes cannot fail, and this one had also SATURATED — 24/24 against
+    # floors of 90/92 tuned for an older embedder, so a real regression passed unnoticed.
+    #
+    # Now: 45 held-out prompts including English (every anchor and seed is Italian),
+    # document/compute traffic, multi-clause turns and near-boundary pairs; floors set one
+    # case above the measured 95%.
+    env:
+      CI: "true"
+      # Arms requireEmbedder's t.Fatal path: under $CI an unreachable sidecar is a
+      # FAILURE, never a skip. Otherwise this job would go green having classified nothing.
+      AURA_EMBED_BASE_URL: http://127.0.0.1:8081
+      # CPU image and no GPU offload: the compose default is server-cuda with -ngl 99,
+      # which cannot start on a GitHub runner. Same model, same weights, same vectors.
+      AURA_EMBED_IMAGE: ghcr.io/ggml-org/llama.cpp:server
+      AURA_EMBED_NGL: "0"
+      POSTGRES_PASSWORD: ci-test-password
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Cache the embedding model
+        # 318 MiB. Keyed on the URL so a model change is a cache miss by construction
+        # rather than by someone remembering to bump a version.
+        id: model-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/aura-embed
+          key: embed-model-ggml-org-embeddinggemma-300M-Q8_0-v1
+
+      - name: Fetch the embedding model
+        if: steps.model-cache.outputs.cache-hit != 'true'
+        # ggml-org's build and NOT unsloth's: unsloth's Q8_0 omits EmbeddingGemma's two
+        # sentence-transformers dense projections, so llama.cpp returns backbone-only
+        # vectors at the correct width with no error at all. The tensor check below is the
+        # same one scripts/install.sh runs, and it is a TENSOR check rather than a checksum
+        # because size and checksum both pass on the broken file.
+        run: |
+          mkdir -p ~/.cache/aura-embed
+          url="https://huggingface.co/ggml-org/embeddinggemma-300M-GGUF/resolve/main/embeddinggemma-300M-Q8_0.gguf"
+          curl -fL --retry 3 --retry-delay 2 "$url" -o ~/.cache/aura-embed/model.gguf
+          [ "$(head -c 4 ~/.cache/aura-embed/model.gguf)" = "GGUF" ] || { echo "not a GGUF" >&2; exit 1; }
+          dense="$(head -c 16000000 ~/.cache/aura-embed/model.gguf | grep -aoE 'dense_[23][.]weight' | sort -u | wc -l)"
+          [ "$dense" -ge 2 ] || { echo "model has no dense projections; it would embed backbone-only" >&2; exit 1; }
+
+      - name: Bring up the embedding sidecar
+        run: |
+          docker compose create aura-llama-embed
+          cid="$(docker compose ps -aq aura-llama-embed | head -1)"
+          docker cp ~/.cache/aura-embed/model.gguf "$cid:/root/.cache/llama.cpp/embeddinggemma-300M-Q8_0.gguf"
+          docker compose up -d aura-llama-embed
+
+      - name: Wait for the sidecar
+        run: |
+          ok=""
+          for i in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:8081/health >/dev/null 2>&1; then ok=1; break; fi
+            echo "embed sidecar not ready yet ($i)"
+            sleep 5
+          done
+          if [ -z "$ok" ]; then
+            echo "embedding sidecar never became ready" >&2
+            docker logs aura-llama-embed --tail 80 || true
+            exit 1
+          fi
+
+      - name: Reasoning tier accuracy gate
+        run: go test -tags reasoning_live -count=1 -v -run TestReasoningClassifierLive ./internal/agent/prompt/
+
+      - name: Tear down
+        if: always()
+        run: docker compose down
+
   multimodal-integration-test:
     name: Multimodal sidecars (multimodal_integration tier, live STT/TTS)
     runs-on: ubuntu-latest

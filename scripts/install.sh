@@ -295,7 +295,7 @@ verify_embed_model() {
     echo "FAIL: embedding model is ${got} bytes, upstream advertised ${want}" >&2
     exit 1
   fi
-  dense="$(head -c 16000000 "$file" | LC_ALL=C tr -c '[:print:]' '\n' | grep -c '^dense_[23]\.weight$' || true)"
+  dense="$(head -c 16000000 "$file" | grep -aoE 'dense_[23][.]weight' | sort -u | wc -l)"
   if [ "$dense" -lt 2 ]; then
     echo "FAIL: embedding model has no sentence-transformers dense projections." >&2
     echo "      It would return backbone-only vectors, silently and at the right width." >&2

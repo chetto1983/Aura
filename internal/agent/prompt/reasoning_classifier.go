@@ -63,6 +63,18 @@ var reasoningTierSeeds = map[ReasoningTier][]string{
 		"ottimizza questo algoritmo che e troppo lento",
 		"analizza questo stack trace e trova la causa dell'errore",
 		"crea una pipeline di build e test per il progetto",
+		// Computing over a real file. Added 2026-08-02 after the held-out corpus caught
+		// the blind spot: every seed above is software engineering, so a question that
+		// aggregates a spreadsheet read as a lookup and landed on `low` or `none` —
+		// summing a year of invoice totals scored `low`, and cross-checking a quote
+		// against its invoice scored `none`. That is the WORST direction to be wrong
+		// in, because under-reasoning an aggregate returns a
+		// confident wrong number instead of a slow right one, and it is now Aura's
+		// dominant traffic: document_search names the file, document_open hands it over,
+		// and the answer comes from computing on it.
+		"somma tutti gli importi del foglio di calcolo e dimmi il totale",
+		"confronta due documenti e dimmi dove non tornano",
+		"quante righe del file rispettano questa condizione",
 	},
 }
 
