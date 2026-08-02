@@ -196,6 +196,25 @@ type rankedFact struct {
 // EmbedMissingFacts backfills vectors for facts written before an embedder was
 // configured, or while it was down. It returns how many it embedded.
 func (c *Client) EmbedMissingFacts(ctx context.Context, batch int) (int, error) {
+	return c.embedFacts(ctx, batch, "embedding IS NULL AND statement IS NOT NULL")
+}
+
+// ReEmbedAllFacts recomputes EVERY fact's vector, including the ones that already have
+// one. It exists because a vector is only meaningful against the model that produced it:
+// swap the embedder and the stored corpus is silently in the wrong geometry, still
+// answering, just answering worse. That is not hypothetical — on 2026-08-02 the appliance
+// was found running a GGUF missing EmbeddingGemma's two dense projections, so every vector
+// written until then came from the backbone alone.
+//
+// Deliberately NOT idempotent-by-skipping: re-running it is the point.
+func (c *Client) ReEmbedAllFacts(ctx context.Context, batch int) (int, error) {
+	return c.embedFacts(ctx, batch, "statement IS NOT NULL")
+}
+
+// embedFacts is the shared body. `where` decides which facts are in scope; everything
+// after it — batching, the document-side task prefix, the width check — is identical,
+// because a backfill and a re-embed differ only in what they select.
+func (c *Client) embedFacts(ctx context.Context, batch int, where string) (int, error) {
 	if c == nil || c.embedder == nil {
 		return 0, fmt.Errorf("arcadedb: no embedder configured")
 	}
@@ -204,9 +223,9 @@ func (c *Client) EmbedMissingFacts(ctx context.Context, batch int) (int, error) 
 	}
 	rows, err := c.Query(ctx,
 		"SELECT @rid AS rid, statement FROM "+factEdgeType+
-			" WHERE embedding IS NULL AND statement IS NOT NULL LIMIT "+strconv.Itoa(batch), nil)
+			" WHERE "+where+" LIMIT "+strconv.Itoa(batch), nil)
 	if err != nil {
-		return 0, fmt.Errorf("arcadedb: find unembedded facts: %w", err)
+		return 0, fmt.Errorf("arcadedb: select facts to embed: %w", err)
 	}
 	if len(rows) == 0 {
 		return 0, nil

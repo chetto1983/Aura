@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/mcp"
@@ -243,6 +244,42 @@ func TestMemoryRememberCarriesTheSupersedesFlag(t *testing.T) {
 	}
 	if args["supersedes"] != true {
 		t.Fatal("--supersedes did not reach the call")
+	}
+}
+
+// TestMemoryRememberAlwaysCarriesASourceRun is a regression guard on a verb that could
+// never succeed. memory_upsert_fact REQUIRES source_run_id — its own schema says so,
+// because that id is what makes a run's writes findable and removable — and this verb
+// sent none, so every `aura memory remember` died at schema validation before reaching
+// the database. Found on 2026-08-02 while rescuing 24 facts stranded in the shared
+// database; the rescue could not run until this was fixed.
+func TestMemoryRememberAlwaysCarriesASourceRun(t *testing.T) {
+	t.Parallel()
+
+	_, args, err := memoryRememberArgs([]string{"Mario", "KNOWS", "Luigi", "Mario knows Luigi."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, _ := args["source_run_id"].(string)
+	if run == "" {
+		t.Fatal("remember sent no source_run_id; the tool rejects the call")
+	}
+	// Grouped by DAY so `aura memory forget --run cli-2026-08-02` can reverse a session
+	// of manual entry. Per-invocation would be precise and impossible to type back.
+	if want := cliRunID(time.Now().UTC()); run != want {
+		t.Errorf("default run = %q, want %q", run, want)
+	}
+
+	_, args, err = memoryRememberArgs(
+		[]string{"--run", "import-2026", "Mario", "KNOWS", "Luigi", "Mario knows Luigi."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if args["source_run_id"] != "import-2026" {
+		t.Errorf("--run = %v, want it to override the daily default", args["source_run_id"])
+	}
+	if args["subject"] != "Mario" {
+		t.Errorf("--run leaked into the positional args: subject = %v", args["subject"])
 	}
 }
 

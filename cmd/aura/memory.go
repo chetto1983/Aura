@@ -37,7 +37,7 @@ const memoryUsage = "usage: aura memory {search <query> [--as-of <RFC3339>]|" +
 	"remember <subject> <predicate> <object> <statement> [--supersedes]|" +
 	"merge <duplicate> <survivor>|" +
 	"forget [--entity <name>] [--subject <s> --predicate <p> --object <o>] [--run <id>] [--apply]|" +
-	"schema}"
+	"reembed [--all]|schema}"
 
 func runMemory(args []string) {
 	ctx, err := withOperatorIdentity(cliInvocationContext)
@@ -131,6 +131,11 @@ func memoryVerbToTool(verb string, args []string) (string, map[string]any, error
 		return memoryMergeArgs(args)
 	case "forget":
 		return memoryForgetArgs(args)
+	case "reembed":
+		// Hidden from the model on purpose (mcptools.memoryHiddenFromModel): rewriting
+		// every vector is an operator's answer to an embedder change, not a move an
+		// agent makes mid-turn. The CLI calls the raw wire tool, so it reaches it anyway.
+		return "memory_reembed", map[string]any{"all": takeBoolFlag(&args, "--all")}, nil
 	case "schema":
 		return "graph_schema", map[string]any{}, nil
 	default:
@@ -143,18 +148,36 @@ func memoryVerbToTool(verb string, args []string) (string, map[string]any, error
 // indexed and searched, and a restated triple retrieves badly.
 func memoryRememberArgs(args []string) (string, map[string]any, error) {
 	supersedes := takeBoolFlag(&args, "--supersedes")
+	run := takeFlag(&args, "--run")
 	if len(args) < 4 {
 		return "", nil, fmt.Errorf(
-			"memory remember requires <subject> <predicate> <object> <statement> [--supersedes]")
+			"memory remember requires <subject> <predicate> <object> <statement> [--supersedes] [--run <id>]")
+	}
+	if run == "" {
+		run = cliRunID(time.Now().UTC())
 	}
 	return "memory_upsert_fact", map[string]any{
-		"subject":    args[0],
-		"predicate":  args[1],
-		"object":     args[2],
-		"statement":  strings.Join(args[3:], " "),
-		"supersedes": supersedes,
+		"subject":       args[0],
+		"predicate":     args[1],
+		"object":        args[2],
+		"statement":     strings.Join(args[3:], " "),
+		"supersedes":    supersedes,
+		"source_run_id": run,
 	}, nil
 }
+
+// cliRunID groups a day's hand-typed facts under one run.
+//
+// source_run_id is REQUIRED by memory_upsert_fact — the tool's own reason is that
+// "everything a run produced can be found and removed" — and this verb was not sending
+// one, so every `aura memory remember` failed schema validation before it reached the
+// database. The operator's only write was unusable.
+//
+// A day is the granularity that makes the undo usable: `aura memory forget --run
+// cli-2026-08-02` reverses a session of manual entry, and an operator can type that id
+// from memory. Per-invocation would be more precise and completely undiscoverable.
+// --run overrides it when a caller wants its own grouping (a rescue, an import).
+func cliRunID(now time.Time) string { return "cli-" + now.Format("2006-01-02") }
 
 func memoryMergeArgs(args []string) (string, map[string]any, error) {
 	if len(args) < 2 {

@@ -165,6 +165,7 @@ func newServer(tenants *tenants, now clock) *mcp.Server {
 	addMemoryEntitiesTool(server, tenants)
 	addMemoryDigestTool(server, tenants)
 	addMemoryMergeTool(server, tenants)
+	addMemoryReembedTool(server, tenants)
 	// Documents are NOT here. They live as bytes in Garage with a catalog row in
 	// Postgres, found by document_search and handed over whole by document_open —
 	// measured, chunk retrieval answered every aggregate at 0% for any k. Mounting

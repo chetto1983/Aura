@@ -40,18 +40,16 @@ func (bridgePolicy) defaultDeferred() bool {
 // was wrong — the fact writer deliberately does not mint entities
 // (_link_fact_to_subject_entity), so with no add_entity nothing ever creates one. Hiding
 // them did not save a manifest; it removed the graph from the graph memory.
+// memoryHiddenFromModel used to list six tools — store_message, get_conversation,
+// list_sessions, get_context, get_facts, store_profile — none of which the ArcadeDB memory
+// server implements. A deny list denying tools that cannot be called is a deny list that
+// denies nothing, and it read like protection while providing none.
+//
+// What actually needs hiding is maintenance: re-embedding is an operator decision about
+// infrastructure — it rewrites every vector in the corpus and its cost scales with the
+// corpus, not with the turn. An agent reaching for it mid-conversation is never right.
 var memoryHiddenFromModel = map[string]struct{}{
-	// Short-term surface: Aura's own host persists every turn to Postgres. A second
-	// copy through the sidecar is a second write and a second bill.
-	"memory_store_message":    {},
-	"memory_get_conversation": {},
-	"memory_list_sessions":    {},
-	// Aura assembles its own context window; memory_get_context would compete with it.
-	"memory_get_context": {},
-	// memory_search already covers fact lookup for the model.
-	"memory_get_facts": {},
-	// Onboarding-owned atomic write, driven by Aura's own flow, never by hand.
-	"memory_store_profile": {},
+	"memory_reembed": {},
 }
 
 func (p bridgePolicy) modelFacing(tool string) bool {

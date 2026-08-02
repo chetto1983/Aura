@@ -12,7 +12,10 @@ import (
 
 func TestMemoryBridgePolicy_AliasKeepsIsolationAndHiddenSurface(t *testing.T) {
 	srv := &fakeServer{defs: []mcp.ToolDef{
-		{Name: "memory_store_message"},
+		// The hidden one. It used to be memory_store_message, a tool the ArcadeDB memory
+		// server never implemented — so the filter was proven against a name that could
+		// not arrive. memory_reembed can and does.
+		{Name: "memory_reembed"},
 		{
 			Name:        "memory_search",
 			InputSchema: json.RawMessage(`{"type":"object","properties":{"query":{"type":"string"},"user_identifier":{"type":"string"}}}`),

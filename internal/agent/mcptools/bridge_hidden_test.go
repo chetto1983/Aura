@@ -16,21 +16,19 @@ import (
 func TestBridgeHidesNonModelFacingMemoryTools(t *testing.T) {
 	t.Parallel()
 
+	// The REAL surface of cmd/arcadedb-mcp. This fixture used to enumerate the previous
+	// sidecar's tools — memory_add_fact, memory_get_entity, memory_update,
+	// memory_create_relationship, memory_store_message and friends — none of which the
+	// ArcadeDB server implements. A hiding test whose hidden names can never arrive
+	// proves the filter compiles, not that it filters.
 	all := []string{
 		// model-facing: one verb per intention
-		"memory_search", "memory_add_fact", "memory_add_preference",
-		"memory_get_entity", "memory_update", "memory_forget",
-		// model-facing since 2026-07-30: the only two tools that create a NODE and an
-		// EDGE. They were hidden, and the cost was not a slimmer manifest (both are
-		// Deferred, so they cost nothing until tool_search returns them) — it was that
-		// the long-term graph could not be built. Measured live: 22 of 26 facts with no
-		// ABOUT_SUBJECT, and an agent asked to register a client wrote three dangling
-		// facts and reported them as linked.
-		"memory_add_entity", "memory_create_relationship",
-		// hidden: still served, still callable by Aura, absent from the manifest
-		"memory_store_message", "memory_get_context", "memory_get_conversation",
-		"memory_list_sessions", "memory_store_profile",
-		"memory_get_facts",
+		"memory_search", "memory_facts_about", "memory_entities", "memory_digest",
+		"memory_upsert_fact", "memory_merge_entities", "memory_forget", "graph_schema",
+		// hidden: served, callable by Aura's own CLI, absent from the model's manifest.
+		// Re-embedding rewrites every vector in the corpus; its cost scales with the
+		// corpus, not the turn, and it is an operator's answer to an embedder change.
+		"memory_reembed",
 	}
 	defs := make([]mcp.ToolDef, 0, len(all))
 	for _, n := range all {
@@ -47,23 +45,16 @@ func TestBridgeHidesNonModelFacingMemoryTools(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		"memory__memory_search", "memory__memory_add_fact", "memory__memory_add_preference",
-		"memory__memory_get_entity", "memory__memory_update", "memory__memory_forget",
-		"memory__memory_add_entity", "memory__memory_create_relationship",
+		"memory__memory_search", "memory__memory_facts_about", "memory__memory_entities",
+		"memory__memory_digest", "memory__memory_upsert_fact",
+		"memory__memory_merge_entities", "memory__memory_forget", "memory__graph_schema",
 	} {
 		if _, ok := got[want]; !ok {
 			t.Errorf("%s must reach the model", want)
 		}
 	}
-	for _, unwanted := range []string{
-		"memory__memory_store_message", "memory__memory_get_context",
-		"memory__memory_get_conversation", "memory__memory_list_sessions",
-		"memory__memory_store_profile",
-		"memory__memory_get_facts",
-	} {
-		if _, ok := got[unwanted]; ok {
-			t.Errorf("%s must NOT reach the model", unwanted)
-		}
+	if _, ok := got["memory__memory_reembed"]; ok {
+		t.Error("memory__memory_reembed must NOT reach the model")
 	}
 	if len(got) != 8 {
 		t.Errorf("bridged %d memory tools, want 8", len(got))
