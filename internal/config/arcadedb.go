@@ -16,7 +16,7 @@ import "os"
 //
 // The type lives here rather than in internal/arcadedb because config is the
 // thin root every subcommand reads: importing that package would drag the
-// document, rerank and object-store stacks behind it into `aura db migrate`.
+// document and object-store stacks behind it into `aura db migrate`.
 type ArcadeDBConfig struct {
 	BaseURL  string // ARCADEDB_URL
 	Database string // ARCADEDB_DATABASE — the SHARED database; per-identity memory lives in mem_<uuid>

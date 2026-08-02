@@ -1,7 +1,0 @@
-[
-  {"op": "call", "tool": "get_calendar_events", "args": {"timeZone": "Europe/Rome", "startDate": "2026-06-16", "endDate": "2026-07-16", "accountId": "google-personal", "count": 20}},
-  {"op": "call", "tool": "create_event", "args": {"subject": "AURA-E2E-20260616 Aura test event", "start": "2026-06-17T15:00:00", "end": "2026-06-17T15:30:00", "accountId": "google-personal", "calendarId": "dvdmarchetto@gmail.com", "timeZone": "Europe/Rome", "location": "Caraglio", "body": "Created by Aura calendar-mcp E2E spike"}},
-  {"op": "call", "tool": "get_calendar_events", "args": {"timeZone": "Europe/Rome", "startDate": "2026-06-17", "endDate": "2026-06-18", "accountId": "google-personal", "calendarId": "dvdmarchetto@gmail.com"}},
-  {"op": "call", "tool": "send_email", "args": {"to": ["dvdmarchetto@gmail.com"], "subject": "AURA-E2E-20260616 Aura email test", "body": "Aura calendar-mcp consolidation email E2E test. tag AURA-E2E-20260616", "bodyFormat": "text", "accountId": "google-personal"}},
-  {"op": "call", "tool": "search_emails", "args": {"query": "AURA-E2E-20260616", "accountId": "google-personal"}}
-]

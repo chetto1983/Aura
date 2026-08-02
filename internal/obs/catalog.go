@@ -90,8 +90,6 @@ const (
 	RetentionDiskUtilizationID   InstrumentID = "retention_disk_utilization"
 	IngestionJobsID              InstrumentID = "ingestion_jobs"
 	IngestionQueueDepthID        InstrumentID = "ingestion_queue_depth"
-	RerankCallsID                InstrumentID = "rerank_calls"
-	RerankDurationID             InstrumentID = "rerank_duration"
 )
 
 // Descriptor defines one stable OTel instrument and its Prometheus projection.
@@ -148,8 +146,6 @@ var descriptors = []Descriptor{
 	gauge(RetentionDiskUtilizationID, "aura.retention.disk.utilization", "aura_retention_disk_utilization_ratio", []AttributeKey{AttributeState}, "Current bounded retention disk utilization ratio.", "1"),
 	count(IngestionJobsID, "aura.ingestion.job", "aura_ingestion_job_total", []AttributeKey{AttributeOutcome}, "Total durable ingestion job terminal outcomes."),
 	gauge(IngestionQueueDepthID, "aura.ingestion.queue.depth", "aura_ingestion_queue_depth_items", nil, "Current durable queued ingestion job backlog.", "items"),
-	count(RerankCallsID, "aura.rerank.call", "aura_rerank_call_total", []AttributeKey{AttributeOutcome, AttributeErrorClass}, "Total rerank calls, including explicit fail-soft degradation."),
-	histogram(RerankDurationID, "aura.rerank.call.duration", "aura_rerank_call_duration_seconds", []AttributeKey{AttributeOutcome}, "Rerank call duration, including cache hits and degraded calls.", fastDurationBuckets),
 }
 
 func count(id InstrumentID, name, prom string, attrs []AttributeKey, description string) Descriptor {

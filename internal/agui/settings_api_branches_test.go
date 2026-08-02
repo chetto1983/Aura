@@ -64,7 +64,7 @@ func TestValidateSettingValueBoolAndDefault(t *testing.T) {
 
 func TestHandlePutSettingBranches(t *testing.T) {
 	t.Run("503 unwired", func(t *testing.T) {
-		rec, r := putReq(t, "AURA_RERANK_MODEL", "x", "op-1")
+		rec, r := putReq(t, "AURA_TTS_MODEL", "x", "op-1")
 		(&Server{}).handlePutSetting(rec, r)
 		if rec.Code != http.StatusServiceUnavailable {
 			t.Fatalf("status = %d, want 503", rec.Code)
@@ -73,8 +73,8 @@ func TestHandlePutSettingBranches(t *testing.T) {
 
 	t.Run("invalid JSON body 400", func(t *testing.T) {
 		s := &Server{settings: &fakeSettingsStore{}}
-		r := httptest.NewRequest(http.MethodPut, "/api/settings/AURA_RERANK_MODEL", strings.NewReader(`{bad`))
-		r.SetPathValue("key", "AURA_RERANK_MODEL")
+		r := httptest.NewRequest(http.MethodPut, "/api/settings/AURA_TTS_MODEL", strings.NewReader(`{bad`))
+		r.SetPathValue("key", "AURA_TTS_MODEL")
 		r = withPrincipal(r, "op-1")
 		rec := httptest.NewRecorder()
 		s.handlePutSetting(rec, r)
@@ -85,7 +85,7 @@ func TestHandlePutSettingBranches(t *testing.T) {
 
 	t.Run("502 on store error", func(t *testing.T) {
 		s := &Server{settings: errSettingsStore{err: errors.New("db down")}}
-		rec, r := putReq(t, "AURA_RERANK_MODEL", "cohere/rerank-4-fast", "op-1")
+		rec, r := putReq(t, "AURA_TTS_MODEL", "openai/tts-1", "op-1")
 		s.handlePutSetting(rec, r)
 		if rec.Code != http.StatusBadGateway {
 			t.Fatalf("status = %d, want 502 on upsert failure", rec.Code)

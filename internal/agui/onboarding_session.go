@@ -217,13 +217,11 @@ type onboardingService struct {
 	objectStore ObjectStoreProvisioner
 	filesystem  FilesystemProvisioner
 
-	// musrIsolation couples provisioning to the documents-plane isolation flag
-	// (AURA_MUSR_ISOLATION, CR-01/VERIF-5). The saga ONLY ever creates ADDITIONAL,
-	// non-local identities (the operator/local is bootstrap-seeded, migration 0004); with
-	// isolation off the six scoped Cypher queries fall back to the unscoped variants, so a
-	// 2nd principal would read the operator's documents. When false, Provision refuses
-	// (errIsolationDisabled) BEFORE any cross-store write — adding a 2nd principal can never
-	// arm the leak.
+	// musrIsolation is the deployment's declaration that it is fit to host more than one
+	// identity (AURA_MUSR_ISOLATION). The saga ONLY ever creates ADDITIONAL, non-local
+	// identities (the operator/local is bootstrap-seeded, migration 0004). When false,
+	// Provision refuses (errIsolationDisabled) BEFORE any cross-store write, because the
+	// planes listed there are shared deployment-wide.
 	musrIsolation bool
 }
 
@@ -250,9 +248,9 @@ type OnboardingDeps struct {
 	Journal     SagaJournal
 	ObjectStore ObjectStoreProvisioner
 	Filesystem  FilesystemProvisioner
-	// MUSRIsolation is the documents-plane isolation flag (AURA_MUSR_ISOLATION, CR-01).
-	// Provision REFUSES while it is false so the leak can never be armed by adding a 2nd
-	// principal. The composition root wires it from config.MUSRIsolation.
+	// MUSRIsolation declares the deployment fit to host more than one identity
+	// (AURA_MUSR_ISOLATION). Provision REFUSES while it is false. The composition root
+	// wires it from config.MUSRIsolation.
 	MUSRIsolation bool
 }
 

@@ -120,12 +120,15 @@ type TelegramMint interface {
 // seed-form-only deployment). The handler renders it as a sanitized 502.
 var errProvisioningUnavailable = errors.New("onboarding: provisioning backend not configured")
 
-// errIsolationDisabled is returned when provisioning is attempted while the documents-plane
-// isolation flag (AURA_MUSR_ISOLATION) is off (CR-01/VERIF-5). The onboarding saga only ever
-// creates ADDITIONAL, non-local identities; with isolation off the documents plane is
-// unscoped, so a 2nd principal would read the operator's documents. Refusing here makes
-// arming that leak (adding a 2nd principal with the flag off) impossible.
-var errIsolationDisabled = errors.New("onboarding: enable AURA_MUSR_ISOLATION before provisioning additional users (documents plane is unscoped while off)")
+// errIsolationDisabled is returned when provisioning is attempted while the deployment has
+// not been declared fit to host more than one identity (AURA_MUSR_ISOLATION off, the
+// default). The saga only ever creates ADDITIONAL, non-local identities, and a second
+// principal SHARES several planes with the operator: the skills library, aura.settings
+// (which holds the deployment's model credentials), the MCP catalog, the governance
+// scheduler board, and — under any non-strict AURA_PROFILE — the host filesystem and shell,
+// because the sandbox router only routes under a strict profile. Refusing here keeps the
+// deployment single-principal, which is the only posture those shared planes are safe in.
+var errIsolationDisabled = errors.New("onboarding: this deployment is configured for a single identity; set AURA_MUSR_ISOLATION=true only once skills, settings, MCP and the filesystem tools are scoped per identity (docs/runbooks/musr-rollout.md)")
 
 // Provision runs the ordered cross-store saga at the wizard's final "Create" confirm
 // (ONBD-01a/01b / RESEARCH §Hard Problem 1). It is the ONLY place the cross-store writes
@@ -149,12 +152,11 @@ func (s *onboardingService) Provision(ctx context.Context, requesterIdentityID, 
 	creator := entry.creatorIdentityID
 
 	// ---- 0. PRE-VALIDATE (no writes; fail fast) ----
-	// CR-01/VERIF-5: refuse to arm the documents-plane leak. The saga only ever creates an
+	// Refuse to widen a single-principal deployment. The saga only ever creates an
 	// ADDITIONAL, non-local identity (the operator/local is bootstrap-seeded, migration
-	// 0004), so requiring isolation on is correct — with the flag off the six scoped Cypher
-	// queries fall back to the unscoped variants and the new principal would read the
-	// operator's documents. Placed before the first cross-store write (and before the Authula
-	// lookup) so adding a 2nd principal can never arm the leak.
+	// 0004), and the planes a second principal would share with the operator are listed on
+	// errIsolationDisabled. Placed before the first cross-store write (and before the
+	// Authula lookup) so a refused attempt leaves ZERO rows behind.
 	if !s.musrIsolation {
 		return OnboardingProvisionResponse{}, errIsolationDisabled
 	}

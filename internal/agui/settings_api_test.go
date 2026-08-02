@@ -53,7 +53,7 @@ func TestHandleListSettingsRedactsSecrets(t *testing.T) {
 	s := &Server{settings: &fakeSettingsStore{rows: []sqlc.AuraSettings{
 		{Key: "OPENROUTER_API_KEY", Value: "sk-super-secret", IsSecret: true},
 		{Key: "TELEGRAM_BOT_TOKEN", Value: "123456:telegram-secret", IsSecret: true},
-		{Key: "AURA_RERANK_MODEL", Value: "cohere/rerank-4-fast"},
+		{Key: "AURA_TTS_MODEL", Value: "openai/tts-1"},
 	}}}
 	rr := httptest.NewRecorder()
 	s.handleListSettings(rr, httptest.NewRequest(http.MethodGet, "/api/settings", nil))
@@ -74,8 +74,8 @@ func TestHandleListSettingsRedactsSecrets(t *testing.T) {
 	if !telegramSecret.Secret || !telegramSecret.HasValue || !telegramSecret.Overridden {
 		t.Errorf("telegram token item = %+v, want secret+has_value+overridden", telegramSecret)
 	}
-	plain := settingItemByKey(t, rr.Body.Bytes(), "AURA_RERANK_MODEL")
-	if plain.Value != "cohere/rerank-4-fast" {
+	plain := settingItemByKey(t, rr.Body.Bytes(), "AURA_TTS_MODEL")
+	if plain.Value != "openai/tts-1" {
 		t.Errorf("non-secret value = %q, want the stored value", plain.Value)
 	}
 }
@@ -115,7 +115,7 @@ func TestHandlePutSetting(t *testing.T) {
 
 	t.Run("no principal 401", func(t *testing.T) {
 		s := &Server{settings: &fakeSettingsStore{}}
-		rr, r := putReq(t, "AURA_RERANK_MODEL", "cohere/rerank-4-fast", "")
+		rr, r := putReq(t, "AURA_TTS_MODEL", "openai/tts-1", "")
 		s.handlePutSetting(rr, r)
 		if rr.Code != http.StatusUnauthorized {
 			t.Fatalf("status = %d, want 401 without a principal", rr.Code)

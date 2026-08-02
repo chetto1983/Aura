@@ -265,35 +265,13 @@ func buildOnboardingService(ctx context.Context, chat *chatEnv, authulaProvider 
 	// Live resolver (ONBD Telegram step): a token saved mid-session via Settings yields a
 	// working deep-link without a daemon restart. Falls back to deps.BotUsername when empty.
 	deps.BotUsernameResolver = newBotUsernameResolver(chat.pool)
-	// CR-01/VERIF-5: couple provisioning to the documents-plane isolation flag. When off, the
-	// saga REFUSES to create a 2nd identity (agui errIsolationDisabled) so the leak can never
-	// be armed by adding a principal; here we also emit a LOUD boot WARN if the daemon already
-	// has >1 identity while the flag is off (the documents plane is unscoped right now).
+	// The saga refuses to provision a 2nd identity unless the operator has declared this
+	// deployment fit to host one. A boot WARN used to sit here telling operators to run
+	// `aura documents backfill` — a command that has never existed — about a
+	// documents-plane leak that no longer exists; it was deleted rather than corrected,
+	// since the refusal is the enforcing control and advisory only ever restated it.
 	deps.MUSRIsolation = chat.cfg.MUSRIsolation
-	warnIfMultiUserWithoutIsolation(ctx, chat)
 	return agui.NewOnboardingService(deps)
-}
-
-// warnIfMultiUserWithoutIsolation emits a LOUD boot WARN when more than one live identity
-// exists while AURA_MUSR_ISOLATION is off: the documents plane is then UNSCOPED (a 2nd
-// identity can read the operator's documents — CR-01). It is best-effort (a ListIdentities
-// error is logged, never fatal) and advisory only — the provision-time refusal
-// (errIsolationDisabled) + the server_production config-validate gate are the enforcing
-// controls; this WARN surfaces an already-multi-user deployment that must run the D-13
-// backfill+flip rollout.
-func warnIfMultiUserWithoutIsolation(ctx context.Context, chat *chatEnv) {
-	if chat == nil || chat.cfg == nil || chat.identity == nil || chat.cfg.MUSRIsolation {
-		return
-	}
-	ids, err := chat.identity.ListIdentities(ctx)
-	if err != nil {
-		slog.Warn("aura serve: could not count identities for the isolation boot check", "error", err)
-		return
-	}
-	if len(ids) > 1 {
-		slog.Warn("aura serve: MULTI-USER WITHOUT ISOLATION — >1 identity exists and AURA_MUSR_ISOLATION is off; the documents plane is UNSCOPED (a 2nd identity can read the operator's documents). Run `aura documents backfill` then set AURA_MUSR_ISOLATION=true — see docs/runbooks/musr-rollout.md",
-			"identity_count", len(ids))
-	}
 }
 
 type onboardingStatusAdapter struct {

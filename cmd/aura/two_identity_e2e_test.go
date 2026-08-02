@@ -1,9 +1,8 @@
 //go:build db_integration && garage_integration && authula_integration && musr_e2e
 
 // Phase 36 D-29 / MUSR-01 two-identity cross-deny acceptance E2E — the phase keystone.
-// It runs with AURA_MUSR_ISOLATION=on (the post-flip enforcement state) against the FULL
-// live stack (Postgres + RLS, Garage Admin API v2 + S3, embedded Authula) and asserts
-// that identity B is denied on EVERY plane while A keeps its data:
+// It runs against the FULL live stack (Postgres + RLS, Garage Admin API v2 + S3, embedded
+// Authula) and asserts that identity B is denied on EVERY plane while A keeps its data:
 //
 //	Postgres conversations — B gets 404 on an HTTP read of A's thread; the owner-scoped
 //	  store returns not-found (404 source) / rows==0 (403 source); the RLS kernel backstop
@@ -44,10 +43,6 @@ import (
 const musrIdentityHeader = "X-Musr-Test-Identity"
 
 func TestTwoIdentityCrossDeny(t *testing.T) {
-	// Guard the flag first: the acceptance gate runs under the post-flip enforcement state.
-	if strings.ToLower(musrEnvOrSkip(t, "AURA_MUSR_ISOLATION")) != "true" {
-		t.Fatal("TestTwoIdentityCrossDeny must run with AURA_MUSR_ISOLATION=true (post-flip enforcement)")
-	}
 	pool := musrMigratedPool(t)
 	idStore := identity.New(pool)
 	convStore := conversations.New(pool, conversations.Config{RunDir: t.TempDir(), TurnCapBytes: 65536})
@@ -293,9 +288,6 @@ func TestTwoIdentityCrossDeny(t *testing.T) {
 // internal/webauth/authula_multiuser_test.go; the authula_integration tag here gates the
 // run to the Authula-configured stack (AURA_AUTHULA_SECRET + the 0019 schema present).
 func TestProvisionLoginIsolatedRun(t *testing.T) {
-	if strings.ToLower(musrEnvOrSkip(t, "AURA_MUSR_ISOLATION")) != "true" {
-		t.Fatal("TestProvisionLoginIsolatedRun must run with AURA_MUSR_ISOLATION=true")
-	}
 	// Assert the Authula-configured stack is present (the authula_integration precondition).
 	musrEnvOrSkip(t, "AURA_AUTHULA_SECRET")
 

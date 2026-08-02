@@ -357,8 +357,8 @@ func validateOnboardingProvision(req OnboardingProvisionRequest) error {
 
 // writeOnboardingError maps a service error onto the right HTTP status with a sanitized
 // body (never echoing a secret-bearing internal error verbatim): an unknown/expired
-// session → 404, a no-escalation rejection → 400, a duplicate identity/email OR
-// isolation-disabled (AURA_MUSR_ISOLATION off, CR-01) → 409, a missing-capability re-check
+// session → 404, a no-escalation rejection → 400, a duplicate identity/email OR a
+// single-identity deployment (AURA_MUSR_ISOLATION off) → 409, a missing-capability re-check
 // → 403, anything else → a sanitized 502 (a backend/saga failure is not the client's fault).
 // The typed sentinels are declared in onboarding_service.go alongside the service that
 // returns them.
@@ -373,7 +373,7 @@ func (s *Server) writeOnboardingError(w http.ResponseWriter, err error) {
 	case errors.Is(err, errOnboardingForbidden):
 		http.Error(w, "forbidden", http.StatusForbidden)
 	case errors.Is(err, errIsolationDisabled):
-		// CR-01: provisioning is refused until isolation is enabled. The message is a fixed,
+		// Provisioning is refused on a single-identity deployment. The message is a fixed,
 		// secret-free operator guidance string (admins hold identity.create), so surfacing it
 		// is safe and actionable — 409 Conflict (the action conflicts with current config).
 		http.Error(w, sanitizeErr(err), http.StatusConflict)

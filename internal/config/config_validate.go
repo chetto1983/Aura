@@ -99,7 +99,6 @@ func (c *Config) ValidateProfile(p RuntimeProfile) []Violation {
 	vs = append(vs, c.gateDestructiveShell(p)...)
 	vs = append(vs, c.gateReasoningTraceFull(p)...)
 	vs = append(vs, c.gateWebAuth(p)...)
-	vs = append(vs, c.gateMUSRIsolation(p)...)
 	vs = append(vs, c.gateMCPLegacyEnv(p)...)
 	vs = append(vs, c.gateObjectStoreEndpoint(p)...)
 	vs = append(vs, c.gateRetention()...)
@@ -267,24 +266,6 @@ func (c *Config) gateWebAuth(p RuntimeProfile) []Violation {
 	}
 	if strings.TrimSpace(c.AuthulaSecret) == "" {
 		return []Violation{{Knob: "AURA_AUTHULA_SECRET", Sev: Fatal, Msg: "web-auth secret is required under " + string(p)}}
-	}
-	return nil
-}
-
-// gateMUSRIsolation requires multi-user identity isolation (AURA_MUSR_ISOLATION) to be
-// enabled under server_production ONLY (CR-01/VERIF-5, the hardened↔prod differentiator —
-// mirrors gateReplication). The flag is the deployment switch for fail-closed identity
-// scoping of the documents plane: while it is off the onboarding saga refuses to create a
-// 2nd identity (agui.errIsolationDisabled), because a 2nd identity would read every other
-// identity's documents. single_user_hardened (the single-node appliance tier)
-// and the lenient tiers do not require it — they are single-principal. It names the knob
-// and never echoes a VALUE.
-func (c *Config) gateMUSRIsolation(p RuntimeProfile) []Violation {
-	if p != ProfileServerProduction {
-		return nil
-	}
-	if !c.MUSRIsolation {
-		return []Violation{{Knob: "AURA_MUSR_ISOLATION", Sev: Fatal, Msg: "multi-user identity isolation must be enabled (true) under server_production — a 2nd identity reads other identities' documents when off"}}
 	}
 	return nil
 }

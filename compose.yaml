@@ -92,17 +92,6 @@ services:
       AURA_RUN_DIR_WARN_THRESHOLD_BYTES: ${AURA_RUN_DIR_WARN_THRESHOLD_BYTES:-1073741824}
       AURA_EMBED_BASE_URL: http://aura-llama-embed:8081
       AURA_EMBED_DIMENSIONS: ${AURA_EMBED_DIMENSIONS:-768}
-      # RET-01/02: two-stage retrieval rerank stage. Points at the GPU aura-rerank
-      # sidecar; client fails soft to RRF/vector order when absent (no hard dep).
-      # Hard-coded to the compose-DNS sidecar (like AURA_EMBED_BASE_URL above): the
-      # host-oriented .env value (127.0.0.1:8085, for the host-run `aura` CLI) must
-      # NOT leak into the container, where loopback does not reach the sidecar.
-      AURA_RERANK_BASE_URL: http://aura-rerank:8085
-      # Retrieval floor: hits the reranker scores below this are dropped, so
-      # document_search can answer "nothing here" instead of the least-bad chunk.
-      # Cohere's rerank guidance is that this number is domain-specific and must be
-      # read off a measured distribution, never assumed — the value ships as a knob.
-      AURA_RERANK_RELEVANCE_FLOOR: ${AURA_RERANK_RELEVANCE_FLOOR:-0.01}
       AURA_OTEL_EXPORTER: ${AURA_OTEL_EXPORTER:-none}
       AURA_OTEL_ENDPOINT: ${AURA_OTEL_ENDPOINT:-localhost:4317}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
@@ -112,10 +101,10 @@ services:
       AURA_LLM_MAX_TOKENS: ${AURA_LLM_MAX_TOKENS:-4096}
       AURA_LLM_ADAPTIVE_REASONING: ${AURA_LLM_ADAPTIVE_REASONING:-true}
       AURA_SHOW_REASONING: ${AURA_SHOW_REASONING:-true}
-      # Phase 36 D-13: documents-plane identity isolation flip (was unplumbed to the
-      # container, so the flag was unreachable in the deployed binary). Default off
-      # (unscoped fallback); set AURA_MUSR_ISOLATION=true in .env AFTER
-      # `aura documents backfill` to enforce per-identity scoping (docs/runbooks/musr-rollout.md).
+      # Declares this deployment fit to host more than one identity: while it is off the
+      # onboarding saga refuses to provision a second one. Default off, because the skills
+      # library, aura.settings, the MCP catalog and (under a non-strict AURA_PROFILE) the
+      # host filesystem tools are shared deployment-wide (docs/runbooks/musr-rollout.md).
       AURA_MUSR_ISOLATION: ${AURA_MUSR_ISOLATION:-false}
       AURA_LLM_TOTAL_TIMEOUT_SEC: ${AURA_LLM_TOTAL_TIMEOUT_SEC:-120}
       AURA_LLM_CONNECT_TIMEOUT_SEC: ${AURA_LLM_CONNECT_TIMEOUT_SEC:-10}
@@ -803,52 +792,6 @@ services:
       retries: 12
       start_period: 60s                        # first-boot HF model download
 
-  # aura-rerank — Qwen3-Reranker-0.6B Q4_K_M cross-encoder (llama.cpp GPU). The
-  # optional rerank stage for retrieval (RET-01 / spike 070). AURA_RERANK_BASE_URL=
-  # http://aura-rerank:8085, POST /v1/rerank → {results:[{index,relevance_score}]}.
-  # GPU-mandatory (CPU rerank is ~23s — dead); when this sidecar/GPU is absent the
-  # rerank client fails soft to the RRF/vector order, so no service depends_on it
-  # and Aura boots without a GPU.
-  aura-rerank:
-    image: ${AURA_RERANK_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda}
-    container_name: aura-rerank
-    restart: unless-stopped
-    environment:
-      LLAMA_ARG_HOST: 0.0.0.0
-    command:
-      - --hf-repo
-      - ${AURA_RERANK_HF_REPO:-Voodisss/Qwen3-Reranker-0.6B-GGUF-llama_cpp}  # spike-locked: community GGUFs miss cls.output.weight
-      - --hf-file
-      - ${AURA_RERANK_HF_FILE:-Qwen3-Reranker-0.6B-Q4_K_M.gguf}              # Q4_K_M only (Q3_K_M slower, IQ3 broken)
-      - --port
-      - "8085"
-      - --reranking                            # enable the /v1/rerank endpoint
-      - --pooling
-      - rank                                   # cross-encoder rank pooling
-      - -ngl
-      - "${AURA_RERANK_NGL:-99}"               # offload all layers to GPU (CPU rerank ~23s — dead, GPU mandatory)
-      - -c
-      - "2048"                                 # per-pair context (docs truncated client-side ~480 runes)
-      - -t
-      - "4"                                    # mini-PC CPU budget cap (feedback_minipc_cpu_budget)
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    ports:
-      - "127.0.0.1:${AURA_RERANK_PORT:-8085}:8085"
-    volumes:
-      - aura-rerank:/root/.cache/llama.cpp
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8085/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 180s                       # first-boot HF GGUF download (~1GB, generous)
-
   # markitdown — document → markdown converter. POST /convert (tiered ≤5MB sync /
   # 5-50MB async / >50MB refuse on the Aura side). DOCUMENTS_BASE_URL points here.
   # Built in-repo (docker/markitdown): a thin FastAPI /convert over the OFFICIAL
@@ -1107,7 +1050,6 @@ volumes:
   aura-whatsapp-session:
   caddy-data:
   aura-ocr-vl:
-  aura-rerank:
   aura-pim-data:
   aura-prometheus:
   aura-tempo:

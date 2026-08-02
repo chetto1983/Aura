@@ -16,7 +16,7 @@ func TestCLIMutationCoverageHasCompleteIdempotencyMetadata(t *testing.T) {
 	}
 	for _, command := range []string{
 		"chat new", "chat resume", "chat archive", "chat delete", "chat rename",
-		"documents backfill", "task schedule", "task cancel", "task run_now", "task approve",
+		"task schedule", "task cancel", "task run_now", "task approve",
 		"identity grant", "identity revoke", "mcp install", "mcp remove", "skills create", "skills delete",
 		"eval adaptive seal-admission",
 	} {

@@ -14,7 +14,7 @@ func TestLoadFrozenAdaptiveBenchmarkDatasetMatchesSpikeSource(t *testing.T) {
 	t.Parallel()
 
 	source, err := os.ReadFile(
-		"../../.planning/spikes/106-adaptive-aura-portability/dataset.json",
+		"testdata/adaptive_benchmark_dataset.json",
 	)
 	if err != nil {
 		t.Fatalf("read spike dataset: %v", err)
@@ -39,7 +39,7 @@ func TestLoadAdaptiveBenchmarkDatasetFreezesFiftyTwoSyntheticScenarios(t *testin
 	t.Parallel()
 
 	payload, err := os.ReadFile(
-		"../../.planning/spikes/106-adaptive-aura-portability/dataset.json",
+		"testdata/adaptive_benchmark_dataset.json",
 	)
 	if err != nil {
 		t.Fatalf("read frozen dataset: %v", err)
@@ -99,7 +99,7 @@ func TestAdaptiveBenchmarkScenarioOrderUsesRegisteredSHASchedule(t *testing.T) {
 	t.Parallel()
 
 	payload, err := os.ReadFile(
-		"../../.planning/spikes/106-adaptive-aura-portability/dataset.json",
+		"testdata/adaptive_benchmark_dataset.json",
 	)
 	if err != nil {
 		t.Fatalf("read frozen dataset: %v", err)
@@ -129,7 +129,7 @@ func TestLoadAdaptiveBenchmarkDatasetRejectsNoncanonicalJSON(t *testing.T) {
 	t.Parallel()
 
 	payload, err := os.ReadFile(
-		"../../.planning/spikes/106-adaptive-aura-portability/dataset.json",
+		"testdata/adaptive_benchmark_dataset.json",
 	)
 	if err != nil {
 		t.Fatalf("read frozen dataset: %v", err)
@@ -187,7 +187,7 @@ func TestLoadAdaptiveBenchmarkDatasetRejectsRegisteredCorpusMutation(
 	t.Parallel()
 
 	payload, err := os.ReadFile(
-		"../../.planning/spikes/106-adaptive-aura-portability/dataset.json",
+		"testdata/adaptive_benchmark_dataset.json",
 	)
 	if err != nil {
 		t.Fatalf("read frozen dataset: %v", err)

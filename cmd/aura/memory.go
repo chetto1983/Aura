@@ -53,8 +53,8 @@ func runMemory(args []string) {
 
 // withOperatorIdentity resolves who this CLI invocation writes and reads as, and seeds it
 // on the context so every downstream call is scoped to one answer. `aura memory` and
-// `aura docs` both take it: memory to own what it writes, docs because with
-// AURA_MUSR_ISOLATION on an empty principal owns nothing and retrieval fails closed.
+// `aura docs` both take it: memory to own what it writes, docs because the digest query
+// is identity-scoped in SQL — an empty principal owns nothing and retrieval fails closed.
 //
 // It costs a Postgres round-trip on a command that otherwise only needs the sidecar. That
 // is the honest price: the identity lives in Postgres, and the alternative — the hardcoded

@@ -341,9 +341,9 @@ jobs:
     timeout-minutes: 40  # includes the three-plane DR drill
     # Phase 36 D-29 acceptance gate. Brings up the FULL live stack (Postgres +
     # Garage with the Admin API v2 published to loopback + the embedded Authula provider)
-    # and runs the two-identity cross-deny E2E with AURA_MUSR_ISOLATION=on (post-flip
-    # enforcement): identity B is denied on every plane (Postgres/Garage/jobs), a
-    # B-created chat is owned by B and runs, provision→login→isolated-run + break-glass work.
+    # and runs the two-identity cross-deny E2E: identity B is denied on every plane
+    # (Postgres/Garage/jobs), a B-created chat is owned by B and runs,
+    # provision→login→isolated-run + break-glass work.
     # This reuses the SAME build-tag docker-compose live-stack harness every other tier uses
     # (D-29) — no throwaway per-test container framework. NO-SKIP-AS-GREEN: CI=true + the
     # exported env arm envOrSkip's
@@ -362,9 +362,6 @@ jobs:
       AURA_DB_MIGRATE_URL: postgres://aura_migrate:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
       AURA_EMBED_BASE_URL: http://127.0.0.1:8081
       AURA_EMBED_DIMENSIONS: "768"
-      # The post-flip enforcement state the acceptance gate runs under (D-13): scoped
-      # fail-closed retrieval is active, so B's document_search is empty and A sees own.
-      AURA_MUSR_ISOLATION: "true"
       # Embedded Authula provider (no separate container — it runs in-process against the
       # 0019 Postgres schema). The E2E's authula_integration leg provisions A + B and
       # exercises login; the secret + seeded operator satisfy its envOrSkip.
@@ -636,14 +633,6 @@ jobs:
       # bounded generously here — it reports without flaking CI. The strict 30ms
       # default still gates on the operator's known hardware.
       AURA_SMOKE_P95_MS: "2000"
-      # RET-05: the rerank live tier reads this endpoint. The aura-rerank cross-encoder
-      # is GPU-MANDATORY (spike 070: CPU is ~70-1000x too slow), and the standard GitHub
-      # runner has no GPU, so the rerank_integration tier DEGRADES to a compile floor
-      # here (see the "Compile the rerank live tier" step + the CI tier matrix in
-      # docs/document-ingestion.md). Its test code t.Fatals under $CI when this env is
-      # unset (no-skip-as-green), so a GPU runner that DOES bring the sidecar up cannot
-      # silently skip it; on that runner it runs live against this endpoint.
-      AURA_RERANK_BASE_URL: http://127.0.0.1:8085
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -667,20 +656,6 @@ jobs:
 
       - name: Bring up stack + migrate (postgres + ArcadeDB + embed sidecar)
         run: make db-migrate memory-up
-
-      - name: Compile the rerank live tier (no-rot floor; GPU run is operator/GPU-host)
-        # RET-05 (spike 070): the cross-encoder reranker is GPU-MANDATORY, so this tier
-        # does NOT execute on the GPU-less standard runner. It ALWAYS compiles here (the
-        # cheap always-green floor proving the tagged files never rot), and its test code
-        # t.Fatals under $CI when AURA_RERANK_BASE_URL (exported above) is unset, so a
-        # GPU runner with the sidecar up runs it live and can never silently skip it.
-        #
-        # The document_ingest_live, graphrag_live and retrieval_eval tiers were removed
-        # with the retired graph document plane: they measured chunk extraction, graph-expanded
-        # retrieval and vector-vs-rerank nDCG, none of which exist now that
-        # document_search ranks a Postgres digest and document_open hands over the file.
-        # Vetting a tag no file carries is a green step that proves nothing.
-        run: go vet -tags rerank_integration ./internal/rerank/
 
       - name: Coverage gate (owned surface >= 85%, CLAUDE.md floor)
         # Reuses the stack + composed DSNs already wired in this job. NO-SKIP-AS-GREEN:

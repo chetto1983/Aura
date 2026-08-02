@@ -333,8 +333,6 @@ AURA_EMBED_MODEL_PATH=/root/.cache/llama.cpp/embeddinggemma-300M-Q8_0.gguf
 AURA_EMBED_POOLING=last
 AURA_EMBED_NGL=99
 AURA_EMBED_DIMENSIONS=768
-AURA_RERANK_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda
-AURA_RERANK_NGL=99
 
 AURA_OBJECTSTORE_ACCESS_KEY=${objectstore_access_key}
 AURA_OBJECTSTORE_SECRET_KEY=${objectstore_secret_key}

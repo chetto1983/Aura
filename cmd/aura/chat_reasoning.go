@@ -2,7 +2,7 @@
 // out of chat_render.go (refactor-on-touch, ≤600 LOC). It replaces the original
 // append-only dim stream (amendment #57e), which grew unbounded and never cleared,
 // with a rune-capped in-place rolling line that mirrors the Telegram status pane's
-// window for cross-surface parity (.planning/spikes/cot-reasoning-fifo.md).
+// window for cross-surface parity.
 package main
 
 import (

@@ -73,7 +73,7 @@ These recur throughout the code and explain most of the non-obvious decisions:
 │                       mcp/manager (recipes, trust, audit)                 │
 ├──────────────────────────────────────────────────────────────────────────┤
 │ Intelligence subst.   llm (+openai_compat) · semindex (embed-index core)  │
-│                       · adaptive · reasoningtrace · multimodal · rerank   │
+│                       · adaptive · reasoningtrace · multimodal            │
 ├──────────────────────────────────────────────────────────────────────────┤
 │ Capabilities          web · skills (+skilladapters) · cron (+handlers)    │
 │                       · onboarding · documents · assets · settings ·      │
@@ -270,10 +270,6 @@ PIM sidecar — its send/search email tools subsume mail-mcp.
   target recorded in `reasoning_classifier.go` is ~10 ms CPU at 90% accuracy over a
   60-prompt held-out set. Its curated seeds are the complete serving baseline.
 - **`multimodal`** — the sidecar clients for vision/STT/TTS.
-- **`rerank`** — a llama.cpp `/v1/rerank` cross-encoder client with fail-soft degradation.
-  It has **no caller**: its only consumer was the two-stage passage-retrieval pipeline, and
-  passages went away when document retrieval became "hand the agent the file". The package,
-  the `AURA_RERANK_*` knobs and the `aura-rerank` Compose service all still exist.
 - **`scoring`** — pure Risk-Based governance: maps scheduler tasks, skill mutations, and
   gateway classifications to a `Safe|Normal|Risky|Destructive` tier.
 

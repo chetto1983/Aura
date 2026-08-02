@@ -6,9 +6,10 @@ import (
 	"testing"
 )
 
-// onboarding_provision_isolation_test.go locks CR-01/VERIF-5: the provisioning saga REFUSES
-// to create an additional identity while AURA_MUSR_ISOLATION is off — arming the
-// documents-plane leak (a 2nd principal reading the operator's documents) is impossible. The
+// onboarding_provision_isolation_test.go locks the single-principal refusal: the saga
+// REFUSES to create an additional identity while AURA_MUSR_ISOLATION is off, so a
+// deployment whose skills library, settings, MCP catalog and (under a non-strict profile)
+// host filesystem are shared can never acquire a second principal to share them WITH. The
 // saga only ever creates ADDITIONAL, non-local identities (the operator/local is
 // bootstrap-seeded, migration 0004), so requiring the flag on is correct.
 

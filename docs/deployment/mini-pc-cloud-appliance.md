@@ -20,8 +20,8 @@ Read it — it is short, and it is the authority. This page is the procedure aro
 │  ALWAYS-ON APPLIANCE           │        │  LOCAL-INFERENCE / DEV         │
 │                                │        │                                │
 │  postgres · arcadedb           │        │  the same stack, plus the GPU  │
-│  arcadedb-mcp · aura           │        │  sidecars: rerank · ocr-vl ·   │
-│  aura-llama-embed (CPU)        │        │  stt · tts                     │
+│  arcadedb-mcp · aura           │        │  sidecars: ocr-vl · stt · tts  │
+│  aura-llama-embed (CPU)        │        │                                │
 │  garage · whatsapp · pim       │        │                                │
 │  searxng · markitdown · caddy  │        │                                │
 │                                │        │                                │
@@ -143,8 +143,8 @@ AURA_EMBED_NGL=0
 AURA_EMBED_DIMENSIONS=768
 ```
 
-Vision, STT, TTS and rerank are already pointed at OpenRouter by
-`compose.minipc.yaml`, with their four GPU containers **deleted** rather than
+Vision, STT and TTS are already pointed at OpenRouter by
+`compose.minipc.yaml`, with their three GPU containers **deleted** rather than
 stopped — a declared-but-never-started service is a trap, because a plain
 `docker compose up -d` pulls it, and here that means a 5 GB CUDA image over WiFi
 for a container that will not run.

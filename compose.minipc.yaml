@@ -18,18 +18,17 @@
 #   - embedding LOCALE anche qui. Misurato: 21-44 ms in locale contro 3,9-43,3 s per
 #     chiamata via OpenRouter, moltiplicato per le 27 ancore che il classificatore
 #     embedda a ogni turno. Il cloud è per i modelli grossi, non per questo.
-#   - rerank, STT, TTS e OCR/vision vanno in cloud e i quattro container spariscono:
-#     sono i soli che chiedono una GPU seria, e su questa macchina non girerebbero.
+#   - STT, TTS e OCR/vision vanno in cloud e i tre container spariscono: sono i soli
+#     che chiedono una GPU seria, e su questa macchina non girerebbero.
 #   - ArcadeDB tiene il suo heap dal base (ARCADEDB_OPTS_MEMORY in .env): è una
 #     variabile, non una riga di override, quindi qui non c'è niente da riscrivere.
 services:
-  # I quattro servizi che sul mini PC vivono in cloud. Cancellati, non spenti: un
+  # I tre servizi che sul mini PC vivono in cloud. Cancellati, non spenti: un
   # servizio dichiarato e mai avviato è una trappola: `docker compose up -d` liscio lo
   # tira su, e su questa macchina significa scaricare un'immagine CUDA da 5 GB in WiFi
   # per un container che poi non parte.
   aura-stt: !reset null
   aura-tts: !reset null
-  aura-rerank: !reset null
   # aura-ocr-vl non serve resettarlo: è già dietro `profiles: [ocr]` nel base.
 
   docker-socket-proxy:
@@ -61,8 +60,6 @@ services:
     environment:
       # Cablati nel base sui sidecar locali, quindi qui vanno riscritti per intero e
       # non basta una variabile.
-      AURA_RERANK_BASE_URL: ${AURA_RERANK_BASE_URL:-https://openrouter.ai/api}
-      AURA_RERANK_MODEL: ${AURA_RERANK_MODEL:-cohere/rerank-4-pro}
       MULTIMODAL_BASE_URL: ${MULTIMODAL_BASE_URL:-https://openrouter.ai/api/v1}
       MULTIMODAL_MODEL: ${MULTIMODAL_MODEL:-google/gemini-3.5-flash-lite}
       MULTIMODAL_FALLBACK_MODEL: ${MULTIMODAL_FALLBACK_MODEL:-minimax/minimax-m3}

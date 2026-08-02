@@ -20,8 +20,6 @@ export type SettingsKey =
   | 'AURA_EMBED_MODEL'
   | 'AURA_EMBED_BASE_URL'
   | 'AURA_EMBED_DIMENSIONS'
-  | 'AURA_RERANK_MODEL'
-  | 'AURA_RERANK_BASE_URL'
   | 'AURA_TTS_MODEL'
   | 'AURA_STT_CLOUD_MODEL'
   | 'AURA_VISION_CLOUD';
@@ -90,8 +88,6 @@ export const BACKEND_SETTINGS: readonly SettingDef[] = [
   { key: 'AURA_EMBED_BASE_URL', kind: 'string', labelKey: 'settings.fields.embedBaseUrl' },
   { key: 'AURA_EMBED_MODEL', kind: 'string', labelKey: 'settings.fields.embedModel' },
   { key: 'AURA_EMBED_DIMENSIONS', kind: 'int', labelKey: 'settings.fields.embedDimensions' },
-  { key: 'AURA_RERANK_BASE_URL', kind: 'string', labelKey: 'settings.fields.rerankBaseUrl' },
-  { key: 'AURA_RERANK_MODEL', kind: 'string', labelKey: 'settings.fields.rerankModel' },
   { key: 'AURA_STT_CLOUD_MODEL', kind: 'string', labelKey: 'settings.fields.sttCloudModel' },
   { key: 'AURA_TTS_MODEL', kind: 'string', labelKey: 'settings.fields.ttsModel' },
   { key: 'AURA_VISION_CLOUD', kind: 'bool', labelKey: 'settings.fields.visionCloud' },

@@ -71,17 +71,16 @@ type cliReplayEnvelope struct {
 var cliInvocationContext = context.Background()
 
 var cliMutationCommands = map[string]cliMutationMeta{
-	"chat archive":       cliMutationMetaFor("chat_archive"),
-	"chat delete":        cliMutationMetaFor("chat_delete"),
-	"chat new":           cliMutationMetaFor("chat_new"),
-	"chat rename":        cliMutationMetaFor("chat_rename"),
-	"chat resume":        cliMutationMetaFor("chat_resume"),
-	"chat unarchive":     cliMutationMetaFor("chat_unarchive"),
-	"config set":         cliMutationMetaFor("config_set"),
-	"db migrate":         cliMigrationMetaFor("db_migrate"),
-	"db reset":           cliResetMetaFor("db_reset"),
-	"docs ingest":        cliMutationMetaFor("docs_ingest"),
-	"documents backfill": cliMutationMetaFor("documents_backfill"),
+	"chat archive":   cliMutationMetaFor("chat_archive"),
+	"chat delete":    cliMutationMetaFor("chat_delete"),
+	"chat new":       cliMutationMetaFor("chat_new"),
+	"chat rename":    cliMutationMetaFor("chat_rename"),
+	"chat resume":    cliMutationMetaFor("chat_resume"),
+	"chat unarchive": cliMutationMetaFor("chat_unarchive"),
+	"config set":     cliMutationMetaFor("config_set"),
+	"db migrate":     cliMigrationMetaFor("db_migrate"),
+	"db reset":       cliResetMetaFor("db_reset"),
+	"docs ingest":    cliMutationMetaFor("docs_ingest"),
 	"eval adaptive seal-admission": cliExpiredRecoveryMetaFor(
 		"eval_adaptive_seal_admission",
 	),

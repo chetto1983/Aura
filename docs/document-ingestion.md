@@ -113,10 +113,6 @@ for a 29 MB manual with 616 distinct parameters. Handing over the file is not a
 degradation of that design; it is the answer to the question the design could not
 reach.
 
-The cross-encoder client (`internal/rerank`) and the optional `aura-rerank` GPU
-sidecar still exist in the tree and in `compose.yaml`, but **nothing calls them** —
-their only consumer was that pipeline.
-
 ## Troubleshooting
 
 Catalog unreachable:

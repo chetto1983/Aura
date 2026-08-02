@@ -154,9 +154,9 @@ func toolTestContext(t *testing.T) context.Context {
 // TestDocumentSearchThreadsOwnerIdentity locks ME-01, carried over from the
 // retrieval-shaped tool: an empty CLI/no-principal ctx maps to the seeded `local`
 // UUID (…001) via ownerFromContext — so the operator's own local-owned documents
-// stay reachable with AURA_MUSR_ISOLATION on — and an authenticated web principal
-// is threaded verbatim. The library is identity-scoped in SQL, so getting this
-// wrong now shows another identity's files rather than none.
+// stay reachable — and an authenticated web principal is threaded verbatim. The
+// library is identity-scoped in SQL, so getting this wrong now shows another
+// identity's files rather than none.
 func TestDocumentSearchThreadsOwnerIdentity(t *testing.T) {
 	t.Run("empty principal resolves to local UUID", func(t *testing.T) {
 		library := &fakeLibrary{}

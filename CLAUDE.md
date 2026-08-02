@@ -48,6 +48,13 @@ Ogni slice attraversa 3 gate (formalizzati nel PRD §Slice Q&A discipline). Mapp
 
 Installazione: `.claude/` con 67 commands + 33 agents + 9 hooks attivi (13 script in `.claude/hooks/`, 9 wired — vedi `.claude/settings.json`). Versione: 1.1.0.
 
+> **`.planning/` NON ESISTE in questo momento** — è stata cancellata alla chiusura della
+> milestone v2.0.0 e viene **rigenerata** dai comandi GSD (`/gsd-map-codebase`,
+> `/gsd-ingest-docs`, `/gsd-graphify`) all'apertura della prossima. Ogni riferimento qui
+> sotto a `.planning/...` descrive la struttura che quei comandi ricreano, non un percorso
+> leggibile adesso. Non è un albero rotto: è un albero non ancora ricostruito, e la storia
+> resta in git.
+
 > **Slice → Phase (Rosetta).** Il PRD numera per **Slice** (0.5, 0.7, 1, 3, 11a-e, 13 — vocabolario storico, tuttora in `prd.md`); `.planning/ROADMAP.md`, `.planning/phases/` e gli scope dei commit numerano per **Phase** (0-43). Le due sequenze NON coincidono: una Slice può atterrare in una Phase con numero diverso. Per qualunque decisione di ordine/atterraggio (migrations su tutte) vale l'**ordine-fase**, mai l'ordine-slice.
 
 Core workflow per nuova slice:

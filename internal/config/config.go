@@ -218,45 +218,6 @@ type Config struct {
 	CalendarMCPURL        string // AURA_PIM_MCP_URL — aura-pim-mcp /admin REST base, default http://aura-pim-mcp:8080
 	CalendarMCPAdminToken string // AURA_PIM_MCP_ADMIN_TOKEN — /admin Bearer token, default changeme-aura-pim-local
 
-	// Phase 30 (RET-01) retrieval rerank knobs. RerankBaseURL is the optional
-	// aura-rerank sidecar (/v1/rerank) base; an unset/empty value is NOT
-	// boot-fatal — the rerank client fails soft to the RRF/vector order, so a
-	// GPU-absent deployment runs with rerank off (spike 070). Convention
-	// AURA_<DOMAIN>_<UNIT>. The local↔cloud swap is ONE knob: set AURA_RERANK_MODEL
-	// to a cloud model (e.g. cohere/rerank-4-fast) and rerank routes to the shared
-	// OpenRouter endpoint authenticated with the SINGLE OPENROUTER_API_KEY every
-	// cloud backend uses — no per-backend key (see RerankRoute, D-28 vision parity).
-	RerankBaseURL string // AURA_RERANK_BASE_URL — local rerank sidecar base, default http://127.0.0.1:8085
-	RerankModel   string // AURA_RERANK_MODEL — set to a cloud model (cohere/rerank-4-fast) to swap to OpenRouter; empty = local sidecar
-
-	// RerankRelevanceFloor drops retrieval hits the reranker scored below it, so
-	// document_search can answer "I have nothing" instead of the least-bad chunk. Zero
-	// disables it. Cohere's own rerank guidance is that this number is domain-specific
-	// and must be picked from a measured distribution (30-50 representative queries),
-	// never assumed: scores are in [0,1] but NOT linear.
-	//
-	// 0.01 is measured, not chosen. Live on 2026-07-30, questions the corpus cannot
-	// answer scored 0.000057-0.00079 and the chunk carrying a real answer scored 0.0586
-	// — a 74x gap with nothing in it. 0.5 was tried first and is WRONG here: it also
-	// dropped the real answer, and the agent then denied a client that is in the file.
-	// The reason the real answer scores only 0.0586 is that the reranker sees the first
-	// 480 characters of a ~6400-character chunk (maxRerankDocChars, itself load-bearing
-	// because the sidecar 500s past ~512 tokens), and the answering row is outside that
-	// window. Shrink the unit and this floor can rise; until then it must stay low.
-	RerankRelevanceFloor float64 // AURA_RERANK_RELEVANCE_FLOOR
-
-	// Phase 36 multi-user identity-isolation rollout switch (D-13). MUSRIsolation is
-	// the documents-retrieval scoped-vs-unscoped query-PATH selector that plan 05
-	// consumes: ON = fail-closed EXISTS enforcement (a document read is scoped to the
-	// owning identity), OFF = the pre-existing unscoped fallback. It is the D-13
-	// reversible-rollout knob — plan 12 flips it ON after the backfill. It is NOT a mere
-	// empty-identity guard. DEFAULT false is load-bearing: it keeps plan 12's "deploy
-	// flag-off" step safe (unscoped path active, no enforcement yet). Read as a dedicated
-	// config field straight from AURA_MUSR_ISOLATION — deliberately NOT routed through the
-	// internal/settings OverlayEnv allowlist (which excludes security/connection env), so
-	// a model-driven settings write can never toggle isolation enforcement.
-	MUSRIsolation bool // AURA_MUSR_ISOLATION — documents-retrieval scoped-vs-unscoped path selector (D-13), default false
-
 	// Phase 36 (plan 06) Garage Admin API v2 (D-08). The provisioning saga (plan 08)
 	// calls the INTERNAL-only admin API to create a per-identity bucket + scoped key.
 	// Endpoint defaults to the in-compose garage:3903 service DNS; the token is a bearer
@@ -281,6 +242,30 @@ type Config struct {
 	// process-cwd fallback (fs_* had NO WorkspaceRoot at all) with one fixed root, same
 	// path in-container as the strict-profile sandbox box's /workspace (forward-compat).
 	WorkspaceDir string // AURA_WORKSPACE_DIR — fixed working root, default ~/.aura/workspace (code) / /workspace (in-container env)
+
+	// MUSRIsolation declares this deployment fit to host more than ONE identity: while it
+	// is off the onboarding saga refuses to provision a second one. It is NOT a query
+	// switch — no read path branches on it, and none ever should.
+	//
+	// The per-identity planes are scoped by construction: documents by an identity
+	// predicate in SQL (an empty principal is rejected before the statement runs),
+	// conversations and approvals by the *ForIdentity stores plus the migration-0032 RLS
+	// policies, memory by one ArcadeDB database and one derived credential per identity,
+	// objects by per-identity Garage buckets and keys.
+	//
+	// What is NOT scoped is everything a second principal would SHARE with the operator:
+	// the skills library (skillLoaderRoots carries no identity component, and the
+	// model-facing skill tool can write it), aura.settings (keyed by `key` alone, so it
+	// holds the deployment's OpenRouter key and LLM base URL), the MCP catalog, the
+	// governance scheduler board — and, under any non-strict AURA_PROFILE (dev is the
+	// default), the filesystem and shell tools, which run on the HOST as the daemon user
+	// because SandboxRouter.Route only routes under a strict profile. Default false is
+	// load-bearing: single-principal is the only posture those shared planes are safe in.
+	//
+	// Read as a dedicated config field, deliberately NOT routed through the
+	// internal/settings OverlayEnv allowlist, so a model-driven settings write can never
+	// widen the deployment to a second principal.
+	MUSRIsolation bool // AURA_MUSR_ISOLATION — allow provisioning a 2nd identity, default false
 }
 
 // Load reads .env (best-effort) then populates a Config from environment
@@ -518,12 +503,8 @@ func loadBase() *Config {
 		CalendarMCPURL:        envDefault("AURA_PIM_MCP_URL", "http://aura-pim-mcp:8080"),
 		CalendarMCPAdminToken: envDefault("AURA_PIM_MCP_ADMIN_TOKEN", "changeme-aura-pim-local"),
 
-		RerankBaseURL:        envDefault("AURA_RERANK_BASE_URL", "http://127.0.0.1:8085"),
-		RerankRelevanceFloor: envutil.FloatDefault("AURA_RERANK_RELEVANCE_FLOOR", 0.01),
-		RerankModel:          os.Getenv("AURA_RERANK_MODEL"),
-
-		// Phase 36 identity-isolation rollout switch (D-13). Default OFF so plan 12's
-		// deploy-flag-off step is safe; plan 05 is the documents-retrieval consumer.
+		// Default OFF: the onboarding saga refuses a 2nd identity until an operator
+		// declares the deployment fit for one (see the field doc for what is shared).
 		MUSRIsolation: envutil.BoolDefault("AURA_MUSR_ISOLATION", false),
 
 		// Phase 36 (plan 06) Garage Admin API v2 (D-08). Endpoint defaults to the

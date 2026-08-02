@@ -48,7 +48,6 @@ func clearPostgresEnv(t *testing.T) {
 		"TTS_BASE_URL", "TTS_VOICE", "TTS_FORMAT", "AURA_TTS_MAX_CHARS",
 		"AURA_PROFILE_DIR", "AURA_PROFILE_CERTAINTY_N",
 		"AURA_WHATSAPP_BRIDGE_URL",
-		"AURA_RERANK_BASE_URL",
 		"AURA_PROFILE", "AURA_OBJECTSTORE_REPLICATION_FACTOR", "GARAGE_RPC_SECRET",
 		"AURA_SHELL_DESTRUCTIVE_PATTERNS", "AURA_MUSR_ISOLATION",
 		"AURA_REASONING_PERSIST_MAX_RUNES",
@@ -515,16 +514,16 @@ func TestWebEnvOverrides(t *testing.T) {
 	}
 }
 
-// TestMUSRIsolationDefaultOff locks the D-13 rollout switch: unset ⇒ false so plan
-// 12's "deploy flag-off" step is safe (the documents-retrieval scoped-vs-unscoped path
-// selector defaults to the unscoped fallback, no enforcement); set-true ⇒ true so plan
-// 12 can flip it after the backfill. Read straight from AURA_MUSR_ISOLATION as a
-// dedicated config field (never through the internal/settings OverlayEnv allowlist).
+// TestMUSRIsolationDefaultOff locks the multi-identity provisioning switch: unset ⇒ false,
+// because the skills library, aura.settings, the MCP catalog and (under a non-strict
+// profile) the host filesystem are shared deployment-wide, so single-principal is the only
+// safe default. Read straight from AURA_MUSR_ISOLATION as a dedicated config field, never
+// through the internal/settings OverlayEnv allowlist.
 func TestMUSRIsolationDefaultOff(t *testing.T) {
 	clearPostgresEnv(t)
 
 	if cfg := LoadDB(); cfg.MUSRIsolation {
-		t.Error("MUSRIsolation default = true, want false (D-13 deploy flag-off is load-bearing)")
+		t.Error("MUSRIsolation default = true, want false (a 2nd identity shares the operator's skills/settings/host)")
 	}
 
 	t.Setenv("AURA_MUSR_ISOLATION", "true")

@@ -1,53 +1,80 @@
-# MUSR isolation runbook (`AURA_MUSR_ISOLATION`)
+# Multi-identity provisioning switch (`AURA_MUSR_ISOLATION`)
 
-`AURA_MUSR_ISOLATION` (`internal/config/config_knobs.go`, default **off**) is the
-deployment switch that declares a deployment fit to host more than one identity. This
-runbook is the operator procedure for turning it on.
+`AURA_MUSR_ISOLATION` (`internal/config/config_knobs.go`, default **off**) declares a
+deployment fit to host more than one identity. While it is off, the onboarding saga
+refuses to provision a second one.
 
-> **There is no data migration and no ordering rule.** An earlier version of this runbook
-> required an owner-edge backfill before the flip, because the documents plane then lived
-> in a graph where ownership was an edge that pre-isolation documents did not have. The
-> documents plane is Postgres now and ownership is a column, so there is nothing to
-> backfill and no window in which the operator's own library can go invisible.
+> **It is not a query switch.** No read path branches on it, and none ever should. An
+> earlier version of this runbook described it as the selector between a scoped and an
+> unscoped documents-retrieval path, and required an owner-edge backfill before the flip.
+> Both are gone: the graph the documents plane lived in was deleted, ownership is a column
+> now, and there is nothing to backfill. The command that version told operators to run,
+> `aura documents backfill`, never existed at all — `aura docs` takes
+> ingest/search/status/list.
 
-## What the flag actually does today
+## What is already scoped, whatever the flag says
 
-Document retrieval is identity-scoped **unconditionally**, in SQL, whatever the flag says:
-`PostgresCatalogStore.SearchDigests` takes the identity as a parameter and the query filters
-on it, `SetDigest` is scoped the same way, and an empty or malformed identity is rejected by
-`pgUUID` before a statement runs — so an unresolved principal returns nothing rather than
-everything. Owner-scoped row-level security sits underneath as the backstop
-(`db.WithIdentityTx`, migration `0032`).
-
-What the flag gates is therefore not a query path but three deployment controls:
-
-| Where | Behaviour when the flag is **off** |
+| Plane | How |
 |---|---|
-| `config.gateMUSRIsolation` (`config_validate.go`) | **Fatal** config violation under `server_production` only. The lenient tiers and `single_user_hardened` are single-principal and do not require it. |
-| The onboarding saga (`agui.errIsolationDisabled`) | **Refuses** to provision a second identity. |
-| `aura serve` boot check | Emits a loud WARN when more than one live identity already exists. |
+| Documents | `SearchDigests` / `SetDigest` filter on the identity in SQL; `pgUUID` rejects an empty or malformed one before a statement runs, so an unresolved principal returns nothing rather than everything. |
+| Conversations, turns, approvals | The `*ForIdentity` stores, with the migration-`0032` RLS policies as the kernel backstop (`db.WithIdentityTx`). |
+| Shared links | Owner column plus RLS (`0041`), with a deliberate public-share carve-out for token resolution. |
+| Long-term memory | One ArcadeDB database and one derived credential per identity; the server refuses cross-tenant access at the door. Created just-in-time on first use. |
+| Objects / uploads | Per-identity Garage bucket and scoped key, selected per request; `IdentityStore.Resolve` fails closed on a missing row. |
+| Adaptive state, idempotency, retention, assets | Owner column, and RLS on the adaptive tables. |
+
+`TestTwoIdentityCrossDeny` (`cmd/aura/two_identity_e2e_test.go`) is the live proof for the
+first five rows. Its assertions never consult this flag.
+
+## Why the flag still exists — what is NOT scoped
+
+A second principal would **share** these with the operator:
+
+| Plane | Why it is shared |
+|---|---|
+| Skills library | `skillLoaderRoots` (`cmd/aura/serve_adapters.go`) resolves `{<export>/.agents/skills, cfg.SkillsDir}` — no identity component. The model-facing `skill` tool can create/update/delete there, so `agent.run` alone is enough to read and rewrite the operator's skills. The per-identity primitive `skills.NewSkillToolForIdentity` exists but has **zero production callers**. |
+| `aura.settings` | Keyed by `key` alone (migration `0024`) — no identity column, no RLS. It carries `OPENROUTER_API_KEY`, `TELEGRAM_BOT_TOKEN` and `AURA_LLM_BASE_URL` for the whole daemon. Secrets are redacted on read, but `governance.write` can overwrite them. |
+| MCP catalog | One shared `servers.json`. The per-identity functions in `internal/mcp/managed_config_identity.go` are dormant. |
+| Governance scheduler board | `ListManageableTasks` / `ApproveTask` / `RunTaskNow` / `UpdateTask` address tasks by id and status only, with no owner predicate and no RLS. |
+| Host filesystem and shell | `SandboxRouter.Route` returns "not routed" unless `AURA_PROFILE` is strict, and **dev is the default**. On that branch `shell_exec` and every `fs_*` tool run on the host as the daemon user — reaching `.env`, the datastore credentials and `$AURA_RUN_DIR`. This one defeats every scoped plane above at once. |
+
+The capability grants (`agent.run`, `governance.read`, `governance.write`) are the only
+control on the middle four; the last one needs no capability beyond `agent.run`.
 
 ## Procedure
 
-1. Set the flag in the environment / `.env`:
+Do **not** set this flag on a deployment you share with someone you would not hand the
+`.env` to. Turning it on is safe only once the table above is empty. In dependency order:
 
-   ```sh
-   AURA_MUSR_ISOLATION=true
-   ```
+1. Route the skills tool through `skills.NewSkillToolForIdentity` (the primitive is
+   written; nothing calls it) and give each box its own materialize source.
+2. Scope `aura.settings` per identity, or make it admin-only and stop treating
+   `governance.write` as a per-user capability.
+3. Same for the MCP catalog.
+4. Add an owner predicate to the scheduler board's list and mutate paths.
+5. Make the sandbox route under every profile a second identity can log into, or fence the
+   host filesystem tools when the principal is not the operator.
 
-2. Restart `aura serve`.
-3. Confirm with `aura config validate --profile server_production` — it must report no
-   `AURA_MUSR_ISOLATION` violation.
+Only then:
 
-Provisioning additional identities through the onboarding saga is available from that point.
+```sh
+AURA_MUSR_ISOLATION=true
+```
+
+Restart `aura serve`. Provisioning through the onboarding saga is available from that
+point.
 
 ## Reversibility
 
-Flipping back to **off** re-arms the provisioning refusal and the boot warning; it destroys
-no data and does not widen any read, because scoping is not conditional on it.
+Flipping back to **off** re-arms the provisioning refusal. It destroys no data, does not
+narrow any read, and does not remove identities already provisioned — an already
+multi-principal deployment stays multi-principal, so the flag is a gate on *acquiring* a
+second identity, not on serving one.
 
 ## Acceptance
 
 - `go test -tags 'db_integration garage_integration authula_integration musr_e2e' ./cmd/aura/`
-  — the two-identity cross-deny live E2E (`provision → login → isolated run`), which proves
-  identity B is denied on every plane while A keeps its data (D-29 / MUSR-01).
+  — the two-identity cross-deny live E2E, which proves identity B is denied on every
+  scoped plane while A keeps its data.
+- `go test ./internal/agui/ -run TestProvisionRefused` — the refusal itself, proven to
+  leave zero rows behind.

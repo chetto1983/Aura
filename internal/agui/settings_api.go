@@ -1,8 +1,8 @@
 package agui
 
 // settings_api.go is the cockpit "Settings" page backend (SETTINGS-01): the model-
-// backend knobs the operator swaps local↔cloud (rerank/embed/STT/TTS/vision), the
-// single OpenRouter key, and the embed dimension. Rows live in aura.settings and
+// backend knobs the operator swaps local↔cloud (embed/STT/TTS/vision), the single
+// OpenRouter key, and the embed dimension. Rows live in aura.settings and
 // are overlaid onto the environment at boot (internal/settings.OverlayEnv), so a
 // change takes effect on the NEXT RESTART — the GET response carries
 // restart_required so the page shows a "restart to apply" banner.

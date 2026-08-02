@@ -56,7 +56,7 @@ export const settingsEn = {
     },
     backends: {
       heading: 'Sidecar and cloud backends',
-      body: 'Swap embeddings, rerank, speech, vision, and memory embedding backends between local services and cloud models.',
+      body: 'Swap embeddings, speech, vision, and memory embedding backends between local services and cloud models.',
     },
     fields: {
       primaryModel: 'Primary model',
@@ -69,8 +69,6 @@ export const settingsEn = {
       embedBaseUrl: 'Embedding base URL',
       embedModel: 'Embedding model',
       embedDimensions: 'Embedding dimensions',
-      rerankBaseUrl: 'Rerank base URL',
-      rerankModel: 'Rerank model',
       sttCloudModel: 'Speech-to-text cloud model',
       ttsModel: 'Text-to-speech model',
       visionCloud: 'Vision uses cloud',
@@ -151,7 +149,7 @@ export const settingsIt = {
     },
     backends: {
       heading: 'Sidecar e backend cloud',
-      body: 'Scambia embedding, rerank, voce, visione e memoria tra servizi locali e modelli cloud.',
+      body: 'Scambia embedding, voce, visione e memoria tra servizi locali e modelli cloud.',
     },
     fields: {
       primaryModel: 'Modello primario',
@@ -164,8 +162,6 @@ export const settingsIt = {
       embedBaseUrl: 'URL base embedding',
       embedModel: 'Modello embedding',
       embedDimensions: 'Dimensioni embedding',
-      rerankBaseUrl: 'URL base rerank',
-      rerankModel: 'Modello rerank',
       sttCloudModel: 'Modello cloud speech-to-text',
       ttsModel: 'Modello text-to-speech',
       visionCloud: 'Visione usa cloud',

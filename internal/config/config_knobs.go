@@ -145,10 +145,9 @@ func knobRegistry() []KnobSpec {
 		{Name: "AURA_PROFILE_CERTAINTY_N", Kind: KindInt, Default: "3"},
 		{Name: "AURA_TTS_MAX_CHARS", Kind: KindInt, Default: "4096"},
 
-		// Phase 36 identity-isolation rollout switch (D-13): the documents-retrieval
-		// scoped-vs-unscoped path selector (plan 05 consumer, plan 12 flip). Catalogued so
-		// `aura config validate` flags a malformed value under a strict tier; it is a
-		// dedicated config field, NOT a mutable internal/settings OverlayEnv knob.
+		// The multi-identity provisioning switch. Catalogued so `aura config validate`
+		// flags a malformed value; it is a dedicated config field, NOT a mutable
+		// internal/settings OverlayEnv knob.
 		{Name: "AURA_MUSR_ISOLATION", Kind: KindBool, Default: "false"},
 
 		// Phase 37 per-identity sandbox operator surface (SBX foundation, config_sandbox.go).

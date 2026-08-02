@@ -28,8 +28,8 @@ func TestAllowed(t *testing.T) {
 			t.Errorf("%s should be an allowlisted non-secret model/token setting, got ok=%v meta=%+v", key, ok, m)
 		}
 	}
-	if _, ok := Allowed("AURA_RERANK_MODEL"); !ok {
-		t.Error("AURA_RERANK_MODEL should be allowed")
+	if _, ok := Allowed("AURA_EMBED_MODEL"); !ok {
+		t.Error("AURA_EMBED_MODEL should be allowed")
 	}
 	if m, ok := Allowed("AURA_LLM_PROVIDER"); !ok || m.Secret || m.Kind != KindString {
 		t.Errorf("AURA_LLM_PROVIDER should be an allowlisted non-secret string setting, got ok=%v meta=%+v", ok, m)
@@ -45,7 +45,7 @@ func TestAllowed(t *testing.T) {
 func TestOverlayEnvAppliesAllowlistOnly(t *testing.T) {
 	// A unique allowlisted key value + a clearly non-allowlisted key. Cleanup
 	// restores the environment so other tests are unaffected.
-	const allowed = "AURA_RERANK_MODEL"
+	const allowed = "AURA_TTS_MODEL"
 	const denied = "AURA_NOT_A_REAL_OVERRIDE_KEY"
 	prev, had := os.LookupEnv(allowed)
 	t.Cleanup(func() {
@@ -58,13 +58,13 @@ func TestOverlayEnvAppliesAllowlistOnly(t *testing.T) {
 	})
 
 	l := fakeLister{rows: []sqlc.AuraSettings{
-		{Key: allowed, Value: "cohere/rerank-4-fast"},
+		{Key: allowed, Value: "overlay-only-tts-model"},
 		{Key: denied, Value: "should-be-ignored"},
 	}}
 	if err := OverlayEnv(t.Context(), l); err != nil {
 		t.Fatalf("OverlayEnv: %v", err)
 	}
-	if got := os.Getenv(allowed); got != "cohere/rerank-4-fast" {
+	if got := os.Getenv(allowed); got != "overlay-only-tts-model" {
 		t.Errorf("%s = %q, want the overlaid value (DB wins)", allowed, got)
 	}
 	if got := os.Getenv(denied); got != "" {
@@ -85,8 +85,6 @@ func TestOverlayEnvFeedsRuntimeConfig(t *testing.T) {
 		{Key: "AURA_EMBED_MODEL", Value: "settings/embed-model"},
 		{Key: "AURA_EMBED_BASE_URL", Value: "https://settings-embed.example"},
 		{Key: "AURA_EMBED_DIMENSIONS", Value: "444"},
-		{Key: "AURA_RERANK_MODEL", Value: "settings/rerank-model"},
-		{Key: "AURA_RERANK_BASE_URL", Value: "https://settings-rerank.example"},
 		{Key: "AURA_TTS_MODEL", Value: "settings-tts-model"},
 		{Key: "AURA_STT_CLOUD_MODEL", Value: "settings-stt-model"},
 		{Key: "AURA_VISION_CLOUD", Value: "true"},
@@ -127,12 +125,6 @@ func TestOverlayEnvFeedsRuntimeConfig(t *testing.T) {
 	if got := cfg.Embed.Dimensions; got != 444 {
 		t.Errorf("Embed.Dimensions = %d, want 444", got)
 	}
-	if got := cfg.RerankModel; got != "settings/rerank-model" {
-		t.Errorf("RerankModel = %q, want overlaid settings rerank model", got)
-	}
-	if got := cfg.RerankBaseURL; got != "https://settings-rerank.example" {
-		t.Errorf("RerankBaseURL = %q, want overlaid settings rerank base URL", got)
-	}
 	if got := cfg.TTSModel; got != "settings-tts-model" {
 		t.Errorf("TTSModel = %q, want overlaid settings TTS model", got)
 	}
@@ -146,10 +138,6 @@ func TestOverlayEnvFeedsRuntimeConfig(t *testing.T) {
 	embedBase, embedKey, embedModel := cfg.EmbedRoute()
 	if embedBase != "https://settings-embed.example" || embedKey != "sk-settings-overlay" || embedModel != "settings/embed-model" {
 		t.Errorf("EmbedRoute() = (%q, %q, %q), want overlaid base/key/model", embedBase, embedKey, embedModel)
-	}
-	rerankBase, rerankKey, rerankModel := cfg.RerankRoute()
-	if rerankBase != "https://settings-rerank.example" || rerankKey != "sk-settings-overlay" || rerankModel != "settings/rerank-model" {
-		t.Errorf("RerankRoute() = (%q, %q, %q), want overlaid base/key/model", rerankBase, rerankKey, rerankModel)
 	}
 }
 
@@ -193,8 +181,6 @@ func clearRuntimeConfigEnvForOverlayTest(t *testing.T) {
 		"AURA_EMBED_MODEL",
 		"AURA_EMBED_BASE_URL",
 		"AURA_EMBED_DIMENSIONS",
-		"AURA_RERANK_MODEL",
-		"AURA_RERANK_BASE_URL",
 		"AURA_TTS_MODEL",
 		"AURA_STT_CLOUD_MODEL",
 		"AURA_VISION_CLOUD",
@@ -211,6 +197,20 @@ func TestMemoryEmbedKeysRemovedFromAllowlist(t *testing.T) {
 	for _, key := range []string{"AURA_MEMORY_EMBED_BASE_URL", "AURA_MEMORY_EMBED_API_KEY"} {
 		if _, ok := AllowedKeys[key]; ok {
 			t.Errorf("%s must NOT be cockpit-overridable — it is a sidecar-owned compose/.env var", key)
+		}
+		if _, ok := Allowed(key); ok {
+			t.Errorf("Allowed(%q) = true, want false after removal", key)
+		}
+	}
+}
+
+// The cross-encoder reranker leg (internal/rerank + the aura-rerank sidecar) was
+// deleted: it had no caller. Its two cockpit knobs went with it, so the Settings
+// page can no longer offer a control that reaches nothing.
+func TestRerankKeysRemovedFromAllowlist(t *testing.T) {
+	for _, key := range []string{"AURA_RERANK_MODEL", "AURA_RERANK_BASE_URL"} {
+		if _, ok := AllowedKeys[key]; ok {
+			t.Errorf("%s must NOT be cockpit-overridable — the rerank leg is deleted", key)
 		}
 		if _, ok := Allowed(key); ok {
 			t.Errorf("Allowed(%q) = true, want false after removal", key)

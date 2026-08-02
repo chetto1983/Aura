@@ -16,7 +16,7 @@ func validAdaptiveBenchmarkReport(
 	t.Helper()
 
 	payload, err := os.ReadFile(
-		"../../.planning/spikes/106-adaptive-aura-portability/dataset.json",
+		"testdata/adaptive_benchmark_dataset.json",
 	)
 	if err != nil {
 		t.Fatalf("read dataset: %v", err)

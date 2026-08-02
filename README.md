@@ -138,8 +138,6 @@ AURA_EMBED_MODEL_PATH=/root/.cache/llama.cpp/embeddinggemma-300M-Q8_0.gguf
 AURA_EMBED_POOLING=mean
 AURA_EMBED_NGL=99
 AURA_EMBED_DIMENSIONS=768
-AURA_RERANK_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda
-AURA_RERANK_NGL=99
 OPENROUTER_API_KEY=
 "@ | Set-Content -Path .env -Encoding ascii
 
@@ -147,7 +145,7 @@ docker run --rm --gpus all nvidia/cuda:12.8.0-base-ubuntu24.04 nvidia-smi
 docker compose up -d
 ```
 
-Aura's local embedding and rerank sidecars require Docker GPU passthrough. Fix
+Aura's local embedding sidecar requires Docker GPU passthrough. Fix
 Docker/NVIDIA before starting Aura if the `nvidia-smi` container check fails.
 
 Set `OPENROUTER_API_KEY` before production use. For local development images,

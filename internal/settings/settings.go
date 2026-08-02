@@ -1,7 +1,7 @@
 // Package settings is the cockpit-editable runtime override layer for Aura's
 // model-backend knobs — the "Settings" page where the operator swaps any backend
-// local↔cloud (rerank/embed/STT/TTS/vision), sets the single OpenRouter key, and
-// picks the embed dimension. Rows live in aura.settings (migration 0024). At
+// local↔cloud (embed/STT/TTS/vision), sets the single OpenRouter key, and picks
+// the embed dimension. Rows live in aura.settings (migration 0024). At
 // daemon boot OverlayEnv applies them onto the process environment BEFORE
 // config.Load, so the existing env readers pick them up with NO per-field mapping;
 // DB values WIN over pre-set env (the operator's UI choice is authoritative).
@@ -51,8 +51,6 @@ var AllowedKeys = map[string]KeyMeta{
 	"AURA_MODEL_CONTEXT_WINDOW":    {Kind: KindInt, Label: "Context window tokens"},
 	"AURA_MODEL_MAX_OUTPUT_TOKENS": {Kind: KindInt, Label: "Reserved output tokens"},
 	"OPENROUTER_API_KEY":           {Secret: true, Kind: KindString, Label: "OpenRouter API key"},
-	"AURA_RERANK_MODEL":            {Kind: KindString, Label: "Rerank cloud model"},
-	"AURA_RERANK_BASE_URL":         {Kind: KindString, Label: "Rerank base URL"},
 	"AURA_EMBED_MODEL":             {Kind: KindString, Label: "Embedding cloud model"},
 	"AURA_EMBED_DIMENSIONS":        {Kind: KindInt, Label: "Embedding dimensions"},
 	"AURA_EMBED_BASE_URL":          {Kind: KindString, Label: "Embedding base URL"},
