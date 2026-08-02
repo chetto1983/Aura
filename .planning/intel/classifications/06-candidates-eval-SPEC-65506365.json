@@ -1,0 +1,31 @@
+{
+  "source_path": "D:\\Aura\\docs\\cockpit-overhaul\\06-candidates-eval-SPEC.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "06 — Candidate Reference-Project Evaluation SPEC",
+  "summary": "Evaluates three reference projects for adoptable Aura cockpit patterns and records their dispositions and implementation status across sibling specifications.",
+  "scope": [
+    "Aura cockpit",
+    "Odysseus",
+    "elysia-frontend",
+    "openhuman",
+    "responsive mobile shell",
+    "chat UI",
+    "design system",
+    "PWA",
+    "authentication",
+    "footer telemetry"
+  ],
+  "cross_refs": [
+    "00-VALIDATION.md",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "README.md",
+    "ROADMAP.md",
+    "static/js/MODULE_SUMMARY.md"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

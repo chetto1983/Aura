@@ -1,0 +1,23 @@
+{
+  "source_path": "D:\\Aura\\docs\\superpowers\\specs\\2026-07-24-aura-adaptive-intelligence-design.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Aura Adaptive Intelligence — Production Design Specification",
+  "summary": "Technical design for Aura's provider-neutral adaptive control plane, including policy, event, persistence, projection, evaluation, rollout, safety, and observability contracts.",
+  "scope": [
+    "adaptive control plane",
+    "adaptive policy",
+    "PostgreSQL",
+    "Neo4j",
+    "event ledger",
+    "off-policy evaluation",
+    "canary promotion"
+  ],
+  "cross_refs": [
+    "2026-07-24-aura-adaptive-intelligence-delivery-and-evidence.md"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

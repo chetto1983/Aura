@@ -1,0 +1,27 @@
+{
+  "source_path": "D:\\Aura\\docs\\superpowers\\specs\\2026-07-23-cockpit-compact-chat-ui-spec.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Cockpit Compact Chat UI — Reasoning Pill + Tool Card Disclosure Spec",
+  "summary": "Specifies compact reasoning pills and tool disclosures, grouping, result panels, reducer metadata, accessibility, internationalization, motion, testing, and rollout for the Cockpit chat UI.",
+  "scope": [
+    "Cockpit chat UI",
+    "ReasoningPill",
+    "ToolActivityCard",
+    "ToolGroup",
+    "ToolResultPanel",
+    "SSE reducer",
+    "internationalization",
+    "motion",
+    "accessibility"
+  ],
+  "cross_refs": [
+    "docs/superpowers/specs/2026-07-15-aura-calm-prism-chat-refinement-design.md",
+    "docs/audit/sse-resume-design-1.3b-2026-07-23.md",
+    "CLAUDE.md"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

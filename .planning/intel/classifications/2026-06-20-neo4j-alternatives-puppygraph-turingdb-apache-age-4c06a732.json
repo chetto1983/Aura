@@ -1,0 +1,24 @@
+{
+  "source_path": "D:\\Aura\\docs\\research\\2026-06-20-neo4j-alternatives-puppygraph-turingdb-apache-age.md",
+  "type": "DOC",
+  "confidence": "medium",
+  "manifest_override": false,
+  "title": "Neo4j Alternatives Due Diligence — PuppyGraph vs. TuringDB vs. Apache AGE",
+  "summary": "Due-diligence comparison of PuppyGraph, TuringDB, and Apache AGE as Neo4j alternatives for Aura, recommending Neo4j retention and an optional Apache AGE proof of concept.",
+  "scope": [
+    "Aura graph store",
+    "Neo4j",
+    "PuppyGraph",
+    "TuringDB",
+    "Apache AGE",
+    "PostgreSQL",
+    "GraphRAG",
+    "proof of concept"
+  ],
+  "cross_refs": [
+    "CLAUDE.md"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": "Research path and comparison/recommendation structure indicate supporting architecture analysis, but no ADR status or formal accepted decision is present."
+}

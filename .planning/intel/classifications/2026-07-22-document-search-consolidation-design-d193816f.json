@@ -1,0 +1,22 @@
+{
+  "source_path": "D:\\Aura\\docs\\superpowers\\specs\\2026-07-22-document-search-consolidation-design.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Aura — Document search / ingestion consolidation (design + ADR)",
+  "summary": "Technical design for distinguishing indexed documents from workspace files and explicitly indexing workspace files into Aura’s searchable knowledge base.",
+  "scope": [
+    "document_search",
+    "document_index",
+    "send_file",
+    "workspace files",
+    "Neo4j knowledge base",
+    "documents.Service.IngestPath"
+  ],
+  "cross_refs": [
+    "docs/superpowers/specs/2026-07-21-aura-dedicated-workspace-garage-design.md"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

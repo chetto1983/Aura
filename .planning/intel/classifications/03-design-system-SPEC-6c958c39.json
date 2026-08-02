@@ -1,0 +1,25 @@
+{
+  "source_path": "D:\\Aura\\docs\\cockpit-overhaul\\03-design-system-SPEC.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Aura Cockpit Design System — Editorial Graphite",
+  "summary": "Technical contract for Aura Cockpit design tokens, typography, palette, motion, density, accessibility, and migration onto the existing token-generation pipeline.",
+  "scope": [
+    "Aura Cockpit",
+    "design tokens",
+    "typography",
+    "color palette",
+    "motion",
+    "density",
+    "WCAG 2.2 accessibility",
+    "tokens.json generation pipeline"
+  ],
+  "cross_refs": [
+    "CLAUDE.md",
+    "25-UI-SPEC.md"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

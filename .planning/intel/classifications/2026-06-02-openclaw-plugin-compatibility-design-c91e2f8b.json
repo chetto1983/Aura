@@ -1,0 +1,20 @@
+{
+  "source_path": "D:\\Aura\\docs\\superpowers\\specs\\2026-06-02-openclaw-plugin-compatibility-design.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "OpenClaw Plugin Compatibility Host Design",
+  "summary": "Technical design for hosting OpenClaw-compatible plugins in an out-of-process Node sidecar governed by Aura's Go control plane.",
+  "scope": [
+    "OpenClaw plugins",
+    "Aura compatibility host",
+    "Node sidecar",
+    "plugin registry",
+    "capability bridges",
+    "plugin policy"
+  ],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

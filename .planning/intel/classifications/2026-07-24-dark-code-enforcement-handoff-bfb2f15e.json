@@ -1,0 +1,22 @@
+{
+  "source_path": "D:\\Aura\\docs\\superpowers\\2026-07-24-dark-code-enforcement-handoff.md",
+  "type": "DOC",
+  "confidence": "medium",
+  "manifest_override": false,
+  "title": "Handoff — CLAUDE.md dark-code enforcement (deferred to a clean tree)",
+  "summary": "Handoff documenting why dark-code enforcement was deferred, prior checks, candidate findings, and the clean-tree procedure for resuming the sweep.",
+  "scope": [
+    "CLAUDE.md",
+    "dark-code enforcement",
+    "deadcode",
+    "Go codebase"
+  ],
+  "cross_refs": [
+    "../../CLAUDE.md",
+    "../audit/consolidated-fix-plan-2026-07-20.md",
+    ".superpowers/sdd/progress.md"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

@@ -1,0 +1,27 @@
+{
+  "source_path": "D:\\Aura\\docs\\superpowers\\plans\\2026-07-24-aura-adaptive-intelligence-implementation.md",
+  "type": "SPEC",
+  "confidence": "medium",
+  "manifest_override": false,
+  "title": "Aura Adaptive Intelligence Implementation Plan",
+  "summary": "Implementation plan for Aura's adaptive assignment ledger, runtime adapters, Agent Memory integration, sealed statistical evidence, and production verification.",
+  "scope": [
+    "adaptive intelligence",
+    "schema-2 ledger",
+    "runtime adapters",
+    "Agent Memory",
+    "promotion evidence"
+  ],
+  "cross_refs": [
+    "../specs/2026-07-24-aura-adaptive-intelligence-design.md",
+    "../specs/2026-07-24-aura-adaptive-intelligence-delivery-and-evidence.md",
+    "../../../prd.md",
+    "D:\\Aura\\CLAUDE.md",
+    "AGENTS.md",
+    "docs/aura-quality-snapshot.md",
+    "CLAUDE.md"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

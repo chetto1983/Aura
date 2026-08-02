@@ -1,0 +1,24 @@
+{
+  "source_path": "D:\\Aura\\docs\\superpowers\\plans\\2026-07-21-aura-dedicated-workspace-garage.md",
+  "type": "SPEC",
+  "confidence": "medium",
+  "manifest_override": false,
+  "title": "Aura Dedicated Workspace + Per-User Garage Object Store — Implementation Plan",
+  "summary": "Implementation plan for a persistent Aura workspace, pre-baked document toolchain, per-user Garage storage, and hardened S3 MCP integration.",
+  "scope": [
+    "/workspace",
+    "Garage object store",
+    "aura-mcp-s3",
+    "document and data toolchain",
+    "per-user bucket provisioning"
+  ],
+  "cross_refs": [
+    "CLAUDE.md",
+    "docs/aura-quality-snapshot.md",
+    "docs/superpowers/specs/2026-07-21-aura-dedicated-workspace-garage-design.md",
+    "prd.md"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

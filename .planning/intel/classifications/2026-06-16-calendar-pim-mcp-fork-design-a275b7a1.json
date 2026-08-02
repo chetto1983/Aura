@@ -1,0 +1,29 @@
+{
+  "source_path": "D:\\Aura\\docs\\superpowers\\specs\\2026-06-16-calendar-pim-mcp-fork-design.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Design: `aura-pim-mcp` — forked PIM (mail + calendar + contacts) sidecar",
+  "summary": "Technical design for an Aura-managed PIM sidecar that unifies mail, calendar, and contacts through a trimmed fork of calendar-mcp.",
+  "scope": [
+    "aura-pim-mcp",
+    "mail",
+    "calendar",
+    "contacts",
+    "OAuth",
+    "MCP-over-HTTP",
+    "Aura cockpit",
+    "admin REST API"
+  ],
+  "cross_refs": [
+    "../../../internal/mcp/manager/catalog.go",
+    "../../../internal/mcp/calendar_integration_test.go",
+    "compose.yaml",
+    "HttpServer/Program.cs",
+    "appsettings.json",
+    "~/.aura/mcp/servers.json"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

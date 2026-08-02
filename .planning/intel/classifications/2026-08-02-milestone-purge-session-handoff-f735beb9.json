@@ -1,0 +1,27 @@
+{
+  "source_path": "D:\\Aura\\docs\\superpowers\\2026-08-02-milestone-purge-session-handoff.md",
+  "type": "DOC",
+  "confidence": "medium",
+  "manifest_override": false,
+  "title": "Session handoff — v2 milestone purge: Neo4j, reranker, adaptive plane, the oracle",
+  "summary": "Session handoff recording shipped milestone purges, architecture findings, measurements, residual risks, and ordered open work for Aura’s next milestone.",
+  "scope": [
+    "Neo4j removal",
+    "ArcadeDB memory",
+    "PostgreSQL RLS",
+    "adaptive plane",
+    "embedding model",
+    "multi-user isolation",
+    "document indexing"
+  ],
+  "cross_refs": [
+    "docs/retrieval-eval.md",
+    "prd.md",
+    "../recon-2026-08-02-document-indexing-at-scale.md",
+    "../recon-2026-08-02-postgres-retrieval-stack.md",
+    "spikes/RETRIEVAL-POSTGRES-SYNTHESIS.md"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": "Dominant signal is a prose-heavy session handoff and status board. It records multiple technical decisions and open tasks but is not a single ADR, PRD, or implementation contract."
+}

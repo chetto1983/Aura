@@ -1,0 +1,23 @@
+{
+  "source_path": "D:\\Aura\\docs\\adr\\0040-agent-loop-semantics.md",
+  "type": "ADR",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "ADR 0040 — Agent loop semantics",
+  "summary": "Defines runner-owned agent-turn lifecycle semantics for tools, persistence, pauses, retries, cancellation, bounded execution, and terminal errors.",
+  "scope": [
+    "runner",
+    "agent turn lifecycle",
+    "durable conversation",
+    "tool calls",
+    "pauses",
+    "retries",
+    "cancellation"
+  ],
+  "cross_refs": [
+    "prd.md"
+  ],
+  "locked": true,
+  "precedence": null,
+  "notes": ""
+}

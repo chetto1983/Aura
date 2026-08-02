@@ -1,0 +1,23 @@
+{
+  "source_path": "D:\\Aura\\docs\\superpowers\\specs\\2026-07-23-mid-turn-steering-design.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Mid-turn steering — design study (typing while the agent runs)",
+  "summary": "Technical design for injecting FIFO operator steering messages into live agent runs at round boundaries, with persistence, transport, UI, and safety contracts.",
+  "scope": [
+    "mid-turn steering",
+    "agent loop",
+    "AG-UI",
+    "run persistence",
+    "cockpit composer",
+    "Telegram"
+  ],
+  "cross_refs": [
+    "docs/superpowers/specs/2026-06-29-durable-swarm-messaging-design.md",
+    "prd.md"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

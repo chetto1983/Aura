@@ -1,0 +1,23 @@
+{
+  "source_path": "D:\\Aura\\docs\\superpowers\\specs\\2026-06-14-aura-plugins-unified-extension-design.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Aura Plugins — Unified Extension Model Design",
+  "summary": "Technical design for Aura’s unified plugin manifest, hook runtime, bundle installer, self-install flow, persistence, governance, and testing.",
+  "scope": [
+    "Aura plugins",
+    "aura.plugin.json",
+    "HookManager",
+    "plugin installer",
+    "capability_grants",
+    "plugins_audit"
+  ],
+  "cross_refs": [
+    "docs/superpowers/specs/2026-06-02-openclaw-plugin-compatibility-design.md",
+    "docs/research/2026-06-14-aura-plugin-architecture-research.md"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

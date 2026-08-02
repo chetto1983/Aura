@@ -1,0 +1,25 @@
+{
+  "source_path": "D:\\Aura\\docs\\superpowers\\specs\\2026-06-15-aura-orchestrator-design.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Aura Orchestrator — Design Spec",
+  "summary": "Technical design for an Aura orchestrator that plans task DAGs, executes typed workers, verifies results, and synthesizes final answers.",
+  "scope": [
+    "Aura orchestrator",
+    "task DAG",
+    "planner",
+    "deterministic executor",
+    "TaskResult",
+    "verification",
+    "synthesis"
+  ],
+  "cross_refs": [
+    "../../../internal/swarm",
+    "../../../internal/agent/workflow",
+    "prd.md"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

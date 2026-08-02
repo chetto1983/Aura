@@ -1,0 +1,22 @@
+{
+  "source_path": "D:\\Aura\\docs\\superpowers\\specs\\2026-07-17-unified-cloud-routing-design.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Unified cloud routing — mini-PC appliance (config now, Go refactor later)",
+  "summary": "Technical design for routing Aura’s cloud inference modalities through OpenRouter, including shipped Compose overrides and a proposed unified Go route resolver.",
+  "scope": [
+    "OpenRouter cloud routing",
+    "compose.cloud.yaml",
+    "CloudRoute resolver",
+    "embed",
+    "rerank",
+    "STT",
+    "TTS",
+    "vision"
+  ],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

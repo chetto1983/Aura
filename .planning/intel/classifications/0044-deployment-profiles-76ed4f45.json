@@ -1,0 +1,24 @@
+{
+  "source_path": "D:\\Aura\\docs\\adr\\0044-deployment-profiles.md",
+  "type": "ADR",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "ADR 0044 — Deployment profiles",
+  "summary": "Defines deployment profiles, strict production controls, and the current single-node Docker Compose boundary.",
+  "scope": [
+    "deployment profiles",
+    "Docker Compose",
+    "ToolGateway",
+    "per-identity sandbox routing",
+    "managed MCP governance",
+    "disaster recovery",
+    "release artifacts"
+  ],
+  "cross_refs": [
+    "prd.md",
+    "scripts/restore_drill.sh"
+  ],
+  "locked": true,
+  "precedence": null,
+  "notes": ""
+}

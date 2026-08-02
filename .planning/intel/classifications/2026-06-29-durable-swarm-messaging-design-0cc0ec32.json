@@ -1,0 +1,22 @@
+{
+  "source_path": "D:\\Aura\\docs\\superpowers\\specs\\2026-06-29-durable-swarm-messaging-design.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Aura Durable Swarm Messaging Design",
+  "summary": "Technical design for durable Postgres-backed swarm messaging, including task schemas, leases, retries, channel adapters, tooling, observability, testing, and rollout.",
+  "scope": [
+    "durable swarm messaging",
+    "PostgreSQL",
+    "agent_message_send",
+    "channel adapters",
+    "task leasing",
+    "AG-UI"
+  ],
+  "cross_refs": [
+    "docs/research/senior-dev-agent-hardening-2026-tool-policy-gateway.md"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

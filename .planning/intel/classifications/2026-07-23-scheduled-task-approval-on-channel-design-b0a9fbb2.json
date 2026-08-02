@@ -1,0 +1,21 @@
+{
+  "source_path": "D:\\Aura\\docs\\superpowers\\specs\\2026-07-23-scheduled-task-approval-on-channel-design.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Scheduled-task approval — real HITL on the origin channel (fix-plan 1.7 revision)",
+  "summary": "Technical design for deterministic scheduled-task approval through ask_user pauses on Telegram and WebUI, including sweep fallback, deduplication, delivery, cancellation, and tests.",
+  "scope": [
+    "scheduled-task approval",
+    "ask_user pauses",
+    "Telegram",
+    "WebUI",
+    "approval reminder sweep"
+  ],
+  "cross_refs": [
+    "prd.md"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

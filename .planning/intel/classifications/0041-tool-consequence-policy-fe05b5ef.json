@@ -1,0 +1,21 @@
+{
+  "source_path": "D:\\Aura\\docs\\adr\\0041-tool-consequence-policy.md",
+  "type": "ADR",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "ADR 0041 — Tool consequence policy",
+  "summary": "Defines a unified consequence model for authorizing, confirming, sandboxing, and auditing mutations across Aura tool surfaces.",
+  "scope": [
+    "tool consequence policy",
+    "MCP annotations",
+    "mutation authorization",
+    "idempotency",
+    "sandbox"
+  ],
+  "cross_refs": [
+    "prd.md"
+  ],
+  "locked": true,
+  "precedence": null,
+  "notes": ""
+}

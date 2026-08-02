@@ -1,0 +1,24 @@
+{
+  "source_path": "D:\\Aura\\docs\\superpowers\\plans\\2026-06-16-aura-pim-mcp-fork.md",
+  "type": "SPEC",
+  "confidence": "medium",
+  "manifest_override": false,
+  "title": "aura-pim-mcp Fork Implementation Plan",
+  "summary": "Implementation plan for forking calendar-mcp into the aura-pim-mcp mail, calendar, and contacts sidecar and integrating it with Aura.",
+  "scope": [
+    "aura-pim-mcp",
+    "calendar-mcp",
+    "MCP-over-HTTP",
+    "Aura cockpit",
+    "OAuth",
+    "Docker Compose"
+  ],
+  "cross_refs": [
+    "../specs/2026-06-16-calendar-pim-mcp-fork-design.md",
+    ".planning/spikes/064-calendar-mcp-http-mount/README.md",
+    "docker/aura/PROVENANCE.md"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

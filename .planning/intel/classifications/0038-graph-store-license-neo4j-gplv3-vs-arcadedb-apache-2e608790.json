@@ -1,0 +1,23 @@
+{
+  "source_path": "D:\\Aura\\docs\\adr\\0038-graph-store-license-neo4j-gplv3-vs-arcadedb-apache.md",
+  "type": "ADR",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "ADR 0038 — Graph-store license posture: Neo4j Community (GPLv3) now, ArcadeDB (Apache-2.0) as the appliance-distribution fallback",
+  "summary": "Accepts Neo4j Community for current use and appliance conveyance compliance, retaining ArcadeDB as fallback when licensing or Enterprise costs become blockers.",
+  "scope": [
+    "Neo4j Community",
+    "GPLv3 conveyance",
+    "ArcadeDB",
+    "GDS Community",
+    "distributed appliances"
+  ],
+  "cross_refs": [
+    "COMPARISON.md",
+    "prd.md",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "locked": true,
+  "precedence": null,
+  "notes": ""
+}

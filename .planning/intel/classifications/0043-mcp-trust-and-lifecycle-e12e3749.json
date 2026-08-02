@@ -1,0 +1,22 @@
+{
+  "source_path": "D:\\Aura\\docs\\adr\\0043-mcp-trust-and-lifecycle.md",
+  "type": "ADR",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "ADR 0043 — MCP trust and lifecycle",
+  "summary": "Defines authoritative MCP transport, trust, protocol, reconnect, bounded-resource, and shutdown rules for managed local and remote servers.",
+  "scope": [
+    "MCP",
+    "managed configuration",
+    "remote HTTP",
+    "local commands",
+    "reconnect schemas",
+    "shutdown"
+  ],
+  "cross_refs": [
+    "prd.md"
+  ],
+  "locked": true,
+  "precedence": null,
+  "notes": ""
+}

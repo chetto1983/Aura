@@ -1,0 +1,21 @@
+{
+  "source_path": "D:\\Aura\\docs\\superpowers\\specs\\2026-07-21-aura-dedicated-workspace-garage-design.md",
+  "type": "ADR",
+  "confidence": "medium",
+  "manifest_override": false,
+  "title": "Aura — Dedicated persistent workspace + per-user Garage object store (design + ADR)",
+  "summary": "Defines the dedicated persistent workspace, pre-baked toolchain, per-user Garage storage, deferred S3 MCP, and artifact-delivery architecture.",
+  "scope": [
+    "persistent workspace",
+    "Garage object store",
+    "document toolchain",
+    "S3 MCP",
+    "artifact delivery"
+  ],
+  "cross_refs": [
+    "docs/audit/agentmd-supersession-design-2026-07-21.md"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": "Path is under specs and contains detailed implementation contracts, but the title, locked scope, explicit decisions, rationale, and risks are dominant ADR signals. No Accepted status; locked remains false."
+}

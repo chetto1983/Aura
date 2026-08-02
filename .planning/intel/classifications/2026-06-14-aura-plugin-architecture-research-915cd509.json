@@ -1,0 +1,21 @@
+{
+  "source_path": "D:\\Aura\\docs\\research\\2026-06-14-aura-plugin-architecture-research.md",
+  "type": "DOC",
+  "confidence": "medium",
+  "manifest_override": false,
+  "title": "Aura Plugin/Extension Architecture — Research & Recommendation",
+  "summary": "Research evaluates Aura's plugin architecture and recommends in-process Go extension seams, MCP for tool capabilities, and no OpenClaw Node sidecar absent binary compatibility.",
+  "scope": [
+    "plugin architecture",
+    "in-process Go extension seams",
+    "MCP",
+    "OpenClaw Node sidecar",
+    "hooks"
+  ],
+  "cross_refs": [
+    "docs/superpowers/specs/2026-06-02-openclaw-plugin-compatibility-design.md"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": "Research-path and prose/rationale signals indicate DOC; recommendation and verdict language resemble an ADR, but status explicitly says product decision is pending."
+}

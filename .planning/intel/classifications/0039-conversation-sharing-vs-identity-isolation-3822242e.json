@@ -1,0 +1,26 @@
+{
+  "source_path": "D:\\Aura\\docs\\adr\\0039-conversation-sharing-vs-identity-isolation.md",
+  "type": "ADR",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "ADR 0039 — Conversation sharing vs. identity isolation: the public tier as a bounded, mitigated hole in MUSR",
+  "summary": "Records the accepted design for a public conversation-sharing tier bounded by capability, kill-switch, expiry, revocation, redaction, opaque-token, and audit controls.",
+  "scope": [
+    "public conversation sharing",
+    "identity isolation",
+    "share.public capability",
+    "AURA_SHARE_PUBLIC_ENABLED",
+    "opaque share tokens",
+    "shared_links",
+    "share_audit",
+    "Garage"
+  ],
+  "cross_refs": [
+    "37F-CONTEXT.md",
+    "37F-RESEARCH.md",
+    "prd.md"
+  ],
+  "locked": true,
+  "precedence": null,
+  "notes": ""
+}

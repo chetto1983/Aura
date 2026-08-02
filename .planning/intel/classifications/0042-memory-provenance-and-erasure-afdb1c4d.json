@@ -1,0 +1,22 @@
+{
+  "source_path": "D:\\Aura\\docs\\adr\\0042-memory-provenance-and-erasure.md",
+  "type": "ADR",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "ADR 0042 — Memory provenance and erasure",
+  "summary": "Defines tenant-scoped memory provenance, aggregate recall bounds, and coordinated owner erasure across registered storage planes.",
+  "scope": [
+    "Agent Memory",
+    "memory provenance",
+    "automatic recall",
+    "owner erasure",
+    "ArcadeDB"
+  ],
+  "cross_refs": [
+    "prd.md",
+    "ADR 0038"
+  ],
+  "locked": true,
+  "precedence": null,
+  "notes": ""
+}

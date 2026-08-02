@@ -1,0 +1,23 @@
+{
+  "source_path": "D:\\Aura\\docs\\cockpit-overhaul\\02-shell-sidebar-SPEC.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "02 — Responsive App Shell + Sidebar + Navigation",
+  "summary": "Technical specification for the responsive cockpit shell, conversation sidebar, navigation, chat lane, runtime panel, accessibility, and testing.",
+  "scope": [
+    "responsive app shell",
+    "conversation sidebar",
+    "navigation",
+    "chat lane",
+    "runtime panel"
+  ],
+  "cross_refs": [
+    "03-design-system-SPEC.md",
+    ".planning/phases/25-chat-approval-center/25-UI-SPEC.md",
+    "docs/design/aura-deep-search-figma/ux-spec.md"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

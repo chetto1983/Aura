@@ -1,0 +1,24 @@
+{
+  "source_path": "D:\\Aura\\docs\\superpowers\\specs\\2026-07-15-aura-calm-prism-chat-refinement-design.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Aura Calm Prism Chat Refinement Design",
+  "summary": "Technical design contract for refining Aura's authenticated chat UI, including responsive layout, approvals, reasoning, tool activity, telemetry, accessibility, localization, and testing.",
+  "scope": [
+    "authenticated chat cockpit",
+    "workspace controls",
+    "reasoning drawer",
+    "tool activity",
+    "approval workflow",
+    "runtime footer",
+    "prompt starters",
+    "semantic color tokens"
+  ],
+  "cross_refs": [
+    "prd.md"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

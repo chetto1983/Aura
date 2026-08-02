@@ -1,0 +1,22 @@
+{
+  "source_path": "D:\\Aura\\docs\\superpowers\\specs\\2026-07-24-aura-adaptive-intelligence-delivery-and-evidence.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Aura Adaptive Intelligence — Delivery and Evidence Appendix",
+  "summary": "Technical delivery appendix defining verification evidence, production activation criteria, and implementation sequencing for Aura adaptive intelligence.",
+  "scope": [
+    "adaptive intelligence",
+    "verification matrix",
+    "production activation",
+    "typed ledger",
+    "immutable evidence reconstruction",
+    "projector lifecycle"
+  ],
+  "cross_refs": [
+    "2026-07-24-aura-adaptive-intelligence-design.md"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

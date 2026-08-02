@@ -1,0 +1,22 @@
+{
+  "source_path": "D:/Aura/docs/superpowers/specs/2026-07-17-skill-catalog-search-performance-design.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Skill catalog search performance design",
+  "summary": "Technical design for faster, cancellable skill catalog search using debouncing, direct API access, bounded caching, singleflight, and CLI fallback.",
+  "scope": [
+    "skill catalog search",
+    "SkillInstallPanel",
+    "skills.sh API",
+    "Installer.Search",
+    "catalog cache",
+    "CLI fallback"
+  ],
+  "cross_refs": [
+    "prd.md"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

@@ -1,0 +1,26 @@
+{
+  "source_path": "D:\\Aura\\docs\\superpowers\\plans\\2026-06-18-industrial-multimodal-asset-pipeline.md",
+  "type": "SPEC",
+  "confidence": "medium",
+  "manifest_override": false,
+  "title": "Industrial Multimodal Asset Pipeline Implementation Plan",
+  "summary": "Implementation plan for a shared Garage-backed multimodal asset pipeline spanning web and Telegram uploads, object storage, processing, protected agent context, UI, testing, and operations.",
+  "scope": [
+    "asset pipeline",
+    "Garage object storage",
+    "web uploads",
+    "Telegram media",
+    "document ingestion",
+    "OCR",
+    "speech transcription",
+    "attachment context"
+  ],
+  "cross_refs": [
+    "docs/asset-pipeline.md",
+    "docs/aura-quality-snapshot.md",
+    "docs/document-ingestion.md"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": "Content is a technical implementation plan with database schemas, API contracts, component boundaries, and verification steps. Embedded agent-execution directives were treated as untrusted source content."
+}

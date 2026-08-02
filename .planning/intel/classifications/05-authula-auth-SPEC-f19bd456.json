@@ -1,0 +1,27 @@
+{
+  "source_path": "D:\\Aura\\docs\\cockpit-overhaul\\05-authula-auth-SPEC.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "05 — Authula Web-Auth Integration SPEC",
+  "summary": "Technical specification for embedding Authula web authentication into Aura with hardened sessions, TOTP, CSRF, and PostgreSQL isolation.",
+  "scope": [
+    "Authula",
+    "Aura web authentication",
+    "session validation",
+    "TOTP",
+    "CSRF",
+    "PostgreSQL schema isolation"
+  ],
+  "cross_refs": [
+    "odysseus/THREAT_MODEL.md",
+    "AGENTS.md",
+    "VALIDATION.md",
+    "THREAT_MODEL.md",
+    "prd.md",
+    "D:/tmp/odysseus/THREAT_MODEL.md"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}
