@@ -6,7 +6,7 @@
 # sqlc CLI: install with `go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1`
 # (v1.27.0 panics on Windows hosts via wazero out-of-bounds; v1.31.1 verified clean).
 
-.PHONY: help tools sqlc lint vet deadcode vuln coverage coverage-docker quality quality-full test test-race tagged-tier-compile file-size web-freshness web-lint web-test web-mutation web-quality evidence-contracts critical-mutation observability-evidence release-readiness db-up db-migrate db-status db-reset memory-up restore-drill load-chaos
+.PHONY: help tools sqlc lint vet deadcode vuln coverage coverage-docker quality quality-full test test-race tagged-tier-compile file-size web-freshness web-lint web-test web-mutation web-quality evidence-contracts critical-mutation observability-evidence release-readiness db-up db-migrate db-status db-reset memory-up arcadedb-integration restore-drill load-chaos
 
 # Resolve go-installed tool binaries even when $GOPATH/bin is not on PATH
 # (common in a fresh WSL login shell). Falls back to a bare name on PATH.
@@ -42,6 +42,7 @@ help:
 	@echo "make db-status     — aura db status"
 	@echo "make db-reset      — DESTRUCTIVE: drop+recreate schema aura (dev only, requires AURA_RESET_YES=1)"
 	@echo "make memory-up     — docker compose up -d arcadedb arcadedb-mcp aura-llama-embed (waits healthy)"
+	@echo "make arcadedb-integration — run the arcadedb_integration tier live, as CI does"
 	@echo "make restore-drill — three-plane DR drill with measured RPO/RTO"
 	@echo "make load-chaos    — blocking Vegeta + Toxiproxy production gate"
 
@@ -208,6 +209,27 @@ memory-up:
 	$(call wait_compose_healthy,arcadedb-mcp)
 	$(call wait_compose_healthy,aura-llama-embed)
 	@echo "ok"
+
+# The arcadedb_integration tier, run exactly the way the CI job
+# `arcadedb-integration-test` runs it — same tags, same -skip/-run selectors, same
+# ArcadeDB-only stack. Keep the two in step: a local green that exercised a different
+# set than CI is worth nothing.
+#
+# The tier reads ARCADEDB_PASSWORD / ARCADEDB_URL / ARCADEDB_DATABASE /
+# AURA_ARCADEDB_TENANT_SECRET from the environment and SKIPS locally when they are
+# absent. Export them (from .env) to make this a real gate; add CI=1 to arm the
+# no-skip-as-green guards and turn any missing piece into a failure, as in the pipeline.
+#
+# TestLocomo* and TestMemoryVector* are excluded here for the same reasons as in CI:
+# an external dataset and a model download respectively. Run those by hand.
+arcadedb-integration:
+	docker compose up -d arcadedb
+	$(call wait_compose_healthy,arcadedb)
+	go test -race -tags arcadedb_integration -count=1 \
+		-skip '^TestLocomo|^TestMemoryVector' ./internal/arcadedb/
+	go test -race -tags arcadedb_integration -count=1 \
+		-run '^TestArcadeMemoryPurgeLive' ./cmd/aura/
+	@echo "ok: arcadedb_integration tier passed against a live ArcadeDB"
 
 restore-drill: db-migrate memory-up
 	bash scripts/garage_bootstrap.sh

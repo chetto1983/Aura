@@ -7,10 +7,10 @@ name: Skills (CAP-07 / CAP-08)
 # gates regressions: the unit tier, the db_integration audit tier (SC#1/SC#2), the
 # FuzzSkillValidator smoke (SC#3), the by-path snippet-exec tier (SC#4, host python3), the
 # TTL sweep tier, go-mutesting on the two critical files (validator.go + writer.go, ≥70%),
-# and the owned-surface ≥85% coverage floor across the tag matrix (db_integration). The
-# LIVE xlsx North-Star cot_eval E2E (D-35) is OPERATOR-run
-# (OPENROUTER_API_KEY, paid) and explicitly NOT in CI — see internal/eval/
-# skills_cot_eval_test.go for the operator invocation.
+# and the owned-surface ≥85% coverage floor across the tag matrix (db_integration).
+# The paid LIVE xlsx North-Star E2E that used to back D-35 is gone with internal/eval
+# (2026-08-02): the harness it ran on was deleted, so there is no operator invocation
+# to point at any more.
 #
 # NO-SKIP-AS-GREEN (CLAUDE.md): every tagged tier exports the exact env it reads and
 # `CI=true` arms the envOrSkip → t.Fatal-on-unset guard, so a skipped tier FAILS the job

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"maps"
-	"slices"
 	"sort"
 	"sync"
 
@@ -242,7 +241,7 @@ func (f *fakeConvStore) LoadManagedHistory(_ context.Context, id string, cfg con
 	if f.manErr != nil {
 		return nil, f.manErr
 	}
-	return managedMessagesForFake(f.messagesLocked(id), cfg), nil
+	return f.messagesLocked(id), nil
 }
 
 // LoadManagedHistoryForBranch records the selected leaf so the branch-aware re-run path
@@ -257,34 +256,7 @@ func (f *fakeConvStore) LoadManagedHistoryForBranch(_ context.Context, id string
 	if f.manErr != nil {
 		return nil, f.manErr
 	}
-	return managedMessagesForFake(f.messagesLocked(id), cfg), nil
-}
-
-func managedMessagesForFake(
-	messages []llm.Message,
-	cfg conversations.ContextConfig,
-) []llm.Message {
-	if cfg.DynamicTail == nil || cfg.DynamicTail.ID == "" ||
-		cfg.DynamicTail.Content == "" {
-		return messages
-	}
-	index := len(messages)
-	if cfg.DynamicTail.BeforeCurrentUser {
-		for candidate, v := range slices.Backward(messages) {
-			if v.Role == llm.RoleUser {
-				index = candidate
-				break
-			}
-		}
-	}
-	out := make([]llm.Message, 0, len(messages)+1)
-	out = append(out, messages[:index]...)
-	out = append(out, llm.Message{
-		Role: llm.RoleUser, Content: cfg.DynamicTail.Content,
-		DynamicTailID: cfg.DynamicTail.ID,
-	})
-	out = append(out, messages[index:]...)
-	return out
+	return f.messagesLocked(id), nil
 }
 
 // messagesLocked rebuilds the loop messages from the persisted turns (the same

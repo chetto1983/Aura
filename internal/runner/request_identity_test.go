@@ -55,41 +55,14 @@ func TestTurnMintsRequestIdentityBeforeContextAssemblyAndReusesItEverywhere(t *t
 	convID := newConvID(t)
 	mustCreate(t, r, convID)
 
-	var recallRequestID string
-	r.recallMaxItems = 8
-	r.dynamicRecallProvider = func(
-		ctx context.Context,
-		_, _ string,
-		_ int,
-	) (DynamicRecall, error) {
-		recallRequestID = tools.RequestIDFromContext(ctx)
-		return validDynamicRecall(), nil
-	}
-	r.dynamicRecallControl = dynamicRecallControlFunc(func(
-		ctx context.Context,
-		input DynamicRecallInput,
-		provider DynamicRecallProvider,
-	) (*PreparedDynamicRecall, error) {
-		recall, err := provider(ctx, input.OwnerID.String(), input.Query, 4)
-		return &PreparedDynamicRecall{
-			Action: DynamicRecallTop4,
-			Recall: recall,
-			Commit: func(context.Context, agent.DynamicTailOutcome) error {
-				return nil
-			},
-		}, err
-	})
 	events, err := drain(r.Turn(context.Background(), convID, new("inspect identity")))
 	if err != nil {
 		t.Fatalf("Turn: %v", err)
 	}
 
-	requestID, err := uuid.Parse(recallRequestID)
+	requestID, err := uuid.Parse(probe.seen)
 	if err != nil || requestID.Version() != 7 {
-		t.Fatalf("recall request ID = %q, want UUIDv7: %v", recallRequestID, err)
-	}
-	if probe.seen != recallRequestID {
-		t.Fatalf("tool request ID = %q, recall saw %q", probe.seen, recallRequestID)
+		t.Fatalf("tool request ID = %q, want UUIDv7: %v", probe.seen, err)
 	}
 	client.mu.Lock()
 	modelIDs := append([]string(nil), client.seen...)
@@ -98,8 +71,8 @@ func TestTurnMintsRequestIdentityBeforeContextAssemblyAndReusesItEverywhere(t *t
 		t.Fatalf("model calls = %v, want two primary calls", modelIDs)
 	}
 	for i, got := range modelIDs[:2] {
-		if got != recallRequestID {
-			t.Fatalf("model call %d request ID = %q, want %q", i, got, recallRequestID)
+		if got != probe.seen {
+			t.Fatalf("model call %d request ID = %q, want %q", i, got, probe.seen)
 		}
 	}
 	for i, event := range events {

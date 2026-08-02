@@ -21,7 +21,7 @@ refuses to provision a second one.
 | Shared links | Owner column plus RLS (`0041`), with a deliberate public-share carve-out for token resolution. |
 | Long-term memory | One ArcadeDB database and one derived credential per identity; the server refuses cross-tenant access at the door. Created just-in-time on first use. |
 | Objects / uploads | Per-identity Garage bucket and scoped key, selected per request; `IdentityStore.Resolve` fails closed on a missing row. |
-| Adaptive state, idempotency, retention, assets | Owner column, and RLS on the adaptive tables. |
+| Idempotency, retention, assets | Owner column on every row. |
 
 `TestTwoIdentityCrossDeny` (`cmd/aura/two_identity_e2e_test.go`) is the live proof for the
 first five rows. Its assertions never consult this flag.

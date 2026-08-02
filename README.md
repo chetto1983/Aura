@@ -68,8 +68,8 @@ default) plus a few local CPU sidecars. It is built as a **product, not a protot
 Transport & UX     cmd/aura (CLI) · channels (+telegram) · agui (SSE) · setup · askuser
 Agent runtime      agent (LlmAgent, Budget, Events, hooks) · workflow (Seq/Par/Loop) · swarm
 Tools & MCP        agent/tools (registry, deferred, tool_search, fs/shell/web/skill) · mcp (+bridge, manager)
-Intelligence       llm (+openai_compat) · semindex (embed-index core) · reasoningtrace · adaptive · scoring
-Capabilities       web · skills · cron · onboarding · documents · eval
+Intelligence       llm (+openai_compat) · semindex (embed-index core) · reasoningtrace · scoring
+Capabilities       web · skills · cron · onboarding · documents
 Persistence        db (Postgres+sqlc) · arcadedb (graph memory) · conversations · identity · profile · secret
 Observability      obs · panicobs · reasoningtrace · toolinvocations · cachemetrics
 ```

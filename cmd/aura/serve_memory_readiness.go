@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/agent/mcptools"
@@ -74,7 +75,7 @@ func checkMemoryReadiness(ctx context.Context, client mcptools.HostClient) error
 	if err := decoder.Decode(&response); err != nil {
 		return fmt.Errorf("decode memory readiness result: %w", err)
 	}
-	if err := ensureJSONEOF(decoder); err != nil {
+	if err := ensureMemoryJSONEOF(decoder); err != nil {
 		return err
 	}
 	if strings.TrimSpace(response.Error) != "" {
@@ -82,6 +83,21 @@ func checkMemoryReadiness(ctx context.Context, client mcptools.HostClient) error
 	}
 	if response.Facts == nil {
 		return errors.New("memory functional search omitted the facts array")
+	}
+	return nil
+}
+
+// ensureMemoryJSONEOF rejects a tool result that carries a second JSON value after the
+// one we decoded. A sidecar that concatenates two objects would otherwise pass the probe
+// on the first and hide whatever the second said. It lived next to the dynamic-recall
+// decoder until that leg was deleted; the readiness probe is its only caller now.
+func ensureMemoryJSONEOF(decoder *json.Decoder) error {
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return errors.New("decode memory readiness result: trailing JSON value")
+		}
+		return fmt.Errorf("decode memory readiness result trailing data: %w", err)
 	}
 	return nil
 }

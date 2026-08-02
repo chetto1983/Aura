@@ -41,10 +41,7 @@ func (t *SkillTool) actionList(ctx context.Context, raw json.RawMessage) (ToolRe
 		return NewResult(ctx, t.Loader.ManifestDescription()+listSkillTail)
 	}
 
-	ranked, err := t.orderSkillList(ctx, query)
-	if err != nil {
-		return ToolResult{}, err
-	}
+	ranked := rankSkills(t.Loader.List(), query)
 	if len(ranked) == 0 {
 		// A queried list miss is the capability-gap decision point. Discovery+install
 		// is NOT a tool action (amendment #51 / D-40): point the model at the always-on

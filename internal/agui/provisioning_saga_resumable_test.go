@@ -18,10 +18,7 @@
 //	go test -tags 'db_integration garage_integration' -run TestProvisioningSagaResumable ./internal/agui -count=1 -p 1
 //
 // Requires POSTGRES_PASSWORD (+ optional PGHOST/PGPORT) and AURA_GARAGE_ADMIN_ENDPOINT +
-// AURA_GARAGE_ADMIN_TOKEN. No-skip-as-green: envOrSkip t.Fatals under $CI when unset. The
-// adaptive projection needs a live ArcadeDB, so it is exercised here via a recording
-// AdaptiveGraphPurger seam (the saga's invocation is asserted); the teardown itself is
-// proven under the arcadedb_integration tier (internal/adaptive/graph_arcadedb_test.go).
+// AURA_GARAGE_ADMIN_TOKEN. No-skip-as-green: envOrSkip t.Fatals under $CI when unset.
 
 package agui
 

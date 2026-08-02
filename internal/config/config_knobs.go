@@ -98,8 +98,6 @@ func knobRegistry() []KnobSpec {
 		{Name: "AURA_HISTORY_HARD_CAP_TURNS", Kind: KindInt, Default: "50"},
 		{Name: "AURA_RUN_DIR_WARN_THRESHOLD_BYTES", Kind: KindInt, Default: "1073741824"},
 		{Name: "AURA_RUN_DIR_SWEEP_INTERVAL_SEC", Kind: KindInt, Default: "3600"},
-		{Name: "AURA_CONTEXT_MEMORY_RECALL", Kind: KindBool, Default: "false"},
-		{Name: "AURA_CONTEXT_MEMORY_RECALL_MAX_ITEMS", Kind: KindInt, Default: "8"},
 		{Name: "AURA_WEB_DNS_PIN_TTL_SEC", Kind: KindInt, Default: "60"},
 		{Name: "AURA_WEB_FETCH_MAX_BODY_BYTES", Kind: KindInt, Default: "5000000"},
 		{Name: "AURA_WEB_CACHE_PERSISTENT", Kind: KindBool, Default: "false"},

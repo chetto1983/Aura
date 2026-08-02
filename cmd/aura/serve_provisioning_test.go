@@ -2,13 +2,11 @@ package main
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/chetto1983/aura/internal/adaptive"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/cron/handlers"
@@ -105,72 +103,6 @@ func TestBuildDeprovisionerWiresPurger(t *testing.T) {
 		t.Fatalf("nil-pool PurgeExpired: purged %d, want 0 (no-op)", n)
 	}
 }
-
-type adaptivePurgeWriter struct {
-	queries []string
-	err     error
-}
-
-func (w *adaptivePurgeWriter) Write(_ context.Context, query string, _ map[string]any) ([]map[string]any, error) {
-	w.queries = append(w.queries, query)
-	return nil, w.err
-}
-
-// The adaptive purge no longer closes anything — the ArcadeDB writer that replaced
-// the Bolt-over-MCP client holds no subprocess — so the surviving contract is that
-// it writes exactly one owner-scoped delete and fails closed when the graph is
-// unreachable.
-func TestAdaptiveGraphPurgeAdapterFailsClosedOnAnUnreachableGraph(t *testing.T) {
-	writer := &adaptivePurgeWriter{}
-	adapter := adaptiveGraphPurgeAdapter{
-		cfg: &config.ArcadeDBConfig{BaseURL: "http://arcadedb:2480", Database: "aura_memory"},
-		open: func(context.Context, *config.ArcadeDBConfig) (adaptive.GraphWriter, error) {
-			return writer, nil
-		},
-	}
-
-	if err := adapter.PurgeAdaptiveGraph(context.Background(), testAdaptiveIdentityID); err != nil {
-		t.Fatalf("PurgeAdaptiveGraph: %v", err)
-	}
-	if len(writer.queries) != 1 {
-		t.Fatalf("graph writes = %d, want 1", len(writer.queries))
-	}
-
-	openErr := errors.New("arcadedb unavailable")
-	adapter.open = func(context.Context, *config.ArcadeDBConfig) (adaptive.GraphWriter, error) {
-		return nil, openErr
-	}
-	if err := adapter.PurgeAdaptiveGraph(context.Background(), testAdaptiveIdentityID); !errors.Is(err, openErr) {
-		t.Fatalf("unavailable graph error = %v, want wrapped %v", err, openErr)
-	}
-
-	// An unconfigured adapter must refuse rather than report a purge it never ran.
-	if err := (adaptiveGraphPurgeAdapter{}).PurgeAdaptiveGraph(context.Background(), testAdaptiveIdentityID); err == nil {
-		t.Fatal("an unconfigured adaptive graph purge reported success")
-	}
-}
-
-// openAdaptiveGraphClient is the production seam: it must validate rather than
-// hand back a client that fails on the first projected event.
-func TestOpenAdaptiveGraphClientValidatesItsConfig(t *testing.T) {
-	if _, err := openAdaptiveGraphClient(context.Background(), nil); err == nil {
-		t.Fatal("a nil config produced a graph client")
-	}
-	if _, err := openAdaptiveGraphClient(context.Background(), &config.ArcadeDBConfig{Database: "aura_memory", User: "u"}); err == nil {
-		t.Fatal("an empty base URL produced a graph client")
-	}
-	writer, err := openAdaptiveGraphClient(context.Background(), &config.ArcadeDBConfig{
-		BaseURL: "http://arcadedb:2480", Database: "aura_memory", User: "aura_memory", Password: "pw",
-	})
-	if err != nil {
-		t.Fatalf("openAdaptiveGraphClient: %v", err)
-	}
-	if writer == nil {
-		t.Fatal("a valid config produced no writer")
-	}
-}
-
-const testAdaptiveIdentityID = "22222222-2222-4222-8222-222222222222"
 
 // TestBuildDispatchRegistersIdentityPurge asserts buildDispatch builds with the new
 // identity_purge entry present. cron.Dispatch's handler map is unexported (package cron),

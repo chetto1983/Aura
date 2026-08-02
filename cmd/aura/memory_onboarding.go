@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/chetto1983/aura/internal/mcp"
@@ -88,6 +89,17 @@ func (m *memoryProfileStore) withSession(ctx context.Context, budget time.Durati
 	return fn(sessCtx, cli)
 }
 
+// multiValuedPredicates are the ones a person can hold several of at once. Everything
+// else supersedes: you have one role, one timezone, one preferred language, and a second
+// submission means the first is no longer true — which is what the bitemporal model is
+// for. Getting this backwards either buries the current answer under stale ones or
+// silently deletes a colleague every time another is added.
+var multiValuedPredicates = map[string]struct{}{
+	"knows":          {},
+	"also_known_as":  {},
+	"prefers_system": {},
+}
+
 func (m *memoryProfileStore) writeProfile(
 	ctx context.Context,
 	cli mcp.Transport,
@@ -95,51 +107,110 @@ func (m *memoryProfileStore) writeProfile(
 	profile onboarding.ProfileMemory,
 	completionPredicate string,
 ) error {
-	entities := make([]map[string]any, 0, len(profile.Entities))
-	for _, entity := range profile.Entities {
-		entities = append(entities, map[string]any{
-			"name": entity.Name, "entity_type": entity.EntityType,
-			"description": entity.Description, "aliases": entity.Aliases,
-		})
-	}
-	facts := make([]map[string]any, 0, len(profile.Facts))
-	for _, fact := range profile.Facts {
-		facts = append(facts, map[string]any{
-			"subject": fact.Subject, "predicate": fact.Predicate, "object_value": fact.ObjectValue,
-		})
-	}
-	preferences := make([]map[string]any, 0, len(profile.Preferences))
-	for _, preference := range profile.Preferences {
-		preferences = append(preferences, map[string]any{
-			"category":   preference.Category,
-			"preference": preference.Preference,
-			"context":    preference.Context,
-		})
-	}
-	_, err := cli.CallTool(ctx, "memory_store_profile", map[string]any{
-		"entities":             entities,
-		"facts":                facts,
-		"preferences":          preferences,
-		"completion_predicate": completionPredicate,
-		"completion_value":     m.now().Format(time.RFC3339),
-		"user_identifier":      identityID,
-	})
-	if err != nil {
-		return fmt.Errorf("onboarding memory profile: %w", err)
+	now := m.now()
+	runID := "onboarding-" + now.Format(time.RFC3339)
+	for _, fact := range profileFacts(profile, identityID, completionPredicate, now) {
+		if err := m.upsert(ctx, cli, identityID, runID, fact); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-// Status reads the onboarding sentinel facts scoped to identityID. The predicate filter
-// is client-side because memory_get_facts matches only on subject.
+// profileFact is one bitemporal edge. `statement` is deliberately a sentence and not a
+// restated triple: it is the text that gets embedded and searched, and "name role
+// engineer" retrieves far worse than "Davide works as an engineer".
+type profileFact struct{ subject, predicate, object, statement string }
+
+// profileFacts flattens the deterministic profile projection into the ONE write the
+// memory server has. Entities become facts too — in a fact graph the subject and the
+// object ARE the entities, so an entity is `X is_a PERSON` and nothing is lost. The
+// completion sentinel is the last fact so a reader that sees it knows the rest landed.
+func profileFacts(
+	profile onboarding.ProfileMemory,
+	identityID, completionPredicate string,
+	now time.Time,
+) []profileFact {
+	facts := make([]profileFact, 0,
+		len(profile.Entities)+len(profile.Facts)+len(profile.Preferences)+1)
+
+	for _, entity := range profile.Entities {
+		statement := entity.Name + " is a " + strings.ToLower(entity.EntityType)
+		if entity.Description != "" {
+			statement += " (" + entity.Description + ")"
+		}
+		facts = append(facts, profileFact{entity.Name, "is_a", entity.EntityType, statement})
+		for _, alias := range entity.Aliases {
+			if alias == "" || alias == entity.Name {
+				continue
+			}
+			facts = append(facts, profileFact{
+				entity.Name, "also_known_as", alias, entity.Name + " is also known as " + alias,
+			})
+		}
+	}
+
+	for _, fact := range profile.Facts {
+		facts = append(facts, profileFact{
+			fact.Subject, fact.Predicate, fact.ObjectValue,
+			fact.Subject + " " + strings.ReplaceAll(fact.Predicate, "_", " ") + " " + fact.ObjectValue,
+		})
+	}
+
+	for _, preference := range profile.Preferences {
+		statement := preference.Preference
+		if preference.Context != "" {
+			statement += " (" + preference.Context + ")"
+		}
+		facts = append(facts, profileFact{
+			identityID, "prefers_" + preference.Category, preference.Preference, statement,
+		})
+	}
+
+	// The sentinel is subject-scoped to the identity because that is what Status reads
+	// back: memory_facts_about walks one entity's edges, so the marker has to hang off
+	// the identity itself rather than off the operator's name.
+	stamp := now.Format(time.RFC3339)
+	return append(facts, profileFact{
+		identityID, completionPredicate, stamp, "onboarding " +
+			strings.TrimPrefix(completionPredicate, "onboarding_") + " at " + stamp,
+	})
+}
+
+func (m *memoryProfileStore) upsert(
+	ctx context.Context,
+	cli mcp.Transport,
+	identityID, runID string,
+	fact profileFact,
+) error {
+	_, multi := multiValuedPredicates[fact.predicate]
+	_, err := cli.CallTool(ctx, "memory_upsert_fact", map[string]any{
+		"user_identifier": identityID,
+		"subject":         fact.subject,
+		"predicate":       fact.predicate,
+		"object":          fact.object,
+		"statement":       fact.statement,
+		"supersedes":      !multi,
+		"source_run_id":   runID,
+	})
+	if err != nil {
+		return fmt.Errorf("onboarding memory fact %s/%s: %w", fact.subject, fact.predicate, err)
+	}
+	return nil
+}
+
+// Status reads the onboarding sentinel facts scoped to identityID. memory_facts_about
+// walks one entity's edges by exact name, which is why writeProfile hangs the sentinel
+// off the identity rather than off the operator's name. The predicate filter stays
+// client-side: the tool takes one predicate and we look for either of two.
 func (m *memoryProfileStore) Status(ctx context.Context, identityID string) (onboarding.OnboardingState, error) {
 	if identityID == "" {
 		return onboarding.OnboardingState{}, nil
 	}
 	var text string
 	err := m.withSession(ctx, memoryOneCallTimeout, func(ctx context.Context, cli mcp.Transport) error {
-		out, err := cli.CallTool(ctx, "memory_get_facts", map[string]any{
-			"subject": identityID, "user_identifier": identityID,
+		out, err := cli.CallTool(ctx, "memory_facts_about", map[string]any{
+			"entity": identityID, "user_identifier": identityID,
 		})
 		text = out
 		return err
@@ -147,17 +218,16 @@ func (m *memoryProfileStore) Status(ctx context.Context, identityID string) (onb
 	if err != nil {
 		return onboarding.OnboardingState{}, err
 	}
+	// No `error` field: the memory server reports failure as an MCP error, which
+	// CallTool already returns above. A struct field for an error nobody sends is a
+	// branch that can never run.
 	var res struct {
 		Facts []struct {
 			Predicate string `json:"predicate"`
 		} `json:"facts"`
-		Error string `json:"error"`
 	}
 	if err := json.Unmarshal([]byte(text), &res); err != nil {
 		return onboarding.OnboardingState{}, fmt.Errorf("onboarding status decode: %w", err)
-	}
-	if res.Error != "" {
-		return onboarding.OnboardingState{}, fmt.Errorf("onboarding status: %s", res.Error)
 	}
 	var st onboarding.OnboardingState
 	for _, f := range res.Facts {

@@ -72,17 +72,9 @@ func validateModelHookMutation(before, after *llm.Request) error {
 }
 
 // validateCommandModelHookMutation compares the command-visible request shape.
-// DynamicTailID is intentionally absent from command-hook JSON, so it is
-// excluded from this comparison and retained from the live request on apply.
 func validateCommandModelHookMutation(before, after *llm.Request) error {
 	expected := cloneModelRequest(before)
 	proposed := cloneModelRequest(after)
-	for i := range expected.Messages {
-		expected.Messages[i].DynamicTailID = ""
-	}
-	for i := range proposed.Messages {
-		proposed.Messages[i].DynamicTailID = ""
-	}
 	return validateModelHookMutation(&expected, &proposed)
 }
 

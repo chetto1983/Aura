@@ -675,6 +675,114 @@ jobs:
           path: artifacts/production-readiness/coverage-report.json
           if-no-files-found: error
 
+  arcadedb-integration-test:
+    name: Memory substrate (arcadedb_integration tier, live ArcadeDB)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Until this job existed the arcadedb_integration tier RAN NOWHERE. It compiled —
+    # scripts/tagged_tier_compile.sh discovers any `*_integration` tag by pattern, so the
+    # tier has always had a build floor — but nothing ever executed it, and it is the only
+    # coverage of the substrate Aura's whole long-term memory sits on. A tier that only
+    # compiles proves the types line up; every defect listed at the top of
+    # memory_integration_test.go (`out.name` returning NULL, vector.neighbors on an EDGE
+    # index yielding unresolvable endpoints, a superseded fact winning rank 1, supersession
+    # filtering on the one field that changes) was green under the unit tests and appeared
+    # only when a real database answered.
+    #
+    # ArcadeDB only. No Postgres, no MCP sidecar image build, no embedder: nothing in the
+    # executed set needs them, and each would be a way for this job to go red for reasons
+    # that are not the memory substrate.
+    env:
+      # Arms the no-skip-as-green guards (liveGap in internal/arcadedb, the inline guards in
+      # cmd/aura). GitHub sets CI=true already; stated here because the tier keys off it and
+      # the coupling should be visible at the job rather than inferred.
+      CI: "true"
+      # The tier's own connection env. ARCADEDB_PASSWORD / ARCADEDB_APP_PASSWORD /
+      # AURA_ARCADEDB_TENANT_SECRET come from the workflow-level env block; these two do not
+      # exist there because only this job talks to ArcadeDB over the wire.
+      ARCADEDB_URL: http://127.0.0.1:2480
+      ARCADEDB_DATABASE: aura_memory
+      # compose interpolates the WHOLE file before it selects a service, and
+      # POSTGRES_PASSWORD is :?-required — so it must be set even though this job starts no
+      # Postgres. Every other required var is in the workflow-level env block.
+      POSTGRES_PASSWORD: ci-test-password
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Bring up ArcadeDB
+        # `docker compose up`, not a GitHub service container: the empty brackets in
+        # `-Darcadedb.server.defaultDatabases=aura_memory[]` are load-bearing (see the
+        # comment on the arcadedb service in compose.yaml — the bracketed-credential form
+        # writes `"aura_memory":[null]` into root's server-users entry and SHADOWS its own
+        # `"*":["admin"]`, locking root out of the database it just created), and reproducing
+        # that JAVA_OPTS by hand in a `services:` block is how that footgun comes back.
+        # Composing keeps CI on the operator's exact server configuration.
+        run: docker compose up -d arcadedb
+
+      - name: Wait for ArcadeDB healthy
+        # The compose healthcheck probes /api/v1/ready, the one endpoint that answers
+        # unauthenticated. Failing HERE with the container log is far easier to read than the
+        # connection-refused storm the tier would otherwise produce.
+        run: |
+          ok=""
+          for i in $(seq 1 40); do
+            status="$(docker inspect -f '{{.State.Health.Status}}' aura-arcadedb 2>/dev/null || echo starting)"
+            echo "arcadedb health: $status"
+            [ "$status" = "healthy" ] && ok=1 && break
+            sleep 5
+          done
+          if [ -z "$ok" ]; then
+            echo "ArcadeDB did not become healthy" >&2
+            docker logs aura-arcadedb --tail 80 || true
+            exit 1
+          fi
+
+      - name: Memory tier — bitemporal facts, supersession, live schema (-race, no skip)
+        # -skip rather than -run: a positive selector would have to be extended by hand every
+        # time a test is added to memory_integration_test.go, and the one that was forgotten
+        # would silently stop being a gate. The exclusions are by FAMILY and each is excluded
+        # for a reason that is about data, never about the code under test:
+        #
+        #   TestLocomo*        need AURA_LOCOMO_DIR — the Backboard LOCOMO corpus (1986
+        #                      questions), an external dataset that is not in the repo, plus
+        #                      hand-extracted facts, a spaCy worker inside the MCP image and
+        #                      60-minute timeouts. They are measurement runs that report
+        #                      recall@k, not pass/fail gates.
+        #   TestMemoryVector*  need the llama.cpp embed sidecar, whose GGUF is a model
+        #                      download the sidecar cannot fetch itself (it has no egress and
+        #                      takes a LOCAL -m path). TestMemoryVectorAnswersACrossLingual
+        #                      Question additionally asserts against the OPERATOR's own fact
+        #                      corpus; on a fresh database there is nothing for it to find.
+        #
+        # Everything else runs, and that includes the package's untagged unit tests — with
+        # the tag on they compile into the same binary, cost nothing, and mean this job also
+        # covers the pure client/schema/tenant surface.
+        run: |
+          go test -race -tags arcadedb_integration -count=1 \
+            -skip '^TestLocomo|^TestMemoryVector' \
+            ./internal/arcadedb/
+
+      - name: Deprovision tier — drop database + revoke tenant credential (-race, no skip)
+        # The per-identity purge, against the real server. It is the postconditions that need
+        # a live ArcadeDB: that `drop database` makes /api/v1/exists answer false, and that a
+        # dropped tenant user is actually REFUSED rather than quietly still accepted. A mock
+        # answers whatever the adapter asks it to.
+        run: |
+          go test -race -tags arcadedb_integration -count=1 \
+            -run '^TestArcadeMemoryPurgeLive' \
+            ./cmd/aura/
+
+      - name: Tear down
+        if: always()
+        run: docker compose down
+
   multimodal-integration-test:
     name: Multimodal sidecars (multimodal_integration tier, live STT/TTS)
     runs-on: ubuntu-latest

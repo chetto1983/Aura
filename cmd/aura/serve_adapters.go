@@ -21,7 +21,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chetto1983/aura/internal/adaptive/orderingcontrol"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/config"
@@ -321,22 +320,9 @@ func taskStorePool(ts *cronTaskStore) *pgxpool.Pool {
 // via skilladapters.NewWriter; the pool-free path leaves Writer nil (write actions
 // error loudly). Discovery+install is no longer a tool concern (amendment #51 /
 // D-40): the find-skills always-on skill teaches self-extension via the sandbox CLI.
-func newSkillTool(cfg *config.Config, pool *pgxpool.Pool, sandboxRouter *usersandbox.SandboxRouter) *tools.SkillTool {
-	var adaptive tools.SkillRoutingControl
-	if cfg != nil {
-		adaptive = orderingcontrol.NewSkillRouting(
-			pool,
-			cfg.LLM.Provider,
-			cfg.LLM.Model,
-		)
-	}
-	return newSkillToolWithAdaptive(cfg, pool, adaptive, sandboxRouter)
-}
-
-func newSkillToolWithAdaptive(
+func newSkillTool(
 	cfg *config.Config,
 	writerPool *pgxpool.Pool,
-	adaptive tools.SkillRoutingControl,
 	sandboxRouter *usersandbox.SandboxRouter,
 ) *tools.SkillTool {
 	if cfg == nil || cfg.SkillsDir == "" {
@@ -354,7 +340,6 @@ func newSkillToolWithAdaptive(
 	// profile action=use renders a snippet's in-box SandboxPath; nil keeps the host-primary path.
 	tool := &tools.SkillTool{
 		Loader:        skilladapters.NewLoader(loader, cfg.SkillManifestCapBytes, cfg.SkillExportDir),
-		Adaptive:      adaptive,
 		SandboxRouter: sandboxRouter,
 	}
 	if writerPool != nil {

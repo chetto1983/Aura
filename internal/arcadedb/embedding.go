@@ -17,6 +17,34 @@ type Embedder interface {
 	Embed(ctx context.Context, texts []string) ([][]float64, error)
 }
 
+// EmbeddingGemma is trained with ASYMMETRIC task prefixes and llama.cpp does not
+// add them, so every caller must. The two literals below are the model card's own,
+// trailing space included — it is part of the string, not formatting:
+//
+//	https://ai.google.dev/gemma/docs/embeddinggemma/model_card
+//	Retrieval (Query)    -> "task: search result | query: {content}"
+//	Retrieval (Document) -> "title: {title | \"none\"} | text: {content}"
+//
+// A fact statement is the DOCUMENT and a search string is the QUERY; the pairing
+// is directional and swapping it measurably costs recall. These are retrieval
+// prefixes only — a symmetric job (comparing two utterances, as the reasoning-tier
+// classifier does) wants "task: sentence similarity | query: " or nothing at all,
+// never these.
+const (
+	taskQueryPrefix    = "task: search result | query: "
+	taskDocumentPrefix = "title: none | text: "
+)
+
+// withTask prepends a task prefix to every text, returning a new slice so the
+// caller's input is never mutated.
+func withTask(prefix string, texts []string) []string {
+	out := make([]string, len(texts))
+	for i, t := range texts {
+		out[i] = prefix + t
+	}
+	return out
+}
+
 // SidecarEmbedder calls an OpenAI-compatible /v1/embeddings endpoint — Aura's
 // llama.cpp sidecar, or any hosted embedder that speaks the same shape.
 type SidecarEmbedder struct {

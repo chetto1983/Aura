@@ -86,8 +86,6 @@ services:
       AURA_RUN_DIR_SWEEP_INTERVAL_SEC: ${AURA_RUN_DIR_SWEEP_INTERVAL_SEC:-3600}
       AURA_CONVERSATION_TURN_CAP_BYTES: ${AURA_CONVERSATION_TURN_CAP_BYTES:-65536}
       AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS: ${AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS:-10}
-      AURA_CONTEXT_MEMORY_RECALL: ${AURA_CONTEXT_MEMORY_RECALL:-true}
-      AURA_CONTEXT_MEMORY_RECALL_MAX_ITEMS: ${AURA_CONTEXT_MEMORY_RECALL_MAX_ITEMS:-8}
       AURA_HISTORY_HARD_CAP_TURNS: ${AURA_HISTORY_HARD_CAP_TURNS:-50}
       AURA_RUN_DIR_WARN_THRESHOLD_BYTES: ${AURA_RUN_DIR_WARN_THRESHOLD_BYTES:-1073741824}
       AURA_EMBED_BASE_URL: http://aura-llama-embed:8081
@@ -582,10 +580,17 @@ services:
       - ${AURA_EMBED_MODEL_PATH:-/root/.cache/llama.cpp/embeddinggemma-300M-Q8_0.gguf}
       - --embeddings
       # Pooling is a property of the embedding model, not a house style, and the wrong
-      # choice degrades similarity silently rather than failing. It therefore travels
-      # with the model in .env instead of being hardcoded here.
+      # choice degrades similarity silently rather than failing. The default here must
+      # therefore match the default MODEL one line above — "it travels with the model in
+      # .env" was the old reasoning and it was wrong, because the model path is defaulted
+      # HERE too: a deploy with an empty .env got EmbeddingGemma from compose and `last`
+      # from compose, a pair that never existed. EmbeddingGemma-300M's own GGUF declares
+      # gemma-embedding.pooling_type = 1, and llama.cpp's enum (include/llama.h:
+      # NONE=0, MEAN=1, CLS=2, LAST=3, RANK=4) makes that MEAN — its architecture is a
+      # mean-pooling layer over the token embeddings. Override in .env only together
+      # with AURA_EMBED_MODEL_PATH.
       - --pooling
-      - ${AURA_EMBED_POOLING:-last}
+      - ${AURA_EMBED_POOLING:-mean}
       - --embd-normalize
       - "2"
       - -ngl

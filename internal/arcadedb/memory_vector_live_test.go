@@ -22,10 +22,7 @@ func vectorClient(t *testing.T) *Client {
 	t.Helper()
 	password := strings.TrimSpace(os.Getenv("ARCADEDB_PASSWORD"))
 	if password == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatal("ARCADEDB_PASSWORD must be set in CI: a skipped integration tier is a falsely-green job")
-		}
-		t.Skip("ARCADEDB_PASSWORD not set")
+		liveGap(t, "ARCADEDB_PASSWORD not set")
 	}
 	base := strings.TrimSpace(os.Getenv("ARCADEDB_URL"))
 	if base == "" {
@@ -37,7 +34,7 @@ func vectorClient(t *testing.T) *Client {
 	}
 	client, err := New(Config{BaseURL: base, Database: database, User: "root", Password: password})
 	if err != nil {
-		t.Skipf("arcadedb: %v", err)
+		liveGap(t, "arcadedb: %v", err)
 	}
 	embedURL := strings.TrimSpace(os.Getenv("AURA_EMBED_BASE_URL"))
 	if embedURL == "" {
@@ -45,10 +42,10 @@ func vectorClient(t *testing.T) *Client {
 	}
 	embedder := NewSidecarEmbedder(embedURL, os.Getenv("AURA_EMBED_MODEL"), "", 60*time.Second)
 	if embedder == nil {
-		t.Skip("no embedder configured")
+		liveGap(t, "no embedder configured")
 	}
 	if _, err := embedder.Embed(context.Background(), []string{"probe"}); err != nil {
-		t.Skipf("embedding sidecar unreachable: %v", err)
+		liveGap(t, "embedding sidecar unreachable: %v", err)
 	}
 	return client.WithEmbedder(embedder)
 }

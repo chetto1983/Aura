@@ -113,11 +113,6 @@ type LlmAgent struct {
 	// embedder is wired). When present, adaptiveReasoningTier uses it instead of
 	// the per-turn LLM router round-trip; the LLM router remains the fallback.
 	classifier *prompt.ReasoningClassifier
-	// reasoningControl is the optional typed schema-2 per-round adapter.
-	reasoningControl ReasoningControl
-	// dynamicTail is one already-assigned recall exposure whose delivery is
-	// committed by the final guard immediately before the first model call.
-	dynamicTail *DynamicTailExposure
 
 	// reasoningOverride is the FIXED per-turn effort selected in the web Composer (37E),
 	// threaded from runner.WithReasoningOverride via LlmAgentConfig. When non-empty the
@@ -178,10 +173,6 @@ type LlmAgentConfig struct {
 	// req.Reasoning on a reasoning target (OpenRouter OR llama.cpp, D-08); empty is the
 	// "auto" default, leaving today's adaptive path byte-identical (D-04, zero regression).
 	ReasoningOverride llm.ReasoningEffort
-	// ReasoningControl is the optional typed per-round adaptive reasoning adapter.
-	ReasoningControl ReasoningControl
-	// DynamicTail carries one protected, non-persisted memory recall exposure.
-	DynamicTail *DynamicTailExposure
 }
 
 // Run drives the budget-gated tool-dispatch loop (Req#9/#10). Termination paths:
@@ -369,9 +360,6 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 					"history":             a.history,
 				})
 				if hookResult != nil {
-					if a.dynamicTail != nil && !a.dynamicTail.Included {
-						req = a.guardDynamicTail(spanCtx, req)
-					}
 					span.End()
 					cancel()
 					answer := normalizeContentStopAnswer(hookResult.Content)
@@ -398,7 +386,6 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				llmEnd.End(err)
 				activeLLMEnd = nil
 			}
-			req = a.guardDynamicTail(llmCtx, req)
 			ch, err := a.streamWithOpenRetry(llmCtx, req, requestID)
 			if err != nil {
 				endLLM(err)

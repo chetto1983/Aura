@@ -45,9 +45,8 @@ These recur throughout the code and explain most of the non-obvious decisions:
 - **Trust boundaries are explicit.** Anything the model didn't author — MCP results,
   web pages, document text — is wrapped/framed as untrusted before it re-enters the
   prompt (prompt-injection containment), and secrets are redacted at every egress.
-- **Static serving, measured adaptation.** A reusable embedding-index substrate powers
-  curated-seed reasoning-tier routing and semantic tool discovery. The separate adaptive
-  control plane remains shadow-only until its promotion gates authorize serving.
+- **Static serving.** A reusable embedding-index substrate powers curated-seed
+  reasoning-tier routing and semantic tool discovery.
 
 ## 2. Layered view
 
@@ -73,7 +72,7 @@ These recur throughout the code and explain most of the non-obvious decisions:
 │                       mcp/manager (recipes, trust, audit)                 │
 ├──────────────────────────────────────────────────────────────────────────┤
 │ Intelligence subst.   llm (+openai_compat) · semindex (embed-index core)  │
-│                       · adaptive · reasoningtrace · multimodal            │
+│                       · reasoningtrace · multimodal                       │
 ├──────────────────────────────────────────────────────────────────────────┤
 │ Capabilities          web · skills (+skilladapters) · cron (+handlers)    │
 │                       · onboarding · documents · assets · settings ·      │
@@ -309,8 +308,7 @@ conversion; ArcadeDB holds long-term memory and is reached only over MCP.
   over EmbeddingGemma-300M, which exists because a question asked in Italian cannot reach a
   fact written in English by lexical match alone. The LLM-facing interface is Aura's own
   `cmd/arcadedb-mcp` sidecar over Streamable-HTTP (`memory_*` + `graph_schema`); the Go
-  package is the HTTP client behind it, and it also backs the private adaptive shadow
-  projection (`adaptive.GraphWriter`, Cypher on ArcadeDB's own engine). There are no graph
+  package is the HTTP client behind it. There are no graph
   migrations — `EnsureMemorySchema` is idempotent DDL run at connect, and it doubles as the
   per-identity database's existence probe.
 - **`objectstore`** — the S3/filesystem blob seam with per-identity prefixes

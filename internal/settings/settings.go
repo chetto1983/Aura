@@ -114,6 +114,9 @@ func (s *Store) Delete(ctx context.Context, key string) error {
 	})
 }
 
+// settingsWriteAdvisoryKey serializes every aura.settings write against itself.
+const settingsWriteAdvisoryKey int64 = 4707759426009125972
+
 func (s *Store) withWriteLock(
 	ctx context.Context, fn func(*sqlc.Queries) error,
 ) (err error) {
@@ -133,7 +136,7 @@ func (s *Store) withWriteLock(
 		err = tx.Commit(ctx)
 	}()
 	if _, err = tx.Exec(
-		ctx, "SELECT pg_advisory_xact_lock($1)", benchmarkSettingsAdvisoryKey,
+		ctx, "SELECT pg_advisory_xact_lock($1)", settingsWriteAdvisoryKey,
 	); err != nil {
 		return err
 	}

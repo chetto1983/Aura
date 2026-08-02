@@ -4,18 +4,14 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/json"
 	"errors"
 	"io"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/chetto1983/aura/internal/idempotency"
-	"github.com/google/uuid"
 )
 
 type cliMemoryRegistry struct {
@@ -202,22 +198,22 @@ func TestPrepareCLIIdempotencyPreservesGenericFingerprintGolden(t *testing.T) {
 	}
 }
 
-func TestCLIMutationPathUsesLongestExactAdaptiveCommand(t *testing.T) {
+func TestCLIMutationPathMatchesWholeCommandsOnly(t *testing.T) {
 	t.Parallel()
 
 	command, mutating := cliMutationPath([]string{
-		"eval", "adaptive", "seal-admission", "--input", "admission.json",
+		"identity", "revoke", "--id", "11111111-1111-4111-8111-111111111111",
 	})
-	if !mutating || command != "eval adaptive seal-admission" {
-		t.Fatalf("seal mutation = %q/%t, want exact three-token command", command, mutating)
+	if !mutating || command != "identity revoke" {
+		t.Fatalf("revoke mutation = %q/%t, want the exact two-token command", command, mutating)
 	}
 	if command, mutating := cliMutationPath([]string{
-		"eval", "adaptive", "verify",
+		"identity", "list",
 	}); mutating || command != "" {
-		t.Fatalf("verify mutation = %q/%t, want read-only", command, mutating)
+		t.Fatalf("list mutation = %q/%t, want read-only", command, mutating)
 	}
 	if command, mutating := cliMutationPath([]string{
-		"eval", "adaptive", "seal-admission-extra",
+		"identity", "revoke-extra",
 	}); mutating || command != "" {
 		t.Fatalf("prefix mutation = %q/%t, want exact rejection", command, mutating)
 	}
@@ -250,246 +246,19 @@ func TestMemoryCommandKeepsPreparedInvocationContext(t *testing.T) {
 	}
 }
 
-func TestPrepareCLIIdempotencyRejectsOperationKeyForAdaptiveVerify(
+func TestPrepareCLIIdempotencyRejectsOperationKeyForAReadOnlyCommand(
 	t *testing.T,
 ) {
 	t.Parallel()
 	_, _, err := prepareCLIIdempotency(
 		context.Background(),
-		[]string{
-			"eval", "adaptive", "verify",
-			"--owner-id", "11111111-1111-4111-8111-111111111111",
-			"--cohort-id", "22222222-2222-4222-8222-222222222222",
-			"--operation-key", "read-only-key",
-		},
+		[]string{"identity", "list", "--operation-key", "read-only-key"},
 		io.Discard,
 	)
 	if err == nil ||
 		!strings.Contains(err.Error(), "only valid for mutating commands") {
-		t.Fatalf("adaptive verify operation key error = %v", err)
+		t.Fatalf("read-only operation key error = %v", err)
 	}
-}
-
-func TestPrepareCLIIdempotencyBindsAdaptiveAdmissionSemanticIntent(
-	t *testing.T,
-) {
-	t.Parallel()
-	baseManifest := validAdaptiveAdmissionManifest(t)
-	basePath := writeAdaptiveBenchmarkJSON(t, "admission.json", baseManifest)
-	base := adaptiveAdmissionFingerprintForTest(t, basePath)
-	retry := adaptiveAdmissionFingerprintForTest(t, basePath)
-	if base != retry {
-		t.Fatal("unchanged admission semantic intent changed fingerprint")
-	}
-
-	tests := []struct {
-		name   string
-		mutate func(*adaptiveBenchmarkAdmissionManifest)
-	}{
-		{name: "manifest path bytes", mutate: func(manifest *adaptiveBenchmarkAdmissionManifest) {
-			copied := filepath.Join(t.TempDir(), "copied-child.json")
-			payload, err := os.ReadFile(manifest.Artifacts[0].Path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(copied, payload, 0o600); err != nil {
-				t.Fatal(err)
-			}
-			manifest.Artifacts[0].Path = copied
-		}},
-		{name: "owner", mutate: func(manifest *adaptiveBenchmarkAdmissionManifest) {
-			manifest.OwnerID = "11111111-1111-4111-8111-111111111111"
-		}},
-		{name: "cohort", mutate: func(manifest *adaptiveBenchmarkAdmissionManifest) {
-			manifest.CohortID = "22222222-2222-4222-8222-222222222222"
-		}},
-		{name: "reference", mutate: func(manifest *adaptiveBenchmarkAdmissionManifest) {
-			manifest.Artifacts[0].Ref.ArtifactID =
-				"33333333-3333-4333-8333-333333333333"
-		}},
-		{name: "child digest", mutate: func(manifest *adaptiveBenchmarkAdmissionManifest) {
-			payload, err := os.ReadFile(manifest.Artifacts[0].Path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			payload = bytes.Replace(
-				payload,
-				[]byte(strings.Repeat("a", 64)),
-				[]byte(strings.Repeat("9", 64)),
-				1,
-			)
-			if err := os.WriteFile(
-				manifest.Artifacts[0].Path,
-				payload,
-				0o600,
-			); err != nil {
-				t.Fatal(err)
-			}
-			manifest.Artifacts[0].Ref.ArtifactSHA256 = sha256HexForTest(payload)
-		}},
-	}
-	for _, testCase := range tests {
-		t.Run(testCase.name, func(t *testing.T) {
-			manifest := validAdaptiveAdmissionManifest(t)
-			testCase.mutate(&manifest)
-			path := writeAdaptiveBenchmarkJSON(t, "changed.json", manifest)
-			changed := adaptiveAdmissionFingerprintForTest(t, path)
-			if changed == base {
-				t.Fatal("changed adaptive admission retained semantic fingerprint")
-			}
-		})
-	}
-}
-
-func TestPrepareCLIIdempotencyRejectsArtifactDigestMismatchBeforeBegin(
-	t *testing.T,
-) {
-	t.Parallel()
-	manifest := validAdaptiveAdmissionManifest(t)
-	if err := os.WriteFile(
-		manifest.Artifacts[0].Path,
-		[]byte(`{"schema_id":"fixture/v1","revision":1,"changed":true}`),
-		0o600,
-	); err != nil {
-		t.Fatal(err)
-	}
-	path := writeAdaptiveBenchmarkJSON(t, "mismatched.json", manifest)
-	if _, _, err := prepareCLIIdempotency(
-		context.Background(),
-		[]string{
-			"eval", "adaptive", "seal-admission",
-			"--input", path,
-			"--confirm-operator-approval",
-			"--operation-key", "digest-mismatch-key",
-		},
-		io.Discard,
-	); err == nil {
-		t.Fatal("artifact bytes mismatching the manifest reference reached Begin")
-	}
-}
-
-func TestPrepareCLIIdempotencyRejectsMissingTypedChildFieldsBeforeBegin(
-	t *testing.T,
-) {
-	t.Parallel()
-	manifest := validAdaptiveAdmissionManifest(t)
-	missing := []byte(
-		`{"schema_id":"aura.adaptive.interference-plan/v1","revision":1}`,
-	)
-	if err := os.WriteFile(
-		manifest.Artifacts[0].Path,
-		missing,
-		0o600,
-	); err != nil {
-		t.Fatal(err)
-	}
-	manifest.Artifacts[0].Ref.ArtifactSHA256 = sha256HexForTest(missing)
-	path := writeAdaptiveBenchmarkJSON(t, "missing-typed-fields.json", manifest)
-	if _, _, err := prepareCLIIdempotency(
-		context.Background(),
-		[]string{
-			"eval", "adaptive", "seal-admission",
-			"--input", path,
-			"--confirm-operator-approval",
-			"--operation-key", "typed-child-key",
-		},
-		io.Discard,
-	); err == nil {
-		t.Fatal("typed child missing registered fields reached Begin")
-	}
-}
-
-func TestRunEvalCommandSealAdmissionRejectsMutationAfterPreparation(
-	t *testing.T,
-) {
-	t.Parallel()
-	tests := []struct {
-		name   string
-		mutate func(*adaptiveBenchmarkAdmissionManifest)
-	}{
-		{name: "manifest", mutate: func(manifest *adaptiveBenchmarkAdmissionManifest) {
-			manifest.OwnerID = uuid.Must(uuid.NewV7()).String()
-		}},
-		{name: "artifact", mutate: func(manifest *adaptiveBenchmarkAdmissionManifest) {
-			if err := os.WriteFile(
-				manifest.Artifacts[0].Path,
-				[]byte(`{"schema_id":"fixture/v1","revision":1,"changed":true}`),
-				0o600,
-			); err != nil {
-				t.Fatal(err)
-			}
-		}},
-	}
-	for _, testCase := range tests {
-		t.Run(testCase.name, func(t *testing.T) {
-			manifest := validAdaptiveAdmissionManifest(t)
-			path := writeAdaptiveBenchmarkJSON(t, "admission.json", manifest)
-			prepared, cleaned, err := prepareCLIIdempotency(
-				t.Context(),
-				[]string{
-					"eval", "adaptive", "seal-admission", "--input", path,
-					"--confirm-operator-approval",
-					"--operation-key", "stable-admission-key",
-				},
-				io.Discard,
-			)
-			if err != nil {
-				t.Fatalf("prepare parent admission: %v", err)
-			}
-			testCase.mutate(&manifest)
-			if testCase.name == "manifest" {
-				payload, err := json.Marshal(manifest)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if err := os.WriteFile(path, payload, 0o600); err != nil {
-					t.Fatal(err)
-				}
-			}
-			factoryCalls := 0
-			err = runEvalCommand(
-				prepared,
-				cleaned[1:],
-				io.Discard,
-				func(context.Context) (adaptiveBenchmarkCLI, func(), error) {
-					factoryCalls++
-					return &adaptiveBenchmarkCLIFake{}, func() {}, nil
-				},
-			)
-			if err == nil || factoryCalls != 0 {
-				t.Fatalf(
-					"mutation error=%v factory_calls=%d, want pre-factory conflict",
-					err,
-					factoryCalls,
-				)
-			}
-		})
-	}
-}
-
-func adaptiveAdmissionFingerprintForTest(
-	t *testing.T,
-	path string,
-) [32]byte {
-	t.Helper()
-	ctx, _, err := prepareCLIIdempotency(
-		context.Background(),
-		[]string{
-			"eval", "adaptive", "seal-admission",
-			"--input", path,
-			"--confirm-operator-approval",
-			"--operation-key", "stable-admission-key",
-		},
-		io.Discard,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, fingerprint, ok := cliOperationFromContext(ctx)
-	if !ok {
-		t.Fatal("adaptive admission lacks operation fingerprint")
-	}
-	return fingerprint
 }
 
 func TestRunCLIIdempotentExecutesOnceAndReplaysRealOutput(t *testing.T) {
@@ -516,13 +285,13 @@ func TestRunCLIIdempotentExecutesOnceAndReplaysRealOutput(t *testing.T) {
 	}
 	var firstOut, firstErr bytes.Buffer
 	if code := runCLIIdempotent(
-		ctx, cleaned, &firstOut, &firstErr, registry, executor, false,
+		ctx, cleaned, &firstOut, &firstErr, registry, executor,
 	); code != 0 {
 		t.Fatalf("first exit = %d, stderr=%q", code, firstErr.String())
 	}
 	var replayOut, replayErr bytes.Buffer
 	if code := runCLIIdempotent(
-		ctx, cleaned, &replayOut, &replayErr, registry, executor, false,
+		ctx, cleaned, &replayOut, &replayErr, registry, executor,
 	); code != 0 {
 		t.Fatalf("replay exit = %d, stderr=%q", code, replayErr.String())
 	}
@@ -544,7 +313,7 @@ func TestRunCLIIdempotentFailureBecomesTerminalIndeterminate(t *testing.T) {
 	registry := &cliMemoryRegistry{}
 	executor := func(context.Context, []string, io.Writer, io.Writer) int { return 7 }
 	if code := runCLIIdempotent(
-		ctx, cleaned, io.Discard, io.Discard, registry, executor, false,
+		ctx, cleaned, io.Discard, io.Discard, registry, executor,
 	); code != 7 {
 		t.Fatalf("exit = %d, want 7", code)
 	}

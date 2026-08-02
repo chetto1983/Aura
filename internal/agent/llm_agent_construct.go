@@ -49,13 +49,7 @@ func NewLlmAgent(cfg LlmAgentConfig) *LlmAgent {
 		breaker:           resolveBreaker(cfg),
 		classifier:        resolveClassifier(cfg),
 		reasoningOverride: cfg.ReasoningOverride,
-		reasoningControl:  cfg.ReasoningControl,
-		dynamicTail:       cfg.DynamicTail,
 		sources:           display.NewRegistry(),
-	}
-	agent.dynamicTail.bind(agent.history)
-	if agent.dynamicTail != nil {
-		agent.history = stripDynamicTail(agent.history, agent.dynamicTail)
 	}
 	return agent
 }

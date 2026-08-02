@@ -22,12 +22,11 @@ const (
 // assistant messages that invoke tools; ToolCallID populates only for `tool`
 // role messages that report a result.
 type Message struct {
-	Role          string     `json:"role"`
-	Content       string     `json:"content,omitempty"`
-	ToolCalls     []ToolCall `json:"tool_calls,omitempty"`
-	ToolCallID    string     `json:"tool_call_id,omitempty"`
-	Name          string     `json:"name,omitempty"`
-	DynamicTailID string     `json:"-"`
+	Role       string     `json:"role"`
+	Content    string     `json:"content,omitempty"`
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string     `json:"tool_call_id,omitempty"`
+	Name       string     `json:"name,omitempty"`
 }
 
 // ToolCall is one assistant-emitted call. Arguments stays a JSON string so the

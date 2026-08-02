@@ -208,6 +208,102 @@ env_value() {
   awk -F= -v k="$key" '$1 == k { sub(/^[^=]*=/, ""); print; exit }' .env
 }
 
+# ensure_embed_model puts the embedding GGUF where the sidecar expects it.
+#
+# The sidecar is started with a LOCAL `-m <path>`, not `--hf-repo`, because it has no
+# egress: a first boot that tries to reach HuggingFace fails with "Could not establish
+# connection" and restart-loops. That made the model a manual prerequisite an operator had
+# no way to discover — the install left a path pointing at a file that had to appear by
+# magic. This function is that missing step.
+#
+# It also fixes something the manual copy hid for months. The appliance was running
+# unsloth's `embeddinggemma-300M-Q8_0.gguf` (328,577,056 bytes, 314 tensors), which OMITS
+# EmbeddingGemma's two sentence-transformers dense projections. Without them llama.cpp
+# returns the raw backbone output: still 768-wide, still no error, just not the model's
+# embeddings. `convert_hf_to_gguf.py` drops them unless `--sentence-transformers-dense-modules`
+# is passed, and Google's own maintainer confirms the projections are part of the model
+# (huggingface.co/google/embeddinggemma-300m/discussions/22). ggml-org's build carries them
+# — 316 tensors including dense_2/dense_3 — so that is the default here, and the check
+# below is for exactly those two tensors rather than a size or a checksum, because that is
+# the property that was actually wrong.
+EMBED_MODEL_URL_DEFAULT="https://huggingface.co/ggml-org/embeddinggemma-300M-GGUF/resolve/main/embeddinggemma-300M-Q8_0.gguf"
+
+EMBED_MODEL_PATH_DEFAULT="/root/.cache/llama.cpp/embeddinggemma-300M-Q8_0.gguf"
+
+ensure_embed_model() {
+  # Both values are ALSO defaulted in compose.yaml, so an .env that omits them still
+  # boots a sidecar pointing at this path. Returning early on an absent key would skip
+  # the fetch silently and leave that exact install broken — the failure this function
+  # exists to prevent. Mirror the compose default instead.
+  model_path="$(env_value AURA_EMBED_MODEL_PATH)"
+  [ -n "$model_path" ] || model_path="$EMBED_MODEL_PATH_DEFAULT"
+  model_url="$(env_value AURA_EMBED_MODEL_URL)"
+  [ -n "$model_url" ] || model_url="$EMBED_MODEL_URL_DEFAULT"
+
+  # Upstream is the size authority: pinning one here would turn a legitimate upstream
+  # rebuild into a failed install, while asking the server costs one HEAD request.
+  want_bytes="$(curl -fsIL "$model_url" 2>/dev/null | awk 'BEGIN{IGNORECASE=1} /^x-linked-size:/ { gsub(/[^0-9]/,"",$2); print $2; exit }')"
+
+  docker compose create aura-llama-embed >/dev/null 2>&1 || true
+  embed_cid="$(docker compose ps -aq aura-llama-embed 2>/dev/null | head -1)"
+  if [ -z "$embed_cid" ]; then
+    echo "FAIL: could not materialise the aura-llama-embed container to place the model" >&2
+    exit 1
+  fi
+  have_bytes="$(docker run --rm --volumes-from "$embed_cid" alpine \
+    sh -c "stat -c %s '$model_path' 2>/dev/null || echo 0" 2>/dev/null | tr -d '\r')"
+
+  if [ -n "$want_bytes" ] && [ "$have_bytes" = "$want_bytes" ]; then
+    echo "embedding model already present (${have_bytes} bytes)"
+    return 0
+  fi
+  if [ "$have_bytes" != "0" ]; then
+    echo "embedding model differs from upstream (${have_bytes} vs ${want_bytes:-unknown} bytes) — refetching"
+  fi
+
+  tmp_model="$(mktemp -t aura-embed-model.XXXXXX)"
+  trap 'rm -f "$tmp_model"' EXIT
+  echo "downloading the embedding model (~318 MiB, once)…"
+  curl -fL --retry 3 --retry-delay 2 "$model_url" -o "$tmp_model" || {
+    echo "FAIL: could not download the embedding model from ${model_url}" >&2
+    exit 1
+  }
+  verify_embed_model "$tmp_model" "$want_bytes"
+
+  docker cp "$tmp_model" "${embed_cid}:${model_path}" || {
+    echo "FAIL: could not place the embedding model into the sidecar volume" >&2
+    exit 1
+  }
+  rm -f "$tmp_model"
+  trap - EXIT
+  echo "embedding model installed at ${model_path}"
+}
+
+# verify_embed_model refuses a download that is not the model we asked for. Three checks,
+# cheapest first: the GGUF magic, the size upstream advertised, and the two dense tensors
+# whose absence is silent. GGUF stores tensor names as plain strings in the header, so
+# pulling the printable runs out of the first 16 MB is enough to see them.
+verify_embed_model() {
+  file="$1"
+  want="$2"
+  if [ "$(head -c 4 "$file")" != "GGUF" ]; then
+    echo "FAIL: downloaded embedding model is not a GGUF file" >&2
+    exit 1
+  fi
+  got="$(wc -c < "$file" | tr -d ' ')"
+  if [ -n "$want" ] && [ "$got" != "$want" ]; then
+    echo "FAIL: embedding model is ${got} bytes, upstream advertised ${want}" >&2
+    exit 1
+  fi
+  dense="$(head -c 16000000 "$file" | LC_ALL=C tr -c '[:print:]' '\n' | grep -c '^dense_[23]\.weight$' || true)"
+  if [ "$dense" -lt 2 ]; then
+    echo "FAIL: embedding model has no sentence-transformers dense projections." >&2
+    echo "      It would return backbone-only vectors, silently and at the right width." >&2
+    echo "      unsloth's Q8_0 build has this defect; use ggml-org's." >&2
+    exit 1
+  fi
+}
+
 set_env_value() {
   key="$1"
   value="$2"
@@ -330,7 +426,15 @@ SEARXNG_SECRET=${searxng_secret}
 
 AURA_EMBED_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda
 AURA_EMBED_MODEL_PATH=/root/.cache/llama.cpp/embeddinggemma-300M-Q8_0.gguf
-AURA_EMBED_POOLING=last
+# Where the installer fetches that file from when it is missing or differs from upstream.
+# ggml-org's build and NOT unsloth's: unsloth's Q8_0 omits the two sentence-transformers
+# dense projections, which makes llama.cpp return backbone-only vectors at the correct
+# width with no error at all. The installer refuses a model without them.
+AURA_EMBED_MODEL_URL=https://huggingface.co/ggml-org/embeddinggemma-300M-GGUF/resolve/main/embeddinggemma-300M-Q8_0.gguf
+# mean, because the model on the line above is mean-pooled: its GGUF declares
+# gemma-embedding.pooling_type = 1 and llama.cpp's enum reads 1 as MEAN. These two
+# lines change together or not at all.
+AURA_EMBED_POOLING=mean
 AURA_EMBED_NGL=99
 AURA_EMBED_DIMENSIONS=768
 
@@ -450,6 +554,7 @@ if [ "${aura_image}" != "aura:local" ]; then
   docker pull "$aura_image"
 fi
 
+ensure_embed_model
 docker compose up -d
 install_systemd_unit
 

@@ -385,8 +385,10 @@ func TestScopeMemoryArgs(t *testing.T) {
 	})
 }
 
-// TestStoreConfirmedOpensOneMCPSessionForTheWholeSubmission asserts the wire
-// boundary: one transport, initialize, and host-only atomic tools/call.
+// TestStoreConfirmedOpensOneMCPSessionForTheWholeSubmission asserts the wire boundary:
+// ONE transport and ONE handshake, however many facts the seed maps to. That property is
+// the whole reason writeProfile takes a session instead of a call — nine facts over nine
+// handshakes would pay the initialize nine times.
 func TestStoreConfirmedOpensOneMCPSessionForTheWholeSubmission(t *testing.T) {
 	rec := newRecordingMemoryMCPServer(t)
 	withMemoryServerAt(t, rec.URL)
@@ -404,18 +406,19 @@ func TestStoreConfirmedOpensOneMCPSessionForTheWholeSubmission(t *testing.T) {
 		t.Errorf("MCP session teardowns = %d, want 0 in authenticated stateless mode", deletes)
 	}
 	calls := rec.recordedCalls()
-	if len(calls) != 1 {
-		t.Fatalf("tools/call requests = %d, want one atomic profile call", len(calls))
+	if len(calls) != 9 {
+		t.Fatalf("tools/call requests = %d, want 8 profile facts + the sentinel", len(calls))
 	}
-	call := calls[0]
-	if call.tool != "memory_store_profile" {
-		t.Errorf("wire tool = %q, want memory_store_profile", call.tool)
+	for i, call := range calls {
+		if call.tool != "memory_upsert_fact" {
+			t.Errorf("wire call %d tool = %q, want memory_upsert_fact", i, call.tool)
+		}
+		if call.args["user_identifier"] != "id-uuid" {
+			t.Errorf("wire call %d missing user_identifier scope: %#v", i, call.args)
+		}
 	}
-	if call.args["user_identifier"] != "id-uuid" {
-		t.Errorf("wire call missing user_identifier scope: %#v", call.args)
-	}
-	if call.args["completion_predicate"] != onboarding.PredicateOnboardingCompleted {
-		t.Errorf("wire call = %#v, want the completion sentinel", call.args)
+	if last := calls[len(calls)-1]; last.args["predicate"] != onboarding.PredicateOnboardingCompleted {
+		t.Errorf("last wire call = %#v, want the completion sentinel", last.args)
 	}
 }
 

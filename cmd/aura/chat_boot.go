@@ -10,13 +10,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/chetto1983/aura/internal/adaptive"
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/askuser"
@@ -41,21 +39,19 @@ import (
 // chatEnv is the booted composition root shared by every chat subcommand: the
 // config, the open pool, the three Stores, and the Runner that drives the REPL.
 type chatEnv struct {
-	cfg               *config.Config
-	pool              *pgxpool.Pool
-	conv              *conversations.Store
-	pause             *askuser.Store
-	identity          *identity.Store
-	run               *runner.Runner
-	client            llm.Client
-	reg               *tools.Registry
-	gateway           *gateway.Gateway
-	reasoningControl  agent.ReasoningControl
-	operations        *idempotency.Store
-	toolInvocations   *toolinvocations.Store // the append-only ledger the gateway reserves + the reconciler sweeps
-	deleteReconciler  *runner.DeleteReconciler
-	adaptiveProjector *adaptiveProjectorRuntime
-	assets            *assets.Service
+	cfg              *config.Config
+	pool             *pgxpool.Pool
+	conv             *conversations.Store
+	pause            *askuser.Store
+	identity         *identity.Store
+	run              *runner.Runner
+	client           llm.Client
+	reg              *tools.Registry
+	gateway          *gateway.Gateway
+	operations       *idempotency.Store
+	toolInvocations  *toolinvocations.Store // the append-only ledger the gateway reserves + the reconciler sweeps
+	deleteReconciler *runner.DeleteReconciler
+	assets           *assets.Service
 	// shareSvc is the WEBSHARE-02/03 share lifecycle (buildShareService, share_service_wiring.go,
 	// serve-only — nil under `aura chat`). Backs three composition-root seams at once: the HTTP
 	// surface (via SetShareService's adapter), the D-15 delete cascade (chat.run.SetShareRevoker),
@@ -74,13 +70,6 @@ type chatEnv struct {
 func (e *chatEnv) close() {
 	if e.deleteReconciler != nil {
 		e.deleteReconciler.Stop()
-	}
-	if e.adaptiveProjector != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		if err := e.adaptiveProjector.Stop(ctx); err != nil {
-			fmt.Fprintln(os.Stderr, "warn: adaptive projector shutdown:", err)
-		}
-		cancel()
 	}
 	if e.toolHandles.BackgroundShells != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -172,7 +161,6 @@ type migrationHeadChecker func(context.Context, string) error
 
 type bootSettingsOps struct {
 	openKeyless func(context.Context) (*pgxpool.Pool, bool, error)
-	recover     func(context.Context, *pgxpool.Pool) error
 	overlay     func(context.Context, *pgxpool.Pool) error
 }
 
@@ -181,24 +169,6 @@ type chatEnvAssembler func(
 	*config.Config,
 	*pgxpool.Pool,
 ) (*chatEnv, error)
-
-type adaptiveControlSetFactory func(
-	context.Context,
-	*config.Config,
-	*pgxpool.Pool,
-) (adaptiveControlSet, error)
-
-type chatRegistryTransform func(
-	*tools.Registry,
-) (*tools.Registry, error)
-
-type chatClientTransform func(llm.Client) (llm.Client, error)
-
-type chatEnvAssemblyOptions struct {
-	adaptiveControls  adaptiveControlSetFactory
-	registryTransform chatRegistryTransform
-	clientTransform   chatClientTransform
-}
 
 func assembleChatEnvAtMigrationHead(
 	ctx context.Context,
@@ -215,9 +185,8 @@ func assembleChatEnvAtMigrationHead(
 }
 
 // resolveConfigAndPool loads the config and opens the DB pool, handing BOTH to
-// migration gate and assembleChatEnv. After opening the pool it recovers any stale
-// benchmark override before the settings overlay and config reload. It owns the pool
-// across every post-open failure: if recovery or reload fails it closes the pool
+// migration gate and assembleChatEnv. It owns the pool across every post-open
+// failure: if the settings overlay or the config reload fails it closes the pool
 // before returning. On success it returns the OPEN pool and the caller takes over
 // its lifecycle. Returning the pool from here also fixes a latent shadow bug: the
 // previous inline form declared the overlay pool with `:=` inside the keyless branch,
@@ -229,7 +198,6 @@ func resolveConfigAndPool(ctx context.Context, loadConfig func() (*config.Config
 		open,
 		bootSettingsOps{
 			openKeyless: openSettingsOverlayPool,
-			recover:     settings.RecoverExpiredBenchmarkOverride,
 			overlay: func(ctx context.Context, pool *pgxpool.Pool) error {
 				return settings.OverlayEnv(ctx, settings.NewStore(pool))
 			},
@@ -255,9 +223,7 @@ func resolveConfigAndPoolWithSettings(
 		if overlayErr != nil || !ok {
 			return nil, nil, err
 		}
-		if err := recoverAndOverlayBootSettings(ctx, pool, settingsOps); err != nil {
-			return nil, nil, err
-		}
+		overlayBootSettings(ctx, pool, settingsOps)
 		cfg, err = loadConfig()
 		if err != nil {
 			pool.Close()
@@ -277,9 +243,7 @@ func resolveConfigAndPoolWithSettings(
 	if err != nil {
 		return nil, nil, fmt.Errorf("db open: %w", err)
 	}
-	if err := recoverAndOverlayBootSettings(ctx, pool, settingsOps); err != nil {
-		return nil, nil, err
-	}
+	overlayBootSettings(ctx, pool, settingsOps)
 	cfg, err = loadConfig()
 	if err != nil {
 		pool.Close()
@@ -288,19 +252,14 @@ func resolveConfigAndPoolWithSettings(
 	return cfg, pool, nil
 }
 
-func recoverAndOverlayBootSettings(
+func overlayBootSettings(
 	ctx context.Context,
 	pool *pgxpool.Pool,
 	settingsOps bootSettingsOps,
-) error {
-	if err := settingsOps.recover(ctx, pool); err != nil {
-		pool.Close()
-		return fmt.Errorf("recover benchmark settings override: %w", err)
-	}
+) {
 	if err := settingsOps.overlay(ctx, pool); err != nil {
 		fmt.Fprintln(os.Stderr, "warn: settings overlay:", err)
 	}
-	return nil
 }
 
 // releaseBootResources is the boot close-on-error path (QUAL-04b): it drains any MCP
@@ -322,67 +281,10 @@ func releaseBootResources(pool interface{ Close() }, closers []func() error) {
 // path, which returned after the pool + registry were built with no cleanup). The guard
 // is disarmed only by the happy-path success flag, after which chatEnv.close owns the
 // lifecycle.
-func assembleChatEnv(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool) (*chatEnv, error) {
-	return assembleChatEnvWithAdaptiveGraphClient(ctx, cfg, pool, nil)
-}
-
-func assembleChatEnvWithAdaptiveGraphClient(
+func assembleChatEnv(
 	ctx context.Context,
 	cfg *config.Config,
 	pool *pgxpool.Pool,
-	openAdaptiveGraph adaptiveGraphClientOpener,
-) (*chatEnv, error) {
-	return assembleChatEnvWithAdaptivePolicy(
-		ctx,
-		cfg,
-		pool,
-		openAdaptiveGraph,
-		adaptive.NewPolicyStore(pool),
-		os.Stderr,
-	)
-}
-
-func assembleChatEnvWithAdaptivePolicy(
-	ctx context.Context,
-	cfg *config.Config,
-	pool *pgxpool.Pool,
-	openAdaptiveGraph adaptiveGraphClientOpener,
-	policyReader adaptive.PolicyReader,
-	warnings io.Writer,
-) (*chatEnv, error) {
-	return assembleChatEnvWithOptions(
-		ctx,
-		cfg,
-		pool,
-		openAdaptiveGraph,
-		chatEnvAssemblyOptions{
-			adaptiveControls: func(
-				ctx context.Context,
-				cfg *config.Config,
-				pool *pgxpool.Pool,
-			) (adaptiveControlSet, error) {
-				adaptivePool := selectAdaptiveBootPool(
-					ctx,
-					pool,
-					policyReader,
-					warnings,
-				)
-				return newAdaptiveControlSet(
-					adaptivePool,
-					cfg.LLM.Provider,
-					cfg.LLM.Model,
-				), nil
-			},
-		},
-	)
-}
-
-func assembleChatEnvWithOptions(
-	ctx context.Context,
-	cfg *config.Config,
-	pool *pgxpool.Pool,
-	openAdaptiveGraph adaptiveGraphClientOpener,
-	options chatEnvAssemblyOptions,
 ) (*chatEnv, error) {
 	var mcpClosers []func() error
 	success := false
@@ -417,14 +319,6 @@ func assembleChatEnvWithOptions(
 	// capability active). dev prints no banner.
 	if cfg.Profile == config.ProfileLocalTrusted {
 		fmt.Fprintln(os.Stderr, "trusted local mode — full host capability active")
-	}
-
-	if options.adaptiveControls == nil {
-		return nil, errors.New("adaptive control factory is unavailable")
-	}
-	adaptiveControls, err := options.adaptiveControls(ctx, cfg, pool)
-	if err != nil {
-		return nil, fmt.Errorf("adaptive controls: %w", err)
 	}
 
 	convStore := conversations.New(pool, conversations.Config{
@@ -468,27 +362,16 @@ func assembleChatEnvWithOptions(
 	// Retain the task-store adapter: it backs BOTH the `task` tool (registry) AND the
 	// scheduled-task resume hook (on-channel HITL approval) below.
 	taskStore := newCronTaskStore(pool, convStore)
-	reg, toolHandles, mcpClosers, err := buildRegistryWithMCPAndAdaptiveControls(
+	reg, toolHandles, mcpClosers, err := buildRegistryWithMCP(
 		ctx,
 		cfg,
 		taskStore,
 		sandboxRouter,
-		adaptiveControls,
 	)
 	if err != nil {
 		// pool + closers released by the deferred close-on-error guard.
 		return nil, fmt.Errorf("mcp: %w", err)
 	}
-	if options.registryTransform != nil {
-		reg, err = options.registryTransform(reg)
-		if err != nil {
-			return nil, fmt.Errorf("registry transform: %w", err)
-		}
-		if reg == nil {
-			return nil, errors.New("registry transform returned nil")
-		}
-	}
-
 	// Fail-loud boot wiring guard (D-02d): a mutating multiplexed tool the classifier
 	// cannot tier panics here rather than silently under-gating a live turn.
 	gateway.ValidateClassifiable(reg)
@@ -508,15 +391,6 @@ func assembleChatEnvWithOptions(
 			"model", cfg.LLM.Model, "err", err)
 	}
 	client := newLLMClient(cfg.LLM)
-	if options.clientTransform != nil {
-		client, err = options.clientTransform(client)
-		if err != nil {
-			return nil, fmt.Errorf("client transform: %w", err)
-		}
-		if client == nil {
-			return nil, errors.New("client transform returned nil")
-		}
-	}
 	deps := runner.Deps{
 		Conv:            convStore,
 		Pause:           pauseStore,
@@ -539,10 +413,6 @@ func assembleChatEnvWithOptions(
 		EvictAfter: cfg.ContextToolEvictAfterTurns,
 		// Amendment #91 (fix-plan 1.12): bounded display-only CoT persistence cap.
 		ReasoningPersistMaxRunes: cfg.ReasoningPersistMaxRunes,
-		DynamicRecallProvider:    dynamicRecallProvider(cfg, toolHandles.Memory),
-		DynamicRecallControl:     adaptiveControls.memoryRecall,
-		ReasoningControl:         adaptiveControls.reasoning,
-		RecallMaxItems:           cfg.MemoryRecallMaxItems,
 		AlwaysBlock:              alwaysBlockProvider(cfg),
 		// The gateway resume hook records an operator's accept of a relayed gateway_approval
 		// pause into the SAME gateway instance (gw) the runner's PEP reads (D-03 point 2).
@@ -555,24 +425,8 @@ func assembleChatEnvWithOptions(
 		Embedder: embeddingClient(cfg, documentHTTPClient(cfg)),
 	}
 	run := runner.New(deps)
-	// Fail-soft, like every other sidecar dependency at boot (MCP mounts, the embed
-	// probe above): the projector drains an outbox, and its own worker already tolerates
-	// a graph that is unreachable at runtime. Making this fatal would let an unconfigured
-	// or unreachable memory server stop `aura serve` from booting at all. Events stay in
-	// the outbox and project once a boot finds the graph reachable.
-	adaptiveProjector, err := buildAdaptiveProjectorRuntime(
-		ctx,
-		&cfg.ArcadeDB,
-		pool,
-		openAdaptiveGraph,
-	)
-	if err != nil {
-		slog.Warn("adaptive projector disabled: private-graph projection is paused until the next boot with a reachable graph",
-			"error", err)
-		adaptiveProjector = nil
-	}
 	success = true // disarm the close-on-error guard; chatEnv.close now owns the lifecycle.
-	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, gateway: gw, reasoningControl: adaptiveControls.reasoning, operations: operations, toolInvocations: toolInvocationStore, deleteReconciler: runner.NewDeleteReconciler(run, time.Minute), adaptiveProjector: adaptiveProjector, toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter}, nil
+	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, gateway: gw, operations: operations, toolInvocations: toolInvocationStore, deleteReconciler: runner.NewDeleteReconciler(run, time.Minute), toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter}, nil
 }
 
 func openSettingsOverlayPool(ctx context.Context) (*pgxpool.Pool, bool, error) {

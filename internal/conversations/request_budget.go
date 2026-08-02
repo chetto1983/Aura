@@ -10,8 +10,7 @@ import (
 // finalRequestEnvelope is the model-visible portion of the OpenAI-compatible
 // request. Counting the serialized envelope includes roles, tool-call framing,
 // tool names/descriptions/schemas, and JSON punctuation in addition to message
-// content. DynamicTailID is intentionally excluded by llm.Message's json tag,
-// exactly as it is on the provider wire.
+// content, exactly as it is on the provider wire.
 type finalRequestEnvelope struct {
 	Messages []llm.Message `json:"messages"`
 	Tools    []llm.ToolDef `json:"tools,omitempty"`

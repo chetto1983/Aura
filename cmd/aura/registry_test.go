@@ -73,27 +73,6 @@ func TestBuildBaseRegistryToolSearchWorksWithoutEmbedder(t *testing.T) {
 	}
 }
 
-func TestNewSkillToolWiresAdaptiveRoutingOnlyWithLivePool(t *testing.T) {
-	cfg := &config.Config{
-		LLM: llm.Config{
-			Provider: "openrouter",
-			Model:    "production-model",
-		},
-		SkillsDir:         t.TempDir(),
-		SkillBodyCapBytes: 1 << 20,
-	}
-	if got := newSkillTool(cfg, nil, nil); got.Adaptive != nil {
-		t.Fatal("pool-free skill tool wired adaptive routing")
-	}
-	if got := newSkillTool(
-		cfg,
-		new(pgxpool.Pool),
-		nil,
-	); got.Adaptive == nil {
-		t.Fatal("live skill tool omitted adaptive routing")
-	}
-}
-
 func TestBuildBaseRegistryWiresDocumentRetrievalOnlyWithLivePool(t *testing.T) {
 	cfg := &config.Config{
 		LLM: llm.Config{

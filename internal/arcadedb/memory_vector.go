@@ -67,7 +67,7 @@ func (c *Client) embedStatement(ctx context.Context, statement string) []float64
 	if c == nil || c.embedder == nil || strings.TrimSpace(statement) == "" {
 		return nil
 	}
-	vectors, err := c.embedder.Embed(ctx, []string{statement})
+	vectors, err := c.embedder.Embed(ctx, withTask(taskDocumentPrefix, []string{statement}))
 	if err != nil || len(vectors) != 1 || len(vectors[0]) != vectorDimensions {
 		// Fail SOFT and deliberately: an embedder that is down must degrade
 		// retrieval, never refuse a write. A fact that was not stored is lost;
@@ -124,7 +124,7 @@ func (c *Client) SearchFactsHybrid(
 	if c.embedder == nil {
 		return c.SearchFacts(ctx, query, limit, asOf)
 	}
-	vectors, err := c.embedder.Embed(ctx, []string{query})
+	vectors, err := c.embedder.Embed(ctx, withTask(taskQueryPrefix, []string{query}))
 	if err != nil || len(vectors) != 1 || len(vectors[0]) != vectorDimensions {
 		return c.SearchFacts(ctx, query, limit, asOf)
 	}
@@ -222,7 +222,7 @@ func (c *Client) EmbedMissingFacts(ctx context.Context, batch int) (int, error) 
 		statements = append(statements, statement)
 		rids = append(rids, rid)
 	}
-	vectors, err := c.embedder.Embed(ctx, statements)
+	vectors, err := c.embedder.Embed(ctx, withTask(taskDocumentPrefix, statements))
 	if err != nil {
 		return 0, fmt.Errorf("arcadedb: embed backfill: %w", err)
 	}

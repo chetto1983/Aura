@@ -79,12 +79,11 @@ type Handler interface {
 // registry (the agent_job runs the registry minus swarm_spawn, D-13), and the
 // sidecar knobs. It is plain composition — no internal/cron types.
 type AgentDeps struct {
-	Client           llm.Client
-	LLM              llm.Config
-	Registry         *tools.Registry
-	PreviewCap       int
-	RunDir           string
-	ReasoningControl agent.ReasoningControl
+	Client     llm.Client
+	LLM        llm.Config
+	Registry   *tools.Registry
+	PreviewCap int
+	RunDir     string
 	// Workspace is the shell workspace path announced in the per-turn tail hint
 	// (#52/D-41) — without it a scheduled agent never learns where deliverables go.
 	// Empty defaults to the process cwd in newAgentWorker, mirroring runner.New.
@@ -132,7 +131,6 @@ func newAgentWorker(deps AgentDeps, runID, ledgerConvID string, prior []llm.Mess
 		// "agent_job:<runID>" SessionID above (uuid.Parse fails on it) (Open Q1).
 		LedgerConversationID: ledgerConvID,
 		Gateway:              deps.Gateway,
-		ReasoningControl:     deps.ReasoningControl,
 		Workspace:            ws,
 		UserTurns:            prior,
 	})

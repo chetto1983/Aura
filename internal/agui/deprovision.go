@@ -65,22 +65,6 @@ type ConversationPurger interface {
 	PurgeConversations(ctx context.Context, identityID string) error
 }
 
-// AdaptiveIdentityFencer permanently denies new adaptive writes for an identity
-// before its private graph projection is purged. It closes the projector/purge
-// race: a projector that crossed the pre-write check must observe the fence on
-// its post-write check and remove its own late projection.
-type AdaptiveIdentityFencer interface {
-	FenceAdaptiveIdentity(ctx context.Context, identityID string) error
-}
-
-// AdaptiveGraphPurger removes only Aura's private adaptive-learning projection from the
-// SHARED graph database. It is deliberately separate from MemoryPurger: the projection is
-// scoped by an owner_id property inside one shared database, not by a database of its own,
-// so dropping an identity's memory database does not reach it.
-type AdaptiveGraphPurger interface {
-	PurgeAdaptiveGraph(ctx context.Context, identityID string) error
-}
-
 // MemoryPurger erases the identity's long-term memory, which is one ArcadeDB database and
 // one server user (internal/arcadedb/tenant.go). Idempotent: it asserts the postcondition
 // (the database is gone, the credential is refused) rather than the drop's exit code, so a
@@ -112,8 +96,6 @@ type DeprovisionDeps struct {
 	Sessions       SessionTerminator
 	Jobs           JobTerminator
 	Conversations  ConversationPurger
-	AdaptiveFence  AdaptiveIdentityFencer
-	AdaptiveGraph  AdaptiveGraphPurger
 	Memory         MemoryPurger
 	ObjectStore    ObjectStoreProvisioner
 	Filesystem     FilesystemProvisioner
@@ -172,7 +154,7 @@ func (d *Deprovisioner) Deactivate(ctx context.Context, identityID string) error
 }
 
 // Purge runs the symmetric reverse saga after the grace window: conversations, then the
-// adaptive projection, then the memory database, then the Garage bucket+key, then the
+// memory database, then the Garage bucket+key, then the
 // per-identity dirs, then the aura identity (cascading grants + link + object-store row),
 // then the Authula user. Journaled
 // (kind=deprovision), idempotent, and resumable — a re-run skips the steps the journal
@@ -194,20 +176,6 @@ func (d *Deprovisioner) Purge(ctx context.Context, target DeprovisionTarget) err
 	if d.deps.Conversations != nil {
 		if err := run.step(ctx, sagaStepConversations, func(ctx context.Context) error {
 			return d.deps.Conversations.PurgeConversations(ctx, target.IdentityID)
-		}); err != nil {
-			return err
-		}
-	}
-	if d.deps.AdaptiveFence != nil {
-		if err := run.step(ctx, sagaStepAdaptiveFence, func(ctx context.Context) error {
-			return d.deps.AdaptiveFence.FenceAdaptiveIdentity(ctx, target.IdentityID)
-		}); err != nil {
-			return err
-		}
-	}
-	if d.deps.AdaptiveGraph != nil {
-		if err := run.step(ctx, sagaStepAdaptiveGraph, func(ctx context.Context) error {
-			return d.deps.AdaptiveGraph.PurgeAdaptiveGraph(ctx, target.IdentityID)
 		}); err != nil {
 			return err
 		}

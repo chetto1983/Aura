@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -86,8 +87,10 @@ func fakeStore() (*memoryProfileStore, *openCounter) {
 	return m, oc
 }
 
-// fullSeedAnswers projects onto 3 entities + 4 facts + 1 preference plus the sentinel,
-// all carried by one atomic host operation.
+// fullSeedAnswers projects onto 3 entities + 4 facts + 1 preference, which the adapter
+// flattens into 8 bitemporal facts plus the sentinel = 9 writes on ONE session. (The
+// Davide alias is dropped: it equals the entity name, and a fact saying a thing is also
+// known as itself is noise in the index.)
 var fullSeedAnswers = onboarding.Answers{
 	Name: "Davide", Lang: "it", Location: "Caraglio",
 	Timezone: "Europe/Rome", Role: "founder", Company: "PmSync",
@@ -99,51 +102,61 @@ func TestStoreConfirmedScopesEveryCallAndEndsWithSentinel(t *testing.T) {
 		t.Fatalf("StoreConfirmed: %v", err)
 	}
 	calls := oc.transport.recorded()
-	if len(calls) != 1 {
-		t.Fatalf("memory calls = %d, want one atomic profile call", len(calls))
+	if len(calls) != 9 {
+		t.Fatalf("memory calls = %d, want 8 profile facts + the sentinel", len(calls))
 	}
-	call := calls[0]
-	if call.tool != "memory_store_profile" {
-		t.Errorf("tool = %q, want memory_store_profile", call.tool)
+	for i, call := range calls {
+		if call.tool != "memory_upsert_fact" {
+			t.Errorf("call %d tool = %q, want memory_upsert_fact", i, call.tool)
+		}
+		// The scope is per-call, not per-session: the memory server reads it off the
+		// arguments, so one unstamped write lands in a scope nobody owns.
+		if call.args["user_identifier"] != "id-uuid" {
+			t.Errorf("call %d is unscoped: %#v", i, call.args)
+		}
+		if call.args["source_run_id"] == "" || call.args["source_run_id"] == nil {
+			t.Errorf("call %d has no source_run_id; a run must be findable to be forgettable", i)
+		}
 	}
-	if call.args["user_identifier"] != "id-uuid" {
-		t.Errorf("call missing user_identifier=id-uuid: %#v", call.args)
+	// The sentinel goes LAST on purpose: a reader that sees it knows the profile
+	// underneath it landed.
+	last := calls[len(calls)-1]
+	if last.args["predicate"] != onboarding.PredicateOnboardingCompleted {
+		t.Errorf("last predicate = %v, want the completion sentinel", last.args["predicate"])
 	}
-	if call.args["completion_predicate"] != onboarding.PredicateOnboardingCompleted {
-		t.Errorf("completion predicate = %v, want completed", call.args["completion_predicate"])
-	}
-	if got := len(profileItems(t, call.args, "entities")); got != 3 {
-		t.Errorf("entities = %d, want 3", got)
-	}
-	if got := len(profileItems(t, call.args, "facts")); got != 4 {
-		t.Errorf("facts = %d, want 4", got)
-	}
-	if got := len(profileItems(t, call.args, "preferences")); got != 1 {
-		t.Errorf("preferences = %d, want 1", got)
+	if last.args["subject"] != "id-uuid" {
+		t.Errorf("sentinel subject = %v, want the identity Status reads back", last.args["subject"])
 	}
 }
 
-func TestStoreConfirmedUsesOneAtomicProfileMutation(t *testing.T) {
+// TestStoreConfirmedSupersedesOnlySingleValuedPredicates is the property the batch API
+// never had to express. A person holds one role and one timezone, so a second submission
+// must CLOSE the previous fact's validity window; they hold any number of colleagues and
+// aliases, so those must accumulate. Getting the direction wrong either buries today's
+// answer under yesterday's or deletes a colleague every time another is added.
+func TestStoreConfirmedSupersedesOnlySingleValuedPredicates(t *testing.T) {
+	answers := fullSeedAnswers
+	answers.People = []string{"Andrea", "Marta"}
 	m, oc := fakeStore()
-	if err := m.StoreConfirmed(context.Background(), "id-uuid", fullSeedAnswers); err != nil {
+	if err := m.StoreConfirmed(context.Background(), "id-uuid", answers); err != nil {
 		t.Fatalf("StoreConfirmed: %v", err)
 	}
-	calls := oc.transport.recorded()
-	if len(calls) != 1 {
-		t.Fatalf("memory calls = %d, want one atomic profile mutation", len(calls))
+	for _, call := range oc.transport.recorded() {
+		predicate, _ := call.args["predicate"].(string)
+		supersedes, _ := call.args["supersedes"].(bool)
+		_, multi := multiValuedPredicates[predicate]
+		if supersedes == multi {
+			t.Errorf("predicate %q supersedes=%v, want %v", predicate, supersedes, !multi)
+		}
 	}
-	if calls[0].tool != "memory_store_profile" {
-		t.Fatalf("tool = %q, want memory_store_profile", calls[0].tool)
+	var colleagues int
+	for _, call := range oc.transport.recorded() {
+		if call.args["predicate"] == "knows" {
+			colleagues++
+		}
 	}
-	if calls[0].args["user_identifier"] != "id-uuid" {
-		t.Fatalf("profile mutation scope = %v, want id-uuid", calls[0].args["user_identifier"])
-	}
-	if calls[0].args["completion_predicate"] != onboarding.PredicateOnboardingCompleted {
-		t.Fatalf(
-			"completion predicate = %v, want %s",
-			calls[0].args["completion_predicate"],
-			onboarding.PredicateOnboardingCompleted,
-		)
+	if colleagues != 2 {
+		t.Errorf("knows facts = %d, want one per person", colleagues)
 	}
 }
 
@@ -156,15 +169,23 @@ func TestStoreConfirmedStoresTheNameByteIdentically(t *testing.T) {
 		if err := m.StoreConfirmed(context.Background(), "id-uuid", onboarding.Answers{Name: name}); err != nil {
 			t.Fatalf("StoreConfirmed(%q): %v", name, err)
 		}
-		call := oc.transport.recorded()[0]
-		entities := profileItems(t, call.args, "entities")
-		if len(entities) != 1 || entities[0]["name"] != name {
-			t.Fatalf("stored entity = %#v, want byte-identical name %q", entities, name)
-		}
-		for _, fact := range profileItems(t, call.args, "facts") {
-			if fact["subject"] != name {
-				t.Errorf("fact %v subject = %v, want the typed name %q", fact["predicate"], fact["subject"], name)
+		var sawEntity bool
+		for _, call := range oc.transport.recorded() {
+			if call.args["predicate"] == "is_a" {
+				sawEntity = true
+				if call.args["subject"] != name {
+					t.Fatalf("entity subject = %v, want byte-identical %q", call.args["subject"], name)
+				}
 			}
+			// The statement is what gets embedded, so a mangled name there is a name the
+			// operator can never search for either.
+			statement, _ := call.args["statement"].(string)
+			if call.args["predicate"] == "is_a" && !strings.Contains(statement, name) {
+				t.Errorf("statement %q does not carry the typed name %q", statement, name)
+			}
+		}
+		if !sawEntity {
+			t.Fatalf("no entity fact written for %q", name)
 		}
 	}
 }
@@ -210,15 +231,11 @@ func TestStoreSkippedWritesOnlySkippedSentinel(t *testing.T) {
 		t.Fatalf("StoreSkipped calls = %d, want 1 — skipping stays cheap", len(calls))
 	}
 	c := calls[0]
-	if c.tool != "memory_store_profile" ||
-		c.args["completion_predicate"] != onboarding.PredicateOnboardingSkipped ||
+	if c.tool != "memory_upsert_fact" ||
+		c.args["predicate"] != onboarding.PredicateOnboardingSkipped ||
+		c.args["subject"] != "id-uuid" ||
 		c.args["user_identifier"] != "id-uuid" {
 		t.Errorf("skip sentinel = %#v", c.args)
-	}
-	for _, key := range []string{"entities", "facts", "preferences"} {
-		if got := len(profileItems(t, c.args, key)); got != 0 {
-			t.Errorf("skip %s = %d, want 0", key, got)
-		}
 	}
 	if oc.opens != 1 || oc.transport.closeCount() != 1 {
 		t.Errorf("skip opened %d / closed %d sessions, want 1/1", oc.opens, oc.transport.closeCount())
@@ -257,6 +274,8 @@ func TestStoreConfirmedSurfacesSessionAndWriteFailures(t *testing.T) {
 		if err := m.StoreConfirmed(context.Background(), "id-uuid", fullSeedAnswers); err == nil {
 			t.Fatal("a rejected write must surface an error")
 		}
+		// Still exactly one: the FIRST fact fails and the loop aborts, so the sentinel is
+		// never stamped over a half-written profile.
 		if got := len(tr.recorded()); got != 1 {
 			t.Errorf("calls after a failed write = %d, want 1 (abort, never stamp the sentinel)", got)
 		}
@@ -277,7 +296,8 @@ func TestStatusScansSentinelPredicates(t *testing.T) {
 		{"skipped", `{"facts":[{"predicate":"onboarding_skipped"}]}`, false, true, false},
 		{"none", `{"facts":[{"predicate":"role"}]}`, false, false, false},
 		{"empty", `{"facts":[]}`, false, false, false},
-		{"server-error", `{"error":"boom"}`, false, false, true},
+		// No server-error case: the memory server reports failure as an MCP error, which
+		// CallTool returns directly. The `error` field this used to feed never arrives.
 		{"bad-json", `not json`, false, false, true},
 	}
 	for _, tc := range cases {
@@ -293,8 +313,9 @@ func TestStatusScansSentinelPredicates(t *testing.T) {
 				t.Errorf("state = %+v, want completed=%v skipped=%v", st, tc.wantC, tc.wantS)
 			}
 			calls := tr.recorded()
-			if len(calls) != 1 || calls[0].args["user_identifier"] != "id" {
-				t.Errorf("status read = %#v, want one user_identifier-scoped call", calls)
+			if len(calls) != 1 || calls[0].tool != "memory_facts_about" ||
+				calls[0].args["entity"] != "id" || calls[0].args["user_identifier"] != "id" {
+				t.Errorf("status read = %#v, want one scoped memory_facts_about call", calls)
 			}
 		})
 	}
@@ -319,13 +340,4 @@ func containsToolCall(calls []recordedCall, tool string) bool {
 		}
 	}
 	return false
-}
-
-func profileItems(t *testing.T, args map[string]any, key string) []map[string]any {
-	t.Helper()
-	items, ok := args[key].([]map[string]any)
-	if !ok {
-		t.Fatalf("%s = %#v, want []map[string]any", key, args[key])
-	}
-	return items
 }

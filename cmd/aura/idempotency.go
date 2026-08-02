@@ -15,19 +15,17 @@ import (
 
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/db"
-	auraeval "github.com/chetto1983/aura/internal/eval"
 	"github.com/chetto1983/aura/internal/idempotency"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/google/uuid"
 )
 
 type cliMutationMeta struct {
-	Scope          idempotency.Scope
-	Normalize      string
-	KeyPolicy      string
-	Execute        cliCommandExecutor
-	Owner          cliMutationOwner
-	RecoverExpired bool
+	Scope     idempotency.Scope
+	Normalize string
+	KeyPolicy string
+	Execute   cliCommandExecutor
+	Owner     cliMutationOwner
 }
 
 type cliMutationOwner uint8
@@ -71,19 +69,16 @@ type cliReplayEnvelope struct {
 var cliInvocationContext = context.Background()
 
 var cliMutationCommands = map[string]cliMutationMeta{
-	"chat archive":   cliMutationMetaFor("chat_archive"),
-	"chat delete":    cliMutationMetaFor("chat_delete"),
-	"chat new":       cliMutationMetaFor("chat_new"),
-	"chat rename":    cliMutationMetaFor("chat_rename"),
-	"chat resume":    cliMutationMetaFor("chat_resume"),
-	"chat unarchive": cliMutationMetaFor("chat_unarchive"),
-	"config set":     cliMutationMetaFor("config_set"),
-	"db migrate":     cliMigrationMetaFor("db_migrate"),
-	"db reset":       cliResetMetaFor("db_reset"),
-	"docs ingest":    cliMutationMetaFor("docs_ingest"),
-	"eval adaptive seal-admission": cliExpiredRecoveryMetaFor(
-		"eval_adaptive_seal_admission",
-	),
+	"chat archive":              cliMutationMetaFor("chat_archive"),
+	"chat delete":               cliMutationMetaFor("chat_delete"),
+	"chat new":                  cliMutationMetaFor("chat_new"),
+	"chat rename":               cliMutationMetaFor("chat_rename"),
+	"chat resume":               cliMutationMetaFor("chat_resume"),
+	"chat unarchive":            cliMutationMetaFor("chat_unarchive"),
+	"config set":                cliMutationMetaFor("config_set"),
+	"db migrate":                cliMigrationMetaFor("db_migrate"),
+	"db reset":                  cliResetMetaFor("db_reset"),
+	"docs ingest":               cliMutationMetaFor("docs_ingest"),
 	"identity grant":            cliMutationMetaFor("identity_grant"),
 	"identity recover":          cliMutationMetaFor("identity_recover"),
 	"identity recover-operator": cliMutationMetaFor("identity_recover_operator"),
@@ -119,13 +114,6 @@ func cliMutationMetaFor(normalizer string) cliMutationMeta {
 		Scope: idempotency.ScopeCLICommand, Normalize: normalizer,
 		KeyPolicy: cliExplicitOrGeneratedKey, Execute: executeCLIChild, Owner: cliRegistryOwner,
 	}
-}
-
-func cliExpiredRecoveryMetaFor(normalizer string) cliMutationMeta {
-	meta := cliMutationMetaFor(normalizer)
-	meta.RecoverExpired = true
-	meta.Execute = executeCLIAdaptiveSealAdmission
-	return meta
 }
 
 func cliMigrationMetaFor(normalizer string) cliMutationMeta {
@@ -168,22 +156,13 @@ func prepareCLIIdempotency(ctx context.Context, args []string, output io.Writer)
 	if err := operationKey.Validate(); err != nil {
 		return nil, nil, fmt.Errorf("--operation-key: %w", err)
 	}
-	var fingerprint [32]byte
-	if command == "eval adaptive seal-admission" {
-		request, loadErr := loadAdaptiveBenchmarkAdmission(cleaned[3:])
-		if loadErr != nil {
-			return nil, nil, loadErr
-		}
-		fingerprint, err = auraeval.AdaptiveBenchmarkAdmissionFingerprint(request)
-	} else {
-		fingerprint, err = idempotency.FingerprintTyped(struct {
-			Command string   `json:"command"`
-			Args    []string `json:"args"`
-		}{
-			Command: command,
-			Args:    append([]string(nil), cleaned[2:]...),
-		})
-	}
+	fingerprint, err := idempotency.FingerprintTyped(struct {
+		Command string   `json:"command"`
+		Args    []string `json:"args"`
+	}{
+		Command: command,
+		Args:    append([]string(nil), cleaned[2:]...),
+	})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -225,7 +204,6 @@ func executeCLIIdempotentParent(ctx context.Context, args []string, stdout, stde
 		stderr,
 		idempotency.New(pool, idempotency.Config{}),
 		meta.Execute,
-		meta.RecoverExpired,
 	)
 }
 
@@ -244,7 +222,6 @@ func runCLIResetOwner(ctx context.Context, args []string, stdout, stderr io.Writ
 		stderr,
 		registry,
 		execute,
-		false,
 	)
 }
 
@@ -264,7 +241,6 @@ func runCLIIdempotent(
 	stderr io.Writer,
 	registry cliOperationRegistry,
 	execute cliCommandExecutor,
-	recoverExpired bool,
 ) int {
 	operation, ok := idempotency.OperationFromContext(ctx)
 	if !ok || registry == nil || execute == nil {
@@ -288,33 +264,8 @@ func runCLIIdempotent(
 		_, _ = fmt.Fprintln(stderr, "operation key conflicts with changed command arguments")
 		return 2
 	case idempotency.DecisionInProgress:
-		recoverer, recoverable := registry.(interface {
-			RecoverExpired(context.Context, idempotency.BeginRequest) (
-				idempotency.ClaimToken,
-				bool,
-				error,
-			)
-		})
-		if !recoverExpired || !recoverable {
-			_, _ = fmt.Fprintln(stderr, "operation is still in progress")
-			return 2
-		}
-		recoveredToken, recovered, recoverErr := recoverer.RecoverExpired(
-			ctx,
-			idempotency.BeginRequest{
-				Operation:   operation.Key,
-				Fingerprint: operation.Fingerprint,
-			},
-		)
-		if recoverErr != nil {
-			_, _ = fmt.Fprintln(stderr, "operation registry unavailable")
-			return 2
-		}
-		if !recovered {
-			_, _ = fmt.Fprintln(stderr, "operation is still in progress")
-			return 2
-		}
-		claimToken = recoveredToken
+		_, _ = fmt.Fprintln(stderr, "operation is still in progress")
+		return 2
 	case idempotency.DecisionIndeterminate:
 		_, _ = fmt.Fprintln(stderr, "operation outcome is indeterminate; do not retry automatically")
 		return 2
@@ -380,31 +331,6 @@ func runCLIIdempotent(
 		)
 		_, _ = fmt.Fprintln(stderr, "operation completion unavailable")
 		return 2
-	}
-	return 0
-}
-
-func executeCLIAdaptiveSealAdmission(
-	ctx context.Context,
-	args []string,
-	stdout io.Writer,
-	stderr io.Writer,
-) int {
-	cleaned, operationKey, err := removeOperationKeyFlag(args)
-	operation, ok := idempotency.OperationFromContext(ctx)
-	if err != nil || !ok || operation.ClaimToken <= 0 ||
-		operationKey != operation.Key.Key {
-		_, _ = fmt.Fprintln(stderr, "operation context unavailable")
-		return 2
-	}
-	if err := runEvalCommand(
-		ctx,
-		cleaned[1:],
-		stdout,
-		newAdaptiveBenchmarkCLI,
-	); err != nil {
-		_, _ = fmt.Fprintln(stderr, err)
-		return 1
 	}
 	return 0
 }

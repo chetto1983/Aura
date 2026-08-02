@@ -30,14 +30,13 @@ const swarmSpawnTool = "swarm_spawn"
 // guard rejects depth >= AURA_SWARM_MAX_DEPTH. ConvID keys the per-child SessionID
 // and the transcript directory.
 type RunConfig struct {
-	ParentBudget     *agent.Budget
-	ParentRegistry   *tools.Registry
-	Client           llm.Client
-	LLM              llm.Config
-	Cfg              config.Config
-	ConvID           string
-	Depth            int
-	ReasoningControl agent.ReasoningControl
+	ParentBudget   *agent.Budget
+	ParentRegistry *tools.Registry
+	Client         llm.Client
+	LLM            llm.Config
+	Cfg            config.Config
+	ConvID         string
+	Depth          int
 	// Gateway is the parent's Phase-35 policy PEP, injected into each worker so a
 	// headless swarm-child dispatch is enforced and keyed on the ORIGINATING
 	// conversation UUID (ConvID), never the flat worker session (Open Q1). nil is a no-op.
@@ -175,7 +174,6 @@ func runChild(ctx context.Context, rc RunConfig, budget *agent.Budget, idx int, 
 		// flat worker SessionID above — uuid.Parse fails on the flat session (Open Q1).
 		LedgerConversationID: rc.ConvID,
 		Gateway:              rc.Gateway,
-		ReasoningControl:     rc.ReasoningControl,
 		UserTurns:            []llm.Message{{Role: llm.RoleUser, Content: structuredBrief(goal)}},
 	})
 

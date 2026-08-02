@@ -11,12 +11,8 @@ import (
 )
 
 type Querier interface {
-	AdaptiveCohortReconstructionTime(ctx context.Context) (pgtype.Timestamptz, error)
-	AdaptiveEvidenceTransactionTime(ctx context.Context) (pgtype.Timestamptz, error)
-	AdaptiveIdentityTombstoned(ctx context.Context, ownerID pgtype.UUID) (bool, error)
 	AggregateCacheMetricsSince(ctx context.Context, since pgtype.Timestamptz) (AggregateCacheMetricsSinceRow, error)
 	AppendIngestionEvent(ctx context.Context, arg AppendIngestionEventParams) (AuraIngestionEvents, error)
-	ApplyAdaptivePolicyTransition(ctx context.Context, arg ApplyAdaptivePolicyTransitionParams) (ApplyAdaptivePolicyTransitionRow, error)
 	// Flip a pending_approval task to active (the cockpit approval, parity with the CLI
 	// `aura task approve`). Returns rows affected so the caller distinguishes a hit (1) from
 	// a task that is not awaiting approval (0).
@@ -35,7 +31,6 @@ type Querier interface {
 	// 0 when the conversation has no turns.
 	CanonicalBranchLeafSeq(ctx context.Context, conversationID pgtype.UUID) (int32, error)
 	CaptureBenchmarkSetting(ctx context.Context, arg CaptureBenchmarkSettingParams) error
-	ClaimAdaptiveOutbox(ctx context.Context, arg ClaimAdaptiveOutboxParams) (AuraAdaptiveOutbox, error)
 	ClaimConversationDeleteTeardown(ctx context.Context, arg ClaimConversationDeleteTeardownParams) (int64, error)
 	ClaimIngestionJobs(ctx context.Context, arg ClaimIngestionJobsParams) ([]AuraIngestionJobs, error)
 	ClaimRetentionItems(ctx context.Context, arg ClaimRetentionItemsParams) ([]AuraRetentionOperationItems, error)
@@ -95,15 +90,6 @@ type Querier interface {
 	FinalizeRetentionItem(ctx context.Context, arg FinalizeRetentionItemParams) (int64, error)
 	FinalizeRetentionOperation(ctx context.Context, arg FinalizeRetentionOperationParams) (AuraRetentionOperations, error)
 	GetActivePasswordResetChallenge(ctx context.Context, identityID pgtype.UUID) (AuraPasswordResetChallenges, error)
-	GetAdaptiveEvidenceArtifact(ctx context.Context, arg GetAdaptiveEvidenceArtifactParams) (AuraAdaptiveEvidenceArtifacts, error)
-	GetAdaptiveFocalCohort(ctx context.Context, arg GetAdaptiveFocalCohortParams) (AuraAdaptiveFocalCohorts, error)
-	GetAdaptiveFocalCohortForReconstruction(ctx context.Context, arg GetAdaptiveFocalCohortForReconstructionParams) (AuraAdaptiveFocalCohorts, error)
-	GetAdaptiveOutboxByID(ctx context.Context, id pgtype.UUID) (AuraAdaptiveOutbox, error)
-	GetAdaptivePolicy(ctx context.Context) (GetAdaptivePolicyRow, error)
-	GetAdaptivePolicySnapshot(ctx context.Context, arg GetAdaptivePolicySnapshotParams) (AuraAdaptivePolicySnapshots, error)
-	GetAdaptiveSealedAdmission(ctx context.Context, arg GetAdaptiveSealedAdmissionParams) (AuraAdaptiveSealedEvidence, error)
-	GetAdaptiveSealedEvidence(ctx context.Context, arg GetAdaptiveSealedEvidenceParams) (AuraAdaptiveSealedEvidence, error)
-	GetAdaptiveSealedOutcomeLook(ctx context.Context, arg GetAdaptiveSealedOutcomeLookParams) (AuraAdaptiveSealedEvidence, error)
 	GetAsset(ctx context.Context, id pgtype.UUID) (AuraAssets, error)
 	GetAssetForIdentity(ctx context.Context, arg GetAssetForIdentityParams) (AuraAssets, error)
 	GetConversation(ctx context.Context, id pgtype.UUID) (AuraConversations, error)
@@ -137,7 +123,6 @@ type Querier interface {
 	GetRetentionItem(ctx context.Context, id pgtype.UUID) (AuraRetentionOperationItems, error)
 	GetRetentionOperationByToken(ctx context.Context, token string) (AuraRetentionOperations, error)
 	GetRun(ctx context.Context, id pgtype.UUID) (AuraAgentJobRuns, error)
-	GetSchema2AdaptiveDelivery(ctx context.Context, arg GetSchema2AdaptiveDeliveryParams) (AuraAdaptiveOutbox, error)
 	GetSetting(ctx context.Context, key string) (AuraSettings, error)
 	GetTask(ctx context.Context, id pgtype.UUID) (AuraSchedulerTasks, error)
 	GetTelegramAccountByIdentity(ctx context.Context, identityID pgtype.UUID) (AuraTelegramAccounts, error)
@@ -154,11 +139,6 @@ type Querier interface {
 	HeartbeatBenchmarkSettingsOverride(ctx context.Context, arg HeartbeatBenchmarkSettingsOverrideParams) (int64, error)
 	IncrementPasswordResetChallengeAttempts(ctx context.Context, id pgtype.UUID) error
 	IncrementPasswordResetTokenAttempts(ctx context.Context, tokenHash string) error
-	InsertAdaptiveFocalCohort(ctx context.Context, arg InsertAdaptiveFocalCohortParams) (int64, error)
-	InsertAdaptiveFocalCohortClaim(ctx context.Context, arg InsertAdaptiveFocalCohortClaimParams) (AuraAdaptiveFocalCohortClaims, error)
-	InsertAdaptiveOutbox(ctx context.Context, arg InsertAdaptiveOutboxParams) (int64, error)
-	InsertAdaptivePolicySnapshot(ctx context.Context, arg InsertAdaptivePolicySnapshotParams) (int64, error)
-	InsertAdaptiveRandomizationReceipt(ctx context.Context, arg InsertAdaptiveRandomizationReceiptParams) (AuraAdaptiveRandomizationReceipts, error)
 	InsertAssetEvent(ctx context.Context, arg InsertAssetEventParams) error
 	InsertBenchmarkSettingsOverride(ctx context.Context, arg InsertBenchmarkSettingsOverrideParams) (AuraBenchmarkSettingsOverrides, error)
 	// Idempotent on (conversation_id, seq): the metric write is a separate, non-transactional
@@ -181,11 +161,6 @@ type Querier interface {
 	InsertTelegramSetupPending(ctx context.Context, arg InsertTelegramSetupPendingParams) error
 	InsertToolInvocation(ctx context.Context, arg InsertToolInvocationParams) (int64, error)
 	ListActiveTasks(ctx context.Context) ([]AuraSchedulerTasks, error)
-	ListAdaptiveAggregate(ctx context.Context, arg ListAdaptiveAggregateParams) ([]AuraAdaptiveOutbox, error)
-	ListAdaptiveEvidenceArtifactsByKind(ctx context.Context, arg ListAdaptiveEvidenceArtifactsByKindParams) ([]AuraAdaptiveEvidenceArtifacts, error)
-	ListAdaptiveFocalCohortClaimConflicts(ctx context.Context, arg ListAdaptiveFocalCohortClaimConflictsParams) ([]AuraAdaptiveFocalCohortClaims, error)
-	ListAdaptiveFocalCohortClaimsForReconstruction(ctx context.Context, arg ListAdaptiveFocalCohortClaimsForReconstructionParams) ([]AuraAdaptiveFocalCohortClaims, error)
-	ListAdaptiveFocalCohortFactsForReconstruction(ctx context.Context, arg ListAdaptiveFocalCohortFactsForReconstructionParams) ([]AuraAdaptiveOutbox, error)
 	// Cross-thread pending list (APRV-01 / D-04): the same SELECT as
 	// ListPendingPausedStates with NO conversation_id filter, so the approval center
 	// can aggregate every still-pending pause across ALL conversations. KEEPS the
@@ -238,7 +213,6 @@ type Querier interface {
 	// SELECT returns (inert). The dedup is the approval_reminded_at throttle stamp, not a row
 	// lock; a rare cross-instance double-nudge under HA is benign.
 	ListDuePendingApprovalReminders(ctx context.Context, arg ListDuePendingApprovalRemindersParams) ([]AuraSchedulerTasks, error)
-	ListEligibleSchema2AdaptiveAggregateFacts(ctx context.Context, arg ListEligibleSchema2AdaptiveAggregateFactsParams) ([]AuraAdaptiveOutbox, error)
 	ListExpiredReplayBodies(ctx context.Context, arg ListExpiredReplayBodiesParams) ([]ListExpiredReplayBodiesRow, error)
 	ListIdentities(ctx context.Context) ([]AuraIdentities, error)
 	ListIdentityAudit(ctx context.Context, arg ListIdentityAuditParams) ([]AuraIdentityAudit, error)
@@ -281,18 +255,10 @@ type Querier interface {
 	// not present) yields an empty path. Walk terminates at parent_seq IS NULL (the root).
 	ListTurnsByBranchPath(ctx context.Context, arg ListTurnsByBranchPathParams) ([]ListTurnsByBranchPathRow, error)
 	ListTurnsBySeq(ctx context.Context, conversationID pgtype.UUID) ([]ListTurnsBySeqRow, error)
-	LockAdaptiveEvent(ctx context.Context, eventID string) error
-	LockAdaptiveOwner(ctx context.Context, ownerID pgtype.UUID) (pgtype.UUID, error)
-	LockAdaptiveOwnerForCohortReconstruction(ctx context.Context, ownerID pgtype.UUID) (pgtype.UUID, error)
-	LockAdaptiveRandomizationReceipt(ctx context.Context, arg LockAdaptiveRandomizationReceiptParams) (AuraAdaptiveRandomizationReceipts, error)
 	LockConversationForTurnAppend(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)
 	// This must run on transaction-bound Queries because autocommit releases the row lock when the statement returns.
 	LockOperationReceipt(ctx context.Context, arg LockOperationReceiptParams) (LockOperationReceiptRow, error)
-	LockSchema2AdaptiveAssignment(ctx context.Context, arg LockSchema2AdaptiveAssignmentParams) (AuraAdaptiveOutbox, error)
-	LockSchema2AdaptiveAssignmentEvents(ctx context.Context, arg LockSchema2AdaptiveAssignmentEventsParams) ([]AuraAdaptiveOutbox, error)
-	LockSchema2AdaptiveOutcomeChain(ctx context.Context, arg LockSchema2AdaptiveOutcomeChainParams) ([]AuraAdaptiveOutbox, error)
 	LookupRecoveryByEmail(ctx context.Context, email string) (LookupRecoveryByEmailRow, error)
-	MarkAdaptiveProjected(ctx context.Context, arg MarkAdaptiveProjectedParams) (int64, error)
 	// Stamp the throttle after a reminder ATTEMPT (delivered or not) so a pending approval
 	// re-nudges at most once per cadence and a failing channel cannot spam the tick.
 	MarkApprovalReminded(ctx context.Context, id pgtype.UUID) error
@@ -303,7 +269,6 @@ type Querier interface {
 	MarkOperationRejected(ctx context.Context, arg MarkOperationRejectedParams) (int64, error)
 	MarkPausedStateResumed(ctx context.Context, arg MarkPausedStateResumedParams) (int64, error)
 	MarkUnknownRecovery(ctx context.Context, id pgtype.UUID) error
-	NextAdaptiveAggregateSequence(ctx context.Context, arg NextAdaptiveAggregateSequenceParams) (int64, error)
 	NextAssetEventSeq(ctx context.Context, assetID pgtype.UUID) (int32, error)
 	NextConversationTurnSeq(ctx context.Context, conversationID pgtype.UUID) (int32, error)
 	PromoteAssetToLibrary(ctx context.Context, arg PromoteAssetToLibraryParams) (AuraAssets, error)
@@ -322,7 +287,6 @@ type Querier interface {
 	// Reusing the same deterministic reservation is idempotent after a process retry.
 	ReserveConversationDeleteForIdentityIfVersion(ctx context.Context, arg ReserveConversationDeleteForIdentityIfVersionParams) (int64, error)
 	RestoreBenchmarkSetting(ctx context.Context, arg RestoreBenchmarkSettingParams) error
-	RetryAdaptiveOutbox(ctx context.Context, arg RetryAdaptiveOutboxParams) (int64, error)
 	RetryIngestionJob(ctx context.Context, arg RetryIngestionJobParams) (AuraIngestionJobs, error)
 	RetryRetentionItem(ctx context.Context, arg RetryRetentionItemParams) (int64, error)
 	RevokeCapability(ctx context.Context, arg RevokeCapabilityParams) error
@@ -330,7 +294,6 @@ type Querier interface {
 	// affected so the caller distinguishes a hit from a non-active (pending/cancelled) task.
 	RunTaskNowRow(ctx context.Context, id pgtype.UUID) (int64, error)
 	ScanStaleRuns(ctx context.Context, secs float64) ([]ScanStaleRunsRow, error)
-	SealAdaptiveEvidence(ctx context.Context, arg SealAdaptiveEvidenceParams) (AuraAdaptiveSealedEvidence, error)
 	// LOCKED cross-slice contract (D-A5-03 / SPEC Req#13). Telegram /search (Phase 13)
 	// reuses this EXACT query; only the excerpt rendering differs per channel.
 	SearchConversationTurns(ctx context.Context, arg SearchConversationTurnsParams) ([]SearchConversationTurnsRow, error)
@@ -369,7 +332,6 @@ type Querier interface {
 	SetTurnBranchPointers(ctx context.Context, arg SetTurnBranchPointersParams) error
 	SoftDeleteAsset(ctx context.Context, arg SoftDeleteAssetParams) (AuraAssets, error)
 	SoftDeleteDocument(ctx context.Context, arg SoftDeleteDocumentParams) (AuraDocuments, error)
-	StoreAdaptiveEvidenceArtifact(ctx context.Context, arg StoreAdaptiveEvidenceArtifactParams) (AuraAdaptiveEvidenceArtifacts, error)
 	SweepDueNotifications(ctx context.Context, arg SweepDueNotificationsParams) ([]AuraPendingNotifications, error)
 	TouchTelegramLastSeen(ctx context.Context, telegramUserID int64) error
 	TryRecoverExpiredOperation(ctx context.Context, arg TryRecoverExpiredOperationParams) (int64, error)

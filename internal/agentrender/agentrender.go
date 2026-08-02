@@ -1,10 +1,8 @@
-// Package agentrender holds the REPL/eval event-render primitives shared by the
-// cmd/aura chat renderer and the internal/eval CoT-capture harness. Keeping ONE
-// copy prevents the silent drift that let the two ~80-LOC copies diverge on token
-// coercion: the eval copy's AnyInt lacked the json.Number branch and silently
-// returned 0 for a json.Number token count, while the chat_render copy parsed it
-// (audit finding QA-C-04). The exported AnyInt adopts the chat_render SUPERSET,
-// which fixes the eval token-count bug — the parity test documents that fix.
+// Package agentrender holds the REPL event-render primitives used by the cmd/aura
+// chat renderer. It was extracted when a second copy lived in the (since-deleted)
+// eval harness and the two ~80-LOC copies silently diverged on token coercion: one
+// AnyInt lacked the json.Number branch and returned 0 for a json.Number token count
+// (audit finding QA-C-04). AnyInt keeps the SUPERSET behaviour that fixed it.
 //
 // Boundary (Shared Pattern C): agentrender imports internal/agent (for *agent.Event)
 // and internal/llm (for llm.ToolCall / llm.Usage) ONLY — never internal/agui, so the

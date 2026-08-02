@@ -111,12 +111,11 @@ func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry, own
 
 func newCronAgentDeps(chat *chatEnv) handlers.AgentDeps {
 	return handlers.AgentDeps{
-		Client:           chat.client,
-		LLM:              chat.cfg.LLM,
-		Registry:         chat.reg,
-		PreviewCap:       chat.cfg.ToolPreviewCap,
-		RunDir:           chat.cfg.RunDir,
-		ReasoningControl: chat.reasoningControl,
+		Client:     chat.client,
+		LLM:        chat.cfg.LLM,
+		Registry:   chat.reg,
+		PreviewCap: chat.cfg.ToolPreviewCap,
+		RunDir:     chat.cfg.RunDir,
 		// Real artifact jobs measure 150-360s live; the 120s handler fallback starved
 		// them mid-LLM-call (#53/D-42). Env-tunable: AURA_AGENT_JOB_MAX_DURATION_SEC.
 		MaxDuration: time.Duration(chat.cfg.AgentJobMaxDurationSec) * time.Second,

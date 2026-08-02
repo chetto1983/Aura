@@ -163,7 +163,6 @@ func (a *LlmAgent) runTool(ctx context.Context, budget *Budget, call llm.ToolCal
 		a.cfg,
 		a.sessionID,
 		a.gateway,
-		a.reasoningControl,
 	)
 	if d := budget.NodeTimeout(); d > 0 {
 		var cancel context.CancelFunc

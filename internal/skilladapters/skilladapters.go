@@ -2,10 +2,9 @@
 // *skills.Loader / *skills.Writer onto the consumer-declared tools.skillLoader /
 // tools.skillWriter interfaces the `skill` tool dispatches against. It keeps
 // internal/agent/tools free of an internal/skills import (the boundary 11-02
-// established) while giving BOTH the production composition root (cmd/aura) AND the
-// eval-parity registry (internal/eval) ONE shared adapter implementation instead of
-// two drifting copies (IN-04: the eval registry previously carried a ~30 LOC mirror
-// of cmd/aura's package-main-private adapters).
+// established) while giving the production composition root (cmd/aura) one shared
+// adapter implementation. It was extracted to stop a second, drifting ~30 LOC mirror
+// in the eval-parity registry (IN-04); that registry has since been deleted.
 //
 // The adapters satisfy the tools seams structurally (the seams are package-private
 // to internal/agent/tools; an adapter only needs the matching method set). The

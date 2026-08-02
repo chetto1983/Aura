@@ -58,9 +58,7 @@ var (
 // objectStoreProvisionAdapter, its objectStoreCredentialResolver/objectStoreMinter seams, and
 // EnsureForIdentity/ProvisionObjectStore/DeprovisionObjectStore live in
 // serve_provisioning_objectstore.go (refactor-on-touch split, Amendment #88 Task 3, to keep
-// this file under the 600-LOC cap). The adaptive-plane adapters
-// (adaptiveIdentityFenceAdapter, adaptiveGraphPurgeAdapter) live in
-// serve_provisioning_adaptive.go for the same reason.
+// this file under the 600-LOC cap).
 
 // filesystemProvisionAdapter satisfies agui.FilesystemProvisioner over the REAL per-user
 // config bases (~/.aura/mcp, $AURA_SKILLS_DIR, ~/.aura/pyscripts, ~/.aura/agents), each
@@ -281,9 +279,7 @@ func buildProvisioningPorts(chat *chatEnv) (agui.ObjectStoreProvisioner, agui.Fi
 
 // buildDeprovisioner assembles the D-27 de-provisioning saga over the chat-reachable ports.
 // A nil pool yields an empty Deprovisioner whose PurgeExpired is a safe no-op (nil
-// Deactivator). AdaptiveGraph is wired independently of Memory because the adaptive
-// projection is owner-scoped inside the SHARED database, so dropping the identity's own
-// memory database does not reach it. The owned Postgres conversation plane and the ArcadeDB
+// Deactivator). The owned Postgres conversation plane and the ArcadeDB
 // memory plane are both mandatory: deprovision refuses identity deletion unless each adapter
 // acknowledges a verified purge.
 // AuthulaDelete/Sessions/Jobs remain separate lifecycle work because those providers are
@@ -311,8 +307,6 @@ func buildDeprovisioner(chat *chatEnv) *agui.Deprovisioner {
 		Journal:        jrnl,
 		Deactivator:    identityDeactivatorAdapter{pool: chat.pool},
 		Conversations:  conversationPurgeAdapter{store: convStore},
-		AdaptiveFence:  adaptiveIdentityFenceAdapter{pool: chat.pool},
-		AdaptiveGraph:  adaptiveGraphPurgeAdapter{cfg: &chat.cfg.ArcadeDB},
 		Memory:         buildArcadeMemoryPurger(chat.cfg),
 		ObjectStore:    objProv,
 		Filesystem:     fsProv,

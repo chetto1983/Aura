@@ -1,6 +1,5 @@
 // Aura entry point. Sub-commands:
 //
-//	aura eval adaptive <sub> - verify cohorts or seal admission
 //	aura serve              — run the long-lived agent runtime (default in production)
 //	aura shell              — interactive REPL against the agent loop
 //	aura agent dry-run      — drive a mock LoopAgent through the Budget tree, one Event per JSON line (SC#4)
@@ -84,8 +83,6 @@ func main() {
 		runObjectStore(os.Args[2:])
 	case "docs":
 		runDocs(os.Args[2:])
-	case "eval":
-		runEval(os.Args[2:])
 	case "identity":
 		runIdentity(os.Args[2:])
 	case "paused-states":
@@ -149,7 +146,7 @@ func runMCPDispatch(args []string) {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|doctor|chat <sub>|config <sub>|identity <sub>|paused-states <sub>|task <sub>|retention <plan|apply>|skills <sub>|agent <sub>|swarm-demo|web <doctor|tool ...>|tools|mcp <sub>|memory <sub>|db <sub>|objectstore <sub>|docs <sub>|eval adaptive <sub>|version}")
+	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|doctor|chat <sub>|config <sub>|identity <sub>|paused-states <sub>|task <sub>|retention <plan|apply>|skills <sub>|agent <sub>|swarm-demo|web <doctor|tool ...>|tools|mcp <sub>|memory <sub>|db <sub>|objectstore <sub>|docs <sub>|version}")
 }
 
 func buildRegistry() *tools.Registry {
@@ -189,21 +186,10 @@ func buildBaseRegistry(cfg *config.Config, ts *cronTaskStore) *tools.Registry {
 // per-identity box (plan 37-07); a nil router (the pool-free `aura tools`/manifest paths, and
 // dev/local_trusted) keeps every tool host-direct byte-for-byte. web_fetch / web_search are
 // deliberately NEVER routed (D-11 — they stay host-side, already SSRF-guarded).
-func buildBaseRegistryWithHandles(cfg *config.Config, ts *cronTaskStore, sandboxRouter *usersandbox.SandboxRouter) (*tools.Registry, runtimeToolHandles) {
-	pool := taskStorePool(ts)
-	return buildBaseRegistryWithAdaptiveControls(
-		cfg,
-		ts,
-		sandboxRouter,
-		newAdaptiveControlSet(pool, cfg.LLM.Provider, cfg.LLM.Model),
-	)
-}
-
-func buildBaseRegistryWithAdaptiveControls(
+func buildBaseRegistryWithHandles(
 	cfg *config.Config,
 	ts *cronTaskStore,
 	sandboxRouter *usersandbox.SandboxRouter,
-	adaptiveControls adaptiveControlSet,
 ) (*tools.Registry, runtimeToolHandles) {
 	handles := runtimeToolHandles{
 		// The background registry carries the SAME sandboxRouter the synchronous tools do (37-09):
@@ -227,12 +213,7 @@ func buildBaseRegistryWithAdaptiveControls(
 	// a live pool is available (serve/chat boot, ts!=nil) the write actions are wired to
 	// the durable, gated Writer (11-05); the pool-free manifest path (`aura tools`) gets
 	// a read-only tool whose write actions error loudly.
-	reg.Register(newSkillToolWithAdaptive(
-		cfg,
-		taskStorePool(ts),
-		adaptiveControls.skillRouting,
-		sandboxRouter,
-	))
+	reg.Register(newSkillTool(cfg, taskStorePool(ts), sandboxRouter))
 	webEngine := web.NewClient(cfg)
 	// web_fetch / web_search are DELIBERATELY NOT routed into the box (D-11): they stay host-side,
 	// already SSRF-guarded — passing sandboxRouter here would be a scope error.
@@ -331,33 +312,16 @@ func buildBaseRegistryWithAdaptiveControls(
 	return reg, handles
 }
 
-func buildRegistryWithMCP(ctx context.Context, cfg *config.Config, ts *cronTaskStore, sandboxRouter *usersandbox.SandboxRouter) (*tools.Registry, runtimeToolHandles, []func() error, error) {
-	pool := taskStorePool(ts)
-	return buildRegistryWithMCPAndAdaptiveControls(
-		ctx,
-		cfg,
-		ts,
-		sandboxRouter,
-		newAdaptiveControlSet(pool, cfg.LLM.Provider, cfg.LLM.Model),
-	)
-}
-
-func buildRegistryWithMCPAndAdaptiveControls(
+func buildRegistryWithMCP(
 	ctx context.Context,
 	cfg *config.Config,
 	ts *cronTaskStore,
 	sandboxRouter *usersandbox.SandboxRouter,
-	adaptiveControls adaptiveControlSet,
 ) (*tools.Registry, runtimeToolHandles, []func() error, error) {
 	if cfg.MCPServersErr != nil {
 		return nil, runtimeToolHandles{}, nil, cfg.MCPServersErr
 	}
-	reg, handles := buildBaseRegistryWithAdaptiveControls(
-		cfg,
-		ts,
-		sandboxRouter,
-		adaptiveControls,
-	)
+	reg, handles := buildBaseRegistryWithHandles(cfg, ts, sandboxRouter)
 	if len(cfg.MCPServers) == 0 && len(cfg.MCPPolicies) == 0 {
 		return reg, handles, nil, nil
 	}

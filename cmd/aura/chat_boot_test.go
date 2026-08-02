@@ -4,18 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/chetto1983/aura/internal/adaptive"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/llm"
-	"github.com/chetto1983/aura/internal/settings"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -174,7 +171,7 @@ func TestBootChatCompositionRejectsIncompatibleMigrationBeforeAssembly(t *testin
 				t.Fatalf("migration error lacks composition context: %v", err)
 			}
 			if assembled {
-				t.Fatal("adaptive chat environment assembled before migration compatibility passed")
+				t.Fatal("chat environment assembled before migration compatibility passed")
 			}
 			assertPoolClosed(t, pool)
 		})
@@ -262,42 +259,6 @@ func TestBootCloseOnCommandHookFailure(t *testing.T) {
 	assertPoolClosed(t, pool)
 }
 
-func TestAssembleChatEnvWiresProductionDynamicRecallControl(t *testing.T) {
-	pool := unreachablePool(t)
-	cfg := validBootConfig()
-	cfg.LLM.Provider = "openrouter"
-	cfg.MemoryRecall = true
-	cfg.MemoryRecallMaxItems = 8
-
-	var projectorOrder []string
-	env, err := assembleChatEnvWithAdaptivePolicy(
-		context.Background(),
-		cfg,
-		pool,
-		func(context.Context, *config.ArcadeDBConfig) (adaptive.GraphWriter, error) {
-			return &adaptiveProjectorWriterSpy{order: &projectorOrder}, nil
-		},
-		adaptiveBootPolicyReaderFunc(func(context.Context) (adaptive.Policy, error) {
-			return validAdaptiveBootTestPolicy(adaptive.PolicyShadow), nil
-		}),
-		io.Discard,
-	)
-	if err != nil {
-		t.Fatalf("assembleChatEnv: %v", err)
-	}
-	t.Cleanup(env.close)
-	if env.adaptiveProjector == nil {
-		t.Fatal("production composition has no adaptive projector")
-	}
-
-	control := reflect.ValueOf(env.run).
-		Elem().
-		FieldByName("dynamicRecallControl")
-	if !control.IsValid() || control.IsNil() {
-		t.Fatal("production runner has no dynamic recall control")
-	}
-}
-
 // TestBootCloseOnReloadFailure covers resolveConfigAndPool's post-overlay reload
 // failure: the pool is opened, the settings overlay applied, then the reload
 // loadConfig fails — the freshly-opened pool must be closed before returning.
@@ -325,7 +286,6 @@ func TestBootCloseOnReloadFailure(t *testing.T) {
 		loadConfig,
 		opener,
 		bootSettingsOps{
-			recover: func(context.Context, *pgxpool.Pool) error { return nil },
 			overlay: func(context.Context, *pgxpool.Pool) error { return nil },
 		},
 	)
@@ -366,7 +326,7 @@ func TestBootFailFastBeforeDBOpen(t *testing.T) {
 	}
 }
 
-func TestResolveConfigAndPoolRecoversOverrideBeforeEveryOverlay(t *testing.T) {
+func TestResolveConfigAndPoolOverlaysSettingsBeforeTheReload(t *testing.T) {
 	tests := []struct {
 		name      string
 		firstErr  error
@@ -405,10 +365,6 @@ func TestResolveConfigAndPoolRecoversOverrideBeforeEveryOverlay(t *testing.T) {
 					}
 					return pool, true, nil
 				},
-				recover: func(context.Context, *pgxpool.Pool) error {
-					order = append(order, "recover")
-					return nil
-				},
 				overlay: func(context.Context, *pgxpool.Pool) error {
 					order = append(order, "overlay")
 					return nil
@@ -424,93 +380,11 @@ func TestResolveConfigAndPoolRecoversOverrideBeforeEveryOverlay(t *testing.T) {
 			if gotCfg != cfg || gotPool != pool {
 				t.Fatalf("resolved cfg/pool = %p/%p, want %p/%p", gotCfg, gotPool, cfg, pool)
 			}
-			wantOrder := []string{"load-1", tt.openEvent, "recover", "overlay", "load-2"}
+			wantOrder := []string{"load-1", tt.openEvent, "overlay", "load-2"}
 			if !reflect.DeepEqual(order, wantOrder) {
 				t.Fatalf("boot order = %v, want %v", order, wantOrder)
 			}
 			pool.Close()
-		})
-	}
-}
-
-func TestResolveConfigAndPoolFailsClosedOnOverrideRecoveryError(t *testing.T) {
-	tests := []struct {
-		name       string
-		firstErr   error
-		recoverErr error
-		openEvent  string
-	}{
-		{
-			name:       "normal active override",
-			recoverErr: settings.ErrBenchmarkOverrideActive,
-			openEvent:  "open",
-		},
-		{
-			name:       "normal recovery failure",
-			recoverErr: errors.New("restore failed"),
-			openEvent:  "open",
-		},
-		{
-			name:       "keyless active override",
-			firstErr:   llm.ErrMissingAPIKey,
-			recoverErr: settings.ErrBenchmarkOverrideActive,
-			openEvent:  "open-keyless",
-		},
-		{
-			name:       "keyless recovery failure",
-			firstErr:   llm.ErrMissingAPIKey,
-			recoverErr: errors.New("restore failed"),
-			openEvent:  "open-keyless",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			pool := unreachablePool(t)
-			cfg := validBootConfig()
-			var order []string
-			loads := 0
-			loadConfig := func() (*config.Config, error) {
-				loads++
-				order = append(order, fmt.Sprintf("load-%d", loads))
-				if loads == 1 && tt.firstErr != nil {
-					return nil, tt.firstErr
-				}
-				return cfg, nil
-			}
-			open := func(context.Context, *db.Config) (*pgxpool.Pool, error) {
-				order = append(order, "open")
-				return pool, nil
-			}
-			ops := bootSettingsOps{
-				openKeyless: func(context.Context) (*pgxpool.Pool, bool, error) {
-					order = append(order, "open-keyless")
-					return pool, true, nil
-				},
-				recover: func(context.Context, *pgxpool.Pool) error {
-					order = append(order, "recover")
-					return tt.recoverErr
-				},
-				overlay: func(context.Context, *pgxpool.Pool) error {
-					order = append(order, "overlay")
-					return nil
-				},
-			}
-
-			gotCfg, gotPool, err := resolveConfigAndPoolWithSettings(
-				context.Background(), loadConfig, open, ops,
-			)
-			if !errors.Is(err, tt.recoverErr) {
-				t.Fatalf("recovery error = %v, want %v", err, tt.recoverErr)
-			}
-			if gotCfg != nil || gotPool != nil {
-				t.Fatalf("failed recovery returned cfg/pool = %v/%v", gotCfg, gotPool)
-			}
-			wantOrder := []string{"load-1", tt.openEvent, "recover"}
-			if !reflect.DeepEqual(order, wantOrder) {
-				t.Fatalf("failed recovery order = %v, want %v", order, wantOrder)
-			}
-			assertPoolClosed(t, pool)
 		})
 	}
 }

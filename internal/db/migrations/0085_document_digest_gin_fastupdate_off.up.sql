@@ -1,0 +1,34 @@
+-- The digest index was paying a search tax that grows and never errors.
+--
+-- 0082 created documents_digest_tsv_idx with no storage parameter, so it took the
+-- default. From CREATE INDEX, GIN storage parameters: "Controls usage of the fast
+-- update technique... `ON` enables fast update, `OFF` disables it. The default is
+-- `ON`." With it on, every write parks its entries in a pending list, and from
+-- gin.html §GIN Fast Update Technique: "The main disadvantage of this approach is
+-- that searches must scan the list of pending entries in addition to searching the
+-- regular index, and so a large list of pending entries will slow searches
+-- significantly."
+--
+-- Significantly, and INVISIBLY: a pending-list scan is linear and correct, so the
+-- failure mode is not an error anyone would see in a log. It is document_search
+-- getting slower between vacuums, and quietly fast again after one.
+--
+-- Our workload is ingest-then-read with small match sets, which is the case the
+-- manual names: "If consistent response time is more important than update speed,
+-- use of pending entries can be disabled by turning off the `fastupdate` storage
+-- parameter for a GIN index." Ingest pays a little more per row; search stops
+-- paying a tax that scales with how much was written since the last cleanup.
+ALTER INDEX aura.documents_digest_tsv_idx SET (fastupdate = off);
+
+-- The ALTER alone is not enough, and the manual says so in a Note under the same
+-- parameter: "Turning `fastupdate` off via `ALTER INDEX` prevents future insertions
+-- from going into the list of pending index entries, but does not in itself flush
+-- existing entries. You might want to `VACUUM` the table or call the
+-- `gin_clean_pending_list` function afterward to ensure the pending list is
+-- emptied." VACUUM cannot run inside a transaction block and golang-migrate wraps
+-- each step in one, so this is the function, exactly as that Note prescribes —
+-- ordered AFTER the ALTER because that is the order the Note gives.
+--
+-- gin_clean_pending_list is "restricted to superusers and the owner of the given
+-- index" (functions-admin). aura_migrate created the index in 0082, so it owns it.
+SELECT gin_clean_pending_list('aura.documents_digest_tsv_idx'::regclass);
