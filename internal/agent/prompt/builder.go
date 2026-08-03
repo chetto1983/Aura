@@ -41,12 +41,29 @@ type Budget struct {
 	CurrentTime string
 	Today       string
 	Sources     string
+	// DeferredTools is the roster of tools whose schemas are not loaded yet
+	// (Registry.DeferredRoster). It rides here, and not in the cached manifest where
+	// it used to live, for the same reason Sources does: it is volatile — it shrinks
+	// as tool_search promotes tools — and it is only useful ADJACENT to the decision
+	// it governs. Measured 2026-08-03: with the full rule sitting at token ~0 of a
+	// 5.8k-token prefix, a live turn still called shell_exec unloaded and spent 2.6s
+	// on the refusal.
+	DeferredTools string
 }
+
+// deferredToolsRubric prefixes the roster inside <deferred_tools>. It is a
+// constant, not a per-turn string, so the only thing that varies between two turns
+// is the roster itself.
+const deferredToolsRubric = "Schemas NOT loaded. Calling one of these directly does not run it: " +
+	"the call is refused, the side effect does not happen, and the round trip is spent. " +
+	"Load first with tool_search 'select:<name>[,<name>...]' — put everything this turn " +
+	"needs in ONE call, because one search per tool costs one round trip per tool."
 
 // present reports whether the trailing hint message should be emitted. The zero
 // value (counts 0, no workspace/time/sources) is the backward-compatible omit case.
 func (b Budget) present() bool {
-	return b.Used != 0 || b.Remaining != 0 || b.Workspace != "" || b.CurrentTime != "" || b.Today != "" || b.Sources != ""
+	return b.Used != 0 || b.Remaining != 0 || b.Workspace != "" || b.CurrentTime != "" ||
+		b.Today != "" || b.Sources != "" || b.DeferredTools != ""
 }
 
 // block renders the directional hint: the D-06 budget line (omitted when both
@@ -70,6 +87,15 @@ func (b Budget) block() string {
 	}
 	if b.Sources != "" {
 		lines = append(lines, fmt.Sprintf("<sources>\n%s\n</sources>", b.Sources))
+	}
+	// Last, so it is the nearest thing to the decision it governs. The three parts
+	// are the ones Claude Code's own deferred-tool reminder carries, in the same
+	// order: the roster, the exact consequence of calling one unloaded, and the
+	// query form — plural, with commas, because one search per tool is one round
+	// trip per tool.
+	if b.DeferredTools != "" {
+		lines = append(lines, fmt.Sprintf("<deferred_tools>\n%s\n%s\n</deferred_tools>",
+			deferredToolsRubric, b.DeferredTools))
 	}
 	return strings.Join(lines, "\n")
 }

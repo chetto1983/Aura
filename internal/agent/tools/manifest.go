@@ -2,6 +2,7 @@ package tools
 
 import (
 	"encoding/json"
+	"fmt"
 	"sort"
 	"strings"
 
@@ -85,6 +86,57 @@ func (r *Registry) RenderToolDefs(activated map[string]struct{}) []llm.ToolDef {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Function.Name < out[j].Function.Name })
 	return out
+}
+
+// DeferredRoster renders the tools that are still deferred, grouped by source
+// ("<namespace>__<tool>" prefix when present, else "built-in"), for the volatile
+// <deferred_tools> hint the prompt builder tail-injects. It returns "" when there
+// is nothing left to load, which omits the block entirely.
+//
+// It takes `activated` so the roster SHRINKS as tool_search promotes tools during
+// the turn: a tool whose schema is loaded is callable, and has no business in a
+// list whose only purpose is to say "load me before calling me".
+//
+// The roster lives HERE, next to the other manifest renderings, and no longer
+// inside tool_search's own Description. That move is the whole point: the
+// Description ships in the cached prefix, so the roster used to arrive at token
+// ~0 of a 5.8k-token prefix while the decision to call a tool happens thousands
+// of tokens later. Measured 2026-08-03 on a live turn: the model called
+// shell_exec without loading it and burned a 2.6s round trip on the refusal —
+// with the rule present, in full, at the top. Claude Code delivers the same list
+// in a late system-reminder instead, adjacent to the decision.
+func (r *Registry) DeferredRoster(activated map[string]struct{}) string {
+	const builtin = "built-in"
+	sources := map[string][]string{}
+	for _, t := range r.tools {
+		s := t.Spec()
+		if !s.Deferred {
+			continue
+		}
+		if _, loaded := activated[s.Name]; loaded {
+			continue
+		}
+		src := builtin
+		if pre, _, ok := strings.Cut(s.Name, nsDelimiterStr); ok && pre != "" {
+			src = pre
+		}
+		sources[src] = append(sources[src], s.Name)
+	}
+	if len(sources) == 0 {
+		return ""
+	}
+	names := make([]string, 0, len(sources))
+	for src := range sources {
+		names = append(names, src)
+	}
+	sort.Strings(names)
+	var b strings.Builder
+	for _, src := range names {
+		tools := sources[src]
+		sort.Strings(tools)
+		fmt.Fprintf(&b, "- %s: %s\n", src, strings.Join(tools, ", "))
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 // ManifestEntryJSON is one tool as the offline tooling needs it: the exact fields

@@ -303,86 +303,55 @@ func TestDeferredOnlyFilter(t *testing.T) {
 	}
 }
 
-// TestToolSearchDescriptionDeterministic asserts the registry-derived
-// tool_search Description (D-09) is byte-stable across calls (cache-load-bearing:
-// tool_search is non-deferred, so its full Description ships in the manifest every
-// turn — any per-call variance busts the OpenRouter implicit cache, T-08.1-07),
-// lists the deferred tools' sources SORTED and grouped by the "__" namespace prefix
-// (else "built-in"), and falls back to a deterministic "None currently enabled."
-// blurb when no deferred tools exist. Kills the "static Description" and the
-// "unsorted source list" mutants.
+// TestToolSearchDescriptionDeterministic asserts the cache invariant the
+// Description has to hold: tool_search is non-deferred, so its full Description
+// ships in the manifest EVERY turn, and any per-turn variance busts the OpenRouter
+// implicit cache (T-08.1-07).
+//
+// The assertion used to be "byte-stable across two calls on one registry", which a
+// registry-derived string can satisfy while still drifting the moment an MCP
+// reconnect changes the deferred set. Now the Description is independent of the
+// registry entirely — the roster it used to concatenate moved to
+// Registry.DeferredRoster and rides the tail-injected hint — so the invariant can
+// be stated at full strength: two registries with NOTHING in common must produce
+// the same bytes. That also subsumes the old self-reference test: Spec() cannot
+// recurse through a registry it never reads.
 func TestToolSearchDescriptionDeterministic(t *testing.T) {
-	ts, _ := newSearch(t,
+	populated, _ := newSearch(t,
 		bm25Tool{name: "web_fetch", summary: "retrieve a url"},
 		bm25Tool{name: "github__create_issue", summary: "open an issue"},
-		bm25Tool{name: "github__list_prs", summary: "list pull requests"},
-		bm25Tool{name: "calculator", summary: "evaluate arithmetic"},
-		nonDeferredTool{name: "active_cap"}, // non-deferred → must NOT appear as a source
+		nonDeferredTool{name: "active_cap"},
 	)
+	empty, _ := newSearch(t, nonDeferredTool{name: "only_active"})
 
-	first := ts.Spec().Description
-	second := ts.Spec().Description
-	if first != second {
-		t.Fatalf("Description not byte-stable across calls:\n1: %q\n2: %q", first, second)
-	}
+	// The production shape: tool_search registered into the registry it describes.
+	// This is what used to recurse; it must merely return.
+	selfReg := NewRegistry()
+	selfHosted := &ToolSearch{Registry: selfReg}
+	selfReg.Register(selfHosted)
+	selfReg.Register(bm25Tool{name: "github__list_prs", summary: "list pull requests"})
 
-	// Sources are grouped by the "__" prefix when present, else "built-in".
-	for _, want := range []string{"built-in", "github"} {
-		if !strings.Contains(first, want) {
-			t.Errorf("Description missing source %q:\n%s", want, first)
+	first := populated.Spec().Description
+	for name, ts := range map[string]*ToolSearch{
+		"same registry twice": populated,
+		"empty registry":      empty,
+		"self-hosted":         selfHosted,
+		"nil registry":        {},
+	} {
+		if got := ts.Spec().Description; got != first {
+			t.Errorf("Description drifted with the registry (%s):\n got: %q\nwant: %q", name, got, first)
 		}
 	}
-	// The non-deferred tool's source name must NOT leak in (search covers deferred
-	// tools only — D-03).
-	if strings.Contains(first, "active_cap") {
-		t.Errorf("Description leaked a non-deferred tool:\n%s", first)
-	}
 
-	// "built-in" sorts before "github": assert the source list ordering is
-	// alphabetical, not registry/map order.
-	if bi, gh := strings.Index(first, "built-in"), strings.Index(first, "github"); bi < 0 || gh < 0 || bi > gh {
-		t.Errorf("sources not sorted (built-in must precede github):\n%s", first)
+	// No tool name may appear in it: names are volatile, the Description is cached.
+	for _, leaked := range []string{"web_fetch", "github__create_issue", "active_cap"} {
+		if strings.Contains(first, leaked) {
+			t.Errorf("Description leaked the tool name %q — the roster belongs in the tail hint:\n%s", leaked, first)
+		}
 	}
-
-	// No deferred tools → deterministic "None currently enabled." blurb.
-	empty, _ := newSearch(t, nonDeferredTool{name: "only_active"})
-	desc := empty.Spec().Description
-	if !strings.Contains(desc, "None currently enabled.") {
-		t.Errorf("empty-deferred Description missing 'None currently enabled.':\n%s", desc)
-	}
-	if desc != empty.Spec().Description {
-		t.Error("empty-deferred Description not byte-stable")
-	}
-
-	// No clock/date shape may appear in the Description (cache-poisoning guard,
-	// same rule as prompt.go).
+	// No clock/date shape either (cache-poisoning guard, same rule as prompt.go).
 	if loc := descClockShape.FindString(first); loc != "" {
 		t.Errorf("Description contains a timestamp-shaped substring %q (cache-poisoning)", loc)
-	}
-}
-
-// TestToolSearchDescription_SelfReferentialNoRecursion guards the production
-// registry shape: tool_search registers ITSELF, and its Description is built by
-// enumerating the registry — so sourceOrientation must skip tool_search before
-// calling its Spec(), or Spec()→Description→sourceOrientation→Spec() recurses to a
-// stack overflow. Registering the tool_search hook into the same registry it
-// describes reproduces the boot path. Kills the "drop the *ToolSearch skip" mutant.
-func TestToolSearchDescription_SelfReferentialNoRecursion(t *testing.T) {
-	reg := NewRegistry()
-	ts := &ToolSearch{Registry: reg}
-	reg.Register(ts)
-	reg.Register(bm25Tool{name: "github__create_issue", summary: "open an issue"})
-
-	desc := ts.Spec().Description // must not recurse
-	// tool_search must not appear in the SOURCE list (the "- " lines); the lead-in
-	// legitimately mentions the `tool_search` hook by name, so scope the check.
-	for _, line := range strings.Split(desc, "\n") {
-		if strings.HasPrefix(line, "- ") && strings.Contains(line, "tool_search") {
-			t.Errorf("Description listed tool_search as a source (it must be excluded): %q", line)
-		}
-	}
-	if !strings.Contains(desc, "- github:") {
-		t.Errorf("Description dropped the deferred source while excluding tool_search:\n%s", desc)
 	}
 }
 

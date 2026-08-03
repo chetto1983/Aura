@@ -69,6 +69,50 @@ func TestRenderToolDefs(t *testing.T) {
 	}
 }
 
+// TestDeferredRoster carries the invariants that used to live on the tool_search
+// Description (grouped by the "__" namespace prefix else "built-in", sorted, no
+// non-deferred tool, no tool_search) — they moved here with the roster itself —
+// plus the one the old home could not express: a tool `activated` has already
+// promoted is GONE from the list. That last one is the point of the move. The
+// roster's whole job is to say "load me before calling me", and repeating it for a
+// tool whose schema the model is already holding invites the round trip the hint
+// exists to prevent.
+func TestDeferredRoster(t *testing.T) {
+	r := NewRegistry()
+	r.Register(&ToolSearch{Registry: r}) // non-deferred, and must not describe itself
+	r.Register(bm25Tool{name: "web_fetch", summary: "retrieve a url"})
+	r.Register(bm25Tool{name: "github__create_issue", summary: "open an issue"})
+	r.Register(bm25Tool{name: "github__list_prs", summary: "list pull requests"})
+	r.Register(nonDeferredTool{name: "active_cap"})
+
+	roster := r.DeferredRoster(nil)
+	if want := "- built-in: web_fetch\n- github: github__create_issue, github__list_prs"; roster != want {
+		t.Fatalf("roster =\n%q\nwant\n%q", roster, want)
+	}
+	for _, leaked := range []string{"active_cap", "tool_search"} {
+		if strings.Contains(roster, leaked) {
+			t.Errorf("roster listed the non-deferred tool %q:\n%s", leaked, roster)
+		}
+	}
+
+	// Promoting a tool removes it; promoting the last of a source removes the whole
+	// source line, so the model is never pointed at an empty group.
+	if got, want := r.DeferredRoster(map[string]struct{}{"web_fetch": {}}),
+		"- github: github__create_issue, github__list_prs"; got != want {
+		t.Errorf("after promoting web_fetch roster = %q, want %q", got, want)
+	}
+
+	// Nothing left to load ⇒ empty string ⇒ the <deferred_tools> block is omitted
+	// entirely rather than rendered around a blank list.
+	all := map[string]struct{}{"web_fetch": {}, "github__create_issue": {}, "github__list_prs": {}}
+	if got := r.DeferredRoster(all); got != "" {
+		t.Errorf("fully promoted roster = %q, want empty", got)
+	}
+	if got := NewRegistry().DeferredRoster(nil); got != "" {
+		t.Errorf("empty registry roster = %q, want empty", got)
+	}
+}
+
 func equalStrings(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

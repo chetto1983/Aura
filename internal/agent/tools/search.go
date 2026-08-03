@@ -73,17 +73,36 @@ func (ts *ToolSearch) Spec() Spec {
 	return Spec{
 		Name:        "tool_search",
 		Summary:     "Load full specifications for deferred tools by name or keyword.",
-		Description: toolSearchDescription(ts.Registry),
+		Description: toolSearchLeadIn,
 		Parameters:  params,
 		Deferred:    false,
 	}
 }
 
+// toolSearchLeadIn states the contract rather than suggesting it. The soft form —
+// "some tools are not provided upfront; use this tool to discover them" — left the
+// model to find the rule by breaking it: knowing perfectly well that a tool like
+// fs_write exists, it called it straight, guessed the argument names, and was
+// refused. Measured on a live turn 2026-08-03, writing and re-reading one 8-byte
+// file cost FOUR model calls and 33,393 tokens, two of them spent entirely on
+// "the tool is now loaded, let me call it again with the correct parameter names".
+// One wasted round trip per distinct tool, per conversation.
+//
+// So the cost of a direct call is spelled out where the model reads it, in the
+// imperative, before it can pay it once.
 const toolSearchLeadIn = "# Tool discovery\n\n" +
-	"Searches deferred-tool metadata by keyword and loads matching tool schemas for the next model call. " +
-	"Use 'select:Name1,Name2' for direct selection — several names at once, uncapped — or a natural-language phrase ranked over deferred tool names, summaries, and argument names. " +
-	"Some tools are not provided upfront; use this tool (`tool_search`) to discover and load them.\n\n" +
-	"You have access to deferred tools from the following sources:\n"
+	"Your manifest does NOT list every tool you have. The rest are deferred: their schemas load on demand, " +
+	"which is what keeps the manifest small enough to stay cached between turns.\n\n" +
+	"CALL `tool_search` FIRST for any tool you do not see in your manifest — including one you are confident " +
+	"exists and whose name you already know. A deferred tool called before its schema is loaded is REFUSED: " +
+	"it does not run, its side effect does not happen, and the turn is spent. Guessing the argument names " +
+	"never works; it only costs a round trip.\n\n" +
+	"Use 'select:Name1,Name2' when you know the names — several at once, uncapped — or a natural-language phrase " +
+	"ranked over deferred tool names, summaries, and argument names when you do not. Load everything the task " +
+	"will need in ONE call rather than one search per tool.\n\n" +
+	"Which tools are still deferred is volatile — it shrinks as you load them — so the roster does not live here, " +
+	"in the cached manifest. It rides the <deferred_tools> hint at the end of the conversation, next to the turn " +
+	"you are about to take."
 
 // noMatchOrientation is the fixed no-result reply (amendment #49, retargeted #52/D-41).
 // A failed tool_search is usually a capability gap; the always-on find-skills skill is the
@@ -106,59 +125,14 @@ const noMatchOrientation = "no matching tools. " +
 // delimiter is a stable cross-package contract, not shared state.
 const nsDelimiterStr = "__"
 
-// toolSearchDescription builds the registry-derived tool_search Description (D-09):
-// a fixed lead-in plus a SORTED, deduped list of the deferred tools' sources
-// (grouped by the "__" namespace prefix when present, else "built-in"). Because the
-// Registry is immutable for an agent run, the output is byte-stable across calls and
-// across turns — tool_search is non-deferred, so this Description ships in every
-// manifest and any variance would bust the OpenRouter implicit cache (T-08.1-07).
-// Only source names and (sorted) tool names flow in — no raw multi-line tool
-// description is concatenated (T-08.1-08). A nil registry yields the "None"-blurb.
-// Per-query ranking happens INSIDE Execute only and NEVER touches this Description
-// (Req-7 cache invariant).
-func toolSearchDescription(reg *Registry) string {
-	return toolSearchLeadIn + sourceOrientation(reg)
-}
-
-func sourceOrientation(reg *Registry) string {
-	const builtin = "built-in"
-	sources := map[string][]string{}
-	if reg != nil {
-		for _, t := range reg.All() {
-			// Skip tool_search itself BEFORE calling Spec(): tool_search's Spec()
-			// re-enters sourceOrientation (this function builds its Description), so
-			// materializing its Spec here recurses unboundedly. It is non-deferred
-			// anyway, so it would be filtered out regardless.
-			if _, ok := t.(*ToolSearch); ok {
-				continue
-			}
-			s := t.Spec()
-			if !s.Deferred {
-				continue
-			}
-			src := builtin
-			if pre, _, ok := strings.Cut(s.Name, nsDelimiterStr); ok && pre != "" {
-				src = pre
-			}
-			sources[src] = append(sources[src], s.Name)
-		}
-	}
-	if len(sources) == 0 {
-		return "None currently enabled.\n"
-	}
-	names := make([]string, 0, len(sources))
-	for src := range sources {
-		names = append(names, src)
-	}
-	sort.Strings(names)
-	var b strings.Builder
-	for _, src := range names {
-		tools := sources[src]
-		sort.Strings(tools)
-		fmt.Fprintf(&b, "- %s: %s\n", src, strings.Join(tools, ", "))
-	}
-	return b.String()
-}
+// The roster of deferred tools used to be concatenated here, built by enumerating
+// the Registry. It now lives in Registry.DeferredRoster and rides the tail-injected
+// <deferred_tools> hint instead — see that method for why position, not wording,
+// was the defect. Two consequences worth naming: this Description is now a
+// compile-time constant, so it cannot vary between two turns and cannot bust the
+// OpenRouter implicit cache (T-08.1-07) by construction rather than by discipline;
+// and Spec() no longer touches the Registry, so the self-referential recursion the
+// old code guarded against — Spec()→Description→roster→Spec() — is gone with it.
 
 // Execute resolves the query to matching deferred specs and returns their full
 // Description + Parameters as the result text. On a successful match it ALSO promotes

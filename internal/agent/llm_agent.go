@@ -313,6 +313,12 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				// so a non-web turn keeps the byte-identical default). messages[0] stays
 				// untouched — the static citation convention lives in the system prompt.
 				Sources: a.sources.RenderSourceList(),
+				// The roster of what is still unloaded, minus what this run already
+				// promoted — so it shrinks as the turn goes and never tells the model to
+				// load something it is already holding. It travels here rather than in
+				// tool_search's Description for the same reason as Sources: the cached
+				// prefix is the wrong distance from the decision.
+				DeferredTools: a.registry.DeferredRoster(a.activated),
 			}
 			// A FIXED per-turn override (37E) bypasses the adaptive classifier entirely
 			// (D-04/D-08): skip the reasoning-router round-trip so buildRequest can force
