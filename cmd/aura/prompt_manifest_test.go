@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/agent"
+	"github.com/chetto1983/aura/internal/agent/tools"
 )
 
 // TestPromptNamesOnlyLoadedTools enforces the one rule that governs what may be
@@ -43,19 +44,33 @@ func TestPromptNamesOnlyLoadedTools(t *testing.T) {
 	registry := buildRegistry()
 	prompt := agent.SystemPrompt
 
+	check := func(name string, isDeferred bool) {
+		if !isDeferred || ambiguousToolName[name] {
+			return
+		}
+		if strings.Contains(prompt, name) {
+			t.Errorf("the prompt names %q, which is DEFERRED — the model is being taught a tool that is not in its manifest", name)
+		}
+	}
+
 	var deferred, loaded int
 	for _, entry := range registry.Render() {
-		if !entry.Deferred {
+		if entry.Deferred {
+			deferred++
+		} else {
 			loaded++
-			continue
 		}
-		deferred++
-		if ambiguousToolName[entry.Name] {
-			continue
-		}
-		if strings.Contains(prompt, entry.Name) {
-			t.Errorf("the prompt names %q, which is DEFERRED — the model is being taught a tool that is not in its manifest", entry.Name)
-		}
+		check(entry.Name, entry.Deferred)
+	}
+
+	// document_open and document_index register only when a live pool exists
+	// (buildBaseRegistryWithHandles), so buildRegistry — which passes a nil store —
+	// does not contain them and the loop above cannot see them. They are the
+	// deployment's whole point, so checking them is not optional: their Spec is a
+	// pure function of the value, exactly as in TestOnlyTheWorkingSetIsAlwaysActive.
+	for _, tool := range []tools.Tool{&tools.DocumentOpen{}, &tools.DocumentIndex{}} {
+		spec := tool.Spec()
+		check(spec.Name, spec.Deferred)
 	}
 	if deferred == 0 || loaded == 0 {
 		t.Fatalf("registry looks wrong: %d loaded, %d deferred — the check would pass vacuously", loaded, deferred)
