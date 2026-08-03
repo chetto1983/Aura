@@ -120,7 +120,7 @@ var gateCases = []gateCase{
 	{"find text inside files in the repository", []string{"fs_grep"}},
 	{"run a shell command on the host", []string{"shell_exec"}},
 	{"kill a background process", []string{"shell_kill"}},
-	{"check the output of a background command", []string{"shell_poll"}},
+	{"poll a still-running background command", []string{"shell_poll"}},
 	{"what time is it", []string{"current_time"}},
 	{"schedule a recurring task", []string{"task"}},
 	{"keep a todo list of the current work", []string{"todo_write"}},
@@ -128,7 +128,7 @@ var gateCases = []gateCase{
 	{"install a new skill", []string{"skill"}},
 	{"search the user uploaded documents", []string{"document_search"}},
 	{"index a document for retrieval", []string{"document_index"}},
-	{"remember a fact about the user", []string{"memory__memory_add_fact"}},
+	{"remember a fact about the user", []string{"memory__memory_upsert_fact"}},
 	{"create a calendar event", []string{"calendar__create_event"}},
 	{"send an email", []string{"calendar__send_email"}},
 	{"send a whatsapp message", []string{"whatsapp__send_message"}},
@@ -213,14 +213,14 @@ func TestToolSearchGate_RankingIsDeterministic(t *testing.T) {
 // orientation is actively wrong advice for a tool the model nearly spelled right.
 func TestToolSearchGate_UnknownSelectNamesTheError(t *testing.T) {
 	ts, ctx := newGateSearch(t)
-	res, err := ts.Execute(ctx, []byte(`{"query":"select:memory__memory_add_entty"}`))
+	res, err := ts.Execute(ctx, []byte(`{"query":"select:memory__memory_upsert_fcat"}`))
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if !strings.Contains(res.Preview, "memory__memory_add_entty") {
+	if !strings.Contains(res.Preview, "memory__memory_upsert_fcat") {
 		t.Errorf("reply does not name the unregistered tool: %q", res.Preview)
 	}
-	if !strings.Contains(res.Preview, "memory__memory_add_entity") {
+	if !strings.Contains(res.Preview, "memory__memory_upsert_fact") {
 		t.Errorf("reply does not suggest the closest registered name: %q", res.Preview)
 	}
 	if strings.Contains(res.Preview, "find-skills") {
@@ -249,8 +249,8 @@ func TestToolSearchGate_PartialSelectLoadsAndReports(t *testing.T) {
 // all, uncapped, instead of returning the top-5 of a similarity ranking.
 func TestToolSearchGate_FreeTextOfRegisteredNamesResolvesAsSelect(t *testing.T) {
 	ts, ctx := newGateSearch(t)
-	const q = "memory__memory_add_entity memory__memory_create_relationship " +
-		"memory__memory_add_fact memory__memory_add_preference"
+	const q = "memory__memory_upsert_fact memory__memory_merge_entities " +
+		"memory__memory_facts_about memory__memory_entities"
 	got := gateSearch(t, ts, ctx, q)
 	want := strings.Fields(q)
 	sort.Strings(got)
