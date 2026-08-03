@@ -38,6 +38,11 @@
   Migration 0089's fail-closed RLS remains authoritative: an identity-less
   `AppendTurn` or `askuser.Insert` is a test defect to correct, never a reason to
   weaken a store or database policy.
+- The production load/chaos appliance must exercise the current ArcadeDB memory
+  contract: its MCP fixture returns the same `facts` array and structured content
+  as `memory_search`. Before readiness is measured, the harness materializes the
+  configured sandbox image; the default is built from the production
+  `docker/aura-sandbox/Dockerfile`, never replaced by a surrogate image.
 
 > Stato di partenza: commit `af4ca65c` (skeleton, 633 LOC src).
 > Ordine fissato (utente): **Agent → Sandbox → Swarm → KV**.
