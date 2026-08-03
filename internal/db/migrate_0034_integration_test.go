@@ -96,7 +96,15 @@ func TestMigration0034SchedulerSandboxReapKind(t *testing.T) {
 	// isolates 0034's OWN down regardless of how many migrations sit above it. The 0034 down
 	// pre-deletes the sandbox_reap row just inserted, so the re-added narrower (0033) CHECK
 	// cannot fail on it — this exercises the down's row-cleanup too.
-	stepDownToV33 := 33 - head
+	// MigrateSteps counts MIGRATIONS, not version numbers. The embedded sequence has
+	// gaps since the adaptive plane's twenty-six migrations were removed, so
+	// `33 - head` overshot by exactly the size of the gap and golang-migrate
+	// refused with an opaque "limit N short". Ask the catalog how far back it is.
+	stepsAbove33, err := MigrationStepsAbove(33)
+	if err != nil {
+		t.Fatalf("MigrationStepsAbove(33): %v", err)
+	}
+	stepDownToV33 := -stepsAbove33
 	if err := MigrateSteps(ctx, migrateURL, stepDownToV33); err != nil {
 		t.Fatalf("MigrateSteps(%d) position down to v33: %v", stepDownToV33, err)
 	}

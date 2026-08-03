@@ -35,7 +35,8 @@ func setUnsafeServerProductionEnv(t *testing.T) {
 	t.Setenv("AURA_OBJECTSTORE_REPLICATION_FACTOR", "1")
 	t.Setenv("AURA_SHELL_DESTRUCTIVE_PATTERNS", "off")
 	t.Setenv("AURA_AUTHULA_SECRET", "")
-	t.Setenv("AURA_PROFILE", "") // base profile irrelevant; --profile overrides it (D-02)
+	t.Setenv("AURA_PROFILE", "")        // base profile irrelevant; --profile overrides it (D-02)
+	t.Setenv("AURA_MUSR_ISOLATION", "") // pinned so the host's own .env cannot add a violation
 }
 
 // setBenignDevEnv composes a realistic, fully-valid dev posture: required secrets present,
@@ -52,6 +53,12 @@ func setBenignDevEnv(t *testing.T) {
 	t.Setenv("AURA_SHELL_DESTRUCTIVE_PATTERNS", "")
 	t.Setenv("AURA_AUTHULA_SECRET", "")
 	t.Setenv("AURA_PROFILE", "")
+	// Every knob a gate READS has to be pinned here, not just every knob this test
+	// asserts on — otherwise the fixture inherits the developer's own .env and the
+	// posture stops being deterministic. AURA_MUSR_ISOLATION became load-bearing when
+	// the multi-user gate landed, and this host sets it: the "benign dev" case then
+	// exited 1 on a machine where it had nothing to do with the code under test.
+	t.Setenv("AURA_MUSR_ISOLATION", "")
 }
 
 // offendingKnobs is the set of AURA_* knobs the unsafe server_production posture above

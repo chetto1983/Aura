@@ -96,7 +96,15 @@ func TestMigration0033SchedulerIdentityPurgeKind(t *testing.T) {
 	// off `head` isolates 0033's OWN down regardless of how many migrations sit above it.
 	// The 0033 down pre-deletes the identity_purge row just inserted, so the re-added
 	// narrower (0010) CHECK cannot fail on it — this exercises the down's row-cleanup too.
-	stepDownToV32 := 32 - head
+	// MigrateSteps counts MIGRATIONS, not version numbers. The embedded sequence has
+	// gaps since the adaptive plane's twenty-six migrations were removed, so
+	// `32 - head` overshot by exactly the size of the gap and golang-migrate
+	// refused with an opaque "limit N short". Ask the catalog how far back it is.
+	stepsAbove32, err := MigrationStepsAbove(32)
+	if err != nil {
+		t.Fatalf("MigrationStepsAbove(32): %v", err)
+	}
+	stepDownToV32 := -stepsAbove32
 	if err := MigrateSteps(ctx, migrateURL, stepDownToV32); err != nil {
 		t.Fatalf("MigrateSteps(%d) position down to v32: %v", stepDownToV32, err)
 	}

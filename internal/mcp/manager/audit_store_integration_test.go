@@ -208,7 +208,13 @@ func migrateToVersion(t *testing.T, ctx context.Context, migrateURL string, targ
 		return fmt.Errorf("migration status: no applied migrations")
 	}
 	current := rows[len(rows)-1].Version
-	steps := int(target - current)
+	// `target - current` counts VERSIONS; MigrateSteps counts MIGRATIONS, and the
+	// embedded sequence has gaps since the adaptive plane's twenty-six migrations were
+	// removed. The difference showed up as golang-migrate's opaque "limit N short".
+	steps, err := db.MigrationStepDelta(current, target)
+	if err != nil {
+		return fmt.Errorf("migration step delta %d -> %d: %w", current, target, err)
+	}
 	if steps == 0 {
 		return nil
 	}

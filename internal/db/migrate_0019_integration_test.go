@@ -82,7 +82,14 @@ func TestMigrate0019_AuthulaSchemaAndLink(t *testing.T) {
 	if headVersion < 19 {
 		t.Fatalf("full Migrate up reached version %d, want at least 19", headVersion)
 	}
-	stepsToBefore0019 := headVersion - 18
+	// MigrateSteps counts MIGRATIONS, not version numbers, and the embedded
+	// sequence has gaps since the adaptive plane's twenty-six migrations were
+	// removed. `headVersion - 18` overshot by exactly the size of the gap and
+	// golang-migrate refused with an opaque "limit N short".
+	stepsToBefore0019, err := MigrationStepsAbove(18)
+	if err != nil {
+		t.Fatalf("MigrationStepsAbove(18): %v", err)
+	}
 
 	app, err := Open(ctx, &Config{URL: dsn("aura_app", freshDB)})
 	if err != nil {

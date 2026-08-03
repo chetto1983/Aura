@@ -72,7 +72,14 @@ func TestMigration0023IdentityRecoveryRoundTrip(t *testing.T) {
 	if headVersion < 23 {
 		t.Fatalf("full Migrate up reached version %d, want at least 23", headVersion)
 	}
-	stepsToBefore0023 := headVersion - 22
+	// MigrateSteps counts MIGRATIONS, not version numbers, and the embedded
+	// sequence has gaps since the adaptive plane's twenty-six migrations were
+	// removed. `headVersion - 22` overshot by exactly the size of the gap and
+	// golang-migrate refused with an opaque "limit N short".
+	stepsToBefore0023, err := MigrationStepsAbove(22)
+	if err != nil {
+		t.Fatalf("MigrationStepsAbove(22): %v", err)
+	}
 	if err := MigrateSteps(ctx, migrateURL, -stepsToBefore0023); err != nil {
 		t.Fatalf("MigrateSteps(%d) down to pre-0023: %v", -stepsToBefore0023, err)
 	}

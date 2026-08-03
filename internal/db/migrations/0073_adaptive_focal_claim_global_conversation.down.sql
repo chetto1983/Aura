@@ -1,1 +1,0 @@
-DROP INDEX IF EXISTS aura.adaptive_focal_cohort_claims_owner_conversation_uidx;

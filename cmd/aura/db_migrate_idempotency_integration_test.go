@@ -68,7 +68,14 @@ func TestDBMigrateCLIWorksBeforeRuntimeRegistrySchema(t *testing.T) {
 				if startVersion > head {
 					t.Fatalf("test start version %d exceeds embedded head %d", startVersion, head)
 				}
-				if err := db.MigrateSteps(ctx, migrateURL, int(startVersion-head)); err != nil {
+				// Not `startVersion - head`: MigrateSteps counts MIGRATIONS, and the
+				// embedded sequence is gapped since the adaptive plane's twenty-six
+				// migrations were removed.
+				backSteps, err := db.MigrationStepDelta(head, startVersion)
+				if err != nil {
+					t.Fatalf("migration step delta %d -> %d: %v", head, startVersion, err)
+				}
+				if err := db.MigrateSteps(ctx, migrateURL, backSteps); err != nil {
 					t.Fatalf("step schema to %d: %v", startVersion, err)
 				}
 			}

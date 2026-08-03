@@ -84,7 +84,14 @@ func TestMigrate0017_BranchPointersBackfillAndRoundTrip(t *testing.T) {
 	if headVersion < 17 {
 		t.Fatalf("full Migrate up reached version %d, want at least 17", headVersion)
 	}
-	stepsToBefore0017 := headVersion - 16
+	// MigrateSteps counts MIGRATIONS, not version numbers, and the embedded
+	// sequence has gaps since the adaptive plane's twenty-six migrations were
+	// removed. `headVersion - 16` overshot by exactly the size of the gap and
+	// golang-migrate refused with an opaque "limit N short".
+	stepsToBefore0017, err := MigrationStepsAbove(16)
+	if err != nil {
+		t.Fatalf("MigrationStepsAbove(16): %v", err)
+	}
 
 	// Seed a conversation + three linear turns on the app pool (post-0017 the inserts
 	// rely on the column DEFAULTs leaving branch_id/parent_seq populated by 0017's
@@ -173,42 +180,48 @@ func TestMigrate0017_BranchPointersBackfillAndRoundTrip(t *testing.T) {
 		2: {parentSeqValid: true, parentSeq: 1},
 		3: {parentSeqValid: true, parentSeq: 2},
 	}
-	rows, err := app.Query(ctx,
-		"SELECT seq, branch_id, parent_seq FROM aura.conversation_turns WHERE conversation_id = $1 ORDER BY seq ASC",
-		convID,
-	)
-	if err != nil {
-		t.Fatalf("read backfilled turns: %v", err)
-	}
-	defer rows.Close()
+	// The read is IDENTITY-SCOPED. By this point the drill is back at HEAD, where
+	// aura.conversation_turns fails closed under RLS (0089): an unscoped read returns
+	// zero rows rather than an error, so this assertion failed with "want 3, got 0" and
+	// read as 0017's backfill having done nothing.
 	seen := 0
-	for rows.Next() {
-		var seq int32
-		var branchID pgtype.UUID
-		var parentSeq pgtype.Int4
-		if err := rows.Scan(&seq, &branchID, &parentSeq); err != nil {
-			t.Fatalf("scan backfilled turn: %v", err)
+	if err := WithIdentityTxRaw(ctx, app, seededIdentity, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx,
+			"SELECT seq, branch_id, parent_seq FROM aura.conversation_turns WHERE conversation_id = $1 ORDER BY seq ASC",
+			convID,
+		)
+		if err != nil {
+			return err
 		}
-		seen++
-		gotBranch := fmt.Sprintf("%x-%x-%x-%x-%x",
-			branchID.Bytes[0:4], branchID.Bytes[4:6], branchID.Bytes[6:8], branchID.Bytes[8:10], branchID.Bytes[10:16])
-		if gotBranch != canonicalBranch {
-			t.Errorf("seq %d: branch_id = %s, want canonical %s", seq, gotBranch, canonicalBranch)
+		defer rows.Close()
+		for rows.Next() {
+			var seq int32
+			var branchID pgtype.UUID
+			var parentSeq pgtype.Int4
+			if err := rows.Scan(&seq, &branchID, &parentSeq); err != nil {
+				return err
+			}
+			seen++
+			gotBranch := fmt.Sprintf("%x-%x-%x-%x-%x",
+				branchID.Bytes[0:4], branchID.Bytes[4:6], branchID.Bytes[6:8], branchID.Bytes[8:10], branchID.Bytes[10:16])
+			if gotBranch != canonicalBranch {
+				t.Errorf("seq %d: branch_id = %s, want canonical %s", seq, gotBranch, canonicalBranch)
+			}
+			w, ok := wants[int(seq)]
+			if !ok {
+				t.Errorf("unexpected seq %d", seq)
+				continue
+			}
+			if parentSeq.Valid != w.parentSeqValid {
+				t.Errorf("seq %d: parent_seq Valid = %v, want %v", seq, parentSeq.Valid, w.parentSeqValid)
+			}
+			if w.parentSeqValid && parentSeq.Int32 != w.parentSeq {
+				t.Errorf("seq %d: parent_seq = %d, want %d", seq, parentSeq.Int32, w.parentSeq)
+			}
 		}
-		w, ok := wants[int(seq)]
-		if !ok {
-			t.Errorf("unexpected seq %d", seq)
-			continue
-		}
-		if parentSeq.Valid != w.parentSeqValid {
-			t.Errorf("seq %d: parent_seq Valid = %v, want %v", seq, parentSeq.Valid, w.parentSeqValid)
-		}
-		if w.parentSeqValid && parentSeq.Int32 != w.parentSeq {
-			t.Errorf("seq %d: parent_seq = %d, want %d", seq, parentSeq.Int32, w.parentSeq)
-		}
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatalf("iterate backfilled turns: %v", err)
+		return rows.Err()
+	}); err != nil {
+		t.Fatalf("read backfilled turns: %v", err)
 	}
 	if seen != 3 {
 		t.Errorf("backfilled turns: want 3, got %d", seen)

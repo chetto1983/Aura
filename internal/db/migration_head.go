@@ -10,13 +10,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// MigrationHead returns the highest embedded PostgreSQL up-migration version.
-func MigrationHead() (int64, error) {
+// migrationVersions returns every embedded PostgreSQL up-migration version, unsorted.
+func migrationVersions() ([]int64, error) {
 	entries, err := migrationsFS.ReadDir("migrations")
 	if err != nil {
-		return 0, fmt.Errorf("read embedded migrations: %w", err)
+		return nil, fmt.Errorf("read embedded migrations: %w", err)
 	}
-	var head int64
+	versions := make([]int64, 0, len(entries)/2)
 	for _, entry := range entries {
 		name := entry.Name()
 		if entry.IsDir() || !strings.HasSuffix(name, ".up.sql") {
@@ -24,20 +24,75 @@ func MigrationHead() (int64, error) {
 		}
 		prefix, _, ok := strings.Cut(name, "_")
 		if !ok {
-			return 0, fmt.Errorf("invalid migration filename %q", name)
+			return nil, fmt.Errorf("invalid migration filename %q", name)
 		}
 		version, err := strconv.ParseInt(prefix, 10, 64)
 		if err != nil {
-			return 0, fmt.Errorf("parse migration version %q: %w", name, err)
+			return nil, fmt.Errorf("parse migration version %q: %w", name, err)
 		}
-		if version > head {
-			head = version
-		}
+		versions = append(versions, version)
 	}
-	if head == 0 {
-		return 0, errors.New("no embedded PostgreSQL migrations")
+	if len(versions) == 0 {
+		return nil, errors.New("no embedded PostgreSQL migrations")
+	}
+	return versions, nil
+}
+
+// MigrationHead returns the highest embedded PostgreSQL up-migration version.
+func MigrationHead() (int64, error) {
+	versions, err := migrationVersions()
+	if err != nil {
+		return 0, err
+	}
+	head := versions[0]
+	for _, v := range versions[1:] {
+		if v > head {
+			head = v
+		}
 	}
 	return head, nil
+}
+
+// MigrationStepsAbove counts the embedded migrations strictly newer than version —
+// which is exactly the MigrateSteps(-n) distance from head back to that version.
+//
+// The sequence has GAPS, so that distance is not `head - version`. Twenty-five
+// migrations built an adaptive-learning plane and one later dropped it whole; all
+// twenty-six were removed on 2026-08-03 once a fresh Migrate was proven to produce a
+// byte-identical schema without them. golang-migrate's Steps() counts MIGRATIONS, not
+// version numbers, so every caller that subtracted version numbers started overshooting
+// the moment the first gap appeared, and golang-migrate reported it as an opaque
+// "limit N short". Ask the embedded catalog instead of doing arithmetic on it.
+func MigrationStepsAbove(version int64) (int, error) {
+	versions, err := migrationVersions()
+	if err != nil {
+		return 0, err
+	}
+	steps := 0
+	for _, v := range versions {
+		if v > version {
+			steps++
+		}
+	}
+	return steps, nil
+}
+
+// MigrationStepDelta returns the signed MigrateSteps argument that moves a database
+// from one version to another — negative to roll back, positive to roll forward.
+//
+// It is `stepsAbove(from) - stepsAbove(to)` because what Steps() counts is the number
+// of migrations strictly between the two versions, which the gapped sequence makes
+// different from `to - from`.
+func MigrationStepDelta(from, to int64) (int, error) {
+	aboveFrom, err := MigrationStepsAbove(from)
+	if err != nil {
+		return 0, err
+	}
+	aboveTo, err := MigrationStepsAbove(to)
+	if err != nil {
+		return 0, err
+	}
+	return aboveFrom - aboveTo, nil
 }
 
 // CheckMigrationHead verifies that the database tracker is clean and exactly at

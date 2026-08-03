@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/chetto1983/aura/internal/db"
@@ -138,11 +139,16 @@ func TestEnsureForIdentityDBIntegrationProvisionsRealRow(t *testing.T) {
 		t.Fatalf("first EnsureForIdentity: CreateKey called %d times, want 1", minter.createKeyCalls)
 	}
 
-	// Confirm the row actually landed in Postgres (not just an in-memory fake).
+	// Confirm the row actually landed in Postgres (not just an in-memory fake). The
+	// read-back is IDENTITY-SCOPED: aura.identity_object_store fails closed under RLS
+	// since 0087, and an unscoped SELECT returns zero rows rather than an error — which
+	// reads exactly like "EnsureForIdentity never wrote anything".
 	var dbBucket, dbAccessKey string
-	if err := pool.QueryRow(ctx,
-		`SELECT bucket, access_key FROM aura.identity_object_store WHERE identity_id = $1`, id,
-	).Scan(&dbBucket, &dbAccessKey); err != nil {
+	if err := db.WithIdentityTxRaw(ctx, pool, id, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx,
+			`SELECT bucket, access_key FROM aura.identity_object_store WHERE identity_id = $1`, id,
+		).Scan(&dbBucket, &dbAccessKey)
+	}); err != nil {
 		t.Fatalf("read persisted row: %v", err)
 	}
 	if dbBucket != wantBucket || dbAccessKey != minter.accessKey {

@@ -190,6 +190,10 @@ func TestHandleCheckTelegramAvailabilityBranches(t *testing.T) {
 
 	t.Run("no token configured reports not-configured", func(t *testing.T) {
 		// Empty body + no stored/env token → configured:false, probe never called.
+		// The env token is pinned empty: effectiveSettingValue falls back to
+		// os.Getenv, so on any host that actually has a bot configured this case
+		// probed a real token and failed for a reason unrelated to the branch.
+		t.Setenv("TELEGRAM_BOT_TOKEN", "")
 		probed := false
 		s := &Server{
 			settings:      &fakeSettingsStore{},

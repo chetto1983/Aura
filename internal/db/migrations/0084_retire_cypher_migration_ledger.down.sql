@@ -15,22 +15,21 @@ GRANT ALL            ON aura.knowledge_migrations TO aura_migrate;
 CREATE INDEX IF NOT EXISTS knowledge_migrations_applied_at_idx
     ON aura.knowledge_migrations (applied_at DESC);
 
--- Restoring the two pre-0084 comments is EXISTENCE-GUARDED, and that guard is load-bearing
+-- Restoring the pre-0084 comment is EXISTENCE-GUARDED, and that guard is load-bearing
 -- rather than defensive style. A downward walk reaches this file with later migrations
--- already reverted, and 0086 dropped aura.adaptive_outbox as a declared one-way door — so a
--- bare COMMENT ON here raised 42P01 and left the database DIRTY at 83. Measured on
--- 2026-08-02: that single failure cascaded into 177 failures across the whole
--- db_integration tier, because every later package's Migrate then refused a dirty database.
--- A comment is cosmetic; it must never be the statement that wedges a rollback.
+-- already reverted, so a bare COMMENT ON here raised 42P01 and left the database DIRTY at
+-- 83. Measured on 2026-08-02: that single failure cascaded into 177 failures across the
+-- whole db_integration tier, because every later package's Migrate then refused a dirty
+-- database. A comment is cosmetic; it must never be the statement that wedges a rollback.
+--
+-- The aura.adaptive_outbox arm of this block went with the adaptive migrations themselves
+-- on 2026-08-03. Its guard could only ever be false now, and a branch that cannot be taken
+-- is dead code even when it is three lines of SQL.
 DO $$
 BEGIN
     IF to_regclass('aura.document_ingest_jobs') IS NOT NULL THEN
         COMMENT ON TABLE aura.document_ingest_jobs IS
             'Durable document ingestion job state. Neo4j stores document/chunk graph data; Postgres tracks lifecycle and progress.';
-    END IF;
-    IF to_regclass('aura.adaptive_outbox') IS NOT NULL THEN
-        COMMENT ON TABLE aura.adaptive_outbox IS
-            'Authoritative owner-scoped adaptive decision/outcome outbox. Neo4j is a replayable projection.';
     END IF;
 END
 $$;

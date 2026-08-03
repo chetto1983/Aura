@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -95,7 +96,12 @@ func TestMigration0035AssetsSourceKindAgent(t *testing.T) {
 	// current head, so anchoring off `head` isolates 0035's OWN down regardless of how many
 	// migrations sit above it. The 0035 down pre-deletes the agent row just inserted, so the
 	// re-added narrower (0020) CHECK cannot fail on it — this exercises the down's row-cleanup too.
-	stepDownToV34 := 34 - head
+	// MigrateSteps counts MIGRATIONS, not version numbers — see MigrationStepsAbove.
+	stepsAbove34, err := MigrationStepsAbove(34)
+	if err != nil {
+		t.Fatalf("MigrationStepsAbove(34): %v", err)
+	}
+	stepDownToV34 := -stepsAbove34
 	if err := MigrateSteps(ctx, migrateURL, stepDownToV34); err != nil {
 		t.Fatalf("MigrateSteps(%d) position down to v34: %v", stepDownToV34, err)
 	}
@@ -148,15 +154,23 @@ func TestMigration0035AssetsSourceKindAgent(t *testing.T) {
 // UUID id + a derived object_key keep each call independent (the assets_identity_object_key_idx
 // unique index forbids a duplicate (identity_id, object_key)), so the same helper serves both the
 // success (widened CHECK) and failure (narrow CHECK → 23514) assertions without a stale-row clash.
+//
+// The write goes through an IDENTITY-SCOPED transaction because aura.assets fails closed under RLS
+// from migration 0090 onward: an unscoped INSERT is refused with 42501 whatever the CHECK
+// constraint this drill exercises would have said. Binding the row's own identity is what the store
+// does in production, so the drill stays a test of the source_kind widening rather than of the policy.
 func insertAgentAsset0035(ctx context.Context, pool *pgxpool.Pool) error {
+	const owner = "00000000-0000-0000-0000-000000000001"
 	newID := uuid.New()
 	id := pgtype.UUID{Bytes: newID, Valid: true}
-	objectKey := "identity/00000000-0000-0000-0000-000000000001/asset/" + newID.String() + "/original"
-	_, err := pool.Exec(ctx,
-		`INSERT INTO aura.assets
-		    (id, identity_id, source_kind, scope, modality, status, file_name, object_bucket, object_key)
-		 VALUES
-		    ($1, '00000000-0000-0000-0000-000000000001', 'agent', 'thread', 'document', 'accepted', 'report.pdf', 'asset-test', $2)`,
-		id, objectKey)
-	return err
+	objectKey := "identity/" + owner + "/asset/" + newID.String() + "/original"
+	return WithIdentityTxRaw(ctx, pool, owner, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx,
+			`INSERT INTO aura.assets
+			    (id, identity_id, source_kind, scope, modality, status, file_name, object_bucket, object_key)
+			 VALUES
+			    ($1, $2, 'agent', 'thread', 'document', 'accepted', 'report.pdf', 'asset-test', $3)`,
+			id, owner, objectKey)
+		return err
+	})
 }

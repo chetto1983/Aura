@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -96,7 +97,15 @@ func TestMigration0026LocalAdminCapsRoundTrip(t *testing.T) {
 	// NEWEST migration (0032 owner-RLS today), not 0026. Stepping this non-positive delta
 	// reverses 0027..HEAD but leaves 0026 applied, so the straddle below isolates
 	// migration 0026's OWN down/up regardless of how many migrations now sit above it.
-	stepDownToV26 := 26 - head
+	// MigrateSteps counts MIGRATIONS, not version numbers. The embedded sequence has
+	// gaps since the adaptive plane's twenty-six migrations were removed, so
+	// `26 - head` overshot by exactly the size of the gap and golang-migrate
+	// refused with an opaque "limit N short". Ask the catalog how far back it is.
+	stepsAbove26, err := MigrationStepsAbove(26)
+	if err != nil {
+		t.Fatalf("MigrationStepsAbove(26): %v", err)
+	}
+	stepDownToV26 := -stepsAbove26
 	if err := MigrateSteps(ctx, migrateURL, stepDownToV26); err != nil {
 		t.Fatalf("MigrateSteps(%d) position down to v26: %v", stepDownToV26, err)
 	}
@@ -126,8 +135,10 @@ func TestMigration0026LocalAdminCapsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("post-round-trip Migrate back to HEAD: %v", err)
 	}
-	if want := head - 26; reapplied != want {
-		t.Errorf("post-round-trip Migrate re-applied %d migrations, want %d (0027..HEAD)", reapplied, want)
+	// stepsAbove26 again, not `head - 26`: what comes back up is the COUNT of migrations
+	// above 26, and the sequence has gaps.
+	if reapplied != stepsAbove26 {
+		t.Errorf("post-round-trip Migrate re-applied %d migrations, want %d (0027..HEAD)", reapplied, stepsAbove26)
 	}
 
 	// A second Migrate must be a no-op — the 0026 round-trip left no lingering pending.
@@ -197,9 +208,13 @@ func TestMigration0026RetireSafe_LocalAbsent(t *testing.T) {
 	if _, err := Migrate(ctx, migrateURL); err != nil {
 		t.Fatalf("full Migrate up: %v", err)
 	}
-	head := currentMigrationVersion(t, ctx, freshAdmin)
-	if err := MigrateSteps(ctx, migrateURL, 25-head); err != nil {
-		t.Fatalf("MigrateSteps(%d) position down to v25: %v", 25-head, err)
+	// MigrateSteps counts MIGRATIONS, not version numbers — see MigrationStepsAbove.
+	stepsAbove25, err := MigrationStepsAbove(25)
+	if err != nil {
+		t.Fatalf("MigrationStepsAbove(25): %v", err)
+	}
+	if err := MigrateSteps(ctx, migrateURL, -stepsAbove25); err != nil {
+		t.Fatalf("MigrateSteps(%d) position down to v25: %v", -stepsAbove25, err)
 	}
 
 	// Simulate the Phase 36 retire: local's caps migrate away and the local row is deleted.
@@ -233,21 +248,27 @@ func TestMigration0026RetireSafe_LocalAbsent(t *testing.T) {
 func localCapabilitySet0026(t *testing.T, ctx context.Context, pool *pgxpool.Pool, identityID string) map[string]bool {
 	t.Helper()
 	id := pgtype.UUID{Bytes: uuid.MustParse(identityID), Valid: true}
-	rows, err := pool.Query(ctx, `SELECT capability FROM aura.capability_grants WHERE identity_id = $1`, id)
-	if err != nil {
-		t.Fatalf("query local capability_grants: %v", err)
-	}
-	defer rows.Close()
 	set := map[string]bool{}
-	for rows.Next() {
-		var capability string
-		if err := rows.Scan(&capability); err != nil {
-			t.Fatalf("scan capability: %v", err)
+	// Identity-scoped because aura.capability_grants fails closed under RLS from 0087
+	// onward: an unscoped read is not an error, it is an EMPTY result — which read as
+	// "migration 0026 never seeded the `*` capability" and pointed the blame at the
+	// wrong migration entirely. Bind the identity whose grants are being asserted.
+	if err := WithIdentityTxRaw(ctx, pool, identityID, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `SELECT capability FROM aura.capability_grants WHERE identity_id = $1`, id)
+		if err != nil {
+			return err
 		}
-		set[capability] = true
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatalf("iterate capabilities: %v", err)
+		defer rows.Close()
+		for rows.Next() {
+			var capability string
+			if err := rows.Scan(&capability); err != nil {
+				return err
+			}
+			set[capability] = true
+		}
+		return rows.Err()
+	}); err != nil {
+		t.Fatalf("query local capability_grants: %v", err)
 	}
 	return set
 }

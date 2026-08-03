@@ -332,9 +332,14 @@ func TestRoleSeparation_AppDenied(t *testing.T) {
 	}
 	defer pool.Close()
 
+	// Every statement here must name an object that still EXISTS, or the test asserts
+	// nothing: a missing relation raises 42P01, not 42501, and 42P01 tells you only that
+	// you deleted a table. Two of these named aura.knowledge_migrations, which migration
+	// 0084 dropped when the Cypher ledger was retired — so this gate had been reporting
+	// a dropped table as a broken privilege since then.
 	denied := []string{
-		"TRUNCATE aura.knowledge_migrations",
-		"DROP TABLE aura.knowledge_migrations",
+		"TRUNCATE aura.conversations",
+		"DROP TABLE aura.conversations",
 		"CREATE TABLE aura.t_role_test (id int)",
 	}
 	// The security property is "aura_app is denied DDL", not a specific message.
