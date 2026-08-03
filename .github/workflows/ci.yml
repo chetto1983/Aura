@@ -73,6 +73,7 @@ jobs:
         run: |
           PYTHONPATH=scripts python3 -m unittest \
             scripts/audit_closure_gate_test.py \
+            scripts/agent_memory_eval_test.py \
             scripts/capability_eval_test.py \
             scripts/critical_mutation_gate_test.py \
             scripts/observability_evidence_test.py \
@@ -702,22 +703,12 @@ jobs:
           if-no-files-found: error
 
   arcadedb-integration-test:
-    name: Memory substrate (arcadedb_integration tier, live ArcadeDB)
+    name: Agent Memory MRS (live ArcadeDB + MCP + EmbeddingGemma)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    # Until this job existed the arcadedb_integration tier RAN NOWHERE. It compiled —
-    # scripts/tagged_tier_compile.sh discovers any `*_integration` tag by pattern, so the
-    # tier has always had a build floor — but nothing ever executed it, and it is the only
-    # coverage of the substrate Aura's whole long-term memory sits on. A tier that only
-    # compiles proves the types line up; every defect listed at the top of
-    # memory_integration_test.go (`out.name` returning NULL, vector.neighbors on an EDGE
-    # index yielding unresolvable endpoints, a superseded fact winning rank 1, supersession
-    # filtering on the one field that changes) was green under the unit tests and appeared
-    # only when a real database answered.
-    #
-    # ArcadeDB only. No Postgres, no MCP sidecar image build, no embedder: nothing in the
-    # executed set needs them, and each would be a way for this job to go red for reasons
-    # that are not the memory substrate.
+    timeout-minutes: 30
+    # `aura.agent-memory-eval/v1` is the sole scored memory gate. Deterministic
+    # tests, live ArcadeDB, the shipped Go MCP and EmbeddingGemma run together;
+    # missing evidence or t.Skip is a failure, never a smaller-but-green score.
     env:
       # Arms the no-skip-as-green guards (liveGap in internal/arcadedb, the inline guards in
       # cmd/aura). GitHub sets CI=true already; stated here because the tier keys off it and
@@ -728,10 +719,15 @@ jobs:
       # exist there because only this job talks to ArcadeDB over the wire.
       ARCADEDB_URL: http://127.0.0.1:2480
       ARCADEDB_DATABASE: aura_memory
-      # compose interpolates the WHOLE file before it selects a service, and
-      # POSTGRES_PASSWORD is :?-required — so it must be set even though this job starts no
-      # Postgres. Every other required var is in the workflow-level env block.
+      AURA_EMBED_BASE_URL: http://127.0.0.1:8081
+      COMPOSE_FILE: compose.yaml:compose.minipc.yaml
+      AURA_EMBED_IMAGE: ghcr.io/ggml-org/llama.cpp:server
+      AURA_EMBED_NGL: "0"
+      # The latency gate includes the real CLI operator-identity lookup, so this
+      # job also starts a disposable migrated Postgres instead of timing a shortcut.
       POSTGRES_PASSWORD: ci-test-password
+      AURA_DB_URL: postgres://aura_app:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
+      AURA_DB_MIGRATE_URL: postgres://aura_migrate:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -741,6 +737,18 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+
+      - name: Cache the EmbeddingGemma model
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/aura-embed
+          key: embed-model-ggml-org-embeddinggemma-300M-Q8_0-v1
+
+      - name: Materialize the validated EmbeddingGemma model
+        run: bash scripts/fetch_embedding_model.sh ~/.cache/aura-embed/model.gguf
+
+      - name: Migrate the disposable operator identity database
+        run: make db-migrate
 
       - name: Bring up ArcadeDB
         # `docker compose up`, not a GitHub service container: the empty brackets in
@@ -770,40 +778,37 @@ jobs:
             exit 1
           fi
 
-      - name: Memory tier — bitemporal facts, supersession, live schema (-race, no skip)
-        # -skip rather than -run: a positive selector would have to be extended by hand every
-        # time a test is added to memory_integration_test.go, and the one that was forgotten
-        # would silently stop being a gate. The exclusions are by FAMILY and each is excluded
-        # for a reason that is about data, never about the code under test:
-        #
-        #   TestLocomo*        need AURA_LOCOMO_DIR — the Backboard LOCOMO corpus (1986
-        #                      questions), an external dataset that is not in the repo, plus
-        #                      hand-extracted facts, embedding models and 60-minute
-        #                      timeouts. They are measurement runs that report
-        #                      recall@k, not pass/fail gates.
-        #   TestMemoryVector*  need the llama.cpp embed sidecar, whose GGUF is a model
-        #                      download the sidecar cannot fetch itself (it has no egress and
-        #                      takes a LOCAL -m path). TestMemoryVectorAnswersACrossLingual
-        #                      Question additionally asserts against the OPERATOR's own fact
-        #                      corpus; on a fresh database there is nothing for it to find.
-        #
-        # Everything else runs, and that includes the package's untagged unit tests — with
-        # the tag on they compile into the same binary, cost nothing, and mean this job also
-        # covers the pure client/schema/tenant surface.
+      - name: Bring up EmbeddingGemma and the ArcadeDB MCP
         run: |
-          go test -race -tags arcadedb_integration -count=1 \
-            -skip '^TestLocomo|^TestMemoryVector' \
-            ./internal/arcadedb/
+          docker compose create aura-llama-embed
+          cid="$(docker compose ps -aq aura-llama-embed | head -1)"
+          docker cp ~/.cache/aura-embed/model.gguf "$cid:/root/.cache/llama.cpp/embeddinggemma-300M-Q8_0.gguf"
+          docker compose up -d --build aura-llama-embed arcadedb-mcp
 
-      - name: Deprovision tier — drop database + revoke tenant credential (-race, no skip)
-        # The per-identity purge, against the real server. It is the postconditions that need
-        # a live ArcadeDB: that `drop database` makes /api/v1/exists answer false, and that a
-        # dropped tenant user is actually REFUSED rather than quietly still accepted. A mock
-        # answers whatever the adapter asks it to.
-        run: |
-          go test -race -tags arcadedb_integration -count=1 \
-            -run '^TestArcadeMemoryPurgeLive' \
-            ./cmd/aura/
+          for endpoint in http://127.0.0.1:8081/health http://127.0.0.1:8096/health; do
+            ok=""
+            for i in $(seq 1 60); do
+              if curl -fsS "$endpoint" >/dev/null 2>&1; then ok=1; break; fi
+              echo "$endpoint not ready yet ($i)"
+              sleep 5
+            done
+            if [ -z "$ok" ]; then
+              echo "$endpoint never became ready" >&2
+              docker compose logs --tail 100 aura-llama-embed arcadedb-mcp || true
+              exit 1
+            fi
+          done
+
+      - name: Agent Memory deterministic + live evaluator (strict MRS > 96.5)
+        run: make agent-memory-eval
+
+      - name: Upload Agent Memory evaluation report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: agent-memory-eval
+          path: artifacts/production-readiness/agent-memory-eval-report.json
+          if-no-files-found: error
 
       - name: Tear down
         if: always()

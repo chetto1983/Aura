@@ -241,26 +241,11 @@ memory-up:
 	$(call wait_compose_healthy,aura-llama-embed)
 	@echo "ok"
 
-# The arcadedb_integration tier, run exactly the way the CI job
-# `arcadedb-integration-test` runs it — same tags, same -skip/-run selectors, same
-# ArcadeDB-only stack. Keep the two in step: a local green that exercised a different
-# set than CI is worth nothing.
-#
-# The tier reads ARCADEDB_PASSWORD / ARCADEDB_URL / ARCADEDB_DATABASE /
-# AURA_ARCADEDB_TENANT_SECRET from the environment and SKIPS locally when they are
-# absent. Export them (from .env) to make this a real gate; add CI=1 to arm the
-# no-skip-as-green guards and turn any missing piece into a failure, as in the pipeline.
-#
-# TestLocomo* and TestMemoryVector* are excluded here for the same reasons as in CI:
-# an external dataset and a model download respectively. Run those by hand.
-arcadedb-integration:
-	docker compose up -d arcadedb
-	$(call wait_compose_healthy,arcadedb)
-	go test -race -tags arcadedb_integration -count=1 \
-		-skip '^TestLocomo|^TestMemoryVector' ./internal/arcadedb/
-	go test -race -tags arcadedb_integration -count=1 \
-		-run '^TestArcadeMemoryPurgeLive' ./cmd/aura/
-	@echo "ok: arcadedb_integration tier passed against a live ArcadeDB"
+# Compatibility name for operators' muscle memory. The MRS evaluator is the
+# single current memory gate and fails closed on missing, skipped, coverage or
+# latency evidence.
+arcadedb-integration: db-migrate memory-up
+	$(MAKE) agent-memory-eval
 
 restore-drill: db-migrate memory-up
 	bash scripts/garage_bootstrap.sh
