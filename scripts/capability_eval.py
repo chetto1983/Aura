@@ -30,14 +30,15 @@ class Scenario:
 SCENARIOS = (
     Scenario("shell.exec.routed", "shell_containment", "positive", "./internal/agent/tools", "TestShellExec_RoutedRunsInBox"),
     Scenario("shell.exec.fail_closed", "shell_containment", "negative", "./internal/agent/tools", "TestShellExec_FailClosedNoHostFallback"),
-    Scenario("fs.workspace.allowed", "filesystem_ownership", "positive", "./internal/agent/tools", "TestSendFileAllowsWorkspacePath"),
-    Scenario("fs.workspace.escape_denied", "filesystem_ownership", "negative", "./internal/agent/tools", "TestSendFileRejectsOutsideWorkspace"),
+    Scenario("fs.workspace.allowed", "filesystem_ownership", "positive", "./internal/agent/tools", "TestSendFileExecuteSetsArtifactMeta"),
+    Scenario("fs.workspace.escape_denied", "filesystem_ownership", "negative", "./internal/agent/tools", "TestSendFileFencesToBoxWorkspace"),
     Scenario("mcp.initialize.valid", "mcp_contract", "positive", "./internal/mcp", "TestHTTPInitializeSessionProtocolAndListTools"),
     Scenario("mcp.domain_error.typed", "mcp_contract", "negative", "./internal/mcp", "TestCallToolRejectsExplicitDomainFailure"),
     Scenario("mcp.timeout.bounded", "mcp_contract", "negative", "./internal/mcp", "TestHTTPTimeout"),
     Scenario("mcp.remote_trust.blocked", "mcp_contract", "negative", "./internal/mcp", "TestMountForIdentityRemoteTrustOverrideIgnored"),
-    Scenario("memory.relationship.schema", "memory_contract", "positive", "./cmd/aura", "TestMemoryRelationshipUsesAdvertisedSchema"),
-    Scenario("memory.recall.bounds", "memory_contract", "negative", "./cmd/aura", "TestDynamicRecallProviderRejectsTransportAndResponseEdges"),
+    Scenario("memory.cli.mapping", "memory_contract", "positive", "./cmd/aura", "TestMemoryVerbMapping"),
+    Scenario("memory.cli.invalid_rejected", "memory_contract", "negative", "./cmd/aura", "TestMemoryVerbMappingNegativeCases"),
+    Scenario("memory.readiness.functional", "memory_contract", "positive", "./cmd/aura", "TestMemoryReadinessCheckRunsAnIsolatedFunctionalSearch"),
     Scenario("memory.readiness.semantic", "memory_contract", "negative", "./cmd/aura", "TestMemoryReadinessCheckRejectsSemanticAndTransportFailure"),
     Scenario("pause.resume.claim_first", "pause_resume_atomicity", "positive", "./internal/runner", "TestSplitResumeCommitter_CommitResume_ClaimsBeforeAppend"),
     Scenario("pause.resume.partial_batch_denied", "pause_resume_atomicity", "negative", "./internal/runner", "TestResumeBatch_PartiallyResolvedAppendsNothing"),
@@ -45,7 +46,7 @@ SCENARIOS = (
     Scenario("terminal.mutating_sibling_denied", "terminal_error_truth", "negative", "./internal/agent", "TestDispatch_TerminalRejectExclusivity"),
     Scenario("mutation.operation.stable", "idempotent_mutation", "positive", "./internal/agent", "TestExecToolDerivesStableChildFromHTTPMutation"),
     Scenario("mutation.domain_rejection.replayed", "idempotent_mutation", "negative", "./internal/agent", "TestExecToolReplaysDeterministicDomainRejectionAsError"),
-    Scenario("workflow.dynamic_tail.resume", "workflow_completion", "positive", "./internal/agent", "TestDynamicTailResumeMovesExactItemToFinalRequestTail"),
+    Scenario("workflow.completion.accepts", "workflow_completion", "positive", "./internal/agent", "TestCompletionGate_Done_AcceptsAfterCritic"),
     Scenario("workflow.retry_exhausted.truthful", "workflow_completion", "negative", "./internal/agent", "TestSynthesizeRetryExhaustedReturnsFinalError"),
 )
 
