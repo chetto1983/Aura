@@ -78,6 +78,14 @@
   EmbeddingGemma HNSW and `vector.fuse` RRF. Valid-time filtering happens before
   candidate truncation, every lexical path escapes Lucene syntax, and an
   unavailable or invalid embedder fails soft to bounded lexical retrieval.
+  Relevance is a pre-fusion gate, not a post-hoc guess from RRF rank: the dense
+  leg uses ArcadeDB `vector.neighbors` `maxDistance=0.55`, and the lexical leg
+  requires Lucene `$score >= 2`. If neither leg qualifies, `memory_search`
+  returns an empty `facts` array plus explicit abstention metadata; a nearest
+  neighbor below the confidence floor is not evidence. The defaults are
+  EmbeddingGemma-specific and were calibrated on 2026-08-03 against stored-fact
+  paraphrases and adversarial nonexistent facts; changing the embedding model
+  requires a fresh calibration rather than reusing them blindly.
 - All model-controlled text, result counts and maintenance batches have hard
   server-side limits. Defaults are: query 2,048 runes; entity name 512 runes;
   statement 4,096 runes; predicate, source-run ID and each source-memory ID 100
@@ -99,8 +107,11 @@
   temporal correctness, MCP/runtime resilience, and operability/coverage.
   `MRS > 96.5` is valid only when every hard gate passes: zero cross-tenant
   leakage, no skipped/missing scenario, live MCP initialize/list/call, exact
-  EmbeddingGemma-768 contract, package coverage at least 85%, and bounded p95.
-  A failed hard gate yields a failing verdict regardless of the arithmetic score.
+  EmbeddingGemma-768 contract, package coverage at least 85%, and an end-to-end
+  local-appliance `memory_search` p95 at or below 1,000 ms across at least 25
+  sequential samples. The latency clock includes operator identity resolution,
+  MCP initialize and the tool call; it does not discard cold samples. A failed
+  hard gate yields a failing verdict regardless of the arithmetic score.
 - LoCoMo evidence Recall@K/MRR/nDCG and LLM-judged answer accuracy are separate
   metrics with frozen dataset, categories, top-K/context budget, model/judge and
   seed metadata. MRS must never be presented as LoCoMo or LongMemEval accuracy;
@@ -6020,6 +6031,8 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_MEMORY_STATEMENT_MAX_RUNES` | `4096` | cap | Agent Memory convergence | Maximum fact statement accepted for storage and embedding; a non-positive override fails boot. |
 | `AURA_MEMORY_DIGEST_SCAN_MAX_COUNT` | `2000` | cap | Agent Memory convergence | Maximum current facts read by one digest build before grouping; response entity/fact counts remain capped separately. |
 | `AURA_MEMORY_HYBRID_CANDIDATE_MAX_COUNT` | `400` | cap | Agent Memory convergence | Maximum candidates admitted by each pre-filtered hybrid retrieval leg. |
+| `AURA_MEMORY_DENSE_MAX_DISTANCE_RATIO` | `0.55` | cap | Agent Memory convergence | Maximum EmbeddingGemma cosine distance admitted by the dense leg before fusion; larger values abstain. Recalibrate on any model change. |
+| `AURA_MEMORY_LEXICAL_MIN_SCORE` | `2` | cap | Agent Memory convergence | Minimum Lucene `$score` admitted by the lexical leg; a lone entity-name token cannot make an unrelated claim relevant. |
 | `AURA_ARCADEDB_MCP_BODY_MAX_BYTES` | `1048576` (1 MiB) | cap | Agent Memory convergence | Maximum Streamable HTTP MCP request body; oversized requests are rejected before JSON decoding. |
 | `AURA_ARCADEDB_MCP_HOST` | `0.0.0.0` | operative | Agent Memory convergence | Bind host of the production Go `arcadedb-mcp` service. Compose publishes it on loopback. |
 | `AURA_ARCADEDB_MCP_PORT` | `8096` | operative | Agent Memory convergence | Host port of the production Go `arcadedb-mcp` Streamable HTTP endpoint at `/mcp/`. |

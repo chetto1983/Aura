@@ -69,9 +69,15 @@ only mutating entity-resolution authority.
 2. Compute one EmbeddingGemma query vector with the query task prefix.
 3. Run bounded dense and Lucene rankings inside ArcadeDB, applying the valid-time
    window before each ranking is truncated.
-4. Fuse the rankings with ArcadeDB RRF, hydrate by RID and restore fused order.
-5. Fall back to escaped, bounded Lucene when the embedder or vector query fails.
-6. Use `memory_facts_about` for exact bidirectional entity traversal.
+4. Admit only dense rows at cosine distance `<= 0.55` and lexical rows with
+   Lucene `$score >= 2`; these EmbeddingGemma defaults are recalibrated when the
+   embedding model changes.
+5. Fuse the admitted rankings with ArcadeDB RRF, hydrate by RID and restore
+   fused order. If both legs are empty, return no facts and mark the response as
+   an abstention instead of returning the least-distant unrelated rows.
+6. Fall back to escaped, bounded and relevance-gated Lucene when the embedder or
+   vector query fails.
+7. Use `memory_facts_about` for exact bidirectional entity traversal.
 
 Every response is bounded and identifies the effective retrieval path. Empty
 memory is a valid empty result; malformed structured content, unbounded output
@@ -103,8 +109,10 @@ The Memory Reliability Score is a 100-point conformance score:
 The release threshold is `MRS > 96.5`. The following hard gates cannot be
 compensated by points: zero cross-tenant leakage; zero skipped or missing cases;
 successful live MCP initialize/list/call; EmbeddingGemma output exactly 768;
-owned-package coverage at least 85%; and latency below the declared local
-appliance p95 ceiling.
+owned-package coverage at least 85%; and end-to-end local-appliance
+`memory_search` p95 at or below 1,000 ms over at least 25 sequential samples.
+The latency interval includes operator identity resolution, MCP initialize and
+the tool call, with cold samples retained.
 
 LoCoMo is reported separately. Evidence Recall@1/5/10, MRR and nDCG are retrieval
 metrics; answer accuracy and faithfulness require a separately pinned answerer
