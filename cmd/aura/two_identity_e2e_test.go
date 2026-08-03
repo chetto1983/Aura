@@ -164,7 +164,7 @@ func TestTwoIdentityCrossDeny(t *testing.T) {
 		aq := askuser.New(pool)
 		token := uuid.NewString()
 		// The BEFORE INSERT trigger (36-04) stamps identity_id from convA's owner (A).
-		if err := aq.Insert(ctx, askuser.InsertParams{
+		if err := aq.Insert(ctxA, askuser.InsertParams{
 			Token: token, ConversationID: convA, Kind: "approval",
 			Question: "approve deploy?", ToolCallID: "call-musr-1",
 		}); err != nil {
