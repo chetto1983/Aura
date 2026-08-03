@@ -6,7 +6,7 @@
 # sqlc CLI: install with `go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1`
 # (v1.27.0 panics on Windows hosts via wazero out-of-bounds; v1.31.1 verified clean).
 
-.PHONY: help tools sqlc lint vet deadcode vuln coverage coverage-docker quality quality-full test test-race tagged-tier-compile file-size embedding-model-contract web-freshness web-lint web-test web-mutation web-quality evidence-contracts critical-mutation observability-evidence release-readiness db-up db-migrate db-status db-reset memory-up arcadedb-integration restore-drill load-chaos
+.PHONY: help tools sqlc lint vet deadcode vuln coverage coverage-docker quality quality-full test test-race tagged-tier-compile file-size embedding-model-contract web-freshness web-lint web-test web-mutation web-quality evidence-contracts agent-memory-eval-contract agent-memory-eval critical-mutation observability-evidence release-readiness db-up db-migrate db-status db-reset memory-up arcadedb-integration restore-drill load-chaos
 
 # Resolve go-installed tool binaries even when $GOPATH/bin is not on PATH
 # (common in a fresh WSL login shell). Falls back to a bare name on PATH.
@@ -35,6 +35,8 @@ help:
 	@echo "make web-mutation  — Stryker mutation run (break=70: fails below 70% killed)"
 	@echo "make web-quality   — full frontend gate: web-lint + web-test + web-mutation"
 	@echo "make evidence-contracts — self-test every candidate-bound release report parser"
+	@echo "make agent-memory-eval-contract — deterministic evaluator; never claims a live MRS"
+	@echo "make agent-memory-eval — blocking MRS over the already-running live memory stack"
 	@echo "make critical-mutation — >=70% per critical Go boundary + frontend, no averaging"
 	@echo "make observability-evidence — fixtures + runtime smoke + live Aura endpoints"
 	@echo "make release-readiness — validate the ten fresh reports for the current Git SHA"
@@ -88,6 +90,22 @@ coverage:
 coverage-docker:
 	bash scripts/coverage_docker.sh
 
+# The BEHAVIOUR gate: does she still answer the question? Every other gate in this
+# file measures the code — build, vet, lint, race, coverage, mutation — and none of
+# them can see a turn that answers wrong, loops, or reaches for the open internet to
+# find something in the operator's own spreadsheet. All three happened on
+# 2026-08-03 and were found by hand, one at a time.
+#
+# NOT in CI, and deliberately: every case is a real turn against a real model and
+# costs money. Run it before shipping anything that touches the prompt, the tool
+# manifest, the registry or memory retrieval. Needs the stack up and the identity
+# that owns the document library:
+#
+#   AURA_EVAL_IDENTITY=<uuid> make agent-eval
+agent-eval:
+	@test -n "$(AURA_EVAL_IDENTITY)" || { echo "AURA_EVAL_IDENTITY=<uuid> is required (see the Makefile comment)"; exit 1; }
+	go test -tags agent_eval -count=1 -v -timeout 30m ./internal/agenteval/
+
 # Pre-push gate that needs NO containers — fast feedback before a push.
 quality: deadcode vet file-size embedding-model-contract lint test-race vuln
 	go build $(GO_PACKAGES)
@@ -139,6 +157,7 @@ web-quality: web-lint web-test web-mutation
 evidence-contracts:
 	PYTHONPATH=scripts python3 -m unittest \
 		scripts/audit_closure_gate_test.py \
+		scripts/agent_memory_eval_test.py \
 		scripts/capability_eval_test.py \
 		scripts/critical_mutation_gate_test.py \
 		scripts/observability_evidence_test.py \
@@ -149,6 +168,14 @@ evidence-contracts:
 		scripts/security_evidence_test.py
 	bash scripts/coverage_gate_test.sh
 	bash scripts/restore_drill_name_test.sh
+
+agent-memory-eval-contract:
+	PYTHONPATH=scripts python3 -m unittest scripts/agent_memory_eval_test.py
+	PYTHONPATH=scripts python3 scripts/agent_memory_eval.py --tier deterministic
+
+agent-memory-eval:
+	PYTHONPATH=scripts python3 -m unittest scripts/agent_memory_eval_test.py
+	PYTHONPATH=scripts python3 scripts/agent_memory_eval.py --tier all
 
 critical-mutation:
 	PYTHONPATH=scripts python3 -m unittest scripts/critical_mutation_gate_test.py
