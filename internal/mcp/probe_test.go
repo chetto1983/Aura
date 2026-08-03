@@ -113,7 +113,7 @@ func TestMCPProbe_HTTPEndpointDialsAndCountsTools(t *testing.T) {
 		case "tools/list":
 			writeHTTPRPC(t, w, req.ID, map[string]any{"tools": []map[string]any{
 				{"name": "memory_search", "description": "Search", "inputSchema": map[string]any{"type": "object"}},
-				{"name": "memory_add_fact", "description": "Add", "inputSchema": map[string]any{"type": "object"}},
+				{"name": "memory_upsert_fact", "description": "Upsert", "inputSchema": map[string]any{"type": "object"}},
 			}})
 		default:
 			t.Fatalf("unexpected method %q", req.Method)

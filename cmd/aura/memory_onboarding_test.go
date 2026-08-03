@@ -114,8 +114,14 @@ func TestStoreConfirmedScopesEveryCallAndEndsWithSentinel(t *testing.T) {
 		if call.args["user_identifier"] != "id-uuid" {
 			t.Errorf("call %d is unscoped: %#v", i, call.args)
 		}
-		if call.args["source_run_id"] == "" || call.args["source_run_id"] == nil {
-			t.Errorf("call %d has no source_run_id; a run must be findable to be forgettable", i)
+		if sourceRun(call.args) == "" {
+			t.Errorf("call %d has no source run; a run must be findable to be forgettable", i)
+		}
+		if _, retired := call.args["source_run_id"]; retired {
+			t.Errorf("call %d used the retired provenance wire: %#v", i, call.args)
+		}
+		if call.args["subject_kind"] == "" {
+			t.Errorf("call %d has no subject kind: %#v", i, call.args)
 		}
 	}
 	// The sentinel goes LAST on purpose: a reader that sees it knows the profile

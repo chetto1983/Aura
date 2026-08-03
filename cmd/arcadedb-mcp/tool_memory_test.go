@@ -69,13 +69,14 @@ func (r *recordingDB) find(fragment string) (string, map[string]any, bool) {
 
 func validFactInput() MemoryUpsertFactInput {
 	return MemoryUpsertFactInput{
-		UserIdentifier:  testIdentity,
-		Subject:         "Davide",
-		Predicate:       "lives_in",
-		Object:          "Caraglio",
-		Statement:       "Davide lives in Caraglio.",
-		SourceRunID:     "run-1",
-		SourceMemoryIDs: []string{"mem-1"},
+		UserIdentifier: testIdentity,
+		Subject:        "Davide",
+		SubjectKind:    "Person",
+		Predicate:      "lives_in",
+		Object:         "Caraglio",
+		ObjectKind:     "Location",
+		Statement:      "Davide lives in Caraglio.",
+		Source:         MemoryFactSource{RunID: "run-1", MemoryIDs: []string{"mem-1"}},
 	}
 }
 
@@ -99,7 +100,7 @@ func TestUpsertFactWritesTheEdgeWithBothTimeAxes(t *testing.T) {
 	if !ok {
 		t.Fatalf("no CREATE EDGE issued; statements = %v", rec.statements)
 	}
-	for _, field := range []string{"valid_from", "valid_to", "created_at", "source_run_id"} {
+	for _, field := range []string{"valid_from", "valid_to", "created_at", "sources", "fact_key"} {
 		if !strings.Contains(statement, field) {
 			t.Fatalf("CREATE EDGE missing %s: %s", field, statement)
 		}
@@ -123,12 +124,17 @@ func TestUpsertFactStoresProvenance(t *testing.T) {
 		t.Fatalf("upsert: %v", err)
 	}
 	_, params, _ := rec.find("CREATE EDGE")
-	if params["source_run_id"] != "run-1" {
-		t.Fatalf("source_run_id = %v", params["source_run_id"])
+	sources, ok := params["sources"].([]any)
+	if !ok || len(sources) != 1 {
+		t.Fatalf("sources = %v", params["sources"])
 	}
-	ids, ok := params["source_memory_ids"].([]any)
+	source, ok := sources[0].(map[string]any)
+	if !ok || source["run_id"] != "run-1" {
+		t.Fatalf("source = %v", sources[0])
+	}
+	ids, ok := source["memory_ids"].([]any)
 	if !ok || len(ids) != 1 || ids[0] != "mem-1" {
-		t.Fatalf("source_memory_ids = %v", params["source_memory_ids"])
+		t.Fatalf("source memory ids = %v", source["memory_ids"])
 	}
 }
 
@@ -194,7 +200,7 @@ func TestUpsertFactRejectsBadInput(t *testing.T) {
 		"no predicate":   func(in *MemoryUpsertFactInput) { in.Predicate = "" },
 		"no object":      func(in *MemoryUpsertFactInput) { in.Object = "" },
 		"no statement":   func(in *MemoryUpsertFactInput) { in.Statement = "  " },
-		"no provenance":  func(in *MemoryUpsertFactInput) { in.SourceRunID = "" },
+		"no provenance":  func(in *MemoryUpsertFactInput) { in.Source.RunID = "" },
 		"bad valid_from": func(in *MemoryUpsertFactInput) { in.ValidFrom = "yesterday" },
 		"bad valid_to":   func(in *MemoryUpsertFactInput) { in.ValidTo = "soon" },
 		"window backwards": func(in *MemoryUpsertFactInput) {
@@ -227,8 +233,9 @@ func search(
 }
 
 const oneFactRow = `{"result":[{"statement":"Davide lives in Caraglio.","predicate":"lives_in",
-"subject":"Davide","object":"Caraglio","valid_from":"2026-01-01T00:00:00Z",
-"source_run_id":"run-1","source_memory_ids":["mem-1"]}]}`
+"subject":"Davide","subject_kind":"Person","object":"Caraglio","object_kind":"Location",
+"valid_from":"2026-01-01T00:00:00Z",
+"sources":[{"run_id":"run-1","memory_ids":["mem-1"]}]}]}`
 
 func TestSearchUsesTheFullTextIndexAndKeepsProvenance(t *testing.T) {
 	client, rec := newRecordingDB(t, oneFactRow)
@@ -246,8 +253,11 @@ func TestSearchUsesTheFullTextIndexAndKeepsProvenance(t *testing.T) {
 	if len(out.Facts) != 1 || out.Facts[0].Subject != "Davide" {
 		t.Fatalf("facts = %+v", out.Facts)
 	}
-	if out.Facts[0].SourceRunID != "run-1" {
+	if len(out.Facts[0].Sources) != 1 || out.Facts[0].Sources[0].RunID != "run-1" {
 		t.Fatalf("provenance lost: %+v", out.Facts[0])
+	}
+	if out.Retrieval.Path != "lexical" || out.Retrieval.Abstained || out.Retrieval.Reason != "embedder_not_configured" {
+		t.Fatalf("retrieval metadata = %+v", out.Retrieval)
 	}
 }
 
@@ -288,6 +298,9 @@ func TestSearchOnEmptyGraphReturnsNoFactsNotAnError(t *testing.T) {
 	if !strings.Contains(string(encoded), `"facts":[]`) {
 		t.Fatalf("facts did not encode as an empty array: %s", encoded)
 	}
+	if !out.Retrieval.Abstained || out.Retrieval.Path != "lexical" || out.Retrieval.Reason == "" {
+		t.Fatalf("empty search did not expose abstention: %+v", out.Retrieval)
+	}
 }
 
 func factsAbout(
@@ -317,6 +330,20 @@ func TestFactsAboutWalksTheGraphWithoutRanking(t *testing.T) {
 	}
 	if len(out.Facts) != 1 || out.Facts[0].Object != "Caraglio" {
 		t.Fatalf("facts = %+v", out.Facts)
+	}
+	if out.Retrieval.Path != "graph" || out.Retrieval.Abstained {
+		t.Fatalf("retrieval metadata = %+v", out.Retrieval)
+	}
+}
+
+func TestFactsAboutEmptyGraphReportsNoFacts(t *testing.T) {
+	client, _ := newRecordingDB(t, `{"result":[]}`)
+	out, err := factsAbout(t, client, MemoryFactsAboutInput{UserIdentifier: testIdentity, Entity: "Nobody"})
+	if err != nil {
+		t.Fatalf("facts_about: %v", err)
+	}
+	if !out.Retrieval.Abstained || out.Retrieval.Path != "graph" || out.Retrieval.Reason != "no_facts" {
+		t.Fatalf("retrieval metadata = %+v", out.Retrieval)
 	}
 }
 

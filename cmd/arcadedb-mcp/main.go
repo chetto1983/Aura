@@ -6,10 +6,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"os"
 	"os/signal"
@@ -31,6 +34,7 @@ const (
 	defaultReadTimeout     = 15 * time.Second
 	defaultWriteTimeout    = 120 * time.Second
 	defaultShutdownTimeout = 10 * time.Second
+	defaultBodyMaxBytes    = 1 << 20
 )
 
 func main() {
@@ -43,6 +47,10 @@ func main() {
 
 func run(logger *slog.Logger) error {
 	cfg, addr, err := configFromEnv()
+	if err != nil {
+		return err
+	}
+	bodyMaxBytes, err := positiveInt64Env("AURA_ARCADEDB_MCP_BODY_MAX_BYTES", defaultBodyMaxBytes)
 	if err != nil {
 		return err
 	}
@@ -103,7 +111,8 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("memory isolation: %w", cerr)
 	}
 	server := newServer(newTenants(cfg, admin, embedder, credentials), time.Now)
-	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)
+	handler := cappedBodyHandler(bodyMaxBytes,
+		mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil))
 
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", handler)
@@ -191,6 +200,11 @@ func configFromEnv() (arcadedb.Config, string, error) {
 		}
 		cfg.Timeout = time.Duration(seconds) * time.Second
 	}
+	limits, err := memoryLimitsFromEnv()
+	if err != nil {
+		return cfg, "", err
+	}
+	cfg.MemoryLimits = limits
 	port := defaultPort
 	if raw := strings.TrimSpace(os.Getenv("AURA_ARCADEDB_MCP_PORT")); raw != "" {
 		parsed, err := strconv.Atoi(raw)
@@ -204,6 +218,107 @@ func configFromEnv() (arcadedb.Config, string, error) {
 		host = "0.0.0.0"
 	}
 	return cfg, host + ":" + strconv.Itoa(port), nil
+}
+
+func memoryLimitsFromEnv() (arcadedb.MemoryLimits, error) {
+	var limits arcadedb.MemoryLimits
+	integers := []struct {
+		key    string
+		target *int
+	}{
+		{"AURA_MEMORY_QUERY_MAX_RUNES", &limits.QueryRunes},
+		{"AURA_MEMORY_ENTITY_MAX_RUNES", &limits.EntityRunes},
+		{"AURA_MEMORY_STATEMENT_MAX_RUNES", &limits.StatementRunes},
+		{"AURA_MEMORY_DIGEST_SCAN_MAX_COUNT", &limits.DigestScan},
+		{"AURA_MEMORY_HYBRID_CANDIDATE_MAX_COUNT", &limits.HybridCandidates},
+	}
+	for _, item := range integers {
+		value, set, err := positiveIntEnv(item.key)
+		if err != nil {
+			return limits, err
+		}
+		if set {
+			*item.target = value
+		}
+	}
+	floats := []struct {
+		key    string
+		target *float64
+	}{
+		{"AURA_MEMORY_DENSE_MAX_DISTANCE_RATIO", &limits.DenseMaxDistance},
+		{"AURA_MEMORY_LEXICAL_MIN_SCORE", &limits.LexicalMinScore},
+	}
+	for _, item := range floats {
+		value, set, err := positiveFloatEnv(item.key)
+		if err != nil {
+			return limits, err
+		}
+		if set {
+			*item.target = value
+		}
+	}
+	return limits, nil
+}
+
+func positiveIntEnv(key string) (int, bool, error) {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return 0, false, nil
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		return 0, false, fmt.Errorf("%s must be a positive integer, got %q", key, raw)
+	}
+	return value, true, nil
+}
+
+func positiveInt64Env(key string, fallback int64) (int64, error) {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback, nil
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || value <= 0 {
+		return 0, fmt.Errorf("%s must be a positive integer, got %q", key, raw)
+	}
+	return value, nil
+}
+
+func positiveFloatEnv(key string) (float64, bool, error) {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return 0, false, nil
+	}
+	value, err := strconv.ParseFloat(raw, 64)
+	if err != nil || value <= 0 || math.IsNaN(value) || math.IsInf(value, 0) {
+		return 0, false, fmt.Errorf("%s must be finite and positive, got %q", key, raw)
+	}
+	return value, true, nil
+}
+
+func cappedBodyHandler(maxBytes int64, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.Body == nil {
+			next.ServeHTTP(w, request)
+			return
+		}
+		request.Body = http.MaxBytesReader(w, request.Body, maxBytes)
+		body, err := io.ReadAll(request.Body)
+		if closeErr := request.Body.Close(); err == nil {
+			err = closeErr
+		}
+		if err != nil {
+			var tooLarge *http.MaxBytesError
+			if errors.As(err, &tooLarge) {
+				http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+				return
+			}
+			http.Error(w, "cannot read request body", http.StatusBadRequest)
+			return
+		}
+		request.Body = io.NopCloser(bytes.NewReader(body))
+		next.ServeHTTP(w, request)
+	})
 }
 
 // adminConfigFromEnv reads the DDL credential. It is deliberately separate from

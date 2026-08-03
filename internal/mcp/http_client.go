@@ -47,10 +47,8 @@ type HTTPConfig struct {
 	// schema-driven injection — a readiness probe building its map literally, any
 	// future direct caller — cannot reach a per-identity server unstamped.
 	//
-	// It was removed once, when the memory server's tools did not declare the
-	// argument and injecting it failed every call. The right fix was to make the
-	// tools declare it, not to drop the guard: without it the only thing stamping
-	// identity is convention, and identity is what selects whose data is read.
+	// Without this guard the only thing stamping identity is bridge convention,
+	// while identity determines which tenant database may be read.
 	ToolIdentityArgument string
 	EgressPolicy         EgressPolicy
 }
@@ -328,8 +326,7 @@ func (c *HTTPClient) post(ctx context.Context, payload any, includeProtocol bool
 	// not be replayed after send), the client is left with no session and no way back — the
 	// only trigger for reinitialize was the session id that was just cleared. Every later
 	// call, reads included, then posts bare and the server answers 400 "Missing session ID"
-	// forever. Observed live 2026-07-25 after a sidecar rebuild: twenty consecutive memory
-	// calls failed with http 400 and only restarting the daemon fixed it.
+	// forever.
 	//
 	// Guarded on sessionID == "": with a session in hand a 400 is a real bad request and is
 	// returned as one. After reinitialize succeeds the guard no longer holds, so a genuinely

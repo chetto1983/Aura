@@ -10,7 +10,7 @@ import (
 )
 
 // writeSharedCatalog stages a shared catalog with a class-(a) stdio server
-// (calculator) and the class-(b) shared agent-memory server, returning the catalog
+// (calculator) and the class-(b) shared ArcadeDB memory MCP, returning the catalog
 // dir (the per-identity root) after pointing AURA_MCP_CONFIG at it.
 func writeSharedCatalog(t *testing.T) string {
 	t.Helper()
@@ -27,7 +27,7 @@ func writeSharedCatalog(t *testing.T) string {
 		},
 		"memory": {
 			Type:    ServerTypeStreamableHTTP,
-			URL:     "http://127.0.0.1:8091/mcp/",
+			URL:     "http://127.0.0.1:8096/mcp/",
 			Enabled: new(true),
 			Source:  SourceRecipeMemory,
 			Trust:   ManagedTrust{Class: TrustTrustedRecipe},
@@ -198,7 +198,7 @@ func TestSetTrustForIdentityRemoteElevationForbidden(t *testing.T) {
 	}
 }
 
-// Test 4: the class-(b) shared agent-memory server cannot be toggled per-identity, and
+// Test 4: the class-(b) shared ArcadeDB memory MCP cannot be toggled per-identity, and
 // mount ignores any overlay pref for it (admin-governed from the shared catalog).
 func TestClassBSharedServerNotUserToggleable(t *testing.T) {
 	writeSharedCatalog(t)

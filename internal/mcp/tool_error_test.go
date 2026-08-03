@@ -10,7 +10,7 @@ func TestDecodeToolCallErrorPreservesTypedOutcome(t *testing.T) {
 	t.Parallel()
 
 	text := `{"outcome":"rejected","code":"invalid_argument","message":"subject is required","effect":"none"}`
-	err := decodeToolCallError("memory", "memory_add_fact", text)
+	err := decodeToolCallError("memory", "memory_upsert_fact", text)
 
 	if err.Outcome != ToolOutcomeRejected || err.Code != "invalid_argument" ||
 		err.Message != "subject is required" || !err.DeterministicNoEffect() {

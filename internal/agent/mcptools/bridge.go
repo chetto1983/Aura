@@ -146,8 +146,8 @@ func (b *bridgedTool) newUntrustedResult(ctx context.Context, text string) (tool
 // Bridged tools are Deferred by default: a real multi-tool MCP server would
 // otherwise flood every per-turn manifest. tool_search indexes the deferred
 // tool's name, description, and argument-field names, so deferred MCP tools stay
-// discoverable. This includes the built-in memory MCP: its six model-facing
-// schemas are reached through tool_search instead of being carried on every turn.
+// discoverable. The memory MCP schemas are therefore reached through tool_search
+// instead of being carried on every turn.
 func Bridge(ctx context.Context, namespace string, srv Server) ([]tools.Tool, error) {
 	defs, err := srv.ListTools(ctx)
 	if err != nil {

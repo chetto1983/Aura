@@ -20,6 +20,11 @@ One verb writes: `memory_upsert_fact`, with `subject`, `predicate`, `object` and
 `statement` in natural language. The statement is what gets indexed and searched, so
 write it as a sentence someone would recognise, not as a triple restated.
 
+Every write also carries one `source` object with a `run_id` and optional `memory_ids`.
+Use `subject_kind` and `object_kind` when the type is known. Replaying an exact fact is
+safe: the same source is idempotent and a different source is attached to the existing
+fact instead of creating another edge.
+
 The subject and object entities are created for you. There is no separate "add entity"
 step, and looking for one is how the graph ends up with facts that connect to nothing.
 
@@ -59,23 +64,19 @@ That is right for a single-valued relation ("lives in") and wrong for a multi-va
 
 **It should never have been recorded** → `memory_forget`.
 Test residue, something captured by mistake, something the operator asked you to erase.
-Nothing should remain, and there is nothing to keep addressable. It takes an `entity`, or
-a `subject`/`predicate`/`object` triple, or a `source_run_id` to sweep one run's writes.
-Run it with `dry_run: true` first and read what it would remove.
+Nothing should remain, and there is nothing to keep addressable. It takes an `entity`, a
+`subject`/`predicate`/`object` triple, or `source: {run_id: ...}` to detach one run's
+support. A fact supported by another source remains. Run it with `dry_run: true` first
+and read what it would remove.
 
 **The same thing was recorded under two names** → `memory_merge_entities`.
 Fold the duplicate onto the survivor; its facts move rather than dying with it. Prefer
 this over forgetting a duplicate — forgetting destroys the facts only the duplicate knew.
 If the target does not exist yet, this is a rename.
 
-## The trap that is gone, and the one that replaced it
+## The correction trap
 
-The old memory deduplicated on write and merged a correction back onto the original
-wording, silently — so "I will just add the corrected version" corrected nothing, and
-the graph once carried two contradictory rules about deferred tools for exactly that
-reason. **That trap no longer exists**: an upsert writes a new fact, always.
-
-The trap now is the opposite one. Because nothing is overwritten, a correction written
-WITHOUT `supersedes` leaves both versions valid at the same instant, and retrieval will
-happily return the stale one. When something changed, say so with the flag; when
-something was merely added, do not.
+Exact replay deduplicates only the same subject, predicate, object and statement. A
+different correction written WITHOUT `supersedes` leaves both versions valid at the
+same instant. When something changed, say so with the flag; when another independent
+fact was merely added, do not.

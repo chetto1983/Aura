@@ -9,14 +9,14 @@ import (
 
 const maxToolCallErrorMessageBytes = 2048
 
-// ToolOutcome is how a tool call ended, in the stable Agent Memory domain-error vocabulary.
+// ToolOutcome is how a tool call ended, in the stable MCP domain-error vocabulary.
 type ToolOutcome string
 
 // ToolEffect is how much of the mutation actually landed, in the same vocabulary: a
 // rejected call and a half-applied one need different recovery from the caller.
 type ToolEffect string
 
-// The Agent Memory domain-error vocabulary. Stable strings: they cross the MCP boundary.
+// The MCP domain-error vocabulary. Stable strings: they cross the MCP boundary.
 const (
 	ToolOutcomeRejected ToolOutcome = "rejected"
 	ToolOutcomePartial  ToolOutcome = "partial"

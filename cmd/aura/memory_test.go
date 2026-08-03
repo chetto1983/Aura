@@ -187,7 +187,7 @@ func TestMemoryVerbMapping(t *testing.T) {
 		{"remember", []string{"remember", "aura", "validates", "memory wiring", "Aura validates its memory wiring."}, "memory_upsert_fact", "statement", "Aura validates its memory wiring."},
 		{"merge", []string{"merge", "M. Rossi", "Mario Rossi"}, "memory_merge_entities", "target", "Mario Rossi"},
 		{"forget-entity", []string{"forget", "--entity", "Mario Rossi"}, "memory_forget", "entity", "Mario Rossi"},
-		{"forget-run", []string{"forget", "--run", "run-7"}, "memory_forget", "source_run_id", "run-7"},
+		{"forget-run", []string{"forget", "--run", "run-7"}, "memory_forget", "", ""},
 		{"schema", []string{"schema"}, "graph_schema", "", ""},
 	}
 
@@ -247,12 +247,25 @@ func TestMemoryRememberCarriesTheSupersedesFlag(t *testing.T) {
 	}
 }
 
-// TestMemoryRememberAlwaysCarriesASourceRun is a regression guard on a verb that could
-// never succeed. memory_upsert_fact REQUIRES source_run_id — its own schema says so,
-// because that id is what makes a run's writes findable and removable — and this verb
-// sent none, so every `aura memory remember` died at schema validation before reaching
-// the database. Found on 2026-08-02 while rescuing 24 facts stranded in the shared
-// database; the rescue could not run until this was fixed.
+func TestMemoryRememberCarriesEntityKinds(t *testing.T) {
+	t.Parallel()
+	_, args, err := memoryRememberArgs([]string{
+		"--subject-kind", "Person", "--object-kind", "Location",
+		"Mario", "lives_in", "Torino", "Mario lives in Torino.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if args["subject_kind"] != "Person" || args["object_kind"] != "Location" {
+		t.Fatalf("entity kinds = %v/%v", args["subject_kind"], args["object_kind"])
+	}
+	if args["subject"] != "Mario" || args["statement"] != "Mario lives in Torino." {
+		t.Fatalf("kind flags leaked into positional args: %#v", args)
+	}
+}
+
+// TestMemoryRememberAlwaysCarriesASourceRun guards the provenance needed to
+// find and remove a run's writes.
 func TestMemoryRememberAlwaysCarriesASourceRun(t *testing.T) {
 	t.Parallel()
 
@@ -260,9 +273,9 @@ func TestMemoryRememberAlwaysCarriesASourceRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, _ := args["source_run_id"].(string)
+	run := sourceRun(args)
 	if run == "" {
-		t.Fatal("remember sent no source_run_id; the tool rejects the call")
+		t.Fatal("remember sent no source run; the tool rejects the call")
 	}
 	// Grouped by DAY so `aura memory forget --run cli-2026-08-02` can reverse a session
 	// of manual entry. Per-invocation would be precise and impossible to type back.
@@ -275,12 +288,29 @@ func TestMemoryRememberAlwaysCarriesASourceRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if args["source_run_id"] != "import-2026" {
-		t.Errorf("--run = %v, want it to override the daily default", args["source_run_id"])
+	if sourceRun(args) != "import-2026" {
+		t.Errorf("--run = %v, want it to override the daily default", args["source"])
 	}
 	if args["subject"] != "Mario" {
 		t.Errorf("--run leaked into the positional args: subject = %v", args["subject"])
 	}
+}
+
+func TestMemoryForgetRunUsesStructuredSource(t *testing.T) {
+	t.Parallel()
+	_, args, err := memoryForgetArgs([]string{"--run", "run-7"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run := sourceRun(args); run != "run-7" {
+		t.Fatalf("source run = %q, want run-7", run)
+	}
+}
+
+func sourceRun(args map[string]any) string {
+	source, _ := args["source"].(map[string]any)
+	run, _ := source["run_id"].(string)
+	return run
 }
 
 // Forgetting is the only irreversible act on this surface, so it must default to a

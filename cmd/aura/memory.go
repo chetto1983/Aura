@@ -26,15 +26,10 @@ import (
 
 const memoryServerName = "memory"
 
-// memoryUsage mirrors the memory server's ACTUAL tool surface, one verb per tool.
-// It used to carry thirteen verbs, eleven of which named tools the ArcadeDB memory
-// does not implement — a debug surface that could only fail. The three that went
-// without a replacement (store-message, conversation, sessions) belonged to the
-// previous sidecar's own conversation store; Aura keeps conversations in Postgres
-// and always did, which is why they were hidden from the model to begin with.
+// memoryUsage mirrors the ArcadeDB memory MCP surface, one verb per tool.
 const memoryUsage = "usage: aura memory {search <query> [--as-of <RFC3339>]|" +
 	"facts <entity> [predicate] [--as-of <RFC3339>]|entities|digest|" +
-	"remember <subject> <predicate> <object> <statement> [--supersedes]|" +
+	"remember <subject> <predicate> <object> <statement> [--subject-kind <kind>] [--object-kind <kind>] [--supersedes]|" +
 	"merge <duplicate> <survivor>|" +
 	"forget [--entity <name>] [--subject <s> --predicate <p> --object <o>] [--run <id>] [--apply]|" +
 	"reembed [--all]|schema}"
@@ -51,16 +46,8 @@ func runMemory(args []string) {
 	}
 }
 
-// withOperatorIdentity resolves who this CLI invocation writes and reads as, and seeds it
-// on the context so every downstream call is scoped to one answer. `aura memory` and
-// `aura docs` both take it: memory to own what it writes, docs because the digest query
-// is identity-scoped in SQL — an empty principal owns nothing and retrieval fails closed.
-//
-// It costs a Postgres round-trip on a command that otherwise only needs the sidecar. That
-// is the honest price: the identity lives in Postgres, and the alternative — the hardcoded
-// seed this used to fall back on — was silently addressing a tenant that first login had
-// already deleted, so `aura memory` wrote a memory graph the cockpit could not see and
-// read one it had not written.
+// withOperatorIdentity resolves the current operator from Postgres and places that
+// identity on the context before any owner-scoped memory or document call.
 func withOperatorIdentity(ctx context.Context) (context.Context, error) {
 	cfg := config.LoadDB()
 	pool, err := db.Open(ctx, &cfg.DB)
@@ -90,12 +77,10 @@ func runMemoryCommand(ctx context.Context, args []string, out io.Writer) error {
 
 // memoryVerbToTool maps an `aura memory <verb>` to its RAW `memory_*` wire tool name
 // plus the call arguments built from the CLI positional args. It is ONE VERB PER TOOL
-// on purpose: a verb with no tool behind it is a debug surface that can only fail, and
-// this file carried eleven of them.
+// on purpose: every advertised verb must map to a live MCP tool.
 //
-// Arbitrary Cypher is deliberately NOT exposed — the unscoped `graph_query` tool was
-// removed as a data-exfiltration surface, and `graph_schema` covers the legitimate
-// "what types exist" need without it.
+// Arbitrary graph queries are deliberately absent; graph_schema provides bounded
+// schema inspection without exposing an unscoped read surface.
 func memoryVerbToTool(verb string, args []string) (string, map[string]any, error) {
 	switch verb {
 	case "search":
@@ -149,31 +134,36 @@ func memoryVerbToTool(verb string, args []string) (string, map[string]any, error
 func memoryRememberArgs(args []string) (string, map[string]any, error) {
 	supersedes := takeBoolFlag(&args, "--supersedes")
 	run := takeFlag(&args, "--run")
+	subjectKind := takeFlag(&args, "--subject-kind")
+	objectKind := takeFlag(&args, "--object-kind")
 	if len(args) < 4 {
 		return "", nil, fmt.Errorf(
-			"memory remember requires <subject> <predicate> <object> <statement> [--supersedes] [--run <id>]")
+			"memory remember requires <subject> <predicate> <object> <statement> [--subject-kind <kind>] [--object-kind <kind>] [--supersedes] [--run <id>]")
 	}
 	if run == "" {
 		run = cliRunID(time.Now().UTC())
 	}
-	return "memory_upsert_fact", map[string]any{
-		"subject":       args[0],
-		"predicate":     args[1],
-		"object":        args[2],
-		"statement":     strings.Join(args[3:], " "),
-		"supersedes":    supersedes,
-		"source_run_id": run,
-	}, nil
+	call := map[string]any{
+		"subject":    args[0],
+		"predicate":  args[1],
+		"object":     args[2],
+		"statement":  strings.Join(args[3:], " "),
+		"supersedes": supersedes,
+		"source":     map[string]any{"run_id": run},
+	}
+	if subjectKind != "" {
+		call["subject_kind"] = subjectKind
+	}
+	if objectKind != "" {
+		call["object_kind"] = objectKind
+	}
+	return "memory_upsert_fact", call, nil
 }
 
 // cliRunID groups a day's hand-typed facts under one run.
 //
-// source_run_id is REQUIRED by memory_upsert_fact — the tool's own reason is that
-// "everything a run produced can be found and removed" — and this verb was not sending
-// one, so every `aura memory remember` failed schema validation before it reached the
-// database. The operator's only write was unusable.
-//
-// A day is the granularity that makes the undo usable: `aura memory forget --run
+// The source run lets an operator remove everything a manual entry run produced.
+// A day is the granularity that makes the undo discoverable: `aura memory forget --run
 // cli-2026-08-02` reverses a session of manual entry, and an operator can type that id
 // from memory. Per-invocation would be more precise and completely undiscoverable.
 // --run overrides it when a caller wants its own grouping (a rescue, an import).
@@ -200,11 +190,13 @@ func memoryForgetArgs(args []string) (string, map[string]any, error) {
 		{"--subject", "subject"},
 		{"--predicate", "predicate"},
 		{"--object", "object"},
-		{"--run", "source_run_id"},
 	} {
 		if v := takeFlag(&args, spec.flag); v != "" {
 			call[spec.key] = v
 		}
+	}
+	if run := takeFlag(&args, "--run"); run != "" {
+		call["source"] = map[string]any{"run_id": run}
 	}
 	if len(call) == 1 {
 		return "", nil, fmt.Errorf(
@@ -280,23 +272,16 @@ func callMemoryToolText(ctx context.Context, tool string, args map[string]any) (
 	return cli.CallTool(callCtx, tool, scoped)
 }
 
-// scopeMemoryArgs stamps the caller's identity on every memory call. The memory server
-// treats a missing user_identifier as "no scope", so an unstamped call wrote a
-// :Conversation with a NULL owner and zero HAS_CONVERSATION edges — data owned by nobody,
-// invisible to every scoped read meant to return it, with anything extracted from it
-// landing in the "global" deduplication scope where it can never merge with the
-// owner-scoped entities the agent records.
+// scopeMemoryArgs stamps the caller's identity on every memory call. The ArcadeDB
+// memory MCP uses user_identifier to resolve the caller's isolated database and
+// credential, so an unstamped call must never reach the wire.
 //
-// It takes the identity off the context and does NOT invent one. The previous fallback to
-// identityctx.LocalOperatorIdentity looked fail-closed and was not: first login retires
-// that seed, so the CLI addressed a deleted tenant while the cockpit used the enrolled
-// one, and the two never saw each other's memory. runMemory resolves the real owner up
-// front (withOperatorIdentity); an unscoped context here means that resolution was
-// skipped, which is a wiring bug worth failing on rather than papering over — the failure
-// mode it would paper over is writing a user's memory under the wrong identity.
+// It takes the identity off the context and does NOT invent one. runMemory resolves
+// the real owner up front; an unscoped context here is a wiring bug that must fail
+// rather than write memory under the wrong identity.
 //
 // A caller-supplied user_identifier is left alone: the paths that pass one explicitly
-// (serve_recall.go's per-conversation owner, an operator inspecting another identity)
+// (for example, a per-conversation owner or an operator inspecting another identity)
 // must not be silently rescoped.
 func scopeMemoryArgs(ctx context.Context, args map[string]any) (map[string]any, error) {
 	if args == nil {

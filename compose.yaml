@@ -40,13 +40,9 @@ services:
         condition: service_healthy
       aura-llama-embed:
         condition: service_healthy
-      # Memory MCP is mounted INTO the agent loop at boot (recipe:memory, default-on) — unlike the
-      # connect-only whatsapp/pim sidecars it is a hard runtime dependency, so it must be HEALTHY
-      # before Aura starts. Otherwise the boot mount races the sidecar's own startup, fails with
-      # "connection refused", and the agent comes up with ZERO memory tools until the next full
-      # restart (the in-process mount has no boot-retry; reconnect-on-use only recovers an
-      # already-mounted server). Memory is arcadedb-mcp now, not the retired agent-memory sidecar:
-      # this gate moved with it, and the healthcheck it waits on was added at the same time.
+      # Memory MCP is mounted into the agent loop at boot (recipe:memory, default-on), so
+      # Aura waits for its healthcheck before taking traffic. Reconnect-on-use only applies
+      # after the initial mount has succeeded.
       arcadedb-mcp:
         condition: service_healthy
       garage-bootstrap:
@@ -476,9 +472,7 @@ services:
   # mean pooling; the service definition below owns those defaults. Appliance and CI
   # flows materialize that exact GGUF before startup. The base service is GPU-first;
   # compose.minipc.yaml and the CI cache overlay remove its NVIDIA reservation.
-  # ↓↓ ArcadeDB — graph substrate for memory + documents ↓↓
-  # This container's only definition used to live in the turing_AgentMemory_MCP compose,
-  # which was deleted with its folder on 2026-07-31. It is Aura's now.
+  # ↓↓ ArcadeDB — graph substrate for long-term memory ↓↓
   # Retrieval is full-text + graph, with an optional dense leg over the sidecar
   # embedder (LSM_VECTOR + vector.fuse); see internal/arcadedb/memory_vector.go.
   arcadedb:
@@ -565,12 +559,19 @@ services:
       # identity the sidecar was actually handed. Rotating this invalidates every
       # tenant credential, so it is a planned operation, not a restart.
       AURA_ARCADEDB_TENANT_SECRET: ${AURA_ARCADEDB_TENANT_SECRET:?AURA_ARCADEDB_TENANT_SECRET required in .env}
-      # The dense leg of memory retrieval. An empty value disables it and leaves
-      # retrieval lexical, which is a supported configuration and not a degraded
-      # one — the search falls back per call, so a sidecar that is merely down
-      # cannot take memory with it.
+      # The dense leg of memory retrieval. An empty value selects bounded lexical
+      # retrieval. Per-call embedder failures use the same fallback and the MCP
+      # response names that mode so dense degradation is never silent.
       AURA_EMBED_BASE_URL: ${AURA_MEMORY_EMBED_BASE_URL:-http://aura-llama-embed:8081}
       AURA_EMBED_MODEL: ${AURA_EMBED_MODEL:-}
+      AURA_MEMORY_QUERY_MAX_RUNES: ${AURA_MEMORY_QUERY_MAX_RUNES:-2048}
+      AURA_MEMORY_ENTITY_MAX_RUNES: ${AURA_MEMORY_ENTITY_MAX_RUNES:-512}
+      AURA_MEMORY_STATEMENT_MAX_RUNES: ${AURA_MEMORY_STATEMENT_MAX_RUNES:-4096}
+      AURA_MEMORY_DIGEST_SCAN_MAX_COUNT: ${AURA_MEMORY_DIGEST_SCAN_MAX_COUNT:-2000}
+      AURA_MEMORY_HYBRID_CANDIDATE_MAX_COUNT: ${AURA_MEMORY_HYBRID_CANDIDATE_MAX_COUNT:-400}
+      AURA_MEMORY_DENSE_MAX_DISTANCE_RATIO: ${AURA_MEMORY_DENSE_MAX_DISTANCE_RATIO:-0.55}
+      AURA_MEMORY_LEXICAL_MIN_SCORE: ${AURA_MEMORY_LEXICAL_MIN_SCORE:-2}
+      AURA_ARCADEDB_MCP_BODY_MAX_BYTES: ${AURA_ARCADEDB_MCP_BODY_MAX_BYTES:-1048576}
     ports:
       - "127.0.0.1:8096:8096"
     healthcheck:

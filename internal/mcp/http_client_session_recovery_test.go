@@ -13,19 +13,18 @@ import (
 	"github.com/chetto1983/aura/internal/identityctx"
 )
 
-// sidecarRestartServer models what the memory sidecar does across a restart: the session the
+// sessionRestartServer models a stateful MCP server across a restart: the session the
 // client holds is gone (404 "Session not found"), and any later request that arrives with NO
-// session header is refused with 400 "Bad Request: Missing session ID". Both are FastMCP's
-// real answers, captured from the running sidecar on 2026-07-25.
-type sidecarRestartServer struct {
+// session header is refused with 400 "Bad Request: Missing session ID".
+type sessionRestartServer struct {
 	initializes atomic.Int64
 	live        atomic.Value // string: the session id the server currently accepts
 	toolCalls   atomic.Int64
 }
 
-func newSidecarRestartServer(t *testing.T) (*httptest.Server, *sidecarRestartServer) {
+func newSessionRestartServer(t *testing.T) (*httptest.Server, *sessionRestartServer) {
 	t.Helper()
-	state := &sidecarRestartServer{}
+	state := &sessionRestartServer{}
 	state.live.Store("session-before-restart")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -72,11 +71,8 @@ func newSidecarRestartServer(t *testing.T) (*httptest.Server, *sidecarRestartSer
 	return srv, state
 }
 
-// TestSessionRecoversAfterARefusedMutatingRetry reproduces the live lock-up: rebuilding the
-// memory sidecar left the running daemon answering http 400 to EVERY memory call — twenty in a
-// row — until aura itself was restarted.
-//
-// The sequence that bricks it: the first call after the restart gets 404, which clears the
+// TestSessionRecoversAfterARefusedMutatingRetry covers the sequence that can brick a
+// stateful connection: the first call after a restart gets 404, which clears the
 // stored session id; because that call is a mutating tool call it must NOT be replayed, so the
 // client declines to reinitialize. From then on it posts with no session at all, the server
 // answers 400, and the only trigger for reinitialize was the session id already cleared. The
@@ -84,13 +80,13 @@ func newSidecarRestartServer(t *testing.T) (*httptest.Server, *sidecarRestartSer
 func TestSessionRecoversAfterARefusedMutatingRetry(t *testing.T) {
 	t.Parallel()
 
-	srv, state := newSidecarRestartServer(t)
+	srv, state := newSessionRestartServer(t)
 	ctx := context.Background()
 	client, err := OpenHTTP(ctx, "memory", HTTPConfig{URL: srv.URL})
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	// The sidecar restarts: the session the client holds is no longer the live one.
+	// The server restarts: the session the client holds is no longer the live one.
 	state.live.Store("session-after-restart")
 
 	mutating, err := idempotency.WithOperation(
@@ -107,7 +103,7 @@ func TestSessionRecoversAfterARefusedMutatingRetry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.CallTool(mutating, "memory_add_entity", map[string]any{}); err == nil {
+	if _, err := client.CallTool(mutating, "memory_upsert_fact", map[string]any{}); err == nil {
 		t.Fatal("a mutating call whose session died must not be silently replayed")
 	}
 

@@ -10,11 +10,11 @@ import (
 func TestManagedConfig_RejectsDuplicateMemorySourcesOnLoadAndSave(t *testing.T) {
 	servers := map[string]ManagedServer{
 		"memory": {
-			Type: ServerTypeStreamableHTTP, URL: "http://127.0.0.1:8091/mcp/",
+			Type: ServerTypeStreamableHTTP, URL: "http://127.0.0.1:8096/mcp/",
 			Source: SourceRecipeMemory, Trust: ManagedTrust{Class: TrustTrustedRecipe},
 		},
 		"mem": {
-			Type: ServerTypeStreamableHTTP, URL: "http://127.0.0.1:8092/mcp/",
+			Type: ServerTypeStreamableHTTP, URL: "http://127.0.0.1:8097/mcp/",
 			Source: SourceRecipeMemory, Trust: ManagedTrust{Class: TrustTrustedRecipe},
 		},
 	}
@@ -25,8 +25,8 @@ func TestManagedConfig_RejectsDuplicateMemorySourcesOnLoadAndSave(t *testing.T) 
 	}
 
 	raw := `{"version":2,"mcpServers":{` +
-		`"memory":{"type":"streamable_http","url":"http://127.0.0.1:8091/mcp/","source":"recipe:memory","trust":{"class":"trusted_recipe"}},` +
-		`"mem":{"type":"streamable_http","url":"http://127.0.0.1:8092/mcp/","source":"recipe:memory","trust":{"class":"trusted_recipe"}}}}`
+		`"memory":{"type":"streamable_http","url":"http://127.0.0.1:8096/mcp/","source":"recipe:memory","trust":{"class":"trusted_recipe"}},` +
+		`"mem":{"type":"streamable_http","url":"http://127.0.0.1:8097/mcp/","source":"recipe:memory","trust":{"class":"trusted_recipe"}}}}`
 	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}

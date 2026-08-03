@@ -13,21 +13,29 @@ import (
 // clock is injected so a test can assert on the timestamps that were written.
 type clock func() time.Time
 
+// MemoryFactSource is the single provenance shape accepted and returned by the
+// memory MCP.
+type MemoryFactSource struct {
+	RunID     string   `json:"run_id" jsonschema:"the extraction or operator run supporting this fact"`
+	MemoryIDs []string `json:"memory_ids,omitempty" jsonschema:"message or memory ids supporting this fact"`
+}
+
 // MemoryUpsertFactInput mirrors arcadedb.Fact minus the embedding, which the
 // tool computes, and minus created_at, which is always now.
 type MemoryUpsertFactInput struct {
 	UserIdentifier string `json:"user_identifier" jsonschema:"the Aura identity whose memory this is; each identity has its own database and cannot reach another's"`
 	Subject        string `json:"subject" jsonschema:"the entity the fact is about"`
+	SubjectKind    string `json:"subject_kind,omitempty" jsonschema:"optional entity kind, e.g. Person or Organization"`
 	Predicate      string `json:"predicate" jsonschema:"the relation, e.g. lives_in"`
 	Object         string `json:"object" jsonschema:"the entity or value the subject relates to"`
+	ObjectKind     string `json:"object_kind,omitempty" jsonschema:"optional entity kind, e.g. Location or Organization"`
 	Statement      string `json:"statement" jsonschema:"the fact in natural language; this is what gets embedded and searched"`
 	ValidFrom      string `json:"valid_from,omitempty" jsonschema:"RFC3339 instant when the fact became true; defaults to now"`
 	ValidTo        string `json:"valid_to,omitempty" jsonschema:"RFC3339 instant when the fact stopped being true; omit while it still holds"`
 	// Supersedes is explicit because some predicates are single-valued
 	// ("lives_in") and others are not ("likes"); guessing gets one of them wrong.
-	Supersedes      bool     `json:"supersedes,omitempty" jsonschema:"close any still-valid fact with the same subject and predicate"`
-	SourceRunID     string   `json:"source_run_id" jsonschema:"which run wrote this; required so everything a run produced can be found and removed"`
-	SourceMemoryIDs []string `json:"source_memory_ids,omitempty" jsonschema:"ids of the messages this was derived from"`
+	Supersedes bool             `json:"supersedes,omitempty" jsonschema:"close any still-valid fact with the same subject and predicate"`
+	Source     MemoryFactSource `json:"source" jsonschema:"required provenance supporting this fact"`
 }
 
 // MemoryUpsertFactOutput reports what changed.
@@ -69,15 +77,18 @@ func memoryUpsertFactHandler(
 			return nil, MemoryUpsertFactOutput{}, err
 		}
 		fact := arcadedb.Fact{
-			Subject:         in.Subject,
-			Predicate:       in.Predicate,
-			Object:          in.Object,
-			Statement:       in.Statement,
-			ValidFrom:       validFrom,
-			ValidTo:         validTo,
-			Supersedes:      in.Supersedes,
-			SourceRunID:     in.SourceRunID,
-			SourceMemoryIDs: in.SourceMemoryIDs,
+			Subject:     in.Subject,
+			SubjectKind: in.SubjectKind,
+			Predicate:   in.Predicate,
+			Object:      in.Object,
+			ObjectKind:  in.ObjectKind,
+			Statement:   in.Statement,
+			ValidFrom:   validFrom,
+			ValidTo:     validTo,
+			Supersedes:  in.Supersedes,
+			Source: arcadedb.FactSource{
+				RunID: in.Source.RunID, MemoryIDs: in.Source.MemoryIDs,
+			},
 		}
 		written, err := client.UpsertFact(ctx, fact, now())
 		if err != nil {
@@ -100,19 +111,28 @@ type MemorySearchInput struct {
 
 // MemorySearchHit is one fact, with the provenance needed to check it.
 type MemorySearchHit struct {
-	Statement       string   `json:"statement"`
-	Predicate       string   `json:"predicate"`
-	Subject         string   `json:"subject"`
-	Object          string   `json:"object"`
-	ValidFrom       string   `json:"valid_from,omitempty"`
-	ValidTo         string   `json:"valid_to,omitempty" jsonschema:"absent while the fact still holds"`
-	SourceRunID     string   `json:"source_run_id,omitempty"`
-	SourceMemoryIDs []string `json:"source_memory_ids,omitempty"`
+	Statement   string             `json:"statement"`
+	Predicate   string             `json:"predicate"`
+	Subject     string             `json:"subject"`
+	SubjectKind string             `json:"subject_kind,omitempty"`
+	Object      string             `json:"object"`
+	ObjectKind  string             `json:"object_kind,omitempty"`
+	ValidFrom   string             `json:"valid_from,omitempty"`
+	ValidTo     string             `json:"valid_to,omitempty" jsonschema:"absent while the fact still holds"`
+	Sources     []MemoryFactSource `json:"sources"`
 }
 
 // MemorySearchOutput carries the hits.
 type MemorySearchOutput struct {
-	Facts []MemorySearchHit `json:"facts"`
+	Facts     []MemorySearchHit       `json:"facts"`
+	Retrieval MemoryRetrievalMetadata `json:"retrieval"`
+}
+
+// MemoryRetrievalMetadata makes fallback and abstention visible to the caller.
+type MemoryRetrievalMetadata struct {
+	Path      string `json:"path" jsonschema:"effective retrieval path: hybrid, lexical, or graph"`
+	Abstained bool   `json:"abstained" jsonschema:"true when no fact met the retrieval contract"`
+	Reason    string `json:"reason,omitempty" jsonschema:"named fallback or abstention reason"`
 }
 
 func addMemorySearchTool(server *mcp.Server, tenants *tenants) {
@@ -121,7 +141,8 @@ func addMemorySearchTool(server *mcp.Server, tenants *tenants) {
 		Title: "Search facts",
 		Description: "Find facts by their words, when you do not know which entity to ask " +
 			"about. If you do know the entity, call memory_facts_about instead: it is exact. " +
-			"Pass as_of to ask what was true at a past instant instead of what is true now.",
+			"Pass as_of to ask what was true at a past instant instead of what is true now. " +
+			"Returns no facts and marks retrieval.abstained when no candidate is relevant enough.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, memorySearchHandler(tenants))
 }
@@ -142,11 +163,18 @@ func memorySearchHandler(
 		if err != nil {
 			return nil, MemorySearchOutput{}, err
 		}
-		hits, err := client.SearchFactsHybrid(ctx, in.Query, in.Limit, asOf)
+		result, err := client.SearchFactsHybrid(ctx, in.Query, in.Limit, asOf)
 		if err != nil {
 			return nil, MemorySearchOutput{}, fmt.Errorf("memory_search: %w", err)
 		}
-		return nil, MemorySearchOutput{Facts: toHits(hits)}, nil
+		return nil, MemorySearchOutput{
+			Facts: toHits(result.Facts),
+			Retrieval: MemoryRetrievalMetadata{
+				Path:      result.RetrievalPath,
+				Abstained: result.Abstained,
+				Reason:    result.Reason,
+			},
+		}, nil
 	}
 }
 
@@ -201,22 +229,32 @@ func memoryFactsAboutHandler(
 		if err != nil {
 			return nil, MemorySearchOutput{}, fmt.Errorf("memory_facts_about: %w", err)
 		}
-		return nil, MemorySearchOutput{Facts: toHits(hits)}, nil
+		retrieval := MemoryRetrievalMetadata{Path: "graph"}
+		if len(hits) == 0 {
+			retrieval.Abstained = true
+			retrieval.Reason = "no_facts"
+		}
+		return nil, MemorySearchOutput{Facts: toHits(hits), Retrieval: retrieval}, nil
 	}
 }
 
 func toHits(hits []arcadedb.FactHit) []MemorySearchHit {
 	out := make([]MemorySearchHit, 0, len(hits))
 	for _, hit := range hits {
+		sources := make([]MemoryFactSource, 0, len(hit.Sources))
+		for _, source := range hit.Sources {
+			sources = append(sources, MemoryFactSource{RunID: source.RunID, MemoryIDs: source.MemoryIDs})
+		}
 		out = append(out, MemorySearchHit{
-			Statement:       hit.Statement,
-			Predicate:       hit.Predicate,
-			Subject:         hit.Subject,
-			Object:          hit.Object,
-			ValidFrom:       hit.ValidFrom,
-			ValidTo:         hit.ValidTo,
-			SourceRunID:     hit.SourceRunID,
-			SourceMemoryIDs: hit.SourceMemoryIDs,
+			Statement:   hit.Statement,
+			Predicate:   hit.Predicate,
+			Subject:     hit.Subject,
+			SubjectKind: hit.SubjectKind,
+			Object:      hit.Object,
+			ObjectKind:  hit.ObjectKind,
+			ValidFrom:   hit.ValidFrom,
+			ValidTo:     hit.ValidTo,
+			Sources:     sources,
 		})
 	}
 	return out

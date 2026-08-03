@@ -120,7 +120,9 @@ func (m *memoryProfileStore) writeProfile(
 // profileFact is one bitemporal edge. `statement` is deliberately a sentence and not a
 // restated triple: it is the text that gets embedded and searched, and "name role
 // engineer" retrieves far worse than "Davide works as an engineer".
-type profileFact struct{ subject, predicate, object, statement string }
+type profileFact struct {
+	subject, subjectKind, predicate, object, objectKind, statement string
+}
 
 // profileFacts flattens the deterministic profile projection into the ONE write the
 // memory server has. Entities become facts too — in a fact graph the subject and the
@@ -133,27 +135,40 @@ func profileFacts(
 ) []profileFact {
 	facts := make([]profileFact, 0,
 		len(profile.Entities)+len(profile.Facts)+len(profile.Preferences)+1)
+	kinds := make(map[string]string, len(profile.Entities))
+	for _, entity := range profile.Entities {
+		kinds[entity.Name] = entity.EntityType
+		for _, alias := range entity.Aliases {
+			kinds[alias] = entity.EntityType
+		}
+	}
 
 	for _, entity := range profile.Entities {
 		statement := entity.Name + " is a " + strings.ToLower(entity.EntityType)
 		if entity.Description != "" {
 			statement += " (" + entity.Description + ")"
 		}
-		facts = append(facts, profileFact{entity.Name, "is_a", entity.EntityType, statement})
+		facts = append(facts, profileFact{
+			subject: entity.Name, subjectKind: entity.EntityType, predicate: "is_a",
+			object: entity.EntityType, objectKind: "EntityType", statement: statement,
+		})
 		for _, alias := range entity.Aliases {
 			if alias == "" || alias == entity.Name {
 				continue
 			}
 			facts = append(facts, profileFact{
-				entity.Name, "also_known_as", alias, entity.Name + " is also known as " + alias,
+				subject: entity.Name, subjectKind: entity.EntityType, predicate: "also_known_as",
+				object: alias, objectKind: entity.EntityType,
+				statement: entity.Name + " is also known as " + alias,
 			})
 		}
 	}
 
 	for _, fact := range profile.Facts {
 		facts = append(facts, profileFact{
-			fact.Subject, fact.Predicate, fact.ObjectValue,
-			fact.Subject + " " + strings.ReplaceAll(fact.Predicate, "_", " ") + " " + fact.ObjectValue,
+			subject: fact.Subject, subjectKind: kinds[fact.Subject], predicate: fact.Predicate,
+			object: fact.ObjectValue, objectKind: kinds[fact.ObjectValue],
+			statement: fact.Subject + " " + strings.ReplaceAll(fact.Predicate, "_", " ") + " " + fact.ObjectValue,
 		})
 	}
 
@@ -163,7 +178,9 @@ func profileFacts(
 			statement += " (" + preference.Context + ")"
 		}
 		facts = append(facts, profileFact{
-			identityID, "prefers_" + preference.Category, preference.Preference, statement,
+			subject: identityID, subjectKind: "Identity",
+			predicate: "prefers_" + preference.Category,
+			object:    preference.Preference, objectKind: "Preference", statement: statement,
 		})
 	}
 
@@ -172,7 +189,8 @@ func profileFacts(
 	// the identity itself rather than off the operator's name.
 	stamp := now.Format(time.RFC3339)
 	return append(facts, profileFact{
-		identityID, completionPredicate, stamp, "onboarding " +
+		subject: identityID, subjectKind: "Identity", predicate: completionPredicate,
+		object: stamp, objectKind: "Timestamp", statement: "onboarding " +
 			strings.TrimPrefix(completionPredicate, "onboarding_") + " at " + stamp,
 	})
 }
@@ -187,11 +205,13 @@ func (m *memoryProfileStore) upsert(
 	_, err := cli.CallTool(ctx, "memory_upsert_fact", map[string]any{
 		"user_identifier": identityID,
 		"subject":         fact.subject,
+		"subject_kind":    fact.subjectKind,
 		"predicate":       fact.predicate,
 		"object":          fact.object,
+		"object_kind":     fact.objectKind,
 		"statement":       fact.statement,
 		"supersedes":      !multi,
-		"source_run_id":   runID,
+		"source":          map[string]any{"run_id": runID},
 	})
 	if err != nil {
 		return fmt.Errorf("onboarding memory fact %s/%s: %w", fact.subject, fact.predicate, err)

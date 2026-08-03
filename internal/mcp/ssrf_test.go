@@ -140,19 +140,19 @@ func TestGuardEndpoint(t *testing.T) {
 		},
 		// Private (docker compose-DNS sidecar): ALLOWED under dev, BLOCKED under enforce.
 		{
-			name: "private_dev_allowed", raw: "http://aura-agent-memory-mcp:8080/mcp", enforce: false,
-			resolve:  map[string][]netip.Addr{"aura-agent-memory-mcp": mustAddrs(t, "172.18.0.5")},
-			wantHost: "aura-agent-memory-mcp",
+			name: "private_dev_allowed", raw: "http://aura-arcadedb-mcp:8096/mcp", enforce: false,
+			resolve:  map[string][]netip.Addr{"aura-arcadedb-mcp": mustAddrs(t, "172.18.0.5")},
+			wantHost: "aura-arcadedb-mcp",
 		},
 		{
-			name: "private_enforce_blocked", raw: "http://aura-agent-memory-mcp:8080/mcp", enforce: true,
-			resolve: map[string][]netip.Addr{"aura-agent-memory-mcp": mustAddrs(t, "172.18.0.5")}, wantErr: true,
+			name: "private_enforce_blocked", raw: "http://aura-arcadedb-mcp:8096/mcp", enforce: true,
+			resolve: map[string][]netip.Addr{"aura-arcadedb-mcp": mustAddrs(t, "172.18.0.5")}, wantErr: true,
 		},
 		{
-			name: "private_enforce_allowlisted", raw: "http://aura-agent-memory-mcp:8080/mcp", enforce: true,
-			allowHosts: map[string]struct{}{"aura-agent-memory-mcp": {}},
-			resolve:    map[string][]netip.Addr{"aura-agent-memory-mcp": mustAddrs(t, "172.18.0.5")},
-			wantHost:   "aura-agent-memory-mcp",
+			name: "private_enforce_allowlisted", raw: "http://aura-arcadedb-mcp:8096/mcp", enforce: true,
+			allowHosts: map[string]struct{}{"aura-arcadedb-mcp": {}},
+			resolve:    map[string][]netip.Addr{"aura-arcadedb-mcp": mustAddrs(t, "172.18.0.5")},
+			wantHost:   "aura-arcadedb-mcp",
 		},
 		// Mixed record sets.
 		{

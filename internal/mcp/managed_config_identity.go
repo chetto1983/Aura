@@ -11,10 +11,9 @@ import (
 	"github.com/chetto1983/aura/internal/idroot"
 )
 
-// SourceRecipeMemory is the Source marker of the shared, admin-governed agent-memory
-// server (:8091) — the class-(b) server users cannot toggle per-identity (D-19). It is
-// the single source of truth for that class marker; the manager catalog stamps it onto
-// the memory recipe so MountForIdentity refuses a per-identity toggle by Source alone.
+// SourceRecipeMemory marks the shared, admin-governed ArcadeDB memory MCP. The
+// manager catalog stamps it onto the memory recipe so MountForIdentity can enforce
+// the class-(b) per-identity toggle boundary independently of the server name.
 const SourceRecipeMemory = "recipe:memory"
 
 // localMCPIdentity is the CLI / no-principal fallback identity (D-25): the CLI always
@@ -57,7 +56,7 @@ type IdentityMCPConfig struct {
 	Preferences map[string]IdentityServerPref `json:"servers,omitempty"`
 }
 
-// IsSharedAdminGoverned reports whether s is the class-(b) shared agent-memory server
+// IsSharedAdminGoverned reports whether s is the class-(b) shared memory MCP
 // (keyed on the memory recipe Source, name-independent). Users cannot toggle shared
 // infra per-identity (D-19); only an admin governs it via the shared catalog.
 func IsSharedAdminGoverned(s ManagedServer) bool {
@@ -151,7 +150,7 @@ func SaveIdentityMCPConfig(identity string, cfg IdentityMCPConfig) error {
 
 // MountForIdentity returns the effective ManagedConfig for identity: the shared catalog
 // read-only, layered with the identity's class-(a) enable/trust overrides. The class-(b)
-// shared agent-memory server keeps the shared catalog's enable/trust (admin-governed) —
+// shared memory MCP keeps the shared catalog's enable/trust (admin-governed) —
 // any overlay pref for it is ignored (defense in depth). The shared catalog on disk is
 // never mutated; each server is a value copy before the overlay is applied.
 func MountForIdentity(identity string) (ManagedConfig, error) {
@@ -196,8 +195,8 @@ func MountForIdentity(identity string) (ManagedConfig, error) {
 // isRemoteTransport classifies s via the canonical Classify (D-01) and reports
 // whether it is a REMOTE (streamable_http) server — the D-04 boundary this
 // package's per-identity overlay must not cross. A Classify error is treated
-// conservatively as "not remote" (the legacy-wrapper default, matching
-// resolveTrust/normalizedServerType), since the shared-catalog shape is
+// conservatively as "not remote" (matching resolveTrust/normalizedServerType),
+// since the shared-catalog shape is
 // admin-authored and validated at write time; the guard's purpose is to stop
 // an untrusted per-identity overlay, not to re-litigate the shared catalog's
 // own shape.

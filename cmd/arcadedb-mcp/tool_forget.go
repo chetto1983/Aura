@@ -12,16 +12,16 @@ import (
 // MemoryForgetInput names what to remove. It is a filter rather than an id
 // because the thing most often worth removing is not one fact but everything a
 // run wrote -- a probe, a bad extraction, a batch written under the wrong
-// identity. At least one of source_run_id, entity or subject is required: an
+// identity. At least one of source, entity or subject is required: an
 // empty filter is refused, not read as "all".
 type MemoryForgetInput struct {
-	UserIdentifier string `json:"user_identifier" jsonschema:"the Aura identity whose memory this is; each identity has its own database and cannot reach another's"`
-	SourceRunID    string `json:"source_run_id,omitempty" jsonschema:"remove everything one run wrote; this is the undo"`
-	Entity         string `json:"entity,omitempty" jsonschema:"remove every fact touching this entity, in either direction, and the entity itself"`
-	Subject        string `json:"subject,omitempty" jsonschema:"remove facts with this subject"`
-	Predicate      string `json:"predicate,omitempty" jsonschema:"narrow to one relation; cannot be used alone"`
-	Object         string `json:"object,omitempty" jsonschema:"narrow to one object; cannot be used alone"`
-	DryRun         bool   `json:"dry_run,omitempty" jsonschema:"count what would be removed without removing it"`
+	UserIdentifier string            `json:"user_identifier" jsonschema:"the Aura identity whose memory this is; each identity has its own database and cannot reach another's"`
+	Source         *MemoryFactSource `json:"source,omitempty" jsonschema:"detach support from this source run; facts with other sources remain"`
+	Entity         string            `json:"entity,omitempty" jsonschema:"remove every fact touching this entity, in either direction, and the entity itself"`
+	Subject        string            `json:"subject,omitempty" jsonschema:"remove facts with this subject"`
+	Predicate      string            `json:"predicate,omitempty" jsonschema:"narrow to one relation; cannot be used alone"`
+	Object         string            `json:"object,omitempty" jsonschema:"narrow to one object; cannot be used alone"`
+	DryRun         bool              `json:"dry_run,omitempty" jsonschema:"count what would be removed without removing it"`
 	// KeepOrphanEntities is negative because pruning is the useful default: an
 	// entity whose last fact just went is a name with nothing attached to it.
 	KeepOrphanEntities bool `json:"keep_orphan_entities,omitempty" jsonschema:"keep entities this removal strips of their last fact"`
@@ -29,7 +29,7 @@ type MemoryForgetInput struct {
 
 // MemoryForgetOutput reports what went, or what would have.
 type MemoryForgetOutput struct {
-	Facts    int  `json:"facts" jsonschema:"facts removed"`
+	Facts    int  `json:"facts" jsonschema:"facts affected by source detachment or removal"`
 	Entities int  `json:"entities" jsonschema:"entities removed for having no facts left"`
 	DryRun   bool `json:"dry_run,omitempty" jsonschema:"true when nothing was actually removed"`
 }
@@ -38,7 +38,8 @@ func addMemoryForgetTool(server *mcp.Server, tenants *tenants) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:  "memory_forget",
 		Title: "Forget facts",
-		Description: "Remove facts, and the entities they leave with nothing. Use this for " +
+		Description: "Detach a source's support or remove matching facts and orphaned entities. " +
+			"A source-scoped call keeps facts that still have another source. Use this for " +
 			"what was never true -- a probe, a bad extraction, a run written under the wrong " +
 			"identity. For something that STOPPED being true, use memory_upsert_fact with " +
 			"supersedes instead: that closes the fact's window and keeps the past answerable, " +
@@ -64,8 +65,12 @@ func memoryForgetHandler(
 		if err != nil {
 			return nil, MemoryForgetOutput{}, err
 		}
+		sourceRunID := ""
+		if in.Source != nil {
+			sourceRunID = in.Source.RunID
+		}
 		result, err := client.Forget(ctx, arcadedb.ForgetFilter{
-			SourceRunID: in.SourceRunID,
+			SourceRunID: sourceRunID,
 			Entity:      in.Entity,
 			Subject:     in.Subject,
 			Predicate:   in.Predicate,
