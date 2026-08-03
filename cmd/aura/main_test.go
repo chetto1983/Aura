@@ -28,9 +28,18 @@ func TestMain(m *testing.M) {
 	// frame is internal/poll.runtime_pollWait (it parks in bufio.Peek→persistConn.Read),
 	// so persistConn.readLoop is a MIDDLE frame — IgnoreTopFunction("...readLoop") never
 	// matches. IgnoreAnyFunction matches the frame anywhere in the stack.
+	//
+	// go-winio's ioCompletionProcessor is the Windows named-pipe I/O pump the moby client
+	// starts on its FIRST dial to the Docker daemon (initIO, package-level, one per pipe
+	// handle) and never stops. It became reachable in tests when buildSandboxRouter began
+	// pinging the daemon at boot — a deliberate diagnostic, since a dead daemon now means a
+	// deployment where every tool call denies. The goroutine belongs to the library and lives
+	// for the process; it is not something Aura can join. No-op on Linux, where the client
+	// dials a unix socket.
 	goleak.VerifyTestMain(m,
 		goleak.IgnoreAnyFunction("net/http.(*persistConn).readLoop"),
 		goleak.IgnoreAnyFunction("net/http.(*persistConn).writeLoop"),
+		goleak.IgnoreAnyFunction("github.com/Microsoft/go-winio.ioCompletionProcessor"),
 	)
 }
 

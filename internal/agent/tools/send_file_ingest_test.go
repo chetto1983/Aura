@@ -5,9 +5,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
-	"os"
-	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/config"
@@ -64,13 +64,15 @@ func artifactMap(t *testing.T, res ToolResult) map[string]any {
 	return m
 }
 
-func writeFixture(t *testing.T, dir, name, body string) string {
+// boxDelivery builds the router a send_file call now needs: a daemon-free backend whose
+// CopyArtifactsOut replays a one-file tar, so Execute stages that file out of the box into the
+// run dir and delivers the staged copy. There is no host-file delivery arm to test against any
+// more — /workspace/<name> is the only kind of path send_file accepts.
+func boxDelivery(t *testing.T, name, body string) *usersandbox.SandboxRouter {
 	t.Helper()
-	p := filepath.Join(dir, name)
-	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
-		t.Fatalf("write fixture: %v", err)
-	}
-	return p
+	tarBuf := tarStream(t, tarEntry{name, tar.TypeReg, body})
+	return usersandbox.NewSandboxRouter(
+		routedBackend{tarBytes: tarBuf.Bytes()}, config.ProfileSingleUserHardened, unitSandboxCfg())
 }
 
 // TestSendFile_IngestSuccess is the happy path: an authenticated identity with a non-empty thread
@@ -78,12 +80,11 @@ func writeFixture(t *testing.T, dir, name, body string) string {
 // (path/filename/caption/tool_call_id/size_bytes + the ingest-derived asset_id/mime_type), and the
 // fake recorded exactly one IngestAgentDelivery with the resolved identity, thread, and host path.
 func TestSendFile_IngestSuccess(t *testing.T) {
-	root := t.TempDir()
-	path := writeFixture(t, root, "results.xlsx", "small spreadsheet bytes")
 	fake := &fakeDeliverer{retID: "asset-xyz"}
 	ctx := ctxWithIdentity(t, "conv-1", "call-1", "id-42")
 
-	res, err := (&SendFile{WorkspaceRoot: root, Assets: fake}).Execute(ctx, sfArgs(t, path, "results"))
+	res, err := (&SendFile{Router: boxDelivery(t, "results.xlsx", "small spreadsheet bytes"), Assets: fake}).
+		Execute(ctx, sfArgs(t, "/workspace/results.xlsx", "results"))
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -126,11 +127,10 @@ func TestSendFile_IngestSuccess(t *testing.T) {
 // TestSendFile_DescriptorFields pins the full success field-set + that the descriptor stays
 // channel-agnostic (still carries path, so Telegram parity holds).
 func TestSendFile_DescriptorFields(t *testing.T) {
-	root := t.TempDir()
-	path := writeFixture(t, root, "report.pdf", "pdf")
 	ctx := ctxWithIdentity(t, "conv-f", "call-f", "id-f")
 
-	res, err := (&SendFile{WorkspaceRoot: root, Assets: &fakeDeliverer{retID: "a1"}}).Execute(ctx, sfArgs(t, path, "cap"))
+	res, err := (&SendFile{Router: boxDelivery(t, "report.pdf", "pdf"), Assets: &fakeDeliverer{retID: "a1"}}).
+		Execute(ctx, sfArgs(t, "/workspace/report.pdf", "cap"))
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -150,47 +150,44 @@ func TestSendFile_DegradeMatrix(t *testing.T) {
 	body := "degrade-bytes"
 
 	cases := []struct {
-		name string
-		// build returns the tool + ctx for the case, under a shared workspace root.
-		build func(t *testing.T, root string) (*SendFile, context.Context)
+		name  string
+		build func(t *testing.T, router *usersandbox.SandboxRouter) (*SendFile, context.Context)
 	}{
 		{
 			name: "nil Assets",
-			build: func(t *testing.T, root string) (*SendFile, context.Context) {
-				return &SendFile{WorkspaceRoot: root}, ctxWithIdentity(t, "conv-a", "call-a", "id-a")
+			build: func(t *testing.T, router *usersandbox.SandboxRouter) (*SendFile, context.Context) {
+				return &SendFile{Router: router}, ctxWithIdentity(t, "conv-a", "call-a", "id-a")
 			},
 		},
 		{
 			name: "empty identity",
-			build: func(t *testing.T, root string) (*SendFile, context.Context) {
+			build: func(t *testing.T, router *usersandbox.SandboxRouter) (*SendFile, context.Context) {
 				// ctxWith carries a tool-call ctx (sessionID + toolCallID) but NO identity principal.
-				return &SendFile{WorkspaceRoot: root, Assets: &fakeDeliverer{retID: "nope"}}, ctxWith(t, "conv-b", "call-b")
+				return &SendFile{Router: router, Assets: &fakeDeliverer{retID: "nope"}}, ctxWith(t, "conv-b", "call-b")
 			},
 		},
 		{
 			name: "empty thread id",
-			build: func(t *testing.T, root string) (*SendFile, context.Context) {
+			build: func(t *testing.T, router *usersandbox.SandboxRouter) (*SendFile, context.Context) {
 				// A tool-call ctx with an EMPTY sessionID (no ConvID) + a scoped identity ⇒ D-05 degrade.
 				ctx := WithToolCallContext(context.Background(), "", "call-c", t.TempDir(), testCap)
 				ctx = identityctx.WithIdentityID(ctx, "id-c")
-				return &SendFile{WorkspaceRoot: root, Assets: &fakeDeliverer{retID: "nope"}}, ctx
+				return &SendFile{Router: router, Assets: &fakeDeliverer{retID: "nope"}}, ctx
 			},
 		},
 		{
 			name: "ingest error",
-			build: func(t *testing.T, root string) (*SendFile, context.Context) {
-				return &SendFile{WorkspaceRoot: root, Assets: &fakeDeliverer{err: context.DeadlineExceeded}}, ctxWithIdentity(t, "conv-d", "call-d", "id-d")
+			build: func(t *testing.T, router *usersandbox.SandboxRouter) (*SendFile, context.Context) {
+				return &SendFile{Router: router, Assets: &fakeDeliverer{err: context.DeadlineExceeded}}, ctxWithIdentity(t, "conv-d", "call-d", "id-d")
 			},
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			root := t.TempDir()
-			path := writeFixture(t, root, "deg.bin", body)
-			sf, ctx := tc.build(t, root)
+			sf, ctx := tc.build(t, boxDelivery(t, "deg.bin", body))
 
-			res, err := sf.Execute(ctx, sfArgs(t, path, "cap"))
+			res, err := sf.Execute(ctx, sfArgs(t, "/workspace/deg.bin", "cap"))
 			if err != nil {
 				t.Fatalf("degrade must NOT error the turn: %v", err)
 			}
@@ -235,41 +232,25 @@ func (b routedBackend) CopyArtifactsOut(_ context.Context, _ usersandbox.BoxHand
 	return io.NopCloser(bytes.NewReader(b.tarBytes)), nil
 }
 
-// TestSendFile_IngestBothTails proves the ingest fires on BOTH delivery tails (Landmine 1): the
-// host-path Execute AND the routed deliverFromBox each funnel through the shared ctx-aware
-// emitDelivery and each produce an asset_id when the deliverer succeeds.
-func TestSendFile_IngestBothTails(t *testing.T) {
-	// Host tail.
-	hostRoot := t.TempDir()
-	hostPath := writeFixture(t, hostRoot, "host.pdf", "host bytes")
-	hostFake := &fakeDeliverer{retID: "asset-host"}
-	hres, err := (&SendFile{WorkspaceRoot: hostRoot, Assets: hostFake}).Execute(
-		ctxWithIdentity(t, "conv-h", "call-h", "id-h"), sfArgs(t, hostPath, ""))
+// TestSendFile_DeniesWhenTheBoxIsUnreachable is the containment case for delivery: there is no
+// host-file arm left, so an unresolvable box DENIES and no descriptor is emitted. (This replaces
+// TestSendFile_IngestBothTails, which asserted a host tail and a routed tail both ingested; there
+// is one tail now, and every other test in this file exercises it.)
+func TestSendFile_DeniesWhenTheBoxIsUnreachable(t *testing.T) {
+	fake := &fakeDeliverer{retID: "asset-never"}
+	res, err := (&SendFile{Router: routerWith(&fakeBox{resolveE: errors.New("dockerd down")}), Assets: fake}).
+		Execute(ctxWithIdentity(t, "conv-x", "call-x", "id-x"), sfArgs(t, "/workspace/report.xlsx", ""))
 	if err != nil {
-		t.Fatalf("host Execute: %v", err)
+		t.Fatalf("an unreachable box is a DENY result, not a Go error: %v", err)
 	}
-	if got := artifactMap(t, hres)["asset_id"]; got != "asset-host" {
-		t.Fatalf("host tail asset_id = %v, want asset-host", got)
+	if !strings.Contains(res.Preview, "sandbox_unavailable") {
+		t.Fatalf("want a sandbox_unavailable deny, got: %q", res.Preview)
 	}
-	if hostFake.calls != 1 {
-		t.Fatalf("host tail ingest calls = %d, want 1", hostFake.calls)
+	if res.Meta != nil {
+		t.Fatalf("a denied delivery must emit no artifact descriptor: %#v", res.Meta)
 	}
-
-	// Routed tail: a strict-profile router over the daemon-free routedBackend routes Execute into
-	// deliverFromBox, which stages the tar out and re-enters the SAME emitDelivery.
-	tarBuf := tarStream(t, tarEntry{"report.xlsx", tar.TypeReg, "XLSXDATA"})
-	router := usersandbox.NewSandboxRouter(routedBackend{tarBytes: tarBuf.Bytes()}, config.ProfileSingleUserHardened, unitSandboxCfg())
-	boxFake := &fakeDeliverer{retID: "asset-box"}
-	rres, err := (&SendFile{Router: router, Assets: boxFake}).Execute(
-		ctxWithIdentity(t, "conv-b", "call-b", "id-b"), sfArgs(t, "/workspace/report.xlsx", ""))
-	if err != nil {
-		t.Fatalf("routed Execute: %v", err)
-	}
-	if got := artifactMap(t, rres)["asset_id"]; got != "asset-box" {
-		t.Fatalf("routed tail asset_id = %v, want asset-box (deliverFromBox must ingest too)", got)
-	}
-	if boxFake.calls != 1 {
-		t.Fatalf("routed tail ingest calls = %d, want 1", boxFake.calls)
+	if fake.calls != 0 {
+		t.Fatalf("a denied delivery must not ingest: %d calls", fake.calls)
 	}
 }
 

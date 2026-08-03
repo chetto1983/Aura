@@ -76,7 +76,7 @@ func TestFSEditRoutedEditsInBoxNotHost(t *testing.T) {
 		t.Fatalf("seed box file: %v", err)
 	}
 
-	edit := &FSEdit{WorkspaceRoot: hostDir, Router: router}
+	edit := &FSEdit{Router: router}
 	res, err := edit.Execute(ctx, json.RawMessage(
 		`{"path":"/workspace/app.go","old_string":"port := 8080","new_string":"port := 9090"}`,
 	))
@@ -109,7 +109,7 @@ func TestFSEditRoutedEditsInBoxNotHost(t *testing.T) {
 func TestFSGlobRoutedListsBoxTreeOnly(t *testing.T) {
 	skipUnlessDockerdTools(t)
 	router := newRuncBoxRouter(t)
-	hostDir := hostTreeWithCanary(t)
+	hostTreeWithCanary(t) // seeds hostonly.go on the HOST; the assertions below prove it never lists
 
 	ctx := ctxWith(t, "sess-dk-fsglob", "call-dk-fsglob")
 	sh := &ShellExec{Router: router}
@@ -119,7 +119,7 @@ func TestFSGlobRoutedListsBoxTreeOnly(t *testing.T) {
 		t.Fatalf("seed box tree: %v", err)
 	}
 
-	glob := &FSGlob{WorkspaceRoot: hostDir, Router: router}
+	glob := &FSGlob{Router: router}
 	res, err := glob.Execute(ctx, json.RawMessage(`{"pattern":"**/*.go"}`))
 	if err != nil {
 		t.Fatalf("routed fs_glob: %v", err)
@@ -141,7 +141,7 @@ func TestFSGlobRoutedListsBoxTreeOnly(t *testing.T) {
 func TestFSGrepRoutedSearchesBoxTreeOnly(t *testing.T) {
 	skipUnlessDockerdTools(t)
 	router := newRuncBoxRouter(t)
-	hostDir := hostTreeWithCanary(t)
+	hostTreeWithCanary(t) // seeds the canary on the HOST; the box sweep must never find it
 
 	ctx := ctxWith(t, "sess-dk-fsgrep", "call-dk-fsgrep")
 	sh := &ShellExec{Router: router}
@@ -151,7 +151,7 @@ func TestFSGrepRoutedSearchesBoxTreeOnly(t *testing.T) {
 		t.Fatalf("seed box content: %v", err)
 	}
 
-	grep := &FSGrep{WorkspaceRoot: hostDir, Router: router}
+	grep := &FSGrep{Router: router}
 	res, err := grep.Execute(ctx, json.RawMessage(`{"pattern":"BOXNEEDLE"}`))
 	if err != nil {
 		t.Fatalf("routed fs_grep: %v", err)

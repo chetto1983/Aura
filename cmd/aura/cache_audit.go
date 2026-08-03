@@ -187,7 +187,7 @@ func replayAudit(ctx context.Context, turns []fixtureTurn, errOut io.Writer) ([]
 	// The fake web_search drives the D-05 source-list tail-inject fixture (turn-08):
 	// the volatile numbered list must ride the tail copy and NEVER mutate messages[0].
 	reg := tools.Without(buildRegistry(), skillManifestName, "web_search")
-	reg.Register(newSkillTool(auditCfg, nil, nil))              // deferred like production; nil router (audit fixture is host-direct)
+	reg.Register(newSkillTool(auditCfg, nil))                   // deferred like production
 	reg.Register(&tools.WebSearch{Engine: auditSearchEngine{}}) // deterministic, network-free
 
 	client := agenttest.NewFakeClient(scriptTurns(turns)...)

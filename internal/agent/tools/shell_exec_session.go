@@ -2,33 +2,17 @@ package tools
 
 import (
 	"context"
-	"os"
-	"strings"
 )
 
 // Per-session working-directory tracking for ShellExec. The cwd map (keyed by the
 // WithToolCallContext session id) gives Claude-Code Bash-tool parity — a `cd` in
 // one call carries into the next — and Evict reclaims it when a conversation ends
 // so a long-running `serve` daemon does not leak it (audit R-41 / AP-16).
-
-// workdir resolves the call's starting directory: explicit cwd arg > the session's
-// tracked cwd (Bash-tool parity) > WorkspaceRoot. A tracked dir that no longer
-// exists (or a POSIX-only form a degraded shell stored) is skipped, never fatal.
-func (s *ShellExec) workdir(ctx context.Context, cwd string) string {
-	if strings.TrimSpace(cwd) != "" {
-		return cwd
-	}
-	s.mu.Lock()
-	tracked := s.cwd[shellSessionKey(ctx)]
-	s.mu.Unlock()
-	if tracked != "" {
-		if _, err := os.Stat(tracked); err == nil {
-			return tracked
-		}
-	}
-	// Empty is valid — exec falls back to the Aura process's current directory.
-	return s.WorkspaceRoot
-}
+//
+// Resolution itself lives in boxWorkdir (shell_exec_sandbox.go): the tracked value is a BOX
+// path, so there is exactly one resolver and it never host-stats. The deleted host resolver
+// stat'ed these box paths, silently fell back to the host workspace when the stat failed, and
+// bound the destructive-command approval digest to a directory the command never entered.
 
 // storeCwd records the shell's final $PWD as the session's tracked cwd. Empty
 // (marker missing — e.g. the command exited the group early, or a timeout kill)

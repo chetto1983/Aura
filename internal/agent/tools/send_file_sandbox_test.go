@@ -69,6 +69,44 @@ func TestStageBoxArtifact_ExtractsRegularFile(t *testing.T) {
 	}
 }
 
+// Staging under $AURA_RUN_DIR/tmp is what makes a delivered artifact reclaimable: that subtree is
+// the one conversations.ScanOrphans sweeps (24h TTL, at boot and on every sweeper tick). Staging at
+// the run-dir ROOT, as this did while only the strict profile routed, left a full copy of every
+// delivered file there forever — and with one execution path every delivery stages. The staged copy
+// cannot simply be deleted when Execute returns: the descriptor hands the channel a PATH it opens
+// later, so an eager delete would deliver an empty file.
+func TestStageBoxArtifact_StagesUnderTheSweptTmpRoot(t *testing.T) {
+	t.Parallel()
+	runDir := t.TempDir()
+	ctx := ctxWithRunDir("sess-tmp", "call-tmp", runDir)
+
+	stageDir, staged, err := stageBoxArtifact(ctx, tarStream(t, tarEntry{"r.xlsx", tar.TypeReg, "X"}), "fallback.bin")
+	if err != nil {
+		t.Fatalf("stageBoxArtifact: %v", err)
+	}
+	tmpRoot := filepath.Join(runDir, "tmp")
+	if !strings.HasPrefix(stageDir, tmpRoot+string(os.PathSeparator)) {
+		t.Fatalf("staging dir %q is not under the swept root %q — nothing will ever reclaim it", stageDir, tmpRoot)
+	}
+	if !strings.HasPrefix(staged, stageDir+string(os.PathSeparator)) {
+		t.Fatalf("staged file %q escaped its staging dir %q", staged, stageDir)
+	}
+}
+
+// With no run dir configured (the manifest/CLI contexts) staging falls back to the OS temp dir,
+// which the OS reclaims — never to the process working directory.
+func TestStageBoxArtifact_NoRunDirFallsBackToOSTemp(t *testing.T) {
+	t.Parallel()
+	stageDir, _, err := stageBoxArtifact(context.Background(), tarStream(t, tarEntry{"r.txt", tar.TypeReg, "X"}), "fallback.bin")
+	if err != nil {
+		t.Fatalf("stageBoxArtifact: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(stageDir) })
+	if !strings.HasPrefix(stageDir, os.TempDir()) {
+		t.Fatalf("staging dir %q is not under the OS temp dir %q", stageDir, os.TempDir())
+	}
+}
+
 // TestStageBoxArtifact_ZipslipContained proves a traversal-shaped entry cannot escape: the name
 // is basename-reduced and the staged file stays strictly under the staging dir.
 func TestStageBoxArtifact_ZipslipContained(t *testing.T) {

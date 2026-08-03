@@ -3,10 +3,11 @@ package tools
 import (
 	"encoding/json"
 	"os"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 )
 
 // TestSendFileSpecIsDeferred pins the deferred-tool contract: send_file has a
@@ -54,15 +55,10 @@ func TestSendFileChannelAgnostic(t *testing.T) {
 // {path, filename, caption}. The tool does NOT touch the Event (it cannot — the
 // inbound ctx is read-only); the agent loop lifts the Meta onto ArtifactDelta.
 func TestSendFileExecuteSetsArtifactMeta(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "results.xlsx")
-	if err := os.WriteFile(path, []byte("small spreadsheet bytes"), 0o644); err != nil {
-		t.Fatalf("write fixture: %v", err)
-	}
 	ctx := ctxWith(t, "sess-sf", "call-sf")
 
-	raw, _ := json.Marshal(map[string]string{"path": path, "caption": "results"})
-	res, err := (&SendFile{}).Execute(ctx, raw)
+	raw, _ := json.Marshal(map[string]string{"path": "/workspace/results.xlsx", "caption": "results"})
+	res, err := (&SendFile{Router: boxDelivery(t, "results.xlsx", "small spreadsheet bytes")}).Execute(ctx, raw)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -73,8 +69,14 @@ func TestSendFileExecuteSetsArtifactMeta(t *testing.T) {
 	if !ok {
 		t.Fatalf("Meta[artifact] = %#v, want map[string]any", (*res.Meta)["artifact"])
 	}
-	if got := art["path"]; got != path {
-		t.Fatalf("artifact.path = %v, want %q", got, path)
+	// The descriptor path is the STAGED host-side copy, not the box path: the delivery pipeline
+	// (telegram tele.FromDisk, asset ingest) reads it from the host after the turn.
+	staged, _ := art["path"].(string)
+	if staged == "" || staged == "/workspace/results.xlsx" {
+		t.Fatalf("artifact.path = %v, want the staged host copy", art["path"])
+	}
+	if body, rerr := os.ReadFile(staged); rerr != nil || string(body) != "small spreadsheet bytes" {
+		t.Fatalf("staged copy = %q err %v, want the box artifact's bytes", body, rerr)
 	}
 	if got := art["filename"]; got != "results.xlsx" {
 		t.Fatalf("artifact.filename = %v, want results.xlsx (filepath.Base)", got)
@@ -90,116 +92,38 @@ func TestSendFileExecuteSetsArtifactMeta(t *testing.T) {
 	}
 }
 
-func TestSendFileAllowsWorkspacePath(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "report.txt")
-	if err := os.WriteFile(path, []byte("ok"), 0o644); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	raw, _ := json.Marshal(map[string]string{"path": path})
-	res, err := (&SendFile{WorkspaceRoot: root}).Execute(ctxWith(t, "sess-sf-root", "call-sf-root"), raw)
-	if err != nil {
-		t.Fatalf("Execute: %v", err)
-	}
-	if res.Meta == nil {
-		t.Fatal("workspace file must produce artifact meta")
-	}
-	art := (*res.Meta)["artifact"].(map[string]any)
-	// SendFile returns the EvalSymlinks-resolved workspace path (the fence at
-	// send_file.go:136). Compare against the resolved form, not the raw join, so the
-	// test is robust to a t.TempDir() carrying a symlink (macOS /var) or an 8.3 short
-	// name (a Windows CI runner whose user > 8 chars yields RUNNER~1, while the fence
-	// resolves it to the long form).
-	want, serr := filepath.EvalSymlinks(path)
-	if serr != nil {
-		t.Fatalf("evalsymlinks want: %v", serr)
-	}
-	if got := art["path"]; got != want {
-		t.Fatalf("artifact.path = %v, want resolved path %q", got, want)
-	}
-}
-
-func TestSendFileAllowsWorkspacePathWithDotDotPrefixName(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "..report.txt")
-	if err := os.WriteFile(path, []byte("ok"), 0o644); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	raw, _ := json.Marshal(map[string]string{"path": path})
-	res, err := (&SendFile{WorkspaceRoot: root}).Execute(ctxWith(t, "sess-sf-dotdot-name", "call-sf-dotdot-name"), raw)
-	if err != nil {
-		t.Fatalf("Execute: %v", err)
-	}
-	if res.Meta == nil {
-		t.Fatalf("in-workspace filename beginning with '..' must produce artifact meta, got %q", res.Preview)
-	}
-}
-
-func TestSendFileRejectsOutsideWorkspace(t *testing.T) {
-	root := t.TempDir()
-	outside := filepath.Join(t.TempDir(), "secret.txt")
-	if err := os.WriteFile(outside, []byte("secret"), 0o644); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	raw, _ := json.Marshal(map[string]string{"path": outside})
-	res, err := (&SendFile{WorkspaceRoot: root}).Execute(ctxWith(t, "sess-sf-out", "call-sf-out"), raw)
-	if err != nil {
-		t.Fatalf("Execute: %v", err)
-	}
-	if res.Meta != nil {
-		t.Fatal("outside-workspace path must not produce artifact meta")
-	}
-	if !strings.Contains(res.Preview, "outside_workspace_unsupported") {
-		t.Fatalf("want deterministic outside_workspace_unsupported result, got %q", res.Preview)
-	}
-	// The dead approval route (F-009) must be gone: no ask_user + resume_context — that
-	// pair advertised an unwireable loop no resume hook consumed. The reject must
-	// instead point the model at the one working fix: copy into the workspace.
-	for _, banned := range []string{"ask_user", "resume_context"} {
-		if strings.Contains(res.Preview, banned) {
-			t.Fatalf("outside-workspace reject must not advertise %q (dead route), got %q", banned, res.Preview)
-		}
-	}
-	if !strings.Contains(res.Preview, "copy") || !strings.Contains(res.Preview, "workspace") {
-		t.Fatalf("reject must instruct copying the file into the workspace, got %q", res.Preview)
-	}
-}
-
-func TestSendFileRejectsSymlinkEscape(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Windows symlink creation requires privileges on some runners")
-	}
-	root := t.TempDir()
-	outside := filepath.Join(t.TempDir(), "secret.txt")
-	if err := os.WriteFile(outside, []byte("secret"), 0o644); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	link := filepath.Join(root, "linked-secret.txt")
-	if err := os.Symlink(outside, link); err != nil {
-		t.Fatalf("symlink: %v", err)
-	}
-	raw, _ := json.Marshal(map[string]string{"path": link})
-	res, err := (&SendFile{WorkspaceRoot: root}).Execute(ctxWith(t, "sess-sf-link", "call-sf-link"), raw)
-	if err != nil {
-		t.Fatalf("Execute: %v", err)
-	}
-	if res.Meta != nil || !strings.Contains(res.Preview, "outside_workspace_unsupported") {
-		t.Fatalf("symlink escape must be refused, got meta=%v preview=%q", res.Meta, res.Preview)
-	}
-}
-
-func TestSendFileNoWorkspacePreservesLegacyBehavior(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "legacy.txt")
-	if err := os.WriteFile(path, []byte("legacy"), 0o644); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	raw, _ := json.Marshal(map[string]string{"path": path})
-	res, err := (&SendFile{}).Execute(ctxWith(t, "sess-sf-legacy", "call-sf-legacy"), raw)
-	if err != nil {
-		t.Fatalf("Execute: %v", err)
-	}
-	if res.Meta == nil {
-		t.Fatal("empty WorkspaceRoot must preserve legacy artifact delivery")
+// The fence is now a literal /workspace prefix check on the BOX path, applied BEFORE the artifact
+// is copied out. It replaces the host EvalSymlinks fence (and its symlink-escape and
+// dot-dot-prefix cases): a box path cannot be host-stat'd, so the escape it has to refuse is a
+// path naming something outside the box's workspace mount. The symlink-resolving fence itself is
+// not gone — fenceWithinRoot still runs over the STAGED copy (send_file_sandbox.go).
+func TestSendFileFencesToBoxWorkspace(t *testing.T) {
+	for _, outside := range []string{"/etc/passwd", "/skills/calc/calc.py", "/workspace/../etc/shadow"} {
+		t.Run(outside, func(t *testing.T) {
+			raw, _ := json.Marshal(map[string]string{"path": outside})
+			res, err := (&SendFile{Router: boxDelivery(t, "leak.txt", "leaked")}).
+				Execute(ctxWith(t, "sess-sf-out", "call-sf-out"), raw)
+			if err != nil {
+				t.Fatalf("Execute: %v", err)
+			}
+			if res.Meta != nil {
+				t.Fatal("an out-of-workspace path must not produce artifact meta")
+			}
+			if !strings.Contains(res.Preview, "outside_workspace_unsupported") {
+				t.Fatalf("want deterministic outside_workspace_unsupported result, got %q", res.Preview)
+			}
+			// The dead approval route (F-009) must stay gone: no ask_user + resume_context — that
+			// pair advertised an unwireable loop no resume hook consumed. The reject instead points
+			// the model at the one working fix: copy into the workspace.
+			for _, banned := range []string{"ask_user", "resume_context"} {
+				if strings.Contains(res.Preview, banned) {
+					t.Fatalf("outside-workspace reject must not advertise %q (dead route), got %q", banned, res.Preview)
+				}
+			}
+			if !strings.Contains(res.Preview, "copy") || !strings.Contains(res.Preview, "workspace") {
+				t.Fatalf("reject must instruct copying the file into the workspace, got %q", res.Preview)
+			}
+		})
 	}
 }
 
@@ -207,15 +131,10 @@ func TestSendFileNoWorkspacePreservesLegacyBehavior(t *testing.T) {
 // non-ASCII caption is sanitized so a downstream document/voice send never 400s
 // on a non-ASCII caption. The descriptor's caption carries only ASCII bytes.
 func TestSendFileCaptionASCIISanitized(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "report.pdf")
-	if err := os.WriteFile(path, []byte("pdf bytes"), 0o644); err != nil {
-		t.Fatalf("write fixture: %v", err)
-	}
 	ctx := ctxWith(t, "sess-sf-ascii", "call-sf")
 
-	raw, _ := json.Marshal(map[string]string{"path": path, "caption": "città è caffè — résumé"})
-	res, err := (&SendFile{}).Execute(ctx, raw)
+	raw, _ := json.Marshal(map[string]string{"path": "/workspace/report.pdf", "caption": "città è caffè — résumé"})
+	res, err := (&SendFile{Router: boxDelivery(t, "report.pdf", "pdf bytes")}).Execute(ctx, raw)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -235,22 +154,14 @@ func TestSendFileCaptionASCIISanitized(t *testing.T) {
 // error ToolResult {error:"file_too_large"} the agent surfaces — NEVER a silent
 // truncation, and NO artifact Meta on overflow.
 func TestSendFileTooLargeErrors(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "huge.bin")
-	f, err := os.Create(path)
-	if err != nil {
-		t.Fatalf("create fixture: %v", err)
-	}
-	// Sparse file just over the 50MB cap — Truncate sets the size without writing.
-	if err := f.Truncate(maxSendFileBytes + 1); err != nil {
-		f.Close()
-		t.Fatalf("truncate: %v", err)
-	}
-	f.Close()
+	// The size gate runs over the STAGED copy, so the oversized bytes have to come out of the box.
+	// stageBoxArtifact reads maxSendFileBytes+1 at most, which is exactly what the gate needs to
+	// see to reject.
 	ctx := ctxWith(t, "sess-sf-big", "call-sf")
 
-	raw, _ := json.Marshal(map[string]string{"path": path})
-	res, err := (&SendFile{}).Execute(ctx, raw)
+	raw, _ := json.Marshal(map[string]string{"path": "/workspace/huge.bin"})
+	res, err := (&SendFile{Router: boxDelivery(t, "huge.bin", strings.Repeat("x", maxSendFileBytes+1))}).
+		Execute(ctx, raw)
 	if err != nil {
 		t.Fatalf("Execute must surface the overflow as a result, not a Go error: %v", err)
 	}
@@ -265,9 +176,15 @@ func TestSendFileTooLargeErrors(t *testing.T) {
 // TestSendFileUnreadableErrors: a nonexistent/unreadable path returns an error
 // ToolResult {error:"file_unreadable"} the model self-corrects on, with no Meta.
 func TestSendFileUnreadableErrors(t *testing.T) {
+	// A path the box cannot produce (missing file, or a directory) yields a tar stream with no
+	// regular file, which stageBoxArtifact reports and the tool turns into file_unreadable.
 	ctx := ctxWith(t, "sess-sf-bad", "call-sf")
-	raw, _ := json.Marshal(map[string]string{"path": filepath.Join(t.TempDir(), "does-not-exist.txt")})
-	res, err := (&SendFile{}).Execute(ctx, raw)
+	emptyTar := tarStream(t)
+	router := usersandbox.NewSandboxRouter(
+		routedBackend{tarBytes: emptyTar.Bytes()}, config.ProfileSingleUserHardened, unitSandboxCfg())
+
+	raw, _ := json.Marshal(map[string]string{"path": "/workspace/does-not-exist.txt"})
+	res, err := (&SendFile{Router: router}).Execute(ctx, raw)
 	if err != nil {
 		t.Fatalf("Execute must surface an unreadable path as a result, not a Go error: %v", err)
 	}
@@ -279,28 +196,11 @@ func TestSendFileUnreadableErrors(t *testing.T) {
 	}
 }
 
-// TestSendFileRejectsDirectory: a directory path is not a deliverable file — it
-// returns file_unreadable (a stat succeeds but IsDir), never an artifact.
-func TestSendFileRejectsDirectory(t *testing.T) {
-	ctx := ctxWith(t, "sess-sf-dir", "call-sf")
-	raw, _ := json.Marshal(map[string]string{"path": t.TempDir()})
-	res, err := (&SendFile{}).Execute(ctx, raw)
-	if err != nil {
-		t.Fatalf("Execute: %v", err)
-	}
-	if res.Meta != nil {
-		t.Fatal("a directory must NOT carry an artifact descriptor")
-	}
-	if !strings.Contains(res.Preview, "file_unreadable") {
-		t.Fatalf("directory result must carry file_unreadable, got: %q", res.Preview)
-	}
-}
-
 // TestSendFileMissingPath: an empty path arg is a self-correctable error result,
 // carrying the clearer guidance that names the canonical key + its aliases.
 func TestSendFileMissingPath(t *testing.T) {
 	ctx := ctxWith(t, "sess-sf-empty", "call-sf")
-	res, err := (&SendFile{}).Execute(ctx, json.RawMessage(`{"caption":"x"}`))
+	res, err := (&SendFile{}).Execute(ctx, json.RawMessage(`{"caption":"x"}`)) // guard runs before the route
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}

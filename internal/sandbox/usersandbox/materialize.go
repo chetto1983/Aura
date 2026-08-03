@@ -11,6 +11,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -166,10 +167,93 @@ func (b *DockerBackend) CopyFileIn(ctx context.Context, h BoxHandle, boxPath str
 	return CopyFileIn(ctx, b.cli, h, boxPath, content, mode)
 }
 
+// CopyFileInStream tar-streams exactly size bytes from src INTO the box at boxPath while holding
+// none of the file in memory: the tar is produced on one end of an io.Pipe and CopyToContainer
+// consumes the other. CopyFileIn's []byte form holds the content TWICE (the slice, plus the fully
+// buffered tar), which is fine for the model-authored text fs_write caps at 10 MiB and not fine for
+// document_open, whose input is an operator-stored document up to AURA_ASSET_MAX_DOCUMENT_BYTES
+// (100 MiB) materialized inside a 768 MiB container.
+//
+// Failure semantics differ from the buffered form and the caller must know it: tar extracts as the
+// daemon reads, so a source that dies mid-stream can leave a SHORT file in the box. The caller owns
+// removing it (document_open does).
+func CopyFileInStream(
+	ctx context.Context,
+	cli *client.Client,
+	h BoxHandle,
+	boxPath string,
+	size int64,
+	src io.Reader,
+	mode int64,
+) error {
+	hdr, err := singleFileHeader(boxPath, size, mode)
+	if err != nil {
+		return err
+	}
+	err = pipeTarEntry(hdr, src, func(r io.Reader) error {
+		_, cerr := cli.CopyToContainer(ctx, h.ContainerID, client.CopyToContainerOptions{
+			DestinationPath: "/",
+			Content:         r,
+		})
+		return cerr
+	})
+	if err != nil {
+		return fmt.Errorf("stream %q into the box: %w", boxPath, err)
+	}
+	return nil
+}
+
+// pipeTarEntry builds the one-entry tar on one end of an io.Pipe and hands the read end to sink
+// (CopyToContainer in production). It is split out from CopyFileInStream because the ordering it
+// encodes is the whole risk of the streamed path, and it needs a test that no daemon can give:
+//
+//   - the reader is closed BEFORE the producer's result is read, or a sink that hangs up early
+//     leaves the goroutine blocked on a write nobody will ever drain;
+//   - the producer's error wins, because when the SOURCE dies mid-stream the sink only ever sees a
+//     truncated body and its transport error would hide the cause the operator needs;
+//   - EXCEPT io.ErrClosedPipe, which is what the producer reports when the SINK hung up first —
+//     there it is pure noise and the sink holds the real reason.
+func pipeTarEntry(hdr *tar.Header, src io.Reader, sink func(io.Reader) error) error {
+	pr, pw := io.Pipe()
+	produced := make(chan error, 1)
+	go func() {
+		err := writeTarEntry(pw, hdr, src)
+		_ = pw.CloseWithError(err)
+		produced <- err
+	}()
+	sinkErr := sink(pr)
+	_ = pr.Close()
+	if err := <-produced; err != nil && !errors.Is(err, io.ErrClosedPipe) {
+		return err
+	}
+	return sinkErr
+}
+
+// CopyFileInStream is the DockerBackend method form WriteFileStream (router_tools.go) resolves
+// structurally.
+func (b *DockerBackend) CopyFileInStream(
+	ctx context.Context, h BoxHandle, boxPath string, size int64, src io.Reader, mode int64,
+) error {
+	return CopyFileInStream(ctx, b.cli, h, boxPath, size, src, mode)
+}
+
 // tarSingleFile builds a one-entry tar of content rooted at boxPath's "/"-relative name (extracted
-// at "/" by CopyToContainer). The path is POSIX-cleaned; a traversal-shaped or empty path is
-// rejected (no escape above the box root).
+// at "/" by CopyToContainer).
 func tarSingleFile(boxPath string, content []byte, mode int64) (io.Reader, error) {
+	hdr, err := singleFileHeader(boxPath, int64(len(content)), mode)
+	if err != nil {
+		return nil, err
+	}
+	var buf bytes.Buffer
+	if err := writeTarEntry(&buf, hdr, bytes.NewReader(content)); err != nil {
+		return nil, err
+	}
+	return &buf, nil
+}
+
+// singleFileHeader is the one tar entry both copy-in forms share: boxPath POSIX-cleaned to a
+// "/"-relative name, with a traversal-shaped or empty path rejected (no escape above the box root).
+func singleFileHeader(boxPath string, size, mode int64) (*tar.Header, error) {
 	name := strings.TrimPrefix(pathpkg.Clean("/"+strings.TrimSpace(boxPath)), "/")
 	if name == "" || name == ".." || strings.HasPrefix(name, "../") {
 		return nil, fmt.Errorf("invalid box path %q", boxPath)
@@ -177,19 +261,29 @@ func tarSingleFile(boxPath string, content []byte, mode int64) (io.Reader, error
 	if mode == 0 {
 		mode = 0o644
 	}
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
-	hdr := &tar.Header{Name: name, Mode: mode, Size: int64(len(content)), Typeflag: tar.TypeReg}
+	return &tar.Header{Name: name, Mode: mode, Size: size, Typeflag: tar.TypeReg}, nil
+}
+
+// writeTarEntry writes one complete tar holding hdr and EXACTLY hdr.Size bytes from src. tar has no
+// length-suffixed framing, so the size is declared before a byte is read; a source that delivers a
+// different count therefore fails here rather than landing a file whose length disagrees with the
+// record it was opened from. A truncated spreadsheet that looks whole is worse than no file at all,
+// because the agent computes a confident wrong answer from it.
+func writeTarEntry(w io.Writer, hdr *tar.Header, src io.Reader) error {
+	tw := tar.NewWriter(w)
 	if err := tw.WriteHeader(hdr); err != nil {
-		return nil, err
+		return err
 	}
-	if _, err := tw.Write(content); err != nil {
-		return nil, err
+	n, err := io.Copy(tw, src)
+	switch {
+	case errors.Is(err, tar.ErrWriteTooLong):
+		return fmt.Errorf("source is longer than the declared %d bytes", hdr.Size)
+	case err != nil:
+		return err
+	case n != hdr.Size:
+		return fmt.Errorf("source delivered %d bytes, not the declared %d", n, hdr.Size)
 	}
-	if err := tw.Close(); err != nil {
-		return nil, err
-	}
-	return &buf, nil
+	return tw.Close()
 }
 
 // tarDir builds an in-memory tar of hostDir's tree with every entry rooted at dest (leading/

@@ -55,28 +55,31 @@ func TestBackgroundJobID(t *testing.T) {
 		seen[id] = true
 	}
 
-	// Two real starts must bind distinct crypto ids (not sh_1/sh_2). echo exists on
-	// both the POSIX shell and the cmd fallback; Shutdown joins the reapers (goleak).
-	t.Run("start binds crypto ids", func(t *testing.T) {
+	// Two registered jobs must carry distinct crypto ids (not sh_1/sh_2), and Shutdown must join
+	// them (goleak). This used to start two host processes; the registry, not the process, is what
+	// binds the id.
+	t.Run("registration binds crypto ids", func(t *testing.T) {
 		bg := NewBackgroundShells(nil)
 		ctx := ctxWith(t, "sess-id", "call-id")
-		id1, err := bg.start(ctx, "echo one", "", mergeEnv(nil))
+		id1, err := newBackgroundShellID()
 		if err != nil {
-			t.Fatalf("start1: %v", err)
+			t.Fatalf("mint1: %v", err)
 		}
-		id2, err := bg.start(ctx, "echo two", "", mergeEnv(nil))
+		id2, err := newBackgroundShellID()
 		if err != nil {
-			t.Fatalf("start2: %v", err)
+			t.Fatalf("mint2: %v", err)
 		}
+		registerJob(t, bg, ctx, id1)
+		registerJob(t, bg, ctx, id2)
 		shutCtx, cancel := context.WithTimeout(context.Background(), backgroundKillWaitTimeout())
 		defer cancel()
 		defer func() { _ = bg.Shutdown(shutCtx) }()
 		if id1 == id2 {
-			t.Fatalf("two starts minted the same id %q", id1)
+			t.Fatalf("two jobs minted the same id %q", id1)
 		}
 		for _, id := range []string{id1, id2} {
 			if !hexRe.MatchString(id) || seqRe.MatchString(id) {
-				t.Fatalf("start bound a guessable id %q", id)
+				t.Fatalf("registration bound a guessable id %q", id)
 			}
 		}
 	})

@@ -5,13 +5,17 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/documents"
 )
+
+// document_open writes into the caller's per-identity BOX, so these tests drive it over the same
+// daemon-free fakeBox harness the fs_* tools use (fs_box_fake_router_test.go) rather than a host
+// temp dir. That is not only a coverage decision — docker_integration contributes zero coverage —
+// it is the point of the tool's fix: a host temp dir is exactly the filesystem the agent cannot
+// see, and asserting against one would re-pin the defect.
 
 type fakeDocumentOpener struct {
 	identityID string
@@ -36,6 +40,13 @@ func (f *fakeDocumentOpener) OpenDocument(
 	return io.NopCloser(strings.NewReader(f.body)), f.meta, nil
 }
 
+// openedDoc builds a backend whose recorded size agrees with its body, which is what the catalog
+// records for a real document. A disagreement is its own test below.
+func openedDoc(body string, meta documents.OpenedDocument) *fakeDocumentOpener {
+	meta.SizeBytes = int64(len(body))
+	return &fakeDocumentOpener{body: body, meta: meta}
+}
+
 func openedPayload(t *testing.T, result ToolResult) map[string]any {
 	t.Helper()
 	var payload map[string]any
@@ -45,39 +56,45 @@ func openedPayload(t *testing.T, result ToolResult) map[string]any {
 	return payload
 }
 
-func TestDocumentOpen_WritesOriginalIntoWorkspace(t *testing.T) {
-	root := t.TempDir()
-	backend := &fakeDocumentOpener{
-		body: "row,row,row",
-		meta: documents.OpenedDocument{
-			DocumentID: "doc_9f2c", FileName: "Clienti.xlsx",
-			MIMEType: "application/vnd.ms-excel", SizeBytes: 11, SHA256: "abc123",
-		},
+// The destination is fixed and lives under the BOX workspace mount. It is asserted on its own
+// because the entire defect this tool was fixed for was a destination that resolved against the
+// wrong filesystem while every other assertion still passed.
+func TestOpenedDocumentsDestinationIsUnderTheBoxWorkspace(t *testing.T) {
+	if openedDocumentsBoxDir != "/workspace/documents" {
+		t.Fatalf("openedDocumentsBoxDir = %q, want the box workspace mount", openedDocumentsBoxDir)
 	}
-	tool := &DocumentOpen{Documents: backend, WorkspaceRoot: root}
+}
+
+func TestDocumentOpen_WritesOriginalIntoTheBox(t *testing.T) {
+	backend := openedDoc("row,row,row", documents.OpenedDocument{
+		DocumentID: "doc_9f2c", FileName: "Clienti.xlsx",
+		MIMEType: "application/vnd.ms-excel", SHA256: "abc123",
+	})
+	be := &fakeBox{}
+	tool := &DocumentOpen{Documents: backend, Router: routerWith(be)}
 
 	result, err := tool.Execute(toolTestContext(t), json.RawMessage(`{"document_id":"doc_9f2c"}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := filepath.Join(root, openedDocumentsDir, "Clienti.xlsx")
-	got, err := os.ReadFile(want) //nolint:gosec // test-controlled path
-	if err != nil {
-		t.Fatalf("file was not written to %s: %v", want, err)
+	const want = "/workspace/documents/Clienti.xlsx"
+	got, ok := be.written[want]
+	if !ok {
+		t.Fatalf("nothing was written into the box at %s: %+v", want, be.written)
 	}
-	if string(got) != "row,row,row" {
+	if got != "row,row,row" {
 		t.Fatalf("written bytes = %q, want the streamed body", got)
 	}
 
 	payload := openedPayload(t, result)
+	// The reported path must be the one the agent's own shell_exec and fs_read reach. Reporting a
+	// path that is real somewhere else is the whole bug (Clienti.xlsx, 2026-08-03).
 	if payload["path"] != want {
-		t.Fatalf("path = %v, want %s", payload["path"], want)
+		t.Fatalf("path = %v, want the box path %s", payload["path"], want)
 	}
 	if payload["file_name"] != "Clienti.xlsx" || payload["sha256"] != "abc123" {
 		t.Fatalf("payload lost metadata: %#v", payload)
 	}
-	// size_bytes reports what was ACTUALLY written, not what the catalog claimed:
-	// a truncated stream must not be reported as a whole file.
 	if payload["size_bytes"] != float64(len("row,row,row")) {
 		t.Fatalf("size_bytes = %v, want the byte count copied", payload["size_bytes"])
 	}
@@ -93,17 +110,17 @@ func TestDocumentOpen_WritesOriginalIntoWorkspace(t *testing.T) {
 }
 
 func TestDocumentOpen_HonoursCallerFileName(t *testing.T) {
-	root := t.TempDir()
+	be := &fakeBox{}
 	tool := &DocumentOpen{
-		Documents:     &fakeDocumentOpener{body: "x", meta: documents.OpenedDocument{FileName: "original.xlsx"}},
-		WorkspaceRoot: root,
+		Documents: openedDoc("x", documents.OpenedDocument{FileName: "original.xlsx"}),
+		Router:    routerWith(be),
 	}
 	if _, err := tool.Execute(toolTestContext(t),
 		json.RawMessage(`{"document_id":"doc_1","file_name":"clienti.xlsx"}`)); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(root, openedDocumentsDir, "clienti.xlsx")); err != nil {
-		t.Fatalf("caller file_name was not used: %v", err)
+	if _, ok := be.written["/workspace/documents/clienti.xlsx"]; !ok {
+		t.Fatalf("caller file_name was not used: %+v", be.written)
 	}
 }
 
@@ -115,9 +132,9 @@ func TestDocumentOpen_RejectsPathsAsFileName(t *testing.T) {
 		"../escape.xlsx", `..\escape.xlsx`, "sub/dir.xlsx", "/etc/passwd", "..", ".", ".hidden",
 	} {
 		t.Run(name, func(t *testing.T) {
-			root := t.TempDir()
-			backend := &fakeDocumentOpener{body: "x", meta: documents.OpenedDocument{FileName: "ok.xlsx"}}
-			tool := &DocumentOpen{Documents: backend, WorkspaceRoot: root}
+			backend := openedDoc("x", documents.OpenedDocument{FileName: "ok.xlsx"})
+			be := &fakeBox{}
+			tool := &DocumentOpen{Documents: backend, Router: routerWith(be)}
 			raw, err := json.Marshal(map[string]string{"document_id": "doc_1", "file_name": name})
 			if err != nil {
 				t.Fatalf("marshal args: %v", err)
@@ -129,12 +146,35 @@ func TestDocumentOpen_RejectsPathsAsFileName(t *testing.T) {
 				t.Fatal("the name was validated only AFTER opening the document; " +
 					"a rejected call must not reach the backend")
 			}
+			if len(be.written) != 0 {
+				t.Fatalf("a rejected name still wrote into the box: %+v", be.written)
+			}
+		})
+	}
+}
+
+// The BACKEND's file name is validated by the same rule as the caller's: it becomes a path
+// component, and a "../.." in it would join its way straight out of the documents directory.
+func TestDocumentOpen_RefusesAnUnusableBackendFileName(t *testing.T) {
+	for _, name := range []string{"", "   ", "../../etc/passwd"} {
+		t.Run(name, func(t *testing.T) {
+			be := &fakeBox{}
+			tool := &DocumentOpen{
+				Documents: openedDoc("x", documents.OpenedDocument{FileName: name}),
+				Router:    routerWith(be),
+			}
+			if _, err := tool.Execute(toolTestContext(t), json.RawMessage(`{"document_id":"doc_1"}`)); err == nil {
+				t.Fatalf("backend file name %q was accepted", name)
+			}
+			if len(be.written) != 0 {
+				t.Fatalf("wrote %+v; a document with no usable name must land nowhere", be.written)
+			}
 		})
 	}
 }
 
 func TestDocumentOpen_RequiresDocumentID(t *testing.T) {
-	tool := &DocumentOpen{Documents: &fakeDocumentOpener{}, WorkspaceRoot: t.TempDir()}
+	tool := &DocumentOpen{Documents: &fakeDocumentOpener{}, Router: routerWith(&fakeBox{})}
 	for _, raw := range []string{`{}`, `{"document_id":"   "}`} {
 		if _, err := tool.Execute(toolTestContext(t), json.RawMessage(raw)); err == nil {
 			t.Fatalf("args %s were accepted", raw)
@@ -143,27 +183,71 @@ func TestDocumentOpen_RequiresDocumentID(t *testing.T) {
 }
 
 func TestDocumentOpen_UnconfiguredAndMalformed(t *testing.T) {
-	if _, err := (&DocumentOpen{WorkspaceRoot: t.TempDir()}).
+	if _, err := (&DocumentOpen{Router: routerWith(&fakeBox{})}).
 		Execute(toolTestContext(t), json.RawMessage(`{"document_id":"doc_1"}`)); err == nil {
 		t.Fatal("a tool with no backend must not report success")
 	}
-	tool := &DocumentOpen{Documents: &fakeDocumentOpener{}, WorkspaceRoot: t.TempDir()}
+	tool := &DocumentOpen{Documents: &fakeDocumentOpener{}, Router: routerWith(&fakeBox{})}
 	if _, err := tool.Execute(toolTestContext(t), json.RawMessage(`{"document_id":`)); err == nil {
 		t.Fatal("malformed args were accepted")
 	}
 }
 
-func TestDocumentOpen_RequiresWorkspaceRoot(t *testing.T) {
-	tool := &DocumentOpen{Documents: &fakeDocumentOpener{body: "x"}}
-	if _, err := tool.Execute(toolTestContext(t), json.RawMessage(`{"document_id":"doc_1"}`)); err == nil {
-		t.Fatal("expected an error when no workspace root is configured")
+// The containment invariant for this tool, and the replacement for the old
+// TestDocumentOpen_RequiresWorkspaceRoot: there is no host destination any more, so an unreachable
+// box DENIES (D-09/GATE-01) instead of falling back to a filesystem the agent cannot read. The
+// deny must also arrive BEFORE the object store is touched — a call that cannot land its bytes
+// must not pay to download them.
+func TestDocumentOpen_DeniesWhenTheBoxIsUnreachable(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		router func() (*fakeBox, *DocumentOpen)
+	}{
+		{"no router at all", func() (*fakeBox, *DocumentOpen) {
+			return nil, &DocumentOpen{Documents: openedDoc("x", documents.OpenedDocument{FileName: "a.xlsx"})}
+		}},
+		{"box cannot be resolved", func() (*fakeBox, *DocumentOpen) {
+			be := &fakeBox{resolveE: errors.New("dockerd down")}
+			return be, &DocumentOpen{
+				Documents: openedDoc("x", documents.OpenedDocument{FileName: "a.xlsx"}),
+				Router:    routerWith(be),
+			}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			be, tool := tc.router()
+			res, err := tool.Execute(toolTestContext(t), json.RawMessage(`{"document_id":"doc_1"}`))
+			if err != nil {
+				t.Fatalf("an unreachable box is a DENY result, not a Go error: %v", err)
+			}
+			var payload map[string]string
+			if uerr := json.Unmarshal([]byte(res.Preview), &payload); uerr != nil {
+				t.Fatalf("deny preview is not json: %q", res.Preview)
+			}
+			if payload["error"] != "sandbox_unavailable" || payload["tool"] != "document_open" {
+				t.Fatalf("payload = %+v, want sandbox_unavailable for document_open", payload)
+			}
+			if !strings.Contains(payload["message"], "NOT run on the host") {
+				t.Errorf("the deny must say the host was not used: %q", payload["message"])
+			}
+			opener, ok := tool.Documents.(*fakeDocumentOpener)
+			if !ok {
+				t.Fatalf("backend = %T", tool.Documents)
+			}
+			if opener.documentID != "" {
+				t.Error("the document was downloaded for a call that could never write it")
+			}
+			if be != nil && len(be.written) != 0 {
+				t.Fatalf("a denied call still wrote: %+v", be.written)
+			}
+		})
 	}
 }
 
 func TestDocumentOpen_PropagatesBackendError(t *testing.T) {
 	tool := &DocumentOpen{
-		Documents:     &fakeDocumentOpener{err: errors.New("document not found")},
-		WorkspaceRoot: t.TempDir(),
+		Documents: &fakeDocumentOpener{err: errors.New("document not found")},
+		Router:    routerWith(&fakeBox{}),
 	}
 	_, err := tool.Execute(toolTestContext(t), json.RawMessage(`{"document_id":"doc_missing"}`))
 	if err == nil || !strings.Contains(err.Error(), "document not found") {
@@ -189,22 +273,47 @@ func (r *failingReader) Read(p []byte) (int, error) {
 
 func (r *failingReader) Close() error { return nil }
 
-func TestDocumentOpen_RemovesPartialFileOnStreamFailure(t *testing.T) {
-	root := t.TempDir()
+// A half-written spreadsheet that LOOKS whole is worse than none: the agent would compute a
+// confident wrong total from it. tar extracts as the daemon reads, so the box can hold a short file
+// after a dead stream and the tool has to remove it explicitly.
+func TestDocumentOpen_RemovesPartialCopyOnStreamFailure(t *testing.T) {
+	be := &fakeBox{}
 	tool := &DocumentOpen{
 		Documents: &fakeDocumentOpener{
 			reader: &failingReader{remaining: 64},
-			meta:   documents.OpenedDocument{FileName: "half.xlsx"},
+			meta:   documents.OpenedDocument{FileName: "half.xlsx", SizeBytes: 4096},
 		},
-		WorkspaceRoot: root,
+		Router: routerWith(be),
 	}
 	if _, err := tool.Execute(toolTestContext(t), json.RawMessage(`{"document_id":"doc_1"}`)); err == nil {
 		t.Fatal("a failed stream reported success")
 	}
-	// A half-written spreadsheet that LOOKS whole is worse than none: the agent
-	// would compute a confident wrong total from it.
-	if _, err := os.Stat(filepath.Join(root, openedDocumentsDir, "half.xlsx")); !os.IsNotExist(err) {
-		t.Fatalf("partial file survived the failure (stat err = %v)", err)
+	if len(be.written) != 0 {
+		t.Fatalf("a failed stream left a file behind: %+v", be.written)
+	}
+	if len(be.execs) != 1 || !strings.Contains(be.execs[0].Command, "rm -f -- '/workspace/documents/half.xlsx'") {
+		t.Fatalf("the partial copy was not removed from the box: %+v", be.execs)
+	}
+}
+
+// The length handed to the copy-in is the CATALOG's, declared before a byte is read, so a document
+// whose stored size disagrees with its bytes fails loudly instead of landing a file whose length
+// contradicts the record it was opened from.
+func TestDocumentOpen_DeclaresTheCatalogSize(t *testing.T) {
+	be := &fakeBox{}
+	tool := &DocumentOpen{
+		Documents: &fakeDocumentOpener{
+			body: "eleven byte",
+			meta: documents.OpenedDocument{FileName: "stale.xlsx", SizeBytes: 5},
+		},
+		Router: routerWith(be),
+	}
+	_, err := tool.Execute(toolTestContext(t), json.RawMessage(`{"document_id":"doc_1"}`))
+	if err == nil || !strings.Contains(err.Error(), "declared 5") {
+		t.Fatalf("error = %v, want a refusal naming the size the catalog declared", err)
+	}
+	if len(be.written) != 0 {
+		t.Fatalf("a size mismatch still wrote: %+v", be.written)
 	}
 }
 

@@ -204,6 +204,21 @@ func (b *DockerBackend) createBox(ctx context.Context, name string, spec Sandbox
 	return res.ID, nil
 }
 
+// CheckRuntime answers the readiness question without creating anything: one ImageInspect on the
+// box image. It fails when the daemon socket is unreachable (the call itself errors) and when the
+// image is absent — the two conditions that make every subsequent tool call answer
+// sandbox_unavailable. It never pulls, never creates a container or a volume, and never touches
+// the reaper's lastUsed, so polling it on a healthcheck interval costs nothing and leaks nothing.
+func (b *DockerBackend) CheckRuntime(ctx context.Context) error {
+	if b == nil || b.cli == nil {
+		return fmt.Errorf("docker client is not configured")
+	}
+	if _, err := b.cli.ImageInspect(ctx, b.image); err != nil {
+		return fmt.Errorf("box image %q unavailable: %w", b.image, err)
+	}
+	return nil
+}
+
 // ensureImage pulls the box image only when it is not already present locally. This keeps a
 // locally-built, registry-less image (e.g. aura-sandbox:latest) working — ImageInspect finds
 // it and no pull is attempted — while a remote test image is pulled on first use.

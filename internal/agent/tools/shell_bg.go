@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
@@ -13,7 +12,6 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent/panicobs"
-	"github.com/chetto1983/aura/internal/procgroup"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 )
 
@@ -39,10 +37,9 @@ type BackgroundShells struct {
 	max    int
 	shells map[string]*bgShell
 
-	// Router is the per-identity box routing seam (SBX-01, plan 37-09). Nil (dev/local_trusted,
-	// the CLI/manifest paths) keeps every background job on the host *exec.Cmd path; under a strict
-	// profile shell_exec routes and calls startBox, which runs the job INSIDE the box via
-	// Router.ExecStream (a streamed box exec), never a host process.
+	// Router is the per-identity box routing seam (SBX-01, plan 37-09) and the only way a
+	// background job starts: shell_exec routes, then startBox runs the job INSIDE the box via
+	// Router.ExecStream. There is no host *exec.Cmd path left.
 	Router *usersandbox.SandboxRouter
 
 	// TTL reaper lifecycle (shell_bg_ttl.go). ttl is the default per-job budget; the
@@ -55,9 +52,9 @@ type BackgroundShells struct {
 }
 
 // NewBackgroundShells builds an empty registry to share across the shell tools, wired with the
-// per-identity box router (nil under dev/local_trusted and the pool-free manifest paths — every
-// job stays host-direct then). The TTL reaper is NOT started here (goleak parity — the constructor
-// spawns no goroutine); the composition root calls StartReaper on the daemon work ctx.
+// per-identity box router every job runs through. The TTL reaper is NOT started here (goleak
+// parity — the constructor spawns no goroutine); the composition root calls StartReaper on the
+// daemon work ctx.
 func NewBackgroundShells(router *usersandbox.SandboxRouter) *BackgroundShells {
 	ttl := shellBackgroundTTL()
 	return &BackgroundShells{
@@ -83,10 +80,9 @@ type bgShell struct {
 	cancel    context.CancelFunc
 
 	mu sync.Mutex
-	// box is the streamed box-exec handle when this job runs INSIDE the per-identity box (strict,
-	// 37-09); nil for a host *exec.Cmd job (lenient / nil router). Guarded by mu because startBox
-	// sets it after the shell is already registered. This is the "registry holds a box-exec handle,
-	// not a host *exec.Cmd" invariant made concrete.
+	// box is the streamed box-exec handle (37-09), nil only between register and a successful
+	// ExecStream. Guarded by mu because startBox sets it after the shell is already registered.
+	// This is the "registry holds a box-exec handle, never a host process" invariant made concrete.
 	box      *usersandbox.ExecStreamHandle
 	buf      []byte
 	readOff  int
@@ -136,18 +132,12 @@ func (s *bgShell) finish(waitErr error) {
 		// process, it did not exit on its own. expired keeps its "expired" status.
 		s.exitCode = nil
 	default:
+		// A box streamed exec reports its exit via ExecInspect (boxWait wraps it), so a
+		// *bgBoxExit is the normal termination; anything else is an infra failure with no
+		// exit code to report.
 		var boxExit *bgBoxExit
-		switch {
-		case errors.As(waitErr, &boxExit):
-			// A box streamed exec reports its exit via ExecInspect, not a host *exec.ExitError.
+		if errors.As(waitErr, &boxExit) {
 			s.exitCode = &boxExit.code
-		default:
-			if ec, ok := exitCode(waitErr); ok {
-				s.exitCode = &ec
-			} else if waitErr == nil {
-				zero := 0
-				s.exitCode = &zero
-			}
 		}
 	}
 	s.mu.Unlock()
@@ -202,53 +192,12 @@ func (s *bgShell) snapshot(filter *regexp.Regexp) (chunk, status string) {
 	return chunk, status
 }
 
-// start launches command DETACHED from the per-call ctx (which dies the moment
-// Execute returns) so the job outlives the turn; kill is via the stored cancel.
-// callerCtx carries the owner principal (identityctx) + session key bound onto the
-// job for the poll/kill authority check (MUSR-03); it is NOT the process lifetime
-// ctx (that is a fresh background ctx so the job survives the turn).
-func (b *BackgroundShells) start(callerCtx context.Context, command, dir string, env []string) (string, error) {
-	ctx, cancel := context.WithCancel(context.Background())
-	name, args := shellInvocation(command)
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Dir = dir
-	cmd.Env = env
-	procgroup.SetProcessGroup(cmd)
-	cmd.Cancel = func() error { return procgroup.KillProcessGroup(cmd) }
-	cmd.WaitDelay = 5 * time.Second
-	id, err := newBackgroundShellID()
-	if err != nil {
-		cancel()
-		return "", err
-	}
-	sh := b.newShell(callerCtx, id)
-	sh.cancel = cancel
-	cmd.Stdout = sh
-	cmd.Stderr = sh
-	if err := b.register(id, sh); err != nil {
-		cancel()
-		return "", err
-	}
-	if err := cmd.Start(); err != nil {
-		cancel()
-		sh.mu.Lock()
-		sh.done = true
-		sh.killed = true
-		sh.exitCode = nil
-		sh.mu.Unlock()
-		b.remove(id)
-		return "", fmt.Errorf("background start: %w", err)
-	}
-	go runBackgroundShellReaper(sh, cmd.Wait, cancel)
-	return id, nil
-}
-
-// startBox is the ROUTED (strict-profile) analog of start: the background job runs INSIDE the
-// per-identity box via a streamed box exec (Router.ExecStream), never a host process. The
-// owner/authority binding, TTL, cap, and random-id machinery are shared with start byte-for-byte
-// (newShell + register) — only the process handle behind bgShell changes (host *exec.Cmd → box
-// exec-stream). A box start failure returns an error the caller maps to the fail-CLOSED deny
-// (D-09/GATE-01); no host process is ever spawned on this path.
+// startBox launches command DETACHED from the per-call ctx (which dies the moment Execute
+// returns) so the job outlives the turn, INSIDE the per-identity box via a streamed box exec
+// (Router.ExecStream). callerCtx carries the owner principal (identityctx) + session key bound
+// onto the job for the poll/kill authority check (MUSR-03); it is NOT the job's lifetime ctx.
+// A box start failure returns an error the caller maps to the fail-CLOSED deny (D-09/GATE-01) —
+// no host process is spawnable from here.
 func (b *BackgroundShells) startBox(callerCtx context.Context, h usersandbox.BoxHandle, command, dir string, env []string) (string, error) {
 	id, err := newBackgroundShellID()
 	if err != nil {

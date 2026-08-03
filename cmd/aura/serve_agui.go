@@ -176,12 +176,13 @@ func wireAGUIServer(chat *chatEnv, store *cron.Store, scheduler *cron.Scheduler,
 }
 
 // serveReadinessProbes builds the /readyz probe set over the daemon's required
-// backends (O-05/AP-14): Postgres (the open pool's Ping) and memory (a functional
-// search through the mounted MCP). The shared global deadline in the agui handler
-// bounds them. A dependency handle that is absent (nil pool) is omitted rather
-// than reported as a false failure.
+// backends (O-05/AP-14): Postgres (the open pool's Ping), memory (a functional
+// search through the mounted MCP), and the per-identity sandbox (a real box
+// resolve — it is where every tool now runs). The shared global deadline in the
+// agui handler bounds them. A dependency handle that is absent (nil pool) is
+// omitted rather than reported as a false failure.
 func serveReadinessProbes(chat *chatEnv) []agui.ReadinessProbe {
-	probes := make([]agui.ReadinessProbe, 0, 2)
+	probes := make([]agui.ReadinessProbe, 0, 3)
 	if chat.pool != nil {
 		probes = append(probes, agui.ReadinessProbe{
 			Name:  "postgres",
@@ -190,6 +191,9 @@ func serveReadinessProbes(chat *chatEnv) []agui.ReadinessProbe {
 		})
 	}
 	if probe, required := memoryReadinessProbe(chat); required {
+		probes = append(probes, probe)
+	}
+	if probe, required := sandboxReadinessProbe(chat); required {
 		probes = append(probes, probe)
 	}
 	return probes

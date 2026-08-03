@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/fs"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -13,15 +11,13 @@ import (
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 )
 
-// FSGlob finds files by name pattern (supporting **) across a directory tree.
-//
-// Router mirrors fs_read/fs_write: under a strict profile the tree walked is the one INSIDE the
-// per-identity box, never the host's. Only the ENUMERATION moves — the pattern is still compiled
-// and matched by the same Go code on both paths, so a box search cannot answer differently from
-// a host search for the same tree (fix plan 2.5).
+// FSGlob finds files by name pattern (supporting **) across the tree INSIDE the caller's
+// per-identity box. There is no host arm: a box that cannot be reached fails CLOSED
+// (D-09/GATE-01). Only the ENUMERATION happens in the box — the pattern is compiled and matched
+// by Go's own regexp, so the tool's semantics never become the box shell's semantics. This file
+// deliberately imports neither io/fs nor path/filepath.
 type FSGlob struct {
-	WorkspaceRoot string
-	Router        *usersandbox.SandboxRouter
+	Router *usersandbox.SandboxRouter
 }
 
 type fsGlobArgs struct {
@@ -37,7 +33,7 @@ func (t *FSGlob) Spec() Spec {
   "type": "object",
   "properties": {
     "pattern": {"type": "string", "description": "Glob pattern over forward-slash paths, e.g. '**/*.go' or 'cmd/*/main.go'. ** crosses directories."},
-    "path": {"type": "string", "description": "Optional root directory to search. Defaults to the workspace root."},
+    "path": {"type": "string", "description": "Optional root directory to search inside your workspace container. Defaults to /workspace."},
     "max_results": {"type": "integer", "minimum": 1, "description": "Optional cap on paths returned (default 500)."}
   },
   "required": ["pattern"]
@@ -70,68 +66,31 @@ func (t *FSGlob) Execute(ctx context.Context, raw json.RawMessage) (ToolResult, 
 	if maxResults <= 0 {
 		maxResults = defaultGlobMax
 	}
-	// Route decision BEFORE the host root is resolved or walked: routed ⇒ enumerate in-box;
-	// routed+err ⇒ deny (fail-CLOSED, D-09/GATE-01), never a host walk fallback.
-	boxHandle, routed, routeErr := t.Router.Route(ctx)
-	if routed && routeErr != nil {
+	root, err := boxPathArg("fs_glob", a.Path)
+	if err != nil {
+		return ToolResult{}, err
+	}
+
+	// Pattern compilation, the result cap and the root resolution run BEFORE the route: an invalid
+	// glob is the model's own error and must read as one, not as a box round-trip that failed
+	// obscurely.
+	boxHandle, routeErr := t.Router.Route(ctx)
+	if routeErr != nil {
 		return sandboxUnavailableResult("fs_glob", routeErr), nil
 	}
-	if routed {
-		return t.globInBox(ctx, boxHandle, a, re, maxResults)
-	}
-
-	root := rootOrDefault(t.WorkspaceRoot, a.Path)
-
-	budget := newWalkBudget(ctx)
-	var truncated bool
-	var out []string
-	walkErr := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
-		if budget.step() {
-			truncated = true
-			return filepath.SkipAll
-		}
-		if err != nil {
-			return nil
-		}
-		if d.IsDir() {
-			if p != root && skipWalkDir(d.Name()) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		rel, relErr := filepath.Rel(root, p)
-		if relErr != nil {
-			rel = p
-		}
-		if re.MatchString(filepath.ToSlash(rel)) {
-			out = append(out, filepath.ToSlash(rel))
-		}
-		if len(out) >= maxResults {
-			return filepath.SkipAll
-		}
-		return nil
-	})
-	if walkErr != nil {
-		return ToolResult{}, fmt.Errorf("fs_glob: %w", walkErr)
-	}
-	if len(out) == 0 {
-		return NewResult(ctx, withWalkTruncation("[no matches]", truncated))
-	}
-	sort.Strings(out)
-	return NewResult(ctx, withWalkTruncation(strings.Join(out, "\n"), truncated))
+	return t.globInBox(ctx, boxHandle, root, re, maxResults)
 }
 
-// globInBox matches the SAME compiled pattern against the box's file list. The host branch above
-// caps results mid-walk; here the enumeration is already bounded by the node cap, so the cap is
-// applied while filtering. Nothing on this path touches the host filesystem.
+// globInBox matches the compiled pattern against the box's file list. The enumeration is already
+// bounded by the node cap, so the result cap is applied while filtering.
 func (t *FSGlob) globInBox(
 	ctx context.Context,
 	handle usersandbox.BoxHandle,
-	a fsGlobArgs,
+	root string,
 	re *regexp.Regexp,
 	maxResults int,
 ) (ToolResult, error) {
-	rels, truncated, err := boxListFiles(ctx, t.Router, handle, boxRootOrDefault(a.Path))
+	rels, truncated, err := boxListFiles(ctx, t.Router, handle, root)
 	if err != nil {
 		return sandboxUnavailableResult("fs_glob", err), nil
 	}

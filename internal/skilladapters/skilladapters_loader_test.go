@@ -35,35 +35,32 @@ func snippetMD(name, desc, lang, body string) string {
 }
 
 // newLoaderAdapter builds a Loader adapter over a real *skills.Loader scanning a
-// temp root, with the supplied manifest cap and export dir.
-func newLoaderAdapter(t *testing.T, manCap int, exportDir string, seed func(root string)) *Loader {
+// temp root, with the supplied manifest cap.
+func newLoaderAdapter(t *testing.T, manCap int, seed func(root string)) *Loader {
 	t.Helper()
 	root := t.TempDir()
 	if seed != nil {
 		seed(root)
 	}
 	live := skills.NewLoader(skills.Config{Roots: []string{root}})
-	return NewLoader(live, manCap, exportDir)
+	return NewLoader(live, manCap)
 }
 
 func TestNewLoaderStoresFields(t *testing.T) {
 	t.Parallel()
 	live := skills.NewLoader(skills.Config{Roots: []string{t.TempDir()}})
-	a := NewLoader(live, 4096, "/export")
+	a := NewLoader(live, 4096)
 	if a.loader != live {
 		t.Error("NewLoader did not retain the live loader")
 	}
 	if a.manCap != 4096 {
 		t.Errorf("manCap = %d, want 4096", a.manCap)
 	}
-	if a.exportDir != "/export" {
-		t.Errorf("exportDir = %q, want /export", a.exportDir)
-	}
 }
 
 func TestLoaderListProjectsToSkillMeta(t *testing.T) {
 	t.Parallel()
-	a := newLoaderAdapter(t, 0, "/export", func(root string) {
+	a := newLoaderAdapter(t, 0, func(root string) {
 		writeSkillFile(t, root, "alpha", instructionMD("alpha", "Alpha skill.", "Do alpha."))
 		writeSkillFile(t, root, "beta", instructionMD("beta", "Beta skill.", "Do beta."))
 	})
@@ -87,7 +84,7 @@ func TestLoaderListProjectsToSkillMeta(t *testing.T) {
 
 func TestLoaderListEmpty(t *testing.T) {
 	t.Parallel()
-	a := newLoaderAdapter(t, 0, "/export", nil)
+	a := newLoaderAdapter(t, 0, nil)
 	got := a.List()
 	if len(got) != 0 {
 		t.Fatalf("List() over an empty root = %d entries, want 0", len(got))
@@ -96,7 +93,7 @@ func TestLoaderListEmpty(t *testing.T) {
 
 func TestLoaderBodyFoundAndAbsent(t *testing.T) {
 	t.Parallel()
-	a := newLoaderAdapter(t, 0, "/export", func(root string) {
+	a := newLoaderAdapter(t, 0, func(root string) {
 		writeSkillFile(t, root, "present", instructionMD("present", "A present skill.", "The real body line."))
 	})
 
@@ -119,7 +116,7 @@ func TestLoaderBodyFoundAndAbsent(t *testing.T) {
 
 func TestLoaderManifestDescriptionRendersAndRespectsCap(t *testing.T) {
 	t.Parallel()
-	a := newLoaderAdapter(t, 0, "/export", func(root string) {
+	a := newLoaderAdapter(t, 0, func(root string) {
 		writeSkillFile(t, root, "zeta", instructionMD("zeta", "Zeta does Z.", "Z body."))
 		writeSkillFile(t, root, "alpha", instructionMD("alpha", "Alpha does A.", "A body."))
 	})
@@ -142,7 +139,7 @@ func TestLoaderManifestDescriptionRendersAndRespectsCap(t *testing.T) {
 func TestLoaderManifestDescriptionTinyCapOverflows(t *testing.T) {
 	t.Parallel()
 	// A 1-byte cap forces the overflow tail after the first (always-rendered) line.
-	a := newLoaderAdapter(t, 1, "/export", func(root string) {
+	a := newLoaderAdapter(t, 1, func(root string) {
 		writeSkillFile(t, root, "alpha", instructionMD("alpha", "Alpha does A.", "A body."))
 		writeSkillFile(t, root, "beta", instructionMD("beta", "Beta does B.", "B body."))
 	})
@@ -152,14 +149,15 @@ func TestLoaderManifestDescriptionTinyCapOverflows(t *testing.T) {
 	}
 }
 
-func TestLoaderSnippetResolvesHostInvocation(t *testing.T) {
+// The adapter resolves the IN-BOX path only. It used to return the host export-dir path too and
+// action=use chose between them; shell_exec runs in one place now, so there is one path to render.
+func TestLoaderSnippetResolvesSandboxInvocation(t *testing.T) {
 	t.Parallel()
-	exportDir := t.TempDir()
-	a := newLoaderAdapter(t, 0, exportDir, func(root string) {
+	a := newLoaderAdapter(t, 0, func(root string) {
 		writeSkillFile(t, root, "fetcher", snippetMD("fetcher", "Fetch a URL.", "python", "Run the fetcher."))
 	})
 
-	instructions, hostPath, sandboxPath, interpreter, ok := a.Snippet("fetcher")
+	instructions, sandboxPath, interpreter, ok := a.Snippet("fetcher")
 	if !ok {
 		t.Fatal("Snippet(fetcher) ok = false, want true for an active python snippet")
 	}
@@ -169,11 +167,6 @@ func TestLoaderSnippetResolvesHostInvocation(t *testing.T) {
 	if interpreter != "python3" {
 		t.Errorf("interpreter = %q, want python3", interpreter)
 	}
-	// Host path is rooted under the export dir at <name>/<name>.py (D-01).
-	wantPath := filepath.Join(exportDir, "fetcher", "fetcher.py")
-	if hostPath != wantPath {
-		t.Errorf("hostPath = %q, want %q", hostPath, wantPath)
-	}
 	// Sandbox path is the in-box /skills root MaterializeIn lands the snippet at (D-10).
 	if sandboxPath != "/skills/fetcher/fetcher.py" {
 		t.Errorf("sandboxPath = %q, want /skills/fetcher/fetcher.py", sandboxPath)
@@ -182,29 +175,22 @@ func TestLoaderSnippetResolvesHostInvocation(t *testing.T) {
 
 func TestLoaderSnippetResolvesShellAndJS(t *testing.T) {
 	t.Parallel()
-	exportDir := t.TempDir()
-	a := newLoaderAdapter(t, 0, exportDir, func(root string) {
+	a := newLoaderAdapter(t, 0, func(root string) {
 		writeSkillFile(t, root, "cleaner", snippetMD("cleaner", "Clean tmp.", "shell", "Run the cleaner."))
 		writeSkillFile(t, root, "builder", snippetMD("builder", "Build it.", "js", "Run the builder."))
 	})
 
-	_, shPath, shSandbox, shInterp, ok := a.Snippet("cleaner")
+	_, shSandbox, shInterp, ok := a.Snippet("cleaner")
 	if !ok || shInterp != "sh" {
 		t.Fatalf("Snippet(cleaner) ok=%v interp=%q, want ok + sh", ok, shInterp)
-	}
-	if shPath != filepath.Join(exportDir, "cleaner", "cleaner.sh") {
-		t.Errorf("shell host path = %q", shPath)
 	}
 	if shSandbox != "/skills/cleaner/cleaner.sh" {
 		t.Errorf("shell sandbox path = %q", shSandbox)
 	}
 
-	_, jsPath, jsSandbox, jsInterp, ok := a.Snippet("builder")
+	_, jsSandbox, jsInterp, ok := a.Snippet("builder")
 	if !ok || jsInterp != "node" {
 		t.Fatalf("Snippet(builder) ok=%v interp=%q, want ok + node", ok, jsInterp)
-	}
-	if jsPath != filepath.Join(exportDir, "builder", "builder.js") {
-		t.Errorf("js host path = %q", jsPath)
 	}
 	if jsSandbox != "/skills/builder/builder.js" {
 		t.Errorf("js sandbox path = %q", jsSandbox)
@@ -213,24 +199,24 @@ func TestLoaderSnippetResolvesShellAndJS(t *testing.T) {
 
 func TestLoaderSnippetAbsentSkill(t *testing.T) {
 	t.Parallel()
-	a := newLoaderAdapter(t, 0, t.TempDir(), nil)
-	instructions, hostPath, sandboxPath, interpreter, ok := a.Snippet("ghost")
+	a := newLoaderAdapter(t, 0, nil)
+	instructions, sandboxPath, interpreter, ok := a.Snippet("ghost")
 	if ok {
 		t.Error("Snippet(ghost) ok = true, want false for an absent skill")
 	}
-	if instructions != "" || hostPath != "" || sandboxPath != "" || interpreter != "" {
-		t.Errorf("absent snippet should return all-empty, got (%q,%q,%q,%q)", instructions, hostPath, sandboxPath, interpreter)
+	if instructions != "" || sandboxPath != "" || interpreter != "" {
+		t.Errorf("absent snippet should return all-empty, got (%q,%q,%q)", instructions, sandboxPath, interpreter)
 	}
 }
 
 func TestLoaderSnippetNonSnippetSkill(t *testing.T) {
 	t.Parallel()
-	a := newLoaderAdapter(t, 0, t.TempDir(), func(root string) {
+	a := newLoaderAdapter(t, 0, func(root string) {
 		// An instruction skill is NOT a snippet → ok=false (use falls back to the
 		// instruction authority-frame path).
 		writeSkillFile(t, root, "guide", instructionMD("guide", "A guide.", "Just instructions."))
 	})
-	_, _, _, _, ok := a.Snippet("guide")
+	_, _, _, ok := a.Snippet("guide")
 	if ok {
 		t.Error("Snippet(guide) ok = true, want false for a non-snippet skill")
 	}
@@ -239,15 +225,15 @@ func TestLoaderSnippetNonSnippetSkill(t *testing.T) {
 func TestLoaderSnippetInvalidLanguageFails(t *testing.T) {
 	t.Parallel()
 	// A snippet whose language is outside {python,shell,js} cannot resolve a
-	// by-path interpreter, so SnippetHostInvocation errors and ok=false.
-	a := newLoaderAdapter(t, 0, t.TempDir(), func(root string) {
+	// by-path interpreter, so SnippetInvocation errors and ok=false.
+	a := newLoaderAdapter(t, 0, func(root string) {
 		writeSkillFile(t, root, "weird", snippetMD("weird", "Weird lang.", "ruby", "Run weird."))
 	})
-	instructions, hostPath, sandboxPath, interpreter, ok := a.Snippet("weird")
+	instructions, sandboxPath, interpreter, ok := a.Snippet("weird")
 	if ok {
 		t.Error("Snippet(weird) ok = true, want false for an unsupported language")
 	}
-	if instructions != "" || hostPath != "" || sandboxPath != "" || interpreter != "" {
-		t.Errorf("invalid-language snippet should return all-empty, got (%q,%q,%q,%q)", instructions, hostPath, sandboxPath, interpreter)
+	if instructions != "" || sandboxPath != "" || interpreter != "" {
+		t.Errorf("invalid-language snippet should return all-empty, got (%q,%q,%q)", instructions, sandboxPath, interpreter)
 	}
 }

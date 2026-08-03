@@ -154,29 +154,143 @@ func TestShellExec_RoutedRunsInBox(t *testing.T) {
 	}
 }
 
-// TestShellExec_NilRouterHostUnchanged: a nil router keeps the host os/exec path byte-for-byte
-// (dev/local_trusted), identical to today's behavior.
-func TestShellExec_NilRouterHostUnchanged(t *testing.T) {
+// TestShellExec_NilRouterDenies replaces TestShellExec_NilRouterHostUnchanged, which pinned the
+// removed behaviour: a nil router used to mean "run it on the host". A router is no longer
+// optional, so an absent one is a failure mode and must DENY. This is the invariant a future
+// regression re-introducing a host arm would trip.
+func TestShellExec_NilRouterDenies(t *testing.T) {
 	tool := &ShellExec{}
 	ctx := ctxWith(t, "sess-host", "call-host")
-	res, err := tool.Execute(ctx, json.RawMessage(`{"command":"echo host-direct"}`))
+	res, err := tool.Execute(ctx, json.RawMessage(`{"command":"echo LEAKED-TO-HOST"}`))
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if !strings.Contains(res.Preview, "host-direct") {
-		t.Fatalf("nil-router host path missing stdout: %q", res.Preview)
+	if !strings.Contains(res.Preview, "sandbox_unavailable") {
+		t.Fatalf("a router-less shell_exec must DENY, got: %q", res.Preview)
+	}
+	if strings.Contains(res.Preview, "LEAKED-TO-HOST") {
+		t.Fatalf("the command reached a host shell: %q", res.Preview)
 	}
 }
 
-// TestSnippetUse_StrictRendersSandboxPath: skill action=use renders the IN-BOX SandboxPath under a
-// strict profile and the HostPath under a lenient one — and calls NO backend.Exec (action=use only
-// chooses the path for the subsequent routed shell_exec).
-func TestSnippetUse_StrictRendersSandboxPath(t *testing.T) {
+// AG-018. A cwd the box cannot chdir into is the model's own argument mistake, and with one
+// execution path it lands on executeInBox's blanket infra-error branch, which answers
+// sandbox_unavailable — "the sandbox runtime is down and an operator must restore it". That is
+// advice a model can act on only by retrying the same broken call forever. The deleted host arm
+// caught it with an os.Stat BEFORE the call; a box path cannot be stat'ed from here, so the box is
+// asked directly — and only once the real exec has already failed, so the common case pays nothing.
+
+// cwdProbeBackend refuses every real command the way a daemon refuses a bad WorkingDir, and answers
+// the `[ -d … ]` probe with a scripted result.
+type cwdProbeBackend struct {
+	fakeBoxBackend
+	probeExit int
+	probeErr  error
+	probes    []string
+}
+
+func (b *cwdProbeBackend) Exec(_ context.Context, _ usersandbox.BoxHandle, req usersandbox.ExecRequest) (usersandbox.ExecResult, error) {
+	b.execCalls = append(b.execCalls, req)
+	if strings.HasPrefix(req.Command, "[ -d ") {
+		b.probes = append(b.probes, req.Command)
+		if b.probeErr != nil {
+			return usersandbox.ExecResult{}, b.probeErr
+		}
+		return usersandbox.ExecResult{ExitCode: b.probeExit}, nil
+	}
+	return usersandbox.ExecResult{}, errors.New("OCI runtime exec failed: chdir to cwd: no such file or directory")
+}
+
+func TestShellExec_BadCwdIsAnArgumentErrorNotAnOutage(t *testing.T) {
+	be := &cwdProbeBackend{probeExit: 1}
+	tool := &ShellExec{Router: newStrictBoxRouter(be)}
+
+	raw, _ := json.Marshal(shellExecArgs{Command: "ls", Cwd: "/workspace/nope"})
+	res, err := tool.Execute(ctxWith(t, "sess-badcwd", "call-1"), raw)
+	if err == nil {
+		t.Fatalf("a bad cwd must be a self-correctable error, got result: %q", res.Preview)
+	}
+	if !strings.Contains(err.Error(), "/workspace/nope") || !strings.Contains(err.Error(), "not a directory") {
+		t.Fatalf("error must name the offending directory: %v", err)
+	}
+	if strings.Contains(err.Error(), "sandbox") && strings.Contains(err.Error(), "down") {
+		t.Fatalf("a mistyped cwd must not read as an outage: %v", err)
+	}
+	if len(be.probes) != 1 || !strings.Contains(be.probes[0], shellQuoteArg("/workspace/nope")) {
+		t.Fatalf("the probe must ask the box about the QUOTED dir: %#v", be.probes)
+	}
+}
+
+// The classifier must not swallow real outages: when the box says the directory is fine, an exec
+// failure is still infra and still DENIES. Without this the AG-018 fix would be a hole in GATE-01.
+func TestShellExec_ExecFailureWithAGoodCwdStillDenies(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		be   *cwdProbeBackend
+	}{
+		{"dir exists", &cwdProbeBackend{probeExit: 0}},
+		{"box cannot even answer the probe", &cwdProbeBackend{probeErr: errors.New("dockerd gone")}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tool := &ShellExec{Router: newStrictBoxRouter(tc.be)}
+			raw, _ := json.Marshal(shellExecArgs{Command: "ls", Cwd: "/workspace/fine"})
+			res, err := tool.Execute(ctxWith(t, "sess-outage", "call-1"), raw)
+			if err != nil {
+				t.Fatalf("an infra failure is a deny RESULT, not a Go error: %v", err)
+			}
+			if !strings.Contains(res.Preview, "sandbox_unavailable") {
+				t.Fatalf("want the fail-CLOSED deny, got: %q", res.Preview)
+			}
+		})
+	}
+}
+
+// A tracked cwd is the ONLY cwd source once there is one execution path, so a directory the session
+// cd'd into and later deleted would resolve on every subsequent call and wedge the session for good.
+// It is dropped instead, and the error says so.
+func TestShellExec_StaleTrackedCwdIsResetNotWedged(t *testing.T) {
+	be := &cwdProbeBackend{probeExit: 1}
+	tool := &ShellExec{Router: newStrictBoxRouter(be)}
+	ctx := ctxWith(t, "sess-stale", "call-1")
+	tool.storeCwd(ctx, "/workspace/gone")
+
+	_, err := tool.Execute(ctx, json.RawMessage(`{"command":"ls"}`))
+	if err == nil {
+		t.Fatal("a vanished tracked cwd must surface as an error")
+	}
+	if !strings.Contains(err.Error(), "/workspace/gone") {
+		t.Fatalf("error must name the vanished directory: %v", err)
+	}
+	if got := tool.boxWorkdir(ctx, ""); got != "" {
+		t.Fatalf("tracked cwd = %q after the reset, want it dropped so the next call starts at the box default", got)
+	}
+}
+
+// The background arm resolves the same directory and had the same misclassification.
+func TestShellExec_BackgroundBadCwdIsAnArgumentError(t *testing.T) {
+	be := &cwdProbeBackend{probeExit: 1}
+	tool := &ShellExec{
+		Router:     newStrictBoxRouter(be),
+		Background: NewBackgroundShells(newStrictBoxRouter(be)),
+	}
+	raw, _ := json.Marshal(shellExecArgs{Command: "sleep 60", Cwd: "/workspace/nope", Background: true})
+	res, err := tool.Execute(ctxWith(t, "sess-bgcwd", "call-1"), raw)
+	if err == nil {
+		t.Fatalf("a background call with a bad cwd must error, got: %q", res.Preview)
+	}
+	if !strings.Contains(err.Error(), "/workspace/nope") {
+		t.Fatalf("error must name the offending directory: %v", err)
+	}
+}
+
+// TestSnippetUse_RendersSandboxPath: skill action=use renders the IN-BOX SandboxPath — the only
+// path shell_exec can reach — and calls NO backend.Exec (action=use only names the path for the
+// subsequent shell_exec).
+func TestSnippetUse_RendersSandboxPath(t *testing.T) {
 	loader := newFakeLoader()
 	loader.snippets = map[string]fakeSnippet{
 		"calc": {
 			instructions: "Adds two numbers.",
-			hostPath:     "/host/export/calc/calc.py",
 			sandboxPath:  "/skills/calc/calc.py",
 			interpreter:  "python3",
 		},
@@ -184,25 +298,13 @@ func TestSnippetUse_StrictRendersSandboxPath(t *testing.T) {
 	be := &fakeBoxBackend{}
 	ctx := ctxWith(t, "sess-snip", "call-snip")
 
-	strict := &SkillTool{Loader: loader, SandboxRouter: newStrictBoxRouter(be)}
-	res, err := strict.Execute(ctx, json.RawMessage(`{"action":"use","name":"calc"}`))
+	tool := &SkillTool{Loader: loader}
+	res, err := tool.Execute(ctx, json.RawMessage(`{"action":"use","name":"calc"}`))
 	if err != nil {
-		t.Fatalf("strict use: %v", err)
+		t.Fatalf("use: %v", err)
 	}
-	if !strings.Contains(res.Preview, "/skills/calc/calc.py") {
-		t.Fatalf("strict snippet use must render the SandboxPath: %q", res.Preview)
-	}
-	if strings.Contains(res.Preview, "/host/export/calc/calc.py") {
-		t.Fatalf("strict snippet use must NOT render the host path: %q", res.Preview)
-	}
-
-	lenient := &SkillTool{Loader: loader} // nil SandboxRouter → Strict()==false → host path
-	res2, err := lenient.Execute(ctx, json.RawMessage(`{"action":"use","name":"calc"}`))
-	if err != nil {
-		t.Fatalf("lenient use: %v", err)
-	}
-	if !strings.Contains(res2.Preview, "/host/export/calc/calc.py") {
-		t.Fatalf("lenient snippet use must render the host path: %q", res2.Preview)
+	if !strings.Contains(res.Preview, "python3 '/skills/calc/calc.py'") {
+		t.Fatalf("snippet use must render the quoted in-box path: %q", res.Preview)
 	}
 	if len(be.execCalls) != 0 {
 		t.Fatalf("action=use must call NO backend.Exec; got %d", len(be.execCalls))

@@ -6,7 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
+	pathpkg "path"
 	"strings"
 	"sync"
 )
@@ -33,12 +33,17 @@ func NewShellApprovals() *ShellApprovals {
 	}
 }
 
-// ShellApprovalDigest normalizes cwd with filepath.Clean before hashing (AG-018)
-// so cosmetic variants (/tmp vs /tmp/) yield one digest and an approved command
-// is not re-prompted on retry. An empty cwd stays empty (Clean would yield ".").
+// ShellApprovalDigest normalizes cwd before hashing (AG-018) so cosmetic variants (/tmp vs /tmp/)
+// yield one digest and an approved command is not re-prompted on retry. An empty cwd stays empty
+// (Clean would yield ".").
+//
+// path.Clean, not filepath.Clean: the cwd this hashes is the directory the command runs in, which is
+// a POSIX path INSIDE the box. filepath is the host's path package and on a Windows dev host it
+// rewrites "/workspace/sub" to "\workspace\sub" — host path semantics applied to a box path, the
+// same category of mistake the one-path collapse exists to remove.
 func ShellApprovalDigest(command, cwd string) string {
 	if strings.TrimSpace(cwd) != "" {
-		cwd = filepath.Clean(cwd)
+		cwd = pathpkg.Clean(cwd)
 	}
 	sum := sha256.Sum256([]byte(cwd + "\x00" + command))
 	return hex.EncodeToString(sum[:])

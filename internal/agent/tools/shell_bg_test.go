@@ -31,134 +31,101 @@ func pollOnce(ctx context.Context, t *testing.T, poll *ShellPoll, id, filter str
 	return res.Preview, st
 }
 
-// drain polls until the shell leaves the running state, returning the joined NEW
-// output chunks (footers stripped) and the final status. Fails on timeout.
-func drain(ctx context.Context, t *testing.T, poll *ShellPoll, id, filter string) (string, string) {
+// registerJob puts a job in the registry exactly the way startBox does — newShell + register —
+// but with no box behind it. usersandbox.ExecStreamHandle wraps a live moby client and cannot be
+// constructed without a daemon, and the registry semantics under test (incremental paging, the
+// concurrency cap, pruning, shutdown, poll/kill authority) do not depend on what the handle is.
+// The live runs-in-a-box proof is shell_bg_sandbox_docker_test.go.
+func registerJob(t *testing.T, bg *BackgroundShells, ctx context.Context, id string) *bgShell {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	var out strings.Builder
-	for {
-		body, status := pollOnce(ctx, t, poll, id, filter)
-		for ln := range strings.SplitSeq(body, "\n") {
-			if strings.HasPrefix(ln, "[aura_shell_bg ") || ln == "[no new output]" {
-				continue
-			}
-			out.WriteString(ln)
-			out.WriteByte('\n')
-		}
-		if status != "running" {
-			return out.String(), status
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("background shell %s still running after deadline; status=%s", id, status)
-		}
-		time.Sleep(20 * time.Millisecond)
+	sh := bg.newShell(ctx, id)
+	sh.cancel = func() {
+		sh.mu.Lock()
+		sh.done = true
+		sh.mu.Unlock()
 	}
+	if err := bg.register(id, sh); err != nil {
+		t.Fatalf("register %s: %v", id, err)
+	}
+	return sh
 }
 
-func TestBackgroundShell_StartPollComplete(t *testing.T) {
+// A poll returns only the output produced SINCE the last poll, then reports the final status —
+// the incremental read-off contract shell_poll's whole design rests on.
+func TestBackgroundShell_PollIsIncremental(t *testing.T) {
 	bg := NewBackgroundShells(nil)
-	sh := &ShellExec{Background: bg}
 	ctx := ctxWith(t, "sess-bg", "call-bg")
-
-	res, err := sh.Execute(ctx, bgArgs(t, "echo hello-bg"))
-	if err != nil {
-		t.Fatalf("background start: %v", err)
-	}
-	id, _ := (*res.Meta)["shell_id"].(string)
-	if id == "" {
-		t.Fatalf("no shell_id in meta: %#v", res.Meta)
-	}
-	if !strings.Contains(res.Preview, "background") {
-		t.Fatalf("preview missing background notice: %q", res.Preview)
+	sh := registerJob(t, bg, ctx, "job-inc")
+	if _, err := sh.Write([]byte("hello-bg\n")); err != nil {
+		t.Fatalf("write: %v", err)
 	}
 
 	poll := &ShellPoll{Shells: bg}
-	out, status := drain(ctx, t, poll, id, "")
-	if !strings.Contains(out, "hello-bg") {
-		t.Fatalf("polled output missing stdout: %q", out)
+	body, status := pollOnce(ctx, t, poll, "job-inc", "")
+	if !strings.Contains(body, "hello-bg") {
+		t.Fatalf("polled output missing job stdout: %q", body)
 	}
-	if status != "exited:0" {
-		t.Fatalf("status = %q, want exited:0", status)
+	if status != "running" {
+		t.Fatalf("status = %q, want running", status)
 	}
-	// A second poll after completion returns no NEW output (incremental read-off).
-	body, _ := pollOnce(ctx, t, poll, id, "")
+
+	// Nothing new since the last poll.
+	body, _ = pollOnce(ctx, t, poll, "job-inc", "")
 	if !strings.Contains(body, "[no new output]") {
 		t.Fatalf("second poll should report no new output, got %q", body)
+	}
+
+	sh.finish(&bgBoxExit{code: 0})
+	if _, status = pollOnce(ctx, t, poll, "job-inc", ""); status != "exited:0" {
+		t.Fatalf("status = %q, want exited:0", status)
 	}
 }
 
 func TestBackgroundShell_Filter(t *testing.T) {
-	if shellIsCmdFallback() {
-		t.Skip("cmd.exe fallback does not honor ';' command separation")
-	}
 	bg := NewBackgroundShells(nil)
-	sh := &ShellExec{Background: bg}
 	ctx := ctxWith(t, "sess-bgf", "call-bgf")
+	sh := registerJob(t, bg, ctx, "job-filter")
+	if _, err := sh.Write([]byte("keep-me\ndrop-me\n")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
 
-	res, err := sh.Execute(ctx, bgArgs(t, "echo keep-me; echo drop-me"))
-	if err != nil {
-		t.Fatalf("background start: %v", err)
+	body, _ := pollOnce(ctx, t, &ShellPoll{Shells: bg}, "job-filter", "keep")
+	if !strings.Contains(body, "keep-me") {
+		t.Fatalf("filtered output missing keep-me: %q", body)
 	}
-	id, _ := (*res.Meta)["shell_id"].(string)
-	poll := &ShellPoll{Shells: bg}
-	out, _ := drain(ctx, t, poll, id, "keep")
-	if !strings.Contains(out, "keep-me") {
-		t.Fatalf("filtered output missing keep-me: %q", out)
-	}
-	if strings.Contains(out, "drop-me") {
-		t.Fatalf("filter leaked a non-matching line: %q", out)
+	if strings.Contains(body, "drop-me") {
+		t.Fatalf("filter leaked a non-matching line: %q", body)
 	}
 }
 
 func TestBackgroundShell_Kill(t *testing.T) {
-	if shellIsCmdFallback() {
-		t.Skip("cmd.exe fallback has no sleep; kill needs a POSIX shell")
-	}
 	bg := NewBackgroundShells(nil)
-	sh := &ShellExec{Background: bg}
 	ctx := ctxWith(t, "sess-bgk", "call-bgk")
+	registerJob(t, bg, ctx, "job-kill")
 
-	res, err := sh.Execute(ctx, bgArgs(t, "sleep 5"))
-	if err != nil {
-		t.Fatalf("background start: %v", err)
-	}
-	id, _ := (*res.Meta)["shell_id"].(string)
 	poll := &ShellPoll{Shells: bg}
-	if _, status := pollOnce(ctx, t, poll, id, ""); status != "running" {
+	if _, status := pollOnce(ctx, t, poll, "job-kill", ""); status != "running" {
 		t.Fatalf("status = %q, want running", status)
 	}
-
-	kill := &ShellKill{Shells: bg}
-	if _, err := kill.Execute(ctx, mustJSON(t, map[string]string{"shell_id": id})); err != nil {
+	if _, err := (&ShellKill{Shells: bg}).Execute(ctx, mustJSON(t, map[string]string{"shell_id": "job-kill"})); err != nil {
 		t.Fatalf("shell_kill: %v", err)
 	}
-	deadline := time.Now().Add(backgroundKillWaitTimeout())
-	for {
-		if _, status := pollOnce(ctx, t, poll, id, ""); status != "running" {
-			return // killed well before the 5s sleep would have ended
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("killed shell still reports running after 2s")
-		}
-		time.Sleep(20 * time.Millisecond)
+	if _, status := pollOnce(ctx, t, poll, "job-kill", ""); status != "killed" {
+		t.Fatalf("status after kill = %q, want killed", status)
 	}
 }
 
 func TestBackgroundShellsCapRunningJobs(t *testing.T) {
-	if shellIsCmdFallback() {
-		t.Skip("cmd.exe fallback has no sleep; cap fixture needs a long-running command")
-	}
 	t.Setenv("AURA_SHELL_BG_MAX", "1")
 	bg := NewBackgroundShells(nil)
-	id, err := bg.start(context.Background(), "sleep 2", "", mergeEnv(nil))
-	if err != nil {
-		t.Fatalf("start first: %v", err)
-	}
-	defer func() { _ = bg.kill(id) }()
-	if _, err := bg.start(context.Background(), "sleep 2", "", mergeEnv(nil)); err == nil {
+	ctx := context.Background()
+	registerJob(t, bg, ctx, "job-1")
+
+	err := bg.register("job-2", bg.newShell(ctx, "job-2"))
+	if err == nil {
 		t.Fatal("want cap error for second running background shell")
-	} else if !strings.Contains(err.Error(), "cap") || !strings.Contains(err.Error(), "1") {
+	}
+	if !strings.Contains(err.Error(), "cap") || !strings.Contains(err.Error(), "1") {
 		t.Fatalf("cap error = %v, want mention cap 1", err)
 	}
 }
@@ -166,36 +133,19 @@ func TestBackgroundShellsCapRunningJobs(t *testing.T) {
 func TestBackgroundShellsPrunesFinishedBeforeCap(t *testing.T) {
 	t.Setenv("AURA_SHELL_BG_MAX", "1")
 	bg := NewBackgroundShells(nil)
-	id, err := bg.start(context.Background(), "echo done", "", mergeEnv(nil))
-	if err != nil {
-		t.Fatalf("start first: %v", err)
-	}
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if sh, ok := bg.get(id); ok {
-			sh.mu.Lock()
-			done := sh.done
-			sh.mu.Unlock()
-			if done {
-				break
-			}
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	if _, err := bg.start(context.Background(), "echo second", "", mergeEnv(nil)); err != nil {
+	ctx := context.Background()
+	sh := registerJob(t, bg, ctx, "job-first")
+	sh.finish(&bgBoxExit{code: 0})
+
+	if err := bg.register("job-second", bg.newShell(ctx, "job-second")); err != nil {
 		t.Fatalf("finished shell should be pruned before cap check: %v", err)
 	}
 }
 
 func TestBackgroundShellsShutdownKillsRunning(t *testing.T) {
-	if shellIsCmdFallback() {
-		t.Skip("cmd.exe fallback has no sleep; shutdown fixture needs a long-running command")
-	}
 	bg := NewBackgroundShells(nil)
-	id, err := bg.start(context.Background(), "sleep 30", "", mergeEnv(nil))
-	if err != nil {
-		t.Fatalf("start: %v", err)
-	}
+	const id = "job-shutdown"
+	registerJob(t, bg, context.Background(), id)
 	ctx, cancel := context.WithTimeout(context.Background(), backgroundKillWaitTimeout())
 	defer cancel()
 	if err := bg.Shutdown(ctx); err != nil {
@@ -292,7 +242,8 @@ func TestShellPollRedactsModelPreview(t *testing.T) {
 func TestBackgroundShell_Errors(t *testing.T) {
 	ctx := ctxWith(t, "sess-bge", "call-bge")
 
-	if _, err := (&ShellExec{}).Execute(ctx, bgArgs(t, "echo x")); err == nil {
+	noRegistry := &ShellExec{Router: newStrictBoxRouter(&fakeBoxBackend{})}
+	if _, err := noRegistry.Execute(ctx, bgArgs(t, "echo x")); err == nil {
 		t.Fatal("expected an error when the Background registry is nil")
 	}
 	bg := NewBackgroundShells(nil)

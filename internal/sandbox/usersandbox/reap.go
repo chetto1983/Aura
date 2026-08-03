@@ -21,7 +21,9 @@ import (
 // the next Route re-resolves and transparently auto-resumes it (D-08), and it is not re-swept
 // while stopped. A Suspend error is terminal for this sweep — the count so far is returned for
 // the handler's summary; the dispatcher records the error and the next tick re-evaluates the
-// rest of the idle set. A nil router is a safe no-op (0 suspended).
+// rest of the idle set. A nil router, or one with no backend, is a safe no-op (0 suspended):
+// the composition root deliberately builds backend-less routers when the Docker client cannot be
+// composed, and a reaper tick against one of those must not dereference a nil backend below.
 //
 // A non-positive AURA_SANDBOX_IDLE_TTL_SEC DISABLES the sweep, matching every other `<=0 turns
 // it off` knob in the codebase (AURA_MCP_PING_INTERVAL_SEC, AURA_AGUI_SSE_HEARTBEAT_SEC,
@@ -30,7 +32,7 @@ import (
 // suspends everything on every tick instead — the single-user appliance case, where the box
 // should simply stay warm and there is no co-tenant to reclaim memory from.
 func (r *SandboxRouter) SuspendIdle(ctx context.Context, now time.Time) (int, error) {
-	if r == nil {
+	if r == nil || r.backend == nil {
 		return 0, nil
 	}
 	ttl := time.Duration(r.cfg.IdleTTLSec) * time.Second

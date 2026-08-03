@@ -3,6 +3,7 @@ package usersandbox
 import (
 	"bytes"
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/config"
@@ -33,9 +34,9 @@ func TestRouterExec_Passthrough(t *testing.T) {
 	}
 }
 
-// TestRouterOptionalCaps_FailClosed covers CopyArtifactOut / WriteFile / ExecStream: a core-only
-// backend does not satisfy the optional capability, so each returns a fail-CLOSED error (never a
-// host fallback). The nil router hits the same backendAs guard.
+// TestRouterOptionalCaps_FailClosed covers CopyArtifactOut / WriteFile / WriteFileStream /
+// ExecStream: a core-only backend does not satisfy the optional capability, so each returns a
+// fail-CLOSED error (never a host fallback). The nil router hits the same backendAs guard.
 func TestRouterOptionalCaps_FailClosed(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -48,8 +49,22 @@ func TestRouterOptionalCaps_FailClosed(t *testing.T) {
 		if err := r.WriteFile(ctx, h, "/workspace/in.txt", []byte("x")); err == nil {
 			t.Fatal("WriteFile without the capability: want error, got nil")
 		}
+		if err := r.WriteFileStream(ctx, h, "/workspace/in.txt", 1, strings.NewReader("x")); err == nil {
+			t.Fatal("WriteFileStream without the capability: want error, got nil")
+		}
 		if _, err := r.ExecStream(ctx, h, ExecRequest{Command: "true"}, &bytes.Buffer{}); err == nil {
 			t.Fatal("ExecStream without the capability: want error, got nil")
 		}
 	}
 }
+
+// The four optional capabilities are resolved by STRUCTURAL type-assertion, so a drifted method
+// signature on DockerBackend does not break the build — it silently degrades every routed tool to
+// "sandbox backend does not support X" at call time, which reads like a code bug and is invisible
+// until an operator hits it. These assertions turn that into a compile error.
+var (
+	_ artifactCopier         = (*DockerBackend)(nil)
+	_ fileWriter             = (*DockerBackend)(nil)
+	_ fileStreamWriter       = (*DockerBackend)(nil)
+	_ backgroundExecStreamer = (*DockerBackend)(nil)
+)

@@ -10,7 +10,7 @@ import (
 
 func TestShellExecDestructivePatternRequiresApproval(t *testing.T) {
 	t.Setenv("AURA_SHELL_DESTRUCTIVE_PATTERNS", `(?i)\brm\s+-rf\b`)
-	tool := &ShellExec{Approvals: NewShellApprovals()}
+	tool := &ShellExec{Approvals: NewShellApprovals(), Router: newStrictBoxRouter(&fakeBoxBackend{})}
 	ctx := ctxWith(t, "sess-shell-gate", "call-shell-gate")
 
 	res, err := tool.Execute(ctx, json.RawMessage(`{"command":"rm -rf /tmp/aura-never-run"}`))
@@ -44,7 +44,7 @@ func TestShellExecDestructivePatternRequiresApproval(t *testing.T) {
 
 func TestShellExecDestructiveBackgroundRequiresApproval(t *testing.T) {
 	t.Setenv("AURA_SHELL_DESTRUCTIVE_PATTERNS", `(?i)\becho\s+danger\b`)
-	tool := &ShellExec{Approvals: NewShellApprovals(), Background: NewBackgroundShells(nil)}
+	tool := &ShellExec{Approvals: NewShellApprovals(), Background: NewBackgroundShells(nil), Router: newStrictBoxRouter(&fakeBoxBackend{})}
 	ctx := ctxWith(t, "sess-shell-bg-gate", "call-shell-bg-gate")
 
 	res, err := tool.Execute(ctx, mustJSON(t, map[string]any{
@@ -65,7 +65,7 @@ func TestShellExecDestructiveBackgroundRequiresApproval(t *testing.T) {
 func TestShellExecDestructiveApprovalIsOneShot(t *testing.T) {
 	t.Setenv("AURA_SHELL_DESTRUCTIVE_PATTERNS", `(?i)\becho\s+danger\b`)
 	approvals := NewShellApprovals()
-	tool := &ShellExec{Approvals: approvals}
+	tool := &ShellExec{Approvals: approvals, Router: echoingBoxRouter()}
 	ctx := ctxWith(t, "sess-shell-ok", "call-shell-ok")
 	command := "echo danger"
 	digest := ShellApprovalDigest(command, "")
@@ -113,11 +113,14 @@ func TestShellApprovalConcurrentConsumeIsOneShot(t *testing.T) {
 func TestShellExecDestructiveApprovalIsBoundToExactCwd(t *testing.T) {
 	t.Setenv("AURA_SHELL_DESTRUCTIVE_PATTERNS", `(?i)\becho\s+cwd-bound\b`)
 	approvals := NewShellApprovals()
-	tool := &ShellExec{Approvals: approvals}
+	tool := &ShellExec{Approvals: approvals, Router: echoingBoxRouter()}
 	ctx := ctxWith(t, "sess-shell-cwd", "call-shell-cwd")
 	command := "echo cwd-bound"
-	exactCwd := t.TempDir()
-	wrongCwd := t.TempDir()
+	// Box paths, not t.TempDir(): the digest binds the approval to the directory the command
+	// actually runs in, and that is a POSIX path inside the box. Host temp dirs used to be the
+	// subject here and are now a directory the command can never enter.
+	exactCwd := "/workspace/exact"
+	wrongCwd := "/workspace/wrong"
 
 	approvals.Approve("sess-shell-cwd", ShellApprovalDigest(command, wrongCwd))
 	res, err := tool.Execute(ctx, mustJSON(t, map[string]string{"command": command, "cwd": exactCwd}))
@@ -141,7 +144,7 @@ func TestShellExecDestructiveApprovalIsBoundToExactCwd(t *testing.T) {
 func TestShellExecDestructiveApprovalUsesNormalizedCRLFDigest(t *testing.T) {
 	t.Setenv("AURA_SHELL_DESTRUCTIVE_PATTERNS", `(?i)\becho\s+crlf\b`)
 	approvals := NewShellApprovals()
-	tool := &ShellExec{Approvals: approvals}
+	tool := &ShellExec{Approvals: approvals, Router: echoingBoxRouter()}
 	ctx := ctxWith(t, "sess-shell-crlf-digest", "call-shell-crlf-digest")
 	rawCommand := "echo crlf\r\n"
 	normalizedCommand := strings.ReplaceAll(rawCommand, "\r\n", "\n")
@@ -167,7 +170,7 @@ func TestShellApprovalDigestDoesNotTrimInputs(t *testing.T) {
 
 func TestShellExecDestructivePatternNilApprovalsFailsClosed(t *testing.T) {
 	t.Setenv("AURA_SHELL_DESTRUCTIVE_PATTERNS", `(?i)\becho\s+danger\b`)
-	tool := &ShellExec{}
+	tool := &ShellExec{Router: newStrictBoxRouter(&fakeBoxBackend{})}
 	ctx := ctxWith(t, "sess-shell-nil", "call-shell-nil")
 
 	res, err := tool.Execute(ctx, json.RawMessage(`{"command":"echo danger"}`))
@@ -181,7 +184,7 @@ func TestShellExecDestructivePatternNilApprovalsFailsClosed(t *testing.T) {
 
 func TestShellExecDestructivePatternInvalidRegexReturnsError(t *testing.T) {
 	t.Setenv("AURA_SHELL_DESTRUCTIVE_PATTERNS", `[`)
-	tool := &ShellExec{Approvals: NewShellApprovals()}
+	tool := &ShellExec{Approvals: NewShellApprovals(), Router: newStrictBoxRouter(&fakeBoxBackend{})}
 	ctx := ctxWith(t, "sess-shell-bad-pattern", "call-shell-bad-pattern")
 
 	_, err := tool.Execute(ctx, json.RawMessage(`{"command":"echo hello"}`))

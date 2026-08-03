@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"strings"
 )
 
@@ -90,12 +89,13 @@ func (t *SkillTool) actionInfo(ctx context.Context, raw json.RawMessage) (ToolRe
 }
 
 // actionUse applies a skill (D-08). For a SNIPPET (type:snippet) it renders the docs instructions +
-// a by-path invocation + the interpreter so the model runs it via shell_exec. Under a STRICT
-// profile it renders the IN-BOX SandboxPath (the routed shell_exec then runs the snippet the box
-// materialized at /skills/<name>/..., D-10); otherwise it renders the HOST export-dir path (D-01
-// host-primary). action=use EXECUTES NOTHING itself (no backend.Exec) — it only chooses which path
-// the subsequent shell_exec runs. For an instruction skill it returns the body wrapped in the
-// authority frame. The body is delivered via NewResult so a large skill pages through the sidecar.
+// a by-path invocation + the interpreter so the model runs it via shell_exec. The path rendered is
+// ALWAYS the IN-BOX one (/skills/<name>/<name>.<ext>, where MaterializeIn lands the snippet, D-10)
+// because shell_exec only runs inside the box: the host export-dir copy is a real file the agent
+// can never reach, and handing the model a path nobody it can talk to looks at is exactly the
+// defect that motivated the one-path collapse. action=use EXECUTES NOTHING itself. For an
+// instruction skill it returns the body wrapped in the authority frame, via NewResult so a large
+// skill pages through the sidecar.
 func (t *SkillTool) actionUse(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
 	if t.Loader == nil {
 		return ToolResult{}, fmt.Errorf("skill use: no skill loader configured")
@@ -108,12 +108,8 @@ func (t *SkillTool) actionUse(ctx context.Context, raw json.RawMessage) (ToolRes
 	if name == "" {
 		return ToolResult{}, fmt.Errorf("skill use: name is required")
 	}
-	if instructions, hostPath, sandboxPath, interpreter, ok := t.Loader.Snippet(name); ok {
-		path := hostPath
-		if t.SandboxRouter.Strict() {
-			path = sandboxPath
-		}
-		return NewResult(ctx, renderSnippetUse(instructions, path, interpreter))
+	if instructions, sandboxPath, interpreter, ok := t.Loader.Snippet(name); ok {
+		return NewResult(ctx, renderSnippetUse(instructions, sandboxPath, interpreter))
 	}
 	body, ok := t.Loader.Body(name)
 	if !ok {
@@ -122,13 +118,12 @@ func (t *SkillTool) actionUse(ctx context.Context, raw json.RawMessage) (ToolRes
 	return NewResult(ctx, UseAuthorityFrame+body)
 }
 
-// renderSnippetUse frames a snippet's by-path invocation for the model: the
-// instructions, then a shell_exec call running the snippet at runPath. It names
-// shell_exec and no other tool — actionUse has already chosen runPath (host export
-// dir, or the in-box path under a strict profile), and which side of that boundary
-// the call lands on is the deployment's decision, not the model's (amendment #96).
-// The literal command shape ("<interpreter> '<runPath>'") mirrors the shell_exec arg
-// schema so the model assembles a correct call.
+// renderSnippetUse frames a snippet's by-path invocation for the model: the instructions, then a
+// shell_exec call running the snippet at its in-box path. It names shell_exec and no other tool
+// (amendment #96). The literal command shape ("<interpreter> '<runPath>'") mirrors the shell_exec
+// arg schema so the model assembles a correct call. Quoting goes through shellQuoteArg — runPath
+// is a POSIX box path now, so the Windows-path normalization the old host-path quoter carried is
+// guarding an input that can no longer be constructed.
 func renderSnippetUse(instructions, runPath, interpreter string) string {
 	var b strings.Builder
 	b.WriteString(UseAuthorityFrame)
@@ -137,22 +132,8 @@ func renderSnippetUse(instructions, runPath, interpreter string) string {
 		b.WriteString("\n")
 	}
 	fmt.Fprintf(&b, "Run this stored snippet by path with shell_exec: command=%q (append further args as needed).\n",
-		interpreter+" "+shellQuotePath(runPath))
+		interpreter+" "+shellQuoteArg(runPath))
 	return b.String()
-}
-
-// shellQuotePath makes a snippet path safe to paste into the shell_exec command
-// the model runs (WR-04). shell_exec ALWAYS runs through bash -c (Git Bash on
-// Windows), where a Windows path with backslashes (C:\Users\...) mangles on \U/\n
-// escapes and a path under a spaced dir (C:\Program Files\...) word-splits. Normalize
-// to forward slashes (filepath.ToSlash for the host OS, plus an explicit backslash
-// fold so a path produced on a Windows host stays forward-slashed even when this runs
-// on a POSIX host — Git Bash accepts forward-slash drive paths, mirroring runner.go's
-// announced-workspace ToSlash treatment) and single-quote so spaces are safe; an
-// embedded single quote is escaped the POSIX way ('\”).
-func shellQuotePath(p string) string {
-	slashed := strings.ReplaceAll(filepath.ToSlash(p), `\`, "/")
-	return "'" + strings.ReplaceAll(slashed, "'", `'\''`) + "'"
 }
 
 // requireBody resolves the `name` arg and fetches the skill body, returning a

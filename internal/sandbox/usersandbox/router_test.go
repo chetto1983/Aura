@@ -11,12 +11,10 @@ import (
 )
 
 // fakeBackend is a Backend double for the router unit tests. It records the specs passed to
-// Resolve and the handles passed to Suspend, and can be told either to fail Resolve (the
-// fail-CLOSED path) or to fatally fail the test if Resolve is ever called (the dev-no-op path,
-// which must never touch the backend).
+// Resolve and the handles passed to Suspend, and can be told to fail Resolve (the fail-CLOSED
+// path).
 type fakeBackend struct {
 	t          *testing.T
-	failIfUsed bool
 	resolveErr error
 
 	resolved  []SandboxSpec
@@ -24,9 +22,6 @@ type fakeBackend struct {
 }
 
 func (f *fakeBackend) Resolve(_ context.Context, spec SandboxSpec) (BoxHandle, error) {
-	if f.failIfUsed {
-		f.t.Fatalf("backend.Resolve must not be called under a lenient profile (host-direct no-op, SC-4)")
-	}
 	f.resolved = append(f.resolved, spec)
 	if f.resolveErr != nil {
 		return BoxHandle{}, f.resolveErr
@@ -57,43 +52,43 @@ func unitSandboxConfig() config.SandboxConfig {
 	}
 }
 
-// TestRoute_DevNoOp proves Route is a host-direct no-op under both lenient profiles — it returns
-// (zero handle, routed=false, nil) and NEVER touches the backend (failIfUsed fatals the test if
-// Resolve is called). This is the exact gateway.Decide short-circuit (SC-4 / T-37-05-DEVLEAK).
-func TestRoute_DevNoOp(t *testing.T) {
-	for _, p := range []config.RuntimeProfile{config.ProfileDev, config.ProfileLocalTrusted} {
+// TestRoute_EveryProfileRoutes replaces the former TestRoute_DevNoOp, which pinned the opposite
+// behaviour: dev and local_trusted used to short-circuit Route into a host-direct no-op. That arm
+// was deliberately removed — the box is the only filesystem and the only shell now — so the test
+// is inverted rather than adapted: under EVERY profile Route must resolve a real box.
+func TestRoute_EveryProfileRoutes(t *testing.T) {
+	for _, p := range []config.RuntimeProfile{
+		config.ProfileDev,
+		config.ProfileLocalTrusted,
+		config.ProfileSingleUserHardened,
+		config.ProfileServerProduction,
+	} {
 		t.Run(string(p), func(t *testing.T) {
-			be := &fakeBackend{t: t, failIfUsed: true}
+			be := &fakeBackend{t: t}
 			r := NewSandboxRouter(be, p, unitSandboxConfig())
-			h, routed, err := r.Route(context.Background())
+			h, err := r.Route(context.Background())
 			if err != nil {
 				t.Fatalf("Route err = %v, want nil", err)
 			}
-			if routed {
-				t.Fatalf("routed = true, want false (host-direct no-op under %s)", p)
+			if len(be.resolved) != 1 {
+				t.Fatalf("resolved %d specs under %s, want 1 — a profile must never bypass the box", len(be.resolved), p)
 			}
-			if h != (BoxHandle{}) {
-				t.Fatalf("handle = %+v, want zero", h)
-			}
-			if r.Strict() {
-				t.Fatalf("Strict() = true under %s, want false", p)
+			if h.ContainerID == "" {
+				t.Fatalf("handle = %+v, want a live box handle", h)
 			}
 		})
 	}
 }
 
-// TestRoute_FailClosed proves a box-create failure under a strict profile returns
-// (zero handle, routed=TRUE, err): the fail-CLOSED containment invariant (D-09/GATE-01). routed
-// stays true so the tool DENIES — it must never read routed=false and fall back to the host.
+// TestRoute_FailClosed proves a box-create failure returns (zero handle, err): the fail-CLOSED
+// containment invariant (D-09/GATE-01). The caller DENIES on that error — there is no host arm
+// for it to fall back to.
 func TestRoute_FailClosed(t *testing.T) {
 	sentinel := errors.New("box create boom")
 	be := &fakeBackend{t: t, resolveErr: sentinel}
 	r := NewSandboxRouter(be, config.ProfileSingleUserHardened, unitSandboxConfig())
 
-	h, routed, err := r.Route(context.Background())
-	if !routed {
-		t.Fatalf("routed = false on box failure, want TRUE (fail-CLOSED must signal routed so the tool denies)")
-	}
+	h, err := r.Route(context.Background())
 	if !errors.Is(err, sentinel) {
 		t.Fatalf("err = %v, want %v", err, sentinel)
 	}
@@ -102,21 +97,39 @@ func TestRoute_FailClosed(t *testing.T) {
 	}
 }
 
-// TestRoute_MissingBackendFailsClosed covers strict composition failures before a concrete
-// backend exists. A strict router with no backend remains a containment boundary: routed=true
-// plus an error, never the routed=false host-direct signal reserved for lenient profiles.
+// TestRoute_MissingBackendFailsClosed covers a composition failure before a concrete backend
+// exists. Such a router stays a containment boundary: an error, never a usable handle.
 func TestRoute_MissingBackendFailsClosed(t *testing.T) {
 	r := NewSandboxRouter(nil, config.ProfileServerProduction, unitSandboxConfig())
 
-	h, routed, err := r.Route(context.Background())
-	if !routed {
-		t.Fatal("routed = false with a missing strict backend, want true so the tool denies")
-	}
+	h, err := r.Route(context.Background())
 	if err == nil {
-		t.Fatal("Route error = nil with a missing strict backend, want containment error")
+		t.Fatal("Route error = nil with a missing backend, want containment error")
 	}
 	if h != (BoxHandle{}) {
 		t.Fatalf("handle = %+v, want zero on missing backend", h)
+	}
+}
+
+// TestRoute_ZeroValueRouterDeniesWithoutPanicking guards a hazard the collapse created. Only
+// NewSandboxRouter allocates lastUsed/handles; the deleted non-strict short-circuit used to
+// return before Route ever wrote them, so a zero-value &SandboxRouter{} survived by accident.
+// Without the merged nil-receiver/nil-backend guard it would now nil-map-panic instead of denying.
+func TestRoute_ZeroValueRouterDeniesWithoutPanicking(t *testing.T) {
+	h, err := (&SandboxRouter{}).Route(context.Background())
+	if !errors.Is(err, errBackendUnavailable) {
+		t.Fatalf("err = %v, want errBackendUnavailable", err)
+	}
+	if h != (BoxHandle{}) {
+		t.Fatalf("handle = %+v, want zero", h)
+	}
+
+	var nilRouter *SandboxRouter
+	if _, err := nilRouter.Route(context.Background()); !errors.Is(err, errBackendUnavailable) {
+		t.Fatalf("nil receiver err = %v, want errBackendUnavailable", err)
+	}
+	if n, err := (&SandboxRouter{}).SuspendIdle(context.Background(), time.Now()); n != 0 || err != nil {
+		t.Fatalf("SuspendIdle on a backend-less router = (%d, %v), want (0, nil)", n, err)
 	}
 }
 
@@ -126,9 +139,9 @@ func TestRoute_LocalFallback(t *testing.T) {
 	be := &fakeBackend{t: t}
 	r := NewSandboxRouter(be, config.ProfileSingleUserHardened, unitSandboxConfig())
 
-	h, routed, err := r.Route(context.Background()) // empty identityctx → local fallback
-	if err != nil || !routed {
-		t.Fatalf("Route = (%+v, %v, %v), want routed no-err", h, routed, err)
+	h, err := r.Route(context.Background()) // empty identityctx → local fallback
+	if err != nil {
+		t.Fatalf("Route = (%+v, %v), want a live handle and no error", h, err)
 	}
 	if len(be.resolved) != 1 {
 		t.Fatalf("resolved %d specs, want 1", len(be.resolved))
@@ -144,7 +157,7 @@ func TestRoute_LocalFallback(t *testing.T) {
 	be2 := &fakeBackend{t: t}
 	r2 := NewSandboxRouter(be2, config.ProfileSingleUserHardened, unitSandboxConfig())
 	ctx := identityctx.WithIdentityID(context.Background(), authID)
-	if _, _, err := r2.Route(ctx); err != nil {
+	if _, err := r2.Route(ctx); err != nil {
 		t.Fatalf("Route(auth) err = %v", err)
 	}
 	if got := be2.resolved[0].IdentityID; got != authID {
@@ -169,7 +182,7 @@ func TestSuspendIdle_NonPositiveTTLKeepsBoxesWarm(t *testing.T) {
 		cfg.IdleTTLSec = ttl
 		r := NewSandboxRouter(be, config.ProfileSingleUserHardened, cfg)
 		r.now = func() time.Time { return base }
-		if _, _, err := r.Route(context.Background()); err != nil {
+		if _, err := r.Route(context.Background()); err != nil {
 			t.Fatalf("ttl=%d: Route err = %v", ttl, err)
 		}
 		// Far past any plausible TTL: still nothing, because the sweep is off.
@@ -194,7 +207,7 @@ func TestRoute_IdleBump(t *testing.T) {
 	r := NewSandboxRouter(be, config.ProfileSingleUserHardened, cfg)
 	r.now = func() time.Time { return base }
 
-	if _, _, err := r.Route(context.Background()); err != nil {
+	if _, err := r.Route(context.Background()); err != nil {
 		t.Fatalf("Route err = %v", err)
 	}
 

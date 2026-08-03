@@ -59,10 +59,11 @@ type chatEnv struct {
 	shareSvc    *share.Service
 	toolHandles runtimeToolHandles
 	mcpClosers  []func() error
-	// sandboxRouter is the per-identity box routing seam (Phase 37, plan 37-05). It is nil only
-	// under a non-strict profile. Strict composition failures keep a non-nil, fail-closed router
-	// so tools cannot fall back to the host. buildDispatch registers it as the KindSandboxReap
-	// reaper; plan 37-07 wires it onto the box-capable tools.
+	// sandboxRouter is the per-identity box routing seam (Phase 37, plan 37-05) and the ONLY
+	// execution path for shell_exec and the fs_* tools. buildSandboxRouter never returns nil: a
+	// composition failure yields a backend-less router whose every Route denies, because nil
+	// would be read as "no containment needed". buildDispatch registers it as the
+	// KindSandboxReap reaper; plan 37-07 wires it onto the box-capable tools.
 	sandboxRouter *usersandbox.SandboxRouter
 }
 
@@ -365,8 +366,8 @@ func assembleChatEnv(
 
 	// The per-identity box router (Phase 37) is built ONCE here so the SAME instance backs both the
 	// box-capable tools (routed below at registry construction, plan 37-07) AND the idle-suspend
-	// reaper (buildDispatch reads chat.sandboxRouter). Nil only under a non-strict profile;
-	// strict Docker composition failures remain routed and fail closed (GATE-01).
+	// reaper (buildDispatch reads chat.sandboxRouter). Never nil: an unreachable Docker daemon
+	// yields a router that denies every call, which is the containment answer (GATE-01).
 	sandboxRouter := buildSandboxRouter(cfg)
 
 	// The live `task` tool persists against the open pool (10-05 deviation #3): both

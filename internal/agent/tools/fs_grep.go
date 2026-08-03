@@ -7,25 +7,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/fs"
-	"os"
 	pathpkg "path"
-	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 )
 
-// FSGrep searches file contents for a regexp across a directory tree, in-process.
-//
-// Router mirrors fs_read/fs_write: under a strict profile the tree searched is the one INSIDE the
-// per-identity box, never the host's. Only the file READ moves — the pattern is still compiled and
-// matched by Go's RE2 on both paths, so a routed search cannot report different matches from a
-// host search over the same tree (fix plan 2.5).
+// FSGrep searches file contents for a regexp across the tree INSIDE the caller's per-identity
+// box. There is no host arm: a box that cannot be reached fails CLOSED (D-09/GATE-01). Only the
+// file READ happens in the box — the pattern is compiled and matched by Go's RE2, so handing a
+// pattern to the box's GNU grep can never quietly swap the regexp dialect underneath the tool.
+// This file deliberately imports neither os, io/fs nor path/filepath.
 type FSGrep struct {
-	WorkspaceRoot string
-	Router        *usersandbox.SandboxRouter
+	Router *usersandbox.SandboxRouter
 }
 
 type fsGrepArgs struct {
@@ -42,7 +37,7 @@ func (t *FSGrep) Spec() Spec {
   "type": "object",
   "properties": {
     "pattern": {"type": "string", "description": "Go/RE2 regular expression to search for in file contents."},
-    "path": {"type": "string", "description": "Optional file or directory to search. Defaults to the workspace root."},
+    "path": {"type": "string", "description": "Optional file or directory to search inside your workspace container. Defaults to /workspace."},
     "glob": {"type": "string", "description": "Optional glob filter. A plain glob ('*.go') matches the filename; a path glob with ** ('**/*.go') matches the path and crosses directories, like fs_glob."},
     "max_results": {"type": "integer", "minimum": 1, "description": "Optional cap on matching lines returned (default 200)."}
   },
@@ -76,99 +71,37 @@ func (t *FSGrep) Execute(ctx context.Context, raw json.RawMessage) (ToolResult, 
 	if maxResults <= 0 {
 		maxResults = defaultGrepMax
 	}
-	// Route decision BEFORE the host root is resolved or walked: routed ⇒ search in-box;
-	// routed+err ⇒ deny (fail-CLOSED, D-09/GATE-01), never a host walk fallback.
-	boxHandle, routed, routeErr := t.Router.Route(ctx)
-	if routed && routeErr != nil {
+	root, err := boxPathArg("fs_grep", a.Path)
+	if err != nil {
+		return ToolResult{}, err
+	}
+
+	// Pattern compilation, the result cap and the root resolution run BEFORE the route: an invalid
+	// regexp is the model's own error and must read as one, not as a box round-trip that failed
+	// obscurely.
+	boxHandle, routeErr := t.Router.Route(ctx)
+	if routeErr != nil {
 		return sandboxUnavailableResult("fs_grep", routeErr), nil
 	}
-	if routed {
-		return t.grepInBox(ctx, boxHandle, a, re, maxResults)
-	}
-
-	root := rootOrDefault(t.WorkspaceRoot, a.Path)
-
-	budget := newWalkBudget(ctx)
-	var truncated bool
-	var out []string
-	walkErr := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
-		if budget.step() {
-			truncated = true
-			return filepath.SkipAll
-		}
-		if err != nil {
-			return nil // unreadable entry: skip, don't abort the whole walk
-		}
-		if d.IsDir() {
-			if p != root && skipWalkDir(d.Name()) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if a.Glob != "" {
-			rel, relErr := filepath.Rel(root, p)
-			if relErr != nil {
-				rel = p
-			}
-			if !globMatch(a.Glob, rel, d.Name()) {
-				return nil
-			}
-		}
-		grepFile(p, root, re, maxResults, &out)
-		if len(out) >= maxResults {
-			return filepath.SkipAll
-		}
-		return nil
-	})
-	if walkErr != nil {
-		return ToolResult{}, fmt.Errorf("fs_grep: %w", walkErr)
-	}
-	if len(out) == 0 {
-		return NewResult(ctx, withWalkTruncation("[no matches]", truncated))
-	}
-	return NewResult(ctx, withWalkTruncation(strings.Join(out, "\n"), truncated))
+	return t.grepInBox(ctx, boxHandle, root, a.Glob, re, maxResults)
 }
 
-func grepFile(path, root string, re *regexp.Regexp, maxResults int, out *[]string) {
-	f, err := os.Open(path)
-	if err != nil {
-		return
-	}
-	defer func() { _ = f.Close() }()
-
-	head := make([]byte, 512)
-	n, _ := f.Read(head)
-	if looksBinary(head[:n]) {
-		return
-	}
-	if _, err := f.Seek(0, 0); err != nil {
-		return
-	}
-
-	rel, relErr := filepath.Rel(root, path)
-	if relErr != nil {
-		rel = path
-	}
-	grepContent(f, filepath.ToSlash(rel), re, maxResults, out)
-}
-
-// grepInBox searches the box's files with the SAME compiled pattern. The whole sweep is one exec
-// (boxReadFiles), then every match decision is made here in Go. Nothing on this path touches the
-// host filesystem.
+// grepInBox searches the box's files with the compiled pattern. The whole sweep is one exec
+// (boxReadFiles), then every match decision is made here in Go.
 func (t *FSGrep) grepInBox(
 	ctx context.Context,
 	handle usersandbox.BoxHandle,
-	a fsGrepArgs,
+	root, glob string,
 	re *regexp.Regexp,
 	maxResults int,
 ) (ToolResult, error) {
-	files, truncated, err := boxReadFiles(ctx, t.Router, handle, boxRootOrDefault(a.Path))
+	files, truncated, err := boxReadFiles(ctx, t.Router, handle, root)
 	if err != nil {
 		return sandboxUnavailableResult("fs_grep", err), nil
 	}
 	var out []string
 	for _, f := range files {
-		if a.Glob != "" && !globMatch(a.Glob, f.Rel, pathpkg.Base(f.Rel)) {
+		if glob != "" && !globMatch(glob, f.Rel, pathpkg.Base(f.Rel)) {
 			continue
 		}
 		if looksBinary(f.Content) {
@@ -185,9 +118,9 @@ func (t *FSGrep) grepInBox(
 	return NewResult(ctx, withWalkTruncation(strings.Join(out, "\n"), truncated))
 }
 
-// grepContent is the ONE line-scanning implementation, shared by the host and in-box paths so a
-// routed search reports matches identically to a host one — same RE2 engine, same line numbering,
-// same truncation notice. Callers do the binary check and supply the display path.
+// grepContent is the ONE line-scanning implementation: same RE2 engine, same line numbering, same
+// truncation notice, whatever produced the bytes. The caller does the binary check and supplies
+// the display path.
 func grepContent(r io.Reader, rel string, re *regexp.Regexp, maxResults int, out *[]string) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)

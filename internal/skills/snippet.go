@@ -93,13 +93,12 @@ func SnippetSandboxPath(name string, lang SnippetLanguage) (string, error) {
 	return inSandboxSkillsRoot + "/" + name + "/" + file, nil
 }
 
-// SnippetHostPath returns the HOST by-path target action=use hands out under D-01
-// (host-primary): exportDir/<name>/<name>.<ext>. It mirrors SnippetSandboxPath EXACTLY
-// (same snippetMetaByLang ext map, same structured ErrInvalidStructure for an unknown
-// language) but roots the path at AURA_SKILL_EXPORT_DIR via filepath.Join so the path
-// is OS-correct — it is the file the model runs through shell_exec on the host, not the
-// in-box /skills mount (which SnippetSandboxPath serves when a strict profile routes the
-// run into the box).
+// SnippetHostPath returns the export-dir target exportDir/<name>/<name>.<ext>. It mirrors
+// SnippetSandboxPath EXACTLY (same snippetMetaByLang ext map, same structured
+// ErrInvalidStructure for an unknown language) but roots the path at AURA_SKILL_EXPORT_DIR via
+// filepath.Join so it is OS-correct. The model is no longer handed this path — shell_exec runs
+// only in the box, so action=use renders SnippetSandboxPath — but the `aura skills snippet exec`
+// CLI verb still resolves through it, and it is the source MaterializeIn copies to /skills.
 func SnippetHostPath(name string, lang SnippetLanguage, exportDir string) (string, error) {
 	file, err := SnippetCodeFile(name, lang)
 	if err != nil {
@@ -118,23 +117,6 @@ func SnippetInvocation(name, language string) (sandboxPath, interpreter string, 
 		return "", "", lerr
 	}
 	path, perr := SnippetSandboxPath(name, lang)
-	if perr != nil {
-		return "", "", perr
-	}
-	return path, meta.interpreter, nil
-}
-
-// SnippetHostInvocation resolves a snippet's HOST by-path invocation from a (possibly
-// aliased) language string (D-01 host-primary): the host export-dir path the model runs
-// through shell_exec AND the interpreter. It is the loader-adapter entry point — it
-// validates the enum once and roots the path at exportDir (AURA_SKILL_EXPORT_DIR), the
-// same dir the Writer materializes into. An unknown language is a structured error.
-func SnippetHostInvocation(name, language, exportDir string) (hostPath, interpreter string, err error) {
-	lang, meta, lerr := validSnippetLanguage(language)
-	if lerr != nil {
-		return "", "", lerr
-	}
-	path, perr := SnippetHostPath(name, lang, exportDir)
 	if perr != nil {
 		return "", "", perr
 	}

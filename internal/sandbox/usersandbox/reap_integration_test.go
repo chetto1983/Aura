@@ -39,14 +39,14 @@ func TestReap_IdleSuspendAutoResume(t *testing.T) {
 	ctx := identityctx.WithIdentityID(context.Background(), id)
 
 	t.Cleanup(func() {
-		h, _, _ := router.Route(ctx) // ensure a live handle for a clean teardown
+		h, _ := router.Route(ctx) // ensure a live handle for a clean teardown
 		_ = backend.Stop(context.Background(), h)
 	})
 
 	// 1. Route creates + starts the box.
-	h1, routed, err := router.Route(ctx)
-	if err != nil || !routed {
-		t.Fatalf("Route(create) = (%+v, %v, %v), want routed no-err", h1, routed, err)
+	h1, err := router.Route(ctx)
+	if err != nil {
+		t.Fatalf("Route(create) = (%+v, %v), want a live handle and no error", h1, err)
 	}
 	if !containerRunning(t, cli, h1.ContainerID) {
 		t.Fatalf("box %s not running after create Route", h1.ContainerID)
@@ -69,9 +69,9 @@ func TestReap_IdleSuspendAutoResume(t *testing.T) {
 	}
 
 	// 3. The next Route transparently auto-resumes the SAME container (inline resume, D-08).
-	h2, routed, err := router.Route(ctx)
-	if err != nil || !routed {
-		t.Fatalf("Route(resume) = (%+v, %v, %v), want routed no-err", h2, routed, err)
+	h2, err := router.Route(ctx)
+	if err != nil {
+		t.Fatalf("Route(resume) = (%+v, %v), want a live handle and no error", h2, err)
 	}
 	if h2.ContainerID != h1.ContainerID {
 		t.Fatalf("resumed container = %s, want the SAME %s (re-created, not resumed)", h2.ContainerID, h1.ContainerID)

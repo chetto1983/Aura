@@ -8,31 +8,33 @@ import (
 	"testing"
 )
 
-// TestRenderSnippetUseHostFrame asserts the D-01 host-primary contract: the snippet
-// `use` frame instructs a shell_exec by-path run on the path actionUse resolved. The
-// frame names shell_exec and no other tool — the escalation clause it used to carry
-// named a tool deleted on 2026-06-10 (amendment #96).
-func TestRenderSnippetUseHostFrame(t *testing.T) {
+// The snippet `use` frame instructs a shell_exec by-path run on the path actionUse resolved, and
+// names shell_exec and no other tool (the escalation clause it used to carry named a tool deleted on
+// 2026-06-10, amendment #96). This was TestRenderSnippetUseHostFrame and fed it an export-dir HOST
+// path: shell_exec runs only in the box, so that file is real and unreachable — the two-filesystem
+// defect the one-path collapse exists to remove. The subject is the in-box path now; the assertions
+// are unchanged.
+func TestRenderSnippetUseFrame(t *testing.T) {
 	t.Parallel()
 	const (
-		instr  = "Adds two numbers."
-		host   = "/home/u/.aura/skills/export/calc/calc.py"
-		interp = "python3"
+		instr   = "Adds two numbers."
+		boxPath = "/skills/calc/calc.py"
+		interp  = "python3"
 	)
-	frame := renderSnippetUse(instr, host, interp)
+	frame := renderSnippetUse(instr, boxPath, interp)
 
 	if !strings.Contains(frame, "shell_exec") {
-		t.Fatalf("frame must name shell_exec (host-primary): %q", frame)
+		t.Fatalf("frame must name shell_exec: %q", frame)
 	}
-	if !strings.Contains(frame, interp) || !strings.Contains(frame, host) {
-		t.Fatalf("frame must carry the interpreter %q and host path %q: %q", interp, host, frame)
+	if !strings.Contains(frame, interp) || !strings.Contains(frame, boxPath) {
+		t.Fatalf("frame must carry the interpreter %q and in-box path %q: %q", interp, boxPath, frame)
 	}
 	if !strings.Contains(frame, instr) {
 		t.Fatalf("frame must carry the docs instructions: %q", frame)
 	}
 	// WR-04: the rendered command single-quotes the path so spaces are shell-safe.
-	if !strings.Contains(frame, "'"+host+"'") {
-		t.Fatalf("frame must single-quote the host path for shell safety: %q", frame)
+	if !strings.Contains(frame, "'"+boxPath+"'") {
+		t.Fatalf("frame must single-quote the path for shell safety: %q", frame)
 	}
 }
 
@@ -45,7 +47,7 @@ func TestRenderSnippetUseHostFrame(t *testing.T) {
 func TestSnippetFrameNamesNoUnservedTool(t *testing.T) {
 	t.Parallel()
 	allowed := map[string]bool{"shell_exec": true}
-	frame := renderSnippetUse("Adds two numbers.", "/home/u/skills/calc/calc.py", "python3")
+	frame := renderSnippetUse("Adds two numbers.", "/skills/calc/calc.py", "python3")
 
 	for _, tok := range regexp.MustCompile(`[a-z][a-z0-9]*(?:_[a-z0-9]+)+`).FindAllString(frame, -1) {
 		if !allowed[tok] {
@@ -54,34 +56,30 @@ func TestSnippetFrameNamesNoUnservedTool(t *testing.T) {
 	}
 }
 
-// TestRenderSnippetUseShellSafePath is the WR-04 regression: a Windows host path
-// (backslashes + a spaced parent dir) is normalized to forward slashes and single-
-// quoted in the rendered shell_exec command, so a bash -c (Git Bash) consumer does
-// not mangle \U/\n escapes or word-split on the space.
-func TestRenderSnippetUseShellSafePath(t *testing.T) {
+// TestRenderSnippetUseQuotesTheBoxPath is what remains of the WR-04 regression. The old test
+// pinned normalizing a Windows host path (C:\Program Files\...) to forward slashes, because
+// action=use used to hand the model the host export-dir copy. It renders the in-box POSIX path
+// now, so the only quoting that matters is the space/quote safety shellQuoteArg gives every other
+// box path.
+func TestRenderSnippetUseQuotesTheBoxPath(t *testing.T) {
 	t.Parallel()
-	const winPath = `C:\Program Files\aura\export\calc\calc.py`
-	frame := renderSnippetUse("Adds two numbers.", winPath, "python3")
-
-	if strings.Contains(frame, `\Program`) || strings.Contains(frame, `C:\`) {
-		t.Fatalf("frame must not carry backslashes (bash -c mangles them): %q", frame)
-	}
-	want := `'C:/Program Files/aura/export/calc/calc.py'`
-	if !strings.Contains(frame, want) {
-		t.Fatalf("frame must carry the forward-slashed, single-quoted path %q: %q", want, frame)
+	frame := renderSnippetUse("Adds two numbers.", "/skills/my calc/my calc.py", "python3")
+	if !strings.Contains(frame, `'/skills/my calc/my calc.py'`) {
+		t.Fatalf("frame must single-quote the box path so a space cannot word-split: %q", frame)
 	}
 }
 
-// TestActionUseSnippetEmitsHostFrame asserts action=use on an active snippet hands the
-// model the host shell_exec by-path frame, via the widened Snippet seam returning a
-// HOST path.
-func TestActionUseSnippetEmitsHostFrame(t *testing.T) {
+// TestActionUseSnippetEmitsBoxFrame asserts action=use on an active snippet hands the model the
+// shell_exec by-path frame naming the IN-BOX path. It used to assert the host export-dir path;
+// that file is real but unreachable from shell_exec, which is the defect the one-path collapse
+// removed rather than a preference.
+func TestActionUseSnippetEmitsBoxFrame(t *testing.T) {
 	t.Parallel()
 	loader := newFakeLoader()
 	loader.snippets = map[string]fakeSnippet{
 		"calc": {
 			instructions: "Adds two numbers.",
-			hostPath:     "/home/u/.aura/skills/export/calc/calc.py",
+			sandboxPath:  "/skills/calc/calc.py",
 			interpreter:  "python3",
 		},
 	}
@@ -93,9 +91,9 @@ func TestActionUseSnippetEmitsHostFrame(t *testing.T) {
 		t.Fatalf("use snippet: %v", err)
 	}
 	if !strings.Contains(res.Preview, "shell_exec") {
-		t.Fatalf("snippet use must emit a host shell_exec frame: %q", res.Preview)
+		t.Fatalf("snippet use must emit a shell_exec frame: %q", res.Preview)
 	}
-	if !strings.Contains(res.Preview, "/home/u/.aura/skills/export/calc/calc.py") {
-		t.Fatalf("snippet use must carry the host path: %q", res.Preview)
+	if !strings.Contains(res.Preview, "/skills/calc/calc.py") {
+		t.Fatalf("snippet use must carry the in-box path: %q", res.Preview)
 	}
 }

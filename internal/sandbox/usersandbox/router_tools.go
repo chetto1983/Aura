@@ -1,8 +1,8 @@
-// router_tools.go adds the tool-facing passthroughs the routed host tools (37-07) call AFTER
-// Route returns a live BoxHandle: Exec runs a command inside the box (shell_exec / fs_read),
-// CopyArtifactOut streams a /workspace artifact out (send_file), and WriteFile copies a file in
-// (fs_write). Copy-out and copy-in are resolved through a structural type-assertion on the
-// backend (backendAs) so the core Backend seam (backend.go) stays minimal — an E2B gateway
+// router_tools.go adds the tool-facing passthroughs the routed tools (37-07) call AFTER Route
+// returns a live BoxHandle: Exec runs a command inside the box (shell_exec / fs_read),
+// CopyArtifactOut streams a /workspace artifact out (send_file), and WriteFile / WriteFileStream
+// copy a file in (fs_write / document_open). Copy-out and copy-in are resolved through a structural
+// type-assertion on the backend (backendAs) so the core Backend seam (backend.go) stays minimal — an E2B gateway
 // backend opts into artifact/file transfer by implementing the SAME method set, and a backend
 // that does not support them yields a clean error the tool surfaces as a fail-CLOSED deny (never
 // a host fallback). A nil router / nil backend is a safe error everywhere.
@@ -43,6 +43,32 @@ func (r *SandboxRouter) CopyArtifactOut(ctx context.Context, h BoxHandle, boxPat
 	return co.CopyArtifactsOut(ctx, h, boxPath)
 }
 
+// runtimeChecker is the optional cheap liveness capability the /readyz probe needs. It answers
+// "could this backend produce a box" WITHOUT producing one.
+//
+// The distinction is load-bearing and was paid for. The probe first resolved a synthetic
+// identity's box, on the argument that only a real Resolve proves image pulls, the egress
+// sidecar and the cgroup caps all work. True, and far too expensive: /readyz is the aura
+// container's compose healthcheck, three services gate on it, and Resolve bumps lastUsed — so a
+// 30-second poll pinned a phantom box, its egress sidecar and its volume alive forever, per
+// deployment, and could never be idle-reaped.
+type runtimeChecker interface {
+	CheckRuntime(ctx context.Context) error
+}
+
+// CheckRuntime reports whether the box runtime is reachable and ready, creating nothing. It
+// catches the failures that actually take a deployment down — no daemon socket, no box image —
+// and deliberately does NOT catch a failure that only appears at container creation. Those
+// surface on the first real tool call as a fail-closed deny, which is a diagnosable error, not a
+// silent degradation.
+func (r *SandboxRouter) CheckRuntime(ctx context.Context) error {
+	c, ok := backendAs[runtimeChecker](r)
+	if !ok {
+		return fmt.Errorf("sandbox backend does not support a runtime check")
+	}
+	return c.CheckRuntime(ctx)
+}
+
 // fileWriter is the optional host→box copy-in capability fs_write's routed branch needs. The tar
 // copy-in (never an in-box heredoc) sidesteps ARG_MAX + quoting/binary limits an exec-based write
 // would hit for large content.
@@ -58,6 +84,24 @@ func (r *SandboxRouter) WriteFile(ctx context.Context, h BoxHandle, boxPath stri
 		return fmt.Errorf("sandbox backend does not support file write")
 	}
 	return w.CopyFileIn(ctx, h, boxPath, content, 0o644)
+}
+
+// fileStreamWriter is the optional host→box copy-in capability document_open needs: the same tar
+// copy-in, but reading from an io.Reader of known length instead of a []byte, so an operator's
+// stored document is never held whole in the aura process.
+type fileStreamWriter interface {
+	CopyFileInStream(ctx context.Context, h BoxHandle, boxPath string, size int64, src io.Reader, mode int64) error
+}
+
+// WriteFileStream copies exactly size bytes from src to boxPath inside the box (document_open). A
+// backend without streamed copy-in returns an error the tool surfaces as a failure, never a host
+// write. A source whose length disagrees with size fails rather than landing a short file.
+func (r *SandboxRouter) WriteFileStream(ctx context.Context, h BoxHandle, boxPath string, size int64, src io.Reader) error {
+	w, ok := backendAs[fileStreamWriter](r)
+	if !ok {
+		return fmt.Errorf("sandbox backend does not support streamed file write")
+	}
+	return w.CopyFileInStream(ctx, h, boxPath, size, src, 0o644)
 }
 
 // backgroundExecStreamer is the optional streamed/detached background-exec capability shell_bg's

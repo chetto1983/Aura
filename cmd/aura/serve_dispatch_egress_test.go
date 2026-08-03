@@ -45,21 +45,30 @@ func TestBuildSandboxRouterWiresEgress(t *testing.T) {
 		t.Fatal("default-loaded cfg must yield a non-empty EgressImage() — the SBX-04 floor is on-by-default (SC#4)")
 	}
 
-	// (3) A non-strict profile stays a host-direct no-op: buildSandboxRouter returns nil and never
-	// reaches the WithEgress / Docker-client path (SC-4). Mirrors TestBuildDispatchRegistersSandboxReap.
+	// (3) A non-strict profile ALSO gets a real router. This replaces the inverse assertion —
+	// buildSandboxRouter used to return nil for dev/local_trusted, which is exactly the
+	// host-fallback door the one-path collapse closed. A nil here would mean every tool call
+	// under the default profile runs outside the box.
 	nonStrict := &config.Config{
 		Profile: config.ProfileDev,
 		Sandbox: config.SandboxConfig{Image: "aura-sandbox:latest", EgressImage: "aura-egress:latest"},
 	}
-	if r := buildSandboxRouter(nonStrict); r != nil {
-		t.Fatal("buildSandboxRouter under a non-strict profile must be nil (host-direct no-op, no WithEgress path)")
+	if r := buildSandboxRouter(nonStrict); r == nil {
+		t.Fatal("buildSandboxRouter under a non-strict profile must still return a router — nil permits host execution")
+	}
+	// And a nil config denies rather than panicking or handing back nil.
+	nilCfgRouter := buildSandboxRouter(nil)
+	if nilCfgRouter == nil {
+		t.Fatal("buildSandboxRouter(nil) must return a denying router, not nil")
+	}
+	if _, err := nilCfgRouter.Route(context.Background()); err == nil {
+		t.Fatal("a config-less router must DENY, not resolve a box")
 	}
 }
 
 // TestBuildSandboxRouterStrictClientErrorFailsClosed proves the production composition root
-// cannot turn a strict profile into host-direct execution when the Docker client configuration is
-// invalid. The strict router must remain present and Route must report routed=true plus an error,
-// which tells every sandbox-aware tool to deny instead of executing on the host.
+// cannot turn a Docker-client configuration failure into host execution. The router must remain
+// present and Route must return an error, which tells every tool to deny.
 func TestBuildSandboxRouterStrictClientErrorFailsClosed(t *testing.T) {
 	t.Setenv("DOCKER_HOST", "invalid-docker-host")
 	cfg := &config.Config{
@@ -69,13 +78,10 @@ func TestBuildSandboxRouterStrictClientErrorFailsClosed(t *testing.T) {
 
 	router := buildSandboxRouter(cfg)
 	if router == nil {
-		t.Fatal("strict Docker client construction failure returned a nil router; that permits host fallback")
+		t.Fatal("Docker client construction failure returned a nil router; that permits host fallback")
 	}
-	handle, routed, err := router.Route(context.Background())
-	if !routed {
-		t.Fatal("strict Docker client construction failure returned routed=false; tool would execute on the host")
-	}
+	handle, err := router.Route(context.Background())
 	if err == nil {
-		t.Fatalf("Route = (%+v, %v, nil), want a containment error", handle, routed)
+		t.Fatalf("Route = (%+v, nil), want a containment error", handle)
 	}
 }

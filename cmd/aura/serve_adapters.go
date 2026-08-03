@@ -29,7 +29,6 @@ import (
 	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/runner"
-	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 	"github.com/chetto1983/aura/internal/scoring"
 	"github.com/chetto1983/aura/internal/skilladapters"
 	"github.com/chetto1983/aura/internal/skills"
@@ -320,13 +319,9 @@ func taskStorePool(ts *cronTaskStore) *pgxpool.Pool {
 // via skilladapters.NewWriter; the pool-free path leaves Writer nil (write actions
 // error loudly). Discovery+install is no longer a tool concern (amendment #51 /
 // D-40): the find-skills always-on skill teaches self-extension via the sandbox CLI.
-func newSkillTool(
-	cfg *config.Config,
-	writerPool *pgxpool.Pool,
-	sandboxRouter *usersandbox.SandboxRouter,
-) *tools.SkillTool {
+func newSkillTool(cfg *config.Config, writerPool *pgxpool.Pool) *tools.SkillTool {
 	if cfg == nil || cfg.SkillsDir == "" {
-		return &tools.SkillTool{SandboxRouter: sandboxRouter}
+		return &tools.SkillTool{}
 	}
 	if err := skills.MaterializeBuiltins(cfg.SkillsDir); err != nil {
 		slog.Warn("skill tool: materialize builtins failed", "dir", cfg.SkillsDir, "err", err)
@@ -336,12 +331,7 @@ func newSkillTool(
 		BodyCapBytes: cfg.SkillBodyCapBytes,
 		Blocklist:    cfg.SkillInjectionBlocklist,
 	})
-	// SandboxRouter (distinct field name, W6 — not the unexported ActionRouter): under a strict
-	// profile action=use renders a snippet's in-box SandboxPath; nil keeps the host-primary path.
-	tool := &tools.SkillTool{
-		Loader:        skilladapters.NewLoader(loader, cfg.SkillManifestCapBytes, cfg.SkillExportDir),
-		SandboxRouter: sandboxRouter,
-	}
+	tool := &tools.SkillTool{Loader: skilladapters.NewLoader(loader, cfg.SkillManifestCapBytes)}
 	if writerPool != nil {
 		w := newSkillWriter(cfg, writerPool)
 		// The model's install path is the SAME Installer the cockpit uses — one fetch +

@@ -99,39 +99,6 @@ func TestSnippetInvocationResolvesInterpreter(t *testing.T) {
 	}
 }
 
-// TestSnippetHostInvocationResolvesInterpreter pins the host-primary mirror of
-// SnippetInvocation: aliases normalize once, then return an OS-correct export path
-// plus the structured interpreter.
-func TestSnippetHostInvocationResolvesInterpreter(t *testing.T) {
-	t.Parallel()
-	export := filepath.Join("tmp", "aura-skills")
-	cases := []struct {
-		name     string
-		language string
-		wantPath string
-		wantExec string
-	}{
-		{name: "python alias", language: "python3", wantPath: filepath.Join(export, "calc", "calc.py"), wantExec: "python3"},
-		{name: "shell alias", language: "bash", wantPath: filepath.Join(export, "calc", "calc.sh"), wantExec: "sh"},
-		{name: "js alias", language: "javascript", wantPath: filepath.Join(export, "calc", "calc.js"), wantExec: "node"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			path, interp, err := SnippetHostInvocation("calc", tc.language, export)
-			if err != nil {
-				t.Fatalf("SnippetHostInvocation(%q): %v", tc.language, err)
-			}
-			if path != tc.wantPath || interp != tc.wantExec {
-				t.Fatalf("SnippetHostInvocation(%q) = (%q,%q), want (%q,%q)",
-					tc.language, path, interp, tc.wantPath, tc.wantExec)
-			}
-		})
-	}
-	if _, _, err := SnippetHostInvocation("calc", "ruby", export); !errors.Is(err, ErrInvalidStructure) {
-		t.Fatalf("SnippetHostInvocation(ruby) = %v, want ErrInvalidStructure", err)
-	}
-}
-
 // TestSaveSnippetRejectsBadLanguage asserts SaveSnippet hard-rejects a non-enum
 // language before any FS write (no pending dir created).
 func TestSaveSnippetRejectsBadLanguage(t *testing.T) {

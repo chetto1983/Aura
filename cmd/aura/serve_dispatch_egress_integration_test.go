@@ -206,20 +206,17 @@ func TestBuildSandboxRouter_LaunchesEgressFloor(t *testing.T) {
 		},
 	}
 
-	// The production composition root builds its OWN docker client from DOCKER_HOST; a strict
-	// profile yields a live router (nil only when Docker is unreachable, gated above).
+	// The production composition root builds its OWN docker client from DOCKER_HOST and never
+	// returns nil — a router that cannot reach a daemon denies rather than disappearing.
 	router := buildSandboxRouter(cfg)
 	if router == nil {
-		t.Fatal("buildSandboxRouter returned nil under single_user_hardened with a reachable daemon — expected a live router")
+		t.Fatal("buildSandboxRouter returned nil — that would be a host-fallback door at the composition root")
 	}
 
 	ctx := identityctx.WithIdentityID(context.Background(), id)
-	h, routed, err := router.Route(ctx)
+	h, err := router.Route(ctx)
 	if err != nil {
 		t.Fatalf("router.Route: composition-root box creation failed (egress image %q present + built?): %v", egressImage, err)
-	}
-	if !routed {
-		t.Fatal("router.Route: routed=false under a strict profile — the box was not interposed")
 	}
 	// Tear down via the tested Stop teardown (removes sidecar + box + per-identity volume, no
 	// orphan). A second backend on the SAME daemon reproduces Stop's semantics from the handle.

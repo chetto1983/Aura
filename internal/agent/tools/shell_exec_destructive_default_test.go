@@ -14,7 +14,7 @@ import (
 // can phrase around it; the real boundary is the host/sandbox policy.)
 func TestDestructiveShellDefaultOnFlagsRmRf(t *testing.T) {
 	os.Unsetenv("AURA_SHELL_DESTRUCTIVE_PATTERNS")
-	tool := &ShellExec{Approvals: NewShellApprovals()}
+	tool := &ShellExec{Approvals: NewShellApprovals(), Router: newStrictBoxRouter(&fakeBoxBackend{})}
 	ctx := ctxWith(t, "sess-default-gate", "call-default-gate")
 
 	res, err := tool.Execute(ctx, json.RawMessage(`{"command":"rm -rf /"}`))

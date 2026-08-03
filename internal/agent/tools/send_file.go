@@ -25,18 +25,10 @@ import (
 // and NON-Mutating (it reads a file and describes a delivery — no host state
 // changes), so it never arms the completion-gate critic.
 type SendFile struct {
-	// WorkspaceRoot, when set, fences delivery to files whose real path stays
-	// inside this workspace. Empty preserves legacy unrestricted delivery in a CLI
-	// context (the operator drives the agent directly).
-	WorkspaceRoot string
-	// RequireWorkspace makes the fence fail CLOSED when WorkspaceRoot is empty
-	// (AG-019): in a non-CLI context (a channel-driven agent) an unset workspace
-	// must NOT silently grant unrestricted host-file delivery. The composition root
-	// sets it true for non-CLI runners; CLI keeps it false (legacy behavior).
-	RequireWorkspace bool
-	// Router, non-nil under a strict profile, makes send_file box-aware: a box /workspace artifact
-	// is CopyArtifactsOut-staged to a host-readable path (D-10) and re-fenced there before delivery.
-	// Nil keeps the host-file delivery path byte-for-byte.
+	// Router is the per-identity box routing seam and the only source of a deliverable file: the
+	// requested path is a BOX path under /workspace, CopyArtifactsOut-staged to a host-readable
+	// staging dir (D-10) and re-fenced there before delivery. A box that cannot be reached fails
+	// CLOSED (D-09/GATE-01) — there is no host-file delivery arm.
 	Router *usersandbox.SandboxRouter
 	// Assets, when set, ingests the delivered file into the identity's owned object store so the
 	// aura.artifact descriptor gains asset_id + mime_type (WEBART-01/D-01). It is wired at serve
@@ -91,21 +83,21 @@ func (s *SendFile) Spec() Spec {
 	params := json.RawMessage(`{
   "type": "object",
   "properties": {
-    "path": {"type": "string", "description": "Absolute path to a readable file on the host to deliver to the user, e.g. \"/abs/results.xlsx\". Aliases also accepted: file_path, file."},
+    "path": {"type": "string", "description": "Absolute path, inside your workspace container and under /workspace, of the file to deliver to the user, e.g. \"/workspace/results.xlsx\". Aliases also accepted: file_path, file."},
     "caption": {"type": "string", "description": "Optional short caption shown alongside the file."}
   },
   "required": ["path"]
 }`)
 	return Spec{
 		Name:    "send_file",
-		Summary: "Deliver a file from the host to the user.",
-		Description: "Deliver a file you produced or found on the host directly to the user as an attachment. " +
+		Summary: "Deliver a file from your workspace to the user.",
+		Description: "Deliver a file you produced or found in your workspace directly to the user as an attachment. " +
 			"Use it when the user should receive an actual file (a spreadsheet, a PDF, an image, a generated report) rather than its contents pasted into the chat. " +
-			"Give the absolute path to the file and an optional short caption. " +
+			"Give the absolute path of the file under /workspace and an optional short caption; a path outside /workspace is refused, so copy such a file into /workspace first and deliver the copy. " +
 			"The file is read and queued for delivery; you do not need to know how the user's channel renders it. " +
 			"A file larger than the 50 MB upload limit, or a path that cannot be read, comes back as a small {error,message} object you should read and adapt to — it is not a tool failure. " +
 			"A delivered file is delivery-only and does NOT become searchable; if the user will need to find or recall it later, save it under /workspace and index it with document_index. " +
-			"Example: {\"path\":\"/abs/file.xlsx\",\"caption\":\"results\"}.",
+			"Example: {\"path\":\"/workspace/file.xlsx\",\"caption\":\"results\"}.",
 		Parameters: params,
 		Deferred:   true,
 		// Reads a file and describes a delivery — no host state mutation (D-43).
@@ -129,32 +121,17 @@ func (s *SendFile) Execute(ctx context.Context, raw json.RawMessage) (ToolResult
 		return errorResult("file_unreadable", "no file path was provided; pass the absolute path of the file under \"path\" (aliases accepted: file_path, file)"), nil
 	}
 
-	// Route decision (plan 37-07): routed ⇒ the requested path is a BOX path — stage it out of the
-	// box before delivery; routed+err ⇒ fail-CLOSED deny.
-	boxHandle, routed, routeErr := s.Router.Route(ctx)
-	if routed && routeErr != nil {
+	// The requested path is a BOX path — stage it out of the box before delivery; a box that
+	// cannot be reached denies fail-CLOSED (D-09/GATE-01).
+	boxHandle, routeErr := s.Router.Route(ctx)
+	if routeErr != nil {
 		return sandboxUnavailableResult("send_file", routeErr), nil
 	}
-	if routed {
-		return s.deliverFromBox(ctx, boxHandle, path, a.Caption)
-	}
-
-	if strings.TrimSpace(s.WorkspaceRoot) == "" && s.RequireWorkspace {
-		return errorResult("workspace_not_configured",
-			"file delivery is disabled: no workspace is configured in this context, so host-file delivery is fenced off (AG-019). Ask the operator to configure a workspace root or deliver via an approved path."), nil
-	}
-	resolved, ok, ferr := s.checkWorkspace(path)
-	if ferr != nil {
-		return errorResult("file_unreadable", fmt.Sprintf("cannot resolve %q: %v", path, ferr)), nil
-	}
-	if !ok {
-		return outsideWorkspaceResult(resolved, s.WorkspaceRoot), nil
-	}
-	return s.emitDelivery(ctx, resolved, a.Caption), nil
+	return s.deliverFromBox(ctx, boxHandle, path, a.Caption)
 }
 
-// emitDelivery is the shared delivery tail (host path AND the routed staged copy): it stats the
-// (already workspace-fenced) file, gates the size, and emits the channel-agnostic artifact
+// emitDelivery is the delivery tail applied to the staged host-side copy: it stats the
+// (already fenced) file, gates the size, and emits the channel-agnostic artifact
 // descriptor. A too-large or unreadable path returns an inline {error,message} the model
 // self-corrects on, NEVER a Go error / artifact Meta.
 //
@@ -207,23 +184,18 @@ func (s *SendFile) emitDelivery(ctx context.Context, path, caption string) ToolR
 	}
 }
 
-func (s *SendFile) checkWorkspace(path string) (string, bool, error) {
-	return fenceWithinRoot(s.WorkspaceRoot, s.RequireWorkspace, path)
-}
-
-// fenceWithinRoot is the symlink-resolving workspace fence used BOTH by the host delivery path
-// (rooted at s.WorkspaceRoot) and the routed staged-copy path (rooted at the staging dir). An empty
-// root with requireWorkspace fails closed (AG-019); otherwise it resolves symlinks on both root and
-// path and confirms path stays inside root (no ".." escape).
-func fenceWithinRoot(root string, requireWorkspace bool, path string) (string, bool, error) {
+// fenceWithinRoot is the symlink-resolving fence applied to the STAGED copy, rooted at the staging
+// dir: it resolves symlinks on both root and path and confirms path stays inside root (no ".."
+// escape). It can resolve anything at all only because the staged copy IS a host file — the box
+// path it came from is fenced separately, by prefix, before the copy-out.
+//
+// The requireWorkspace parameter went with the host-delivery arm: there is one caller and it always
+// fences. An empty root keeps that arm's fail-CLOSED answer (AG-019) rather than silently fencing
+// against the process working directory.
+func fenceWithinRoot(root, path string) (string, bool, error) {
 	root = strings.TrimSpace(root)
 	if root == "" {
-		if requireWorkspace {
-			// Fail closed (AG-019): a non-CLI context without a configured workspace
-			// must not deliver arbitrary host files.
-			return path, false, nil
-		}
-		return path, true, nil
+		return path, false, nil
 	}
 	rootAbs, err := filepath.Abs(root)
 	if err != nil {

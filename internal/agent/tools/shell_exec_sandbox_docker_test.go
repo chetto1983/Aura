@@ -129,9 +129,9 @@ func TestSnippetExec_RoutedEndToEnd(t *testing.T) {
 	// skill action=use (strict) renders the SandboxPath the box materialized the snippet at.
 	loader := newFakeLoader()
 	loader.snippets = map[string]fakeSnippet{
-		"calc": {instructions: "Add.", hostPath: filepath.Join(calcDir, "calc.py"), sandboxPath: "/skills/calc/calc.py", interpreter: "python3"},
+		"calc": {instructions: "Add.", sandboxPath: "/skills/calc/calc.py", interpreter: "python3"},
 	}
-	skill := &SkillTool{Loader: loader, SandboxRouter: router}
+	skill := &SkillTool{Loader: loader}
 	ctx := ctxWith(t, "sess-dk-snip", "call-dk-snip")
 	use, err := skill.Execute(ctx, json.RawMessage(`{"action":"use","name":"calc"}`))
 	if err != nil {

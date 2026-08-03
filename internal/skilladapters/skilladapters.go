@@ -26,18 +26,16 @@ var modelActor = skills.AuditActor{ActorID: "model"}
 
 // Loader bridges a live *skills.Loader onto the tools.skillLoader seam: it projects
 // skills.Skill into the tool-local SkillMeta, renders the manifest the tool's
-// Description shows, and resolves a snippet skill into its HOST by-path invocation
-// (D-01 host-primary) under the export dir the Writer materializes into.
+// Description shows, and resolves a snippet skill into its in-box by-path invocation.
 type Loader struct {
-	loader    *skills.Loader
-	manCap    int
-	exportDir string // AURA_SKILL_EXPORT_DIR — the host materialization target a snippet's HOST by-path use frame points at (D-01)
+	loader *skills.Loader
+	manCap int
 }
 
 // NewLoader builds the loader adapter. manCap is the manifest byte cap
-// (cfg.SkillManifestCapBytes); exportDir is AURA_SKILL_EXPORT_DIR (cfg.SkillExportDir).
-func NewLoader(loader *skills.Loader, manCap int, exportDir string) *Loader {
-	return &Loader{loader: loader, manCap: manCap, exportDir: exportDir}
+// (cfg.SkillManifestCapBytes).
+func NewLoader(loader *skills.Loader, manCap int) *Loader {
+	return &Loader{loader: loader, manCap: manCap}
 }
 
 // List projects the loaded skills into the tool-local SkillMeta shape.
@@ -71,27 +69,22 @@ func (a *Loader) ManifestDescription() string {
 	return skills.RenderManifest(a.loader.List(), a.manCap)
 }
 
-// Snippet resolves an active snippet skill into BOTH by-path invocations: the HOST export-dir path
-// (D-01 host-primary, under the SAME export dir the Writer materializes into) AND the IN-BOX
-// SandboxPath (skills.SnippetSandboxPath — /skills/<name>/<name>.<ext>, the SAME root MaterializeIn
-// lands the snippet at under a strict profile, D-10), plus the docs instructions (SKILL.md body)
-// and the interpreter. action=use renders the sandbox path under Strict(), the host path otherwise.
-// ok=false for an absent or non-snippet skill (action=use then falls back to the instruction
-// authority-frame path).
-func (a *Loader) Snippet(name string) (instructions, hostPath, sandboxPath, interpreter string, ok bool) {
+// Snippet resolves an active snippet skill into its IN-BOX by-path invocation
+// (skills.SnippetSandboxPath — /skills/<name>/<name>.<ext>, the SAME root MaterializeIn lands the
+// snippet at, D-10), plus the docs instructions (SKILL.md body) and the interpreter. There is one
+// path because shell_exec has one place to run: the host export-dir copy still EXISTS (it is the
+// materialize SOURCE), but nothing the model can call reaches it. ok=false for an absent or
+// non-snippet skill (action=use then falls back to the instruction authority-frame path).
+func (a *Loader) Snippet(name string) (instructions, sandboxPath, interpreter string, ok bool) {
 	s, found := a.loader.Get(name)
 	if !found || s.Type != skills.TypeSnippet {
-		return "", "", "", "", false
+		return "", "", "", false
 	}
-	hp, interp, perr := skills.SnippetHostInvocation(s.Name, s.Language, a.exportDir)
-	if perr != nil {
-		return "", "", "", "", false
+	sp, interp, err := skills.SnippetInvocation(s.Name, s.Language)
+	if err != nil {
+		return "", "", "", false
 	}
-	sp, _, serr := skills.SnippetInvocation(s.Name, s.Language)
-	if serr != nil {
-		return "", "", "", "", false
-	}
-	return s.Body, hp, sp, interp, true
+	return s.Body, sp, interp, true
 }
 
 // Writer bridges a live *skills.Writer onto the tools.skillWriter seam the skill

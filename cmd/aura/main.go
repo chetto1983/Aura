@@ -149,6 +149,9 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|doctor|chat <sub>|config <sub>|identity <sub>|paused-states <sub>|task <sub>|retention <plan|apply>|skills <sub>|agent <sub>|swarm-demo|web <doctor|tool ...>|tools|mcp <sub>|memory <sub>|db <sub>|objectstore <sub>|docs <sub>|version}")
 }
 
+// buildRegistry is the pool-free, box-free registry the manifest/fixture verbs use. The nil
+// router is deliberate: these paths have no identity to key a box on, so a routed tool DENIES
+// rather than reaching a filesystem that is nobody's.
 func buildRegistry() *tools.Registry {
 	cfg := config.LoadDB()
 	return buildBaseRegistry(cfg, nil)
@@ -181,11 +184,12 @@ func buildBaseRegistry(cfg *config.Config, ts *cronTaskStore) *tools.Registry {
 	return reg
 }
 
-// buildBaseRegistryWithHandles threads sandboxRouter onto the box-capable tools (shell_exec /
-// fs_read / fs_write / send_file / skill) so under a strict profile they execute INSIDE the
-// per-identity box (plan 37-07); a nil router (the pool-free `aura tools`/manifest paths, and
-// dev/local_trusted) keeps every tool host-direct byte-for-byte. web_fetch / web_search are
-// deliberately NEVER routed (D-11 — they stay host-side, already SSRF-guarded).
+// buildBaseRegistryWithHandles threads sandboxRouter onto every box-capable tool (shell_exec, the
+// five fs_* tools, send_file, document_open) so their work happens INSIDE the caller's per-identity
+// box on EVERY profile (plan 37-07). A nil router — the pool-free `aura tools`/manifest paths, which
+// build the tools to read their Specs and never Execute — is not a host-direct mode: Route denies,
+// and so does every tool holding it. web_fetch / web_search are deliberately NEVER routed (D-11 —
+// they stay host-side, already SSRF-guarded).
 func buildBaseRegistryWithHandles(
 	cfg *config.Config,
 	ts *cronTaskStore,
@@ -213,7 +217,7 @@ func buildBaseRegistryWithHandles(
 	// a live pool is available (serve/chat boot, ts!=nil) the write actions are wired to
 	// the durable, gated Writer (11-05); the pool-free manifest path (`aura tools`) gets
 	// a read-only tool whose write actions error loudly.
-	reg.Register(newSkillTool(cfg, taskStorePool(ts), sandboxRouter))
+	reg.Register(newSkillTool(cfg, taskStorePool(ts)))
 	webEngine := web.NewClient(cfg)
 	// web_fetch / web_search are DELIBERATELY NOT routed into the box (D-11): they stay host-side,
 	// already SSRF-guarded — passing sandboxRouter here would be a scope error.
@@ -230,18 +234,11 @@ func buildBaseRegistryWithHandles(
 	// upload any more, so the description is written by the agent after it has
 	// actually opened the file.
 	reg.Register(&tools.DocumentDescribe{Documents: library})
-	// shell_exec is the full host terminal — THE execution surface (amendment #50 / D-15c).
-	// Deferred so simple chat/web turns do not carry a giant shell schema in the hot manifest.
-	// Amendment #88: workspace is the fixed /workspace working root (cfg.WorkspaceDir),
-	// same value on every host-direct tool below — replacing the previous
-	// process-cwd-derived default (and the fs_* tools' outright lack of a WorkspaceRoot).
-	workspace := cfg.WorkspaceDir
-	if workspace == "" {
-		if wd, err := os.Getwd(); err == nil {
-			workspace = wd
-		}
-	}
-	reg.Register(&tools.ShellExec{WorkspaceRoot: workspace, Background: handles.BackgroundShells, Approvals: handles.ShellApprovals, Router: sandboxRouter})
+	// shell_exec is the full terminal — THE execution surface — and it runs inside the caller's
+	// per-identity box, never on the host. Deferred so simple chat/web turns do not carry a giant
+	// shell schema in the hot manifest. No tool below is given the HOST workspace root: every one
+	// of them resolves against the box's own /workspace, which is where the agent's files live.
+	reg.Register(&tools.ShellExec{Background: handles.BackgroundShells, Approvals: handles.ShellApprovals, Router: sandboxRouter})
 	// shell_poll / shell_kill mirror Claude Code's BashOutput / KillBash: read new
 	// output from, and terminate, a background shell_exec job. Deferred — the model
 	// tool_searches for them once it holds a background shell_id to follow. The pointers
@@ -254,19 +251,19 @@ func buildBaseRegistryWithHandles(
 	handles.ShellKill = sk
 	reg.Register(sp)
 	reg.Register(sk)
-	// Native in-process filesystem hands — Claude-Code-style file ergonomics, full
-	// host access, no path fence (amendment #50 / D-15c) EXCEPT the surgical
-	// skills-library fence (#54 / D-43): fs_write/fs_edit refuse to write inside
-	// SkillsDir so the gated skill-authoring flow cannot be bypassed.
-	reg.Register(&tools.FSRead{WorkspaceRoot: workspace, Router: sandboxRouter})
-	reg.Register(&tools.FSWrite{WorkspaceRoot: workspace, SkillsDir: cfg.SkillsDir, Router: sandboxRouter})
-	reg.Register(&tools.FSEdit{WorkspaceRoot: workspace, SkillsDir: cfg.SkillsDir, Router: sandboxRouter})
-	reg.Register(&tools.FSGrep{WorkspaceRoot: workspace, Router: sandboxRouter})
-	reg.Register(&tools.FSGlob{WorkspaceRoot: workspace, Router: sandboxRouter})
-	// send_file hands a host file to the user as an attachment (D-05/D-06). Deferred:
-	// the model tool_searches for it when it has a produced/found file to deliver; the
+	// Claude-Code-style file ergonomics over the box's filesystem. The skills-library fence
+	// (#54 / D-43) travels with them as a box-relative rule over the materialized /skills mount,
+	// so it needs no configured directory: fs_write/fs_edit refuse to write there and the gated
+	// skill-authoring flow cannot be bypassed.
+	reg.Register(&tools.FSRead{Router: sandboxRouter})
+	reg.Register(&tools.FSWrite{Router: sandboxRouter})
+	reg.Register(&tools.FSEdit{Router: sandboxRouter})
+	reg.Register(&tools.FSGrep{Router: sandboxRouter})
+	reg.Register(&tools.FSGlob{Router: sandboxRouter})
+	// send_file hands a file from the box's /workspace to the user as an attachment (D-05/D-06).
+	// Deferred: the model tool_searches for it when it has a produced/found file to deliver; the
 	// agent loop lifts its artifact Meta onto the AG-UI ArtifactDelta the channel renders.
-	sf := &tools.SendFile{WorkspaceRoot: workspace, Router: sandboxRouter}
+	sf := &tools.SendFile{Router: sandboxRouter}
 	handles.SendFile = sf
 	reg.Register(sf)
 	// document_index is the explicit bridge from a workspace file to document_search
@@ -279,20 +276,25 @@ func buildBaseRegistryWithHandles(
 	// documents.Service builder serve_channels.go and document_processor_wiring.go
 	// already use for send_file/channel ingestion — reused here rather than
 	// duplicated, since its IngestPath signature already satisfies
-	// tools.DocumentIndexBackend byte-for-byte.
+	// tools.DocumentIndexBackend byte-for-byte. It takes the router, not the host
+	// workspace root: the file to index sits on the BOX's /workspace volume, and the
+	// ingest reads the bytes in THIS process (hash + filecard), so the tool stages the
+	// artifact out of the box first and hands over the staged copy.
 	// document_open is the same bridge in reverse, and needs the same live pool:
 	// it walks a retrieval hit's document id back through the catalog to the asset
-	// and writes the ORIGINAL file into /workspace/documents/. Retrieval answers
+	// and streams the ORIGINAL file into the BOX's /workspace/documents/ — hence the
+	// router rather than the host workspace root, so the path it reports is the one
+	// the agent's own shell_exec and fs_read can then open. Retrieval answers
 	// "what does it say"; a spreadsheet question is usually "how many", which no
 	// chunk contains at any relevance — so the agent gets the file and computes.
 	if pool := taskStorePool(ts); pool != nil {
 		reg.Register(&tools.DocumentIndex{
-			Indexer:       newRuntimeDocumentIngestor(cfg, pool),
-			WorkspaceRoot: workspace,
+			Indexer: newRuntimeDocumentIngestor(cfg, pool),
+			Router:  sandboxRouter,
 		})
 		reg.Register(&tools.DocumentOpen{
-			Documents:     newRuntimeDocumentOpener(cfg, pool),
-			WorkspaceRoot: workspace,
+			Documents: newRuntimeDocumentOpener(cfg, pool),
+			Router:    sandboxRouter,
 		})
 	}
 	// swarm_spawn registers into the PARENT registry ONLY (D-08/D-10): workers receive
@@ -495,7 +497,9 @@ func printTools(args []string) {
 		fmt.Fprintln(os.Stderr, "usage: aura tools [--json]")
 		os.Exit(1)
 	}
-	// Pool-free manifest path: a nil router keeps every tool host-direct (the manifest never routes).
+	// Pool-free manifest path: printing Specs never calls Execute, so a nil router costs nothing
+	// and saves this verb a Docker dial. Were a tool ever executed from here it would DENY, which
+	// is the right answer for a path with no identity and no box.
 	reg, _, closers, err := buildRegistryWithMCP(context.Background(), config.LoadDB(), nil, nil)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "mcp:", err)

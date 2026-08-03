@@ -3,26 +3,22 @@ package tools
 import (
 	"context"
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
-	"time"
+
+	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 )
 
-// AG-046: fs_grep glob honors ** path semantics like fs_glob, so a model reusing
-// `**/*.go` does not silently get zero matches.
+// AG-046: fs_grep glob honors ** path semantics like fs_glob, so a model reusing `**/*.go` does
+// not silently get zero matches. globMatch is shared, and the box arm feeds it the same two
+// arguments (root-relative path, basename) the deleted host walk did.
 func TestFSGrepGlobSupportsDoubleStar(t *testing.T) {
-	dir := t.TempDir()
-	sub := filepath.Join(dir, "pkg", "deep")
-	if err := os.MkdirAll(sub, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(sub, "code.go"), []byte("needle here\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	be := &fakeBox{respond: func(cmd string) usersandbox.ExecResult {
+		return usersandbox.ExecResult{Stdout: boxFrames(t, cmd, boxWorkspaceRoot, "pkg/deep/code.go", "needle here\n")}
+	}}
 	ctx := ctxWith(t, "sess-grep", "call-grep")
-	res, err := (&FSGrep{}).Execute(ctx, mustJSON(t, fsGrepArgs{Pattern: "needle", Path: dir, Glob: "**/*.go"}))
+	res, err := (&FSGrep{Router: routerWith(be)}).
+		Execute(ctx, mustJSON(t, fsGrepArgs{Pattern: "needle", Glob: "**/*.go"}))
 	if err != nil {
 		t.Fatalf("grep: %v", err)
 	}
@@ -33,40 +29,17 @@ func TestFSGrepGlobSupportsDoubleStar(t *testing.T) {
 
 // AG-046: the plain `*.go` basename glob still works for grep.
 func TestFSGrepGlobBasenameStillWorks(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("needle\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "b.txt"), []byte("needle\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	be := &fakeBox{respond: func(cmd string) usersandbox.ExecResult {
+		return usersandbox.ExecResult{Stdout: boxFrames(t, cmd, boxWorkspaceRoot, "a.go", "needle\n", "b.txt", "needle\n")}
+	}}
 	ctx := ctxWith(t, "sess-grep2", "call-grep2")
-	res, err := (&FSGrep{}).Execute(ctx, mustJSON(t, fsGrepArgs{Pattern: "needle", Path: dir, Glob: "*.go"}))
+	res, err := (&FSGrep{Router: routerWith(be)}).
+		Execute(ctx, mustJSON(t, fsGrepArgs{Pattern: "needle", Glob: "*.go"}))
 	if err != nil {
 		t.Fatalf("grep: %v", err)
 	}
 	if !strings.Contains(res.Preview, "a.go") || strings.Contains(res.Preview, "b.txt") {
 		t.Fatalf("*.go basename glob wrong (AG-046): %q", res.Preview)
-	}
-}
-
-// AG-019: send_file fails closed in a non-CLI context when the workspace root is
-// empty, instead of silently allowing unrestricted host delivery.
-func TestSendFileFailsClosedWhenRootEmptyNonCLI(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "leak.txt")
-	if err := os.WriteFile(path, []byte("secret"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	raw, _ := json.Marshal(map[string]string{"path": path})
-	res, err := (&SendFile{RequireWorkspace: true}).Execute(ctxWith(t, "sess-sf-fc", "call-sf-fc"), raw)
-	if err != nil {
-		t.Fatalf("Execute: %v", err)
-	}
-	if res.Meta != nil {
-		t.Fatal("non-CLI send_file with empty root must NOT deliver (fail closed)")
-	}
-	if !strings.Contains(res.Preview, "workspace") {
-		t.Fatalf("fail-closed result must mention the missing workspace fence: %q", res.Preview)
 	}
 }
 
@@ -124,12 +97,8 @@ func TestToolSearch_SpecChangeIsReindexed(t *testing.T) {
 
 func TestBackgroundShells_EvictReclaimsFinished(t *testing.T) {
 	b := NewBackgroundShells(nil)
-	id, err := b.start(context.Background(), "exit 0", t.TempDir(), nil)
-	if err != nil {
-		t.Fatalf("start: %v", err)
-	}
-	// Wait for the reaper to finish the shell.
-	waitShellDone(t, b, id)
+	const id = "job-evict"
+	registerJob(t, b, context.Background(), id).finish(&bgBoxExit{code: 0})
 	b.Evict("any-session")
 	if _, ok := b.get(id); ok {
 		t.Fatal("Evict did not reclaim the finished background shell (AG-015)")
@@ -162,28 +131,6 @@ func TestBackgroundShellIncrementalPagingByteExact(t *testing.T) {
 	}
 }
 
-func waitShellDone(t *testing.T, b *BackgroundShells, id string) {
-	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for {
-		sh, ok := b.get(id)
-		if !ok {
-			return
-		}
-		_, status := sh.snapshot(nil)
-		if status != "running" {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("background shell %s still running after deadline", id)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-}
-
-// AG-018: the approval digest is normalized so /tmp and /tmp/ (trailing slash)
-// hash identically — an operator who approved a command does not get re-prompted
-// because the model resent it with a cosmetically-different cwd.
 func TestShellApprovalDigestNormalizesCwd(t *testing.T) {
 	a := ShellApprovalDigest("rm -rf x", "/tmp")
 	b := ShellApprovalDigest("rm -rf x", "/tmp/")

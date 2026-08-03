@@ -15,6 +15,10 @@ const (
 	CodePostgresUnavailable Code = "postgres_unavailable"
 	// CodeMemoryUnavailable reports a failed required Agent Memory capability probe.
 	CodeMemoryUnavailable Code = "memory_unavailable"
+	// CodeSandboxUnavailable reports a per-identity sandbox that cannot be resolved. Since the
+	// box is the only place shell_exec and the fs_* tools run, this means the agent can answer
+	// but cannot DO anything — the daemon must say so rather than report itself healthy.
+	CodeSandboxUnavailable Code = "sandbox_unavailable"
 	// CodeListenerUnavailable reports a listener that is not serving.
 	CodeListenerUnavailable Code = "listener_unavailable"
 	// CodeMigrationIncompatible reports a runtime schema that is not at head.

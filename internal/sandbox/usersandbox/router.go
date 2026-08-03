@@ -1,15 +1,16 @@
 // router.go interposes the per-identity sandbox ROUTING SEAM (SBX-01/GATE-01): Route is the
-// single get-or-create entry point the strict-profile tools call. It mirrors gateway.Decide's
-// `if g == nil || !Strict()` short-circuit — under dev/local_trusted it is a host-direct no-op
-// (routed=false) so tools keep their host os/exec path unchanged (SC-4) — and under a strict
-// profile it get-or-creates the identity's box keyed on identityctx.IdentityID (the seeded
-// `local` fallback for the CLI / no-principal caller). A routed-but-box-failed call returns
-// (_, true, err): the fail-CLOSED containment invariant (D-09/GATE-01) — the tool MUST deny,
-// never fall back to host. specFor sources the box image, cgroup caps, and the egress FQDN
-// allowlist from the AURA_SANDBOX_* config surface (cfg.Sandbox, 37-01), so a CONFIGURED
-// allowlist reaches EgressPolicy, not just a test fixture. The live idle-suspend reaper impl
-// (SuspendIdle, the handlers.SandboxReaper seam) lives in reap.go over the lastUsed map bumped
-// here on each Route.
+// single get-or-create entry point EVERY tool call passes through. There is no host arm behind
+// it any more — the per-identity box is the only filesystem and the only shell the agent has, on
+// every profile. Route therefore has exactly TWO outcomes: a live BoxHandle, or an error the
+// caller turns into a DENY (the fail-CLOSED containment invariant, D-09/GATE-01). specFor sources
+// the box image, cgroup caps, and the egress FQDN allowlist from the AURA_SANDBOX_* config surface
+// (cfg.Sandbox, 37-01), so a CONFIGURED allowlist reaches EgressPolicy, not just a test fixture.
+// The live idle-suspend reaper impl (SuspendIdle, the handlers.SandboxReaper seam) lives in
+// reap.go over the lastUsed map bumped here on each Route.
+//
+// The collapse to one successful outcome closed a live defect: while a host arm existed, a tool
+// could write a file into the aura container's own volume and report a path the box — where the
+// agent's shell actually looks — could not see (document_open / Clienti.xlsx, 2026-08-03).
 
 package usersandbox
 
@@ -33,15 +34,16 @@ const localIdentityID = "00000000-0000-0000-0000-000000000001"
 // 1e9 nano-CPUs), the container.Resources.NanoCPUs cgroup cap (D-14).
 const nanoCPUsPerCPU = 1_000_000_000
 
-// errBackendUnavailable is returned by a strict router whose provider could not be composed.
-// Keeping the router present preserves the routed=true denial signal and prevents host fallback.
-var errBackendUnavailable = errors.New("strict sandbox backend unavailable")
+// errBackendUnavailable is returned by a router whose provider could not be composed. It is a
+// DENIAL, not a degraded mode: there is no host arm to fall back to, so the composition root
+// deliberately keeps a backend-less router alive rather than returning nil.
+var errBackendUnavailable = errors.New("sandbox backend unavailable")
 
-// SandboxRouter is the per-identity routing seam every strict-profile tool call passes through
-// (SBX-01). It holds the box Backend, the runtime profile that decides contain-vs-host-direct,
-// the AURA_SANDBOX_* config specFor sources the spec from, and a mutex-guarded lastUsed map the
-// idle reaper reads. A nil *SandboxRouter is a host-direct no-op reserved for lenient profiles;
-// strict composition failures wire a non-nil router with a nil backend so Route fails closed.
+// SandboxRouter is the per-identity routing seam EVERY tool call passes through (SBX-01). It
+// holds the box Backend, the runtime profile specFor reads to pick the container runtime, the
+// AURA_SANDBOX_* config specFor sources the rest of the spec from, and a mutex-guarded lastUsed
+// map the idle reaper reads. A nil *SandboxRouter and a router with a nil backend behave
+// identically: every Route denies (see Route).
 type SandboxRouter struct {
 	backend Backend
 	profile config.RuntimeProfile
@@ -55,8 +57,8 @@ type SandboxRouter struct {
 	now func() time.Time
 }
 
-// NewSandboxRouter builds a router over a box Backend, the runtime profile (its Strict() gates
-// contain-vs-host-direct), and the AURA_SANDBOX_* config (37-01) specFor maps into each spec.
+// NewSandboxRouter builds a router over a box Backend, the runtime profile (specFor reads it to
+// pick Runc vs Runsc), and the AURA_SANDBOX_* config (37-01) specFor maps into each spec.
 func NewSandboxRouter(backend Backend, profile config.RuntimeProfile, cfg config.SandboxConfig) *SandboxRouter {
 	return &SandboxRouter{
 		backend:  backend,
@@ -67,37 +69,28 @@ func NewSandboxRouter(backend Backend, profile config.RuntimeProfile, cfg config
 	}
 }
 
-// Strict reports whether the router is enforcing a strict profile (single_user_hardened /
-// server_production). The skill tool (37-07) consults it to select the box-side snippet path
-// vs the host path. A nil router is never strict.
-func (r *SandboxRouter) Strict() bool {
-	return r != nil && r.profile.Strict()
-}
-
-// Route is the single get-or-create seam the tools call. Under a nil router or a non-strict
-// profile it is a host-direct no-op — (zero handle, routed=false, nil) — the exact gateway.
-// Decide short-circuit that preserves the operator's full-host experience (SC-4). Under a
-// strict profile it resolves the caller's box keyed on identityctx.IdentityID (the seeded
-// `local` fallback for the CLI / no-principal caller) and bumps lastUsed on success. A box
-// failure returns (zero handle, routed=TRUE, err): the fail-CLOSED containment invariant
-// (D-09/GATE-01) — routed=true tells the tool to DENY, never fall back to host.
-func (r *SandboxRouter) Route(ctx context.Context) (BoxHandle, bool, error) {
-	if r == nil || !r.profile.Strict() {
-		return BoxHandle{}, false, nil
-	}
-	if r.backend == nil {
-		return BoxHandle{}, true, errBackendUnavailable
+// Route is the single get-or-create seam every tool calls, and it ALWAYS routes: it resolves the
+// caller's box keyed on identityctx.IdentityID (the seeded `local` fallback for the CLI /
+// no-principal caller) and bumps lastUsed on success. A non-nil error means the caller DENIES —
+// there is no host arm to fall back to (D-09/GATE-01).
+//
+// The nil-receiver and nil-backend cases share ONE denial point on purpose. NewSandboxRouter is
+// the only constructor that allocates lastUsed/handles, so a zero-value &SandboxRouter{} has to
+// be refused before the map write below — otherwise it nil-map-panics instead of denying.
+func (r *SandboxRouter) Route(ctx context.Context) (BoxHandle, error) {
+	if r == nil || r.backend == nil {
+		return BoxHandle{}, errBackendUnavailable
 	}
 	id := r.identityID(ctx)
 	h, err := r.backend.Resolve(ctx, r.specFor(id))
 	if err != nil {
-		return BoxHandle{}, true, err // fail-CLOSED (D-09/GATE-01) — routed, so the tool denies
+		return BoxHandle{}, err // fail-CLOSED (D-09/GATE-01) — the tool denies, never host
 	}
 	r.mu.Lock()
 	r.lastUsed[id] = r.clock()
 	r.handles[id] = h
 	r.mu.Unlock()
-	return h, true, nil
+	return h, nil
 }
 
 // identityID resolves the caller principal: the authenticated identity from identityctx, or the

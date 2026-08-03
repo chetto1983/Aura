@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
+	pathpkg "path"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/documents"
+	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 )
 
 // DocumentOpenBackend streams the original bytes behind an indexed document,
@@ -28,18 +28,29 @@ type DocumentOpenBackend interface {
 // It exists because retrieval has a ceiling that tuning does not move. Measured
 // on a 5889-row customer spreadsheet: an exact lookup scores 100% (BM25), and
 // "how many customers in Torino" scores 0% at every k — the answer is a property
-// of the whole set and sits in no chunk. The container already carries
-// LibreOffice, openpyxl and pandas, so once the agent holds the file the
-// question is arithmetic rather than recall.
+// of the whole set and sits in no chunk. The box already carries LibreOffice,
+// openpyxl and pandas, so once the agent holds the file the question is
+// arithmetic rather than recall.
+//
+// The copy lands INSIDE the caller's per-identity box, through the same router
+// seam fs_write uses, and that is the whole reason Router is here. Writing it
+// host-side was a live defect (Clienti.xlsx, 2026-08-03): the aura container and
+// the box mount DIFFERENT volumes at /workspace, so the tool reported a path that
+// was real where nobody looks — shell_exec, fs_read and the agent's own eyes are
+// all in the box. A path this tool returns must be one the agent can then open.
 type DocumentOpen struct {
-	Documents     DocumentOpenBackend
-	WorkspaceRoot string
+	Documents DocumentOpenBackend
+	Router    *usersandbox.SandboxRouter
 }
 
-// openedDocumentsDir is the fixed subdirectory materialized copies land in. The
-// destination is never caller-chosen: a working copy of a user document is not
-// something the agent should be able to scatter across the host.
-const openedDocumentsDir = "documents"
+// openedDocumentsDir is the fixed subdirectory materialized copies land in, and
+// openedDocumentsBoxDir is where that sits inside the box. The destination is
+// never caller-chosen: a working copy of a user document is not something the
+// agent should be able to scatter across the workspace.
+const (
+	openedDocumentsDir    = "documents"
+	openedDocumentsBoxDir = boxWorkspaceRoot + "/" + openedDocumentsDir
+)
 
 type documentOpenArgs struct {
 	DocumentID string `json:"document_id"`
@@ -92,6 +103,14 @@ func (t *DocumentOpen) Execute(ctx context.Context, raw json.RawMessage) (ToolRe
 		return ToolResult{}, err
 	}
 
+	// Route BEFORE the object-store read: a call that will be denied must not pay for
+	// bytes it can never write, and a box that cannot be reached DENIES — there is no
+	// host arm to fall back to (D-09/GATE-01).
+	handle, routeErr := t.Router.Route(ctx)
+	if routeErr != nil {
+		return sandboxUnavailableResult("document_open", routeErr), nil
+	}
+
 	body, meta, err := t.Documents.OpenDocument(ctx, ownerFromContext(ctx), args.DocumentID)
 	if err != nil {
 		return ToolResult{}, fmt.Errorf("document_open: %w", err)
@@ -100,18 +119,35 @@ func (t *DocumentOpen) Execute(ctx context.Context, raw json.RawMessage) (ToolRe
 
 	name := strings.TrimSpace(args.FileName)
 	if name == "" {
-		name = meta.FileName
+		name = strings.TrimSpace(meta.FileName)
 	}
-	path, written, err := t.write(body, name)
-	if err != nil {
+	// The backend's own name goes through the SAME rule as the caller's, and an empty one is
+	// refused outright: the name becomes a path component, so a "../.." in it would let
+	// pathpkg.Join walk out of the documents directory and an empty string would resolve to
+	// the directory itself.
+	if name == "" {
+		return ToolResult{}, fmt.Errorf("document_open: document %s has no usable file name", args.DocumentID)
+	}
+	if err := validateOpenFileName(name); err != nil {
+		return ToolResult{}, err
+	}
+	boxPath := pathpkg.Join(openedDocumentsBoxDir, name)
+	// A write failure is a plain error, NOT the sandbox_unavailable deny the route uses: it is
+	// just as likely to be the object store dying mid-download, and telling the model its
+	// container is down and an operator must restore it is advice it can only act on by
+	// retrying forever. The route above is where the containment answer belongs.
+	if err := t.write(ctx, handle, boxPath, meta.SizeBytes, body); err != nil {
 		return ToolResult{}, fmt.Errorf("document_open: %w", err)
 	}
 
 	out, err := json.Marshal(map[string]any{
-		"path":        path,
-		"file_name":   filepath.Base(path),
-		"mime_type":   meta.MIMEType,
-		"size_bytes":  written,
+		"path":      boxPath,
+		"file_name": pathpkg.Base(boxPath),
+		"mime_type": meta.MIMEType,
+		// The catalog's size is what was written, not merely what was claimed: the copy-in
+		// declares it to tar up front and fails if the stream delivers any other count, so a
+		// short file cannot be reported as a whole one.
+		"size_bytes":  meta.SizeBytes,
 		"sha256":      meta.SHA256,
 		"document_id": meta.DocumentID,
 	})
@@ -126,69 +162,42 @@ func (t *DocumentOpen) Execute(ctx context.Context, raw json.RawMessage) (ToolRe
 	return result, nil
 }
 
-// write streams the body into <workspace>/documents/<name>. A failed copy takes
-// its partial file with it: a truncated spreadsheet that looks like a whole one
-// is worse than no file, because the agent would compute a confident wrong
-// answer from it.
-func (t *DocumentOpen) write(body io.Reader, name string) (string, int64, error) {
-	dir, err := t.destinationDir()
-	if err != nil {
-		return "", 0, err
+// write streams size bytes of body into boxPath inside the caller's box. Nothing is
+// buffered on the way: an indexed document is an operator-chosen file, up to the
+// 100 MiB ingest ceiling, and the aura container has 768 MiB in total.
+//
+// A failed copy takes its partial file with it. The daemon extracts the tar as it
+// reads it, so a source that dies mid-stream leaves a SHORT file behind, and a
+// truncated spreadsheet that looks like a whole one is worse than no file at all:
+// the agent would compute a confident wrong answer from it.
+func (t *DocumentOpen) write(
+	ctx context.Context,
+	h usersandbox.BoxHandle,
+	boxPath string,
+	size int64,
+	body io.Reader,
+) error {
+	if err := t.Router.WriteFileStream(ctx, h, boxPath, size, body); err != nil {
+		_, _ = t.Router.Exec(ctx, h, usersandbox.ExecRequest{Command: "rm -f -- " + shellQuoteArg(boxPath)})
+		return fmt.Errorf("write %s: %w", boxPath, err)
 	}
-	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return "", 0, fmt.Errorf("create %s: %w", dir, err)
-	}
-	path := filepath.Join(dir, name)
-	file, err := os.Create(path) //nolint:gosec // path is a fixed workspace dir + a separator-free base name.
-	if err != nil {
-		return "", 0, fmt.Errorf("create %s: %w", path, err)
-	}
-	written, copyErr := io.Copy(file, body)
-	closeErr := file.Close()
-	if copyErr != nil || closeErr != nil {
-		_ = os.Remove(path)
-		if copyErr != nil {
-			return "", 0, fmt.Errorf("write %s: %w", path, copyErr)
-		}
-		return "", 0, fmt.Errorf("close %s: %w", path, closeErr)
-	}
-	return path, written, nil
-}
-
-// destinationDir resolves <workspace>/documents and refuses a root that escapes
-// the workspace through a symlink — the same defense document_index applies in
-// the other direction.
-func (t *DocumentOpen) destinationDir() (string, error) {
-	root := expandHomePath(strings.TrimSpace(t.WorkspaceRoot))
-	if root == "" {
-		return "", fmt.Errorf("no workspace root is configured")
-	}
-	dir := filepath.Join(root, openedDocumentsDir)
-	if real, err := filepath.EvalSymlinks(dir); err == nil {
-		resolvedRoot := root
-		if realRoot, err := filepath.EvalSymlinks(root); err == nil {
-			resolvedRoot = realRoot
-		}
-		if !withinDir(resolvedRoot, real) {
-			return "", fmt.Errorf("%s resolves outside the workspace", dir)
-		}
-		return real, nil
-	}
-	return dir, nil
+	return nil
 }
 
 // validateOpenFileName rejects anything that is not a bare file name. Silently
 // basename-ing a caller's "../../etc/passwd" would accept a path traversal and
-// write it somewhere else instead of saying no.
+// write it somewhere else instead of saying no. Both separators are refused, not
+// just the POSIX one the box uses: a caller who types a Windows path is making the
+// same mistake and deserves the same answer.
 func validateOpenFileName(name string) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil
 	}
-	if strings.ContainsAny(name, `/\`) || filepath.IsAbs(name) {
+	if strings.ContainsAny(name, `/\`) {
 		return fmt.Errorf(
 			"document_open: file_name %q must be a bare file name, not a path; "+
-				"the file is always written into %s/ inside the workspace", name, openedDocumentsDir)
+				"the file is always written into %s", name, openedDocumentsBoxDir)
 	}
 	if name == "." || name == ".." || strings.HasPrefix(name, ".") {
 		return fmt.Errorf("document_open: file_name %q is not a usable file name", name)

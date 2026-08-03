@@ -2,12 +2,17 @@ package usersandbox
 
 import (
 	"archive/tar"
+	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/iotest"
+
+	"go.uber.org/goleak"
 )
 
 // materialize_test.go is the daemon-free unit tier for the docker-cp bridge's PURE logic: the
@@ -91,6 +96,114 @@ func TestTarSingleFile(t *testing.T) {
 			if _, err := tarSingleFile(bad, []byte("x"), 0o644); err == nil {
 				t.Fatalf("tarSingleFile(%q): want error, got nil", bad)
 			}
+		}
+	})
+}
+
+// TestWriteTarEntryDeclaredLength covers the contract the STREAMED copy-in rests on. tar has no
+// length-suffixed framing, so CopyFileInStream declares the size before it has seen a byte of the
+// document; a source that then delivers a different count must fail rather than land a file whose
+// length contradicts the catalog record it was opened from. A truncated spreadsheet that looks
+// whole is worse than no file — the agent computes a confident wrong answer from it.
+func TestWriteTarEntryDeclaredLength(t *testing.T) {
+	t.Parallel()
+
+	entry := func(declared int64, body string) (map[string]string, error) {
+		hdr, err := singleFileHeader("/workspace/documents/d.xlsx", declared, 0o644)
+		if err != nil {
+			return nil, err
+		}
+		var buf bytes.Buffer
+		if err := writeTarEntry(&buf, hdr, strings.NewReader(body)); err != nil {
+			return nil, err
+		}
+		return readTarNames(t, &buf), nil
+	}
+
+	t.Run("an exact source builds the entry", func(t *testing.T) {
+		t.Parallel()
+		names, err := entry(5, "hello")
+		if err != nil {
+			t.Fatalf("writeTarEntry: %v", err)
+		}
+		if names["workspace/documents/d.xlsx"] != "hello" {
+			t.Fatalf("entries = %v", names)
+		}
+	})
+
+	t.Run("a short source is refused", func(t *testing.T) {
+		t.Parallel()
+		_, err := entry(64, "hello")
+		if err == nil || !strings.Contains(err.Error(), "declared 64") {
+			t.Fatalf("err = %v, want a refusal naming the declared length", err)
+		}
+	})
+
+	t.Run("a long source is refused", func(t *testing.T) {
+		t.Parallel()
+		_, err := entry(2, "hello")
+		if err == nil || !strings.Contains(err.Error(), "longer than the declared 2") {
+			t.Fatalf("err = %v, want a refusal naming the declared length", err)
+		}
+	})
+
+	t.Run("a traversal-shaped path never reaches the writer", func(t *testing.T) {
+		t.Parallel()
+		if _, err := singleFileHeader("/", 0, 0o644); err == nil {
+			t.Fatal("singleFileHeader(\"/\"): want error, got nil")
+		}
+	})
+}
+
+// TestPipeTarEntry covers the streamed copy-in's concurrency, which no daemon test can pin: which
+// of the two errors survives, and that neither outcome strands the producer goroutine. goleak is
+// asserted per-test because the package's TestMain gate is docker_integration-only.
+func TestPipeTarEntry(t *testing.T) {
+	hdr := func(size int64) *tar.Header {
+		h, err := singleFileHeader("/workspace/documents/d.xlsx", size, 0o644)
+		if err != nil {
+			t.Fatalf("singleFileHeader: %v", err)
+		}
+		return h
+	}
+
+	t.Run("the sink receives the whole tar", func(t *testing.T) {
+		defer goleak.VerifyNone(t)
+		var got map[string]string
+		err := pipeTarEntry(hdr(5), strings.NewReader("hello"), func(r io.Reader) error {
+			got = readTarNames(t, r)
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("pipeTarEntry: %v", err)
+		}
+		if got["workspace/documents/d.xlsx"] != "hello" {
+			t.Fatalf("sink saw %v", got)
+		}
+	})
+
+	t.Run("a dead source wins over the sink's truncated-body error", func(t *testing.T) {
+		defer goleak.VerifyNone(t)
+		err := pipeTarEntry(hdr(4096), iotest.TimeoutReader(strings.NewReader("hello")), func(r io.Reader) error {
+			_, _ = io.Copy(io.Discard, r)
+			return errors.New("unexpected EOF from the daemon")
+		})
+		// The daemon's view of a dead source is a truncated request body; reporting THAT would
+		// send an operator looking at the sandbox for an object-store outage.
+		if err == nil || !strings.Contains(err.Error(), iotest.ErrTimeout.Error()) {
+			t.Fatalf("err = %v, want the source's own failure", err)
+		}
+	})
+
+	t.Run("a sink that hangs up early wins, and strands nothing", func(t *testing.T) {
+		defer goleak.VerifyNone(t)
+		// The sink never drains, so the producer blocks mid-body — exactly the shape that leaks a
+		// goroutine if the read end is not closed before its result is awaited.
+		err := pipeTarEntry(hdr(1<<20), strings.NewReader(strings.Repeat("x", 1<<20)), func(io.Reader) error {
+			return errors.New("daemon refused the copy")
+		})
+		if err == nil || !strings.Contains(err.Error(), "daemon refused the copy") {
+			t.Fatalf("err = %v, want the sink's own failure, not pipe noise", err)
 		}
 	})
 }

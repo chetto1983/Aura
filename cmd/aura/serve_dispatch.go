@@ -44,17 +44,6 @@ var _ cron.ApprovalChannel = (*channels.Registry)(nil)
 // agent_job handler runs the parent registry minus swarm_spawn (childRegistry, owned
 // by the handlers package) over the live LLM client.
 func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry, ownerExportSweepers ...handlers.OwnerExportSweeper) *cron.Dispatch {
-	// The per-identity box router (Phase 37) is built ONCE at composition (assembleChatEnv) and
-	// retained on chat so the SAME instance backs both the box-capable tools (plan 37-07 wiring)
-	// AND this reaper registration — never two routers with divergent box-handle maps. It is nil
-	// only under a non-strict profile; strict Docker composition failures keep a fail-closed router.
-	// A genuinely-nil SandboxReaper interface (not a typed-nil *SandboxRouter) yields the
-	// handler's "disabled (no reaper)" no-op — exactly the identity_purge nil-Purger note.
-	var sandboxReaper handlers.SandboxReaper
-	if chat.sandboxRouter != nil {
-		sandboxReaper = chat.sandboxRouter
-	}
-
 	agentDeps := newCronAgentDeps(chat)
 	real := map[cron.TaskKind]handlers.Handler{
 		cron.KindReminder:       handlers.ReminderHandler{},
@@ -69,10 +58,10 @@ func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry, own
 		// no-op Purger, so this registration is always safe.
 		cron.KindIdentityPurge: handlers.NewIdentityPurgeHandler(buildDeprovisioner(chat)),
 		// The D-08 idle-suspend reaper (plan 37-05): the live *usersandbox.SandboxRouter
-		// satisfies handlers.SandboxReaper via SuspendIdle. A nil router (non-strict profile
-		// or Docker-unavailable) leaves sandboxReaper a nil interface, so the handler is the
-		// disabled no-op — always safe, exactly like the identity_purge registration.
-		cron.KindSandboxReap: handlers.NewSandboxReapHandler(sandboxReaper),
+		// satisfies handlers.SandboxReaper via SuspendIdle. chat.sandboxRouter is always non-nil
+		// (buildSandboxRouter never returns nil), and SuspendIdle no-ops on a backend-less router,
+		// so this registration is always safe — no typed-nil dance needed.
+		cron.KindSandboxReap: handlers.NewSandboxReapHandler(chat.sandboxRouter),
 		// The D-15/OQ3 share-link expiry GC sweep (37F-18 wiring): chat.shareSvc
 		// (share_service_wiring.go) satisfies handlers.ShareExpirer via ExpireDue directly, no
 		// adapter — always non-nil once serve boots, so this registration is always safe.
@@ -158,27 +147,54 @@ func (a handlerAdapter) Run(ctx context.Context, job cron.Job) (string, error) {
 }
 
 // buildSandboxRouter constructs the per-identity box router at composition, sourced entirely from
-// cfg.Sandbox (37-01). It returns NIL — a safe host-direct no-op everywhere (Route/Strict/
-// SuspendIdle all nil-guard) — only under a non-strict profile (the box is interposed ONLY under
-// single_user_hardened / server_production, SC-4). A strict-profile Docker client construction
-// failure returns a non-nil router with no backend: Route reports routed=true plus an error, so
-// tools deny instead of falling back to the host (GATE-01). With a client, the box gets the
-// always-on egress floor (SBX-04): newSandboxBackend wires usersandbox.WithEgress from
-// cfg.Sandbox.EgressImage, so every routed box carries the DROP-RFC1918/metadata/bridge tenancy
+// cfg.Sandbox (37-01). It is built on EVERY profile and NEVER returns nil: the box is the agent's
+// only filesystem and only shell now, so a profile no longer selects between contain and
+// host-direct — it only selects the container runtime (specFor picks Runsc under
+// server_production, Runc elsewhere). A Docker client that cannot be composed still yields a
+// non-nil, backend-less router so every Route DENIES; returning nil here would be a host-fallback
+// door reopened at the composition root.
+//
+// The box gets the always-on egress floor (SBX-04): newSandboxBackend wires usersandbox.WithEgress
+// from cfg.Sandbox.EgressImage, so every box carries the DROP-RFC1918/metadata/bridge tenancy
 // sidecar. Because the config default is NON-EMPTY (aura-egress:latest, SC#4) the floor is
 // on-by-default, and box creation is fail-CLOSED when that image is unavailable (ensureImage
-// pull-fail -> Resolve error -> Route routed=true,err -> the tool DENIES).
+// pull-fail -> Resolve error -> Route err -> the tool DENIES).
 func buildSandboxRouter(cfg *config.Config) *usersandbox.SandboxRouter {
-	if cfg == nil || !cfg.Profile.Strict() {
-		return nil // non-strict: host-direct everywhere, no box runtime needed (SC-4)
+	if cfg == nil {
+		// No config means no box spec. A denying router is the only honest answer; nil would be
+		// read as "no containment needed".
+		slog.Error("aura: sandbox router built without config — EVERY tool call will be denied")
+		return usersandbox.NewSandboxRouter(nil, "", config.SandboxConfig{})
 	}
-	cli, err := client.New(client.FromEnv) // moby v0.4.1 New negotiates the API version by default (downgrades for older daemons).
+	// client.New does NO network I/O — it parses DOCKER_HOST, builds an *http.Client and returns
+	// (moby/moby/client@v0.5.0 client.go:191-259; API-version negotiation happens on the first
+	// request). So this error means a malformed DOCKER_HOST or unreadable TLS material, never
+	// "the daemon is down".
+	cli, err := client.New(client.FromEnv)
 	if err != nil {
-		slog.Error("aura: docker client unavailable — strict sandbox tools will fail closed", "err", err)
+		slog.Error("aura: docker client could not be composed — EVERY tool call will be denied", "err", err)
 		return usersandbox.NewSandboxRouter(nil, cfg.Profile, cfg.Sandbox)
 	}
+	pingSandboxDaemon(cli)
 	return usersandbox.NewSandboxRouter(newSandboxBackend(cli, cfg), cfg.Profile, cfg.Sandbox)
 }
+
+// pingSandboxDaemon names a dead daemon ONCE, at boot, where an operator is already reading logs.
+// Without it the first evidence is a moby dial error buried in the `detail` key of a
+// sandbox_unavailable tool result — per tool call, in the model's context, nowhere near the
+// operator. The router is returned either way: a dead daemon denies, it does not degrade.
+func pingSandboxDaemon(cli *client.Client) {
+	ctx, cancel := context.WithTimeout(context.Background(), sandboxPingTimeout)
+	defer cancel()
+	if _, err := cli.Ping(ctx, client.PingOptions{}); err != nil {
+		slog.Error("aura: docker daemon unreachable — EVERY tool call will be denied until it is restored",
+			"docker_host", cli.DaemonHost(), "err", err)
+	}
+}
+
+// sandboxPingTimeout bounds the boot-time reachability check: long enough for a loaded local
+// daemon, short enough that an unreachable socket cannot stall serve boot.
+const sandboxPingTimeout = 5 * time.Second
 
 // newSandboxBackend builds the production DockerBackend from cfg: the box image + cgroup caps, the
 // per-identity materialize sources (skills / Agent.md / pyscripts, so a routed shell_exec finds a

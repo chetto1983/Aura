@@ -106,32 +106,26 @@ func (c *Config) ValidateProfile(p RuntimeProfile) []Violation {
 	return vs
 }
 
-// gateMultiUserNeedsASandbox refuses the ONE combination that makes every other
-// isolation control decorative: a second identity on a deployment whose tools run on
-// the host.
+// gateMultiUserNeedsASandbox refuses a second identity on a deployment whose shared,
+// deployment-wide planes are not identity-scoped.
 //
-// Four planes are shared deployment-wide and none of them is identity-scoped today:
+// The TOOL plane is no longer one of them. SandboxRouter.Route now contains on every
+// profile — there is no host arm behind it — so shell_exec and the fs_* tools reach only
+// the caller's own per-identity box whatever AURA_PROFILE says. The gate is deliberately
+// kept keyed on Strict() anyway, because the other three planes it names still stand:
 //
 //	skills          skillLoaderRoots() returns {<export>/.agents/skills, cfg.SkillsDir}
 //	                with no identity component, and skills.NewSkillToolForIdentity — the
 //	                per-identity primitive — has ZERO production callers. A second
 //	                identity reads and rewrites the operator's library.
-//	host tools      usersandbox.SandboxRouter.Route returns routed=false unless the
-//	                profile is Strict, and ParseProfile maps unset to `dev`. On that
-//	                branch shell_exec and every fs_* run on the host as the daemon user:
-//	                .env, the Postgres/Garage/ArcadeDB credentials, $AURA_RUN_DIR.
 //	aura.settings   keyed by `key` alone — no identity column, no RLS — and it holds
 //	                OPENROUTER_API_KEY.
 //	MCP catalog     unscoped; capability grants are the only control.
 //
-// Running tools on the host is a DELIBERATE product decision for a single-principal
-// appliance, not a defect: the operator's own words are that the full host terminal is
-// the primary surface. The defect would be pairing it with a second identity, because
-// host access defeats the five planes that ARE isolated — per-identity ArcadeDB
-// databases, identity-scoped Postgres rows, Garage objects, conversations, shared links.
-//
-// So this gate does not force a sandbox and does not forbid multi-user. It forbids the
-// PAIR, at any profile, and says which of the two to change.
+// Those three defeat the five planes that ARE isolated — per-identity ArcadeDB databases,
+// identity-scoped Postgres rows, Garage objects, conversations, shared links — so the
+// PAIR is still what this refuses, and it still says which of the two to change. What
+// changed is the reason: it is no longer "your tools run on the host".
 func (c *Config) gateMultiUserNeedsASandbox(p RuntimeProfile) []Violation {
 	if c == nil || !c.MUSRIsolation || p.Strict() {
 		return nil
@@ -143,10 +137,10 @@ func (c *Config) gateMultiUserNeedsASandbox(p RuntimeProfile) []Violation {
 		// nothing anywhere reads the other name — a fail-closed gate that tells the
 		// operator to set a variable with no effect leaves them stuck at a boot loop
 		// following its own instructions. Found on the live box, 2026-08-03.
-		Msg: "a second identity needs per-identity tool isolation: set AURA_PROFILE to " +
-			"single_user_hardened or server_production so shell_exec and fs_* route into a " +
-			"per-identity box, or leave AURA_MUSR_ISOLATION off — under the dev profile every " +
-			"identity shares the host, the skills library, aura.settings and the MCP catalog",
+		Msg: "a second identity needs a hardened profile: set AURA_PROFILE to " +
+			"single_user_hardened or server_production, or leave AURA_MUSR_ISOLATION off — " +
+			"tools are already contained per identity on every profile, but under dev every " +
+			"identity still shares the skills library, aura.settings and the MCP catalog",
 	}}
 }
 
