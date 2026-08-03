@@ -76,7 +76,14 @@ describe('RuntimeHealthPanel', () => {
     it('renders a TEXT status label for every row (never colour-only)', async () => {
       renderPanel();
       // Row labels present.
-      for (const label of ['Liveness', 'Readiness', 'Postgres', 'Memory', 'Bind address', 'Build']) {
+      for (const label of [
+        'Liveness',
+        'Readiness',
+        'Postgres',
+        'Memory',
+        'Bind address',
+        'Build',
+      ]) {
         await waitFor(() => {
           expect(screen.getByText(label)).toBeTruthy();
         });

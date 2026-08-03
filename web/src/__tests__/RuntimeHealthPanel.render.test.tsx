@@ -95,7 +95,9 @@ describe('RuntimeHealthPanel rendering', () => {
   });
 
   it('maps a not-ready /readyz to a warning Degraded readiness', () => {
-    set({ readyz: { status: 503, body: { ready: false, deps: { postgres: 'ok', memory: 'ok' } } } });
+    set({
+      readyz: { status: 503, body: { ready: false, deps: { postgres: 'ok', memory: 'ok' } } },
+    });
     render(<RuntimeHealthPanel />);
     expect(statusOf('Readiness')).toBe('Degraded');
     expect(dotClass('Readiness')).toContain('bg-warning');
