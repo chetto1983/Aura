@@ -44,6 +44,8 @@ updated: 2026-08-03
   finding: The full owned-surface matrix passed at 23,474/27,152 statements (86.4%); `internal/arcadedb` measured 93.9% unit and 94.0% with live ArcadeDB integration, while `internal/agui` measured 85.5% on the full `db_integration` profile.
 - timestamp: 2026-08-03T13:20:00+02:00
   finding: `go-mutesting internal/arcadedb/studio_graph.go` killed 18/18 mutants (100%), above the 70% critical-file gate; WSL race passed for `internal/arcadedb`, `internal/agui`, `internal/webui`, and `cmd/aura`.
+- timestamp: 2026-08-03T15:28:00+02:00
+  finding: The former Sigma/Graphology/ForceAtlas2 renderer was replaced, not retained, by ArcadeDB Studio's Cytoscape + fCoSE stack. The final frontend suite passed 1,747 tests at 92.76% statements / 87.26% branches / 92.65% functions / 94.59% lines; `src/graph` measured 95.88% / 87.41% / 93.45% / 97.67%, and the new projection/style module killed 153/178 mutants (85.96%). The production bundle emits no >500 kB warning: Cytoscape core is 435.41 kB and its layout chunk 122.56 kB.
 
 ## Eliminated
 
@@ -55,6 +57,6 @@ updated: 2026-08-03
 ## Resolution
 
 - root_cause: The ArcadeDB migration kept schema discovery but replaced graph reads with an always-empty placeholder; Compose also omitted the tenant graph configuration required by the server adapter.
-- fix: Added tenant-scoped Studio serializer reads, strict `overview`/`expand` intent compilation, bounded projection, cumulative RID expansion, the identity-wide frontend flow, and explicit Compose wiring. Removed the conversation seed contract and its UI.
+- fix: Added tenant-scoped Studio serializer reads, strict `overview`/`expand` intent compilation, bounded projection, cumulative RID expansion, the identity-wide frontend flow, and explicit Compose wiring. Replaced Sigma/Graphology/ForceAtlas2 with the same Cytoscape + fCoSE renderer family as Studio, added type-derived colours and native-speed zoom, and removed the conversation seed contract and its UI.
 - verification: Unit, integration, race, vet, build, full-matrix coverage, serializer mutation, full frontend, mocked Playwright, real authenticated desktop/mobile Playwright, dead-code, duplication, contrast, and embedded-bundle checks passed.
 - files_changed: `internal/arcadedb`, `internal/agui`, `cmd/aura/serve_graph_schema*`, `web/src/graph`, graph E2E tests, `compose.yaml`, operator docs, and `internal/webui/dist`.
