@@ -1,6 +1,7 @@
 package mcptools
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/mcp"
@@ -63,7 +64,12 @@ func TestTrustedRecipeRiskPolicyIsGraduated(t *testing.T) {
 		{name: "calendar external send", source: "recipe:calendar", tool: "send_email", wantMutating: true, wantDestructive: true},
 		{name: "calendar external response", source: "recipe:calendar", tool: "respond_to_event", wantMutating: true, wantDestructive: true},
 		{name: "memory read", source: mcp.SourceRecipeMemory, tool: "memory_search"},
-		{name: "memory ordinary write", source: mcp.SourceRecipeMemory, tool: "memory_update", wantMutating: true},
+		// Recording a fact must NOT stop the turn. The table used to name the
+		// previous server's tools, so memory_upsert_fact fell through to the
+		// fail-closed default and the cockpit asked the operator, live, whether
+		// Aura was allowed to remember something.
+		{name: "memory ordinary write", source: mcp.SourceRecipeMemory, tool: "memory_upsert_fact", wantMutating: true},
+		{name: "memory hygiene", source: mcp.SourceRecipeMemory, tool: "memory_merge_entities", wantMutating: true},
 		{name: "memory erase", source: mcp.SourceRecipeMemory, tool: "memory_forget", wantMutating: true, wantDestructive: true},
 		{name: "whatsapp read", source: "recipe:whatsapp", tool: "list_messages"},
 		{name: "whatsapp local download", source: "recipe:whatsapp", tool: "download_media", wantMutating: true},
@@ -83,6 +89,35 @@ func TestTrustedRecipeRiskPolicyIsGraduated(t *testing.T) {
 					tt.tool, spec.Mutating, spec.Destructive, tt.wantMutating, tt.wantDestructive)
 			}
 		})
+	}
+}
+
+// TestMemoryRecipeCoversEveryServedTool is the tripwire the previous table lacked.
+// A name that drifts out of this map does not fail loudly — it falls through to the
+// unannotated default in mcpToolRisk, `return true, true`, and quietly becomes a
+// Destructive action that stops the turn. That is how six fictional tool names sat
+// here across a whole memory-server rewrite while the eight real ones were gated.
+//
+// The list is the tool set cmd/arcadedb-mcp serves. It cannot be imported (main
+// package), so it is duplicated here on purpose: the duplication IS the alarm.
+// Adding a tool there and not here now fails a test instead of surprising an
+// operator in the cockpit.
+func TestMemoryRecipeCoversEveryServedTool(t *testing.T) {
+	t.Parallel()
+	served := []string{
+		"memory_digest", "memory_entities", "memory_facts_about", "memory_forget",
+		"memory_merge_entities", "memory_reembed", "memory_search", "memory_upsert_fact",
+	}
+	table := trustedRecipeActions[mcp.SourceRecipeMemory]
+	for _, name := range served {
+		if _, ok := table[name]; !ok {
+			t.Errorf("%s is served but unclassified — it silently becomes Destructive and stops the turn", name)
+		}
+	}
+	for name := range table {
+		if !slices.Contains(served, name) {
+			t.Errorf("%s is classified but no longer served — the table is describing a server that is gone", name)
+		}
 	}
 }
 

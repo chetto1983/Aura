@@ -53,15 +53,27 @@ var trustedRecipeActions = map[string]map[string]mcpActionClass{
 		"send_message":               mcpActionDestructive,
 		"send_reaction":              mcpActionDestructive,
 	},
+	// The eight tools cmd/arcadedb-mcp actually serves. The names here were the
+	// PREVIOUS memory server's — memory_add_fact, memory_add_entity, memory_update,
+	// memory_add_preference, memory_create_relationship, memory_get_entity — and
+	// none of them exists any more. A tool absent from this table falls through to
+	// the unannotated default in mcpToolRisk, which is `return true, true`: so
+	// every write to her own memory was classified Destructive and stopped the turn
+	// to ask the operator whether Aura may remember something. Seen live in the
+	// cockpit on 2026-08-03 on memory_upsert_fact.
+	//
+	// Only forget is gated. Recording, organising and re-embedding her own memory is
+	// what she does, not something done TO the operator; merge folds one entity's
+	// facts onto another and keeps them.
 	mcp.SourceRecipeMemory: {
-		"memory_search":              mcpActionRead,
-		"memory_get_entity":          mcpActionRead,
-		"memory_add_entity":          mcpActionMutate,
-		"memory_add_fact":            mcpActionMutate,
-		"memory_add_preference":      mcpActionMutate,
-		"memory_create_relationship": mcpActionMutate,
-		"memory_update":              mcpActionMutate,
-		"memory_forget":              mcpActionDestructive,
+		"memory_search":         mcpActionRead,
+		"memory_entities":       mcpActionRead,
+		"memory_facts_about":    mcpActionRead,
+		"memory_digest":         mcpActionRead,
+		"memory_upsert_fact":    mcpActionMutate,
+		"memory_merge_entities": mcpActionMutate,
+		"memory_reembed":        mcpActionMutate,
+		"memory_forget":         mcpActionDestructive,
 	},
 }
 
