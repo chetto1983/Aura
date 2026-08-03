@@ -296,8 +296,11 @@ type Querier interface {
 	// reuses this EXACT query; only the excerpt rendering differs per channel.
 	SearchConversationTurns(ctx context.Context, arg SearchConversationTurnsParams) ([]SearchConversationTurnsRow, error)
 	// Rank a library by what each document IS, to pick WHICH file to open. The
-	// ranking is Postgres' own ts_rank over the weighted title/tags/digest vector —
-	// no embedding, no reranker, no graph. websearch_to_tsquery is used because the
+	// ranking is Postgres' own ts_rank over the weighted title/tags/digest/card
+	// vector — no embedding, no reranker, no graph. The four legs are weighted in
+	// that order (A title, B tags, C the agent's note, D the machine card): the card
+	// makes every file findable from the moment it lands, and never outranks what a
+	// person or the agent said about it. websearch_to_tsquery is used because the
 	// query arrives as a user's sentence, and it degrades a malformed one to terms
 	// instead of raising, which plainto_tsquery does not do as gracefully.
 	//
