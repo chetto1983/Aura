@@ -43,6 +43,11 @@
   as `memory_search`. Before readiness is measured, the harness materializes the
   configured sandbox image; the default is built from the production
   `docker/aura-sandbox/Dockerfile`, never replaced by a surrogate image.
+- PostgreSQL backups must restore into a newly-created database under
+  `pg_restore`'s restricted search path. Stored expressions and SQL functions
+  therefore schema-qualify extension objects such as
+  `public.unaccent`/`public.unaccent(...)`; the three-plane DR drill is the
+  blocking acceptance test.
 
 > Stato di partenza: commit `af4ca65c` (skeleton, 633 LOC src).
 > Ordine fissato (utente): **Agent → Sandbox → Swarm → KV**.
