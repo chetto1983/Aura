@@ -236,6 +236,24 @@ può puntare a Garage).
     → aggiungerlo ha senso solo se Hetzner è già k8s o per il multi-tenant; per il
     single-op il DockerBackend attuale basta e non va rippato. (2) qualunque
     sostituto deve **almeno pareggiare** l'egress control attuale, non regredire.
+  - **RI-VERIFICATO sul codice 2026-08-03** (l'assessment sopra era di seconda mano e
+    l'operatore l'ha giustamente messo in dubbio). Misurato sul repo, non sul documento:
+    `install.yaml` = 133 righe, solo ServiceAccount/Service/Secret/Role/RoleBinding/
+    Deployment. In TUTTO il repository: `NetworkPolicy` **0**, `SecurityContext` **0**,
+    `Capabilities` solo nei doc. Quindi **l'accusa sull'egress regge, confermata di prima
+    mano**. Ma *«runtime di isolamento non dichiarato» era TROPPO SEVERO*: gVisor c'è —
+    `config/sandbox.yaml` rende `runtimeClassName` da `.Sandbox.Metadata`, ed è quindi
+    **opt-in**. Il dato nuovo: dei sei template spediti in `config/templates.json` **uno
+    solo** (`code-interpreter`) lo imposta; gli altri cinque — `aio`, `opencode`,
+    `desktop`, `openclaw` e persino `code-interpreter-biz` — girano senza. L'isolamento
+    forte esiste ma NON è il default.
+  - **DECISIONE OPERATORE 2026-08-03: si resta su `usersandbox`.** Il saldo reale di
+    un'adozione sarebbe −930 righe di lifecycle (`docker_backend*.go` + `materialize.go`),
+    +Kubernetes, e le 183 righe di `egress.go` riscritte come manifest invece che
+    eliminate — perché dall'altra parte quel confine non c'è. 930 righe su ~100k non
+    giustificano un cluster. `backend.go` resta la cucitura: il suo commento dichiara già
+    che un gateway E2B entra dietro la stessa interfaccia, quindi la porta è aperta se un
+    giorno il deploy è su cluster.
   - **Strade pulite**: SIG project (sicurezza vera) + facade MCP/E2B sottile;
     oppure il repo linkato **hardened** (RuntimeClass gVisor/Kata + NetworkPolicy
     deny-egress + blocco metadata). Rif. egress-fatto-bene: `mattolson/agent-sandbox`
