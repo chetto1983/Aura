@@ -12,14 +12,14 @@ import (
 )
 
 const searchDocumentDigests = `-- name: SearchDocumentDigests :many
-SELECT id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, card, digest_tsv, ts_rank(digest_tsv, websearch_to_tsquery('simple', unaccent('unaccent'::regdictionary, $1::text))) AS rank
+SELECT id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, card, digest_tsv, ts_rank(digest_tsv, websearch_to_tsquery('simple', public.unaccent('public.unaccent'::regdictionary, $1::text))) AS rank
 FROM aura.documents
 WHERE identity_id = $2
   AND deleted_at IS NULL
   AND status <> 'deleted'
   AND (
     $1::text = ''
-    OR digest_tsv @@ websearch_to_tsquery('simple', unaccent('unaccent'::regdictionary, $1::text))
+    OR digest_tsv @@ websearch_to_tsquery('simple', public.unaccent('public.unaccent'::regdictionary, $1::text))
   )
 ORDER BY rank DESC, updated_at DESC
 LIMIT $3

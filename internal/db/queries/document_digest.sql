@@ -47,14 +47,14 @@ RETURNING *;
 -- stemmer for a mixed corpus (measured: a single stemmer halved recall). A library
 -- is tens of documents and the agent can rephrase; if this starts costing, fold
 -- plurals inside aura.searchable_text rather than reaching for a stemmer.
-SELECT *, ts_rank(digest_tsv, websearch_to_tsquery('simple', unaccent('unaccent'::regdictionary, sqlc.arg(query)::text))) AS rank
+SELECT *, ts_rank(digest_tsv, websearch_to_tsquery('simple', public.unaccent('public.unaccent'::regdictionary, sqlc.arg(query)::text))) AS rank
 FROM aura.documents
 WHERE identity_id = sqlc.arg(identity_id)
   AND deleted_at IS NULL
   AND status <> 'deleted'
   AND (
     sqlc.arg(query)::text = ''
-    OR digest_tsv @@ websearch_to_tsquery('simple', unaccent('unaccent'::regdictionary, sqlc.arg(query)::text))
+    OR digest_tsv @@ websearch_to_tsquery('simple', public.unaccent('public.unaccent'::regdictionary, sqlc.arg(query)::text))
   )
 ORDER BY rank DESC, updated_at DESC
 LIMIT sqlc.arg(row_limit);
