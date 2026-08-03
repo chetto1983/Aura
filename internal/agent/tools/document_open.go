@@ -124,15 +124,13 @@ func (t *DocumentOpen) Execute(ctx context.Context, raw json.RawMessage) (ToolRe
 	}
 	// The backend's own name goes through the SAME rule as the caller's, and an empty one is
 	// refused outright: the name becomes a path component, so a "../.." in it would let
-	// pathpkg.Join walk out of the documents directory and an empty string would resolve to
-	// the directory itself.
-	if name == "" {
-		return ToolResult{}, fmt.Errorf("document_open: document %s has no usable file name", args.DocumentID)
+	// the join walk out of the documents directory and an empty string would resolve to
+	// the directory itself. StagedDocumentPath owns both checks, and the delete resolves
+	// the file to remove through that same function.
+	boxPath, err := StagedDocumentPath(name)
+	if err != nil {
+		return ToolResult{}, fmt.Errorf("document_open: document %s: %w", args.DocumentID, err)
 	}
-	if err := validateOpenFileName(name); err != nil {
-		return ToolResult{}, err
-	}
-	boxPath := pathpkg.Join(openedDocumentsBoxDir, name)
 	// A write failure is a plain error, NOT the sandbox_unavailable deny the route uses: it is
 	// just as likely to be the object store dying mid-download, and telling the model its
 	// container is down and an operator must restore it is advice it can only act on by
@@ -190,6 +188,25 @@ func (t *DocumentOpen) write(
 // write it somewhere else instead of saying no. Both separators are refused, not
 // just the POSIX one the box uses: a caller who types a Windows path is making the
 // same mistake and deserves the same answer.
+// StagedDocumentPath returns the in-box path document_open materializes a document
+// to, or an error when the name cannot be one.
+//
+// It is exported because DELETING a document has to remove that same file, and the
+// delete lives at the composition root rather than in this package. Resolving both
+// through one function is the point: a staging directory that moved, or a name rule
+// that tightened, would otherwise leave the delete confidently removing a path
+// nothing was ever written to — and the operator's document still readable.
+func StagedDocumentPath(fileName string) (string, error) {
+	name := strings.TrimSpace(fileName)
+	if err := validateOpenFileName(name); err != nil {
+		return "", err
+	}
+	if name == "" {
+		return "", fmt.Errorf("staged document path: file name is empty")
+	}
+	return pathpkg.Join(openedDocumentsBoxDir, name), nil
+}
+
 func validateOpenFileName(name string) error {
 	name = strings.TrimSpace(name)
 	if name == "" {

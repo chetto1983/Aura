@@ -93,6 +93,28 @@ func TestCheckMemoryPrecision(t *testing.T) {
 	}
 }
 
+// TestCheckAnswerMustNotContain is the deletion assertion. Nothing else in the
+// gate can make it: every other check asks whether something is present, and a
+// delete is proved by an absence.
+func TestCheckAnswerMustNotContain(t *testing.T) {
+	t.Parallel()
+	c := Case{AnswerMustNotContain: []string{"699"}, MaxLLMCalls: 8}
+	clean := Evidence{Answer: "Non ho documenti caricati, quindi non posso contarli.", LLMCalls: 2}
+	if got := c.Check(clean); len(got) != 0 {
+		t.Fatalf("an answer that dropped the deleted number reported violations: %v", got)
+	}
+	leaked := Evidence{Answer: "Ci sono 699 clienti a TORINO.", LLMCalls: 5, Tools: []string{"fs_glob", "shell_exec"}}
+	got := c.Check(leaked)
+	if len(got) != 1 || !strings.Contains(got[0], "699") {
+		t.Fatalf("a deleted document was answered from and the gate did not catch it: %v", got)
+	}
+	// The tools are in the message: knowing she reached it via fs_glob rather than
+	// document_search is the difference between a catalog bug and a residue on disk.
+	if !strings.Contains(got[0], "fs_glob") {
+		t.Errorf("the violation does not say HOW she reached it: %s", got[0])
+	}
+}
+
 // TestCasesAreWellFormed keeps the corpus honest: a case with no assertion is a
 // live turn that costs money and can never fail.
 func TestCasesAreWellFormed(t *testing.T) {
@@ -106,7 +128,8 @@ func TestCasesAreWellFormed(t *testing.T) {
 			t.Errorf("duplicate case name %q", c.Name)
 		}
 		seen[c.Name] = true
-		if len(c.AnswerContains) == 0 && !c.MemoryMustBeEmpty && len(c.ForbiddenTools) == 0 {
+		if len(c.AnswerContains) == 0 && len(c.AnswerMustNotContain) == 0 &&
+			!c.MemoryMustBeEmpty && len(c.ForbiddenTools) == 0 {
 			t.Errorf("case %q asserts nothing that can fail", c.Name)
 		}
 		if c.MaxLLMCalls <= 0 {

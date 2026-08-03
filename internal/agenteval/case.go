@@ -38,6 +38,14 @@ type Case struct {
 	// phrase. "699" is ground truth; "molti clienti" is an opinion about prose.
 	AnswerContains []string
 
+	// AnswerMustNotContain are exact tokens the answer must NOT carry. It is the
+	// deletion primitive: after an operator deletes a document, the only assertion
+	// that means anything is that the number it held has stopped coming out. A
+	// catalog row marked deleted proves the catalog, not the deletion — on
+	// 2026-08-03 the catalog was correct and she still answered 699 from a copy left
+	// in the sandbox.
+	AnswerMustNotContain []string
+
 	// RequiredTools passes when AT LEAST ONE was called. It states the capability
 	// the question demands without pinning the route, which would make the gate
 	// fail on an improvement.
@@ -86,6 +94,13 @@ func (c Case) Check(e Evidence) []string {
 	for _, want := range c.AnswerContains {
 		if !strings.Contains(e.Answer, want) {
 			failures = append(failures, fmt.Sprintf("answer is missing %q; got: %s", want, truncate(e.Answer, 300)))
+		}
+	}
+	for _, banned := range c.AnswerMustNotContain {
+		if strings.Contains(e.Answer, banned) {
+			failures = append(failures, fmt.Sprintf(
+				"the answer still carries %q, which should no longer be reachable; tools: %v — answer: %s",
+				banned, e.Tools, truncate(e.Answer, 300)))
 		}
 	}
 	if len(c.RequiredTools) > 0 && !anyCalled(e.Tools, c.RequiredTools) {
