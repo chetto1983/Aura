@@ -83,7 +83,7 @@ func (f *fakeArcadeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/server":
 		f.serveCommand(w, r)
 	case r.URL.Path == "/api/v1/ready":
-		w.WriteHeader(http.StatusOK)
+		w.WriteHeader(http.StatusNoContent)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/exists/"):
 		f.serveExists(w, strings.TrimPrefix(r.URL.Path, "/api/v1/exists/"))
 	default:

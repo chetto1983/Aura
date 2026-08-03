@@ -360,10 +360,9 @@ func (c *Client) DatabaseExists(ctx context.Context, name string) (bool, error) 
 //
 // ArcadeDB publishes no list-users endpoint, so a negative bind is the only way
 // to prove `drop user` took. GET /api/v1/ready is the probe ArcadeDB's own
-// user-management tests use for exactly this: an auth-guarded GET that answers
-// 200 when the credential is accepted and 401 when it is not
-// (docs/superpowers/plans/2026-04-10-ha-raft-drop-database-propagation-impl.md,
-// "Task 22").
+// user-management tests use for exactly this: GetReadyHandler answers 204 when
+// the credential is accepted, while the auth layer answers 401 or 403 when it is
+// refused.
 //
 // The (bool, error) split is load-bearing: false means REFUSED, an error means
 // the answer is unknown. Collapsing them would read a server that is merely down
@@ -375,7 +374,7 @@ func (c *Client) CredentialAccepted(ctx context.Context) (bool, error) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 	switch resp.StatusCode {
-	case http.StatusOK:
+	case http.StatusNoContent:
 		return true, nil
 	case http.StatusUnauthorized, http.StatusForbidden:
 		return false, nil

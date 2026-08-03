@@ -318,9 +318,10 @@ func TestCredentialAcceptedSeparatesRefusalFromUnreachable(t *testing.T) {
 		want    bool
 		wantErr bool
 	}{
-		{name: "accepted", status: http.StatusOK, want: true},
+		{name: "accepted", status: http.StatusNoContent, want: true},
 		{name: "unauthorized", status: http.StatusUnauthorized},
 		{name: "forbidden", status: http.StatusForbidden},
+		{name: "unexpected ok", status: http.StatusOK, wantErr: true},
 		{name: "server error", status: http.StatusInternalServerError, wantErr: true},
 	}
 	for _, tt := range tests {
