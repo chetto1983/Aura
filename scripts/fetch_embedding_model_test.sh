@@ -33,8 +33,8 @@ fi
 
 workflow="$repo_root/.github/workflows/ci.yml"
 helper_calls="$(grep -c 'bash scripts/fetch_embedding_model[.]sh' "$workflow" || true)"
-if [ "$helper_calls" -ne 3 ]; then
-  echo "expected all three live embedding CI tiers to use the shared helper" >&2
+if [ "$helper_calls" -ne 4 ]; then
+  echo "expected all four live embedding CI tiers to use the shared helper" >&2
   exit 1
 fi
 if grep -q 'qwen3-embedding-0[.]6b' "$workflow"; then
