@@ -48,6 +48,18 @@
   therefore schema-qualify extension objects such as
   `public.unaccent`/`public.unaccent(...)`; the three-plane DR drill is the
   blocking acceptance test.
+- Archive entry names copied out of a sandbox are content metadata only and
+  must never influence a host filesystem path. The staged filename comes from
+  the validated requested artifact basename and is created exclusively with
+  private permissions; traversal-shaped archive names cannot be laundered into
+  host filenames or overwrite an existing staged file.
+- CLI integers that eventually cross an `int32` database boundary are parsed at
+  32-bit width and reject overflow at the input boundary; the store converts to
+  `int32` only inside its proven bounded branch. CodeQL alert 50 is closed as a
+  documented false positive: it merges independent object-list calls, while the
+  production `slog.JSONHandler` escapes CR/LF in structured error attributes.
+  Alerts 51-52 close through code and all three boundaries have regression
+  evidence on the exact shipped SHA.
 
 > Stato di partenza: commit `af4ca65c` (skeleton, 633 LOC src).
 > Ordine fissato (utente): **Agent → Sandbox → Swarm → KV**.
