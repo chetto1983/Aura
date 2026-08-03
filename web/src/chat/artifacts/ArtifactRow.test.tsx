@@ -51,7 +51,15 @@ describe('ArtifactRow — accepted', () => {
   it('does NOT open the preview when the download anchor is clicked', () => {
     const onPreview = vi.fn();
     render(<ArtifactRow asset={asset({})} onPreview={onPreview} />);
-    fireEvent.click(screen.getByRole('link'));
+    const link = screen.getByRole('link');
+    link.addEventListener(
+      'click',
+      (event) => {
+        event.preventDefault();
+      },
+      { once: true },
+    );
+    fireEvent.click(link);
     expect(onPreview).not.toHaveBeenCalled();
   });
 });
