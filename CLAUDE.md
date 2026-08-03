@@ -157,6 +157,23 @@ Il modello detecta skill rilevante dal frontmatter `description` (es. "Use when 
 
 - **NEVER SUPPOSE.** Read code before editing. If uncertain about API contract, stop and ask.
 - **READ THE DOCUMENTATION FIRST — ALWAYS.** Before writing a line against any external system (ArcadeDB, Postgres, LibreOffice, an MCP server, a library), read its documentation. Not after a failure, not "if the probe is unclear": first. Probing a live system to discover an API is guessing with extra steps, and it produces code that works by accident. Measured cost on 2026-08-01 alone: ArcadeDB's `vector.fuse` needs an options object, backticked names, and a `@rid, $score` full-text leg — all documented, all discovered by trial; `INT8` quantization was copied from the manual's production recommendation without reading the sentence that exempts corpora under 10K vectors; `LIST OF FLOAT` vs `ARRAY_OF_FLOATS` cost a failed write; and half an hour went into probing user management before the page said plainly that a user's databases CANNOT be widened after creation. Each was one page away. Cite the page in the code comment when the behaviour is surprising.
+- **INVENTORY BEFORE INVENTION. ALWAYS.** Before writing a component, enumerate what the
+  engine, the library or the package you already depend on ALREADY DOES. Read its function
+  list, not its landing page. `gh api "search/code?q=repo:<owner>/<repo>+<Symbol>"` and a
+  scan of the source tree take two minutes; the component you were about to write takes a
+  week and then rots because nobody calls it. Measured on 2026-08-03: ArcadeDB's engine
+  exposes **78 vector functions**, among them `SQLFunctionVectorRerank` — a declarative
+  prefetch+rerank that re-scores a coarse candidate set against full-precision vectors in
+  ONE query. `internal/rerank` had been written, had never acquired a caller, and was
+  deleted the same morning. Likewise `vector.multiscore` / `hybridscore` / `rrfscore` /
+  `normalizescores` were sitting in the engine while a Go fusion layer was being planned,
+  and `vector.neighbors` takes a `{filter: <RIDs>}` so a graph traversal can pick the
+  candidate set before ANN runs. The rule cuts BOTH ways and the second half is the one
+  that costs money: the same search proved ArcadeDB has NO text-to-vector function at all
+  (`SQLFunctionVectorEmbed`/`VectorEncode`/`VectorEmbedding` = zero hits), so "bring your
+  own embedding model" is literal and the embedding sweep genuinely must be ours. Answer
+  BUILD vs REUSE with a grep over the dependency, never with an assumption in either
+  direction.
 - **NOT MY WORK.** If Bug or gap found fix on touch. Never Skip.
 - **READ BEFORE EDIT.** Re-read a file you haven't touched in the last 5 messages.
 - **3-STRIKE RULE.** Same failing approach max 3 times. On strike 3, stop and ask (or escalate via PRD-amendment, vedi PRD §Q&A escalation).
