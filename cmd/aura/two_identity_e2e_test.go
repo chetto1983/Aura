@@ -58,7 +58,8 @@ func TestTwoIdentityCrossDeny(t *testing.T) {
 		t.Fatalf("A create conversation: %v", err)
 	}
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM aura.conversations WHERE id=$1`, convA) })
-	if err := convStore.AppendTurn(ctx, conversations.AppendTurnParams{
+	ctxA := identityctx.WithIdentityID(ctx, idA)
+	if err := convStore.AppendTurn(ctxA, conversations.AppendTurnParams{
 		ConversationID: convA, Seq: 1, Role: "system", Content: "you are aura",
 	}); err != nil {
 		t.Fatalf("A append turn: %v", err)
