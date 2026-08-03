@@ -27,6 +27,12 @@
   binds its HTTP listener. The per-tenant resolver remains the sole owner of
   database names and tenant credentials; boot validation must not resurrect a
   shared database client or require obsolete shared credentials.
+- Every CI tier that starts the local embedding sidecar must materialize the
+  official `ggml-org/embeddinggemma-300M-Q8_0.gguf` artifact at Compose's model
+  path before the healthcheck begins. Cache keys identify EmbeddingGemma 300M,
+  Q8_0 and 768 dimensions; retired Qwen cache names and implicit pre-seeding are
+  forbidden. Download and GGUF/dense-projection validation live in one shared
+  helper used by CI and installation.
 
 > Stato di partenza: commit `af4ca65c` (skeleton, 633 LOC src).
 > Ordine fissato (utente): **Agent → Sandbox → Swarm → KV**.
