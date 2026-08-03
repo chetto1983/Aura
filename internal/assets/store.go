@@ -9,16 +9,34 @@ import (
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Store persists multimodal asset lifecycle state in Postgres.
+//
+// pool is the RLS carrier, not a second query handle: migration 0090 put a fail-closed
+// floor on aura.assets and aura.asset_events, so every statement below runs inside a
+// transaction that first binds app.current_identity. See withIdentity in
+// store_identity.go.
 type Store struct {
-	q *sqlc.Queries
+	q    *sqlc.Queries
+	pool *pgxpool.Pool
 }
 
 // NewStore builds a Postgres-backed asset store.
+//
+// A *pgxpool.Pool is ALSO kept as the pool, so the Store can open the identity-scoped
+// transactions aura.assets now requires. The only deployed call site
+// (cmd/aura/document_processor_wiring.go) already passes one — which is why the signature
+// does not change and no call site moves, the same reshape idempotency.New and
+// documents.NewPostgresCatalogStore took. Any other DBTX is a handle the caller already
+// owns and is responsible for scoping; it is used as-is.
 func NewStore(db sqlc.DBTX) *Store {
-	return &Store{q: sqlc.New(db)}
+	store := &Store{q: sqlc.New(db)}
+	if pool, ok := db.(*pgxpool.Pool); ok {
+		store.pool = pool
+	}
+	return store
 }
 
 // Create inserts a new presigned asset record.
@@ -31,45 +49,34 @@ func (s *Store) Create(ctx context.Context, req CreateRequest) (Asset, error) {
 	if err != nil {
 		return Asset{}, err
 	}
-	row, err := s.q.CreateAsset(ctx, sqlc.CreateAssetParams{
-		IdentityID:        identityID,
-		SourceKind:        string(req.SourceKind),
-		SourceRef:         req.SourceRef,
-		ThreadID:          req.ThreadID,
-		Scope:             string(req.Scope),
-		Modality:          string(req.Modality),
-		Status:            string(StatusPresigned),
-		FileName:          req.FileName,
-		MimeType:          req.MIMEType,
-		DeclaredSizeBytes: req.DeclaredSizeBytes,
-		ObjectBucket:      req.ObjectBucket,
-		ObjectKey:         req.ObjectKey,
-		Metadata:          metadata,
+	return s.scopedRow(ctx, req.IdentityID, func(q *sqlc.Queries) (sqlc.AuraAssets, error) {
+		return q.CreateAsset(ctx, sqlc.CreateAssetParams{
+			IdentityID:        identityID,
+			SourceKind:        string(req.SourceKind),
+			SourceRef:         req.SourceRef,
+			ThreadID:          req.ThreadID,
+			Scope:             string(req.Scope),
+			Modality:          string(req.Modality),
+			Status:            string(StatusPresigned),
+			FileName:          req.FileName,
+			MimeType:          req.MIMEType,
+			DeclaredSizeBytes: req.DeclaredSizeBytes,
+			ObjectBucket:      req.ObjectBucket,
+			ObjectKey:         req.ObjectKey,
+			Metadata:          metadata,
+		})
 	})
-	if err != nil {
-		return Asset{}, err
-	}
-	return assetFromSQL(row)
 }
 
 // GetForIdentity returns a non-deleted asset by asset and identity id.
 func (s *Store) GetForIdentity(ctx context.Context, id, identityID string) (Asset, error) {
-	pgID, err := pgUUID("asset id", id)
-	if err != nil {
-		return Asset{}, err
-	}
-	pgIdentityID, err := pgUUID("identity_id", identityID)
-	if err != nil {
-		return Asset{}, err
-	}
-	row, err := s.q.GetAssetForIdentity(ctx, sqlc.GetAssetForIdentityParams{
-		ID:         pgID,
-		IdentityID: pgIdentityID,
-	})
-	if err != nil {
-		return Asset{}, err
-	}
-	return assetFromSQL(row)
+	return s.scopedTarget(ctx, id, identityID,
+		func(q *sqlc.Queries, pgID, pgIdentityID pgtype.UUID) (sqlc.AuraAssets, error) {
+			return q.GetAssetForIdentity(ctx, sqlc.GetAssetForIdentityParams{
+				ID:         pgID,
+				IdentityID: pgIdentityID,
+			})
+		})
 }
 
 // ListForThread returns non-deleted assets in thread order.
@@ -78,22 +85,12 @@ func (s *Store) ListForThread(ctx context.Context, identityID, threadID string) 
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.q.ListAssetsForThread(ctx, sqlc.ListAssetsForThreadParams{
-		IdentityID: pgIdentityID,
-		ThreadID:   threadID,
+	return s.scopedRows(ctx, identityID, func(q *sqlc.Queries) ([]sqlc.AuraAssets, error) {
+		return q.ListAssetsForThread(ctx, sqlc.ListAssetsForThreadParams{
+			IdentityID: pgIdentityID,
+			ThreadID:   threadID,
+		})
 	})
-	if err != nil {
-		return nil, err
-	}
-	out := make([]Asset, 0, len(rows))
-	for _, row := range rows {
-		asset, err := assetFromSQL(row)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, asset)
-	}
-	return out, nil
 }
 
 // ListForLibrary returns recent non-deleted library assets for one identity.
@@ -105,158 +102,94 @@ func (s *Store) ListForLibrary(ctx context.Context, identityID string, limit int
 	if limit <= 0 {
 		limit = 30
 	}
-	rows, err := s.q.ListAssetsForLibrary(ctx, sqlc.ListAssetsForLibraryParams{
-		IdentityID: pgIdentityID,
-		Limit:      int32(limit), //nolint:gosec // caller caps this at a small catalog limit.
+	return s.scopedRows(ctx, identityID, func(q *sqlc.Queries) ([]sqlc.AuraAssets, error) {
+		return q.ListAssetsForLibrary(ctx, sqlc.ListAssetsForLibraryParams{
+			IdentityID: pgIdentityID,
+			Limit:      int32(limit), //nolint:gosec // caller caps this at a small catalog limit.
+		})
 	})
-	if err != nil {
-		return nil, err
-	}
-	out := make([]Asset, 0, len(rows))
-	for _, row := range rows {
-		asset, err := assetFromSQL(row)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, asset)
-	}
-	return out, nil
 }
 
 // MarkUploaded records object storage upload completion.
 func (s *Store) MarkUploaded(ctx context.Context, id, identityID string, size int64, etag string) (Asset, error) {
-	pgID, err := pgUUID("asset id", id)
-	if err != nil {
-		return Asset{}, err
-	}
-	pgIdentityID, err := pgUUID("identity_id", identityID)
-	if err != nil {
-		return Asset{}, err
-	}
-	row, err := s.q.UpdateAssetUploaded(ctx, sqlc.UpdateAssetUploadedParams{
-		ID:         pgID,
-		IdentityID: pgIdentityID,
-		SizeBytes:  size,
-		ObjectEtag: etag,
-	})
-	if err != nil {
-		return Asset{}, err
-	}
-	return assetFromSQL(row)
+	return s.scopedTarget(ctx, id, identityID,
+		func(q *sqlc.Queries, pgID, pgIdentityID pgtype.UUID) (sqlc.AuraAssets, error) {
+			return q.UpdateAssetUploaded(ctx, sqlc.UpdateAssetUploadedParams{
+				ID:         pgID,
+				IdentityID: pgIdentityID,
+				SizeBytes:  size,
+				ObjectEtag: etag,
+			})
+		})
 }
 
 // MarkAccepted records validation of an uploaded asset.
 func (s *Store) MarkAccepted(ctx context.Context, id, identityID string, size int64, hash, mimeType string) (Asset, error) {
-	pgID, err := pgUUID("asset id", id)
-	if err != nil {
-		return Asset{}, err
-	}
-	pgIdentityID, err := pgUUID("identity_id", identityID)
-	if err != nil {
-		return Asset{}, err
-	}
-	row, err := s.q.UpdateAssetAccepted(ctx, sqlc.UpdateAssetAcceptedParams{
-		ID:          pgID,
-		IdentityID:  pgIdentityID,
-		SizeBytes:   size,
-		ContentHash: hash,
-		MimeType:    mimeType,
-	})
-	if err != nil {
-		return Asset{}, err
-	}
-	return assetFromSQL(row)
+	return s.scopedTarget(ctx, id, identityID,
+		func(q *sqlc.Queries, pgID, pgIdentityID pgtype.UUID) (sqlc.AuraAssets, error) {
+			return q.UpdateAssetAccepted(ctx, sqlc.UpdateAssetAcceptedParams{
+				ID:          pgID,
+				IdentityID:  pgIdentityID,
+				SizeBytes:   size,
+				ContentHash: hash,
+				MimeType:    mimeType,
+			})
+		})
 }
 
 // SetStatus records a lifecycle state transition and optional error fields.
 func (s *Store) SetStatus(ctx context.Context, id, identityID string, status Status, code, message string) (Asset, error) {
-	pgID, err := pgUUID("asset id", id)
-	if err != nil {
-		return Asset{}, err
-	}
-	pgIdentityID, err := pgUUID("identity_id", identityID)
-	if err != nil {
-		return Asset{}, err
-	}
-	row, err := s.q.UpdateAssetStatus(ctx, sqlc.UpdateAssetStatusParams{
-		ID:           pgID,
-		IdentityID:   pgIdentityID,
-		Status:       string(status),
-		ErrorCode:    code,
-		ErrorMessage: message,
-	})
-	if err != nil {
-		return Asset{}, err
-	}
-	return assetFromSQL(row)
+	return s.scopedTarget(ctx, id, identityID,
+		func(q *sqlc.Queries, pgID, pgIdentityID pgtype.UUID) (sqlc.AuraAssets, error) {
+			return q.UpdateAssetStatus(ctx, sqlc.UpdateAssetStatusParams{
+				ID:           pgID,
+				IdentityID:   pgIdentityID,
+				Status:       string(status),
+				ErrorCode:    code,
+				ErrorMessage: message,
+			})
+		})
 }
 
 // SetResult records processing output and clears prior error fields.
 func (s *Store) SetResult(ctx context.Context, id, identityID string, result Result) (Asset, error) {
-	pgID, err := pgUUID("asset id", id)
-	if err != nil {
-		return Asset{}, err
-	}
-	pgIdentityID, err := pgUUID("identity_id", identityID)
-	if err != nil {
-		return Asset{}, err
-	}
 	metadata, err := metadataJSON(result.Metadata)
 	if err != nil {
 		return Asset{}, err
 	}
-	row, err := s.q.UpdateAssetResult(ctx, sqlc.UpdateAssetResultParams{
-		ID:         pgID,
-		IdentityID: pgIdentityID,
-		Status:     string(result.Status),
-		DocumentID: result.DocumentID,
-		Summary:    result.Summary,
-		Metadata:   metadata,
-	})
-	if err != nil {
-		return Asset{}, err
-	}
-	return assetFromSQL(row)
+	return s.scopedTarget(ctx, id, identityID,
+		func(q *sqlc.Queries, pgID, pgIdentityID pgtype.UUID) (sqlc.AuraAssets, error) {
+			return q.UpdateAssetResult(ctx, sqlc.UpdateAssetResultParams{
+				ID:         pgID,
+				IdentityID: pgIdentityID,
+				Status:     string(result.Status),
+				DocumentID: result.DocumentID,
+				Summary:    result.Summary,
+				Metadata:   metadata,
+			})
+		})
 }
 
 // Promote moves an asset into the operator library scope.
 func (s *Store) Promote(ctx context.Context, id, identityID string) (Asset, error) {
-	pgID, err := pgUUID("asset id", id)
-	if err != nil {
-		return Asset{}, err
-	}
-	pgIdentityID, err := pgUUID("identity_id", identityID)
-	if err != nil {
-		return Asset{}, err
-	}
-	row, err := s.q.PromoteAssetToLibrary(ctx, sqlc.PromoteAssetToLibraryParams{
-		ID:         pgID,
-		IdentityID: pgIdentityID,
-	})
-	if err != nil {
-		return Asset{}, err
-	}
-	return assetFromSQL(row)
+	return s.scopedTarget(ctx, id, identityID,
+		func(q *sqlc.Queries, pgID, pgIdentityID pgtype.UUID) (sqlc.AuraAssets, error) {
+			return q.PromoteAssetToLibrary(ctx, sqlc.PromoteAssetToLibraryParams{
+				ID:         pgID,
+				IdentityID: pgIdentityID,
+			})
+		})
 }
 
 // Delete soft-deletes an asset.
 func (s *Store) Delete(ctx context.Context, id, identityID string) (Asset, error) {
-	pgID, err := pgUUID("asset id", id)
-	if err != nil {
-		return Asset{}, err
-	}
-	pgIdentityID, err := pgUUID("identity_id", identityID)
-	if err != nil {
-		return Asset{}, err
-	}
-	row, err := s.q.SoftDeleteAsset(ctx, sqlc.SoftDeleteAssetParams{
-		ID:         pgID,
-		IdentityID: pgIdentityID,
-	})
-	if err != nil {
-		return Asset{}, err
-	}
-	return assetFromSQL(row)
+	return s.scopedTarget(ctx, id, identityID,
+		func(q *sqlc.Queries, pgID, pgIdentityID pgtype.UUID) (sqlc.AuraAssets, error) {
+			return q.SoftDeleteAsset(ctx, sqlc.SoftDeleteAssetParams{
+				ID:         pgID,
+				IdentityID: pgIdentityID,
+			})
+		})
 }
 
 func assetFromSQL(row sqlc.AuraAssets) (Asset, error) {
