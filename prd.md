@@ -18,6 +18,11 @@
   replaced by positive and negative coverage of the surviving boundary; deleted
   tests are never restored merely to satisfy the manifest. Missing test names
   remain a hard failure so future manifest drift cannot pass silently.
+- ArcadeDB credential-revocation proof uses the server's authenticated
+  `GET /api/v1/ready` contract exactly: `204 No Content` means the credential is
+  accepted, `401`/`403` means it is refused, and every other response remains an
+  error/unknown state. Aura must not reinterpret an unexpected response as proof
+  of erasure.
 
 > Stato di partenza: commit `af4ca65c` (skeleton, 633 LOC src).
 > Ordine fissato (utente): **Agent → Sandbox → Swarm → KV**.
