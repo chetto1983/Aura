@@ -270,6 +270,25 @@ services:
       # Amendment #88: the fixed /workspace working root (AURA_WORKSPACE_DIR), durable
       # across recreates — the entrypoint bootstrap above lays out its subdirs on boot.
       - aura-workspace:/workspace
+      # Required by the STRICT profile only (AURA_MUSR_ISOLATION=true +
+      # AURA_PROFILE=single_user_hardened). usersandbox.SandboxRouter then routes
+      # shell_exec and every fs_* into a per-identity box, and buildSandboxRouter builds
+      # that box through the Docker API. With no socket, client.New(FromEnv) has nothing
+      # to dial, Route returns routed=true WITH an error, and the tools DENY rather than
+      # falling back to the host — the fail-closed containment invariant (D-09/GATE-01)
+      # behaving exactly as designed.
+      #
+      # Measured live 2026-08-03: multi-user was switched on without this line and the
+      # agent reported the blocker itself — "shell_exec non può eseguire comandi,
+      # dial unix /var/run/docker.sock: no such file or directory" — naming the box it
+      # had tried to create, aura-box-<identity-uuid>. Routing worked; the runtime was
+      # absent.
+      #
+      # The privilege is real and deliberate: the daemon socket is host-root-equivalent,
+      # so anything that escapes this container owns the host. That is the price of
+      # per-identity boxes, and it is why the non-strict single-principal profile — where
+      # tools run host-direct in this container — must NOT mount it.
+      - /var/run/docker.sock:/var/run/docker.sock
       # Warm package caches for the non-strict host-direct shell_exec path (which runs IN this
       # container, HOME=/root, not in a box): without these, /root/.npm|.cache/pip|.cache/uv live in
       # the ephemeral container layer and are wiped on every recreate, so npm/pip/uv re-download every
