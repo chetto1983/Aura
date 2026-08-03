@@ -96,13 +96,18 @@ func TestInjectionSuiteOrdinaryMutationsRequireIdempotencyButNotApproval(t *test
 	}{
 		{
 			name: "memory add fact",
-			spec: ordinaryMCPSpec("memory__memory_add_fact"),
+			spec: ordinaryMCPSpec("memory__memory_upsert_fact"),
 			args: json.RawMessage(`{"subject":"project","predicate":"status","object":"green"}`),
 		},
 		{
-			name: "memory correction",
-			spec: ordinaryMCPSpec("memory__memory_update"),
-			args: json.RawMessage(`{"node_type":"fact","node_id":"owned","object":"corrected"}`),
+			name: "memory merge",
+			spec: ordinaryMCPSpec("memory__memory_merge_entities"),
+			args: json.RawMessage(`{"source":"duplicate","target":"owned"}`),
+		},
+		{
+			name: "memory forget",
+			spec: ordinaryMCPSpec("memory__memory_forget"),
+			args: json.RawMessage(`{"subject":"owned","predicate":"status","object":"obsolete"}`),
 		},
 		{
 			name: "calendar create",

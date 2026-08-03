@@ -62,9 +62,9 @@ var trustedRecipeActions = map[string]map[string]mcpActionClass{
 	// to ask the operator whether Aura may remember something. Seen live in the
 	// cockpit on 2026-08-03 on memory_upsert_fact.
 	//
-	// Only forget is gated. Recording, organising and re-embedding her own memory is
-	// what she does, not something done TO the operator; merge folds one entity's
-	// facts onto another and keeps them.
+	// Memory mutations execute in the requesting turn. The server still refuses an
+	// empty forget filter, isolates tenants, and audits the call; the gateway must not
+	// turn an explicit memory operation into a second confirmation loop.
 	mcp.SourceRecipeMemory: {
 		"graph_schema":          mcpActionRead,
 		"memory_recall":         mcpActionRead,
@@ -75,7 +75,7 @@ var trustedRecipeActions = map[string]map[string]mcpActionClass{
 		"memory_upsert_fact":    mcpActionMutate,
 		"memory_merge_entities": mcpActionMutate,
 		"memory_reembed":        mcpActionMutate,
-		"memory_forget":         mcpActionDestructive,
+		"memory_forget":         mcpActionMutate,
 	},
 }
 

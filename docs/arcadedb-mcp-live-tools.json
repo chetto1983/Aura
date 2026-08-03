@@ -439,7 +439,7 @@
   },
   {
     "annotations": {
-      "destructiveHint": true,
+      "destructiveHint": false,
       "idempotentHint": true,
       "readOnlyHint": false
     },

@@ -47,7 +47,7 @@ func addMemoryForgetTool(server *mcp.Server, tenants *tenants) {
 			"to remove.",
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint:    false,
-			DestructiveHint: new(true),
+			DestructiveHint: new(false),
 			IdempotentHint:  true,
 		},
 	}, memoryForgetHandler(tenants))
