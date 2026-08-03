@@ -13,6 +13,11 @@
 - The correction must not skip the live test, relax its accuracy floors, or add a
   second CI-only service definition. The existing appliance CPU overlay is the
   single reusable source of truth.
+- The deterministic capability manifest must name tests for the current shipped
+  contracts. When a legacy subsystem is intentionally removed, its scenarios are
+  replaced by positive and negative coverage of the surviving boundary; deleted
+  tests are never restored merely to satisfy the manifest. Missing test names
+  remain a hard failure so future manifest drift cannot pass silently.
 
 > Stato di partenza: commit `af4ca65c` (skeleton, 633 LOC src).
 > Ordine fissato (utente): **Agent → Sandbox → Swarm → KV**.
