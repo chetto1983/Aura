@@ -133,6 +133,12 @@ type ToolInvocationStore interface {
 	Insert(ctx context.Context, e toolinvocations.Event) error
 }
 
+// MemoryContextProvider returns the authenticated identity's bounded memory
+// digest. The Runner owns trust fencing and context placement.
+type MemoryContextProvider interface {
+	Context(ctx context.Context, identityID string) (string, error)
+}
+
 // IdentityStore is the narrow identity surface the Runner consumes (D-A2-02).
 // *identity.Store satisfies it implicitly. New conversations prefer a real user
 // identity and retain `local` only as a legacy fallback for pre-Authula installs.

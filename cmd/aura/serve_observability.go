@@ -49,12 +49,11 @@ func startServeObservability(
 		return nil, errors.New("start serve observability: database pool is nil")
 	}
 	runtime, err := obs.InitRuntime(ctx, obs.Config{
-		Service:           "aura",
-		Version:           version,
-		OtelExporter:      cfg.OtelExporter,
-		OtelEndpoint:      cfg.OtelEndpoint,
-		EnablePrometheus:  true,
-		EnableOTLPMetrics: cfg.OtelExporter == "otlp",
+		Service:          "aura",
+		Version:          version,
+		OtelExporter:     cfg.OtelExporter,
+		OtelEndpoint:     cfg.OtelEndpoint,
+		EnablePrometheus: true,
 	})
 	if err != nil {
 		return nil, err

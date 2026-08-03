@@ -66,6 +66,7 @@ type Deps struct {
 	Identity        IdentityStore
 	CacheMetrics    CacheMetricStore
 	ToolInvocations ToolInvocationStore
+	MemoryContext   MemoryContextProvider
 	// ResumeCommitter is the cross-store HITL-durability seam (D-03/D-05). The
 	// composition root injects a pool-owning *PoolResumeCommitter so single/batch resume
 	// and pause exposure each commit in ONE db.WithTx; nil => New defaults to the
@@ -136,6 +137,7 @@ type Runner struct {
 	identity        IdentityStore
 	cacheMetrics    CacheMetricStore
 	toolInvocations ToolInvocationStore
+	memoryContext   MemoryContextProvider
 	resumeCommitter ResumeCommitter // cross-store HITL-durability seam (D-03/D-05); split fallback when unset
 
 	client     llm.Client
@@ -219,6 +221,7 @@ func New(d Deps) *Runner {
 		identity:                 d.Identity,
 		cacheMetrics:             d.CacheMetrics,
 		toolInvocations:          d.ToolInvocations,
+		memoryContext:            d.MemoryContext,
 		client:                   d.Client,
 		registry:                 d.Registry,
 		cfg:                      d.LLM,
@@ -350,7 +353,7 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, input turnInput)
 			}
 		}
 
-		cfg := r.contextConfig()
+		cfg := r.contextConfig(r.loadMemoryContext(ctx, input.visibleUserMsg != nil))
 		history, err := r.loadTurnHistory(ctx, convID, cfg, input.branchLeaf)
 		if err != nil {
 			yield(nil, err)

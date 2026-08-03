@@ -22,10 +22,16 @@ func (bridgePolicy) defaultDeferred() bool {
 	return true
 }
 
-// Re-embedding is operator-only because it rewrites the entire vector corpus.
-// Deferral alone would still make it callable through tool_search.
+// The model gets one read plan, memory_recall. Path-specific reads remain active
+// host primitives for automatic context, the CLI, readiness, and graph inspection;
+// exposing them through tool_search made the model plan Aura's retrieval internals.
 var memoryHiddenFromModel = map[string]struct{}{
-	"memory_reembed": {},
+	"graph_schema":       {},
+	"memory_digest":      {},
+	"memory_entities":    {},
+	"memory_facts_about": {},
+	"memory_reembed":     {},
+	"memory_search":      {},
 }
 
 func (p bridgePolicy) modelFacing(tool string) bool {

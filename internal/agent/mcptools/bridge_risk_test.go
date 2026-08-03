@@ -63,7 +63,7 @@ func TestTrustedRecipeRiskPolicyIsGraduated(t *testing.T) {
 		{name: "calendar reversible write", source: "recipe:calendar", tool: "update_event", wantMutating: true},
 		{name: "calendar external send", source: "recipe:calendar", tool: "send_email", wantMutating: true, wantDestructive: true},
 		{name: "calendar external response", source: "recipe:calendar", tool: "respond_to_event", wantMutating: true, wantDestructive: true},
-		{name: "memory read", source: mcp.SourceRecipeMemory, tool: "memory_search"},
+		{name: "memory read", source: mcp.SourceRecipeMemory, tool: "memory_recall"},
 		// Recording a fact must NOT stop the turn. The table used to name the
 		// previous server's tools, so memory_upsert_fact fell through to the
 		// fail-closed default and the cockpit asked the operator, live, whether
@@ -105,8 +105,8 @@ func TestTrustedRecipeRiskPolicyIsGraduated(t *testing.T) {
 func TestMemoryRecipeCoversEveryServedTool(t *testing.T) {
 	t.Parallel()
 	served := []string{
-		"memory_digest", "memory_entities", "memory_facts_about", "memory_forget",
-		"memory_merge_entities", "memory_reembed", "memory_search", "memory_upsert_fact",
+		"graph_schema", "memory_digest", "memory_entities", "memory_facts_about", "memory_forget",
+		"memory_merge_entities", "memory_recall", "memory_reembed", "memory_search", "memory_upsert_fact",
 	}
 	table := trustedRecipeActions[mcp.SourceRecipeMemory]
 	for _, name := range served {

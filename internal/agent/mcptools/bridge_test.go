@@ -138,8 +138,8 @@ func TestBridge_TranslatesTools(t *testing.T) {
 
 func TestBridge_MemoryNamespaceToolsAreDeferredByDefault(t *testing.T) {
 	got, err := Bridge(context.Background(), "memory", &fakeServer{defs: []mcp.ToolDef{
-		{Name: "memory_search", Description: "Search memory.", Annotations: mcp.ToolAnnotations{ReadOnlyHint: true}},
-		{Name: "memory_add_fact", Description: "Store a durable fact."},
+		{Name: "memory_recall", Description: "Recall memory.", Annotations: mcp.ToolAnnotations{ReadOnlyHint: true}},
+		{Name: "memory_upsert_fact", Description: "Store a durable fact."},
 	}})
 	if err != nil {
 		t.Fatalf("Bridge: %v", err)

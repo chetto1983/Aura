@@ -91,6 +91,10 @@ type ContextConfig struct {
 	// (Pitfall 3). The Runner renders it per turn from current loader state; an empty
 	// string means no always:true skill is active (the turn is omitted).
 	AlwaysBlock string
+	// TransientContext is a non-persisted reference item, budgeted as one unit and
+	// inserted immediately before the current user turn. It is omitted, never
+	// truncated, when the deterministic ladder cannot make room for it.
+	TransientContext *TransientContext
 	// ProviderErrorReserveTokens is the extra L2 hard-cap headroom the configured chat
 	// backend needs for its token-estimation error (Wave 1.10). It is non-zero only on
 	// the local llama.cpp path, which has no provider-side overflow net — an Aura
@@ -298,9 +302,13 @@ func applyContextLadder(
 	l1 := applyL1(turns, cfg.ToolEvictAfterTurns)
 
 	hardCap := cfg.hardCap()
+	tail, tailTokens := usableTransientContext(cfg.TransientContext, enc, hardCap)
 	ordinaryCap := hardCap
+	if tail != nil {
+		ordinaryCap -= tailTokens
+	}
 	tokensAfterL1 := totalTokens(enc, l1)
-	totalAfterL1 := tokensAfterL1
+	totalAfterL1 := tokensAfterL1 + tailTokens
 
 	// L2: budget gate. Over the warn cap (0.75×hard) → audit WARN; over the hard cap
 	// → fall through to L2.5. If under the hard cap, we are done after L1 (SC-1:
@@ -313,22 +321,32 @@ func applyContextLadder(
 			"conversation_id", conversationID, "tokens", totalAfterL1, "hard_cap", hardCap)
 	}
 	if hardCap == 0 || tokensAfterL1 <= ordinaryCap {
-		return repairManagedToolMessagePairs(toMessages(l1)), nil
+		return injectTransientContext(repairManagedToolMessagePairs(toMessages(l1)), tail), nil
 	}
 
 	// L2.5: drop oldest user/assistant PAIRs (preserve system L0 + keep an even
 	// non-system length) until under the hard cap, writing ONE rot-event row.
 	reduced, pairsDropped := dropOldestPairs(enc, l1, ordinaryCap)
 	tokensAfter := totalTokens(enc, reduced)
+	if tail != nil && (pairsDropped == 0 || tokensAfter > ordinaryCap) {
+		tail = nil
+		tailTokens = 0
+		ordinaryCap = hardCap
+		if tokensAfterL1 <= ordinaryCap {
+			return repairManagedToolMessagePairs(toMessages(l1)), nil
+		}
+		reduced, pairsDropped = dropOldestPairs(enc, l1, ordinaryCap)
+		tokensAfter = totalTokens(enc, reduced)
+	}
 	if pairsDropped == 0 || tokensAfter > ordinaryCap {
 		// L2.5 could not bring it under (only the system turn / a single oversized
 		// turn remains) → the explicit window-exceeded error (suggest `aura chat new`).
-		return nil, fmt.Errorf("%w (%d tokens, cap %d)", ErrContextWindowExceeded, tokensAfter, hardCap)
+		return nil, fmt.Errorf("%w (%d tokens, cap %d)", ErrContextWindowExceeded, tokensAfter+tailTokens, hardCap)
 	}
-	if err := emit.insertContextRotEvent(ctx, conversationID, pairsDropped, totalAfterL1, tokensAfter); err != nil {
+	if err := emit.insertContextRotEvent(ctx, conversationID, pairsDropped, totalAfterL1, tokensAfter+tailTokens); err != nil {
 		return nil, err
 	}
-	return repairManagedToolMessagePairs(toMessages(reduced)), nil
+	return injectTransientContext(repairManagedToolMessagePairs(toMessages(reduced)), tail), nil
 }
 
 // injectAlwaysBlock inserts the messages[1] always-block as a protected user-role

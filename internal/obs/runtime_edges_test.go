@@ -192,21 +192,11 @@ func TestTraceAndMeterConcreteFactories(t *testing.T) {
 	if _, err := newPrometheusComponent(nil); err == nil {
 		t.Fatal("nil Prometheus registry succeeded")
 	}
-	component, err := newOTLPMetricComponent(context.Background(), "127.0.0.1:1")
-	if err != nil || component.reader == nil || component.cleanup == nil {
-		t.Fatalf("OTLP metric component = %+v, %v", component, err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	if err := component.cleanup(ctx); err != nil {
-		t.Fatal(err)
-	}
 }
 
 func TestMeterConstructionFailuresCleanUpAndRuntimeAccessorsAreNilSafe(t *testing.T) {
 	buildErr := errors.New("build failed")
-	cleanupErr := errors.New("cleanup failed")
-	_, err := buildMeterRuntime(context.Background(), meterOptions{
+	_, err := buildMeterRuntime(meterOptions{
 		enablePrometheus: true,
 		factories: meterFactories{prometheus: func(*prometheus.Registry) (readerComponent, error) {
 			return readerComponent{}, buildErr
@@ -214,18 +204,6 @@ func TestMeterConstructionFailuresCleanUpAndRuntimeAccessorsAreNilSafe(t *testin
 	})
 	if !errors.Is(err, buildErr) {
 		t.Fatalf("Prometheus build error = %v", err)
-	}
-	_, err = buildMeterRuntime(context.Background(), meterOptions{
-		enablePrometheus: true, enableOTLP: true,
-		factories: meterFactories{
-			prometheus: func(*prometheus.Registry) (readerComponent, error) {
-				return readerComponent{reader: metric.NewManualReader(), cleanup: func(context.Context) error { return cleanupErr }}, nil
-			},
-			otlp: func(context.Context, string) (readerComponent, error) { return readerComponent{}, buildErr },
-		},
-	})
-	if !errors.Is(err, buildErr) || !errors.Is(err, cleanupErr) {
-		t.Fatalf("partial meter cleanup error = %v", err)
 	}
 	if err := newShutdownStack(nil)(context.Background()); err != nil {
 		t.Fatal(err)

@@ -53,7 +53,7 @@ var trustedRecipeActions = map[string]map[string]mcpActionClass{
 		"send_message":               mcpActionDestructive,
 		"send_reaction":              mcpActionDestructive,
 	},
-	// The eight tools cmd/arcadedb-mcp actually serves. The names here were the
+	// The tools cmd/arcadedb-mcp actually serves. The names here were the
 	// PREVIOUS memory server's — memory_add_fact, memory_add_entity, memory_update,
 	// memory_add_preference, memory_create_relationship, memory_get_entity — and
 	// none of them exists any more. A tool absent from this table falls through to
@@ -66,6 +66,8 @@ var trustedRecipeActions = map[string]map[string]mcpActionClass{
 	// what she does, not something done TO the operator; merge folds one entity's
 	// facts onto another and keeps them.
 	mcp.SourceRecipeMemory: {
+		"graph_schema":          mcpActionRead,
+		"memory_recall":         mcpActionRead,
 		"memory_search":         mcpActionRead,
 		"memory_entities":       mcpActionRead,
 		"memory_facts_about":    mcpActionRead,

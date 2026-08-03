@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -133,6 +134,64 @@ type MemoryRetrievalMetadata struct {
 	Path      string `json:"path" jsonschema:"effective retrieval path: hybrid, lexical, or graph"`
 	Abstained bool   `json:"abstained" jsonschema:"true when no fact met the retrieval contract"`
 	Reason    string `json:"reason,omitempty" jsonschema:"named fallback or abstention reason"`
+}
+
+// MemoryRecallInput is the model-facing read contract. Entity selects the exact
+// graph path; otherwise query selects hybrid retrieval. The path-specific tools
+// remain host operations for the CLI and automatic context.
+type MemoryRecallInput struct {
+	UserIdentifier string `json:"user_identifier" jsonschema:"the Aura identity whose memory this is; each identity has its own database and cannot reach another's"`
+	Query          string `json:"query,omitempty" jsonschema:"what to recall in natural language; required when entity is empty"`
+	Entity         string `json:"entity,omitempty" jsonschema:"exact entity name when known; selects graph traversal instead of semantic search"`
+	Predicate      string `json:"predicate,omitempty" jsonschema:"optional relation filter used with entity"`
+	Limit          int    `json:"limit,omitempty" jsonschema:"how many facts to return"`
+	AsOf           string `json:"as_of,omitempty" jsonschema:"RFC3339 instant; return facts valid then rather than now"`
+}
+
+func addMemoryRecallTool(server *mcp.Server, tenants *tenants) {
+	mcp.AddTool(server, &mcp.Tool{
+		Name:  "memory_recall",
+		Title: "Recall memory",
+		Description: "The single deep-read operation for Aura memory. Current profile facts " +
+			"are already supplied in conversation context; call this only for a fact outside " +
+			"that bounded index or for a historical as_of question. Give entity when its exact " +
+			"name is known; otherwise give query. Returns explicit abstention instead of an " +
+			"approximate unrelated fact.",
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+	}, memoryRecallHandler(tenants))
+}
+
+func memoryRecallHandler(
+	tenants *tenants,
+) mcp.ToolHandlerFor[MemoryRecallInput, MemorySearchOutput] {
+	return func(
+		ctx context.Context,
+		_ *mcp.CallToolRequest,
+		in MemoryRecallInput,
+	) (*mcp.CallToolResult, MemorySearchOutput, error) {
+		if strings.TrimSpace(in.Entity) != "" {
+			return memoryFactsAboutHandler(tenants)(ctx, nil, MemoryFactsAboutInput{
+				UserIdentifier: in.UserIdentifier,
+				Entity:         in.Entity,
+				Predicate:      in.Predicate,
+				Limit:          in.Limit,
+				AsOf:           in.AsOf,
+			})
+		}
+		if strings.TrimSpace(in.Query) == "" {
+			return nil, MemorySearchOutput{}, fmt.Errorf("memory_recall needs query or entity")
+		}
+		result, output, err := memorySearchHandler(tenants)(ctx, nil, MemorySearchInput{
+			UserIdentifier: in.UserIdentifier,
+			Query:          in.Query,
+			Limit:          in.Limit,
+			AsOf:           in.AsOf,
+		})
+		if err != nil {
+			return nil, MemorySearchOutput{}, fmt.Errorf("memory_recall: %w", err)
+		}
+		return result, output, nil
+	}
 }
 
 func addMemorySearchTool(server *mcp.Server, tenants *tenants) {

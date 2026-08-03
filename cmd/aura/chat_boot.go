@@ -411,6 +411,7 @@ func assembleChatEnv(
 		Identity:        idStore,
 		CacheMetrics:    cacheStore,
 		ToolInvocations: toolInvocationStore,
+		MemoryContext:   newMemoryContextProvider(toolHandles.Memory),
 		// Atomic cross-store HITL durability (D-03/D-05): the pool-owning committer spans
 		// a pause claim + its answer turn (and pause exposure) in ONE db.WithTx.
 		ResumeCommitter: runner.NewPoolResumeCommitter(pool, convStore, pauseStore),

@@ -27,13 +27,12 @@ const (
 // Config carries the process-level observability knobs resolved by the binary
 // edge. LogWriter is injectable so tests can assert the JSON log shape.
 type Config struct {
-	Service           string
-	Version           string
-	OtelExporter      string
-	OtelEndpoint      string
-	EnablePrometheus  bool
-	EnableOTLPMetrics bool
-	LogWriter         io.Writer
+	Service          string
+	Version          string
+	OtelExporter     string
+	OtelEndpoint     string
+	EnablePrometheus bool
+	LogWriter        io.Writer
 }
 
 // ShutdownFunc is the bounded process-observability cleanup contract.
@@ -125,11 +124,9 @@ func InitRuntime(ctx context.Context, cfg Config) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
-	meter, err := buildMeterRuntime(ctx, meterOptions{
+	meter, err := buildMeterRuntime(meterOptions{
 		resource:         res,
 		enablePrometheus: cfg.EnablePrometheus,
-		enableOTLP:       cfg.EnableOTLPMetrics,
-		endpoint:         endpoint,
 	})
 	if err != nil {
 		return nil, errors.Join(err, tp.Shutdown(ctx))

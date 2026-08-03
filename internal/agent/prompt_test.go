@@ -8,9 +8,9 @@ import (
 
 func TestPrompt_ProfileContextDoctrine(t *testing.T) {
 	for _, needle := range []string{
-		"Recall it on demand",
 		"long-term memory",
-		"nothing pins it into your context",
+		"bounded current index",
+		"<memory_context>",
 		"current explicit instruction wins",
 	} {
 		if !strings.Contains(SystemPrompt, needle) {
@@ -37,15 +37,13 @@ func TestPrompt_ProfileUsageRules(t *testing.T) {
 	}
 }
 
-// TestPrompt_MemoryDoctrine asserts the Phase-15 memory doctrine: D-01
-// agent-decides writes (proactive, no confirmation), D-03 pull-on-demand recall
-// (search before answering/asking), D-09 fail-soft posture — mechanism-level
-// only, no volatile memory_* tool names (D-07 keeps them behind tool_search).
+// TestPrompt_MemoryDoctrine asserts automatic bounded recall, deep-recall fallback,
+// proactive writes, and fail-soft posture without naming deferred memory tools.
 func TestPrompt_MemoryDoctrine(t *testing.T) {
 	for _, needle := range []string{
 		"persistent long-term memory",
-		"pull-on-demand",
-		"search memory BEFORE answering",
+		"Read the supplied <memory_context>",
+		"use deep memory recall before answering",
 		"without being asked",
 		"fail-soft",
 	} {

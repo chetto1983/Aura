@@ -128,6 +128,7 @@ var gateCases = []gateCase{
 	{"install a new skill", []string{"skill"}},
 	{"search the user uploaded documents", []string{"document_search"}},
 	{"index a document for retrieval", []string{"document_index"}},
+	{"recall a deeper or historical fact from memory", []string{"memory__memory_recall"}},
 	{"remember a fact about the user", []string{"memory__memory_upsert_fact"}},
 	{"create a calendar event", []string{"calendar__create_event"}},
 	{"send an email", []string{"calendar__send_email"}},
@@ -250,7 +251,7 @@ func TestToolSearchGate_PartialSelectLoadsAndReports(t *testing.T) {
 func TestToolSearchGate_FreeTextOfRegisteredNamesResolvesAsSelect(t *testing.T) {
 	ts, ctx := newGateSearch(t)
 	const q = "memory__memory_upsert_fact memory__memory_merge_entities " +
-		"memory__memory_facts_about memory__memory_entities"
+		"memory__memory_recall memory__memory_forget"
 	got := gateSearch(t, ts, ctx, q)
 	want := strings.Fields(q)
 	sort.Strings(got)

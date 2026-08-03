@@ -37,7 +37,7 @@ func TestBridgedMemoryToolInjectsContextUserIdentifier(t *testing.T) {
 // to the seeded local operator identity rather than forwarded bare. Without this the
 // call would read every tenant's memory.
 func TestBridgedMemoryToolFallsBackToOperatorWhenNoPrincipal(t *testing.T) {
-	srv := &fakeServer{defs: []mcp.ToolDef{{Name: "memory_search", Description: "Search memory."}}, callText: "ok"}
+	srv := &fakeServer{defs: []mcp.ToolDef{{Name: "memory_recall", Description: "Recall memory."}}, callText: "ok"}
 	got, err := Bridge(context.Background(), "memory", srv)
 	if err != nil {
 		t.Fatalf("Bridge: %v", err)

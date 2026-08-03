@@ -374,3 +374,57 @@ func TestFactsAboutRejectsAnEmptyEntityAndABadAsOf(t *testing.T) {
 		t.Fatal("nothing should be queried for invalid input")
 	}
 }
+
+func TestMemoryRecallSelectsOneDeterministicReadPath(t *testing.T) {
+	t.Run("exact entity walks the graph", func(t *testing.T) {
+		client, rec := newRecordingDB(t, oneFactRow)
+		_, out, err := memoryRecallHandler(singleTenant(t, client))(
+			context.Background(), nil, MemoryRecallInput{
+				UserIdentifier: testIdentity,
+				Entity:         "Davide",
+				Predicate:      "lives_in",
+			},
+		)
+		if err != nil {
+			t.Fatalf("memory_recall entity: %v", err)
+		}
+		if out.Retrieval.Path != "graph" || len(out.Facts) != 1 {
+			t.Fatalf("output = %+v", out)
+		}
+		if len(rec.statements) != 1 || !strings.Contains(rec.statements[0], "outV().name = :entity") {
+			t.Fatalf("statements = %v, want one graph traversal", rec.statements)
+		}
+	})
+
+	t.Run("natural-language query uses ranked retrieval", func(t *testing.T) {
+		client, rec := newRecordingDB(t, oneFactRow)
+		_, out, err := memoryRecallHandler(singleTenant(t, client))(
+			context.Background(), nil, MemoryRecallInput{
+				UserIdentifier: testIdentity,
+				Query:          "where does Davide live",
+			},
+		)
+		if err != nil {
+			t.Fatalf("memory_recall query: %v", err)
+		}
+		if out.Retrieval.Path != "lexical" || len(out.Facts) != 1 {
+			t.Fatalf("output = %+v", out)
+		}
+		if _, _, ok := rec.find("SEARCH_INDEX"); !ok {
+			t.Fatalf("statements = %v, want ranked retrieval", rec.statements)
+		}
+	})
+}
+
+func TestMemoryRecallRejectsAnEmptySelectorBeforeAccessingATenant(t *testing.T) {
+	client, rec := newRecordingDB(t)
+	_, _, err := memoryRecallHandler(singleTenant(t, client))(
+		context.Background(), nil, MemoryRecallInput{UserIdentifier: testIdentity},
+	)
+	if err == nil || !strings.Contains(err.Error(), "query or entity") {
+		t.Fatalf("err = %v", err)
+	}
+	if len(rec.statements) != 0 {
+		t.Fatalf("statements = %v, want no database access", rec.statements)
+	}
+}

@@ -591,6 +591,153 @@
   {
     "annotations": {
       "idempotentHint": false,
+      "readOnlyHint": true
+    },
+    "description": "The single deep-read operation for Aura memory. Current profile facts are already supplied in conversation context; call this only for a fact outside that bounded index or for a historical as_of question. Give entity when its exact name is known; otherwise give query. Returns explicit abstention instead of an approximate unrelated fact.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "as_of": {
+          "description": "RFC3339 instant; return facts valid then rather than now",
+          "type": "string"
+        },
+        "entity": {
+          "description": "exact entity name when known; selects graph traversal instead of semantic search",
+          "type": "string"
+        },
+        "limit": {
+          "description": "how many facts to return",
+          "type": "integer"
+        },
+        "predicate": {
+          "description": "optional relation filter used with entity",
+          "type": "string"
+        },
+        "query": {
+          "description": "what to recall in natural language; required when entity is empty",
+          "type": "string"
+        },
+        "user_identifier": {
+          "description": "the Aura identity whose memory this is; each identity has its own database and cannot reach another's",
+          "type": "string"
+        }
+      },
+      "required": [
+        "user_identifier"
+      ],
+      "type": "object"
+    },
+    "name": "memory_recall",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "facts": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "object": {
+                "type": "string"
+              },
+              "object_kind": {
+                "type": "string"
+              },
+              "predicate": {
+                "type": "string"
+              },
+              "sources": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "memory_ids": {
+                      "description": "message or memory ids supporting this fact",
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": [
+                        "null",
+                        "array"
+                      ]
+                    },
+                    "run_id": {
+                      "description": "the extraction or operator run supporting this fact",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "run_id"
+                  ],
+                  "type": "object"
+                },
+                "type": [
+                  "null",
+                  "array"
+                ]
+              },
+              "statement": {
+                "type": "string"
+              },
+              "subject": {
+                "type": "string"
+              },
+              "subject_kind": {
+                "type": "string"
+              },
+              "valid_from": {
+                "type": "string"
+              },
+              "valid_to": {
+                "description": "absent while the fact still holds",
+                "type": "string"
+              }
+            },
+            "required": [
+              "statement",
+              "predicate",
+              "subject",
+              "object",
+              "sources"
+            ],
+            "type": "object"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "retrieval": {
+          "additionalProperties": false,
+          "properties": {
+            "abstained": {
+              "description": "true when no fact met the retrieval contract",
+              "type": "boolean"
+            },
+            "path": {
+              "description": "effective retrieval path: hybrid, lexical, or graph",
+              "type": "string"
+            },
+            "reason": {
+              "description": "named fallback or abstention reason",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "abstained"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "facts",
+        "retrieval"
+      ],
+      "type": "object"
+    },
+    "title": "Recall memory"
+  },
+  {
+    "annotations": {
+      "idempotentHint": false,
       "readOnlyHint": false
     },
     "description": "Write embedding vectors for this identity's facts. Without `all` it only fills facts that have none — the gap left by an embedder that was down. With `all` it recomputes every vector, which is what an embedding-model change requires: vectors written by a different model are in a different geometry.",
