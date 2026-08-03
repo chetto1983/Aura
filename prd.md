@@ -33,6 +33,10 @@
   Q8_0 and 768 dimensions; retired Qwen cache names and implicit pre-seeding are
   forbidden. Download and GGUF/dense-projection validation live in one shared
   helper used by CI and installation.
+- MUSR acceptance fixtures must use the same authenticated identity context as
+  production when they seed owner-scoped conversation data. Migration 0089's
+  fail-closed RLS remains authoritative: an identity-less `AppendTurn` is a test
+  defect to correct, never a reason to weaken the store or database policy.
 
 > Stato di partenza: commit `af4ca65c` (skeleton, 633 LOC src).
 > Ordine fissato (utente): **Agent → Sandbox → Swarm → KV**.
