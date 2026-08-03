@@ -138,6 +138,45 @@ func TestEmbedStatementIsFailSoft(t *testing.T) {
 	}
 }
 
+// The vector a write computes must reach the database. It did not: the edge statement
+// carried no `embedding` in its SET while the parameter was bound anyway, ArcadeDB
+// accepted the unused param without a word, and EVERY fact in every identity's memory
+// was stored without its vector — from the MCP tool, the CLI and onboarding alike.
+func TestUpsertFactStoresTheVectorItComputed(t *testing.T) {
+	client, rec := recordingClient(t, `{"result":[]}`)
+	client.WithEmbedder(&stubEmbedder{vectors: [][][]float64{{vectorOf(5)}}})
+
+	if _, err := client.UpsertFact(context.Background(), validFact(), now); err != nil {
+		t.Fatalf("UpsertFact: %v", err)
+	}
+	edge, params := rec.statements[2], rec.params[2]
+	if !strings.Contains(edge, "embedding = :embedding") {
+		t.Fatalf("the edge does not store the vector it computed:\n%s", edge)
+	}
+	vector, ok := params["embedding"].([]any)
+	if !ok || len(vector) != vectorDimensions {
+		t.Fatalf("embedding param = %T with %d values, want %d floats",
+			params["embedding"], len(vector), vectorDimensions)
+	}
+}
+
+// With no embedder — or a sidecar that is down — the fact is still written, without the
+// clause and without the parameter. The write must never fail because retrieval's dense
+// leg is unavailable; the backfill sweep embeds it within minutes.
+func TestUpsertFactWithoutAVectorOmitsTheClause(t *testing.T) {
+	client, rec := recordingClient(t, `{"result":[]}`)
+
+	if _, err := client.UpsertFact(context.Background(), validFact(), now); err != nil {
+		t.Fatalf("UpsertFact: %v", err)
+	}
+	if strings.Contains(rec.statements[2], "embedding") {
+		t.Fatalf("no vector to store, yet the statement names one:\n%s", rec.statements[2])
+	}
+	if _, bound := rec.params[2]["embedding"]; bound {
+		t.Fatal("an embedding parameter was bound with no vector to put in it")
+	}
+}
+
 func TestEmbedMissingAndReembedFactsWriteOnlyValidVectors(t *testing.T) {
 	embedder := &stubEmbedder{vectors: [][][]float64{
 		{vectorOf(1), {1}},
@@ -165,7 +204,12 @@ func TestEmbedMissingAndReembedFactsWriteOnlyValidVectors(t *testing.T) {
 	if err != nil || written != 2 {
 		t.Fatalf("ReEmbedAllFacts written=%d err=%v", written, err)
 	}
-	if len(*requests) != 5 {
+	// Four, not five: each call is one SELECT plus ONE batched sqlscript, where it
+	// used to be one UPDATE per fact. The count is asserted only to catch a stray
+	// extra round trip — that a batch is a single request is pinned properly by
+	// TestWriteVectorsSendsOneBoundScriptForTheWholeBatch, and index 2 below is
+	// still the second selection either way.
+	if len(*requests) != 4 {
 		t.Fatalf("requests = %d", len(*requests))
 	}
 	if !strings.Contains((*requests)[0].Payload["command"].(string), "embedding IS NULL") ||

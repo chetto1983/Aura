@@ -344,6 +344,12 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	if err := seedRetentionSweep(ctx, store); err != nil {
 		slog.Warn("aura serve: seed retention sweep", "err", err)
 	}
+	// Seed the memory embedding backfill (0091's kind CHECK admits it). Until this sweep
+	// existed a fact written while the embedding sidecar was absent or slow kept no vector
+	// for good, and semantic recall answered on a partially-embedded corpus.
+	if err := seedMemoryEmbedBackfillSweep(ctx, store); err != nil {
+		slog.Warn("aura serve: seed memory embed backfill sweep", "err", err)
+	}
 	// The AG-UI gateway (Slice 8b) construction + its independent SetX wiring lives in
 	// wireAGUIServer (serve_agui.go, refactor-on-touch split when the SSE-heartbeat knob
 	// landed a new ServerConfig field — CLAUDE.md 600-LOC ceiling). The auth-dependent

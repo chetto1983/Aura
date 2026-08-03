@@ -47,6 +47,14 @@ const localSeededIdentityID = "00000000-0000-0000-0000-000000000001"
 // handlers.NewIdentityPurgeHandler bounds a single sweep).
 const identityPurgeSweepMinutes = 15
 
+// memoryEmbedBackfillSweepMinutes is the cadence of the seeded memory embedding backfill.
+// It is cron.MinScheduleEveryMinutes, the floor of the `every` grammar, because the window
+// it governs is how long a freshly-written fact stays invisible to semantic search: the
+// lexical leg answers immediately, the dense one only once the vector exists. The sweep is
+// cheap when there is nothing to do — one credential probe and one indexed SELECT per
+// identity — so the floor costs little and buys the shortest gap the scheduler allows.
+const memoryEmbedBackfillSweepMinutes = cron.MinScheduleEveryMinutes
+
 var (
 	_ agui.ObjectStoreProvisioner = (*objectStoreProvisionAdapter)(nil)
 	_ agui.FilesystemProvisioner  = filesystemProvisionAdapter{}
@@ -314,73 +322,64 @@ func buildDeprovisioner(chat *chatEnv) *agui.Deprovisioner {
 	})
 }
 
-// seedIdentityPurgeSweep idempotently seeds the grace-window purge sweep (D-27), mirroring
-// seedSkillTTLSweep: it scans the active tasks for an existing identity_purge and inserts one
-// only if absent. The INSERT succeeds against the 0033-widened scheduler_tasks.kind CHECK. A
-// seed failure is non-fatal (logged by the caller) — the daemon still runs.
-func seedIdentityPurgeSweep(ctx context.Context, store *cron.Store) error {
+// seedEveryCronSweep idempotently seeds a fixed-interval system-seeded sweep: it scans the
+// active tasks for an existing entry of kind and only inserts one if absent. Shared by the
+// three `every` sweeps (identity_purge, sandbox_reap, memory_embed_backfill) for the same
+// reason seedDailyCronSweep is shared by the daily ones — three byte-identical copies modulo
+// four literals is what golangci-lint's dupl exists to catch (CLAUDE.md REUSABLE CODE). A
+// seed failure is non-fatal (logged by the caller); the daemon still runs.
+func seedEveryCronSweep(ctx context.Context, store *cron.Store, kind cron.TaskKind, everyMinutes int, label string) error {
 	tasks, err := store.ListActiveTasks(ctx)
 	if err != nil {
 		return fmt.Errorf("list active tasks: %w", err)
 	}
 	for _, t := range tasks {
-		if t.Kind == cron.KindIdentityPurge {
+		if t.Kind == kind {
 			return nil // already seeded — idempotent
 		}
 	}
-	spec, err := cron.ParseSchedule(string(cron.KindEvery), "", identityPurgeSweepMinutes, time.Time{}, "Europe/Rome")
+	spec, err := cron.ParseSchedule(string(cron.KindEvery), "", everyMinutes, time.Time{}, "Europe/Rome")
 	if err != nil {
-		return fmt.Errorf("parse purge sweep schedule: %w", err)
+		return fmt.Errorf("parse %s schedule: %w", label, err)
 	}
 	next, err := cron.NextRunAt(spec, time.Now().UTC())
 	if err != nil {
 		return fmt.Errorf("compute next run: %w", err)
 	}
 	if _, err := store.CreateTask(ctx, cron.CreateTaskParams{
-		Kind:      cron.KindIdentityPurge,
+		Kind:      kind,
 		Spec:      spec,
 		NextRunAt: next,
 	}); err != nil {
-		return fmt.Errorf("create identity_purge task: %w", err)
+		return fmt.Errorf("create %s task: %w", string(kind), err)
 	}
-	slog.Info("aura serve: seeded identity purge sweep", "schedule", fmt.Sprintf("every %dm", identityPurgeSweepMinutes))
+	slog.Info("aura serve: seeded "+label, "schedule", fmt.Sprintf("every %dm", everyMinutes))
 	return nil
 }
 
-// seedSandboxReapSweep idempotently seeds the D-08 idle-suspend reaper sweep (plan 37-05),
-// mirroring seedIdentityPurgeSweep: it scans the active tasks for an existing sandbox_reap and
-// inserts one only if absent. The INSERT succeeds against the 0034-widened scheduler_tasks.kind
-// CHECK. The cadence is DERIVED from the idle-TTL config knob (idleTTLSec, the D-08 tunable) —
-// not a new hardcoded const — so a shorter TTL sweeps proportionally more often. A seed failure
-// is non-fatal (logged by the caller); the daemon still runs.
+// seedIdentityPurgeSweep idempotently seeds the grace-window purge sweep (D-27). The INSERT
+// succeeds against the 0033-widened scheduler_tasks.kind CHECK.
+func seedIdentityPurgeSweep(ctx context.Context, store *cron.Store) error {
+	return seedEveryCronSweep(ctx, store, cron.KindIdentityPurge, identityPurgeSweepMinutes, "identity purge sweep")
+}
+
+// seedSandboxReapSweep idempotently seeds the D-08 idle-suspend reaper sweep (plan 37-05). The
+// INSERT succeeds against the 0034-widened scheduler_tasks.kind CHECK. The cadence is DERIVED
+// from the idle-TTL config knob (idleTTLSec, the D-08 tunable) — not a new hardcoded const —
+// so a shorter TTL sweeps proportionally more often.
 func seedSandboxReapSweep(ctx context.Context, store *cron.Store, idleTTLSec int) error {
-	tasks, err := store.ListActiveTasks(ctx)
-	if err != nil {
-		return fmt.Errorf("list active tasks: %w", err)
-	}
-	for _, t := range tasks {
-		if t.Kind == cron.KindSandboxReap {
-			return nil // already seeded — idempotent
-		}
-	}
-	everyMinutes := sandboxReapSweepMinutes(idleTTLSec)
-	spec, err := cron.ParseSchedule(string(cron.KindEvery), "", everyMinutes, time.Time{}, "Europe/Rome")
-	if err != nil {
-		return fmt.Errorf("parse sandbox reap sweep schedule: %w", err)
-	}
-	next, err := cron.NextRunAt(spec, time.Now().UTC())
-	if err != nil {
-		return fmt.Errorf("compute next run: %w", err)
-	}
-	if _, err := store.CreateTask(ctx, cron.CreateTaskParams{
-		Kind:      cron.KindSandboxReap,
-		Spec:      spec,
-		NextRunAt: next,
-	}); err != nil {
-		return fmt.Errorf("create sandbox_reap task: %w", err)
-	}
-	slog.Info("aura serve: seeded sandbox reap sweep", "schedule", fmt.Sprintf("every %dm", everyMinutes))
-	return nil
+	return seedEveryCronSweep(ctx, store, cron.KindSandboxReap, sandboxReapSweepMinutes(idleTTLSec), "sandbox reap sweep")
+}
+
+// seedMemoryEmbedBackfillSweep idempotently seeds the memory embedding backfill. The INSERT
+// succeeds against the 0091-widened scheduler_tasks.kind CHECK.
+//
+// This is the sweep that closes the hole: writes store a fact without its vector whenever the
+// embedding sidecar is absent or slow, and until this existed nothing ever came back for them,
+// so the dense leg of retrieval answered on a corpus with holes in it.
+func seedMemoryEmbedBackfillSweep(ctx context.Context, store *cron.Store) error {
+	return seedEveryCronSweep(ctx, store, cron.KindMemoryEmbedBackfill,
+		memoryEmbedBackfillSweepMinutes, "memory embed backfill sweep")
 }
 
 // sandboxReapSweepMinutes derives the reap-sweep cadence (in minutes) from the idle-TTL seconds

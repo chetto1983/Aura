@@ -49,6 +49,13 @@ type TaskKind string
 // system-seeded (seedShareExpirySweep), never model-schedulable. Its literal MUST equal
 // handlers.KindShareExpirySweep ("share_expiry_sweep") — the cron store writes the row, the
 // dispatcher routes the same string to the handler handlers.NewShareExpiryHandler builds.
+//
+// KindMemoryEmbedBackfill is the per-tenant memory embedding backfill — the 0091 migration
+// widened the scheduler_tasks.kind CHECK to admit it. Like the sweeps above it is
+// system-seeded (seedMemoryEmbedBackfillSweep), never model-schedulable. Its literal MUST
+// equal handlers.KindMemoryEmbedBackfill ("memory_embed_backfill") — the cron store writes
+// the row, the dispatcher routes the same string to the handler
+// handlers.NewMemoryEmbedBackfillHandler builds.
 const (
 	KindReminder         TaskKind = "reminder"
 	KindAgentJob         TaskKind = "agent_job"
@@ -58,6 +65,8 @@ const (
 	KindSandboxReap      TaskKind = "sandbox_reap"
 	KindShareExpirySweep TaskKind = "share_expiry_sweep"
 	KindRetentionSweep   TaskKind = "retention_sweep"
+
+	KindMemoryEmbedBackfill TaskKind = "memory_embed_backfill"
 )
 
 // Store wraps a pgx pool and the generated Queries — the identity-04-02 canonical

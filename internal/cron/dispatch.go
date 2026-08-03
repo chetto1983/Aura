@@ -369,12 +369,14 @@ func (d *Dispatch) insertPendingNotification(
 // isSilentSuccessKind reports the system-seeded housekeeping sweeps whose ROUTINE
 // SUCCESS must not reach the user's channel. They are not model-schedulable — the
 // composition root seeds them on a fixed cadence (identity_purge ~every 15m,
-// sandbox_reap on the idle-TTL cadence, skill_ttl_sweep + share_expiry_sweep daily) — so
-// a per-tick "ok" summary is noise, not signal. Their FAILURE still notifies (D-21) and
-// the audit summary is always written to the run ledger; only the success push is skipped.
+// sandbox_reap on the idle-TTL cadence, memory_embed_backfill every few minutes,
+// skill_ttl_sweep + share_expiry_sweep daily) — so a per-tick "ok" summary is noise, not
+// signal. Their FAILURE still notifies (D-21) and the audit summary is always written to
+// the run ledger; only the success push is skipped.
 func isSilentSuccessKind(kind TaskKind) bool {
 	switch kind {
-	case KindIdentityPurge, KindSandboxReap, KindSkillTTLSweep, KindShareExpirySweep, KindRetentionSweep:
+	case KindIdentityPurge, KindSandboxReap, KindSkillTTLSweep, KindShareExpirySweep,
+		KindRetentionSweep, KindMemoryEmbedBackfill:
 		return true
 	default:
 		return false

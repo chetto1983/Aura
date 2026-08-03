@@ -16,7 +16,14 @@ var now = time.Date(2026, 7, 31, 12, 0, 0, 0, time.UTC)
 type recorder struct {
 	statements []string
 	params     []map[string]any
-	body       string
+	// languages parallels statements. Only a caller that batches cares — the write
+	// path sends "sqlscript" for a whole batch and "sql" for the per-fact fallback,
+	// and that distinction is invisible in the statements themselves.
+	languages []string
+	// failLanguage makes the server refuse requests in that language, which is how
+	// a test reaches the fallback branch without a real poisoned row.
+	failLanguage string
+	body         string
 }
 
 func recordingClient(t *testing.T, body string) (*Client, *recorder) {
@@ -25,12 +32,19 @@ func recordingClient(t *testing.T, body string) (*Client, *recorder) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
 		var payload struct {
-			Command string         `json:"command"`
-			Params  map[string]any `json:"params"`
+			Command  string         `json:"command"`
+			Params   map[string]any `json:"params"`
+			Language string         `json:"language"`
 		}
 		_ = json.Unmarshal(raw, &payload)
 		rec.statements = append(rec.statements, payload.Command)
 		rec.params = append(rec.params, payload.Params)
+		rec.languages = append(rec.languages, payload.Language)
+		if rec.failLanguage != "" && payload.Language == rec.failLanguage {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = io.WriteString(w, `{"error":"refused"}`)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, rec.body)
 	}))

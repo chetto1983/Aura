@@ -67,6 +67,11 @@ func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry, own
 		// adapter — always non-nil once serve boots, so this registration is always safe.
 		cron.KindShareExpirySweep: handlers.NewShareExpiryHandler(chat.shareSvc),
 		cron.KindRetentionSweep:   handlers.NewRetentionHandler(newRuntimeRetentionEngine(chat.cfg, chat.pool), ownerExportSweepers...),
+		// The scheduled caller for the vectors (serve_memory_backfill.go): it visits every
+		// identity's memory database and embeds the facts that have none. buildMemoryEmbedBackfill
+		// returns a bare nil when ArcadeDB or the embedding sidecar is unconfigured, which
+		// registers the disabled no-op sweep rather than a failing one.
+		cron.KindMemoryEmbedBackfill: handlers.NewMemoryEmbedBackfillHandler(buildMemoryEmbedBackfill(chat)),
 	}
 	hmap := make(map[cron.TaskKind]cron.Handler, len(real))
 	for kind, h := range real {
