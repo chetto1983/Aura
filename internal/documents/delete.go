@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 )
 
 // DocumentAssetDeleter removes source assets that advertise a deleted document.
@@ -58,7 +57,7 @@ func (s *DeleteService) SoftDeleteDocument(ctx context.Context, identityID, docu
 			}
 		}
 	}
-	s.purgeStagedCopy(ctx, documentID, detail.Document.Title)
+	s.purgeStagedCopy(ctx, documentID, detail)
 	return deleted, nil
 }
 
@@ -77,18 +76,56 @@ func (s *DeleteService) SoftDeleteDocument(ctx context.Context, identityID, docu
 // the operator asked to be gone are still readable, which the orphan-cleanup
 // endpoint does not cover: that one reconciles the object store, not the box volume.
 //
-// The name is the catalog title, which is what document_open stages under by
-// default. A copy the model chose to stage under a DIFFERENT file_name survives
-// this, and closing that needs a reconcile over the whole documents directory
-// rather than a targeted remove.
-func (s *DeleteService) purgeStagedCopy(ctx context.Context, documentID, title string) {
-	if s.Staged == nil || strings.TrimSpace(title) == "" {
+// The name comes from documentFileName — the SAME function OpenDocument stages
+// under (open.go) — and not from the raw catalog title. That distinction is the
+// whole correctness of this function: the title is an uploaded file name and can
+// carry separators or resolve to a dotted name, in which case the staging side
+// replaces it with "document-<sha12>". A purge built on the raw title would then
+// name a path nothing was ever written to and remove NOTHING, silently, which is
+// worse than not trying — the operator would be told the delete succeeded.
+//
+// One name per version, because a document with several versions can have any of
+// them staged, and rm -f on an absent path is free.
+//
+// A copy the model chose to stage under a caller-supplied file_name still survives
+// this: closing that needs a reconcile over the whole documents directory rather
+// than a targeted remove.
+func (s *DeleteService) purgeStagedCopy(ctx context.Context, documentID string, detail DocumentDetail) {
+	if s.Staged == nil {
 		return
 	}
-	if err := s.Staged.PurgeStagedDocument(ctx, title); err != nil {
-		slog.Default().Error("document delete: the staged copy is STILL READABLE in the sandbox",
-			"document_id", documentID, "file_name", title, "error", err)
+	for _, name := range stagedNames(detail) {
+		if err := s.Staged.PurgeStagedDocument(ctx, name); err != nil {
+			slog.Default().Error("document delete: the staged copy is STILL READABLE in the sandbox",
+				"document_id", documentID, "file_name", name, "error", err)
+		}
 	}
+}
+
+// stagedNames returns every name OpenDocument could have staged this document
+// under, deduplicated and in version order.
+func stagedNames(detail DocumentDetail) []string {
+	seen := map[string]struct{}{}
+	names := make([]string, 0, len(detail.Versions)+1)
+	add := func(name string) {
+		if name == "" {
+			return
+		}
+		if _, dup := seen[name]; dup {
+			return
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+	for _, version := range detail.Versions {
+		add(documentFileName(detail.Document, version))
+	}
+	// A document with no version row still has a title, and a copy could have been
+	// staged from an earlier state. The zero version only affects the fallback name.
+	if len(detail.Versions) == 0 {
+		add(documentFileName(detail.Document, DocumentVersion{}))
+	}
+	return names
 }
 
 // DeletingCatalog exposes normal catalog operations and routes delete through asset

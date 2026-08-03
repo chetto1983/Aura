@@ -81,20 +81,53 @@ func TestDeleteSurvivesAnUnreachableBox(t *testing.T) {
 	}
 }
 
-// No purger wired (the CLI and pool-free paths) and an untitled document must both
-// be no-ops rather than panics: the delete still has to complete.
-func TestDeleteWithoutAPurgerOrATitle(t *testing.T) {
+// No purger wired — the CLI and pool-free compositions — must be a no-op, not a
+// panic in the middle of an operator's delete.
+func TestDeleteWithoutAPurger(t *testing.T) {
 	t.Parallel()
 	if _, err := (&DeleteService{Catalog: catalogWithDocument(t, "Clienti.xlsx")}).
 		SoftDeleteDocument(context.Background(), testIdentity, testDocumentID); err != nil {
 		t.Fatalf("delete without a purger: %v", err)
 	}
-	purger := &recordingPurger{}
-	if _, err := (&DeleteService{Catalog: catalogWithDocument(t, "   "), Staged: purger}).
-		SoftDeleteDocument(context.Background(), testIdentity, testDocumentID); err != nil {
-		t.Fatalf("delete of an untitled document: %v", err)
-	}
-	if len(purger.names) != 0 {
-		t.Fatalf("a blank title reached the purge as %v; joined to the documents directory it would name the directory itself", purger.names)
+}
+
+// TestDeletePurgesTheNameStagingActuallyUsED — the purge must resolve the name
+// through documentFileName, exactly as OpenDocument does, and NOT through the raw
+// catalog title.
+//
+// The first version of this fix passed the title straight through. A title is an
+// uploaded file name: it can carry separators, or resolve to a dotted name, and in
+// those cases the staging side does not use it at all — it writes
+// "document-<sha12>" instead. A purge built on the raw title would then name a path
+// nothing was ever written to, remove NOTHING, report success, and leave the
+// operator's document readable. That is worse than not trying, and no test caught
+// it: it took an adversarial re-read of the shipped fix.
+func TestDeletePurgesTheNameStagingActuallyUses(t *testing.T) {
+	t.Parallel()
+	for name, tc := range map[string]struct {
+		title string
+		want  []string
+	}{
+		"ordinary title is used verbatim": {title: "Clienti.xlsx", want: []string{"Clienti.xlsx"}},
+		// filepath.Base strips the directory, so a title carrying one still stages —
+		// and must still be purged — under its base name.
+		"title with separators keeps only the base": {title: "sub/dir/Clienti.xlsx", want: []string{"Clienti.xlsx"}},
+		// These resolve to nothing usable, so staging substitutes the digest name.
+		// Purging the raw title here would have been the silent no-op.
+		"blank title falls back to the digest name":  {title: "   ", want: []string{"document-unknown"}},
+		"dotted title falls back to the digest name": {title: ".hidden", want: []string{"document-unknown"}},
+		"dot title falls back to the digest name":    {title: "..", want: []string{"document-unknown"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			purger := &recordingPurger{}
+			service := &DeleteService{Catalog: catalogWithDocument(t, tc.title), Staged: purger}
+			if _, err := service.SoftDeleteDocument(context.Background(), testIdentity, testDocumentID); err != nil {
+				t.Fatalf("SoftDeleteDocument: %v", err)
+			}
+			if len(purger.names) != len(tc.want) || purger.names[0] != tc.want[0] {
+				t.Fatalf("purged %v, want %v — this is the name OpenDocument stages under", purger.names, tc.want)
+			}
+		})
 	}
 }
