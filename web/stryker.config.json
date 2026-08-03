@@ -16,6 +16,7 @@
     "src/graph/graphApi.ts",
     "src/graph/graphIntent.ts",
     "src/graph/SigmaCanvas_reducers.ts",
+    "src/graph/SigmaCanvas_labels.ts",
     "src/governance/governanceApi.ts",
     "src/governance/governanceView.tsx",
     "src/approvals/approvalState.ts",

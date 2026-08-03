@@ -35,7 +35,12 @@ const sigmaShim = {
 // graph from it and useLoadGraph imports into THAT one, which is where a parallel-edge crash
 // actually happens. A mock that swallows the prop is why the previous parallel-edge test
 // passed against a renderer that threw in production.
-const sigmaContainerProps: { graph?: new () => { import: (data: unknown) => unknown } }[] = [];
+interface CapturedSigmaProps {
+  readonly graph?: new () => { import: (data: unknown) => unknown };
+  readonly settings?: Record<string, unknown>;
+}
+
+const sigmaContainerProps: CapturedSigmaProps[] = [];
 
 vi.mock('@react-sigma/core', () => ({
   SigmaContainer: ({ children, ...props }: { children: React.ReactNode }) => {
@@ -47,6 +52,11 @@ vi.mock('@react-sigma/core', () => ({
   useSigma: () => sigmaShim,
 }));
 vi.mock('@react-sigma/core/lib/style.css', () => ({}));
+vi.mock('sigma/rendering', () => ({
+  EdgeArrowProgram: class EdgeArrowProgram {
+    readonly kind = 'arrow';
+  },
+}));
 
 // Import AFTER the mock is registered so SigmaCanvas binds to the fakes.
 const { SigmaCanvas } = await import('../SigmaCanvas');
@@ -178,7 +188,7 @@ describe('SigmaCanvas (renderer mocked — no WebGL in jsdom)', () => {
     expect(graph.getNodeAttribute('n2', 'label')).toBe('web_search');
   });
 
-  it('hides ambient labels for dense overviews but keeps compact labels for focus restore', () => {
+  it('keeps compact names visible and forced for dense identity overviews', () => {
     render(
       <SigmaCanvas
         nodes={DENSE_NODES}
@@ -192,8 +202,40 @@ describe('SigmaCanvas (renderer mocked — no WebGL in jsdom)', () => {
     const graph = loadGraph.mock.calls[0]?.[0] as {
       getNodeAttribute: (nodeId: string, key: string) => unknown;
     };
-    expect(graph.getNodeAttribute('n0', 'label')).toBeNull();
+    expect(graph.getNodeAttribute('n0', 'label')).toBe('d:0');
     expect(graph.getNodeAttribute('n0', 'canvasLabel')).toBe('d:0');
+    expect(graph.getNodeAttribute('n0', 'forceLabel')).toBe(true);
+  });
+
+  it('uses Studio-style centred node labels, outlined edge labels and arrow programs', () => {
+    render(
+      <SigmaCanvas
+        nodes={NODES}
+        edges={EDGES}
+        pinnedPath={new Set()}
+        sigmaKey={0}
+        onNodeClick={vi.fn()}
+      />,
+    );
+
+    const props = sigmaContainerProps.at(-1);
+    expect(props?.settings).toMatchObject({
+      renderEdgeLabels: true,
+      defaultEdgeType: 'arrow',
+      labelRenderedSizeThreshold: 0,
+    });
+    expect(typeof props?.settings?.defaultDrawNodeLabel).toBe('function');
+    expect(typeof props?.settings?.defaultDrawEdgeLabel).toBe('function');
+    const edgePrograms = props?.settings?.edgeProgramClasses as Record<string, unknown> | undefined;
+    expect(typeof edgePrograms?.arrow).toBe('function');
+
+    const graph = loadGraph.mock.calls[0]?.[0] as {
+      getNodeAttribute: (nodeId: string, key: string) => unknown;
+      getEdgeAttribute: (edgeId: string, key: string) => unknown;
+    };
+    expect(graph.getNodeAttribute('n1', 'size')).toBe(27.5);
+    expect(graph.getNodeAttribute('n1', 'forceLabel')).toBe(true);
+    expect(graph.getEdgeAttribute('e1', 'forceLabel')).toBe(true);
   });
 
   it('registers node events so a canvas click can open the inspector (non-hover path wiring)', () => {

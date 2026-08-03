@@ -5,6 +5,8 @@
 // They import NO sigma/graphology/@react-sigma — they are plain attribute transforms,
 // so they are jsdom-unit-testable (Pitfall 4) and Stryker-reachable.
 
+import { studioCaption } from './SigmaCanvas_labels';
+
 const DIM_COLOR = '#3C4043'; // --color-border — the dimmed fill/stroke (off-path context)
 const PATH_NODE_COLOR = '#8AB4F8'; // --color-ring — the pinned-path accent (the single signal)
 const PATH_EDGE_COLOR = '#8AB4F8';
@@ -31,8 +33,8 @@ export interface EdgeDisplay {
 
 /**
  * pinnedNodeReducer dims a node that is not on the pinned path and lifts the ones that
- * are (accent fill + a higher zIndex so the path reads on top). An EMPTY pinnedPath means
- * "nothing pinned" → the node renders unchanged (its label-family fill from the loader).
+ * are (accent fill + a higher zIndex so the path reads on top). Captions survive the dim:
+ * Studio-style names are graph content, not decoration to erase during path focus.
  */
 export function pinnedNodeReducer(
   nodeId: string,
@@ -48,7 +50,7 @@ export function pinnedNodeReducer(
       zIndex: 1,
     };
   }
-  return { ...data, color: DIM_COLOR, label: null, zIndex: 0 };
+  return { ...data, color: DIM_COLOR, zIndex: 0 };
 }
 
 /**
@@ -73,9 +75,6 @@ export const REDUCER_COLORS = { DIM_COLOR, PATH_NODE_COLOR, PATH_EDGE_COLOR } as
 const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 const LONG_HEX_RE = /[0-9a-f]{24,}/i;
 const ELEMENT_ID_RE = /^(\d+):([0-9a-f-]{36}):([A-Za-z]+):(\d+)$/;
-const AMBIENT_LABEL_NODE_LIMIT = 32;
-const AMBIENT_LABEL_EDGE_LIMIT = 48;
-
 export function compactCanvasLabel(caption: string): string {
   const trimmed = caption.trim();
   if (trimmed === '') return '';
@@ -92,10 +91,5 @@ export function compactCanvasLabel(caption: string): string {
   const longHex = LONG_HEX_RE.exec(trimmed);
   if (longHex !== null) return `${trimmed.slice(0, 8)}...${trimmed.slice(-6)}`;
 
-  if (trimmed.length > 32) return `${trimmed.slice(0, 24)}...${trimmed.slice(-6)}`;
-  return trimmed;
-}
-
-export function shouldRenderAmbientLabels(nodeCount: number, edgeCount: number): boolean {
-  return nodeCount <= AMBIENT_LABEL_NODE_LIMIT && edgeCount <= AMBIENT_LABEL_EDGE_LIMIT;
+  return studioCaption(trimmed);
 }

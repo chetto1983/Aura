@@ -16,6 +16,7 @@ const mutationTests = [
   'src/governance/__tests__/BoardStateView.test.tsx',
   'src/governance/__tests__/governanceApi.test.ts',
   'src/governance/__tests__/helpers.test.ts',
+  'src/graph/__tests__/SigmaCanvas_labels.test.ts',
   'src/graph/__tests__/SigmaCanvas_reducers.test.ts',
   'src/graph/__tests__/graphIntent.test.ts',
   'src/onboarding/__tests__/onboardingApi.test.ts',

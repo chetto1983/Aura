@@ -4,7 +4,6 @@ import {
   pinnedEdgeReducer,
   pinnedNodeReducer,
   REDUCER_COLORS,
-  shouldRenderAmbientLabels,
   type EdgeDisplay,
   type NodeDisplay,
 } from '../SigmaCanvas_reducers';
@@ -25,7 +24,7 @@ describe('pinnedNodeReducer', () => {
     expect(out.zIndex).toBe(1);
   });
 
-  it('restores the compact canvas label for a focused node when ambient labels are hidden', () => {
+  it('restores the compact canvas label when a focused projection has a null label', () => {
     const out = pinnedNodeReducer(
       'n1',
       { ...base, label: null, canvasLabel: 'd:42' },
@@ -34,10 +33,10 @@ describe('pinnedNodeReducer', () => {
     expect(out.label).toBe('d:42');
   });
 
-  it('dims + drops the label of a node that is off the pinned path', () => {
+  it('dims a node off the pinned path without erasing its Studio caption', () => {
     const out = pinnedNodeReducer('n2', base, new Set(['n1']));
     expect(out.color).toBe(REDUCER_COLORS.DIM_COLOR);
-    expect(out.label).toBeNull();
+    expect(out.label).toBe('Alpha');
     expect(out.zIndex).toBe(0);
   });
 });
@@ -72,8 +71,7 @@ describe('canvas label helpers', () => {
     expect(compactCanvasLabel('web_search')).toBe('web_search');
   });
 
-  it('suppresses ambient labels for dense overviews', () => {
-    expect(shouldRenderAmbientLabels(12, 20)).toBe(true);
-    expect(shouldRenderAmbientLabels(75, 64)).toBe(false);
+  it("caps human captions at ArcadeDB Studio's 45-character boundary", () => {
+    expect(compactCanvasLabel('z'.repeat(46))).toBe(`${'z'.repeat(45)}…`);
   });
 });

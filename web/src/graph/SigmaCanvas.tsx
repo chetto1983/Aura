@@ -3,14 +3,11 @@ import { MultiDirectedGraph } from 'graphology';
 import { SigmaContainer, useLoadGraph, useRegisterEvents, useSigma } from '@react-sigma/core';
 import '@react-sigma/core/lib/style.css';
 import forceAtlas2 from 'graphology-layout-forceatlas2';
+import { EdgeArrowProgram } from 'sigma/rendering';
 import { useTranslation } from 'react-i18next';
 import type { ClientEdge, ClientNode } from './types';
-import {
-  compactCanvasLabel,
-  pinnedEdgeReducer,
-  pinnedNodeReducer,
-  shouldRenderAmbientLabels,
-} from './SigmaCanvas_reducers';
+import { compactCanvasLabel, pinnedEdgeReducer, pinnedNodeReducer } from './SigmaCanvas_reducers';
+import { drawStudioEdgeLabel, drawStudioNodeLabel, studioNodeRadius } from './SigmaCanvas_labels';
 
 // SigmaCanvas is the ONLY module in the cockpit that imports the WebGL renderer stack
 // (sigma / @react-sigma/core / graphology / graphology-layout-forceatlas2). jsdom has no
@@ -51,7 +48,6 @@ function GraphLoader({ nodes, edges, reducedMotion }: LoaderProps) {
     const dataKey = layoutDataKey(nodes, edges);
     const needsLayout = dataKey !== lastLayoutKey;
     const graph = new MultiDirectedGraph();
-    const renderAmbientLabels = shouldRenderAmbientLabels(nodes.length, edges.length);
 
     for (const node of nodes) {
       const cached = POSITION_CACHE.get(node.id);
@@ -59,12 +55,11 @@ function GraphLoader({ nodes, edges, reducedMotion }: LoaderProps) {
       graph.addNode(node.id, {
         x: cached?.x ?? Math.random() * 100,
         y: cached?.y ?? Math.random() * 100,
-        // Scale the degree-derived radius up for legibility on the WebGL canvas (the pure
-        // degreeToSize keeps a small DOM-safe range; the renderer wants chunkier nodes).
-        size: Math.max(7, node.size * 1.8),
+        size: studioNodeRadius(canvasLabel, node.size),
         color: node.color,
-        label: renderAmbientLabels ? canvasLabel : null,
+        label: canvasLabel,
         canvasLabel,
+        forceLabel: canvasLabel !== '',
       });
     }
     for (const edge of edges) {
@@ -74,6 +69,7 @@ function GraphLoader({ nodes, edges, reducedMotion }: LoaderProps) {
         label: edge.label,
         size: 1.4,
         color: '#3f444c',
+        forceLabel: edge.label.trim() !== '',
       });
     }
 
@@ -290,18 +286,24 @@ export function SigmaCanvas({ nodes, edges, pinnedPath, sigmaKey, onNodeClick }:
           graph={MultiDirectedGraph}
           style={{ height: '100%', width: '100%', background: 'transparent' }}
           settings={{
-            // Edge labels off-by-default: relationship types live in the inspector + evidence
-            // list, so painting them on every edge only produced an overlapping tangle.
-            renderEdgeLabels: false,
+            renderEdgeLabels: true,
+            defaultDrawNodeLabel: drawStudioNodeLabel,
+            defaultDrawEdgeLabel: drawStudioEdgeLabel,
+            defaultEdgeType: 'arrow',
+            edgeProgramClasses: { arrow: EdgeArrowProgram },
             labelColor: { color: '#E6E8EC' },
             labelSize: 13,
             labelWeight: '600',
             labelFont: '"Atkinson Hyperlegible Next", ui-sans-serif, system-ui, sans-serif',
-            // Only label nodes big enough to read; the density grid drops colliding labels.
-            labelRenderedSizeThreshold: 8,
-            labelDensity: 0.8,
-            labelGridCellSize: 64,
+            edgeLabelColor: { color: '#C7CAD1' },
+            edgeLabelSize: 10,
+            edgeLabelWeight: '600',
+            edgeLabelFont: '"Atkinson Hyperlegible Next", ui-sans-serif, system-ui, sans-serif',
+            labelRenderedSizeThreshold: 0,
+            labelDensity: 1,
+            labelGridCellSize: 48,
             defaultEdgeColor: '#3a3f47',
+            stagePadding: 36,
             zIndex: true,
           }}
         >
