@@ -74,6 +74,21 @@
   by another source gains that source rather than creating a duplicate. Removing
   one source detaches only that support and deletes the fact only when no source
   remains. Identity erasure remains the stronger database-drop guarantee.
+- The MCP wire has one provenance shape only: `memory_upsert_fact` accepts a
+  required `source` object containing `run_id` and bounded `memory_ids`, plus
+  optional `subject_kind` and `object_kind`; fact reads return a `sources` array
+  with that same object shape. The retired singular `source_run_id` and
+  `source_memory_ids` fields are not accepted or emitted. Schema initialization
+  performs a one-time in-place conversion of stored provenance and then drops
+  those properties; there is no dual parser, compatibility module or dormant
+  legacy branch in the runtime.
+- Exact replay identity is the SHA-256 of the length-prefixed, trimmed
+  subject/predicate/object/statement tuple. It deliberately excludes source,
+  observation time and embeddings, so a retry or a second source attaches to the
+  current edge. A contradiction closes the current subject+predicate edge before
+  creating the replacement. Source-scoped forget detaches every matching source
+  reference and deletes only edges whose source list becomes empty; entity-wide
+  forget remains the explicit destructive path.
 - Retrieval remains ArcadeDB-native: exact graph traversal, English Lucene,
   EmbeddingGemma HNSW and `vector.fuse` RRF. Valid-time filtering happens before
   candidate truncation, every lexical path escapes Lucene syntax, and an
