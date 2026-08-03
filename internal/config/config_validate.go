@@ -139,7 +139,11 @@ func (c *Config) gateMultiUserNeedsASandbox(p RuntimeProfile) []Violation {
 	return []Violation{{
 		Knob: "AURA_MUSR_ISOLATION",
 		Sev:  Fatal,
-		Msg: "a second identity needs per-identity tool isolation: set AURA_RUNTIME_PROFILE to " +
+		// AURA_PROFILE, not AURA_RUNTIME_PROFILE. config.go:400 reads AURA_PROFILE and
+		// nothing anywhere reads the other name — a fail-closed gate that tells the
+		// operator to set a variable with no effect leaves them stuck at a boot loop
+		// following its own instructions. Found on the live box, 2026-08-03.
+		Msg: "a second identity needs per-identity tool isolation: set AURA_PROFILE to " +
 			"single_user_hardened or server_production so shell_exec and fs_* route into a " +
 			"per-identity box, or leave AURA_MUSR_ISOLATION off — under the dev profile every " +
 			"identity shares the host, the skills library, aura.settings and the MCP catalog",
