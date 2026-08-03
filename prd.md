@@ -79,10 +79,16 @@
   candidate truncation, every lexical path escapes Lucene syntax, and an
   unavailable or invalid embedder fails soft to bounded lexical retrieval.
 - All model-controlled text, result counts and maintenance batches have hard
-  server-side limits. Entity kinds are written with the entities so the graph
-  and memory API can expose meaningful types. The service reports whether a
-  result used hybrid retrieval or a named fallback; silent dense degradation is
-  not an acceptable success signal.
+  server-side limits. Defaults are: query 2,048 runes; entity name 512 runes;
+  statement 4,096 runes; predicate, source-run ID and each source-memory ID 100
+  runes; 64 source-memory IDs per fact; 100 returned rows; 20 digest facts per
+  entity; 100 maintenance rows per batch; 2,000 facts scanned for a digest; 400
+  candidates per hybrid leg; and a 1 MiB MCP request body. Limits above 100 are
+  configurable through the env catalog below; non-positive overrides fail boot
+  rather than disabling a guard. Entity kinds are written with the entities so
+  the graph and memory API can expose meaningful types. The service reports
+  whether a result used hybrid retrieval or a named fallback; silent dense
+  degradation is not an acceptable success signal.
 - The obsolete Qwen/1024 LOCOMO branch, stale Neo4j tool schemas and comments
   describing the retired server or port are removed. The only benchmarked
   embedding contract is EmbeddingGemma with its asymmetric query/document task
@@ -6009,10 +6015,14 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_MEMORY_RERANK_TOP_K_IN` | `20` | cap | 11d | Hybrid retrieval candidates pre-rerank (RRF `sourceK`/finalK input). |
 | `AURA_MEMORY_RERANK_TOP_K_OUT` | `5` | cap | 11d | LLM re-ranker output size (RRF `finalK`). |
 | `AURA_MEMORY_RERANK_ENABLED` | `true` | cap | 11d | LLM re-ranker always-on per query interattive (amendment #29). `false` per batch-eval/bulk; confidence-skip + cross-encoder locale = follow-on. |
-| `AURA_AGENT_MEMORY_MCP_PORT` | `8091` | operative | 11 (#62) | Host port del sidecar MCP `aura-agent-memory-mcp` (streamable-HTTP, `127.0.0.1:<port>/mcp/`) adottato off-the-shelf (amendment #61/#62, D-11/D-12). Già in `compose.yaml`. |
-| `AURA_AGENT_MEMORY_MCP_IMAGE` | `aura-agent-memory-mcp:local` | operative | 11 (#62) | Tag dell'immagine costruita dal `build:` riproducibile (Dockerfile che `pip install` dal fork `aura/provenance-safe-dedup` @ `c1c2d65`), che rimpiazza il `:spike-fixed` hand-built (amendment #62, nodo aperto #4 di #61). |
-| `AURA_AGENT_MEMORY_MCP_URL` | `http://127.0.0.1:8091/mcp/` | operative | 11 (#62) | Override test-tier letto dal tier `memory_integration` (`*_memory_integration_test.go`); gate live del mount/recall (amendment #62, D-12). Sotto `$CI` `t.Fatal` se unset (no-skip-as-green). |
-| `AURA_AGENT_MEMORY_MCP_AUTH_SECRET` | *(required, no default)* | secret | 11 (#98) | Shared HS256 service credential used only by Aura to mint ≤60-second tenant delegation JWTs and by Agent Memory to validate them. Compose/configuration fails closed when absent; never exposed to the model, MCP arguments, logs, status output, or checked-in env files. |
+| `AURA_MEMORY_QUERY_MAX_RUNES` | `2048` | cap | Agent Memory convergence | Maximum natural-language search query accepted by `arcadedb-mcp`; a non-positive override fails boot. |
+| `AURA_MEMORY_ENTITY_MAX_RUNES` | `512` | cap | Agent Memory convergence | Maximum canonical entity name accepted on writes and exact traversal; a non-positive override fails boot. |
+| `AURA_MEMORY_STATEMENT_MAX_RUNES` | `4096` | cap | Agent Memory convergence | Maximum fact statement accepted for storage and embedding; a non-positive override fails boot. |
+| `AURA_MEMORY_DIGEST_SCAN_MAX_COUNT` | `2000` | cap | Agent Memory convergence | Maximum current facts read by one digest build before grouping; response entity/fact counts remain capped separately. |
+| `AURA_MEMORY_HYBRID_CANDIDATE_MAX_COUNT` | `400` | cap | Agent Memory convergence | Maximum candidates admitted by each pre-filtered hybrid retrieval leg. |
+| `AURA_ARCADEDB_MCP_BODY_MAX_BYTES` | `1048576` (1 MiB) | cap | Agent Memory convergence | Maximum Streamable HTTP MCP request body; oversized requests are rejected before JSON decoding. |
+| `AURA_ARCADEDB_MCP_HOST` | `0.0.0.0` | operative | Agent Memory convergence | Bind host of the production Go `arcadedb-mcp` service. Compose publishes it on loopback. |
+| `AURA_ARCADEDB_MCP_PORT` | `8096` | operative | Agent Memory convergence | Host port of the production Go `arcadedb-mcp` Streamable HTTP endpoint at `/mcp/`. |
 | `AURA_MCP_PING_INTERVAL_SEC` | `60` | cap | fix-plan 1.6 | Background per-server MCP liveness-poll interval (`internal/agent/mcptools/bridge_ping.go`), started after a successful mount on both the stdio and streamable-HTTP branches. Each ping is bounded to `min(10s, interval)`. `<=0` disables the poller entirely. A ping classified as a transport error (`mcp.IsTransportError`) triggers the existing reactive `reconnectAfterTransport` machinery (breaker+backoff already bound a runaway reconnect storm); a non-transport ping error is WARN-logged only. |
 | `AURA_LLM_LOCAL_BASE_URL` | `http://aura-vllm-chat:8083/v1` | operative | 13 | Local LLM endpoint (vLLM o llama.cpp fallback). |
 | `AURA_LLM_LOCAL_MODEL` | `gemma-3-12b-it` | operative | 13 | Local LLM model id. |

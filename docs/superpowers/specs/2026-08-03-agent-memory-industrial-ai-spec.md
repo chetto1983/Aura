@@ -77,6 +77,13 @@ Every response is bounded and identifies the effective retrieval path. Empty
 memory is a valid empty result; malformed structured content, unbounded output
 or silent dense failure is not.
 
+The default service envelope is 2,048 runes per query, 512 per entity name,
+4,096 per fact statement, 100 per predicate/source identifier, 64 source-memory
+identifiers, 100 returned rows or maintenance rows, 20 digest facts per entity,
+2,000 scanned digest facts, 400 candidates per hybrid leg and a 1 MiB MCP HTTP
+body. Values above 100 are env-overrideable and every override remains a
+positive hard bound.
+
 ## Evaluation Strategy
 
 The canonical artifact schema is `aura.agent-memory-eval/v1`. It binds the Aura
