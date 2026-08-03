@@ -472,11 +472,10 @@ services:
       - garage-data:/var/lib/garage
 
   # ↓↓ Slice 0.7 — OpenAI-compat embedding sidecar ↓↓
-  # The model is NOT part of this comment on purpose: it travels in .env (repo default
-  # below is Qwen3-Embedding-0.6B, 1024-d native, pooling last). Naming a model here is
-  # what let "Granite" survive two swaps and describe a sidecar that no longer ran it.
-  # Default compose must start on CPU-only CI/installer hosts; layer compose.gpu.yaml
-  # when the operator wants Docker to reserve NVIDIA devices for this service.
+  # The shipped local contract is ggml-org EmbeddingGemma-300M Q8_0 at 768d with
+  # mean pooling; the service definition below owns those defaults. Appliance and CI
+  # flows materialize that exact GGUF before startup. The base service is GPU-first;
+  # compose.minipc.yaml and the CI cache overlay remove its NVIDIA reservation.
   # ↓↓ ArcadeDB — graph substrate for memory + documents ↓↓
   # This container's only definition used to live in the turing_AgentMemory_MCP compose,
   # which was deleted with its folder on 2026-07-31. It is Aura's now.

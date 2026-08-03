@@ -263,12 +263,7 @@ ensure_embed_model() {
 
   tmp_model="$(mktemp -t aura-embed-model.XXXXXX)"
   trap 'rm -f "$tmp_model"' EXIT
-  echo "downloading the embedding model (~318 MiB, once)…"
-  curl -fL --retry 3 --retry-delay 2 "$model_url" -o "$tmp_model" || {
-    echo "FAIL: could not download the embedding model from ${model_url}" >&2
-    exit 1
-  }
-  verify_embed_model "$tmp_model" "$want_bytes"
+  scripts/fetch_embedding_model.sh "$tmp_model" "$model_url"
 
   docker cp "$tmp_model" "${embed_cid}:${model_path}" || {
     echo "FAIL: could not place the embedding model into the sidecar volume" >&2
@@ -277,31 +272,6 @@ ensure_embed_model() {
   rm -f "$tmp_model"
   trap - EXIT
   echo "embedding model installed at ${model_path}"
-}
-
-# verify_embed_model refuses a download that is not the model we asked for. Three checks,
-# cheapest first: the GGUF magic, the size upstream advertised, and the two dense tensors
-# whose absence is silent. GGUF stores tensor names as plain strings in the header, so
-# pulling the printable runs out of the first 16 MB is enough to see them.
-verify_embed_model() {
-  file="$1"
-  want="$2"
-  if [ "$(head -c 4 "$file")" != "GGUF" ]; then
-    echo "FAIL: downloaded embedding model is not a GGUF file" >&2
-    exit 1
-  fi
-  got="$(wc -c < "$file" | tr -d ' ')"
-  if [ -n "$want" ] && [ "$got" != "$want" ]; then
-    echo "FAIL: embedding model is ${got} bytes, upstream advertised ${want}" >&2
-    exit 1
-  fi
-  dense="$(head -c 16000000 "$file" | grep -aoE 'dense_[23][.]weight' | sort -u | wc -l)"
-  if [ "$dense" -lt 2 ]; then
-    echo "FAIL: embedding model has no sentence-transformers dense projections." >&2
-    echo "      It would return backbone-only vectors, silently and at the right width." >&2
-    echo "      unsloth's Q8_0 build has this defect; use ggml-org's." >&2
-    exit 1
-  fi
 }
 
 set_env_value() {
@@ -532,7 +502,8 @@ download_file deploy/aura.service deploy/aura.service
 download_file searxng/settings.yml searxng/settings.yml
 download_file searxng/limiter.toml searxng/limiter.toml
 download_file scripts/garage_bootstrap.sh scripts/garage_bootstrap.sh
-chmod +x scripts/garage_bootstrap.sh
+download_file scripts/fetch_embedding_model.sh scripts/fetch_embedding_model.sh
+chmod +x scripts/garage_bootstrap.sh scripts/fetch_embedding_model.sh
 
 write_env_if_missing
 
