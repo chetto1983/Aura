@@ -120,11 +120,16 @@ func TestIdentityObjectStoreRoundTrip(t *testing.T) {
 		t.Fatalf("Resolve = %+v, want %+v", got, want)
 	}
 
-	// The secret is stored as ciphertext, never plaintext.
+	// The secret is stored as ciphertext, never plaintext. The read is identity-scoped for
+	// the same reason the store's own is: since migration 0087 aura.identity_object_store is
+	// fail-closed, so a bare app-pool SELECT is refused every row and this assertion would
+	// read "no rows" rather than the ciphertext it exists to inspect.
 	var enc []byte
-	if err := pool.QueryRow(ctx,
-		`SELECT secret_key_enc FROM aura.identity_object_store WHERE identity_id = $1`, id,
-	).Scan(&enc); err != nil {
+	if err := db.WithIdentityTxRaw(ctx, pool, id, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx,
+			`SELECT secret_key_enc FROM aura.identity_object_store WHERE identity_id = $1`, id,
+		).Scan(&enc)
+	}); err != nil {
 		t.Fatalf("read ciphertext: %v", err)
 	}
 	if string(enc) == want.SecretKey {

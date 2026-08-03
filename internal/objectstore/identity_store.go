@@ -11,9 +11,11 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/idroot"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -89,10 +91,12 @@ func (s *IdentityStore) Resolve(ctx context.Context) (Credentials, error) {
 	}
 	var bucket, accessKey string
 	var enc []byte
-	err = s.pool.QueryRow(ctx,
-		`SELECT bucket, access_key, secret_key_enc FROM aura.identity_object_store WHERE identity_id = $1`,
-		pgID,
-	).Scan(&bucket, &accessKey, &enc)
+	err = s.asIdentity(ctx, id, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx,
+			`SELECT bucket, access_key, secret_key_enc FROM aura.identity_object_store WHERE identity_id = $1`,
+			pgID,
+		).Scan(&bucket, &accessKey, &enc)
+	})
 	if err != nil {
 		// pgx.ErrNoRows is intentionally NOT special-cased to the shared bucket: an
 		// identity without its own provisioned key must resolve to nothing (fail closed),
@@ -120,12 +124,14 @@ func (s *IdentityStore) Put(ctx context.Context, identity, bucket, accessKey, se
 	if err != nil {
 		return err
 	}
-	_, err = s.pool.Exec(ctx,
-		`INSERT INTO aura.identity_object_store (identity_id, bucket, access_key, secret_key_enc)
-		 VALUES ($1, $2, $3, $4) ON CONFLICT (identity_id) DO NOTHING`,
-		pgID, bucket, accessKey, enc,
-	)
-	if err != nil {
+	if err := s.asIdentity(ctx, identity, func(tx pgx.Tx) error {
+		_, execErr := tx.Exec(ctx,
+			`INSERT INTO aura.identity_object_store (identity_id, bucket, access_key, secret_key_enc)
+			 VALUES ($1, $2, $3, $4) ON CONFLICT (identity_id) DO NOTHING`,
+			pgID, bucket, accessKey, enc,
+		)
+		return execErr
+	}); err != nil {
 		return fmt.Errorf("objectstore identity: put %q: %w", identity, err)
 	}
 	return nil
@@ -138,12 +144,29 @@ func (s *IdentityStore) Delete(ctx context.Context, identity string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := s.pool.Exec(ctx,
-		`DELETE FROM aura.identity_object_store WHERE identity_id = $1`, pgID,
-	); err != nil {
+	if err := s.asIdentity(ctx, identity, func(tx pgx.Tx) error {
+		_, execErr := tx.Exec(ctx,
+			`DELETE FROM aura.identity_object_store WHERE identity_id = $1`, pgID)
+		return execErr
+	}); err != nil {
 		return fmt.Errorf("objectstore identity: delete %q: %w", identity, err)
 	}
 	return nil
+}
+
+// asIdentity runs fn with app.current_identity bound to identityID, so the fail-closed
+// floor migration 0087 put on aura.identity_object_store admits exactly that identity's
+// binding. Without it Resolve sees no row on a deployed daemon and every non-shared
+// principal fails closed onto NO bucket — which reads exactly like an unprovisioned
+// identity, so the outage would have looked like a provisioning bug.
+//
+// The scope is always the identity being addressed, which every one of the three methods
+// already holds: Put and Delete take it as an argument, and Resolve has read it off the
+// context and branched on it (isShared) before it gets here. It is db.WithIdentityTxRaw
+// rather than WithIdentityTx because this store is raw pgx by design — it carries no sqlc
+// query, following the PgAuditStore/share.Store precedent.
+func (s *IdentityStore) asIdentity(ctx context.Context, identityID string, fn func(pgx.Tx) error) error {
+	return db.WithIdentityTxRaw(ctx, s.pool, identityID, fn)
 }
 
 // isShared reports whether id maps to the shared bucket (empty/CLI, the built-in

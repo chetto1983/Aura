@@ -15,8 +15,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 )
 
@@ -39,9 +41,7 @@ func TestStorePostgresContract(t *testing.T) {
 		var wg sync.WaitGroup
 		errs := make(chan error, contenders)
 		for range contenders {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				decision, err := store.Begin(ctx, req)
 				if err != nil {
 					errs <- err
@@ -61,7 +61,7 @@ func TestStorePostgresContract(t *testing.T) {
 				default:
 					errs <- fmt.Errorf("unexpected decision %q", decision.Decision)
 				}
-			}()
+			})
 		}
 		wg.Wait()
 		close(errs)
@@ -118,12 +118,12 @@ func TestStorePostgresContract(t *testing.T) {
 		}
 		var state string
 		var rejectedAt bool
-		if err := app.QueryRow(ctx, `
+		if err := scopedQueryRow(ctx, app, req.Operation.IdentityID, `
 			SELECT state, rejected_at IS NOT NULL
 			FROM aura.idempotency_operations
 			WHERE identity_id=$1 AND operation_scope=$2 AND operation_key=$3`,
-			req.Operation.IdentityID, req.Operation.Scope, req.Operation.Key,
-		).Scan(&state, &rejectedAt); err != nil {
+			[]any{req.Operation.IdentityID, req.Operation.Scope, req.Operation.Key},
+			&state, &rejectedAt); err != nil {
 			t.Fatal(err)
 		}
 		if state != string(StateRejected) || !rejectedAt {
@@ -268,7 +268,7 @@ func TestStorePostgresContract(t *testing.T) {
 			audit := &AuditLink{ConversationID: uuid.NewString(), RequestID: uuid.NewString(), ToolCallID: fmt.Sprintf("call-%d", i)}
 			req.Audit = audit
 			claimToken := mustAcquire(t, ctx, store, req)
-			result := ReplayResult{Body: []byte(fmt.Sprintf(`{"row":%d}`, i)), Preview: "kept-metadata", ExpiresAt: expiry}
+			result := ReplayResult{Body: fmt.Appendf(nil, `{"row":%d}`, i), Preview: "kept-metadata", ExpiresAt: expiry}
 			if err := store.Complete(ctx, CompleteRequest{
 				Operation: req.Operation, Fingerprint: req.Fingerprint,
 				ClaimToken: claimToken, Result: result,
@@ -324,12 +324,12 @@ func TestStorePostgresContract(t *testing.T) {
 					t.Fatal(err)
 				}
 				var bodyRetained, notCleared bool
-				if err := app.QueryRow(ctx, `
+				if err := scopedQueryRow(ctx, app, req.Operation.IdentityID, `
 					SELECT replay_body IS NOT NULL, replay_cleared_at IS NULL
 					FROM aura.idempotency_operations
 					WHERE identity_id=$1 AND operation_scope=$2 AND operation_key=$3`,
-					req.Operation.IdentityID, req.Operation.Scope, req.Operation.Key,
-				).Scan(&bodyRetained, &notCleared); err != nil {
+					[]any{req.Operation.IdentityID, req.Operation.Scope, req.Operation.Key},
+					&bodyRetained, &notCleared); err != nil {
 					t.Fatal(err)
 				}
 				decision, err := store.Begin(ctx, req)
@@ -424,16 +424,29 @@ func mustAcquire(
 	return decision.ClaimToken
 }
 
+// scopedQueryRow runs a verification read as identityID.
+//
+// The bare app-pool reads these assertions used to do see NOTHING since migration 0087:
+// aura.idempotency_operations is fail-closed, so a connection with no app.current_identity
+// is refused every row and Scan reports "no rows in result set". The assertions are
+// unchanged — only the channel they read through is now one the policy admits, which is the
+// same channel the Store itself must go through.
+func scopedQueryRow(ctx context.Context, app *pgxpool.Pool, identityID, query string, args []any, dest ...any) error {
+	return db.WithIdentityTxRaw(ctx, app, identityID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, query, args...).Scan(dest...)
+	})
+}
+
 func assertReplayMetadata(t *testing.T, ctx context.Context, pool *pgxpool.Pool, req BeginRequest, wantCleared bool) {
 	t.Helper()
 	var state, conversationID, requestID, toolCallID string
 	var replayCleared bool
-	err := pool.QueryRow(ctx, `
+	err := scopedQueryRow(ctx, pool, req.Operation.IdentityID, `
 		SELECT state, replay_body IS NULL, audit_conversation_id::text, audit_request_id::text, audit_tool_call_id
 		FROM aura.idempotency_operations
 		WHERE identity_id=$1 AND operation_scope=$2 AND operation_key=$3`,
-		req.Operation.IdentityID, req.Operation.Scope, req.Operation.Key,
-	).Scan(&state, &replayCleared, &conversationID, &requestID, &toolCallID)
+		[]any{req.Operation.IdentityID, req.Operation.Scope, req.Operation.Key},
+		&state, &replayCleared, &conversationID, &requestID, &toolCallID)
 	if err != nil {
 		t.Fatal(err)
 	}

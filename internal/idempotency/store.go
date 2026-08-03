@@ -12,8 +12,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/otel"
 
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 )
 
@@ -60,35 +62,47 @@ func (s *Store) RecoverExpired(
 	}
 	now := s.now().UTC()
 	identityID, _ := operationUUID(request.Operation.IdentityID)
-	generation, err := s.queries.TryRecoverExpiredOperation(
-		ctx,
-		sqlc.TryRecoverExpiredOperationParams{
-			LeaseExpiresAt: timestamp(now.Add(s.leaseDuration)),
-			RetryAfter:     timestamp(now.Add(s.retryAfter)),
-			Now:            timestamp(now),
-			IdentityID:     identityID,
-			OperationScope: string(request.Operation.Scope),
-			OperationKey:   request.Operation.Key,
-			PayloadHash:    append([]byte(nil), request.Fingerprint[:]...),
-		},
-	)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return 0, false, nil
+	params := sqlc.TryRecoverExpiredOperationParams{
+		LeaseExpiresAt: timestamp(now.Add(s.leaseDuration)),
+		RetryAfter:     timestamp(now.Add(s.retryAfter)),
+		Now:            timestamp(now),
+		IdentityID:     identityID,
+		OperationScope: string(request.Operation.Scope),
+		OperationKey:   request.Operation.Key,
+		PayloadHash:    append([]byte(nil), request.Fingerprint[:]...),
 	}
+	var token ClaimToken
+	var recovered bool
+	err := s.withIdentity(ctx, request.Operation.IdentityID, func(q operationQueries) error {
+		generation, qErr := q.TryRecoverExpiredOperation(ctx, params)
+		if errors.Is(qErr, pgx.ErrNoRows) {
+			return nil
+		}
+		if qErr != nil {
+			return fmt.Errorf("recover expired idempotency operation: %w", qErr)
+		}
+		if generation <= 0 {
+			return fmt.Errorf(
+				"recover expired idempotency operation: invalid claim token",
+			)
+		}
+		token, recovered = ClaimToken(generation), true
+		return nil
+	})
 	if err != nil {
-		return 0, false, fmt.Errorf("recover expired idempotency operation: %w", err)
+		return 0, false, err
 	}
-	if generation <= 0 {
-		return 0, false, fmt.Errorf(
-			"recover expired idempotency operation: invalid claim token",
-		)
-	}
-	return ClaimToken(generation), true, nil
+	return token, recovered, nil
 }
 
 // Store owns atomic operation acquisition, terminal transitions, replay, and
 // bounded expiry over the generated idempotency registry queries.
+//
+// pool is the RLS carrier, not a second query handle: migration 0087 put a fail-closed
+// floor on aura.idempotency_operations, so every statement below runs inside a
+// transaction that first binds app.current_identity. See withIdentity.
 type Store struct {
+	pool          *pgxpool.Pool
 	queries       operationQueries
 	now           func() time.Time
 	leaseDuration time.Duration
@@ -98,8 +112,18 @@ type Store struct {
 }
 
 // New constructs a Store over a pool or transaction implementing sqlc.DBTX.
+//
+// A *pgxpool.Pool is ALSO kept as the pool, so the Store can open the identity-scoped
+// transactions aura.idempotency_operations now requires. Every deployed caller
+// (cmd/aura/chat_boot.go, cmd/aura/idempotency.go) already passes one — which is why the
+// signature does not change and no call site moves. Any other DBTX is a handle the caller
+// already owns and is responsible for scoping; it is used as-is.
 func New(database sqlc.DBTX, cfg Config) *Store {
-	return newStore(sqlc.New(database), cfg)
+	store := newStore(sqlc.New(database), cfg)
+	if pool, ok := database.(*pgxpool.Pool); ok {
+		store.pool = pool
+	}
+	return store
 }
 
 func newStore(queries operationQueries, cfg Config) *Store {
@@ -125,6 +149,47 @@ func newStore(queries operationQueries, cfg Config) *Store {
 	}
 }
 
+// withIdentity runs fn with app.current_identity bound to identityID, so the fail-closed
+// floor migration 0087 put on aura.idempotency_operations admits exactly that principal's
+// registry rows. Without it every Begin on a deployed daemon fails 42501: the floor is AS
+// RESTRICTIVE, so an unset session variable refuses the INSERT outright.
+//
+// The scope is the identity the REQUEST carries, never the ambient context. A registry
+// entry belongs to the principal the operation was issued FOR, which is not necessarily
+// whoever is executing it, and OperationKey.Validate has already rejected anything that is
+// not a uuid before any caller reaches here. This is the conversations.Store.Create side of
+// the choice db.WithCallerIdentityTx documents, not the askuser.Store side.
+//
+// A pool-less Store is the injected-DBTX construction the package's unit tests use
+// (newStore over a fakeOperationQueries): it has no transaction to open, so it runs fn on
+// the injected queries directly. Production always goes through New with a pool.
+func (s *Store) withIdentity(ctx context.Context, identityID string, fn func(operationQueries) error) error {
+	if s.pool == nil {
+		return fn(s.queries)
+	}
+	return db.WithIdentityTx(ctx, s.pool, identityID, func(q *sqlc.Queries) error {
+		return fn(q)
+	})
+}
+
+// transition runs one conditional terminal UPDATE as identityID and turns its affected-row
+// count into the stale-transition contract. Complete, MarkIndeterminate and MarkRejected
+// differ only in the statement they issue and the label they report, so the identity scope
+// and the row-count rule live here once instead of three times.
+func (s *Store) transition(
+	ctx context.Context,
+	identityID, label string,
+	exec func(operationQueries) (int64, error),
+) error {
+	return s.withIdentity(ctx, identityID, func(q operationQueries) error {
+		affected, err := exec(q)
+		if err != nil {
+			return fmt.Errorf("%s: %w", label, err)
+		}
+		return requireOneTransition(affected)
+	})
+}
+
 // Begin atomically acquires a new operation or returns the durable decision
 // for an existing identity/scope/key. Only DecisionAcquired permits an effect.
 func (s *Store) Begin(ctx context.Context, request BeginRequest) (decision BeginDecision, err error) {
@@ -144,23 +209,33 @@ func (s *Store) Begin(ctx context.Context, request BeginRequest) (decision Begin
 		params.AuditRequestID, _ = operationUUID(request.Audit.RequestID)
 		params.AuditToolCallID = optionalText(request.Audit.ToolCallID)
 	}
-	generation, err := s.queries.TryStartOperation(ctx, params)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return s.readExistingDecision(ctx, request, identityID, now)
-	}
-	if err != nil {
-		return BeginDecision{}, fmt.Errorf("begin idempotency operation: %w", err)
-	}
-	if generation <= 0 {
-		return BeginDecision{}, fmt.Errorf("begin idempotency operation: invalid claim token")
-	}
-	return BeginDecision{
-		Decision: DecisionAcquired, ClaimToken: ClaimToken(generation),
-	}, nil
+	// The acquire and the losing racer's read of the durable decision share ONE
+	// transaction: ON CONFLICT DO NOTHING yields zero rows without aborting it, so the
+	// GetOperation that follows is a valid statement on the same snapshot. The error is
+	// returned ALONGSIDE the decision rather than collapsing it, because DecisionConflict
+	// travels with ErrConflict — dropping either half loses the caller's whole answer.
+	err = s.withIdentity(ctx, request.Operation.IdentityID, func(q operationQueries) error {
+		generation, qErr := q.TryStartOperation(ctx, params)
+		if errors.Is(qErr, pgx.ErrNoRows) {
+			decision, qErr = s.readExistingDecision(ctx, q, request, identityID, now)
+			return qErr
+		}
+		if qErr != nil {
+			return fmt.Errorf("begin idempotency operation: %w", qErr)
+		}
+		if generation <= 0 {
+			return fmt.Errorf("begin idempotency operation: invalid claim token")
+		}
+		decision = BeginDecision{
+			Decision: DecisionAcquired, ClaimToken: ClaimToken(generation),
+		}
+		return nil
+	})
+	return decision, err
 }
 
-func (s *Store) readExistingDecision(ctx context.Context, request BeginRequest, identityID pgtype.UUID, now time.Time) (BeginDecision, error) {
-	row, err := s.queries.GetOperation(ctx, sqlc.GetOperationParams{
+func (s *Store) readExistingDecision(ctx context.Context, q operationQueries, request BeginRequest, identityID pgtype.UUID, now time.Time) (BeginDecision, error) {
+	row, err := q.GetOperation(ctx, sqlc.GetOperationParams{
 		IdentityID: identityID, OperationScope: string(request.Operation.Scope), OperationKey: request.Operation.Key,
 	})
 	if err != nil {
@@ -240,7 +315,7 @@ func (s *Store) Complete(ctx context.Context, request CompleteRequest) (err erro
 	if err != nil {
 		return err
 	}
-	affected, err := s.queries.CompleteOperation(ctx, sqlc.CompleteOperationParams{
+	params := sqlc.CompleteOperationParams{
 		ReplayBody: append([]byte(nil), request.Result.Body...), ReplayPreview: optionalText(request.Result.Preview),
 		ReplaySidecarRef: optionalText(request.Result.SidecarRef),
 		ReplayStatusCode: optionalInt2(request.Result.StatusCode), ReplayHeaders: headers,
@@ -249,11 +324,9 @@ func (s *Store) Complete(ctx context.Context, request CompleteRequest) (err erro
 		OperationScope: string(request.Operation.Scope), OperationKey: request.Operation.Key,
 		PayloadHash: append([]byte(nil), request.Fingerprint[:]...),
 		ClaimToken:  int64(request.ClaimToken),
-	})
-	if err != nil {
-		return fmt.Errorf("complete idempotency operation: %w", err)
 	}
-	return requireOneTransition(affected)
+	return s.transition(ctx, request.Operation.IdentityID, "complete idempotency operation",
+		func(q operationQueries) (int64, error) { return q.CompleteOperation(ctx, params) })
 }
 
 // MarkIndeterminate makes ambiguous work terminal without permitting replay or
@@ -272,15 +345,13 @@ func (s *Store) MarkIndeterminate(
 		return fmt.Errorf("idempotency claim token is required")
 	}
 	identityID, _ := operationUUID(operation.IdentityID)
-	affected, err := s.queries.MarkOperationIndeterminate(ctx, sqlc.MarkOperationIndeterminateParams{
+	params := sqlc.MarkOperationIndeterminateParams{
 		Now: timestamp(s.now().UTC()), IdentityID: identityID, OperationScope: string(operation.Scope),
 		OperationKey: operation.Key, PayloadHash: append([]byte(nil), fingerprint[:]...),
 		ClaimToken: int64(claimToken),
-	})
-	if err != nil {
-		return fmt.Errorf("mark idempotency operation indeterminate: %w", err)
 	}
-	return requireOneTransition(affected)
+	return s.transition(ctx, operation.IdentityID, "mark idempotency operation indeterminate",
+		func(q operationQueries) (int64, error) { return q.MarkOperationIndeterminate(ctx, params) })
 }
 
 // MarkRejected makes a deterministic no-effect domain failure terminal and
@@ -292,7 +363,7 @@ func (s *Store) MarkRejected(ctx context.Context, request RejectRequest) (err er
 	}
 	now := s.now().UTC()
 	identityID, _ := operationUUID(request.Operation.IdentityID)
-	affected, err := s.queries.MarkOperationRejected(ctx, sqlc.MarkOperationRejectedParams{
+	params := sqlc.MarkOperationRejectedParams{
 		ReplayBody:      append([]byte(nil), request.Result.Body...),
 		ReplayPreview:   optionalText(request.Result.Preview),
 		ReplayBytes:     int64(len(request.Result.Body) + len(request.Result.Preview)),
@@ -301,38 +372,84 @@ func (s *Store) MarkRejected(ctx context.Context, request RejectRequest) (err er
 		OperationScope: string(request.Operation.Scope), OperationKey: request.Operation.Key,
 		PayloadHash: append([]byte(nil), request.Fingerprint[:]...),
 		ClaimToken:  int64(request.ClaimToken),
-	})
-	if err != nil {
-		return fmt.Errorf("mark idempotency operation rejected: %w", err)
 	}
-	return requireOneTransition(affected)
+	return s.transition(ctx, request.Operation.IdentityID, "mark idempotency operation rejected",
+		func(q operationQueries) (int64, error) { return q.MarkOperationRejected(ctx, params) })
 }
 
 // ExpireReplayBodies clears at most the configured number of replay payloads
 // at or before the cutoff. Registry state and audit linkage are never deleted.
+//
+// It is the one genuinely cross-identity operation on the registry, and it cannot name a
+// single principal — so it does what conversations.ScanOrphans does: enumerate
+// aura.identities (which carries NO row-level security, being the login lookup) and run
+// ONE identity-scoped transaction per owner. No RLS bypass, no service role. The per-owner
+// passes debit a single global budget, so a sweep stays bounded exactly as it was before.
+//
+// On a failure the report is best-effort, as it always was. What changed is the shape of
+// the residue: the owner being swept rolls back whole, so nothing is left half-cleared,
+// while earlier owners' passes have committed and are counted.
 func (s *Store) ExpireReplayBodies(ctx context.Context, before time.Time) (ExpiryReport, error) {
 	if before.IsZero() {
 		return ExpiryReport{}, fmt.Errorf("idempotency replay expiry cutoff is required")
 	}
 	before = before.UTC()
-	rows, err := s.queries.ListExpiredReplayBodies(ctx, sqlc.ListExpiredReplayBodiesParams{
-		Before: timestamp(before), BatchSize: s.expiryBatch,
+	report := ExpiryReport{}
+	if s.pool == nil {
+		_, err := s.expireVisibleReplays(ctx, s.queries, before, s.expiryBatch, &report)
+		return report, err
+	}
+	owners, err := s.replayExpiryOwners(ctx)
+	if err != nil {
+		return report, err
+	}
+	budget := s.expiryBatch
+	for _, owner := range owners {
+		if budget <= 0 {
+			break
+		}
+		var examined int32
+		if err := s.withIdentity(ctx, owner, func(q operationQueries) error {
+			var passErr error
+			examined, passErr = s.expireVisibleReplays(ctx, q, before, budget, &report)
+			return passErr
+		}); err != nil {
+			return report, err
+		}
+		budget -= examined
+	}
+	return report, nil
+}
+
+// expireVisibleReplays clears every expired replay payload q can see, up to budget rows,
+// adding what it cleared to report. It returns how many rows it EXAMINED (not how many it
+// cleared) so the cross-identity sweep can debit one global budget across its per-owner
+// passes: a row a concurrent writer had already cleared still consumed a slot in the batch.
+func (s *Store) expireVisibleReplays(
+	ctx context.Context,
+	q operationQueries,
+	before time.Time,
+	budget int32,
+	report *ExpiryReport,
+) (int32, error) {
+	rows, err := q.ListExpiredReplayBodies(ctx, sqlc.ListExpiredReplayBodiesParams{
+		Before: timestamp(before), BatchSize: budget,
 	})
 	if err != nil {
-		return ExpiryReport{}, fmt.Errorf("list expired idempotency replays: %w", err)
+		return 0, fmt.Errorf("list expired idempotency replays: %w", err)
 	}
-	report := ExpiryReport{}
+	examined := int32(len(rows)) //nolint:gosec // bounded by budget, itself <= maxExpiryBatch.
 	clearedAt := timestamp(s.now().UTC())
 	for _, row := range rows {
 		if row.ReplayBytes < 0 || math.MaxInt64-report.Bytes < row.ReplayBytes {
-			return report, fmt.Errorf("expire idempotency replays: invalid replay byte count")
+			return examined, fmt.Errorf("expire idempotency replays: invalid replay byte count")
 		}
-		affected, err := s.queries.ClearExpiredReplayBody(ctx, sqlc.ClearExpiredReplayBodyParams{
+		affected, err := q.ClearExpiredReplayBody(ctx, sqlc.ClearExpiredReplayBodyParams{
 			ClearedAt: clearedAt, IdentityID: row.IdentityID, OperationScope: row.OperationScope,
 			OperationKey: row.OperationKey, Before: timestamp(before),
 		})
 		if err != nil {
-			return report, fmt.Errorf("clear expired idempotency replay: %w", err)
+			return examined, fmt.Errorf("clear expired idempotency replay: %w", err)
 		}
 		switch affected {
 		case 0:
@@ -341,10 +458,26 @@ func (s *Store) ExpireReplayBodies(ctx context.Context, before time.Time) (Expir
 			report.Cleared++
 			report.Bytes += row.ReplayBytes
 		default:
-			return report, fmt.Errorf("clear expired idempotency replay: unexpected affected row count")
+			return examined, fmt.Errorf("clear expired idempotency replay: unexpected affected row count")
 		}
 	}
-	return report, nil
+	return examined, nil
+}
+
+// replayExpiryOwners lists every identity the sweep must visit. aura.identities carries no
+// policy of its own, so this read needs no principal — it is the same identity-less read
+// conversations.listOwnerIdentities relies on, and it is what makes a cross-tenant sweep
+// possible without widening anything.
+func (s *Store) replayExpiryOwners(ctx context.Context) ([]string, error) {
+	rows, err := sqlc.New(s.pool).ListIdentities(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list idempotency replay expiry owners: %w", err)
+	}
+	owners := make([]string, 0, len(rows))
+	for _, row := range rows {
+		owners = append(owners, uuid.UUID(row.ID.Bytes).String())
+	}
+	return owners, nil
 }
 
 func requireOneTransition(affected int64) error {
