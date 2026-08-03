@@ -815,6 +815,9 @@ jobs:
     # case above the measured 95%.
     env:
       CI: "true"
+      # Merge the CPU appliance overlay so Compose removes the base service's
+      # structural NVIDIA reservation as well as selecting CPU runtime settings.
+      COMPOSE_FILE: compose.yaml:compose.minipc.yaml
       # Arms requireEmbedder's t.Fatal path: under $CI an unreachable sidecar is a
       # FAILURE, never a skip. Otherwise this job would go green having classified nothing.
       AURA_EMBED_BASE_URL: http://127.0.0.1:8081
