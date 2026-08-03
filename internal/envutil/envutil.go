@@ -6,8 +6,8 @@
 // logic was copied across internal/config, internal/channels, and
 // internal/channels/telegram (QUAL-03, D-06 leaf extraction).
 //
-// Scope is deliberately minimal (IntDefault + BoolDefault + FloatDefault): the string/slice
-// variants have no cross-package copy to fold, and pulling agent-tool knob reads to
+// Scope is deliberately minimal (IntDefault + BoolDefault): the string/slice variants
+// have no cross-package copy to fold, and pulling agent-tool knob reads to
 // construction time is QUAL-04 (a later phase), not this leaf.
 package envutil
 
@@ -44,22 +44,4 @@ func BoolDefault(key string, fallback bool) bool {
 		return fallback
 	}
 	return b
-}
-
-// FloatDefault returns the float64 value of key, falling back to fallback when the
-// variable is unset, empty, or fails to parse. It exists for relevance thresholds,
-// whose useful range is fractional and whose scale is model-specific — a rerank score
-// lives in [0,1] and is not linear, so the value belongs in an env knob measured per
-// deployment rather than a constant. Malformed values are absorbed like the others: a
-// typo in a threshold must not stop the process from booting.
-func FloatDefault(key string, fallback float64) float64 {
-	v := os.Getenv(key)
-	if v == "" {
-		return fallback
-	}
-	f, err := strconv.ParseFloat(v, 64)
-	if err != nil {
-		return fallback
-	}
-	return f
 }

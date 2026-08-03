@@ -53,48 +53,6 @@ func MigrationHead() (int64, error) {
 	return head, nil
 }
 
-// MigrationStepsAbove counts the embedded migrations strictly newer than version —
-// which is exactly the MigrateSteps(-n) distance from head back to that version.
-//
-// The sequence has GAPS, so that distance is not `head - version`. Twenty-five
-// migrations built an adaptive-learning plane and one later dropped it whole; all
-// twenty-six were removed on 2026-08-03 once a fresh Migrate was proven to produce a
-// byte-identical schema without them. golang-migrate's Steps() counts MIGRATIONS, not
-// version numbers, so every caller that subtracted version numbers started overshooting
-// the moment the first gap appeared, and golang-migrate reported it as an opaque
-// "limit N short". Ask the embedded catalog instead of doing arithmetic on it.
-func MigrationStepsAbove(version int64) (int, error) {
-	versions, err := migrationVersions()
-	if err != nil {
-		return 0, err
-	}
-	steps := 0
-	for _, v := range versions {
-		if v > version {
-			steps++
-		}
-	}
-	return steps, nil
-}
-
-// MigrationStepDelta returns the signed MigrateSteps argument that moves a database
-// from one version to another — negative to roll back, positive to roll forward.
-//
-// It is `stepsAbove(from) - stepsAbove(to)` because what Steps() counts is the number
-// of migrations strictly between the two versions, which the gapped sequence makes
-// different from `to - from`.
-func MigrationStepDelta(from, to int64) (int, error) {
-	aboveFrom, err := MigrationStepsAbove(from)
-	if err != nil {
-		return 0, err
-	}
-	aboveTo, err := MigrationStepsAbove(to)
-	if err != nil {
-		return 0, err
-	}
-	return aboveFrom - aboveTo, nil
-}
-
 // CheckMigrationHead verifies that the database tracker is clean and exactly at
 // the highest embedded migration. It never applies migrations.
 func CheckMigrationHead(ctx context.Context, migrateURL string) error {
