@@ -79,25 +79,49 @@ Acceptance: `Clienti.xlsx`'s 699 TORINO clients answered by SQL, identical to op
 
 It is the natural companion to the mechanical card: now that every file is carded by the machine, listing them is cheap and honest. Note this also explains a reasoning-tier residual — the classifier over-rates that prompt partly because there is no tool behind it.
 
-### 5. A PDF text extractor at ingest
+### 5. ~~A PDF text extractor at ingest~~ — SHIPPED `b1e5f8006`
 
 **The five Normattiva decrees are unroutable by subject.** They carry no Info title (producer "iText") and their text is Type0/CID glyph indices needing a ToUnicode CMap, so their cards are name + size + page count — which the card SAYS, rather than faking. They are routable by filename only, and their filenames differ solely by decree number and date.
 
 Two routes: a real PDF extractor (600–1000 LOC of fragile parsing) or a sandbox `pdftotext` pass at ingest. **The container already has both.** The sandbox pass is almost certainly the right first move; measure the added ingest time against the 0.57s the whole 56 MB corpus currently takes.
 
-### 6. Known debt — `MigrateSteps` down dies on a function 0086 dropped
+### 6. ~~`MigrateSteps` down dies on a function 0086 dropped~~ — CLOSED `bd83f35df`
 
-`internal/cron`'s `TestDispatchPendingNotificationIdentityRoundTrip` runs `MigrateSteps down -1`, fails on `function aura.apply_adaptive_policy_transition(...) does not exist`, and **leaves the schema torn down** — every later package then fails on missing columns. That cascade is 13 packages / ~176 tests of noise and makes the whole-tree `db_integration` count unusable.
+The twenty-five migrations that built the adaptive plane and the one that dropped it
+are gone. A fresh database migrated with all 90 files and one migrated with the
+remaining 65 produce a **byte-identical** `pg_dump --schema-only` (1456 lines, only
+pg_dump's random `estrict` nonce differs), and the live deployment needs no adoption
+step because golang-migrate keeps one version number, not a per-migration ledger.
 
-Related and already paid once: `0084`'s down ran a bare `COMMENT ON` against a table `0086` had dropped, wedging the rollback at 83 and cascading ~177 failures. It is existence-guarded now. **The downward walk still dies at 0075.**
+Removing the wedge exposed two bug classes it had been hiding, both now fixed:
 
-A one-way-door migration is allowed, but its declared irreversibility must not silently break every later package's `Migrate`.
+- **Version arithmetic vs migration count.** `Steps(n)` counts MIGRATIONS; eight call
+  sites computed `head - N`. Those agreed only while the sequence was gapless.
+  `MigrationStepsAbove` / `MigrationStepDelta` ask the embedded catalog instead.
+- **Unscoped reads under fail-closed RLS.** Four drills read or wrote through `aura_app`
+  at HEAD with no identity bound. An unscoped read is not an error, it is an EMPTY
+  RESULT — so 0017 failed as "backfill produced 0 rows" and 0026 as "0026 never seeded
+  the wildcard capability", both blaming innocent migrations.
 
-### 7. `internal/assets` — next to break, and it must go WITH its migration
+Plus two stale gates: `TestRoleSeparation_AppDenied` asserted a privilege on a table
+0084 dropped (42P01 is not 42501), and two tests could only pass on a host with no
+`.env` — one reported this machine's live passphrase as the "default" `WebAuthSecret`.
 
-`aura.assets` and `asset_events` are outside 0087's floor, so nothing fails today. All ten `assets.Store` methods already take `identityID`; only `NewStore` takes a bare `sqlc.DBTX`, so the reshape is the same type-assert used in `idempotency.New`.
+**Whole-tree `db_integration`, fresh disposable database: ~176 failures / 13 packages
+→ 0.**
 
-**Do not land the reshape alone.** The pool field without the migration is dark code and no test would change colour, so it would ship unverified. That is the 0087 mistake inverted, and #107 records the rule: *a fail-closed migration must land WITH the identity plumbing of every store it covers, never before it.*
+### 7. ~~`internal/assets` — next to break~~ — SHIPPED `292a0c41a`
+
+Migration 0090 puts `aura.assets` and `asset_events` under the floor; all ten `Store`
+methods carry the identity. `asset_events` has no identity column, so its policy names
+the PARENT'S OWNER — a bare parent-exists predicate would not refuse a cross-tenant
+append, because the FK check itself bypasses row security (PostgreSQL manual §5.9).
+
+Two findings reported rather than half-fixed: `retireLegacyLocalIdentityForAuthulaUser`
+is **already broken one table earlier** (its first statement updates `aura.conversations`
+on the `aura_app` pool with no identity — RLS *filters* an UPDATE rather than erroring,
+so it silently migrates nothing), and `asset_events` is write-dead (`InsertAssetEvent`
+and `NextAssetEventSeq` have zero Go callers).
 
 ---
 
