@@ -13,11 +13,9 @@ import {
 
 // graphIntent.ts is the PURE, jsdom-testable core of the graph workspace: the intent
 // reducer (overview/expand/filter transitions), the active-filter dim/exclude logic, the
-// schema-driven label-family color mapper (D-02), and the contract→graphology-ready
-// projection. It imports NO sigma/@react-sigma/graphology (jsdom has no WebGL — the
-// renderer is imported only by SigmaCanvas in plan 04, Pitfall 4). Keeping the logic
-// off the .tsx is the sourceExplorerData.ts idiom: directly unit- + mutation-tested,
-// so the ≥85% line / ≥70% mutation gates are reachable without real WebGL.
+// schema-driven label-family color mapper (D-02), and the contract→renderer projection.
+// Keeping the logic off the .tsx is the sourceExplorerData.ts idiom: directly unit- and
+// mutation-tested without a browser canvas.
 //
 // COLOR is schema-DRIVEN from the brand accent ramp (D-02) — NOT a hard-coded per-label
 // table and NOT a rainbow. Known Frame-06 families map to curated brand-token shades;
@@ -36,14 +34,14 @@ export const DEFAULT_EDGE_CAP = 200;
  * ramp is the single source the contrast-check + the mapper share, so there is no
  * second hard-coded per-label table. */
 export const BRAND_RAMP: readonly string[] = [
-  '#AECBFA', // --color-info — accent blue (evidence/source anchor)
-  '#81C995', // --color-success — the "self"/agent-memory signal
-  '#FDD663', // --color-warning — warm-neutral (claims/facts)
-  '#F28B82', // --color-danger — reserved conflict marker
-  '#A7C7E7', // desaturated blue step
-  '#B4A7D6', // muted violet-grey (topic clustering)
-  '#7FC9C3', // desaturated teal/cyan (entity family)
-  '#D7AEFB', // soft violet step
+  '#38BDF8', // source/evidence — electric sky
+  '#22C55E', // agent/self — signal green
+  '#F59E0B', // claim/fact — amber
+  '#EF4444', // conflict — alert red
+  '#3B82F6', // source variant — cobalt
+  '#B16CFF', // topic — violet
+  '#06B6D4', // entity base — cyan
+  '#EC4899', // entity variant — magenta
 ] as const;
 
 /** Frame-06 semantic families (D-02). Each known family pins a BRAND_RAMP index; the
@@ -69,6 +67,7 @@ const LABEL_FAMILY: Readonly<Record<string, LabelFamily>> = {
   Chunk: 'source',
   Entity: 'entity',
   Fact: 'claim',
+  FACT: 'claim',
   Preference: 'claim',
   ReasoningTrace: 'agent',
   AgentEpisode: 'agent',
@@ -335,7 +334,7 @@ export function edgeDisplayName(edge: GraphEdge): string {
   return caption !== undefined && caption.length > 0 ? caption : (edge.rel_type ?? '');
 }
 
-/** degreeToSize maps a node's degree to a Sigma node radius — the NON-color channel that
+/** degreeToSize maps a node's degree to a renderer-independent radius — the NON-color channel that
  * keeps color from being the only encoding (WCAG 1.4.1 / D-03). A floor keeps isolated
  * nodes visible; growth is sub-linear so a hub never dwarfs the canvas. */
 export function degreeToSize(degree: number): number {
@@ -345,11 +344,11 @@ export function degreeToSize(degree: number): number {
 }
 
 /**
- * rowsToClientGraph maps a contract GraphResult into a graphology-ready {nodes,edges}
+ * rowsToClientGraph maps a contract GraphResult into renderer-ready {nodes,edges}
  * (id/caption/color/size + source/target/label) with NO duplicate node ids. Color is the
  * schema-driven label-family fill; SIZE encodes degree (the non-color channel), so color
  * is never the only encoding. Edges referencing a missing node id are dropped (a dangling
- * edge would crash graphology.addEdge in plan 04).
+ * edge would not be drawable by the canvas).
  */
 export function rowsToClientGraph(result: GraphResult): ClientGraph {
   const seen = new Set<string>();
@@ -376,6 +375,7 @@ export function rowsToClientGraph(result: GraphResult): ClientGraph {
       source: edge.source,
       target: edge.target,
       label: edgeDisplayName(edge),
+      color: labelFamilyColor(edge.rel_type ?? '', undefined, result.schema),
     });
   }
   return { nodes, edges };

@@ -3,8 +3,8 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import '../../i18n/i18n'; // side-effect: initialise i18next so t() resolves keys
 import type { GraphResult, GraphSchema } from '../types';
 
-// GraphExplorer is the lazy three-pane shell. SigmaCanvas is mocked (no WebGL in jsdom,
-// Pitfall 4) and graphApi is mocked so we drive the overview→schema fallback and the
+// GraphExplorer is the lazy three-pane shell. The canvas is mocked in jsdom and graphApi is
+// mocked so we drive the overview→schema fallback and the
 // 401 → visible-auth-error path (the unit half of B3 / T-27-03; the full browser run is the
 // Task-4 Playwright spec). These are the GraphExplorer behavior obligations from the plan.
 
@@ -16,10 +16,16 @@ vi.mock('../graphApi', () => ({
   fetchGraphSchema: (...args: unknown[]) => fetchGraphSchema(...args) as Promise<GraphSchema>,
 }));
 
-// Mock the WebGL renderer — assert ONLY that node/edge props arrive (the real render is e2e).
-vi.mock('../SigmaCanvas', () => ({
-  SigmaCanvas: ({ nodes, edges }: { nodes: readonly unknown[]; edges: readonly unknown[] }) => (
-    <div data-testid="sigma-mock">
+// Mock the canvas renderer — assert ONLY that node/edge props arrive (the real render is e2e).
+vi.mock('../ArcadeGraphCanvas', () => ({
+  ArcadeGraphCanvas: ({
+    nodes,
+    edges,
+  }: {
+    nodes: readonly unknown[];
+    edges: readonly unknown[];
+  }) => (
+    <div data-testid="arcade-graph-mock">
       canvas:{nodes.length}:{edges.length}
     </div>
   ),
@@ -95,7 +101,7 @@ describe('GraphExplorer (renderer + graphApi mocked)', () => {
     });
     // The visible auth error is an alert, never a silent blank canvas.
     expect(screen.getByRole('alert')).toBeTruthy();
-    expect(screen.queryByTestId('sigma-mock')).toBeNull();
+    expect(screen.queryByTestId('arcade-graph-mock')).toBeNull();
   });
 
   it('renders the populated canvas with node/edge props on a non-empty overview', async () => {
@@ -104,7 +110,7 @@ describe('GraphExplorer (renderer + graphApi mocked)', () => {
     render(<GraphExplorer />);
 
     await waitFor(() => {
-      expect(screen.getByTestId('sigma-mock').textContent).toBe('canvas:2:1');
+      expect(screen.getByTestId('arcade-graph-mock').textContent).toBe('canvas:2:1');
     });
     const workspace = screen.getByTestId('graph-workspace');
     expect(workspace.className).toContain('graph-workspace');
@@ -135,7 +141,7 @@ describe('GraphExplorer (renderer + graphApi mocked)', () => {
     postGraphQuery.mockResolvedValueOnce(POPULATED_RESULT);
     fireEvent.click(retry);
     await waitFor(() => {
-      expect(screen.getByTestId('sigma-mock')).toBeTruthy();
+      expect(screen.getByTestId('arcade-graph-mock')).toBeTruthy();
     });
   });
 
@@ -167,7 +173,7 @@ describe('GraphExplorer (renderer + graphApi mocked)', () => {
     });
 
     render(<GraphExplorer />);
-    await screen.findByTestId('sigma-mock');
+    await screen.findByTestId('arcade-graph-mock');
     expect(screen.queryByText(/Showing the top/)).toBeNull();
   });
 
@@ -176,7 +182,7 @@ describe('GraphExplorer (renderer + graphApi mocked)', () => {
 
     render(<GraphExplorer />);
     await waitFor(() => {
-      expect(screen.getByTestId('sigma-mock')).toBeTruthy();
+      expect(screen.getByTestId('arcade-graph-mock')).toBeTruthy();
     });
     const calls = postGraphQuery.mock.calls.length;
     // Mobile and desktop controls share the same refresh path; click the first.
@@ -195,7 +201,7 @@ describe('GraphExplorer (renderer + graphApi mocked)', () => {
 
     render(<GraphExplorer />);
     await waitFor(() => {
-      expect(screen.getByTestId('sigma-mock')).toBeTruthy();
+      expect(screen.getByTestId('arcade-graph-mock')).toBeTruthy();
     });
 
     const calls = postGraphQuery.mock.calls.length;
@@ -232,7 +238,7 @@ describe('GraphExplorer (renderer + graphApi mocked)', () => {
 
     render(<GraphExplorer />);
     await waitFor(() => {
-      expect(screen.getByTestId('sigma-mock')).toBeTruthy();
+      expect(screen.getByTestId('arcade-graph-mock')).toBeTruthy();
     });
     // Filter toggle (the dispatch path).
     const filterCalls = postGraphQuery.mock.calls.length;
@@ -277,7 +283,7 @@ describe('GraphExplorer (renderer + graphApi mocked)', () => {
 
     render(<GraphExplorer />);
     await waitFor(() => {
-      expect(screen.getByTestId('sigma-mock')).toBeTruthy();
+      expect(screen.getByTestId('arcade-graph-mock')).toBeTruthy();
     });
     // Open the inspector on Alpha, then pin its path.
     fireEvent.click(screen.getByRole('button', { name: /Alpha/ }));
@@ -301,12 +307,12 @@ describe('GraphExplorer (renderer + graphApi mocked)', () => {
     postGraphQuery.mockResolvedValueOnce(POPULATED_RESULT).mockResolvedValueOnce(expansion);
 
     render(<GraphExplorer />);
-    await screen.findByTestId('sigma-mock');
+    await screen.findByTestId('arcade-graph-mock');
     fireEvent.click(screen.getByRole('button', { name: /Alpha/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Expand neighbors' }));
 
     await waitFor(() => {
-      expect(screen.getByTestId('sigma-mock').textContent).toBe('canvas:3:2');
+      expect(screen.getByTestId('arcade-graph-mock').textContent).toBe('canvas:3:2');
     });
     expect(postGraphQuery.mock.calls.at(-1)?.[0]).toMatchObject({
       op: 'expand',

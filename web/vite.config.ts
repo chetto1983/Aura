@@ -191,6 +191,14 @@ export default defineConfig({
         codeSplitting: {
           groups: [
             {
+              name: 'cytoscape-core',
+              test: /[\\/]node_modules[\\/]cytoscape[\\/]/,
+            },
+            {
+              name: 'cytoscape-layout',
+              test: /[\\/]node_modules[\\/](cytoscape-fcose|cose-base|layout-base)[\\/]/,
+            },
+            {
               name: 'assistant-ui',
               test: /[\\/]node_modules[\\/](@assistant-ui|assistant-stream)[\\/]/,
             },

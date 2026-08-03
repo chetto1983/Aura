@@ -69,7 +69,7 @@
 - `go.opentelemetry.io/otel` 1.44.0 + `github.com/prometheus/client_golang` 1.24.1 - Traces, metrics, and private scrape handler in `internal/obs/`, pinned in `go.mod`.
 - `github.com/moby/moby/client` 0.5.0 - Docker-backed per-identity sandbox lifecycle under `internal/sandbox/usersandbox/`, pinned in `go.mod`.
 - `codeberg.org/readeck/go-readability/v2` 2.1.2 + `github.com/JohannesKaufmann/html-to-markdown/v2` 2.5.2 - Web fetch extraction/normalization used under `internal/web/`, pinned in `go.mod`.
-- `@react-sigma/core` 5.0.6 + Sigma 3.0.3 + Graphology 0.26.0 - Cockpit memory graph visualization declared in `web/package.json` and implemented under `web/src/graph/`.
+- `cytoscape` 3.34.0 + `cytoscape-fcose` 2.2.0 - ArcadeDB Studio-compatible cockpit memory graph visualization, declared in `web/package.json` and isolated under `web/src/graph/`.
 - TipTap 3.29.2, Shiki 4.2.0, and React Markdown 10.1.0 - Rich document/chat rendering declared in `web/package.json` and consumed under `web/src/chat/` and `web/src/documents/`.
 
 **Infrastructure:**

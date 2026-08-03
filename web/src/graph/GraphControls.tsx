@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { labelFamilyColor } from './graphIntent';
 import type { GraphSchema } from './types';
 import { Button } from '@/components/ui/button';
 
@@ -17,12 +18,16 @@ export interface GraphControlsProps {
   readonly onToggleRelType: (relType: string) => void;
 }
 
+const EMPTY_SCHEMA: GraphSchema = { labels: [], rel_types: [] };
+
 function ToggleChip({
   label,
+  color,
   active,
   onToggle,
 }: {
   readonly label: string;
+  readonly color: string;
   readonly active: boolean;
   readonly onToggle: () => void;
 }) {
@@ -34,6 +39,11 @@ function ToggleChip({
       onClick={onToggle}
       className="h-auto justify-start whitespace-normal px-3 py-2 text-left text-[13px]"
     >
+      <span
+        aria-hidden="true"
+        className="size-2.5 shrink-0 rounded-full ring-1 ring-white/30"
+        style={{ backgroundColor: color }}
+      />
       <span className="block min-w-0 overflow-wrap-anywhere">{label}</span>
     </Button>
   );
@@ -53,6 +63,7 @@ export function GraphControls({
 
   const labels = schema?.labels ?? [];
   const relTypes = schema?.rel_types ?? [];
+  const colorSchema = schema ?? EMPTY_SCHEMA;
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-6 overflow-y-auto bg-surface p-4">
@@ -74,6 +85,7 @@ export function GraphControls({
               <ToggleChip
                 key={label}
                 label={label}
+                color={labelFamilyColor(label, undefined, colorSchema)}
                 active={activeLabels.has(label)}
                 onToggle={() => {
                   onToggleLabel(label);
@@ -94,6 +106,7 @@ export function GraphControls({
               <ToggleChip
                 key={relType}
                 label={relType}
+                color={labelFamilyColor(relType, undefined, colorSchema)}
                 active={activeRelTypes.has(relType)}
                 onToggle={() => {
                   onToggleRelType(relType);

@@ -18,24 +18,19 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
-// GraphExplorer is the lazy default export the AppShell mounts when surface==='graph' (its own
-// Vite chunk so the Sigma stack never lands in the main bundle — Pitfall 7). It is the
-// three-CSS-grid-column workspace shell (controls | canvas | inspector) with the path
-// strip below the canvas. It owns the intent/selection/path state (the plan-03 intentReducer)
-// and the `sigmaKey` counter (bumped on mount + inspector open/close to dodge the Sigma resize-
-// remount crash, Pitfall 1).
+// GraphExplorer is the lazy default export the AppShell mounts when surface==='graph'. Its
+// separate Vite chunk keeps Cytoscape out of the main cockpit bundle. It is the three-column
+// workspace shell (controls | canvas | inspector) with the path strip below the canvas, and
+// owns the intent, selection and path state while the canvas owns rendering and layout.
 //
 // On mount the authenticated identity's overview loads. An empty result falls back to the
 // schema readiness board, never a blank canvas. An HTTP 401 renders a visible auth-
 // error state — never a silent blank canvas (B3 / threat T-27-03). Any other rejection renders
-// the query/schema error state. SigmaCanvas + the parallel-DOM surface are imported lazily/in
-// Task 3; Task 2 slots a placeholder for the right pane + below-canvas surface.
-//
-// NodeInspector + PathStrip are wired in Task 3 (this file is edited there); the SigmaCanvas is
-// lazy so the WebGL chunk loads only inside this already-lazy workspace.
+// the query/schema error state. The accessible parallel DOM remains available alongside the
+// lazy canvas renderer.
 
-const SigmaCanvas = lazy(() =>
-  import('./SigmaCanvas').then((mod) => ({ default: mod.SigmaCanvas })),
+const ArcadeGraphCanvas = lazy(() =>
+  import('./ArcadeGraphCanvas').then((mod) => ({ default: mod.ArcadeGraphCanvas })),
 );
 
 type ViewStatus = 'loading' | 'populated' | 'empty' | 'error-query' | 'error-schema' | 'error-auth';
@@ -167,8 +162,6 @@ export default function GraphExplorer() {
   const [view, setView] = useState<ViewState>(INITIAL_VIEW);
   const [selected, setSelected] = useState<GraphNode | undefined>(undefined);
   const [pinnedPath, setPinnedPath] = useState<ReadonlySet<string>>(new Set());
-  // sigmaKey starts at 1 so the first mount + every inspector open/close remounts cleanly.
-  const [sigmaKey, setSigmaKey] = useState(1);
   // Mobile-only: the control pane is a bottom sheet (canvas stays dominant). On lg it is
   // the permanent left column and this flag is inert.
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -229,7 +222,6 @@ export default function GraphExplorer() {
     void runIntent(initialIntentState());
     setSelected(undefined);
     setPinnedPath(new Set());
-    setSigmaKey((k) => k + 1);
   }, [runIntent]);
 
   const refreshGraph = useCallback(() => {
@@ -269,19 +261,17 @@ export default function GraphExplorer() {
   );
 
   // Selecting a node (canvas click OR node-list Enter/tap — the non-hover access path, D-03)
-  // opens the inspector and remounts sigma (Pitfall 1: inspector open/close bumps sigmaKey).
+  // opens the inspector; the canvas observes and refits the resized workspace.
   const selectNode = useCallback((node: GraphNode) => {
     setSelected(node);
-    setSigmaKey((k) => k + 1);
   }, []);
 
   const closeInspector = useCallback(() => {
     setSelected(undefined);
-    setSigmaKey((k) => k + 1);
   }, []);
 
   // Pin path = the node + its directly-connected neighbors (client-side highlight, D-10). The
-  // SigmaCanvas reducer accents this set and dims the rest; the path strip mirrors it.
+  // The canvas accents this set and dims the rest; the path strip mirrors it.
   const pinPath = useCallback(
     (node: GraphNode) => {
       const path = new Set<string>([node.id]);
@@ -359,11 +349,10 @@ export default function GraphExplorer() {
           </div>
         }
       >
-        <SigmaCanvas
+        <ArcadeGraphCanvas
           nodes={clientGraph.nodes}
           edges={clientGraph.edges}
           pinnedPath={pinnedPath}
-          sigmaKey={sigmaKey}
           onNodeClick={(id) => {
             const node = view.result?.nodes.find((n) => n.id === id);
             if (node !== undefined) selectNode(node);
@@ -482,7 +471,7 @@ export default function GraphExplorer() {
 
         {/* EVIDENCE — path strip + a11y parallel DOM. Mobile: a capped scroll region below the
           canvas (canvas stays dominant). Desktop: the strip under the canvas (col 2). */}
-        <div className="graph-workspace__evidence max-h-[40svh] shrink-0 overflow-y-auto border-t border-border lg:col-start-2 lg:row-start-2 lg:max-h-[32vh] lg:shrink lg:overflow-y-auto">
+        <div className="graph-workspace__evidence max-h-[40svh] shrink-0 overflow-y-auto border-t border-border lg:col-start-2 lg:row-start-2 lg:max-h-[18vh] lg:shrink lg:overflow-y-auto">
           <PathStrip
             nodes={view.result?.nodes ?? []}
             edges={view.result?.edges ?? []}

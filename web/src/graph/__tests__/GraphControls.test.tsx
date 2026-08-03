@@ -33,7 +33,11 @@ describe('GraphControls', () => {
 
   it('renders the live-schema filters and raises their callbacks', () => {
     const props = renderControls();
-    fireEvent.click(screen.getByRole('button', { name: 'Entity' }));
+    const entity = screen.getByRole('button', { name: 'Entity' });
+    expect(entity.querySelector('[aria-hidden="true"]')?.getAttribute('style')).toContain(
+      'background-color',
+    );
+    fireEvent.click(entity);
     expect(props.onToggleLabel).toHaveBeenCalledWith('Entity');
     fireEvent.click(screen.getByRole('button', { name: 'MENTIONS' }));
     expect(props.onToggleRelType).toHaveBeenCalledWith('MENTIONS');

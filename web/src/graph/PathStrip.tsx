@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 // PathStrip — the surface below the canvas that doubles as (1) the D-10 path strip (the selected
 // evidence path as an ordered run of `node —REL→ node` steps) and (2) the a11y PARALLEL DOM: a
 // focusable, ordered node list (role="list") + an edge list that mirror the graph for screen
-// readers and keyboard users (the non-WebGL fallback, D-03). `Enter` on a node-list item selects
+// readers and keyboard users (the non-canvas interaction path, D-03). `Enter` on a node-list item selects
 // it = the same effect as a canvas click (hover is never the only access path), and arrow keys
 // roam the list. Every interactive item is a 44px touch target. The canvas pixels are opaque to
 // assistive tech — this DOM mirror is the standards-compliant access route.

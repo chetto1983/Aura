@@ -11,7 +11,7 @@ import type { GraphIntent, GraphResult, GraphSchema } from './types';
 // never a silent blank canvas (requirement B3 / threat T-27-03).
 //
 // The client authors no database query — it sends the structured
-// GraphIntent ONLY (D-05). There is NO sigma/graphology/@react-sigma import here.
+// GraphIntent ONLY (D-05). There is no renderer import here.
 
 export const GRAPH_SCHEMA_PATH = '/api/graph/schema';
 export const GRAPH_QUERY_PATH = '/api/graph/query';

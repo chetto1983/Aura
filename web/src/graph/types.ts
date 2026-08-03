@@ -2,9 +2,8 @@
 // Go structs in internal/agui/graph_contract.go. The TS keys
 // are the Go json TAG names (not the Go field names) because the wire is JSON: a
 // GraphResult round-trips graphview.go's `json:"..."` tags exactly. There is NO
-// sigma/graphology/@react-sigma import anywhere in this module — it is a pure data
-// contract consumed by both the jsdom-tested core (graphApi.ts/graphIntent.ts) and,
-// only in plan 04, the WebGL SigmaCanvas (jsdom has no WebGL — Pitfall 4).
+// renderer import anywhere in this module — it is a pure data contract consumed by both the
+// jsdom-tested core (graphApi.ts/graphIntent.ts) and the lazy canvas boundary.
 
 /** The only two graph operations accepted by the Go read contract. */
 export type GraphOp = 'overview' | 'expand';
@@ -76,9 +75,8 @@ export interface GraphResult {
   readonly truncated?: boolean;
 }
 
-/** ClientNode is a graphology-ready node projection (id/caption/color/size) the
- * SigmaCanvas (plan 04) loads. size encodes degree — a NON-color channel so color is
- * never the only encoding (WCAG 1.4.1 / D-03). It carries no sigma/graphology type. */
+/** ClientNode is a renderer-ready node projection. size encodes degree — a NON-color channel
+ * so color is never the only encoding (WCAG 1.4.1 / D-03). */
 export interface ClientNode {
   readonly id: string;
   readonly caption: string;
@@ -88,12 +86,13 @@ export interface ClientNode {
   readonly entityType?: string;
 }
 
-/** ClientEdge is a graphology-ready edge projection (id/source/target/label). */
+/** ClientEdge is a renderer-ready directed relationship projection. */
 export interface ClientEdge {
   readonly id: string;
   readonly source: string;
   readonly target: string;
   readonly label: string;
+  readonly color: string;
 }
 
 /** ClientGraph is the {nodes,edges} pair rowsToClientGraph emits for the renderer. */

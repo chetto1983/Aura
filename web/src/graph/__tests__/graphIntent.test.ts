@@ -21,8 +21,8 @@ import type { GraphResult, GraphSchema } from '../types';
 
 // Exhaustive unit coverage for the PURE graph core (graphIntent.ts) + the credentialed
 // fetch wrappers (graphApi.ts) — the sourceExplorerData.ts idiom: logic off the .tsx,
-// directly mutation-tested. NO sigma/graphology import: these tests run in jsdom with no
-// WebGL (Pitfall 4). The 401-reject cases pin requirement B3 / threat T-27-03.
+// directly mutation-tested without importing the browser renderer. The 401-reject cases pin
+// requirement B3 / threat T-27-03.
 
 const SCHEMA: GraphSchema = {
   labels: ['Document', 'Entity', 'Fact', 'ReasoningTrace', 'Topic', 'Conflict'],
@@ -255,7 +255,7 @@ describe('nodeDisplayName (the one place a node becomes readable text)', () => {
   });
 });
 
-describe('rowsToClientGraph (contract → graphology-ready)', () => {
+describe('rowsToClientGraph (contract → renderer-ready)', () => {
   it('maps nodes with id/caption/color/size and de-dupes by id', () => {
     const res = result({
       nodes: [
@@ -280,10 +280,18 @@ describe('rowsToClientGraph (contract → graphology-ready)', () => {
     // arrived without a caption. The old expectation encoded that behaviour as correct.
     expect(n2?.caption).toBe('Entity');
     expect(n2?.entityType).toBe('PERSON');
-    expect(out.edges).toEqual([{ id: 'e1', source: 'n1', target: 'n2', label: 'mentions_in' }]);
+    expect(out.edges).toEqual([
+      {
+        id: 'e1',
+        source: 'n1',
+        target: 'n2',
+        label: 'mentions_in',
+        color: labelFamilyColor('MENTIONS', undefined, res.schema),
+      },
+    ]);
   });
 
-  it('drops an edge that references a missing node id (no graphology crash)', () => {
+  it('drops an edge that references a missing node id', () => {
     const res = result({
       nodes: [{ id: 'n1', labels: ['Document'] }],
       edges: [{ id: 'e-bad', source: 'n1', target: 'ghost', rel_type: 'CITES' }],

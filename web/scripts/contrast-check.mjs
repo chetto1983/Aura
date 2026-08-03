@@ -36,14 +36,14 @@ if (Math.abs(SANITY - 21) > 0.01) {
 }
 
 const GRAPH_RAMP = [
-  ['graph ramp source/info', '#AECBFA'],
-  ['graph ramp agent/success', '#81C995'],
-  ['graph ramp claim/warning', '#FDD663'],
-  ['graph ramp conflict/danger', '#F28B82'],
-  ['graph ramp blue-step', '#A7C7E7'],
-  ['graph ramp topic/violet', '#B4A7D6'],
-  ['graph ramp entity/teal', '#7FC9C3'],
-  ['graph ramp violet-step', '#D7AEFB'],
+  ['graph ramp source/sky', '#38BDF8'],
+  ['graph ramp agent/green', '#22C55E'],
+  ['graph ramp claim/amber', '#F59E0B'],
+  ['graph ramp conflict/red', '#EF4444'],
+  ['graph ramp source/cobalt', '#3B82F6'],
+  ['graph ramp topic/violet', '#B16CFF'],
+  ['graph ramp entity/cyan', '#06B6D4'],
+  ['graph ramp entity/magenta', '#EC4899'],
 ];
 
 function themePairs(themeName) {
@@ -90,7 +90,7 @@ function themePairs(themeName) {
     uiOn('border-strong on surface-3', t('border-strong'), t('surface-3')),
   ];
 
-  // The Sigma graph canvas is intentionally dark in both app themes.
+  // The Cytoscape graph canvas is intentionally dark in both app themes.
   for (const [name, hex] of GRAPH_RAMP) {
     pairs.push(uiOn(`${name} fill on graph bg`, hex, tokens.color.dark.bg));
     pairs.push(textOn(`${name} label on graph surface`, hex, tokens.color.dark.surface));

@@ -88,7 +88,7 @@
 
 ## Function Design
 
-**Size:** Keep functions focused and keep their files under 600 lines. Extract pure parsing, validation, formatting, and state-reduction logic so it is directly testable; examples include `internal/skills/validator.go`, `web/src/chat/durationFormat.ts`, and `web/src/graph/SigmaCanvas_reducers.ts`.
+**Size:** Keep functions focused and keep their files under 600 lines. Extract pure parsing, validation, formatting, and state-reduction logic so it is directly testable; examples include `internal/skills/validator.go`, `web/src/chat/durationFormat.ts`, and `web/src/graph/ArcadeGraphCanvas_data.ts`.
 
 **Parameters:**
 - Put `context.Context` first in Go operations that may block or cross a boundary. Accept dependency interfaces or configuration structs instead of global lookups and long positional argument lists.
