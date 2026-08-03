@@ -10,7 +10,6 @@ package cron
 import (
 	"context"
 	"errors"
-	"os"
 	"testing"
 	"time"
 
@@ -249,9 +248,10 @@ func TestPendingNotificationFailedSelfSendBoundedRetry(t *testing.T) {
 // TestDispatchPendingNotificationIdentityRoundTrip pins the 0014 schema work: the
 // identity_id snapshot threaded by InsertPendingNotification round-trips through
 // SweepDueNotifications + the PendingNotification projection (the Step-2 route-back
-// key). It then asserts migration 0014 reverts cleanly (down drops identity_id) and
-// re-up re-adds it — the no-skip-as-green reversibility gate (T-20-13). This test runs
-// against a live Postgres; a sub-second runtime is a skip tell.
+// key). 0014's REVERSIBILITY is a separate concern and lives in
+// TestMigration0014IdentityColumnIsReversible, which owns a throwaway database — this
+// one must leave the shared schema exactly as it found it. This test runs against a
+// live Postgres; a sub-second runtime is a skip tell.
 func TestDispatchPendingNotificationIdentityRoundTrip(t *testing.T) {
 	pool := migratedPool(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -308,70 +308,51 @@ func TestDispatchPendingNotificationIdentityRoundTrip(t *testing.T) {
 		t.Fatalf("identity_id did not round-trip through SweepDueNotifications: got %q, want %q", got.IdentityID, wantIdentity)
 	}
 
-	// Reversibility: down -1 drops identity_id, re-up re-adds it. Probe the column via
-	// information_schema so we assert the SCHEMA, not just a query error.
-	migrateURL := os.Getenv("AURA_DB_MIGRATE_URL")
-	if migrateURL == "" {
-		t.Fatal("AURA_DB_MIGRATE_URL unset after migratedPool — reversibility step needs the migrate DSN")
-	}
-	if columnExists(ctx, t, pool, "identity_id") != true {
-		t.Fatal("identity_id column missing before the down step (migratedPool should have applied 0014)")
-	}
-	// Migrations newer than 0014 (e.g. 0015 document_ingest_jobs) sit on top of
-	// the head, so the distance from head to 0014's down is not a fixed -1. Walk
-	// down one step at a time (bounded) until 0014's down drops identity_id, then
-	// re-up the same number of steps — the assertion stays pinned to 0014's
-	// reversibility, not to 0014 being the latest migration.
-	//
-	// The bound is HEAD-DERIVED (not a stale constant): reverting 0014 means landing
-	// at version 13, so the worst-case down distance is head-13. We add a small slack
-	// so the bound stays valid as new migrations land, while remaining finite (the
-	// guard is only there to catch a genuinely-non-reverting 0014, not to cap a moving
-	// head). A hardcoded bound silently went stale once head grew past 0021 (off-by-one
-	// at head=0022), so derive it from the live head.
-	maxDownSteps := headDownBound(ctx, t, migrateURL)
-	downSteps := 0
-	for columnExists(ctx, t, pool, "identity_id") {
-		if downSteps >= maxDownSteps {
-			t.Fatalf("identity_id still present after %d down steps (bound %d) — 0014's down did not drop it", downSteps, maxDownSteps)
-		}
-		if err := db.MigrateSteps(ctx, migrateURL, -1); err != nil {
-			t.Fatalf("MigrateSteps down -1 (step %d toward reverting 0014): %v", downSteps+1, err)
-		}
-		downSteps++
-	}
-	if err := db.MigrateSteps(ctx, migrateURL, downSteps); err != nil {
-		t.Fatalf("MigrateSteps up %d (re-apply through 0014): %v", downSteps, err)
-	}
-	if columnExists(ctx, t, pool, "identity_id") != true {
-		t.Fatal("identity_id column missing after re-applying 0014 — re-up is not clean")
-	}
 }
 
-// headDownBound returns a finite down-step bound that always reaches BELOW migration
-// 0014 from the current head. Reverting 0014 lands the schema at version 13, so the
-// worst-case down distance from head is (head-13); a small slack keeps the bound valid
-// across concurrent migrate races. It is derived from the LIVE head (db.Status) so it
-// never goes stale as new migrations land — a hardcoded bound silently broke once head
-// grew past 0021 (off-by-one at head=0022, deferred-items D-29-05-1).
-func headDownBound(ctx context.Context, t *testing.T, migrateURL string) int {
-	t.Helper()
+// TestMigration0014IdentityColumnIsReversible is the no-skip-as-green reversibility
+// gate (T-20-13): 0014's down drops pending_notifications.identity_id and its re-up
+// re-adds it. The column is probed through information_schema, so the assertion is
+// about the SCHEMA and not merely about a query failing.
+//
+// It runs on a THROWAWAY database migrated to exactly 14, so the whole proof is three
+// steps: up-to-14, down 1, up 1. The previous shape walked the SHARED integration
+// database down from head — 76 steps in each direction — which was wrong twice over.
+// It wiped every other package's fixtures on the way past, and any single failing down
+// step left the schema torn down for the remainder of the tier (2026-08-03: one bad
+// REVOKE in 0076 produced ~176 downstream failures across 13 packages). It also crossed
+// migration 0086, a declared one-way door whose own comment warns that stepping past it
+// fails. None of that has anything to do with whether 0014 reverses.
+func TestMigration0014IdentityColumnIsReversible(t *testing.T) {
+	migrateURL := disposableMigrateURL(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	const target = 14
+	if err := db.MigrateSteps(ctx, migrateURL, target); err != nil {
+		t.Fatalf("MigrateSteps up %d: %v", target, err)
+	}
 	pool, err := db.Open(ctx, &db.Config{URL: migrateURL})
 	if err != nil {
-		t.Fatalf("open migrate pool for head detection: %v", err)
+		t.Fatalf("open migrate pool: %v", err)
 	}
 	defer pool.Close()
-	rows, err := db.Status(ctx, pool)
-	if err != nil || len(rows) == 0 {
-		t.Fatalf("migration status for head detection: %v (rows=%d)", err, len(rows))
+
+	if !columnExists(ctx, t, pool, "identity_id") {
+		t.Fatal("identity_id column missing at version 14 — 0014 did not add it")
 	}
-	head := int(rows[len(rows)-1].Version)
-	// (head-13) reaches version 13 (0014 reverted); +2 slack stays finite + future-proof.
-	bound := head - 13 + 2
-	if bound < 2 {
-		bound = 2
+	if err := db.MigrateSteps(ctx, migrateURL, -1); err != nil {
+		t.Fatalf("MigrateSteps down -1 (revert 0014): %v", err)
 	}
-	return bound
+	if columnExists(ctx, t, pool, "identity_id") {
+		t.Fatal("identity_id column still present after 0014's down — the migration does not revert")
+	}
+	if err := db.MigrateSteps(ctx, migrateURL, 1); err != nil {
+		t.Fatalf("MigrateSteps up 1 (re-apply 0014): %v", err)
+	}
+	if !columnExists(ctx, t, pool, "identity_id") {
+		t.Fatal("identity_id column missing after re-applying 0014 — re-up is not clean")
+	}
 }
 
 // columnExists probes information_schema for aura.pending_notifications.<col>.

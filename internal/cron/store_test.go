@@ -42,6 +42,20 @@ func envOrSkip(t *testing.T, key string) string {
 	return v
 }
 
+// pgDSN builds a connection string for one role against one database on the test
+// cluster. PGHOST/PGPORT default to the compose stack.
+func pgDSN(role, password, database string) string {
+	host := os.Getenv("PGHOST")
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	port := os.Getenv("PGPORT")
+	if port == "" {
+		port = "5432"
+	}
+	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", role, password, host, port, database)
+}
+
 // migratedPool ensures roles + migrations are applied, then returns an aura_app
 // pool ready for Store use. Closed via t.Cleanup.
 func migratedPool(t *testing.T) *pgxpool.Pool {
@@ -53,15 +67,7 @@ func migratedPool(t *testing.T) *pgxpool.Pool {
 	migrateURL := envOrSkip(t, "AURA_DB_MIGRATE_URL")
 	appURL := envOrSkip(t, "AURA_DB_URL")
 
-	host := os.Getenv("PGHOST")
-	if host == "" {
-		host = "127.0.0.1"
-	}
-	port := os.Getenv("PGPORT")
-	if port == "" {
-		port = "5432"
-	}
-	bootstrap := fmt.Sprintf("postgres://aura:%s@%s:%s/aura?sslmode=disable", pwd, host, port)
+	bootstrap := pgDSN("aura", pwd, "aura")
 
 	if err := db.EnsureRoles(ctx, bootstrap, pwd); err != nil {
 		t.Fatalf("EnsureRoles: %v", err)
@@ -75,6 +81,55 @@ func migratedPool(t *testing.T) *pgxpool.Pool {
 	}
 	t.Cleanup(pool.Close)
 	return pool
+}
+
+// disposableMigrateURL creates an EMPTY database owned by aura_migrate, returns its
+// migrate DSN, and drops it when the test ends.
+//
+// A migration-reversibility probe must never walk the SHARED integration database.
+// Stepping it down deletes every other package's fixtures, and a single failing down
+// step leaves the schema torn down for the whole rest of the tier: measured 2026-08-03
+// at ~176 failures across 13 packages, all of them downstream noise from one bad
+// statement. Worse, walking far enough back crosses migration 0086 — a declared
+// one-way door that drops the adaptive plane and says in its own comment that stepping
+// past it will fail. Reversibility is a property of ONE migration; prove it on three
+// steps of a throwaway database, not on a hundred-and-fifty against the live one.
+func disposableMigrateURL(t *testing.T) string {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	pwd := envOrSkip(t, "POSTGRES_PASSWORD")
+	admin, err := db.Open(ctx, &db.Config{URL: pgDSN("aura", pwd, "postgres")})
+	if err != nil {
+		t.Fatalf("open admin pool: %v", err)
+	}
+	defer admin.Close()
+
+	name := fmt.Sprintf("aura_cron_rev_%d", time.Now().UnixNano())
+	if _, err := admin.Exec(ctx, `CREATE DATABASE "`+name+`" OWNER aura_migrate`); err != nil {
+		t.Fatalf("create disposable database %s: %v", name, err)
+	}
+	t.Cleanup(func() {
+		dropCtx, dropCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer dropCancel()
+		dropPool, err := db.Open(dropCtx, &db.Config{URL: pgDSN("aura", pwd, "postgres")})
+		if err != nil {
+			t.Logf("drop %s: reopen admin pool: %v", name, err)
+			return
+		}
+		defer dropPool.Close()
+		if _, err := dropPool.Exec(dropCtx, `DROP DATABASE IF EXISTS "`+name+`" WITH (FORCE)`); err != nil {
+			t.Logf("drop %s: %v", name, err)
+		}
+	})
+
+	// EnsureRoles is per-DATABASE for the CREATE grant 0001_init needs, so it must run
+	// against the new database, not the shared one.
+	if err := db.EnsureRoles(ctx, pgDSN("aura", pwd, name), pwd); err != nil {
+		t.Fatalf("ensure roles on %s: %v", name, err)
+	}
+	return pgDSN("aura_migrate", pwd, name)
 }
 
 // cleanupTask removes a task (and its run rows cascade) so re-runs start clean.
