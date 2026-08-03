@@ -23,6 +23,10 @@
   accepted, `401`/`403` means it is refused, and every other response remains an
   error/unknown state. Aura must not reinterpret an unexpected response as proof
   of erasure.
+- The ArcadeDB MCP sidecar must validate the shared ArcadeDB base URL before it
+  binds its HTTP listener. The per-tenant resolver remains the sole owner of
+  database names and tenant credentials; boot validation must not resurrect a
+  shared database client or require obsolete shared credentials.
 
 > Stato di partenza: commit `af4ca65c` (skeleton, 633 LOC src).
 > Ordine fissato (utente): **Agent → Sandbox → Swarm → KV**.
