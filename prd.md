@@ -61,6 +61,46 @@
   Alerts 51-52 close through code and all three boundaries have regression
   evidence on the exact shipped SHA.
 
+## Agent Memory industrial convergence (2026-08-03)
+
+- Aura keeps one production implementation: the Go `arcadedb-mcp` service, the
+  official Go MCP SDK, one ArcadeDB database and credential per identity, and
+  EmbeddingGemma-300M at its native 768 dimensions. Hindsight, Graphiti,
+  MemMachine, Mem0, Cognee, MemOS, Letta and LangMem are research donors only;
+  no Python/TypeScript memory runtime, Neo4j adapter, second retriever or
+  compatibility module may enter the product.
+- The production fact contract is bitemporal and provenance-bearing. Replaying
+  the same fact from the same source must be idempotent; an exact fact supported
+  by another source gains that source rather than creating a duplicate. Removing
+  one source detaches only that support and deletes the fact only when no source
+  remains. Identity erasure remains the stronger database-drop guarantee.
+- Retrieval remains ArcadeDB-native: exact graph traversal, English Lucene,
+  EmbeddingGemma HNSW and `vector.fuse` RRF. Valid-time filtering happens before
+  candidate truncation, every lexical path escapes Lucene syntax, and an
+  unavailable or invalid embedder fails soft to bounded lexical retrieval.
+- All model-controlled text, result counts and maintenance batches have hard
+  server-side limits. Entity kinds are written with the entities so the graph
+  and memory API can expose meaningful types. The service reports whether a
+  result used hybrid retrieval or a named fallback; silent dense degradation is
+  not an acceptable success signal.
+- The obsolete Qwen/1024 LOCOMO branch, stale Neo4j tool schemas and comments
+  describing the retired server or port are removed. The only benchmarked
+  embedding contract is EmbeddingGemma with its asymmetric query/document task
+  prefixes.
+- The blocking release metric is `aura.agent-memory-eval/v1`, a reproducible
+  Memory Reliability Score (MRS) on the actual MCP surface. It reports separate
+  dimensions for isolation/security, fact/provenance correctness, retrieval and
+  temporal correctness, MCP/runtime resilience, and operability/coverage.
+  `MRS > 96.5` is valid only when every hard gate passes: zero cross-tenant
+  leakage, no skipped/missing scenario, live MCP initialize/list/call, exact
+  EmbeddingGemma-768 contract, package coverage at least 85%, and bounded p95.
+  A failed hard gate yields a failing verdict regardless of the arithmetic score.
+- LoCoMo evidence Recall@K/MRR/nDCG and LLM-judged answer accuracy are separate
+  metrics with frozen dataset, categories, top-K/context budget, model/judge and
+  seed metadata. MRS must never be presented as LoCoMo or LongMemEval accuracy;
+  no public 2026 result reviewed is a comparable, reproducible `>96.5` answer
+  score.
+
 > Stato di partenza: commit `af4ca65c` (skeleton, 633 LOC src).
 > Ordine fissato (utente): **Agent → Sandbox → Swarm → KV**.
 > KV è ultimo per design: il prompt-builder ottimizza una superficie che a quel
