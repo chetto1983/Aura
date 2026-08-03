@@ -129,7 +129,10 @@ describe('ArcadeGraphCanvas', () => {
   });
 
   it('uses reduced-motion layout settings and handles an empty graph without layout work', () => {
-    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true })));
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: true })),
+    );
     const { rerender } = render(
       <ArcadeGraphCanvas
         nodes={NODES}
