@@ -161,6 +161,15 @@ func TestDocsSearchRejectsUnknownTrailingFlag(t *testing.T) {
 	}
 }
 
+func TestDocsSearchRejectsLimitOutsideInt32(t *testing.T) {
+	for _, value := range []string{"2147483648", "9223372036854775807"} {
+		_, _, _, err := parseDocsSearchArgs([]string{"--limit", value})
+		if err == nil || !strings.Contains(err.Error(), "positive integer") {
+			t.Fatalf("--limit %s: err = %v, want bounded-integer error", value, err)
+		}
+	}
+}
+
 // TestDocsSearchThreadsTheOperatorIdentity guards the half of the fix a shape assertion
 // cannot see. The digest query is identity-scoped in SQL, so a service that forgot the
 // principal is a no-op that exits 0 with zero hits.

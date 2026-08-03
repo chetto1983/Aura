@@ -106,14 +106,15 @@ func (s *PostgresCatalogStore) SearchDigests(
 	if err != nil {
 		return nil, err
 	}
-	if limit <= 0 || limit > maxDigestLimit {
-		limit = defaultDigestLimit
+	rowLimit := int32(defaultDigestLimit)
+	if limit > 0 && limit <= maxDigestLimit {
+		rowLimit = int32(limit)
 	}
 	return scopedValue(ctx, s, identityID, func(sc catalogTx) ([]DigestHit, error) {
 		rows, err := sc.q.SearchDocumentDigests(ctx, sqlc.SearchDocumentDigestsParams{
 			IdentityID: pgIdentityID,
 			Query:      strings.TrimSpace(query),
-			RowLimit:   int32(limit), //nolint:gosec // bounded by maxDigestLimit just above.
+			RowLimit:   rowLimit,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("search document digests: %w", err)

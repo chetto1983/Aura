@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 )
@@ -78,7 +77,13 @@ func stageBoxArtifact(ctx context.Context, r io.Reader, fallbackName string) (st
 }
 
 // extractFirstRegularFile writes the first regular tar entry into stageDir and returns its path.
+// The archive entry supplies bytes only: its untrusted name never reaches a filesystem operation.
 func extractFirstRegularFile(tr *tar.Reader, stageDir, fallbackName string) (string, error) {
+	name := filepath.Clean(fallbackName)
+	if !filepath.IsLocal(name) || name == "." || filepath.Base(name) != name {
+		return "", fmt.Errorf("invalid staged artifact name %q", fallbackName)
+	}
+	dest := filepath.Join(stageDir, name)
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
@@ -90,20 +95,7 @@ func extractFirstRegularFile(tr *tar.Reader, stageDir, fallbackName string) (str
 		if hdr.Typeflag != tar.TypeReg {
 			continue
 		}
-		// Zipslip guard: filepath.Base strips every directory component, and a residual "."/".."/
-		// separator entry falls back to the (safe) basename of the requested box path — so the
-		// extracted name can never carry traversal.
-		name := filepath.Base(hdr.Name)
-		if name == "" || name == "." || name == ".." || name == string(filepath.Separator) {
-			name = fallbackName
-		}
-		dest := filepath.Join(stageDir, name)
-		// Defence-in-depth: refuse any entry whose joined path escapes the staging dir (the tar
-		// stream is daemon-produced, but the containment invariant must hold on the sink itself).
-		if dest != stageDir && !strings.HasPrefix(dest, filepath.Clean(stageDir)+string(os.PathSeparator)) {
-			continue
-		}
-		f, err := os.Create(dest)
+		f, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 		if err != nil {
 			return "", err
 		}

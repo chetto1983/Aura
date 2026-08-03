@@ -1,6 +1,7 @@
 package documents
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -54,5 +55,31 @@ func TestSortDigestHitsKeepsRankAboveRecency(t *testing.T) {
 	SortDigestHits(hits)
 	if hits[0].Title != "old-but-relevant" {
 		t.Fatalf("first hit = %q; recency overtook relevance", hits[0].Title)
+	}
+}
+
+func TestSearchDigestsBindsOnlyBoundedInt32Limits(t *testing.T) {
+	const identityID = "00000000-0000-0000-0000-000000000001"
+	for _, tc := range []struct {
+		name  string
+		limit int
+		want  int32
+	}{
+		{name: "negative", limit: -1, want: defaultDigestLimit},
+		{name: "zero", limit: 0, want: defaultDigestLimit},
+		{name: "minimum", limit: 1, want: 1},
+		{name: "maximum", limit: maxDigestLimit, want: maxDigestLimit},
+		{name: "over maximum", limit: maxDigestLimit + 1, want: defaultDigestLimit},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := &fakeDocDBTX{rows: &fakeDocRows{}}
+			store := NewPostgresCatalogStore(fake)
+			if _, err := store.SearchDigests(context.Background(), identityID, "query", tc.limit); err != nil {
+				t.Fatalf("SearchDigests: %v", err)
+			}
+			if len(fake.queryArgs) != 3 || fake.queryArgs[2] != tc.want {
+				t.Fatalf("query args = %#v, want int32 limit %d", fake.queryArgs, tc.want)
+			}
+		})
 	}
 }

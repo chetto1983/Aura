@@ -107,6 +107,25 @@ func TestInitRedactsErrorsStringersLogValuersAndNestedGroups(t *testing.T) {
 	}
 }
 
+func TestInitJSONLoggerEscapesRecordSeparators(t *testing.T) {
+	var logs bytes.Buffer
+	shutdown, err := Init(context.Background(), Config{OtelExporter: "none", LogWriter: &logs})
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	t.Cleanup(func() { _ = shutdown(context.Background()) })
+
+	slog.Warn("probe", "err", errors.New("first line\r\nforged line"))
+	if got := strings.Count(logs.String(), "\n"); got != 1 {
+		t.Fatalf("JSON logger emitted %d physical records, want 1: %q", got, logs.String())
+	}
+	for _, escaped := range []string{`\r`, `\n`} {
+		if !strings.Contains(logs.String(), escaped) {
+			t.Fatalf("JSON log does not contain escaped %q: %q", escaped, logs.String())
+		}
+	}
+}
+
 func TestShutdownFuncNilAndErrorPaths(t *testing.T) {
 	var nilShutdown ShutdownFunc
 	if err := nilShutdown.Shutdown(context.Background()); err != nil {

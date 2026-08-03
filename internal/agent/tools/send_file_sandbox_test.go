@@ -10,10 +10,9 @@ import (
 	"testing"
 )
 
-// send_file_sandbox_test.go unit-proves stageBoxArtifact's extraction WITHOUT a daemon: the
-// zipslip guard (a traversal-shaped tar entry is basename-reduced and never escapes the staging
-// dir), the non-regular skip, and the empty-stream error. The live copy-out is the
-// docker_integration tier's job (shell_exec_sandbox_docker_test.go).
+// send_file_sandbox_test.go unit-proves stageBoxArtifact's extraction WITHOUT a daemon: archive
+// names never influence the staged path, alongside the non-regular skip and empty-stream error.
+// The live copy-out is the docker_integration tier's job (shell_exec_sandbox_docker_test.go).
 
 // tarStream builds a tar of the given (name, typeflag, body) entries — the CopyArtifactsOut wire
 // shape stageBoxArtifact consumes.
@@ -57,8 +56,8 @@ func TestStageBoxArtifact_ExtractsRegularFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stageBoxArtifact: %v", err)
 	}
-	if filepath.Base(staged) != "report.xlsx" {
-		t.Fatalf("staged basename = %q, want report.xlsx", filepath.Base(staged))
+	if filepath.Base(staged) != "fallback.bin" {
+		t.Fatalf("staged basename = %q, want fallback.bin", filepath.Base(staged))
 	}
 	if !strings.HasPrefix(staged, stageDir) {
 		t.Fatalf("staged %q not under stageDir %q", staged, stageDir)
@@ -66,6 +65,13 @@ func TestStageBoxArtifact_ExtractsRegularFile(t *testing.T) {
 	got, err := os.ReadFile(staged)
 	if err != nil || string(got) != "XLSXDATA" {
 		t.Fatalf("staged content = %q (err %v), want XLSXDATA", got, err)
+	}
+	info, err := os.Stat(staged)
+	if err != nil {
+		t.Fatalf("stat staged file: %v", err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("staged mode = %v, want 0600", info.Mode().Perm())
 	}
 }
 
@@ -107,19 +113,44 @@ func TestStageBoxArtifact_NoRunDirFallsBackToOSTemp(t *testing.T) {
 	}
 }
 
-// TestStageBoxArtifact_ZipslipContained proves a traversal-shaped entry cannot escape: the name
-// is basename-reduced and the staged file stays strictly under the staging dir.
-func TestStageBoxArtifact_ZipslipContained(t *testing.T) {
+// TestStageBoxArtifact_ArchiveNameNeverReachesTheHostPath proves a traversal-shaped entry can
+// contribute bytes but never its attacker-controlled name.
+func TestStageBoxArtifact_ArchiveNameNeverReachesTheHostPath(t *testing.T) {
 	t.Parallel()
-	for _, evil := range []string{"../../etc/passwd", "/etc/shadow", "../escape.txt"} {
-		stageDir, staged, err := stageBoxArtifact(stageCtx(t), tarStream(t, tarEntry{evil, tar.TypeReg, "x"}), "fallback.bin")
+	for _, evil := range []string{"../../etc/passwd", "/etc/shadow", "../escape.txt", `..\..\evil.txt`} {
+		stageDir, staged, err := stageBoxArtifact(stageCtx(t), tarStream(t, tarEntry{evil, tar.TypeReg, "x"}), "requested.bin")
 		if err != nil {
 			t.Fatalf("stageBoxArtifact(%q): %v", evil, err)
+		}
+		if filepath.Base(staged) != "requested.bin" {
+			t.Fatalf("entry %q influenced staged path %q", evil, staged)
 		}
 		rel, rerr := filepath.Rel(stageDir, staged)
 		if rerr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
 			t.Fatalf("entry %q escaped staging dir: staged=%q rel=%q", evil, staged, rel)
 		}
+	}
+}
+
+func TestExtractFirstRegularFileRejectsUnsafeOrExistingDestination(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"", ".", "../escape", "dir/file"} {
+		stageDir := t.TempDir()
+		stream := tar.NewReader(tarStream(t, tarEntry{"entry", tar.TypeReg, "x"}))
+		if _, err := extractFirstRegularFile(stream, stageDir, name); err == nil {
+			t.Fatalf("fallback %q: want rejection", name)
+		}
+	}
+
+	stageDir := t.TempDir()
+	stream := func() *tar.Reader {
+		return tar.NewReader(tarStream(t, tarEntry{"entry", tar.TypeReg, "x"}))
+	}
+	if _, err := extractFirstRegularFile(stream(), stageDir, "requested.bin"); err != nil {
+		t.Fatalf("first extraction: %v", err)
+	}
+	if _, err := extractFirstRegularFile(stream(), stageDir, "requested.bin"); err == nil {
+		t.Fatal("second extraction overwrote an existing staged file")
 	}
 }
 
@@ -134,8 +165,8 @@ func TestStageBoxArtifact_SkipsNonRegularAndEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stageBoxArtifact (dir then file): %v", err)
 	}
-	if filepath.Base(staged) != "data.txt" {
-		t.Fatalf("staged = %q, want data.txt", filepath.Base(staged))
+	if filepath.Base(staged) != "fallback.bin" {
+		t.Fatalf("staged = %q, want fallback.bin", filepath.Base(staged))
 	}
 
 	// A stream with no regular file is a clean error.

@@ -142,17 +142,23 @@ func filterDigestHits(hits []documents.DigestHit, documentID string) []documents
 func parseDocsSearchArgs(args []string) (query, documentID string, limit int, err error) {
 	limit = 8
 	var queryParts []string
-	for i := 0; i < len(args); i++ {
-		name, inlineValue, hasInlineValue := strings.Cut(args[i], "=")
+	remaining := args
+	for len(remaining) > 0 {
+		arg := remaining[0]
+		remaining = remaining[1:]
+		name, inlineValue, hasInlineValue := strings.Cut(arg, "=")
 		switch name {
 		case "--document-id", "--limit":
 			value := inlineValue
 			if !hasInlineValue {
-				i++
-				if i >= len(args) || strings.HasPrefix(args[i], "--") {
+				if len(remaining) == 0 {
 					return "", "", 0, fmt.Errorf("%s requires a value", name)
 				}
-				value = args[i]
+				value = remaining[0]
+				remaining = remaining[1:]
+				if strings.HasPrefix(value, "--") {
+					return "", "", 0, fmt.Errorf("%s requires a value", name)
+				}
 			}
 			if strings.TrimSpace(value) == "" {
 				return "", "", 0, fmt.Errorf("%s requires a value", name)
@@ -161,16 +167,16 @@ func parseDocsSearchArgs(args []string) (query, documentID string, limit int, er
 				documentID = value
 				continue
 			}
-			parsed, parseErr := strconv.Atoi(value)
+			parsed, parseErr := strconv.ParseInt(value, 10, 32)
 			if parseErr != nil || parsed <= 0 {
 				return "", "", 0, fmt.Errorf("--limit requires a positive integer, got %q", value)
 			}
-			limit = parsed
+			limit = int(parsed)
 		default:
 			if strings.HasPrefix(name, "-") {
 				return "", "", 0, fmt.Errorf("unknown flag %q", name)
 			}
-			queryParts = append(queryParts, args[i])
+			queryParts = append(queryParts, arg)
 		}
 	}
 	// A BLANK query lists the library newest-first, and that is not a courtesy: it is
