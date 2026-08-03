@@ -181,6 +181,9 @@ func configFromEnv() (arcadedb.Config, string, error) {
 		User:     os.Getenv("ARCADEDB_USER"),
 		Password: os.Getenv("ARCADEDB_PASSWORD"),
 	}
+	if err := arcadedb.ValidateBaseURL(cfg.BaseURL); err != nil {
+		return cfg, "", fmt.Errorf("ARCADEDB_URL: %w", err)
+	}
 	if timeout := strings.TrimSpace(os.Getenv("ARCADEDB_TIMEOUT_SECONDS")); timeout != "" {
 		seconds, err := strconv.Atoi(timeout)
 		if err != nil || seconds <= 0 {

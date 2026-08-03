@@ -84,16 +84,9 @@ func (e *ServerError) Error() string {
 
 // New validates cfg and builds a Client. It performs no I/O.
 func New(cfg Config) (*Client, error) {
-	base := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
-	if base == "" {
-		return nil, fmt.Errorf("arcadedb: base URL must be non-empty")
-	}
-	parsed, err := url.Parse(base)
+	base, err := normalizeBaseURL(cfg.BaseURL)
 	if err != nil {
-		return nil, fmt.Errorf("arcadedb: parse base URL: %w", err)
-	}
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return nil, fmt.Errorf("arcadedb: base URL scheme must be http or https, got %q", parsed.Scheme)
+		return nil, err
 	}
 	database := strings.TrimSpace(cfg.Database)
 	if database == "" {
@@ -115,6 +108,27 @@ func New(cfg Config) (*Client, error) {
 		authHeader: "Basic " + credentials,
 		http:       &http.Client{Timeout: timeout},
 	}, nil
+}
+
+// ValidateBaseURL checks the shared server endpoint without requiring tenant credentials.
+func ValidateBaseURL(raw string) error {
+	_, err := normalizeBaseURL(raw)
+	return err
+}
+
+func normalizeBaseURL(raw string) (string, error) {
+	base := strings.TrimRight(strings.TrimSpace(raw), "/")
+	if base == "" {
+		return "", fmt.Errorf("arcadedb: base URL must be non-empty")
+	}
+	parsed, err := url.Parse(base)
+	if err != nil {
+		return "", fmt.Errorf("arcadedb: parse base URL: %w", err)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", fmt.Errorf("arcadedb: base URL scheme must be http or https, got %q", parsed.Scheme)
+	}
+	return base, nil
 }
 
 // Query runs a read-only statement.

@@ -102,6 +102,24 @@ func TestConfigFromEnvRejectsBadNumbers(t *testing.T) {
 	}
 }
 
+func TestConfigFromEnvRejectsInvalidBaseURL(t *testing.T) {
+	for name, baseURL := range map[string]string{
+		"empty":      "",
+		"blank":      "   ",
+		"bad scheme": "ftp://arcadedb:2480",
+		"unparsable": "http://[::1",
+	} {
+		t.Run(name, func(t *testing.T) {
+			env := validEnv()
+			env["ARCADEDB_URL"] = baseURL
+			setEnv(t, env)
+			if _, _, err := configFromEnv(); err == nil {
+				t.Fatal("expected an error, got nil")
+			}
+		})
+	}
+}
+
 // Whitespace-only values are what a compose file with an unset variable
 // produces; they must behave as absent, not as a parse failure.
 func TestConfigFromEnvTreatsBlankOptionalsAsUnset(t *testing.T) {
