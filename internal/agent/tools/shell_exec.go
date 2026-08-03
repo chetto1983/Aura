@@ -83,12 +83,32 @@ func (s *ShellExec) Spec() Spec {
 			"Pipes, redirects, && chains, any installed interpreter (python, node), git, and filesystem work all just work. " +
 			"Your working directory persists between calls (a cd carries over) and starts at /workspace. " +
 			"Returns combined stdout and stderr plus a final [aura_shell {...}] JSON footer with exit_code, cwd, duration_ms, and timed_out; rely on that footer instead of spending separate pwd or exit-code calls. " +
-			"For a long-running job set \"background\": true — it returns immediately with a shell_id you read with shell_poll and stop with shell_kill.",
+			"For a long-running job set \"background\": true — it returns immediately with a shell_id you read with shell_poll and stop with shell_kill.\n\n" +
+			// These four rules used to live in the system prompt, where they were read
+			// thousands of tokens before the decision they govern. They belong with the
+			// schema: the model reads them exactly when it is about to run a command.
+			"Working rules:\n" +
+			"- One call is one shell transaction. When steps are sequential, put discovery, execution and verification in the SAME command and print one compact final status, JSON preferred.\n" +
+			// Measured 2026-08-03: asked for one row out of a spreadsheet, she printed
+			// the whole sheet (prompt 8.171 -> 9.596 tokens) and then spent a SECOND
+			// call searching the dump she had just made (13.626). The script is where
+			// the filtering belongs; stdout is for the answer.
+			"- QUERY data, never dump it. When the answer is a row, a count or an aggregate, do the filtering INSIDE the script — pandas, awk, jq, sqlite — and print only the result. Printing a whole sheet, table or log into the conversation so you can search it in the next call costs two calls and a context window to do one call's work.\n" +
+			"- Never author file content here. Heredocs and quoted echo/printf blobs break on quoting — write the file with fs_write, then run it.\n" +
+			"- Pick ONE interpreter per task and install into it: `python3 -m pip install ...`, never bare `pip`, so the install lands on the interpreter you run. An import that fails right after installing means pip used a different one; fix it with `python3 -m pip`, do not alternate between python and python3.\n" +
+			"- Treat code you generated as untrusted: read it before running it, and prefer a scratch directory you can clean up.",
 		Parameters: params,
-		// Deferred: the full terminal stays available through tool_search, but its
-		// large, permissive schema should not dominate the hot manifest for simple
-		// chat/web tasks.
-		Deferred: true,
+		// NOT deferred: this is the most-used tool in the system, and hiding it bought
+		// nothing. Measured 2026-08-03 across live turns, the manifest held four tools
+		// — ask_user, read_tool_output, text_response, tool_search — and not one of
+		// them does any work, so every substantive turn opened with a search for how
+		// to do things. The schema costs tokens once per turn against a search round
+		// trip that costs a whole model call, every conversation.
+		//
+		// Anthropic's own guidance for the pattern says to keep the three to five most
+		// frequently used tools loaded so the model can call them without searching
+		// first. Having zero is what made her wander.
+		Deferred: false,
 		// Conservatively Mutating (D-43): a command line can write files or mutate
 		// state and the agent cannot tell `ls` from `python build.py` statically.
 		Mutating:       true,

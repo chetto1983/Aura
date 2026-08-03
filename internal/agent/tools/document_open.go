@@ -80,10 +80,11 @@ func (t *DocumentOpen) Spec() Spec {
   },
   "required": ["document_id"]
 }`),
-		// Deferred, like document_index: a deliberate action the agent reaches for once
-		// retrieval has told it which document matters. document_search's description
-		// names it, so it is discoverable at the moment it becomes relevant.
-		Deferred: true,
+		// NOT deferred, because it is the second half of one motion. document_search
+		// answers WHICH file; this one puts it on disk so it can be computed on. Leaving
+		// it deferred meant every document question paid a search round trip in the
+		// middle of a flow the operator experiences as a single question.
+		Deferred: false,
 	}
 }
 

@@ -136,9 +136,11 @@ func TestDocumentSearchUnconfiguredAndMalformed(t *testing.T) {
 func TestDocumentSearchSpecPointsAtDocumentOpen(t *testing.T) {
 	t.Parallel()
 	spec := (&DocumentSearch{}).Spec()
-	if spec.Name != "document_search" || !spec.Deferred {
-		t.Fatalf("spec = %q deferred=%v", spec.Name, spec.Deferred)
+	if spec.Name != "document_search" {
+		t.Fatalf("name = %q, want document_search", spec.Name)
 	}
+	// Deferred-or-loaded is asserted once, in TestOnlyTheWorkingSetIsAlwaysActive,
+	// where the manifest budget is weighed as a whole.
 	for _, want := range []string{"document_open", "/workspace", "how many", "NOT their text"} {
 		if !strings.Contains(spec.Description, want) {
 			t.Errorf("description never mentions %q", want)

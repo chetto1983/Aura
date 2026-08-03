@@ -59,15 +59,18 @@ func (t *DocumentSearch) Spec() Spec {
     "limit": {"type": "integer", "minimum": 1, "maximum": 50, "description": "Maximum documents to return. Default 8."}
   }
 }`),
-		// Deferred, with the regression that once un-deferred it in mind: hiding
-		// retrieval behind tool_search made the agent answer document questions with
-		// the visible fs_glob/fs_grep and never discover it. What changed is that
-		// fs_glob/fs_grep are no longer visible either — with only the four primitives
-		// always on there is no plausible-looking wrong tool left to grab — and a
-		// deferred tool called by name now gets its schema back in the same step
-		// rather than an errand. If retrieval regresses again, this is the first line
-		// to revisit, and the fix is the <documents> prompt block naming it.
-		Deferred: true,
+		// NOT deferred. This line said "if retrieval regresses again, this is the first
+		// line to revisit". It regressed: on 2026-08-03, asked for a customer code that
+		// was in the operator's own spreadsheet, she went to memory, then to the PUBLIC
+		// WEB — searching "WPT SRL partita IVA codice cliente" — then listed the entire
+		// filesystem, and reached the document library on the fourth attempt.
+		//
+		// Hiding fs_glob/fs_grep did not remove the plausible-looking wrong tool; it
+		// only moved it further out. The operator's own documents are what this
+		// deployment is FOR, and the entry point to them cannot be something she has to
+		// think of searching for. Sending a customer's data to a public search engine
+		// is a privacy failure before it is a quality one.
+		Deferred: false,
 	}
 }
 

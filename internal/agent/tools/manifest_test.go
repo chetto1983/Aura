@@ -154,57 +154,56 @@ func TestRenderToolDefs_Namespaced(t *testing.T) {
 	}
 }
 
+// The deferred flag used to be a column here. It was duplicated bookkeeping — the
+// manifest budget is weighed as a whole in TestOnlyTheWorkingSetIsAlwaysActive, and
+// asserting it per tool as well is how the always-active set drifted to seventeen
+// with every file defending its own seat. What this test owns is the OPERATIONAL
+// contract each description must carry.
 func TestFilesystemToolSpecsDescribeOperationalContracts(t *testing.T) {
 	tests := []struct {
-		name         string
-		tool         Tool
-		wantName     string
-		wantSummary  string
-		wantPhrases  []string
-		wantMutate   bool
-		wantDeferred bool
+		name        string
+		tool        Tool
+		wantName    string
+		wantSummary string
+		wantPhrases []string
+		wantMutate  bool
 	}{
 		{
-			name:         "read",
-			tool:         &FSRead{},
-			wantName:     "fs_read",
-			wantSummary:  "Read a file from disk.",
-			wantPhrases:  []string{"1-based `offset`", "Read a file with this tool BEFORE editing", "large result pages"},
-			wantDeferred: true,
+			name:        "read",
+			tool:        &FSRead{},
+			wantName:    "fs_read",
+			wantSummary: "Read a file from disk.",
+			wantPhrases: []string{"1-based `offset`", "Read a file with this tool BEFORE editing", "large result pages"},
 		},
 		{
-			name:         "edit",
-			tool:         &FSEdit{},
-			wantName:     "fs_edit",
-			wantSummary:  "Replace an exact string in a file.",
-			wantPhrases:  []string{"Read the file first", "must be UNIQUE", "`replace_all`"},
-			wantMutate:   true,
-			wantDeferred: true,
+			name:        "edit",
+			tool:        &FSEdit{},
+			wantName:    "fs_edit",
+			wantSummary: "Replace an exact string in a file.",
+			wantPhrases: []string{"Read the file first", "must be UNIQUE", "`replace_all`"},
+			wantMutate:  true,
 		},
 		{
-			name:         "write",
-			tool:         &FSWrite{},
-			wantName:     "fs_write",
-			wantSummary:  "Write a file to disk (create or overwrite).",
-			wantPhrases:  []string{"COMPLETE `content`", "prefer fs_edit", "Always report the absolute path"},
-			wantMutate:   true,
-			wantDeferred: true,
+			name:        "write",
+			tool:        &FSWrite{},
+			wantName:    "fs_write",
+			wantSummary: "Write a file to disk (create or overwrite).",
+			wantPhrases: []string{"COMPLETE `content`", "prefer fs_edit", "Always report the absolute path"},
+			wantMutate:  true,
 		},
 		{
-			name:         "glob",
-			tool:         &FSGlob{},
-			wantName:     "fs_glob",
-			wantSummary:  "Find files by name pattern.",
-			wantPhrases:  []string{"Find files by NAME", "`**`", "use fs_grep to search their contents"},
-			wantDeferred: true,
+			name:        "glob",
+			tool:        &FSGlob{},
+			wantName:    "fs_glob",
+			wantSummary: "Find files by name pattern.",
+			wantPhrases: []string{"Find files by NAME", "`**`", "use fs_grep to search their contents"},
 		},
 		{
-			name:         "grep",
-			tool:         &FSGrep{},
-			wantName:     "fs_grep",
-			wantSummary:  "Find text inside file contents with a regexp (grep).",
-			wantPhrases:  []string{"Search file CONTENTS", "RE2 regular expression", "To find files by NAME use fs_glob"},
-			wantDeferred: true,
+			name:        "grep",
+			tool:        &FSGrep{},
+			wantName:    "fs_grep",
+			wantSummary: "Find text inside file contents with a regexp (grep).",
+			wantPhrases: []string{"Search file CONTENTS", "RE2 regular expression", "To find files by NAME use fs_glob"},
 		},
 	}
 
@@ -216,15 +215,6 @@ func TestFilesystemToolSpecsDescribeOperationalContracts(t *testing.T) {
 			}
 			if spec.Summary != tt.wantSummary {
 				t.Fatalf("Summary = %q, want %q", spec.Summary, tt.wantSummary)
-			}
-			if spec.Deferred != tt.wantDeferred {
-				// All five are deferred now. fs_read/fs_write used to be exempt by operator
-				// directive, and the operator reversed it once the bill was on the table:
-				// keeping two of the five visible did not help discovery, it just made those
-				// two the default answer for jobs the other three were better at, at 560
-				// tokens a turn. The whole always-active budget is pinned in
-				// TestOnlyFourToolsAreAlwaysActive.
-				t.Fatalf("Deferred = %v, want %v", spec.Deferred, tt.wantDeferred)
 			}
 			if spec.Mutating != tt.wantMutate {
 				t.Fatalf("Mutating = %v, want %v", spec.Mutating, tt.wantMutate)

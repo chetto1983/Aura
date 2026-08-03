@@ -40,15 +40,30 @@ func (b *blockingBoxBackend) Exec(ctx context.Context, _ usersandbox.BoxHandle, 
 	return usersandbox.ExecResult{}, ctx.Err()
 }
 
-func TestShellExecSpecIsDeferred(t *testing.T) {
+// Whether shell_exec is deferred is asserted ONCE, in
+// TestOnlyTheWorkingSetIsAlwaysActive, which is where the whole manifest budget is
+// weighed. It used to be asserted here too, and that duplication is exactly how the
+// set drifted to seventeen tools with each file defending its own seat.
+//
+// What belongs here is the operational doctrine that moved OUT of the system prompt
+// and into this description: the model now reads it with the schema, at the moment
+// it is about to run a command, instead of thousands of tokens earlier in a prefix
+// that was describing a tool it could not even call.
+func TestShellExecSpecCarriesItsOperationalRules(t *testing.T) {
 	s := (&ShellExec{}).Spec()
 	if s.Name != "shell_exec" {
 		t.Fatalf("name = %q, want shell_exec", s.Name)
 	}
-	// The full terminal remains discoverable via tool_search, but should not dominate
-	// the hot manifest for simple chat/web tasks.
-	if !s.Deferred {
-		t.Fatal("shell_exec must be deferred; load the full schema through tool_search")
+	for _, rule := range []string{
+		"One call is one shell transaction",
+		"QUERY data, never dump it",
+		"Never author file content here",
+		"python3 -m pip",
+		"untrusted",
+	} {
+		if !strings.Contains(s.Description, rule) {
+			t.Errorf("shell_exec description dropped the %q rule; it has no other home", rule)
+		}
 	}
 }
 

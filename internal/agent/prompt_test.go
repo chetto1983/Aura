@@ -74,13 +74,12 @@ func TestPrompt_Directive(t *testing.T) {
 	}
 }
 
-func TestPrompt_ShellTransactionDoctrine(t *testing.T) {
-	for _, needle := range []string{"shell transaction", "exit_code/cwd/duration", "separate calls for pwd or exit-code checks"} {
-		if !strings.Contains(SystemPrompt, needle) {
-			t.Errorf("system prompt is missing shell-call reduction doctrine %q", needle)
-		}
-	}
-}
+// The shell-call reduction doctrine is no longer asserted here. It did not go away
+// — it moved into shell_exec's own Description, where it arrives WITH the schema at
+// the moment a command is about to run, instead of thousands of tokens earlier in a
+// prefix that also described a tool the model could not call. The invariant is
+// asserted at its new home by
+// tools.TestShellExecSpecCarriesItsOperationalRules.
 
 // TestPrompt_NoTimestamp asserts the prompt contains no date/clock substring, so
 // it can never poison the byte-stable cached prefix (Req#14 / D-08).
@@ -90,36 +89,58 @@ func TestPrompt_NoTimestamp(t *testing.T) {
 	}
 }
 
-// TestPrompt_MechanismNotEnumeration asserts the prompt names the discovery
-// MECHANISM (tool_search, text_response) but does not enumerate the volatile
-// builtins by name — enumeration cache-busts the prefix when the tool set changes
-// (D-09). tool_search and text_response are stable contract surfaces, allowed.
-func TestPrompt_MechanismNotEnumeration(t *testing.T) {
-	for _, volatile := range []string{"read_tool_output", "current_time"} {
-		if strings.Contains(SystemPrompt, volatile) {
-			t.Errorf("system prompt enumerates the volatile tool %q (cache-busts the prefix, D-09)", volatile)
+// TestPrompt_NamesOnlyLoadedTools is the rule the old "mechanism, not enumeration"
+// guard was reaching for, stated exactly.
+//
+// The old rule forbade naming volatile builtins, on the grounds that enumeration
+// cache-busts the prefix. That reasoning was half right: what busts the cache is a
+// name that CHANGES, and a tool's deferred-or-loaded status is a deliberate,
+// committed decision, not per-turn drift. Meanwhile the rule permitted the failure
+// that actually cost turns — the prompt taught shell_exec eight times and
+// document_search three while both were deferred and uncallable, so the model was
+// told in detail how to use tools that were not in its manifest.
+//
+// So: a tool may be named here if and only if it is LOADED. Everything deferred is
+// referred to by capability family. Un-deferring a tool and forgetting to teach it
+// is cheap; teaching one that is not there is what sent her to the public web for a
+// customer code that was in the operator's own spreadsheet.
+// The registry lives in package main, so the rule is enforced against the LIVE tool
+// set by main.TestPromptNamesOnlyLoadedTools, which can build it. What is checked
+// here is what needs no registry: the two structural verbs must stay explained, one
+// being how she reaches everything deferred and the other the only way to end a turn.
+func TestPrompt_NamesTheStructuralVerbs(t *testing.T) {
+	for _, mechanism := range []string{"tool_search", "text_response"} {
+		if !strings.Contains(SystemPrompt, mechanism) {
+			t.Errorf("system prompt no longer explains %q", mechanism)
 		}
-	}
-	if !strings.Contains(SystemPrompt, "tool_search") {
-		t.Error("system prompt must explain the tool_search discovery mechanism")
-	}
-	if !strings.Contains(SystemPrompt, "text_response") {
-		t.Error("system prompt must explain the text_response termination mechanism")
 	}
 }
 
-// TestPrompt_FullToolSurfaceDoctrine keeps Aura tool-aware without making it a
-// coding-only agent or enumerating volatile tool names.
+// TestPrompt_FullToolSurfaceDoctrine keeps Aura tool-aware without making her a
+// coding-only agent.
+//
+// The two dropped phrases — "whole current tool list" and "most specific safe tool"
+// — described a surface that did not exist: the current list held four tools that
+// only ask, page, reply and search, so "scan the list for a dedicated tool" could
+// only ever fail. The doctrine survives, addressed to what she can actually reach:
+// pick the most specific CAPABILITY, and the families are enumerated so the choice
+// is informed rather than a guess.
 func TestPrompt_FullToolSurfaceDoctrine(t *testing.T) {
 	for _, needle := range []string{
-		"whole current tool list",
-		"most specific safe tool",
+		"MOST SPECIFIC capability",
 		"not only software engineering",
 		"planning, task, or progress-tracking tool",
 		"update it as each step completes",
 	} {
 		if !strings.Contains(SystemPrompt, needle) {
 			t.Errorf("system prompt is missing full tool-surface doctrine %q", needle)
+		}
+	}
+	// The families are the replacement for the enumeration the old wording assumed.
+	// Without them "pick the most specific capability" is advice she cannot act on.
+	for _, family := range []string{"filesystem —", "web —", "memory —", "documents —", "skills —", "delegation —"} {
+		if !strings.Contains(SystemPrompt, family) {
+			t.Errorf("system prompt no longer lists the %q capability family", family)
 		}
 	}
 }
@@ -162,11 +183,13 @@ func TestPrompt_SkillInstallRoutingIsTheTool(t *testing.T) {
 	if strings.Contains(SystemPrompt, "action=catalog") {
 		t.Error("SystemPrompt reintroduced action=catalog (#51 removed it; discovery is the CLI)")
 	}
-	if !strings.Contains(SystemPrompt, "skill action=install") {
-		t.Error("the §Skills section must route install through the tool, not the terminal")
-	}
-	if !strings.Contains(SystemPrompt, "NEVER install by running the skills CLI") {
-		t.Error("the §Skills section must warn the model off the CLI install that cannot work")
+	// The install routing itself moved into the skill tool's own Description, which
+	// is where the model reads it at the moment it is choosing between a skill and
+	// hand-written code. It cannot stay here: the tool is deferred, so teaching it
+	// in the prefix is teaching something absent from the manifest. The invariant is
+	// asserted at its new home by tools.TestSkillDescriptionCarriesTheInstallOrder.
+	if strings.Contains(SystemPrompt, "skill action=install") {
+		t.Error("the install routing is back in the prompt; it belongs in the deferred tool's Description")
 	}
 }
 
@@ -178,9 +201,17 @@ func TestPrompt_DocumentsDoctrine(t *testing.T) {
 	for _, needle := range []string{
 		"<documents>",
 		"NOT on the filesystem",
+		// Both are LOADED now, so the doctrine may name them: the three-step flow is
+		// useless if the model has to guess what performs steps 1 and 2.
 		"document_search",
 		"document_open",
-		"document_index",
+		// document_index is deferred, so it is named by family instead — but the
+		// doctrine it carries (a file you wrote is not findable until it is indexed)
+		// must survive the rename.
+		"documents capability",
+		// The sharp clause, added after she searched the PUBLIC WEB on 2026-08-03 for
+		// a customer code that was in the operator's own spreadsheet.
+		"NEVER the public web",
 	} {
 		if !strings.Contains(SystemPrompt, needle) {
 			t.Errorf("system prompt missing documents doctrine %q", needle)

@@ -39,10 +39,14 @@ func (t *FSRead) Spec() Spec {
 		Summary:     "Read a file from disk.",
 		Description: "Read a file from your workspace container and return its contents. `path` is absolute (e.g. /workspace/notes.md) or relative to /workspace. By default the whole file is returned; for a long file pass a 1-based `offset` plus a `limit` to read a targeted range instead of pulling the whole file into context. A large result pages to a sidecar you read with read_tool_output rather than flooding the conversation. Read a file with this tool BEFORE editing it — fs_edit matches the exact bytes returned here. A missing or empty file returns an explicit error/notice, never silent empty content. Prefer these structured file tools over shell cat/grep so results come back structured and large files page. Example: {\"path\":\"cmd/aura/main.go\"} for a whole file, or {\"path\":\"app.log\",\"offset\":2000,\"limit\":200} to read just a window.",
 		Parameters:  params,
-		// Deferred con fs_edit/fs_glob/fs_grep, che lo erano gia': tenere due dei cinque
-		// tool di filesystem sempre visibili spingeva a ripiegare su quelli invece del piu'
-		// specifico. O tutti o nessuno, e nessuno costa meno.
-		Deferred: true,
+		// NOT deferred, alone among the five filesystem tools. The old rule was "all or
+		// none, and none costs less", taken because two visible primitives pulled her
+		// away from the more specific tool. That reasoning holds for the four that
+		// WRITE or SEARCH — those are the plausible wrong answers to a document
+		// question — but reading a file whose path she already has is not a choice
+		// between tools, it is the next step. Keeping it deferred bought a search round
+		// trip in the middle of every open-then-read flow.
+		Deferred: false,
 	}
 }
 

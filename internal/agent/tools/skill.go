@@ -172,6 +172,13 @@ func (t *SkillTool) manifestDescription() string {
 	const lead = "Skills are packaged capabilities (instructions and runnable snippets) that extend you for specific tasks. " +
 		"Call action=use with a skill name to apply its instructions to the current task; action=info reads a skill without applying it; action=list shows what is available. " +
 		"When NO installed skill covers a reusable task family (spreadsheets, documents, file formats, integrations, recurring workflows), an always-on skill teaches how to discover and install skills from the open ecosystem.\n\n" +
+		// The order used to live in the system prompt, thousands of tokens from the
+		// decision. It belongs with the schema, where it is read at the moment the
+		// question "skill or hand-code?" is actually being answered.
+		"Order for a reusable task family: look here FIRST, install second, hand-write last. " +
+		"Having the libraries (openpyxl, pandas, a node package) is not a reason to skip it — the skill is the tested playbook for the family, the library is not. " +
+		"Install with action=install source=<owner/repo>: one call and the skill is usable this same turn. NEVER install by running the skills CLI yourself — it writes into whatever directory it is standing in, which is not the library, and the skill will not load however encouraging the CLI output looks. " +
+		"Skill work is bounded: apply the obvious skill once, then execute. A skill that is instructions-only, or that points at a script which is not there, is guidance — implement with the tools you have instead of hunting for the missing file.\n\n" +
 		"Available skills:\n"
 	if t.Loader == nil {
 		return lead + "(none loaded)\n"

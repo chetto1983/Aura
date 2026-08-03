@@ -82,21 +82,26 @@ func TestDispatchGateLeavesPlainToolsAlone(t *testing.T) {
 	}
 }
 
-// The system prompt and the dispatch gate are one contract: if the prompt keeps
-// telling the model to tool_search after tool_not_loaded, it will, and the schema
-// handed back is wasted. This is the guard against fixing one half only.
-func TestPromptTellsTheModelToRetryNotToSearch(t *testing.T) {
+// The refusal must carry its own recovery instruction. It used to be duplicated in
+// the system prompt as well; that copy is gone, and its absence is not a weakening
+// — the prompt sat thousands of tokens from the failure, while this text arrives AT
+// it, with the schema attached. Telling the model to tool_search here would spend a
+// whole round trip fetching what the process already handed over.
+func TestRefusalTellsTheModelToRetryNotToSearch(t *testing.T) {
 	t.Parallel()
-	prompt := systemPromptText(t)
-	if !strings.Contains(prompt, "tool_not_loaded") {
-		t.Fatal("the prompt no longer names the refusal it is explaining")
+	agent := &LlmAgent{registry: decayRegistry()}
+	run := agent.runTool(context.Background(), testBudget(t), toolCall("c1", "alpha", `{}`), time.Now())
+
+	if !strings.Contains(run.Preview, "tool_not_loaded") {
+		t.Fatalf("the deferred tool was not bounced: %q", run.Preview)
 	}
 	for _, phrase := range []string{
-		"hands you its schema",
-		"do NOT call tool_search for it",
+		"Its schema follows",
+		"Do not call tool_search",
+		"call alpha again using exactly these parameters",
 	} {
-		if !strings.Contains(prompt, phrase) {
-			t.Errorf("the prompt no longer tells the model to retry directly: missing %q", phrase)
+		if !strings.Contains(run.Preview, phrase) {
+			t.Errorf("the refusal no longer tells the model to retry directly: missing %q\ngot: %s", phrase, run.Preview)
 		}
 	}
 }
@@ -110,13 +115,4 @@ func testBudget(t *testing.T) *Budget {
 		t.Fatalf("budget: %v", err)
 	}
 	return budget
-}
-
-// systemPromptText returns the prompt text the model actually receives.
-func systemPromptText(t *testing.T) string {
-	t.Helper()
-	if strings.TrimSpace(SystemPrompt) == "" {
-		t.Fatal("base system prompt is empty")
-	}
-	return SystemPrompt
 }

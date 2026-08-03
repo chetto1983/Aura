@@ -319,9 +319,11 @@ func TestDocumentOpen_DeclaresTheCatalogSize(t *testing.T) {
 
 func TestDocumentOpen_SpecNamesTheAggregateCase(t *testing.T) {
 	spec := (&DocumentOpen{}).Spec()
-	if spec.Name != "document_open" || !spec.Deferred {
-		t.Fatalf("spec = %q deferred=%v", spec.Name, spec.Deferred)
+	if spec.Name != "document_open" {
+		t.Fatalf("name = %q, want document_open", spec.Name)
 	}
+	// Deferred-or-loaded is asserted once, in TestOnlyTheWorkingSetIsAlwaysActive,
+	// where the manifest budget is weighed as a whole.
 	// The tool only earns its place if the model reaches for it on the questions
 	// retrieval cannot answer, so the description must say so in the words a
 	// tool_search query would carry.
