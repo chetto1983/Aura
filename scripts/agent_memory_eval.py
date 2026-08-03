@@ -360,7 +360,7 @@ def run_suites(manifest: dict[str, Any], tier: str, repo: pathlib.Path, timeout_
                     cwd=repo,
                     text=True,
                     stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
+                    stderr=subprocess.PIPE,
                     check=False,
                     timeout=timeout_seconds,
                 )
@@ -372,6 +372,7 @@ def run_suites(manifest: dict[str, Any], tier: str, repo: pathlib.Path, timeout_
                     "command": command,
                     "return_code": completed.returncode,
                     "elapsed_ms": (time.monotonic() - started) * 1000,
+                    "stderr_line_count": sum(1 for line in completed.stderr.splitlines() if line.strip()),
                     **parsed,
                 }
                 if suite.get("coverage"):

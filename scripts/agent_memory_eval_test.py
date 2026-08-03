@@ -5,6 +5,7 @@ import pathlib
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 import agent_memory_eval as evaluator
 import agent_memory_eval_metadata as metadata
@@ -178,6 +179,34 @@ class GoTestParserTest(unittest.TestCase):
         )
         parsed = evaluator.parse_go_test_json(output)
         self.assertEqual(parsed["runtime_metadata"]["TestLiveWire"][0]["embedding_dimension"], 768)
+
+
+class SuiteRunnerTest(unittest.TestCase):
+    def test_toolchain_stderr_is_not_merged_into_go_test_json(self) -> None:
+        manifest = {
+            "suites": [
+                {
+                    "id": "unit",
+                    "tier": "deterministic",
+                    "command": ["go", "test", "-json", "./example"],
+                }
+            ]
+        }
+        completed = subprocess.CompletedProcess(
+            args=manifest["suites"][0]["command"],
+            returncode=0,
+            stdout="\n".join([event("pass", "TestWire", 0.01), event("pass", elapsed=0.02)]),
+            stderr="go: downloading example.test/module v1.0.0\n",
+        )
+        with tempfile.TemporaryDirectory() as raw, mock.patch.object(
+            evaluator.subprocess, "run", return_value=completed
+        ) as run:
+            suites = evaluator.run_suites(manifest, "all", pathlib.Path(raw), 30)
+
+        self.assertTrue(suites["unit"]["passed"])
+        self.assertEqual(suites["unit"]["protocol_errors"], [])
+        self.assertEqual(suites["unit"]["stderr_line_count"], 1)
+        self.assertIs(run.call_args.kwargs["stderr"], subprocess.PIPE)
 
 
 class MetricParserTest(unittest.TestCase):
