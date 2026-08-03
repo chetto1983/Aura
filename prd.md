@@ -1,5 +1,19 @@
 # PRD — Tabula-rasa, Slice 1 → 4
 
+## CI reproducibility correction (2026-08-03)
+
+- The `sqlc generate is in sync` gate remains a byte-for-byte golden check using
+  the version pinned by CI (`sqlc v1.31.1`). Any query or query-comment change
+  must commit the regenerated `internal/db/sqlc/` output in the same change.
+- The `reasoning_live` accuracy gate must execute the production embedding model
+  on ordinary GitHub-hosted CPU runners. Selecting the CPU llama.cpp image and
+  setting `AURA_EMBED_NGL=0` is insufficient while the base Compose service still
+  reserves an NVIDIA device; the job must also merge `compose.minipc.yaml`, whose
+  explicit contract is to remove that structural GPU reservation.
+- The correction must not skip the live test, relax its accuracy floors, or add a
+  second CI-only service definition. The existing appliance CPU overlay is the
+  single reusable source of truth.
+
 > Stato di partenza: commit `af4ca65c` (skeleton, 633 LOC src).
 > Ordine fissato (utente): **Agent → Sandbox → Swarm → KV**.
 > KV è ultimo per design: il prompt-builder ottimizza una superficie che a quel
