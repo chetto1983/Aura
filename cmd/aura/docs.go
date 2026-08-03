@@ -173,11 +173,13 @@ func parseDocsSearchArgs(args []string) (query, documentID string, limit int, er
 			queryParts = append(queryParts, args[i])
 		}
 	}
-	query = strings.Join(queryParts, " ")
-	if strings.TrimSpace(query) == "" {
-		return "", "", 0, fmt.Errorf("docs search requires <query>")
-	}
-	return query, documentID, limit, nil
+	// A BLANK query lists the library newest-first, and that is not a courtesy: it is
+	// what the SQL does (`SearchDocumentDigests`' own comment says so), what the
+	// document_search tool does, and what that tool's description promises the model —
+	// "leave query empty to list the library". This verb refusing it was the operator
+	// alone being unable to ask the one question the machine answers most cheaply,
+	// "what have I actually got in here".
+	return strings.Join(queryParts, " "), documentID, limit, nil
 }
 
 func docsStatus(ctx context.Context, args []string, out io.Writer, factory docsServiceFactory) error {

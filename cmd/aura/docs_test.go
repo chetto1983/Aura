@@ -78,6 +78,47 @@ func TestDocsSearchPrintsHits(t *testing.T) {
 	}
 }
 
+// TestDocsSearchBlankQueryListsTheLibrary pins the one question the machine answers
+// most cheaply: "what have I actually got in here". A blank query is not an error at any
+// other layer — `SearchDocumentDigests`' own comment says it lists newest-first, the
+// document_search tool trims and passes it straight through, and that tool's description
+// promises the model "leave query empty to list the library". This verb used to be the
+// single place that refused, so the operator could not ask what their own agent could.
+func TestDocsSearchBlankQueryListsTheLibrary(t *testing.T) {
+	svc := &fakeDocsService{
+		hits: []documents.DigestHit{
+			{DocumentID: "doc-1", Title: "Clienti.xlsx"},
+			{DocumentID: "doc-2", Title: "manual.pdf"},
+		},
+	}
+	var out bytes.Buffer
+	if err := runDocsCommand(t.Context(), []string{"search"}, &out, fakeDocsFactory(svc)); err != nil {
+		t.Fatalf("a blank query must list the library, not error: %v", err)
+	}
+	var decoded struct {
+		Query string                `json:"query"`
+		Hits  []documents.DigestHit `json:"hits"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Query != "" {
+		t.Errorf("query = %q, want it passed through empty", decoded.Query)
+	}
+	if len(decoded.Hits) != 2 {
+		t.Errorf("hits = %d, want the whole library", len(decoded.Hits))
+	}
+	// The flags still have to work without a query in front of them, or "list my library,
+	// newest 3" is unsayable.
+	out.Reset()
+	if err := runDocsCommand(t.Context(), []string{"search", "--limit", "3"}, &out, fakeDocsFactory(svc)); err != nil {
+		t.Fatalf("blank query with a flag: %v", err)
+	}
+	if svc.searchLimit != 3 {
+		t.Errorf("limit = %d, want 3", svc.searchLimit)
+	}
+}
+
 func TestDocsSearchAcceptsDocumentedTrailingFlags(t *testing.T) {
 	svc := &fakeDocsService{
 		hits: []documents.DigestHit{
