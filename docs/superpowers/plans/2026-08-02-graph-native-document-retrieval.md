@@ -132,9 +132,40 @@ and the RLS we just closed. Do not move it.
 - [ ] Dimensions 768, cosine — same contract as memory. Do NOT introduce a second width.
 - [ ] The Postgres `documents.id` is the join key; a Section knows its document id.
 
-### 1.2 Sectioning
-- [ ] Split prose into sections at STRUCTURE where the format gives it (PDF outline,
-      docx headings, epub spine, html headings) and fall back to a size window with
+### 1.2 Sectioning — extract with markitdown, do not re-write a converter
+
+**Decision 2026-08-03: `markitdown-mcp` becomes the PROSE extractor for this phase.**
+Read before deciding: its README and `converters/_pdf_converter.py`.
+
+It exposes exactly ONE tool, `convert_to_markdown(uri)`, over stdio / streamable-HTTP /
+SSE, and ships converters for docx, pptx, xlsx, epub, html, csv, pdf, **plus formats we
+cannot read at all today: `.msg` (Outlook), `.ipynb`, RSS, YouTube, images (EXIF + OCR /
+LLM caption) and audio (EXIF + transcription)**. Structure-preserving markdown is exactly
+what sectioning wants, and writing a docx/pptx/epub full-text extractor per format is the
+wheel.
+
+Three boundaries, each from a measurement or from its own docs — do not cross them:
+
+1. **PDF stays on poppler.** markitdown's PDF path is pdfplumber/pdfminer.six, pure
+   Python, behind an HTTP round trip. The in-process `pdftotext` leg landed 2026-08-03
+   at ~90 ms per PDF and took inside-PDF recall 0/8 → 8/8. There is no measured gain to
+   trade that for. Revisit only with a number.
+2. **Tabular stays on the native reader.** markitdown renders a spreadsheet as a markdown
+   TABLE. Phase 4 needs cells and types landing in real Postgres columns; a markdown table
+   is the wrong shape and would have to be re-parsed.
+3. **It is NOT mounted as a model-visible MCP tool.** Its own README: no authentication,
+   runs with the server user's privileges, and `convert_to_markdown` "can be used to read
+   any file that the server's user has access to, or any data from the network". Exposed
+   to the agent that is an unbounded file-read and SSRF primitive. Call it from the ingest
+   path over `--http` on loopback, in a container mounting only the asset directory — the
+   shape the other sidecars already use.
+
+The card does NOT move to markitdown either. The card is a compact routing proxy, not a
+full conversion, and the study measured that a full flatten routes no better: 35% vs the
+card's 40% R@1 on 21 files, 0.917 vs 0.903 MRR on 465.
+
+- [ ] Split prose into sections at STRUCTURE where the format gives it — markitdown's
+      markdown headings are the structure signal — and fall back to a size window with
       overlap only where it does not.
 - [ ] A section carries: text, the document id, an ordinal, and the heading path.
       The heading path is what makes a passage citable ("Manual → §4.2 Calibration").
