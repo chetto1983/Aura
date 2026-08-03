@@ -244,6 +244,74 @@ results identical: True
 Not an approximation that is faster — **the same answer**. Nothing tabular exists in
 `internal/db/migrations` yet.
 
+### Ground truth on the real corpus, measured 2026-08-03 — READ BEFORE BUILDING
+
+The 1193 ms above is **400 separate files re-read per query**. On the actual baseline
+corpus it is six files, and open-and-compute costs:
+
+```
+Clienti.xlsx                5890 rows   full read 0.31 s
+Panduit Q.tà minime         7824 rows   full read 0.48 s
+```
+
+**So do not justify this phase with speed on the current corpus.** Sub-second is already
+usable for one question about one file. ETL earns its keep on three things instead, and
+the acceptance must test those: **joins across files**, **questions that must scan many
+files**, and **the same question asked repeatedly**.
+
+### The landing rate, simulated over every sheet
+
+Rule stated so it can be argued with: header = first non-empty row is ≥80% non-empty
+distinct strings; rectangular = ≥90% of body rows match the header width; typed = ≤20%
+mixed-type columns.
+
+| | count | |
+|---|---|---|
+| **sheets landing** | **6 / 18** | **33%** |
+| **rows landing** | **20,063 / 22,135** | **91%** |
+
+**Those two numbers disagree, and the disagreement is the design.** Two thirds of the
+*sheets* do not land — and they are a config pair-list, five engineering I/O bit-maps, a
+two-column lookup, a ragged multi-table sheet, and three empty tabs. They are small, and
+**nobody asks an aggregate about an I/O bit map.** The row mass, which is what an aggregate
+actually runs over, is 91% covered.
+
+The plan's earlier "~25% of files will not land" budget was counting the wrong unit. By
+sheet the miss is far worse (67%); by row it is far better (9%).
+
+Non-landing reasons, in full — each one is a real shape, not a parser bug:
+
+```
+Fornitori - Acquisitori   ragged 1386/1386 rows off-width; 10 mixed-type columns
+db gruppi merce           header 1/2 named          (a lookup table with no header)
+CONFIGURAZIONE            ragged 9/9 off-width      (key-value pairs, not a table)
+CTRL-STAT / System Bit /
+Data / Robot In / Robot Out   ragged + mixed        (merged cells, multi-row headers)
+Lista Fornitori Foglio1   header 0/2 named
+Progamma base ×3          empty
+```
+
+**One false positive to fix before trusting the rule:** `Codici Ledvance` LANDS, but its
+header row is actually data — `CODICE | OSR0 | 074503015514    20 | QT.` The rule sees
+four distinct non-empty strings and says clean. A header heuristic needs a type-shift test
+(header row is text where the body column is numeric), not just non-emptiness.
+
+### The proof — three arms, not two
+
+Ground truth: `Clienti.xlsx`, **699 clients in TORINO** out of 5,889 rows (verified
+2026-08-03; next four are GENOVA 243, ASTI 102, CUNEO 98, MILANO 97).
+
+1. **Landing rate** — the table above, re-run as a test, reported in BOTH units.
+2. **Landed arm** — the same question answered by SQL and by open-and-compute, results
+   **identical**, both timed. The questions must include a **join across sheets**
+   (`Abbinamento Fornitore` 4,087 × `Acquisitori` 21 × `Forn Z9 Attivi` 785), because a
+   single-file count is precisely where open-and-compute is already fine and SQL's win
+   looks unimpressive.
+3. **Not-landed arm** — a question answerable only by opening the file (e.g. which Robot
+   Output bit carries a given signal, from the I/O map), proving the fallback is a working
+   path and measuring what it costs. **If arm 3 is not tested, 67% of the sheets are
+   untested.**
+
 - [ ] Land rows into real Postgres tables at ingest, schema inferred per file.
 - [ ] **Budget for ~25% of files not landing.** Auto-Tables (Microsoft, VLDB) reaches
       ~75% top-3 on 244 real cases with no examples, and <3% of real spreadsheets have a
