@@ -1,25 +1,22 @@
 //go:build arcadedb_integration
 
-// The three legs fused by the database instead of by us.
+// The two production retrieval legs fused by the database instead of by us.
 //
 // Everything measured up to here ran the retrieval in Go: a BM25 index built in
 // process, brute-force cosine over vectors pulled into the client, and an
-// additive fusion whose weights I chose. ArcadeDB does all three natively, and
-// the hand-rolled version was measurably WORSE at combining them -- stacking the
-// graph entity boost additively on top of dense SUBTRACTED 2.3 points (74.8 to
-// 72.5), because two signals carrying the same information add twice.
+// additive fusion whose weights I chose. ArcadeDB performs both active legs
+// natively using reciprocal-rank fusion, which does not depend on score scale.
 //
 // vector.fuse is reciprocal-rank fusion, and RRF does not care about scale or
 // redundancy: a record's contribution is 1/(60+rank) per list it appears in.
 // Verified on the binary, since the docs only show it for vector results:
 // it is N-ary, it accepts ANY record lists (two plain SELECTs fuse fine), and
-// with three lists a record present in two scores 2/61 against 1/61 for one.
+// with two lists a record present in both scores 2/61 against 1/61 for one.
 //
-// So the three legs become three sub-selects of one statement:
+// The two legs become two sub-selects of one statement:
 //
 //	dense    vector.neighbors over an LSM_VECTOR HNSW index
 //	lexical  SEARCH_INDEX over the EnglishAnalyzer full-text index
-//	graph    the turns spaCy's query entities are MENTIONED_IN
 //
 // Run: go test -tags arcadedb_integration -run LocomoNative -v -timeout 60m ./internal/arcadedb/
 package arcadedb
@@ -122,8 +119,8 @@ func TestLocomoNativeIndexesEmbeddings(t *testing.T) {
 //
 // The dense leg over-fetches globally and narrows afterwards because a
 // LSM_VECTOR index spans the type, not a conversation, and `dia_id` is unique
-// only within one: D1:3 exists in all ten. The lexical and graph legs carry
-// their own conversation predicate.
+// only within one: D1:3 exists in all ten. The lexical leg carries its own
+// conversation predicate.
 const nativeFusedQuery = "SELECT dia_id, score FROM (SELECT expand(`vector.fuse`(" +
 	// dense
 	"(SELECT FROM (SELECT expand(`vector.neighbors`('LocomoTurn[embedding]', :qv, 600)))" +
@@ -131,23 +128,6 @@ const nativeFusedQuery = "SELECT dia_id, score FROM (SELECT expand(`vector.fuse`
 	// lexical
 	"(SELECT FROM LocomoTurn WHERE SEARCH_INDEX('LocomoTurn[text]', :q)" +
 	" AND conversation = :c LIMIT 60), " +
-	// graph: the turns the query's entities are mentioned in. OUT, not in: the
-	// edge runs (:LocomoEntity)-[:MENTIONED_IN]->(:LocomoTurn), so from the entity
-	// you leave. `in()` returns zero rows and no error, which made this leg an
-	// invisible no-op -- the tell was that adding it changed the score by exactly
-	// nothing at all three cutoffs.
-	// The conversation predicate goes OUTSIDE the expand, like the dense leg:
-	// filtering the entity instead only asks whether it appears in the
-	// conversation at all, and then hands back its turns from every other one too
-	// (264 rows of 266 survived that mistake).
-	// Mem0's hub penalty, expressed as a filter rather than a weight. RRF reads a
-	// list as a ranked opinion, and an unranked bag is a bad one: without this the
-	// leg contributed every turn mentioning a speaker -- measured degrees are
-	// Caroline 269, Melanie 264, against `sunrise` 2 -- and its diffuse 1/61 votes
-	// took R@1 from 40% to 0% on the smoke.
-	"(SELECT FROM (SELECT expand(out('MENTIONED_IN')) FROM LocomoEntity" +
-	" WHERE name IN :entities AND out('MENTIONED_IN').size() <= 15)" +
-	" WHERE conversation = :c LIMIT 20), " +
 	"{ fusion: 'RRF' }))) WHERE conversation = :c LIMIT 10"
 
 // nativeUnscopedQuery drops the `conversation = :c` predicate that every other
@@ -165,18 +145,7 @@ const nativeFusedQuery = "SELECT dia_id, score FROM (SELECT expand(`vector.fuse`
 const nativeUnscopedQuery = "SELECT id, score FROM (SELECT expand(`vector.fuse`(" +
 	"(SELECT expand(`vector.neighbors`('LocomoTurn[embedding]', :qv, 60))), " +
 	"(SELECT FROM LocomoTurn WHERE SEARCH_INDEX('LocomoTurn[text]', :q) LIMIT 60), " +
-	"(SELECT expand(out('MENTIONED_IN')) FROM LocomoEntity" +
-	" WHERE name IN :entities AND out('MENTIONED_IN').size() <= 15), " +
 	"{ fusion: 'RRF' }))) LIMIT 10"
-
-// nativeFusedNoGraph is the same statement without the graph leg, so the leg's
-// contribution is measured rather than assumed.
-const nativeFusedNoGraph = "SELECT dia_id, score FROM (SELECT expand(`vector.fuse`(" +
-	"(SELECT FROM (SELECT expand(`vector.neighbors`('LocomoTurn[embedding]', :qv, 600)))" +
-	" WHERE conversation = :c LIMIT 60), " +
-	"(SELECT FROM LocomoTurn WHERE SEARCH_INDEX('LocomoTurn[text]', :q)" +
-	" AND conversation = :c LIMIT 60), " +
-	"{ fusion: 'RRF' }))) WHERE conversation = :c LIMIT 10"
 
 func TestLocomoNativeFusedRecall(t *testing.T) {
 	client := documentClient(t)
@@ -194,8 +163,6 @@ func TestLocomoNativeFusedRecall(t *testing.T) {
 		Model:      envOr("AURA_EMBED_MODEL", "qwen3-embed"),
 		Dimensions: embedDimensions,
 	}
-	extractor := spacyOrSkip(t)
-
 	// AURA_LOCOMO_MAX_QUESTIONS smoke-tests the pipeline before a full run. A
 	// 1536-question pass costs four minutes; the last two defects here -- a graph
 	// leg traversing the edge backwards and a conversation filter applied to the
@@ -240,21 +207,16 @@ func TestLocomoNativeFusedRecall(t *testing.T) {
 		time.Since(embedStart).Round(time.Millisecond),
 		float64(time.Since(embedStart).Milliseconds())/float64(max(len(queue), 1)))
 
-	withGraph, withoutGraph, unscoped := &recallScore{}, &recallScore{}, &recallScore{}
+	scoped, unscoped := &recallScore{}, &recallScore{}
 	asked := 0
 	started := time.Now()
 	for i, item := range queue {
 		asked++
-		entities := extractor.Entities(item.question)
-		if len(entities) == 0 {
-			entities = []string{""}
-		}
 		params := map[string]any{
 			"qv": questionVectors[i], "q": escapeLucene(item.question),
-			"c": item.conversation, "entities": entities,
+			"c": item.conversation,
 		}
-		withGraph.add(nativeRank(t, client, nativeFusedQuery, params, item.evidence))
-		withoutGraph.add(nativeRank(t, client, nativeFusedNoGraph, params, item.evidence))
+		scoped.add(nativeRank(t, client, nativeFusedQuery, params, item.evidence))
 
 		// Unscoped: the evidence must be found among all 5882 turns, and the hit
 		// is checked on the global id so a D1:3 from another conversation cannot
@@ -266,7 +228,7 @@ func TestLocomoNativeFusedRecall(t *testing.T) {
 		unscoped.add(nativeRankBy(t, client, nativeUnscopedQuery, params, "id", global))
 	}
 
-	t.Logf("%d questions in %s (%.0f ms each, two queries + embedding)", asked,
+	t.Logf("%d questions in %s (%.0f ms each, scoped and unscoped queries + embedding)", asked,
 		time.Since(started).Round(time.Second),
 		float64(time.Since(started).Milliseconds())/float64(max(asked, 1)))
 	t.Logf("%-34s %8s %8s %8s", "native RRF fusion", "R@1", "R@5", "R@10")
@@ -274,15 +236,14 @@ func TestLocomoNativeFusedRecall(t *testing.T) {
 		name  string
 		score *recallScore
 	}{
-		{"scoped: dense + lexical", withoutGraph},
-		{"scoped: + graph (spaCy)", withGraph},
+		{"scoped: dense + lexical", scoped},
 		{"UNSCOPED: all 5882 turns", unscoped},
 	} {
 		t.Logf("%-34s %7.1f%% %7.1f%% %7.1f%%", row.name,
 			pct(row.score.hit1, row.score.asked), pct(row.score.hit5, row.score.asked),
 			pct(row.score.hit10, row.score.asked))
 	}
-	t.Logf("hand-rolled Go for comparison: additive dense+BM25 74.8, +entity 72.5")
+	t.Logf("hand-rolled Go for comparison: additive dense+BM25 74.8")
 }
 
 func nativeRank(

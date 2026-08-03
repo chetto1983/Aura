@@ -769,8 +769,8 @@ jobs:
         #
         #   TestLocomo*        need AURA_LOCOMO_DIR — the Backboard LOCOMO corpus (1986
         #                      questions), an external dataset that is not in the repo, plus
-        #                      hand-extracted facts, a spaCy worker inside the MCP image and
-        #                      60-minute timeouts. They are measurement runs that report
+        #                      hand-extracted facts, embedding models and 60-minute
+        #                      timeouts. They are measurement runs that report
         #                      recall@k, not pass/fail gates.
         #   TestMemoryVector*  need the llama.cpp embed sidecar, whose GGUF is a model
         #                      download the sidecar cannot fetch itself (it has no egress and

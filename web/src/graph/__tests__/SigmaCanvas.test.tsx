@@ -105,7 +105,7 @@ describe('SigmaCanvas (renderer mocked — no WebGL in jsdom)', () => {
     );
     const canvas = screen.getByRole('img');
     expect(canvas).toBeTruthy();
-    // graph.a11y.canvasName = "Evidence graph: {{nodeCount}} nodes, {{edgeCount}} connections"
+    // graph.a11y.canvasName = "Memory graph: {{nodeCount}} nodes, {{edgeCount}} connections"
     expect(canvas.getAttribute('aria-label')).toContain('2');
     expect(canvas.getAttribute('aria-label')).toContain('1');
   });

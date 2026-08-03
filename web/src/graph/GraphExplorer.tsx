@@ -3,15 +3,14 @@ import { CheckCircle2, Database, Network, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { fetchGraphSchema, postGraphQuery } from './graphApi';
 import {
-  DEFAULT_EDGE_CAP,
-  DEFAULT_NODE_CAP,
   initialIntentState,
   intentReducer,
+  mergeGraphResults,
   rowsToClientGraph,
   toClientIntent,
   type IntentState,
 } from './graphIntent';
-import { SeedFilterPanel } from './SeedFilterPanel';
+import { GraphControls } from './GraphControls';
 import { NodeInspector } from './NodeInspector';
 import { PathStrip } from './PathStrip';
 import type { GraphNode, GraphResult, GraphSchema } from './types';
@@ -21,14 +20,13 @@ import { Button } from '@/components/ui/button';
 
 // GraphExplorer is the lazy default export the AppShell mounts when surface==='graph' (its own
 // Vite chunk so the Sigma stack never lands in the main bundle — Pitfall 7). It is the
-// three-CSS-grid-column workspace shell (SeedFilterPanel | canvas | inspector) with the path
+// three-CSS-grid-column workspace shell (controls | canvas | inspector) with the path
 // strip below the canvas. It owns the intent/selection/path state (the plan-03 intentReducer)
 // and the `sigmaKey` counter (bumped on mount + inspector open/close to dodge the Sigma resize-
 // remount crash, Pitfall 1).
 //
-// State machine for the default open (D-07/D-08, carry-forward from plans 01/02): on mount with
-// a threadId it POSTs op:'seed'; an EMPTY result falls back to the schema overview (never a blank
-// canvas). A fetch that REJECTS with `HTTP 401` (expired/absent session) renders a VISIBLE auth-
+// On mount the authenticated identity's overview loads. An empty result falls back to the
+// schema readiness board, never a blank canvas. An HTTP 401 renders a visible auth-
 // error state — never a silent blank canvas (B3 / threat T-27-03). Any other rejection renders
 // the query/schema error state. SigmaCanvas + the parallel-DOM surface are imported lazily/in
 // Task 3; Task 2 slots a placeholder for the right pane + below-canvas surface.
@@ -39,10 +37,6 @@ import { Button } from '@/components/ui/button';
 const SigmaCanvas = lazy(() =>
   import('./SigmaCanvas').then((mod) => ({ default: mod.SigmaCanvas })),
 );
-
-export interface GraphExplorerProps {
-  readonly threadId: string;
-}
 
 type ViewStatus = 'loading' | 'populated' | 'empty' | 'error-query' | 'error-schema' | 'error-auth';
 
@@ -69,17 +63,15 @@ function resultIsEmpty(result: GraphResult): boolean {
 }
 
 function isCapped(result: GraphResult): boolean {
-  return result.nodes.length >= DEFAULT_NODE_CAP || result.edges.length >= DEFAULT_EDGE_CAP;
+  return result.truncated === true;
 }
 
 function EvidenceReadinessBoard({
   schema,
-  canSeed,
-  onSeed,
+  onRefresh,
 }: {
   readonly schema: GraphSchema | undefined;
-  readonly canSeed: boolean;
-  readonly onSeed: () => void;
+  readonly onRefresh: () => void;
 }) {
   const { t } = useTranslation();
   const labels = schema?.labels ?? [];
@@ -115,9 +107,9 @@ function EvidenceReadinessBoard({
             {t('graph.empty.body')}
           </p>
           <div className="mt-5 flex flex-wrap gap-2">
-            <Button type="button" onClick={onSeed} disabled={!canSeed} className="min-w-0">
+            <Button type="button" onClick={onRefresh} className="min-w-0">
               <span className="block min-w-0 overflow-wrap-anywhere">
-                {t('graph.cta.seedConversation')}
+                {t('graph.cta.refreshMemory')}
               </span>
             </Button>
           </div>
@@ -169,7 +161,7 @@ function EvidenceReadinessBoard({
   );
 }
 
-export default function GraphExplorer({ threadId }: GraphExplorerProps) {
+export default function GraphExplorer() {
   const { t } = useTranslation();
   const [intent, dispatch] = useReducer(intentReducer, undefined, initialIntentState);
   const [view, setView] = useState<ViewState>(INITIAL_VIEW);
@@ -177,7 +169,7 @@ export default function GraphExplorer({ threadId }: GraphExplorerProps) {
   const [pinnedPath, setPinnedPath] = useState<ReadonlySet<string>>(new Set());
   // sigmaKey starts at 1 so the first mount + every inspector open/close remounts cleanly.
   const [sigmaKey, setSigmaKey] = useState(1);
-  // Mobile-only: the seed/filter pane is a bottom sheet (canvas stays dominant). On lg it is
+  // Mobile-only: the control pane is a bottom sheet (canvas stays dominant). On lg it is
   // the permanent left column and this flag is inert.
   const [filtersOpen, setFiltersOpen] = useState(false);
 
@@ -194,19 +186,30 @@ export default function GraphExplorer({ threadId }: GraphExplorerProps) {
   }, []);
 
   const runIntent = useCallback(
-    async (state: IntentState) => {
+    async (state: IntentState, append = false) => {
       setView((prev) => ({ ...prev, status: 'loading' }));
       try {
         const result = await postGraphQuery(toClientIntent(state));
         if (resultIsEmpty(result)) {
+          if (append) {
+            setView((prev) => ({
+              ...prev,
+              status: prev.result === undefined ? 'empty' : 'populated',
+            }));
+            return;
+          }
           await loadSchemaOverview();
           return;
         }
-        setView({
-          status: 'populated',
-          result,
-          schema: result.schema,
-          capped: isCapped(result),
+        setView((prev) => {
+          const nextResult =
+            append && prev.result !== undefined ? mergeGraphResults(prev.result, result) : result;
+          return {
+            status: 'populated',
+            result: nextResult,
+            schema: nextResult.schema,
+            capped: isCapped(nextResult),
+          };
         });
       } catch (err) {
         if (isAuthError(err)) {
@@ -220,43 +223,50 @@ export default function GraphExplorer({ threadId }: GraphExplorerProps) {
     [loadSchemaOverview],
   );
 
-  // Default open: seed from the active thread, schema-overview fallback on empty.
+  // The graph is scoped only by the authenticated identity. Conversation state is
+  // deliberately absent from this component and cannot trigger or narrow a read.
   useEffect(() => {
-    const seed: IntentState = { ...initialIntentState(), session: threadId };
-    void runIntent(seed);
+    void runIntent(initialIntentState());
     setSelected(undefined);
     setPinnedPath(new Set());
     setSigmaKey((k) => k + 1);
-  }, [threadId, runIntent]);
+  }, [runIntent]);
 
-  const onSeed = useCallback(() => {
-    const next = intentReducer(intent, { kind: 'setSeed', session: threadId });
-    dispatch({ kind: 'setSeed', session: threadId });
+  const refreshGraph = useCallback(() => {
+    const next = intentReducer(intent, { kind: 'refresh' });
+    dispatch({ kind: 'refresh' });
     void runIntent(next);
-  }, [intent, threadId, runIntent]);
+  }, [intent, runIntent]);
 
   const onToggleLabel = useCallback(
     (label: string) => {
       const next = intentReducer(intent, { kind: 'toggleLabel', label });
-      const executable = next.op === 'seed' ? { ...next, session: threadId } : next;
       dispatch({ kind: 'toggleLabel', label });
-      void runIntent(executable);
+      void runIntent(next);
     },
-    [intent, runIntent, threadId],
+    [intent, runIntent],
   );
   const onToggleRelType = useCallback(
     (relType: string) => {
       const next = intentReducer(intent, { kind: 'toggleRelType', relType });
-      const executable = next.op === 'seed' ? { ...next, session: threadId } : next;
       dispatch({ kind: 'toggleRelType', relType });
-      void runIntent(executable);
+      void runIntent(next);
     },
-    [intent, runIntent, threadId],
+    [intent, runIntent],
   );
 
   const retry = useCallback(() => {
-    void runIntent({ ...intent, session: threadId });
-  }, [intent, threadId, runIntent]);
+    void runIntent(intent, intent.op === 'expand');
+  }, [intent, runIntent]);
+
+  const expandNode = useCallback(
+    (node: GraphNode) => {
+      const next = intentReducer(intent, { kind: 'expand', nodeId: node.id });
+      dispatch({ kind: 'expand', nodeId: node.id });
+      void runIntent(next, true);
+    },
+    [intent, runIntent],
+  );
 
   // Selecting a node (canvas click OR node-list Enter/tap — the non-hover access path, D-03)
   // opens the inspector and remounts sigma (Pitfall 1: inspector open/close bumps sigmaKey).
@@ -288,14 +298,13 @@ export default function GraphExplorer({ threadId }: GraphExplorerProps) {
     view.result !== undefined ? rowsToClientGraph(view.result) : { nodes: [], edges: [] };
   const inspectorOpen = selected !== undefined;
 
-  const seedPanel = (
-    <SeedFilterPanel
+  const controlPanel = (
+    <GraphControls
       schema={view.schema}
       activeLabels={intent.labels}
       activeRelTypes={intent.relTypes}
       query={view.result?.query ?? ''}
-      canSeed={threadId.length > 0}
-      onSeed={onSeed}
+      onRefresh={refreshGraph}
       onToggleLabel={onToggleLabel}
       onToggleRelType={onToggleRelType}
     />
@@ -329,11 +338,7 @@ export default function GraphExplorer({ threadId }: GraphExplorerProps) {
       </div>
     ) : view.status === 'empty' ? (
       <>
-        <EvidenceReadinessBoard
-          schema={view.schema}
-          canSeed={threadId.length > 0}
-          onSeed={onSeed}
-        />
+        <EvidenceReadinessBoard schema={view.schema} onRefresh={refreshGraph} />
         <div hidden className="grid h-full place-items-center p-8 text-center">
           <div className="flex max-w-sm flex-col items-center gap-3">
             <span aria-hidden="true" className="text-4xl leading-none text-accent-text opacity-70">
@@ -376,9 +381,9 @@ export default function GraphExplorer({ threadId }: GraphExplorerProps) {
     );
 
   // Mobile-first layout (the lg: grid is the desktop 3-pane). On mobile the canvas is the
-  // DOMINANT element (flex-1, real min-height — never the old crushed sliver); seed/filter is a
+  // DOMINANT element (flex-1, real min-height — never the old crushed sliver); controls are a
   // bottom sheet behind the toolbar, the evidence list is a capped scroll region below, and the
-  // inspector is a sheet that appears on selection. On lg it flips to seed | canvas | inspector
+  // inspector is a sheet that appears on selection. On lg it flips to controls | canvas | inspector
   // with the evidence strip under the canvas.
   return (
     <div className="graph-workspace-container h-full min-h-0">
@@ -390,17 +395,16 @@ export default function GraphExplorer({ threadId }: GraphExplorerProps) {
             : 'lg:grid-cols-[18rem_minmax(0,1fr)]'
         }`}
       >
-        {/* MOBILE control bar — keeps the canvas dominant; Seed + Filters live here, not in an
+        {/* MOBILE control bar — keeps the canvas dominant; refresh + filters live here, not in an
           always-on top strip. */}
         <div className="graph-workspace__mobile-bar flex shrink-0 items-center gap-2 border-b border-border bg-surface px-3 py-2 lg:hidden">
           <Button
             type="button"
-            onClick={onSeed}
-            disabled={threadId.length === 0}
+            onClick={refreshGraph}
             className="h-auto min-h-[44px] min-w-0 flex-1 px-3 py-2 text-[14px]"
           >
             <span className="block min-w-0 overflow-wrap-anywhere">
-              {t('graph.cta.seedConversation')}
+              {t('graph.cta.refreshMemory')}
             </span>
           </Button>
           <Button
@@ -418,7 +422,7 @@ export default function GraphExplorer({ threadId }: GraphExplorerProps) {
           </Button>
         </div>
 
-        {/* SEED / FILTER — desktop left column; mobile bottom sheet (filtersOpen). ONE instance. */}
+        {/* CONTROLS — desktop left column; mobile bottom sheet (filtersOpen). ONE instance. */}
         <aside
           aria-label={t('graph.filter.labels')}
           data-open={filtersOpen ? 'true' : 'false'}
@@ -445,7 +449,7 @@ export default function GraphExplorer({ threadId }: GraphExplorerProps) {
               <X data-icon aria-hidden="true" />
             </Button>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto">{seedPanel}</div>
+          <div className="min-h-0 flex-1 overflow-y-auto">{controlPanel}</div>
         </aside>
 
         {/* CANVAS — the dominant element. Mobile: flex-1 with a real min-height. Desktop: center cell. */}
@@ -470,6 +474,7 @@ export default function GraphExplorer({ threadId }: GraphExplorerProps) {
           <NodeInspector
             node={selected}
             query={view.result?.query ?? ''}
+            onExpand={expandNode}
             onPinPath={pinPath}
             onClose={closeInspector}
           />

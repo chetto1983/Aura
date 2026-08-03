@@ -1,7 +1,4 @@
-// serve_graph_schema.go builds the cockpit's graph view over ArcadeDB.
-//
-// The view is schema-only — one identity's type catalogue, not a drawable canvas (see
-// agui.ArcadeGraphView). It needs no subprocess, no boot-time handle, nothing to close.
+// serve_graph_schema.go builds the cockpit's tenant-scoped graph view over ArcadeDB.
 package main
 
 import (
@@ -15,25 +12,23 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 )
 
-// arcadeTenantSchema reads ONE identity's type catalogue through that identity's own
-// derived credential — the same database name and the same derived password the memory
-// sidecar provisions with (internal/arcadedb/tenant.go). The server refuses a credential
-// scoped elsewhere, so the cockpit cannot read another person's memory shape even if this
-// code were handed the wrong identity.
+// arcadeTenantGraph reads ONE identity's catalogue and graph through that
+// identity's own derived credential: the same database name and password the
+// memory sidecar provisions with (internal/arcadedb/tenant.go). The server
+// refuses a credential scoped elsewhere.
 //
-// It caches nothing. arcadedb.New performs no I/O and the http.Client it builds uses the
-// shared default transport, so a per-request client costs an allocation and reuses the
-// pooled connection — cheaper than the invalidation rules a cache keyed by identity would
-// need once a database is dropped by de-provisioning.
-type arcadeTenantSchema struct {
+// It caches nothing. arcadedb.New performs no I/O and its http.Client uses the
+// shared default transport, so requests reuse pooled connections without a
+// credential-bearing client cache that would need de-provisioning rules.
+type arcadeTenantGraph struct {
 	base        arcadedb.Config
 	credentials *arcadedb.TenantCredentials
 }
 
-func (a arcadeTenantSchema) Schema(ctx context.Context, identityID string) (arcadedb.Schema, error) {
+func (a arcadeTenantGraph) client(identityID string) (*arcadedb.Client, error) {
 	database, err := arcadedb.DatabaseFor(identityID)
 	if err != nil {
-		return arcadedb.Schema{}, fmt.Errorf("memory schema: %w", err)
+		return nil, fmt.Errorf("memory graph: %w", err)
 	}
 	cfg := a.base
 	cfg.Database = database
@@ -41,15 +36,36 @@ func (a arcadeTenantSchema) Schema(ctx context.Context, identityID string) (arca
 	cfg.Password = a.credentials.PasswordFor(database)
 	client, err := arcadedb.New(cfg)
 	if err != nil {
-		return arcadedb.Schema{}, fmt.Errorf("memory schema: %w", err)
+		return nil, fmt.Errorf("memory graph: %w", err)
+	}
+	return client, nil
+}
+
+func (a arcadeTenantGraph) Schema(ctx context.Context, identityID string) (arcadedb.Schema, error) {
+	client, err := a.client(identityID)
+	if err != nil {
+		return arcadedb.Schema{}, err
 	}
 	return client.Schema(ctx)
 }
 
-// buildArcadeGraphView wires the graph view, or returns nil when the memory server or the
-// tenant derivation secret is not configured. Nil leaves both /api/graph/* routes at 503,
-// which is the same best-effort contract the previous graph client had: a cockpit panel
-// that cannot answer is not a reason to refuse to boot.
+func (a arcadeTenantGraph) QueryGraph(
+	ctx context.Context,
+	identityID string,
+	statement string,
+	params map[string]any,
+	limit int,
+) (arcadedb.StudioGraph, error) {
+	client, err := a.client(identityID)
+	if err != nil {
+		return arcadedb.StudioGraph{}, err
+	}
+	return client.QueryStudioGraph(ctx, statement, params, limit)
+}
+
+// buildArcadeGraphView wires the graph view, or returns nil when the memory
+// server or tenant derivation secret is not configured. Nil keeps both routes at
+// their existing best-effort 503 contract instead of refusing to boot Aura.
 func buildArcadeGraphView(cfg *config.Config) agui.GraphView {
 	if cfg == nil || strings.TrimSpace(cfg.ArcadeDB.BaseURL) == "" {
 		slog.Warn("aura serve: no ArcadeDB server configured — graph explorer unavailable")
@@ -60,8 +76,8 @@ func buildArcadeGraphView(cfg *config.Config) agui.GraphView {
 		slog.Warn("aura serve: no ArcadeDB tenant secret — graph explorer unavailable", "error", err)
 		return nil
 	}
-	// Database is left unset here on purpose: it is the per-identity one, chosen per
-	// request. A default sitting in the base config is a default something could use.
+	// Database is deliberately unset: the authenticated identity selects it on
+	// every request. A default here would create an unsafe fallback.
 	base := arcadedb.Config{BaseURL: cfg.ArcadeDB.BaseURL}
-	return agui.NewArcadeGraphView(arcadeTenantSchema{base: base, credentials: credentials})
+	return agui.NewArcadeGraphView(arcadeTenantGraph{base: base, credentials: credentials})
 }

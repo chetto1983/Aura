@@ -139,7 +139,7 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"aura-arcadedb:/home/arcadedb/databases",
 		"arcadedb-mcp:",
 		"127.0.0.1:8096:8096",
-		"urllib.request.urlopen('http://127.0.0.1:8096/health', timeout=3)",
+		`test: ["CMD", "wget", "--spider", "-q", "-T", "3", "http://127.0.0.1:8096/health"]`,
 	} {
 		if !strings.Contains(compose, want) {
 			t.Fatalf("compose.yaml missing %q", want)
@@ -315,6 +315,28 @@ func TestRetiredMCPPythonRuntimeStaysOutAndCoverageIsReproducible(t *testing.T) 
 	goTest := regexp.MustCompile(`(?s)go test .*?-count=1 .*?-covermode=atomic`)
 	if !goTest.MatchString(coverageGate) {
 		t.Error("scripts/coverage_gate.sh must force -count=1 before accepting integration coverage")
+	}
+}
+
+func TestArcadeDBMCPImageStaysGoOnly(t *testing.T) {
+	root := repoRootForTest(t)
+	dockerfile := readProjectFile(t, root, "docker/arcadedb-mcp/Dockerfile")
+	if !strings.Contains(dockerfile, "FROM alpine:3.22") {
+		t.Fatalf("ArcadeDB MCP runtime must stay on the minimal Alpine image:\n%s", dockerfile)
+	}
+	for _, banned := range []string{"FROM python:", "pip install", "spacy", "spacy_worker"} {
+		if strings.Contains(strings.ToLower(dockerfile), strings.ToLower(banned)) {
+			t.Fatalf("ArcadeDB MCP runtime reinstates retired dependency %q:\n%s", banned, dockerfile)
+		}
+	}
+	for _, rel := range []string{
+		"docker/arcadedb-mcp/spacy_worker.py",
+		"internal/arcadedb/entities.go",
+		"internal/arcadedb/entities_spacy.go",
+	} {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel))); !os.IsNotExist(err) {
+			t.Fatalf("retired ArcadeDB extraction module %s must stay absent, stat err=%v", rel, err)
+		}
 	}
 }
 

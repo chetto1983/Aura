@@ -276,7 +276,8 @@ PIM sidecar — its send/search email tools subsume mail-mcp.
 
 Two stores. Postgres is the system of record, reached through thin per-domain adapters
 (`Store{q}`) over generated sqlc with SQLSTATE-classified errors and pgtype boundary
-conversion; ArcadeDB holds long-term memory and is reached only over MCP.
+conversion; ArcadeDB holds long-term memory. Agent operations reach it through MCP, while
+the authenticated cockpit graph uses a narrow, read-only HTTP query adapter.
 
 - **Postgres** (`internal/db`, `internal/db/sqlc`) — pgxpool + golang-migrate, a
   two-role split (`aura_app` runtime vs `aura_migrate` DDL), the `aura.*` schema, and a
@@ -308,7 +309,10 @@ conversion; ArcadeDB holds long-term memory and is reached only over MCP.
   over EmbeddingGemma-300M, which exists because a question asked in Italian cannot reach a
   fact written in English by lexical match alone. The LLM-facing interface is Aura's own
   `cmd/arcadedb-mcp` sidecar over Streamable-HTTP (`memory_*` + `graph_schema`); the Go
-  package is the HTTP client behind it. There are no graph
+  package is the HTTP client behind it. The cockpit graph uses the same tenant credential
+  and database boundary, asks the read-only query endpoint for `serializer: "studio"`, and
+  compiles only capped overview or direct RID-neighbor intents — never arbitrary SQL,
+  writes, or server administration. There are no graph
   migrations — `EnsureMemorySchema` is idempotent DDL run at connect, and it doubles as the
   per-identity database's existence probe.
 - **`objectstore`** — the S3/filesystem blob seam with per-identity prefixes

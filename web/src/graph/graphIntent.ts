@@ -8,11 +8,11 @@ import {
   type GraphResult,
   type GraphSchema,
   OP_EXPAND,
-  OP_SEED,
+  OP_OVERVIEW,
 } from './types';
 
 // graphIntent.ts is the PURE, jsdom-testable core of the graph workspace: the intent
-// reducer (seed/expand/filter toggles), the active-filter dim/exclude logic, the
+// reducer (overview/expand/filter transitions), the active-filter dim/exclude logic, the
 // schema-driven label-family color mapper (D-02), and the contract→graphology-ready
 // projection. It imports NO sigma/@react-sigma/graphology (jsdom has no WebGL — the
 // renderer is imported only by SigmaCanvas in plan 04, Pitfall 4). Keeping the logic
@@ -216,21 +216,18 @@ function toggleMember(set: ReadonlySet<string>, member: string): Set<string> {
  * one source of truth; toClientIntent projects it back to the POST body. */
 export interface IntentState {
   readonly op: GraphIntent['op'];
-  readonly seedId: string;
-  readonly session: string;
+  readonly nodeID: string;
   readonly labels: ReadonlySet<string>;
   readonly relTypes: ReadonlySet<string>;
   readonly nodeCap: number;
   readonly edgeCap: number;
 }
 
-/** initialIntentState is the default open: a schema-overview-shaped empty seed with the
- * default caps (D-08 — the default open is never blank, the seed falls back server-side). */
+/** initialIntentState opens the authenticated identity's complete bounded overview. */
 export function initialIntentState(): IntentState {
   return {
-    op: OP_SEED,
-    seedId: '',
-    session: '',
+    op: OP_OVERVIEW,
+    nodeID: '',
     labels: new Set<string>(),
     relTypes: new Set<string>(),
     nodeCap: DEFAULT_NODE_CAP,
@@ -239,27 +236,36 @@ export function initialIntentState(): IntentState {
 }
 
 export type IntentAction =
-  | { readonly kind: 'setSeed'; readonly session: string }
+  | { readonly kind: 'refresh' }
   | { readonly kind: 'expand'; readonly nodeId: string }
   | { readonly kind: 'toggleLabel'; readonly label: string }
   | { readonly kind: 'toggleRelType'; readonly relType: string };
 
 /**
- * intentReducer is the pure state transition for the workspace: setSeed(session) →
- * op 'seed' for the active conversation footprint; expand(nodeId) → op 'expand' with
- * seed_id set; toggling a label/rel-type updates the active filter sets. Caps default to
- * 75/200 and are preserved across transitions.
+ * intentReducer is the pure state transition for the workspace: refresh returns to
+ * the per-identity overview; expand(nodeId) selects a RID; filters always trigger a
+ * fresh overview. Caps default to 75/200 and survive every transition.
  */
 export function intentReducer(state: IntentState, action: IntentAction): IntentState {
   switch (action.kind) {
-    case 'setSeed':
-      return { ...state, op: OP_SEED, session: action.session, seedId: '' };
+    case 'refresh':
+      return { ...state, op: OP_OVERVIEW, nodeID: '' };
     case 'expand':
-      return { ...state, op: OP_EXPAND, seedId: action.nodeId };
+      return { ...state, op: OP_EXPAND, nodeID: action.nodeId };
     case 'toggleLabel':
-      return { ...state, labels: toggleMember(state.labels, action.label) };
+      return {
+        ...state,
+        op: OP_OVERVIEW,
+        nodeID: '',
+        labels: toggleMember(state.labels, action.label),
+      };
     case 'toggleRelType':
-      return { ...state, relTypes: toggleMember(state.relTypes, action.relType) };
+      return {
+        ...state,
+        op: OP_OVERVIEW,
+        nodeID: '',
+        relTypes: toggleMember(state.relTypes, action.relType),
+      };
   }
 }
 
@@ -268,12 +274,40 @@ export function intentReducer(state: IntentState, action: IntentAction): IntentS
 export function toClientIntent(state: IntentState): GraphIntent {
   return {
     op: state.op,
-    seed_id: state.seedId,
-    session: state.session,
+    ...(state.nodeID ? { node_id: state.nodeID } : {}),
     labels: [...state.labels].sort(),
     rel_types: [...state.relTypes].sort(),
     node_cap: state.nodeCap,
     edge_cap: state.edgeCap,
+  };
+}
+
+/** mergeGraphResults applies ArcadeDB Studio's incremental exploration rule:
+ * preserve the current graph, append unseen record IDs, and let the latest read
+ * supply schema/query/truncation metadata. */
+export function mergeGraphResults(current: GraphResult, incoming: GraphResult): GraphResult {
+  const nodeIDs = new Set(current.nodes.map((node) => node.id));
+  const edgeIDs = new Set(current.edges.map((edge) => edge.id));
+  const nodes = [...current.nodes];
+  for (const node of incoming.nodes) {
+    if (nodeIDs.has(node.id)) continue;
+    nodeIDs.add(node.id);
+    nodes.push(node);
+  }
+  const edges = [...current.edges];
+  for (const edge of incoming.edges) {
+    if (edgeIDs.has(edge.id)) continue;
+    edgeIDs.add(edge.id);
+    edges.push(edge);
+  }
+  const paths = incoming.paths ?? current.paths;
+  return {
+    nodes,
+    edges,
+    ...(paths !== undefined ? { paths } : {}),
+    schema: incoming.schema,
+    query: incoming.query,
+    truncated: current.truncated === true || incoming.truncated === true,
   };
 }
 
@@ -294,6 +328,11 @@ export function nodeDisplayName(node: {
   if (caption.length > 0) return caption;
   const label = primaryLabel(node.labels ?? []);
   return label.length > 0 ? label : node.id;
+}
+
+export function edgeDisplayName(edge: GraphEdge): string {
+  const caption = edge.caption?.trim();
+  return caption !== undefined && caption.length > 0 ? caption : (edge.rel_type ?? '');
 }
 
 /** degreeToSize maps a node's degree to a Sigma node radius — the NON-color channel that
@@ -336,7 +375,7 @@ export function rowsToClientGraph(result: GraphResult): ClientGraph {
       id: edge.id,
       source: edge.source,
       target: edge.target,
-      label: edge.rel_type ?? '',
+      label: edgeDisplayName(edge),
     });
   }
   return { nodes, edges };

@@ -1,7 +1,7 @@
 import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { GraphEdge, GraphNode } from './types';
-import { nodeDisplayName } from './graphIntent';
+import { edgeDisplayName, nodeDisplayName } from './graphIntent';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -120,7 +120,7 @@ export function PathStrip({ nodes, edges, pinnedPath, onSelectNode }: PathStripP
             >
               <span className="text-text">{captionById.get(edge.source) ?? edge.source}</span>
               <Badge variant="secondary" className="font-medium text-accent-text">
-                {edge.rel_type ?? ''}
+                {edgeDisplayName(edge)}
               </Badge>
               <span aria-hidden="true" className="text-text-muted">
                 →

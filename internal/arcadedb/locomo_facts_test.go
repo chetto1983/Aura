@@ -145,7 +145,19 @@ func TestLocomoFactsVersusTurns(t *testing.T) {
 		factDocs = append(factDocs, factDocument(fact))
 	}
 	factIndex := bm25.New(factDocs)
-	turnIndexes := buildConversationIndexes(t, client, 1)
+	turnRows, err := client.Query(ctx,
+		"SELECT dia_id, text FROM "+locomoEnglishType+
+			" WHERE conversation = :c LIMIT 5000", map[string]any{"c": "locomo-1"})
+	if err != nil {
+		t.Fatalf("read locomo-1 turns: %v", err)
+	}
+	turnIDs := make([]string, 0, len(turnRows))
+	turnDocs := make([]string, 0, len(turnRows))
+	for _, row := range turnRows {
+		turnIDs = append(turnIDs, rowString(row, "dia_id"))
+		turnDocs = append(turnDocs, rowString(row, "text"))
+	}
+	turnIndex := bm25.New(turnDocs)
 
 	questions := 0
 	turnScore, factScore := &recallScore{}, &recallScore{}
@@ -158,16 +170,13 @@ func TestLocomoFactsVersusTurns(t *testing.T) {
 		}
 		questions++
 
-		// Raw turns: the pipeline as it stands, BM25-rescored.
-		lexical := lexicalCandidates(ctx, client, qa.Question, "locomo-1")
-		lexical = turnIndexes["locomo-1"].rescore(qa.Question, lexical)
-		ranked := fuse(lexical, nil, false)
+		// Raw turns: the same in-process BM25 ranker used for the fact corpus.
 		rank := -1
-		for position, entry := range ranked {
+		for position, hit := range turnIndex.Rank(qa.Question) {
 			if position >= 10 {
 				break
 			}
-			if slices.Contains(qa.Evidence, entry.diaID) {
+			if slices.Contains(qa.Evidence, turnIDs[hit.Doc]) {
 				rank = position
 				break
 			}
@@ -213,7 +222,7 @@ func TestLocomoFactsVersusTurns(t *testing.T) {
 	}
 
 	t.Logf("conversation 1: %d scorable questions, %d turns vs %d facts, %s",
-		questions, len(turnIndexes["locomo-1"].corpus), len(facts),
+		questions, len(turnDocs), len(facts),
 		time.Since(turnStart).Round(time.Millisecond))
 	t.Logf("%-24s %8s %8s %8s", "corpus", "R@1", "R@5", "R@10")
 	t.Logf("%-24s %7.1f%% %7.1f%% %7.1f%%", "raw turns (BM25)",

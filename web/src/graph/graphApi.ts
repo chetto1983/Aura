@@ -10,7 +10,7 @@ import type { GraphIntent, GraphResult, GraphSchema } from './types';
 // TanStack Query error path so an expired session surfaces a visible auth-error state,
 // never a silent blank canvas (requirement B3 / threat T-27-03).
 //
-// The client authors NO Cypher and builds NO Cypher string — it sends the structured
+// The client authors no database query — it sends the structured
 // GraphIntent ONLY (D-05). There is NO sigma/graphology/@react-sigma import here.
 
 export const GRAPH_SCHEMA_PATH = '/api/graph/schema';
@@ -23,7 +23,7 @@ export function fetchGraphSchema(): Promise<GraphSchema> {
   return getJSON<GraphSchema>(GRAPH_SCHEMA_PATH);
 }
 
-/** POST /api/graph/query — dispatch a STRUCTURED GraphIntent (never raw Cypher, D-05)
+/** POST /api/graph/query — dispatch a STRUCTURED GraphIntent (never raw SQL, D-05)
  * and parse the flat {nodes,edges,paths,schema,query} contract. Rejects on a non-200
  * (incl. 401) so the consumer surfaces the auth/error state (B3 / T-27-03). */
 export function postGraphQuery(intent: GraphIntent): Promise<GraphResult> {

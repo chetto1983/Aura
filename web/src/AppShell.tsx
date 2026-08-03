@@ -377,7 +377,7 @@ export function AppShell() {
           }
         >
           {surface === 'graph' ? (
-            <GraphExplorer threadId={activeThreadId} />
+            <GraphExplorer />
           ) : surface === 'governance' ? (
             <GovernanceWorkspace />
           ) : surface === 'documents' ? (

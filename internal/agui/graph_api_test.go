@@ -125,7 +125,7 @@ func TestGraphSchemaErrorSanitized(t *testing.T) {
 // contract JSON.
 func TestGraphQueryOK(t *testing.T) {
 	gv := fakeGraph()
-	body, _ := json.Marshal(GraphIntent{Op: OpSeed, Session: "thread-1"})
+	body, _ := json.Marshal(GraphIntent{Op: OpOverview})
 	rec := doGraph(t, graphServer(gv), http.MethodPost, "/api/graph/query", body)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
@@ -143,14 +143,14 @@ func TestGraphQueryOK(t *testing.T) {
 	if got.Query == "" {
 		t.Fatalf("expected the display query to round-trip")
 	}
-	if gv.gotIntent.Op != OpSeed || gv.gotIntent.Session != "thread-1" {
+	if gv.gotIntent.Op != OpOverview {
 		t.Fatalf("normalizer got intent %+v", gv.gotIntent)
 	}
 }
 
 // TestGraphQueryUnwired503: POST /api/graph/query with no GraphView wired is 503.
 func TestGraphQueryUnwired503(t *testing.T) {
-	body, _ := json.Marshal(GraphIntent{Op: OpSchemaOverview})
+	body, _ := json.Marshal(GraphIntent{Op: OpOverview})
 	rec := doGraph(t, graphServer(nil), http.MethodPost, "/api/graph/query", body)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503", rec.Code)
@@ -178,10 +178,29 @@ func TestGraphQueryUnknownOp(t *testing.T) {
 	}
 }
 
+func TestGraphQueryRejectsRemovedContractShapes(t *testing.T) {
+	for _, body := range []string{
+		`{"op":"seed"}`,
+		`{"op":"schema_overview"}`,
+		`{"op":"overview","seed_id":"#1:0"}`,
+		`{"op":"overview","session":"thread-1"}`,
+		`{"op":"overview","node_id":"#1:0"}`,
+	} {
+		gv := fakeGraph()
+		rec := doGraph(t, graphServer(gv), http.MethodPost, "/api/graph/query", []byte(body))
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("body %s: status = %d, want 400", body, rec.Code)
+		}
+		if gv.schemaCalls != 0 || gv.queryReached {
+			t.Fatalf("removed request caused graph I/O: schema=%d query=%v", gv.schemaCalls, gv.queryReached)
+		}
+	}
+}
+
 // TestGraphQueryNegativeCap: a negative cap is rejected 400 before dispatch (V5).
 func TestGraphQueryNegativeCap(t *testing.T) {
 	gv := fakeGraph()
-	body := []byte(`{"op":"seed","node_cap":-5}`)
+	body := []byte(`{"op":"overview","node_cap":-5}`)
 	rec := doGraph(t, graphServer(gv), http.MethodPost, "/api/graph/query", body)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
@@ -191,11 +210,23 @@ func TestGraphQueryNegativeCap(t *testing.T) {
 	}
 }
 
+func TestGraphQueryInvalidArcadeRIDIsRejectedBeforeSchemaIO(t *testing.T) {
+	gv := fakeGraph()
+	body := []byte(`{"op":"expand","node_id":"#1:0; DELETE FROM Entity","labels":["Entity"]}`)
+	rec := doGraph(t, graphServer(gv), http.MethodPost, "/api/graph/query", body)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+	if gv.schemaCalls != 0 || gv.queryReached {
+		t.Fatalf("unsafe RID caused graph I/O: schema=%d query=%v", gv.schemaCalls, gv.queryReached)
+	}
+}
+
 // TestGraphQueryUnknownLabelFilter: a label absent from the live schema set is a 400
 // (validated against Schema before dispatch, V5), and the normalizer's Query is not reached.
 func TestGraphQueryUnknownLabelFilter(t *testing.T) {
 	gv := fakeGraph()
-	body := []byte(`{"op":"expand","seed_id":"e1","labels":["NotARealLabel"]}`)
+	body := []byte(`{"op":"expand","node_id":"#1:0","labels":["NotARealLabel"]}`)
 	rec := doGraph(t, graphServer(gv), http.MethodPost, "/api/graph/query", body)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
@@ -209,7 +240,7 @@ func TestGraphQueryUnknownLabelFilter(t *testing.T) {
 // and the intent reaches the normalizer with the filter intact.
 func TestGraphQueryKnownLabelFilter(t *testing.T) {
 	gv := fakeGraph()
-	body := []byte(`{"op":"expand","seed_id":"e1","labels":["Entity"],"rel_types":["MENTIONS"]}`)
+	body := []byte(`{"op":"expand","node_id":"#1:0","labels":["Entity"],"rel_types":["MENTIONS"]}`)
 	rec := doGraph(t, graphServer(gv), http.MethodPost, "/api/graph/query", body)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
@@ -223,7 +254,7 @@ func TestGraphQueryKnownLabelFilter(t *testing.T) {
 func TestGraphQueryOverCap413(t *testing.T) {
 	gv := fakeGraph()
 	// Build a body larger than maxRunBodyBytes (1 MiB) with valid-prefix JSON padding.
-	big := append([]byte(`{"op":"seed","session":"`), bytes.Repeat([]byte("a"), maxRunBodyBytes+16)...)
+	big := append([]byte(`{"op":"overview","padding":"`), bytes.Repeat([]byte("a"), maxRunBodyBytes+16)...)
 	big = append(big, []byte(`"}`)...)
 	rec := doGraph(t, graphServer(gv), http.MethodPost, "/api/graph/query", big)
 	if rec.Code == http.StatusOK {
@@ -239,7 +270,7 @@ func TestGraphQueryOverCap413(t *testing.T) {
 func TestGraphQueryErrorSanitized(t *testing.T) {
 	gv := fakeGraph()
 	gv.queryErr = errors.New("read failed at http://mem_tenant:hunter2@arcadedb:2480")
-	body, _ := json.Marshal(GraphIntent{Op: OpSeed, Session: "t"})
+	body, _ := json.Marshal(GraphIntent{Op: OpOverview})
 	rec := doGraph(t, graphServer(gv), http.MethodPost, "/api/graph/query", body)
 	if rec.Code == http.StatusOK {
 		t.Fatalf("status = %d, want non-200", rec.Code)
@@ -253,7 +284,7 @@ func TestGraphQueryErrorSanitized(t *testing.T) {
 // over-long ids, over-long filter tokens, too many filter entries, and a too-large rel-type
 // token. Each is a clean 400 BEFORE the normalizer is reached.
 func TestGraphQueryValidationBranches(t *testing.T) {
-	longID := strings.Repeat("x", graphSeedIDMaxLen+1)
+	longID := strings.Repeat("x", graphNodeIDMaxLen+1)
 	longTok := strings.Repeat("L", graphFilterMaxLen+1)
 	manyLabels := make([]string, graphFilterMaxEntries+1)
 	for i := range manyLabels {
@@ -263,11 +294,10 @@ func TestGraphQueryValidationBranches(t *testing.T) {
 		name   string
 		intent GraphIntent
 	}{
-		{"seed_id too long", GraphIntent{Op: OpExpand, SeedID: longID}},
-		{"session too long", GraphIntent{Op: OpSeed, Session: longID}},
-		{"too many label filters", GraphIntent{Op: OpExpand, SeedID: "e1", Labels: manyLabels}},
-		{"label token too long", GraphIntent{Op: OpExpand, SeedID: "e1", Labels: []string{longTok}}},
-		{"rel-type token too long", GraphIntent{Op: OpExpand, SeedID: "e1", RelTypes: []string{longTok}}},
+		{"node_id too long", GraphIntent{Op: OpExpand, NodeID: longID}},
+		{"too many label filters", GraphIntent{Op: OpExpand, NodeID: "#1:0", Labels: manyLabels}},
+		{"label token too long", GraphIntent{Op: OpExpand, NodeID: "#1:0", Labels: []string{longTok}}},
+		{"rel-type token too long", GraphIntent{Op: OpExpand, NodeID: "#1:0", RelTypes: []string{longTok}}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -289,7 +319,7 @@ func TestGraphQueryValidationBranches(t *testing.T) {
 // trivial subset (no filter to check).
 func TestGraphQueryLabelsOnlyFilter(t *testing.T) {
 	gv := fakeGraph()
-	body := []byte(`{"op":"expand","seed_id":"e1","labels":["Document"]}`)
+	body := []byte(`{"op":"expand","node_id":"#1:0","labels":["Document"]}`)
 	rec := doGraph(t, graphServer(gv), http.MethodPost, "/api/graph/query", body)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
@@ -305,7 +335,7 @@ func TestGraphQueryLabelsOnlyFilter(t *testing.T) {
 func TestGraphQueryFilterSchemaError(t *testing.T) {
 	gv := fakeGraph()
 	gv.schemaErr = errors.New("schema read failed at http://mem_tenant:topsecret@arcadedb:2480")
-	body := []byte(`{"op":"expand","seed_id":"e1","labels":["Entity"]}`)
+	body := []byte(`{"op":"expand","node_id":"#1:0","labels":["Entity"]}`)
 	rec := doGraph(t, graphServer(gv), http.MethodPost, "/api/graph/query", body)
 	if rec.Code == http.StatusOK {
 		t.Fatalf("status = %d, want non-200 when the filter-schema read fails", rec.Code)
@@ -345,7 +375,7 @@ func TestGraphQueryInjectsAuthenticatedPrincipal(t *testing.T) {
 	gv := fakeGraph()
 	s := graphServer(gv)
 	gated := RequireAuth(s.Mux(), deps)
-	body, _ := json.Marshal(GraphIntent{Op: OpSeed, Session: "thread-1"})
+	body, _ := json.Marshal(GraphIntent{Op: OpOverview})
 
 	rec := httptest.NewRecorder()
 	gated.ServeHTTP(rec, validCookiePost(deps, "/api/graph/query", body))
@@ -387,7 +417,7 @@ func TestGraphQueryFilterValidationScopesToAuthenticatedIdentity(t *testing.T) {
 	deps := testDeps("operator-secret")
 	gv := fakeGraph()
 	gated := RequireAuth(graphServer(gv).Mux(), deps)
-	body := []byte(`{"op":"expand","seed_id":"e1","labels":["Entity"]}`)
+	body := []byte(`{"op":"expand","node_id":"#1:0","labels":["Entity"]}`)
 
 	rec := httptest.NewRecorder()
 	gated.ServeHTTP(rec, validCookiePost(deps, "/api/graph/query", body))
@@ -426,7 +456,7 @@ func TestGraphRequireAuthGate(t *testing.T) {
 	})
 
 	t.Run("unauthenticated query POST rejected 401", func(t *testing.T) {
-		body, _ := json.Marshal(GraphIntent{Op: OpSchemaOverview})
+		body, _ := json.Marshal(GraphIntent{Op: OpOverview})
 		req := httptest.NewRequest(http.MethodPost, "/api/graph/query", bytes.NewReader(body))
 		rec := httptest.NewRecorder()
 		gated.ServeHTTP(rec, req)
@@ -450,7 +480,7 @@ func TestGraphRequireAuthGate(t *testing.T) {
 	})
 
 	t.Run("valid session reaches the query handler", func(t *testing.T) {
-		body, _ := json.Marshal(GraphIntent{Op: OpSchemaOverview})
+		body, _ := json.Marshal(GraphIntent{Op: OpOverview})
 		rec := httptest.NewRecorder()
 		gated.ServeHTTP(rec, validCookiePost(deps, "/api/graph/query", body))
 		if rec.Code != http.StatusOK {

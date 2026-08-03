@@ -6,15 +6,15 @@
 
 export const graphEn = {
   graph: {
-    title: 'Graph Explorer',
-    loading: 'Building the evidence graph…',
+    title: 'Memory graph',
+    loading: 'Loading your ArcadeDB memory graph…',
     cta: {
-      seedConversation: 'Explore this conversation',
+      refreshMemory: 'Load memory graph',
       expand: 'Expand neighbors',
     },
     empty: {
-      heading: 'No evidence graph yet',
-      readinessAria: 'Evidence readiness',
+      heading: 'No memories in the graph yet',
+      readinessAria: 'Memory graph readiness',
       schemaOnline: 'Schema online',
       nodeTypeCount_one: '{{count}} node type',
       nodeTypeCount_other: '{{count}} node types',
@@ -22,7 +22,7 @@ export const graphEn = {
       connectionTypeCount_other: '{{count}} connection types',
       nodeTypes: 'Node types',
       connectionTypes: 'Connection types',
-      body: 'Nothing is linked to this thread yet. The evidence graph fills in as Aura ingests sources and works through conversations — entities, documents, and their connections will appear here.',
+      body: 'Aura has not stored any connected memories for this account yet. Entities and their factual connections will appear here as memory is created.',
     },
     inspector: {
       emptyHeading: 'Select a node',
@@ -30,7 +30,7 @@ export const graphEn = {
         'Pick a node on the canvas, or from the list, to see its details, connections, and sources.',
       pinPath: 'Pin path',
       openSource: 'Open source',
-      showCypher: 'Show Cypher',
+      showQuery: 'Show ArcadeDB SQL',
       citations: 'Citations',
       label: 'Type',
       degree: 'Connections',
@@ -45,9 +45,9 @@ export const graphEn = {
       auth: 'Your session has expired. Sign in again to view the graph.',
       retry: 'Retry',
     },
-    cypher: {
-      show: 'Show Cypher',
-      hide: 'Hide Cypher',
+    query: {
+      show: 'Show ArcadeDB SQL',
+      hide: 'Hide ArcadeDB SQL',
       note: "Read-only — this is the query that produced this view. You can't edit it.",
     },
     path: {
@@ -57,7 +57,7 @@ export const graphEn = {
     a11y: {
       nodeList: 'Nodes ({{count}}) — use arrow keys, Enter to inspect',
       edgeList: 'Connections ({{count}})',
-      canvasName: 'Evidence graph: {{nodeCount}} nodes, {{edgeCount}} connections',
+      canvasName: 'Memory graph: {{nodeCount}} nodes, {{edgeCount}} connections',
     },
     filter: {
       labels: 'Node types',
@@ -71,15 +71,15 @@ export const graphEn = {
 
 export const graphIt = {
   graph: {
-    title: 'Esplora grafo',
-    loading: 'Costruzione del grafo delle evidenze…',
+    title: 'Grafo memoria',
+    loading: 'Caricamento del grafo memoria da ArcadeDB…',
     cta: {
-      seedConversation: 'Esplora questa conversazione',
+      refreshMemory: 'Carica grafo memoria',
       expand: 'Espandi vicini',
     },
     empty: {
-      heading: 'Ancora nessun grafo delle evidenze',
-      readinessAria: 'Stato evidenze',
+      heading: 'Ancora nessun ricordo nel grafo',
+      readinessAria: 'Stato grafo memoria',
       schemaOnline: 'Schema online',
       nodeTypeCount_one: '{{count}} tipo di nodo',
       nodeTypeCount_other: '{{count}} tipi di nodo',
@@ -87,7 +87,7 @@ export const graphIt = {
       connectionTypeCount_other: '{{count}} tipi di connessione',
       nodeTypes: 'Tipi di nodo',
       connectionTypes: 'Tipi di connessione',
-      body: 'Niente è ancora collegato a questo thread. Il grafo delle evidenze si popola man mano che Aura acquisisce fonti e lavora sulle conversazioni — entità, documenti e le loro connessioni appariranno qui.',
+      body: 'Aura non ha ancora salvato ricordi collegati per questo account. Entità e connessioni fattuali appariranno qui quando verrà creata memoria.',
     },
     inspector: {
       emptyHeading: 'Seleziona un nodo',
@@ -95,7 +95,7 @@ export const graphIt = {
         'Scegli un nodo sulla tela, o dalla lista, per vederne dettagli, connessioni e fonti.',
       pinPath: 'Fissa percorso',
       openSource: 'Apri fonte',
-      showCypher: 'Mostra Cypher',
+      showQuery: 'Mostra SQL ArcadeDB',
       citations: 'Citazioni',
       label: 'Tipo',
       degree: 'Connessioni',
@@ -110,9 +110,9 @@ export const graphIt = {
       auth: 'La tua sessione è scaduta. Accedi di nuovo per visualizzare il grafo.',
       retry: 'Riprova',
     },
-    cypher: {
-      show: 'Mostra Cypher',
-      hide: 'Nascondi Cypher',
+    query: {
+      show: 'Mostra SQL ArcadeDB',
+      hide: 'Nascondi SQL ArcadeDB',
       note: 'Sola lettura — questa è la query che ha prodotto questa vista. Non puoi modificarla.',
     },
     path: {
@@ -122,7 +122,7 @@ export const graphIt = {
     a11y: {
       nodeList: 'Nodi ({{count}}) — usa le frecce, Invio per ispezionare',
       edgeList: 'Connessioni ({{count}})',
-      canvasName: 'Grafo delle evidenze: {{nodeCount}} nodi, {{edgeCount}} connessioni',
+      canvasName: 'Grafo memoria: {{nodeCount}} nodi, {{edgeCount}} connessioni',
     },
     filter: {
       labels: 'Tipi di nodo',

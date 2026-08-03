@@ -72,6 +72,11 @@ services:
       AURA_DB_URL: postgres://${AURA_DB_APP_ROLE:-aura_app}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}@postgres:5432/${POSTGRES_DB:-aura}?sslmode=disable
       AURA_DB_MIGRATE_URL: postgres://${AURA_DB_MIGRATE_ROLE:-aura_migrate}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}@postgres:5432/${POSTGRES_DB:-aura}?sslmode=disable
       AURA_DB_BOOTSTRAP_URL: postgres://${POSTGRES_USER:-aura}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}@postgres:5432/${POSTGRES_DB:-aura}?sslmode=disable
+      # The cockpit graph reads the authenticated identity's database directly
+      # through ArcadeDB's read-only Studio serializer. It derives the exact same
+      # tenant credential as arcadedb-mcp; no root/admin credential enters Aura.
+      ARCADEDB_URL: http://arcadedb:2480
+      AURA_ARCADEDB_TENANT_SECRET: ${AURA_ARCADEDB_TENANT_SECRET:?AURA_ARCADEDB_TENANT_SECRET required in .env}
       AURA_CONFIG_DIR: /var/lib/aura
       AURA_RUN_DIR: /var/lib/aura/runs
       AURA_SKILLS_DIR: /var/lib/aura/skills
@@ -575,8 +580,9 @@ services:
       # is merely still starting means an agent with ZERO memory tools until the next
       # restart. /health is deliberately liveness-only (it does not touch ArcadeDB —
       # see cmd/arcadedb-mcp/main.go), so an ArcadeDB blip cannot restart this process.
-      # python, not curl/wget: the runtime image is python:3.12-slim, which has neither.
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8096/health', timeout=3)"]
+      # BusyBox wget ships in the Alpine runtime, so the probe adds no interpreter
+      # or package solely for health checking.
+      test: ["CMD", "wget", "--spider", "-q", "-T", "3", "http://127.0.0.1:8096/health"]
       interval: 10s
       timeout: 5s
       retries: 12

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -18,8 +19,9 @@ const graphSchemaTestSecret = "0123456789abcdef0123456789abcdef"
 // graphSchemaProbe records the database path and credential every schema read arrives
 // with — the two things per-identity isolation actually rests on.
 type graphSchemaProbe struct {
-	path string
-	auth string
+	path    string
+	auth    string
+	payload map[string]any
 }
 
 func newGraphSchemaProbe(t *testing.T, body string) (*httptest.Server, *graphSchemaProbe) {
@@ -28,6 +30,11 @@ func newGraphSchemaProbe(t *testing.T, body string) (*httptest.Server, *graphSch
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seen.path = r.URL.Path
 		seen.auth = r.Header.Get("Authorization")
+		raw, _ := io.ReadAll(r.Body)
+		if len(raw) > 0 {
+			seen.payload = map[string]any{}
+			_ = json.Unmarshal(raw, &seen.payload)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, body)
 	}))
@@ -35,14 +42,14 @@ func newGraphSchemaProbe(t *testing.T, body string) (*httptest.Server, *graphSch
 	return srv, seen
 }
 
-func graphSchemaReader(t *testing.T, baseURL string) arcadeTenantSchema {
+func graphReader(t *testing.T, baseURL string) arcadeTenantGraph {
 	t.Helper()
 	t.Setenv("AURA_ARCADEDB_TENANT_SECRET", graphSchemaTestSecret)
 	credentials, err := arcadedb.NewTenantCredentials()
 	if err != nil {
 		t.Fatalf("NewTenantCredentials: %v", err)
 	}
-	return arcadeTenantSchema{base: arcadedb.Config{BaseURL: baseURL}, credentials: credentials}
+	return arcadeTenantGraph{base: arcadedb.Config{BaseURL: baseURL}, credentials: credentials}
 }
 
 // The identity picks the DATABASE, not a WHERE clause: the read must land on that
@@ -51,7 +58,7 @@ func TestArcadeTenantSchemaReadsTheIdentitysOwnDatabase(t *testing.T) {
 	srv, seen := newGraphSchemaProbe(t, `{"result":[{"name":"Entity","type":"vertex","records":3}]}`)
 	identity := "6b3f8f0e-9c2a-4d4b-8f1a-2d5e7c9a1b34"
 
-	got, err := graphSchemaReader(t, srv.URL).Schema(context.Background(), identity)
+	got, err := graphReader(t, srv.URL).Schema(context.Background(), identity)
 	if err != nil {
 		t.Fatalf("Schema: %v", err)
 	}
@@ -74,7 +81,7 @@ func TestArcadeTenantSchemaBindsAsTheTenantUser(t *testing.T) {
 	srv, seen := newGraphSchemaProbe(t, `{"result":[]}`)
 	identity := "6b3f8f0e-9c2a-4d4b-8f1a-2d5e7c9a1b34"
 
-	if _, err := graphSchemaReader(t, srv.URL).Schema(context.Background(), identity); err != nil {
+	if _, err := graphReader(t, srv.URL).Schema(context.Background(), identity); err != nil {
 		t.Fatalf("Schema: %v", err)
 	}
 	raw, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(seen.auth, "Basic "))
@@ -95,7 +102,7 @@ func TestArcadeTenantSchemaBindsAsTheTenantUser(t *testing.T) {
 // arcadedb.DatabaseFor's fail-closed contract and the route must inherit it.
 func TestArcadeTenantSchemaRefusesAnAbsentIdentity(t *testing.T) {
 	srv, seen := newGraphSchemaProbe(t, `{"result":[]}`)
-	reader := graphSchemaReader(t, srv.URL)
+	reader := graphReader(t, srv.URL)
 	for _, identity := range []string{"", "not-a-uuid"} {
 		if _, err := reader.Schema(context.Background(), identity); err == nil {
 			t.Fatalf("identity %q was accepted; it must fail closed", identity)
@@ -103,6 +110,27 @@ func TestArcadeTenantSchemaRefusesAnAbsentIdentity(t *testing.T) {
 	}
 	if seen.path != "" {
 		t.Fatalf("an unscoped read reached the server at %q", seen.path)
+	}
+}
+
+func TestArcadeTenantGraphRunsStudioQueryInTheIdentitysDatabase(t *testing.T) {
+	srv, seen := newGraphSchemaProbe(t, `{"result":{"vertices":[],"edges":[],"records":[]}}`)
+	identity := "6b3f8f0e-9c2a-4d4b-8f1a-2d5e7c9a1b34"
+
+	if _, err := graphReader(t, srv.URL).QueryGraph(
+		context.Background(), identity, "SELECT FROM FACT LIMIT 10", nil, 10,
+	); err != nil {
+		t.Fatalf("QueryGraph: %v", err)
+	}
+	database, err := arcadedb.DatabaseFor(identity)
+	if err != nil {
+		t.Fatalf("DatabaseFor: %v", err)
+	}
+	if !strings.HasSuffix(seen.path, "/api/v1/query/"+database) {
+		t.Fatalf("query hit %q, want identity database %q", seen.path, database)
+	}
+	if seen.payload["serializer"] != "studio" {
+		t.Fatalf("serializer = %v, want studio", seen.payload["serializer"])
 	}
 }
 

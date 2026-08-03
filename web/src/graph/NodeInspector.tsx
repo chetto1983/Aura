@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
+import { Network, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSourceExplorer } from '../chat/displays/sourceExplorerControls';
 import { isSourceNode, sourcesForNode } from './nodeSources';
@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 // NodeInspector — the RIGHT pane of the Frame-06 workspace. It renders the selected node's
 // label / properties (as TEXT, never HTML — T-27-04 / HARDEN-08) / degree / neighbors /
 // citations, plus the READ-ONLY action set (D-04/D-09): pin path (client-side highlight),
-// open source (the Phase-26 Source Explorer cross-link), and show Cypher (display-only).
+// open source, expand neighbors, and show the display-only ArcadeDB SQL.
 // `add note` is NOT rendered — graph WRITES are deferred to Phase 29 (T-27-02). The citations
 // list is a DISPLAYED field (the node.citations contract), DISTINCT from the open-source ACTION.
 //
@@ -30,14 +30,15 @@ function propEntries(node: GraphNode): readonly [string, string][] {
 export interface NodeInspectorProps {
   readonly node: GraphNode | undefined;
   readonly query: string;
+  readonly onExpand: (node: GraphNode) => void;
   readonly onPinPath: (node: GraphNode) => void;
   readonly onClose: () => void;
 }
 
-export function NodeInspector({ node, query, onPinPath, onClose }: NodeInspectorProps) {
+export function NodeInspector({ node, query, onExpand, onPinPath, onClose }: NodeInspectorProps) {
   const { t } = useTranslation();
   const { openSources } = useSourceExplorer();
-  const [cypherOpen, setCypherOpen] = useState(false);
+  const [queryOpen, setQueryOpen] = useState(false);
 
   if (node === undefined) {
     return (
@@ -124,6 +125,16 @@ export function NodeInspector({ node, query, onPinPath, onClose }: NodeInspector
           type="button"
           variant="outline"
           onClick={() => {
+            onExpand(node);
+          }}
+        >
+          <Network data-icon="inline-start" aria-hidden="true" />
+          {t('graph.cta.expand')}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => {
             onPinPath(node);
           }}
         >
@@ -145,21 +156,21 @@ export function NodeInspector({ node, query, onPinPath, onClose }: NodeInspector
           <Button
             type="button"
             variant="outline"
-            aria-expanded={cypherOpen}
+            aria-expanded={queryOpen}
             onClick={() => {
-              setCypherOpen((v) => !v);
+              setQueryOpen((v) => !v);
             }}
           >
-            {t('graph.inspector.showCypher')}
+            {t('graph.inspector.showQuery')}
           </Button>
         ) : null}
-        {cypherOpen && query.length > 0 ? (
+        {queryOpen && query.length > 0 ? (
           <div className="flex flex-col gap-1">
             {/* Read-only — rendered as TEXT, never an editable input (D-04/D-09). */}
             <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-bg p-2 font-mono text-[13px] text-text">
               {query}
             </pre>
-            <p className="text-[13px] text-text-muted">{t('graph.cypher.note')}</p>
+            <p className="text-[13px] text-text-muted">{t('graph.query.note')}</p>
           </div>
         ) : null}
       </footer>

@@ -59,7 +59,7 @@ cockpit (Phases 22-30) shipped 2026-06-29 · **v2.0.0** industrial hardening
 | Memory store | ArcadeDB, **one database per identity**, server-enforced. Bitemporal facts (`valid_from`/`valid_to` + supersede) over an entity graph; retrieval fuses a Lucene full-text leg with a **768-d** HNSW dense leg (EmbeddingGemma-300M) using ArcadeDB's own `vector.fuse` RRF. | ✅ | `arcadedb`, `cmd/arcadedb-mcp` |
 | Agent-memory MCP | `memory_search` · `memory_facts_about` · `memory_entities` · `memory_digest` · `memory_upsert_fact` · `memory_merge_entities` · `memory_forget` · `graph_schema`, mounted default-on from Aura's own `arcadedb-mcp` sidecar | ✅ | `cmd/arcadedb-mcp`, `mcp/manager` (catalog), `agent/mcptools` |
 | User profile | Per-identity `Agent.md` (atomic writes), injected as a protected block | ✅ | `profile`, `onboarding` |
-| Memory graph explorer | Cockpit panel over ArcadeDB's `schema:types` catalogue: which vertex/edge types exist, their properties and record counts — enough for the filters, the legend and an honest empty state. **Schema only**: seed / expand / overview traversal is not implemented, and the response says so in its `query` field rather than returning a silently empty graph. | 🟡 | `agui` (`graph_arcadedb`, `graph_api`) |
+| Memory graph explorer | Read-only cockpit over the authenticated identity's ArcadeDB memory. It uses ArcadeDB's Studio serializer to draw vertices and factual edges, exposes schema-driven filters, shows the producing SQL, and expands a selected RID's direct neighbors cumulatively. Reads are tenant-credentialed and capped at 75 nodes / 200 edges by default (200 hard maximum). | ✅ | `agui` (`graph_arcadedb`, `graph_api`), `arcadedb` (`studio_graph`), `web/src/graph` |
 
 ## Identity, isolation & storage
 

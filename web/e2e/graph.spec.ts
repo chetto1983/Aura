@@ -13,7 +13,7 @@ const CONV_ID = '88888888-8888-8888-8888-888888888888';
 const POPULATED = {
   nodes: [
     {
-      id: 'n1',
+      id: '#1:0',
       caption: 'Alpha Entity',
       labels: ['Entity'],
       entity_type: 'PERSON',
@@ -21,7 +21,7 @@ const POPULATED = {
       props: { name: 'Alpha Entity' },
     },
     {
-      id: 'n2',
+      id: '#1:1',
       caption: 'Beta Document',
       labels: ['Document'],
       degree: 1,
@@ -30,9 +30,9 @@ const POPULATED = {
       citations: ['Cited source X'],
     },
   ],
-  edges: [{ id: 'e1', source: 'n1', target: 'n2', rel_type: 'MENTIONS' }],
-  schema: { labels: ['Entity', 'Document'], rel_types: ['MENTIONS'], entity_types: ['PERSON'] },
-  query: 'MATCH (e:Entity)-[r]-(n) RETURN e, r, n',
+  edges: [{ id: '#5:0', source: '#1:0', target: '#1:1', rel_type: 'FACT', caption: 'cites' }],
+  schema: { labels: ['Entity'], rel_types: ['FACT'], entity_types: ['PERSON'] },
+  query: 'SELECT FROM `FACT` LIMIT 200',
 };
 
 const SCHEMA = {
@@ -99,7 +99,7 @@ test.describe('Phase 27 — Graph Explorer (desktop + mobile)', () => {
     await openGraphSurface(page);
 
     // The canvas region renders with role="img" + an accessible name naming the counts.
-    const canvas = page.getByRole('img', { name: /Evidence graph:/ });
+    const canvas = page.getByRole('img', { name: /Memory graph:/ });
     await expect(canvas).toBeVisible({ timeout: 15000 });
 
     // The a11y parallel DOM (the non-WebGL fallback + SR surface) lists the nodes + edges.
@@ -120,7 +120,7 @@ test.describe('Phase 27 — Graph Explorer (desktop + mobile)', () => {
     page,
   }) => {
     await openGraphSurface(page);
-    await expect(page.getByRole('img', { name: /Evidence graph:/ })).toBeVisible({
+    await expect(page.getByRole('img', { name: /Memory graph:/ })).toBeVisible({
       timeout: 15000,
     });
 
@@ -132,27 +132,28 @@ test.describe('Phase 27 — Graph Explorer (desktop + mobile)', () => {
     await expect(inspector.getByText('Citations')).toBeVisible();
     await expect(inspector.getByText('Cited source X')).toBeVisible();
 
-    // Read-only: pin path / show Cypher exist; add-note does NOT (T-27-02).
+    // Read-only actions include expansion and SQL inspection; add-note does not.
     await expect(inspector.getByRole('button', { name: 'Pin path' })).toBeVisible();
-    await expect(inspector.getByRole('button', { name: 'Show Cypher' })).toBeVisible();
+    await expect(inspector.getByRole('button', { name: 'Expand neighbors' })).toBeVisible();
+    await expect(inspector.getByRole('button', { name: 'Show ArcadeDB SQL' })).toBeVisible();
     await expect(inspector.getByRole('button', { name: /add note/i })).toHaveCount(0);
   });
 
-  test('Show Cypher reveals the read-only query — never an editable input (D-04/D-09)', async ({
+  test('Show ArcadeDB SQL reveals the read-only query — never an editable input', async ({
     page,
   }) => {
     await openGraphSurface(page);
-    await expect(page.getByRole('img', { name: /Evidence graph:/ })).toBeVisible({
+    await expect(page.getByRole('img', { name: /Memory graph:/ })).toBeVisible({
       timeout: 15000,
     });
 
     await page.getByRole('button', { name: /Beta Document/ }).click();
     const inspector = page.getByRole('complementary', { name: 'Select a node' });
-    await inspector.getByRole('button', { name: 'Show Cypher' }).click();
-    await expect(inspector.getByText('MATCH (e:Entity)-[r]-(n) RETURN e, r, n')).toBeVisible();
-    // The Cypher preview is display-only — it renders inside a <pre>, never an editable input.
+    await inspector.getByRole('button', { name: 'Show ArcadeDB SQL' }).click();
+    await expect(inspector.getByText('SELECT FROM `FACT` LIMIT 200')).toBeVisible();
+    // The SQL preview is display-only — it renders inside a <pre>, never an editable input.
     // (Scope to the inspector: the page-level "Ask Aura" chat composer is a legitimate textbox,
-    // mirroring the displays.spec swarm-card scoping precedent — it is NOT a Cypher field.)
+    // mirroring the displays.spec swarm-card precedent — it is not a graph query field.)
     await expect(inspector.locator('textarea, input')).toHaveCount(0);
     await expect(inspector.locator('pre')).toBeVisible();
   });

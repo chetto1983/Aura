@@ -20,7 +20,7 @@ import {
 // testable graph LOGIC lives in the pure plan-03 core (graphIntent.ts) + the pure reducers
 // (SigmaCanvas_reducers.ts) — this file is the thin renderer boundary only.
 //
-// It owns rendering ONLY. The intent/seed/fetch/selection/path state lives in GraphExplorer
+// It owns rendering ONLY. Intent/fetch/selection/path state lives in GraphExplorer
 // (Task 2/3) and is handed in as props. The Pitfall-1 resize-remount crash workaround is the
 // `sigmaKey` prop the parent increments on mode-swap + inspector open/close — passed straight
 // to the SigmaContainer `key`, forcing a clean remount so the GPU programs recompile.

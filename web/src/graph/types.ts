@@ -1,26 +1,24 @@
 // types.ts mirrors the Phase-27 read-only graph contract field-for-field with the
-// Go structs in internal/knowledge/graphview.go + graphview_intent.go. The TS keys
+// Go structs in internal/agui/graph_contract.go. The TS keys
 // are the Go json TAG names (not the Go field names) because the wire is JSON: a
 // GraphResult round-trips graphview.go's `json:"..."` tags exactly. There is NO
 // sigma/graphology/@react-sigma import anywhere in this module — it is a pure data
 // contract consumed by both the jsdom-tested core (graphApi.ts/graphIntent.ts) and,
 // only in plan 04, the WebGL SigmaCanvas (jsdom has no WebGL — Pitfall 4).
 
-/** Op union — the underlying JSON STRING values of the Go OpSeed/OpExpand/OpSchemaOverview
- * constants (graphview_intent.go lines 15-17), NOT the unexported Go identifier names. */
-export type GraphOp = 'seed' | 'expand' | 'schema_overview';
+/** The only two graph operations accepted by the Go read contract. */
+export type GraphOp = 'overview' | 'expand';
 
-export const OP_SEED: GraphOp = 'seed';
+export const OP_OVERVIEW: GraphOp = 'overview';
 export const OP_EXPAND: GraphOp = 'expand';
 
-/** GraphIntent mirrors knowledge.GraphIntent (graphview_intent.go): the structured
- * payload the cockpit POSTs to /api/graph/query. The client authors NO Cypher — it
- * sends this typed intent ONLY (D-05). seed_id/session/labels/rel_types/node_cap/
+/** GraphIntent mirrors agui.GraphIntent: the structured
+ * payload the cockpit POSTs to /api/graph/query. The client authors no query — it
+ * sends this typed intent ONLY (D-05). node_id/labels/rel_types/node_cap/
  * edge_cap match the Go json tags; the omitempty fields are optional here. */
 export interface GraphIntent {
   readonly op: GraphOp;
-  readonly seed_id?: string;
-  readonly session?: string;
+  readonly node_id?: string;
   readonly labels?: readonly string[];
   readonly rel_types?: readonly string[];
   readonly node_cap?: number;
@@ -41,22 +39,23 @@ export interface GraphNode {
   readonly citations?: readonly string[];
 }
 
-/** GraphEdge mirrors knowledge.GraphEdge: source/target are elementId keys matching
+/** GraphEdge mirrors agui.GraphEdge: source/target are ArcadeDB RIDs matching
  * node ids; rel_type is the relationship type. */
 export interface GraphEdge {
   readonly id: string;
   readonly source: string;
   readonly target: string;
   readonly rel_type?: string;
+  readonly caption?: string;
 }
 
-/** GraphPath mirrors knowledge.GraphPath — an ordered run of edges (the path strip). */
+/** GraphPath mirrors agui.GraphPath — an ordered run of edges (the path strip). */
 export interface GraphPath {
   readonly steps: readonly GraphEdge[];
 }
 
-/** GraphSchema mirrors knowledge.GraphSchema: the live introspection result driving
- * the left-panel filters + color legend + schema-overview fallback. entity_types is
+/** GraphSchema mirrors agui.GraphSchema: the live introspection result driving
+ * the left-panel filters + color legend + overview fallback. entity_types is
  * the POLE+O second color dimension. */
 export interface GraphSchema {
   readonly labels: readonly string[];
@@ -66,14 +65,15 @@ export interface GraphSchema {
   readonly counts?: Readonly<Record<string, number>>;
 }
 
-/** GraphResult mirrors knowledge.GraphResult — the flat contract a graph read emits.
- * query is the compiled display Cypher (read-only "Show Cypher" affordance, D-09). */
+/** GraphResult mirrors agui.GraphResult. query is display-only ArcadeDB SQL and
+ * truncated reports that the bounded server read hit a cap. */
 export interface GraphResult {
   readonly nodes: readonly GraphNode[];
   readonly edges: readonly GraphEdge[];
   readonly paths?: readonly GraphPath[];
   readonly schema: GraphSchema;
   readonly query: string;
+  readonly truncated?: boolean;
 }
 
 /** ClientNode is a graphology-ready node projection (id/caption/color/size) the

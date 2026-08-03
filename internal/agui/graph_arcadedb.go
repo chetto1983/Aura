@@ -2,98 +2,246 @@ package agui
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"regexp"
 	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/chetto1983/aura/internal/arcadedb"
 )
 
-// ArcadeGraphView answers the cockpit's two graph routes from ArcadeDB's
-// `schema:types` catalogue, and from nothing else.
-//
-// THIS IS A CAPABILITY REDUCTION, recorded here rather than discovered later: the
-// Graph Explorer used to be drawable. It seeded from the active conversation,
-// expanded a clicked node's neighbours and sampled an ownership-scoped
-// relationship overview. All three were parameterized Cypher built out of
-// elementId(), apoc.convert.toJson(), apoc.map.removeKey() and
-// startNode()/endNode(); ArcadeDB has no APOC and no equivalent built-ins, so
-// re-drawing the canvas is a rewrite, not a translation, and it is deliberately
-// not attempted here.
-//
-// What remains is the type catalogue: which vertex types exist, which edge types,
-// what properties they carry and how many records are in each. That is enough for
-// the left-panel filters, the colour legend and an honest "here is the shape of
-// your memory" empty state. It is not enough to draw a graph, and Query says so
-// in the one field a caller reads either way.
+const (
+	defaultGraphNodeCap = 75
+	defaultGraphEdgeCap = 200
+	maxGraphNodeCap     = 75
+	maxGraphEdgeCap     = arcadedb.MaxStudioGraphLimit
+)
+
+var (
+	errInvalidArcadeRID = errors.New("graphview: invalid ArcadeDB RID")
+	arcadeRIDPattern    = regexp.MustCompile(`^#[0-9]+:[0-9]+$`)
+	sqlTypePattern      = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+)
+
+// ArcadeGraphView answers the cockpit's graph routes from one identity's
+// ArcadeDB type catalogue and read-only Studio graph queries.
 type ArcadeGraphView struct {
-	types ArcadeSchemaReader
+	store ArcadeGraphReader
 }
 
-// ArcadeSchemaReader hands back one identity's type catalogue. The identity is a
-// PARAMETER, not something read out of the context, because memory is one
-// ArcadeDB database per identity: naming the wrong one is the whole failure mode
-// this design exists to prevent, and an implicit lookup is exactly how it would
-// happen quietly.
-type ArcadeSchemaReader interface {
+// ArcadeGraphReader keeps the identity explicit on every read. Aura stores one
+// ArcadeDB database per identity, so an implicit/default database would be a
+// cross-tenant failure mode.
+type ArcadeGraphReader interface {
 	Schema(ctx context.Context, identityID string) (arcadedb.Schema, error)
+	QueryGraph(
+		ctx context.Context,
+		identityID string,
+		statement string,
+		params map[string]any,
+		limit int,
+	) (arcadedb.StudioGraph, error)
 }
 
-// NewArcadeGraphView wraps a schema reader as the GraphView the routes consume.
-func NewArcadeGraphView(types ArcadeSchemaReader) *ArcadeGraphView {
-	return &ArcadeGraphView{types: types}
+// NewArcadeGraphView wraps the tenant-scoped store as the GraphView consumed by
+// the authenticated routes.
+func NewArcadeGraphView(store ArcadeGraphReader) *ArcadeGraphView {
+	return &ArcadeGraphView{store: store}
 }
-
-// schemaOnlyQuery is what GraphResult.Query carries now that no compiler stands
-// behind it. It is prose where Cypher used to be, deliberately: `query` is the
-// field the "Show Cypher" affordance displays and the only place a response can
-// tell its reader that an empty node list means "not implemented" rather than
-// "your graph is empty". The two are very different facts and the wire must not
-// blur them.
-const schemaOnlyQuery = "schema-only: this view reports the live ArcadeDB type " +
-	"catalogue; graph traversal (seed/expand/overview) is not implemented against " +
-	"ArcadeDB, so no nodes or edges are returned"
 
 // Schema projects the identity's ArcadeDB type catalogue onto the wire contract.
 func (v *ArcadeGraphView) Schema(ctx context.Context, identityID string) (GraphSchema, error) {
-	catalogue, err := v.types.Schema(ctx, identityID)
+	catalogue, err := v.store.Schema(ctx, identityID)
 	if err != nil {
 		return GraphSchema{}, err
 	}
 	return projectArcadeSchema(catalogue), nil
 }
 
-// Query answers every op with the same schema-only result: the live schema, an
-// empty canvas, and a Query string naming the reason. It is a 200 rather than a
-// 501 so the panel still renders its schema-driven empty state instead of an
-// error card — but the emptiness is explained in the body, never implied.
+// Query compiles only the two structured, bounded graph operations. Neither
+// operation accepts conversation scope because one ArcadeDB database already
+// represents all memory owned by the authenticated identity.
 func (v *ArcadeGraphView) Query(ctx context.Context, in GraphIntent) (GraphResult, error) {
-	schema, err := v.Schema(ctx, in.UserID)
+	switch in.Op {
+	case OpOverview:
+		if in.NodeID != "" {
+			return GraphResult{}, errors.New("graphview: node_id is only valid for expand")
+		}
+	case OpExpand:
+		if !arcadeRIDPattern.MatchString(in.NodeID) {
+			return GraphResult{}, errInvalidArcadeRID
+		}
+	default:
+		return GraphResult{}, errors.New("graphview: unknown op")
+	}
+	catalogue, err := v.store.Schema(ctx, in.UserID)
 	if err != nil {
 		return GraphResult{}, err
 	}
-	return GraphResult{
-		Nodes:  []GraphNode{},
-		Edges:  []GraphEdge{},
-		Schema: schema,
-		Query:  schemaOnlyQuery,
-	}, nil
+	schema := projectArcadeSchema(catalogue)
+	nodeCap := boundedGraphCap(in.NodeCap, defaultGraphNodeCap, maxGraphNodeCap)
+	edgeCap := boundedGraphCap(in.EdgeCap, defaultGraphEdgeCap, maxGraphEdgeCap)
+
+	if in.Op == OpOverview {
+		return v.overview(ctx, in, catalogue, schema, nodeCap, edgeCap)
+	}
+	return v.expand(ctx, in, catalogue, schema, nodeCap, edgeCap)
 }
 
-// projectArcadeSchema maps the catalogue onto the contract:
-//
-//	vertex types            -> Labels    (what a node could be)
-//	edge types              -> RelTypes  (what a connection could be)
-//	union of all properties -> PropertyKeys
-//	records per type        -> Counts
-//
-// Document types are counted but are NOT labels: an ArcadeDB document is a record
-// with no place on either side of an arrow, and offering it as a canvas filter
-// would advertise a node type that can never be drawn.
-//
-// EntityTypes stays EMPTY. It was the POLE+O `Entity.type` value set — a second
-// colour dimension read from the DATA, not from the schema — and `schema:types`
-// has no equivalent: recovering it means a DISTINCT over every Entity record,
-// which is a data scan this catalogue read is not. The frontend already treats
-// the field as optional.
+func (v *ArcadeGraphView) overview(
+	ctx context.Context,
+	in GraphIntent,
+	catalogue arcadedb.Schema,
+	schema GraphSchema,
+	nodeCap int,
+	edgeCap int,
+) (GraphResult, error) {
+	edgeTypes, err := selectedSchemaTypes(catalogue.Edges, in.RelTypes)
+	if err != nil {
+		return GraphResult{}, err
+	}
+	vertexTypes, err := selectedSchemaTypes(catalogue.Vertices, in.Labels)
+	if err != nil {
+		return GraphResult{}, err
+	}
+
+	raw := arcadedb.StudioGraph{Vertices: []arcadedb.StudioVertex{}, Edges: []arcadedb.StudioEdge{}}
+	statements := make([]string, 0, len(edgeTypes)+len(vertexTypes))
+	for _, edgeType := range edgeTypes {
+		remaining := edgeCap - len(raw.Edges)
+		if remaining <= 0 {
+			break
+		}
+		statement, err := selectTypeStatement(edgeType.Name, remaining)
+		if err != nil {
+			return GraphResult{}, err
+		}
+		graph, err := v.store.QueryGraph(ctx, in.UserID, statement, nil, remaining)
+		if err != nil {
+			return GraphResult{}, err
+		}
+		mergeStudioGraph(&raw, graph)
+		statements = append(statements, statement)
+	}
+	for _, vertexType := range vertexTypes {
+		if len(raw.Vertices) >= nodeCap {
+			break
+		}
+		// Edge queries already return their endpoints. Read a full node-cap page
+		// so duplicate endpoints do not consume the small "remaining" window and
+		// hide isolated vertices later in the type.
+		statement, err := selectTypeStatement(vertexType.Name, nodeCap)
+		if err != nil {
+			return GraphResult{}, err
+		}
+		graph, err := v.store.QueryGraph(ctx, in.UserID, statement, nil, nodeCap)
+		if err != nil {
+			return GraphResult{}, err
+		}
+		mergeStudioGraph(&raw, graph)
+		statements = append(statements, statement)
+	}
+
+	result := projectStudioGraph(raw, in, schema, nodeCap, edgeCap)
+	result.Query = strings.Join(statements, "\n")
+	result.Truncated = result.Truncated || catalogueExceedsCaps(edgeTypes, vertexTypes, edgeCap, nodeCap)
+	return result, nil
+}
+
+func (v *ArcadeGraphView) expand(
+	ctx context.Context,
+	in GraphIntent,
+	catalogue arcadedb.Schema,
+	schema GraphSchema,
+	nodeCap int,
+	edgeCap int,
+) (GraphResult, error) {
+	edgeTypes, err := selectedSchemaTypes(catalogue.Edges, in.RelTypes)
+	if err != nil {
+		return GraphResult{}, err
+	}
+	statement, err := expandStatement(in.NodeID, edgeTypes, edgeCap)
+	if err != nil {
+		return GraphResult{}, err
+	}
+	graph, err := v.store.QueryGraph(ctx, in.UserID, statement, nil, edgeCap)
+	if err != nil {
+		return GraphResult{}, err
+	}
+	result := projectStudioGraph(graph, in, schema, nodeCap, edgeCap)
+	result.Query = statement
+	result.Truncated = result.Truncated || len(graph.Edges) >= edgeCap || len(graph.Vertices) >= nodeCap
+	return result, nil
+}
+
+func boundedGraphCap(requested, fallback, maximum int) int {
+	if requested <= 0 {
+		return fallback
+	}
+	if requested > maximum {
+		return maximum
+	}
+	return requested
+}
+
+func selectedSchemaTypes(available []arcadedb.SchemaType, selected []string) ([]arcadedb.SchemaType, error) {
+	if len(selected) == 0 {
+		return available, nil
+	}
+	wanted := make(map[string]struct{}, len(selected))
+	for _, name := range selected {
+		wanted[name] = struct{}{}
+	}
+	out := make([]arcadedb.SchemaType, 0, len(selected))
+	for _, entry := range available {
+		if _, ok := wanted[entry.Name]; ok {
+			out = append(out, entry)
+			delete(wanted, entry.Name)
+		}
+	}
+	if len(wanted) != 0 {
+		return nil, errors.New("graphview: filter is absent from ArcadeDB schema")
+	}
+	return out, nil
+}
+
+func selectTypeStatement(typeName string, limit int) (string, error) {
+	if !sqlTypePattern.MatchString(typeName) {
+		return "", errors.New("graphview: unsafe ArcadeDB type name")
+	}
+	return "SELECT FROM `" + typeName + "` LIMIT " + strconv.Itoa(limit), nil
+}
+
+func expandStatement(rid string, edgeTypes []arcadedb.SchemaType, limit int) (string, error) {
+	if !arcadeRIDPattern.MatchString(rid) {
+		return "", errInvalidArcadeRID
+	}
+	args := make([]string, 0, len(edgeTypes))
+	for _, edgeType := range edgeTypes {
+		if !sqlTypePattern.MatchString(edgeType.Name) {
+			return "", errors.New("graphview: unsafe ArcadeDB type name")
+		}
+		args = append(args, "'"+edgeType.Name+"'")
+	}
+	return fmt.Sprintf("SELECT expand(bothE(%s)) FROM %s LIMIT %d", strings.Join(args, ","), rid, limit), nil
+}
+
+func catalogueExceedsCaps(edges, vertices []arcadedb.SchemaType, edgeCap, nodeCap int) bool {
+	var edgeCount, vertexCount int64
+	for _, entry := range edges {
+		edgeCount += entry.Records
+	}
+	for _, entry := range vertices {
+		vertexCount += entry.Records
+	}
+	return edgeCount > int64(edgeCap) || vertexCount > int64(nodeCap)
+}
+
+// projectArcadeSchema maps graph-capable catalogue types onto the wire schema.
+// Document types are counted but are not labels because they cannot be an edge
+// endpoint. EntityTypes remains data-derived and is intentionally omitted.
 func projectArcadeSchema(in arcadedb.Schema) GraphSchema {
 	out := GraphSchema{
 		Labels:   make([]string, 0, len(in.Vertices)),
@@ -122,8 +270,6 @@ func projectArcadeSchema(in arcadedb.Schema) GraphSchema {
 	return out
 }
 
-// sortedSet returns the set's members in a stable order, or nil when empty so the
-// omitempty tag drops the field rather than shipping `[]`.
 func sortedSet(set map[string]struct{}) []string {
 	if len(set) == 0 {
 		return nil

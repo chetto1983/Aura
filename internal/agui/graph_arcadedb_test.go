@@ -17,9 +17,21 @@ type stubSchemaReader struct {
 	err         error
 	gotID       string
 	perIdentity map[string]arcadedb.Schema
+	graph       arcadedb.StudioGraph
+	graphs      map[string]arcadedb.StudioGraph
+	queryErr    error
+	schemaCalls int
+	queries     []stubGraphQuery
+}
+
+type stubGraphQuery struct {
+	identityID string
+	statement  string
+	limit      int
 }
 
 func (s *stubSchemaReader) Schema(_ context.Context, identityID string) (arcadedb.Schema, error) {
+	s.schemaCalls++
 	s.gotID = identityID
 	if s.err != nil {
 		return arcadedb.Schema{}, s.err
@@ -28,6 +40,25 @@ func (s *stubSchemaReader) Schema(_ context.Context, identityID string) (arcaded
 		return found, nil
 	}
 	return s.schema, nil
+}
+
+func (s *stubSchemaReader) QueryGraph(
+	_ context.Context,
+	identityID string,
+	statement string,
+	_ map[string]any,
+	limit int,
+) (arcadedb.StudioGraph, error) {
+	s.queries = append(s.queries, stubGraphQuery{identityID: identityID, statement: statement, limit: limit})
+	if s.queryErr != nil {
+		return arcadedb.StudioGraph{}, s.queryErr
+	}
+	for marker, graph := range s.graphs {
+		if strings.Contains(statement, marker) {
+			return graph, nil
+		}
+	}
+	return s.graph, nil
 }
 
 // liveCatalogue is the shape internal/arcadedb.buildSchema produces for a memory
@@ -151,39 +182,158 @@ func TestArcadeGraphViewSchemaScopesToTheIdentity(t *testing.T) {
 	}
 }
 
-// Query answers every op the same way. The empty node list is the CONSEQUENCE of a
-// removed capability, so the response must carry the reason: a caller reading
-// {nodes:[]} alone would record "this graph is empty", which is a different fact.
-func TestArcadeGraphViewQueryIsSchemaOnlyAndSaysSo(t *testing.T) {
-	reader := &stubSchemaReader{schema: liveCatalogue()}
-	view := NewArcadeGraphView(reader)
-	for _, op := range []string{OpSeed, OpExpand, OpSchemaOverview} {
-		t.Run(op, func(t *testing.T) {
-			res, err := view.Query(context.Background(), GraphIntent{Op: op, UserID: "id-1"})
-			if err != nil {
-				t.Fatalf("Query: %v", err)
-			}
-			if len(res.Nodes) != 0 || len(res.Edges) != 0 {
-				t.Fatalf("expected an empty canvas, got %d nodes / %d edges", len(res.Nodes), len(res.Edges))
-			}
-			if len(res.Schema.Labels) == 0 {
-				t.Fatalf("the live schema must still ride along: %+v", res.Schema)
-			}
-			if !strings.Contains(res.Query, "schema-only") || !strings.Contains(res.Query, "not implemented") {
-				t.Fatalf("query field does not explain the empty canvas: %q", res.Query)
-			}
-		})
+func TestArcadeGraphViewOverviewProjectsStudioGraph(t *testing.T) {
+	reader := &stubSchemaReader{
+		schema: liveCatalogue(),
+		graphs: map[string]arcadedb.StudioGraph{
+			"MENTIONS": {
+				Vertices: []arcadedb.StudioVertex{
+					{RID: "#1:0", Type: "Entity", Properties: map[string]any{"name": "Aura", "kind": "product"}, In: 1},
+					{RID: "#1:1", Type: "Entity", Properties: map[string]any{"name": "ArcadeDB"}, Out: 1},
+				},
+				Edges: []arcadedb.StudioEdge{{RID: "#5:0", Type: "MENTIONS", Out: "#1:0", In: "#1:1", Properties: map[string]any{"predicate": "stores_in", "embedding": []any{1.0}}}},
+			},
+			"Chunk":  {Vertices: []arcadedb.StudioVertex{{RID: "#2:0", Type: "Chunk", Properties: map[string]any{"title": "Migration note", "embedding": []any{2.0}}}}},
+			"Entity": {Vertices: []arcadedb.StudioVertex{{RID: "#1:0", Type: "Entity", Properties: map[string]any{"name": "Aura"}, In: 1}}},
+		},
+	}
+
+	res, err := NewArcadeGraphView(reader).Query(context.Background(), GraphIntent{
+		Op: OpOverview, UserID: "id-1", NodeCap: 10, EdgeCap: 10,
+	})
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if len(res.Nodes) != 3 || len(res.Edges) != 1 {
+		t.Fatalf("overview = %d nodes / %d edges, want 3 / 1: %+v", len(res.Nodes), len(res.Edges), res)
+	}
+	if res.Edges[0].Source != "#1:0" || res.Edges[0].Target != "#1:1" || res.Edges[0].Caption != "stores_in" {
+		t.Fatalf("edge projection = %+v", res.Edges[0])
+	}
+	if res.Nodes[0].Degree != 1 {
+		t.Fatalf("node degree = %d, want ArcadeDB i+o", res.Nodes[0].Degree)
+	}
+	for _, node := range res.Nodes {
+		if _, leaked := node.Props["embedding"]; leaked {
+			t.Fatalf("embedding leaked into graph props: %+v", node.Props)
+		}
+	}
+	if len(reader.queries) != 3 || reader.queries[0].identityID != "id-1" {
+		t.Fatalf("tenant-scoped graph reads = %+v", reader.queries)
+	}
+	for _, query := range reader.queries[1:] {
+		if query.limit != 10 || !strings.Contains(query.statement, "LIMIT 10") {
+			t.Fatalf("vertex fill was narrowed by duplicate endpoints: %+v", reader.queries)
+		}
+	}
+	if !strings.Contains(res.Query, "SELECT FROM") || strings.Contains(strings.ToLower(res.Query), "cypher") {
+		t.Fatalf("display query is not ArcadeDB SQL: %q", res.Query)
 	}
 }
 
 func TestArcadeGraphViewQueryScopesToTheIntentIdentity(t *testing.T) {
 	reader := &stubSchemaReader{schema: liveCatalogue()}
 	view := NewArcadeGraphView(reader)
-	if _, err := view.Query(context.Background(), GraphIntent{Op: OpSeed, UserID: "id-7"}); err != nil {
+	if _, err := view.Query(context.Background(), GraphIntent{Op: OpOverview, UserID: "id-7"}); err != nil {
 		t.Fatalf("Query: %v", err)
 	}
-	if reader.gotID != "id-7" {
-		t.Fatalf("reader asked about %q, want the intent's identity id-7", reader.gotID)
+	if reader.gotID != "id-7" || len(reader.queries) == 0 || reader.queries[0].identityID != "id-7" {
+		t.Fatalf("reader calls were not scoped to id-7: schema=%q queries=%+v", reader.gotID, reader.queries)
+	}
+}
+
+func TestArcadeGraphViewExpandUsesValidatedRIDAndRelationshipFilter(t *testing.T) {
+	reader := &stubSchemaReader{
+		schema: liveCatalogue(),
+		graph: arcadedb.StudioGraph{
+			Vertices: []arcadedb.StudioVertex{
+				{RID: "#1:0", Type: "Entity", Properties: map[string]any{"name": "Aura"}},
+				{RID: "#1:1", Type: "Entity", Properties: map[string]any{"name": "ArcadeDB"}},
+			},
+			Edges: []arcadedb.StudioEdge{{RID: "#5:0", Type: "MENTIONS", Out: "#1:0", In: "#1:1"}},
+		},
+	}
+	res, err := NewArcadeGraphView(reader).Query(context.Background(), GraphIntent{
+		Op: OpExpand, UserID: "id-1", NodeID: "#1:0", RelTypes: []string{"MENTIONS"}, NodeCap: 2, EdgeCap: 1,
+	})
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if len(res.Nodes) != 2 || len(res.Edges) != 1 {
+		t.Fatalf("expanded graph = %+v", res)
+	}
+	if !res.Truncated {
+		t.Fatal("an expansion that reaches its read cap must report possible truncation")
+	}
+	if len(reader.queries) != 1 || !strings.Contains(reader.queries[0].statement, "bothE('MENTIONS')") || !strings.Contains(reader.queries[0].statement, "FROM #1:0") {
+		t.Fatalf("expand statement = %+v", reader.queries)
+	}
+}
+
+func TestArcadeGraphViewClampsRequestedCapsToOperationMaxima(t *testing.T) {
+	reader := &stubSchemaReader{schema: arcadedb.Schema{
+		Edges:    []arcadedb.SchemaType{{Name: "MENTIONS", Kind: "edge"}},
+		Vertices: []arcadedb.SchemaType{{Name: "Entity", Kind: "vertex"}},
+	}}
+	_, err := NewArcadeGraphView(reader).Query(context.Background(), GraphIntent{
+		Op: OpOverview, UserID: "id-1", NodeCap: 999, EdgeCap: 999,
+	})
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if len(reader.queries) != 2 {
+		t.Fatalf("transport reads = %+v, want one edge and one vertex read", reader.queries)
+	}
+	if reader.queries[0].limit != maxGraphEdgeCap || reader.queries[1].limit != maxGraphNodeCap {
+		t.Fatalf("transport reads = %+v, want edge/node maxima %d/%d", reader.queries, maxGraphEdgeCap, maxGraphNodeCap)
+	}
+}
+
+func TestArcadeGraphViewRejectsInvalidExpandRIDBeforeAnyIO(t *testing.T) {
+	reader := &stubSchemaReader{schema: liveCatalogue()}
+	_, err := NewArcadeGraphView(reader).Query(context.Background(), GraphIntent{
+		Op: OpExpand, UserID: "id-1", NodeID: "#1:0; DELETE FROM Entity",
+	})
+	if err == nil {
+		t.Fatal("unsafe RID was accepted")
+	}
+	if reader.schemaCalls != 0 || len(reader.queries) != 0 {
+		t.Fatalf("unsafe RID caused I/O: schema=%d queries=%+v", reader.schemaCalls, reader.queries)
+	}
+}
+
+func TestArcadeGraphViewRejectsNodeIDOnOverviewBeforeAnyIO(t *testing.T) {
+	reader := &stubSchemaReader{schema: liveCatalogue()}
+	_, err := NewArcadeGraphView(reader).Query(context.Background(), GraphIntent{
+		Op: OpOverview, UserID: "id-1", NodeID: "#1:0",
+	})
+	if err == nil {
+		t.Fatal("overview accepted an expansion-only node_id")
+	}
+	if reader.schemaCalls != 0 || len(reader.queries) != 0 {
+		t.Fatalf("invalid overview caused I/O: schema=%d queries=%+v", reader.schemaCalls, reader.queries)
+	}
+}
+
+func TestArcadeGraphViewCapsResultsAndDropsDanglingEdges(t *testing.T) {
+	reader := &stubSchemaReader{
+		schema: arcadedb.Schema{Edges: []arcadedb.SchemaType{{Name: "MENTIONS", Kind: "edge", Records: 3}}},
+		graph: arcadedb.StudioGraph{
+			Vertices: []arcadedb.StudioVertex{{RID: "#1:0", Type: "Entity"}, {RID: "#1:1", Type: "Entity"}},
+			Edges:    []arcadedb.StudioEdge{{RID: "#5:0", Type: "MENTIONS", Out: "#1:0", In: "#1:1"}},
+		},
+	}
+	res, err := NewArcadeGraphView(reader).Query(context.Background(), GraphIntent{
+		Op: OpOverview, UserID: "id-1", NodeCap: 1, EdgeCap: 1,
+	})
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if len(res.Nodes) != 1 || len(res.Edges) != 0 {
+		t.Fatalf("capped graph kept a dangling edge: %+v", res)
+	}
+	if !res.Truncated {
+		t.Fatal("cap hit was not reported")
 	}
 }
 
@@ -193,7 +343,14 @@ func TestArcadeGraphViewPropagatesReadFailures(t *testing.T) {
 	if _, err := view.Schema(context.Background(), "id-1"); err == nil {
 		t.Fatal("expected the read failure to surface, not an empty schema")
 	}
-	if _, err := view.Query(context.Background(), GraphIntent{Op: OpSeed, UserID: "id-1"}); err == nil {
+	if _, err := view.Query(context.Background(), GraphIntent{Op: OpOverview, UserID: "id-1"}); err == nil {
 		t.Fatal("expected Query to refuse when the schema read fails")
+	}
+}
+
+func TestArcadeGraphViewPropagatesGraphReadFailures(t *testing.T) {
+	reader := &stubSchemaReader{schema: liveCatalogue(), queryErr: errors.New("query refused")}
+	if _, err := NewArcadeGraphView(reader).Query(context.Background(), GraphIntent{Op: OpOverview, UserID: "id-1"}); err == nil {
+		t.Fatal("expected the graph read failure to surface")
 	}
 }

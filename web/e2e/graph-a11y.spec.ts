@@ -91,7 +91,7 @@ async function installBaseRoutes(page: Page) {
 async function openGraphSurface(page: Page) {
   await gotoAuthenticated(page, `/c/${CONV_ID}`);
   await page.getByRole('button', { name: 'Graph', exact: true }).first().click();
-  await expect(page.getByRole('img', { name: /Evidence graph:/ })).toBeVisible({ timeout: 15000 });
+  await expect(page.getByRole('img', { name: /Memory graph:/ })).toBeVisible({ timeout: 15000 });
 }
 
 async function runAxe(page: Page): Promise<AxeResult> {
@@ -190,8 +190,8 @@ test.describe('Phase 27 — Graph Explorer accessibility + auth resilience', () 
 
     await openGraphSurface(page);
 
-    // Trigger the next graph fetch via the seed CTA (re-seed) — now it 401s.
-    await page.getByRole('button', { name: 'Explore this conversation' }).click();
+    // Trigger the next graph refresh; the expired authentication now returns 401.
+    await page.getByRole('button', { name: 'Load memory graph' }).first().click();
 
     // A VISIBLE auth-error alert, never a blank canvas.
     await expect(
@@ -199,6 +199,6 @@ test.describe('Phase 27 — Graph Explorer accessibility + auth resilience', () 
     ).toBeVisible({
       timeout: 10000,
     });
-    await expect(page.getByRole('img', { name: /Evidence graph:/ })).toHaveCount(0);
+    await expect(page.getByRole('img', { name: /Memory graph:/ })).toHaveCount(0);
   });
 });

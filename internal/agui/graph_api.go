@@ -13,10 +13,9 @@ import (
 // There is no query logic here; the handlers parse, validate, dispatch to the wired
 // GraphView and project to JSON.
 //
-// The GraphView behind them is schema-only (graph_arcadedb.go): no traversal compiler
-// stands behind /api/graph/query, so it answers every op with the live type catalogue and
-// an empty canvas. The validation below still earns its keep regardless — it is the
-// untrusted-input chokepoint for a route that is authenticated but public-facing.
+// The GraphView behind them compiles the two supported operations into bounded,
+// read-only ArcadeDB queries. Validation is the untrusted-input chokepoint for an
+// authenticated but public-facing route.
 //
 // The routes are registered on the agui Server.Mux under the /api/ carve-out; the
 // PARENT-mux mount behind RequireAuth is cmd/aura/serve_webui.go's job (the whole-origin
@@ -24,14 +23,9 @@ import (
 // imports NO runner/SSE adapter and touches NO messages[0]/SSE path (Pitfall 6): it is
 // plain net/http JSON, distinct from the chat KV-cache stream.
 
-// graphSeedIDMaxLen / graphSessionMaxLen bound the free-form intent identifier fields
-// before they reach the view (V5 length-cap). A node id is short and a session ThreadID
-// is a UUID; a payload far past these is a crafted body, rejected 400 rather than
-// carried any further.
-const (
-	graphSeedIDMaxLen  = 256
-	graphSessionMaxLen = 256
-)
+// graphNodeIDMaxLen bounds the expand anchor before it reaches the view. A
+// payload far beyond an ArcadeDB RID is rejected before any store read.
+const graphNodeIDMaxLen = 256
 
 // graphFilterMaxLen bounds each label/rel-type filter token AND the number of filter
 // entries — a hostile body cannot smuggle thousands of filter strings through. Labels and
@@ -89,7 +83,7 @@ func (s *Server) handleGraphSchema(w http.ResponseWriter, r *http.Request) {
 // handleGraphQuery serves POST /api/graph/query: a structured GraphIntent → the flat
 // {nodes,edges,paths,schema,query} contract. The handler is the untrusted-input
 // chokepoint (T-27-01/T-27-05): the body is size-capped (MaxBytesReader), the op is
-// enum-validated, the id fields are length-capped, and the label/rel-type filters are
+// enum-validated, node_id is length-capped, and the label/rel-type filters are
 // validated against the live schema set BEFORE dispatch. A read failure is a sanitized 502.
 //
 // The principal is stamped onto the intent BEFORE validation, not after: validation reads
@@ -102,7 +96,9 @@ func (s *Server) handleGraphQuery(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxRunBodyBytes)
 	var intent GraphIntent
-	if err := json.NewDecoder(r.Body).Decode(&intent); err != nil {
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&intent); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
@@ -120,20 +116,23 @@ func (s *Server) handleGraphQuery(w http.ResponseWriter, r *http.Request) {
 }
 
 // validateGraphIntent enforces the server-side V5 input-validation contract before the
-// intent reaches the view: a known op, length-capped id fields, bounded + live-
+// intent reaches the view: a known op, length-capped node_id, bounded + live-
 // schema-validated label/rel-type filters, and non-negative caps. It returns a sanitized
 // error (never reflecting an untrusted token verbatim) so a 400 body leaks nothing.
 func (s *Server) validateGraphIntent(ctx context.Context, in GraphIntent) error {
 	switch in.Op {
-	case OpSeed, OpExpand, OpSchemaOverview:
+	case OpOverview, OpExpand:
 	default:
 		return errors.New("graphview: unknown op")
 	}
-	if len(in.SeedID) > graphSeedIDMaxLen {
-		return errors.New("graphview: seed_id too long")
+	if len(in.NodeID) > graphNodeIDMaxLen {
+		return errors.New("graphview: node_id too long")
 	}
-	if len(in.Session) > graphSessionMaxLen {
-		return errors.New("graphview: session too long")
+	if in.Op == OpOverview && in.NodeID != "" {
+		return errors.New("graphview: node_id is only valid for expand")
+	}
+	if in.Op == OpExpand && !arcadeRIDPattern.MatchString(in.NodeID) {
+		return errInvalidArcadeRID
 	}
 	if in.NodeCap < 0 || in.EdgeCap < 0 {
 		return errors.New("graphview: caps must not be negative")

@@ -170,10 +170,9 @@ Aura is held to a gate enforced in CI and runnable locally. Stated without round
 
 Known residual gaps, tracked rather than papered over: a 32 GB sandbox soak envelope and a
 gVisor `runsc` smoke (both hardware-gated, listed as Phase-41 release must-runs), a
-`SECURITY.md` threat-mitigation retro-verification for the sandbox phase, and the cockpit's
-graph explorer, which is schema-only since memory moved to ArcadeDB — the traversal
-compilers that drew the canvas did not survive the move, and porting them is a rewrite
-rather than a translation.
+`SECURITY.md` threat-mitigation retro-verification for the sandbox phase. The cockpit's
+memory graph is drawable again after the ArcadeDB migration: its bounded read-only backend
+uses the Studio graph serializer for overview data and direct RID-neighbor expansion.
 
 ## 7. Deployment & operations
 

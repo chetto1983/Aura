@@ -11,12 +11,12 @@
 // every LOCOMO miss inspected so far has been exactly that: "What did Caroline
 // research?" against a turn that never says "research".
 //
-// So the same 1536 questions, the same turns, four variants:
+// So the same 1536 questions and the same turns compare the two signals the
+// production retrieval path actually uses:
 //
 //	A  BM25 only            the current pipeline, in process
 //	B  dense only           cosine over Qwen3-Embedding-0.6B, 1024-d, local GPU
 //	C  dense + BM25         Mem0's additive fusion, no entity leg
-//	D  dense + BM25 + graph entity boost
 //
 // Embeddings are brute-forced per conversation rather than indexed: ~600 vectors
 // per conversation is a dot product, and an HNSW index would measure ArcadeDB's
@@ -32,6 +32,7 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -46,6 +47,11 @@ type denseCorpus struct {
 	texts   []string
 	vectors [][]float64
 	index   *bm25.Index
+}
+
+type candidate struct {
+	diaID string
+	fused float64
 }
 
 // embedDims and the two prefixes make the harness model-agnostic, because the
@@ -121,6 +127,25 @@ func dot(a, b []float64) float64 {
 	return sum
 }
 
+func normalizeBM25(raw, midpoint, steepness float64) float64 {
+	return 1.0 / (1.0 + math.Exp(-steepness*(raw-midpoint)))
+}
+
+func mem0BM25Params(query string) (midpoint, steepness float64) {
+	switch terms := len(strings.Fields(query)); {
+	case terms <= 3:
+		return 5.0, 0.7
+	case terms <= 6:
+		return 7.0, 0.6
+	case terms <= 9:
+		return 9.0, 0.5
+	case terms <= 15:
+		return 10.0, 0.5
+	default:
+		return 12.0, 0.5
+	}
+}
+
 func TestLocomoDenseVersusLexical(t *testing.T) {
 	client := documentClient(t)
 	ctx := context.Background()
@@ -165,10 +190,9 @@ func TestLocomoDenseVersusLexical(t *testing.T) {
 		time.Since(started).Round(time.Second),
 		float64(time.Since(started).Milliseconds())/float64(max(embedded, 1)))
 
-	extractor := spacyOrSkip(t)
 	variants := []struct {
-		name                   string
-		dense, lexical, entity bool
+		name           string
+		dense, lexical bool
 		// cascade > 0 means: dense owns the first N slots and the lexical ranking
 		// only fills what is left. Fusion mixes two opinions into one score and
 		// dilutes the stronger -- measured, adding BM25 to EmbeddingGemma COST 2
@@ -177,12 +201,11 @@ func TestLocomoDenseVersusLexical(t *testing.T) {
 		// the seats left over.
 		cascade int
 	}{
-		{"A BM25 only", false, true, false, 0},
-		{"B dense only", true, false, false, 0},
-		{"C dense + BM25", true, true, false, 0},
-		{"D dense + BM25 + entity", true, true, true, 0},
-		{"E dense top-3, lexical fills", true, true, false, 3},
-		{"F dense top-5, lexical fills", true, true, false, 5},
+		{"A BM25 only", false, true, 0},
+		{"B dense only", true, false, 0},
+		{"C dense + BM25", true, true, 0},
+		{"D dense top-3, lexical fills", true, true, 3},
+		{"E dense top-5, lexical fills", true, true, 5},
 	}
 	scores := make([]*recallScore, len(variants))
 	for i := range scores {
@@ -218,10 +241,6 @@ func TestLocomoDenseVersusLexical(t *testing.T) {
 
 			terms := bm25.Tokenize(qa.Question)
 			midpoint, steepness := mem0BM25Params(qa.Question)
-			boosts := map[string]float64{}
-			if variantsNeedEntities(variants) {
-				boosts = entityBoosts(ctx, client, extractor.Entities(qa.Question), conversation)
-			}
 
 			for v, variant := range variants {
 				if variant.cascade > 0 {
@@ -237,9 +256,6 @@ func TestLocomoDenseVersusLexical(t *testing.T) {
 				if variant.lexical {
 					maxPossible += 1.0
 				}
-				if variant.entity && len(boosts) > 0 {
-					maxPossible += entityBoostWeight
-				}
 				for i, diaID := range corpus.diaIDs {
 					total := 0.0
 					if variant.dense {
@@ -247,9 +263,6 @@ func TestLocomoDenseVersusLexical(t *testing.T) {
 					}
 					if variant.lexical {
 						total += normalizeBM25(corpus.index.ScoreTerms(i, terms), midpoint, steepness)
-					}
-					if variant.entity {
-						total += boosts[diaID]
 					}
 					ranked = append(ranked, candidate{diaID: diaID, fused: total / maxPossible})
 				}
@@ -347,17 +360,4 @@ func cascadeRank(
 		}
 	}
 	return -1
-}
-
-func variantsNeedEntities(variants []struct {
-	name                   string
-	dense, lexical, entity bool
-	cascade                int
-}) bool {
-	for _, variant := range variants {
-		if variant.entity {
-			return true
-		}
-	}
-	return false
 }

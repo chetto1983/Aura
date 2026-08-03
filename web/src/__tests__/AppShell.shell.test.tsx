@@ -50,7 +50,7 @@ vi.mock('../documents/DocumentsWorkspace', () => ({
 }));
 
 vi.mock('../graph/GraphExplorer', () => ({
-  default: () => <div data-testid="graph-workspace">Evidence graph</div>,
+  default: () => <div data-testid="graph-workspace">Memory graph</div>,
 }));
 
 // The marketing-hero copy this operator console must NOT ship (ux-spec §350 / SC4).

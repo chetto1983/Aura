@@ -173,33 +173,43 @@ func (c *Client) execute(
 	if len(params) > 0 {
 		payload["params"] = params
 	}
+	var decoded struct {
+		Result []map[string]any `json:"result"`
+	}
+	if err := c.executeJSON(ctx, endpoint, payload, &decoded); err != nil {
+		return nil, err
+	}
+	return decoded.Result, nil
+}
+
+// executeJSON is the shared authenticated HTTP transport. ArcadeDB serializers
+// change only the successful response shape; request construction, bounded error
+// handling and the read/write endpoint split must stay identical.
+func (c *Client) executeJSON(ctx context.Context, endpoint string, payload map[string]any, decoded any) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return nil, fmt.Errorf("arcadedb: encode request: %w", err)
+		return fmt.Errorf("arcadedb: encode request: %w", err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("arcadedb: build request: %w", err)
+		return fmt.Errorf("arcadedb: build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", c.authHeader)
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("arcadedb: request: %w", err)
+		return fmt.Errorf("arcadedb: request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, decodeServerError(resp)
+		return decodeServerError(resp)
 	}
-	var decoded struct {
-		Result []map[string]any `json:"result"`
+	if err := json.NewDecoder(resp.Body).Decode(decoded); err != nil {
+		return fmt.Errorf("arcadedb: decode response: %w", err)
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
-		return nil, fmt.Errorf("arcadedb: decode response: %w", err)
-	}
-	return decoded.Result, nil
+	return nil
 }
 
 func decodeServerError(resp *http.Response) error {

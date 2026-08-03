@@ -1,6 +1,6 @@
 # Technology Stack
 
-**Analysis Date:** 2026-08-02
+**Analysis Date:** 2026-08-03
 
 ## Languages
 
@@ -10,7 +10,7 @@
 
 **Secondary:**
 - SQL (PostgreSQL dialect) - Schema evolution and handwritten queries live in `internal/db/migrations/` and `internal/db/queries/`; `sqlc.yaml` generates the typed pgx client into `internal/db/sqlc/`.
-- Python 3.12 - Runs the MarkItDown/FastAPI document sidecar in `docker/markitdown/app.py`, the spaCy worker beside the memory MCP server in `docker/arcadedb-mcp/spacy_worker.py`, release/evidence tooling in `scripts/*.py`, and the optional fine-tuning spike in `finetune/aura_finetune/`.
+- Python 3.12 - Runs the MarkItDown/FastAPI document sidecar in `docker/markitdown/app.py`, release/evidence tooling in `scripts/*.py`, and the optional fine-tuning spike in `finetune/aura_finetune/`.
 - POSIX shell and PowerShell - Quality gates, smoke tests, deployment checks, and operator scripts live in `scripts/*.sh` and `scripts/*.ps1`; the primary command surface is coordinated by `Makefile`.
 - JavaScript (ES modules), CSS, and HTML - Vite/theme generation and browser tooling use `web/tokens/*.mjs`, `web/scripts/*.mjs`, `web/src/styles/`, and `web/index.html`; the integration console is embedded from `cmd/aura/integrations_console.html`.
 
@@ -19,13 +19,13 @@
 **Environment:**
 - Go 1.26.5 - Native backend/runtime toolchain from `go.mod`; the production builder uses `golang:1.26.5-alpine` in `docker/aura/Dockerfile`.
 - Node.js 24.16.0 - Cockpit build/runtime-tool baseline from `.nvmrc` and `.node-version`; `docker/aura/Dockerfile` uses Node 24 both for the discardable SPA build stage and for runtime skill/snippet tooling.
-- Python 3.12 - Sidecar base runtime in `docker/markitdown/Dockerfile` and `docker/arcadedb-mcp/Dockerfile`; the main appliance also carries Python 3 tooling for agent-owned document/data work in `docker/aura/Dockerfile`.
+- Python 3.12 - Sidecar base runtime in `docker/markitdown/Dockerfile`; the main appliance also carries Python 3 tooling for agent-owned document/data work in `docker/aura/Dockerfile`.
 - Debian Bookworm slim - Final `aura` appliance base in `docker/aura/Dockerfile`; purpose-built sandbox and egress images also use pinned Debian Bookworm bases in `docker/aura-sandbox/Dockerfile` and `docker/aura-egress/Dockerfile`.
 
 **Package Manager:**
 - Go modules - Backend dependency graph is declared in `go.mod` and locked by `go.sum`; no `go.work` workspace is present at the repository root.
 - npm 12.0.0 - Frontend package manager is declared in `web/package.json`; `web/package-lock.json` is present with lockfile version 3.
-- pip - Python sidecar dependencies are image-pinned in `docker/markitdown/Dockerfile` and `docker/arcadedb-mcp/Dockerfile`; fine-tuning ranges are declared without a lockfile in `finetune/requirements.txt`.
+- pip - Python sidecar dependencies are image-pinned in `docker/markitdown/Dockerfile`; fine-tuning ranges are declared without a lockfile in `finetune/requirements.txt`.
 - uv/uvx 0.11.32 - Preinstalled in the appliance for agent-driven Python work by `docker/aura/Dockerfile`; it is not the Go or frontend dependency manager.
 
 ## Frameworks
@@ -113,4 +113,4 @@
 
 ---
 
-*Stack analysis: 2026-08-02*
+*Stack analysis: 2026-08-03*

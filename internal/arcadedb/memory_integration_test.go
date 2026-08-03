@@ -82,6 +82,36 @@ func write(t *testing.T, client *Client, fact Fact, at time.Time) FactWrite {
 	return written
 }
 
+func TestStudioGraphSerializerReturnsFactEndpoints(t *testing.T) {
+	client := integrationClient(t)
+	subject, runID := isolate(t, client)
+	object := subject + "_ArcadeDB"
+	write(t, client, Fact{
+		Subject: subject, Predicate: "uses", Object: object,
+		Statement: subject + " uses ArcadeDB.", SourceRunID: runID,
+	}, time.Now().UTC())
+
+	graph, err := client.QueryStudioGraph(
+		context.Background(),
+		"SELECT FROM FACT WHERE source_run_id = :run LIMIT 10",
+		map[string]any{"run": runID},
+		10,
+	)
+	if err != nil {
+		t.Fatalf("QueryStudioGraph: %v", err)
+	}
+	if len(graph.Vertices) != 2 || len(graph.Edges) != 1 {
+		t.Fatalf("studio graph = %d vertices / %d edges: %+v", len(graph.Vertices), len(graph.Edges), graph)
+	}
+	edge := graph.Edges[0]
+	if edge.RID == "" || edge.Out == "" || edge.In == "" || edge.Out == edge.In {
+		t.Fatalf("edge endpoints were not decoded: %+v", edge)
+	}
+	if edge.Properties["predicate"] != "uses" {
+		t.Fatalf("edge properties = %+v", edge.Properties)
+	}
+}
+
 // The endpoints must survive retrieval. `out.name` returned NULL here and no
 // test noticed, because the SQL "looked right".
 func TestRetrievedFactCarriesItsEndpointsAndProvenance(t *testing.T) {

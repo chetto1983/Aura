@@ -4,11 +4,11 @@ import "os"
 
 // ArcadeDBConfig addresses the memory server.
 //
-// cmd/aura does not read or write memory — the arcadedb-mcp sidecar owns that.
-// It needs this for ONE thing: de-provisioning. Memory is one ArcadeDB database
-// and one server user per identity (internal/arcadedb/tenant.go), so "forget
-// this person" is `drop database` + `drop user`, both server commands, and a
-// server command needs a server-rights credential.
+// cmd/aura uses the ordinary server address for the cockpit's bounded read-only
+// memory graph. It also uses the separate admin credential for de-provisioning:
+// memory is one ArcadeDB database and one server user per identity
+// (internal/arcadedb/tenant.go), so "forget this person" is `drop database` +
+// `drop user`, both server commands.
 //
 // The env names are the sidecar's, deliberately: the two composition roots must
 // name the same server, and a second spelling would let them drift onto

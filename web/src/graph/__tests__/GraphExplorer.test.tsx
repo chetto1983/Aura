@@ -4,7 +4,7 @@ import '../../i18n/i18n'; // side-effect: initialise i18next so t() resolves key
 import type { GraphResult, GraphSchema } from '../types';
 
 // GraphExplorer is the lazy three-pane shell. SigmaCanvas is mocked (no WebGL in jsdom,
-// Pitfall 4) and graphApi is mocked so we drive the seed→schema-overview fallback and the
+// Pitfall 4) and graphApi is mocked so we drive the overview→schema fallback and the
 // 401 → visible-auth-error path (the unit half of B3 / T-27-03; the full browser run is the
 // Task-4 Playwright spec). These are the GraphExplorer behavior obligations from the plan.
 
@@ -36,15 +36,15 @@ const EMPTY_RESULT: GraphResult = {
 
 const POPULATED_RESULT: GraphResult = {
   nodes: [
-    { id: 'n1', caption: 'Alpha', labels: ['Entity'], degree: 2 },
-    { id: 'n2', caption: 'Bravo', labels: ['Document'], degree: 1 },
+    { id: '#1:0', caption: 'Alpha', labels: ['Entity'], degree: 2 },
+    { id: '#1:1', caption: 'Bravo', labels: ['Entity'], degree: 1 },
   ],
-  edges: [{ id: 'e1', source: 'n1', target: 'n2', rel_type: 'MENTIONS' }],
-  schema: { labels: ['Entity', 'Document'], rel_types: ['MENTIONS'] },
-  query: 'MATCH (e:Entity) RETURN e',
+  edges: [{ id: '#5:0', source: '#1:0', target: '#1:1', rel_type: 'FACT' }],
+  schema: { labels: ['Entity'], rel_types: ['FACT'] },
+  query: 'SELECT FROM `FACT` LIMIT 200',
 };
 
-const SCHEMA: GraphSchema = { labels: ['Entity', 'Document'], rel_types: ['MENTIONS'] };
+const SCHEMA: GraphSchema = { labels: ['Entity'], rel_types: ['FACT'] };
 
 describe('GraphExplorer (renderer + graphApi mocked)', () => {
   beforeEach(() => {
@@ -52,15 +52,17 @@ describe('GraphExplorer (renderer + graphApi mocked)', () => {
     fetchGraphSchema.mockReset();
   });
 
-  it('seeds from the threadId and falls back to the schema overview on an empty result', async () => {
+  it('loads the identity memory overview and falls back to schema on an empty result', async () => {
     postGraphQuery.mockResolvedValue(EMPTY_RESULT);
     fetchGraphSchema.mockResolvedValue(SCHEMA);
 
-    render(<GraphExplorer threadId="thread-123" />);
+    render(<GraphExplorer />);
 
-    // The empty seed result triggers the schema-overview empty-state (never a blank canvas).
-    expect(await screen.findByRole('region', { name: 'Evidence readiness' })).toBeTruthy();
-    expect(postGraphQuery).toHaveBeenCalled();
+    // An empty overview triggers the schema-backed empty state, never a blank canvas.
+    expect(await screen.findByRole('region', { name: 'Memory graph readiness' })).toBeTruthy();
+    expect(postGraphQuery).toHaveBeenCalledWith(expect.objectContaining({ op: 'overview' }));
+    expect(postGraphQuery.mock.calls[0]?.[0]).not.toHaveProperty('session');
+    expect(postGraphQuery.mock.calls[0]?.[0]).not.toHaveProperty('seed_id');
     expect(fetchGraphSchema).toHaveBeenCalled();
   });
 
@@ -68,23 +70,23 @@ describe('GraphExplorer (renderer + graphApi mocked)', () => {
     postGraphQuery.mockResolvedValue(EMPTY_RESULT);
     fetchGraphSchema.mockResolvedValue(SCHEMA);
 
-    render(<GraphExplorer threadId="thread-123" />);
+    render(<GraphExplorer />);
 
-    const board = await screen.findByRole('region', { name: 'Evidence readiness' });
+    const board = await screen.findByRole('region', { name: 'Memory graph readiness' });
     expect(board.textContent).toContain('Schema online');
-    expect(board.textContent).toContain('2 node types');
+    expect(board.textContent).toContain('1 node type');
     expect(board.textContent).toContain('1 connection type');
     expect(board.textContent).toContain('Entity');
-    expect(board.textContent).toContain('MENTIONS');
-    expect(within(board).getByRole('button', { name: 'Explore this conversation' })).toBeTruthy();
+    expect(board.textContent).toContain('FACT');
+    expect(within(board).getByRole('button', { name: 'Load memory graph' })).toBeTruthy();
   });
 
   it('renders an auth-error state on a 401', async () => {
-    // B3 / T-27-03: an expired-session 401 from the seed fetch surfaces a VISIBLE auth-error
+    // B3 / T-27-03: an expired authentication session surfaces a VISIBLE auth-error
     // state (graph.error.auth), NOT a blank canvas and NOT a swallowed error.
     postGraphQuery.mockRejectedValue(new Error('HTTP 401'));
 
-    render(<GraphExplorer threadId="thread-123" />);
+    render(<GraphExplorer />);
 
     await waitFor(() => {
       expect(
@@ -96,10 +98,10 @@ describe('GraphExplorer (renderer + graphApi mocked)', () => {
     expect(screen.queryByTestId('sigma-mock')).toBeNull();
   });
 
-  it('renders the populated canvas with node/edge props on a non-empty seed result', async () => {
+  it('renders the populated canvas with node/edge props on a non-empty overview', async () => {
     postGraphQuery.mockResolvedValue(POPULATED_RESULT);
 
-    render(<GraphExplorer threadId="thread-123" />);
+    render(<GraphExplorer />);
 
     await waitFor(() => {
       expect(screen.getByTestId('sigma-mock').textContent).toBe('canvas:2:1');
@@ -114,14 +116,14 @@ describe('GraphExplorer (renderer + graphApi mocked)', () => {
     expect(canvas?.className).not.toContain('min-h-[46svh]');
     expect(screen.getByLabelText('Select a node').className).toContain('hidden');
     expect(screen.getByLabelText('Select a node').className).not.toContain('lg:block');
-    // The schema-overview fallback was NOT taken (we had a real result).
+    // The schema fallback was NOT taken because the overview contained memory.
     expect(fetchGraphSchema).not.toHaveBeenCalled();
   });
 
   it('renders the query/service error state on a non-401 rejection, and retry re-fetches', async () => {
     postGraphQuery.mockRejectedValueOnce(new Error('HTTP 503'));
 
-    render(<GraphExplorer threadId="thread-123" />);
+    render(<GraphExplorer />);
 
     await waitFor(() => {
       expect(screen.getByRole('alert')).toBeTruthy();
@@ -137,39 +139,52 @@ describe('GraphExplorer (renderer + graphApi mocked)', () => {
     });
   });
 
-  it('shows the cap notice when the seed result hits the node/edge caps', async () => {
+  it('shows the cap notice when the overview hits the node/edge caps', async () => {
     const big: GraphResult = {
-      nodes: Array.from({ length: 80 }, (_, i) => ({
-        id: `n${String(i)}`,
-        caption: `N${String(i)}`,
-      })),
+      nodes: POPULATED_RESULT.nodes,
       edges: [],
       schema: SCHEMA,
-      query: 'MATCH (n) RETURN n',
+      query: 'SELECT FROM `Entity` LIMIT 75',
+      truncated: true,
     };
     postGraphQuery.mockResolvedValue(big);
 
-    render(<GraphExplorer threadId="thread-123" />);
+    render(<GraphExplorer />);
     await waitFor(() => {
       expect(screen.getByText(/Showing the top/)).toBeTruthy();
     });
   });
 
-  it('the seed CTA re-runs the intent (the SeedFilterPanel onSeed path)', async () => {
+  it('does not infer truncation when a complete result exactly fills a cap', async () => {
+    postGraphQuery.mockResolvedValue({
+      ...POPULATED_RESULT,
+      nodes: Array.from({ length: 75 }, (_, index) => ({
+        id: `#1:${String(index)}`,
+        caption: `Entity ${String(index)}`,
+        labels: ['Entity'],
+      })),
+      truncated: false,
+    });
+
+    render(<GraphExplorer />);
+    await screen.findByTestId('sigma-mock');
+    expect(screen.queryByText(/Showing the top/)).toBeNull();
+  });
+
+  it('the refresh action re-runs the identity overview', async () => {
     postGraphQuery.mockResolvedValue(POPULATED_RESULT);
 
-    render(<GraphExplorer threadId="thread-123" />);
+    render(<GraphExplorer />);
     await waitFor(() => {
       expect(screen.getByTestId('sigma-mock')).toBeTruthy();
     });
     const calls = postGraphQuery.mock.calls.length;
-    // The mobile-first layout renders the seed CTA twice (the mobile control bar + the
-    // desktop seed panel) — both drive the same onSeed path; click the first.
-    const [seedButton] = screen.getAllByRole('button', { name: 'Explore this conversation' });
-    if (seedButton === undefined) throw new Error('seed CTA not rendered');
-    expect(seedButton.className).toContain('min-h-[44px]');
+    // Mobile and desktop controls share the same refresh path; click the first.
+    const [refreshButton] = screen.getAllByRole('button', { name: 'Load memory graph' });
+    if (refreshButton === undefined) throw new Error('refresh action not rendered');
+    expect(refreshButton.className).toContain('min-h-[44px]');
     expect(screen.getByRole('button', { name: 'Node types' }).className).toContain('min-h-[44px]');
-    fireEvent.click(seedButton);
+    fireEvent.click(refreshButton);
     await waitFor(() => {
       expect(postGraphQuery.mock.calls.length).toBeGreaterThan(calls);
     });
@@ -178,44 +193,44 @@ describe('GraphExplorer (renderer + graphApi mocked)', () => {
   it('clicking a left-panel label filter immediately re-runs the graph query', async () => {
     postGraphQuery.mockResolvedValue(POPULATED_RESULT);
 
-    render(<GraphExplorer threadId="thread-123" />);
+    render(<GraphExplorer />);
     await waitFor(() => {
       expect(screen.getByTestId('sigma-mock')).toBeTruthy();
     });
 
     const calls = postGraphQuery.mock.calls.length;
-    fireEvent.click(screen.getByRole('button', { name: 'Document' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Entity' }));
 
     await waitFor(() => {
       expect(postGraphQuery.mock.calls.length).toBeGreaterThan(calls);
     });
     expect(postGraphQuery.mock.calls.at(-1)?.[0]).toMatchObject({
-      labels: ['Document'],
-      session: 'thread-123',
+      op: 'overview',
+      labels: ['Entity'],
     });
 
     const callsAfterLabel = postGraphQuery.mock.calls.length;
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Document' }).getAttribute('aria-pressed')).toBe(
+      expect(screen.getByRole('button', { name: 'Entity' }).getAttribute('aria-pressed')).toBe(
         'true',
       );
     });
-    fireEvent.click(screen.getByRole('button', { name: 'MENTIONS' }));
+    fireEvent.click(screen.getByRole('button', { name: 'FACT' }));
 
     await waitFor(() => {
       expect(postGraphQuery.mock.calls.length).toBeGreaterThan(callsAfterLabel);
     });
     expect(postGraphQuery.mock.calls.at(-1)?.[0]).toMatchObject({
-      labels: ['Document'],
-      rel_types: ['MENTIONS'],
-      session: 'thread-123',
+      op: 'overview',
+      labels: ['Entity'],
+      rel_types: ['FACT'],
     });
   });
 
   it('toggling a filter label + selecting a node from the path strip opens the inspector', async () => {
     postGraphQuery.mockResolvedValue(POPULATED_RESULT);
 
-    render(<GraphExplorer threadId="thread-123" />);
+    render(<GraphExplorer />);
     await waitFor(() => {
       expect(screen.getByTestId('sigma-mock')).toBeTruthy();
     });
@@ -235,21 +250,21 @@ describe('GraphExplorer (renderer + graphApi mocked)', () => {
     expect(screen.getByText('Connections')).toBeTruthy(); // inspector degree label
   });
 
-  it('falls to the schema-error state when the empty-seed schema fetch also fails', async () => {
+  it('falls to the schema-error state when the empty-overview schema fetch also fails', async () => {
     postGraphQuery.mockResolvedValue(EMPTY_RESULT);
     fetchGraphSchema.mockRejectedValue(new Error('HTTP 500'));
 
-    render(<GraphExplorer threadId="thread-123" />);
+    render(<GraphExplorer />);
     await waitFor(() => {
       expect(screen.getByText("Couldn't load the graph structure. Retry.")).toBeTruthy();
     });
   });
 
-  it('surfaces an auth error when the empty-seed schema fetch returns 401', async () => {
+  it('surfaces an auth error when the empty-overview schema fetch returns 401', async () => {
     postGraphQuery.mockResolvedValue(EMPTY_RESULT);
     fetchGraphSchema.mockRejectedValue(new Error('HTTP 401'));
 
-    render(<GraphExplorer threadId="thread-123" />);
+    render(<GraphExplorer />);
     await waitFor(() => {
       expect(
         screen.getByText('Your session has expired. Sign in again to view the graph.'),
@@ -260,7 +275,7 @@ describe('GraphExplorer (renderer + graphApi mocked)', () => {
   it('pin path from the inspector highlights the node + its neighbors in the path strip', async () => {
     postGraphQuery.mockResolvedValue(POPULATED_RESULT);
 
-    render(<GraphExplorer threadId="thread-123" />);
+    render(<GraphExplorer />);
     await waitFor(() => {
       expect(screen.getByTestId('sigma-mock')).toBeTruthy();
     });
@@ -271,5 +286,31 @@ describe('GraphExplorer (renderer + graphApi mocked)', () => {
     const pathSection = screen.getByLabelText('Selected path');
     expect(pathSection.textContent).toContain('Alpha');
     expect(pathSection.textContent).toContain('Bravo');
+  });
+
+  it('expands a selected RID and cumulatively merges the returned neighbors', async () => {
+    const expansion: GraphResult = {
+      nodes: [
+        { id: '#1:0', caption: 'Alpha', labels: ['Entity'] },
+        { id: '#1:2', caption: 'Charlie', labels: ['Entity'] },
+      ],
+      edges: [{ id: '#5:1', source: '#1:0', target: '#1:2', rel_type: 'FACT' }],
+      schema: POPULATED_RESULT.schema,
+      query: 'SELECT expand(bothE()) FROM #1:0 LIMIT 200',
+    };
+    postGraphQuery.mockResolvedValueOnce(POPULATED_RESULT).mockResolvedValueOnce(expansion);
+
+    render(<GraphExplorer />);
+    await screen.findByTestId('sigma-mock');
+    fireEvent.click(screen.getByRole('button', { name: /Alpha/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Expand neighbors' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('sigma-mock').textContent).toBe('canvas:3:2');
+    });
+    expect(postGraphQuery.mock.calls.at(-1)?.[0]).toMatchObject({
+      op: 'expand',
+      node_id: '#1:0',
+    });
   });
 });

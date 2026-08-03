@@ -20,7 +20,6 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/joho/godotenv v1.5.1
-	github.com/k8nstantin/go-leiden v0.1.0
 	github.com/mdp/qrterminal/v3 v3.2.1
 	github.com/moby/moby/api v1.55.0
 	github.com/moby/moby/client v0.5.0

@@ -8,7 +8,7 @@ import type { GraphEdge, GraphNode } from '../types';
 
 // NodeInspector / PathStrip cover the GRAPH-03 / D-03 / D-09 + SC3 obligations as unit
 // assertions (the full axe/keyboard run is the Task-4 Playwright spec): the read-only action
-// set (NO add-note, NO editable Cypher), the citations list distinct from the open-source
+// set (no add-note, no editable SQL), the citations list distinct from the open-source
 // action, the openSources cross-link, properties-as-text, and the non-hover access path
 // (node-list Enter selects = a canvas click).
 
@@ -31,30 +31,38 @@ function docNode(over: Partial<GraphNode> = {}): GraphNode {
 }
 
 describe('NodeInspector (read-only action set + citations)', () => {
-  it('inspector renders the read-only set and NO add-note / NO editable Cypher input', () => {
+  it('inspector renders the read-only set and NO add-note / NO editable SQL input', () => {
     render(
       <NodeInspector
         node={docNode()}
-        query="MATCH (d:Document) RETURN d"
+        query="SELECT FROM `Entity` LIMIT 75"
+        onExpand={vi.fn()}
         onPinPath={vi.fn()}
         onClose={vi.fn()}
       />,
     );
     expect(screen.getByRole('button', { name: 'Pin path' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Open source' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Show Cypher' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Expand neighbors' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Show ArcadeDB SQL' })).toBeTruthy();
     // T-27-02: add-note is NOT rendered (graph WRITES deferred to Phase 29).
     expect(screen.queryByRole('button', { name: /add note/i })).toBeNull();
-    // Show Cypher is display-only — toggling it reveals text, never a textbox/input.
-    fireEvent.click(screen.getByRole('button', { name: 'Show Cypher' }));
-    expect(screen.getByText('MATCH (d:Document) RETURN d')).toBeTruthy();
+    // The ArcadeDB SQL is display-only: toggling reveals text, never an input.
+    fireEvent.click(screen.getByRole('button', { name: 'Show ArcadeDB SQL' }));
+    expect(screen.getByText('SELECT FROM `Entity` LIMIT 75')).toBeTruthy();
     expect(screen.queryByRole('textbox')).toBeNull();
   });
 
   it('inspector renders citations (a node with a list shows them; one without renders none)', () => {
     // SC3 / D-09: the citations list is a DISPLAYED field, distinct from the open-source action.
     const { unmount } = render(
-      <NodeInspector node={docNode()} query="" onPinPath={vi.fn()} onClose={vi.fn()} />,
+      <NodeInspector
+        node={docNode()}
+        query=""
+        onExpand={vi.fn()}
+        onPinPath={vi.fn()}
+        onClose={vi.fn()}
+      />,
     );
     expect(screen.getByText('Source A')).toBeTruthy();
     expect(screen.getByText('Source B')).toBeTruthy();
@@ -65,6 +73,7 @@ describe('NodeInspector (read-only action set + citations)', () => {
       <NodeInspector
         node={docNode({ citations: [] })}
         query=""
+        onExpand={vi.fn()}
         onPinPath={vi.fn()}
         onClose={vi.fn()}
       />,
@@ -75,7 +84,15 @@ describe('NodeInspector (read-only action set + citations)', () => {
 
   it('inspector open-source action calls openSources with the node sources + refId', () => {
     openSources.mockClear();
-    render(<NodeInspector node={docNode()} query="" onPinPath={vi.fn()} onClose={vi.fn()} />);
+    render(
+      <NodeInspector
+        node={docNode()}
+        query=""
+        onExpand={vi.fn()}
+        onPinPath={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Open source' }));
     expect(openSources).toHaveBeenCalledTimes(1);
     const [sources, refId] = openSources.mock.calls[0] as [readonly { ref_id: string }[], string];
@@ -88,6 +105,7 @@ describe('NodeInspector (read-only action set + citations)', () => {
       <NodeInspector
         node={docNode({ props: { note: '<script>window.__x=1</script>' } })}
         query=""
+        onExpand={vi.fn()}
         onPinPath={vi.fn()}
         onClose={vi.fn()}
       />,
@@ -99,7 +117,15 @@ describe('NodeInspector (read-only action set + citations)', () => {
 
   it('inspector close button invokes onClose (focus-return to the opener)', () => {
     const onClose = vi.fn();
-    render(<NodeInspector node={docNode()} query="" onPinPath={vi.fn()} onClose={onClose} />);
+    render(
+      <NodeInspector
+        node={docNode()}
+        query=""
+        onExpand={vi.fn()}
+        onPinPath={vi.fn()}
+        onClose={onClose}
+      />,
+    );
     fireEvent.click(screen.getByRole('button', { name: /close/i }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
@@ -107,9 +133,33 @@ describe('NodeInspector (read-only action set + citations)', () => {
   it('inspector pin-path action raises onPinPath with the node', () => {
     const onPinPath = vi.fn();
     const node = docNode();
-    render(<NodeInspector node={node} query="" onPinPath={onPinPath} onClose={vi.fn()} />);
+    render(
+      <NodeInspector
+        node={node}
+        query=""
+        onExpand={vi.fn()}
+        onPinPath={onPinPath}
+        onClose={vi.fn()}
+      />,
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Pin path' }));
     expect(onPinPath).toHaveBeenCalledWith(node);
+  });
+
+  it('inspector expansion raises the selected ArcadeDB RID', () => {
+    const onExpand = vi.fn();
+    const node = docNode({ id: '#1:7' });
+    render(
+      <NodeInspector
+        node={node}
+        query=""
+        onExpand={onExpand}
+        onPinPath={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Expand neighbors' }));
+    expect(onExpand).toHaveBeenCalledWith(node);
   });
 
   it('inspector hides open-source for a non-document node + shows the empty state for none', () => {
@@ -118,6 +168,7 @@ describe('NodeInspector (read-only action set + citations)', () => {
       <NodeInspector
         node={docNode({ labels: ['Entity'] })}
         query=""
+        onExpand={vi.fn()}
         onPinPath={vi.fn()}
         onClose={vi.fn()}
       />,
@@ -125,7 +176,15 @@ describe('NodeInspector (read-only action set + citations)', () => {
     expect(screen.queryByRole('button', { name: 'Open source' })).toBeNull();
 
     // No node selected → the empty inspector state.
-    render(<NodeInspector node={undefined} query="" onPinPath={vi.fn()} onClose={vi.fn()} />);
+    render(
+      <NodeInspector
+        node={undefined}
+        query=""
+        onExpand={vi.fn()}
+        onPinPath={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
     expect(screen.getByText('Select a node')).toBeTruthy();
   });
 });

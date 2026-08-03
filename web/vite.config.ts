@@ -218,6 +218,10 @@ export default defineConfig({
               name: 'shiki-lang-tools',
               test: /[\\/]node_modules[\\/]@shikijs[\\/]langs[\\/]dist[\\/](bash|go|python|shellscript|sql)\.mjs$/,
             },
+            {
+              name: 'editor-prosemirror',
+              test: /[\\/]node_modules[\\/]prosemirror-[^\\/]+[\\/]/,
+            },
           ],
         },
       },
