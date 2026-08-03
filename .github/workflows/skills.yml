@@ -150,6 +150,12 @@ jobs:
             fi
           done
 
+      - name: Install poppler-utils (the PDF text extractor ingest uses)
+        # The gate measures internal/documents/filecard, whose PDF path shells out to
+        # pdftotext (baked into docker/aura/Dockerfile, absent from the runner image).
+        # Without it that path is uncovered AND its tests t.Fatal under $CI.
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends poppler-utils
+
       - name: Coverage gate (owned surface ≥85% across the tag matrix, CLAUDE.md floor)
         # The combined figure (CLAUDE.md): the coverage run carries the db_integration tag
         # so the audit + by-path snippet-exec tiers fold into internal/skills coverage.

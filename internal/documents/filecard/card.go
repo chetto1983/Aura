@@ -248,11 +248,7 @@ func (c Column) line(index int) string {
 		fmt.Fprintf(&b, ", %s", plural(c.Distinct, "distinct value", "distinct values"))
 	}
 	if len(c.Common) > 0 {
-		frequent := make([]string, 0, len(c.Common))
-		for _, value := range c.Common {
-			frequent = append(frequent, fmt.Sprintf("%s (%d)", value.Text, value.Count))
-		}
-		fmt.Fprintf(&b, ", most common %s", strings.Join(frequent, ", "))
+		fmt.Fprintf(&b, ", most common %s", joinValues(c.Common))
 	}
 	if c.Min != "" && c.Max != "" {
 		fmt.Fprintf(&b, ", from %s to %s", c.Min, c.Max)

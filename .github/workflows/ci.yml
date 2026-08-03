@@ -142,6 +142,13 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Install poppler-utils (the PDF text extractor ingest uses)
+        # internal/documents/filecard shells out to pdftotext to read a PDF's words at
+        # ingest; poppler-utils is baked into docker/aura/Dockerfile but is NOT on the
+        # hosted runner image. Without it the extraction tests t.Fatal (no-skip-as-green)
+        # — a card path that runs nowhere in CI is the falsely-green case.
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends poppler-utils
+
       - name: go test -race
         run: go test -race -count=1 $(bash scripts/go_packages.sh)
 
@@ -282,6 +289,11 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+
+      - name: Install poppler-utils (the PDF text extractor ingest uses)
+        # ./internal/documents/... below builds file cards, and a card for a PDF reads
+        # its text through pdftotext. See the unit-test job for why this is installed.
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends poppler-utils
 
       - name: Start Postgres (docker compose)
         run: make db-up
@@ -653,6 +665,11 @@ jobs:
         run: |
           mkdir -p "$AURA_CI_LLAMA_CACHE_DIR/llama.cpp" "$AURA_CI_LLAMA_CACHE_DIR/huggingface" "$AURA_SKILL_EXPORT_DIR"
           chmod -R a+rwX "$AURA_CI_LLAMA_CACHE_DIR"
+
+      - name: Install poppler-utils (the PDF text extractor ingest uses)
+        # The gate measures internal/documents/filecard, whose PDF path shells out to
+        # pdftotext. Without it that path is uncovered AND its tests t.Fatal under $CI.
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends poppler-utils
 
       - name: Bring up stack + migrate (postgres + ArcadeDB + embed sidecar)
         run: make db-migrate memory-up

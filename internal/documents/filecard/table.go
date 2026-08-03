@@ -1,7 +1,6 @@
 package filecard
 
 import (
-	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -291,24 +290,7 @@ func (c *columnStats) kind() string {
 // the floor the column narration says only how many distinct values there are,
 // and the sampled rows carry the examples.
 func (c *columnStats) common() []Value {
-	floor := max(2, c.nonEmpty/100)
-	values := make([]Value, 0, len(c.counts))
-	for text, count := range c.counts {
-		if count < floor {
-			continue
-		}
-		values = append(values, Value{Text: text, Count: count})
-	}
-	sort.Slice(values, func(i, j int) bool {
-		if values[i].Count != values[j].Count {
-			return values[i].Count > values[j].Count
-		}
-		return values[i].Text < values[j].Text
-	})
-	if len(values) > mcvPerColumn {
-		values = values[:mcvPerColumn]
-	}
-	return values
+	return topValues(c.counts, max(2, c.nonEmpty/100), mcvPerColumn)
 }
 
 func clean(value string) string {

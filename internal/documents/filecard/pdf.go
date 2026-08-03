@@ -5,25 +5,31 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"unicode/utf16"
 )
 
-// A PDF is the one common format whose words the card cannot reach.
-//
-// Its text lives in content streams that are Flate-compressed and written as
-// glyph indices into a font; for the CID fonts every modern producer emits, a
-// glyph index means nothing without that font's ToUnicode CMap. Extracting it is
-// a PDF engine, not a card builder, so this reader takes only what a PDF states
-// about itself in the clear: its metadata and its page count. When those are
-// absent — and for the Normattiva decrees in the reference corpus they are, the
-// producer wrote nothing but "iText" — the card says so instead of pretending.
+// A PDF states two things about itself in the clear — its metadata and its page
+// count — and hides the rest. Its text lives in content streams that are
+// Flate-compressed and written as glyph indices into a font; for the CID fonts
+// every modern producer emits, a glyph index means nothing without that font's
+// ToUnicode CMap. Reading that is a PDF engine's work, so this file reads the
+// clear part itself and hands the words to one (see pdf_text.go). When no engine
+// is at hand the card degrades to the clear part and says so, which for the
+// Normattiva decrees — whose producer wrote nothing but "iText" — is a file name
+// and a page count.
 const (
 	pdfHeadBytes    = 1 << 20
 	pdfTailBytes    = 256 << 10
 	maxPDFScanBytes = 32 << 20
 )
+
+// pdfUnreadCaveat is the card's statement that it is describing a PDF it could
+// not read. It is followed by the reason; see pdfUnreadReason.
+const pdfUnreadCaveat = "Aura did not read this PDF's text at ingest — a PDF stores its words as font glyph " +
+	"indices, which needs the file itself. Open it with document_open to read or search inside it."
 
 func buildPDF(req Request, card Card) (Card, error) {
 	file, err := os.Open(req.Path)
@@ -41,6 +47,9 @@ func buildPDF(req Request, card Card) (Card, error) {
 	tail := readTail(file, req.SizeBytes, pdfTailBytes)
 
 	card.Title = pdfMetadata(head, tail, "Title", "dc:title")
+	if titleIsFileName(card.Title) {
+		card.Title = ""
+	}
 	for _, field := range []struct{ label, info, xmp string }{
 		{"Subject", "Subject", "dc:description"},
 		{"Keywords", "Keywords", "pdf:Keywords"},
@@ -58,14 +67,69 @@ func buildPDF(req Request, card Card) (Card, error) {
 	case pages > 0:
 		card.Facts = append(card.Facts, fmt.Sprintf("at least %d pages", pages))
 	}
-	card.Caveats = append(card.Caveats,
-		"Aura did not read this PDF's text at ingest — a PDF stores its words as font glyph indices, "+
-			"which needs the file itself. Open it with document_open to read or search inside it.")
-	if card.Title == "" && len(card.Text) == 0 {
-		card.Caveats = append(card.Caveats,
-			"It carries no title or subject of its own, so only its file name says what it is.")
+	return describePDFText(req, card, pages, exact), nil
+}
+
+// describePDFText adds what a PDF engine could read to the card, and states what
+// it did not read. A PDF that cannot be extracted is still a card: ingest must
+// never fail because a file was unreadable, so every failure here becomes a
+// caveat and a log line, and the document keeps its name, size and page count.
+func describePDFText(req Request, card Card, pages int, exact bool) Card {
+	text, bytesCapped, err := pdfExtractText(req.Path)
+	if err != nil {
+		logExtractFailure(req.FileName, err)
 	}
-	return card, nil
+	blocks := pdfBlocks(text)
+	if len(blocks) == 0 {
+		card.Caveats = append(card.Caveats, pdfUnreadCaveat+" "+pdfUnreadReason(err))
+		if card.Title == "" && len(card.Text) == 0 {
+			card.Caveats = append(card.Caveats,
+				"It carries no title or subject of its own, so only its file name says what it is.")
+		}
+		return card
+	}
+
+	opening := firstWords(blocks, maxProseWords)
+	if card.Title == "" {
+		card.Title = pdfTitle(blocks)
+	}
+	card.Text = append(card.Text, "Opens: "+strings.Join(opening, " / "))
+	if terms := recurringTerms(blocks, opening); len(terms) > 0 {
+		card.Text = append(card.Text, "Recurring terms: "+joinValues(terms))
+	}
+	card.Caveats = append(card.Caveats, pdfReadCaveat(pages, exact))
+	if bytesCapped {
+		card.Caveats = append(card.Caveats,
+			fmt.Sprintf("The extract was cut at %d KB before those pages ran out.", maxTextChars>>10))
+	}
+	return card
+}
+
+// pdfReadCaveat states how much of the file was read. A page count is only
+// quotable when it is exact — a count scanned out of compressed object streams
+// is a floor — so an inexact one is reported as no count at all rather than as a
+// number the caveat would make look certain.
+func pdfReadCaveat(pages int, exact bool) string {
+	const described = "only their opening and their recurring terms are described here."
+	switch {
+	case exact && pages <= pdfTextPages:
+		return "Its pages were all read at ingest, and " + described
+	case exact:
+		return fmt.Sprintf("Only the first %d of its %d pages were read at ingest, and %s",
+			pdfTextPages, pages, described)
+	default:
+		return fmt.Sprintf("At most the first %d pages were read at ingest, and %s", pdfTextPages, described)
+	}
+}
+
+// titleIsFileName reports a /Title that is really the producer's source file
+// name — the reference corpus' Costituzione.pdf states "Costituzione VIGENTE
+// DEF.pdf", which displaces the title its own first page carries. Card.Title
+// must be a DESCRIPTION the file holds; the name is indexed on its own already,
+// so a name here is noise standing in the way of the real thing.
+func titleIsFileName(title string) bool {
+	kind, _ := handlerFor(strings.ToLower(filepath.Ext(strings.TrimSpace(title))))
+	return kind != KindFile
 }
 
 func readTail(file *os.File, size int64, want int64) []byte {
