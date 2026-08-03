@@ -1,7 +1,8 @@
 # Session handoff — the v2 purge closed, seven items open
 
-**Date:** 2026-08-03 · **Branch:** `master` (master-direct) · **HEAD:** `f09fa5c99`
-**Working tree:** CLEAN. **Migration head:** 0089. **Live `aura` DB:** at 87 — see §Live drift.
+**Date:** 2026-08-03 · **Branch:** `master` (master-direct) · **HEAD:** `578c3f00c`
+**Working tree:** CLEAN. **Migration head:** 0090 (65 files, not 90 — see item 6).
+**Live `aura` DB:** at 89, clean; it needs 0090 before the next boot.
 
 Supersedes [2026-08-02-milestone-purge-session-handoff.md](2026-08-02-milestone-purge-session-handoff.md),
 which stays as the record of the deletion arc. `.planning/` was retired at milestone
@@ -90,7 +91,8 @@ Two routes: a real PDF extractor (600–1000 LOC of fragile parsing) or a sandbo
 The twenty-five migrations that built the adaptive plane and the one that dropped it
 are gone. A fresh database migrated with all 90 files and one migrated with the
 remaining 65 produce a **byte-identical** `pg_dump --schema-only` (1456 lines, only
-pg_dump's random `estrict` nonce differs), and the live deployment needs no adoption
+pg_dump's random `
+estrict` nonce differs), and the live deployment needs no adoption
 step because golang-migrate keeps one version number, not a per-migration ledger.
 
 Removing the wedge exposed two bug classes it had been hiding, both now fixed:
