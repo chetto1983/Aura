@@ -69,9 +69,13 @@ only mutating entity-resolution authority.
 2. Compute one EmbeddingGemma query vector with the query task prefix.
 3. Run bounded dense and Lucene rankings inside ArcadeDB, applying the valid-time
    window before each ranking is truncated.
-4. Admit only dense rows at cosine distance `<= 0.55` and lexical rows with
-   Lucene `$score >= 2`; these EmbeddingGemma defaults are recalibrated when the
-   embedding model changes.
+4. Admit only dense rows at cosine distance `<= 0.55`. For lexical queries with
+   two or more whitespace-separated terms, require Lucene `$score >= 2`; for an
+   explicit single-term lookup, admit every positive `SEARCH_INDEX` match. The
+   split keeps `Caraglio`/`Torino` and historical `as_of` lookups reachable while
+   preventing one entity-only match from satisfying a longer unsupported claim.
+   These EmbeddingGemma/Lucene defaults are recalibrated when the embedding model
+   changes.
 5. Fuse the admitted rankings with ArcadeDB RRF, hydrate by RID and restore
    fused order. If both legs are empty, return no facts and mark the response as
    an abstention instead of returning the least-distant unrelated rows.
