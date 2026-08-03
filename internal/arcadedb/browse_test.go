@@ -27,6 +27,12 @@ func TestListEntitiesMapsRowsAndBoundsTheQuery(t *testing.T) {
 	if !strings.Contains(rec.statements[1], "LIMIT 7") {
 		t.Fatalf("custom bound missing: %s", rec.statements[1])
 	}
+	if _, err := client.ListEntities(context.Background(), 1000); err != nil {
+		t.Fatalf("ListEntities capped limit: %v", err)
+	}
+	if !strings.Contains(rec.statements[2], "LIMIT 100") {
+		t.Fatalf("hard bound missing: %s", rec.statements[2])
+	}
 }
 
 func TestListEntitiesPreservesServerErrors(t *testing.T) {
@@ -73,6 +79,23 @@ func TestDigestDefaultsAndReportsCompleteCoverage(t *testing.T) {
 	}
 	if len(rec.statements) != 1 {
 		t.Fatalf("queries = %d, want one", len(rec.statements))
+	}
+}
+
+func TestDigestHonoursConfiguredHardCaps(t *testing.T) {
+	client, rec := recordingClient(t, `{"result":[
+		{"subject":"A","object":"B","predicate":"first"},
+		{"subject":"A","object":"C","predicate":"second"}]}`)
+	client.limits = MemoryLimits{Results: 1, DigestFactsPerEntity: 1, DigestScan: 7}.normalized()
+	got, err := client.Digest(context.Background(), 1000, 1000)
+	if err != nil {
+		t.Fatalf("Digest: %v", err)
+	}
+	if got.Entities != 1 || strings.Count(got.Text, ";") != 0 {
+		t.Fatalf("digest exceeded configured caps: %+v", got)
+	}
+	if !strings.Contains(rec.statements[0], "LIMIT 7") {
+		t.Fatalf("scan cap missing: %s", rec.statements[0])
 	}
 }
 

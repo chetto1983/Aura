@@ -6,15 +6,14 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // The memory model: the fact lives on the EDGE and is bitemporal.
 //
-// There is no embedding. Retrieval is the graph -- walk an entity's edges when
-// the question names it, and the Lucene index over the statement text when it
-// does not. Both are exact and cost a single round trip; a vector layer on top
-// added an embedding call per read and per write, a fusion stage to tune, and
-// three ranking defects, to answer questions a traversal answers outright.
+// Retrieval walks an entity's edges when the question names it. Otherwise it
+// fuses Lucene and EmbeddingGemma rankings inside ArcadeDB; the lexical leg is
+// the bounded fallback whenever embedding is unavailable.
 //
 // Two independent time axes, because they answer different questions:
 //   - valid_from / valid_to  -- when the fact was true in the world
@@ -25,10 +24,8 @@ import (
 // have answers. On LOCOMO the systems without this score 21-23% on temporal
 // questions against Zep's 79.8%.
 //
-// Provenance (source_run_id, source_memory_ids) is mandatory, taken from
-// Cognee, whose graph interface spends a third of its methods on source refs.
-// Aura has already paid for its absence once: test entities written under the
-// operator's real identity had no discriminator and had to be cleaned by hand.
+// Provenance is mandatory and multi-source. Exact replay reuses the edge, so a
+// fact can be detached from one source without destroying support from another.
 //
 // Property names avoid `end`: ArcadeDB reserves it both as a bare identifier
 // and as a bind-parameter name.
@@ -51,8 +48,8 @@ func memorySchemaStatements() []string {
 		"CREATE PROPERTY " + factEdgeType + ".valid_to IF NOT EXISTS DATETIME",
 		"CREATE PROPERTY " + factEdgeType + ".created_at IF NOT EXISTS DATETIME",
 		"CREATE PROPERTY " + factEdgeType + ".expired_at IF NOT EXISTS DATETIME",
-		"CREATE PROPERTY " + factEdgeType + ".source_run_id IF NOT EXISTS STRING",
-		"CREATE PROPERTY " + factEdgeType + ".source_memory_ids IF NOT EXISTS LIST",
+		"CREATE PROPERTY " + factEdgeType + ".fact_key IF NOT EXISTS STRING",
+		"CREATE PROPERTY " + factEdgeType + ".sources IF NOT EXISTS LIST OF MAP",
 
 		// EnglishAnalyzer, not the StandardAnalyzer default: Standard does no
 		// stemming, so a fact reading "works for" is invisible to a question
@@ -65,7 +62,15 @@ func memorySchemaStatements() []string {
 
 // EnsureMemorySchema creates the memory model if it is not already there.
 func (c *Client) EnsureMemorySchema(ctx context.Context) error {
-	for _, statement := range append(memorySchemaStatements(), vectorSchemaStatements()...) {
+	for _, statement := range memorySchemaStatements() {
+		if _, err := c.Command(ctx, statement, nil); err != nil {
+			return fmt.Errorf("arcadedb: ensure memory schema: %w", err)
+		}
+	}
+	if err := c.migrateMemoryProvenance(ctx); err != nil {
+		return err
+	}
+	for _, statement := range vectorSchemaStatements() {
 		if _, err := c.Command(ctx, statement, nil); err != nil {
 			return fmt.Errorf("arcadedb: ensure memory schema: %w", err)
 		}
@@ -73,16 +78,23 @@ func (c *Client) EnsureMemorySchema(ctx context.Context) error {
 	return nil
 }
 
+// FactSource identifies one extraction run supporting a fact.
+type FactSource struct {
+	RunID     string   `json:"run_id"`
+	MemoryIDs []string `json:"memory_ids"`
+}
+
 // Fact is one assertion about the world, as stored on an edge.
 type Fact struct {
-	Subject         string
-	Predicate       string
-	Object          string
-	Statement       string
-	ValidFrom       time.Time
-	ValidTo         time.Time
-	SourceRunID     string
-	SourceMemoryIDs []string
+	Subject     string
+	SubjectKind string
+	Predicate   string
+	Object      string
+	ObjectKind  string
+	Statement   string
+	ValidFrom   time.Time
+	ValidTo     time.Time
+	Source      FactSource
 	// Supersedes closes any still-valid fact sharing this subject and predicate.
 	// It is explicit rather than inferred because some predicates are
 	// single-valued ("lives in") and others are not ("likes").
@@ -97,6 +109,11 @@ type FactWrite struct {
 
 // Validate rejects a fact that could not be answered for later.
 func (f Fact) Validate() error {
+	return f.validate(defaultMemoryLimits)
+}
+
+func (f Fact) validate(limits MemoryLimits) error {
+	limits = limits.normalized()
 	switch {
 	case strings.TrimSpace(f.Subject) == "":
 		return fmt.Errorf("arcadedb: fact subject must be non-empty")
@@ -106,15 +123,44 @@ func (f Fact) Validate() error {
 		return fmt.Errorf("arcadedb: fact object must be non-empty")
 	case strings.TrimSpace(f.Statement) == "":
 		return fmt.Errorf("arcadedb: fact statement must be non-empty")
-	case strings.TrimSpace(f.SourceRunID) == "":
-		return fmt.Errorf("arcadedb: fact source_run_id must be non-empty")
+	case strings.TrimSpace(f.Source.RunID) == "":
+		return fmt.Errorf("arcadedb: fact source run_id must be non-empty")
 	case !f.ValidFrom.IsZero() && !f.ValidTo.IsZero() && !f.ValidTo.After(f.ValidFrom):
 		return fmt.Errorf("arcadedb: fact valid_to must be after valid_from")
+	}
+	fields := []struct {
+		name  string
+		value string
+		limit int
+	}{
+		{"subject", f.Subject, limits.EntityRunes},
+		{"subject_kind", f.SubjectKind, limits.PredicateRunes},
+		{"predicate", f.Predicate, limits.PredicateRunes},
+		{"object", f.Object, limits.EntityRunes},
+		{"object_kind", f.ObjectKind, limits.PredicateRunes},
+		{"statement", f.Statement, limits.StatementRunes},
+		{"source run_id", f.Source.RunID, limits.SourceRunIDRunes},
+	}
+	for _, field := range fields {
+		if err := validateRuneLimit(field.name, field.value, field.limit); err != nil {
+			return err
+		}
+	}
+	if len(f.Source.MemoryIDs) > limits.SourceMemoryIDs {
+		return fmt.Errorf("arcadedb: fact source memory_ids exceeds %d items", limits.SourceMemoryIDs)
+	}
+	for _, sourceID := range f.Source.MemoryIDs {
+		if err := validateRuneLimit("source_memory_id", sourceID, limits.SourceMemoryIDRunes); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
 const upsertEntityStatement = "UPDATE Entity SET name = :name UPSERT " +
+	"RETURN AFTER WHERE name = :name"
+
+const upsertTypedEntityStatement = "UPDATE Entity SET name = :name, kind = :kind UPSERT " +
 	"RETURN AFTER WHERE name = :name"
 
 // closeSupersededStatement ends the validity window of every still-valid fact
@@ -127,8 +173,9 @@ const upsertEntityStatement = "UPDATE Entity SET name = :name UPSERT " +
 // Endpoints are read with outV()/inV(). The dotted `out.name` form returns NULL
 // on an edge rather than failing, so getting this wrong is silent.
 const closeSupersededStatement = "UPDATE " + factEdgeType + " SET valid_to = :valid_to, " +
-	"expired_at = :expired_at WHERE predicate = :predicate AND valid_to IS NULL " +
-	"AND outV().name = :subject_name"
+	"expired_at = :expired_at, fact_key = NULL WHERE predicate = :predicate AND expired_at IS NULL " +
+	"AND (valid_to IS NULL OR valid_to > :valid_to) " +
+	"AND fact_key <> :fact_key AND outV().name = :subject_name"
 
 const createFactStatement = "CREATE EDGE " + factEdgeType +
 	" FROM (SELECT FROM Entity WHERE name = :subject_name)" +
@@ -136,7 +183,7 @@ const createFactStatement = "CREATE EDGE " + factEdgeType +
 	" SET statement = :statement," +
 	" predicate = :predicate, valid_from = :valid_from, valid_to = :valid_to," +
 	" created_at = :created_at, expired_at = :expired_at," +
-	" source_run_id = :source_run_id, source_memory_ids = :source_memory_ids"
+	" fact_key = :fact_key, sources = :sources"
 
 // createFactEmbeddingClause is appended only when there IS a vector.
 //
@@ -155,26 +202,39 @@ const createFactEmbeddingClause = ", embedding = :embedding"
 
 // UpsertFact writes one fact, closing any fact it supersedes.
 func (c *Client) UpsertFact(ctx context.Context, fact Fact, now time.Time) (FactWrite, error) {
-	if err := fact.Validate(); err != nil {
+	if err := fact.validate(c.memoryLimits()); err != nil {
 		return FactWrite{}, err
 	}
+	fact = normalizeFact(fact)
 	validFrom := fact.ValidFrom
 	if validFrom.IsZero() {
 		validFrom = now
 	}
-	for _, name := range []string{fact.Subject, fact.Object} {
-		if _, err := c.Command(ctx, upsertEntityStatement, map[string]any{"name": name}); err != nil {
-			return FactWrite{}, fmt.Errorf("arcadedb: upsert entity %q: %w", name, err)
+	for _, entity := range []struct{ name, kind string }{{fact.Subject, fact.SubjectKind}, {fact.Object, fact.ObjectKind}} {
+		statement := upsertEntityStatement
+		params := map[string]any{"name": entity.name}
+		if entity.kind != "" {
+			statement = upsertTypedEntityStatement
+			params["kind"] = entity.kind
+		}
+		if _, err := c.Command(ctx, statement, params); err != nil {
+			return FactWrite{}, fmt.Errorf("arcadedb: upsert entity %q: %w", entity.name, err)
 		}
 	}
+	factKey := factIdentity(fact)
 	written := FactWrite{Statement: fact.Statement}
+	if attached, err := c.attachFactSource(ctx, factKey, fact.Source, now); err != nil {
+		return FactWrite{}, err
+	} else if attached {
+		return written, nil
+	}
 	if fact.Supersedes {
 		rows, err := c.Command(ctx, closeSupersededStatement, map[string]any{
 			"valid_to":     validFrom.UTC().Format(time.RFC3339),
 			"expired_at":   now.UTC().Format(time.RFC3339),
 			"predicate":    fact.Predicate,
 			"subject_name": fact.Subject,
-			"object_name":  fact.Object,
+			"fact_key":     factKey,
 		})
 		if err != nil {
 			return FactWrite{}, fmt.Errorf("arcadedb: close superseded facts: %w", err)
@@ -182,16 +242,16 @@ func (c *Client) UpsertFact(ctx context.Context, fact Fact, now time.Time) (Fact
 		written.Superseded = countUpdated(rows)
 	}
 	params := map[string]any{
-		"subject_name":      fact.Subject,
-		"object_name":       fact.Object,
-		"statement":         fact.Statement,
-		"predicate":         fact.Predicate,
-		"valid_from":        validFrom.UTC().Format(time.RFC3339),
-		"valid_to":          nullableTime(fact.ValidTo),
-		"created_at":        now.UTC().Format(time.RFC3339),
-		"expired_at":        nil,
-		"source_run_id":     fact.SourceRunID,
-		"source_memory_ids": fact.SourceMemoryIDs,
+		"subject_name": fact.Subject,
+		"object_name":  fact.Object,
+		"statement":    fact.Statement,
+		"predicate":    fact.Predicate,
+		"valid_from":   validFrom.UTC().Format(time.RFC3339),
+		"valid_to":     nullableTime(fact.ValidTo),
+		"created_at":   now.UTC().Format(time.RFC3339),
+		"expired_at":   nil,
+		"fact_key":     activeFactKey(factKey, fact.ValidTo, now),
+		"sources":      sourcesParam([]FactSource{fact.Source}),
 	}
 	statement := createFactStatement
 	// nil when no embedder is configured or the sidecar is down, which stores the
@@ -202,6 +262,9 @@ func (c *Client) UpsertFact(ctx context.Context, fact Fact, now time.Time) (Fact
 		statement += createFactEmbeddingClause
 	}
 	if _, err := c.Command(ctx, statement, params); err != nil {
+		if attached, attachErr := c.attachFactSource(ctx, factKey, fact.Source, now); attachErr == nil && attached {
+			return written, nil
+		}
 		return FactWrite{}, fmt.Errorf("arcadedb: create fact: %w", err)
 	}
 	return written, nil
@@ -209,14 +272,15 @@ func (c *Client) UpsertFact(ctx context.Context, fact Fact, now time.Time) (Fact
 
 // FactHit is one retrieved fact.
 type FactHit struct {
-	Statement       string
-	Predicate       string
-	Subject         string
-	Object          string
-	ValidFrom       string
-	ValidTo         string
-	SourceRunID     string
-	SourceMemoryIDs []string
+	Statement   string       `json:"statement"`
+	Predicate   string       `json:"predicate"`
+	Subject     string       `json:"subject"`
+	SubjectKind string       `json:"subject_kind,omitempty"`
+	Object      string       `json:"object"`
+	ObjectKind  string       `json:"object_kind,omitempty"`
+	ValidFrom   string       `json:"valid_from"`
+	ValidTo     string       `json:"valid_to,omitempty"`
+	Sources     []FactSource `json:"sources"`
 }
 
 // searchFactsStatement is the entry point for when the question does not name
@@ -224,9 +288,10 @@ type FactHit struct {
 // edges directly, so endpoints resolve -- outV()/inV(), never the dotted
 // `out.name` form, which yields NULL on an edge instead of failing.
 const searchFactsStatement = "SELECT statement, predicate, valid_from, valid_to, " +
-	"source_run_id, source_memory_ids, outV().name AS subject, inV().name AS object " +
+	"sources, outV().name AS subject, outV().kind AS subject_kind, " +
+	"inV().name AS object, inV().kind AS object_kind " +
 	"FROM " + factEdgeType + " WHERE SEARCH_INDEX('" + factEdgeType +
-	"[statement]', :query)"
+	"[statement]', :query) = true AND $score >= :min_lexical_score"
 
 // asOfFilter keeps only facts whose validity window contains the instant. A
 // NULL valid_to means "still true", which is why it cannot be a plain
@@ -249,16 +314,19 @@ func (c *Client) SearchFacts(
 	if strings.TrimSpace(query) == "" {
 		return nil, fmt.Errorf("arcadedb: search query must be non-empty")
 	}
-	if limit <= 0 {
-		limit = 5
+	limits := c.memoryLimits()
+	if err := validateRuneLimit("search query", query, limits.QueryRunes); err != nil {
+		return nil, err
 	}
+	limit = boundedLimit(limit, 5, limits.Results)
 	if asOf.IsZero() {
 		asOf = time.Now()
 	}
 	rows, err := c.Query(ctx, searchFactsStatement+asOfFilter+" LIMIT "+strconv.Itoa(limit),
 		map[string]any{
-			"query": query,
-			"as_of": asOf.UTC().Format(time.RFC3339),
+			"query":             escapeLucene(query),
+			"min_lexical_score": lexicalScoreFloor(query, limits.LexicalMinScore),
+			"as_of":             asOf.UTC().Format(time.RFC3339),
 		})
 	if err != nil {
 		return nil, fmt.Errorf("arcadedb: search facts: %w", err)
@@ -282,7 +350,8 @@ func (c *Client) SearchFacts(
 // and the hubs of any real graph sit on that side. memory_forget already walked
 // both directions, so the surface disagreed with itself as well.
 const factsAboutStatement = "SELECT statement, predicate, valid_from, valid_to, " +
-	"source_run_id, source_memory_ids, outV().name AS subject, inV().name AS object " +
+	"sources, outV().name AS subject, outV().kind AS subject_kind, " +
+	"inV().name AS object, inV().kind AS object_kind " +
 	"FROM " + factEdgeType + " WHERE (outV().name = :entity OR inV().name = :entity)"
 
 const factsAboutPredicateFilter = " AND predicate = :predicate"
@@ -299,9 +368,14 @@ func (c *Client) FactsAbout(
 	if strings.TrimSpace(entity) == "" {
 		return nil, fmt.Errorf("arcadedb: entity must be non-empty")
 	}
-	if limit <= 0 {
-		limit = 20
+	limits := c.memoryLimits()
+	if err := validateRuneLimit("entity", entity, limits.EntityRunes); err != nil {
+		return nil, err
 	}
+	if err := validateRuneLimit("predicate", predicate, limits.PredicateRunes); err != nil {
+		return nil, err
+	}
+	limit = boundedLimit(limit, 20, limits.Results)
 	if asOf.IsZero() {
 		asOf = time.Now()
 	}
@@ -325,16 +399,40 @@ func (c *Client) FactsAbout(
 	return hits, nil
 }
 
+func validateRuneLimit(field, value string, limit int) error {
+	if utf8.RuneCountInString(value) > limit {
+		return fmt.Errorf("arcadedb: %s exceeds %d characters", field, limit)
+	}
+	return nil
+}
+
+func boundedLimit(value, fallback, maximum int) int {
+	if value <= 0 {
+		value = fallback
+	}
+	return min(value, maximum)
+}
+
+// SEARCH_INDEX already proves a one-token lookup matched; the configured floor
+// is for rejecting longer claims whose only lexical evidence is one named entity.
+func lexicalScoreFloor(query string, configured float64) float64 {
+	if len(strings.Fields(query)) <= 1 {
+		return 0
+	}
+	return configured
+}
+
 func factHitFromRow(row map[string]any) FactHit {
 	return FactHit{
-		Statement:       rowString(row, "statement"),
-		Predicate:       rowString(row, "predicate"),
-		Subject:         rowString(row, "subject"),
-		Object:          rowString(row, "object"),
-		ValidFrom:       rowString(row, "valid_from"),
-		ValidTo:         rowString(row, "valid_to"),
-		SourceRunID:     rowString(row, "source_run_id"),
-		SourceMemoryIDs: rowStrings(row, "source_memory_ids"),
+		Statement:   rowString(row, "statement"),
+		Predicate:   rowString(row, "predicate"),
+		Subject:     rowString(row, "subject"),
+		SubjectKind: rowString(row, "subject_kind"),
+		Object:      rowString(row, "object"),
+		ObjectKind:  rowString(row, "object_kind"),
+		ValidFrom:   rowString(row, "valid_from"),
+		ValidTo:     rowString(row, "valid_to"),
+		Sources:     factSources(row["sources"]),
 	}
 }
 

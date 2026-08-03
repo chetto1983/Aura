@@ -14,9 +14,9 @@
 // So the same 1536 questions and the same turns compare the two signals the
 // production retrieval path actually uses:
 //
-//	A  BM25 only            the current pipeline, in process
-//	B  dense only           cosine over Qwen3-Embedding-0.6B, 1024-d, local GPU
-//	C  dense + BM25         Mem0's additive fusion, no entity leg
+//	A  BM25 only            lexical baseline, in process
+//	B  dense only           cosine over EmbeddingGemma-300M, 768-d
+//	C  dense + BM25         additive fusion, no entity leg
 //
 // Embeddings are brute-forced per conversation rather than indexed: ~600 vectors
 // per conversation is a dot product, and an HNSW index would measure ArcadeDB's
@@ -37,7 +37,6 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/bm25"
-	"github.com/chetto1983/aura/internal/documents"
 )
 
 const embedBatch = 64
@@ -54,35 +53,9 @@ type candidate struct {
 	fused float64
 }
 
-// embedDims and the two prefixes make the harness model-agnostic, because the
-// models are not interchangeable at the wire.
-//
-// Qwen3-Embedding-0.6B is 1024-d and takes text as it comes. EmbeddingGemma-300M
-// is 768-d and its card specifies TASK PREFIXES -- "task: search result | query:"
-// for a question, "title: none | text:" for a passage. Running it without them
-// measures a handicapped model and calls the number a comparison.
-func embedDims() int {
-	if raw := envOr("AURA_EMBED_DIMS", ""); raw != "" {
-		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
-			return parsed
-		}
-	}
-	return 1024
-}
-
-func prefixed(kind string, texts []string) []string {
-	prefix := envOr("AURA_EMBED_"+kind+"_PREFIX", "")
-	if prefix == "" {
-		return texts
-	}
-	out := make([]string, 0, len(texts))
-	for _, text := range texts {
-		out = append(out, prefix+text)
-	}
-	return out
-}
-
-func embedAll(t *testing.T, client *documents.EmbeddingClient, texts []string) [][]float64 {
+func embedAll(t *testing.T, client interface {
+	Embed(context.Context, []string) ([][]float64, error)
+}, texts []string) [][]float64 {
 	t.Helper()
 	out := make([][]float64, 0, len(texts))
 	for start := 0; start < len(texts); start += embedBatch {
@@ -151,11 +124,7 @@ func TestLocomoDenseVersusLexical(t *testing.T) {
 	ctx := context.Background()
 	samples := loadLocomo(t)
 
-	embedder := &documents.EmbeddingClient{
-		BaseURL:    envOr("AURA_EMBED_BASE_URL", "http://127.0.0.1:8081"),
-		Model:      envOr("AURA_EMBED_MODEL", "qwen3-embed"),
-		Dimensions: embedDims(),
-	}
+	embedder := locomoEmbedder()
 	if _, err := embedder.Embed(ctx, []string{"probe"}); err != nil {
 		t.Skipf("embedding sidecar unavailable: %v", err)
 	}
@@ -180,7 +149,7 @@ func TestLocomoDenseVersusLexical(t *testing.T) {
 			corpus.diaIDs = append(corpus.diaIDs, rowString(row, "dia_id"))
 			corpus.texts = append(corpus.texts, rowString(row, "text"))
 		}
-		corpus.vectors = embedAll(t, embedder, prefixed("DOC", corpus.texts))
+		corpus.vectors = embedAll(t, embedder, withTask(taskDocumentPrefix, corpus.texts))
 		normalise(corpus.vectors)
 		corpus.index = bm25.New(corpus.texts)
 		corpora[conversation] = corpus
@@ -195,8 +164,8 @@ func TestLocomoDenseVersusLexical(t *testing.T) {
 		dense, lexical bool
 		// cascade > 0 means: dense owns the first N slots and the lexical ranking
 		// only fills what is left. Fusion mixes two opinions into one score and
-		// dilutes the stronger -- measured, adding BM25 to EmbeddingGemma COST 2
-		// points while adding it to Qwen3 GAINED 4, on the same 100 questions. A
+		// dilutes the stronger -- measured, adding BM25 to EmbeddingGemma cost two
+		// points on the same 100 questions. A
 		// cascade never lets the weaker leg displace a confident answer; it gets
 		// the seats left over.
 		cascade int
@@ -232,7 +201,7 @@ func TestLocomoDenseVersusLexical(t *testing.T) {
 			}
 			queried++
 
-			vectors, err := embedder.Embed(ctx, prefixed("QUERY", []string{qa.Question}))
+			vectors, err := embedder.Embed(ctx, withTask(taskQueryPrefix, []string{qa.Question}))
 			if err != nil || len(vectors) != 1 {
 				t.Fatalf("embed question: %v", err)
 			}

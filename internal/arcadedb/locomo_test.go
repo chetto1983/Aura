@@ -28,13 +28,26 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/documents"
 )
 
 const (
-	locomoDocPrefix  = "locomo-"
-	locomoBatchSize  = 400
-	adversarialClass = 5
+	locomoDocPrefix       = "locomo-"
+	locomoBatchSize       = 400
+	locomoEmbedDimensions = config.DefaultEmbedDimensions
+	adversarialClass      = 5
 )
+
+func locomoEmbedder() *documents.EmbeddingClient {
+	// The benchmark is locked to Compose's local EmbeddingGemma artifact. Honouring
+	// the cloud model knob here would make two LOCOMO runs incomparable.
+	return &documents.EmbeddingClient{
+		BaseURL:    envOr("AURA_EMBED_BASE_URL", "http://127.0.0.1:8081"),
+		Dimensions: locomoEmbedDimensions,
+	}
+}
 
 // locomoCategories are the labels the leaderboard reports. Read off the data
 // rather than assumed: see TestLocomoCategoriesAreWhatWeThink.

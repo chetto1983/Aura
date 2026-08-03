@@ -29,11 +29,7 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/chetto1983/aura/internal/documents"
 )
-
-const embedDimensions = 1024
 
 func ensureVectorIndex(t *testing.T, client *Client) {
 	t.Helper()
@@ -48,7 +44,7 @@ func ensureVectorIndex(t *testing.T, client *Client) {
 		"CREATE PROPERTY " + locomoEnglishType + ".embedding IF NOT EXISTS ARRAY_OF_FLOATS",
 		fmt.Sprintf("CREATE INDEX IF NOT EXISTS ON %s (embedding) LSM_VECTOR "+
 			"METADATA { dimensions: %d, similarity: 'COSINE' }",
-			locomoEnglishType, embedDimensions),
+			locomoEnglishType, locomoEmbedDimensions),
 	} {
 		if _, err := client.Command(context.Background(), ddl, nil); err != nil {
 			t.Fatalf("ddl %q: %v", ddl, err)
@@ -69,11 +65,7 @@ func TestLocomoNativeIndexesEmbeddings(t *testing.T) {
 	samples := loadLocomo(t)
 	ensureVectorIndex(t, client)
 
-	embedder := &documents.EmbeddingClient{
-		BaseURL:    envOr("AURA_EMBED_BASE_URL", "http://127.0.0.1:8081"),
-		Model:      envOr("AURA_EMBED_MODEL", "qwen3-embed"),
-		Dimensions: embedDimensions,
-	}
+	embedder := locomoEmbedder()
 	if _, err := embedder.Embed(ctx, []string{"probe"}); err != nil {
 		t.Skipf("embedding sidecar unavailable: %v", err)
 	}
@@ -96,12 +88,12 @@ func TestLocomoNativeIndexesEmbeddings(t *testing.T) {
 			ids = append(ids, rowString(row, "id"))
 			texts = append(texts, rowString(row, "text"))
 		}
-		vectors := embedAll(t, embedder, texts)
+		vectors := embedAll(t, embedder, withTask(taskDocumentPrefix, texts))
 		payload := make([]any, 0, len(vectors))
 		for i, vector := range vectors {
 			payload = append(payload, map[string]any{"id": ids[i], "embedding": vector})
 		}
-		// Small batches: each row carries 1024 floats, so a 400-row batch is a
+		// Small batches: each row carries 768 floats, so a 400-row batch is a
 		// multi-megabyte statement.
 		for start := 0; start < len(payload); start += 50 {
 			end := min(start+50, len(payload))
@@ -158,11 +150,7 @@ func TestLocomoNativeFusedRecall(t *testing.T) {
 		t.Skip("embeddings not indexed; run TestLocomoNativeIndexesEmbeddings first")
 	}
 
-	embedder := &documents.EmbeddingClient{
-		BaseURL:    envOr("AURA_EMBED_BASE_URL", "http://127.0.0.1:8081"),
-		Model:      envOr("AURA_EMBED_MODEL", "qwen3-embed"),
-		Dimensions: embedDimensions,
-	}
+	embedder := locomoEmbedder()
 	// AURA_LOCOMO_MAX_QUESTIONS smoke-tests the pipeline before a full run. A
 	// 1536-question pass costs four minutes; the last two defects here -- a graph
 	// leg traversing the edge backwards and a conversation filter applied to the
@@ -202,7 +190,7 @@ func TestLocomoNativeFusedRecall(t *testing.T) {
 		questionTexts = append(questionTexts, item.question)
 	}
 	embedStart := time.Now()
-	questionVectors := embedAll(t, embedder, questionTexts)
+	questionVectors := embedAll(t, embedder, withTask(taskQueryPrefix, questionTexts))
 	t.Logf("embedded %d questions in %s (%.1f ms each, batched)", len(queue),
 		time.Since(embedStart).Round(time.Millisecond),
 		float64(time.Since(embedStart).Milliseconds())/float64(max(len(queue), 1)))

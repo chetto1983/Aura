@@ -2,10 +2,67 @@ package arcadedb
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
 )
+
+func TestForgetBySourceDetachesUntilLastSourceThenDeletes(t *testing.T) {
+	stored := []FactSource{{RunID: "run-1", MemoryIDs: []string{"m1"}}, {RunID: "run-2", MemoryIDs: []string{"m2"}}}
+	deleted := false
+	client, requests := routedClient(t, func(request recordedRequest) testResponse {
+		statement, _ := request.Payload["command"].(string)
+		params, _ := request.Payload["params"].(map[string]any)
+		switch {
+		case strings.HasPrefix(statement, "SELECT @rid AS rid"):
+			run, _ := params["source_run_id"].(string)
+			present := false
+			for _, source := range stored {
+				present = present || source.RunID == run
+			}
+			if deleted || !present {
+				return testResponse{Body: `{"result":[]}`}
+			}
+			body, _ := json.Marshal(map[string]any{"result": []any{map[string]any{
+				"rid": "#1:0", "subject": "A", "object": "B", "sources": sourcesParam(stored),
+			}}})
+			return testResponse{Body: string(body)}
+		case strings.HasPrefix(statement, "UPDATE FACT SET sources"):
+			stored = factSources(params["sources"])
+			return testResponse{Body: `{"result":[{"count":1}]}`}
+		case strings.HasPrefix(statement, "DELETE FROM FACT"):
+			deleted = true
+			return testResponse{Body: `{"result":[{"count":1}]}`}
+		case strings.HasPrefix(statement, "DELETE FROM Entity"):
+			return testResponse{Body: `{"result":[]}`}
+		default:
+			return testResponse{Status: http.StatusBadRequest, Body: `{"detail":"unexpected statement"}`}
+		}
+	})
+	first, err := client.Forget(context.Background(), ForgetFilter{SourceRunID: "run-1"})
+	if err != nil {
+		t.Fatalf("detach first source: %v", err)
+	}
+	if first.Facts != 1 || deleted || len(stored) != 1 || stored[0].RunID != "run-2" {
+		t.Fatalf("first=%+v deleted=%v sources=%+v", first, deleted, stored)
+	}
+	second, err := client.Forget(context.Background(), ForgetFilter{SourceRunID: "run-2"})
+	if err != nil {
+		t.Fatalf("detach final source: %v", err)
+	}
+	if second.Facts != 1 || !deleted {
+		t.Fatalf("second=%+v deleted=%v", second, deleted)
+	}
+	var sent strings.Builder
+	for _, request := range *requests {
+		sent.WriteString(request.Payload["command"].(string))
+		sent.WriteByte('\n')
+	}
+	if joined := sent.String(); strings.Contains(joined, "WHERE source_run_id") {
+		t.Fatalf("retired flat provenance was queried:\n%s", joined)
+	}
+}
 
 func TestForgetFilterBuildsAnchoredConjunction(t *testing.T) {
 	clause, params, err := (ForgetFilter{
@@ -14,7 +71,7 @@ func TestForgetFilterBuildsAnchoredConjunction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("where: %v", err)
 	}
-	for _, fragment := range []string{"source_run_id", "outV().name", "predicate", "inV().name", "OR"} {
+	for _, fragment := range []string{"sources CONTAINS", "outV().name", "predicate", "inV().name", "OR"} {
 		if !strings.Contains(clause, fragment) {
 			t.Fatalf("clause %q missing %q", clause, fragment)
 		}
@@ -34,7 +91,10 @@ func forgetResponder(request recordedRequest) testResponse {
 	params, _ := request.Payload["params"].(map[string]any)
 	switch {
 	case strings.Contains(statement, "outV().name AS subject"):
-		return testResponse{Body: `{"result":[{"subject":"A","object":"B"},{"subject":"A","object":"B"}]}`}
+		return testResponse{Body: `{"result":[
+			{"rid":"#1:0","subject":"A","object":"B","sources":[{"run_id":"run-1","memory_ids":["m1"]}]},
+			{"rid":"#1:1","subject":"A","object":"B","sources":[{"run_id":"run-1","memory_ids":["m2"]}]}
+		]}`}
 	case strings.Contains(statement, "bothE().size() AS degree"):
 		if params["name"] == "A" {
 			return testResponse{Body: `{"result":[{"degree":2}]}`}
@@ -110,7 +170,7 @@ func TestForgetSurfacesEndpointAndPruneFailures(t *testing.T) {
 	client, _ := routedClient(t, func(request recordedRequest) testResponse {
 		statement, _ := request.Payload["command"].(string)
 		if strings.Contains(statement, "outV().name AS subject") {
-			return testResponse{Body: `{"result":[{"subject":"A","object":"B"}]}`}
+			return testResponse{Body: `{"result":[{"rid":"#1:0","subject":"A","object":"B","sources":[{"run_id":"run-1","memory_ids":[]}]}]}`}
 		}
 		if strings.HasPrefix(strings.TrimSpace(statement), "DELETE FROM FACT") {
 			return testResponse{Body: `{"result":[]}`}

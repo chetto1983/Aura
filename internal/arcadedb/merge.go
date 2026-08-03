@@ -27,14 +27,15 @@ import (
 // half-done: the fact would hang off "Marta Bellini" while still reading
 // "M. Bellini specialises in…", so the full-text index keeps answering under the
 // name that no longer exists, which is the exact problem the merge was called to
-// fix. Provenance is not lost by this: source_run_id and source_memory_ids are
-// copied untouched and still point at what was originally said.
+// fix. Provenance is copied untouched and still points at what was originally
+// said. fact_key is cleared while both the old and replacement edges coexist;
+// it is rebuilt after the old edge has gone so the unique key never collides.
 const mergeOutgoing = `
 MATCH (s:Entity {name: $source})-[f:FACT]->(o:Entity)
 WHERE o.name <> $target
 MATCH (t:Entity {name: $target})
 CREATE (t)-[n:FACT]->(o)
-SET n = properties(f), n.statement = replace(f.statement, $source, $target)
+SET n = properties(f), n.statement = replace(f.statement, $source, $target), n.fact_key = null
 DELETE f
 RETURN count(n) AS moved
 `
@@ -45,7 +46,7 @@ MATCH (s:Entity)-[f:FACT]->(o:Entity {name: $source})
 WHERE s.name <> $target
 MATCH (t:Entity {name: $target})
 CREATE (s)-[n:FACT]->(t)
-SET n = properties(f), n.statement = replace(f.statement, $source, $target)
+SET n = properties(f), n.statement = replace(f.statement, $source, $target), n.fact_key = null
 DELETE f
 RETURN count(n) AS moved
 `
@@ -105,6 +106,10 @@ func (c *Client) MergeEntities(ctx context.Context, source, target string) (Merg
 	if _, err = c.Write(ctx,
 		"MATCH (s:Entity {name: $source}) DETACH DELETE s", params); err != nil {
 		return MergeResult{}, fmt.Errorf("arcadedb: remove merged entity %q: %w", source, err)
+	}
+	state := memorySchemaState{properties: map[string]bool{"sources": true}}
+	if err := c.reindexFacts(ctx, state); err != nil {
+		return MergeResult{}, fmt.Errorf("arcadedb: rebuild fact identity after merge: %w", err)
 	}
 	return MergeResult{Moved: moved, Dropped: before - moved, Target: target}, nil
 }

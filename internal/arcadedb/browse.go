@@ -22,12 +22,9 @@ import (
 // generated, so it is only as good as the statements that went in.
 
 const (
-	defaultEntityLimit   = 50
-	defaultDocumentLimit = 50
-	defaultDigestFacts   = 3
-	digestFactCap        = 2000
-	digestHookRunes      = 120
-	maxPassageSpan       = 200
+	defaultEntityLimit = 50
+	defaultDigestFacts = 3
+	digestHookRunes    = 120
 )
 
 // EntitySummary is one name the memory knows, with how much hangs off it.
@@ -40,9 +37,7 @@ type EntitySummary struct {
 // ListEntities returns the entities holding the most facts first, because an
 // entity with one stray fact is noise and an entity with twenty is a subject.
 func (c *Client) ListEntities(ctx context.Context, limit int) ([]EntitySummary, error) {
-	if limit <= 0 {
-		limit = defaultEntityLimit
-	}
+	limit = boundedLimit(limit, defaultEntityLimit, c.memoryLimits().Results)
 	rows, err := c.Query(ctx,
 		"SELECT name, kind, bothE().size() AS degree FROM Entity"+
 			" ORDER BY degree DESC LIMIT "+strconv.Itoa(limit), nil)
@@ -73,15 +68,12 @@ type DigestResult struct {
 // obvious shape -- list entities, then read each one's facts -- is N+1 queries
 // for a thing meant to be cheap enough to build every turn.
 func (c *Client) Digest(ctx context.Context, entityLimit, factsPerEntity int) (DigestResult, error) {
-	if entityLimit <= 0 {
-		entityLimit = defaultEntityLimit
-	}
-	if factsPerEntity <= 0 {
-		factsPerEntity = defaultDigestFacts
-	}
+	limits := c.memoryLimits()
+	entityLimit = boundedLimit(entityLimit, defaultEntityLimit, limits.Results)
+	factsPerEntity = boundedLimit(factsPerEntity, defaultDigestFacts, limits.DigestFactsPerEntity)
 	rows, err := c.Query(ctx,
 		"SELECT outV().name AS subject, inV().name AS object, predicate, statement FROM "+
-			factEdgeType+" WHERE "+asOfCondition+" LIMIT "+strconv.Itoa(digestFactCap),
+			factEdgeType+" WHERE "+asOfCondition+" LIMIT "+strconv.Itoa(limits.DigestScan),
 		map[string]any{"as_of": time.Now().UTC().Format(time.RFC3339)})
 	if err != nil {
 		return DigestResult{}, fmt.Errorf("arcadedb: build digest: %w", err)
@@ -129,7 +121,7 @@ func (c *Client) Digest(ctx context.Context, entityLimit, factsPerEntity int) (D
 		Text:     strings.Join(lines, "\n"),
 		Entities: shown,
 		Facts:    len(rows),
-		Covered:  shown == len(order) && len(rows) < digestFactCap,
+		Covered:  shown == len(order) && len(rows) < limits.DigestScan,
 	}, nil
 }
 

@@ -97,10 +97,10 @@ func TestMemoryVectorAnswersACrossLingualQuestion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("english search: %v", err)
 	}
-	if len(english) == 0 {
+	if len(english.Facts) == 0 {
 		t.Fatal("the English question lost its answer — the fusion regressed the lexical leg")
 	}
-	t.Logf("EN  %.90s", english[0].Statement)
+	t.Logf("EN  %.90s", english.Facts[0].Statement)
 
 	// Italian: same question, the language the operator actually asks in. The
 	// facts are in English. Lexical retrieval returned zero here.
@@ -109,10 +109,10 @@ func TestMemoryVectorAnswersACrossLingualQuestion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("italian search: %v", err)
 	}
-	if len(italian) == 0 {
+	if len(italian.Facts) == 0 {
 		t.Fatal("the Italian question found nothing: the dense leg is not contributing")
 	}
-	for i, hit := range italian {
+	for i, hit := range italian.Facts {
 		t.Logf("IT%d %.90s", i+1, hit.Statement)
 	}
 
@@ -121,7 +121,7 @@ func TestMemoryVectorAnswersACrossLingualQuestion(t *testing.T) {
 		t.Logf("lexical-only comparison errored (which is itself the old behaviour): %v", err)
 	}
 	t.Logf("lexical-only on the same Italian question: %d hits", len(lexical))
-	if len(lexical) >= len(italian) {
+	if len(lexical) >= len(italian.Facts) {
 		t.Logf("NOTE: lexical alone matched %d — the corpus may have grown Italian text since "+
 			"this gap was measured; the fusion must still not be WORSE", len(lexical))
 	}
@@ -142,8 +142,8 @@ func TestMemoryVectorDegradesWithoutAnEmbedder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("lexical: %v", err)
 	}
-	if len(hybrid) != len(lexical) {
+	if len(hybrid.Facts) != len(lexical) {
 		t.Fatalf("with no embedder the hybrid returned %d and the lexical %d; they must agree",
-			len(hybrid), len(lexical))
+			len(hybrid.Facts), len(lexical))
 	}
 }

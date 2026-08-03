@@ -2,9 +2,9 @@
 //
 // It talks to the database directly rather than through ArcadeDB's own MCP
 // server: that server's `query` tool accepts only (database, language, query,
-// limit) with no bind parameters, which makes it unusable for a 1024-float
-// vector and unsafe for user text. `/api/v1/query` and `/api/v1/command` take
-// `params`, so they are the programmatic seam.
+// limit) with no bind parameters, which makes it unusable for EmbeddingGemma's
+// 768-float vectors and unsafe for user text. `/api/v1/query` and
+// `/api/v1/command` take `params`, so they are the programmatic seam.
 package arcadedb
 
 import (
@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -35,13 +36,106 @@ const maxErrorBody = 4 << 10
 // statement, which it reports as a parse error and is confusing to read.
 var ErrEmptyStatement = errors.New("arcadedb: empty statement")
 
-// Config addresses one database. Every field is required except Timeout.
+// MemoryLimits are enforced in this package, below every MCP or CLI caller.
+// Positive values override the defaults; zero values inherit them.
+type MemoryLimits struct {
+	QueryRunes           int
+	EntityRunes          int
+	StatementRunes       int
+	PredicateRunes       int
+	SourceRunIDRunes     int
+	SourceMemoryIDRunes  int
+	SourceMemoryIDs      int
+	Results              int
+	DigestFactsPerEntity int
+	MaintenanceBatch     int
+	DigestScan           int
+	HybridCandidates     int
+	DenseMaxDistance     float64
+	LexicalMinScore      float64
+}
+
+var defaultMemoryLimits = MemoryLimits{
+	QueryRunes: 2048, EntityRunes: 512, StatementRunes: 4096,
+	PredicateRunes: 100, SourceRunIDRunes: 100, SourceMemoryIDRunes: 100,
+	SourceMemoryIDs: 64, Results: 100, DigestFactsPerEntity: 20,
+	MaintenanceBatch: 100, DigestScan: 2000, HybridCandidates: 400,
+	DenseMaxDistance: 0.55, LexicalMinScore: 2,
+}
+
+func (limits MemoryLimits) normalized() MemoryLimits {
+	limits.QueryRunes = defaultLimit(limits.QueryRunes, defaultMemoryLimits.QueryRunes)
+	limits.EntityRunes = defaultLimit(limits.EntityRunes, defaultMemoryLimits.EntityRunes)
+	limits.StatementRunes = defaultLimit(limits.StatementRunes, defaultMemoryLimits.StatementRunes)
+	limits.PredicateRunes = defaultLimit(limits.PredicateRunes, defaultMemoryLimits.PredicateRunes)
+	limits.SourceRunIDRunes = defaultLimit(limits.SourceRunIDRunes, defaultMemoryLimits.SourceRunIDRunes)
+	limits.SourceMemoryIDRunes = defaultLimit(limits.SourceMemoryIDRunes, defaultMemoryLimits.SourceMemoryIDRunes)
+	limits.SourceMemoryIDs = defaultLimit(limits.SourceMemoryIDs, defaultMemoryLimits.SourceMemoryIDs)
+	limits.Results = defaultLimit(limits.Results, defaultMemoryLimits.Results)
+	limits.DigestFactsPerEntity = defaultLimit(limits.DigestFactsPerEntity, defaultMemoryLimits.DigestFactsPerEntity)
+	limits.MaintenanceBatch = defaultLimit(limits.MaintenanceBatch, defaultMemoryLimits.MaintenanceBatch)
+	limits.DigestScan = defaultLimit(limits.DigestScan, defaultMemoryLimits.DigestScan)
+	limits.HybridCandidates = defaultLimit(limits.HybridCandidates, defaultMemoryLimits.HybridCandidates)
+	limits.DenseMaxDistance = defaultFloatLimit(limits.DenseMaxDistance, defaultMemoryLimits.DenseMaxDistance)
+	limits.LexicalMinScore = defaultFloatLimit(limits.LexicalMinScore, defaultMemoryLimits.LexicalMinScore)
+	return limits
+}
+
+func defaultLimit(value, fallback int) int {
+	if value == 0 {
+		return fallback
+	}
+	return value
+}
+
+func defaultFloatLimit(value, fallback float64) float64 {
+	if value == 0 {
+		return fallback
+	}
+	return value
+}
+
+func (limits MemoryLimits) validate() error {
+	integers := []struct {
+		name  string
+		value int
+	}{
+		{"query runes", limits.QueryRunes}, {"entity runes", limits.EntityRunes},
+		{"statement runes", limits.StatementRunes}, {"predicate runes", limits.PredicateRunes},
+		{"source run id runes", limits.SourceRunIDRunes}, {"source memory id runes", limits.SourceMemoryIDRunes},
+		{"source memory ids", limits.SourceMemoryIDs}, {"results", limits.Results},
+		{"digest facts per entity", limits.DigestFactsPerEntity}, {"maintenance batch", limits.MaintenanceBatch},
+		{"digest scan", limits.DigestScan}, {"hybrid candidates", limits.HybridCandidates},
+	}
+	for _, limit := range integers {
+		if limit.value < 0 {
+			return fmt.Errorf("arcadedb: memory limit %s must be positive", limit.name)
+		}
+	}
+	floats := []struct {
+		name  string
+		value float64
+	}{
+		{"dense max distance", limits.DenseMaxDistance},
+		{"lexical min score", limits.LexicalMinScore},
+	}
+	for _, limit := range floats {
+		if limit.value < 0 || math.IsNaN(limit.value) || math.IsInf(limit.value, 0) {
+			return fmt.Errorf("arcadedb: memory limit %s must be finite and positive", limit.name)
+		}
+	}
+	return nil
+}
+
+// Config addresses one database. Every field is required except Timeout and
+// MemoryLimits.
 type Config struct {
-	BaseURL  string
-	Database string
-	User     string
-	Password string
-	Timeout  time.Duration
+	BaseURL      string
+	Database     string
+	User         string
+	Password     string
+	Timeout      time.Duration
+	MemoryLimits MemoryLimits
 }
 
 // Client issues statements against a single ArcadeDB database.
@@ -58,6 +152,7 @@ type Client struct {
 	serverURL  string
 	authHeader string
 	http       *http.Client
+	limits     MemoryLimits
 	// embedder is optional: with none, memory retrieval is the lexical leg alone,
 	// which is the behaviour that shipped and must not regress when it is absent.
 	embedder Embedder
@@ -95,6 +190,9 @@ func New(cfg Config) (*Client, error) {
 	if strings.TrimSpace(cfg.User) == "" {
 		return nil, fmt.Errorf("arcadedb: user must be non-empty")
 	}
+	if err := cfg.MemoryLimits.validate(); err != nil {
+		return nil, err
+	}
 	timeout := cfg.Timeout
 	if timeout <= 0 {
 		timeout = DefaultTimeout
@@ -107,7 +205,15 @@ func New(cfg Config) (*Client, error) {
 		serverURL:  base + "/api/v1/server",
 		authHeader: "Basic " + credentials,
 		http:       &http.Client{Timeout: timeout},
+		limits:     cfg.MemoryLimits.normalized(),
 	}, nil
+}
+
+func (c *Client) memoryLimits() MemoryLimits {
+	if c == nil {
+		return defaultMemoryLimits
+	}
+	return c.limits.normalized()
 }
 
 // ValidateBaseURL checks the shared server endpoint without requiring tenant credentials.

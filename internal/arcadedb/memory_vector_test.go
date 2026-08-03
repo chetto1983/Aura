@@ -49,22 +49,42 @@ func TestSearchFactsHybridRestoresFusionOrder(t *testing.T) {
 		return testResponse{Status: http.StatusBadRequest, Body: `{"detail":"unexpected query"}`}
 	})
 	client.WithEmbedder(embedder)
-	hits, err := client.SearchFactsHybrid(context.Background(), "cliente?", 1, time.Time{})
+	result, err := client.SearchFactsHybrid(context.Background(), "cliente torino?", 1, time.Time{})
 	if err != nil {
 		t.Fatalf("SearchFactsHybrid: %v", err)
 	}
-	if len(hits) != 1 || hits[0].Statement != "first" {
-		t.Fatalf("hits = %+v", hits)
+	if len(result.Facts) != 1 || result.Facts[0].Statement != "first" ||
+		result.RetrievalPath != retrievalPathHybrid || result.Abstained || result.Reason != "" {
+		t.Fatalf("result = %+v", result)
 	}
-	if len(embedder.calls) != 1 || embedder.calls[0][0] != taskQueryPrefix+"cliente?" {
+	if len(embedder.calls) != 1 || embedder.calls[0][0] != taskQueryPrefix+"cliente torino?" {
 		t.Fatalf("embedding input = %v", embedder.calls)
 	}
 	if len(*requests) != 2 {
 		t.Fatalf("requests = %d", len(*requests))
 	}
 	params := (*requests)[0].Payload["params"].(map[string]any)
-	if params["query"] != `cliente\?` || params["candidates"] != float64(20) {
+	if params["query"] != `cliente torino\?` || params["candidates"] != float64(20) ||
+		params["as_of"] == nil || params["max_distance"] != float64(0.55) ||
+		params["min_lexical_score"] != float64(2) {
 		t.Fatalf("fusion params = %v", params)
+	}
+	fusion := (*requests)[0].Payload["command"].(string)
+	vectorFilter := `{ filter: (SELECT @rid FROM FACT WHERE ` + asOfCondition +
+		`).@rid, maxDistance: :max_distance }`
+	if !strings.Contains(fusion, vectorFilter) {
+		t.Fatalf("dense leg does not filter valid RIDs inline before ranking: %s", fusion)
+	}
+	if !strings.Contains(fusion, "maxDistance: :max_distance") {
+		t.Fatalf("dense relevance gate missing: %s", fusion)
+	}
+	if strings.Count(fusion, asOfCondition) != 2 {
+		t.Fatalf("validity filter must occur in both retrieval legs: %s", fusion)
+	}
+	lexical := "SEARCH_INDEX('FACT[statement]', :query) = true AND $score >= :min_lexical_score AND " + asOfCondition +
+		" LIMIT :candidates"
+	if !strings.Contains(fusion, lexical) {
+		t.Fatalf("lexical validity filter must precede candidate LIMIT: %s", fusion)
 	}
 }
 
@@ -74,17 +94,18 @@ func TestSearchFactsHybridFallsBackToLexical(t *testing.T) {
 		embedder  Embedder
 		fusion    testResponse
 		hydration testResponse
+		reason    string
 	}{
-		{name: "no embedder"},
-		{name: "embed error", embedder: &stubEmbedder{err: errors.New("down")}},
-		{name: "wrong dimensions", embedder: &stubEmbedder{vectors: [][][]float64{{{1}}}}},
-		{name: "fusion error", embedder: &stubEmbedder{vectors: [][][]float64{{vectorOf(1)}}}, fusion: testResponse{Status: 500, Body: `{}`}},
-		{name: "empty fusion", embedder: &stubEmbedder{vectors: [][][]float64{{vectorOf(1)}}}, fusion: testResponse{Body: `{"result":[]}`}},
-		{name: "empty rid", embedder: &stubEmbedder{vectors: [][][]float64{{vectorOf(1)}}}, fusion: testResponse{Body: `{"result":[{"rid":null}]}`}},
-		{name: "hydration error", embedder: &stubEmbedder{vectors: [][][]float64{{vectorOf(1)}}}, fusion: testResponse{Body: `{"result":[{"rid":"#3:1"}]}`}, hydration: testResponse{Status: 500, Body: `{}`}},
+		{name: "no embedder", reason: reasonEmbedderNotConfigured},
+		{name: "embed error", embedder: &stubEmbedder{err: errors.New("down")}, reason: reasonEmbeddingFailed},
+		{name: "wrong dimensions", embedder: &stubEmbedder{vectors: [][][]float64{{{1}}}}, reason: reasonEmbeddingInvalid},
+		{name: "fusion error", embedder: &stubEmbedder{vectors: [][][]float64{{vectorOf(1)}}}, fusion: testResponse{Status: 500, Body: `{}`}, reason: reasonFusionFailed},
+		{name: "empty rid", embedder: &stubEmbedder{vectors: [][][]float64{{vectorOf(1)}}}, fusion: testResponse{Body: `{"result":[{"rid":null}]}`}, reason: reasonFusionResultInvalid},
+		{name: "hydration error", embedder: &stubEmbedder{vectors: [][][]float64{{vectorOf(1)}}}, fusion: testResponse{Body: `{"result":[{"rid":"#3:1"}]}`}, hydration: testResponse{Status: 500, Body: `{}`}, reason: reasonHydrationFailed},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			var lexicalQueries []any
 			client, _ := routedClient(t, func(request recordedRequest) testResponse {
 				statement, _ := request.Payload["command"].(string)
 				switch {
@@ -93,19 +114,86 @@ func TestSearchFactsHybridFallsBackToLexical(t *testing.T) {
 				case strings.Contains(statement, "@rid IN"):
 					return tt.hydration
 				default:
+					params, _ := request.Payload["params"].(map[string]any)
+					lexicalQueries = append(lexicalQueries, params["query"])
 					return testResponse{Body: oneFactRow}
 				}
 			})
 			client.WithEmbedder(tt.embedder)
-			hits, err := client.SearchFactsHybrid(context.Background(), "where", 2, now)
-			if err != nil || len(hits) != 1 || hits[0].Subject != "Davide" {
-				t.Fatalf("hits=%+v err=%v", hits, err)
+			result, err := client.SearchFactsHybrid(context.Background(), "where?", 2, now)
+			if err != nil || len(result.Facts) != 1 || result.Facts[0].Subject != "Davide" {
+				t.Fatalf("result=%+v err=%v", result, err)
+			}
+			if result.RetrievalPath != retrievalPathLexical || result.Abstained || result.Reason != tt.reason {
+				t.Fatalf("fallback metadata = %+v", result)
+			}
+			if len(lexicalQueries) != 1 || lexicalQueries[0] != `where\?` {
+				t.Fatalf("fallback lexical queries = %#v, want one escaped query", lexicalQueries)
 			}
 		})
 	}
 	client, _ := recordingClient(t, `{"result":[]}`)
 	if _, err := client.SearchFactsHybrid(context.Background(), " ", 1, now); err == nil {
 		t.Fatal("blank hybrid query accepted")
+	}
+}
+
+func TestSearchFactsHybridAbstainsWhenNoLegQualifies(t *testing.T) {
+	client, requests := routedClient(t, func(request recordedRequest) testResponse {
+		return testResponse{Body: `{"result":[]}`}
+	})
+	client.WithEmbedder(&stubEmbedder{vectors: [][][]float64{{vectorOf(1)}}})
+	result, err := client.SearchFactsHybrid(context.Background(), "unrelated", 5, now)
+	if err != nil {
+		t.Fatalf("SearchFactsHybrid: %v", err)
+	}
+	if len(result.Facts) != 0 || result.RetrievalPath != retrievalPathHybrid ||
+		!result.Abstained || result.Reason != reasonNoQualifiedCandidates {
+		t.Fatalf("result = %+v", result)
+	}
+	if len(*requests) != 1 {
+		t.Fatalf("requests = %d, want no lexical retry after a valid abstention", len(*requests))
+	}
+}
+
+func TestSearchFactsHybridReportsLexicalFallbackAbstention(t *testing.T) {
+	client, requests := routedClient(t, func(request recordedRequest) testResponse {
+		return testResponse{Body: `{"result":[]}`}
+	})
+	result, err := client.SearchFactsHybrid(context.Background(), "unrelated", 5, now)
+	if err != nil {
+		t.Fatalf("SearchFactsHybrid: %v", err)
+	}
+	if len(result.Facts) != 0 || result.RetrievalPath != retrievalPathLexical ||
+		!result.Abstained || result.Reason != reasonEmbedderNotConfigured {
+		t.Fatalf("result = %+v", result)
+	}
+	if len(*requests) != 1 {
+		t.Fatalf("requests = %d, want one bounded lexical fallback", len(*requests))
+	}
+}
+
+func TestSearchFactsHybridCapsCandidatesAndQuery(t *testing.T) {
+	embedder := &stubEmbedder{vectors: [][][]float64{{vectorOf(1)}}}
+	client, requests := routedClient(t, func(request recordedRequest) testResponse {
+		statement, _ := request.Payload["command"].(string)
+		if strings.Contains(statement, "vector.fuse") {
+			return testResponse{Body: `{"result":[{"rid":"#3:1"}]}`}
+		}
+		return testResponse{Body: `{"result":[]}`}
+	})
+	client.WithEmbedder(embedder)
+	if _, err := client.SearchFactsHybrid(context.Background(), "bounded", 1000, now); err != nil {
+		t.Fatalf("SearchFactsHybrid: %v", err)
+	}
+	params := (*requests)[0].Payload["params"].(map[string]any)
+	if params["candidates"] != float64(400) {
+		t.Fatalf("candidates = %v, want 400", params["candidates"])
+	}
+	if _, err := client.SearchFactsHybrid(
+		context.Background(), strings.Repeat("界", 2049), 1, now,
+	); err == nil {
+		t.Fatal("oversized hybrid query accepted")
 	}
 }
 
@@ -149,7 +237,7 @@ func TestUpsertFactStoresTheVectorItComputed(t *testing.T) {
 	if _, err := client.UpsertFact(context.Background(), validFact(), now); err != nil {
 		t.Fatalf("UpsertFact: %v", err)
 	}
-	edge, params := rec.statements[2], rec.params[2]
+	edge, params := rec.statements[len(rec.statements)-1], rec.params[len(rec.params)-1]
 	if !strings.Contains(edge, "embedding = :embedding") {
 		t.Fatalf("the edge does not store the vector it computed:\n%s", edge)
 	}
@@ -169,10 +257,11 @@ func TestUpsertFactWithoutAVectorOmitsTheClause(t *testing.T) {
 	if _, err := client.UpsertFact(context.Background(), validFact(), now); err != nil {
 		t.Fatalf("UpsertFact: %v", err)
 	}
-	if strings.Contains(rec.statements[2], "embedding") {
-		t.Fatalf("no vector to store, yet the statement names one:\n%s", rec.statements[2])
+	edge, params := rec.statements[len(rec.statements)-1], rec.params[len(rec.params)-1]
+	if strings.Contains(edge, "embedding") {
+		t.Fatalf("no vector to store, yet the statement names one:\n%s", edge)
 	}
-	if _, bound := rec.params[2]["embedding"]; bound {
+	if _, bound := params["embedding"]; bound {
 		t.Fatal("an embedding parameter was bound with no vector to put in it")
 	}
 }
@@ -254,6 +343,20 @@ func TestEmbedFactsHandlesNoWorkAndFailures(t *testing.T) {
 	writeFailed.WithEmbedder(&stubEmbedder{vectors: [][][]float64{{vectorOf(1)}}})
 	if _, err := writeFailed.EmbedMissingFacts(context.Background(), 1); err == nil || !strings.Contains(err.Error(), "write embedding") {
 		t.Fatalf("write error = %v", err)
+	}
+}
+
+func TestEmbedFactsCapsMaintenanceBatch(t *testing.T) {
+	client, requests := routedClient(t, func(recordedRequest) testResponse {
+		return testResponse{Body: `{"result":[]}`}
+	})
+	client.WithEmbedder(&stubEmbedder{})
+	if _, err := client.ReEmbedAllFacts(context.Background(), 1000); err != nil {
+		t.Fatalf("ReEmbedAllFacts: %v", err)
+	}
+	statement := (*requests)[0].Payload["command"].(string)
+	if !strings.Contains(statement, "LIMIT 100") {
+		t.Fatalf("maintenance cap missing: %s", statement)
 	}
 }
 

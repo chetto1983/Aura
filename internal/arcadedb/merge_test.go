@@ -28,12 +28,11 @@ func TestMergeEntitiesMovesBothDirectionsAndDropsSelfLinks(t *testing.T) {
 	if got != (MergeResult{Moved: 2, Dropped: 1, Target: "Marta Bellini"}) {
 		t.Fatalf("result = %+v", got)
 	}
-	if len(*requests) != 5 {
-		t.Fatalf("requests = %d, want count/upsert/two moves/delete", len(*requests))
+	if len(*requests) != 6 {
+		t.Fatalf("requests = %d, want count/upsert/two moves/delete/reindex", len(*requests))
 	}
-	last := (*requests)[len(*requests)-1]
-	if !strings.Contains(last.Payload["command"].(string), "DETACH DELETE") {
-		t.Fatalf("source removal missing: %v", last.Payload)
+	if !strings.Contains((*requests)[4].Payload["command"].(string), "DETACH DELETE") {
+		t.Fatalf("source removal missing: %v", (*requests)[4].Payload)
 	}
 }
 
@@ -62,7 +61,7 @@ func TestMergeEntitiesChecksAZeroDegreeSourceBeforeRename(t *testing.T) {
 	if got.Target != "New" || got.Moved != 0 || got.Dropped != 0 {
 		t.Fatalf("result = %+v", got)
 	}
-	if len(*requests) != 6 || !strings.Contains((*requests)[1].Payload["command"].(string), "SELECT name") {
+	if len(*requests) != 7 || !strings.Contains((*requests)[1].Payload["command"].(string), "SELECT name") {
 		t.Fatalf("zero-degree existence check missing: %+v", *requests)
 	}
 }

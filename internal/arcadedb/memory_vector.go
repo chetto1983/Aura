@@ -84,63 +84,107 @@ func (c *Client) embedStatement(ctx context.Context, statement string) []float64
 // Each source is a RANKING, not a result set: the dense leg is
 // `vector.neighbors`, the lexical leg is the `@rid, $score` projection the manual
 // pairs with it, and `= true` on SEARCH_INDEX is the documented form rather than
-// a bare predicate. The fusion returns the winning EDGES; the endpoint names it
+// a bare predicate. Both legs apply valid-time before their candidate limits;
+// vector.neighbors accepts the inline RID subquery as its documented filter.
+// The fusion returns the winning EDGES; the endpoint names it
 // cannot carry — outV()/inV() are not on a fused record — are added by hydrating
 // the rids in a second statement, which is one round trip for a set already
 // bounded by the limit.
 const fuseRIDsStatement = "SELECT @rid AS rid FROM (SELECT expand(`vector.fuse`(" +
-	"`vector.neighbors`('" + factEdgeType + "[embedding]', :vector, :candidates), " +
+	"`vector.neighbors`('" + factEdgeType + "[embedding]', :vector, :candidates, " +
+	"{ filter: (SELECT @rid FROM " + factEdgeType + " WHERE " + asOfCondition +
+	").@rid, maxDistance: :max_distance }), " +
 	"(SELECT @rid, $score FROM " + factEdgeType +
-	" WHERE SEARCH_INDEX('" + factEdgeType + "[statement]', :query) = true), " +
+	" WHERE SEARCH_INDEX('" + factEdgeType + "[statement]', :query) = true AND " +
+	"$score >= :min_lexical_score AND " +
+	asOfCondition + " LIMIT :candidates), " +
 	"{ \"fusion\": \"RRF\" }" +
 	"))) LIMIT :candidates"
 
-// hydrateFactsStatement turns the fused rids back into whole facts, applying the
-// validity window here rather than inside the fusion: a leg that filtered by
-// as_of would rank against a different candidate set than the other.
+// hydrateFactsStatement rechecks validity after fusion, closing the race where a
+// fact is superseded between candidate ranking and hydration.
 const hydrateFactsStatement = "SELECT @rid, statement, predicate, valid_from, valid_to, " +
-	"source_run_id, source_memory_ids, outV().name AS subject, inV().name AS object " +
+	"sources, outV().name AS subject, outV().kind AS subject_kind, " +
+	"inV().name AS object, inV().kind AS object_kind " +
 	"FROM " + factEdgeType + " WHERE @rid IN :rids AND " + asOfCondition
+
+// FactSearchResult carries the hits together with the path that produced them and,
+// when nothing qualified, the reason it abstained rather than an approximate answer.
+type FactSearchResult struct {
+	Facts         []FactHit
+	RetrievalPath string
+	Abstained     bool
+	Reason        string
+}
+
+const (
+	retrievalPathHybrid  = "hybrid"
+	retrievalPathLexical = "lexical"
+
+	reasonEmbedderNotConfigured = "embedder_not_configured"
+	reasonEmbeddingFailed       = "embedding_failed"
+	reasonEmbeddingInvalid      = "embedding_invalid"
+	reasonFusionFailed          = "fusion_failed"
+	reasonFusionResultInvalid   = "fusion_result_invalid"
+	reasonHydrationFailed       = "hydration_failed"
+	reasonNoQualifiedCandidates = "no_qualified_candidates"
+)
 
 // SearchFactsHybrid runs both legs and fuses them with ArcadeDB's own reciprocal
 // rank fusion. With no embedder configured — or with the sidecar down — it is
 // exactly SearchFacts, which is the point: the dense leg is an improvement, not a
-// dependency.
+// dependency. The result names the path it took, so a caller can tell a fused
+// answer from a lexical fallback instead of inferring it.
 func (c *Client) SearchFactsHybrid(
 	ctx context.Context,
 	query string,
 	limit int,
 	asOf time.Time,
-) ([]FactHit, error) {
+) (FactSearchResult, error) {
 	if strings.TrimSpace(query) == "" {
-		return nil, fmt.Errorf("arcadedb: search query must be non-empty")
+		return FactSearchResult{}, fmt.Errorf("arcadedb: search query must be non-empty")
 	}
-	if limit <= 0 {
-		limit = 5
+	limits := c.memoryLimits()
+	if err := validateRuneLimit("search query", query, limits.QueryRunes); err != nil {
+		return FactSearchResult{}, err
 	}
+	limit = boundedLimit(limit, 5, limits.Results)
 	if asOf.IsZero() {
 		asOf = time.Now()
 	}
 	if c.embedder == nil {
-		return c.SearchFacts(ctx, query, limit, asOf)
+		return c.searchFactsFallback(ctx, query, limit, asOf, reasonEmbedderNotConfigured)
 	}
 	vectors, err := c.embedder.Embed(ctx, withTask(taskQueryPrefix, []string{query}))
-	if err != nil || len(vectors) != 1 || len(vectors[0]) != vectorDimensions {
-		return c.SearchFacts(ctx, query, limit, asOf)
+	if err != nil {
+		return c.searchFactsFallback(ctx, query, limit, asOf, reasonEmbeddingFailed)
+	}
+	if len(vectors) != 1 || len(vectors[0]) != vectorDimensions {
+		return c.searchFactsFallback(ctx, query, limit, asOf, reasonEmbeddingInvalid)
 	}
 
 	// Over-fetch each leg: fusion can only reorder what it is given, and a fact
 	// ranked 8th lexically and 2nd densely is exactly the one the fusion exists
 	// to promote.
-	candidates := max(limit*4, 20)
+	candidates := min(max(limit*4, 20), limits.HybridCandidates)
 	ranked, err := c.Query(ctx, fuseRIDsStatement, map[string]any{
-		"query":      escapeLucene(query),
-		"vector":     vectors[0],
-		"candidates": candidates,
+		"query":             escapeLucene(query),
+		"vector":            vectors[0],
+		"candidates":        candidates,
+		"as_of":             asOf.UTC().Format(time.RFC3339),
+		"max_distance":      limits.DenseMaxDistance,
+		"min_lexical_score": lexicalScoreFloor(query, limits.LexicalMinScore),
 	})
-	if err != nil || len(ranked) == 0 {
+	if err != nil {
 		// A fusion that fails must not lose the answer the lexical leg already had.
-		return c.SearchFacts(ctx, query, limit, asOf)
+		return c.searchFactsFallback(ctx, query, limit, asOf, reasonFusionFailed)
+	}
+	if len(ranked) == 0 {
+		return FactSearchResult{
+			RetrievalPath: retrievalPathHybrid,
+			Abstained:     true,
+			Reason:        reasonNoQualifiedCandidates,
+		}, nil
 	}
 	rids := make([]string, 0, len(ranked))
 	for _, row := range ranked {
@@ -149,14 +193,14 @@ func (c *Client) SearchFactsHybrid(
 		}
 	}
 	if len(rids) == 0 {
-		return c.SearchFacts(ctx, query, limit, asOf)
+		return c.searchFactsFallback(ctx, query, limit, asOf, reasonFusionResultInvalid)
 	}
 	rows, err := c.Query(ctx, hydrateFactsStatement, map[string]any{
 		"rids":  rids,
 		"as_of": asOf.UTC().Format(time.RFC3339),
 	})
 	if err != nil {
-		return c.SearchFacts(ctx, query, limit, asOf)
+		return c.searchFactsFallback(ctx, query, limit, asOf, reasonHydrationFailed)
 	}
 	// The hydration is a set read, so it loses the fused order; restore it from
 	// the ranking, which is the only thing that knew it. The rank travels WITH
@@ -184,7 +228,31 @@ func (c *Client) SearchFactsHybrid(
 		}
 		hits = append(hits, item.hit)
 	}
-	return hits, nil
+	result := FactSearchResult{Facts: hits, RetrievalPath: retrievalPathHybrid}
+	if len(hits) == 0 {
+		result.Abstained = true
+		result.Reason = reasonNoQualifiedCandidates
+	}
+	return result, nil
+}
+
+func (c *Client) searchFactsFallback(
+	ctx context.Context,
+	query string,
+	limit int,
+	asOf time.Time,
+	reason string,
+) (FactSearchResult, error) {
+	hits, err := c.SearchFacts(ctx, query, limit, asOf)
+	if err != nil {
+		return FactSearchResult{}, err
+	}
+	return FactSearchResult{
+		Facts:         hits,
+		RetrievalPath: retrievalPathLexical,
+		Abstained:     len(hits) == 0,
+		Reason:        reason,
+	}, nil
 }
 
 // rankedFact keeps a hydrated fact next to its place in the fused ranking.
@@ -218,9 +286,7 @@ func (c *Client) embedFacts(ctx context.Context, batch int, where string) (int, 
 	if c == nil || c.embedder == nil {
 		return 0, fmt.Errorf("arcadedb: no embedder configured")
 	}
-	if batch <= 0 {
-		batch = 100
-	}
+	batch = boundedLimit(batch, 100, c.memoryLimits().MaintenanceBatch)
 	rows, err := c.Query(ctx,
 		"SELECT @rid AS rid, statement FROM "+factEdgeType+
 			" WHERE "+where+" LIMIT "+strconv.Itoa(batch), nil)

@@ -59,6 +59,14 @@ func TestNewRejectsInvalidConfig(t *testing.T) {
 		"blank database": {BaseURL: "http://host:2480", Database: " ", User: "root"},
 		"empty user":     {BaseURL: "http://host:2480", Database: "aura"},
 		"blank user":     {BaseURL: "http://host:2480", Database: "aura", User: "\t"},
+		"negative memory limit": {
+			BaseURL: "http://host:2480", Database: "aura", User: "root",
+			MemoryLimits: MemoryLimits{QueryRunes: -1},
+		},
+		"negative relevance limit": {
+			BaseURL: "http://host:2480", Database: "aura", User: "root",
+			MemoryLimits: MemoryLimits{DenseMaxDistance: -0.1},
+		},
 	}
 	for name, cfg := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -89,6 +97,42 @@ func TestNewHonoursExplicitTimeout(t *testing.T) {
 	}
 	if c.http.Timeout != 5*time.Second {
 		t.Fatalf("timeout = %v, want 5s", c.http.Timeout)
+	}
+}
+
+func TestNewDefaultsMemoryLimits(t *testing.T) {
+	c, err := New(Config{BaseURL: "http://host:2480", Database: "aura", User: "root"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	want := MemoryLimits{
+		QueryRunes: 2048, EntityRunes: 512, StatementRunes: 4096,
+		PredicateRunes: 100, SourceRunIDRunes: 100, SourceMemoryIDRunes: 100,
+		SourceMemoryIDs: 64, Results: 100, DigestFactsPerEntity: 20,
+		MaintenanceBatch: 100, DigestScan: 2000, HybridCandidates: 400,
+		DenseMaxDistance: 0.55, LexicalMinScore: 2,
+	}
+	if c.limits != want {
+		t.Fatalf("limits = %+v, want %+v", c.limits, want)
+	}
+}
+
+func TestNewHonoursMemoryLimitOverrides(t *testing.T) {
+	want := MemoryLimits{
+		QueryRunes: 101, EntityRunes: 102, StatementRunes: 103,
+		PredicateRunes: 104, SourceRunIDRunes: 105, SourceMemoryIDRunes: 106,
+		SourceMemoryIDs: 107, Results: 108, DigestFactsPerEntity: 109,
+		MaintenanceBatch: 110, DigestScan: 111, HybridCandidates: 112,
+		DenseMaxDistance: 0.25, LexicalMinScore: 3.5,
+	}
+	c, err := New(Config{
+		BaseURL: "http://host:2480", Database: "aura", User: "root", MemoryLimits: want,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if c.limits != want {
+		t.Fatalf("limits = %+v, want %+v", c.limits, want)
 	}
 }
 
