@@ -37,6 +37,8 @@ from production_load_chaos_support import (
     write_report,
 )
 
+DEFAULT_SANDBOX_IMAGE = "aura-sandbox:latest"
+
 
 def new_reports(args: argparse.Namespace) -> tuple[dict, dict]:
     generated = dt.datetime.now(dt.timezone.utc).isoformat()
@@ -145,6 +147,7 @@ def run_isolated_appliance(
         )
         aura_port = free_port()
         env = daemon_env(work, database, proxy, aura_port)
+        materialize_sandbox_image(env)
         command([str(aura), "db", "migrate"], env=env, timeout=120)
         daemon_log = (work / "aura.log").open("wb")
         daemon = subprocess.Popen(
@@ -199,6 +202,31 @@ def run_isolated_appliance(
             daemon_log.close()
         if database_created:
             fresh_database(database, False)
+
+
+def materialize_sandbox_image(env: dict[str, str]) -> None:
+    image = env.get("AURA_SANDBOX_IMAGE", "").strip() or DEFAULT_SANDBOX_IMAGE
+    inspected = command(
+        ["docker", "image", "inspect", image],
+        check=False,
+    )
+    if inspected.returncode == 0:
+        return
+    if image == DEFAULT_SANDBOX_IMAGE:
+        command(
+            [
+                "docker",
+                "build",
+                "-f",
+                "docker/aura-sandbox/Dockerfile",
+                "-t",
+                image,
+                ".",
+            ],
+            timeout=1200,
+        )
+        return
+    command(["docker", "pull", image], timeout=300)
 
 
 def wait_for_daemon(

@@ -106,16 +106,18 @@ class MCPFixtureHandler(http.server.BaseHTTPRequestHandler):
                 ]
             }
         elif method == "tools/call":
+            payload = {"facts": []}
             result = {
                 "content": [
                     {
                         "type": "text",
                         "text": json.dumps(
-                            {"results": {"preferences": []}},
+                            payload,
                             separators=(",", ":"),
                         ),
                     }
-                ]
+                ],
+                "structuredContent": payload,
             }
         elif method == "ping":
             result = {}

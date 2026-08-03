@@ -3,11 +3,13 @@ import json
 import re
 import unittest
 import urllib.request
+from unittest import mock
 
 from production_load_chaos import (
     MCPFixture,
     REQUIRED_CHAOS_SCENARIOS,
     Toxiproxy,
+    materialize_sandbox_image,
     new_reports,
     validate_chaos_report,
     validate_load_report,
@@ -156,7 +158,11 @@ class MCPFixtureTest(unittest.TestCase):
             text = called["result"]["content"][0]["text"]
             self.assertEqual(
                 json.loads(text),
-                {"results": {"preferences": []}},
+                {"facts": []},
+            )
+            self.assertEqual(
+                called["result"]["structuredContent"],
+                {"facts": []},
             )
 
     @staticmethod
@@ -176,6 +182,58 @@ class ToxiproxyConfigurationTest(unittest.TestCase):
         proxy = Toxiproxy(19091, "unit")
         ports = [proxy.control_port, *proxy.host_ports.values()]
         self.assertEqual(len(ports), len(set(ports)))
+
+
+class SandboxImageMaterializationTest(unittest.TestCase):
+    @mock.patch("production_load_chaos.command")
+    def test_default_image_is_built_from_production_dockerfile(self, run):
+        run.side_effect = [mock.Mock(returncode=1), mock.Mock(returncode=0)]
+
+        materialize_sandbox_image({})
+
+        self.assertEqual(
+            run.call_args_list,
+            [
+                mock.call(
+                    ["docker", "image", "inspect", "aura-sandbox:latest"],
+                    check=False,
+                ),
+                mock.call(
+                    [
+                        "docker",
+                        "build",
+                        "-f",
+                        "docker/aura-sandbox/Dockerfile",
+                        "-t",
+                        "aura-sandbox:latest",
+                        ".",
+                    ],
+                    timeout=1200,
+                ),
+            ],
+        )
+
+    @mock.patch("production_load_chaos.command")
+    def test_present_image_is_reused(self, run):
+        run.return_value = mock.Mock(returncode=0)
+
+        materialize_sandbox_image({"AURA_SANDBOX_IMAGE": "registry/box:v1"})
+
+        run.assert_called_once_with(
+            ["docker", "image", "inspect", "registry/box:v1"],
+            check=False,
+        )
+
+    @mock.patch("production_load_chaos.command")
+    def test_missing_configured_image_is_pulled(self, run):
+        run.side_effect = [mock.Mock(returncode=1), mock.Mock(returncode=0)]
+
+        materialize_sandbox_image({"AURA_SANDBOX_IMAGE": "registry/box:v1"})
+
+        self.assertEqual(
+            run.call_args_list[-1],
+            mock.call(["docker", "pull", "registry/box:v1"], timeout=300),
+        )
 
 
 if __name__ == "__main__":

@@ -33,16 +33,8 @@ func (c *memoryReadinessClient) CallTool(
 
 func (*memoryReadinessClient) Ping(context.Context) error { return nil }
 
-// This test was TestMemoryReadinessCheckUsesFunctionalTenantScopedSearch, and it
-// asserted that the probe carried an isolated synthetic `user_identifier` so a
-// readiness check never searched a real person's memory.
-//
-// That property is GONE, and not because the probe stopped caring: ArcadeDB's
-// memory_search has no per-identity scope to pass. Memory is one database with no
-// owner filter today — the per-tenant database work that would restore it is
-// designed and unbuilt. The probe therefore runs a one-result search against the
-// shared memory, which is cheap and read-only but is NOT the isolation the old
-// name claimed. Restoring it is part of that slice, not a rename away.
+// The readiness search uses a synthetic owner whose isolated ArcadeDB database
+// cannot expose or disturb a person's memory.
 func TestMemoryReadinessCheckRunsAnIsolatedFunctionalSearch(t *testing.T) {
 	client := &memoryReadinessClient{text: `{"facts":[]}`}
 	if err := checkMemoryReadiness(context.Background(), client); err != nil {
