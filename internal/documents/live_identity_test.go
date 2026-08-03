@@ -6,9 +6,25 @@ import (
 	"context"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// asDocumentIdentity is the channel a test must use to seed, clear or read back
+// aura.documents through the ordinary app pool.
+//
+// Migration 0087 made that table fail CLOSED: with no app.current_identity bound, a raw
+// INSERT is refused 42501 and a raw SELECT quietly returns nothing — so a test that reads
+// straight off the pool asserts on an empty set instead of on the row it just wrote, and a
+// cleanup DELETE reports success having removed nothing. Binding the principal is the fix;
+// the assertions on the other side are unchanged.
+func asDocumentIdentity(
+	ctx context.Context, pool *pgxpool.Pool, identityID string, fn func(pgx.Tx) error,
+) error {
+	return db.WithIdentityTxRaw(ctx, pool, identityID, fn)
+}
 
 // seedDocumentTestIdentity creates a throwaway identity so a catalog row's identity_id
 // foreign key is satisfied without borrowing a real one. Both reasons matter: the seeded

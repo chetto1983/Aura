@@ -85,11 +85,15 @@ func TestPostgresCatalogStoreUsesEmptyTagArrayForNoTags(t *testing.T) {
 
 func TestPostgresCatalogStoreSoftDeletesVersionAssets(t *testing.T) {
 	db := &recordingCatalogDB{}
-	store := &PostgresCatalogStore{db: db}
+	// The worker now hangs off catalogTx — the pair of handles one identity-scoped
+	// transaction hands out — because migration 0087 requires this statement to share a
+	// transaction with the document soft-delete it accompanies. The assertions below are
+	// unchanged; only the channel the fake DBTX arrives through is.
+	sc := catalogTx{raw: db}
 	identityID := mustCatalogTestUUID(t, "00000000-0000-0000-0000-000000000001")
 	documentID := mustCatalogTestUUID(t, "10000000-0000-0000-0000-000000000001")
 
-	if err := store.softDeleteDocumentAssets(context.Background(), identityID, documentID); err != nil {
+	if err := sc.softDeleteDocumentAssets(context.Background(), identityID, documentID); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(db.execSQL, "UPDATE aura.assets") || !strings.Contains(db.execSQL, "aura.document_versions") {

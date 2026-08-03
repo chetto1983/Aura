@@ -24,8 +24,25 @@ import (
 // when one already carries this search_document_id rather than creating a second — the
 // ingest path writes the catalog row first, and creating another here produced two rows
 // per upload with document_open resolving the newer, card-less one.
-func (s *PostgresCatalogStore) RecordAssetVersion(ctx context.Context, req RecordAssetVersionRequest) (DocumentVersionRecord, error) {
-	doc, err := s.documentForAssetVersion(ctx, req)
+//
+// All of it is ONE identity-scoped transaction, opened here and handed down to the
+// unexported workers. That is not only the RLS carrier: the storage object, the version,
+// the storage-object back-link and the active-version link are one indivisible fact about
+// an upload, and reaching them through the public CreateDocument/UpdateDocument methods
+// would open a fresh transaction per statement and lose exactly the atomicity whose
+// absence already cost this package a duplicate row per file.
+func (s *PostgresCatalogStore) RecordAssetVersion(
+	ctx context.Context, req RecordAssetVersionRequest,
+) (DocumentVersionRecord, error) {
+	return scopedValue(ctx, s, req.IdentityID, func(sc catalogTx) (DocumentVersionRecord, error) {
+		return sc.recordAssetVersion(ctx, req)
+	})
+}
+
+func (sc catalogTx) recordAssetVersion(
+	ctx context.Context, req RecordAssetVersionRequest,
+) (DocumentVersionRecord, error) {
+	doc, err := sc.documentForAssetVersion(ctx, req)
 	if err != nil {
 		return DocumentVersionRecord{}, err
 	}
@@ -41,7 +58,7 @@ func (s *PostgresCatalogStore) RecordAssetVersion(ctx context.Context, req Recor
 	if err != nil {
 		return DocumentVersionRecord{}, err
 	}
-	storageRow, err := s.q.CreateStorageObject(ctx, sqlc.CreateStorageObjectParams{
+	storageRow, err := sc.q.CreateStorageObject(ctx, sqlc.CreateStorageObjectParams{
 		IdentityID:     pgIdentityID,
 		DocumentID:     pgDocumentID,
 		AssetID:        pgAssetID,
@@ -58,7 +75,7 @@ func (s *PostgresCatalogStore) RecordAssetVersion(ctx context.Context, req Recor
 	if err != nil {
 		return DocumentVersionRecord{}, err
 	}
-	versionRow, err := s.q.CreateDocumentVersion(ctx, sqlc.CreateDocumentVersionParams{
+	versionRow, err := sc.q.CreateDocumentVersion(ctx, sqlc.CreateDocumentVersionParams{
 		DocumentID:         pgDocumentID,
 		AssetID:            pgAssetID,
 		VersionNumber:      int32(req.VersionNumber), //nolint:gosec // normalized positive and starts at 1.
@@ -74,14 +91,14 @@ func (s *PostgresCatalogStore) RecordAssetVersion(ctx context.Context, req Recor
 	if err != nil {
 		return DocumentVersionRecord{}, err
 	}
-	if _, err := s.q.UpdateStorageObjectVersion(ctx, sqlc.UpdateStorageObjectVersionParams{
+	if _, err := sc.q.UpdateStorageObjectVersion(ctx, sqlc.UpdateStorageObjectVersionParams{
 		ID:        storageRow.ID,
 		VersionID: versionRow.ID,
 	}); err != nil {
 		return DocumentVersionRecord{}, err
 	}
 	version := catalogVersionFromSQL(versionRow)
-	doc, err = s.UpdateDocument(ctx, UpdateDocumentRequest{
+	doc, err = sc.updateDocument(ctx, UpdateDocumentRequest{
 		IdentityID:      req.IdentityID,
 		DocumentID:      doc.ID,
 		Scope:           doc.Scope,
@@ -106,15 +123,15 @@ func (s *PostgresCatalogStore) RecordAssetVersion(ctx context.Context, req Recor
 // ends up as two catalog rows with the same search_document_id: the library shows
 // the file twice, and document_open resolves the newest, which is the one without
 // the card. One file, one row, whichever writer arrives first.
-func (s *PostgresCatalogStore) documentForAssetVersion(
+func (sc catalogTx) documentForAssetVersion(
 	ctx context.Context, req RecordAssetVersionRequest,
 ) (Document, error) {
-	existing, found, err := s.documentBySearchID(ctx, req.IdentityID, req.SearchDocumentID)
+	existing, found, err := sc.documentBySearchID(ctx, req.IdentityID, req.SearchDocumentID)
 	if err != nil {
 		return Document{}, err
 	}
 	if !found {
-		return s.CreateDocument(ctx, CreateDocumentRequest{
+		return sc.createDocument(ctx, CreateDocumentRequest{
 			IdentityID: req.IdentityID,
 			Scope:      req.Scope,
 			Title:      req.Title,
@@ -124,7 +141,7 @@ func (s *PostgresCatalogStore) documentForAssetVersion(
 	}
 	// Tags and title are left as they are found: a person may already have edited
 	// them in the cockpit, and this call knows only what the uploader said.
-	return s.UpdateDocument(ctx, UpdateDocumentRequest{
+	return sc.updateDocument(ctx, UpdateDocumentRequest{
 		IdentityID:      req.IdentityID,
 		DocumentID:      existing.ID,
 		Scope:           existing.Scope,
@@ -138,13 +155,13 @@ func (s *PostgresCatalogStore) documentForAssetVersion(
 
 // documentBySearchID finds one identity's live catalog row for a search id. A
 // missing row is not an error: it is the first writer's normal case.
-func (s *PostgresCatalogStore) documentBySearchID(
+func (sc catalogTx) documentBySearchID(
 	ctx context.Context, identityID, searchDocumentID string,
 ) (Document, bool, error) {
 	if strings.TrimSpace(searchDocumentID) == "" || strings.TrimSpace(identityID) == "" {
 		return Document{}, false, nil
 	}
-	id, err := s.catalogIDForSearchDocument(ctx, searchDocumentID)
+	id, err := sc.catalogIDForSearchDocument(ctx, searchDocumentID)
 	if err != nil {
 		return Document{}, false, nil //nolint:nilerr // not-catalogued is the create path, not a failure.
 	}
@@ -152,7 +169,7 @@ func (s *PostgresCatalogStore) documentBySearchID(
 	if err != nil {
 		return Document{}, false, err
 	}
-	row, err := s.q.GetDocument(ctx, sqlc.GetDocumentParams{ID: id, IdentityID: owner})
+	row, err := sc.q.GetDocument(ctx, sqlc.GetDocumentParams{ID: id, IdentityID: owner})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Document{}, false, nil

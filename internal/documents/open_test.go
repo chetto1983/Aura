@@ -15,13 +15,16 @@ const (
 )
 
 type fakeSearchResolver struct {
-	asked string
-	id    string
-	err   error
+	askedIdentity string
+	asked         string
+	id            string
+	err           error
 }
 
-func (f *fakeSearchResolver) CatalogIDForSearchDocument(_ context.Context, searchDocumentID string) (string, error) {
-	f.asked = searchDocumentID
+func (f *fakeSearchResolver) CatalogIDForSearchDocument(
+	_ context.Context, identityID, searchDocumentID string,
+) (string, error) {
+	f.askedIdentity, f.asked = identityID, searchDocumentID
 	return f.id, f.err
 }
 
@@ -73,6 +76,12 @@ func TestOpenDocument_ResolvesSearchIDThroughTheCatalog(t *testing.T) {
 
 	if resolver.asked != "doc_9f2c" {
 		t.Fatalf("resolver asked for %q, want the search id", resolver.asked)
+	}
+	// The resolution is a read of aura.documents, which fails closed without a principal
+	// (migration 0087), so the identity has to reach the resolver too — not only the two
+	// gates below.
+	if resolver.askedIdentity != testIdentityID {
+		t.Fatalf("resolver asked as %q, want the caller's identity", resolver.askedIdentity)
 	}
 	if store.getDocumentID != testCatalogID {
 		t.Fatalf("catalog looked up %q, want the resolved uuid", store.getDocumentID)

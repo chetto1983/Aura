@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -30,6 +31,13 @@ func digestSearchPool(t *testing.T) *pgxpool.Pool {
 	return pool
 }
 
+func clearDigestSearchDocuments(ctx context.Context, pool *pgxpool.Pool) error {
+	return asDocumentIdentity(ctx, pool, digestSearchIdentity, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `DELETE FROM aura.documents WHERE identity_id = $1`, digestSearchIdentity)
+		return err
+	})
+}
+
 // TestSearchDigestsFindsADocumentByAWordInsideItsFilename pins the defect 0081
 // fixed. Postgres' text parser classifies `Clienti.xlsx` as ONE `file` token, so
 // under 0080 the library returned zero hits for the single most likely query
@@ -40,8 +48,10 @@ func TestSearchDigestsFindsADocumentByAWordInsideItsFilename(t *testing.T) {
 	ctx := context.Background()
 	store := NewPostgresCatalogStore(pool)
 
-	if _, err := pool.Exec(ctx,
-		`DELETE FROM aura.documents WHERE identity_id = $1`, digestSearchIdentity); err != nil {
+	// The clear, the fixture insert and the cleanup all bind the principal: aura.documents
+	// fails closed under 0087, so off the bare pool the INSERT is refused 42501 outright
+	// and the two DELETEs report success having removed nothing.
+	if err := clearDigestSearchDocuments(ctx, pool); err != nil {
 		t.Fatalf("clear: %v", err)
 	}
 	// The FK is real, so the seed must SUCCEED, not be logged and skipped: the
@@ -54,16 +64,18 @@ VALUES ($1, 'digest-search-test', 'service') ON CONFLICT (id) DO NOTHING`,
 		digestSearchIdentity); err != nil {
 		t.Fatalf("seed identity: %v", err)
 	}
-	if _, err := pool.Exec(ctx, `
+	if err := asDocumentIdentity(ctx, pool, digestSearchIdentity, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `
 INSERT INTO aura.documents (identity_id, scope, title, tags, metadata, status, digest)
 VALUES ($1, 'library', 'Clienti.xlsx', ARRAY['fatturato-2026'], '{}'::jsonb, 'ready',
         'Clienti.xlsx — Tabular data. Clienti (5889 rows): Ragione sociale, Località, Venditore Esterno')`,
-		digestSearchIdentity); err != nil {
+			digestSearchIdentity)
+		return err
+	}); err != nil {
 		t.Fatalf("insert: %v", err)
 	}
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(),
-			`DELETE FROM aura.documents WHERE identity_id = $1`, digestSearchIdentity)
+		_ = clearDigestSearchDocuments(context.Background(), pool)
 	})
 
 	for _, query := range []string{

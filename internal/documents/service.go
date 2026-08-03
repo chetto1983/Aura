@@ -21,10 +21,16 @@ const DefaultMaxIngestBytes int64 = 50 << 20
 var ErrFileTooLarge = errors.New("document file too large")
 
 // IngestCatalog owns the logical catalog lifecycle for an ingested document.
+//
+// Every method names an identity because every one of them writes an owner-scoped row:
+// aura.documents fails closed without a principal (migration 0087), and the ingest request
+// has been carrying one all along.
 type IngestCatalog interface {
 	CreateDocument(context.Context, CreateDocumentRequest) (Document, error)
 	SetCard(ctx context.Context, identityID, documentID, card string) error
-	SetSearchDocumentStatus(ctx context.Context, searchDocumentID string, status DocumentStatus, reason string) error
+	SetSearchDocumentStatus(
+		ctx context.Context, identityID, searchDocumentID string, status DocumentStatus, reason string,
+	) error
 }
 
 // Clock returns the current time; tests inject it for deterministic timestamps.
@@ -98,7 +104,7 @@ func (s *Service) IngestPath(ctx context.Context, req IngestRequest, path string
 		// The catalog row already advertises the document. Leaving it saying "ready"
 		// while its job never reached searchable is the exact silence that once let a
 		// document with nothing behind it look complete to the cockpit and the agent.
-		s.markCatalogFailed(ctx, documentID, err)
+		s.markCatalogFailed(ctx, req.IdentityID, documentID, err)
 		return &job, err
 	}
 	return &job, nil
@@ -153,13 +159,17 @@ func (s *Service) writeCard(ctx context.Context, req IngestRequest, catalogID, p
 	}
 }
 
-func (s *Service) markCatalogFailed(ctx context.Context, documentID string, cause error) {
-	if s.Catalog == nil {
+// markCatalogFailed guards on the same condition recordCatalogDocument does, and must:
+// without an identity no catalog row was ever written, so there is nothing to correct and
+// the attempt would only fail closed on aura.documents and log a WARN about a row that
+// does not exist.
+func (s *Service) markCatalogFailed(ctx context.Context, identityID, documentID string, cause error) {
+	if s.Catalog == nil || strings.TrimSpace(identityID) == "" {
 		return
 	}
 	reason := fmt.Sprintf("document ingest failed: %v", cause)
 	if err := s.Catalog.SetSearchDocumentStatus(
-		context.WithoutCancel(ctx), documentID, DocumentStatusFailed, reason,
+		context.WithoutCancel(ctx), identityID, documentID, DocumentStatusFailed, reason,
 	); err != nil {
 		slog.Warn("documents: could not mark catalog document failed", "document_id", documentID, "err", err)
 	}

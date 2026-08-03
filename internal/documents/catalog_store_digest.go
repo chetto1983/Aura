@@ -18,13 +18,14 @@ import (
 //
 // documentID may be either namespace — the `doc_<hex>` search id a retrieval hit
 // carries, or the catalog uuid — because the caller holds whichever its own
-// caller gave it. The write is identity-scoped in SQL: a document id alone must
-// never be enough to overwrite what another person's library says about their
-// file, and this is reachable from a tool call.
+// caller gave it. The write is identity-scoped twice over: in SQL, and in the RLS
+// session the transaction opens. A document id alone must never be enough to
+// overwrite what another person's library says about their file, and this is
+// reachable from a tool call.
 func (s *PostgresCatalogStore) SetDigest(ctx context.Context, identityID, documentID, digest string) error {
 	return s.setDescription(ctx, identityID, documentID, "digest",
-		func(id, owner pgtype.UUID) error {
-			_, err := s.q.SetDocumentDigest(ctx, sqlc.SetDocumentDigestParams{
+		func(q *sqlc.Queries, id, owner pgtype.UUID) error {
+			_, err := q.SetDocumentDigest(ctx, sqlc.SetDocumentDigestParams{
 				ID: id, IdentityID: owner, Digest: digest,
 			})
 			return err
@@ -39,8 +40,8 @@ func (s *PostgresCatalogStore) SetDigest(ctx context.Context, identityID, docume
 // alone. Same identity gate as SetDigest, for the same reason.
 func (s *PostgresCatalogStore) SetCard(ctx context.Context, identityID, documentID, card string) error {
 	return s.setDescription(ctx, identityID, documentID, "card",
-		func(id, owner pgtype.UUID) error {
-			_, err := s.q.SetDocumentCard(ctx, sqlc.SetDocumentCardParams{
+		func(q *sqlc.Queries, id, owner pgtype.UUID) error {
+			_, err := q.SetDocumentCard(ctx, sqlc.SetDocumentCardParams{
 				ID: id, IdentityID: owner, Card: card,
 			})
 			return err
@@ -54,27 +55,29 @@ func (s *PostgresCatalogStore) SetCard(ctx context.Context, identityID, document
 func (s *PostgresCatalogStore) setDescription(
 	ctx context.Context,
 	identityID, documentID, column string,
-	write func(id, owner pgtype.UUID) error,
+	write func(q *sqlc.Queries, id, owner pgtype.UUID) error,
 ) error {
 	owner, err := pgUUID("identity_id", identityID)
 	if err != nil {
 		return err
 	}
-	id, err := s.digestTargetID(ctx, documentID)
-	if err != nil {
-		return err
-	}
-	if err := write(id, owner); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return fmt.Errorf("%w: %s", ErrDocumentNotCatalogued, documentID)
+	return s.scoped(ctx, identityID, func(sc catalogTx) error {
+		id, err := sc.digestTargetID(ctx, documentID)
+		if err != nil {
+			return err
 		}
-		return fmt.Errorf("set document %s: %w", column, err)
-	}
-	return nil
+		if err := write(sc.q, id, owner); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return fmt.Errorf("%w: %s", ErrDocumentNotCatalogued, documentID)
+			}
+			return fmt.Errorf("set document %s: %w", column, err)
+		}
+		return nil
+	})
 }
 
 // digestTargetID accepts either id namespace, same as OpenService does.
-func (s *PostgresCatalogStore) digestTargetID(ctx context.Context, documentID string) (pgtype.UUID, error) {
+func (sc catalogTx) digestTargetID(ctx context.Context, documentID string) (pgtype.UUID, error) {
 	documentID = strings.TrimSpace(documentID)
 	if documentID == "" {
 		return pgtype.UUID{}, fmt.Errorf("document_id is required")
@@ -82,7 +85,7 @@ func (s *PostgresCatalogStore) digestTargetID(ctx context.Context, documentID st
 	if _, err := uuid.Parse(documentID); err == nil {
 		return pgUUID("document_id", documentID)
 	}
-	return s.catalogIDForSearchDocument(ctx, documentID)
+	return sc.catalogIDForSearchDocument(ctx, documentID)
 }
 
 // SearchDigests ranks one identity's library by ts_rank over the weighted
@@ -106,31 +109,33 @@ func (s *PostgresCatalogStore) SearchDigests(
 	if limit <= 0 || limit > maxDigestLimit {
 		limit = defaultDigestLimit
 	}
-	rows, err := s.q.SearchDocumentDigests(ctx, sqlc.SearchDocumentDigestsParams{
-		IdentityID: pgIdentityID,
-		Query:      strings.TrimSpace(query),
-		RowLimit:   int32(limit), //nolint:gosec // bounded by maxCatalogDocs just above.
-	})
-	if err != nil {
-		return nil, fmt.Errorf("search document digests: %w", err)
-	}
-	hits := make([]DigestHit, 0, len(rows))
-	for _, row := range rows {
-		hits = append(hits, DigestHit{
-			DocumentID: digestDocumentID(row),
-			Title:      row.Title,
-			Tags:       append([]string(nil), row.Tags...),
-			Digest:     row.Digest,
-			Card:       row.Card,
-			Rank:       float64(row.Rank),
-			UpdatedAt:  row.UpdatedAt.Time,
+	return scopedValue(ctx, s, identityID, func(sc catalogTx) ([]DigestHit, error) {
+		rows, err := sc.q.SearchDocumentDigests(ctx, sqlc.SearchDocumentDigestsParams{
+			IdentityID: pgIdentityID,
+			Query:      strings.TrimSpace(query),
+			RowLimit:   int32(limit), //nolint:gosec // bounded by maxDigestLimit just above.
 		})
-	}
-	// The SQL already returns them in order. This re-sort exists so a caller that
-	// merges hits from more than one source lands on the same order — it must
-	// therefore agree with the statement, not quietly re-alphabetize it.
-	SortDigestHits(hits)
-	return hits, nil
+		if err != nil {
+			return nil, fmt.Errorf("search document digests: %w", err)
+		}
+		hits := make([]DigestHit, 0, len(rows))
+		for _, row := range rows {
+			hits = append(hits, DigestHit{
+				DocumentID: digestDocumentID(row),
+				Title:      row.Title,
+				Tags:       append([]string(nil), row.Tags...),
+				Digest:     row.Digest,
+				Card:       row.Card,
+				Rank:       float64(row.Rank),
+				UpdatedAt:  row.UpdatedAt.Time,
+			})
+		}
+		// The SQL already returns them in order. This re-sort exists so a caller that
+		// merges hits from more than one source lands on the same order — it must
+		// therefore agree with the statement, not quietly re-alphabetize it.
+		SortDigestHits(hits)
+		return hits, nil
+	})
 }
 
 const (

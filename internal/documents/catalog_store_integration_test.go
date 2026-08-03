@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // TestSetSearchDocumentStatusSpeaksTheSearchIDNamespace pins the seam IngestPath calls
@@ -38,17 +40,24 @@ func TestSetSearchDocumentStatusSpeaksTheSearchIDNamespace(t *testing.T) {
 		t.Fatalf("CreateDocument: %v", err)
 	}
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), "DELETE FROM aura.documents WHERE id = $1", doc.ID)
+		_ = asDocumentIdentity(context.Background(), pool, identityID, func(tx pgx.Tx) error {
+			_, err := tx.Exec(context.Background(), "DELETE FROM aura.documents WHERE id = $1", doc.ID)
+			return err
+		})
 	})
 
-	if err := store.SetSearchDocumentStatus(ctx, searchDocumentID, DocumentStatusFailed, "ingest never finished"); err != nil {
+	if err := store.SetSearchDocumentStatus(
+		ctx, identityID, searchDocumentID, DocumentStatusFailed, "ingest never finished",
+	); err != nil {
 		t.Fatalf("SetSearchDocumentStatus: %v", err)
 	}
 
 	var status, reason string
-	if err := pool.QueryRow(ctx,
-		"SELECT status, coalesce(metadata->>'status_reason', '') FROM aura.documents WHERE id = $1",
-		doc.ID).Scan(&status, &reason); err != nil {
+	if err := asDocumentIdentity(ctx, pool, identityID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx,
+			"SELECT status, coalesce(metadata->>'status_reason', '') FROM aura.documents WHERE id = $1",
+			doc.ID).Scan(&status, &reason)
+	}); err != nil {
 		t.Fatalf("read back status: %v", err)
 	}
 	if status != string(DocumentStatusFailed) {
@@ -68,15 +77,16 @@ func TestSetSearchDocumentStatusNamesTheUncataloguedCase(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	identityID := seedDocumentTestIdentity(t, ctx, pool)
 	store := NewPostgresCatalogStore(pool)
 	orphan := DocumentID(fmt.Sprintf("never-catalogued-%d", time.Now().UnixNano()), "cli")
 
-	err := store.SetSearchDocumentStatus(ctx, orphan, DocumentStatusFailed, "ingest never finished")
+	err := store.SetSearchDocumentStatus(ctx, identityID, orphan, DocumentStatusFailed, "ingest never finished")
 	if !errors.Is(err, ErrDocumentNotCatalogued) {
 		t.Fatalf("SetSearchDocumentStatus = %v, want ErrDocumentNotCatalogued", err)
 	}
 
-	if err := store.SetSearchDocumentStatus(ctx, "  ", DocumentStatusFailed, "x"); err == nil {
+	if err := store.SetSearchDocumentStatus(ctx, identityID, "  ", DocumentStatusFailed, "x"); err == nil {
 		t.Fatal("SetSearchDocumentStatus accepted an empty search document id")
 	}
 }
@@ -108,7 +118,8 @@ func TestOwnedIngestCreatesAReadyCatalogRow(t *testing.T) {
 	}
 
 	var catalogID, catalogIdentity, status, catalogJobID, catalogSourceID string
-	err = pool.QueryRow(ctx, `
+	err = asDocumentIdentity(ctx, pool, identityID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
 SELECT id::text, identity_id::text, status,
        metadata->>'document_job_id', metadata->>'source_id'
 FROM aura.documents
@@ -116,13 +127,17 @@ WHERE metadata->>'search_document_id' = $1
   AND deleted_at IS NULL
 ORDER BY created_at DESC
 LIMIT 1`, job.DocumentID).Scan(
-		&catalogID, &catalogIdentity, &status, &catalogJobID, &catalogSourceID,
-	)
+			&catalogID, &catalogIdentity, &status, &catalogJobID, &catalogSourceID,
+		)
+	})
 	if err != nil {
 		t.Fatalf("read owned catalog row: %v", err)
 	}
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), "DELETE FROM aura.documents WHERE id = $1", catalogID)
+		_ = asDocumentIdentity(context.Background(), pool, identityID, func(tx pgx.Tx) error {
+			_, err := tx.Exec(context.Background(), "DELETE FROM aura.documents WHERE id = $1", catalogID)
+			return err
+		})
 	})
 	// Ready, not processing: no later stage exists to promote it.
 	if catalogIdentity != identityID || status != string(DocumentStatusReady) ||

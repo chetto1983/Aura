@@ -18,8 +18,12 @@ import (
 //
 // It is a separate interface rather than a CatalogStore method so the existing
 // CatalogStore fakes keep compiling: resolution is needed by this service alone.
+//
+// The resolution names an identity because aura.documents fails closed without one
+// (migration 0087). It is the owner whose document is being opened — OpenDocument's own
+// argument — so the gate is not new, it has simply moved one call earlier.
 type SearchDocumentResolver interface {
-	CatalogIDForSearchDocument(ctx context.Context, searchDocumentID string) (string, error)
+	CatalogIDForSearchDocument(ctx context.Context, identityID, searchDocumentID string) (string, error)
 }
 
 // DocumentAssetOpener opens the stored body of one identity-scoped asset. The
@@ -79,7 +83,7 @@ func (s *OpenService) OpenDocument(
 		return nil, OpenedDocument{}, fmt.Errorf("identity_id is required")
 	}
 
-	catalogID, err := s.catalogID(ctx, documentID)
+	catalogID, err := s.catalogID(ctx, identityID, documentID)
 	if err != nil {
 		return nil, OpenedDocument{}, err
 	}
@@ -107,7 +111,7 @@ func (s *OpenService) OpenDocument(
 
 // catalogID normalizes either id namespace to the catalog uuid. A uuid is used
 // as-is; anything else (`doc_<hex>`) goes through the resolver.
-func (s *OpenService) catalogID(ctx context.Context, documentID string) (string, error) {
+func (s *OpenService) catalogID(ctx context.Context, identityID, documentID string) (string, error) {
 	if _, err := uuid.Parse(documentID); err == nil {
 		return documentID, nil
 	}
@@ -115,7 +119,7 @@ func (s *OpenService) catalogID(ctx context.Context, documentID string) (string,
 		return "", fmt.Errorf(
 			"document %s is a search id and no catalog resolver is configured", documentID)
 	}
-	catalogID, err := s.Resolver.CatalogIDForSearchDocument(ctx, documentID)
+	catalogID, err := s.Resolver.CatalogIDForSearchDocument(ctx, identityID, documentID)
 	if err != nil {
 		return "", fmt.Errorf("resolve document %s: %w", documentID, err)
 	}

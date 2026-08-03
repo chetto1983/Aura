@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const cardIngestIdentity = "00000000-0000-0000-0000-0000000000d4"
@@ -128,10 +131,12 @@ func TestAssetVersionReusesTheCatalogRowIngestAlreadyWrote(t *testing.T) {
 	}
 
 	var rows int
-	if err := pool.QueryRow(ctx, `
+	if err := asDocumentIdentity(ctx, pool, cardIngestIdentity, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
 SELECT count(*) FROM aura.documents
 WHERE identity_id = $1 AND deleted_at IS NULL AND metadata->>'search_document_id' = $2`,
-		cardIngestIdentity, job.DocumentID).Scan(&rows); err != nil {
+			cardIngestIdentity, job.DocumentID).Scan(&rows)
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if rows != 1 {
@@ -155,12 +160,21 @@ INSERT INTO aura.identities (id, name, kind)
 VALUES ($1, 'card-ingest-test', 'service') ON CONFLICT (id) DO NOTHING`, cardIngestIdentity); err != nil {
 		t.Fatalf("seed identity: %v", err)
 	}
-	if _, err := pool.Exec(ctx,
-		`DELETE FROM aura.documents WHERE identity_id = $1`, cardIngestIdentity); err != nil {
+	// Both the clear and the cleanup go through a bound principal. Off the bare pool they
+	// are no-ops under 0087's fail-closed floor — reporting success having deleted nothing
+	// — and the second run of this file would then find two GHEDI documents where its
+	// assertions expect exactly one.
+	if err := clearCardIngestDocuments(ctx, pool); err != nil {
 		t.Fatalf("clear: %v", err)
 	}
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(),
-			`DELETE FROM aura.documents WHERE identity_id = $1`, cardIngestIdentity)
+		_ = clearCardIngestDocuments(context.Background(), pool)
+	})
+}
+
+func clearCardIngestDocuments(ctx context.Context, pool *pgxpool.Pool) error {
+	return asDocumentIdentity(ctx, pool, cardIngestIdentity, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `DELETE FROM aura.documents WHERE identity_id = $1`, cardIngestIdentity)
+		return err
 	})
 }

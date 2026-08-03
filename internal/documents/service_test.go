@@ -164,6 +164,11 @@ func TestServiceMarksTheCatalogFailedWhenTheJobCannotBeMarkedSearchable(t *testi
 	if !strings.Contains(catalog.failedReason, "ledger unavailable") {
 		t.Fatalf("catalog reason = %q, want the cause named", catalog.failedReason)
 	}
+	// The correction is a write to aura.documents, which fails closed without a principal
+	// (migration 0087). The identity the ingest request carried must reach it.
+	if catalog.failedIdentity != "00000000-0000-0000-0000-000000000001" {
+		t.Fatalf("catalog corrected as %q, want the ingesting identity", catalog.failedIdentity)
+	}
 }
 
 func TestServiceWarnsWhenTheCatalogCannotBeMarkedFailed(t *testing.T) {
@@ -272,14 +277,15 @@ func writeNamedTempFile(t *testing.T, name, content string) string {
 }
 
 type fakeIngestCatalog struct {
-	created      CreateDocumentRequest
-	err          error
-	setStatusErr error
-	setCardErr   error
-	card         string
-	cardTarget   string
-	failedStatus DocumentStatus
-	failedReason string
+	created        CreateDocumentRequest
+	err            error
+	setStatusErr   error
+	setCardErr     error
+	card           string
+	cardTarget     string
+	failedStatus   DocumentStatus
+	failedReason   string
+	failedIdentity string
 }
 
 func (f *fakeIngestCatalog) CreateDocument(_ context.Context, req CreateDocumentRequest) (Document, error) {
@@ -293,7 +299,10 @@ func (f *fakeIngestCatalog) SetCard(_ context.Context, _, documentID, card strin
 	return f.setCardErr
 }
 
-func (f *fakeIngestCatalog) SetSearchDocumentStatus(_ context.Context, _ string, status DocumentStatus, reason string) error {
+func (f *fakeIngestCatalog) SetSearchDocumentStatus(
+	_ context.Context, identityID, _ string, status DocumentStatus, reason string,
+) error {
+	f.failedIdentity = identityID
 	f.failedStatus = status
 	f.failedReason = reason
 	return f.setStatusErr
