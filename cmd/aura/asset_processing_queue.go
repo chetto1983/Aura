@@ -46,6 +46,8 @@ func (q *runtimeAssetProcessingQueue) clock() time.Time {
 
 func assetProcessingIngestionJobRequest(asset assets.Asset, nextAttemptAt time.Time) documents.CreateIngestionJobRequest {
 	return documents.CreateIngestionJobRequest{
+		IdentityID:     asset.IdentityID,
+		AssetID:        asset.ID,
 		JobType:        assetProcessJobType,
 		Status:         "queued",
 		IdempotencyKey: assetProcessJobType + ":" + asset.ID,

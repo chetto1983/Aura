@@ -62,6 +62,34 @@ func TestRuntimeAssetProcessingQueueEnqueuesDocumentJob(t *testing.T) {
 	}
 }
 
+// TestAssetProcessingIngestionJobRequestSetsIdentityID guards against the
+// 8d2701bd1 regression: identity_id was written into the untyped Payload
+// map but never onto the request struct's own IdentityID field, so
+// createIngestionJobParams (internal/documents/jobs_store.go) rejected
+// every asset with "invalid ingestion job identity id \"\"" and finalize
+// returned HTTP 400 for all uploads.
+func TestAssetProcessingIngestionJobRequestSetsIdentityID(t *testing.T) {
+	now := time.Date(2026, 6, 30, 10, 11, 12, 0, time.UTC)
+	asset := assets.Asset{
+		ID:         "asset-1",
+		IdentityID: "identity-1",
+		Modality:   assets.ModalityDocument,
+		Status:     assets.StatusAccepted,
+		FileName:   "manual.pdf",
+		MIMEType:   "application/pdf",
+		SizeBytes:  42,
+	}
+
+	req := assetProcessingIngestionJobRequest(asset, now)
+
+	if req.IdentityID != asset.IdentityID {
+		t.Fatalf("IdentityID = %q, want %q", req.IdentityID, asset.IdentityID)
+	}
+	if req.AssetID != asset.ID {
+		t.Fatalf("AssetID = %q, want %q", req.AssetID, asset.ID)
+	}
+}
+
 func TestRuntimeAssetProcessingQueueRequiresStore(t *testing.T) {
 	var queue *runtimeAssetProcessingQueue
 	if err := queue.EnqueueAssetProcessing(context.Background(), assets.Asset{}); err == nil {
