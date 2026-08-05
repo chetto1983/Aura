@@ -69,7 +69,7 @@
 - [ ] **MCP-01**: MCP tool descriptions reach the model as ordinary text, without the untrusted-data wrapper
 - [ ] **MCP-02**: Per-call result fencing and fail-closed risk classification for unknown tools remain in force and are proven by test
 - [ ] **MCP-03**: Trust is unconditional across every mounted MCP server — those Aura ships, those added later, and those minted by her own self-extension alike. **Operator decision, 2026-08-05**, taken against the research recommendation to scope removal to code-reviewed recipes: the residual risk is carried by MCP-02's per-call result fencing and fail-closed risk classification, and by the operator's control over what gets mounted at all
-- [ ] **MCP-04**: Calendar and WhatsApp are reachable through a curated surface instead of 28 raw third-party tools
+- [ ] **MCP-04**: Calendar and WhatsApp are reachable through a curated surface instead of 28 raw third-party tools — and that surface is **always loaded, never deferred**. Collapsing 28 to a handful is what makes keeping them in front of the model affordable; the two are one move in two steps, not alternatives. Undeferring the 28 raw tools instead would put ~56 definitions in every turn's manifest, which is the exact configuration Aura already measured at ~20k tokens/turn and recorded as the point where tool-choice accuracy collapses (`llm_agent_promote.go:88-93`). Reference point: Claude Code ships **16 tools, all loaded, no deferred pattern** — every one a curated surface rather than an endpoint wrapper
 - [ ] **MCP-05**: `accountId` is resolved host-side from the operator's configuration, like `user_identifier`
 
 ### Context management
