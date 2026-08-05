@@ -10,7 +10,7 @@ the next session does not re-derive them.
 (gofmt, file-size, vet, lint):
 
 ```
-<F3>       Wire the same-SHA replay through one atomic reservation
+7cea13da4  Wire the same-SHA replay through one atomic reservation (F3)
 afd5a05e6  Record the document pipeline checkpoint
 a974cfb22  Give the nightly Postgres backup a clock      (operator's work, own commit)
 8d2701bd1  Converge the industrial document pipeline     (163 files)
