@@ -67,8 +67,18 @@ describe('documentViewModel', () => {
   it('maps status tones and tag drafts', () => {
     expect(statusToneFor('ready')).toBe('success');
     expect(statusToneFor('failed')).toBe('danger');
-    expect(statusToneFor('processing')).toBe('warning');
+    expect(statusToneFor('dead_letter')).toBe('danger');
+    expect(statusToneFor('converting')).toBe('warning');
+    expect(statusToneFor('projecting')).toBe('warning');
+    expect(statusToneFor('accepted')).toBe('secondary');
     expect(parseDocumentTags('robot, manual, robot')).toEqual(['robot', 'manual']);
+  });
+
+  it('treats every in-flight status as the processing tab', () => {
+    for (const status of ['queued', 'converting', 'chunking', 'embedding', 'projecting'] as const) {
+      expect(documentMatchesTab({ ...doc, status }, undefined, 'processing')).toBe(true);
+    }
+    expect(documentMatchesTab({ ...doc, status: 'ready' }, undefined, 'processing')).toBe(false);
   });
 
   it('formats dates compactly', () => {

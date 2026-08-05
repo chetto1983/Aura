@@ -1,13 +1,17 @@
 export type DocumentScope = 'thread' | 'library';
 export type DocumentStatus =
-  | 'draft'
+  | 'accepted'
+  | 'stored'
   | 'queued'
-  | 'processing'
+  | 'converting'
+  | 'chunking'
+  | 'embedding'
+  | 'projecting'
   | 'ready'
   | 'failed'
+  | 'dead_letter'
   | 'deleting'
-  | 'deleted'
-  | 'archived';
+  | 'deleted';
 
 export interface DocumentItem {
   readonly id: string;

@@ -49,17 +49,27 @@ export function documentMatchesTab(
 ): boolean {
   if (tab === 'all') return true;
   if (tab === 'failed') return document.status === 'failed';
-  if (tab === 'processing') return document.status === 'queued' || document.status === 'processing';
+  if (tab === 'processing') return inFlightStatuses.has(document.status);
   const kind = documentKindFor(document, version);
   if (tab === 'documents') return kind === 'document';
   if (tab === 'images') return kind === 'image';
   return kind === 'file';
 }
 
+// The pipeline stages a document passes through between acceptance and ready. The tab
+// is named for the state the operator cares about, not for any single status value.
+const inFlightStatuses = new Set<DocumentStatus>([
+  'queued',
+  'converting',
+  'chunking',
+  'embedding',
+  'projecting',
+]);
+
 export function statusToneFor(status: DocumentStatus): StatusTone {
   if (status === 'ready') return 'success';
-  if (status === 'failed' || status === 'deleted') return 'danger';
-  if (status === 'queued' || status === 'processing' || status === 'deleting') return 'warning';
+  if (status === 'failed' || status === 'dead_letter' || status === 'deleted') return 'danger';
+  if (inFlightStatuses.has(status) || status === 'deleting') return 'warning';
   return 'secondary';
 }
 
