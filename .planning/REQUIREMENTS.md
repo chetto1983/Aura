@@ -36,16 +36,42 @@
 
 ### Tool surface
 
-- [ ] **TOOL-01**: The tools needed on most turns are callable without spending a `tool_search` round trip first
+- [ ] **TOOL-01**: Exactly **14 tools** are loaded in the model's manifest. A hard cap, not a target:
+
+  | # | Tool | Covers |
+  |---|------|--------|
+  | 1 | `text_response` | the loop's only terminal |
+  | 2 | `ask_user` | pause, clarify, approve |
+  | 3 | `shell_exec` | terminal, background via param |
+  | 4 | `fs_read` | |
+  | 5 | `fs_write` | write + exact-string edit |
+  | 6 | `fs_search` | find by name + search contents |
+  | 7 | `document` | search + open |
+  | 8 | `memory` | recall + atomic write batch |
+  | 9 | `web` | search + fetch |
+  | 10 | `skill` | list + view + linked files |
+  | 11 | `skill_manage` | create, patch, delete, install |
+  | 12 | `task` | schedule, list, cancel |
+  | 13 | `delegate` | swarm |
+  | 14 | `comms` | calendar, mail, contacts, WhatsApp |
+
+  Everything else is deferred behind `tool_search`. Four tools leave the model's surface
+  entirely because the host takes the step over: `send_file` (AUTO-01), `document_index`
+  and `document_describe` (AUTO-02), and `current_time` (already injected in the volatile
+  block). Reference point: Claude Code ships 16 loaded tools and no deferred pattern at
+  all — but those 16 cover coding alone, while these 14 must also carry documents, memory,
+  comms, scheduling and delegation. The budget is stricter than the comparison suggests
+  and has no slack
 - [ ] **TOOL-02**: The model is never asked to supply a parameter the host overwrites and discards
 - [ ] **TOOL-03**: A withheld destructive action is raised and resolved by the host; the model never relays a resume payload. **Carve-out:** the swarm relay fields (`proxied_from_child_id`, `proxied_tool_call_id`) stay — a headless worker has already returned its report by the time the parent relays its question, so which worker asked is knowledge only the parent holds. Removing them would leave a worker's question unattributed or undeliverable
 - [ ] **TOOL-04**: Scheduling a task takes one natural-language `when` instead of five mutually exclusive time fields
 - [ ] **TOOL-05**: Recalling memory takes one question; the host chooses graph traversal or hybrid search and reports which it used
-- [ ] **TOOL-06**: Applying a skill is one call — reading a skill without applying it is no longer a separate action
+- [ ] **TOOL-06**: Loading a skill's content **is** using it — the read-without-applying action does not exist. Hermes exposes a single `skill_view`; Aura's `info`/`use` pair differs only by a wrapper sentence, and that cosmetic split cost ~4k duplicated tokens in the audited session when she read `docx` and `xlsx` through one verb and then re-read both through the other
 - [ ] **TOOL-07**: Skill *use* is separated from skill *lifecycle* (create, update, delete, install, snippets), so the frequent path stays small
 - [ ] **TOOL-08**: Indexing a produced file accepts its description in the same call
 - [ ] **TOOL-09**: Web search drops the parameters inferable from the query itself
 - [ ] **TOOL-10**: A fetch that returns a bot-block, consent wall, or empty extraction is reported as a failed read, never handed back as if it were the page
+- [ ] **TOOL-11**: Finding files by name and searching their contents are one tool (`target: files | content`). **This reverses an earlier decision in this document.** The research established that five of six vendor harnesses — Claude Code included — keep them separate, and on that evidence the merge was parked pending telemetry. TOOL-01's hard cap overrules it: those vendors spend 16 slots on coding alone and can afford two, while Aura must fit documents, memory, comms, scheduling and delegation into the same budget. The cap forces the merge; the vendor evidence still says it is the weaker shape, and that tension is recorded rather than resolved
 
 ### Automation
 
@@ -69,7 +95,7 @@
 - [ ] **MCP-01**: MCP tool descriptions reach the model as ordinary text, without the untrusted-data wrapper
 - [ ] **MCP-02**: Per-call result fencing and fail-closed risk classification for unknown tools remain in force and are proven by test
 - [ ] **MCP-03**: Trust is unconditional across every mounted MCP server — those Aura ships, those added later, and those minted by her own self-extension alike. **Operator decision, 2026-08-05**, taken against the research recommendation to scope removal to code-reviewed recipes: the residual risk is carried by MCP-02's per-call result fencing and fail-closed risk classification, and by the operator's control over what gets mounted at all
-- [ ] **MCP-04**: Calendar and WhatsApp are reachable through a curated surface instead of 28 raw third-party tools — and that surface is **always loaded, never deferred**. Collapsing 28 to a handful is what makes keeping them in front of the model affordable; the two are one move in two steps, not alternatives. Undeferring the 28 raw tools instead would put ~56 definitions in every turn's manifest, which is the exact configuration Aura already measured at ~20k tokens/turn and recorded as the point where tool-choice accuracy collapses (`llm_agent_promote.go:88-93`). Reference point: Claude Code ships **16 tools, all loaded, no deferred pattern** — every one a curated surface rather than an endpoint wrapper
+- [ ] **MCP-04**: Calendar, mail, contacts and WhatsApp are reachable through **one** curated `comms` surface — a single loaded slot replacing 28 raw third-party tools, **always loaded, never deferred**. Skills take two of the fourteen slots and connected accounts take one, deliberately: hermes calls skills *"your procedural memory — reusable approaches for recurring task types"*, and Aura extends herself many times a day where she consults a calendar occasionally. Collapsing 28 to a handful is what makes keeping them in front of the model affordable; the two are one move in two steps, not alternatives. Undeferring the 28 raw tools instead would put ~56 definitions in every turn's manifest, which is the exact configuration Aura already measured at ~20k tokens/turn and recorded as the point where tool-choice accuracy collapses (`llm_agent_promote.go:88-93`). Reference point: Claude Code ships **16 tools, all loaded, no deferred pattern** — every one a curated surface rather than an endpoint wrapper
 - [ ] **MCP-05**: `accountId` is resolved host-side from the operator's configuration, like `user_identifier`
 
 ### Context management
@@ -98,7 +124,7 @@
 - [ ] **SURF-03**: Files produced but not yet delivered or indexed are surfaced next to the turn, not left for the model to remember
 - [ ] **SURF-04**: The model can tell that memory was already injected, and that a tool dropped from the manifest is still callable
 - [ ] **SURF-05**: The obsolete `learned_lesson` facts and the `always-deliver-files` skill are retired once the defects they compensate for are fixed
-- [ ] **SURF-06**: A skill's bundled scripts are reachable from what the skill tool returns, without discovering the mount point by hand
+- [ ] **SURF-06**: A skill's references, templates and scripts are fetched **through the skill tool itself** — the first call returns the skill body plus a `linked_files` index, and a second call naming one of those paths returns it. The model never learns where skills are mounted because it never needs to (hermes `skill_view` pattern). This is what F-6 actually wanted: `ls /skills/` was a workaround for a tool that would not hand back its own attachments
 - [ ] **SURF-07**: Each preinstalled skill carries the operational detail its family needs — no skill is a stub beside siblings that are full playbooks
 
 ### Delegation
@@ -156,7 +182,7 @@ Deferred. Tracked, not in this roadmap.
 
 | Feature | Reason |
 |---------|--------|
-| Merging `fs_glob` + `fs_grep` now | Five of six vendor harnesses keep name-search and content-search separate; only hermes merges. The tool name is a zero-cost disambiguator. Aura has one local reason to want it (the 10-slot promotion cap) — measure that in real sessions first |
+| ~~Merging `fs_glob` + `fs_grep`~~ | **Reversed 2026-08-05** — promoted to TOOL-11. The vendor evidence against it stands; TOOL-01's 14-slot cap overrules it anyway |
 | Restoring `internal/eval/` | It was broken, which is why it was deleted. OTel, `tool_invocations` and `conversation_turns` already carry the evidence (ACC-02) |
 | `make_document` routing tool | The friction it was meant to fix was the F-1 replay bug; fixing the harness removes the need |
 | `remind_me` / `remember` as new wrapper tools | Delivered by flattening `task` and `memory_recall` in place (TOOL-04, TOOL-05), so there stays one obvious way to do it |
@@ -248,10 +274,11 @@ Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-52).
 | TOOL-08 | Phase 47 | Pending |
 | TOOL-09 | Phase 47 | Pending |
 | TOOL-10 | Phase 47 | Pending |
+| TOOL-11 | Phase 48 | Pending |
 
 **Coverage:**
-- v1 requirements: 69 total
-- Mapped to phases: 69
+- v1 requirements: 70 total
+- Mapped to phases: 70
 - Unmapped: 0 ✓
 
 ---

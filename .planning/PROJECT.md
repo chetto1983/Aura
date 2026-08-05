@@ -112,6 +112,18 @@ was told, makes the rest worthless.
   locally; the LLM is remote (OpenRouter) by default.
 - **Migrations**: the next number is `ls internal/db/migrations/ | tail -1` + 1 at landing time,
   never deduced from a slice number.
+- **Read the reference implementations before designing anything in this milestone.**
+  `D:/tmp/hermes-agent` (a working agent harness: 80 tools, delegation, context engine) and
+  `D:/tmp/system-prompts-and-models-of-ai-tools` (30+ vendor prompts and tool schemas,
+  including Claude Code's own `Tools.json`) are on disk. This is CLAUDE.md's
+  *inventory before invention* rule with the corpora named, and it is a constraint because
+  ignoring it has already cost real work in this milestone's own planning: an `fs_glob`+`fs_grep`
+  merge proposed from one implementation and contradicted by five others; a `make_document`
+  router designed for a problem that was actually the F-1 replay bug; the swarm relay fields
+  nearly stripped as ceremony when they carry parent-only knowledge; and a background-delegation
+  design started before noticing the approved substrate already specified in
+  `docs/superpowers/specs/`. Read hermes and the vendor schemas first, then Aura's own
+  `docs/superpowers/specs/` for an existing design, and only then propose something new.
 
 ## Key Decisions
 

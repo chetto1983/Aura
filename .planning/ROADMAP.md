@@ -10,7 +10,7 @@ her own bug report. This milestone is done when those lessons become unnecessary
 uses her memory as the oracle for that.
 
 Phase numbering continues from v2.0.0 (which closed at Phase 44) — this milestone is Phases
-45-54. All 69 v1 requirements from REQUIREMENTS.md map to exactly one of these 10 phases; the
+45-54. All 70 v1 requirements from REQUIREMENTS.md map to exactly one of these 10 phases; the
 v2 items (CTX-V2-01, CTX-V2-02, TOOL-V2-01, TOOL-V2-02) and the Out of Scope table are not
 scheduled here.
 
@@ -67,7 +67,7 @@ harness is built; `internal/eval/` stays deleted.
 - [ ] **Phase 45: Harness correctness** - Idempotency replay fix and memory-write guardrails close the two headline audit defects
 - [ ] **Phase 46: MCP trust and facade** - Drop the untrusted-MCP wrapper where it's earned; curate calendar/WhatsApp into one surface
 - [ ] **Phase 47: Tool-surface ceremony strip** - Host-fills drop from schemas, approvals resolve without a resume payload, files auto-deliver and auto-index
-- [ ] **Phase 48: Tool-surface un-defer and merges** - ~56 tools flatten toward ~26; the system prompt regenerates to match
+- [ ] **Phase 48: Tool-surface un-defer and merges** - the manifest lands on exactly 14 loaded tools; the system prompt regenerates to match
 - [ ] **Phase 49: Memory tiers** - Short-term searchable retrieval and a PRD-amendment-gated reasoning tier
 - [ ] **Phase 50: Context ladder legibility** - Real token accounting, eviction, and per-category visibility
 - [ ] **Phase 51: Durable delegation** - The approved swarm substrate gets built; workers get a real brief, real limits, and a turn that no longer blocks
@@ -113,7 +113,7 @@ validation depends on this methodology already being lived practice, not policy 
 **Goal**: MCP servers Aura ships or bundles are trusted in the model's own context, without
 losing the two independent guardrails (per-call result fencing, fail-closed risk
 classification) that never depended on that trust in the first place; calendar and WhatsApp
-become one curated surface instead of 28 raw tools.
+collapse into a single always-loaded `comms` slot, replacing 28 raw tools.
 **Depends on**: Phase 45 — `applyMCPOperationMetadata` needs the new `ReplayPolicy` vocabulary from Phase 45 to assign anything other than the uniform default to a bridged tool.
 **Requirements**: MCP-01, MCP-02, MCP-03, MCP-04, MCP-05
 **Rationale**: Trust-wrapper scoping and facade groundwork are the same code change
@@ -163,12 +163,12 @@ shape must resume correctly or fail loudly, never silently (Pitfall 4).
 **Plans**: TBD
 
 ### Phase 48: Tool-surface un-defer and merges
-**Goal**: The model-facing tool count drops from ~56 toward ~26 and the system prompt is
-regenerated to match exactly what's loaded — the manifest the model reasons over each turn
+**Goal**: The model's manifest lands on exactly **14** loaded tools (TOOL-01 names them) and the
+system prompt is regenerated to match exactly what's loaded — the manifest the model reasons over each turn
 becomes something it can actually hold in its head, safe against conversations and schedules
 that predate the change.
-**Depends on**: Phase 45 (ReplayPolicy vocabulary for newly merged/un-deferred specs), Phase 46 (the facade shape must be settled first since facade tools count toward the ~26-tool budget this phase sizes against), Phase 47 (shares the same native tool files; landing ceremony-strip first avoids double-touching them, and settles the ask_user/approval state before further tool-registry churn).
-**Requirements**: TOOL-01, TOOL-04, TOOL-06, TOOL-07, SURF-01, SURF-06, SURF-07, COMPAT-01, COMPAT-03, AUTO-04
+**Depends on**: Phase 45 (ReplayPolicy vocabulary for newly merged/un-deferred specs), Phase 46 (the facade must collapse to the single `comms` slot first, since that slot is one of the 14 this phase sizes against), Phase 47 (shares the same native tool files; landing ceremony-strip first avoids double-touching them, and settles the ask_user/approval state before further tool-registry churn).
+**Requirements**: TOOL-01, TOOL-04, TOOL-06, TOOL-07, TOOL-11, SURF-01, SURF-06, SURF-07, COMPAT-01, COMPAT-03, AUTO-04
 **Rationale**: Highest surface area of the milestone — every native tool file,
 `llm_agent_promote.go`'s promotion machinery, the registry boot-guard (ARCHITECTURE.md §4).
 Pitfall 1 recommends restoring a tool-choice-accuracy eval harness before un-deferring;
