@@ -1,16 +1,13 @@
 # PHASE0 — Rehearse migration 0093 against a copy of live data
 
 Date: 2026-08-05
-Task: Task 1 of `docs/superpowers/plans/2026-08-05-document-pipeline-operator-e2e.md`
-Verdict: **DONE_WITH_CONCERNS — 0093 FAILS against real data.** Two rehearsal attempts were
-made. Attempt 1 (documented below) used `pg_restore --no-owner --role=aura`, which flattened
-object ownership and blocked `aura_migrate` before any 0093 DDL ran — a defect in the rehearsal
-recipe, not in 0093, so it proved nothing. Attempt 2 used a plain `pg_restore` (ownership
-preserved, verified to match live before migrating) and **actually exercised 0093's DDL**. It
-failed with a genuine Postgres error: `pq: cannot ALTER TABLE "documents" because it has
-pending trigger events (55006)`. Live `aura` was never touched in either attempt (confirmed
-before/after both). **This is the finding the rehearsal exists to produce: 0093 is not safe to
-run against live as written.**
+Task: Task 1 (and Task 1b) of `docs/superpowers/plans/2026-08-05-document-pipeline-operator-e2e.md`
+Verdict: **RESOLVED by Task 1b — 0093 now reaches `93 / clean` on a faithful copy of live
+data.** See "Task 1b — the fix and Attempt 3" below for the corrected root cause, the
+one-line fix, and the successful re-rehearsal. The narrative below (Attempts 1 and 2) is
+retained verbatim as the historical record of how the failure was found; its root-cause
+paragraph at the end of Attempt 2 has been superseded — do not act on it, see the
+correction in the Task 1b section.
 
 ## Baseline (measured before any action)
 
@@ -377,6 +374,17 @@ unfired/pending trigger events queued against it earlier in the same transaction
 task's constraints, no fix to 0093's statement ordering was attempted — this diagnostic is
 reported as a hint for whoever addresses the finding, not as a prescribed fix.
 
+> **CORRECTION (Task 1b, 2026-08-05):** the query above (`WHERE confrelid =
+> 'aura.documents'::regclass AND condeferrable`) checks constraints that *reference*
+> `aura.documents` from other tables, not constraints *on* `aura.documents` itself — the
+> wrong direction. Queried correctly (`conname='documents_active_version_id_fkey'`), a
+> pre-existing `DEFERRABLE INITIALLY DEFERRED` FK **does** exist on `aura.documents` at
+> version 92 (`documents_active_version_id_fkey`, `documents → document_versions`,
+> `condeferrable=t condeferred=t`), and it is what queues the pending RI check events. The
+> FKs 0093 itself adds at lines 384-397 are not the cause — they execute after the failure
+> point at line 290 and never run. See the Task 1b section below for the verified diagnosis
+> and the fix.
+
 ## Step 6 (Attempt 2) — Assert the rehearsed end state (captured against the FAILED/dirty rehearsal DB)
 
 **Assertion 1** — `SELECT version, dirty FROM public.schema_migrations;`
@@ -465,19 +473,110 @@ $ docker exec aura-postgres psql -U aura -d aura -c "SELECT status, count(*) FRO
 Identical to baseline. No live-database command was ever run in this task beyond read-only
 `SELECT` — across both attempts.
 
+## Task 1b — the fix and Attempt 3 (2026-08-05, supersedes the FAILS verdict above)
+
+**Corrected root cause (measured):** `aura.documents` carries a pre-existing `DEFERRABLE
+INITIALLY DEFERRED` foreign key, `documents_active_version_id_fkey` (`documents →
+document_versions`), live at version 92. Every `UPDATE aura.documents` statement in 0093
+(lines 102-288) queues a deferred RI check event against it; those events stay pending
+until COMMIT, and the `ALTER TABLE aura.documents ... SET NOT NULL` block at line 290 then
+fails with SQLSTATE 55006. The FKs 0093 itself adds at lines 384-397 are not the cause —
+they run after line 290 and never execute before the failure. Full detail of the prior
+diagnosis's error is in the correction note inline above.
+
+### The fix — one line, inserted before line 290
+
+```diff
+ WHERE status IN ('draft', 'processing', 'archived');
+
++-- aura.documents carries a DEFERRABLE INITIALLY DEFERRED FK
++-- (documents_active_version_id_fkey), so every UPDATE above queues an RI check event that
++-- stays pending until COMMIT, and ALTER TABLE refuses to run while any are outstanding
++-- (SQLSTATE 55006). Flush them here. No DML follows this point, so one flush covers the
++-- rest of the migration.
++SET CONSTRAINTS ALL IMMEDIATE;
++
+ ALTER TABLE aura.documents
+     ALTER COLUMN source_kind SET NOT NULL,
+```
+
+No other line in `0093_document_pipeline_convergence.up.sql` changed. `.down.sql` untouched.
+
+### Attempt 3 — re-rehearsal against a fresh, ownership-preserving restore
+
+Rebuilt the dump into `aura_0093_rehearsal` exactly as in Attempt 2 (plain `pg_restore`,
+ownership preserved), verified faithful before trusting it:
+
+```
+$ docker exec aura-postgres psql -U aura -d aura_0093_rehearsal -c "SELECT version, dirty FROM public.schema_migrations;"
+ version | dirty
+---------+-------
+      92 | f
+(1 row)
+$ docker exec aura-postgres psql -U aura -d aura_0093_rehearsal -c "SELECT status, count(*) FROM aura.documents GROUP BY 1 ORDER BY 1;"
+ status  | count
+---------+-------
+ deleted |     1
+ ready   |     3
+(2 rows)
+$ docker exec aura-postgres psql -U aura -d aura_0093_rehearsal -c "SELECT conname, condeferrable, condeferred FROM pg_constraint WHERE conname='documents_active_version_id_fkey';"
+             conname              | condeferrable | condeferred
+-----------------------------------+---------------+-------------
+ documents_active_version_id_fkey | t             | t
+(1 row)
+```
+
+Rebuilt `aura:local` (`docker compose build aura`) so the binary carries the amended file,
+confirmed via byte search:
+
+```
+$ docker run --rm --entrypoint sh aura:local -lc 'grep -ac "SET CONSTRAINTS ALL IMMEDIATE" /usr/local/bin/aura'
+1
+```
+
+Migrated the copy:
+
+```
+$ docker run --rm --network aura_default \
+  -e AURA_DB_MIGRATE_URL="postgres://aura_migrate:REDACTED@postgres:5432/aura_0093_rehearsal?sslmode=disable" \
+  -e AURA_DB_URL="postgres://aura_app:REDACTED@postgres:5432/aura_0093_rehearsal?sslmode=disable" \
+  -e AURA_DB_BOOTSTRAP_URL="postgres://aura:REDACTED@postgres:5432/aura_0093_rehearsal?sslmode=disable" \
+  -e AURA_CONFIG_DIR=/tmp \
+  --entrypoint sh aura:local -lc 'aura db migrate'
+
+ok: 1 migration(s) applied
+migrate exit=0
+```
+
+**Exit 0 — the SQLSTATE 55006 failure is gone.** Post-migration assertions, all five pass:
+
+| Assertion | Expected | Got | Result |
+|---|---|---|---|
+| `schema_migrations` version/dirty | `93 \| f` | `93 \| f` | PASS |
+| docs/null_kind/null_key | `4 / 0 / 0` | `4 / 0 / 0` | PASS |
+| `to_regclass` stages/quarantine | both non-null | `document_pipeline_stages` / `document_pipeline_quarantine` | PASS |
+| `documents_identity_source_live_idx` present | present | present | PASS |
+| `documents_active_version_id_fkey` deferrable/deferred | `t \| t` (unaltered) | `t \| t` | PASS |
+
+Live confirmed still at `92 | f` after the re-rehearsal (this task never migrates live).
+Rehearsal database dropped, in-container dump copy removed; host dump
+(`D:\tmp\aura-backups\aura-pre0093-2026-08-05.dump`, 537,381 bytes) retained for Task 3,
+not re-dumped.
+
+Full command transcript, including the `MSYS_NO_PATHCONV=1` gotcha hit while re-copying
+the dump into the container, is in
+`.superpowers/sdd/2026-08-05-document-pipeline-operator-e2e/task-1b-report.md`.
+
 ## Summary for Task 3
 
-- **Rollback dump:** verified faithful and restorable — `D:\tmp\aura-backups\aura-pre0093-2026-08-05.dump` (537,381 bytes).
-- **Image:** `aura:local` built 2026-08-05, confirmed (via `grep -a` byte search, `strings` unavailable in the image) to embed `0093_document_pipeline_convergence` (count 2).
-- **0093 verdict: FAILS.** Against a faithful, ownership-verified copy of live data, migration
-  0093 aborts partway through with `pq: cannot ALTER TABLE "documents" because it has pending
-  trigger events (55006)`. Root cause is intrinsic to 0093's own statement ordering (UPDATEs on
-  `aura.documents` earlier in the transaction, `DEFERRABLE INITIALLY DEFERRED` FK additions and
-  `ALTER COLUMN ... SET NOT NULL` later in the same transaction) — not caused by any pre-existing
-  trigger or schema drift on live (verified: zero triggers, zero deferrable constraints on live's
-  `aura.documents`). The migration's own transaction rolls back cleanly on failure (no partial
-  schema/data damage), but leaves `schema_migrations` at `93 | t` (dirty), which would need a
-  manual `migrate force` before any retry. **Task 3 must NOT cut 0093 over to live as currently
-  written.** This is a decision for the human operator: 0093's statement ordering needs to change
-  (e.g., defer the FK additions earlier, or split the migration, or explicitly manage
-  `SET CONSTRAINTS ... IMMEDIATE` at the right point) before it is safe to run against live.
+- **Rollback dump:** verified faithful and restorable — `D:\tmp\aura-backups\aura-pre0093-2026-08-05.dump` (537,381 bytes). Reused unchanged across Attempts 2 and 3.
+- **Image:** `aura:local` rebuilt 2026-08-05 (Task 1b), confirmed via `grep -a` byte search to embed both `0093_document_pipeline_convergence` and the `SET CONSTRAINTS ALL IMMEDIATE` fix.
+- **0093 verdict: FIXED — reaches `93 / clean` on a faithful copy of live data.** The
+  original failure (`pq: cannot ALTER TABLE "documents" because it has pending trigger
+  events (55006)`) was caused by a pre-existing `DEFERRABLE INITIALLY DEFERRED` FK on
+  `aura.documents` (`documents_active_version_id_fkey`), not by anything 0093 itself adds.
+  A single `SET CONSTRAINTS ALL IMMEDIATE;` inserted immediately before the `ALTER TABLE
+  aura.documents ... SET NOT NULL` block (after the last `UPDATE aura.documents` in the
+  file) flushes the pending RI checks and resolves it — verified by Attempt 3's clean
+  `93 | f` result and all five post-migration assertions passing. **Task 3 may proceed
+  with the cutover**, using the amended migration file and this rehearsal as evidence.

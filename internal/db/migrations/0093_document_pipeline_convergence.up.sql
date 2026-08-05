@@ -287,6 +287,13 @@ SET status = CASE status
     updated_at = now()
 WHERE status IN ('draft', 'processing', 'archived');
 
+-- aura.documents carries a DEFERRABLE INITIALLY DEFERRED FK
+-- (documents_active_version_id_fkey), so every UPDATE above queues an RI check event that
+-- stays pending until COMMIT, and ALTER TABLE refuses to run while any are outstanding
+-- (SQLSTATE 55006). Flush them here. No DML follows this point, so one flush covers the
+-- rest of the migration.
+SET CONSTRAINTS ALL IMMEDIATE;
+
 ALTER TABLE aura.documents
     ALTER COLUMN source_kind SET NOT NULL,
     ALTER COLUMN source_key SET NOT NULL,
