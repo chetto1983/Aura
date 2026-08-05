@@ -50,9 +50,13 @@ was told, makes the rest worthless.
 - [ ] The harness never returns a result the tool did not produce this call
 - [ ] A memory correction closes exactly the fact it names
 - [ ] The model-facing tool surface fits in working memory (~26 tools, ceremony removed)
-- [ ] MCP servers are trusted; their descriptions are not wrapped as hostile data
-- [ ] Context compresses under pressure instead of forgetting
+- [ ] Every mounted MCP server is trusted; no description is wrapped as hostile data
+- [ ] Steps the host can take stop being the model's to remember — delivery, indexing, fact capture, host-known parameters
+- [ ] The tool-shape changes survive live persisted state — rehydrated history, paused approvals, scheduled jobs
+- [ ] Past conversation is semantically searchable, and one retrieval spans short-term and long-term memory
+- [ ] Reasoning is persisted to the graph and retrieved on demand — never summarized, never harvested into facts
 - [ ] The agent can see what it already has — loaded tools, injected memory, pruned skills
+- [ ] The nine compensating `learned_lesson` facts are retired, and do not come back
 
 ### Out of Scope
 

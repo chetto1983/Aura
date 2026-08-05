@@ -60,7 +60,7 @@
 
 - [ ] **MCP-01**: MCP tool descriptions reach the model as ordinary text, without the untrusted-data wrapper
 - [ ] **MCP-02**: Per-call result fencing and fail-closed risk classification for unknown tools remain in force and are proven by test
-- [ ] **MCP-03**: The trust decision distinguishes servers Aura ships from servers added later, rather than trusting both identically
+- [ ] **MCP-03**: Trust is unconditional across every mounted MCP server — those Aura ships, those added later, and those minted by her own self-extension alike. **Operator decision, 2026-08-05**, taken against the research recommendation to scope removal to code-reviewed recipes: the residual risk is carried by MCP-02's per-call result fencing and fail-closed risk classification, and by the operator's control over what gets mounted at all
 - [ ] **MCP-04**: Calendar and WhatsApp are reachable through a curated surface instead of 28 raw third-party tools
 - [ ] **MCP-05**: `accountId` is resolved host-side from the operator's configuration, like `user_identifier`
 
@@ -136,17 +136,71 @@ Not requirements — corrections to make in whatever phase touches the file (CLA
 
 ## Traceability
 
-Populated during roadmap creation.
+Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-52).
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| _(all)_ | — | Pending |
+| HARN-01 | Phase 45 | Pending |
+| HARN-02 | Phase 45 | Pending |
+| HARN-03 | Phase 45 | Pending |
+| HARN-04 | Phase 45 | Pending |
+| HARN-05 | Phase 49 | Pending |
+| HARN-06 | Phase 45 | Pending |
+| HARN-07 | Phase 45 | Pending |
+| TOOL-01 | Phase 48 | Pending |
+| TOOL-02 | Phase 47 | Pending |
+| TOOL-03 | Phase 47 | Pending |
+| TOOL-04 | Phase 48 | Pending |
+| TOOL-05 | Phase 49 | Pending |
+| TOOL-06 | Phase 48 | Pending |
+| TOOL-07 | Phase 48 | Pending |
+| TOOL-08 | Phase 47 | Pending |
+| TOOL-09 | Phase 47 | Pending |
+| TOOL-10 | Phase 47 | Pending |
+| AUTO-01 | Phase 47 | Pending |
+| AUTO-02 | Phase 47 | Pending |
+| AUTO-03 | Phase 49 | Pending |
+| AUTO-04 | Phase 48 | Pending |
+| COMPAT-01 | Phase 48 | Pending |
+| COMPAT-02 | Phase 47 | Pending |
+| COMPAT-03 | Phase 48 | Pending |
+| MCP-01 | Phase 46 | Pending |
+| MCP-02 | Phase 46 | Pending |
+| MCP-03 | Phase 46 | Pending |
+| MCP-04 | Phase 46 | Pending |
+| MCP-05 | Phase 46 | Pending |
+| CTX-01 | Phase 50 | Pending |
+| CTX-02 | Phase 50 | Pending |
+| CTX-03 | Phase 50 | Pending |
+| CTX-04 | Phase 50 | Pending |
+| CTX-05 | Phase 49 | Pending |
+| CTX-06 | Phase 51 | Pending |
+| CTX-07 | Phase 50 | Pending |
+| MEM-01 | Phase 49 | Pending |
+| MEM-02 | Phase 49 | Pending |
+| MEM-03 | Phase 49 | Pending |
+| MEM-04 | Phase 45 | Pending |
+| MEM-05 | Phase 45 | Pending |
+| MEM-06 | Phase 49 | Pending |
+| SURF-01 | Phase 48 | Pending |
+| SURF-02 | Phase 47 | Pending |
+| SURF-03 | Phase 47 | Pending |
+| SURF-04 | Phase 50 | Pending |
+| SURF-05 | Phase 52 | Pending |
+| SURF-06 | Phase 48 | Pending |
+| SURF-07 | Phase 48 | Pending |
+| ACC-01 | Phase 45 | Pending |
+| ACC-02 | Phase 45 | Pending |
+| ACC-03 | Phase 52 | Pending |
 
 **Coverage:**
-- v1 requirements: 51 total
-- Mapped to phases: 0
-- Unmapped: 51 ⚠️ (roadmap not yet created)
+- v1 requirements: 52 total (corrected from the 51 stated at requirements-definition time — a
+  direct count of `- [ ] **<ID>**` lines in this file returns 52 unique requirement IDs across
+  the 9 categories; the count below was a miscount at definition time, not a scope change)
+- Mapped to phases: 52
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-08-05*
-*Last updated: 2026-08-05 — added Automation, Compatibility, and the seven audit gaps*
+*Last updated: 2026-08-05 — roadmap created (Phases 45-52); traceability populated, 52/52
+mapped; corrected the v1 requirement count from 51 to 52*
