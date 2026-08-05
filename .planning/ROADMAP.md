@@ -10,7 +10,7 @@ her own bug report. This milestone is done when those lessons become unnecessary
 uses her memory as the oracle for that.
 
 Phase numbering continues from v2.0.0 (which closed at Phase 44) — this milestone is Phases
-45-54. All 70 v1 requirements from REQUIREMENTS.md map to exactly one of these 10 phases; the
+45-54. All 72 v1 requirements from REQUIREMENTS.md map to exactly one of these 10 phases; the
 v2 items (CTX-V2-01, CTX-V2-02, TOOL-V2-01, TOOL-V2-02) and the Out of Scope table are not
 scheduled here.
 
@@ -82,14 +82,33 @@ harness is built; `internal/eval/` stays deleted.
 memory correction touches exactly the fact it names — the two headline defects the
 2026-08-04 audit found are closed at the root, not patched at the symptom.
 **Depends on**: Nothing (first phase of this milestone)
-**Requirements**: HARN-01, HARN-02, HARN-03, HARN-04, HARN-06, HARN-07, MEM-04, MEM-05, ACC-01, ACC-02
+**Requirements**: HARN-01, HARN-02, HARN-03, HARN-04, HARN-06, HARN-07, HARN-08, HARN-09, MEM-04, MEM-05, ACC-01, ACC-02
 **Rationale**: Foundational and lowest-risk (ARCHITECTURE.md §1/§4) — touches only
 `tools.Spec`, `idempotency_operation.go`, `reserve.go`, and `internal/arcadedb/memory.go`; no
 new tools, no new packages. Every later phase needs the new `ReplayPolicy` value
-(`ReplayReissueExecutes`) from day one. Before choosing the key-shape fix direction, verify
-empirically whether Aura's transport-retry path reuses the same `tool_call_id` or mints a
-fresh one (Pitfall 5) — this single fact determines whether widening the key is safe or
-reopens real double-execution. Ship the `replayedMarker` (mirroring `resultExpiredMarker`)
+(`ReplayReissueExecutes`) from day one.
+
+**The open `tool_call_id` question is answered, and the answer is "do not key on it"**
+(hermes `agent/message_sanitization.py:536-566`, `run_agent.py:4601-4648`). Models and
+providers reuse one call id across different calls in a single batch — observed on Kimi
+Responses replays, Ollama-compatible endpoints, and degraded models at long context — and
+strict providers, **DeepSeek among them and DeepSeek is Aura's default**, reject duplicate ids
+outright. Hermes derives a deterministic id from `(fn_name, arguments, index)` when the API
+omits one, and repairs collisions with an `<id>_d<n>` suffix, never a UUID, because random ids
+break prompt-cache prefix stability. Uniqueness is a property the harness must ENFORCE, not one
+it can key at-most-once on.
+
+**The discriminator is the round boundary.** Hermes drops identical `(name, arguments)` pairs
+*within one assistant message* (a model error) but lets identical calls in *different rounds*
+both execute (a deliberate re-issue). That is exactly the distinction Aura collapses: audit
+turns `[058]` and `[062]` were separate assistant messages with an `fs_write` between them, and
+the second was served from the operation registry. The evidenced fix direction is therefore a
+per-turn ROUND ORDINAL in the child operation key — deterministic, reproducible across a
+replayed dispatch (so the CLI/scheduler at-most-once protection the architecture research
+worried about survives), and discriminating in exactly the place hermes discriminates. Confirm
+it against Aura's own dispatch loop before building; do NOT adopt `tool_call_id`.
+
+HARN-08 and HARN-09 land here because both are the same seam. Ship the `replayedMarker` (mirroring `resultExpiredMarker`)
 regardless of which direction is chosen — it is the cheapest, highest-leverage fix in the
 whole milestone (it directly targets the misdiagnosis Aura wrote into her own memory as
 fact). For HARN-04, prefer an explicit-fact-identifier path over a pure count-threshold
