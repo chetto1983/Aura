@@ -17,7 +17,7 @@
 - **Never run a `.exe` on the Windows host.** Go toolchain and `sqlc` are WSL only:
   `wsl -e bash -lc 'export PATH=$HOME/.local/go1.26.3/bin:$HOME/go/bin:$PATH; cd /mnt/d/Aura && <cmd>'`
 - **No `db_integration` / `docker_integration` / any tagged tier runs at any point in this plan.** Those helpers migrate whatever `AURA_DB_URL` names, which locally is the live `aura`.
-- **Every direct SQL read of an identity-scoped table goes through the identity GUC.** RLS (migration 0087) returns zero rows to a naked query, so an unwrapped probe passes against nothing.
+- **Every direct SQL read of an identity-scoped table goes through the identity GUC, as `aura_app`.** The GUC is **`app.current_identity`** (`internal/db/tx.go:120`), not `aura.identity_id`. The role matters as much as the GUC: `aura` is `rolsuper=t, rolbypassrls=t`, so it reads every row whether or not the GUC is set — a probe run as `aura` cannot fail its own negative control and proves nothing about scoping. Measured as `aura_app`: **0 rows without the GUC, 4 with it.**
 - **Never accept a container healthcheck as proof of reachability** for `tempo` or `prometheus`. Measured 2026-08-05: both report `running`/`healthy` while unreachable.
 - `POSTGRES_PASSWORD` is sourced from `.env` and never echoed into logs or command lines that get printed.
 - Operator identity: `dc98a3ee-e38e-4288-8d64-27ce4c9cde65` (`dvdmarchetto@gmail.com`, kind `user`).
@@ -530,8 +530,8 @@ Every direct SQL read below uses this shape. A naked query returns zero rows und
 
 ```bash
 docid() {
-  docker exec aura-postgres psql -U aura -d aura -t -A -F'|' -c \
-    "BEGIN; SELECT set_config('aura.identity_id','dc98a3ee-e38e-4288-8d64-27ce4c9cde65',true); \
+  docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" aura-postgres psql -U aura_app -d aura -t -A -F'|' -c \
+    "BEGIN; SELECT set_config('app.current_identity','dc98a3ee-e38e-4288-8d64-27ce4c9cde65',true); \
      SELECT id, status, source_kind, source_key, deleted_at FROM aura.documents ORDER BY created_at DESC LIMIT 5; COMMIT;"
 }
 docid
@@ -570,8 +570,8 @@ Operator, in the Cockpit: upload `documenti da stampare.pdf` (5 KB). Report whic
 Run repeatedly from upload until terminal, recording every distinct status seen:
 
 ```bash
-docker exec aura-postgres psql -U aura -d aura -t -A -F'|' -c \
-  "BEGIN; SELECT set_config('aura.identity_id','dc98a3ee-e38e-4288-8d64-27ce4c9cde65',true); \
+docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" aura-postgres psql -U aura_app -d aura -t -A -F'|' -c \
+  "BEGIN; SELECT set_config('app.current_identity','dc98a3ee-e38e-4288-8d64-27ce4c9cde65',true); \
    SELECT d.id, d.status AS doc_status, v.status AS ver_status, v.version_number \
    FROM aura.documents d LEFT JOIN aura.document_versions v ON v.document_id=d.id \
    ORDER BY d.created_at DESC LIMIT 3; COMMIT;"
@@ -595,8 +595,8 @@ Operator: upload `Clienti.xlsx` (331 KB), then `TESEBRO000050EN.pdf` (31 MB). Re
 
 ```bash
 docker exec aura-grafana-1 wget -qO- "http://aura:3200/api/search?limit=20"
-docker exec aura-postgres psql -U aura -d aura -t -A -F'|' -c \
-  "BEGIN; SELECT set_config('aura.identity_id','dc98a3ee-e38e-4288-8d64-27ce4c9cde65',true); \
+docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" aura-postgres psql -U aura_app -d aura -t -A -F'|' -c \
+  "BEGIN; SELECT set_config('app.current_identity','dc98a3ee-e38e-4288-8d64-27ce4c9cde65',true); \
    SELECT DISTINCT stage, status, producer_version FROM aura.document_pipeline_stages ORDER BY 1; COMMIT;"
 ```
 
@@ -641,8 +641,8 @@ Expected in the trace: `document_search` called. For a spreadsheet computation, 
 - [ ] **Step 3: Assert the persisted conversation model**
 
 ```bash
-docker exec aura-postgres psql -U aura -d aura -t -A -F'|' -c \
-  "BEGIN; SELECT set_config('aura.identity_id','dc98a3ee-e38e-4288-8d64-27ce4c9cde65',true); \
+docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" aura-postgres psql -U aura_app -d aura -t -A -F'|' -c \
+  "BEGIN; SELECT set_config('app.current_identity','dc98a3ee-e38e-4288-8d64-27ce4c9cde65',true); \
    SELECT id, model FROM aura.conversations ORDER BY created_at DESC LIMIT 1; COMMIT;"
 ```
 
@@ -677,8 +677,8 @@ Operator: delete `Clienti.xlsx` from the action menu, then **immediately** re-up
 - [ ] **Step 2: Claude confirms the window was genuinely open**
 
 ```bash
-docker exec aura-postgres psql -U aura -d aura -t -A -F'|' -c \
-  "BEGIN; SELECT set_config('aura.identity_id','dc98a3ee-e38e-4288-8d64-27ce4c9cde65',true); \
+docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" aura-postgres psql -U aura_app -d aura -t -A -F'|' -c \
+  "BEGIN; SELECT set_config('app.current_identity','dc98a3ee-e38e-4288-8d64-27ce4c9cde65',true); \
    SELECT id, status, deleted_at FROM aura.documents WHERE status='deleting'; COMMIT;"
 ```
 
@@ -719,8 +719,8 @@ Operator: wait until `Clienti.xlsx` has disappeared from the library, then uploa
 - [ ] **Step 2: Claude confirms the old row is genuinely tombstoned**
 
 ```bash
-docker exec aura-postgres psql -U aura -d aura -t -A -F'|' -c \
-  "BEGIN; SELECT set_config('aura.identity_id','dc98a3ee-e38e-4288-8d64-27ce4c9cde65',true); \
+docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" aura-postgres psql -U aura_app -d aura -t -A -F'|' -c \
+  "BEGIN; SELECT set_config('app.current_identity','dc98a3ee-e38e-4288-8d64-27ce4c9cde65',true); \
    SELECT id, status, source_key, deleted_at IS NOT NULL AS tombstoned FROM aura.documents \
    WHERE source_key LIKE '%Clienti%' ORDER BY created_at; COMMIT;"
 ```
@@ -730,8 +730,8 @@ Expected: the old row with `tombstoned=t`, and a **new** row with `tombstoned=f`
 - [ ] **Step 3: Assert the fresh document has a working version**
 
 ```bash
-docker exec aura-postgres psql -U aura -d aura -t -A -F'|' -c \
-  "BEGIN; SELECT set_config('aura.identity_id','dc98a3ee-e38e-4288-8d64-27ce4c9cde65',true); \
+docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" aura-postgres psql -U aura_app -d aura -t -A -F'|' -c \
+  "BEGIN; SELECT set_config('app.current_identity','dc98a3ee-e38e-4288-8d64-27ce4c9cde65',true); \
    SELECT d.id, d.status, v.version_number, v.status FROM aura.documents d \
    JOIN aura.document_versions v ON v.document_id=d.id \
    WHERE d.deleted_at IS NULL AND d.source_key LIKE '%Clienti%'; COMMIT;"
@@ -770,8 +770,8 @@ Operator, reporting what each shows: open the details drawer; open the events pa
 - [ ] **Step 2: Claude asserts the rename persisted**
 
 ```bash
-docker exec aura-postgres psql -U aura -d aura -t -A -F'|' -c \
-  "BEGIN; SELECT set_config('aura.identity_id','dc98a3ee-e38e-4288-8d64-27ce4c9cde65',true); \
+docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" aura-postgres psql -U aura_app -d aura -t -A -F'|' -c \
+  "BEGIN; SELECT set_config('app.current_identity','dc98a3ee-e38e-4288-8d64-27ce4c9cde65',true); \
    SELECT id, title, updated_at FROM aura.documents WHERE deleted_at IS NULL ORDER BY updated_at DESC LIMIT 3; COMMIT;"
 ```
 
@@ -780,8 +780,8 @@ Expected: the new title, with a fresh `updated_at`.
 - [ ] **Step 3: Claude asserts the events panel matches the ledger**
 
 ```bash
-docker exec aura-postgres psql -U aura -d aura -t -A -F'|' -c \
-  "BEGIN; SELECT set_config('aura.identity_id','dc98a3ee-e38e-4288-8d64-27ce4c9cde65',true); \
+docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" aura-postgres psql -U aura_app -d aura -t -A -F'|' -c \
+  "BEGIN; SELECT set_config('app.current_identity','dc98a3ee-e38e-4288-8d64-27ce4c9cde65',true); \
    SELECT event_type, count(*) FROM aura.document_events GROUP BY 1 ORDER BY 1; COMMIT;"
 ```
 
@@ -790,8 +790,8 @@ Expected: the event types the panel displayed, with matching counts.
 - [ ] **Step 4: Claude asserts the orphans panel matches reality**
 
 ```bash
-docker exec aura-postgres psql -U aura -d aura -t -A -F'|' -c \
-  "BEGIN; SELECT set_config('aura.identity_id','dc98a3ee-e38e-4288-8d64-27ce4c9cde65',true); \
+docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" aura-postgres psql -U aura_app -d aura -t -A -F'|' -c \
+  "BEGIN; SELECT set_config('app.current_identity','dc98a3ee-e38e-4288-8d64-27ce4c9cde65',true); \
    SELECT status, count(*) FROM aura.storage_objects GROUP BY 1 ORDER BY 1; COMMIT;"
 ```
 
@@ -818,8 +818,8 @@ Operator: delete every document uploaded during CP1–CP6 through the UI. Leave 
 - [ ] **Step 2: Claude asserts tombstones and object removal**
 
 ```bash
-docker exec aura-postgres psql -U aura -d aura -t -A -F'|' -c \
-  "BEGIN; SELECT set_config('aura.identity_id','dc98a3ee-e38e-4288-8d64-27ce4c9cde65',true); \
+docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" aura-postgres psql -U aura_app -d aura -t -A -F'|' -c \
+  "BEGIN; SELECT set_config('app.current_identity','dc98a3ee-e38e-4288-8d64-27ce4c9cde65',true); \
    SELECT status, count(*) FROM aura.documents GROUP BY 1 ORDER BY 1; \
    SELECT status, count(*) FROM aura.storage_objects GROUP BY 1 ORDER BY 1; COMMIT;"
 ```
