@@ -1,3 +1,11 @@
+-- Get-or-create by source, refusing a document that is already being deleted.
+-- DO UPDATE rather than DO NOTHING because :one needs a row back, and it touches ONLY
+-- updated_at: re-ingesting a file must not overwrite a title or tags the operator edited,
+-- and aura.document_identity_immutable raises 23514 on any write to identity, source,
+-- search id, or a lowered pipeline_generation. The status guard matters because deletion
+-- is asynchronous: deleted_at is set by FinalizeDocumentDelete, not by the soft delete, so
+-- without it a re-upload mid-delete would silently join a document the finalize erases.
+-- Zero rows is that case, and the caller turns it into ErrDocumentDeleteInFlight.
 -- name: CreateDocument :one
 INSERT INTO aura.documents (
     identity_id, scope, title, tags, metadata, status,
@@ -7,6 +15,9 @@ INSERT INTO aura.documents (
     sqlc.arg(metadata), sqlc.arg(status), sqlc.arg(source_kind),
     sqlc.arg(source_key), sqlc.arg(search_document_id), sqlc.arg(pipeline_generation)
 )
+ON CONFLICT (identity_id, source_kind, source_key) WHERE deleted_at IS NULL
+DO UPDATE SET updated_at = now()
+    WHERE documents.status <> 'deleting'
 RETURNING *;
 -- name: ListDocuments :many
 SELECT * FROM aura.documents

@@ -68,6 +68,7 @@ CREATE POLICY document_embeddings_owner_isolation ON aura.document_embeddings
 
 DROP TRIGGER documents_identity_immutable ON aura.documents;
 DROP FUNCTION aura.document_identity_immutable();
+DROP INDEX aura.documents_identity_source_live_idx;
 DROP INDEX aura.documents_identity_search_document_live_idx;
 DROP INDEX aura.document_versions_document_sha256_live_idx;
 DROP INDEX aura.document_ingest_jobs_owner_source_document_hash_idx;
@@ -283,7 +284,6 @@ SET status = CASE status
 END;
 
 ALTER TABLE aura.documents
-    DROP CONSTRAINT documents_source_unique,
     DROP CONSTRAINT documents_id_identity_unique,
     DROP CONSTRAINT documents_generation_valid,
     DROP CONSTRAINT documents_search_id_nonempty,

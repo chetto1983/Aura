@@ -302,11 +302,14 @@ ALTER TABLE aura.documents
     ADD CONSTRAINT documents_generation_valid CHECK (
         pipeline_generation >= 0 AND (status <> 'ready' OR pipeline_generation > 0)
     ),
-    ADD CONSTRAINT documents_id_identity_unique UNIQUE (id, identity_id),
-    ADD CONSTRAINT documents_source_unique UNIQUE (identity_id, source_kind, source_key);
+    ADD CONSTRAINT documents_id_identity_unique UNIQUE (id, identity_id);
 
 CREATE UNIQUE INDEX documents_identity_search_document_live_idx
     ON aura.documents (identity_id, search_document_id)
+    WHERE deleted_at IS NULL;
+
+CREATE UNIQUE INDEX documents_identity_source_live_idx
+    ON aura.documents (identity_id, source_kind, source_key)
     WHERE deleted_at IS NULL;
 
 CREATE FUNCTION aura.document_identity_immutable() RETURNS trigger

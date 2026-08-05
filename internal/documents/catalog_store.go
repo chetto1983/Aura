@@ -3,12 +3,14 @@ package documents
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/objectstore"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -114,6 +116,9 @@ func (sc catalogTx) createDocument(ctx context.Context, req CreateDocumentReques
 		PipelineGeneration: req.PipelineGeneration,
 	})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Document{}, ErrDocumentDeleteInFlight
+		}
 		return Document{}, err
 	}
 	doc, err := catalogDocumentFromSQL(row)

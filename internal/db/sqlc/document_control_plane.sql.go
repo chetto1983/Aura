@@ -556,6 +556,9 @@ INSERT INTO aura.documents (
     $5, $6, $7,
     $8, $9, $10
 )
+ON CONFLICT (identity_id, source_kind, source_key) WHERE deleted_at IS NULL
+DO UPDATE SET updated_at = now()
+    WHERE documents.status <> 'deleting'
 RETURNING id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, card, digest_tsv, source_kind, source_key, search_document_id, pipeline_generation, error_code, error_message
 `
 
@@ -572,6 +575,14 @@ type CreateDocumentParams struct {
 	PipelineGeneration int64       `json:"pipeline_generation"`
 }
 
+// Get-or-create by source, refusing a document that is already being deleted.
+// DO UPDATE rather than DO NOTHING because :one needs a row back, and it touches ONLY
+// updated_at: re-ingesting a file must not overwrite a title or tags the operator edited,
+// and aura.document_identity_immutable raises 23514 on any write to identity, source,
+// search id, or a lowered pipeline_generation. The status guard matters because deletion
+// is asynchronous: deleted_at is set by FinalizeDocumentDelete, not by the soft delete, so
+// without it a re-upload mid-delete would silently join a document the finalize erases.
+// Zero rows is that case, and the caller turns it into ErrDocumentDeleteInFlight.
 func (q *Queries) CreateDocument(ctx context.Context, arg CreateDocumentParams) (AuraDocuments, error) {
 	row := q.db.QueryRow(ctx, createDocument,
 		arg.IdentityID,

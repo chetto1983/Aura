@@ -84,6 +84,11 @@ func scopedValue[T any](
 // nothing the cockpit's document list can see.
 var ErrDocumentNotCatalogued = errors.New("documents: search document is not in the catalog")
 
+// ErrDocumentDeleteInFlight reports that a document with this source is still being
+// deleted. Its bytes are on their way out, so attaching a new upload to it would hand the
+// caller a document the delete's finalize is about to erase.
+var ErrDocumentDeleteInFlight = errors.New("document with this source is being deleted")
+
 // SetSearchDocumentStatus corrects one catalogued document's status without touching
 // anything else. UpdateDocument cannot serve this — it rewrites every column, so a narrow
 // correction would have to invent scope, title and tags to make it.
