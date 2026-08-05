@@ -9,13 +9,14 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// jobRowValues returns the 17 positional column values, in sqlc Scan order, for an
+// jobRowValues returns the positional column values, in sqlc Scan order, for an
 // aura.document_ingest_jobs row. The store's queries scan into &field pointers of the
 // matching types, so the scripted slice must mirror them exactly.
 func jobRowValues(id pgtype.UUID, sourceID, status string, sparse, embedded int32, errText pgtype.Text, searchable, completed pgtype.Timestamptz) []any {
@@ -38,7 +39,17 @@ func jobRowValues(id pgtype.UUID, sourceID, status string, sparse, embedded int3
 		now,               // updated_at
 		searchable,        // searchable_at
 		completed,         // completed_at
+		pgtype.UUID{Bytes: uuid.MustParse(testIngestionIdentityID), Valid: true}, // identity_id
+		pgtype.UUID{}, // asset_id
+		pgtype.UUID{}, // catalog_document_id
+		pgtype.UUID{}, // version_id
+		int64(0),      // pipeline_generation
 	}
+}
+
+func jobStoreTestContext(t *testing.T) context.Context {
+	t.Helper()
+	return identityctx.WithIdentityID(t.Context(), testIngestionIdentityID)
 }
 
 func TestPostgresJobStoreCreateBindsParamsAndMapsRow(t *testing.T) {
@@ -50,6 +61,7 @@ func TestPostgresJobStoreCreateBindsParamsAndMapsRow(t *testing.T) {
 	store := &PostgresJobStore{q: sqlc.New(fake)}
 
 	job, err := store.Create(t.Context(), CreateJobParams{
+		IdentityID:   testIngestionIdentityID,
 		SourceID:     "cli",
 		SourceKind:   "local",
 		DocumentID:   "doc_1",
@@ -73,7 +85,7 @@ func TestPostgresJobStoreCreateBindsParamsAndMapsRow(t *testing.T) {
 	if !strings.Contains(fake.queryRowSQL, "INSERT INTO aura.document_ingest_jobs") {
 		t.Fatalf("create SQL = %q", fake.queryRowSQL)
 	}
-	if len(fake.queryArgs) != 9 || fake.queryArgs[0] != "cli" || fake.queryArgs[8] != string(JobAccepted) {
+	if len(fake.queryArgs) != 14 || fake.queryArgs[1] != "cli" || fake.queryArgs[9] != string(JobAccepted) {
 		t.Fatalf("create args = %#v", fake.queryArgs)
 	}
 }
@@ -81,7 +93,7 @@ func TestPostgresJobStoreCreateBindsParamsAndMapsRow(t *testing.T) {
 func TestPostgresJobStoreCreatePropagatesScanError(t *testing.T) {
 	fake := &fakeDocDBTX{rowVal: &fakeDocRow{scanErr: errors.New("insert violated constraint")}}
 	store := &PostgresJobStore{q: sqlc.New(fake)}
-	_, err := store.Create(t.Context(), CreateJobParams{SourceID: "cli", Status: JobAccepted})
+	_, err := store.Create(t.Context(), CreateJobParams{IdentityID: testIngestionIdentityID, SourceID: "cli", Status: JobAccepted})
 	if err == nil || !strings.Contains(err.Error(), "constraint") {
 		t.Fatalf("want constraint error, got %v", err)
 	}
@@ -96,7 +108,7 @@ func TestPostgresJobStoreGetParsesUUIDAndMapsRow(t *testing.T) {
 	}
 	store := &PostgresJobStore{q: sqlc.New(fake)}
 
-	job, err := store.Get(t.Context(), id.String())
+	job, err := store.Get(jobStoreTestContext(t), id.String())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +116,7 @@ func TestPostgresJobStoreGetParsesUUIDAndMapsRow(t *testing.T) {
 		t.Fatalf("mapped job = %#v", job)
 	}
 	// The id must be bound as a typed pgtype.UUID, not the raw string.
-	if len(fake.queryArgs) != 1 {
+	if len(fake.queryArgs) != 2 {
 		t.Fatalf("get args = %#v", fake.queryArgs)
 	}
 	if _, ok := fake.queryArgs[0].(pgtype.UUID); !ok {
@@ -114,7 +126,7 @@ func TestPostgresJobStoreGetParsesUUIDAndMapsRow(t *testing.T) {
 
 func TestPostgresJobStoreGetRejectsInvalidUUID(t *testing.T) {
 	store := &PostgresJobStore{q: sqlc.New(&fakeDocDBTX{})}
-	_, err := store.Get(t.Context(), "not-a-uuid")
+	_, err := store.Get(jobStoreTestContext(t), "not-a-uuid")
 	if err == nil || !strings.Contains(err.Error(), "invalid job id") {
 		t.Fatalf("want invalid id error, got %v", err)
 	}
@@ -123,7 +135,7 @@ func TestPostgresJobStoreGetRejectsInvalidUUID(t *testing.T) {
 func TestPostgresJobStoreGetPropagatesQueryError(t *testing.T) {
 	fake := &fakeDocDBTX{rowVal: &fakeDocRow{scanErr: errors.New("no rows in result set")}}
 	store := &PostgresJobStore{q: sqlc.New(fake)}
-	_, err := store.Get(t.Context(), uuid.NewString())
+	_, err := store.Get(jobStoreTestContext(t), uuid.NewString())
 	if err == nil || !strings.Contains(err.Error(), "no rows") {
 		t.Fatalf("want no-rows error, got %v", err)
 	}
@@ -137,14 +149,14 @@ func TestPostgresJobStoreGetByDocumentIDBindsDocumentID(t *testing.T) {
 	}
 	store := &PostgresJobStore{q: sqlc.New(fake)}
 
-	job, err := store.GetByDocumentID(t.Context(), "doc_1")
+	job, err := store.GetByDocumentID(jobStoreTestContext(t), "doc_1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if job.Status != JobSearchable || job.SearchableAt.IsZero() {
 		t.Fatalf("mapped job = %#v", job)
 	}
-	if len(fake.queryArgs) != 1 || fake.queryArgs[0] != "doc_1" {
+	if len(fake.queryArgs) != 2 || fake.queryArgs[1] != "doc_1" {
 		t.Fatalf("getByDocumentID args = %#v", fake.queryArgs)
 	}
 }
@@ -152,7 +164,7 @@ func TestPostgresJobStoreGetByDocumentIDBindsDocumentID(t *testing.T) {
 func TestPostgresJobStoreGetByDocumentIDPropagatesError(t *testing.T) {
 	fake := &fakeDocDBTX{rowVal: &fakeDocRow{scanErr: errors.New("no rows in result set")}}
 	store := &PostgresJobStore{q: sqlc.New(fake)}
-	_, err := store.GetByDocumentID(t.Context(), "doc_missing")
+	_, err := store.GetByDocumentID(jobStoreTestContext(t), "doc_missing")
 	if err == nil || !strings.Contains(err.Error(), "no rows") {
 		t.Fatalf("want no-rows error, got %v", err)
 	}
@@ -166,25 +178,25 @@ func TestPostgresJobStoreUpdateStatusBindsErrorText(t *testing.T) {
 	}
 	store := &PostgresJobStore{q: sqlc.New(fake)}
 
-	job, err := store.UpdateStatus(t.Context(), id.String(), JobFailed, "extract failed")
+	job, err := store.UpdateStatus(jobStoreTestContext(t), id.String(), JobFailed, "extract failed")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if job.Status != JobFailed || job.Error != "extract failed" {
 		t.Fatalf("mapped job = %#v", job)
 	}
-	if len(fake.queryArgs) != 3 {
+	if len(fake.queryArgs) != 4 {
 		t.Fatalf("updateStatus args = %#v", fake.queryArgs)
 	}
-	gotText, ok := fake.queryArgs[2].(pgtype.Text)
+	gotText, ok := fake.queryArgs[1].(pgtype.Text)
 	if !ok || !gotText.Valid || gotText.String != "extract failed" {
-		t.Fatalf("error text arg = %#v", fake.queryArgs[2])
+		t.Fatalf("error text arg = %#v", fake.queryArgs[1])
 	}
 }
 
 func TestPostgresJobStoreUpdateStatusRejectsInvalidUUID(t *testing.T) {
 	store := &PostgresJobStore{q: sqlc.New(&fakeDocDBTX{})}
-	_, err := store.UpdateStatus(t.Context(), "bad", JobFailed, "boom")
+	_, err := store.UpdateStatus(jobStoreTestContext(t), "bad", JobFailed, "boom")
 	if err == nil || !strings.Contains(err.Error(), "invalid job id") {
 		t.Fatalf("want invalid id error, got %v", err)
 	}
@@ -193,7 +205,7 @@ func TestPostgresJobStoreUpdateStatusRejectsInvalidUUID(t *testing.T) {
 func TestPostgresJobStoreUpdateStatusPropagatesError(t *testing.T) {
 	fake := &fakeDocDBTX{rowVal: &fakeDocRow{scanErr: errors.New("deadlock detected")}}
 	store := &PostgresJobStore{q: sqlc.New(fake)}
-	_, err := store.UpdateStatus(t.Context(), uuid.NewString(), JobFailed, "boom")
+	_, err := store.UpdateStatus(jobStoreTestContext(t), uuid.NewString(), JobFailed, "boom")
 	if err == nil || !strings.Contains(err.Error(), "deadlock") {
 		t.Fatalf("want deadlock error, got %v", err)
 	}
@@ -207,27 +219,27 @@ func TestPostgresJobStoreUpdateProgressBindsCounts(t *testing.T) {
 	}
 	store := &PostgresJobStore{q: sqlc.New(fake)}
 
-	job, err := store.UpdateProgress(t.Context(), id.String(), JobComplete, 7, 7)
+	job, err := store.UpdateProgress(jobStoreTestContext(t), id.String(), JobComplete, 7, 7)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if job.Status != JobComplete || job.SparseChunks != 7 || job.EmbeddedChunks != 7 || job.CompletedAt.IsZero() {
 		t.Fatalf("mapped job = %#v", job)
 	}
-	if len(fake.queryArgs) != 4 {
+	if len(fake.queryArgs) != 5 {
 		t.Fatalf("updateProgress args = %#v", fake.queryArgs)
 	}
 	if !strings.Contains(fake.queryRowSQL, "error = NULL") {
 		t.Fatalf("successful progress must clear a stale error:\n%s", fake.queryRowSQL)
 	}
-	if fake.queryArgs[2] != int32(7) || fake.queryArgs[3] != int32(7) {
+	if fake.queryArgs[1] != int32(7) || fake.queryArgs[2] != int32(7) {
 		t.Fatalf("count args = %#v", fake.queryArgs)
 	}
 }
 
 func TestPostgresJobStoreUpdateProgressRejectsInvalidUUID(t *testing.T) {
 	store := &PostgresJobStore{q: sqlc.New(&fakeDocDBTX{})}
-	_, err := store.UpdateProgress(t.Context(), "bad", JobSearchable, 1, 0)
+	_, err := store.UpdateProgress(jobStoreTestContext(t), "bad", JobSearchable, 1, 0)
 	if err == nil || !strings.Contains(err.Error(), "invalid job id") {
 		t.Fatalf("want invalid id error, got %v", err)
 	}
@@ -236,7 +248,7 @@ func TestPostgresJobStoreUpdateProgressRejectsInvalidUUID(t *testing.T) {
 func TestPostgresJobStoreUpdateProgressPropagatesError(t *testing.T) {
 	fake := &fakeDocDBTX{rowVal: &fakeDocRow{scanErr: errors.New("statement timeout")}}
 	store := &PostgresJobStore{q: sqlc.New(fake)}
-	_, err := store.UpdateProgress(t.Context(), uuid.NewString(), JobSearchable, 1, 0)
+	_, err := store.UpdateProgress(jobStoreTestContext(t), uuid.NewString(), JobSearchable, 1, 0)
 	if err == nil || !strings.Contains(err.Error(), "timeout") {
 		t.Fatalf("want timeout error, got %v", err)
 	}
@@ -253,7 +265,7 @@ func TestPostgresJobStoreListRecentDefaultsLimitAndMapsRows(t *testing.T) {
 	}
 	store := &PostgresJobStore{q: sqlc.New(fake)}
 
-	jobs, err := store.ListRecent(t.Context(), 0)
+	jobs, err := store.ListRecent(jobStoreTestContext(t), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -264,7 +276,7 @@ func TestPostgresJobStoreListRecentDefaultsLimitAndMapsRows(t *testing.T) {
 		t.Fatalf("mapped jobs = %#v", jobs)
 	}
 	// limit <= 0 falls back to 20.
-	if len(fake.queryArgs) != 1 || fake.queryArgs[0] != int32(20) {
+	if len(fake.queryArgs) != 2 || fake.queryArgs[1] != int32(20) {
 		t.Fatalf("listRecent limit arg = %#v", fake.queryArgs)
 	}
 	if !fake.rows.closed {
@@ -275,14 +287,14 @@ func TestPostgresJobStoreListRecentDefaultsLimitAndMapsRows(t *testing.T) {
 func TestPostgresJobStoreListRecentPassesPositiveLimit(t *testing.T) {
 	fake := &fakeDocDBTX{rows: &fakeDocRows{}}
 	store := &PostgresJobStore{q: sqlc.New(fake)}
-	jobs, err := store.ListRecent(t.Context(), 5)
+	jobs, err := store.ListRecent(jobStoreTestContext(t), 5)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(jobs) != 0 {
 		t.Fatalf("jobs = %d", len(jobs))
 	}
-	if fake.queryArgs[0] != int32(5) {
+	if fake.queryArgs[1] != int32(5) {
 		t.Fatalf("listRecent limit arg = %#v", fake.queryArgs)
 	}
 }
@@ -290,7 +302,7 @@ func TestPostgresJobStoreListRecentPassesPositiveLimit(t *testing.T) {
 func TestPostgresJobStoreListRecentPropagatesQueryError(t *testing.T) {
 	fake := &fakeDocDBTX{queryErr: errors.New("connection refused")}
 	store := &PostgresJobStore{q: sqlc.New(fake)}
-	_, err := store.ListRecent(t.Context(), 10)
+	_, err := store.ListRecent(jobStoreTestContext(t), 10)
 	if err == nil || !strings.Contains(err.Error(), "connection refused") {
 		t.Fatalf("want connection error, got %v", err)
 	}
@@ -302,7 +314,7 @@ func TestPostgresJobStoreListRecentPropagatesRowsError(t *testing.T) {
 		rowsErr: errors.New("read tcp: reset"),
 	}}
 	store := &PostgresJobStore{q: sqlc.New(fake)}
-	_, err := store.ListRecent(t.Context(), 10)
+	_, err := store.ListRecent(jobStoreTestContext(t), 10)
 	if err == nil || !strings.Contains(err.Error(), "reset") {
 		t.Fatalf("want rows error, got %v", err)
 	}

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/objectstore"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -67,32 +68,33 @@ func (s *PostgresCatalogStore) GetDocument(ctx context.Context, identityID, docu
 	})
 }
 
-// SoftDeleteDocument marks one logical document deleted for an identity.
+// SoftDeleteDocument starts the durable, owner-scoped delete workflow.
 func (s *PostgresCatalogStore) SoftDeleteDocument(ctx context.Context, identityID, documentID string) (Document, error) {
 	return scopedValue(ctx, s, identityID, func(sc catalogTx) (Document, error) {
 		return sc.softDeleteDocument(ctx, identityID, documentID)
 	})
 }
 
-// ListStorageObjects returns ledgered object refs for orphan detection.
-//
-// This is the one catalog read that runs OUTSIDE an identity transaction, and deliberately:
-// aura.storage_objects is bucket/prefix scoped by construction and migration 0087 leaves it
-// out of the fail-closed floor for exactly that reason — an orphan sweep that could only
-// see one tenant's objects would report every other tenant's as orphaned.
+// ListStorageObjects returns the caller identity's live ledger refs for orphan detection.
 func (s *PostgresCatalogStore) ListStorageObjects(ctx context.Context, bucket, prefix string) ([]objectstore.ObjectRef, error) {
-	rows, err := s.q.ListStorageObjects(ctx, sqlc.ListStorageObjectsParams{
-		Bucket: bucket,
-		Prefix: prefix,
-	})
+	identityID := identityctx.IdentityID(ctx)
+	owner, err := pgUUID("identity_id", identityID)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]objectstore.ObjectRef, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, objectstore.ObjectRef{Bucket: row.Bucket, Key: row.ObjectKey})
-	}
-	return out, nil
+	return scopedValue(ctx, s, identityID, func(sc catalogTx) ([]objectstore.ObjectRef, error) {
+		rows, queryErr := sc.q.ListStorageObjects(ctx, sqlc.ListStorageObjectsParams{
+			IdentityID: owner, Bucket: bucket, Prefix: prefix,
+		})
+		if queryErr != nil {
+			return nil, queryErr
+		}
+		out := make([]objectstore.ObjectRef, 0, len(rows))
+		for _, row := range rows {
+			out = append(out, objectstore.ObjectRef{Bucket: row.Bucket, Key: row.ObjectKey})
+		}
+		return out, nil
+	})
 }
 
 func (sc catalogTx) createDocument(ctx context.Context, req CreateDocumentRequest) (Document, error) {
@@ -106,11 +108,10 @@ func (sc catalogTx) createDocument(ctx context.Context, req CreateDocumentReques
 	}
 	row, err := sc.q.CreateDocument(ctx, sqlc.CreateDocumentParams{
 		IdentityID: identityID,
-		Scope:      string(req.Scope),
-		Title:      req.Title,
-		Tags:       catalogTagsArray(req.Tags),
-		Metadata:   metadata,
-		Status:     string(req.Status),
+		Scope:      string(req.Scope), Title: req.Title, Tags: catalogTagsArray(req.Tags),
+		Metadata: metadata, Status: string(req.Status), SourceKind: req.SourceKind,
+		SourceKey: req.SourceKey, SearchDocumentID: req.SearchDocumentID,
+		PipelineGeneration: req.PipelineGeneration,
 	})
 	if err != nil {
 		return Document{}, err
@@ -143,14 +144,15 @@ func (sc catalogTx) updateDocument(ctx context.Context, req UpdateDocumentReques
 		return Document{}, err
 	}
 	row, err := sc.q.UpdateDocument(ctx, sqlc.UpdateDocumentParams{
-		ID:              documentID,
-		IdentityID:      identityID,
-		Scope:           string(req.Scope),
-		Title:           req.Title,
-		Tags:            catalogTagsArray(req.Tags),
-		Metadata:        metadata,
-		ActiveVersionID: activeVersionID,
-		Status:          string(req.Status),
+		ID:                 documentID,
+		IdentityID:         identityID,
+		Scope:              string(req.Scope),
+		Title:              req.Title,
+		Tags:               catalogTagsArray(req.Tags),
+		Metadata:           metadata,
+		ActiveVersionID:    activeVersionID,
+		Status:             string(req.Status),
+		PipelineGeneration: req.PipelineGeneration,
 	})
 	if err != nil {
 		return Document{}, err
@@ -215,7 +217,9 @@ func (sc catalogTx) getDocument(ctx context.Context, identityID, documentID stri
 	if err != nil {
 		return DocumentDetail{}, err
 	}
-	versionRows, err := sc.q.ListDocumentVersions(ctx, pgDocumentID)
+	versionRows, err := sc.q.ListDocumentVersions(ctx, sqlc.ListDocumentVersionsParams{
+		IdentityID: pgIdentityID, DocumentID: pgDocumentID,
+	})
 	if err != nil {
 		return DocumentDetail{}, err
 	}
@@ -242,14 +246,7 @@ func (sc catalogTx) softDeleteDocument(ctx context.Context, identityID, document
 	if err != nil {
 		return Document{}, err
 	}
-	doc, err := catalogDocumentFromSQL(row)
-	if err != nil {
-		return Document{}, err
-	}
-	if err := sc.softDeleteDocumentAssets(ctx, pgIdentityID, pgDocumentID); err != nil {
-		return Document{}, err
-	}
-	return doc, nil
+	return catalogDocumentFromSQL(sqlc.AuraDocuments(row))
 }
 
 // attachActiveVersionSizes denormalizes each summary's active-version size and
@@ -327,50 +324,43 @@ func (sc catalogTx) replaceDocumentTags(ctx context.Context, documentID, actorId
 	return nil
 }
 
-func (sc catalogTx) softDeleteDocumentAssets(ctx context.Context, identityID, documentID pgtype.UUID) error {
-	if sc.raw == nil {
-		return nil
-	}
-	_, err := sc.raw.Exec(ctx, `
-UPDATE aura.assets
-SET status = 'deleted',
-    deleted_at = COALESCE(deleted_at, now()),
-    updated_at = now()
-WHERE identity_id = $1
-  AND deleted_at IS NULL
-  AND id IN (
-    SELECT asset_id
-    FROM aura.document_versions
-    WHERE document_id = $2
-      AND asset_id IS NOT NULL
-  )`, identityID, documentID)
-	return err
-}
-
+// catalogDocumentFromSQL is the single decoder for a document row.
+//
+// sqlc emits a distinct row type per query, but the delete-path statements return
+// aura.documents in table order, so those rows convert to sqlc.AuraDocuments outright.
+// Callers use that conversion instead of restating the twenty fields: a column added to
+// the table but missing from a query then becomes a compile error here, where a
+// field-by-field literal would have silently handed back a zero value.
 func catalogDocumentFromSQL(row sqlc.AuraDocuments) (Document, error) {
 	metadata, err := catalogMetadataFromJSON(row.Metadata)
 	if err != nil {
 		return Document{}, err
 	}
 	return Document{
-		ID:              uuidString(row.ID),
-		IdentityID:      uuidString(row.IdentityID),
-		Scope:           DocumentScope(row.Scope),
-		Title:           row.Title,
-		Tags:            catalogTagsArray(row.Tags),
-		Metadata:        metadata,
-		ActiveVersionID: uuidString(row.ActiveVersionID),
-		Status:          DocumentStatus(row.Status),
-		CreatedAt:       timeValue(row.CreatedAt),
-		UpdatedAt:       timeValue(row.UpdatedAt),
-		DeletedAt:       timeValue(row.DeletedAt),
+		ID:         uuidString(row.ID),
+		IdentityID: uuidString(row.IdentityID),
+		SourceKind: row.SourceKind, SourceKey: row.SourceKey,
+		SearchDocumentID:   row.SearchDocumentID,
+		PipelineGeneration: row.PipelineGeneration,
+		Scope:              DocumentScope(row.Scope),
+		Title:              row.Title,
+		Tags:               catalogTagsArray(row.Tags),
+		Metadata:           metadata,
+		ActiveVersionID:    uuidString(row.ActiveVersionID),
+		Status:             DocumentStatus(row.Status),
+		CreatedAt:          timeValue(row.CreatedAt),
+		UpdatedAt:          timeValue(row.UpdatedAt),
+		DeletedAt:          timeValue(row.DeletedAt),
 	}, nil
 }
 
 func catalogVersionFromSQL(row sqlc.AuraDocumentVersions) DocumentVersion {
 	return DocumentVersion{
 		ID:                 uuidString(row.ID),
+		IdentityID:         uuidString(row.IdentityID),
 		DocumentID:         uuidString(row.DocumentID),
+		SearchDocumentID:   row.SearchDocumentID,
+		PipelineGeneration: row.PipelineGeneration,
 		AssetID:            uuidString(row.AssetID),
 		VersionNumber:      int(row.VersionNumber),
 		Status:             row.Status,

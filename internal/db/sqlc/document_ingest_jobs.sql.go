@@ -12,43 +12,48 @@ import (
 )
 
 const createDocumentIngestJob = `-- name: CreateDocumentIngestJob :one
+
 INSERT INTO aura.document_ingest_jobs (
-    source_id,
-    source_kind,
-    document_id,
-    content_hash,
-    original_path,
-    file_name,
-    mime_type,
-    size_bytes,
-    status
+    identity_id, source_id, source_kind, document_id, content_hash, original_path,
+    file_name, mime_type, size_bytes, status, asset_id, catalog_document_id,
+    version_id, pipeline_generation
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9
+    $1, $2, $3,
+    $4, $5, $6,
+    $7, $8, $9, $10,
+    $11, $12, $13,
+    $14
 )
-ON CONFLICT (source_id, document_id, content_hash)
-DO UPDATE SET
-    original_path = EXCLUDED.original_path,
-    file_name = EXCLUDED.file_name,
-    mime_type = EXCLUDED.mime_type,
-    size_bytes = EXCLUDED.size_bytes,
-    updated_at = now()
-RETURNING id, source_id, source_kind, document_id, content_hash, original_path, file_name, mime_type, size_bytes, status, sparse_chunks, embedded_chunks, error, created_at, updated_at, searchable_at, completed_at
+ON CONFLICT (identity_id, source_id, document_id, content_hash)
+DO UPDATE SET original_path = EXCLUDED.original_path,
+              file_name = EXCLUDED.file_name,
+              mime_type = EXCLUDED.mime_type,
+              size_bytes = EXCLUDED.size_bytes,
+              updated_at = now()
+RETURNING id, source_id, source_kind, document_id, content_hash, original_path, file_name, mime_type, size_bytes, status, sparse_chunks, embedded_chunks, error, created_at, updated_at, searchable_at, completed_at, identity_id, asset_id, catalog_document_id, version_id, pipeline_generation
 `
 
 type CreateDocumentIngestJobParams struct {
-	SourceID     string `json:"source_id"`
-	SourceKind   string `json:"source_kind"`
-	DocumentID   string `json:"document_id"`
-	ContentHash  string `json:"content_hash"`
-	OriginalPath string `json:"original_path"`
-	FileName     string `json:"file_name"`
-	MimeType     string `json:"mime_type"`
-	SizeBytes    int64  `json:"size_bytes"`
-	Status       string `json:"status"`
+	IdentityID         pgtype.UUID `json:"identity_id"`
+	SourceID           string      `json:"source_id"`
+	SourceKind         string      `json:"source_kind"`
+	DocumentID         string      `json:"document_id"`
+	ContentHash        string      `json:"content_hash"`
+	OriginalPath       string      `json:"original_path"`
+	FileName           string      `json:"file_name"`
+	MimeType           string      `json:"mime_type"`
+	SizeBytes          int64       `json:"size_bytes"`
+	Status             string      `json:"status"`
+	AssetID            pgtype.UUID `json:"asset_id"`
+	CatalogDocumentID  pgtype.UUID `json:"catalog_document_id"`
+	VersionID          pgtype.UUID `json:"version_id"`
+	PipelineGeneration int64       `json:"pipeline_generation"`
 }
 
+// Legacy queue kept owner-scoped during retirement. New ingress uses aura.ingestion_jobs.
 func (q *Queries) CreateDocumentIngestJob(ctx context.Context, arg CreateDocumentIngestJobParams) (AuraDocumentIngestJobs, error) {
 	row := q.db.QueryRow(ctx, createDocumentIngestJob,
+		arg.IdentityID,
 		arg.SourceID,
 		arg.SourceKind,
 		arg.DocumentID,
@@ -58,6 +63,10 @@ func (q *Queries) CreateDocumentIngestJob(ctx context.Context, arg CreateDocumen
 		arg.MimeType,
 		arg.SizeBytes,
 		arg.Status,
+		arg.AssetID,
+		arg.CatalogDocumentID,
+		arg.VersionID,
+		arg.PipelineGeneration,
 	)
 	var i AuraDocumentIngestJobs
 	err := row.Scan(
@@ -78,18 +87,27 @@ func (q *Queries) CreateDocumentIngestJob(ctx context.Context, arg CreateDocumen
 		&i.UpdatedAt,
 		&i.SearchableAt,
 		&i.CompletedAt,
+		&i.IdentityID,
+		&i.AssetID,
+		&i.CatalogDocumentID,
+		&i.VersionID,
+		&i.PipelineGeneration,
 	)
 	return i, err
 }
 
 const getDocumentIngestJob = `-- name: GetDocumentIngestJob :one
-SELECT id, source_id, source_kind, document_id, content_hash, original_path, file_name, mime_type, size_bytes, status, sparse_chunks, embedded_chunks, error, created_at, updated_at, searchable_at, completed_at
-FROM aura.document_ingest_jobs
-WHERE id = $1
+SELECT id, source_id, source_kind, document_id, content_hash, original_path, file_name, mime_type, size_bytes, status, sparse_chunks, embedded_chunks, error, created_at, updated_at, searchable_at, completed_at, identity_id, asset_id, catalog_document_id, version_id, pipeline_generation FROM aura.document_ingest_jobs
+WHERE id = $1 AND identity_id = $2
 `
 
-func (q *Queries) GetDocumentIngestJob(ctx context.Context, id pgtype.UUID) (AuraDocumentIngestJobs, error) {
-	row := q.db.QueryRow(ctx, getDocumentIngestJob, id)
+type GetDocumentIngestJobParams struct {
+	ID         pgtype.UUID `json:"id"`
+	IdentityID pgtype.UUID `json:"identity_id"`
+}
+
+func (q *Queries) GetDocumentIngestJob(ctx context.Context, arg GetDocumentIngestJobParams) (AuraDocumentIngestJobs, error) {
+	row := q.db.QueryRow(ctx, getDocumentIngestJob, arg.ID, arg.IdentityID)
 	var i AuraDocumentIngestJobs
 	err := row.Scan(
 		&i.ID,
@@ -109,20 +127,30 @@ func (q *Queries) GetDocumentIngestJob(ctx context.Context, id pgtype.UUID) (Aur
 		&i.UpdatedAt,
 		&i.SearchableAt,
 		&i.CompletedAt,
+		&i.IdentityID,
+		&i.AssetID,
+		&i.CatalogDocumentID,
+		&i.VersionID,
+		&i.PipelineGeneration,
 	)
 	return i, err
 }
 
 const getDocumentIngestJobByDocumentID = `-- name: GetDocumentIngestJobByDocumentID :one
-SELECT id, source_id, source_kind, document_id, content_hash, original_path, file_name, mime_type, size_bytes, status, sparse_chunks, embedded_chunks, error, created_at, updated_at, searchable_at, completed_at
-FROM aura.document_ingest_jobs
-WHERE document_id = $1
+SELECT id, source_id, source_kind, document_id, content_hash, original_path, file_name, mime_type, size_bytes, status, sparse_chunks, embedded_chunks, error, created_at, updated_at, searchable_at, completed_at, identity_id, asset_id, catalog_document_id, version_id, pipeline_generation FROM aura.document_ingest_jobs
+WHERE identity_id = $1
+  AND document_id = $2
 ORDER BY created_at DESC
 LIMIT 1
 `
 
-func (q *Queries) GetDocumentIngestJobByDocumentID(ctx context.Context, documentID string) (AuraDocumentIngestJobs, error) {
-	row := q.db.QueryRow(ctx, getDocumentIngestJobByDocumentID, documentID)
+type GetDocumentIngestJobByDocumentIDParams struct {
+	IdentityID pgtype.UUID `json:"identity_id"`
+	DocumentID string      `json:"document_id"`
+}
+
+func (q *Queries) GetDocumentIngestJobByDocumentID(ctx context.Context, arg GetDocumentIngestJobByDocumentIDParams) (AuraDocumentIngestJobs, error) {
+	row := q.db.QueryRow(ctx, getDocumentIngestJobByDocumentID, arg.IdentityID, arg.DocumentID)
 	var i AuraDocumentIngestJobs
 	err := row.Scan(
 		&i.ID,
@@ -142,19 +170,29 @@ func (q *Queries) GetDocumentIngestJobByDocumentID(ctx context.Context, document
 		&i.UpdatedAt,
 		&i.SearchableAt,
 		&i.CompletedAt,
+		&i.IdentityID,
+		&i.AssetID,
+		&i.CatalogDocumentID,
+		&i.VersionID,
+		&i.PipelineGeneration,
 	)
 	return i, err
 }
 
 const listRecentDocumentIngestJobs = `-- name: ListRecentDocumentIngestJobs :many
-SELECT id, source_id, source_kind, document_id, content_hash, original_path, file_name, mime_type, size_bytes, status, sparse_chunks, embedded_chunks, error, created_at, updated_at, searchable_at, completed_at
-FROM aura.document_ingest_jobs
+SELECT id, source_id, source_kind, document_id, content_hash, original_path, file_name, mime_type, size_bytes, status, sparse_chunks, embedded_chunks, error, created_at, updated_at, searchable_at, completed_at, identity_id, asset_id, catalog_document_id, version_id, pipeline_generation FROM aura.document_ingest_jobs
+WHERE identity_id = $1
 ORDER BY created_at DESC
-LIMIT $1
+LIMIT $2
 `
 
-func (q *Queries) ListRecentDocumentIngestJobs(ctx context.Context, limit int32) ([]AuraDocumentIngestJobs, error) {
-	rows, err := q.db.Query(ctx, listRecentDocumentIngestJobs, limit)
+type ListRecentDocumentIngestJobsParams struct {
+	IdentityID pgtype.UUID `json:"identity_id"`
+	RowLimit   int32       `json:"row_limit"`
+}
+
+func (q *Queries) ListRecentDocumentIngestJobs(ctx context.Context, arg ListRecentDocumentIngestJobsParams) ([]AuraDocumentIngestJobs, error) {
+	rows, err := q.db.Query(ctx, listRecentDocumentIngestJobs, arg.IdentityID, arg.RowLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -180,6 +218,11 @@ func (q *Queries) ListRecentDocumentIngestJobs(ctx context.Context, limit int32)
 			&i.UpdatedAt,
 			&i.SearchableAt,
 			&i.CompletedAt,
+			&i.IdentityID,
+			&i.AssetID,
+			&i.CatalogDocumentID,
+			&i.VersionID,
+			&i.PipelineGeneration,
 		); err != nil {
 			return nil, err
 		}
@@ -193,31 +236,33 @@ func (q *Queries) ListRecentDocumentIngestJobs(ctx context.Context, limit int32)
 
 const updateDocumentIngestJobProgress = `-- name: UpdateDocumentIngestJobProgress :one
 UPDATE aura.document_ingest_jobs
-SET
-    status = $2,
-    sparse_chunks = $3,
-    embedded_chunks = $4,
-    error = NULL,
-    updated_at = now(),
-    searchable_at = CASE WHEN $2 = 'searchable' AND searchable_at IS NULL THEN now() ELSE searchable_at END,
-    completed_at = CASE WHEN $2 = 'complete' AND completed_at IS NULL THEN now() ELSE completed_at END
-WHERE id = $1
-RETURNING id, source_id, source_kind, document_id, content_hash, original_path, file_name, mime_type, size_bytes, status, sparse_chunks, embedded_chunks, error, created_at, updated_at, searchable_at, completed_at
+SET status = $1, sparse_chunks = $2,
+    embedded_chunks = $3, error = NULL, updated_at = now(),
+    searchable_at = CASE
+        WHEN $1::text = 'searchable' AND searchable_at IS NULL THEN now()
+        ELSE searchable_at END,
+    completed_at = CASE
+        WHEN $1::text = 'complete' AND completed_at IS NULL THEN now()
+        ELSE completed_at END
+WHERE id = $4 AND identity_id = $5
+RETURNING id, source_id, source_kind, document_id, content_hash, original_path, file_name, mime_type, size_bytes, status, sparse_chunks, embedded_chunks, error, created_at, updated_at, searchable_at, completed_at, identity_id, asset_id, catalog_document_id, version_id, pipeline_generation
 `
 
 type UpdateDocumentIngestJobProgressParams struct {
-	ID             pgtype.UUID `json:"id"`
 	Status         string      `json:"status"`
 	SparseChunks   int32       `json:"sparse_chunks"`
 	EmbeddedChunks int32       `json:"embedded_chunks"`
+	ID             pgtype.UUID `json:"id"`
+	IdentityID     pgtype.UUID `json:"identity_id"`
 }
 
 func (q *Queries) UpdateDocumentIngestJobProgress(ctx context.Context, arg UpdateDocumentIngestJobProgressParams) (AuraDocumentIngestJobs, error) {
 	row := q.db.QueryRow(ctx, updateDocumentIngestJobProgress,
-		arg.ID,
 		arg.Status,
 		arg.SparseChunks,
 		arg.EmbeddedChunks,
+		arg.ID,
+		arg.IdentityID,
 	)
 	var i AuraDocumentIngestJobs
 	err := row.Scan(
@@ -238,30 +283,40 @@ func (q *Queries) UpdateDocumentIngestJobProgress(ctx context.Context, arg Updat
 		&i.UpdatedAt,
 		&i.SearchableAt,
 		&i.CompletedAt,
+		&i.IdentityID,
+		&i.AssetID,
+		&i.CatalogDocumentID,
+		&i.VersionID,
+		&i.PipelineGeneration,
 	)
 	return i, err
 }
 
 const updateDocumentIngestJobStatus = `-- name: UpdateDocumentIngestJobStatus :one
 UPDATE aura.document_ingest_jobs
-SET
-    status = $2,
-    error = $3,
-    updated_at = now(),
-    searchable_at = CASE WHEN $2 = 'searchable' THEN now() ELSE searchable_at END,
-    completed_at = CASE WHEN $2 = 'complete' THEN now() ELSE completed_at END
-WHERE id = $1
-RETURNING id, source_id, source_kind, document_id, content_hash, original_path, file_name, mime_type, size_bytes, status, sparse_chunks, embedded_chunks, error, created_at, updated_at, searchable_at, completed_at
+SET status = $1, error = $2, updated_at = now(),
+    searchable_at = CASE WHEN $1::text = 'searchable' THEN now()
+                         ELSE searchable_at END,
+    completed_at = CASE WHEN $1::text = 'complete' THEN now()
+                        ELSE completed_at END
+WHERE id = $3 AND identity_id = $4
+RETURNING id, source_id, source_kind, document_id, content_hash, original_path, file_name, mime_type, size_bytes, status, sparse_chunks, embedded_chunks, error, created_at, updated_at, searchable_at, completed_at, identity_id, asset_id, catalog_document_id, version_id, pipeline_generation
 `
 
 type UpdateDocumentIngestJobStatusParams struct {
-	ID     pgtype.UUID `json:"id"`
-	Status string      `json:"status"`
-	Error  pgtype.Text `json:"error"`
+	Status     string      `json:"status"`
+	Error      pgtype.Text `json:"error"`
+	ID         pgtype.UUID `json:"id"`
+	IdentityID pgtype.UUID `json:"identity_id"`
 }
 
 func (q *Queries) UpdateDocumentIngestJobStatus(ctx context.Context, arg UpdateDocumentIngestJobStatusParams) (AuraDocumentIngestJobs, error) {
-	row := q.db.QueryRow(ctx, updateDocumentIngestJobStatus, arg.ID, arg.Status, arg.Error)
+	row := q.db.QueryRow(ctx, updateDocumentIngestJobStatus,
+		arg.Status,
+		arg.Error,
+		arg.ID,
+		arg.IdentityID,
+	)
 	var i AuraDocumentIngestJobs
 	err := row.Scan(
 		&i.ID,
@@ -281,6 +336,11 @@ func (q *Queries) UpdateDocumentIngestJobStatus(ctx context.Context, arg UpdateD
 		&i.UpdatedAt,
 		&i.SearchableAt,
 		&i.CompletedAt,
+		&i.IdentityID,
+		&i.AssetID,
+		&i.CatalogDocumentID,
+		&i.VersionID,
+		&i.PipelineGeneration,
 	)
 	return i, err
 }

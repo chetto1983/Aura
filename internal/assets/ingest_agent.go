@@ -29,6 +29,8 @@ type objectIngest struct {
 	modality      Modality
 	sizeBytes     int64
 	reader        io.Reader
+	scope         Scope
+	metadata      map[string]any
 	enforceLimits bool
 	process       bool
 }
@@ -54,6 +56,13 @@ func (s *Service) ingestObject(ctx context.Context, in objectIngest) (Asset, err
 			return Asset{}, err
 		}
 	}
+	scope := in.scope
+	if scope == "" {
+		scope = ScopeThread
+	}
+	if scope != ScopeThread && scope != ScopeLibrary {
+		return Asset{}, fmt.Errorf("unsupported asset scope %q", scope)
+	}
 	objects, bucket, err := s.objectsFor(identityctx.WithIdentityID(ctx, in.identityID))
 	if err != nil {
 		return Asset{}, err
@@ -65,14 +74,14 @@ func (s *Service) ingestObject(ctx context.Context, in objectIngest) (Asset, err
 		ThreadID:          in.threadID,
 		SourceKind:        in.sourceKind,
 		SourceRef:         in.sourceRef,
-		Scope:             ScopeThread,
+		Scope:             scope,
 		Modality:          modality,
 		FileName:          name,
 		MIMEType:          mimeType,
 		DeclaredSizeBytes: in.sizeBytes,
 		ObjectBucket:      bucket,
 		ObjectKey:         key,
-		Metadata:          map[string]any{},
+		Metadata:          in.metadata,
 	})
 	if err != nil {
 		return Asset{}, err
@@ -105,6 +114,16 @@ func (s *Service) ingestObject(ctx context.Context, in objectIngest) (Asset, err
 	if !in.process {
 		return asset, nil
 	}
+	// Documents always cross the durable queue boundary. The source staging file
+	// may disappear as soon as this returns because Garage already owns the bytes;
+	// conversion never depends on a caller's host or sandbox path.
+	if modality == ModalityDocument {
+		if err := s.enqueueProcessing(ctx, asset); err != nil {
+			updated, _ := s.Store.SetStatus(ctx, asset.ID, in.identityID, StatusFailed, "processing_enqueue_failed", err.Error())
+			return updated, err
+		}
+		return asset, nil
+	}
 	return s.processAsset(ctx, asset)
 }
 
@@ -122,6 +141,7 @@ func (s *Service) IngestAgentFile(ctx context.Context, req AgentIngestRequest) (
 		modality:      req.Modality,
 		sizeBytes:     req.SizeBytes,
 		reader:        req.Reader,
+		scope:         ScopeThread,
 		enforceLimits: false,
 		process:       false,
 	})

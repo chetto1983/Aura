@@ -2,13 +2,15 @@ package tools
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	pathpkg "path"
 	"strings"
 
-	"github.com/chetto1983/aura/internal/documents"
+	"github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 )
 
@@ -20,7 +22,7 @@ import (
 // reason this tool copies bytes OUT of the box rather than passing a box path
 // along, the way document_open passes one in.
 type DocumentIndexBackend interface {
-	IngestPath(ctx context.Context, req documents.IngestRequest, path string) (*documents.Job, error)
+	IngestDocument(ctx context.Context, req assets.DocumentIngestRequest) (assets.Asset, error)
 }
 
 // DocumentIndex is the explicit bridge from a workspace file to document_search.
@@ -39,6 +41,9 @@ type DocumentIndexBackend interface {
 // the staged copy, and deletes it.
 type DocumentIndex struct {
 	Indexer DocumentIndexBackend
+	// MaxBytes is the AURA_ASSET_MAX_DOCUMENT_BYTES ceiling shared by every
+	// document ingress.
+	MaxBytes int64
 	// Router is the per-identity box routing seam and the ONLY source of an indexable
 	// file. A box that cannot be reached fails CLOSED (D-09/GATE-01) — there is no
 	// host-filesystem arm left to read from.
@@ -51,7 +56,7 @@ type DocumentIndex struct {
 // to sit exactly there: the service ceiling is operator-tunable and, raised, would
 // catalog the short copy as a whole document — a spreadsheet cut off mid-file that then
 // answers confidently and wrongly.
-const maxIndexedFileBytes int64 = maxSendFileBytes
+const maxIndexedFileBytes int64 = 100 << 20
 
 type documentIndexArgs struct {
 	Path  string `json:"path"`
@@ -69,7 +74,7 @@ func (t *DocumentIndex) Spec() Spec {
 			"fs_read see, so a file you just created is indexable at exactly the path they reported. Aura copies it " +
 			"out of your workspace container to read it, then registers it in YOUR identity's document catalog — the " +
 			"same catalog document_search ranks and document_open opens. A path outside /workspace, or a file over " +
-			"50 MB, is refused. This is for your own workspace files; the user's uploaded documents are already " +
+			"the configured document size limit, is refused. This is for your own workspace files; the user's uploaded documents are already " +
 			"indexed automatically. " +
 			"Example: {\"path\":\"artifacts/q3-report.docx\"}.",
 		Parameters: json.RawMessage(`{
@@ -124,38 +129,38 @@ func (t *DocumentIndex) Execute(ctx context.Context, raw json.RawMessage) (ToolR
 	if err != nil {
 		return ToolResult{}, err
 	}
-	// The staged copy exists only for this call: IngestPath hashes and cards the file
-	// synchronously, so nothing needs it once it returns. That is the difference from
+	// The staged copy exists only for this call: IngestDocument copies the complete
+	// stream to Garage before it returns. That is the difference from
 	// send_file, whose descriptor hands the channel a PATH opened after the turn and so
 	// cannot delete eagerly — here an eager delete is what keeps a copy of every indexed
-	// file (up to 50 MiB each) out of the run dir.
+	// file (up to the configured document ceiling) out of the run dir.
 	defer func() { _ = os.RemoveAll(stageDir) }()
 
-	req := documents.IngestRequest{
-		SourceID:   strings.TrimSpace(args.Title),
-		SourceKind: "workspace",
+	f, err := os.Open(staged)
+	if err != nil {
+		return ToolResult{}, fmt.Errorf("document_index: open staged document: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	info, err := f.Stat()
+	if err != nil {
+		return ToolResult{}, fmt.Errorf("document_index: stat staged document: %w", err)
+	}
+	asset, err := t.Indexer.IngestDocument(ctx, assets.DocumentIngestRequest{
 		IdentityID: ownerFromContext(ctx),
-		// The name and origin recorded are the BOX ones, never the staging path: that
-		// path is deleted before this function returns, so filing the document under it
-		// would name a location nobody can resolve. It is load-bearing beyond cosmetics —
-		// the ingest's supported-type gate and the card's reader both key off FileName.
-		FileName:     pathpkg.Base(boxPath),
-		OriginalPath: boxPath,
-	}
-	if req.SourceID == "" {
-		req.SourceID = boxPath
-	}
-	job, err := t.Indexer.IngestPath(ctx, req, staged)
+		SourceKind: assets.SourceWorkspace,
+		SourceRef:  documentSourceFingerprint(boxPath),
+		Title:      strings.TrimSpace(args.Title),
+		FileName:   pathpkg.Base(boxPath),
+		SizeBytes:  info.Size(),
+		Reader:     io.Reader(f),
+	})
 	if err != nil {
 		return ToolResult{}, fmt.Errorf("document_index: %w", err)
 	}
-	// No "chunks" field: it reported job.SparseChunks, which ingest hard-wires to 0 now
-	// that a document is one catalog row and not a pile of fragments. A field that is
-	// always zero teaches the model the indexing failed.
 	out, err := json.Marshal(map[string]any{
-		"document_id": job.DocumentID,
-		"file_name":   job.FileName,
-		"status":      job.Status,
+		"asset_id":  asset.ID,
+		"file_name": asset.FileName,
+		"status":    asset.Status,
 	})
 	if err != nil {
 		return ToolResult{}, fmt.Errorf("document_index: marshal result: %w", err)
@@ -166,6 +171,13 @@ func (t *DocumentIndex) Execute(ctx context.Context, raw json.RawMessage) (ToolR
 	}
 	result.Provenance = &ToolResultProvenance{Source: "document_index", Trust: TrustUntrusted}
 	return result, nil
+}
+
+// documentSourceFingerprint makes a workspace locator stable without persisting
+// a container path in the catalog or queue payload.
+func documentSourceFingerprint(boxPath string) string {
+	sum := sha256.Sum256([]byte(boxPath))
+	return fmt.Sprintf("sha256:%x", sum)
 }
 
 // stageForIngest copies boxPath out of the caller's box into a fresh host staging dir the
@@ -188,11 +200,11 @@ func (t *DocumentIndex) stageForIngest(
 	}
 	defer func() { _ = rc.Close() }()
 
-	stageDir, staged, err = stageBoxArtifact(ctx, rc, pathpkg.Base(boxPath))
+	stageDir, staged, err = stageBoxArtifactCapped(ctx, rc, pathpkg.Base(boxPath), t.maxBytes())
 	if err != nil {
 		return "", "", nil, fmt.Errorf("document_index: cannot read %s from your workspace: %w", boxPath, err)
 	}
-	resolved, verr := vetStagedForIngest(stageDir, staged, boxPath)
+	resolved, verr := vetStagedForIngestCapped(stageDir, staged, boxPath, t.maxBytes())
 	if verr != nil {
 		_ = os.RemoveAll(stageDir)
 		return "", "", nil, verr
@@ -205,14 +217,18 @@ func (t *DocumentIndex) stageForIngest(
 // it short, so a truncated file can never be cataloged as a whole one), and it stays inside
 // its staging dir.
 func vetStagedForIngest(stageDir, staged, boxPath string) (string, error) {
+	return vetStagedForIngestCapped(stageDir, staged, boxPath, maxIndexedFileBytes)
+}
+
+func vetStagedForIngestCapped(stageDir, staged, boxPath string, maxBytes int64) (string, error) {
 	info, err := os.Stat(staged)
 	if err != nil {
 		return "", fmt.Errorf("document_index: cannot read the staged copy of %s: %w", boxPath, err)
 	}
-	if info.Size() > maxIndexedFileBytes {
+	if info.Size() > maxBytes {
 		return "", fmt.Errorf(
 			"document_index: %s is larger than the %d-byte indexing limit; index a smaller file or an extract of it",
-			boxPath, maxIndexedFileBytes)
+			boxPath, maxBytes)
 	}
 	resolved, ok, err := fenceWithinRoot(stageDir, staged)
 	if err != nil {
@@ -222,4 +238,11 @@ func vetStagedForIngest(stageDir, staged, boxPath string) (string, error) {
 		return "", fmt.Errorf("document_index: the staged copy of %s resolved outside its staging directory", boxPath)
 	}
 	return resolved, nil
+}
+
+func (t *DocumentIndex) maxBytes() int64 {
+	if t != nil && t.MaxBytes > 0 {
+		return t.MaxBytes
+	}
+	return maxIndexedFileBytes
 }

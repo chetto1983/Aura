@@ -4,31 +4,41 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/documents"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// documentLibrary backs the document_search tool. It ranks one identity's
-// documents by what each one IS — title, operator tags, and the description of
-// the file — which is the only question the index still answers now that
-// document_open hands over the file itself.
+// documentLibrary backs every host retrieval surface. It combines identity-scoped
+// PostgreSQL card routing with revalidated ArcadeDB passage candidates.
 type documentLibrary struct {
-	pool *pgxpool.Pool
+	pool         *pgxpool.Pool
+	retriever    *documents.HostRetriever
+	retrievalErr error
 }
 
-func newDocumentLibrary(pool *pgxpool.Pool) *documentLibrary {
-	return &documentLibrary{pool: pool}
-}
-
-func (l *documentLibrary) SearchDigests(
-	ctx context.Context,
-	identityID, query string,
-	limit int,
-) ([]documents.DigestHit, error) {
-	if l == nil || l.pool == nil {
-		return nil, fmt.Errorf("document library is not configured: no database pool")
+func newDocumentLibrary(pool *pgxpool.Pool, configs ...*config.Config) *documentLibrary {
+	cfg := config.LoadDB()
+	if len(configs) > 0 && configs[0] != nil {
+		cfg = configs[0]
 	}
-	return documents.NewPostgresCatalogStore(l.pool).SearchDigests(ctx, identityID, query, limit)
+	retriever, err := newHostDocumentRetriever(cfg, pool)
+	return &documentLibrary{pool: pool, retriever: retriever, retrievalErr: err}
+}
+
+func (l *documentLibrary) Retrieve(
+	ctx context.Context,
+	request documents.RetrievalRequest,
+) (documents.RetrievalResponse, error) {
+	if l == nil || l.pool == nil || l.retriever == nil {
+		if l != nil && l.retrievalErr != nil {
+			return documents.RetrievalResponse{}, fmt.Errorf(
+				"document library is not configured: %w", l.retrievalErr,
+			)
+		}
+		return documents.RetrievalResponse{}, fmt.Errorf("document library is not configured")
+	}
+	return l.retriever.Retrieve(ctx, request)
 }
 
 // SetDigest backs document_describe: the agent writes what it saw after opening

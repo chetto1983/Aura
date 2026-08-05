@@ -103,12 +103,42 @@ RETURNING *;
 
 -- name: SoftDeleteAsset :one
 UPDATE aura.assets
-SET status = 'deleted',
-    deleted_at = now(),
+SET status = 'deleting',
     updated_at = now()
 WHERE id = $1
   AND identity_id = $2
   AND deleted_at IS NULL
+  AND status NOT IN ('deleting', 'deleted')
+RETURNING *;
+
+-- name: LinkAssetDocumentVersion :one
+UPDATE aura.assets
+SET document_id = sqlc.arg(search_document_id),
+    catalog_document_id = sqlc.arg(catalog_document_id),
+    document_version_id = sqlc.arg(document_version_id),
+    pipeline_generation = sqlc.arg(pipeline_generation),
+    updated_at = now()
+WHERE id = sqlc.arg(id)
+  AND identity_id = sqlc.arg(identity_id)
+  AND deleted_at IS NULL
+RETURNING *;
+
+-- name: ResetAssetForIngestionRetry :one
+UPDATE aura.assets
+SET status = 'accepted', error_code = '', error_message = '',
+    processed_at = NULL, searchable_at = NULL, completed_at = NULL, updated_at = now()
+WHERE id = sqlc.arg(id)
+  AND identity_id = sqlc.arg(identity_id)
+  AND status IN ('failed', 'refused', 'canceled')
+  AND deleted_at IS NULL
+RETURNING *;
+
+-- name: MarkAssetDeleted :one
+UPDATE aura.assets
+SET status = 'deleted', deleted_at = COALESCE(deleted_at, now()), updated_at = now()
+WHERE id = sqlc.arg(id)
+  AND identity_id = sqlc.arg(identity_id)
+  AND status = 'deleting'
 RETURNING *;
 
 -- name: NextAssetEventSeq :one

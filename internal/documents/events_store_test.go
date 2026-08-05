@@ -16,17 +16,21 @@ var _ interface {
 
 func TestIngestionEventFromSQLDecodesDetail(t *testing.T) {
 	row := sqlc.AuraIngestionEvents{
-		ID:         42,
-		EntityType: "ingestion_job",
-		EntityID:   mustCatalogTestUUID(t, "10000000-0000-0000-0000-000000000001"),
-		JobID:      mustCatalogTestUUID(t, "10000000-0000-0000-0000-000000000002"),
-		FromStatus: pgtype.Text{String: "running", Valid: true},
-		ToStatus:   pgtype.Text{String: "succeeded", Valid: true},
-		EventType:  "ingestion_job.succeeded",
-		Message:    "ok",
-		Detail:     []byte(`{"stage":"accepted"}`),
-		TraceID:    "trace-1",
-		CreatedAt:  pgtype.Timestamptz{Time: time.Unix(1, 0), Valid: true},
+		ID:                 42,
+		IdentityID:         mustCatalogTestUUID(t, testIngestionIdentityID),
+		EntityType:         "ingestion_job",
+		EntityID:           mustCatalogTestUUID(t, "10000000-0000-0000-0000-000000000001"),
+		JobID:              mustCatalogTestUUID(t, "10000000-0000-0000-0000-000000000002"),
+		FromStatus:         pgtype.Text{String: "running", Valid: true},
+		ToStatus:           pgtype.Text{String: "succeeded", Valid: true},
+		EventType:          "ingestion_job.succeeded",
+		Message:            "ok",
+		Detail:             []byte(`{"stage":"accepted"}`),
+		TraceID:            "trace-1",
+		CreatedAt:          pgtype.Timestamptz{Time: time.Unix(1, 0), Valid: true},
+		PipelineGeneration: 3,
+		AttemptGeneration:  4,
+		LeaseGeneration:    5,
 	}
 
 	event, err := ingestionEventFromSQL(row)
@@ -35,6 +39,10 @@ func TestIngestionEventFromSQLDecodesDetail(t *testing.T) {
 	}
 	if event.ID != 42 || event.EntityID != "10000000-0000-0000-0000-000000000001" || event.JobID != "10000000-0000-0000-0000-000000000002" {
 		t.Fatalf("event identity = %#v", event)
+	}
+	if event.IdentityID != testIngestionIdentityID || event.PipelineGeneration != 3 ||
+		event.AttemptGeneration != 4 || event.LeaseGeneration != 5 {
+		t.Fatalf("event owner/generations = %#v", event)
 	}
 	if event.FromStatus != "running" || event.ToStatus != "succeeded" || event.EventType != "ingestion_job.succeeded" {
 		t.Fatalf("event transition = %#v", event)
@@ -46,7 +54,7 @@ func TestIngestionEventFromSQLDecodesDetail(t *testing.T) {
 
 func TestNewPostgresIngestionEventStoreWiresQueries(t *testing.T) {
 	store := NewPostgresIngestionEventStore(nil)
-	if store == nil || store.q == nil {
+	if store == nil {
 		t.Fatalf("NewPostgresIngestionEventStore = %#v", store)
 	}
 }

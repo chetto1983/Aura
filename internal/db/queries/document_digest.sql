@@ -47,14 +47,32 @@ RETURNING *;
 -- stemmer for a mixed corpus (measured: a single stemmer halved recall). A library
 -- is tens of documents and the agent can rephrase; if this starts costing, fold
 -- plurals inside aura.searchable_text rather than reaching for a stemmer.
-SELECT *, ts_rank(digest_tsv, websearch_to_tsquery('simple', public.unaccent('public.unaccent'::regdictionary, sqlc.arg(query)::text))) AS rank
-FROM aura.documents
-WHERE identity_id = sqlc.arg(identity_id)
-  AND deleted_at IS NULL
-  AND status <> 'deleted'
+SELECT d.*, ts_rank(d.digest_tsv, websearch_to_tsquery('simple', public.unaccent('public.unaccent'::regdictionary, sqlc.arg(query)::text))) AS rank
+FROM aura.documents d
+WHERE d.identity_id = sqlc.arg(identity_id)
+  AND d.deleted_at IS NULL
+  AND d.status = 'ready'
+  AND d.pipeline_generation > 0
+  AND EXISTS (
+    SELECT 1
+    FROM aura.document_versions v
+    JOIN aura.storage_objects o
+      ON o.id = v.storage_object_id AND o.identity_id = v.identity_id
+    JOIN aura.assets a ON a.id = v.asset_id AND a.identity_id = v.identity_id
+    WHERE v.id = d.active_version_id
+      AND v.document_id = d.id
+      AND v.identity_id = d.identity_id
+      AND v.status = 'ready'
+      AND v.pipeline_generation = aura.documents.pipeline_generation
+      AND v.deleted_at IS NULL
+      AND o.status = 'live'
+      AND o.deleted_at IS NULL
+      AND a.status NOT IN ('deleting', 'deleted', 'canceled')
+      AND a.deleted_at IS NULL
+  )
   AND (
     sqlc.arg(query)::text = ''
-    OR digest_tsv @@ websearch_to_tsquery('simple', public.unaccent('public.unaccent'::regdictionary, sqlc.arg(query)::text))
+    OR d.digest_tsv @@ websearch_to_tsquery('simple', public.unaccent('public.unaccent'::regdictionary, sqlc.arg(query)::text))
   )
-ORDER BY rank DESC, updated_at DESC
+ORDER BY rank DESC, d.updated_at DESC
 LIMIT sqlc.arg(row_limit);

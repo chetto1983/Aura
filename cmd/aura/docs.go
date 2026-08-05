@@ -2,16 +2,19 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/documents"
@@ -19,14 +22,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const docsUsage = "usage: aura docs {ingest <path> [--source-id cli] [--source-kind local]|search <query> [--document-id id] [--limit 8]|status <job-id>|list [--limit 20]}"
+const docsUsage = "usage: aura docs {ingest <path> [--source-id id] [--source-kind cli]|search <query> [--document-id id] [--limit 8]|status <job-id>|list [--limit 20]}"
 
-// docsCLIService is the surface `aura docs` drives. Search returns DOCUMENTS, not
-// passages: it is the same digest ranking the document_search tool reads, so the CLI and
-// the agent cannot disagree about what the library contains.
+// docsCLIService is the surface `aura docs` drives. Search uses the same host
+// retriever as the agent tool and HTTP API, including passage evidence and degradation.
 type docsCLIService interface {
-	IngestPath(ctx context.Context, req documents.IngestRequest, path string) (*documents.Job, error)
-	SearchDigests(ctx context.Context, identityID, query string, limit int) ([]documents.DigestHit, error)
+	IngestDocumentPath(ctx context.Context, req assets.DocumentIngestRequest, path string) (assets.Asset, error)
+	Retrieve(ctx context.Context, request documents.RetrievalRequest) (documents.RetrievalResponse, error)
 	GetJob(ctx context.Context, id string) (*documents.Job, error)
 	ListJobs(ctx context.Context, limit int) ([]documents.Job, error)
 }
@@ -65,8 +67,8 @@ func runDocsCommand(ctx context.Context, args []string, out io.Writer, factory d
 func docsIngest(ctx context.Context, args []string, out io.Writer, factory docsServiceFactory) error {
 	fs := flag.NewFlagSet("docs ingest", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	sourceID := fs.String("source-id", "cli", "source id")
-	sourceKind := fs.String("source-kind", "local", "source kind")
+	sourceID := fs.String("source-id", "", "stable source id")
+	sourceKind := fs.String("source-kind", string(assets.SourceCLI), "source kind")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -80,27 +82,31 @@ func docsIngest(ctx context.Context, args []string, out io.Writer, factory docsS
 	defer closeFn()
 
 	start := time.Now()
-	job, err := svc.IngestPath(ctx, documents.IngestRequest{
-		SourceID: *sourceID, SourceKind: *sourceKind, IdentityID: identityctx.IdentityID(ctx),
+	kind := assets.SourceKind(strings.TrimSpace(*sourceKind))
+	if kind != assets.SourceCLI {
+		return fmt.Errorf("docs ingest --source-kind must be %q", assets.SourceCLI)
+	}
+	asset, err := svc.IngestDocumentPath(ctx, assets.DocumentIngestRequest{
+		IdentityID: identityctx.IdentityID(ctx),
+		SourceKind: kind,
+		SourceRef:  strings.TrimSpace(*sourceID),
 	}, fs.Arg(0))
 	if err != nil {
 		return err
 	}
 	return writeJSON(out, map[string]any{
-		"job_id":      job.ID,
-		"document_id": job.DocumentID,
-		"status":      job.Status,
-		"file_name":   job.FileName,
-		"ingest_ms":   time.Since(start).Milliseconds(),
+		"asset_id":  asset.ID,
+		"status":    asset.Status,
+		"file_name": asset.FileName,
+		"ingest_ms": time.Since(start).Milliseconds(),
 	})
 }
 
-// docsSearch ranks the operator's library. The identity is load-bearing, not bookkeeping:
-// the digest query is identity-scoped in SQL, so an unresolved principal returns nothing.
-// runDocs resolves the operator once onto the context, the way the document_search tool
-// reads it from identityctx.
+// docsSearch retrieves from the operator's library. The identity is load-bearing,
+// not bookkeeping: every control-plane query and ArcadeDB candidate filter is scoped
+// to it. runDocs resolves the operator once onto the context.
 func docsSearch(ctx context.Context, args []string, out io.Writer, factory docsServiceFactory) error {
-	query, documentID, limit, err := parseDocsSearchArgs(args)
+	query, documentIDs, limit, err := parseDocsSearchArgs(args)
 	if err != nil {
 		return err
 	}
@@ -111,35 +117,25 @@ func docsSearch(ctx context.Context, args []string, out io.Writer, factory docsS
 	defer closeFn()
 
 	start := time.Now()
-	hits, err := svc.SearchDigests(ctx, identityctx.IdentityID(ctx), query, limit)
+	response, err := svc.Retrieve(ctx, documents.RetrievalRequest{
+		IdentityID: identityctx.IdentityID(ctx), Query: query,
+		Limit: limit, DocumentIDs: documentIDs,
+	})
 	if err != nil {
 		return err
 	}
-	hits = filterDigestHits(hits, documentID)
 	return writeJSON(out, map[string]any{
-		"query":        query,
-		"hits":         hits,
-		"retrieval_ms": time.Since(start).Milliseconds(),
+		"query":               response.Query,
+		"profile":             response.Profile,
+		"status":              response.Status,
+		"degradation_reason":  response.DegradationReason,
+		"rejected_candidates": response.RejectedCandidates,
+		"documents":           response.Documents,
+		"retrieval_ms":        time.Since(start).Milliseconds(),
 	})
 }
 
-// filterDigestHits keeps --document-id meaning what it always meant: scope the answer to
-// one document. A hit set is at most a few dozen rows, so this is a filter rather than a
-// second query.
-func filterDigestHits(hits []documents.DigestHit, documentID string) []documents.DigestHit {
-	if strings.TrimSpace(documentID) == "" {
-		return hits
-	}
-	scoped := make([]documents.DigestHit, 0, 1)
-	for _, hit := range hits {
-		if hit.DocumentID == documentID {
-			scoped = append(scoped, hit)
-		}
-	}
-	return scoped
-}
-
-func parseDocsSearchArgs(args []string) (query, documentID string, limit int, err error) {
+func parseDocsSearchArgs(args []string) (query string, documentIDs []string, limit int, err error) {
 	limit = 8
 	var queryParts []string
 	remaining := args
@@ -152,40 +148,38 @@ func parseDocsSearchArgs(args []string) (query, documentID string, limit int, er
 			value := inlineValue
 			if !hasInlineValue {
 				if len(remaining) == 0 {
-					return "", "", 0, fmt.Errorf("%s requires a value", name)
+					return "", nil, 0, fmt.Errorf("%s requires a value", name)
 				}
 				value = remaining[0]
 				remaining = remaining[1:]
 				if strings.HasPrefix(value, "--") {
-					return "", "", 0, fmt.Errorf("%s requires a value", name)
+					return "", nil, 0, fmt.Errorf("%s requires a value", name)
 				}
 			}
 			if strings.TrimSpace(value) == "" {
-				return "", "", 0, fmt.Errorf("%s requires a value", name)
+				return "", nil, 0, fmt.Errorf("%s requires a value", name)
 			}
 			if name == "--document-id" {
-				documentID = value
+				documentIDs = append(documentIDs, value)
 				continue
 			}
 			parsed, parseErr := strconv.ParseInt(value, 10, 32)
 			if parseErr != nil || parsed <= 0 {
-				return "", "", 0, fmt.Errorf("--limit requires a positive integer, got %q", value)
+				return "", nil, 0, fmt.Errorf("--limit requires a positive integer, got %q", value)
 			}
 			limit = int(parsed)
 		default:
 			if strings.HasPrefix(name, "-") {
-				return "", "", 0, fmt.Errorf("unknown flag %q", name)
+				return "", nil, 0, fmt.Errorf("unknown flag %q", name)
 			}
 			queryParts = append(queryParts, arg)
 		}
 	}
-	// A BLANK query lists the library newest-first, and that is not a courtesy: it is
-	// what the SQL does (`SearchDocumentDigests`' own comment says so), what the
-	// document_search tool does, and what that tool's description promises the model —
-	// "leave query empty to list the library". This verb refusing it was the operator
-	// alone being unable to ask the one question the machine answers most cheaply,
-	// "what have I actually got in here".
-	return strings.Join(queryParts, " "), documentID, limit, nil
+	query = strings.TrimSpace(strings.Join(queryParts, " "))
+	if query == "" {
+		return "", nil, 0, documents.ErrEmptyDocumentQuery
+	}
+	return query, documentIDs, limit, nil
 }
 
 func docsStatus(ctx context.Context, args []string, out io.Writer, factory docsServiceFactory) error {
@@ -223,19 +217,30 @@ func docsList(ctx context.Context, args []string, out io.Writer, factory docsSer
 	return writeJSON(out, map[string]any{"jobs": jobs})
 }
 
-// docsCLI joins the two halves `aura docs` needs: the ingest service that writes the
-// catalog row, and the digest ranking that reads it back.
+// docsCLI joins the ingest service and the shared document retriever used by the
+// other host surfaces.
 type docsCLI struct {
 	*documents.Service
-	library *documentLibrary
+	library  *documentLibrary
+	ingestor *runtimeDocumentIngestor
 }
 
-func (c docsCLI) SearchDigests(
+func (c docsCLI) IngestDocumentPath(
 	ctx context.Context,
-	identityID, query string,
-	limit int,
-) ([]documents.DigestHit, error) {
-	return c.library.SearchDigests(ctx, identityID, query, limit)
+	req assets.DocumentIngestRequest,
+	path string,
+) (assets.Asset, error) {
+	if c.ingestor == nil {
+		return assets.Asset{}, fmt.Errorf("document ingestor is not configured")
+	}
+	return c.ingestor.IngestDocumentPath(ctx, req, path)
+}
+
+func (c docsCLI) Retrieve(
+	ctx context.Context,
+	request documents.RetrievalRequest,
+) (documents.RetrievalResponse, error) {
+	return c.library.Retrieve(ctx, request)
 }
 
 func newDocsService(ctx context.Context) (docsCLIService, func(), error) {
@@ -250,7 +255,8 @@ func newDocsService(ctx context.Context) (docsCLIService, func(), error) {
 			pool:     pool,
 			maxBytes: documentMaxBytes(cfg),
 		}),
-		library: newDocumentLibrary(pool),
+		library:  newDocumentLibrary(pool, cfg),
+		ingestor: newRuntimeDocumentIngestor(cfg, pool),
 	}
 	return svc, pool.Close, nil
 }
@@ -273,6 +279,91 @@ func (i *runtimeDocumentIngestor) IngestPath(ctx context.Context, req documents.
 		cfg: i.cfg, pool: i.pool, maxBytes: i.MaxBytes,
 	})
 	return svc.IngestPath(ctx, req, path)
+}
+
+// IngestDocument persists a non-presigned document in the owner's object store
+// before enqueueing it. It is the canonical ingress used by document_index; the
+// legacy IngestPath method remains internal to the queued processor until the
+// Docling stage replaces it.
+func (i *runtimeDocumentIngestor) IngestDocument(ctx context.Context, req assets.DocumentIngestRequest) (assets.Asset, error) {
+	if i == nil || i.cfg == nil || i.pool == nil {
+		return assets.Asset{}, fmt.Errorf("document ingestor is not configured")
+	}
+	objects, err := buildObjectStore(ctx, i.cfg)
+	if err != nil {
+		return assets.Asset{}, err
+	}
+	return buildAssetService(i.cfg, i.pool, objects).IngestDocument(ctx, req)
+}
+
+func (i *runtimeDocumentIngestor) IngestDocumentPath(
+	ctx context.Context,
+	req assets.DocumentIngestRequest,
+	rawPath string,
+) (assets.Asset, error) {
+	if i == nil || i.cfg == nil || i.pool == nil {
+		return assets.Asset{}, fmt.Errorf("document ingestor is not configured")
+	}
+	resolved, relative, err := documentPathWithinRoot(i.cfg.WorkspaceDir, rawPath)
+	if err != nil {
+		return assets.Asset{}, err
+	}
+	// #nosec G304 -- resolved is not caller-controlled by the time it reaches here:
+	// documentPathWithinRoot resolves symlinks on BOTH the workspace root and the target
+	// before comparing them, then rejects any path whose relative form escapes the root.
+	// Resolving before the comparison is what defeats a symlink pointing outside.
+	f, err := os.Open(resolved)
+	if err != nil {
+		return assets.Asset{}, err
+	}
+	defer func() { _ = f.Close() }()
+	info, err := f.Stat()
+	if err != nil {
+		return assets.Asset{}, err
+	}
+	if info.IsDir() {
+		return assets.Asset{}, fmt.Errorf("document path %q is a directory", rawPath)
+	}
+	locator := relative
+	if req.SourceRef != "" {
+		locator = "explicit:" + req.SourceRef
+	}
+	refHash := sha256.Sum256([]byte(locator))
+	req.SourceRef = fmt.Sprintf("sha256:%x", refHash)
+	req.FileName = filepath.Base(resolved)
+	req.SizeBytes = info.Size()
+	req.Reader = f
+	return i.IngestDocument(ctx, req)
+}
+
+func documentPathWithinRoot(root, rawPath string) (resolved, relative string, err error) {
+	if strings.TrimSpace(root) == "" {
+		return "", "", fmt.Errorf("document workspace root is not configured")
+	}
+	root, err = filepath.Abs(root)
+	if err != nil {
+		return "", "", fmt.Errorf("resolve document workspace root: %w", err)
+	}
+	root, err = filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", "", fmt.Errorf("resolve document workspace root: %w", err)
+	}
+	resolved = rawPath
+	if !filepath.IsAbs(resolved) {
+		resolved = filepath.Join(root, resolved)
+	}
+	resolved, err = filepath.EvalSymlinks(resolved)
+	if err != nil {
+		return "", "", fmt.Errorf("resolve document path: %w", err)
+	}
+	relative, err = filepath.Rel(root, resolved)
+	if err != nil {
+		return "", "", fmt.Errorf("relativize document path: %w", err)
+	}
+	if relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
+		return "", "", fmt.Errorf("document path %q is outside workspace root", rawPath)
+	}
+	return resolved, filepath.ToSlash(relative), nil
 }
 
 func documentHTTPClient(cfg *config.Config) *http.Client {

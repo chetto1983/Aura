@@ -6,35 +6,46 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/chetto1983/aura/internal/identityctx"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // IngestionEvent is an operator-visible lifecycle/progress event.
 type IngestionEvent struct {
-	ID         int64          `json:"id"`
-	EntityType string         `json:"entity_type"`
-	EntityID   string         `json:"entity_id"`
-	JobID      string         `json:"job_id,omitempty"`
-	FromStatus string         `json:"from_status,omitempty"`
-	ToStatus   string         `json:"to_status,omitempty"`
-	EventType  string         `json:"event_type"`
-	Message    string         `json:"message,omitempty"`
-	Detail     map[string]any `json:"detail"`
-	TraceID    string         `json:"trace_id,omitempty"`
-	CreatedAt  time.Time      `json:"created_at"`
+	ID                 int64          `json:"id"`
+	IdentityID         string         `json:"identity_id"`
+	EntityType         string         `json:"entity_type"`
+	EntityID           string         `json:"entity_id"`
+	JobID              string         `json:"job_id,omitempty"`
+	FromStatus         string         `json:"from_status,omitempty"`
+	ToStatus           string         `json:"to_status,omitempty"`
+	EventType          string         `json:"event_type"`
+	Message            string         `json:"message,omitempty"`
+	Detail             map[string]any `json:"detail"`
+	TraceID            string         `json:"trace_id,omitempty"`
+	PipelineGeneration int64          `json:"pipeline_generation"`
+	AttemptGeneration  int64          `json:"attempt_generation"`
+	LeaseGeneration    int64          `json:"lease_generation"`
+	CreatedAt          time.Time      `json:"created_at"`
 }
 
 // AppendIngestionEventRequest carries one event append request.
 type AppendIngestionEventRequest struct {
-	EntityType string
-	EntityID   string
-	JobID      string
-	FromStatus string
-	ToStatus   string
-	EventType  string
-	Message    string
-	Detail     map[string]any
-	TraceID    string
+	IdentityID         string
+	EntityType         string
+	EntityID           string
+	JobID              string
+	FromStatus         string
+	ToStatus           string
+	EventType          string
+	Message            string
+	Detail             map[string]any
+	TraceID            string
+	PipelineGeneration int64
+	AttemptGeneration  int64
+	LeaseGeneration    int64
 }
 
 // IngestionEventStore appends ingestion timeline events.
@@ -49,12 +60,12 @@ type IngestionEventReader interface {
 
 // PostgresIngestionEventStore implements ingestion event storage with sqlc.
 type PostgresIngestionEventStore struct {
-	q *sqlc.Queries
+	pool *pgxpool.Pool
 }
 
 // NewPostgresIngestionEventStore builds a Postgres-backed ingestion event store.
-func NewPostgresIngestionEventStore(db sqlc.DBTX) *PostgresIngestionEventStore {
-	return &PostgresIngestionEventStore{q: sqlc.New(db)}
+func NewPostgresIngestionEventStore(pool *pgxpool.Pool) *PostgresIngestionEventStore {
+	return &PostgresIngestionEventStore{pool: pool}
 }
 
 // Append persists one ingestion event.
@@ -71,16 +82,28 @@ func (s *PostgresIngestionEventStore) Append(ctx context.Context, req AppendInge
 	if err != nil {
 		return IngestionEvent{}, err
 	}
-	row, err := s.q.AppendIngestionEvent(ctx, sqlc.AppendIngestionEventParams{
-		EntityType: req.EntityType,
-		EntityID:   entityID,
-		JobID:      jobID,
-		FromStatus: pgText(req.FromStatus),
-		ToStatus:   pgText(req.ToStatus),
-		EventType:  req.EventType,
-		Message:    req.Message,
-		Detail:     detail,
-		TraceID:    req.TraceID,
+	identityID, err := pgUUID("event identity id", req.IdentityID)
+	if err != nil {
+		return IngestionEvent{}, err
+	}
+	var row sqlc.AuraIngestionEvents
+	err = s.withIdentity(ctx, req.IdentityID, func(q *sqlc.Queries) error {
+		var queryErr error
+		row, queryErr = q.AppendIngestionEvent(ctx, sqlc.AppendIngestionEventParams{
+			IdentityID: identityID, EntityType: req.EntityType,
+			EntityID:           entityID,
+			JobID:              jobID,
+			FromStatus:         pgText(req.FromStatus),
+			ToStatus:           pgText(req.ToStatus),
+			EventType:          req.EventType,
+			Message:            req.Message,
+			Detail:             detail,
+			TraceID:            req.TraceID,
+			PipelineGeneration: req.PipelineGeneration,
+			AttemptGeneration:  req.AttemptGeneration,
+			LeaseGeneration:    req.LeaseGeneration,
+		})
+		return queryErr
 	})
 	if err != nil {
 		return IngestionEvent{}, err
@@ -94,7 +117,19 @@ func (s *PostgresIngestionEventStore) ListByJob(ctx context.Context, jobID strin
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.q.ListIngestionEventsByJob(ctx, pgJobID)
+	identityID := identityctx.IdentityID(ctx)
+	pgIdentityID, err := pgUUID("event identity id", identityID)
+	if err != nil {
+		return nil, err
+	}
+	var rows []sqlc.AuraIngestionEvents
+	err = s.withIdentity(ctx, identityID, func(q *sqlc.Queries) error {
+		var queryErr error
+		rows, queryErr = q.ListIngestionEventsByJob(ctx, sqlc.ListIngestionEventsByJobParams{
+			IdentityID: pgIdentityID, JobID: pgJobID,
+		})
+		return queryErr
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -109,23 +144,34 @@ func (s *PostgresIngestionEventStore) ListByJob(ctx context.Context, jobID strin
 	return out, nil
 }
 
+func (s *PostgresIngestionEventStore) withIdentity(ctx context.Context, identityID string, fn func(*sqlc.Queries) error) error {
+	if s == nil || s.pool == nil {
+		return fmt.Errorf("ingestion event store is not configured")
+	}
+	return db.WithIdentityTx(ctx, s.pool, identityID, fn)
+}
+
 func ingestionEventFromSQL(row sqlc.AuraIngestionEvents) (IngestionEvent, error) {
 	detail, err := ingestionEventDetailFromJSON(row.Detail)
 	if err != nil {
 		return IngestionEvent{}, err
 	}
 	return IngestionEvent{
-		ID:         row.ID,
-		EntityType: row.EntityType,
-		EntityID:   uuidString(row.EntityID),
-		JobID:      uuidString(row.JobID),
-		FromStatus: textString(row.FromStatus),
-		ToStatus:   textString(row.ToStatus),
-		EventType:  row.EventType,
-		Message:    row.Message,
-		Detail:     detail,
-		TraceID:    row.TraceID,
-		CreatedAt:  timeValue(row.CreatedAt),
+		ID:                 row.ID,
+		IdentityID:         uuidString(row.IdentityID),
+		EntityType:         row.EntityType,
+		EntityID:           uuidString(row.EntityID),
+		JobID:              uuidString(row.JobID),
+		FromStatus:         textString(row.FromStatus),
+		ToStatus:           textString(row.ToStatus),
+		EventType:          row.EventType,
+		Message:            row.Message,
+		Detail:             detail,
+		TraceID:            row.TraceID,
+		PipelineGeneration: row.PipelineGeneration,
+		AttemptGeneration:  row.AttemptGeneration,
+		LeaseGeneration:    row.LeaseGeneration,
+		CreatedAt:          timeValue(row.CreatedAt),
 	}, nil
 }
 

@@ -40,6 +40,8 @@ services:
         condition: service_healthy
       aura-llama-embed:
         condition: service_healthy
+      aura-docling:
+        condition: service_healthy
       # Memory MCP is mounted into the agent loop at boot (recipe:memory, default-on), so
       # Aura waits for its healthcheck before taking traffic. Reconnect-on-use only applies
       # after the initial mount has succeeded.
@@ -188,6 +190,23 @@ services:
       AURA_ASSET_MAX_AUDIO_BYTES: ${AURA_ASSET_MAX_AUDIO_BYTES:-104857600}
       AURA_ASSET_PRESIGN_TTL_SEC: ${AURA_ASSET_PRESIGN_TTL_SEC:-600}
       AURA_ASSET_PROCESSING_CONCURRENCY: ${AURA_ASSET_PROCESSING_CONCURRENCY:-2}
+      AURA_DOCLING_BASE_URL: http://aura-docling:5001
+      AURA_DOCLING_API_KEY: ${AURA_DOCLING_API_KEY:?AURA_DOCLING_API_KEY required in .env}
+      AURA_DOCLING_IMAGE: ${AURA_DOCLING_IMAGE:-quay.io/docling-project/docling-serve-cpu:v1.29.0@sha256:51c18e0e0fec8a13ab858f03d5e9a140178d8d95962400553cb2644ad5ee84da}
+      AURA_DOCUMENT_CONVERT_TIMEOUT_SEC: ${AURA_DOCUMENT_CONVERT_TIMEOUT_SEC:-900}
+      AURA_DOCUMENT_MAX_PAGES: ${AURA_DOCUMENT_MAX_PAGES:-2000}
+      AURA_DOCUMENT_CHUNK_MAX_TOKENS: ${AURA_DOCUMENT_CHUNK_MAX_TOKENS:-512}
+      AURA_DOCUMENT_CHUNK_TOKENIZER: ${AURA_DOCUMENT_CHUNK_TOKENIZER:-google/embeddinggemma-300m}
+      AURA_EMBED_REVISION: ${AURA_EMBED_REVISION:?AURA_EMBED_REVISION required in .env}
+      AURA_EMBED_FINGERPRINT: ${AURA_EMBED_FINGERPRINT:?AURA_EMBED_FINGERPRINT required in .env}
+      AURA_DOCUMENT_MAX_PASSAGES_PER_VERSION: ${AURA_DOCUMENT_MAX_PASSAGES_PER_VERSION:-10000}
+      AURA_DOCUMENT_MAX_ACTIVE_PASSAGES: ${AURA_DOCUMENT_MAX_ACTIVE_PASSAGES:-100000}
+      AURA_DOCUMENT_EMBED_BATCH_SIZE: ${AURA_DOCUMENT_EMBED_BATCH_SIZE:-32}
+      AURA_DOCUMENT_PIPELINE_MAX_ATTEMPTS: ${AURA_DOCUMENT_PIPELINE_MAX_ATTEMPTS:-5}
+      AURA_DOCUMENT_PIPELINE_LEASE_SEC: ${AURA_DOCUMENT_PIPELINE_LEASE_SEC:-1200}
+      AURA_DOCUMENT_RETRIEVAL_CANDIDATES: ${AURA_DOCUMENT_RETRIEVAL_CANDIDATES:-200}
+      AURA_DOCUMENT_DENSE_MAX_DISTANCE_RATIO: ${AURA_DOCUMENT_DENSE_MAX_DISTANCE_RATIO:-0.55}
+      AURA_DOCUMENT_LEXICAL_MIN_SCORE: ${AURA_DOCUMENT_LEXICAL_MIN_SCORE:-2}
       TELEGRAM_API_BASE_URL: ${TELEGRAM_API_BASE_URL:-}
       TELEGRAM_FILE_BASE_URL: ${TELEGRAM_FILE_BASE_URL:-}
       AURA_TELEGRAM_LOCAL_BOT_API: ${AURA_TELEGRAM_LOCAL_BOT_API:-false}
@@ -265,6 +284,7 @@ services:
     networks:
       - default
       - aura-web
+      - aura-docling
     volumes:
       - aura-home:/var/lib/aura
       - ${AURA_BACKUP_DIR:-./backups}:/backups
@@ -665,6 +685,103 @@ services:
       retries: 30
       start_period: 300s                       # first-boot HF model download can exceed 4 minutes
 
+  # Docling Serve v1.29.0 is a private conversion appliance. It has no host
+  # port, no proxy inheritance, no runtime downloads, and no alternate config
+  # surface. The immutable image already carries the standard pipeline models;
+  # the install step must add the pinned EmbeddingGemma tokenizer snapshot to
+  # aura-docling-models before readiness can pass.
+  aura-docling:
+    image: ${AURA_DOCLING_IMAGE:-quay.io/docling-project/docling-serve-cpu:v1.29.0@sha256:51c18e0e0fec8a13ab858f03d5e9a140178d8d95962400553cb2644ad5ee84da}
+    pull_policy: missing
+    container_name: aura-docling
+    restart: unless-stopped
+    init: true
+    user: "1001:0"
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 4g
+    cpus: 2.0
+    pids_limit: 512
+    environment:
+      DOCLING_SERVE_API_KEY: ${AURA_DOCLING_API_KEY:?AURA_DOCLING_API_KEY required in .env}
+      DOCLING_SERVE_ENABLE_UI: "false"
+      DOCLING_SERVE_ENABLE_REMOTE_SERVICES: "false"
+      DOCLING_SERVE_ALLOW_EXTERNAL_PLUGINS: "false"
+      DOCLING_SERVE_ALLOW_CUSTOM_VLM_CONFIG: "false"
+      DOCLING_SERVE_ALLOW_CUSTOM_PICTURE_DESCRIPTION_CONFIG: "false"
+      DOCLING_SERVE_ALLOW_CUSTOM_CODE_FORMULA_CONFIG: "false"
+      DOCLING_SERVE_ALLOW_CUSTOM_TABLE_STRUCTURE_CONFIG: "false"
+      DOCLING_SERVE_ALLOW_CUSTOM_LAYOUT_CONFIG: "false"
+      DOCLING_SERVE_ALLOW_CUSTOM_PICTURE_CLASSIFICATION_CONFIG: "false"
+      DOCLING_SERVE_ALLOW_CUSTOM_OCR_CONFIG: "false"
+      DOCLING_SERVE_ENABLE_MANAGEMENT_ENDPOINTS: "false"
+      DOCLING_SERVE_SHOW_VERSION_INFO: "false"
+      DOCLING_SERVE_DEBUG_ERROR_DETAILS: "false"
+      DOCLING_SERVE_LOG_LEVEL: WARNING
+      DOCLING_SERVE_LOG_FORMAT: json
+      DOCLING_SERVE_LOG_HEADER_PREFIX: X-Aura-Docling-Trace-
+      DOCLING_SERVE_ARTIFACTS_PATH: /opt/app-root/src/.cache/docling/models
+      DOCLING_SERVE_SCRATCH_PATH: /opt/app-root/src/scratch
+      DOCLING_SERVE_SINGLE_USE_RESULTS: "true"
+      DOCLING_SERVE_RESULT_REMOVAL_DELAY: "300"
+      DOCLING_SERVE_LOAD_MODELS_AT_BOOT: "true"
+      DOCLING_SERVE_OPTIONS_CACHE_SIZE: "1"
+      DOCLING_SERVE_MAX_DOCUMENT_TIMEOUT: ${AURA_DOCUMENT_CONVERT_TIMEOUT_SEC:-900}
+      DOCLING_SERVE_MAX_NUM_PAGES: ${AURA_DOCUMENT_MAX_PAGES:-2000}
+      DOCLING_SERVE_MAX_FILE_SIZE: ${AURA_ASSET_MAX_DOCUMENT_BYTES:-104857600}
+      DOCLING_SERVE_MAX_SOURCES_PER_REQUEST: "1"
+      DOCLING_SERVE_QUEUE_MAX_SIZE: "16"
+      DOCLING_SERVE_ALLOWED_SOURCE_TYPES: '[]'
+      DOCLING_SERVE_ALLOWED_TARGET_TYPES: '["inbody"]'
+      DOCLING_SERVE_ALLOWED_IMAGE_EXPORT_MODES: '["placeholder"]'
+      DOCLING_SERVE_ALLOWED_VLM_PRESETS: '["granite_docling"]'
+      DOCLING_SERVE_ALLOWED_CHUNKING_PRESETS: '[]'
+      DOCLING_SERVE_CORS_ORIGINS: '[]'
+      DOCLING_SERVE_CORS_METHODS: '[]'
+      DOCLING_SERVE_CORS_HEADERS: '[]'
+      DOCLING_SERVE_ENG_KIND: local
+      DOCLING_SERVE_ENG_LOC_NUM_WORKERS: "1"
+      DOCLING_SERVE_ENG_LOC_SHARE_MODELS: "true"
+      DOCLING_SERVE_OTEL_ENABLE_METRICS: "false"
+      DOCLING_SERVE_OTEL_ENABLE_TRACES: "false"
+      DOCLING_SERVE_OTEL_ENABLE_PROMETHEUS: "false"
+      UVICORN_WORKERS: "1"
+      UVICORN_RELOAD: "false"
+      UVICORN_PROXY_HEADERS: "false"
+      UVICORN_TIMEOUT_KEEP_ALIVE: "5"
+      HF_HUB_OFFLINE: "1"
+      HF_DATASETS_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      ALL_PROXY: ""
+      NO_PROXY: "*"
+    networks:
+      - aura-docling
+    expose:
+      - "5001"
+    volumes:
+      - aura-docling-models:/opt/app-root/src/.cache:ro
+    tmpfs:
+      - /opt/app-root/src/scratch:rw,noexec,nosuid,nodev,size=1g,uid=1001,gid=0,mode=0770
+      - /tmp:rw,noexec,nosuid,nodev,size=256m,uid=1001,gid=0,mode=0770
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - |
+          import urllib.request
+          from transformers import AutoTokenizer
+          AutoTokenizer.from_pretrained("google/embeddinggemma-300m", local_files_only=True)
+          urllib.request.urlopen("http://127.0.0.1:5001/livez", timeout=3).read()
+          urllib.request.urlopen("http://127.0.0.1:5001/readyz", timeout=3).read()
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 180s
+
   # WhatsApp MCP sibling — forked whatsmeow bridge + FastMCP HTTP front
   # (chetto1983/whatsapp-mcp @ aura/cockpit-connect): the agent mounts the MCP over
   # streamable-HTTP (8080, catalog recipe:whatsapp), and Aura's cockpit drives device
@@ -1046,6 +1163,7 @@ volumes:
   aura-workspace:
   aura-postgres:
   aura-llama-embed:
+  aura-docling-models:
   aura-llm:
   aura-whatsapp-session:
   caddy-data:
@@ -1062,6 +1180,10 @@ volumes:
   aura-uv-cache-host:
 
 networks:
+  # Docling has no default/NAT network attachment: only the Aura daemon can
+  # reach it, and runtime model/tokenizer downloads are structurally impossible.
+  aura-docling:
+    internal: true
   # Local SearXNG bridge: host-loopback published; default Docker NAT egress
   # remains enabled so metasearch can reach upstream engines.
   aura-web:

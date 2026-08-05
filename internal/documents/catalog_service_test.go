@@ -8,8 +8,6 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -80,27 +78,6 @@ func TestCatalogServiceCreateDocumentNormalizesTags(t *testing.T) {
 func TestPostgresCatalogStoreUsesEmptyTagArrayForNoTags(t *testing.T) {
 	if got := catalogTagsArray(nil); got == nil || len(got) != 0 {
 		t.Fatalf("catalogTagsArray(nil) = %#v, want empty slice", got)
-	}
-}
-
-func TestPostgresCatalogStoreSoftDeletesVersionAssets(t *testing.T) {
-	db := &recordingCatalogDB{}
-	// The worker now hangs off catalogTx — the pair of handles one identity-scoped
-	// transaction hands out — because migration 0087 requires this statement to share a
-	// transaction with the document soft-delete it accompanies. The assertions below are
-	// unchanged; only the channel the fake DBTX arrives through is.
-	sc := catalogTx{raw: db}
-	identityID := mustCatalogTestUUID(t, "00000000-0000-0000-0000-000000000001")
-	documentID := mustCatalogTestUUID(t, "10000000-0000-0000-0000-000000000001")
-
-	if err := sc.softDeleteDocumentAssets(context.Background(), identityID, documentID); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(db.execSQL, "UPDATE aura.assets") || !strings.Contains(db.execSQL, "aura.document_versions") {
-		t.Fatalf("asset cleanup SQL = %q", db.execSQL)
-	}
-	if !reflect.DeepEqual(db.args, []any{identityID, documentID}) {
-		t.Fatalf("asset cleanup args = %#v", db.args)
 	}
 }
 
@@ -188,8 +165,8 @@ func TestCatalogServiceRecordAssetVersionDefaultsReadyDocument(t *testing.T) {
 	if store.recordReq.Title != "Servo Manual.pdf" {
 		t.Fatalf("record title = %q, want trimmed filename", store.recordReq.Title)
 	}
-	if store.recordReq.DocumentStatus != DocumentStatusReady || store.recordReq.VersionStatus != "ready" {
-		t.Fatalf("record statuses = %q/%q, want ready/ready", store.recordReq.DocumentStatus, store.recordReq.VersionStatus)
+	if store.recordReq.DocumentStatus != DocumentStatusProcessing || store.recordReq.VersionStatus != "processing" {
+		t.Fatalf("record statuses = %q/%q, want processing/processing", store.recordReq.DocumentStatus, store.recordReq.VersionStatus)
 	}
 	if store.recordReq.Metadata["search_document_id"] != "doc_search_1" || store.recordReq.Metadata["document_job_id"] != "job-1" {
 		t.Fatalf("record metadata = %#v", store.recordReq.Metadata)
@@ -210,7 +187,7 @@ func TestCatalogServiceDeleteDocumentRequiresIdentityAndDocument(t *testing.T) {
 	}
 }
 
-func TestDeleteServiceSoftDeletesAndRemovesSourceAssets(t *testing.T) {
+func TestDeleteServiceQueuesDurableDeleteWithoutPrematureAssetRemoval(t *testing.T) {
 	store := &fakeCatalogStore{
 		detail: DocumentDetail{Document: Document{
 			ID:         "10000000-0000-0000-0000-000000000001",
@@ -222,32 +199,21 @@ func TestDeleteServiceSoftDeletesAndRemovesSourceAssets(t *testing.T) {
 			AssetID: "30000000-0000-0000-0000-000000000001",
 		}}},
 	}
-	assets := &recordingAssetDeleter{}
-	svc := &DeleteService{
-		Catalog: &CatalogService{Store: store},
-		Assets:  assets,
-	}
+	svc := &DeleteService{Catalog: &CatalogService{Store: store}}
 
 	doc, err := svc.SoftDeleteDocument(context.Background(), "00000000-0000-0000-0000-000000000001", "10000000-0000-0000-0000-000000000001")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if doc.Status != DocumentStatusDeleted {
+	if doc.Status != DocumentStatusDeleting {
 		t.Fatalf("deleted doc = %#v", doc)
 	}
 	if store.deleteIdentityID != "00000000-0000-0000-0000-000000000001" || store.deleteDocumentID != "10000000-0000-0000-0000-000000000001" {
 		t.Fatalf("delete call identity=%q document=%q", store.deleteIdentityID, store.deleteDocumentID)
 	}
-	if assets.identityID != "00000000-0000-0000-0000-000000000001" || assets.assetID != "30000000-0000-0000-0000-000000000001" {
-		t.Fatalf("asset delete identity=%q asset=%q", assets.identityID, assets.assetID)
-	}
 }
 
-func TestDeleteServiceToleratesCleanupErrors(t *testing.T) {
-	// A real document's assets are already soft-deleted by the catalog step, so the
-	// asset cleanup here returns "already deleted". That must not fail the operator's
-	// delete (regression: the docs library "delete does nothing" defect where a 404
-	// stuck the confirm dialog).
+func TestDeleteServiceDoesNotReadVersionHistoryBeforeEnqueue(t *testing.T) {
 	store := &fakeCatalogStore{
 		detail: DocumentDetail{Document: Document{
 			ID:         "10000000-0000-0000-0000-000000000001",
@@ -259,19 +225,19 @@ func TestDeleteServiceToleratesCleanupErrors(t *testing.T) {
 			AssetID: "30000000-0000-0000-0000-000000000001",
 		}}},
 	}
-	assets := &recordingAssetDeleter{err: errors.New("asset already deleted")}
-	svc := &DeleteService{Catalog: &CatalogService{Store: store}, Assets: assets}
+	store.getErr = errors.New("version history must not be read")
+	svc := &DeleteService{Catalog: &CatalogService{Store: store}}
 
 	doc, err := svc.SoftDeleteDocument(context.Background(),
 		"00000000-0000-0000-0000-000000000001", "10000000-0000-0000-0000-000000000001")
 	if err != nil {
-		t.Fatalf("delete must succeed despite cleanup errors: %v", err)
+		t.Fatalf("durable delete enqueue: %v", err)
 	}
-	if doc.Status != DocumentStatusDeleted {
+	if doc.Status != DocumentStatusDeleting {
 		t.Fatalf("deleted doc = %#v", doc)
 	}
-	if assets.assetID != "30000000-0000-0000-0000-000000000001" {
-		t.Fatalf("asset cleanup not attempted: %q", assets.assetID)
+	if store.getDocumentID != "" {
+		t.Fatalf("delete read version history before enqueue: %q", store.getDocumentID)
 	}
 }
 
@@ -384,7 +350,7 @@ func (f *fakeCatalogStore) GetDocument(_ context.Context, identityID, documentID
 func (f *fakeCatalogStore) SoftDeleteDocument(_ context.Context, identityID, documentID string) (Document, error) {
 	f.deleteIdentityID = identityID
 	f.deleteDocumentID = documentID
-	return Document{ID: documentID, IdentityID: identityID, Status: DocumentStatusDeleted}, nil
+	return Document{ID: documentID, IdentityID: identityID, Status: DocumentStatusDeleting}, nil
 }
 
 func (f *fakeCatalogStore) RecordAssetVersion(_ context.Context, req RecordAssetVersionRequest) (DocumentVersionRecord, error) {
@@ -416,35 +382,4 @@ func mustCatalogTestUUID(t *testing.T, value string) pgtype.UUID {
 		t.Fatal(err)
 	}
 	return id
-}
-
-type recordingAssetDeleter struct {
-	identityID string
-	assetID    string
-	err        error
-}
-
-func (a *recordingAssetDeleter) DeleteDocumentAsset(_ context.Context, identityID, assetID string) error {
-	a.identityID = identityID
-	a.assetID = assetID
-	return a.err
-}
-
-type recordingCatalogDB struct {
-	execSQL string
-	args    []any
-}
-
-func (db *recordingCatalogDB) Exec(_ context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-	db.execSQL = sql
-	db.args = append([]any(nil), args...)
-	return pgconn.NewCommandTag("UPDATE 1"), nil
-}
-
-func (db *recordingCatalogDB) Query(context.Context, string, ...any) (pgx.Rows, error) {
-	return nil, errors.New("not implemented")
-}
-
-func (db *recordingCatalogDB) QueryRow(context.Context, string, ...any) pgx.Row {
-	return nil
 }

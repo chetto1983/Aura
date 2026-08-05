@@ -12,15 +12,16 @@ package documents
 import (
 	"context"
 	"errors"
-	"maps"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// RecordAssetVersion attaches an uploaded asset to a catalog document: the raw storage
-// object, the first version, and the active-version link. It REUSES an existing document
+// RecordAssetVersion attaches an uploaded asset to a catalog document as a candidate: the
+// raw storage object and immutable version. It REUSES an existing document
 // when one already carries this search_document_id rather than creating a second — the
 // ingest path writes the catalog row first, and creating another here produced two rows
 // per upload with document_open resolving the newer, card-less one.
@@ -59,26 +60,30 @@ func (sc catalogTx) recordAssetVersion(
 		return DocumentVersionRecord{}, err
 	}
 	storageRow, err := sc.q.CreateStorageObject(ctx, sqlc.CreateStorageObjectParams{
-		IdentityID:     pgIdentityID,
-		DocumentID:     pgDocumentID,
-		AssetID:        pgAssetID,
-		Bucket:         req.ObjectBucket,
-		ObjectKey:      req.ObjectKey,
-		Kind:           req.StorageKind,
-		Sha1:           req.SHA1,
-		Sha256:         req.SHA256,
-		Etag:           req.ObjectETag,
-		SizeBytes:      req.SizeBytes,
-		ContentType:    req.MIMEType,
-		RetentionClass: req.RetentionClass,
+		IdentityID:         pgIdentityID,
+		DocumentID:         pgDocumentID,
+		VersionID:          pgtype.UUID{},
+		AssetID:            pgAssetID,
+		Bucket:             req.ObjectBucket,
+		ObjectKey:          req.ObjectKey,
+		Kind:               req.StorageKind,
+		Sha1:               req.SHA1,
+		Sha256:             req.SHA256,
+		Etag:               req.ObjectETag,
+		SizeBytes:          req.SizeBytes,
+		ContentType:        req.MIMEType,
+		RetentionClass:     req.RetentionClass,
+		Status:             "live",
+		PipelineGeneration: req.PipelineGeneration,
 	})
 	if err != nil {
 		return DocumentVersionRecord{}, err
 	}
 	versionRow, err := sc.q.CreateDocumentVersion(ctx, sqlc.CreateDocumentVersionParams{
+		ID:                 deterministicDocumentVersionID(doc.ID, req.SHA256),
+		IdentityID:         pgIdentityID,
 		DocumentID:         pgDocumentID,
 		AssetID:            pgAssetID,
-		VersionNumber:      int32(req.VersionNumber), //nolint:gosec // normalized positive and starts at 1.
 		Status:             req.VersionStatus,
 		Sha1:               req.SHA1,
 		Sha256:             req.SHA256,
@@ -87,31 +92,27 @@ func (sc catalogTx) recordAssetVersion(
 		StorageObjectID:    storageRow.ID,
 		ChunkingConfigHash: req.ChunkingConfigHash,
 		PipelineConfigHash: req.PipelineConfigHash,
+		PipelineGeneration: req.PipelineGeneration,
 	})
 	if err != nil {
 		return DocumentVersionRecord{}, err
 	}
 	if _, err := sc.q.UpdateStorageObjectVersion(ctx, sqlc.UpdateStorageObjectVersionParams{
-		ID:        storageRow.ID,
-		VersionID: versionRow.ID,
+		ID: storageRow.ID, IdentityID: pgIdentityID, VersionID: versionRow.ID,
+		PipelineGeneration: versionRow.PipelineGeneration,
 	}); err != nil {
 		return DocumentVersionRecord{}, err
 	}
-	version := catalogVersionFromSQL(versionRow)
-	doc, err = sc.updateDocument(ctx, UpdateDocumentRequest{
-		IdentityID:      req.IdentityID,
-		DocumentID:      doc.ID,
-		Scope:           doc.Scope,
-		Title:           doc.Title,
-		Tags:            doc.Tags,
-		Metadata:        doc.Metadata,
-		ActiveVersionID: version.ID,
-		Status:          req.DocumentStatus,
-	})
-	if err != nil {
-		return DocumentVersionRecord{}, err
+	if pgAssetID.Valid {
+		if _, err := sc.q.LinkAssetDocumentVersion(ctx, sqlc.LinkAssetDocumentVersionParams{
+			ID: pgAssetID, IdentityID: pgIdentityID, SearchDocumentID: doc.SearchDocumentID,
+			CatalogDocumentID: pgDocumentID, DocumentVersionID: versionRow.ID,
+			PipelineGeneration: versionRow.PipelineGeneration,
+		}); err != nil {
+			return DocumentVersionRecord{}, err
+		}
 	}
-	return DocumentVersionRecord{Document: doc, Version: version}, nil
+	return DocumentVersionRecord{Document: doc, Version: catalogVersionFromSQL(versionRow)}, nil
 }
 
 // documentForAssetVersion returns the catalog row this asset's document already
@@ -132,25 +133,12 @@ func (sc catalogTx) documentForAssetVersion(
 	}
 	if !found {
 		return sc.createDocument(ctx, CreateDocumentRequest{
-			IdentityID: req.IdentityID,
-			Scope:      req.Scope,
-			Title:      req.Title,
-			Metadata:   req.Metadata,
-			Status:     req.DocumentStatus,
+			IdentityID: req.IdentityID, SourceKind: req.SourceKind, SourceKey: req.SourceKey,
+			SearchDocumentID: req.SearchDocumentID, PipelineGeneration: req.PipelineGeneration,
+			Scope: req.Scope, Title: req.Title, Metadata: req.Metadata, Status: req.DocumentStatus,
 		})
 	}
-	// Tags and title are left as they are found: a person may already have edited
-	// them in the cockpit, and this call knows only what the uploader said.
-	return sc.updateDocument(ctx, UpdateDocumentRequest{
-		IdentityID:      req.IdentityID,
-		DocumentID:      existing.ID,
-		Scope:           existing.Scope,
-		Title:           existing.Title,
-		Tags:            existing.Tags,
-		Metadata:        mergeMetadata(existing.Metadata, req.Metadata),
-		ActiveVersionID: existing.ActiveVersionID,
-		Status:          req.DocumentStatus,
-	})
+	return existing, nil
 }
 
 // documentBySearchID finds one identity's live catalog row for a search id. A
@@ -161,15 +149,13 @@ func (sc catalogTx) documentBySearchID(
 	if strings.TrimSpace(searchDocumentID) == "" || strings.TrimSpace(identityID) == "" {
 		return Document{}, false, nil
 	}
-	id, err := sc.catalogIDForSearchDocument(ctx, searchDocumentID)
-	if err != nil {
-		return Document{}, false, nil //nolint:nilerr // not-catalogued is the create path, not a failure.
-	}
 	owner, err := pgUUID("identity_id", identityID)
 	if err != nil {
 		return Document{}, false, err
 	}
-	row, err := sc.q.GetDocument(ctx, sqlc.GetDocumentParams{ID: id, IdentityID: owner})
+	row, err := sc.q.GetDocumentBySearchID(ctx, sqlc.GetDocumentBySearchIDParams{
+		IdentityID: owner, SearchDocumentID: searchDocumentID,
+	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Document{}, false, nil
@@ -183,9 +169,7 @@ func (sc catalogTx) documentBySearchID(
 	return doc, true, nil
 }
 
-func mergeMetadata(existing, incoming map[string]any) map[string]any {
-	merged := make(map[string]any, len(existing)+len(incoming))
-	maps.Copy(merged, existing)
-	maps.Copy(merged, incoming)
-	return merged
+func deterministicDocumentVersionID(documentID, rawSHA256 string) pgtype.UUID {
+	id := uuid.NewSHA1(uuid.NameSpaceOID, []byte(documentID+":"+strings.ToLower(rawSHA256)))
+	return pgtype.UUID{Bytes: id, Valid: true}
 }

@@ -1,13 +1,21 @@
 package agui
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/chetto1983/aura/internal/documents"
 	"github.com/google/uuid"
 )
+
+type documentQueryService interface {
+	Retrieve(context.Context, documents.RetrievalRequest) (documents.RetrievalResponse, error)
+}
 
 func (s *Server) registerDocumentRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/documents", s.handleDocumentCreate)
@@ -59,12 +67,57 @@ func (s *Server) handleDocumentList(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !validateDocumentQueryFields(w, r) {
+		return
+	}
 	limit, ok := parseDocumentQueryInt(w, r, "limit")
 	if !ok {
 		return
 	}
 	offset, ok := parseDocumentQueryInt(w, r, "offset")
 	if !ok {
+		return
+	}
+	documentIDs, err := documentQueryIDs(r)
+	if err != nil {
+		http.Error(w, sanitizeErr(err), http.StatusBadRequest)
+		return
+	}
+	queryValues, queryRequested := r.URL.Query()["q"]
+	if queryRequested {
+		query := strings.TrimSpace(strings.Join(queryValues, " "))
+		if query == "" {
+			http.Error(w, "q must be non-empty", http.StatusBadRequest)
+			return
+		}
+		if offset != 0 || r.URL.Query().Get("scope") != "" || r.URL.Query().Get("tag") != "" {
+			http.Error(w, "q cannot be combined with scope, tag, or offset", http.StatusBadRequest)
+			return
+		}
+		retriever, ok := s.documentCatalog.(documentQueryService)
+		if !ok {
+			http.Error(w, "document retrieval unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		response, err := retriever.Retrieve(r.Context(), documents.RetrievalRequest{
+			IdentityID: identityID, Query: query, Limit: limit,
+			DocumentIDs: documentIDs,
+		})
+		if err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, documents.ErrEmptyDocumentQuery) ||
+				errors.Is(err, documents.ErrInvalidDocumentScope) ||
+				errors.Is(err, documents.ErrInvalidRetrievalRequest) {
+				status = http.StatusBadRequest
+			}
+			http.Error(w, sanitizeErr(err), status)
+			return
+		}
+		writeJSON(w, response)
+		return
+	}
+	if len(documentIDs) > 0 {
+		http.Error(w, "document_ids requires q", http.StatusBadRequest)
 		return
 	}
 	items, err := s.documentCatalog.ListDocuments(r.Context(), documents.ListDocumentsRequest{
@@ -80,6 +133,32 @@ func (s *Server) handleDocumentList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, items)
+}
+
+func validateDocumentQueryFields(w http.ResponseWriter, r *http.Request) bool {
+	allowed := map[string]struct{}{
+		"scope": {}, "q": {}, "tag": {}, "limit": {}, "offset": {}, "document_ids": {},
+	}
+	for key := range r.URL.Query() {
+		if _, ok := allowed[key]; !ok {
+			http.Error(w, "unknown query parameter", http.StatusBadRequest)
+			return false
+		}
+	}
+	return true
+}
+
+func documentQueryIDs(r *http.Request) ([]string, error) {
+	var ids []string
+	for _, group := range r.URL.Query()["document_ids"] {
+		for id := range strings.SplitSeq(group, ",") {
+			if id = strings.TrimSpace(id); id == "" {
+				return nil, fmt.Errorf("document_ids must not contain blank values")
+			}
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
 }
 
 func (s *Server) handleDocumentGet(w http.ResponseWriter, r *http.Request) {

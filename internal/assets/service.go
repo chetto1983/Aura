@@ -264,6 +264,16 @@ func (s *Service) ProcessAccepted(ctx context.Context, identityID, assetID strin
 	switch asset.Status {
 	case StatusAccepted, StatusProcessing:
 		return s.processAsset(ctx, asset)
+	case StatusFailed:
+		// A failed handler leaves both the job queued for retry and the asset in
+		// failed state. Re-arm the asset only after the durable worker has claimed
+		// that retry; otherwise the next attempt would reject itself before the
+		// processor can recover.
+		asset, err = s.Store.SetStatus(ctx, asset.ID, identityID, StatusAccepted, "", "")
+		if err != nil {
+			return Asset{}, err
+		}
+		return s.processAsset(ctx, asset)
 	case StatusSearchable, StatusComplete:
 		return asset, nil
 	default:
@@ -286,6 +296,10 @@ func (s *Service) IngestTelegramFile(ctx context.Context, req TelegramIngestRequ
 	if err != nil {
 		return Asset{}, err
 	}
+	scope := ScopeThread
+	if req.Modality == ModalityDocument || (req.Modality == "" && InferModality(req.FileName, req.MIMEType) == ModalityDocument) {
+		scope = ScopeLibrary
+	}
 	return s.ingestObject(ctx, objectIngest{
 		identityID:    req.IdentityID,
 		threadID:      req.ThreadID,
@@ -296,6 +310,39 @@ func (s *Service) IngestTelegramFile(ctx context.Context, req TelegramIngestRequ
 		modality:      req.Modality,
 		sizeBytes:     req.SizeBytes,
 		reader:        req.Reader,
+		scope:         scope,
+		enforceLimits: true,
+		process:       true,
+	})
+}
+
+// IngestDocument stores a non-presigned document under its owner's Garage
+// credentials and enqueues the accepted asset for durable processing. It is the
+// canonical ingress used by CLI and workspace indexing; callers may delete their
+// local staging copy after this method returns.
+func (s *Service) IngestDocument(ctx context.Context, req DocumentIngestRequest) (Asset, error) {
+	if req.Reader == nil {
+		return Asset{}, fmt.Errorf("document asset reader is nil")
+	}
+	if req.SourceKind == "" {
+		return Asset{}, fmt.Errorf("document source kind is required")
+	}
+	metadata := map[string]any{}
+	if title := strings.TrimSpace(req.Title); title != "" {
+		metadata["title"] = title
+	}
+	return s.ingestObject(ctx, objectIngest{
+		identityID:    req.IdentityID,
+		threadID:      req.ThreadID,
+		sourceKind:    req.SourceKind,
+		sourceRef:     req.SourceRef,
+		fileName:      req.FileName,
+		mimeType:      req.MIMEType,
+		modality:      ModalityDocument,
+		sizeBytes:     req.SizeBytes,
+		reader:        req.Reader,
+		scope:         ScopeLibrary,
+		metadata:      metadata,
 		enforceLimits: true,
 		process:       true,
 	})

@@ -208,6 +208,10 @@ func TestDotEnvTemplateHygiene(t *testing.T) {
 		"ARCADEDB_APP_PASSWORD=",
 		"AURA_ARCADEDB_TENANT_SECRET=",
 		"AURA_LLM_STREAM_IDLE_TIMEOUT_SEC=",
+		// Asserted as present-and-assigned, not as an exact slug: the default model
+		// is a routine operational change, and pinning the slug here turns every
+		// model bump into an unrelated distribution-test failure.
+		"AURA_LLM_MODEL=",
 		"AURA_MODEL_CONTEXT_WINDOW=",
 		"AURA_COMPLETION_GATE=",
 		"AURA_AGENT_JOB_MAX_DURATION_SEC=",
@@ -253,8 +257,9 @@ func TestDotEnvTemplateHygiene(t *testing.T) {
 			t.Fatalf(".env.example missing active assignment for %q", want)
 		}
 	}
+	// Exact-value lines only where the value itself carries a contract: a boolean
+	// default, and endpoints/ports that must agree with compose.yaml.
 	for _, want := range []string{
-		"AURA_LLM_MODEL=deepseek/deepseek-v4-flash:nitro",
 		"AURA_SHOW_REASONING=true",
 		"AURA_OBJECTSTORE_PUBLIC_ENDPOINT=http://127.0.0.1:3900",
 		"AURA_WHATSAPP_BRIDGE_PORT=8094",

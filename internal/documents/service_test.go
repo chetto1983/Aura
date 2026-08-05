@@ -11,16 +11,18 @@ import (
 	"testing"
 )
 
-func TestServiceMakesADocumentSearchableWithoutReadingIt(t *testing.T) {
+const serviceTestIdentity = "00000000-0000-0000-0000-000000000001"
+
+func TestServiceRegistersAnOwnedCandidateWithoutPublishingIt(t *testing.T) {
 	path := writeNamedTempFile(t, "manual.pdf", "payload")
 	service := &Service{Jobs: newFakeJobStore()}
 
-	job, err := service.IngestPath(t.Context(), IngestRequest{SourceID: "cli"}, path)
+	job, err := service.IngestPath(t.Context(), IngestRequest{SourceID: "cli", IdentityID: serviceTestIdentity}, path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if job.Status != JobSearchable {
-		t.Fatalf("status = %s, want %s", job.Status, JobSearchable)
+	if job.Status != JobAccepted {
+		t.Fatalf("status = %s, want %s", job.Status, JobAccepted)
 	}
 	if job.DocumentID == "" || !strings.HasPrefix(job.DocumentID, "doc_") {
 		t.Fatalf("document id = %q, want the content-addressed search id", job.DocumentID)
@@ -32,24 +34,22 @@ func TestServiceMakesADocumentSearchableWithoutReadingIt(t *testing.T) {
 	}
 }
 
-func TestServiceCatalogsAnOwnedIngestAsReady(t *testing.T) {
+func TestServiceCatalogsAnOwnedIngestAsProcessing(t *testing.T) {
 	path := writeNamedTempFile(t, "manual.pdf", "payload")
 	catalog := &fakeIngestCatalog{}
 	service := &Service{Jobs: newFakeJobStore(), Catalog: catalog}
 
 	job, err := service.IngestPath(t.Context(), IngestRequest{
-		SourceID: "cli", IdentityID: "00000000-0000-0000-0000-000000000001",
+		SourceID: "cli", IdentityID: serviceTestIdentity,
 	}, path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if catalog.created.IdentityID != "00000000-0000-0000-0000-000000000001" {
+	if catalog.created.IdentityID != serviceTestIdentity {
 		t.Fatalf("catalog identity = %q", catalog.created.IdentityID)
 	}
-	// Ready, not processing: no later stage exists to promote it, so "processing"
-	// would be a status the document never leaves.
-	if catalog.created.Status != DocumentStatusReady {
-		t.Fatalf("catalog status = %q, want ready", catalog.created.Status)
+	if catalog.created.Status != DocumentStatusProcessing {
+		t.Fatalf("catalog status = %q, want processing", catalog.created.Status)
 	}
 	if catalog.created.Title != "manual.pdf" {
 		t.Fatalf("catalog title = %q, want the file name", catalog.created.Title)
@@ -102,23 +102,24 @@ func TestServiceKeepsTheIngestWhenTheCardCannotBeStored(t *testing.T) {
 	if err != nil {
 		t.Fatalf("IngestPath error = %v, want the upload to survive a card failure", err)
 	}
-	if job.Status != JobSearchable {
-		t.Fatalf("status = %s, want %s", job.Status, JobSearchable)
+	if job.Status != JobAccepted {
+		t.Fatalf("status = %s, want %s", job.Status, JobAccepted)
 	}
 	if !strings.Contains(logs.String(), "could not store the document card") {
 		t.Fatalf("the card failure passed silently: %q", logs.String())
 	}
 }
 
-func TestServiceSkipsTheCatalogWithoutAnIdentity(t *testing.T) {
+func TestServiceRejectsAnIngestWithoutAnIdentity(t *testing.T) {
 	path := writeNamedTempFile(t, "manual.pdf", "payload")
 	catalog := &fakeIngestCatalog{}
 	service := &Service{Jobs: newFakeJobStore(), Catalog: catalog}
 
-	if _, err := service.IngestPath(t.Context(), IngestRequest{SourceID: "cli"}, path); err != nil {
-		t.Fatal(err)
+	if _, err := service.IngestPath(t.Context(), IngestRequest{SourceID: "cli"}, path); err == nil ||
+		!strings.Contains(err.Error(), "identity") {
+		t.Fatalf("error = %v, want identity refusal", err)
 	}
-	if catalog.created.IdentityID != "" {
+	if catalog.created.Title != "" {
 		t.Fatalf("catalog write happened without an owner: %#v", catalog.created)
 	}
 }
@@ -131,7 +132,7 @@ func TestServiceFailsTheJobWhenTheCatalogWriteFails(t *testing.T) {
 	}
 
 	job, err := service.IngestPath(t.Context(), IngestRequest{
-		SourceID: "cli", IdentityID: "00000000-0000-0000-0000-000000000001",
+		SourceID: "cli", IdentityID: serviceTestIdentity,
 	}, path)
 	if err == nil || !strings.Contains(err.Error(), "catalog document") {
 		t.Fatalf("IngestPath error = %v, want catalog failure", err)
@@ -141,54 +142,21 @@ func TestServiceFailsTheJobWhenTheCatalogWriteFails(t *testing.T) {
 	}
 }
 
-// TestServiceMarksTheCatalogFailedWhenTheJobCannotBeMarkedSearchable guards the
-// one window where the catalog row outlives its job: the row is already written
-// and says ready, so a lost status update would leave the library advertising a
-// document whose ingestion never finished.
-func TestServiceMarksTheCatalogFailedWhenTheJobCannotBeMarkedSearchable(t *testing.T) {
+func TestServiceDoesNotPublishThroughTheLegacyProgressUpdate(t *testing.T) {
 	path := writeNamedTempFile(t, "manual.pdf", "payload")
 	jobs := newFakeJobStore()
 	jobs.progressErr = errors.New("ledger unavailable")
 	catalog := &fakeIngestCatalog{}
 	service := &Service{Jobs: jobs, Catalog: catalog}
 
-	_, err := service.IngestPath(t.Context(), IngestRequest{
-		SourceID: "cli", IdentityID: "00000000-0000-0000-0000-000000000001",
+	job, err := service.IngestPath(t.Context(), IngestRequest{
+		SourceID: "cli", IdentityID: serviceTestIdentity,
 	}, path)
-	if err == nil || !strings.Contains(err.Error(), "ledger unavailable") {
-		t.Fatalf("IngestPath error = %v, want the ledger failure", err)
+	if err != nil || job.Status != JobAccepted {
+		t.Fatalf("candidate = %#v, error = %v", job, err)
 	}
-	if catalog.failedStatus != DocumentStatusFailed {
-		t.Fatalf("catalog status = %q, want failed", catalog.failedStatus)
-	}
-	if !strings.Contains(catalog.failedReason, "ledger unavailable") {
-		t.Fatalf("catalog reason = %q, want the cause named", catalog.failedReason)
-	}
-	// The correction is a write to aura.documents, which fails closed without a principal
-	// (migration 0087). The identity the ingest request carried must reach it.
-	if catalog.failedIdentity != "00000000-0000-0000-0000-000000000001" {
-		t.Fatalf("catalog corrected as %q, want the ingesting identity", catalog.failedIdentity)
-	}
-}
-
-func TestServiceWarnsWhenTheCatalogCannotBeMarkedFailed(t *testing.T) {
-	path := writeNamedTempFile(t, "manual.pdf", "payload")
-	jobs := newFakeJobStore()
-	jobs.progressErr = errors.New("ledger unavailable")
-	service := &Service{Jobs: jobs, Catalog: &fakeIngestCatalog{setStatusErr: errors.New("catalog unavailable")}}
-
-	var logs bytes.Buffer
-	prev := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn})))
-	t.Cleanup(func() { slog.SetDefault(prev) })
-
-	if _, err := service.IngestPath(t.Context(), IngestRequest{
-		SourceID: "cli", IdentityID: "00000000-0000-0000-0000-000000000001",
-	}, path); err == nil {
-		t.Fatal("want the ledger failure surfaced")
-	}
-	if !strings.Contains(logs.String(), "could not mark catalog document failed") {
-		t.Fatalf("warn log missing: %q", logs.String())
+	if catalog.failedStatus != "" {
+		t.Fatalf("candidate was incorrectly marked failed: %#v", catalog)
 	}
 }
 
@@ -205,11 +173,11 @@ func TestServiceReusesExistingJobForSameSourceDocumentHash(t *testing.T) {
 	path := writeNamedTempFile(t, "manual.pdf", "payload")
 	jobs := newFakeJobStore()
 	service := &Service{Jobs: jobs}
-	first, err := service.IngestPath(t.Context(), IngestRequest{SourceID: "cli"}, path)
+	first, err := service.IngestPath(t.Context(), IngestRequest{SourceID: "cli", IdentityID: serviceTestIdentity}, path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := service.IngestPath(t.Context(), IngestRequest{SourceID: "cli"}, path)
+	second, err := service.IngestPath(t.Context(), IngestRequest{SourceID: "cli", IdentityID: serviceTestIdentity}, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -262,7 +230,9 @@ func TestServiceRejectsUnsupportedAndDirectoryPaths(t *testing.T) {
 	// .txt is now in the supportedDocumentExt allowlist; use a genuinely
 	// unsupported extension to exercise the rejection path.
 	blob := writeNamedTempFile(t, "notes.exe", "payload")
-	if _, err := service.IngestPath(t.Context(), IngestRequest{}, blob); err == nil || !strings.Contains(err.Error(), "unsupported") {
+	if _, err := service.IngestPath(t.Context(), IngestRequest{
+		SourceID: "cli", IdentityID: serviceTestIdentity,
+	}, blob); err == nil || !strings.Contains(err.Error(), "unsupported") {
 		t.Fatalf("unsupported path error = %v", err)
 	}
 }

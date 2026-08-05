@@ -73,6 +73,21 @@ type ObjectResolverBundle struct {
 	SharedBucket     string
 }
 
+// ResolveForIdentity returns the exact store and bucket belonging to a durable
+// background job owner. It shares the same fallback and credential boundary as
+// request-time asset access.
+func (b *ObjectResolverBundle) ResolveForIdentity(
+	ctx context.Context,
+	shared objectstore.Store,
+	identityID string,
+) (objectstore.Store, string, error) {
+	if b == nil {
+		return nil, "", errors.New("asset object resolver is not configured")
+	}
+	ownerCtx := identityctx.WithIdentityID(ctx, identityID)
+	return resolveObjects(ownerCtx, b.Resolver, b.PerIdentityStore, shared, b.SharedBucket)
+}
+
 // storeForAsset returns the object Store to read asset's bytes with, resolving the ASSET
 // OWNER's per-identity credentials (asset.ObjectBucket was written by the routed Put/Presign
 // under that owner, so only the owner's creds can read it). The processor Gets

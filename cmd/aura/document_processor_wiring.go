@@ -15,10 +15,15 @@ import (
 )
 
 func buildAssetService(cfg *config.Config, pool *pgxpool.Pool, objectStore objectstore.Store) *assets.Service {
+	pipeline, pipelineErr := buildRuntimeDocumentPipeline(cfg, pool)
+	if pipelineErr != nil && pool != nil {
+		slog.Error("aura assets: document pipeline unavailable", "err", pipelineErr)
+	}
 	docProcessor := &assets.DocumentProcessor{
 		Objects:         objectStore,
 		Ingest:          newRuntimeDocumentIngestor(cfg, pool),
-		VersionRecorder: newRuntimeDocumentVersionRecorder(pool, objectStore),
+		VersionRecorder: newRuntimeDocumentVersionRecorder(pool),
+		Pipeline:        pipeline,
 	}
 	imageProc := assets.NewImageProcessor(objectStore, visionConfigFrom(cfg))
 	audioProc := assets.NewAudioProcessor(objectStore, sttConfigFrom(cfg))

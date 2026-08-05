@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+const testIngestionIdentityID = "20000000-0000-0000-0000-000000000001"
+
 func TestIngestionJobWorkerMarksSucceeded(t *testing.T) {
 	store := &fakeIngestionJobQueue{
 		claimed: []IngestionJob{{
@@ -24,6 +26,7 @@ func TestIngestionJobWorkerMarksSucceeded(t *testing.T) {
 	handled := false
 	worker := &IngestionJobWorker{
 		Store:         store,
+		IdentityID:    testIngestionIdentityID,
 		WorkerID:      "worker-1",
 		LeaseDuration: 2 * time.Minute,
 		BatchSize:     7,
@@ -45,7 +48,8 @@ func TestIngestionJobWorkerMarksSucceeded(t *testing.T) {
 	if processed != 1 || !handled {
 		t.Fatalf("processed=%d handled=%v", processed, handled)
 	}
-	if store.claimReq.WorkerID != "worker-1" || store.claimReq.LeaseDuration != 2*time.Minute || store.claimReq.BatchSize != 7 {
+	if store.claimReq.IdentityID != testIngestionIdentityID || store.claimReq.WorkerID != "worker-1" ||
+		store.claimReq.LeaseDuration != 2*time.Minute || store.claimReq.BatchSize != 7 {
 		t.Fatalf("claim request = %#v", store.claimReq)
 	}
 	if len(store.statuses) != 1 {
@@ -55,12 +59,15 @@ func TestIngestionJobWorkerMarksSucceeded(t *testing.T) {
 	if got.id != "job-1" || got.status != "succeeded" || got.stage != "accepted" || got.code != "" || got.message != "" {
 		t.Fatalf("success update = %#v", got)
 	}
+	if got.identityID != testIngestionIdentityID || got.workerID != "worker-1" || got.leaseGeneration != 1 {
+		t.Fatalf("success fence = %#v", got)
+	}
 	if len(store.retries) != 0 {
 		t.Fatalf("unexpected retries = %#v", store.retries)
 	}
 }
 
-func TestIngestionJobWorkerAppendsTransitionEvent(t *testing.T) {
+func TestIngestionJobWorkerIncludesEventInAtomicTransition(t *testing.T) {
 	store := &fakeIngestionJobQueue{
 		claimed: []IngestionJob{{
 			ID:           "10000000-0000-0000-0000-000000000001",
@@ -71,11 +78,10 @@ func TestIngestionJobWorkerAppendsTransitionEvent(t *testing.T) {
 			MaxAttempts:  3,
 		}},
 	}
-	events := &recordingIngestionEventStore{}
 	worker := &IngestionJobWorker{
-		Store:    store,
-		Events:   events,
-		WorkerID: "worker-1",
+		Store:      store,
+		IdentityID: testIngestionIdentityID,
+		WorkerID:   "worker-1",
 		Handlers: map[string]IngestionJobHandler{
 			"asset_process": IngestionJobHandlerFunc(func(context.Context, IngestionJob) error { return nil }),
 		},
@@ -84,19 +90,39 @@ func TestIngestionJobWorkerAppendsTransitionEvent(t *testing.T) {
 	if _, err := worker.ProcessOnce(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if len(events.appended) != 1 {
-		t.Fatalf("events = %#v", events.appended)
+	if len(store.statuses) != 1 {
+		t.Fatalf("transitions = %#v", store.statuses)
 	}
-	got := events.appended[0]
-	if got.EntityType != "ingestion_job" || got.EntityID != "10000000-0000-0000-0000-000000000001" ||
-		got.JobID != "10000000-0000-0000-0000-000000000001" {
-		t.Fatalf("event identity = %#v", got)
+	got := store.statuses[0]
+	if got.id != "10000000-0000-0000-0000-000000000001" || got.eventType != "ingestion_job.succeeded" {
+		t.Fatalf("atomic transition event = %#v", got)
 	}
-	if got.FromStatus != "running" || got.ToStatus != "succeeded" || got.EventType != "ingestion_job.succeeded" {
-		t.Fatalf("event transition = %#v", got)
+	if got.detail["stage"] != "accepted" || got.detail["job_type"] != "asset_process" {
+		t.Fatalf("event detail = %#v", got.detail)
 	}
-	if got.Detail["stage"] != "accepted" || got.Detail["job_type"] != "asset_process" {
-		t.Fatalf("event detail = %#v", got.Detail)
+}
+
+func TestIngestionJobWorkerDoesNotDoubleCompleteAtomicActivation(t *testing.T) {
+	store := &fakeIngestionJobQueue{claimed: []IngestionJob{{
+		ID: "job-1", IdentityID: testIngestionIdentityID, JobType: "asset_process",
+		Status: "running", Stage: "accepted", AttemptCount: 1, MaxAttempts: 3,
+		LockedBy: "worker-1", LeaseGeneration: 1,
+	}}}
+	worker := &IngestionJobWorker{
+		Store: store, IdentityID: testIngestionIdentityID, WorkerID: "worker-1",
+		Handlers: map[string]IngestionJobHandler{
+			"asset_process": IngestionJobHandlerFunc(func(context.Context, IngestionJob) error {
+				return ErrIngestionJobCompletionCommitted
+			}),
+		},
+	}
+
+	processed, err := worker.ProcessOnce(t.Context())
+	if err != nil || processed != 1 {
+		t.Fatalf("processed=%d error=%v", processed, err)
+	}
+	if len(store.statuses) != 0 || len(store.retries) != 0 {
+		t.Fatalf("atomic completion was written twice: statuses=%#v retries=%#v", store.statuses, store.retries)
 	}
 }
 
@@ -114,8 +140,10 @@ func TestIngestionJobWorkerRetriesHandlerFailure(t *testing.T) {
 	}
 	worker := &IngestionJobWorker{
 		Store:        store,
+		IdentityID:   testIngestionIdentityID,
 		WorkerID:     "worker-1",
 		RetryBackoff: time.Minute,
+		RetryJitter:  func(cap time.Duration) time.Duration { return cap / 2 },
 		Clock:        func() time.Time { return now },
 		Handlers: map[string]IngestionJobHandler{
 			"asset_process": IngestionJobHandlerFunc(func(context.Context, IngestionJob) error {
@@ -141,6 +169,9 @@ func TestIngestionJobWorkerRetriesHandlerFailure(t *testing.T) {
 	if !got.nextAttemptAt.Equal(now.Add(time.Minute)) {
 		t.Fatalf("next attempt = %s", got.nextAttemptAt)
 	}
+	if got.identityID != testIngestionIdentityID || got.workerID != "worker-1" || got.leaseGeneration != 1 {
+		t.Fatalf("retry fence = %#v", got)
+	}
 	if len(store.statuses) != 0 {
 		t.Fatalf("unexpected terminal statuses = %#v", store.statuses)
 	}
@@ -158,8 +189,9 @@ func TestIngestionJobWorkerDeadLettersAfterMaxAttempts(t *testing.T) {
 		}},
 	}
 	worker := &IngestionJobWorker{
-		Store:    store,
-		WorkerID: "worker-1",
+		Store:      store,
+		IdentityID: testIngestionIdentityID,
+		WorkerID:   "worker-1",
 		Handlers: map[string]IngestionJobHandler{
 			"asset_process": IngestionJobHandlerFunc(func(context.Context, IngestionJob) error {
 				return errors.New("embedding sidecar unavailable")
@@ -207,7 +239,7 @@ func TestIngestionJobWorkerLogsWarnAndDeadLettersWhenHandlerMissing(t *testing.T
 			MaxAttempts:  3,
 		}},
 	}
-	worker := &IngestionJobWorker{Store: store, WorkerID: "worker-1", Handlers: map[string]IngestionJobHandler{}}
+	worker := &IngestionJobWorker{Store: store, IdentityID: testIngestionIdentityID, WorkerID: "worker-1", Handlers: map[string]IngestionJobHandler{}}
 	logs := captureWarnLogs(t)
 
 	processed, err := worker.ProcessOnce(t.Context())
@@ -241,8 +273,9 @@ func TestIngestionJobWorkerLogsWarnAndDeadLettersAfterMaxAttempts(t *testing.T) 
 		}},
 	}
 	worker := &IngestionJobWorker{
-		Store:    store,
-		WorkerID: "worker-1",
+		Store:      store,
+		IdentityID: testIngestionIdentityID,
+		WorkerID:   "worker-1",
 		Handlers: map[string]IngestionJobHandler{
 			"asset_process": IngestionJobHandlerFunc(func(context.Context, IngestionJob) error {
 				return errors.New("embedding sidecar unavailable")
@@ -280,6 +313,7 @@ func TestIngestionJobWorkerRetrySchedulingDoesNotLogWarn(t *testing.T) {
 	}
 	worker := &IngestionJobWorker{
 		Store:        store,
+		IdentityID:   testIngestionIdentityID,
 		WorkerID:     "worker-1",
 		RetryBackoff: time.Minute,
 		Handlers: map[string]IngestionJobHandler{
@@ -304,19 +338,19 @@ func TestIngestionJobWorkerRetrySchedulingDoesNotLogWarn(t *testing.T) {
 func TestIngestionJobWorkerRecordsQueueDepthWhenSourceProvided(t *testing.T) {
 	store := &fakeIngestionJobQueue{}
 	depth := &fakeQueueDepthSource{count: 5}
-	worker := &IngestionJobWorker{Store: store, WorkerID: "worker-1", QueueDepth: depth, Handlers: map[string]IngestionJobHandler{}}
+	worker := &IngestionJobWorker{Store: store, IdentityID: testIngestionIdentityID, WorkerID: "worker-1", QueueDepth: depth, Handlers: map[string]IngestionJobHandler{}}
 
 	if _, err := worker.ProcessOnce(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if depth.calls != 1 || depth.lastStatus != ingestionJobStatusQueued {
-		t.Fatalf("queue depth source calls = %d lastStatus = %q", depth.calls, depth.lastStatus)
+	if depth.calls != 1 || depth.identityID != testIngestionIdentityID || depth.lastStatus != ingestionJobStatusQueued {
+		t.Fatalf("queue depth source = %#v", depth)
 	}
 }
 
 func TestIngestionJobWorkerSkipsQueueDepthWhenSourceMissingOrErroring(t *testing.T) {
 	store := &fakeIngestionJobQueue{}
-	worker := &IngestionJobWorker{Store: store, WorkerID: "worker-1", Handlers: map[string]IngestionJobHandler{}}
+	worker := &IngestionJobWorker{Store: store, IdentityID: testIngestionIdentityID, WorkerID: "worker-1", Handlers: map[string]IngestionJobHandler{}}
 	if _, err := worker.ProcessOnce(t.Context()); err != nil {
 		t.Fatal(err)
 	}
@@ -331,15 +365,72 @@ func TestIngestionJobWorkerSkipsQueueDepthWhenSourceMissingOrErroring(t *testing
 	}
 }
 
+func TestIngestionJobWorkerFailsClosedWithoutIdentity(t *testing.T) {
+	worker := &IngestionJobWorker{Store: &fakeIngestionJobQueue{}, WorkerID: "worker-1"}
+	if _, err := worker.ProcessOnce(t.Context()); err == nil || !strings.Contains(err.Error(), "no identity") {
+		t.Fatalf("ProcessOnce error = %v", err)
+	}
+}
+
+func TestIngestionJobWorkerRejectsCrossIdentityClaim(t *testing.T) {
+	store := &fakeIngestionJobQueue{claimed: []IngestionJob{{
+		ID: "job-1", IdentityID: "30000000-0000-0000-0000-000000000001",
+		JobType: "asset_process", Status: "running", LeaseGeneration: 7,
+	}}}
+	worker := &IngestionJobWorker{Store: store, IdentityID: testIngestionIdentityID, WorkerID: "worker-1"}
+	if _, err := worker.ProcessOnce(t.Context()); err == nil || !strings.Contains(err.Error(), "unexpected identity") {
+		t.Fatalf("ProcessOnce error = %v", err)
+	}
+	if len(store.statuses) != 0 || len(store.retries) != 0 {
+		t.Fatalf("cross-owner job was mutated: statuses=%#v retries=%#v", store.statuses, store.retries)
+	}
+}
+
+func TestIngestionJobWorkerHeartbeatLeaseLostCancelsHandlerAndDoesNotTransition(t *testing.T) {
+	store := &fakeIngestionJobQueue{
+		claimed: []IngestionJob{{
+			ID: "job-1", JobType: "asset_process", Status: "running", Stage: "convert",
+			AttemptCount: 1, MaxAttempts: 3, LeaseGeneration: 9,
+		}},
+		heartbeatErr: ErrIngestionJobLeaseLost,
+	}
+	worker := &IngestionJobWorker{
+		Store: store, IdentityID: testIngestionIdentityID, WorkerID: "worker-1",
+		LeaseDuration: 30 * time.Millisecond,
+		Handlers: map[string]IngestionJobHandler{
+			"asset_process": IngestionJobHandlerFunc(func(ctx context.Context, _ IngestionJob) error {
+				<-ctx.Done()
+				return ctx.Err()
+			}),
+		},
+	}
+	processed, err := worker.ProcessOnce(t.Context())
+	if !errors.Is(err, ErrIngestionJobLeaseLost) || processed != 0 {
+		t.Fatalf("ProcessOnce = (%d, %v)", processed, err)
+	}
+	if len(store.heartbeats) != 1 {
+		t.Fatalf("heartbeats = %#v", store.heartbeats)
+	}
+	got := store.heartbeats[0]
+	if got.IdentityID != testIngestionIdentityID || got.WorkerID != "worker-1" || got.LeaseGeneration != 9 {
+		t.Fatalf("heartbeat fence = %#v", got)
+	}
+	if len(store.statuses) != 0 || len(store.retries) != 0 {
+		t.Fatalf("lease-lost job was mutated: statuses=%#v retries=%#v", store.statuses, store.retries)
+	}
+}
+
 type fakeQueueDepthSource struct {
 	calls      int
+	identityID string
 	lastStatus string
 	count      int64
 	err        error
 }
 
-func (f *fakeQueueDepthSource) CountByStatus(_ context.Context, status string) (int64, error) {
+func (f *fakeQueueDepthSource) CountByStatus(_ context.Context, identityID, status string) (int64, error) {
 	f.calls++
+	f.identityID = identityID
 	f.lastStatus = status
 	if f.err != nil {
 		return 0, f.err
@@ -348,50 +439,75 @@ func (f *fakeQueueDepthSource) CountByStatus(_ context.Context, status string) (
 }
 
 type fakeIngestionJobQueue struct {
-	claimed  []IngestionJob
-	claimReq ClaimIngestionJobsRequest
-	statuses []fakeIngestionJobStatus
-	retries  []fakeIngestionJobRetry
+	claimed      []IngestionJob
+	claimReq     ClaimIngestionJobsRequest
+	statuses     []fakeIngestionJobStatus
+	retries      []fakeIngestionJobRetry
+	heartbeats   []HeartbeatIngestionJobRequest
+	heartbeatErr error
 }
 
 func (f *fakeIngestionJobQueue) Claim(_ context.Context, req ClaimIngestionJobsRequest) ([]IngestionJob, error) {
 	f.claimReq = req
-	return append([]IngestionJob(nil), f.claimed...), nil
+	jobs := append([]IngestionJob(nil), f.claimed...)
+	for i := range jobs {
+		if jobs[i].IdentityID == "" {
+			jobs[i].IdentityID = req.IdentityID
+		}
+		if jobs[i].LeaseGeneration == 0 {
+			jobs[i].LeaseGeneration = 1
+		}
+	}
+	return jobs, nil
 }
 
-func (f *fakeIngestionJobQueue) UpdateStatus(_ context.Context, id, status, stage, code, message string) (IngestionJob, error) {
-	f.statuses = append(f.statuses, fakeIngestionJobStatus{id: id, status: status, stage: stage, code: code, message: message})
-	return IngestionJob{ID: id, Status: status, Stage: stage, ErrorCode: code, ErrorMessage: message}, nil
-}
-
-func (f *fakeIngestionJobQueue) Retry(_ context.Context, id, stage, code, message string, nextAttemptAt time.Time) (IngestionJob, error) {
-	f.retries = append(f.retries, fakeIngestionJobRetry{
-		id: id, stage: stage, code: code, message: message, nextAttemptAt: nextAttemptAt,
+func (f *fakeIngestionJobQueue) UpdateStatus(_ context.Context, req TransitionIngestionJobRequest) (IngestionJob, error) {
+	f.statuses = append(f.statuses, fakeIngestionJobStatus{
+		id: req.JobID, identityID: req.IdentityID, workerID: req.WorkerID,
+		leaseGeneration: req.LeaseGeneration, status: req.Status, stage: req.Stage,
+		code: req.ErrorCode, message: req.ErrorMessage, eventType: req.EventType,
+		detail: req.EventDetail,
 	})
-	return IngestionJob{ID: id, Status: "queued", Stage: stage, ErrorCode: code, ErrorMessage: message, NextAttemptAt: nextAttemptAt}, nil
+	return IngestionJob{ID: req.JobID, IdentityID: req.IdentityID, Status: req.Status, Stage: req.Stage}, nil
+}
+
+func (f *fakeIngestionJobQueue) Retry(_ context.Context, req RetryIngestionJobRequest) (IngestionJob, error) {
+	f.retries = append(f.retries, fakeIngestionJobRetry{
+		id: req.JobID, identityID: req.IdentityID, workerID: req.WorkerID,
+		leaseGeneration: req.LeaseGeneration, stage: req.Stage, code: req.ErrorCode,
+		message: req.ErrorMessage, nextAttemptAt: req.NextAttemptAt,
+	})
+	return IngestionJob{ID: req.JobID, IdentityID: req.IdentityID, Status: "queued", Stage: req.Stage}, nil
+}
+
+func (f *fakeIngestionJobQueue) Heartbeat(_ context.Context, req HeartbeatIngestionJobRequest) (IngestionJob, error) {
+	f.heartbeats = append(f.heartbeats, req)
+	if f.heartbeatErr != nil {
+		return IngestionJob{}, f.heartbeatErr
+	}
+	return IngestionJob{ID: req.JobID, IdentityID: req.IdentityID, LeaseGeneration: req.LeaseGeneration}, nil
 }
 
 type fakeIngestionJobStatus struct {
-	id      string
-	status  string
-	stage   string
-	code    string
-	message string
+	id              string
+	identityID      string
+	workerID        string
+	leaseGeneration int64
+	status          string
+	stage           string
+	code            string
+	message         string
+	eventType       string
+	detail          map[string]any
 }
 
 type fakeIngestionJobRetry struct {
-	id            string
-	stage         string
-	code          string
-	message       string
-	nextAttemptAt time.Time
-}
-
-type recordingIngestionEventStore struct {
-	appended []AppendIngestionEventRequest
-}
-
-func (s *recordingIngestionEventStore) Append(_ context.Context, req AppendIngestionEventRequest) (IngestionEvent, error) {
-	s.appended = append(s.appended, req)
-	return IngestionEvent{ID: int64(len(s.appended))}, nil
+	id              string
+	identityID      string
+	workerID        string
+	leaseGeneration int64
+	stage           string
+	code            string
+	message         string
+	nextAttemptAt   time.Time
 }

@@ -97,7 +97,7 @@ type serveEnv struct {
 
 	// assetProcessingWorker claims durable asset_process ingestion jobs and runs the
 	// shared asset processor pipeline. runServe Start/Stops it with the daemon.
-	assetProcessingWorker *runtimeIngestionWorker
+	assetProcessingWorker *runtimeProcessingWorkers
 
 	// reconciler is the crash-orphan reconciler (D-01d / GATE-03 durability + GATE-04
 	// recovery): it closes a start∧¬end reservation left by a crash by appending a
@@ -429,7 +429,9 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		RunDir:             chat.cfg.RunDir,
 		WarnThresholdBytes: int64(chat.cfg.RunDirWarnThresholdBytes),
 	}, time.Duration(chat.cfg.RunDirSweepIntervalSec)*time.Second)
-	assetProcessingWorker := newRuntimeAssetProcessingWorker(chat.cfg, chat.pool, chat.assets, chat.cfg.AssetProcessingConcurrent)
+	assetProcessingWorker := newRuntimeAssetProcessingWorker(
+		chat.cfg, chat.pool, chat.assets, chat.sandboxRouter, chat.cfg.AssetProcessingConcurrent,
+	)
 
 	// Crash-orphan reconciler (D-01d): closes a start∧¬end reservation left by a crash
 	// between reserve and Execute by APPENDING a terminal indeterminate `end` fact — it

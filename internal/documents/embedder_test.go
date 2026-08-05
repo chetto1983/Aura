@@ -15,8 +15,8 @@ func TestEmbeddingClientReturnsEmbeddings(t *testing.T) {
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"data": []map[string]any{
-				{"embedding": []float64{1, 2}},
-				{"embedding": []float64{3, 4}},
+				{"index": 0, "embedding": []float64{1, 2}},
+				{"index": 1, "embedding": []float64{3, 4}},
 			},
 		})
 	}))
@@ -35,7 +35,7 @@ func TestEmbeddingClientReturnsEmbeddings(t *testing.T) {
 func TestEmbeddingClientRejectsDimensionMismatch(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"data": []map[string]any{{"embedding": []float64{1}}},
+			"data": []map[string]any{{"index": 0, "embedding": []float64{1}}},
 		})
 	}))
 	defer srv.Close()
@@ -56,12 +56,6 @@ func TestEmbeddingClientHandlesEmptyInputAndDefaultModel(t *testing.T) {
 	if got != nil {
 		t.Fatalf("empty input embeddings = %#v", got)
 	}
-	if got := inputModel(""); got != "aura-local-embedding" {
-		t.Fatalf("inputModel default = %q", got)
-	}
-	if got := inputModel("custom"); got != "custom" {
-		t.Fatalf("inputModel custom = %q", got)
-	}
 }
 
 func TestEmbeddingClientRequiresBaseURL(t *testing.T) {
@@ -81,7 +75,7 @@ func TestEmbeddingClientCloudRoute(t *testing.T) {
 			auth = r.Header.Get("Authorization")
 			_ = json.NewDecoder(r.Body).Decode(&body)
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"data": []map[string]any{{"embedding": []float64{1, 2, 3, 4}}},
+				"data": []map[string]any{{"index": 0, "embedding": []float64{1, 2, 3, 4}}},
 			})
 		}))
 		defer srv.Close()

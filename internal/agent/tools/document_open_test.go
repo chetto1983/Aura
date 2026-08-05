@@ -11,6 +11,8 @@ import (
 	"github.com/chetto1983/aura/internal/documents"
 )
 
+const toolTestCatalogID = "10000000-0000-0000-0000-000000000001"
+
 // document_open writes into the caller's per-identity BOX, so these tests drive it over the same
 // daemon-free fakeBox harness the fs_* tools use (fs_box_fake_router_test.go) rather than a host
 // temp dir. That is not only a coverage decision — docker_integration contributes zero coverage —
@@ -43,6 +45,9 @@ func (f *fakeDocumentOpener) OpenDocument(
 // openedDoc builds a backend whose recorded size agrees with its body, which is what the catalog
 // records for a real document. A disagreement is its own test below.
 func openedDoc(body string, meta documents.OpenedDocument) *fakeDocumentOpener {
+	if meta.CatalogID == "" {
+		meta.CatalogID = toolTestCatalogID
+	}
 	meta.SizeBytes = int64(len(body))
 	return &fakeDocumentOpener{body: body, meta: meta}
 }
@@ -77,7 +82,11 @@ func TestDocumentOpen_WritesOriginalIntoTheBox(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	const want = "/workspace/documents/Clienti.xlsx"
+	dir, err := StagedDocumentDirectory(toolTestCatalogID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := dir + "/Clienti.xlsx"
 	got, ok := be.written[want]
 	if !ok {
 		t.Fatalf("nothing was written into the box at %s: %+v", want, be.written)
@@ -119,7 +128,11 @@ func TestDocumentOpen_HonoursCallerFileName(t *testing.T) {
 		json.RawMessage(`{"document_id":"doc_1","file_name":"clienti.xlsx"}`)); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if _, ok := be.written["/workspace/documents/clienti.xlsx"]; !ok {
+	want, err := StagedDocumentPath(toolTestCatalogID, "clienti.xlsx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := be.written[want]; !ok {
 		t.Fatalf("caller file_name was not used: %+v", be.written)
 	}
 }
@@ -281,7 +294,7 @@ func TestDocumentOpen_RemovesPartialCopyOnStreamFailure(t *testing.T) {
 	tool := &DocumentOpen{
 		Documents: &fakeDocumentOpener{
 			reader: &failingReader{remaining: 64},
-			meta:   documents.OpenedDocument{FileName: "half.xlsx", SizeBytes: 4096},
+			meta:   documents.OpenedDocument{CatalogID: toolTestCatalogID, FileName: "half.xlsx", SizeBytes: 4096},
 		},
 		Router: routerWith(be),
 	}
@@ -291,7 +304,11 @@ func TestDocumentOpen_RemovesPartialCopyOnStreamFailure(t *testing.T) {
 	if len(be.written) != 0 {
 		t.Fatalf("a failed stream left a file behind: %+v", be.written)
 	}
-	if len(be.execs) != 1 || !strings.Contains(be.execs[0].Command, "rm -f -- '/workspace/documents/half.xlsx'") {
+	partialPath, pathErr := StagedDocumentPath(toolTestCatalogID, "half.xlsx")
+	if pathErr != nil {
+		t.Fatal(pathErr)
+	}
+	if len(be.execs) != 1 || !strings.Contains(be.execs[0].Command, "rm -f -- "+shellQuoteArg(partialPath)) {
 		t.Fatalf("the partial copy was not removed from the box: %+v", be.execs)
 	}
 }
@@ -304,7 +321,7 @@ func TestDocumentOpen_DeclaresTheCatalogSize(t *testing.T) {
 	tool := &DocumentOpen{
 		Documents: &fakeDocumentOpener{
 			body: "eleven byte",
-			meta: documents.OpenedDocument{FileName: "stale.xlsx", SizeBytes: 5},
+			meta: documents.OpenedDocument{CatalogID: toolTestCatalogID, FileName: "stale.xlsx", SizeBytes: 5},
 		},
 		Router: routerWith(be),
 	}

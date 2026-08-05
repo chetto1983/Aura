@@ -66,7 +66,7 @@ func TestDocumentAPIListUsesFiltersAndPrincipal(t *testing.T) {
 	s := NewServer(&scriptedRunner{}, &fakeConvStore{}, ServerConfig{})
 	s.SetDocumentCatalog(catalog)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/documents?scope=library&q=servo&tag=Servo&limit=25&offset=5", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/documents?scope=library&tag=Servo&limit=25&offset=5", nil)
 	req = withPrincipal(req, documentAPIIdentityID)
 	rec := httptest.NewRecorder()
 
@@ -77,7 +77,7 @@ func TestDocumentAPIListUsesFiltersAndPrincipal(t *testing.T) {
 	}
 	if catalog.listReq.IdentityID != documentAPIIdentityID ||
 		catalog.listReq.Scope != documents.DocumentScopeLibrary ||
-		catalog.listReq.Query != "servo" ||
+		catalog.listReq.Query != "" ||
 		catalog.listReq.Tag != "Servo" ||
 		catalog.listReq.Limit != 25 ||
 		catalog.listReq.Offset != 5 {
@@ -89,6 +89,86 @@ func TestDocumentAPIListUsesFiltersAndPrincipal(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].ID != catalog.listResp[0].ID {
 		t.Fatalf("response = %#v", got)
+	}
+}
+
+func TestDocumentAPIQueryUsesSharedRetriever(t *testing.T) {
+	catalog := &fakeDocumentCatalog{retrievalResp: documents.RetrievalResponse{
+		Query: "codice WPT", Profile: documents.ProductionRetrievalProfile,
+		Status: documents.RetrievalComplete,
+		Documents: []documents.RetrievalDocument{{
+			DocumentID: "doc_9f2c", VersionNumber: 2,
+			OriginalSHA256: strings.Repeat("a", 64),
+		}},
+	}}
+	s := NewServer(&scriptedRunner{}, &fakeConvStore{}, ServerConfig{})
+	s.SetDocumentCatalog(catalog)
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/api/documents?q=codice+WPT&limit=4&document_ids=doc_9f2c,doc_other",
+		nil,
+	)
+	req = withPrincipal(req, documentAPIIdentityID)
+	rec := httptest.NewRecorder()
+	s.Mux().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if catalog.retrievalReq.IdentityID != documentAPIIdentityID ||
+		catalog.retrievalReq.Query != "codice WPT" || catalog.retrievalReq.Limit != 4 ||
+		len(catalog.retrievalReq.DocumentIDs) != 2 {
+		t.Fatalf("retrieval request = %#v", catalog.retrievalReq)
+	}
+	var got documents.RetrievalResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Profile != documents.ProductionRetrievalProfile || len(got.Documents) != 1 {
+		t.Fatalf("response = %#v", got)
+	}
+}
+
+func TestDocumentAPIQueryRejectsBlankUnknownAndListScopeMix(t *testing.T) {
+	s := NewServer(&scriptedRunner{}, &fakeConvStore{}, ServerConfig{})
+	s.SetDocumentCatalog(&fakeDocumentCatalog{})
+	for _, target := range []string{
+		"/api/documents?q=+", "/api/documents?q=x&scope=library",
+		"/api/documents?unknown=x", "/api/documents?document_ids=doc_1",
+		"/api/documents?q=x&document_ids=",
+	} {
+		req := withPrincipal(httptest.NewRequest(http.MethodGet, target, nil), documentAPIIdentityID)
+		rec := httptest.NewRecorder()
+		s.Mux().ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("%s status = %d, want 400", target, rec.Code)
+		}
+	}
+}
+
+func TestDocumentAPIQueryMapsRetrievalErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want int
+	}{
+		{name: "invalid scope", err: documents.ErrInvalidDocumentScope, want: http.StatusBadRequest},
+		{name: "invalid request", err: documents.ErrInvalidRetrievalRequest, want: http.StatusBadRequest},
+		{name: "control plane", err: context.DeadlineExceeded, want: http.StatusInternalServerError},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := NewServer(&scriptedRunner{}, &fakeConvStore{}, ServerConfig{})
+			s.SetDocumentCatalog(&fakeDocumentCatalog{retrievalErr: test.err})
+			req := withPrincipal(
+				httptest.NewRequest(http.MethodGet, "/api/documents?q=manual", nil),
+				documentAPIIdentityID,
+			)
+			rec := httptest.NewRecorder()
+			s.Mux().ServeHTTP(rec, req)
+			if rec.Code != test.want {
+				t.Fatalf("status = %d, want %d: %s", rec.Code, test.want, rec.Body.String())
+			}
+		})
 	}
 }
 
@@ -285,11 +365,14 @@ type fakeDocumentCatalog struct {
 	updateReq UpdateDocumentRequestAlias
 	listReq   ListDocumentsRequestAlias
 
-	createResp documents.Document
-	updateResp documents.Document
-	deleteResp documents.Document
-	listResp   []documents.DocumentSummary
-	detailResp documents.DocumentDetail
+	createResp    documents.Document
+	updateResp    documents.Document
+	deleteResp    documents.Document
+	listResp      []documents.DocumentSummary
+	detailResp    documents.DocumentDetail
+	retrievalResp documents.RetrievalResponse
+	retrievalReq  documents.RetrievalRequest
+	retrievalErr  error
 
 	detailIdentityID string
 	detailDocumentID string
@@ -326,6 +409,14 @@ func (f *fakeDocumentCatalog) DeleteDocument(_ context.Context, identityID, docu
 	f.deleteIdentityID = identityID
 	f.deleteDocumentID = documentID
 	return f.deleteResp, nil
+}
+
+func (f *fakeDocumentCatalog) Retrieve(
+	_ context.Context,
+	request documents.RetrievalRequest,
+) (documents.RetrievalResponse, error) {
+	f.retrievalReq = request
+	return f.retrievalResp, f.retrievalErr
 }
 
 type fakeDocumentEvents struct {

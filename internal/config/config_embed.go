@@ -15,7 +15,9 @@ const DefaultEmbedDimensions = 768
 // longer one: the embedder is read by the reasoning classifier, the doctor, the
 // adaptive controls and memory alike.
 type EmbedConfig struct {
-	BaseURL    string // AURA_EMBED_BASE_URL — OpenAI-compat embeddings base URL
-	Dimensions int    // AURA_EMBED_DIMENSIONS — contract width; a narrower response is an error
-	Model      string // AURA_EMBED_MODEL — set to a hosted model to swap embeddings to OpenRouter; empty = local sidecar
+	Revision    string // AURA_EMBED_REVISION: immutable deployed model revision.
+	Fingerprint string // AURA_EMBED_FINGERPRINT: SHA-256 of the exact deployed artifact.
+	BaseURL     string // AURA_EMBED_BASE_URL — OpenAI-compat embeddings base URL
+	Dimensions  int    // AURA_EMBED_DIMENSIONS — contract width; a narrower response is an error
+	Model       string // AURA_EMBED_MODEL — set to a hosted model to swap embeddings to OpenRouter; empty = local sidecar
 }

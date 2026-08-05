@@ -12,84 +12,77 @@ import (
 )
 
 type fakeLibrary struct {
-	identityID string
-	query      string
-	limit      int
-	hits       []documents.DigestHit
-	err        error
+	request  documents.RetrievalRequest
+	response documents.RetrievalResponse
+	err      error
 }
 
-func (f *fakeLibrary) SearchDigests(
+func (f *fakeLibrary) Retrieve(
 	_ context.Context,
-	identityID, query string,
-	limit int,
-) ([]documents.DigestHit, error) {
-	f.identityID, f.query, f.limit = identityID, query, limit
-	return f.hits, f.err
+	request documents.RetrievalRequest,
+) (documents.RetrievalResponse, error) {
+	f.request = request
+	return f.response, f.err
 }
 
-func searchPayload(t *testing.T, result ToolResult) []map[string]any {
+func searchPayload(t *testing.T, result ToolResult) documents.RetrievalResponse {
 	t.Helper()
-	var payload struct {
-		Documents []map[string]any `json:"documents"`
-	}
+	var payload documents.RetrievalResponse
 	if err := json.Unmarshal([]byte(result.Preview), &payload); err != nil {
 		t.Fatalf("result is not JSON (%q): %v", result.Preview, err)
 	}
-	return payload.Documents
+	return payload
 }
 
-func TestDocumentSearchReturnsDocumentsNotPassages(t *testing.T) {
+func TestDocumentSearchReturnsProvenanceBearingPassages(t *testing.T) {
 	t.Parallel()
-	library := &fakeLibrary{hits: []documents.DigestHit{{
-		DocumentID: "doc_9f2c", Title: "Clienti.xlsx",
-		Tags:   []string{"clienti", "2026"},
-		Digest: "Clienti.xlsx — Tabular data. Clienti (5889 rows): Ragione sociale, Località",
-		Rank:   0.42,
-	}}}
+	library := &fakeLibrary{response: documents.RetrievalResponse{
+		Profile: documents.ProductionRetrievalProfile,
+		Status:  documents.RetrievalComplete,
+		Documents: []documents.RetrievalDocument{{
+			DocumentID: "doc_9f2c", Title: "Clienti.xlsx",
+			Tags: []string{"clienti", "2026"}, OriginalSHA256: strings.Repeat("a", 64),
+			Passages: []documents.RetrievalPassage{{
+				Text:          "Il codice cliente di WPT SRL è C-1042.",
+				CitationToken: "document:doc_9f2c@2#sheet=Clienti;cell=A42",
+			}},
+		}},
+	}}
 	tool := &DocumentSearch{Library: library}
 
-	result, err := tool.Execute(toolTestContext(t), json.RawMessage(`{"query":"elenco clienti"}`))
+	result, err := tool.Execute(toolTestContext(t), json.RawMessage(
+		`{"query":"codice cliente WPT","document_ids":["doc_9f2c"]}`,
+	))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	docs := searchPayload(t, result)
-	if len(docs) != 1 {
-		t.Fatalf("got %d documents, want 1", len(docs))
+	payload := searchPayload(t, result)
+	if len(payload.Documents) != 1 || len(payload.Documents[0].Passages) != 1 {
+		t.Fatalf("payload = %#v", payload)
 	}
-	// The id is the whole point: it is what document_open takes.
-	if docs[0]["document_id"] != "doc_9f2c" {
-		t.Fatalf("document_id = %v", docs[0]["document_id"])
+	if payload.Documents[0].Passages[0].CitationToken == "" ||
+		payload.Documents[0].OriginalSHA256 == "" {
+		t.Fatalf("provenance missing: %#v", payload.Documents[0])
 	}
-	// Operator-written tags travel: they are the part of the description a PERSON
-	// wrote, and the cockpit lets them edit it.
-	tags, _ := docs[0]["tags"].([]any)
-	if len(tags) != 2 || tags[0] != "clienti" {
-		t.Fatalf("tags = %v", docs[0]["tags"])
+	if library.request.Query != "codice cliente WPT" || library.request.Limit != 8 ||
+		len(library.request.DocumentIDs) != 1 {
+		t.Fatalf("library request = %#v", library.request)
 	}
-	if library.query != "elenco clienti" || library.limit != 8 {
-		t.Fatalf("library called with query=%q limit=%d", library.query, library.limit)
-	}
-	if library.identityID == "" {
+	if library.request.IdentityID == "" {
 		t.Fatal("the owning identity did not reach the library")
 	}
-	if result.Provenance == nil || result.Provenance.Source != "document_search" {
+	if result.Provenance == nil || result.Provenance.Source != "document_search" ||
+		result.Provenance.Trust != TrustUntrusted {
 		t.Fatalf("provenance = %#v", result.Provenance)
 	}
 }
 
-func TestDocumentSearchBlankQueryListsTheLibrary(t *testing.T) {
+func TestDocumentSearchRejectsBlankMalformedAndUnknownArgs(t *testing.T) {
 	t.Parallel()
-	library := &fakeLibrary{hits: []documents.DigestHit{{DocumentID: "doc_1", Title: "a.pdf"}}}
-	tool := &DocumentSearch{Library: library}
-
-	// "the file I just uploaded" carries no search terms, and must still list.
-	for _, raw := range []string{`{}`, `{"query":"   "}`, ``} {
-		if _, err := tool.Execute(toolTestContext(t), json.RawMessage(raw)); err != nil {
-			t.Fatalf("args %q: %v", raw, err)
-		}
-		if library.query != "" {
-			t.Fatalf("query = %q, want empty", library.query)
+	tool := &DocumentSearch{Library: &fakeLibrary{}}
+	for _, raw := range []string{`{}`, `{"query":"   "}`, ``, `{"document_id":"doc_1"}`} {
+		if _, err := tool.Execute(toolTestContext(t), json.RawMessage(raw)); err == nil {
+			t.Fatalf("args %q: expected fail-closed rejection", raw)
 		}
 	}
 }
@@ -98,32 +91,27 @@ func TestDocumentSearchLimit(t *testing.T) {
 	t.Parallel()
 	library := &fakeLibrary{}
 	tool := &DocumentSearch{Library: library}
-
 	for _, tc := range []struct{ in, want int }{{0, 8}, {3, 3}, {500, 50}} {
-		raw, err := json.Marshal(map[string]int{"limit": tc.in})
+		raw, err := json.Marshal(map[string]any{"query": "fatture clienti", "limit": tc.in})
 		if err != nil {
 			t.Fatal(err)
 		}
 		if _, err := tool.Execute(toolTestContext(t), raw); err != nil {
 			t.Fatalf("limit %d: %v", tc.in, err)
 		}
-		if library.limit != tc.want {
-			t.Errorf("limit %d -> %d, want %d", tc.in, library.limit, tc.want)
+		if library.request.Limit != tc.want {
+			t.Errorf("limit %d -> %d, want %d", tc.in, library.request.Limit, tc.want)
 		}
 	}
-	if _, err := tool.Execute(toolTestContext(t), json.RawMessage(`{"limit":-1}`)); err == nil {
+	if _, err := tool.Execute(toolTestContext(t), json.RawMessage(`{"query":"fatture","limit":-1}`)); err == nil {
 		t.Error("a negative limit was accepted")
 	}
 }
 
-func TestDocumentSearchUnconfiguredAndMalformed(t *testing.T) {
+func TestDocumentSearchUnconfiguredAndBackendFailure(t *testing.T) {
 	t.Parallel()
 	if _, err := (&DocumentSearch{}).Execute(toolTestContext(t), json.RawMessage(`{}`)); err == nil {
 		t.Error("a tool with no library reported success")
-	}
-	tool := &DocumentSearch{Library: &fakeLibrary{}}
-	if _, err := tool.Execute(toolTestContext(t), json.RawMessage(`{"query":`)); err == nil {
-		t.Error("malformed args were accepted")
 	}
 	failing := &DocumentSearch{Library: &fakeLibrary{err: errors.New("pool is closed")}}
 	_, err := failing.Execute(toolTestContext(t), json.RawMessage(`{"query":"x"}`))
@@ -132,16 +120,13 @@ func TestDocumentSearchUnconfiguredAndMalformed(t *testing.T) {
 	}
 }
 
-// The handoff is the whole design: search names the file, open hands it over.
-func TestDocumentSearchSpecPointsAtDocumentOpen(t *testing.T) {
+func TestDocumentSearchSpecNamesCitationAndOpenContract(t *testing.T) {
 	t.Parallel()
 	spec := (&DocumentSearch{}).Spec()
-	if spec.Name != "document_search" {
-		t.Fatalf("name = %q, want document_search", spec.Name)
+	if spec.Name != "document_search" || spec.Deferred {
+		t.Fatalf("spec = %#v", spec)
 	}
-	// Deferred-or-loaded is asserted once, in TestOnlyTheWorkingSetIsAlwaysActive,
-	// where the manifest budget is weighed as a whole.
-	for _, want := range []string{"document_open", "/workspace", "how many", "NOT their text"} {
+	for _, want := range []string{"document_open", "/workspace", "how many", "citation_token", "requires_open"} {
 		if !strings.Contains(spec.Description, want) {
 			t.Errorf("description never mentions %q", want)
 		}
@@ -153,33 +138,29 @@ func toolTestContext(t *testing.T) context.Context {
 	return WithToolCallContext(t.Context(), "session", "toolcall", t.TempDir(), 4096)
 }
 
-// TestDocumentSearchThreadsOwnerIdentity locks ME-01, carried over from the
-// retrieval-shaped tool: an empty CLI/no-principal ctx maps to the seeded `local`
-// UUID (…001) via ownerFromContext — so the operator's own local-owned documents
-// stay reachable — and an authenticated web principal is threaded verbatim. The
-// library is identity-scoped in SQL, so getting this wrong now shows another
-// identity's files rather than none.
 func TestDocumentSearchThreadsOwnerIdentity(t *testing.T) {
 	t.Run("empty principal resolves to local UUID", func(t *testing.T) {
 		library := &fakeLibrary{}
-		tool := &DocumentSearch{Library: library}
-		if _, err := tool.Execute(toolTestContext(t), json.RawMessage(`{"query":"hello"}`)); err != nil {
+		if _, err := (&DocumentSearch{Library: library}).Execute(
+			toolTestContext(t), json.RawMessage(`{"query":"hello"}`),
+		); err != nil {
 			t.Fatal(err)
 		}
-		if library.identityID != localOwnerID {
-			t.Fatalf("identity = %q, want the local UUID %q", library.identityID, localOwnerID)
+		if library.request.IdentityID != localOwnerID {
+			t.Fatalf("identity = %q, want %q", library.request.IdentityID, localOwnerID)
 		}
 	})
 	t.Run("web principal threaded verbatim", func(t *testing.T) {
 		const principal = "00000000-0000-0000-0000-0000000000ab"
 		library := &fakeLibrary{}
-		tool := &DocumentSearch{Library: library}
 		ctx := identityctx.WithIdentityID(toolTestContext(t), principal)
-		if _, err := tool.Execute(ctx, json.RawMessage(`{"query":"hello"}`)); err != nil {
+		if _, err := (&DocumentSearch{Library: library}).Execute(
+			ctx, json.RawMessage(`{"query":"hello"}`),
+		); err != nil {
 			t.Fatal(err)
 		}
-		if library.identityID != principal {
-			t.Fatalf("identity = %q, want %q", library.identityID, principal)
+		if library.request.IdentityID != principal {
+			t.Fatalf("identity = %q, want %q", library.request.IdentityID, principal)
 		}
 	})
 }

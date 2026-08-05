@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/url"
 	"slices"
 	"strings"
@@ -79,7 +80,7 @@ func (s *FakeStore) Head(ctx context.Context, ref ObjectRef) (Attrs, error) {
 	defer s.mu.RUnlock()
 	obj, ok := s.objects[ref]
 	if !ok {
-		return Attrs{}, fmt.Errorf("objectstore fake: %s/%s not found", ref.Bucket, ref.Key)
+		return Attrs{}, fmt.Errorf("objectstore fake: %s/%s: %w", ref.Bucket, ref.Key, fs.ErrNotExist)
 	}
 	return obj.attrs, nil
 }
@@ -92,7 +93,7 @@ func (s *FakeStore) Get(ctx context.Context, ref ObjectRef) (io.ReadCloser, Attr
 	defer s.mu.RUnlock()
 	obj, ok := s.objects[ref]
 	if !ok {
-		return nil, Attrs{}, fmt.Errorf("objectstore fake: %s/%s not found", ref.Bucket, ref.Key)
+		return nil, Attrs{}, fmt.Errorf("objectstore fake: %s/%s: %w", ref.Bucket, ref.Key, fs.ErrNotExist)
 	}
 	data := bytes.Clone(obj.data)
 	return io.NopCloser(bytes.NewReader(data)), obj.attrs, nil

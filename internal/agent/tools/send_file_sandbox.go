@@ -60,6 +60,10 @@ func (s *SendFile) deliverFromBox(ctx context.Context, h usersandbox.BoxHandle, 
 // prefix. A FAILED extraction takes its staging dir with it: the caller gets no path back, so
 // anything left behind would sit there until the 24h run-dir sweeper (or the OS) noticed.
 func stageBoxArtifact(ctx context.Context, r io.Reader, fallbackName string) (string, string, error) {
+	return stageBoxArtifactCapped(ctx, r, fallbackName, maxSendFileBytes)
+}
+
+func stageBoxArtifactCapped(ctx context.Context, r io.Reader, fallbackName string, maxBytes int64) (string, string, error) {
 	root, err := stagingRoot(ctx)
 	if err != nil {
 		return "", "", err
@@ -68,7 +72,7 @@ func stageBoxArtifact(ctx context.Context, r io.Reader, fallbackName string) (st
 	if err != nil {
 		return "", "", err
 	}
-	staged, err := extractFirstRegularFile(tar.NewReader(r), stageDir, fallbackName)
+	staged, err := extractFirstRegularFile(tar.NewReader(r), stageDir, fallbackName, maxBytes)
 	if err != nil {
 		_ = os.RemoveAll(stageDir)
 		return "", "", err
@@ -78,7 +82,10 @@ func stageBoxArtifact(ctx context.Context, r io.Reader, fallbackName string) (st
 
 // extractFirstRegularFile writes the first regular tar entry into stageDir and returns its path.
 // The archive entry supplies bytes only: its untrusted name never reaches a filesystem operation.
-func extractFirstRegularFile(tr *tar.Reader, stageDir, fallbackName string) (string, error) {
+func extractFirstRegularFile(tr *tar.Reader, stageDir, fallbackName string, maxBytes int64) (string, error) {
+	if maxBytes <= 0 {
+		return "", fmt.Errorf("staged artifact size limit must be positive")
+	}
 	name := filepath.Clean(fallbackName)
 	if !filepath.IsLocal(name) || name == "." || filepath.Base(name) != name {
 		return "", fmt.Errorf("invalid staged artifact name %q", fallbackName)
@@ -99,7 +106,7 @@ func extractFirstRegularFile(tr *tar.Reader, stageDir, fallbackName string) (str
 		if err != nil {
 			return "", err
 		}
-		_, cerr := io.Copy(f, io.LimitReader(tr, maxSendFileBytes+1))
+		_, cerr := io.Copy(f, io.LimitReader(tr, maxBytes+1))
 		closeErr := f.Close()
 		if cerr != nil {
 			return "", cerr

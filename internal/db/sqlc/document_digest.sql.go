@@ -12,16 +12,34 @@ import (
 )
 
 const searchDocumentDigests = `-- name: SearchDocumentDigests :many
-SELECT id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, card, digest_tsv, ts_rank(digest_tsv, websearch_to_tsquery('simple', public.unaccent('public.unaccent'::regdictionary, $1::text))) AS rank
-FROM aura.documents
-WHERE identity_id = $2
-  AND deleted_at IS NULL
-  AND status <> 'deleted'
+SELECT d.id, d.identity_id, d.scope, d.title, d.tags, d.metadata, d.active_version_id, d.status, d.created_at, d.updated_at, d.deleted_at, d.digest, d.card, d.digest_tsv, d.source_kind, d.source_key, d.search_document_id, d.pipeline_generation, d.error_code, d.error_message, ts_rank(d.digest_tsv, websearch_to_tsquery('simple', public.unaccent('public.unaccent'::regdictionary, $1::text))) AS rank
+FROM aura.documents d
+WHERE d.identity_id = $2
+  AND d.deleted_at IS NULL
+  AND d.status = 'ready'
+  AND d.pipeline_generation > 0
+  AND EXISTS (
+    SELECT 1
+    FROM aura.document_versions v
+    JOIN aura.storage_objects o
+      ON o.id = v.storage_object_id AND o.identity_id = v.identity_id
+    JOIN aura.assets a ON a.id = v.asset_id AND a.identity_id = v.identity_id
+    WHERE v.id = d.active_version_id
+      AND v.document_id = d.id
+      AND v.identity_id = d.identity_id
+      AND v.status = 'ready'
+      AND v.pipeline_generation = aura.documents.pipeline_generation
+      AND v.deleted_at IS NULL
+      AND o.status = 'live'
+      AND o.deleted_at IS NULL
+      AND a.status NOT IN ('deleting', 'deleted', 'canceled')
+      AND a.deleted_at IS NULL
+  )
   AND (
     $1::text = ''
-    OR digest_tsv @@ websearch_to_tsquery('simple', public.unaccent('public.unaccent'::regdictionary, $1::text))
+    OR d.digest_tsv @@ websearch_to_tsquery('simple', public.unaccent('public.unaccent'::regdictionary, $1::text))
   )
-ORDER BY rank DESC, updated_at DESC
+ORDER BY rank DESC, d.updated_at DESC
 LIMIT $3
 `
 
@@ -32,21 +50,27 @@ type SearchDocumentDigestsParams struct {
 }
 
 type SearchDocumentDigestsRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	IdentityID      pgtype.UUID        `json:"identity_id"`
-	Scope           string             `json:"scope"`
-	Title           string             `json:"title"`
-	Tags            []string           `json:"tags"`
-	Metadata        []byte             `json:"metadata"`
-	ActiveVersionID pgtype.UUID        `json:"active_version_id"`
-	Status          string             `json:"status"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
-	Digest          string             `json:"digest"`
-	Card            string             `json:"card"`
-	DigestTsv       interface{}        `json:"digest_tsv"`
-	Rank            float32            `json:"rank"`
+	ID                 pgtype.UUID        `json:"id"`
+	IdentityID         pgtype.UUID        `json:"identity_id"`
+	Scope              string             `json:"scope"`
+	Title              string             `json:"title"`
+	Tags               []string           `json:"tags"`
+	Metadata           []byte             `json:"metadata"`
+	ActiveVersionID    pgtype.UUID        `json:"active_version_id"`
+	Status             string             `json:"status"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
+	Digest             string             `json:"digest"`
+	Card               string             `json:"card"`
+	DigestTsv          interface{}        `json:"digest_tsv"`
+	SourceKind         string             `json:"source_kind"`
+	SourceKey          string             `json:"source_key"`
+	SearchDocumentID   string             `json:"search_document_id"`
+	PipelineGeneration int64              `json:"pipeline_generation"`
+	ErrorCode          string             `json:"error_code"`
+	ErrorMessage       string             `json:"error_message"`
+	Rank               float32            `json:"rank"`
 }
 
 // Rank a library by what each document IS, to pick WHICH file to open. The
@@ -96,6 +120,12 @@ func (q *Queries) SearchDocumentDigests(ctx context.Context, arg SearchDocumentD
 			&i.Digest,
 			&i.Card,
 			&i.DigestTsv,
+			&i.SourceKind,
+			&i.SourceKey,
+			&i.SearchDocumentID,
+			&i.PipelineGeneration,
+			&i.ErrorCode,
+			&i.ErrorMessage,
 			&i.Rank,
 		); err != nil {
 			return nil, err
@@ -115,7 +145,7 @@ SET card = $1,
 WHERE id = $2
   AND identity_id = $3
   AND deleted_at IS NULL
-RETURNING id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, card, digest_tsv
+RETURNING id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, card, digest_tsv, source_kind, source_key, search_document_id, pipeline_generation, error_code, error_message
 `
 
 type SetDocumentCardParams struct {
@@ -146,6 +176,12 @@ func (q *Queries) SetDocumentCard(ctx context.Context, arg SetDocumentCardParams
 		&i.Digest,
 		&i.Card,
 		&i.DigestTsv,
+		&i.SourceKind,
+		&i.SourceKey,
+		&i.SearchDocumentID,
+		&i.PipelineGeneration,
+		&i.ErrorCode,
+		&i.ErrorMessage,
 	)
 	return i, err
 }
@@ -157,7 +193,7 @@ SET digest = $1,
 WHERE id = $2
   AND identity_id = $3
   AND deleted_at IS NULL
-RETURNING id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, card, digest_tsv
+RETURNING id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, card, digest_tsv, source_kind, source_key, search_document_id, pipeline_generation, error_code, error_message
 `
 
 type SetDocumentDigestParams struct {
@@ -187,6 +223,12 @@ func (q *Queries) SetDocumentDigest(ctx context.Context, arg SetDocumentDigestPa
 		&i.Digest,
 		&i.Card,
 		&i.DigestTsv,
+		&i.SourceKind,
+		&i.SourceKey,
+		&i.SearchDocumentID,
+		&i.PipelineGeneration,
+		&i.ErrorCode,
+		&i.ErrorMessage,
 	)
 	return i, err
 }

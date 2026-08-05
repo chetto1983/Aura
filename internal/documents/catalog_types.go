@@ -47,17 +47,21 @@ const (
 
 // Document is the domain view of one logical, versioned document.
 type Document struct {
-	ID              string         `json:"id"`
-	IdentityID      string         `json:"identity_id"`
-	Scope           DocumentScope  `json:"scope"`
-	Title           string         `json:"title"`
-	Tags            []string       `json:"tags"`
-	Metadata        map[string]any `json:"metadata"`
-	ActiveVersionID string         `json:"active_version_id,omitempty"`
-	Status          DocumentStatus `json:"status"`
-	CreatedAt       time.Time      `json:"created_at"`
-	UpdatedAt       time.Time      `json:"updated_at"`
-	DeletedAt       time.Time      `json:"deleted_at"`
+	ID                 string         `json:"id"`
+	IdentityID         string         `json:"identity_id"`
+	SourceKind         string         `json:"source_kind"`
+	SourceKey          string         `json:"source_key"`
+	SearchDocumentID   string         `json:"search_document_id"`
+	PipelineGeneration int64          `json:"pipeline_generation"`
+	Scope              DocumentScope  `json:"scope"`
+	Title              string         `json:"title"`
+	Tags               []string       `json:"tags"`
+	Metadata           map[string]any `json:"metadata"`
+	ActiveVersionID    string         `json:"active_version_id,omitempty"`
+	Status             DocumentStatus `json:"status"`
+	CreatedAt          time.Time      `json:"created_at"`
+	UpdatedAt          time.Time      `json:"updated_at"`
+	DeletedAt          time.Time      `json:"deleted_at"`
 	// ActiveSizeBytes and ActiveContentType denormalize the active version's
 	// storage facts onto list rows so a document catalog entry is self-sufficient
 	// (size + kind) without an N+1 detail fetch. They are populated only by
@@ -72,7 +76,10 @@ type DocumentSummary = Document
 // DocumentVersion summarizes an immutable content version.
 type DocumentVersion struct {
 	ID                 string    `json:"id"`
+	IdentityID         string    `json:"identity_id"`
 	DocumentID         string    `json:"document_id"`
+	SearchDocumentID   string    `json:"search_document_id"`
+	PipelineGeneration int64     `json:"pipeline_generation"`
 	AssetID            string    `json:"asset_id,omitempty"`
 	VersionNumber      int       `json:"version_number"`
 	Status             string    `json:"status"`
@@ -101,24 +108,29 @@ type DocumentDetail struct {
 
 // CreateDocumentRequest creates a logical document before or alongside its first version.
 type CreateDocumentRequest struct {
-	IdentityID string
-	Scope      DocumentScope
-	Title      string
-	Tags       []string
-	Metadata   map[string]any
-	Status     DocumentStatus
+	IdentityID         string
+	SourceKind         string
+	SourceKey          string
+	SearchDocumentID   string
+	PipelineGeneration int64
+	Scope              DocumentScope
+	Title              string
+	Tags               []string
+	Metadata           map[string]any
+	Status             DocumentStatus
 }
 
 // UpdateDocumentRequest updates version-independent document metadata.
 type UpdateDocumentRequest struct {
-	IdentityID      string
-	DocumentID      string
-	Scope           DocumentScope
-	Title           string
-	Tags            []string
-	Metadata        map[string]any
-	ActiveVersionID string
-	Status          DocumentStatus
+	IdentityID         string
+	DocumentID         string
+	Scope              DocumentScope
+	Title              string
+	Tags               []string
+	Metadata           map[string]any
+	ActiveVersionID    string
+	Status             DocumentStatus
+	PipelineGeneration int64
 }
 
 // ListDocumentsRequest filters the operator document catalog.
@@ -135,6 +147,8 @@ type ListDocumentsRequest struct {
 type RecordAssetVersionRequest struct {
 	IdentityID         string
 	AssetID            string
+	SourceKind         string
+	SourceKey          string
 	Scope              DocumentScope
 	Title              string
 	FileName           string
@@ -155,6 +169,7 @@ type RecordAssetVersionRequest struct {
 	RetentionClass     string
 	ChunkingConfigHash string
 	PipelineConfigHash string
+	PipelineGeneration int64
 	Metadata           map[string]any
 }
 

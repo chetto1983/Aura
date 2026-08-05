@@ -3,89 +3,140 @@ package documents
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// ErrIngestionJobLeaseLost means a worker no longer owns the job lease and
+// must not publish any further state for that attempt.
+var ErrIngestionJobLeaseLost = errors.New("ingestion job lease lost")
 
 // IngestionJob is the durable document/asset processing queue row.
 type IngestionJob struct {
-	ID             string         `json:"id"`
-	JobType        string         `json:"job_type"`
-	DocumentID     string         `json:"document_id,omitempty"`
-	VersionID      string         `json:"version_id,omitempty"`
-	Status         string         `json:"status"`
-	IdempotencyKey string         `json:"idempotency_key"`
-	Stage          string         `json:"stage"`
-	AttemptCount   int            `json:"attempt_count"`
-	MaxAttempts    int            `json:"max_attempts"`
-	LockedBy       string         `json:"locked_by,omitempty"`
-	LockedUntil    time.Time      `json:"locked_until"`
-	NextAttemptAt  time.Time      `json:"next_attempt_at"`
-	Payload        map[string]any `json:"payload"`
-	ErrorCode      string         `json:"error_code,omitempty"`
-	ErrorMessage   string         `json:"error_message,omitempty"`
-	CreatedAt      time.Time      `json:"created_at"`
-	UpdatedAt      time.Time      `json:"updated_at"`
-	CompletedAt    time.Time      `json:"completed_at"`
+	ID                 string         `json:"id"`
+	IdentityID         string         `json:"identity_id"`
+	JobType            string         `json:"job_type"`
+	AssetID            string         `json:"asset_id,omitempty"`
+	DocumentID         string         `json:"document_id,omitempty"`
+	VersionID          string         `json:"version_id,omitempty"`
+	Status             string         `json:"status"`
+	IdempotencyKey     string         `json:"idempotency_key"`
+	Stage              string         `json:"stage"`
+	AttemptCount       int            `json:"attempt_count"`
+	MaxAttempts        int            `json:"max_attempts"`
+	PipelineGeneration int64          `json:"pipeline_generation"`
+	AttemptGeneration  int64          `json:"attempt_generation"`
+	LeaseGeneration    int64          `json:"lease_generation"`
+	LockedBy           string         `json:"locked_by,omitempty"`
+	LockedUntil        time.Time      `json:"locked_until"`
+	NextAttemptAt      time.Time      `json:"next_attempt_at"`
+	Payload            map[string]any `json:"payload"`
+	ErrorCode          string         `json:"error_code,omitempty"`
+	ErrorMessage       string         `json:"error_message,omitempty"`
+	CreatedAt          time.Time      `json:"created_at"`
+	UpdatedAt          time.Time      `json:"updated_at"`
+	CompletedAt        time.Time      `json:"completed_at"`
 }
 
 // CreateIngestionJobRequest carries a durable job enqueue request.
 type CreateIngestionJobRequest struct {
-	JobType        string
-	DocumentID     string
-	VersionID      string
-	Status         string
-	IdempotencyKey string
-	Stage          string
-	MaxAttempts    int
-	NextAttemptAt  time.Time
-	Payload        map[string]any
+	IdentityID         string
+	JobType            string
+	AssetID            string
+	DocumentID         string
+	VersionID          string
+	Status             string
+	IdempotencyKey     string
+	Stage              string
+	MaxAttempts        int
+	NextAttemptAt      time.Time
+	Payload            map[string]any
+	PipelineGeneration int64
 }
 
-// ClaimIngestionJobsRequest carries worker lease parameters for queued jobs.
+// ClaimIngestionJobsRequest carries owner-scoped worker lease parameters.
 type ClaimIngestionJobsRequest struct {
+	IdentityID    string
 	WorkerID      string
 	LeaseDuration time.Duration
 	BatchSize     int
 }
 
-// PostgresIngestionJobStore implements the durable ingestion job queue with sqlc.
+// TransitionIngestionJobRequest carries a fenced terminal state transition.
+type TransitionIngestionJobRequest struct {
+	IdentityID      string
+	JobID           string
+	WorkerID        string
+	LeaseGeneration int64
+	Status          string
+	Stage           string
+	ErrorCode       string
+	ErrorMessage    string
+	EventType       string
+	EventMessage    string
+	EventDetail     map[string]any
+	TraceID         string
+}
+
+// RetryIngestionJobRequest carries a fenced retry transition.
+type RetryIngestionJobRequest struct {
+	IdentityID      string
+	JobID           string
+	WorkerID        string
+	LeaseGeneration int64
+	Stage           string
+	ErrorCode       string
+	ErrorMessage    string
+	EventMessage    string
+	NextAttemptAt   time.Time
+}
+
+// HeartbeatIngestionJobRequest carries a fenced lease renewal.
+type HeartbeatIngestionJobRequest struct {
+	IdentityID      string
+	JobID           string
+	WorkerID        string
+	LeaseGeneration int64
+	LeaseDuration   time.Duration
+}
+
+// ManualRetryIngestionJobRequest identifies a terminal job by its stable key.
+type ManualRetryIngestionJobRequest struct {
+	IdentityID     string
+	JobType        string
+	IdempotencyKey string
+	Stage          string
+	NextAttemptAt  time.Time
+}
+
+// PostgresIngestionJobStore implements the durable ingestion queue with RLS.
 type PostgresIngestionJobStore struct {
-	q *sqlc.Queries
+	pool *pgxpool.Pool
 }
 
 // NewPostgresIngestionJobStore builds a Postgres-backed durable ingestion job store.
-func NewPostgresIngestionJobStore(db sqlc.DBTX) *PostgresIngestionJobStore {
-	return &PostgresIngestionJobStore{q: sqlc.New(db)}
+func NewPostgresIngestionJobStore(pool *pgxpool.Pool) *PostgresIngestionJobStore {
+	return &PostgresIngestionJobStore{pool: pool}
 }
 
-// Create inserts or returns a durable ingestion job by idempotency key.
+// Create inserts or returns a durable ingestion job by stable identity-scoped key.
 func (s *PostgresIngestionJobStore) Create(ctx context.Context, req CreateIngestionJobRequest) (IngestionJob, error) {
-	payload, err := ingestionJobPayloadJSON(req.Payload)
+	p, err := createIngestionJobParams(req)
 	if err != nil {
 		return IngestionJob{}, err
 	}
-	documentID, err := optionalUUIDFromString("document id", req.DocumentID)
-	if err != nil {
-		return IngestionJob{}, err
-	}
-	versionID, err := optionalUUIDFromString("version id", req.VersionID)
-	if err != nil {
-		return IngestionJob{}, err
-	}
-	row, err := s.q.CreateIngestionJob(ctx, sqlc.CreateIngestionJobParams{
-		JobType:        req.JobType,
-		DocumentID:     documentID,
-		VersionID:      versionID,
-		Status:         req.Status,
-		IdempotencyKey: req.IdempotencyKey,
-		Stage:          req.Stage,
-		MaxAttempts:    int32(req.MaxAttempts), //nolint:gosec // caller controls a small retry count.
-		NextAttemptAt:  pgTime(req.NextAttemptAt),
-		Payload:        payload,
+	var row sqlc.AuraIngestionJobs
+	err = s.withIdentity(ctx, req.IdentityID, func(q *sqlc.Queries) error {
+		var queryErr error
+		row, queryErr = q.CreateIngestionJob(ctx, p)
+		return queryErr
 	})
 	if err != nil {
 		return IngestionJob{}, err
@@ -93,68 +144,138 @@ func (s *PostgresIngestionJobStore) Create(ctx context.Context, req CreateIngest
 	return ingestionJobFromSQL(row)
 }
 
-// Claim leases queued jobs using the generated SKIP LOCKED query.
+// Claim leases queued or expired-running jobs for one owner.
 func (s *PostgresIngestionJobStore) Claim(ctx context.Context, req ClaimIngestionJobsRequest) ([]IngestionJob, error) {
-	rows, err := s.q.ClaimIngestionJobs(ctx, sqlc.ClaimIngestionJobsParams{
-		LockedBy:      pgtype.Text{String: req.WorkerID, Valid: req.WorkerID != ""},
-		LeaseDuration: pgInterval(req.LeaseDuration),
-		BatchSize:     int32(req.BatchSize), //nolint:gosec // worker batch sizes are small positive ints.
+	identityID, err := pgUUID("ingestion job identity id", req.IdentityID)
+	if err != nil {
+		return nil, err
+	}
+	var rows []sqlc.ClaimIngestionJobsRow
+	err = s.withIdentity(ctx, req.IdentityID, func(q *sqlc.Queries) error {
+		var queryErr error
+		rows, queryErr = q.ClaimIngestionJobs(ctx, sqlc.ClaimIngestionJobsParams{
+			IdentityID: identityID, LockedBy: pgText(req.WorkerID),
+			LeaseDuration: pgInterval(req.LeaseDuration),
+			BatchSize:     int32(req.BatchSize), //nolint:gosec // configured worker batch is bounded.
+		})
+		return queryErr
 	})
 	if err != nil {
 		return nil, err
 	}
 	out := make([]IngestionJob, 0, len(rows))
 	for _, row := range rows {
-		job, err := ingestionJobFromSQL(row)
-		if err != nil {
-			return nil, err
+		job, convertErr := ingestionJobFromSQL(row)
+		if convertErr != nil {
+			return nil, convertErr
 		}
 		out = append(out, job)
 	}
 	return out, nil
 }
 
-// UpdateStatus records one durable job lifecycle transition.
-func (s *PostgresIngestionJobStore) UpdateStatus(ctx context.Context, id, status, stage, code, message string) (IngestionJob, error) {
-	pgID, err := pgUUID("ingestion job id", id)
+// UpdateStatus records one fenced lifecycle transition and its event atomically.
+func (s *PostgresIngestionJobStore) UpdateStatus(ctx context.Context, req TransitionIngestionJobRequest) (IngestionJob, error) {
+	identityID, jobID, detail, err := transitionIngestionJobParams(req)
 	if err != nil {
 		return IngestionJob{}, err
 	}
-	row, err := s.q.UpdateIngestionJobStatus(ctx, sqlc.UpdateIngestionJobStatusParams{
-		ID:           pgID,
-		Status:       status,
-		Stage:        stage,
-		ErrorCode:    code,
-		ErrorMessage: message,
+	var row sqlc.UpdateIngestionJobStatusRow
+	err = s.withIdentity(ctx, req.IdentityID, func(q *sqlc.Queries) error {
+		var queryErr error
+		row, queryErr = q.UpdateIngestionJobStatus(ctx, sqlc.UpdateIngestionJobStatusParams{
+			ID: jobID, IdentityID: identityID, LockedBy: pgText(req.WorkerID),
+			LeaseGeneration: req.LeaseGeneration, Status: req.Status, Stage: req.Stage,
+			ErrorCode: req.ErrorCode, ErrorMessage: req.ErrorMessage,
+			EventType: req.EventType, EventMessage: req.EventMessage,
+			EventDetail: detail, TraceID: req.TraceID,
+		})
+		return queryErr
 	})
 	if err != nil {
-		return IngestionJob{}, err
+		return IngestionJob{}, fencedIngestionJobError("transition", err)
 	}
 	return ingestionJobFromSQL(row)
 }
 
-// CountByStatus returns the current durable job count for one status value,
-// backing the ingestion_queue_depth gauge (obs.IngestionQueueDepthID).
-func (s *PostgresIngestionJobStore) CountByStatus(ctx context.Context, status string) (int64, error) {
-	count, err := s.q.CountIngestionJobsByStatus(ctx, status)
+// Retry returns a claimed job to queued using the active worker fence.
+func (s *PostgresIngestionJobStore) Retry(ctx context.Context, req RetryIngestionJobRequest) (IngestionJob, error) {
+	identityID, jobID, err := ingestionJobFence(req.IdentityID, req.JobID)
+	if err != nil {
+		return IngestionJob{}, err
+	}
+	var row sqlc.RetryIngestionJobRow
+	err = s.withIdentity(ctx, req.IdentityID, func(q *sqlc.Queries) error {
+		var queryErr error
+		row, queryErr = q.RetryIngestionJob(ctx, sqlc.RetryIngestionJobParams{
+			ID: jobID, IdentityID: identityID, LockedBy: pgText(req.WorkerID),
+			LeaseGeneration: req.LeaseGeneration, Stage: req.Stage,
+			ErrorCode: req.ErrorCode, ErrorMessage: req.ErrorMessage,
+			NextAttemptAt: pgTime(req.NextAttemptAt), EventMessage: req.EventMessage,
+		})
+		return queryErr
+	})
+	if err != nil {
+		return IngestionJob{}, fencedIngestionJobError("retry", err)
+	}
+	return ingestionJobFromSQL(row)
+}
+
+// Heartbeat renews a lease only while the owner, worker, and fence still match.
+func (s *PostgresIngestionJobStore) Heartbeat(ctx context.Context, req HeartbeatIngestionJobRequest) (IngestionJob, error) {
+	identityID, jobID, err := ingestionJobFence(req.IdentityID, req.JobID)
+	if err != nil {
+		return IngestionJob{}, err
+	}
+	var row sqlc.AuraIngestionJobs
+	err = s.withIdentity(ctx, req.IdentityID, func(q *sqlc.Queries) error {
+		var queryErr error
+		row, queryErr = q.HeartbeatIngestionJob(ctx, sqlc.HeartbeatIngestionJobParams{
+			ID: jobID, IdentityID: identityID, LockedBy: pgText(req.WorkerID),
+			LeaseGeneration: req.LeaseGeneration, LeaseDuration: pgInterval(req.LeaseDuration),
+		})
+		return queryErr
+	})
+	if err != nil {
+		return IngestionJob{}, fencedIngestionJobError("heartbeat", err)
+	}
+	return ingestionJobFromSQL(row)
+}
+
+// CountByStatus returns one owner's durable job count for a status.
+func (s *PostgresIngestionJobStore) CountByStatus(ctx context.Context, identityID, status string) (int64, error) {
+	pgIdentityID, err := pgUUID("ingestion job identity id", identityID)
+	if err != nil {
+		return 0, err
+	}
+	var count int64
+	err = s.withIdentity(ctx, identityID, func(q *sqlc.Queries) error {
+		var queryErr error
+		count, queryErr = q.CountIngestionJobsByStatus(ctx, sqlc.CountIngestionJobsByStatusParams{
+			IdentityID: pgIdentityID, Status: status,
+		})
+		return queryErr
+	})
 	if err != nil {
 		return 0, fmt.Errorf("count ingestion jobs by status: %w", err)
 	}
 	return count, nil
 }
 
-// Retry returns a claimed job to the queued state for a later attempt.
-func (s *PostgresIngestionJobStore) Retry(ctx context.Context, id, stage, code, message string, nextAttemptAt time.Time) (IngestionJob, error) {
-	pgID, err := pgUUID("ingestion job id", id)
+// ManualRetryByKey reopens only a terminal job and advances both retry fences.
+func (s *PostgresIngestionJobStore) ManualRetryByKey(ctx context.Context, req ManualRetryIngestionJobRequest) (IngestionJob, error) {
+	identityID, err := pgUUID("ingestion job identity id", req.IdentityID)
 	if err != nil {
 		return IngestionJob{}, err
 	}
-	row, err := s.q.RetryIngestionJob(ctx, sqlc.RetryIngestionJobParams{
-		ID:            pgID,
-		Stage:         stage,
-		ErrorCode:     code,
-		ErrorMessage:  message,
-		NextAttemptAt: pgTime(nextAttemptAt),
+	var row sqlc.ManualRetryIngestionJobByKeyRow
+	err = s.withIdentity(ctx, req.IdentityID, func(q *sqlc.Queries) error {
+		var queryErr error
+		row, queryErr = q.ManualRetryIngestionJobByKey(ctx, sqlc.ManualRetryIngestionJobByKeyParams{
+			IdentityID: identityID, JobType: req.JobType, IdempotencyKey: req.IdempotencyKey,
+			Stage: req.Stage, NextAttemptAt: pgTime(req.NextAttemptAt),
+		})
+		return queryErr
 	})
 	if err != nil {
 		return IngestionJob{}, err
@@ -162,30 +283,107 @@ func (s *PostgresIngestionJobStore) Retry(ctx context.Context, id, stage, code, 
 	return ingestionJobFromSQL(row)
 }
 
-func ingestionJobFromSQL(row sqlc.AuraIngestionJobs) (IngestionJob, error) {
-	payload, err := ingestionJobPayloadFromJSON(row.Payload)
+func (s *PostgresIngestionJobStore) withIdentity(ctx context.Context, identityID string, fn func(*sqlc.Queries) error) error {
+	if s == nil || s.pool == nil {
+		return fmt.Errorf("ingestion job store is not configured")
+	}
+	if identityID == "" {
+		return fmt.Errorf("ingestion job identity id is required")
+	}
+	return db.WithIdentityTx(ctx, s.pool, identityID, fn)
+}
+
+func createIngestionJobParams(req CreateIngestionJobRequest) (sqlc.CreateIngestionJobParams, error) {
+	identityID, err := pgUUID("ingestion job identity id", req.IdentityID)
+	if err != nil {
+		return sqlc.CreateIngestionJobParams{}, err
+	}
+	assetID, err := optionalUUIDFromString("asset id", req.AssetID)
+	if err != nil {
+		return sqlc.CreateIngestionJobParams{}, err
+	}
+	documentID, err := optionalUUIDFromString("document id", req.DocumentID)
+	if err != nil {
+		return sqlc.CreateIngestionJobParams{}, err
+	}
+	versionID, err := optionalUUIDFromString("version id", req.VersionID)
+	if err != nil {
+		return sqlc.CreateIngestionJobParams{}, err
+	}
+	payload, err := ingestionJobPayloadJSON(req.Payload)
+	if err != nil {
+		return sqlc.CreateIngestionJobParams{}, err
+	}
+	return sqlc.CreateIngestionJobParams{
+		IdentityID: identityID, JobType: req.JobType, AssetID: assetID,
+		DocumentID: documentID, VersionID: versionID, Status: req.Status,
+		IdempotencyKey: req.IdempotencyKey, Stage: req.Stage,
+		MaxAttempts:   int32(req.MaxAttempts), //nolint:gosec // caller controls a small retry count.
+		NextAttemptAt: pgTime(req.NextAttemptAt), Payload: payload,
+		PipelineGeneration: req.PipelineGeneration,
+	}, nil
+}
+
+func transitionIngestionJobParams(req TransitionIngestionJobRequest) (pgtype.UUID, pgtype.UUID, []byte, error) {
+	identityID, jobID, err := ingestionJobFence(req.IdentityID, req.JobID)
+	if err != nil {
+		return pgtype.UUID{}, pgtype.UUID{}, nil, err
+	}
+	detail, err := ingestionEventDetailJSON(req.EventDetail)
+	if err != nil {
+		return pgtype.UUID{}, pgtype.UUID{}, nil, err
+	}
+	return identityID, jobID, detail, nil
+}
+
+func ingestionJobFence(identityID, jobID string) (pgtype.UUID, pgtype.UUID, error) {
+	pgIdentityID, err := pgUUID("ingestion job identity id", identityID)
+	if err != nil {
+		return pgtype.UUID{}, pgtype.UUID{}, err
+	}
+	pgJobID, err := pgUUID("ingestion job id", jobID)
+	if err != nil {
+		return pgtype.UUID{}, pgtype.UUID{}, err
+	}
+	return pgIdentityID, pgJobID, nil
+}
+
+func fencedIngestionJobError(action string, err error) error {
+	if errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("%s ingestion job: %w", action, ErrIngestionJobLeaseLost)
+	}
+	return err
+}
+
+// ingestionJobRow is the set of row structs sqlc emits for the ingestion job queries.
+// Every one of those queries returns the full aura.ingestion_jobs column list in table
+// order, so the five generated structs are field-identical to the model and each converts
+// straight into it — which is what lets a single mapper serve all of them. A query that
+// projects a narrower or reordered column list stops compiling here rather than silently
+// growing a sixth copy of this mapping.
+type ingestionJobRow interface {
+	sqlc.AuraIngestionJobs | sqlc.ClaimIngestionJobsRow | sqlc.UpdateIngestionJobStatusRow |
+		sqlc.RetryIngestionJobRow | sqlc.ManualRetryIngestionJobByKeyRow
+}
+
+func ingestionJobFromSQL[R ingestionJobRow](row R) (IngestionJob, error) {
+	rec := sqlc.AuraIngestionJobs(row)
+	payload, err := ingestionJobPayloadFromJSON(rec.Payload)
 	if err != nil {
 		return IngestionJob{}, err
 	}
 	return IngestionJob{
-		ID:             uuidString(row.ID),
-		JobType:        row.JobType,
-		DocumentID:     uuidString(row.DocumentID),
-		VersionID:      uuidString(row.VersionID),
-		Status:         row.Status,
-		IdempotencyKey: row.IdempotencyKey,
-		Stage:          row.Stage,
-		AttemptCount:   int(row.AttemptCount),
-		MaxAttempts:    int(row.MaxAttempts),
-		LockedBy:       textString(row.LockedBy),
-		LockedUntil:    timeValue(row.LockedUntil),
-		NextAttemptAt:  timeValue(row.NextAttemptAt),
-		Payload:        payload,
-		ErrorCode:      row.ErrorCode,
-		ErrorMessage:   row.ErrorMessage,
-		CreatedAt:      timeValue(row.CreatedAt),
-		UpdatedAt:      timeValue(row.UpdatedAt),
-		CompletedAt:    timeValue(row.CompletedAt),
+		ID: uuidString(rec.ID), IdentityID: uuidString(rec.IdentityID), JobType: rec.JobType,
+		AssetID: uuidString(rec.AssetID), DocumentID: uuidString(rec.DocumentID),
+		VersionID: uuidString(rec.VersionID), Status: rec.Status,
+		IdempotencyKey: rec.IdempotencyKey, Stage: rec.Stage,
+		AttemptCount: int(rec.AttemptCount), MaxAttempts: int(rec.MaxAttempts),
+		PipelineGeneration: rec.PipelineGeneration, AttemptGeneration: rec.AttemptGeneration,
+		LeaseGeneration: rec.LeaseGeneration, LockedBy: textString(rec.LockedBy),
+		LockedUntil: timeValue(rec.LockedUntil), NextAttemptAt: timeValue(rec.NextAttemptAt),
+		Payload: payload, ErrorCode: rec.ErrorCode, ErrorMessage: rec.ErrorMessage,
+		CreatedAt: timeValue(rec.CreatedAt), UpdatedAt: timeValue(rec.UpdatedAt),
+		CompletedAt: timeValue(rec.CompletedAt),
 	}, nil
 }
 

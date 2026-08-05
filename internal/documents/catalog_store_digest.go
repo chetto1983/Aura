@@ -62,7 +62,7 @@ func (s *PostgresCatalogStore) setDescription(
 		return err
 	}
 	return s.scoped(ctx, identityID, func(sc catalogTx) error {
-		id, err := sc.digestTargetID(ctx, documentID)
+		id, err := sc.digestTargetID(ctx, identityID, documentID)
 		if err != nil {
 			return err
 		}
@@ -77,7 +77,7 @@ func (s *PostgresCatalogStore) setDescription(
 }
 
 // digestTargetID accepts either id namespace, same as OpenService does.
-func (sc catalogTx) digestTargetID(ctx context.Context, documentID string) (pgtype.UUID, error) {
+func (sc catalogTx) digestTargetID(ctx context.Context, identityID, documentID string) (pgtype.UUID, error) {
 	documentID = strings.TrimSpace(documentID)
 	if documentID == "" {
 		return pgtype.UUID{}, fmt.Errorf("document_id is required")
@@ -85,7 +85,7 @@ func (sc catalogTx) digestTargetID(ctx context.Context, documentID string) (pgty
 	if _, err := uuid.Parse(documentID); err == nil {
 		return pgUUID("document_id", documentID)
 	}
-	return sc.catalogIDForSearchDocument(ctx, documentID)
+	return sc.catalogIDForSearchDocument(ctx, identityID, documentID)
 }
 
 // SearchDigests ranks one identity's library by ts_rank over the weighted

@@ -100,8 +100,7 @@ var ErrDocumentNotCatalogued = errors.New("documents: search document is not in 
 // catalog's uuid primary key, and passing one where the other was expected is how the "a
 // dead embedding never stays ready" guarantee silently never fired: uuid.Parse rejected the
 // string, the worker swallowed the error into a WARN, and the catalog kept saying ready.
-// The mapping lives in metadata->>'search_document_id', written by
-// CatalogService.RecordAssetVersion and read the same way by the ownership backfill.
+// The mapping is the typed, immutable owner-scoped search_document_id column.
 func (s *PostgresCatalogStore) SetSearchDocumentStatus(
 	ctx context.Context,
 	identityID, searchDocumentID string,
@@ -109,14 +108,17 @@ func (s *PostgresCatalogStore) SetSearchDocumentStatus(
 	reason string,
 ) error {
 	return s.scoped(ctx, identityID, func(sc catalogTx) error {
-		pgDocumentID, err := sc.catalogIDForSearchDocument(ctx, searchDocumentID)
+		pgDocumentID, err := sc.catalogIDForSearchDocument(ctx, identityID, searchDocumentID)
+		if err != nil {
+			return err
+		}
+		pgIdentityID, err := pgUUID("identity_id", identityID)
 		if err != nil {
 			return err
 		}
 		if _, err := sc.q.SetDocumentStatus(ctx, sqlc.SetDocumentStatusParams{
-			ID:     pgDocumentID,
-			Status: string(status),
-			Reason: reason,
+			ID: pgDocumentID, IdentityID: pgIdentityID, Status: string(status),
+			ErrorCode: reason, ErrorMessage: reason,
 		}); err != nil {
 			return fmt.Errorf("set document status: %w", err)
 		}
@@ -138,7 +140,7 @@ func (s *PostgresCatalogStore) CatalogIDForSearchDocument(
 	identityID, searchDocumentID string,
 ) (string, error) {
 	return scopedValue(ctx, s, identityID, func(sc catalogTx) (string, error) {
-		id, err := sc.catalogIDForSearchDocument(ctx, searchDocumentID)
+		id, err := sc.catalogIDForSearchDocument(ctx, identityID, searchDocumentID)
 		if err != nil {
 			return "", err
 		}
@@ -146,29 +148,23 @@ func (s *PostgresCatalogStore) CatalogIDForSearchDocument(
 	})
 }
 
-// catalogIDForSearchDocument resolves the catalog uuid a search document was recorded
-// under. Newest first: a re-uploaded file keeps its content-derived search id, so the same
-// string can name several catalog rows over time and only the live one may be corrected.
-func (sc catalogTx) catalogIDForSearchDocument(ctx context.Context, searchDocumentID string) (pgtype.UUID, error) {
+// catalogIDForSearchDocument resolves the unique live owner-scoped typed search id.
+func (sc catalogTx) catalogIDForSearchDocument(ctx context.Context, identityID, searchDocumentID string) (pgtype.UUID, error) {
 	if strings.TrimSpace(searchDocumentID) == "" {
 		return pgtype.UUID{}, fmt.Errorf("search_document_id is empty")
 	}
-	if sc.raw == nil {
-		return pgtype.UUID{}, fmt.Errorf("catalog store has no database handle")
+	owner, err := pgUUID("identity_id", identityID)
+	if err != nil {
+		return pgtype.UUID{}, err
 	}
-	var id string
-	err := sc.raw.QueryRow(ctx, `
-SELECT id::text
-FROM aura.documents
-WHERE metadata->>'search_document_id' = $1
-  AND deleted_at IS NULL
-ORDER BY created_at DESC
-LIMIT 1`, searchDocumentID).Scan(&id)
+	row, err := sc.q.GetDocumentBySearchID(ctx, sqlc.GetDocumentBySearchIDParams{
+		IdentityID: owner, SearchDocumentID: searchDocumentID,
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return pgtype.UUID{}, fmt.Errorf("%w: %s", ErrDocumentNotCatalogued, searchDocumentID)
 	}
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("resolve catalog document for %s: %w", searchDocumentID, err)
 	}
-	return pgUUID("document_id", id)
+	return row.ID, nil
 }

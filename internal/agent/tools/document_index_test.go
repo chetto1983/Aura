@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/config"
-	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 )
 
@@ -98,26 +98,26 @@ func assertNothingStaged(t *testing.T, runDir string) {
 }
 
 type fakeIndexer struct {
+	called     bool
 	calledPath string
-	calledReq  documents.IngestRequest
+	calledReq  assets.DocumentIngestRequest
 	read       []byte
 	readErr    error
-	job        *documents.Job
+	asset      assets.Asset
 	err        error
 }
 
-func (f *fakeIndexer) IngestPath(_ context.Context, req documents.IngestRequest, path string) (*documents.Job, error) {
-	f.calledPath = path
+func (f *fakeIndexer) IngestDocument(_ context.Context, req assets.DocumentIngestRequest) (assets.Asset, error) {
+	f.called = true
 	f.calledReq = req
-	// The real pipeline READS the bytes in this process (content hash + the filecard, which
-	// shells out to pdftotext). Reading them here is what proves the tool handed over a path the
-	// aura container can actually open — precisely what the host-workspace version could not do
-	// for a file the agent had produced inside its box.
-	f.read, f.readErr = os.ReadFile(path)
-	if f.err != nil {
-		return nil, f.err
+	if named, ok := req.Reader.(interface{ Name() string }); ok {
+		f.calledPath = named.Name()
 	}
-	return f.job, nil
+	f.read, f.readErr = io.ReadAll(req.Reader)
+	if f.err != nil {
+		return assets.Asset{}, f.err
+	}
+	return f.asset, nil
 }
 
 // TestDocumentIndex_StagesTheBoxFileForIngest is the fix itself: a workspace-relative path
@@ -126,7 +126,7 @@ func (f *fakeIndexer) IngestPath(_ context.Context, req documents.IngestRequest,
 func TestDocumentIndex_StagesTheBoxFileForIngest(t *testing.T) {
 	ctx, runDir := indexCtx(t)
 	be := boxTar(t, "r.docx", "DOCXBYTES")
-	fi := &fakeIndexer{job: &documents.Job{DocumentID: "doc-1", FileName: "r.docx", Status: "searchable"}}
+	fi := &fakeIndexer{asset: assets.Asset{ID: "asset-1", FileName: "r.docx", Status: assets.StatusAccepted}}
 
 	res, err := (&DocumentIndex{Indexer: fi, Router: indexRouter(be)}).
 		Execute(ctx, json.RawMessage(`{"path":"artifacts/r.docx"}`))
@@ -136,8 +136,8 @@ func TestDocumentIndex_StagesTheBoxFileForIngest(t *testing.T) {
 	if want := []string{"/workspace/artifacts/r.docx"}; !slices.Equal(be.copiedOut, want) {
 		t.Fatalf("box was asked for %v, want %v (a relative path joins onto the BOX /workspace)", be.copiedOut, want)
 	}
-	if fi.calledPath == "/workspace/artifacts/r.docx" {
-		t.Fatal("IngestPath got the BOX path; the ingest reads host bytes and would find nothing there")
+	if !fi.called {
+		t.Fatal("IngestDocument was not called")
 	}
 	if fi.readErr != nil || string(fi.read) != "DOCXBYTES" {
 		t.Fatalf("ingest read %q (err %v), want the box artifact's bytes", fi.read, fi.readErr)
@@ -147,34 +147,48 @@ func TestDocumentIndex_StagesTheBoxFileForIngest(t *testing.T) {
 	if fi.calledReq.FileName != "r.docx" {
 		t.Fatalf("FileName = %q, want the box basename r.docx", fi.calledReq.FileName)
 	}
-	if fi.calledReq.OriginalPath != "/workspace/artifacts/r.docx" {
-		t.Fatalf("OriginalPath = %q, want the box path", fi.calledReq.OriginalPath)
+	if fi.calledReq.SourceRef != documentSourceFingerprint("/workspace/artifacts/r.docx") || strings.Contains(fi.calledReq.SourceRef, "/workspace") {
+		t.Fatalf("SourceRef = %q, want an opaque stable fingerprint", fi.calledReq.SourceRef)
 	}
-	if fi.calledReq.SourceID != "/workspace/artifacts/r.docx" {
-		t.Fatalf("SourceID = %q, want the box path when no title was given", fi.calledReq.SourceID)
-	}
-	if fi.calledReq.SourceKind != "workspace" {
+	if fi.calledReq.SourceKind != assets.SourceWorkspace {
 		t.Fatalf("SourceKind = %q, want workspace", fi.calledReq.SourceKind)
 	}
 	if fi.calledReq.IdentityID == "" {
 		t.Fatal("expected a non-empty owning identity (ownerFromContext) on the ingest request")
 	}
-	if !strings.Contains(res.Preview, "doc-1") {
-		t.Fatalf("result must report the document id, got %q", res.Preview)
+	if !strings.Contains(res.Preview, "asset-1") {
+		t.Fatalf("result must report the accepted asset id, got %q", res.Preview)
 	}
 	assertNothingStaged(t, runDir)
 }
 
-// A title becomes the catalog SourceID; without one the box path stands in.
-func TestDocumentIndex_TitleBecomesSourceID(t *testing.T) {
+// A title is display metadata; the stable source identity remains the path fingerprint.
+func TestDocumentIndex_TitleIsDisplayMetadata(t *testing.T) {
 	ctx, runDir := indexCtx(t)
-	fi := &fakeIndexer{job: &documents.Job{DocumentID: "doc-2", FileName: "r.docx", Status: "searchable"}}
+	fi := &fakeIndexer{asset: assets.Asset{ID: "asset-2", FileName: "r.docx", Status: assets.StatusAccepted}}
 	if _, err := (&DocumentIndex{Indexer: fi, Router: indexRouter(boxTar(t, "r.docx", "X"))}).
 		Execute(ctx, json.RawMessage(`{"path":"/workspace/r.docx","title":"Q3 report"}`)); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if fi.calledReq.SourceID != "Q3 report" {
-		t.Fatalf("SourceID = %q, want the caller's title", fi.calledReq.SourceID)
+	if fi.calledReq.Title != "Q3 report" {
+		t.Fatalf("Title = %q, want the caller's title", fi.calledReq.Title)
+	}
+	assertNothingStaged(t, runDir)
+}
+
+func TestDocumentIndex_EnforcesConfiguredDocumentLimitBeforeIngest(t *testing.T) {
+	ctx, runDir := indexCtx(t)
+	fi := &fakeIndexer{}
+	_, err := (&DocumentIndex{
+		Indexer:  fi,
+		Router:   indexRouter(boxTar(t, "oversize.txt", "12345")),
+		MaxBytes: 4,
+	}).Execute(ctx, json.RawMessage(`{"path":"oversize.txt"}`))
+	if err == nil || !strings.Contains(err.Error(), "4-byte") {
+		t.Fatalf("err = %v, want configured 4-byte limit", err)
+	}
+	if fi.called {
+		t.Fatal("an oversized artifact must be rejected before canonical ingest")
 	}
 	assertNothingStaged(t, runDir)
 }
@@ -187,7 +201,7 @@ func TestDocumentIndex_FencesToTheBoxWorkspace(t *testing.T) {
 		t.Run(outside, func(t *testing.T) {
 			ctx, runDir := indexCtx(t)
 			be := boxTar(t, "leak.txt", "leaked")
-			fi := &fakeIndexer{job: &documents.Job{}}
+			fi := &fakeIndexer{}
 			raw, err := json.Marshal(map[string]string{"path": outside})
 			if err != nil {
 				t.Fatalf("marshal args: %v", err)

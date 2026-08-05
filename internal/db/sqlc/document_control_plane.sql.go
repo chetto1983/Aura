@@ -13,35 +13,37 @@ import (
 
 const appendIngestionEvent = `-- name: AppendIngestionEvent :one
 INSERT INTO aura.ingestion_events (
-    entity_type,
-    entity_id,
-    job_id,
-    from_status,
-    to_status,
-    event_type,
-    message,
-    detail,
-    trace_id
+    identity_id, entity_type, entity_id, job_id, from_status, to_status,
+    event_type, message, detail, trace_id,
+    pipeline_generation, attempt_generation, lease_generation
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9
+    $1, $2, $3,
+    $4, $5, $6,
+    $7, $8, $9, $10,
+    $11, $12, $13
 )
-RETURNING id, entity_type, entity_id, job_id, from_status, to_status, event_type, message, detail, trace_id, created_at
+RETURNING id, entity_type, entity_id, job_id, from_status, to_status, event_type, message, detail, trace_id, created_at, identity_id, pipeline_generation, attempt_generation, lease_generation
 `
 
 type AppendIngestionEventParams struct {
-	EntityType string      `json:"entity_type"`
-	EntityID   pgtype.UUID `json:"entity_id"`
-	JobID      pgtype.UUID `json:"job_id"`
-	FromStatus pgtype.Text `json:"from_status"`
-	ToStatus   pgtype.Text `json:"to_status"`
-	EventType  string      `json:"event_type"`
-	Message    string      `json:"message"`
-	Detail     []byte      `json:"detail"`
-	TraceID    string      `json:"trace_id"`
+	IdentityID         pgtype.UUID `json:"identity_id"`
+	EntityType         string      `json:"entity_type"`
+	EntityID           pgtype.UUID `json:"entity_id"`
+	JobID              pgtype.UUID `json:"job_id"`
+	FromStatus         pgtype.Text `json:"from_status"`
+	ToStatus           pgtype.Text `json:"to_status"`
+	EventType          string      `json:"event_type"`
+	Message            string      `json:"message"`
+	Detail             []byte      `json:"detail"`
+	TraceID            string      `json:"trace_id"`
+	PipelineGeneration int64       `json:"pipeline_generation"`
+	AttemptGeneration  int64       `json:"attempt_generation"`
+	LeaseGeneration    int64       `json:"lease_generation"`
 }
 
 func (q *Queries) AppendIngestionEvent(ctx context.Context, arg AppendIngestionEventParams) (AuraIngestionEvents, error) {
 	row := q.db.QueryRow(ctx, appendIngestionEvent,
+		arg.IdentityID,
 		arg.EntityType,
 		arg.EntityID,
 		arg.JobID,
@@ -51,6 +53,9 @@ func (q *Queries) AppendIngestionEvent(ctx context.Context, arg AppendIngestionE
 		arg.Message,
 		arg.Detail,
 		arg.TraceID,
+		arg.PipelineGeneration,
+		arg.AttemptGeneration,
+		arg.LeaseGeneration,
 	)
 	var i AuraIngestionEvents
 	err := row.Scan(
@@ -65,48 +70,274 @@ func (q *Queries) AppendIngestionEvent(ctx context.Context, arg AppendIngestionE
 		&i.Detail,
 		&i.TraceID,
 		&i.CreatedAt,
+		&i.IdentityID,
+		&i.PipelineGeneration,
+		&i.AttemptGeneration,
+		&i.LeaseGeneration,
+	)
+	return i, err
+}
+
+const claimDeleteJobs = `-- name: ClaimDeleteJobs :many
+WITH candidates AS (
+    SELECT queued_job.id, queued_job.status AS prior_status FROM aura.delete_jobs queued_job
+    WHERE queued_job.identity_id = $1
+      AND queued_job.attempt_count < queued_job.max_attempts
+      AND ((queued_job.status = 'queued' AND queued_job.next_attempt_at <= now())
+           OR (queued_job.status = 'running' AND queued_job.locked_until < now()))
+    ORDER BY queued_job.next_attempt_at, queued_job.created_at
+    LIMIT $2 FOR UPDATE SKIP LOCKED
+), claimed AS (
+    UPDATE aura.delete_jobs job
+    SET status = 'running', locked_by = $3,
+        locked_until = now() + $4::interval,
+        attempt_count = attempt_count + 1, lease_generation = lease_generation + 1,
+        completed_at = NULL, updated_at = now()
+    FROM candidates candidate WHERE job.id = candidate.id
+    RETURNING job.id, job.document_id, job.version_id, job.scope, job.status, job.steps, job.attempt_count, job.max_attempts, job.locked_by, job.locked_until, job.next_attempt_at, job.created_at, job.updated_at, job.completed_at, job.identity_id, job.idempotency_key, job.delete_generation, job.lease_generation, job.error_code, job.error_message, candidate.prior_status
+), events AS (
+    INSERT INTO aura.ingestion_events (
+        identity_id, entity_type, entity_id, from_status, to_status, event_type,
+        attempt_generation, lease_generation
+    )
+    SELECT claimed.identity_id, 'delete_job', claimed.id, claimed.prior_status, 'running',
+           CASE WHEN claimed.prior_status = 'running' THEN 'delete_lease_reclaimed'
+                ELSE 'delete_claimed' END,
+           claimed.delete_generation, claimed.lease_generation
+    FROM claimed
+    RETURNING entity_id
+)
+SELECT claimed.id, claimed.document_id, claimed.version_id, claimed.scope, claimed.status, claimed.steps, claimed.attempt_count, claimed.max_attempts, claimed.locked_by, claimed.locked_until, claimed.next_attempt_at, claimed.created_at, claimed.updated_at, claimed.completed_at, claimed.identity_id, claimed.idempotency_key, claimed.delete_generation, claimed.lease_generation, claimed.error_code, claimed.error_message FROM claimed JOIN events ON events.entity_id = claimed.id
+ORDER BY claimed.next_attempt_at, claimed.created_at
+`
+
+type ClaimDeleteJobsParams struct {
+	IdentityID    pgtype.UUID     `json:"identity_id"`
+	BatchSize     int32           `json:"batch_size"`
+	LockedBy      pgtype.Text     `json:"locked_by"`
+	LeaseDuration pgtype.Interval `json:"lease_duration"`
+}
+
+type ClaimDeleteJobsRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	DocumentID       pgtype.UUID        `json:"document_id"`
+	VersionID        pgtype.UUID        `json:"version_id"`
+	Scope            string             `json:"scope"`
+	Status           string             `json:"status"`
+	Steps            []byte             `json:"steps"`
+	AttemptCount     int32              `json:"attempt_count"`
+	MaxAttempts      int32              `json:"max_attempts"`
+	LockedBy         pgtype.Text        `json:"locked_by"`
+	LockedUntil      pgtype.Timestamptz `json:"locked_until"`
+	NextAttemptAt    pgtype.Timestamptz `json:"next_attempt_at"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	CompletedAt      pgtype.Timestamptz `json:"completed_at"`
+	IdentityID       pgtype.UUID        `json:"identity_id"`
+	IdempotencyKey   string             `json:"idempotency_key"`
+	DeleteGeneration int64              `json:"delete_generation"`
+	LeaseGeneration  int64              `json:"lease_generation"`
+	ErrorCode        string             `json:"error_code"`
+	ErrorMessage     string             `json:"error_message"`
+}
+
+func (q *Queries) ClaimDeleteJobs(ctx context.Context, arg ClaimDeleteJobsParams) ([]ClaimDeleteJobsRow, error) {
+	rows, err := q.db.Query(ctx, claimDeleteJobs,
+		arg.IdentityID,
+		arg.BatchSize,
+		arg.LockedBy,
+		arg.LeaseDuration,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ClaimDeleteJobsRow{}
+	for rows.Next() {
+		var i ClaimDeleteJobsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.DocumentID,
+			&i.VersionID,
+			&i.Scope,
+			&i.Status,
+			&i.Steps,
+			&i.AttemptCount,
+			&i.MaxAttempts,
+			&i.LockedBy,
+			&i.LockedUntil,
+			&i.NextAttemptAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CompletedAt,
+			&i.IdentityID,
+			&i.IdempotencyKey,
+			&i.DeleteGeneration,
+			&i.LeaseGeneration,
+			&i.ErrorCode,
+			&i.ErrorMessage,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const claimDocumentPipelineStage = `-- name: ClaimDocumentPipelineStage :one
+UPDATE aura.document_pipeline_stages
+SET status = 'running', locked_by = $1,
+    locked_until = now() + $2::interval,
+    attempt_count = attempt_count + 1, lease_generation = lease_generation + 1,
+    updated_at = now()
+WHERE id = $3 AND identity_id = $4
+  AND attempt_count < max_attempts
+  AND ((status = 'pending' AND next_attempt_at <= now())
+       OR (status = 'running' AND locked_until < now()))
+RETURNING id, identity_id, document_id, version_id, stage, input_fingerprint, producer_version, pipeline_generation, artifact_storage_object_id, artifact_object_key, artifact_sha256, artifact_size_bytes, status, attempt_count, max_attempts, lease_generation, locked_by, locked_until, next_attempt_at, error_class, error_code, error_message, diagnostic_state, created_at, updated_at, completed_at
+`
+
+type ClaimDocumentPipelineStageParams struct {
+	LockedBy      pgtype.Text     `json:"locked_by"`
+	LeaseDuration pgtype.Interval `json:"lease_duration"`
+	ID            pgtype.UUID     `json:"id"`
+	IdentityID    pgtype.UUID     `json:"identity_id"`
+}
+
+func (q *Queries) ClaimDocumentPipelineStage(ctx context.Context, arg ClaimDocumentPipelineStageParams) (AuraDocumentPipelineStages, error) {
+	row := q.db.QueryRow(ctx, claimDocumentPipelineStage,
+		arg.LockedBy,
+		arg.LeaseDuration,
+		arg.ID,
+		arg.IdentityID,
+	)
+	var i AuraDocumentPipelineStages
+	err := row.Scan(
+		&i.ID,
+		&i.IdentityID,
+		&i.DocumentID,
+		&i.VersionID,
+		&i.Stage,
+		&i.InputFingerprint,
+		&i.ProducerVersion,
+		&i.PipelineGeneration,
+		&i.ArtifactStorageObjectID,
+		&i.ArtifactObjectKey,
+		&i.ArtifactSha256,
+		&i.ArtifactSizeBytes,
+		&i.Status,
+		&i.AttemptCount,
+		&i.MaxAttempts,
+		&i.LeaseGeneration,
+		&i.LockedBy,
+		&i.LockedUntil,
+		&i.NextAttemptAt,
+		&i.ErrorClass,
+		&i.ErrorCode,
+		&i.ErrorMessage,
+		&i.DiagnosticState,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CompletedAt,
 	)
 	return i, err
 }
 
 const claimIngestionJobs = `-- name: ClaimIngestionJobs :many
-WITH claim AS (
-    SELECT id
-    FROM aura.ingestion_jobs
-    WHERE status = 'queued'
-      AND next_attempt_at <= now()
-      AND (locked_until IS NULL OR locked_until < now())
-    ORDER BY next_attempt_at ASC, created_at ASC
-    LIMIT $3
+WITH candidates AS (
+    SELECT queued_job.id, queued_job.status AS prior_status
+    FROM aura.ingestion_jobs queued_job
+    WHERE queued_job.identity_id = $1
+      AND queued_job.attempt_count < queued_job.max_attempts
+      AND (
+        (queued_job.status = 'queued' AND queued_job.next_attempt_at <= now()
+         AND (queued_job.locked_until IS NULL OR queued_job.locked_until < now()))
+        OR (queued_job.status = 'running' AND queued_job.locked_until < now())
+      )
+    ORDER BY queued_job.next_attempt_at, queued_job.created_at
+    LIMIT $2
     FOR UPDATE SKIP LOCKED
+), claimed AS (
+    UPDATE aura.ingestion_jobs job
+    SET status = 'running',
+        locked_by = $3,
+        locked_until = now() + $4::interval,
+        attempt_count = attempt_count + 1,
+        lease_generation = lease_generation + 1,
+        completed_at = NULL,
+        updated_at = now()
+    FROM candidates candidate
+    WHERE job.id = candidate.id
+    RETURNING job.id, job.job_type, job.document_id, job.version_id, job.status, job.idempotency_key, job.stage, job.attempt_count, job.max_attempts, job.locked_by, job.locked_until, job.next_attempt_at, job.payload, job.error_code, job.error_message, job.created_at, job.updated_at, job.completed_at, job.identity_id, job.asset_id, job.pipeline_generation, job.attempt_generation, job.lease_generation, candidate.prior_status
+), events AS (
+    INSERT INTO aura.ingestion_events (
+        identity_id, entity_type, entity_id, job_id, from_status, to_status,
+        event_type, detail, pipeline_generation, attempt_generation, lease_generation
+    )
+    SELECT claimed.identity_id, 'ingestion_job', claimed.id, claimed.id,
+           claimed.prior_status, 'running',
+           CASE WHEN claimed.prior_status = 'running' THEN 'job_lease_reclaimed'
+                ELSE 'job_claimed' END,
+           '{}'::jsonb, claimed.pipeline_generation, claimed.attempt_generation,
+           claimed.lease_generation
+    FROM claimed
+    RETURNING job_id
 )
-UPDATE aura.ingestion_jobs AS job
-SET
-    status = 'running',
-    locked_by = $1,
-    locked_until = now() + $2::interval,
-    attempt_count = attempt_count + 1,
-    updated_at = now()
-FROM claim
-WHERE job.id = claim.id
-RETURNING job.id, job.job_type, job.document_id, job.version_id, job.status, job.idempotency_key, job.stage, job.attempt_count, job.max_attempts, job.locked_by, job.locked_until, job.next_attempt_at, job.payload, job.error_code, job.error_message, job.created_at, job.updated_at, job.completed_at
+SELECT claimed.id, claimed.job_type, claimed.document_id, claimed.version_id, claimed.status, claimed.idempotency_key, claimed.stage, claimed.attempt_count, claimed.max_attempts, claimed.locked_by, claimed.locked_until, claimed.next_attempt_at, claimed.payload, claimed.error_code, claimed.error_message, claimed.created_at, claimed.updated_at, claimed.completed_at, claimed.identity_id, claimed.asset_id, claimed.pipeline_generation, claimed.attempt_generation, claimed.lease_generation FROM claimed
+JOIN events ON events.job_id = claimed.id
+ORDER BY claimed.next_attempt_at, claimed.created_at
 `
 
 type ClaimIngestionJobsParams struct {
+	IdentityID    pgtype.UUID     `json:"identity_id"`
+	BatchSize     int32           `json:"batch_size"`
 	LockedBy      pgtype.Text     `json:"locked_by"`
 	LeaseDuration pgtype.Interval `json:"lease_duration"`
-	BatchSize     int32           `json:"batch_size"`
 }
 
-func (q *Queries) ClaimIngestionJobs(ctx context.Context, arg ClaimIngestionJobsParams) ([]AuraIngestionJobs, error) {
-	rows, err := q.db.Query(ctx, claimIngestionJobs, arg.LockedBy, arg.LeaseDuration, arg.BatchSize)
+type ClaimIngestionJobsRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	JobType            string             `json:"job_type"`
+	DocumentID         pgtype.UUID        `json:"document_id"`
+	VersionID          pgtype.UUID        `json:"version_id"`
+	Status             string             `json:"status"`
+	IdempotencyKey     string             `json:"idempotency_key"`
+	Stage              string             `json:"stage"`
+	AttemptCount       int32              `json:"attempt_count"`
+	MaxAttempts        int32              `json:"max_attempts"`
+	LockedBy           pgtype.Text        `json:"locked_by"`
+	LockedUntil        pgtype.Timestamptz `json:"locked_until"`
+	NextAttemptAt      pgtype.Timestamptz `json:"next_attempt_at"`
+	Payload            []byte             `json:"payload"`
+	ErrorCode          string             `json:"error_code"`
+	ErrorMessage       string             `json:"error_message"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	CompletedAt        pgtype.Timestamptz `json:"completed_at"`
+	IdentityID         pgtype.UUID        `json:"identity_id"`
+	AssetID            pgtype.UUID        `json:"asset_id"`
+	PipelineGeneration int64              `json:"pipeline_generation"`
+	AttemptGeneration  int64              `json:"attempt_generation"`
+	LeaseGeneration    int64              `json:"lease_generation"`
+}
+
+func (q *Queries) ClaimIngestionJobs(ctx context.Context, arg ClaimIngestionJobsParams) ([]ClaimIngestionJobsRow, error) {
+	rows, err := q.db.Query(ctx, claimIngestionJobs,
+		arg.IdentityID,
+		arg.BatchSize,
+		arg.LockedBy,
+		arg.LeaseDuration,
+	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []AuraIngestionJobs{}
+	items := []ClaimIngestionJobsRow{}
 	for rows.Next() {
-		var i AuraIngestionJobs
+		var i ClaimIngestionJobsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.JobType,
@@ -126,6 +357,11 @@ func (q *Queries) ClaimIngestionJobs(ctx context.Context, arg ClaimIngestionJobs
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.CompletedAt,
+			&i.IdentityID,
+			&i.AssetID,
+			&i.PipelineGeneration,
+			&i.AttemptGeneration,
+			&i.LeaseGeneration,
 		); err != nil {
 			return nil, err
 		}
@@ -137,46 +373,144 @@ func (q *Queries) ClaimIngestionJobs(ctx context.Context, arg ClaimIngestionJobs
 	return items, nil
 }
 
-const countIngestionJobsByStatus = `-- name: CountIngestionJobsByStatus :one
-SELECT count(*)
-FROM aura.ingestion_jobs
-WHERE status = $1
+const completeDocumentPipelineStage = `-- name: CompleteDocumentPipelineStage :one
+UPDATE aura.document_pipeline_stages
+SET status = 'succeeded', artifact_storage_object_id = $1,
+    artifact_object_key = $2,
+    artifact_sha256 = $3,
+    artifact_size_bytes = $4,
+    locked_by = NULL, locked_until = NULL, completed_at = now(), updated_at = now()
+WHERE id = $5 AND identity_id = $6
+  AND status = 'running' AND locked_by = $7
+  AND lease_generation = $8
+RETURNING id, identity_id, document_id, version_id, stage, input_fingerprint, producer_version, pipeline_generation, artifact_storage_object_id, artifact_object_key, artifact_sha256, artifact_size_bytes, status, attempt_count, max_attempts, lease_generation, locked_by, locked_until, next_attempt_at, error_class, error_code, error_message, diagnostic_state, created_at, updated_at, completed_at
 `
 
-func (q *Queries) CountIngestionJobsByStatus(ctx context.Context, status string) (int64, error) {
-	row := q.db.QueryRow(ctx, countIngestionJobsByStatus, status)
+type CompleteDocumentPipelineStageParams struct {
+	ArtifactStorageObjectID pgtype.UUID `json:"artifact_storage_object_id"`
+	ArtifactObjectKey       string      `json:"artifact_object_key"`
+	ArtifactSha256          string      `json:"artifact_sha256"`
+	ArtifactSizeBytes       int64       `json:"artifact_size_bytes"`
+	ID                      pgtype.UUID `json:"id"`
+	IdentityID              pgtype.UUID `json:"identity_id"`
+	LockedBy                pgtype.Text `json:"locked_by"`
+	LeaseGeneration         int64       `json:"lease_generation"`
+}
+
+func (q *Queries) CompleteDocumentPipelineStage(ctx context.Context, arg CompleteDocumentPipelineStageParams) (AuraDocumentPipelineStages, error) {
+	row := q.db.QueryRow(ctx, completeDocumentPipelineStage,
+		arg.ArtifactStorageObjectID,
+		arg.ArtifactObjectKey,
+		arg.ArtifactSha256,
+		arg.ArtifactSizeBytes,
+		arg.ID,
+		arg.IdentityID,
+		arg.LockedBy,
+		arg.LeaseGeneration,
+	)
+	var i AuraDocumentPipelineStages
+	err := row.Scan(
+		&i.ID,
+		&i.IdentityID,
+		&i.DocumentID,
+		&i.VersionID,
+		&i.Stage,
+		&i.InputFingerprint,
+		&i.ProducerVersion,
+		&i.PipelineGeneration,
+		&i.ArtifactStorageObjectID,
+		&i.ArtifactObjectKey,
+		&i.ArtifactSha256,
+		&i.ArtifactSizeBytes,
+		&i.Status,
+		&i.AttemptCount,
+		&i.MaxAttempts,
+		&i.LeaseGeneration,
+		&i.LockedBy,
+		&i.LockedUntil,
+		&i.NextAttemptAt,
+		&i.ErrorClass,
+		&i.ErrorCode,
+		&i.ErrorMessage,
+		&i.DiagnosticState,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CompletedAt,
+	)
+	return i, err
+}
+
+const countIngestionJobsByStatus = `-- name: CountIngestionJobsByStatus :one
+SELECT count(*) FROM aura.ingestion_jobs
+WHERE identity_id = $1 AND status = $2
+`
+
+type CountIngestionJobsByStatusParams struct {
+	IdentityID pgtype.UUID `json:"identity_id"`
+	Status     string      `json:"status"`
+}
+
+func (q *Queries) CountIngestionJobsByStatus(ctx context.Context, arg CountIngestionJobsByStatusParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countIngestionJobsByStatus, arg.IdentityID, arg.Status)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
 }
 
+const countLiveDocumentPassages = `-- name: CountLiveDocumentPassages :one
+SELECT (
+    (SELECT count(*) FROM aura.document_chunks chunk
+      WHERE chunk.identity_id = $1
+        AND chunk.document_id = $2)
+  + (SELECT count(*) FROM aura.document_embeddings embedding
+      WHERE embedding.identity_id = $1
+        AND embedding.document_id = $2)
+)::bigint
+`
+
+type CountLiveDocumentPassagesParams struct {
+	IdentityID pgtype.UUID `json:"identity_id"`
+	DocumentID pgtype.UUID `json:"document_id"`
+}
+
+// Fail-closed evidence for the finalize gate: a delete that cannot prove erasure
+// must not report success.
+func (q *Queries) CountLiveDocumentPassages(ctx context.Context, arg CountLiveDocumentPassagesParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countLiveDocumentPassages, arg.IdentityID, arg.DocumentID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const createDeleteJob = `-- name: CreateDeleteJob :one
 INSERT INTO aura.delete_jobs (
-    document_id,
-    version_id,
-    scope,
-    status,
-    steps,
-    max_attempts,
-    next_attempt_at
+    identity_id, document_id, version_id, scope, status, steps,
+    max_attempts, next_attempt_at, idempotency_key, delete_generation
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7
+    $1, $2, $3,
+    $4, $5, $6, $7,
+    $8, $9, $10
 )
-RETURNING id, document_id, version_id, scope, status, steps, attempt_count, max_attempts, locked_by, locked_until, next_attempt_at, created_at, updated_at, completed_at
+ON CONFLICT (identity_id, idempotency_key) DO UPDATE SET updated_at = now()
+RETURNING id, document_id, version_id, scope, status, steps, attempt_count, max_attempts, locked_by, locked_until, next_attempt_at, created_at, updated_at, completed_at, identity_id, idempotency_key, delete_generation, lease_generation, error_code, error_message
 `
 
 type CreateDeleteJobParams struct {
-	DocumentID    pgtype.UUID        `json:"document_id"`
-	VersionID     pgtype.UUID        `json:"version_id"`
-	Scope         string             `json:"scope"`
-	Status        string             `json:"status"`
-	Steps         []byte             `json:"steps"`
-	MaxAttempts   int32              `json:"max_attempts"`
-	NextAttemptAt pgtype.Timestamptz `json:"next_attempt_at"`
+	IdentityID       pgtype.UUID        `json:"identity_id"`
+	DocumentID       pgtype.UUID        `json:"document_id"`
+	VersionID        pgtype.UUID        `json:"version_id"`
+	Scope            string             `json:"scope"`
+	Status           string             `json:"status"`
+	Steps            []byte             `json:"steps"`
+	MaxAttempts      int32              `json:"max_attempts"`
+	NextAttemptAt    pgtype.Timestamptz `json:"next_attempt_at"`
+	IdempotencyKey   string             `json:"idempotency_key"`
+	DeleteGeneration int64              `json:"delete_generation"`
 }
 
 func (q *Queries) CreateDeleteJob(ctx context.Context, arg CreateDeleteJobParams) (AuraDeleteJobs, error) {
 	row := q.db.QueryRow(ctx, createDeleteJob,
+		arg.IdentityID,
 		arg.DocumentID,
 		arg.VersionID,
 		arg.Scope,
@@ -184,6 +518,8 @@ func (q *Queries) CreateDeleteJob(ctx context.Context, arg CreateDeleteJobParams
 		arg.Steps,
 		arg.MaxAttempts,
 		arg.NextAttemptAt,
+		arg.IdempotencyKey,
+		arg.DeleteGeneration,
 	)
 	var i AuraDeleteJobs
 	err := row.Scan(
@@ -201,31 +537,39 @@ func (q *Queries) CreateDeleteJob(ctx context.Context, arg CreateDeleteJobParams
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.CompletedAt,
+		&i.IdentityID,
+		&i.IdempotencyKey,
+		&i.DeleteGeneration,
+		&i.LeaseGeneration,
+		&i.ErrorCode,
+		&i.ErrorMessage,
 	)
 	return i, err
 }
 
 const createDocument = `-- name: CreateDocument :one
 INSERT INTO aura.documents (
-    identity_id,
-    scope,
-    title,
-    tags,
-    metadata,
-    status
+    identity_id, scope, title, tags, metadata, status,
+    source_kind, source_key, search_document_id, pipeline_generation
 ) VALUES (
-    $1, $2, $3, $4, $5, $6
+    $1, $2, $3, $4,
+    $5, $6, $7,
+    $8, $9, $10
 )
-RETURNING id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, card, digest_tsv
+RETURNING id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, card, digest_tsv, source_kind, source_key, search_document_id, pipeline_generation, error_code, error_message
 `
 
 type CreateDocumentParams struct {
-	IdentityID pgtype.UUID `json:"identity_id"`
-	Scope      string      `json:"scope"`
-	Title      string      `json:"title"`
-	Tags       []string    `json:"tags"`
-	Metadata   []byte      `json:"metadata"`
-	Status     string      `json:"status"`
+	IdentityID         pgtype.UUID `json:"identity_id"`
+	Scope              string      `json:"scope"`
+	Title              string      `json:"title"`
+	Tags               []string    `json:"tags"`
+	Metadata           []byte      `json:"metadata"`
+	Status             string      `json:"status"`
+	SourceKind         string      `json:"source_kind"`
+	SourceKey          string      `json:"source_key"`
+	SearchDocumentID   string      `json:"search_document_id"`
+	PipelineGeneration int64       `json:"pipeline_generation"`
 }
 
 func (q *Queries) CreateDocument(ctx context.Context, arg CreateDocumentParams) (AuraDocuments, error) {
@@ -236,6 +580,10 @@ func (q *Queries) CreateDocument(ctx context.Context, arg CreateDocumentParams) 
 		arg.Tags,
 		arg.Metadata,
 		arg.Status,
+		arg.SourceKind,
+		arg.SourceKey,
+		arg.SearchDocumentID,
+		arg.PipelineGeneration,
 	)
 	var i AuraDocuments
 	err := row.Scan(
@@ -253,37 +601,53 @@ func (q *Queries) CreateDocument(ctx context.Context, arg CreateDocumentParams) 
 		&i.Digest,
 		&i.Card,
 		&i.DigestTsv,
+		&i.SourceKind,
+		&i.SourceKey,
+		&i.SearchDocumentID,
+		&i.PipelineGeneration,
+		&i.ErrorCode,
+		&i.ErrorMessage,
 	)
 	return i, err
 }
 
 const createDocumentVersion = `-- name: CreateDocumentVersion :one
-INSERT INTO aura.document_versions (
-    document_id,
-    asset_id,
-    version_number,
-    status,
-    sha1,
-    sha256,
-    content_type,
-    size_bytes,
-    storage_object_id,
-    chunking_config_hash,
-    pipeline_config_hash
-) VALUES (
-    $1, $2, $3, $4, $5, $6,
-    $7, $8, $9, $10, $11
+WITH locked_document AS (
+    SELECT document.id, document.identity_id, document.search_document_id, document.pipeline_generation
+    FROM aura.documents document
+    WHERE document.id = $11
+      AND document.identity_id = $12
+      AND document.deleted_at IS NULL
+      AND document.status NOT IN ('deleting', 'deleted')
+    FOR UPDATE
+), next_version AS (
+    SELECT d.id AS document_id, d.identity_id, d.search_document_id,
+           COALESCE(max(v.version_number), 0)::integer + 1 AS version_number,
+           GREATEST(d.pipeline_generation, COALESCE(max(v.pipeline_generation), 0),
+                    COALESCE(max(v.version_number), 0), $13::bigint - 1) + 1 AS pipeline_generation
+    FROM locked_document d
+    LEFT JOIN aura.document_versions v ON v.document_id = d.id
+    GROUP BY d.id, d.identity_id, d.search_document_id, d.pipeline_generation
 )
-ON CONFLICT (document_id, sha256, pipeline_config_hash)
-DO UPDATE SET
-    updated_at = aura.document_versions.updated_at
-RETURNING id, document_id, asset_id, version_number, status, sha1, sha256, content_type, size_bytes, storage_object_id, chunking_config_hash, pipeline_config_hash, ready_at, activated_at, created_at, updated_at, deleted_at, error_code, error_message
+INSERT INTO aura.document_versions (
+    id, identity_id, document_id, asset_id, version_number, status, sha1, sha256,
+    content_type, size_bytes, storage_object_id, chunking_config_hash,
+    pipeline_config_hash, search_document_id, pipeline_generation
+)
+SELECT $1, n.identity_id, n.document_id, $2,
+       n.version_number, $3, $4, $5,
+       $6, $7, $8,
+       $9, $10,
+       n.search_document_id, n.pipeline_generation
+FROM next_version n
+ON CONFLICT (document_id, sha256) WHERE deleted_at IS NULL
+DO UPDATE SET updated_at = aura.document_versions.updated_at
+RETURNING id, document_id, asset_id, version_number, status, sha1, sha256, content_type, size_bytes, storage_object_id, chunking_config_hash, pipeline_config_hash, ready_at, activated_at, created_at, updated_at, deleted_at, error_code, error_message, identity_id, search_document_id, pipeline_generation
 `
 
 type CreateDocumentVersionParams struct {
-	DocumentID         pgtype.UUID `json:"document_id"`
+	ID                 pgtype.UUID `json:"id"`
 	AssetID            pgtype.UUID `json:"asset_id"`
-	VersionNumber      int32       `json:"version_number"`
 	Status             string      `json:"status"`
 	Sha1               string      `json:"sha1"`
 	Sha256             string      `json:"sha256"`
@@ -292,13 +656,15 @@ type CreateDocumentVersionParams struct {
 	StorageObjectID    pgtype.UUID `json:"storage_object_id"`
 	ChunkingConfigHash string      `json:"chunking_config_hash"`
 	PipelineConfigHash string      `json:"pipeline_config_hash"`
+	DocumentID         pgtype.UUID `json:"document_id"`
+	IdentityID         pgtype.UUID `json:"identity_id"`
+	PipelineGeneration int64       `json:"pipeline_generation"`
 }
 
 func (q *Queries) CreateDocumentVersion(ctx context.Context, arg CreateDocumentVersionParams) (AuraDocumentVersions, error) {
 	row := q.db.QueryRow(ctx, createDocumentVersion,
-		arg.DocumentID,
+		arg.ID,
 		arg.AssetID,
-		arg.VersionNumber,
 		arg.Status,
 		arg.Sha1,
 		arg.Sha256,
@@ -307,6 +673,9 @@ func (q *Queries) CreateDocumentVersion(ctx context.Context, arg CreateDocumentV
 		arg.StorageObjectID,
 		arg.ChunkingConfigHash,
 		arg.PipelineConfigHash,
+		arg.DocumentID,
+		arg.IdentityID,
+		arg.PipelineGeneration,
 	)
 	var i AuraDocumentVersions
 	err := row.Scan(
@@ -329,45 +698,49 @@ func (q *Queries) CreateDocumentVersion(ctx context.Context, arg CreateDocumentV
 		&i.DeletedAt,
 		&i.ErrorCode,
 		&i.ErrorMessage,
+		&i.IdentityID,
+		&i.SearchDocumentID,
+		&i.PipelineGeneration,
 	)
 	return i, err
 }
 
 const createIngestionJob = `-- name: CreateIngestionJob :one
 INSERT INTO aura.ingestion_jobs (
-    job_type,
-    document_id,
-    version_id,
-    status,
-    idempotency_key,
-    stage,
-    max_attempts,
-    next_attempt_at,
-    payload
+    identity_id, job_type, asset_id, document_id, version_id, status,
+    idempotency_key, stage, max_attempts, next_attempt_at, payload,
+    pipeline_generation
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9
+    $1, $2, $3,
+    $4, $5, $6,
+    $7, $8, $9,
+    $10, $11, $12
 )
-ON CONFLICT (job_type, idempotency_key)
-DO UPDATE SET
-    updated_at = now()
-RETURNING id, job_type, document_id, version_id, status, idempotency_key, stage, attempt_count, max_attempts, locked_by, locked_until, next_attempt_at, payload, error_code, error_message, created_at, updated_at, completed_at
+ON CONFLICT (identity_id, job_type, idempotency_key) DO UPDATE
+SET updated_at = now()
+RETURNING id, job_type, document_id, version_id, status, idempotency_key, stage, attempt_count, max_attempts, locked_by, locked_until, next_attempt_at, payload, error_code, error_message, created_at, updated_at, completed_at, identity_id, asset_id, pipeline_generation, attempt_generation, lease_generation
 `
 
 type CreateIngestionJobParams struct {
-	JobType        string             `json:"job_type"`
-	DocumentID     pgtype.UUID        `json:"document_id"`
-	VersionID      pgtype.UUID        `json:"version_id"`
-	Status         string             `json:"status"`
-	IdempotencyKey string             `json:"idempotency_key"`
-	Stage          string             `json:"stage"`
-	MaxAttempts    int32              `json:"max_attempts"`
-	NextAttemptAt  pgtype.Timestamptz `json:"next_attempt_at"`
-	Payload        []byte             `json:"payload"`
+	IdentityID         pgtype.UUID        `json:"identity_id"`
+	JobType            string             `json:"job_type"`
+	AssetID            pgtype.UUID        `json:"asset_id"`
+	DocumentID         pgtype.UUID        `json:"document_id"`
+	VersionID          pgtype.UUID        `json:"version_id"`
+	Status             string             `json:"status"`
+	IdempotencyKey     string             `json:"idempotency_key"`
+	Stage              string             `json:"stage"`
+	MaxAttempts        int32              `json:"max_attempts"`
+	NextAttemptAt      pgtype.Timestamptz `json:"next_attempt_at"`
+	Payload            []byte             `json:"payload"`
+	PipelineGeneration int64              `json:"pipeline_generation"`
 }
 
 func (q *Queries) CreateIngestionJob(ctx context.Context, arg CreateIngestionJobParams) (AuraIngestionJobs, error) {
 	row := q.db.QueryRow(ctx, createIngestionJob,
+		arg.IdentityID,
 		arg.JobType,
+		arg.AssetID,
 		arg.DocumentID,
 		arg.VersionID,
 		arg.Status,
@@ -376,6 +749,7 @@ func (q *Queries) CreateIngestionJob(ctx context.Context, arg CreateIngestionJob
 		arg.MaxAttempts,
 		arg.NextAttemptAt,
 		arg.Payload,
+		arg.PipelineGeneration,
 	)
 	var i AuraIngestionJobs
 	err := row.Scan(
@@ -397,51 +771,51 @@ func (q *Queries) CreateIngestionJob(ctx context.Context, arg CreateIngestionJob
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.CompletedAt,
+		&i.IdentityID,
+		&i.AssetID,
+		&i.PipelineGeneration,
+		&i.AttemptGeneration,
+		&i.LeaseGeneration,
 	)
 	return i, err
 }
 
 const createStorageObject = `-- name: CreateStorageObject :one
 INSERT INTO aura.storage_objects (
-    identity_id,
-    document_id,
-    version_id,
-    asset_id,
-    bucket,
-    object_key,
-    kind,
-    sha1,
-    sha256,
-    etag,
-    size_bytes,
-    content_type,
-    retention_class
+    identity_id, document_id, version_id, asset_id, bucket, object_key, kind,
+    sha1, sha256, etag, size_bytes, content_type, retention_class,
+    status, pipeline_generation
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7,
-    $8, $9, $10, $11, $12, $13
+    $1, $2, $3,
+    $4, $5, $6, $7,
+    $8, $9, $10, $11,
+    $12, $13, $14,
+    $15
 )
-ON CONFLICT (bucket, object_key)
-DO UPDATE SET
-    etag = EXCLUDED.etag,
+ON CONFLICT (bucket, object_key) DO UPDATE
+SET etag = EXCLUDED.etag,
     size_bytes = EXCLUDED.size_bytes,
     content_type = EXCLUDED.content_type
-RETURNING id, identity_id, document_id, version_id, asset_id, bucket, object_key, kind, sha1, sha256, etag, size_bytes, content_type, retention_class, created_at, deleted_at
+WHERE aura.storage_objects.identity_id = EXCLUDED.identity_id
+RETURNING id, identity_id, document_id, version_id, asset_id, bucket, object_key, kind, sha1, sha256, etag, size_bytes, content_type, retention_class, created_at, deleted_at, status, pipeline_generation, deletion_generation, deletion_verified_at
 `
 
 type CreateStorageObjectParams struct {
-	IdentityID     pgtype.UUID `json:"identity_id"`
-	DocumentID     pgtype.UUID `json:"document_id"`
-	VersionID      pgtype.UUID `json:"version_id"`
-	AssetID        pgtype.UUID `json:"asset_id"`
-	Bucket         string      `json:"bucket"`
-	ObjectKey      string      `json:"object_key"`
-	Kind           string      `json:"kind"`
-	Sha1           string      `json:"sha1"`
-	Sha256         string      `json:"sha256"`
-	Etag           string      `json:"etag"`
-	SizeBytes      int64       `json:"size_bytes"`
-	ContentType    string      `json:"content_type"`
-	RetentionClass string      `json:"retention_class"`
+	IdentityID         pgtype.UUID `json:"identity_id"`
+	DocumentID         pgtype.UUID `json:"document_id"`
+	VersionID          pgtype.UUID `json:"version_id"`
+	AssetID            pgtype.UUID `json:"asset_id"`
+	Bucket             string      `json:"bucket"`
+	ObjectKey          string      `json:"object_key"`
+	Kind               string      `json:"kind"`
+	Sha1               string      `json:"sha1"`
+	Sha256             string      `json:"sha256"`
+	Etag               string      `json:"etag"`
+	SizeBytes          int64       `json:"size_bytes"`
+	ContentType        string      `json:"content_type"`
+	RetentionClass     string      `json:"retention_class"`
+	Status             string      `json:"status"`
+	PipelineGeneration int64       `json:"pipeline_generation"`
 }
 
 func (q *Queries) CreateStorageObject(ctx context.Context, arg CreateStorageObjectParams) (AuraStorageObjects, error) {
@@ -459,6 +833,8 @@ func (q *Queries) CreateStorageObject(ctx context.Context, arg CreateStorageObje
 		arg.SizeBytes,
 		arg.ContentType,
 		arg.RetentionClass,
+		arg.Status,
+		arg.PipelineGeneration,
 	)
 	var i AuraStorageObjects
 	err := row.Scan(
@@ -478,13 +854,16 @@ func (q *Queries) CreateStorageObject(ctx context.Context, arg CreateStorageObje
 		&i.RetentionClass,
 		&i.CreatedAt,
 		&i.DeletedAt,
+		&i.Status,
+		&i.PipelineGeneration,
+		&i.DeletionGeneration,
+		&i.DeletionVerifiedAt,
 	)
 	return i, err
 }
 
 const deleteDocumentTags = `-- name: DeleteDocumentTags :exec
-DELETE FROM aura.document_tags
-WHERE document_id = $1
+DELETE FROM aura.document_tags WHERE document_id = $1
 `
 
 func (q *Queries) DeleteDocumentTags(ctx context.Context, documentID pgtype.UUID) error {
@@ -492,9 +871,140 @@ func (q *Queries) DeleteDocumentTags(ctx context.Context, documentID pgtype.UUID
 	return err
 }
 
+const finalizeDocumentDelete = `-- name: FinalizeDocumentDelete :one
+WITH target AS (
+    SELECT job.id AS job_id, job.identity_id, job.document_id, job.delete_generation,
+           job.lease_generation, job.status AS prior_status
+    FROM aura.delete_jobs job
+    JOIN aura.documents document ON document.id = job.document_id
+      AND document.identity_id = job.identity_id
+    WHERE job.id = $1 AND job.identity_id = $2
+      AND job.status = 'running' AND job.locked_by = $3
+      AND job.lease_generation = $4
+      AND job.locked_until > now()
+      AND document.status = 'deleting' AND $5::boolean
+      AND NOT EXISTS (
+          SELECT 1 FROM aura.storage_objects object
+          WHERE object.identity_id = job.identity_id AND object.document_id = job.document_id
+            AND (object.status <> 'object_deleted' OR object.deletion_verified_at IS NULL)
+      )
+      AND NOT EXISTS (
+          SELECT 1 FROM aura.document_chunks chunk
+          WHERE chunk.identity_id = job.identity_id AND chunk.document_id = job.document_id
+      )
+      AND NOT EXISTS (
+          SELECT 1 FROM aura.document_embeddings embedding
+          WHERE embedding.identity_id = job.identity_id AND embedding.document_id = job.document_id
+      )
+    FOR UPDATE OF job, document
+), deleted_assets AS (
+    UPDATE aura.assets asset SET status = 'deleted', deleted_at = COALESCE(asset.deleted_at, now()), updated_at = now()
+    FROM target WHERE asset.identity_id = target.identity_id AND asset.id IN (
+        SELECT version.asset_id FROM aura.document_versions version
+        WHERE version.identity_id = target.identity_id AND version.document_id = target.document_id
+          AND version.asset_id IS NOT NULL
+    ) RETURNING asset.id
+), deleted_versions AS (
+    UPDATE aura.document_versions version
+    SET status = 'deleted', deleted_at = COALESCE(version.deleted_at, now()), updated_at = now()
+    FROM target WHERE version.identity_id = target.identity_id
+      AND version.document_id = target.document_id RETURNING version.id
+), deleted_document AS (
+    UPDATE aura.documents document
+    SET status = 'deleted', active_version_id = NULL,
+        deleted_at = COALESCE(document.deleted_at, now()), updated_at = now()
+    FROM target WHERE document.id = target.document_id
+      AND document.identity_id = target.identity_id RETURNING document.id, document.identity_id, document.scope, document.title, document.tags, document.metadata, document.active_version_id, document.status, document.created_at, document.updated_at, document.deleted_at, document.digest, document.card, document.digest_tsv, document.source_kind, document.source_key, document.search_document_id, document.pipeline_generation, document.error_code, document.error_message
+), completed_job AS (
+    UPDATE aura.delete_jobs job
+    SET status = 'succeeded', locked_by = NULL, locked_until = NULL,
+        error_code = '', error_message = '', completed_at = now(), updated_at = now()
+    FROM target WHERE job.id = target.job_id RETURNING job.id, job.document_id, job.version_id, job.scope, job.status, job.steps, job.attempt_count, job.max_attempts, job.locked_by, job.locked_until, job.next_attempt_at, job.created_at, job.updated_at, job.completed_at, job.identity_id, job.idempotency_key, job.delete_generation, job.lease_generation, job.error_code, job.error_message
+), event AS (
+    INSERT INTO aura.ingestion_events (
+        identity_id, entity_type, entity_id, from_status, to_status, event_type,
+        message, attempt_generation, lease_generation
+    ) SELECT completed_job.identity_id, 'delete_job', completed_job.id,
+             target.prior_status, 'succeeded', 'delete_succeeded',
+             $6, completed_job.delete_generation,
+             completed_job.lease_generation
+      FROM completed_job JOIN target ON target.job_id = completed_job.id
+    RETURNING entity_id
+)
+SELECT deleted_document.id, deleted_document.identity_id, deleted_document.scope, deleted_document.title, deleted_document.tags, deleted_document.metadata, deleted_document.active_version_id, deleted_document.status, deleted_document.created_at, deleted_document.updated_at, deleted_document.deleted_at, deleted_document.digest, deleted_document.card, deleted_document.digest_tsv, deleted_document.source_kind, deleted_document.source_key, deleted_document.search_document_id, deleted_document.pipeline_generation, deleted_document.error_code, deleted_document.error_message FROM deleted_document
+JOIN target ON target.document_id = deleted_document.id
+JOIN event ON event.entity_id = target.job_id
+`
+
+type FinalizeDocumentDeleteParams struct {
+	ID                 pgtype.UUID `json:"id"`
+	IdentityID         pgtype.UUID `json:"identity_id"`
+	LockedBy           pgtype.Text `json:"locked_by"`
+	LeaseGeneration    int64       `json:"lease_generation"`
+	ProjectionVerified bool        `json:"projection_verified"`
+	EventMessage       string      `json:"event_message"`
+}
+
+type FinalizeDocumentDeleteRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	IdentityID         pgtype.UUID        `json:"identity_id"`
+	Scope              string             `json:"scope"`
+	Title              string             `json:"title"`
+	Tags               []string           `json:"tags"`
+	Metadata           []byte             `json:"metadata"`
+	ActiveVersionID    pgtype.UUID        `json:"active_version_id"`
+	Status             string             `json:"status"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
+	Digest             string             `json:"digest"`
+	Card               string             `json:"card"`
+	DigestTsv          interface{}        `json:"digest_tsv"`
+	SourceKind         string             `json:"source_kind"`
+	SourceKey          string             `json:"source_key"`
+	SearchDocumentID   string             `json:"search_document_id"`
+	PipelineGeneration int64              `json:"pipeline_generation"`
+	ErrorCode          string             `json:"error_code"`
+	ErrorMessage       string             `json:"error_message"`
+}
+
+func (q *Queries) FinalizeDocumentDelete(ctx context.Context, arg FinalizeDocumentDeleteParams) (FinalizeDocumentDeleteRow, error) {
+	row := q.db.QueryRow(ctx, finalizeDocumentDelete,
+		arg.ID,
+		arg.IdentityID,
+		arg.LockedBy,
+		arg.LeaseGeneration,
+		arg.ProjectionVerified,
+		arg.EventMessage,
+	)
+	var i FinalizeDocumentDeleteRow
+	err := row.Scan(
+		&i.ID,
+		&i.IdentityID,
+		&i.Scope,
+		&i.Title,
+		&i.Tags,
+		&i.Metadata,
+		&i.ActiveVersionID,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.Digest,
+		&i.Card,
+		&i.DigestTsv,
+		&i.SourceKind,
+		&i.SourceKey,
+		&i.SearchDocumentID,
+		&i.PipelineGeneration,
+		&i.ErrorCode,
+		&i.ErrorMessage,
+	)
+	return i, err
+}
+
 const getDocument = `-- name: GetDocument :one
-SELECT id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, card, digest_tsv
-FROM aura.documents
+SELECT id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, card, digest_tsv, source_kind, source_key, search_document_id, pipeline_generation, error_code, error_message FROM aura.documents
 WHERE id = $1
   AND identity_id = $2
   AND deleted_at IS NULL
@@ -523,15 +1033,280 @@ func (q *Queries) GetDocument(ctx context.Context, arg GetDocumentParams) (AuraD
 		&i.Digest,
 		&i.Card,
 		&i.DigestTsv,
+		&i.SourceKind,
+		&i.SourceKey,
+		&i.SearchDocumentID,
+		&i.PipelineGeneration,
+		&i.ErrorCode,
+		&i.ErrorMessage,
 	)
 	return i, err
 }
 
+const getDocumentBySearchID = `-- name: GetDocumentBySearchID :one
+SELECT id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, card, digest_tsv, source_kind, source_key, search_document_id, pipeline_generation, error_code, error_message FROM aura.documents
+WHERE identity_id = $1
+  AND search_document_id = $2
+  AND deleted_at IS NULL
+`
+
+type GetDocumentBySearchIDParams struct {
+	IdentityID       pgtype.UUID `json:"identity_id"`
+	SearchDocumentID string      `json:"search_document_id"`
+}
+
+func (q *Queries) GetDocumentBySearchID(ctx context.Context, arg GetDocumentBySearchIDParams) (AuraDocuments, error) {
+	row := q.db.QueryRow(ctx, getDocumentBySearchID, arg.IdentityID, arg.SearchDocumentID)
+	var i AuraDocuments
+	err := row.Scan(
+		&i.ID,
+		&i.IdentityID,
+		&i.Scope,
+		&i.Title,
+		&i.Tags,
+		&i.Metadata,
+		&i.ActiveVersionID,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.Digest,
+		&i.Card,
+		&i.DigestTsv,
+		&i.SourceKind,
+		&i.SourceKey,
+		&i.SearchDocumentID,
+		&i.PipelineGeneration,
+		&i.ErrorCode,
+		&i.ErrorMessage,
+	)
+	return i, err
+}
+
+const heartbeatDeleteJob = `-- name: HeartbeatDeleteJob :one
+UPDATE aura.delete_jobs
+SET locked_until = now() + $1::interval, updated_at = now()
+WHERE id = $2 AND identity_id = $3
+  AND status = 'running' AND locked_by = $4
+  AND lease_generation = $5 AND locked_until > now()
+RETURNING id, document_id, version_id, scope, status, steps, attempt_count, max_attempts, locked_by, locked_until, next_attempt_at, created_at, updated_at, completed_at, identity_id, idempotency_key, delete_generation, lease_generation, error_code, error_message
+`
+
+type HeartbeatDeleteJobParams struct {
+	LeaseDuration   pgtype.Interval `json:"lease_duration"`
+	ID              pgtype.UUID     `json:"id"`
+	IdentityID      pgtype.UUID     `json:"identity_id"`
+	LockedBy        pgtype.Text     `json:"locked_by"`
+	LeaseGeneration int64           `json:"lease_generation"`
+}
+
+func (q *Queries) HeartbeatDeleteJob(ctx context.Context, arg HeartbeatDeleteJobParams) (AuraDeleteJobs, error) {
+	row := q.db.QueryRow(ctx, heartbeatDeleteJob,
+		arg.LeaseDuration,
+		arg.ID,
+		arg.IdentityID,
+		arg.LockedBy,
+		arg.LeaseGeneration,
+	)
+	var i AuraDeleteJobs
+	err := row.Scan(
+		&i.ID,
+		&i.DocumentID,
+		&i.VersionID,
+		&i.Scope,
+		&i.Status,
+		&i.Steps,
+		&i.AttemptCount,
+		&i.MaxAttempts,
+		&i.LockedBy,
+		&i.LockedUntil,
+		&i.NextAttemptAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CompletedAt,
+		&i.IdentityID,
+		&i.IdempotencyKey,
+		&i.DeleteGeneration,
+		&i.LeaseGeneration,
+		&i.ErrorCode,
+		&i.ErrorMessage,
+	)
+	return i, err
+}
+
+const heartbeatDocumentPipelineStage = `-- name: HeartbeatDocumentPipelineStage :one
+UPDATE aura.document_pipeline_stages
+SET locked_until = now() + $1::interval, updated_at = now()
+WHERE id = $2 AND identity_id = $3
+  AND status = 'running' AND locked_by = $4
+  AND lease_generation = $5 AND locked_until > now()
+RETURNING id, identity_id, document_id, version_id, stage, input_fingerprint, producer_version, pipeline_generation, artifact_storage_object_id, artifact_object_key, artifact_sha256, artifact_size_bytes, status, attempt_count, max_attempts, lease_generation, locked_by, locked_until, next_attempt_at, error_class, error_code, error_message, diagnostic_state, created_at, updated_at, completed_at
+`
+
+type HeartbeatDocumentPipelineStageParams struct {
+	LeaseDuration   pgtype.Interval `json:"lease_duration"`
+	ID              pgtype.UUID     `json:"id"`
+	IdentityID      pgtype.UUID     `json:"identity_id"`
+	LockedBy        pgtype.Text     `json:"locked_by"`
+	LeaseGeneration int64           `json:"lease_generation"`
+}
+
+func (q *Queries) HeartbeatDocumentPipelineStage(ctx context.Context, arg HeartbeatDocumentPipelineStageParams) (AuraDocumentPipelineStages, error) {
+	row := q.db.QueryRow(ctx, heartbeatDocumentPipelineStage,
+		arg.LeaseDuration,
+		arg.ID,
+		arg.IdentityID,
+		arg.LockedBy,
+		arg.LeaseGeneration,
+	)
+	var i AuraDocumentPipelineStages
+	err := row.Scan(
+		&i.ID,
+		&i.IdentityID,
+		&i.DocumentID,
+		&i.VersionID,
+		&i.Stage,
+		&i.InputFingerprint,
+		&i.ProducerVersion,
+		&i.PipelineGeneration,
+		&i.ArtifactStorageObjectID,
+		&i.ArtifactObjectKey,
+		&i.ArtifactSha256,
+		&i.ArtifactSizeBytes,
+		&i.Status,
+		&i.AttemptCount,
+		&i.MaxAttempts,
+		&i.LeaseGeneration,
+		&i.LockedBy,
+		&i.LockedUntil,
+		&i.NextAttemptAt,
+		&i.ErrorClass,
+		&i.ErrorCode,
+		&i.ErrorMessage,
+		&i.DiagnosticState,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CompletedAt,
+	)
+	return i, err
+}
+
+const heartbeatIngestionJob = `-- name: HeartbeatIngestionJob :one
+UPDATE aura.ingestion_jobs
+SET locked_until = now() + $1::interval,
+    updated_at = now()
+WHERE id = $2
+  AND identity_id = $3
+  AND status = 'running'
+  AND locked_by = $4
+  AND lease_generation = $5
+  AND locked_until > now()
+RETURNING id, job_type, document_id, version_id, status, idempotency_key, stage, attempt_count, max_attempts, locked_by, locked_until, next_attempt_at, payload, error_code, error_message, created_at, updated_at, completed_at, identity_id, asset_id, pipeline_generation, attempt_generation, lease_generation
+`
+
+type HeartbeatIngestionJobParams struct {
+	LeaseDuration   pgtype.Interval `json:"lease_duration"`
+	ID              pgtype.UUID     `json:"id"`
+	IdentityID      pgtype.UUID     `json:"identity_id"`
+	LockedBy        pgtype.Text     `json:"locked_by"`
+	LeaseGeneration int64           `json:"lease_generation"`
+}
+
+func (q *Queries) HeartbeatIngestionJob(ctx context.Context, arg HeartbeatIngestionJobParams) (AuraIngestionJobs, error) {
+	row := q.db.QueryRow(ctx, heartbeatIngestionJob,
+		arg.LeaseDuration,
+		arg.ID,
+		arg.IdentityID,
+		arg.LockedBy,
+		arg.LeaseGeneration,
+	)
+	var i AuraIngestionJobs
+	err := row.Scan(
+		&i.ID,
+		&i.JobType,
+		&i.DocumentID,
+		&i.VersionID,
+		&i.Status,
+		&i.IdempotencyKey,
+		&i.Stage,
+		&i.AttemptCount,
+		&i.MaxAttempts,
+		&i.LockedBy,
+		&i.LockedUntil,
+		&i.NextAttemptAt,
+		&i.Payload,
+		&i.ErrorCode,
+		&i.ErrorMessage,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CompletedAt,
+		&i.IdentityID,
+		&i.AssetID,
+		&i.PipelineGeneration,
+		&i.AttemptGeneration,
+		&i.LeaseGeneration,
+	)
+	return i, err
+}
+
+const listDocumentStorageObjects = `-- name: ListDocumentStorageObjects :many
+SELECT id, identity_id, document_id, version_id, asset_id, bucket, object_key, kind, sha1, sha256, etag, size_bytes, content_type, retention_class, created_at, deleted_at, status, pipeline_generation, deletion_generation, deletion_verified_at FROM aura.storage_objects
+WHERE identity_id = $1
+  AND document_id = $2
+  AND status <> 'object_deleted'
+ORDER BY created_at, id
+`
+
+type ListDocumentStorageObjectsParams struct {
+	IdentityID pgtype.UUID `json:"identity_id"`
+	DocumentID pgtype.UUID `json:"document_id"`
+}
+
+func (q *Queries) ListDocumentStorageObjects(ctx context.Context, arg ListDocumentStorageObjectsParams) ([]AuraStorageObjects, error) {
+	rows, err := q.db.Query(ctx, listDocumentStorageObjects, arg.IdentityID, arg.DocumentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuraStorageObjects{}
+	for rows.Next() {
+		var i AuraStorageObjects
+		if err := rows.Scan(
+			&i.ID,
+			&i.IdentityID,
+			&i.DocumentID,
+			&i.VersionID,
+			&i.AssetID,
+			&i.Bucket,
+			&i.ObjectKey,
+			&i.Kind,
+			&i.Sha1,
+			&i.Sha256,
+			&i.Etag,
+			&i.SizeBytes,
+			&i.ContentType,
+			&i.RetentionClass,
+			&i.CreatedAt,
+			&i.DeletedAt,
+			&i.Status,
+			&i.PipelineGeneration,
+			&i.DeletionGeneration,
+			&i.DeletionVerifiedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listDocumentTags = `-- name: ListDocumentTags :many
-SELECT tag
-FROM aura.document_tags
+SELECT tag FROM aura.document_tags
 WHERE document_id = $1
-ORDER BY tag ASC
+ORDER BY tag
 `
 
 func (q *Queries) ListDocumentTags(ctx context.Context, documentID pgtype.UUID) ([]string, error) {
@@ -555,15 +1330,20 @@ func (q *Queries) ListDocumentTags(ctx context.Context, documentID pgtype.UUID) 
 }
 
 const listDocumentVersions = `-- name: ListDocumentVersions :many
-SELECT id, document_id, asset_id, version_number, status, sha1, sha256, content_type, size_bytes, storage_object_id, chunking_config_hash, pipeline_config_hash, ready_at, activated_at, created_at, updated_at, deleted_at, error_code, error_message
-FROM aura.document_versions
-WHERE document_id = $1
+SELECT id, document_id, asset_id, version_number, status, sha1, sha256, content_type, size_bytes, storage_object_id, chunking_config_hash, pipeline_config_hash, ready_at, activated_at, created_at, updated_at, deleted_at, error_code, error_message, identity_id, search_document_id, pipeline_generation FROM aura.document_versions
+WHERE identity_id = $1
+  AND document_id = $2
   AND deleted_at IS NULL
 ORDER BY version_number DESC
 `
 
-func (q *Queries) ListDocumentVersions(ctx context.Context, documentID pgtype.UUID) ([]AuraDocumentVersions, error) {
-	rows, err := q.db.Query(ctx, listDocumentVersions, documentID)
+type ListDocumentVersionsParams struct {
+	IdentityID pgtype.UUID `json:"identity_id"`
+	DocumentID pgtype.UUID `json:"document_id"`
+}
+
+func (q *Queries) ListDocumentVersions(ctx context.Context, arg ListDocumentVersionsParams) ([]AuraDocumentVersions, error) {
+	rows, err := q.db.Query(ctx, listDocumentVersions, arg.IdentityID, arg.DocumentID)
 	if err != nil {
 		return nil, err
 	}
@@ -591,6 +1371,9 @@ func (q *Queries) ListDocumentVersions(ctx context.Context, documentID pgtype.UU
 			&i.DeletedAt,
 			&i.ErrorCode,
 			&i.ErrorMessage,
+			&i.IdentityID,
+			&i.SearchDocumentID,
+			&i.PipelineGeneration,
 		); err != nil {
 			return nil, err
 		}
@@ -603,8 +1386,7 @@ func (q *Queries) ListDocumentVersions(ctx context.Context, documentID pgtype.UU
 }
 
 const listDocuments = `-- name: ListDocuments :many
-SELECT id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, card, digest_tsv
-FROM aura.documents
+SELECT id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, card, digest_tsv, source_kind, source_key, search_document_id, pipeline_generation, error_code, error_message FROM aura.documents
 WHERE identity_id = $1
   AND deleted_at IS NULL
   AND ($2::text = '' OR scope = $2)
@@ -658,6 +1440,12 @@ func (q *Queries) ListDocuments(ctx context.Context, arg ListDocumentsParams) ([
 			&i.Digest,
 			&i.Card,
 			&i.DigestTsv,
+			&i.SourceKind,
+			&i.SourceKey,
+			&i.SearchDocumentID,
+			&i.PipelineGeneration,
+			&i.ErrorCode,
+			&i.ErrorMessage,
 		); err != nil {
 			return nil, err
 		}
@@ -670,14 +1458,18 @@ func (q *Queries) ListDocuments(ctx context.Context, arg ListDocumentsParams) ([
 }
 
 const listIngestionEventsByJob = `-- name: ListIngestionEventsByJob :many
-SELECT id, entity_type, entity_id, job_id, from_status, to_status, event_type, message, detail, trace_id, created_at
-FROM aura.ingestion_events
-WHERE job_id = $1
-ORDER BY created_at ASC, id ASC
+SELECT id, entity_type, entity_id, job_id, from_status, to_status, event_type, message, detail, trace_id, created_at, identity_id, pipeline_generation, attempt_generation, lease_generation FROM aura.ingestion_events
+WHERE identity_id = $1 AND job_id = $2
+ORDER BY created_at, id
 `
 
-func (q *Queries) ListIngestionEventsByJob(ctx context.Context, jobID pgtype.UUID) ([]AuraIngestionEvents, error) {
-	rows, err := q.db.Query(ctx, listIngestionEventsByJob, jobID)
+type ListIngestionEventsByJobParams struct {
+	IdentityID pgtype.UUID `json:"identity_id"`
+	JobID      pgtype.UUID `json:"job_id"`
+}
+
+func (q *Queries) ListIngestionEventsByJob(ctx context.Context, arg ListIngestionEventsByJobParams) ([]AuraIngestionEvents, error) {
+	rows, err := q.db.Query(ctx, listIngestionEventsByJob, arg.IdentityID, arg.JobID)
 	if err != nil {
 		return nil, err
 	}
@@ -697,6 +1489,10 @@ func (q *Queries) ListIngestionEventsByJob(ctx context.Context, jobID pgtype.UUI
 			&i.Detail,
 			&i.TraceID,
 			&i.CreatedAt,
+			&i.IdentityID,
+			&i.PipelineGeneration,
+			&i.AttemptGeneration,
+			&i.LeaseGeneration,
 		); err != nil {
 			return nil, err
 		}
@@ -709,21 +1505,22 @@ func (q *Queries) ListIngestionEventsByJob(ctx context.Context, jobID pgtype.UUI
 }
 
 const listStorageObjects = `-- name: ListStorageObjects :many
-SELECT id, identity_id, document_id, version_id, asset_id, bucket, object_key, kind, sha1, sha256, etag, size_bytes, content_type, retention_class, created_at, deleted_at
-FROM aura.storage_objects
-WHERE bucket = $1
-  AND deleted_at IS NULL
-  AND ($2::text = '' OR object_key LIKE $2 || '%')
-ORDER BY object_key ASC
+SELECT id, identity_id, document_id, version_id, asset_id, bucket, object_key, kind, sha1, sha256, etag, size_bytes, content_type, retention_class, created_at, deleted_at, status, pipeline_generation, deletion_generation, deletion_verified_at FROM aura.storage_objects
+WHERE identity_id = $1
+  AND bucket = $2
+  AND status <> 'object_deleted'
+  AND ($3::text = '' OR object_key LIKE $3 || '%')
+ORDER BY object_key
 `
 
 type ListStorageObjectsParams struct {
-	Bucket string `json:"bucket"`
-	Prefix string `json:"prefix"`
+	IdentityID pgtype.UUID `json:"identity_id"`
+	Bucket     string      `json:"bucket"`
+	Prefix     string      `json:"prefix"`
 }
 
 func (q *Queries) ListStorageObjects(ctx context.Context, arg ListStorageObjectsParams) ([]AuraStorageObjects, error) {
-	rows, err := q.db.Query(ctx, listStorageObjects, arg.Bucket, arg.Prefix)
+	rows, err := q.db.Query(ctx, listStorageObjects, arg.IdentityID, arg.Bucket, arg.Prefix)
 	if err != nil {
 		return nil, err
 	}
@@ -748,6 +1545,10 @@ func (q *Queries) ListStorageObjects(ctx context.Context, arg ListStorageObjects
 			&i.RetentionClass,
 			&i.CreatedAt,
 			&i.DeletedAt,
+			&i.Status,
+			&i.PipelineGeneration,
+			&i.DeletionGeneration,
+			&i.DeletionVerifiedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -759,273 +1560,76 @@ func (q *Queries) ListStorageObjects(ctx context.Context, arg ListStorageObjects
 	return items, nil
 }
 
-const retryIngestionJob = `-- name: RetryIngestionJob :one
-UPDATE aura.ingestion_jobs
-SET
-    status = 'queued',
-    stage = $2,
-    error_code = $3,
-    error_message = $4,
-    locked_by = NULL,
-    locked_until = NULL,
-    next_attempt_at = $5,
-    updated_at = now()
-WHERE id = $1
-RETURNING id, job_type, document_id, version_id, status, idempotency_key, stage, attempt_count, max_attempts, locked_by, locked_until, next_attempt_at, payload, error_code, error_message, created_at, updated_at, completed_at
+const manualRetryIngestionJob = `-- name: ManualRetryIngestionJob :one
+WITH target AS (
+    SELECT target_job.id, target_job.status AS prior_status FROM aura.ingestion_jobs target_job
+    WHERE target_job.id = $1 AND target_job.identity_id = $2
+      AND target_job.status IN ('failed', 'dead_letter', 'canceled')
+    FOR UPDATE
+), retried AS (
+    UPDATE aura.ingestion_jobs job
+    SET status = 'queued', stage = $3, attempt_count = 0,
+        attempt_generation = attempt_generation + 1,
+        lease_generation = lease_generation + 1,
+        error_code = '', error_message = '', locked_by = NULL, locked_until = NULL,
+        next_attempt_at = $4, completed_at = NULL, updated_at = now()
+    FROM target WHERE job.id = target.id
+    RETURNING job.id, job.job_type, job.document_id, job.version_id, job.status, job.idempotency_key, job.stage, job.attempt_count, job.max_attempts, job.locked_by, job.locked_until, job.next_attempt_at, job.payload, job.error_code, job.error_message, job.created_at, job.updated_at, job.completed_at, job.identity_id, job.asset_id, job.pipeline_generation, job.attempt_generation, job.lease_generation, target.prior_status
+), events AS (
+    INSERT INTO aura.ingestion_events (
+        identity_id, entity_type, entity_id, job_id, from_status, to_status,
+        event_type, pipeline_generation, attempt_generation, lease_generation
+    )
+    SELECT retried.identity_id, 'ingestion_job', retried.id, retried.id,
+           retried.prior_status, 'queued', 'job_manual_retry',
+           retried.pipeline_generation, retried.attempt_generation, retried.lease_generation
+    FROM retried
+    RETURNING job_id
+)
+SELECT retried.id, retried.job_type, retried.document_id, retried.version_id, retried.status, retried.idempotency_key, retried.stage, retried.attempt_count, retried.max_attempts, retried.locked_by, retried.locked_until, retried.next_attempt_at, retried.payload, retried.error_code, retried.error_message, retried.created_at, retried.updated_at, retried.completed_at, retried.identity_id, retried.asset_id, retried.pipeline_generation, retried.attempt_generation, retried.lease_generation FROM retried JOIN events ON events.job_id = retried.id
 `
 
-type RetryIngestionJobParams struct {
+type ManualRetryIngestionJobParams struct {
 	ID            pgtype.UUID        `json:"id"`
+	IdentityID    pgtype.UUID        `json:"identity_id"`
 	Stage         string             `json:"stage"`
-	ErrorCode     string             `json:"error_code"`
-	ErrorMessage  string             `json:"error_message"`
 	NextAttemptAt pgtype.Timestamptz `json:"next_attempt_at"`
 }
 
-func (q *Queries) RetryIngestionJob(ctx context.Context, arg RetryIngestionJobParams) (AuraIngestionJobs, error) {
-	row := q.db.QueryRow(ctx, retryIngestionJob,
-		arg.ID,
-		arg.Stage,
-		arg.ErrorCode,
-		arg.ErrorMessage,
-		arg.NextAttemptAt,
-	)
-	var i AuraIngestionJobs
-	err := row.Scan(
-		&i.ID,
-		&i.JobType,
-		&i.DocumentID,
-		&i.VersionID,
-		&i.Status,
-		&i.IdempotencyKey,
-		&i.Stage,
-		&i.AttemptCount,
-		&i.MaxAttempts,
-		&i.LockedBy,
-		&i.LockedUntil,
-		&i.NextAttemptAt,
-		&i.Payload,
-		&i.ErrorCode,
-		&i.ErrorMessage,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.CompletedAt,
-	)
-	return i, err
+type ManualRetryIngestionJobRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	JobType            string             `json:"job_type"`
+	DocumentID         pgtype.UUID        `json:"document_id"`
+	VersionID          pgtype.UUID        `json:"version_id"`
+	Status             string             `json:"status"`
+	IdempotencyKey     string             `json:"idempotency_key"`
+	Stage              string             `json:"stage"`
+	AttemptCount       int32              `json:"attempt_count"`
+	MaxAttempts        int32              `json:"max_attempts"`
+	LockedBy           pgtype.Text        `json:"locked_by"`
+	LockedUntil        pgtype.Timestamptz `json:"locked_until"`
+	NextAttemptAt      pgtype.Timestamptz `json:"next_attempt_at"`
+	Payload            []byte             `json:"payload"`
+	ErrorCode          string             `json:"error_code"`
+	ErrorMessage       string             `json:"error_message"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	CompletedAt        pgtype.Timestamptz `json:"completed_at"`
+	IdentityID         pgtype.UUID        `json:"identity_id"`
+	AssetID            pgtype.UUID        `json:"asset_id"`
+	PipelineGeneration int64              `json:"pipeline_generation"`
+	AttemptGeneration  int64              `json:"attempt_generation"`
+	LeaseGeneration    int64              `json:"lease_generation"`
 }
 
-const setDocumentStatus = `-- name: SetDocumentStatus :one
-UPDATE aura.documents
-SET status = $2,
-    metadata = jsonb_set(metadata, '{status_reason}', to_jsonb($3::text), true),
-    updated_at = now()
-WHERE id = $1
-  AND deleted_at IS NULL
-RETURNING id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, card, digest_tsv
-`
-
-type SetDocumentStatusParams struct {
-	ID     pgtype.UUID `json:"id"`
-	Status string      `json:"status"`
-	Reason string      `json:"reason"`
-}
-
-// Narrow status write for background workers, which know the document but not the
-// identity that owns it. UpdateDocument above needs identity_id and rewrites every column,
-// so a worker could not use it to correct a single field without inventing the rest.
-func (q *Queries) SetDocumentStatus(ctx context.Context, arg SetDocumentStatusParams) (AuraDocuments, error) {
-	row := q.db.QueryRow(ctx, setDocumentStatus, arg.ID, arg.Status, arg.Reason)
-	var i AuraDocuments
-	err := row.Scan(
-		&i.ID,
-		&i.IdentityID,
-		&i.Scope,
-		&i.Title,
-		&i.Tags,
-		&i.Metadata,
-		&i.ActiveVersionID,
-		&i.Status,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.DeletedAt,
-		&i.Digest,
-		&i.Card,
-		&i.DigestTsv,
-	)
-	return i, err
-}
-
-const softDeleteDocument = `-- name: SoftDeleteDocument :one
-UPDATE aura.documents
-SET
-    status = 'deleted',
-    deleted_at = COALESCE(deleted_at, now()),
-    updated_at = now()
-WHERE id = $1
-  AND identity_id = $2
-  AND deleted_at IS NULL
-RETURNING id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, card, digest_tsv
-`
-
-type SoftDeleteDocumentParams struct {
-	ID         pgtype.UUID `json:"id"`
-	IdentityID pgtype.UUID `json:"identity_id"`
-}
-
-func (q *Queries) SoftDeleteDocument(ctx context.Context, arg SoftDeleteDocumentParams) (AuraDocuments, error) {
-	row := q.db.QueryRow(ctx, softDeleteDocument, arg.ID, arg.IdentityID)
-	var i AuraDocuments
-	err := row.Scan(
-		&i.ID,
-		&i.IdentityID,
-		&i.Scope,
-		&i.Title,
-		&i.Tags,
-		&i.Metadata,
-		&i.ActiveVersionID,
-		&i.Status,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.DeletedAt,
-		&i.Digest,
-		&i.Card,
-		&i.DigestTsv,
-	)
-	return i, err
-}
-
-const updateDocument = `-- name: UpdateDocument :one
-UPDATE aura.documents
-SET
-    scope = $3,
-    title = $4,
-    tags = $5,
-    metadata = $6,
-    active_version_id = $7,
-    status = $8,
-    updated_at = now()
-WHERE id = $1
-  AND identity_id = $2
-  AND deleted_at IS NULL
-RETURNING id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, card, digest_tsv
-`
-
-type UpdateDocumentParams struct {
-	ID              pgtype.UUID `json:"id"`
-	IdentityID      pgtype.UUID `json:"identity_id"`
-	Scope           string      `json:"scope"`
-	Title           string      `json:"title"`
-	Tags            []string    `json:"tags"`
-	Metadata        []byte      `json:"metadata"`
-	ActiveVersionID pgtype.UUID `json:"active_version_id"`
-	Status          string      `json:"status"`
-}
-
-func (q *Queries) UpdateDocument(ctx context.Context, arg UpdateDocumentParams) (AuraDocuments, error) {
-	row := q.db.QueryRow(ctx, updateDocument,
+func (q *Queries) ManualRetryIngestionJob(ctx context.Context, arg ManualRetryIngestionJobParams) (ManualRetryIngestionJobRow, error) {
+	row := q.db.QueryRow(ctx, manualRetryIngestionJob,
 		arg.ID,
 		arg.IdentityID,
-		arg.Scope,
-		arg.Title,
-		arg.Tags,
-		arg.Metadata,
-		arg.ActiveVersionID,
-		arg.Status,
-	)
-	var i AuraDocuments
-	err := row.Scan(
-		&i.ID,
-		&i.IdentityID,
-		&i.Scope,
-		&i.Title,
-		&i.Tags,
-		&i.Metadata,
-		&i.ActiveVersionID,
-		&i.Status,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.DeletedAt,
-		&i.Digest,
-		&i.Card,
-		&i.DigestTsv,
-	)
-	return i, err
-}
-
-const updateDocumentTags = `-- name: UpdateDocumentTags :one
-UPDATE aura.documents
-SET
-    tags = $3,
-    updated_at = now()
-WHERE id = $1
-  AND identity_id = $2
-  AND deleted_at IS NULL
-RETURNING id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, card, digest_tsv
-`
-
-type UpdateDocumentTagsParams struct {
-	ID         pgtype.UUID `json:"id"`
-	IdentityID pgtype.UUID `json:"identity_id"`
-	Tags       []string    `json:"tags"`
-}
-
-func (q *Queries) UpdateDocumentTags(ctx context.Context, arg UpdateDocumentTagsParams) (AuraDocuments, error) {
-	row := q.db.QueryRow(ctx, updateDocumentTags, arg.ID, arg.IdentityID, arg.Tags)
-	var i AuraDocuments
-	err := row.Scan(
-		&i.ID,
-		&i.IdentityID,
-		&i.Scope,
-		&i.Title,
-		&i.Tags,
-		&i.Metadata,
-		&i.ActiveVersionID,
-		&i.Status,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.DeletedAt,
-		&i.Digest,
-		&i.Card,
-		&i.DigestTsv,
-	)
-	return i, err
-}
-
-const updateIngestionJobStatus = `-- name: UpdateIngestionJobStatus :one
-UPDATE aura.ingestion_jobs
-SET
-    status = $2,
-    stage = $3,
-    error_code = $4,
-    error_message = $5,
-    locked_by = NULL,
-    locked_until = NULL,
-    completed_at = CASE
-        WHEN $2 IN ('succeeded', 'failed', 'dead_letter', 'canceled') THEN now()
-        ELSE completed_at
-    END,
-    updated_at = now()
-WHERE id = $1
-RETURNING id, job_type, document_id, version_id, status, idempotency_key, stage, attempt_count, max_attempts, locked_by, locked_until, next_attempt_at, payload, error_code, error_message, created_at, updated_at, completed_at
-`
-
-type UpdateIngestionJobStatusParams struct {
-	ID           pgtype.UUID `json:"id"`
-	Status       string      `json:"status"`
-	Stage        string      `json:"stage"`
-	ErrorCode    string      `json:"error_code"`
-	ErrorMessage string      `json:"error_message"`
-}
-
-func (q *Queries) UpdateIngestionJobStatus(ctx context.Context, arg UpdateIngestionJobStatusParams) (AuraIngestionJobs, error) {
-	row := q.db.QueryRow(ctx, updateIngestionJobStatus,
-		arg.ID,
-		arg.Status,
 		arg.Stage,
-		arg.ErrorCode,
-		arg.ErrorMessage,
+		arg.NextAttemptAt,
 	)
-	var i AuraIngestionJobs
+	var i ManualRetryIngestionJobRow
 	err := row.Scan(
 		&i.ID,
 		&i.JobType,
@@ -1045,25 +1649,230 @@ func (q *Queries) UpdateIngestionJobStatus(ctx context.Context, arg UpdateIngest
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.CompletedAt,
+		&i.IdentityID,
+		&i.AssetID,
+		&i.PipelineGeneration,
+		&i.AttemptGeneration,
+		&i.LeaseGeneration,
 	)
 	return i, err
 }
 
-const updateStorageObjectVersion = `-- name: UpdateStorageObjectVersion :one
-UPDATE aura.storage_objects
-SET
-    version_id = $2
-WHERE id = $1
-RETURNING id, identity_id, document_id, version_id, asset_id, bucket, object_key, kind, sha1, sha256, etag, size_bytes, content_type, retention_class, created_at, deleted_at
+const manualRetryIngestionJobByKey = `-- name: ManualRetryIngestionJobByKey :one
+WITH target AS (
+    SELECT target_job.id, target_job.status AS prior_status FROM aura.ingestion_jobs target_job
+    WHERE target_job.identity_id = $1
+      AND target_job.job_type = $2
+      AND target_job.idempotency_key = $3
+      AND target_job.status IN ('failed', 'dead_letter', 'canceled')
+    FOR UPDATE
+), retried AS (
+    UPDATE aura.ingestion_jobs job
+    SET status = 'queued', stage = $4, attempt_count = 0,
+        attempt_generation = attempt_generation + 1,
+        lease_generation = lease_generation + 1,
+        error_code = '', error_message = '', locked_by = NULL, locked_until = NULL,
+        next_attempt_at = $5, completed_at = NULL, updated_at = now()
+    FROM target WHERE job.id = target.id
+    RETURNING job.id, job.job_type, job.document_id, job.version_id, job.status, job.idempotency_key, job.stage, job.attempt_count, job.max_attempts, job.locked_by, job.locked_until, job.next_attempt_at, job.payload, job.error_code, job.error_message, job.created_at, job.updated_at, job.completed_at, job.identity_id, job.asset_id, job.pipeline_generation, job.attempt_generation, job.lease_generation, target.prior_status
+), events AS (
+    INSERT INTO aura.ingestion_events (
+        identity_id, entity_type, entity_id, job_id, from_status, to_status,
+        event_type, pipeline_generation, attempt_generation, lease_generation
+    )
+    SELECT retried.identity_id, 'ingestion_job', retried.id, retried.id,
+           retried.prior_status, 'queued', 'job_manual_retry',
+           retried.pipeline_generation, retried.attempt_generation, retried.lease_generation
+    FROM retried
+    RETURNING job_id
+)
+SELECT retried.id, retried.job_type, retried.document_id, retried.version_id, retried.status, retried.idempotency_key, retried.stage, retried.attempt_count, retried.max_attempts, retried.locked_by, retried.locked_until, retried.next_attempt_at, retried.payload, retried.error_code, retried.error_message, retried.created_at, retried.updated_at, retried.completed_at, retried.identity_id, retried.asset_id, retried.pipeline_generation, retried.attempt_generation, retried.lease_generation FROM retried JOIN events ON events.job_id = retried.id
 `
 
-type UpdateStorageObjectVersionParams struct {
-	ID        pgtype.UUID `json:"id"`
-	VersionID pgtype.UUID `json:"version_id"`
+type ManualRetryIngestionJobByKeyParams struct {
+	IdentityID     pgtype.UUID        `json:"identity_id"`
+	JobType        string             `json:"job_type"`
+	IdempotencyKey string             `json:"idempotency_key"`
+	Stage          string             `json:"stage"`
+	NextAttemptAt  pgtype.Timestamptz `json:"next_attempt_at"`
 }
 
-func (q *Queries) UpdateStorageObjectVersion(ctx context.Context, arg UpdateStorageObjectVersionParams) (AuraStorageObjects, error) {
-	row := q.db.QueryRow(ctx, updateStorageObjectVersion, arg.ID, arg.VersionID)
+type ManualRetryIngestionJobByKeyRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	JobType            string             `json:"job_type"`
+	DocumentID         pgtype.UUID        `json:"document_id"`
+	VersionID          pgtype.UUID        `json:"version_id"`
+	Status             string             `json:"status"`
+	IdempotencyKey     string             `json:"idempotency_key"`
+	Stage              string             `json:"stage"`
+	AttemptCount       int32              `json:"attempt_count"`
+	MaxAttempts        int32              `json:"max_attempts"`
+	LockedBy           pgtype.Text        `json:"locked_by"`
+	LockedUntil        pgtype.Timestamptz `json:"locked_until"`
+	NextAttemptAt      pgtype.Timestamptz `json:"next_attempt_at"`
+	Payload            []byte             `json:"payload"`
+	ErrorCode          string             `json:"error_code"`
+	ErrorMessage       string             `json:"error_message"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	CompletedAt        pgtype.Timestamptz `json:"completed_at"`
+	IdentityID         pgtype.UUID        `json:"identity_id"`
+	AssetID            pgtype.UUID        `json:"asset_id"`
+	PipelineGeneration int64              `json:"pipeline_generation"`
+	AttemptGeneration  int64              `json:"attempt_generation"`
+	LeaseGeneration    int64              `json:"lease_generation"`
+}
+
+func (q *Queries) ManualRetryIngestionJobByKey(ctx context.Context, arg ManualRetryIngestionJobByKeyParams) (ManualRetryIngestionJobByKeyRow, error) {
+	row := q.db.QueryRow(ctx, manualRetryIngestionJobByKey,
+		arg.IdentityID,
+		arg.JobType,
+		arg.IdempotencyKey,
+		arg.Stage,
+		arg.NextAttemptAt,
+	)
+	var i ManualRetryIngestionJobByKeyRow
+	err := row.Scan(
+		&i.ID,
+		&i.JobType,
+		&i.DocumentID,
+		&i.VersionID,
+		&i.Status,
+		&i.IdempotencyKey,
+		&i.Stage,
+		&i.AttemptCount,
+		&i.MaxAttempts,
+		&i.LockedBy,
+		&i.LockedUntil,
+		&i.NextAttemptAt,
+		&i.Payload,
+		&i.ErrorCode,
+		&i.ErrorMessage,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CompletedAt,
+		&i.IdentityID,
+		&i.AssetID,
+		&i.PipelineGeneration,
+		&i.AttemptGeneration,
+		&i.LeaseGeneration,
+	)
+	return i, err
+}
+
+const markDeleteJobStorageObjectDeleted = `-- name: MarkDeleteJobStorageObjectDeleted :one
+WITH active_job AS (
+    SELECT job.id, job.identity_id, job.document_id
+    FROM aura.delete_jobs job
+    WHERE job.id = $1
+      AND job.identity_id = $2
+      AND job.status = 'running'
+      AND job.locked_by = $3
+      AND job.lease_generation = $4
+      AND job.locked_until > now()
+), verified AS (
+    UPDATE aura.storage_objects object
+    SET status = 'object_deleted',
+        deleted_at = COALESCE(object.deleted_at, now()),
+        deletion_verified_at = now()
+    FROM active_job job
+    WHERE object.id = $5
+      AND object.identity_id = job.identity_id
+      AND object.document_id = job.document_id
+      AND object.deletion_generation = $6
+      AND (
+          object.status = 'delete_pending'
+          OR (object.status = 'object_deleted' AND object.deletion_verified_at IS NOT NULL)
+      )
+    RETURNING object.id, object.identity_id, object.document_id, object.version_id, object.asset_id, object.bucket, object.object_key, object.kind, object.sha1, object.sha256, object.etag, object.size_bytes, object.content_type, object.retention_class, object.created_at, object.deleted_at, object.status, object.pipeline_generation, object.deletion_generation, object.deletion_verified_at
+)
+SELECT id, identity_id, document_id, version_id, asset_id, bucket, object_key, kind, sha1, sha256, etag, size_bytes, content_type, retention_class, created_at, deleted_at, status, pipeline_generation, deletion_generation, deletion_verified_at FROM verified
+`
+
+type MarkDeleteJobStorageObjectDeletedParams struct {
+	JobID              pgtype.UUID `json:"job_id"`
+	IdentityID         pgtype.UUID `json:"identity_id"`
+	LockedBy           pgtype.Text `json:"locked_by"`
+	LeaseGeneration    int64       `json:"lease_generation"`
+	StorageObjectID    pgtype.UUID `json:"storage_object_id"`
+	DeletionGeneration int64       `json:"deletion_generation"`
+}
+
+type MarkDeleteJobStorageObjectDeletedRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	IdentityID         pgtype.UUID        `json:"identity_id"`
+	DocumentID         pgtype.UUID        `json:"document_id"`
+	VersionID          pgtype.UUID        `json:"version_id"`
+	AssetID            pgtype.UUID        `json:"asset_id"`
+	Bucket             string             `json:"bucket"`
+	ObjectKey          string             `json:"object_key"`
+	Kind               string             `json:"kind"`
+	Sha1               string             `json:"sha1"`
+	Sha256             string             `json:"sha256"`
+	Etag               string             `json:"etag"`
+	SizeBytes          int64              `json:"size_bytes"`
+	ContentType        string             `json:"content_type"`
+	RetentionClass     string             `json:"retention_class"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
+	Status             string             `json:"status"`
+	PipelineGeneration int64              `json:"pipeline_generation"`
+	DeletionGeneration int64              `json:"deletion_generation"`
+	DeletionVerifiedAt pgtype.Timestamptz `json:"deletion_verified_at"`
+}
+
+func (q *Queries) MarkDeleteJobStorageObjectDeleted(ctx context.Context, arg MarkDeleteJobStorageObjectDeletedParams) (MarkDeleteJobStorageObjectDeletedRow, error) {
+	row := q.db.QueryRow(ctx, markDeleteJobStorageObjectDeleted,
+		arg.JobID,
+		arg.IdentityID,
+		arg.LockedBy,
+		arg.LeaseGeneration,
+		arg.StorageObjectID,
+		arg.DeletionGeneration,
+	)
+	var i MarkDeleteJobStorageObjectDeletedRow
+	err := row.Scan(
+		&i.ID,
+		&i.IdentityID,
+		&i.DocumentID,
+		&i.VersionID,
+		&i.AssetID,
+		&i.Bucket,
+		&i.ObjectKey,
+		&i.Kind,
+		&i.Sha1,
+		&i.Sha256,
+		&i.Etag,
+		&i.SizeBytes,
+		&i.ContentType,
+		&i.RetentionClass,
+		&i.CreatedAt,
+		&i.DeletedAt,
+		&i.Status,
+		&i.PipelineGeneration,
+		&i.DeletionGeneration,
+		&i.DeletionVerifiedAt,
+	)
+	return i, err
+}
+
+const markStorageObjectDeletePending = `-- name: MarkStorageObjectDeletePending :one
+UPDATE aura.storage_objects
+SET status = 'delete_pending',
+    deletion_generation = deletion_generation + 1
+WHERE id = $1
+  AND identity_id = $2
+  AND status <> 'object_deleted'
+RETURNING id, identity_id, document_id, version_id, asset_id, bucket, object_key, kind, sha1, sha256, etag, size_bytes, content_type, retention_class, created_at, deleted_at, status, pipeline_generation, deletion_generation, deletion_verified_at
+`
+
+type MarkStorageObjectDeletePendingParams struct {
+	ID         pgtype.UUID `json:"id"`
+	IdentityID pgtype.UUID `json:"identity_id"`
+}
+
+func (q *Queries) MarkStorageObjectDeletePending(ctx context.Context, arg MarkStorageObjectDeletePendingParams) (AuraStorageObjects, error) {
+	row := q.db.QueryRow(ctx, markStorageObjectDeletePending, arg.ID, arg.IdentityID)
 	var i AuraStorageObjects
 	err := row.Scan(
 		&i.ID,
@@ -1082,18 +1891,1023 @@ func (q *Queries) UpdateStorageObjectVersion(ctx context.Context, arg UpdateStor
 		&i.RetentionClass,
 		&i.CreatedAt,
 		&i.DeletedAt,
+		&i.Status,
+		&i.PipelineGeneration,
+		&i.DeletionGeneration,
+		&i.DeletionVerifiedAt,
+	)
+	return i, err
+}
+
+const markStorageObjectDeleted = `-- name: MarkStorageObjectDeleted :one
+UPDATE aura.storage_objects
+SET status = 'object_deleted',
+    deleted_at = COALESCE(deleted_at, now()),
+    deletion_verified_at = now()
+WHERE id = $1
+  AND identity_id = $2
+  AND status = 'delete_pending'
+  AND deletion_generation = $3
+RETURNING id, identity_id, document_id, version_id, asset_id, bucket, object_key, kind, sha1, sha256, etag, size_bytes, content_type, retention_class, created_at, deleted_at, status, pipeline_generation, deletion_generation, deletion_verified_at
+`
+
+type MarkStorageObjectDeletedParams struct {
+	ID                 pgtype.UUID `json:"id"`
+	IdentityID         pgtype.UUID `json:"identity_id"`
+	DeletionGeneration int64       `json:"deletion_generation"`
+}
+
+func (q *Queries) MarkStorageObjectDeleted(ctx context.Context, arg MarkStorageObjectDeletedParams) (AuraStorageObjects, error) {
+	row := q.db.QueryRow(ctx, markStorageObjectDeleted, arg.ID, arg.IdentityID, arg.DeletionGeneration)
+	var i AuraStorageObjects
+	err := row.Scan(
+		&i.ID,
+		&i.IdentityID,
+		&i.DocumentID,
+		&i.VersionID,
+		&i.AssetID,
+		&i.Bucket,
+		&i.ObjectKey,
+		&i.Kind,
+		&i.Sha1,
+		&i.Sha256,
+		&i.Etag,
+		&i.SizeBytes,
+		&i.ContentType,
+		&i.RetentionClass,
+		&i.CreatedAt,
+		&i.DeletedAt,
+		&i.Status,
+		&i.PipelineGeneration,
+		&i.DeletionGeneration,
+		&i.DeletionVerifiedAt,
+	)
+	return i, err
+}
+
+const purgeDocumentPassages = `-- name: PurgeDocumentPassages :one
+WITH active_job AS (
+    SELECT job.id, job.identity_id, job.document_id
+    FROM aura.delete_jobs job
+    WHERE job.id = $1
+      AND job.identity_id = $2
+      AND job.status = 'running'
+      AND job.locked_by = $3
+      AND job.lease_generation = $4
+      AND job.locked_until > now()
+), purged_chunks AS (
+    DELETE FROM aura.document_chunks chunk
+    USING active_job job
+    WHERE chunk.identity_id = job.identity_id AND chunk.document_id = job.document_id
+    RETURNING chunk.id
+)
+SELECT count(*)::bigint FROM purged_chunks
+`
+
+type PurgeDocumentPassagesParams struct {
+	JobID           pgtype.UUID `json:"job_id"`
+	IdentityID      pgtype.UUID `json:"identity_id"`
+	LockedBy        pgtype.Text `json:"locked_by"`
+	LeaseGeneration int64       `json:"lease_generation"`
+}
+
+// Physically erases the document body. Amendment #117: for these two tables
+// "marked deleted" means DELETE, because document_chunks.text is the document text
+// itself and a deleted_at tombstone is retained PII. The fence row is READ, never
+// locked, matching MarkDeleteJobStorageObjectDeleted. Chunks go first so the
+// document_embeddings FK cascade fires in the same order the writer inserted.
+func (q *Queries) PurgeDocumentPassages(ctx context.Context, arg PurgeDocumentPassagesParams) (int64, error) {
+	row := q.db.QueryRow(ctx, purgeDocumentPassages,
+		arg.JobID,
+		arg.IdentityID,
+		arg.LockedBy,
+		arg.LeaseGeneration,
+	)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const retryDeleteJob = `-- name: RetryDeleteJob :one
+WITH target AS (
+    SELECT job.id, job.status AS prior_status,
+           CASE WHEN job.attempt_count >= job.max_attempts
+                THEN 'dead_letter' ELSE 'queued' END AS next_status
+    FROM aura.delete_jobs job
+    WHERE job.id = $1
+      AND job.identity_id = $2
+      AND job.status = 'running'
+      AND job.locked_by = $3
+      AND job.lease_generation = $4
+      AND job.locked_until > now()
+    FOR UPDATE
+), transitioned AS (
+    UPDATE aura.delete_jobs job
+    SET status = target.next_status,
+        error_code = $5,
+        error_message = $6,
+        locked_by = NULL,
+        locked_until = NULL,
+        next_attempt_at = CASE WHEN target.next_status = 'queued'
+                               THEN $7 ELSE now() END,
+        completed_at = CASE WHEN target.next_status = 'dead_letter'
+                            THEN now() ELSE NULL END,
+        updated_at = now()
+    FROM target
+    WHERE job.id = target.id
+    RETURNING job.id, job.document_id, job.version_id, job.scope, job.status, job.steps, job.attempt_count, job.max_attempts, job.locked_by, job.locked_until, job.next_attempt_at, job.created_at, job.updated_at, job.completed_at, job.identity_id, job.idempotency_key, job.delete_generation, job.lease_generation, job.error_code, job.error_message, target.prior_status
+), event AS (
+    INSERT INTO aura.ingestion_events (
+        identity_id, entity_type, entity_id, from_status, to_status,
+        event_type, message, attempt_generation, lease_generation
+    )
+    SELECT transitioned.identity_id, 'delete_job', transitioned.id,
+           transitioned.prior_status, transitioned.status,
+           CASE WHEN transitioned.status = 'dead_letter'
+                THEN 'delete_dead_letter' ELSE 'delete_retry_scheduled' END,
+           $8, transitioned.delete_generation,
+           transitioned.lease_generation
+    FROM transitioned
+    RETURNING entity_id
+)
+SELECT transitioned.id, transitioned.document_id, transitioned.version_id,
+       transitioned.scope, transitioned.status, transitioned.steps,
+       transitioned.attempt_count, transitioned.max_attempts,
+       transitioned.locked_by, transitioned.locked_until,
+       transitioned.next_attempt_at, transitioned.created_at,
+       transitioned.updated_at, transitioned.completed_at,
+       transitioned.identity_id, transitioned.idempotency_key,
+       transitioned.delete_generation, transitioned.lease_generation,
+       transitioned.error_code, transitioned.error_message
+FROM transitioned JOIN event ON event.entity_id = transitioned.id
+`
+
+type RetryDeleteJobParams struct {
+	ID              pgtype.UUID        `json:"id"`
+	IdentityID      pgtype.UUID        `json:"identity_id"`
+	LockedBy        pgtype.Text        `json:"locked_by"`
+	LeaseGeneration int64              `json:"lease_generation"`
+	ErrorCode       string             `json:"error_code"`
+	ErrorMessage    string             `json:"error_message"`
+	NextAttemptAt   pgtype.Timestamptz `json:"next_attempt_at"`
+	EventMessage    string             `json:"event_message"`
+}
+
+type RetryDeleteJobRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	DocumentID       pgtype.UUID        `json:"document_id"`
+	VersionID        pgtype.UUID        `json:"version_id"`
+	Scope            string             `json:"scope"`
+	Status           string             `json:"status"`
+	Steps            []byte             `json:"steps"`
+	AttemptCount     int32              `json:"attempt_count"`
+	MaxAttempts      int32              `json:"max_attempts"`
+	LockedBy         pgtype.Text        `json:"locked_by"`
+	LockedUntil      pgtype.Timestamptz `json:"locked_until"`
+	NextAttemptAt    pgtype.Timestamptz `json:"next_attempt_at"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	CompletedAt      pgtype.Timestamptz `json:"completed_at"`
+	IdentityID       pgtype.UUID        `json:"identity_id"`
+	IdempotencyKey   string             `json:"idempotency_key"`
+	DeleteGeneration int64              `json:"delete_generation"`
+	LeaseGeneration  int64              `json:"lease_generation"`
+	ErrorCode        string             `json:"error_code"`
+	ErrorMessage     string             `json:"error_message"`
+}
+
+func (q *Queries) RetryDeleteJob(ctx context.Context, arg RetryDeleteJobParams) (RetryDeleteJobRow, error) {
+	row := q.db.QueryRow(ctx, retryDeleteJob,
+		arg.ID,
+		arg.IdentityID,
+		arg.LockedBy,
+		arg.LeaseGeneration,
+		arg.ErrorCode,
+		arg.ErrorMessage,
+		arg.NextAttemptAt,
+		arg.EventMessage,
+	)
+	var i RetryDeleteJobRow
+	err := row.Scan(
+		&i.ID,
+		&i.DocumentID,
+		&i.VersionID,
+		&i.Scope,
+		&i.Status,
+		&i.Steps,
+		&i.AttemptCount,
+		&i.MaxAttempts,
+		&i.LockedBy,
+		&i.LockedUntil,
+		&i.NextAttemptAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CompletedAt,
+		&i.IdentityID,
+		&i.IdempotencyKey,
+		&i.DeleteGeneration,
+		&i.LeaseGeneration,
+		&i.ErrorCode,
+		&i.ErrorMessage,
+	)
+	return i, err
+}
+
+const retryIngestionJob = `-- name: RetryIngestionJob :one
+WITH target AS (
+    SELECT target_job.id, target_job.status AS prior_status FROM aura.ingestion_jobs target_job
+    WHERE target_job.id = $1 AND target_job.identity_id = $2
+      AND target_job.status = 'running' AND target_job.locked_by = $3
+      AND target_job.lease_generation = $4
+    FOR UPDATE
+), retried AS (
+    UPDATE aura.ingestion_jobs job
+    SET status = 'queued', stage = $5,
+        error_code = $6, error_message = $7,
+        locked_by = NULL, locked_until = NULL,
+        next_attempt_at = $8, updated_at = now()
+    FROM target WHERE job.id = target.id
+    RETURNING job.id, job.job_type, job.document_id, job.version_id, job.status, job.idempotency_key, job.stage, job.attempt_count, job.max_attempts, job.locked_by, job.locked_until, job.next_attempt_at, job.payload, job.error_code, job.error_message, job.created_at, job.updated_at, job.completed_at, job.identity_id, job.asset_id, job.pipeline_generation, job.attempt_generation, job.lease_generation, target.prior_status
+), events AS (
+    INSERT INTO aura.ingestion_events (
+        identity_id, entity_type, entity_id, job_id, from_status, to_status,
+        event_type, message, pipeline_generation, attempt_generation, lease_generation
+    )
+    SELECT retried.identity_id, 'ingestion_job', retried.id, retried.id,
+           retried.prior_status, 'queued', 'job_retry_scheduled',
+           $9, retried.pipeline_generation,
+           retried.attempt_generation, retried.lease_generation
+    FROM retried
+    RETURNING job_id
+)
+SELECT retried.id, retried.job_type, retried.document_id, retried.version_id, retried.status, retried.idempotency_key, retried.stage, retried.attempt_count, retried.max_attempts, retried.locked_by, retried.locked_until, retried.next_attempt_at, retried.payload, retried.error_code, retried.error_message, retried.created_at, retried.updated_at, retried.completed_at, retried.identity_id, retried.asset_id, retried.pipeline_generation, retried.attempt_generation, retried.lease_generation FROM retried JOIN events ON events.job_id = retried.id
+`
+
+type RetryIngestionJobParams struct {
+	ID              pgtype.UUID        `json:"id"`
+	IdentityID      pgtype.UUID        `json:"identity_id"`
+	LockedBy        pgtype.Text        `json:"locked_by"`
+	LeaseGeneration int64              `json:"lease_generation"`
+	Stage           string             `json:"stage"`
+	ErrorCode       string             `json:"error_code"`
+	ErrorMessage    string             `json:"error_message"`
+	NextAttemptAt   pgtype.Timestamptz `json:"next_attempt_at"`
+	EventMessage    string             `json:"event_message"`
+}
+
+type RetryIngestionJobRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	JobType            string             `json:"job_type"`
+	DocumentID         pgtype.UUID        `json:"document_id"`
+	VersionID          pgtype.UUID        `json:"version_id"`
+	Status             string             `json:"status"`
+	IdempotencyKey     string             `json:"idempotency_key"`
+	Stage              string             `json:"stage"`
+	AttemptCount       int32              `json:"attempt_count"`
+	MaxAttempts        int32              `json:"max_attempts"`
+	LockedBy           pgtype.Text        `json:"locked_by"`
+	LockedUntil        pgtype.Timestamptz `json:"locked_until"`
+	NextAttemptAt      pgtype.Timestamptz `json:"next_attempt_at"`
+	Payload            []byte             `json:"payload"`
+	ErrorCode          string             `json:"error_code"`
+	ErrorMessage       string             `json:"error_message"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	CompletedAt        pgtype.Timestamptz `json:"completed_at"`
+	IdentityID         pgtype.UUID        `json:"identity_id"`
+	AssetID            pgtype.UUID        `json:"asset_id"`
+	PipelineGeneration int64              `json:"pipeline_generation"`
+	AttemptGeneration  int64              `json:"attempt_generation"`
+	LeaseGeneration    int64              `json:"lease_generation"`
+}
+
+func (q *Queries) RetryIngestionJob(ctx context.Context, arg RetryIngestionJobParams) (RetryIngestionJobRow, error) {
+	row := q.db.QueryRow(ctx, retryIngestionJob,
+		arg.ID,
+		arg.IdentityID,
+		arg.LockedBy,
+		arg.LeaseGeneration,
+		arg.Stage,
+		arg.ErrorCode,
+		arg.ErrorMessage,
+		arg.NextAttemptAt,
+		arg.EventMessage,
+	)
+	var i RetryIngestionJobRow
+	err := row.Scan(
+		&i.ID,
+		&i.JobType,
+		&i.DocumentID,
+		&i.VersionID,
+		&i.Status,
+		&i.IdempotencyKey,
+		&i.Stage,
+		&i.AttemptCount,
+		&i.MaxAttempts,
+		&i.LockedBy,
+		&i.LockedUntil,
+		&i.NextAttemptAt,
+		&i.Payload,
+		&i.ErrorCode,
+		&i.ErrorMessage,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CompletedAt,
+		&i.IdentityID,
+		&i.AssetID,
+		&i.PipelineGeneration,
+		&i.AttemptGeneration,
+		&i.LeaseGeneration,
+	)
+	return i, err
+}
+
+const setDocumentStatus = `-- name: SetDocumentStatus :one
+UPDATE aura.documents
+SET status = $1,
+    error_code = $2,
+    error_message = $3,
+    updated_at = now()
+WHERE id = $4
+  AND identity_id = $5
+  AND deleted_at IS NULL
+RETURNING id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, card, digest_tsv, source_kind, source_key, search_document_id, pipeline_generation, error_code, error_message
+`
+
+type SetDocumentStatusParams struct {
+	Status       string      `json:"status"`
+	ErrorCode    string      `json:"error_code"`
+	ErrorMessage string      `json:"error_message"`
+	ID           pgtype.UUID `json:"id"`
+	IdentityID   pgtype.UUID `json:"identity_id"`
+}
+
+func (q *Queries) SetDocumentStatus(ctx context.Context, arg SetDocumentStatusParams) (AuraDocuments, error) {
+	row := q.db.QueryRow(ctx, setDocumentStatus,
+		arg.Status,
+		arg.ErrorCode,
+		arg.ErrorMessage,
+		arg.ID,
+		arg.IdentityID,
+	)
+	var i AuraDocuments
+	err := row.Scan(
+		&i.ID,
+		&i.IdentityID,
+		&i.Scope,
+		&i.Title,
+		&i.Tags,
+		&i.Metadata,
+		&i.ActiveVersionID,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.Digest,
+		&i.Card,
+		&i.DigestTsv,
+		&i.SourceKind,
+		&i.SourceKey,
+		&i.SearchDocumentID,
+		&i.PipelineGeneration,
+		&i.ErrorCode,
+		&i.ErrorMessage,
+	)
+	return i, err
+}
+
+const softDeleteDocument = `-- name: SoftDeleteDocument :one
+WITH target AS (
+    SELECT document.id, document.identity_id, document.scope, document.title, document.tags, document.metadata, document.active_version_id, document.status, document.created_at, document.updated_at, document.deleted_at, document.digest, document.card, document.digest_tsv, document.source_kind, document.source_key, document.search_document_id, document.pipeline_generation, document.error_code, document.error_message FROM aura.documents document
+    WHERE document.id = $1 AND document.identity_id = $2
+      AND document.deleted_at IS NULL AND document.status <> 'deleted'
+    FOR UPDATE
+), snapshot AS (
+    SELECT target.id, target.identity_id, target.pipeline_generation,
+           jsonb_build_object(
+               'document_id', target.id,
+               'pipeline_generation', target.pipeline_generation,
+               'objects', COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                   'id', object.id, 'bucket', object.bucket, 'object_key', object.object_key,
+                   'deletion_generation', object.deletion_generation + 1) ORDER BY object.id)
+                   FROM aura.storage_objects object
+                   WHERE object.identity_id = target.identity_id AND object.document_id = target.id
+                     AND object.status <> 'object_deleted'), '[]'::jsonb),
+               'projection_generations', COALESCE((SELECT jsonb_agg(DISTINCT version.pipeline_generation)
+                   FROM aura.document_versions version
+                   WHERE version.identity_id = target.identity_id
+                     AND version.document_id = target.id
+                     AND version.deleted_at IS NULL), '[]'::jsonb)
+           ) AS steps
+    FROM target
+), changed AS (
+    UPDATE aura.documents document SET status = 'deleting', updated_at = now()
+    FROM target WHERE document.id = target.id RETURNING document.id, document.identity_id, document.scope, document.title, document.tags, document.metadata, document.active_version_id, document.status, document.created_at, document.updated_at, document.deleted_at, document.digest, document.card, document.digest_tsv, document.source_kind, document.source_key, document.search_document_id, document.pipeline_generation, document.error_code, document.error_message
+), pending_objects AS (
+    UPDATE aura.storage_objects object
+    SET status = 'delete_pending', deletion_generation = deletion_generation + 1
+    FROM target WHERE object.identity_id = target.identity_id AND object.document_id = target.id
+      AND object.status <> 'object_deleted' RETURNING object.id
+), job AS (
+    INSERT INTO aura.delete_jobs (
+        identity_id, document_id, scope, status, steps, max_attempts,
+        next_attempt_at, idempotency_key, delete_generation
+    ) SELECT identity_id, id, 'hard', 'queued', steps, 10, now(),
+             'document:' || id::text, GREATEST(pipeline_generation, 1) FROM snapshot
+    ON CONFLICT (identity_id, idempotency_key) DO UPDATE SET updated_at = now()
+    RETURNING document_id
+)
+SELECT changed.id, changed.identity_id, changed.scope, changed.title, changed.tags, changed.metadata, changed.active_version_id, changed.status, changed.created_at, changed.updated_at, changed.deleted_at, changed.digest, changed.card, changed.digest_tsv, changed.source_kind, changed.source_key, changed.search_document_id, changed.pipeline_generation, changed.error_code, changed.error_message FROM changed JOIN job ON job.document_id = changed.id
+`
+
+type SoftDeleteDocumentParams struct {
+	ID         pgtype.UUID `json:"id"`
+	IdentityID pgtype.UUID `json:"identity_id"`
+}
+
+type SoftDeleteDocumentRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	IdentityID         pgtype.UUID        `json:"identity_id"`
+	Scope              string             `json:"scope"`
+	Title              string             `json:"title"`
+	Tags               []string           `json:"tags"`
+	Metadata           []byte             `json:"metadata"`
+	ActiveVersionID    pgtype.UUID        `json:"active_version_id"`
+	Status             string             `json:"status"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
+	Digest             string             `json:"digest"`
+	Card               string             `json:"card"`
+	DigestTsv          interface{}        `json:"digest_tsv"`
+	SourceKind         string             `json:"source_kind"`
+	SourceKey          string             `json:"source_key"`
+	SearchDocumentID   string             `json:"search_document_id"`
+	PipelineGeneration int64              `json:"pipeline_generation"`
+	ErrorCode          string             `json:"error_code"`
+	ErrorMessage       string             `json:"error_message"`
+}
+
+func (q *Queries) SoftDeleteDocument(ctx context.Context, arg SoftDeleteDocumentParams) (SoftDeleteDocumentRow, error) {
+	row := q.db.QueryRow(ctx, softDeleteDocument, arg.ID, arg.IdentityID)
+	var i SoftDeleteDocumentRow
+	err := row.Scan(
+		&i.ID,
+		&i.IdentityID,
+		&i.Scope,
+		&i.Title,
+		&i.Tags,
+		&i.Metadata,
+		&i.ActiveVersionID,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.Digest,
+		&i.Card,
+		&i.DigestTsv,
+		&i.SourceKind,
+		&i.SourceKey,
+		&i.SearchDocumentID,
+		&i.PipelineGeneration,
+		&i.ErrorCode,
+		&i.ErrorMessage,
+	)
+	return i, err
+}
+
+const updateDeleteJobStatus = `-- name: UpdateDeleteJobStatus :one
+WITH target AS (
+    SELECT target_job.id, target_job.status AS prior_status FROM aura.delete_jobs target_job
+    WHERE target_job.id = $1 AND target_job.identity_id = $2
+      AND target_job.status = 'running' AND target_job.locked_by = $3
+      AND target_job.lease_generation = $4
+      AND target_job.locked_until > now()
+    FOR UPDATE
+), transitioned AS (
+    UPDATE aura.delete_jobs job
+    SET status = $5, error_code = $6,
+        error_message = $7, locked_by = NULL, locked_until = NULL,
+        completed_at = CASE WHEN $5::text IN (
+            'succeeded', 'failed', 'dead_letter', 'canceled'
+        ) THEN now() ELSE NULL END,
+        updated_at = now()
+    FROM target WHERE job.id = target.id
+    RETURNING job.id, job.document_id, job.version_id, job.scope, job.status, job.steps, job.attempt_count, job.max_attempts, job.locked_by, job.locked_until, job.next_attempt_at, job.created_at, job.updated_at, job.completed_at, job.identity_id, job.idempotency_key, job.delete_generation, job.lease_generation, job.error_code, job.error_message, target.prior_status
+), events AS (
+    INSERT INTO aura.ingestion_events (
+        identity_id, entity_type, entity_id, from_status, to_status,
+        event_type, message, attempt_generation, lease_generation
+    )
+    SELECT transitioned.identity_id, 'delete_job', transitioned.id, transitioned.prior_status,
+           transitioned.status, $8, $9,
+           transitioned.delete_generation, transitioned.lease_generation
+    FROM transitioned
+    RETURNING entity_id
+)
+SELECT transitioned.id, transitioned.document_id, transitioned.version_id, transitioned.scope, transitioned.status, transitioned.steps, transitioned.attempt_count, transitioned.max_attempts, transitioned.locked_by, transitioned.locked_until, transitioned.next_attempt_at, transitioned.created_at, transitioned.updated_at, transitioned.completed_at, transitioned.identity_id, transitioned.idempotency_key, transitioned.delete_generation, transitioned.lease_generation, transitioned.error_code, transitioned.error_message FROM transitioned JOIN events ON events.entity_id = transitioned.id
+`
+
+type UpdateDeleteJobStatusParams struct {
+	ID              pgtype.UUID `json:"id"`
+	IdentityID      pgtype.UUID `json:"identity_id"`
+	LockedBy        pgtype.Text `json:"locked_by"`
+	LeaseGeneration int64       `json:"lease_generation"`
+	Status          string      `json:"status"`
+	ErrorCode       string      `json:"error_code"`
+	ErrorMessage    string      `json:"error_message"`
+	EventType       string      `json:"event_type"`
+	EventMessage    string      `json:"event_message"`
+}
+
+type UpdateDeleteJobStatusRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	DocumentID       pgtype.UUID        `json:"document_id"`
+	VersionID        pgtype.UUID        `json:"version_id"`
+	Scope            string             `json:"scope"`
+	Status           string             `json:"status"`
+	Steps            []byte             `json:"steps"`
+	AttemptCount     int32              `json:"attempt_count"`
+	MaxAttempts      int32              `json:"max_attempts"`
+	LockedBy         pgtype.Text        `json:"locked_by"`
+	LockedUntil      pgtype.Timestamptz `json:"locked_until"`
+	NextAttemptAt    pgtype.Timestamptz `json:"next_attempt_at"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	CompletedAt      pgtype.Timestamptz `json:"completed_at"`
+	IdentityID       pgtype.UUID        `json:"identity_id"`
+	IdempotencyKey   string             `json:"idempotency_key"`
+	DeleteGeneration int64              `json:"delete_generation"`
+	LeaseGeneration  int64              `json:"lease_generation"`
+	ErrorCode        string             `json:"error_code"`
+	ErrorMessage     string             `json:"error_message"`
+}
+
+func (q *Queries) UpdateDeleteJobStatus(ctx context.Context, arg UpdateDeleteJobStatusParams) (UpdateDeleteJobStatusRow, error) {
+	row := q.db.QueryRow(ctx, updateDeleteJobStatus,
+		arg.ID,
+		arg.IdentityID,
+		arg.LockedBy,
+		arg.LeaseGeneration,
+		arg.Status,
+		arg.ErrorCode,
+		arg.ErrorMessage,
+		arg.EventType,
+		arg.EventMessage,
+	)
+	var i UpdateDeleteJobStatusRow
+	err := row.Scan(
+		&i.ID,
+		&i.DocumentID,
+		&i.VersionID,
+		&i.Scope,
+		&i.Status,
+		&i.Steps,
+		&i.AttemptCount,
+		&i.MaxAttempts,
+		&i.LockedBy,
+		&i.LockedUntil,
+		&i.NextAttemptAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CompletedAt,
+		&i.IdentityID,
+		&i.IdempotencyKey,
+		&i.DeleteGeneration,
+		&i.LeaseGeneration,
+		&i.ErrorCode,
+		&i.ErrorMessage,
+	)
+	return i, err
+}
+
+const updateDocument = `-- name: UpdateDocument :one
+UPDATE aura.documents
+SET scope = $1,
+    title = $2,
+    tags = $3,
+    metadata = $4,
+    active_version_id = $5,
+    status = $6,
+    pipeline_generation = GREATEST(pipeline_generation, $7),
+    updated_at = now()
+WHERE id = $8
+  AND identity_id = $9
+  AND deleted_at IS NULL
+RETURNING id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, card, digest_tsv, source_kind, source_key, search_document_id, pipeline_generation, error_code, error_message
+`
+
+type UpdateDocumentParams struct {
+	Scope              string      `json:"scope"`
+	Title              string      `json:"title"`
+	Tags               []string    `json:"tags"`
+	Metadata           []byte      `json:"metadata"`
+	ActiveVersionID    pgtype.UUID `json:"active_version_id"`
+	Status             string      `json:"status"`
+	PipelineGeneration int64       `json:"pipeline_generation"`
+	ID                 pgtype.UUID `json:"id"`
+	IdentityID         pgtype.UUID `json:"identity_id"`
+}
+
+func (q *Queries) UpdateDocument(ctx context.Context, arg UpdateDocumentParams) (AuraDocuments, error) {
+	row := q.db.QueryRow(ctx, updateDocument,
+		arg.Scope,
+		arg.Title,
+		arg.Tags,
+		arg.Metadata,
+		arg.ActiveVersionID,
+		arg.Status,
+		arg.PipelineGeneration,
+		arg.ID,
+		arg.IdentityID,
+	)
+	var i AuraDocuments
+	err := row.Scan(
+		&i.ID,
+		&i.IdentityID,
+		&i.Scope,
+		&i.Title,
+		&i.Tags,
+		&i.Metadata,
+		&i.ActiveVersionID,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.Digest,
+		&i.Card,
+		&i.DigestTsv,
+		&i.SourceKind,
+		&i.SourceKey,
+		&i.SearchDocumentID,
+		&i.PipelineGeneration,
+		&i.ErrorCode,
+		&i.ErrorMessage,
+	)
+	return i, err
+}
+
+const updateDocumentPipelineStageStatus = `-- name: UpdateDocumentPipelineStageStatus :one
+UPDATE aura.document_pipeline_stages
+SET status = $1, error_class = $2,
+    error_code = $3, error_message = $4,
+    next_attempt_at = $5, locked_by = NULL, locked_until = NULL,
+    completed_at = CASE WHEN $1::text IN ('succeeded', 'failed', 'dead_letter')
+                        THEN now() ELSE NULL END,
+    updated_at = now()
+WHERE id = $6 AND identity_id = $7
+  AND status = 'running' AND locked_by = $8
+  AND lease_generation = $9
+RETURNING id, identity_id, document_id, version_id, stage, input_fingerprint, producer_version, pipeline_generation, artifact_storage_object_id, artifact_object_key, artifact_sha256, artifact_size_bytes, status, attempt_count, max_attempts, lease_generation, locked_by, locked_until, next_attempt_at, error_class, error_code, error_message, diagnostic_state, created_at, updated_at, completed_at
+`
+
+type UpdateDocumentPipelineStageStatusParams struct {
+	Status          string             `json:"status"`
+	ErrorClass      string             `json:"error_class"`
+	ErrorCode       string             `json:"error_code"`
+	ErrorMessage    string             `json:"error_message"`
+	NextAttemptAt   pgtype.Timestamptz `json:"next_attempt_at"`
+	ID              pgtype.UUID        `json:"id"`
+	IdentityID      pgtype.UUID        `json:"identity_id"`
+	LockedBy        pgtype.Text        `json:"locked_by"`
+	LeaseGeneration int64              `json:"lease_generation"`
+}
+
+func (q *Queries) UpdateDocumentPipelineStageStatus(ctx context.Context, arg UpdateDocumentPipelineStageStatusParams) (AuraDocumentPipelineStages, error) {
+	row := q.db.QueryRow(ctx, updateDocumentPipelineStageStatus,
+		arg.Status,
+		arg.ErrorClass,
+		arg.ErrorCode,
+		arg.ErrorMessage,
+		arg.NextAttemptAt,
+		arg.ID,
+		arg.IdentityID,
+		arg.LockedBy,
+		arg.LeaseGeneration,
+	)
+	var i AuraDocumentPipelineStages
+	err := row.Scan(
+		&i.ID,
+		&i.IdentityID,
+		&i.DocumentID,
+		&i.VersionID,
+		&i.Stage,
+		&i.InputFingerprint,
+		&i.ProducerVersion,
+		&i.PipelineGeneration,
+		&i.ArtifactStorageObjectID,
+		&i.ArtifactObjectKey,
+		&i.ArtifactSha256,
+		&i.ArtifactSizeBytes,
+		&i.Status,
+		&i.AttemptCount,
+		&i.MaxAttempts,
+		&i.LeaseGeneration,
+		&i.LockedBy,
+		&i.LockedUntil,
+		&i.NextAttemptAt,
+		&i.ErrorClass,
+		&i.ErrorCode,
+		&i.ErrorMessage,
+		&i.DiagnosticState,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CompletedAt,
+	)
+	return i, err
+}
+
+const updateDocumentTags = `-- name: UpdateDocumentTags :one
+UPDATE aura.documents
+SET tags = $1, updated_at = now()
+WHERE id = $2
+  AND identity_id = $3
+  AND deleted_at IS NULL
+RETURNING id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, card, digest_tsv, source_kind, source_key, search_document_id, pipeline_generation, error_code, error_message
+`
+
+type UpdateDocumentTagsParams struct {
+	Tags       []string    `json:"tags"`
+	ID         pgtype.UUID `json:"id"`
+	IdentityID pgtype.UUID `json:"identity_id"`
+}
+
+func (q *Queries) UpdateDocumentTags(ctx context.Context, arg UpdateDocumentTagsParams) (AuraDocuments, error) {
+	row := q.db.QueryRow(ctx, updateDocumentTags, arg.Tags, arg.ID, arg.IdentityID)
+	var i AuraDocuments
+	err := row.Scan(
+		&i.ID,
+		&i.IdentityID,
+		&i.Scope,
+		&i.Title,
+		&i.Tags,
+		&i.Metadata,
+		&i.ActiveVersionID,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.Digest,
+		&i.Card,
+		&i.DigestTsv,
+		&i.SourceKind,
+		&i.SourceKey,
+		&i.SearchDocumentID,
+		&i.PipelineGeneration,
+		&i.ErrorCode,
+		&i.ErrorMessage,
+	)
+	return i, err
+}
+
+const updateIngestionJobStatus = `-- name: UpdateIngestionJobStatus :one
+WITH target AS (
+    SELECT target_job.id, target_job.status AS prior_status
+    FROM aura.ingestion_jobs target_job
+    WHERE target_job.id = $1
+      AND target_job.identity_id = $2
+      AND target_job.status = 'running'
+      AND target_job.locked_by = $3
+      AND target_job.lease_generation = $4
+    FOR UPDATE
+), transitioned AS (
+    UPDATE aura.ingestion_jobs job
+    SET status = $5, stage = $6,
+        error_code = $7, error_message = $8,
+        locked_by = NULL, locked_until = NULL,
+        completed_at = CASE WHEN $5::text IN (
+            'succeeded', 'failed', 'dead_letter', 'canceled'
+        ) THEN now() ELSE NULL END,
+        updated_at = now()
+    FROM target WHERE job.id = target.id
+    RETURNING job.id, job.job_type, job.document_id, job.version_id, job.status, job.idempotency_key, job.stage, job.attempt_count, job.max_attempts, job.locked_by, job.locked_until, job.next_attempt_at, job.payload, job.error_code, job.error_message, job.created_at, job.updated_at, job.completed_at, job.identity_id, job.asset_id, job.pipeline_generation, job.attempt_generation, job.lease_generation, target.prior_status
+), events AS (
+    INSERT INTO aura.ingestion_events (
+        identity_id, entity_type, entity_id, job_id, from_status, to_status,
+        event_type, message, detail, trace_id,
+        pipeline_generation, attempt_generation, lease_generation
+    )
+    SELECT transitioned.identity_id, 'ingestion_job', transitioned.id, transitioned.id,
+           transitioned.prior_status, transitioned.status, $9,
+           $10, $11, $12,
+           transitioned.pipeline_generation, transitioned.attempt_generation, transitioned.lease_generation
+    FROM transitioned
+    RETURNING job_id
+)
+SELECT transitioned.id, transitioned.job_type, transitioned.document_id, transitioned.version_id, transitioned.status, transitioned.idempotency_key, transitioned.stage, transitioned.attempt_count, transitioned.max_attempts, transitioned.locked_by, transitioned.locked_until, transitioned.next_attempt_at, transitioned.payload, transitioned.error_code, transitioned.error_message, transitioned.created_at, transitioned.updated_at, transitioned.completed_at, transitioned.identity_id, transitioned.asset_id, transitioned.pipeline_generation, transitioned.attempt_generation, transitioned.lease_generation FROM transitioned JOIN events ON events.job_id = transitioned.id
+`
+
+type UpdateIngestionJobStatusParams struct {
+	ID              pgtype.UUID `json:"id"`
+	IdentityID      pgtype.UUID `json:"identity_id"`
+	LockedBy        pgtype.Text `json:"locked_by"`
+	LeaseGeneration int64       `json:"lease_generation"`
+	Status          string      `json:"status"`
+	Stage           string      `json:"stage"`
+	ErrorCode       string      `json:"error_code"`
+	ErrorMessage    string      `json:"error_message"`
+	EventType       string      `json:"event_type"`
+	EventMessage    string      `json:"event_message"`
+	EventDetail     []byte      `json:"event_detail"`
+	TraceID         string      `json:"trace_id"`
+}
+
+type UpdateIngestionJobStatusRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	JobType            string             `json:"job_type"`
+	DocumentID         pgtype.UUID        `json:"document_id"`
+	VersionID          pgtype.UUID        `json:"version_id"`
+	Status             string             `json:"status"`
+	IdempotencyKey     string             `json:"idempotency_key"`
+	Stage              string             `json:"stage"`
+	AttemptCount       int32              `json:"attempt_count"`
+	MaxAttempts        int32              `json:"max_attempts"`
+	LockedBy           pgtype.Text        `json:"locked_by"`
+	LockedUntil        pgtype.Timestamptz `json:"locked_until"`
+	NextAttemptAt      pgtype.Timestamptz `json:"next_attempt_at"`
+	Payload            []byte             `json:"payload"`
+	ErrorCode          string             `json:"error_code"`
+	ErrorMessage       string             `json:"error_message"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	CompletedAt        pgtype.Timestamptz `json:"completed_at"`
+	IdentityID         pgtype.UUID        `json:"identity_id"`
+	AssetID            pgtype.UUID        `json:"asset_id"`
+	PipelineGeneration int64              `json:"pipeline_generation"`
+	AttemptGeneration  int64              `json:"attempt_generation"`
+	LeaseGeneration    int64              `json:"lease_generation"`
+}
+
+func (q *Queries) UpdateIngestionJobStatus(ctx context.Context, arg UpdateIngestionJobStatusParams) (UpdateIngestionJobStatusRow, error) {
+	row := q.db.QueryRow(ctx, updateIngestionJobStatus,
+		arg.ID,
+		arg.IdentityID,
+		arg.LockedBy,
+		arg.LeaseGeneration,
+		arg.Status,
+		arg.Stage,
+		arg.ErrorCode,
+		arg.ErrorMessage,
+		arg.EventType,
+		arg.EventMessage,
+		arg.EventDetail,
+		arg.TraceID,
+	)
+	var i UpdateIngestionJobStatusRow
+	err := row.Scan(
+		&i.ID,
+		&i.JobType,
+		&i.DocumentID,
+		&i.VersionID,
+		&i.Status,
+		&i.IdempotencyKey,
+		&i.Stage,
+		&i.AttemptCount,
+		&i.MaxAttempts,
+		&i.LockedBy,
+		&i.LockedUntil,
+		&i.NextAttemptAt,
+		&i.Payload,
+		&i.ErrorCode,
+		&i.ErrorMessage,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CompletedAt,
+		&i.IdentityID,
+		&i.AssetID,
+		&i.PipelineGeneration,
+		&i.AttemptGeneration,
+		&i.LeaseGeneration,
+	)
+	return i, err
+}
+
+const updateStorageObjectVersion = `-- name: UpdateStorageObjectVersion :one
+UPDATE aura.storage_objects
+SET version_id = $1,
+    pipeline_generation = $2
+WHERE id = $3
+  AND identity_id = $4
+  AND status = 'live'
+RETURNING id, identity_id, document_id, version_id, asset_id, bucket, object_key, kind, sha1, sha256, etag, size_bytes, content_type, retention_class, created_at, deleted_at, status, pipeline_generation, deletion_generation, deletion_verified_at
+`
+
+type UpdateStorageObjectVersionParams struct {
+	VersionID          pgtype.UUID `json:"version_id"`
+	PipelineGeneration int64       `json:"pipeline_generation"`
+	ID                 pgtype.UUID `json:"id"`
+	IdentityID         pgtype.UUID `json:"identity_id"`
+}
+
+func (q *Queries) UpdateStorageObjectVersion(ctx context.Context, arg UpdateStorageObjectVersionParams) (AuraStorageObjects, error) {
+	row := q.db.QueryRow(ctx, updateStorageObjectVersion,
+		arg.VersionID,
+		arg.PipelineGeneration,
+		arg.ID,
+		arg.IdentityID,
+	)
+	var i AuraStorageObjects
+	err := row.Scan(
+		&i.ID,
+		&i.IdentityID,
+		&i.DocumentID,
+		&i.VersionID,
+		&i.AssetID,
+		&i.Bucket,
+		&i.ObjectKey,
+		&i.Kind,
+		&i.Sha1,
+		&i.Sha256,
+		&i.Etag,
+		&i.SizeBytes,
+		&i.ContentType,
+		&i.RetentionClass,
+		&i.CreatedAt,
+		&i.DeletedAt,
+		&i.Status,
+		&i.PipelineGeneration,
+		&i.DeletionGeneration,
+		&i.DeletionVerifiedAt,
+	)
+	return i, err
+}
+
+const upsertDocumentPipelineStage = `-- name: UpsertDocumentPipelineStage :one
+INSERT INTO aura.document_pipeline_stages (
+    identity_id, document_id, version_id, stage, input_fingerprint,
+    producer_version, pipeline_generation, status, max_attempts, next_attempt_at
+) VALUES (
+    $1, $2, $3,
+    $4, $5, $6,
+    $7, $8, $9,
+    $10
+)
+ON CONFLICT (identity_id, version_id, stage, input_fingerprint)
+DO UPDATE SET updated_at = aura.document_pipeline_stages.updated_at
+RETURNING id, identity_id, document_id, version_id, stage, input_fingerprint, producer_version, pipeline_generation, artifact_storage_object_id, artifact_object_key, artifact_sha256, artifact_size_bytes, status, attempt_count, max_attempts, lease_generation, locked_by, locked_until, next_attempt_at, error_class, error_code, error_message, diagnostic_state, created_at, updated_at, completed_at
+`
+
+type UpsertDocumentPipelineStageParams struct {
+	IdentityID         pgtype.UUID        `json:"identity_id"`
+	DocumentID         pgtype.UUID        `json:"document_id"`
+	VersionID          pgtype.UUID        `json:"version_id"`
+	Stage              string             `json:"stage"`
+	InputFingerprint   string             `json:"input_fingerprint"`
+	ProducerVersion    string             `json:"producer_version"`
+	PipelineGeneration int64              `json:"pipeline_generation"`
+	Status             string             `json:"status"`
+	MaxAttempts        int32              `json:"max_attempts"`
+	NextAttemptAt      pgtype.Timestamptz `json:"next_attempt_at"`
+}
+
+func (q *Queries) UpsertDocumentPipelineStage(ctx context.Context, arg UpsertDocumentPipelineStageParams) (AuraDocumentPipelineStages, error) {
+	row := q.db.QueryRow(ctx, upsertDocumentPipelineStage,
+		arg.IdentityID,
+		arg.DocumentID,
+		arg.VersionID,
+		arg.Stage,
+		arg.InputFingerprint,
+		arg.ProducerVersion,
+		arg.PipelineGeneration,
+		arg.Status,
+		arg.MaxAttempts,
+		arg.NextAttemptAt,
+	)
+	var i AuraDocumentPipelineStages
+	err := row.Scan(
+		&i.ID,
+		&i.IdentityID,
+		&i.DocumentID,
+		&i.VersionID,
+		&i.Stage,
+		&i.InputFingerprint,
+		&i.ProducerVersion,
+		&i.PipelineGeneration,
+		&i.ArtifactStorageObjectID,
+		&i.ArtifactObjectKey,
+		&i.ArtifactSha256,
+		&i.ArtifactSizeBytes,
+		&i.Status,
+		&i.AttemptCount,
+		&i.MaxAttempts,
+		&i.LeaseGeneration,
+		&i.LockedBy,
+		&i.LockedUntil,
+		&i.NextAttemptAt,
+		&i.ErrorClass,
+		&i.ErrorCode,
+		&i.ErrorMessage,
+		&i.DiagnosticState,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CompletedAt,
 	)
 	return i, err
 }
 
 const upsertDocumentTag = `-- name: UpsertDocumentTag :exec
-INSERT INTO aura.document_tags (
-    document_id,
-    tag,
-    created_by
-) VALUES (
-    $1, $2, $3
-)
+INSERT INTO aura.document_tags (document_id, tag, created_by)
+VALUES ($1, $2, $3)
 ON CONFLICT (document_id, tag) DO NOTHING
 `
 

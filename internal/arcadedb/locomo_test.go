@@ -30,7 +30,7 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/config"
-	"github.com/chetto1983/aura/internal/documents"
+	"github.com/chetto1983/aura/internal/embeddings"
 )
 
 const (
@@ -40,10 +40,13 @@ const (
 	adversarialClass      = 5
 )
 
-func locomoEmbedder() *documents.EmbeddingClient {
+// Depends on internal/embeddings directly rather than on documents.EmbeddingClient,
+// which is only an alias for it: internal/documents now imports internal/arcadedb, so
+// reaching the alias from this in-package test would close an import cycle.
+func locomoEmbedder() *embeddings.Client {
 	// The benchmark is locked to Compose's local EmbeddingGemma artifact. Honouring
 	// the cloud model knob here would make two LOCOMO runs incomparable.
-	return &documents.EmbeddingClient{
+	return &embeddings.Client{
 		BaseURL:    envOr("AURA_EMBED_BASE_URL", "http://127.0.0.1:8081"),
 		Dimensions: locomoEmbedDimensions,
 	}

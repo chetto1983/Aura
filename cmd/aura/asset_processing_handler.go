@@ -29,8 +29,14 @@ func (h runtimeAssetProcessHandler) HandleIngestionJob(ctx context.Context, job 
 	if err != nil {
 		return err
 	}
-	_, err = h.assets.ProcessAccepted(ctx, identityID, assetID)
-	return err
+	asset, err := h.assets.ProcessAccepted(documents.WithClaimedIngestionJob(ctx, job), identityID, assetID)
+	if err != nil {
+		return err
+	}
+	if committedJob, ok := asset.Metadata["pipeline_activation_job_id"].(string); ok && committedJob == job.ID {
+		return documents.ErrIngestionJobCompletionCommitted
+	}
+	return nil
 }
 
 func ingestionPayloadString(payload map[string]any, key string) (string, error) {

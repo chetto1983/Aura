@@ -29,7 +29,7 @@ func TestEmbeddingClientRejectsCountMismatch(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		// Asked for 2 inputs, sidecar returns 1 embedding.
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"data": []map[string]any{{"embedding": []float64{1, 2}}},
+			"data": []map[string]any{{"index": 0, "embedding": []float64{1, 2}}},
 		})
 	}))
 	defer srv.Close()
@@ -70,7 +70,7 @@ func TestEmbeddingClientUsesDefaultDimensionsWhenUnset(t *testing.T) {
 	dim := config.DefaultEmbedDimensions
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"data": []map[string]any{{"embedding": make([]float64, dim)}},
+			"data": []map[string]any{{"index": 0, "embedding": make([]float64, dim)}},
 		})
 	}))
 	defer srv.Close()

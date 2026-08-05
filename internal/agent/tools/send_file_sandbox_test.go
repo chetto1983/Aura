@@ -137,7 +137,7 @@ func TestExtractFirstRegularFileRejectsUnsafeOrExistingDestination(t *testing.T)
 	for _, name := range []string{"", ".", "../escape", "dir/file"} {
 		stageDir := t.TempDir()
 		stream := tar.NewReader(tarStream(t, tarEntry{"entry", tar.TypeReg, "x"}))
-		if _, err := extractFirstRegularFile(stream, stageDir, name); err == nil {
+		if _, err := extractFirstRegularFile(stream, stageDir, name, maxSendFileBytes); err == nil {
 			t.Fatalf("fallback %q: want rejection", name)
 		}
 	}
@@ -146,10 +146,10 @@ func TestExtractFirstRegularFileRejectsUnsafeOrExistingDestination(t *testing.T)
 	stream := func() *tar.Reader {
 		return tar.NewReader(tarStream(t, tarEntry{"entry", tar.TypeReg, "x"}))
 	}
-	if _, err := extractFirstRegularFile(stream(), stageDir, "requested.bin"); err != nil {
+	if _, err := extractFirstRegularFile(stream(), stageDir, "requested.bin", maxSendFileBytes); err != nil {
 		t.Fatalf("first extraction: %v", err)
 	}
-	if _, err := extractFirstRegularFile(stream(), stageDir, "requested.bin"); err == nil {
+	if _, err := extractFirstRegularFile(stream(), stageDir, "requested.bin", maxSendFileBytes); err == nil {
 		t.Fatal("second extraction overwrote an existing staged file")
 	}
 }

@@ -30,7 +30,10 @@ func TestNewSidecarEmbedderNormalizesConfiguration(t *testing.T) {
 
 func TestSidecarEmbedderUsesOpenAIWireAndResponseIndexes(t *testing.T) {
 	var path, auth string
-	var payload embeddingRequest
+	var payload struct {
+		Input []string `json:"input"`
+		Model string   `json:"model"`
+	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path = r.URL.Path
 		auth = r.Header.Get("Authorization")
@@ -41,6 +44,7 @@ func TestSidecarEmbedderUsesOpenAIWireAndResponseIndexes(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 	embedder := NewSidecarEmbedder(srv.URL+"/v1", "embeddinggemma", "secret", time.Second)
+	embedder.Dimensions = 2
 	got, err := embedder.Embed(context.Background(), []string{"first", "second"})
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
@@ -79,8 +83,9 @@ func TestSidecarEmbedderRejectsBadResponses(t *testing.T) {
 				_, _ = io.WriteString(w, tt.body)
 			}))
 			t.Cleanup(srv.Close)
-			if _, err := NewSidecarEmbedder(srv.URL+"/embeddings", "", "", time.Second).
-				Embed(context.Background(), []string{"x"}); err == nil {
+			embedder := NewSidecarEmbedder(srv.URL+"/embeddings", "", "", time.Second)
+			embedder.Dimensions = 1
+			if _, err := embedder.Embed(context.Background(), []string{"x"}); err == nil {
 				t.Fatal("bad response accepted")
 			}
 		})

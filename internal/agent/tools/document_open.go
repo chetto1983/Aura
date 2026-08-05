@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -127,7 +128,7 @@ func (t *DocumentOpen) Execute(ctx context.Context, raw json.RawMessage) (ToolRe
 	// the join walk out of the documents directory and an empty string would resolve to
 	// the directory itself. StagedDocumentPath owns both checks, and the delete resolves
 	// the file to remove through that same function.
-	boxPath, err := StagedDocumentPath(name)
+	boxPath, err := StagedDocumentPath(meta.CatalogID, name)
 	if err != nil {
 		return ToolResult{}, fmt.Errorf("document_open: document %s: %w", args.DocumentID, err)
 	}
@@ -183,20 +184,20 @@ func (t *DocumentOpen) write(
 	return nil
 }
 
-// validateOpenFileName rejects anything that is not a bare file name. Silently
-// basename-ing a caller's "../../etc/passwd" would accept a path traversal and
-// write it somewhere else instead of saying no. Both separators are refused, not
-// just the POSIX one the box uses: a caller who types a Windows path is making the
-// same mistake and deserves the same answer.
-// StagedDocumentPath returns the in-box path document_open materializes a document
-// to, or an error when the name cannot be one.
-//
-// It is exported because DELETING a document has to remove that same file, and the
-// delete lives at the composition root rather than in this package. Resolving both
-// through one function is the point: a staging directory that moved, or a name rule
-// that tightened, would otherwise leave the delete confidently removing a path
-// nothing was ever written to — and the operator's document still readable.
-func StagedDocumentPath(fileName string) (string, error) {
+// StagedDocumentDirectory derives the single sandbox directory for a logical
+// catalog id. It is exported so delete removes exactly the parent that open uses.
+func StagedDocumentDirectory(documentID string) (string, error) {
+	documentID = strings.TrimSpace(documentID)
+	if documentID == "" {
+		return "", fmt.Errorf("staged document directory: document id is empty")
+	}
+	sum := sha256.Sum256([]byte(documentID))
+	return pathpkg.Join(openedDocumentsBoxDir, fmt.Sprintf("document-%x", sum[:12])), nil
+}
+
+// StagedDocumentPath validates a bare alias and places it below the logical
+// document directory.
+func StagedDocumentPath(documentID, fileName string) (string, error) {
 	name := strings.TrimSpace(fileName)
 	if err := validateOpenFileName(name); err != nil {
 		return "", err
@@ -204,7 +205,11 @@ func StagedDocumentPath(fileName string) (string, error) {
 	if name == "" {
 		return "", fmt.Errorf("staged document path: file name is empty")
 	}
-	return pathpkg.Join(openedDocumentsBoxDir, name), nil
+	dir, err := StagedDocumentDirectory(documentID)
+	if err != nil {
+		return "", err
+	}
+	return pathpkg.Join(dir, name), nil
 }
 
 func validateOpenFileName(name string) error {

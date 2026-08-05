@@ -12,7 +12,7 @@ import (
 // of an operator's delete.
 func TestStagedPurgerWithoutARouterIsANoOp(t *testing.T) {
 	t.Parallel()
-	if err := (runtimeStagedDocumentPurger{}).PurgeStagedDocument(context.Background(), "Clienti.xlsx"); err != nil {
+	if err := (runtimeStagedDocumentPurger{}).PurgeStagedDocument(context.Background(), "doc-1"); err != nil {
 		t.Fatalf("purge without a router: %v", err)
 	}
 }
@@ -20,13 +20,11 @@ func TestStagedPurgerWithoutARouterIsANoOp(t *testing.T) {
 // A name the staging rules reject was never written under that name, so there is
 // nothing to remove. Returning an error here would make every delete of such a
 // document log a scary line about readable bytes that do not exist.
-func TestStagedPurgerIgnoresNamesThatCannotHaveBeenStaged(t *testing.T) {
+func TestStagedPurgerWithoutRouterDoesNotValidate(t *testing.T) {
 	t.Parallel()
 	purger := runtimeStagedDocumentPurger{}
-	for _, name := range []string{"", "   ", "../etc/passwd", "sub/dir.xlsx", ".hidden"} {
-		if err := purger.PurgeStagedDocument(context.Background(), name); err != nil {
-			t.Errorf("purge(%q) = %v, want a silent no-op", name, err)
-		}
+	if err := purger.PurgeStagedDocument(context.Background(), " "); err != nil {
+		t.Fatalf("nil router remains a no-op: %v", err)
 	}
 }
 
@@ -36,16 +34,20 @@ func TestStagedPurgerIgnoresNamesThatCannotHaveBeenStaged(t *testing.T) {
 // operator's document still sitting where the agent can read it.
 func TestStagedDocumentPathIsTheOneDocumentOpenWrites(t *testing.T) {
 	t.Parallel()
-	got, err := tools.StagedDocumentPath("Clienti.xlsx")
+	got, err := tools.StagedDocumentPath("doc-1", "Clienti.xlsx")
 	if err != nil {
 		t.Fatalf("StagedDocumentPath: %v", err)
 	}
-	if got != "/workspace/documents/Clienti.xlsx" {
-		t.Fatalf("staged path = %q, want the in-box documents directory", got)
+	dir, err := tools.StagedDocumentDirectory("doc-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != dir+"/Clienti.xlsx" {
+		t.Fatalf("staged path = %q, want deterministic document directory %q", got, dir)
 	}
 	// The rejections are the write path's own rules, reused rather than restated.
 	for _, bad := range []string{"", "  ", "../escape.xlsx", "a/b.xlsx", ".dotfile"} {
-		if _, err := tools.StagedDocumentPath(bad); err == nil {
+		if _, err := tools.StagedDocumentPath("doc-1", bad); err == nil {
 			t.Errorf("StagedDocumentPath(%q) was accepted; it would name something outside the documents directory", bad)
 		}
 	}

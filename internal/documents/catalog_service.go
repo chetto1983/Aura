@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"github.com/google/uuid"
 )
 
 const (
@@ -96,7 +98,7 @@ func (s *CatalogService) DeleteDocument(ctx context.Context, identityID, documen
 	return s.Store.SoftDeleteDocument(ctx, identityID, documentID)
 }
 
-// RecordAssetVersion records a processed asset as a ready logical document and version.
+// RecordAssetVersion records a stored asset as a non-visible candidate version.
 func (s *CatalogService) RecordAssetVersion(ctx context.Context, req RecordAssetVersionRequest) (DocumentVersionRecord, error) {
 	if s.Store == nil {
 		return DocumentVersionRecord{}, fmt.Errorf("document catalog service has no store")
@@ -122,6 +124,18 @@ func normalizeCreateDocumentRequest(req CreateDocumentRequest) (CreateDocumentRe
 	}
 	if req.Status == "" {
 		req.Status = DocumentStatusDraft
+	}
+	if strings.TrimSpace(req.SearchDocumentID) == "" {
+		req.SearchDocumentID = "catalog:" + uuid.NewString()
+	}
+	if strings.TrimSpace(req.SourceKind) == "" {
+		req.SourceKind = "manual"
+	}
+	if strings.TrimSpace(req.SourceKey) == "" {
+		req.SourceKey = req.SearchDocumentID
+	}
+	if req.PipelineGeneration < 0 {
+		return CreateDocumentRequest{}, fmt.Errorf("pipeline_generation must be non-negative")
 	}
 	tags, err := NormalizeTags(req.Tags)
 	if err != nil {
@@ -207,10 +221,22 @@ func normalizeRecordAssetVersionRequest(req RecordAssetVersionRequest) (RecordAs
 		req.Scope = DocumentScopeLibrary
 	}
 	if req.DocumentStatus == "" {
-		req.DocumentStatus = DocumentStatusReady
+		req.DocumentStatus = DocumentStatusProcessing
+	}
+	if req.PipelineGeneration <= 0 {
+		req.PipelineGeneration = 1
+	}
+	if strings.TrimSpace(req.SearchDocumentID) == "" {
+		req.SearchDocumentID = "asset:" + req.AssetID
+	}
+	if strings.TrimSpace(req.SourceKind) == "" {
+		req.SourceKind = "asset"
+	}
+	if strings.TrimSpace(req.SourceKey) == "" {
+		req.SourceKey = req.AssetID
 	}
 	if req.VersionStatus == "" {
-		req.VersionStatus = "ready"
+		req.VersionStatus = "processing"
 	}
 	if strings.TrimSpace(req.MIMEType) == "" {
 		req.MIMEType = "application/octet-stream"

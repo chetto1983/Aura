@@ -11,6 +11,7 @@ import (
 )
 
 type Querier interface {
+	ActivatePipelineCandidate(ctx context.Context, arg ActivatePipelineCandidateParams) (int64, error)
 	AggregateCacheMetricsSince(ctx context.Context, since pgtype.Timestamptz) (AggregateCacheMetricsSinceRow, error)
 	AppendIngestionEvent(ctx context.Context, arg AppendIngestionEventParams) (AuraIngestionEvents, error)
 	// Flip a pending_approval task to active (the cockpit approval, parity with the CLI
@@ -23,6 +24,7 @@ type Querier interface {
 	AuthorizeRetentionOperation(ctx context.Context, arg AuthorizeRetentionOperationParams) (int64, error)
 	AutoResolvePendingForConversation(ctx context.Context, arg AutoResolvePendingForConversationParams) error
 	BenchmarkSettingsOverrideExpired(ctx context.Context, runID pgtype.UUID) (bool, error)
+	BindPipelineJobCandidate(ctx context.Context, arg BindPipelineJobCandidateParams) (BindPipelineJobCandidateRow, error)
 	CancelTask(ctx context.Context, id pgtype.UUID) error
 	// D-09 (CHAT-05): the leaf (deepest) seq of a conversation's canonical branch — the
 	// all-zero sentinel branch every pre-0017 turn is backfilled onto. For a non-branched
@@ -32,12 +34,17 @@ type Querier interface {
 	CanonicalBranchLeafSeq(ctx context.Context, conversationID pgtype.UUID) (int32, error)
 	CaptureBenchmarkSetting(ctx context.Context, arg CaptureBenchmarkSettingParams) error
 	ClaimConversationDeleteTeardown(ctx context.Context, arg ClaimConversationDeleteTeardownParams) (int64, error)
-	ClaimIngestionJobs(ctx context.Context, arg ClaimIngestionJobsParams) ([]AuraIngestionJobs, error)
+	ClaimDeleteJobs(ctx context.Context, arg ClaimDeleteJobsParams) ([]ClaimDeleteJobsRow, error)
+	ClaimDocumentPipelineStage(ctx context.Context, arg ClaimDocumentPipelineStageParams) (AuraDocumentPipelineStages, error)
+	ClaimIngestionJobs(ctx context.Context, arg ClaimIngestionJobsParams) ([]ClaimIngestionJobsRow, error)
+	ClaimPipelineStageLedger(ctx context.Context, arg ClaimPipelineStageLedgerParams) (AuraDocumentPipelineStages, error)
 	ClaimRetentionItems(ctx context.Context, arg ClaimRetentionItemsParams) ([]AuraRetentionOperationItems, error)
 	CleanupResumedOlderThan(ctx context.Context, resumedAt pgtype.Timestamptz) error
 	ClearExpiredReplayBody(ctx context.Context, arg ClearExpiredReplayBodyParams) (int64, error)
 	CompleteBenchmarkSettingsOverride(ctx context.Context, arg CompleteBenchmarkSettingsOverrideParams) (int64, error)
+	CompleteDocumentPipelineStage(ctx context.Context, arg CompleteDocumentPipelineStageParams) (AuraDocumentPipelineStages, error)
 	CompleteOperation(ctx context.Context, arg CompleteOperationParams) (int64, error)
+	CompletePipelineStageLedger(ctx context.Context, arg CompletePipelineStageLedgerParams) (pgtype.UUID, error)
 	CompleteRun(ctx context.Context, arg CompleteRunParams) error
 	ConsumePasswordResetChallenge(ctx context.Context, id pgtype.UUID) (AuraPasswordResetChallenges, error)
 	ConsumePasswordResetToken(ctx context.Context, tokenHash string) (AuraPasswordResetTokens, error)
@@ -53,7 +60,17 @@ type Querier interface {
 	CountBenchmarkSettingsOverrideRows(ctx context.Context, runID pgtype.UUID) (int32, error)
 	CountBenchmarkSettingsRestoreMismatches(ctx context.Context, runID pgtype.UUID) (int32, error)
 	CountConversationsForIdentityPurge(ctx context.Context, identityID pgtype.UUID) (int64, error)
-	CountIngestionJobsByStatus(ctx context.Context, status string) (int64, error)
+	CountIngestionJobsByStatus(ctx context.Context, arg CountIngestionJobsByStatusParams) (int64, error)
+	// Fail-closed evidence for the finalize gate: a delete that cannot prove erasure
+	// must not report success.
+	CountLiveDocumentPassages(ctx context.Context, arg CountLiveDocumentPassagesParams) (int64, error)
+	// Proves whether any live ledger row still owns a derived-artifact key, so cleanup
+	// after an ambiguous write deletes only objects PostgreSQL says nobody references.
+	// Artifact keys are content/config addressed and therefore shareable, and a returned
+	// commit error does not prove the insert failed. Identity-scoped by RLS while the
+	// uniqueness constraint is global, so a zero count disproves ownership only within
+	// this identity -- which is exactly the scope permitted to delete the object.
+	CountPipelineArtifactLedgerOwners(ctx context.Context, arg CountPipelineArtifactLedgerOwnersParams) (int64, error)
 	// Current durable work that has not reached a terminal completed/failed item state.
 	// This query owns the restart-safe backlog gauge; transition counters are not state.
 	CountRetentionBacklog(ctx context.Context) (int64, error)
@@ -63,6 +80,7 @@ type Querier interface {
 	CreateConversation(ctx context.Context, arg CreateConversationParams) (AuraConversations, error)
 	CreateDeleteJob(ctx context.Context, arg CreateDeleteJobParams) (AuraDeleteJobs, error)
 	CreateDocument(ctx context.Context, arg CreateDocumentParams) (AuraDocuments, error)
+	// Legacy queue kept owner-scoped during retirement. New ingress uses aura.ingestion_jobs.
 	CreateDocumentIngestJob(ctx context.Context, arg CreateDocumentIngestJobParams) (AuraDocumentIngestJobs, error)
 	CreateDocumentVersion(ctx context.Context, arg CreateDocumentVersionParams) (AuraDocumentVersions, error)
 	CreateIdentity(ctx context.Context, arg CreateIdentityParams) (AuraIdentities, error)
@@ -86,7 +104,9 @@ type Querier interface {
 	// LOCKED would release the instant the SELECT returns (inert, L5). The advisory lock
 	// is what makes each due task a singleton across concurrent workers.
 	DueTasks(ctx context.Context, limit int32) ([]AuraSchedulerTasks, error)
+	FailPipelineStageLedger(ctx context.Context, arg FailPipelineStageLedgerParams) (pgtype.UUID, error)
 	FailRetentionItem(ctx context.Context, arg FailRetentionItemParams) (int64, error)
+	FinalizeDocumentDelete(ctx context.Context, arg FinalizeDocumentDeleteParams) (FinalizeDocumentDeleteRow, error)
 	FinalizeRetentionItem(ctx context.Context, arg FinalizeRetentionItemParams) (int64, error)
 	FinalizeRetentionOperation(ctx context.Context, arg FinalizeRetentionOperationParams) (AuraRetentionOperations, error)
 	GetActivePasswordResetChallenge(ctx context.Context, identityID pgtype.UUID) (AuraPasswordResetChallenges, error)
@@ -106,8 +126,9 @@ type Querier interface {
 	GetConversationLastInputTokens(ctx context.Context, conversationID pgtype.UUID) (int32, error)
 	GetConversationVersionForIdentity(ctx context.Context, arg GetConversationVersionForIdentityParams) (int64, error)
 	GetDocument(ctx context.Context, arg GetDocumentParams) (AuraDocuments, error)
-	GetDocumentIngestJob(ctx context.Context, id pgtype.UUID) (AuraDocumentIngestJobs, error)
-	GetDocumentIngestJobByDocumentID(ctx context.Context, documentID string) (AuraDocumentIngestJobs, error)
+	GetDocumentBySearchID(ctx context.Context, arg GetDocumentBySearchIDParams) (AuraDocuments, error)
+	GetDocumentIngestJob(ctx context.Context, arg GetDocumentIngestJobParams) (AuraDocumentIngestJobs, error)
+	GetDocumentIngestJobByDocumentID(ctx context.Context, arg GetDocumentIngestJobByDocumentIDParams) (AuraDocumentIngestJobs, error)
 	GetIdentityByID(ctx context.Context, id pgtype.UUID) (AuraIdentities, error)
 	GetIdentityByName(ctx context.Context, name string) (AuraIdentities, error)
 	GetIdentityRecoveryByIdentity(ctx context.Context, identityID pgtype.UUID) (AuraIdentityRecovery, error)
@@ -120,6 +141,7 @@ type Querier interface {
 	// token owned by another identity) is the caller's 404/403 signal. Run through
 	// db.WithIdentityTx so the RLS owner policy backstops a forgotten filter.
 	GetPausedStateByTokenForIdentity(ctx context.Context, arg GetPausedStateByTokenForIdentityParams) (AuraPausedStates, error)
+	GetPipelineCandidateVersion(ctx context.Context, arg GetPipelineCandidateVersionParams) (GetPipelineCandidateVersionRow, error)
 	GetRetentionItem(ctx context.Context, id pgtype.UUID) (AuraRetentionOperationItems, error)
 	GetRetentionOperationByToken(ctx context.Context, token string) (AuraRetentionOperations, error)
 	GetRun(ctx context.Context, id pgtype.UUID) (AuraAgentJobRuns, error)
@@ -137,6 +159,10 @@ type Querier interface {
 	GrantCapability(ctx context.Context, arg GrantCapabilityParams) error
 	HasCapability(ctx context.Context, arg HasCapabilityParams) (bool, error)
 	HeartbeatBenchmarkSettingsOverride(ctx context.Context, arg HeartbeatBenchmarkSettingsOverrideParams) (int64, error)
+	HeartbeatDeleteJob(ctx context.Context, arg HeartbeatDeleteJobParams) (AuraDeleteJobs, error)
+	HeartbeatDocumentPipelineStage(ctx context.Context, arg HeartbeatDocumentPipelineStageParams) (AuraDocumentPipelineStages, error)
+	HeartbeatIngestionJob(ctx context.Context, arg HeartbeatIngestionJobParams) (AuraIngestionJobs, error)
+	HeartbeatPipelineStageLedger(ctx context.Context, arg HeartbeatPipelineStageLedgerParams) (pgtype.UUID, error)
 	IncrementPasswordResetChallengeAttempts(ctx context.Context, id pgtype.UUID) error
 	IncrementPasswordResetTokenAttempts(ctx context.Context, tokenHash string) error
 	InsertAssetEvent(ctx context.Context, arg InsertAssetEventParams) error
@@ -160,6 +186,7 @@ type Querier interface {
 	InsertTelegramAccount(ctx context.Context, arg InsertTelegramAccountParams) (AuraTelegramAccounts, error)
 	InsertTelegramSetupPending(ctx context.Context, arg InsertTelegramSetupPendingParams) error
 	InsertToolInvocation(ctx context.Context, arg InsertToolInvocationParams) (int64, error)
+	LinkAssetDocumentVersion(ctx context.Context, arg LinkAssetDocumentVersionParams) (AuraAssets, error)
 	ListActiveTasks(ctx context.Context) ([]AuraSchedulerTasks, error)
 	// Cross-thread pending list (APRV-01 / D-04): the same SELECT as
 	// ListPendingPausedStates with NO conversation_id filter, so the approval center
@@ -197,8 +224,9 @@ type Querier interface {
 	// Owner-scoped conversation list (Phase 36 MUSR-01): ListConversations restricted to one
 	// identity. identity_id is NOT NULL (0005) so every conversation is attributable.
 	ListConversationsForIdentity(ctx context.Context, arg ListConversationsForIdentityParams) ([]AuraConversations, error)
+	ListDocumentStorageObjects(ctx context.Context, arg ListDocumentStorageObjectsParams) ([]AuraStorageObjects, error)
 	ListDocumentTags(ctx context.Context, documentID pgtype.UUID) ([]string, error)
-	ListDocumentVersions(ctx context.Context, documentID pgtype.UUID) ([]AuraDocumentVersions, error)
+	ListDocumentVersions(ctx context.Context, arg ListDocumentVersionsParams) ([]AuraDocumentVersions, error)
 	ListDocuments(ctx context.Context, arg ListDocumentsParams) ([]AuraDocuments, error)
 	// fix-plan 1.7 / Amendment #92 (REVISED): the per-tick approval-reminder sweep. Every
 	// pending_approval task with an ORIGIN CONVERSATION whose throttle stamp is due (never
@@ -216,14 +244,16 @@ type Querier interface {
 	ListIdentities(ctx context.Context) ([]AuraIdentities, error)
 	ListIdentityAudit(ctx context.Context, arg ListIdentityAuditParams) ([]AuraIdentityAudit, error)
 	ListInFlightToolInvocationsBefore(ctx context.Context, startedAt pgtype.Timestamptz) ([]AuraToolInvocations, error)
-	ListIngestionEventsByJob(ctx context.Context, jobID pgtype.UUID) ([]AuraIngestionEvents, error)
+	ListIngestionEventsByJob(ctx context.Context, arg ListIngestionEventsByJobParams) ([]AuraIngestionEvents, error)
 	// The cockpit scheduler board (GOV-03 write): active AND pending_approval tasks, so an
 	// operator can approve a gated task on-screen. Ordered by next fire (pending rows have a
 	// non-null next_run_at too — it is the first fire computed at schedule time).
 	ListManageableTasks(ctx context.Context) ([]AuraSchedulerTasks, error)
 	ListMcpAudit(ctx context.Context, arg ListMcpAuditParams) ([]AuraMcpAudit, error)
 	ListPendingPausedStates(ctx context.Context, conversationID pgtype.UUID) ([]AuraPausedStates, error)
-	ListRecentDocumentIngestJobs(ctx context.Context, limit int32) ([]AuraDocumentIngestJobs, error)
+	ListPipelineCandidateChunks(ctx context.Context, arg ListPipelineCandidateChunksParams) ([]AuraDocumentChunks, error)
+	ListPipelineCandidateEmbeddings(ctx context.Context, arg ListPipelineCandidateEmbeddingsParams) ([]AuraDocumentEmbeddings, error)
+	ListRecentDocumentIngestJobs(ctx context.Context, arg ListRecentDocumentIngestJobsParams) ([]AuraDocumentIngestJobs, error)
 	ListRecentPausedStates(ctx context.Context, limit int32) ([]AuraPausedStates, error)
 	// Managed branch-history query: cap recursive parent traversal itself, then add the
 	// protected system head in a separate O(1) lookup. This keeps branch reconstruction
@@ -258,19 +288,32 @@ type Querier interface {
 	// This must run on transaction-bound Queries because autocommit releases the row lock when the statement returns.
 	LockOperationReceipt(ctx context.Context, arg LockOperationReceiptParams) (LockOperationReceiptRow, error)
 	LookupRecoveryByEmail(ctx context.Context, email string) (LookupRecoveryByEmailRow, error)
+	ManualRetryIngestionJob(ctx context.Context, arg ManualRetryIngestionJobParams) (ManualRetryIngestionJobRow, error)
+	ManualRetryIngestionJobByKey(ctx context.Context, arg ManualRetryIngestionJobByKeyParams) (ManualRetryIngestionJobByKeyRow, error)
 	// Stamp the throttle after a reminder ATTEMPT (delivered or not) so a pending approval
 	// re-nudges at most once per cadence and a failing channel cannot spam the tick.
 	MarkApprovalReminded(ctx context.Context, id pgtype.UUID) error
+	MarkAssetDeleted(ctx context.Context, arg MarkAssetDeletedParams) (AuraAssets, error)
 	MarkBenchmarkSettingsOverrideRestoring(ctx context.Context, runID pgtype.UUID) (int64, error)
+	MarkDeleteJobStorageObjectDeleted(ctx context.Context, arg MarkDeleteJobStorageObjectDeletedParams) (MarkDeleteJobStorageObjectDeletedRow, error)
 	MarkNotificationDelivered(ctx context.Context, id pgtype.UUID) error
 	MarkNotificationFailed(ctx context.Context, arg MarkNotificationFailedParams) error
 	MarkOperationIndeterminate(ctx context.Context, arg MarkOperationIndeterminateParams) (int64, error)
 	MarkOperationRejected(ctx context.Context, arg MarkOperationRejectedParams) (int64, error)
 	MarkPausedStateResumed(ctx context.Context, arg MarkPausedStateResumedParams) (int64, error)
+	MarkStorageObjectDeletePending(ctx context.Context, arg MarkStorageObjectDeletePendingParams) (AuraStorageObjects, error)
+	MarkStorageObjectDeleted(ctx context.Context, arg MarkStorageObjectDeletedParams) (AuraStorageObjects, error)
 	MarkUnknownRecovery(ctx context.Context, id pgtype.UUID) error
 	NextAssetEventSeq(ctx context.Context, assetID pgtype.UUID) (int32, error)
 	NextConversationTurnSeq(ctx context.Context, conversationID pgtype.UUID) (int32, error)
 	PromoteAssetToLibrary(ctx context.Context, arg PromoteAssetToLibraryParams) (AuraAssets, error)
+	// Physically erases the document body. Amendment #117: for these two tables
+	// "marked deleted" means DELETE, because document_chunks.text is the document text
+	// itself and a deleted_at tombstone is retained PII. The fence row is READ, never
+	// locked, matching MarkDeleteJobStorageObjectDeleted. Chunks go first so the
+	// document_embeddings FK cascade fires in the same order the writer inserted.
+	PurgeDocumentPassages(ctx context.Context, arg PurgeDocumentPassagesParams) (int64, error)
+	RecordPipelineDerivedArtifact(ctx context.Context, arg RecordPipelineDerivedArtifactParams) (pgtype.UUID, error)
 	RecordRetentionArtifactResult(ctx context.Context, arg RecordRetentionArtifactResultParams) (int64, error)
 	// A byte-identical deterministic plan receives a fresh authorization window only
 	// while it has not crossed the first-apply durability boundary. In-flight and
@@ -284,8 +327,11 @@ type Querier interface {
 	// Cross-process export-delete fence. This must commit before any runtime teardown.
 	// Reusing the same deterministic reservation is idempotent after a process retry.
 	ReserveConversationDeleteForIdentityIfVersion(ctx context.Context, arg ReserveConversationDeleteForIdentityIfVersionParams) (int64, error)
+	ReservePipelineCandidateVersion(ctx context.Context, arg ReservePipelineCandidateVersionParams) (ReservePipelineCandidateVersionRow, error)
+	ResetAssetForIngestionRetry(ctx context.Context, arg ResetAssetForIngestionRetryParams) (AuraAssets, error)
 	RestoreBenchmarkSetting(ctx context.Context, arg RestoreBenchmarkSettingParams) error
-	RetryIngestionJob(ctx context.Context, arg RetryIngestionJobParams) (AuraIngestionJobs, error)
+	RetryDeleteJob(ctx context.Context, arg RetryDeleteJobParams) (RetryDeleteJobRow, error)
+	RetryIngestionJob(ctx context.Context, arg RetryIngestionJobParams) (RetryIngestionJobRow, error)
 	RetryRetentionItem(ctx context.Context, arg RetryRetentionItemParams) (int64, error)
 	RevokeCapability(ctx context.Context, arg RevokeCapabilityParams) error
 	// Advance an active task's next fire to now so the next tick claims it. Returns rows
@@ -329,15 +375,12 @@ type Querier interface {
 	// alone must never be enough to overwrite what someone else's library says about
 	// their file. A non-owner gets no rows, which the caller reports as not-found.
 	SetDocumentDigest(ctx context.Context, arg SetDocumentDigestParams) (AuraDocuments, error)
-	// Narrow status write for background workers, which know the document but not the
-	// identity that owns it. UpdateDocument above needs identity_id and rewrites every column,
-	// so a worker could not use it to correct a single field without inventing the rest.
 	SetDocumentStatus(ctx context.Context, arg SetDocumentStatusParams) (AuraDocuments, error)
 	// D-09 (CHAT-05): set a turn's branch/parent pointers. The branch-write seam plan 25-07
 	// uses when an edit/regenerate forks a new sibling branch off an existing parent turn.
 	SetTurnBranchPointers(ctx context.Context, arg SetTurnBranchPointersParams) error
 	SoftDeleteAsset(ctx context.Context, arg SoftDeleteAssetParams) (AuraAssets, error)
-	SoftDeleteDocument(ctx context.Context, arg SoftDeleteDocumentParams) (AuraDocuments, error)
+	SoftDeleteDocument(ctx context.Context, arg SoftDeleteDocumentParams) (SoftDeleteDocumentRow, error)
 	SweepDueNotifications(ctx context.Context, arg SweepDueNotificationsParams) ([]AuraPendingNotifications, error)
 	TouchTelegramLastSeen(ctx context.Context, telegramUserID int64) error
 	TryRecoverExpiredOperation(ctx context.Context, arg TryRecoverExpiredOperationParams) (int64, error)
@@ -360,12 +403,14 @@ type Querier interface {
 	// Owner-scoped status transition (archive/unarchive, Phase 36 MUSR-01 / D-06). Serves the
 	// /archive + /unarchive routes; rows-affected==0 drives the handler's 403-vs-404 split.
 	UpdateConversationStatusForIdentity(ctx context.Context, arg UpdateConversationStatusForIdentityParams) (int64, error)
+	UpdateDeleteJobStatus(ctx context.Context, arg UpdateDeleteJobStatusParams) (UpdateDeleteJobStatusRow, error)
 	UpdateDocument(ctx context.Context, arg UpdateDocumentParams) (AuraDocuments, error)
 	UpdateDocumentIngestJobProgress(ctx context.Context, arg UpdateDocumentIngestJobProgressParams) (AuraDocumentIngestJobs, error)
 	UpdateDocumentIngestJobStatus(ctx context.Context, arg UpdateDocumentIngestJobStatusParams) (AuraDocumentIngestJobs, error)
+	UpdateDocumentPipelineStageStatus(ctx context.Context, arg UpdateDocumentPipelineStageStatusParams) (AuraDocumentPipelineStages, error)
 	UpdateDocumentTags(ctx context.Context, arg UpdateDocumentTagsParams) (AuraDocuments, error)
 	UpdateHeartbeat(ctx context.Context, id pgtype.UUID) error
-	UpdateIngestionJobStatus(ctx context.Context, arg UpdateIngestionJobStatusParams) (AuraIngestionJobs, error)
+	UpdateIngestionJobStatus(ctx context.Context, arg UpdateIngestionJobStatusParams) (UpdateIngestionJobStatusRow, error)
 	UpdateNextRunAt(ctx context.Context, arg UpdateNextRunAtParams) error
 	UpdateStorageObjectVersion(ctx context.Context, arg UpdateStorageObjectVersionParams) (AuraStorageObjects, error)
 	// Reschedule + re-payload a user task (the cockpit edit): rewrite the schedule grammar,
@@ -373,8 +418,12 @@ type Querier interface {
 	// a cancelled/completed task is not silently revived. Returns rows affected.
 	UpdateTaskScheduleRow(ctx context.Context, arg UpdateTaskScheduleRowParams) (int64, error)
 	UpsertBenchmarkSetting(ctx context.Context, arg UpsertBenchmarkSettingParams) error
+	UpsertDocumentPipelineStage(ctx context.Context, arg UpsertDocumentPipelineStageParams) (AuraDocumentPipelineStages, error)
 	UpsertDocumentTag(ctx context.Context, arg UpsertDocumentTagParams) error
 	UpsertIdentityRecovery(ctx context.Context, arg UpsertIdentityRecoveryParams) error
+	UpsertPipelineCandidateChunk(ctx context.Context, arg UpsertPipelineCandidateChunkParams) (AuraDocumentChunks, error)
+	UpsertPipelineCandidateEmbedding(ctx context.Context, arg UpsertPipelineCandidateEmbeddingParams) (AuraDocumentEmbeddings, error)
+	UpsertPipelineStageLedger(ctx context.Context, arg UpsertPipelineStageLedgerParams) (AuraDocumentPipelineStages, error)
 	UpsertSetting(ctx context.Context, arg UpsertSettingParams) (AuraSettings, error)
 }
 

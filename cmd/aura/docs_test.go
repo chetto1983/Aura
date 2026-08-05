@@ -4,9 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/identityctx"
 )
@@ -18,13 +22,12 @@ func TestDocsCommandRequiresSubcommand(t *testing.T) {
 	}
 }
 
-func TestDocsIngestPrintsSearchableJob(t *testing.T) {
+func TestDocsIngestPrintsAcceptedAsset(t *testing.T) {
 	svc := &fakeDocsService{
-		ingestJob: &documents.Job{
-			ID:         "job-1",
-			DocumentID: "doc-1",
-			Status:     documents.JobSearchable,
-			FileName:   "manual.pdf",
+		ingestAsset: assets.Asset{
+			ID:       "asset-1",
+			Status:   assets.StatusAccepted,
+			FileName: "manual.pdf",
 		},
 	}
 	var out bytes.Buffer
@@ -35,95 +38,91 @@ func TestDocsIngestPrintsSearchableJob(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if decoded["status"] != string(documents.JobSearchable) {
+	if decoded["status"] != string(assets.StatusAccepted) {
 		t.Fatalf("status = %#v", decoded["status"])
 	}
-	if decoded["document_id"] != "doc-1" {
-		t.Fatalf("document_id = %#v", decoded["document_id"])
+	if decoded["asset_id"] != "asset-1" {
+		t.Fatalf("asset_id = %#v", decoded["asset_id"])
 	}
 }
 
 func TestDocsIngestThreadsTheOperatorIdentity(t *testing.T) {
 	const operator = "00000000-0000-0000-0000-000000000001"
-	svc := &fakeDocsService{ingestJob: &documents.Job{ID: "job-1"}}
+	svc := &fakeDocsService{ingestAsset: assets.Asset{ID: "asset-1"}}
 	ctx := identityctx.WithIdentityID(t.Context(), operator)
 	if err := runDocsCommand(ctx, []string{"ingest", "manual.pdf"}, &bytes.Buffer{}, fakeDocsFactory(svc)); err != nil {
 		t.Fatal(err)
 	}
-	if svc.ingestReq.IdentityID != operator {
+	if svc.ingestReq.IdentityID != operator || svc.ingestReq.SourceKind != assets.SourceCLI {
 		t.Fatalf("ingest identity = %q, want %q", svc.ingestReq.IdentityID, operator)
+	}
+}
+
+func TestDocumentPathWithinRootRejectsEscape(t *testing.T) {
+	root := t.TempDir()
+	inside := filepath.Join(root, "manual.pdf")
+	if err := os.WriteFile(inside, []byte("pdf"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	resolved, relative, err := documentPathWithinRoot(root, "manual.pdf")
+	if err != nil {
+		t.Fatalf("inside path: %v", err)
+	}
+	if resolved != inside || relative != "manual.pdf" {
+		t.Fatalf("resolved = %q, relative = %q", resolved, relative)
+	}
+
+	outsideDir := t.TempDir()
+	outside := filepath.Join(outsideDir, "secret.pdf")
+	if err := os.WriteFile(outside, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := documentPathWithinRoot(root, outside); err == nil || !strings.Contains(err.Error(), "outside workspace root") {
+		t.Fatalf("outside path error = %v, want workspace fence", err)
 	}
 }
 
 func TestDocsSearchPrintsHits(t *testing.T) {
 	svc := &fakeDocsService{
-		hits: []documents.DigestHit{{DocumentID: "doc-1", Title: "manual.pdf", Digest: "hello"}},
+		response: documents.RetrievalResponse{
+			Profile:   documents.ProductionRetrievalProfile,
+			Status:    documents.RetrievalComplete,
+			Documents: []documents.RetrievalDocument{{DocumentID: "doc-1", Title: "manual.pdf"}},
+		},
 	}
 	var out bytes.Buffer
 	if err := runDocsCommand(t.Context(), []string{"search", "--limit", "5", "hello"}, &out, fakeDocsFactory(svc)); err != nil {
 		t.Fatal(err)
 	}
 	var decoded struct {
-		Query string                `json:"query"`
-		Hits  []documents.DigestHit `json:"hits"`
+		Query     string                        `json:"query"`
+		Documents []documents.RetrievalDocument `json:"documents"`
 	}
 	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if decoded.Query != "hello" || len(decoded.Hits) != 1 {
+	if decoded.Query != "hello" || len(decoded.Documents) != 1 {
 		t.Fatalf("decoded = %#v", decoded)
 	}
-	if svc.searchLimit != 5 {
-		t.Fatalf("limit = %d", svc.searchLimit)
+	if svc.retrievalRequest.Limit != 5 {
+		t.Fatalf("limit = %d", svc.retrievalRequest.Limit)
 	}
 }
 
-// TestDocsSearchBlankQueryListsTheLibrary pins the one question the machine answers
-// most cheaply: "what have I actually got in here". A blank query is not an error at any
-// other layer — `SearchDocumentDigests`' own comment says it lists newest-first, the
-// document_search tool trims and passes it straight through, and that tool's description
-// promises the model "leave query empty to list the library". This verb used to be the
-// single place that refused, so the operator could not ask what their own agent could.
-func TestDocsSearchBlankQueryListsTheLibrary(t *testing.T) {
-	svc := &fakeDocsService{
-		hits: []documents.DigestHit{
-			{DocumentID: "doc-1", Title: "Clienti.xlsx"},
-			{DocumentID: "doc-2", Title: "manual.pdf"},
-		},
-	}
-	var out bytes.Buffer
-	if err := runDocsCommand(t.Context(), []string{"search"}, &out, fakeDocsFactory(svc)); err != nil {
-		t.Fatalf("a blank query must list the library, not error: %v", err)
-	}
-	var decoded struct {
-		Query string                `json:"query"`
-		Hits  []documents.DigestHit `json:"hits"`
-	}
-	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
-		t.Fatal(err)
-	}
-	if decoded.Query != "" {
-		t.Errorf("query = %q, want it passed through empty", decoded.Query)
-	}
-	if len(decoded.Hits) != 2 {
-		t.Errorf("hits = %d, want the whole library", len(decoded.Hits))
-	}
-	// The flags still have to work without a query in front of them, or "list my library,
-	// newest 3" is unsayable.
-	out.Reset()
-	if err := runDocsCommand(t.Context(), []string{"search", "--limit", "3"}, &out, fakeDocsFactory(svc)); err != nil {
-		t.Fatalf("blank query with a flag: %v", err)
-	}
-	if svc.searchLimit != 3 {
-		t.Errorf("limit = %d, want 3", svc.searchLimit)
+func TestDocsSearchRejectsBlankQuery(t *testing.T) {
+	err := runDocsCommand(
+		t.Context(), []string{"search", "--limit", "3"},
+		&bytes.Buffer{}, fakeDocsFactory(&fakeDocsService{}),
+	)
+	if !errors.Is(err, documents.ErrEmptyDocumentQuery) {
+		t.Fatalf("blank query error = %v", err)
 	}
 }
 
 func TestDocsSearchAcceptsDocumentedTrailingFlags(t *testing.T) {
 	svc := &fakeDocsService{
-		hits: []documents.DigestHit{
-			{DocumentID: "doc-1", Title: "manual.pdf"},
-			{DocumentID: "doc-2", Title: "other.pdf"},
+		response: documents.RetrievalResponse{
+			Documents: []documents.RetrievalDocument{{DocumentID: "doc-1", Title: "manual.pdf"}},
 		},
 	}
 	var out bytes.Buffer
@@ -132,8 +131,8 @@ func TestDocsSearchAcceptsDocumentedTrailingFlags(t *testing.T) {
 		t.Fatal(err)
 	}
 	var decoded struct {
-		Query string                `json:"query"`
-		Hits  []documents.DigestHit `json:"hits"`
+		Query     string                        `json:"query"`
+		Documents []documents.RetrievalDocument `json:"documents"`
 	}
 	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
 		t.Fatal(err)
@@ -141,11 +140,12 @@ func TestDocsSearchAcceptsDocumentedTrailingFlags(t *testing.T) {
 	if decoded.Query != "hello world" {
 		t.Fatalf("query = %q, want flags excluded", decoded.Query)
 	}
-	if svc.searchLimit != 3 {
-		t.Fatalf("limit = %d", svc.searchLimit)
+	if svc.retrievalRequest.Limit != 3 {
+		t.Fatalf("limit = %d", svc.retrievalRequest.Limit)
 	}
-	if len(decoded.Hits) != 1 || decoded.Hits[0].DocumentID != "doc-1" {
-		t.Fatalf("--document-id did not scope the answer: %#v", decoded.Hits)
+	if len(svc.retrievalRequest.DocumentIDs) != 1 || svc.retrievalRequest.DocumentIDs[0] != "doc-1" ||
+		len(decoded.Documents) != 1 {
+		t.Fatalf("--document-id did not scope the request: %#v", svc.retrievalRequest)
 	}
 }
 
@@ -170,9 +170,8 @@ func TestDocsSearchRejectsLimitOutsideInt32(t *testing.T) {
 	}
 }
 
-// TestDocsSearchThreadsTheOperatorIdentity guards the half of the fix a shape assertion
-// cannot see. The digest query is identity-scoped in SQL, so a service that forgot the
-// principal is a no-op that exits 0 with zero hits.
+// TestDocsSearchThreadsTheOperatorIdentity guards what a response-shape assertion
+// cannot see: the shared retriever must receive the resolved operator identity.
 func TestDocsSearchThreadsTheOperatorIdentity(t *testing.T) {
 	const operator = "00000000-0000-0000-0000-000000000001"
 	svc := &fakeDocsService{}
@@ -180,8 +179,8 @@ func TestDocsSearchThreadsTheOperatorIdentity(t *testing.T) {
 	if err := runDocsCommand(ctx, []string{"search", "hello"}, &bytes.Buffer{}, fakeDocsFactory(svc)); err != nil {
 		t.Fatal(err)
 	}
-	if svc.searchIdentity != operator {
-		t.Fatalf("search identity = %q, want the resolved operator %q", svc.searchIdentity, operator)
+	if svc.retrievalRequest.IdentityID != operator {
+		t.Fatalf("search identity = %q, want the resolved operator %q", svc.retrievalRequest.IdentityID, operator)
 	}
 }
 
@@ -207,23 +206,26 @@ func fakeDocsFactory(svc *fakeDocsService) docsServiceFactory {
 }
 
 type fakeDocsService struct {
-	ingestJob      *documents.Job
-	ingestReq      documents.IngestRequest
-	statusJob      *documents.Job
-	hits           []documents.DigestHit
-	searchIdentity string
-	searchQuery    string
-	searchLimit    int
+	ingestAsset      assets.Asset
+	ingestReq        assets.DocumentIngestRequest
+	statusJob        *documents.Job
+	response         documents.RetrievalResponse
+	retrievalRequest documents.RetrievalRequest
 }
 
-func (f *fakeDocsService) IngestPath(_ context.Context, req documents.IngestRequest, _ string) (*documents.Job, error) {
+func (f *fakeDocsService) IngestDocumentPath(_ context.Context, req assets.DocumentIngestRequest, _ string) (assets.Asset, error) {
 	f.ingestReq = req
-	return f.ingestJob, nil
+	return f.ingestAsset, nil
 }
 
-func (f *fakeDocsService) SearchDigests(_ context.Context, identityID, query string, limit int) ([]documents.DigestHit, error) {
-	f.searchIdentity, f.searchQuery, f.searchLimit = identityID, query, limit
-	return f.hits, nil
+func (f *fakeDocsService) Retrieve(
+	_ context.Context,
+	request documents.RetrievalRequest,
+) (documents.RetrievalResponse, error) {
+	f.retrievalRequest = request
+	response := f.response
+	response.Query = request.Query
+	return response, nil
 }
 
 func (f *fakeDocsService) GetJob(context.Context, string) (*documents.Job, error) {

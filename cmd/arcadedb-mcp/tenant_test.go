@@ -16,13 +16,18 @@ const testIdentity = "00000000-0000-0000-0000-000000000001"
 // production path fills, so the lookup under test is the real one.
 func singleTenant(t *testing.T, client *arcadedb.Client) *tenants {
 	t.Helper()
-	database, err := arcadedb.DatabaseFor(testIdentity)
-	if err != nil {
-		t.Fatalf("DatabaseFor: %v", err)
+	return &tenants{resolver: fixedTenantClient{client: client}}
+}
+
+type fixedTenantClient struct {
+	client *arcadedb.Client
+}
+
+func (f fixedTenantClient) For(_ context.Context, identityID string) (*arcadedb.Client, error) {
+	if _, err := arcadedb.DatabaseFor(identityID); err != nil {
+		return nil, err
 	}
-	tn := newTenants(arcadedb.Config{}, nil, nil, nil)
-	tn.clients[database] = client
-	return tn
+	return f.client, nil
 }
 
 func TestTenantsRefusesAnUnstampedCall(t *testing.T) {

@@ -228,7 +228,7 @@ func buildBaseRegistryWithHandles(
 	// manifest always lists it (Spec reads no dependency); with no pool it fails
 	// loudly at call time rather than being silently absent, which is how the
 	// upload->chat regression happened once already.
-	library := newDocumentLibrary(taskStorePool(ts))
+	library := newDocumentLibrary(taskStorePool(ts), cfg)
 	reg.Register(&tools.DocumentSearch{Library: library})
 	// document_describe is how the library learns: nothing reads a document at
 	// upload any more, so the description is written by the agent after it has
@@ -289,8 +289,9 @@ func buildBaseRegistryWithHandles(
 	// chunk contains at any relevance — so the agent gets the file and computes.
 	if pool := taskStorePool(ts); pool != nil {
 		reg.Register(&tools.DocumentIndex{
-			Indexer: newRuntimeDocumentIngestor(cfg, pool),
-			Router:  sandboxRouter,
+			Indexer:  newRuntimeDocumentIngestor(cfg, pool),
+			Router:   sandboxRouter,
+			MaxBytes: int64(cfg.AssetMaxDocumentBytes),
 		})
 		reg.Register(&tools.DocumentOpen{
 			Documents: newRuntimeDocumentOpener(cfg, pool),

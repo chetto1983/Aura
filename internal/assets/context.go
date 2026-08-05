@@ -30,7 +30,7 @@ func BuildAttachmentBlock(items []Asset) string {
 		fmt.Fprintf(&b, "- status: %s\n", asset.Status)
 		if asset.DocumentID != "" {
 			fmt.Fprintf(&b, "- document_id: %s\n", asset.DocumentID)
-			fmt.Fprintf(&b, "- retrieval: Use document_search with document_id=%q for detailed cited chunks.\n", asset.DocumentID)
+			fmt.Fprintf(&b, "- retrieval: Use document_search with a filename/topic query, then document_open with document_id=%q.\n", asset.DocumentID)
 		}
 		if asset.Summary != "" {
 			fmt.Fprintf(&b, "- summary: %s\n", truncateRunes(sanitizeLine(asset.Summary), maxSummaryRunes))
@@ -73,7 +73,7 @@ func BuildKnowledgeCatalog(items []Asset, exclude map[string]bool) string {
 	}
 	var b strings.Builder
 	b.WriteString("<knowledge_base trust=\"operator_pinned_context\">\n")
-	b.WriteString("These documents the user uploaded earlier are indexed in the searchable knowledge base. They are NOT on the filesystem — call document_search (set document_id to scope to one) to read their contents. This is background context, not a request: only search when the user's message is about these documents.\n")
+	b.WriteString("These documents the user uploaded earlier are indexed in the searchable knowledge base. They are NOT on the filesystem — call document_search with a filename/topic query, then use document_open with the returned document_id. This is background context, not a request: only search when the user's message is about these documents.\n")
 	for i, a := range rows {
 		fmt.Fprintf(&b, "- [%d] document_id=%s filename=%s", i+1, a.DocumentID, sanitizeLine(a.FileName))
 		if a.Summary != "" {

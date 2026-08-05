@@ -62,9 +62,10 @@ type SourceKind string
 
 // Supported asset source kinds.
 const (
-	SourceWeb      SourceKind = "web"
-	SourceTelegram SourceKind = "telegram"
-	SourceCLI      SourceKind = "cli"
+	SourceWeb       SourceKind = "web"
+	SourceTelegram  SourceKind = "telegram"
+	SourceCLI       SourceKind = "cli"
+	SourceWorkspace SourceKind = "workspace"
 	// SourceAgent marks an asset ingested from an agent-produced deliverable (send_file →
 	// Garage, WEBART-01/D-06): first-class and distinguishable from human uploads.
 	SourceAgent SourceKind = "agent"
@@ -142,6 +143,22 @@ type TelegramIngestRequest struct {
 	FileName   string
 	MIMEType   string
 	Modality   Modality
+	SizeBytes  int64
+	Reader     io.Reader
+}
+
+// DocumentIngestRequest carries a document stream from a non-presigned ingress
+// into the same durable object + asset + processing queue used by Web uploads.
+// SourceRef is a stable, non-secret source locator; it must not be a transient
+// staging path.
+type DocumentIngestRequest struct {
+	IdentityID string
+	ThreadID   string
+	SourceKind SourceKind
+	SourceRef  string
+	Title      string
+	FileName   string
+	MIMEType   string
 	SizeBytes  int64
 	Reader     io.Reader
 }

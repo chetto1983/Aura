@@ -14,7 +14,7 @@ import (
 // TestKnobRegistry round-trips the QUAL-04 promise (D-08): the registry is the
 // single source of truth for the hot-path AURA_* knobs. It asserts the structural
 // invariants that keep the slice honest — no duplicate Name, every enum row carries
-// a non-empty Enum (and non-enum rows carry none), exactly the five secret knobs are
+// a non-empty Enum (and non-enum rows carry none), exactly the seven secret knobs are
 // flagged Secret, the AURA_PROFILE enum row spells the four runtime profiles, the two
 // representative reliability/gate knobs are present with the right kind, and no Tier C
 // (agent-tools/loop/llm) knob leaked in (D-16).
@@ -46,7 +46,7 @@ func TestKnobRegistry(t *testing.T) {
 		}
 	}
 
-	// Exactly the six secret knobs are flagged Secret (drives rendered redaction).
+	// Exactly the seven secret knobs are flagged Secret (drives rendered redaction).
 	wantSecret := map[string]bool{
 		"AURA_OBJECTSTORE_ACCESS_KEY": true,
 		"AURA_OBJECTSTORE_SECRET_KEY": true,
@@ -54,6 +54,7 @@ func TestKnobRegistry(t *testing.T) {
 		"AURA_GARAGE_ADMIN_TOKEN":     true,
 		"AURA_AUTHULA_SECRET":         true,
 		"AURA_TRACE_ENCRYPT_KEY":      true,
+		"AURA_DOCLING_API_KEY":        true,
 	}
 	gotSecret := map[string]bool{}
 	for _, k := range reg {
@@ -62,7 +63,7 @@ func TestKnobRegistry(t *testing.T) {
 		}
 	}
 	if !reflect.DeepEqual(gotSecret, wantSecret) {
-		t.Errorf("secret knob set = %v, want exactly the six secret knobs %v", gotSecret, wantSecret)
+		t.Errorf("secret knob set = %v, want exactly the seven secret knobs %v", gotSecret, wantSecret)
 	}
 
 	// AURA_PROFILE is the KindEnum row spelling the four runtime profiles.

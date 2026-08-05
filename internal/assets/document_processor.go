@@ -3,6 +3,9 @@ package assets
 
 import (
 	"context"
+	"crypto/sha1" // #nosec G505 -- compatibility metadata only; SHA-256 remains canonical.
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -17,21 +20,38 @@ type DocumentIngestor interface {
 }
 
 type DocumentVersionRecorder interface {
-	RecordDocumentAsset(ctx context.Context, asset Asset, job documents.Job) error
+	RecordDocumentAsset(
+		ctx context.Context,
+		asset Asset,
+		job documents.Job,
+		hashes documents.ContentHashes,
+	) (documents.DocumentVersionRecord, error)
+}
+
+type DocumentPipeline interface {
+	Run(context.Context, documents.PipelineRunRequest) (documents.PipelineRunResult, error)
 }
 
 type DocumentProcessor struct {
 	Objects         objectstore.Store
 	Ingest          DocumentIngestor
 	VersionRecorder DocumentVersionRecorder
+	Pipeline        DocumentPipeline
 	// PerIdentityObjects, when set, resolves the ASSET OWNER's per-identity store so the
 	// object read targets the owner's bucket with the owner's creds. Nil → the shared Objects.
 	PerIdentityObjects *ObjectResolverBundle
 }
 
 func (p *DocumentProcessor) ProcessAsset(ctx context.Context, asset Asset) (Result, error) {
-	if p.Objects == nil || p.Ingest == nil {
+	if p.Objects == nil || p.Ingest == nil || p.VersionRecorder == nil || p.Pipeline == nil {
 		return Result{}, fmt.Errorf("document processor is not configured")
+	}
+	claim, ok := documents.ClaimedIngestionJob(ctx)
+	if !ok || claim.ID == "" || claim.LockedBy == "" || claim.LeaseGeneration <= 0 {
+		return Result{}, fmt.Errorf("document processor requires a fenced ingestion claim")
+	}
+	if claim.IdentityID != asset.IdentityID || (claim.AssetID != "" && claim.AssetID != asset.ID) {
+		return Result{}, fmt.Errorf("document processor ingestion claim does not own the asset")
 	}
 	objects, err := p.PerIdentityObjects.storeForAsset(ctx, p.Objects, asset)
 	if err != nil {
@@ -43,13 +63,13 @@ func (p *DocumentProcessor) ProcessAsset(ctx context.Context, asset Asset) (Resu
 		return Result{}, err
 	}
 	defer func() { _ = rc.Close() }()
-	path, cleanup, err := writeTempAsset(rc, asset.FileName)
+	path, hashes, cleanup, err := writeTempAsset(rc, asset.FileName)
 	if err != nil {
 		return Result{}, err
 	}
 	defer cleanup()
 	job, err := p.Ingest.IngestPath(ctx, documents.IngestRequest{
-		SourceID:     asset.ID,
+		SourceID:     firstNonBlank(asset.SourceRef, asset.ID),
 		SourceKind:   string(asset.SourceKind),
 		OriginalPath: "object://" + asset.ObjectBucket + "/" + asset.ObjectKey,
 		FileName:     asset.FileName,
@@ -63,44 +83,66 @@ func (p *DocumentProcessor) ProcessAsset(ctx context.Context, asset Asset) (Resu
 	if err != nil {
 		return Result{}, err
 	}
-	if p.VersionRecorder != nil {
-		if err := p.VersionRecorder.RecordDocumentAsset(ctx, asset, *job); err != nil {
-			return Result{}, err
-		}
+	record, err := p.VersionRecorder.RecordDocumentAsset(ctx, asset, *job, hashes)
+	if err != nil {
+		return Result{}, err
 	}
-	// The summary said "indexed with N searchable chunks" and N was ALWAYS 0: ingest
-	// stopped chunking when the document plane became a catalog, and the count it read
-	// is now hard-wired to zero. It shipped that to the user on every single upload.
-	// What actually happened is the honest sentence, and it is also the one that tells
-	// the agent what to do next.
+	published, err := p.Pipeline.Run(ctx, documents.PipelineRunRequest{
+		Record: record, AssetID: asset.ID, JobID: claim.ID, WorkerID: claim.LockedBy,
+		LeaseGeneration: claim.LeaseGeneration, Title: record.Document.Title,
+		FileName: asset.FileName, MIMEType: asset.MIMEType, Path: path,
+		ObjectBucket: asset.ObjectBucket, Objects: objects,
+	})
+	if err != nil {
+		return Result{}, err
+	}
 	return Result{
 		Status:     StatusSearchable,
-		DocumentID: job.DocumentID,
-		Summary:    fmt.Sprintf("%s is in the document catalog; open it to read or compute on it.", job.FileName),
+		DocumentID: published.SearchDocumentID,
+		Summary:    fmt.Sprintf("%s is searchable across %d verified passages.", job.FileName, published.PassageCount),
 		Metadata: map[string]any{
-			"document_job_id": job.ID,
+			"document_job_id":            job.ID,
+			"pipeline_activation_job_id": claim.ID,
+			"document_version_id":        published.VersionID,
+			"pipeline_generation":        published.PipelineGeneration,
+			"passage_count":              published.PassageCount,
 		},
 	}, nil
 }
 
-func writeTempAsset(src io.Reader, fileName string) (string, func(), error) {
+func firstNonBlank(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func writeTempAsset(src io.Reader, fileName string) (string, documents.ContentHashes, func(), error) {
 	suffix := filepath.Ext(fileName)
 	if suffix == "" {
 		suffix = ".bin"
 	}
 	f, err := os.CreateTemp("", "aura-asset-doc-*"+suffix)
 	if err != nil {
-		return "", func() {}, err
+		return "", documents.ContentHashes{}, func() {}, err
 	}
 	path := f.Name()
-	if _, err = io.Copy(f, src); err != nil {
+	sha1Hash := sha1.New() //nolint:gosec // SHA-1 is compatibility metadata; SHA-256 remains canonical.
+	sha256Hash := sha256.New()
+	if _, err = io.Copy(io.MultiWriter(f, sha1Hash, sha256Hash), src); err != nil {
 		_ = f.Close()
 		_ = os.Remove(path)
-		return "", func() {}, err
+		return "", documents.ContentHashes{}, func() {}, err
 	}
 	if err = f.Close(); err != nil {
 		_ = os.Remove(path)
-		return "", func() {}, err
+		return "", documents.ContentHashes{}, func() {}, err
 	}
-	return path, func() { _ = os.Remove(path) }, nil
+	hashes := documents.ContentHashes{
+		SHA1:   hex.EncodeToString(sha1Hash.Sum(nil)),
+		SHA256: hex.EncodeToString(sha256Hash.Sum(nil)),
+	}
+	return path, hashes, func() { _ = os.Remove(path) }, nil
 }

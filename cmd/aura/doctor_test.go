@@ -184,7 +184,7 @@ func TestDoctorDefaultEmbedProbeChecksDimension(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(map[string]any{
-			"data": []map[string]any{{"embedding": []float64{0.1, 0.2, 0.3}}},
+			"data": []map[string]any{{"index": 0, "embedding": []float64{0.1, 0.2, 0.3}}},
 		}); err != nil {
 			t.Fatalf("encode response: %v", err)
 		}

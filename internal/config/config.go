@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"strings"
 
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/db"
@@ -25,19 +26,21 @@ import (
 
 // Config is the root composite. Subsystem configs live in their packages.
 type Config struct {
-	DB             db.Config
-	Embed          EmbedConfig    // embedding sidecar wiring (config_embed.go)
-	ArcadeDB       ArcadeDBConfig // memory server — per-identity databases + the adaptive projection (arcadedb.go)
-	LLM            llm.Config     // Slice 1 — OpenAI-compat client + load-order chain (D-22)
-	MCPServers     map[string]mcp.ServerConfig
-	MCPPolicies    map[string]mcp.ManagedServer
-	MCPServersErr  error
-	RunDir         string // absolute — a relative AURA_RUN_DIR is normalized to absolute at load (F-041) so sidecars are not cwd-dependent
-	RunDirErr      error  // non-nil only if filepath.Abs failed (cwd unobtainable); surfaced by Validate so boot fails loudly
-	ToolPreviewCap int
-	OtelExporter   string // AURA_OTEL_EXPORTER ∈ {stdout,otlp,none} (D-06)
-	OtelEndpoint   string // AURA_OTEL_ENDPOINT — OTLP/gRPC target (D-06)
-	MetricsBind    string // AURA_METRICS_BIND — private loopback Prometheus listener
+	DB               db.Config
+	Document         DocumentConfig
+	DocumentPipeline DocumentPipelineConfig
+	Embed            EmbedConfig    // embedding sidecar wiring (config_embed.go)
+	ArcadeDB         ArcadeDBConfig // memory server — per-identity databases + the adaptive projection (arcadedb.go)
+	LLM              llm.Config     // Slice 1 — OpenAI-compat client + load-order chain (D-22)
+	MCPServers       map[string]mcp.ServerConfig
+	MCPPolicies      map[string]mcp.ManagedServer
+	MCPServersErr    error
+	RunDir           string // absolute — a relative AURA_RUN_DIR is normalized to absolute at load (F-041) so sidecars are not cwd-dependent
+	RunDirErr        error  // non-nil only if filepath.Abs failed (cwd unobtainable); surfaced by Validate so boot fails loudly
+	ToolPreviewCap   int
+	OtelExporter     string // AURA_OTEL_EXPORTER ∈ {stdout,otlp,none} (D-06)
+	OtelEndpoint     string // AURA_OTEL_ENDPOINT — OTLP/gRPC target (D-06)
+	MetricsBind      string // AURA_METRICS_BIND — private loopback Prometheus listener
 
 	// Phase 33 (Slice runtime-profiles) deployment posture. Distinct from the
 	// Agent.md per-identity ProfileDir below (RESEARCH Pitfall 1). Selects the
@@ -381,10 +384,16 @@ func loadBase() *Config {
 			BootstrapURL: bootstrapURL,
 			Password:     pgPassword,
 		},
+		Document:         loadDocumentConfig(),
+		DocumentPipeline: loadDocumentPipelineConfig(),
 		Embed: EmbedConfig{
 			BaseURL:    envDefault("AURA_EMBED_BASE_URL", "http://127.0.0.1:8081"),
 			Dimensions: envutil.IntDefault("AURA_EMBED_DIMENSIONS", DefaultEmbedDimensions),
 			Model:      os.Getenv("AURA_EMBED_MODEL"),
+			Revision:   strings.TrimSpace(os.Getenv("AURA_EMBED_REVISION")),
+			Fingerprint: strings.ToLower(strings.TrimSpace(
+				os.Getenv("AURA_EMBED_FINGERPRINT"),
+			)),
 		},
 		ArcadeDB:       loadArcadeDB(),
 		MCPServers:     mcpServers,
@@ -446,7 +455,7 @@ func loadBase() *Config {
 		// docker/garage/garage.toml in sync is a deployment follow-on, not this phase.
 		ObjectStoreReplicationFactor: envutil.IntDefault("AURA_OBJECTSTORE_REPLICATION_FACTOR", 1),
 		GarageRPCSecret:              os.Getenv("GARAGE_RPC_SECRET"),
-		AssetMaxDocumentBytes:        envutil.IntDefault("AURA_ASSET_MAX_DOCUMENT_BYTES", 104857600),
+		AssetMaxDocumentBytes:        envutil.IntDefault("AURA_ASSET_MAX_DOCUMENT_BYTES", DefaultAssetMaxDocumentBytes),
 		AssetMaxImageBytes:           envutil.IntDefault("AURA_ASSET_MAX_IMAGE_BYTES", 26214400),
 		AssetMaxAudioBytes:           envutil.IntDefault("AURA_ASSET_MAX_AUDIO_BYTES", 104857600),
 		AssetPresignTTLSec:           envutil.IntDefault("AURA_ASSET_PRESIGN_TTL_SEC", 600),

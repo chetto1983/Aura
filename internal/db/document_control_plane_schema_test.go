@@ -42,12 +42,58 @@ func TestDocumentControlPlaneQueryContract(t *testing.T) {
 		"-- name: CreateStorageObject :one",
 		"-- name: CreateIngestionJob :one",
 		"-- name: ClaimIngestionJobs :many",
+		"-- name: HeartbeatIngestionJob :one",
 		"-- name: UpdateIngestionJobStatus :one",
+		"-- name: RetryIngestionJob :one",
+		"-- name: ManualRetryIngestionJobByKey :one",
 		"-- name: AppendIngestionEvent :one",
 		"-- name: CreateDeleteJob :one",
+		"-- name: ClaimDeleteJobs :many",
+		"-- name: FinalizeDocumentDelete :one",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("document control-plane queries missing %q", want)
+		}
+	}
+}
+
+func TestDocumentPipelineConvergenceMigrationContract(t *testing.T) {
+	up := readSchemaContractFile(t, "migrations/0093_document_pipeline_convergence.up.sql")
+	for _, want := range []string{
+		"CREATE TABLE aura.document_pipeline_quarantine",
+		"CREATE TABLE aura.document_pipeline_stages",
+		"ADD COLUMN identity_id uuid",
+		"ADD COLUMN lease_generation bigint",
+		"documents_identity_search_document_live_idx",
+		"document_versions_document_sha256_live_idx",
+		"document_versions_document_identity_fkey",
+		"storage_objects_document_identity_fkey",
+		"ingestion_events_job_identity_fkey",
+		"AS RESTRICTIVE FOR ALL TO aura_app",
+		"REVOKE ALL ON aura.document_pipeline_quarantine FROM aura_app",
+	} {
+		if !strings.Contains(up, want) {
+			t.Fatalf("0093 up migration missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		"SET identity_id = '00000000-0000-0000-0000-000000000001'",
+		"COALESCE(identity_id, '00000000-0000-0000-0000-000000000001'",
+	} {
+		if strings.Contains(up, forbidden) {
+			t.Fatalf("0093 up migration fabricates an owner via %q", forbidden)
+		}
+	}
+
+	down := readSchemaContractFile(t, "migrations/0093_document_pipeline_convergence.down.sql")
+	for _, want := range []string{
+		"verified object deletion requires forward repair",
+		"jsonb_populate_record",
+		"DROP TABLE aura.document_pipeline_quarantine",
+		"DROP TABLE aura.document_pipeline_stages",
+	} {
+		if !strings.Contains(down, want) {
+			t.Fatalf("0093 down migration missing %q", want)
 		}
 	}
 }

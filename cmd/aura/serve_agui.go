@@ -84,7 +84,9 @@ func wireAGUIServer(chat *chatEnv, store *cron.Store, scheduler *cron.Scheduler,
 	aguiServer.SetAssetService(chat.assets)
 	aguiServer.SetOwnerExportDestination(ownerExports)
 	aguiServer.SetShareService(shareAPI)
-	aguiServer.SetDocumentCatalog(buildDocumentCatalogService(chat))
+	aguiServer.SetDocumentCatalog(withDocumentRetriever(
+		buildDocumentCatalogService(chat), chat.cfg, chat.pool,
+	))
 	aguiServer.SetDocumentEvents(buildDocumentEventService(chat))
 	aguiServer.SetStorageOrphans(buildStorageOrphanService(chat, objectStore))
 	// Wire the cross-thread HITL approval read (APRV-01 / D-04). Without this the

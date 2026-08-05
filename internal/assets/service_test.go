@@ -318,6 +318,48 @@ func TestServiceProcessAcceptedRunsProcessor(t *testing.T) {
 	}
 }
 
+func TestServiceProcessAcceptedRearmsFailedAssetForDurableRetry(t *testing.T) {
+	svc, store := newAssetServiceTestRig(t, Limits{
+		MaxDocumentBytes: 100,
+		MaxImageBytes:    100,
+		MaxAudioBytes:    100,
+	})
+	processor := &recordingProcessor{
+		called: make(chan Asset, 1),
+		result: Result{Status: StatusSearchable, DocumentID: "doc-1", Summary: "recovered"},
+	}
+	svc.Processors.Document = processor
+	asset, err := store.Create(context.Background(), CreateRequest{
+		IdentityID: serviceIdentityID, SourceKind: SourceWeb, Scope: ScopeLibrary,
+		Modality: ModalityDocument, FileName: "manual.pdf", MIMEType: "application/pdf",
+		DeclaredSizeBytes: 9, ObjectBucket: "asset-test", ObjectKey: "asset-key",
+		Metadata: map[string]any{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	asset, err = store.SetStatus(context.Background(), asset.ID, serviceIdentityID, StatusFailed, "processor_failed", "temporary")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	processed, err := svc.ProcessAccepted(context.Background(), serviceIdentityID, asset.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if processed.Status != StatusSearchable || processed.Summary != "recovered" {
+		t.Fatalf("processed retry = %#v", processed)
+	}
+	select {
+	case processing := <-processor.called:
+		if processing.Status != StatusProcessing || processing.ErrorCode != "" || processing.ErrorMessage != "" {
+			t.Fatalf("processor saw retry asset = %#v, want clean processing state", processing)
+		}
+	default:
+		t.Fatal("processor was not called for the durable retry")
+	}
+}
+
 func TestServiceIngestTelegramFileStoresObjectAndReturnsProcessedAsset(t *testing.T) {
 	svc, store := newAssetServiceTestRig(t, Limits{
 		MaxDocumentBytes: 100,

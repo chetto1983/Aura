@@ -21,9 +21,20 @@ func TestDocumentProcessorStreamsObjectToIngestPath(t *testing.T) {
 		// an output the production path can never produce. This test used to assert 3.
 		job: &documents.Job{ID: "job-1", DocumentID: "doc-1", FileName: "manual.pdf"},
 	}
-	recorder := &recordingVersionRecorder{}
+	recorder := &recordingVersionRecorder{record: documents.DocumentVersionRecord{
+		Document: documents.Document{ID: "catalog-1", IdentityID: "00000000-0000-0000-0000-000000000001", SearchDocumentID: "doc-1", Title: "Manual"},
+		Version:  documents.DocumentVersion{ID: "version-1", IdentityID: "00000000-0000-0000-0000-000000000001", DocumentID: "catalog-1", SearchDocumentID: "doc-1", VersionNumber: 1, PipelineGeneration: 1},
+	}}
+	pipeline := &recordingDocumentPipeline{result: documents.PipelineRunResult{
+		DocumentID: "catalog-1", SearchDocumentID: "doc-1", VersionID: "version-1",
+		VersionNumber: 1, PipelineGeneration: 1, PassageCount: 3,
+	}}
+	ctx := documents.WithClaimedIngestionJob(context.Background(), documents.IngestionJob{
+		ID: "queue-job-1", IdentityID: "00000000-0000-0000-0000-000000000001", AssetID: "asset-1",
+		LockedBy: "worker-1", LeaseGeneration: 1,
+	})
 
-	result, err := (&DocumentProcessor{Objects: objects, Ingest: ingest, VersionRecorder: recorder}).ProcessAsset(context.Background(), Asset{
+	result, err := (&DocumentProcessor{Objects: objects, Ingest: ingest, VersionRecorder: recorder, Pipeline: pipeline}).ProcessAsset(ctx, Asset{
 		ID:           "asset-1",
 		IdentityID:   "00000000-0000-0000-0000-000000000001",
 		SourceKind:   SourceWeb,
@@ -50,8 +61,8 @@ func TestDocumentProcessorStreamsObjectToIngestPath(t *testing.T) {
 	}
 	// The summary is user-visible on every upload. It used to read "manual.pdf indexed
 	// with 0 searchable chunks" — always zero, because ingest stopped chunking.
-	if !strings.Contains(result.Summary, "manual.pdf") || strings.Contains(result.Summary, "chunk") {
-		t.Fatalf("Summary = %q, want the file named and no chunk count", result.Summary)
+	if !strings.Contains(result.Summary, "manual.pdf") || !strings.Contains(result.Summary, "3 verified passages") {
+		t.Fatalf("Summary = %q, want the verified passage count", result.Summary)
 	}
 	if ingest.req.OriginalPath != "object://b/k" {
 		t.Fatalf("OriginalPath = %q, want object://b/k", ingest.req.OriginalPath)
@@ -70,6 +81,12 @@ func TestDocumentProcessorStreamsObjectToIngestPath(t *testing.T) {
 	}
 	if recorder.asset.ID != "asset-1" || recorder.job.DocumentID != "doc-1" {
 		t.Fatalf("version recorder saw asset/job = %#v/%#v", recorder.asset, recorder.job)
+	}
+	if recorder.hashes.SHA256 != "bb094c25184067415837d8dc66cfa65366384a80625877252719369a2dc80575" || recorder.hashes.SHA1 == "" {
+		t.Fatalf("version recorder hashes = %#v", recorder.hashes)
+	}
+	if pipeline.req.JobID != "queue-job-1" || pipeline.req.Objects != objects || pipeline.req.Path == "" {
+		t.Fatalf("pipeline request = %#v", pipeline.req)
 	}
 }
 
@@ -96,13 +113,32 @@ func (r *recordingIngestor) IngestPath(_ context.Context, req documents.IngestRe
 }
 
 type recordingVersionRecorder struct {
-	asset Asset
-	job   documents.Job
-	err   error
+	asset  Asset
+	job    documents.Job
+	hashes documents.ContentHashes
+	err    error
+	record documents.DocumentVersionRecord
 }
 
-func (r *recordingVersionRecorder) RecordDocumentAsset(_ context.Context, asset Asset, job documents.Job) error {
+func (r *recordingVersionRecorder) RecordDocumentAsset(
+	_ context.Context,
+	asset Asset,
+	job documents.Job,
+	hashes documents.ContentHashes,
+) (documents.DocumentVersionRecord, error) {
 	r.asset = asset
 	r.job = job
-	return r.err
+	r.hashes = hashes
+	return r.record, r.err
+}
+
+type recordingDocumentPipeline struct {
+	req    documents.PipelineRunRequest
+	result documents.PipelineRunResult
+	err    error
+}
+
+func (p *recordingDocumentPipeline) Run(_ context.Context, req documents.PipelineRunRequest) (documents.PipelineRunResult, error) {
+	p.req = req
+	return p.result, p.err
 }

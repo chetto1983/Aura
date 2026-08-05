@@ -36,7 +36,7 @@ type IngestCatalog interface {
 // Clock returns the current time; tests inject it for deterministic timestamps.
 type Clock func() time.Time
 
-// Service registers an ingested file in the document catalog.
+// Service validates one stored original and registers its processing candidate.
 //
 // It does not extract, chunk, or embed. Those existed to answer "what does this
 // document say" from passages, and that question is now answered by handing the
@@ -53,7 +53,7 @@ type Service struct {
 	MaxBytes int64
 }
 
-// IngestPath registers a local document file and returns its searchable job.
+// IngestPath registers a processing candidate from a stored original.
 func (s *Service) IngestPath(ctx context.Context, req IngestRequest, path string) (*Job, error) {
 	if s.Jobs == nil {
 		return nil, fmt.Errorf("document service has no job store")
@@ -73,6 +73,9 @@ func (s *Service) IngestPath(ctx context.Context, req IngestRequest, path string
 		return nil, fmt.Errorf("%w: %d bytes exceeds %d", ErrFileTooLarge, info.Size(), maxBytes)
 	}
 	req = normalizeIngestRequest(req, path, info.Size())
+	if strings.TrimSpace(req.IdentityID) == "" {
+		return nil, fmt.Errorf("document identity is required")
+	}
 	if !isSupportedDocument(req.FileName) {
 		return nil, fmt.Errorf("unsupported document type %q", filepath.Ext(req.FileName))
 	}
@@ -81,8 +84,16 @@ func (s *Service) IngestPath(ctx context.Context, req IngestRequest, path string
 	if err != nil {
 		return nil, err
 	}
-	documentID := DocumentID(contentHash, req.SourceID)
+	sourceKey, err := SourceKey(req.SourceID, "")
+	if err != nil {
+		return nil, err
+	}
+	documentID, err := SearchDocumentID(req.IdentityID, req.SourceKind, sourceKey)
+	if err != nil {
+		return nil, err
+	}
 	job, err := s.Jobs.Create(ctx, CreateJobParams{
+		IdentityID:   req.IdentityID,
 		SourceID:     req.SourceID,
 		SourceKind:   req.SourceKind,
 		DocumentID:   documentID,
@@ -96,38 +107,33 @@ func (s *Service) IngestPath(ctx context.Context, req IngestRequest, path string
 	if err != nil {
 		return nil, err
 	}
-	if err := s.recordCatalogDocument(ctx, req, documentID, job.ID, path); err != nil {
+	if err := s.recordCatalogDocument(ctx, req, sourceKey, documentID, job.ID, path); err != nil {
 		return s.failJob(ctx, job, err)
-	}
-	job, err = s.Jobs.UpdateProgress(ctx, job.ID, JobSearchable, 0, 0)
-	if err != nil {
-		// The catalog row already advertises the document. Leaving it saying "ready"
-		// while its job never reached searchable is the exact silence that once let a
-		// document with nothing behind it look complete to the cockpit and the agent.
-		s.markCatalogFailed(ctx, req.IdentityID, documentID, err)
-		return &job, err
 	}
 	return &job, nil
 }
 
-// recordCatalogDocument writes the row document_search ranks and document_open
+// recordCatalogDocument creates a non-visible candidate. It never activates it.
+// The row document_search eventually ranks and document_open eventually resolves
 // resolves, then the card that makes it findable. Both the CLI and the runtime
 // ingestor go through here: an asset upload gets its row from a version
 // recorder, but a local path has none, and without it a file the agent indexed
 // is invisible to the tool that promised it was searchable.
-func (s *Service) recordCatalogDocument(ctx context.Context, req IngestRequest, documentID, jobID, path string) error {
-	if s.Catalog == nil || strings.TrimSpace(req.IdentityID) == "" {
+func (s *Service) recordCatalogDocument(
+	ctx context.Context,
+	req IngestRequest,
+	sourceKey, documentID, jobID, path string,
+) error {
+	if s.Catalog == nil {
 		return nil
 	}
 	doc, err := s.Catalog.CreateDocument(ctx, CreateDocumentRequest{
-		IdentityID: req.IdentityID,
-		Scope:      DocumentScopeLibrary,
-		Title:      req.FileName,
-		Status:     DocumentStatusReady,
+		IdentityID: req.IdentityID, SourceKind: req.SourceKind, SourceKey: sourceKey,
+		SearchDocumentID: documentID, PipelineGeneration: 0,
+		Scope: DocumentScopeLibrary, Title: req.FileName, Status: DocumentStatusProcessing,
 		Metadata: map[string]any{
 			"search_document_id": documentID,
 			"document_job_id":    jobID,
-			"source_id":          req.SourceID,
 			"source_kind":        req.SourceKind,
 		},
 	})
@@ -156,22 +162,6 @@ func (s *Service) writeCard(ctx context.Context, req IngestRequest, catalogID, p
 	if err := s.Catalog.SetCard(ctx, req.IdentityID, catalogID, card.Render()); err != nil {
 		slog.Warn("documents: could not store the document card",
 			"document_id", catalogID, "file_name", req.FileName, "err", err)
-	}
-}
-
-// markCatalogFailed guards on the same condition recordCatalogDocument does, and must:
-// without an identity no catalog row was ever written, so there is nothing to correct and
-// the attempt would only fail closed on aura.documents and log a WARN about a row that
-// does not exist.
-func (s *Service) markCatalogFailed(ctx context.Context, identityID, documentID string, cause error) {
-	if s.Catalog == nil || strings.TrimSpace(identityID) == "" {
-		return
-	}
-	reason := fmt.Sprintf("document ingest failed: %v", cause)
-	if err := s.Catalog.SetSearchDocumentStatus(
-		context.WithoutCancel(ctx), identityID, documentID, DocumentStatusFailed, reason,
-	); err != nil {
-		slog.Warn("documents: could not mark catalog document failed", "document_id", documentID, "err", err)
 	}
 }
 
