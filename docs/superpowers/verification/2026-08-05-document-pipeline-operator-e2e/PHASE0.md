@@ -883,3 +883,276 @@ Stack left green: script exits 0, grafana `healthy`, tempo and prometheus `healt
 actually reachable this time. **Task 3's cutover and any later `document_pipeline_e2e.sh`
 restart-mid-run assertion can rely on `scripts/observability_sidecar_check.sh` as ground
 truth — Docker's per-sidecar health flags alone are no longer sufficient, by design.**
+
+## Task 3 — Cutover: 0093 applied to the LIVE deployment (2026-08-05)
+
+The rehearsal is over. This section records the migration being applied to the operator's
+real database, in the measured order: `aura` first, observability sidecars second.
+
+### Baseline (measured immediately before the cutover)
+
+```
+$ git log -1 --oneline
+2f561797b Surface wget's failure diagnostic in the sidecar check
+$ git status --short internal/db/migrations/
+(clean — 0093 unmodified since the proven Attempt 3)
+
+$ docker exec aura-postgres psql -U aura -d aura -tAc "SELECT version, dirty FROM schema_migrations;"
+92|f
+$ docker exec aura-postgres psql -U aura -d aura -c "SELECT status, count(*) FROM aura.documents GROUP BY status ORDER BY status;"
+ status  | count
+---------+-------
+ deleted |     1
+ ready   |     3
+
+$ docker images aura:local --format '{{.ID}}'
+72debdff03d4                    # rebuilt today, carries 0093
+$ docker inspect aura --format '{{.Image}}'
+sha256:ce69c48b1edf...          # container still on the PRE-0093 image
+```
+
+The tag/container-image mismatch is what made this cutover a container recreate rather than a
+rebuild: the image carrying 0093 already existed, only the running containers were stale.
+
+Rollback available and untouched throughout: `D:\tmp\aura-backups\aura-pre0093-2026-08-05.dump`
+(537,381 bytes). It was never needed.
+
+### Step 1 — Recreate aura on the new image
+
+```
+$ docker compose up -d --force-recreate aura
+ Container aura-migrate Recreated
+ Container aura-migrate Started
+ Container aura-migrate Exited
+ Container aura Recreated
+ Container aura Started
+```
+
+`aura-migrate` shares `image: ${AURA_IMAGE:-aura:local}` with `aura`, so compose recreated it
+onto the new image as a dependency and re-ran `aura db migrate` before `aura` was allowed to
+start (`condition: service_completed_successfully`).
+
+```
+$ docker inspect aura-migrate --format 'exit={{.State.ExitCode}} image={{.Image}}'
+exit=0 image=sha256:72debdff03d4...
+
+$ docker logs aura-migrate --tail 20
+operation-key: 338a02a6-0f7c-4cd7-9b56-a8a4582b3ba3
+ok: 1 migration(s) applied
+
+$ docker inspect aura --format 'health={{.State.Health.Status}} image={{.Image}}'
+health=healthy image=sha256:72debdff03d4...
+```
+
+**The SQLSTATE 55006 failure did not recur.** The `SET CONSTRAINTS ALL IMMEDIATE;` fix at
+line 295 held against live data exactly as it held in Attempt 3.
+
+### Step 2 — Assert the live end state
+
+```
+$ docker exec aura aura db status
+VERSION  DIRTY
+93       false
+
+$ docker exec aura-postgres psql -U aura -d aura -c \
+    "SELECT to_regclass('aura.document_pipeline_stages') AS stages, to_regclass('aura.document_pipeline_quarantine') AS quarantine;"
+          stages          |          quarantine
+--------------------------+------------------------------
+ document_pipeline_stages | document_pipeline_quarantine
+
+$ docker exec aura-postgres psql -U aura -d aura -c \
+    "SELECT count(*) AS docs, count(*) FILTER (WHERE source_kind IS NULL) AS null_kind, count(*) FILTER (WHERE source_key IS NULL) AS null_key FROM aura.documents;"
+ docs | null_kind | null_key
+------+-----------+----------
+    4 |         0 |        0
+```
+
+All three assertions match the rehearsal exactly: `93 / false`, both tables present,
+`docs=4, null_kind=0, null_key=0`. No restore was required.
+
+### Step 2b — The legacy corpus was demoted, by design (finding for later tasks)
+
+Not covered by the brief's assertions, but material to every downstream checkpoint. The
+pre-existing `ready` documents did **not** survive as `ready`:
+
+```
+$ docker exec aura-postgres psql -U aura -d aura -c \
+    "SELECT id, status, source_kind, error_code, error_message, pipeline_generation FROM aura.documents ORDER BY id;"
+                  id                  | status  | source_kind |      error_code      |                      error_message                      | pipeline_generation
+--------------------------------------+---------+-------------+----------------------+---------------------------------------------------------+---------------------
+ 1f79970c-de3b-4d51-a157-9e62e326fef0 | deleted | legacy      |                      |                                                         |                   0
+ 45086f98-8f9d-411b-bdb3-8ee44ac4281e | failed  | legacy      | original_unavailable | legacy ready row has no owner-coherent openable version |                   0
+ eca7f21c-b953-4340-9bec-095ffe05ad72 | failed  | legacy      | original_unavailable | legacy ready row has no owner-coherent openable version |                   0
+ fda0529c-6bb2-4154-87cb-cc42281320d8 | failed  | legacy      | original_unavailable | legacy ready row has no owner-coherent openable version |                   0
+```
+
+This is 0093 behaving as written, not a defect. The demotion comes from the
+`original_unavailable` rule (up.sql lines 144-164), which fails any `ready` row lacking an
+owner-coherent openable version — a joined `document_versions` + `storage_objects` + `assets`
+chain all sharing the document's `identity_id`. The live database held **one**
+`document_versions` row for **four** documents, so three of them had no version to open at all
+and were correctly demoted rather than silently attributed to the seeded `local` identity.
+The migration header states the intent explicitly: unowned legacy rows are "preserved for
+operator repair, never attributed."
+
+Companion state, consistent with the same conservatism:
+
+```
+$ ... "SELECT source_table, count(*) FROM aura.document_pipeline_quarantine GROUP BY source_table ORDER BY source_table;"
+     source_table     | count
+----------------------+-------
+ document_ingest_jobs |     4
+ ingestion_events     |     1
+ ingestion_jobs       |     1
+
+$ ... "SELECT count(*) FROM aura.document_pipeline_stages;"   -> 0
+$ ... "SELECT count(*) FROM aura.document_versions;"          -> 1
+```
+
+**Consequence for Tasks 5-10:** the pre-existing corpus is not usable as a retrieval fixture —
+nothing is `ready`, and `document_pipeline_stages` is empty. Every checkpoint that needs a
+readable document must ingest a fresh one. No checkpoint should assert against the four legacy
+rows except as evidence of the legacy/quarantine path itself.
+
+### Step 3 — Recreate the observability sidecars, aura-first order honoured
+
+```
+$ docker compose --profile observability up -d --no-deps --force-recreate tempo prometheus
+ Container aura-prometheus-1 Recreated / Started
+ Container aura-tempo-1 Recreated / Started
+
+$ docker compose --profile observability up -d --no-deps grafana
+ Container aura-grafana-1 Running
+
+$ bash /d/Aura/scripts/observability_sidecar_check.sh; echo "EXIT=$?"
+observability sidecars reachable
+EXIT=0
+```
+
+Ordering confirmed by the container clocks — the sidecars were rebuilt onto the namespace
+`aura` had already established, never the reverse:
+
+```
+aura       StartedAt 2026-08-05T21:09:51Z
+tempo      StartedAt 2026-08-05T21:11:24Z
+prometheus StartedAt 2026-08-05T21:11:24Z
+```
+
+### Step 4 — Prove traces flow, by finding a span
+
+The first measurement of the otel-error count came back non-zero:
+
+```
+$ docker logs aura --since 2m 2>&1 | grep -ci "otel error" | xargs echo "otel errors:"
+otel errors: 1
+```
+
+Inspected rather than assumed. Both entries are export failures against a collector that did
+not yet exist:
+
+```
+21:10:07 WARN otel error ... "traces export: ... dial tcp 127.0.0.1:4317: connect: connection refused"
+21:11:07 WARN otel error ... "traces export: ... dial tcp [::1]:4317: connect: connection refused" suppressed=5
+```
+
+Both timestamps fall between `aura`'s start (21:09:51) and `tempo`'s (21:11:24) — the transient
+window that the mandated aura-first ordering necessarily creates. It is a property of the
+procedure, not a fault. Re-measured on the post-restart window with fresh traffic:
+
+```
+$ for i in $(seq 1 10); do curl -s -o /dev/null -w "%{http_code} " http://127.0.0.1:9080/api/documents; done
+401 401 401 401 401 401 401 401 401 401     # unauthenticated, still traced
+$ docker logs aura --since 60s 2>&1 | grep -ci "otel error" | xargs echo "otel errors:"
+otel errors: 0
+```
+
+The lens is live — a real span, not a healthcheck:
+
+```
+$ docker exec aura-grafana-1 wget -qO- "http://aura:3200/api/search?limit=3"
+{"traces":[
+  {"traceID":"416771dfc207147136dee3604d8c0a","rootServiceName":"aura","rootTraceName":"db_transaction","startTimeUnixNano":"1785964308589026837"},
+  {"traceID":"3d031e705403bd4e73b4de64e71b6f","rootServiceName":"aura","rootTraceName":"db_query","startTimeUnixNano":"1785964287591371296"},
+  {"traceID":"e99153069d6e93e5755feeb61af693","rootServiceName":"aura","rootTraceName":"db_transaction","startTimeUnixNano":"1785964280596379552"}],
+ "metrics":{"inspectedTraces":869,"inspectedBytes":"34043","completedJobs":1,"totalJobs":1}}
+```
+
+**Trace ID that proved the lens live: `416771dfc207147136dee3604d8c0a`** (`rootServiceName: aura`).
+Fetched in full to confirm it resolves to real instrumented spans, not just an index entry:
+
+```
+$ docker exec aura-grafana-1 wget -qO- "http://aura:3200/api/traces/416771dfc207147136dee3604d8c0a"
+{"batches":[{"resource":{"attributes":[
+   {"key":"service.version","value":{"stringValue":"dev"}},
+   {"key":"service.name","value":{"stringValue":"aura"}}]},
+ "scopeSpans":[{"scope":{"name":"github.com/chetto1983/aura/internal/db"},
+  "spans":[{"name":"db_query","kind":"SPAN_KIND_INTERNAL",
+    "attributes":[{"key":"operation",...,"stringValue":"db_query"},
+                  {"key":"outcome",...,"stringValue":"success"},
+                  {"key":"error_class",...,"stringValue":"none"}],
+    "status":{"code":"STATUS_CODE_OK"}}, ...
+```
+
+869 traces inspected in the search window. Tracing is provably flowing end to end.
+
+### Step 5 — Cockpit reachability (the brief's expectation is what needed correcting)
+
+```
+$ curl -s -o /dev/null -w "cockpit=%{http_code}\n" http://127.0.0.1:9080/
+cockpit=401
+$ curl -s -o /dev/null -w "healthz=%{http_code}\n" http://127.0.0.1:9080/healthz
+healthz=200
+```
+
+`healthz=200` as expected; `cockpit=401` where the brief expected 200. Investigated rather than
+waved through — and the brief's expectation is what is wrong, not the deployment.
+
+`internal/agui/auth.go` `redirectToLogin` (lines 263-271) deliberately serves two different
+responses to an unauthenticated request: a **browser navigation** (`Accept: text/html` GET)
+gets a 302 to the login page, while an **API request** gets a bare 401, "so a fetch() gets a
+clean status instead of an HTML login page it cannot use." Bare `curl` sends `Accept: */*`, so
+it is classified as an API client and correctly receives the 401. Proven:
+
+```
+$ curl -s -o /dev/null -w "cockpit=%{http_code}\n" http://127.0.0.1:9080/
+cockpit=401                                                     # Accept: */*  → API path
+
+$ curl -s -o /dev/null -w "cockpit=%{http_code} redirect_to=%{redirect_url}\n" \
+    -H 'Accept: text/html,application/xhtml+xml' http://127.0.0.1:9080/
+cockpit=302 redirect_to=http://127.0.0.1:9080/login             # browser path
+
+$ curl -s -L -o /dev/null -w "cockpit_followed=%{http_code} final=%{url_effective}\n" \
+    -H 'Accept: text/html,application/xhtml+xml' http://127.0.0.1:9080/
+cockpit_followed=200 final=http://127.0.0.1:9080/login
+
+$ curl -s -i http://127.0.0.1:9080/login | head -5
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=utf-8
+Content-Length: 1678
+<!doctype html> ... (the Cockpit SPA shell)
+```
+
+**The Cockpit is reachable for the operator**: a real browser at `http://127.0.0.1:9080/` is
+redirected to `/login`, which serves the SPA shell with HTTP 200. This is the Authula guard
+(`AURA_WEB_AUTH_PROVIDER=authula`, WEB-02 GuardWebBind) working as designed — unrelated to the
+cutover and not caused by it. **Later tasks must send `-H 'Accept: text/html'` when probing
+browser routes, or authenticate first: a bare-curl 401 on `/` is not an outage.**
+
+### Final state
+
+```
+$ docker ps --format '{{.Names}}\t{{.Status}}'
+aura                Up 4 minutes (healthy)
+aura-tempo-1        Up 2 minutes (healthy)
+aura-prometheus-1   Up 2 minutes (healthy)
+aura-grafana-1      Up 2 hours (healthy)
+... (all other stack services healthy/up, unaffected)
+
+$ bash /d/Aura/scripts/observability_sidecar_check.sh; echo "EXIT=$?"
+observability sidecars reachable
+EXIT=0
+```
+
+**Live `aura` is at `93 / clean`. `aura.document_pipeline_stages` and
+`aura.document_pipeline_quarantine` both exist. Traces are provably flowing. The rollback dump
+was never used and remains intact.** The three preconditions every later task depends on are met.
