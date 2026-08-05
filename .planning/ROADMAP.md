@@ -10,7 +10,7 @@ her own bug report. This milestone is done when those lessons become unnecessary
 uses her memory as the oracle for that.
 
 Phase numbering continues from v2.0.0 (which closed at Phase 44) — this milestone is Phases
-45-54. All 72 v1 requirements from REQUIREMENTS.md map to exactly one of these 10 phases; the
+45-54. All 76 v1 requirements from REQUIREMENTS.md map to exactly one of these 10 phases; the
 v2 items (CTX-V2-01, CTX-V2-02, TOOL-V2-01, TOOL-V2-02) and the Out of Scope table are not
 scheduled here.
 
@@ -187,7 +187,7 @@ system prompt is regenerated to match exactly what's loaded — the manifest the
 becomes something it can actually hold in its head, safe against conversations and schedules
 that predate the change.
 **Depends on**: Phase 45 (ReplayPolicy vocabulary for newly merged/un-deferred specs), Phase 46 (the facade must collapse to the single `comms` slot first, since that slot is one of the 14 this phase sizes against), Phase 47 (shares the same native tool files; landing ceremony-strip first avoids double-touching them, and settles the ask_user/approval state before further tool-registry churn).
-**Requirements**: TOOL-01, TOOL-04, TOOL-06, TOOL-07, TOOL-11, SURF-01, SURF-06, SURF-07, COMPAT-01, COMPAT-03, AUTO-04
+**Requirements**: TOOL-01, TOOL-04, TOOL-06, TOOL-07, TOOL-11, TOOL-12, SURF-01, SURF-06, SURF-07, SURF-08, COMPAT-01, COMPAT-03, AUTO-04
 **Rationale**: Highest surface area of the milestone — every native tool file,
 `llm_agent_promote.go`'s promotion machinery, the registry boot-guard (ARCHITECTURE.md §4).
 Pitfall 1 recommends restoring a tool-choice-accuracy eval harness before un-deferring;
@@ -205,6 +205,16 @@ ships a wrong prompt. COMPAT-01 and COMPAT-03 protect specifically the renames/m
 phase makes: test against a REHYDRATED pre-flatten conversation fixture, not just a fresh
 one, and keep renamed tools rejecting with a clear message for at least one deploy cycle
 (Pitfall 4).
+**`tool_search` is infrastructure and stays loaded** — hermes states the rule outright:
+*"Core tools are never deferred. Always-load means always-load. No exceptions."* Without it the
+deferred tail is unreachable, so the 14 domain tools are really 15 loaded. SURF-08 puts the
+deferred roster's names and its three anti-failure sentences where the decision happens; TOOL-12
+lets a known name skip the search step. **The three-tool bridge (`tool_search`/`tool_describe`/
+`tool_call`) was evaluated and deliberately deferred to TOOL-V2-03** with a written trigger — it
+would insert an unwrapping step into the gateway's name-keyed risk classification and the
+idempotency key, which are the two paths Phase 45 is fixing, and its payoff scales with a catalog
+Aura does not have.
+
 **Success Criteria** (what must be TRUE):
   1. A fresh conversation's system prompt names exactly the tools actually loaded that turn — no phantom name for a deferred/unloaded tool, verified by reading the rendered prompt.
   2. Scheduling a task in a live conversation with a natural-language `when` ("next Tuesday at 9am") succeeds in one call, with no mutually exclusive time fields required.
@@ -247,7 +257,7 @@ already exhibited once.
 accurate — the eviction/budget decisions the model is already subject to are now visible to
 the operator and correct against the provider's real token count.
 **Depends on**: Nothing structurally (zero package overlap with Phases 45-49: touches only `internal/conversations` + `internal/runner`); sequenced after Phase 48 so its real-token budget (CTX-01) tunes against the FINAL tool-surface shape rather than one still being renumbered by the un-defer/merge work.
-**Requirements**: CTX-01, CTX-02, CTX-03, CTX-04, CTX-07, SURF-04
+**Requirements**: CTX-01, CTX-02, CTX-03, CTX-04, CTX-07, CTX-08, TOOL-13, SURF-04
 **Rationale**: `internal/conversations/context.go` is at 590/600 LOC — new work lands in
 sibling files (`context_summary.go`/`context_breakdown.go`), never appended to it. The
 cheapest, highest-value item in the whole milestone lives here: the real `prompt_tokens`

@@ -56,6 +56,11 @@
   | 12 | `task` | schedule, list, cancel |
   | 13 | `delegate` | swarm |
   | 14 | `comms` | calendar, mail, contacts, WhatsApp |
+  | + | `tool_search` | **infrastructure — mandatory.** Without it the deferred tail is unreachable; hermes states the rule as *"Core tools are never deferred. Always-load means always-load. No exceptions."* |
+
+  So **15 loaded**, not 14: fourteen domain tools plus the one that reaches everything else.
+  `read_tool_output` is loaded too until TOOL-13 deletes it, briefly making 16 — the same count
+  Claude Code ships, whose 16 likewise include plumbing (`Task`, `BashOutput`, `KillBash`).
 
   Everything else is deferred behind `tool_search`. Four tools leave the model's surface
   entirely because the host takes the step over: `send_file` (AUTO-01), `document_index`
@@ -73,6 +78,8 @@
 - [ ] **TOOL-08**: Indexing a produced file accepts its description in the same call
 - [ ] **TOOL-09**: Web search drops the parameters inferable from the query itself
 - [ ] **TOOL-10**: A fetch that returns a bot-block, consent wall, or empty extraction is reported as a failed read, never handed back as if it were the page
+- [ ] **TOOL-12**: A deferred tool whose exact name the model can already see is loaded without spending a search first — the listing makes the name visible, so discovery and loading are not forced into two round trips
+- [ ] **TOOL-13**: `read_tool_output` is deleted. A spilled or truncated result is written where `fs_read` can read it and the preview carries that path, so paging a large output uses the file tool that already exists. The L1 eviction pointer becomes a path for the same reason. Hermes has no such tool at all: *"the model can `read_file` to access the full output"*
 - [ ] **TOOL-11**: Finding files by name and searching their contents are one tool (`target: files | content`). **This reverses an earlier decision in this document.** The research established that five of six vendor harnesses — Claude Code included — keep them separate, and on that evidence the merge was parked pending telemetry. TOOL-01's hard cap overrules it: those vendors spend 16 slots on coding alone and can afford two, while Aura must fit documents, memory, comms, scheduling and delegation into the same budget. The cap forces the merge; the vendor evidence still says it is the weaker shape, and that tension is recorded rather than resolved
 
 ### Automation
@@ -109,6 +116,7 @@
 - [ ] **CTX-05**: Reasoning traces never reach a summarizer or fact extraction, so scratch-work conclusions cannot be preserved as facts
 - [ ] **CTX-06**: A spike measures, on real exported conversations with known-correct answers, whether retrieval over indexed history recovers what the ladder drops — against summarization, and against both — and its result decides which ships
 - [ ] **CTX-07**: When the context is over threshold and cannot be reduced, the reason is stated rather than the session simply failing or silently degrading
+- [ ] **CTX-08**: Tool output is bounded **per turn**, not only per result. After a round's results are collected, if their total exceeds the turn budget the largest are spilled to disk until it is under. Aura caps each result (`AURA_CONTEXT_PREVIEW_CAP_BYTES`) and has no aggregate: ten medium results in one parallel batch each clear the per-result cap and still overflow the turn — the exact shape of a swarm fan-out or a wide multi-tool round. Hermes calls this the third of three defenses and sets it at 200K chars
 
 ### Memory tiers
 
@@ -128,6 +136,7 @@
 - [ ] **SURF-05**: The obsolete `learned_lesson` facts and the `always-deliver-files` skill are retired once the defects they compensate for are fixed
 - [ ] **SURF-06**: A skill's references, templates and scripts are fetched **through the skill tool itself** — the first call returns the skill body plus a `linked_files` index, and a second call naming one of those paths returns it. The model never learns where skills are mounted because it never needs to (hermes `skill_view` pattern). This is what F-6 actually wanted: `ls /skills/` was a workaround for a tool that would not hand back its own attachments
 - [ ] **SURF-07**: Each preinstalled skill carries the operational detail its family needs — no skill is a stub beside siblings that are full playbooks
+- [ ] **SURF-08**: The deferred roster lists every deferred capability **by name**, and carries three statements hermes found necessary: that tools already loaded need no search; that a name appearing in the list must not be reported as unavailable; and that a generic tool — the terminal above all — must not be substituted for a specific one without searching first. The third is the exact failure of audit turn `[054]`, where she reached for `shell_exec` because the specific tool was not in front of her. The roster degrades deterministically when it will not fit — full listing, then names only, then one line per server — sorted so a single oversized server cannot cost a small one its listing
 
 ### Delegation
 
@@ -179,6 +188,10 @@ Deferred. Tracked, not in this roadmap.
 
 - **TOOL-V2-01**: Merge `fs_glob` and `fs_grep` — **blocked on telemetry**, see Out of Scope
 - **TOOL-V2-02**: Provider reasoning-block replay for models that require it for multi-turn tool use (not needed by DeepSeek via OpenRouter today)
+- **TOOL-V2-03**: **The three-tool bridge** — `tool_search` + `tool_describe` + `tool_call`, where a deferred tool is invoked THROUGH the bridge and never enters the manifest at all. Hermes' model; it makes the manifest constant regardless of catalog size (they carry ~3,300 Cloudflare tools whose names alone are ~32K tokens) and dissolves the promotion machinery outright — `activated`, `everLoaded`, `maxPromotedDeferredTools`, `promoteFromMeta`, `deriveActivated` all become dead code, and with them F-3's manifest-versus-callability confusion and the catalog-drift class hermes warns about (*"a session-keyed catalog that drifts out of sync with the live tool registry produces silent tool dropouts"* — which is what `deriveActivated` is).
+  **Deferred deliberately, not overlooked.** Two reasons: Aura's gateway classifies risk by tool NAME and fails closed, and the idempotency key is built from `tools.Spec` + args — behind a bridge both must unwrap, which inserts a step into precisely the two code paths Phase 45 is fixing bugs in. And the benefit scales with catalog size: after the `comms` facade Aura's deferred tail is ~10-15 tools, not thousands.
+  **Note it would NOT fix F-4** — `tool_describe` results accumulate in the transcript exactly as `tool_search` results do today; that is CTX-02's job either way.
+  **Trigger to reopen:** the deferred tail passes ~30 tools, or a self-extension-minted MCP server mounts a surface of Cloudflare's order.
 
 ## Out of Scope
 
@@ -224,6 +237,7 @@ Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-52).
 | CTX-05 | Phase 49 | Pending |
 | CTX-06 | Phase 53 | Pending |
 | CTX-07 | Phase 50 | Pending |
+| CTX-08 | Phase 50 | Pending |
 | HARN-01 | Phase 45 | Pending |
 | HARN-02 | Phase 45 | Pending |
 | HARN-03 | Phase 45 | Pending |
@@ -257,6 +271,7 @@ Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-52).
 | SURF-05 | Phase 54 | Pending |
 | SURF-06 | Phase 48 | Pending |
 | SURF-07 | Phase 48 | Pending |
+| SURF-08 | Phase 48 | Pending |
 | SWARM-01 | Phase 51 | Pending |
 | SWARM-02 | Phase 51 | Pending |
 | SWARM-03 | Phase 51 | Pending |
@@ -279,10 +294,12 @@ Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-52).
 | TOOL-09 | Phase 47 | Pending |
 | TOOL-10 | Phase 47 | Pending |
 | TOOL-11 | Phase 48 | Pending |
+| TOOL-12 | Phase 48 | Pending |
+| TOOL-13 | Phase 50 | Pending |
 
 **Coverage:**
-- v1 requirements: 72 total
-- Mapped to phases: 72
+- v1 requirements: 76 total
+- Mapped to phases: 76
 - Unmapped: 0 ✓
 
 ---
