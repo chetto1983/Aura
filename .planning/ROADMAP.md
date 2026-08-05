@@ -6,11 +6,11 @@ v2.1.0 HERMES-CLAUDE_PARITY brings the agent harness to parity with hermes-agent
 Claude Code. The organising insight, from auditing two live 2026-08-04 sessions: Aura's own
 long-term memory holds nine `learned_lesson` facts, eight of which are workarounds for a
 defective surface, six of which restate rules the system prompt already contains. She wrote
-her own bug report. This milestone is done when those lessons become unnecessary — Phase 52
+her own bug report. This milestone is done when those lessons become unnecessary — Phase 53
 uses her memory as the oracle for that.
 
 Phase numbering continues from v2.0.0 (which closed at Phase 44) — this milestone is Phases
-45-52. All 52 v1 requirements from REQUIREMENTS.md map to exactly one of these 8 phases; the
+45-54. All 69 v1 requirements from REQUIREMENTS.md map to exactly one of these 10 phases; the
 v2 items (CTX-V2-01, CTX-V2-02, TOOL-V2-01, TOOL-V2-02) and the Out of Scope table are not
 scheduled here.
 
@@ -40,10 +40,15 @@ call sites, not stylistic preference):
    + `internal/runner` only) and could run in parallel. Sequenced last among the technical
    phases so its real-token budget (CTX-01) tunes against the *final* manifest shape rather
    than one still being renumbered by Phase 48's un-defer/merges.
-6. **Phase 51 (the spike) needs Phase 49's retrieval mechanism** to exist so it can measure
+6. **Phase 53 (the spike) needs Phase 49's retrieval mechanism** to exist so it can measure
    "does retrieval recover what the ladder drops" against a prototyped summarization
    approach, on the real audit corpus already in hand.
-7. **Phase 52 (milestone exit) depends on everything** — it retires the compensating lessons
+7. **Phases 51-52 (delegation, steering) were added by operator decision on 2026-08-05**, after
+   reading hermes' delegation against Aura's. Both implement designs that already exist in the
+   repo and were never built: the durable swarm-messaging substrate (approved) and the
+   mid-turn steering study. Delegation precedes steering because the steering design
+   reconciles with the substrate in its own section 8, and both attach to the same run identity.
+8. **Phase 54 (milestone exit) depends on everything** — it retires the compensating lessons
    only once the defects they compensate for are actually fixed, and validates the whole
    milestone by replay, not by a green test suite (ACC-01).
 
@@ -56,7 +61,7 @@ harness is built; `internal/eval/` stays deleted.
 ## Phases
 
 **Phase Numbering:**
-- Continues from v2.0.0's Phase 44. This milestone is Phases 45-52.
+- Continues from v2.0.0's Phase 44. This milestone is Phases 45-54.
 - Decimal phases (45.1, 45.2, ...) would be urgent insertions between these, if needed.
 
 - [ ] **Phase 45: Harness correctness** - Idempotency replay fix and memory-write guardrails close the two headline audit defects
@@ -65,8 +70,10 @@ harness is built; `internal/eval/` stays deleted.
 - [ ] **Phase 48: Tool-surface un-defer and merges** - ~56 tools flatten toward ~26; the system prompt regenerates to match
 - [ ] **Phase 49: Memory tiers** - Short-term searchable retrieval and a PRD-amendment-gated reasoning tier
 - [ ] **Phase 50: Context ladder legibility** - Real token accounting, eviction, and per-category visibility
-- [ ] **Phase 51: Summarization spike** - Evidenced decision on retrieval vs. summarization vs. both
-- [ ] **Phase 52: Milestone exit** - Retire the compensating lessons and skill; validate parity live
+- [ ] **Phase 51: Durable delegation** - The approved swarm substrate gets built; workers get a real brief, real limits, and a turn that no longer blocks
+- [ ] **Phase 52: Mid-turn steering** - The operator can type into a running turn and redirect it at the next round boundary
+- [ ] **Phase 53: Summarization spike** - Evidenced decision on retrieval vs. summarization vs. both
+- [ ] **Phase 54: Milestone exit** - Retire the compensating lessons and skill; validate parity live
 
 ## Phase Details
 
@@ -198,7 +205,7 @@ record, not an implementation detail.
 persisted to the graph, retrieved only on demand, never summarized or harvested) is its own
 committed step, landing before any commit that touches reasoning-tier implementation, per
 CLAUDE.md's PRD-amendment-before-code rule. A short-term memory tier in ArcadeDB is settled,
-operator-decided scope regardless of Phase 51's spike outcome — Postgres stays the system of
+operator-decided scope regardless of Phase 53's spike outcome — Postgres stays the system of
 record for turns, ArcadeDB gets a derived, searchable projection (MEM-01). TOOL-05 lands here
 rather than with its flatten siblings in Phase 48 because it's the model-facing shape of
 this exact mechanism (MEM-02's unified retrieval call). HARN-05 (atomic multi-op memory
@@ -243,7 +250,91 @@ context can't be reduced) closes the ladder's failure-mode legibility gap.
   5. When context is over threshold and cannot be reduced further, the turn states the reason rather than failing silently or truncating without explanation.
 **Plans**: TBD
 
-### Phase 51: Summarization spike
+### Phase 51: Durable delegation
+**Goal**: A delegated worker gets a brief worth acting on and limits it can see, a worker can
+orchestrate workers of its own, and a top-level delegation stops holding the operator's turn
+hostage — results re-enter the conversation when the work is actually done.
+**Depends on**: Phase 48 (the worker registry is the parent's minus the delegation tool, so the flattened surface must be settled before workers are verified against it — SWARM-08), Phase 49 (SWARM-07 needs the memory and reasoning tiers to exist before deciding what concurrent workers may write into them), Phase 47 (SWARM-06's relay rides the `ask_user` shape that phase reworks).
+**Requirements**: SWARM-01, SWARM-02, SWARM-03, SWARM-04, SWARM-05, SWARM-06, SWARM-07, SWARM-08, SWARM-09, SWARM-10, SWARM-11
+**Rationale**: Operator decision, 2026-08-05, taken after reading hermes' `delegate_task`
+against Aura's `swarm_spawn`.
+
+**Do not design the durable half — it is already designed and approved.**
+`docs/superpowers/specs/2026-06-29-durable-swarm-messaging-design.md` (551 lines) specifies a
+Postgres-first substrate: claimable tasks, short leases (1m — crash-recovery latency, not task
+duration) extended by a heartbeat, fencing on `attempt_count` + `locked_by` so a zombie worker
+whose lease expired matches zero rows and gets a typed `ErrLeaseLost`, at-least-once delivery
+with idempotency keys, transient-vs-permanent retry with exponential backoff and full jitter,
+and an A2A lifecycle in which `waiting_input` is a non-terminal pause woken transactionally by
+the arriving reply. It was approved and never built. SWARM-03's background delegation is that
+substrate's first consumer (SWARM-09), not a second mechanism beside it — the same
+inventory-before-invention call that killed `make_document`. SWARM-11 lands its PRD amendment
+first. SWARM-10 (a tail-able live transcript per child) is hermes' answer to waiting blind for
+a consolidated report, and is what makes a backgrounded delegation observable at all. Three of these are cheap surface fixes against a defect Aura
+already documents in her own tool description (*"the worker cannot see the conversation, the
+user, the other workers, or anything outside the goal text you give it"*): SWARM-01 splits
+`goal` from `context`, SWARM-02 rebuilds the schema per manifest render so the model reads the
+operator's real `AURA_SWARM_*` caps instead of discovering them by failing, and SWARM-06 keeps
+the child-question relay alive through Phase 47's approval rework.
+
+SWARM-03/04 are the substantial change and are NOT a surface clean: today the parent blocks
+until every worker reports. Hermes makes top-level delegation background-by-default with the
+flag deprecated so the model cannot opt out, and keeps a depth>0 orchestrator synchronous
+because it needs its workers inside its own turn. **Inventory before invention applies hard
+here** — Aura already has machinery for "work happens later and reports back": the scheduler's
+`agent_job` runs a fresh agent turn at fire time, and AG-UI carries run-detach with
+Last-Event-ID resume (Amendment #90). Establish whether background delegation is a new
+execution path or a second caller of those before designing one.
+
+SWARM-05 opens nesting the PRD already designed (Slice 3's 2-deep cap) but the implementation
+forecloses by handing workers `Without(reg, "swarm_spawn")`. SWARM-07 is the one nobody asked
+for and everybody needs: AUTO-03 fires fact-capture inside every worker, so N concurrent
+workers writing one identity's graph is a concurrency surface that does not exist today and
+lands squarely on the memory correctness Phase 45 and 49 just established.
+**Success Criteria** (what must be TRUE):
+  1. Delegating in a live conversation returns Aura's turn immediately — the operator can keep talking, and the consolidated worker result arrives in the conversation when the work finishes, observable in `aura.conversation_turns`.
+  2. A worker that itself delegates receives its own workers' results within its turn — its delegation does not return early, verified in a live nested run.
+  3. A live worker brief carries its context separately from its goal, and the rendered tool schema shows the operator's configured concurrency and depth caps, not framework defaults.
+  4. A worker that needs the operator surfaces the question in the operator's channel, naming which worker raised it, and answering it resumes that worker's line of work.
+  5. After a live fan-out where several workers each learn something durable, the graph holds one correctly-attributed fact per worker — no duplicates, no lost writes, no fact attributed to the parent.
+**Plans**: TBD
+
+### Phase 52: Mid-turn steering
+**Goal**: The operator can type into a running turn and have it land — redirecting work at
+the next round boundary instead of waiting for the turn to end or killing it and starting
+over.
+**Depends on**: Phase 51 — the steering design reconciles with the durable swarm substrate in its own §8, and both touch the same run-identity and pause/resume machinery; building the substrate first means steering has one addressable run model to attach to rather than two.
+**Requirements**: STEER-01, STEER-02, STEER-03, STEER-04, STEER-05, STEER-06
+**Rationale**: Operator decision, 2026-08-05. The design study already exists
+(`docs/superpowers/specs/2026-07-23-mid-turn-steering-design.md`, 664 lines, its three
+operator-level open questions already resolved to "Claude Code parity") and is explicitly
+marked STUDY ONLY — no code, no amendment. STEER-06 lands that amendment first; §11 of the
+study is already an amendment checklist.
+
+The study's own finding is why this is a phase and not an epic: **the seam is unusually
+clean.** The agent loop already injects user-role messages mid-run on three established
+paths — recovery nudge, empty-response nudge, completion-gate feedback
+(`llm_agent.go:331`, `:439`, `llm_agent_finalize.go`) — so a steer is a fourth,
+operator-sourced instance of an existing in-loop pattern rather than a new message
+discipline. The runner persists turns incrementally per round
+(`runner_persist.go:187-204`, `:144-151`), so a steer appended at the drain point lands at
+the right `seq` with no in-flight-assistant-row conflict. And Amendment #90's RunRegistry
+already gives every live run an owner-scoped addressable identity plus a replay ring, which
+makes STEER-03's resume-exact echo close to free.
+
+Today the composer is dead while the agent runs: the thread lock returns 409 `ErrThreadBusy`
+and the client blocks send while `live_run_id` is set. STEER-02 is the guardrail that keeps
+this from becoming an escape hatch — a steer redirects the work, it does not buy more budget.
+STEER-04 exists because the failure mode of any queue-into-a-running-thing is silent loss.
+**Success Criteria** (what must be TRUE):
+  1. Typing a redirect while Aura is mid-task changes what she does next, live — observable as her next round acting on the new instruction, with no tool killed mid-execution.
+  2. That steer appears in the persisted conversation at the point it actually landed — reloading the thread or resuming the run shows it in the right place, not appended at the end.
+  3. Steering a run that has just finished returns the message to the operator to send normally — it is never silently swallowed.
+  4. A steered turn consumes no more steps or wallclock than an unsteered one — the budget is unchanged by steering.
+  5. The same steer works from a channel, not only the cockpit.
+**Plans**: TBD
+
+### Phase 53: Summarization spike
 **Goal**: The milestone has an evidenced answer, not a guess, to whether an LLM
 summarization rung is worth building on top of the short-term retrieval tier Phase 49
 shipped.
@@ -270,11 +361,11 @@ roadmap — it is this phase's deliverable.
   3. The decision explicitly states whether CTX-V2-01 is promoted into a future phase, backed by the measured numbers, not asserted without evidence.
 **Plans**: TBD
 
-### Phase 52: Milestone exit
+### Phase 54: Milestone exit
 **Goal**: The nine `learned_lesson` facts and the `always-deliver-files` skill — Aura's own
 bug report on herself — are retired, and a live replay of the audited scenarios proves the
 defects they compensated for are actually gone, not just believed gone.
-**Depends on**: Phases 45, 46, 47, 48, 49, 50, 51 — this is the milestone exit gate; retiring the compensating lessons presupposes the defects they compensate for are fixed, and the replay validates everything shipped, not one phase in isolation.
+**Depends on**: Phases 45-53 — this is the milestone exit gate; retiring the compensating lessons presupposes the defects they compensate for are fixed, and the replay validates everything shipped, not one phase in isolation.
 **Requirements**: SURF-05, ACC-03
 **Rationale**: This is the milestone's own stated finish line (PROJECT.md, REQUIREMENTS.md
 organising insight): the milestone is done when Aura's memory no longer needs to hold
@@ -292,7 +383,7 @@ the four named signals, never a green test suite.
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 45 → 46 → 47 → 48 → 49 → 50 → 51 → 52
+Phases execute in numeric order: 45 → 46 → 47 → 48 → 49 → 50 → 51 → 52 → 53 → 54
 (Phase 50 has no hard dependency on 45-49 and could run in parallel if desired; kept serial
 and last-among-technical-phases here so its token budget tunes against the final manifest.)
 
@@ -304,15 +395,17 @@ and last-among-technical-phases here so its token budget tunes against the final
 | 48. Tool-surface un-defer and merges | 0/TBD | Not started | - |
 | 49. Memory tiers | 0/TBD | Not started | - |
 | 50. Context ladder legibility | 0/TBD | Not started | - |
-| 51. Summarization spike | 0/TBD | Not started | - |
-| 52. Milestone exit | 0/TBD | Not started | - |
+| 51. Durable delegation | 0/TBD | Not started | - |
+| 52. Mid-turn steering | 0/TBD | Not started | - |
+| 53. Summarization spike | 0/TBD | Not started | - |
+| 54. Milestone exit | 0/TBD | Not started | - |
 
 ## Notes on conditional scope
 
-Phase 51's spike may promote `CTX-V2-01` (LLM summarization rung) from the v2 deferred list
+Phase 53's spike may promote `CTX-V2-01` (LLM summarization rung) from the v2 deferred list
 into a scheduled phase — this roadmap deliberately does NOT pre-schedule that phase, since
 its design, dependency set, and even which package it touches depend entirely on the spike's
 still-unknown outcome (SUMMARY.md's own research flag: "cannot be planned in detail until the
-spike concludes"). If promoted, add it as Phase 53 (or a decimal insertion if urgent) via
+spike concludes"). If promoted, add it as Phase 55 (or a decimal insertion if urgent) via
 `/gsd-phase`, carrying ARCHITECTURE.md §3's prepared design and Pitfall 3's mandatory
 anti-thrash/cooldown/fallback guards in the same phase, not a follow-up.

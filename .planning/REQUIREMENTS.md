@@ -13,6 +13,14 @@
 > Eight are workarounds for a defective surface, and six restate rules the system prompt
 > already contains. She wrote her own bug report. This milestone's job is to make those
 > lessons unnecessary — see **ACC-03**.
+>
+> **How anything here gets marked done — read this before checking a box.** Every
+> requirement below is verified by talking to the running Aura and reading what she did.
+> Not a unit test. Not an integration test. Not a smoke test. A green suite is not
+> evidence and never closes a box (**ACC-01**). The reason is in the audit that produced
+> this milestone: the replay defect that made her act on a stale result, report the wrong
+> conclusion, and write that conclusion into her own memory as fact was invisible to the
+> entire test suite. It surfaced because a human watched a real conversation go wrong.
 
 ## v1 Requirements
 
@@ -30,7 +38,7 @@
 
 - [ ] **TOOL-01**: The tools needed on most turns are callable without spending a `tool_search` round trip first
 - [ ] **TOOL-02**: The model is never asked to supply a parameter the host overwrites and discards
-- [ ] **TOOL-03**: A withheld destructive action is raised and resolved by the host; the model never relays a resume payload
+- [ ] **TOOL-03**: A withheld destructive action is raised and resolved by the host; the model never relays a resume payload. **Carve-out:** the swarm relay fields (`proxied_from_child_id`, `proxied_tool_call_id`) stay — a headless worker has already returned its report by the time the parent relays its question, so which worker asked is knowledge only the parent holds. Removing them would leave a worker's question unattributed or undeliverable
 - [ ] **TOOL-04**: Scheduling a task takes one natural-language `when` instead of five mutually exclusive time fields
 - [ ] **TOOL-05**: Recalling memory takes one question; the host chooses graph traversal or hybrid search and reports which it used
 - [ ] **TOOL-06**: Applying a skill is one call — reading a skill without applying it is no longer a separate action
@@ -93,9 +101,40 @@
 - [ ] **SURF-06**: A skill's bundled scripts are reachable from what the skill tool returns, without discovering the mount point by hand
 - [ ] **SURF-07**: Each preinstalled skill carries the operational detail its family needs — no skill is a stub beside siblings that are full playbooks
 
+### Delegation
+
+<!-- Hermes parity. Aura's swarm today: one goal string per worker, parent blocks, workers
+     cannot delegate further (their registry is Without(reg, "swarm_spawn")). -->
+
+- [ ] **SWARM-01**: A worker brief separates *what to accomplish* from *the context it needs* — file paths, error messages, constraints — instead of forcing both into one string
+- [ ] **SWARM-02**: The model sees the operator's actual concurrency and depth limits in the tool schema, rather than discovering them by failing
+- [ ] **SWARM-03**: A top-level delegation returns the turn immediately; its results re-enter the conversation when the work finishes, and the model cannot opt out of this
+- [ ] **SWARM-04**: A delegation issued *by a worker* runs synchronously — an orchestrating worker needs its own workers' results inside its own turn
+- [ ] **SWARM-05**: A worker can itself orchestrate, bounded by the configured depth — opening the nesting the PRD designed and the current registry-minus-`swarm_spawn` implementation forecloses
+- [ ] **SWARM-06**: A worker that needs the operator reaches them, attributed to the worker that asked — the relay survives the TOOL-03 approval rework
+- [ ] **SWARM-07**: Concurrent workers writing durable facts (AUTO-03) and reasoning traces (MEM-03) into one identity's graph neither corrupt nor duplicate, and each write names the worker that made it
+- [ ] **SWARM-08**: Workers reason over the same flattened tool surface the parent does, verified after the un-defer rather than assumed from registry inheritance
+- [ ] **SWARM-09**: Delegated work is durable — a task survives a process restart, is claimable from Postgres, and is never silently lost nor silently retried. Implements the approved-but-unbuilt [durable swarm messaging design](../docs/superpowers/specs/2026-06-29-durable-swarm-messaging-design.md); SWARM-03's background delegation is this substrate's first consumer, not a parallel mechanism
+- [ ] **SWARM-10**: The operator (and the parent) can watch a worker work — a tail-able live transcript per child, rather than waiting blind for the consolidated report
+- [ ] **SWARM-11**: The PRD amendment ratifying the durable swarm substrate is committed **before** any of its code
+
+### Steering
+
+<!-- Implements the design study at docs/superpowers/specs/2026-07-23-mid-turn-steering-design.md
+     (study only, no code, no amendment yet). Its own finding: the loop already injects
+     user-role messages mid-run on three paths, so a steer is a fourth instance of an
+     existing pattern. -->
+
+- [ ] **STEER-01**: The operator can type into a running turn; the message is injected at the next round boundary as ordinary user input, never interrupting a tool mid-execution
+- [ ] **STEER-02**: A steer does not extend the step or wallclock budget — steering redirects the work, it does not buy more of it
+- [ ] **STEER-03**: A steer is echoed on the wire and persisted where it belongs in sequence, so a reload, a resume, or a later replay shows it at the point it actually landed
+- [ ] **STEER-04**: A steer that arrives after its run has ended is returned to the operator to re-send as a normal turn, never silently swallowed
+- [ ] **STEER-05**: Steering works from the operator's channels, not only the cockpit
+- [ ] **STEER-06**: The PRD amendment ratifying mid-turn steering is committed **before** any of its code
+
 ### Acceptance
 
-- [ ] **ACC-01**: Every phase is validated by a real scenario run against the live stack and scored on the response and the artifact produced — a green test suite is not evidence of completion
+- [ ] **ACC-01**: **Mandatory, every requirement, no exceptions.** A requirement is verified only by a real conversation with the running Aura, scored on the answer she actually gave and the artifact or state she actually produced. A passing test — unit, integration, race, or smoke — is **not** evidence that a requirement is met. Tests keep the code honest; they say nothing about whether the agent behaves. Any requirement whose only evidence is a green suite is **not done**
 - [ ] **ACC-02**: Phase evidence is read from OpenTelemetry traces, `aura.tool_invocations`, `aura.conversation_turns` and `aura.context_rot_events` — no new eval harness is built
 - [ ] **ACC-03**: **Milestone exit gate.** With the nine `learned_lesson` facts and the `always-deliver-files` skill deleted, replaying the audited scenarios produces correct tool choice, automatic delivery and successful self-retrieval — and Aura does not re-learn any retired lesson
 
@@ -140,6 +179,23 @@ Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-52).
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
+| ACC-01 | Phase 45 | Pending |
+| ACC-02 | Phase 45 | Pending |
+| ACC-03 | Phase 54 | Pending |
+| AUTO-01 | Phase 47 | Pending |
+| AUTO-02 | Phase 47 | Pending |
+| AUTO-03 | Phase 49 | Pending |
+| AUTO-04 | Phase 48 | Pending |
+| COMPAT-01 | Phase 48 | Pending |
+| COMPAT-02 | Phase 47 | Pending |
+| COMPAT-03 | Phase 48 | Pending |
+| CTX-01 | Phase 50 | Pending |
+| CTX-02 | Phase 50 | Pending |
+| CTX-03 | Phase 50 | Pending |
+| CTX-04 | Phase 50 | Pending |
+| CTX-05 | Phase 49 | Pending |
+| CTX-06 | Phase 53 | Pending |
+| CTX-07 | Phase 50 | Pending |
 | HARN-01 | Phase 45 | Pending |
 | HARN-02 | Phase 45 | Pending |
 | HARN-03 | Phase 45 | Pending |
@@ -147,6 +203,41 @@ Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-52).
 | HARN-05 | Phase 49 | Pending |
 | HARN-06 | Phase 45 | Pending |
 | HARN-07 | Phase 45 | Pending |
+| MCP-01 | Phase 46 | Pending |
+| MCP-02 | Phase 46 | Pending |
+| MCP-03 | Phase 46 | Pending |
+| MCP-04 | Phase 46 | Pending |
+| MCP-05 | Phase 46 | Pending |
+| MEM-01 | Phase 49 | Pending |
+| MEM-02 | Phase 49 | Pending |
+| MEM-03 | Phase 49 | Pending |
+| MEM-04 | Phase 45 | Pending |
+| MEM-05 | Phase 45 | Pending |
+| MEM-06 | Phase 49 | Pending |
+| STEER-01 | Phase 52 | Pending |
+| STEER-02 | Phase 52 | Pending |
+| STEER-03 | Phase 52 | Pending |
+| STEER-04 | Phase 52 | Pending |
+| STEER-05 | Phase 52 | Pending |
+| STEER-06 | Phase 52 | Pending |
+| SURF-01 | Phase 48 | Pending |
+| SURF-02 | Phase 47 | Pending |
+| SURF-03 | Phase 47 | Pending |
+| SURF-04 | Phase 50 | Pending |
+| SURF-05 | Phase 54 | Pending |
+| SURF-06 | Phase 48 | Pending |
+| SURF-07 | Phase 48 | Pending |
+| SWARM-01 | Phase 51 | Pending |
+| SWARM-02 | Phase 51 | Pending |
+| SWARM-03 | Phase 51 | Pending |
+| SWARM-04 | Phase 51 | Pending |
+| SWARM-05 | Phase 51 | Pending |
+| SWARM-06 | Phase 51 | Pending |
+| SWARM-07 | Phase 51 | Pending |
+| SWARM-08 | Phase 51 | Pending |
+| SWARM-09 | Phase 51 | Pending |
+| SWARM-10 | Phase 51 | Pending |
+| SWARM-11 | Phase 51 | Pending |
 | TOOL-01 | Phase 48 | Pending |
 | TOOL-02 | Phase 47 | Pending |
 | TOOL-03 | Phase 47 | Pending |
@@ -157,47 +248,10 @@ Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-52).
 | TOOL-08 | Phase 47 | Pending |
 | TOOL-09 | Phase 47 | Pending |
 | TOOL-10 | Phase 47 | Pending |
-| AUTO-01 | Phase 47 | Pending |
-| AUTO-02 | Phase 47 | Pending |
-| AUTO-03 | Phase 49 | Pending |
-| AUTO-04 | Phase 48 | Pending |
-| COMPAT-01 | Phase 48 | Pending |
-| COMPAT-02 | Phase 47 | Pending |
-| COMPAT-03 | Phase 48 | Pending |
-| MCP-01 | Phase 46 | Pending |
-| MCP-02 | Phase 46 | Pending |
-| MCP-03 | Phase 46 | Pending |
-| MCP-04 | Phase 46 | Pending |
-| MCP-05 | Phase 46 | Pending |
-| CTX-01 | Phase 50 | Pending |
-| CTX-02 | Phase 50 | Pending |
-| CTX-03 | Phase 50 | Pending |
-| CTX-04 | Phase 50 | Pending |
-| CTX-05 | Phase 49 | Pending |
-| CTX-06 | Phase 51 | Pending |
-| CTX-07 | Phase 50 | Pending |
-| MEM-01 | Phase 49 | Pending |
-| MEM-02 | Phase 49 | Pending |
-| MEM-03 | Phase 49 | Pending |
-| MEM-04 | Phase 45 | Pending |
-| MEM-05 | Phase 45 | Pending |
-| MEM-06 | Phase 49 | Pending |
-| SURF-01 | Phase 48 | Pending |
-| SURF-02 | Phase 47 | Pending |
-| SURF-03 | Phase 47 | Pending |
-| SURF-04 | Phase 50 | Pending |
-| SURF-05 | Phase 52 | Pending |
-| SURF-06 | Phase 48 | Pending |
-| SURF-07 | Phase 48 | Pending |
-| ACC-01 | Phase 45 | Pending |
-| ACC-02 | Phase 45 | Pending |
-| ACC-03 | Phase 52 | Pending |
 
 **Coverage:**
-- v1 requirements: 52 total (corrected from the 51 stated at requirements-definition time — a
-  direct count of `- [ ] **<ID>**` lines in this file returns 52 unique requirement IDs across
-  the 9 categories; the count below was a miscount at definition time, not a scope change)
-- Mapped to phases: 52
+- v1 requirements: 69 total
+- Mapped to phases: 69
 - Unmapped: 0 ✓
 
 ---
