@@ -10,7 +10,7 @@ her own bug report. This milestone is done when those lessons become unnecessary
 uses her memory as the oracle for that.
 
 Phase numbering continues from v2.0.0 (which closed at Phase 44) — this milestone is Phases
-45-54. All 76 v1 requirements from REQUIREMENTS.md map to exactly one of these 10 phases; the
+45-54. All 77 v1 requirements from REQUIREMENTS.md map to exactly one of these 10 phases; the
 v2 items (CTX-V2-01, CTX-V2-02, TOOL-V2-01, TOOL-V2-02) and the Out of Scope table are not
 scheduled here.
 
@@ -134,7 +134,7 @@ losing the two independent guardrails (per-call result fencing, fail-closed risk
 classification) that never depended on that trust in the first place; calendar and WhatsApp
 collapse into a single always-loaded `comms` slot, replacing 28 raw tools.
 **Depends on**: Phase 45 — `applyMCPOperationMetadata` needs the new `ReplayPolicy` vocabulary from Phase 45 to assign anything other than the uniform default to a bridged tool.
-**Requirements**: MCP-01, MCP-02, MCP-03, MCP-04, MCP-05
+**Requirements**: MCP-01, MCP-02, MCP-03, MCP-04, MCP-05, TOOL-14
 **Rationale**: Trust-wrapper scoping and facade groundwork are the same code change
 (generalizing `bridgePolicy` into a namespace-keyed table), so they land together
 (ARCHITECTURE.md §2). **Operator decision, 2026-08-05:** wrapper removal is UNCONDITIONAL —
@@ -149,6 +149,21 @@ context-ladder work (Phase 50) — no package overlap. Verify explicitly that `t
 nonce-wrapped result-fencing and `mcpToolRisk`'s fail-closed classification are untouched by
 this change (MCP-02) — they are a separate mechanism from the description wrapper and a
 reviewer could otherwise assume removing one weakens the other.
+**TOOL-14 lands here, before Phase 48 needs it.** Tool tiering is PRD-declared, not an
+implementation detail: `prd.md:154` states the rule, each slice carries a "Deferred-tool
+partition", and two named amendments fix specific tools' tiers — A4 makes `read_tool_output`
+non-deferred (which TOOL-13 changes) and #44 makes `sandbox_exec` non-deferred with live
+evidence. Phase 46 is the earliest consumer because MCP-04 changes which MCP tools exist at
+all, so the amendment gates this phase and Phase 48 both.
+
+**Also settle the MCP-trust question here, by reading rather than assuming.** A targeted PRD
+search found the untrusted-data doctrine to be about RESULT fencing (`prd.md:1904`, `:2018` —
+*"its returned content is still fenced as untrusted reference data"*), which MCP-02 preserves,
+and found nothing establishing the description wrapper, which lives in `bridge.go` as an
+implementation defense. On that reading MCP-01/MCP-03 need no amendment. The search was
+targeted, not exhaustive: confirm it in this phase's discussion, and if the PRD does establish
+description wrapping somewhere, add a second amendment before touching `bridge.go`.
+
 **Success Criteria** (what must be TRUE):
   1. In a live conversation, the tool manifest / `tool_search` index shows calendar and WhatsApp reachable through a small curated action set, not the raw 28 underlying MCP tools.
   2. A calendar or WhatsApp mutating action (e.g., delete an event, send a message) still produces the fail-closed risk gate / approval flow live — the removal of the description wrapper has not weakened authorization.

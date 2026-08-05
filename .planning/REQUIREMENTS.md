@@ -87,6 +87,7 @@
   3. **GC contract.** `AURA_RUN_DIR` is swept and `reserve.go`'s `resultExpiredMarker` depends on that. A spill in the persistent `/workspace` either accumulates in the operator's own space or needs its own sweep.
 
   **Fallback if (1) proves expensive: keep the tool but make it deferred rather than loaded.** That recovers the manifest slot — the actual scarce resource under TOOL-01 — at near-zero cost, and paging a result is rare enough that one search round trip is acceptable. The L1 eviction pointer keeps working unchanged
+- [ ] **TOOL-14**: The PRD amendment ratifying the tool-surface tier change is committed **before** any of its code. It must (a) supersede amendment **A4** (2026-05-30, `prd.md:751,783`) by name, which declares `read_tool_output` a *"Builtin non-deferred"* with a byte-paging contract that TOOL-13 changes; (b) extend amendment **#44** (`prd.md:1371`), which already ratified `sandbox_exec` as *"non-deferred di proposito"* because a live E2E showed the model cramming a whole command line into one argument when it could not see the schema — *"il modello DEVE vedere lo schema"*; and (c) change the tiering axis stated at `prd.md:154` from **size** (*"Tool grandi → Deferred: true"*) to **frequency plus a hard count budget**. Covers TOOL-01, TOOL-13 and MCP-04. This is an extension of ratified reasoning, not a reversal of it
 - [ ] **TOOL-11**: Finding files by name and searching their contents are one tool (`target: files | content`). **This reverses an earlier decision in this document.** The research established that five of six vendor harnesses — Claude Code included — keep them separate, and on that evidence the merge was parked pending telemetry. TOOL-01's hard cap overrules it: those vendors spend 16 slots on coding alone and can afford two, while Aura must fit documents, memory, comms, scheduling and delegation into the same budget. The cap forces the merge; the vendor evidence still says it is the weaker shape, and that tension is recorded rather than resolved
 
 ### Automation
@@ -303,10 +304,11 @@ Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-52).
 | TOOL-11 | Phase 48 | Pending |
 | TOOL-12 | Phase 48 | Pending |
 | TOOL-13 | Phase 50 | Pending |
+| TOOL-14 | Phase 46 | Pending |
 
 **Coverage:**
-- v1 requirements: 76 total
-- Mapped to phases: 76
+- v1 requirements: 77 total
+- Mapped to phases: 77
 - Unmapped: 0 ✓
 
 ---
