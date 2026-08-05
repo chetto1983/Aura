@@ -79,7 +79,14 @@
 - [ ] **TOOL-09**: Web search drops the parameters inferable from the query itself
 - [ ] **TOOL-10**: A fetch that returns a bot-block, consent wall, or empty extraction is reported as a failed read, never handed back as if it were the page
 - [ ] **TOOL-12**: A deferred tool whose exact name the model can already see is loaded without spending a search first — the listing makes the name visible, so discovery and loading are not forced into two round trips
-- [ ] **TOOL-13**: `read_tool_output` is deleted. A spilled or truncated result is written where `fs_read` can read it and the preview carries that path, so paging a large output uses the file tool that already exists. The L1 eviction pointer becomes a path for the same reason. Hermes has no such tool at all: *"the model can `read_file` to access the full output"*
+- [ ] **TOOL-13**: `read_tool_output` stops occupying a loaded slot. Paging a large output should use the file tool that already exists — **neither reference harness has a bespoke paging tool**: hermes writes the spill to a file (*"the model can `read_file` to access the full output"*) and Claude Code's 16 tools have none either (`Read` takes `offset`/`limit`; `BashOutput` is for live background shells, not completed results). Two independent harnesses, no third way.
+
+  **Deleting it outright is the goal, and it is not trivial — three sub-problems, to be sized before committing to the full form:**
+  1. **Filesystem boundary.** Sidecars live host-side in `AURA_RUN_DIR` (absolute, swept on a timer); `fs_read` reads inside the sandbox container under `/workspace`. The spill must land somewhere the sandboxed reader can reach.
+  2. **Description debt.** `fs_read`'s own text says *"A large result pages to a sidecar you read with read_tool_output"* — every description naming the tool has to be rewritten with it (SURF-02 territory).
+  3. **GC contract.** `AURA_RUN_DIR` is swept and `reserve.go`'s `resultExpiredMarker` depends on that. A spill in the persistent `/workspace` either accumulates in the operator's own space or needs its own sweep.
+
+  **Fallback if (1) proves expensive: keep the tool but make it deferred rather than loaded.** That recovers the manifest slot — the actual scarce resource under TOOL-01 — at near-zero cost, and paging a result is rare enough that one search round trip is acceptable. The L1 eviction pointer keeps working unchanged
 - [ ] **TOOL-11**: Finding files by name and searching their contents are one tool (`target: files | content`). **This reverses an earlier decision in this document.** The research established that five of six vendor harnesses — Claude Code included — keep them separate, and on that evidence the merge was parked pending telemetry. TOOL-01's hard cap overrules it: those vendors spend 16 slots on coding alone and can afford two, while Aura must fit documents, memory, comms, scheduling and delegation into the same budget. The cap forces the merge; the vendor evidence still says it is the weaker shape, and that tension is recorded rather than resolved
 
 ### Automation
