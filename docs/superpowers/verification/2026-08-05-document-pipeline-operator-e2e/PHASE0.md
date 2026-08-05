@@ -749,3 +749,137 @@ unmodified by this fix-round, same as every prior round.
   post-migration assertions, and the fix-round's fresh, measured check that **both**
   pre-existing deferrable constraints survive the flush unaltered. **Task 3 may proceed
   with the cutover**, using the amended migration file and this rehearsal as evidence.
+
+## Task 2 — The observability healthchecks that lie
+
+**Verdict: FIXED.** `tempo` and `prometheus` share `aura`'s network namespace
+(`network_mode: "service:aura"`). Their own healthchecks probe loopback from inside that
+namespace, so after `docker restart aura` both processes stay attached to a dead namespace
+and keep reporting `healthy` while completely unreachable from everywhere else. Neither can
+detect its own orphaning: a loopback probe inside the dead namespace still passes, and
+`tempo`'s image is distroless (no shell, no wget — `exec: "sh": executable file not found in
+$PATH`), so it cannot even run a `CMD-SHELL` network test. `grafana` is the one container
+that sits outside that namespace, has a shell, and already depends on both — so the
+reachability assertion moved there.
+
+### Step 1 — the check script
+
+Created `scripts/observability_sidecar_check.sh` (verbatim per plan), executable, asserting
+both sidecars from outside the namespace via `docker exec aura-grafana-1 wget … aura:3200/ready`
+and `… aura:9090/-/ready`.
+
+### Step 2 — reproduce the false green (baseline)
+
+```
+$ bash /d/Aura/scripts/observability_sidecar_check.sh
+observability sidecars reachable
+baseline exit=0
+
+$ docker restart aura >/dev/null; echo exit=$?
+exit=0
+
+$ docker inspect aura-tempo-1 aura-prometheus-1 --format '{{.Name}} {{.State.Status}} {{.State.Health.Status}}'
+/aura-tempo-1 running healthy
+/aura-prometheus-1 running healthy
+
+$ bash /d/Aura/scripts/observability_sidecar_check.sh; echo "check exit=$?"
+wget: can't connect to remote host (172.19.0.11): Connection refused
+tempo unreachable at aura:3200/ready
+wget: can't connect to remote host (172.19.0.11): Connection refused
+prometheus unreachable at aura:9090/-/ready
+check exit=1
+```
+
+Docker's own verdict (`running healthy`/`running healthy`) and the external script
+(`tempo unreachable`, `prometheus unreachable`, exit 1) disagree — that disagreement is the
+defect. Confirmed live, matching the plan's stated measurement exactly.
+
+Note: on the very first, pre-restart invocation (before `MSYS_NO_PATHCONV=1` was exported for
+this Git Bash session), the script's own `/dev/null` argument was mangled by MSYS path
+conversion into the Windows null device (`wget: can't open 'nul': Permission denied`) and a
+concurrent tempo compaction cycle returned one transient `503`. Both were session/timing
+artifacts, not the defect under test, and disappeared on retry; every reproduction quoted
+above and below ran with `MSYS_NO_PATHCONV=1` exported.
+
+### Step 3 — the fix
+
+`compose.yaml`: `grafana`'s `healthcheck.test` replaced with a `CMD-SHELL` chain that probes
+its own `/api/health`, then `aura:3200/ready`, then `aura:9090/-/ready` — all three must
+succeed. `tempo` and `prometheus`'s `test:` lines are **unchanged**; a one-line (multi-line)
+comment was added above each pointing at grafana's healthcheck as the reachability authority,
+so a future reader does not "fix" them into another false green.
+
+### Step 4 — restore and verify agreement
+
+```
+$ docker compose --profile observability up -d --no-deps --force-recreate tempo prometheus
+$ docker compose --profile observability up -d --no-deps --force-recreate grafana
+# waited for grafana's healthcheck to leave `starting` (start_period 20s)
+$ bash /d/Aura/scripts/observability_sidecar_check.sh; echo "check exit=$?"
+observability sidecars reachable
+check exit=0
+$ docker inspect aura-grafana-1 --format 'grafana health={{.State.Health.Status}}'
+grafana health=healthy
+```
+
+Both authorities agree: reachable, exit 0, grafana `healthy`.
+
+### Step 5 — prove the new healthcheck catches the orphaning
+
+```
+$ docker restart aura >/dev/null
+```
+
+`grafana`'s healthcheck runs at `interval: 15s` with `retries: 12` — i.e. Docker requires 12
+**consecutive** failures before flipping the reported status to `unhealthy`, roughly 180s of
+sustained failure, not the ~60s the plan's polling loop budgets. Deviation from the plan:
+extended the wait loop past the specified 12×5s to observe the actual transition, polling
+`{{.State.Health.Status}}` and `{{.State.Health.FailingStreak}}`:
+
+```
+poll 1: grafana health=healthy failingStreak=6
+poll 2: grafana health=healthy failingStreak=7
+...
+poll 8: grafana health=healthy failingStreak=11
+poll 9: grafana health=unhealthy failingStreak=12
+
+$ docker inspect aura-grafana-1 --format 'grafana health={{.State.Health.Status}} failingStreak={{.State.Health.FailingStreak}}'
+grafana health=unhealthy failingStreak=12
+
+$ bash /d/Aura/scripts/observability_sidecar_check.sh; echo "check exit=$?"
+wget: can't connect to remote host (172.19.0.11): Connection refused
+tempo unreachable at aura:3200/ready
+wget: can't connect to remote host (172.19.0.11): Connection refused
+prometheus unreachable at aura:9090/-/ready
+check exit=1
+```
+
+Every intermediate healthcheck log entry during the failing streak showed the same
+`Connection refused` — the mechanism was working correctly throughout, it simply needed more
+wall-clock time than the plan's loop budgeted before Docker's own status field caught up.
+Before this change Docker reported everything healthy while the sidecars were unreachable;
+now Docker's own health status (`unhealthy`) and the external script (exit 1) **agree**. The
+fix works.
+
+### Step 6 — restored working state
+
+```
+$ docker compose --profile observability up -d --no-deps --force-recreate tempo prometheus
+$ docker compose --profile observability up -d --no-deps --force-recreate grafana
+# waited for grafana healthcheck to leave `starting`
+$ bash /d/Aura/scripts/observability_sidecar_check.sh; echo "check exit=$?"
+observability sidecars reachable
+check exit=0
+
+$ docker ps --format '{{.Names}}\t{{.Status}}'
+aura-grafana-1      Up 27 seconds (healthy)
+aura-prometheus-1   Up 28 seconds (healthy)
+aura-tempo-1        Up 28 seconds (healthy)
+aura                Up 3 minutes (healthy)
+... (all other stack services healthy/up, unaffected)
+```
+
+Stack left green: script exits 0, grafana `healthy`, tempo and prometheus `healthy` and
+actually reachable this time. **Task 3's cutover and any later `document_pipeline_e2e.sh`
+restart-mid-run assertion can rely on `scripts/observability_sidecar_check.sh` as ground
+truth — Docker's per-sidecar health flags alone are no longer sufficient, by design.**

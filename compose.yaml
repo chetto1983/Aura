@@ -1087,6 +1087,11 @@ services:
     cpus: ${AURA_PROMETHEUS_CPUS:-0.50}
     pids_limit: 256
     healthcheck:
+      # Loopback-only: this probe runs INSIDE aura's network namespace, so after
+      # `docker restart aura` it keeps passing against a dead namespace nobody else
+      # can reach. Reachability is asserted from outside by grafana's healthcheck
+      # (see below) and scripts/observability_sidecar_check.sh — do not "fix" this
+      # one into a false green.
       test: ["CMD", "/bin/wget", "--spider", "-q", "http://127.0.0.1:9090/-/ready"]
       interval: 15s
       timeout: 5s
@@ -1113,6 +1118,13 @@ services:
     cpus: ${AURA_TEMPO_CPUS:-0.50}
     pids_limit: 256
     healthcheck:
+      # Config-file validation only, not a network probe: the image is distroless
+      # (no shell, no wget — measured 2026-08-05), so it cannot run a CMD-SHELL
+      # reachability test at all, and it would keep passing against a dead
+      # namespace after `docker restart aura` regardless. Reachability is asserted
+      # from outside by grafana's healthcheck (see below) and
+      # scripts/observability_sidecar_check.sh — do not "fix" this one into a false
+      # green.
       test: ["CMD", "/tempo", "-config.file=/etc/tempo/tempo.yml", "-config.verify=true"]
       interval: 30s
       timeout: 10s
@@ -1146,7 +1158,14 @@ services:
     cpus: ${AURA_GRAFANA_CPUS:-0.50}
     pids_limit: 256
     healthcheck:
-      test: ["CMD", "/usr/bin/wget", "--spider", "-q", "http://127.0.0.1:3000/api/health"]
+      # Also asserts the two sidecars that share aura's network namespace. Neither can
+      # detect its own orphaning: after aura is recreated their processes stay alive
+      # attached to a dead namespace, and a loopback probe from inside it still passes
+      # (measured 2026-08-05). tempo is distroless and cannot run a shell test at all.
+      # Grafana is outside that namespace and already depends on both, so it is where
+      # the reachability assertion belongs — and a dashboard without its datasources is
+      # genuinely degraded, not merely reporting on someone else's problem.
+      test: ["CMD-SHELL", "wget -q -T 3 -O /dev/null http://127.0.0.1:3000/api/health && wget -q -T 3 -O /dev/null http://aura:3200/ready && wget -q -T 3 -O /dev/null http://aura:9090/-/ready"]
       interval: 15s
       timeout: 5s
       retries: 12
