@@ -484,7 +484,39 @@ fails with SQLSTATE 55006. The FKs 0093 itself adds at lines 384-397 are not the
 they run after line 290 and never execute before the failure. Full detail of the prior
 diagnosis's error is in the correction note inline above.
 
-### The fix — one line, inserted before line 290
+> **CORRECTION (Task 1b fix-round, 2026-08-05): the inventory above was not exhaustive.**
+> The paragraph above, and Attempt 3's assertion 5 below, name and check only
+> `documents_active_version_id_fkey` — inferred from the failing table name in the error
+> message, not from an exhaustive scan of the schema. An exhaustive scan
+> (`SELECT conname, conrelid::regclass, condeferrable, condeferred FROM pg_constraint WHERE
+> contype='f' AND condeferrable;`) finds **two** pre-existing deferrable FKs at version 92,
+> both added in `0025_document_control_plane.up.sql`:
+>
+> ```
+>              conname              |   table_name    | condeferrable | condeferred
+> ----------------------------------+-----------------+---------------+-------------
+>  documents_active_version_id_fkey | documents       | t             | t
+>  storage_objects_version_id_fkey  | storage_objects  | t             | t
+> ```
+>
+> `storage_objects_version_id_fkey` is not exploitable here — verified, not assumed: 0093's
+> only `UPDATE aura.storage_objects` (line 182-183) sets `status` alone
+> (`SET status = CASE WHEN deleted_at IS NULL THEN 'live' ELSE 'delete_pending' END;`), never
+> `version_id`. PostgreSQL's referencing-side RI check trigger only queues a pending event
+> when the FK's own column(s) change, so this UPDATE queues nothing against it regardless of
+> deferral. `SET CONSTRAINTS ALL IMMEDIATE;` (`ALL`, not a named constraint) would flush it
+> in any case, so the fix is unaffected. See "Fix-round — exhaustive inventory measured, not
+> reasoned" below for the fresh rehearsal that checks both constraints' flags post-migration.
+
+### The fix
+
+The single `SET CONSTRAINTS ALL IMMEDIATE;` statement below was already present, uncommitted,
+in the working tree's `0093_document_pipeline_convergence.up.sql` when Task 1b began — a
+prior session had applied it but not committed. Task 1b's job was to verify it matched the
+diagnosis, then independently execute the rehearsal end to end (fresh restore, fresh image
+build/grep check, fresh `aura db migrate` run, all post-migration assertions, live-untouched
+check) and commit. The diff below documents what the file contains relative to the version
+committed before this fix, not an edit authored in this task:
 
 ```diff
  WHERE status IN ('draft', 'processing', 'archived');
@@ -558,6 +590,12 @@ migrate exit=0
 | `documents_identity_source_live_idx` present | present | present | PASS |
 | `documents_active_version_id_fkey` deferrable/deferred | `t \| t` (unaltered) | `t \| t` | PASS |
 
+**Note (added in the fix-round below):** the fifth assertion above checks only
+`documents_active_version_id_fkey`. It does not cover `storage_objects_version_id_fkey`,
+the second pre-existing deferrable FK found by the exhaustive inventory. See "Fix-round —
+exhaustive inventory measured, not reasoned" immediately below for the corrected assertion
+that checks both, run fresh against a new restore.
+
 Live confirmed still at `92 | f` after the re-rehearsal (this task never migrates live).
 Rehearsal database dropped, in-container dump copy removed; host dump
 (`D:\tmp\aura-backups\aura-pre0093-2026-08-05.dump`, 537,381 bytes) retained for Task 3,
@@ -567,16 +605,147 @@ Full command transcript, including the `MSYS_NO_PATHCONV=1` gotcha hit while re-
 the dump into the container, is in
 `.superpowers/sdd/2026-08-05-document-pipeline-operator-e2e/task-1b-report.md`.
 
+## Fix-round — exhaustive inventory measured, not reasoned (2026-08-05)
+
+Review of Tasks 1+1b approved the fix and its execution but flagged that the
+deferrable-constraint inventory above was not exhaustive (it named one FK, inferred from
+the failing table in the error message, not from a schema-wide scan) and that assertion 5
+checked only that one. This section re-runs the rehearsal fresh — new restore, new migrate,
+new assertions — to measure both constraints, not reason about them. The SQL in
+`0093_document_pipeline_convergence.up.sql` was **not** changed for this round.
+
+### Exhaustive pre-migration inventory, against a fresh restore
+
+```
+$ docker cp /d/tmp/aura-backups/aura-pre0093-2026-08-05.dump aura-postgres:/tmp/aura-pre0093-fix2.dump
+(exit 0)
+$ docker exec aura-postgres psql -U aura -d postgres -c "DROP DATABASE IF EXISTS aura_0093_rehearsal;"
+NOTICE:  database "aura_0093_rehearsal" does not exist, skipping
+DROP DATABASE
+$ docker exec aura-postgres psql -U aura -d postgres -c "CREATE DATABASE aura_0093_rehearsal OWNER aura;"
+CREATE DATABASE
+$ docker exec aura-postgres pg_restore -U aura -d aura_0093_rehearsal /tmp/aura-pre0093-fix2.dump
+(exit 0)
+
+$ docker exec aura-postgres psql -U aura -d aura_0093_rehearsal -c "SELECT version, dirty FROM public.schema_migrations;"
+ version | dirty
+---------+-------
+      92 | f
+(1 row)
+
+$ docker exec aura-postgres psql -U aura -d aura_0093_rehearsal -c "SELECT conname, conrelid::regclass AS table_name, condeferrable, condeferred FROM pg_constraint WHERE contype='f' AND condeferrable ORDER BY conname;"
+             conname              |   table_name    | condeferrable | condeferred
+----------------------------------+-----------------+---------------+-------------
+ documents_active_version_id_fkey | documents       | t             | t
+ storage_objects_version_id_fkey  | storage_objects  | t             | t
+(2 rows)
+```
+
+Faithful copy (`92 | f`, matching baseline) with both pre-existing deferrable FKs confirmed
+present, measured directly from `pg_constraint` with `contype='f' AND condeferrable` (no
+table name assumed) — same result as the exhaustive scan against live shown in the
+correction note above. Both originate in `0025_document_control_plane.up.sql`
+(`documents_active_version_id_fkey` at its line 79-83, `storage_objects_version_id_fkey` at
+its line 85-90 — confirmed by `grep -n` against that file).
+
+### Why the second constraint is harmless (verified, not assumed)
+
+```
+$ grep -n -A1 "^UPDATE aura.storage_objects$" internal/db/migrations/0093_document_pipeline_convergence.up.sql
+182:UPDATE aura.storage_objects
+183-SET status = CASE WHEN deleted_at IS NULL THEN 'live' ELSE 'delete_pending' END;
+```
+
+0093's only `UPDATE` against `aura.storage_objects` sets `status` alone — it never touches
+`version_id`, the column `storage_objects_version_id_fkey` constrains. PostgreSQL's
+referencing-side RI check trigger fires only when the FK's own column(s) actually change, so
+this UPDATE queues no pending event against that constraint regardless of its deferral mode.
+`SET CONSTRAINTS ALL IMMEDIATE;` flushes `ALL` pending events (not one named constraint), so
+it would cover this FK too if it ever did queue one. The fix does not depend on this
+constraint being harmless — it is unconditionally correct either way — but the record should
+say so measured, not implied.
+
+### Migrate and assert both constraints survive the flush unaltered
+
+```
+$ set -a; . /d/Aura/.env; set +a
+$ docker run --rm --network aura_default \
+  -e AURA_DB_MIGRATE_URL="postgres://aura_migrate:REDACTED@postgres:5432/aura_0093_rehearsal?sslmode=disable" \
+  -e AURA_DB_URL="postgres://aura_app:REDACTED@postgres:5432/aura_0093_rehearsal?sslmode=disable" \
+  -e AURA_DB_BOOTSTRAP_URL="postgres://aura:REDACTED@postgres:5432/aura_0093_rehearsal?sslmode=disable" \
+  -e AURA_CONFIG_DIR=/tmp \
+  --entrypoint sh aura:local -lc 'aura db migrate'
+
+operation-key: c9b0fabe-35a0-4610-aaa3-b4e9669328da
+ok: 1 migration(s) applied
+migrate exit=0
+
+$ docker exec aura-postgres psql -U aura -d aura_0093_rehearsal -c "SELECT version, dirty FROM public.schema_migrations;"
+ version | dirty
+---------+-------
+      93 | f
+(1 row)
+
+$ docker exec aura-postgres psql -U aura -d aura_0093_rehearsal -c \
+  "SELECT conname, conrelid::regclass AS on_table, condeferrable, condeferred FROM pg_constraint WHERE contype='f' AND condeferrable ORDER BY 2,1;"
+                 conname                 |     on_table       | condeferrable | condeferred
+-----------------------------------------+--------------------+---------------+-------------
+ document_versions_storage_identity_fkey | document_versions  | t             | t
+ documents_active_version_id_fkey        | documents          | t             | t
+ documents_active_version_identity_fkey  | documents          | t             | t
+ storage_objects_version_id_fkey         | storage_objects    | t             | t
+ storage_objects_version_identity_fkey   | storage_objects    | t             | t
+(5 rows)
+```
+
+`93 | f` — clean, as before. The query now returns five rows because 0093 itself adds three
+more `DEFERRABLE INITIALLY DEFERRED` FKs (the `*_identity_fkey` constraints, lines 384-404)
+in addition to the two pre-existing ones. Both pre-existing constraints —
+`documents_active_version_id_fkey` and `storage_objects_version_id_fkey` — are present in
+the post-migration result with `condeferrable=t, condeferred=t`, unaltered: **the flush did
+not change either constraint's declared deferrability, measured for both, not just one.**
+
+### Cleanup
+
+```
+$ docker exec aura-postgres psql -U aura -d postgres -c "DROP DATABASE aura_0093_rehearsal;"
+DROP DATABASE
+$ docker exec aura-postgres rm -f /tmp/aura-pre0093-fix2.dump   # MSYS_NO_PATHCONV=1
+(exit 0)
+$ docker exec aura-postgres psql -U aura -d postgres -c "SELECT datname FROM pg_database WHERE datname LIKE 'aura%';"
+                    datname
+------------------------------------------------
+ aura_phase4_migrate_drill
+ aura
+ aura_migratesteps_drill
+ aura_pipeline_0a0469f3cd4a4e00889fba07b1f89582
+(4 rows)
+
+$ docker exec aura-postgres psql -U aura -d aura -c "SELECT version, dirty FROM public.schema_migrations;"
+ version | dirty
+---------+-------
+      92 | f
+(1 row)
+```
+
+`aura_0093_rehearsal` dropped again. Live confirmed still `92 | f` — unmigrated and
+unmodified by this fix-round, same as every prior round.
+
 ## Summary for Task 3
 
-- **Rollback dump:** verified faithful and restorable — `D:\tmp\aura-backups\aura-pre0093-2026-08-05.dump` (537,381 bytes). Reused unchanged across Attempts 2 and 3.
+- **Rollback dump:** verified faithful and restorable — `D:\tmp\aura-backups\aura-pre0093-2026-08-05.dump` (537,381 bytes). Reused unchanged across Attempts 2 and 3 and the fix-round.
 - **Image:** `aura:local` rebuilt 2026-08-05 (Task 1b), confirmed via `grep -a` byte search to embed both `0093_document_pipeline_convergence` and the `SET CONSTRAINTS ALL IMMEDIATE` fix.
 - **0093 verdict: FIXED — reaches `93 / clean` on a faithful copy of live data.** The
   original failure (`pq: cannot ALTER TABLE "documents" because it has pending trigger
-  events (55006)`) was caused by a pre-existing `DEFERRABLE INITIALLY DEFERRED` FK on
-  `aura.documents` (`documents_active_version_id_fkey`), not by anything 0093 itself adds.
-  A single `SET CONSTRAINTS ALL IMMEDIATE;` inserted immediately before the `ALTER TABLE
-  aura.documents ... SET NOT NULL` block (after the last `UPDATE aura.documents` in the
-  file) flushes the pending RI checks and resolves it — verified by Attempt 3's clean
-  `93 | f` result and all five post-migration assertions passing. **Task 3 may proceed
+  events (55006)`) was caused by pre-existing `DEFERRABLE INITIALLY DEFERRED` FKs on
+  `aura.documents` and `aura.storage_objects` — an exhaustive scan found **two**
+  (`documents_active_version_id_fkey`, `storage_objects_version_id_fkey`), both added in
+  `0025_document_control_plane.up.sql`; the second queues no event here because 0093 never
+  writes the column it constrains, but the fix does not depend on that — `SET CONSTRAINTS
+  ALL IMMEDIATE;` flushes both unconditionally. A single `SET CONSTRAINTS ALL IMMEDIATE;`
+  inserted immediately before the `ALTER TABLE aura.documents ... SET NOT NULL` block
+  (after the last `UPDATE aura.documents` in the file) flushes the pending RI checks and
+  resolves it — verified by Attempt 3's and the fix-round's clean `93 | f` results, all
+  post-migration assertions, and the fix-round's fresh, measured check that **both**
+  pre-existing deferrable constraints survive the flush unaltered. **Task 3 may proceed
   with the cutover**, using the amended migration file and this rehearsal as evidence.
