@@ -7,13 +7,15 @@
 # Reachability must therefore be asserted from OUTSIDE the namespace.
 set -Eeuo pipefail
 probe() {
-  # -O - (stdout), not -O /dev/null: on Git Bash / MSYS the /dev/null argument gets
-  # rewritten to the Windows "nul" device before it reaches docker exec, which
-  # busybox wget inside the container then fails to open ("Permission denied") —
-  # a false negative with the stack fully healthy. Writing to stdout instead and
-  # discarding it on the host side needs no path argument, so there is nothing for
-  # MSYS to mangle; behaves identically on Linux (CI, WSL) and Windows Git Bash.
-  docker exec aura-grafana-1 wget -q -T 5 -O - "$1" >/dev/null 2>&1
+  # -O - (stdout) rather than -O /dev/null: MSYS rewrites the /dev/null argument to
+  # `nul` before it reaches busybox wget in the container, which then fails to open it
+  # and reports a false unreachable. `2>&1 >/dev/null` captures wget's diagnostic while
+  # discarding the response body — order matters, the reverse discards both.
+  local err
+  if ! err="$(docker exec aura-grafana-1 wget -q -T 5 -O - "$1" 2>&1 >/dev/null)"; then
+    [[ -n "$err" ]] && printf '  %s\n' "$err" >&2
+    return 1
+  fi
 }
 fail=0
 probe "http://aura:3200/ready"    || { echo "tempo unreachable at aura:3200/ready"; fail=1; }
