@@ -579,13 +579,30 @@ docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" aura-postgres psql -U aura_app -d
 
 - [ ] **Step 3: Assert the regression guard**
 
-The live database currently holds **3 `ready` documents behind 1 `document_versions` row** — the exact shape the recorder bug produced. The new upload must not add to that count.
+Before 0093 the database held **3 `ready` documents behind 1 `document_versions` row** — the exact shape the recorder bug produced. 0093 reclassified those three as `failed / original_unavailable`, because they had `active_version_id = NULL` and were already unopenable. So the post-cutover baseline is:
 
-```bash
-docker exec aura-postgres psql -U aura -d aura -c "SELECT count(*) AS version_rows FROM aura.document_versions;"
+```
+documents:          failed 3, deleted 1     <-- NOTHING is `ready`
+document_versions:  ready 1                 <-- belongs to the DELETED document
 ```
 
-Expected: **2**, up from the measured baseline of 1. A `ready` document with no version row is a CP1 failure and blocks everything downstream.
+Any document reaching `ready` from here is necessarily this upload, and it must bring its own version row with it.
+
+Read as `aura_app`, not `aura`. `aura` is `rolsuper` with `rolbypassrls`, so it counts **every tenant's** rows — harmless while one identity exists, and silently wrong the moment Task 12 provisions two.
+
+```bash
+set -a; . /d/Aura/.env; set +a
+docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" aura-postgres psql -U aura_app -d aura -t -A -F'|' -c \
+  "BEGIN; SELECT set_config('app.current_identity','dc98a3ee-e38e-4288-8d64-27ce4c9cde65',true); \
+   SELECT count(*) AS version_rows FROM aura.document_versions; \
+   SELECT count(*) FILTER (WHERE d.status='ready') AS ready_docs, \
+          count(*) FILTER (WHERE d.status='ready' AND v.id IS NULL) AS ready_without_version \
+   FROM aura.documents d LEFT JOIN aura.document_versions v ON v.document_id = d.id; COMMIT;"
+```
+
+Expected: `version_rows = 2` (up from 1), `ready_docs = 1`, and **`ready_without_version = 0`**.
+
+That last column is the actual regression guard. A count going up proves a row was written; only `ready_without_version = 0` proves the recorder bug has not recurred, which is the defect this whole checkpoint exists to catch.
 
 - [ ] **Step 4: Operator uploads the long-window files**
 
