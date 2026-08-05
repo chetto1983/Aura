@@ -20,7 +20,7 @@ import (
 // Posture: replace DB-invalid NUL bytes, cap the durable footprint, then redact
 // over the capped string (so an over-cap secret tail is already truncated away,
 // and the redactor scans a bounded input). The caps mirror the existing preview
-// discipline: the result preview cap is AURA_CONTEXT_PREVIEW_CAP_BYTES=2048 (internal/agent), so
+// discipline: the result preview cap is AURA_CONTEXT_PREVIEW_CAP_BYTES (internal/agent), so
 // result_preview keeps that ceiling here; args_raw gets a larger 8 KiB ceiling
 // because a legitimate multi-tool argument JSON (a long shell script, a write
 // payload) is bulkier than a result preview yet still bounded for the ledger.

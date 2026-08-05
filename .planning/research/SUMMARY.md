@@ -426,3 +426,159 @@ Acceptance criteria, regardless of which arm(s) ship: adversarial fixtures for t
 consecutive low-savings passes), freeze loop (forced 429), an orphaned tool_call/tool_result pair,
 and the ghost-skill marker surviving a summarization pass; a green suite with only happy-path
 tests has not exercised hermes' hardest-won lessons (Pitfall 3's "Looks Done But Isn't" checklist).
+
+### Cross-cutting: milestone-wide acceptance policy (applies to every phase above)
+
+SETTLED (operator decision): every phase closes only after a real, live end-to-end evaluation
+of Aura's actual response against a known-correct outcome on the running stack. A green test
+suite is explicitly NOT evidence of phase completion.
+
+Gap this collides with: internal/eval/, the harness this policy needs, is deleted
+(PITFALLS.md Pitfall 1, .planning/codebase/CONCERNS.md). Phase 47 already needs a version of
+this for tool-choice-accuracy; Phase 49's spike needs a version of this for
+recall/continuity-correctness; the acceptance policy needs it for every other phase besides. The
+roadmapper should decide whether to stand up a shared minimal internal/eval-tagged harness as
+an early, explicit deliverable that later phases reuse, or require each phase to carry its own
+narrow live-validation script against the audit corpus, but should not leave this implicit, since
+at least three phases in this roadmap independently need some form of "run against real data,
+check a known-correct answer."
+
+### Phase Ordering Rationale
+
+- Phases 45 to 46 to 47 are a strict dependency chain on the ReplayPolicy/trust-classification
+  vocabulary, traced by ARCHITECTURE.md section 4 to specific function call sites
+  (applyMCPOperationMetadata, the registry boot-guard); this is not a stylistic preference, it
+  is "phase N+1's spec-correctness depends on a type phase N introduces."
+  Phase 48 has zero package overlap with 45-47 and can run in parallel; the only reason to
+  sequence it last if serial is that it tunes better against a settled tool manifest.
+- Phase 49 (spike) must precede Phase 50 because Phase 50's file structure, dependency set, and
+  even which package (internal/conversations versus the ArcadeDB memory bridge) is touched depend
+  entirely on the spike's outcome; scheduling Phase 50's implementation details before Phase 49
+  concludes would be planning against an unresolved variable.
+- The ask_user trim (Phase 47) sharing state with Phase 45's idempotency/reservation machinery
+  is the one place two "separate" phases actually touch the same code; FEATURES.md flags this
+  explicitly (internal/agent/idempotency_operation.go, internal/gateway/reserve.go) and the
+  roadmapper should either land them in the same phase or make the ordering (45 before 47's
+  ask_user piece) explicit rather than risk two uncoordinated changes racing on the same state
+  machine.
+
+### Research Flags
+
+Needs deeper research during planning (/gsd-plan-phase --research-phase N):
+- Phase 47 (tool-surface flatten): the task.when natural-language/cron/RFC-3339 parser is
+  net-new (no existing Aura dependency); the memory_write atomic multi-op transactional path
+  through the ArcadeDB memory bridge is genuinely new transactional semantics, not a schema
+  widening.
+- Phase 49 (spike): by construction a research/measurement phase; cannot be scoped as a
+  normal implementation phase since its output determines Phase 50's shape. The methodology for
+  "known-correct answer" on the audit corpus needs to be designed, not assumed.
+- Phase 50 (summarization rung): cannot be planned in detail until Phase 49 concludes; once
+  it does, if the LLM-summarization arm is selected, re-read PITFALLS.md Pitfall 3's five
+  enumerated failure modes (each with a hermes issue number) as the phase's own acceptance-test
+  design input.
+
+Phases with standard, well-documented patterns (skip research-phase):
+- Phase 45 (F-1/F-2 fix): ARCHITECTURE.md section 1 traces every relevant call site by
+  file:line; the fix is a new ReplayPolicy enum value plus a branch in already-small,
+  already-tested files (reserve.go at 305/600 LOC, spec.go at 205/600 LOC).
+- Phase 46 (MCP trust/facade): bridge_memory.go (69 LOC) is a working, in-tree precedent for
+  the exact generalization needed; this is pattern-extension, not novel design, though the
+  trust-scoping DECISION itself (Pitfall 2) needs an explicit design note in the phase spec so it
+  is reviewable on its own diff, not folded silently into the flatten.
+- Phase 48 (context cheap wins): C-4 is pure wiring of two already-built pieces; C-2/C-3/C-6
+  are small, deterministic, well-precedented changes with existing test patterns to extend.
+
+## Confidence Assessment
+
+| Area | Confidence | Notes |
+|------|------------|-------|
+| Stack | HIGH | Every recommendation grounded in either hermes-agent file:line reads, Aura codebase file:line reads, or OpenRouter's own current documentation fetched directly on 2026-08-05. Zero new dependencies to evaluate reduces version-compatibility risk to none. |
+| Features | HIGH for tool-granularity consensus and approval-flow patterns (cross-verified across 6 independent vendor tool sets plus Aura's own code); MEDIUM for the exact param-count targets in TOOL-SIMPLIFICATION.md (one engineer's proposal, checked against the reference collection rather than re-derived from scratch). |
+| Architecture | HIGH; every claim grounded in a direct read of the named file:line; explicitly no training-data assertion about this codebase's behavior is used unverified; this is a same-codebase integration question, not an ecosystem survey. |
+| Pitfalls | HIGH for anything with a file:line citation from Aura's own codebase (5 of 6 pitfalls). MEDIUM/LOW explicitly flagged for one sub-claim only: the 15-20 tools in active rotation lower-band degradation figure comes from uncontrolled industry write-ups (Zylos, MachineLearningMastery), not a published methodology; used only to bracket a range, not as the primary claim (the primary claim, Anthropic's 30-50 threshold, is HIGH confidence, official, cross-checked against an existing Aura memory note). |
+
+Overall confidence: HIGH. The one recurring soft spot across all four documents is not a
+confidence problem but a MEASUREMENT problem: several recommendations (tool-choice accuracy
+post-flatten, whether the spike's chosen summarization arm actually recovers dropped context) are
+well-reasoned but literally unmeasurable today because the harness that would measure them
+(internal/eval/) does not exist. This is a gap to schedule, not a reason to distrust the
+research.
+
+### Gaps to Address
+
+- internal/eval/ is deleted (.planning/codebase/CONCERNS.md, cited independently by
+  PITFALLS.md Pitfall 1). At least three phases in this roadmap (47, 49, and the cross-cutting
+  acceptance policy) need some form of live-data measurement against a known-correct outcome, and
+  none of them currently has a harness to do it with. Address by deciding, at roadmap-creation
+  time, whether to stand up a shared minimal harness as an explicit early deliverable or require
+  each phase to carry its own narrow validation script.
+- Whether the transport-retry path reuses the same tool_call_id or mints a fresh one is
+  UNVERIFIED (PITFALLS.md Pitfall 5). This single fact determines whether Phase 45's fix
+  direction (adding tool_call_id to the idempotency key, versus the recommended per-tool-class
+  ReplayPolicy differentiation) is safe or catastrophic. Must be established empirically before
+  the phase's implementation approach is finalized, not assumed either way.
+- The next free migration slot is deliberately not hardcoded anywhere; ARCHITECTURE.md notes
+  it was 0093_document_pipeline_convergence as of 2026-08-05 research date, but every phase must
+  re-derive it via "ls internal/db/migrations/ | tail -1" at landing time per project convention;
+  research is explicit this number will drift before Phase 50 lands.
+- Anti-thrash streak persistence (restart-durable DB columns versus Runner-scoped in-memory) is an
+  open phase-design call, not resolved by research (STACK.md "Stack Patterns by Variant");
+  flag for whoever specs Phase 50.
+- C-6's category naming is a phase-design decision, not a given; STACK.md explicitly warns
+  against treating "copy hermes' 8 categories verbatim" as settled; Aura's manifest shape differs
+  (no separate rules or subagent-definitions block; memory is already a distinct field).
+- The spike's (Phase 49) own measurement methodology does not yet exist; "known-correct
+  answer" for a conversational-recall/continuity question needs to be defined before the spike can
+  be run against the audit corpus; this is itself the first task of that phase, not a
+  precondition external to it.
+- PROJECT.md's Active requirements list does not yet name the short-term-memory tier or the
+  reasoning tier as scope items; these are net-new additions from the operator's
+  post-briefing decisions and were not present when the four researchers were briefed. The
+  roadmapper should ensure REQUIREMENTS.md and PROJECT.md are updated to carry these two items
+  explicitly, since the four research files (written before the decisions landed) treat
+  summarization as a single-arm design and do not by themselves surface the three-tier memory
+  model or the PRD-amendment-#91 requirement.
+
+## Sources
+
+### Primary (HIGH confidence)
+- internal/** (extensive file:line citations across agent, agent/tools, agent/mcptools,
+  gateway, idempotency, conversations, runner, llm, llm/openai_compat, mcp, arcadedb, cron,
+  db/queries, db/sqlc) - read directly by all four researchers, current codebase, ground truth.
+- D:/tmp/hermes-agent/agent/context_compressor.py, context_breakdown.py,
+  D:/tmp/hermes-agent/tools/file_tools.py, memory_tool.py, clarify_tool.py, cronjob_tools.py -
+  read directly, primary reference-implementation source, cited by line number throughout.
+- D:/tmp/system-prompts-and-models-of-ai-tools/ (Anthropic, Amp, Cursor Prompts, Windsurf,
+  Warp.dev, Devin AI) - 6 independent vendor tool-schema sources, read directly.
+- D:/Aura/docs/audit/live-conversations-2026-08-04/ (FINDINGS.md, TOOL-SIMPLIFICATION.md,
+  CONTEXT-MANAGEMENT.md) - the motivating audit for this entire milestone, F-1 through F-10,
+  C-1 through C-8, read directly by all four researchers.
+- D:/Aura/.planning/codebase/ (ARCHITECTURE.md, STRUCTURE.md, CONCERNS.md) and
+  .planning/PROJECT.md - read directly for milestone scope, constraints, and the confirmed
+  deletion of internal/eval/.
+- OpenRouter Usage Accounting cookbook
+  (https://openrouter.ai/docs/cookbook/administration/usage-accounting) - fetched live
+  2026-08-05, confirms native-tokenizer counts and streaming delivery semantics.
+- Anthropic Tool search tool documentation
+  (https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool) - fetched,
+  the 30-50-tool degradation threshold, cross-checked against an existing Aura memory note
+  independently citing the same number.
+
+### Secondary (MEDIUM confidence)
+- TOOL-SIMPLIFICATION.md's exact param-count targets - one engineer's proposal, validated in
+  parts (A1, A2/A3, B2, C1, C2, C3, C5, C4) and challenged in one part (B1, the fs_glob/fs_grep
+  merge) by FEATURES.md's cross-vendor comparison.
+
+### Tertiary (LOW confidence, used only to bracket a range, not as a primary claim)
+- Zylos - Tool-Augmented LLM Agents: Production Architecture Patterns
+  (https://zylos.ai/research/2026-04-16-tool-augmented-llm-agents-production-architecture/)
+  and MachineLearningMastery - The Complete Guide to Tool Selection in AI Agents
+  (https://machinelearningmastery.com/the-complete-guide-to-tool-selection-in-ai-agents/) -
+  no published controlled methodology; used only to note a "15-20 tools in active rotation"
+  lower-band degradation report, well below Anthropic's own 30-50 hard wall.
+
+---
+Research completed: 2026-08-05
+Ready for roadmap: yes, with Phase 49 (spike) explicitly flagged as a non-standard,
+output-determines-next-phase step, and the eval-harness gap flagged as a cross-cutting
+prerequisite the roadmapper must schedule, not assume away.

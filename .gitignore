@@ -94,3 +94,6 @@ artifacts/*
 .audit-build-*
 # transient conversation store written by cmd/aura tests
 cmd/aura/conversations/
+# subagent-driven-development scratch: ledger, task briefs, review packages
+.superpowers/
+docs/audit/live-conversations-*
