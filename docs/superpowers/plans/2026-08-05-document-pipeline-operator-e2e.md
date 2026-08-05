@@ -140,6 +140,157 @@ git commit -m "Rehearse migration 0093 against a copy of live data"
 
 ---
 
+### Task 1b: Fix 0093's pending-trigger-event failure and re-rehearse
+
+Task 1's rehearsal did its job and **0093 failed against real data**:
+
+```
+pq: cannot ALTER TABLE "documents" because it has pending trigger events (55006)
+```
+
+**Root cause, measured — and it is not what the first diagnosis said.** There *is* a
+pre-existing `DEFERRABLE INITIALLY DEFERRED` foreign key on `aura.documents`, live at version
+92:
+
+```
+documents_active_version_id_fkey  documents → document_versions  condeferrable=t  condeferred=t
+```
+
+Every one of 0093's `UPDATE aura.documents` statements (lines 102–288) queues a deferred RI
+check event for it. Deferred events stay pending until COMMIT, and
+`ALTER TABLE aura.documents … SET NOT NULL` at line 290 then refuses.
+
+The FKs 0093 adds at lines 384–397 are **not** the cause — they are added after the failure
+point and never execute.
+
+Two facts make the fix a single line:
+
+- **No DML follows line 290.** Everything from there to the end of the migration is DDL, so
+  one flush placed immediately before it covers the entire remainder.
+- **0093 never writes `active_version_id`** — lines 155, 168 and 173 only read it. The flush
+  therefore validates data that was already valid at COMMIT under version 92.
+
+Amending 0093 in place remains legitimate: live is at `92`, and the migration is applied
+nowhere. That licence ends the moment Task 3 runs.
+
+**Files:**
+- Modify: `internal/db/migrations/0093_document_pipeline_convergence.up.sql` (insert one statement before the `ALTER TABLE aura.documents` at line 290)
+- Modify: `docs/superpowers/verification/2026-08-05-document-pipeline-operator-e2e/PHASE0.md`
+
+**Interfaces:**
+- Consumes: the dump at `D:\tmp\aura-backups\aura-pre0093-2026-08-05.dump` (already proven restorable by Task 1).
+- Produces: a 0093 that reaches `93 / clean` on a faithful copy of live data. Task 3 depends entirely on this.
+
+- [ ] **Step 1: Insert the flush**
+
+Immediately before the `ALTER TABLE aura.documents` block that begins with
+`ALTER COLUMN source_kind SET NOT NULL` (line 290), and after the `UPDATE aura.documents`
+that remaps `draft`/`processing`/`archived`, insert:
+
+```sql
+-- aura.documents carries a DEFERRABLE INITIALLY DEFERRED FK
+-- (documents_active_version_id_fkey), so every UPDATE above queues an RI check event that
+-- stays pending until COMMIT, and ALTER TABLE refuses to run while any are outstanding
+-- (SQLSTATE 55006). Flush them here. No DML follows this point, so one flush covers the
+-- rest of the migration.
+SET CONSTRAINTS ALL IMMEDIATE;
+```
+
+Change nothing else in the file.
+
+- [ ] **Step 2: Restore a faithful copy**
+
+Ownership must be preserved — a `--no-owner --role=aura` restore strips `aura_migrate`'s
+ownership of `schema_migrations` and the migration fails a permission check before running
+any DDL. That is a rehearsal-harness defect, not a migration defect, and it already cost one
+attempt.
+
+```bash
+docker cp /d/tmp/aura-backups/aura-pre0093-2026-08-05.dump aura-postgres:/tmp/aura-pre0093.dump
+docker exec aura-postgres psql -U aura -d postgres -c "DROP DATABASE IF EXISTS aura_0093_rehearsal;"
+docker exec aura-postgres psql -U aura -d postgres -c "CREATE DATABASE aura_0093_rehearsal OWNER aura;"
+docker exec aura-postgres pg_restore -U aura -d aura_0093_rehearsal /tmp/aura-pre0093.dump
+```
+
+- [ ] **Step 3: Verify the copy is faithful before trusting it**
+
+```bash
+docker exec aura-postgres psql -U aura -d aura_0093_rehearsal -c "SELECT version, dirty FROM public.schema_migrations;"
+docker exec aura-postgres psql -U aura -d aura_0093_rehearsal -c "SELECT status, count(*) FROM aura.documents GROUP BY 1 ORDER BY 1;"
+docker exec aura-postgres psql -U aura -d aura_0093_rehearsal -c "SELECT conname, condeferrable, condeferred FROM pg_constraint WHERE conname='documents_active_version_id_fkey';"
+```
+
+Expected: `92 | f`; `deleted | 1` and `ready | 3`; the FK present and `t | t`. If the FK is
+absent or not deferred, the copy does not reproduce the failure and the rehearsal proves
+nothing.
+
+- [ ] **Step 4: Rebuild the image so it carries the amended migration**
+
+The migration is embedded in the binary. An unbuilt image runs the old SQL.
+
+```bash
+docker compose build aura
+docker run --rm --entrypoint sh aura:local -lc \
+  'grep -ac "SET CONSTRAINTS ALL IMMEDIATE" /usr/local/bin/aura'
+```
+
+Expected: `>= 1`. A `0` means the amended file is not in the binary and every later step is
+meaningless.
+
+- [ ] **Step 5: Migrate the copy**
+
+```bash
+set -a; . /d/Aura/.env; set +a
+docker run --rm --network aura_default \
+  -e AURA_DB_MIGRATE_URL="postgres://aura_migrate:${POSTGRES_PASSWORD}@postgres:5432/aura_0093_rehearsal?sslmode=disable" \
+  -e AURA_DB_URL="postgres://aura_app:${POSTGRES_PASSWORD}@postgres:5432/aura_0093_rehearsal?sslmode=disable" \
+  -e AURA_DB_BOOTSTRAP_URL="postgres://aura:${POSTGRES_PASSWORD}@postgres:5432/aura_0093_rehearsal?sslmode=disable" \
+  -e AURA_CONFIG_DIR=/tmp \
+  --entrypoint sh aura:local -lc 'aura db migrate'
+```
+
+Expected: exit 0.
+
+If it fails on a *different* error, that is a new finding — capture it verbatim and report.
+Do not stack a second speculative fix on top of this one; one diagnosed cause per round.
+
+- [ ] **Step 6: Assert the rehearsed end state**
+
+```bash
+docker exec aura-postgres psql -U aura -d aura_0093_rehearsal -c "SELECT version, dirty FROM public.schema_migrations;"
+docker exec aura-postgres psql -U aura -d aura_0093_rehearsal -c \
+  "SELECT count(*) AS docs, count(*) FILTER (WHERE source_kind IS NULL) AS null_kind, count(*) FILTER (WHERE source_key IS NULL) AS null_key FROM aura.documents;"
+docker exec aura-postgres psql -U aura -d aura_0093_rehearsal -c \
+  "SELECT to_regclass('aura.document_pipeline_stages') AS stages, to_regclass('aura.document_pipeline_quarantine') AS quarantine;"
+docker exec aura-postgres psql -U aura -d aura_0093_rehearsal -c \
+  "SELECT indexname FROM pg_indexes WHERE schemaname='aura' AND indexname='documents_identity_source_live_idx';"
+docker exec aura-postgres psql -U aura -d aura_0093_rehearsal -c \
+  "SELECT conname, condeferrable, condeferred FROM pg_constraint WHERE conname='documents_active_version_id_fkey';"
+```
+
+Expected: `93 | f`; `docs=4, null_kind=0, null_key=0`; both `to_regclass` non-null; the
+partial index present; and the deferrable FK still `t | t` — the flush must not have left it
+altered.
+
+- [ ] **Step 7: Confirm live is still untouched**
+
+```bash
+docker exec aura-postgres psql -U aura -d aura -c "SELECT version, dirty FROM public.schema_migrations;"
+```
+
+Expected: `92 | f`. This task never migrates live.
+
+- [ ] **Step 8: Drop the rehearsal database and commit**
+
+```bash
+docker exec aura-postgres psql -U aura -d postgres -c "DROP DATABASE aura_0093_rehearsal;"
+docker exec aura-postgres rm -f /tmp/aura-pre0093.dump
+git add internal/db/migrations/0093_document_pipeline_convergence.up.sql docs/superpowers/verification/2026-08-05-document-pipeline-operator-e2e/PHASE0.md
+git commit -m "Flush deferred FK events before 0093 tightens documents"
+```
+
+---
+
 ### Task 2: Replace the observability healthchecks that lie
 
 Measured 2026-08-05: after `docker restart aura`, both `tempo` and `prometheus` report `running`/`healthy` while unreachable (`wget http://aura:3200` → connection refused). Tempo's healthcheck validates a *config file* and never touches the network; prometheus's probes loopback from **inside its own orphaned namespace**. Both pass while dead to everything else. That is a falsely-green signal, and in Phase 2 it would blind the backend lens at exactly the lease-reclaim assertion.
