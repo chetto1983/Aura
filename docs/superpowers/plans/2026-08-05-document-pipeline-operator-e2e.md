@@ -189,44 +189,88 @@ bash /d/Aura/scripts/observability_sidecar_check.sh; echo "check exit=$?"
 
 Expected, and this **is** the test: Docker prints `running healthy` for both, while the script prints `tempo unreachable` / `prometheus unreachable` and exits 1. Docker's verdict and reality disagree — that disagreement is the defect being fixed.
 
-- [ ] **Step 3: Point the compose healthchecks at reachability**
+- [ ] **Step 3: Make grafana's healthcheck assert the sidecars are reachable**
 
-In `compose.yaml`, replace the `tempo` healthcheck test:
+Neither sidecar can detect its own orphaning. A loopback probe runs *inside* the dead
+namespace and passes; and `tempo`'s image is **distroless — no shell, no wget** (measured:
+`exec: "sh": executable file not found in $PATH`), which is precisely why its healthcheck
+validates a config file. A `CMD-SHELL` test on tempo would fail permanently and block
+grafana's `depends_on: tempo → service_healthy`.
+
+Grafana is the one container that can see across the boundary: it has a shell, it sits
+outside aura's namespace, and it already depends on both. Give it the assertion.
+
+In `compose.yaml`, replace the `grafana` healthcheck test:
 
 ```yaml
     healthcheck:
-      # Config validation passes while the process is attached to a dead network
-      # namespace after aura is recreated, so it cannot detect the only failure
-      # that matters. Probe the port this container actually serves on instead.
-      test: ["CMD", "/tempo", "-config.file=/etc/tempo/tempo.yml", "-config.verify=true"]
+      test: ["CMD", "/usr/bin/wget", "--spider", "-q", "http://127.0.0.1:3000/api/health"]
 ```
 
 with:
 
 ```yaml
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -T 3 -O /dev/null http://127.0.0.1:3200/ready || exit 1"]
+      # Also asserts the two sidecars that share aura's network namespace. Neither can
+      # detect its own orphaning: after aura is recreated their processes stay alive
+      # attached to a dead namespace, and a loopback probe from inside it still passes
+      # (measured 2026-08-05). tempo is distroless and cannot run a shell test at all.
+      # Grafana is outside that namespace and already depends on both, so it is where
+      # the reachability assertion belongs — and a dashboard without its datasources is
+      # genuinely degraded, not merely reporting on someone else's problem.
+      test: ["CMD-SHELL", "wget -q -T 3 -O /dev/null http://127.0.0.1:3000/api/health && wget -q -T 3 -O /dev/null http://aura:3200/ready && wget -q -T 3 -O /dev/null http://aura:9090/-/ready"]
 ```
 
-and the `prometheus` healthcheck stays a loopback probe but gains the same shell form so a namespace teardown surfaces as a failure rather than a hang:
+Leave the `tempo` and `prometheus` healthchecks **unchanged**. Add a one-line comment above
+each pointing at grafana's as the reachability authority, so the next reader does not
+"improve" them into a false green.
 
-```yaml
-    healthcheck:
-      test: ["CMD-SHELL", "/bin/wget -q -T 3 -O /dev/null http://127.0.0.1:9090/-/ready || exit 1"]
-```
+The external `scripts/observability_sidecar_check.sh` stays, and remains what Phase 0 step 6
+and the restart hook call — a script gives an actionable message and does not depend on
+grafana's own state. The two agree by construction; they probe the same endpoints.
 
-Note honestly what this does and does not buy: a loopback probe still runs inside the orphaned namespace, so it can still report healthy while unreachable from outside. The compose change reduces hangs and false greens on genuine process failure; **the external check in step 1 remains the authority**, and it is what Phase 0 and the restart hook call. Do not delete it in favour of the healthcheck.
-
-- [ ] **Step 4: Restore the sidecars and verify the check goes green**
+- [ ] **Step 4: Restore the sidecars and verify both authorities agree**
 
 ```bash
 docker compose --profile observability up -d --no-deps --force-recreate tempo prometheus
+docker compose --profile observability up -d --no-deps --force-recreate grafana
+bash /d/Aura/scripts/observability_sidecar_check.sh; echo "check exit=$?"
+docker inspect aura-grafana-1 --format 'grafana health={{.State.Health.Status}}'
+```
+
+Expected: `observability sidecars reachable`, exit 0, and grafana `healthy`.
+
+- [ ] **Step 5: Prove the new healthcheck actually catches the orphaning**
+
+This is the test that the fix works, and it is the same reproduction as step 2 — but now
+Docker's own verdict must change too.
+
+```bash
+docker restart aura >/dev/null
+# grafana's healthcheck interval is 15s; allow two cycles before judging
+for _ in $(seq 1 12); do
+  status="$(docker inspect aura-grafana-1 --format '{{.State.Health.Status}}')"
+  [[ "$status" == "unhealthy" ]] && break
+  sleep 5
+done
+docker inspect aura-grafana-1 --format 'grafana health={{.State.Health.Status}}'
 bash /d/Aura/scripts/observability_sidecar_check.sh; echo "check exit=$?"
 ```
 
-Expected: `observability sidecars reachable`, exit 0.
+Expected: grafana `unhealthy` **and** the script exits 1. Before this change Docker reported
+everything healthy while the sidecars were unreachable; now the two agree.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Restore working state**
+
+```bash
+docker compose --profile observability up -d --no-deps --force-recreate tempo prometheus
+docker compose --profile observability up -d --no-deps --force-recreate grafana
+bash /d/Aura/scripts/observability_sidecar_check.sh; echo "check exit=$?"
+```
+
+Expected: exit 0.
+
+- [ ] **Step 7: Commit**
 
 ```bash
 git add scripts/observability_sidecar_check.sh compose.yaml
