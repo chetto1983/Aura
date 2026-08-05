@@ -87,6 +87,9 @@ func (p *DocumentProcessor) ProcessAsset(ctx context.Context, asset Asset) (Resu
 	if err != nil {
 		return Result{}, err
 	}
+	if record.ReplayedActive {
+		return replayedAssetResult(asset, record), nil
+	}
 	published, err := p.Pipeline.Run(ctx, documents.PipelineRunRequest{
 		Record: record, AssetID: asset.ID, JobID: claim.ID, WorkerID: claim.LockedBy,
 		LeaseGeneration: claim.LeaseGeneration, Title: record.Document.Title,
@@ -108,6 +111,34 @@ func (p *DocumentProcessor) ProcessAsset(ctx context.Context, asset Asset) (Resu
 			"passage_count":              published.PassageCount,
 		},
 	}, nil
+}
+
+// replayedAssetResult settles an upload whose bytes are ALREADY the document's published
+// version: the passages, embeddings and projections behind them exist, so re-running the
+// pipeline would spend a Docling conversion — up to fifteen minutes — to arrive back here.
+//
+// Only ReplayedActive earns this. Every other outcome, a replay onto a version still
+// processing included, falls through to Pipeline.Run, whose beginStage resumes from the
+// stage ledger exactly as it does on a first upload.
+//
+// It deliberately omits pipeline_activation_job_id. That key is the ingestion handler's
+// signal that the activation statement already settled the job (asset_processing_handler.go);
+// nothing settled it here, so the key's absence is what lets the queue worker close the job
+// itself instead of leaving it leased until it dead-letters.
+func replayedAssetResult(asset Asset, record documents.DocumentVersionRecord) Result {
+	return Result{
+		Status:     StatusSearchable,
+		DocumentID: record.Document.SearchDocumentID,
+		Summary: fmt.Sprintf(
+			"%s was already indexed; reused the active version without reprocessing.",
+			asset.FileName,
+		),
+		Metadata: map[string]any{
+			"document_version_id": record.Version.ID,
+			"pipeline_generation": record.Version.PipelineGeneration,
+			"replayed_active":     true,
+		},
+	}
 }
 
 func firstNonBlank(values ...string) string {

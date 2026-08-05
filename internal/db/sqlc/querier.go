@@ -186,7 +186,6 @@ type Querier interface {
 	InsertTelegramAccount(ctx context.Context, arg InsertTelegramAccountParams) (AuraTelegramAccounts, error)
 	InsertTelegramSetupPending(ctx context.Context, arg InsertTelegramSetupPendingParams) error
 	InsertToolInvocation(ctx context.Context, arg InsertToolInvocationParams) (int64, error)
-	LinkAssetDocumentVersion(ctx context.Context, arg LinkAssetDocumentVersionParams) (AuraAssets, error)
 	ListActiveTasks(ctx context.Context) ([]AuraSchedulerTasks, error)
 	// Cross-thread pending list (APRV-01 / D-04): the same SELECT as
 	// ListPendingPausedStates with NO conversation_id filter, so the approval center
@@ -327,6 +326,22 @@ type Querier interface {
 	// Cross-process export-delete fence. This must commit before any runtime teardown.
 	// Reusing the same deterministic reservation is idempotent after a process retry.
 	ReserveConversationDeleteForIdentityIfVersion(ctx context.Context, arg ReserveConversationDeleteForIdentityIfVersionParams) (int64, error)
+	// Reserves the version that owns these exact bytes AND writes the asset's storage-object
+	// ledger row AND binds the asset to the resulting document+version -- in one statement.
+	//
+	// One statement rather than four because the four could interleave: a repeat upload of
+	// identical bytes would create a fresh raw object and then attach it to the OLD immutable
+	// version, and a repeat ingest would redo conversion, embedding and projection that the
+	// recorded version already owns.
+	//
+	// The object INSERT names a version that does not exist yet, and the version names that
+	// object, because both foreign keys are DEFERRABLE INITIALLY DEFERRED (0093:378-394) and
+	// the remaining immediate one is checked at end of statement, by which time both rows are
+	// present.
+	//
+	// Data-modifying CTEs cannot observe each other's effects on the underlying tables, so
+	// every hand-off here travels through a RETURNING projection -- `inserted` reads
+	// `asset_object.id`, never aura.storage_objects a second time.
 	ReservePipelineCandidateVersion(ctx context.Context, arg ReservePipelineCandidateVersionParams) (ReservePipelineCandidateVersionRow, error)
 	ResetAssetForIngestionRetry(ctx context.Context, arg ResetAssetForIngestionRetryParams) (AuraAssets, error)
 	RestoreBenchmarkSetting(ctx context.Context, arg RestoreBenchmarkSettingParams) error
@@ -412,7 +427,6 @@ type Querier interface {
 	UpdateHeartbeat(ctx context.Context, id pgtype.UUID) error
 	UpdateIngestionJobStatus(ctx context.Context, arg UpdateIngestionJobStatusParams) (UpdateIngestionJobStatusRow, error)
 	UpdateNextRunAt(ctx context.Context, arg UpdateNextRunAtParams) error
-	UpdateStorageObjectVersion(ctx context.Context, arg UpdateStorageObjectVersionParams) (AuraStorageObjects, error)
 	// Reschedule + re-payload a user task (the cockpit edit): rewrite the schedule grammar,
 	// payload, notify route, and the recomputed first fire. Guarded to active/pending rows so
 	// a cancelled/completed task is not silently revived. Returns rows affected.

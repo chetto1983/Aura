@@ -165,7 +165,7 @@ func testCreateDocumentVersionAllocatesNextGeneration(
 	fixture pipelineStoreFixture,
 ) {
 	t.Helper()
-	assetID, request := seedPipelineRawObject(
+	assetID, storageID, request := seedPipelineRawObject(
 		t, ctx, pool, fixture, "three", strings.Repeat("d", 64),
 	)
 	versionID, err := DeterministicVersionID(fixture.documentID, request.SHA256)
@@ -175,7 +175,7 @@ func testCreateDocumentVersionAllocatesNextGeneration(
 	identity, _ := pgUUID("identity", fixture.identityID)
 	document, _ := pgUUID("document", fixture.documentID)
 	asset, _ := pgUUID("asset", assetID)
-	storage, _ := pgUUID("storage", request.StorageObjectID)
+	storage, _ := pgUUID("storage", storageID)
 	version, _ := pgUUID("version", versionID)
 	var created sqlc.AuraDocumentVersions
 	err = asDocumentIdentity(ctx, pool, fixture.identityID, func(tx pgx.Tx) error {
@@ -227,7 +227,7 @@ INSERT INTO aura.documents (
 	}
 
 	var request1 CandidateVersionRequest
-	fixture.asset1ID, request1 = seedPipelineRawObject(
+	fixture.asset1ID, request1 = seedPipelineAsset(
 		t, ctx, pool, fixture, "one", strings.Repeat("a", 64),
 	)
 	var err error
@@ -240,7 +240,7 @@ INSERT INTO aura.documents (
 		t.Fatalf("ReserveCandidateVersion replay: %v", err)
 	}
 	var request2 CandidateVersionRequest
-	fixture.asset2ID, request2 = seedPipelineRawObject(
+	fixture.asset2ID, request2 = seedPipelineAsset(
 		t, ctx, pool, fixture, "two", strings.Repeat("b", 64),
 	)
 	fixture.v2, err = store.ReserveCandidateVersion(ctx, request2)
@@ -250,7 +250,12 @@ INSERT INTO aura.documents (
 	return fixture
 }
 
-func seedPipelineRawObject(
+// seedPipelineAsset inserts ONLY the asset row. The storage object is deliberately absent:
+// ReservePipelineCandidateVersion writes that ledger row itself, so pre-seeding it would
+// drive the statement's ON CONFLICT leg on every call and never its INSERT leg — which is
+// the leg that has to prove the deferred foreign keys let an object name a version that
+// does not exist yet.
+func seedPipelineAsset(
 	t *testing.T,
 	ctx context.Context,
 	pool *pgxpool.Pool,
@@ -258,35 +263,54 @@ func seedPipelineRawObject(
 	suffix, sha256 string,
 ) (string, CandidateVersionRequest) {
 	t.Helper()
-	assetID, storageID := uuid.NewString(), uuid.NewString()
+	assetID := uuid.NewString()
 	objectKey := fixture.prefix + "/raw-" + suffix
 	err := asDocumentIdentity(ctx, pool, fixture.identityID, func(tx pgx.Tx) error {
-		if _, execErr := tx.Exec(ctx, `
+		_, execErr := tx.Exec(ctx, `
 INSERT INTO aura.assets (
     id, identity_id, source_kind, source_ref, scope, modality, status,
     file_name, mime_type, size_bytes, content_hash, object_bucket, object_key
 ) VALUES ($1, $2, 'cli', $3, 'library', 'document', 'accepted',
           $4, 'application/pdf', 42, $5, 'documents', $6)`,
-			assetID, fixture.identityID, objectKey, suffix+".pdf", sha256, objectKey); execErr != nil {
-			return execErr
-		}
+			assetID, fixture.identityID, objectKey, suffix+".pdf", sha256, objectKey)
+		return execErr
+	})
+	if err != nil {
+		t.Fatalf("seed asset %s: %v", suffix, err)
+	}
+	return assetID, CandidateVersionRequest{
+		IdentityID: fixture.identityID, DocumentID: fixture.documentID,
+		AssetID: assetID, ObjectBucket: "documents", ObjectKey: objectKey,
+		SHA256: sha256, ContentType: "application/pdf", SizeBytes: 42, Status: "queued",
+	}
+}
+
+// seedPipelineRawObject adds the raw ledger row on top, for the one test that drives the
+// legacy CreateDocumentVersion statement — which still requires the object to pre-exist.
+func seedPipelineRawObject(
+	t *testing.T,
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	fixture pipelineStoreFixture,
+	suffix, sha256 string,
+) (string, string, CandidateVersionRequest) {
+	t.Helper()
+	assetID, request := seedPipelineAsset(t, ctx, pool, fixture, suffix, sha256)
+	storageID := uuid.NewString()
+	err := asDocumentIdentity(ctx, pool, fixture.identityID, func(tx pgx.Tx) error {
 		_, execErr := tx.Exec(ctx, `
 INSERT INTO aura.storage_objects (
     id, identity_id, document_id, asset_id, bucket, object_key, kind,
     sha256, size_bytes, content_type, status, pipeline_generation
 ) VALUES ($1, $2, $3, $4, 'documents', $5, 'raw', $6, 42,
           'application/pdf', 'live', 0)`,
-			storageID, fixture.identityID, fixture.documentID, assetID, objectKey, sha256)
+			storageID, fixture.identityID, fixture.documentID, assetID, request.ObjectKey, sha256)
 		return execErr
 	})
 	if err != nil {
 		t.Fatalf("seed raw object %s: %v", suffix, err)
 	}
-	return assetID, CandidateVersionRequest{
-		IdentityID: fixture.identityID, DocumentID: fixture.documentID,
-		AssetID: assetID, StorageObjectID: storageID, SHA256: sha256,
-		ContentType: "application/pdf", SizeBytes: 42, Status: "queued",
-	}
+	return assetID, storageID, request
 }
 
 func pipelineCandidateForVersion(

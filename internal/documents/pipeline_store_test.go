@@ -76,15 +76,23 @@ func TestPipelineStoreRejectsCandidateCoordinateAndVectorDrift(t *testing.T) {
 func TestPipelineStoreVersionArtifactAndFenceParameters(t *testing.T) {
 	req := CandidateVersionRequest{
 		IdentityID: uuid.NewString(), DocumentID: uuid.NewString(), AssetID: uuid.NewString(),
-		StorageObjectID: uuid.NewString(), SHA256: strings.Repeat("a", 64), SizeBytes: 12,
+		ObjectBucket: "documents", ObjectKey: "raw/one.pdf",
+		SHA256: strings.Repeat("a", 64), SizeBytes: 12,
 	}
 	params, err := candidateVersionParams(req)
 	if err != nil {
 		t.Fatalf("candidateVersionParams: %v", err)
 	}
 	wantID, _ := DeterministicVersionID(req.DocumentID, req.SHA256)
-	if uuidString(params.ID) != wantID || params.Status != "queued" || params.ContentType != "application/octet-stream" {
+	if uuidString(params.ID) != wantID || params.Status != "queued" ||
+		params.ContentType != "application/octet-stream" || params.RetentionClass != "standard" {
 		t.Fatalf("version params = %#v", params)
+	}
+	if _, err := candidateVersionParams(CandidateVersionRequest{
+		IdentityID: req.IdentityID, DocumentID: req.DocumentID, AssetID: req.AssetID,
+		ObjectBucket: "documents", SHA256: req.SHA256,
+	}); err == nil {
+		t.Fatal("candidateVersionParams accepted a reservation with no object key")
 	}
 
 	artifact := DerivedArtifactRequest{

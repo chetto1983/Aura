@@ -68,11 +68,19 @@ type PipelinePersistence interface {
 // CandidateVersionRequest asks for the version that owns these exact bytes. The
 // reservation is keyed on the raw SHA-256, so re-uploading identical content resolves to
 // the version already on record instead of minting a second one.
+//
+// It names the object by (bucket, key) rather than by a storage-object id because the
+// reservation WRITES that ledger row itself: the object, the version and the asset
+// binding are one indivisible fact about an upload, and a caller that created the object
+// first could attach freshly written bytes to an already-recorded version.
 type CandidateVersionRequest struct {
 	IdentityID         string
 	DocumentID         string
 	AssetID            string
-	StorageObjectID    string
+	ObjectBucket       string
+	ObjectKey          string
+	ObjectETag         string
+	RetentionClass     string
 	SHA1               string
 	SHA256             string
 	ContentType        string
@@ -82,9 +90,13 @@ type CandidateVersionRequest struct {
 	PipelineConfigHash string
 }
 
-// CandidateVersion is the reserved immutable version. Replayed reports that the bytes
-// were already on record; it says nothing about whether that version is ACTIVE, so a
-// caller must not treat it alone as permission to skip processing.
+// CandidateVersion is the reserved immutable version.
+//
+// The two booleans are NOT interchangeable. Replayed reports only that the bytes were
+// already on record — the version carrying them may still be `processing`. ReplayedActive
+// additionally reports that this version is the document's published one, and it is the
+// only one of the two that may be read as permission to skip processing: acting on
+// Replayed alone marks a document searchable while nothing has been indexed for it.
 type CandidateVersion struct {
 	ID                 string
 	IdentityID         string
@@ -100,6 +112,7 @@ type CandidateVersion struct {
 	SizeBytes          int64
 	Status             string
 	Replayed           bool
+	ReplayedActive     bool
 }
 
 // CandidateGeneration is one complete unpublished generation — passages, embeddings and

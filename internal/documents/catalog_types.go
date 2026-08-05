@@ -95,9 +95,16 @@ type DocumentVersion struct {
 }
 
 // DocumentVersionRecord is returned after recording an asset as a logical document version.
+//
+// ReplayedActive reports that these bytes were already on record AND that the version
+// carrying them is the document's published one, so the work behind it — conversion,
+// embedding, projection — is done and need not be repeated. It deliberately does NOT
+// expose bare "these bytes are known": a version can hold them while still processing,
+// and a caller who skipped on that would mark an unindexed document searchable.
 type DocumentVersionRecord struct {
-	Document Document        `json:"document"`
-	Version  DocumentVersion `json:"version"`
+	Document       Document        `json:"document"`
+	Version        DocumentVersion `json:"version"`
+	ReplayedActive bool            `json:"replayed_active"`
 }
 
 // DocumentDetail returns a document with related control-plane records.

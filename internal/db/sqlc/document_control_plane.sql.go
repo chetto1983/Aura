@@ -2782,56 +2782,6 @@ func (q *Queries) UpdateIngestionJobStatus(ctx context.Context, arg UpdateIngest
 	return i, err
 }
 
-const updateStorageObjectVersion = `-- name: UpdateStorageObjectVersion :one
-UPDATE aura.storage_objects
-SET version_id = $1,
-    pipeline_generation = $2
-WHERE id = $3
-  AND identity_id = $4
-  AND status = 'live'
-RETURNING id, identity_id, document_id, version_id, asset_id, bucket, object_key, kind, sha1, sha256, etag, size_bytes, content_type, retention_class, created_at, deleted_at, status, pipeline_generation, deletion_generation, deletion_verified_at
-`
-
-type UpdateStorageObjectVersionParams struct {
-	VersionID          pgtype.UUID `json:"version_id"`
-	PipelineGeneration int64       `json:"pipeline_generation"`
-	ID                 pgtype.UUID `json:"id"`
-	IdentityID         pgtype.UUID `json:"identity_id"`
-}
-
-func (q *Queries) UpdateStorageObjectVersion(ctx context.Context, arg UpdateStorageObjectVersionParams) (AuraStorageObjects, error) {
-	row := q.db.QueryRow(ctx, updateStorageObjectVersion,
-		arg.VersionID,
-		arg.PipelineGeneration,
-		arg.ID,
-		arg.IdentityID,
-	)
-	var i AuraStorageObjects
-	err := row.Scan(
-		&i.ID,
-		&i.IdentityID,
-		&i.DocumentID,
-		&i.VersionID,
-		&i.AssetID,
-		&i.Bucket,
-		&i.ObjectKey,
-		&i.Kind,
-		&i.Sha1,
-		&i.Sha256,
-		&i.Etag,
-		&i.SizeBytes,
-		&i.ContentType,
-		&i.RetentionClass,
-		&i.CreatedAt,
-		&i.DeletedAt,
-		&i.Status,
-		&i.PipelineGeneration,
-		&i.DeletionGeneration,
-		&i.DeletionVerifiedAt,
-	)
-	return i, err
-}
-
 const upsertDocumentPipelineStage = `-- name: UpsertDocumentPipelineStage :one
 INSERT INTO aura.document_pipeline_stages (
     identity_id, document_id, version_id, stage, input_fingerprint,

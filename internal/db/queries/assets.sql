@@ -111,18 +111,6 @@ WHERE id = $1
   AND status NOT IN ('deleting', 'deleted')
 RETURNING *;
 
--- name: LinkAssetDocumentVersion :one
-UPDATE aura.assets
-SET document_id = sqlc.arg(search_document_id),
-    catalog_document_id = sqlc.arg(catalog_document_id),
-    document_version_id = sqlc.arg(document_version_id),
-    pipeline_generation = sqlc.arg(pipeline_generation),
-    updated_at = now()
-WHERE id = sqlc.arg(id)
-  AND identity_id = sqlc.arg(identity_id)
-  AND deleted_at IS NULL
-RETURNING *;
-
 -- name: ResetAssetForIngestionRetry :one
 UPDATE aura.assets
 SET status = 'accepted', error_code = '', error_message = '',

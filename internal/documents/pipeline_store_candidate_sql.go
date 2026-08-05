@@ -30,9 +30,10 @@ func candidateVersionParams(req CandidateVersionRequest) (sqlc.ReservePipelineCa
 	if err != nil {
 		return sqlc.ReservePipelineCandidateVersionParams{}, err
 	}
-	storageID, err := pgUUID("candidate storage object id", strings.TrimSpace(req.StorageObjectID))
-	if err != nil {
-		return sqlc.ReservePipelineCandidateVersionParams{}, err
+	bucket, objectKey := strings.TrimSpace(req.ObjectBucket), strings.TrimSpace(req.ObjectKey)
+	if bucket == "" || objectKey == "" {
+		return sqlc.ReservePipelineCandidateVersionParams{},
+			fmt.Errorf("candidate object bucket and key are required")
 	}
 	sha256, err := canonicalSHA256(req.SHA256)
 	if err != nil {
@@ -57,9 +58,14 @@ func candidateVersionParams(req CandidateVersionRequest) (sqlc.ReservePipelineCa
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
+	retentionClass := strings.TrimSpace(req.RetentionClass)
+	if retentionClass == "" {
+		retentionClass = defaultRetentionClass
+	}
 	return sqlc.ReservePipelineCandidateVersionParams{
 		DocumentID: documentID, IdentityID: identityID, Sha256: sha256,
-		AssetID: assetID, StorageObjectID: storageID, ID: pgVersionID,
+		AssetID: assetID, ID: pgVersionID, Bucket: bucket, ObjectKey: objectKey,
+		Etag: strings.TrimSpace(req.ObjectETag), RetentionClass: retentionClass,
 		Status: status, Sha1: strings.TrimSpace(req.SHA1), ContentType: contentType,
 		SizeBytes: req.SizeBytes, ChunkingConfigHash: strings.TrimSpace(req.ChunkingConfigHash),
 		PipelineConfigHash: strings.TrimSpace(req.PipelineConfigHash),
@@ -74,6 +80,9 @@ func candidateVersionFromSQL(row sqlc.ReservePipelineCandidateVersionRow) Candid
 		VersionNumber: int(row.VersionNumber), PipelineGeneration: row.PipelineGeneration,
 		SHA1: row.Sha1, SHA256: row.Sha256, ContentType: row.ContentType,
 		SizeBytes: row.SizeBytes, Status: row.Status, Replayed: row.Replayed,
+		// The statement's conjunction is total (IS NOT DISTINCT FROM), so the column is
+		// never SQL NULL; sqlc types it nullable only because it crosses a UNION.
+		ReplayedActive: row.ReplayIsActive.Bool,
 	}
 }
 

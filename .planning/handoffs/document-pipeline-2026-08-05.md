@@ -6,16 +6,20 @@ the next session does not re-derive them.
 
 ## State
 
-**The worktree is clean.** Three commits landed, every lefthook gate green
+**The worktree is clean.** Commits landed, every lefthook gate green
 (gofmt, file-size, vet, lint):
 
 ```
+<F3>       Wire the same-SHA replay through one atomic reservation
+afd5a05e6  Record the document pipeline checkpoint
 a974cfb22  Give the nightly Postgres backup a clock      (operator's work, own commit)
 8d2701bd1  Converge the industrial document pipeline     (163 files)
 fe20c2c72  Rule passage erasure physical, not tombstoned (PRD amendment #117)
 ```
 
 Nothing has been pushed. `origin/master` is still at `975b7d521`.
+
+**All six audit findings are now closed.** F3 shipped 2026-08-05; see below.
 
 ## What is done
 
@@ -96,68 +100,137 @@ silently reuses vectors from a different model.
   trips `unused` no matter what you stage. This is why the operator's
   nightly-backup work had to be committed as its own unit.
 
+## F3 — same-SHA replay wiring — DONE (2026-08-05)
+
+`ReservePipelineCandidateVersion` now owns the raw storage object, the version and
+the asset binding in ONE statement, and `PostgresCatalogStore.RecordAssetVersion`
+routes through it. The four-statement body is gone.
+
+Shipped shape:
+
+- **`bound_asset`** validates the INCOMING asset (live, owned) for both legs.
+- **`binding`** decides ONCE — which version, `raw` vs `temp`, which generation —
+  because sqlc cannot resolve a computed CTE column referenced downstream.
+- **`asset_object`** INSERTs the ledger row naming a version that does not exist
+  yet. `ON CONFLICT (bucket, object_key)` deliberately does NOT rewrite `kind`:
+  demoting a version's own raw object to `temp` would break the resolution
+  `existing` depends on. Its guard is stricter than `CreateStorageObject`'s —
+  other bytes under that key, or a key already scheduled for deletion, return no
+  row and the statement resolves to `ErrPipelineCandidateRejected`.
+- **`existing`** projects `replay_is_active` using `IS NOT DISTINCT FROM`, not
+  `=`: under `=` a document with no active version yields SQL NULL, and a NULL
+  decoding to Go false is a guarantee resting on luck. The conjunction is total.
+- **`linked_asset`** binds `bound_asset.id` (the incoming asset, not
+  `selected.asset_id`) and uses `GREATEST(...)` so a replay never walks an
+  asset's generation backwards.
+- **`inserted`** carries `ON CONFLICT DO NOTHING`: reaching a conflict means a row
+  holds these bytes while `existing` refused it (its asset or raw object is no
+  longer live) — incoherent, so it becomes the statement's own empty result rather
+  than a raw 23505 the caller retries to dead-letter.
+
+Surfaced as `CandidateVersion.ReplayedActive` and
+`DocumentVersionRecord.ReplayedActive`. `DocumentVersionRecord` deliberately has
+NO bare `Replayed`. `internal/assets/document_processor.go` short-circuits only on
+`ReplayedActive` (`replayedAssetResult`), which omits `pipeline_activation_job_id`
+so the queue worker still settles the job; every other case falls through to
+`Pipeline.Run` unchanged.
+
+**Deleted as dead:** `UpdateStorageObjectVersion`, `LinkAssetDocumentVersion`,
+`deterministicDocumentVersionID`. **`CreateStorageObject` was KEPT** per review,
+and is now caller-less — the duplicate's bytes get their owner from the statement's
+non-raw ledger row instead. That tension is open for the operator to settle.
+
+### Proven, not argued
+
+Probe against a disposable DB (68 migrations), driving the RENDERED live query
+text — both probe DBs dropped, live `aura` untouched:
+
+| leg | result |
+|---|---|
+| fresh insert | `replayed=f replay_is_active=f`; object written naming a not-yet-existing version |
+| 2nd asset, new key, same SHA, not activated | `replayed=t replay_is_active=f` |
+| re-drive same asset+key | idempotent; raw object NOT demoted to `temp` |
+| 2nd asset after activation | `replayed=t replay_is_active=t` |
+| same key, different SHA | **0 rows** → `ErrPipelineCandidateRejected` |
+
+End state: 1 live version · 1 live `raw` · 2 `temp` duplicates all carrying
+`document_id` and all swept to `delete_pending` by `SoftDeleteDocument` ·
+`version.asset_id` still the FIRST asset.
+
+**T1 was proven to fail against the pre-change code by executing it**, not by
+reasoning: the old four-statement body run twice yields `live raw objects=2` where
+T1 asserts 1. The version already de-duplicated via `CreateDocumentVersion`'s
+`ON CONFLICT`; what did not was the OBJECT — a fresh raw row rebound to the old
+version, exactly the finding. T2/T3 could not compile before (`ReplayedActive` did
+not exist). Honest caveat: the `internal/assets` **false** case passes before AND
+after — it constrains the wrong implementation (short-circuiting on `Replayed`),
+not the old one.
+
+Tests: `internal/documents/catalog_store_replay_integration_test.go` (T1/T2/T3,
+`db_integration`, disposable pool) and
+`internal/assets/document_processor_replay_test.go` (daemon-free).
+
+### sqlc gotcha, cost ~40 minutes — read before editing this query
+
+sqlc's STATIC analyzer cannot name a SELECT-list expression wrapping a named
+parameter (`*ast.ResTarget has nil name` — sqlc-dev/sqlc#1646, #3991) and cannot
+resolve a virtual CTE column referenced downstream (#3555, still open). The
+documented no-managed-DB fix is an explicit cast: `sqlc.arg(id)::uuid`. That cast
+in `binding` is load-bearing — removing it fails the whole package's codegen.
+Enabling the database-backed analyzer would also fix it but requires a reachable
+server at `sqlc generate` time (config `database.managed` + `servers`), which CI
+does not have.
+
 ## Open work, in order
 
-### 1. F3 — same-SHA replay wiring (the only remaining finding)
+### 1. Document status vocabularies never followed migration 0093 — NEW, blocking
 
-`ReserveCandidateVersion` still has **zero production callers**. The real ingress
-can attach a newly written raw object to an old immutable version, and a repeat
-ingest redoes Docling + embed + project work.
+The production recorder cannot insert a version at all. Probed on a disposable DB:
 
-Its one unproven assumption is now **proven**: a single statement can insert a
-storage object referencing a not-yet-existing version and the version referencing
-that object, because both FKs are `DEFERRABLE INITIALLY DEFERRED` (0093:378-394).
-Verified on a disposable database (`aura_f3_probe`, 68 migrations): committed,
-`versions=1 objects=1`. Probe DB dropped; live `aura` untouched.
+- `document_versions_status_check` admits `uploaded, hash_calculated, stored,
+  queued, parsing, parsed, chunking, chunked, embedding, embedded, indexed, ready,
+  failed, deleting, deleted, archived` — **not `processing`**, which
+  `cmd/aura/document_version_recorder.go:66` hard-codes and
+  `catalog_service.go:239` defaults to. `ERROR: violates check constraint`.
+- `documents_status_check` admits `accepted, stored, queued, converting, chunking,
+  embedding, projecting, ready, failed, dead_letter, deleting, deleted` — **not
+  `processing`** (`document_version_recorder.go:65`, `catalog_service.go:224`,
+  `documents/service.go:133`) and **not `draft`** (`catalog_service.go:126,166`).
+- `web/src/documents/documentApi.ts:2-10` mirrors the SAME stale vocabulary:
+  it lists `draft`/`processing`/`archived`, which the DB can no longer produce,
+  and lacks `accepted`/`stored`/`converting`/`chunking`/`projecting`/`dead_letter`,
+  which it can.
+- Corroborating live evidence: `aura` has 3 `ready` documents but only ONE
+  `document_versions` row.
 
-The corrected design (first pass was rejected on review):
+0093:279-288 already states the project's own mapping — `draft→accepted`,
+`processing→converting`, `archived→failed`. `catalog_service_test.go:168` pins
+`"processing"`, so that test is broken too and its rewrite needs justification in
+the commit message. **This is wire-visible; it is its own commit.** F3 does not
+depend on it — F3 is a strict improvement either way — which is why the F3 tests
+pass explicitly-legal statuses (the precedent `card_ingest_integration_test.go`
+already sets) rather than masking the defect.
 
-1. rewrite `ReservePipelineCandidateVersion` so one statement owns the raw
-   object, the version and the asset binding, projecting a `replay_is_active`
-   boolean computed from `status='ready' AND activated_at IS NOT NULL AND
-   document.active_version_id = existing.id`
-2. surface it as `CandidateVersion.ReplayedActive` / `DocumentVersionRecord.ReplayedActive`.
-   **Do NOT add a bare `Replayed` to `DocumentVersionRecord`** — a caller that can
-   see identity without liveness will short-circuit on a still-`processing`
-   version and mark an unindexed document searchable.
-3. route the real recorder through it; delete the four-statement body it replaces
-4. `internal/assets/document_processor.go`: short-circuit **only** on
-   `ReplayedActive`; every other case falls through to the existing
-   `p.Pipeline.Run`, so `beginStage` resumes from the ledger as it does today.
-   The unit test needs both cases, and the not-live case must assert `Run` WAS called.
-5. `linked_asset` binds `sqlc.arg(asset_id)`; use
-   `GREATEST(asset.pipeline_generation, selected.pipeline_generation)` — never lower it
-6. **Do not delete `CreateStorageObject`** until the duplicate asset's bytes have
-   an owner, or `SoftDeleteDocument`'s object sweep stops reaping them. Preferred:
-   register the duplicate's object as an additional non-raw ledger row bound to
-   the same version.
+### 2. Repeat-source `23505` (was: split out of F3)
 
-Tests (all `db_integration`, all via `pipelineDisposablePool`, whose
-`pipelineEnvOrSkip` already `t.Fatal`s under `$CI`):
-- **T1** drive the production `PostgresCatalogStore.RecordAssetVersion` twice —
-  two assets, same SHA, different object keys. Assert exactly 1 live version,
-  exactly 1 live `kind='raw'` object, `asset_id` still A1, A2 bound to V1.
-- **T2** replay onto a still-`processing` version → `ReplayedActive == false`,
-  and a daemon-free `internal/assets` test asserting `Pipeline.Run` ran.
-- **T3** replay onto an activated version → `ReplayedActive == true`, `Run` not called.
+Needs 0093 amended — replace `ADD CONSTRAINT documents_source_unique UNIQUE (...)`
+(:306) with a partial unique index `WHERE deleted_at IS NULL`, mirroring its
+sibling at :308, and mirror the DROP in the `.down.sql`. Only then may
+`CreateDocument` take an `ON CONFLICT ... DO UPDATE`. Without the partial index,
+delete-then-reingest cannot create a fresh document.
 
-**Split out of F3, own commit:** the repeat-source `23505`. It needs 0093 amended
-— replace `ADD CONSTRAINT documents_source_unique UNIQUE (...)` (:306) with a
-partial unique index `WHERE deleted_at IS NULL`, mirroring its sibling at :308,
-and mirror the DROP in the `.down.sql`. Only then may `CreateDocument` take an
-`ON CONFLICT ... DO UPDATE`. Without the partial index, delete-then-reingest
-cannot create a fresh document.
-
-### 2. Production E2E (Amendment #115/#116)
+### 3. Production E2E (Amendment #115/#116)
 
 Corpus verified intact — exactly the 7 authorized files under
 `D:\tmp\aura-document-pipeline-references\document_ingestion\baseline-corpus`,
 `Clienti.xlsx` present for the 699/TORINO ground truth.
 
-**Run it after F3, not before**: F3 changes the version and activation counts the
-E2E asserts, so a green run now would be misread either way.
+F3 has landed, so the version and activation counts the E2E asserts are now
+stable. **It still cannot pass until item 1 is fixed**: the recorder's own status
+defaults are rejected by both CHECK constraints, so the real ingress never gets as
+far as producing a version.
 
-### 3. Before any push
+### 4. Before any push
 
 - `make quality-full` (needs the stack up)
 - combined coverage ≥85% over the full tag matrix; mutation ≥70% on the
@@ -181,6 +254,14 @@ E2E asserts, so a green run now would be misread either way.
   (`UpsertDocumentPipelineStage`, `ClaimDocumentPipelineStage`,
   `CompleteDocumentPipelineStage`, `HeartbeatDocumentPipelineStage`,
   `UpdateDocumentPipelineStageStatus`) — zero non-generated callers.
+- `CreateStorageObject` is now caller-less. It was kept on review instruction; the
+  duplicate asset's bytes get their owner from the reservation's non-raw ledger
+  row instead. Delete it or give it a caller — the deadcode gate does NOT catch
+  this (sqlc methods satisfy the used `Querier` interface, so they read as
+  reachable), which is also why the three below survived unnoticed.
+- `MarkStorageObjectDeletePending`, `MarkStorageObjectDeleted` and
+  `ListDocumentStorageObjects` have zero callers anywhere, tests included —
+  pre-existing, untouched by F3.
 - `cmd/aura/document_pipeline_wiring.go:101-129` duplicates the
   tombstone→delete→verify sequence in `delete_durable_worker.go:102-133`.
 - `StorageOrphanService.DryRun` detects orphan objects only; there is no

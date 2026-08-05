@@ -15,9 +15,7 @@ import (
 	"strings"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // RecordAssetVersion attaches an uploaded asset to a catalog document as a candidate: the
@@ -40,6 +38,16 @@ func (s *PostgresCatalogStore) RecordAssetVersion(
 	})
 }
 
+// recordAssetVersion resolves the document, then hands the object, the version and the
+// asset binding to ReservePipelineCandidateVersion as ONE statement.
+//
+// It used to run four (CreateStorageObject, CreateDocumentVersion,
+// UpdateStorageObjectVersion, LinkAssetDocumentVersion). Sharing a transaction made that
+// atomic but not correct: the object was written before anything had decided which version
+// owned these bytes, so a second upload of an identical file created a fresh raw object and
+// then attached it to the version already on record. The single statement decides first and
+// writes accordingly — and, because it can answer whether the replayed version is the
+// document's PUBLISHED one, it lets the caller skip a conversion the bytes already have.
 func (sc catalogTx) recordAssetVersion(
 	ctx context.Context, req RecordAssetVersionRequest,
 ) (DocumentVersionRecord, error) {
@@ -47,72 +55,45 @@ func (sc catalogTx) recordAssetVersion(
 	if err != nil {
 		return DocumentVersionRecord{}, err
 	}
-	pgIdentityID, err := pgUUID("identity_id", req.IdentityID)
-	if err != nil {
-		return DocumentVersionRecord{}, err
-	}
-	pgDocumentID, err := pgUUID("document_id", doc.ID)
-	if err != nil {
-		return DocumentVersionRecord{}, err
-	}
-	pgAssetID, err := pgOptionalUUID("asset_id", req.AssetID)
-	if err != nil {
-		return DocumentVersionRecord{}, err
-	}
-	storageRow, err := sc.q.CreateStorageObject(ctx, sqlc.CreateStorageObjectParams{
-		IdentityID:         pgIdentityID,
-		DocumentID:         pgDocumentID,
-		VersionID:          pgtype.UUID{},
-		AssetID:            pgAssetID,
-		Bucket:             req.ObjectBucket,
-		ObjectKey:          req.ObjectKey,
-		Kind:               req.StorageKind,
-		Sha1:               req.SHA1,
-		Sha256:             req.SHA256,
-		Etag:               req.ObjectETag,
-		SizeBytes:          req.SizeBytes,
-		ContentType:        req.MIMEType,
-		RetentionClass:     req.RetentionClass,
-		Status:             "live",
-		PipelineGeneration: req.PipelineGeneration,
-	})
-	if err != nil {
-		return DocumentVersionRecord{}, err
-	}
-	versionRow, err := sc.q.CreateDocumentVersion(ctx, sqlc.CreateDocumentVersionParams{
-		ID:                 deterministicDocumentVersionID(doc.ID, req.SHA256),
-		IdentityID:         pgIdentityID,
-		DocumentID:         pgDocumentID,
-		AssetID:            pgAssetID,
-		Status:             req.VersionStatus,
-		Sha1:               req.SHA1,
-		Sha256:             req.SHA256,
-		ContentType:        req.MIMEType,
-		SizeBytes:          req.SizeBytes,
-		StorageObjectID:    storageRow.ID,
+	params, err := candidateVersionParams(CandidateVersionRequest{
+		IdentityID: req.IdentityID, DocumentID: doc.ID, AssetID: req.AssetID,
+		ObjectBucket: req.ObjectBucket, ObjectKey: req.ObjectKey,
+		ObjectETag: req.ObjectETag, RetentionClass: req.RetentionClass,
+		SHA1: req.SHA1, SHA256: req.SHA256, ContentType: req.MIMEType,
+		SizeBytes: req.SizeBytes, Status: req.VersionStatus,
 		ChunkingConfigHash: req.ChunkingConfigHash,
 		PipelineConfigHash: req.PipelineConfigHash,
-		PipelineGeneration: req.PipelineGeneration,
 	})
 	if err != nil {
 		return DocumentVersionRecord{}, err
 	}
-	if _, err := sc.q.UpdateStorageObjectVersion(ctx, sqlc.UpdateStorageObjectVersionParams{
-		ID: storageRow.ID, IdentityID: pgIdentityID, VersionID: versionRow.ID,
-		PipelineGeneration: versionRow.PipelineGeneration,
-	}); err != nil {
-		return DocumentVersionRecord{}, err
+	row, err := sc.q.ReservePipelineCandidateVersion(ctx, params)
+	if err != nil {
+		return DocumentVersionRecord{}, candidateRejectedError("record asset version", err)
 	}
-	if pgAssetID.Valid {
-		if _, err := sc.q.LinkAssetDocumentVersion(ctx, sqlc.LinkAssetDocumentVersionParams{
-			ID: pgAssetID, IdentityID: pgIdentityID, SearchDocumentID: doc.SearchDocumentID,
-			CatalogDocumentID: pgDocumentID, DocumentVersionID: versionRow.ID,
-			PipelineGeneration: versionRow.PipelineGeneration,
-		}); err != nil {
-			return DocumentVersionRecord{}, err
-		}
+	return DocumentVersionRecord{
+		Document:       doc,
+		Version:        catalogVersionFromSQL(reservedDocumentVersion(row)),
+		ReplayedActive: row.ReplayIsActive.Bool,
+	}, nil
+}
+
+// reservedDocumentVersion re-types the reservation's projection as the table row, so
+// DocumentVersion keeps ONE decoder. Restating the fields in a second decoder would let a
+// column added to aura.document_versions reach a caller as a zero value; here it is a
+// compile error, which is the same bargain catalogDocumentFromSQL already makes.
+func reservedDocumentVersion(row sqlc.ReservePipelineCandidateVersionRow) sqlc.AuraDocumentVersions {
+	return sqlc.AuraDocumentVersions{
+		ID: row.ID, DocumentID: row.DocumentID, AssetID: row.AssetID,
+		VersionNumber: row.VersionNumber, Status: row.Status, Sha1: row.Sha1,
+		Sha256: row.Sha256, ContentType: row.ContentType, SizeBytes: row.SizeBytes,
+		StorageObjectID: row.StorageObjectID, ChunkingConfigHash: row.ChunkingConfigHash,
+		PipelineConfigHash: row.PipelineConfigHash, ReadyAt: row.ReadyAt,
+		ActivatedAt: row.ActivatedAt, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+		DeletedAt: row.DeletedAt, ErrorCode: row.ErrorCode, ErrorMessage: row.ErrorMessage,
+		IdentityID: row.IdentityID, SearchDocumentID: row.SearchDocumentID,
+		PipelineGeneration: row.PipelineGeneration,
 	}
-	return DocumentVersionRecord{Document: doc, Version: catalogVersionFromSQL(versionRow)}, nil
 }
 
 // documentForAssetVersion returns the catalog row this asset's document already
@@ -167,9 +148,4 @@ func (sc catalogTx) documentBySearchID(
 		return Document{}, false, err
 	}
 	return doc, true, nil
-}
-
-func deterministicDocumentVersionID(documentID, rawSHA256 string) pgtype.UUID {
-	id := uuid.NewSHA1(uuid.NameSpaceOID, []byte(documentID+":"+strings.ToLower(rawSHA256)))
-	return pgtype.UUID{Bytes: id, Valid: true}
 }

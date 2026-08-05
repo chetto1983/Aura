@@ -145,14 +145,6 @@ WHERE identity_id = sqlc.arg(identity_id)
   AND document_id = sqlc.arg(document_id)
   AND status <> 'object_deleted'
 ORDER BY created_at, id;
--- name: UpdateStorageObjectVersion :one
-UPDATE aura.storage_objects
-SET version_id = sqlc.arg(version_id),
-    pipeline_generation = sqlc.arg(pipeline_generation)
-WHERE id = sqlc.arg(id)
-  AND identity_id = sqlc.arg(identity_id)
-  AND status = 'live'
-RETURNING *;
 -- name: MarkStorageObjectDeletePending :one
 UPDATE aura.storage_objects
 SET status = 'delete_pending',

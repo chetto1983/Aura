@@ -136,9 +136,11 @@ type recordingDocumentPipeline struct {
 	req    documents.PipelineRunRequest
 	result documents.PipelineRunResult
 	err    error
+	calls  int
 }
 
 func (p *recordingDocumentPipeline) Run(_ context.Context, req documents.PipelineRunRequest) (documents.PipelineRunResult, error) {
 	p.req = req
+	p.calls++
 	return p.result, p.err
 }

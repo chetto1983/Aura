@@ -30,6 +30,9 @@ func NewPostgresPipelineStore(pool *pgxpool.Pool) *PostgresPipelineStore {
 // ReserveCandidateVersion derives the version id from the document id and the raw
 // SHA-256, so re-uploading identical bytes resolves to the version already on
 // record (reported by CandidateVersion.Replayed) instead of minting a second one.
+// The same statement writes the asset's storage-object ledger row and binds the
+// asset, and reports through ReplayedActive whether the replayed version is the
+// document's published one — the only condition under which processing may be skipped.
 func (s *PostgresPipelineStore) ReserveCandidateVersion(
 	ctx context.Context,
 	req CandidateVersionRequest,
