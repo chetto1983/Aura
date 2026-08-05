@@ -454,3 +454,22 @@ func seedShareExpirySweep(ctx context.Context, store *cron.Store) error {
 func seedRetentionSweep(ctx context.Context, store *cron.Store) error {
 	return seedDailyCronSweep(ctx, store, cron.KindRetentionSweep, "30 2 * * *", "retention sweep")
 }
+
+// seedPostgresBackup idempotently seeds the nightly pg_dump — 01:00 Europe/Rome, ahead of
+// the 02:30/03:00/04:00 sweeps so the dump captures the state BEFORE a retention pass
+// prunes anything.
+//
+// It was missing, and the consequence was not theoretical. Checked on the live appliance
+// 2026-08-03: six system sweeps active — identity_purge, memory_embed_backfill,
+// retention_sweep, sandbox_reap, share_expiry_sweep, skill_ttl_sweep — and no
+// backup_postgres among them, with AURA_BACKUP_DIR empty. BackupHandler exists, is
+// tested, and is registered in the dispatcher (serve_dispatch.go), so it has always been
+// able to run; nothing ever gave it a clock. A backup that is one scheduler row away from
+// working, and does not have that row, is indistinguishable from no backup at all.
+//
+// backup_postgres is also operator- and model-schedulable through the task tool, which is
+// exactly why the gap survived: `aura task --kind backup_postgres` works, so the feature
+// demos correctly and still protects nobody by default.
+func seedPostgresBackup(ctx context.Context, store *cron.Store) error {
+	return seedDailyCronSweep(ctx, store, cron.KindBackupPostgres, "0 1 * * *", "postgres backup")
+}

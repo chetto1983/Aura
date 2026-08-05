@@ -350,6 +350,12 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	if err := seedMemoryEmbedBackfillSweep(ctx, store); err != nil {
 		slog.Warn("aura serve: seed memory embed backfill sweep", "err", err)
 	}
+	// The nightly dump. It had no clock: the handler shipped, the dispatcher knew it, and
+	// no seed ever created the row — so a live appliance ran for weeks with an empty
+	// AURA_BACKUP_DIR (see seedPostgresBackup).
+	if err := seedPostgresBackup(ctx, store); err != nil {
+		slog.Warn("aura serve: seed postgres backup", "err", err)
+	}
 	// The AG-UI gateway (Slice 8b) construction + its independent SetX wiring lives in
 	// wireAGUIServer (serve_agui.go, refactor-on-touch split when the SSE-heartbeat knob
 	// landed a new ServerConfig field — CLAUDE.md 600-LOC ceiling). The auth-dependent
