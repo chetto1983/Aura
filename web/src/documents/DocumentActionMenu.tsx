@@ -1,6 +1,7 @@
 import { MessageSquareText, MoreHorizontal, Pencil, RefreshCw, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { DocumentItem } from './documentApi';
+import { failedStatuses } from './documentViewModel';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -62,7 +63,7 @@ export function DocumentActionMenu({
             {t('documents.actions.editTags')}
           </DropdownMenuItem>
         </DropdownMenuGroup>
-        {document.status === 'failed' ? (
+        {failedStatuses.has(document.status) ? (
           <DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem

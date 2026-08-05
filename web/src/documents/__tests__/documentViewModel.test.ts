@@ -70,6 +70,9 @@ describe('documentViewModel', () => {
     expect(statusToneFor('dead_letter')).toBe('danger');
     expect(statusToneFor('converting')).toBe('warning');
     expect(statusToneFor('projecting')).toBe('warning');
+    expect(statusToneFor('stored')).toBe('warning');
+    expect(statusToneFor('deleting')).toBe('warning');
+    expect(statusToneFor('deleted')).toBe('danger');
     expect(statusToneFor('accepted')).toBe('secondary');
     expect(parseDocumentTags('robot, manual, robot')).toEqual(['robot', 'manual']);
   });

@@ -48,7 +48,7 @@ export function documentMatchesTab(
   tab: DocumentTab,
 ): boolean {
   if (tab === 'all') return true;
-  if (tab === 'failed') return document.status === 'failed';
+  if (tab === 'failed') return failedStatuses.has(document.status);
   if (tab === 'processing') return inFlightStatuses.has(document.status);
   const kind = documentKindFor(document, version);
   if (tab === 'documents') return kind === 'document';
@@ -56,9 +56,22 @@ export function documentMatchesTab(
   return kind === 'file';
 }
 
+// Statuses aura.documents_status_check treats as a failed pipeline attempt. failed can
+// still be retried; dead_letter means retries are exhausted. Both the failed tab and the
+// retry action in DocumentActionMenu key off this set so they cannot drift apart again.
+export const failedStatuses = new Set<DocumentStatus>(['failed', 'dead_letter']);
+
 // The pipeline stages a document passes through between acceptance and ready. The tab
 // is named for the state the operator cares about, not for any single status value.
+// 'stored' is the only one of these the pipeline actually reaches today: RecordAssetVersion
+// (and the wrapper that calls it) run from inside the asset processing queue, so a job is
+// already in flight by the time a document is written to 'stored'. The remaining five --
+// queued, converting, chunking, embedding, projecting -- are not yet written by any code
+// path; the pipeline currently jumps stored -> ready. They stay in the set because they
+// are legal values under aura.documents_status_check and name the lifecycle it
+// anticipates, so a future reader must not "clean up" the unreachable ones.
 const inFlightStatuses = new Set<DocumentStatus>([
+  'stored',
   'queued',
   'converting',
   'chunking',
@@ -68,7 +81,7 @@ const inFlightStatuses = new Set<DocumentStatus>([
 
 export function statusToneFor(status: DocumentStatus): StatusTone {
   if (status === 'ready') return 'success';
-  if (status === 'failed' || status === 'dead_letter' || status === 'deleted') return 'danger';
+  if (failedStatuses.has(status) || status === 'deleted') return 'danger';
   if (inFlightStatuses.has(status) || status === 'deleting') return 'warning';
   return 'secondary';
 }
