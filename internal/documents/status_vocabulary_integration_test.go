@@ -24,7 +24,7 @@ import (
 
 // checkLiteral matches the quoted values PostgreSQL renders back inside a CHECK
 // definition: status = ANY (ARRAY['ready'::text, 'failed'::text, ...]).
-var checkLiteral = regexp.MustCompile(`'([a-z_]+)'::text`)
+var checkLiteral = regexp.MustCompile(`'([a-z0-9_]+)'::text`)
 
 func TestDocumentVocabulariesMatchTheDatabase(t *testing.T) {
 	pool := pipelineDisposablePool(t)

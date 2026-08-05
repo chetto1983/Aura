@@ -172,9 +172,10 @@ INSERT INTO aura.assets (
 		FileName: suffix + ".pdf", MIMEType: "application/pdf", SizeBytes: 42,
 		ObjectBucket: "documents", ObjectKey: objectKey, ObjectETag: "etag-" + suffix,
 		SHA256: replaySHA256,
-		// Statuses migration 0093 still admits. The recorder's own defaults are
-		// 'processing' for both, which no longer satisfies either CHECK constraint --
-		// a defect of its own, reported separately and deliberately not masked here.
+		// "queued" is a legal value for both aura.documents_status_check and
+		// aura.document_versions_status_check -- this is the vocabulary the constraints
+		// admit, not a workaround. The recorder used to default to "processing" for
+		// both, which neither constraint accepted; commit 38d78e403 fixed that.
 		DocumentStatus: DocumentStatusQueued, VersionStatus: "queued",
 		StorageKind: defaultStorageKind, RetentionClass: defaultRetentionClass,
 	})
