@@ -111,9 +111,18 @@ Ordered. The order is proven by the tests above, not chosen for convenience.
 6. Assert traces flow by querying Tempo for a span with `rootServiceName: aura`. Never accept
    a healthcheck as proof.
 7. Replace the two lying healthchecks with reachability probes.
-8. Record the operator's identity UUID and the four `EXPECT_*` values (model, embed model,
-   embed version, Docling producer) read off the live deployment. Phase 2 needs them and they
-   must describe the rebuilt image, not the old one.
+8. Record the operator's identity UUID and three of the four `EXPECT_*` values, read off the
+   **rebuilt** container: `AURA_LLM_MODEL`, `AURA_DOCUMENT_CHUNK_TOKENIZER`,
+   `AURA_EMBED_REVISION`.
+
+   The fourth, `EXPECT_DOCLING_PRODUCER`, **cannot be sourced here.** It is the `convert`
+   stage's `producer_version` in `aura.document_pipeline_stages`, and that table does not
+   exist until 0093 creates it — measured 2026-08-05: `relation "aura.document_pipeline_stages"
+   does not exist`. The value is therefore discovered at CP2, from the first document
+   converted after the migration, and feeds Phase 2 from there.
+
+   This is also why the probe's `snapshot` command cannot run at all before the cutover: its
+   whole stage-evidence assertion reads that table.
 
 Cockpit is confirmed reachable at `127.0.0.1:9080` before the operator is asked to do
 anything.
@@ -220,7 +229,9 @@ Setup work it needs, none of which exists today:
   WSL operator, not group/world writable. **It must recreate `tempo` and `prometheus` after
   restarting `aura`**, or observability dies silently at the lease-reclaim assertion. This is
   the direct consequence of the falsely-green finding.
-- The four `EXPECT_*` values, from Phase 0 step 8.
+- Three `EXPECT_*` values from Phase 0 step 8, plus `EXPECT_DOCLING_PRODUCER` captured at CP2.
+  Phase 2 therefore has a hard data dependency on Phase 1 having run — a second reason the
+  ordering is not merely a preference.
 - `AURA_DOCUMENT_E2E_PRODUCTION_CONFIRM=I_ACKNOWLEDGE_PRODUCTION_E2E`, base URL
   `http://127.0.0.1:9080`, an absolute WSL report path.
 
