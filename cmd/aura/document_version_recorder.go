@@ -62,7 +62,7 @@ func (r *runtimeDocumentVersionRecorder) RecordDocumentAsset(
 		SparseChunks:     job.SparseChunks,
 		SHA1:             hashes.SHA1,
 		SHA256:           hashes.SHA256,
-		DocumentStatus:   documents.DocumentStatusProcessing,
-		VersionStatus:    "processing",
+		DocumentStatus:   documents.DocumentStatusStored,
+		VersionStatus:    documents.DocumentVersionStatusStored,
 	})
 }

@@ -60,7 +60,7 @@ func (sc catalogTx) recordAssetVersion(
 		ObjectBucket: req.ObjectBucket, ObjectKey: req.ObjectKey,
 		ObjectETag: req.ObjectETag, RetentionClass: req.RetentionClass,
 		SHA1: req.SHA1, SHA256: req.SHA256, ContentType: req.MIMEType,
-		SizeBytes: req.SizeBytes, Status: req.VersionStatus,
+		SizeBytes: req.SizeBytes, Status: string(req.VersionStatus),
 		ChunkingConfigHash: req.ChunkingConfigHash,
 		PipelineConfigHash: req.PipelineConfigHash,
 	})

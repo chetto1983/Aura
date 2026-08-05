@@ -67,8 +67,8 @@ func TestCatalogServiceCreateDocumentNormalizesTags(t *testing.T) {
 	if store.createReq.Scope != DocumentScopeLibrary {
 		t.Fatalf("create scope = %q, want %q", store.createReq.Scope, DocumentScopeLibrary)
 	}
-	if store.createReq.Status != DocumentStatusDraft {
-		t.Fatalf("create status = %q, want %q", store.createReq.Status, DocumentStatusDraft)
+	if store.createReq.Status != DocumentStatusAccepted {
+		t.Fatalf("create status = %q, want %q", store.createReq.Status, DocumentStatusAccepted)
 	}
 	if !reflect.DeepEqual(doc.Tags, wantTags) {
 		t.Fatalf("returned tags = %#v, want %#v", doc.Tags, wantTags)
@@ -165,8 +165,10 @@ func TestCatalogServiceRecordAssetVersionDefaultsReadyDocument(t *testing.T) {
 	if store.recordReq.Title != "Servo Manual.pdf" {
 		t.Fatalf("record title = %q, want trimmed filename", store.recordReq.Title)
 	}
-	if store.recordReq.DocumentStatus != DocumentStatusProcessing || store.recordReq.VersionStatus != "processing" {
-		t.Fatalf("record statuses = %q/%q, want processing/processing", store.recordReq.DocumentStatus, store.recordReq.VersionStatus)
+	if store.recordReq.DocumentStatus != DocumentStatusStored ||
+		store.recordReq.VersionStatus != DocumentVersionStatusStored {
+		t.Fatalf("record statuses = %q/%q, want stored/stored",
+			store.recordReq.DocumentStatus, store.recordReq.VersionStatus)
 	}
 	if store.recordReq.Metadata["search_document_id"] != "doc_search_1" || store.recordReq.Metadata["document_job_id"] != "job-1" {
 		t.Fatalf("record metadata = %#v", store.recordReq.Metadata)

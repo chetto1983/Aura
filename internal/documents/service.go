@@ -130,7 +130,7 @@ func (s *Service) recordCatalogDocument(
 	doc, err := s.Catalog.CreateDocument(ctx, CreateDocumentRequest{
 		IdentityID: req.IdentityID, SourceKind: req.SourceKind, SourceKey: sourceKey,
 		SearchDocumentID: documentID, PipelineGeneration: 0,
-		Scope: DocumentScopeLibrary, Title: req.FileName, Status: DocumentStatusProcessing,
+		Scope: DocumentScopeLibrary, Title: req.FileName, Status: DocumentStatusStored,
 		Metadata: map[string]any{
 			"search_document_id": documentID,
 			"document_job_id":    jobID,

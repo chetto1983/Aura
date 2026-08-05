@@ -363,7 +363,7 @@ func catalogVersionFromSQL(row sqlc.AuraDocumentVersions) DocumentVersion {
 		PipelineGeneration: row.PipelineGeneration,
 		AssetID:            uuidString(row.AssetID),
 		VersionNumber:      int(row.VersionNumber),
-		Status:             row.Status,
+		Status:             DocumentVersionStatus(row.Status),
 		SHA1:               row.Sha1,
 		SHA256:             row.Sha256,
 		ContentType:        row.ContentType,

@@ -48,8 +48,8 @@ func TestServiceCatalogsAnOwnedIngestAsProcessing(t *testing.T) {
 	if catalog.created.IdentityID != serviceTestIdentity {
 		t.Fatalf("catalog identity = %q", catalog.created.IdentityID)
 	}
-	if catalog.created.Status != DocumentStatusProcessing {
-		t.Fatalf("catalog status = %q, want processing", catalog.created.Status)
+	if catalog.created.Status != DocumentStatusStored {
+		t.Fatalf("catalog status = %q, want stored", catalog.created.Status)
 	}
 	if catalog.created.Title != "manual.pdf" {
 		t.Fatalf("catalog title = %q, want the file name", catalog.created.Title)

@@ -123,7 +123,7 @@ func normalizeCreateDocumentRequest(req CreateDocumentRequest) (CreateDocumentRe
 		req.Scope = DocumentScopeLibrary
 	}
 	if req.Status == "" {
-		req.Status = DocumentStatusDraft
+		req.Status = DocumentStatusAccepted
 	}
 	if strings.TrimSpace(req.SearchDocumentID) == "" {
 		req.SearchDocumentID = "catalog:" + uuid.NewString()
@@ -163,7 +163,7 @@ func normalizeUpdateDocumentRequest(req UpdateDocumentRequest) (UpdateDocumentRe
 		req.Scope = DocumentScopeLibrary
 	}
 	if req.Status == "" {
-		req.Status = DocumentStatusDraft
+		req.Status = DocumentStatusAccepted
 	}
 	tags, err := NormalizeTags(req.Tags)
 	if err != nil {
@@ -221,7 +221,7 @@ func normalizeRecordAssetVersionRequest(req RecordAssetVersionRequest) (RecordAs
 		req.Scope = DocumentScopeLibrary
 	}
 	if req.DocumentStatus == "" {
-		req.DocumentStatus = DocumentStatusProcessing
+		req.DocumentStatus = DocumentStatusStored
 	}
 	if req.PipelineGeneration <= 0 {
 		req.PipelineGeneration = 1
@@ -236,7 +236,7 @@ func normalizeRecordAssetVersionRequest(req RecordAssetVersionRequest) (RecordAs
 		req.SourceKey = req.AssetID
 	}
 	if req.VersionStatus == "" {
-		req.VersionStatus = "processing"
+		req.VersionStatus = DocumentVersionStatusStored
 	}
 	if strings.TrimSpace(req.MIMEType) == "" {
 		req.MIMEType = "application/octet-stream"

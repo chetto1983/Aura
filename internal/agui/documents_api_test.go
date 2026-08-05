@@ -22,7 +22,7 @@ func TestDocumentAPICreateUsesPrincipalAndRoundTripsTags(t *testing.T) {
 			Title:      "Servo Manual",
 			Tags:       []string{"g220", "servo"},
 			Metadata:   map[string]any{"source": "test"},
-			Status:     documents.DocumentStatusDraft,
+			Status:     documents.DocumentStatusAccepted,
 		},
 	}
 	s := NewServer(&scriptedRunner{}, &fakeConvStore{}, ServerConfig{})

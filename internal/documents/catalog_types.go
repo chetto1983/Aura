@@ -23,28 +23,6 @@ const (
 	DocumentScopeLibrary DocumentScope = "library"
 )
 
-// DocumentStatus is the logical document lifecycle state.
-type DocumentStatus string
-
-const (
-	// DocumentStatusDraft means the logical document exists before ingestion is queued.
-	DocumentStatusDraft DocumentStatus = "draft"
-	// DocumentStatusQueued means ingestion work has been queued.
-	DocumentStatusQueued DocumentStatus = "queued"
-	// DocumentStatusProcessing means ingestion or indexing is actively running.
-	DocumentStatusProcessing DocumentStatus = "processing"
-	// DocumentStatusReady means the active document version is searchable.
-	DocumentStatusReady DocumentStatus = "ready"
-	// DocumentStatusFailed means the latest ingestion attempt failed.
-	DocumentStatusFailed DocumentStatus = "failed"
-	// DocumentStatusDeleting means deletion has started but cleanup is still in progress.
-	DocumentStatusDeleting DocumentStatus = "deleting"
-	// DocumentStatusDeleted means the logical document has been soft-deleted.
-	DocumentStatusDeleted DocumentStatus = "deleted"
-	// DocumentStatusArchived means the document is retained but hidden from active views.
-	DocumentStatusArchived DocumentStatus = "archived"
-)
-
 // Document is the domain view of one logical, versioned document.
 type Document struct {
 	ID                 string         `json:"id"`
@@ -75,23 +53,23 @@ type DocumentSummary = Document
 
 // DocumentVersion summarizes an immutable content version.
 type DocumentVersion struct {
-	ID                 string    `json:"id"`
-	IdentityID         string    `json:"identity_id"`
-	DocumentID         string    `json:"document_id"`
-	SearchDocumentID   string    `json:"search_document_id"`
-	PipelineGeneration int64     `json:"pipeline_generation"`
-	AssetID            string    `json:"asset_id,omitempty"`
-	VersionNumber      int       `json:"version_number"`
-	Status             string    `json:"status"`
-	SHA1               string    `json:"sha1,omitempty"`
-	SHA256             string    `json:"sha256"`
-	ContentType        string    `json:"content_type"`
-	SizeBytes          int64     `json:"size_bytes"`
-	StorageObjectID    string    `json:"storage_object_id"`
-	ChunkingConfigHash string    `json:"chunking_config_hash,omitempty"`
-	PipelineConfigHash string    `json:"pipeline_config_hash,omitempty"`
-	CreatedAt          time.Time `json:"created_at"`
-	UpdatedAt          time.Time `json:"updated_at"`
+	ID                 string                `json:"id"`
+	IdentityID         string                `json:"identity_id"`
+	DocumentID         string                `json:"document_id"`
+	SearchDocumentID   string                `json:"search_document_id"`
+	PipelineGeneration int64                 `json:"pipeline_generation"`
+	AssetID            string                `json:"asset_id,omitempty"`
+	VersionNumber      int                   `json:"version_number"`
+	Status             DocumentVersionStatus `json:"status"`
+	SHA1               string                `json:"sha1,omitempty"`
+	SHA256             string                `json:"sha256"`
+	ContentType        string                `json:"content_type"`
+	SizeBytes          int64                 `json:"size_bytes"`
+	StorageObjectID    string                `json:"storage_object_id"`
+	ChunkingConfigHash string                `json:"chunking_config_hash,omitempty"`
+	PipelineConfigHash string                `json:"pipeline_config_hash,omitempty"`
+	CreatedAt          time.Time             `json:"created_at"`
+	UpdatedAt          time.Time             `json:"updated_at"`
 }
 
 // DocumentVersionRecord is returned after recording an asset as a logical document version.
@@ -171,7 +149,7 @@ type RecordAssetVersionRequest struct {
 	SHA256             string
 	VersionNumber      int
 	DocumentStatus     DocumentStatus
-	VersionStatus      string
+	VersionStatus      DocumentVersionStatus
 	StorageKind        string
 	RetentionClass     string
 	ChunkingConfigHash string

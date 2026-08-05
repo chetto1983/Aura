@@ -262,7 +262,7 @@ func pipelineRunFixture(path string, objects objectstore.Store) PipelineRunReque
 		Record: DocumentVersionRecord{
 			Document: Document{
 				ID: "10000000-0000-0000-0000-000000000001", IdentityID: "00000000-0000-0000-0000-000000000001",
-				SearchDocumentID: "doc_canary", Status: DocumentStatusProcessing,
+				SearchDocumentID: "doc_canary", Status: DocumentStatusStored,
 			},
 			Version: DocumentVersion{
 				ID: "20000000-0000-0000-0000-000000000001", IdentityID: "00000000-0000-0000-0000-000000000001",
