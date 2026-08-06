@@ -3,8 +3,17 @@
 **Data:** 2026-08-06 · **Stato:** misurato, non integrato · **Codice:** `flows/`, `probes/`
 
 Sostituire la pipeline documenti (Docling + versioning + worker di cancellazione fatti a
-mano) con **MarkItDown + CocoIndex + ArcadeDB**, senza scrivere un driver e senza
+mano) con **un estrattore + CocoIndex + ArcadeDB**, senza scrivere un driver e senza
 aggiungere un datastore. Tutte le cifre qui sotto sono misurate su questo host, non stimate.
+
+> **MarkItDown non è più il candidato estrattore.** Questo documento lo misura solo contro
+> Docling, su PDF, dove vince. Allargato a tutti i formati Office la sera del 2026-08-06
+> è caduto: fallisce del tutto su `.doc`, `.ppt`, `.odt`, `.ods`, `.odp`, restituisce
+> markup RTF grezzo come se fosse testo, e **rompe la ricerca per frase esatta sui PDF
+> giustificati** emettendo doppi spazi (invisibile: produce più caratteri di un estrattore
+> pulito). Il candidato è **iscc-tika 0.6.0** — 15 formati su 16, 18× più veloce sul PDF.
+> Le misure stanno in `HANDOFF.md` §3.4. Le cifre qui sotto restano valide come confronto
+> con Docling, non come scelta.
 
 ---
 
@@ -29,7 +38,7 @@ entrano tutti in contesto, cioè su casi che non sono casi RAG. Misuravano la co
 
 ## 2. Le misure
 
-### Conversione — MarkItDown contro Docling
+### Conversione — MarkItDown contro Docling (solo PDF; per la scelta vedi HANDOFF §3.4)
 
 | documento | pagine | Docling | MarkItDown |
 |---|---|---|---|
@@ -166,7 +175,7 @@ l'AutoBackupScheduler. È fuorviante — Cypher è compilato dentro.
 | gruppo | non-test | test | destino |
 |---|---|---|---|
 | orchestrazione: `pipeline_worker` (stage, lease, fingerprint, retry), `pipeline_store_*`, `jobs_*`, `delete_durable_*`, `events_store`, `orphans`, `retry_backoff`, `job_context` | 4.468 | 2.047 | **CocoIndex** |
-| client Docling: `docling_client{,_transport,_types}`, `docling_passages` | 1.041 | 565 | **MarkItDown** (~40 LOC) |
+| client Docling: `docling_client{,_transport,_types}`, `docling_passages` | 1.041 | 565 | **iscc-tika** (~40 LOC) |
 | `internal/arcadedb/document_projection.go` — versioning/tombstone | 567 | 335 | **sparisce** |
 | **cancellabile** | **6.076** | **2.947** | **9.023 LOC** |
 | catalogo, retrieval, API, identity | 3.563 | — | resta |
