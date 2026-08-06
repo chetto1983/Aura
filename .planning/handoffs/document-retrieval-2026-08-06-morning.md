@@ -204,18 +204,23 @@ competence. Separable from retrieval; worth its own discussion.
 
 ## Working tree — READ BEFORE BUILDING
 
-Two uncommitted things, neither mine:
+One uncommitted thing, not mine:
 
-- **`internal/webui/dist/` is EMPTY** — 95 files deleted, `assets/` has 0 entries. A Vite build
-  cleans `outDir` first; it either did not finish or failed. **`go build` will fail on the
-  `go:embed`** until it is repopulated, and CI's D-05 "web dist freshness" job compares the
-  committed dist to a fresh build. Nothing is committed, so `master` is safe and CI is green at
-  `62208c52d`. Recover with a completed `npm run build` (Linux Node 24, see below) or
-  `git restore internal/webui/dist`.
 - **6 modified files under `web/src/documents/`** — operator work in progress on the upload
   flow (`documentUpload.ts`, `DocumentsWorkspace.tsx`, `DocumentUploadDialog.tsx` + tests).
   These were swept into a commit by `git add -A` and **split back out before pushing**; they
-  are untouched. Do not `git add -A`.
+  are untouched. Do not `git add -A` — stage explicitly.
+
+Transient, already resolved, recorded because it will recur: mid-session
+`internal/webui/dist/` went **empty** (95 files deleted, `assets/` at 0) while a Vite build was
+in flight — it cleans `outDir` first. In that window **`go build` fails on the `go:embed`**,
+and CI's D-05 "web dist freshness" job compares the committed dist to a fresh build. It
+repopulated on its own and now matches HEAD byte-for-byte (94 assets, no diff). If you find it
+empty again, finish the build (Linux Node 24) or `git restore internal/webui/dist` — do not
+commit the deletions.
+
+The running container is unaffected by any of this: the UI is `go:embed`-ed into the binary,
+and the image was built while dist was intact.
 
 The running container is unaffected: the UI is `go:embed`-ed into the binary, and the image was
 built while dist was intact. `GET :9080/` answers `401` (Authula), i.e. the server is up.
