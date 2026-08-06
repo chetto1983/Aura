@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"iter"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -139,7 +140,9 @@ func musrPublishDocument(
 	t.Helper()
 	assetID := uuid.NewString()
 	objectKey := "musr-publish/" + assetID
-	sha256 := fmt.Sprintf("%064s", assetID[:8]+assetID[24:])
+	// Real hex, 64 wide: a uuid is 32 hex digits once its dashes are gone, zero-padded to
+	// the width of a sha256 digest. (fmt's %064s pads with SPACES, which is not a digest.)
+	sha256 := strings.Repeat("0", 32) + strings.ReplaceAll(assetID, "-", "")
 
 	if err := db.WithIdentityTxRaw(ctx, pool, identityID, func(tx pgx.Tx) error {
 		_, e := tx.Exec(ctx, `

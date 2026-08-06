@@ -14,7 +14,6 @@ package documents
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"testing"
 
@@ -51,9 +50,11 @@ func publishForSearch(
 
 	assetID := uuid.NewString()
 	objectKey := "publish-for-search/" + assetID
-	// Deterministic per asset: the reservation keys replay off the raw sha256, so two
-	// documents published in one test must not collide on it.
-	sha256 := fmt.Sprintf("%064s", strings.ReplaceAll(assetID, "-", ""))
+	// Deterministic per asset, and real hex: the reservation keys replay detection off the
+	// raw sha256, so two documents published in one test must not collide on it. A uuid is
+	// 32 hex digits once its dashes are gone; the zero prefix pads it to the 64 a sha256
+	// digest has. (fmt's %064s would pad with SPACES, which is not a digest.)
+	sha256 := strings.Repeat("0", 32) + strings.ReplaceAll(assetID, "-", "")
 
 	if err := asDocumentIdentity(ctx, pool, identityID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `
