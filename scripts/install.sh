@@ -230,6 +230,29 @@ EMBED_MODEL_URL_DEFAULT="https://huggingface.co/ggml-org/embeddinggemma-300M-GGU
 
 EMBED_MODEL_PATH_DEFAULT="/root/.cache/llama.cpp/embeddinggemma-300M-Q8_0.gguf"
 
+embed_model_url() {
+  url="$(env_value AURA_EMBED_MODEL_URL)"
+  [ -n "$url" ] || url="$EMBED_MODEL_URL_DEFAULT"
+  printf '%s\n' "$url"
+}
+
+# One HEAD, three answers: the size the fetch checks against, plus the two provenance
+# values compose demands. `-L` prints the headers of EVERY hop and the CDN's final hop
+# carries its own `etag:` that is NOT the artifact digest, so every reader below takes
+# the FIRST match and stops.
+embed_model_headers() {
+  curl -fsIL "$(embed_model_url)" 2>/dev/null
+}
+
+# Reads one header from stdin. `strip` is a character class dropped from the value,
+# which is how the quotes come off an ETag and stray CR off a header line.
+embed_header_value() {
+  awk -v want="$1" -v strip="$2" '
+    BEGIN { IGNORECASE = 1; want = tolower(want) ":" }
+    tolower($1) == want { gsub(strip, "", $2); print $2; exit }
+  '
+}
+
 ensure_embed_model() {
   # Both values are ALSO defaulted in compose.yaml, so an .env that omits them still
   # boots a sidecar pointing at this path. Returning early on an absent key would skip
@@ -237,12 +260,11 @@ ensure_embed_model() {
   # exists to prevent. Mirror the compose default instead.
   model_path="$(env_value AURA_EMBED_MODEL_PATH)"
   [ -n "$model_path" ] || model_path="$EMBED_MODEL_PATH_DEFAULT"
-  model_url="$(env_value AURA_EMBED_MODEL_URL)"
-  [ -n "$model_url" ] || model_url="$EMBED_MODEL_URL_DEFAULT"
+  model_url="$(embed_model_url)"
 
   # Upstream is the size authority: pinning one here would turn a legitimate upstream
   # rebuild into a failed install, while asking the server costs one HEAD request.
-  want_bytes="$(curl -fsIL "$model_url" 2>/dev/null | awk 'BEGIN{IGNORECASE=1} /^x-linked-size:/ { gsub(/[^0-9]/,"",$2); print $2; exit }')"
+  want_bytes="$(embed_model_headers | embed_header_value x-linked-size '[^0-9]')"
 
   docker compose create aura-llama-embed >/dev/null 2>&1 || true
   embed_cid="$(docker compose ps -aq aura-llama-embed 2>/dev/null | head -1)"
@@ -319,6 +341,28 @@ ensure_objectstore_env_secrets() {
   ensure_generated_env_secret AURA_GARAGE_ADMIN_TOKEN 32
 }
 
+# AURA_EMBED_REVISION/AURA_EMBED_FINGERPRINT are not secrets to invent: they name the
+# exact artifact this install serves, and a pair that does not match it defeats the whole
+# point — the mismatch that is supposed to stop vectors from two different models being
+# compared. HuggingFace answers both in the HEAD already made for the size: X-Repo-Commit
+# is the revision, and for an LFS object X-Linked-ETag IS the file's SHA-256. Derive them.
+ensure_embed_provenance() {
+  if [ -n "$(env_value AURA_EMBED_REVISION)" ] && [ -n "$(env_value AURA_EMBED_FINGERPRINT)" ]; then
+    return
+  fi
+  headers="$(embed_model_headers)"
+  revision="$(printf '%s\n' "$headers" | embed_header_value x-repo-commit '[^0-9a-fA-F]')"
+  fingerprint="$(printf '%s\n' "$headers" | embed_header_value x-linked-etag '[^0-9a-fA-F]')"
+  if [ -z "$revision" ] || [ -z "$fingerprint" ]; then
+    echo "FAIL: could not derive AURA_EMBED_REVISION/AURA_EMBED_FINGERPRINT from $(embed_model_url)." >&2
+    echo "      compose requires both. A non-HuggingFace mirror does not serve those headers;" >&2
+    echo "      set the pair in .env from the artifact you actually serve." >&2
+    exit 1
+  fi
+  ensure_env_default AURA_EMBED_REVISION "$revision"
+  ensure_env_default AURA_EMBED_FINGERPRINT "$fingerprint"
+}
+
 ensure_internal_env_secrets() {
   command -v openssl >/dev/null 2>&1 || {
     echo "FAIL: openssl is required to generate Aura internal secrets." >&2
@@ -337,6 +381,7 @@ ensure_internal_env_secrets() {
   ensure_generated_env_secret SEARXNG_SECRET 32
   ensure_generated_env_secret AURA_DOCLING_API_KEY 32
   ensure_objectstore_env_secrets
+  ensure_embed_provenance
   ensure_env_default ARCADEDB_APP_USER "aura_memory"
   ensure_env_default ARCADEDB_DATABASE "aura_memory"
   ensure_env_default POSTGRES_IMAGE "${POSTGRES_IMAGE:-postgres:18.4-alpine3.24}"
@@ -417,10 +462,12 @@ AURA_GARAGE_ADMIN_TOKEN=${garage_admin_token}
 OPENROUTER_API_KEY=${openrouter_key}
 EOF
   # The heredoc above is the fresh-install template and it WILL drift: compose
-  # fail-fasts on twelve `:?` variables and interpolates the whole file before it
-  # selects a service, so one missing name aborts every compose invocation. Rather
-  # than list them twice, hand the file to the same idempotent filler the
-  # already-have-a-.env path uses — it only writes keys that are absent.
+  # fail-fasts on every `:?` variable and interpolates the whole file before it
+  # selects a service, so one missing name aborts every compose invocation — including
+  # `ps`. Rather than list them twice, hand the file to the same idempotent filler the
+  # already-have-a-.env path uses; it only writes keys that are absent. Counting them
+  # here is what rotted last time: `grep -oE '\$\{[A-Z_]+:\?' compose.yaml | sort -u`
+  # is the live count, and this installer must cover all of it.
   ensure_internal_env_secrets
   chmod 600 .env
 }
