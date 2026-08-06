@@ -714,9 +714,15 @@ services:
     environment:
       DOCLING_SERVE_API_KEY: ${AURA_DOCLING_API_KEY:?AURA_DOCLING_API_KEY required in .env}
       DOCLING_SERVE_ENABLE_UI: "false"
-      DOCLING_SERVE_ENABLE_REMOTE_SERVICES: "false"
+      # These two gate the VLM pipeline that offloads OCR to aura-ocr-vl (GLM-OCR).
+      # Turning them on does NOT give Docling the internet: the aura-docling network is
+      # `internal: true`, so the only thing it can newly reach is a sidecar on that same
+      # network. Containment here is the network, not the flag. Custom VLM config is
+      # needed because the built-in GLMOCR_VLLM_API preset hardcodes localhost:8000 and
+      # ours answers on aura-ocr-vl:8082.
+      DOCLING_SERVE_ENABLE_REMOTE_SERVICES: "${AURA_DOCLING_REMOTE_SERVICES:-true}"
       DOCLING_SERVE_ALLOW_EXTERNAL_PLUGINS: "false"
-      DOCLING_SERVE_ALLOW_CUSTOM_VLM_CONFIG: "false"
+      DOCLING_SERVE_ALLOW_CUSTOM_VLM_CONFIG: "${AURA_DOCLING_CUSTOM_VLM:-true}"
       DOCLING_SERVE_ALLOW_CUSTOM_PICTURE_DESCRIPTION_CONFIG: "false"
       DOCLING_SERVE_ALLOW_CUSTOM_CODE_FORMULA_CONFIG: "false"
       DOCLING_SERVE_ALLOW_CUSTOM_TABLE_STRUCTURE_CONFIG: "false"
@@ -908,7 +914,7 @@ services:
       retries: 12
       start_period: 60s
 
-  # aura-ocr-vl — GLM-OCR Q8 (llama.cpp CPU vision). MULTIMODAL_BASE_URL=
+  # aura-ocr-vl — GLM-OCR Q8 on llama.cpp GPU vision. MULTIMODAL_BASE_URL=
   # http://aura-ocr-vl:8082/v1, POST /chat/completions with a base64 image_url.
   # NOT started when AURA_VISION_CLOUD=true (the cloud-vision tier B).
   aura-ocr-vl:
@@ -916,19 +922,40 @@ services:
     container_name: aura-ocr-vl
     environment:
       LLAMA_ARG_HOST: 0.0.0.0
+      # --hf-repo downloads into $HF_HOME/hub, NOT /root/.cache/llama.cpp, so without
+      # this the 1.4GB (Q8_0 + mmproj) lands in the container layer and the volume
+      # below stays empty: every recreate re-downloaded it. Same trap aura-llm documents.
+      HF_HOME: /root/.cache/llama.cpp
     # Offloaded by default to free ~2.35GB VRAM for the GPU embed sidecar. On-demand:
     # `docker compose --profile ocr up -d aura-ocr-vl`. Vision paths fail-soft when absent.
     profiles: [ocr]
     restart: unless-stopped
     command:
       - --hf-repo
-      - ${AURA_OCR_VL_HF_REPO:-ggml-org/glm-ocr-GGUF}
+      # No --hf-file: the repo's `latest` manifest already resolves to the Q8_0 model
+      # layer plus the mmproj projector layer, and llama.cpp loads both. Naming only the
+      # model file here would leave the projector behind and the server would boot blind.
+      - ${AURA_OCR_VL_HF_REPO:-ggml-org/GLM-OCR-GGUF}
       - --port
       - "8082"
       - -ngl
       - "${AURA_OCR_VL_NGL:-99}"               # offload all layers to GPU (CPU OCR took ~55s; GLM-OCR is ~1.4GB → fits 4GB)
       - -t
       - "4"                                    # mini-PC CPU budget cap (feedback_minipc_cpu_budget)
+      # -c is PER SLOT and multiplies by -np, the lesson aura-llama-embed already paid for.
+      # Unset, llama.cpp picked 4 slots x 10240 = 40960 tokens of KV and the 4GB A2000 went
+      # to 181 MiB free with the embed sidecar still resident. OCR is one page at a time:
+      # one slot is the honest shape.
+      #
+      # 16384 is not a round number, it is markitdown-ocr's: it renders a scanned page at a
+      # HARDCODED 300 DPI (_pdf_converter_with_ocr.py `page.to_image(resolution=300)`), which
+      # measured 8083-8126 prompt tokens here. Against an 8192 cap that survived only by
+      # luck — a denser page truncates silently, which reads as bad OCR, not as an error.
+      # Prompt ~8.1k + the 4096 max_tokens the GLM-OCR spec asks for needs ~12.2k.
+      - -np
+      - "${AURA_OCR_VL_SLOTS:-1}"
+      - -c
+      - "${AURA_OCR_VL_CTX:-16384}"
     deploy:
       resources:
         reservations:
@@ -938,6 +965,13 @@ services:
               capabilities: [gpu]
     ports:
       - "127.0.0.1:${AURA_OCR_VL_PORT:-8082}:8082"
+    # `default` carries the first-boot HF download; `aura-docling` is what lets the
+    # converter POST page images here. Joining the sidecar to Docling's internal network
+    # is the direction that keeps Docling egress-free — the reverse (Docling on default)
+    # would hand it NAT and undo the isolation the network comment above promises.
+    networks:
+      - default
+      - aura-docling
     volumes:
       - aura-ocr-vl:/root/.cache/llama.cpp
     healthcheck:
