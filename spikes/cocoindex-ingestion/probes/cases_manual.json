@@ -1,0 +1,22 @@
+{
+  "answerable": [
+    ["Qual e' il numero di ordinazione del Sensor Module External SME20?", "6SL3055-0AA00-5EA0"],
+    ["Secondo quale norma europea e' definita la categoria C3 di soppressione radiodisturbi?", "61800-3"],
+    ["Secondo quale norma e' definita la categoria di sovratensione III?", "60664-1"],
+    ["Quale morsettiera del Terminal Board TB30 porta gli ingressi analogici?", "X482"],
+    ["Quanto pesa circa la Communication Board Ethernet CBE20?", "0,1"],
+    ["Qual e' il numero di ordinazione di questo manuale del prodotto?", "6SL3097-4AH00-0CP1"],
+    ["Qual e' la corrente di carico massima delle prese di misura?", "3 mA"],
+    ["Quante regole di sicurezza vanno rispettate prima di intervenire sul Sensor Module External?", "5 regole"],
+    ["Quale categoria opzionale di soppressione radiodisturbi richiede la dichiarazione di conformita' EMC?", "C2"],
+    ["Quale sensore PTC a 150 gradi e' previsto per il rilevamento temperatura?", "PTC 150"]
+  ],
+  "unanswerable": [
+    "Qual e' il prezzo di listino della Control Unit CU320-2?",
+    "Quanti anni dura la garanzia commerciale del prodotto?",
+    "Chi e' l'amministratore delegato di Siemens Italia?",
+    "Qual e' la procedura per richiedere un rimborso dell'acquisto?",
+    "Quanti dipendenti lavorano nello stabilimento di produzione?",
+    "Quale antivirus e' raccomandato per il PC di programmazione?"
+  ]
+}
