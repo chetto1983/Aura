@@ -131,6 +131,60 @@ place until it is.
 has been successfully ingested since. **CP1 must start by confirming an upload now reaches
 `ready` with its own version row.**
 
+## CI is RED, and the machine was left ON because of it
+
+Pushed through `d81e87417`. **CodeQL green. CI and Skills red.** Do not treat this branch as
+landed.
+
+CI had been green at `30c781358` and was not run again until tonight, so every breakage below
+was already sitting in the range — invisible because the jobs died before executing anything.
+
+### Fixed tonight
+
+| Break | Fix |
+|---|---|
+| Every compose-touching job failed at bring-up: `AURA_DOCLING_API_KEY` / `AURA_EMBED_REVISION` / `AURA_EMBED_FINGERPRINT` made `:?`-required with no way for CI to supply them. compose interpolates the whole file before selecting a service, so a job starting only Postgres failed as hard as one starting the stack. | `1db674ecd` — added to the workflow env blocks, where the same lesson is already recorded three times (caddy, Garage admin token, ArcadeDB) |
+| `arcadedb-mcp` image would not build: `internal/arcadedb` gained an import of `internal/embeddings`, and the Dockerfile copied two directories while `go list -deps` reports **19** internal packages | `cb603f696` — copy the whole internal tree; enumeration is what broke it and would break again |
+| D-05 stale guard: committed `internal/webui/dist` did not equal a fresh build — 54 assets out of date | `d81e87417` — rebuilt in Linux Node 24 (the gate is a byte comparison, so the Windows host would not have settled it) |
+
+### STILL RED — this is the next session's first job
+
+**`db_integration` suite fails against the 0093 schema.** `internal/db` and
+`internal/documents`, roughly six tests:
+
+```
+TestRLSFailsClosedWithoutIdentity
+  null value in column "source_kind" of relation "documents" violates not-null (23502)
+TestSetSearchDocumentStatusSpeaksTheSearchIDNamespace
+  violates check constraint "documents_generation_valid" (23514)
+TestIngestCardMakesAFileFindableByWhatIsInsideIt
+  search document digests: invalid reference to FROM-clause entry for table "documents" (42P01)
+```
+
+Two different classes, and **the difference matters**:
+
+- The `23502` and `23514` failures are **test fixtures** that predate 0093 — they insert
+  documents without `source_kind` and with a `pipeline_generation` the new CHECK rejects.
+  Updating the fixtures is probably right, but confirm the constraint is what we want before
+  bending tests to fit it.
+- The `42P01` is **not a fixture problem**. `invalid reference to FROM-clause entry` is a
+  malformed SQL query in the digest-search path. That is a production bug, and it means
+  document digest search is broken. **Do not "fix" it by changing the test.**
+
+Deliberately not attempted at 04:00 unsupervised: it needs the database, it needs a judgment
+call on constraint-versus-fixture, and one of the three is a real query defect that deserves
+a rested reading.
+
+### The pattern worth acting on
+
+`8d2701bd1` ("Converge the industrial document pipeline") has now produced **four** distinct
+breakages: the deferred-FK migration failure, asset ingestion dead on arrival, CI unable to
+start any container, and the `db_integration` suite. Every one passed `make quality` green.
+
+`make quality` builds, vets, lints, races and vuln-scans. It never starts a container, never
+applies a migration, and never uploads a file. Treating it as a proxy for "the product works"
+is what let one commit ship four independent failures.
+
 ## Resume instructions
 
 The stack was left healthy and traces flowing. After a reboot:
