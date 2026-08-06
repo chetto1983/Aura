@@ -699,8 +699,17 @@ services:
     user: "1001:0"
     security_opt:
       - no-new-privileges:true
-    mem_limit: 4g
-    cpus: 2.0
+    # Docling is THE ingestion bottleneck, and these caps are why. Measured per-stage on the
+    # live deployment (aura.document_pipeline_stages): convert 28.28s, chunk 0.02s,
+    # embed 0.63s, project 0.28s, activate 0.03s — conversion is 97% of the time from upload
+    # to searchable, and everything Aura itself does is sub-second. Under load the container
+    # sat at 152% CPU against a 2.0 cap and 2.87 of 4 GiB: pegged on both, on an 8-CPU host
+    # where it was the only thing anyone was waiting for.
+    #
+    # Knobs rather than literals, like every other service here, so an appliance with a
+    # different core count can size it without editing this file.
+    mem_limit: ${AURA_DOCLING_MEM_LIMIT:-5g}
+    cpus: ${AURA_DOCLING_CPUS:-4.0}
     pids_limit: 512
     environment:
       DOCLING_SERVE_API_KEY: ${AURA_DOCLING_API_KEY:?AURA_DOCLING_API_KEY required in .env}
