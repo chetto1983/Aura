@@ -13,7 +13,7 @@ func TestLoadDocumentConfigDefaultsAndOverrides(t *testing.T) {
 		t.Fatalf("unexpected defaults: %+v", cfg)
 	}
 	if cfg.ConvertTimeout != 15*time.Minute || cfg.MaxRequestBytes != 100<<20 ||
-		cfg.MaxPages != 2000 || cfg.ChunkMaxTokens != 512 || cfg.ChunkTokenizer != DoclingTokenizer {
+		cfg.MaxPages != 2000 || cfg.ChunkMaxTokens != 2048 || cfg.ChunkTokenizer != DoclingTokenizer {
 		t.Fatalf("unexpected limits: %+v", cfg)
 	}
 
@@ -56,7 +56,7 @@ func TestDocumentConfigValidation(t *testing.T) {
 		{name: "timeout", edit: func(c *DocumentConfig) { c.ConvertTimeout = 16 * time.Minute }, want: "AURA_DOCUMENT_CONVERT_TIMEOUT_SEC"},
 		{name: "request bytes", edit: func(c *DocumentConfig) { c.MaxRequestBytes = 0 }, want: "AURA_ASSET_MAX_DOCUMENT_BYTES"},
 		{name: "pages", edit: func(c *DocumentConfig) { c.MaxPages = 2001 }, want: "AURA_DOCUMENT_MAX_PAGES"},
-		{name: "tokens", edit: func(c *DocumentConfig) { c.ChunkMaxTokens = 513 }, want: "AURA_DOCUMENT_CHUNK_MAX_TOKENS"},
+		{name: "tokens", edit: func(c *DocumentConfig) { c.ChunkMaxTokens = 4097 }, want: "AURA_DOCUMENT_CHUNK_MAX_TOKENS"},
 		{name: "tokenizer", edit: func(c *DocumentConfig) { c.ChunkTokenizer = "other/model" }, want: "AURA_DOCUMENT_CHUNK_TOKENIZER"},
 	}
 	for _, tc := range tests {

@@ -16,9 +16,19 @@ import (
 // constants are ordinary defaults — their bounds are the unit interval and
 // non-negativity, not these values.
 const (
-	DefaultDocumentMaxPassages         = 10_000
-	DefaultDocumentMaxActivePassages   = 100_000
-	DefaultDocumentEmbedBatchSize      = 32
+	DefaultDocumentMaxPassages       = 10_000
+	DefaultDocumentMaxActivePassages = 100_000
+	// DefaultDocumentEmbedBatchSize holds the PER-REQUEST token envelope constant while the
+	// chunk budget grew. It was 32 against 512-token chunks (~16k tokens per request, the
+	// shape the embed sidecar was calibrated against); chunks are now 2048
+	// (defaultDocumentChunkTokens), so 8 keeps the same ~16k. Raising the chunk size without
+	// lowering this would have quadrupled the request and re-run the HTTP 400
+	// "exceeds the available context size" that dead-lettered the embed stage before.
+	DefaultDocumentEmbedBatchSize = 8
+
+	// maxDocumentEmbedBatchSize is the largest batch the embed sidecar has actually been
+	// run against (32 × 512-token chunks). It bounds the knob; it is not the default.
+	maxDocumentEmbedBatchSize          = 32
 	DefaultDocumentPipelineAttempts    = 5
 	DefaultDocumentPipelineLeaseSec    = 1_200
 	DefaultDocumentRetrievalCandidates = 200
@@ -78,8 +88,12 @@ func (c DocumentPipelineConfig) Validate() error {
 	if c.MaxActivePassages < c.MaxPassagesPerVersion || c.MaxActivePassages > DefaultDocumentMaxActivePassages {
 		return fmt.Errorf("AURA_DOCUMENT_MAX_ACTIVE_PASSAGES must be between the per-version cap and %d", DefaultDocumentMaxActivePassages)
 	}
-	if c.EmbedBatchSize <= 0 || c.EmbedBatchSize > DefaultDocumentEmbedBatchSize {
-		return fmt.Errorf("AURA_DOCUMENT_EMBED_BATCH_SIZE must be between 1 and %d", DefaultDocumentEmbedBatchSize)
+	// Ceiling, not the default: using the default as its own maximum is what made the chunk
+	// budget untunable and cost recall. 32 is the batch the sidecar was proven against at
+	// the older 512-token chunk size, so it stays reachable for operators running smaller
+	// chunks — it is simply no longer the default.
+	if c.EmbedBatchSize <= 0 || c.EmbedBatchSize > maxDocumentEmbedBatchSize {
+		return fmt.Errorf("AURA_DOCUMENT_EMBED_BATCH_SIZE must be between 1 and %d", maxDocumentEmbedBatchSize)
 	}
 	if c.MaxAttempts <= 0 || c.MaxAttempts > DefaultDocumentPipelineAttempts {
 		return fmt.Errorf("AURA_DOCUMENT_PIPELINE_MAX_ATTEMPTS must be between 1 and %d", DefaultDocumentPipelineAttempts)

@@ -21,7 +21,22 @@ const (
 	DefaultAssetMaxDocumentBytes = 100 << 20
 	defaultDocumentConvertSec    = 900
 	defaultDocumentMaxPages      = 2000
-	defaultDocumentChunkTokens   = 512
+
+	// defaultDocumentChunkTokens is the chunk budget handed to Docling's hybrid chunker.
+	//
+	// It was 512, and 512 was ALSO the validation ceiling below, so the knob could never be
+	// raised — the default was the maximum. That cost recall, measured: Docling warns
+	// "Chunks prefix is too long (637/709/729/1603 tokens) for chunk size 512. It will be
+	// split into multiple chunks and only included in the first chunk(s)". The prefix is the
+	// heading path that says WHICH section a passage belongs to, so on any document with real
+	// structure most chunks were stored without the context that identifies them.
+	defaultDocumentChunkTokens = 2048
+
+	// maxDocumentChunkTokens is a physical limit, not a preference: an embedding needs the
+	// whole sequence in ONE llama.cpp micro-batch, and the sidecar runs with -ub 4096
+	// (compose.yaml, aura-llama-embed). A chunk above that is rejected by the sidecar rather
+	// than truncated, which dead-lettered the embed stage the last time it happened.
+	maxDocumentChunkTokens = 4096
 )
 
 // DocumentConfig is the immutable Docling conversion/chunking boundary from
@@ -80,8 +95,8 @@ func (c DocumentConfig) Validate() error {
 	if c.MaxPages <= 0 || c.MaxPages > defaultDocumentMaxPages {
 		return fmt.Errorf("AURA_DOCUMENT_MAX_PAGES must be between 1 and %d", defaultDocumentMaxPages)
 	}
-	if c.ChunkMaxTokens <= 0 || c.ChunkMaxTokens > defaultDocumentChunkTokens {
-		return fmt.Errorf("AURA_DOCUMENT_CHUNK_MAX_TOKENS must be between 1 and %d", defaultDocumentChunkTokens)
+	if c.ChunkMaxTokens <= 0 || c.ChunkMaxTokens > maxDocumentChunkTokens {
+		return fmt.Errorf("AURA_DOCUMENT_CHUNK_MAX_TOKENS must be between 1 and %d", maxDocumentChunkTokens)
 	}
 	if c.ChunkTokenizer != DoclingTokenizer {
 		return fmt.Errorf("AURA_DOCUMENT_CHUNK_TOKENIZER must equal the pinned tokenizer family")

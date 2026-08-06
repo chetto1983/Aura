@@ -7,11 +7,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/identity"
 )
 
 const runtimeWorkerIdentityID = "10000000-0000-0000-0000-000000000001"
+
+// testJobLease stands in for the production value, which is now derived from the pipeline
+// stage lease rather than chosen at the worker. Its exact length is irrelevant to these
+// tests — that the two horizons AGREE is what matters, and
+// TestRuntimeProcessingJobWorkerLeaseMatchesStageLease asserts it.
+const testJobLease = time.Minute
 
 func TestRuntimeAssetProcessingJobWorkerProcessesClaimedAsset(t *testing.T) {
 	store := &fakeRuntimeIngestionJobQueue{
@@ -31,7 +38,7 @@ func TestRuntimeAssetProcessingJobWorkerProcessesClaimedAsset(t *testing.T) {
 		}},
 	}
 	processor := &recordingAssetProcessor{}
-	worker := newRuntimeProcessingJobWorker(store, processor, runtimeWorkerIdentityID, "worker-3")
+	worker := newRuntimeProcessingJobWorker(store, processor, runtimeWorkerIdentityID, "worker-3", testJobLease)
 
 	processed, err := worker.ProcessOnce(context.Background())
 	if err != nil {
@@ -69,7 +76,7 @@ func TestRuntimeProcessingJobWorkerDeadLettersRetiredEmbeddingJobs(t *testing.T)
 		}},
 	}
 	worker := newRuntimeProcessingJobWorker(
-		store, &recordingAssetProcessor{}, runtimeWorkerIdentityID, "worker-2",
+		store, &recordingAssetProcessor{}, runtimeWorkerIdentityID, "worker-2", testJobLease,
 	)
 
 	processed, err := worker.ProcessOnce(context.Background())
@@ -84,10 +91,40 @@ func TestRuntimeProcessingJobWorkerDeadLettersRetiredEmbeddingJobs(t *testing.T)
 	}
 }
 
+// TestRuntimeProcessingJobWorkerLeaseMatchesStageLease pins the crash-recovery defect that
+// dead-lettered a healthy document on 2026-08-06.
+//
+// The job lease was a hardcoded 5 minutes while the pipeline STAGE lease is
+// AURA_DOCUMENT_PIPELINE_LEASE_SEC (1200s / 20 minutes). When a worker died mid-convert the
+// job freed itself 15 minutes before its own stage did, so every reclaim failed instantly
+// with "no pipeline stage is claimable" AND burned an attempt — all five were consumed
+// inside the stage-lease window and the document dead-lettered with nothing wrong with it.
+//
+// A job cannot progress without claiming its stage, so reclaiming it earlier buys nothing.
+// The lease now comes from the same config the stage lease does. This fails against the old
+// hardcoded value, which ignored whatever it was handed.
+func TestRuntimeProcessingJobWorkerLeaseMatchesStageLease(t *testing.T) {
+	stageLease := time.Duration(config.DefaultDocumentPipelineLeaseSec) * time.Second
+	worker := newRuntimeProcessingJobWorker(
+		&fakeRuntimeIngestionJobQueue{}, &recordingAssetProcessor{},
+		runtimeWorkerIdentityID, "worker-lease", stageLease,
+	)
+	if worker.LeaseDuration != stageLease {
+		t.Fatalf("job lease = %s, want the stage lease %s", worker.LeaseDuration, stageLease)
+	}
+	if worker.LeaseDuration < stageLease {
+		t.Fatalf(
+			"job lease %s is shorter than the stage lease %s — every crash mid-stage will "+
+				"burn all retries on \"no pipeline stage is claimable\"",
+			worker.LeaseDuration, stageLease,
+		)
+	}
+}
+
 func TestNewRuntimeProcessingJobWorkerWiresQueueDepthWhenStoreSupportsIt(t *testing.T) {
 	store := &fakeRuntimeIngestionJobQueueWithDepth{}
 	worker := newRuntimeProcessingJobWorker(
-		store, &recordingAssetProcessor{}, runtimeWorkerIdentityID, "worker-1",
+		store, &recordingAssetProcessor{}, runtimeWorkerIdentityID, "worker-1", testJobLease,
 	)
 	if worker.QueueDepth == nil {
 		t.Fatal("QueueDepth should be wired when the store implements IngestionQueueDepthSource")
@@ -97,7 +134,7 @@ func TestNewRuntimeProcessingJobWorkerWiresQueueDepthWhenStoreSupportsIt(t *test
 func TestNewRuntimeProcessingJobWorkerLeavesQueueDepthNilWhenUnsupported(t *testing.T) {
 	store := &fakeRuntimeIngestionJobQueue{}
 	worker := newRuntimeProcessingJobWorker(
-		store, &recordingAssetProcessor{}, runtimeWorkerIdentityID, "worker-1",
+		store, &recordingAssetProcessor{}, runtimeWorkerIdentityID, "worker-1", testJobLease,
 	)
 	if worker.QueueDepth != nil {
 		t.Fatal("QueueDepth must stay nil (fail-soft) when the store lacks CountByStatus")

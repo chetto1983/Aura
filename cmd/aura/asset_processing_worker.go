@@ -72,7 +72,9 @@ func newRuntimeAssetProcessingWorker(
 		identities: identity.New(pool),
 		width:      batchSize,
 		worker: func(identityID, workerID string) runtimeIngestionProcessor {
-			return newRuntimeProcessingJobWorker(store, accepted, identityID, workerID)
+			return newRuntimeProcessingJobWorker(
+				store, accepted, identityID, workerID, cfg.DocumentPipeline.LeaseDuration,
+			)
 		},
 	}
 	// Deletion gets its OWN loop rather than sharing ingestion's tick. Ingestion's
@@ -130,15 +132,29 @@ func newRuntimeProcessingJobWorker(
 	assets acceptedAssetProcessor,
 	identityID string,
 	workerID string,
+	leaseDuration time.Duration,
 ) *documents.IngestionJobWorker {
 	handlers := map[string]documents.IngestionJobHandler{
 		assetProcessJobType: runtimeAssetProcessHandler{assets: assets},
 	}
 	worker := &documents.IngestionJobWorker{
-		Store:         store,
-		IdentityID:    identityID,
-		WorkerID:      workerID,
-		LeaseDuration: 5 * time.Minute,
+		Store:      store,
+		IdentityID: identityID,
+		WorkerID:   workerID,
+		// The JOB lease must never be shorter than the STAGE lease this job's work runs
+		// under, and it is therefore derived from the same config rather than chosen here.
+		//
+		// It was a hardcoded 5 minutes against a 20-minute stage lease
+		// (AURA_DOCUMENT_PIPELINE_LEASE_SEC, 1200s), and that gap is a guaranteed
+		// dead-letter. Measured on 2026-08-06: the container was recreated mid-convert, the
+		// job lease expired at +5min and was reclaimed, but the convert stage stayed leased
+		// to the dead worker until +20min — so every reclaim failed instantly with
+		// "no pipeline stage is claimable" AND consumed an attempt. All 5 attempts burned
+		// inside the stage-lease window and a perfectly good document dead-lettered.
+		//
+		// Reclaiming a job earlier than its stage buys nothing: the job cannot make progress
+		// without claiming the stage. Equal horizons mean one reclaim, one attempt, success.
+		LeaseDuration: leaseDuration,
 		BatchSize:     1,
 		RetryBackoff:  time.Minute,
 		Handlers:      handlers,

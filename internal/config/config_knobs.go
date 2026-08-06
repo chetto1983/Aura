@@ -128,7 +128,7 @@ func knobRegistry() []KnobSpec {
 		{Name: "AURA_ASSET_PROCESSING_CONCURRENCY", Kind: KindInt, Default: "2"},
 		{Name: "AURA_DOCUMENT_CONVERT_TIMEOUT_SEC", Kind: KindInt, Default: "900"},
 		{Name: "AURA_DOCUMENT_MAX_PAGES", Kind: KindInt, Default: "2000"},
-		{Name: "AURA_DOCUMENT_CHUNK_MAX_TOKENS", Kind: KindInt, Default: "512"},
+		{Name: "AURA_DOCUMENT_CHUNK_MAX_TOKENS", Kind: KindInt, Default: "2048"},
 		{Name: "AURA_DOCUMENT_CHUNK_TOKENIZER", Kind: KindString, Default: DoclingTokenizer},
 		{Name: "AURA_EMBED_REVISION", Kind: KindString, Default: ""},
 		{Name: "AURA_EMBED_FINGERPRINT", Kind: KindString, Default: ""},
