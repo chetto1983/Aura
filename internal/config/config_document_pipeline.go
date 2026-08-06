@@ -10,11 +10,15 @@ import (
 	"github.com/chetto1983/aura/internal/envutil"
 )
 
-// The capacity constants are not merely fallbacks: Validate reuses each one as the
-// hard ceiling for its knob, so an AURA_DOCUMENT_* override can only narrow the
-// envelope the pipeline was calibrated against, never widen it. The two scoring
-// constants are ordinary defaults — their bounds are the unit interval and
-// non-negativity, not these values.
+// Most capacity constants are not merely fallbacks: Validate reuses them as the hard
+// ceiling for their knob, so an AURA_DOCUMENT_* override can only narrow the envelope the
+// pipeline was calibrated against, never widen it. The two scoring constants are ordinary
+// defaults — their bounds are the unit interval and non-negativity, not these values.
+//
+// EmbedBatchSize is the exception, and deliberately so: its ceiling is the separate
+// maxDocumentEmbedBatchSize. Conflating the two is what left the chunk budget untunable —
+// the default WAS the maximum, so the one knob that would have fixed a measured recall loss
+// could not be turned. A ceiling and a default answer different questions.
 const (
 	DefaultDocumentMaxPassages       = 10_000
 	DefaultDocumentMaxActivePassages = 100_000
