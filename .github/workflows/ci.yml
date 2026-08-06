@@ -28,6 +28,15 @@ env:
   # service, so a missing one of these aborts every compose invocation in the job —
   # even the ones that start none of these containers.
   ARCADEDB_PASSWORD: ci-test-password
+  # Same lesson a fourth time. `Converge the industrial document pipeline` made these
+  # three :?-required on the aura and aura-docling services, which took out every
+  # compose-touching job at bring-up — including ones that start neither container.
+  # Note `:?` rejects empty as well as unset, so the blank entries in .env.example do
+  # not satisfy it either. The two embed values are public model identifiers, not
+  # credentials: they are the real ones so any model-contract check sees a coherent pair.
+  AURA_DOCLING_API_KEY: ci-not-a-secret
+  AURA_EMBED_REVISION: 0f741b5a6585bd53aeb15cd1372c56f2a0f65e12
+  AURA_EMBED_FINGERPRINT: b5ce9d77a3fc4b3b39ccb5643c36777911cc4eb46a66962eadfa3f5f60490d63
   ARCADEDB_APP_PASSWORD: ci-test-password
   AURA_ARCADEDB_TENANT_SECRET: "0000000000000000000000000000000000000000000000000000000000000d1"
   AURA_CI_NODE_VERSION: "24.x"
