@@ -77,8 +77,15 @@ restituisce un riferimento che `document_open` risolve.
 recupera un embedding scritto via Bolt.
 
 **F2 — sidecar CocoIndex con sorgente S3.** Un servizio compose che esegue
-`cocoindex update` (o `-L` per il live). Stato LMDB **su volume**, non effimero.
+`cocoindex update`. Stato LMDB **su volume**, non effimero.
 *Verifica:* le 4 run di `FINDINGS.md` §2 (baseline / unchanged / modified / deleted).
+
+> **Il live NON si ottiene con `-L`** (misurato su 1.0.19, vedi §5 trappola 7): la sorgente
+> S3 non lo implementa. Si ottiene avvolgendo la funzione di sync in `coco.auto_refresh(fn,
+> interval=…)` — API pubblica, nessun LiveComponent da scrivere — che in live cicla
+> `sleep → update_full` e in catch-up è indistinguibile dal montaggio diretto. Una sola
+> pipeline, modalità scelta all'avvio. Provato contro Garage a processo residente: add,
+> modify e delete riconciliati senza riavvio.
 
 **F3 — `documents_mcp` come sidecar.** Registrarlo come gli altri MCP di Aura, fail-soft.
 *Verifica:* i tre tool rispondono e `answered:false` arriva strutturato.
@@ -129,6 +136,16 @@ che è una cartella → **poi** semantico sul residuo. Non il contrario.
    È fuorviante: Cypher e Bolt ci sono.
 6. **Rename su S3 = copy+delete**, non atomico. Cartelle vuote non esistono senza un
    oggetto marcatore a 0 byte.
+7. **`cocoindex update -L` su una sorgente non-live non fallisce: stampa
+   `⏳ Ready | Watching for changes...` ed esce con 0.** Sotto `restart: unless-stopped`
+   gira in tondo facendo una LIST completa a ogni giro, con il container "up" e i log che
+   dicono che sta osservando — tutti i sintomi del successo. Solo `localfs(live=True)`
+   restituisce un `_LiveDirItems` con `watch()`; `amazon_s3.list_objects` rifiuta `live=`
+   con `TypeError`. La riga sbagliata è indistinguibile da quella giusta: usare
+   `coco.auto_refresh` (F2).
+8. **Su Docker Desktop inotify non attraversa un bind mount da Windows**, quindi
+   `localfs(live=True)` su una cartella dell'host non vede nulla e sembra che il live sia
+   rotto. Provare il live su un volume Linux, scrivendo dall'interno del container.
 
 ---
 
