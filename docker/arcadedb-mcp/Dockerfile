@@ -9,7 +9,12 @@ COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
 COPY cmd/arcadedb-mcp ./cmd/arcadedb-mcp
-COPY internal/arcadedb ./internal/arcadedb
+# The whole internal tree, not an enumerated subset. internal/arcadedb gained an
+# import of internal/embeddings, which imports internal/config, and `go list -deps`
+# now reports 19 internal packages behind this binary (db, llm, mcp, conversations,
+# …). Listing them individually is what broke this build: the import landed and the
+# COPY list did not follow. A subset here fails again on the next one.
+COPY internal ./internal
 
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
