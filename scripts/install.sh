@@ -447,10 +447,6 @@ AURA_EMBED_MODEL_PATH=/root/.cache/llama.cpp/embeddinggemma-300M-Q8_0.gguf
 # dense projections, which makes llama.cpp return backbone-only vectors at the correct
 # width with no error at all. The installer refuses a model without them.
 AURA_EMBED_MODEL_URL=https://huggingface.co/ggml-org/embeddinggemma-300M-GGUF/resolve/main/embeddinggemma-300M-Q8_0.gguf
-# mean, because the model on the line above is mean-pooled: its GGUF declares
-# gemma-embedding.pooling_type = 1 and llama.cpp's enum reads 1 as MEAN. These two
-# lines change together or not at all.
-AURA_EMBED_POOLING=mean
 AURA_EMBED_NGL=99
 AURA_EMBED_DIMENSIONS=768
 

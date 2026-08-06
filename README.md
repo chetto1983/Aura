@@ -135,7 +135,6 @@ AURA_ACCESS_TOKEN=$(New-Hex)
 AURA_BACKUP_DIR=./backups
 AURA_EMBED_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda
 AURA_EMBED_MODEL_PATH=/root/.cache/llama.cpp/embeddinggemma-300M-Q8_0.gguf
-AURA_EMBED_POOLING=mean
 AURA_EMBED_NGL=99
 AURA_EMBED_DIMENSIONS=768
 OPENROUTER_API_KEY=

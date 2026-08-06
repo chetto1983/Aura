@@ -488,8 +488,8 @@ services:
       - garage-data:/var/lib/garage
 
   # ↓↓ Slice 0.7 — OpenAI-compat embedding sidecar ↓↓
-  # The shipped local contract is ggml-org EmbeddingGemma-300M Q8_0 at 768d with
-  # mean pooling; the service definition below owns those defaults. Appliance and CI
+  # The shipped local contract is ggml-org EmbeddingGemma-300M Q8_0 at 768d; the
+  # model file declares its own pooling and llama.cpp obeys it. Appliance and CI
   # flows materialize that exact GGUF before startup. The base service is GPU-first;
   # compose.minipc.yaml and the CI cache overlay remove its NVIDIA reservation.
   # ↓↓ ArcadeDB — graph substrate for long-term memory ↓↓
@@ -631,18 +631,18 @@ services:
       - -m
       - ${AURA_EMBED_MODEL_PATH:-/root/.cache/llama.cpp/embeddinggemma-300M-Q8_0.gguf}
       - --embeddings
-      # Pooling is a property of the embedding model, not a house style, and the wrong
-      # choice degrades similarity silently rather than failing. The default here must
-      # therefore match the default MODEL one line above — "it travels with the model in
-      # .env" was the old reasoning and it was wrong, because the model path is defaulted
-      # HERE too: a deploy with an empty .env got EmbeddingGemma from compose and `last`
-      # from compose, a pair that never existed. EmbeddingGemma-300M's own GGUF declares
-      # gemma-embedding.pooling_type = 1, and llama.cpp's enum (include/llama.h:
-      # NONE=0, MEAN=1, CLS=2, LAST=3, RANK=4) makes that MEAN — its architecture is a
-      # mean-pooling layer over the token embeddings. Override in .env only together
-      # with AURA_EMBED_MODEL_PATH.
-      - --pooling
-      - ${AURA_EMBED_POOLING:-mean}
+      # No --pooling on purpose. Pooling is a property of the model file, and the model
+      # file already carries it: this GGUF declares gemma-embedding.pooling_type = 1,
+      # which is MEAN (include/llama.h: NONE=0, MEAN=1, CLS=2, LAST=3, RANK=4). With the
+      # flag absent llama.cpp reads exactly that value — common_params defaults
+      # pooling_type to UNSPECIFIED (common/common.h) and llama_context falls back to
+      # hparams.pooling_type (src/llama-context.cpp). So the correct setting needs no
+      # setting, and there is nothing left to contradict.
+      # An AURA_EMBED_POOLING knob used to sit here. It could only ever be right by
+      # agreeing with the file, and it was wrong: a `last` left over from Qwen3-Embedding
+      # survived the swap to EmbeddingGemma and cost recall@1 0.90 -> 0.70 over 8,891
+      # documents, silently, because a wrongly-pooled vector is still a plausible vector.
+      # A comment warning about that pairing was already present and did not prevent it.
       - --embd-normalize
       - "2"
       - -ngl
@@ -651,25 +651,22 @@ services:
       - "8081"
       - -t
       - "4"                                    # CPU thread cap for orchestration work; harmless under GPU offload
-      # -c was never set, so llama.cpp used its 4096 default while -ub 2048 sat right next
-      # to a comment saying chunks exceed 1024 tokens. A spreadsheet chunks into ~8 KB rows
-      # (~2.1k tokens), which alone overruns -ub, and a batch of them overran -c: the
-      # sidecar answered HTTP 400 "exceeds the available context size", the embed job
-      # dead-lettered after 5 attempts, and the document stayed "ready" with zero
-      # embeddings. Aura now caps a request by BYTES (defaultEmbeddingBatchBytes); these
-      # two make sure the sidecar can accept what it sends, with room to spare.
-      # -c is PER SLOT and llama.cpp defaults to 4 of them, so it multiplies. A first
-      # attempt at 32768 asked for 131k tokens of KV, ~9 GB, which does not fit the 4 GB
-      # A2000 — and because -ngl 99 is set explicitly, llama.cpp abandoned its auto-fit
-      # ("n_gpu_layers already set by user to 99, abort") and ran on CPU at ~300 tok/s
-      # instead of failing. One slot at 8192 is ~50 MB of KV, comfortably above the 6k
-      # tokens the byte budget (defaultEmbeddingBatchBytes) can send in one request.
+      # 2048 is the model's ceiling, not a budget choice: the GGUF declares
+      # gemma-embedding.context_length = 2048 and Google documents "maximum input context
+      # length of 2048 tokens". Ask for more and llama.cpp simply takes it away at load
+      # ("the slot context (8192) exceeds the training context of the model (2048) -
+      # capping"), so a larger number here buys nothing and reads as a promise the
+      # sidecar cannot keep — an earlier 8192/4096 pair did exactly that. A single input
+      # above the ceiling is refused with HTTP 500 "input (N tokens) is too large to
+      # process", loudly, so the chunker must stay under 2048 TOKENS (~6 KB of Italian
+      # prose, less for a dense table row) rather than trust a byte budget.
+      # -c is PER SLOT, so it multiplies by -np; one slot at 2048 is a few MB of KV.
       - -np
       - "${AURA_EMBED_SLOTS:-1}"
       - -c
-      - "${AURA_EMBED_CTX:-8192}"
+      - "${AURA_EMBED_CTX:-2048}"
       - -ub
-      - "${AURA_EMBED_UBATCH:-4096}"           # >= the largest SINGLE chunk: embeddings need the whole sequence in one ubatch
+      - "${AURA_EMBED_UBATCH:-2048}"           # the whole sequence must fit ONE ubatch: embeddings are not decoded incrementally
     ports:
       - "127.0.0.1:8081:8081"
     volumes:
