@@ -50,6 +50,24 @@ type DocumentConfig struct {
 	MaxPages        int
 	ChunkMaxTokens  int
 	ChunkTokenizer  string
+
+	// OCREnabled asks Docling to rasterise and read bitmap content. It is OFF by default,
+	// which is a capability trade made on measured evidence rather than a preference.
+	//
+	// The bundled engines cannot read this deployment's corpus: RapidOCR (what `auto`
+	// selects here) is Chinese/English-oriented, the image's tesseract carries only eng+osd,
+	// and Docling's ocr_lang is never set. An Italian scan therefore OCRs to nothing —
+	// observed as "RapidOCR returned empty result!" — while still costing minutes of CPU on
+	// a 2-core docling-serve-cpu, which is long enough for a worker restart to land
+	// mid-convert. Paying that for no text is worse than not paying it: a digital PDF still
+	// yields its text layer without OCR.
+	//
+	// Re-enable per deployment with AURA_DOCUMENT_OCR_ENABLED=true once an engine that reads
+	// the corpus is in place — the intended one is Docling's VLM pipeline against the
+	// GLM-OCR sidecar. The flag travels into the conversion profile (and so into the stage
+	// fingerprint), so flipping it re-converts rather than reusing text produced under the
+	// other setting.
+	OCREnabled bool
 }
 
 func loadDocumentConfig() DocumentConfig {
@@ -57,6 +75,7 @@ func loadDocumentConfig() DocumentConfig {
 		DoclingBaseURL: envDefault("AURA_DOCLING_BASE_URL", "http://127.0.0.1:5001"),
 		DoclingAPIKey:  strings.TrimSpace(envDefault("AURA_DOCLING_API_KEY", "")),
 		DoclingImage:   envDefault("AURA_DOCLING_IMAGE", DoclingImageV1290),
+		OCREnabled:     envutil.BoolDefault("AURA_DOCUMENT_OCR_ENABLED", false),
 		ConvertTimeout: time.Duration(envutil.IntDefault("AURA_DOCUMENT_CONVERT_TIMEOUT_SEC", defaultDocumentConvertSec)) * time.Second,
 		MaxRequestBytes: int64(envutil.IntDefault(
 			"AURA_ASSET_MAX_DOCUMENT_BYTES", DefaultAssetMaxDocumentBytes,

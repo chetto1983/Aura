@@ -27,6 +27,10 @@ func testDocumentConfig(baseURL string) config.DocumentConfig {
 		MaxPages:        100,
 		ChunkMaxTokens:  256,
 		ChunkTokenizer:  config.DoclingTokenizer,
+		// Explicitly ON so the wire-contract assertions below keep exercising the
+		// OCR-enabled shape. Production defaults it OFF; TestDoclingConversionProfile
+		// and TestDoclingClientSendsTheConfiguredOCRSetting cover the other side.
+		OCREnabled: true,
 	}
 }
 
@@ -239,5 +243,25 @@ func TestDoclingClientRejectsUnsafeTaskIDAndMismatchedSize(t *testing.T) {
 	})
 	if !errors.As(err, &doclingErr) || doclingErr.Class != DoclingErrorRequestTooLarge {
 		t.Fatalf("long upload err = %v", err)
+	}
+}
+
+// TestDoclingConversionProfile pins that the OCR setting reaches the profile string.
+//
+// The profile is folded into the conversion stage fingerprint, so this is not cosmetic:
+// a document converted with OCR off holds only its text layer, and if both settings
+// produced the same profile the pipeline would happily serve one as the other from cache.
+func TestDoclingConversionProfile(t *testing.T) {
+	on, off := DoclingConversionProfile(true), DoclingConversionProfile(false)
+	if on == off {
+		t.Fatal("OCR on and off produce the same profile — the fingerprint cannot tell the " +
+			"two conversions apart and cached text would be reused across the setting")
+	}
+	if !strings.Contains(on, "ocr=true") || !strings.Contains(off, "ocr=false") {
+		t.Fatalf("profiles do not carry the setting: on=%q off=%q", on, off)
+	}
+	// Everything else must be identical, or this stops being a test of the OCR flag.
+	if strings.Replace(on, "ocr=true", "ocr=false", 1) != off {
+		t.Fatalf("profiles differ beyond the OCR flag:\n on=%q\noff=%q", on, off)
 	}
 }

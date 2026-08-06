@@ -21,11 +21,21 @@ import (
 
 var doclingTaskIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 
-// DoclingStandardConversionProfile is the exact option set sent to Docling Serve, and it
-// is folded into the conversion stage fingerprint rather than merely documented: changing
-// any flag here changes the extracted text, so cached conversions must not be reused
-// across a change to this string.
-const DoclingStandardConversionProfile = "standard-v1:ocr=true:tables=true:abort=false:image=placeholder:heading=false:enrichment=false:hybrid-merge=true:raw-text=true:markdown-tables=true"
+// DoclingConversionProfile is the exact option set sent to Docling Serve, and it is folded
+// into the conversion stage fingerprint rather than merely documented: changing any flag
+// here changes the extracted text, so cached conversions must not be reused across a
+// change to this string.
+//
+// It takes the OCR setting rather than hardcoding it precisely because of that fingerprint.
+// A document converted with OCR off holds only its text layer; the same bytes converted
+// with OCR on can hold more. Reusing one as the other would serve text the current settings
+// would never produce, so the flag has to reach the fingerprint — which means it has to
+// reach this string.
+func DoclingConversionProfile(ocrEnabled bool) string {
+	return "standard-v1:ocr=" + strconv.FormatBool(ocrEnabled) +
+		":tables=true:abort=false:image=placeholder:heading=false:enrichment=false" +
+		":hybrid-merge=true:raw-text=true:markdown-tables=true"
+}
 
 // DoclingClientOption customizes the Docling v1 boundary.
 type DoclingClientOption func(*DoclingClient)
@@ -49,6 +59,7 @@ type DoclingClient struct {
 	requestTimeout time.Duration
 	maxRequest     int64
 	chunkTokens    int
+	ocr            bool
 	tokenizer      string
 	pollPeriod     time.Duration
 }
@@ -73,6 +84,7 @@ func NewDoclingClient(cfg config.DocumentConfig, options ...DoclingClientOption)
 		requestTimeout: min(cfg.ConvertTimeout, doclingRequestTimeout),
 		maxRequest:     cfg.MaxRequestBytes,
 		chunkTokens:    cfg.ChunkMaxTokens,
+		ocr:            cfg.OCREnabled,
 		tokenizer:      cfg.ChunkTokenizer,
 		pollPeriod:     doclingDefaultPollPeriod,
 	}
@@ -295,7 +307,7 @@ func (c *DoclingClient) multipartFields() [][2]string {
 		{"convert_document_timeout", positiveSeconds(c.overallTimeout)},
 		{"convert_abort_on_error", "false"},
 		{"convert_image_export_mode", "placeholder"},
-		{"convert_do_ocr", "true"},
+		{"convert_do_ocr", strconv.FormatBool(c.ocr)},
 		{"convert_do_table_structure", "true"},
 		{"convert_do_pdf_heading_hierarchy", "false"},
 		{"convert_include_images", "false"},

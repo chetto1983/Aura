@@ -44,7 +44,7 @@ func buildRuntimeDocumentPipeline(cfg *config.Config, pool *pgxpool.Pool) (*docu
 		Persistence: documents.NewPostgresPipelineStore(pool),
 		Config: documents.PipelineWorkerConfig{
 			ProducerVersion:        cfg.Document.DoclingImage,
-			ConversionProfile:      documents.DoclingStandardConversionProfile,
+			ConversionProfile:      documents.DoclingConversionProfile(cfg.Document.OCREnabled),
 			ChunkTokenizer:         cfg.Document.ChunkTokenizer,
 			ChunkMaxTokens:         cfg.Document.ChunkMaxTokens,
 			EmbeddingModel:         model,

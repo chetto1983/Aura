@@ -245,7 +245,7 @@ func pipelineWorkerFixture(persistence *pipelinePersistenceFake) *PipelineWorker
 		Persistence: persistence,
 		Config: PipelineWorkerConfig{
 			ProducerVersion: "docling-v1.29.0", EmbeddingModel: "embeddinggemma",
-			ConversionProfile: DoclingStandardConversionProfile,
+			ConversionProfile: DoclingConversionProfile(false),
 			ChunkTokenizer:    "embeddinggemma-revision-1", ChunkMaxTokens: 512,
 			EmbeddingVersion: "revision-1", EmbeddingFingerprint: strings.Repeat("e", 64),
 			EmbeddingDimensions: 2, EmbeddingNormalization: EmbeddingNormalizationMRL,
