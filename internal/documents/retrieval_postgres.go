@@ -81,7 +81,14 @@ SELECT document.id::text, document.search_document_id, document.title, document.
 FROM aura.documents document
 ` + readyDocumentJoins + `
 WHERE ` + readyDocumentWhere + `
-  AND ($3::text[] = '{}'::text[] OR document.id::text = ANY($3::text[]))
+  -- An absent scope means "every ready document", and it arrives here as a NIL slice from
+  -- ResolveDocumentScope, which pgx encodes as SQL NULL rather than an empty array. Under
+  -- three-valued logic NULL = '{}' is NULL and id = ANY(NULL) is NULL, so the older
+  -- "$3 = '{}' OR ..." form evaluated to NULL for every row and this leg returned NOTHING
+  -- on the common unscoped path. cardinality() over a coalesced array is TRUE/FALSE for
+  -- both spellings.
+  AND (cardinality(coalesce($3::text[], '{}'::text[])) = 0
+       OR document.id::text = ANY($3::text[]))
   AND document.digest_tsv @@ websearch_to_tsquery(
         'simple', public.unaccent('public.unaccent'::regdictionary, $2::text))
 ORDER BY 11 DESC, document.id ASC
