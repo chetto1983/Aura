@@ -38,7 +38,7 @@
 | `services/ingest/extract.py` | iscc-tika extraction + LibreOffice normalisation for legacy formats |
 | `services/ingest/chunk.py` | token-bounded chunking (≤2048) with heading-path prefixes |
 | `services/ingest/identity.py` | the stable passage identity — the Python mirror of `SearchDocumentID` |
-| `services/ingest/arcade.py` | schema-first DDL + Bolt writes |
+| `services/ingest/arcade.py` | schema-first DDL **only** — the rows are written by CocoIndex's stock `neo4j` target, not by us. `declare_vector_index` is never called: it emits Neo4j's `CREATE VECTOR INDEX` syntax while ArcadeDB wants `LSM_VECTOR METADATA`, so the index is created here first and the connector only inserts. |
 | `services/ingest/source.py` | the source binding (bucket or catalog) incl. the per-connection RLS GUC |
 | `internal/db/migrations/00NN_*.up.sql` / `.down.sql` | retire the hand-rolled stage ledger |
 | `scripts/fetch_llm_model.sh` | fetch + verify Qwen3-8B-Q4_K_M against its published size and SHA-256 |
