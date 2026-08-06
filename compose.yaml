@@ -510,11 +510,19 @@ services:
       #       ("User 'root' is not allowed to update schema", 403, on the first DDL).
       #   `…defaultDatabases=aura_memory[]`            creates it and grants nothing extra,
       #       so root's wildcard admin still applies. This is the only correct form.
+      # The Bolt plugin ships in the image (lib/arcadedb-bolt-*.jar) but loads only when
+      # enlisted here. It is what lets any official Neo4j driver talk to ArcadeDB: the
+      # implementation is certified against all five, Python `neo4j` 5.x/6.x included, so
+      # tooling written for Neo4j (CocoIndex's connector, among others) needs no port of
+      # its own. Documented deltas are narrow — RID/UUID arrive as strings, BigDecimal
+      # down-converts to double, auth `none` is always rejected.
       JAVA_OPTS: >-
         -Darcadedb.server.rootPassword=${ARCADEDB_PASSWORD:?ARCADEDB_PASSWORD required in .env}
         -Darcadedb.server.defaultDatabases=${ARCADEDB_DATABASE:-aura_memory}[]
+        -Darcadedb.server.plugins=Bolt:com.arcadedb.bolt.BoltProtocolPlugin
     ports:
       - "127.0.0.1:2480:2480"
+      - "127.0.0.1:${ARCADEDB_BOLT_PORT:-7687}:7687"
     volumes:
       - aura-arcadedb:/home/arcadedb/databases
       # Memory is per-identity: every enrolled user owns a `mem_<uuid>` database, and
