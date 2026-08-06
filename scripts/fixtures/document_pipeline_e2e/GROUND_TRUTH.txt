@@ -1,0 +1,7 @@
+CANARY: La sovranita appartiene al popolo che la esercita nelle forme e nei limiti della Costituzione.
+SHEET:  header on row 3 under a merged banner; Codice | Quantita | Descrizione
+SUM:    total Quantita = 24
+CODE:   A9A26924 appears exactly once, with Quantita 11
+NOTE:   sample.pptx slide 1 splits the canary across two text boxes ON PURPOSE.
+        No extractor recovers a sentence split across text boxes; slide 2 carries
+        it whole, and that is the case the gate asserts.
