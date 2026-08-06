@@ -19,6 +19,7 @@ RUN pip install --no-cache-dir \
         neo4j \
         litellm instructor pydantic \
         asyncpg pypdfium2 \
-        aiobotocore
+        aiobotocore \
+        "mcp>=1.9.4,<2.0.0"
 
 WORKDIR /work
