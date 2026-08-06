@@ -114,6 +114,28 @@ che è una cartella → **poi** semantico sul residuo. Non il contrario.
 
 ---
 
+## 5b. DIFETTO: il passaggio non porta un'identità di documento azionabile
+
+`Passage.document` oggi contiene il percorso che il walker aveva **al momento
+dell'ingest**, e cambia con la sorgente:
+
+```
+localfs → /corpus/GH1_0111_ita_it-IT.pdf   (path dentro il container di ingest)
+S3      → mutuo.pdf                        (chiave oggetto, SENZA bucket né prefisso)
+```
+
+`document_search` lo restituisce come `document`, ma **non è apribile**: `document_open`
+accetta un `document_id` (`doc_…` o uuid catalogo) e risolve via catalogo + object store.
+Il valore attuale serve solo a mostrare la provenienza.
+
+**Correzione, prima di integrare:** `process_file` deve scrivere un'identità stabile —
+id di catalogo, oppure `bucket/key` completo — e `document_search` deve restituire
+QUELLA, non il path del walker. Il contratto verso `document_open` resta invariato:
+l'MCP dice *quale* file, il tool Go fa routing + copy-in nella sandbox.
+
+Finché non è fatto, la catena trova → apri **è spezzata**: il modello riceve un
+riferimento che non può usare.
+
 ## 6. Domande aperte, in ordine di impatto
 
 1. **Routing per prefisso** — progettato, non costruito. È il pezzo con più valore residuo.
