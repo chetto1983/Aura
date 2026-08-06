@@ -2,7 +2,6 @@ package documents
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -148,13 +147,15 @@ const (
 
 // digestDocumentID prefers the search id the rest of the document surface speaks.
 func digestDocumentID(row sqlc.SearchDocumentDigestsRow) string {
-	var metadata map[string]any
-	if len(row.Metadata) > 0 {
-		if err := json.Unmarshal(row.Metadata, &metadata); err == nil {
-			if id, ok := metadata["search_document_id"].(string); ok && strings.TrimSpace(id) != "" {
-				return id
-			}
-		}
+	// The COLUMN, not metadata->>'search_document_id'. This read the JSON blob until
+	// migration 0093 promoted the search id to a real NOT NULL column — backfilled from
+	// exactly that key, de-duplicated per identity, and held immutable by
+	// aura.document_identity_immutable. Documents catalogued through any path that fills
+	// the column without also copying it into metadata (POST /api/documents, the version
+	// recorder) were handed back their catalog uuid instead of their search id, which is
+	// not the id this method's contract promises.
+	if id := strings.TrimSpace(row.SearchDocumentID); id != "" {
+		return id
 	}
 	return uuidString(row.ID)
 }

@@ -177,15 +177,30 @@ func seedRLSDocument(t *testing.T, pool *pgxpool.Pool, identityID string) string
 	t.Helper()
 	docID := uuid.Must(uuid.NewV7()).String()
 	if err := WithIdentityTxRaw(context.Background(), pool, identityID, func(tx pgx.Tx) error {
-		_, e := tx.Exec(context.Background(),
-			"INSERT INTO aura.documents (id, identity_id, scope, title, status) VALUES ($1, $2, 'library', 'rls-doc', 'ready')",
-			docID, identityID)
+		_, e := tx.Exec(context.Background(), rlsDocumentInsert, docID, identityID, docID)
 		return e
 	}); err != nil {
 		t.Fatalf("seed document for %s: %v", identityID, err)
 	}
 	return docID
 }
+
+// rlsDocumentInsert is the only statement this file inserts documents with, and every
+// column migration 0093 made mandatory is spelled out on purpose.
+//
+// The two refusal assertions below reuse it, which is the whole reason it exists: a
+// negative control must be rejected by the row-level-security policy and by NOTHING
+// else. An insert that omitted source_kind would be refused by a NOT NULL constraint
+// whether the policy held or failed open, so the test would keep passing while the
+// thing it exists to prove was broken.
+//
+// $3 keys both partial-unique indexes 0093 added (identity+source, identity+search id),
+// so every caller passes a value it has not used before.
+const rlsDocumentInsert = `
+INSERT INTO aura.documents
+    (id, identity_id, scope, title, status,
+     source_kind, source_key, search_document_id, pipeline_generation)
+VALUES ($1, $2, 'library', 'rls-doc', 'ready', 'test', $3, $3, 1)`
 
 // TestRLSFailsClosedWithoutIdentity is the migration-0087 regression proof, and it is
 // written against the exact failure that was MEASURED on the live deployment on
@@ -223,9 +238,8 @@ func TestRLSFailsClosedWithoutIdentity(t *testing.T) {
 	}
 
 	// 2. No identity on the session: writes are refused outright.
-	_, err := pool.Exec(ctx,
-		"INSERT INTO aura.documents (id, identity_id, scope, title, status) VALUES ($1, $2, 'library', 'no-identity', 'ready')",
-		uuid.Must(uuid.NewV7()).String(), idA)
+	noIdentityDoc := uuid.Must(uuid.NewV7()).String()
+	_, err := pool.Exec(ctx, rlsDocumentInsert, noIdentityDoc, idA, noIdentityDoc)
 	if err == nil {
 		t.Error("INSERT into aura.documents succeeded with no app.current_identity set, want a row-level-security refusal")
 	}
@@ -253,10 +267,9 @@ func TestRLSFailsClosedWithoutIdentity(t *testing.T) {
 	// 4. A cannot forge a row owned by B. This needs its OWN transaction: the refused
 	//    INSERT aborts the one it runs in, so folding it into the reads above would turn
 	//    their COMMIT into a rollback and mask what actually happened.
+	forgedDoc := uuid.Must(uuid.NewV7()).String()
 	err = WithIdentityTxRaw(ctx, pool, idA, func(tx pgx.Tx) error {
-		_, e := tx.Exec(ctx,
-			"INSERT INTO aura.documents (id, identity_id, scope, title, status) VALUES ($1, $2, 'library', 'cross-identity', 'ready')",
-			uuid.Must(uuid.NewV7()).String(), idB)
+		_, e := tx.Exec(ctx, rlsDocumentInsert, forgedDoc, idB, forgedDoc)
 		return e
 	})
 	if err == nil {

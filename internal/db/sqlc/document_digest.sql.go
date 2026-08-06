@@ -28,7 +28,7 @@ WHERE d.identity_id = $2
       AND v.document_id = d.id
       AND v.identity_id = d.identity_id
       AND v.status = 'ready'
-      AND v.pipeline_generation = aura.documents.pipeline_generation
+      AND v.pipeline_generation = d.pipeline_generation
       AND v.deleted_at IS NULL
       AND o.status = 'live'
       AND o.deleted_at IS NULL

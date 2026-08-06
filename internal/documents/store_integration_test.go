@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -68,7 +69,14 @@ func TestPostgresJobStoreRoundTrip(t *testing.T) {
 
 	store := NewPostgresJobStore(pool)
 	documentID := DocumentID("hash", sourceID)
+	// The ledger is owner-scoped since 0093: identity_id is NOT NULL with a real FK, so an
+	// ownerless job is no longer a thing the store will accept. Every READ below resolves
+	// its owner from the CONTEXT rather than an argument (callerJobIdentity), so the
+	// principal has to travel on ctx too — Create alone is not enough.
+	identityID := seedDocumentTestIdentity(t, ctx, pool)
+	ctx = identityctx.WithIdentityID(ctx, identityID)
 	created, err := store.Create(ctx, CreateJobParams{
+		IdentityID:   identityID,
 		SourceID:     sourceID,
 		SourceKind:   "local",
 		DocumentID:   documentID,

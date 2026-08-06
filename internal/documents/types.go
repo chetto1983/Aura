@@ -8,12 +8,17 @@ import "time"
 // JobStatus is the durable lifecycle state for a document ingestion job.
 type JobStatus string
 
-// Candidate registration stops at accepted; only activation publishes ready.
-// the ledger only ever moves accepted → searchable, or accepted → failed.
+// Candidate registration stops at accepted; only activation publishes ready, and
+// activation settles aura.documents, not this ledger. So a job this store owns only
+// ever moves accepted → failed — there is no success transition to wait for, and a
+// row sitting at accepted after a completed ingest is the designed resting state,
+// not a stall.
 //
-// JobComplete is no longer written by anything. It is kept because the store's
-// SQL keys `completed_at` off the literal "complete" and older rows carry it, so
-// this is the one place that string is named rather than typed twice.
+// JobSearchable and JobComplete are no longer written by anything. They are kept
+// because the store's SQL keys `searchable_at`/`completed_at` off those literals and
+// older rows carry them, so this is the one place each string is named rather than
+// typed twice. Do NOT reintroduce a writer without moving the whole ledger: the
+// convergence deliberately made this table a registration record.
 const (
 	JobAccepted   JobStatus = "accepted"
 	JobSearchable JobStatus = "searchable"

@@ -39,6 +39,10 @@ func TestIngestCardMakesAFileFindableByWhatIsInsideIt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ingest: %v", err)
 	}
+	// Ingest registers a candidate and writes its card; it does not publish. Since 0093
+	// only an activated document is rankable, so the card would be unreachable here
+	// without this — which is the pipeline working, not the card failing.
+	publishForSearch(t, ctx, pool, cardIngestIdentity, job.DocumentID, "export_2024_final_v3.csv")
 
 	// GHEDI is in no filename, no tag and no agent note. Only the card has it.
 	hits, err := store.SearchDigests(ctx, cardIngestIdentity, "ghedi", 5)
@@ -105,30 +109,12 @@ func TestAssetVersionReusesTheCatalogRowIngestAlreadyWrote(t *testing.T) {
 		t.Fatalf("ingest: %v", err)
 	}
 
-	if _, err := store.RecordAssetVersion(ctx, RecordAssetVersionRequest{
-		IdentityID:       cardIngestIdentity,
-		Scope:            DocumentScopeLibrary,
-		Title:            "listino.csv",
-		FileName:         "listino.csv",
-		MIMEType:         "text/csv",
-		SizeBytes:        42,
-		ObjectBucket:     "aura-assets",
-		ObjectKey:        "card-asset-test/listino.csv",
-		SearchDocumentID: job.DocumentID,
-		JobID:            job.ID,
-		SHA256:           "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-		VersionNumber:    1,
-		DocumentStatus:   DocumentStatusReady,
-		VersionStatus:    "ready",
-		StorageKind:      defaultStorageKind,
-		RetentionClass:   defaultRetentionClass,
-		Metadata: map[string]any{
-			"search_document_id": job.DocumentID,
-			"document_job_id":    job.ID,
-		},
-	}); err != nil {
-		t.Fatalf("record asset version: %v", err)
-	}
+	// The second writer: an asset arrives for the file ingest already catalogued.
+	// publishForSearch runs the same RecordAssetVersion this test was written against —
+	// it now needs a real asset row to bind, which is the only reason it is not inlined
+	// here — and then publishes, so the count below still answers the question that
+	// matters: did recording the asset produce a SECOND library row?
+	publishForSearch(t, ctx, pool, cardIngestIdentity, job.DocumentID, "listino.csv")
 
 	var rows int
 	if err := asDocumentIdentity(ctx, pool, cardIngestIdentity, func(tx pgx.Tx) error {

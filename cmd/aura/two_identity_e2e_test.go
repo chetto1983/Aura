@@ -186,15 +186,25 @@ func TestTwoIdentityCrossDeny(t *testing.T) {
 		// predicate, so the cross-deny assertion belongs to the catalog store.
 		store := documents.NewPostgresCatalogStore(pool)
 		term := "quetzal" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
+		searchID := "doc_musr_" + uuid.NewString()
+		// Catalogued 'stored', then published. document_search ranks only an activated
+		// document — status 'ready' at a positive pipeline generation with a live active
+		// version — and since 0093 the schema refuses 'ready' at generation 0 outright.
+		// Creating the row 'ready' in one call, as this test used to, is no longer a state
+		// the database will hold.
 		doc, err := store.CreateDocument(ctx, documents.CreateDocumentRequest{
-			IdentityID: idA,
-			Scope:      documents.DocumentScopeLibrary,
-			Title:      "A private " + term,
-			Status:     documents.DocumentStatusReady,
+			IdentityID:       idA,
+			Scope:            documents.DocumentScopeLibrary,
+			Title:            "A private " + term,
+			SourceKind:       "musr-test",
+			SourceKey:        searchID,
+			SearchDocumentID: searchID,
+			Status:           documents.DocumentStatusStored,
 		})
 		if err != nil {
 			t.Fatalf("A catalog document: %v", err)
 		}
+		musrPublishDocument(t, ctx, pool, store, idA, searchID, "A private "+term)
 		t.Cleanup(func() {
 			_, _ = pool.Exec(context.Background(), `DELETE FROM aura.documents WHERE id=$1`, doc.ID)
 		})
@@ -208,8 +218,10 @@ func TestTwoIdentityCrossDeny(t *testing.T) {
 		if err != nil {
 			t.Fatalf("A document_search: %v", err)
 		}
-		if len(hits) == 0 || hits[0].DocumentID != doc.ID {
-			t.Errorf("A document_search = %#v, want its own doc %s", hits, doc.ID)
+		// A hit carries the SEARCH id, not the catalog uuid — that is what document_open
+		// and every retrieval-shaped caller expect.
+		if len(hits) == 0 || hits[0].DocumentID != searchID {
+			t.Errorf("A document_search = %#v, want its own doc %s (%s)", hits, searchID, doc.ID)
 		}
 	})
 

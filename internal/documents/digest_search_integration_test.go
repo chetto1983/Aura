@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -64,19 +65,30 @@ VALUES ($1, 'digest-search-test', 'service') ON CONFLICT (id) DO NOTHING`,
 		digestSearchIdentity); err != nil {
 		t.Fatalf("seed identity: %v", err)
 	}
-	if err := asDocumentIdentity(ctx, pool, digestSearchIdentity, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `
-INSERT INTO aura.documents (identity_id, scope, title, tags, metadata, status, digest)
-VALUES ($1, 'library', 'Clienti.xlsx', ARRAY['fatturato-2026'], '{}'::jsonb, 'ready',
-        'Clienti.xlsx — Tabular data. Clienti (5889 rows): Ragione sociale, Località, Venditore Esterno')`,
-			digestSearchIdentity)
-		return err
-	}); err != nil {
-		t.Fatalf("insert: %v", err)
+	// Catalogue, publish, then describe — the order production uses. The row cannot be
+	// inserted 'ready' directly: 0093 admits that status only at a positive pipeline
+	// generation, and SearchDigests ranks nothing that lacks a live active version.
+	// publishForSearch drives the real activation so this fixture cannot drift from what
+	// the pipeline actually produces.
+	searchDocumentID := "doc_digest_search_" + uuid.NewString()
+	doc, err := store.CreateDocument(ctx, CreateDocumentRequest{
+		IdentityID: digestSearchIdentity, Scope: DocumentScopeLibrary,
+		Title: "Clienti.xlsx", Tags: []string{"fatturato-2026"},
+		SourceKind: "test", SourceKey: searchDocumentID,
+		SearchDocumentID: searchDocumentID, Status: DocumentStatusStored,
+	})
+	if err != nil {
+		t.Fatalf("create document: %v", err)
 	}
 	t.Cleanup(func() {
 		_ = clearDigestSearchDocuments(context.Background(), pool)
 	})
+	publishForSearch(t, ctx, pool, digestSearchIdentity, searchDocumentID, "Clienti.xlsx")
+	if err := store.SetDigest(ctx, digestSearchIdentity, doc.ID,
+		"Clienti.xlsx — Tabular data. Clienti (5889 rows): "+
+			"Ragione sociale, Località, Venditore Esterno"); err != nil {
+		t.Fatalf("set digest: %v", err)
+	}
 
 	for _, query := range []string{
 		"clienti",         // a word INSIDE the filename — the 0080 miss

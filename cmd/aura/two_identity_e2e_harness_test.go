@@ -27,6 +27,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/objectstore/garageadmin"
 	"github.com/chetto1983/aura/internal/runner"
@@ -110,6 +111,83 @@ func musrProvisionIdentity(t *testing.T, pool *pgxpool.Pool, label string) strin
 		_, _ = pool.Exec(context.Background(), `DELETE FROM aura.identities WHERE id = $1::uuid`, id)
 	})
 	return id
+}
+
+// musrPublishDocument gives an already-catalogued document the bytes and the state
+// document_search requires, so the cross-deny assertion has something real to find.
+//
+// Since migration 0093 a document is rankable only when it is 'ready' at a POSITIVE
+// pipeline generation and its active version is itself ready over a live raw object whose
+// asset is alive. None of that follows from creating a catalog row, and the schema now
+// rejects 'ready' at generation 0 outright, so the one-call fixture this test used to
+// carry cannot exist any more.
+//
+// The asset, the raw object and the candidate version come from RecordAssetVersion, the
+// production statement. The publish is written out rather than routed through
+// PostgresPipelineStore.ActivateCandidate because activation refuses a candidate with no
+// passages (`expected_passage_count > 0`), and fabricating a chunk, an embedding vector
+// and a projection commit to prove an ISOLATION property would bury the thing under test.
+// These are the columns activation's ready_version / searchable_asset / ready_document
+// CTEs write.
+func musrPublishDocument(
+	t *testing.T,
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	store *documents.PostgresCatalogStore,
+	identityID, searchDocumentID, title string,
+) {
+	t.Helper()
+	assetID := uuid.NewString()
+	objectKey := "musr-publish/" + assetID
+	sha256 := fmt.Sprintf("%064s", assetID[:8]+assetID[24:])
+
+	if err := db.WithIdentityTxRaw(ctx, pool, identityID, func(tx pgx.Tx) error {
+		_, e := tx.Exec(ctx, `
+INSERT INTO aura.assets (
+    id, identity_id, source_kind, source_ref, scope, modality, status,
+    file_name, mime_type, size_bytes, content_hash, object_bucket, object_key
+) VALUES ($1::uuid, $2::uuid, 'cli', $3, 'library', 'document', 'accepted',
+          $4, 'application/octet-stream', 42, $5, 'documents', $3)`,
+			assetID, identityID, objectKey, title, sha256)
+		return e
+	}); err != nil {
+		t.Fatalf("musrPublishDocument: seed asset: %v", err)
+	}
+
+	record, err := store.RecordAssetVersion(ctx, documents.RecordAssetVersionRequest{
+		IdentityID: identityID, AssetID: assetID,
+		SearchDocumentID: searchDocumentID, FileName: title, Title: title,
+		MIMEType: "application/octet-stream", SizeBytes: 42,
+		ObjectBucket: "documents", ObjectKey: objectKey, SHA256: sha256,
+		VersionNumber: 1, VersionStatus: "queued",
+	})
+	if err != nil {
+		t.Fatalf("musrPublishDocument: record asset version: %v", err)
+	}
+
+	if err := db.WithIdentityTxRaw(ctx, pool, identityID, func(tx pgx.Tx) error {
+		if _, e := tx.Exec(ctx, `
+UPDATE aura.document_versions
+SET status = 'ready', ready_at = COALESCE(ready_at, now()), updated_at = now()
+WHERE id = $1::uuid AND identity_id = $2::uuid`, record.Version.ID, identityID); e != nil {
+			return e
+		}
+		if _, e := tx.Exec(ctx, `
+UPDATE aura.assets SET status = 'searchable', pipeline_generation = $3, updated_at = now()
+WHERE id = $1::uuid AND identity_id = $2::uuid`,
+			assetID, identityID, record.Version.PipelineGeneration); e != nil {
+			return e
+		}
+		_, e := tx.Exec(ctx, `
+UPDATE aura.documents
+SET active_version_id = $3::uuid, pipeline_generation = $4, status = 'ready',
+    error_code = '', error_message = '', deleted_at = NULL, updated_at = now()
+WHERE id = $1::uuid AND identity_id = $2::uuid`,
+			record.Document.ID, identityID, record.Version.ID, record.Version.PipelineGeneration)
+		return e
+	}); err != nil {
+		t.Fatalf("musrPublishDocument: publish: %v", err)
+	}
 }
 
 // musrGarageIdentity is one identity's provisioned per-identity Garage bucket + scoped key.
