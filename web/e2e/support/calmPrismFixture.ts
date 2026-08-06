@@ -200,7 +200,7 @@ async function installShellRoutes(page: Page) {
   );
   await page.route('**/healthz', (route) => json(route, { ok: true }));
   await page.route('**/readyz', (route) =>
-    json(route, { ready: true, deps: { postgres: 'ok', neo4j: 'ok' } }),
+    json(route, { status: 'ready', ready: true, reasons: [] }),
   );
   await page.route('**/api/me', (route) =>
     json(route, { identity_id: 'operator', capabilities: [] }),

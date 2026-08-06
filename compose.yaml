@@ -511,10 +511,19 @@ services:
       #   `…defaultDatabases=aura_memory[]`            creates it and grants nothing extra,
       #       so root's wildcard admin still applies. This is the only correct form.
       # The Bolt plugin ships in the image (lib/arcadedb-bolt-*.jar) but loads only when
-      # enlisted here. It is what lets any official Neo4j driver talk to ArcadeDB: the
-      # implementation is certified against all five, Python `neo4j` 5.x/6.x included, so
-      # tooling written for Neo4j (CocoIndex's connector, among others) needs no port of
-      # its own. Documented deltas are narrow — RID/UUID arrive as strings, BigDecimal
+      # enlisted here, and it is LOAD-BEARING: it is how CocoIndex writes. The library's
+      # stock `cocoindex.connectors.neo4j` is a full target (mount_table_target,
+      # mount_relation_target, ConnectionFactory) and it speaks Bolt, so enlisting the
+      # plugin is what buys us the ingestion target for free. Drop it and the sidecar needs
+      # a bespoke writer — the exact thing amendment #118 exists to stop.
+      #
+      # ArcadeDB's docs call Bolt a compatibility layer, and the HTTP API at :2480 is
+      # indeed the full read/write surface (verified on 26.7.3: DDL, parameterised
+      # 768-float writes, `vector.neighbors` with a RID filter). That makes HTTP the right
+      # choice for Aura's OWN client, which is what internal/arcadedb/client.go uses. It
+      # does NOT make Bolt removable: the two serve different callers.
+      #
+      # Documented Bolt deltas are narrow — RID/UUID arrive as strings, BigDecimal
       # down-converts to double, auth `none` is always rejected.
       JAVA_OPTS: >-
         -Darcadedb.server.rootPassword=${ARCADEDB_PASSWORD:?ARCADEDB_PASSWORD required in .env}

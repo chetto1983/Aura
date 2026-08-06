@@ -316,13 +316,15 @@ async function installCompletedProfileFixture(page: Page) {
 
 // installRuntimeHealthFixture pins the shell's runtime-health poll to a healthy 200. The
 // ShellHeader RuntimeStatusChip (useRuntimeHealth, D-07) polls /healthz + /readyz every 5s
-// from EVERY authenticated page. The E2E stack boots `aura serve` over Postgres + Garage
-// with NO Neo4j, so the LIVE /readyz Neo4j probe returns 503 — a genuine "degraded in this
-// env" signal, not a chat-flow bug — which otherwise leaks a "Failed to load resource: 503"
-// console error and trips chat.spec.ts's consoleProblems assertion. Mocking here (a page
-// route, not the beforeAll `request` liveness probe) keeps the shell hermetic; a spec that
-// wants to exercise the degraded chip can re-route /readyz after gotoAuthenticated (later
+// from EVERY authenticated page, so any 503 leaks a "Failed to load resource" console error
+// and trips chat.spec.ts's consoleProblems assertion. Mocking here (a page route, not the
+// beforeAll `request` liveness probe) keeps the shell hermetic; a spec that wants to
+// exercise the degraded chip can re-route /readyz after gotoAuthenticated (later
 // page.route wins).
+//
+// The body mirrors internal/agui/readiness.go: {status, ready, reasons}. It used to send
+// {ready, deps: {postgres, neo4j}}, a shape the daemon stopped producing when the graph
+// store was retired — a stub that cannot fail is a stub that hides drift.
 async function installRuntimeHealthFixture(page: Page) {
   await page.route('**/healthz', (route) =>
     route.fulfill({
@@ -335,7 +337,7 @@ async function installRuntimeHealthFixture(page: Page) {
     route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ ready: true, deps: { postgres: 'ok', neo4j: 'ok' } }),
+      body: JSON.stringify({ status: 'ready', ready: true, reasons: [] }),
     }),
   );
 }

@@ -4,9 +4,11 @@
 
 **Goal:** Replace Aura's hand-built document ingestion (Docling + 9,023 LOC of stage machine, leases, retry backoff, orphan sweep, durable-delete workers and an unread tombstone scheme) with three specialised engines — iscc-tika extracts, CocoIndex reconciles, ArcadeDB retrieves — keeping PRD amendment #114's contract intact and closing only on amendment #115's production gate driven by the real agent.
 
-**Architecture:** A Python sidecar runs a CocoIndex app whose incremental state lives in LMDB on a volume; `coco.auto_refresh` makes any source live. Extraction is iscc-tika, with LibreOffice normalising legacy Office formats first. Passages and their embeddings are written to ArcadeDB over the stock Neo4j Bolt driver against ArcadeDB's Bolt plugin, into a schema created natively *before* any write. Retrieval is ArcadeDB's own vector kit; Aura keeps identity, tenancy, tool contracts and sandbox delivery. Two sidecars (`aura-docling`, `aura-rerank`) are deleted.
+**Architecture:** A Python sidecar runs a CocoIndex app whose incremental state lives in LMDB on a volume; `coco.auto_refresh` makes any source live. Extraction is iscc-tika, with LibreOffice normalising legacy Office formats first. Passages and their embeddings are written by CocoIndex's **stock `neo4j` target connector** over ArcadeDB's Bolt plugin — no writer of ours — into a schema created *before* any write. Retrieval is ArcadeDB's own vector kit, reached over HTTP by Aura's Go client. Aura keeps identity, tenancy, tool contracts and sandbox delivery. Two sidecars (`aura-docling`, `aura-rerank`) are deleted.
 
-**Tech Stack:** Python 3.12 + cocoindex 1.0.19 + iscc-tika 0.6.0 + asyncpg 0.31 · Go 1.26 · ArcadeDB 26.7.3 (Bolt + `LSM_VECTOR` + `ARRAY_OF_FLOATS`) · PostgreSQL 18 (control plane, fail-closed RLS) · llama.cpp sidecars (EmbeddingGemma-300M embed, Qwen3-8B answer) · Garage S3 · Docker Compose.
+**Tech Stack:** Python 3.12 + cocoindex 1.0.19 + iscc-tika 0.6.0 · Go 1.26 · ArcadeDB 26.7.3 (`LSM_VECTOR` + `ARRAY_OF_FLOATS`) · PostgreSQL 18 (control plane, fail-closed RLS) · llama.cpp sidecars (EmbeddingGemma-300M embed, Qwen3-8B answer) · Garage S3 · Docker Compose.
+
+**Two protocols on purpose, and the reason is not symmetry.** The **Bolt plugin is load-bearing**: `cocoindex.connectors.neo4j` is a full target (`mount_table_target`, `mount_relation_target`, `ConnectionFactory`) that speaks Bolt, so enlisting the plugin is what buys the ingestion writer for free. Removing it would force a bespoke writer — the exact thing amendment #118 exists to stop. Aura's **own** client keeps using the HTTP API at :2480, which `internal/arcadedb/client.go` already does and which is verified on 26.7.3 for DDL, parameterised 768-float writes, and `vector.neighbors` with a RID filter. Different callers, different surfaces; neither replaces the other.
 
 ## Global Constraints
 
@@ -68,23 +70,21 @@ The whole plan rests on three claims measured in a spike but never on this machi
 - Consumes: the running stack (`aura-arcadedb`, `aura-llama-embed`, `aura-garage`, `aura-postgres` at migration 93)
 - Produces: a go/no-go on Bolt writes, `auto_refresh` reconciliation, and iscc-tika coverage
 
-- [ ] **Step 1: Confirm ArcadeDB accepts a typed vector over Bolt**
+- [x] **Step 1: Confirm ArcadeDB accepts a typed vector over HTTP — DONE 2026-08-06, PASS**
 
-```bash
-MSYS_NO_PATHCONV=1 docker run --rm --network aura_default \
-  -e ARCADEDB_PASSWORD="$ARCADEDB_PASSWORD" aura-pipeline:probe python - <<'PY'
-from neo4j import GraphDatabase
-d = GraphDatabase.driver("bolt://arcadedb:7687", auth=("root", __import__("os").environ["ARCADEDB_PASSWORD"]))
-with d.session(database="aura_probe") as s:
-    s.run("CREATE VERTEX TYPE Passage IF NOT EXISTS")
-    s.run("CREATE PROPERTY Passage.embedding IF NOT EXISTS ARRAY_OF_FLOATS")
-    s.run("CREATE INDEX IF NOT EXISTS ON Passage (embedding) LSM_VECTOR")
-    s.run("CREATE (:Passage {id:'p1', embedding:$e})", e=[0.1]*768)
-    print(s.run("SELECT count(*) AS n FROM Passage").single()["n"])
-PY
+`docker run --rm -i` — **without `-i` the heredoc is silently discarded and the probe prints nothing**, which reads exactly like a hang. POST `/api/v1/command/<db>` with `{"language":"sql","command":…,"params":{…}}` and Basic auth.
+
+The DDL must carry METADATA or the engine rejects it: `LSM_VECTOR index requires METADATA with dimensions, similarity, maxConnections, and beamWidth`. Both forms work — the JSON-quoted one `internal/arcadedb/document_schema.go:314` already builds (three keys, defaults for the rest) and the documented five-key form. Copy the Go one; it is the in-house pattern.
+
+The ANN call is **not** `function('vector.neighbors', …)` — that fails with `Unknown function name 'function'`. The proven shape is `internal/arcadedb/document_retrieval.go:134`: a backticked name and type+property as ONE string.
+
+```sql
+SELECT expand(`vector.neighbors`('Passage[embedding]', :q, 3))
+SELECT expand(`vector.neighbors`('Passage[embedding]', :q, 3,
+  { filter: (SELECT @rid FROM Passage WHERE document = :doc).@rid }))
 ```
 
-Expected: prints `1`. A failure with "cannot index untyped list" means the DDL ran after the write — schema-first is a requirement, not a style.
+Both verified. Note the trailing `.@rid` on the filter subquery — without it the engine throws "must contain RIDs, got: ResultInternal", which is what makes the documentation's example look broken.
 
 - [ ] **Step 2: Confirm `coco.auto_refresh` exists and is source-agnostic**
 
