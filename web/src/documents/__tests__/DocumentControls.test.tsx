@@ -294,14 +294,15 @@ describe('Document library controls', () => {
     expect(onOpenActions).toHaveBeenCalledWith('doc-1');
   });
 
-  it('keeps upload disabled until a file exists and reports success progress', async () => {
+  it('keeps upload disabled until a file exists, then closes on the accepted asset', async () => {
     const onOpenChange = vi.fn();
     const onUploaded = vi.fn();
-    let finishUpload: (() => void) | undefined;
+    const accepted = { id: 'asset-1', status: 'processing' };
+    let finishUpload: ((asset: typeof accepted) => void) | undefined;
     uploadLibraryDocument.mockImplementation(
       async (_file: File, onProgress: (value: number) => void) => {
         onProgress(0.42);
-        await new Promise<void>((resolve) => {
+        return new Promise<typeof accepted>((resolve) => {
           finishUpload = resolve;
         });
       },
@@ -317,11 +318,13 @@ describe('Document library controls', () => {
     fireEvent.click(upload);
 
     expect((await screen.findByRole('status')).textContent).toContain('Uploading 42%');
-    finishUpload?.();
+    expect(onOpenChange).not.toHaveBeenCalled();
+
+    finishUpload?.(accepted);
     await waitFor(() => {
       expect(uploadLibraryDocument).toHaveBeenCalledWith(file, expect.any(Function));
       expect(onOpenChange).toHaveBeenCalledWith(false);
-      expect(onUploaded).toHaveBeenCalledTimes(1);
+      expect(onUploaded).toHaveBeenCalledWith(accepted);
     });
   });
 

@@ -3,6 +3,11 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import '../../i18n/i18n';
 import DocumentsWorkspace from '../DocumentsWorkspace';
 
+const uploadLibraryDocument = vi.hoisted(() => vi.fn());
+const waitForDocumentIngestion = vi.hoisted(() => vi.fn());
+
+vi.mock('../documentUpload', () => ({ uploadLibraryDocument, waitForDocumentIngestion }));
+
 const DOC = {
   id: 'doc-1',
   identity_id: 'operator-1',
@@ -61,6 +66,8 @@ function lastElement<T>(items: T[]): T {
 describe('DocumentsWorkspace', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    uploadLibraryDocument.mockReset();
+    waitForDocumentIngestion.mockReset();
   });
 
   it('loads the catalog, opens versions, saves tags, and deletes through confirmation', async () => {
@@ -280,6 +287,58 @@ describe('DocumentsWorkspace', () => {
     fireEvent.click(within(menu).getByRole('menuitem', { name: 'Ask this document' }));
 
     expect(askDocument).toHaveBeenCalledWith(DOC);
+  });
+
+  it('closes the upload dialog on the accepted asset and refreshes when ingestion settles', async () => {
+    const accepted = { id: 'asset-9', status: 'processing', modality: 'document' };
+    let settleIngestion: ((asset: typeof accepted) => void) | undefined;
+    uploadLibraryDocument.mockResolvedValue(accepted);
+    waitForDocumentIngestion.mockImplementation(
+      async () =>
+        new Promise((resolve) => {
+          settleIngestion = resolve;
+        }),
+    );
+    const listCalls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (url === '/api/documents/doc-1/events') {
+          return Promise.resolve(new Response('[]', { status: 200 }));
+        }
+        if (url === '/api/documents/doc-1') {
+          return Promise.resolve(new Response(JSON.stringify(DETAIL), { status: 200 }));
+        }
+        if (url.startsWith('/api/documents')) {
+          listCalls.push(url);
+          return Promise.resolve(new Response(JSON.stringify([DOC]), { status: 200 }));
+        }
+        return Promise.resolve(new Response('{"ok":true}', { status: 200 }));
+      }),
+    );
+
+    render(<DocumentsWorkspace />);
+    await screen.findByRole('row', { name: /Handbook\.pdf/ });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Upload' }));
+    const dialog = await screen.findByRole('dialog');
+    const file = new File(['handbook'], 'Handbook.pdf', { type: 'application/pdf' });
+    fireEvent.change(within(dialog).getByLabelText('Document file'), { target: { files: [file] } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Upload' }));
+
+    // The dialog is gone while ingestion is still pending -- that is the whole point.
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+    expect(waitForDocumentIngestion).toHaveBeenCalledWith(accepted, expect.anything());
+    const callsBeforeSettle = listCalls.length;
+
+    settleIngestion?.({ ...accepted, status: 'searchable' });
+    await waitFor(() => {
+      expect(listCalls.length).toBeGreaterThan(callsBeforeSettle);
+    });
   });
 
   it('retries a failed document through its active version asset', async () => {

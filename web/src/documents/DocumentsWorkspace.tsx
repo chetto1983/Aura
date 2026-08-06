@@ -1,8 +1,10 @@
 import type { ReactNode } from 'react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Settings2, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Spinner } from '../components/Spinner';
+import type { Asset } from '../chat/attachments/types';
+import { waitForDocumentIngestion } from './documentUpload';
 import {
   deleteDocument,
   fetchDocumentDetail,
@@ -111,6 +113,31 @@ export default function DocumentsWorkspace({ mobileMenu, onAskDocument }: Docume
   useEffect(() => {
     void Promise.resolve().then(() => loadDocuments(defaultFilters));
   }, [loadDocuments]);
+
+  // The upload dialog closes as soon as the bytes are accepted, so nothing is on screen
+  // waiting for ingestion any more. Poll it here instead and refresh once it settles, so a
+  // row leaves the processing tab without the operator hitting refresh.
+  const ingestionWatchers = useRef<Set<AbortController>>(new Set());
+  useEffect(() => {
+    const watchers = ingestionWatchers.current;
+    return () => {
+      for (const controller of watchers) controller.abort();
+      watchers.clear();
+    };
+  }, []);
+
+  const watchIngestion = useCallback(async (asset: Asset, refresh: () => void) => {
+    const controller = new AbortController();
+    ingestionWatchers.current.add(controller);
+    try {
+      await waitForDocumentIngestion(asset, { signal: controller.signal });
+      if (!controller.signal.aborted) refresh();
+    } catch {
+      // A dropped poll leaves the row at its last known status; refresh reconciles it.
+    } finally {
+      ingestionWatchers.current.delete(controller);
+    }
+  }, []);
 
   const activeVersion = useMemo(() => activeVersionFor(detail), [detail]);
   const activeVersions = useMemo(() => {
@@ -299,8 +326,12 @@ export default function DocumentsWorkspace({ mobileMenu, onAskDocument }: Docume
       <DocumentUploadDialog
         open={uploadOpen}
         onOpenChange={setUploadOpen}
-        onUploaded={() => {
-          void loadDocuments({ query, tag, scope }, selectedId);
+        onUploaded={(asset) => {
+          const refresh = () => {
+            void loadDocuments({ query, tag, scope }, selectedId);
+          };
+          refresh();
+          void watchIngestion(asset, refresh);
         }}
       />
       <DeleteDialog

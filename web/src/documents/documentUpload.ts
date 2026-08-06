@@ -1,8 +1,23 @@
 import { finalizeAsset, getAsset, presignAsset } from '../chat/attachments/api';
+import { attachmentPollDelayMs } from '../chat/attachments/useAttachmentUploads';
 import type { Asset } from '../chat/attachments/types';
 
 type ProgressHandler = (progress: number) => void;
 
+export interface IngestionWatchOptions {
+  readonly signal?: AbortSignal;
+  readonly pollIntervalMs?: number;
+}
+
+// Statuses the server can hand back that mean the upload will never become a document.
+const rejectedStatuses = new Set<Asset['status']>(['failed', 'refused', 'deleted', 'canceled']);
+const settledStatuses = new Set<Asset['status']>([...rejectedStatuses, 'searchable', 'complete']);
+
+// Resolves once the bytes are stored and the asset is accepted -- NOT once the server has
+// finished extracting, chunking and embedding it. Ingestion scales with the file, so an
+// upload dialog that awaited it sat at "100%" for minutes and never closed at all when the
+// pipeline stalled short of 'searchable'. The library list owns the rest of the lifecycle:
+// the row lands in the processing tab and waitForDocumentIngestion flips it when it settles.
 export async function uploadLibraryDocument(
   file: File,
   onProgress: ProgressHandler = () => undefined,
@@ -23,16 +38,44 @@ export async function uploadLibraryDocument(
     onProgress,
   );
   const finalized = await finalizeAsset(presigned.asset.id);
-  return pollUntilDocumentReady(finalized);
+  if (rejectedStatuses.has(finalized.status)) {
+    throw new Error(finalized.error_message ?? `document upload ${finalized.status}`);
+  }
+  return finalized;
 }
 
-async function pollUntilDocumentReady(asset: Asset): Promise<Asset> {
-  if (asset.status === 'searchable' || asset.status === 'complete') return asset;
-  if (asset.status === 'failed' || asset.status === 'refused') {
-    throw new Error(asset.error_message ?? `document processing ${asset.status}`);
+// Polls an accepted asset until the server settles it either way. Runs in the background
+// behind a closed dialog, so it must be abortable: the caller aborts on unmount.
+export async function waitForDocumentIngestion(
+  asset: Asset,
+  options: IngestionWatchOptions = {},
+): Promise<Asset> {
+  const { signal, pollIntervalMs } = options;
+  let current = asset;
+  const startedAt = Date.now();
+  while (!settledStatuses.has(current.status) && !isAborted(signal)) {
+    await delay(pollIntervalMs ?? attachmentPollDelayMs(Date.now() - startedAt), signal);
+    if (isAborted(signal)) break;
+    current = await getAsset(current.id);
   }
-  await new Promise((resolve) => window.setTimeout(resolve, 1000));
-  return pollUntilDocumentReady(await getAsset(asset.id));
+  return current;
+}
+
+function isAborted(signal: AbortSignal | undefined): boolean {
+  return signal?.aborted === true;
+}
+
+function delay(ms: number, signal: AbortSignal | undefined): Promise<void> {
+  return new Promise((resolve) => {
+    let timer = 0;
+    const done = () => {
+      window.clearTimeout(timer);
+      signal?.removeEventListener('abort', done);
+      resolve();
+    };
+    timer = window.setTimeout(done, ms);
+    signal?.addEventListener('abort', done, { once: true });
+  });
 }
 
 function uploadToPresignedURL(

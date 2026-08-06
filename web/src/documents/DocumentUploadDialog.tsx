@@ -2,6 +2,7 @@ import { Upload } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Spinner } from '../components/Spinner';
+import type { Asset } from '../chat/attachments/types';
 import { uploadLibraryDocument } from './documentUpload';
 import { Button } from '@/components/ui/button';
 import {
@@ -18,7 +19,7 @@ import { Label } from '@/components/ui/label';
 interface DocumentUploadDialogProps {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
-  readonly onUploaded: () => void;
+  readonly onUploaded: (asset: Asset) => void;
 }
 
 export function DocumentUploadDialog({
@@ -37,11 +38,11 @@ export function DocumentUploadDialog({
     setUploading(true);
     setError('');
     try {
-      await uploadLibraryDocument(file, setProgress);
+      const asset = await uploadLibraryDocument(file, setProgress);
       onOpenChange(false);
       setFile(undefined);
       setProgress(0);
-      onUploaded();
+      onUploaded(asset);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'upload failed');
     } finally {
