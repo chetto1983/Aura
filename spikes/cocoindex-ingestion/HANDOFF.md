@@ -41,12 +41,18 @@ consulta. Con la riconciliazione lo stato corrente È lo stato.
 
 ### Nasce (~400 LOC stimate)
 
-| componente | cosa fa |
-|---|---|
-| flow CocoIndex (Python, sidecar) | sorgente S3 → MarkItDown → chunk → embed → ArcadeDB |
-| `ensure_schema` in SQL nativo | tipi, proprietà `ARRAY_OF_FLOATS`, indice `LSM_VECTOR` — **prima** di ogni scrittura Bolt |
-| retrieval hybrid | denso ∪ token esatto → rerank con astensione |
-| filtro strutturale per prefisso | il path come filtro di routing (vedi §4) |
+| componente | cosa fa | stato |
+|---|---|---|
+| flow CocoIndex (Python, sidecar) | sorgente S3 → MarkItDown → chunk → embed → ArcadeDB | provato |
+| `ensure_schema` in SQL nativo | tipi, `ARRAY_OF_FLOATS`, `LSM_VECTOR` — **prima** di ogni scrittura Bolt | provato |
+| `documents_mcp` | `document_search` (hybrid + rerank + astensione, con `prefix`), `document_describe`, `document_resolve` | provato, `mcp/` |
+| `document_open` (Go, ridotto) | `Router.Route` + copy-in nella sandbox; consuma l'id che l'MCP risolve | da fare |
+| `table_query` | SQL sulle tabelle ETL; espone `unit.header_json` + `fingerprint` come schema scoperto | da fare |
+| identità stabile del passaggio | `bucket/key` o id catalogo al posto del path del walker (§5b) | **bloccante** |
+
+I due tool NON vanno confusi: `document_search` recupera un passaggio, `table_query`
+calcola un aggregato. La domanda "quanti fornitori gestisce Molteni" ha risposta 258 e
+quel numero non è scritto in nessuna cella — nessun retrieval può produrlo.
 
 ### Resta
 
@@ -61,6 +67,11 @@ duplicato per errore.
 
 Ogni fase è verificabile da sola e non rompe la precedente.
 
+**F0 — identità stabile del passaggio.** *Bloccante, e va per prima* (§5b): finché
+`Passage.document` porta il path del walker, la catena trova→apri è spezzata e tutto ciò
+che sta sopra è invalidato. Due righe in `process_file`. *Verifica:* `document_search`
+restituisce un riferimento che `document_open` risolve.
+
 **F1 — schema-first su ArcadeDB.** Portare le DDL native (`ARRAY_OF_FLOATS` +
 `LSM_VECTOR` + FULL_TEXT) in una migration/bootstrap. *Verifica:* `vector.neighbors`
 recupera un embedding scritto via Bolt.
@@ -69,16 +80,23 @@ recupera un embedding scritto via Bolt.
 `cocoindex update` (o `-L` per il live). Stato LMDB **su volume**, non effimero.
 *Verifica:* le 4 run di `FINDINGS.md` §2 (baseline / unchanged / modified / deleted).
 
-**F3 — retrieval hybrid + astensione.** Sostituire il ranking attuale mantenendo lo
-scoping per identità. *Verifica:* recall@1 e tasso di astensione, due numeri non uno.
-Riferimento: 10/10 e 6/6 sul manuale da 328 pagine.
+**F3 — `documents_mcp` come sidecar.** Registrarlo come gli altri MCP di Aura, fail-soft.
+*Verifica:* i tre tool rispondono e `answered:false` arriva strutturato.
 
-**F4 — spegnere il vecchio.** Solo ora cancellare i file di §2. *Verifica:* la suite passa
+**F4 — `document_open` ridotto.** Consuma l'id risolto dall'MCP; resta solo
+`Router.Route` + copy-in. *Verifica:* il file compare nella sandbox del chiamante.
+
+**F5 — spegnere il vecchio.** Solo ora cancellare i file di §2. *Verifica:* la suite passa
 senza di essi.
 
-**F5 — routing per prefisso.** Il filtro strutturale (§4).
+**F6 — `table_query` sulle tabelle ETL.** La capacità Excel, distinta dal retrieval.
+*Verifica:* "quanti fornitori per acquisitore" torna 258 per Molteni.
 
-**F6 — UI file manager.** Per ultima: senza F5 è solo un browser di file.
+**F7 — routing per prefisso end-to-end.** Il filtro strutturale (§4) usato dall'agente,
+non solo disponibile come parametro.
+
+**F8 — UI file manager.** Per ultima: senza F7 è solo un browser di file. La UI scrive su
+S3 e CocoIndex riconcilia — nessun collante fra UI e ingestion (provato, RUN 4).
 
 ---
 
@@ -138,14 +156,34 @@ riferimento che non può usare.
 
 ## 6. Domande aperte, in ordine di impatto
 
-1. **Routing per prefisso** — progettato, non costruito. È il pezzo con più valore residuo.
-2. **`etl_flow.py` va rifatto per chiamare `filecard`** invece di reimplementarlo.
-3. **Grafo a 85 s/documento** — solo asincrono. Le 2 chiamate LLM sono sequenziali:
+1. **Identità stabile del passaggio** (§5b) — bloccante, rompe trova→apri.
+2. **Routing per prefisso end-to-end** — il parametro c'è nell'MCP, l'agente non lo usa.
+   È il pezzo con più valore residuo dopo il punto 1.
+3. **`etl_flow.py` va rifatto per chiamare `filecard`** invece di reimplementarlo (§5b
+   di FINDINGS).
+4. **`table_query` non esiste.** Oggi le tabelle ETL si interrogano solo a mano.
+5. **Grafo a 85 s/documento** — solo asincrono. Le 2 chiamate LLM sono sequenziali:
    parallelizzarle dovrebbe dimezzare.
-4. **Un solo corpus.** Un manuale tecnico e tre documenti amministrativi non sono una
-   validazione statistica.
-5. **Poppler** è installato sull'host (`~/bin`) ma Claude Code lo vedrà solo dopo un
+6. **Fail-soft dell'MCP.** Un sidecar giù = documenti non consultabili, mentre un tool
+   in-process non può esserlo. Per la memoria il compromesso è già accettato; qui va
+   deciso consapevolmente.
+7. **Un solo corpus.** Un manuale tecnico e tre documenti amministrativi non sono una
+   validazione statistica. Manca soprattutto un vero scansionato in italiano: GLM-OCR è
+   provato su pixel, non su una scansione nativa.
+8. **`data_json` come `jsonb`** invece di TEXT: toglie il cast e permette un indice GIN.
+9. **Poppler** è installato sull'host (`~/bin`) ma Claude Code lo vedrà solo dopo un
    riavvio: la capability è verificata all'avvio.
+
+## 8. Risorse lasciate attive (da pulire quando non servono)
+
+- container `aura-documents-mcp` sulla rete `aura_default`
+- bucket Garage `cocoindex-spike` + chiave `cocoindex-spike-key`
+- database ArcadeDB `aura_manual_spike`, `aura_ingest_spike`, `aura_s3_spike`
+- schema `etl` nel database Postgres `cocoindex`
+- volumi `aura-s3-state-v2`, `aura-cocoindex-state`, immagine `aura-pipeline:probe`
+
+Nessuno tocca la produzione: `aura_memory`, i `mem_<uuid>` per identità e il bucket
+`aura-assets` non sono stati modificati.
 
 ---
 

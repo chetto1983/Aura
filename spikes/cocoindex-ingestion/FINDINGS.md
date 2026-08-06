@@ -83,6 +83,51 @@ nulla per accorgersi che un file è invariato.
 7 file → 131 unità → **21.797 righe in 3,9 s**. Tre tabelle sole (`source → unit →
 datarow`): per `.xlsx` unità = foglio, per `.pdf` = pagina, per `.pptx` = slide.
 
+### Excel: SQL risponde dove il RAG non può, per costruzione
+
+Domanda reale sul foglio `Fornitori - Acquisitori` (1.385 righe, colonne scoperte a
+runtime, nessuno schema scritto a mano):
+
+```
+ acquisitore        | fornitori
+--------------------+-----------
+ Luca Molteni       |       258
+ M. Grazia Colombo  |       151
+ Claudio Sannà      |       110
+```
+
+**Il numero 258 non esiste in nessuna cella.** Esiste solo dopo l'aggregazione, quindi
+nessun retrieval può restituirlo: non c'è niente da recuperare. È il risultato di
+answerability del D1 riprodotto sui dati dell'operatore, ed è la prova che **Excel non
+entra nel RAG** — entra in tabelle, e l'agente fa SQL.
+
+Senza l'euristica header quelle 1.385 righe erano tutte sotto la chiave
+`"Elenco Fornitori Acquisitori"` (un titolo). Nota: `data_json` è TEXT e richiede
+`::jsonb`; come colonna `jsonb` nativa si risparmia il cast e si indicizza con GIN.
+
+### MCP documenti — l'astensione sopravvive al confine
+
+Server FastMCP su streamable-http, interrogato da un client come farebbe un host:
+
+```
+TOOLS: document_search, document_describe, document_resolve
+resolve → 696 passaggi indicizzati
+search  → answered:true,  passaggio con 6SL3055-0AA00-5EA0
+search  → answered:false, "Nessun passaggio riporta il prezzo di listino della CU320-2"
+```
+
+Il punto non è che i tool funzionano: è che **`answered:false` attraversa il confine MCP**
+come dato strutturato con motivazione, invece di una lista top-k che un agente potrebbe
+scambiare per una risposta. La distanza non può prendere quella decisione (peggiore vera
+0,5886 > migliore falsa 0,5764); il reranker sì, e il contratto lo rende esplicito.
+
+`document_search` guadagna il parametro che il tool Go non ha mai avuto: `prefix`.
+
+**Difetto aperto:** `Passage.document` porta il path del walker al momento dell'ingest
+(`/corpus/…` da localfs, `mutuo.pdf` senza bucket da S3), che `document_open` non sa
+risolvere. La catena trova→apri è spezzata finché il passaggio non porta un'identità
+stabile. Vedi `HANDOFF.md` §5b.
+
 ---
 
 ## 3. ArcadeDB parla Neo4j — nessun driver da scrivere
