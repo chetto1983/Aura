@@ -174,6 +174,22 @@ Il modello detecta skill rilevante dal frontmatter `description` (es. "Use when 
   own embedding model" is literal and the embedding sweep genuinely must be ours. Answer
   BUILD vs REUSE with a grep over the dependency, never with an assumption in either
   direction.
+- **STOP BEFORE BESPOKE. ASK, DO NOT ASSUME.** The moment you are about to write a custom
+  component, adapter, wrapper or protocol implementation against a dependency: STOP. Do not
+  write it. Post the inventory you actually ran and the gap you believe it leaves, and
+  confirm with the human BEFORE a line is written. "The docs do not mention it" is NOT
+  evidence of absence, and neither is "the connector I looked at does not expose it": the
+  capability is often orthogonal to the place you looked. Enumerate the whole public
+  surface (`__all__`, the exported symbol list, the module tree of the INSTALLED version --
+  not the landing page, not the docs site, not one source file), because a package will
+  ship a public API its own documentation never demonstrates. Measured on 2026-08-06:
+  cocoindex's S3 connector genuinely has no live mode (`list_objects` rejects `live=` with
+  TypeError, `items()` is a bare async_generator with no `watch()`), and from that a custom
+  LiveComponent of about 50 lines was proposed and nearly written. It was not needed.
+  `coco.auto_refresh(fn, interval=...)` is in `coco.__all__`, wraps ANY process function as
+  a LiveComponent, and is orthogonal to the source -- it does not appear in the connector
+  docs or the connector table at all. One grep of the installed package's `__all__` would
+  have found it before the design went the wrong way; the docs alone did not.
 - **NOT MY WORK.** If Bug or gap found fix on touch. Never Skip.
 - **READ BEFORE EDIT.** Re-read a file you haven't touched in the last 5 messages.
 - **3-STRIKE RULE.** Same failing approach max 3 times. On strike 3, stop and ask (or escalate via PRD-amendment, vedi PRD §Q&A escalation).
