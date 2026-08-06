@@ -1,0 +1,5 @@
+# Pinned, because an ingestion sidecar that silently changes extractor or
+# reconciliation semantics between rebuilds produces a corpus nobody can explain.
+cocoindex==1.0.19
+iscc-tika==0.6.0
+neo4j==5.28.1
