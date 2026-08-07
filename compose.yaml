@@ -699,6 +699,72 @@ services:
       retries: 30
       start_period: 300s                       # first-boot HF model download can exceed 4 minutes
 
+  # ↓↓ Document-pipeline rewrite (amendment #118) — CocoIndex reconciliation sidecar ↓↓
+  # Reconciles one identity's Garage bucket into ArcadeDB with no delete/dedup/memoization
+  # code of ours: CocoIndex's own target reconciliation does that (proven live in Task 6's
+  # scripts/ingest_reconcile_e2e.sh — rerun-unchanged re-extracts nothing, delete removes
+  # passages with no delete worker running). aura-docling/aura-rerank below are this
+  # sidecar's predecessor and are slated for removal once the Go pipeline they served is
+  # deleted (this rewrite's later tasks), not by this change.
+  #
+  # Gated behind a profile and NOT started by a bare `docker compose up -d`:
+  # AURA_INGEST_IDENTITY_ID/S3_BUCKET/S3_ACCESS_KEY_ID/S3_SECRET_ACCESS_KEY default to
+  # empty on purpose. They are per-identity credentials Go-side provisioning mints
+  # (services/ingest/source.py), not a shared appliance secret, and compose interpolates
+  # the WHOLE file before it selects a service (see the ARCADEDB_PASSWORD comment
+  # elsewhere in this file) — a `:?required` default here would abort every `docker
+  # compose` invocation on this stack, not just this service's. The container's own
+  # source.py._required() raises loudly at boot if it is actually started without them.
+  # Naming the service explicitly (`docker compose up -d aura-ingest`, Task 10's gate)
+  # starts it regardless of the profile — Compose starts an explicitly targeted service
+  # even when its profile is not active.
+  #
+  # The LMDB memoization state (COCOINDEX_DB=/state/coco.db, baked into the image) MUST
+  # live on the volume below: an ephemeral path silently reprocesses the whole corpus
+  # every run while every log line still looks like a correct incremental pass.
+  aura-ingest:
+    build:
+      context: .
+      dockerfile: docker/aura-ingest/Dockerfile
+    image: ${AURA_INGEST_IMAGE:-aura-ingest:local}
+    pull_policy: never
+    container_name: aura-ingest
+    profiles: [ingest]
+    restart: unless-stopped
+    depends_on:
+      arcadedb:
+        condition: service_healthy
+      aura-llama-embed:
+        condition: service_healthy
+    environment:
+      # Service-name DNS, not the container_name defaults baked into app.py/source.py
+      # (aura-arcadedb/aura-garage): every other consumer in this file reaches ArcadeDB
+      # and Garage via their SERVICE names (arcadedb, garage — see AURA_OBJECTSTORE_ENDPOINT
+      # and the aura service's own ARCADEDB_URL above), so this sidecar matches them
+      # explicitly rather than leaning on container_name also happening to resolve.
+      ARCADE_HTTP: http://arcadedb:2480
+      ARCADE_BOLT: bolt://arcadedb:7687
+      ARCADE_DB: ${ARCADE_DB:-aura_ingest}
+      ARCADEDB_PASSWORD: ${ARCADEDB_PASSWORD:?ARCADEDB_PASSWORD required in .env}
+      AURA_EMBED_BASE_URL: http://aura-llama-embed:8081
+      AURA_EMBED_DIMENSIONS: ${AURA_EMBED_DIMENSIONS:-768}
+      # Catch-up mode by default (Task 6, measured): a worker-task RuntimeError
+      # propagates and fails the run in catch-up mode, but auto_refresh's live mode
+      # swallows the same exception into the next cycle. AURA_INGEST_LIVE=true is an
+      # explicit, informed opt-in — it trades fail-closed extraction errors for
+      # continuous reconciliation.
+      AURA_INGEST_LIVE: ${AURA_INGEST_LIVE:-false}
+      AURA_INGEST_INTERVAL_SEC: ${AURA_INGEST_INTERVAL_SEC:-60}
+      AURA_INGEST_IDENTITY_ID: ${AURA_INGEST_IDENTITY_ID:-}
+      AURA_INGEST_S3_ENDPOINT: ${AURA_INGEST_S3_ENDPOINT:-http://garage:3900}
+      AURA_INGEST_S3_BUCKET: ${AURA_INGEST_S3_BUCKET:-}
+      AURA_INGEST_S3_ACCESS_KEY_ID: ${AURA_INGEST_S3_ACCESS_KEY_ID:-}
+      AURA_INGEST_S3_SECRET_ACCESS_KEY: ${AURA_INGEST_S3_SECRET_ACCESS_KEY:-}
+      AURA_INGEST_S3_REGION: ${AURA_INGEST_S3_REGION:-garage}
+      AURA_INGEST_S3_PREFIX: ${AURA_INGEST_S3_PREFIX:-}
+    volumes:
+      - aura-ingest-state:/state
+
   # Docling Serve v1.29.0 is a private conversion appliance. It has no host
   # port, no proxy inheritance, no runtime downloads, and no alternate config
   # surface. The immutable image already carries the standard pipeline models;
@@ -1044,7 +1110,7 @@ services:
   # then point the daemon at it in .env (the profile can gate a SERVICE, not another
   # service's env, so this half stays explicit):
   #   AURA_LLM_BASE_URL=http://aura-llm:8084/v1
-  #   AURA_LLM_MODEL=qwen3-8b
+  #   AURA_LLM_MODEL=qwen3.5-9b
   # Host-side `go run ./cmd/aura` is unaffected unless you export the same two.
   aura-llm:
     profiles: [localllm]
@@ -1053,37 +1119,40 @@ services:
     restart: unless-stopped
     environment:
       LLAMA_ARG_HOST: 0.0.0.0
-      # llama.cpp --hf-repo downloads into the HF hub cache ($HF_HOME/hub), NOT
-      # /root/.cache/llama.cpp. Point HF_HOME at the persisted volume below so the
-      # ~6GB GGUF survives container recreates (otherwise every --force-recreate,
-      # e.g. a context-size change, re-downloads the whole model).
-      HF_HOME: /root/.cache/llama.cpp
     command:
-      - --hf-repo
-      - ${AURA_LLM_HF_REPO:-unsloth/Qwen3-8B-GGUF}
-      - --hf-file
-      - ${AURA_LLM_HF_FILE:-Qwen3-8B-UD-Q4_K_XL.gguf}
+      # A LOCAL path, not --hf-repo (task-7 RULING 1, 2026-08-07): the previous
+      # --hf-repo/--hf-file pair needed egress at every first boot and verified nothing
+      # about what it fetched — the same restart-loop and same silent-corruption risk
+      # aura-llama-embed's own comment above already documents for this exact image.
+      # scripts/fetch_llm_model.sh pins unsloth/Qwen3.5-9B-GGUF's Qwen3.5-9B-UD-Q4_K_XL.gguf
+      # at commit 3885219b6810b007914f3a7950a8d1b469d598a5 (5,966,095,584 bytes, sha256
+      # 6f5d30666c2d8ae16a306e616d95341dcf3cc46810df84d7e6f5a7d1e4c1b293) and refuses
+      # anything else; the file is placed into this volume before the first `up`,
+      # the same appliance-install step ensure_embed_model already performs. unsloth's UD
+      # (dynamic-quant) family, not a plain Q4_K_M, to stay on the pattern this default
+      # already used before this task.
+      - -m
+      - ${AURA_LLM_MODEL_PATH:-/root/.cache/llama.cpp/Qwen3.5-9B-UD-Q4_K_XL.gguf}
       - -a
-      - ${AURA_LLM_ALIAS:-qwen3-8b}
+      - ${AURA_LLM_ALIAS:-qwen3.5-9b}
       - --port
       - "8084"
       - -ngl
       - "${AURA_LLM_NGL:-99}"          # full GPU offload
       - -c
-      - "${AURA_LLM_CTX:-131072}"       # 128K context — the stable ceiling on a 12GB
-                                        # RTX 3060 for Qwythos-9B-v2 (Q4 weights + BF16
-                                        # mmproj + q8_0 KV). MEASURED: 256K saturates VRAM
-                                        # (132MB free), 1M needs ~16-20GB KV → OOM. The
-                                        # 3:1 hybrid (Gated-DeltaNet SSM : full-attn) keeps
-                                        # KV small, but 1M still exceeds this GPU. Bump
-                                        # AURA_LLM_CTX on bigger VRAM (e.g. DGX Spark).
-                                        # Native ctx is 16384; YaRN (below) scales up.
+      # MEASURED on this host's 12GB RTX 3060 (task-7 RULING 2, 2026-08-07; see
+      # task-7-report.md for the full VRAM/tok-s evidence). Qwen3.5-9B's card declares a
+      # 262144-token native context (YaRN-extensible to ~1,010,000) — nothing like
+      # Qwen3-8B's 40960 or the Qwythos-9B-v2 card this block described before this task
+      # (native 16384, needing --rope-scaling yarn --yarn-orig-ctx 16384). Both of those
+      # numbers, and that YaRN pair, belonged to different models and are gone: applying a
+      # YaRN factor computed from 16384 to a model whose native window is 262144 would
+      # distort every position. The value below is the largest this GPU held stable
+      # alongside the resident embed sidecar, not the model's native ceiling — see the
+      # report for what a larger -c did instead.
+      - "${AURA_LLM_CTX:-32768}"
       - -np
       - "${AURA_LLM_PARALLEL:-1}"       # ONE slot so -c is the full context, not c/np
-      - --rope-scaling
-      - yarn                            # Qwythos card: >16384 up to 1M needs YaRN
-      - --yarn-orig-ctx
-      - "16384"
       - --flash-attn
       - "on"                            # required for quantized KV cache
       - --cache-type-k
@@ -1094,11 +1163,27 @@ services:
       - --reasoning-format
       - deepseek                        # surface Qwen3 <think> as reasoning_content (Aura accept-both #33)
       # VERIFIED: Aura's per-turn adaptive reasoning is an OpenRouter `reasoning:{}`
-      # object llama.cpp ignores, so thinking policy lives HERE, server-side.
+      # object llama.cpp ignores, so thinking policy lives HERE, server-side. This model
+      # thinks (<think> tags) by default, same as Qwen3.
       - --reasoning
-      - "${AURA_LLM_REASONING:-auto}"   # on|off|auto — auto = Qwen3 template default (thinks)
+      - "${AURA_LLM_REASONING:-auto}"   # on|off|auto — auto = template default (thinks)
       - --reasoning-budget
       - "${AURA_LLM_REASONING_BUDGET:--1}"  # thinking token cap: -1 unrestricted, 0 off, N to bound latency
+      # MEASURED (task-7, 2026-08-07): this model thinks BEFORE it answers, and thinking
+      # tokens count against the request's max_tokens/AURA_LLM_MAX_TOKENS budget the SAME
+      # as the answer does. A trivial one-line question spent ~281 completion tokens on
+      # ~909 chars of reasoning before writing a word of the reply. At max_tokens=200 the
+      # response came back with `content` EMPTY and everything in `reasoning_content` —
+      # no error anywhere, no truncation flag a naive caller checks. Any caller (Aura's
+      # OpenRouter-shaped client included) must budget max_tokens for thinking PLUS the
+      # answer, and must treat empty content + non-empty reasoning_content as its own
+      # failure class, not as "the model had nothing to say."
+      # Qwen3.5-9B-GGUF's model card recommends temperature=1.0, top_p=0.95, top_k=20,
+      # min_p=0.0, presence_penalty=1.5, repetition_penalty=1.0 for general/thinking use.
+      # Deliberately NOT set as server flags here: Aura's own request always carries
+      # AURA_LLM_TEMPERATURE (.env, default 0.7 — shared with the OpenRouter path, so this
+      # task does not change it) and llama.cpp honours a client-supplied value over its own
+      # default. Flagged for the record, not silently applied.
       - -t
       - "4"
     deploy:
@@ -1116,8 +1201,8 @@ services:
       test: ["CMD-SHELL", "curl -sf http://localhost:8084/health || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 60
-      start_period: 900s                # first-boot GGUF download (~5.5GB) can be slow
+      retries: 30
+      start_period: 60s                 # local artifact loads fast; no first-boot download anymore
 
   # Optional local observability pack. Prometheus and Tempo join Aura's network
   # namespace so the loopback-only metrics listener and OTLP receiver remain
@@ -1241,6 +1326,8 @@ volumes:
   aura-llama-embed:
   aura-docling-models:
   aura-llm:
+  # CocoIndex's LMDB memoization state (see the aura-ingest service comment above).
+  aura-ingest-state:
   aura-whatsapp-session:
   caddy-data:
   aura-ocr-vl:
