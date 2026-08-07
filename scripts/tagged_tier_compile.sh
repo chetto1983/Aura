@@ -37,19 +37,21 @@ declare -A tiers=()
 declare -A unknown=()
 declare -A package_tiers=()
 
+# The slashes in the grep pattern below are ESCAPED for MSYS, not for the regex.
+# `^//go:build ` begins with `//`, which Git-for-Windows treats as a UNC-style path and
+# rewrites before git ever sees the argument, so the pattern silently matches NOTHING:
+# measured, the anchored form returned 0 files while `^\/\/go:build ` and `-F '//go:build'`
+# both returned them all. Whether this leg ran at all depended on how the CALLER spelled the
+# repo root — a direct invocation mismatched the guard below and fell through to find, while
+# lefthook passed the same Windows spelling git reports and took this branch. That is why the
+# pre-push gate exited "no Aura tier tags found" in half a second while a manual run compiled
+# all 21 tiers. Escaping is a no-op for the regex (\/ is /) and neutral on Linux, where the
+# plain form was never broken.
 discover_sources() {
-  # NOTE: this git fast path is currently INERT and must stay behind an exact-string
-  # guard until its pattern is fixed. `git grep -l '^//go:build'` returns ZERO matches in
-  # this repository while `git grep -F -l '//go:build'` returns them all — the anchored
-  # form matches nothing, so taking this branch yields an empty tier set and the gate
-  # exits "no Aura tier tags found". Discovery has always run through the `find` fallback
-  # below, which is why that was never noticed. Normalising the comparison (so the paths
-  # match on Windows, where lefthook passes `D:/Repo/Aura` and git answers `/d/Repo/Aura`)
-  # is therefore NOT the fix — it just switches discovery onto the broken leg.
   if [[ "$(git -C "$source_root" rev-parse --show-toplevel 2>/dev/null || true)" == "$source_root" ]]; then
     while IFS= read -r -d '' relative; do
       printf '%s/%s\0' "$source_root" "$relative"
-    done < <(git -C "$source_root" grep -lz '^//go:build ' -- cmd internal scripts || true)
+    done < <(git -C "$source_root" grep -lz '^\/\/go:build ' -- cmd internal scripts || true)
     while IFS= read -r -d '' relative; do
       printf '%s/%s\0' "$source_root" "$relative"
     done < <(
