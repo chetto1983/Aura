@@ -57,12 +57,15 @@ pre-push:
     build:
       run: bash -c 'go build $(bash scripts/go_packages.sh)'
     tagged-tier-compile:
-      # `bash -c` and an EXPLICIT --compile, for the same reason deadcode needs its
-      # wrapper below: lefthook appends the changed files to the command, so the script
-      # saw a path as $1, hit its usage guard and exited before compiling anything. It
-      # failed closed in 0.39s while a real run takes ~61s — fast enough to look like a
-      # cached pass in the summary, which is how it went unnoticed.
-      run: bash -c 'bash scripts/tagged_tier_compile.sh --compile'
+      # Two Windows-only traps, both of which made this gate exit in ~0.4s while a real
+      # run takes ~61s — fast enough to read as a cached pass in lefthook's summary:
+      #   1. lefthook appends the changed files, so the script saw a source path as $1,
+      #      hit its own usage guard and exited before compiling anything. Hence the
+      #      explicit --compile, the same shape deadcode needs below.
+      #   2. lefthook's cwd/root arrives Windows-spelled (D:/Repo/Aura), and the script's
+      #      discovery paths only resolve from the MSYS form. cd to the toplevel first so
+      #      it computes its own root the way a direct invocation does.
+      run: bash -c 'cd "$(git rev-parse --show-toplevel)" && bash scripts/tagged_tier_compile.sh --compile'
     deadcode:
       # No inner quotes: lefthook mangles double quotes nested in the single-quoted
       # `bash -c '…'` string, which failed the gate closed at ~0.2s without ever running it.

@@ -38,6 +38,14 @@ declare -A unknown=()
 declare -A package_tiers=()
 
 discover_sources() {
+  # NOTE: this git fast path is currently INERT and must stay behind an exact-string
+  # guard until its pattern is fixed. `git grep -l '^//go:build'` returns ZERO matches in
+  # this repository while `git grep -F -l '//go:build'` returns them all — the anchored
+  # form matches nothing, so taking this branch yields an empty tier set and the gate
+  # exits "no Aura tier tags found". Discovery has always run through the `find` fallback
+  # below, which is why that was never noticed. Normalising the comparison (so the paths
+  # match on Windows, where lefthook passes `D:/Repo/Aura` and git answers `/d/Repo/Aura`)
+  # is therefore NOT the fix — it just switches discovery onto the broken leg.
   if [[ "$(git -C "$source_root" rev-parse --show-toplevel 2>/dev/null || true)" == "$source_root" ]]; then
     while IFS= read -r -d '' relative; do
       printf '%s/%s\0' "$source_root" "$relative"
