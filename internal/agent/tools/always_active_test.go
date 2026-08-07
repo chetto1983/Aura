@@ -27,7 +27,7 @@ import (
 // then listed the whole filesystem, and reached the document library on the fourth attempt.
 //
 //   - shell_exec      — the most-used tool in the system; the terminal is how work happens
-//   - fs_read         — reading a file whose path she already has is not a choice between
+//   - read_file       — reading a file whose path she already has is not a choice between
 //     tools, it is the next step
 //   - document_search — the operator's own documents are what this deployment is FOR, and
 //     the entry point to them cannot be something she has to think of looking for
@@ -41,22 +41,43 @@ import (
 // guidance for this pattern is to keep the three to five most-used tools loaded; Aura had
 // none that do any work.
 //
-// Everything else stays discoverable. Adding a ninth is a real decision with a real price,
+// Everything else stays discoverable. Adding one more is a real decision with a real price,
 // so it should require editing this list and reading this comment.
+//
+// 2026-08-07: the set was aligned to the reference coding agent's own always-active tools,
+// which is a measured configuration rather than an opinion. That added five:
+//   - patch, write_file, search_files — the file toolset is ONE toolset. Splitting it left the
+//     model able to read but not edit or find without first paying a tool_search on the single
+//     most common path there is, which costs more turns than the manifest bytes it saved.
+//   - send_file — delivering a result is the last step of most requests, not a rare one.
+//
+// It also confirmed two that must STAY deferred, because the reference agent defers them too:
+// todo_write and web_search.
+//
+// Two more MATCH the reference agent's set but stay deferred here for a reason the set alone
+// does not capture — Aura's descriptions are several times larger than the equivalents, and the
+// manifest is billed on every turn, cold and cached:
+//   - skill: 1,638 tokens, 12% of every prompt, because it multiplexes read + authoring +
+//     snippet lifecycle behind one `action` enum.
+//   - swarm_spawn: swarmSpawnDescription is 4,364 chars (~1,100 tokens).
+//
+// Both are promotion candidates once their descriptions are cut to the reference size. Matching
+// the set is not enough on its own: the bytes are the other half.
 func TestOnlyTheWorkingSetIsAlwaysActive(t *testing.T) {
 	t.Parallel()
 	want := []string{
-		"ask_user", "document_open", "document_search", "fs_read",
-		"read_tool_output", "shell_exec", "text_response", "tool_search",
+		"ask_user", "document_open", "document_search", "patch", "read_file",
+		"read_tool_output", "search_files", "send_file", "shell_exec",
+		"text_response", "tool_search", "write_file",
 	}
 
 	// Every tool the daemon can register, constructed the cheap way (no wiring): Spec() is
 	// a pure function of the value, and Deferred never depends on collaborators.
 	all := []Tool{
-		&AskUser{}, &CurrentTime{}, &DocumentOpen{}, &DocumentSearch{}, &FSEdit{}, &FSGlob{},
-		&FSGrep{}, &FSRead{}, &FSWrite{}, &ReadToolOutput{}, &SendFile{}, &ShellExec{},
-		&SkillTool{}, &TaskTool{}, &TextResponse{}, &TodoTool{}, &ToolSearch{}, &WebFetch{},
-		&WebSearch{},
+		&AskUser{}, &CurrentTime{}, &DocumentOpen{}, &DocumentSearch{}, &Patch{}, &SearchFiles{},
+		&ReadFile{}, &WriteFile{}, &ReadToolOutput{}, &SendFile{}, &ShellExec{},
+		&SkillTool{}, &SwarmSpawn{}, &TaskTool{}, &TextResponse{}, &TodoTool{}, &ToolSearch{},
+		&WebFetch{}, &WebSearch{},
 	}
 
 	var got []string

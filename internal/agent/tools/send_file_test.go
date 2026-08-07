@@ -19,8 +19,12 @@ func TestSendFileSpecIsDeferred(t *testing.T) {
 	if s.Name != "send_file" {
 		t.Fatalf("name = %q, want send_file", s.Name)
 	}
-	if !s.Deferred {
-		t.Fatal("send_file MUST be Deferred:true — it has a path/caption schema + example (deferred-tool rule)")
+	// 2026-08-07: promoted to always-active when the set was aligned to the reference coding
+	// agent's own tools, whose delivery tool is always in the manifest. Delivering a result is
+	// the last step of most requests, so paying a tool_search for it taxed the common path.
+	// See TestOnlyTheWorkingSetIsAlwaysActive for the full rationale.
+	if s.Deferred {
+		t.Fatal("send_file is part of the always-active working set — see always_active_test.go")
 	}
 	if s.Mutating {
 		t.Fatal("send_file MUST be Mutating:false — it reads a file and emits a descriptor, no host mutation")

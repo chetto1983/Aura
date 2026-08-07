@@ -103,8 +103,8 @@ func TestMutatingToolOwnerCoverage(t *testing.T) {
 	t.Parallel()
 
 	registered := []Tool{
-		&FSWrite{},
-		&FSEdit{},
+		&WriteFile{},
+		&Patch{},
 		&ShellExec{},
 		&ShellKill{},
 		&SkillTool{},

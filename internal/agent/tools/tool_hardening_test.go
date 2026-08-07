@@ -9,34 +9,35 @@ import (
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 )
 
-// AG-046: fs_grep glob honors ** path semantics like fs_glob, so a model reusing `**/*.go` does
-// not silently get zero matches. globMatch is shared, and the box arm feeds it the same two
-// arguments (root-relative path, basename) the deleted host walk did.
-func TestFSGrepGlobSupportsDoubleStar(t *testing.T) {
+// AG-046: search_files' file_glob honors ** path semantics for content search the same way
+// target="files" does, so a model reusing `**/*.go` does not silently get zero matches. globMatch
+// is shared, and the box arm feeds it the same two arguments (root-relative path, basename) the
+// deleted host walk did.
+func TestSearchFilesGlobSupportsDoubleStar(t *testing.T) {
 	be := &fakeBox{respond: func(cmd string) usersandbox.ExecResult {
 		return usersandbox.ExecResult{Stdout: boxFrames(t, cmd, boxWorkspaceRoot, "pkg/deep/code.go", "needle here\n")}
 	}}
 	ctx := ctxWith(t, "sess-grep", "call-grep")
-	res, err := (&FSGrep{Router: routerWith(be)}).
-		Execute(ctx, mustJSON(t, fsGrepArgs{Pattern: "needle", Glob: "**/*.go"}))
+	res, err := (&SearchFiles{Router: routerWith(be)}).
+		Execute(ctx, mustJSON(t, searchFilesArgs{Pattern: "needle", FileGlob: "**/*.go"}))
 	if err != nil {
-		t.Fatalf("grep: %v", err)
+		t.Fatalf("search_files: %v", err)
 	}
 	if !strings.Contains(res.Preview, "needle") {
-		t.Fatalf("**/*.go grep found no matches (AG-046): %q", res.Preview)
+		t.Fatalf("**/*.go search_files found no matches (AG-046): %q", res.Preview)
 	}
 }
 
-// AG-046: the plain `*.go` basename glob still works for grep.
-func TestFSGrepGlobBasenameStillWorks(t *testing.T) {
+// AG-046: the plain `*.go` basename glob still works for content search.
+func TestSearchFilesGlobBasenameStillWorks(t *testing.T) {
 	be := &fakeBox{respond: func(cmd string) usersandbox.ExecResult {
 		return usersandbox.ExecResult{Stdout: boxFrames(t, cmd, boxWorkspaceRoot, "a.go", "needle\n", "b.txt", "needle\n")}
 	}}
 	ctx := ctxWith(t, "sess-grep2", "call-grep2")
-	res, err := (&FSGrep{Router: routerWith(be)}).
-		Execute(ctx, mustJSON(t, fsGrepArgs{Pattern: "needle", Glob: "*.go"}))
+	res, err := (&SearchFiles{Router: routerWith(be)}).
+		Execute(ctx, mustJSON(t, searchFilesArgs{Pattern: "needle", FileGlob: "*.go"}))
 	if err != nil {
-		t.Fatalf("grep: %v", err)
+		t.Fatalf("search_files: %v", err)
 	}
 	if !strings.Contains(res.Preview, "a.go") || strings.Contains(res.Preview, "b.txt") {
 		t.Fatalf("*.go basename glob wrong (AG-046): %q", res.Preview)

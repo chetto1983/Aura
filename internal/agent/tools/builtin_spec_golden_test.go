@@ -24,20 +24,16 @@ func builtinTools() []Tool {
 		&ShellExec{},
 		&ShellPoll{},
 		&ShellKill{},
-		&FSRead{},
-		&FSWrite{},
-		&FSEdit{},
-		&FSGrep{},
-		&FSGlob{},
+		&ReadFile{},
+		&WriteFile{},
+		&Patch{},
+		&SearchFiles{},
 		&SendFile{},
-		// document_index/document_open register only when a live pool exists
-		// (cmd/aura/main.go), but Spec() reads no dependency and the sweep is the
-		// only thing asserting a deferred tool carries a legible description —
-		// exactly what tool_search retrieves on. Excluding the pool-gated pair
-		// left document_index outside it; both belong here.
-		&DocumentIndex{},
+		// document_open registers only when a live pool exists (cmd/aura/main.go), but
+		// Spec() reads no dependency and the sweep is the only thing asserting a deferred
+		// tool carries a legible description — exactly what tool_search retrieves on.
+		// Excluding the pool-gated tool left it outside it; it belongs here.
 		&DocumentOpen{},
-		&DocumentDescribe{},
 		&SwarmSpawn{},
 	}
 }

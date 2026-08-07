@@ -122,7 +122,7 @@ func boxRelPath(root, abs string) (string, bool) {
 	return rel, true
 }
 
-// boxReadFileCapped is the ONE bounded read fs_read and fs_edit share: a `head -c <cap+1>` exec, so
+// boxReadFileCapped is the ONE bounded read read_file and patch share: a `head -c <cap+1>` exec, so
 // the size cap lands on the BYTES that come back rather than on a host stat, and an over-cap file
 // is refused without ever materializing the whole thing.
 //
@@ -130,6 +130,26 @@ func boxRelPath(root, abs string) (string, bool) {
 // the caller must fail CLOSED. A non-nil err is the model's own problem (missing file, over cap,
 // binary) and must read as one so it can self-correct. Otherwise the content is complete.
 func boxReadFileCapped(
+	ctx context.Context,
+	router *usersandbox.SandboxRouter,
+	h usersandbox.BoxHandle,
+	tool, boxPath string,
+) (content []byte, deny *ToolResult, err error) {
+	b, deny, err := boxReadFileRaw(ctx, router, h, tool, boxPath)
+	if deny != nil || err != nil {
+		return nil, deny, err
+	}
+	if looksBinary(b) {
+		return nil, nil, fmt.Errorf("%s: binary file contains NUL bytes; use a binary-aware tool instead", tool)
+	}
+	return b, nil, nil
+}
+
+// boxReadFileRaw is boxReadFileCapped WITHOUT the binary refusal. read_file's document-extraction
+// path (docx/xlsx are zip archives — binary by construction) needs the raw bytes to decode before
+// any text-vs-binary judgment applies; every other caller wants boxReadFileCapped's refusal and
+// should use that instead.
+func boxReadFileRaw(
 	ctx context.Context,
 	router *usersandbox.SandboxRouter,
 	h usersandbox.BoxHandle,
@@ -150,11 +170,8 @@ func boxReadFileCapped(
 		return nil, nil, fmt.Errorf("%s: %s", tool, msg)
 	}
 	if int64(len(res.Stdout)) > readCap {
-		return nil, nil, fmt.Errorf("%s: %s is over the %d-byte cap (%s); read a window with fs_read offset+limit instead of the whole file",
+		return nil, nil, fmt.Errorf("%s: %s is over the %d-byte cap (%s); read a window with read_file offset+limit instead of the whole file",
 			tool, boxPath, readCap, envFSMaxReadBytes)
-	}
-	if looksBinary(res.Stdout) {
-		return nil, nil, fmt.Errorf("%s: binary file contains NUL bytes; use a binary-aware tool instead", tool)
 	}
 	return res.Stdout, nil, nil
 }
@@ -195,49 +212,6 @@ func boxFindPrune() string {
 		tests = append(tests, "-name "+shellQuoteArg(d))
 	}
 	return "'(' " + strings.Join(tests, " -o ") + " ')' -type d -prune"
-}
-
-// boxListFiles enumerates regular files under root INSIDE the box and returns forward-slash paths
-// RELATIVE to root, honouring the same skip rules and node cap as the deleted host walk. truncated
-// reports the cap was reached, so callers reuse withWalkTruncation.
-//
-// Only the ENUMERATION moves into the box. Pattern compilation and matching stay in Go, so a box
-// search cannot answer differently from the host search it replaced — the alternative (handing the
-// pattern to the box's grep/find) would silently swap RE2 for POSIX semantics.
-//
-// find's exit code is ignored on purpose: it reports non-zero for any unreadable subtree while
-// still printing everything it could reach, which is precisely the host walk's behaviour (its
-// WalkDir callback swallowed per-entry errors and continued). stderr is dropped for the same reason.
-func boxListFiles(
-	ctx context.Context,
-	router *usersandbox.SandboxRouter,
-	handle usersandbox.BoxHandle,
-	root string,
-) (paths []string, truncated bool, err error) {
-	nodeCap := fsWalkNodeCap()
-	cmd := fmt.Sprintf(
-		"find %s -mindepth 1 %s -o -type f -print 2>/dev/null | head -n %d",
-		shellQuoteArg(root), boxFindPrune(), nodeCap+1,
-	)
-	ctx, cancel := boxSweepDeadline(ctx)
-	defer cancel()
-	res, execErr := router.Exec(ctx, handle, usersandbox.ExecRequest{Command: cmd})
-	if execErr != nil {
-		return nil, false, execErr
-	}
-	listed := strings.Split(strings.Trim(string(res.Stdout), "\n"), "\n")
-	if len(listed) > nodeCap {
-		truncated = true
-		listed = listed[:nodeCap]
-	}
-	for _, p := range listed {
-		rel, ok := boxRelPath(root, p)
-		if !ok || boxSkippedPath(rel) {
-			continue
-		}
-		paths = append(paths, rel)
-	}
-	return paths, truncated, nil
 }
 
 // boxFile is one enumerated box file and its (possibly capped) content.

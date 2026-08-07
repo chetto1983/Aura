@@ -230,10 +230,6 @@ func buildBaseRegistryWithHandles(
 	// upload->chat regression happened once already.
 	library := newDocumentLibrary(taskStorePool(ts), cfg)
 	reg.Register(&tools.DocumentSearch{Library: library})
-	// document_describe is how the library learns: nothing reads a document at
-	// upload any more, so the description is written by the agent after it has
-	// actually opened the file.
-	reg.Register(&tools.DocumentDescribe{Documents: library})
 	// shell_exec is the full terminal — THE execution surface — and it runs inside the caller's
 	// per-identity box, never on the host. Deferred so simple chat/web turns do not carry a giant
 	// shell schema in the hot manifest. No tool below is given the HOST workspace root: every one
@@ -251,48 +247,32 @@ func buildBaseRegistryWithHandles(
 	handles.ShellKill = sk
 	reg.Register(sp)
 	reg.Register(sk)
-	// Claude-Code-style file ergonomics over the box's filesystem. The skills-library fence
-	// (#54 / D-43) travels with them as a box-relative rule over the materialized /skills mount,
-	// so it needs no configured directory: fs_write/fs_edit refuse to write there and the gated
+	// Claude-Code-style file ergonomics over the box's filesystem — a Go port of hermes-agent's
+	// four file_tools.py tools (read_file/write_file/patch/search_files, replacing the prior
+	// fs_read/fs_write/fs_edit/fs_grep/fs_glob five). The skills-library fence (#54 / D-43)
+	// travels with them as a box-relative rule over the materialized /skills mount, so it needs
+	// no configured directory: write_file/patch refuse to write there and the gated
 	// skill-authoring flow cannot be bypassed.
-	reg.Register(&tools.FSRead{Router: sandboxRouter})
-	reg.Register(&tools.FSWrite{Router: sandboxRouter})
-	reg.Register(&tools.FSEdit{Router: sandboxRouter})
-	reg.Register(&tools.FSGrep{Router: sandboxRouter})
-	reg.Register(&tools.FSGlob{Router: sandboxRouter})
+	reg.Register(&tools.ReadFile{Router: sandboxRouter})
+	reg.Register(&tools.WriteFile{Router: sandboxRouter})
+	reg.Register(&tools.Patch{Router: sandboxRouter})
+	reg.Register(&tools.SearchFiles{Router: sandboxRouter})
 	// send_file hands a file from the box's /workspace to the user as an attachment (D-05/D-06).
 	// Deferred: the model tool_searches for it when it has a produced/found file to deliver; the
 	// agent loop lifts its artifact Meta onto the AG-UI ArtifactDelta the channel renders.
 	sf := &tools.SendFile{Router: sandboxRouter}
 	handles.SendFile = sf
 	reg.Register(sf)
-	// document_index is the explicit bridge from a workspace file to document_search
-	// (D-03: a produced/delivered file is NOT silently searchable). It needs a live
-	// Postgres pool for the ingestion job store, so — unlike the lazy, pool-free
-	// docsToolSearcher above — it only registers when the task-store pool exists
-	// (serve/chat boot); the pool-free manifest path (`aura tools`) registers
-	// nothing rather than a nil-backed tool, mirroring the skill-tool write-action
-	// guard just above. newRuntimeDocumentIngestor is the SAME lazy per-call
-	// documents.Service builder serve_channels.go and document_processor_wiring.go
-	// already use for send_file/channel ingestion — reused here rather than
-	// duplicated, since its IngestPath signature already satisfies
-	// tools.DocumentIndexBackend byte-for-byte. It takes the router, not the host
-	// workspace root: the file to index sits on the BOX's /workspace volume, and the
-	// ingest reads the bytes in THIS process (hash + filecard), so the tool stages the
-	// artifact out of the box first and hands over the staged copy.
-	// document_open is the same bridge in reverse, and needs the same live pool:
-	// it walks a retrieval hit's document id back through the catalog to the asset
-	// and streams the ORIGINAL file into the BOX's /workspace/documents/ — hence the
-	// router rather than the host workspace root, so the path it reports is the one
-	// the agent's own shell_exec and fs_read can then open. Retrieval answers
-	// "what does it say"; a spreadsheet question is usually "how many", which no
-	// chunk contains at any relevance — so the agent gets the file and computes.
+	// document_index / document_describe were DELETED (2026-08-07): with the ingest bucket as the
+	// source of truth, "indexing" a workspace file is not an agent action any more — putting the
+	// file in the bucket is, and that is a pipeline concern, not a tool call. document_open is
+	// unchanged and needs a live Postgres pool: it walks a retrieval hit's document id back
+	// through the catalog to the asset and streams the ORIGINAL file into the BOX's
+	// /workspace/documents/ — hence the router rather than the host workspace root, so the path it
+	// reports is the one the agent's own shell_exec and read_file can then open. Retrieval answers
+	// "what does it say"; a spreadsheet question is usually "how many", which no chunk contains at
+	// any relevance — so the agent gets the file and computes.
 	if pool := taskStorePool(ts); pool != nil {
-		reg.Register(&tools.DocumentIndex{
-			Indexer:  newRuntimeDocumentIngestor(cfg, pool),
-			Router:   sandboxRouter,
-			MaxBytes: int64(cfg.AssetMaxDocumentBytes),
-		})
 		reg.Register(&tools.DocumentOpen{
 			Documents: newRuntimeDocumentOpener(cfg, pool),
 			Router:    sandboxRouter,

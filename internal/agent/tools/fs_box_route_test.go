@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"os"
@@ -59,25 +58,25 @@ func TestFSToolsDenyWhenTheBoxIsUnreachable(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			res, err := (&FSRead{Router: tc.router()}).Execute(ctx, json.RawMessage(
+			res, err := (&ReadFile{Router: tc.router()}).Execute(ctx, json.RawMessage(
 				`{"path":`+strconv.Quote(target)+`}`))
-			denies(t, "fs_read", res.Preview, err)
+			denies(t, "read_file", res.Preview, err)
 
-			res, err = (&FSWrite{Router: tc.router()}).Execute(ctx, json.RawMessage(
+			res, err = (&WriteFile{Router: tc.router()}).Execute(ctx, json.RawMessage(
 				`{"path":`+strconv.Quote(filepath.Join(dir, "new.txt"))+`,"content":"LEAKED"}`))
-			denies(t, "fs_write", res.Preview, err)
+			denies(t, "write_file", res.Preview, err)
 
-			res, err = (&FSEdit{Router: tc.router()}).Execute(ctx, json.RawMessage(
+			res, err = (&Patch{Router: tc.router()}).Execute(ctx, json.RawMessage(
 				`{"path":`+strconv.Quote(target)+`,"old_string":"port := 8080","new_string":"port := 9090"}`))
-			denies(t, "fs_edit", res.Preview, err)
+			denies(t, "patch", res.Preview, err)
 
-			res, err = (&FSGlob{Router: tc.router()}).Execute(ctx, json.RawMessage(
-				`{"pattern":"**/*.go","path":`+strconv.Quote(dir)+`}`))
-			denies(t, "fs_glob", res.Preview, err)
+			res, err = (&SearchFiles{Router: tc.router()}).Execute(ctx, json.RawMessage(
+				`{"pattern":"**/*.go","target":"files","path":`+strconv.Quote(dir)+`}`))
+			denies(t, "search_files", res.Preview, err)
 
-			res, err = (&FSGrep{Router: tc.router()}).Execute(ctx, json.RawMessage(
+			res, err = (&SearchFiles{Router: tc.router()}).Execute(ctx, json.RawMessage(
 				`{"pattern":"8080","path":`+strconv.Quote(dir)+`}`))
-			denies(t, "fs_grep", res.Preview, err)
+			denies(t, "search_files", res.Preview, err)
 
 			after, err := os.ReadFile(target)
 			if err != nil {
@@ -97,61 +96,78 @@ func TestFSToolsDenyWhenTheBoxIsUnreachable(t *testing.T) {
 	}
 }
 
-func TestApplyExactEditRules(t *testing.T) {
+func TestPatchApplyReplaceRules(t *testing.T) {
 	tests := []struct {
-		name    string
-		content string
-		args    fsEditArgs
-		want    string
-		wantN   int
-		wantErr string
+		name     string
+		content  string
+		args     patchArgs
+		want     string
+		wantNote string
+		wantErr  string
 	}{
 		{
 			name:    "unique match replaced once",
 			content: "a\nport := 8080\nb\n",
-			args:    fsEditArgs{OldString: "port := 8080", NewString: "port := 9090"},
+			args:    patchArgs{OldString: "port := 8080", NewString: "port := 9090"},
 			want:    "a\nport := 9090\nb\n",
-			wantN:   1,
 		},
 		{
 			name:    "replace_all rewrites every occurrence",
 			content: "x x x",
-			args:    fsEditArgs{OldString: "x", NewString: "y", ReplaceAll: true},
+			args:    patchArgs{OldString: "x", NewString: "y", ReplaceAll: true},
 			want:    "y y y",
-			wantN:   3,
 		},
 		{
 			name:    "ambiguous match is refused",
 			content: "x x",
-			args:    fsEditArgs{OldString: "x", NewString: "y"},
-			wantErr: "not unique",
+			args:    patchArgs{OldString: "x", NewString: "y"},
+			wantErr: "matches 2 times",
 		},
 		{
-			name:    "absent match is refused",
-			content: "abc",
-			args:    fsEditArgs{OldString: "zzz", NewString: "y"},
-			wantErr: "not found",
+			// Absent bytes are NOT an immediate refusal any more: the fuzzy leg runs first, so
+			// whitespace drift still lands. Only a genuinely absent block is refused.
+			name:    "absent match is refused after the fuzzy leg",
+			content: "totally unrelated content\n",
+			args:    patchArgs{OldString: "zzz nowhere near\n", NewString: "y"},
+			wantErr: "exactly or fuzzily",
+		},
+		{
+			// The commonest production shape: a re-sent patch whose old_string is gone because
+			// new_string already landed. That must be a no-op note, never a write.
+			name:     "already-applied edit is a no-op note",
+			content:  "port := 9090\n",
+			args:     patchArgs{OldString: "port := 8080", NewString: "port := 9090"},
+			wantNote: "already be",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, n, err := applyExactEdit(tt.content, tt.args, "/workspace/f.txt")
+			got, note, err := (&Patch{}).applyReplace(tt.content, tt.args)
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("error = %v, want it to contain %q", err, tt.wantErr)
 				}
 				// A refused edit must yield nothing writable: the box path passes this
 				// straight to Router.WriteFile.
-				if got != "" || n != 0 {
-					t.Errorf("refused edit returned content %q / count %d", got, n)
+				if got != "" {
+					t.Errorf("refused edit returned content %q", got)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("applyExactEdit: %v", err)
+				t.Fatalf("applyReplace: %v", err)
 			}
-			if got != tt.want || n != tt.wantN {
-				t.Errorf("= %q/%d, want %q/%d", got, n, tt.want, tt.wantN)
+			if tt.wantNote != "" {
+				if !strings.Contains(note, tt.wantNote) {
+					t.Errorf("note = %q, want it to contain %q", note, tt.wantNote)
+				}
+				if got != "" {
+					t.Errorf("a no-op must not return writable content, got %q", got)
+				}
+				return
+			}
+			if got != tt.want {
+				t.Errorf("= %q, want %q", got, tt.want)
 			}
 		})
 	}
@@ -195,18 +211,19 @@ func TestBoxPathArg(t *testing.T) {
 func TestFSToolsRefuseTildePaths(t *testing.T) {
 	ctx := WithToolCallContext(t.Context(), "session", "toolcall", t.TempDir(), 4096)
 	for _, tc := range []struct{ tool, args string }{
-		{"fs_read", `{"path":"~/notes.txt"}`},
-		{"fs_write", `{"path":"~/notes.txt","content":"x"}`},
-		{"fs_edit", `{"path":"~/notes.txt","old_string":"a","new_string":"b"}`},
-		{"fs_glob", `{"pattern":"*.go","path":"~/src"}`},
-		{"fs_grep", `{"pattern":"needle","path":"~/src"}`},
+		{"read_file", `{"path":"~/notes.txt"}`},
+		{"write_file", `{"path":"~/notes.txt","content":"x"}`},
+		{"patch", `{"path":"~/notes.txt","old_string":"a","new_string":"b"}`},
+		{"search_files_names", `{"pattern":"*.go","target":"files","path":"~/src"}`},
+		{"search_files_content", `{"pattern":"needle","path":"~/src"}`},
 	} {
 		t.Run(tc.tool, func(t *testing.T) {
 			be := &fakeBox{}
 			r := routerWith(be)
 			tools := map[string]Tool{
-				"fs_read": &FSRead{Router: r}, "fs_write": &FSWrite{Router: r},
-				"fs_edit": &FSEdit{Router: r}, "fs_glob": &FSGlob{Router: r}, "fs_grep": &FSGrep{Router: r},
+				"read_file": &ReadFile{Router: r}, "write_file": &WriteFile{Router: r},
+				"patch":              &Patch{Router: r},
+				"search_files_names": &SearchFiles{Router: r}, "search_files_content": &SearchFiles{Router: r},
 			}
 			_, err := tools[tc.tool].Execute(ctx, json.RawMessage(tc.args))
 			if err == nil || !strings.Contains(err.Error(), "/workspace") {
@@ -403,12 +420,14 @@ func TestBoxFrameEmitterAndParserAgreeOnEveryToken(t *testing.T) {
 	}
 }
 
-func TestGrepContentIsSharedByBothPaths(t *testing.T) {
+func TestGrepFileWithContextRendersMatches(t *testing.T) {
 	re := regexp.MustCompile(`po(rt|ol)`)
 	var out []string
-	grepContent(bytes.NewReader([]byte("no\n  port := 8080  \npool := 4\nnope\n")), "sub/app.go", re, 10, &out)
+	// The line is rendered as it stands apart from a trailing \r: leading indentation is part of
+	// the evidence, so the model sees the line the file actually holds.
+	grepFileWithContext("sub/app.go", []byte("no\n  port := 8080\npool := 4\nnope\n"), re, 0, 10, &out)
 
-	want := []string{"sub/app.go:2: port := 8080", "sub/app.go:3: pool := 4"}
+	want := []string{"sub/app.go:2:   port := 8080", "sub/app.go:3: pool := 4"}
 	if len(out) != len(want) {
 		t.Fatalf("matches = %#v, want %#v", out, want)
 	}
@@ -418,10 +437,17 @@ func TestGrepContentIsSharedByBothPaths(t *testing.T) {
 		}
 	}
 
-	// maxResults is a hard stop, so the box sweep cannot flood a turn.
+	// context lines are rendered with '-' so a match is never confused for its surroundings.
 	out = nil
-	grepContent(bytes.NewReader([]byte("a\na\na\na\n")), "f", regexp.MustCompile("a"), 2, &out)
+	grepFileWithContext("f", []byte("a\nMATCH\nb\n"), regexp.MustCompile("MATCH"), 1, 10, &out)
+	if len(out) != 3 || !strings.Contains(out[0], "f-1-") || !strings.Contains(out[1], "f:2:") {
+		t.Errorf("context framing lost the match/context distinction: %#v", out)
+	}
+
+	// budget is a hard stop, so the box sweep cannot flood a turn.
+	out = nil
+	grepFileWithContext("f", []byte("a\na\na\na\n"), regexp.MustCompile("a"), 0, 2, &out)
 	if len(out) != 2 {
-		t.Errorf("maxResults ignored: %#v", out)
+		t.Errorf("budget ignored: %#v", out)
 	}
 }

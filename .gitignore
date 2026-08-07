@@ -9,7 +9,7 @@
 /arcadedb-mcp
 /bin/
 /dist/
-web/node_modules/*
+web/
 # internal/webui/dist/ is the committed //go:embed source (D-05) — Go embed is
 # package-relative (no ../web/dist), so the build output is co-located with
 # embed.go. Keep it tracked even if a broader dist/ ignore is ever added
@@ -97,3 +97,13 @@ cmd/aura/conversations/
 # subagent-driven-development scratch: ledger, task briefs, review packages
 .superpowers/
 docs/audit/live-conversations-*
+
+# Local node toolchain pulled in for fixture generation (docx-js, pptxgenjs).
+node_modules/
+
+# Database dumps taken before a migration. They are recovery artefacts, not source,
+# and a stray `git add -A` would otherwise commit a full copy of the deployment.
+backups/
+
+# LibreOffice lock files, created during fixture conversion.
+.~lock.*#

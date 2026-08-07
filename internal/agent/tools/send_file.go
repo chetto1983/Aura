@@ -96,10 +96,10 @@ func (s *SendFile) Spec() Spec {
 			"Give the absolute path of the file under /workspace and an optional short caption; a path outside /workspace is refused, so copy such a file into /workspace first and deliver the copy. " +
 			"The file is read and queued for delivery; you do not need to know how the user's channel renders it. " +
 			"A file larger than the 50 MB upload limit, or a path that cannot be read, comes back as a small {error,message} object you should read and adapt to — it is not a tool failure. " +
-			"A delivered file is delivery-only and does NOT become searchable; if the user will need to find or recall it later, save it under /workspace and index it with document_index. " +
+			"A delivered file is delivery-only and does NOT become searchable through document_search. " +
 			"Example: {\"path\":\"/workspace/file.xlsx\",\"caption\":\"results\"}.",
 		Parameters: params,
-		Deferred:   true,
+		Deferred:   false,
 		// Reads a file and describes a delivery — no host state mutation (D-43).
 		Mutating: false,
 	}
