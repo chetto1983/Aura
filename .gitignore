@@ -9,7 +9,12 @@
 /arcadedb-mcp
 /bin/
 /dist/
-web/
+# Only the installed dependencies, NEVER the frontend itself. A bare `web/` here
+# ignores every source file: git keeps already-tracked files, so nothing visibly
+# breaks, but knip respects .gitignore and silently sees an EMPTY project — it then
+# reports all 32 dependencies unused and the web-deadcode pre-push gate fails with a
+# report that contradicts itself (cytoscape "unused" while ArcadeGraphCanvas imports it).
+web/node_modules/
 # internal/webui/dist/ is the committed //go:embed source (D-05) — Go embed is
 # package-relative (no ../web/dist), so the build output is co-located with
 # embed.go. Keep it tracked even if a broader dist/ ignore is ever added
