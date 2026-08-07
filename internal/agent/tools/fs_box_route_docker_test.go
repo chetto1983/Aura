@@ -56,9 +56,9 @@ func hostTreeWithCanary(t *testing.T) string {
 	return dir
 }
 
-// TestFSEditRoutedEditsInBoxNotHost proves the edit lands on the box copy and the identically-named
+// TestPatchRoutedEditsInBoxNotHost proves the edit lands on the box copy and the identically-named
 // host file is left byte-for-byte alone.
-func TestFSEditRoutedEditsInBoxNotHost(t *testing.T) {
+func TestPatchRoutedEditsInBoxNotHost(t *testing.T) {
 	skipUnlessDockerdTools(t)
 	router := newRuncBoxRouter(t)
 	hostDir := hostTreeWithCanary(t)
@@ -76,15 +76,16 @@ func TestFSEditRoutedEditsInBoxNotHost(t *testing.T) {
 		t.Fatalf("seed box file: %v", err)
 	}
 
-	edit := &FSEdit{Router: router}
+	edit := &Patch{Router: router}
 	res, err := edit.Execute(ctx, json.RawMessage(
 		`{"path":"/workspace/app.go","old_string":"port := 8080","new_string":"port := 9090"}`,
 	))
 	if err != nil {
-		t.Fatalf("routed fs_edit: %v", err)
+		t.Fatalf("routed patch: %v", err)
 	}
-	if !strings.Contains(res.Preview, "replaced 1 occurrence") {
-		t.Fatalf("routed fs_edit result = %q", res.Preview)
+	// patch reports a unified diff, so the result shows both sides of the replacement.
+	if !strings.Contains(res.Preview, "port := 9090") || !strings.Contains(res.Preview, "port := 8080") {
+		t.Fatalf("routed patch result = %q", res.Preview)
 	}
 
 	back, err := sh.Execute(ctx, json.RawMessage(`{"command":"cat /workspace/app.go"}`))
@@ -100,13 +101,13 @@ func TestFSEditRoutedEditsInBoxNotHost(t *testing.T) {
 		t.Fatal(err)
 	}
 	if string(after) != string(original) {
-		t.Fatalf("routed fs_edit modified the HOST file — containment breached: %q", after)
+		t.Fatalf("routed patch modified the HOST file — containment breached: %q", after)
 	}
 }
 
-// TestFSGlobRoutedListsBoxTreeOnly proves the routed enumeration walks the box, and that the host
+// TestSearchFilesNamesRoutedListsBoxTreeOnly proves the routed enumeration walks the box, and that the host
 // tree the tool is configured with never appears in the results.
-func TestFSGlobRoutedListsBoxTreeOnly(t *testing.T) {
+func TestSearchFilesNamesRoutedListsBoxTreeOnly(t *testing.T) {
 	skipUnlessDockerdTools(t)
 	router := newRuncBoxRouter(t)
 	hostTreeWithCanary(t) // seeds hostonly.go on the HOST; the assertions below prove it never lists
@@ -119,26 +120,26 @@ func TestFSGlobRoutedListsBoxTreeOnly(t *testing.T) {
 		t.Fatalf("seed box tree: %v", err)
 	}
 
-	glob := &FSGlob{Router: router}
-	res, err := glob.Execute(ctx, json.RawMessage(`{"pattern":"**/*.go"}`))
+	glob := &SearchFiles{Router: router}
+	res, err := glob.Execute(ctx, json.RawMessage(`{"pattern":"**/*.go","target":"files"}`))
 	if err != nil {
-		t.Fatalf("routed fs_glob: %v", err)
+		t.Fatalf("routed search_files: %v", err)
 	}
 	if !strings.Contains(res.Preview, "sub/inbox.go") {
-		t.Fatalf("routed fs_glob did not list the box tree: %q", res.Preview)
+		t.Fatalf("routed search_files did not list the box tree: %q", res.Preview)
 	}
 	if strings.Contains(res.Preview, "hostonly.go") {
-		t.Fatalf("routed fs_glob listed a HOST file — containment breached: %q", res.Preview)
+		t.Fatalf("routed search_files listed a HOST file — containment breached: %q", res.Preview)
 	}
 	// The box enumeration must prune the same directories the host walk prunes.
 	if strings.Contains(res.Preview, "skipme.go") {
-		t.Fatalf("routed fs_glob did not prune node_modules: %q", res.Preview)
+		t.Fatalf("routed search_files did not prune node_modules: %q", res.Preview)
 	}
 }
 
-// TestFSGrepRoutedSearchesBoxTreeOnly proves the routed search reads box content and cannot reach
+// TestSearchFilesContentRoutedSearchesBoxTreeOnly proves the routed search reads box content and cannot reach
 // the host tree — the canary is present on the host and must never be reported.
-func TestFSGrepRoutedSearchesBoxTreeOnly(t *testing.T) {
+func TestSearchFilesContentRoutedSearchesBoxTreeOnly(t *testing.T) {
 	skipUnlessDockerdTools(t)
 	router := newRuncBoxRouter(t)
 	hostTreeWithCanary(t) // seeds the canary on the HOST; the box sweep must never find it
@@ -151,21 +152,21 @@ func TestFSGrepRoutedSearchesBoxTreeOnly(t *testing.T) {
 		t.Fatalf("seed box content: %v", err)
 	}
 
-	grep := &FSGrep{Router: router}
+	grep := &SearchFiles{Router: router}
 	res, err := grep.Execute(ctx, json.RawMessage(`{"pattern":"BOXNEEDLE"}`))
 	if err != nil {
-		t.Fatalf("routed fs_grep: %v", err)
+		t.Fatalf("routed search_files: %v", err)
 	}
 	// Line number and relative path must match what the host branch would report.
 	if !strings.Contains(res.Preview, "sub/found.txt:2: BOXNEEDLE here") {
-		t.Fatalf("routed fs_grep result = %q", res.Preview)
+		t.Fatalf("routed search_files result = %q", res.Preview)
 	}
 
 	leak, err := grep.Execute(ctx, json.RawMessage(`{"pattern":"`+hostLeakCanary+`"}`))
 	if err != nil {
-		t.Fatalf("routed fs_grep (canary): %v", err)
+		t.Fatalf("routed search_files (canary): %v", err)
 	}
 	if !strings.Contains(leak.Preview, "[no matches]") {
-		t.Fatalf("routed fs_grep read the HOST tree — containment breached: %q", leak.Preview)
+		t.Fatalf("routed search_files read the HOST tree — containment breached: %q", leak.Preview)
 	}
 }

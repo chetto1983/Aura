@@ -214,49 +214,6 @@ func boxFindPrune() string {
 	return "'(' " + strings.Join(tests, " -o ") + " ')' -type d -prune"
 }
 
-// boxListFiles enumerates regular files under root INSIDE the box and returns forward-slash paths
-// RELATIVE to root, honouring the same skip rules and node cap as the deleted host walk. truncated
-// reports the cap was reached, so callers reuse withWalkTruncation.
-//
-// Only the ENUMERATION moves into the box. Pattern compilation and matching stay in Go, so a box
-// search cannot answer differently from the host search it replaced — the alternative (handing the
-// pattern to the box's grep/find) would silently swap RE2 for POSIX semantics.
-//
-// find's exit code is ignored on purpose: it reports non-zero for any unreadable subtree while
-// still printing everything it could reach, which is precisely the host walk's behaviour (its
-// WalkDir callback swallowed per-entry errors and continued). stderr is dropped for the same reason.
-func boxListFiles(
-	ctx context.Context,
-	router *usersandbox.SandboxRouter,
-	handle usersandbox.BoxHandle,
-	root string,
-) (paths []string, truncated bool, err error) {
-	nodeCap := fsWalkNodeCap()
-	cmd := fmt.Sprintf(
-		"find %s -mindepth 1 %s -o -type f -print 2>/dev/null | head -n %d",
-		shellQuoteArg(root), boxFindPrune(), nodeCap+1,
-	)
-	ctx, cancel := boxSweepDeadline(ctx)
-	defer cancel()
-	res, execErr := router.Exec(ctx, handle, usersandbox.ExecRequest{Command: cmd})
-	if execErr != nil {
-		return nil, false, execErr
-	}
-	listed := strings.Split(strings.Trim(string(res.Stdout), "\n"), "\n")
-	if len(listed) > nodeCap {
-		truncated = true
-		listed = listed[:nodeCap]
-	}
-	for _, p := range listed {
-		rel, ok := boxRelPath(root, p)
-		if !ok || boxSkippedPath(rel) {
-			continue
-		}
-		paths = append(paths, rel)
-	}
-	return paths, truncated, nil
-}
-
 // boxFile is one enumerated box file and its (possibly capped) content.
 type boxFile struct {
 	Rel     string
