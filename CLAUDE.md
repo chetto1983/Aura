@@ -4,9 +4,30 @@ Project guidance for Claude Code (claude.ai/code) on this codebase.
 
 - **Spike findings for Aura** (implementation patterns, constraints, gotchas — skills self-extension, sandbox runtime, MCP live servers, AG-UI gateway, Telegram channel) → `Skill("spike-findings-Aura")`
 
-## PRD-first principle (absolute)
+## PRD-first principle — misura, poi emenda, poi implementa
 
-**Senza PRD completo non si scrive una riga di codice.** Il PRD ([prd.md](prd.md)) è la **truth-source**, non un suggerimento. Ogni decisione architettonica, ogni file target, ogni env var, ogni open question è documentata lì. Deviazioni dal PRD richiedono PRD-amendment commit prima dell'implementazione (vedi §Slice Q&A discipline → Q&A revision protocol nel PRD).
+**Un PRD-amendment ha senso SOLO dopo un test reale.** Si misura sullo stack acceso, poi
+si scrive l'emendamento per **registrare** la misura, poi si implementa. Mai l'inverso:
+un emendamento scritto su una supposizione diventa un vincolo che nessuno ha verificato e
+che il codice poi eredita come se fosse un fatto.
+
+Il PRD ([prd.md](prd.md)) resta il posto dove ogni decisione architettonica, file target,
+env var e open question è documentata — ma è un **registro di ciò che è stato misurato**,
+non un oracolo. Quando una misura contraddice il PRD, **vince la misura** e il PRD si
+corregge, citando data ed evidenza.
+
+Ogni emendamento dichiara anche **cosa la misura NON dimostra**: un numero senza il suo
+perimetro è un'altra supposizione travestita.
+
+Prezzo misurato di non averlo fatto (2026-08-07, una sola sessione): il PRD pinnava un
+artefatto modello (`Qwen3-8B-Q4_K_M`, size + SHA-256) mai scaricato, sostituito a metà
+task; il catalogo env portava ancora `AURA_DOCUMENT_CHUNK_MAX_TOKENS=512` dell'era Docling
+mentre il tetto vero è **2048 token**, dichiarato dal GGUF di EmbeddingGemma; e il
+paragrafo provenance stava per congelare uno schema ArcadeDB invece di misurare cosa la
+pipeline scrive davvero.
+
+Corollario operativo: **una suite unitaria verde non chiude niente.** La prova è il test
+E2E vero sullo stack acceso, guidato dall'agente reale (vedi §DEFINITION OF DONE).
 
 ## Frontend_aesthetics
 
