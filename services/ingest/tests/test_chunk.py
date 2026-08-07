@@ -90,3 +90,17 @@ def test_default_overlap_produces_overlapping_chunks():
     assert any(out[i + 1].start < out[i].end for i in range(len(out) - 1)), (
         "default overlap_ratio should produce at least one overlapping pair"
     )
+
+
+def test_a_dense_script_run_still_respects_the_ceiling():
+    # Han runs near one character per token, where Latin runs near five. A window
+    # sized by the Latin constant would be three times too wide here, and this is
+    # the one path whose output nothing downstream re-checks. Boundary-less on
+    # purpose: it must reach _window_split.
+    text = "\u6cd5" * 40000
+    out = chunk(text, max_tokens=2048)
+
+    assert len(out) > 1
+    for c in out:
+        assert count_tokens(c.text) <= 2048
+        assert text[c.start:c.end] == c.text

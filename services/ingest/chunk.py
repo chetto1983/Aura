@@ -46,6 +46,14 @@ _TOKENIZE_TIMEOUT_S = 2.0
 # longer than max_tokens once the real tokenizer counts it. Also sizes
 # _window_split's fixed window below, for the same overshoot-is-safe reason.
 CHARS_PER_TOKEN_FALLBACK = 3
+# The measured ratio is an AVERAGE over the piece, so a window sized exactly at it
+# can still overshoot where the text is locally denser. 0.9 buys that margin back.
+_WINDOW_SAFETY = 0.9
+# `.{N}` is expanded by the regex engine, so a large N stops compiling: measured on
+# this build, 8000 compiles and 12000 raises "Compiled regex exceeds size limit of
+# 10485760 bytes". Only the boundary-less path uses these windows, so capping there
+# costs nothing worth having.
+_MAX_WINDOW_CHARS = 8000
 DEFAULT_OVERLAP_RATIO = 0.1  # verified directly against RecursiveSplitter: chunk_size=2000/chunk_overlap=200 keeps every offset exact
 
 _splitter = RecursiveSplitter()
@@ -119,7 +127,21 @@ def _window_split(piece: CoreChunk, max_tokens: int) -> list[Chunk]:
     # reconstructing the source). No newline exists inside `piece` (any would
     # already have been a RecursiveSplitter boundary), which is what makes
     # _shift's line/column arithmetic below valid.
-    max_chars = max_tokens * CHARS_PER_TOKEN_FALLBACK
+    # The window is sized from THIS piece's measured chars-per-token, not from
+    # CHARS_PER_TOKEN_FALLBACK. That constant is safe only where a character is
+    # worth more than three tokens' worth of nothing -- i.e. Latin script. Han,
+    # Kana and Hangul run near one character per token, so a 3x window would
+    # produce chunks THREE TIMES over the ceiling, on the one path whose output
+    # nothing downstream re-checks. Measuring the piece makes the sizing correct
+    # for whatever script it actually contains.
+    # Clamped, because both ends of the range are reachable. Degenerate input
+    # ("x" repeated) compresses so well that the measured ratio explodes and the
+    # resulting `.{N}` regex blows past the engine's 10 MB compile limit; dense
+    # scripts sit near 1. Outside [1, 20] the measurement says more about the
+    # tokenizer's handling of pathological text than about the window we want.
+    tokens = max(count_tokens(piece.text), 1)
+    chars_per_token = min(max(len(piece.text) / tokens, 1.0), 20.0)
+    max_chars = min(max(1, int(max_tokens * chars_per_token * _WINDOW_SAFETY)), _MAX_WINDOW_CHARS)
     splitter = SeparatorSplitter([rf"(?s).{{{max_chars}}}"], keep_separator="left", trim=False)
     out: list[Chunk] = []
     for rel in splitter.split(piece.text):
