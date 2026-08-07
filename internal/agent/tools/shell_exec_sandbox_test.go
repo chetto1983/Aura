@@ -372,25 +372,25 @@ func TestSendFile_RoutedWorkspaceFence(t *testing.T) {
 	}
 }
 
-// TestFSRead_FailClosedNoHostFallback + routed read: a strict fs_read reads via the box; a Resolve
-// failure denies without a host os.ReadFile.
-func TestFSRead_RoutedReadsInBoxAndFailsClosed(t *testing.T) {
+// Routed read: a strict read_file reads via the box; a Resolve failure denies without ever
+// falling back to a host os.ReadFile.
+func TestReadFile_RoutedReadsInBoxAndFailsClosed(t *testing.T) {
 	be := &fakeBoxBackend{execResult: usersandbox.ExecResult{Stdout: []byte("box-file-body\n"), ExitCode: 0}}
-	tool := &FSRead{Router: newStrictBoxRouter(be)}
+	tool := &ReadFile{Router: newStrictBoxRouter(be)}
 	ctx := ctxWith(t, "sess-fr", "call-fr")
 	res, err := tool.Execute(ctx, json.RawMessage(`{"path":"/workspace/data.txt"}`))
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
 	if !strings.Contains(res.Preview, "box-file-body") {
-		t.Fatalf("routed fs_read missing box content: %q", res.Preview)
+		t.Fatalf("routed read_file missing box content: %q", res.Preview)
 	}
 	if len(be.execCalls) != 1 || !strings.Contains(be.execCalls[0].Command, "head -c") {
-		t.Fatalf("routed fs_read must read via a bounded head -c exec: %#v", be.execCalls)
+		t.Fatalf("routed read_file must read via a bounded head -c exec: %#v", be.execCalls)
 	}
 
 	beFail := &fakeBoxBackend{resolveErr: errors.New("no box")}
-	toolFail := &FSRead{Router: newStrictBoxRouter(beFail)}
+	toolFail := &ReadFile{Router: newStrictBoxRouter(beFail)}
 	resFail, err := toolFail.Execute(ctx, json.RawMessage(`{"path":"/etc/hostname"}`))
 	if err != nil {
 		t.Fatalf("Execute (fail): %v", err)
@@ -400,11 +400,11 @@ func TestFSRead_RoutedReadsInBoxAndFailsClosed(t *testing.T) {
 	}
 }
 
-// TestFSWrite_RoutedWritesInBox: a strict fs_write copies content into the box (never host), and
-// refuses a write into the /skills mount.
-func TestFSWrite_RoutedWritesInBoxAndSkillsFence(t *testing.T) {
+// A strict write_file copies content into the box (never the host), reports whether the on-disk
+// hash was confirmed, and refuses a write into the /skills mount.
+func TestWriteFile_RoutedWritesInBoxAndSkillsFence(t *testing.T) {
 	be := &fakeBoxBackend{}
-	tool := &FSWrite{Router: newStrictBoxRouter(be)}
+	tool := &WriteFile{Router: newStrictBoxRouter(be)}
 	ctx := ctxWith(t, "sess-fw", "call-fw")
 
 	res, err := tool.Execute(ctx, json.RawMessage(`{"path":"/workspace/out.txt","content":"hello"}`))
@@ -412,10 +412,14 @@ func TestFSWrite_RoutedWritesInBoxAndSkillsFence(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 	if !strings.Contains(res.Preview, "wrote 5 bytes to /workspace/out.txt") {
-		t.Fatalf("routed fs_write preview wrong: %q", res.Preview)
+		t.Fatalf("routed write_file preview wrong: %q", res.Preview)
+	}
+	// The verified flag is what lets the model skip a confirming read; it must always be stated.
+	if !strings.Contains(res.Preview, "verified:") {
+		t.Errorf("write_file must report the verified flag: %q", res.Preview)
 	}
 	if len(be.writes) != 1 || be.writes[0].path != "/workspace/out.txt" || string(be.writes[0].content) != "hello" {
-		t.Fatalf("routed fs_write did not copy into the box: %#v", be.writes)
+		t.Fatalf("routed write_file did not copy into the box: %#v", be.writes)
 	}
 
 	skills, err := tool.Execute(ctx, json.RawMessage(`{"path":"/skills/evil/evil.py","content":"x"}`))

@@ -75,7 +75,12 @@ func (e *SwarmSpawn) Spec() Spec {
 			`Call shape: {"goals":["<complete brief for subtask 1>","<complete brief for subtask 2>"]}.`,
 		Description: swarmSpawnDescription,
 		Parameters:  params,
-		Deferred:    true,
+		// The reference coding agent keeps its delegation tool always-active, and fanning work
+		// out IS decided while reading the request — but its description is a few lines, while
+		// swarmSpawnDescription is 4,364 chars (~1,100 tokens) paid on every turn. Promote this
+		// only after the description is cut to that size; the set is not the whole story, the
+		// bytes are.
+		Deferred: true,
 		// D-02/D-02d: a swarm worker turn wields the full tool set, so swarm_spawn is
 		// the fail-closed Mutating floor. It has no `action` field, but it is treated
 		// as Multiplexed so the boot-guard asserts the classifier tiers it (flat Risky).

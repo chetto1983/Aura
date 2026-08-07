@@ -10,39 +10,23 @@ import (
 	"time"
 )
 
-// Shared seams for the filesystem tools (fs_read/fs_write/fs_edit/fs_grep/fs_glob), which give
-// the agent Claude-Code-style file ergonomics over the caller's per-identity BOX — sliceLines,
+// Shared seams for the filesystem tools — a Go port of hermes-agent's four `tools/file_tools.py`
+// tools (read_file/write_file/patch/search_files) over the caller's per-identity BOX:
 // globToRegexp/globMatch, looksBinary, the size cap and the walk filters, so each tool file stays
 // small and free of duplication.
 //
 // resolveFSPath, expandHomePath and withinDir stood here until 2026-08-03: HOST path helpers,
-// kept alive by document_index alone once the fs_* tools moved into the box. document_index now
-// fences the BOX path and stages the bytes out through the sandbox, so nothing in production
-// resolved a host path any more and only their own tests still called them. Deleted with those
-// tests rather than left as a host-path primitive sitting in the toolbox of a box-only surface.
+// kept alive by the now-deleted document_index tool alone once the fs_* tools moved into the box.
+// document_index fenced the BOX path and staged the bytes out through the sandbox, so nothing in
+// production resolved a host path any more and only their own tests still called them. Deleted
+// with those tests rather than left as a host-path primitive sitting in the toolbox of a box-only
+// surface. document_index itself was later deleted outright (2026-08-07): with the ingest bucket
+// as the source of truth, indexing a workspace file is not an agent action any more.
 //
 // One consequence is worth stating because it is a behaviour change, not an omission: "~" no
-// longer expands for the fs_* tools. boxPathArg refuses it outright — the box's home is a
+// longer expands for these tools. boxPathArg refuses it outright — the box's home is a
 // different filesystem, and a box path travels through shellQuoteArg, which POSIX sh does not
 // expand.
-
-// sliceLines returns the 1-based [offset, offset+limit) line window of content.
-// offset<=1 starts at the top; limit<=0 runs to the end.
-func sliceLines(content string, offset, limit int) string {
-	lines := strings.Split(content, "\n")
-	start := 0
-	if offset > 1 {
-		start = offset - 1
-	}
-	if start > len(lines) {
-		start = len(lines)
-	}
-	end := len(lines)
-	if limit > 0 && start+limit < end {
-		end = start + limit
-	}
-	return strings.Join(lines[start:end], "\n")
-}
 
 // globMatch reports whether a glob matches a file given its relative path and
 // basename. A glob containing "**" or "/" is matched against the **-aware

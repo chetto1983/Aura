@@ -2,6 +2,8 @@ package tools
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -174,7 +176,7 @@ func boxCtx(t *testing.T) context.Context {
 	return WithToolCallContext(t.Context(), "session", "toolcall", t.TempDir(), 4096)
 }
 
-func TestFSGrepRoutedSweepsTheBoxAndParsesFrames(t *testing.T) {
+func TestSearchFilesContentRoutedSweepsTheBoxAndParsesFrames(t *testing.T) {
 	be := &fakeBox{respond: func(cmd string) usersandbox.ExecResult {
 		return usersandbox.ExecResult{Stdout: boxFrames(t, cmd, boxWorkspaceRoot,
 			"sub/app.go", "alpha\nport := 8080\n",
@@ -182,7 +184,7 @@ func TestFSGrepRoutedSweepsTheBoxAndParsesFrames(t *testing.T) {
 			"readme.md", "no match here\n",
 		)}
 	}}
-	res, err := (&FSGrep{Router: routerWith(be)}).
+	res, err := (&SearchFiles{Router: routerWith(be)}).
 		Execute(boxCtx(t), json.RawMessage(`{"pattern":"port := \\d+"}`))
 	if err != nil {
 		t.Fatalf("routed fs_grep: %v", err)
@@ -204,11 +206,11 @@ func TestFSGrepRoutedSweepsTheBoxAndParsesFrames(t *testing.T) {
 	}
 }
 
-func TestFSGrepRoutedReportsNoMatches(t *testing.T) {
+func TestSearchFilesContentRoutedReportsNoMatches(t *testing.T) {
 	be := &fakeBox{respond: func(cmd string) usersandbox.ExecResult {
 		return usersandbox.ExecResult{Stdout: boxFrames(t, cmd, boxWorkspaceRoot, "a.txt", "nothing relevant\n")}
 	}}
-	res, err := (&FSGrep{Router: routerWith(be)}).
+	res, err := (&SearchFiles{Router: routerWith(be)}).
 		Execute(boxCtx(t), json.RawMessage(`{"pattern":"ZZZ"}`))
 	if err != nil {
 		t.Fatalf("routed fs_grep: %v", err)
@@ -223,7 +225,7 @@ func TestFSGrepRoutedReportsNoMatches(t *testing.T) {
 // an odd count — every following file's real matches were reported under another file's path. That
 // is the two-filesystems document_open defect in miniature: content reported where it does not
 // live. The per-call token makes the desync unrepresentable.
-func TestFSGrepFramingSurvivesBinaryContent(t *testing.T) {
+func TestSearchFilesContentFramingSurvivesBinaryContent(t *testing.T) {
 	binary := "\x00\x89PNG\x00\x1a\x00" // an ODD number of NULs: the shape that shifted every later pair
 	be := &fakeBox{respond: func(cmd string) usersandbox.ExecResult {
 		return usersandbox.ExecResult{Stdout: boxFrames(t, cmd, boxWorkspaceRoot,
@@ -231,7 +233,7 @@ func TestFSGrepFramingSurvivesBinaryContent(t *testing.T) {
 			"src/app.go", "port := 8080\n",
 		)}
 	}}
-	res, err := (&FSGrep{Router: routerWith(be)}).
+	res, err := (&SearchFiles{Router: routerWith(be)}).
 		Execute(boxCtx(t), json.RawMessage(`{"pattern":"port := 8080"}`))
 	if err != nil {
 		t.Fatalf("routed fs_grep: %v", err)
@@ -251,13 +253,13 @@ func TestFSGrepFramingSurvivesBinaryContent(t *testing.T) {
 // prunes itself away.
 func TestBoxSweepsPruneAtTheProducer(t *testing.T) {
 	sweeps := map[string]func(*fakeBox) error{
-		"fs_glob": func(be *fakeBox) error {
-			_, err := (&FSGlob{Router: routerWith(be)}).
-				Execute(boxCtx(t), json.RawMessage(`{"pattern":"**/*.go"}`))
+		"target=files": func(be *fakeBox) error {
+			_, err := (&SearchFiles{Router: routerWith(be)}).
+				Execute(boxCtx(t), json.RawMessage(`{"pattern":"**/*.go","target":"files"}`))
 			return err
 		},
-		"fs_grep": func(be *fakeBox) error {
-			_, err := (&FSGrep{Router: routerWith(be)}).
+		"target=content": func(be *fakeBox) error {
+			_, err := (&SearchFiles{Router: routerWith(be)}).
 				Execute(boxCtx(t), json.RawMessage(`{"pattern":"needle"}`))
 			return err
 		},
@@ -284,7 +286,7 @@ func TestBoxSweepsPruneAtTheProducer(t *testing.T) {
 // fs_grep's spec accepts a FILE as `path`. find -mindepth 1 prints nothing for a file start point,
 // so the sweep carries a separate single-file arm; without it the tool answered "[no matches]" for
 // a file it could read perfectly well.
-func TestFSGrepSearchesASingleFileRoot(t *testing.T) {
+func TestSearchFilesContentSearchesASingleFileRoot(t *testing.T) {
 	const target = "/workspace/notes.txt"
 	be := &fakeBox{respond: func(cmd string) usersandbox.ExecResult {
 		if !strings.Contains(cmd, "[ -f '"+target+"' ]") {
@@ -292,7 +294,7 @@ func TestFSGrepSearchesASingleFileRoot(t *testing.T) {
 		}
 		return usersandbox.ExecResult{Stdout: boxFrames(t, cmd, target, target, "alpha\nneedle here\n")}
 	}}
-	res, err := (&FSGrep{Router: routerWith(be)}).
+	res, err := (&SearchFiles{Router: routerWith(be)}).
 		Execute(boxCtx(t), json.RawMessage(`{"pattern":"needle","path":"`+target+`"}`))
 	if err != nil {
 		t.Fatalf("routed fs_grep: %v", err)
@@ -303,17 +305,19 @@ func TestFSGrepSearchesASingleFileRoot(t *testing.T) {
 	}
 }
 
-func TestFSGlobRoutedListsBoxTreeAndPrunes(t *testing.T) {
+func TestSearchFilesNamesListsBoxTreeAndPrunes(t *testing.T) {
 	be := &fakeBox{respond: func(string) usersandbox.ExecResult {
+		// The sweep is `find -printf '%T@ %p\n' | sort -rn`, so each line is "<mtime> <path>":
+		// results come back newest-first, which is the ordering the tool promises.
 		return usersandbox.ExecResult{Stdout: []byte(strings.Join([]string{
-			"/workspace/main.go",
-			"/workspace/sub/app.go",
-			"/workspace/vendor/dep/x.go", // pruned
-			"/workspace/notes.md",        // pattern miss
+			"1786000004.0 /workspace/main.go",
+			"1786000003.0 /workspace/sub/app.go",
+			"1786000002.0 /workspace/vendor/dep/x.go", // pruned
+			"1786000001.0 /workspace/notes.md",        // pattern miss
 		}, "\n") + "\n")}
 	}}
-	res, err := (&FSGlob{Router: routerWith(be)}).
-		Execute(boxCtx(t), json.RawMessage(`{"pattern":"**/*.go"}`))
+	res, err := (&SearchFiles{Router: routerWith(be)}).
+		Execute(boxCtx(t), json.RawMessage(`{"pattern":"**/*.go","target":"files"}`))
 	if err != nil {
 		t.Fatalf("routed fs_glob: %v", err)
 	}
@@ -330,20 +334,28 @@ func TestFSGlobRoutedListsBoxTreeAndPrunes(t *testing.T) {
 	}
 }
 
-func TestFSEditRoutedReadsBoxAppliesEditAndWritesBack(t *testing.T) {
-	be := &fakeBox{respond: func(cmd string) usersandbox.ExecResult {
+func TestPatchRoutedReadsBoxAppliesEditAndWritesBack(t *testing.T) {
+	var be *fakeBox
+	be = &fakeBox{respond: func(cmd string) usersandbox.ExecResult {
+		// patch re-hashes the file after writing it, so the fake has to answer BOTH execs:
+		// the bounded read, and the verification that the bytes actually persisted.
+		if strings.HasPrefix(cmd, "sha256sum ") {
+			sum := sha256.Sum256([]byte(be.written["/workspace/app.go"]))
+			return usersandbox.ExecResult{Stdout: []byte(hex.EncodeToString(sum[:]) + "  /workspace/app.go\n")}
+		}
 		if !strings.HasPrefix(cmd, "head -c ") {
-			t.Errorf("fs_edit must read through the bounded head -c exec, got %q", cmd)
+			t.Errorf("patch must read through the bounded head -c exec, got %q", cmd)
 		}
 		return usersandbox.ExecResult{Stdout: []byte("port := 8080\nname := \"aura\"\n")}
 	}}
-	res, err := (&FSEdit{Router: routerWith(be)}).Execute(boxCtx(t), json.RawMessage(
+	res, err := (&Patch{Router: routerWith(be)}).Execute(boxCtx(t), json.RawMessage(
 		`{"path":"/workspace/app.go","old_string":"port := 8080","new_string":"port := 9090"}`))
 	if err != nil {
-		t.Fatalf("routed fs_edit: %v", err)
+		t.Fatalf("routed patch: %v", err)
 	}
-	if !strings.Contains(res.Preview, "replaced 1 occurrence") {
-		t.Errorf("result = %q", res.Preview)
+	// patch reports a unified diff, so the result itself shows both sides of the edit.
+	if !strings.Contains(res.Preview, "port := 9090") || !strings.Contains(res.Preview, "port := 8080") {
+		t.Errorf("result should be a diff showing the replacement, got %q", res.Preview)
 	}
 	got, ok := be.written["/workspace/app.go"]
 	if !ok {
@@ -354,9 +366,9 @@ func TestFSEditRoutedReadsBoxAppliesEditAndWritesBack(t *testing.T) {
 	}
 }
 
-func TestFSEditRoutedRefusesTheSkillsMount(t *testing.T) {
+func TestPatchRoutedRefusesTheSkillsMount(t *testing.T) {
 	be := &fakeBox{}
-	_, err := (&FSEdit{Router: routerWith(be)}).Execute(boxCtx(t), json.RawMessage(
+	_, err := (&Patch{Router: routerWith(be)}).Execute(boxCtx(t), json.RawMessage(
 		`{"path":"/skills/calc/calc.py","old_string":"a","new_string":"b"}`))
 	if err == nil || !strings.Contains(err.Error(), "skills") {
 		t.Fatalf("err = %v, want a refusal naming the skills mount", err)
@@ -368,7 +380,7 @@ func TestFSEditRoutedRefusesTheSkillsMount(t *testing.T) {
 
 // A box failure must DENY, never silently fall back to the host (D-09/GATE-01). Each routed
 // tool is checked at both seams that can fail: resolving the box, and the exec/write itself.
-func TestRoutedFSToolsFailClosedOnBoxFailure(t *testing.T) {
+func TestRoutedFileToolsFailClosedOnBoxFailure(t *testing.T) {
 	deny := func(t *testing.T, res ToolResult, err error, tool string) {
 		t.Helper()
 		if err != nil {
@@ -397,15 +409,15 @@ func TestRoutedFSToolsFailClosedOnBoxFailure(t *testing.T) {
 			r := routerWith(tc.be)
 			ctx := boxCtx(t)
 
-			res, err := (&FSGrep{Router: r}).Execute(ctx, json.RawMessage(`{"pattern":"needle"}`))
-			deny(t, res, err, "fs_grep")
+			res, err := (&SearchFiles{Router: r}).Execute(ctx, json.RawMessage(`{"pattern":"needle"}`))
+			deny(t, res, err, "search_files")
 
-			res, err = (&FSGlob{Router: r}).Execute(ctx, json.RawMessage(`{"pattern":"**/*.go"}`))
-			deny(t, res, err, "fs_glob")
+			res, err = (&SearchFiles{Router: r}).Execute(ctx, json.RawMessage(`{"pattern":"**/*.go","target":"files"}`))
+			deny(t, res, err, "search_files")
 
-			res, err = (&FSEdit{Router: r}).Execute(ctx, json.RawMessage(
+			res, err = (&Patch{Router: r}).Execute(ctx, json.RawMessage(
 				`{"path":"/workspace/app.go","old_string":"a","new_string":"b"}`))
-			deny(t, res, err, "fs_edit")
+			deny(t, res, err, "patch")
 		})
 	}
 
@@ -416,7 +428,7 @@ func TestRoutedFSToolsFailClosedOnBoxFailure(t *testing.T) {
 		},
 		writeE: fmt.Errorf("copy refused"),
 	}
-	res, err := (&FSEdit{Router: routerWith(be)}).Execute(boxCtx(t), json.RawMessage(
+	res, err := (&Patch{Router: routerWith(be)}).Execute(boxCtx(t), json.RawMessage(
 		`{"path":"/workspace/app.go","old_string":"a","new_string":"b"}`))
-	deny(t, res, err, "fs_edit")
+	deny(t, res, err, "patch")
 }

@@ -63,12 +63,14 @@ func TestPromptNamesOnlyLoadedTools(t *testing.T) {
 		check(entry.Name, entry.Deferred)
 	}
 
-	// document_open and document_index register only when a live pool exists
+	// document_open and document_search register only when a live pool exists
 	// (buildBaseRegistryWithHandles), so buildRegistry — which passes a nil store —
 	// does not contain them and the loop above cannot see them. They are the
 	// deployment's whole point, so checking them is not optional: their Spec is a
 	// pure function of the value, exactly as in TestOnlyTheWorkingSetIsAlwaysActive.
-	for _, tool := range []tools.Tool{&tools.DocumentOpen{}, &tools.DocumentIndex{}} {
+	// (document_index was removed with the hand-built pipeline: the bucket is the
+	// source of truth now, so putting a file there IS the indexing action.)
+	for _, tool := range []tools.Tool{&tools.DocumentOpen{}, &tools.DocumentSearch{}} {
 		spec := tool.Spec()
 		check(spec.Name, spec.Deferred)
 	}

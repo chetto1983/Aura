@@ -37,8 +37,8 @@ func (t *DocumentSearch) Spec() Spec {
 			"call document_open with document_id; it writes the real file into /workspace for shell_exec. Uploaded " +
 			"documents are not otherwise on the filesystem. Query is required and may name a topic, entity, fact, " +
 			"or filename. document_ids optionally scopes search to ids previously returned to this owner. Files " +
-			"YOU created live under /workspace: read those with fs_read/fs_grep, and add one to this library with " +
-			"document_index. Example: {\"query\":\"customer code for WPT SRL\",\"document_ids\":[\"doc_9f2c\"]}.",
+			"YOU created live under /workspace: read those with read_file/search_files instead. " +
+			"Example: {\"query\":\"customer code for WPT SRL\",\"document_ids\":[\"doc_9f2c\"]}.",
 		Parameters: json.RawMessage(`{
   "type": "object",
   "properties": {
