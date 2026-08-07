@@ -9,6 +9,12 @@ statements move, this list must move with them. (DocumentProjection, the
 other vertex type declared there, stays a Go-side concept this Python
 sidecar does not populate -- it writes only Passage rows.)
 
+One deliberate exception: source_kind/source_key are declared here but not
+in document_schema.go. Go's retriever doesn't read them yet; they exist so a
+retrieval hit can be traced back to the Garage object it came from. ArcadeDB
+property creation is additive and IF NOT EXISTS, so a Go-created Passage type
+tolerates these extra properties without conflict.
+
 ensure_schema() MUST run before the first passage write, every run,
 idempotently. CocoIndex's Neo4j-dialect Cypher MERGE creates an untyped list
 for a list-valued property, and ArcadeDB's LSM_VECTOR index then refuses to
@@ -78,6 +84,12 @@ def _passage_ddl(dimensions: int) -> list[str]:
         f"CREATE PROPERTY {t}.projection_key IF NOT EXISTS STRING",
         f"CREATE PROPERTY {t}.document_id IF NOT EXISTS STRING",
         f"CREATE PROPERTY {t}.search_document_id IF NOT EXISTS STRING",
+        # Not in document_schema.go yet (Go retrieval doesn't consume these):
+        # added here so a retrieval hit can resolve back to the object it came
+        # from. Property creation is additive/idempotent, so this does not
+        # conflict with the Go-created type -- see this module's docstring.
+        f"CREATE PROPERTY {t}.source_kind IF NOT EXISTS STRING",
+        f"CREATE PROPERTY {t}.source_key IF NOT EXISTS STRING",
         f"CREATE PROPERTY {t}.version_id IF NOT EXISTS STRING",
         f"CREATE PROPERTY {t}.version_number IF NOT EXISTS LONG",
         f"CREATE PROPERTY {t}.raw_sha256 IF NOT EXISTS STRING",

@@ -66,6 +66,11 @@ class Passage:
     None: this writer only ever extracts plain text, never structured layout.
     tombstoned_at stays None always -- CocoIndex deletes the row outright on source
     deletion, so nothing here ever soft-tombstones (FINDINGS.md §4).
+
+    source_kind/source_key carry where the file actually lives: source_kind is
+    always "s3" (this app has only one source connector) and source_key is the
+    exact same raw object key process_file already resolves and feeds into
+    search_document_id -- reused, not recomputed, so the two stay byte-identical.
     """
 
     passage_key: str
@@ -73,6 +78,8 @@ class Passage:
     projection_key: str | None
     document_id: str
     search_document_id: str
+    source_kind: str
+    source_key: str
     version_id: str | None
     version_number: int | None
     raw_sha256: str
@@ -117,7 +124,7 @@ def _embed(text: str) -> list[float]:
 @coco.fn
 async def process_chunk(
     item: tuple[int, chunk.Chunk], document_id: str, search_document_id: str,
-    raw_sha256: str, table: neo4j.TableTarget[Passage],
+    source_kind: str, source_key: str, raw_sha256: str, table: neo4j.TableTarget[Passage],
 ) -> None:
     ordinal, piece = item
     table.declare_record(row=Passage(
@@ -126,6 +133,8 @@ async def process_chunk(
         projection_key=None,
         document_id=document_id,
         search_document_id=search_document_id,
+        source_kind=source_kind,
+        source_key=source_key,
         version_id=None,
         version_number=None,
         raw_sha256=raw_sha256,
@@ -167,12 +176,13 @@ async def process_file(
         tmp.write(content)
         tmp.flush()
         text = extract.extract_text(tmp.name)
-    search_document_id = identity.search_document_id(identity_id, "s3", key)
+    source_kind = "s3"
+    search_document_id = identity.search_document_id(identity_id, source_kind, key)
     pieces = chunk.chunk(text)
     raw_sha256 = hashlib.sha256(content).hexdigest()
     await coco.map(
         process_chunk, list(enumerate(pieces)),
-        search_document_id, search_document_id, raw_sha256, table,
+        search_document_id, search_document_id, source_kind, key, raw_sha256, table,
     )
 
 
