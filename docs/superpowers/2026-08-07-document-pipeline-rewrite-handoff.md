@@ -87,12 +87,20 @@ corpus, which scored 8/10 documents and 9/10 mechanism — identical to the rera
 Bolt. Aura's own Go client keeps using ArcadeDB's HTTP API at :2480. Different callers,
 different surfaces.
 
-**The E2E answering model is local.** `Qwen/Qwen3-8B-GGUF` → `Qwen3-8B-Q4_K_M.gguf`,
-5,027,783,488 bytes, SHA-256 `d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785`,
-repo commit `7c41481f57cb95916b40956ab2f0b139b296d974`, context 40960, served by `aura-llm`
-on :8084. **The `aura_aura-llm` volume is EMPTY and `aura.settings` still routes every turn
-to OpenRouter (`deepseek/deepseek-v4-flash:nitro`)** — today's gate would spend credits on
-every run. Fetching the model is Task 7.
+**The E2E answering model is local.** DEPLOYED (Task 7, done 2026-08-07):
+`unsloth/Qwen3.5-9B-GGUF` → `Qwen3.5-9B-UD-Q4_K_XL.gguf`, 5,966,095,584 bytes,
+SHA-256 `6f5d30666c2d8ae16a306e616d95341dcf3cc46810df84d7e6f5a7d1e4c1b293`, repo commit
+`3885219b6810b007914f3a7950a8d1b469d598a5`, native context 262144 — served at `-c 32768`
+(load-tested stable on this host's 12GB RTX 3060 alongside the resident embed sidecar,
+NOT the native ceiling; VRAM 1088→7211 MiB, genuinely on GPU, 45.1 tok/s). Served by
+`aura-llm` on :8084 with `AURA_LLM_BASE_URL=http://aura-llm:8084/v1`, from a pre-fetched
+LOCAL path (not `--hf-repo`). SUPERSEDES an earlier pin of `Qwen/Qwen3-8B-GGUF`'s
+`Qwen3-8B-Q4_K_M.gguf` (5,027,783,488 bytes, commit `7c41481f57cb95916b40956ab2f0b139b296d974`,
+declared context 40960) — the human changed the served model mid-Task-7, before that
+artifact finished downloading. **The 40960 figure belonged to Qwen3-8B and does not apply
+to the deployed Qwen3.5-9B.** `aura.settings`/`.env` still route every turn to OpenRouter
+(`AURA_LLM_BASE_URL=https://openrouter.ai/api/v1`) — that flip for an actual gate run is
+still open work, Task 7 deliberately did not silently edit the live `.env`.
 
 ---
 
@@ -122,6 +130,18 @@ every run. Fetching the model is Task 7.
   `⏳ Ready | Watching for changes...` and exits 0 while watching nothing. Use
   `coco.auto_refresh(fn, interval=timedelta(...))`, which returns a LiveComponent and is
   orthogonal to the connector.
+- **`coco.auto_refresh` also needs `live=True` on `update_blocking`/`-L`, or it silently
+  degrades to one catch-up pass and the interval is IGNORED.** Its own docstring: "In
+  catch-up mode (live=False), mark_ready terminates the live component after the first
+  full pass -- observationally identical to mounting process_fn directly." Both are
+  required together: `-L`/`live=True` is necessary but not sufficient, `auto_refresh` is
+  sufficient only WITH it. Getting this wrong yields a sidecar that runs once and looks
+  like it is watching (Task 6).
+- **`cocoindex[amazon_s3]` is required, not `cocoindex` bare, or the S3 connector cannot
+  even import.** Bare `cocoindex==1.0.19` raises on `from cocoindex.connectors import
+  amazon_s3`: "aiobotocore is required ... install cocoindex[amazon_s3]" — and the S3/
+  Garage bucket is the source this whole architecture reconciles against. Verified fix:
+  the extra pulls `aiobotocore` 3.9.0 and the import then succeeds (Task 6).
 - `RecursiveSplitter` cannot cut a run with no syntax boundary — `"x"*200000` at
   `chunk_size=2000` returns ONE chunk. `CustomLanguageConfig` does not fix it either.
 - `SeparatorSplitter` CAN, configured as a fixed-width window. Three options are load-bearing
@@ -145,6 +165,20 @@ every run. Fetching the model is Task 7.
 - **Never pass `--pooling`.** The GGUF declares its own and llama.cpp obeys it; the knob was
   deleted because it could only ever be right by agreeing with the file, and when it disagreed
   it cost recall@1 0.90 → 0.70 in silence.
+
+**aura-llm / Qwen3.5-9B (Task 7)**
+- **The model thinks by default, and thinking tokens count against the SAME budget as the
+  answer.** A trivial one-line factual question spent ~281 completion tokens (~909 chars)
+  reasoning before writing a word of the reply; a one-passage RAG question spent 1373 of a
+  1500-token budget. At an undersized `max_tokens` (200), the response came back with
+  `content` **EMPTY** and everything in `reasoning_content` — **no error anywhere, no
+  truncation flag.** Any caller (Aura's OpenRouter-shaped client included) must budget
+  `max_tokens` for thinking PLUS the answer, and must treat "empty `content` + non-empty
+  `reasoning_content`" as its own distinct failure class, never as "nothing to say."
+- `--rope-scaling yarn --yarn-orig-ctx 16384` does NOT belong on this model (or on
+  Qwen3-8B): that pair was tuned for a third, different model (Qwythos-9B-v2, native
+  16384) that was never actually deployed here. Qwen3.5-9B's native context is 262144;
+  applying a YaRN factor computed from 16384 would distort every position.
 
 **iscc-tika**
 - The API is `Extractor().extract_file_to_string(path)` and it returns **`(text, metadata)`**,

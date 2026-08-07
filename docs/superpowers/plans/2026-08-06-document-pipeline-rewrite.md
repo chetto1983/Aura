@@ -6,7 +6,7 @@
 
 **Architecture:** A Python sidecar runs a CocoIndex app whose incremental state lives in LMDB on a volume; `coco.auto_refresh` makes any source live. Extraction is iscc-tika, with LibreOffice normalising legacy Office formats first. Passages and their embeddings are written by CocoIndex's **stock `neo4j` target connector** over ArcadeDB's Bolt plugin — no writer of ours — into a schema created *before* any write. Retrieval is ArcadeDB's own vector kit, reached over HTTP by Aura's Go client. Aura keeps identity, tenancy, tool contracts and sandbox delivery. Two sidecars (`aura-docling`, `aura-rerank`) are deleted.
 
-**Tech Stack:** Python 3.12 + cocoindex 1.0.19 + iscc-tika 0.6.0 · Go 1.26 · ArcadeDB 26.7.3 (`LSM_VECTOR` + `ARRAY_OF_FLOATS`) · PostgreSQL 18 (control plane, fail-closed RLS) · llama.cpp sidecars (EmbeddingGemma-300M embed, Qwen3-8B answer) · Garage S3 · Docker Compose.
+**Tech Stack:** Python 3.12 + cocoindex 1.0.19 + iscc-tika 0.6.0 · Go 1.26 · ArcadeDB 26.7.3 (`LSM_VECTOR` + `ARRAY_OF_FLOATS`) · PostgreSQL 18 (control plane, fail-closed RLS) · llama.cpp sidecars (EmbeddingGemma-300M embed, Qwen3.5-9B answer) · Garage S3 · Docker Compose.
 
 **Two protocols on purpose, and the reason is not symmetry.** The **Bolt plugin is load-bearing**: `cocoindex.connectors.neo4j` is a full target (`mount_table_target`, `mount_relation_target`, `ConnectionFactory`) that speaks Bolt, so enlisting the plugin is what buys the ingestion writer for free. Removing it would force a bespoke writer — the exact thing amendment #118 exists to stop. Aura's **own** client keeps using the HTTP API at :2480, which `internal/arcadedb/client.go` already does and which is verified on 26.7.3 for DDL, parameterised 768-float writes, and `vector.neighbors` with a RID filter. Different callers, different surfaces; neither replaces the other.
 
@@ -14,7 +14,7 @@
 
 - **PRD amendment #118 is the contract.** #114's guarantees (provenance-bearing passages, durable erasure, cross-tenant non-disclosure) are NOT reopened. Only the implementation changes.
 - **The closing gate is amendment #115's production E2E, above 98%, driven by the real Aura agent.** A green unit suite explicitly does not close any phase. No mock, skip, fallback or degraded status may appear in the gate run.
-- **The E2E answering model is LOCAL:** `Qwen/Qwen3-8B-GGUF` → `Qwen3-8B-Q4_K_M.gguf`, 5,027,783,488 bytes, repo commit `7c41481f57cb95916b40956ab2f0b139b296d974`, SHA-256 `d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785`, architecture `qwen3`, declared context 40960. Served by `aura-llm` on :8084 with `AURA_LLM_BASE_URL=http://aura-llm:8084/v1`. **No OpenRouter spend in any gate.**
+- **The E2E answering model is LOCAL:** `unsloth/Qwen3.5-9B-GGUF` → `Qwen3.5-9B-UD-Q4_K_XL.gguf`, 5,966,095,584 bytes, repo commit `3885219b6810b007914f3a7950a8d1b469d598a5`, SHA-256 `6f5d30666c2d8ae16a306e616d95341dcf3cc46810df84d7e6f5a7d1e4c1b293`, native context 262144 (served at `-c 32768`, the conservative value load-tested stable on the 12GB RTX 3060, not the native ceiling). Served by `aura-llm` on :8084 with `AURA_LLM_BASE_URL=http://aura-llm:8084/v1`, from a pre-fetched LOCAL path (not `--hf-repo`). **No OpenRouter spend in any gate.** SUPERSEDES an earlier pin of `Qwen/Qwen3-8B-GGUF`'s `Qwen3-8B-Q4_K_M.gguf` (5,027,783,488 bytes, commit `7c41481f57cb95916b40956ab2f0b139b296d974`, declared context 40960): the human changed the served model during Task 7 execution (2026-08-07) before that artifact was fully downloaded. The 40960 figure belonged to Qwen3-8B and does NOT apply to the deployed Qwen3.5-9B.
 - **The chunker's hard ceiling is 2048 TOKENS** — EmbeddingGemma-300M's GGUF declares `context_length = 2048`; a longer input is refused with HTTP 500. Never reason in bytes.
 - **Embedding prefixes are asymmetric and mandatory:** documents `title: none | text: …`, queries `task: search result | query: …`. Omitting them measured recall@1 0.25 → 0.05.
 - **Never pass `--pooling`.** The GGUF declares its own pooling and llama.cpp obeys it when the flag is absent.
@@ -41,13 +41,13 @@
 | `services/ingest/arcade.py` | schema-first DDL **only** — the rows are written by CocoIndex's stock `neo4j` target, not by us. `declare_vector_index` is never called: it emits Neo4j's `CREATE VECTOR INDEX` syntax while ArcadeDB wants `LSM_VECTOR METADATA`, so the index is created here first and the connector only inserts. |
 | `services/ingest/source.py` | the source binding (bucket or catalog) incl. the per-connection RLS GUC |
 | `internal/db/migrations/00NN_*.up.sql` / `.down.sql` | retire the hand-rolled stage ledger |
-| `scripts/fetch_llm_model.sh` | fetch + verify Qwen3-8B-Q4_K_M against its published size and SHA-256 |
+| `scripts/fetch_llm_model.sh` | fetch + verify Qwen3.5-9B-UD-Q4_K_XL against its published size and SHA-256 |
 
 **Modified**
 
 | path | change |
 |---|---|
-| `compose.yaml` | delete `aura-docling` + `aura-rerank` + their network/volume/env; add `aura-ingest`; point `aura-llm` at Qwen3-8B |
+| `compose.yaml` | delete `aura-docling` + `aura-rerank` + their network/volume/env; add `aura-ingest`; point `aura-llm` at Qwen3.5-9B |
 | `cmd/aura/document_pipeline_wiring.go` | stop constructing the Docling client and the in-process worker |
 | `internal/documents/*` | delete the groups listed in HANDOFF §2 |
 | `internal/config/config_document.go` | drop `AURA_DOCLING_*`; keep chunk knobs, cap at the served model's context |
@@ -579,7 +579,18 @@ git commit -m "Reconcile the corpus instead of orchestrating it"
 
 ---
 
-## Task 7: Wire the sidecar into compose, and serve Qwen3-8B locally
+## Task 7: Wire the sidecar into compose, and serve Qwen3.5-9B locally
+
+> **SUPERSEDED 2026-08-07, mid-execution:** this task originally pinned `Qwen/Qwen3-8B-GGUF`'s
+> `Qwen3-8B-Q4_K_M.gguf` (5,027,783,488 bytes, commit `7c41481f57cb95916b40956ab2f0b139b296d974`,
+> SHA-256 `d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785`, declared context
+> 40960 — visible below only as the ORIGINAL instruction). The human changed the served model
+> before that artifact finished downloading. The DEPLOYED artifact is
+> `unsloth/Qwen3.5-9B-GGUF`'s `Qwen3.5-9B-UD-Q4_K_XL.gguf`, 5,966,095,584 bytes, commit
+> `3885219b6810b007914f3a7950a8d1b469d598a5`, SHA-256
+> `6f5d30666c2d8ae16a306e616d95341dcf3cc46810df84d7e6f5a7d1e4c1b293`, native context 262144,
+> served at `-c 32768` (load-tested, not the native ceiling). The 40960 figure below is history,
+> not a live ceiling — it does not apply to the deployed model.
 
 **Files:**
 - Modify: `compose.yaml`, `.env.example`, `scripts/install.sh`
@@ -587,7 +598,7 @@ git commit -m "Reconcile the corpus instead of orchestrating it"
 
 - [ ] **Step 1: Write the failing model-fetch test**
 
-Mirror `scripts/fetch_embedding_model_test.sh`: assert the fetched file starts with `GGUF`, matches the published size **5027783488**, and its SHA-256 equals `d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785`.
+ORIGINAL instruction (superseded, see banner above): mirror `scripts/fetch_embedding_model_test.sh`: assert the fetched file starts with `GGUF`, matches the published size **5027783488**, and its SHA-256 equals `d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785`. AS BUILT: the deployed pins are 5,966,095,584 bytes / SHA-256 `6f5d30666c2d8ae16a306e616d95341dcf3cc46810df84d7e6f5a7d1e4c1b293` (see banner).
 
 - [ ] **Step 2: Run to verify it fails**
 
@@ -596,7 +607,7 @@ Expected: FAIL — script missing.
 
 - [ ] **Step 3: Implement the fetch and add the compose service**
 
-`aura-ingest` joins the default network, mounts the state volume, and depends on `arcadedb` + `aura-llama-embed` being healthy. `aura-llm` serves `Qwen3-8B-Q4_K_M.gguf`. **Do not set `--pooling`** anywhere. Set `-c` no higher than the model's declared context (40960 for Qwen3-8B; the embedder stays 2048).
+`aura-ingest` joins the default network, mounts the state volume, and depends on `arcadedb` + `aura-llama-embed` being healthy. `aura-llm` serves `Qwen3.5-9B-UD-Q4_K_XL.gguf` (AS BUILT; ORIGINAL instruction named `Qwen3-8B-Q4_K_M.gguf`, see banner). **Do not set `--pooling`** anywhere. Set `-c` no higher than the model's declared context — AS BUILT this is 262144 native, served at the load-tested 32768 (ORIGINAL instruction said "40960 for Qwen3-8B", which does not apply here); the embedder stays 2048.
 
 - [ ] **Step 4: Run to verify it passes, and bring the stack up**
 
@@ -697,7 +708,7 @@ Expected: ≥85%. Removing ~10k lines removes their tests too; if a surviving pa
 
 - [ ] **Step 1: Re-point the component list**
 
-The gate must fail closed unless the configured **local** LLM (`aura-llm`, Qwen3-8B-Q4_K_M), the **ingest sidecar**, the embedding server, Garage, PostgreSQL and the per-identity ArcadeDB projection all execute without mock, skip, fallback or degraded status. Docling and the reranker are removed from that list. **No OpenRouter.**
+The gate must fail closed unless the configured **local** LLM (`aura-llm`, Qwen3.5-9B-UD-Q4_K_XL — AS BUILT; superseded the originally-pinned Qwen3-8B-Q4_K_M mid-Task-7, see the Task 7 banner above), the **ingest sidecar**, the embedding server, Garage, PostgreSQL and the per-identity ArcadeDB projection all execute without mock, skip, fallback or degraded status. Docling and the reranker are removed from that list. **No OpenRouter.**
 
 - [ ] **Step 2: Add the format-coverage hard check**
 
