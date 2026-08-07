@@ -104,3 +104,6 @@ node_modules/
 # Database dumps taken before a migration. They are recovery artefacts, not source,
 # and a stray `git add -A` would otherwise commit a full copy of the deployment.
 backups/
+
+# LibreOffice lock files, created during fixture conversion.
+.~lock.*#

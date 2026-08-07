@@ -20,7 +20,11 @@ MSYS_NO_PATHCONV=1 docker run --rm -i -v "${abs}:/fx:ro" --entrypoint python "$i
 import pathlib, subprocess, sys, tempfile, time
 from iscc_tika import Extractor
 
-CANARY = "La sovranita appartiene al popolo"
+# The WHOLE sentence, not a short prefix. An earlier version of this script tested
+# only "La sovranita appartiene al popolo", which fits on one rendered line and so
+# passed a literal substring check while proving almost nothing.
+CANARY = ("La sovranita appartiene al popolo che la esercita nelle forme e nei "
+          "limiti della Costituzione.")
 LEGACY = {".doc": "docx", ".xls": "xlsx", ".ppt": "pptx"}
 
 # The extractor ships a string-length cap and truncates to it in silence -- the
@@ -70,16 +74,26 @@ for p in files:
         continue
     dt = time.perf_counter() - t0
     if p.suffix.lower() in PROSE:
-        # Collapsed first (are the WORDS there?), then exact (did spacing survive?).
-        # The gap between the two answers IS the reflow bug: text a human still
-        # reads, that an exact-phrase search can no longer find.
+        # The word SEQUENCE must be intact. A literal substring check is the wrong
+        # assertion here and was measured to be so: a PDF has real rendered lines,
+        # so Tika returns "...nei limiti\ndella Costituzione." Requiring no newline
+        # would fail a correct extraction.
         found = CANARY in " ".join(text.split())
-        verbatim = CANARY in text
         if not found:
-            silent.append((p.suffix, "canarino assente"))
-        elif not verbatim:
-            silent.append((p.suffix, "canarino trovato solo dopo aver compresso gli spazi — testo riflusso"))
-        mark = "canarino ok" if verbatim else ("RIFLUSSO" if found else "ASSENTE")
+            silent.append((p.suffix, "sequenza di parole del canarino assente"))
+            mark = "ASSENTE"
+        else:
+            # Reflow is the real bug, and it shows as widened INTER-WORD spacing
+            # inside the sentence itself -- not as a line break. The span is the
+            # sentence's EXACT extent: the fixture's next paragraph is deliberately
+            # over-justified as a decoy, so a window that overruns the full stop
+            # reports that decoy instead of the canary.
+            start = text.find("La sovranita")
+            end = text.index("Costituzione.", start) + len("Costituzione.")
+            doubles = text[start:end].count("  ")
+            if doubles:
+                silent.append((p.suffix, f"{doubles} spazi doppi dentro la frase — testo riflusso"))
+            mark = "canarino ok" if not doubles else "RIFLUSSO"
     else:
         missing = [t for t in SHEET_TOKENS if t not in text]
         if missing:
@@ -98,5 +112,5 @@ if silent:
         print(f"  {s}: {why}")
 if hard or silent:
     sys.exit(1)
-print(f"ok: {len(files)} formati estratti, canarino verbatim in tutti")
+print(f"ok: {len(files)} formati estratti; sequenza del canarino intatta e non riflussa in tutti quelli di prosa")
 PY
