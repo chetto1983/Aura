@@ -3,6 +3,8 @@ refuses anything past 2048 tokens with HTTP 500, so "no chunk exceeds the ceilin
 is a correctness test, not a style preference.
 """
 
+from cocoindex.resources.chunk import Chunk as CoreChunk, TextPosition
+
 from ingest.chunk import _window_split, chunk, count_tokens
 
 
@@ -38,7 +40,12 @@ def test_window_split_offsets_reconstruct_a_boundary_less_source():
     prefix = "PREFIX " * 3
     body = "y" * 5000
     document = prefix + body
-    out = _window_split(body, offset=len(prefix), max_tokens=64)
+    piece = CoreChunk(
+        text=body,
+        start=TextPosition(byte_offset=len(prefix), char_offset=len(prefix), line=1, column=len(prefix)),
+        end=TextPosition(byte_offset=len(document), char_offset=len(document), line=1, column=len(document)),
+    )
+    out = _window_split(piece, max_tokens=64)
 
     assert len(out) > 1
     for c in out:
@@ -60,3 +67,26 @@ def test_a_boundary_less_document_is_covered_exactly_by_chunk():
     assert out[-1].end == len(text)
     for prev, nxt in zip(out, out[1:]):
         assert prev.end == nxt.start, "chunks must be contiguous, no gap or overlap"
+
+
+def test_chunks_carry_cocoindex_text_position_not_just_char_offsets():
+    # start_pos/end_pos preserve cocoindex's own line/column provenance
+    # alongside the plain int offsets this module's contract requires --
+    # nothing from RecursiveSplitter's own TextPosition should be discarded.
+    text = "alpha beta gamma delta " * 500
+    for c in chunk(text, max_tokens=64):
+        assert c.start_pos.char_offset == c.start
+        assert c.end_pos.char_offset == c.end
+        assert c.start_pos.line >= 1
+        assert c.start_pos.byte_offset <= c.end_pos.byte_offset
+
+
+def test_default_overlap_produces_overlapping_chunks():
+    # chunk_overlap is retrieval quality, not decoration: without it a fact
+    # straddling a chunk boundary is unreachable from either side.
+    text = "alpha beta gamma delta epsilon zeta eta theta iota kappa " * 400
+    out = chunk(text, max_tokens=64)
+    assert len(out) > 1
+    assert any(out[i + 1].start < out[i].end for i in range(len(out) - 1)), (
+        "default overlap_ratio should produce at least one overlapping pair"
+    )
