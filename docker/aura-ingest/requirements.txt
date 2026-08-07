@@ -1,5 +1,12 @@
 # Pinned, because an ingestion sidecar that silently changes extractor or
 # reconciliation semantics between rebuilds produces a corpus nobody can explain.
-cocoindex==1.0.19
+#
+# [amazon_s3] is load-bearing, not optional: bare `cocoindex==1.0.19` cannot import
+# `cocoindex.connectors.amazon_s3` at all ("ModuleNotFoundError: aiobotocore" ->
+# "ImportError: aiobotocore is required ... install cocoindex[amazon_s3]", measured
+# against this exact pin) -- and the S3/Garage bucket is the source this whole
+# rewrite reconciles against. Verified: this extra pulls aiobotocore 3.9.0 and the
+# import then succeeds.
+cocoindex[amazon_s3]==1.0.19
 iscc-tika==0.6.0
 neo4j==5.28.1
