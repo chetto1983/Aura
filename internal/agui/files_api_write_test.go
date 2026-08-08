@@ -211,30 +211,45 @@ func TestFileWritesSurfaceStoreFailures(t *testing.T) {
 	}
 }
 
-// Opening renders user bytes on the cockpit's own origin, which is only safe because the
-// response sandboxes itself. If this header goes, an uploaded .html runs with the operator's
-// session — so the assertion is on the header, not on the disposition alone.
-func TestFileDirectSandboxesAnInlineOpen(t *testing.T) {
-	opener := &fakeFileOpener{body: "<h1>ciao</h1>", mime: "text/html"}
-	rec := serveFiles(t, fileServer(nil, opener), fileManagerBase+"/direct?id=%2Fnota.html")
-	// The sandbox directive is the whole control: an opaque origin, so no script runs and
-	// nothing reaches the cockpit's session. It must not carry default-src 'none' with it --
-	// that also blocks the document's own resources, so nothing renders.
-	if got := rec.Header().Get("Content-Security-Policy"); got != "sandbox" {
-		t.Fatalf("Content-Security-Policy = %q, want exactly \"sandbox\"", got)
-	}
-	if got := rec.Header().Get("Content-Disposition"); !strings.HasPrefix(got, "inline") {
-		t.Fatalf("Content-Disposition = %q, want inline", got)
-	}
-	if got := rec.Header().Get("Content-Type"); got != "text/html" {
-		t.Fatalf("Content-Type = %q", got)
-	}
-	if got := rec.Header().Get("X-Content-Type-Options"); got != "nosniff" {
-		t.Fatalf("nosniff missing: %q", got)
+// Opening renders user bytes on the cockpit's own origin, so what may render is an
+// allowlist of types that cannot execute. The sandbox CSP that used to guard this was
+// measured to break the thing it guarded: Chrome will not run its PDF viewer in an opaque
+// origin, so every open answered "Download is starting" and left a blank tab.
+func TestFileDirectRendersSafeTypesAndForcesTheRest(t *testing.T) {
+	for mime, wantInline := range map[string]bool{
+		"application/pdf":           true,
+		"image/png":                 true,
+		"text/plain; charset=utf-8": true,
+		"audio/mpeg":                true,
+		"video/mp4":                 true,
+		// These execute. SVG especially: a script carrier wearing an image's clothes.
+		"text/html":       false,
+		"image/svg+xml":   false,
+		"application/xml": false,
+		"":                false,
+	} {
+		opener := &fakeFileOpener{body: "x", mime: mime}
+		rec := serveFiles(t, fileServer(nil, opener), fileManagerBase+"/direct?id=%2Fnota")
+		disposition := rec.Header().Get("Content-Disposition")
+		if wantInline && !strings.HasPrefix(disposition, "inline") {
+			t.Fatalf("%q = %q, want inline so the browser's own viewer opens it", mime, disposition)
+		}
+		if !wantInline && !strings.HasPrefix(disposition, "attachment") {
+			t.Fatalf("%q = %q, want attachment: it can execute", mime, disposition)
+		}
+		if got := rec.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+			t.Fatalf("%q lost nosniff", mime)
+		}
+		// No CSP on either path: the type allowlist is the control, and the directive
+		// blocked the native viewers.
+		if got := rec.Header().Get("Content-Security-Policy"); got != "" {
+			t.Fatalf("%q carries a CSP again: %q", mime, got)
+		}
 	}
 
-	// ?download=true is the component's "save it" and must never render.
-	rec = serveFiles(t, fileServer(nil, opener), fileManagerBase+"/direct?id=%2Fnota.html&download=true")
+	// ?download=true is the component's "save it" and must never render, allowlisted or not.
+	opener := &fakeFileOpener{body: "%PDF", mime: "application/pdf"}
+	rec := serveFiles(t, fileServer(nil, opener), fileManagerBase+"/direct?id=%2Fa.pdf&download=true")
 	if got := rec.Header().Get("Content-Type"); got != "application/octet-stream" {
 		t.Fatalf("download Content-Type = %q", got)
 	}

@@ -2,9 +2,11 @@ package agui
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"path"
-	"strings"
 )
 
 // The write half of the SVAR File Manager REST contract, matching its official Go reference
@@ -78,8 +80,20 @@ func (s *Server) fileWriteContext(w http.ResponseWriter, r *http.Request) (strin
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return "", fileMutation{}, false
 	}
+	// Decoded WITHOUT a Content-Type gate, unlike every other write on this server. The
+	// component's own provider sends JSON.stringify(...) and sets no header, so the browser
+	// labels it text/plain and strictDecodeJSON refused every one of them with "invalid
+	// request body" — measured against the running cockpit: create, rename, move, copy and
+	// delete all 400'd while the listing worked, which is what a header check looks like
+	// from the outside.
+	//
+	// The rest of the discipline stays: the body is bounded and unknown fields are refused,
+	// so this trusts the payload's SHAPE no more than before — only its label.
+	r.Body = http.MaxBytesReader(w, r.Body, maxRunBodyBytes)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
 	var body fileMutation
-	if err := strictDecodeJSON(w, r, &body, decodeOpts{allowEmpty: true}); err != nil {
+	if err := decoder.Decode(&body); err != nil && !errors.Is(err, io.EOF) {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return "", fileMutation{}, false
 	}
@@ -170,12 +184,4 @@ func (s *Server) handleFileDelete(w http.ResponseWriter, r *http.Request) {
 // Content-Security-Policy: sandbox with it — see there.
 func inlineDisposition(r *http.Request) bool {
 	return !r.URL.Query().Has("download")
-}
-
-func mimeOrOctetStream(declared string) string {
-	declared = strings.TrimSpace(declared)
-	if declared == "" {
-		return "application/octet-stream"
-	}
-	return declared
 }

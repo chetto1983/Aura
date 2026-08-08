@@ -184,19 +184,10 @@ func (s *Server) handleFileDirect(w http.ResponseWriter, r *http.Request) {
 
 	header := w.Header()
 	header.Set("X-Content-Type-Options", "nosniff")
-	if inlineDisposition(r) {
-		// `sandbox` alone is the control: it drops the response into an opaque origin, so no
-		// script runs and nothing can reach the cockpit's session. Adding default-src 'none'
-		// on top blocked the document's OWN resources — the browser console filled with
-		// "Blocked script execution ... the document's frame is sandboxed" and a viewer that
-		// needs to load anything (a PDF, an image, a stylesheet) could not render at all.
-		// That is a different thing from being safe, and it made a working feature useless.
-		header.Set("Content-Security-Policy", "sandbox")
-		header.Set("Content-Type", mimeOrOctetStream(attrs.MIMEType))
+	if inlineDisposition(r) && inlineSafeMIME(attrs.MIMEType) {
+		header.Set("Content-Type", attrs.MIMEType)
 		header.Set("Content-Disposition", inlineContentDisposition(path.Base(key)))
 	} else {
-		// A forced download is never rendered, so it does not need the type at all — and a
-		// neutral one removes any chance of the browser deciding to display it anyway.
 		header.Set("Content-Type", "application/octet-stream")
 		header.Set("Content-Disposition", contentDisposition(path.Base(key)))
 	}
@@ -269,4 +260,38 @@ func uploadFileName(raw string) string {
 		return ""
 	}
 	return name
+}
+
+// inlineSafeMIME is the allowlist of types the browser may RENDER from this origin.
+//
+// It replaces `Content-Security-Policy: sandbox`, which was the wrong tool and was MEASURED
+// to be: Chrome will not run its PDF viewer inside a sandboxed opaque origin, so opening a
+// PDF answered "Download is starting" and left a blank tab. A control that makes the feature
+// not work is not a control.
+//
+// The rule is now about what the bytes can DO, not where they run. A PDF, an image, plain
+// text, audio and video are handled by the browser's own viewers and execute no script from
+// this origin, so they open natively. HTML, SVG and XML do execute -- SVG in particular is a
+// script carrier wearing an image's clothes -- so they are served as attachments, which is
+// the stored-XSS case WEBART-03/D-10 is actually about. That is a handful of types nobody
+// opens to read, against every type somebody does.
+//
+// nosniff rides both paths, so a mislabelled type is never upgraded by a guess.
+func inlineSafeMIME(declared string) bool {
+	mime := strings.ToLower(strings.TrimSpace(declared))
+	if index := strings.IndexByte(mime, ';'); index >= 0 {
+		mime = strings.TrimSpace(mime[:index])
+	}
+	if mime == "application/pdf" || mime == "text/plain" {
+		return true
+	}
+	if mime == "image/svg+xml" {
+		return false
+	}
+	for _, family := range []string{"image/", "audio/", "video/"} {
+		if strings.HasPrefix(mime, family) {
+			return true
+		}
+	}
+	return false
 }
