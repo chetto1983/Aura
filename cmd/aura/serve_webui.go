@@ -129,6 +129,8 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	mux.Handle(assetsSubtreeRoute, aguiHandler)
 	mux.Handle(documentsRoutePrefix, aguiHandler)
 	mux.Handle(documentsSubtreeRoute, aguiHandler)
+	mux.Handle(fileManagerRoutePrefix, aguiHandler)
+	mux.Handle(fileManagerSubtreeRoute, aguiHandler)
 	// The DISP-05/D-09 image-proxy delegates to the AG-UI handler (route on Server.Mux).
 	// A read GET, it inherits RequireAuth from the whole-mux wrap below (never an open
 	// relay) — no capability gate. Method+path-specific so it wins longest-pattern

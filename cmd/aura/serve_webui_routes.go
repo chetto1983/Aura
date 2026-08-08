@@ -282,6 +282,16 @@ const assetsSubtreeRoute = "/api/assets/"
 const documentsRoutePrefix = "/api/documents"
 const documentsSubtreeRoute = "/api/documents/"
 
+// The file-manager subtree (/api/filemanager/{files,direct,upload}). Like every other
+// backend surface it must be registered HERE as well as on the AG-UI mux: the parent mux
+// falls everything it does not recognise through to the embedded SPA, so a route that
+// exists only on the inner mux answers the SPA's 404 with an HTML body — which is exactly
+// what the live cockpit showed ("Unexpected non-whitespace character after JSON").
+// Read and write both inherit RequireAuth from the whole-mux wrap; the handlers scope every
+// operation to the authenticated principal's own bucket, so no capability gate is added.
+const fileManagerRoutePrefix = "/api/filemanager"
+const fileManagerSubtreeRoute = "/api/filemanager/"
+
 const (
 	assetsPresignRoute  = "POST /api/assets/presign"
 	assetsFinalizeRoute = "POST /api/assets/{id}/finalize"
