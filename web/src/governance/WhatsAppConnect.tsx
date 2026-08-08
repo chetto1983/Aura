@@ -104,6 +104,28 @@ export function WhatsAppConnect() {
             height={264}
             className="self-start rounded-md border border-border bg-surface p-2"
           />
+          {/* A pairing code lives about a minute. An operator who opens this panel a while
+              after the bridge started is looking at a dead code that renders perfectly and
+              scans into nothing — and until now the only way out was restarting the
+              container. Logout re-arms pairing, so it doubles as "give me a live code". */}
+          <p className="text-[13px] text-text-muted">{t('governance.mcp.connect.qrExpiryNote')}</p>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              logout.mutate();
+            }}
+            disabled={logout.isPending}
+            className="self-start px-3 text-[13px]"
+          >
+            {logout.isPending ? <Spinner /> : null}
+            {t('governance.mcp.connect.newCode')}
+          </Button>
+          {logout.isError ? (
+            <p role="alert" className="text-[13px] text-danger">
+              {t('governance.mcp.connect.newCodeError')}
+            </p>
+          ) : null}
         </div>
       )}
     </section>
