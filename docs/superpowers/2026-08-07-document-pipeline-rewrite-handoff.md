@@ -28,6 +28,15 @@ The spike write-up is `spikes/cocoindex-ingestion/HANDOFF.md` (rewritten) and
 
 ## Where the work stands
 
+> **UPDATE 2026-08-07 (second session).** Everything below still holds, but the branch is
+> **merged into `master` and pushed, CI green** — `master` is `bdb3406c3`, not the branch
+> head this file was written at. Landed since: Tasks 5-7, the full circle proven live
+> (file on Garage → automatic pickup in ~19s with no trigger → `Passage` carrying its own
+> `source_key` → answer from the LOCAL model with a citation), the filesystem toolset
+> ported from hermes, and owned coverage back over the floor at 85.2%. The next session's
+> brief is `docs/superpowers/2026-08-07-next-session-prompt.md` — read that first; it
+> carries the deletion inventory, the dependency order, and the infrastructure traps.
+
 **Done, each reviewed by a separate subagent and each proven against the live stack:**
 
 - **Task 0** — the three load-bearing spike claims re-verified at HEAD: `coco.auto_refresh`
@@ -56,12 +65,18 @@ tests; the twelve share nearly identical content by construction, so picking the
 FAMILY is meaningful while picking the right DOCUMENT is not; and there is still no agent,
 no bucket, no reconciliation and no `document_open`.
 
-**Next: Task 5** (schema-first ArcadeDB DDL). Its brief is already extracted at
-`.superpowers/sdd/2026-08-06-document-pipeline-rewrite/task-5-brief.md`. BASE for its
-review package is `633deb864`.
+~~**Next: Task 5**~~ — **SUPERSEDED 2026-08-07.** Tasks 5, 6 and 7 are done and on
+`master`; so is the filesystem toolset port. What remains is deletion (~10k LOC in
+dependency order), simplifying `skill`, and the #115 gate. The current brief is
+`docs/superpowers/2026-08-07-next-session-prompt.md`.
 
-Tasks 6-10 follow: the CocoIndex app, compose wiring plus the local answering model,
-reducing `document_open`, deleting ~10k lines and the two sidecars, then the gate.
+Two caveats from this section are NOT closed and still bite:
+- the retrieval evidence above, and the later one-question circle, both named the target
+  document in the question, so **retrieval could not fail**. The blind test — ≥6 real
+  documents with vocabulary-sharing distractors, natural questions naming neither file nor
+  content, plus one unanswerable to check abstention — has still never been run;
+- the splitting path is still exercised only by unit tests, because every canary fixture
+  is a single chunk.
 
 ---
 
@@ -193,7 +208,18 @@ still open work, Task 7 deliberately did not silently edit the live `.env`.
 - Modules added under `services/ingest/` are not visible to `ingest.*` imports until the image
   is rebuilt — they are baked in at build time.
 - Run `.sh` gates in **WSL**, not Git Bash.
-- `backups/` and `node_modules/` are now gitignored; `backups/` holds a pre-migration dump.
+- `backups/` and `web/node_modules/` are gitignored; `backups/` holds a pre-migration dump.
+- **MSYS eats a leading `//` in an ARGUMENT, not just in a path.** `git grep '^//go:build '`
+  matches ZERO files under Git-for-Windows because the pattern is rewritten as a UNC path
+  before git sees it; `^\/\/go:build ` and `-F '//go:build'` both match everything. This
+  silently disabled the tagged-tier gate for an unknown length of time (2026-08-07).
+- **A suspiciously fast gate is a gate that never ran.** lefthook prints elapsed time in its
+  summary, and 0.4s against a 61s real runtime reads as a warm cache. Check the duration,
+  not just the tick.
+- **WSL needs `poppler-utils`** or three `filecard` PDF tests fail and `coverage_docker.sh`
+  aborts before computing a number. CI installs it; the local environment did not.
+- `scripts/quality_snapshot_gate.sh` calls `python`, which WSL does not have (`python3`
+  only). Shimmed locally; the script itself is still unfixed.
 
 ---
 
@@ -209,6 +235,20 @@ still open work, Task 7 deliberately did not silently edit the live `.env`.
   reservation, which made the HEAD binary refuse to boot.
 - Disposable ArcadeDB databases from probing: `aura_probe`, `aura_chain_probe`. Production
   `aura_memory` and the per-identity `mem_<uuid>` were never touched.
+
+**Added 2026-08-07:**
+- `aura-llm` serves **Qwen3.5-9B-UD-Q4_K_XL locally** from a pre-fetched path (not
+  `--hf-repo`): 5,966,095,584 bytes, SHA-256
+  `6f5d30666c2d8ae16a306e616d95341dcf3cc46810df84d7e6f5a7d1e4c1b293`, repo commit
+  `3885219b6810b007914f3a7950a8d1b469d598a5`, in the `aura_aura-llm` volume. Verified on
+  GPU: VRAM 1088 → 7211 MiB, 45.1 tok/s, `-c 32768`. Native context is 262,144; the stale
+  Qwythos YaRN pair is gone from compose.
+- **`.env` still points at OpenRouter** (`AURA_LLM_BASE_URL=https://openrouter.ai/api/v1`).
+  It is the operator's live file and was deliberately not edited — flipping it is a
+  prerequisite for any #115 gate run, and a decision to ask about, not to take.
+- **`aura:local` is now OLDER than `master`.** It was last built before the merge, so it
+  does not contain the ported filesystem tools or the two `patch` fixes. Rebuild it before
+  any live verification, or you will measure the previous binary and believe it.
 
 ---
 

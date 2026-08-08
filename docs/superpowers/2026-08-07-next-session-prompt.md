@@ -14,7 +14,8 @@ Leggi PRIMA questi tre file, in quest'ordine:
    la sezione finale `=== SESSION 2026-08-07 (second) ===`, che contiene l'inventario di
    cancellazione già verificato e l'ordine corretto
 
-Branch `feat/document-pipeline-rewrite`, HEAD `ce5927c07`, albero pulito, niente pushato.
+**Sei su `master`, HEAD `bdb3406c3`, già pushato, CI verde** (CI + Skills + CodeQL), albero
+pulito. Il branch `feat/document-pipeline-rewrite` è stato mergiato: non ripartire da lì.
 
 ---
 
@@ -47,10 +48,46 @@ Branch `feat/document-pipeline-rewrite`, HEAD `ce5927c07`, albero pulito, niente
 - **Il cerchio** (`8ab4dbf85`) — file su Garage → pickup automatico in ~19s senza trigger →
   Passage con `source_key` → domanda → risposta corretta dal modello locale.
 - **I tool file** (`ce5927c07`) — i 5 `fs_*` cancellati, i 4 di hermes portati
-  (`read_file`, `write_file`, `patch`, `search_files`). `document_index` e
-  `document_describe` cancellati con loro.
+  (`read_file`, `write_file`, `patch`, `search_files`, con `target` che assorbe glob+grep).
+  `document_index` e `document_describe` cancellati con loro. Il fuzzy di `patch` usa
+  `sergi/go-diff v1.4.0`, non un matcher scritto a mano.
+- **Il set attivo è 12**, allineato a quello dell'agente di riferimento:
+  `ask_user document_open document_search patch read_file read_tool_output search_files
+  send_file shell_exec text_response tool_search write_file`. `todo_write` e `web_search`
+  restano deferred **perché lo sono anche nel riferimento**. `skill` e `swarm_spawn` sono
+  nel set del riferimento ma restano deferred **per peso**: 1.638 e ~1.100 token di
+  descrizione contro poche righe. Tre guardie lo impongono (`always_active_test.go`,
+  `send_file_test.go`, e il gate cache-invariant che verifica `skill` deferred su 23
+  richieste). Copiare il set è metà del lavoro; i byte sono l'altra metà.
+- **La copertura** (`bdb3406c3`) — 85,2% (26576/31207) misurato con
+  `scripts/coverage_docker.sh` sullo stack vivo. `internal/agent/tools` da 74,7% a 86,2%.
 
 ---
+
+## Difetti trovati spingendo. Non sono chiusi tutti, e si ripresentano
+
+Quattro gate dichiaravano di girare **senza girare**. Se un gate è sospettosamente veloce,
+non è cache: guarda quanto ci mette davvero.
+
+- **`tagged-tier-compile` non partiva** dal pre-push. Segnava 0,4 s contro 61 reali, e
+  lefthook stampa il tempo nel sommario, quindi si leggeva come cache calda. Causa: MSYS.
+  `git grep -lz '^//go:build '` non matcha **niente** su Git-for-Windows, perché il pattern
+  inizia con `//` e viene riscritto come path UNC prima che git veda l'argomento — lo
+  stesso mangling che impone `MSYS_NO_PATHCONV` su ogni `docker run` qui. Misurato: forma
+  ancorata 0 file, `^\/\/go:build ` e `-F '//go:build'` tutti. Quale gamba girasse dipendeva
+  da **come il chiamante scriveva la root**. Corretto (`426fca836`), ma la lezione resta.
+- **`.gitignore` ignorava l'intero frontend** (`web/` invece di `web/node_modules/`).
+  eslint, tsc e prettier passavano — leggono il filesystem, non l'indice — mentre knip,
+  che rispetta `.gitignore`, vedeva un progetto vuoto e dichiarava inutilizzate tutte e 32
+  le dipendenze, `cytoscape` compresa mentre un file la importa alla riga 2. Corretto.
+- **`scripts/quality_snapshot_gate.sh` chiama `python`**, che WSL non ha (solo `python3`).
+  Oggi risolto con uno shim in `~/.local/bin`: **lo script va sistemato**, non è chiuso.
+- **`coverage_docker.sh` su WSL richiede `poppler-utils`**. Senza `pdftotext` tre test di
+  `filecard` falliscono e il gate si ferma **prima** di calcolare la copertura — un rosso
+  che non c'entra nulla con la copertura. La CI lo installa; l'ambiente locale no.
+
+Errore di diagnosi da non ripetere: sul primo avevo "normalizzato" il confronto dei path,
+che sembrava la correzione ovvia e invece spostava solo la discovery sulla gamba rotta.
 
 ## Il lavoro: cancellare, non aggiungere
 
@@ -138,3 +175,8 @@ sbagliare: prova molto meno di quanto sembri.
   `docker build -t aura-ingest:local -f docker/aura-ingest/Dockerfile .`
 - Un fallimento su Windows con permessi `0600` vs `0666` è un artefatto dell'ambiente:
   verifica in WSL prima di chiamarlo regressione.
+- `docker/agent-memory` (77 file del sidecar Neo4j ritirato) è sul disco ma **gitignorato**:
+  fa fallire `TestRetiredGraphPlaneStaysOutOfTheComposeDeclarations` in locale e passa in
+  CI, dove un checkout pulito non ce l'ha. È spazzatura cancellabile.
+- Prima di dire "l'ha rotto il branch", riproduci su un worktree di `origin/master` — e
+  controlla che la copia abbia davvero `node_modules`, o il verde è vacuo (mi è successo).
