@@ -54,7 +54,6 @@ func TestKnobRegistry(t *testing.T) {
 		"AURA_GARAGE_ADMIN_TOKEN":     true,
 		"AURA_AUTHULA_SECRET":         true,
 		"AURA_TRACE_ENCRYPT_KEY":      true,
-		"AURA_DOCLING_API_KEY":        true,
 	}
 	gotSecret := map[string]bool{}
 	for _, k := range reg {

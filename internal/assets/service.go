@@ -100,7 +100,7 @@ func (s *Service) Presign(ctx context.Context, req PresignRequest) (PresignRespo
 		return PresignResponse{}, err
 	}
 	assetID := newAssetID()
-	key := objectstore.AssetKey(req.IdentityID, assetID)
+	key := objectstore.AssetKey(assetID, name)
 	asset, err := s.Store.Create(ctx, CreateRequest{
 		IdentityID:        req.IdentityID,
 		SourceKind:        req.SourceKind,

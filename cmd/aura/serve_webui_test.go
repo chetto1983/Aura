@@ -264,48 +264,40 @@ func TestServeWebui(t *testing.T) {
 		}
 	})
 
-	t.Run("/api/documents + metadata writes -> AG-UI handler (document mount)", func(t *testing.T) {
-		for _, route := range []string{"/api/documents", "/api/documents/10000000-0000-0000-0000-000000000001", "/api/documents/10000000-0000-0000-0000-000000000001/versions"} {
+	// The file manager reads and writes JSON. A route missing from THIS mux does not 404
+	// cleanly — it falls through to the embedded SPA, which answers with an HTML shell, and
+	// the component reports "Unexpected non-whitespace character after JSON". That is what
+	// the live cockpit showed, so every verb the widget uses is asserted here.
+	t.Run("/api/filemanager -> AG-UI handler (never the SPA shell)", func(t *testing.T) {
+		for _, probe := range []struct{ method, route string }{
+			{http.MethodGet, "/api/filemanager/files"},
+			{http.MethodGet, "/api/filemanager/files/%2Fcontabilita"},
+			{http.MethodGet, "/api/filemanager/direct"},
+			{http.MethodPost, "/api/filemanager/upload"},
+			{http.MethodPost, "/api/filemanager/files/%2Fcontabilita"},
+			{http.MethodPut, "/api/filemanager/files"},
+			{http.MethodDelete, "/api/filemanager/files"},
+		} {
 			aguiHits = nil
-			resp, err := http.Get(srv.URL + route)
+			req, err := http.NewRequest(probe.method, srv.URL+probe.route, strings.NewReader("{}"))
 			if err != nil {
-				t.Fatalf("GET %s: %v", route, err)
+				t.Fatalf("new %s %s: %v", probe.method, probe.route, err)
+			}
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("%s %s: %v", probe.method, probe.route, err)
 			}
 			raw, _ := io.ReadAll(resp.Body)
 			_ = resp.Body.Close()
-			if len(aguiHits) != 1 || aguiHits[0] != route {
-				t.Fatalf("GET %s did not route to the AG-UI handler: hits=%v body=%s", route, aguiHits, raw)
+			if len(aguiHits) != 1 {
+				t.Fatalf("%s %s did not route to the AG-UI handler: hits=%v body=%s",
+					probe.method, probe.route, aguiHits, raw)
 			}
 			if strings.Contains(string(raw), indexMarker) {
-				t.Fatalf("%s leaked the SPA shell instead of reaching the AG-UI handler", route)
+				t.Fatalf("%s %s leaked the SPA shell instead of reaching the AG-UI handler",
+					probe.method, probe.route)
 			}
-		}
-
-		aguiHits = nil
-		presp, err := http.Post(srv.URL+"/api/documents", "application/json", strings.NewReader(`{"title":"Manual"}`))
-		if err != nil {
-			t.Fatalf("POST /api/documents: %v", err)
-		}
-		praw, _ := io.ReadAll(presp.Body)
-		_ = presp.Body.Close()
-		if len(aguiHits) != 1 || aguiHits[0] != "/api/documents" {
-			t.Fatalf("POST /api/documents did not route to the AG-UI handler: hits=%v body=%s", aguiHits, praw)
-		}
-
-		aguiHits = nil
-		req, err := http.NewRequest(http.MethodPatch, srv.URL+"/api/documents/10000000-0000-0000-0000-000000000001", strings.NewReader(`{"title":"Manual"}`))
-		if err != nil {
-			t.Fatalf("new PATCH document: %v", err)
-		}
-		req.Header.Set("Content-Type", "application/json")
-		dresp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatalf("PATCH document: %v", err)
-		}
-		draw, _ := io.ReadAll(dresp.Body)
-		_ = dresp.Body.Close()
-		if len(aguiHits) != 1 || aguiHits[0] != "/api/documents/10000000-0000-0000-0000-000000000001" {
-			t.Fatalf("PATCH document did not route to the AG-UI handler: hits=%v body=%s", aguiHits, draw)
 		}
 	})
 

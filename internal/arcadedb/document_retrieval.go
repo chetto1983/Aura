@@ -40,14 +40,18 @@ type DenseCandidateQuery struct {
 	Embedding []float64
 }
 
-// PassageCandidate is an immutable passage plus generation and locator evidence.
+// PassageCandidate is an immutable passage plus its provenance and locator evidence.
 type PassageCandidate struct {
-	PassageID          string
-	ProjectionKey      string
-	DocumentID         string
-	SearchDocumentID   string
-	VersionID          string
-	VersionNumber      int64
+	PassageID        string
+	DocumentID       string
+	SearchDocumentID string
+	// SourceKind and SourceKey are where the bytes actually live -- for the only writer
+	// that exists, "s3" and the exact Garage object key. services/ingest has written both
+	// since it was built and arcade.py declares them, noting that Go "doesn't read them
+	// yet"; reading them here is what turns a retrieval hit back into a file in one hop,
+	// instead of the five the catalog used to take.
+	SourceKind         string
+	SourceKey          string
 	RawSHA256          string
 	PipelineGeneration string
 	SchemaVersion      string
@@ -70,8 +74,8 @@ type PassageCandidate struct {
 	DenseDistance      *float64
 }
 
-const passageCandidateFields = "passage_key, passage_id, projection_key, document_id, " +
-	"search_document_id, version_id, version_number, raw_sha256, pipeline_generation, " +
+const passageCandidateFields = "passage_key, passage_id, document_id, " +
+	"search_document_id, source_kind, source_key, raw_sha256, pipeline_generation, " +
 	"schema_version, ordinal, text, normalized_text_sha256, self_ref, heading_path, captions, " +
 	"page_number, bbox_left, bbox_top, bbox_right, bbox_bottom, char_start, char_end, " +
 	"sheet_name, table_name, row_number, column_number, cell_reference, active"
@@ -238,13 +242,30 @@ func (d *DocumentIndex) decodeCandidate(
 	if err != nil {
 		return PassageCandidate{}, "", err
 	}
+	// projection_key, version_id and version_number are NOT required any more.
+	//
+	// They were the generation model: a projection grouped the passages of one document
+	// version so a later generation could tombstone the earlier one wholesale. The writer
+	// that produced them was deleted with the in-process pipeline, and the reconciler that
+	// replaced it removes a document's rows when its object leaves the bucket -- so there
+	// is no second generation to distinguish, and no tombstone to read. services/ingest
+	// writes all three as NULL, which under the old rule made every candidate it produced
+	// unreadable: rows landed, and retrieval returned nothing, with no error anywhere.
+	//
+	// What still has to hold is what a citation depends on: the passage's identity, the
+	// document it came from, its text, and the two digests that stop a citation outliving
+	// the bytes it quotes.
 	required := []struct {
 		key    string
 		target *string
 	}{
-		{"passage_id", new(string)}, {"projection_key", new(string)},
+		{"passage_id", new(string)},
 		{"document_id", new(string)}, {"search_document_id", new(string)},
-		{"version_id", new(string)}, {"raw_sha256", new(string)},
+		// source_key is REQUIRED, not best-effort. It is the only route from a hit back to
+		// the bytes it quotes, so a passage without one can be ranked and cited but never
+		// opened -- an answer the caller cannot verify. Failing here keeps that impossible.
+		{"source_kind", new(string)}, {"source_key", new(string)},
+		{"raw_sha256", new(string)},
 		{"pipeline_generation", new(string)}, {"schema_version", new(string)},
 		{"text", new(string)}, {"normalized_text_sha256", new(string)},
 	}
@@ -255,9 +276,10 @@ func (d *DocumentIndex) decodeCandidate(
 		}
 	}
 	candidate := PassageCandidate{
-		PassageID: *required[0].target, ProjectionKey: *required[1].target,
-		DocumentID: *required[2].target, SearchDocumentID: *required[3].target,
-		VersionID: *required[4].target, RawSHA256: *required[5].target,
+		PassageID:  *required[0].target,
+		DocumentID: *required[1].target, SearchDocumentID: *required[2].target,
+		SourceKind: *required[3].target, SourceKey: *required[4].target,
+		RawSHA256:          *required[5].target,
 		PipelineGeneration: *required[6].target, SchemaVersion: *required[7].target,
 		Text: *required[8].target, NormalizedSHA256: *required[9].target, Leg: leg,
 	}
@@ -269,17 +291,10 @@ func (d *DocumentIndex) decodeCandidate(
 			"candidate schema %q does not match %q", candidate.SchemaVersion, d.schemaVersion(),
 		)
 	}
-	if candidate.ProjectionKey != documentProjectionKey(candidate.DocumentID, candidate.PipelineGeneration) {
-		return PassageCandidate{}, "", fmt.Errorf("candidate projection key does not match its generation")
-	}
-	if passageKey != passageProjectionKey(candidate.ProjectionKey, candidate.PassageID) {
-		return PassageCandidate{}, "", fmt.Errorf("candidate passage key does not match its passage id")
-	}
-	version, err := requiredPositiveInt64(row, "version_number")
-	if err != nil {
-		return PassageCandidate{}, "", err
-	}
-	candidate.VersionNumber = version
+	// The two projection-key equalities and the version_number check went with the
+	// generation model above. passageKey is still read and returned -- it is the row's
+	// unique key, and dedup across the lexical and dense legs needs it -- but it is no
+	// longer required to hash to anything.
 	candidate.Ordinal, err = requiredInt64(row, "ordinal", false)
 	if err != nil {
 		return PassageCandidate{}, "", err
@@ -364,10 +379,6 @@ func candidateLess(left, right PassageCandidate, leg RetrievalLeg) bool {
 		return left.Ordinal < right.Ordinal
 	}
 	return left.PassageID < right.PassageID
-}
-
-func requiredPositiveInt64(row map[string]any, key string) (int64, error) {
-	return requiredInt64(row, key, true)
 }
 
 func requiredInt64(row map[string]any, key string, positive bool) (int64, error) {

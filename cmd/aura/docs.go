@@ -284,7 +284,7 @@ func (i *runtimeDocumentIngestor) IngestPath(ctx context.Context, req documents.
 // IngestDocument persists a non-presigned document in the owner's object store
 // before enqueueing it. It is the canonical ingress used by document_index; the
 // legacy IngestPath method remains internal to the queued processor until the
-// Docling stage replaces it.
+// extraction stage replaces it.
 func (i *runtimeDocumentIngestor) IngestDocument(ctx context.Context, req assets.DocumentIngestRequest) (assets.Asset, error) {
 	if i == nil || i.cfg == nil || i.pool == nil {
 		return assets.Asset{}, fmt.Errorf("document ingestor is not configured")

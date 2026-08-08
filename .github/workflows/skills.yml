@@ -41,12 +41,10 @@ jobs:
       # AURA_ACCESS_TOKEN satisfies the caddy :? interpolation (Phase-17 appliance ingress;
       # caddy is never started here) so `compose up postgres` doesn't fail to parse.
       AURA_ACCESS_TOKEN: ci-not-a-secret
-      # Same reason, three more: `Converge the industrial document pipeline` made these
-      # :?-required on the aura and aura-docling services, so `compose up postgres` could
-      # not even parse the file. `:?` rejects empty as well as unset, so the blank entries
-      # in .env.example do not satisfy it. The embed pair are public model identifiers,
+      # Same reason, two more: they are :?-required on the aura service, so `compose up
+      # postgres` could not even parse the file. `:?` rejects empty as well as unset, so the
+      # blank entries in .env.example do not satisfy it. Both are public model identifiers,
       # not credentials.
-      AURA_DOCLING_API_KEY: ci-not-a-secret
       AURA_EMBED_REVISION: 0f741b5a6585bd53aeb15cd1372c56f2a0f65e12
       AURA_EMBED_FINGERPRINT: b5ce9d77a3fc4b3b39ccb5643c36777911cc4eb46a66962eadfa3f5f60490d63
       POSTGRES_USER: aura

@@ -2,12 +2,15 @@
 
 Passage's property names, its indexes, and its HAS_PASSAGE edge type are NOT
 this module's to invent: they mirror internal/arcadedb/document_schema.go's
-documentSchemaStatements (lines 257-319) exactly, because that is the schema
-Aura's Go retriever reads in production -- a name invented here would write
-rows the product cannot see. document_schema.go survives this rewrite; if its
-statements move, this list must move with them. (DocumentProjection, the
-other vertex type declared there, stays a Go-side concept this Python
-sidecar does not populate -- it writes only Passage rows.)
+documentSchemaStatements exactly, because that is the schema Aura's Go
+retriever reads in production -- a name invented here would write rows the
+product cannot see. document_schema.go survives this rewrite; if its
+statements move, this list must move with them.
+
+DocumentProjection is GONE from both sides (2026-08-08). It was the other
+vertex type declared there, this sidecar never populated it, and the Go
+generation/tombstone writer that was its only author was deleted with the
+in-process pipeline -- so declaring it was dead schema.
 
 One deliberate exception: source_kind/source_key are declared here but not
 in document_schema.go. Go's retriever doesn't read them yet; they exist so a
@@ -45,6 +48,19 @@ import urllib.request
 
 PASSAGE_TYPE = "Passage"
 PASSAGE_EDGE_TYPE = "HAS_PASSAGE"
+DOCUMENT_TYPE = "IndexedDocument"
+
+
+def schema_version(dimensions: int) -> str:
+    """The schema stamp Aura's Go retriever compares every candidate against.
+
+    Mirrors internal/arcadedb/document_schema.go's DocumentIndex.schemaVersion(). The Go
+    reader REJECTS any candidate whose schema_version differs from its own, so this is a
+    contract, not a label: a passage stamped with anything else is written successfully
+    and then never returned. It encodes the properties that would invalidate an index if
+    they changed -- analyzer, similarity, quantization and dimensions.
+    """
+    return f"document-v1:standard-analyzer:cosine:none:{dimensions}"
 
 
 class ArcadeSchemaError(RuntimeError):
@@ -81,7 +97,6 @@ def _passage_ddl(dimensions: int) -> list[str]:
         f"CREATE VERTEX TYPE {t} IF NOT EXISTS",
         f"CREATE PROPERTY {t}.passage_key IF NOT EXISTS STRING",
         f"CREATE PROPERTY {t}.passage_id IF NOT EXISTS STRING",
-        f"CREATE PROPERTY {t}.projection_key IF NOT EXISTS STRING",
         f"CREATE PROPERTY {t}.document_id IF NOT EXISTS STRING",
         f"CREATE PROPERTY {t}.search_document_id IF NOT EXISTS STRING",
         # Not in document_schema.go yet (Go retrieval doesn't consume these):
@@ -90,29 +105,15 @@ def _passage_ddl(dimensions: int) -> list[str]:
         # conflict with the Go-created type -- see this module's docstring.
         f"CREATE PROPERTY {t}.source_kind IF NOT EXISTS STRING",
         f"CREATE PROPERTY {t}.source_key IF NOT EXISTS STRING",
-        f"CREATE PROPERTY {t}.version_id IF NOT EXISTS STRING",
-        f"CREATE PROPERTY {t}.version_number IF NOT EXISTS LONG",
         f"CREATE PROPERTY {t}.raw_sha256 IF NOT EXISTS STRING",
         f"CREATE PROPERTY {t}.pipeline_generation IF NOT EXISTS STRING",
         f"CREATE PROPERTY {t}.schema_version IF NOT EXISTS STRING",
         f"CREATE PROPERTY {t}.ordinal IF NOT EXISTS LONG",
         f"CREATE PROPERTY {t}.text IF NOT EXISTS STRING",
         f"CREATE PROPERTY {t}.normalized_text_sha256 IF NOT EXISTS STRING",
-        f"CREATE PROPERTY {t}.self_ref IF NOT EXISTS STRING",
         f"CREATE PROPERTY {t}.heading_path IF NOT EXISTS LIST OF STRING",
-        f"CREATE PROPERTY {t}.captions IF NOT EXISTS LIST OF STRING",
-        f"CREATE PROPERTY {t}.page_number IF NOT EXISTS LONG",
-        f"CREATE PROPERTY {t}.bbox_left IF NOT EXISTS DOUBLE",
-        f"CREATE PROPERTY {t}.bbox_top IF NOT EXISTS DOUBLE",
-        f"CREATE PROPERTY {t}.bbox_right IF NOT EXISTS DOUBLE",
-        f"CREATE PROPERTY {t}.bbox_bottom IF NOT EXISTS DOUBLE",
         f"CREATE PROPERTY {t}.char_start IF NOT EXISTS LONG",
         f"CREATE PROPERTY {t}.char_end IF NOT EXISTS LONG",
-        f"CREATE PROPERTY {t}.sheet_name IF NOT EXISTS STRING",
-        f"CREATE PROPERTY {t}.table_name IF NOT EXISTS STRING",
-        f"CREATE PROPERTY {t}.row_number IF NOT EXISTS LONG",
-        f"CREATE PROPERTY {t}.column_number IF NOT EXISTS LONG",
-        f"CREATE PROPERTY {t}.cell_reference IF NOT EXISTS STRING",
         # ARRAY_OF_FLOATS, not an untyped list or LIST OF FLOAT: LSM_VECTOR
         # indexes only this exact type, and a Cypher write to a LIST OF FLOAT
         # property fails outright ("declared as LIST of 'FLOAT' but a value
@@ -120,9 +121,7 @@ def _passage_ddl(dimensions: int) -> list[str]:
         f"CREATE PROPERTY {t}.embedding IF NOT EXISTS ARRAY_OF_FLOATS",
         f"CREATE PROPERTY {t}.active IF NOT EXISTS BOOLEAN",
         f"CREATE PROPERTY {t}.created_at IF NOT EXISTS DATETIME",
-        f"CREATE PROPERTY {t}.tombstoned_at IF NOT EXISTS DATETIME",
         f"CREATE INDEX IF NOT EXISTS ON {t} (passage_key) UNIQUE",
-        f"CREATE INDEX IF NOT EXISTS ON {t} (projection_key) NOTUNIQUE",
         f"CREATE INDEX IF NOT EXISTS ON {t} (active, document_id) NOTUNIQUE",
         # The corpus is multilingual (Italian/English business documents), so
         # the analyzer is pinned explicitly rather than left at ArcadeDB's
@@ -137,6 +136,38 @@ def _passage_ddl(dimensions: int) -> list[str]:
         f"CREATE INDEX IF NOT EXISTS ON {t} (embedding) LSM_VECTOR METADATA "
         f'{{ "dimensions": {dimensions}, "similarity": "COSINE", "quantization": "NONE" }}',
         f"CREATE EDGE TYPE {PASSAGE_EDGE_TYPE} IF NOT EXISTS",
+
+        # One record per object, carrying the card. It lives HERE and not in PostgreSQL
+        # because the card leg is a full-text ranking, and ArcadeDB already indexes
+        # Passage.text FULL_TEXT with this same analyzer: putting the card in Postgres
+        # would mean two full-text engines ranking the same words differently. ArcadeDB is
+        # multi-model -- documents, vertices and edges in one store -- so the record and
+        # the passages that came from it sit in the same database and the same query
+        # language.
+        f"CREATE VERTEX TYPE {DOCUMENT_TYPE} IF NOT EXISTS",
+        f"CREATE PROPERTY {DOCUMENT_TYPE}.search_document_id IF NOT EXISTS STRING",
+        f"CREATE PROPERTY {DOCUMENT_TYPE}.source_kind IF NOT EXISTS STRING",
+        f"CREATE PROPERTY {DOCUMENT_TYPE}.source_key IF NOT EXISTS STRING",
+        f"CREATE PROPERTY {DOCUMENT_TYPE}.file_name IF NOT EXISTS STRING",
+        f"CREATE PROPERTY {DOCUMENT_TYPE}.file_name_words IF NOT EXISTS STRING",
+        f"CREATE PROPERTY {DOCUMENT_TYPE}.raw_sha256 IF NOT EXISTS STRING",
+        f"CREATE PROPERTY {DOCUMENT_TYPE}.size_bytes IF NOT EXISTS LONG",
+        f"CREATE PROPERTY {DOCUMENT_TYPE}.passage_count IF NOT EXISTS LONG",
+        f"CREATE PROPERTY {DOCUMENT_TYPE}.card IF NOT EXISTS STRING",
+        f"CREATE PROPERTY {DOCUMENT_TYPE}.indexed_at IF NOT EXISTS DATETIME",
+        f"CREATE INDEX IF NOT EXISTS ON {DOCUMENT_TYPE} (search_document_id) UNIQUE",
+        # Same analyzer as Passage.text on purpose: the card leg and the passage leg must
+        # tokenise a query identically or the two rank the same words differently.
+        f"CREATE INDEX IF NOT EXISTS ON {DOCUMENT_TYPE} (card) FULL_TEXT METADATA "
+        "{analyzer:'org.apache.lucene.analysis.standard.StandardAnalyzer'}",
+        # file_name_words, NOT file_name. MEASURED 2026-08-08: StandardAnalyzer keeps
+        # "clienti_complesso.xlsx" as ONE token -- neither underscore nor dot splits it --
+        # so indexing the raw name makes a file findable only by its exact full spelling
+        # and a search for "clienti" returns nothing. This is the same problem migration
+        # 0081 solved for PostgreSQL with aura.searchable_text ("text as written PLUS the
+        # same text split on every non-alphanumeric run"), and the same fix.
+        f"CREATE INDEX IF NOT EXISTS ON {DOCUMENT_TYPE} (file_name_words) FULL_TEXT METADATA "
+        "{analyzer:'org.apache.lucene.analysis.standard.StandardAnalyzer'}",
     ]
 
 

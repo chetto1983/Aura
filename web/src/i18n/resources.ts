@@ -8,7 +8,7 @@ import {
 } from './resources.composer';
 import { displayEn, displayIt } from './resources.display';
 import { footerEn, footerIt } from './resources.footer';
-import { documentsEn, documentsIt } from './resources.documents';
+import { filesEn, filesIt } from './resources.files';
 import { chatEmptyEn, chatEmptyIt } from './resources.empty';
 import { governanceEn, governanceIt } from './resources.governance';
 import { graphEn, graphIt } from './resources.graph';
@@ -144,7 +144,7 @@ export const resources = {
       },
       ...displayEn,
       ...shareEn,
-      ...documentsEn,
+      ...filesEn,
       ...governanceEn,
       ...graphEn,
       ...settingsEn,
@@ -406,7 +406,7 @@ export const resources = {
       },
       ...displayIt,
       ...shareIt,
-      ...documentsIt,
+      ...filesIt,
       ...governanceIt,
       ...graphIt,
       ...settingsIt,

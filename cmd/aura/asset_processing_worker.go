@@ -11,18 +11,11 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/identity"
-	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const (
-	runtimeIngestionWorkerID = "aura-asset-processing"
-	runtimeDeleteWorkerID    = "aura-document-delete"
-	// Deletion runs one consumer per pass, independent of the ingestion batch size.
-	// A delete pass is a handful of tombstones plus object HEADs, so it does not need
-	// ingestion's width, and inheriting it would multiply the appliance's concurrent
-	// load on a shared 16-core host for no throughput gain.
-	runtimeDeleteWorkerWidth          = 1
+	runtimeIngestionWorkerID          = "aura-asset-processing"
 	runtimeIngestionPollInterval      = time.Second
 	runtimeIngestionWorkerStopTimeout = 30 * time.Second
 )
@@ -61,7 +54,6 @@ func newRuntimeAssetProcessingWorker(
 	cfg *config.Config,
 	pool *pgxpool.Pool,
 	accepted acceptedAssetProcessor,
-	router *usersandbox.SandboxRouter,
 	batchSize int,
 ) *runtimeProcessingWorkers {
 	if pool == nil || accepted == nil {
@@ -77,23 +69,19 @@ func newRuntimeAssetProcessingWorker(
 			)
 		},
 	}
-	// Deletion gets its OWN loop rather than sharing ingestion's tick. Ingestion's
-	// ProcessOnce blocks until every slot returns, and a slot runs a Docling convert
-	// inline for up to AURA_DOCUMENT_CONVERT_TIMEOUT_SEC; sharing a loop let one large
-	// upload postpone every erasure claim for that long, which is a retention breach,
-	// not just latency.
-	workers := []*runtimeIngestionWorker{
+	// Erasure no longer has a loop here. It used to get its OWN, so a long conversion
+	// could not postpone an erasure claim into a retention breach -- but the convert is
+	// gone with the in-process pipeline, and removing a document is now the reconciler's
+	// job: CocoIndex deletes the rows projecting an object once the object leaves the
+	// bucket, in the same pass that would have added it.
+	//
+	// This is a CONTRACT CHANGE, not a cleanup. PRD amendment #114 names durable erasure as
+	// a guarantee and #118 keeps it "in full", so erasure moving from a fenced, retrying,
+	// multi-store proof to eventual reconciliation has to be amended into the PRD and
+	// proven by #115's delete / Garage-absence / post-delete-non-recall checks.
+	return &runtimeProcessingWorkers{workers: []*runtimeIngestionWorker{
 		newRuntimeIngestionWorker(ingestion, runtimeIngestionPollInterval),
-	}
-	if deletion, ok := newRuntimeDurableDeleteTenantProcessor(cfg, pool, accepted, router); ok {
-		workers = append(workers, newRuntimeIngestionWorker(deletion, runtimeIngestionPollInterval))
-	} else {
-		// Never fail silently: without this the whole erasure plane can be absent because
-		// of a nil router or an unexpected processor type, with nothing in the log.
-		slog.Warn("aura serve: durable document delete plane not wired",
-			"reason", "delete worker dependencies unavailable")
-	}
-	return &runtimeProcessingWorkers{workers: workers}
+	}}
 }
 
 // runtimeProcessingWorkers drives independent polling loops so a long-running pass in

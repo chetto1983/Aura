@@ -58,15 +58,29 @@ func TestResolveObjectsFallbackDiscipline(t *testing.T) {
 		}
 	})
 
-	t.Run("ErrNoRows (unprovisioned) -> shared, factory NOT called", func(t *testing.T) {
+	// REWRITTEN, and the old assertion is the reason. It required ErrNoRows to resolve to
+	// the SHARED bucket, which reads as a harmless degradation and is not one: measured on
+	// the live deployment, 26 identities had zero rows in aura.identity_object_store, so
+	// every one of them resolved to the same bucket with the same credential and the file
+	// manager showed each of them everyone else's files. The layer below already forbade
+	// this in as many words -- "must resolve to nothing (fail closed), never to the shared
+	// or another identity's bucket (F-007)" -- so the test was pinning a defect against its
+	// own design.
+	t.Run("unprovisioned -> fail closed, never the shared bucket", func(t *testing.T) {
 		rf := &recordingFactory{store: perID}
 		res := fakeResolver{err: fmt.Errorf("objectstore identity: resolve: %w", pgx.ErrNoRows)}
 		got, bucket, err := resolveObjects(context.Background(), res, rf.factory, shared, unitSharedBucket)
-		if err != nil || got != shared || bucket != unitSharedBucket {
-			t.Fatalf("ErrNoRows = (%v,%q,%v), want shared", got != shared, bucket, err)
+		if err == nil {
+			t.Fatalf("unprovisioned resolved to (%q) instead of failing closed", bucket)
+		}
+		if got != nil || bucket != "" {
+			t.Fatalf("unprovisioned handed back a store/bucket: (%v,%q)", got != nil, bucket)
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			t.Fatalf("err = %v, want the underlying ErrNoRows so callers can still tell why", err)
 		}
 		if len(rf.calls) != 0 {
-			t.Fatalf("factory called on the ErrNoRows fallback, want 0 (never a foreign bucket)")
+			t.Fatalf("factory called %d times while failing closed, want 0", len(rf.calls))
 		}
 	})
 
@@ -145,7 +159,9 @@ func TestObjectResolverBundleStoreForAsset(t *testing.T) {
 		}
 	})
 
-	t.Run("unprovisioned owner (ErrNoRows) -> shared, no crash", func(t *testing.T) {
+	// Same correction on the background-worker path: a processor for an unprovisioned owner
+	// must NOT quietly read and write the shared bucket on that owner's behalf.
+	t.Run("unprovisioned owner -> fail closed, not the shared store", func(t *testing.T) {
 		rf := &recordingFactory{store: perID}
 		b := &ObjectResolverBundle{
 			Resolver:         fakeResolver{err: fmt.Errorf("resolve: %w", pgx.ErrNoRows)},
@@ -153,8 +169,8 @@ func TestObjectResolverBundleStoreForAsset(t *testing.T) {
 			SharedBucket:     unitSharedBucket,
 		}
 		got, err := b.storeForAsset(context.Background(), shared, ownerAsset)
-		if err != nil || got != shared {
-			t.Fatalf("unprovisioned = (%v,%v), want shared fallback", got == shared, err)
+		if err == nil || got != nil {
+			t.Fatalf("unprovisioned owner = (store=%v,%v), want a refusal", got != nil, err)
 		}
 	})
 }

@@ -2,8 +2,8 @@ package documents
 
 import (
 	"math"
+	"path"
 	"sort"
-	"strconv"
 
 	"github.com/chetto1983/aura/internal/arcadedb"
 )
@@ -17,14 +17,25 @@ type rankedDocument struct {
 
 func rankDocuments(
 	cards []RetrievalCard,
-	passages []validatedPassage,
+	passages []arcadedb.PassageCandidate,
 	limit int,
 	topPassages int,
 	forceOpen bool,
 ) []RetrievalDocument {
-	byCatalogID := make(map[string]*rankedDocument, len(cards)+len(passages))
+	// Keyed by search_document_id, which BOTH sides already carry: a card's DocumentID is
+	// aura.documents.search_document_id, and a candidate's is the same string the sidecar
+	// derived from (identity, "s3", source_key).
+	//
+	// It used to be keyed by the card's catalog uuid, and that made the CARD the spine: a
+	// document existed in the answer only because a card created it, and passages attached
+	// to it afterwards. A document reconciled from the bucket has no catalog row at all, so
+	// its passages matched the query and were then dropped on the floor with nothing to
+	// attach to. The passage is the spine now and the card is enrichment -- the shape
+	// cognee uses, where the chunk carries document_id/document_name for reference
+	// rendering rather than joining to find them.
+	byDocumentID := make(map[string]*rankedDocument, len(cards)+len(passages))
 	for rank, card := range cards {
-		doc := ensureRankedDocument(byCatalogID, card)
+		doc := ensureRankedDocumentFromCard(byDocumentID, card)
 		score := 1 + normalizedScore(card.Rank)
 		if score > doc.document.Score {
 			doc.document.Score = score
@@ -35,18 +46,18 @@ func rankDocuments(
 	}
 	legRanks := make(map[arcadedb.RetrievalLeg]int, 2)
 	for _, passage := range passages {
-		doc := ensureRankedDocument(byCatalogID, passage.card)
-		legPriority, score := passageScore(passage.candidate)
+		doc := ensureRankedDocumentFromCandidate(byDocumentID, passage)
+		legPriority, score := passageScore(passage)
 		if legPriority > doc.bestLeg || (legPriority == doc.bestLeg && score > doc.document.Score) {
 			doc.bestLeg, doc.document.Score = legPriority, score
 		}
-		doc.ordinal = min(doc.ordinal, passage.candidate.Ordinal)
-		legRanks[passage.candidate.Leg]++
-		mergePassage(doc, passage.candidate, legRanks[passage.candidate.Leg])
+		doc.ordinal = min(doc.ordinal, passage.Ordinal)
+		legRanks[passage.Leg]++
+		mergePassage(doc, passage, legRanks[passage.Leg])
 	}
 
-	ranked := make([]*rankedDocument, 0, len(byCatalogID))
-	for _, doc := range byCatalogID {
+	ranked := make([]*rankedDocument, 0, len(byDocumentID))
+	for _, doc := range byDocumentID {
 		doc.document.RequiresOpen = forceOpen || len(doc.passages) == 0
 		doc.document.Passages = sortedPassages(doc.passages, topPassages)
 		sortEvidence(doc.document.Evidence)
@@ -71,22 +82,54 @@ func rankDocuments(
 	return out
 }
 
-func ensureRankedDocument(byCatalogID map[string]*rankedDocument, card RetrievalCard) *rankedDocument {
-	if existing := byCatalogID[card.CatalogID]; existing != nil {
-		return existing
-	}
-	doc := &rankedDocument{
+func newRankedDocument(documentID string) *rankedDocument {
+	return &rankedDocument{
 		document: RetrievalDocument{
-			DocumentID: card.DocumentID, CatalogID: card.CatalogID,
-			Title: card.Title, Tags: append([]string(nil), card.Tags...),
-			Digest: card.Digest, Card: card.Card, VersionID: card.VersionID,
-			VersionNumber: card.VersionNumber, OriginalSHA256: card.OriginalSHA256,
-			PipelineGeneration: card.PipelineGeneration,
-			Evidence:           []RetrievalEvidence{}, Passages: []RetrievalPassage{},
+			DocumentID: documentID,
+			Evidence:   []RetrievalEvidence{}, Passages: []RetrievalPassage{},
 		},
 		passages: make(map[string]*RetrievalPassage), ordinal: math.MaxInt64,
 	}
-	byCatalogID[card.CatalogID] = doc
+}
+
+// ensureRankedDocumentFromCard adds the catalog's human-facing fields -- title, tags, the
+// digest and the card body. They are enrichment: a document is perfectly answerable
+// without them, it just answers with a filename instead of a title.
+func ensureRankedDocumentFromCard(byDocumentID map[string]*rankedDocument, card RetrievalCard) *rankedDocument {
+	doc := byDocumentID[card.DocumentID]
+	if doc == nil {
+		doc = newRankedDocument(card.DocumentID)
+		byDocumentID[card.DocumentID] = doc
+	}
+	doc.document.Title = card.Title
+	doc.document.Card = card.Card
+	if doc.document.SourceKey == "" {
+		doc.document.SourceKind, doc.document.SourceKey = card.SourceKind, card.SourceKey
+	}
+	if doc.document.OriginalSHA256 == "" {
+		doc.document.OriginalSHA256 = card.OriginalSHA256
+	}
+	return doc
+}
+
+// ensureRankedDocumentFromCandidate builds the document out of the passage itself, so a
+// document reconciled from the bucket -- which has no card at all -- still reaches the
+// caller. SourceKey is both the title fallback and the route back to the bytes.
+func ensureRankedDocumentFromCandidate(
+	byDocumentID map[string]*rankedDocument, candidate arcadedb.PassageCandidate,
+) *rankedDocument {
+	doc := byDocumentID[candidate.SearchDocumentID]
+	if doc == nil {
+		doc = newRankedDocument(candidate.SearchDocumentID)
+		byDocumentID[candidate.SearchDocumentID] = doc
+	}
+	doc.document.SourceKind, doc.document.SourceKey = candidate.SourceKind, candidate.SourceKey
+	if doc.document.Title == "" {
+		doc.document.Title = path.Base(candidate.SourceKey)
+	}
+	if doc.document.OriginalSHA256 == "" {
+		doc.document.OriginalSHA256 = candidate.RawSHA256
+	}
 	return doc
 }
 
@@ -107,10 +150,14 @@ func mergePassage(doc *rankedDocument, candidate arcadedb.PassageCandidate, rank
 		locator := citationLocator(candidate)
 		passage = &RetrievalPassage{
 			PassageID: candidate.PassageID, Ordinal: candidate.Ordinal, Text: candidate.Text,
+			// document:<search_document_id>@<sha12>#<locator>. The middle field was the
+			// version number, which is always absent now; the digest of the object replaces
+			// it and is strictly better at the job a citation has -- a version number says
+			// which row was current, while the digest says whether these are still the bytes
+			// that were quoted. Twelve hex characters, like every other short digest here.
 			CitationToken: "document:" + candidate.SearchDocumentID + "@" +
-				strconvFormatInt(candidate.VersionNumber) + "#" + locator,
+				shortHash(candidate.RawSHA256) + "#" + locator,
 			CitationLocator: locator, Locator: passageLocator(candidate),
-			VersionID: candidate.VersionID, VersionNumber: candidate.VersionNumber,
 			OriginalSHA256: candidate.RawSHA256, NormalizedSHA256: candidate.NormalizedSHA256,
 			Evidence: []RetrievalEvidence{},
 		}
@@ -219,8 +266,4 @@ func sortEvidence(evidence []RetrievalEvidence) {
 		}
 		return evidence[i].Rank < evidence[j].Rank
 	})
-}
-
-func strconvFormatInt(value int64) string {
-	return strconv.FormatInt(value, 10)
 }

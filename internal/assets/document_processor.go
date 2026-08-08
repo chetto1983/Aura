@@ -28,22 +28,17 @@ type DocumentVersionRecorder interface {
 	) (documents.DocumentVersionRecord, error)
 }
 
-type DocumentPipeline interface {
-	Run(context.Context, documents.PipelineRunRequest) (documents.PipelineRunResult, error)
-}
-
 type DocumentProcessor struct {
 	Objects         objectstore.Store
 	Ingest          DocumentIngestor
 	VersionRecorder DocumentVersionRecorder
-	Pipeline        DocumentPipeline
 	// PerIdentityObjects, when set, resolves the ASSET OWNER's per-identity store so the
 	// object read targets the owner's bucket with the owner's creds. Nil → the shared Objects.
 	PerIdentityObjects *ObjectResolverBundle
 }
 
 func (p *DocumentProcessor) ProcessAsset(ctx context.Context, asset Asset) (Result, error) {
-	if p.Objects == nil || p.Ingest == nil || p.VersionRecorder == nil || p.Pipeline == nil {
+	if p.Objects == nil || p.Ingest == nil || p.VersionRecorder == nil {
 		return Result{}, fmt.Errorf("document processor is not configured")
 	}
 	claim, ok := documents.ClaimedIngestionJob(ctx)
@@ -90,32 +85,32 @@ func (p *DocumentProcessor) ProcessAsset(ctx context.Context, asset Asset) (Resu
 	if record.ReplayedActive {
 		return replayedAssetResult(asset, record), nil
 	}
-	published, err := p.Pipeline.Run(ctx, documents.PipelineRunRequest{
-		Record: record, AssetID: asset.ID, JobID: claim.ID, WorkerID: claim.LockedBy,
-		LeaseGeneration: claim.LeaseGeneration, Title: record.Document.Title,
-		FileName: asset.FileName, MIMEType: asset.MIMEType, Path: path,
-		ObjectBucket: asset.ObjectBucket, Objects: objects,
-	})
-	if err != nil {
-		return Result{}, err
-	}
+	// The bytes are in the bucket and the version is on record; indexing is the ingest
+	// sidecar's job now, reconciled from the bucket rather than driven from here.
+	//
+	// StatusProcessing, NOT StatusSearchable, and the difference is not cosmetic: nothing
+	// here has produced a passage, so claiming searchable would be the skip-as-green lie --
+	// context.go:63 hands the agent only StatusSearchable assets, and it would be handing
+	// over documents retrieval cannot find. WHAT FLIPS IT IS AN OPEN GAP: the in-process
+	// pipeline used to, and "searchable" is now a property of ArcadeDB (does this
+	// source_key have passages?) rather than of a Postgres column. Tracked in
+	// docs/superpowers/specs/2026-08-08-document-plane-two-store-design.md.
 	return Result{
-		Status:     StatusSearchable,
-		DocumentID: published.SearchDocumentID,
-		Summary:    fmt.Sprintf("%s is searchable across %d verified passages.", job.FileName, published.PassageCount),
+		Status:     StatusProcessing,
+		DocumentID: record.Document.SearchDocumentID,
+		Summary:    fmt.Sprintf("%s is stored; the ingest sidecar indexes it from the bucket.", job.FileName),
 		Metadata: map[string]any{
-			"document_job_id":            job.ID,
-			"pipeline_activation_job_id": claim.ID,
-			"document_version_id":        published.VersionID,
-			"pipeline_generation":        published.PipelineGeneration,
-			"passage_count":              published.PassageCount,
+			"document_job_id":     job.ID,
+			"document_version_id": record.Version.ID,
+			"object_bucket":       asset.ObjectBucket,
+			"object_key":          asset.ObjectKey,
 		},
 	}, nil
 }
 
 // replayedAssetResult settles an upload whose bytes are ALREADY the document's published
 // version: the passages, embeddings and projections behind them exist, so re-running the
-// pipeline would spend a Docling conversion — up to fifteen minutes — to arrive back here.
+// pipeline would spend a full conversion — up to fifteen minutes — to arrive back here.
 //
 // Only ReplayedActive earns this. Every other outcome, a replay onto a version still
 // processing included, falls through to Pipeline.Run, whose beginStage resumes from the

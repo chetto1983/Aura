@@ -4,40 +4,38 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"path/filepath"
-	"sort"
+	"path"
 	"strings"
 
-	"github.com/google/uuid"
+	"github.com/chetto1983/aura/internal/arcadedb"
 )
 
-// SearchDocumentResolver maps a content-derived search document id (`doc_<hex>`,
-// what a retrieval hit carries) to the catalog's uuid primary key. The two are
-// different namespaces; PostgresCatalogStore holds the mapping in
-// metadata->>'search_document_id'.
+// DocumentObjectOpener streams one object of one identity's bucket.
 //
-// It is a separate interface rather than a CatalogStore method so the existing
-// CatalogStore fakes keep compiling: resolution is needed by this service alone.
+// It takes a KEY, not an asset id, and that is the whole change: the reconciler records
+// where the bytes live, so nothing has to walk a catalog to find out. The implementation
+// MUST resolve the owner's own store before reading -- this service relies on that as its
+// second gate, not as a courtesy.
 //
-// The resolution names an identity because aura.documents fails closed without one
-// (migration 0087). It is the owner whose document is being opened — OpenDocument's own
-// argument — so the gate is not new, it has simply moved one call earlier.
-type SearchDocumentResolver interface {
-	CatalogIDForSearchDocument(ctx context.Context, identityID, searchDocumentID string) (string, error)
+// An interface rather than a direct dependency because internal/assets imports this
+// package, so importing it back would be a cycle.
+type DocumentObjectOpener interface {
+	OpenObject(ctx context.Context, identityID, key string) (io.ReadCloser, error)
 }
 
-// DocumentAssetOpener opens the stored body of one identity-scoped asset. The
-// implementation MUST re-check ownership before touching the object store — this
-// service relies on that as its second gate, not as a courtesy.
-type DocumentAssetOpener interface {
-	OpenDocumentAsset(ctx context.Context, identityID, assetID string) (io.ReadCloser, error)
+// DocumentRecordLookup resolves the id a retrieval hit carries to the record describing
+// where its bytes live. An interface for the same reason the opener beside it is one: the
+// resolution is the part worth faking, and a concrete index would drag an HTTP server into
+// every test of this service.
+type DocumentRecordLookup interface {
+	DocumentByID(ctx context.Context, identityID, searchDocumentID string) (arcadedb.DocumentCard, error)
 }
 
 // OpenedDocument describes the original file behind an indexed document.
 type OpenedDocument struct {
 	DocumentID string `json:"document_id"`
-	CatalogID  string `json:"catalog_id"`
 	FileName   string `json:"file_name"`
+	SourceKey  string `json:"source_key"`
 	MIMEType   string `json:"mime_type"`
 	SizeBytes  int64  `json:"size_bytes"`
 	SHA256     string `json:"sha256"`
@@ -46,34 +44,33 @@ type OpenedDocument struct {
 // OpenService resolves an indexed document back to the bytes it was made from.
 //
 // Retrieval answers "what does this document say" by returning text, which for a
-// spreadsheet is the wrong question: measured on a 5889-row customer list, an
-// exact lookup scores 100% (BM25) and an aggregate — "how many customers in
-// Torino" — scores 0% at every k, because the answer is a property of the whole
-// set and lives in no passage. Handing over the file removes the ceiling: the
-// agent's container already carries LibreOffice, openpyxl and pandas.
+// spreadsheet is the wrong question: measured on a 5889-row customer list, an exact lookup
+// scores 100% (BM25) and an aggregate -- "how many customers in Torino" -- scores 0% at
+// every k, because the answer is a property of the whole set and lives in no passage.
+// Handing over the file removes the ceiling: the agent's container already carries
+// LibreOffice, openpyxl and pandas.
 //
-// Two identity gates, deliberately. CatalogService.GetDocument is scoped, and
-// the asset opener re-checks ownership before any object-store read (T-IDOR,
-// D-12). A non-owner is refused twice and never reaches storage.
+// ONE HOP. It used to be five -- doc_<hex> to a catalog uuid, to the document, to its
+// active version, to an asset id, to an object -- and every one of them was a place the
+// chain could break, which is exactly what amendment #114's own audit found when catalog
+// rows created by `aura docs ingest` could not satisfy their own document_open contract.
+// The record carries source_key now, so there is nothing to walk.
 type OpenService struct {
-	Catalog  *CatalogService
-	Resolver SearchDocumentResolver
-	Assets   DocumentAssetOpener
+	Index   DocumentRecordLookup
+	Objects DocumentObjectOpener
 }
 
-// OpenDocument streams the original bytes of documentID for identityID. The
-// caller closes the reader. documentID may be either id namespace — a retrieval
-// hit carries the search id, the web catalog carries the uuid, and the agent
-// holds whichever its caller gave it.
+// OpenDocument streams the original bytes of documentID for identityID. The caller closes
+// the reader.
 func (s *OpenService) OpenDocument(
 	ctx context.Context,
 	identityID, documentID string,
 ) (io.ReadCloser, OpenedDocument, error) {
-	if s == nil || s.Catalog == nil {
-		return nil, OpenedDocument{}, fmt.Errorf("document open service has no catalog")
+	if s == nil || s.Index == nil {
+		return nil, OpenedDocument{}, fmt.Errorf("document open service has no document index")
 	}
-	if s.Assets == nil {
-		return nil, OpenedDocument{}, fmt.Errorf("document open service has no asset opener")
+	if s.Objects == nil {
+		return nil, OpenedDocument{}, fmt.Errorf("document open service has no object opener")
 	}
 	documentID = strings.TrimSpace(documentID)
 	if documentID == "" {
@@ -82,90 +79,35 @@ func (s *OpenService) OpenDocument(
 	if strings.TrimSpace(identityID) == "" {
 		return nil, OpenedDocument{}, fmt.Errorf("identity_id is required")
 	}
-
-	catalogID, err := s.catalogID(ctx, identityID, documentID)
+	record, err := s.Index.DocumentByID(ctx, identityID, documentID)
 	if err != nil {
 		return nil, OpenedDocument{}, err
 	}
-	detail, err := s.Catalog.GetDocument(ctx, identityID, catalogID)
-	if err != nil {
-		return nil, OpenedDocument{}, err
-	}
-	version, err := activeVersion(detail)
-	if err != nil {
-		return nil, OpenedDocument{}, fmt.Errorf("document %s: %w", documentID, err)
-	}
-	body, err := s.Assets.OpenDocumentAsset(ctx, identityID, version.AssetID)
+	body, err := s.Objects.OpenObject(ctx, identityID, record.SourceKey)
 	if err != nil {
 		return nil, OpenedDocument{}, fmt.Errorf("open document %s: %w", documentID, err)
 	}
 	return body, OpenedDocument{
-		DocumentID: documentID,
-		CatalogID:  catalogID,
-		FileName:   documentFileName(detail.Document, version),
-		MIMEType:   version.ContentType,
-		SizeBytes:  version.SizeBytes,
-		SHA256:     version.SHA256,
+		DocumentID: record.SearchDocumentID,
+		FileName:   documentFileName(record),
+		SourceKey:  record.SourceKey,
+		SizeBytes:  record.SizeBytes,
+		SHA256:     record.RawSHA256,
 	}, nil
 }
 
-// catalogID normalizes either id namespace to the catalog uuid. A uuid is used
-// as-is; anything else (`doc_<hex>`) goes through the resolver.
-func (s *OpenService) catalogID(ctx context.Context, identityID, documentID string) (string, error) {
-	if _, err := uuid.Parse(documentID); err == nil {
-		return documentID, nil
+// documentFileName recovers a safe base name for the materialized copy.
+//
+// The name becomes a path component in the caller's box, so a key whose base resolves to
+// nothing, to a traversal, or to a dotfile is replaced by the digest rather than trusted.
+func documentFileName(record arcadedb.DocumentCard) string {
+	name := strings.TrimSpace(record.FileName)
+	if name == "" {
+		name = record.SourceKey
 	}
-	if s.Resolver == nil {
-		return "", fmt.Errorf(
-			"document %s is a search id and no catalog resolver is configured", documentID)
-	}
-	catalogID, err := s.Resolver.CatalogIDForSearchDocument(ctx, identityID, documentID)
-	if err != nil {
-		return "", fmt.Errorf("resolve document %s: %w", documentID, err)
-	}
-	return catalogID, nil
-}
-
-// activeVersion picks the version whose bytes the document currently stands for:
-// the one the catalog marks active, else the highest version number. A version
-// without an asset id predates the asset chain and has no original to open.
-func activeVersion(detail DocumentDetail) (DocumentVersion, error) {
-	if len(detail.Versions) == 0 {
-		return DocumentVersion{}, fmt.Errorf("has no stored versions")
-	}
-	versions := append([]DocumentVersion(nil), detail.Versions...)
-	sort.SliceStable(versions, func(i, j int) bool {
-		return versions[i].VersionNumber > versions[j].VersionNumber
-	})
-	chosen := versions[0]
-	if active := strings.TrimSpace(detail.Document.ActiveVersionID); active != "" {
-		for _, version := range versions {
-			if version.ID == active {
-				chosen = version
-				break
-			}
-		}
-	}
-	if strings.TrimSpace(chosen.AssetID) == "" {
-		return DocumentVersion{}, fmt.Errorf(
-			"version %d has no source asset; its original was never stored", chosen.VersionNumber)
-	}
-	return chosen, nil
-}
-
-// documentFileName recovers a safe base name for the materialized copy. The
-// catalog stores the uploaded name as the document title (RecordAssetVersion
-// defaults Title to FileName), so that is the best name available; a title that
-// carries separators or resolves to nothing is replaced rather than trusted,
-// since it becomes a path component.
-func documentFileName(doc Document, version DocumentVersion) string {
-	name := filepath.Base(strings.TrimSpace(doc.Title))
-	name = strings.TrimSpace(strings.ReplaceAll(name, `\`, "/"))
-	if idx := strings.LastIndex(name, "/"); idx >= 0 {
-		name = name[idx+1:]
-	}
+	name = path.Base(strings.ReplaceAll(strings.TrimSpace(name), `\`, "/"))
 	if name == "" || name == "." || name == ".." || strings.HasPrefix(name, ".") {
-		return "document-" + shortHash(version.SHA256)
+		return "document-" + shortHash(record.RawSHA256)
 	}
 	return name
 }

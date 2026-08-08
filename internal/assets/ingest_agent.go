@@ -68,7 +68,7 @@ func (s *Service) ingestObject(ctx context.Context, in objectIngest) (Asset, err
 		return Asset{}, err
 	}
 	assetID := newAssetID()
-	key := objectstore.AssetKey(in.identityID, assetID)
+	key := objectstore.AssetKey(assetID, name)
 	asset, err := s.Store.Create(ctx, CreateRequest{
 		IdentityID:        in.identityID,
 		ThreadID:          in.threadID,

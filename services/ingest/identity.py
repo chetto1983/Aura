@@ -7,8 +7,32 @@ casing, or hash framing silently breaks find-then-open.
 """
 
 import hashlib
+import uuid as _uuid
 
 _DOMAIN = "aura.document.search.v1"
+
+
+def database_for(identity_id: str) -> str:
+    """The ArcadeDB database holding one identity's passages.
+
+    Mirrors internal/arcadedb/tenant.go's DatabaseFor. This is NOT cosmetic and NOT
+    configurable: Aura's Go retriever opens `mem_<uuid>` for the identity it is
+    answering for, so passages written anywhere else are invisible to it no matter how
+    correct their contents are. Writing them to a single shared database is exactly how
+    an ingestion run can look completely successful while retrieval returns nothing.
+
+    Fails closed on a missing or malformed identity, like the Go original: an empty
+    identity used to mean "the shared database", which is the hole that closes.
+    """
+    identity_id = identity_id.strip()
+    if not identity_id:
+        raise ValueError("identity_id is required: passages are per identity")
+    try:
+        parsed = _uuid.UUID(identity_id)
+    except ValueError as exc:
+        raise ValueError(f"identity_id {identity_id!r} is not an identity: {exc}") from exc
+    # str(UUID) is canonical lowercase 8-4-4-4-12, so the mapping is total and injective.
+    return "mem_" + str(parsed).replace("-", "_")
 
 
 def search_document_id(identity_id: str, source_kind: str, source_key: str) -> str:

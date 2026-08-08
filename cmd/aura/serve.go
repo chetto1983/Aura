@@ -436,7 +436,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		WarnThresholdBytes: int64(chat.cfg.RunDirWarnThresholdBytes),
 	}, time.Duration(chat.cfg.RunDirSweepIntervalSec)*time.Second)
 	assetProcessingWorker := newRuntimeAssetProcessingWorker(
-		chat.cfg, chat.pool, chat.assets, chat.sandboxRouter, chat.cfg.AssetProcessingConcurrent,
+		chat.cfg, chat.pool, chat.assets, chat.cfg.AssetProcessingConcurrent,
 	)
 
 	// Crash-orphan reconciler (D-01d): closes a start∧¬end reservation left by a crash

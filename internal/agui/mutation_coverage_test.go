@@ -26,8 +26,6 @@ func TestHTTPMutationCoverageHasCompleteIdempotencyMetadata(t *testing.T) {
 		"POST /api/approvals/{token}/resolve",
 		"POST /api/conversations",
 		"DELETE /api/conversations/{id}",
-		"POST /api/documents",
-		"PATCH /api/documents/{id}",
 		"POST /api/assets/{id}/finalize",
 		"POST /api/governance/mcp",
 		"POST /api/governance/scheduler/{id}/run",

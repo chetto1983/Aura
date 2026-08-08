@@ -9,14 +9,35 @@ import (
 	"time"
 )
 
-func TestAssetKeyContainsNoFilename(t *testing.T) {
-	key := AssetKey("identity-1", "asset-2")
-	if key != "identity/identity-1/asset/asset-2/original" {
-		t.Fatalf("AssetKey() = %q, want identity/identity-1/asset/asset-2/original", key)
+// The layout changed -- an attachment now lands where its owner can see it and the
+// reconciler can read it -- but the privacy rule did not: a key travels into presigned URLs,
+// S3 access logs and error strings, so the file NAME must never appear in one. The extension
+// does, because ".pdf" identifies a format and not a document, and without it the extractor
+// cannot tell how to read the bytes.
+func TestAssetKeyCarriesTheExtensionAndNeverTheName(t *testing.T) {
+	key := AssetKey("asset-2", `C:\Users\me\Quarterly Secrets.pdf`)
+	if key != "chat/asset-2.pdf" {
+		t.Fatalf("AssetKey() = %q, want chat/asset-2.pdf", key)
 	}
-	for _, forbidden := range []string{".pdf", ".jpg", ".png", "invoice", "\\"} {
-		if strings.Contains(key, forbidden) {
-			t.Fatalf("AssetKey() contains filename-like fragment %q in %q", forbidden, key)
+	for _, forbidden := range []string{"quarterly", "secrets", "users", `\`} {
+		if strings.Contains(strings.ToLower(key), forbidden) {
+			t.Fatalf("AssetKey() leaked the filename fragment %q in %q", forbidden, key)
+		}
+	}
+
+	// A name with no usable extension yields none rather than an invented one, and anything
+	// that is not a short alphanumeric suffix is refused: the fragment becomes part of an
+	// object key, so a name like "x.p df" must not survive into one.
+	for name, want := range map[string]string{
+		"nota":               "chat/asset-2",
+		"":                   "chat/asset-2",
+		"archivio.tar.gz":    "chat/asset-2.gz",
+		"strano.p df":        "chat/asset-2",
+		"lungo.averylongext": "chat/asset-2",
+		"REL.PDF":            "chat/asset-2.pdf",
+	} {
+		if got := AssetKey("asset-2", name); got != want {
+			t.Fatalf("AssetKey(%q) = %q, want %q", name, got, want)
 		}
 	}
 }
@@ -24,7 +45,7 @@ func TestAssetKeyContainsNoFilename(t *testing.T) {
 func TestFakeRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	store := NewFake()
-	ref := ObjectRef{Bucket: "bucket", Key: AssetKey("id", "asset")}
+	ref := ObjectRef{Bucket: "bucket", Key: AssetKey("asset", "nota.txt")}
 	original := []byte("hello asset")
 	putAttrs, err := store.Put(ctx, ref, strings.NewReader(string(original)), PutOptions{MIMEType: "text/plain", Size: int64(len(original))})
 	if err != nil {
@@ -272,7 +293,7 @@ func TestBrowserUploadCORSConfigurationAllowsPresignedBrowserPut(t *testing.T) {
 func TestFilesystemRoundTripAndRejectsUnsafeKeys(t *testing.T) {
 	ctx := context.Background()
 	store := NewFilesystem(t.TempDir())
-	ref := ObjectRef{Bucket: "bucket", Key: AssetKey("id", "asset")}
+	ref := ObjectRef{Bucket: "bucket", Key: AssetKey("asset", "nota.txt")}
 
 	putAttrs, err := store.Put(ctx, ref, strings.NewReader("file asset"), PutOptions{MIMEType: "text/plain", Size: int64(len("file asset"))})
 	if err != nil {

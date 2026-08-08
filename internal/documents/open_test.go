@@ -6,279 +6,186 @@ import (
 	"io"
 	"strings"
 	"testing"
+
+	"github.com/chetto1983/aura/internal/arcadedb"
 )
 
-const (
-	testCatalogID  = "10000000-0000-0000-0000-000000000001"
-	testIdentityID = "00000000-0000-0000-0000-000000000001"
-	testAssetID    = "30000000-0000-0000-0000-000000000001"
-)
+// These tests used to cover a five-hop resolution: a doc_<hex> to a catalog uuid, the uuid
+// to a document, the document to its ACTIVE version, that to an asset id, and the asset to
+// an object -- with cases for the uuid namespace, for picking the active version, for
+// falling back to the newest, and for refusing a version with no stored original. Every one
+// of those concepts is gone: a record carries source_key, so there is one hop and no
+// version to choose between.
+//
+// Two guarantees outlived the model and are kept below, because they are about safety
+// rather than shape: the caller's identity is passed to BOTH the lookup and the read, and a
+// file name that becomes a path component is never trusted.
 
-type fakeSearchResolver struct {
-	askedIdentity string
-	asked         string
-	id            string
-	err           error
+type fakeRecordLookup struct {
+	identity string
+	id       string
+	record   arcadedb.DocumentCard
+	err      error
 }
 
-func (f *fakeSearchResolver) CatalogIDForSearchDocument(
+func (f *fakeRecordLookup) DocumentByID(
 	_ context.Context, identityID, searchDocumentID string,
-) (string, error) {
-	f.askedIdentity, f.asked = identityID, searchDocumentID
-	return f.id, f.err
+) (arcadedb.DocumentCard, error) {
+	f.identity, f.id = identityID, searchDocumentID
+	return f.record, f.err
 }
 
-type fakeAssetOpener struct {
-	identityID string
-	assetID    string
-	body       string
-	err        error
+type fakeObjectOpener struct {
+	identity string
+	key      string
+	body     string
+	err      error
 }
 
-func (f *fakeAssetOpener) OpenDocumentAsset(_ context.Context, identityID, assetID string) (io.ReadCloser, error) {
-	f.identityID, f.assetID = identityID, assetID
+func (f *fakeObjectOpener) OpenObject(
+	_ context.Context, identityID, key string,
+) (io.ReadCloser, error) {
+	f.identity, f.key = identityID, key
 	if f.err != nil {
 		return nil, f.err
 	}
 	return io.NopCloser(strings.NewReader(f.body)), nil
 }
 
-func openServiceWith(detail DocumentDetail) (*OpenService, *fakeCatalogStore, *fakeAssetOpener, *fakeSearchResolver) {
-	store := &fakeCatalogStore{detail: detail}
-	assets := &fakeAssetOpener{body: "original bytes"}
-	resolver := &fakeSearchResolver{id: testCatalogID}
-	return &OpenService{
-		Catalog:  &CatalogService{Store: store},
-		Resolver: resolver,
-		Assets:   assets,
-	}, store, assets, resolver
+func openFixture() (*OpenService, *fakeRecordLookup, *fakeObjectOpener) {
+	lookup := &fakeRecordLookup{record: arcadedb.DocumentCard{
+		SearchDocumentID: "doc_" + strings.Repeat("a", 32),
+		SourceKind:       "s3",
+		SourceKey:        "contabilita/2026/fattura-acme.pdf",
+		FileName:         "fattura-acme.pdf",
+		RawSHA256:        strings.Repeat("b", 64),
+		SizeBytes:        22083,
+	}}
+	opener := &fakeObjectOpener{body: "%PDF real bytes"}
+	return &OpenService{Index: lookup, Objects: opener}, lookup, opener
 }
 
-func oneVersionDetail() DocumentDetail {
-	return DocumentDetail{
-		Document: Document{ID: testCatalogID, IdentityID: testIdentityID, Title: "Clienti.xlsx"},
-		Versions: []DocumentVersion{{
-			ID: "20000000-0000-0000-0000-000000000001", DocumentID: testCatalogID,
-			AssetID: testAssetID, VersionNumber: 1, SHA256: "abc", SizeBytes: 331239,
-			ContentType: "application/vnd.ms-excel",
-		}},
-	}
-}
-
-func TestOpenDocument_ResolvesSearchIDThroughTheCatalog(t *testing.T) {
-	service, store, assets, resolver := openServiceWith(oneVersionDetail())
-
-	body, meta, err := service.OpenDocument(context.Background(), testIdentityID, "doc_9f2c")
+func TestOpenDocumentResolvesTheSourceKeyInOneHop(t *testing.T) {
+	service, lookup, opener := openFixture()
+	body, meta, err := service.OpenDocument(t.Context(), retrievalIdentity, lookup.record.SearchDocumentID)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("OpenDocument: %v", err)
 	}
-	defer func() { _ = body.Close() }()
-
-	if resolver.asked != "doc_9f2c" {
-		t.Fatalf("resolver asked for %q, want the search id", resolver.asked)
+	defer body.Close()
+	read, _ := io.ReadAll(body)
+	if string(read) != "%PDF real bytes" {
+		t.Fatalf("body = %q", read)
 	}
-	// The resolution is a read of aura.documents, which fails closed without a principal
-	// (migration 0087), so the identity has to reach the resolver too — not only the two
-	// gates below.
-	if resolver.askedIdentity != testIdentityID {
-		t.Fatalf("resolver asked as %q, want the caller's identity", resolver.askedIdentity)
+	// The key the record carries is the key that was read -- nothing in between resolves,
+	// rewrites or guesses it.
+	if opener.key != lookup.record.SourceKey {
+		t.Fatalf("opened %q, want the record's source key %q", opener.key, lookup.record.SourceKey)
 	}
-	if store.getDocumentID != testCatalogID {
-		t.Fatalf("catalog looked up %q, want the resolved uuid", store.getDocumentID)
-	}
-	// Both gates must carry the caller's identity, not the document's owner field.
-	if store.getIdentityID != testIdentityID || assets.identityID != testIdentityID {
-		t.Fatalf("identity lost: catalog=%q assets=%q", store.getIdentityID, assets.identityID)
-	}
-	if assets.assetID != testAssetID {
-		t.Fatalf("opened asset %q, want %q", assets.assetID, testAssetID)
-	}
-	if meta.FileName != "Clienti.xlsx" || meta.SHA256 != "abc" || meta.SizeBytes != 331239 {
-		t.Fatalf("metadata = %#v", meta)
-	}
-	if meta.DocumentID != "doc_9f2c" || meta.CatalogID != testCatalogID {
-		t.Fatalf("ids = %q / %q, want the caller's id and the resolved uuid", meta.DocumentID, meta.CatalogID)
-	}
-	content, err := io.ReadAll(body)
-	if err != nil || string(content) != "original bytes" {
-		t.Fatalf("body = %q err = %v", content, err)
+	if meta.SourceKey != lookup.record.SourceKey || meta.SHA256 != lookup.record.RawSHA256 ||
+		meta.SizeBytes != 22083 || meta.FileName != "fattura-acme.pdf" {
+		t.Fatalf("meta = %+v", meta)
 	}
 }
 
-func TestOpenDocument_UUIDSkipsTheResolver(t *testing.T) {
-	service, store, _, resolver := openServiceWith(oneVersionDetail())
-	body, _, err := service.OpenDocument(context.Background(), testIdentityID, testCatalogID)
+// The identity must reach BOTH the lookup and the read. The lookup picks the tenant
+// database and the read resolves the owner's own credential, so an identity that stopped
+// at one of them would leave the other reading somebody else's store.
+func TestOpenDocumentPassesTheIdentityToBothGates(t *testing.T) {
+	service, lookup, opener := openFixture()
+	body, _, err := service.OpenDocument(t.Context(), retrievalIdentity, lookup.record.SearchDocumentID)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatal(err)
 	}
-	_ = body.Close()
-	if resolver.asked != "" {
-		t.Fatalf("a catalog uuid was sent through the search resolver (%q)", resolver.asked)
-	}
-	if store.getDocumentID != testCatalogID {
-		t.Fatalf("catalog looked up %q", store.getDocumentID)
+	defer body.Close()
+	if lookup.identity != retrievalIdentity || opener.identity != retrievalIdentity {
+		t.Fatalf("identity reached lookup=%q opener=%q, want %q both",
+			lookup.identity, opener.identity, retrievalIdentity)
 	}
 }
 
-func TestOpenDocument_IdentityGateRefusesAnotherOwnersDocument(t *testing.T) {
-	service, store, assets, _ := openServiceWith(oneVersionDetail())
-	store.getErr = errors.New("document not found")
-
-	if _, _, err := service.OpenDocument(context.Background(), testIdentityID, testCatalogID); err == nil {
-		t.Fatal("a non-owner lookup reported success")
+func TestOpenDocumentSurfacesLookupAndReadFailures(t *testing.T) {
+	service, lookup, _ := openFixture()
+	lookup.err = errors.New("not found")
+	if _, _, err := service.OpenDocument(t.Context(), retrievalIdentity, "doc_x"); err == nil {
+		t.Fatal("a missing record opened successfully")
 	}
-	// The object store must never be reached once the catalog gate refuses: that
-	// ordering IS the IDOR guard, not an optimization.
-	if assets.assetID != "" {
-		t.Fatalf("asset %q was opened after the catalog refused", assets.assetID)
+
+	service, lookup, opener := openFixture()
+	opener.err = errors.New("object store down")
+	if _, _, err := service.OpenDocument(t.Context(), retrievalIdentity, lookup.record.SearchDocumentID); err == nil {
+		t.Fatal("an unreadable object opened successfully")
 	}
 }
 
-func TestOpenDocument_PicksTheActiveVersion(t *testing.T) {
-	detail := DocumentDetail{
-		Document: Document{
-			ID: testCatalogID, Title: "Clienti.xlsx",
-			ActiveVersionID: "version-1",
+func TestOpenDocumentValidatesItsInputsAndWiring(t *testing.T) {
+	service, lookup, _ := openFixture()
+	for name, run := range map[string]func() error{
+		"no document id": func() error {
+			_, _, err := service.OpenDocument(t.Context(), retrievalIdentity, "  ")
+			return err
 		},
-		Versions: []DocumentVersion{
-			{ID: "version-1", AssetID: "asset-v1", VersionNumber: 1},
-			{ID: "version-2", AssetID: "asset-v2", VersionNumber: 2},
+		"no identity": func() error {
+			_, _, err := service.OpenDocument(t.Context(), " ", lookup.record.SearchDocumentID)
+			return err
 		},
-	}
-	service, _, assets, _ := openServiceWith(detail)
-	body, _, err := service.OpenDocument(context.Background(), testIdentityID, testCatalogID)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	_ = body.Close()
-	// The catalog's active pointer wins over "highest number": a rolled-back
-	// document still has the newer version row, and serving it would hand the
-	// agent bytes the user no longer considers current.
-	if assets.assetID != "asset-v1" {
-		t.Fatalf("opened %q, want the catalog's active version", assets.assetID)
-	}
-}
-
-func TestOpenDocument_FallsBackToTheNewestVersion(t *testing.T) {
-	detail := DocumentDetail{
-		Document: Document{ID: testCatalogID, Title: "Clienti.xlsx"},
-		Versions: []DocumentVersion{
-			{ID: "version-1", AssetID: "asset-v1", VersionNumber: 1},
-			{ID: "version-3", AssetID: "asset-v3", VersionNumber: 3},
-			{ID: "version-2", AssetID: "asset-v2", VersionNumber: 2},
+		"no index": func() error {
+			_, _, err := (&OpenService{Objects: &fakeObjectOpener{}}).
+				OpenDocument(t.Context(), retrievalIdentity, "doc_x")
+			return err
 		},
-	}
-	service, _, assets, _ := openServiceWith(detail)
-	body, _, err := service.OpenDocument(context.Background(), testIdentityID, testCatalogID)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	_ = body.Close()
-	if assets.assetID != "asset-v3" {
-		t.Fatalf("opened %q, want the highest version number", assets.assetID)
-	}
-}
-
-func TestOpenDocument_RefusesVersionsWithNoOriginal(t *testing.T) {
-	cases := map[string]DocumentDetail{
-		"no versions at all": {Document: Document{ID: testCatalogID, Title: "x.xlsx"}},
-		"version without an asset": {
-			Document: Document{ID: testCatalogID, Title: "x.xlsx"},
-			Versions: []DocumentVersion{{ID: "version-1", VersionNumber: 1}},
+		"no opener": func() error {
+			_, _, err := (&OpenService{Index: lookup}).
+				OpenDocument(t.Context(), retrievalIdentity, "doc_x")
+			return err
 		},
-	}
-	for name, detail := range cases {
+		"nil service": func() error {
+			_, _, err := (*OpenService)(nil).OpenDocument(t.Context(), retrievalIdentity, "doc_x")
+			return err
+		},
+	} {
 		t.Run(name, func(t *testing.T) {
-			service, _, _, _ := openServiceWith(detail)
-			if _, _, err := service.OpenDocument(context.Background(), testIdentityID, testCatalogID); err == nil {
-				t.Fatal("expected an error: there is no original to hand over")
+			if err := run(); err == nil {
+				t.Fatal("invalid call succeeded")
 			}
 		})
 	}
 }
 
-func TestOpenDocument_ValidatesItsInputsAndWiring(t *testing.T) {
-	detail := oneVersionDetail()
-	t.Run("blank ids", func(t *testing.T) {
-		service, _, _, _ := openServiceWith(detail)
-		if _, _, err := service.OpenDocument(context.Background(), testIdentityID, "  "); err == nil {
-			t.Error("empty document_id accepted")
-		}
-		if _, _, err := service.OpenDocument(context.Background(), " ", testCatalogID); err == nil {
-			t.Error("empty identity accepted")
-		}
-	})
-	t.Run("unconfigured service", func(t *testing.T) {
-		if _, _, err := (&OpenService{}).OpenDocument(context.Background(), testIdentityID, testCatalogID); err == nil {
-			t.Error("a service with no catalog reported success")
-		}
-		if _, _, err := (&OpenService{Catalog: &CatalogService{Store: &fakeCatalogStore{}}}).
-			OpenDocument(context.Background(), testIdentityID, testCatalogID); err == nil {
-			t.Error("a service with no asset opener reported success")
-		}
-	})
-	t.Run("search id with no resolver", func(t *testing.T) {
-		service, _, _, _ := openServiceWith(detail)
-		service.Resolver = nil
-		if _, _, err := service.OpenDocument(context.Background(), testIdentityID, "doc_9f2c"); err == nil {
-			t.Error("a search id was accepted with no way to resolve it")
-		}
-	})
-	t.Run("resolver failure", func(t *testing.T) {
-		service, _, _, resolver := openServiceWith(detail)
-		resolver.err = errors.New("not catalogued")
-		_, _, err := service.OpenDocument(context.Background(), testIdentityID, "doc_9f2c")
-		if err == nil || !strings.Contains(err.Error(), "not catalogued") {
-			t.Errorf("error = %v, want the resolver's reason preserved", err)
-		}
-	})
-	t.Run("asset open failure", func(t *testing.T) {
-		service, _, assets, _ := openServiceWith(detail)
-		assets.err = errors.New("object missing")
-		_, _, err := service.OpenDocument(context.Background(), testIdentityID, testCatalogID)
-		if err == nil || !strings.Contains(err.Error(), "object missing") {
-			t.Errorf("error = %v, want the storage reason preserved", err)
-		}
-	})
-}
-
+// The name becomes a path component inside the caller's box, so anything that could escape
+// the documents directory or hide the file is replaced by the digest.
 func TestDocumentFileName(t *testing.T) {
-	// The title becomes a path component, so anything that could steer the write
-	// elsewhere — or produce a dotfile — is replaced rather than trusted.
-	cases := []struct {
-		name  string
-		title string
-		want  string
+	sha := strings.Repeat("c", 64)
+	for name, test := range map[string]struct {
+		record arcadedb.DocumentCard
+		want   string
 	}{
-		{"plain", "Clienti.xlsx", "Clienti.xlsx"},
-		{"unix path", "/etc/passwd", "passwd"},
-		{"windows path", `C:\Users\x\Clienti.xlsx`, "Clienti.xlsx"},
-		{"traversal", "../../escape.xlsx", "escape.xlsx"},
-		{"empty", "   ", "document-abcdef012345"},
-		{"dotfile", ".bashrc", "document-abcdef012345"},
-		{"dot", ".", "document-abcdef012345"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := documentFileName(
-				Document{Title: tc.title},
-				DocumentVersion{SHA256: "abcdef0123456789"},
-			)
-			if got != tc.want {
-				t.Fatalf("documentFileName(%q) = %q, want %q", tc.title, got, tc.want)
+		"plain name":       {arcadedb.DocumentCard{FileName: "report.pdf", RawSHA256: sha}, "report.pdf"},
+		"strips directory": {arcadedb.DocumentCard{FileName: "a/b/report.pdf", RawSHA256: sha}, "report.pdf"},
+		"strips backslash": {arcadedb.DocumentCard{FileName: `a\b\report.pdf`, RawSHA256: sha}, "report.pdf"},
+		"traversal":        {arcadedb.DocumentCard{FileName: "../../etc/passwd", RawSHA256: sha}, "passwd"},
+		"bare traversal":   {arcadedb.DocumentCard{FileName: "..", RawSHA256: sha}, "document-cccccccccccc"},
+		"dotfile":          {arcadedb.DocumentCard{FileName: ".bashrc", RawSHA256: sha}, "document-cccccccccccc"},
+		"empty falls back to the key": {
+			arcadedb.DocumentCard{SourceKey: "contabilita/listino.xlsx", RawSHA256: sha}, "listino.xlsx",
+		},
+		"empty everything": {arcadedb.DocumentCard{RawSHA256: sha}, "document-cccccccccccc"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := documentFileName(test.record); got != test.want {
+				t.Fatalf("documentFileName = %q, want %q", got, test.want)
 			}
 		})
 	}
 }
 
 func TestShortHash(t *testing.T) {
-	if got := shortHash(""); got != "unknown" {
-		t.Errorf("shortHash(empty) = %q", got)
+	if got := shortHash(strings.Repeat("d", 64)); got != "dddddddddddd" {
+		t.Fatalf("shortHash = %q", got)
+	}
+	if got := shortHash("  "); got != "unknown" {
+		t.Fatalf("shortHash(empty) = %q", got)
 	}
 	if got := shortHash("abc"); got != "abc" {
-		t.Errorf("shortHash(short) = %q", got)
-	}
-	if got := shortHash("0123456789abcdef"); got != "0123456789ab" {
-		t.Errorf("shortHash(long) = %q", got)
+		t.Fatalf("shortHash(short) = %q", got)
 	}
 }

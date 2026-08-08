@@ -9,21 +9,18 @@ import (
 
 	"github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/multimodal"
 	"github.com/chetto1983/aura/internal/objectstore"
+	"github.com/chetto1983/aura/internal/objectstore/garageadmin"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func buildAssetService(cfg *config.Config, pool *pgxpool.Pool, objectStore objectstore.Store) *assets.Service {
-	pipeline, pipelineErr := buildRuntimeDocumentPipeline(cfg, pool)
-	if pipelineErr != nil && pool != nil {
-		slog.Error("aura assets: document pipeline unavailable", "err", pipelineErr)
-	}
 	docProcessor := &assets.DocumentProcessor{
 		Objects:         objectStore,
 		Ingest:          newRuntimeDocumentIngestor(cfg, pool),
 		VersionRecorder: newRuntimeDocumentVersionRecorder(pool),
-		Pipeline:        pipeline,
 	}
 	imageProc := assets.NewImageProcessor(objectStore, visionConfigFrom(cfg))
 	audioProc := assets.NewAudioProcessor(objectStore, sttConfigFrom(cfg))
@@ -85,10 +82,42 @@ func buildObjectResolverBundle(cfg *config.Config, pool *pgxpool.Pool) *assets.O
 		return nil
 	}
 	return &assets.ObjectResolverBundle{
-		Resolver:         resolver,
+		Resolver:         ensuringObjectResolver(cfg, resolver),
 		PerIdentityStore: newCachingPerIdentityStoreFactory(cfg),
 		SharedBucket:     cfg.ObjectStoreBucket,
 	}
+}
+
+// ensuringObjectResolver makes an identity's bucket exist the first time that identity
+// reaches for it, instead of only when the onboarding saga happened to run.
+//
+// EnsureForIdentity already documents itself as "minting it on first use if absent" and is
+// idempotent, but its ONLY caller was the onboarding resource leg. Identities that arrived
+// any other way therefore had no row at all — measured, 26 of them — and the layer above
+// used to answer that by handing every one of them the shared bucket. That is now a
+// refusal (F-007), which is correct and would leave those identities unable to store
+// anything, so the missing half is minting on demand rather than a manual repair step.
+//
+// Falls back to the plain resolver when the Garage admin API is not configured: an
+// interview-only deploy mints nothing, exactly as buildProvisioningPorts decides.
+func ensuringObjectResolver(cfg *config.Config, resolver *objectstore.IdentityStore) assets.ObjectResolver {
+	endpoint := strings.TrimSpace(cfg.GarageAdminEndpoint)
+	token := strings.TrimSpace(cfg.GarageAdminToken)
+	if endpoint == "" || token == "" {
+		return resolver
+	}
+	client, err := garageadmin.New(endpoint, token)
+	if err != nil {
+		slog.Warn("aura assets: garage admin unavailable — buckets are not minted on demand", "err", err)
+		return resolver
+	}
+	return mintingResolver{adapter: newObjectStoreProvisionAdapter(client, resolver)}
+}
+
+type mintingResolver struct{ adapter *objectStoreProvisionAdapter }
+
+func (m mintingResolver) Resolve(ctx context.Context) (objectstore.Credentials, error) {
+	return m.adapter.EnsureForIdentity(ctx, identityctx.IdentityID(ctx))
 }
 
 // newCachingPerIdentityStoreFactory builds a StoreFactory that layers resolved per-identity

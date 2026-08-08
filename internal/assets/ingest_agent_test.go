@@ -61,8 +61,14 @@ func TestIngestAgentFileStoresAcceptedAssetSkippingProcess(t *testing.T) {
 		t.Fatalf("processAsset ran for an agent delivery = %#v (D-03 violated)", got)
 	default:
 	}
-	if !strings.HasPrefix(asset.ObjectKey, "identity/"+serviceIdentityID+"/asset/") {
-		t.Fatalf("asset.ObjectKey = %q, want per-identity AssetKey", asset.ObjectKey)
+	// The identity segment is gone from the key because the BUCKET is per-identity now, so
+	// repeating the id inside a store that belongs to that id separated nothing. What the key
+	// must do is land where the owner can see it and the reconciler can read it.
+	if !strings.HasPrefix(asset.ObjectKey, "chat/") {
+		t.Fatalf("asset.ObjectKey = %q, want it under the browsable chat/ prefix", asset.ObjectKey)
+	}
+	if strings.Contains(asset.ObjectKey, serviceIdentityID) {
+		t.Fatalf("asset.ObjectKey = %q still repeats the identity the bucket already scopes", asset.ObjectKey)
 	}
 	rc, _, err := svc.Objects.Get(context.Background(), objectstore.ObjectRef{Bucket: asset.ObjectBucket, Key: asset.ObjectKey})
 	if err != nil {

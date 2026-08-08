@@ -4,6 +4,8 @@ package objectstore
 import (
 	"context"
 	"io"
+	"path"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -18,6 +20,10 @@ type Attrs struct {
 	SizeBytes int64
 	ETag      string
 	MIMEType  string
+	// ModifiedAt is what the store reports, not when Aura noticed. It was discarded from
+	// every S3 listing until a file browser needed a date column, which is the only thing
+	// that can order "recent" for a human.
+	ModifiedAt time.Time
 }
 
 type ObjectInfo struct {
@@ -30,6 +36,14 @@ type ListRequest struct {
 	Prefix string
 	// Limit bounds returned objects. Zero means no application-level bound.
 	Limit int
+	// Delimiter groups keys server-side, so listing one folder of a large bucket costs one
+	// page instead of every key under it. Empty means a flat listing, which is what every
+	// caller before the file browser wanted.
+	//
+	// A group comes back as an ObjectInfo whose Key ENDS WITH the delimiter and whose size
+	// is zero -- the same shape S3 calls a CommonPrefix. That keeps the interface a single
+	// []ObjectInfo instead of a second return value every existing caller would ignore.
+	Delimiter string
 }
 
 type PutOptions struct {
@@ -59,10 +73,53 @@ type Store interface {
 	Get(context.Context, ObjectRef) (io.ReadCloser, Attrs, error)
 	List(context.Context, ListRequest) ([]ObjectInfo, error)
 	Delete(context.Context, ObjectRef) error
+	// Copy duplicates one object inside the store. It exists so a file manager's move and
+	// rename -- which S3 has no primitive for, both being copy-then-delete -- do not have to
+	// stream every byte out through the daemon and back.
+	Copy(ctx context.Context, src, dst ObjectRef) error
 }
 
-func AssetKey(identityID, assetID string) string {
-	return "identity/" + identityID + "/asset/" + assetID + "/original"
+// AssetKey places an uploaded file where its owner can see it and the reconciler can read
+// it: "chat/<assetID>-<name>" in the identity's own bucket.
+//
+// It used to be "identity/<id>/asset/<id>/original", and every part of that has stopped
+// earning its place:
+//
+//   - The identity segment was the isolation. It is not any more — each identity has its
+//     own bucket, so a key cannot address another's store at all, and repeating the id
+//     inside a bucket that belongs to that id says nothing.
+//   - "identity/" is excluded from the ingest sweep and hidden from the file manager, so an
+//     attachment landing there was invisible AND unindexed: uploading a document in chat
+//     and then asking about it found nothing.
+//   - "original" has no extension. The extractor routes on it, so a .docx arriving as
+//     "original" was fed to Tika as an unknown type and threw — the errors that made a
+//     working pipeline look broken.
+//
+// The EXTENSION is carried and the name is NOT, and that split is the whole design. A key
+// travels into presigned URLs, S3 access logs and error strings, so "Quarterly Secrets.pdf"
+// in a key leaks the document's subject to everyone who sees a link — the reason
+// TestServicePresignNeverPutsFilenameInObjectKey exists and the reason this function used
+// to carry no name at all. ".pdf" leaks nothing and is exactly what the extractor routes
+// on, so the extension comes along and the name stays behind on the asset row.
+func AssetKey(assetID, fileName string) string {
+	return "chat/" + assetID + assetExtension(fileName)
+}
+
+// assetExtension returns a lowercase ".ext", or "" when the name has none.
+//
+// Bounded and character-checked because it is caller-supplied: a chat client or a Telegram
+// message can send any name, and this fragment becomes part of an object key.
+func assetExtension(name string) string {
+	ext := strings.ToLower(path.Ext(path.Base(strings.ReplaceAll(strings.TrimSpace(name), `\`, "/"))))
+	if len(ext) < 2 || len(ext) > 12 {
+		return ""
+	}
+	for _, r := range ext[1:] {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') {
+			return ""
+		}
+	}
+	return ext
 }
 
 // ShareSnapshotKey returns the object-store key for a share's redacted

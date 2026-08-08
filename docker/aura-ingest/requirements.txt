@@ -7,6 +7,10 @@
 # against this exact pin) -- and the S3/Garage bucket is the source this whole
 # rewrite reconciles against. Verified: this extra pulls aiobotocore 3.9.0 and the
 # import then succeeds.
-cocoindex[amazon_s3]==1.0.19
+# [postgres] is load-bearing for the same reason [amazon_s3] is, and was missed the same
+# way: cocoindex's pyproject declares postgres = ["asyncpg>=0.31.0"], and without the extra
+# `cocoindex.connectors.postgres` cannot import. asyncpg appeared in this file's first
+# draft and never shipped, so the document rows had no writer at all.
+cocoindex[amazon_s3,postgres]==1.0.19
 iscc-tika==0.6.0
 neo4j==5.28.1

@@ -1,18 +1,31 @@
 package arcadedb
 
 import (
+	"encoding/json"
 	"math"
+	"strconv"
 	"strings"
 	"testing"
 )
 
+// resultBody moved here with document_projection_test.go's deletion; the retrieval tests
+// are its only remaining callers.
+func resultBody(rows any) string {
+	encoded, _ := json.Marshal(map[string]any{"result": rows})
+	return string(encoded)
+}
+
+// candidateFixture shapes a row the way services/ingest actually writes one: passage_key is
+// "<search_document_id>:<ordinal>", and projection_key / version_id / version_number are
+// absent because the sidecar never sets them. It used to hash the projection keys, which
+// tested the decoder against a writer that no longer exists.
 func candidateFixture(index *DocumentIndex, passageID, documentID string, ordinal int64, scoreKey string, score float64) map[string]any {
 	generation := "generation-1"
-	projectionKey := documentProjectionKey(documentID, generation)
 	return map[string]any{
-		"passage_key": passageProjectionKey(projectionKey, passageID), "passage_id": passageID,
-		"projection_key": projectionKey, "document_id": documentID, "search_document_id": "search-" + documentID,
-		"version_id": "version-1", "version_number": 1, "raw_sha256": strings.Repeat("a", 64),
+		"passage_key": "search-" + documentID + ":" + strconv.FormatInt(ordinal, 10), "passage_id": passageID,
+		"document_id": documentID, "search_document_id": "search-" + documentID,
+		"source_kind": "s3", "source_key": "fatture/" + documentID + ".pdf",
+		"raw_sha256":          strings.Repeat("a", 64),
 		"pipeline_generation": generation, "schema_version": index.schemaVersion(), "ordinal": ordinal,
 		"text": "bounded passage text", "normalized_text_sha256": strings.Repeat("b", 64),
 		"active": true, scoreKey: score,
@@ -175,10 +188,13 @@ func TestCandidateDecoderRejectsMalformedOrStaleRows(t *testing.T) {
 		"inactive":           func(row map[string]any) { row["active"] = false },
 		"fractional ordinal": func(row map[string]any) { row["ordinal"] = 1.5 },
 		"negative score":     func(row map[string]any) { row["lexical_score"] = -1 },
-		"bad projection key": func(row map[string]any) { row["projection_key"] = strings.Repeat("0", 64) },
 		"partial bbox":       func(row map[string]any) { row["bbox_left"] = 1.0 },
 		"partial span":       func(row map[string]any) { row["char_start"] = 1 },
 		"bad headings":       func(row map[string]any) { row["heading_path"] = []any{7} },
+		// "bad projection key" was here. It is gone with the invariant it protected: the
+		// decoder no longer requires projection_key, because the generation model it keyed
+		// was deleted and the only writer that exists never sets it. Keeping the case would
+		// have meant keeping a check that rejected every real row.
 	}
 	for name, mutate := range mutations {
 		t.Run(name, func(t *testing.T) {

@@ -285,7 +285,7 @@ type fakeRuntimeIngestionRetry struct {
 }
 
 // blockingRuntimeIngestionProcessor models an ingestion pass wedged inside a long
-// Docling conversion. Every wait is ctx-aware so a tick racing test cancellation
+// a long conversion. Every wait is ctx-aware so a tick racing test cancellation
 // cannot re-enter and leak the goroutine past Stop into goleak.
 type blockingRuntimeIngestionProcessor struct {
 	entered chan struct{}

@@ -21,7 +21,6 @@ import { fetchOnboardingStatus } from './onboarding/onboardingApi';
 import { useRunUsageOwner } from './chat/useRunUsageOwner';
 import type { ComposerDraftPrompt } from './chat/Composer';
 import { useCreateConversation } from './conversations/useConversations';
-import type { DocumentItem } from './documents/documentApi';
 import { ArtifactsDrawer, ArtifactsResizablePanel } from './shell/ArtifactsShell';
 import { ChatWorkspaceControls } from './shell/ChatWorkspaceControls';
 import { useArtifactsPanel } from './shell/useArtifactsPanel';
@@ -39,7 +38,7 @@ const ExternalStoreChat = lazy(() =>
 const GraphExplorer = lazy(() => import('./graph/GraphExplorer'));
 
 const GovernanceWorkspace = lazy(() => import('./governance/GovernanceWorkspace'));
-const DocumentsWorkspace = lazy(() => import('./documents/DocumentsWorkspace'));
+const FilesWorkspace = lazy(() => import('./files/FilesWorkspace'));
 const SettingsWorkspace = lazy(() => import('./settings/SettingsWorkspace'));
 
 const OnboardingWizard = lazy(() => import('./onboarding/OnboardingWizard'));
@@ -240,24 +239,6 @@ export function AppShell() {
     setComposerDraftPrompt((current) => (current?.nonce === nonce ? undefined : current));
   }, []);
 
-  const askDocument = useCallback(
-    (document: DocumentItem) => {
-      const searchDocumentID =
-        typeof document.metadata.search_document_id === 'string'
-          ? document.metadata.search_document_id
-          : '';
-      const text =
-        searchDocumentID === ''
-          ? t('documents.ask.prompt', { title: document.title })
-          : t('documents.ask.promptWithId', {
-              title: document.title,
-              documentId: searchDocumentID,
-            });
-      requestComposerDraft(text);
-    },
-    [requestComposerDraft, t],
-  );
-
   const edgeSwipe = useEdgeSwipe({
     onLeftEdge: surfaces.openNav,
     onLeftClose: surfaces.closeNav,
@@ -369,7 +350,7 @@ export function AppShell() {
                 : surface === 'governance'
                   ? t('governance.loading')
                   : surface === 'documents'
-                    ? t('documents.loading')
+                    ? t('files.loading')
                     : surface === 'settings'
                       ? t('settings.loading')
                       : t('chat.loading')}
@@ -381,7 +362,7 @@ export function AppShell() {
           ) : surface === 'governance' ? (
             <GovernanceWorkspace />
           ) : surface === 'documents' ? (
-            <DocumentsWorkspace mobileMenu={documentsMobileMenu} onAskDocument={askDocument} />
+            <FilesWorkspace mobileMenu={documentsMobileMenu} />
           ) : surface === 'settings' ? (
             <SettingsWorkspace onCreateIdentity={openCreateIdentity} />
           ) : (

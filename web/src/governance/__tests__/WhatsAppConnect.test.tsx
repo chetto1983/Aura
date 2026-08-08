@@ -137,4 +137,19 @@ describe('WhatsAppConnect', () => {
     expect(await screen.findByText(/WhatsApp bridge offline/i)).toBeTruthy();
     expect(screen.queryByRole('img')).toBeNull();
   });
+  it('offers a new code while waiting, because the one on screen is probably dead', async () => {
+    // A pairing code lasts about a minute; an operator opening this panel later is looking
+    // at a code that renders perfectly and scans into nothing. Logout re-arms pairing on
+    // the bridge, so it is the only lever that produces a live code without restarting the
+    // container — which is what the operator had to do before.
+    whatsappConnectStatus.mockResolvedValue({ paired: false, jid: '', state: 'waiting_qr' });
+    whatsappConnectLogout.mockResolvedValue(undefined);
+    renderConnect();
+
+    const button = await screen.findByRole('button', { name: 'New code' });
+    fireEvent.click(button);
+    await waitFor(() => {
+      expect(whatsappConnectLogout).toHaveBeenCalled();
+    });
+  });
 });

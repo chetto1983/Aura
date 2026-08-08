@@ -130,9 +130,10 @@ type Server struct {
 	// share is the WEBSHARE-02/03 share-lifecycle API (plan 37F-10) the share route
 	// handlers call; nil until SetShareService wires it (D-A2-02 narrow seam).
 	share            ShareService
-	documentCatalog  DocumentCatalogService
-	documentEvents   DocumentEventService
-	storageOrphans   StorageOrphanService
+	files            FileBrowser
+	fileObjects      FileObjectOpener
+	fileWrites       FileObjectWriter
+	fileOps          FileOperations
 	images           ImageFetcher
 	graph            GraphView
 	governance       GovernanceProviders
@@ -360,8 +361,7 @@ func (s *Server) Mux() http.Handler {
 	// handler (composer_api.go); the parent-mux mount (bare aguiHandler, RequireAuth-only —
 	// NOT governance.read) lives in cmd/aura/serve_webui_composer.go.
 	s.registerComposerRoutes(mux)
-	s.registerDocumentRoutes(mux)
-	s.registerStorageOrphanRoutes(mux)
+	s.registerFileRoutes(mux)
 	// GRAPH-01 read-only graph-explorer routes (Phase 27 plan 27-02): GET /api/graph/schema
 	// + POST /api/graph/query. Colocated with their handlers; the parent-mux mount behind
 	// RequireAuth (no RequireCapability — read-only milestone) lives in

@@ -84,11 +84,17 @@ func wireAGUIServer(chat *chatEnv, store *cron.Store, scheduler *cron.Scheduler,
 	aguiServer.SetAssetService(chat.assets)
 	aguiServer.SetOwnerExportDestination(ownerExports)
 	aguiServer.SetShareService(shareAPI)
-	aguiServer.SetDocumentCatalog(withDocumentRetriever(
-		buildDocumentCatalogService(chat), chat.cfg, chat.pool,
-	))
-	aguiServer.SetDocumentEvents(buildDocumentEventService(chat))
-	aguiServer.SetStorageOrphans(buildStorageOrphanService(chat, objectStore))
+	// Wire the file manager's two seams (the listing and the byte stream behind a download).
+	// Without them /api/filemanager/* answers 503 and the cockpit's file browser is dead. It
+	// replaces the catalog listing, which only ever had rows for uploaded documents — so a
+	// document reconciled from the bucket was invisible to the UI no matter that it was
+	// fully indexed and answerable.
+	fileObjects := buildFileObjectAccess(chat.cfg, chat.pool, objectStore)
+	fileBrowser := buildFileBrowser(chat.cfg, chat.pool, objectStore)
+	aguiServer.SetFileBrowser(fileBrowser)
+	aguiServer.SetFileOpener(fileObjects)
+	aguiServer.SetFileWriter(fileObjects)
+	aguiServer.SetFileOperations(fileBrowser)
 	// Wire the cross-thread HITL approval read (APRV-01 / D-04). Without this the
 	// GET /api/approvals poll answers 503 and the whole approval center is dead in
 	// production — SetApprovalStore was only ever called in tests, so the live daemon

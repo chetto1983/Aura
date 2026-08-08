@@ -41,7 +41,8 @@ func TestDocumentSearchReturnsProvenanceBearingPassages(t *testing.T) {
 		Status:  documents.RetrievalComplete,
 		Documents: []documents.RetrievalDocument{{
 			DocumentID: "doc_9f2c", Title: "Clienti.xlsx",
-			Tags: []string{"clienti", "2026"}, OriginalSHA256: strings.Repeat("a", 64),
+			SourceKind: "s3", SourceKey: "contabilita/Clienti.xlsx",
+			OriginalSHA256: strings.Repeat("a", 64),
 			Passages: []documents.RetrievalPassage{{
 				Text:          "Il codice cliente di WPT SRL è C-1042.",
 				CitationToken: "document:doc_9f2c@2#sheet=Clienti;cell=A42",

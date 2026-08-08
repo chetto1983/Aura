@@ -25,16 +25,12 @@ func TestDocumentProcessorStreamsObjectToIngestPath(t *testing.T) {
 		Document: documents.Document{ID: "catalog-1", IdentityID: "00000000-0000-0000-0000-000000000001", SearchDocumentID: "doc-1", Title: "Manual"},
 		Version:  documents.DocumentVersion{ID: "version-1", IdentityID: "00000000-0000-0000-0000-000000000001", DocumentID: "catalog-1", SearchDocumentID: "doc-1", VersionNumber: 1, PipelineGeneration: 1},
 	}}
-	pipeline := &recordingDocumentPipeline{result: documents.PipelineRunResult{
-		DocumentID: "catalog-1", SearchDocumentID: "doc-1", VersionID: "version-1",
-		VersionNumber: 1, PipelineGeneration: 1, PassageCount: 3,
-	}}
 	ctx := documents.WithClaimedIngestionJob(context.Background(), documents.IngestionJob{
 		ID: "queue-job-1", IdentityID: "00000000-0000-0000-0000-000000000001", AssetID: "asset-1",
 		LockedBy: "worker-1", LeaseGeneration: 1,
 	})
 
-	result, err := (&DocumentProcessor{Objects: objects, Ingest: ingest, VersionRecorder: recorder, Pipeline: pipeline}).ProcessAsset(ctx, Asset{
+	result, err := (&DocumentProcessor{Objects: objects, Ingest: ingest, VersionRecorder: recorder}).ProcessAsset(ctx, Asset{
 		ID:           "asset-1",
 		IdentityID:   "00000000-0000-0000-0000-000000000001",
 		SourceKind:   SourceWeb,
@@ -50,8 +46,12 @@ func TestDocumentProcessorStreamsObjectToIngestPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ProcessAsset: %v", err)
 	}
-	if result.Status != StatusSearchable || result.DocumentID != "doc-1" {
-		t.Fatalf("result = %+v, want searchable doc-1", result)
+	// StatusProcessing, not StatusSearchable. Nothing in this path produces a passage any
+	// more -- the ingest sidecar reconciles the bucket -- and context.go:63 hands the agent
+	// only StatusSearchable assets, so claiming searchable here would offer the agent a
+	// document retrieval cannot yet find.
+	if result.Status != StatusProcessing || result.DocumentID != "doc-1" {
+		t.Fatalf("result = %+v, want processing doc-1", result)
 	}
 	if result.Metadata["document_job_id"] != "job-1" {
 		t.Fatalf("metadata = %#v, want the document job id", result.Metadata)
@@ -59,10 +59,13 @@ func TestDocumentProcessorStreamsObjectToIngestPath(t *testing.T) {
 	if _, leaked := result.Metadata["sparse_chunks"]; leaked {
 		t.Fatalf("metadata still carries sparse_chunks: %#v", result.Metadata)
 	}
-	// The summary is user-visible on every upload. It used to read "manual.pdf indexed
-	// with 0 searchable chunks" — always zero, because ingest stopped chunking.
-	if !strings.Contains(result.Summary, "manual.pdf") || !strings.Contains(result.Summary, "3 verified passages") {
-		t.Fatalf("Summary = %q, want the verified passage count", result.Summary)
+	// The object coordinates are the handoff to the sidecar: they are what a source_key on a
+	// Passage is later matched against, so losing them here breaks find-then-open silently.
+	if result.Metadata["object_bucket"] != "b" || result.Metadata["object_key"] != "k" {
+		t.Fatalf("metadata = %#v, want the object coordinates the sidecar indexes from", result.Metadata)
+	}
+	if !strings.Contains(result.Summary, "manual.pdf") || !strings.Contains(result.Summary, "sidecar") {
+		t.Fatalf("Summary = %q, want it to name the file and say indexing is out of process", result.Summary)
 	}
 	if ingest.req.OriginalPath != "object://b/k" {
 		t.Fatalf("OriginalPath = %q, want object://b/k", ingest.req.OriginalPath)
@@ -84,9 +87,6 @@ func TestDocumentProcessorStreamsObjectToIngestPath(t *testing.T) {
 	}
 	if recorder.hashes.SHA256 != "bb094c25184067415837d8dc66cfa65366384a80625877252719369a2dc80575" || recorder.hashes.SHA1 == "" {
 		t.Fatalf("version recorder hashes = %#v", recorder.hashes)
-	}
-	if pipeline.req.JobID != "queue-job-1" || pipeline.req.Objects != objects || pipeline.req.Path == "" {
-		t.Fatalf("pipeline request = %#v", pipeline.req)
 	}
 }
 
@@ -130,17 +130,4 @@ func (r *recordingVersionRecorder) RecordDocumentAsset(
 	r.job = job
 	r.hashes = hashes
 	return r.record, r.err
-}
-
-type recordingDocumentPipeline struct {
-	req    documents.PipelineRunRequest
-	result documents.PipelineRunResult
-	err    error
-	calls  int
-}
-
-func (p *recordingDocumentPipeline) Run(_ context.Context, req documents.PipelineRunRequest) (documents.PipelineRunResult, error) {
-	p.req = req
-	p.calls++
-	return p.result, p.err
 }

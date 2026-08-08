@@ -51,6 +51,10 @@ export const governanceEn = {
         scanInstructions:
           'On your phone open WhatsApp → Settings → Linked Devices → Link a Device, then scan this code.',
         qrAlt: 'WhatsApp linking QR code',
+        qrExpiryNote:
+          'A pairing code lasts about a minute. If scanning does nothing, ask for a new one.',
+        newCode: 'New code',
+        newCodeError: "Couldn't start a new pairing. Try again.",
       },
       calendar: {
         heading: 'Connect calendar / PIM account',
@@ -253,6 +257,10 @@ export const governanceIt = {
         scanInstructions:
           'Sul telefono apri WhatsApp → Impostazioni → Dispositivi collegati → Collega un dispositivo, poi inquadra questo codice.',
         qrAlt: 'Codice QR per collegare WhatsApp',
+        qrExpiryNote:
+          'Un codice di abbinamento dura circa un minuto. Se la scansione non fa nulla, chiedine uno nuovo.',
+        newCode: 'Nuovo codice',
+        newCodeError: 'Impossibile avviare un nuovo abbinamento. Riprova.',
       },
       calendar: {
         heading: 'Collega account calendario / PIM',

@@ -4,10 +4,10 @@ package assets
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/objectstore"
-	"github.com/jackc/pgx/v5"
 )
 
 // ObjectResolver resolves the per-identity S3 credentials for the identity carried on ctx
@@ -29,10 +29,9 @@ type StoreFactory func(objectstore.Credentials) (objectstore.Store, error)
 // owner-scoping that already gates asset record/presigned-URL access:
 //   - resolver/factory nil          → the injected shared store+bucket (backward compat: the
 //     pre-resolver shared path, so every existing shared-path unit test is unaffected).
-//   - Resolve → pgx.ErrNoRows       → the shared store+bucket EXPLICITLY. An unprovisioned
-//     non-local identity degrades to shared; IdentityStore.Resolve fail-closes a FOREIGN
-//     identity to ErrNoRows, so this can NEVER resolve to a foreign bucket (F-007).
-//   - Resolve → any other error     → propagate (a real fault: bad KEK, DB down, decrypt fail).
+//   - Resolve → ANY error           → propagate. "Not provisioned" is an error like any
+//     other here: degrading it to the shared bucket is what put 26 identities in one
+//     bucket with one credential (see the body).
 //   - creds.Bucket == sharedBucket  → the shared store (IdentityStore.Resolve returns the
 //     shared creds for the local/empty principal, D-11 operator-unchanged; no client rebuild).
 //   - otherwise                     → a per-identity store built from the resolved creds.
@@ -42,10 +41,24 @@ func resolveObjects(ctx context.Context, resolver ObjectResolver, factory StoreF
 	}
 	creds, err := resolver.Resolve(ctx)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return shared, sharedBucket, nil
-		}
-		return nil, "", err
+		// NO shared-bucket fallback on "not provisioned". The layer below says why in
+		// terms this code was quietly overriding: "an identity without its own provisioned
+		// key must resolve to nothing (fail closed), never to the shared or another
+		// identity's bucket (F-007)" -- IdentityStore.Resolve. Catching ErrNoRows here
+		// undid exactly that.
+		//
+		// Measured on the live deployment 2026-08-08: 26 identities, ZERO rows in
+		// aura.identity_object_store, so every one of them resolved to the SAME shared
+		// bucket with the SAME credentials. The file manager lists a bucket root, so each
+		// identity could list, download, rename and delete every other identity's files.
+		// The per-key "identity/<id>/" prefix had been the only thing separating them, and
+		// it is a naming convention, not a boundary.
+		//
+		// Failing closed makes an unprovisioned identity an ERROR at the seam instead of a
+		// silent share. Provisioning mints the bucket (objectStoreProvisionAdapter.
+		// EnsureForIdentity); the operator principal is answered by isShared before this
+		// point and is unaffected.
+		return nil, "", fmt.Errorf("resolve object store for identity: %w", err)
 	}
 	if creds.Bucket == sharedBucket {
 		return shared, sharedBucket, nil
