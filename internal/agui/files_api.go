@@ -185,7 +185,13 @@ func (s *Server) handleFileDirect(w http.ResponseWriter, r *http.Request) {
 	header := w.Header()
 	header.Set("X-Content-Type-Options", "nosniff")
 	if inlineDisposition(r) {
-		header.Set("Content-Security-Policy", "sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'")
+		// `sandbox` alone is the control: it drops the response into an opaque origin, so no
+		// script runs and nothing can reach the cockpit's session. Adding default-src 'none'
+		// on top blocked the document's OWN resources — the browser console filled with
+		// "Blocked script execution ... the document's frame is sandboxed" and a viewer that
+		// needs to load anything (a PDF, an image, a stylesheet) could not render at all.
+		// That is a different thing from being safe, and it made a working feature useless.
+		header.Set("Content-Security-Policy", "sandbox")
 		header.Set("Content-Type", mimeOrOctetStream(attrs.MIMEType))
 		header.Set("Content-Disposition", inlineContentDisposition(path.Base(key)))
 	} else {

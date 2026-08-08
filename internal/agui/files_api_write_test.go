@@ -217,8 +217,11 @@ func TestFileWritesSurfaceStoreFailures(t *testing.T) {
 func TestFileDirectSandboxesAnInlineOpen(t *testing.T) {
 	opener := &fakeFileOpener{body: "<h1>ciao</h1>", mime: "text/html"}
 	rec := serveFiles(t, fileServer(nil, opener), fileManagerBase+"/direct?id=%2Fnota.html")
-	if got := rec.Header().Get("Content-Security-Policy"); !strings.HasPrefix(got, "sandbox") {
-		t.Fatalf("Content-Security-Policy = %q, want a sandbox", got)
+	// The sandbox directive is the whole control: an opaque origin, so no script runs and
+	// nothing reaches the cockpit's session. It must not carry default-src 'none' with it --
+	// that also blocks the document's own resources, so nothing renders.
+	if got := rec.Header().Get("Content-Security-Policy"); got != "sandbox" {
+		t.Fatalf("Content-Security-Policy = %q, want exactly \"sandbox\"", got)
 	}
 	if got := rec.Header().Get("Content-Disposition"); !strings.HasPrefix(got, "inline") {
 		t.Fatalf("Content-Disposition = %q, want inline", got)
