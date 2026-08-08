@@ -48,6 +48,7 @@ import urllib.request
 
 PASSAGE_TYPE = "Passage"
 PASSAGE_EDGE_TYPE = "HAS_PASSAGE"
+DOCUMENT_TYPE = "IndexedDocument"
 
 
 def schema_version(dimensions: int) -> str:
@@ -135,6 +136,38 @@ def _passage_ddl(dimensions: int) -> list[str]:
         f"CREATE INDEX IF NOT EXISTS ON {t} (embedding) LSM_VECTOR METADATA "
         f'{{ "dimensions": {dimensions}, "similarity": "COSINE", "quantization": "NONE" }}',
         f"CREATE EDGE TYPE {PASSAGE_EDGE_TYPE} IF NOT EXISTS",
+
+        # One record per object, carrying the card. It lives HERE and not in PostgreSQL
+        # because the card leg is a full-text ranking, and ArcadeDB already indexes
+        # Passage.text FULL_TEXT with this same analyzer: putting the card in Postgres
+        # would mean two full-text engines ranking the same words differently. ArcadeDB is
+        # multi-model -- documents, vertices and edges in one store -- so the record and
+        # the passages that came from it sit in the same database and the same query
+        # language.
+        f"CREATE VERTEX TYPE {DOCUMENT_TYPE} IF NOT EXISTS",
+        f"CREATE PROPERTY {DOCUMENT_TYPE}.search_document_id IF NOT EXISTS STRING",
+        f"CREATE PROPERTY {DOCUMENT_TYPE}.source_kind IF NOT EXISTS STRING",
+        f"CREATE PROPERTY {DOCUMENT_TYPE}.source_key IF NOT EXISTS STRING",
+        f"CREATE PROPERTY {DOCUMENT_TYPE}.file_name IF NOT EXISTS STRING",
+        f"CREATE PROPERTY {DOCUMENT_TYPE}.file_name_words IF NOT EXISTS STRING",
+        f"CREATE PROPERTY {DOCUMENT_TYPE}.raw_sha256 IF NOT EXISTS STRING",
+        f"CREATE PROPERTY {DOCUMENT_TYPE}.size_bytes IF NOT EXISTS LONG",
+        f"CREATE PROPERTY {DOCUMENT_TYPE}.passage_count IF NOT EXISTS LONG",
+        f"CREATE PROPERTY {DOCUMENT_TYPE}.card IF NOT EXISTS STRING",
+        f"CREATE PROPERTY {DOCUMENT_TYPE}.indexed_at IF NOT EXISTS DATETIME",
+        f"CREATE INDEX IF NOT EXISTS ON {DOCUMENT_TYPE} (search_document_id) UNIQUE",
+        # Same analyzer as Passage.text on purpose: the card leg and the passage leg must
+        # tokenise a query identically or the two rank the same words differently.
+        f"CREATE INDEX IF NOT EXISTS ON {DOCUMENT_TYPE} (card) FULL_TEXT METADATA "
+        "{analyzer:'org.apache.lucene.analysis.standard.StandardAnalyzer'}",
+        # file_name_words, NOT file_name. MEASURED 2026-08-08: StandardAnalyzer keeps
+        # "clienti_complesso.xlsx" as ONE token -- neither underscore nor dot splits it --
+        # so indexing the raw name makes a file findable only by its exact full spelling
+        # and a search for "clienti" returns nothing. This is the same problem migration
+        # 0081 solved for PostgreSQL with aura.searchable_text ("text as written PLUS the
+        # same text split on every non-alphanumeric run"), and the same fix.
+        f"CREATE INDEX IF NOT EXISTS ON {DOCUMENT_TYPE} (file_name_words) FULL_TEXT METADATA "
+        "{analyzer:'org.apache.lucene.analysis.standard.StandardAnalyzer'}",
     ]
 
 

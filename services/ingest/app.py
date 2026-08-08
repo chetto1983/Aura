@@ -17,15 +17,13 @@ import hashlib
 import json
 import os
 import pathlib
+import re
 import subprocess
 import tempfile
 import urllib.request
 
-import asyncpg
 import cocoindex as coco
 from cocoindex.connectors import amazon_s3, neo4j
-from cocoindex.connectors import postgres as pg
-from cocoindex.connectorkits import target as coco_target
 
 from ingest import arcade, chunk, extract, identity, source
 
@@ -56,35 +54,8 @@ _LIVE = os.environ.get("AURA_INGEST_LIVE", "").strip().lower() in {"1", "true", 
 _INTERVAL_S = float(os.environ.get("AURA_INGEST_INTERVAL_SEC", "60"))
 
 KG_DB = coco.ContextKey[neo4j.ConnectionFactory]("kg_db")
-PG_DB = coco.ContextKey[asyncpg.Pool]("pg_db")
 S3 = coco.ContextKey[object]("s3_client")
 
-# The DSN must be aura_app's, NOT aura_migrate's. aura_migrate owns these tables and
-# migration 0087 uses ENABLE rather than FORCE, so the owner bypasses row-level security
-# entirely -- connecting as it would silently discard the isolation this pool's init hook
-# is here to enforce.
-PG_DSN = os.environ.get("AURA_INGEST_PG_DSN", "").strip()
-
-
-async def _set_identity(conn: asyncpg.Connection) -> None:
-    """Stamp app.current_identity on every ACQUIRED connection.
-
-    Wired as asyncpg's `setup=`, not `init=`, and the difference is the whole point.
-    `init` runs once when a connection is created; `setup` runs on every acquire. asyncpg
-    resets a connection when it is RELEASED back to the pool -- RESET ALL clears exactly
-    this setting -- so an identity stamped in `init` survives only until the first release
-    and every acquire after that writes with no identity at all.
-
-    MEASURED 2026-08-08, and measured WRONG the first time: a spike that acquired one
-    connection and used it immediately showed `init` working, then the real target failed
-    with "new row violates row-level security policy for table ingested_documents" as soon
-    as it released and re-acquired. Migration 0087's policy is fail-closed, so the symptom
-    is a refusal rather than a silently unowned row -- which is the good outcome, and the
-    reason the policy is written that way.
-    """
-    await conn.execute(
-        "SELECT set_config('app.current_identity', $1, false)", _S3_CONFIG.identity_id
-    )
 
 
 @coco.lifespan
@@ -94,32 +65,36 @@ async def coco_lifespan(builder: coco.EnvironmentBuilder):
     arcade.ensure_schema(ARCADE_HTTP, ARCADE_DB, ("root", ARCADE_PASSWORD), EMBED_DIMENSIONS)
     builder.provide(KG_DB, neo4j.ConnectionFactory(
         uri=ARCADE_BOLT, auth=("root", ARCADE_PASSWORD), database=ARCADE_DB))
-    if not PG_DSN:
-        raise RuntimeError("AURA_INGEST_PG_DSN is required: the document rows have no writer without it")
-    pool = await asyncpg.create_pool(PG_DSN, setup=_set_identity, min_size=1, max_size=4)
-    try:
-        builder.provide(PG_DB, pool)
-        async with source.create_client(_S3_CONFIG) as client:
-            builder.provide(S3, client)
-            yield
-    finally:
-        await pool.close()
+    async with source.create_client(_S3_CONFIG) as client:
+        builder.provide(S3, client)
+        yield
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class IngestedDocument:
-    """One row per object indexed -- a projection of the bucket, not a catalog.
+class IndexedDocument:
+    """One record per object indexed, in the SAME database as its passages.
 
-    Mirrors migration 0094's aura.ingested_documents. It carries only what reconciling the
-    bucket actually knows: there is no title, no status and no version here, because the
-    object has none and inventing them is what made the old catalog unable to answer its
-    own document_open contract.
+    Mirrors arcade.py's IndexedDocument DDL. It carries what reconciling a bucket actually
+    knows -- no title, no status, no version, because the object has none and inventing
+    them is what made the old catalog unable to answer its own document_open contract.
+
+    It lived in PostgreSQL for one commit. That was wrong: the card leg is a full-text
+    ranking and ArcadeDB already indexes Passage.text FULL_TEXT with the same analyzer, so
+    a Postgres card meant two search engines tokenising the same query differently. No
+    identity_id either -- the database IS the identity (mem_<uuid>), so a column repeating
+    it would be a second place for tenancy to be wrong.
     """
 
     search_document_id: str
-    identity_id: str
     source_kind: str
     source_key: str
+    # The base name -- how a person refers to a file, and the title retrieval falls back to.
+    file_name: str
+    # The same name PLUS its non-alphanumeric runs turned into spaces. Mirrors
+    # aura.searchable_text (migration 0081) because the analyzer has the same blind spot
+    # here as there: "clienti_complesso.xlsx" is a single token, so without this a search
+    # for "clienti" cannot find it.
+    file_name_words: str
     raw_sha256: str
     size_bytes: int
     passage_count: int
@@ -127,23 +102,6 @@ class IngestedDocument:
     # never an error, because a card is how a document is found, not whether it exists.
     card: str
     indexed_at: datetime.datetime
-
-
-_DOCUMENT_TABLE_SCHEMA = pg.TableSchema(
-    columns={
-        "search_document_id": pg.ColumnDef("text", nullable=False),
-        "identity_id": pg.ColumnDef("uuid", nullable=False),
-        "source_kind": pg.ColumnDef("text", nullable=False),
-        "source_key": pg.ColumnDef("text", nullable=False),
-        "raw_sha256": pg.ColumnDef("text", nullable=False),
-        "size_bytes": pg.ColumnDef("bigint", nullable=False),
-        "passage_count": pg.ColumnDef("integer", nullable=False),
-        "card": pg.ColumnDef("text", nullable=False),
-        "indexed_at": pg.ColumnDef("timestamptz", nullable=False),
-    },
-    primary_key=["search_document_id"],
-    row_type=IngestedDocument,
-)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -197,6 +155,11 @@ class Passage:
     active: bool
     created_at: datetime.datetime
     tombstoned_at: datetime.datetime | None
+
+
+def _name_words(file_name: str) -> str:
+    """The name as written plus its non-alphanumeric runs split, for the full-text index."""
+    return file_name + " " + re.sub(r"[^0-9A-Za-z]+", " ", file_name)
 
 
 @coco.fn(memo=True)
@@ -280,7 +243,7 @@ async def process_chunk(
 @coco.fn(memo=True)
 async def process_file(
     file: amazon_s3.S3File, identity_id: str, table: neo4j.TableTarget[Passage],
-    documents: pg.TableTarget[IngestedDocument],
+    documents: neo4j.TableTarget[IndexedDocument],
 ) -> None:
     # The walker's iteration key is the PREFIX-RELATIVE path (F0: the spike used exactly
     # that as the passage identity, breaking find->open). resolve() is the raw S3 object
@@ -323,11 +286,12 @@ async def process_file(
     # the same pass over the same source. That is the whole reason this row is not a
     # catalog: when the object leaves the bucket, CocoIndex removes the passages AND this
     # row together, so the two can never disagree about what exists.
-    documents.declare_row(row=IngestedDocument(
+    documents.declare_record(row=IndexedDocument(
         search_document_id=search_document_id,
-        identity_id=identity_id,
         source_kind=source_kind,
         source_key=key,
+        file_name=file_name,
+        file_name_words=_name_words(file_name),
         raw_sha256=raw_sha256,
         size_bytes=len(content),
         passage_count=len(pieces),
@@ -339,7 +303,7 @@ async def process_file(
 @coco.fn
 async def reconcile(
     identity_id: str, table: neo4j.TableTarget[Passage],
-    documents: pg.TableTarget[IngestedDocument],
+    documents: neo4j.TableTarget[IndexedDocument],
 ) -> None:
     walker = source.walk(coco.use_context(S3), _S3_CONFIG)
     await coco.mount_each(process_file, walker.items(), identity_id, table, documents)
@@ -356,9 +320,13 @@ async def app_main(identity_id: str, interval_s: float) -> None:
     # this target only upserts and deletes rows. SYSTEM would have CocoIndex create the
     # table itself -- outside golang-migrate, and without the RLS that makes the isolation
     # the server's job rather than ours.
-    documents = await pg.mount_table_target(
-        PG_DB, "ingested_documents", _DOCUMENT_TABLE_SCHEMA,
-        pg_schema_name="aura", managed_by=coco_target.ManagedBy.USER,
+    # The SAME target connector that writes the passages, pointed at a second type. One
+    # writer, one store, one query language -- and the record and its passages can never
+    # end up in different databases.
+    documents = await neo4j.mount_table_target(
+        KG_DB, arcade.DOCUMENT_TYPE,
+        await neo4j.TableSchema.from_class(IndexedDocument, primary_key="search_document_id"),
+        primary_key="search_document_id",
     )
     await coco.mount(
         coco.auto_refresh(reconcile, interval=datetime.timedelta(seconds=interval_s)),
