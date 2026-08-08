@@ -265,7 +265,17 @@ async def process_file(
         # .xls or .ods carded raw yields "file, 6 KB" and nothing else, because filecard
         # routes .xlsx/.docx/.pptx only.
         with extract.prepared(tmp.name) as ready:
-            text = extract.extract_text(ready)
+            # Routed by family, not attempted-and-caught. Tika raises on a format it
+            # cannot parse, and the raise killed the whole component -- one photo in the
+            # bucket and that file never got indexed. The library's own image and audio
+            # examples do the same thing one level up, choosing the processor from the
+            # path; this is that choice made where the extension is already known.
+            #
+            # A non-textual file still gets its row: name-searchable, card-described,
+            # openable. Giving images their own embedding and audio its own transcript --
+            # the two examples above -- is the natural next step, and this leaves the
+            # seam for it rather than deciding it here.
+            text = extract.extract_text(ready) if extract.extractable(ready) else ""
             # Routed on the CONVERTED name, not the original. filecard's Request.ext()
             # prefers FileName over Path, so carding a converted .ods under the name
             # "x.ods" falls through to "file, 12 KB" -- the conversion happens and is then

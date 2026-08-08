@@ -84,3 +84,18 @@ def test_normalise_converts_legacy_doc_to_ooxml(tmp_path):
     out = normalise(str(FX / "sample.doc"), str(tmp_path))
     assert out.endswith(".docx")
     assert pathlib.Path(out).exists()
+
+
+def test_extractable_routes_by_family():
+    """A format Tika cannot parse must be decided BEFORE the call, not caught after it.
+
+    The raise killed the whole CocoIndex component, so one .png in a bucket stopped that
+    file being indexed at all. These are the families the measured matrix covers plus the
+    ones LibreOffice normalises into them.
+    """
+    for name in ["a.pdf", "b.docx", "c.xlsx", "d.txt", "e.md", "f.csv", "G.PDF"]:
+        assert extract.extractable(name), name
+    for name in ["a.doc", "b.xls", "c.ppt", "d.odt", "e.ods", "f.odp", "g.rtf"]:
+        assert extract.extractable(name), name
+    for name in ["photo.png", "photo.jpg", "clip.mp3", "clip.wav", "archive.zip", "noext"]:
+        assert not extract.extractable(name), name
