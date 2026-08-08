@@ -44,6 +44,9 @@ func (b *Browser) Create(ctx context.Context, identityID, parent, name, kind str
 		return "", fmt.Errorf("assets: %q is not a usable name", name)
 	}
 	key := normalizeBrowsePrefix(parent) + safe
+	if reserved(key) {
+		return "", ErrReservedPrefix
+	}
 	if kind == "folder" {
 		key += folderMarkerSuffix
 	}
@@ -63,6 +66,9 @@ func (b *Browser) Rename(ctx context.Context, identityID, id, name string) (stri
 	source := cleanKey(id)
 	if source == "" {
 		return "", errors.New("assets: rename needs a file")
+	}
+	if reserved(source) {
+		return "", ErrReservedPrefix
 	}
 	target := path.Dir(source)
 	if target == "." || target == "/" {
@@ -113,6 +119,9 @@ func (b *Browser) transfer(
 	if err != nil {
 		return "", err
 	}
+	if reserved(source) || reserved(destination) {
+		return "", ErrReservedPrefix
+	}
 	if source == destination {
 		return "/" + source, nil
 	}
@@ -153,6 +162,9 @@ func (b *Browser) Delete(ctx context.Context, identityID string, ids []string) e
 		source := cleanKey(id)
 		if source == "" {
 			continue
+		}
+		if reserved(source) {
+			return ErrReservedPrefix
 		}
 		keys, err := b.descendants(ctx, store, bucket, source)
 		if err != nil {

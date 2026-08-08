@@ -167,6 +167,12 @@ func (s *Server) handleFileDirect(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "id is required", http.StatusBadRequest)
 		return
 	}
+	// Aura's own storage is not addressable here. It is hidden from listings, and hiding
+	// alone would leave it reachable by anyone who typed the path.
+	if assets.IsReservedPath(key) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
 	body, attrs, err := s.fileObjects.ReadObject(r.Context(), identityID, key)
 	if err != nil {
 		// Not-found and not-owned collapse to the same 404 so the response cannot be used to
@@ -228,6 +234,10 @@ func (s *Server) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 		key += "/"
 	}
 	key += name
+	if assets.IsReservedPath(key) {
+		http.Error(w, "that folder belongs to Aura's internal storage", http.StatusBadRequest)
+		return
+	}
 
 	// The MIME type is the browser's claim about somebody's file. It is recorded so a
 	// download can be honest about what was uploaded, and is never trusted on the way out --

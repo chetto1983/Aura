@@ -180,3 +180,66 @@ func TestOperationsRefuseWhenUnconfigured(t *testing.T) {
 		t.Fatal("created without an identity")
 	}
 }
+
+// Aura's own storage lives in the same bucket as the user's files, because the bucket IS
+// theirs. Hiding it from listings is the cosmetic half; refusing to write to it is the half
+// that matters, since a delete reaching "identity/" takes every chat attachment with it.
+func TestReservedPrefixesAreHiddenAndProtected(t *testing.T) {
+	browser := opsFixture(t,
+		"identity/1111/asset/2222/original",
+		"share/3333/snapshot/4444/canonical.json",
+		"contabilita/listino.xlsx",
+	)
+
+	result, err := browser.List(t.Context(), "owner-1", "", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range result.Entries {
+		if strings.HasPrefix(entry.Key, "identity") || strings.HasPrefix(entry.Key, "share") {
+			t.Fatalf("listing exposed Aura's own storage: %v", keysOf(result))
+		}
+	}
+	if len(result.Entries) != 1 || result.Entries[0].Key != "contabilita/" {
+		t.Fatalf("entries = %v, want just the user's folder", keysOf(result))
+	}
+
+	for name, run := range map[string]func() error{
+		"delete assets": func() error {
+			return browser.Delete(t.Context(), "owner-1", []string{"/identity"})
+		},
+		"delete one asset": func() error {
+			return browser.Delete(t.Context(), "owner-1", []string{"/identity/1111/asset/2222/original"})
+		},
+		"delete shares": func() error {
+			return browser.Delete(t.Context(), "owner-1", []string{"/share"})
+		},
+		"rename assets": func() error {
+			_, err := browser.Rename(t.Context(), "owner-1", "/identity", "mio")
+			return err
+		},
+		"move out of assets": func() error {
+			_, err := browser.Move(t.Context(), "owner-1", []string{"/identity/1111"}, "/contabilita")
+			return err
+		},
+		"copy into assets": func() error {
+			_, err := browser.Copy(t.Context(), "owner-1", []string{"/contabilita/listino.xlsx"}, "/identity")
+			return err
+		},
+		"create inside assets": func() error {
+			_, err := browser.Create(t.Context(), "owner-1", "/identity", "x.txt", "file")
+			return err
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := run(); !errors.Is(err, ErrReservedPrefix) {
+				t.Fatalf("err = %v, want ErrReservedPrefix", err)
+			}
+		})
+	}
+
+	// Nothing was touched by any of the refusals above.
+	if !slices.Contains(allKeys(t, browser), "identity/1111/asset/2222/original") {
+		t.Fatalf("an asset was lost: %v", allKeys(t, browser))
+	}
+}

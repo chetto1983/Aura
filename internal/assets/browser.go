@@ -51,6 +51,36 @@ type BrowseResult struct {
 // rather than a caller error and must not read as "this identity has no files".
 var ErrBrowserUnconfigured = errors.New("assets: file browser is not configured")
 
+// ErrReservedPrefix means an operation addressed Aura's own storage rather than the user's.
+var ErrReservedPrefix = errors.New("assets: that path belongs to Aura's internal storage")
+
+// reservedPrefixes are the parts of the bucket that belong to Aura, not to the person
+// browsing it: the asset service's per-identity object layout and the share snapshots.
+//
+// They are hidden from listings AND refused for writes, and the second half is the one that
+// matters. The bucket is the identity's own, so the file manager was happily offering to
+// rename or delete "identity/" — the tree every chat attachment and every share artifact
+// lives under. A listing that shows plumbing is untidy; a delete that reaches it is data
+// loss.
+var reservedPrefixes = []string{"identity/", "share/"}
+
+// IsReservedPath reports whether a caller-supplied path addresses Aura's own storage. It is
+// exported because the upload and download handlers reach the bucket through a different
+// seam than the browser and must apply the same rule -- otherwise the tree is merely hidden,
+// which is not the same as protected.
+func IsReservedPath(key string) bool { return reserved(key) }
+
+// reserved reports whether key is inside storage the user does not own the layout of.
+func reserved(key string) bool {
+	key = strings.TrimPrefix(key, "/")
+	for _, prefix := range reservedPrefixes {
+		if key == strings.TrimSuffix(prefix, "/") || strings.HasPrefix(key, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // resolveStore returns the store and bucket that BELONG to identityID.
 //
 // Every read and every write goes through here, which is the point: the resolver is the
@@ -115,6 +145,10 @@ func (b *Browser) List(
 		// The prefix itself comes back as a zero-length key when a folder marker object
 		// exists. It is the folder being viewed, not an entry inside it.
 		if relative == "" {
+			continue
+		}
+		// Aura's own storage is not the user's to browse; see reservedPrefixes.
+		if reserved(object.Ref.Key) {
 			continue
 		}
 		entries = append(entries, BrowseEntry{
