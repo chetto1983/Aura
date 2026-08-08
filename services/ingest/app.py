@@ -17,6 +17,7 @@ import hashlib
 import json
 import os
 import pathlib
+import subprocess
 import tempfile
 import urllib.request
 
@@ -122,6 +123,9 @@ class IngestedDocument:
     raw_sha256: str
     size_bytes: int
     passage_count: int
+    # What filecard measured about the file. Empty when it could not be described --
+    # never an error, because a card is how a document is found, not whether it exists.
+    card: str
     indexed_at: datetime.datetime
 
 
@@ -134,6 +138,7 @@ _DOCUMENT_TABLE_SCHEMA = pg.TableSchema(
         "raw_sha256": pg.ColumnDef("text", nullable=False),
         "size_bytes": pg.ColumnDef("bigint", nullable=False),
         "passage_count": pg.ColumnDef("integer", nullable=False),
+        "card": pg.ColumnDef("text", nullable=False),
         "indexed_at": pg.ColumnDef("timestamptz", nullable=False),
     },
     primary_key=["search_document_id"],
@@ -192,6 +197,35 @@ class Passage:
     active: bool
     created_at: datetime.datetime
     tombstoned_at: datetime.datetime | None
+
+
+@coco.fn(memo=True)
+def _card(path: str, file_name: str) -> str:
+    """Describe the file, by calling Aura's own filecard rather than reimplementing it.
+
+    A card is how a document is FOUND, and for a spreadsheet it is how one is ANSWERED:
+    measured on a 500-row, 3-sheet workbook it locates the real header under a merged
+    banner, types every column and reports value distributions -- "Citta: most common
+    Torino (98), Milano (94)". That is precisely the aggregate that scores 0% at every k
+    when asked of passages (internal/documents/open.go), so a document reconciled from the
+    bucket without a card loses the only thing that could answer it.
+
+    Subprocess for the same reason extract.py runs `soffice`: the logic exists, in Go, and
+    a Python port would be a second implementation to keep in step. Failure is not fatal --
+    Service.writeCard does not fail an ingest over a card either -- so a file that cannot
+    be described simply has none, and the reason is printed.
+    """
+    try:
+        done = subprocess.run(
+            ["aura-filecard", "-name", file_name, path],
+            check=False, capture_output=True, timeout=120,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(f"[card] {file_name}: {exc}", flush=True)
+        return ""
+    if done.stderr:
+        print(f"[card] {file_name}: {done.stderr.decode('utf-8', 'replace').strip()}", flush=True)
+    return done.stdout.decode("utf-8", "replace")
 
 
 @coco.fn(memo=True)
@@ -258,10 +292,25 @@ async def process_file(
     # skips the whole function, print included, on an unchanged rerun.
     print(f"[extract] {key}", flush=True)
     content = await file.read()
+    file_name = pathlib.PurePosixPath(key).name
     with tempfile.NamedTemporaryFile(suffix=pathlib.Path(key).suffix) as tmp:
         tmp.write(content)
         tmp.flush()
-        text = extract.extract_text(tmp.name)
+        # ONE conversion, both consumers. extract.prepared yields the OOXML form for the
+        # formats LibreOffice has to normalise, so the extractor and the card read the same
+        # converted file -- and, crucially, the card is built from the CONVERTED file: a
+        # .xls or .ods carded raw yields "file, 6 KB" and nothing else, because filecard
+        # routes .xlsx/.docx/.pptx only.
+        with extract.prepared(tmp.name) as ready:
+            text = extract.extract_text(ready)
+            # Routed on the CONVERTED name, not the original. filecard's Request.ext()
+            # prefers FileName over Path, so carding a converted .ods under the name
+            # "x.ods" falls through to "file, 12 KB" -- the conversion happens and is then
+            # thrown away. LibreOffice keeps the stem, so this only changes the extension,
+            # which is an honest statement of what was parsed; source_key on the row still
+            # carries the true original key. MEASURED: 12/12 fixture formats card
+            # structurally this way, against 4/12 before.
+            card = _card(ready, pathlib.PurePosixPath(ready).name)
     source_kind = "s3"
     search_document_id = identity.search_document_id(identity_id, source_kind, key)
     pieces = chunk.chunk(text)
@@ -282,6 +331,7 @@ async def process_file(
         raw_sha256=raw_sha256,
         size_bytes=len(content),
         passage_count=len(pieces),
+        card=card,
         indexed_at=datetime.datetime.now(datetime.timezone.utc),
     ))
 

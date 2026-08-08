@@ -96,7 +96,6 @@ def _passage_ddl(dimensions: int) -> list[str]:
         f"CREATE VERTEX TYPE {t} IF NOT EXISTS",
         f"CREATE PROPERTY {t}.passage_key IF NOT EXISTS STRING",
         f"CREATE PROPERTY {t}.passage_id IF NOT EXISTS STRING",
-        f"CREATE PROPERTY {t}.projection_key IF NOT EXISTS STRING",
         f"CREATE PROPERTY {t}.document_id IF NOT EXISTS STRING",
         f"CREATE PROPERTY {t}.search_document_id IF NOT EXISTS STRING",
         # Not in document_schema.go yet (Go retrieval doesn't consume these):
@@ -105,29 +104,15 @@ def _passage_ddl(dimensions: int) -> list[str]:
         # conflict with the Go-created type -- see this module's docstring.
         f"CREATE PROPERTY {t}.source_kind IF NOT EXISTS STRING",
         f"CREATE PROPERTY {t}.source_key IF NOT EXISTS STRING",
-        f"CREATE PROPERTY {t}.version_id IF NOT EXISTS STRING",
-        f"CREATE PROPERTY {t}.version_number IF NOT EXISTS LONG",
         f"CREATE PROPERTY {t}.raw_sha256 IF NOT EXISTS STRING",
         f"CREATE PROPERTY {t}.pipeline_generation IF NOT EXISTS STRING",
         f"CREATE PROPERTY {t}.schema_version IF NOT EXISTS STRING",
         f"CREATE PROPERTY {t}.ordinal IF NOT EXISTS LONG",
         f"CREATE PROPERTY {t}.text IF NOT EXISTS STRING",
         f"CREATE PROPERTY {t}.normalized_text_sha256 IF NOT EXISTS STRING",
-        f"CREATE PROPERTY {t}.self_ref IF NOT EXISTS STRING",
         f"CREATE PROPERTY {t}.heading_path IF NOT EXISTS LIST OF STRING",
-        f"CREATE PROPERTY {t}.captions IF NOT EXISTS LIST OF STRING",
-        f"CREATE PROPERTY {t}.page_number IF NOT EXISTS LONG",
-        f"CREATE PROPERTY {t}.bbox_left IF NOT EXISTS DOUBLE",
-        f"CREATE PROPERTY {t}.bbox_top IF NOT EXISTS DOUBLE",
-        f"CREATE PROPERTY {t}.bbox_right IF NOT EXISTS DOUBLE",
-        f"CREATE PROPERTY {t}.bbox_bottom IF NOT EXISTS DOUBLE",
         f"CREATE PROPERTY {t}.char_start IF NOT EXISTS LONG",
         f"CREATE PROPERTY {t}.char_end IF NOT EXISTS LONG",
-        f"CREATE PROPERTY {t}.sheet_name IF NOT EXISTS STRING",
-        f"CREATE PROPERTY {t}.table_name IF NOT EXISTS STRING",
-        f"CREATE PROPERTY {t}.row_number IF NOT EXISTS LONG",
-        f"CREATE PROPERTY {t}.column_number IF NOT EXISTS LONG",
-        f"CREATE PROPERTY {t}.cell_reference IF NOT EXISTS STRING",
         # ARRAY_OF_FLOATS, not an untyped list or LIST OF FLOAT: LSM_VECTOR
         # indexes only this exact type, and a Cypher write to a LIST OF FLOAT
         # property fails outright ("declared as LIST of 'FLOAT' but a value
@@ -135,9 +120,7 @@ def _passage_ddl(dimensions: int) -> list[str]:
         f"CREATE PROPERTY {t}.embedding IF NOT EXISTS ARRAY_OF_FLOATS",
         f"CREATE PROPERTY {t}.active IF NOT EXISTS BOOLEAN",
         f"CREATE PROPERTY {t}.created_at IF NOT EXISTS DATETIME",
-        f"CREATE PROPERTY {t}.tombstoned_at IF NOT EXISTS DATETIME",
         f"CREATE INDEX IF NOT EXISTS ON {t} (passage_key) UNIQUE",
-        f"CREATE INDEX IF NOT EXISTS ON {t} (projection_key) NOTUNIQUE",
         f"CREATE INDEX IF NOT EXISTS ON {t} (active, document_id) NOTUNIQUE",
         # The corpus is multilingual (Italian/English business documents), so
         # the analyzer is pinned explicitly rather than left at ArcadeDB's
