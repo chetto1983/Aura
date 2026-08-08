@@ -93,6 +93,14 @@
       }
     ]
   },
+
+  "permissions": {
+    "allow": [
+      "Bash(docker exec -e PGPASSWORD=* aura-postgres psql *)",
+      "Bash(docker exec aura-postgres psql *)"
+    ]
+  },
+  
   "enabledPlugins": {
     "frontend-design@claude-plugins-official": true,
     "superpowers@claude-plugins-official": true,
