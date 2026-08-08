@@ -11,8 +11,12 @@ import (
 type rankedDocument struct {
 	document RetrievalDocument
 	passages map[string]*RetrievalPassage
-	bestLeg  int
-	ordinal  int64
+	// order is the best position this document reached in the ranking the ENGINE
+	// returned. Nothing here computes a score: ArcadeDB fused both indexes and ordered
+	// them, and any order re-derived in Go could only disagree with it -- which is what
+	// the tier ladder this replaces did, at 0.300 recall@1 against 0.850.
+	order   int
+	ordinal int64
 }
 
 func rankDocuments(
@@ -34,38 +38,34 @@ func rankDocuments(
 	// cognee uses, where the chunk carries document_id/document_name for reference
 	// rendering rather than joining to find them.
 	byDocumentID := make(map[string]*rankedDocument, len(cards)+len(passages))
+	// Passages first and their order wins: a document the engine ranked is better
+	// evidenced than one only a card mentions, so cards start after the last passage.
+	for rank, passage := range passages {
+		doc := ensureRankedDocumentFromCandidate(byDocumentID, passage)
+		doc.order = min(doc.order, rank)
+		doc.ordinal = min(doc.ordinal, passage.Ordinal)
+		if passage.FusedScore != nil && *passage.FusedScore > doc.document.Score {
+			doc.document.Score = *passage.FusedScore
+		}
+		mergePassage(doc, passage, rank+1)
+	}
 	for rank, card := range cards {
 		doc := ensureRankedDocumentFromCard(byDocumentID, card)
-		score := 1 + normalizedScore(card.Rank)
-		if score > doc.document.Score {
-			doc.document.Score = score
-		}
+		doc.order = min(doc.order, len(passages)+rank)
 		doc.document.Evidence = appendEvidence(doc.document.Evidence, RetrievalEvidence{
 			Leg: "card", Rank: rank + 1, Score: new(card.Rank),
 		})
-	}
-	legRanks := make(map[arcadedb.RetrievalLeg]int, 2)
-	for _, passage := range passages {
-		doc := ensureRankedDocumentFromCandidate(byDocumentID, passage)
-		legPriority, score := passageScore(passage)
-		if legPriority > doc.bestLeg || (legPriority == doc.bestLeg && score > doc.document.Score) {
-			doc.bestLeg, doc.document.Score = legPriority, score
-		}
-		doc.ordinal = min(doc.ordinal, passage.Ordinal)
-		legRanks[passage.Leg]++
-		mergePassage(doc, passage, legRanks[passage.Leg])
 	}
 
 	ranked := make([]*rankedDocument, 0, len(byDocumentID))
 	for _, doc := range byDocumentID {
 		doc.document.RequiresOpen = forceOpen || len(doc.passages) == 0
 		doc.document.Passages = sortedPassages(doc.passages, topPassages)
-		sortEvidence(doc.document.Evidence)
 		ranked = append(ranked, doc)
 	}
 	sort.Slice(ranked, func(i, j int) bool {
-		if ranked[i].document.Score != ranked[j].document.Score {
-			return ranked[i].document.Score > ranked[j].document.Score
+		if ranked[i].order != ranked[j].order {
+			return ranked[i].order < ranked[j].order
 		}
 		if ranked[i].document.DocumentID != ranked[j].document.DocumentID {
 			return ranked[i].document.DocumentID < ranked[j].document.DocumentID
@@ -88,7 +88,8 @@ func newRankedDocument(documentID string) *rankedDocument {
 			DocumentID: documentID,
 			Evidence:   []RetrievalEvidence{}, Passages: []RetrievalPassage{},
 		},
-		passages: make(map[string]*RetrievalPassage), ordinal: math.MaxInt64,
+		passages: make(map[string]*RetrievalPassage),
+		order:    math.MaxInt, ordinal: math.MaxInt64,
 	}
 }
 
@@ -133,17 +134,6 @@ func ensureRankedDocumentFromCandidate(
 	return doc
 }
 
-func passageScore(candidate arcadedb.PassageCandidate) (int, float64) {
-	if candidate.Leg == arcadedb.RetrievalLegLexical && candidate.LexicalScore != nil {
-		return 3, 3 + normalizedScore(*candidate.LexicalScore)
-	}
-	if candidate.Leg == arcadedb.RetrievalLegDense && candidate.DenseDistance != nil {
-		closeness := max(0, 1-*candidate.DenseDistance)
-		return 2, 2 + closeness
-	}
-	return 0, 0
-}
-
 func mergePassage(doc *rankedDocument, candidate arcadedb.PassageCandidate, rank int) {
 	passage := doc.passages[candidate.PassageID]
 	if passage == nil {
@@ -164,11 +154,8 @@ func mergePassage(doc *rankedDocument, candidate arcadedb.PassageCandidate, rank
 		doc.passages[candidate.PassageID] = passage
 	}
 	evidence := RetrievalEvidence{Leg: string(candidate.Leg), Rank: rank}
-	if candidate.LexicalScore != nil {
-		evidence.Score = new(*candidate.LexicalScore)
-	}
-	if candidate.DenseDistance != nil {
-		evidence.Distance = new(*candidate.DenseDistance)
+	if candidate.FusedScore != nil {
+		evidence.Score = new(*candidate.FusedScore)
 	}
 	passage.Evidence = appendEvidence(passage.Evidence, evidence)
 	doc.document.Evidence = appendEvidence(doc.document.Evidence, evidence)
@@ -208,14 +195,10 @@ func intFromInt64(value *int64) *int {
 func sortedPassages(passages map[string]*RetrievalPassage, limit int) []RetrievalPassage {
 	out := make([]RetrievalPassage, 0, len(passages))
 	for _, passage := range passages {
-		sortEvidence(passage.Evidence)
 		out = append(out, *passage)
 	}
+	// Engine order is already the ranking, so ties break on position in the document.
 	sort.Slice(out, func(i, j int) bool {
-		left, right := passageBestEvidence(out[i]), passageBestEvidence(out[j])
-		if left != right {
-			return left > right
-		}
 		if out[i].Ordinal != out[j].Ordinal {
 			return out[i].Ordinal < out[j].Ordinal
 		}
@@ -227,19 +210,6 @@ func sortedPassages(passages map[string]*RetrievalPassage, limit int) []Retrieva
 	return out
 }
 
-func passageBestEvidence(passage RetrievalPassage) float64 {
-	best := 0.0
-	for _, evidence := range passage.Evidence {
-		if evidence.Score != nil {
-			best = max(best, 3+normalizedScore(*evidence.Score))
-		}
-		if evidence.Distance != nil {
-			best = max(best, 2+max(0, 1-*evidence.Distance))
-		}
-	}
-	return best
-}
-
 func appendEvidence(existing []RetrievalEvidence, candidate RetrievalEvidence) []RetrievalEvidence {
 	for _, evidence := range existing {
 		if evidence.Leg == candidate.Leg && evidence.Rank == candidate.Rank {
@@ -247,23 +217,4 @@ func appendEvidence(existing []RetrievalEvidence, candidate RetrievalEvidence) [
 		}
 	}
 	return append(existing, candidate)
-}
-
-func sortEvidence(evidence []RetrievalEvidence) {
-	sort.Slice(evidence, func(i, j int) bool {
-		priority := func(leg string) int {
-			switch leg {
-			case string(arcadedb.RetrievalLegLexical):
-				return 3
-			case string(arcadedb.RetrievalLegDense):
-				return 2
-			default:
-				return 1
-			}
-		}
-		if priority(evidence[i].Leg) != priority(evidence[j].Leg) {
-			return priority(evidence[i].Leg) > priority(evidence[j].Leg)
-		}
-		return evidence[i].Rank < evidence[j].Rank
-	})
 }

@@ -22,7 +22,6 @@ import (
 	"encoding/json"
 	"os"
 	"path"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -99,16 +98,10 @@ func TestFusionBenchmark(t *testing.T) {
 	if err != nil {
 		t.Fatalf("document index: %v", err)
 	}
-	client, err := tenants.For(ctx, identity)
-	if err != nil {
-		t.Fatalf("tenant client: %v", err)
-	}
-
 	cfg := normalizedRetrievalConfig(RetrievalConfig{})
 	const topK = 10
 
 	runs := []benchRun{
-		{Arm: "go-ladder", Ranking: map[string][]string{}},
 		{Arm: "fuse-RRF", Ranking: map[string][]string{}},
 		{Arm: "fuse-DBSF", Ranking: map[string][]string{}},
 		{Arm: "fuse-LINEAR", Ranking: map[string][]string{}},
@@ -121,45 +114,22 @@ func TestFusionBenchmark(t *testing.T) {
 		}
 		filter := arcadedb.CandidateFilter{IdentityID: identity, Limit: cfg.CandidateLimit}
 
-		// Arm A: the shipped Go path, called the way HostRetriever.Retrieve calls it.
-		lexical, err := index.LexicalCandidates(ctx, arcadedb.LexicalCandidateQuery{
-			CandidateFilter: filter, Query: question.Query,
-		})
-		if err != nil {
-			t.Fatalf("lexical %q: %v", question.QID, err)
-		}
-		dense, err := index.DenseCandidates(ctx, arcadedb.DenseCandidateQuery{
-			CandidateFilter: filter, Embedding: vectors[0],
-		})
-		if err != nil {
-			t.Fatalf("dense %q: %v", question.QID, err)
-		}
-		candidates := append(
-			admittedLexical(lexical, question.Query, cfg.LexicalMinScore),
-			admittedDense(dense, cfg.DenseMaxDistance)...,
-		)
-		for _, document := range rankDocuments(nil, candidates, topK, cfg.TopPassages, false) {
-			runs[0].Ranking[question.QID] = append(runs[0].Ranking[question.QID], benchDocName(document.SourceKey))
-		}
-
-		// Arm B: one native query per fusion strategy. Raw SQL on purpose -- the point of
-		// the measurement is to decide which strategy to implement, so nothing is
-		// implemented yet.
-		for armIndex, fusion := range []string{"RRF", "DBSF", "LINEAR"} {
-			rows, err := client.Query(ctx, fusedBenchStatement(fusion, topK), map[string]any{
-				"embedding": vectors[0],
-				"query":     question.Query,
+		// One arm per strategy, all through the SHIPPED FusedCandidates. The Go tier
+		// ladder these were first measured against no longer exists.
+		for armIndex, fusion := range []arcadedb.FusionStrategy{
+			arcadedb.FusionRRF, arcadedb.FusionDBSF, arcadedb.FusionLINEAR,
+		} {
+			fused, err := index.FusedCandidates(ctx, arcadedb.FusedCandidateQuery{
+				CandidateFilter: filter, Query: question.Query,
+				Embedding: vectors[0], Strategy: fusion,
 			})
 			if err != nil {
 				t.Fatalf("fuse %s %q: %v", fusion, question.QID, err)
 			}
-			for _, row := range rows {
-				key, _ := row["source_key"].(string)
-				if key != "" {
-					runs[armIndex+1].Ranking[question.QID] = append(
-						runs[armIndex+1].Ranking[question.QID], benchDocName(key),
-					)
-				}
+			for _, doc := range rankDocuments(nil, fused, topK, cfg.TopPassages, false) {
+				runs[armIndex].Ranking[question.QID] = append(
+					runs[armIndex].Ranking[question.QID], benchDocName(doc.SourceKey),
+				)
 			}
 		}
 	}
@@ -172,17 +142,4 @@ func TestFusionBenchmark(t *testing.T) {
 		t.Fatalf("write runs: %v", err)
 	}
 	t.Logf("wrote %d arms x %d questions to %s", len(runs), len(pilot.Questions), outPath)
-}
-
-// fusedBenchStatement is the documented `vector.fuse` shape (ArcadeDB manual,
-// "Hybrid Search with vector.fuse"): the dense and full-text legs as sub-pipelines,
-// groupBy collapsing to the best passage per document so the ranked unit is the
-// document, which is what the Go arm also emits.
-func fusedBenchStatement(fusion string, limit int) string {
-	return "SELECT source_key, score FROM (" +
-		"SELECT expand(`vector.fuse`(" +
-		"`vector.neighbors`('Passage[embedding]', :embedding, 200)," +
-		"(SELECT @rid, $score FROM Passage WHERE SEARCH_INDEX('Passage[text]', :query) = true)," +
-		"{ fusion: '" + fusion + "', groupBy: 'document_id', groupSize: 1 }" +
-		"))) ORDER BY score DESC LIMIT " + strconv.Itoa(limit)
 }

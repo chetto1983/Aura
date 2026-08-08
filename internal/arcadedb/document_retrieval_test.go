@@ -32,84 +32,10 @@ func candidateFixture(index *DocumentIndex, passageID, documentID string, ordina
 	}
 }
 
-func TestLexicalCandidatesBindEscapeFilterAndSort(t *testing.T) {
-	var index *DocumentIndex
-	index, requests := testDocumentIndex(t, func(recordedRequest) testResponse {
-		return testResponse{Body: resultBody([]any{
-			candidateFixture(index, "p-2", "doc-b", 2, "lexical_score", 3),
-			candidateFixture(index, "p-1", "doc-a", 1, "lexical_score", 9),
-		})}
-	}, true)
-	candidates, err := index.LexicalCandidates(t.Context(), LexicalCandidateQuery{
-		CandidateFilter: CandidateFilter{
-			IdentityID: documentTestIdentity, Limit: 2,
-			DocumentIDs: []string{"doc-b", "doc-a", "doc-a"},
-		},
-		Query: `c++ impossible?`,
-	})
-	if err != nil {
-		t.Fatalf("LexicalCandidates: %v", err)
-	}
-	if len(candidates) != 2 || candidates[0].PassageID != "p-1" ||
-		candidates[0].LexicalScore == nil || candidates[0].DenseDistance != nil {
-		t.Fatalf("candidates = %+v", candidates)
-	}
-	request := (*requests)[0]
-	statement, _ := request.Payload["command"].(string)
-	if !strings.Contains(statement, "SEARCH_INDEX('Passage[text]'") ||
-		!strings.Contains(statement, "document_id IN :document_ids") ||
-		!strings.Contains(statement, "ORDER BY lexical_score DESC") {
-		t.Fatalf("statement = %s", statement)
-	}
-	params, _ := request.Payload["params"].(map[string]any)
-	if params["query"] != `c\+\+ impossible\?` {
-		t.Fatalf("escaped query = %#v", params["query"])
-	}
-	documents, _ := params["document_ids"].([]any)
-	if len(documents) != 2 || documents[0] != "doc-a" || documents[1] != "doc-b" {
-		t.Fatalf("document filters = %#v", params["document_ids"])
-	}
-}
-
-func TestDenseCandidatesUseActiveRIDFilterAndSort(t *testing.T) {
-	var index *DocumentIndex
-	index, requests := testDocumentIndex(t, func(recordedRequest) testResponse {
-		return testResponse{Body: resultBody([]any{
-			candidateFixture(index, "p-far", "doc-b", 2, "dense_distance", 0.4),
-			candidateFixture(index, "p-near", "doc-a", 1, "dense_distance", 0.1),
-		})}
-	}, true)
-	candidates, err := index.DenseCandidates(t.Context(), DenseCandidateQuery{
-		CandidateFilter: CandidateFilter{IdentityID: documentTestIdentity, Limit: 2},
-		Embedding:       []float64{1, 0, 0},
-	})
-	if err != nil {
-		t.Fatalf("DenseCandidates: %v", err)
-	}
-	if len(candidates) != 2 || candidates[0].PassageID != "p-near" ||
-		candidates[0].DenseDistance == nil || candidates[0].LexicalScore != nil {
-		t.Fatalf("candidates = %+v", candidates)
-	}
-	request := (*requests)[0]
-	statement, _ := request.Payload["command"].(string)
-	if !strings.Contains(statement, "`vector.neighbors`('Passage[embedding]'") ||
-		!strings.Contains(statement, "WHERE active = true") ||
-		!strings.Contains(statement, "ORDER BY dense_distance ASC") {
-		t.Fatalf("statement = %s", statement)
-	}
-	params, _ := request.Payload["params"].(map[string]any)
-	if params["fetch"] != float64(4) {
-		t.Fatalf("fetch = %#v", params["fetch"])
-	}
-	if _, found := params["document_ids"]; found {
-		t.Fatalf("empty filter emitted document_ids: %#v", params)
-	}
-}
-
 func TestCandidateLocatorRoundTripsStrictly(t *testing.T) {
 	var index *DocumentIndex
 	index, _ = testDocumentIndex(t, func(recordedRequest) testResponse {
-		row := candidateFixture(index, "p-1", "doc-a", 1, "lexical_score", 2)
+		row := candidateFixture(index, "p-1", "doc-a", 1, "fused_score", 2)
 		row["self_ref"] = "#/tables/1"
 		row["heading_path"] = []any{"Quarterly", "Revenue"}
 		row["captions"] = []any{"Amounts in EUR"}
@@ -120,11 +46,12 @@ func TestCandidateLocatorRoundTripsStrictly(t *testing.T) {
 		row["row_number"], row["column_number"], row["cell_reference"] = 4, 7, "G4"
 		return testResponse{Body: resultBody([]any{row})}
 	}, true)
-	candidates, err := index.LexicalCandidates(t.Context(), LexicalCandidateQuery{
-		CandidateFilter: CandidateFilter{IdentityID: documentTestIdentity, Limit: 1}, Query: "revenue",
+	candidates, err := index.FusedCandidates(t.Context(), FusedCandidateQuery{
+		CandidateFilter: CandidateFilter{IdentityID: documentTestIdentity, Limit: 1},
+		Query:           "revenue", Embedding: []float64{1, 0, 0},
 	})
 	if err != nil {
-		t.Fatalf("LexicalCandidates: %v", err)
+		t.Fatalf("FusedCandidates: %v", err)
 	}
 	candidate := candidates[0]
 	if candidate.PageNumber == nil || *candidate.PageNumber != 3 ||
@@ -141,27 +68,35 @@ func TestCandidateQueriesRejectInvalidRequestsBeforeIO(t *testing.T) {
 		run  func(*DocumentIndex) error
 	}{
 		{"empty query", func(index *DocumentIndex) error {
-			_, err := index.LexicalCandidates(t.Context(), LexicalCandidateQuery{CandidateFilter: CandidateFilter{IdentityID: documentTestIdentity}})
+			_, err := index.FusedCandidates(t.Context(), fusedFixtureQuery(""))
 			return err
 		}},
 		{"long query", func(index *DocumentIndex) error {
-			_, err := index.LexicalCandidates(t.Context(), LexicalCandidateQuery{CandidateFilter: CandidateFilter{IdentityID: documentTestIdentity}, Query: strings.Repeat("x", 41)})
+			_, err := index.FusedCandidates(t.Context(), fusedFixtureQuery(strings.Repeat("x", 41)))
 			return err
 		}},
 		{"wrong dimension", func(index *DocumentIndex) error {
-			_, err := index.DenseCandidates(t.Context(), DenseCandidateQuery{CandidateFilter: CandidateFilter{IdentityID: documentTestIdentity}, Embedding: []float64{1}})
+			request := fusedFixtureQuery("x")
+			request.Embedding = []float64{1}
+			_, err := index.FusedCandidates(t.Context(), request)
 			return err
 		}},
 		{"non-finite embedding", func(index *DocumentIndex) error {
-			_, err := index.DenseCandidates(t.Context(), DenseCandidateQuery{CandidateFilter: CandidateFilter{IdentityID: documentTestIdentity}, Embedding: []float64{1, math.NaN(), 0}})
+			request := fusedFixtureQuery("x")
+			request.Embedding = []float64{1, math.NaN(), 0}
+			_, err := index.FusedCandidates(t.Context(), request)
 			return err
 		}},
 		{"limit above cap", func(index *DocumentIndex) error {
-			_, err := index.LexicalCandidates(t.Context(), LexicalCandidateQuery{CandidateFilter: CandidateFilter{IdentityID: documentTestIdentity, Limit: 5}, Query: "x"})
+			request := fusedFixtureQuery("x")
+			request.Limit = 5
+			_, err := index.FusedCandidates(t.Context(), request)
 			return err
 		}},
 		{"too many documents", func(index *DocumentIndex) error {
-			_, err := index.LexicalCandidates(t.Context(), LexicalCandidateQuery{CandidateFilter: CandidateFilter{IdentityID: documentTestIdentity, DocumentIDs: []string{"a", "b", "c", "d"}}, Query: "x"})
+			request := fusedFixtureQuery("x")
+			request.DocumentIDs = []string{"a", "b", "c", "d"}
+			_, err := index.FusedCandidates(t.Context(), request)
 			return err
 		}},
 	}
@@ -187,7 +122,7 @@ func TestCandidateDecoderRejectsMalformedOrStaleRows(t *testing.T) {
 		"wrong schema":       func(row map[string]any) { row["schema_version"] = "old" },
 		"inactive":           func(row map[string]any) { row["active"] = false },
 		"fractional ordinal": func(row map[string]any) { row["ordinal"] = 1.5 },
-		"negative score":     func(row map[string]any) { row["lexical_score"] = -1 },
+		"negative score":     func(row map[string]any) { row["fused_score"] = -1 },
 		"partial bbox":       func(row map[string]any) { row["bbox_left"] = 1.0 },
 		"partial span":       func(row map[string]any) { row["char_start"] = 1 },
 		"bad headings":       func(row map[string]any) { row["heading_path"] = []any{7} },
@@ -200,12 +135,13 @@ func TestCandidateDecoderRejectsMalformedOrStaleRows(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			var index *DocumentIndex
 			index, _ = testDocumentIndex(t, func(recordedRequest) testResponse {
-				row := candidateFixture(index, "p-1", "doc-a", 1, "lexical_score", 1)
+				row := candidateFixture(index, "p-1", "doc-a", 1, "fused_score", 1)
 				mutate(row)
 				return testResponse{Body: resultBody([]any{row})}
 			}, true)
-			_, err := index.LexicalCandidates(t.Context(), LexicalCandidateQuery{
-				CandidateFilter: CandidateFilter{IdentityID: documentTestIdentity, Limit: 1}, Query: "x",
+			_, err := index.FusedCandidates(t.Context(), FusedCandidateQuery{
+				CandidateFilter: CandidateFilter{IdentityID: documentTestIdentity, Limit: 1},
+				Query:           "x", Embedding: []float64{1, 0, 0},
 			})
 			if err == nil {
 				t.Fatal("malformed candidate accepted")
@@ -219,15 +155,82 @@ func TestCandidateDecoderRejectsDuplicateAndOverLimitRows(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			var index *DocumentIndex
 			index, _ = testDocumentIndex(t, func(recordedRequest) testResponse {
-				row := candidateFixture(index, "p-1", "doc-a", 1, "lexical_score", 1)
+				row := candidateFixture(index, "p-1", "doc-a", 1, "fused_score", 1)
 				return testResponse{Body: resultBody([]any{row, row})}
 			}, true)
-			_, err := index.LexicalCandidates(t.Context(), LexicalCandidateQuery{
-				CandidateFilter: CandidateFilter{IdentityID: documentTestIdentity, Limit: limit}, Query: "x",
+			_, err := index.FusedCandidates(t.Context(), FusedCandidateQuery{
+				CandidateFilter: CandidateFilter{IdentityID: documentTestIdentity, Limit: limit},
+				Query:           "x", Embedding: []float64{1, 0, 0},
 			})
 			if err == nil {
 				t.Fatal("invalid candidate response accepted")
 			}
 		})
+	}
+}
+
+// The query is the measurement: it scored 0.850 recall@1 where the Go tier ladder it
+// replaced scored 0.300, and it did so at these exact parameters. This test pins the
+// shape so a later edit cannot drift it away from the measured one in silence.
+func TestFusedCandidatesSendTheMeasuredQueryAndKeepEngineOrder(t *testing.T) {
+	var index *DocumentIndex
+	var statement string
+	index, _ = testDocumentIndex(t, func(request recordedRequest) testResponse {
+		statement, _ = request.Payload["command"].(string)
+		return testResponse{Body: resultBody([]any{
+			candidateFixture(index, "p-best", "doc-b", 2, "fused_score", 0.031),
+			candidateFixture(index, "p-next", "doc-a", 1, "fused_score", 0.019),
+		})}
+	}, true)
+	candidates, err := index.FusedCandidates(t.Context(), FusedCandidateQuery{
+		CandidateFilter: CandidateFilter{IdentityID: documentTestIdentity, Limit: 4},
+		Query:           "codice cliente", Embedding: []float64{1, 0, 0},
+	})
+	if err != nil {
+		t.Fatalf("FusedCandidates: %v", err)
+	}
+	// Engine order, NOT re-sorted by document id: the row the engine put first stays
+	// first even though its document sorts after the other's. Re-imposing an order here
+	// is what made the fused ranking arrive correct and leave grouped and ascending.
+	if len(candidates) != 2 || candidates[0].PassageID != "p-best" {
+		t.Fatalf("engine order not preserved: %#v", candidates)
+	}
+	if candidates[0].FusedScore == nil || *candidates[0].FusedScore != 0.031 {
+		t.Fatalf("fused score not decoded: %#v", candidates[0])
+	}
+	for _, want := range []string{
+		"`vector.fuse`(", "`vector.neighbors`('Passage[embedding]', :embedding, :fetch,", "active = true",
+		"SEARCH_INDEX('Passage[text]', :query)", "fusion: 'RRF'",
+		"groupBy: 'document_id'", "groupSize: 1",
+	} {
+		if !strings.Contains(statement, want) {
+			t.Fatalf("statement lost %q: %s", want, statement)
+		}
+	}
+	if strings.Contains(statement, "ORDER BY") {
+		t.Fatalf("outer ORDER BY re-imposed on an already ordered fusion: %s", statement)
+	}
+}
+
+func TestFusedCandidatesRejectAnUnknownStrategy(t *testing.T) {
+	index, _ := testDocumentIndex(t, func(recordedRequest) testResponse {
+		return testResponse{Body: resultBody([]any{})}
+	}, true)
+	_, err := index.FusedCandidates(t.Context(), FusedCandidateQuery{
+		CandidateFilter: CandidateFilter{IdentityID: documentTestIdentity, Limit: 4},
+		Query:           "q", Embedding: []float64{1, 0, 0}, Strategy: "COSINE",
+	})
+	if err == nil {
+		t.Fatal("a strategy the engine does not implement was accepted")
+	}
+}
+
+// fusedFixtureQuery is a request that passes every check except the one under test, so
+// each case above fails for its own named reason and not incidentally.
+func fusedFixtureQuery(query string) FusedCandidateQuery {
+	return FusedCandidateQuery{
+		CandidateFilter: CandidateFilter{IdentityID: documentTestIdentity},
+		Query:           query,
+		Embedding:       []float64{1, 0, 0},
 	}
 }

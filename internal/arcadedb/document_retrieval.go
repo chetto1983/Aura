@@ -17,8 +17,32 @@ type RetrievalLeg string
 // and in which direction that field orders: a lexical score is a relevance score where
 // higher wins, a dense score is a cosine distance where lower wins.
 const (
-	RetrievalLegLexical RetrievalLeg = "lexical"
-	RetrievalLegDense   RetrievalLeg = "dense"
+	// RetrievalLegFused is the only leg: ArcadeDB fuses the full-text and the vector
+	// index itself and returns one ranking. There is no lexical-only or dense-only path,
+	// because reconciling two rankings in Go is exactly what measured 0.300 recall@1
+	// against the engine's 0.850.
+	RetrievalLegFused RetrievalLeg = "fused"
+)
+
+// FusionStrategy is `vector.fuse`'s combination rule -- the engine's three, no fourth.
+type FusionStrategy string
+
+// RRF fuses by rank, DBSF and LINEAR by normalised score. RRF is the default because
+// this pair of sources has incomparable scales -- a cosine distance and a Lucene
+// relevance score -- and rank fusion is indifferent to that by construction.
+const (
+	FusionRRF    FusionStrategy = "RRF"
+	FusionDBSF   FusionStrategy = "DBSF"
+	FusionLINEAR FusionStrategy = "LINEAR"
+)
+
+// The values the 0.850/0.900 measurement used. Constants, not knobs: a passage's fused
+// rank depends on both, and the first attempt shipped groupSize 3 with 800 neighbours
+// against a measurement taken at 1 and 200, and scored 0.000. Change either only with a
+// fresh `go test -tags retrieval_bench ./internal/documents/`.
+const (
+	fusedDenseNeighbours = 200
+	fusedGroupSize       = 1
 )
 
 // CandidateFilter is the bounded tenant and document subset shared by both legs.
@@ -28,16 +52,12 @@ type CandidateFilter struct {
 	DocumentIDs []string
 }
 
-// LexicalCandidateQuery searches the multilingual StandardAnalyzer index.
-type LexicalCandidateQuery struct {
+// FusedCandidateQuery searches both indexes and fuses them server-side, in one query.
+type FusedCandidateQuery struct {
 	CandidateFilter
-	Query string
-}
-
-// DenseCandidateQuery searches the exact-width NONE-quantized vector index.
-type DenseCandidateQuery struct {
-	CandidateFilter
+	Query     string
 	Embedding []float64
+	Strategy  FusionStrategy
 }
 
 // PassageCandidate is an immutable passage plus its provenance and locator evidence.
@@ -70,8 +90,10 @@ type PassageCandidate struct {
 	ColumnNumber       *int64
 	CellReference      string
 	Leg                RetrievalLeg
-	LexicalScore       *float64
-	DenseDistance      *float64
+	// FusedScore is the engine's combined score, higher-is-better. Under RRF it reads
+	// back as a sum of 1/(60+rank) over the sources that matched, which makes a bad
+	// ranking diagnosable by arithmetic instead of by guessing.
+	FusedScore *float64
 }
 
 const passageCandidateFields = "passage_key, passage_id, document_id, " +
@@ -80,10 +102,13 @@ const passageCandidateFields = "passage_key, passage_id, document_id, " +
 	"page_number, bbox_left, bbox_top, bbox_right, bbox_bottom, char_start, char_end, " +
 	"sheet_name, table_name, row_number, column_number, cell_reference, active"
 
-// LexicalCandidates returns a deterministic, bounded lexical ranking.
-func (d *DocumentIndex) LexicalCandidates(
+// FusedCandidates returns ONE ranking over the full-text and vector indexes, combined by
+// ArcadeDB's own `vector.fuse` (manual: "Hybrid Search with vector.fuse", >= 26.5.1) and
+// diversified to one passage per document by the engine's groupBy, inside the index
+// traversal rather than over-fetched and partitioned afterwards.
+func (d *DocumentIndex) FusedCandidates(
 	ctx context.Context,
-	request LexicalCandidateQuery,
+	request FusedCandidateQuery,
 ) ([]PassageCandidate, error) {
 	filter, err := d.normalizeCandidateFilter(request.CandidateFilter)
 	if err != nil {
@@ -91,40 +116,22 @@ func (d *DocumentIndex) LexicalCandidates(
 	}
 	query := strings.TrimSpace(request.Query)
 	if query == "" {
-		return nil, fmt.Errorf("arcadedb: document lexical query must be non-empty")
+		return nil, fmt.Errorf("arcadedb: document fused query must be non-empty")
 	}
 	if utf8.RuneCountInString(query) > d.config.MaxQueryRunes {
 		return nil, fmt.Errorf("arcadedb: document query exceeds %d characters", d.config.MaxQueryRunes)
 	}
-	client, err := d.tenantClient(ctx, filter.IdentityID)
-	if err != nil {
-		return nil, err
-	}
-	where, params := candidateWhere(filter.DocumentIDs)
-	params["query"] = escapeLucene(query)
-	statement := "SELECT " + passageCandidateFields + ", $score AS lexical_score FROM " +
-		documentPassageType + " WHERE SEARCH_INDEX('" + documentPassageType +
-		"[text]', :query) = true AND " + where +
-		" ORDER BY lexical_score DESC, document_id ASC, ordinal ASC, passage_id ASC LIMIT " +
-		strconv.Itoa(filter.Limit)
-	rows, err := client.Query(ctx, statement, params)
-	if err != nil {
-		return nil, fmt.Errorf("arcadedb: lexical document candidates: %w", err)
-	}
-	return d.decodeCandidates(rows, RetrievalLegLexical, filter.Limit)
-}
-
-// DenseCandidates returns a deterministic, bounded nearest-neighbor ranking.
-func (d *DocumentIndex) DenseCandidates(
-	ctx context.Context,
-	request DenseCandidateQuery,
-) ([]PassageCandidate, error) {
-	filter, err := d.normalizeCandidateFilter(request.CandidateFilter)
-	if err != nil {
-		return nil, err
-	}
 	if err := validateDenseVector(request.Embedding, d.config.Dimensions); err != nil {
 		return nil, err
+	}
+	strategy := request.Strategy
+	if strategy == "" {
+		strategy = FusionRRF
+	}
+	switch strategy {
+	case FusionRRF, FusionDBSF, FusionLINEAR:
+	default:
+		return nil, fmt.Errorf("arcadedb: unknown fusion strategy %q", strategy)
 	}
 	client, err := d.tenantClient(ctx, filter.IdentityID)
 	if err != nil {
@@ -132,19 +139,32 @@ func (d *DocumentIndex) DenseCandidates(
 	}
 	where, params := candidateWhere(filter.DocumentIDs)
 	params["embedding"] = append([]float64(nil), request.Embedding...)
-	fetch := min(max(filter.Limit*4, 20), d.config.MaxRetrievalCandidates)
-	params["fetch"] = fetch
-	statement := "SELECT " + passageCandidateFields + ", distance AS dense_distance FROM (" +
-		"SELECT expand(`vector.neighbors`('" + documentPassageType +
-		"[embedding]', :embedding, :fetch, { filter: (SELECT @rid FROM " +
-		documentPassageType + " WHERE " + where + ").@rid }))" +
-		") ORDER BY dense_distance ASC, document_id ASC, ordinal ASC, passage_id ASC LIMIT " +
-		strconv.Itoa(filter.Limit)
-	rows, err := client.Query(ctx, statement, params)
+	params["query"] = escapeLucene(query)
+	params["fetch"] = fusedDenseNeighbours
+	rows, err := client.Query(ctx, fusedStatement(where, strategy, filter.Limit), params)
 	if err != nil {
-		return nil, fmt.Errorf("arcadedb: dense document candidates: %w", err)
+		return nil, fmt.Errorf("arcadedb: fused document candidates: %w", err)
 	}
-	return d.decodeCandidates(rows, RetrievalLegDense, filter.Limit)
+	return d.decodeCandidates(rows, RetrievalLegFused, filter.Limit)
+}
+
+// fusedStatement is the measured query, parameter for parameter. No outer ORDER BY:
+// `vector.fuse` returns descending by fused score, asserted by the engine's own
+// SQLFunctionVectorFuseTest.
+// The scope predicate reaches BOTH sub-pipelines: it carries `active = true` and, when
+// the caller named documents, the restriction to them. Measured 2026-08-08 to leave the
+// ranking bit-identical, so it costs nothing and its absence would have silently ignored
+// a caller's document filter.
+func fusedStatement(where string, strategy FusionStrategy, limit int) string {
+	return "SELECT " + passageCandidateFields + ", score AS fused_score FROM (" +
+		"SELECT expand(`vector.fuse`(" +
+		"`vector.neighbors`('" + documentPassageType + "[embedding]', :embedding, :fetch, " +
+		"{ filter: (SELECT @rid FROM " + documentPassageType + " WHERE " + where + ").@rid })," +
+		"(SELECT @rid, $score FROM " + documentPassageType +
+		" WHERE SEARCH_INDEX('" + documentPassageType + "[text]', :query) = true AND " + where + ")," +
+		"{ fusion: '" + string(strategy) + "', groupBy: 'document_id', groupSize: " +
+		strconv.Itoa(fusedGroupSize) + " }" +
+		"))) LIMIT " + strconv.Itoa(limit)
 }
 
 func (d *DocumentIndex) normalizeCandidateFilter(filter CandidateFilter) (CandidateFilter, error) {
@@ -228,9 +248,11 @@ func (d *DocumentIndex) decodeCandidates(
 		seen[passageKey] = struct{}{}
 		candidates = append(candidates, candidate)
 	}
-	sort.Slice(candidates, func(i, j int) bool {
-		return candidateLess(candidates[i], candidates[j], leg)
-	})
+	// NO re-sort. The engine returns the fused ranking in order and re-imposing one here
+	// throws it away: the comparator this replaces had a branch per leg, so the fused leg
+	// matched none of them and fell through to document_id ASC, ordinal ASC -- the
+	// ranking arrived correct and left grouped by document and ascending, measured at
+	// 0.000 recall@1 while the same query scored 0.850 run directly.
 	return candidates, nil
 }
 
@@ -309,22 +331,14 @@ func (d *DocumentIndex) decodeCandidate(
 	if err := decodeCandidateLocator(row, &candidate); err != nil {
 		return PassageCandidate{}, "", err
 	}
-	switch leg {
-	case RetrievalLegLexical:
-		score, err := requiredNonNegativeFloat(row, "lexical_score")
-		if err != nil {
-			return PassageCandidate{}, "", err
-		}
-		candidate.LexicalScore = &score
-	case RetrievalLegDense:
-		distance, err := requiredNonNegativeFloat(row, "dense_distance")
-		if err != nil {
-			return PassageCandidate{}, "", err
-		}
-		candidate.DenseDistance = &distance
-	default:
+	if leg != RetrievalLegFused {
 		return PassageCandidate{}, "", fmt.Errorf("unknown retrieval leg %q", leg)
 	}
+	score, err := requiredNonNegativeFloat(row, "fused_score")
+	if err != nil {
+		return PassageCandidate{}, "", err
+	}
+	candidate.FusedScore = &score
 	return candidate, passageKey, nil
 }
 
@@ -363,22 +377,6 @@ func decodeCandidateLocator(row map[string]any, candidate *PassageCandidate) err
 	}
 	candidate.CharacterSpan, err = optionalCharacterSpan(row)
 	return err
-}
-
-func candidateLess(left, right PassageCandidate, leg RetrievalLeg) bool {
-	if leg == RetrievalLegLexical && *left.LexicalScore != *right.LexicalScore {
-		return *left.LexicalScore > *right.LexicalScore
-	}
-	if leg == RetrievalLegDense && *left.DenseDistance != *right.DenseDistance {
-		return *left.DenseDistance < *right.DenseDistance
-	}
-	if left.DocumentID != right.DocumentID {
-		return left.DocumentID < right.DocumentID
-	}
-	if left.Ordinal != right.Ordinal {
-		return left.Ordinal < right.Ordinal
-	}
-	return left.PassageID < right.PassageID
 }
 
 func requiredInt64(row map[string]any, key string, positive bool) (int64, error) {

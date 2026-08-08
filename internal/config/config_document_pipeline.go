@@ -2,8 +2,6 @@ package config
 
 import (
 	"fmt"
-	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -36,8 +34,9 @@ const (
 	DefaultDocumentPipelineAttempts    = 5
 	DefaultDocumentPipelineLeaseSec    = 1_200
 	DefaultDocumentRetrievalCandidates = 200
-	DefaultDocumentDenseDistanceRatio  = 0.55
-	DefaultDocumentLexicalMinScore     = 2.0
+	// RRF is the manual's default and the right one here: it ranks by position, so it
+	// never has to reconcile a cosine distance with a Lucene relevance score.
+	DefaultDocumentFusionStrategy = "RRF"
 )
 
 // DocumentPipelineConfig bounds candidate construction and production retrieval.
@@ -48,8 +47,10 @@ type DocumentPipelineConfig struct {
 	MaxAttempts           int
 	LeaseDuration         time.Duration
 	RetrievalCandidates   int
-	DenseMaxDistanceRatio float64
-	LexicalMinScore       float64
+	// FusionStrategy names ArcadeDB's vector.fuse rule (RRF | DBSF | LINEAR). It replaces
+	// AURA_DOCUMENT_DENSE_MAX_DISTANCE_RATIO and AURA_DOCUMENT_LEXICAL_MIN_SCORE, which
+	// gated two separate legs that no longer exist: the engine returns one fused ranking.
+	FusionStrategy string
 }
 
 func loadDocumentPipelineConfig() DocumentPipelineConfig {
@@ -72,11 +73,8 @@ func loadDocumentPipelineConfig() DocumentPipelineConfig {
 		RetrievalCandidates: envutil.IntDefault(
 			"AURA_DOCUMENT_RETRIEVAL_CANDIDATES", DefaultDocumentRetrievalCandidates,
 		),
-		DenseMaxDistanceRatio: floatEnvDefault(
-			"AURA_DOCUMENT_DENSE_MAX_DISTANCE_RATIO", DefaultDocumentDenseDistanceRatio,
-		),
-		LexicalMinScore: floatEnvDefault(
-			"AURA_DOCUMENT_LEXICAL_MIN_SCORE", DefaultDocumentLexicalMinScore,
+		FusionStrategy: envDefault(
+			"AURA_DOCUMENT_FUSION_STRATEGY", DefaultDocumentFusionStrategy,
 		),
 	}
 }
@@ -108,25 +106,12 @@ func (c DocumentPipelineConfig) Validate() error {
 	if c.RetrievalCandidates <= 0 || c.RetrievalCandidates > DefaultDocumentRetrievalCandidates {
 		return fmt.Errorf("AURA_DOCUMENT_RETRIEVAL_CANDIDATES must be between 1 and %d", DefaultDocumentRetrievalCandidates)
 	}
-	if c.DenseMaxDistanceRatio <= 0 || c.DenseMaxDistanceRatio > 1 {
-		return fmt.Errorf("AURA_DOCUMENT_DENSE_MAX_DISTANCE_RATIO must be in (0,1]")
-	}
-	if c.LexicalMinScore < 0 {
-		return fmt.Errorf("AURA_DOCUMENT_LEXICAL_MIN_SCORE must be non-negative")
+	switch c.FusionStrategy {
+	case "RRF", "DBSF", "LINEAR":
+	default:
+		return fmt.Errorf("AURA_DOCUMENT_FUSION_STRATEGY must be RRF, DBSF or LINEAR")
 	}
 	return nil
-}
-
-func floatEnvDefault(key string, fallback float64) float64 {
-	value := os.Getenv(key)
-	if value == "" {
-		return fallback
-	}
-	parsed, err := strconv.ParseFloat(value, 64)
-	if err != nil {
-		return fallback
-	}
-	return parsed
 }
 
 func (c *Config) gateDocumentPipeline(profile RuntimeProfile) []Violation {

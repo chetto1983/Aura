@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"net/url"
 	"sort"
 	"strconv"
@@ -19,7 +18,7 @@ import (
 // be read back tomorrow against the cascade that actually produced it. Bump it whenever the
 // leg set, the admission thresholds or the ranking change — old citations then stay legible
 // as products of the older profile instead of silently claiming the new one.
-const ProductionRetrievalProfile = "lexical-dense-card-cascade-v1"
+const ProductionRetrievalProfile = "arcadedb-fused-card-v2"
 
 // The three sentinels separate blame. An empty query is the caller's input, an invalid scope
 // means a named document is not visible to this identity or is not in a ready generation, and
@@ -201,21 +200,23 @@ type RetrievalControlPlane interface {
 // ordering only, never for content or tenancy, and both of its legs are advisory: an error from
 // either degrades the answer instead of failing the call.
 type RetrievalProjection interface {
-	LexicalCandidates(context.Context, arcadedb.LexicalCandidateQuery) ([]arcadedb.PassageCandidate, error)
-	DenseCandidates(context.Context, arcadedb.DenseCandidateQuery) ([]arcadedb.PassageCandidate, error)
+	FusedCandidates(context.Context, arcadedb.FusedCandidateQuery) ([]arcadedb.PassageCandidate, error)
 }
 
 // RetrievalConfig bounds the cascade. Every non-positive field is replaced by a production
 // default during normalization, so the zero value is a working configuration rather than a
 // broken one — which also means a deliberate "no limit" cannot be expressed here.
 type RetrievalConfig struct {
-	CandidateLimit   int
-	MaxLimit         int
-	MaxDocumentIDs   int
-	MaxQueryRunes    int
-	TopPassages      int
-	DenseMaxDistance float64
-	LexicalMinScore  float64
+	CandidateLimit int
+	MaxLimit       int
+	MaxDocumentIDs int
+	MaxQueryRunes  int
+	TopPassages    int
+	// FusionStrategy picks the engine's combination rule. RRF by default: it ranks by
+	// position, so it is indifferent to the dense leg scoring a distance and the lexical
+	// leg a Lucene score. LINEAR measured better on the 2026-08-08 pilot (0.900 vs 0.850)
+	// but the manual reserves it for tuned weights, which one pilot is not.
+	FusionStrategy arcadedb.FusionStrategy
 }
 
 // HostRetriever runs the cascade in-process. Projection and Embedder are optional on purpose —
@@ -261,38 +262,43 @@ func (r *HostRetriever) Retrieve(ctx context.Context, request RetrievalRequest) 
 		response.Documents = rankDocuments(cards, nil, request.Limit, cfg.TopPassages, true)
 		return response, nil
 	}
-	filter := arcadedb.CandidateFilter{
-		IdentityID: request.IdentityID, Limit: cfg.CandidateLimit, DocumentIDs: scope,
+	// The embedding comes before the index read because there is one read: the engine
+	// needs both the vector and the terms to fuse them. Without an embedding there is
+	// nothing to fuse, so the answer degrades to the cards rather than to a second,
+	// hand-reconciled ranking -- that reconciliation is the thing being removed.
+	vectors, embedErr := r.embedQuery(ctx, request.Query)
+	if embedErr != nil {
+		response.Status, response.DegradationReason = RetrievalCardOnly, DegradationEmbedding
+		response.Documents = rankDocuments(cards, nil, request.Limit, cfg.TopPassages, true)
+		return response, nil
 	}
-	lexical, err := r.Projection.LexicalCandidates(ctx, arcadedb.LexicalCandidateQuery{
-		CandidateFilter: filter, Query: request.Query,
+	fused, err := r.Projection.FusedCandidates(ctx, arcadedb.FusedCandidateQuery{
+		CandidateFilter: arcadedb.CandidateFilter{
+			IdentityID: request.IdentityID, Limit: cfg.CandidateLimit, DocumentIDs: scope,
+		},
+		Query: request.Query, Embedding: vectors, Strategy: cfg.FusionStrategy,
 	})
 	if err != nil {
 		response.Status, response.DegradationReason = RetrievalCardOnly, DegradationArcade
 		response.Documents = rankDocuments(cards, nil, request.Limit, cfg.TopPassages, true)
 		return response, nil
 	}
-	lexical = admittedLexical(lexical, request.Query, cfg.LexicalMinScore)
-	candidates := lexical
-	if r.Embedder == nil {
-		response.Status, response.DegradationReason = RetrievalLexicalOnly, DegradationEmbedding
-	} else {
-		vectors, embedErr := r.Embedder.Embed(ctx, embeddings.RetrievalQueries([]string{request.Query}))
-		if embedErr != nil || len(vectors) != 1 {
-			response.Status, response.DegradationReason = RetrievalLexicalOnly, DegradationEmbedding
-		} else {
-			dense, denseErr := r.Projection.DenseCandidates(ctx, arcadedb.DenseCandidateQuery{
-				CandidateFilter: filter, Embedding: vectors[0],
-			})
-			if denseErr != nil {
-				response.Status, response.DegradationReason = RetrievalLexicalOnly, DegradationDense
-			} else {
-				candidates = append(candidates, admittedDense(dense, cfg.DenseMaxDistance)...)
-			}
-		}
-	}
-	response.Documents = rankDocuments(cards, candidates, request.Limit, cfg.TopPassages, false)
+	response.Documents = rankDocuments(cards, fused, request.Limit, cfg.TopPassages, false)
 	return response, nil
+}
+
+func (r *HostRetriever) embedQuery(ctx context.Context, query string) ([]float64, error) {
+	if r.Embedder == nil {
+		return nil, fmt.Errorf("documents: retrieval embedder is not configured")
+	}
+	vectors, err := r.Embedder.Embed(ctx, embeddings.RetrievalQueries([]string{query}))
+	if err != nil {
+		return nil, err
+	}
+	if len(vectors) != 1 {
+		return nil, fmt.Errorf("documents: embedder returned %d vectors, want 1", len(vectors))
+	}
+	return vectors[0], nil
 }
 
 func normalizeRetrievalRequest(request RetrievalRequest, cfg RetrievalConfig) (RetrievalRequest, RetrievalConfig, error) {
@@ -355,36 +361,10 @@ func normalizedRetrievalConfig(cfg RetrievalConfig) RetrievalConfig {
 	if cfg.TopPassages <= 0 {
 		cfg.TopPassages = 3
 	}
-	if cfg.DenseMaxDistance <= 0 {
-		cfg.DenseMaxDistance = 0.55
-	}
-	if cfg.LexicalMinScore < 0 {
-		cfg.LexicalMinScore = 0
+	if cfg.FusionStrategy == "" {
+		cfg.FusionStrategy = arcadedb.FusionRRF
 	}
 	return cfg
-}
-
-func admittedLexical(candidates []arcadedb.PassageCandidate, query string, minimum float64) []arcadedb.PassageCandidate {
-	multiTerm := len(strings.Fields(query)) > 1
-	return filterCandidates(candidates, func(candidate arcadedb.PassageCandidate) bool {
-		return candidate.LexicalScore != nil && *candidate.LexicalScore > 0 && (!multiTerm || *candidate.LexicalScore >= minimum)
-	})
-}
-
-func admittedDense(candidates []arcadedb.PassageCandidate, maximum float64) []arcadedb.PassageCandidate {
-	return filterCandidates(candidates, func(candidate arcadedb.PassageCandidate) bool {
-		return candidate.DenseDistance != nil && *candidate.DenseDistance <= maximum
-	})
-}
-
-func filterCandidates(candidates []arcadedb.PassageCandidate, keep func(arcadedb.PassageCandidate) bool) []arcadedb.PassageCandidate {
-	out := make([]arcadedb.PassageCandidate, 0, len(candidates))
-	for _, candidate := range candidates {
-		if keep(candidate) {
-			out = append(out, candidate)
-		}
-	}
-	return out
 }
 
 func citationLocator(candidate arcadedb.PassageCandidate) string {
@@ -411,11 +391,4 @@ func citationLocator(candidate arcadedb.PassageCandidate) string {
 		parts = append(parts, "ordinal="+strconv.FormatInt(candidate.Ordinal, 10))
 	}
 	return strings.Join(parts, ";")
-}
-
-func normalizedScore(value float64) float64 {
-	if value <= 0 || math.IsNaN(value) || math.IsInf(value, 0) {
-		return 0
-	}
-	return value / (1 + value)
 }

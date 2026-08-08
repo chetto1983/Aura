@@ -44,26 +44,16 @@ func (f *fakeRetrievalControl) RouteDocumentCards(
 }
 
 type fakeRetrievalProjection struct {
-	lexical      []arcadedb.PassageCandidate
-	dense        []arcadedb.PassageCandidate
-	lexicalErr   error
-	denseErr     error
-	lexicalQuery arcadedb.LexicalCandidateQuery
-	denseQuery   arcadedb.DenseCandidateQuery
+	fused      []arcadedb.PassageCandidate
+	fusedErr   error
+	fusedQuery arcadedb.FusedCandidateQuery
 }
 
-func (f *fakeRetrievalProjection) LexicalCandidates(
-	_ context.Context, query arcadedb.LexicalCandidateQuery,
+func (f *fakeRetrievalProjection) FusedCandidates(
+	_ context.Context, query arcadedb.FusedCandidateQuery,
 ) ([]arcadedb.PassageCandidate, error) {
-	f.lexicalQuery = query
-	return append([]arcadedb.PassageCandidate(nil), f.lexical...), f.lexicalErr
-}
-
-func (f *fakeRetrievalProjection) DenseCandidates(
-	_ context.Context, query arcadedb.DenseCandidateQuery,
-) ([]arcadedb.PassageCandidate, error) {
-	f.denseQuery = query
-	return append([]arcadedb.PassageCandidate(nil), f.dense...), f.denseErr
+	f.fusedQuery = query
+	return append([]arcadedb.PassageCandidate(nil), f.fused...), f.fusedErr
 }
 
 type fakeRetrievalEmbedder struct {
@@ -81,18 +71,17 @@ func (f *fakeRetrievalEmbedder) Embed(_ context.Context, inputs []string) ([][]f
 }
 
 func TestHostRetrieverReturnsRevalidatedCitationEvidence(t *testing.T) {
-	lexical := retrievalCandidate(arcadedb.RetrievalLegLexical)
-	lexical.LexicalScore = new(3.5)
-	dense := retrievalCandidate(arcadedb.RetrievalLegDense)
-	dense.DenseDistance = new(0.2)
+	// One fused candidate, not one per leg: the engine returns a single ranking.
+	fused := retrievalCandidate(arcadedb.RetrievalLegFused)
+	fused.FusedScore = new(0.031)
 	control := &fakeRetrievalControl{
 		scope: []string{retrievalDocument}, cards: []RetrievalCard{retrievalCard()},
 	}
-	projection := &fakeRetrievalProjection{lexical: []arcadedb.PassageCandidate{lexical}, dense: []arcadedb.PassageCandidate{dense}}
+	projection := &fakeRetrievalProjection{fused: []arcadedb.PassageCandidate{fused}}
 	embedder := &fakeRetrievalEmbedder{vector: []float64{0.1, 0.2}}
 	retriever := &HostRetriever{
 		ControlPlane: control, Projection: projection, Embedder: embedder,
-		Config: RetrievalConfig{CandidateLimit: 20, LexicalMinScore: 2},
+		Config: RetrievalConfig{CandidateLimit: 20},
 	}
 
 	response, err := retriever.Retrieve(t.Context(), RetrievalRequest{
@@ -108,20 +97,20 @@ func TestHostRetrieverReturnsRevalidatedCitationEvidence(t *testing.T) {
 	}
 	doc := response.Documents[0]
 	if doc.RequiresOpen || doc.OriginalSHA256 != strings.Repeat("a", 64) ||
-		len(doc.Passages) != 1 || len(doc.Passages[0].Evidence) != 2 {
+		len(doc.Passages) != 1 || len(doc.Passages[0].Evidence) != 1 || doc.Score != 0.031 {
 		t.Fatalf("document = %#v", doc)
 	}
 	passage := doc.Passages[0]
 	if passage.CitationToken != "document:doc_9f2c@aaaaaaaaaaaa#ref=%2Ftexts%2F42;page=7" ||
 		passage.CitationLocator != "ref=%2Ftexts%2F42;page=7" ||
 		passage.Locator.SelfRef != "/texts/42" ||
-		passage.Evidence[0].Rank != 1 || passage.Evidence[1].Rank != 1 {
+		passage.Evidence[0].Rank != 1 {
 		t.Fatalf("citation = %#v", passage)
 	}
 	if !reflect.DeepEqual(control.scopeRequest, []string{"doc_9f2c"}) ||
-		!reflect.DeepEqual(projection.lexicalQuery.DocumentIDs, []string{retrievalDocument}) ||
-		!reflect.DeepEqual(projection.denseQuery.Embedding, []float64{0.1, 0.2}) {
-		t.Fatalf("scope/query not threaded: %#v %#v", projection.lexicalQuery, projection.denseQuery)
+		!reflect.DeepEqual(projection.fusedQuery.DocumentIDs, []string{retrievalDocument}) ||
+		!reflect.DeepEqual(projection.fusedQuery.Embedding, []float64{0.1, 0.2}) {
+		t.Fatalf("scope/query not threaded: %#v", projection.fusedQuery)
 	}
 	if len(embedder.inputs) != 1 || embedder.inputs[0] != "task: search result | query: codice cliente WPT" {
 		t.Fatalf("embedding inputs = %#v", embedder.inputs)
@@ -135,13 +124,14 @@ func TestHostRetrieverReturnsTheProjectionPassageDirectly(t *testing.T) {
 	// of the text in Postgres to be authoritative, and its own preconditions (uuid ids, an
 	// integer generation) rejected every row the reconciler writes. The projection payload
 	// is the answer now, which is what comparable systems do.
-	candidate := retrievalCandidate(arcadedb.RetrievalLegLexical)
+	candidate := retrievalCandidate(arcadedb.RetrievalLegFused)
 	candidate.Text = "il codice cliente WPT-4417 e' attivo"
 	candidate.SelfRef = "/texts/42"
-	candidate.LexicalScore = new(4.0)
+	candidate.FusedScore = new(0.031)
 	response, err := (&HostRetriever{
 		ControlPlane: &fakeRetrievalControl{cards: []RetrievalCard{retrievalCard()}},
-		Projection:   &fakeRetrievalProjection{lexical: []arcadedb.PassageCandidate{candidate}},
+		Projection:   &fakeRetrievalProjection{fused: []arcadedb.PassageCandidate{candidate}},
+		Embedder:     &fakeRetrievalEmbedder{vector: []float64{0.1, 0.2}},
 	}).Retrieve(t.Context(), RetrievalRequest{IdentityID: retrievalIdentity, Query: "WPT cliente"})
 	if err != nil {
 		t.Fatal(err)
@@ -160,12 +150,13 @@ func TestHostRetrieverReturnsTheProjectionPassageDirectly(t *testing.T) {
 // could only be created by a card -- which is the whole reason bucket-ingested documents
 // were unreachable through document_search.
 func TestHostRetrieverReturnsDocumentsThatHaveNoCard(t *testing.T) {
-	candidate := retrievalCandidate(arcadedb.RetrievalLegLexical)
-	candidate.LexicalScore = new(4.0)
+	candidate := retrievalCandidate(arcadedb.RetrievalLegFused)
+	candidate.FusedScore = new(0.031)
 	candidate.SourceKind, candidate.SourceKey = "s3", "fatture/2026/q1/fattura-acme.pdf"
 	response, err := (&HostRetriever{
 		ControlPlane: &fakeRetrievalControl{},
-		Projection:   &fakeRetrievalProjection{lexical: []arcadedb.PassageCandidate{candidate}},
+		Projection:   &fakeRetrievalProjection{fused: []arcadedb.PassageCandidate{candidate}},
+		Embedder:     &fakeRetrievalEmbedder{vector: []float64{0.1, 0.2}},
 	}).Retrieve(t.Context(), RetrievalRequest{IdentityID: retrievalIdentity, Query: "fattura"})
 	if err != nil {
 		t.Fatal(err)
@@ -185,45 +176,29 @@ func TestHostRetrieverReturnsDocumentsThatHaveNoCard(t *testing.T) {
 }
 
 func TestHostRetrieverDegradationIsExplicit(t *testing.T) {
-	lexical := retrievalCandidate(arcadedb.RetrievalLegLexical)
-	lexical.LexicalScore = new(3.0)
+	// With one fused read there are two ways to lose it -- no embedding to fuse with, or
+	// the engine refusing -- and both leave only the cards.
 	tests := []struct {
 		name       string
 		projection *fakeRetrievalProjection
 		embedder   *fakeRetrievalEmbedder
-		status     RetrievalStatus
 		reason     string
-		open       bool
 	}{
-		{
-			name: "embedding", projection: &fakeRetrievalProjection{lexical: []arcadedb.PassageCandidate{lexical}},
-			embedder: &fakeRetrievalEmbedder{err: errors.New("offline")},
-			status:   RetrievalLexicalOnly, reason: DegradationEmbedding,
-		},
-		{
-			name: "dense", projection: &fakeRetrievalProjection{
-				lexical: []arcadedb.PassageCandidate{lexical}, denseErr: errors.New("index unavailable"),
-			}, embedder: &fakeRetrievalEmbedder{vector: []float64{1}},
-			status: RetrievalLexicalOnly, reason: DegradationDense,
-		},
-		{
-			name: "arcade", projection: &fakeRetrievalProjection{lexicalErr: errors.New("server unavailable")},
-			embedder: &fakeRetrievalEmbedder{vector: []float64{1}},
-			status:   RetrievalCardOnly, reason: DegradationArcade, open: true,
-		},
+		{"embedding", &fakeRetrievalProjection{}, &fakeRetrievalEmbedder{err: errors.New("offline")}, DegradationEmbedding},
+		{"arcade", &fakeRetrievalProjection{fusedErr: errors.New("server unavailable")},
+			&fakeRetrievalEmbedder{vector: []float64{1}}, DegradationArcade},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			control := &fakeRetrievalControl{cards: []RetrievalCard{retrievalCard()}}
 			response, err := (&HostRetriever{
 				ControlPlane: control, Projection: test.projection, Embedder: test.embedder,
-				Config: RetrievalConfig{LexicalMinScore: 2},
 			}).Retrieve(t.Context(), RetrievalRequest{IdentityID: retrievalIdentity, Query: "codice cliente"})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if response.Status != test.status || response.DegradationReason != test.reason ||
-				len(response.Documents) != 1 || response.Documents[0].RequiresOpen != test.open {
+			if response.Status != RetrievalCardOnly || response.DegradationReason != test.reason ||
+				len(response.Documents) != 1 || !response.Documents[0].RequiresOpen {
 				t.Fatalf("response = %#v", response)
 			}
 		})
@@ -239,19 +214,6 @@ func TestHostRetrieverValidationAndThresholds(t *testing.T) {
 		if _, err := (&HostRetriever{}).Retrieve(t.Context(), request); err == nil {
 			t.Fatalf("request accepted: %#v", request)
 		}
-	}
-	low := retrievalCandidate(arcadedb.RetrievalLegLexical)
-	low.LexicalScore = new(0.5)
-	if got := admittedLexical([]arcadedb.PassageCandidate{low}, "single", 2); len(got) != 1 {
-		t.Fatalf("single-token positive lexical match rejected: %#v", got)
-	}
-	if got := admittedLexical([]arcadedb.PassageCandidate{low}, "two terms", 2); len(got) != 0 {
-		t.Fatalf("multi-term low lexical match admitted: %#v", got)
-	}
-	dense := retrievalCandidate(arcadedb.RetrievalLegDense)
-	dense.DenseDistance = new(0.56)
-	if got := admittedDense([]arcadedb.PassageCandidate{dense}, 0.55); len(got) != 0 {
-		t.Fatalf("distant vector admitted: %#v", got)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/chetto1983/aura/internal/arcadedb"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/documents"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -16,9 +17,8 @@ func newHostDocumentRetriever(cfg *config.Config, pool *pgxpool.Pool) (*document
 	retriever := &documents.HostRetriever{
 		Embedder: embeddingClient(cfg, documentHTTPClient(cfg)),
 		Config: documents.RetrievalConfig{
-			CandidateLimit:   cfg.DocumentPipeline.RetrievalCandidates,
-			DenseMaxDistance: cfg.DocumentPipeline.DenseMaxDistanceRatio,
-			LexicalMinScore:  cfg.DocumentPipeline.LexicalMinScore,
+			CandidateLimit: cfg.DocumentPipeline.RetrievalCandidates,
+			FusionStrategy: arcadedb.FusionStrategy(cfg.DocumentPipeline.FusionStrategy),
 		},
 	}
 	// ONE index serves both roles now. The control plane used to be a PostgreSQL store
