@@ -37,14 +37,48 @@ A correction worth keeping: the handoff's claim that passages carry `source_key`
 schema**. Stale probe databases are worse than no evidence — reading them as current nearly killed
 a sound design.
 
-## 3. Decision 1 — two stores, and the catalog is deleted
+## 3. Decision 1 — one writer, not two stores
 
-**Garage holds bytes and names. ArcadeDB holds passages and vectors. PostgreSQL holds no document
-state at all** — it keeps only the generic asset queue and the storage ledger, neither of which is
-about documents specifically.
+> **CORRECTED 2026-08-08, after enumerating the installed package instead of assuming.** This
+> section originally said "two stores, and the catalog is deleted", and rejected a Postgres
+> projection as a third copy that would drift. That was wrong, and it was wrong for the reason this
+> project keeps paying for: the inventory was done after the design instead of before it.
+> **CocoIndex ships a `postgres` connector** whose `__all__` exports `mount_table_target`,
+> `declare_table_target`, `table_target`, `TableSchema`, `ColumnDef`, `PgType` and `create_pool` —
+> the same target API the `neo4j` connector already uses to write the passages, with pgvector
+> support included.
 
-This is the standard production RAG shape (object storage as truth, vector store as a reconciled
+**The correct framing is not how many stores exist. It is how many writers exist, and the answer
+is one.** CocoIndex reconciles the bucket into every store that projects it:
+
+| store | holds | written by |
+|---|---|---|
+| Garage | bytes and names — the truth | the uploader |
+| ArcadeDB | passages, vectors | CocoIndex `neo4j` target (already) |
+| PostgreSQL | the document rows the UI filters and sorts | CocoIndex `postgres` target |
+
+A projection maintained by the same engine, in the same pass, from the same source, **cannot drift
+by construction** — which is precisely why the "third copy" objection does not apply here and does
+apply to anything Aura syncs itself.
+
+What gets deleted is therefore **Aura's catalog WRITE machinery**, not necessarily the table. Reads
+stay as SQL. Aura writes no synchronisation code at all.
+
+This is the standard production RAG shape (object storage as truth, everything else a reconciled
 projection), not an invention.
+
+### 3.1 The open choice: `managed_by`
+
+`declare_table_target` takes `managed_by`: `ManagedBy.SYSTEM` means CocoIndex creates and drops the
+table; `ManagedBy.USER` means the table must already exist and CocoIndex manages only its rows.
+That second mode would let the sidecar maintain rows in Aura's **existing** `aura.documents`,
+deleting the write path without dropping the table or rewriting the read queries.
+
+**This is unmeasured and must be spiked before it is decided**, because the document plane is under
+fail-closed RLS (migration 0087) and the connector's pool is not Aura's: a target that cannot set
+`app.current_identity` per connection writes rows owned by nobody, which is invisible to every read
+meant to return them. The spike is: point a `ManagedBy.USER` target at `aura.documents` on the live
+stack and see whether rows land, and land owned. Until it passes, neither mode is chosen here.
 
 The catalog existed to answer three questions. Each is now answerable without it:
 
@@ -134,8 +168,10 @@ Aura is on v2.
   Aura, no per-identity credential routing, and no ingest status.
 - **`Noooste/garage-ui` as a sidecar or fork (MIT).** Rejected as the product surface for the same
   integration reasons; retained as the **reference implementation** for the object-browsing handlers.
-- **Catalog as a thin one-row-per-object projection.** Rejected: a third copy that can drift from
-  the bucket is the exact bug class reconciliation exists to remove.
+- **A HAND-MAINTAINED catalog projection.** Rejected: a third copy Aura syncs itself can drift from
+  the bucket, which is the exact bug class reconciliation exists to remove. Note carefully that this
+  rejects the *hand-maintained* version only — see §3.1, where CocoIndex maintains it instead and the
+  objection stops applying.
 
 ## 7. Prerequisites and open risks
 

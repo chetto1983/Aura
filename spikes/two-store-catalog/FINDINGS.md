@@ -74,6 +74,51 @@ leg — in live mode `auto_refresh` swallows extraction errors into the next cyc
   `services/ingest/identity.py` is null-**prefixed**, matching `ids.go:92-96`, and says so in a
   comment. The skeleton was wrong; the code is right.
 
+## Round 2 — the postgres target, and a correction to this document's own conclusion
+
+**2026-08-08, later the same day.** The design above concluded "delete the catalog, two stores" and
+rejected a Postgres projection as a third copy that would drift. That rejection was wrong, and it
+was wrong for the reason this project keeps paying for: the dependency was inventoried AFTER the
+design instead of before it.
+
+**CocoIndex ships a `postgres` connector.** `cocoindex/connectors/postgres/_target.py` exports
+`mount_table_target`, `declare_table_target`, `table_target`, `TableSchema`, `ColumnDef`, `PgType`
+and `create_pool` — the same target API the `neo4j` connector already uses for the passages, with
+pgvector support included. `declare_table_target` takes `managed_by`: `ManagedBy.SYSTEM` creates and
+drops the table, `ManagedBy.USER` requires it to exist and manages only its rows.
+
+A projection written by the same engine, in the same pass, from the same source **cannot drift by
+construction**. The drift objection applies only to a copy Aura synchronises itself.
+
+### Measured: does it survive fail-closed RLS?
+
+The document plane is under RLS (migration 0087) and the connector owns its own pool, so a target
+that cannot set `app.current_identity` per connection would write rows owned by nobody. Measured on
+a disposable database reproducing 0087's policy, writing as a **non-owner** role:
+
+| pool | write | rows visible |
+|---|---|---|
+| `asyncpg.create_pool(init=…)` sets the GUC | **OK** | 1 |
+| no GUC | **REFUSED** — `InsufficientPrivilegeError: new row violates row-level security policy` | 0 |
+| blind reader, no GUC | — | **0 — fail-closed holds** |
+
+`create_pool` in the connector is deprecated and delegates to `asyncpg.create_pool(dsn, **kwargs)`,
+so the pool is ours to construct and the GUC goes in `init=`. **The whole mechanism is pool
+configuration — no Go, no sync code, no bespoke component.**
+
+**Two constraints this puts on the design.** The sidecar must connect as `aura_app`, NOT
+`aura_migrate`: 0087 deliberately uses `ENABLE`, not `FORCE` ("aura_migrate OWNS these tables …
+aura_app is a non-owner, non-superuser, non-BYPASSRLS role"), so the owner bypasses RLS and the
+database-level guarantee would be lost. And the image needs **`cocoindex[amazon_s3,postgres]`**:
+`postgres = ["asyncpg>=0.31.0"]` in cocoindex's pyproject, and `asyncpg` appeared in the plan's
+draft requirements but never shipped — the image carries only `cocoindex[amazon_s3]`, `iscc-tika`
+and `neo4j`. Exactly the failure mode the `amazon_s3` comment in that same file already warns about.
+
+**What this does NOT prove:** no `TableSchema` was declared and no target was actually mounted — the
+INSERT path was exercised directly against the same pool configuration the target would use. That
+isolates the RLS question, which was the risk; it does not prove the target's own DDL, upsert or
+delete-reconciliation behaviour against this schema.
+
 ## Operational gotchas found
 
 - **ArcadeDB locks out after repeated failed auth** ("Too many failed authentication attempts").
