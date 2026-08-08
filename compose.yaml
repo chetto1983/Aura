@@ -765,6 +765,10 @@ services:
       AURA_INGEST_S3_SECRET_ACCESS_KEY: ${AURA_INGEST_S3_SECRET_ACCESS_KEY:-}
       AURA_INGEST_S3_REGION: ${AURA_INGEST_S3_REGION:-garage}
       AURA_INGEST_S3_PREFIX: ${AURA_INGEST_S3_PREFIX:-}
+      # aura_app, NEVER aura_migrate: migration 0087 uses ENABLE rather than FORCE, so the
+      # table owner bypasses row-level security and the per-connection identity this pool
+      # sets would buy nothing.
+      AURA_INGEST_PG_DSN: ${AURA_INGEST_PG_DSN:?AURA_INGEST_PG_DSN required (aura_app DSN)}
     volumes:
       - aura-ingest-state:/state
 
