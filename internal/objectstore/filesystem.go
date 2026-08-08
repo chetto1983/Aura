@@ -197,6 +197,18 @@ func (s *FilesystemStore) List(ctx context.Context, req ListRequest) ([]ObjectIn
 	return out, nil
 }
 
+// Copy reads and rewrites. A filesystem has no server-side copy to delegate to, and this
+// store backs tests and single-node deployments where that cost is not the constraint.
+func (s *FilesystemStore) Copy(ctx context.Context, src, dst ObjectRef) error {
+	body, attrs, err := s.Get(ctx, src)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = body.Close() }()
+	_, err = s.Put(ctx, dst, body, PutOptions{MIMEType: attrs.MIMEType, Size: attrs.SizeBytes})
+	return err
+}
+
 func (s *FilesystemStore) Delete(ctx context.Context, ref ObjectRef) error {
 	if err := ctx.Err(); err != nil {
 		return err

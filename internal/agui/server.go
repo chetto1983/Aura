@@ -136,6 +136,7 @@ type Server struct {
 	files            FileBrowser
 	fileObjects      FileObjectOpener
 	fileWrites       FileObjectWriter
+	fileOps          FileOperations
 	images           ImageFetcher
 	graph            GraphView
 	governance       GovernanceProviders

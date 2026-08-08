@@ -29,6 +29,13 @@ func contentDisposition(filename string) string {
 	return `attachment; filename="` + fallback + `"; filename*=UTF-8''` + extended
 }
 
+// inlineContentDisposition names a file the browser is allowed to render. Identical escaping
+// to the attachment form above -- the disposition changes, the header-injection guard does
+// not -- so the two can never drift into one being safe and the other not.
+func inlineContentDisposition(filename string) string {
+	return "inline" + strings.TrimPrefix(contentDisposition(filename), "attachment")
+}
+
 // asciiFallbackFilename folds diacritics (NFKD decompose, drop combining marks, recompose) so an
 // accented name degrades to its base-Latin ASCII form ("relazióne.pdf" -> "relazione.pdf"), then
 // replaces every remaining non-printable-ASCII byte and the quoted-string delimiters ('"' and

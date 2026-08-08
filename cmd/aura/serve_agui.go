@@ -95,9 +95,11 @@ func wireAGUIServer(chat *chatEnv, store *cron.Store, scheduler *cron.Scheduler,
 	// document reconciled from the bucket was invisible to the UI no matter that it was
 	// fully indexed and answerable.
 	fileObjects := buildFileObjectAccess(chat.cfg, chat.pool, objectStore)
-	aguiServer.SetFileBrowser(buildFileBrowser(chat.cfg, chat.pool, objectStore))
+	fileBrowser := buildFileBrowser(chat.cfg, chat.pool, objectStore)
+	aguiServer.SetFileBrowser(fileBrowser)
 	aguiServer.SetFileOpener(fileObjects)
 	aguiServer.SetFileWriter(fileObjects)
+	aguiServer.SetFileOperations(fileBrowser)
 	// Wire the cross-thread HITL approval read (APRV-01 / D-04). Without this the
 	// GET /api/approvals poll answers 503 and the whole approval center is dead in
 	// production — SetApprovalStore was only ever called in tests, so the live daemon

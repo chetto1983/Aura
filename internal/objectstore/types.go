@@ -71,6 +71,10 @@ type Store interface {
 	Get(context.Context, ObjectRef) (io.ReadCloser, Attrs, error)
 	List(context.Context, ListRequest) ([]ObjectInfo, error)
 	Delete(context.Context, ObjectRef) error
+	// Copy duplicates one object inside the store. It exists so a file manager's move and
+	// rename -- which S3 has no primitive for, both being copy-then-delete -- do not have to
+	// stream every byte out through the daemon and back.
+	Copy(ctx context.Context, src, dst ObjectRef) error
 }
 
 func AssetKey(identityID, assetID string) string {

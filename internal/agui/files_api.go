@@ -26,11 +26,17 @@ type FileBrowser interface {
 	List(ctx context.Context, identityID, prefix string, limit int) (assets.BrowseResult, error)
 }
 
+// FileAttrs is what the store knows about an object beyond its bytes.
+type FileAttrs struct {
+	MIMEType  string
+	SizeBytes int64
+}
+
 // FileObjectOpener streams one object out of one identity's own bucket. The implementation
 // MUST resolve the owner's own store before reading: this handler relies on that as its
 // ownership gate, exactly as document_open does.
 type FileObjectOpener interface {
-	OpenObject(ctx context.Context, identityID, key string) (io.ReadCloser, error)
+	ReadObject(ctx context.Context, identityID, key string) (io.ReadCloser, FileAttrs, error)
 }
 
 // FileObjectWriter stores one object in one identity's own bucket, with the same ownership
@@ -53,6 +59,7 @@ func (s *Server) registerFileRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+fileManagerBase+"/files/{path...}", s.handleFileList)
 	mux.HandleFunc("GET "+fileManagerBase+"/direct", s.handleFileDirect)
 	mux.HandleFunc("POST "+fileManagerBase+"/upload", s.handleFileUpload)
+	s.registerFileWriteRoutes(mux)
 }
 
 // fileEntry is one row in the component's vocabulary.
@@ -133,15 +140,18 @@ func browseDate(at time.Time) string {
 	return at.UTC().Format(time.RFC3339)
 }
 
-// handleFileDirect streams one object of the caller's own bucket.
+// handleFileDirect streams one object of the caller's own bucket, inline for an open and as
+// an attachment for a download — the component's own distinction.
 //
-// ALWAYS an attachment, never inline. The reference backend serves inline unless asked to
-// download, and the widget's "open" action relies on that — but these are user-supplied
-// bytes served from the cockpit's own origin, so rendering them in-origin is the stored-XSS
-// hazard WEBART-03/D-10 exists to prevent. The same three guards as the asset download
-// apply: a neutral content type plus nosniff regardless of what the object claims to be, the
-// file name carried through the injection-safe Content-Disposition encoder, and a read
-// scoped to the request context so a client disconnect cancels it.
+// Inline is the interesting one, because these are user-supplied bytes on the cockpit's own
+// origin: an uploaded .html rendered here would run with the operator's session. What makes
+// it safe is Content-Security-Policy: sandbox, which drops the response into an opaque
+// origin with no scripts, no forms and no same-origin access — so the document renders and
+// can reach nothing. That is the same control GitHub applies to raw user content, and it is
+// why the answer is a header rather than refusing to open files at all.
+//
+// nosniff stays regardless, so a mislabelled type is never upgraded by the browser's guess,
+// and the read is scoped to the request context so a disconnect cancels it.
 func (s *Server) handleFileDirect(w http.ResponseWriter, r *http.Request) {
 	if s.fileObjects == nil {
 		http.Error(w, "file browser unavailable", http.StatusServiceUnavailable)
@@ -157,7 +167,7 @@ func (s *Server) handleFileDirect(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "id is required", http.StatusBadRequest)
 		return
 	}
-	body, err := s.fileObjects.OpenObject(r.Context(), identityID, key)
+	body, attrs, err := s.fileObjects.ReadObject(r.Context(), identityID, key)
 	if err != nil {
 		// Not-found and not-owned collapse to the same 404 so the response cannot be used to
 		// probe which keys exist in someone else's bucket (D-12 existence hiding).
@@ -167,9 +177,17 @@ func (s *Server) handleFileDirect(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = body.Close() }()
 
 	header := w.Header()
-	header.Set("Content-Type", "application/octet-stream")
 	header.Set("X-Content-Type-Options", "nosniff")
-	header.Set("Content-Disposition", contentDisposition(path.Base(key)))
+	if inlineDisposition(r) {
+		header.Set("Content-Security-Policy", "sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'")
+		header.Set("Content-Type", mimeOrOctetStream(attrs.MIMEType))
+		header.Set("Content-Disposition", inlineContentDisposition(path.Base(key)))
+	} else {
+		// A forced download is never rendered, so it does not need the type at all — and a
+		// neutral one removes any chance of the browser deciding to display it anyway.
+		header.Set("Content-Type", "application/octet-stream")
+		header.Set("Content-Disposition", contentDisposition(path.Base(key)))
+	}
 	_, _ = io.Copy(w, body)
 }
 

@@ -35,6 +35,7 @@
     "@shikijs/langs": "^4.2.0",
     "@shikijs/themes": "^4.2.0",
     "@svar-ui/core-locales": "^2.6.0",
+    "@svar-ui/filemanager-data-provider": "^2.6.0",
     "@svar-ui/react-filemanager": "^2.6.0",
     "@tanstack/react-query": "^5.101.0",
     "@tiptap/react": "^3.29.2",

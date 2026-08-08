@@ -51,6 +51,31 @@ type BrowseResult struct {
 // rather than a caller error and must not read as "this identity has no files".
 var ErrBrowserUnconfigured = errors.New("assets: file browser is not configured")
 
+// resolveStore returns the store and bucket that BELONG to identityID.
+//
+// Every read and every write goes through here, which is the point: the resolver is the
+// ownership gate, so no operation can reach another identity's bucket even if a caller
+// hands it a key from one. A nil resolver is the pre-provisioning deployment, where the
+// shared bucket is the only bucket.
+func (b *Browser) resolveStore(
+	ctx context.Context, identityID string,
+) (objectstore.Store, string, error) {
+	if b == nil || b.Objects == nil {
+		return nil, "", ErrBrowserUnconfigured
+	}
+	if strings.TrimSpace(identityID) == "" {
+		return nil, "", errors.New("assets: identity is required to reach a bucket")
+	}
+	if b.PerIdentity == nil {
+		return b.Objects, b.SharedBucket, nil
+	}
+	store, bucket, err := b.PerIdentity.ResolveForIdentity(ctx, b.Objects, identityID)
+	if err != nil {
+		return nil, "", err
+	}
+	return store, bucket, nil
+}
+
 // List returns one folder's contents for identityID.
 //
 // The delimiter is always "/": a listing without one returns every key in the bucket, which
@@ -72,13 +97,9 @@ func (b *Browser) List(
 		limit = 200
 	}
 
-	store, bucket := b.Objects, b.SharedBucket
-	if b.PerIdentity != nil {
-		resolved, resolvedBucket, err := b.PerIdentity.ResolveForIdentity(ctx, b.Objects, identityID)
-		if err != nil {
-			return BrowseResult{}, err
-		}
-		store, bucket = resolved, resolvedBucket
+	store, bucket, err := b.resolveStore(ctx, identityID)
+	if err != nil {
+		return BrowseResult{}, err
 	}
 
 	objects, err := store.List(ctx, objectstore.ListRequest{

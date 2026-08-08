@@ -152,6 +152,20 @@ func (s *FakeStore) Delete(ctx context.Context, ref ObjectRef) error {
 	return nil
 }
 
+func (s *FakeStore) Copy(ctx context.Context, src, dst ObjectRef) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	object, ok := s.objects[src]
+	if !ok {
+		return fs.ErrNotExist
+	}
+	s.objects[dst] = object
+	return nil
+}
+
 func etag(data []byte) string {
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])

@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/documents"
@@ -92,6 +93,23 @@ func (o identityObjectOpener) OpenObject(
 	}
 	body, _, err := store.Get(ctx, objectstore.ObjectRef{Bucket: bucket, Key: key})
 	return body, err
+}
+
+// ReadObject is OpenObject plus what the store knows about the bytes, which the file
+// manager needs to render a file inline instead of only offering it as a download.
+func (o identityObjectOpener) ReadObject(
+	ctx context.Context,
+	identityID, key string,
+) (io.ReadCloser, agui.FileAttrs, error) {
+	store, bucket, err := o.resolve(ctx, identityID, key)
+	if err != nil {
+		return nil, agui.FileAttrs{}, err
+	}
+	body, attrs, err := store.Get(ctx, objectstore.ObjectRef{Bucket: bucket, Key: key})
+	if err != nil {
+		return nil, agui.FileAttrs{}, err
+	}
+	return body, agui.FileAttrs{MIMEType: attrs.MIMEType, SizeBytes: attrs.SizeBytes}, nil
 }
 
 // PutObject stores an uploaded file in the owner's own bucket. Nothing is enqueued: the

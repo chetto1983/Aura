@@ -36,17 +36,19 @@ type fakeFileOpener struct {
 	identity string
 	key      string
 	body     string
+	mime     string
 	err      error
 }
 
-func (f *fakeFileOpener) OpenObject(
+func (f *fakeFileOpener) ReadObject(
 	_ context.Context, identityID, key string,
-) (io.ReadCloser, error) {
+) (io.ReadCloser, FileAttrs, error) {
 	f.identity, f.key = identityID, key
 	if f.err != nil {
-		return nil, f.err
+		return nil, FileAttrs{}, f.err
 	}
-	return io.NopCloser(strings.NewReader(f.body)), nil
+	return io.NopCloser(strings.NewReader(f.body)),
+		FileAttrs{MIMEType: f.mime, SizeBytes: int64(len(f.body))}, nil
 }
 
 func fileServer(browser FileBrowser, opener FileObjectOpener) *Server {
@@ -174,7 +176,7 @@ func TestFileListSurfacesBrowseFailures(t *testing.T) {
 func TestFileDirectServesAnAttachmentAndNeverTheObjectsOwnType(t *testing.T) {
 	opener := &fakeFileOpener{body: "<script>alert(1)</script>"}
 	rec := serveFiles(t, fileServer(nil, opener),
-		fileManagerBase+"/direct?id=%2Fcontabilita%2Fevil.html")
+		fileManagerBase+"/direct?id=%2Fcontabilita%2Fevil.html&download=true")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
 	}

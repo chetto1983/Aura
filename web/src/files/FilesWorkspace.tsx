@@ -1,16 +1,16 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Filemanager,
   Willow,
   WillowDark,
-  getMenuOptions,
   type IApi,
-  type IFile,
+  type IEntity,
 } from '@svar-ui/react-filemanager';
+import { RestDataProvider } from '@svar-ui/filemanager-data-provider';
 import { Locale } from '@svar-ui/react-core';
 import { useTranslation } from 'react-i18next';
 import '@svar-ui/react-filemanager/all.css';
-import { downloadURL, loadFolder, uploadFile, type FileEntry } from './filesApi';
+import { fileManagerBase, directURL, parseDates } from './filesApi';
 import { filesWords } from './filesLocale';
 
 interface FilesWorkspaceProps {
@@ -18,9 +18,10 @@ interface FilesWorkspaceProps {
 }
 
 /**
- * The corpus browser IS the component: SVAR React File Manager (MIT), driven the way its
- * own backend demo drives it -- a root listing in `data`, folders filled on demand through
- * request-data/provide-data, downloads and uploads routed at the api seam.
+ * The corpus browser IS the component: SVAR React File Manager (MIT), driven by its OWN
+ * RestDataProvider against a mount that speaks its REST dialect. Every write -- create,
+ * rename, move, copy, delete, upload -- is issued by the provider, so there is no
+ * request-building code here to drift from the contract.
  *
  * It replaces a hand-written library workspace that read the document catalog. The catalog
  * only ever had rows for documents uploaded through it, so a file reconciled from the
@@ -28,15 +29,20 @@ interface FilesWorkspaceProps {
  */
 export default function FilesWorkspace({ mobileMenu }: FilesWorkspaceProps) {
   const { t, i18n } = useTranslation();
-  const [data, setData] = useState<readonly FileEntry[]>([]);
+  const [data, setData] = useState<IEntity[]>([]);
   const [error, setError] = useState('');
   const apiRef = useRef<IApi | null>(null);
 
+  // One provider for the component's lifetime: it is an event-bus link, and rebuilding it
+  // per render would re-register handlers on every keystroke.
+  const provider = useMemo(() => new RestDataProvider(fileManagerBase), []);
+
   useEffect(() => {
     let cancelled = false;
-    loadFolder()
-      .then((entries) => {
-        if (!cancelled) setData(entries);
+    provider
+      .loadFiles('')
+      .then((files: IEntity[]) => {
+        if (!cancelled) setData(parseDates(files));
       })
       .catch(() => {
         if (!cancelled) setError(t('files.loadFailed'));
@@ -44,58 +50,61 @@ export default function FilesWorkspace({ mobileMenu }: FilesWorkspaceProps) {
     return () => {
       cancelled = true;
     };
-  }, [t]);
+  }, [provider, t]);
+
+  useEffect(() => {
+    // The store may have had to pick a different name than the one typed -- a collision, or
+    // a character it will not keep. The provider says so; without this the UI keeps showing
+    // the name the user asked for while the bucket holds another.
+    provider.on('file-renamed', (ev) => {
+      // The bus types every action as the union of all payloads, so this one is narrowed at
+      // the point of use rather than by widening the handler's signature.
+      const { id, newId } = ev as { id: string; newId: string };
+      // skipProvider stops the correction from being sent straight back to the server as a
+      // second rename; there is nothing to await, the store update is local.
+      void apiRef.current?.exec('rename-file', {
+        id,
+        name: newId.slice(newId.lastIndexOf('/') + 1),
+        skipProvider: true,
+      });
+    });
+  }, [provider]);
 
   const init = useCallback(
     (api: IApi) => {
       apiRef.current = api;
-      // Both actions download. Serving user-supplied bytes inline from the cockpit's own
-      // origin is a stored-XSS hazard the backend refuses, so "open" cannot mean "render
-      // here" -- it resolves to the same attachment rather than a second, weaker path.
-      const download = ({ id }: { id: string }) => {
-        window.location.assign(downloadURL(id));
-      };
-      api.on('download-file', download);
-      api.on('open-file', download);
-
-      // An upload arrives as create-file carrying the raw File; the same action without one
-      // is a new empty file or folder, which this backend does not offer and the menu below
-      // does not show. The widget has already added the row optimistically, so the PUT only
-      // has to make the bucket agree with what the user is looking at.
-      api.on('create-file', ({ file, parent }: { file: IFile; parent: string }) => {
-        if (!file.file) return;
-        return uploadFile(parent, file.file).catch(() => {
-          setError(t('files.uploadFailed', { name: file.name }));
-        });
+      // Putting the provider last on the bus is what turns every local action into its REST
+      // call. This one line replaces a handler per verb.
+      api.setNext(provider);
+      // Open renders in a tab, download saves. The backend distinguishes the two and makes
+      // inline safe with a sandbox CSP rather than by refusing to render at all.
+      api.on('open-file', ({ id }: { id: string }) => {
+        window.open(directURL(id, false), '_blank', 'noopener,noreferrer');
+      });
+      api.on('download-file', ({ id }: { id: string }) => {
+        window.location.assign(directURL(id, true));
       });
     },
-    [t],
+    [provider],
   );
 
   const requestData = useCallback(
     (ev: { id: string }) => {
-      loadFolder(ev.id)
+      provider
+        .loadFiles(ev.id)
         // Returned, not fired and forgotten: exec resolves asynchronously, so a failure to
         // hand the folder over has to reach the same catch as a failure to fetch it.
-        .then((entries) => apiRef.current?.exec('provide-data', { id: ev.id, data: entries }))
+        .then((files: IEntity[]) =>
+          apiRef.current?.exec('provide-data', { id: ev.id, data: parseDates(files) }),
+        )
         .catch(() => {
           // The folder stays collapsed and the banner says why; resolving with an empty
           // list would claim the folder is empty, which is a different and wrong answer.
           setError(t('files.loadFailed'));
         });
     },
-    [t],
+    [provider, t],
   );
-
-  // The menu is the backend's capability list, not a taste decision. The mount serves a
-  // listing, a byte stream and an upload, so those are the three things offered; rename,
-  // copy, move, delete and new-folder would every one of them 404. `readonly` would have
-  // been the one-word version of this but it hides upload too.
-  const menuOptions = useCallback((mode: string) => {
-    if (mode === 'add') return getMenuOptions(mode).filter((option) => option.id === 'upload');
-    if (mode === 'file') return getMenuOptions(mode).filter((option) => option.id === 'download');
-    return false as const;
-  }, []);
 
   const Theme = document.documentElement.getAttribute('data-theme') === 'light' ? Willow : WillowDark;
 
@@ -119,12 +128,7 @@ export default function FilesWorkspace({ mobileMenu }: FilesWorkspaceProps) {
       <div className="min-h-0 flex-1 [&>*]:h-full">
         <Theme>
           <Locale words={filesWords(i18n.language)}>
-            <Filemanager
-              data={data as FileEntry[]}
-              init={init}
-              onRequestData={requestData}
-              menuOptions={menuOptions}
-            />
+            <Filemanager data={data} init={init} onRequestData={requestData} />
           </Locale>
         </Theme>
       </div>

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"net/url"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -234,6 +236,18 @@ func (s *S3Store) Delete(ctx context.Context, ref ObjectRef) error {
 	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket: aws.String(ref.Bucket),
 		Key:    aws.String(ref.Key),
+	})
+	return err
+}
+
+// Copy asks the STORE to duplicate the object; the bytes never travel to this process.
+// CopySource is a path, so both components need escaping -- a key with a space or a '+' in
+// it is common in a user's corpus and would otherwise resolve to a different object.
+func (s *S3Store) Copy(ctx context.Context, src, dst ObjectRef) error {
+	_, err := s.client.CopyObject(ctx, &s3.CopyObjectInput{
+		Bucket:     aws.String(dst.Bucket),
+		Key:        aws.String(dst.Key),
+		CopySource: aws.String(url.PathEscape(src.Bucket + "/" + src.Key)),
 	})
 	return err
 }
