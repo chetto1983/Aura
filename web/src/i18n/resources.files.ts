@@ -3,6 +3,7 @@ export const filesEn = {
     title: 'Documents',
     loading: 'Loading files...',
     loadFailed: 'Could not load your files.',
+    uploadFailed: 'Could not upload {{name}}.',
   },
 };
 
@@ -11,5 +12,6 @@ export const filesIt = {
     title: 'Documenti',
     loading: 'Caricamento dei file...',
     loadFailed: 'Impossibile caricare i file.',
+    uploadFailed: 'Impossibile caricare {{name}}.',
   },
 };

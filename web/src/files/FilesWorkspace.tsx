@@ -1,8 +1,17 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Filemanager, Willow, WillowDark, type IApi } from '@svar-ui/react-filemanager';
+import {
+  Filemanager,
+  Willow,
+  WillowDark,
+  getMenuOptions,
+  type IApi,
+  type IFile,
+} from '@svar-ui/react-filemanager';
+import { Locale } from '@svar-ui/react-core';
 import { useTranslation } from 'react-i18next';
 import '@svar-ui/react-filemanager/all.css';
-import { downloadURL, loadFolder, type FileEntry } from './filesApi';
+import { downloadURL, loadFolder, uploadFile, type FileEntry } from './filesApi';
+import { filesWords } from './filesLocale';
 
 interface FilesWorkspaceProps {
   readonly mobileMenu?: ReactNode;
@@ -11,19 +20,14 @@ interface FilesWorkspaceProps {
 /**
  * The corpus browser IS the component: SVAR React File Manager (MIT), driven the way its
  * own backend demo drives it -- a root listing in `data`, folders filled on demand through
- * request-data/provide-data, and downloads routed at the api seam.
+ * request-data/provide-data, downloads and uploads routed at the api seam.
  *
  * It replaces a hand-written library workspace that read the document catalog. The catalog
  * only ever had rows for documents uploaded through it, so a file reconciled from the
  * bucket was invisible here no matter that it was fully indexed and answerable.
- *
- * READ ONLY, and that is a statement about the backend rather than a preference: the mount
- * serves a listing and a byte stream, so `readonly` leaves exactly the actions that exist
- * (download, preview) and hides the ones that would 404 (create, rename, move, copy,
- * delete).
  */
 export default function FilesWorkspace({ mobileMenu }: FilesWorkspaceProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [data, setData] = useState<readonly FileEntry[]>([]);
   const [error, setError] = useState('');
   const apiRef = useRef<IApi | null>(null);
@@ -42,16 +46,31 @@ export default function FilesWorkspace({ mobileMenu }: FilesWorkspaceProps) {
     };
   }, [t]);
 
-  const init = useCallback((api: IApi) => {
-    apiRef.current = api;
-    // Both actions download. "Open" cannot mean "render here" for the reason above, so it
-    // resolves to the same attachment rather than to a second, weaker code path.
-    const download = ({ id }: { id: string }) => {
-      window.location.assign(downloadURL(id));
-    };
-    api.on('download-file', download);
-    api.on('open-file', download);
-  }, []);
+  const init = useCallback(
+    (api: IApi) => {
+      apiRef.current = api;
+      // Both actions download. Serving user-supplied bytes inline from the cockpit's own
+      // origin is a stored-XSS hazard the backend refuses, so "open" cannot mean "render
+      // here" -- it resolves to the same attachment rather than a second, weaker path.
+      const download = ({ id }: { id: string }) => {
+        window.location.assign(downloadURL(id));
+      };
+      api.on('download-file', download);
+      api.on('open-file', download);
+
+      // An upload arrives as create-file carrying the raw File; the same action without one
+      // is a new empty file or folder, which this backend does not offer and the menu below
+      // does not show. The widget has already added the row optimistically, so the PUT only
+      // has to make the bucket agree with what the user is looking at.
+      api.on('create-file', ({ file, parent }: { file: IFile; parent: string }) => {
+        if (!file.file) return;
+        return uploadFile(parent, file.file).catch(() => {
+          setError(t('files.uploadFailed', { name: file.name }));
+        });
+      });
+    },
+    [t],
+  );
 
   const requestData = useCallback(
     (ev: { id: string }) => {
@@ -67,6 +86,16 @@ export default function FilesWorkspace({ mobileMenu }: FilesWorkspaceProps) {
     },
     [t],
   );
+
+  // The menu is the backend's capability list, not a taste decision. The mount serves a
+  // listing, a byte stream and an upload, so those are the three things offered; rename,
+  // copy, move, delete and new-folder would every one of them 404. `readonly` would have
+  // been the one-word version of this but it hides upload too.
+  const menuOptions = useCallback((mode: string) => {
+    if (mode === 'add') return getMenuOptions(mode).filter((option) => option.id === 'upload');
+    if (mode === 'file') return getMenuOptions(mode).filter((option) => option.id === 'download');
+    return false as const;
+  }, []);
 
   const Theme = document.documentElement.getAttribute('data-theme') === 'light' ? Willow : WillowDark;
 
@@ -89,7 +118,14 @@ export default function FilesWorkspace({ mobileMenu }: FilesWorkspaceProps) {
           gives its container the same explicit full height. */}
       <div className="min-h-0 flex-1 [&>*]:h-full">
         <Theme>
-          <Filemanager data={data as FileEntry[]} init={init} onRequestData={requestData} readonly />
+          <Locale words={filesWords(i18n.language)}>
+            <Filemanager
+              data={data as FileEntry[]}
+              init={init}
+              onRequestData={requestData}
+              menuOptions={menuOptions}
+            />
+          </Locale>
         </Theme>
       </div>
     </section>

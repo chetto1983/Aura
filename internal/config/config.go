@@ -24,10 +24,14 @@ import (
 	"github.com/joho/godotenv"
 )
 
+// DefaultAssetMaxDocumentBytes is the 100 MiB document-ingress ceiling. It outlived the
+// conversion boundary that used to own it: that converter is gone, the cap on what an
+// upload may carry is not.
+const DefaultAssetMaxDocumentBytes = 100 << 20
+
 // Config is the root composite. Subsystem configs live in their packages.
 type Config struct {
 	DB               db.Config
-	Document         DocumentConfig
 	DocumentPipeline DocumentPipelineConfig
 	Embed            EmbedConfig    // embedding sidecar wiring (config_embed.go)
 	ArcadeDB         ArcadeDBConfig // memory server — per-identity databases + the adaptive projection (arcadedb.go)
@@ -384,7 +388,6 @@ func loadBase() *Config {
 			BootstrapURL: bootstrapURL,
 			Password:     pgPassword,
 		},
-		Document:         loadDocumentConfig(),
 		DocumentPipeline: loadDocumentPipelineConfig(),
 		Embed: EmbedConfig{
 			BaseURL:    envDefault("AURA_EMBED_BASE_URL", "http://127.0.0.1:8081"),

@@ -40,8 +40,6 @@ services:
         condition: service_healthy
       aura-llama-embed:
         condition: service_healthy
-      aura-docling:
-        condition: service_healthy
       # Memory MCP is mounted into the agent loop at boot (recipe:memory, default-on), so
       # Aura waits for its healthcheck before taking traffic. Reconnect-on-use only applies
       # after the initial mount has succeeded.
@@ -190,9 +188,6 @@ services:
       AURA_ASSET_MAX_AUDIO_BYTES: ${AURA_ASSET_MAX_AUDIO_BYTES:-104857600}
       AURA_ASSET_PRESIGN_TTL_SEC: ${AURA_ASSET_PRESIGN_TTL_SEC:-600}
       AURA_ASSET_PROCESSING_CONCURRENCY: ${AURA_ASSET_PROCESSING_CONCURRENCY:-2}
-      AURA_DOCLING_BASE_URL: http://aura-docling:5001
-      AURA_DOCLING_API_KEY: ${AURA_DOCLING_API_KEY:?AURA_DOCLING_API_KEY required in .env}
-      AURA_DOCLING_IMAGE: ${AURA_DOCLING_IMAGE:-quay.io/docling-project/docling-serve-cpu:v1.29.0@sha256:51c18e0e0fec8a13ab858f03d5e9a140178d8d95962400553cb2644ad5ee84da}
       AURA_DOCUMENT_CONVERT_TIMEOUT_SEC: ${AURA_DOCUMENT_CONVERT_TIMEOUT_SEC:-900}
       AURA_DOCUMENT_MAX_PAGES: ${AURA_DOCUMENT_MAX_PAGES:-2000}
       AURA_DOCUMENT_CHUNK_MAX_TOKENS: ${AURA_DOCUMENT_CHUNK_MAX_TOKENS:-512}
@@ -284,7 +279,6 @@ services:
     networks:
       - default
       - aura-web
-      - aura-docling
     volumes:
       - aura-home:/var/lib/aura
       - ${AURA_BACKUP_DIR:-./backups}:/backups
@@ -703,9 +697,8 @@ services:
   # Reconciles one identity's Garage bucket into ArcadeDB with no delete/dedup/memoization
   # code of ours: CocoIndex's own target reconciliation does that (proven live in Task 6's
   # scripts/ingest_reconcile_e2e.sh — rerun-unchanged re-extracts nothing, delete removes
-  # passages with no delete worker running). aura-docling/aura-rerank below are this
-  # sidecar's predecessor and are slated for removal once the Go pipeline they served is
-  # deleted (this rewrite's later tasks), not by this change.
+  # passages with no delete worker running). Extraction is iscc-tika + LibreOffice +
+  # poppler inside this sidecar.
   #
   # Gated behind a profile and NOT started by a bare `docker compose up -d`:
   # AURA_INGEST_IDENTITY_ID/S3_BUCKET/S3_ACCESS_KEY_ID/S3_SECRET_ACCESS_KEY default to
@@ -768,117 +761,6 @@ services:
     volumes:
       - aura-ingest-state:/state
 
-  # Docling Serve v1.29.0 is a private conversion appliance. It has no host
-  # port, no proxy inheritance, no runtime downloads, and no alternate config
-  # surface. The immutable image already carries the standard pipeline models;
-  # the install step must add the pinned EmbeddingGemma tokenizer snapshot to
-  # aura-docling-models before readiness can pass.
-  aura-docling:
-    image: ${AURA_DOCLING_IMAGE:-quay.io/docling-project/docling-serve-cpu:v1.29.0@sha256:51c18e0e0fec8a13ab858f03d5e9a140178d8d95962400553cb2644ad5ee84da}
-    pull_policy: missing
-    container_name: aura-docling
-    restart: unless-stopped
-    init: true
-    user: "1001:0"
-    security_opt:
-      - no-new-privileges:true
-    # Docling is THE ingestion bottleneck, and these caps are why. Measured per-stage on the
-    # live deployment (aura.document_pipeline_stages): convert 28.28s, chunk 0.02s,
-    # embed 0.63s, project 0.28s, activate 0.03s — conversion is 97% of the time from upload
-    # to searchable, and everything Aura itself does is sub-second. Under load the container
-    # sat at 152% CPU against a 2.0 cap and 2.87 of 4 GiB: pegged on both, on an 8-CPU host
-    # where it was the only thing anyone was waiting for.
-    #
-    # Knobs rather than literals, like every other service here, so an appliance with a
-    # different core count can size it without editing this file.
-    mem_limit: ${AURA_DOCLING_MEM_LIMIT:-5g}
-    cpus: ${AURA_DOCLING_CPUS:-4.0}
-    pids_limit: 512
-    environment:
-      DOCLING_SERVE_API_KEY: ${AURA_DOCLING_API_KEY:?AURA_DOCLING_API_KEY required in .env}
-      DOCLING_SERVE_ENABLE_UI: "false"
-      # These two gate the VLM pipeline that offloads OCR to aura-ocr-vl (GLM-OCR).
-      # Turning them on does NOT give Docling the internet: the aura-docling network is
-      # `internal: true`, so the only thing it can newly reach is a sidecar on that same
-      # network. Containment here is the network, not the flag. Custom VLM config is
-      # needed because the built-in GLMOCR_VLLM_API preset hardcodes localhost:8000 and
-      # ours answers on aura-ocr-vl:8082.
-      DOCLING_SERVE_ENABLE_REMOTE_SERVICES: "${AURA_DOCLING_REMOTE_SERVICES:-true}"
-      DOCLING_SERVE_ALLOW_EXTERNAL_PLUGINS: "false"
-      DOCLING_SERVE_ALLOW_CUSTOM_VLM_CONFIG: "${AURA_DOCLING_CUSTOM_VLM:-true}"
-      DOCLING_SERVE_ALLOW_CUSTOM_PICTURE_DESCRIPTION_CONFIG: "false"
-      DOCLING_SERVE_ALLOW_CUSTOM_CODE_FORMULA_CONFIG: "false"
-      DOCLING_SERVE_ALLOW_CUSTOM_TABLE_STRUCTURE_CONFIG: "false"
-      DOCLING_SERVE_ALLOW_CUSTOM_LAYOUT_CONFIG: "false"
-      DOCLING_SERVE_ALLOW_CUSTOM_PICTURE_CLASSIFICATION_CONFIG: "false"
-      DOCLING_SERVE_ALLOW_CUSTOM_OCR_CONFIG: "false"
-      DOCLING_SERVE_ENABLE_MANAGEMENT_ENDPOINTS: "false"
-      DOCLING_SERVE_SHOW_VERSION_INFO: "false"
-      DOCLING_SERVE_DEBUG_ERROR_DETAILS: "false"
-      DOCLING_SERVE_LOG_LEVEL: WARNING
-      DOCLING_SERVE_LOG_FORMAT: json
-      DOCLING_SERVE_LOG_HEADER_PREFIX: X-Aura-Docling-Trace-
-      DOCLING_SERVE_ARTIFACTS_PATH: /opt/app-root/src/.cache/docling/models
-      DOCLING_SERVE_SCRATCH_PATH: /opt/app-root/src/scratch
-      DOCLING_SERVE_SINGLE_USE_RESULTS: "true"
-      DOCLING_SERVE_RESULT_REMOVAL_DELAY: "300"
-      DOCLING_SERVE_LOAD_MODELS_AT_BOOT: "true"
-      DOCLING_SERVE_OPTIONS_CACHE_SIZE: "1"
-      DOCLING_SERVE_MAX_DOCUMENT_TIMEOUT: ${AURA_DOCUMENT_CONVERT_TIMEOUT_SEC:-900}
-      DOCLING_SERVE_MAX_NUM_PAGES: ${AURA_DOCUMENT_MAX_PAGES:-2000}
-      DOCLING_SERVE_MAX_FILE_SIZE: ${AURA_ASSET_MAX_DOCUMENT_BYTES:-104857600}
-      DOCLING_SERVE_MAX_SOURCES_PER_REQUEST: "1"
-      DOCLING_SERVE_QUEUE_MAX_SIZE: "16"
-      DOCLING_SERVE_ALLOWED_SOURCE_TYPES: '[]'
-      DOCLING_SERVE_ALLOWED_TARGET_TYPES: '["inbody"]'
-      DOCLING_SERVE_ALLOWED_IMAGE_EXPORT_MODES: '["placeholder"]'
-      DOCLING_SERVE_ALLOWED_VLM_PRESETS: '["granite_docling"]'
-      DOCLING_SERVE_ALLOWED_CHUNKING_PRESETS: '[]'
-      DOCLING_SERVE_CORS_ORIGINS: '[]'
-      DOCLING_SERVE_CORS_METHODS: '[]'
-      DOCLING_SERVE_CORS_HEADERS: '[]'
-      DOCLING_SERVE_ENG_KIND: local
-      DOCLING_SERVE_ENG_LOC_NUM_WORKERS: "1"
-      DOCLING_SERVE_ENG_LOC_SHARE_MODELS: "true"
-      DOCLING_SERVE_OTEL_ENABLE_METRICS: "false"
-      DOCLING_SERVE_OTEL_ENABLE_TRACES: "false"
-      DOCLING_SERVE_OTEL_ENABLE_PROMETHEUS: "false"
-      UVICORN_WORKERS: "1"
-      UVICORN_RELOAD: "false"
-      UVICORN_PROXY_HEADERS: "false"
-      UVICORN_TIMEOUT_KEEP_ALIVE: "5"
-      HF_HUB_OFFLINE: "1"
-      HF_DATASETS_OFFLINE: "1"
-      TRANSFORMERS_OFFLINE: "1"
-      HF_HUB_DISABLE_TELEMETRY: "1"
-      HTTP_PROXY: ""
-      HTTPS_PROXY: ""
-      ALL_PROXY: ""
-      NO_PROXY: "*"
-    networks:
-      - aura-docling
-    expose:
-      - "5001"
-    volumes:
-      - aura-docling-models:/opt/app-root/src/.cache:ro
-    tmpfs:
-      - /opt/app-root/src/scratch:rw,noexec,nosuid,nodev,size=1g,uid=1001,gid=0,mode=0770
-      - /tmp:rw,noexec,nosuid,nodev,size=256m,uid=1001,gid=0,mode=0770
-    healthcheck:
-      test:
-        - CMD
-        - python
-        - -c
-        - |
-          import urllib.request
-          from transformers import AutoTokenizer
-          AutoTokenizer.from_pretrained("google/embeddinggemma-300m", local_files_only=True)
-          urllib.request.urlopen("http://127.0.0.1:5001/livez", timeout=3).read()
-          urllib.request.urlopen("http://127.0.0.1:5001/readyz", timeout=3).read()
-      interval: 15s
-      timeout: 10s
-      retries: 20
-      start_period: 180s
 
   # WhatsApp MCP sibling — forked whatsmeow bridge + FastMCP HTTP front
   # (chetto1983/whatsapp-mcp @ aura/cockpit-connect): the agent mounts the MCP over
@@ -1048,13 +930,8 @@ services:
               capabilities: [gpu]
     ports:
       - "127.0.0.1:${AURA_OCR_VL_PORT:-8082}:8082"
-    # `default` carries the first-boot HF download; `aura-docling` is what lets the
-    # converter POST page images here. Joining the sidecar to Docling's internal network
-    # is the direction that keeps Docling egress-free — the reverse (Docling on default)
-    # would hand it NAT and undo the isolation the network comment above promises.
     networks:
       - default
-      - aura-docling
     volumes:
       - aura-ocr-vl:/root/.cache/llama.cpp
     healthcheck:
@@ -1327,7 +1204,6 @@ volumes:
   aura-workspace:
   aura-postgres:
   aura-llama-embed:
-  aura-docling-models:
   aura-llm:
   # CocoIndex's LMDB memoization state (see the aura-ingest service comment above).
   aura-ingest-state:
@@ -1346,10 +1222,6 @@ volumes:
   aura-uv-cache-host:
 
 networks:
-  # Docling has no default/NAT network attachment: only the Aura daemon can
-  # reach it, and runtime model/tokenizer downloads are structurally impossible.
-  aura-docling:
-    internal: true
   # Local SearXNG bridge: host-loopback published; default Docker NAT egress
   # remains enabled so metasearch can reach upstream engines.
   aura-web:

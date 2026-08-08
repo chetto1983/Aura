@@ -29,7 +29,7 @@ const (
 	defaultDocumentQueryRunes    = 2_048
 )
 
-// BoundingBox preserves Docling's coordinates without inventing a coordinate origin.
+// BoundingBox preserves the extractor's coordinates without inventing a coordinate origin.
 type BoundingBox struct {
 	Left   float64
 	Top    float64

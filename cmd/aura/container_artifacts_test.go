@@ -412,6 +412,36 @@ func TestRetiredGraphPlaneStaysOutOfTheComposeDeclarations(t *testing.T) {
 	}
 }
 
+// REGRESSION GUARD, and this one has a live incident behind it. The Docling converter was
+// replaced by the ingest sidecar's iscc-tika + LibreOffice + poppler chain, but its service
+// stayed in compose with `condition: service_healthy` on aura. It could never become
+// healthy — it wants models from HuggingFace and its network is internal: true — so
+// `docker compose up -d aura` blocked forever and the cockpit stayed down. A dead service
+// nothing depends on is clutter; a dead service the daemon GATES ON is an outage.
+func TestRetiredConverterStaysOutOfTheComposeDeclarations(t *testing.T) {
+	root := repoRootForTest(t)
+	for _, rel := range []string{"compose.yaml", "compose.minipc.yaml"} {
+		contents := strings.ReplaceAll(readProjectFile(t, root, rel), "\r\n", "\n")
+		for _, banned := range []string{
+			"\n  aura-docling:\n",
+			"container_name: aura-docling",
+			"AURA_DOCLING_API_KEY",
+			"AURA_DOCLING_BASE_URL",
+			"DOCLING_SERVE_",
+			"aura-docling-models",
+		} {
+			if strings.Contains(contents, banned) {
+				t.Errorf("%s still declares the retired converter: %q", rel, banned)
+			}
+		}
+	}
+	// The knob catalogue is the other half: a var no code reads is a var an operator will
+	// keep setting, and .env.example is where they copy it from.
+	if strings.Contains(readProjectFile(t, root, ".env.example"), "AURA_DOCLING") {
+		t.Error(".env.example still advertises a Docling knob nothing reads")
+	}
+}
+
 func hasActiveEnvAssignment(contents, key string) bool {
 	prefix := key + "="
 	for line := range strings.SplitSeq(contents, "\n") {

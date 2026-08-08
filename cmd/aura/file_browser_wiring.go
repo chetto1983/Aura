@@ -21,10 +21,10 @@ func buildFileBrowser(cfg *config.Config, pool *pgxpool.Pool, objects objectstor
 	}
 }
 
-// buildFileOpener backs the file manager's download (GET /api/filemanager/direct) with the
-// SAME resolver-gated reader document_open uses, so the two cannot disagree about whose
-// bucket a key belongs to.
-func buildFileOpener(cfg *config.Config, pool *pgxpool.Pool, objects objectstore.Store) identityObjectOpener {
+// buildFileObjectAccess backs the file manager's download and upload with the SAME
+// resolver-gated accessor document_open uses, so none of the three can disagree about
+// whose bucket a key belongs to.
+func buildFileObjectAccess(cfg *config.Config, pool *pgxpool.Pool, objects objectstore.Store) identityObjectOpener {
 	return identityObjectOpener{
 		objects:  objects,
 		resolver: buildObjectResolverBundle(cfg, pool),

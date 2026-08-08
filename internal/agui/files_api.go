@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/assets"
+	"github.com/chetto1983/aura/internal/config"
 )
 
 // fileManagerBase is the mount point of the SVAR File Manager REST contract.
@@ -32,16 +33,26 @@ type FileObjectOpener interface {
 	OpenObject(ctx context.Context, identityID, key string) (io.ReadCloser, error)
 }
 
+// FileObjectWriter stores one object in one identity's own bucket, with the same ownership
+// obligation as the opener above.
+type FileObjectWriter interface {
+	PutObject(ctx context.Context, identityID, key, mimeType string, size int64, body io.Reader) error
+}
+
 // SetFileBrowser wires the listing the file manager reads.
 func (s *Server) SetFileBrowser(browser FileBrowser) { s.files = browser }
 
 // SetFileOpener wires the byte stream behind a file manager download.
 func (s *Server) SetFileOpener(opener FileObjectOpener) { s.fileObjects = opener }
 
+// SetFileWriter wires the destination of a file manager upload.
+func (s *Server) SetFileWriter(writer FileObjectWriter) { s.fileWrites = writer }
+
 func (s *Server) registerFileRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+fileManagerBase+"/files", s.handleFileList)
 	mux.HandleFunc("GET "+fileManagerBase+"/files/{path...}", s.handleFileList)
 	mux.HandleFunc("GET "+fileManagerBase+"/direct", s.handleFileDirect)
+	mux.HandleFunc("POST "+fileManagerBase+"/upload", s.handleFileUpload)
 }
 
 // fileEntry is one row in the component's vocabulary.
@@ -160,4 +171,68 @@ func (s *Server) handleFileDirect(w http.ResponseWriter, r *http.Request) {
 	header.Set("X-Content-Type-Options", "nosniff")
 	header.Set("Content-Disposition", contentDisposition(path.Base(key)))
 	_, _ = io.Copy(w, body)
+}
+
+// handleFileUpload stores one uploaded file in the folder the caller is viewing.
+//
+// The bytes land at the browsed prefix and NOTHING else happens here -- no queue row, no
+// pipeline kick. Ingestion is reconciliation-driven now: the sidecar watches the bucket, so
+// a file that appears in it gets extracted, carded and indexed on its own. That is why this
+// writes to the folder the user chose rather than to the asset service's own key space,
+// which would have stored the file somewhere other than where the UI just showed it.
+func (s *Server) handleFileUpload(w http.ResponseWriter, r *http.Request) {
+	if s.fileWrites == nil {
+		http.Error(w, "file upload unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	identityID, ok := principalIdentityID(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	// The cap is enforced on the REQUEST, before anything is read, so an oversized body is
+	// refused rather than streamed into the bucket and deleted afterwards.
+	r.Body = http.MaxBytesReader(w, r.Body, config.DefaultAssetMaxDocumentBytes)
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "a multipart file field is required", http.StatusBadRequest)
+		return
+	}
+	defer func() { _ = file.Close() }()
+
+	name := uploadFileName(header.Filename)
+	if name == "" {
+		http.Error(w, "the file needs a usable name", http.StatusBadRequest)
+		return
+	}
+	key := strings.TrimPrefix(strings.TrimSpace(r.URL.Query().Get("id")), "/")
+	if key != "" && !strings.HasSuffix(key, "/") {
+		key += "/"
+	}
+	key += name
+
+	// The MIME type is the browser's claim about somebody's file. It is recorded so a
+	// download can be honest about what was uploaded, and is never trusted on the way out --
+	// handleFileDirect serves octet-stream regardless.
+	if err := s.fileWrites.PutObject(
+		r.Context(), identityID, key, header.Header.Get("Content-Type"), header.Size, file,
+	); err != nil {
+		http.Error(w, sanitizeErr(err), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, fileEntry{ID: "/" + key, Type: "file", Size: header.Size})
+}
+
+// uploadFileName reduces a caller-supplied name to a safe single path component.
+//
+// The name becomes part of an object key, so a directory in it would let an upload land
+// outside the folder the user is looking at. Returns "" when nothing usable survives, which
+// the caller refuses rather than papering over with a generated name -- the user picked this
+// file and deserves to be told the name is the problem.
+func uploadFileName(raw string) string {
+	name := path.Base(strings.ReplaceAll(strings.TrimSpace(raw), `\`, "/"))
+	if name == "." || name == ".." || name == "/" || strings.HasPrefix(name, ".") {
+		return ""
+	}
+	return name
 }

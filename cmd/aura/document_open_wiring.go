@@ -49,35 +49,64 @@ func (o *runtimeDocumentOpener) OpenDocument(
 	return service.OpenDocument(ctx, identityID, documentID)
 }
 
-// identityObjectOpener reads one object with the OWNER's own credentials.
+// identityObjectOpener reads and writes objects with the OWNER's own credentials.
 //
 // The resolver is the gate, not a courtesy: it returns the identity's own store and bucket,
-// so a key belonging to somebody else cannot be read even if the caller supplied one. A nil
-// resolver is the pre-provisioning deployment, where the shared store is the only store.
+// so a key belonging to somebody else cannot be touched even if the caller supplied one. A
+// nil resolver is the pre-provisioning deployment, where the shared store is the only store.
+//
+// Both directions go through the SAME resolve, so a read and a write can never disagree
+// about which bucket a key belongs to.
 type identityObjectOpener struct {
 	objects  objectstore.Store
 	resolver *assets.ObjectResolverBundle
 	bucket   string
 }
 
+func (o identityObjectOpener) resolve(
+	ctx context.Context, identityID, key string,
+) (objectstore.Store, string, error) {
+	if o.objects == nil {
+		return nil, "", fmt.Errorf("object store is not configured")
+	}
+	if strings.TrimSpace(key) == "" {
+		return nil, "", fmt.Errorf("no object key was given")
+	}
+	if o.resolver == nil {
+		return o.objects, o.bucket, nil
+	}
+	store, bucket, err := o.resolver.ResolveForIdentity(ctx, o.objects, identityID)
+	if err != nil {
+		return nil, "", err
+	}
+	return store, bucket, nil
+}
+
 func (o identityObjectOpener) OpenObject(
 	ctx context.Context,
 	identityID, key string,
 ) (io.ReadCloser, error) {
-	if o.objects == nil {
-		return nil, fmt.Errorf("object store is not configured")
-	}
-	if strings.TrimSpace(key) == "" {
-		return nil, fmt.Errorf("document has no source key to open")
-	}
-	store, bucket := o.objects, o.bucket
-	if o.resolver != nil {
-		resolved, resolvedBucket, err := o.resolver.ResolveForIdentity(ctx, o.objects, identityID)
-		if err != nil {
-			return nil, err
-		}
-		store, bucket = resolved, resolvedBucket
+	store, bucket, err := o.resolve(ctx, identityID, key)
+	if err != nil {
+		return nil, err
 	}
 	body, _, err := store.Get(ctx, objectstore.ObjectRef{Bucket: bucket, Key: key})
 	return body, err
+}
+
+// PutObject stores an uploaded file in the owner's own bucket. Nothing is enqueued: the
+// ingest sidecar reconciles the bucket, so appearing in it IS the trigger.
+func (o identityObjectOpener) PutObject(
+	ctx context.Context,
+	identityID, key, mimeType string,
+	size int64,
+	body io.Reader,
+) error {
+	store, bucket, err := o.resolve(ctx, identityID, key)
+	if err != nil {
+		return err
+	}
+	_, err = store.Put(ctx, objectstore.ObjectRef{Bucket: bucket, Key: key}, body,
+		objectstore.PutOptions{MIMEType: mimeType, Size: size})
+	return err
 }

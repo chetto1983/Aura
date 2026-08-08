@@ -110,7 +110,7 @@ func (p *DocumentProcessor) ProcessAsset(ctx context.Context, asset Asset) (Resu
 
 // replayedAssetResult settles an upload whose bytes are ALREADY the document's published
 // version: the passages, embeddings and projections behind them exist, so re-running the
-// pipeline would spend a Docling conversion — up to fifteen minutes — to arrive back here.
+// pipeline would spend a full conversion — up to fifteen minutes — to arrive back here.
 //
 // Only ReplayedActive earns this. Every other outcome, a replay onto a version still
 // processing included, falls through to Pipeline.Run, whose beginStage resumes from the

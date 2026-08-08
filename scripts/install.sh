@@ -379,7 +379,6 @@ ensure_internal_env_secrets() {
   ensure_generated_env_secret AURA_ARCADEDB_TENANT_SECRET 32
   ensure_generated_env_secret AURA_PIM_MCP_ADMIN_TOKEN 32
   ensure_generated_env_secret SEARXNG_SECRET 32
-  ensure_generated_env_secret AURA_DOCLING_API_KEY 32
   ensure_objectstore_env_secrets
   ensure_embed_provenance
   ensure_env_default ARCADEDB_APP_USER "aura_memory"

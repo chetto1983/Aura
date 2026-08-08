@@ -135,6 +135,7 @@ type Server struct {
 	storageOrphans   StorageOrphanService
 	files            FileBrowser
 	fileObjects      FileObjectOpener
+	fileWrites       FileObjectWriter
 	images           ImageFetcher
 	graph            GraphView
 	governance       GovernanceProviders

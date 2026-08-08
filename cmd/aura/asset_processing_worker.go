@@ -69,7 +69,7 @@ func newRuntimeAssetProcessingWorker(
 			)
 		},
 	}
-	// Erasure no longer has a loop here. It used to get its OWN, so a long Docling convert
+	// Erasure no longer has a loop here. It used to get its OWN, so a long conversion
 	// could not postpone an erasure claim into a retention breach -- but the convert is
 	// gone with the in-process pipeline, and removing a document is now the reconciler's
 	// job: CocoIndex deletes the rows projecting an object once the object leaves the

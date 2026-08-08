@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"path"
 	"strings"
 	"testing"
 	"time"
@@ -195,6 +197,155 @@ func TestFileDirectServesAnAttachmentAndNeverTheObjectsOwnType(t *testing.T) {
 	}
 	if opener.identity != fileAPIIdentityID {
 		t.Fatalf("identity = %q, want the authenticated principal", opener.identity)
+	}
+}
+
+type fakeFileWriter struct {
+	identity, key, mime string
+	size                int64
+	body                string
+	err                 error
+}
+
+func (f *fakeFileWriter) PutObject(
+	_ context.Context, identityID, key, mimeType string, size int64, body io.Reader,
+) error {
+	f.identity, f.key, f.mime, f.size = identityID, key, mimeType, size
+	read, _ := io.ReadAll(body)
+	f.body = string(read)
+	return f.err
+}
+
+func uploadRequest(t *testing.T, target, filename, content string) *http.Request {
+	t.Helper()
+	var buf strings.Builder
+	writer := multipart.NewWriter(&buf)
+	part, err := writer.CreateFormFile("file", filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write([]byte(content)); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, target, strings.NewReader(buf.String()))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	return withPrincipal(req, fileAPIIdentityID)
+}
+
+func serveUpload(t *testing.T, server *Server, req *http.Request) *httptest.ResponseRecorder {
+	t.Helper()
+	mux := http.NewServeMux()
+	server.registerFileRoutes(mux)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	return rec
+}
+
+// An upload lands in the folder the user is LOOKING AT. That is the whole reason it does not
+// go through the asset service, which picks its own key space and would have stored the file
+// somewhere other than where the UI just showed it.
+func TestFileUploadStoresInTheBrowsedFolder(t *testing.T) {
+	writer := &fakeFileWriter{}
+	server := fileServer(nil, nil)
+	server.fileWrites = writer
+	rec := serveUpload(t, server,
+		uploadRequest(t, fileManagerBase+"/upload?id=%2Fcontabilita", "fattura.pdf", "%PDF-1.7"))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
+	}
+	if writer.key != "contabilita/fattura.pdf" {
+		t.Fatalf("key = %q", writer.key)
+	}
+	if writer.body != "%PDF-1.7" {
+		t.Fatalf("body = %q", writer.body)
+	}
+	if writer.identity != fileAPIIdentityID {
+		t.Fatalf("identity = %q, want the authenticated principal", writer.identity)
+	}
+	// The response is the row the widget just created optimistically, so its id must be the
+	// one a later download will resolve.
+	var created fileEntry
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	if created.ID != "/contabilita/fattura.pdf" || created.Type != "file" {
+		t.Fatalf("created = %+v", created)
+	}
+}
+
+func TestFileUploadStoresAtTheRootWithNoFolder(t *testing.T) {
+	writer := &fakeFileWriter{}
+	server := fileServer(nil, nil)
+	server.fileWrites = writer
+	serveUpload(t, server, uploadRequest(t, fileManagerBase+"/upload", "nota.txt", "x"))
+	if writer.key != "nota.txt" {
+		t.Fatalf("root key = %q", writer.key)
+	}
+}
+
+// The name becomes part of an object key, so a directory inside it would put the bytes
+// somewhere other than the folder the user chose -- including outside it.
+func TestFileUploadRefusesAnEscapingName(t *testing.T) {
+	for _, name := range []string{"../../etc/passwd", `..\..\evil.exe`, "..", ".", ".bashrc"} {
+		writer := &fakeFileWriter{}
+		server := fileServer(nil, nil)
+		server.fileWrites = writer
+		rec := serveUpload(t, server,
+			uploadRequest(t, fileManagerBase+"/upload?id=%2Fcontabilita", name, "x"))
+		switch name {
+		case "..", ".", ".bashrc":
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("%q = %d, want 400", name, rec.Code)
+			}
+			if writer.key != "" {
+				t.Fatalf("%q still wrote %q", name, writer.key)
+			}
+		default:
+			if writer.key != "contabilita/"+path.Base(strings.ReplaceAll(name, `\`, "/")) {
+				t.Fatalf("%q escaped to %q", name, writer.key)
+			}
+		}
+	}
+}
+
+func TestFileUploadRefusesWithoutAProviderPrincipalOrFile(t *testing.T) {
+	if got := serveUpload(t, &Server{},
+		uploadRequest(t, fileManagerBase+"/upload", "a.txt", "x")).Code; got != http.StatusServiceUnavailable {
+		t.Fatalf("unwired upload = %d, want 503", got)
+	}
+
+	server := fileServer(nil, nil)
+	server.fileWrites = &fakeFileWriter{}
+	mux := http.NewServeMux()
+	server.registerFileRoutes(mux)
+	rec := httptest.NewRecorder()
+	anonymous := uploadRequest(t, fileManagerBase+"/upload", "a.txt", "x")
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, fileManagerBase+"/upload", anonymous.Body))
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous upload = %d, want 401", rec.Code)
+	}
+
+	// A POST with no multipart file field is a malformed client, not a store failure.
+	bodyless := withPrincipal(
+		httptest.NewRequest(http.MethodPost, fileManagerBase+"/upload", strings.NewReader("")),
+		fileAPIIdentityID)
+	bodyless.Header.Set("Content-Type", "multipart/form-data; boundary=zzz")
+	if got := serveUpload(t, server, bodyless).Code; got != http.StatusBadRequest {
+		t.Fatalf("fieldless upload = %d, want 400", got)
+	}
+}
+
+// A store that refuses the write must not read as a successful upload: the widget has
+// already drawn the row, so a silent failure would leave a file on screen that is not there.
+func TestFileUploadSurfacesStoreFailures(t *testing.T) {
+	server := fileServer(nil, nil)
+	server.fileWrites = &fakeFileWriter{err: errors.New("bucket full")}
+	if got := serveUpload(t, server,
+		uploadRequest(t, fileManagerBase+"/upload", "a.txt", "x")).Code; got != http.StatusBadGateway {
+		t.Fatalf("failed write = %d, want 502", got)
 	}
 }
 

@@ -14,7 +14,7 @@ const (
 	DocumentStatusStored DocumentStatus = "stored"
 	// DocumentStatusQueued means pipeline work has been queued.
 	DocumentStatusQueued DocumentStatus = "queued"
-	// DocumentStatusConverting means Docling is turning the raw bytes into a document.
+	// DocumentStatusConverting means the extractor is turning the raw bytes into a document.
 	DocumentStatusConverting DocumentStatus = "converting"
 	// DocumentStatusChunking means the converted document is being split into passages.
 	DocumentStatusChunking DocumentStatus = "chunking"

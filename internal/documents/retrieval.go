@@ -103,7 +103,7 @@ type RetrievalDocument struct {
 // fields as merely absent. services/ingest/app.py says so outright -- "the layout fields
 // stay None: this writer only ever extracts plain text, never structured layout" -- so
 // self_ref, captions, page_number, bbox_*, sheet_name, table_name, row/column and
-// cell_reference are ALWAYS null since Docling was withdrawn. Only HeadingPath and
+// cell_reference are ALWAYS null since the layout-aware converter was withdrawn. Only HeadingPath and
 // CharStart/CharEnd carry data, from cocoindex's own Chunk offsets.
 //
 // It also duplicates arcadedb.PassageCandidate, which carries the same fields and is the

@@ -52,7 +52,6 @@ func setBenignDevEnv(t *testing.T) {
 	t.Setenv("AURA_OBJECTSTORE_REPLICATION_FACTOR", "1")
 	t.Setenv("AURA_SHELL_DESTRUCTIVE_PATTERNS", "")
 	t.Setenv("AURA_AUTHULA_SECRET", "")
-	t.Setenv("AURA_DOCLING_API_KEY", "test-docling-api-key")
 	t.Setenv("AURA_PROFILE", "")
 	// Every knob a gate READS has to be pinned here, not just every knob this test
 	// asserts on — otherwise the fixture inherits the developer's own .env and the

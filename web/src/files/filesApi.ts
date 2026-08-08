@@ -39,3 +39,21 @@ function withParsedDate(entry: RawFileEntry): FileEntry {
 export function downloadURL(id: string): string {
   return `${base}/direct?id=${encodeURIComponent(id)}`;
 }
+
+/**
+ * Stores one file in the folder being viewed.
+ *
+ * There is no ingestion call after this and there should not be: the sidecar reconciles the
+ * bucket, so landing in it IS what gets the file extracted, carded and indexed. The upload
+ * therefore finishes long before the file becomes searchable.
+ */
+export async function uploadFile(parent: string, file: File): Promise<void> {
+  const body = new FormData();
+  body.append('file', file, file.name);
+  const res = await fetch(`${base}/upload?id=${encodeURIComponent(parent)}`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    body,
+  });
+  if (!res.ok) throw new Error(`HTTP ${String(res.status)}`);
+}
