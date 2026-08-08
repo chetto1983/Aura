@@ -38,6 +38,23 @@ async function mockListing(page: Page): Promise<void> {
   );
 }
 
+// The widget renders every entry TWICE — once in the sidebar tree, once in the file panel —
+// so an unscoped getByText() is ambiguous and .first() resolves to the TREE node. On a narrow
+// viewport SVAR parks that tree off-canvas (.wx-sidebar-narrow is position:absolute at
+// x=-300, measured x=-222 for the row itself), which is unreachable: toBeVisible() still
+// passes on it (Playwright's visibility check ignores the viewport) but dblclick can never
+// satisfy actionability, so the spec burned its 30s timeout on mobile-chrome while the card
+// sat plainly on screen at y=375. Desktop only passed because there the sidebar is on-screen.
+//
+// data-id=":body" is the widget's OWN identifier for the file panel — it marks the container
+// in all three view modes (wx-cards / wx-list / wx-panels) and its click handler switches on
+// "body" as a panel identity (dist/index.cjs; setID prefixes a literal ":"). Scoping to it
+// selects the card the user actually touches, on both projects. `.first()` because the panel
+// nests a second :body container inside the outer one.
+function panelEntry(page: Page, name: string) {
+  return page.locator('[data-id=":body"]').first().getByText(name, { exact: true });
+}
+
 async function openFiles(page: Page, projectName: string): Promise<void> {
   await mockListing(page);
   await gotoAuthenticated(page, '/');
@@ -52,8 +69,11 @@ async function openFiles(page: Page, projectName: string): Promise<void> {
 test('the file manager lists the bucket root', async ({ page }, testInfo) => {
   await openFiles(page, testInfo.project.name);
 
-  await expect(page.getByText('contabilita', { exact: true }).first()).toBeVisible();
-  await expect(page.getByText('listino-2026.pdf', { exact: true }).first()).toBeVisible();
+  // toBeInViewport, not just toBeVisible: the assertion this replaces passed against the
+  // off-canvas tree node, so it proved the row existed in the DOM and not that anyone could
+  // see it. In-viewport is the claim the test is actually making.
+  await expect(panelEntry(page, 'contabilita')).toBeInViewport();
+  await expect(panelEntry(page, 'listino-2026.pdf')).toBeVisible();
   // No assertion on the widget's own toolbar controls: this spec proves the MOUNT — that
   // rows come back and render — and asserting a searchbox by role was a guess copied from
   // the workspace this replaced, which had its own labelled input. It failed on both
@@ -65,10 +85,6 @@ test('descending into a folder loads it on demand', async ({ page }, testInfo) =
 
   // The root payload carries no child of /contabilita, so this row can only appear if the
   // widget asked for the folder and the workspace answered with provide-data.
-  // scrollIntoViewIfNeeded first: on the mobile project the card sits below the fold and
-  // the dblclick retried until timeout against an element outside the viewport.
-  const folder = page.getByText('contabilita', { exact: true }).first();
-  await folder.scrollIntoViewIfNeeded();
-  await folder.dblclick();
-  await expect(page.getByText('fattura-acme.pdf', { exact: true }).first()).toBeVisible();
+  await panelEntry(page, 'contabilita').dblclick();
+  await expect(panelEntry(page, 'fattura-acme.pdf')).toBeVisible();
 });
