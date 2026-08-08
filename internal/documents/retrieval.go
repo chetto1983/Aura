@@ -2,8 +2,6 @@ package documents
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"math"
@@ -60,9 +58,10 @@ type RetrievalRequest struct {
 	DocumentIDs []string `json:"document_ids,omitempty"`
 }
 
-// RetrievalResponse reports what was thrown away as well as what was kept: RejectedCandidates
-// counts projection candidates that failed control-plane revalidation. A non-zero count is a
-// staleness signal about ArcadeDB, not a sign that the query was bad.
+// RetrievalResponse reports what ran. RejectedCandidates is retained in the wire shape and is
+// now always zero: it counted candidates that failed control-plane revalidation, and there is
+// no revalidation step to fail. It stays so a stored response from before the rewrite still
+// decodes, and it is omitempty so a new one does not carry a meaningless field.
 type RetrievalResponse struct {
 	Query              string              `json:"query"`
 	Profile            string              `json:"profile"`
@@ -72,24 +71,32 @@ type RetrievalResponse struct {
 	Documents          []RetrievalDocument `json:"documents"`
 }
 
-// RetrievalDocument is one document's share of the answer. RequiresOpen is set when no passage
-// survived revalidation, which tells the agent to open the file rather than cite a snippet it
-// does not actually hold; the card-only degradation forces it for every document.
+// RetrievalDocument is one document's share of the answer. RequiresOpen is set when the document
+// carries no passage at all, which tells the agent to open the file rather than cite a snippet it
+// does not hold; the card-only degradation forces it for every document.
 type RetrievalDocument struct {
-	DocumentID         string              `json:"document_id"`
-	CatalogID          string              `json:"catalog_id"`
-	Title              string              `json:"title"`
-	Tags               []string            `json:"tags,omitempty"`
-	Digest             string              `json:"digest,omitempty"`
-	Card               string              `json:"card,omitempty"`
-	Score              float64             `json:"score"`
-	RequiresOpen       bool                `json:"requires_open"`
-	VersionID          string              `json:"version_id"`
-	VersionNumber      int64               `json:"version_number"`
-	OriginalSHA256     string              `json:"original_sha256"`
-	PipelineGeneration int64               `json:"pipeline_generation"`
-	Evidence           []RetrievalEvidence `json:"evidence"`
-	Passages           []RetrievalPassage  `json:"passages"`
+	DocumentID string   `json:"document_id"`
+	CatalogID  string   `json:"catalog_id,omitempty"`
+	Title      string   `json:"title"`
+	Tags       []string `json:"tags,omitempty"`
+	Digest     string   `json:"digest,omitempty"`
+	Card       string   `json:"card,omitempty"`
+	Score      float64  `json:"score"`
+	// SourceKind and SourceKey are the route back to the bytes: "s3" plus the exact object
+	// key. document_open takes the key and reads the object, which is the whole of what the
+	// catalog's uuid -> version -> asset -> object chain used to do.
+	SourceKind string `json:"source_kind,omitempty"`
+	SourceKey  string `json:"source_key,omitempty"`
+	// OriginalSHA256 is what a citation is pinned to now. VersionID, VersionNumber and
+	// PipelineGeneration were here and are gone: nothing writes them, and a version number
+	// only ever meant "which of this document's rows is current" -- a question that stops
+	// existing once the bucket is the truth and an object simply has the bytes it has. The
+	// digest answers the question that actually matters, which is whether the bytes a
+	// citation quotes are still the bytes in the bucket.
+	OriginalSHA256 string              `json:"original_sha256"`
+	RequiresOpen   bool                `json:"requires_open"`
+	Evidence       []RetrievalEvidence `json:"evidence"`
+	Passages       []RetrievalPassage  `json:"passages"`
 }
 
 // PassageLocator anchors a passage inside the document it was cut from. It moved here
@@ -121,9 +128,10 @@ type PassageLocator struct {
 	CellRef      string    `json:"cell_ref,omitempty"`
 }
 
-// RetrievalPassage carries the control-plane copy of the text, never the projection's: the
-// revalidation step replaces the candidate wholesale. The version, original digest and
-// normalized-text digest travel with it so a citation cannot outlive the bytes it quotes.
+// RetrievalPassage is the passage as ArcadeDB holds it. It used to be the control plane's copy,
+// substituted for the projection's by a revalidation step that no longer exists. The two digests
+// travel with it so a citation cannot outlive the bytes it quotes: OriginalSHA256 pins the object
+// and NormalizedSHA256 pins this passage's text within it.
 type RetrievalPassage struct {
 	PassageID        string              `json:"passage_id"`
 	Ordinal          int64               `json:"ordinal"`
@@ -131,8 +139,6 @@ type RetrievalPassage struct {
 	CitationToken    string              `json:"citation_token"`
 	CitationLocator  string              `json:"citation_locator"`
 	Locator          PassageLocator      `json:"locator"`
-	VersionID        string              `json:"version_id"`
-	VersionNumber    int64               `json:"version_number"`
 	OriginalSHA256   string              `json:"original_sha256"`
 	NormalizedSHA256 string              `json:"normalized_text_sha256"`
 	Evidence         []RetrievalEvidence `json:"evidence"`
@@ -153,34 +159,34 @@ type RetrievalEvidence struct {
 // is unreachable. Rank is the raw ts_rank, unbounded and not comparable to a passage score until
 // normalizedScore squashes it.
 type RetrievalCard struct {
-	CatalogID          string
-	DocumentID         string
-	Title              string
-	Tags               []string
-	Digest             string
-	Card               string
-	Rank               float64
-	VersionID          string
-	VersionNumber      int64
-	OriginalSHA256     string
-	PipelineGeneration int64
+	CatalogID      string
+	DocumentID     string
+	Title          string
+	Tags           []string
+	Digest         string
+	Card           string
+	Rank           float64
+	OriginalSHA256 string
 }
 
-// RetrievalControlPlane is the sole authority on what exists: it bounds the scope, routes the
-// cards, and re-confirms every projection candidate against the live version before a word of it
-// reaches the caller. Nothing the projection returns is quotable until it has passed through here.
+// RetrievalControlPlane bounds the scope and routes the cards. It no longer re-confirms
+// candidates.
+//
+// RevalidateDocumentCandidates was here, and it re-read every candidate from Postgres so the
+// control plane's copy could supersede the projection's before anything was quotable. It is
+// gone because what it validated against no longer exists: there is no second copy of the
+// text in Postgres, no version to confirm a passage belongs to, and no generation to check
+// it against. Its requirements had also become unsatisfiable -- it demanded uuid passage,
+// document and version ids and an integer generation, while the reconciler writes
+// "doc_<hex>:0", "doc_<hex>", nothing, and "cocoindex-v1" -- so it rejected every real row.
+//
+// What replaces it is carried by the passage: source_key locates the bytes and raw_sha256
+// proves them. That is the shape every comparable system uses -- cognee's retrievers return
+// the vector payload directly, and the string "revalidat" does not appear anywhere in its
+// codebase.
 type RetrievalControlPlane interface {
 	ResolveDocumentScope(context.Context, string, []string) ([]string, error)
 	RouteDocumentCards(context.Context, string, string, []string, int) ([]RetrievalCard, error)
-	RevalidateDocumentCandidates(context.Context, string, []arcadedb.PassageCandidate) (map[string]RevalidatedCandidate, error)
-}
-
-// RevalidatedCandidate is the control plane's own card and passage for a candidate coordinate.
-// It supersedes the projection's copy rather than annotating it; only the retrieval leg and its
-// scores are carried back over from the candidate that proposed it.
-type RevalidatedCandidate struct {
-	Card    RetrievalCard
-	Passage arcadedb.PassageCandidate
 }
 
 // RetrievalProjection is the search index side of the cascade. It is trusted for candidate
@@ -277,24 +283,7 @@ func (r *HostRetriever) Retrieve(ctx context.Context, request RetrievalRequest) 
 			}
 		}
 	}
-	validated, err := r.ControlPlane.RevalidateDocumentCandidates(ctx, request.IdentityID, candidates)
-	if err != nil {
-		return RetrievalResponse{}, fmt.Errorf("documents: revalidate retrieval candidates: %w", err)
-	}
-	accepted := make([]validatedPassage, 0, len(candidates))
-	for _, candidate := range candidates {
-		if authoritative, ok := validated[candidateCoordinateKey(candidate)]; ok {
-			authoritative.Passage.Leg = candidate.Leg
-			authoritative.Passage.LexicalScore = candidate.LexicalScore
-			authoritative.Passage.DenseDistance = candidate.DenseDistance
-			accepted = append(accepted, validatedPassage{
-				candidate: authoritative.Passage, card: authoritative.Card,
-			})
-		} else {
-			response.RejectedCandidates++
-		}
-	}
-	response.Documents = rankDocuments(cards, accepted, request.Limit, cfg.TopPassages, false)
+	response.Documents = rankDocuments(cards, candidates, request.Limit, cfg.TopPassages, false)
 	return response, nil
 }
 
@@ -388,22 +377,6 @@ func filterCandidates(candidates []arcadedb.PassageCandidate, keep func(arcadedb
 		}
 	}
 	return out
-}
-
-type validatedPassage struct {
-	candidate arcadedb.PassageCandidate
-	card      RetrievalCard
-}
-
-func candidateCoordinateKey(candidate arcadedb.PassageCandidate) string {
-	hash := sha256.New()
-	for _, part := range []string{candidate.PassageID, candidate.DocumentID, candidate.SearchDocumentID,
-		candidate.VersionID, strconv.FormatInt(candidate.VersionNumber, 10), candidate.PipelineGeneration,
-		strconv.FormatInt(candidate.Ordinal, 10), candidate.RawSHA256, candidate.NormalizedSHA256} {
-		_, _ = hash.Write([]byte(part))
-		_, _ = hash.Write([]byte{0})
-	}
-	return hex.EncodeToString(hash.Sum(nil))
 }
 
 func citationLocator(candidate arcadedb.PassageCandidate) string {

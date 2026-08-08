@@ -3,7 +3,6 @@ package documents
 import (
 	"context"
 	"errors"
-	"maps"
 	"reflect"
 	"strings"
 	"testing"
@@ -22,8 +21,6 @@ type fakeRetrievalControl struct {
 	scopeRequest []string
 	scope        []string
 	cards        []RetrievalCard
-	validated    map[string]RevalidatedCandidate
-	validateAll  bool
 	err          error
 }
 
@@ -44,24 +41,6 @@ func (f *fakeRetrievalControl) RouteDocumentCards(
 		return nil, f.err
 	}
 	return append([]RetrievalCard(nil), f.cards...), nil
-}
-
-func (f *fakeRetrievalControl) RevalidateDocumentCandidates(
-	_ context.Context, _ string, candidates []arcadedb.PassageCandidate,
-) (map[string]RevalidatedCandidate, error) {
-	if f.err != nil {
-		return nil, f.err
-	}
-	out := make(map[string]RevalidatedCandidate, len(f.validated)+len(candidates))
-	maps.Copy(out, f.validated)
-	if f.validateAll {
-		for _, candidate := range candidates {
-			out[candidateCoordinateKey(candidate)] = RevalidatedCandidate{
-				Card: retrievalCard(), Passage: candidate,
-			}
-		}
-	}
-	return out, nil
 }
 
 type fakeRetrievalProjection struct {
@@ -107,7 +86,7 @@ func TestHostRetrieverReturnsRevalidatedCitationEvidence(t *testing.T) {
 	dense := retrievalCandidate(arcadedb.RetrievalLegDense)
 	dense.DenseDistance = new(0.2)
 	control := &fakeRetrievalControl{
-		scope: []string{retrievalDocument}, cards: []RetrievalCard{retrievalCard()}, validateAll: true,
+		scope: []string{retrievalDocument}, cards: []RetrievalCard{retrievalCard()},
 	}
 	projection := &fakeRetrievalProjection{lexical: []arcadedb.PassageCandidate{lexical}, dense: []arcadedb.PassageCandidate{dense}}
 	embedder := &fakeRetrievalEmbedder{vector: []float64{0.1, 0.2}}
@@ -128,12 +107,12 @@ func TestHostRetrieverReturnsRevalidatedCitationEvidence(t *testing.T) {
 		t.Fatalf("response = %#v", response)
 	}
 	doc := response.Documents[0]
-	if doc.RequiresOpen || doc.VersionNumber != 2 || doc.OriginalSHA256 != strings.Repeat("a", 64) ||
+	if doc.RequiresOpen || doc.OriginalSHA256 != strings.Repeat("a", 64) ||
 		len(doc.Passages) != 1 || len(doc.Passages[0].Evidence) != 2 {
 		t.Fatalf("document = %#v", doc)
 	}
 	passage := doc.Passages[0]
-	if passage.CitationToken != "document:doc_9f2c@2#ref=%2Ftexts%2F42;page=7" ||
+	if passage.CitationToken != "document:doc_9f2c@aaaaaaaaaaaa#ref=%2Ftexts%2F42;page=7" ||
 		passage.CitationLocator != "ref=%2Ftexts%2F42;page=7" ||
 		passage.Locator.SelfRef != "/texts/42" ||
 		passage.Evidence[0].Rank != 1 || passage.Evidence[1].Rank != 1 {
@@ -149,30 +128,59 @@ func TestHostRetrieverReturnsRevalidatedCitationEvidence(t *testing.T) {
 	}
 }
 
-func TestHostRetrieverEmitsAuthoritativePostgresPassage(t *testing.T) {
+func TestHostRetrieverReturnsTheProjectionPassageDirectly(t *testing.T) {
+	// This test asserted the OPPOSITE until 2026-08-08: that a Postgres copy fetched by
+	// RevalidateDocumentCandidates superseded the ArcadeDB payload wholesale, and it was
+	// named EmitsAuthoritativePostgresPassage. That step is gone -- there is no second copy
+	// of the text in Postgres to be authoritative, and its own preconditions (uuid ids, an
+	// integer generation) rejected every row the reconciler writes. The projection payload
+	// is the answer now, which is what comparable systems do.
 	candidate := retrievalCandidate(arcadedb.RetrievalLegLexical)
-	candidate.Text = "stale ArcadeDB text"
-	candidate.SelfRef = "/stale/locator"
+	candidate.Text = "il codice cliente WPT-4417 e' attivo"
+	candidate.SelfRef = "/texts/42"
 	candidate.LexicalScore = new(4.0)
-	authoritative := candidate
-	authoritative.Text = "authoritative PostgreSQL text"
-	authoritative.SelfRef = "/texts/authoritative"
 	response, err := (&HostRetriever{
-		ControlPlane: &fakeRetrievalControl{
-			cards: []RetrievalCard{retrievalCard()},
-			validated: map[string]RevalidatedCandidate{
-				candidateCoordinateKey(candidate): {Card: retrievalCard(), Passage: authoritative},
-			},
-		},
-		Projection: &fakeRetrievalProjection{lexical: []arcadedb.PassageCandidate{candidate}},
+		ControlPlane: &fakeRetrievalControl{cards: []RetrievalCard{retrievalCard()}},
+		Projection:   &fakeRetrievalProjection{lexical: []arcadedb.PassageCandidate{candidate}},
 	}).Retrieve(t.Context(), RetrievalRequest{IdentityID: retrievalIdentity, Query: "WPT cliente"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	passage := response.Documents[0].Passages[0]
-	if passage.Text != authoritative.Text || passage.Locator.SelfRef != authoritative.SelfRef ||
-		passage.CitationLocator != "ref=%2Ftexts%2Fauthoritative;page=7" {
-		t.Fatalf("ArcadeDB payload escaped revalidation: %#v", passage)
+	if passage.Text != candidate.Text || passage.Locator.SelfRef != candidate.SelfRef {
+		t.Fatalf("projection payload was altered on the way out: %#v", passage)
+	}
+	if response.RejectedCandidates != 0 {
+		t.Fatalf("nothing revalidates any more, so nothing can be rejected: %d", response.RejectedCandidates)
+	}
+}
+
+// A document reconciled from the bucket has no catalog row, so no card. Before the passage
+// became the ranking spine its passages matched and were then discarded, because a document
+// could only be created by a card -- which is the whole reason bucket-ingested documents
+// were unreachable through document_search.
+func TestHostRetrieverReturnsDocumentsThatHaveNoCard(t *testing.T) {
+	candidate := retrievalCandidate(arcadedb.RetrievalLegLexical)
+	candidate.LexicalScore = new(4.0)
+	candidate.SourceKind, candidate.SourceKey = "s3", "fatture/2026/q1/fattura-acme.pdf"
+	response, err := (&HostRetriever{
+		ControlPlane: &fakeRetrievalControl{},
+		Projection:   &fakeRetrievalProjection{lexical: []arcadedb.PassageCandidate{candidate}},
+	}).Retrieve(t.Context(), RetrievalRequest{IdentityID: retrievalIdentity, Query: "fattura"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Documents) != 1 {
+		t.Fatalf("a passage with no card produced %d documents, want 1", len(response.Documents))
+	}
+	doc := response.Documents[0]
+	if doc.DocumentID != candidate.SearchDocumentID || doc.SourceKey != candidate.SourceKey {
+		t.Fatalf("document not built from the passage: %#v", doc)
+	}
+	// The filename is the title when no card supplies one -- enough for the agent to name
+	// what it found, and the key is what document_open needs.
+	if doc.Title != "fattura-acme.pdf" {
+		t.Fatalf("title = %q, want the object's base name", doc.Title)
 	}
 }
 
@@ -206,7 +214,7 @@ func TestHostRetrieverDegradationIsExplicit(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			control := &fakeRetrievalControl{cards: []RetrievalCard{retrievalCard()}, validateAll: true}
+			control := &fakeRetrievalControl{cards: []RetrievalCard{retrievalCard()}}
 			response, err := (&HostRetriever{
 				ControlPlane: control, Projection: test.projection, Embedder: test.embedder,
 				Config: RetrievalConfig{LexicalMinScore: 2},
@@ -219,22 +227,6 @@ func TestHostRetrieverDegradationIsExplicit(t *testing.T) {
 				t.Fatalf("response = %#v", response)
 			}
 		})
-	}
-}
-
-func TestHostRetrieverRejectsStaleArcadeCandidates(t *testing.T) {
-	candidate := retrievalCandidate(arcadedb.RetrievalLegLexical)
-	candidate.LexicalScore = new(4.0)
-	response, err := (&HostRetriever{
-		ControlPlane: &fakeRetrievalControl{cards: []RetrievalCard{retrievalCard()}},
-		Projection:   &fakeRetrievalProjection{lexical: []arcadedb.PassageCandidate{candidate}},
-	}).Retrieve(t.Context(), RetrievalRequest{IdentityID: retrievalIdentity, Query: "WPT cliente"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if response.RejectedCandidates != 1 || len(response.Documents) != 1 ||
-		!response.Documents[0].RequiresOpen || len(response.Documents[0].Passages) != 0 {
-		t.Fatalf("stale candidate leaked: %#v", response)
 	}
 }
 
@@ -263,25 +255,11 @@ func TestHostRetrieverValidationAndThresholds(t *testing.T) {
 	}
 }
 
-func TestCandidateInputsDeduplicateLegsAndRejectNonUUIDCoordinates(t *testing.T) {
-	lexical := retrievalCandidate(arcadedb.RetrievalLegLexical)
-	dense := retrievalCandidate(arcadedb.RetrievalLegDense)
-	inputs, err := candidateInputs([]arcadedb.PassageCandidate{lexical, dense})
-	if err != nil || len(inputs) != 1 || inputs[0].PipelineGeneration != 7 {
-		t.Fatalf("inputs = %#v, err = %v", inputs, err)
-	}
-	lexical.PassageID = "not-a-uuid"
-	if _, err := candidateInputs([]arcadedb.PassageCandidate{lexical}); err == nil {
-		t.Fatal("invalid candidate coordinates accepted")
-	}
-}
-
 func retrievalCard() RetrievalCard {
 	return RetrievalCard{
 		CatalogID: retrievalDocument, DocumentID: "doc_9f2c", Title: "Clienti.xlsx",
 		Tags: []string{"clienti"}, Card: "Tabella clienti", Rank: 0.7,
-		VersionID: retrievalVersion, VersionNumber: 2, OriginalSHA256: strings.Repeat("a", 64),
-		PipelineGeneration: 7,
+		OriginalSHA256: strings.Repeat("a", 64),
 	}
 }
 
@@ -289,7 +267,7 @@ func retrievalCandidate(leg arcadedb.RetrievalLeg) arcadedb.PassageCandidate {
 	page := int64(7)
 	return arcadedb.PassageCandidate{
 		PassageID: retrievalPassage, DocumentID: retrievalDocument,
-		SearchDocumentID: "doc_9f2c", VersionID: retrievalVersion, VersionNumber: 2,
+		SearchDocumentID: "doc_9f2c", SourceKind: "s3", SourceKey: "clienti/Clienti.xlsx",
 		RawSHA256: strings.Repeat("a", 64), PipelineGeneration: "7",
 		Ordinal: 42, Text: "Il codice cliente di WPT SRL è C-1042.",
 		NormalizedSHA256: strings.Repeat("b", 64), SelfRef: "/texts/42",

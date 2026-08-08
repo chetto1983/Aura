@@ -24,6 +24,7 @@ func candidateFixture(index *DocumentIndex, passageID, documentID string, ordina
 	return map[string]any{
 		"passage_key": "search-" + documentID + ":" + strconv.FormatInt(ordinal, 10), "passage_id": passageID,
 		"document_id": documentID, "search_document_id": "search-" + documentID,
+		"source_kind": "s3", "source_key": "fatture/" + documentID + ".pdf",
 		"raw_sha256":          strings.Repeat("a", 64),
 		"pipeline_generation": generation, "schema_version": index.schemaVersion(), "ordinal": ordinal,
 		"text": "bounded passage text", "normalized_text_sha256": strings.Repeat("b", 64),

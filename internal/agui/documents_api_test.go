@@ -97,7 +97,7 @@ func TestDocumentAPIQueryUsesSharedRetriever(t *testing.T) {
 		Query: "codice WPT", Profile: documents.ProductionRetrievalProfile,
 		Status: documents.RetrievalComplete,
 		Documents: []documents.RetrievalDocument{{
-			DocumentID: "doc_9f2c", VersionNumber: 2,
+			DocumentID: "doc_9f2c", SourceKind: "s3", SourceKey: "fatture/fattura-acme.pdf",
 			OriginalSHA256: strings.Repeat("a", 64),
 		}},
 	}}

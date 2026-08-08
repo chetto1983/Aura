@@ -40,13 +40,18 @@ type DenseCandidateQuery struct {
 	Embedding []float64
 }
 
-// PassageCandidate is an immutable passage plus generation and locator evidence.
+// PassageCandidate is an immutable passage plus its provenance and locator evidence.
 type PassageCandidate struct {
-	PassageID          string
-	DocumentID         string
-	SearchDocumentID   string
-	VersionID          string
-	VersionNumber      int64
+	PassageID        string
+	DocumentID       string
+	SearchDocumentID string
+	// SourceKind and SourceKey are where the bytes actually live -- for the only writer
+	// that exists, "s3" and the exact Garage object key. services/ingest has written both
+	// since it was built and arcade.py declares them, noting that Go "doesn't read them
+	// yet"; reading them here is what turns a retrieval hit back into a file in one hop,
+	// instead of the five the catalog used to take.
+	SourceKind         string
+	SourceKey          string
 	RawSHA256          string
 	PipelineGeneration string
 	SchemaVersion      string
@@ -69,8 +74,8 @@ type PassageCandidate struct {
 	DenseDistance      *float64
 }
 
-const passageCandidateFields = "passage_key, passage_id, projection_key, document_id, " +
-	"search_document_id, version_id, version_number, raw_sha256, pipeline_generation, " +
+const passageCandidateFields = "passage_key, passage_id, document_id, " +
+	"search_document_id, source_kind, source_key, raw_sha256, pipeline_generation, " +
 	"schema_version, ordinal, text, normalized_text_sha256, self_ref, heading_path, captions, " +
 	"page_number, bbox_left, bbox_top, bbox_right, bbox_bottom, char_start, char_end, " +
 	"sheet_name, table_name, row_number, column_number, cell_reference, active"
@@ -256,6 +261,10 @@ func (d *DocumentIndex) decodeCandidate(
 	}{
 		{"passage_id", new(string)},
 		{"document_id", new(string)}, {"search_document_id", new(string)},
+		// source_key is REQUIRED, not best-effort. It is the only route from a hit back to
+		// the bytes it quotes, so a passage without one can be ranked and cited but never
+		// opened -- an answer the caller cannot verify. Failing here keeps that impossible.
+		{"source_kind", new(string)}, {"source_key", new(string)},
 		{"raw_sha256", new(string)},
 		{"pipeline_generation", new(string)}, {"schema_version", new(string)},
 		{"text", new(string)}, {"normalized_text_sha256", new(string)},
@@ -269,9 +278,10 @@ func (d *DocumentIndex) decodeCandidate(
 	candidate := PassageCandidate{
 		PassageID:  *required[0].target,
 		DocumentID: *required[1].target, SearchDocumentID: *required[2].target,
-		RawSHA256:          *required[3].target,
-		PipelineGeneration: *required[4].target, SchemaVersion: *required[5].target,
-		Text: *required[6].target, NormalizedSHA256: *required[7].target, Leg: leg,
+		SourceKind: *required[3].target, SourceKey: *required[4].target,
+		RawSHA256:          *required[5].target,
+		PipelineGeneration: *required[6].target, SchemaVersion: *required[7].target,
+		Text: *required[8].target, NormalizedSHA256: *required[9].target, Leg: leg,
 	}
 	if !validSHA256(candidate.RawSHA256) || !validSHA256(candidate.NormalizedSHA256) {
 		return PassageCandidate{}, "", fmt.Errorf("candidate carries an invalid SHA-256")
