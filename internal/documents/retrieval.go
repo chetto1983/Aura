@@ -75,13 +75,10 @@ type RetrievalResponse struct {
 // carries no passage at all, which tells the agent to open the file rather than cite a snippet it
 // does not hold; the card-only degradation forces it for every document.
 type RetrievalDocument struct {
-	DocumentID string   `json:"document_id"`
-	CatalogID  string   `json:"catalog_id,omitempty"`
-	Title      string   `json:"title"`
-	Tags       []string `json:"tags,omitempty"`
-	Digest     string   `json:"digest,omitempty"`
-	Card       string   `json:"card,omitempty"`
-	Score      float64  `json:"score"`
+	DocumentID string  `json:"document_id"`
+	Title      string  `json:"title"`
+	Card       string  `json:"card,omitempty"`
+	Score      float64 `json:"score"`
 	// SourceKind and SourceKey are the route back to the bytes: "s3" plus the exact object
 	// key. document_open takes the key and reads the object, which is the whole of what the
 	// catalog's uuid -> version -> asset -> object chain used to do.
@@ -158,19 +155,30 @@ type RetrievalEvidence struct {
 // runs entirely inside Postgres, and is therefore the only leg still standing when the projection
 // is unreachable. Rank is the raw ts_rank, unbounded and not comparable to a passage score until
 // normalizedScore squashes it.
+// RetrievalCard is one document's own description, as the reconciler recorded it.
+//
+// CatalogID, Tags and Digest were here and are gone with the catalog that supplied them:
+// an object in a bucket has no uuid, no tags and no separate digest, so the fields could
+// only ever have been empty, and document_search marshals this whole shape into the
+// model's context.
 type RetrievalCard struct {
-	CatalogID      string
-	DocumentID     string
-	Title          string
-	Tags           []string
-	Digest         string
+	DocumentID string
+	Title      string
+	// The object coordinates travel with the card too, so a card-only answer -- the
+	// degraded path taken when ArcadeDB's vector leg is down -- is still openable.
+	SourceKind     string
+	SourceKey      string
 	Card           string
 	Rank           float64
 	OriginalSHA256 string
 }
 
-// RetrievalControlPlane bounds the scope and routes the cards. It no longer re-confirms
-// candidates.
+// RetrievalControlPlane bounds the scope and routes the cards, both from ArcadeDB.
+//
+// It used to be PostgreSQL. Both of its jobs are full-text work over records the
+// reconciler writes, and ArcadeDB already indexes those records FULL_TEXT with the same
+// analyzer it uses for passages -- so a PostgreSQL control plane meant two search engines
+// tokenising one query differently. It no longer re-confirms candidates either.
 //
 // RevalidateDocumentCandidates was here, and it re-read every candidate from Postgres so the
 // control plane's copy could supersede the projection's before anything was quotable. It is

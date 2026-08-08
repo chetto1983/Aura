@@ -101,10 +101,11 @@ func ensureRankedDocumentFromCard(byDocumentID map[string]*rankedDocument, card 
 		doc = newRankedDocument(card.DocumentID)
 		byDocumentID[card.DocumentID] = doc
 	}
-	doc.document.CatalogID = card.CatalogID
 	doc.document.Title = card.Title
-	doc.document.Tags = append([]string(nil), card.Tags...)
-	doc.document.Digest, doc.document.Card = card.Digest, card.Card
+	doc.document.Card = card.Card
+	if doc.document.SourceKey == "" {
+		doc.document.SourceKind, doc.document.SourceKey = card.SourceKind, card.SourceKey
+	}
 	if doc.document.OriginalSHA256 == "" {
 		doc.document.OriginalSHA256 = card.OriginalSHA256
 	}

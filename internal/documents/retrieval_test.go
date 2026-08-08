@@ -257,8 +257,9 @@ func TestHostRetrieverValidationAndThresholds(t *testing.T) {
 
 func retrievalCard() RetrievalCard {
 	return RetrievalCard{
-		CatalogID: retrievalDocument, DocumentID: "doc_9f2c", Title: "Clienti.xlsx",
-		Tags: []string{"clienti"}, Card: "Tabella clienti", Rank: 0.7,
+		DocumentID: "doc_9f2c", Title: "Clienti.xlsx",
+		SourceKind: "s3", SourceKey: "contabilita/Clienti.xlsx",
+		Card: "Tabella clienti", Rank: 0.7,
 		OriginalSHA256: strings.Repeat("a", 64),
 	}
 }
