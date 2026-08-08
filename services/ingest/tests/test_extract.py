@@ -29,7 +29,7 @@ import re
 
 import pytest
 
-from ingest.extract import extract_text, needs_normalisation, normalise
+from ingest.extract import extractable, extract_text, needs_normalisation, normalise
 
 FX = pathlib.Path("/fx")
 
@@ -94,8 +94,8 @@ def test_extractable_routes_by_family():
     ones LibreOffice normalises into them.
     """
     for name in ["a.pdf", "b.docx", "c.xlsx", "d.txt", "e.md", "f.csv", "G.PDF"]:
-        assert extract.extractable(name), name
+        assert extractable(name), name
     for name in ["a.doc", "b.xls", "c.ppt", "d.odt", "e.ods", "f.odp", "g.rtf"]:
-        assert extract.extractable(name), name
+        assert extractable(name), name
     for name in ["photo.png", "photo.jpg", "clip.mp3", "clip.wav", "archive.zip", "noext"]:
-        assert not extract.extractable(name), name
+        assert not extractable(name), name

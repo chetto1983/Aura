@@ -194,8 +194,12 @@ def _card(path: str, file_name: str) -> str:
 @coco.fn(memo=True)
 def _embed(text: str) -> list[float]:
     # EmbeddingGemma is asymmetric: documents carry "title: none | text: …" (queries
-    # carry a different prefix) -- omitting it measured recall@1 0.25 -> 0.05.
-    payload = json.dumps({"input": f"title: none | text: {text}", "model": "embeddinggemma"}).encode()
+    # carry a different prefix) -- omitting it measured recall@1 0.25 -> 0.05. The
+    # prefix is a chunk.py constant because the chunk budget has to subtract it; see
+    # chunk.document_budget().
+    payload = json.dumps(
+        {"input": chunk.EMBED_DOC_PREFIX + text, "model": "embeddinggemma"}
+    ).encode()
     req = urllib.request.Request(
         f"{EMBED_BASE_URL.rstrip('/')}/v1/embeddings", data=payload,
         headers={"Content-Type": "application/json"})
@@ -286,7 +290,9 @@ async def process_file(
             card = _card(ready, pathlib.PurePosixPath(ready).name)
     source_kind = "s3"
     search_document_id = identity.search_document_id(identity_id, source_kind, key)
-    pieces = chunk.chunk(text)
+    # document_budget(), not the bare ceiling: _embed sends EMBED_DOC_PREFIX + text, so a
+    # chunk sized to the full ceiling overflows by the prefix and the request 500s.
+    pieces = chunk.chunk(text, max_tokens=chunk.document_budget())
     raw_sha256 = hashlib.sha256(content).hexdigest()
     await coco.map(
         process_chunk, list(enumerate(pieces)),

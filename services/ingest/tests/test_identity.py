@@ -6,7 +6,11 @@ on this machine — they are the ground truth, not something to recompute here.
 
 import pytest
 
-from services.ingest.identity import search_document_id
+# `ingest.`, not `services.ingest.`: the image COPYs services/ingest to /app/ingest, so
+# the deployed package is `ingest` and every sibling test already imports it that way.
+# This module was the odd one out, and since nothing runs these tests it collected as an
+# ImportError that failed the WHOLE suite rather than one file.
+from ingest.identity import search_document_id
 
 VECTORS = [
     (

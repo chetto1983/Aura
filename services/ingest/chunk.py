@@ -39,6 +39,16 @@ _EMBED_BASE_URL_ENV = "AURA_EMBED_BASE_URL"
 _DEFAULT_EMBED_BASE_URL = "http://aura-llama-embed:8081"
 _TOKENIZE_TIMEOUT_S = 2.0
 
+# The model's own ceiling, not a tuning knob: past this the server answers HTTP 500.
+MODEL_MAX_TOKENS = 2048
+# EmbeddingGemma is asymmetric and the prefix is part of the model input, so the
+# server is sent PREFIX + text and the ceiling applies to the SUM. It lives here,
+# next to the budget that has to subtract it, because the two drifting apart is
+# exactly the defect this module exists to prevent -- and it drifted once already.
+# Must equal embeddings.UntitledDocumentPrefix (internal/embeddings/tasks.go), the
+# Go side of the same contract.
+EMBED_DOC_PREFIX = "title: none | text: "
+
 # FALLBACK ONLY (see count_tokens). Measured 2026-08-06 via POST /tokenize on
 # real Italian prose: embeddinggemma-300m's SentencePiece tokenizer averages
 # ~5.32 chars/token (6400 chars -> 1202 tokens). Using 3 instead of ~5.3 always
@@ -107,6 +117,15 @@ def count_tokens(text: str) -> int:
     FALLBACK_ACTIVE = True
     return math.ceil(len(text) / CHARS_PER_TOKEN_FALLBACK)
 
+def document_budget() -> int:
+    """Tokens a document chunk may occupy once EMBED_DOC_PREFIX is prepended.
+
+    Measured with the server's own tokenizer rather than assumed, so changing the
+    prefix moves the budget with it instead of silently overflowing the ceiling.
+    """
+    return MODEL_MAX_TOKENS - count_tokens(EMBED_DOC_PREFIX)
+
+
 def _shift(base: TextPosition, rel: TextPosition) -> TextPosition:
     # `rel` is relative to a piece that (see _window_split) never crosses a
     # source line, so line is constant and column advances 1:1 with char_offset.
@@ -150,7 +169,9 @@ def _window_split(piece: CoreChunk, max_tokens: int) -> list[Chunk]:
                           start_pos=start_pos, end_pos=end_pos))
     return out
 
-def chunk(text: str, max_tokens: int = 2048, overlap_ratio: float = DEFAULT_OVERLAP_RATIO) -> list[Chunk]:
+def chunk(
+    text: str, max_tokens: int = MODEL_MAX_TOKENS, overlap_ratio: float = DEFAULT_OVERLAP_RATIO
+) -> list[Chunk]:
     """Split text so every chunk fits the embedding model's token ceiling.
 
     overlap_ratio drives RecursiveSplitter's native chunk_overlap: a fact

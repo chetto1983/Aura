@@ -5,13 +5,36 @@ is a correctness test, not a style preference.
 
 from cocoindex.resources.chunk import Chunk as CoreChunk, TextPosition
 
-from ingest.chunk import _window_split, chunk, count_tokens
+from ingest.chunk import (
+    EMBED_DOC_PREFIX,
+    MODEL_MAX_TOKENS,
+    _window_split,
+    chunk,
+    count_tokens,
+    document_budget,
+)
 
 
 def test_no_chunk_exceeds_the_model_ceiling():
     text = "parola " * 20000
     for c in chunk(text, max_tokens=2048):
         assert count_tokens(c.text) <= 2048
+
+
+def test_the_embedded_payload_fits_the_ceiling_including_the_task_prefix():
+    # The server is sent PREFIX + text, never text alone, so budgeting the ceiling for
+    # the text spends it twice: the request overflows by exactly the prefix.
+    #
+    # This is the invariant the test above does NOT state, and the gap was not
+    # theoretical. Measured live 2026-08-08 against 25 legal PDFs: the prefix tokenizes
+    # to 7 tokens (the server's own /tokenize), and six chunks reached it at 2050-2056
+    # tokens against a 2048 ceiling, each answered HTTP 500 and each passage therefore
+    # never indexed. Production runs AURA_INGEST_LIVE=true, where that exception is
+    # swallowed into the next cycle -- so the loss is silent, which is why the invariant
+    # has to be asserted here rather than trusted to surface.
+    text = "parola " * 20000
+    for c in chunk(text, max_tokens=document_budget()):
+        assert count_tokens(EMBED_DOC_PREFIX + c.text) <= MODEL_MAX_TOKENS
 
 
 def test_offsets_reconstruct_the_source():
