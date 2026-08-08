@@ -215,7 +215,22 @@ The live `aura` identity, its bucket and its database were never touched.
      because they need `AURA_LOCOMO_DIR` / `AURA_LOCOMO_FACTS` — an external dataset the repo
      does not carry and CI does not provision. **Deleting the `-skip` would therefore not run
      them; it would add seven green skips**, which is the falsely-green job CLAUDE.md forbids.
-     Closing this means provisioning the dataset first, then removing the exclusion.
+     **Provisioning it is now solved.** `AURA_LOCOMO_DIR` must hold a file named literally
+     `locomo_dataset.json`; the public dataset is
+     `https://raw.githubusercontent.com/snap-research/locomo/main/data/locomo10.json`
+     (2.8 MB, 10 samples, keys `conversation`/`qa`/`sample_id`, sessions `session_N` plus
+     their `_date_time` twins) — the exact shape the loader expects, so it only needs
+     renaming. Verified end to end today: with it in place `TestLocomoEnglishAnalyzerRecall`
+     **passes in 11.7s** (its `MISS` lines are diagnostics, not failures).
+     `AURA_LOCOMO_MAX_QUESTIONS=5` smoke-tests before a full run — the knob's own comment
+     says so. The other six were NOT run; do not assume they pass.
+
+     Two things the dataset does not unblock. `AURA_LOCOMO_FACTS` defaults to another
+     session's scratchpad (`locomo1_facts.json`) and is a DERIVED artifact absent from the
+     public dataset, so the facts tests stay skipped until that derivation is reproducible.
+     And `snap-research/locomo` is licensed **`NOASSERTION`** — settle that before fetching
+     it in a pipeline. For CI, follow the pattern already in `ci.yml` for the embedding
+     model (fetch script + cache step) rather than vendoring 2.8 MB into git.
    - **`internal/agenteval/live_test.go`** carries the tag and is in no package the evaluator
      runs, so it is compiled and never executed.
 7. **`docker_integration` feeds no coverage.**
