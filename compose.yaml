@@ -69,10 +69,24 @@ services:
       AURA_DB_MIGRATE_URL: postgres://${AURA_DB_MIGRATE_ROLE:-aura_migrate}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}@postgres:5432/${POSTGRES_DB:-aura}?sslmode=disable
       AURA_DB_BOOTSTRAP_URL: postgres://${POSTGRES_USER:-aura}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}@postgres:5432/${POSTGRES_DB:-aura}?sslmode=disable
       # The cockpit graph reads the authenticated identity's database directly
-      # through ArcadeDB's read-only Studio serializer. It derives the exact same
-      # tenant credential as arcadedb-mcp; no root/admin credential enters Aura.
+      # through ArcadeDB's read-only Studio serializer, deriving the same tenant
+      # credential as arcadedb-mcp.
       ARCADEDB_URL: http://arcadedb:2480
       AURA_ARCADEDB_TENANT_SECRET: ${AURA_ARCADEDB_TENANT_SECRET:?AURA_ARCADEDB_TENANT_SECRET required in .env}
+      # Server rights, for ONE operation: dropping a tenant database when an identity is
+      # deleted. Without them buildArcadeMemoryPurger returns nil and the de-provisioning
+      # saga REFUSES every identity deletion — deliberately, because deleting the Postgres
+      # row while the memory database survived would orphan it with no owner left pointing
+      # at it. So "delete a user" was structurally impossible here.
+      #
+      # This block used to say "no root/admin credential enters Aura", and that read as a
+      # containment boundary it was not: AURA_ARCADEDB_TENANT_SECRET above already derives
+      # EVERY tenant's credential — that is how the graph explorer opens any authenticated
+      # identity's database. Root adds DROP DATABASE, not reach over the data. Keeping the
+      # comment while the capability it promised was absent bought no safety and cost the
+      # ability to remove a user.
+      ARCADEDB_ADMIN_USER: ${ARCADEDB_ADMIN_USER:-root}
+      ARCADEDB_ADMIN_PASSWORD: ${ARCADEDB_PASSWORD:?ARCADEDB_PASSWORD required in .env}
       AURA_CONFIG_DIR: /var/lib/aura
       AURA_RUN_DIR: /var/lib/aura/runs
       AURA_SKILLS_DIR: /var/lib/aura/skills
