@@ -18,6 +18,10 @@ type Attrs struct {
 	SizeBytes int64
 	ETag      string
 	MIMEType  string
+	// ModifiedAt is what the store reports, not when Aura noticed. It was discarded from
+	// every S3 listing until a file browser needed a date column, which is the only thing
+	// that can order "recent" for a human.
+	ModifiedAt time.Time
 }
 
 type ObjectInfo struct {
@@ -30,6 +34,14 @@ type ListRequest struct {
 	Prefix string
 	// Limit bounds returned objects. Zero means no application-level bound.
 	Limit int
+	// Delimiter groups keys server-side, so listing one folder of a large bucket costs one
+	// page instead of every key under it. Empty means a flat listing, which is what every
+	// caller before the file browser wanted.
+	//
+	// A group comes back as an ObjectInfo whose Key ENDS WITH the delimiter and whose size
+	// is zero -- the same shape S3 calls a CommonPrefix. That keeps the interface a single
+	// []ObjectInfo instead of a second return value every existing caller would ignore.
+	Delimiter string
 }
 
 type PutOptions struct {

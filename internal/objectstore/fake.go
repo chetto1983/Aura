@@ -112,11 +112,26 @@ func (s *FakeStore) List(ctx context.Context, req ListRequest) ([]ObjectInfo, er
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]ObjectInfo, 0)
+	// Groups are collapsed exactly as S3 collapses them: everything sharing a prefix up to
+	// the first delimiter AFTER req.Prefix becomes one zero-sized entry whose key ends with
+	// the delimiter. The fake has to agree with the real store here, or a browser that
+	// works in tests shows a flat list of every key in production.
+	groups := make(map[string]struct{})
 	for ref, obj := range s.objects {
 		if ref.Bucket != req.Bucket || !strings.HasPrefix(ref.Key, req.Prefix) {
 			continue
 		}
+		if req.Delimiter != "" {
+			rest := strings.TrimPrefix(ref.Key, req.Prefix)
+			if index := strings.Index(rest, req.Delimiter); index >= 0 {
+				groups[req.Prefix+rest[:index+len(req.Delimiter)]] = struct{}{}
+				continue
+			}
+		}
 		out = append(out, ObjectInfo{Ref: ref, Attrs: obj.attrs})
+	}
+	for prefix := range groups {
+		out = append(out, ObjectInfo{Ref: ObjectRef{Bucket: req.Bucket, Key: prefix}})
 	}
 	slices.SortFunc(out, func(a, b ObjectInfo) int {
 		return strings.Compare(a.Ref.Key, b.Ref.Key)

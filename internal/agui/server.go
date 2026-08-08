@@ -133,6 +133,7 @@ type Server struct {
 	documentCatalog  DocumentCatalogService
 	documentEvents   DocumentEventService
 	storageOrphans   StorageOrphanService
+	files            FileBrowser
 	images           ImageFetcher
 	graph            GraphView
 	governance       GovernanceProviders
@@ -362,6 +363,7 @@ func (s *Server) Mux() http.Handler {
 	s.registerComposerRoutes(mux)
 	s.registerDocumentRoutes(mux)
 	s.registerStorageOrphanRoutes(mux)
+	s.registerFileRoutes(mux)
 	// GRAPH-01 read-only graph-explorer routes (Phase 27 plan 27-02): GET /api/graph/schema
 	// + POST /api/graph/query. Colocated with their handlers; the parent-mux mount behind
 	// RequireAuth (no RequireCapability — read-only milestone) lives in

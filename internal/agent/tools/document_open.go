@@ -128,7 +128,7 @@ func (t *DocumentOpen) Execute(ctx context.Context, raw json.RawMessage) (ToolRe
 	// the join walk out of the documents directory and an empty string would resolve to
 	// the directory itself. StagedDocumentPath owns both checks, and the delete resolves
 	// the file to remove through that same function.
-	boxPath, err := StagedDocumentPath(meta.CatalogID, name)
+	boxPath, err := StagedDocumentPath(meta.DocumentID, name)
 	if err != nil {
 		return ToolResult{}, fmt.Errorf("document_open: document %s: %w", args.DocumentID, err)
 	}

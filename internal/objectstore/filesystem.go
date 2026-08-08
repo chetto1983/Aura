@@ -144,6 +144,7 @@ func (s *FilesystemStore) List(ctx context.Context, req ListRequest) ([]ObjectIn
 	}
 	bucketRoot := filepath.Join(root, filepath.FromSlash(req.Bucket))
 	var out []ObjectInfo
+	groups := make(map[string]struct{})
 	err = filepath.WalkDir(bucketRoot, func(p string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -159,13 +160,28 @@ func (s *FilesystemStore) List(ctx context.Context, req ListRequest) ([]ObjectIn
 		if !strings.HasPrefix(key, req.Prefix) {
 			return nil
 		}
+		if req.Delimiter != "" {
+			rest := strings.TrimPrefix(key, req.Prefix)
+			if index := strings.Index(rest, req.Delimiter); index >= 0 {
+				groups[req.Prefix+rest[:index+len(req.Delimiter)]] = struct{}{}
+				return nil
+			}
+		}
 		attrs, err := readAttrs(p)
 		if err != nil {
 			return err
 		}
+		// The sidecar file holds the metadata; the object file holds the mtime, and that is
+		// the one a person sorts "recent" by.
+		if info, statErr := entry.Info(); statErr == nil {
+			attrs.ModifiedAt = info.ModTime()
+		}
 		out = append(out, ObjectInfo{Ref: ObjectRef{Bucket: req.Bucket, Key: key}, Attrs: attrs})
 		return nil
 	})
+	for prefix := range groups {
+		out = append(out, ObjectInfo{Ref: ObjectRef{Bucket: req.Bucket, Key: prefix}})
+	}
 	if os.IsNotExist(err) {
 		return nil, nil
 	}

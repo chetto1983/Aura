@@ -192,6 +192,9 @@ func (s *S3Store) List(ctx context.Context, req ListRequest) ([]ObjectInfo, erro
 			Prefix:            aws.String(req.Prefix),
 			ContinuationToken: token,
 		}
+		if req.Delimiter != "" {
+			input.Delimiter = aws.String(req.Delimiter)
+		}
 		if req.Limit > 0 {
 			remaining := min(req.Limit-len(out), math.MaxInt32)
 			input.MaxKeys = aws.Int32(int32(remaining)) //nolint:gosec // clamped to int32 above.
@@ -200,12 +203,20 @@ func (s *S3Store) List(ctx context.Context, req ListRequest) ([]ObjectInfo, erro
 		if err != nil {
 			return nil, err
 		}
+		// Groups first, so one page reads as "folders, then files" without the caller
+		// sorting. CommonPrefixes are only populated when a delimiter was sent.
+		for _, prefix := range resp.CommonPrefixes {
+			out = append(out, ObjectInfo{
+				Ref: ObjectRef{Bucket: req.Bucket, Key: aws.ToString(prefix.Prefix)},
+			})
+		}
 		for _, obj := range resp.Contents {
 			out = append(out, ObjectInfo{
 				Ref: ObjectRef{Bucket: req.Bucket, Key: aws.ToString(obj.Key)},
 				Attrs: Attrs{
-					SizeBytes: aws.ToInt64(obj.Size),
-					ETag:      strings.Trim(aws.ToString(obj.ETag), `"`),
+					SizeBytes:  aws.ToInt64(obj.Size),
+					ETag:       strings.Trim(aws.ToString(obj.ETag), `"`),
+					ModifiedAt: aws.ToTime(obj.LastModified),
 				},
 			})
 		}

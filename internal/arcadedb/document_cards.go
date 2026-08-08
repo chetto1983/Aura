@@ -163,6 +163,46 @@ func (d *DocumentIndex) ResolveDocumentScope(
 	return scope, nil
 }
 
+// DocumentByID resolves one document's record from the id a retrieval hit carries.
+//
+// This is the whole of what document_open used to do in five hops -- doc_<hex> to a catalog
+// uuid, to the document, to its active version, to an asset id, to an object. The record
+// carries source_key, so the answer is one lookup and the bytes are one Get away.
+func (d *DocumentIndex) DocumentByID(
+	ctx context.Context,
+	identityID string,
+	searchDocumentID string,
+) (DocumentCard, error) {
+	identityID = strings.TrimSpace(identityID)
+	if err := validateIdentifier("document identity", identityID); err != nil {
+		return DocumentCard{}, err
+	}
+	searchDocumentID = strings.TrimSpace(searchDocumentID)
+	if err := validateIdentifier("document id", searchDocumentID); err != nil {
+		return DocumentCard{}, err
+	}
+	client, err := d.tenantClient(ctx, identityID)
+	if err != nil {
+		return DocumentCard{}, err
+	}
+	rows, err := client.Query(ctx,
+		"SELECT "+documentCardFields+" FROM "+IndexedDocumentType+
+			" WHERE search_document_id = :id LIMIT 2",
+		map[string]any{"id": searchDocumentID})
+	if err != nil {
+		return DocumentCard{}, fmt.Errorf("arcadedb: document by id: %w", err)
+	}
+	if len(rows) == 0 {
+		return DocumentCard{}, fmt.Errorf("arcadedb: document %s not found", searchDocumentID)
+	}
+	// search_document_id is UNIQUE-indexed, so two rows means the index is not doing its
+	// job and picking either one would be arbitrary.
+	if len(rows) > 1 {
+		return DocumentCard{}, fmt.Errorf("arcadedb: document %s is not unique", searchDocumentID)
+	}
+	return decodeDocumentCard(rows[0])
+}
+
 func decodeDocumentCard(row map[string]any) (DocumentCard, error) {
 	card := DocumentCard{}
 	var err error
