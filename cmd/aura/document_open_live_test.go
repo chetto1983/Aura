@@ -74,7 +74,9 @@ func TestDocumentOpenLiveReturnsTheOriginalBytes(t *testing.T) {
 	if meta.FileName == "" || strings.ContainsAny(meta.FileName, `/\`) {
 		t.Fatalf("file name %q is not a usable base name", meta.FileName)
 	}
-	if meta.CatalogID == "" || meta.DocumentID != searchID {
+	// CatalogID is gone with the catalog: a record carries source_key, so document_open is
+	// one lookup and there is no second id to correlate. SourceKey is what the read used.
+	if meta.DocumentID != searchID || meta.SourceKey == "" {
 		t.Fatalf("ids = %#v", meta)
 	}
 }

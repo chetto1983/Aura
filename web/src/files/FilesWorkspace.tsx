@@ -106,7 +106,8 @@ export default function FilesWorkspace({ mobileMenu }: FilesWorkspaceProps) {
     [provider, t],
   );
 
-  const Theme = document.documentElement.getAttribute('data-theme') === 'light' ? Willow : WillowDark;
+  const Theme =
+    document.documentElement.getAttribute('data-theme') === 'light' ? Willow : WillowDark;
 
   return (
     <section aria-label={t('files.title')} className="flex h-full min-h-0 min-w-0 flex-col bg-bg">

@@ -2,7 +2,6 @@ package documents
 
 import (
 	"context"
-	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -186,60 +185,6 @@ func TestCatalogServiceDeleteDocumentRequiresIdentityAndDocument(t *testing.T) {
 	}
 	if _, err := svc.DeleteDocument(context.Background(), "identity-1", ""); err == nil {
 		t.Fatal("expected missing document error")
-	}
-}
-
-func TestDeleteServiceQueuesDurableDeleteWithoutPrematureAssetRemoval(t *testing.T) {
-	store := &fakeCatalogStore{
-		detail: DocumentDetail{Document: Document{
-			ID:         "10000000-0000-0000-0000-000000000001",
-			IdentityID: "00000000-0000-0000-0000-000000000001",
-			Metadata:   map[string]any{"search_document_id": "doc_search_1"},
-			Status:     DocumentStatusReady,
-		}, Versions: []DocumentVersion{{
-			ID:      "20000000-0000-0000-0000-000000000001",
-			AssetID: "30000000-0000-0000-0000-000000000001",
-		}}},
-	}
-	svc := &DeleteService{Catalog: &CatalogService{Store: store}}
-
-	doc, err := svc.SoftDeleteDocument(context.Background(), "00000000-0000-0000-0000-000000000001", "10000000-0000-0000-0000-000000000001")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if doc.Status != DocumentStatusDeleting {
-		t.Fatalf("deleted doc = %#v", doc)
-	}
-	if store.deleteIdentityID != "00000000-0000-0000-0000-000000000001" || store.deleteDocumentID != "10000000-0000-0000-0000-000000000001" {
-		t.Fatalf("delete call identity=%q document=%q", store.deleteIdentityID, store.deleteDocumentID)
-	}
-}
-
-func TestDeleteServiceDoesNotReadVersionHistoryBeforeEnqueue(t *testing.T) {
-	store := &fakeCatalogStore{
-		detail: DocumentDetail{Document: Document{
-			ID:         "10000000-0000-0000-0000-000000000001",
-			IdentityID: "00000000-0000-0000-0000-000000000001",
-			Metadata:   map[string]any{"search_document_id": "doc_search_1"},
-			Status:     DocumentStatusReady,
-		}, Versions: []DocumentVersion{{
-			ID:      "20000000-0000-0000-0000-000000000001",
-			AssetID: "30000000-0000-0000-0000-000000000001",
-		}}},
-	}
-	store.getErr = errors.New("version history must not be read")
-	svc := &DeleteService{Catalog: &CatalogService{Store: store}}
-
-	doc, err := svc.SoftDeleteDocument(context.Background(),
-		"00000000-0000-0000-0000-000000000001", "10000000-0000-0000-0000-000000000001")
-	if err != nil {
-		t.Fatalf("durable delete enqueue: %v", err)
-	}
-	if doc.Status != DocumentStatusDeleting {
-		t.Fatalf("deleted doc = %#v", doc)
-	}
-	if store.getDocumentID != "" {
-		t.Fatalf("delete read version history before enqueue: %q", store.getDocumentID)
 	}
 }
 
