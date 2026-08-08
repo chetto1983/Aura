@@ -2,12 +2,15 @@
 
 Passage's property names, its indexes, and its HAS_PASSAGE edge type are NOT
 this module's to invent: they mirror internal/arcadedb/document_schema.go's
-documentSchemaStatements (lines 257-319) exactly, because that is the schema
-Aura's Go retriever reads in production -- a name invented here would write
-rows the product cannot see. document_schema.go survives this rewrite; if its
-statements move, this list must move with them. (DocumentProjection, the
-other vertex type declared there, stays a Go-side concept this Python
-sidecar does not populate -- it writes only Passage rows.)
+documentSchemaStatements exactly, because that is the schema Aura's Go
+retriever reads in production -- a name invented here would write rows the
+product cannot see. document_schema.go survives this rewrite; if its
+statements move, this list must move with them.
+
+DocumentProjection is GONE from both sides (2026-08-08). It was the other
+vertex type declared there, this sidecar never populated it, and the Go
+generation/tombstone writer that was its only author was deleted with the
+in-process pipeline -- so declaring it was dead schema.
 
 One deliberate exception: source_kind/source_key are declared here but not
 in document_schema.go. Go's retriever doesn't read them yet; they exist so a

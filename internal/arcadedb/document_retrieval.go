@@ -2,6 +2,8 @@ package arcadedb
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"math"
 	"sort"
@@ -9,6 +11,34 @@ import (
 	"strings"
 	"unicode/utf8"
 )
+
+// The projection-generation key scheme, moved here when document_projection.go was deleted
+// because the reader's validation is now its only caller.
+//
+// IT DOES NOT MATCH THE ONLY WRITER THAT EXISTS, and that is a live defect rather than a
+// stylistic note: services/ingest writes projection_key=None, version_id=None,
+// version_number=None, passage_key="<search_document_id>:<ordinal>" and schema_version="1",
+// while this file requires projection_key and version_number to be present and demands
+// passage_key == passageProjectionKey(...) and schema_version == schemaVersion()
+// ("document-v1:standard-analyzer:cosine:none:768"). Every candidate the sidecar writes is
+// therefore rejected before it can be ranked. Reconciling the two is the retrieval slice's
+// work -- the generation model these keys encode is exactly what the rewrite removes.
+func documentProjectionKey(documentID, generation string) string {
+	return hashKey("document", documentID, "generation", generation)
+}
+
+func passageProjectionKey(projectionKey, passageID string) string {
+	return hashKey("projection", projectionKey, "passage", passageID)
+}
+
+func hashKey(parts ...string) string {
+	hash := sha256.New()
+	for _, part := range parts {
+		_, _ = hash.Write([]byte(part))
+		_, _ = hash.Write([]byte{0})
+	}
+	return hex.EncodeToString(hash.Sum(nil))
+}
 
 // RetrievalLeg identifies the evidence carried by one candidate score.
 type RetrievalLeg string

@@ -1,10 +1,18 @@
 package arcadedb
 
 import (
+	"encoding/json"
 	"math"
 	"strings"
 	"testing"
 )
+
+// resultBody moved here with document_projection_test.go's deletion; the retrieval tests
+// are its only remaining callers.
+func resultBody(rows any) string {
+	encoded, _ := json.Marshal(map[string]any{"result": rows})
+	return string(encoded)
+}
 
 func candidateFixture(index *DocumentIndex, passageID, documentID string, ordinal int64, scoreKey string, score float64) map[string]any {
 	generation := "generation-1"

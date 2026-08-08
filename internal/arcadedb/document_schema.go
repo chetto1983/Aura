@@ -18,11 +18,9 @@ const (
 	// stored passage shape stops being readable by this package.
 	DocumentProjectionSchemaVersion = "arcadedb-document-projection-v1"
 
-	documentProjectionType       = "DocumentProjection"
 	documentPassageType          = "Passage"
 	documentPassageEdge          = "HAS_PASSAGE"
 	maxProjectionIdentifierRunes = 512
-	maxProjectedPassageRunes     = 262_144
 
 	defaultCandidatePassageLimit = 10_000
 	defaultActivePassageLimit    = 100_000
@@ -43,62 +41,6 @@ type BoundingBox struct {
 type CharacterSpan struct {
 	Start int64
 	End   int64
-}
-
-// ProjectedPassage is one immutable passage in one pipeline generation.
-type ProjectedPassage struct {
-	PassageID        string
-	Ordinal          int64
-	Text             string
-	NormalizedSHA256 string
-	SelfRef          string
-	HeadingPath      []string
-	Captions         []string
-	PageNumber       *int64
-	BoundingBox      *BoundingBox
-	CharacterSpan    *CharacterSpan
-	SheetName        string
-	TableName        string
-	RowNumber        *int64
-	ColumnNumber     *int64
-	CellReference    string
-	Embedding        []float64
-}
-
-// ProjectionGeneration carries the immutable fields shared by all of its passages.
-type ProjectionGeneration struct {
-	IdentityID         string
-	DocumentID         string
-	SearchDocumentID   string
-	VersionID          string
-	VersionNumber      int64
-	RawSHA256          string
-	PipelineGeneration string
-	Passages           []ProjectedPassage
-}
-
-// ProjectionResult distinguishes a new projection from an exact idempotent replay.
-type ProjectionResult struct {
-	ProjectionKey string
-	Fingerprint   string
-	PassageCount  int
-	Created       bool
-	Active        bool
-}
-
-// TombstoneResult reports whether the selected generation existed and changed state.
-type TombstoneResult struct {
-	ProjectionKey     string
-	PassageCount      int
-	Found             bool
-	AlreadyTombstoned bool
-}
-
-// DeleteProjectionResult reports the exact immutable generation removed from ArcadeDB.
-type DeleteProjectionResult struct {
-	ProjectionKey string
-	PassageCount  int
-	Found         bool
 }
 
 // DocumentIndexConfig fixes the physical vector schema and bounds every read and write.
@@ -159,11 +101,9 @@ type DocumentIndex struct {
 	tenants TenantClientResolver
 	config  DocumentIndexConfig
 
-	schemaMu     sync.Mutex
-	schemaReady  map[string]struct{}
-	schemaCalls  map[string]*documentSchemaCall
-	projectMu    sync.Mutex
-	projectLocks map[string]*sync.Mutex
+	schemaMu    sync.Mutex
+	schemaReady map[string]struct{}
+	schemaCalls map[string]*documentSchemaCall
 }
 
 // NewDocumentIndex validates its immutable schema and capacity contract without doing I/O.
@@ -178,19 +118,7 @@ func NewDocumentIndex(tenants TenantClientResolver, cfg DocumentIndexConfig) (*D
 	return &DocumentIndex{
 		tenants: tenants, config: normalized,
 		schemaReady: make(map[string]struct{}), schemaCalls: make(map[string]*documentSchemaCall),
-		projectLocks: make(map[string]*sync.Mutex),
 	}, nil
-}
-
-func (d *DocumentIndex) projectionLock(identityID string) *sync.Mutex {
-	d.projectMu.Lock()
-	defer d.projectMu.Unlock()
-	lock := d.projectLocks[identityID]
-	if lock == nil {
-		lock = &sync.Mutex{}
-		d.projectLocks[identityID] = lock
-	}
-	return lock
 }
 
 func (d *DocumentIndex) schemaVersion() string {
@@ -256,23 +184,6 @@ func ensureDocumentSchema(ctx context.Context, client *Client, dimensions int) e
 
 func documentSchemaStatements(dimensions int) []string {
 	return []string{
-		"CREATE VERTEX TYPE " + documentProjectionType + " IF NOT EXISTS",
-		"CREATE PROPERTY " + documentProjectionType + ".projection_key IF NOT EXISTS STRING",
-		"CREATE PROPERTY " + documentProjectionType + ".document_id IF NOT EXISTS STRING",
-		"CREATE PROPERTY " + documentProjectionType + ".search_document_id IF NOT EXISTS STRING",
-		"CREATE PROPERTY " + documentProjectionType + ".version_id IF NOT EXISTS STRING",
-		"CREATE PROPERTY " + documentProjectionType + ".version_number IF NOT EXISTS LONG",
-		"CREATE PROPERTY " + documentProjectionType + ".raw_sha256 IF NOT EXISTS STRING",
-		"CREATE PROPERTY " + documentProjectionType + ".pipeline_generation IF NOT EXISTS STRING",
-		"CREATE PROPERTY " + documentProjectionType + ".schema_version IF NOT EXISTS STRING",
-		"CREATE PROPERTY " + documentProjectionType + ".projection_fingerprint IF NOT EXISTS STRING",
-		"CREATE PROPERTY " + documentProjectionType + ".passage_count IF NOT EXISTS LONG",
-		"CREATE PROPERTY " + documentProjectionType + ".active IF NOT EXISTS BOOLEAN",
-		"CREATE PROPERTY " + documentProjectionType + ".created_at IF NOT EXISTS DATETIME",
-		"CREATE PROPERTY " + documentProjectionType + ".tombstoned_at IF NOT EXISTS DATETIME",
-		"CREATE INDEX IF NOT EXISTS ON " + documentProjectionType + " (projection_key) UNIQUE",
-		"CREATE INDEX IF NOT EXISTS ON " + documentProjectionType + " (document_id) NOTUNIQUE",
-
 		"CREATE VERTEX TYPE " + documentPassageType + " IF NOT EXISTS",
 		"CREATE PROPERTY " + documentPassageType + ".passage_key IF NOT EXISTS STRING",
 		"CREATE PROPERTY " + documentPassageType + ".passage_id IF NOT EXISTS STRING",
@@ -327,14 +238,6 @@ func requiredString(row map[string]any, key string) (string, error) {
 	return value, nil
 }
 
-func requiredNonNegativeInt(row map[string]any, key string) (int, error) {
-	value, ok := exactInt64(row[key])
-	if !ok || value < 0 || int64(int(value)) != value {
-		return 0, fmt.Errorf("%s is missing or not a non-negative integer", key)
-	}
-	return int(value), nil
-}
-
 func exactInt64(value any) (int64, bool) {
 	switch typed := value.(type) {
 	case float64:
@@ -377,29 +280,4 @@ func validSHA256(value string) bool {
 	}
 	_, err := hex.DecodeString(value)
 	return err == nil
-}
-
-func normalizeLabels(values []string) []string {
-	if len(values) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(values))
-	for _, value := range values {
-		if value = strings.TrimSpace(value); value != "" {
-			out = append(out, value)
-		}
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
-func finiteBoundingBox(box BoundingBox) bool {
-	for _, value := range []float64{box.Left, box.Top, box.Right, box.Bottom} {
-		if math.IsNaN(value) || math.IsInf(value, 0) {
-			return false
-		}
-	}
-	return true
 }

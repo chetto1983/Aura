@@ -66,8 +66,14 @@ func TestDocumentSchemaIsExplicitIdempotentAndCached(t *testing.T) {
 		}
 	}
 	joined := schema.String()
+	// DocumentProjection is deliberately absent: the generation/tombstone writer that was
+	// its only author is gone, and services/ingest never populated it ("a Go-side concept
+	// this Python sidecar does not populate" -- arcade.py). Declaring a vertex type nothing
+	// writes or reads is dead schema, so its DDL went with the writer.
+	if strings.Contains(joined, "DocumentProjection") {
+		t.Errorf("schema still declares DocumentProjection, which nothing writes or reads")
+	}
 	for _, required := range []string{
-		"CREATE VERTEX TYPE DocumentProjection",
 		"CREATE VERTEX TYPE Passage",
 		"CREATE EDGE TYPE HAS_PASSAGE",
 		"org.apache.lucene.analysis.standard.StandardAnalyzer",
