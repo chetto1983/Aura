@@ -92,6 +92,35 @@ type RetrievalDocument struct {
 	Passages           []RetrievalPassage  `json:"passages"`
 }
 
+// PassageLocator anchors a passage inside the document it was cut from. It moved here
+// verbatim when pipeline_types.go was deleted; retrieval is its only remaining consumer.
+//
+// MOST OF IT IS DEAD UNDER THE CURRENT WRITER, and that is not a reason to read the
+// fields as merely absent. services/ingest/app.py says so outright -- "the layout fields
+// stay None: this writer only ever extracts plain text, never structured layout" -- so
+// self_ref, captions, page_number, bbox_*, sheet_name, table_name, row/column and
+// cell_reference are ALWAYS null since Docling was withdrawn. Only HeadingPath and
+// CharStart/CharEnd carry data, from cocoindex's own Chunk offsets.
+//
+// It also duplicates arcadedb.PassageCandidate, which carries the same fields and is the
+// schema authority services/ingest/arcade.py mirrors. Collapsing the two into one model
+// and dropping the dead fields changes the DDL, the sidecar and document_search's wire
+// shape together, so it belongs to the retrieval sub-project, not to this deletion.
+type PassageLocator struct {
+	SelfRef      string    `json:"self_ref,omitempty"`
+	HeadingPath  []string  `json:"heading_path,omitempty"`
+	Captions     []string  `json:"captions,omitempty"`
+	PageNumber   *int      `json:"page_number,omitempty"`
+	BoundingBox  []float64 `json:"bounding_box,omitempty"`
+	CharStart    *int      `json:"char_start,omitempty"`
+	CharEnd      *int      `json:"char_end,omitempty"`
+	SheetName    string    `json:"sheet_name,omitempty"`
+	TableName    string    `json:"table_name,omitempty"`
+	RowNumber    *int      `json:"row_number,omitempty"`
+	ColumnNumber *int      `json:"column_number,omitempty"`
+	CellRef      string    `json:"cell_ref,omitempty"`
+}
+
 // RetrievalPassage carries the control-plane copy of the text, never the projection's: the
 // revalidation step replaces the candidate wholesale. The version, original digest and
 // normalized-text digest travel with it so a citation cannot outlive the bytes it quotes.

@@ -1,10 +1,12 @@
-// The replay short-circuit in DocumentProcessor.ProcessAsset, exercised without a database
-// or a container: both cases turn on one boolean the recorder returns.
+// The replay branch in DocumentProcessor.ProcessAsset, exercised without a database or a
+// container: both cases turn on one boolean the recorder returns.
 //
-// The pair matters more than either test alone. Skipping the pipeline is only safe when the
-// replayed version is the document's PUBLISHED one; skipping on mere identity of bytes would
-// mark a document searchable while a still-processing version has nothing indexed behind it.
-// So one test proves the skip happens, and the other proves it does NOT happen anywhere else.
+// It used to assert that a replay SKIPPED the in-process pipeline. There is no pipeline to
+// skip any more, but the distinction it protected outlived it and is why these tests were
+// rewritten rather than deleted: a replay onto the document's PUBLISHED version genuinely
+// has passages behind it already, so it alone may answer searchable. Every other outcome --
+// including a replay onto a version still processing -- has nothing indexed yet and must say
+// so, or the agent is offered a document retrieval cannot find (context.go:63).
 
 package assets
 
@@ -17,34 +19,31 @@ import (
 	"github.com/chetto1983/aura/internal/objectstore"
 )
 
-func TestDocumentProcessorSkipsPipelineOnlyForActiveReplay(t *testing.T) {
+func TestDocumentProcessorClaimsSearchableOnlyForActiveReplay(t *testing.T) {
 	tests := []struct {
 		name           string
 		replayedActive bool
-		wantRuns       int
+		wantStatus     Status
 		wantSummary    string
 	}{
 		{
-			name:           "replay onto a version that is not the published one still runs",
+			name:           "replay onto a version that is not the published one is still pending",
 			replayedActive: false,
-			wantRuns:       1,
-			wantSummary:    "3 verified passages",
+			wantStatus:     StatusProcessing,
+			wantSummary:    "sidecar",
 		},
 		{
-			name:           "replay onto the published version skips the pipeline",
+			name:           "replay onto the published version is already indexed",
 			replayedActive: true,
-			wantRuns:       0,
+			wantStatus:     StatusSearchable,
 			wantSummary:    "already indexed",
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			pipeline, result := runReplayProcessor(t, test.replayedActive)
-			if pipeline.calls != test.wantRuns {
-				t.Fatalf("Pipeline.Run calls = %d, want %d", pipeline.calls, test.wantRuns)
-			}
-			if result.Status != StatusSearchable || result.DocumentID != "doc-1" {
-				t.Fatalf("result = %+v, want searchable doc-1", result)
+			result := runReplayProcessor(t, test.replayedActive)
+			if result.Status != test.wantStatus || result.DocumentID != "doc-1" {
+				t.Fatalf("result = %+v, want %s doc-1", result, test.wantStatus)
 			}
 			if !strings.Contains(result.Summary, test.wantSummary) {
 				t.Fatalf("Summary = %q, want it to mention %q", result.Summary, test.wantSummary)
@@ -58,7 +57,7 @@ func TestDocumentProcessorSkipsPipelineOnlyForActiveReplay(t *testing.T) {
 // this job succeeded"; the replay path activates nothing, so emitting it would leave the
 // job leased until it dead-lettered.
 func TestDocumentProcessorReplayLeavesJobForTheQueue(t *testing.T) {
-	_, result := runReplayProcessor(t, true)
+	result := runReplayProcessor(t, true)
 	if _, present := result.Metadata["pipeline_activation_job_id"]; present {
 		t.Fatalf("replay result claims the activation committed the job: %#v", result.Metadata)
 	}
@@ -70,7 +69,7 @@ func TestDocumentProcessorReplayLeavesJobForTheQueue(t *testing.T) {
 	}
 }
 
-func runReplayProcessor(t *testing.T, replayedActive bool) (*recordingDocumentPipeline, Result) {
+func runReplayProcessor(t *testing.T, replayedActive bool) Result {
 	t.Helper()
 	const identity = "00000000-0000-0000-0000-000000000001"
 	objects := objectstore.NewFake()
@@ -92,16 +91,12 @@ func runReplayProcessor(t *testing.T, replayedActive bool) (*recordingDocumentPi
 		},
 		ReplayedActive: replayedActive,
 	}}
-	pipeline := &recordingDocumentPipeline{result: documents.PipelineRunResult{
-		DocumentID: "catalog-1", SearchDocumentID: "doc-1", VersionID: "version-1",
-		VersionNumber: 1, PipelineGeneration: 1, PassageCount: 3,
-	}}
 	ctx := documents.WithClaimedIngestionJob(context.Background(), documents.IngestionJob{
 		ID: "queue-job-1", IdentityID: identity, AssetID: "asset-1",
 		LockedBy: "worker-1", LeaseGeneration: 1,
 	})
 	result, err := (&DocumentProcessor{
-		Objects: objects, Ingest: ingest, VersionRecorder: recorder, Pipeline: pipeline,
+		Objects: objects, Ingest: ingest, VersionRecorder: recorder,
 	}).ProcessAsset(ctx, Asset{
 		ID: "asset-1", IdentityID: identity, SourceKind: SourceWeb, Scope: ScopeThread,
 		ObjectBucket: "b", ObjectKey: "k", ObjectETag: "etag-1", FileName: "manual.pdf",
@@ -110,5 +105,5 @@ func runReplayProcessor(t *testing.T, replayedActive bool) (*recordingDocumentPi
 	if err != nil {
 		t.Fatalf("ProcessAsset: %v", err)
 	}
-	return pipeline, result
+	return result
 }
