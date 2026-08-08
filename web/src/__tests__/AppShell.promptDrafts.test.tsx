@@ -1,23 +1,12 @@
 import type { ReactNode } from 'react';
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppShell } from '../AppShell';
 import i18n from '../i18n/i18n';
 import { fetchOnboardingStatus } from '../onboarding/onboardingApi';
-import type { DocumentItem } from '../documents/documentApi';
 import type { ComposerDraftPrompt } from '../chat/Composer';
-
-const DOCUMENT: DocumentItem = {
-  id: 'document-1',
-  identity_id: 'operator-1',
-  scope: 'library',
-  title: 'Handbook.pdf',
-  tags: [],
-  metadata: {},
-  status: 'ready',
-};
 
 const CONVERSATION = {
   ID: 'conv-1',
@@ -111,12 +100,8 @@ vi.mock('../chat/displays/SourceExplorerContext', () => ({
   SourceExplorerProvider: ({ children }: { readonly children: ReactNode }) => children,
 }));
 
-vi.mock('../documents/DocumentsWorkspace', () => ({
-  default: ({ onAskDocument }: { readonly onAskDocument?: (document: DocumentItem) => void }) => (
-    <button type="button" onClick={() => onAskDocument?.(DOCUMENT)}>
-      Ask Handbook.pdf
-    </button>
-  ),
+vi.mock('../files/FilesWorkspace', () => ({
+  default: () => <div>Files</div>,
 }));
 
 vi.mock('../chat/ExternalStoreChat', async () => {
@@ -248,107 +233,4 @@ describe('AppShell prompt draft integration', () => {
     expect(remountedInput).toHaveProperty('value', '');
     expect(remountedInput.getAttribute('data-nonce')).toBeNull();
   });
-
-  it('uses the current locale and a fresh nonce when asking the same document twice', async () => {
-    await import('../documents/DocumentsWorkspace');
-    let rendered!: ReturnType<typeof renderShell>;
-    await act(async () => {
-      rendered = renderShell();
-      await Promise.resolve();
-    });
-    const { container } = rendered;
-    const fetchSpy = vi.mocked(fetch);
-    const shell = container.firstElementChild;
-    if (!(shell instanceof HTMLElement)) throw new Error('expected application shell');
-
-    await act(async () => {
-      fireEvent.click(
-        within(screen.getByRole('navigation', { name: 'Surface controls' })).getByRole('button', {
-          name: 'Documents',
-        }),
-      );
-      await Promise.resolve();
-    });
-    await waitFor(() => {
-      expect(shell.getAttribute('data-surface')).toBe('documents');
-    });
-    const italianAsk = await screen.findByRole(
-      'button',
-      { name: 'Ask Handbook.pdf' },
-      { timeout: 5000 },
-    );
-    await act(async () => {
-      fireEvent.click(italianAsk);
-      await Promise.resolve();
-    });
-    await waitFor(() => {
-      expect(shell.getAttribute('data-surface')).toBe('chat');
-    });
-
-    const input = await screen.findByRole('textbox', { name: 'Draft prompt' });
-    expect(input).toHaveProperty(
-      'value',
-      'Rispondi da "Handbook.pdf". Riassumi i punti chiave e cita le evidenze del documento che usi.',
-    );
-    expect(input.getAttribute('data-nonce')).toBe('1');
-    expect(document.activeElement).toBe(input);
-    fireEvent.change(input, { target: { value: 'modifica temporanea' } });
-
-    await act(async () => {
-      fireEvent.click(
-        within(screen.getByRole('navigation', { name: 'Surface controls' })).getByRole('button', {
-          name: 'Documents',
-        }),
-      );
-      await Promise.resolve();
-    });
-    await waitFor(() => {
-      expect(shell.getAttribute('data-surface')).toBe('documents');
-    });
-    const languageChanged = new Promise<void>((resolve) => {
-      const onLanguageChanged = () => {
-        i18n.off('languageChanged', onLanguageChanged);
-        resolve();
-      };
-      i18n.on('languageChanged', onLanguageChanged);
-    });
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'English' }));
-      await languageChanged;
-      await Promise.resolve();
-    });
-    await waitFor(() => {
-      expect(document.documentElement.lang).toBe('en');
-    });
-    const englishAsk = await screen.findByRole('button', { name: 'Ask Handbook.pdf' });
-    await act(async () => {
-      fireEvent.click(englishAsk);
-      await Promise.resolve();
-    });
-    await waitFor(() => {
-      expect(shell.getAttribute('data-surface')).toBe('chat');
-    });
-
-    const englishInput = await screen.findByRole('textbox', { name: 'Draft prompt' });
-    await waitFor(() => {
-      expect(englishInput).toHaveProperty(
-        'value',
-        'Answer from "Handbook.pdf". Summarize the key points and cite the document evidence you use.',
-      );
-      expect(document.activeElement).toBe(englishInput);
-    });
-    expect(englishInput.getAttribute('data-nonce')).toBe('2');
-    const navigation = screen.getByRole('complementary', { name: 'Navigation' });
-    expect(within(navigation).queryByRole('group', { name: 'Suggestions' })).toBeNull();
-    expect(
-      fetchSpy.mock.calls
-        .map(([input]) => requestURL(input))
-        .filter((url) => url.includes('/agent/run')),
-    ).toEqual([]);
-    await act(async () => {
-      await new Promise<void>((resolve) => {
-        setTimeout(resolve, 0);
-      });
-    });
-  }, 15000);
 });

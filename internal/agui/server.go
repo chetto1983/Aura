@@ -134,6 +134,7 @@ type Server struct {
 	documentEvents   DocumentEventService
 	storageOrphans   StorageOrphanService
 	files            FileBrowser
+	fileObjects      FileObjectOpener
 	images           ImageFetcher
 	graph            GraphView
 	governance       GovernanceProviders

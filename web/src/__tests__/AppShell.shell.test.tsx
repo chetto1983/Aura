@@ -257,7 +257,7 @@ describe('AppShell', () => {
     expect(within(nav).getByRole('button', { name: 'Chat' })).toBeTruthy();
   });
 
-  it('opens the document library workspace from the shell mode switcher', async () => {
+  it('opens the file workspace from the shell mode switcher', async () => {
     renderShell();
 
     fireEvent.click(
@@ -266,8 +266,10 @@ describe('AppShell', () => {
       }),
     );
 
+    // The region, not its heading text: the workspace is now the file manager and the
+    // header reads the same as the nav button that opened it.
     await waitFor(() => {
-      expect(screen.getByText('Document library')).toBeTruthy();
+      expect(screen.getByRole('region', { name: 'Documents' })).toBeTruthy();
     });
   });
 

@@ -116,14 +116,14 @@ func normalizeBrowsePrefix(prefix string) string {
 	if prefix == "" || prefix == "/" {
 		return ""
 	}
-	trailing := strings.HasSuffix(prefix, "/")
 	prefix = path.Clean("/" + prefix)
 	prefix = strings.TrimPrefix(prefix, "/")
 	if prefix == "" || prefix == "." {
 		return ""
 	}
-	if trailing || !strings.Contains(path.Base(prefix), ".") {
-		prefix += "/"
-	}
-	return prefix
+	// A prefix always addresses a FOLDER here, so it always ends in "/". Guessing from the
+	// name instead -- "it has a dot, so it is a file" -- got a folder called "v1.2" wrong:
+	// the listing would have matched every sibling starting with those characters and every
+	// key would have come back relative to the wrong parent.
+	return prefix + "/"
 }
