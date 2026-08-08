@@ -279,8 +279,6 @@ const approvalsResolveRoute = "POST /api/approvals/{token}/resolve"
 
 const assetsRoutePrefix = "/api/assets"
 const assetsSubtreeRoute = "/api/assets/"
-const documentsRoutePrefix = "/api/documents"
-const documentsSubtreeRoute = "/api/documents/"
 
 // The file-manager subtree (/api/filemanager/{files,direct,upload}). Like every other
 // backend surface it must be registered HERE as well as on the AG-UI mux: the parent mux

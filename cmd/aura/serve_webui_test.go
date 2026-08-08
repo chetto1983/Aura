@@ -301,51 +301,6 @@ func TestServeWebui(t *testing.T) {
 		}
 	})
 
-	t.Run("/api/documents + metadata writes -> AG-UI handler (document mount)", func(t *testing.T) {
-		for _, route := range []string{"/api/documents", "/api/documents/10000000-0000-0000-0000-000000000001", "/api/documents/10000000-0000-0000-0000-000000000001/versions"} {
-			aguiHits = nil
-			resp, err := http.Get(srv.URL + route)
-			if err != nil {
-				t.Fatalf("GET %s: %v", route, err)
-			}
-			raw, _ := io.ReadAll(resp.Body)
-			_ = resp.Body.Close()
-			if len(aguiHits) != 1 || aguiHits[0] != route {
-				t.Fatalf("GET %s did not route to the AG-UI handler: hits=%v body=%s", route, aguiHits, raw)
-			}
-			if strings.Contains(string(raw), indexMarker) {
-				t.Fatalf("%s leaked the SPA shell instead of reaching the AG-UI handler", route)
-			}
-		}
-
-		aguiHits = nil
-		presp, err := http.Post(srv.URL+"/api/documents", "application/json", strings.NewReader(`{"title":"Manual"}`))
-		if err != nil {
-			t.Fatalf("POST /api/documents: %v", err)
-		}
-		praw, _ := io.ReadAll(presp.Body)
-		_ = presp.Body.Close()
-		if len(aguiHits) != 1 || aguiHits[0] != "/api/documents" {
-			t.Fatalf("POST /api/documents did not route to the AG-UI handler: hits=%v body=%s", aguiHits, praw)
-		}
-
-		aguiHits = nil
-		req, err := http.NewRequest(http.MethodPatch, srv.URL+"/api/documents/10000000-0000-0000-0000-000000000001", strings.NewReader(`{"title":"Manual"}`))
-		if err != nil {
-			t.Fatalf("new PATCH document: %v", err)
-		}
-		req.Header.Set("Content-Type", "application/json")
-		dresp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatalf("PATCH document: %v", err)
-		}
-		draw, _ := io.ReadAll(dresp.Body)
-		_ = dresp.Body.Close()
-		if len(aguiHits) != 1 || aguiHits[0] != "/api/documents/10000000-0000-0000-0000-000000000001" {
-			t.Fatalf("PATCH document did not route to the AG-UI handler: hits=%v body=%s", aguiHits, draw)
-		}
-	})
-
 	t.Run("GET /api/integrations/<unknown> -> integrations proxy (precedence)", func(t *testing.T) {
 		aguiHits = nil
 		resp, err := http.Get(srv.URL + "/api/integrations/does-not-exist")

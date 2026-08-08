@@ -17,9 +17,22 @@ import os
 
 from aiobotocore.session import get_session
 from cocoindex.connectors import amazon_s3
+from cocoindex.resources.file import PatternFilePathMatcher
 
 _DEFAULT_ENDPOINT = "http://aura-garage:3900"
 _DEFAULT_REGION = "garage"
+
+# Parts of the bucket that belong to Aura, not to the person whose documents these are.
+# MIRRORS internal/assets/browser.go's reservedPrefixes, which hides the same two from the
+# file manager; the lists are in different languages and must be changed together.
+#
+# Reconciling them was actively wrong, not merely wasteful. "identity/" is the asset
+# service's own layout, so every chat attachment was indexed a SECOND time under a second
+# search_document_id -- the same document twice in one search. And those objects are named
+# "original" with no extension, so the temp file got no suffix and Tika's OOXMLParser threw
+# "Unexpected RuntimeException" on each one: the errors that made a working pipeline look
+# broken were entirely about files the user never uploaded here.
+RESERVED_PATTERNS = ("identity/**", "share/**")
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -70,4 +83,9 @@ def create_client(config: S3Config):
 
 
 def walk(client: object, config: S3Config) -> amazon_s3.S3Walker:
-    return amazon_s3.list_objects(client, config.bucket, prefix=config.prefix)
+    return amazon_s3.list_objects(
+        client,
+        config.bucket,
+        prefix=config.prefix,
+        path_matcher=PatternFilePathMatcher(excluded_patterns=list(RESERVED_PATTERNS)),
+    )

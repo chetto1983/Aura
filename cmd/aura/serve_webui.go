@@ -127,8 +127,6 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	mux.Handle(assetsDeleteRoute, agui.RequireCapability(aguiHandler, auth, agentRunCapability))
 	mux.Handle(assetsRoutePrefix, aguiHandler)
 	mux.Handle(assetsSubtreeRoute, aguiHandler)
-	mux.Handle(documentsRoutePrefix, aguiHandler)
-	mux.Handle(documentsSubtreeRoute, aguiHandler)
 	mux.Handle(fileManagerRoutePrefix, aguiHandler)
 	mux.Handle(fileManagerSubtreeRoute, aguiHandler)
 	// The DISP-05/D-09 image-proxy delegates to the AG-UI handler (route on Server.Mux).

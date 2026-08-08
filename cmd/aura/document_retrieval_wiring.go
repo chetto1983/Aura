@@ -1,11 +1,9 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
-	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/documents"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -38,27 +36,4 @@ func newHostDocumentRetriever(cfg *config.Config, pool *pgxpool.Pool) (*document
 	retriever.ControlPlane = &documents.ArcadeRetrievalControlPlane{Index: index}
 	retriever.Projection = index
 	return retriever, nil
-}
-
-type documentCatalogWithRetriever struct {
-	agui.DocumentCatalogService
-	retriever *documentLibrary
-}
-
-func (c *documentCatalogWithRetriever) Retrieve(
-	ctx context.Context,
-	request documents.RetrievalRequest,
-) (documents.RetrievalResponse, error) {
-	return c.retriever.Retrieve(ctx, request)
-}
-
-func withDocumentRetriever(
-	catalog agui.DocumentCatalogService,
-	cfg *config.Config,
-	pool *pgxpool.Pool,
-) agui.DocumentCatalogService {
-	return &documentCatalogWithRetriever{
-		DocumentCatalogService: catalog,
-		retriever:              newDocumentLibrary(pool, cfg),
-	}
 }

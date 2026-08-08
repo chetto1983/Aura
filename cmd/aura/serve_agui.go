@@ -84,11 +84,6 @@ func wireAGUIServer(chat *chatEnv, store *cron.Store, scheduler *cron.Scheduler,
 	aguiServer.SetAssetService(chat.assets)
 	aguiServer.SetOwnerExportDestination(ownerExports)
 	aguiServer.SetShareService(shareAPI)
-	aguiServer.SetDocumentCatalog(withDocumentRetriever(
-		buildDocumentCatalogService(chat), chat.cfg, chat.pool,
-	))
-	aguiServer.SetDocumentEvents(buildDocumentEventService(chat))
-	aguiServer.SetStorageOrphans(buildStorageOrphanService(chat, objectStore))
 	// Wire the file manager's two seams (the listing and the byte stream behind a download).
 	// Without them /api/filemanager/* answers 503 and the cockpit's file browser is dead. It
 	// replaces the catalog listing, which only ever had rows for uploaded documents — so a
