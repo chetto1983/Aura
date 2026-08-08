@@ -27,16 +27,27 @@ from ingest import arcade, chunk, extract, identity, source
 
 ARCADE_HTTP = os.environ.get("ARCADE_HTTP", "http://aura-arcadedb:2480")
 ARCADE_BOLT = os.environ.get("ARCADE_BOLT", "bolt://aura-arcadedb:7687")
-ARCADE_DB = os.environ.get("ARCADE_DB", "aura_ingest")
 ARCADE_PASSWORD = os.environ["ARCADEDB_PASSWORD"]
 EMBED_BASE_URL = os.environ.get("AURA_EMBED_BASE_URL", "http://aura-llama-embed:8081")
 EMBED_DIMENSIONS = int(os.environ.get("AURA_EMBED_DIMENSIONS", "768"))
-# Free-text provenance markers this writer stamps on every row -- not read back by
-# anything in this task, kept simple rather than versioned.
-PIPELINE_GENERATION = "cocoindex-v1"
-SCHEMA_VERSION = "1"
 
 _S3_CONFIG = source.config_from_env()
+
+# DERIVED, never configured. Both of these are contracts with Aura's Go retriever, and
+# both were wrong until 2026-08-08 in ways that fail silently: rows landed, and nothing
+# could ever read them.
+#
+#   - the database was a single ARCADE_DB (default "aura_ingest"), while the retriever
+#     opens mem_<identity_uuid>. It was writing to a database the reader never opens.
+#   - schema_version was the string "1", while the reader rejects any candidate whose
+#     stamp differs from its own "document-v1:standard-analyzer:cosine:none:<dims>".
+#
+# An env var for either would just be a way to reintroduce the same defect, so there
+# isn't one.
+ARCADE_DB = identity.database_for(_S3_CONFIG.identity_id)
+SCHEMA_VERSION = arcade.schema_version(EMBED_DIMENSIONS)
+# Free-text provenance marker, not read back by anything.
+PIPELINE_GENERATION = "cocoindex-v1"
 _LIVE = os.environ.get("AURA_INGEST_LIVE", "").strip().lower() in {"1", "true", "yes", "on"}
 _INTERVAL_S = float(os.environ.get("AURA_INGEST_INTERVAL_SEC", "60"))
 

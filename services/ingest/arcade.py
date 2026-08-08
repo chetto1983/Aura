@@ -50,6 +50,18 @@ PASSAGE_TYPE = "Passage"
 PASSAGE_EDGE_TYPE = "HAS_PASSAGE"
 
 
+def schema_version(dimensions: int) -> str:
+    """The schema stamp Aura's Go retriever compares every candidate against.
+
+    Mirrors internal/arcadedb/document_schema.go's DocumentIndex.schemaVersion(). The Go
+    reader REJECTS any candidate whose schema_version differs from its own, so this is a
+    contract, not a label: a passage stamped with anything else is written successfully
+    and then never returned. It encodes the properties that would invalidate an index if
+    they changed -- analyzer, similarity, quantization and dimensions.
+    """
+    return f"document-v1:standard-analyzer:cosine:none:{dimensions}"
+
+
 class ArcadeSchemaError(RuntimeError):
     """Raised when ArcadeDB rejects database creation or a DDL statement."""
 

@@ -744,7 +744,10 @@ services:
       # explicitly rather than leaning on container_name also happening to resolve.
       ARCADE_HTTP: http://arcadedb:2480
       ARCADE_BOLT: bolt://arcadedb:7687
-      ARCADE_DB: ${ARCADE_DB:-aura_ingest}
+      # No ARCADE_DB: the database is DERIVED from AURA_INGEST_IDENTITY_ID as
+      # mem_<uuid>, because that is the database Aura's Go retriever opens for that
+      # identity. Configuring it separately is how this sidecar spent its whole life
+      # writing to "aura_ingest", a database the reader never opens.
       ARCADEDB_PASSWORD: ${ARCADEDB_PASSWORD:?ARCADEDB_PASSWORD required in .env}
       AURA_EMBED_BASE_URL: http://aura-llama-embed:8081
       AURA_EMBED_DIMENSIONS: ${AURA_EMBED_DIMENSIONS:-768}
