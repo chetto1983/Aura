@@ -1,4 +1,4 @@
-//go:build retrieval_bench
+//go:build retrieval_eval
 
 // Measurement harness for the two ways this codebase can rank a hybrid retrieval:
 // the Go tier ladder in retrieval_rank.go, and ArcadeDB's own `vector.fuse`.
@@ -14,7 +14,7 @@
 //
 // Run (needs the stack up and a corpus ingested for AURA_BENCH_IDENTITY):
 //
-//	go test -tags retrieval_bench ./internal/documents/ -run TestFusionBenchmark -v
+//	go test -tags retrieval_eval ./internal/documents/ -run TestFusionBenchmark -v
 package documents
 
 import (

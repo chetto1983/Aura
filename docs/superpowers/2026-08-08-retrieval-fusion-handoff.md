@@ -43,7 +43,7 @@ reconciliation that scored 0.300. LINEAR ranks the top three perfectly but the m
 reserves it for tuned weights, and one pilot in one domain is not a tuning campaign.
 
 The harness is committed (`internal/documents/retrieval_fusion_bench_test.go`, build tag
-`retrieval_bench`) and runs in ~8s against a live corpus.
+`retrieval_eval`) and runs in ~8s against a live corpus.
 
 ## What broke, and why it is worth reading
 
@@ -201,9 +201,23 @@ The live `aura` identity, its bucket and its database were never touched.
 4. **filecard: 442 LOC in `xlsx.go` + 270 in `ooxml.go`** against excelize (BSD-3).
 5. **Images and audio as their own families** — CocoIndex's `live-image-search` and
    `audio-to-text` are additions to `process_file`, not rewrites.
-6. **`arcadedb_integration` runs NOWHERE.** Ten test files carry the tag — the whole LOCOMO
-   memory suite included — and neither CI, the Makefile nor the coverage scripts execute it.
-   Not even `go vet`-compiled, so it rots silently.
+6. **`arcadedb_integration` — the carried claim was FALSE; here is the measured state.**
+   The previous handoffs said the tier "runs NOWHERE" and is "not even `go vet`-compiled".
+   Both are wrong: the tag is in `scripts/tagged_tier_compile.sh --list`, so pre-push
+   compiles it; `make arcadedb-integration` exists; and CI's **Agent Memory MRS** job
+   (`ci.yml:713`) runs it live through `scripts/agent_memory_eval.py` across
+   `./internal/arcadedb/`, `./cmd/arcadedb-mcp/` and `./cmd/aura/`. That job was green today.
+
+   The real gap is narrower and was hiding inside the false one:
+   - **The LOCOMO suite runs nowhere at all.** The evaluator excludes it
+     (`-skip "^TestLocomo|..."`), and grep across workflows, Makefile and scripts finds no
+     other caller. Run by hand against the live stack today: all 7 tests **SKIP in 0.00s**,
+     because they need `AURA_LOCOMO_DIR` / `AURA_LOCOMO_FACTS` — an external dataset the repo
+     does not carry and CI does not provision. **Deleting the `-skip` would therefore not run
+     them; it would add seven green skips**, which is the falsely-green job CLAUDE.md forbids.
+     Closing this means provisioning the dataset first, then removing the exclusion.
+   - **`internal/agenteval/live_test.go`** carries the tag and is in no package the evaluator
+     runs, so it is compiled and never executed.
 7. **`docker_integration` feeds no coverage.**
 8. **`scripts/quality_snapshot_gate.sh` calls `python`**, which WSL lacks (python3 only).
 9. **Ingest package-name trap.** The image COPYs `services/ingest` → `/app/ingest`, so the
