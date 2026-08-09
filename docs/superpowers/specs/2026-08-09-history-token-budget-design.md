@@ -159,22 +159,43 @@ values the request is built from, so it cannot drift from what is actually sent.
 
 - Local llama.cpp path: `/tokenize` returns the exact count for the serving model. Verified working
   on `aura-llm:8084` and `aura-llama-embed:8081`.
-- OpenRouter path: no pre-call tokenizer exists for deepseek. The pre-call figure is therefore an
-  estimate — but the call returns exact `usage`, so **the estimate's error is measured on every
-  call and exposed**, rather than assumed. A drifting error becomes visible instead of silently
-  wrong. This also retires the guesswork behind `ProviderErrorReserveTokens`, which today reserves
-  headroom for an estimation error nobody measures.
+- OpenRouter path: no pre-call tokenizer exists for deepseek, so the pre-call figure is an
+  estimate. But the response carries counts from **the model's own native tokenizer** — per
+  OpenRouter's usage-accounting contract, automatically, in the last SSE message; the
+  `usage: {include: true}` and `stream_options: {include_usage: true}` parameters are deprecated
+  no-ops. The reconciliation target is therefore exact, and **the estimate's error is measured on
+  every call and exposed** rather than assumed. This also retires the guesswork behind
+  `ProviderErrorReserveTokens`, which today reserves headroom for an estimation error nobody
+  measures.
+
+**The wire boundary is already correct — do not rebuild it.** `internal/llm/openai_compat/usage.go`
+parses `cost`, `prompt_tokens_details.cached_tokens` and `cache_write_tokens`, keeping reads and
+writes distinct because conflating them misreports the hit ratio. `internal/llm/prices.go:38-39`
+prefers the provider's reported `cost` and falls back to the price table only when it is nil
+(D-18). `stream_options` is set only on the llama.cpp target, matching the no-op rule above.
 
 **What it emits.** Per-turn: a `aura_agent_context_tokens{category}` gauge on the existing obs
 registry (`internal/obs/catalog.go`), and the same payload on the `agent.turn` span already wrapping
 the loop. Both surfaces are already scraped/collected for the `serve` path — verified live this
 session: an agent turn takes the family from 0 to 43 series on `:9464`.
 
-**Prerequisite defect.** Per-call `usage` is currently recorded only for the terminal assistant turn
-of a round: `019fa8ba` has 57 assistant turns and 7 `aura.cache_metrics` rows, `019fa501` 63 and 23.
-Roughly 50 LLM calls on one conversation carry no token or cost record, so the reconciliation above
-has nothing to reconcile against on intermediate calls, and `total_cost_usd` understates spend by
-about the tool-iteration factor. Recording usage on every call is part of Part A, not a follow-up.
+**Prerequisite defect — persistence, not parsing.** The usage exists on the `llm.Usage` boundary
+for *every* call; it is written only for the terminal assistant turn of a round. `019fa8ba` has 57
+assistant turns and 7 `aura.cache_metrics` rows, `019fa501` 63 and 23 — roughly 50 LLM calls on one
+conversation carry no token or cost record, so `total_cost_usd` understates spend by about the
+tool-iteration factor and the reconciliation above has nothing to reconcile against on intermediate
+calls. Persisting what is already captured is part of Part A, not a follow-up, and is a smaller
+change than parsing would have been.
+
+**Two declared-ignored fields, one of which now matters.** `usage.go:7-9` documents
+`reasoning_tokens`, `cost_details`, `audio_tokens` and `total_tokens` as intentionally ignored, and
+`toUsage` discards `cache_write_tokens` pending a KV-builder owner. Reasoning is not hypothetical on
+this deployment: **62 turns carry `reasoning_duration_ms`, the largest 129,516 ms**. Cost stays
+correct — reasoning tokens bill inside `completion_tokens`, and Aura uses the provider's `cost` —
+but the *composition* is unknowable: there is no way to separate answer from thinking. Capturing
+`completion_tokens_details.reasoning_tokens` is one field on an existing struct and belongs with the
+per-call persistence above. `cache_write_tokens` stays out of scope: its owner is already assigned
+and nothing measured here implicates it.
 
 ## 5. Part B — the history budget (second)
 
@@ -272,7 +293,8 @@ Coverage floor for the touched packages is the project's 85%, per CLAUDE.md.
 | `internal/agent/prompt/context_breakdown.go` | **new** — the category model and its token counts |
 | `internal/agent/prompt/builder.go` | emit the breakdown at the `buildBase` chokepoint |
 | `internal/obs/catalog.go` | `aura_agent_context_tokens{category}` instrument |
-| `internal/agent/metrics.go` | record it; record per-call usage on every LLM call, not only terminal |
+| `internal/agent/metrics.go` | record it; persist per-call usage on every LLM call, not only terminal |
+| `internal/llm/openai_compat/usage.go` | capture `completion_tokens_details.reasoning_tokens` |
 | `internal/conversations/context_budget.go` | **new** — history budget and the tail cut |
 | `internal/conversations/context.go` | budget derivation in `ContextConfig` |
 | `internal/conversations/store.go` | `loadRecentTurns` — cut before sidecar rehydration |
