@@ -6265,6 +6265,91 @@ Distinzioni semantiche **non negoziabili**: knowledge + vectors → solo Neo4j (
 ```
 
 Questa nota va committata nello stesso commit di Slice 0.5 (sono accoppiate: codice + contract documentale insieme).
+## §Retrieval confidence & abstention — amendment #119 (2026-08-09)
+
+Registra una misura, non una decisione presa a tavolino. Il predecessore
+(`docs/superpowers/2026-08-08-retrieval-fusion-handoff.md` §Abstention) affermava che
+**«`vector.fuse` non può astenersi, per costruzione»** e specificava di implementare
+arXiv 2402.12997 sopra un punteggio a piena precisione. **La misura contraddice
+l'affermazione, quindi vince la misura e l'affermazione qui si corregge.**
+
+### Cosa è stato misurato
+
+Due corpora, due bracci, sempre attraverso il path spedito (`FusedCandidates` →
+`vector.fuse` RRF, `groupBy: document_id`, `groupSize: 1`, 200 vicini densi). Harness:
+`internal/documents/retrieval_abstention_eval_test.go`, build tag `retrieval_eval`.
+Scorer e baseline importati **verbatim** da `artefactory/abstention-reranker` (MIT), mai
+reimplementati; girano in un container di scoring usa-e-getta, mai nel runtime di Aura.
+
+- **Braccio A — `vectara/open_ragbench`** (BEIR, qrels reali): 1000 documenti arXiv
+  (400 con gold, 600 hard-negative che il dataset dichiara irrilevanti a ogni query),
+  20.743 passaggi, **1.914 query text-only**, 0 fallimenti di ingest.
+- **Braccio B — 130 documenti open-data italiani** (dati.gov.it): 127 indicizzati,
+  3.284 passaggi, 295 domande generate localmente (178 answerable + 117 «unanswerable»).
+
+### I numeri (braccio A, etichette pulite)
+
+Recupero: gold nei top-20 **96.9%**, gold al rank 1 **71.7%**, NDCG@20 fuso **0.841**.
+
+nAUC nel predire la qualità del ranking **che Aura spedisce** (1.0 = oracolo, 0.0 = caso):
+
+| confidenza da | max | std | top1−top2 | linreg |
+|---|---|---|---|---|
+| similarità (`vector.rerank`, piena precisione) | 0.330 | 0.195 | 0.447 | 0.408 |
+| **punteggio fuso (RRF)** | **0.809** | 0.559 | 0.691 | 0.779 |
+
+ROC AUC del punteggio fuso per «gold al rank 1»: **0.880**.
+
+**Il punteggio RRF è il predittore migliore, e lo calcoliamo già.** L'affermazione
+superata confondeva due magnitudini: RRF scarta quella del coseno ma ne produce
+un'altra, perché `Σ 1/(60+rank)` codifica **quante gambe hanno trovato il passaggio e a
+che posizione** — `2/61` contro `1/61` è informazione. Un rerank a piena precisione in
+più non serve: costa una query e predice *peggio* il ranking che spediamo.
+
+Controllo di coerenza superato: ogni punteggio predice bene il ranking che produce lui
+(similarità → ranking-rerank 0.683–0.857; fuso → ranking-fuso 0.809). Un esito diverso
+avrebbe accusato l'harness, non il motore.
+
+### Cosa la misura NON dimostra
+
+1. **Non dimostra che serva un gate.** Su ragbench solo il **3.1%** delle query manca il
+   bersaglio, quindi al 20% di astensione la spazzatura scende 3.1% → 1.6% al costo del
+   18.8% delle risposte. Nessun punto di lavoro conviene.
+2. **`open_ragbench` non contiene domande senza risposta** (lo dichiara la scheda). Quel
+   3.1% sono **fallimenti di recupero**, non domande non rispondibili: il braccio A misura
+   «questo ranking è affidabile?», mai «questa domanda è rispondibile?».
+3. **Il braccio B non è una misura di answerability.** Le sue etichette «senza risposta»
+   sono verificate sbagliate: guidando l'agente reale, **5 su 14** erano rispondibili da un
+   documento fratello (ISBN in una tabella di adozioni, posti-degenza in una tabella di
+   microcomunità). Un'«unanswerable» generata da un documento non è unanswerable dal corpus.
+4. **Non copre i fogli di calcolo.** Su CSV/XLSX il contratto è già deciso e implementato:
+   `document_search` trova QUALE file, `document_open` lo consegna, l'agente calcola con
+   soffice/pandas (`document_open.go`: *"chunked text cannot answer aggregates at any
+   relevance"*). Misurare la RAG a passaggi su quella famiglia misura una configurazione
+   che il prodotto non usa: il braccio B era 75 CSV su 130 e l'nAUC saliva da 0.234 a 0.378
+   solo restringendolo ai PDF.
+5. **Nessun numero qui riguarda la latenza o il costo** di un eventuale consumatore.
+
+### Decisione
+
+- **NESSUN gate di astensione a punteggio.** L'agente reale si astiene già sul
+  **contenuto**: 0 confabulazioni su 14 turni senza risposta completati, 4 rifiuti puliti,
+  e un caso in cui ha respinto la premessa della domanda (valore critico NOx = vegetazione,
+  non salute umana) — distinzione che nessuno scalare rappresenta. Un gate risolverebbe un
+  problema risolto introducendo il fallimento opposto.
+- **Il punteggio fuso è promosso a segnale di affidabilità del ranking**, non di silenzio.
+  Il consumatore è misurato, non ipotizzato: un caso su dieci ha avuto il file giusto al
+  **rank 2** con la similarità più alta della lista, ha ricevuto la lastra CSV sbagliata,
+  ha speso 24 chiamate a tool e ha **rifiutato invece di aprire il file**. Confidenza bassa
+  deve spingere verso `document_open`, mai verso il silenzio.
+- **Il rerank a piena precisione non entra nel path caldo.** Resta nell'harness.
+
+### Perimetro e licenze
+
+`open_ragbench` è **CC-BY-NC-4.0** (non commerciale) e `snap-research/locomo` è
+**NOASSERTION**: entrambi sono decisioni da prendere prima che una pipeline li scarichi,
+non dopo. Oggi vivono solo in scratchpad usa-e-getta.
+
 # Industrial conversation context lifecycle (Phase 42) — ❌ REMOVED (superseded by Amendment #86)
 
 > **SUPERSEDED 2026-07-20 by Amendment #86 (compaction SPIKE = REMOVE).** The durable
