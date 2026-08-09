@@ -107,6 +107,12 @@ type Deps struct {
 	// HookManager is the optional agent extension surface. nil keeps the agent's
 	// hook calls as no-ops; production may inject command hooks here.
 	HookManager *agent.HookManager
+	// VerificationStore is the process-wide verification evidence ledger (it holds the
+	// pgxpool, so it is built ONCE at the composition root, never per turn). The runner
+	// derives the per-turn read and write halves from it (runner_verification.go). nil —
+	// which agent.NewEvidenceStore returns for a nil pool — disables the verify-on-stop
+	// gate entirely rather than degrading to a panic.
+	VerificationStore *agent.EvidenceStore
 	// Gateway is the Phase-35 policy PEP (GATE-01) injected into every per-turn agent.
 	// The runner is the INTERACTIVE composition root, so it marks its turn ctx with a
 	// live responder (gateway.WithResponder) — under a strict profile a mutating
@@ -161,11 +167,14 @@ type Runner struct {
 	stopTimeout  time.Duration
 	resumeHook   ResumeHook
 
-	hookManager  *agent.HookManager          // optional per-turn LlmAgent hooks
-	alwaysBlock  func() string               // renders the messages[1] always-block per turn (D-07); nil → empty
-	classifier   *prompt.ReasoningClassifier // SHARED reasoning-tier classifier (anchors built once); nil → LLM router
-	gateway      *gateway.Gateway            // Phase-35 policy PEP injected into every per-turn agent; nil → Allow no-op
-	shareRevoker ShareRevoker                // D-15 consumer-declared seam (runner_delete.go step 4.5); nil → step 4.5 is a silent skip
+	hookManager *agent.HookManager // optional per-turn LlmAgent hooks
+	// verificationStore is the process-wide evidence ledger (pool-owning); nil disables
+	// the verify-on-stop gate. See runner_verification.go for the per-turn halves.
+	verificationStore *agent.EvidenceStore
+	alwaysBlock       func() string               // renders the messages[1] always-block per turn (D-07); nil → empty
+	classifier        *prompt.ReasoningClassifier // SHARED reasoning-tier classifier (anchors built once); nil → LLM router
+	gateway           *gateway.Gateway            // Phase-35 policy PEP injected into every per-turn agent; nil → Allow no-op
+	shareRevoker      ShareRevoker                // D-15 consumer-declared seam (runner_delete.go step 4.5); nil → step 4.5 is a silent skip
 
 	// threadLocks + sessions are the two per-conversation in-memory maps, BOTH keyed by
 	// the composite (identity, session) sessionKey (D-23, runner_session.go): threadLocks
@@ -236,6 +245,7 @@ func New(d Deps) *Runner {
 		stopTimeout:              stopTimeout,
 		resumeHook:               d.ResumeHook,
 		hookManager:              d.HookManager,
+		verificationStore:        d.VerificationStore,
 		alwaysBlock:              d.AlwaysBlock,
 		classifier:               classifier,
 		breaker:                  d.Breaker,
@@ -481,17 +491,20 @@ func (r *Runner) buildAgent(ctx context.Context, convID string, requestID uuid.U
 	// a fixed level bypasses the classifier and forces req.Reasoning (D-08).
 	reasoningEffort, _ := reasoningOverride(ctx)
 	la := agent.NewLlmAgent(agent.LlmAgentConfig{
-		Client:            r.client,
-		LLM:               r.cfg,
-		Registry:          r.registry,
-		PreviewCap:        r.previewCap,
-		RunDir:            r.runDir,
-		SessionID:         convID, // session_id == conversation_id (D-26)
-		Workspace:         r.workspace,
-		UserTurns:         seed,
-		Classifier:        r.classifier, // shared, anchors built once
-		Breaker:           r.breaker,    // shared process-lifetime breaker (B-05)
-		HookManager:       r.hookManager,
+		Client:     r.client,
+		LLM:        r.cfg,
+		Registry:   r.registry,
+		PreviewCap: r.previewCap,
+		RunDir:     r.runDir,
+		SessionID:  convID, // session_id == conversation_id (D-26)
+		Workspace:  r.workspace,
+		UserTurns:  seed,
+		Classifier: r.classifier, // shared, anchors built once
+		Breaker:    r.breaker,    // shared process-lifetime breaker (B-05)
+		// Both halves of the verification ledger are per turn because both are scoped to
+		// (identity, session); the pool-owning store behind them is per process.
+		HookManager:       r.verificationHooks(ctx, convID),
+		Ledger:            r.verificationLedger(ctx),
 		Gateway:           r.gateway,       // Phase-35 PEP; LedgerConversationID defaults to convID (UUID)
 		ReasoningOverride: reasoningEffort, // 37E fixed effort; "" => auto (adaptive path)
 	})
