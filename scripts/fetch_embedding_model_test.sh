@@ -33,8 +33,11 @@ fi
 
 workflow="$repo_root/.github/workflows/ci.yml"
 helper_calls="$(grep -c 'bash scripts/fetch_embedding_model[.]sh' "$workflow" || true)"
-if [ "$helper_calls" -ne 4 ]; then
-  echo "expected all four live embedding CI tiers to use the shared helper" >&2
+# Five since 2026-08-09: ingest-sidecar-test joined the four live embedding tiers.
+# The count is the point -- a new tier that fetches the model its own way is how the
+# validated-artifact contract erodes -- so raising it is a deliberate act, not a fixup.
+if [ "$helper_calls" -ne 5 ]; then
+  echo "expected all five live embedding CI tiers to use the shared helper" >&2
   exit 1
 fi
 if grep -q 'qwen3-embedding-0[.]6b' "$workflow"; then
