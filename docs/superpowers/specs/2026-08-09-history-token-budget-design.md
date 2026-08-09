@@ -330,6 +330,26 @@ Two spikes are therefore **deferred, not cancelled**, to be run against a simula
   and retrieve by relevance at compose time. Requires porting `ShortTermMemory` (from
   `neo4j-labs/agent-memory`: `add_message`, `search_messages`, `get_context`, `ConversationSummary`)
   into `cmd/arcadedb-mcp`, which today carries only long-term tools.
+
+  The target shape is that project's own graph model (`img/memory-graph-model.png`), three planes:
+
+  | plane | model | what Aura has today |
+  |---|---|---|
+  | short-term | `Conversation -FIRST_MESSAGE-> Message -NEXT_MESSAGE-> Message` | `aura.conversation_turns` in Postgres — the rows §2.1 discards |
+  | long-term | `Entity -WORKS_AT-> Entity`, `Entity -MENTIONED_IN-> Message` | `cmd/arcadedb-mcp` facts/entities/recall — already built |
+  | reasoning | `Message -TRIGGERED-> ReasoningTrace -HAS_STEP-> ReasoningStep -USED_TOOL-> ToolCall -CALL_OF-> Tool` | `internal/reasoningtrace` — a flat `Record(stage, fields)` to an encrypted, row-capped file sink |
+
+  The reasoning plane is the part worth noting now, because it bears on a finding this
+  investigation already made and did not act on. Aura's reasoning trace is **write-only**: neither
+  the agent nor an operator can query it. Modelling it as a graph would make it retrievable
+  *without* putting it in context — which is the right shape given §4's finding that CoT is
+  deliberately excluded from the wire. It is also where grinding would become visible: the 22
+  tool-calls-in-one-round measured on `019fa8ba` are reconstructable today only by hand-querying
+  Postgres.
+
+  `MENTIONED_IN` and `RETRIEVED` are the edges that make this more than three separate stores —
+  they link a retrieved entity back to the message and the tool call that produced it. That is
+  provenance Aura currently has nowhere.
 - **Spike 2 — Hermes rolling summary.** Cumulative one-exchange-at-a-time summarization with
   cursor, defrag and 3-strike skip, answered from the summary alone.
 
