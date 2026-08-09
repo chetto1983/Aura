@@ -31,6 +31,27 @@ var writeToolPathArgs = map[string]string{
 	"patch":      "path",
 }
 
+// writeToolPath returns the path a write tool's arguments name. ok=false when the call
+// is not a write tool, its arguments do not parse, or it names no path -- three ways of
+// having nothing to record. The run loop's own edited-path accumulator
+// (recordEditedPath) reads through here too, so the gate and the ledger can never
+// disagree about which tools edit and where they say so.
+func writeToolPath(call llm.ToolCall) (string, bool) {
+	field, isWrite := writeToolPathArgs[call.Function.Name]
+	if !isWrite {
+		return "", false
+	}
+	var args map[string]any
+	if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
+		return "", false
+	}
+	path, _ := args[field].(string)
+	if strings.TrimSpace(path) == "" {
+		return "", false
+	}
+	return path, true
+}
+
 // VerificationHook records verification evidence and edit staleness as a turn runs.
 type VerificationHook struct {
 	Store      *EvidenceStore
@@ -64,13 +85,11 @@ func (h *VerificationHook) AfterTool(
 	if h == nil || h.Store == nil {
 		return nil, nil
 	}
-	switch name := call.Function.Name; name {
+	switch call.Function.Name {
 	case "shell_exec":
 		h.recordShell(ctx, call, result)
 	default:
-		if field, ok := writeToolPathArgs[name]; ok {
-			h.markEdited(ctx, call, field)
-		}
+		h.markEdited(ctx, call)
 	}
 	// Always nil: this hook never rewrites a tool result.
 	return nil, nil
@@ -105,13 +124,9 @@ func (h *VerificationHook) recordShell(ctx context.Context, call llm.ToolCall, r
 	}
 }
 
-func (h *VerificationHook) markEdited(ctx context.Context, call llm.ToolCall, field string) {
-	var args map[string]any
-	if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
-		return
-	}
-	path, _ := args[field].(string)
-	if strings.TrimSpace(path) == "" {
+func (h *VerificationHook) markEdited(ctx context.Context, call llm.ToolCall) {
+	path, ok := writeToolPath(call)
+	if !ok {
 		return
 	}
 	facts := h.Detector.ProjectFactsFor(filepath.Dir(path))

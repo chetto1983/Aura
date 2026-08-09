@@ -125,6 +125,10 @@ func (a *LlmAgent) dispatch(ic InvocationContext, spanID [8]byte, parentSpanID *
 			if run.Mutating {
 				a.sideEffected = true // D-43: this turn touched host state; arm the completion gate.
 			}
+			// The verify-on-stop gate needs to know WHAT was edited, not just that
+			// something was: this is the one place that sees every dispatched call with
+			// its result, serially, so the accumulator needs no second interception.
+			a.recordEditedPath(calls[i])
 			// Full-promotion parity: if this run was a tool_search hit, promote the tools
 			// it loaded (MetaActivatedTools) into a.activated so the NEXT turn's buildRequest
 			// makes them callable WITH their schema. Race-free: this is the serial result

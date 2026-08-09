@@ -131,6 +131,16 @@ type Config struct {
 	CompletionGate        bool
 	CompletionCriticModel string
 
+	// VerifyOnStop is the configured value of the agent's verify-on-stop gate: a
+	// voluntary termination on a turn that EDITED code is sent back once when the
+	// verification ledger holds no fresh passing evidence for the workspace. Empty
+	// (the default) means "auto", which resolves ON for non-messaging surfaces;
+	// "1"/"0" (and their word forms) force it either way. Load() deliberately does
+	// NOT read an env var into this field: agent.verifyOnStopEnabled owns the
+	// precedence and lets AURA_AGENT_VERIFY_ON_STOP_ENABLED win over whatever a
+	// composition root configured here.
+	VerifyOnStop string
+
 	// OpenRouterMiddleOut is the opt-in overflow belt (fix-plan 1.11): when ON
 	// (AND the resolved reasoning target is OpenRouter) the wire layer sets
 	// transforms:["middle-out"], OpenRouter's provider-side lossy truncation
