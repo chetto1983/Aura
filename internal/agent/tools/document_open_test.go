@@ -314,7 +314,7 @@ func TestDocumentOpen_RemovesPartialCopyOnStreamFailure(t *testing.T) {
 	if pathErr != nil {
 		t.Fatal(pathErr)
 	}
-	if len(be.execs) != 1 || !strings.Contains(be.execs[0].Command, "rm -f -- "+shellQuoteArg(partialPath)) {
+	if len(be.execs) != 1 || !strings.Contains(be.execs[0].Command, "rm -f -- "+ShellQuoteArg(partialPath)) {
 		t.Fatalf("the partial copy was not removed from the box: %+v", be.execs)
 	}
 }

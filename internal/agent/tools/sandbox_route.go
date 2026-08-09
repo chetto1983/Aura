@@ -47,10 +47,14 @@ func sandboxUnavailableResult(tool string, cause error) ToolResult {
 	return ToolResult{Preview: string(raw), Bytes: len(raw)}
 }
 
-// shellQuoteArg single-quotes a POSIX box path/argument so it is safe to paste into a `/bin/sh -c`
+// ShellQuoteArg single-quotes a POSIX box path/argument so it is safe to paste into a `/bin/sh -c`
 // command run inside the box. It does NOT ToSlash — a box path is already POSIX; an embedded
 // single quote is escaped the POSIX way ('\”).
-func shellQuoteArg(arg string) string {
+//
+// Exported because internal/agent composes a box command too (coding_context_box.go's project
+// probe), and every one of those paths is model-supplied. One quoting rule for every box command
+// is the point: a second copy is a second place for the escaping to be subtly wrong.
+func ShellQuoteArg(arg string) string {
 	return "'" + strings.ReplaceAll(arg, "'", `'\''`) + "'"
 }
 
@@ -156,7 +160,7 @@ func boxReadFileRaw(
 	tool, boxPath string,
 ) (content []byte, deny *ToolResult, err error) {
 	readCap := fsMaxReadBytes()
-	cmd := fmt.Sprintf("head -c %d -- %s", readCap+1, shellQuoteArg(boxPath))
+	cmd := fmt.Sprintf("head -c %d -- %s", readCap+1, ShellQuoteArg(boxPath))
 	res, execErr := router.Exec(ctx, h, usersandbox.ExecRequest{Command: cmd})
 	if execErr != nil {
 		d := sandboxUnavailableResult(tool, execErr)
@@ -209,7 +213,7 @@ func boxSkippedPath(rel string) bool {
 func boxFindPrune() string {
 	tests := make([]string, 0, len(walkPruneDirs)+1)
 	for _, d := range append([]string{".*"}, walkPruneDirs...) {
-		tests = append(tests, "-name "+shellQuoteArg(d))
+		tests = append(tests, "-name "+ShellQuoteArg(d))
 	}
 	return "'(' " + strings.Join(tests, " -o ") + " ')' -type d -prune"
 }
@@ -294,9 +298,9 @@ func boxReadFiles(
 	cmd := fmt.Sprintf(
 		"e=%s; { [ -f %s ] && sh -c \"$e\" sh %s; "+
 			"find %s -mindepth 1 %s -o -type f -exec sh -c \"$e\" sh {} + ; } 2>/dev/null | head -c %d",
-		shellQuoteArg(emit),
-		shellQuoteArg(root), shellQuoteArg(root),
-		shellQuoteArg(root), boxFindPrune(),
+		ShellQuoteArg(emit),
+		ShellQuoteArg(root), ShellQuoteArg(root),
+		ShellQuoteArg(root), boxFindPrune(),
 		budget,
 	)
 	ctx, cancel := boxSweepDeadline(ctx)

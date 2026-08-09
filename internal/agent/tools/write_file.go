@@ -136,7 +136,7 @@ func verifyBoxWrite(
 	content []byte,
 ) (verified bool, err error) {
 	res, execErr := router.Exec(ctx, h, usersandbox.ExecRequest{
-		Command: fmt.Sprintf("sha256sum -- %s 2>/dev/null", shellQuoteArg(boxPath)),
+		Command: fmt.Sprintf("sha256sum -- %s 2>/dev/null", ShellQuoteArg(boxPath)),
 	})
 	if execErr != nil || res.ExitCode != 0 {
 		return false, nil // no sha256sum available inside this box image — degrade to unverified, not an error

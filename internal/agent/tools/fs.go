@@ -25,7 +25,7 @@ import (
 //
 // One consequence is worth stating because it is a behaviour change, not an omission: "~" no
 // longer expands for these tools. boxPathArg refuses it outright — the box's home is a
-// different filesystem, and a box path travels through shellQuoteArg, which POSIX sh does not
+// different filesystem, and a box path travels through ShellQuoteArg, which POSIX sh does not
 // expand.
 
 // globMatch reports whether a glob matches a file given its relative path and

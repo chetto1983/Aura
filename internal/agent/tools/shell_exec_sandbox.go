@@ -117,7 +117,7 @@ func (s *ShellExec) rejectMissingBoxDir(ctx context.Context, h usersandbox.BoxHa
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, boxDirProbeTimeout)
 	defer cancel()
-	res, err := s.Router.Exec(probeCtx, h, usersandbox.ExecRequest{Command: "[ -d " + shellQuoteArg(dir) + " ]"})
+	res, err := s.Router.Exec(probeCtx, h, usersandbox.ExecRequest{Command: "[ -d " + ShellQuoteArg(dir) + " ]"})
 	if err != nil || res.ExitCode == 0 {
 		return nil
 	}
