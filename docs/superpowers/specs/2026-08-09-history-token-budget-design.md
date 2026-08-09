@@ -187,15 +187,18 @@ tool-iteration factor and the reconciliation above has nothing to reconcile agai
 calls. Persisting what is already captured is part of Part A, not a follow-up, and is a smaller
 change than parsing would have been.
 
-**Two declared-ignored fields, one of which now matters.** `usage.go:7-9` documents
-`reasoning_tokens`, `cost_details`, `audio_tokens` and `total_tokens` as intentionally ignored, and
-`toUsage` discards `cache_write_tokens` pending a KV-builder owner. Reasoning is not hypothetical on
-this deployment: **62 turns carry `reasoning_duration_ms`, the largest 129,516 ms**. Cost stays
-correct — reasoning tokens bill inside `completion_tokens`, and Aura uses the provider's `cost` —
-but the *composition* is unknowable: there is no way to separate answer from thinking. Capturing
-`completion_tokens_details.reasoning_tokens` is one field on an existing struct and belongs with the
-per-call persistence above. `cache_write_tokens` stays out of scope: its owner is already assigned
-and nothing measured here implicates it.
+**Reasoning contributes nothing to context, and the breakdown must not invent a category for it.**
+Chain-of-thought is persisted DISPLAY-ONLY (`internal/conversations/store_append.go:46`) and the
+projection that reads it is documented as "structurally incapable of carrying CoT back into the
+model context" (`store_reasoning.go:14`). The mechanism is `turnToMessage`
+(`store_helpers.go:96-106`), which builds `llm.Message{Role, Content, ToolCallID, ToolCalls}` — it
+has no reasoning field, so reasoning cannot reach the wire. The ladder agrees: `totalTokens` sums
+content, tool calls and tool-call id only.
+
+This deployment reasons heavily — 62 turns carry `reasoning_duration_ms`, the largest 129,516 ms —
+and none of it occupies context. `completion_tokens_details.reasoning_tokens` is therefore an
+**output-accounting** question, not a context one, and stays out of this spec. `cache_write_tokens`
+stays out for its own reason: its owner is already assigned and nothing measured here implicates it.
 
 ## 5. Part B — the history budget (second)
 
@@ -294,7 +297,6 @@ Coverage floor for the touched packages is the project's 85%, per CLAUDE.md.
 | `internal/agent/prompt/builder.go` | emit the breakdown at the `buildBase` chokepoint |
 | `internal/obs/catalog.go` | `aura_agent_context_tokens{category}` instrument |
 | `internal/agent/metrics.go` | record it; persist per-call usage on every LLM call, not only terminal |
-| `internal/llm/openai_compat/usage.go` | capture `completion_tokens_details.reasoning_tokens` |
 | `internal/conversations/context_budget.go` | **new** — history budget and the tail cut |
 | `internal/conversations/context.go` | budget derivation in `ContextConfig` |
 | `internal/conversations/store.go` | `loadRecentTurns` — cut before sidecar rehydration |
