@@ -119,18 +119,25 @@ func filterVerifiablePaths(paths []string) []string {
 }
 
 // sessionIsMessagingSurface reports whether this turn is delivered over a human
-// messaging channel.
+// messaging channel. In Aura it is always false, permanently and by design.
 //
-// Verify-on-stop defaults ON for the interactive surfaces and programmatic
-// callers, and OFF on a conversational platform (Telegram, WhatsApp, ...) where
-// the verification narrative reaches a human as chat noise.
+// This DIVERGES from the original deliberately. Hermes asks its gateway for
+// per-platform session state (`gateway.session_context.session_is_messaging_surface`)
+// and switches verify-on-stop OFF on a conversational platform, where the
+// verification narrative would reach a human as chat noise.
 //
-// Aura's agent package does not carry the delivery surface: InvocationContext has
-// no channel field and the runner does not thread one in. So this reports a local
-// surface, which keeps verify-on-stop enabled -- the SAME fallback the original
-// takes when its gateway package is unreachable ("there is no messaging channel
-// to be on"). Wiring the real surface is what makes the Telegram default correct;
-// until then this is honest about defaulting on rather than pretending to know.
+// Aura has no such state to ask for, and will not grow one here: Telegram is a
+// WRAPPER, not a surface of its own. It consumes the same AG-UI fanout every other
+// channel consumes (internal/channels/telegram/agui_subscriber.go) and never
+// constructs an agent, so presentation is the wrapper's job and the agent behaves
+// identically wherever it is spoken to. Threading a channel into InvocationContext
+// to answer this question would build exactly the standalone-Telegram path that
+// architecture rejects, and a gate that verified its work for cockpit users while
+// skipping it for Telegram users would be two different agents wearing one name.
+//
+// So "auto" resolves ON everywhere. If the narrative proves noisy on some channel,
+// AURA_AGENT_VERIFY_ON_STOP_ENABLED is the operator's switch -- a deployment
+// decision, not a per-turn inference the agent makes about who is listening.
 func sessionIsMessagingSurface() bool { return false }
 
 // verifyOnStopEnabled reports whether edit -> verify-before-finish is enabled.
@@ -240,6 +247,19 @@ func statusState(status VerificationStatus) string {
 // "this workspace needs proof": treating it as one turns a database outage into a
 // nudge on every edited workspace of every turn, demanding evidence about a ledger
 // nobody could ask. Both are silence, for opposite reasons.
+//
+// This DIVERGES from the original, which checks `!= "passed"` and nothing else
+// (`_verification_snapshot`, `build_verify_on_stop_nudge`). That check is correct
+// THERE and would be wrong here, because the two have different sets of producers
+// for "not_applicable". Hermes has exactly one (`verification_evidence.py:594`, a
+// cwd `project_facts_for` rejects), and its snapshot loop skips such a cwd before
+// it ever reads a status -- so the value is unreachable inside the loop and never
+// had to be handled. Its ledger is a local SQLite file opened in-process: a read
+// that fails raises, it does not return a status. Aura's is networked Postgres
+// behind a pool, so "the store could not be asked" is a routine outcome on the
+// critical path of a turn ending, and LedgerAdapter reports it as this second
+// producer -- on a workspace the detector DID recognise, which is precisely the
+// case the original's check lets through.
 func statusSaysNothing(status VerificationStatus) bool {
 	switch statusState(status) {
 	case StatusPassed, StatusNotApplicable:

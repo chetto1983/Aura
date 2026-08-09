@@ -467,15 +467,7 @@ func TestVerifyGate_TextResponse_RunsBeforeTheCompletionCritic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if fc.CallCount() != 4 {
-		t.Fatalf("CallCount = %d, want 4 (write + nudged round + accepted round + ONE critic call)", fc.CallCount())
-	}
-	if fc.Requests[1].ToolChoice == "none" {
-		t.Error("the critic ran on the round the verification gate sent back: the free gate must run first")
-	}
-	if fc.Requests[3].ToolChoice != "none" {
-		t.Errorf("request[3].ToolChoice = %q, want the critic call on the accepted round", fc.Requests[3].ToolChoice)
-	}
+	assertCriticRanOnlyAfterTheNudgedRound(t, fc)
 	if final := finalContent(t, evs); final != "ran go test ./... — green" {
 		t.Errorf("final = %q, want the verified answer", final)
 	}

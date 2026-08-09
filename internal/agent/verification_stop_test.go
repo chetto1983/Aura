@@ -51,14 +51,15 @@ func TestVerifyOnStopEnvCanDisable(t *testing.T) {
 	}
 }
 
-func TestVerifyOnStopAutoIsOnForNonMessagingSurfaces(t *testing.T) {
-	// Under "auto" the interactive/programmatic surfaces resolve ON. Aura carries
-	// no surface yet, so sessionIsMessagingSurface reports local and this is the
-	// only branch reachable -- asserted so wiring a real surface breaks HERE and
-	// not in production.
+func TestVerifyOnStopAutoIsOnForEverySurface(t *testing.T) {
+	// "auto" resolves ON everywhere, because Aura's agent has no delivery surface to
+	// be aware of: Telegram is a wrapper over the same AG-UI fanout, not a channel the
+	// agent behaves differently for. This pins the decision, not a waiting room --
+	// making the gate surface-dependent would be two agents wearing one name, and the
+	// operator's off-switch is AURA_AGENT_VERIFY_ON_STOP_ENABLED.
 	for _, configured := range []string{"", "auto", "unrecognised"} {
 		if !verifyOnStopEnabled(configured) {
-			t.Fatalf("configured %q must resolve ON while no messaging surface is wired", configured)
+			t.Fatalf("configured %q must resolve ON: the gate does not vary by surface", configured)
 		}
 	}
 }
