@@ -56,6 +56,11 @@ EMBED_DOC_PREFIX = "title: none | text: "
 # longer than max_tokens once the real tokenizer counts it. Also sizes
 # _window_split's fixed window below, for the same overshoot-is-safe reason.
 CHARS_PER_TOKEN_FALLBACK = 3
+# FALLBACK ONLY, same reason: with no server to ask, the BOS/EOS pair the embeddings
+# endpoint always adds still has to be paid for. Measured on this build via POST
+# /tokenize with add_special true and false on the same string: 10 tokens against 8,
+# BOS id 2 prepended and EOS id 1 appended.
+_SPECIAL_TOKENS = 2
 # The measured ratio is an AVERAGE over the piece, so a window sized exactly at it
 # can still overshoot where the text is locally denser. 0.9 buys that margin back.
 _WINDOW_SAFETY = 0.9
@@ -79,14 +84,14 @@ class Chunk:
     end_pos: TextPosition
     heading_path: list[str] = field(default_factory=list)
 
-def _tokenize_remote(text: str) -> list[int] | None:
+def _tokenize_remote(text: str, add_special: bool = False) -> list[int] | None:
     global _server_reachable
     if _server_reachable is False:
         return None
     base = os.environ.get(_EMBED_BASE_URL_ENV, _DEFAULT_EMBED_BASE_URL)
     req = urllib.request.Request(
         f"{base.rstrip('/')}/tokenize",
-        data=json.dumps({"content": text}).encode("utf-8"),
+        data=json.dumps({"content": text, "add_special": add_special}).encode("utf-8"),
         headers={"Content-Type": "application/json"},
         method="POST",
     )
@@ -105,25 +110,37 @@ def _tokenize_remote(text: str) -> list[int] | None:
     _server_reachable = True
     return tokens
 
-def count_tokens(text: str) -> int:
+def count_tokens(text: str, add_special: bool = False) -> int:
+    """Tokens the embedding server sees. add_special counts what IT prepends and
+    appends, which /tokenize omits by default -- see document_budget()."""
     global FALLBACK_ACTIVE
     if not text:
         FALLBACK_ACTIVE = False
         return 0
-    tokens = _tokenize_remote(text)
+    tokens = _tokenize_remote(text, add_special)
     if tokens is not None:
         FALLBACK_ACTIVE = False
         return len(tokens)
     FALLBACK_ACTIVE = True
-    return math.ceil(len(text) / CHARS_PER_TOKEN_FALLBACK)
+    estimate = math.ceil(len(text) / CHARS_PER_TOKEN_FALLBACK)
+    return estimate + _SPECIAL_TOKENS if add_special else estimate
 
 def document_budget() -> int:
     """Tokens a document chunk may occupy once EMBED_DOC_PREFIX is prepended.
 
     Measured with the server's own tokenizer rather than assumed, so changing the
     prefix moves the budget with it instead of silently overflowing the ceiling.
+
+    add_special=True is the whole point of the second measurement. /tokenize omits
+    BOS/EOS by default while the embeddings endpoint always adds them, so counting
+    the prefix without them left a two-token hole -- and a hole of exactly two
+    tokens is one a real document walks into. Measured 2026-08-09 on the 130-document
+    Italian corpus: `epatite-di-origine-sconosciuta-nei-bambini.csv` chunked to 2047
+    tokens by /tokenize, cleared the 2041 budget, and the server refused it with
+    "input (2049 tokens) is too large to process" -- the document vanished from the
+    index while the run still exited 0.
     """
-    return MODEL_MAX_TOKENS - count_tokens(EMBED_DOC_PREFIX)
+    return MODEL_MAX_TOKENS - count_tokens(EMBED_DOC_PREFIX, add_special=True)
 
 
 def _shift(base: TextPosition, rel: TextPosition) -> TextPosition:

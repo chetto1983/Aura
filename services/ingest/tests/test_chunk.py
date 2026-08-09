@@ -32,9 +32,17 @@ def test_the_embedded_payload_fits_the_ceiling_including_the_task_prefix():
     # never indexed. Production runs AURA_INGEST_LIVE=true, where that exception is
     # swallowed into the next cycle -- so the loss is silent, which is why the invariant
     # has to be asserted here rather than trusted to surface.
+    #
+    # add_special=True is not decoration and this assertion was WRONG without it. It
+    # counted what /tokenize reports, and /tokenize omits by default the BOS/EOS pair
+    # the embeddings endpoint always adds -- so the test asserted a payload two tokens
+    # smaller than the one the server is handed. Measured 2026-08-09 on the Italian
+    # corpus: a chunk /tokenize called 2047 cleared the then-2041 budget and the server
+    # refused it as "input (2049 tokens) is too large to process". The document left no
+    # passage and the run still exited 0.
     text = "parola " * 20000
     for c in chunk(text, max_tokens=document_budget()):
-        assert count_tokens(EMBED_DOC_PREFIX + c.text) <= MODEL_MAX_TOKENS
+        assert count_tokens(EMBED_DOC_PREFIX + c.text, add_special=True) <= MODEL_MAX_TOKENS
 
 
 def test_offsets_reconstruct_the_source():
