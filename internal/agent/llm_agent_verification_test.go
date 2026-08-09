@@ -69,14 +69,18 @@ func newVerifyAgent(t *testing.T, fc *agenttest.FakeClient, ledger agent.Verific
 	return newVerifyGateAgent(t, fc, ledger, false)
 }
 
-func newVerifyGateAgent(t *testing.T, fc *agenttest.FakeClient, ledger agent.VerificationLedger, completionGate bool) *agent.LlmAgent {
+func newVerifyGateAgent(
+	t *testing.T, fc *agenttest.FakeClient, ledger agent.VerificationLedger,
+	completionGate bool, hooks ...agent.Hook,
+) *agent.LlmAgent {
 	t.Helper()
 	r := tools.NewRegistry()
 	r.Register(tools.TextResponse{})
 	r.Register(&echoTool{})
 	r.Register(&fakeWriteTool{})
 	return agent.NewLlmAgent(agent.LlmAgentConfig{
-		Client: fc,
+		Client:      fc,
+		HookManager: agent.NewHookManager(hooks...),
 		LLM: llm.Config{
 			Model: "test-model", Provider: "test-provider",
 			TotalTimeoutSec: 30, CompletionGate: completionGate,
@@ -284,19 +288,91 @@ func TestVerifyGate_RunsBeforeTheCompletionCritic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if fc.CallCount() != 4 {
-		t.Fatalf("CallCount = %d, want 4 (write + nudged round + accepted round + ONE critic call)", fc.CallCount())
+	assertCriticRanOnlyAfterTheNudgedRound(t, fc)
+	if final := finalContent(t, evs); final != "ran go test ./... — green" {
+		t.Errorf("final = %q, want the verified answer", final)
 	}
-	if fc.Requests[1].ToolChoice == "none" {
+}
+
+// assertCriticRanOnlyAfterTheNudgedRound pins the gate ordering on a script of
+// write → termination (nudged) → termination (accepted) → critic.
+//
+// Request[2] is the load-bearing index: it is the round that FOLLOWS the first
+// termination candidate, so it is the critic's slot if the paid gate ran first, and an
+// ordinary model round if the free gate did. Asserting on request[1] — the termination
+// candidate itself — can never fire in either ordering, and reads like a guard while
+// being none.
+func assertCriticRanOnlyAfterTheNudgedRound(t *testing.T, fc *agenttest.FakeClient) {
+	t.Helper()
+	if len(fc.Requests) < 4 {
+		t.Fatalf("requests = %d, want at least 4 to tell the two orderings apart", len(fc.Requests))
+	}
+	if fc.Requests[2].ToolChoice == "none" {
 		t.Error("the critic ran on the round the verification gate sent back: the free gate must run first")
 	}
 	if fc.Requests[3].ToolChoice != "none" {
 		t.Errorf("request[3].ToolChoice = %q, want the critic call on the accepted round", fc.Requests[3].ToolChoice)
 	}
-	if final := finalContent(t, evs); final != "ran go test ./... — green" {
-		t.Errorf("final = %q, want the verified answer", final)
+	if fc.CallCount() != 4 {
+		t.Errorf("CallCount = %d, want 4 (write + nudged round + accepted round + ONE critic call)", fc.CallCount())
 	}
 }
+
+// TestVerifyGate_HookDeniedWrite_RecordsNoPath: a BeforeTool policy hook that DENIES a
+// write short-circuits into a synthetic result, so the call never reaches Execute and
+// never sets Mutating. Nothing was written, so nothing needs verifying — recording the
+// path anyway would spend up to two model rounds demanding proof of a write that policy
+// blocked.
+func TestVerifyGate_HookDeniedWrite_RecordsNoPath(t *testing.T) {
+	dir, file := projectFile(t)
+	ledger := &stubLedger{dir: dir, statuses: []string{"unverified"}}
+	fc := agenttest.NewFakeClient(
+		agenttest.ToolCallTurn(writeCall("c1", file)),
+		agenttest.ToolCallTurn(textResponseCall("term-1", "the write was blocked by policy")),
+	)
+	a := newVerifyGateAgent(t, fc, ledger, false, denyingHook{})
+
+	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{})))
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if fc.CallCount() != 2 {
+		t.Errorf("CallCount = %d, want 2 (a blocked write leaves nothing to verify)", fc.CallCount())
+	}
+	if n := nudges(t, a); len(n) != 0 {
+		t.Errorf("nudges = %d, want 0: the write never happened", len(n))
+	}
+	if ledger.reads != 0 {
+		t.Errorf("ledger status reads = %d, want 0 (no edited path to ask about)", ledger.reads)
+	}
+	if got := finalContent(t, evs); got != "the write was blocked by policy" {
+		t.Errorf("final = %q, want the first answer", got)
+	}
+}
+
+// denyingHook vetoes write_file the way a policy command hook's "deny" decision does
+// (hooks_command.go): BeforeTool returns a synthetic ToolResult, dispatch skips
+// execution entirely, and the run carries no Mutating flag.
+type denyingHook struct{}
+
+func (denyingHook) OnTurnStart(context.Context, agent.HookTurn) error { return nil }
+
+func (denyingHook) BeforeModel(context.Context, *llm.Request) (*agent.ModelHookResult, error) {
+	return nil, nil
+}
+
+func (denyingHook) BeforeTool(_ context.Context, call llm.ToolCall) (*agent.ToolHookResult, error) {
+	if call.Function.Name != "write_file" {
+		return nil, nil
+	}
+	return &agent.ToolHookResult{Result: &tools.ToolResult{Preview: "denied: policy blocked this write"}}, nil
+}
+
+func (denyingHook) AfterTool(context.Context, llm.ToolCall, tools.ToolResult) (*agent.ToolResultHookResult, error) {
+	return nil, nil
+}
+
+func (denyingHook) OnTurnEnd(context.Context, agent.HookTurn) error { return nil }
 
 // TestVerifyGate_TextResponse_NudgesAsAToolResult: text_response is the terminal a
 // tool-calling model actually reaches, and it has a tool_call awaiting an answer — so

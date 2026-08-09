@@ -38,6 +38,13 @@ const (
 	// maxEvidenceAge and maxEventsPerSessionRoot are the original's retention bounds.
 	maxEvidenceAge          = 30 * 24 * time.Hour
 	maxEventsPerSessionRoot = 100
+
+	// verificationReadTimeout bounds the status read the gate makes at a voluntary
+	// termination. Short on purpose: that read runs on the TURN's own goroutine, so an
+	// unbounded one would hold the turn open for as long as a stalled Postgres or an
+	// exhausted pgxpool takes to answer -- which is never. Losing the answer costs one
+	// nudge; losing the turn costs the session.
+	verificationReadTimeout = 2 * time.Second
 )
 
 // Ledger statuses. "not_applicable" is what the caller gets for a directory the project
@@ -253,18 +260,32 @@ func (a LedgerAdapter) ProjectFactsFor(cwd string) ProjectFacts {
 // because the ledger keys on ROOT: a suite run from a subdirectory and one run from the
 // top are the same workspace, and looking the status up by cwd would split them.
 //
-// A read failure reports "unverified" rather than propagating: the gate that consumes
-// this decides whether to nudge, and a database hiccup must not become a turn error.
-// It is logged so an outage is visible instead of silently disabling the gate.
+// A read failure reports "not_applicable" rather than propagating: the gate that consumes
+// this decides whether to nudge, and a database hiccup must not become a turn error. It
+// must not become a NUDGE either -- "unverified" would read as "this workspace needs
+// proof", so an outage would demand verification of every edited workspace on every turn,
+// twice, about a ledger nobody could actually ask. "not_applicable" is the policy's way
+// of saying there is nothing to say. The slog.Warn keeps the outage visible.
 func (a LedgerAdapter) VerificationStatusFor(sessionID, cwd string) VerificationStatus {
 	facts := a.Detector.ProjectFactsFor(cwd)
 	if !facts.Found {
 		return VerificationStatus{Status: StatusNotApplicable}
 	}
-	status, err := a.Store.VerificationStatus(context.Background(), a.IdentityID, sessionID, facts.Root)
+	ctx, cancel := verificationReadContext()
+	defer cancel()
+	status, err := a.Store.VerificationStatus(ctx, a.IdentityID, sessionID, facts.Root)
 	if err != nil {
 		slog.Warn("verification ledger: read status", "error", err, "session_id", sessionID, "root", facts.Root)
-		return VerificationStatus{Status: StatusUnverified}
+		return VerificationStatus{Status: StatusNotApplicable}
 	}
 	return status
+}
+
+// verificationReadContext bounds one ledger read (verificationReadTimeout). It is rooted
+// in context.Background() on purpose: the read happens AT a voluntary termination, where
+// a wallclock trip may already have made the turn ctx Done -- the same hazard the
+// completion critic severs its deadline for (llm_agent_completion.go). Detached is not
+// the same as unbounded, and this timeout is the whole difference between them.
+func verificationReadContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), verificationReadTimeout)
 }

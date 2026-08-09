@@ -124,11 +124,16 @@ func (a *LlmAgent) dispatch(ic InvocationContext, spanID [8]byte, parentSpanID *
 			}
 			if run.Mutating {
 				a.sideEffected = true // D-43: this turn touched host state; arm the completion gate.
+				// The verify-on-stop gate needs to know WHAT was edited, not just that
+				// something was. It rides the SAME condition deliberately: a call vetoed
+				// by a BeforeTool policy hook, refused as an unloaded deferred tool, or
+				// dispatched to an unknown name never reaches Execute and never sets
+				// Mutating, so it must not leave an edited path behind — the gate would
+				// then spend up to two model rounds demanding proof of a write that
+				// policy blocked. A write that RAN and failed still counts: runTool sets
+				// Mutating before execTool, and a failed write did touch the workspace.
+				a.recordEditedPath(calls[i])
 			}
-			// The verify-on-stop gate needs to know WHAT was edited, not just that
-			// something was: this is the one place that sees every dispatched call with
-			// its result, serially, so the accumulator needs no second interception.
-			a.recordEditedPath(calls[i])
 			// Full-promotion parity: if this run was a tool_search hit, promote the tools
 			// it loaded (MetaActivatedTools) into a.activated so the NEXT turn's buildRequest
 			// makes them callable WITH their schema. Race-free: this is the serial result

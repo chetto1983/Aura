@@ -194,9 +194,10 @@ func candidateCWDs(paths []string) []string {
 
 // verificationSnapshot returns the status and facts for the first edited
 // workspace needing proof, or ok=false when no candidate directory is a project
-// the detector recognises. A workspace whose status is already "passed" is
-// remembered but keeps being searched past, so a turn that edited two projects
-// nudges for the one that still needs proof rather than the first one seen.
+// the detector recognises. A workspace whose status says nothing (passed, or a
+// ledger that could not answer) is remembered but keeps being searched past, so
+// a turn that edited two projects nudges for the one that still needs proof
+// rather than the first one seen.
 func verificationSnapshot(
 	ledger VerificationLedger,
 	sessionID string,
@@ -219,7 +220,7 @@ func verificationSnapshot(
 		if !haveFirst {
 			firstStatus, firstFacts, haveFirst = status, facts, true
 		}
-		if statusState(status) != "passed" {
+		if !statusSaysNothing(status) {
 			return status, facts, true
 		}
 	}
@@ -228,9 +229,23 @@ func verificationSnapshot(
 
 func statusState(status VerificationStatus) string {
 	if strings.TrimSpace(status.Status) == "" {
-		return "unverified"
+		return StatusUnverified
 	}
 	return status.Status
+}
+
+// statusSaysNothing reports whether a status leaves the policy with no follow-up.
+// "passed" is proof. "not_applicable" is the ledger DECLINING to answer -- an
+// unreadable store, a root it does not track -- and that is not the same claim as
+// "this workspace needs proof": treating it as one turns a database outage into a
+// nudge on every edited workspace of every turn, demanding evidence about a ledger
+// nobody could ask. Both are silence, for opposite reasons.
+func statusSaysNothing(status VerificationStatus) bool {
+	switch statusState(status) {
+	case StatusPassed, StatusNotApplicable:
+		return true
+	}
+	return false
 }
 
 // formatChangedPaths renders at most maxChangedPathsInNudge paths and says how
@@ -299,7 +314,8 @@ type VerifyOnStopRequest struct {
 // BuildVerifyOnStopNudge returns a synthetic follow-up when edited code lacks
 // fresh verification, and ok=false when there is nothing to say: no verifiable
 // path was touched, the attempt budget is spent, no edited directory is a known
-// project, or the ledger already says the workspace passed.
+// project, the ledger already says the workspace passed, or the ledger could not
+// be read at all.
 func BuildVerifyOnStopNudge(request VerifyOnStopRequest) (string, bool) {
 	// Drop documentation/prose paths (markdown, skills, README, LICENSE, ...) --
 	// they carry no verifiable behavior, so a turn that touched only those has
@@ -313,7 +329,7 @@ func BuildVerifyOnStopNudge(request VerifyOnStopRequest) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	if statusState(status) == "passed" {
+	if statusSaysNothing(status) {
 		return "", false
 	}
 
