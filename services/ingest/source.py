@@ -14,8 +14,10 @@ from __future__ import annotations
 
 import dataclasses
 import os
+import pathlib
 
 from aiobotocore.session import get_session
+from botocore.session import get_session as sync_get_session
 from cocoindex.connectors import amazon_s3
 from cocoindex.resources.file import PatternFilePathMatcher
 
@@ -89,3 +91,33 @@ def walk(client: object, config: S3Config) -> amazon_s3.S3Walker:
         prefix=config.prefix,
         path_matcher=PatternFilePathMatcher(excluded_patterns=list(RESERVED_PATTERNS)),
     )
+
+
+def expected_keys(config: S3Config) -> set[str]:
+    """The object keys a completed pass must have produced a document row for.
+
+    Same bucket, same prefix and the same reserved-prefix exclusion as walk(), because
+    the point is to compare against what walk() fed the pipeline -- a different filter
+    here would manufacture a discrepancy or hide a real one.
+
+    Synchronous botocore rather than the aiobotocore client above: this runs after the
+    pass has finished and its event loop is gone.
+    """
+    matcher = PatternFilePathMatcher(excluded_patterns=list(RESERVED_PATTERNS))
+    client = sync_get_session().create_client(
+        "s3",
+        endpoint_url=config.endpoint,
+        aws_access_key_id=config.access_key,
+        aws_secret_access_key=config.secret_key,
+        region_name=config.region,
+    )
+    keys: set[str] = set()
+    for page in client.get_paginator("list_objects_v2").paginate(
+        Bucket=config.bucket, Prefix=config.prefix
+    ):
+        for obj in page.get("Contents", []):
+            # PurePosixPath, not the raw string: is_file_included calls .as_posix() on
+            # what it is handed, so a str raises AttributeError on the first object.
+            if matcher.is_file_included(pathlib.PurePosixPath(obj["Key"])):
+                keys.add(obj["Key"])
+    return keys

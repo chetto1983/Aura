@@ -19,6 +19,7 @@ import os
 import pathlib
 import re
 import subprocess
+import sys
 import tempfile
 import urllib.request
 
@@ -355,5 +356,32 @@ app = coco.App(
     app_main, _S3_CONFIG.identity_id, _INTERVAL_S,
 )
 
+def audit_pass() -> int:
+    """Compare the bucket against the index and name every object that produced no row.
+
+    This exists because an ingest that loses documents and exits 0 is not a hypothetical:
+    on 2026-08-09 two separate defects did exactly that on the same corpus, and both were
+    found by running this comparison BY HAND. CocoIndex catches a component failure, prints
+    "component build failed" and carries on, so a lost document looks identical to a
+    document with nothing to say -- in catch-up mode as well as live, whatever compose.yaml
+    claims. Reconciliation is the only thing that can tell them apart, so it ships.
+
+    Returns the number of missing objects; the caller decides what that is worth.
+    """
+    expected = source.expected_keys(_S3_CONFIG)
+    indexed = arcade.indexed_source_keys(
+        ARCADE_HTTP, ARCADE_DB, ("root", ARCADE_PASSWORD), 60.0
+    )
+    missing = sorted(expected - indexed)
+    print(f"[audit] {len(expected)} objects in {_S3_CONFIG.bucket}, "
+          f"{len(indexed)} indexed, {len(missing)} missing", flush=True)
+    for key in missing:
+        print(f"[audit] MISSING {key}", flush=True)
+    return len(missing)
+
+
 if __name__ == "__main__":
     app.update_blocking(live=_LIVE)
+    # Live never returns, so there is no pass to audit and no exit code to carry one.
+    if not _LIVE:
+        sys.exit(1 if audit_pass() else 0)

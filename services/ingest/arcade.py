@@ -171,6 +171,26 @@ def _passage_ddl(dimensions: int) -> list[str]:
     ]
 
 
+def indexed_source_keys(
+    base_url: str, database: str, auth: tuple[str, str], timeout_s: float
+) -> set[str]:
+    """The object keys that actually carry an IndexedDocument row.
+
+    app.py declares that row AFTER mapping the chunks, so a document whose extraction or
+    embedding raised leaves no row at all -- which makes the row the exact witness that a
+    file made it through. A file with no extractable text still gets one, with
+    passage_count 0, and that distinction is the point: silence about a scanned image is
+    correct, silence about a statute is a lost document.
+    """
+    path = f"/api/v1/query/{urllib.parse.quote(database, safe='')}"
+    body = _post(
+        base_url, path,
+        {"language": "sql", "command": f"SELECT source_key FROM {DOCUMENT_TYPE}"},
+        auth, timeout_s,
+    )
+    return {row["source_key"] for row in body.get("result", []) if row.get("source_key")}
+
+
 def _create_database(base_url: str, database: str, auth: tuple[str, str], timeout_s: float) -> None:
     try:
         _post(base_url, "/api/v1/server", {"command": f"create database {database}"}, auth, timeout_s)

@@ -758,11 +758,14 @@ services:
       ARCADEDB_PASSWORD: ${ARCADEDB_PASSWORD:?ARCADEDB_PASSWORD required in .env}
       AURA_EMBED_BASE_URL: http://aura-llama-embed:8081
       AURA_EMBED_DIMENSIONS: ${AURA_EMBED_DIMENSIONS:-768}
-      # Catch-up mode by default (Task 6, measured): a worker-task RuntimeError
-      # propagates and fails the run in catch-up mode, but auto_refresh's live mode
-      # swallows the same exception into the next cycle. AURA_INGEST_LIVE=true is an
-      # explicit, informed opt-in — it trades fail-closed extraction errors for
-      # continuous reconciliation.
+      # Catch-up mode by default. It does NOT fail closed, whatever this comment used to
+      # claim: measured 2026-08-09, a per-file failure is caught by CocoIndex, printed as
+      # "component build failed", and the pass carries on to exit 0 — in catch-up mode
+      # exactly as in live. Two documents were lost that way on a 130-file corpus with a
+      # clean-looking log. What makes the loss visible is app.py's audit_pass(), which
+      # compares the bucket against the IndexedDocument rows after a catch-up pass, names
+      # every object with no row, and exits non-zero. Live never returns, so it gets no
+      # audit — that is the real difference between the two modes.
       AURA_INGEST_LIVE: ${AURA_INGEST_LIVE:-false}
       AURA_INGEST_INTERVAL_SEC: ${AURA_INGEST_INTERVAL_SEC:-60}
       AURA_INGEST_IDENTITY_ID: ${AURA_INGEST_IDENTITY_ID:-}
