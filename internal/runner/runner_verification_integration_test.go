@@ -15,8 +15,6 @@ package runner
 import (
 	"context"
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -34,39 +32,51 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// runnerWithLedger builds a Runner the way the composition root does: the store is
-// injected through Deps so New's copy is what the test exercises, not a field poked
-// in afterwards.
+// verifiableProject is a workspace the detector recognises AND can name a canonical
+// command for. The command list is load-bearing: ClassifyVerificationCommand only accepts
+// a canonical suite the project actually declares, so a project with no commands could
+// record evidence for nothing but a disposable ad-hoc script.
+//
+// It is a BOX path with a stub detector behind it, not a directory on this host. The
+// production detector probes the per-identity sandbox box (agent/coding_context_box.go),
+// whose /workspace is a different volume from the aura process's — so a real os.MkdirTemp
+// fixture would exercise a filesystem nothing in production reads.
+const verifiableProject = "/workspace/fixture"
+
+// stubDetectorSource is the ProjectDetectorSource seam the composition root fills with
+// *agent.BoxProjectDetector. Every identity gets the same answers here: this suite is
+// about the ledger's two halves meeting, not about tenancy.
+type stubDetectorSource map[string]agent.ProjectFacts
+
+func (s stubDetectorSource) ForIdentity(string) agent.ProjectDetector { return stubDetector(s) }
+
+type stubDetector map[string]agent.ProjectFacts
+
+func (d stubDetector) ProjectFactsFor(cwd string) agent.ProjectFacts { return d[cwd] }
+
+func verifiableProjectDetector() stubDetectorSource {
+	return stubDetectorSource{verifiableProject: {
+		Found: true, Root: verifiableProject, VerifyCommands: []string{"make test"},
+	}}
+}
+
+// runnerWithLedger builds a Runner the way the composition root does: the store and the
+// detector are injected through Deps so New's copy is what the test exercises, not a field
+// poked in afterwards.
 func runnerWithLedger(t *testing.T, pool *pgxpool.Pool) *Runner {
 	t.Helper()
 	reg := tools.NewRegistry()
 	reg.Register(tools.TextResponse{})
 	return New(Deps{
-		Identity:          newFakeIdentityStore(),
-		CacheMetrics:      newFakeCacheMetricStore(),
-		ToolInvocations:   newFakeToolInvocationStore(),
-		Client:            agenttest.NewFakeClient(),
-		Registry:          reg,
-		LLM:               llm.Config{Model: "test-model", ContextWindow: 1000000, MaxOutputTokens: 32768},
-		VerificationStore: agent.NewEvidenceStore(pool),
+		Identity:             newFakeIdentityStore(),
+		CacheMetrics:         newFakeCacheMetricStore(),
+		ToolInvocations:      newFakeToolInvocationStore(),
+		Client:               agenttest.NewFakeClient(),
+		Registry:             reg,
+		LLM:                  llm.Config{Model: "test-model", ContextWindow: 1000000, MaxOutputTokens: 32768},
+		VerificationStore:    agent.NewEvidenceStore(pool),
+		VerificationDetector: verifiableProjectDetector(),
 	})
-}
-
-// verifiableProject creates a directory the FilesystemProjectDetector recognises AND
-// can name a canonical command for. The Makefile is load-bearing: detectVerifyCommands
-// reads run_tests.sh, package.json scripts, pytest and Makefile targets, so a bare
-// go.mod project detects no command at all and only a disposable ad-hoc script could
-// ever classify as evidence there.
-func verifiableProject(t *testing.T) string {
-	t.Helper()
-	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module fixture\n"), 0o600); err != nil {
-		t.Fatalf("write project marker: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "Makefile"), []byte("test:\n\tgo test ./...\n"), 0o600); err != nil {
-		t.Fatalf("write Makefile: %v", err)
-	}
-	return root
 }
 
 func shellExecCall(command string) llm.ToolCall {
@@ -85,7 +95,7 @@ func TestVerificationLedgerIsLiveForAScopedTurn(t *testing.T) {
 	if ledger == nil {
 		t.Fatal("a runner with a store and a scoped identity must hand the turn a ledger")
 	}
-	root := verifiableProject(t)
+	root := verifiableProject
 	if facts := ledger.ProjectFactsFor(root); !facts.Found || facts.Root != root {
 		t.Fatalf("project facts = %+v, want the detector to find %q", facts, root)
 	}
@@ -111,7 +121,7 @@ func TestVerificationHookWritesTheLedgerTheGateReads(t *testing.T) {
 	seedLocalIdentity(t, pool)
 	r := runnerWithLedger(t, pool)
 
-	root := verifiableProject(t)
+	root := verifiableProject
 	sessionID := "session-" + uuid.Must(uuid.NewV7()).String()
 	// Scoped, like every other write in this suite: migration 0094's RLS is fail-closed,
 	// so a bare pool statement neither sees nor deletes these rows.
@@ -211,8 +221,8 @@ func TestVerifyOnStopFiresOnARealTurn(t *testing.T) {
 	pool := migratedRunnerPool(t)
 	seedLocalIdentity(t, pool)
 
-	root := verifiableProject(t)
-	edited := filepath.Join(root, "app.go")
+	root := verifiableProject
+	edited := root + "/app.go"
 
 	reg := tools.NewRegistry()
 	reg.Register(tools.TextResponse{})
@@ -228,17 +238,18 @@ func TestVerifyOnStopFiresOnARealTurn(t *testing.T) {
 		agenttest.ToolCallTurn(textResponseCall("t2", "Ran make test, it passed.")),
 	)
 	r := New(Deps{
-		Conv:              convStore,
-		Pause:             askuser.New(pool),
-		Identity:          newFakeIdentityStore(),
-		CacheMetrics:      newFakeCacheMetricStore(),
-		ToolInvocations:   newFakeToolInvocationStore(),
-		Client:            client,
-		Registry:          reg,
-		LLM:               llm.Config{Model: "test-model", ContextWindow: 1000000, MaxOutputTokens: 32768},
-		TitleTimeout:      2 * time.Second,
-		StopTimeout:       2 * time.Second,
-		VerificationStore: agent.NewEvidenceStore(pool),
+		Conv:                 convStore,
+		Pause:                askuser.New(pool),
+		Identity:             newFakeIdentityStore(),
+		CacheMetrics:         newFakeCacheMetricStore(),
+		ToolInvocations:      newFakeToolInvocationStore(),
+		Client:               client,
+		Registry:             reg,
+		LLM:                  llm.Config{Model: "test-model", ContextWindow: 1000000, MaxOutputTokens: 32768},
+		TitleTimeout:         2 * time.Second,
+		StopTimeout:          2 * time.Second,
+		VerificationStore:    agent.NewEvidenceStore(pool),
+		VerificationDetector: verifiableProjectDetector(),
 	})
 	// The auto-title worker fires past seq>=3; join it so goleak does not see it.
 	t.Cleanup(func() { r.waitWorkers(5 * time.Second) })

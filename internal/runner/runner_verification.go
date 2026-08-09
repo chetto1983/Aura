@@ -8,13 +8,15 @@
 //	                     passing evidence (agent/llm_agent_verification.go).
 //
 // Both are per TURN, not per process, because both are scoped to (identity, session)
-// and the runner builds a fresh agent per turn. What IS per process is the
-// EvidenceStore: it holds the pgxpool, so the composition root builds it once and
-// injects it through Deps.
+// and the runner builds a fresh agent per turn. What IS per process are the two things
+// they are built from — the EvidenceStore, which holds the pgxpool, and the project
+// detector, which holds the box-probe memo — so the composition root builds each once
+// and injects it through Deps.
 //
 // Nil is the disabled state throughout, never a panic: no store (no pool — tests,
-// standalone) or no identity on ctx yields a nil ledger and the unmodified
-// process-wide hook manager, which the agent reads as "no gate".
+// standalone), no detector (no box router to probe with) or no identity on ctx yields a
+// nil ledger and the unmodified process-wide hook manager, which the agent reads as
+// "no gate".
 package runner
 
 import (
@@ -24,14 +26,22 @@ import (
 	"github.com/chetto1983/aura/internal/identityctx"
 )
 
+// ProjectDetectorSource hands out the per-identity project detector both halves consult.
+// It is declared here, on the consumer side (D-A2-02), so the runner never learns that the
+// production answer comes from a Docker container: *agent.BoxProjectDetector satisfies it,
+// and so does a stub with no box behind it.
+type ProjectDetectorSource interface {
+	ForIdentity(identityID string) agent.ProjectDetector
+}
+
 // verificationLedger builds the read half for the identity scoped onto ctx.
 func (r *Runner) verificationLedger(ctx context.Context) agent.VerificationLedger {
 	identityID := identityctx.IdentityID(ctx)
-	if r.verificationStore == nil || identityID == "" {
+	if r.verificationStore == nil || r.verificationDetector == nil || identityID == "" {
 		return nil
 	}
 	return agent.LedgerAdapter{
-		Detector:   agent.FilesystemProjectDetector{},
+		Detector:   r.verificationDetector.ForIdentity(identityID),
 		Store:      r.verificationStore,
 		IdentityID: identityID,
 	}
@@ -43,11 +53,14 @@ func (r *Runner) verificationLedger(ctx context.Context) agent.VerificationLedge
 // Register's FailClosed default would do exactly that.
 func (r *Runner) verificationHooks(ctx context.Context, sessionID string) *agent.HookManager {
 	identityID := identityctx.IdentityID(ctx)
-	if r.verificationStore == nil || identityID == "" {
+	if r.verificationStore == nil || r.verificationDetector == nil || identityID == "" {
 		return r.hookManager
 	}
 	return r.hookManager.With(&agent.VerificationHook{
-		Store:      r.verificationStore,
+		Store: r.verificationStore,
+		// The SAME detector the read half gets, so the two halves can never disagree
+		// about which directory is the root a workspace's evidence is keyed on.
+		Detector:   r.verificationDetector.ForIdentity(identityID),
 		IdentityID: identityID,
 		SessionID:  sessionID,
 	}, agent.FailOpen)
