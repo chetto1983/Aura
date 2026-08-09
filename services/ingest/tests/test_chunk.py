@@ -135,3 +135,44 @@ def test_a_dense_script_run_still_respects_the_ceiling():
     for c in out:
         assert count_tokens(c.text) <= 2048
         assert text[c.start:c.end] == c.text
+
+
+def test_window_split_verifies_its_own_output_on_locally_dense_text(monkeypatch):
+    # The regression this exists for: _window_split sized its window from the piece's
+    # AVERAGE chars-per-token and emitted the result unmeasured. An average is not a
+    # bound -- where the text is locally denser the window overshoots -- and nothing
+    # downstream re-checks this path, so the overflow surfaced only as an HTTP 500 the
+    # reconciler printed and walked past, losing the document. Measured 2026-08-09 over
+    # 60 open_ragbench arXiv papers: 2 of 1419 chunks at 2116 and 2350 tokens against
+    # the 2048 ceiling.
+    #
+    # The live tokenizer is not reachable from a unit test, and the char FALLBACK is
+    # uniform by construction, so neither can express "locally denser than average".
+    # This stubs a tokenizer that is: one token per character in the dense tail, one
+    # per five elsewhere. A window sized on the average therefore lands well over the
+    # ceiling on the tail, exactly as the real corpus did.
+    dense_from = 4000
+
+    def uneven_count(text: str, add_special: bool = False) -> int:
+        # Counted per character so the answer depends on WHERE the slice came from,
+        # which a length-only estimate cannot capture.
+        return sum(1 if c == "#" else 0.2 for c in text).__ceil__()
+
+    monkeypatch.setattr("ingest.chunk.count_tokens", uneven_count)
+    body = ("y" * dense_from) + ("#" * 4000)
+    piece = CoreChunk(
+        text=body,
+        start=TextPosition(byte_offset=0, char_offset=0, line=1, column=0),
+        end=TextPosition(byte_offset=len(body), char_offset=len(body), line=1, column=len(body)),
+    )
+
+    out = _window_split(piece, max_tokens=500)
+
+    assert len(out) > 1
+    for c in out:
+        assert uneven_count(c.text) <= 500, "a window may not exceed the ceiling it was sized for"
+    assert out[0].start == 0
+    assert out[-1].end == len(body)
+    for prev, nxt in zip(out, out[1:]):
+        assert prev.end == nxt.start, "window chunks must stay contiguous while shrinking"
+    assert "".join(c.text for c in out) == body

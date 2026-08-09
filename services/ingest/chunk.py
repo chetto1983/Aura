@@ -178,6 +178,28 @@ def _window_split(piece: CoreChunk, max_tokens: int) -> list[Chunk]:
     tokens = max(count_tokens(piece.text), 1)
     chars_per_token = min(max(len(piece.text) / tokens, 1.0), 20.0)
     max_chars = min(max(1, int(max_tokens * chars_per_token * _WINDOW_SAFETY)), _MAX_WINDOW_CHARS)
+    # Sized from an AVERAGE, then VERIFIED, because an average is not a bound. Where a
+    # piece is locally denser than itself -- prose that turns into a formula block --
+    # a window sized on the whole overshoots on that stretch, and _WINDOW_SAFETY is a
+    # hoped-for margin, not a guarantee. Nothing downstream re-measures this path, so
+    # an overshoot here is an HTTP 500 the reconciler prints and walks past, and the
+    # document leaves no passage. Measured 2026-08-09 over 60 open_ragbench arXiv
+    # papers: 2 of 1419 chunks came back at 2116 and 2350 tokens against a 2048
+    # ceiling -- exactly the two the ingest run then dropped.
+    #
+    # The loop shrinks by the overshoot it just measured rather than by a fixed
+    # factor, so the correction is the evidence. It terminates: while the worst chunk
+    # exceeds max_tokens the multiplier is below _WINDOW_SAFETY < 1, so max_chars
+    # strictly decreases to its floor of 1 character.
+    while True:
+        out = _windows(piece, max_chars)
+        worst = max((count_tokens(chunk.text) for chunk in out), default=0)
+        if worst <= max_tokens or max_chars <= 1:
+            return out
+        max_chars = max(1, int(max_chars * max_tokens / worst * _WINDOW_SAFETY))
+
+
+def _windows(piece: CoreChunk, max_chars: int) -> list[Chunk]:
     splitter = SeparatorSplitter([rf"(?s).{{{max_chars}}}"], keep_separator="left", trim=False)
     out: list[Chunk] = []
     for rel in splitter.split(piece.text):
