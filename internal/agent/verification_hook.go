@@ -52,13 +52,31 @@ func writeToolPath(call llm.ToolCall) (string, bool) {
 	return path, true
 }
 
+// verificationRecorder is the two ledger writes this hook makes, declared on the
+// consumer side (D-A2-02) rather than taking *EvidenceStore directly. The hook's
+// decisions -- which finished command is evidence, which finished call stales it --
+// are pure policy, and behind a concrete pool-owning store they could only be
+// exercised against Postgres. *EvidenceStore satisfies this.
+type verificationRecorder interface {
+	RecordTerminalResult(context.Context, string, ClassifyVerificationCommandInput) (VerificationCommandEvidence, bool, error)
+	MarkWorkspaceEdited(ctx context.Context, identityID, sessionID, root string, paths []string) error
+}
+
 // VerificationHook records verification evidence and edit staleness as a turn runs.
 type VerificationHook struct {
-	Store      *EvidenceStore
+	Store      verificationRecorder
 	Detector   FilesystemProjectDetector
 	IdentityID string
 	SessionID  string
 }
+
+// The assertion is not decoration: this hook shipped without OnTurnStart and so did
+// not satisfy Hook at all, which nothing noticed for as long as nothing registered it.
+var _ Hook = (*VerificationHook)(nil)
+
+// OnTurnStart is a no-op: the ledger records what a turn DID, and at turn start it
+// has done nothing.
+func (h *VerificationHook) OnTurnStart(context.Context, HookTurn) error { return nil }
 
 // BeforeModel is a no-op: this hook observes, it never steers a request.
 func (h *VerificationHook) BeforeModel(context.Context, *llm.Request) (*ModelHookResult, error) {

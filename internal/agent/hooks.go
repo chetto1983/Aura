@@ -106,6 +106,27 @@ func (m *HookManager) RegisterWithPolicy(h Hook, policy FailPolicy) {
 	m.policies = append(m.policies, policy)
 }
 
+// With returns a NEW manager running m's hooks in order followed by h under policy,
+// leaving m untouched. The composition root builds one process-wide manager at boot
+// and every turn shares it, so a hook carrying per-turn state — VerificationHook
+// holds the turn's identity and session — must be appended to a copy or it would
+// record the next turn's tool calls against this turn's session.
+//
+// A nil h returns m unchanged and a nil receiver yields a manager holding only h, so
+// a caller never has to branch on either.
+func (m *HookManager) With(h Hook, policy FailPolicy) *HookManager {
+	if h == nil {
+		return m
+	}
+	next := &HookManager{}
+	if m != nil {
+		next.hooks = append(next.hooks, m.hooks...)
+		next.policies = append(next.policies, m.policies...)
+	}
+	next.RegisterWithPolicy(h, policy)
+	return next
+}
+
 func (m *HookManager) policyAt(i int) FailPolicy {
 	if i < 0 || i >= len(m.policies) {
 		return FailClosed
