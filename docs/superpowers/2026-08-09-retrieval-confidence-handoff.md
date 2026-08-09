@@ -141,9 +141,11 @@ Three things worth more than the counts:
 3. ~~**Nothing runs the ingest tests.**~~ **CLOSED** (`d211cf117`). `make ingest-test`
    runs them inside `aura-ingest:local` with `/fx` and the env; CI job
    `ingest-sidecar-test` calls that target against a live ArcadeDB and EmbeddingGemma.
-   **60 passed.** The gotchas are recorded in the target's own comment: without `/fx` 25
-   extraction tests fail, and without `ARCADEDB_PASSWORD` the arcade module reads
-   `os.environ` at import and fails collection for every file at once.
+   Green in CI at `ea4803a20`: **`60 passed in 34.84s`**, sixty dots and no skips — a
+   real runtime, not the sub-second tell of a tier that skipped itself. The gotchas are
+   recorded in the target's own comment: without `/fx` 25 extraction tests fail, and
+   without `ARCADEDB_PASSWORD` the arcade module reads `os.environ` at import and fails
+   collection for every file at once.
 4. **Two `retrieval_eval` harnesses are committed and nothing runs them** —
    `retrieval_fusion_bench_test.go` and now `retrieval_abstention_eval_test.go`. They are
    compile-checked by `scripts/tagged_tier_compile.sh` and never executed.
@@ -229,6 +231,20 @@ The operator's `aura` database, `aura-b130c94d-…` bucket, `mem_b130c94d…` an
   across 3,284 passages — 4 documents, 0.01% of text. Not a systematic bug.)
 
 ## The lesson this session cost
+
+**Two, and the second is cheaper to say than it was to learn.**
+
+**Authoring CI by reading the job next door.** The `ingest-sidecar-test` job went red
+three times, each on a different mistake of mine and none of them about the tests it
+runs: `POSTGRES_PASSWORD` missing (compose interpolates the WHOLE file before it selects
+a service — a paragraph of `compose.yaml` I had quoted that same morning); a contract
+test that COUNTS the CI tiers using the shared embedding-model helper, which my fifth
+tier broke; and three secrets restated by hand from the workflow-level env block, one of
+them 22 characters against a 32-character minimum. The pre-push gate runs vet, lint,
+build and the quality snapshot — it cannot execute a GitHub workflow, so the only way to
+verify one is to push and watch. Budget for that, or the first three pushes of any new
+job are the debugging.
+
 
 Yesterday's was "verify one thing and ship another". Today's is its sibling: **I measured
 for six hours without ever reading what the system returned.** I generated 295 questions
