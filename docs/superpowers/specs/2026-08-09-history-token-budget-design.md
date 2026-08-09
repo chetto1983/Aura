@@ -174,18 +174,36 @@ writes distinct because conflating them misreports the hit ratio. `internal/llm/
 prefers the provider's reported `cost` and falls back to the price table only when it is nil
 (D-18). `stream_options` is set only on the llama.cpp target, matching the no-op rule above.
 
-**What it emits.** Per-turn: a `aura_agent_context_tokens{category}` gauge on the existing obs
-registry (`internal/obs/catalog.go`), and the same payload on the `agent.turn` span already wrapping
-the loop. Both surfaces are already scraped/collected for the `serve` path — verified live this
-session: an agent turn takes the family from 0 to 43 series on `:9464`.
+**What it emits.** Per call: a `aura_agent_context_tokens{category}` gauge on the existing obs
+registry (`internal/obs/catalog.go`), which is already scraped for the `serve` path — verified live
+this session, an agent turn takes the family from 0 to 43 series on `:9464`. `category` is a new
+bounded attribute and must be registered in `allowedAttributeValues` and `AllAttributeKeys()`, or
+every sample is dropped without error.
 
-**Prerequisite defect — persistence, not parsing.** The usage exists on the `llm.Usage` boundary
-for *every* call; it is written only for the terminal assistant turn of a round. `019fa8ba` has 57
-assistant turns and 7 `aura.cache_metrics` rows, `019fa501` 63 and 23 — roughly 50 LLM calls on one
-conversation carry no token or cost record, so `total_cost_usd` understates spend by about the
-tool-iteration factor and the reconciliation above has nothing to reconcile against on intermediate
-calls. Persisting what is already captured is part of Part A, not a follow-up, and is a smaller
-change than parsing would have been.
+Mirroring the same payload onto the `agent.turn` span is **not** part of this work: the span already
+carries duration and nesting, the gauge carries composition, and duplicating five numbers onto a
+span buys correlation that `aura.request_id` already provides. Revisit only if a real investigation
+needs per-turn composition that the gauge cannot answer.
+
+**Prerequisite defect — transport, not parsing.** Three layers, and only the middle one is broken.
+Parsing is correct (above). Metering is correct: `recordUsage` runs on **every** call
+(`internal/agent/llm_agent_consume.go:38`, `llm_agent_completion.go:119`), so
+`aura_agent_prompt_tokens_total` already counts them all. What is missing is transport to the
+Runner: `usageStateDelta` is attached only to the turn's **final** Event
+(`internal/agent/llm_agent_events.go:231`), and the Runner reconstructs usage from that state delta
+(`runner_persist.go:475-482`). An LLM call that ends in `tool_calls` therefore reaches
+`flushToolCalls` (`runner_persist.go:179-196`), which writes the assistant turn through a plain
+`AppendTurn` with no usage and no cache metric.
+
+Measured consequence: `019fa8ba` has 57 assistant turns and 7 `aura.cache_metrics` rows, `019fa501`
+63 and 23. Roughly 50 LLM calls on one conversation carry no token or cost record, so
+`total_cost_usd` understates spend by about the tool-iteration factor, and the reconciliation above
+has nothing to reconcile against on intermediate calls.
+
+Closing it means carrying per-call usage on the tool-call Event as well as the final one, and
+teaching `flushToolCalls` to write the metric. That is a real change across the agent/runner seam —
+larger than an earlier revision of this document implied when it called the gap "persistence, not
+parsing" — and it is part of Part A, not a follow-up.
 
 **Reasoning contributes nothing to context, and the breakdown must not invent a category for it.**
 Chain-of-thought is persisted DISPLAY-ONLY (`internal/conversations/store_append.go:46`) and the
