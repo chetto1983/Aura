@@ -6,7 +6,7 @@
 # sqlc CLI: install with `go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1`
 # (v1.27.0 panics on Windows hosts via wazero out-of-bounds; v1.31.1 verified clean).
 
-.PHONY: help tools sqlc lint vet deadcode vuln coverage coverage-docker quality quality-full test test-race tagged-tier-compile file-size embedding-model-contract web-freshness web-lint web-test web-mutation web-quality evidence-contracts agent-memory-eval-contract agent-memory-eval critical-mutation observability-evidence release-readiness db-up db-migrate db-status db-reset memory-up arcadedb-integration restore-drill load-chaos
+.PHONY: help tools sqlc lint vet deadcode vuln coverage coverage-docker quality quality-full test test-race tagged-tier-compile file-size embedding-model-contract web-freshness web-lint web-test web-mutation web-quality evidence-contracts agent-memory-eval-contract agent-memory-eval critical-mutation observability-evidence release-readiness db-up db-migrate db-status db-reset memory-up arcadedb-integration ingest-test restore-drill load-chaos
 
 # Resolve go-installed tool binaries even when $GOPATH/bin is not on PATH
 # (common in a fresh WSL login shell). Falls back to a bare name on PATH.
@@ -246,6 +246,26 @@ memory-up:
 # latency evidence.
 arcadedb-integration: db-migrate memory-up
 	$(MAKE) agent-memory-eval
+
+# The ingestion sidecar's own suite. It runs INSIDE aura-ingest:local because half of it
+# is about that image's contents -- iscc-tika, LibreOffice, poppler -- and a host venv
+# would test a toolchain nobody deploys. Two mounts and the env are not optional and each
+# one has burned an hour: without /fx, 25 of the extraction tests fail on missing
+# fixtures; without ARCADEDB_PASSWORD, test_arcade_integration.py reads os.environ at
+# import and fails COLLECTION for the whole suite, which is a red that looks like a broken
+# product. pytest is installed at run time rather than baked in: a test dependency has no
+# business in the image that ships to production.
+ingest-test: memory-up
+	docker build -f docker/aura-ingest/Dockerfile -t aura-ingest:local .
+	@# @-silenced: make echoes the recipe line and ARCADEDB_PASSWORD sits on it.
+	@docker run --rm --network aura_default --entrypoint sh \
+	  -v "$(CURDIR)/services/ingest:/app/ingest:ro" \
+	  -v "$(CURDIR)/scripts/fixtures/document_pipeline_e2e:/fx:ro" \
+	  -e ARCADEDB_PASSWORD="$(ARCADEDB_PASSWORD)" \
+	  -e ARCADE_HTTP=http://arcadedb:2480 \
+	  -e ARCADE_BOLT=bolt://arcadedb:7687 \
+	  -e AURA_EMBED_BASE_URL=http://aura-llama-embed:8081 \
+	  aura-ingest:local -c 'pip install --quiet pytest && cd /app && python -m pytest ingest/tests -q'
 
 restore-drill: db-migrate memory-up
 	bash scripts/garage_bootstrap.sh

@@ -822,6 +822,85 @@ jobs:
         if: always()
         run: docker compose down
 
+  ingest-sidecar-test:
+    name: Ingestion sidecar (live ArcadeDB + EmbeddingGemma)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # services/ingest carried 53 tests that NOTHING executed -- no CI job, no Makefile
+    # target -- and on 2026-08-09 two silent document-loss defects shipped through that
+    # gap: a chunk budget that ignored the BOS/EOS pair the embeddings endpoint adds, and
+    # a window splitter that never measured its own output. Both are covered by this suite.
+    env:
+      CI: "true"
+      ARCADEDB_PASSWORD: ci-test-password
+      ARCADEDB_APP_PASSWORD: ci-test-password
+      AURA_ARCADEDB_TENANT_SECRET: ci-test-tenant-secret
+      COMPOSE_FILE: compose.yaml:compose.minipc.yaml
+      AURA_EMBED_IMAGE: ghcr.io/ggml-org/llama.cpp:server
+      AURA_EMBED_NGL: "0"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Cache the EmbeddingGemma model
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/aura-embed
+          key: embed-model-ggml-org-embeddinggemma-300M-Q8_0-v1
+
+      - name: Materialize the validated EmbeddingGemma model
+        run: bash scripts/fetch_embedding_model.sh ~/.cache/aura-embed/model.gguf
+
+      - name: Bring up ArcadeDB
+        # `docker compose up`, not a services: block -- the bracketed defaultDatabases
+        # form in compose.yaml is load-bearing and reproducing it by hand is how that
+        # footgun comes back. Same reasoning as arcadedb-integration-test.
+        run: docker compose up -d arcadedb
+
+      - name: Wait for ArcadeDB healthy
+        run: |
+          ok=""
+          for i in $(seq 1 40); do
+            status="$(docker inspect -f '{{.State.Health.Status}}' aura-arcadedb 2>/dev/null || echo starting)"
+            echo "arcadedb health: $status"
+            [ "$status" = "healthy" ] && ok=1 && break
+            sleep 5
+          done
+          if [ -z "$ok" ]; then
+            echo "ArcadeDB did not become healthy" >&2
+            docker logs aura-arcadedb --tail 80 || true
+            exit 1
+          fi
+
+      - name: Bring up EmbeddingGemma
+        # The chunker asks this server for its OWN token counts (POST /tokenize, with
+        # add_special so BOS/EOS are counted). Without it chunk.py falls back to a
+        # character estimate and the budget tests would assert against the fallback --
+        # green, and blind to exactly the defect they exist to catch.
+        run: |
+          docker compose create aura-llama-embed
+          cid="$(docker compose ps -aq aura-llama-embed | head -1)"
+          docker cp ~/.cache/aura-embed/model.gguf "$cid:/root/.cache/llama.cpp/embeddinggemma-300M-Q8_0.gguf"
+          docker compose up -d aura-llama-embed
+          ok=""
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8081/health >/dev/null 2>&1; then ok=1; break; fi
+            echo "embed server not ready yet ($i)"
+            sleep 5
+          done
+          if [ -z "$ok" ]; then
+            echo "embed server never became ready" >&2
+            docker compose logs --tail 100 aura-llama-embed || true
+            exit 1
+          fi
+
+      - name: Run the ingestion sidecar suite
+        run: make ingest-test
+
+      - name: Tear down
+        if: always()
+        run: docker compose down
+
   reasoning-tier-test:
     name: Reasoning tier accuracy (reasoning_live, real embedder)
     runs-on: ubuntu-latest
