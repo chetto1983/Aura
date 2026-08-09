@@ -8,22 +8,22 @@
 package agent
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
 
-// unreadableAdapter is a real LedgerAdapter over a real project directory whose ledger
-// read always fails: the identity is not a UUID.
+// unreadableAdapter is a real LedgerAdapter over a directory its detector recognises but
+// whose ledger read always fails: the identity is not a UUID.
 func unreadableAdapter(t *testing.T) (LedgerAdapter, string) {
 	t.Helper()
-	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/x\n"), 0o600); err != nil {
-		t.Fatalf("write marker: %v", err)
-	}
-	return LedgerAdapter{Store: &EvidenceStore{}, IdentityID: "not-a-uuid"}, root
+	root := filepath.Join("workspace", "unreadable")
+	return LedgerAdapter{
+		Detector:   stubDetector{root: {Found: true, Root: root}},
+		Store:      &EvidenceStore{},
+		IdentityID: "not-a-uuid",
+	}, root
 }
 
 func TestVerificationReadIsBounded(t *testing.T) {
@@ -75,7 +75,7 @@ func TestUnreadableWorkspaceIsSearchedPast(t *testing.T) {
 	// which genuinely has no evidence. A status that says nothing must not stop the search
 	// any more than "passed" does.
 	unreadable, unreadableRoot := unreadableAdapter(t)
-	pending := t.TempDir()
+	pending := filepath.Join("workspace", "pending")
 	ledger := &splitLedger{
 		unreadable:     unreadable,
 		unreadableRoot: unreadableRoot,

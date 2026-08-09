@@ -2,8 +2,6 @@ package agent
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strconv"
 	"testing"
 
@@ -50,22 +48,31 @@ func (f *fakeRecorder) MarkWorkspaceEdited(
 	return nil
 }
 
-// hookProject creates a directory the FilesystemProjectDetector recognises (a go.mod
-// marker) and returns it. The detector stats the real filesystem, so the fixture has
-// to be a real one.
-func hookProject(t *testing.T) string {
-	t.Helper()
-	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module fixture\n"), 0o600); err != nil {
-		t.Fatalf("write project marker: %v", err)
-	}
-	return root
-}
+// stubDetector recognises exactly the directories it was given and reports every other
+// one as "not a project" -- which is all the ledger's two halves ever ask a detector.
+//
+// It replaces a real-directory fixture because the production detector no longer stats
+// anything reachable from a test: it probes the per-identity sandbox box
+// (coding_context_box.go), whose /workspace is a different volume from this process's. A
+// fixture built with os.MkdirTemp would therefore be testing a filesystem the shipped
+// code never reads.
+type stubDetector map[string]ProjectFacts
+
+func (d stubDetector) ProjectFactsFor(cwd string) ProjectFacts { return d[cwd] }
+
+// hookProjectRoot is a BOX path: the hook resolves a written file to its directory with
+// path.Dir, so these fixtures are POSIX on every host.
+const hookProjectRoot = "/workspace/fixture"
 
 func newHook(t *testing.T) (*VerificationHook, *fakeRecorder) {
 	t.Helper()
 	rec := &fakeRecorder{}
-	return &VerificationHook{Store: rec, IdentityID: "identity-1", SessionID: "session-1"}, rec
+	return &VerificationHook{
+		Store:      rec,
+		Detector:   stubDetector{hookProjectRoot: {Found: true, Root: hookProjectRoot}},
+		IdentityID: "identity-1",
+		SessionID:  "session-1",
+	}, rec
 }
 
 // hookCall builds one dispatched call. llm.ToolCall's Function is an anonymous
@@ -107,7 +114,7 @@ func afterTool(t *testing.T, h *VerificationHook, call llm.ToolCall, result tool
 }
 
 func TestVerificationHookRecordsAFinishedShellCommand(t *testing.T) {
-	root := hookProject(t)
+	root := hookProjectRoot
 	h, rec := newHook(t)
 
 	afterTool(t, h, shellCall("go test ./...", false),
@@ -143,7 +150,7 @@ func TestVerificationHookRecordsAFinishedShellCommand(t *testing.T) {
 func TestVerificationHookRecordsAFailingCommandToo(t *testing.T) {
 	// The ledger records what was PROVED, not only what succeeded: a failing suite is
 	// evidence, and dropping it would let a red workspace read as never-verified.
-	root := hookProject(t)
+	root := hookProjectRoot
 	h, rec := newHook(t)
 
 	afterTool(t, h, shellCall("go test ./...", false),
@@ -158,7 +165,7 @@ func TestVerificationHookRecordsAFailingCommandToo(t *testing.T) {
 }
 
 func TestVerificationHookRecordsNothingForShellCallsThatProvedNothing(t *testing.T) {
-	root := hookProject(t)
+	root := hookProjectRoot
 
 	cases := map[string]struct {
 		call   llm.ToolCall
@@ -172,7 +179,7 @@ func TestVerificationHookRecordsNothingForShellCallsThatProvedNothing(t *testing
 		"no meta":      {shellCall("go test ./...", false), tools.ToolResult{Preview: "ok"}},
 		"no cwd":       {shellCall("go test ./...", false), shellResult(tools.ToolResultMeta{"exit_code": 0})},
 		// A directory the detector does not recognise is not a workspace to prove.
-		"outside a project": {shellCall("go test ./...", false), shellResult(tools.ToolResultMeta{"cwd": t.TempDir(), "exit_code": 0})},
+		"outside a project": {shellCall("go test ./...", false), shellResult(tools.ToolResultMeta{"cwd": "/workspace/elsewhere", "exit_code": 0})},
 		"unparseable args": {
 			hookCall("shell_exec", "{"),
 			shellResult(tools.ToolResultMeta{"cwd": root, "exit_code": 0}),
@@ -195,11 +202,11 @@ func TestVerificationHookRecordsNothingForShellCallsThatProvedNothing(t *testing
 }
 
 func TestVerificationHookMarksAWriteToolsWorkspaceEdited(t *testing.T) {
-	root := hookProject(t)
-	path := filepath.Join(root, "app.go")
+	root := hookProjectRoot
+	edited := root + "/app.go"
 	h, rec := newHook(t)
 
-	afterTool(t, h, writeCall("write_file", path), tools.ToolResult{Preview: "wrote"})
+	afterTool(t, h, writeCall("write_file", edited), tools.ToolResult{Preview: "wrote"})
 
 	if len(rec.edits) != 1 {
 		t.Fatalf("recorded %d edits, want 1", len(rec.edits))
@@ -211,8 +218,8 @@ func TestVerificationHookMarksAWriteToolsWorkspaceEdited(t *testing.T) {
 	if got.root != root {
 		t.Errorf("root = %q, want %q -- the ledger keys on the project root, not the file", got.root, root)
 	}
-	if len(got.paths) != 1 || got.paths[0] != path {
-		t.Errorf("paths = %v, want [%s]", got.paths, path)
+	if len(got.paths) != 1 || got.paths[0] != edited {
+		t.Errorf("paths = %v, want [%s]", got.paths, edited)
 	}
 	if len(rec.terminals) != 0 {
 		t.Errorf("a write must not record verification evidence: %+v", rec.terminals)
@@ -220,15 +227,15 @@ func TestVerificationHookMarksAWriteToolsWorkspaceEdited(t *testing.T) {
 }
 
 func TestVerificationHookIgnoresCallsItHasNothingToSayAbout(t *testing.T) {
-	root := hookProject(t)
+	root := hookProjectRoot
 
 	cases := map[string]llm.ToolCall{
 		// Not a write tool: writeToolPathArgs is the whole list, and a tool absent
 		// from it leaves no path to stale.
 		"unknown tool":            hookCall("web_search", `{"query":"go"}`),
-		"read tool":               writeCall("read_file", filepath.Join(root, "app.go")),
+		"read tool":               writeCall("read_file", root+"/app.go"),
 		"write with no path":      hookCall("write_file", `{"content":"x"}`),
-		"write outside a project": writeCall("write_file", filepath.Join(t.TempDir(), "app.go")),
+		"write outside a project": writeCall("write_file", "/workspace/elsewhere/app.go"),
 	}
 
 	for name, call := range cases {
@@ -242,13 +249,24 @@ func TestVerificationHookIgnoresCallsItHasNothingToSayAbout(t *testing.T) {
 	}
 }
 
-func TestVerificationHookWithoutAStoreIsInert(t *testing.T) {
-	// The disabled deployment (no pool behind NewEvidenceStore). It must degrade to
-	// doing nothing, never to a nil-store panic on the turn's own goroutine.
-	root := hookProject(t)
-	h := &VerificationHook{IdentityID: "identity-1", SessionID: "session-1"}
-	afterTool(t, h, shellCall("go test ./...", false),
-		shellResult(tools.ToolResultMeta{"cwd": root, "exit_code": 0}))
+func TestVerificationHookWithoutAHalfIsInert(t *testing.T) {
+	// The two disabled deployments, each of which must degrade to doing nothing rather
+	// than to a nil-dereference on the turn's own goroutine: no pool behind
+	// NewEvidenceStore, and no detector (a composition root with no box router to give
+	// one). Both are nil-interface fields, so both would panic without the guard.
+	hooks := map[string]*VerificationHook{
+		"no store":    {Detector: stubDetector{hookProjectRoot: {Found: true, Root: hookProjectRoot}}},
+		"no detector": {Store: &fakeRecorder{}},
+	}
+	for name, h := range hooks {
+		t.Run(name, func(t *testing.T) {
+			h.IdentityID, h.SessionID = "identity-1", "session-1"
+			afterTool(t, h, shellCall("go test ./...", false),
+				shellResult(tools.ToolResultMeta{"cwd": hookProjectRoot, "exit_code": 0}))
+			afterTool(t, h, writeCall("write_file", hookProjectRoot+"/app.go"),
+				tools.ToolResult{Preview: "wrote"})
+		})
+	}
 }
 
 func TestVerificationHookObservesOnly(t *testing.T) {
@@ -296,8 +314,13 @@ func TestVerificationHookMustBeRegisteredFailOpen(t *testing.T) {
 	// is why: the ledger is an OBSERVER, so a ledger outage that aborted the turn it
 	// was watching would make recording evidence more dangerous than not recording it.
 	// Register's FailClosed default does exactly that, so the choice is load-bearing.
-	root := hookProject(t)
-	h := &VerificationHook{Store: panickingRecorder{}, IdentityID: "identity-1", SessionID: "session-1"}
+	root := hookProjectRoot
+	h := &VerificationHook{
+		Store:      panickingRecorder{},
+		Detector:   stubDetector{root: {Found: true, Root: root}},
+		IdentityID: "identity-1",
+		SessionID:  "session-1",
+	}
 	call := shellCall("go test ./...", false)
 	result := shellResult(tools.ToolResultMeta{"cwd": root, "exit_code": 0})
 

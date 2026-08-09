@@ -15,7 +15,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
-	"path/filepath"
+	"path"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
@@ -64,8 +64,12 @@ type verificationRecorder interface {
 
 // VerificationHook records verification evidence and edit staleness as a turn runs.
 type VerificationHook struct {
-	Store      verificationRecorder
-	Detector   FilesystemProjectDetector
+	Store verificationRecorder
+	// Detector resolves a cwd to the project root the ledger keys on. It is the SAME
+	// detector the gate's read half consults (runner_verification.go): if the write half
+	// and the read half disagreed about where a workspace begins, the hook would record
+	// evidence under a root the gate never asks about.
+	Detector   ProjectDetector
 	IdentityID string
 	SessionID  string
 }
@@ -100,7 +104,9 @@ func (h *VerificationHook) AfterTool(
 	call llm.ToolCall,
 	result tools.ToolResult,
 ) (*ToolResultHookResult, error) {
-	if h == nil || h.Store == nil {
+	// No detector means nothing can be resolved to a project root, so there is nothing to
+	// record and no reason to reach the box: an inert hook, never a nil-interface panic.
+	if h == nil || h.Store == nil || h.Detector == nil {
 		return nil, nil
 	}
 	switch call.Function.Name {
@@ -143,15 +149,17 @@ func (h *VerificationHook) recordShell(ctx context.Context, call llm.ToolCall, r
 }
 
 func (h *VerificationHook) markEdited(ctx context.Context, call llm.ToolCall) {
-	path, ok := writeToolPath(call)
+	edited, ok := writeToolPath(call)
 	if !ok {
 		return
 	}
-	facts := h.Detector.ProjectFactsFor(filepath.Dir(path))
+	// path.Dir, not filepath.Dir: this names a file inside the per-identity box, and a box
+	// path is POSIX wherever the aura process happens to be running.
+	facts := h.Detector.ProjectFactsFor(path.Dir(edited))
 	if !facts.Found {
 		return
 	}
-	if err := h.Store.MarkWorkspaceEdited(ctx, h.IdentityID, h.SessionID, facts.Root, []string{path}); err != nil {
+	if err := h.Store.MarkWorkspaceEdited(ctx, h.IdentityID, h.SessionID, facts.Root, []string{edited}); err != nil {
 		slog.Warn("verification ledger: mark workspace edited", "error", err, "session_id", h.SessionID)
 	}
 }

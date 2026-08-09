@@ -23,7 +23,6 @@ package agent
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -76,15 +75,15 @@ func singleConnPool(t *testing.T) *pgxpool.Pool {
 	return pool
 }
 
-// ledgerProject creates a directory the detector recognises, so VerificationStatusFor
-// gets past ProjectFactsFor and actually reaches the store.
-func ledgerProject(t *testing.T) string {
-	t.Helper()
-	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module fixture\n"), 0o600); err != nil {
-		t.Fatalf("write project marker: %v", err)
-	}
-	return root
+// ledgerProject is a directory the detector recognises, so VerificationStatusFor gets past
+// ProjectFactsFor and actually reaches the store. It is a stub rather than a real
+// directory because the production detector reads the per-identity sandbox box, not this
+// process's filesystem — what this file exercises is the POOL, and the detector only has
+// to get out of the way.
+const ledgerProject = "/workspace/fixture"
+
+func ledgerProjectDetector() ProjectDetector {
+	return stubDetector{ledgerProject: {Found: true, Root: ledgerProject}}
 }
 
 func TestVerificationReadAnswersFromALivePool(t *testing.T) {
@@ -93,12 +92,12 @@ func TestVerificationReadAnswersFromALivePool(t *testing.T) {
 	// DSN would make the wedge test pass for the wrong reason.
 	pool := singleConnPool(t)
 	ledger := LedgerAdapter{
-		Detector:   FilesystemProjectDetector{},
+		Detector:   ledgerProjectDetector(),
 		Store:      NewEvidenceStore(pool),
 		IdentityID: uuid.Must(uuid.NewV7()).String(),
 	}
 
-	status := ledger.VerificationStatusFor("session-"+uuid.Must(uuid.NewV7()).String(), ledgerProject(t))
+	status := ledger.VerificationStatusFor("session-"+uuid.Must(uuid.NewV7()).String(), ledgerProject)
 	if statusState(status) != StatusUnverified {
 		t.Fatalf("status = %q, want %q: a workspace with no recorded event is unverified",
 			statusState(status), StatusUnverified)
@@ -111,11 +110,11 @@ func TestVerificationReadIsBoundedAgainstAWedgedPool(t *testing.T) {
 	// hand back a connection — which, while the only connection is held, is never.
 	pool := singleConnPool(t)
 	ledger := LedgerAdapter{
-		Detector:   FilesystemProjectDetector{},
+		Detector:   ledgerProjectDetector(),
 		Store:      NewEvidenceStore(pool),
 		IdentityID: uuid.Must(uuid.NewV7()).String(),
 	}
-	root := ledgerProject(t)
+	root := ledgerProject
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

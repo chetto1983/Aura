@@ -241,18 +241,22 @@ func (s *EvidenceStore) prune(
 	return nil
 }
 
-// LedgerAdapter joins the two halves the policy needs behind one interface: the
-// filesystem detector answers "is this a project and how does it verify itself", the
-// Postgres store answers "what was proved here". They are separate because they have
-// nothing in common but the question the gate asks.
+// LedgerAdapter joins the two halves the policy needs behind one interface: the project
+// detector answers "is this a project and how does it verify itself" from the identity's
+// sandbox box, the Postgres store answers "what was proved here". They are separate
+// because they have nothing in common but the question the gate asks.
 type LedgerAdapter struct {
-	Detector   FilesystemProjectDetector
+	Detector   ProjectDetector
 	Store      *EvidenceStore
 	IdentityID string
 }
 
-// ProjectFactsFor delegates to the detector.
+// ProjectFactsFor delegates to the detector. A nil detector recognises nothing, which the
+// policy reads as "no workspace to check" -- never a panic on the turn's own goroutine.
 func (a LedgerAdapter) ProjectFactsFor(cwd string) ProjectFacts {
+	if a.Detector == nil {
+		return ProjectFacts{}
+	}
 	return a.Detector.ProjectFactsFor(cwd)
 }
 
@@ -267,7 +271,7 @@ func (a LedgerAdapter) ProjectFactsFor(cwd string) ProjectFacts {
 // twice, about a ledger nobody could actually ask. "not_applicable" is the policy's way
 // of saying there is nothing to say. The slog.Warn keeps the outage visible.
 func (a LedgerAdapter) VerificationStatusFor(sessionID, cwd string) VerificationStatus {
-	facts := a.Detector.ProjectFactsFor(cwd)
+	facts := a.ProjectFactsFor(cwd)
 	if !facts.Found {
 		return VerificationStatus{Status: StatusNotApplicable}
 	}
