@@ -803,3 +803,31 @@ type AuraToolInvocations struct {
 	ExitCode          pgtype.Int4        `json:"exit_code"`
 	Meta              []byte             `json:"meta"`
 }
+
+// Passive ledger of classified verification commands (port of hermes-agent verification_evidence.py). Never decides to run anything.
+type AuraVerificationEvents struct {
+	ID               int64              `json:"id"`
+	IdentityID       pgtype.UUID        `json:"identity_id"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	SessionID        string             `json:"session_id"`
+	Cwd              string             `json:"cwd"`
+	Root             string             `json:"root"`
+	Command          string             `json:"command"`
+	CanonicalCommand string             `json:"canonical_command"`
+	Kind             string             `json:"kind"`
+	// targeted when the command named a file/path argument, so a single-file run is never read back as repo-green evidence.
+	Scope         string `json:"scope"`
+	Status        string `json:"status"`
+	ExitCode      int32  `json:"exit_code"`
+	OutputSummary string `json:"output_summary"`
+}
+
+// One row per identity+session+root. last_edit_at set by an edit and cleared by a passing verification: its presence IS the staleness.
+type AuraVerificationState struct {
+	IdentityID   pgtype.UUID        `json:"identity_id"`
+	SessionID    string             `json:"session_id"`
+	Root         string             `json:"root"`
+	LastEventID  pgtype.Int8        `json:"last_event_id"`
+	LastEditAt   pgtype.Timestamptz `json:"last_edit_at"`
+	ChangedPaths []byte             `json:"changed_paths"`
+}

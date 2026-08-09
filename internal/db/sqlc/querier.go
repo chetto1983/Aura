@@ -105,8 +105,15 @@ type Querier interface {
 	DeleteConversationsForIdentityPurge(ctx context.Context, identityID pgtype.UUID) (int64, error)
 	DeleteDocumentTags(ctx context.Context, documentID pgtype.UUID) error
 	DeleteExpiredTelegramSetupPending(ctx context.Context) (int64, error)
+	DeleteExpiredVerificationEvents(ctx context.Context, createdAt pgtype.Timestamptz) error
+	// Retention, mirroring the original's two-branch prune: state that was edited before
+	// the cutoff, and state whose only anchor is an event older than the cutoff.
+	DeleteExpiredVerificationState(ctx context.Context, lastEditAt pgtype.Timestamptz) error
 	DeleteIdentity(ctx context.Context, name string) error
 	DeleteSetting(ctx context.Context, key string) error
+	// Bound ledger growth per session+root, keeping the newest $4 events. The row the
+	// state points at survives because it is always among the newest.
+	DeleteSupersededVerificationEvents(ctx context.Context, arg DeleteSupersededVerificationEventsParams) error
 	// Claim correctness is held by the per-task pg_try_advisory_lock (claim.go), NOT a
 	// row lock here: this SELECT runs on the autocommit pool, so any FOR UPDATE SKIP
 	// LOCKED would release the instant the SELECT returns (inert, L5). The advisory lock
@@ -164,6 +171,7 @@ type Querier interface {
 	// the diverging turn rather than appending after it). Returns pgx.ErrNoRows when the seq
 	// is absent (mapped to a clean 404 at the boundary).
 	GetTurnPointers(ctx context.Context, arg GetTurnPointersParams) (GetTurnPointersRow, error)
+	GetVerificationState(ctx context.Context, arg GetVerificationStateParams) (GetVerificationStateRow, error)
 	GrantCapability(ctx context.Context, arg GrantCapabilityParams) error
 	HasCapability(ctx context.Context, arg HasCapabilityParams) (bool, error)
 	HeartbeatBenchmarkSettingsOverride(ctx context.Context, arg HeartbeatBenchmarkSettingsOverrideParams) (int64, error)
@@ -194,6 +202,16 @@ type Querier interface {
 	InsertTelegramAccount(ctx context.Context, arg InsertTelegramAccountParams) (AuraTelegramAccounts, error)
 	InsertTelegramSetupPending(ctx context.Context, arg InsertTelegramSetupPendingParams) error
 	InsertToolInvocation(ctx context.Context, arg InsertToolInvocationParams) (int64, error)
+	// Coding verification evidence ledger (migration 0094).
+	//
+	// Ported from NousResearch/hermes-agent `agent/verification_evidence.py` (MIT), whose
+	// store is SQLite. The statements below are the same operations against Postgres; the
+	// invariant they maintain is the module's whole point:
+	//
+	//   a passing verification event CLEARS last_edit_at;
+	//   an edit SETS it;
+	//   so "was this workspace edited after its last passing verification" is one column.
+	InsertVerificationEvent(ctx context.Context, arg InsertVerificationEventParams) (InsertVerificationEventRow, error)
 	ListActiveTasks(ctx context.Context) ([]AuraSchedulerTasks, error)
 	// Cross-thread pending list (APRV-01 / D-04): the same SELECT as
 	// ListPendingPausedStates with NO conversation_id filter, so the approval center
@@ -447,6 +465,13 @@ type Querier interface {
 	UpsertPipelineCandidateEmbedding(ctx context.Context, arg UpsertPipelineCandidateEmbeddingParams) (AuraDocumentEmbeddings, error)
 	UpsertPipelineStageLedger(ctx context.Context, arg UpsertPipelineStageLedgerParams) (AuraDocumentPipelineStages, error)
 	UpsertSetting(ctx context.Context, arg UpsertSettingParams) (AuraSettings, error)
+	// The setting half: an edit stales whatever evidence existed. last_event_id is kept so
+	// the status read can still name the command that last passed, which is what makes the
+	// nudge say "last command X" instead of a bare "unverified".
+	UpsertVerificationStateEdited(ctx context.Context, arg UpsertVerificationStateEditedParams) error
+	// The clearing half of the invariant: recording an event makes this workspace the
+	// verified one and drops the edit marker with the paths it carried.
+	UpsertVerificationStateVerified(ctx context.Context, arg UpsertVerificationStateVerifiedParams) error
 }
 
 var _ Querier = (*Queries)(nil)
