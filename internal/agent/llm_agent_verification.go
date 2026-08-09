@@ -36,14 +36,13 @@ const verifyOnStopNudgePrefix = "[System: You edited code in this turn"
 // off, or the attempt budget spent all return ok=false — a ledger outage can never
 // wedge a turn.
 func (a *LlmAgent) gateVerification() (string, bool) {
-	if a.ledger == nil || a.verificationAttempts >= verificationMaxAttempts ||
-		!verifyOnStopEnabled(a.cfg.VerifyOnStop) {
+	if a.ledger == nil || a.verificationAttempts >= verificationMaxAttempts || !verifyOnStopEnabled() {
 		return "", false
 	}
 	nudge, ok := BuildVerifyOnStopNudge(VerifyOnStopRequest{
 		Ledger:       a.ledger,
 		SessionID:    a.sessionID,
-		ChangedPaths: a.turnEditedPaths(),
+		ChangedPaths: a.editedPaths,
 		Attempts:     a.verificationAttempts,
 		MaxAttempts:  verificationMaxAttempts,
 	})
@@ -53,9 +52,6 @@ func (a *LlmAgent) gateVerification() (string, bool) {
 	a.verificationAttempts++
 	return nudge, true
 }
-
-// turnEditedPaths is what this run's write tools touched, in dispatch order.
-func (a *LlmAgent) turnEditedPaths() []string { return a.editedPaths }
 
 // recordEditedPath accumulates the path one dispatched call edited. It reads the
 // argument name from writeToolPathArgs — the same map the ledger hook writes from — so

@@ -36,41 +36,34 @@ func nodeProject(commands ...string) ProjectFacts {
 	return ProjectFacts{Found: true, VerifyCommands: commands}
 }
 
-func TestVerifyOnStopEnvCanEnable(t *testing.T) {
-	// Env "1" forces ON regardless of the configured value.
-	t.Setenv("AURA_AGENT_VERIFY_ON_STOP_ENABLED", "1")
-	if !verifyOnStopEnabled("off") {
-		t.Fatal("env must win over the configured value")
-	}
-}
-
 func TestVerifyOnStopEnvCanDisable(t *testing.T) {
-	t.Setenv("AURA_AGENT_VERIFY_ON_STOP_ENABLED", "false")
-	if verifyOnStopEnabled("on") {
-		t.Fatal("env must win over the configured value")
-	}
-}
-
-func TestVerifyOnStopAutoIsOnForEverySurface(t *testing.T) {
-	// "auto" resolves ON everywhere, because Aura's agent has no delivery surface to
-	// be aware of: Telegram is a wrapper over the same AG-UI fanout, not a channel the
-	// agent behaves differently for. This pins the decision, not a waiting room --
-	// making the gate surface-dependent would be two agents wearing one name, and the
-	// operator's off-switch is AURA_AGENT_VERIFY_ON_STOP_ENABLED.
-	for _, configured := range []string{"", "auto", "unrecognised"} {
-		if !verifyOnStopEnabled(configured) {
-			t.Fatalf("configured %q must resolve ON: the gate does not vary by surface", configured)
+	for _, off := range []string{"0", "false", "no", "off", "OFF"} {
+		t.Setenv("AURA_AGENT_VERIFY_ON_STOP_ENABLED", off)
+		if verifyOnStopEnabled() {
+			t.Fatalf("%q must disable the gate: the env var is the operator's only switch", off)
 		}
 	}
 }
 
-func TestVerifyOnStopExplicitConfigWins(t *testing.T) {
-	os.Unsetenv("AURA_AGENT_VERIFY_ON_STOP_ENABLED")
-	if verifyOnStopEnabled("off") {
-		t.Fatal("an explicit off must disable the gate")
-	}
-	if !verifyOnStopEnabled("yes") {
+func TestVerifyOnStopIsOnForEverySurface(t *testing.T) {
+	// The gate does not vary by surface and has no second input: Aura's agent has no
+	// delivery surface to be aware of (Telegram is a wrapper over the same AG-UI
+	// fanout, not a channel the agent behaves differently for), so anything that is
+	// not an explicit off leaves it ON. This pins the decision, not a waiting room --
+	// making the gate surface-dependent would be two agents wearing one name.
+	t.Setenv("AURA_AGENT_VERIFY_ON_STOP_ENABLED", "1")
+	if !verifyOnStopEnabled() {
 		t.Fatal("an explicit on must enable the gate")
+	}
+	for _, unset := range []string{"", "auto", "unrecognised"} {
+		t.Setenv("AURA_AGENT_VERIFY_ON_STOP_ENABLED", unset)
+		if !verifyOnStopEnabled() {
+			t.Fatalf("env %q must leave the gate ON", unset)
+		}
+	}
+	os.Unsetenv("AURA_AGENT_VERIFY_ON_STOP_ENABLED")
+	if !verifyOnStopEnabled() {
+		t.Fatal("an unset env must leave the gate ON")
 	}
 }
 
@@ -126,20 +119,12 @@ func TestPassedWorkspaceDoesNotNudge(t *testing.T) {
 	}
 }
 
-func TestNoSuiteNudgeUsesCanonicalTempDir(t *testing.T) {
-	// A symlinked temp directory named in the nudge would send the agent's later
-	// file operations somewhere other than where it wrote, so the nudge must name
-	// the resolved path.
-	real := t.TempDir()
-	linked := filepath.Join(t.TempDir(), "linked")
-	if err := os.Symlink(real, linked); err != nil {
-		t.Skipf("symlinks unavailable on this host: %v", err)
-	}
-	resolvedReal, err := filepath.EvalSymlinks(real)
-	if err != nil {
-		t.Fatalf("resolve real temp dir: %v", err)
-	}
-
+func TestNoSuiteNudgeNamesTheDirectoryTheClassifierAccepts(t *testing.T) {
+	// The nudge's script directory and ClassifyVerificationCommand's isUnderTempDir
+	// must be the SAME directory, or the agent writes the ad-hoc check where the
+	// classifier refuses to read it as evidence and gets nudged a second time for
+	// work it already did. This pins that coupling: whatever the nudge names, a
+	// script written there and run classifies as a recorded verification.
 	cwd := filepath.Join("workspace", "src")
 	ledger := &fakeLedger{
 		// Found, but with NO canonical command -- the branch that asks for a script.
@@ -149,17 +134,24 @@ func TestNoSuiteNudgeUsesCanonicalTempDir(t *testing.T) {
 	nudge, ok := BuildVerifyOnStopNudge(VerifyOnStopRequest{
 		Ledger: ledger, SessionID: "s1",
 		ChangedPaths: []string{filepath.Join(cwd, "app.go")},
-		MaxAttempts:  2, TempDir: linked,
+		MaxAttempts:  2,
 	})
 
 	if !ok {
 		t.Fatal("a project with no canonical command must still nudge")
 	}
-	if !strings.Contains(nudge, resolvedReal) {
-		t.Fatalf("nudge must name the resolved temp dir %q, got: %s", resolvedReal, nudge)
+	if !strings.Contains(nudge, os.TempDir()) {
+		t.Fatalf("nudge must name the temp dir %q, got: %s", os.TempDir(), nudge)
 	}
-	if strings.Contains(nudge, linked) {
-		t.Fatalf("nudge must not name the symlink %q, got: %s", linked, nudge)
+	script := filepath.Join(os.TempDir(), "aura-verify-check.py")
+	evidence, classified := ClassifyVerificationCommand(ClassifyVerificationCommandInput{
+		Command: "python " + script, CWD: cwd, Root: "workspace", SessionID: "s1",
+	})
+	if !classified {
+		t.Fatalf("a script under the directory the nudge names must classify as evidence: %q", script)
+	}
+	if evidence.Kind != adHocKind {
+		t.Fatalf("evidence kind = %q, want %q", evidence.Kind, adHocKind)
 	}
 }
 

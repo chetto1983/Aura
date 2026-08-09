@@ -118,49 +118,33 @@ func filterVerifiablePaths(paths []string) []string {
 	return kept
 }
 
-// sessionIsMessagingSurface reports whether this turn is delivered over a human
-// messaging channel. In Aura it is always false, permanently and by design.
-//
-// This DIVERGES from the original deliberately. Hermes asks its gateway for
-// per-platform session state (`gateway.session_context.session_is_messaging_surface`)
-// and switches verify-on-stop OFF on a conversational platform, where the
-// verification narrative would reach a human as chat noise.
-//
-// Aura has no such state to ask for, and will not grow one here: Telegram is a
-// WRAPPER, not a surface of its own. It consumes the same AG-UI fanout every other
-// channel consumes (internal/channels/telegram/agui_subscriber.go) and never
-// constructs an agent, so presentation is the wrapper's job and the agent behaves
-// identically wherever it is spoken to. Threading a channel into InvocationContext
-// to answer this question would build exactly the standalone-Telegram path that
-// architecture rejects, and a gate that verified its work for cockpit users while
-// skipping it for Telegram users would be two different agents wearing one name.
-//
-// So "auto" resolves ON everywhere. If the narrative proves noisy on some channel,
-// AURA_AGENT_VERIFY_ON_STOP_ENABLED is the operator's switch -- a deployment
-// decision, not a per-turn inference the agent makes about who is listening.
-func sessionIsMessagingSurface() bool { return false }
-
 // verifyOnStopEnabled reports whether edit -> verify-before-finish is enabled.
+// AURA_AGENT_VERIFY_ON_STOP_ENABLED is the ONLY input, and the gate is ON unless
+// that variable holds a false token. The env var is named for Aura's catalog
+// convention (AURA_<DOMAIN>_<UNIT>, _ENABLED for booleans) rather than carried over
+// as HERMES_VERIFY_ON_STOP.
 //
-// Precedence: an explicit AURA_AGENT_VERIFY_ON_STOP_ENABLED env var wins, then an
-// explicit configured value. The default is surface-aware "auto": ON for
-// interactive surfaces and programmatic callers, OFF for conversational messaging
-// surfaces. An explicit bool forces the behavior in either direction; a missing or
-// unrecognized value falls back to the surface-aware default.
+// This DIVERGES from the original, which also consults its gateway for per-platform
+// session state (`gateway.session_context.session_is_messaging_surface`) and
+// switches verify-on-stop OFF on a conversational platform, where the verification
+// narrative would reach a human as chat noise.
 //
-// The env var is named for Aura's catalog convention (AURA_<DOMAIN>_<UNIT>, _ENABLED
-// for booleans) rather than carried over as HERMES_VERIFY_ON_STOP.
-func verifyOnStopEnabled(configured string) bool {
-	if env, ok := os.LookupEnv("AURA_AGENT_VERIFY_ON_STOP_ENABLED"); ok {
-		return !isFalseToken(env)
-	}
-	switch token := strings.ToLower(strings.TrimSpace(configured)); token {
-	case "1", "true", "yes", "on":
-		return true
-	case "0", "false", "no", "off":
-		return false
-	}
-	return !sessionIsMessagingSurface()
+// Aura has no such state to ask for, and will not grow one: Telegram is a WRAPPER,
+// not a surface of its own. It consumes the same AG-UI fanout every other channel
+// consumes (internal/channels/telegram/agui_subscriber.go) and never constructs an
+// agent, so presentation is the wrapper's job and the agent behaves identically
+// wherever it is spoken to. Threading a channel into InvocationContext to answer
+// that question would build exactly the standalone-Telegram path the architecture
+// rejects, and a gate that verified its work for cockpit users while skipping it for
+// Telegram users would be two different agents wearing one name.
+//
+// So the gate does not vary by surface, and there is no second input to consult. If
+// the narrative proves noisy on some channel, the env var is the operator's switch --
+// a deployment decision, not a per-turn inference the agent makes about who is
+// listening.
+func verifyOnStopEnabled() bool {
+	env, ok := os.LookupEnv("AURA_AGENT_VERIFY_ON_STOP_ENABLED")
+	return !ok || !isFalseToken(env)
 }
 
 func isFalseToken(raw string) bool {
@@ -315,20 +299,19 @@ func statusDetail(status VerificationStatus) string {
 // VerifyOnStopRequest is the call the loop makes at a voluntary termination.
 // Attempts is how many nudges this run has already issued; MaxAttempts bounds
 // them so the gate can never wedge a turn.
+//
+// The original also carries a caller-supplied Guidance blob and TempDir; neither is
+// a field here. Nothing in Aura composes guidance, and the temp directory MUST NOT
+// be a caller's choice: commandInstruction and ClassifyVerificationCommand's
+// isUnderTempDir (verification_evidence.go) have to agree about where a disposable
+// script lives, or the agent writes its ad-hoc check somewhere the classifier
+// refuses to read as evidence and gets nudged a second time for work it did.
 type VerifyOnStopRequest struct {
 	Ledger       VerificationLedger
 	SessionID    string
 	ChangedPaths []string
 	Attempts     int
 	MaxAttempts  int
-	// Guidance is the optional shipped coding guidance appended to the nudge,
-	// paid for only when this evidence gate actually fires (hermes
-	// `agent/verify_hooks.py:CODING_VERIFY_GUIDANCE`).
-	Guidance string
-	// TempDir names where an ad-hoc verification script may be written when the
-	// project has no canonical command. The caller supplies it rather than this
-	// module reading the host, for the reason candidateCWDs gives.
-	TempDir string
 }
 
 // BuildVerifyOnStopNudge returns a synthetic follow-up when edited code lacks
@@ -353,26 +336,29 @@ func BuildVerifyOnStopNudge(request VerifyOnStopRequest) (string, bool) {
 		return "", false
 	}
 
-	addendum := ""
-	if guidance := strings.TrimSpace(request.Guidance); guidance != "" {
-		addendum = "\n\n" + guidance
-	}
-
 	// The prefix is a constant because the loop injects this as a USER-role message
 	// and isAgentNudge has to recognise it (llm_agent_verification.go).
 	return verifyOnStopNudgePrefix + ", but the workspace does not have " +
 		"fresh passing verification evidence yet.\n\n" +
 		"Verification status: " + statusDetail(status) + "\n\n" +
 		"Changed paths:\n" + formatChangedPaths(paths) + "\n\n" +
-		commandInstruction(facts.VerifyCommands, request.TempDir) +
+		commandInstruction(facts.VerifyCommands) +
 		" If verification is not possible, explain the concrete blocker instead of " +
-		"claiming the work is fully verified." + addendum + "]", true
+		"claiming the work is fully verified.]", true
 }
 
 // commandInstruction names the project's own verification commands when it has
 // them, and otherwise asks for a disposable script -- the original's two branches,
 // unchanged in substance.
-func commandInstruction(verifyCommands []string, tempDir string) string {
+//
+// The script directory is os.TempDir() and is deliberately not resolved through
+// filepath.EvalSymlinks the way the original resolves it. The agent's shell runs
+// INSIDE the per-identity box (usersandbox/router.go: there is no host arm on any
+// profile), so resolving a symlink against the Aura process's filesystem would name
+// a path that exists here and not there -- a wrong path, which is worse than the
+// unresolved one. `/tmp` is a real directory in both, measured 2026-08-09 on the
+// live stack (aura and aura-sandbox:latest: `readlink -f /tmp` == `/tmp` in both).
+func commandInstruction(verifyCommands []string) string {
 	commands := make([]string, 0, len(verifyCommands))
 	for _, command := range verifyCommands {
 		if trimmed := strings.TrimSpace(command); trimmed != "" {
@@ -380,18 +366,8 @@ func commandInstruction(verifyCommands []string, tempDir string) string {
 		}
 	}
 	if len(commands) == 0 {
-		if strings.TrimSpace(tempDir) == "" {
-			tempDir = os.TempDir()
-		}
-		// realpath, as the original does: a symlinked temp directory named in the
-		// nudge sends the agent's later file operations somewhere else than where
-		// it wrote. Best-effort -- an unresolvable path is still better named than
-		// omitted.
-		if resolved, err := filepath.EvalSymlinks(tempDir); err == nil {
-			tempDir = resolved
-		}
 		return "No canonical test/lint/build command was detected. Create a focused " +
-			"temporary verification script under `" + tempDir + "` using an OS-safe " +
+			"temporary verification script under `" + os.TempDir() + "` using an OS-safe " +
 			"temporary path with an `aura-verify-` filename prefix, run it against the " +
 			"changed behavior, clean it up when possible, and summarize it explicitly " +
 			"as ad-hoc verification rather than suite green."
