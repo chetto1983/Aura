@@ -128,24 +128,22 @@ Three things worth more than the counts:
 
 ### From this session
 
-1. **`compose.yaml` claims catch-up mode fails the run on an extraction error. It does
-   not.** Measured: CocoIndex prints `component build failed`, the pass continues, the
-   container exits **0**, and the document leaves no passage. The loss is silent in BOTH
-   modes, not just under `AURA_INGEST_LIVE=true` as the comment at `compose.yaml:763-766`
-   says. Fix the comment, and decide whether a catch-up pass should fail closed — an ingest
-   that loses documents and reports success is the failure mode this whole session kept
-   hitting.
+1. ~~**`compose.yaml` claims catch-up mode fails the run on an extraction error.**~~
+   **CLOSED** (`bc9a49f26`). The claim was false — CocoIndex prints `component build
+   failed` and the pass exits 0, in catch-up mode as in live. `app.py`'s `audit_pass()`
+   now compares the bucket against the `IndexedDocument` rows after a catch-up pass, names
+   every object with no row and exits non-zero; the comment is corrected. Verified live:
+   130 objects / 130 indexed / exit 0, then 131 / 130 with the key named and exit 1.
 2. **`_embed` swallows the server's message.** `app.py:202` raises a bare
    `HTTPError: HTTP Error 500` with no body, so "which chunk, how many tokens, why" costs a
    separate reproduction every time — it cost two today. Include the response body and the
    measured token count in the raised error.
-3. **Nothing runs the ingest tests.** No CI job, no Makefile target. To run them you need
-   `services/ingest` mounted at `/app/ingest`, the fixtures at `/fx`
-   (`scripts/fixtures/document_pipeline_e2e`), `ARCADEDB_PASSWORD` + `ARCADE_HTTP` +
-   `AURA_EMBED_BASE_URL`, and `pip install pytest` (the image has no pytest). Without `/fx`
-   25 of 53 fail; without the env, `test_arcade_integration.py` reads `os.environ` at import
-   and fails **collection for the whole suite**. Current state: **53 passed** against the
-   live stack.
+3. ~~**Nothing runs the ingest tests.**~~ **CLOSED** (`d211cf117`). `make ingest-test`
+   runs them inside `aura-ingest:local` with `/fx` and the env; CI job
+   `ingest-sidecar-test` calls that target against a live ArcadeDB and EmbeddingGemma.
+   **60 passed.** The gotchas are recorded in the target's own comment: without `/fx` 25
+   extraction tests fail, and without `ARCADEDB_PASSWORD` the arcade module reads
+   `os.environ` at import and fails collection for every file at once.
 4. **Two `retrieval_eval` harnesses are committed and nothing runs them** —
    `retrieval_fusion_bench_test.go` and now `retrieval_abstention_eval_test.go`. They are
    compile-checked by `scripts/tagged_tier_compile.sh` and never executed.
