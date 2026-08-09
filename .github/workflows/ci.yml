@@ -832,9 +832,6 @@ jobs:
     # a window splitter that never measured its own output. Both are covered by this suite.
     env:
       CI: "true"
-      ARCADEDB_PASSWORD: ci-test-password
-      ARCADEDB_APP_PASSWORD: ci-test-password
-      AURA_ARCADEDB_TENANT_SECRET: ci-test-tenant-secret
       # compose interpolates the WHOLE file before it selects a service, so even `up -d arcadedb`
       # resolves garage-bootstrap's AURA_DB_URL and fails without this. Same footgun compose.yaml
       # documents on the aura-ingest service.
