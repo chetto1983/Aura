@@ -353,9 +353,29 @@ Two spikes are therefore **deferred, not cancelled**, to be run against a simula
 - **Spike 2 — Hermes rolling summary.** Cumulative one-exchange-at-a-time summarization with
   cursor, defrag and 3-strike skip, answered from the summary alone.
 
-The context-rot evidence bears on that choice and is recorded for it: if a single distractor
-measurably lowers accuracy, *retrieve only what is relevant* is better motivated than *summarize
-everything*. That is an argument, not a measurement; the spikes are what would settle it.
+- **Spike 3 — durable artifacts instead of carried context** (`snarktank/ralph`). A third answer to
+  the same question, and the only one that makes compaction unnecessary rather than cheaper: do not
+  compress the middle, do not index it — **do not carry it**. Ralph spawns a fresh instance per
+  iteration with clean context; the memory between iterations is git history, an append-only
+  `progress.txt`, a `prd.json` of stories with `passes: true/false`, and an `AGENTS.md` the tool
+  re-reads. It halts when every story passes.
+
+  **This does not apply to interactive chat** — a user mid-conversation expects continuity, and
+  discarding context every turn would break it. It applies squarely to Aura's autonomous paths: 13
+  rows in `aura.scheduler_tasks`, the swarm children, and `aura.agent_job_runs`, which have no
+  human waiting on continuity.
+
+  There it lands on a real gap. Aura's nearest analogue to `prd.json` is `TodoTool`
+  (`internal/agent/tools/todo.go`), whose own comment names the need — "the coherence aid an
+  autonomous swarm/cron run lacks today" — but whose state is `byID map[string][]todoItem` behind a
+  mutex, session-scoped and evicted at session end. **It does not survive the process.** The
+  artifact exists as a concept and not as durable state, which is the one thing Ralph's design
+  depends on.
+
+The context-rot evidence bears on the choice between these and is recorded for it: if a single
+distractor measurably lowers accuracy, *retrieve only what is relevant* is better motivated than
+*summarize everything*, and *carry nothing and re-derive* is better motivated still where a human
+is not waiting. That is an argument, not a measurement; the spikes are what would settle it.
 
 **Reducing per-schema tool cost** is out of scope here and is the most likely thing Part A will
 make actionable. ~2,100 tokens per promoted schema against Claude Code's ~1,080 average is a signal,
