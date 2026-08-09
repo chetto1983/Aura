@@ -193,20 +193,24 @@ Three things worth more than the counts:
 21. **`TestStageBoxArtifact_ExtractsRegularFile`** fails on Windows only (0600 vs 0666) and
     passes under WSL.
 
-## Disposable resources to clean up
+## Disposable resources — cleaned up 2026-08-09
 
-Everything below is outside production. The operator's `aura` database, the
-`aura-b130c94d-…` bucket and `mem_b130c94d…` were never written to; the operator's
-`aura-box-b130c94d` / `aura-egress-b130c94d` containers are untouched.
+Removed on the operator's instruction: ArcadeDB `mem_4ac9d11d_…` (MMDocIR, previous
+session) and `mem_00000000_…_0001` (agent-driving run); Garage buckets
+`aura-4ac9d11d-…` (25 objects) and `aura-00000000-…-0001` (130 objects); Postgres
+database `aura_bench`; volumes `aura-ingest-state-{italia,ragbench,abstention}`; exited
+containers `aura-ingest-{italia,ragbench,abstention}`.
 
-- ArcadeDB: `mem_17815d5a_…` (Italian, 127 docs), `mem_21cdc28c_…` (ragbench, 1000 docs),
-  `mem_4ac9d11d_…` (MMDocIR, previous session), `mem_00000000_…_0001` (agent-driving run).
-- Garage buckets `aura-17815d5a-…`, `aura-21cdc28c-…`, `aura-4ac9d11d-…`,
-  `aura-00000000-…-0001`, plus key `bench-mmdocir`.
-- Postgres database `aura_bench` (separate control plane for the agent-driving run).
-- Volumes `aura-ingest-state-{italia,ragbench,abstention}`; exited containers
-  `aura-ingest-{italia,ragbench,abstention}`.
-- Images `aura-abstention-score:local`, `aura-webbuild:local`.
+**Kept, because they cost about an hour of ingest to rebuild and the harnesses read them:**
+
+| corpus | ArcadeDB | Garage bucket | contents |
+|---|---|---|---|
+| Italian open-data | `mem_17815d5a_ed64_4c4c_b9a4_424fba3defa4` | `aura-17815d5a-…` | 127 docs, 3,284 passages |
+| open_ragbench | `mem_21cdc28c_8d83_4647_8efb_4b43585baa2a` | `aura-21cdc28c-…` | 1,000 docs, 20,743 passages |
+
+Also kept: Garage key `bench-mmdocir` (RW on both), image `aura-abstention-score:local`.
+The operator's `aura` database, `aura-b130c94d-…` bucket, `mem_b130c94d…` and the
+`aura-box`/`aura-egress-b130c94d` containers were never touched.
 
 ## Environment notes
 
