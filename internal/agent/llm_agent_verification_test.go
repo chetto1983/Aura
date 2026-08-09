@@ -103,13 +103,16 @@ func writeCall(id, path string) llm.ToolCall {
 	return agenttest.MakeToolCall(id, "write_file", string(args))
 }
 
-// nudges returns the verify-on-stop messages the agent injected into history.
-func nudges(t *testing.T, a *agent.LlmAgent) []string {
+// nudges returns the verify-on-stop messages the agent injected into history, whole:
+// the seam decides whether the nudge is a RoleUser message (content-stop, no tool_call
+// to answer) or a RoleTool result on the terminal call id (text_response), and both the
+// role and the id are part of the contract.
+func nudges(t *testing.T, a *agent.LlmAgent) []llm.Message {
 	t.Helper()
-	var found []string
+	var found []llm.Message
 	for _, m := range a.HistoryForTest() {
-		if m.Role == llm.RoleUser && strings.Contains(m.Content, "fresh passing verification evidence") {
-			found = append(found, m.Content)
+		if strings.Contains(m.Content, "fresh passing verification evidence") {
+			found = append(found, m)
 		}
 	}
 	return found
@@ -191,11 +194,14 @@ func TestVerifyGate_UnverifiedEdit_NudgesOnceAndContinues(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("nudges = %d, want exactly 1: %v", len(got), got)
 	}
-	if !strings.Contains(got[0], file) {
-		t.Errorf("nudge does not name the edited path %q: %s", file, got[0])
+	if got[0].Role != llm.RoleUser {
+		t.Errorf("nudge role = %q, want RoleUser (content-stop has no tool_call to answer)", got[0].Role)
 	}
-	if !strings.Contains(got[0], "go test ./...") {
-		t.Errorf("nudge does not name the project's verify command: %s", got[0])
+	if !strings.Contains(got[0].Content, file) {
+		t.Errorf("nudge does not name the edited path %q: %s", file, got[0].Content)
+	}
+	if !strings.Contains(got[0].Content, "go test ./...") {
+		t.Errorf("nudge does not name the project's verify command: %s", got[0].Content)
 	}
 	if final := finalContent(t, evs); final != "ran go test ./... — green" {
 		t.Errorf("final = %q, want the answer after the nudge", final)
@@ -289,6 +295,166 @@ func TestVerifyGate_RunsBeforeTheCompletionCritic(t *testing.T) {
 	}
 	if final := finalContent(t, evs); final != "ran go test ./... — green" {
 		t.Errorf("final = %q, want the verified answer", final)
+	}
+}
+
+// TestVerifyGate_TextResponse_NudgesAsAToolResult: text_response is the terminal a
+// tool-calling model actually reaches, and it has a tool_call awaiting an answer — so
+// the nudge must ride a RoleTool result carrying that call id, not the RoleUser message
+// the content-stop seam uses. A RoleUser message here would leave the text_response
+// unanswered and break the wire.
+func TestVerifyGate_TextResponse_NudgesAsAToolResult(t *testing.T) {
+	dir, file := projectFile(t)
+	ledger := &stubLedger{dir: dir, statuses: []string{"unverified", "passed"}}
+	fc := agenttest.NewFakeClient(
+		agenttest.ToolCallTurn(writeCall("c1", file)),
+		agenttest.ToolCallTurn(textResponseCall("term-1", "patched it, should be fine")),
+		agenttest.ToolCallTurn(textResponseCall("term-2", "ran go test ./... — green")),
+	)
+	a := newVerifyAgent(t, fc, ledger)
+
+	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{})))
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if fc.CallCount() != 3 {
+		t.Fatalf("CallCount = %d, want 3 (the nudge must re-enter the model round)", fc.CallCount())
+	}
+	got := nudges(t, a)
+	if len(got) != 1 {
+		t.Fatalf("nudges = %d, want exactly 1", len(got))
+	}
+	if got[0].Role != llm.RoleTool {
+		t.Errorf("nudge role = %q, want RoleTool (the terminal call must be answered)", got[0].Role)
+	}
+	if got[0].ToolCallID != "term-1" {
+		t.Errorf("nudge ToolCallID = %q, want %q (the terminal call it answers)", got[0].ToolCallID, "term-1")
+	}
+	if !strings.Contains(got[0].Content, file) {
+		t.Errorf("nudge does not name the edited path %q: %s", file, got[0].Content)
+	}
+	if final := finalContent(t, evs); final != "ran go test ./... — green" {
+		t.Errorf("final = %q, want the answer after the nudge", final)
+	}
+}
+
+// TestVerifyGate_AttemptsAreSharedAcrossSeams: the counter lives on the agent, so the
+// budget is two nudges per RUN — not two per seam. A turn that terminates through the
+// content-stop fallback and then through text_response spends both, and the third
+// termination is accepted whichever seam it arrives on.
+func TestVerifyGate_AttemptsAreSharedAcrossSeams(t *testing.T) {
+	dir, file := projectFile(t)
+	ledger := &stubLedger{dir: dir, statuses: []string{"unverified"}}
+	fc := agenttest.NewFakeClient(
+		agenttest.ToolCallTurn(writeCall("c1", file)),
+		agenttest.TextChunks("stop", "first answer"),
+		agenttest.ToolCallTurn(textResponseCall("term-1", "second answer")),
+		agenttest.ToolCallTurn(textResponseCall("term-2", "third answer")),
+	)
+	a := newVerifyAgent(t, fc, ledger)
+
+	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{})))
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if fc.CallCount() != 4 {
+		t.Fatalf("CallCount = %d, want 4 (write + one nudge per seam + the accepted answer)", fc.CallCount())
+	}
+	got := nudges(t, a)
+	if len(got) != 2 {
+		t.Fatalf("nudges = %d, want exactly 2 across BOTH seams (verificationMaxAttempts is per run)", len(got))
+	}
+	if got[0].Role != llm.RoleUser || got[1].Role != llm.RoleTool {
+		t.Errorf("nudge roles = (%q, %q), want (RoleUser from content-stop, RoleTool from text_response)",
+			got[0].Role, got[1].Role)
+	}
+	if final := finalContent(t, evs); final != "third answer" {
+		t.Errorf("final = %q, want the third answer (the shared counter is spent)", final)
+	}
+}
+
+// TestVerifyGate_TextResponse_RunsBeforeTheCompletionCritic mirrors the content-stop
+// ordering case on the terminal that actually fires in production: a round the free gate
+// sends back must never have paid for the critic.
+func TestVerifyGate_TextResponse_RunsBeforeTheCompletionCritic(t *testing.T) {
+	dir, file := projectFile(t)
+	ledger := &stubLedger{dir: dir, statuses: []string{"unverified", "passed"}}
+	fc := agenttest.NewFakeClient(
+		agenttest.ToolCallTurn(writeCall("c1", file)),
+		agenttest.ToolCallTurn(textResponseCall("term-1", "patched it, should be fine")),
+		agenttest.ToolCallTurn(textResponseCall("term-2", "ran go test ./... — green")),
+		agenttest.TextChunks("stop", "DONE"),
+	)
+	a := newVerifyGateAgent(t, fc, ledger, true)
+
+	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{})))
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if fc.CallCount() != 4 {
+		t.Fatalf("CallCount = %d, want 4 (write + nudged round + accepted round + ONE critic call)", fc.CallCount())
+	}
+	if fc.Requests[1].ToolChoice == "none" {
+		t.Error("the critic ran on the round the verification gate sent back: the free gate must run first")
+	}
+	if fc.Requests[3].ToolChoice != "none" {
+		t.Errorf("request[3].ToolChoice = %q, want the critic call on the accepted round", fc.Requests[3].ToolChoice)
+	}
+	if final := finalContent(t, evs); final != "ran go test ./... — green" {
+		t.Errorf("final = %q, want the verified answer", final)
+	}
+}
+
+// TestVerifyGate_TextResponse_DoesNotNudge covers, on the text_response terminal, the
+// four ways the gate has nothing to say — the same cases the content-stop seam pins one
+// by one above.
+func TestVerifyGate_TextResponse_DoesNotNudge(t *testing.T) {
+	dir, file := projectFile(t)
+	cases := []struct {
+		name      string
+		ledger    *stubLedger // nil → no ledger wired at all
+		firstCall llm.ToolCall
+		env       string
+		wantReads int
+	}{
+		{"nil_ledger", nil, writeCall("c1", file), "", 0},
+		{"no_edited_paths", &stubLedger{dir: dir, statuses: []string{"unverified"}}, echoCall("c1"), "", 0},
+		{"env_off", &stubLedger{dir: dir, statuses: []string{"unverified"}}, writeCall("c1", file), "0", 0},
+		{"passed_workspace", &stubLedger{dir: dir, statuses: []string{"passed"}}, writeCall("c1", file), "", 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.env != "" {
+				t.Setenv("AURA_AGENT_VERIFY_ON_STOP_ENABLED", tc.env)
+			}
+			// A typed nil would satisfy the interface and defeat the nil-ledger case.
+			var ledger agent.VerificationLedger
+			if tc.ledger != nil {
+				ledger = tc.ledger
+			}
+			fc := agenttest.NewFakeClient(
+				agenttest.ToolCallTurn(tc.firstCall),
+				agenttest.ToolCallTurn(textResponseCall("term-1", "patched it")),
+			)
+			a := newVerifyAgent(t, fc, ledger)
+
+			evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{})))
+			if err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			if fc.CallCount() != 2 {
+				t.Errorf("CallCount = %d, want 2 (no nudge)", fc.CallCount())
+			}
+			if n := nudges(t, a); len(n) != 0 {
+				t.Errorf("nudges = %d, want 0", len(n))
+			}
+			if tc.ledger != nil && tc.ledger.reads != tc.wantReads {
+				t.Errorf("ledger status reads = %d, want %d", tc.ledger.reads, tc.wantReads)
+			}
+			if got := finalContent(t, evs); got != "patched it" {
+				t.Errorf("final = %q, want the first answer", got)
+			}
+		})
 	}
 }
 

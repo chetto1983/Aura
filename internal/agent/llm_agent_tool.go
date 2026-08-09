@@ -19,11 +19,17 @@ import (
 // The batch orchestration that calls these lives in llm_agent_dispatch.go.
 
 // runTerminal handles the text_response terminal call (D-13). A malformed payload
-// feeds the parse error back and continues the loop (done=false); the completion gate
-// (D-43) can veto on a side-effecting turn by appending a RoleTool "not done" result
-// and continuing; otherwise it appends the final answer and emits the terminal
-// finalEvent (done=true). The runnable siblings have already executed this turn, so —
-// unlike the old sequential path — there are never later siblings left to synthesize.
+// feeds the parse error back and continues the loop (done=false); the verification gate
+// and then the completion gate (D-43) can each send the turn back by appending a
+// RoleTool result and continuing; otherwise it appends the final answer and emits the
+// terminal finalEvent (done=true). The runnable siblings have already executed this
+// turn, so — unlike the old sequential path — there are never later siblings left to
+// synthesize.
+//
+// This is the terminal a tool-calling model actually reaches; the content-stop seam in
+// llm_agent.go is the D-13/D-16 fallback for a model that answers in prose instead. Both
+// are voluntary terminations, so both gates run at both — and the attempt counters are on
+// the agent, so the budget is per RUN and shared across the two seams, never per seam.
 func (a *LlmAgent) runTerminal(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte,
 	requestID string, call llm.ToolCall, acc *turnUsage, yield func(*Event, error) bool,
 ) (done bool) {
@@ -32,6 +38,15 @@ func (a *LlmAgent) runTerminal(ic InvocationContext, spanID [8]byte, parentSpanI
 		a.appendToolError(call.ID, perr)
 		// yield false (consumer stopped) → done=true; otherwise continue the loop.
 		return !yield(a.toolPreviewEvent(ic, spanID, parentSpanID, call.ID, "parse error"), nil)
+	}
+	// Verification gate first, for the reason it goes first at the content-stop seam:
+	// it is deterministic and free, and the critic below costs a model call. Unlike
+	// that seam there IS a tool_call to answer here, so the nudge rides a RoleTool
+	// result on the terminal call id — a RoleUser message would leave this
+	// text_response unanswered and break the wire.
+	if nudge, ok := a.gateVerification(); ok {
+		a.history = append(a.history, llm.Message{Role: llm.RoleTool, ToolCallID: call.ID, Content: nudge})
+		return !yield(a.toolPreviewEvent(ic, spanID, parentSpanID, call.ID, "verification gate: unverified edit"), nil)
 	}
 	if veto, feedback := a.gateCompletion(ic, answer); veto {
 		a.history = append(a.history, llm.Message{Role: llm.RoleTool, ToolCallID: call.ID, Content: feedback})
