@@ -747,7 +747,7 @@ jobs:
           cache: true
 
       - name: Cache the EmbeddingGemma model
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/aura-embed
           key: embed-model-ggml-org-embeddinggemma-300M-Q8_0-v1
@@ -844,7 +844,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Cache the EmbeddingGemma model
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/aura-embed
           key: embed-model-ggml-org-embeddinggemma-300M-Q8_0-v1
@@ -941,7 +941,7 @@ jobs:
       - name: Cache the embedding model
         # 318 MiB. Keyed on the URL so a model change is a cache miss by construction
         # rather than by someone remembering to bump a version.
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/aura-embed
           key: embed-model-ggml-org-embeddinggemma-300M-Q8_0-v1
