@@ -210,7 +210,7 @@ func documentSearchResult(n int) map[string]any {
 func documentOpenResult() map[string]any {
 	return map[string]any{
 		"path": "/workspace/documents/relazione.xlsx", "file_name": "relazione.xlsx",
-		"mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+		"mime_type":  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 		"size_bytes": 481232.0, "sha256": strings.Repeat("ab", 32), "document_id": "doc-0001",
 	}
 }
