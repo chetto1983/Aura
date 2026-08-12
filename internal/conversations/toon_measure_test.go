@@ -322,3 +322,57 @@ func delta(got, base int) float64 {
 	}
 	return (float64(got) - float64(base)) / float64(base) * 100
 }
+
+// dropField removes one key from every object in the array under arrayKey — the
+// "send less" lever, measured against re-encoding the same payload.
+func dropField(payload map[string]any, arrayKey, field string) map[string]any {
+	raw, _ := json.Marshal(payload)
+	var out map[string]any
+	_ = json.Unmarshal(raw, &out)
+	items, _ := out[arrayKey].([]any)
+	for _, item := range items {
+		if obj, ok := item.(map[string]any); ok {
+			delete(obj, field)
+		}
+	}
+	return out
+}
+
+// TestMeasureOptionalFieldWeight prices the OPTIONAL fields Aura ships in every tool
+// result. Trimming a payload needs no new format, no encoder and carries no
+// comprehension risk, so it is the honest baseline any re-encoding must beat.
+func TestMeasureOptionalFieldWeight(t *testing.T) {
+	enc := mustEncoderRaw(t)
+	count := func(v any) int {
+		raw, err := json.Marshal(v)
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		return countTokens(enc, string(raw))
+	}
+
+	cases := []struct {
+		name, arrayKey string
+		full           map[string]any
+		fields         []string
+	}{
+		{"mcp: memory_recall ×5", "facts", memoryRecall(5, true),
+			[]string{"sources", "subject_kind", "object_kind", "valid_from"}},
+		{"mcp: memory_recall ×20", "facts", memoryRecall(20, true),
+			[]string{"sources", "subject_kind", "object_kind", "valid_from"}},
+		{"document_search ×20", "documents", documentSearchResult(20),
+			[]string{"card", "source_kind", "score"}},
+	}
+
+	for _, tc := range cases {
+		base := count(tc.full)
+		t.Logf("\n--- %s --- full payload: %d tokens", tc.name, base)
+		cumulative := tc.full
+		for _, f := range tc.fields {
+			only := dropField(tc.full, tc.arrayKey, f)
+			cumulative = dropField(cumulative, tc.arrayKey, f)
+			t.Logf("  drop %-14s alone: %5d tokens (%+.1f%%)   cumulative: %5d (%+.1f%%)",
+				f, count(only), delta(count(only), base), count(cumulative), delta(count(cumulative), base))
+		}
+	}
+}
