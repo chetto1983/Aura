@@ -111,6 +111,13 @@ type TrustLevel string
 
 const (
 	TrustUntrusted TrustLevel = "untrusted"
+	// TrustTrusted marks a result as host/operator-trusted, short-circuiting the
+	// name-based untrusted-by-default fallback (AG-052). Used by the MCP bridge:
+	// a mounted MCP server is operator-configured infrastructure, so its output is
+	// trusted content like a built-in, not attacker bytes (aligns with Claude
+	// Code's MCP posture). Size caps still bound it; only the distrust framing is
+	// dropped.
+	TrustTrusted TrustLevel = "trusted"
 )
 
 // ToolResultProvenance is runtime-only metadata consumed by the agent loop before

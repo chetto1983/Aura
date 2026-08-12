@@ -36,12 +36,19 @@ func renderToolResultForPrompt(toolName string, res tools.ToolResult) string {
 }
 
 func untrustedSource(toolName string, res tools.ToolResult) (string, bool) {
-	if res.Provenance != nil && res.Provenance.Trust == tools.TrustUntrusted {
-		source := strings.TrimSpace(res.Provenance.Source)
-		if source == "" {
-			source = toolName
+	if res.Provenance != nil {
+		switch res.Provenance.Trust {
+		case tools.TrustUntrusted:
+			source := strings.TrimSpace(res.Provenance.Source)
+			if source == "" {
+				source = toolName
+			}
+			return source, true
+		case tools.TrustTrusted:
+			// Explicit operator-trusted provenance (e.g. the MCP bridge) wins over
+			// the name-based untrusted-by-default fallback below.
+			return "", false
 		}
-		return source, true
 	}
 	if _, ok := trustedToolNames[toolName]; ok {
 		return "", false

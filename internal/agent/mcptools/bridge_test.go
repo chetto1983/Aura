@@ -114,13 +114,12 @@ func TestBridge_TranslatesTools(t *testing.T) {
 	if exec.Name != "sb__sandbox_exec" {
 		t.Fatalf("name = %q, want namespaced sb__sandbox_exec", exec.Name)
 	}
-	// The deferred Summary is manifest-visible, so MCP text must be framed as
-	// untrusted while keeping the required-args hint visible for call shape.
-	if !strings.Contains(strings.ToLower(exec.Summary), "untrusted mcp server") ||
-		!strings.Contains(strings.ToLower(exec.Summary), "data") ||
+	// The deferred Summary is manifest-visible; MCP text is trusted, so it appears
+	// plainly (no distrust framing) with the required-args hint for call shape.
+	if strings.Contains(strings.ToLower(exec.Summary), "untrusted") ||
 		!strings.Contains(exec.Summary, "Execute commands in the sandboxed environment.") ||
 		!strings.Contains(exec.Summary, "Required args: container_id.") {
-		t.Fatalf("summary should be framed and include required-args hint, got %q", exec.Summary)
+		t.Fatalf("summary should carry plain text plus required-args hint, got %q", exec.Summary)
 	}
 	if !exec.Deferred {
 		t.Fatal("bridged tools must be Deferred:true (D-20) — a multi-tool MCP server floods the manifest into the 30-50-tool degradation zone; tool_search loads the full spec on demand")
@@ -203,10 +202,10 @@ func TestReconnectServerRetriesAndRefreshesToolSearch(t *testing.T) {
 	if initial.callCount != 1 || refreshed.callCount != 0 {
 		t.Fatalf("call replay policy mismatch: initial=%d refreshed=%d", initial.callCount, refreshed.callCount)
 	}
-	if got := tool.Spec().Description; !strings.Contains(got, "Fresh delivery path.") || !strings.Contains(got, "untrusted MCP server description") {
+	if got := tool.Spec().Description; !strings.Contains(got, "Fresh delivery path.") || strings.Contains(strings.ToLower(got), "untrusted") {
 		t.Fatalf("refreshed description = %q", got)
 	}
-	if got := tool.Spec().Summary; !strings.Contains(got, "Fresh delivery path.") || !strings.Contains(got, "untrusted MCP server summary data") {
+	if got := tool.Spec().Summary; !strings.Contains(got, "Fresh delivery path.") || strings.Contains(strings.ToLower(got), "untrusted") {
 		t.Fatalf("refreshed summary = %q", got)
 	}
 	if tool.Spec().Mutating {
@@ -350,7 +349,7 @@ func TestBridgedTool_Execute_RoutesAndWraps(t *testing.T) {
 	}
 }
 
-func TestBridgedTool_Execute_MarksResultUntrusted(t *testing.T) {
+func TestBridgedTool_Execute_MarksResultTrusted(t *testing.T) {
 	srv := &fakeServer{defs: sandboxDefs(), callText: "external payload"}
 	got, _ := Bridge(context.Background(), "sb", srv)
 	ctx := tools.WithToolCallContext(context.Background(), "sess", "tc1", t.TempDir(), 2048)
@@ -362,8 +361,8 @@ func TestBridgedTool_Execute_MarksResultUntrusted(t *testing.T) {
 	if res.Provenance == nil {
 		t.Fatal("bridged MCP result must carry provenance")
 	}
-	if res.Provenance.Trust != tools.TrustUntrusted {
-		t.Fatalf("trust = %q, want untrusted", res.Provenance.Trust)
+	if res.Provenance.Trust != tools.TrustTrusted {
+		t.Fatalf("trust = %q, want trusted", res.Provenance.Trust)
 	}
 	if res.Provenance.Source != "mcp:sb__sandbox_exec" {
 		t.Fatalf("source = %q, want mcp:sb__sandbox_exec", res.Provenance.Source)
