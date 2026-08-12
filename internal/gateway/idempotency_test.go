@@ -49,7 +49,7 @@ func gatewayOperationContext(t *testing.T, key string, args json.RawMessage) con
 	fingerprint, err := idempotency.FingerprintTyped(struct {
 		Tool string          `json:"tool"`
 		Args json.RawMessage `json:"args"`
-	}{Tool: "skill", Args: args})
+	}{Tool: "skill_manage", Args: args})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestGatewayIdempotencyDecisionsPrecedePolicyReservation(t *testing.T) {
 			registry := &fakeOperationRegistry{decision: tt.decision, beginErr: tt.beginErr}
 			g := New(config.ProfileSingleUserHardened, ledger)
 			g.SetOperationRegistry(registry)
-			spec := tools.Spec{Name: "skill", Mutating: true, Multiplexed: true, OperationScope: tools.OperationScopeAgent, OperationNormalizer: tools.OperationNormalizerCanonical, ReplayPolicy: tools.ReplayToolResult}
+			spec := tools.Spec{Name: "skill_manage", Mutating: true, Multiplexed: true, OperationScope: tools.OperationScopeAgent, OperationNormalizer: tools.OperationNormalizerCanonical, ReplayPolicy: tools.ReplayToolResult}
 			verdict, err := g.Decide(gatewayOperationContext(t, "public-key", args), spec, args, testKey())
 			if err != nil {
 				t.Fatalf("Decide: %v", err)

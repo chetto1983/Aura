@@ -210,7 +210,7 @@ func TestRenderRoundsForSummary_CapsAndElides(t *testing.T) {
 
 	// Enough turns to blow the total cap: the oldest must be elided, newest kept.
 	many := make([]llm.Message, 0, 40)
-	for i := 0; i < 40; i++ {
+	for range 40 {
 		many = append(many, llm.Message{Role: llm.RoleUser, Content: strings.Repeat("y", 3000)})
 	}
 	many = append(many, llm.Message{Role: llm.RoleAssistant, Content: "NEWEST-MARKER"})

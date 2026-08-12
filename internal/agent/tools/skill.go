@@ -124,15 +124,34 @@ type skillArgs struct {
 const skillParamsSchemaHonest = `{
   "type": "object",
   "properties": {
-    "action": {"type": "string", "enum": ["list", "info", "use", "install", "create", "update", "delete", "save_snippet", "restore", "archive"], "description": "The skill operation: list (show available skills; pass an optional query to rank by relevance); info (read a skill's body for inspection by name); use (apply a skill's instructions, or run a stored snippet by path, by name); install (fetch a skill from the open ecosystem into your library - give it source, e.g. owner/repo); create (author a new skill); update (revise an existing skill); delete (remove a skill); save_snippet (store a reusable executable code snippet so you can re-run it by path on a later turn instead of re-authoring it); restore (un-archive a previously archived snippet back to active); archive (de-activate a snippet you no longer need - recoverable with restore). Every write action takes effect immediately after validation and audit: a skill you create, update or install is usable on this same turn, a snippet you save can be run right away with action=use, and a delete removes it. Nothing is staged and nothing waits for approval. Never install a skill by running the skills CLI in a terminal - that writes outside the library and the skill will not load."},
-    "name": {"type": "string", "description": "Required when action=info, use, create, update, delete, save_snippet, restore, or archive. The exact skill/snippet name (lowercase, [a-z0-9-], 1-64 chars) to inspect, apply, author, revise, remove, save, restore, or archive."},
-    "description": {"type": "string", "description": "Required when action=create, update or save_snippet. A one-line summary of what the skill/snippet does (shown in the skill manifest, which is how you find it again). A skill saved without one is refused."},
-    "body": {"type": "string", "description": "Required when action=create or update. The markdown instructions that make up the skill."},
-    "source": {"type": "string", "description": "Required when action=install. Where to fetch the skill from: owner/repo (optionally owner/repo@skill-name), a URL, or a local path."},
-    "language": {"type": "string", "enum": ["python", "shell", "js"], "description": "Required when action=save_snippet. The language of the snippet code (python, shell, or js)."},
-    "code": {"type": "string", "description": "Required when action=save_snippet. The executable snippet body (the code that will be saved and later run by path)."},
-    "always": {"type": "boolean", "description": "Optional when action=create or update. always:true injects the skill body into every future turn's always-on prompt block instead of only when you apply it by name — use it only for standing instructions, since it costs context on every turn."},
-    "query": {"type": "string", "description": "Optional when action=list (ranks the skill list by relevance when the full manifest is too large to show at once)."}
+    "action": {"type": "string", "enum": ["list", "info", "use"], "description": "use applies a skill's instructions to the current task, or runs a stored snippet, by name; info reads a skill's body without applying it; list shows what is available. Authoring, installing and snippet lifecycle live in skill_manage."},
+    "name": {"type": "string", "description": "Required for info and use. The exact skill/snippet name (lowercase, [a-z0-9-], 1-64 chars)."},
+    "query": {"type": "string", "description": "Optional for list: ranks the manifest by relevance when it is too large to show at once."}
+  },
+  "required": ["action"]
+}`
+
+// skillManageParamsSchema is the write half (D-10 discipline unchanged): the root's
+// only required field is `action`, per-action requirements live in the field
+// descriptions, and there is NO root-level oneOf/anyOf/enum — a root enum 400s
+// OpenAI-compat providers. Property-level enums are wire-safe.
+//
+// HONESTY (AG-011 / AG-044 / amendment #97) is preserved, compressed: Aura runs for one
+// trusted operator on their own host, so every write takes effect when written. The
+// schema must not promise an approval step nobody performs — that is what taught the
+// model to wait, and it is why the save-then-cannot-use failure survived. The prior
+// wording spent ~50 tokens restating it per-action; one clause carries the same contract.
+const skillManageParamsSchema = `{
+  "type": "object",
+  "properties": {
+    "action": {"type": "string", "enum": ["create", "update", "delete", "install", "save_snippet", "restore", "archive"], "description": "create authors a new skill and update revises one; delete removes it; install fetches a skill from the open ecosystem into your library; save_snippet stores runnable code you can re-run by path on a later turn instead of re-authoring it; archive de-activates a snippet and restore un-archives it. Every write takes effect immediately: what you create, update, install or save is usable on this same turn. Nothing is staged and nothing waits for approval. Never install by running the skills CLI in a terminal - it writes outside the library and the skill will not load."},
+    "name": {"type": "string", "description": "Required for every action except install. The exact skill/snippet name (lowercase, [a-z0-9-], 1-64 chars)."},
+    "description": {"type": "string", "description": "Required for create, update and save_snippet. A one-line summary, shown in the skill manifest - it is how you find it again. Refused without one."},
+    "body": {"type": "string", "description": "Required for create and update. The markdown instructions that make up the skill."},
+    "source": {"type": "string", "description": "Required for install: owner/repo (optionally owner/repo@skill-name), a URL, or a local path."},
+    "language": {"type": "string", "enum": ["python", "shell", "js"], "description": "Required for save_snippet. The language of the snippet code."},
+    "code": {"type": "string", "description": "Required for save_snippet. The executable body, run later by path."},
+    "always": {"type": "boolean", "description": "Optional for create and update. true injects the body into every future turn's always-on block instead of only when applied by name - standing instructions only, since it costs context every turn."}
   },
   "required": ["action"]
 }`
@@ -150,14 +169,12 @@ func (t *SkillTool) Spec() Spec {
 		// prompt, pagato anche per rispondere "ok". Le skill sono un'azione deliberata, non
 		// un riflesso: il costo di un tool_search quando servono e' irrisorio in confronto.
 		Deferred: true,
-		// D-02/D-02d: the skill verb multiplexes read + authoring + snippet-lifecycle
-		// actions behind one `action` enum, so it is the fail-closed Mutating floor and
-		// carries the Multiplexed hint the gateway boot-guard reads. The classifier
-		// de-escalates the enumerated reads; everything else stays mutating.
-		Mutating:       true,
-		Multiplexed:    true,
-		OperationScope: OperationScopeAgent, OperationNormalizer: OperationNormalizerCanonical,
-		ReplayPolicy: ReplayToolResult,
+		// READ-ONLY (the write half is skill_manage). list/info/use were ALREADY pinned to
+		// scoring.Safe by the gateway's skillFixedTiers, and classify gives a non-Mutating
+		// tool exactly Safe, so splitting them out changes no tier: it only stops the reads
+		// from dragging the authoring grammar into the manifest with them.
+		Mutating:    false,
+		Multiplexed: false,
 	}
 }
 
@@ -177,7 +194,7 @@ func (t *SkillTool) manifestDescription() string {
 		// question "skill or hand-code?" is actually being answered.
 		"Order for a reusable task family: look here FIRST, install second, hand-write last. " +
 		"Having the libraries (openpyxl, pandas, a node package) is not a reason to skip it — the skill is the tested playbook for the family, the library is not. " +
-		"Install with action=install source=<owner/repo>: one call and the skill is usable this same turn. NEVER install by running the skills CLI yourself — it writes into whatever directory it is standing in, which is not the library, and the skill will not load however encouraging the CLI output looks. " +
+		"Installing is skill_manage action=install source=<owner/repo>: one call and the skill is usable this same turn. NEVER install by running the skills CLI yourself — it writes into whatever directory it is standing in, which is not the library, and the skill will not load however encouraging the CLI output looks. " +
 		"Skill work is bounded: apply the obvious skill once, then execute. A skill that is instructions-only, or that points at a script which is not there, is guidance — implement with the tools you have instead of hunting for the missing file.\n\n" +
 		"Available skills:\n"
 	if t.Loader == nil {
@@ -208,25 +225,6 @@ func (t *SkillTool) actionRouter() *ActionRouter {
 			"list": t.actionList,
 			"info": t.actionInfo,
 			"use":  t.actionUse,
-			// Write actions (11-05): validate -> write -> materialize -> audit, all in the
-			// one call (amendment #97). There is no approve action because there is
-			// nothing left to approve.
-			"create": t.actionCreate,
-			"update": t.actionUpdate,
-			"delete": t.actionDelete,
-			// install runs the SAME Installer the cockpit uses: fetch, validate, land it
-			// active, audit. It used to be deliberately absent (amendment #51 / D-40 left
-			// self-extension to the find-skills always-on skill and the CLI) — but a CLI
-			// install writes into the directory it is standing in, not into the loader's
-			// roots, so the loop the model was taught could not close. A skill you cannot
-			// install through the tool is a skill Aura never learns about.
-			"install": t.actionInstall,
-			// Snippet lifecycle (18-03): save_snippet is the in-loop save (a normal result,
-			// NEVER a pause); restore is Archive's inverse; archive is the
-			// manual SAFE-tier de-materialize.
-			"save_snippet": t.actionSaveSnippet,
-			"restore":      t.actionRestore,
-			"archive":      t.actionArchive,
 		})
 	})
 	return t.router

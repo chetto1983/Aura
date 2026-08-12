@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -177,17 +178,18 @@ func renderRoundsForSummary(rounds []llm.Message) string {
 	elided := false
 	total := 0
 	kept := make([]string, 0, len(rendered))
-	for i := len(rendered) - 1; i >= 0; i-- {
-		if total+len(rendered[i]) > summaryRenderCap && len(kept) > 0 {
+	// Walk backward so the budget is spent on the MOST RECENT turns, then restore
+	// chronological order — a summarizer reading the tail out of sequence would invent
+	// a causality the conversation never had.
+	for _, line := range slices.Backward(rendered) {
+		if total+len(line) > summaryRenderCap && len(kept) > 0 {
 			elided = true
 			break
 		}
-		total += len(rendered[i])
-		kept = append(kept, rendered[i])
+		total += len(line)
+		kept = append(kept, line)
 	}
-	for l, r := 0, len(kept)-1; l < r; l, r = l+1, r-1 {
-		kept[l], kept[r] = kept[r], kept[l]
-	}
+	slices.Reverse(kept)
 	out := strings.Join(kept, "\n")
 	if elided {
 		out = "[earlier turns omitted]\n" + out

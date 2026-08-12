@@ -90,17 +90,43 @@ func TestSkillSpecSchemaDiscipline(t *testing.T) {
 	props, _ := schema["properties"].(map[string]any)
 	action, _ := props["action"].(map[string]any)
 	enum, _ := action["enum"].([]any)
-	want := map[string]bool{"list": false, "info": false, "use": false, "create": false, "restore": false}
+	// The grammar is split across two tools now: `skill` carries the reads, and
+	// `skill_manage` the authoring/install/snippet-lifecycle writes. Each enum is checked
+	// against its OWN half, and each is checked to NOT advertise the other's actions —
+	// an action a tool cannot dispatch is a promise the router will refuse.
+	assertActionEnum(t, enum,
+		[]string{"list", "info", "use"},
+		[]string{"create", "update", "delete", "install", "save_snippet", "restore", "archive"})
+
+	var manageSchema map[string]any
+	if err := json.Unmarshal((&SkillManageTool{}).Spec().Parameters, &manageSchema); err != nil {
+		t.Fatalf("skill_manage Parameters not valid JSON: %v", err)
+	}
+	manageProps, _ := manageSchema["properties"].(map[string]any)
+	manageAction, _ := manageProps["action"].(map[string]any)
+	manageEnum, _ := manageAction["enum"].([]any)
+	assertActionEnum(t, manageEnum,
+		[]string{"create", "update", "delete", "install", "save_snippet", "restore", "archive"},
+		[]string{"list", "info", "use"})
+}
+
+// assertActionEnum asserts an action enum contains every want and none of the absent.
+func assertActionEnum(t *testing.T, enum []any, want, absent []string) {
+	t.Helper()
+	got := make(map[string]bool, len(enum))
 	for _, v := range enum {
 		if s, ok := v.(string); ok {
-			if _, tracked := want[s]; tracked {
-				want[s] = true
-			}
+			got[s] = true
 		}
 	}
-	for name, seen := range want {
-		if !seen {
-			t.Errorf("action enum missing %q", name)
+	for _, name := range want {
+		if !got[name] {
+			t.Errorf("action enum missing %q (have %v)", name, enum)
+		}
+	}
+	for _, name := range absent {
+		if got[name] {
+			t.Errorf("action enum advertises %q, which this tool cannot dispatch", name)
 		}
 	}
 }
@@ -114,7 +140,10 @@ func TestSkillSpecSchemaDiscipline(t *testing.T) {
 // cheap to add and invisible until it changes the model's behaviour.
 func TestSkillSchemaPromisesNoApproval(t *testing.T) {
 	t.Parallel()
-	schema := string((&SkillTool{}).Spec().Parameters)
+	// The promise belongs to the WRITE half now — it is the schema that describes writes.
+	// The forbidden vocabulary is checked on BOTH halves below: wording that teaches the
+	// model to wait is a defect wherever it appears.
+	schema := string((&SkillManageTool{}).Spec().Parameters)
 
 	for _, want := range []string{
 		"takes effect immediately",
@@ -138,8 +167,13 @@ func TestSkillSchemaPromisesNoApproval(t *testing.T) {
 		"operator approval",
 		"before reuse",
 	} {
-		if strings.Contains(schema, forbidden) {
-			t.Fatalf("skill schema still teaches the model to wait (%q): %s", forbidden, schema)
+		for _, half := range []struct{ name, schema string }{
+			{"skill_manage", schema},
+			{"skill", string((&SkillTool{}).Spec().Parameters)},
+		} {
+			if strings.Contains(half.schema, forbidden) {
+				t.Fatalf("%s schema still teaches the model to wait (%q): %s", half.name, forbidden, half.schema)
+			}
 		}
 	}
 }
@@ -169,12 +203,25 @@ func TestSkillDispatchErrors(t *testing.T) {
 		!strings.Contains(err.Error(), "valid actions are") {
 		t.Fatalf("unknown action err = %v, want 'valid actions are ...'", err)
 	}
-	// restore/archive are WIRED now (18-03) — with no writer in this loader-only tool
-	// they dispatch to the real handler and return a clear "no writer" error (never the
-	// old "not yet available" placeholder, never a panic).
+	// A write action is no longer dispatchable from the read half at all — it is not in
+	// its router — so the model is told the actions it CAN call rather than being handed
+	// a writer error for a verb this tool does not own.
 	if _, err := tool.Execute(ctx, json.RawMessage(`{"action":"restore","name":"x"}`)); err == nil ||
+		!strings.Contains(err.Error(), "valid actions are") {
+		t.Fatalf("restore on the read half err = %v, want the valid-actions list", err)
+	}
+	// restore/archive are WIRED (18-03) on the write half — with no writer they dispatch
+	// to the real handler and return a clear "no writer" error (never the old "not yet
+	// available" placeholder, never a panic).
+	manage := &SkillManageTool{Skills: &SkillTool{Loader: newFakeLoader()}}
+	if _, err := manage.Execute(ctx, json.RawMessage(`{"action":"restore","name":"x"}`)); err == nil ||
 		!strings.Contains(err.Error(), "no writer") {
 		t.Fatalf("restore (wired, no writer) err = %v, want 'no writer'", err)
+	}
+	// The write half rejects a missing action with its own contract, like the read half.
+	if _, err := manage.Execute(ctx, json.RawMessage(`{"action":""}`)); err == nil ||
+		!strings.Contains(err.Error(), "action is required") {
+		t.Fatalf("skill_manage empty action err = %v, want 'action is required'", err)
 	}
 }
 

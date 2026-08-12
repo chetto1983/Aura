@@ -174,7 +174,7 @@ func scriptRoundTripTurn(msgs []llm.Message, n int) agenttest.FakeTurn {
 	// Fresh user turn OR resumed after accept → emit skill/delete with a FRESH tool_call_id
 	// (a re-emit changes the id — the ledger key deliberately excludes it, keying on args).
 	return agenttest.ToolCallTurn(agenttest.MakeToolCall(
-		fmt.Sprintf("call-skill-%d", n), "skill", `{"action":"delete","name":"obsolete-skill"}`))
+		fmt.Sprintf("call-skill-%d", n), "skill_manage", `{"action":"delete","name":"obsolete-skill"}`))
 }
 
 // extractApprovalRelay pulls the gateway approval-required JSON out of the (untrusted
@@ -263,7 +263,7 @@ type spyDeleteTool struct {
 }
 
 func (s *spyDeleteTool) Spec() tools.Spec {
-	return tools.Spec{Name: "skill", Summary: "skill lifecycle (test spy)", Mutating: true}
+	return tools.Spec{Name: "skill_manage", Summary: "skill lifecycle (test spy)", Mutating: true}
 }
 
 func (s *spyDeleteTool) Execute(context.Context, json.RawMessage) (tools.ToolResult, error) {

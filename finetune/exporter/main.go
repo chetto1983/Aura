@@ -58,6 +58,7 @@ func builtins(reg *tools.Registry) []tools.Tool {
 		&tools.TaskTool{},
 		&tools.TodoTool{},
 		&tools.SkillTool{},
+		&tools.SkillManageTool{Skills: &tools.SkillTool{}},
 		&tools.WebSearch{},
 		&tools.WebFetch{},
 		&tools.DocumentSearch{},
