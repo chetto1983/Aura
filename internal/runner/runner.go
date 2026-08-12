@@ -88,9 +88,13 @@ type Deps struct {
 	// (AURA_CONTEXT_COMPACTION_MODEL); empty → the main chat model (d.LLM.Model).
 	CompactionEnabled bool
 	CompactionModel   string
-	Workspace         string // shell workspace announced per turn (#52/D-41); "" → the process cwd
-	TitleTimeout      time.Duration
-	StopTimeout       time.Duration
+	// MemoryPreloadEnabled turns on the proactive per-message memory preload
+	// (AURA_MEMORY_PRELOAD_ENABLED): a memory_search over the current user text injected
+	// alongside the always-on digest. Default off — it adds an MCP round-trip per turn.
+	MemoryPreloadEnabled bool
+	Workspace            string // shell workspace announced per turn (#52/D-41); "" → the process cwd
+	TitleTimeout         time.Duration
+	StopTimeout          time.Duration
 	// ReasoningPersistMaxRunes caps the display-only CoT accumulated per turn and
 	// persisted onto conversation_turns.reasoning (amendment #91 / fix-plan 1.12,
 	// AURA_REASONING_PERSIST_MAX_RUNES — the composition root passes the resolved
@@ -156,9 +160,10 @@ type Runner struct {
 	// compactionEnabled + compactionModel drive the L2.4 summarizer the context ladder
 	// receives via ContextConfig.Summarizer (compactionModel is pre-resolved to the main
 	// chat model when the knob is empty).
-	compactionEnabled bool
-	compactionModel   string
-	workspace         string // the shell workspace path the per-turn tail hint announces (#52/D-41)
+	compactionEnabled    bool
+	compactionModel      string
+	memoryPreloadEnabled bool   // proactive per-message memory_search preload (AURA_MEMORY_PRELOAD_ENABLED)
+	workspace            string // the shell workspace path the per-turn tail hint announces (#52/D-41)
 	// reasoningPersistMaxRunes bounds the per-turn display-only CoT accumulator
 	// (amendment #91); <=0 disables persistence (see Deps.ReasoningPersistMaxRunes).
 	reasoningPersistMaxRunes int
@@ -247,6 +252,7 @@ func New(d Deps) *Runner {
 		evictAfter:               d.EvictAfter,
 		compactionEnabled:        d.CompactionEnabled,
 		compactionModel:          compactionModel,
+		memoryPreloadEnabled:     d.MemoryPreloadEnabled,
 		workspace:                workspace,
 		reasoningPersistMaxRunes: d.ReasoningPersistMaxRunes,
 		gatewayOwnsToolStarts:    d.Gateway.OwnsToolStartRows(),
@@ -371,7 +377,7 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, input turnInput)
 			}
 		}
 
-		cfg := r.contextConfig(r.loadMemoryContext(ctx, input.visibleUserMsg != nil))
+		cfg := r.contextConfig(r.loadMemoryContext(ctx, input.visibleUserMsg))
 		history, err := r.loadTurnHistory(ctx, convID, cfg, input.branchLeaf)
 		if err != nil {
 			yield(nil, err)

@@ -63,9 +63,16 @@ type Config struct {
 	// covers a summarizer failure.
 	ContextCompactionEnabled bool   // AURA_CONTEXT_COMPACTION_ENABLED
 	ContextCompactionModel   string // AURA_CONTEXT_COMPACTION_MODEL — empty → main chat model
-	RunDirWarnThresholdBytes int    // AURA_RUN_DIR_WARN_THRESHOLD_BYTES — boot du WARN threshold (audit-only)
-	RunDirSweepIntervalSec   int    // AURA_RUN_DIR_SWEEP_INTERVAL_SEC — periodic sidecar-sweep cadence in `serve` (M-06); <=0 disables the worker (boot sweep still runs)
-	ReasoningPersistMaxRunes int    // AURA_REASONING_PERSIST_MAX_RUNES — display-only per-turn CoT persistence cap (amendment #91); <=0 disables persistence
+	// MemoryPreloadEnabled turns on the proactive per-message memory_search preload (a
+	// relevance search over the current user text injected alongside the always-on
+	// digest). Default off — it adds an MCP round-trip per turn. TopK bounds the facts;
+	// TimeoutMS bounds the search call.
+	MemoryPreloadEnabled     bool // AURA_MEMORY_PRELOAD_ENABLED
+	MemoryPreloadTopK        int  // AURA_MEMORY_PRELOAD_TOP_K
+	MemoryPreloadTimeoutMS   int  // AURA_MEMORY_PRELOAD_TIMEOUT_MS
+	RunDirWarnThresholdBytes int  // AURA_RUN_DIR_WARN_THRESHOLD_BYTES — boot du WARN threshold (audit-only)
+	RunDirSweepIntervalSec   int  // AURA_RUN_DIR_SWEEP_INTERVAL_SEC — periodic sidecar-sweep cadence in `serve` (M-06); <=0 disables the worker (boot sweep still runs)
+	ReasoningPersistMaxRunes int  // AURA_REASONING_PERSIST_MAX_RUNES — display-only per-turn CoT persistence cap (amendment #91); <=0 disables persistence
 
 	// Phase 7 (Slice 5) web_search/web_fetch knobs. SearxngURL is the upstream-
 	// canonical name (NO AURA_ prefix); an empty value is NOT boot-fatal — it is
@@ -424,6 +431,9 @@ func loadBase() *Config {
 		HistoryHardCapTurns:        envutil.IntDefault("AURA_HISTORY_HARD_CAP_TURNS", 50),
 		ContextCompactionEnabled:   envutil.BoolDefault("AURA_CONTEXT_COMPACTION_ENABLED", true),
 		ContextCompactionModel:     envDefault("AURA_CONTEXT_COMPACTION_MODEL", ""),
+		MemoryPreloadEnabled:       envutil.BoolDefault("AURA_MEMORY_PRELOAD_ENABLED", false),
+		MemoryPreloadTopK:          envutil.IntDefault("AURA_MEMORY_PRELOAD_TOP_K", 5),
+		MemoryPreloadTimeoutMS:     envutil.IntDefault("AURA_MEMORY_PRELOAD_TIMEOUT_MS", 1500),
 		RunDirWarnThresholdBytes:   envutil.IntDefault("AURA_RUN_DIR_WARN_THRESHOLD_BYTES", 1073741824),
 		RunDirSweepIntervalSec:     envutil.IntDefault("AURA_RUN_DIR_SWEEP_INTERVAL_SEC", 3600),
 		ReasoningPersistMaxRunes:   envutil.IntDefault("AURA_REASONING_PERSIST_MAX_RUNES", 65536),

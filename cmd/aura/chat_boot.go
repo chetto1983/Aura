@@ -411,7 +411,7 @@ func assembleChatEnv(
 		Identity:        idStore,
 		CacheMetrics:    cacheStore,
 		ToolInvocations: toolInvocationStore,
-		MemoryContext:   newMemoryContextProvider(toolHandles.Memory),
+		MemoryContext:   newMemoryContextProvider(toolHandles.Memory, cfg.MemoryPreloadTopK, time.Duration(cfg.MemoryPreloadTimeoutMS)*time.Millisecond),
 		// Atomic cross-store HITL durability (D-03/D-05): the pool-owning committer spans
 		// a pause claim + its answer turn (and pause exposure) in ONE db.WithTx.
 		ResumeCommitter: runner.NewPoolResumeCommitter(pool, convStore, pauseStore),
@@ -422,12 +422,13 @@ func assembleChatEnv(
 		// Amendment #88: the per-turn "Working directory" hint mirrors the fixed
 		// WorkspaceRoot every host-direct tool now resolves against, replacing the
 		// process-cwd fallback (runner.New still falls back to os.Getwd if this is "").
-		Workspace:         cfg.WorkspaceDir,
-		PreviewCap:        cfg.ToolPreviewCap,
-		HistoryCap:        cfg.HistoryHardCapTurns,
-		EvictAfter:        cfg.ContextToolEvictAfterTurns,
-		CompactionEnabled: cfg.ContextCompactionEnabled,
-		CompactionModel:   cfg.ContextCompactionModel,
+		Workspace:            cfg.WorkspaceDir,
+		PreviewCap:           cfg.ToolPreviewCap,
+		HistoryCap:           cfg.HistoryHardCapTurns,
+		EvictAfter:           cfg.ContextToolEvictAfterTurns,
+		CompactionEnabled:    cfg.ContextCompactionEnabled,
+		CompactionModel:      cfg.ContextCompactionModel,
+		MemoryPreloadEnabled: cfg.MemoryPreloadEnabled,
 		// Amendment #91 (fix-plan 1.12): bounded display-only CoT persistence cap.
 		ReasoningPersistMaxRunes: cfg.ReasoningPersistMaxRunes,
 		AlwaysBlock:              alwaysBlockProvider(cfg),
