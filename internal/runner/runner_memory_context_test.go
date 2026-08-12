@@ -31,14 +31,12 @@ func (f *memoryContextFake) Search(_ context.Context, identityID, query string) 
 	return f.searchOut, f.searchErr
 }
 
-func strptr(s string) *string { return &s }
-
 func TestLoadMemoryContextFencesAuthenticatedIdentityFacts(t *testing.T) {
 	provider := &memoryContextFake{content: "Davide located_in Caraglio"}
 	r := &Runner{memoryContext: provider}
 	ctx := identityctx.WithIdentityID(context.Background(), "identity-a")
 
-	got := r.loadMemoryContext(ctx, strptr("hi"))
+	got := r.loadMemoryContext(ctx, new("hi"))
 	if got == nil {
 		t.Fatal("memory context is nil")
 	}
@@ -79,7 +77,7 @@ func TestLoadMemoryContextFailureDoesNotBlockTheTurn(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			r := &Runner{memoryContext: setup.provider}
-			if got := r.loadMemoryContext(setup.ctx, strptr("hi")); got != nil {
+			if got := r.loadMemoryContext(setup.ctx, new("hi")); got != nil {
 				t.Fatalf("context = %+v, want omitted memory", got)
 			}
 		})
@@ -91,7 +89,7 @@ func TestLoadMemoryContext_PreloadInjectsRecall(t *testing.T) {
 	r := &Runner{memoryContext: provider, memoryPreloadEnabled: true}
 	ctx := identityctx.WithIdentityID(context.Background(), "identity-a")
 
-	got := r.loadMemoryContext(ctx, strptr("what do I prefer"))
+	got := r.loadMemoryContext(ctx, new("what do I prefer"))
 	if got == nil {
 		t.Fatal("memory context is nil")
 	}
@@ -111,7 +109,7 @@ func TestLoadMemoryContext_PreloadFailSoftKeepsDigest(t *testing.T) {
 	r := &Runner{memoryContext: provider, memoryPreloadEnabled: true}
 	ctx := identityctx.WithIdentityID(context.Background(), "identity-a")
 
-	got := r.loadMemoryContext(ctx, strptr("q"))
+	got := r.loadMemoryContext(ctx, new("q"))
 	if got == nil {
 		t.Fatal("a preload failure must not drop the digest")
 	}
@@ -128,7 +126,7 @@ func TestLoadMemoryContext_PreloadOnlyWhenDigestEmpty(t *testing.T) {
 	r := &Runner{memoryContext: provider, memoryPreloadEnabled: true}
 	ctx := identityctx.WithIdentityID(context.Background(), "identity-a")
 
-	got := r.loadMemoryContext(ctx, strptr("q"))
+	got := r.loadMemoryContext(ctx, new("q"))
 	if got == nil {
 		t.Fatal("a recall-only result must still inject memory")
 	}

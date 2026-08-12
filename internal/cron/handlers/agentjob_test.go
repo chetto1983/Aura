@@ -21,7 +21,7 @@ type scheduledMutationTool struct{ effects int }
 
 func (s *scheduledMutationTool) Spec() tools.Spec {
 	return tools.Spec{
-		Name: "skill", Mutating: true,
+		Name: "skill_manage", Mutating: true,
 		OperationScope: tools.OperationScopeAgent, OperationNormalizer: tools.OperationNormalizerCanonical,
 		ReplayPolicy: tools.ReplayToolResult,
 	}
@@ -149,7 +149,7 @@ func TestAgentJobStrictMutationDerivesStableChildAndReplays(t *testing.T) {
 	policy.SetOperationRegistry(operations)
 	turns := func() *agenttest.FakeClient {
 		return agenttest.NewFakeClient(
-			agenttest.ToolCallTurn(agenttest.MakeToolCall("mut-1", "skill", `{"action":"restore","name":"calc"}`)),
+			agenttest.ToolCallTurn(agenttest.MakeToolCall("mut-1", "skill_manage", `{"action":"restore","name":"calc"}`)),
 			agenttest.ToolCallTurn(agenttest.MakeToolCall("final", "text_response", `{"text":"done"}`)),
 		)
 	}
