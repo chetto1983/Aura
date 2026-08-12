@@ -78,14 +78,23 @@ type Deps struct {
 	// Breaker is the SHARED process-lifetime LLM circuit breaker (B-05). The
 	// composition root may inject one; nil => New mints the default. It is threaded
 	// into every per-turn agent so a provider outage trips cross-turn protection.
-	Breaker      *llm.Breaker
-	RunDir       string
-	PreviewCap   int
-	HistoryCap   int
-	EvictAfter   int    // AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS — L1 eviction age
-	Workspace    string // shell workspace announced per turn (#52/D-41); "" → the process cwd
-	TitleTimeout time.Duration
-	StopTimeout  time.Duration
+	Breaker    *llm.Breaker
+	RunDir     string
+	PreviewCap int
+	HistoryCap int
+	EvictAfter int // AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS — L1 eviction age
+	// CompactionEnabled turns on L2.4 LLM compaction in the context ladder
+	// (AURA_CONTEXT_COMPACTION_ENABLED). CompactionModel overrides the summarizer model
+	// (AURA_CONTEXT_COMPACTION_MODEL); empty → the main chat model (d.LLM.Model).
+	CompactionEnabled bool
+	CompactionModel   string
+	// MemoryPreloadEnabled turns on the proactive per-message memory preload
+	// (AURA_MEMORY_PRELOAD_ENABLED): a memory_search over the current user text injected
+	// alongside the always-on digest. Default off — it adds an MCP round-trip per turn.
+	MemoryPreloadEnabled bool
+	Workspace            string // shell workspace announced per turn (#52/D-41); "" → the process cwd
+	TitleTimeout         time.Duration
+	StopTimeout          time.Duration
 	// ReasoningPersistMaxRunes caps the display-only CoT accumulated per turn and
 	// persisted onto conversation_turns.reasoning (amendment #91 / fix-plan 1.12,
 	// AURA_REASONING_PERSIST_MAX_RUNES — the composition root passes the resolved
@@ -148,7 +157,13 @@ type Runner struct {
 	previewCap int
 	historyCap int
 	evictAfter int
-	workspace  string // the shell workspace path the per-turn tail hint announces (#52/D-41)
+	// compactionEnabled + compactionModel drive the L2.4 summarizer the context ladder
+	// receives via ContextConfig.Summarizer (compactionModel is pre-resolved to the main
+	// chat model when the knob is empty).
+	compactionEnabled    bool
+	compactionModel      string
+	memoryPreloadEnabled bool   // proactive per-message memory_search preload (AURA_MEMORY_PRELOAD_ENABLED)
+	workspace            string // the shell workspace path the per-turn tail hint announces (#52/D-41)
 	// reasoningPersistMaxRunes bounds the per-turn display-only CoT accumulator
 	// (amendment #91); <=0 disables persistence (see Deps.ReasoningPersistMaxRunes).
 	reasoningPersistMaxRunes int
@@ -206,6 +221,12 @@ func New(d Deps) *Runner {
 			workspace = filepath.ToSlash(wd)
 		}
 	}
+	// Resolve the compaction summarizer model once: an empty knob falls back to the
+	// main chat model, mirroring the llm.Config secondary-model convention.
+	compactionModel := d.CompactionModel
+	if compactionModel == "" {
+		compactionModel = d.LLM.Model
+	}
 	// Build the static curated-seed reasoning classifier once so its anchors are
 	// amortized across every turn.
 	classifier := prompt.NewReasoningClassifier(d.Embedder)
@@ -229,6 +250,9 @@ func New(d Deps) *Runner {
 		previewCap:               d.PreviewCap,
 		historyCap:               d.HistoryCap,
 		evictAfter:               d.EvictAfter,
+		compactionEnabled:        d.CompactionEnabled,
+		compactionModel:          compactionModel,
+		memoryPreloadEnabled:     d.MemoryPreloadEnabled,
 		workspace:                workspace,
 		reasoningPersistMaxRunes: d.ReasoningPersistMaxRunes,
 		gatewayOwnsToolStarts:    d.Gateway.OwnsToolStartRows(),
@@ -353,7 +377,7 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, input turnInput)
 			}
 		}
 
-		cfg := r.contextConfig(r.loadMemoryContext(ctx, input.visibleUserMsg != nil))
+		cfg := r.contextConfig(r.loadMemoryContext(ctx, input.visibleUserMsg))
 		history, err := r.loadTurnHistory(ctx, convID, cfg, input.branchLeaf)
 		if err != nil {
 			yield(nil, err)

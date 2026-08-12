@@ -10,17 +10,22 @@ import (
 	"github.com/chetto1983/aura/internal/agent/mcptools"
 )
 
-const memoryContextTimeout = 2 * time.Second
+const (
+	memoryContextTimeout = 2 * time.Second
+	defaultPreloadTopK   = 5
+)
 
 type mountedMemoryContext struct {
-	client mcptools.HostClient
+	client         mcptools.HostClient
+	preloadTopK    int
+	preloadTimeout time.Duration
 }
 
-func newMemoryContextProvider(client mcptools.HostClient) *mountedMemoryContext {
+func newMemoryContextProvider(client mcptools.HostClient, preloadTopK int, preloadTimeout time.Duration) *mountedMemoryContext {
 	if client == nil {
 		return nil
 	}
-	return &mountedMemoryContext{client: client}
+	return &mountedMemoryContext{client: client, preloadTopK: preloadTopK, preloadTimeout: preloadTimeout}
 }
 
 func (m *mountedMemoryContext) Context(ctx context.Context, identityID string) (string, error) {
@@ -51,4 +56,57 @@ func (m *mountedMemoryContext) Context(ctx context.Context, identityID string) (
 	}
 	return fmt.Sprintf("covered=%t entities=%d facts=%d\n%s",
 		digest.Covered, digest.Entities, digest.Facts, strings.TrimSpace(digest.Text)), nil
+}
+
+// Search is the proactive per-message preload: a hybrid memory_search over the current
+// user text, returning the top-k facts as bullet lines. An explicit abstention or an
+// empty result yields "" (the caller then injects only the digest). Its own timeout
+// (preloadTimeout, falling back to the digest timeout) keeps it off the critical path.
+func (m *mountedMemoryContext) Search(ctx context.Context, identityID, query string) (string, error) {
+	if m == nil || m.client == nil {
+		return "", fmt.Errorf("memory MCP is not mounted")
+	}
+	limit := m.preloadTopK
+	if limit <= 0 {
+		limit = defaultPreloadTopK
+	}
+	timeout := m.preloadTimeout
+	if timeout <= 0 {
+		timeout = memoryContextTimeout
+	}
+	callCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	text, err := m.client.CallTool(callCtx, "memory_search", map[string]any{
+		"user_identifier": identityID,
+		"query":           query,
+		"limit":           limit,
+	})
+	if err != nil {
+		return "", fmt.Errorf("memory search: %w", err)
+	}
+	var out struct {
+		Facts []struct {
+			Statement string `json:"statement"`
+		} `json:"facts"`
+		Retrieval struct {
+			Abstained bool `json:"abstained"`
+		} `json:"retrieval"`
+	}
+	if err := json.Unmarshal([]byte(text), &out); err != nil {
+		return "", fmt.Errorf("decode memory search: %w", err)
+	}
+	if out.Retrieval.Abstained || len(out.Facts) == 0 {
+		return "", nil
+	}
+	var b strings.Builder
+	for _, f := range out.Facts {
+		s := strings.TrimSpace(f.Statement)
+		if s == "" {
+			continue
+		}
+		b.WriteString("- ")
+		b.WriteString(s)
+		b.WriteString("\n")
+	}
+	return strings.TrimSpace(b.String()), nil
 }
