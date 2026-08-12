@@ -1,20 +1,30 @@
 //go:build measure
 
-// Measurement harness (NOT a gate): token cost of tool-result payloads rendered as
-// compact JSON (what Aura sends today) vs TOON.
+// Measurement harness (NOT a gate): token cost of EVERY model-visible tool result in
+// Aura, rendered as compact JSON (what Aura sends today) vs TOON.
 //
 //	go test -tags measure ./internal/conversations -run TestMeasureTOON -v
 //
 // Baseline discipline: the comparison is against COMPACT json.Marshal output, because
-// that is what the MCP bridge actually threads into history. Published TOON savings are
-// often quoted against PRETTY-printed JSON, which would overstate the gain here.
+// that is what actually reaches the model. Published TOON savings are usually quoted
+// against PRETTY-printed JSON, which overstates the gain here.
 //
-// Encoder scope: TOON per spec (toon-format/spec SPEC.md) for the subset used —
-// `key[N]{f1,f2}:` tabular arrays of uniform all-primitive objects, `key: value` scalars,
-// nested objects at depth+1, `key[N]: a,b,c` primitive arrays, `key: []`, and the quoting
-// rules. Tabular form REQUIRES every cell to be a primitive leaf; an array whose objects
-// carry a nested array is not tabular-eligible, and this harness does not invent a syntax
-// for that case — it reports it instead (see the memory_search fixtures).
+// Inventory (grep of every NewResult call in internal/agent/tools + internal/swarm):
+// the MAJORITY of Aura's tools return RENDERED TEXT, not JSON — patch, read_file,
+// search_files_*, shell_exec, shell_poll/kill, skill_*, tool_search, todo_write
+// (renderTodos), ask_user, current_time, text_response, write_file, send_file, xlsx,
+// web_fetch, web_search. TOON cannot apply to those at all: there is no JSON to re-encode.
+// Only these emit JSON as the model-visible content, and they are the fixtures below:
+//   - document_search  -> documents.RetrievalResponse   (retrieval.go:64-80)
+//   - document_open    -> flat map[string]any            (document_open.go:143-153)
+//   - swarm_spawn      -> []swarm.ChildReport            (report.go:32, swarm.go:85)
+//   - MCP-bridged      -> whatever the server emits      (memory_* via mcptools/bridge.go)
+//
+// Encoder scope: TOON per toon-format/spec SPEC.md for the subset used — `key[N]{f}:`
+// tabular arrays of uniform all-primitive objects, `key: value` scalars, nested objects
+// at depth+1, `key[N]: a,b,c` primitive arrays, `key: []`, and the quoting rules. Tabular
+// form REQUIRES every cell to be a primitive leaf; this harness refuses to invent syntax
+// for non-eligible arrays and reports them instead.
 package conversations
 
 import (
@@ -75,8 +85,6 @@ func isPrimitive(v any) bool {
 	return true
 }
 
-// tabularFields returns the ordered field list when items is a non-empty array of
-// objects sharing one key set whose values are ALL primitive leaves; ok=false otherwise.
 func tabularFields(items []any) ([]string, bool) {
 	if len(items) == 0 {
 		return nil, false
@@ -110,8 +118,11 @@ func toonEncode(v any) string {
 	var b strings.Builder
 	obj, ok := v.(map[string]any)
 	if !ok {
-		b.WriteString(toonScalar(v))
-		return b.String()
+		if items, isArr := v.([]any); isArr {
+			toonArray(&b, "", items, 0)
+			return strings.TrimRight(b.String(), "\n")
+		}
+		return toonScalar(v)
 	}
 	toonObject(&b, obj, 0)
 	return strings.TrimRight(b.String(), "\n")
@@ -160,8 +171,6 @@ func toonArray(b *strings.Builder, key string, items []any, depth int) {
 	}
 	fields, ok := tabularFields(items)
 	if !ok {
-		// Not tabular-eligible. This harness refuses to invent syntax; the caller is
-		// expected to have filtered such fixtures out (they are reported, not encoded).
 		fmt.Fprintf(b, "%s%s: <NOT-TABULAR>\n", pad, key)
 		return
 	}
@@ -177,70 +186,94 @@ func toonArray(b *strings.Builder, key string, items []any, depth int) {
 	}
 }
 
-// ---------- fixtures ----------
+// ---------- fixtures: the REAL model-visible JSON shapes ----------
 
-// memorySearchJSON is the VERIFIED shape of cmd/arcadedb-mcp MemorySearchOutput
-// (tool_memory.go): facts[] each with a nested sources[] array, plus retrieval metadata.
-func memorySearchJSON(n int, withSources bool) map[string]any {
+// documentSearchResult mirrors documents.RetrievalResponse (retrieval.go:64-80):
+// scalars + a documents[] array whose fields are all primitive => tabular-eligible.
+func documentSearchResult(n int) map[string]any {
+	docs := make([]any, 0, n)
+	for i := range n {
+		docs = append(docs, map[string]any{
+			"document_id": fmt.Sprintf("doc-%04d", i),
+			"title":       fmt.Sprintf("Relazione trimestrale sezione %d", i),
+			"card":        "Foglio con ricavi e costi per regione, 12 colonne, 340 righe.",
+			"score":       0.87 - float64(i)/100,
+			"source_kind": "s3",
+		})
+	}
+	return map[string]any{
+		"query": "ricavi nord", "profile": "standard", "status": "ok", "documents": docs,
+	}
+}
+
+// documentOpenResult mirrors document_open.go:143-153 — one flat object, no array.
+func documentOpenResult() map[string]any {
+	return map[string]any{
+		"path": "/workspace/documents/relazione.xlsx", "file_name": "relazione.xlsx",
+		"mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+		"size_bytes": 481232.0, "sha256": strings.Repeat("ab", 32), "document_id": "doc-0001",
+	}
+}
+
+// swarmReports mirrors swarm.ChildReport (report.go:32) marshaled by marshalReports
+// (swarm.go:85). withOptions adds the options[] array that breaks tabular eligibility.
+func swarmReports(n int, withOptions bool) []any {
+	out := make([]any, 0, n)
+	for i := range n {
+		r := map[string]any{
+			"goal_index": float64(i), "child_id": fmt.Sprintf("child-%d", i),
+			"status":  "done",
+			"summary": "Ho letto i file richiesti e riassunto i risultati principali del trimestre.",
+		}
+		if withOptions {
+			r["options"] = []any{"riprova", "salta"}
+			r["question"] = "Come procedo?"
+			r["status"] = "paused"
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+// memoryRecall mirrors cmd/arcadedb-mcp MemorySearchOutput (tool_memory.go:105-137),
+// reached through the MCP bridge. withSources keeps the nested provenance array.
+func memoryRecall(n int, withSources bool) map[string]any {
 	facts := make([]any, 0, n)
 	for i := range n {
 		f := map[string]any{
-			"statement":    fmt.Sprintf("Davide prefers Go for backend work (note %d)", i),
-			"predicate":    "prefers",
-			"subject":      "Davide",
-			"subject_kind": "Person",
-			"object":       "Go",
-			"object_kind":  "Technology",
-			"valid_from":   "2026-03-14T09:12:00Z",
+			"statement": fmt.Sprintf("Davide preferisce Go per il backend (nota %d)", i),
+			"predicate": "prefers", "subject": "Davide", "subject_kind": "Person",
+			"object": "Go", "object_kind": "Technology", "valid_from": "2026-03-14T09:12:00Z",
 		}
 		if withSources {
-			f["sources"] = []any{
-				map[string]any{"run_id": fmt.Sprintf("run-%d", i), "memory_ids": []any{"m1", "m2"}},
-			}
+			f["sources"] = []any{map[string]any{
+				"run_id": fmt.Sprintf("run-%d", i), "memory_ids": []any{"m1", "m2"},
+			}}
 		}
 		facts = append(facts, f)
 	}
 	return map[string]any{
-		"facts":     facts,
-		"retrieval": map[string]any{"path": "hybrid", "abstained": false},
+		"facts": facts, "retrieval": map[string]any{"path": "hybrid", "abstained": false},
 	}
 }
 
-// searchResultsJSON is the flat uniform shape a document/web search result list takes:
-// the archetypal TOON sweet spot (every cell a primitive leaf).
-func searchResultsJSON(n int) map[string]any {
-	rows := make([]any, 0, n)
-	for i := range n {
-		rows = append(rows, map[string]any{
-			"document_id": fmt.Sprintf("doc-%04d", i),
-			"title":       fmt.Sprintf("Quarterly report section %d", i),
-			"score":       0.87 - float64(i)/100,
-			"snippet":     "Revenue grew across the northern region while costs stayed flat.",
-		})
-	}
-	return map[string]any{"results": rows, "query": "revenue north", "limit": n}
-}
-
-// digestJSON is the verified memory_digest shape (serve_memory_context.go): one large
-// text blob plus counters — the archetypal WORST case for TOON.
-func digestJSON() map[string]any {
+// memoryDigest mirrors the digest shape decoded in serve_memory_context.go:40-45.
+func memoryDigest() map[string]any {
 	return map[string]any{
 		"text":     strings.Repeat("Davide located_in Caraglio. Davide prefers Go. ", 40),
-		"entities": 12.0,
-		"facts":    37.0,
-		"covered":  true,
+		"entities": 12.0, "facts": 37.0, "covered": true,
 	}
 }
 
 func TestMeasureTOON(t *testing.T) {
 	enc := mustEncoderRaw(t)
 
-	roundtrip := func(v map[string]any) map[string]any {
+	roundtrip := func(v any) any {
 		raw, err := json.Marshal(v)
 		if err != nil {
 			t.Fatalf("marshal: %v", err)
 		}
-		var out map[string]any
+		var out any
 		if err := json.Unmarshal(raw, &out); err != nil {
 			t.Fatalf("unmarshal: %v", err)
 		}
@@ -248,51 +281,41 @@ func TestMeasureTOON(t *testing.T) {
 	}
 
 	cases := []struct {
-		name    string
-		payload map[string]any
-		note    string
+		tool, shape string
+		payload     any
 	}{
-		{"search results ×10 (flat uniform — TOON sweet spot)", searchResultsJSON(10), ""},
-		{"search results ×50 (flat uniform, larger)", searchResultsJSON(50), ""},
-		{"memory_search ×5 WITHOUT sources (flattened)", memorySearchJSON(5, false), ""},
-		{"memory_search ×5 AS-IS (nested sources[])", memorySearchJSON(5, true),
-			"nested array per row ⇒ NOT tabular-eligible; TOON's tabular gain does not apply"},
-		{"memory_digest (one text blob — worst case)", digestJSON(), ""},
+		{"document_search", "documents[] ×5, all-primitive fields", documentSearchResult(5)},
+		{"document_search", "documents[] ×20, all-primitive fields", documentSearchResult(20)},
+		{"document_open", "single flat object, 6 scalars", documentOpenResult()},
+		{"swarm_spawn", "ChildReport[] ×4, no options[]", swarmReports(4, false)},
+		{"swarm_spawn", "ChildReport[] ×4, WITH options[] (paused)", swarmReports(4, true)},
+		{"mcp: memory_recall", "facts[] ×5 WITHOUT sources", memoryRecall(5, false)},
+		{"mcp: memory_recall", "facts[] ×5 AS-IS (nested sources[])", memoryRecall(5, true)},
+		{"mcp: memory_digest", "one text blob + 3 counters", memoryDigest()},
 	}
 
+	t.Log("NOTE: every other Aura tool returns RENDERED TEXT, not JSON — TOON is inapplicable there.")
 	for _, tc := range cases {
 		payload := roundtrip(tc.payload)
-		compact, err := json.Marshal(payload)
-		if err != nil {
-			t.Fatalf("marshal: %v", err)
-		}
-		pretty, err := json.MarshalIndent(payload, "", "  ")
-		if err != nil {
-			t.Fatalf("marshal indent: %v", err)
-		}
+		compact, _ := json.Marshal(payload)
+		pretty, _ := json.MarshalIndent(payload, "", "  ")
 		toon := toonEncode(payload)
 
 		cJSON := countTokens(enc, string(compact))
 		pJSON := countTokens(enc, string(pretty))
-		cTOON := countTokens(enc, toon)
 
-		t.Logf("\n--- %s ---", tc.name)
-		if tc.note != "" {
-			t.Logf("  NOTE: %s", tc.note)
-		}
-		t.Logf("  compact JSON (Aura's real baseline): %d tokens", cJSON)
-		t.Logf("  pretty  JSON (the flattering baseline): %d tokens", pJSON)
+		t.Logf("\n--- %s | %s ---", tc.tool, tc.shape)
 		if strings.Contains(toon, "<NOT-TABULAR>") {
-			t.Logf("  TOON: not encodable here — %s", tc.note)
+			t.Logf("  compact JSON: %d tokens", cJSON)
+			t.Logf("  TOON: NOT TABULAR-ELIGIBLE (a row carries a nested array) — no tabular gain")
 			continue
 		}
-		t.Logf("  TOON: %d tokens", cTOON)
-		t.Logf("  → vs compact JSON: %+.1f%%   vs pretty JSON: %+.1f%%",
-			delta(cTOON, cJSON), delta(cTOON, pJSON))
+		cTOON := countTokens(enc, toon)
+		t.Logf("  compact JSON: %d   pretty JSON: %d   TOON: %d", cJSON, pJSON, cTOON)
+		t.Logf("  → vs compact: %+.1f%%   (vs pretty: %+.1f%%)", delta(cTOON, cJSON), delta(cTOON, pJSON))
 	}
 }
 
-// delta returns the percentage change from base to got (negative = fewer tokens).
 func delta(got, base int) float64 {
 	if base == 0 {
 		return 0
