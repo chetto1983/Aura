@@ -17,6 +17,7 @@
 package main
 
 import (
+	"encoding/json"
 	"sort"
 	"testing"
 
@@ -132,3 +133,56 @@ func TestMeasureToolWeight(t *testing.T) {
 }
 
 var _ = tools.NewRegistry
+
+// TestMeasureSkillToolBreakdown splits the skill tool's manifest cost between its
+// Description (the loader manifest + lead) and its Parameters schema, then prices each
+// schema property, so a cut can be aimed instead of guessed.
+func TestMeasureSkillToolBreakdown(t *testing.T) {
+	registry := buildRegistry()
+	var spec tools.Spec
+	for _, tool := range registry.All() {
+		if tool.Spec().Name == "skill" {
+			spec = tool.Spec()
+		}
+	}
+	if spec.Name == "" {
+		t.Fatal("skill tool not in the registry")
+	}
+	floor := tokensOfRequest(t, llm.Request{})
+
+	t.Logf("NOTE: buildRegistry wires a nil skills loader, so Description here is the")
+	t.Logf("      fallback notice, NOT a populated manifest. In production the")
+	t.Logf("      Description grows with every installed skill: these are FLOORS.")
+	t.Logf("")
+	t.Logf("summary:     %4d tokens", tokensOfText(t, spec.Summary)-floor)
+	t.Logf("description: %4d tokens", tokensOfText(t, spec.Description)-floor)
+	t.Logf("parameters:  %4d tokens", tokensOfText(t, string(spec.Parameters))-floor)
+
+	var schema struct {
+		Properties map[string]struct {
+			Description string   `json:"description"`
+			Enum        []string `json:"enum"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(spec.Parameters, &schema); err != nil {
+		t.Fatalf("schema: %v", err)
+	}
+	type row struct {
+		name string
+		n    int
+	}
+	rows := make([]row, 0, len(schema.Properties))
+	for name, p := range schema.Properties {
+		rows = append(rows, row{name, tokensOfText(t, p.Description) - floor})
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].n > rows[j].n })
+	t.Logf("")
+	t.Logf("per-property DESCRIPTION cost inside the schema:")
+	total := 0
+	for _, r := range rows {
+		t.Logf("  %-14s %4d tokens", r.name, r.n)
+		total += r.n
+	}
+	t.Logf("  %-14s %4d tokens (%.0f%% of the schema)", "(sum)", total,
+		float64(total)/float64(tokensOfText(t, string(spec.Parameters))-floor)*100)
+}
