@@ -217,7 +217,7 @@ func buildBaseRegistryWithHandles(
 	// a live pool is available (serve/chat boot, ts!=nil) the write actions are wired to
 	// the durable, gated Writer (11-05); the pool-free manifest path (`aura tools`) gets
 	// a read-only tool whose write actions error loudly.
-	reg.Register(newSkillTool(cfg, taskStorePool(ts)))
+	registerSkillTools(reg, cfg, taskStorePool(ts))
 	webEngine := web.NewClient(cfg)
 	// web_fetch / web_search are DELIBERATELY NOT routed into the box (D-11): they stay host-side,
 	// already SSRF-guarded — passing sandboxRouter here would be a scope error.

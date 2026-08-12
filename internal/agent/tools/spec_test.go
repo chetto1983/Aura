@@ -91,7 +91,7 @@ func TestMultiplexedToolsMutatingFloor(t *testing.T) {
 		name string
 		spec Spec
 	}{
-		{"skill", (&SkillTool{}).Spec()},
+		{"skill_manage", (&SkillManageTool{}).Spec()},
 		{"task", (&TaskTool{}).Spec()},
 		{"swarm_spawn", (&SwarmSpawn{}).Spec()},
 	}

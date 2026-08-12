@@ -107,7 +107,7 @@ func TestMutatingToolOwnerCoverage(t *testing.T) {
 		&Patch{},
 		&ShellExec{},
 		&ShellKill{},
-		&SkillTool{},
+		&SkillManageTool{},
 		&SwarmSpawn{},
 		&TaskTool{},
 	}

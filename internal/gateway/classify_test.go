@@ -12,9 +12,14 @@ import (
 // skillSpec/taskSpec/swarmSpec return the REAL tool descriptors so the tests drive
 // off the same schema the model sees (exhaustiveness derives its action list from
 // spec.Parameters, not a hand-copied enum that could drift).
-func skillSpec() tools.Spec { return (&tools.SkillTool{}).Spec() }
-func taskSpec() tools.Spec  { return (&tools.TaskTool{}).Spec() }
-func swarmSpec() tools.Spec { return (&tools.SwarmSpawn{}).Spec() }
+func skillSpec() tools.Spec { return (&tools.SkillManageTool{}).Spec() }
+
+// skillReadSpec is the READ half (list/info/use). Split out of skill in the tool
+// registry; its actions were already Safe, and classify gives a non-Mutating tool
+// exactly Safe, so the table below asserts the tier is unchanged by the split.
+func skillReadSpec() tools.Spec { return (&tools.SkillTool{}).Spec() }
+func taskSpec() tools.Spec      { return (&tools.TaskTool{}).Spec() }
+func swarmSpec() tools.Spec     { return (&tools.SwarmSpawn{}).Spec() }
 
 func mustArgs(t *testing.T, v any) json.RawMessage {
 	t.Helper()
@@ -64,9 +69,9 @@ func TestClassifyTable(t *testing.T) {
 		want scoring.RiskTier
 	}{
 		// skill reads → Safe (allow-listed, never scored)
-		{"skill/list", skill, mustArgs(t, map[string]string{"action": "list"}), scoring.Safe},
-		{"skill/info", skill, mustArgs(t, map[string]string{"action": "info", "name": "x"}), scoring.Safe},
-		{"skill/use", skill, mustArgs(t, map[string]string{"action": "use", "name": "x"}), scoring.Safe},
+		{"skill/list", skillReadSpec(), mustArgs(t, map[string]string{"action": "list"}), scoring.Safe},
+		{"skill/info", skillReadSpec(), mustArgs(t, map[string]string{"action": "info", "name": "x"}), scoring.Safe},
+		{"skill/use", skillReadSpec(), mustArgs(t, map[string]string{"action": "use", "name": "x"}), scoring.Safe},
 		// skill snippet-lifecycle → Normal
 		{"skill/restore", skill, mustArgs(t, map[string]string{"action": "restore", "name": "x"}), scoring.Normal},
 		{"skill/archive", skill, mustArgs(t, map[string]string{"action": "archive", "name": "x"}), scoring.Normal},
@@ -199,7 +204,9 @@ func sortedKeys(m map[string]bool) []string {
 // test pins that separation by asserting BOTH the ComputeSkillTier landmine value AND
 // the correct classify outcome.
 func TestClassifyReadsNotScored(t *testing.T) {
-	skill := skillSpec()
+	// The reads live on the read half now; the separation this test pins is unchanged —
+	// they must reach Safe WITHOUT ever being routed through ComputeSkillTier.
+	skill := skillReadSpec()
 	for _, action := range []string{"list", "info", "use"} {
 		if tier := scoring.ComputeSkillTier(scoring.SkillAction(action), ""); tier != scoring.Risky {
 			t.Fatalf("precondition: ComputeSkillTier(%q) = %q, expected the Risky landmine", action, tier)

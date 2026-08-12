@@ -24,10 +24,14 @@ import (
 // that every registered Mutating+Multiplexed tool appears here — a newly-added
 // multiplexed tool that forgets its entry fails the boot-guard rather than silently
 // under-gating its actions (RESEARCH Pitfall 2 / D-02d).
+// `skill` itself is absent on purpose: it is now the READ-ONLY half (list/info/use) and
+// is not Mutating, so classify's generic branch returns scoring.Safe — the exact tier
+// skillFixedTiers already pinned those three actions to. The authoring half kept the
+// name-keyed entry, because it kept the Mutating+Multiplexed pair the boot-guard checks.
 var multiplexedClassifiers = map[string]func(json.RawMessage) scoring.RiskTier{
-	"skill":       classifySkill,
-	"task":        classifyTask,
-	"swarm_spawn": classifySwarmSpawn,
+	"skill_manage": classifySkill,
+	"task":         classifyTask,
+	"swarm_spawn":  classifySwarmSpawn,
 }
 
 // classify is the monotone saturate-upward de-escalator (D-02). An action-multiplexed
@@ -70,10 +74,12 @@ func classify(spec tools.Spec, rawArgs json.RawMessage) scoring.RiskTier {
 // changes the day someone touches the fallback. It fetches third-party code and lands it
 // active — persistent self-modification from a supply-chain input, which is the tier's own
 // definition. It is not Destructive: an install adds a skill and takes nothing away.
+// The reads (list/info/use) are NOT here any more: they belong to the read-only `skill`
+// tool, which classify answers by name (non-Mutating → Safe, the tier they always had).
+// This map serves `skill_manage`, which cannot dispatch them, so listing them would be a
+// dead entry — and an unrecognised action here saturates to Risky, which is the correct
+// direction for a write verb anyway.
 var skillFixedTiers = map[string]scoring.RiskTier{
-	"list":         scoring.Safe,
-	"info":         scoring.Safe,
-	"use":          scoring.Safe,
 	"restore":      scoring.Normal,
 	"archive":      scoring.Normal,
 	"save_snippet": scoring.Normal,

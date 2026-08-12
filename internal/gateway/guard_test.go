@@ -49,7 +49,7 @@ func TestValidateClassifiablePanicsOnUnwiredMultiplexed(t *testing.T) {
 // mutating tools (shell_exec-shaped) are ignored.
 func TestValidateClassifiableAcceptsWiredTools(t *testing.T) {
 	reg := tools.NewRegistry()
-	reg.Register(fakeTool{spec: tools.Spec{Name: "skill", Mutating: true, Multiplexed: true}})
+	reg.Register(fakeTool{spec: tools.Spec{Name: "skill_manage", Mutating: true, Multiplexed: true}})
 	reg.Register(fakeTool{spec: tools.Spec{Name: "task", Mutating: true, Multiplexed: true}})
 	reg.Register(fakeTool{spec: tools.Spec{Name: "swarm_spawn", Mutating: true, Multiplexed: true, Deferred: true}})
 	reg.Register(fakeTool{spec: tools.Spec{Name: "shell_exec", Mutating: true}})
