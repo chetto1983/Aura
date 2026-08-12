@@ -56,9 +56,16 @@ type Config struct {
 	ConversationTurnCapBytes   int // AURA_CONVERSATION_TURN_CAP_BYTES — content > this spills to a sidecar file
 	ContextToolEvictAfterTurns int // AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS — L1 microcompact eviction age
 	HistoryHardCapTurns        int // AURA_HISTORY_HARD_CAP_TURNS — aggregate rows fetched before the context ladder
-	RunDirWarnThresholdBytes   int // AURA_RUN_DIR_WARN_THRESHOLD_BYTES — boot du WARN threshold (audit-only)
-	RunDirSweepIntervalSec     int // AURA_RUN_DIR_SWEEP_INTERVAL_SEC — periodic sidecar-sweep cadence in `serve` (M-06); <=0 disables the worker (boot sweep still runs)
-	ReasoningPersistMaxRunes   int // AURA_REASONING_PERSIST_MAX_RUNES — display-only per-turn CoT persistence cap (amendment #91); <=0 disables persistence
+	// ContextCompactionEnabled turns on L2.4 LLM compaction: over-budget history is
+	// summarized into one turn before the deterministic L2.5 drop. Default true — it
+	// fires only when the history is ALREADY over the hard cap (where the alternative is
+	// dropping rounds), so it strictly improves that path; the L2.5 fail-safe still
+	// covers a summarizer failure.
+	ContextCompactionEnabled bool   // AURA_CONTEXT_COMPACTION_ENABLED
+	ContextCompactionModel   string // AURA_CONTEXT_COMPACTION_MODEL — empty → main chat model
+	RunDirWarnThresholdBytes int    // AURA_RUN_DIR_WARN_THRESHOLD_BYTES — boot du WARN threshold (audit-only)
+	RunDirSweepIntervalSec   int    // AURA_RUN_DIR_SWEEP_INTERVAL_SEC — periodic sidecar-sweep cadence in `serve` (M-06); <=0 disables the worker (boot sweep still runs)
+	ReasoningPersistMaxRunes int    // AURA_REASONING_PERSIST_MAX_RUNES — display-only per-turn CoT persistence cap (amendment #91); <=0 disables persistence
 
 	// Phase 7 (Slice 5) web_search/web_fetch knobs. SearxngURL is the upstream-
 	// canonical name (NO AURA_ prefix); an empty value is NOT boot-fatal — it is
@@ -415,6 +422,8 @@ func loadBase() *Config {
 		ConversationTurnCapBytes:   envutil.IntDefault("AURA_CONVERSATION_TURN_CAP_BYTES", conversations.DefaultTurnCapBytes),
 		ContextToolEvictAfterTurns: envutil.IntDefault("AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS", 10),
 		HistoryHardCapTurns:        envutil.IntDefault("AURA_HISTORY_HARD_CAP_TURNS", 50),
+		ContextCompactionEnabled:   envutil.BoolDefault("AURA_CONTEXT_COMPACTION_ENABLED", true),
+		ContextCompactionModel:     envDefault("AURA_CONTEXT_COMPACTION_MODEL", ""),
 		RunDirWarnThresholdBytes:   envutil.IntDefault("AURA_RUN_DIR_WARN_THRESHOLD_BYTES", 1073741824),
 		RunDirSweepIntervalSec:     envutil.IntDefault("AURA_RUN_DIR_SWEEP_INTERVAL_SEC", 3600),
 		ReasoningPersistMaxRunes:   envutil.IntDefault("AURA_REASONING_PERSIST_MAX_RUNES", 65536),

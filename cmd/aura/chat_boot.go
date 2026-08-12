@@ -422,10 +422,12 @@ func assembleChatEnv(
 		// Amendment #88: the per-turn "Working directory" hint mirrors the fixed
 		// WorkspaceRoot every host-direct tool now resolves against, replacing the
 		// process-cwd fallback (runner.New still falls back to os.Getwd if this is "").
-		Workspace:  cfg.WorkspaceDir,
-		PreviewCap: cfg.ToolPreviewCap,
-		HistoryCap: cfg.HistoryHardCapTurns,
-		EvictAfter: cfg.ContextToolEvictAfterTurns,
+		Workspace:         cfg.WorkspaceDir,
+		PreviewCap:        cfg.ToolPreviewCap,
+		HistoryCap:        cfg.HistoryHardCapTurns,
+		EvictAfter:        cfg.ContextToolEvictAfterTurns,
+		CompactionEnabled: cfg.ContextCompactionEnabled,
+		CompactionModel:   cfg.ContextCompactionModel,
 		// Amendment #91 (fix-plan 1.12): bounded display-only CoT persistence cap.
 		ReasoningPersistMaxRunes: cfg.ReasoningPersistMaxRunes,
 		AlwaysBlock:              alwaysBlockProvider(cfg),

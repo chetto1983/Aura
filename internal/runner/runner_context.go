@@ -30,6 +30,10 @@ func (r *Runner) loadTurnHistory(
 }
 
 func (r *Runner) contextConfig(memory *conversations.TransientContext) conversations.ContextConfig {
+	var summarizer conversations.Summarizer
+	if r.compactionEnabled {
+		summarizer = conversations.NewLLMSummarizer(r.client, r.compactionModel)
+	}
 	return conversations.ContextConfig{
 		ContextWindow:              r.cfg.ContextWindow,
 		MaxOutputTokens:            r.cfg.MaxOutputTokens,
@@ -38,6 +42,7 @@ func (r *Runner) contextConfig(memory *conversations.TransientContext) conversat
 		AlwaysBlock:                r.renderContextBlock(),
 		TransientContext:           memory,
 		ProviderErrorReserveTokens: llm.ProviderErrorReserveTokens(r.cfg),
+		Summarizer:                 summarizer,
 	}
 }
 

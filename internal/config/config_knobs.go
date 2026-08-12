@@ -96,6 +96,8 @@ func knobRegistry() []KnobSpec {
 		{Name: "AURA_CONVERSATION_TURN_CAP_BYTES", Kind: KindInt, Default: strconv.Itoa(conversations.DefaultTurnCapBytes)},
 		{Name: "AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS", Kind: KindInt, Default: "10"},
 		{Name: "AURA_HISTORY_HARD_CAP_TURNS", Kind: KindInt, Default: "50"},
+		{Name: "AURA_CONTEXT_COMPACTION_ENABLED", Kind: KindBool, Default: "true"},
+		{Name: "AURA_CONTEXT_COMPACTION_MODEL", Kind: KindString, Default: ""},
 		{Name: "AURA_RUN_DIR_WARN_THRESHOLD_BYTES", Kind: KindInt, Default: "1073741824"},
 		{Name: "AURA_RUN_DIR_SWEEP_INTERVAL_SEC", Kind: KindInt, Default: "3600"},
 		{Name: "AURA_WEB_DNS_PIN_TTL_SEC", Kind: KindInt, Default: "60"},
