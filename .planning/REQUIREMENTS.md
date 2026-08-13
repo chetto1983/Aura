@@ -224,7 +224,7 @@ Not requirements — corrections to make in whatever phase touches the file (CLA
 
 ## Traceability
 
-Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-52).
+Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-54).
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
@@ -313,5 +313,10 @@ Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-52).
 
 ---
 *Requirements defined: 2026-08-05*
-*Last updated: 2026-08-05 — roadmap created (Phases 45-52); traceability populated, 52/52
-mapped; corrected the v1 requirement count from 51 to 52*
+*Last updated: 2026-08-13 — reconciled the prose around the traceability table with the table
+itself. The table was already current; the surrounding sentences still described the roadmap's
+first shape. History: 2026-08-05 roadmap created over Phases 45-52 with 52 requirements (the
+count corrected from a stated 51 to an actual 52 at that time), then expanded the same day to
+Phases 45-54 by `1844cbfd9` (durable delegation + mid-turn steering) and grown to 77 by the
+follow-up commits through `528d811c7`. Coverage re-measured 2026-08-13 against ROADMAP.md:
+77 defined, 77 mapped, each to exactly one phase, 0 unmapped, 0 double-mapped.*
