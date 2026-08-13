@@ -27,6 +27,24 @@ import (
 // to chase the verbatim bytes (Pitfall 6).
 const resultExpiredMarker = "\n\n[result expired: full output no longer retained]"
 
+// replayedMarker is appended to a replayed preview on BOTH replay layers (HARN-03/D-10).
+// Without it the model cannot tell a recorded result from one this call actually
+// produced — Aura once diagnosed a stale replay as a live symptom and wrote that
+// misdiagnosis into long-term memory as fact. It composes with resultExpiredMarker
+// rather than replacing it: the two answer different questions (the body is gone /
+// this result was not produced by this call).
+const replayedMarker = "\n\n[replayed: this result is from a prior dispatch of this call, not a fresh execution]"
+
+// markReplayed appends replayedMarker to result.Preview. Both replay layers —
+// replayResult (Layer A, the reservation ledger) and decodeOperationReplay (Layer B,
+// the operation registry, which had no marker at all before this) — call this ONE
+// helper, so the marker string and the append rule live in exactly one place
+// (CLAUDE.md REUSABLE CODE).
+func markReplayed(result tools.ToolResult) tools.ToolResult {
+	result.Preview += replayedMarker
+	return result
+}
+
 const operationReplayRetention = 30 * 24 * time.Hour
 
 // beginOperation consumes the shared registry before the internal policy
@@ -109,7 +127,7 @@ func decodeOperationReplay(replay *idempotency.ReplayResult) (tools.ToolResult, 
 		result.FullPath = replay.SidecarRef
 		result.Bytes = len(result.Preview)
 	}
-	return result, nil
+	return markReplayed(result), nil
 }
 
 // CompleteOperation records the durable typed result after a mutating effect has
@@ -296,10 +314,10 @@ func replayResult(end *toolinvocations.Event) tools.ToolResult {
 			fullPath = ""
 		}
 	}
-	return tools.ToolResult{
+	return markReplayed(tools.ToolResult{
 		Preview:   preview,
 		FullPath:  fullPath,
 		Bytes:     end.ResultBytes,
 		Truncated: end.ResultTruncated,
-	}
+	})
 }

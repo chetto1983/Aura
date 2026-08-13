@@ -179,7 +179,10 @@ func TestGatewayOperationReplayValidationAndBounds(t *testing.T) {
 	t.Parallel()
 
 	fallback, err := decodeOperationReplay(&idempotency.ReplayResult{Preview: "safe", SidecarRef: "sidecar", ExpiresAt: time.Now().Add(time.Hour)})
-	if err != nil || fallback.Preview != "safe" || fallback.FullPath != "sidecar" {
+	// D-10: decodeOperationReplay now appends replayedMarker to every successful
+	// decode, so the preview contains "safe" plus the marker rather than equaling
+	// it verbatim.
+	if err != nil || !strings.Contains(fallback.Preview, "safe") || fallback.FullPath != "sidecar" {
 		t.Fatalf("fallback replay = %+v, %v", fallback, err)
 	}
 	for _, replay := range []*idempotency.ReplayResult{
