@@ -20,10 +20,12 @@ call sites, not stylistic preference):
 1. **Phase 45 (harness correctness) is foundational.** It introduces the `ReplayPolicy`
    vocabulary every later phase's tool specs need to declare correctly from day one, rather
    than retrofitting it after the fact.
+
 2. **Phase 46 (MCP trust/facade) needs Phase 45's vocabulary** — `applyMCPOperationMetadata`
    can't assign anything but the uniform default to a bridged tool without it. Doing this
    right after Phase 45 leaves exactly one remaining metadata-assignment site (native tool
    files) to audit in Phases 47-48, not two moving targets.
+
 3. **Phases 47-48 (tool-surface) need both prior phases settled** — every touched/merged spec
    needs the correct `Mutating`/`ReplayPolicy`/`OperationScope`/`Multiplexed` combination from
    Phase 45, and Phase 46's facade shape must be settled first since facade tools count toward
@@ -31,23 +33,28 @@ call sites, not stylistic preference):
    (47: ceremony strip, 48: un-defer/merges) rather than one giant phase, because it touches
    live persisted state (COMPAT-01/02/03) and PITFALLS.md documents distinct blast radii for
    each kind of change — a parameter drop is lower-risk than a rename/merge.
+
 4. **Phase 49 (memory tiers) is a secondary track** that emerged from the operator's
    post-briefing decisions, not from the original architecture research. It depends on
    Phase 45 (the entity-resolution baseline in the same `internal/arcadedb/memory.go` code
    MEM-04/05 touch) and Phase 46 (the `bridgePolicy` generalization its new short-term/
    reasoning-tier tools reuse for hide-list/risk/replay classification).
+
 5. **Phase 50 (context ladder) has zero package overlap with 45-49** (`internal/conversations`
    + `internal/runner` only) and could run in parallel. Sequenced last among the technical
    phases so its real-token budget (CTX-01) tunes against the *final* manifest shape rather
    than one still being renumbered by Phase 48's un-defer/merges.
+
 6. **Phase 53 (the spike) needs Phase 49's retrieval mechanism** to exist so it can measure
    "does retrieval recover what the ladder drops" against a prototyped summarization
    approach, on the real audit corpus already in hand.
+
 7. **Phases 51-52 (delegation, steering) were added by operator decision on 2026-08-05**, after
    reading hermes' delegation against Aura's. Both implement designs that already exist in the
    repo and were never built: the durable swarm-messaging substrate (approved) and the
    mid-turn steering study. Delegation precedes steering because the steering design
    reconciles with the substrate in its own section 8, and both attach to the same run identity.
+
 8. **Phase 54 (milestone exit) depends on everything** — it retires the compensating lessons
    only once the defects they compensate for are actually fixed, and validates the whole
    milestone by replay, not by a green test suite (ACC-01).
@@ -61,6 +68,7 @@ harness is built; `internal/eval/` stays deleted.
 ## Phases
 
 **Phase Numbering:**
+
 - Continues from v2.0.0's Phase 44. This milestone is Phases 45-54.
 - Decimal phases (45.1, 45.2, ...) would be urgent insertions between these, if needed.
 
@@ -78,6 +86,7 @@ harness is built; `internal/eval/` stays deleted.
 ## Phase Details
 
 ### Phase 45: Harness correctness
+
 **Goal**: Aura's harness never reports a tool result it did not produce this call, and a
 memory correction touches exactly the fact it names — the two headline defects the
 2026-08-04 audit found are closed at the root, not patched at the symptom.
@@ -124,13 +133,16 @@ the subject can't be reliably identified, "exactly the fact it names" can't be r
 ACC-01/ACC-02 are established here, in the first phase, because every subsequent phase's
 validation depends on this methodology already being lived practice, not policy text.
 **Success Criteria** (what must be TRUE):
+
   1. In a live conversation, asking Aura to re-run the same mutating command twice in one turn (after changing the world in between) produces two distinct executions in `aura.tool_invocations`, not one recorded replay served twice.
   2. A genuinely retried dispatch (e.g., a scheduler restart reclaiming the same run) still shows exactly one real execution for that operation in `aura.tool_invocations` — no duplicated side effect.
   3. When a call is legitimately replayed, the tool result surfaced to the model carries a visible replay marker, observable in the transcript / OTel span attributes.
   4. Asking Aura to correct one fact among several sharing the same subject and predicate leaves the sibling facts valid — inspecting the ArcadeDB graph afterward shows only the named fact's validity window closed.
   5. Across this scenario, Aura's replies are in the operator's language, no raw deliberation leaks into user-facing text, and every stated intention either ran or the turn says plainly it didn't.
-**Plans**: 8 plans in 5 waves
-- [ ] 45-01-PLAN.md — BLOCKING D-08 amendments (ROADMAP §45/§46 + prd.md) and the two fix-on-touch doc corrections *(wave 1)*
+
+**Plans**: 1/8 plans executed in 5 waves
+
+- [x] 45-01-PLAN.md — BLOCKING D-08 amendments (ROADMAP §45/§46 + prd.md) and the two fix-on-touch doc corrections *(wave 1)*
 - [ ] 45-02-PLAN.md — TRACER: `RoundOrdinal` in the child operation key, fail-closed, proved with SQL against `aura.tool_invocations` *(wave 2)*
 - [ ] 45-03-PLAN.md — `replayedMarker` on both replay layers, OTel replay attributes, boot-time operation-metadata guard *(wave 3)*
 - [ ] 45-04-PLAN.md — deterministic tool-call-id repair and same-message `(name, args)` dedup *(wave 3)*
@@ -140,6 +152,7 @@ validation depends on this methodology already being lived practice, not policy 
 - [ ] 45-08-PLAN.md — live scenario scored >9.8, full gate matrix, quality-snapshot re-attestation *(wave 5)*
 
 ### Phase 46: MCP trust and facade
+
 **Goal**: MCP servers Aura ships or bundles are trusted in the model's own context, without
 losing the two independent guardrails (per-call result fencing, fail-closed risk
 classification) that never depended on that trust in the first place; calendar and WhatsApp
@@ -180,14 +193,17 @@ targeted, not exhaustive: confirm it in this phase's discussion, and if the PRD 
 description wrapping somewhere, add a second amendment before touching `bridge.go`.
 
 **Success Criteria** (what must be TRUE):
+
   1. In a live conversation, the tool manifest / `tool_search` index shows calendar and WhatsApp reachable through a small curated action set, not the raw 28 underlying MCP tools.
   2. A calendar or WhatsApp mutating action (e.g., delete an event, send a message) still produces the fail-closed risk gate / approval flow live — the removal of the description wrapper has not weakened authorization.
   3. Reading the rendered tool descriptions in a live turn shows every mounted MCP server — bundled recipes and any ad hoc mount alike — presented as ordinary text, with no untrusted-data framing anywhere.
   5. With the description wrapper gone everywhere, a live turn whose MCP tool result carries instruction-shaped text — e.g. an inbound WhatsApp message written to read as a directive overriding Aura's standing orders — does not act on it, proving the result-fencing envelope rather than the description wrapper was what carried the defense.
   4. `accountId` never appears in the model's dispatched arguments for a live calendar/WhatsApp call — inspecting `aura.tool_invocations` shows it was host-injected, exactly like `user_identifier`.
+
 **Plans**: TBD
 
 ### Phase 47: Tool-surface ceremony strip
+
 **Goal**: The lowest-risk tool-surface debt is paid off: parameters the host already knows
 stop being asked of the model, a withheld destructive action is resolved without the model
 ever touching a resume payload, and a file the operator needed reaches them and becomes
@@ -204,14 +220,17 @@ same vein, not schema renames, so they belong in the lower-risk phase. COMPAT-02
 specifically the `ask_user` shape change this phase makes: a pause created under the old
 shape must resume correctly or fail loudly, never silently (Pitfall 4).
 **Success Criteria** (what must be TRUE):
+
   1. Asking Aura to produce a file for the operator results in it reaching their channel (Telegram/web) automatically in that same turn, without Aura calling a separate "send" action.
   2. That same file is already findable via `document_search`/`document_open` on a following turn, without Aura having called a separate indexing action.
   3. A live destructive action withheld for approval, once approved, resumes and completes without the model ever being shown or asked to reproduce a resume/fingerprint payload.
   4. A live `web_fetch` against a known bot-blocked or consent-wall URL is reported to the model as a failed read in the transcript, never handed back as if it were page content.
   5. A conversation paused mid-approval under the pre-Phase-47 `ask_user` shape (seeded before this phase lands) either resumes correctly or fails with an explicit, actionable message — never silently.
+
 **Plans**: TBD
 
 ### Phase 48: Tool-surface un-defer and merges
+
 **Goal**: The model's manifest lands on exactly **14** loaded tools (TOOL-01 names them) and the
 system prompt is regenerated to match exactly what's loaded — the manifest the model reasons over each turn
 becomes something it can actually hold in its head, safe against conversations and schedules
@@ -246,14 +265,17 @@ idempotency key, which are the two paths Phase 45 is fixing, and its payoff scal
 Aura does not have.
 
 **Success Criteria** (what must be TRUE):
+
   1. A fresh conversation's system prompt names exactly the tools actually loaded that turn — no phantom name for a deferred/unloaded tool, verified by reading the rendered prompt.
   2. Scheduling a task in a live conversation with a natural-language `when` ("next Tuesday at 9am") succeeds in one call, with no mutually exclusive time fields required.
   3. Applying a skill happens in one call in a live turn — no separate "view" step before "apply" — while creating/updating a skill still works through the separate lifecycle action.
   4. A conversation rehydrated from turns recorded against the pre-flatten tool schema (seeded before this phase) still produces a valid request on its next live turn — no broken wire message, no crash.
   5. A scheduled `agent_job` created before this phase still fires and resolves its tools against the current, post-flatten registry, verified via a live scheduler run.
+
 **Plans**: TBD
 
 ### Phase 49: Memory tiers
+
 **Goal**: Aura's memory grows a searchable short-term tier and a reasoning tier that only
 enters context on demand — gated by a PRD amendment committed before any of the
 reasoning-tier code, so the boundary between scratch-work and durable fact is a decision on
@@ -276,13 +298,16 @@ content never reaches a summarizer or fact extraction — hermes' own failure mo
 speculative reasoning conclusion preserved as a fact) is one Aura's own audited session
 already exhibited once.
 **Success Criteria** (what must be TRUE):
+
   1. `git log` shows the PRD amendment extending #91 committed as its own commit, dated before any commit touching the reasoning-tier implementation.
   2. A live question about something said several turns back — past what the deterministic ladder still holds in context — is answered correctly via one `memory_recall` call spanning recent conversation and long-term facts; the tool result / OTel span shows which retrieval path (graph traversal or hybrid search) was actually used.
   3. After a turn involving extended reasoning, the ArcadeDB graph shows the reasoning trace persisted with edges to the entities it touched, and a later turn's injected context does NOT include that reasoning content unless explicitly retrieved.
   4. A durable fact revealed mid-task (stated during a live shell/file task) is captured as a memory fact by the time the task completes — checking its recorded provenance shows it was captured directly, never sourced from a reasoning-trace summarizer.
+
 **Plans**: TBD
 
 ### Phase 50: Context ladder legibility
+
 **Goal**: The context ladder's existing deterministic machinery becomes legible and
 accurate — the eviction/budget decisions the model is already subject to are now visible to
 the operator and correct against the provider's real token count.
@@ -302,14 +327,17 @@ reflecting Aura's actual manifest shape, not hermes' 8 categories copied verbati
 same class of legibility signal as the ghost-skill marker. CTX-07 (stated reason when
 context can't be reduced) closes the ladder's failure-mode legibility gap.
 **Success Criteria** (what must be TRUE):
+
   1. In a live long conversation, the context-budget trigger visibly uses the real reported `prompt_tokens` from the last provider response (inspectable via the ladder's logged trigger value / `aura.context_rot_events`), not a tiktoken estimate.
   2. A `tool_search` result whose schema was reloaded later is evicted from context on a subsequent turn — verified by inspecting what's actually sent on the wire that turn.
   3. A skill pruned from context by the ladder leaves a visible marker in a later turn, and Aura reloads it via `skill` rather than acting as if it's still loaded.
   4. Asking the operator-facing diagnostic (or the operator inspecting a live turn) what's consuming the context window shows a breakdown by category — tools, memory, skills, history — not just a single fullness percentage.
   5. When context is over threshold and cannot be reduced further, the turn states the reason rather than failing silently or truncating without explanation.
+
 **Plans**: TBD
 
 ### Phase 51: Durable delegation
+
 **Goal**: A delegated worker gets a brief worth acting on and limits it can see, a worker can
 orchestrate workers of its own, and a top-level delegation stops holding the operator's turn
 hostage — results re-enter the conversation when the work is actually done.
@@ -351,14 +379,17 @@ for and everybody needs: AUTO-03 fires fact-capture inside every worker, so N co
 workers writing one identity's graph is a concurrency surface that does not exist today and
 lands squarely on the memory correctness Phase 45 and 49 just established.
 **Success Criteria** (what must be TRUE):
+
   1. Delegating in a live conversation returns Aura's turn immediately — the operator can keep talking, and the consolidated worker result arrives in the conversation when the work finishes, observable in `aura.conversation_turns`.
   2. A worker that itself delegates receives its own workers' results within its turn — its delegation does not return early, verified in a live nested run.
   3. A live worker brief carries its context separately from its goal, and the rendered tool schema shows the operator's configured concurrency and depth caps, not framework defaults.
   4. A worker that needs the operator surfaces the question in the operator's channel, naming which worker raised it, and answering it resumes that worker's line of work.
   5. After a live fan-out where several workers each learn something durable, the graph holds one correctly-attributed fact per worker — no duplicates, no lost writes, no fact attributed to the parent.
+
 **Plans**: TBD
 
 ### Phase 52: Mid-turn steering
+
 **Goal**: The operator can type into a running turn and have it land — redirecting work at
 the next round boundary instead of waiting for the turn to end or killing it and starting
 over.
@@ -386,14 +417,17 @@ and the client blocks send while `live_run_id` is set. STEER-02 is the guardrail
 this from becoming an escape hatch — a steer redirects the work, it does not buy more budget.
 STEER-04 exists because the failure mode of any queue-into-a-running-thing is silent loss.
 **Success Criteria** (what must be TRUE):
+
   1. Typing a redirect while Aura is mid-task changes what she does next, live — observable as her next round acting on the new instruction, with no tool killed mid-execution.
   2. That steer appears in the persisted conversation at the point it actually landed — reloading the thread or resuming the run shows it in the right place, not appended at the end.
   3. Steering a run that has just finished returns the message to the operator to send normally — it is never silently swallowed.
   4. A steered turn consumes no more steps or wallclock than an unsteered one — the budget is unchanged by steering.
   5. The same steer works from a channel, not only the cockpit.
+
 **Plans**: TBD
 
 ### Phase 53: Summarization spike
+
 **Goal**: The milestone has an evidenced answer, not a guess, to whether an LLM
 summarization rung is worth building on top of the short-term retrieval tier Phase 49
 shipped.
@@ -415,12 +449,15 @@ into that same phase, not a follow-up (Pitfall 3). If it selects retrieval alone
 phase is needed for CTX-V2-01 and it stays deferred. That decision is NOT made by this
 roadmap — it is this phase's deliverable.
 **Success Criteria** (what must be TRUE):
+
   1. The spike runs against the real audit corpus with a defined "known-correct answer" methodology (documented before scoring), not an assumed or informal one.
   2. The spike produces a written, evidenced decision — with measured recall/continuity numbers per arm — on whether retrieval, summarization, or both best recover what the ladder drops.
   3. The decision explicitly states whether CTX-V2-01 is promoted into a future phase, backed by the measured numbers, not asserted without evidence.
+
 **Plans**: TBD
 
 ### Phase 54: Milestone exit
+
 **Goal**: The nine `learned_lesson` facts and the `always-deliver-files` skill — Aura's own
 bug report on herself — are retired, and a live replay of the audited scenarios proves the
 defects they compensated for are actually gone, not just believed gone.
@@ -434,9 +471,11 @@ precondition of the validation, not a separate cleanup step. ACC-01/ACC-02's pol
 (established in Phase 45) governs this phase too: evidence is a live replay against OTel and
 the four named signals, never a green test suite.
 **Success Criteria** (what must be TRUE):
+
   1. The nine `learned_lesson` facts and the `always-deliver-files` skill are deleted from Aura's live memory/skill store — confirmed by querying ArcadeDB and the skills directory directly.
   2. Replaying the audited 2026-08-04 scenarios (or an equivalent live re-run of the same tasks) against the current stack produces correct tool choice on the first attempt, automatic file delivery, and successful self-retrieval of what she needed — verified via `aura.tool_invocations`/`aura.conversation_turns`.
   3. Across a fresh live run of those scenarios, Aura does not re-learn or re-write any of the nine retired lessons back into memory — confirmed by inspecting ArcadeDB after the run.
+
 **Plans**: TBD
 
 ## Progress
@@ -448,7 +487,7 @@ and last-among-technical-phases here so its token budget tunes against the final
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 45. Harness correctness | 0/TBD | Not started | - |
+| 45. Harness correctness | 1/8 | In Progress|  |
 | 46. MCP trust and facade | 0/TBD | Not started | - |
 | 47. Tool-surface ceremony strip | 0/TBD | Not started | - |
 | 48. Tool-surface un-defer and merges | 0/TBD | Not started | - |
