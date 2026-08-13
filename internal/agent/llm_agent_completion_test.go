@@ -298,21 +298,24 @@ func TestCompletionGate_CriticRetryExhaustedFailsOpen(t *testing.T) {
 
 // TestCompletionGate_ContentStop_Veto: the content-stop fallback (model emits
 // prose, no tool call) is also a voluntary termination. A NOT_DONE veto continues
-// the loop one more turn; the second content-stop is accepted.
+// the loop one more turn; the critic is consulted again on the second attempt
+// (the veto budget is now 2, D-20b) and returns DONE, so the second content-stop
+// is accepted.
 func TestCompletionGate_ContentStop_Veto(t *testing.T) {
 	fc := agenttest.NewFakeClient(
 		agenttest.ToolCallTurn(mutatingCall("c1")),
 		agenttest.TextChunks("stop", "here, run create.py yourself"),
 		agenttest.TextChunks("stop", "NOT_DONE: nothing was executed; run it now"),
 		agenttest.TextChunks("stop", "produced and verified the output file"),
+		agenttest.TextChunks("stop", "DONE"),
 	)
 	a := newGateAgent(t, fc, true)
 	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{})))
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if fc.CallCount() != 4 {
-		t.Errorf("CallCount = %d, want 4 (content-stop veto then accept)", fc.CallCount())
+	if fc.CallCount() != 5 {
+		t.Errorf("CallCount = %d, want 5 (mutating + contentStop + critic(NOT_DONE) + contentStop + critic(DONE))", fc.CallCount())
 	}
 	if got := finalContent(t, evs); got != "produced and verified the output file" {
 		t.Errorf("final = %q, want the second (accepted) content-stop answer", got)
