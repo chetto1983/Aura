@@ -189,6 +189,15 @@ type Querier interface {
 	// duplicate, so a retry after a transient failure can never double-count the metric (WR-03).
 	InsertCacheMetric(ctx context.Context, arg InsertCacheMetricParams) error
 	InsertContextRotEvent(ctx context.Context, arg InsertContextRotEventParams) error
+	// parent_seq maintains the canonical leaf->root chain the branch walk recurses on
+	// (ListRecentTurnsByBranchPath joins `t.seq = p.parent_seq`). It is derived here rather
+	// than bound as a parameter so no call site can forget it — which is exactly what
+	// happened: 0017 added the column, backfilled `seq - 1` for the rows present at
+	// migration time, and gave it no default, so EVERY turn appended since carried NULL. A
+	// NULL breaks the join, so a forked branch reconstructed to the forked turn ALONE —
+	// measured 2026-08-13 against the live schema, one turn, not even the system head — and
+	// the model lost the whole prior conversation on any edit/regenerate.
+	// NULLIF keeps seq=1 (the root) at NULL, matching that backfill's `WHERE seq > 1`.
 	InsertConversationTurn(ctx context.Context, arg InsertConversationTurnParams) error
 	InsertIdentityAudit(ctx context.Context, arg InsertIdentityAuditParams) (AuraIdentityAudit, error)
 	InsertIdentityRecoveryAudit(ctx context.Context, arg InsertIdentityRecoveryAuditParams) (AuraIdentityRecoveryAudit, error)

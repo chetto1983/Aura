@@ -21,10 +21,15 @@ import (
 	"github.com/google/uuid"
 )
 
-// chainCanonical sets parent_seq = seq-1 on every turn of conv, putting them all on the
-// canonical branch — what migration 0017 backfills for a pre-0017 linear conversation
-// (AppendTurn, the linear path, leaves parent_seq NULL post-0017; the branch write seam
-// is SetBranchPointers, plan 25-07's job, which we exercise here to model the chain).
+// chainCanonical sets parent_seq = seq-1 on every turn of conv through SetBranchPointers,
+// modelling what migration 0017 backfilled onto the rows that pre-dated it — a state the
+// live database still holds for those rows.
+//
+// It is no longer the ONLY way to reach that shape: AppendTurn now derives the same chain
+// in its INSERT. Until it did, this helper was the only thing producing it, and every
+// branch test seeding through it therefore asserted against a state production never
+// wrote — which is how a total context loss on edit/regenerate stayed green. The test
+// that seeds WITHOUT it is TestBranchFork_ProductionAppendChainsParentSeq.
 func chainCanonical(t *testing.T, s *Store, convID string, seqs ...int) {
 	t.Helper()
 	for _, seq := range seqs {

@@ -43,6 +43,60 @@ func seedLinear(t *testing.T, s *Store) string {
 // branch (chained off the diverging turn's PARENT) while the OLD branch stays queryable —
 // the full-tree contract (RESEARCH OQ3). The new branch's path replaces the edited user
 // turn; the original path still reconstructs unchanged.
+// TestBranchFork_ProductionAppendChainsParentSeq is the regression for the parent_seq
+// data-loss bug. Every other test in this file seeds through chainCanonical, which sets
+// the pointers BY HAND — so the suite validated a state the production append path did
+// not produce, and stayed green while every appended turn carried parent_seq = NULL.
+//
+// It seeds with AppendTurn ONLY, and it forks DEEP. Forking at seq 2 cannot tell the
+// two worlds apart: chained, the path is [system, edited]; broken, the walk dies at the
+// NULL and the CTE's separate head re-adds the system turn — length 2 either way. That
+// is exactly why the bug survived. Forking at seq 4 makes the correct path [1,2,3,leaf]
+// and the broken one [system, leaf]: 4 against 2.
+func TestBranchFork_ProductionAppendChainsParentSeq(t *testing.T) {
+	pool := migratedPool(t)
+	s := newStore(t, pool)
+	ctx := ownerCtx()
+	convID := newConversation(t, s)
+
+	for _, tp := range []AppendTurnParams{
+		{ConversationID: convID, Seq: 1, Role: llm.RoleSystem, Content: "you are aura"},
+		{ConversationID: convID, Seq: 2, Role: llm.RoleUser, Content: "first question"},
+		{ConversationID: convID, Seq: 3, Role: llm.RoleAssistant, Content: "first answer"},
+		{ConversationID: convID, Seq: 4, Role: llm.RoleUser, Content: "second question"},
+		{ConversationID: convID, Seq: 5, Role: llm.RoleAssistant, Content: "second answer"},
+	} {
+		if err := s.AppendTurn(ctx, tp); err != nil {
+			t.Fatalf("AppendTurn seq %d: %v", tp.Seq, err)
+		}
+	}
+	// Deliberately NO chainCanonical: the point is that the production path chains itself.
+
+	newSeq, _, err := s.ForkBranch(ctx, convID, 4, llm.RoleUser, "edited second question")
+	if err != nil {
+		t.Fatalf("ForkBranch(seq 4): %v", err)
+	}
+	path, err := s.LoadBranchHistory(ctx, convID, newSeq)
+	if err != nil {
+		t.Fatalf("LoadBranchHistory(new): %v", err)
+	}
+	if len(path) != 4 {
+		var got []string
+		for _, turn := range path {
+			got = append(got, turn.Content)
+		}
+		t.Fatalf("continued branch reconstructed %d turns %q, want 4 "+
+			"([system, first question, first answer, edited second question]) — a short "+
+			"path means the parent_seq walk died on a NULL and the model lost the prior "+
+			"conversation", len(path), got)
+	}
+	for i, want := range []string{"you are aura", "first question", "first answer", "edited second question"} {
+		if path[i].Content != want {
+			t.Errorf("path[%d] = %q, want %q", i, path[i].Content, want)
+		}
+	}
+}
+
 func TestBranchFork_EditUserTurnCreatesSibling(t *testing.T) {
 	pool := migratedPool(t)
 	s := newStore(t, pool)
