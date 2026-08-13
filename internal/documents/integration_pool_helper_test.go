@@ -2,10 +2,15 @@
 
 package documents
 
-// The disposable-database helper the catalog store's integration tests build on. It
-// outlived the in-process pipeline whose test file defined it: three catalog tests still
-// need a throwaway database, and letting the harness go with the pipeline would have
-// silently dropped tagged coverage of code that is still running.
+// The disposable-database helper every db_integration test in this package builds on. It
+// outlived the in-process pipeline whose test file defined it, and letting the harness go
+// with the pipeline would have silently dropped tagged coverage of code that is still
+// running.
+//
+// It is the ONLY admissible pool here. The alternative this replaced read AURA_DB_MIGRATE_URL
+// and ran db.Migrate against whatever it pointed at, so a local run aimed at the deployment
+// migrated the live database — measured on 2026-08-13, when it applied 0095 outside a deploy.
+// A throwaway database cannot do that to anyone.
 
 import (
 	"context"

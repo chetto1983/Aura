@@ -21,7 +21,7 @@ import (
 // fake catalog stored whatever string it was handed. Only a real store over a real schema
 // can tell the two namespaces apart.
 func TestSetSearchDocumentStatusSpeaksTheSearchIDNamespace(t *testing.T) {
-	pool := migratedDocumentPool(t)
+	pool := pipelineDisposablePool(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -83,7 +83,7 @@ func TestSetSearchDocumentStatusSpeaksTheSearchIDNamespace(t *testing.T) {
 // ownerless ingests: a row in the ingest ledger and no catalog row. The store must say so
 // rather than silently report success on a row it never found.
 func TestSetSearchDocumentStatusNamesTheUncataloguedCase(t *testing.T) {
-	pool := migratedDocumentPool(t)
+	pool := pipelineDisposablePool(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -102,7 +102,7 @@ func TestSetSearchDocumentStatusNamesTheUncataloguedCase(t *testing.T) {
 }
 
 func TestOwnedIngestCreatesAStoredCatalogRow(t *testing.T) {
-	pool := migratedDocumentPool(t)
+	pool := pipelineDisposablePool(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 

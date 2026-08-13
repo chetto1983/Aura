@@ -21,10 +21,10 @@ const cardIngestIdentity = "00000000-0000-0000-0000-0000000000d4"
 // wrote a title and nothing else, and this query returned nothing — the library
 // only knew about documents somebody had already found another way.
 func TestIngestCardMakesAFileFindableByWhatIsInsideIt(t *testing.T) {
-	pool := digestSearchPool(t)
+	pool := pipelineDisposablePool(t)
 	ctx := context.Background()
 	store := NewPostgresCatalogStore(pool)
-	seedCardIngestIdentity(t)
+	seedCardIngestIdentity(t, pool)
 
 	path := filepath.Join(t.TempDir(), "export_2024_final_v3.csv")
 	body := "Area;Localita;Agente\nNORD;GHEDI;ROSSI\nNORD;GHEDI;VERDI\nSUD;GENOVA;BIANCHI\n"
@@ -92,10 +92,10 @@ func TestIngestCardMakesAFileFindableByWhatIsInsideIt(t *testing.T) {
 // upload became two library rows for one file, and the newest — the one
 // document_open resolves — was the one without a card.
 func TestAssetVersionReusesTheCatalogRowIngestAlreadyWrote(t *testing.T) {
-	pool := digestSearchPool(t)
+	pool := pipelineDisposablePool(t)
 	ctx := context.Background()
 	store := NewPostgresCatalogStore(pool)
-	seedCardIngestIdentity(t)
+	seedCardIngestIdentity(t, pool)
 
 	path := filepath.Join(t.TempDir(), "listino.csv")
 	if err := os.WriteFile(path, []byte("Codice;Fornitore\nA1;ACME SPA\nA2;ACME SPA\n"), 0o600); err != nil {
@@ -137,9 +137,12 @@ WHERE identity_id = $1 AND deleted_at IS NULL AND metadata->>'search_document_id
 	}
 }
 
-func seedCardIngestIdentity(t *testing.T) {
+// Takes the caller's pool rather than opening its own: every pool here is a database of
+// its own, so a helper that made a second one would seed the identity somewhere the test
+// never looks. Against the shared live database the two pools happened to agree, which is
+// exactly why the coupling survived unnoticed.
+func seedCardIngestIdentity(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
-	pool := digestSearchPool(t)
 	ctx := context.Background()
 	if _, err := pool.Exec(ctx, `
 INSERT INTO aura.identities (id, name, kind)

@@ -4,8 +4,6 @@ package documents
 
 import (
 	"context"
-	"os"
-	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -14,23 +12,6 @@ import (
 )
 
 const digestSearchIdentity = "00000000-0000-0000-0000-0000000000d2"
-
-func digestSearchPool(t *testing.T) *pgxpool.Pool {
-	t.Helper()
-	dsn := strings.TrimSpace(os.Getenv("AURA_DB_URL"))
-	if dsn == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatal("AURA_DB_URL must be set in CI: a skipped integration tier is a falsely-green job")
-		}
-		t.Skip("AURA_DB_URL not set")
-	}
-	pool, err := pgxpool.New(context.Background(), dsn)
-	if err != nil {
-		t.Skipf("postgres: %v", err)
-	}
-	t.Cleanup(pool.Close)
-	return pool
-}
 
 func clearDigestSearchDocuments(ctx context.Context, pool *pgxpool.Pool) error {
 	return asDocumentIdentity(ctx, pool, digestSearchIdentity, func(tx pgx.Tx) error {
@@ -45,7 +26,7 @@ func clearDigestSearchDocuments(ctx context.Context, pool *pgxpool.Pool) error {
 // there is — the document's own name — while happily listing it. A ranking that
 // cannot find a file by its name is not a library.
 func TestSearchDigestsFindsADocumentByAWordInsideItsFilename(t *testing.T) {
-	pool := digestSearchPool(t)
+	pool := pipelineDisposablePool(t)
 	ctx := context.Background()
 	store := NewPostgresCatalogStore(pool)
 
