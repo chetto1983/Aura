@@ -140,10 +140,10 @@ validation depends on this methodology already being lived practice, not policy 
   4. Asking Aura to correct one fact among several sharing the same subject and predicate leaves the sibling facts valid — inspecting the ArcadeDB graph afterward shows only the named fact's validity window closed.
   5. Across this scenario, Aura's replies are in the operator's language, no raw deliberation leaks into user-facing text, and every stated intention either ran or the turn says plainly it didn't.
 
-**Plans**: 1/8 plans executed in 5 waves
+**Plans**: 2/8 plans executed in 5 waves
 
 - [x] 45-01-PLAN.md — BLOCKING D-08 amendments (ROADMAP §45/§46 + prd.md) and the two fix-on-touch doc corrections *(wave 1)*
-- [ ] 45-02-PLAN.md — TRACER: `RoundOrdinal` in the child operation key, fail-closed, proved with SQL against `aura.tool_invocations` *(wave 2)*
+- [x] 45-02-PLAN.md — TRACER: `RoundOrdinal` in the child operation key, fail-closed, proved with SQL against `aura.tool_invocations` *(wave 2)*
 - [ ] 45-03-PLAN.md — `replayedMarker` on both replay layers, OTel replay attributes, boot-time operation-metadata guard *(wave 3)*
 - [ ] 45-04-PLAN.md — deterministic tool-call-id repair and same-message `(name, args)` dedup *(wave 3)*
 - [ ] 45-05-PLAN.md — completion critic on every voluntary termination, veto budget 2, reply-discipline prompt rule *(wave 3)*
@@ -487,7 +487,7 @@ and last-among-technical-phases here so its token budget tunes against the final
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 45. Harness correctness | 1/8 | In Progress|  |
+| 45. Harness correctness | 2/8 | In Progress|  |
 | 46. MCP trust and facade | 0/TBD | Not started | - |
 | 47. Tool-surface ceremony strip | 0/TBD | Not started | - |
 | 48. Tool-surface un-defer and merges | 0/TBD | Not started | - |
