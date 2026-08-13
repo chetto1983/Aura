@@ -85,8 +85,11 @@ memory correction touches exactly the fact it names — the two headline defects
 **Requirements**: HARN-01, HARN-02, HARN-03, HARN-04, HARN-06, HARN-07, HARN-08, HARN-09, MEM-04, MEM-05, ACC-01, ACC-02
 **Rationale**: Foundational and lowest-risk (ARCHITECTURE.md §1/§4) — touches only
 `tools.Spec`, `idempotency_operation.go`, `reserve.go`, and `internal/arcadedb/memory.go`; no
-new tools, no new packages. Every later phase needs the new `ReplayPolicy` value
-(`ReplayReissueExecutes`) from day one.
+new tools, no new packages. **Corrected 2026-08-13 (measured against commit `09f91a865`,
+prd.md Amendment #121): this phase does NOT introduce a new `ReplayPolicy` value.**
+`ReplayToolResult` remains the only value; the discriminator is a `RoundOrdinal` field added
+to the child operation key's `FingerprintTyped` struct in `deriveToolOperationContext`, and
+the round-ordinal mechanism it depends on already exists in `internal/agent/model_round.go`.
 
 **The open `tool_call_id` question is answered, and the answer is "do not key on it"**
 (hermes `agent/message_sanitization.py:536-566`, `run_agent.py:4601-4648`). Models and
@@ -141,7 +144,11 @@ validation depends on this methodology already being lived practice, not policy 
 losing the two independent guardrails (per-call result fencing, fail-closed risk
 classification) that never depended on that trust in the first place; calendar and WhatsApp
 collapse into a single always-loaded `comms` slot, replacing 28 raw tools.
-**Depends on**: Phase 45 — `applyMCPOperationMetadata` needs the new `ReplayPolicy` vocabulary from Phase 45 to assign anything other than the uniform default to a bridged tool.
+**Depends on**: Phase 45 — narrowed 2026-08-13 (prd.md Amendment #121): `applyMCPOperationMetadata`
+(`internal/agent/mcptools/bridge.go:230-240`) already fills `OperationScope`,
+`OperationNormalizer` and `ReplayPolicy` unconditionally for every `Mutating` bridged tool with
+the uniform default, and that default is correct — there is no vocabulary to wait for. The
+remaining dependency on Phase 45 is the risk-override and hide-list work only.
 **Requirements**: MCP-01, MCP-02, MCP-03, MCP-04, MCP-05, TOOL-14
 **Rationale**: Trust-wrapper scoping and facade groundwork are the same code change
 (generalizing `bridgePolicy` into a namespace-keyed table), so they land together
