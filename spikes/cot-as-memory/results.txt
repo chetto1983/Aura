@@ -1,0 +1,20 @@
+turns=62  conversations=18
+
+M1 cos(reasoning_i, answer_i) — marginal information of the CoT over its own answer
+  min=0.263  p25=0.510  median=0.587  p75=0.734  max=0.859
+
+M2 recall@k with the real user message as query (ground truth = the transcript pairing)
+  answers_recall@1=0.371  reasoning_recall@1=0.694  answers_recall@3=0.548  reasoning_recall@3=0.823
+
+M3 confound check — does the CoT just quote the question back?
+  echo_rows=38  noecho_rows=24  noecho_answers_recall@1=0.375  noecho_reasoning_recall@1=0.375  echo_reasoning_recall@1=0.895
+
+M4 same as M3's no-echo subset, minus degenerate queries ('grazie', 'quindi?')
+  substantive_noecho_rows=20  answers_recall@1=0.450  reasoning_recall@1=0.400
+
+least-similar pairs (largest marginal signal — READ THESE before trusting the number):
+  cos=0.263  q='Carica gli schemi di questi tool con UNA sola chiamata a tool_search: '
+  cos=0.303  q='quindi?'
+  cos=0.322  q='grazie'
+  cos=0.361  q='quale titolo consigli?'
+  cos=0.384  q='<knowledge_base trust="operator_pinned_context">\nThese documents the u'
