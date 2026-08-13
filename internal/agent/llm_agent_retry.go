@@ -52,6 +52,12 @@ func bookkeepingCtx(ctx context.Context) (context.Context, context.CancelFunc) {
 // not a const, so tests can shrink it without sleeping real backoff windows.
 var toolRetryBaseDelay = 200 * time.Millisecond
 
+// replayLayerAttributes derives the OTel evidence for a replayed tool call from
+// state gateway.Verdict already carries — no new field on Verdict (D-10/T-45-10).
+func replayLayerAttributes(operationDecision idempotency.Decision, replay bool) (replayed bool, layer string) {
+	return false, ""
+}
+
 // execTool runs one tool, retrying a non-mutating transient failure with a small
 // linear backoff. It returns the last result/error once the tool succeeds, the
 // error is non-transient, the attempt budget is spent, the tool is mutating, or the
