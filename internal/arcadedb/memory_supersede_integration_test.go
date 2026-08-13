@@ -147,6 +147,112 @@ func TestUpsertFactWithUnknownFactKeyRefusesAgainstALiveGraph(t *testing.T) {
 	}
 }
 
+// D-16: the legacy blanket path resolves candidates before closing. Zero
+// still-valid facts share this subject+predicate -- there is nothing to
+// supersede -- so it refuses rather than silently creating an unlinked new
+// fact next to nothing.
+func TestSupersedeWithNoCandidatesRefusesAgainstALiveGraph(t *testing.T) {
+	client := integrationClient(t)
+	subject, _ := isolate(t, client)
+	now := time.Now()
+
+	written, err := client.UpsertFact(context.Background(), Fact{
+		Subject: subject, Predicate: "learned_lesson", Object: subject + "_lesson",
+		Statement:  subject + " learned a lesson.",
+		Source:     FactSource{RunID: "it-" + subject},
+		Supersedes: true,
+	}, now)
+	if err != nil {
+		t.Fatalf("UpsertFact: %v", err)
+	}
+	if !written.Refused {
+		t.Fatalf("written = %+v, want a refusal: no prior fact shares this subject+predicate", written)
+	}
+	if written.Superseded != 0 {
+		t.Fatalf("superseded = %d, want 0", written.Superseded)
+	}
+
+	present, err := client.FactsAbout(context.Background(), subject, "learned_lesson", 10, time.Time{})
+	if err != nil {
+		t.Fatalf("FactsAbout: %v", err)
+	}
+	if len(present) != 0 {
+		t.Fatalf("a refused correction must write nothing: %+v", present)
+	}
+}
+
+// D-16/SC#4/F-2 replay: eight learned_lesson facts share subject and
+// predicate -- F-2's exact shape, which the broad blind match closed all
+// eight of to correct one. A blanket correction with no fact_key must
+// refuse with eight previews, and EVERY fact -- all eight learned_lesson
+// siblings AND the unrelated lives_in fact on the same subject -- must
+// still be open afterwards. Asserted per-fact, not by a returned count: a
+// count is exactly what hid the original damage.
+func TestSupersedeReplaysF2EightLearnedLessonFactsRefusedAndLivesInUntouched(t *testing.T) {
+	client := integrationClient(t)
+	subject, runID := isolate(t, client)
+	now := time.Now()
+
+	const lessonCount = 8
+	for i := range lessonCount {
+		write(t, client, Fact{
+			Subject: subject, Predicate: "learned_lesson",
+			Object:    fmt.Sprintf("%s_lesson_%d", subject, i),
+			Statement: fmt.Sprintf("%s learned lesson number %d.", subject, i),
+			Source:    FactSource{RunID: runID},
+		}, now)
+	}
+	write(t, client, Fact{
+		Subject: subject, Predicate: "lives_in", Object: subject + "_Torino",
+		Statement: subject + " lives in Torino.",
+		Source:    FactSource{RunID: runID},
+	}, now)
+
+	written, err := client.UpsertFact(context.Background(), Fact{
+		Subject: subject, Predicate: "learned_lesson", Object: subject + "_lesson_blanket_correction",
+		Statement: subject + " learned a lesson, corrected.",
+		Source:    FactSource{RunID: runID}, Supersedes: true,
+	}, now)
+	if err != nil {
+		t.Fatalf("UpsertFact: %v", err)
+	}
+	if !written.Refused {
+		t.Fatalf("written = %+v, want a refusal: %d distinct candidates matched", written, lessonCount)
+	}
+	if written.Superseded != 0 {
+		t.Fatalf("superseded = %d, want 0", written.Superseded)
+	}
+	if len(written.Candidates) != lessonCount {
+		t.Fatalf("candidates = %d, want %d previews", len(written.Candidates), lessonCount)
+	}
+
+	lessons, err := client.FactsAbout(context.Background(), subject, "learned_lesson", 20, time.Time{})
+	if err != nil {
+		t.Fatalf("FactsAbout(learned_lesson): %v", err)
+	}
+	if len(lessons) != lessonCount {
+		t.Fatalf("learned_lesson facts = %d, want exactly %d (no blanket correction written)", len(lessons), lessonCount)
+	}
+	for i := range lessonCount {
+		object := fmt.Sprintf("%s_lesson_%d", subject, i)
+		hit, ok := findByObject(lessons, object)
+		if !ok {
+			t.Fatalf("lesson %d is missing entirely: %+v", i, lessons)
+		}
+		if hit.ValidTo != "" {
+			t.Fatalf("lesson %d was closed by a refused correction: %+v", i, hit)
+		}
+	}
+
+	livesIn, err := client.FactsAbout(context.Background(), subject, "lives_in", 10, time.Time{})
+	if err != nil {
+		t.Fatalf("FactsAbout(lives_in): %v", err)
+	}
+	if len(livesIn) != 1 || livesIn[0].ValidTo != "" {
+		t.Fatalf("the unrelated lives_in fact was touched by a learned_lesson correction: %+v", livesIn)
+	}
+}
+
 func findByObject(hits []FactHit, object string) (FactHit, bool) {
 	for _, hit := range hits {
 		if hit.Object == object {
