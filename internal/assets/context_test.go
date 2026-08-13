@@ -19,7 +19,10 @@ func TestBuildTurnContextComposesAttachmentAndCatalogChannelAgnostic(t *testing.
 	store.assets["nope"] = Asset{ID: "nope", IdentityID: "u1", ThreadID: "t1", Status: StatusComplete, DocumentID: ""}
 	store.assets["xthread"] = Asset{ID: "xthread", IdentityID: "u1", ThreadID: "t2", Status: StatusSearchable, DocumentID: "doc-x", FileName: "x.pdf"}
 	store.assets["other-user-library"] = Asset{ID: "other-user-library", IdentityID: "u2", Scope: ScopeLibrary, Status: StatusSearchable, DocumentID: "doc-u2", FileName: "u2.pdf"}
-	svc := &Service{Store: store}
+	// A DocumentScope that holds everything: this test is about composition and thread/identity
+	// scoping, not about which documents the index has. The catalog now asks the index instead
+	// of reading the status column, so without one it would advertise nothing.
+	svc := &Service{Store: store, DocumentScope: everythingIndexed{}}
 	ctx := context.Background()
 
 	withAttach := svc.BuildTurnContext(ctx, "u1", "t1", []Asset{store.assets["att"]}, "what torque?")
@@ -105,7 +108,9 @@ func TestBuildKnowledgeCatalogListsSearchableDocsExcludingAttached(t *testing.T)
 		{ID: "a3", FileName: "attached.xlsx", Status: StatusSearchable, DocumentID: "doc-3"}, // attached this turn -> excluded
 		{ID: "a4", FileName: "photo.png", Status: StatusSearchable, DocumentID: "doc-4", Summary: "control panel"},
 	}
-	catalog := BuildKnowledgeCatalog(items, map[string]bool{"a3": true})
+	// Every id is indexed here: this test is about exclusion and rendering, not about which
+	// documents the index holds -- context_indexed_test.go owns that.
+	catalog := BuildKnowledgeCatalog(items, map[string]bool{"a3": true}, allIndexed)
 
 	for _, want := range []string{"<knowledge_base", "document_search", "document_id=doc-1", "manual.pdf", "document_id=doc-4", "photo.png"} {
 		if !strings.Contains(catalog, want) {
@@ -120,11 +125,28 @@ func TestBuildKnowledgeCatalogListsSearchableDocsExcludingAttached(t *testing.T)
 }
 
 func TestBuildKnowledgeCatalogEmptyWhenNothingSearchable(t *testing.T) {
-	if got := BuildKnowledgeCatalog(nil, nil); got != "" {
+	if got := BuildKnowledgeCatalog(nil, nil, allIndexed); got != "" {
 		t.Fatalf("empty input catalog = %q, want empty", got)
 	}
+	// Both lack a document id, so neither can be advertised however the index answers.
 	items := []Asset{{ID: "a1", Status: StatusComplete}, {ID: "a2", Status: StatusSearchable, DocumentID: ""}}
-	if got := BuildKnowledgeCatalog(items, nil); got != "" {
+	if got := BuildKnowledgeCatalog(items, nil, allIndexed); got != "" {
 		t.Fatalf("no-searchable catalog = %q, want empty", got)
 	}
+}
+
+// allIndexed stands in for an index that holds everything it is asked about.
+func allIndexed(ids []string) map[string]bool {
+	indexed := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		indexed[id] = true
+	}
+	return indexed
+}
+
+// everythingIndexed answers that every document asked about is in the index.
+type everythingIndexed struct{}
+
+func (everythingIndexed) ResolveDocumentScope(_ context.Context, _ string, ids []string) ([]string, error) {
+	return ids, nil
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/multimodal"
 	"github.com/chetto1983/aura/internal/objectstore"
@@ -53,6 +54,18 @@ func buildAssetService(cfg *config.Config, pool *pgxpool.Pool, objectStore objec
 	// bytes land in ITS OWN Garage bucket under ITS OWN key. Absent → the shared Objects store
 	// handles every op (pre-cutover / interview-only deploy; assets_test.go's nil-pool call stays
 	// valid — no signature change).
+	// The knowledge catalog asks the index which documents exist, because the status column it
+	// used to read has stopped being written: measured on the live deployment 2026-08-13, no
+	// asset had EVER reached 'searchable', so the agent was never told about a single uploaded
+	// file. Absent ArcadeDB the field stays nil and the catalog advertises nothing, which is
+	// the honest answer when there is no index to ask.
+	if strings.TrimSpace(cfg.ArcadeDB.BaseURL) != "" {
+		if index, err := newRuntimeDocumentIndex(cfg, nil, false); err == nil {
+			svc.DocumentScope = &documents.ArcadeRetrievalControlPlane{Index: index}
+		} else {
+			slog.Warn("aura assets: knowledge catalog disabled — no document index", "err", err)
+		}
+	}
 	if bundle := buildObjectResolverBundle(cfg, pool); bundle != nil {
 		svc.IdentityObjects = bundle.Resolver
 		svc.PerIdentityStore = bundle.PerIdentityStore

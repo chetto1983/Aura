@@ -195,7 +195,13 @@ func (f *fakeAssetService) BuildTurnContext(_ context.Context, identityID, threa
 	}
 	var catalog string
 	if identityID != "" && threadID != "" {
-		catalog = assets.BuildKnowledgeCatalog(f.listResp, excluded)
+		catalog = assets.BuildKnowledgeCatalog(f.listResp, excluded, func(ids []string) map[string]bool {
+			indexed := make(map[string]bool, len(ids))
+			for _, id := range ids {
+				indexed[id] = true
+			}
+			return indexed
+		})
 	}
 	return assets.WithContextBlocks(userText, catalog, assets.BuildAttachmentBlock(attachments))
 }

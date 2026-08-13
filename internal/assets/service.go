@@ -46,11 +46,15 @@ type Service struct {
 	// key. Both nil → the shared Objects store handles every op (backward compat).
 	IdentityObjects  ObjectResolver
 	PerIdentityStore StoreFactory
-	Processors       ProcessorSet
-	ProcessingJobs   ProcessingJobQueue
-	Limits           Limits
-	Bucket           string
-	PresignTTL       time.Duration
+	// DocumentScope answers which of a thread's documents the index actually holds, which is
+	// what decides the knowledge catalog now that the status column cannot. Optional: nil
+	// advertises nothing, which is the honest answer when there is no index to ask.
+	DocumentScope  DocumentScopeResolver
+	Processors     ProcessorSet
+	ProcessingJobs ProcessingJobQueue
+	Limits         Limits
+	Bucket         string
+	PresignTTL     time.Duration
 }
 
 // objectsFor resolves the object Store + bucket for the identity carried on ctx (the caller
