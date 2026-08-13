@@ -58,9 +58,17 @@ var patterns = []*struct {
 	// AWS access key ids (permanent IAM keys and temporary STS credentials).
 	{regexp.MustCompile(`(AKIA|ASIA|AROA|AIDA|ANPA|ANVA|AIAA)[0-9A-Z]{16}`), Placeholder},
 	// JSON credential fields, e.g. {"password":"hunter2"}. The inline pattern below
-	// misses these because a quote sits between the key and the colon. The {4,} lower
-	// bound leaves trivially short ("" / "x") values alone.
-	{regexp.MustCompile(`(?i)("(?:password|passwd|pwd|api[_-]?key|token|secret|client[_-]?secret)"\s*:\s*)"[^"]{4,}"`), `${1}"` + Placeholder + `"`},
+	// misses these because a quote sits between the key and the colon.
+	//
+	// The value is `[^"]+` (any non-empty run) and the CLOSING QUOTE IS OPTIONAL. Both
+	// details are load-bearing and were both wrong before:
+	//   - a `{4,}` lower bound let `{"password":"x"}` through verbatim. A one-character
+	//     credential is still a credential; only the empty value is safely ignorable.
+	//   - requiring the closing quote let a TRUNCATED value through, and the ledger
+	//     manufactures exactly that case: RedactForLedger caps the string BEFORE
+	//     redacting, so a JSON credential cut by the byte cap arrives here unterminated
+	//     and, with a mandatory closing quote, survived redaction whole.
+	{regexp.MustCompile(`(?i)("(?:password|passwd|pwd|api[_-]?key|token|secret|client[_-]?secret)"\s*:\s*)"[^"]+"?`), `${1}"` + Placeholder + `"`},
 	// Inline assignments: password=…, token: …, api_key=…. The value runs to the next
 	// whitespace, quote, comma, semicolon or ampersand, so a query string stops at & and
 	// a JSON blob stops at the closing quote.

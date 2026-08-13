@@ -25,6 +25,14 @@ func TestStringRedactsDatabaseURLsUserinfoAndTokens(t *testing.T) {
 		{name: "aws access key id", input: "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE", leaks: []string{"AKIAIOSFODNN7EXAMPLE"}},
 		{name: "aws temporary key id", input: "AWS_ACCESS_KEY_ID=ASIAIOSFODNN7EXAMPLE", leaks: []string{"ASIAIOSFODNN7EXAMPLE"}},
 		{name: "json credential field", input: `{"password":"hunter2","path":"a.txt"}`, leaks: []string{"hunter2"}},
+		// A one-character credential is still a credential: a {4,} lower bound used to let
+		// this through verbatim.
+		{name: "json credential one char", input: `{"password":"x"}`, leaks: []string{`"x"`}},
+		{name: "json credential two chars", input: `{"token":"ab"}`, leaks: []string{`"ab"`}},
+		// The ledger caps BEFORE redacting, so an over-cap JSON credential arrives here
+		// with no closing quote. Requiring one let the retained bytes survive whole.
+		{name: "json credential truncated by a cap", input: `{"api_key":"live-secret-abcdef`, leaks: []string{"live-secret-abcdef"}},
+		{name: "json password truncated by a cap", input: `{"password":"supersecretvalue`, leaks: []string{"supersecretvalue"}},
 		{name: "query string token", input: "https://api.example.com/v1?token=abc123def456&page=2", leaks: []string{"abc123def456"}},
 	}
 	for _, test := range tests {
