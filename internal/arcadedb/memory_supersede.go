@@ -53,7 +53,10 @@ type SupersedeOutcome struct {
 
 // closeSuperseded resolves and closes the fact(s) fact.Supersedes names.
 // fact.TargetFactKey set -> exact-match close (D-15). Empty -> the legacy
-// subject+predicate path.
+// subject+predicate path: resolve the candidate set first, then refuse on 0
+// or >1 distinct matches, close on exactly 1 (D-16). Ambiguity is never
+// resolved by guessing -- no recency tie-break, no ranking heuristic, no
+// cardinality registry (Pitfall 6).
 func (c *Client) closeSuperseded(
 	ctx context.Context,
 	fact Fact,
@@ -63,6 +66,48 @@ func (c *Client) closeSuperseded(
 	if fact.TargetFactKey != "" {
 		return c.closeByFactKey(ctx, fact.TargetFactKey, validFrom, now)
 	}
+	return c.closeByCandidateResolution(ctx, fact, factKey, validFrom, now)
+}
+
+// closeByCandidateResolution is the legacy path's ambiguity contract
+// (D-16), replayed from F-2: 0 candidates refuses (nothing to supersede);
+// exactly 1 closes it, behaviour identical to before D-16 for the
+// single-valued case; more than 1 distinct candidate refuses with previews,
+// naming supersedes_fact_key (Task 1's exact-match close) as the
+// disambiguation path. "Distinct" means a different fact_key -- candidates
+// are already one row per edge, so the count IS the distinct count.
+func (c *Client) closeByCandidateResolution(
+	ctx context.Context,
+	fact Fact,
+	factKey string,
+	validFrom, now time.Time,
+) (SupersedeOutcome, error) {
+	candidates, err := c.candidatesForSupersede(ctx, fact.Subject, fact.Predicate, now)
+	if err != nil {
+		return SupersedeOutcome{}, err
+	}
+	switch len(candidates) {
+	case 0:
+		return SupersedeOutcome{
+			Refused: true,
+			Reason: fmt.Sprintf(
+				"no still-valid fact matches subject %q and predicate %q; nothing to supersede",
+				fact.Subject, fact.Predicate,
+			),
+			Candidates: candidates,
+		}, nil
+	case 1:
+		// Fall through: exactly one target, close it below.
+	default:
+		return SupersedeOutcome{
+			Refused: true,
+			Reason: fmt.Sprintf(
+				"%d facts match subject %q and predicate %q -- name one with supersedes_fact_key",
+				len(candidates), fact.Subject, fact.Predicate,
+			),
+			Candidates: candidates,
+		}, nil
+	}
 	rows, err := c.Command(ctx, closeSupersededStatement, map[string]any{
 		"valid_to":     validFrom.UTC().Format(time.RFC3339),
 		"expired_at":   now.UTC().Format(time.RFC3339),
@@ -71,9 +116,35 @@ func (c *Client) closeSuperseded(
 		"fact_key":     factKey,
 	})
 	if err != nil {
-		return SupersedeOutcome{}, fmt.Errorf("arcadedb: close superseded facts: %w", err)
+		return SupersedeOutcome{}, fmt.Errorf("arcadedb: close superseded fact: %w", err)
 	}
 	return SupersedeOutcome{Closed: countUpdated(rows)}, nil
+}
+
+// candidatesForSupersede resolves the still-valid facts an ambiguous
+// Supersedes:true would consider. It reuses FactsAbout -- the read path
+// Task 1's fact_key already rides through, factHitFromRow and all -- rather
+// than a third query shape, then narrows client-side to the hits where
+// subject is the edge's SOURCE: FactsAbout's WHERE matches either endpoint,
+// but closeSupersededStatement only ever closes a fact where the named
+// subject is outV(), and the candidate set must match exactly what a close
+// would touch.
+func (c *Client) candidatesForSupersede(
+	ctx context.Context,
+	subject, predicate string,
+	asOf time.Time,
+) ([]FactHit, error) {
+	hits, err := c.FactsAbout(ctx, subject, predicate, c.memoryLimits().Results, asOf)
+	if err != nil {
+		return nil, fmt.Errorf("arcadedb: resolve supersede candidates: %w", err)
+	}
+	candidates := make([]FactHit, 0, len(hits))
+	for _, hit := range hits {
+		if hit.Subject == subject {
+			candidates = append(candidates, hit)
+		}
+	}
+	return candidates, nil
 }
 
 // closeByFactKey closes exactly the one fact targetFactKey names. 0 rows

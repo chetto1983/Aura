@@ -140,8 +140,21 @@ func TestUpsertFactStoresProvenance(t *testing.T) {
 
 // Superseding closes the previous window instead of deleting the row: that is
 // what keeps "where did he live in 2024" answerable.
+//
+// arcadedb's D-16 ambiguity contract now resolves the subject+predicate
+// candidate set before closing anything (0 or >1 distinct matches refuses
+// instead of blindly closing) -- so this mock must answer the resolution
+// SELECT with exactly one candidate for the close to be reached at all.
+// oneFactRow's subject ("Davide") matches validFactInput() exactly.
 func TestSupersedingClosesTheWindowAndDoesNotDelete(t *testing.T) {
-	client, rec := newRecordingDB(t)
+	client, rec := newRecordingDB(t,
+		`{"result":[]}`,            // entity upsert: subject
+		`{"result":[]}`,            // entity upsert: object
+		`{"result":[]}`,            // attachFactSource: release expired identity
+		`{"result":[]}`,            // attachFactSource: exact replay lookup
+		oneFactRow,                 // candidate resolution (D-16): exactly one still-valid match
+		`{"result":[{"count":1}]}`, // the exact-match close this test asserts on
+	)
 	in := validFactInput()
 	in.Supersedes = true
 	if _, err := upsert(t, client, in); err != nil {
