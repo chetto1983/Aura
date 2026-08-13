@@ -29,7 +29,7 @@
 - [ ] **HARN-01**: A mutating tool call re-issued in the same turn with identical arguments executes again and returns a fresh result, never a recorded one
 - [x] **HARN-02**: A genuinely retried dispatch (CLI or scheduler restart, approval resume) still executes at most once
 - [x] **HARN-03**: When a replay is correct, the returned result is labelled as replayed so the model can tell it apart from a fresh execution
-- [ ] **HARN-04**: A memory correction closes exactly the fact it names and leaves sibling facts sharing the same subject and predicate untouched
+- [x] **HARN-04**: A memory correction closes exactly the fact it names and leaves sibling facts sharing the same subject and predicate untouched
 - [ ] **HARN-05**: Several memory operations apply as one atomic call, validated on the final state, so a correction cannot destroy what it was meant to replace
 - [ ] **HARN-06**: A turn does not end on a stated-but-unexecuted intention — either the action runs, or the turn says plainly it did not and why
 - [ ] **HARN-07**: The reply is in the operator's language, and internal deliberation never reaches it as user-facing text
@@ -135,7 +135,7 @@
 - [ ] **MEM-02**: One retrieval call spans short-term conversation and long-term facts
 - [ ] **MEM-03**: Reasoning traces are persisted to the graph with edges to the entities they touched, and enter context only when explicitly retrieved
 - [ ] **MEM-04**: One person is one entity — the operator's profile and preferences do not split across a name and an identity UUID
-- [ ] **MEM-05**: Recording a multi-valued fact does not create a junk entity node per distinct value
+- [x] **MEM-05**: Recording a multi-valued fact does not create a junk entity node per distinct value
 - [ ] **MEM-06**: The PRD amendment extending #91 (reasoning persisted to the graph, retrieved only on demand, never summarized or harvested) is committed **before** any reasoning-tier code
 
 ### Surface legibility
@@ -252,7 +252,7 @@ Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-54).
 | HARN-01 | Phase 45 | Pending |
 | HARN-02 | Phase 45 | Complete |
 | HARN-03 | Phase 45 | Complete |
-| HARN-04 | Phase 45 | Pending |
+| HARN-04 | Phase 45 | Complete |
 | HARN-05 | Phase 49 | Pending |
 | HARN-06 | Phase 45 | Pending |
 | HARN-07 | Phase 45 | Pending |
@@ -267,7 +267,7 @@ Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-54).
 | MEM-02 | Phase 49 | Pending |
 | MEM-03 | Phase 49 | Pending |
 | MEM-04 | Phase 45 | Pending |
-| MEM-05 | Phase 45 | Pending |
+| MEM-05 | Phase 45 | Complete |
 | MEM-06 | Phase 49 | Pending |
 | STEER-01 | Phase 52 | Pending |
 | STEER-02 | Phase 52 | Pending |
