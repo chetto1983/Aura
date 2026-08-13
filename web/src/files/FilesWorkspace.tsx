@@ -6,11 +6,10 @@ import {
   type IApi,
   type IEntity,
 } from '@svar-ui/react-filemanager';
-import { RestDataProvider } from '@svar-ui/filemanager-data-provider';
 import { Locale } from '@svar-ui/react-core';
 import { useTranslation } from 'react-i18next';
 import '@svar-ui/react-filemanager/all.css';
-import { fileManagerBase, directURL, parseDates } from './filesApi';
+import { createFileManagerProvider, directURL, parseDates } from './filesApi';
 import { filesWords } from './filesLocale';
 
 interface FilesWorkspaceProps {
@@ -35,7 +34,7 @@ export default function FilesWorkspace({ mobileMenu }: FilesWorkspaceProps) {
 
   // One provider for the component's lifetime: it is an event-bus link, and rebuilding it
   // per render would re-register handlers on every keystroke.
-  const provider = useMemo(() => new RestDataProvider(fileManagerBase), []);
+  const provider = useMemo(() => createFileManagerProvider(), []);
 
   useEffect(() => {
     let cancelled = false;
