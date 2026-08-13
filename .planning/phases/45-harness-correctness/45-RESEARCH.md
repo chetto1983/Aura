@@ -856,12 +856,16 @@ WHERE predicate = :predicate AND expired_at IS NULL
 |---|-------|---------|---------------|
 | A1 | Hermes' exact behavior (`agent/message_sanitization.py:536-566`, `conversation_loop.py:5950-5990,6155-6215`, `tools/memory_tool.py:462-491,615-642`) as described in CONTEXT.md/ROADMAP.md — this research did **not** independently re-read `D:/tmp/hermes-agent` (out of scope: it is not part of this repository, and CONTEXT.md's discussion session already did this reading with file:line citations) | User Constraints (D-12/D-13/D-16/D-17), Don't Hand-Roll | If a hermes citation is subtly mis-transcribed in CONTEXT.md, the specific mechanic (e.g., the exact collision-suffix algorithm) could be wrong in a way this research would not catch; the planner should treat hermes citations as CITED-tier (from the discuss-phase session), not independently re-verified here |
 | A2 | `go.opentelemetry.io/otel/attribute` (or the project's existing OTel wrapper) is the correct import for D-10's span attributes | Standard Stack | If Aura wraps OTel behind an internal package instead of calling the SDK directly, the exact import path differs — a two-minute `grep -rn "SetAttributes\|attribute\." internal/` at implementation time resolves this; not independently confirmed in this session |
-| A3 | No currently-passing test asserts on the literal `"tool-child-v1"` version string or the exact 6-field shape of `FingerprintTyped` | Finding 2 | If such a test exists, it needs updating alongside D-01's field addition; this research did not run the specific grep to confirm either way (noted explicitly in Finding 2's "what this does not prove") |
+| A3 | No currently-passing test asserts on the literal `"tool-child-v1"` version string or the exact 6-field shape of `FingerprintTyped` | Finding 2 | If such a test exists, it needs updating alongside D-01's field addition; this research did not run the specific grep to confirm either way (noted explicitly in Finding 2's "what this does not prove"). **RESOLVED 2026-08-13** — the grep was run at planning time: zero matches on the `"tool-child-v1"` literal, and every `FingerprintTyped` test occurrence builds a PARENT struct. See Open Question 2's resolution below. |
 
-## Open Questions
+## Open Questions (RESOLVED — both closed at planning time, 2026-08-13)
+
+> Both questions below were open when this research was written and are now closed. The resolution
+> is recorded inline under each, with the plan and task that carries it. Neither remains a blocker
+> for execution; do not re-open either without a new measurement.
 
 1. **Which span is in scope when `replayResult`/`decodeOperationReplay` need to set an OTel
-   attribute?**
+   attribute?** — **RESOLVED by plan 45-03, Task 2.**
    - What we know: neither function takes a `context.Context` or span reference today (Finding
      3); the caller (`execTool`) does have `ctx`.
    - What's unclear: whether the attribute should be set by the caller (after receiving the
@@ -870,13 +874,42 @@ WHERE predicate = :predicate AND expired_at IS NULL
    - Recommendation: the planner should decide this as an implementation-task detail; either
      shape satisfies D-10's requirement, and CONTEXT.md deliberately left "exact wording" to
      Claude's Discretion, which by extension covers this plumbing choice too.
+   - **RESOLUTION (plan 45-03, Task 2):** neither replay function is given a span parameter. The
+     layer is DERIVED where the information already exists — in `execTool`, at the point it already
+     reads `verdict.OperationDecision` and `verdict.Replay`: `OperationDecision ==
+     idempotency.DecisionReplay` means `"operation"`, otherwise a non-nil `verdict.Replay` means
+     `"reservation"`. No field is added to `gateway.Verdict`. The choice between the two remaining
+     plumbing shapes — stamping inside `execTool` on the span its `ctx` already carries, versus
+     returning the two values for `runTool` to stamp before `endToolSpan` — is delegated to the
+     implementer as the smaller signature change, with the attribute-name literals confined to a
+     single stamping helper beside `endToolSpan` in `tracing.go` and the derivation unit-tested in
+     `internal/agent/llm_agent_replay_layer_test.go`. What is NOT delegated: the attribute names are
+     fixed at `aura.tool.replayed` (bool) and `aura.tool.replay_layer` (string), because ACC-02's
+     evidence reading queries them.
 
 2. **Does any existing test assert on `FingerprintTyped`'s exact field set or the
-   `"tool-child-v1"` literal?**
+   `"tool-child-v1"` literal?** — **RESOLVED by plan 45-01's `<assumption_delta_decision>`; re-run
+   as a task step in plan 45-02, Task 1.**
    - What we know: the struct and constant are confirmed present (Finding 2).
    - What's unclear: whether a golden/snapshot test pins the current shape.
    - Recommendation: run `grep -rn "tool-child-v1\|FingerprintTyped" internal/ --include=*_test.go`
      as a pre-flight step before starting the D-01 implementation task.
+   - **RESOLUTION (measured 2026-08-13, recorded verbatim in 45-01-PLAN.md
+     `<assumption_delta_decision>`):** the grep was run. **Zero matches on the `"tool-child-v1"`
+     literal anywhere in the tree.** `FingerprintTyped` appears in 8 test files
+     (`llm_agent_retry_gateway_test.go:371`, `agui/idempotency_http_test.go:215`,
+     `cron/handlers/agentjob_test.go:156`, `gateway/idempotency_test.go:49`,
+     `idempotency/fingerprint_test.go`, `idempotency/maintenance_integration_test.go:190`,
+     `idempotency/store_integration_test.go:403`, `idempotency/store_test.go:395`,
+     `runner/runner_resume_idempotency_test.go:31`) but **every occurrence builds a PARENT
+     fingerprint struct, never the child `FingerprintTyped` literal in
+     `deriveToolOperationContext`.** No golden or snapshot test pins the child struct's field set,
+     so D-01's field addition and the `tool-child-v1` → `tool-child-v2` version bump are unblocked.
+     This closes assumption **A3** in the table above.
+   - **Why it is still a task step and not merely a recorded answer:** RESEARCH.md carries a 14-day
+     validity window and this branch is active, so plan 45-02 Task 1 re-runs the identical grep
+     before the key-shape edit. If the re-run disagrees with the measurement above, the pinning test
+     is updated in the same commit rather than worked around.
 
 ## Environment Availability
 
