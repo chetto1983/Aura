@@ -85,8 +85,11 @@ memory correction touches exactly the fact it names — the two headline defects
 **Requirements**: HARN-01, HARN-02, HARN-03, HARN-04, HARN-06, HARN-07, HARN-08, HARN-09, MEM-04, MEM-05, ACC-01, ACC-02
 **Rationale**: Foundational and lowest-risk (ARCHITECTURE.md §1/§4) — touches only
 `tools.Spec`, `idempotency_operation.go`, `reserve.go`, and `internal/arcadedb/memory.go`; no
-new tools, no new packages. Every later phase needs the new `ReplayPolicy` value
-(`ReplayReissueExecutes`) from day one.
+new tools, no new packages. **Corrected 2026-08-13 (measured against commit `09f91a865`,
+prd.md Amendment #121): this phase does NOT introduce a new `ReplayPolicy` value.**
+`ReplayToolResult` remains the only value; the discriminator is a `RoundOrdinal` field added
+to the child operation key's `FingerprintTyped` struct in `deriveToolOperationContext`, and
+the round-ordinal mechanism it depends on already exists in `internal/agent/model_round.go`.
 
 **The open `tool_call_id` question is answered, and the answer is "do not key on it"**
 (hermes `agent/message_sanitization.py:536-566`, `run_agent.py:4601-4648`). Models and
