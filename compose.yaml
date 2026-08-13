@@ -106,7 +106,16 @@ services:
       AURA_EMBED_BASE_URL: http://aura-llama-embed:8081
       AURA_EMBED_DIMENSIONS: ${AURA_EMBED_DIMENSIONS:-768}
       AURA_OTEL_EXPORTER: ${AURA_OTEL_EXPORTER:-none}
-      AURA_OTEL_ENDPOINT: ${AURA_OTEL_ENDPOINT:-localhost:4317}
+      # tempo:4317, not localhost:4317. Tempo used to live in this container's network
+      # namespace; it is an ordinary service now, so traces go to it by name.
+      AURA_OTEL_ENDPOINT: ${AURA_OTEL_ENDPOINT:-tempo:4317}
+      # 0.0.0.0, not the 127.0.0.1 default in config.go: Prometheus scrapes this from
+      # its own container now. No host port is published for 9464, so the listener is
+      # reachable on the project network and nowhere else. The loopback-only bind was
+      # only viable while Prometheus shared this namespace, and that sharing is what
+      # silently blinded the whole metrics plane for five and a half hours on
+      # 2026-08-13 (see the prometheus service for the measurement).
+      AURA_METRICS_BIND: ${AURA_METRICS_BIND:-0.0.0.0:9464}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       AURA_LLM_BASE_URL: ${AURA_LLM_BASE_URL:-https://openrouter.ai/api/v1}
       AURA_LLM_MODEL: ${AURA_LLM_MODEL:-deepseek/deepseek-v4-flash:nitro}
@@ -1101,14 +1110,36 @@ services:
       retries: 30
       start_period: 60s                 # local artifact loads fast; no first-boot download anymore
 
-  # Optional local observability pack. Prometheus and Tempo join Aura's network
-  # namespace so the loopback-only metrics listener and OTLP receiver remain
-  # private. Grafana alone is published, and only on host loopback.
+  # Optional local observability pack. Ordinary services on the project network,
+  # reached by service name. Grafana alone is published, and only on host loopback.
+  #
+  # These two used to run with `network_mode: "service:aura"` so Aura's metrics
+  # listener could stay loopback-only. That is a documented, unfixed Docker Compose
+  # trap: when the namespace owner is recreated the sharers keep running attached to
+  # the DEAD namespace, reachable by nobody, and Compose never re-attaches them
+  # (docker/compose#6626, #7765, #10263 — all still open). Nothing crashes, so no
+  # restart policy helps.
+  #
+  # Measured here on 2026-08-13: `up{job="aura"}` was 0 for FIVE AND A HALF HOURS
+  # (07:05 -> 12:35 UTC) after an `up -d --no-deps aura`. Every metric in the catalog
+  # kept being recorded and none reached Prometheus; the outage surfaced only because
+  # someone went looking for a cache-hit number by hand.
+  #
+  # The previous design detected it correctly — Grafana probed both sidecars from
+  # OUTSIDE the namespace, which is the only place that can — but detection routed to
+  # a container health status nobody reads. Rather than add a watcher that repairs the
+  # orphaning, the coupling that creates it is removed: on the project network there
+  # is no namespace to orphan and nothing to re-attach, ever.
+  #
+  # The price, stated plainly: AURA_METRICS_BIND moves from 127.0.0.1 to 0.0.0.0, so
+  # /metrics is reachable by any service on the project network instead of by the
+  # namespace only. No host port is published for it. That is a weaker posture than
+  # before and a stronger one than the Docker socket this same container already
+  # mounts (see the aura service).
   prometheus:
     image: prom/prometheus:v3.13.1@sha256:3c42b892cf723fa54d2f262c37a0e1f80aa8c8ddb1da7b9b0df9455a35a7f893
     profiles: [observability]
     restart: unless-stopped
-    network_mode: "service:aura"
     depends_on:
       aura:
         condition: service_healthy
@@ -1126,11 +1157,9 @@ services:
     cpus: ${AURA_PROMETHEUS_CPUS:-0.50}
     pids_limit: 256
     healthcheck:
-      # Loopback-only: this probe runs INSIDE aura's network namespace, so after
-      # `docker restart aura` it keeps passing against a dead namespace nobody else
-      # can reach. Reachability is asserted from outside by grafana's healthcheck
-      # (see below) and scripts/observability_sidecar_check.sh — do not "fix" this
-      # one into a false green.
+      # Now a real probe: 127.0.0.1 is this container's own loopback, not a shared
+      # namespace that can go stale underneath it. The old warning about a false green
+      # is gone with the coupling that caused it.
       test: ["CMD", "/bin/wget", "--spider", "-q", "http://127.0.0.1:9090/-/ready"]
       interval: 15s
       timeout: 5s
@@ -1144,7 +1173,6 @@ services:
     # The distroless image has no init shell; root is required to initialize a
     # fresh Docker-managed volume before Tempo writes bounded local blocks.
     user: "0:0"
-    network_mode: "service:aura"
     depends_on:
       aura:
         condition: service_healthy
@@ -1159,11 +1187,9 @@ services:
     healthcheck:
       # Config-file validation only, not a network probe: the image is distroless
       # (no shell, no wget — measured 2026-08-05), so it cannot run a CMD-SHELL
-      # reachability test at all, and it would keep passing against a dead
-      # namespace after `docker restart aura` regardless. Reachability is asserted
-      # from outside by grafana's healthcheck (see below) and
-      # scripts/observability_sidecar_check.sh — do not "fix" this one into a false
-      # green.
+      # reachability test at all. Tempo's reachability is asserted by grafana's
+      # healthcheck, which now dials it by service name; the stale-namespace caveat
+      # this comment used to carry no longer applies (see the prometheus service).
       test: ["CMD", "/tempo", "-config.file=/etc/tempo/tempo.yml", "-config.verify=true"]
       interval: 30s
       timeout: 10s
@@ -1197,14 +1223,12 @@ services:
     cpus: ${AURA_GRAFANA_CPUS:-0.50}
     pids_limit: 256
     healthcheck:
-      # Also asserts the two sidecars that share aura's network namespace. Neither can
-      # detect its own orphaning: after aura is recreated their processes stay alive
-      # attached to a dead namespace, and a loopback probe from inside it still passes
-      # (measured 2026-08-05). tempo is distroless and cannot run a shell test at all.
-      # Grafana is outside that namespace and already depends on both, so it is where
-      # the reachability assertion belongs — and a dashboard without its datasources is
-      # genuinely degraded, not merely reporting on someone else's problem.
-      test: ["CMD-SHELL", "wget -q -T 3 -O /dev/null http://127.0.0.1:3000/api/health && wget -q -T 3 -O /dev/null http://aura:3200/ready && wget -q -T 3 -O /dev/null http://aura:9090/-/ready"]
+      # Still asserts both datasources, now by SERVICE NAME rather than through aura's
+      # namespace. The reason for asserting them here is unchanged and still good: a
+      # dashboard without its datasources is genuinely degraded, not merely reporting
+      # on someone else's problem. What is gone is the orphaning this had to catch —
+      # tempo and prometheus are ordinary services on the project network now.
+      test: ["CMD-SHELL", "wget -q -T 3 -O /dev/null http://127.0.0.1:3000/api/health && wget -q -T 3 -O /dev/null http://tempo:3200/ready && wget -q -T 3 -O /dev/null http://prometheus:9090/-/ready"]
       interval: 15s
       timeout: 5s
       retries: 12

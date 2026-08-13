@@ -58,8 +58,8 @@ func startServeObservability(
 	if err != nil {
 		return nil, err
 	}
-	server := newPrivateMetricsServer(cfg.MetricsBind, runtime.MetricsHandler())
-	listener, err := bindPrivateMetricsListener(server.Addr, listen)
+	server := newMetricsServer(cfg.MetricsBind, runtime.MetricsHandler())
+	listener, err := bindMetricsListener(server.Addr, listen)
 	if err != nil {
 		shutCtx, cancel := context.WithTimeout(context.Background(), observabilityShutdownTimeout)
 		defer cancel()
