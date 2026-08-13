@@ -152,8 +152,51 @@ func EnsureRoles(ctx context.Context, bootstrapURL, password string) error {
 	if _, err := pool.Exec(ctx, "GRANT CREATE ON SCHEMA public TO aura_migrate"); err != nil {
 		return fmt.Errorf("grant CREATE on public to aura_migrate: %w", redactErrorPassword(err, password))
 	}
+	if _, err := pool.Exec(ctx, ensureAuthulaReadableByMigrateSQL); err != nil {
+		return fmt.Errorf("grant SELECT on authula to aura_migrate: %w", redactErrorPassword(err, password))
+	}
 	return nil
 }
+
+// ensureAuthulaReadableByMigrateSQL lets aura_migrate READ the authula schema, which is
+// what the nightly pg_dump backup needs and did not have.
+//
+// 0019 creates schema `authula` owned by aura_migrate and grants aura_app CREATE+USAGE,
+// then reasons: "aura_app owns the tables it creates in authula, so it already has full
+// DML on them; no ALTER DEFAULT PRIVILEGES is needed." True for aura_app, and it forgot
+// the role that takes the backups. Owning a SCHEMA conveys nothing over tables another
+// role creates inside it, so aura_migrate could not even LOCK them:
+//
+//	pg_dump: error: query failed: ERROR: permission denied for table auth_schema_migrations
+//
+// auth_schema_migrations is not special — it is simply the first authula table in
+// pg_dump's LOCK TABLE list, so the dump aborts there. All seven were unreadable, and
+// every nightly backup had failed since Authula first created them (measured 2026-08-13
+// on the live deployment: 5 runs, 5 failures, zero dumps produced).
+//
+// This cannot live in a migration. Migrations run as aura_migrate, which is not the
+// tables' owner, not a superuser, and not a member of aura_app — it cannot grant itself
+// anything here. EnsureRoles already runs on the privileged bootstrap connection and
+// already issues grants, so it is the seam that CAN.
+//
+// Both statements are needed and neither replaces the other: the GRANT covers the tables
+// Authula has already created, ALTER DEFAULT PRIVILEGES covers the ones it creates next
+// (a plugin table added by a future Authula upgrade would otherwise silently re-break the
+// backup). Running on every boot makes it self-healing rather than a one-shot repair.
+//
+// The IF-EXISTS guard matters because EnsureRoles runs BEFORE Migrate: on a first boot
+// the schema does not exist yet, and the next boot picks it up.
+const ensureAuthulaReadableByMigrateSQL = `
+DO $$
+BEGIN
+    IF to_regnamespace('authula') IS NULL THEN
+        RETURN;
+    END IF;
+    EXECUTE 'GRANT USAGE ON SCHEMA authula TO aura_migrate';
+    EXECUTE 'GRANT SELECT ON ALL TABLES IN SCHEMA authula TO aura_migrate';
+    EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE aura_app IN SCHEMA authula GRANT SELECT ON TABLES TO aura_migrate';
+END
+$$;`
 
 // redactErrorPassword scrubs known passwords from an error message before it
 // is wrapped. Defense-in-depth on top of parametrized queries — if a Postgres
