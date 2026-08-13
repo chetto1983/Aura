@@ -33,8 +33,8 @@
 - [ ] **HARN-05**: Several memory operations apply as one atomic call, validated on the final state, so a correction cannot destroy what it was meant to replace
 - [ ] **HARN-06**: A turn does not end on a stated-but-unexecuted intention — either the action runs, or the turn says plainly it did not and why
 - [ ] **HARN-07**: The reply is in the operator's language, and internal deliberation never reaches it as user-facing text
-- [ ] **HARN-08**: Two tool calls arriving in one assistant message with the same id are repaired **deterministically** before the request is sent (`<id>_d<n>`, never a random id, which would break prompt-cache prefix stability). Aura has no such repair today and DeepSeek — her default model — is named by hermes as a provider that rejects duplicate ids outright; a degraded long-context turn emitting two calls under one id fails the request
-- [ ] **HARN-09**: Identical `(name, arguments)` calls are distinguished by **where they arrive**, not by their provider-supplied id: two in the *same* assistant message are a model error and only the first runs; two in *different rounds* are a deliberate re-issue and both run. This is the discrimination F-1 lacks — `[058]` and `[062]` in the audit were separate rounds with an `fs_write` between them, and the second was served from the registry
+- [x] **HARN-08**: Two tool calls arriving in one assistant message with the same id are repaired **deterministically** before the request is sent (`<id>_d<n>`, never a random id, which would break prompt-cache prefix stability). Aura has no such repair today and DeepSeek — her default model — is named by hermes as a provider that rejects duplicate ids outright; a degraded long-context turn emitting two calls under one id fails the request
+- [x] **HARN-09**: Identical `(name, arguments)` calls are distinguished by **where they arrive**, not by their provider-supplied id: two in the *same* assistant message are a model error and only the first runs; two in *different rounds* are a deliberate re-issue and both run. This is the discrimination F-1 lacks — `[058]` and `[062]` in the audit were separate rounds with an `fs_write` between them, and the second was served from the registry
 
 ### Tool surface
 
@@ -256,8 +256,8 @@ Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-54).
 | HARN-05 | Phase 49 | Pending |
 | HARN-06 | Phase 45 | Pending |
 | HARN-07 | Phase 45 | Pending |
-| HARN-08 | Phase 45 | Pending |
-| HARN-09 | Phase 45 | Pending |
+| HARN-08 | Phase 45 | Complete |
+| HARN-09 | Phase 45 | Complete |
 | MCP-01 | Phase 46 | Pending |
 | MCP-02 | Phase 46 | Pending |
 | MCP-03 | Phase 46 | Pending |
