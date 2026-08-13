@@ -17,6 +17,28 @@ lavoro fase-45 di una sessione parallela, quindi non è mergiabile così com'è)
 | **4.5** nome dell'allegato | **CHIUSA** (`a5afccfc3` + `146ea83dc`) | Vedi §0.1. |
 | **CORS bucket per-identità** (non nel handoff) | **CHIUSA** (`146ea83dc`) | Vedi §0.1. |
 
+**0.2 — Il nome è indicizzato ma NON arriva agli occhi dell'agente. Diagnosi completa, fix non fatto.**
+Guidando l'agente vero (`document_search`, stack acceso) risponde con la **chiave** e non con il nome:
+`05129905-ee6b-45df-b6bd-75b2a7b0bad5.txt (contenuto: "Perizia città di Ghèdi 2026")`, mentre
+`IndexedDocument.file_name` per quella `source_key` è già `Perizia città di Ghèdi 2026.txt`.
+
+Causa, letta nel codice: un documento che arriva dalla **gamba passaggi** (nessuna card in match)
+passa da `ensureRankedDocumentFromCandidate`, che fa
+`doc.document.Title = path.Base(candidate.SourceKey)` (`retrieval_rank.go:129`). La gamba card
+invece popola `Title` correttamente (`retrieval_cards.go:57`). `document_search` non formatta
+nulla: serializza `RetrievalDocument` così com'è (`document_search.go:85`).
+
+**Non è una riga**: `arcadedb.PassageCandidate` (`document_retrieval.go:65-86`) non ha alcun campo
+nome — i record Passage non lo portano. Il fix tocca quattro punti su due linguaggi: il campo sulla
+riga Passage in `services/ingest/app.py` (il nome ce l'ha già, `file_name`), il DDL in
+`services/ingest/arcade.py`, la struct `PassageCandidate` + la proiezione della query in
+`internal/arcadedb/document_retrieval.go`, e infine il fallback in `retrieval_rank.go`.
+Prova di chiusura: la stessa domanda all'agente deve dire il nome, non l'uuid.
+
+**0.3 — 6.6 resta valida.** Avevo scritto che la premessa era falsa perché `document_search`
+risponde: non regge. L'agente ha chiamato `document_search` **tre volte** per compilare la lista —
+rastrella, non elenca, perché non esiste un `document_list`.
+
 **0.1 — Il nome viaggia, e per farlo viaggiare è emerso che il browser non caricava affatto.**
 Il canale metadati è completo e testato da entrambi i lati (Go `PlaceAsset` + percent-encoding,
 sidecar `decode_file_name` + `head_object`; CocoIndex non ha superficie metadati — enumerata:
