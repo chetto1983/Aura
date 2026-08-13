@@ -52,7 +52,7 @@ func boxListFilesByMtime(
 	nodeCap := fsWalkNodeCap()
 	cmd := fmt.Sprintf(
 		"find %s -mindepth 1 %s -o -type f -printf '%%T@ %%p\\n' 2>/dev/null | sort -rn | head -n %d",
-		shellQuoteArg(root), boxFindPrune(), nodeCap+1,
+		ShellQuoteArg(root), boxFindPrune(), nodeCap+1,
 	)
 	ctx, cancel := boxSweepDeadline(ctx)
 	defer cancel()

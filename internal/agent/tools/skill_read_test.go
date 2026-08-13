@@ -59,7 +59,7 @@ func TestSnippetFrameNamesNoUnservedTool(t *testing.T) {
 // TestRenderSnippetUseQuotesTheBoxPath is what remains of the WR-04 regression. The old test
 // pinned normalizing a Windows host path (C:\Program Files\...) to forward slashes, because
 // action=use used to hand the model the host export-dir copy. It renders the in-box POSIX path
-// now, so the only quoting that matters is the space/quote safety shellQuoteArg gives every other
+// now, so the only quoting that matters is the space/quote safety ShellQuoteArg gives every other
 // box path.
 func TestRenderSnippetUseQuotesTheBoxPath(t *testing.T) {
 	t.Parallel()

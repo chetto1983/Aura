@@ -290,7 +290,7 @@ func (t *ReadFile) notFoundWithSuggestions(ctx context.Context, h usersandbox.Bo
 	dir := boxDir(boxPath)
 	base := boxBase(boxPath)
 
-	cmd := fmt.Sprintf("ls -1 -- %s 2>/dev/null | head -50", shellQuoteArg(dir))
+	cmd := fmt.Sprintf("ls -1 -- %s 2>/dev/null | head -50", ShellQuoteArg(dir))
 	res, err := t.Router.Exec(ctx, h, usersandbox.ExecRequest{Command: cmd})
 	msg := fmt.Sprintf("File not found: %s", originalPath)
 	if err != nil || res.ExitCode != 0 {

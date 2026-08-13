@@ -333,10 +333,12 @@ async def app_main(identity_id: str, interval_s: float) -> None:
         await neo4j.TableSchema.from_class(Passage, primary_key="passage_key"),
         primary_key="passage_key",
     )
-    # managed_by=USER: migration 0094 owns the DDL and the row-level security policy, and
-    # this target only upserts and deletes rows. SYSTEM would have CocoIndex create the
-    # table itself -- outside golang-migrate, and without the RLS that makes the isolation
-    # the server's job rather than ours.
+    # managed_by=USER: arcade.ensure_schema owns the DDL (see _document_ddl) and this
+    # target only upserts and deletes rows. SYSTEM would have CocoIndex create the type
+    # itself, outside the one place that knows the schema version the Go reader checks.
+    # (This comment used to credit "migration 0094" and a row-level security policy. Both
+    # were wrong: no such migration exists, the type lives in ArcadeDB where a Postgres
+    # RLS policy has no meaning, and the isolation here is the per-identity database.)
     # The SAME target connector that writes the passages, pointed at a second type. One
     # writer, one store, one query language -- and the record and its passages can never
     # end up in different databases.

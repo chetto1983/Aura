@@ -216,7 +216,7 @@ func TestShellExec_BadCwdIsAnArgumentErrorNotAnOutage(t *testing.T) {
 	if strings.Contains(err.Error(), "sandbox") && strings.Contains(err.Error(), "down") {
 		t.Fatalf("a mistyped cwd must not read as an outage: %v", err)
 	}
-	if len(be.probes) != 1 || !strings.Contains(be.probes[0], shellQuoteArg("/workspace/nope")) {
+	if len(be.probes) != 1 || !strings.Contains(be.probes[0], ShellQuoteArg("/workspace/nope")) {
 		t.Fatalf("the probe must ask the box about the QUOTED dir: %#v", be.probes)
 	}
 }
