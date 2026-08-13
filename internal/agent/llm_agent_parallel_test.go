@@ -191,8 +191,11 @@ func TestExecuteBatch_PanickingToolSurfacesModelVisibleError(t *testing.T) {
 		{
 			name: "parallel_batch_call",
 			calls: []llm.ToolCall{
-				agenttest.MakeToolCall("panic-1", "panic_tool", `{}`),
-				agenttest.MakeToolCall("panic-2", "panic_tool", `{}`),
+				// Distinct args per call (D-12): two identical-args panic_tool
+				// calls in one message are now a legitimate same-message
+				// duplicate and would collapse to one surviving call.
+				agenttest.MakeToolCall("panic-1", "panic_tool", `{"i":1}`),
+				agenttest.MakeToolCall("panic-2", "panic_tool", `{"i":2}`),
 			},
 		},
 	} {
@@ -291,7 +294,10 @@ func TestDispatch_ParallelRespectsFanoutCap(t *testing.T) {
 
 	calls := make([]llm.ToolCall, 0, 5)
 	for i := range 5 {
-		calls = append(calls, agenttest.MakeToolCall("c"+string(rune('1'+i)), "tracking", `{}`))
+		// Distinct args per call (D-12): five identical-args calls in one message
+		// are now a legitimate same-message duplicate and would collapse to one
+		// surviving call, defeating the fanout-cap measurement below.
+		calls = append(calls, agenttest.MakeToolCall("c"+string(rune('1'+i)), "tracking", fmt.Sprintf(`{"i":%d}`, i)))
 	}
 	fc := agenttest.NewFakeClient(
 		agenttest.ToolCallTurn(calls...),

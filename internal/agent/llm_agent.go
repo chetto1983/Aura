@@ -308,34 +308,9 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				time.Duration(a.cfg.TotalTimeoutSec)*time.Second)
 			spanCtx, span := startLLMSpan(callCtx)
 
-			// The builder is the single assembly chokepoint (D-01): it reproduces the
-			// byte-stable messages[0] and routes the provider-aware cache_control seam.
-			// a.history stays read-only — the client never mutates it (Req#13). The
-			// live volatile hints are tail-injected to a COPY (messages[0] untouched,
-			// D-04): remaining is the shared balance, used = the steps this branch has
-			// spent (Remaining never exceeds the start, so used = start-remaining is
-			// the per-branch consumption — no MaxSteps() getter, landmine #11). Current
-			// time rides here too, not in the system prompt, so date-sensitive turns are
-			// deterministic without poisoning the cached prefix.
-			now := ic.Budget.Now()
-			budget := prompt.Budget{
-				Used:        ic.Budget.BranchConsumed(),
-				Remaining:   ic.Budget.Remaining(),
-				Workspace:   a.workspace,
-				CurrentTime: now.Format(time.RFC3339),
-				Today:       now.Format("2006-01-02"),
-				// D-05: the volatile numbered source list rides the tail-inject copy
-				// (RenderSourceList is "" until a web tool consulted a source this turn,
-				// so a non-web turn keeps the byte-identical default). messages[0] stays
-				// untouched — the static citation convention lives in the system prompt.
-				Sources: a.sources.RenderSourceList(),
-				// The roster of what is still unloaded, minus what this run already
-				// promoted — so it shrinks as the turn goes and never tells the model to
-				// load something it is already holding. It travels here rather than in
-				// tool_search's Description for the same reason as Sources: the cached
-				// prefix is the wrong distance from the decision.
-				DeferredTools: a.registry.DeferredRoster(a.activated),
-			}
+			// roundBudget assembles the per-round prompt.Budget (llm_agent_round.go);
+			// its doc comment carries the cache-prefix rationale.
+			budget := a.roundBudget(ic)
 			// A FIXED per-turn override (37E) bypasses the adaptive classifier entirely
 			// (D-04/D-08): skip the reasoning-router round-trip so buildRequest can force
 			// the selected effort. Auto (empty override) runs the classifier UNCHANGED.
@@ -369,18 +344,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				hookResult = prepared.HookResult
 			}
 			if !transportRetry {
-				reasoningtrace.Record("agent_request_built", map[string]any{
-					"request_id":          requestID,
-					"model_round_ordinal": modelRound.ordinal,
-					"thread_id":           a.sessionID,
-					"provider":            a.cfg.Provider,
-					"model":               req.Model,
-					"max_tokens":          req.MaxTokens,
-					"tool_choice":         req.ToolChoice,
-					"tools_count":         len(req.Tools),
-					"reasoning":           req.Reasoning,
-					"history":             a.history,
-				})
+				a.recordRequestBuilt(requestID, modelRound, req)
 				if hookResult != nil {
 					span.End()
 					cancel()
@@ -431,6 +395,11 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			}
 
 			text, calls, finish, usage, stopped, streamErr := a.consume(ch, ic, spanID, parentSpanID, requestID, yield)
+			// Repair provider-supplied ids the moment they arrive (D-13): every
+			// downstream consumer -- the terminal/runnable partition, argument
+			// validation, the reservation key, dispatch, history -- must see the
+			// repaired batch, never the raw one.
+			calls = uniquifyToolCallIDs(calls)
 			// Fold THIS call in before any exit path below reads the total. The span keeps
 			// reporting the single call, which is what a span is: one request.
 			turnU.add(usage)
@@ -543,6 +512,10 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				a.emitPauses(ic, spanID, parentSpanID, pauses, yield)
 				return
 			}
+			// Drop an exact same-message repeat (D-12) before it enters history or
+			// the dispatch batch, so no dropped duplicate is ever answered with a
+			// synthesized result.
+			calls = dedupeSameMessageCalls(calls)
 			a.history = append(a.history, llm.Message{Role: llm.RoleAssistant, ToolCalls: calls})
 			// executeBatch dispatches on ic.Ctx, not spanCtx (llm_agent_dispatch.go), so the
 			// tool path never sees the round unless it is re-pointed here — mirrors the

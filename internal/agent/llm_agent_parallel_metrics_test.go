@@ -44,8 +44,12 @@ func TestExecuteBatch_PanicRecordsObservabilityMetrics(t *testing.T) {
 	const panics = 2
 	fc := agenttest.NewFakeClient(
 		agenttest.ToolCallTurn(
-			agenttest.MakeToolCall("p1", "panic_tool", `{}`),
-			agenttest.MakeToolCall("p2", "panic_tool", `{}`),
+			// Distinct args per call (D-12): two identical-args panic_tool calls
+			// in one message are now a legitimate same-message duplicate and
+			// would collapse to one surviving call, halving the metrics delta
+			// this test measures.
+			agenttest.MakeToolCall("p1", "panic_tool", `{"i":1}`),
+			agenttest.MakeToolCall("p2", "panic_tool", `{"i":2}`),
 		),
 		agenttest.ToolCallTurn(textResponseCall("done", "done")),
 	)
