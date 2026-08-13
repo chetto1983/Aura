@@ -215,3 +215,15 @@ None — no external service configuration required. This plan touches only stat
 ---
 *Phase: 45-harness-correctness*
 *Completed: 2026-08-13*
+
+## Self-Check: PASSED
+
+- FOUND: internal/agent/llm_agent_completion.go
+- FOUND: internal/agent/llm_agent_completion_test.go
+- FOUND: internal/agent/prompt.go
+- FOUND: internal/agent/prompt_test.go
+- FOUND: .planning/phases/45-harness-correctness/45-05-SUMMARY.md
+- FOUND: 1f4759b98 (Task 1 RED commit)
+- FOUND: 292996464 (Task 1 GREEN commit)
+- FOUND: 42ad72f28 (Task 2 RED commit)
+- FOUND: 15f62a124 (Task 2 GREEN commit)
