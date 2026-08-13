@@ -1,303 +1,292 @@
-<!-- refreshed: 2026-08-02 -->
+---
+last_mapped_commit: 5adb3d49b9b8cd7ea4f872fbdb7199b4021c9f5c
+---
+<!-- refreshed: 2026-08-13 -->
 # Architecture
 
-**Analysis Date:** 2026-08-02
+**Analysis Date:** 2026-08-13
 
 ## System Overview
 
 ```text
-+----------------------------------------------------------------------------------+
-| Transport and UX                                                                 |
-| `web/src/` React cockpit | `cmd/aura/` CLI | `internal/channels/telegram/`       |
-+--------------------------+---------------------+---------------------------------+
-                           | authenticated HTTP / direct call / channel event
-                           v
-+----------------------------------------------------------------------------------+
-| Composition and ingress                                                          |
-| `cmd/aura/serve.go` + `cmd/aura/chat_boot.go` + `internal/agui/` + `webauth/`   |
-+--------------------------------------+-------------------------------------------+
-                                       |
-                                       v
-+----------------------------------------------------------------------------------+
-| Turn orchestration and agent runtime                                              |
-| `internal/runner/` -> `internal/agent/` -> `internal/agent/workflow/` / `swarm/` |
-+--------------------------------------+-------------------------------------------+
-                                       |
-                                       v
-+----------------------------------------------------------------------------------+
-| Policy and capabilities                                                          |
-| `internal/gateway/` -> `internal/agent/tools/` -> `agent/mcptools/` / `mcp/`     |
-+---------------------------+--------------------------+---------------------------+
-                            |                          |
-                            v                          v
-+------------------------------------------+  +------------------------------------+
-| Durable application state                |  | Sidecars and external runtimes     |
-| Postgres: `internal/db/`, domain stores  |  | `cmd/arcadedb-mcp/`, ArcadeDB,     |
-| Blobs: `internal/objectstore/`           |  | embedding/media/MCP services,      |
-| Memory client: `internal/arcadedb/`      |  | per-user Docker sandboxes          |
-+------------------------------------------+  +------------------------------------+
+┌──────────────────────────────────────────────────────────────────────────┐
+│ CHANNELS / ENTRY POINTS                                                   │
+├──────────────────┬──────────────────┬────────────────┬───────────────────┤
+│ AG-UI HTTP/SSE    │ Telegram bot     │ CLI REPL        │ cron/scheduler    │
+│ `internal/agui`   │ `internal/       │ `cmd/aura/      │ `internal/cron`   │
+│ (embedded cockpit │  channels/       │  chat.go`,      │ (agent_job tasks) │
+│ `internal/webui`) │  telegram`       │ `shell.go`      │                   │
+└─────────┬─────────┴────────┬─────────┴────────┬────────┴─────────┬────────┘
+          │                  │                  │                  │
+          ▼                  ▼                  ▼                  ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│ ORCHESTRATION — internal/runner (Runner.Turn / TurnBranch)                │
+│ per-thread lock → persist user turn → context ladder → build fresh agent  │
+└───────────────────────────────┬────────────────────────────────────────-─┘
+                                 │ agent.InvocationContext{Ctx,Budget,Agent}
+                                 ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│ AGENT CORE — internal/agent (Agent interface, LlmAgent, Budget, Event)    │
+│ prompt build → LLM stream → tool dispatch → history append → loop/finalize│
+└───────┬───────────────────────────────────┬──────────────────────────────┘
+        │ prompt.PromptBuilder                │ tools.Registry.Get/Execute
+        ▼                                     ▼
+┌──────────────────────────┐   ┌──────────────────────────────────────────┐
+│ internal/agent/prompt     │   │ internal/agent/tools (46 built-ins)       │
+│ messages[0] system prompt │   │ deferred-tool manifest, shell_exec/fs_*   │
+│ + tail-injected volatile  │   │ routed into internal/sandbox/usersandbox  │
+│ hints (budget/workspace/  │   │ box; document_search/open; MCP-bridged    │
+│ sources/deferred_tools)   │   │ tools via internal/agent/mcptools         │
+└──────────────────────────┘   └───────────────┬────────────────────────--─┘
+                                                │
+                 ┌──────────────────────────────┼───────────────────────────┐
+                 ▼                              ▼                           ▼
+    ┌──────────────────────┐   ┌──────────────────────────┐   ┌─────────────────────────┐
+    │ internal/documents     │   │ internal/arcadedb         │   │ internal/gateway         │
+    │ catalog + card +       │   │ typed ArcadeDB HTTP client │   │ policy PEP: mutating tool│
+    │ retrieval cascade      │   │ (per-identity mem_<uuid>   │   │ calls decided/approved   │
+    │ (Postgres aura.*)      │   │ database): passages, facts,│   │ before Execute            │
+    └──────────┬─────────────┘   │ vectors, cards             │   └─────────────────────────┘
+               │                 └───────────┬───────────────┘
+               ▼                             ▲
+    ┌──────────────────────┐                 │ Cypher/Bolt writes
+    │ internal/objectstore   │                 │
+    │ Garage/S3 bucket per   │─────────┬───────┘
+    │ identity (originals)   │         │
+    └──────────┬─────────────┘         │
+               │ reconciled by         │
+               ▼                       │
+    ┌──────────────────────────────────┴───┐
+    │ services/ingest (Python, CocoIndex)   │
+    │ extract → chunk → embed → write       │
+    │ IndexedDocument + Passage into ArcadeDB│
+    └────────────────────────────────────────┘
 ```
-
-Aura is a modular Go monolith with two executable composition roots: the main `aura` binary in `cmd/aura/` and the long-term-memory MCP sidecar in `cmd/arcadedb-mcp/`. The browser application in `web/src/` is built into `internal/webui/dist/` and embedded into the main Go binary by `internal/webui/embed.go`.
-
-The active package graph is the output of `go list ./...`: application packages live under `internal/`, command-only adapters live under `cmd/`, and no active `internal/adaptive/` package exists in the current worktree. Historical adaptive tables and migrations remain in `internal/db/migrations/` and generated accessors remain in `internal/db/sqlc/`, but they are persistence history rather than an active runtime layer.
 
 ## Component Responsibilities
 
 | Component | Responsibility | File |
 |-----------|----------------|------|
-| Aura CLI dispatcher | Loads local environment configuration, establishes CLI idempotency, and routes subcommands | `cmd/aura/main.go` |
-| Daemon composition root | Boots shared chat/runtime dependencies, HTTP, scheduler, channels, workers, readiness, and graceful shutdown | `cmd/aura/serve.go` |
-| Shared runtime assembly | Validates configuration/migration head and wires stores, policy, tools, MCP clients, LLM client, and Runner | `cmd/aura/chat_boot.go` |
-| Authenticated HTTP parent mux | Mounts Authula, capability gates, AG-UI/REST routes, and the embedded SPA fallback | `cmd/aura/serve_webui.go` |
-| Cockpit protocol server | Owns AG-UI run handling, SSE translation, cockpit REST handlers, and narrow provider setters | `internal/agui/server.go` |
-| Turn orchestrator | Serializes a conversation, persists input/output, reloads managed history, creates a fresh agent, and handles HITL resume | `internal/runner/runner.go` |
-| Agent runtime | Implements the budgeted streaming LLM/tool loop over the open `Agent` contract | `internal/agent/agent.go`, `internal/agent/llm_agent.go` |
-| Tool policy enforcement point | Classifies calls, requests destructive approval, reserves mutations, and reconciles incomplete ledger entries | `internal/gateway/decide.go`, `internal/gateway/reserve.go`, `internal/gateway/reconcile.go` |
-| Tool surface | Defines `Tool`, `Spec`, `Registry`, deferred discovery, host tools, document tools, skills, scheduling, and swarm dispatch | `internal/agent/tools/spec.go`, `internal/agent/tools/registry.go` |
-| MCP extension layer | Opens stdio/HTTP MCP transports and adapts remote tools into the Aura registry | `internal/mcp/transport.go`, `internal/agent/mcptools/mount.go` |
-| Scheduler | Claims due tasks, dispatches typed handlers, tracks runs, and delivers or queues notifications | `internal/cron/scheduler.go`, `internal/cron/dispatch.go` |
-| PostgreSQL layer | Opens `pgxpool`, embeds/applies migrations, supplies transaction seams, and hosts sqlc-generated queries | `internal/db/db.go`, `internal/db/migrate.go`, `internal/db/tx.go` |
-| Long-term memory | Exposes per-identity ArcadeDB memory through an MCP server and an HTTP client | `cmd/arcadedb-mcp/main.go`, `internal/arcadedb/client.go`, `internal/arcadedb/memory.go` |
-| Blob storage | Provides S3-compatible, filesystem, and test implementations behind one `Store` interface | `internal/objectstore/types.go`, `internal/objectstore/s3.go`, `internal/objectstore/filesystem.go` |
-| Cockpit SPA | Provides routes, application shell, feature workspaces, server-state queries, and AG-UI stream reduction | `web/src/main.tsx`, `web/src/AppShell.tsx`, `web/src/chat/sseAdapter.ts` |
+| CLI dispatcher | Top-level `aura <verb>` hand-rolled switch; not cobra | `cmd/aura/main.go` |
+| Runner | Per-conversation orchestration: lock, persist, context ladder, fresh-agent-per-turn | `internal/runner/runner.go` |
+| Agent core | Open `Agent` interface, `InvocationContext`, `Budget`, `Event` shape | `internal/agent/agent.go`, `internal/agent/event.go` |
+| LlmAgent | Budget-gated tool-dispatch loop over one LLM | `internal/agent/llm_agent.go` |
+| PromptBuilder | Single chokepoint assembling the wire `llm.Request` (byte-stable messages[0] + tail hints) | `internal/agent/prompt/builder.go` |
+| Tool registry | Immutable per-run tool set; deferred-tool manifest + `tool_search` | `internal/agent/tools/spec.go`, `internal/agent/tools/registry.go` |
+| Context ladder | L1 tool-eviction / L2 budget gate / L2.4 LLM compaction / L2.5 hard-drop over persisted history | `internal/conversations/context.go`, `internal/conversations/compaction.go` |
+| Gateway (PEP) | Policy decision on mutating tool calls before `Execute` | `internal/gateway/classify.go` |
+| Sandbox box | Docker-backed per-identity execution box that `shell_exec`/`fs_*`/`send_file` route into | `internal/sandbox/usersandbox` |
+| Documents | Versioned catalog + card + retrieval cascade over Postgres + ArcadeDB | `internal/documents/service.go`, `internal/documents/retrieval.go` |
+| ArcadeDB client | Typed HTTP/Cypher client for the per-identity long-term-memory graph store | `internal/arcadedb/client.go`, `internal/arcadedb/memory.go` |
+| arcadedb-mcp | MCP server exposing memory (facts) + document retrieval as LLM-callable tools | `cmd/arcadedb-mcp/main.go` |
+| AG-UI gateway | HTTP/SSE transport translating `agent.Event` to the AG-UI wire protocol | `internal/agui/server.go`, `internal/agui/translator.go` |
+| Web cockpit host | Leaf package serving the embedded Vite SPA build with API-prefix fallback | `internal/webui/embed.go` |
+| Telegram channel | Polling bot; per-turn `runner.Turn` driver, HITL, voice, artifacts | `internal/channels/telegram/bot_dispatch_turn.go` |
+| Ingestion (Python) | CocoIndex reconciliation of a Garage bucket into ArcadeDB passages | `services/ingest/app.py` |
 
 ## Pattern Overview
 
-**Overall:** Modular monolith with ports-and-adapters boundaries, command-layer composition roots, streaming event orchestration, and out-of-process sidecars for isolated or heavyweight capabilities.
+**Overall:** Layered agent-runtime with a channel-agnostic orchestration core. A fresh `LlmAgent` is constructed per turn over rehydrated, ladder-managed history (no long-lived in-process agent state); durability lives entirely in Postgres stores, never in the agent struct. Tool execution is dispatched through an open, name-keyed `Registry` with a "deferred tool" indirection (Claude-Code-parity `tool_search`) so the LLM-visible manifest stays small.
 
 **Key Characteristics:**
-- Keep dependency assembly in `cmd/aura/`; `cmd/aura/chat_boot.go` constructs concrete stores and injects them into consumer-owned interfaces in `internal/runner/interfaces.go` and `internal/agui/server.go`.
-- Stream a single event model from the core: `agent.Agent.Run` returns `iter.Seq2[*agent.Event, error]` in `internal/agent/agent.go`, then `internal/agui/translator.go` projects it into AG-UI events without the runtime importing the transport.
-- Make runtime posture explicit through `config.RuntimeProfile` in `internal/config/config_runtimeprofile.go`; strict profiles route mutations through `internal/gateway/` and host-capable tools through `internal/sandbox/usersandbox/`.
-- Keep large tool schemas deferred through `tools.Spec.Deferred` in `internal/agent/tools/spec.go`; `tool_search` activates full schemas from the immutable registry built in `cmd/aura/main.go`.
-- Separate durable stores by concern: control-plane and conversation data use Postgres through `internal/db/` plus domain stores, blobs use `internal/objectstore/`, and long-term semantic memory uses the `cmd/arcadedb-mcp/` boundary.
-- Treat the frontend as a same-origin client: `web/src/main.tsx` mounts React Router and TanStack Query, while `cmd/aura/serve_webui.go` remains the actual authentication and authorization boundary.
+- **Open interface, no seal** — `agent.Agent` has no unexported method, deliberately diverging from google/adk-go so both `LlmAgent` and the swarm coordinator implement it directly (`internal/agent/agent.go:1-23`).
+- **Shared-pointer Budget tree** — one `*atomic.Int32` step counter bounds an entire agent tree (root + swarm children), never per-branch (`internal/agent/budget.go:47-62`).
+- **Fresh-agent-per-turn, durable-everything-else** — `runner.buildAgent` constructs a new `LlmAgent` every `Turn`/`TurnBranch` call seeded from `LoadManagedHistory`; nothing about a conversation survives in memory between turns (`internal/runner/runner.go:506-554`).
+- **Deferred-tool manifest** — big tool specs (`Deferred: true`) are hidden from the default LLM-visible manifest and loaded on demand via the built-in `tool_search` hook, protecting the KV-cache prefix (`internal/agent/tools/spec.go:1-44`).
+- **Sandbox-routed execution** — every filesystem/shell/file-delivery tool takes an optional `*usersandbox.SandboxRouter`; under a strict profile the box is the ONLY place code runs, never the host (`cmd/aura/main.go:187-280`).
+- **Policy PEP as a single choke point** — `internal/gateway` decides every mutating tool call before `Execute`, independent of tool implementation (`internal/agent/llm_agent_dispatch.go` calls the gateway inside `execTool`, wired via `LlmAgentConfig.Gateway`).
 
 ## Layers
 
-**Presentation Layer:**
-- Purpose: Render browser, CLI, and Telegram experiences over the same runner/event model.
-- Location: `web/src/`, `cmd/aura/chat*.go`, `cmd/aura/shell.go`, `internal/channels/`, `internal/channels/telegram/`
-- Contains: React workspaces/components, CLI REPL rendering, channel lifecycle, Telegram input/output adapters.
-- Depends on: `internal/agui/` over HTTP in the browser; `internal/runner/` directly for CLI/channel adapters.
-- Used by: Operators and authenticated identities entering through `cmd/aura/main.go` or `cmd/aura/serve.go`.
+**Channel layer:**
+- Purpose: Turn an inbound message (HTTP POST, Telegram update, CLI stdin, cron tick) into a call to `runner.Turn`/`TurnBranch`.
+- Location: `internal/agui`, `internal/channels/telegram`, `cmd/aura/chat.go`, `internal/cron`.
+- Contains: Protocol translation (AG-UI SSE, Telegram Bot API, REPL rendering), per-turn identity scoping, HITL resume plumbing.
+- Depends on: `internal/runner`, `internal/conversations` (thread ownership checks), `internal/identityctx`.
+- Used by: External clients (browser cockpit, Telegram users, operators, scheduled jobs).
 
-**Ingress and Authentication Layer:**
-- Purpose: Route HTTP requests, validate sessions/capabilities, enforce same-origin behavior, and translate core events to wire formats.
-- Location: `cmd/aura/serve_webui.go`, `cmd/aura/serve_webui_routes.go`, `internal/agui/`, `internal/webauth/`, `internal/identityctx/`
-- Contains: Parent `http.ServeMux`, Authula integration, capability middleware, REST handlers, AG-UI SSE encoder, identity context propagation.
-- Depends on: Narrow Runner/store/provider interfaces declared in `internal/agui/server.go` and `internal/agui/types.go`.
-- Used by: The SPA in `web/src/` and programmatic AG-UI clients.
+**Orchestration layer:**
+- Purpose: Own conversation persistence, per-thread locking, the context ladder, and fresh-agent construction.
+- Location: `internal/runner`.
+- Contains: `Runner`, `Deps` (composition-root inputs), turn lifecycle, pause/resume flush, auto-title worker.
+- Depends on: `internal/agent`, `internal/conversations`, `internal/gateway`, `internal/askuser`.
+- Used by: Every channel layer.
 
-**Composition Layer:**
-- Purpose: Build process-lifetime objects and connect concrete implementations without introducing package cycles.
-- Location: `cmd/aura/main.go`, `cmd/aura/chat_boot.go`, `cmd/aura/serve.go`, `cmd/aura/serve_agui.go`, `cmd/aura/serve_dispatch.go`
-- Contains: Configuration loading, pool lifecycle, store construction, registry/MCP mounts, scheduler handlers, auth/provider wiring, shutdown order.
-- Depends on: All required `internal/` packages; no `internal/` package may import `cmd/aura/`.
-- Used by: The `aura` executable at `cmd/aura/main.go`.
+**Agent core:**
+- Purpose: Drive one LLM round-trip loop with budget enforcement, tool dispatch, and event streaming.
+- Location: `internal/agent`, `internal/agent/prompt`, `internal/agent/tools`, `internal/agent/mcptools`, `internal/agent/display`.
+- Contains: `LlmAgent.Run`, `PromptBuilder`, `Registry`/`Tool`/`Spec`, hooks, verification-evidence gate, reasoning-tier classifier.
+- Depends on: `internal/llm` (provider client), `internal/gateway`, `internal/sandbox/usersandbox`.
+- Used by: `internal/runner`, `internal/swarm` (sub-agent fan-out), `internal/cron` (headless `agent_job`).
 
-**Application Orchestration Layer:**
-- Purpose: Coordinate durable turns, resumable HITL, scheduled work, agent workflows, and fan-out.
-- Location: `internal/runner/`, `internal/cron/`, `internal/cron/handlers/`, `internal/agent/workflow/`, `internal/swarm/`
-- Contains: Per-conversation locks, history hydration, turn persistence, resume commits, scheduler claims, sequential/parallel/loop agents, bounded swarm waves.
-- Depends on: Consumer-side interfaces plus `internal/agent/`, `internal/conversations/`, `internal/gateway/`, and domain stores.
-- Used by: HTTP, CLI, Telegram, and scheduled job composition in `cmd/aura/`.
+**Substrate layer:**
+- Purpose: Own durable state — conversations, documents, memory, identity, sandbox lifecycle.
+- Location: `internal/conversations`, `internal/documents`, `internal/arcadedb`, `internal/identity`, `internal/db`, `internal/objectstore`, `internal/sandbox/usersandbox`.
+- Contains: sqlc-generated Postgres access, ArcadeDB HTTP/Cypher client, Garage/S3 object store client, Docker sandbox lifecycle.
+- Depends on: Postgres (`aura.*` schema), ArcadeDB (one database per identity), Garage (S3-compatible), Docker daemon.
+- Used by: Agent core (via tools), documents retrieval, `cmd/arcadedb-mcp`.
 
-**Agent Runtime Layer:**
-- Purpose: Build prompts, select reasoning effort, stream model output, dispatch tools, and emit transport-neutral events.
-- Location: `internal/agent/`, `internal/agent/prompt/`, `internal/agent/display/`, `internal/llm/`, `internal/llm/openai_compat/`
-- Contains: `Agent`, `InvocationContext`, `Budget`, `LlmAgent`, hooks, completion/finalization, provider-neutral streaming client, display payloads.
-- Depends on: `internal/agent/tools/`, `internal/gateway/`, `internal/llm/`, and cross-cutting utilities.
-- Used by: `internal/runner/`, `internal/cron/handlers/`, `internal/swarm/`, and test agents in `internal/agent/agenttest/`.
-
-**Policy and Capability Layer:**
-- Purpose: Decide whether a model-originated operation may execute and where host-capable work runs.
-- Location: `internal/gateway/`, `internal/scoring/`, `internal/agent/tools/`, `internal/sandbox/usersandbox/`, `internal/mcp/`
-- Contains: Risk classification, approval routing, durable reservations, idempotent replay, tool registry, sandbox routing, MCP egress controls.
-- Depends on: `internal/config/`, `internal/idempotency/`, `internal/toolinvocations/`, and concrete adapters injected from `cmd/aura/`.
-- Used by: Every tool call from `internal/agent/llm_agent_tool.go` and every managed MCP mount from `cmd/aura/main.go`.
-
-**Domain Services Layer:**
-- Purpose: Implement conversations, documents/assets, skills, sharing, identity, scheduling, retention, web retrieval, and multimodal behavior.
-- Location: `internal/conversations/`, `internal/documents/`, `internal/assets/`, `internal/skills/`, `internal/share/`, `internal/identity/`, `internal/retention/`, `internal/web/`, `internal/multimodal/`
-- Contains: Domain types, validation, narrow stores/services, processing workers, and API-independent business rules.
-- Depends on: `internal/db/sqlc/`, `internal/objectstore/`, or external-client abstractions as required by each domain.
-- Used by: Tools and composition adapters in `cmd/aura/` plus REST handlers in `internal/agui/`.
-
-**Persistence and Infrastructure Layer:**
-- Purpose: Persist relational state, blobs, long-term memory, and observability data.
-- Location: `internal/db/`, `internal/db/queries/`, `internal/db/sqlc/`, `internal/objectstore/`, `internal/arcadedb/`, `internal/obs/`
-- Contains: pgx/sqlc/migrations, S3/filesystem stores, ArcadeDB HTTP operations, OpenTelemetry/Prometheus setup.
-- Depends on: Postgres, S3-compatible storage, ArcadeDB, and configured telemetry collectors.
-- Used by: Domain stores and process composition in `cmd/aura/`.
+**Ingestion (external process, Python):**
+- Purpose: Reconcile a per-identity Garage bucket into ArcadeDB passages/vectors.
+- Location: `services/ingest` (CocoIndex app, not part of the Go module).
+- Contains: `app.py` (lifespan + reconcile flow), `ingest/arcade.py` (schema + writes), `ingest/chunk.py`, `ingest/extract.py`.
+- Depends on: CocoIndex's `amazon_s3` connector, ArcadeDB Bolt/Cypher, the embedding sidecar (`AURA_EMBED_BASE_URL`).
+- Used by: Nothing in Go directly calls it — it is an autonomous reconciler; Go's `internal/documents`/`internal/arcadedb` only ever READ what it wrote.
 
 ## Data Flow
 
-### Primary Request Path
+### 1. Inbound user turn → tool call → response (AG-UI path)
 
-1. The cockpit calls `POST /agent/run` with `fetch` and consumes its SSE body in `streamRun` (`web/src/chat/sseAdapter.ts:407`).
-2. The parent mux applies authentication and the `agent.run` capability before delegating to AG-UI (`cmd/aura/serve_webui.go:89`).
-3. `handleRun` validates the AG-UI envelope, verifies thread ownership, prepares attachments/pinned-skill context, and selects request-scoped or detached execution (`internal/agui/server_run.go:22`).
-4. `Runner.Turn` takes the identity-scoped per-conversation lock; `turnLocked` persists the visible user turn, loads managed history, and constructs a fresh agent (`internal/runner/runner.go:279`, `internal/runner/runner.go:317`).
-5. `buildAgent` creates a per-turn `Budget`, attaches the shared classifier/breaker/registry/gateway, and returns the `InvocationContext` (`internal/runner/runner.go:465`).
-6. `LlmAgent.Run` repeatedly builds a cache-stable prompt, opens the provider stream, consumes model chunks, and dispatches tool calls until a terminal event or infrastructure error (`internal/agent/llm_agent.go:182`).
-7. Before an executable mutation, `Gateway.Decide` classifies it, optionally requests destructive approval, starts an idempotent operation, and reserves a ledger row (`internal/gateway/decide.go:47`, `internal/gateway/reserve.go:35`).
-8. The Runner persists emitted tool/assistant/pause events through the turn tracker while `agui.Translate` converts the same core events into AG-UI frames (`internal/runner/runner_persist.go:80`, `internal/agui/translator.go:54`).
-9. `streamSSE` writes translated frames; the browser folds each frame into the current assistant message with `reduceFrame` (`internal/agui/server_sse.go:35`, `web/src/chat/sseAdapter.ts:95`).
+1. `POST /agent/run` decoded and validated; thread ownership checked (`internal/agui/server_run.go:22-51`).
+2. Per-turn context blocks (attachments, doc catalog, pinned skill) are prepended to the model-facing copy of the user message, while the visible/persisted message stays the raw user text — `s.buildTurnUserMessage` (`internal/agui/server_run.go:66-86`, `internal/agui/server_context.go`).
+3. `s.run.Turn(ctx, threadID, modelUserMsg)` → `internal/runner/runner.go:327-329` (`Runner.Turn`) → `runTurn` → per-thread lock (`lockForThread`) → `turnLocked` (`internal/runner/runner.go:365-483`).
+4. `turnLocked` persists the new user turn (`appendUserTurn`), loads the memory digest (`loadMemoryContext`), builds `ContextConfig` (`contextConfig`), and calls `loadTurnHistory` → `conversations.Store.LoadManagedHistory` (context ladder, see flow 2).
+5. `buildAgent` constructs a fresh `*agent.LlmAgent` + `InvocationContext` seeded from the ladder-managed history, a per-turn `Budget` from `AURA_LOOP_*` env, and the shared `Registry`/`Gateway`/`Breaker` (`internal/runner/runner.go:513-554`).
+6. `LlmAgent.Run` loop (`internal/agent/llm_agent.go:198-560`): budget gate → `PromptBuilder.Build*` assembles the wire request (system prompt + history + tail-injected volatile hint) → `streamWithOpenRetry` calls the provider (`internal/llm`) → `consume` parses chunks/tool_calls.
+7. On tool calls, `dispatch` (`internal/agent/llm_agent_dispatch.go:14-160`) partitions terminal (`text_response`) vs runnable calls, runs hooks (`BeforeTool`), dedup-checks via `Budget.BeforeToolCall`, then `executeBatch` runs tools concurrently. Each tool's `Execute` is gated by `internal/gateway` when mutating (policy PEP) before running.
+8. Tool results are appended to `a.history` as `RoleTool` messages and streamed as `Event`s back through the iterator.
+9. `Runner.turnLocked` persists each `Event` (`persistEvent`) and re-yields it to the AG-UI translator (`internal/agui/translator.go`), which turns it into AG-UI SSE frames streamed to the browser (`s.streamSSE`, `server_run.go:136`).
 
-### CLI Conversation Flow
+### 2. Context/history assembly with token budgeting (the "context ladder")
 
-1. `main` routes `aura chat` or `aura shell` from the explicit switch in `cmd/aura/main.go:47`.
-2. `bootCLIChat` resolves the operator identity after the shared runtime boot in `cmd/aura/chat_boot.go:98`; `assembleChatEnv` builds the same Runner, tool registry, gateway, and stores used by the daemon (`cmd/aura/chat_boot.go:284`).
-3. The REPL invokes `Runner.Turn`, renders the transport-neutral `agent.Event` stream, and delegates durable pause/resume to the Runner (`cmd/aura/chat_repl.go`, `internal/runner/runner_resume.go`).
+1. `Runner.contextConfig` builds `conversations.ContextConfig{ContextWindow, MaxOutputTokens, ToolEvictAfterTurns, HistoryHardCapTurns, AlwaysBlock, TransientContext, ProviderErrorReserveTokens, Summarizer}` — `internal/runner/runner_context.go:34-49`. `Summarizer` is non-nil only when `AURA_CONTEXT_COMPACTION_ENABLED` is set (`internal/runner/runner.go:86-90`, `243-248`).
+2. `conversations.Store.LoadManagedHistory` fetches only the newest `HistoryHardCapTurns` rows (protected system head always retained) and calls `applyContextLadder` — `internal/conversations/context.go:150-160, 209-287`.
+3. **L1 (tool micro-compact):** `applyL1` rewrites old `role='tool'` turns older than `ToolEvictAfterTurns` into a `read_tool_output(tool_call_id=...)` pointer, skipping the system turn and any `tool_search` result (which holds a still-needed schema) — `internal/conversations/context.go:325-355`.
+4. **L2 (budget gate):** hard cap = `ContextWindow - max(MaxOutputTokens,20000) - 13000 - ProviderErrorReserveTokens` (floored to `ContextWindow/2` on small windows) — `internal/conversations/context.go:107-143`. Under cap → return the L1 result (zero rot). Over 75% of cap → WARN log only.
+5. **L2.4 (LLM compaction, optional):** if `Summarizer` is set and still over cap, `tryCompact` condenses historical rounds into one synthetic summary turn, keeping the protected head and the active user-led round verbatim — `internal/conversations/context.go:256-262`, `internal/conversations/compaction.go`.
+6. **L2.5 (deterministic hard-drop):** `dropOldestPairs` removes the oldest complete user/assistant rounds until under cap, writing exactly one `context_rot` event row for audit — `internal/conversations/context.go:264-286, 457-491`.
+7. `ContextConfig.AlwaysBlock` (the messages[1] always-on skill block, rendered per turn from live skill-loader state) is injected as a PROTECTED turn immediately after the system head, counted toward budget but never evicted — `internal/conversations/context.go:220-223, 296-310`.
+8. Inside the agent loop itself, a SEPARATE per-call volatile hint (`prompt.Budget`: used/remaining steps, workspace, current time, numbered web-source list, deferred-tool roster) is tail-injected to a COPY of history on every LLM call — never into the persisted/cached `messages[0]` — `internal/agent/prompt/builder.go:23-159`, `internal/agent/llm_agent.go:320-338`.
+9. Token counting throughout the ladder uses a `tiktoken-go` `cl100k_base` encoder (`internal/conversations/tiktoken.go`), with `ProviderErrorReserveTokens` widening the local-llama.cpp headroom to cover Aura's tokenizer-estimate gap versus the real local tokenizer (`internal/llm/capabilities.go`).
 
-### Scheduled Job Flow
+### 3. Document ingestion path
 
-1. `Scheduler.Start` performs recovery and periodic due-task scans (`internal/cron/scheduler.go:177`).
-2. `Scheduler.tick` claims tasks with advisory-lock-backed claims and invokes the dispatcher (`internal/cron/scheduler.go:250`, `internal/cron/claim.go:54`).
-3. `Dispatch.Dispatch` runs the handler map assembled in `buildDispatch`; agent jobs reuse the agent runtime while maintenance kinds call focused handlers (`internal/cron/dispatch.go:162`, `cmd/aura/serve_dispatch.go:46`).
-4. Completion and notification state are persisted through `internal/cron/store.go` and delivered through `internal/channels/registry.go` or managed MCP notification tools.
+1. A file is uploaded via a channel (Telegram attachment, AG-UI file upload) or `aura docs` CLI; it lands in `internal/objectstore` (Garage/S3-compatible bucket, one bucket per identity).
+2. `documents.Service.IngestPath` (or the asset-upload equivalent) validates size/type, computes a content hash, mints a deterministic `documentID` (`SearchDocumentID`), creates a `JobStore` row, and writes a non-visible catalog `Document` row via `IngestCatalog.CreateDocument` — `internal/documents/service.go:57-145`.
+3. `writeCard` reads the file once (`internal/documents/filecard`) to build a structural CARD (title/shape description) and stores it via `Catalog.SetCard` — this card is what `document_search` ranks on BEFORE any deep extraction has happened — `internal/documents/service.go:147-166`.
+4. Independently, the Python **CocoIndex** app in `services/ingest` (`app.py`) reconciles each identity's Garage bucket on an interval (`AURA_INGEST_INTERVAL_SEC`, wrapped by `coco.auto_refresh` since the `amazon_s3` connector has no native live/watch mode): it extracts text (`ingest/extract.py`), chunks it (`ingest/chunk.py`), embeds it (`AURA_EMBED_BASE_URL`), and writes `IndexedDocument`/`Passage` records directly into ArcadeDB via Bolt/Cypher (`ingest/arcade.py`) — into the SAME per-identity `mem_<identity_uuid>` database the Go retriever reads (`services/ingest/app.py:1-45`).
+5. The agent's `document_search` tool (`internal/agent/tools/document_search.go`) calls `documents.HostRetriever.Retrieve` (`internal/documents/retrieval.go:235-288`), which fuses three legs: the Postgres/ArcadeDB **card** (`RetrievalControlPlane.RouteDocumentCards`), the **lexical** leg, and the **dense** leg (`RetrievalProjection.FusedCandidates` over `arcadedb.PassageCandidate`) — degrading gracefully (card-only) when the embedder or ArcadeDB projection is unavailable.
+6. When the model needs the full document rather than a ranked passage (e.g. "how many rows"), `document_open` (`internal/agent/tools/document_open.go`) resolves the catalog id back to the object-store key and streams the ORIGINAL file into the caller's sandbox box `/workspace/documents/`.
 
-### Long-Term Memory Flow
+### 4. Memory write/recall path
 
-1. `buildRegistryWithMCP` mounts configured MCP servers and adapts their tools into the parent registry (`cmd/aura/main.go:315`, `internal/agent/mcptools/mount.go`).
-2. Memory tool calls cross the normal gateway/tool path, then the MCP HTTP transport in `internal/mcp/http_client.go` calls the standalone server at `cmd/arcadedb-mcp/main.go:44`.
-3. The sidecar resolves a tenant-scoped client, provisions/validates the per-identity database when allowed, and executes memory operations through `internal/arcadedb/memory.go` and `internal/arcadedb/memory_vector.go`.
-4. ArcadeDB results return as untrusted MCP tool output through `internal/agent/mcptools/bridge.go`, where the runtime can frame/cap them before the next model round.
-
-**State Management:**
-- Durable server state belongs in Postgres domain stores backed by `internal/db/sqlc/`; multi-statement writes use `db.WithTx` or identity-scoped variants in `internal/db/tx.go`.
-- Blob state belongs behind `objectstore.Store` in `internal/objectstore/types.go`; document metadata and ingestion lifecycle remain relational in `internal/documents/` and `internal/assets/`.
-- Process-local coordination is intentionally bounded: conversation locks/live cancels live in `internal/runner/runner_session.go`, optional detached SSE sessions live in `internal/agui/runregistry.go`, and the tool registry is constructed at boot in `cmd/aura/main.go`.
-- Browser server state uses the shared TanStack Query client in `web/src/queryClient.ts`; transient stream state is reduced from AG-UI frames in `web/src/chat/sseAdapter.ts`, while layout/theme preferences remain client-local under `web/src/shell/` and `web/src/theme/`.
+1. **Recall (host-driven, pre-turn):** `Runner.loadMemoryContext` (`internal/runner/runner_context.go:55-84`) calls `MemoryContextProvider.Context` for an always-on query-less digest and, when `AURA_MEMORY_PRELOAD_ENABLED`, `.Search` for a per-message relevance recall. Both are implemented by `mountedMemoryContext` (`cmd/aura/serve_memory_context.go:18-59`), a thin adapter over the `memory` MCP host client that calls the `memory_digest`/`memory_search` MCP tools directly (not through the LLM) with a 2s bound, fail-soft on any error.
+2. The digest/recall text is wrapped in `<memory_context>`/`<memory_recall>` blocks and passed as `ContextConfig.TransientContext`, inserted immediately before the current user turn by the ladder (`injectTransientContext`), never persisted to `conversation_turns`.
+3. **Recall (LLM-driven, in-turn):** the agent can also directly call `memory_search`/`memory_facts_about`/`memory_digest`/`memory_entities` as ordinary MCP tools once `cmd/arcadedb-mcp` is mounted as a managed MCP server (`buildRegistryWithMCP`, `cmd/aura/main.go:298-392`, using `mcptools.MountManagedServerHostWithEgress`). The `memory-aura` skill (`internal/skills/embed/memory-aura/SKILL.md`) documents when/how to call these.
+4. **Write:** the model calls `memory_upsert_fact` (an MCP tool, never a host-driven background job) with `subject/predicate/object/statement` + mandatory `source{run_id,memory_ids}` provenance; the handler resolves the caller's tenant client (`tenants.For`) and calls `arcadedb.Client.UpsertFact` (`cmd/arcadedb-mcp/tool_memory.go:48-103`, `internal/arcadedb/memory.go`).
+5. `UpsertFact` stores the fact as a bitemporal `FACT` edge between `Entity` vertices in the caller's OWN per-identity ArcadeDB database (`mem_<identity_uuid>`, HMAC-derived tenant credential — server-enforced isolation, not a `WHERE` clause). A `supersedes:true` write closes the previous fact's `valid_to` window rather than deleting it (`internal/arcadedb/memory.go:12-32, 87-104`).
+6. Retrieval inside the MCP server fuses a Lucene full-text leg (`EnglishAnalyzer` FULL_TEXT index on `FACT.statement`) with a vector leg (EmbeddingGemma) natively inside ArcadeDB — no Go-side reranking (`internal/arcadedb/memory.go:16, 54-59`).
 
 ## Key Abstractions
 
-**Agent and InvocationContext:**
-- Purpose: Provide the open, transport-neutral execution contract and request-scoped context for every agent/workflow.
-- Examples: `internal/agent/agent.go`, `internal/agent/workflow/sequential.go`, `internal/agent/workflow/parallel.go`
-- Pattern: `iter.Seq2` streaming plus composition; never store `InvocationContext` on a long-lived object.
+**Agent (interface):**
+- Purpose: The single open contract every runnable agent implements — leaf `LlmAgent`, workflow/swarm coordinators.
+- Examples: `internal/agent/agent.go`, `internal/agent/llm_agent.go` (implements it), `internal/swarm` (fan-out coordinator).
+- Pattern: `Run(InvocationContext) iter.Seq2[*Event, error]`; termination is ALWAYS a non-error `Event` (budget trips, pauses), never the error slot, which is reserved for real infra failures.
 
-**Budget Tree:**
-- Purpose: Bound steps, wall clock, branch consumption, and repeated tool calls across an agent tree.
-- Examples: `internal/agent/budget.go`, `internal/agent/budget_dedup.go`
-- Pattern: Shared atomic step balance with child-local dedup rings; parallel branches call `Budget.Child`.
+**Budget:**
+- Purpose: The single resource-exhaustion control for an entire agent tree (steps, wallclock, dedup).
+- Examples: `internal/agent/budget.go`, `internal/agent/budget_dedup.go`.
+- Pattern: A shared `*atomic.Int32` counter by pointer across the whole tree (`Child` forks a distinct dedup ring but the SAME counter), so a fan-out swarm cannot multiply the total step budget.
 
-**Runner:**
-- Purpose: Own durable turn orchestration, history hydration, identity scoping, pause/resume, and per-thread serialization.
-- Examples: `internal/runner/runner.go`, `internal/runner/resume_committer.go`, `internal/runner/runner_persist.go`
-- Pattern: Application service over consumer-declared store interfaces from `internal/runner/interfaces.go`.
+**Event:**
+- Purpose: The single wire/runtime type every agent- and tool-emitted signal flows through (chunks, tool start/result, pause, final answer, discard-streamed repudiation).
+- Examples: `internal/agent/event.go`.
+- Pattern: One struct with an `Actions` union of optional pointer fields (`AwaitingInput`, `Display`, `ToolInvocation`) so new signal types are additive and `omitempty` on the wire.
 
 **Tool / Spec / Registry:**
-- Purpose: Expose callable capabilities without coupling the LLM loop to concrete implementations.
-- Examples: `internal/agent/tools/spec.go`, `internal/agent/tools/registry.go`, `internal/agent/tools/search.go`
-- Pattern: Immutable boot-time registry, duplicate-name panic, non-deferred minimum validation, deferred full-schema discovery.
+- Purpose: The dispatch contract between the agent loop and every capability (built-in, MCP-bridged, or sandbox-routed).
+- Examples: `internal/agent/tools/spec.go`, 46 built-ins under `internal/agent/tools/*.go`.
+- Pattern: `Spec.Deferred=true` hides a tool's full schema from the default manifest until `tool_search` loads it (protects the KV-cache prefix); `Registry` is immutable per run, built once at boot via `buildBaseRegistryWithHandles` (`cmd/aura/main.go:193-296`).
 
-**Gateway:**
-- Purpose: Centralize runtime-profile policy, operator approvals, mutation reservations, replay, and crash reconciliation.
-- Examples: `internal/gateway/gateway.go`, `internal/gateway/decide.go`, `internal/gateway/reserve.go`
-- Pattern: Single process-wide policy enforcement point injected into each fresh `LlmAgent` by `internal/runner/runner.go`.
+**Context ladder (L1/L2/L2.4/L2.5):**
+- Purpose: Deterministic, pure-function history reduction bounding the wire request to the model's context window.
+- Examples: `internal/conversations/context.go`, `internal/conversations/compaction.go`.
+- Pattern: Ordered, side-effect-free stages except the single audited `context_rot` event write at L2.5; LLM compaction (L2.4) is opt-in and always falls back to the zero-LLM L2.5 drop on any summarizer failure.
 
-**Domain Store Interfaces:**
-- Purpose: Keep orchestration and transports independent from pgx/sqlc implementations.
-- Examples: `internal/runner/interfaces.go`, `internal/agui/types.go`, `internal/documents/catalog_service.go`, `internal/objectstore/types.go`
-- Pattern: Consumers declare narrow interfaces; `cmd/aura/` injects concrete adapters.
-
-**AG-UI Translator:**
-- Purpose: Convert Aura events to protocol events without importing AG-UI into the agent runtime.
-- Examples: `internal/agui/translator.go`, `internal/agui/server_sse.go`
-- Pattern: Pure iterator projection followed by bounded SSE pumping.
-
-**MCP Transport and Bridge:**
-- Purpose: Add out-of-process tools through stdio or Streamable HTTP while preserving namespacing, trust, and lifecycle.
-- Examples: `internal/mcp/transport.go`, `internal/mcp/http_client.go`, `internal/agent/mcptools/bridge.go`
-- Pattern: Transport interface plus host-tool adapter; managed servers are configured in `internal/mcp/manager/`.
+**InvocationContext:**
+- Purpose: The single-Run-scoped value carrying ctx/budget/agent down the tree, copy-on-write only.
+- Examples: `internal/agent/agent.go:64-91`.
+- Pattern: `WithContext`/`WithSubAgent` always return a COPY; never stored on a long-lived struct.
 
 ## Entry Points
 
-**Aura CLI / Daemon:**
-- Location: `cmd/aura/main.go`
-- Triggers: `aura serve`, `aura chat`, `aura shell`, and explicit operational subcommands.
-- Responsibilities: Load local configuration support, enforce CLI operation idempotency, and route to command-specific composition code.
+**`cmd/aura` (main binary):**
+- Location: `cmd/aura/main.go`.
+- Mechanism: **A hand-rolled top-level switch on `os.Args[1]`, explicitly NOT cobra** (`cmd/aura/identity.go:1-10` documents this as a recorded deviation from an earlier assumption — go.mod carries `spf13/cobra` only for a FEW nested subcommand trees: `identity`, `paused-states`, `recover-operator`, `skills`). Verbs: `tools|mcp|memory|agent|swarm-demo|web|doctor|db|objectstore|docs|identity|paused-states|task|retention|skills|chat|cache-stats|cache-audit|config|version|serve|shell|toolpipe`.
+- Responsibilities: Every subcommand builds its own composition root (`buildRegistry`/`buildBaseRegistryWithHandles`/`buildRegistryWithMCP`) — there is no single shared "app" struct; `serve` and `chat` share `bootChatEnv`.
 
-**Serve Daemon:**
-- Location: `cmd/aura/serve.go`
-- Triggers: `aura serve` from `cmd/aura/main.go`.
-- Responsibilities: Run authenticated HTTP, scheduler, Telegram/setup channel services, ingestion/sweep/reconciliation workers, metrics, readiness, and graceful drain.
+**`aura serve` (daemon):**
+- Location: `cmd/aura/serve.go`.
+- Triggers: Process start; runs until SIGINT/SIGTERM.
+- Responsibilities: Boots the shared chat composition root, mounts the AG-UI HTTP/SSE gateway, the cron `Scheduler` tick loop, the Telegram channel registry (fail-soft), and the loopback setup-wizard server; graceful shutdown drains in-flight turns before reverse-closing MCP servers and the pool.
 
-**ArcadeDB MCP Sidecar:**
-- Location: `cmd/arcadedb-mcp/main.go`
-- Triggers: Standalone process/container start.
-- Responsibilities: Serve `/mcp` and `/health`, resolve per-identity ArcadeDB clients, and expose memory and graph-schema tools.
+**`aura chat` (REPL):**
+- Location: `cmd/aura/chat.go`.
+- Triggers: Interactive CLI invocation.
+- Responsibilities: Same composition root as `serve` (`bootChatEnv`), drives `runner.Runner` directly with a local REPL renderer; **also hand-rolled, not cobra**.
 
-**Cockpit Browser Application:**
-- Location: `web/src/main.tsx`
-- Triggers: Browser loading the embedded SPA from `internal/webui/dist/`.
-- Responsibilities: Install mutation idempotency, initialize theme/i18n/query state, and route login, cockpit, conversation, and shared-link views.
+**`cmd/arcadedb-mcp` (MCP server binary):**
+- Location: `cmd/arcadedb-mcp/main.go`.
+- Triggers: Spawned as a subprocess by `aura serve`/`aura chat`'s MCP mount step (`mcptools.MountManagedServerHostWithEgress`), or run standalone for other MCP-speaking clients.
+- Responsibilities: Exposes the ArcadeDB-backed memory graph (`memory_upsert_fact`, `memory_search`, `memory_facts_about`, `memory_digest`, `memory_entities`, `memory_forget`) and document-retrieval/graph-schema tools as MCP tools; owns per-identity tenant credential derivation (`cmd/arcadedb-mcp/tenant.go`).
+
+**`POST /agent/run` (AG-UI gateway):**
+- Location: `internal/agui/server_run.go`.
+- Triggers: The web cockpit SSE client.
+- Responsibilities: Decode+validate the AG-UI run request, resolve/own-scope the thread, drive `runner.Turn`, translate `agent.Event`s to AG-UI SSE frames.
+
+**Telegram poller:**
+- Location: `internal/channels/telegram/bot_dispatch_turn.go`.
+- Triggers: An inbound Telegram update.
+- Responsibilities: Resolve the linked Aura identity (fail-closed if unresolved), spawn the turn off the poller goroutine, drive `runner.Turn` via the shared `agui_subscriber.go` fanout seam, render the response back through Telegram (Markdown-v2, HITL inline keyboards, TTS).
 
 ## Architectural Constraints
 
-- **Threading:** Go HTTP requests and daemon workers run concurrently; conversation turns are serialized by identity-plus-session locks in `internal/runner/runner_session.go`, workflow fan-out uses `errgroup` and serial iterator-frame yielding in `internal/agent/workflow/parallel.go`, and graceful shutdown joins workers in `cmd/aura/serve.go`.
-- **Global state:** Process-wide objects include the shared LLM breaker/classifier in `internal/runner/runner.go`, global metrics/boundaries in `internal/obs/` and `internal/agent/panicobs/`, and boot-built immutable registries in `internal/agent/tools/spec.go`; request state must remain in contexts or turn-local structs.
-- **Circular imports:** No compile-time circular imports are present. Preserve consumer-side seams such as `Runner` interfaces in `internal/agui/server.go` and tool-facing runner/store interfaces in `internal/agent/tools/`; concrete wiring belongs in `cmd/aura/`.
-- **Transport boundary:** `internal/agent/` must not import `internal/agui/`, and `internal/webui/` stays independent of other internal packages; `scripts/agui_boundary_check.sh` checks this boundary.
-- **Prompt-cache boundary:** Stable system content stays at `messages[0]`; volatile time, budget, workspace, sources, and worker framing are appended later by `internal/agent/prompt/` and `internal/agent/llm_agent.go`.
-- **Identity boundary:** Web requests acquire an authenticated principal in `internal/agui/auth.go`; owner-scoped database operations use the identity context and RLS transaction seams in `internal/db/tx.go`.
-- **Route boundary:** An AG-UI route must be registered inside `internal/agui/server.go` and delegated by the authenticated parent mux in `cmd/aura/serve_webui.go`; constants/prefixes live in `cmd/aura/serve_webui_routes.go`.
-- **Migration boundary:** Add paired migrations only under `internal/db/migrations/`, deriving the next number from that directory; update SQL sources in `internal/db/queries/` and regenerate `internal/db/sqlc/` through `sqlc.yaml`.
-- **File-size boundary:** Keep implementation files at or below 600 LOC per `CLAUDE.md`; split touched concerns using existing patterns such as `internal/agent/llm_agent_*.go` and `cmd/aura/serve_*.go`.
+- **Threading:** Go's standard goroutine-per-request model; the agent loop itself is single-goroutine per turn, but `dispatch` runs multiple RUNNABLE tool calls concurrently within one turn (`internal/agent/llm_agent_dispatch.go:91-152`) while keeping the terminal/history-append phase strictly serial and in original call order (KV-cache and audit-order invariant).
+- **Global state:** Deliberately minimal. The Runner holds two per-process `sync.Map`s keyed by a composite `(identity, session)` key (`threadLocks`, `sessions` — `internal/runner/runner.go:204-219`) for per-conversation serialization and in-flight-turn cancellation; the LLM circuit breaker (`llm.Breaker`) and the reasoning classifier are process-lifetime singletons injected into every per-turn agent, never rebuilt per turn.
+- **No long-lived agent state:** `LlmAgent` is constructed fresh every turn from rehydrated history — there is no persistent in-memory conversation object; a crash mid-turn loses nothing durable because `Runner` persists each `Event` as it streams (`internal/runner/runner.go:455-467`).
+- **Tenant isolation is server-enforced, not query-scoped:** ArcadeDB isolation is one database per identity with an HMAC-derived credential, not a `WHERE identity_id = ?` filter that code could forget (`internal/arcadedb/tenant.go`; see CLAUDE.md §Persistence).
+- **Sandbox routing:** Under a strict deployment profile, every filesystem/shell/file-delivery tool executes inside a per-identity Docker box (`internal/sandbox/usersandbox`) via a `SandboxRouter`; `web_fetch`/`web_search` are deliberately NEVER routed (they stay host-side, already SSRF-guarded) — a scope violation to route them.
 
 ## Anti-Patterns
 
-### Single-Mux Route Registration
+### Reintroducing a fresh long-lived agent object per conversation
 
-**What happens:** A handler added only to `internal/agui/server.go` is hidden by the authenticated parent mux and can fall through to the SPA or a 404.
-**Why it's wrong:** Aura deliberately uses two mux layers for capability placement and static fallback; the reachability list in `cmd/aura/serve_webui_routes.go` is part of the contract.
-**Do this instead:** Register the handler in `internal/agui/server.go`, add its parent delegation/capability wrapper in `cmd/aura/serve_webui.go`, and keep route constants in `cmd/aura/serve_webui_routes.go` or the focused `serve_webui_*.go` file.
+**What happens:** A naive extension would try to cache an `*agent.LlmAgent` keyed by conversation id to "save" reconstruction cost.
+**Why it's wrong:** `LlmAgent` carries per-run mutable fields (`activated`, `recoveryAttempts`, `sideEffected`, `editedPaths`) that are explicitly documented as per-run only (`internal/agent/llm_agent.go:82-142`); caching one across turns would leak recovery/verification state and silently change dedup/activation behavior across unrelated turns.
+**Do this instead:** Always build a fresh `LlmAgent` per turn via `Runner.buildAgent`, seeded from `LoadManagedHistory`; durability lives in the Stores, never the struct.
 
-### Concrete Dependency Construction Inside Domain Packages
+### Writing directly into `messages[0]` (the system prompt) for anything volatile
 
-**What happens:** A domain or tool package imports another high-level domain to build its concrete store/runner, creating dependency inversion violations and potential cycles.
-**Why it's wrong:** `internal/agent/tools/` already depends on low-level tool contracts; importing `internal/cron/`, `internal/skills/`, or `internal/swarm/` for construction would couple the runtime and defeat the consumer-interface pattern.
-**Do this instead:** Declare the smallest interface beside its consumer, then adapt and inject the concrete implementation from `cmd/aura/main.go`, `cmd/aura/chat_boot.go`, or `cmd/aura/serve_dispatch.go`.
+**What happens:** Adding a per-turn-varying fact (current time, budget counters, web sources) directly into the system message string.
+**Why it's wrong:** `messages[0]` must stay byte-stable to preserve the provider's prompt cache (`internal/agent/prompt/builder.go:103-114`); poisoning it busts the cached prefix on every turn and was measured to cost real latency (see `internal/agent/prompt/builder.go:47-51` on the deferred-tools roster placement).
+**Do this instead:** Append volatile content to a COPY of history as a trailing tail-injected message (`PromptBuilder.buildBase`), never mutate `messages[0]`.
 
-### Transport-Specific Events in the Runtime
+### Bypassing the context ladder by loading raw unbounded history
 
-**What happens:** Core code emits SSE/AG-UI/Telegram-specific payloads directly from `internal/agent/`.
-**Why it's wrong:** It prevents CLI/channel reuse and reverses the established `agent.Event` -> translator/renderer dependency direction.
-**Do this instead:** Emit `agent.Event` or a transport-neutral `display.Payload` from `internal/agent/`; translate in `internal/agui/translator.go`, `internal/agentrender/`, or `internal/channels/telegram/renderer.go`.
-
-### Signal-Cancelling In-Flight Work Immediately
-
-**What happens:** A signal-derived context directly parents an active turn, terminating the stream before terminal frames and durable cleanup are emitted.
-**Why it's wrong:** The shutdown contract in `cmd/aura/serve.go` separates the signal context from the work context so existing work receives a bounded drain window.
-**Do this instead:** Stop admission with the signal context, drain workers/HTTP under the configured grace, and cancel the work context only as the final backstop in `cmd/aura/serve.go` and `cmd/aura/serve_lifecycle.go`.
+**What happens:** A new read path that calls a lower-level store method (e.g. a raw turn fetch) instead of `Store.LoadManagedHistory`/`LoadManagedHistoryForBranch`.
+**Why it's wrong:** Skips L1 tool-eviction, the L2 hard-cap gate, and the L2.5 audited drop — a long conversation would silently overflow the model's context window with no `context_rot` audit trail.
+**Do this instead:** Every history read for an LLM call goes through `conversations.Store.LoadManagedHistory*`.
 
 ## Error Handling
 
-**Strategy:** Fail fast on invalid required configuration and incompatible migrations, fail closed at policy/identity boundaries, fail soft for optional sidecars/providers, and preserve graceful cleanup through error-returning boot functions.
+**Strategy:** Real infrastructure failures (LLM transport errors, dispatch panics) flow through the `iter.Seq2[*Event, error]` error slot; every OTHER termination (budget exhaustion, dedup trip, pause, empty-response, breaker-open) is an explicit non-error `Event` with `Actions.Escalate`/`AwaitingInput` set (D-04 in `internal/agent/llm_agent.go` comments) — the error slot is reserved, never overloaded for control flow.
 
 **Patterns:**
-- Reserve the `iter.Seq2` error slot for real infrastructure failures; represent budget exhaustion, pauses, and normal termination as `agent.Event` state/actions in `internal/agent/agent.go` and `internal/agent/event.go`.
-- Wrap errors with context and `%w`; redact DSNs and external payloads at boundaries such as `internal/db/db.go`, `internal/agui/server_redact.go`, and `internal/mcp/redact.go`.
-- Keep reusable boot helpers free of `os.Exit`; return errors from `bootChatEnv`/`assembleChatEnv` in `cmd/aura/chat_boot.go`, then translate them at the CLI boundary in `cmd/aura/main.go` or `cmd/aura/serve.go`.
-- Allow optional MCP, graph, voice, and governance providers to degrade with warnings/503s rather than aborting the whole daemon; wiring and nil-provider behavior live in `cmd/aura/serve_agui.go`.
-- Strictly decode bounded JSON and map domain failures to controlled HTTP statuses in `internal/agui/strict_decode.go` and focused `internal/agui/*_api.go` handlers.
-- Always release resources in reverse ownership order: detached runs/workers, HTTP, MCP clients, and pool lifecycles are coordinated by `cmd/aura/serve.go`, `cmd/aura/serve_lifecycle.go`, and `cmd/aura/chat_boot.go`.
+- A recovery counter (`recoveryAttempts`, max 1) lets the FIRST budget/dedup trip inject one nudge-and-continue turn before a second trip routes straight to `finalize()` — never an infinite retry loop.
+- `maybeRecoverEmptyResponse` retries once on a genuinely empty LLM completion (observed live provider hiccup) before finalizing.
+- A terminal `text_response` combined with any other tool call in the same step is rejected wholesale and replanned (`internal/agent/llm_agent_dispatch.go:34-53`) rather than silently picking one.
+- MCP server mount failures are fail-soft (WARN + skip that server) at boot, never fatal to the whole registry, as long as at least one non-deferred capability tool remains registered (`Registry.Validate`, `internal/agent/tools/spec.go:198-212`).
 
 ## Cross-Cutting Concerns
 
-**Logging:** Use structured `log/slog` with bounded/redacted fields in `cmd/aura/serve.go`, `internal/agent/llm_agent.go`, and `internal/obs/`; request/thread/tool identifiers are preferred over raw payloads.
+**Logging:** `log/slog` structured logging throughout; `internal/obs` centralizes process observability bootstrap (OTel spans, metrics). Sensitive values pass through `internal/redact` before reaching logs.
 
-**Validation:** Configuration is centralized in `internal/config/` with profile-aware validation in `internal/config/config_validate.go`; HTTP bodies use `internal/agui/strict_decode.go`; domain types validate at service boundaries such as `internal/documents/catalog_service.go` and `internal/agent/tools/spec.go`.
+**Validation:** Config is fail-fast on malformed (but not absent) `AURA_LOOP_*`/`AURA_CONTEXT_*` env values (`errMalformed` pattern in `internal/agent/budget.go`); AG-UI request bodies are strictly decoded and size-capped (`internal/agui/strict_decode.go`).
 
-**Authentication:** Authula integration in `internal/webauth/` validates sessions, `internal/agui/auth.go` establishes the request principal and capability gates, `internal/identityctx/` carries identity ownership, and `internal/db/tx.go` applies the RLS context for scoped operations.
-
-**Idempotency:** Browser mutations receive a stable request key in `web/src/api/idempotency.ts`; HTTP mutation routes use `internal/agui/idempotency_http.go`; agent mutations reserve through `internal/gateway/reserve.go` and persist in `internal/idempotency/` plus `internal/toolinvocations/`.
-
-**Observability:** OTel tracing/metrics and Prometheus live in `internal/obs/`; agent, database, scheduler, document, and MCP boundaries instrument their own packages, while `cmd/aura/serve_observability.go` owns daemon startup/shutdown.
+**Authentication/Authorization:** `internal/webauth` (Authula-based) gates the AG-UI cockpit; every Telegram turn is scoped to a resolved linked identity or DROPPED (fail-closed, `internal/channels/telegram/bot_dispatch_turn.go:82-141`); `internal/gateway` is the single policy PEP for mutating tool calls; ArcadeDB tenant isolation is server-enforced per identity (`internal/arcadedb/tenant.go`).
 
 ---
 
-*Architecture analysis: 2026-08-02*
+*Architecture analysis: 2026-08-13*
