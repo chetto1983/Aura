@@ -79,7 +79,9 @@ func TestReserveReplayOnConflict(t *testing.T) {
 	if v.Decision != Allow || v.Replay == nil {
 		t.Fatalf("verdict = %+v, want allow with a replay", v)
 	}
-	if v.Replay.Preview != "recorded-output" || v.Replay.Bytes != 15 {
+	// D-10: replayResult now appends replayedMarker, so the preview contains the
+	// recorded text plus the marker rather than equaling it verbatim.
+	if !strings.Contains(v.Replay.Preview, "recorded-output") || v.Replay.Bytes != 15 {
 		t.Fatalf("replay = %+v, want the recorded end preview", v.Replay)
 	}
 }
