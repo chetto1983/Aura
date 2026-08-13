@@ -31,6 +31,7 @@ import (
 	"encoding/hex"
 	"fmt"
 
+	"github.com/chetto1983/aura/internal/canonicaljson"
 	"github.com/chetto1983/aura/internal/llm"
 )
 
@@ -94,8 +95,37 @@ func deterministicBlankCallID(name, args string, index int) string {
 	return "call_" + hex.EncodeToString(sum[:])[:12]
 }
 
-// dedupeSameMessageCalls will drop an exact same-message repeat (D-12). Not
-// yet implemented.
+// dedupeSameMessageCalls drops a later call in the SAME assistant message
+// whose (name, arguments) exactly repeats an earlier call in that message
+// (D-12). Order of the surviving calls is preserved. The dropped call is
+// removed entirely — never left in the slice with a marker and never
+// answered with a synthesized result — because the provider contract
+// requires every tool_call to have exactly one matching result and vice
+// versa; a fabricated result would be the harness inventing an outcome.
+//
+// This is NOT the cross-round loop guard in budget_dedup.go (D-18): that one
+// is a runaway-loop veto over calls from DIFFERENT rounds, gated on the
+// RESULT staying unchanged across repeats. This function has no notion of
+// rounds or results — it only ever looks at calls that arrived together in
+// one message — so two identical calls in two separate rounds both survive
+// untouched; that discrimination belongs to plan 45-02's round-ordinal work,
+// not here. Neither function subsumes the other.
 func dedupeSameMessageCalls(calls []llm.ToolCall) []llm.ToolCall {
-	return calls
+	if len(calls) < 2 {
+		return calls
+	}
+	seen := make(map[string]struct{}, len(calls))
+	out := make([]llm.ToolCall, 0, len(calls))
+	for _, call := range calls {
+		// The separator is a NUL byte, not a plain colon or space: it can
+		// never appear in either a tool name or canonical JSON, so two
+		// (name, arguments) pairs cannot collide by concatenation alone.
+		key := call.Function.Name + "\x00" + string(canonicaljson.CanonicalArgs(call.Function.Arguments))
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, call)
+	}
+	return out
 }
