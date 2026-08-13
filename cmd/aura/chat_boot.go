@@ -436,7 +436,15 @@ func assembleChatEnv(
 		// pause into the SAME gateway instance (gw) the runner's PEP reads (D-03 point 2).
 		ResumeHook:  chainResumeHooks(newShellResumeHook(toolHandles.ShellApprovals), newGatewayResumeHook(gw), newScheduledTaskResumeHook(taskStore)),
 		HookManager: hookManager,
-		Gateway:     gw,
+		// The verify-on-stop evidence ledger (migration 0094). Built ONCE here because it
+		// holds the pool; the runner derives the per-turn read and write halves from it.
+		VerificationStore: agent.NewEvidenceStore(pool),
+		// Project detection reads the SAME per-identity box the agent's shell runs in —
+		// the aura process's own /workspace is a different volume, so a host-filesystem
+		// detector answered "not a project" for every path the agent could name. Built
+		// once here too: it memoizes one box probe per (identity, directory).
+		VerificationDetector: agent.NewBoxProjectDetector(sandboxRouter),
+		Gateway:              gw,
 		// Local embedding-based reasoning-tier classifier (embedding sidecar):
 		// replaces the per-turn LLM router round-trip. Empty EmbedURL => the agent
 		// falls back to the LLM router.

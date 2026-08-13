@@ -282,5 +282,6 @@ func isAgentNudge(content string) bool {
 	return content == recoveryNudgeGeneric ||
 		content == recoveryNudgeEmpty ||
 		strings.HasPrefix(content, recoveryNudgeToolPrefix) ||
-		strings.HasPrefix(content, completionVetoPrefix)
+		strings.HasPrefix(content, completionVetoPrefix) ||
+		strings.HasPrefix(content, verifyOnStopNudgePrefix)
 }

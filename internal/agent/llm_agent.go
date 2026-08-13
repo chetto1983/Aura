@@ -99,6 +99,18 @@ type LlmAgent struct {
 	sideEffected       bool
 	completionAttempts int
 
+	// ledger is the verification evidence the verify-on-stop gate reads
+	// (llm_agent_verification.go); nil disables that gate entirely, so a deployment
+	// without the ledger degrades to no nudge rather than to a panic.
+	// verificationAttempts is its own veto counter (max verificationMaxAttempts),
+	// orthogonal to completionAttempts so one gate never spends the other's budget.
+	// editedPaths accumulates the paths this run's write tools touched — written only
+	// from the SERIAL result loop in dispatch, so it needs no lock. All three are
+	// per-run (a fresh LlmAgent per turn resets them).
+	ledger               VerificationLedger
+	verificationAttempts int
+	editedPaths          []string
+
 	streamRetryUsed bool
 
 	// truncatedToolTurns counts consecutive turns whose tool call was cut mid-JSON by
@@ -162,6 +174,10 @@ type LlmAgentConfig struct {
 	// Gateway is the optional Phase-35 policy PEP (GATE-01). nil is an Allow no-op
 	// (dev-parity). The composition roots inject the one process-wide *gateway.Gateway.
 	Gateway *gateway.Gateway
+	// Ledger is the optional verification evidence ledger the verify-on-stop gate
+	// reads. nil disables that gate (tests/standalone, and any deployment with no
+	// Postgres pool behind NewEvidenceStore).
+	Ledger VerificationLedger
 	// LedgerConversationID is the ORIGINATING conversation UUID the gateway keys its
 	// decision-fact ledger on. Empty defaults to SessionID in NewLlmAgent — correct for
 	// the main runner path (session_id == conversation_id UUID); the headless swarm/cron
@@ -482,6 +498,14 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				answer := normalizeContentStopAnswer(text)
 				if finish == "length" {
 					answer += truncationNotice // D-21 — no auto-continue
+				}
+				// Verification gate: an edit with no fresh passing evidence gets one
+				// deterministic follow-up, injected exactly like a completion veto. It
+				// runs FIRST because it costs no model call and the completion critic
+				// costs one — a turn the free gate sends back never pays for the paid one.
+				if nudge, ok := a.gateVerification(); ok {
+					a.history = append(a.history, llm.Message{Role: llm.RoleUser, Content: nudge})
+					continue
 				}
 				// Completion gate (D-43): content-stop is also a voluntary termination.
 				// No tool_call to attach feedback to here, so a veto appends only the

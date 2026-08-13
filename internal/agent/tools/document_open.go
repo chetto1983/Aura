@@ -178,7 +178,7 @@ func (t *DocumentOpen) write(
 	body io.Reader,
 ) error {
 	if err := t.Router.WriteFileStream(ctx, h, boxPath, size, body); err != nil {
-		_, _ = t.Router.Exec(ctx, h, usersandbox.ExecRequest{Command: "rm -f -- " + shellQuoteArg(boxPath)})
+		_, _ = t.Router.Exec(ctx, h, usersandbox.ExecRequest{Command: "rm -f -- " + ShellQuoteArg(boxPath)})
 		return fmt.Errorf("write %s: %w", boxPath, err)
 	}
 	return nil

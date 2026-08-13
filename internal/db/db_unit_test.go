@@ -357,8 +357,12 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if head != 93 {
-		t.Fatalf("MigrationHead=%d, want embedded head 93", head)
+	// A deliberate pin, moved deliberately: 0094_verification_evidence landed the
+	// coding verification ledger. The test exists so a migration added without
+	// noticing breaks the build rather than the deployment, so bumping it is the
+	// intended way to acknowledge one -- never a fixup to make a red go away.
+	if head != 94 {
+		t.Fatalf("MigrationHead=%d, want embedded head 94", head)
 	}
 }
 
