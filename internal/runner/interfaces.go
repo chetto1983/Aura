@@ -133,10 +133,14 @@ type ToolInvocationStore interface {
 	Insert(ctx context.Context, e toolinvocations.Event) error
 }
 
-// MemoryContextProvider returns the authenticated identity's bounded memory
-// digest. The Runner owns trust fencing and context placement.
+// MemoryContextProvider returns the authenticated identity's long-term memory for
+// injection. Context is the query-less whole-memory digest (always available); Search
+// is the proactive per-message preload (ADK preload_memory-style): a relevance search
+// over the CURRENT user text. The Runner owns fencing and context placement; both are
+// fail-soft (an error/empty result is dropped, never blocks the turn).
 type MemoryContextProvider interface {
 	Context(ctx context.Context, identityID string) (string, error)
+	Search(ctx context.Context, identityID, query string) (string, error)
 }
 
 // IdentityStore is the narrow identity surface the Runner consumes (D-A2-02).

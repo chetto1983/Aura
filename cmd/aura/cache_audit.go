@@ -186,8 +186,8 @@ func replayAudit(ctx context.Context, turns []fixtureTurn, errOut io.Writer) ([]
 	// list with NO network). Dropping them first keeps Register fail-loud (B-14).
 	// The fake web_search drives the D-05 source-list tail-inject fixture (turn-08):
 	// the volatile numbered list must ride the tail copy and NEVER mutate messages[0].
-	reg := tools.Without(buildRegistry(), skillManifestName, "web_search")
-	reg.Register(newSkillTool(auditCfg, nil))                   // deferred like production
+	reg := tools.Without(buildRegistry(), skillManifestName, skillManageName, "web_search")
+	registerSkillTools(reg, auditCfg, nil)                      // deferred like production
 	reg.Register(&tools.WebSearch{Engine: auditSearchEngine{}}) // deterministic, network-free
 
 	client := agenttest.NewFakeClient(scriptTurns(turns)...)
@@ -261,6 +261,11 @@ func hashMessages1(req llm.Request) (string, error) {
 // turn-stable manifest when exposed (D-06). The audit hashes its ToolDef to assert
 // the manifest-in-Description never drifts turn-to-turn.
 const skillManifestName = "skill"
+
+// skillManageName is the WRITE half of the split skills grammar. The audit drops it
+// alongside the read half: buildRegistry wires both, and re-registering either one
+// over a registry that still holds it panics (Register is fail-loud by design, B-14).
+const skillManageName = "skill_manage"
 
 // skillManifestHash fingerprints the skill tool's ToolDef (its manifest-in-Description,
 // D-06) from req.Tools via the same canonicaljson the prefix hash uses, returning

@@ -11,10 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
-	"github.com/chetto1983/aura/internal/db"
-	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/pkoukk/tiktoken-go"
 )
@@ -37,10 +34,6 @@ const (
 	minHistoryHardCapTurns     = 4
 	maxHistoryHardCapTurns     = 1000
 )
-
-// rotActionHardDropPairs is the context_rot_events.action value written when L2.5
-// drops oldest user/assistant pairs (amendment #22).
-const rotActionHardDropPairs = "hard_drop_pairs"
 
 // alwaysBlockSeq is the synthetic seq the messages[1] always-block turn carries when
 // the ladder injects it (D-07). seq=1 is the system L0 turn; the always-block sits at
@@ -103,6 +96,12 @@ type ContextConfig struct {
 	// llm.ProviderErrorReserveTokens(cfg); zero (the default) leaves the formula
 	// unchanged for OpenRouter and hand-built test configs.
 	ProviderErrorReserveTokens int
+	// Summarizer, when non-nil, enables L2.4 LLM compaction: over-budget history is
+	// condensed into one synthetic summary turn (keeping the protected head and the
+	// active round verbatim) BEFORE the deterministic L2.5 hard-drop. A nil Summarizer
+	// (the default, and every unit test that does not set it) disables compaction, so
+	// the ladder behaves exactly as before.
+	Summarizer Summarizer
 }
 
 // hardCap computes the L2 hard cap from the config (SPEC Req#10:
@@ -141,81 +140,6 @@ func smallWindowHardCapFloor(window int) int {
 		return 0
 	}
 	return window / 2
-}
-
-// rotEmitter is the narrow write surface ApplyContextLadder needs to record an L2.5
-// drop. *Store satisfies it; unit tests pass a fake (no DB).
-type rotEmitter interface {
-	insertContextRotEvent(ctx context.Context, conversationID string, pairsDropped, before, after int) error
-}
-
-// insertContextRotEvent records one L2.5 hard-drop audit row (Store impl).
-func (s *Store) insertContextRotEvent(ctx context.Context, conversationID string, pairsDropped, before, after int) error {
-	id, err := db.ParseUUID("conversation_id", conversationID)
-	if err != nil {
-		return fmt.Errorf("context rot event: %w", err)
-	}
-	return s.scoped(ctx, func(q *sqlc.Queries) error {
-		if iErr := q.InsertContextRotEvent(ctx, sqlc.InsertContextRotEventParams{
-			ConversationID: id,
-			Action:         rotActionHardDropPairs,
-			PairsDropped:   int32(pairsDropped),
-			TokensBefore:   int32(before),
-			TokensAfter:    int32(after),
-		}); iErr != nil {
-			return fmt.Errorf("insert context rot event %s: %w", conversationID, iErr)
-		}
-		return nil
-	})
-}
-
-// RotEvent is the domain projection of one aura.context_rot_events row — the
-// microcompact ladder audit trail (L2.5 hard-drop). PairsDropped/TokensBefore/
-// TokensAfter quantify one drop; TS is the RFC3339 timestamp. The web cockpit's
-// context-budget gauge marks these on the fill bar (D-11, Phase 25).
-type RotEvent struct {
-	TS           string // RFC3339
-	Action       string
-	PairsDropped int
-	TokensBefore int
-	TokensAfter  int
-}
-
-// ListContextRotEvents returns the microcompact ladder events for one conversation
-// in ts-ASC order via the existing ListContextRotEvents sqlc query (no new query or
-// migration — read-only projection at the pgtype boundary). A malformed id is a
-// parse error the caller maps to a clean 404.
-func (s *Store) ListContextRotEvents(ctx context.Context, conversationID string) ([]RotEvent, error) {
-	id, err := db.ParseUUID("conversation_id", conversationID)
-	if err != nil {
-		return nil, fmt.Errorf("list context rot events: %w", err)
-	}
-	var rows []sqlc.AuraContextRotEvents
-	if err := s.scoped(ctx, func(q *sqlc.Queries) error {
-		listed, lErr := q.ListContextRotEvents(ctx, id)
-		if lErr != nil {
-			return fmt.Errorf("list context rot events %s: %w", conversationID, lErr)
-		}
-		rows = listed
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-	out := make([]RotEvent, 0, len(rows))
-	for _, r := range rows {
-		ts := ""
-		if r.Ts.Valid {
-			ts = r.Ts.Time.Format(time.RFC3339)
-		}
-		out = append(out, RotEvent{
-			TS:           ts,
-			Action:       r.Action,
-			PairsDropped: int(r.PairsDropped),
-			TokensBefore: int(r.TokensBefore),
-			TokensAfter:  int(r.TokensAfter),
-		})
-	}
-	return out, nil
 }
 
 // LoadManagedHistory loads the raw turns and applies the L1/L2/L2.5 ladder, the
@@ -322,6 +246,19 @@ func applyContextLadder(
 	}
 	if hardCap == 0 || tokensAfterL1 <= ordinaryCap {
 		return injectTransientContext(repairManagedToolMessagePairs(toMessages(l1)), tail), nil
+	}
+
+	// L2.4: LLM compaction. Summarize the historical rounds into one synthetic turn,
+	// keeping the protected head and the active user-led round verbatim, so old context
+	// is condensed rather than lost. It runs BEFORE the deterministic L2.5 drop. On any
+	// summarizer error, empty result, or a summary that still overflows, tryCompact
+	// returns false and we fall through to L2.5 (the zero-LLM fail-safe) unchanged.
+	if compacted, ok := tryCompact(ctx, cfg.Summarizer, enc, l1, ordinaryCap); ok {
+		slog.Info("conversation context compacted",
+			"conversation_id", conversationID,
+			"tokens_before", totalAfterL1,
+			"tokens_after", totalTokens(enc, compacted)+tailTokens)
+		return injectTransientContext(repairManagedToolMessagePairs(toMessages(compacted)), tail), nil
 	}
 
 	// L2.5: drop oldest user/assistant PAIRs (preserve system L0 + keep an even
@@ -488,10 +425,13 @@ func readToolOutputPointer(spillID string) string {
 	return fmt.Sprintf("[tool output evicted to save context; page it back via read_tool_output(tool_call_id=%q)]", spillID)
 }
 
-// dropOldestPairs removes complete historical rounds after the protected head
-// while preserving the final user-led active round byte-for-byte. The historical
-// name/signature stays because rot-event accounting consumes its count.
-func dropOldestPairs(enc *tiktoken.Tiktoken, turns []Turn, hardCap int) ([]Turn, int) {
+// splitHeadHistoryActive partitions turns into the protected head (system L0 +
+// always-block), the historical rounds, and the active user-led round that is never
+// dropped. The returned slices are sub-slices of turns (read-only for callers that do
+// not mutate elements); dropOldestPairs copies history before reslicing it. It is
+// shared by dropOldestPairs (L2.5) and tryCompact (L2.4) so the head/active boundary
+// is defined in one place.
+func splitHeadHistoryActive(turns []Turn) (head, history, active []Turn) {
 	start := 0
 	if len(turns) > 0 && turns[0].Seq == 1 && turns[0].Role == llm.RoleSystem {
 		start = 1
@@ -499,8 +439,8 @@ func dropOldestPairs(enc *tiktoken.Tiktoken, turns []Turn, hardCap int) ([]Turn,
 	if len(turns) > start && isAlwaysBlock(turns[start]) {
 		start++
 	}
-	head := turns[:start]
-	body := append([]Turn(nil), turns[start:]...)
+	head = turns[:start]
+	body := turns[start:]
 
 	// Read-only scan, so ranging over the yielded copy is safe here — unlike a loop that
 	// assigns into the element, where slices.Backward's copy would swallow the write.
@@ -511,8 +451,15 @@ func dropOldestPairs(enc *tiktoken.Tiktoken, turns []Turn, hardCap int) ([]Turn,
 			break
 		}
 	}
-	history := body[:activeAt]
-	active := body[activeAt:]
+	return head, body[:activeAt], body[activeAt:]
+}
+
+// dropOldestPairs removes complete historical rounds after the protected head
+// while preserving the final user-led active round byte-for-byte. The historical
+// name/signature stays because rot-event accounting consumes its count.
+func dropOldestPairs(enc *tiktoken.Tiktoken, turns []Turn, hardCap int) ([]Turn, int) {
+	head, historyView, active := splitHeadHistoryActive(turns)
+	history := append([]Turn(nil), historyView...)
 
 	pairsDropped := 0
 	for len(history) > 0 {
@@ -573,10 +520,11 @@ func totalTokens(enc *tiktoken.Tiktoken, turns []Turn) int {
 func toMessages(turns []Turn) []llm.Message {
 	out := make([]llm.Message, 0, len(turns))
 	for _, t := range turns {
-		// The synthetic always-block carries an internal marker in ToolCallID for
-		// protection bookkeeping (isAlwaysBlock); strip it so the wire message is a
-		// clean user-role message (a user message must not carry a tool_call_id).
-		if isAlwaysBlock(t) {
+		// The synthetic always-block and compaction-summary turns carry an internal
+		// marker in ToolCallID for bookkeeping (isAlwaysBlock / isCompaction); strip it
+		// so the wire message is a clean user-role message (a user message must not
+		// carry a tool_call_id).
+		if isAlwaysBlock(t) || isCompaction(t) {
 			out = append(out, llm.Message{Role: llm.RoleUser, Content: t.Content})
 			continue
 		}

@@ -83,7 +83,7 @@ func readOnlySpec() tools.Spec { return tools.Spec{Name: "read_file", Mutating: 
 // It is deliberately not shell_exec (Normal), not swarm_spawn (Normal), and not a Risky
 // call either: Risky no longer gates. If a future change re-widens the gate, these tests
 // keep passing and TestDecideRiskyIsNotGated below is what fails.
-func gatedSpec() tools.Spec { return tools.Spec{Name: "skill", Mutating: true} }
+func gatedSpec() tools.Spec { return tools.Spec{Name: "skill_manage", Mutating: true} }
 
 func gatedArgs() json.RawMessage { return json.RawMessage(`{"action":"delete","name":"x"}`) }
 

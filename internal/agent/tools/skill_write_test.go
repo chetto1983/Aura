@@ -119,7 +119,11 @@ func (f *fakeSkillAlerter) AlertPendingSkill(_ context.Context, name, action str
 	f.name, f.action, f.tier = name, action, tier
 }
 
-func execSkill(t *testing.T, tool *SkillTool, args map[string]any) (ToolResult, error) {
+// execSkill takes the narrow Execute surface so it serves BOTH halves of the split
+// skills grammar (the read `skill` tool and the write `skill_manage` tool).
+func execSkill(t *testing.T, tool interface {
+	Execute(context.Context, json.RawMessage) (ToolResult, error)
+}, args map[string]any) (ToolResult, error) {
 	t.Helper()
 	raw, err := json.Marshal(args)
 	if err != nil {
@@ -134,9 +138,13 @@ func execSkill(t *testing.T, tool *SkillTool, args map[string]any) (ToolResult, 
 // writer activates (returns a non-pending status) yields a NORMAL result, NOT a pause
 // — Claude-Code self-extension parity. The pending/pause fallback is covered by the
 // defensive tests below.
+// manageSkills wraps the read tool's seams in the write half: authoring, install and
+// snippet lifecycle moved to skill_manage, which dispatches against the SAME SkillTool.
+func manageSkills(s *SkillTool) *SkillManageTool { return &SkillManageTool{Skills: s} }
+
 func TestActionCreateActivates(t *testing.T) {
 	w := &fakeSkillWriter{status: "active"}
-	tool := &SkillTool{Writer: w}
+	tool := manageSkills(&SkillTool{Writer: w})
 	ctx := withTestToolCallCtx(context.Background())
 
 	raw, _ := json.Marshal(map[string]any{
@@ -165,7 +173,7 @@ func TestActionCreateActivates(t *testing.T) {
 func TestActionCreateInvalidatesLoaderForSameTurnRead(t *testing.T) {
 	w := &fakeSkillWriter{status: "active"}
 	loader := newFakeLoader()
-	tool := &SkillTool{Writer: w, Loader: loader}
+	tool := manageSkills(&SkillTool{Writer: w, Loader: loader})
 
 	if _, err := execSkill(t, tool, map[string]any{
 		"action":      "create",
@@ -183,7 +191,7 @@ func TestActionCreateInvalidatesLoaderForSameTurnRead(t *testing.T) {
 func TestActionCreateActivePathStillAlertsWhenAlerterWired(t *testing.T) {
 	w := &fakeSkillWriter{status: "active"}
 	al := &fakeSkillAlerter{}
-	tool := &SkillTool{Writer: w, Alerter: al}
+	tool := manageSkills(&SkillTool{Writer: w, Alerter: al})
 	ctx := withTestToolCallCtx(context.Background())
 
 	raw, _ := json.Marshal(map[string]any{
@@ -207,7 +215,7 @@ func TestActionCreateActivePathStillAlertsWhenAlerterWired(t *testing.T) {
 // the writer (the model path) surfaces as a tool ERROR (self-correct), NOT a pause.
 func TestActionCreateBlocklistedIsToolError(t *testing.T) {
 	w := &fakeSkillWriter{err: errors.New("skill body contains a blocklisted injection sequence")}
-	tool := &SkillTool{Writer: w}
+	tool := manageSkills(&SkillTool{Writer: w})
 
 	_, err := execSkill(t, tool, map[string]any{
 		"action":      "create",
@@ -235,7 +243,7 @@ func TestActionCreateBlocklistedIsToolError(t *testing.T) {
 func TestDeleteAlertsAndReportsRemoval(t *testing.T) {
 	w := &fakeSkillWriter{}
 	al := &fakeSkillAlerter{}
-	tool := &SkillTool{Writer: w, Alerter: al}
+	tool := manageSkills(&SkillTool{Writer: w, Alerter: al})
 
 	res, err := execSkill(t, tool, map[string]any{"action": "delete", "name": "old-skill"})
 	if err != nil {
@@ -256,7 +264,7 @@ func TestDeleteAlertsAndReportsRemoval(t *testing.T) {
 // writer call (defensive guard).
 func TestWriteActionRequiresName(t *testing.T) {
 	w := &fakeSkillWriter{}
-	tool := &SkillTool{Writer: w}
+	tool := manageSkills(&SkillTool{Writer: w})
 
 	_, err := execSkill(t, tool, map[string]any{"action": "create", "description": "x", "body": "y"})
 	if err == nil {
@@ -270,7 +278,7 @@ func TestWriteActionRequiresName(t *testing.T) {
 // TestWriteActionNoWriter asserts a write action with no writer wired returns a clear
 // error, never a panic.
 func TestWriteActionNoWriter(t *testing.T) {
-	tool := &SkillTool{}
+	tool := manageSkills(&SkillTool{})
 	_, err := execSkill(t, tool, map[string]any{"action": "create", "name": "x", "description": "d", "body": "b"})
 	if err == nil || !strings.Contains(err.Error(), "no writer") {
 		t.Fatalf("want a 'no writer' error, got %v", err)
@@ -280,7 +288,7 @@ func TestWriteActionNoWriter(t *testing.T) {
 // TestNoApproveAction asserts there is NO model-facing approve action (D-03): the
 // router rejects it as unknown.
 func TestNoApproveAction(t *testing.T) {
-	tool := &SkillTool{Writer: &fakeSkillWriter{}}
+	tool := manageSkills(&SkillTool{Writer: &fakeSkillWriter{}})
 	_, err := execSkill(t, tool, map[string]any{"action": "approve", "name": "x"})
 	if err == nil || !strings.Contains(err.Error(), "unknown action") {
 		t.Fatalf("approve must be unknown (D-03), got %v", err)
@@ -293,7 +301,7 @@ func TestNoApproveAction(t *testing.T) {
 // TestAskUserOnlyPauseConstraint). This is the architectural inverse of writeAction.
 func TestSnippetSaveAction(t *testing.T) {
 	w := &fakeSkillWriter{}
-	tool := &SkillTool{Writer: w}
+	tool := manageSkills(&SkillTool{Writer: w})
 	ctx := withTestToolCallCtx(context.Background())
 
 	raw, _ := json.Marshal(map[string]any{
@@ -342,7 +350,7 @@ func TestSnippetSaveActionRequiresFields(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			w := &fakeSkillWriter{}
-			tool := &SkillTool{Writer: w}
+			tool := manageSkills(&SkillTool{Writer: w})
 			_, err := execSkill(t, tool, tc.args)
 			if err == nil {
 				t.Fatalf("%s: want a tool error, got nil", tc.name)
@@ -362,7 +370,7 @@ func TestSnippetSaveActionRequiresFields(t *testing.T) {
 // NORMAL ToolResult (not a pause) confirming the restore.
 func TestActionRestore(t *testing.T) {
 	w := &fakeSkillWriter{}
-	tool := &SkillTool{Writer: w}
+	tool := manageSkills(&SkillTool{Writer: w})
 	ctx := withTestToolCallCtx(context.Background())
 
 	raw, _ := json.Marshal(map[string]any{"action": "restore", "name": "xlsx-build"})
@@ -387,7 +395,7 @@ func TestActionRestore(t *testing.T) {
 // tier, no gate) and returns a NORMAL ToolResult (not a pause).
 func TestActionArchive(t *testing.T) {
 	w := &fakeSkillWriter{}
-	tool := &SkillTool{Writer: w}
+	tool := manageSkills(&SkillTool{Writer: w})
 	ctx := withTestToolCallCtx(context.Background())
 
 	raw, _ := json.Marshal(map[string]any{"action": "archive", "name": "xlsx-build"})
@@ -416,7 +424,7 @@ func TestActionArchiveRejectsInvalidName(t *testing.T) {
 	for _, name := range []string{"../../../tmp/x", "   ", "../sibling", "Bad Name"} {
 		t.Run(name, func(t *testing.T) {
 			w := &fakeSkillWriter{}
-			tool := &SkillTool{Writer: w}
+			tool := manageSkills(&SkillTool{Writer: w})
 			_, err := execSkill(t, tool, map[string]any{"action": "archive", "name": name})
 			if err == nil {
 				t.Fatalf("archive %q: want a tool error, got nil", name)
@@ -439,7 +447,7 @@ func TestNameBearingActionsRejectInvalidName(t *testing.T) {
 	for _, action := range []string{"create", "update", "delete", "restore", "archive", "save_snippet"} {
 		t.Run(action, func(t *testing.T) {
 			w := &fakeSkillWriter{}
-			tool := &SkillTool{Writer: w}
+			tool := manageSkills(&SkillTool{Writer: w})
 			args := map[string]any{"action": action, "name": "  ../evil  "}
 			if action == "create" || action == "update" {
 				args["description"], args["body"] = "d", "b"
@@ -465,13 +473,13 @@ func TestNameBearingActionsRejectInvalidName(t *testing.T) {
 // return a clear error, never a panic.
 func TestSnippetLifecycleNoWriter(t *testing.T) {
 	for _, action := range []string{"restore", "archive"} {
-		tool := &SkillTool{}
+		tool := manageSkills(&SkillTool{})
 		_, err := execSkill(t, tool, map[string]any{"action": action, "name": "x"})
 		if err == nil || !strings.Contains(err.Error(), "no writer") {
 			t.Fatalf("%s without writer: want a 'no writer' error, got %v", action, err)
 		}
 	}
-	tool := &SkillTool{}
+	tool := manageSkills(&SkillTool{})
 	_, err := execSkill(t, tool, map[string]any{"action": "save_snippet", "name": "x", "language": "python", "code": "y"})
 	if err == nil || !strings.Contains(err.Error(), "no writer") {
 		t.Fatalf("save_snippet without writer: want a 'no writer' error, got %v", err)
@@ -486,7 +494,7 @@ func TestSnippetLifecycleNoWriter(t *testing.T) {
 // to the regex branch and emits "invalid name" instead of "name is required".)
 func TestEmptyNameErrorIsContractual(t *testing.T) {
 	w := &fakeSkillWriter{}
-	tool := &SkillTool{Writer: w}
+	tool := manageSkills(&SkillTool{Writer: w})
 
 	_, err := execSkill(t, tool, map[string]any{"action": "create", "description": "d", "body": "b"})
 	if err == nil {
@@ -518,7 +526,7 @@ func TestMalformedJSONWrapsArgs(t *testing.T) {
 	for _, action := range []string{"create", "save_snippet", "restore", "archive"} {
 		t.Run(action, func(t *testing.T) {
 			w := &fakeSkillWriter{}
-			tool := &SkillTool{Writer: w}
+			tool := manageSkills(&SkillTool{Writer: w})
 			raw := json.RawMessage(strings.Replace(string(malformed), "%s", action, 1))
 			_, err := tool.Execute(context.Background(), raw)
 			if err == nil {
@@ -551,7 +559,7 @@ func TestLifecycleWriterErrorSurfacesWithContext(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.action, func(t *testing.T) {
 			w := &fakeSkillWriter{lifecycleErr: errors.New("writer exploded")}
-			tool := &SkillTool{Writer: w}
+			tool := manageSkills(&SkillTool{Writer: w})
 			res, err := execSkill(t, tool, tc.args)
 			if err == nil {
 				t.Fatalf("%s with a failing writer: want a tool error, got nil (res=%q)", tc.action, res.Preview)

@@ -32,7 +32,7 @@ func installArgs(t *testing.T, source string) json.RawMessage {
 
 func TestSkillInstallForwardsTheSourceAndNamesTheResult(t *testing.T) {
 	w := &fakeSkillWriter{installName: "xlsx"}
-	tool := &SkillTool{Loader: &fakeSkillLoader{}, Writer: w}
+	tool := manageSkills(&SkillTool{Loader: &fakeSkillLoader{}, Writer: w})
 
 	res, err := tool.Execute(installCtx(t), installArgs(t, " anthropics/skills@xlsx "))
 	if err != nil {
@@ -57,7 +57,7 @@ func TestSkillInstallForwardsTheSourceAndNamesTheResult(t *testing.T) {
 
 func TestSkillInstallRequiresASource(t *testing.T) {
 	w := &fakeSkillWriter{}
-	tool := &SkillTool{Loader: &fakeSkillLoader{}, Writer: w}
+	tool := manageSkills(&SkillTool{Loader: &fakeSkillLoader{}, Writer: w})
 
 	for _, source := range []string{"", "   "} {
 		_, err := tool.Execute(installCtx(t), installArgs(t, source))
@@ -75,7 +75,7 @@ func TestSkillInstallRequiresASource(t *testing.T) {
 
 func TestSkillInstallSurfacesTheInstallerError(t *testing.T) {
 	boom := errors.New("blocklisted injection sequence")
-	tool := &SkillTool{Loader: &fakeSkillLoader{}, Writer: &fakeSkillWriter{installErr: boom}}
+	tool := manageSkills(&SkillTool{Loader: &fakeSkillLoader{}, Writer: &fakeSkillWriter{installErr: boom}})
 
 	_, err := tool.Execute(installCtx(t), installArgs(t, "owner/repo"))
 	if err == nil {
@@ -90,7 +90,7 @@ func TestSkillInstallSurfacesTheInstallerError(t *testing.T) {
 }
 
 func TestSkillInstallWithoutAWriterIsAClearError(t *testing.T) {
-	tool := &SkillTool{Loader: &fakeSkillLoader{}}
+	tool := manageSkills(&SkillTool{Loader: &fakeSkillLoader{}})
 
 	_, err := tool.Execute(installCtx(t), installArgs(t, "owner/repo"))
 	if err == nil {
@@ -105,7 +105,7 @@ func TestSkillInstallWithoutAWriterIsAClearError(t *testing.T) {
 // every turn. If install is absent from the enum the model falls back to the shell, which
 // is the behaviour this action exists to end.
 func TestSkillSpecAdvertisesInstallAndWarnsOffTheCLI(t *testing.T) {
-	spec := (&SkillTool{Loader: &fakeSkillLoader{}}).Spec()
+	spec := (manageSkills(&SkillTool{Loader: &fakeSkillLoader{}})).Spec()
 	var schema struct {
 		Properties map[string]struct {
 			Enum        []string `json:"enum"`
@@ -129,7 +129,7 @@ func TestSkillSpecAdvertisesInstallAndWarnsOffTheCLI(t *testing.T) {
 	if !found {
 		t.Fatalf("install missing from the action enum: %v", action.Enum)
 	}
-	if !strings.Contains(action.Description, "Never install a skill by running the skills CLI") {
+	if !strings.Contains(action.Description, "Never install by running the skills CLI") {
 		t.Error("the action description does not warn the model off the CLI install")
 	}
 	if _, ok := schema.Properties["source"]; !ok {

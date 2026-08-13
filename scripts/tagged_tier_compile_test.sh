@@ -20,6 +20,11 @@ cat >"$fixture_root/good/internal/fixture/live_test.go" <<'GO'
 
 package fixture
 GO
+cat >"$fixture_root/good/internal/fixture/measure_test.go" <<'GO'
+//go:build measure
+
+package fixture
+GO
 cat >"$fixture_root/good/internal/fixture/windows.go" <<'GO'
 //go:build windows
 
@@ -37,7 +42,7 @@ package main
 GO
 
 actual="$(AURA_TAGGED_SOURCE_ROOT="$fixture_root/good" bash "$gate" --list)"
-expected=$'db_integration\npaid_live'
+expected=$'db_integration\nmeasure\npaid_live'
 if [[ "$actual" != "$expected" ]]; then
   printf 'tagged-tier-compile-test: unexpected tags\nexpected:\n%s\nactual:\n%s\n' \
     "$expected" "$actual" >&2
@@ -45,7 +50,7 @@ if [[ "$actual" != "$expected" ]]; then
 fi
 
 plan="$(AURA_TAGGED_SOURCE_ROOT="$fixture_root/good" bash "$gate" --plan)"
-if [[ "$plan" != $'internal/fixture\tdb_integration,paid_live' ]]; then
+if [[ "$plan" != $'internal/fixture\tdb_integration,measure,paid_live' ]]; then
   printf 'tagged-tier-compile-test: unexpected package plan: %q\n' "$plan" >&2
   exit 1
 fi

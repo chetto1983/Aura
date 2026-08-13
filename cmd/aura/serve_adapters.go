@@ -319,6 +319,18 @@ func taskStorePool(ts *cronTaskStore) *pgxpool.Pool {
 // via skilladapters.NewWriter; the pool-free path leaves Writer nil (write actions
 // error loudly). Discovery+install is no longer a tool concern (amendment #51 /
 // D-40): the find-skills always-on skill teaches self-extension via the sandbox CLI.
+// registerSkillTools registers BOTH halves of the skills grammar over ONE SkillTool:
+// the read verb `skill` (list/info/use) and the write verb `skill_manage` (authoring,
+// install, snippet lifecycle). They share the instance so one loader, one writer and one
+// cache-invalidation path serve both — a skill written through skill_manage is visible to
+// skill info/use in the same turn. Registering them together is what keeps the two call
+// sites (chat/serve boot and the cache audit) from drifting apart.
+func registerSkillTools(reg *tools.Registry, cfg *config.Config, writerPool *pgxpool.Pool) {
+	skillTool := newSkillTool(cfg, writerPool)
+	reg.Register(skillTool)
+	reg.Register(&tools.SkillManageTool{Skills: skillTool})
+}
+
 func newSkillTool(cfg *config.Config, writerPool *pgxpool.Pool) *tools.SkillTool {
 	if cfg == nil || cfg.SkillsDir == "" {
 		return &tools.SkillTool{}

@@ -23,7 +23,7 @@ func gatewayApprovalPending(t *testing.T, gw *gateway.Gateway, convID string) (a
 	t.Helper()
 	// skill/delete — Destructive, the only tier that stops the turn — so this seed actually
 	// reaches routeApprove instead of being allowed outright.
-	spec := tools.Spec{Name: "skill", Mutating: true}
+	spec := tools.Spec{Name: "skill_manage", Mutating: true}
 	args := json.RawMessage(`{"action":"delete","name":"obsolete-skill"}`)
 	key := gateway.ReservationKey{ConversationID: convID, RequestID: "req-1", ToolCallID: "call-1"}
 
@@ -121,7 +121,7 @@ func TestGatewayResumeHookRejectsMalformedContext(t *testing.T) {
 		rc   map[string]string
 	}{
 		{"missing tool", map[string]string{"type": "gateway_approval", "args_sha256": "abc"}},
-		{"missing args_sha256", map[string]string{"type": "gateway_approval", "tool": "skill"}},
+		{"missing args_sha256", map[string]string{"type": "gateway_approval", "tool": "skill_manage"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := hook(context.Background(), askuser.Pending{

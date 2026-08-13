@@ -33,6 +33,15 @@ is_tier_tag() {
     [[ "$1" == live_* ]]
 }
 
+# is_harness_tag marks a MEASUREMENT harness: code that prints numbers instead of
+# asserting them, so it gates nothing and no CI job runs it. It is still compiled here
+# for the same reason every tier is — a tagged file nobody builds rots silently, which
+# is exactly the failure this gate exists to prevent. Keeping it a named class rather
+# than widening is_tier_tag stops a harness from ever being mistaken for a gate.
+is_harness_tag() {
+  [[ "$1" == "measure" ]]
+}
+
 declare -A tiers=()
 declare -A unknown=()
 declare -A package_tiers=()
@@ -78,7 +87,7 @@ while IFS= read -r -d '' source; do
     if is_structural_tag "$token"; then
       continue
     fi
-    if is_tier_tag "$token"; then
+    if is_tier_tag "$token" || is_harness_tag "$token"; then
       tiers["$token"]=1
       source_tiers+=("$token")
     else

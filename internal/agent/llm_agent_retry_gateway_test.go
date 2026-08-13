@@ -68,7 +68,7 @@ func (s *spyMutatingTool) Execute(context.Context, json.RawMessage) (tools.ToolR
 func TestExecToolGatewayApprovalWithheldThenReEnters(t *testing.T) {
 	gw := gateway.New(config.ProfileSingleUserHardened, &fakeReserveStore{})
 	a := &LlmAgent{gateway: gw, ledgerConvID: "conv-gw-1"}
-	spy := &spyMutatingTool{name: "skill"}
+	spy := &spyMutatingTool{name: "skill_manage"}
 	ctx := gateway.WithResponder(context.Background())
 	args := json.RawMessage(`{"action":"delete","name":"obsolete-skill"}`)
 
@@ -97,7 +97,7 @@ func TestExecToolGatewayApprovalWithheldThenReEnters(t *testing.T) {
 
 	// (2) Operator accepts (host-side ledger write — the model never writes it). The
 	// re-emit with the SAME args Consumes the approval and executes exactly once.
-	gw.RecordResolvedApproval("conv-gw-1", "skill", fp,
+	gw.RecordResolvedApproval("conv-gw-1", "skill_manage", fp,
 		gateway.ResolvedApproval{Approved: true, OperatorID: "op"})
 	res2, err := a.execTool(ctx, spy, true, args)
 	if err != nil {
@@ -120,7 +120,7 @@ func TestExecToolGatewayNoApprovalRequiredPaths(t *testing.T) {
 
 	t.Run("dev profile executes", func(t *testing.T) {
 		a := &LlmAgent{gateway: gateway.New(config.ProfileDev, &fakeReserveStore{}), ledgerConvID: "c"}
-		spy := &spyMutatingTool{name: "skill"}
+		spy := &spyMutatingTool{name: "skill_manage"}
 		res, err := a.execTool(gateway.WithResponder(context.Background()), spy, true, args)
 		if err != nil || spy.count != 1 {
 			t.Fatalf("dev profile: (count=%d, err=%v), want executed once", spy.count, err)
@@ -141,7 +141,7 @@ func TestExecToolGatewayNoApprovalRequiredPaths(t *testing.T) {
 
 	t.Run("no responder denies fail-closed", func(t *testing.T) {
 		a := &LlmAgent{gateway: gateway.New(config.ProfileSingleUserHardened, &fakeReserveStore{}), ledgerConvID: "c"}
-		spy := &spyMutatingTool{name: "skill"}
+		spy := &spyMutatingTool{name: "skill_manage"}
 		_, err := a.execTool(context.Background(), spy, true, args) // no WithResponder
 		var denied *gateway.ErrDenied
 		if !errors.As(err, &denied) {
@@ -231,7 +231,7 @@ type rejectingMutatingTool struct {
 
 func (t *rejectingMutatingTool) Spec() tools.Spec {
 	return tools.Spec{
-		Name: "skill", Mutating: true,
+		Name: "skill_manage", Mutating: true,
 		OperationScope:      tools.OperationScopeAgent,
 		OperationNormalizer: tools.OperationNormalizerCanonical,
 		ReplayPolicy:        tools.ReplayToolResult,
@@ -308,7 +308,7 @@ func TestExecToolRetryReusesOperationWhileAuditIDsChange(t *testing.T) {
 	gw := gateway.New(config.ProfileSingleUserHardened, &fakeReserveStore{})
 	gw.SetOperationRegistry(registry)
 	a := &LlmAgent{gateway: gw, ledgerConvID: "11111111-1111-1111-1111-111111111111"}
-	spy := &spyMutatingTool{name: "skill"}
+	spy := &spyMutatingTool{name: "skill_manage"}
 	args := json.RawMessage(`{"action":"restore","name":"calc"}`)
 	fingerprint, err := tools.OperationFingerprint(spy.Spec(), args)
 	if err != nil {
@@ -366,7 +366,7 @@ func TestExecToolDerivesStableChildFromHTTPMutation(t *testing.T) {
 	gw := gateway.New(config.ProfileSingleUserHardened, &fakeReserveStore{})
 	gw.SetOperationRegistry(registry)
 	a := &LlmAgent{gateway: gw, ledgerConvID: "11111111-1111-1111-1111-111111111111"}
-	spy := &spyMutatingTool{name: "skill"}
+	spy := &spyMutatingTool{name: "skill_manage"}
 	args := json.RawMessage(`{"action":"restore","name":"calc"}`)
 	parentFingerprint, err := idempotency.FingerprintTyped(struct {
 		Route string `json:"route"`
@@ -421,7 +421,7 @@ func TestExecToolCompletionFailureMarksOperationIndeterminate(t *testing.T) {
 	gw := gateway.New(config.ProfileSingleUserHardened, &fakeReserveStore{})
 	gw.SetOperationRegistry(registry)
 	a := &LlmAgent{gateway: gw, ledgerConvID: "11111111-1111-1111-1111-111111111111"}
-	spy := &spyMutatingTool{name: "skill"}
+	spy := &spyMutatingTool{name: "skill_manage"}
 	args := json.RawMessage(`{"action":"restore","name":"calc"}`)
 	fingerprint, err := tools.OperationFingerprint(spy.Spec(), args)
 	if err != nil {

@@ -192,7 +192,7 @@ func insertEnd(t *testing.T, store *toolinvocations.Store, key ReservationKey, p
 		ConversationID:    key.ConversationID,
 		RequestID:         key.RequestID,
 		ToolCallID:        key.ToolCallID,
-		ToolName:          "skill",
+		ToolName:          "skill_manage",
 		Event:             toolinvocations.EventEnd,
 		Seq:               2,
 		StartedAt:         time.Now().UTC(),
@@ -242,7 +242,7 @@ func TestReserveBeforeExecute(t *testing.T) {
 
 	startPresentAtExec := -1
 	spy := &spyTool{
-		spec:   tools.Spec{Name: "skill", Mutating: true},
+		spec:   tools.Spec{Name: "skill_manage", Mutating: true},
 		result: tools.ToolResult{Preview: "executed"},
 		onExec: func() { startPresentAtExec = startRowCount(t, pool, key) },
 	}
@@ -274,7 +274,7 @@ func TestReservationFailBlocks(t *testing.T) {
 	// conversation_id FK (23503) → Reserve errors → fail-closed deny.
 	badKey := newKey(uuid.Must(uuid.NewV7()).String(), "call-fail-1")
 
-	spy := &spyTool{spec: tools.Spec{Name: "skill", Mutating: true}}
+	spy := &spyTool{spec: tools.Spec{Name: "skill_manage", Mutating: true}}
 	_, v, err := gatedExec(ownerCtx(), g, spy, skillRestoreArgs, badKey)
 
 	if v.Decision != Deny {
@@ -298,7 +298,7 @@ func TestIdempotentReplay(t *testing.T) {
 
 	convID := seedConversation(t, pool)
 	key := newKey(convID, "call-idem-1")
-	spy := &spyTool{spec: tools.Spec{Name: "skill", Mutating: true}, result: tools.ToolResult{Preview: "first-output"}}
+	spy := &spyTool{spec: tools.Spec{Name: "skill_manage", Mutating: true}, result: tools.ToolResult{Preview: "first-output"}}
 
 	// First dispatch: reserve acquires, Execute runs.
 	if _, v, err := gatedExec(ownerCtx(), g, spy, skillRestoreArgs, key); err != nil || v.Decision != Allow {
@@ -346,7 +346,7 @@ func TestApprovedCallReservedAndIdempotent(t *testing.T) {
 	// Allow assertion while silently asserting nothing about approval at all.
 	approvedCtx := WithResolvedApproval(WithResponder(ownerCtx()),
 		ResolvedApproval{Approved: true, OperatorID: "op-1"})
-	mutatingSpec := tools.Spec{Name: "skill", Mutating: true}
+	mutatingSpec := tools.Spec{Name: "skill_manage", Mutating: true}
 
 	// (a) reserve-before-execute for the approved call.
 	key := newKey(convID, "call-approved-1")
@@ -417,7 +417,7 @@ func TestReplayMissingSidecar(t *testing.T) {
 
 	convID := seedConversation(t, pool)
 	key := newKey(convID, "call-sidecar-1")
-	spy := &spyTool{spec: tools.Spec{Name: "skill", Mutating: true}, result: tools.ToolResult{Preview: "big-output"}}
+	spy := &spyTool{spec: tools.Spec{Name: "skill_manage", Mutating: true}, result: tools.ToolResult{Preview: "big-output"}}
 
 	// First dispatch acquires + executes; then record an end pointing at a GC'd sidecar.
 	if _, _, err := gatedExec(ownerCtx(), g, spy, skillRestoreArgs, key); err != nil {
@@ -461,12 +461,12 @@ func TestGatewayApprovalResumeReentersAndReservesOnce(t *testing.T) {
 	g := New(config.ProfileSingleUserHardened, store)
 	convID := seedConversation(t, pool)
 
-	mutatingSpec := tools.Spec{Name: "skill", Mutating: true}
+	mutatingSpec := tools.Spec{Name: "skill_manage", Mutating: true}
 	fp := gatewayArgsFingerprint(skillDeleteArgs)
 	key := newKey(convID, "call-resume-1")
 
 	// The host-side resume hook recorded the operator's accept (the production carrier).
-	g.RecordResolvedApproval(convID, "skill", fp, ResolvedApproval{Approved: true, OperatorID: "op-1"})
+	g.RecordResolvedApproval(convID, "skill_manage", fp, ResolvedApproval{Approved: true, OperatorID: "op-1"})
 
 	startAtExec := -1
 	spy := &spyTool{
@@ -496,7 +496,7 @@ func TestGatewayApprovalResumeReentersAndReservesOnce(t *testing.T) {
 
 	// (2) A retry of the SAME triple (re-recorded approval) replays: rows==0 → Verdict.Replay,
 	// Execute NOT called again (the reservation is the exactly-once guarantee).
-	g.RecordResolvedApproval(convID, "skill", fp, ResolvedApproval{Approved: true, OperatorID: "op-1"})
+	g.RecordResolvedApproval(convID, "skill_manage", fp, ResolvedApproval{Approved: true, OperatorID: "op-1"})
 	res, rv, rerr := gatedExec(WithResponder(ownerCtx()), g, spy, skillDeleteArgs, key)
 	if rerr != nil {
 		t.Fatalf("resumed retry err: %v", rerr)
@@ -530,7 +530,7 @@ func TestGatewayApprovalDeclineStaysFailClosed(t *testing.T) {
 	pool := migratedPool(t)
 	store := toolinvocations.New(pool)
 	convID := seedConversation(t, pool)
-	mutatingSpec := tools.Spec{Name: "skill", Mutating: true}
+	mutatingSpec := tools.Spec{Name: "skill_manage", Mutating: true}
 
 	// (a) hardened + responder, NO ledger approval → Approve + ApprovalRequest, WITHHELD.
 	hardened := New(config.ProfileSingleUserHardened, store)

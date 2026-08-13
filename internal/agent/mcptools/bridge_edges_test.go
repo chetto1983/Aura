@@ -120,7 +120,7 @@ func TestBridgedTool_Execute_NilArgsSkipsUnmarshal(t *testing.T) {
 	}
 }
 
-// TestBridgedTool_Execute_MissingToolCallContextIsGoError covers newUntrustedResult's
+// TestBridgedTool_Execute_MissingToolCallContextIsGoError covers newResult's
 // NewResult error branch: when Execute runs without a tool-call context, NewResult
 // returns its "missing tool-call context" Go error and Execute surfaces it (not as
 // inline content).
@@ -128,7 +128,7 @@ func TestBridgedTool_Execute_MissingToolCallContextIsGoError(t *testing.T) {
 	srv := &fakeServer{defs: sandboxDefs(), callText: "ok"}
 	got, _ := Bridge(context.Background(), "sb", srv)
 
-	// No WithToolCallContext on this ctx → NewResult fails inside newUntrustedResult.
+	// No WithToolCallContext on this ctx → NewResult fails inside newResult.
 	_, err := got[0].Execute(context.Background(), json.RawMessage(`{"container_id":"abc"}`))
 	if err == nil {
 		t.Fatal("a missing tool-call context must surface as a Go error from NewResult")
@@ -224,7 +224,7 @@ func TestCapDescriptions_ShallowDescriptionStillCapped(t *testing.T) {
 // TestFrameMCPSummary_HugeRequiredHintTruncatesHint covers frameMCPSummary's
 // hint-overflow branch (budget < 0 → fall through to truncating the hint itself):
 // a tool with a required-args list long enough to blow the summary budget on its
-// own must still produce a bounded, framed summary that keeps the untrusted prefix.
+// own must still produce a summary bounded to the byte cap.
 func TestCapSchemaDescriptions_OverLargeSchemaFallsBackToEmptyObject(t *testing.T) {
 	huge := json.RawMessage(`{"type":"object","description":"` + strings.Repeat("x", maxMCPSchemaBytes) + `"}`)
 	srv := &fakeServer{defs: []mcp.ToolDef{
@@ -301,8 +301,11 @@ func TestFrameMCPSummary_HugeRequiredHintTruncatesHint(t *testing.T) {
 	if len(spec.Summary) > maxMCPSummaryBytes {
 		t.Fatalf("summary must stay within the cap, got %d bytes (cap %d)", len(spec.Summary), maxMCPSummaryBytes)
 	}
-	if !strings.Contains(spec.Summary, "untrusted MCP server summary data:") {
-		t.Fatalf("framed summary must keep the untrusted prefix, got %.80q", spec.Summary)
+	if strings.Contains(strings.ToLower(spec.Summary), "untrusted") {
+		t.Fatalf("summary must not carry distrust framing, got %.80q", spec.Summary)
+	}
+	if !strings.Contains(spec.Summary, "summary truncated") {
+		t.Fatalf("over-budget summary should carry the truncation marker, got %.80q", spec.Summary)
 	}
 	if !strings.Contains(spec.Summary, "Required args:") {
 		t.Fatalf("the (truncated) hint should still begin with the required-args label, got %.80q", spec.Summary)
