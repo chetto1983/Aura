@@ -182,3 +182,145 @@ func deterministicallyExpectedBlankID(t *testing.T, name, args string, index int
 	sum := sha256.Sum256(fmt.Appendf(nil, "%s:%s:%d", name, args, index))
 	return "call_" + hex.EncodeToString(sum[:])[:12]
 }
+
+func TestDedupeSameMessageCalls(t *testing.T) {
+	tests := []struct {
+		name string
+		in   []llm.ToolCall
+		want []llm.ToolCall
+	}{
+		{
+			name: "nil input returned unchanged",
+			in:   nil,
+			want: nil,
+		},
+		{
+			name: "empty input returned unchanged",
+			in:   []llm.ToolCall{},
+			want: []llm.ToolCall{},
+		},
+		{
+			name: "single call returned unchanged",
+			in:   []llm.ToolCall{newDedupCall("1", "fs_read", `{"path":"a"}`)},
+			want: []llm.ToolCall{newDedupCall("1", "fs_read", `{"path":"a"}`)},
+		},
+		{
+			name: "byte-identical repeat: only the first survives",
+			in: []llm.ToolCall{
+				newDedupCall("1", "fs_read", `{"path":"a"}`),
+				newDedupCall("2", "fs_read", `{"path":"a"}`),
+			},
+			want: []llm.ToolCall{newDedupCall("1", "fs_read", `{"path":"a"}`)},
+		},
+		{
+			// Proves canonicalization is applied, not a raw byte comparison.
+			name: "same name, reordered-but-equivalent JSON args: only the first survives",
+			in: []llm.ToolCall{
+				newDedupCall("1", "fs_read", `{"path":"a","mode":"r"}`),
+				newDedupCall("2", "fs_read", `{"mode":"r","path":"a"}`),
+			},
+			want: []llm.ToolCall{newDedupCall("1", "fs_read", `{"path":"a","mode":"r"}`)},
+		},
+		{
+			name: "same name, genuinely different args: both survive",
+			in: []llm.ToolCall{
+				newDedupCall("1", "fs_read", `{"path":"a"}`),
+				newDedupCall("2", "fs_read", `{"path":"b"}`),
+			},
+			want: []llm.ToolCall{
+				newDedupCall("1", "fs_read", `{"path":"a"}`),
+				newDedupCall("2", "fs_read", `{"path":"b"}`),
+			},
+		},
+		{
+			name: "different names, identical args: both survive",
+			in: []llm.ToolCall{
+				newDedupCall("1", "fs_read", `{"path":"a"}`),
+				newDedupCall("2", "fs_stat", `{"path":"a"}`),
+			},
+			want: []llm.ToolCall{
+				newDedupCall("1", "fs_read", `{"path":"a"}`),
+				newDedupCall("2", "fs_stat", `{"path":"a"}`),
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := dedupeSameMessageCalls(tc.in)
+			if len(got) != len(tc.want) {
+				t.Fatalf("length = %d, want %d (got ids: %v)", len(got), len(tc.want), dedupCallIDs(got))
+			}
+			for i := range got {
+				if got[i].ID != tc.want[i].ID || got[i].Function.Name != tc.want[i].Function.Name ||
+					got[i].Function.Arguments != tc.want[i].Function.Arguments {
+					t.Fatalf("call %d = %+v, want %+v", i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
+
+// TestDedupeSameMessageCallsPreservesOrder asserts positionally, not as a
+// set: given [A, B, A', C] where A' repeats A, the output must be exactly
+// [A, B, C] in that order. Reordering a batch changes the sequence the
+// provider sees and the order side effects apply in.
+func TestDedupeSameMessageCallsPreservesOrder(t *testing.T) {
+	a := newDedupCall("a1", "fs_read", `{"path":"a"}`)
+	b := newDedupCall("b1", "fs_write", `{"path":"b"}`)
+	aRepeat := newDedupCall("a2", "fs_read", `{"path":"a"}`)
+	c := newDedupCall("c1", "shell_exec", `{"cmd":"ls"}`)
+
+	got := dedupeSameMessageCalls([]llm.ToolCall{a, b, aRepeat, c})
+	wantIDs := []string{"a1", "b1", "c1"}
+	gotIDs := dedupCallIDs(got)
+	if len(gotIDs) != len(wantIDs) {
+		t.Fatalf("got %v, want ids in order %v", gotIDs, wantIDs)
+	}
+	for i := range wantIDs {
+		if gotIDs[i] != wantIDs[i] {
+			t.Fatalf("position %d: got id %q, want %q (full: %v)", i, gotIDs[i], wantIDs[i], gotIDs)
+		}
+	}
+}
+
+// TestDedupeSameMessageCallsAcrossSeparateInvocationsBothSurvive proves
+// cross-round behavior is explicitly NOT this function's concern (D-09/D-12
+// boundary): the SAME (name, args) passed in two SEPARATE calls to
+// dedupeSameMessageCalls (simulating two different rounds, each dispatched
+// independently) both survive, one per call — this function has no memory
+// across invocations.
+func TestDedupeSameMessageCallsAcrossSeparateInvocationsBothSurvive(t *testing.T) {
+	call := newDedupCall("1", "fs_read", `{"path":"a"}`)
+
+	round1 := dedupeSameMessageCalls([]llm.ToolCall{call})
+	round2 := dedupeSameMessageCalls([]llm.ToolCall{call})
+
+	if len(round1) != 1 || len(round2) != 1 {
+		t.Fatalf("each independent round call must survive on its own: round1=%v round2=%v",
+			dedupCallIDs(round1), dedupCallIDs(round2))
+	}
+}
+
+// TestDedupeSameMessageCallsIgnoresIDs proves ids are irrelevant to the
+// decision (D-12): identical (name, arguments) with DIFFERENT ids still
+// collapse to one, and the SAME id with different arguments does not.
+func TestDedupeSameMessageCallsIgnoresIDs(t *testing.T) {
+	t.Run("identical name+args, different ids: collapse to one", func(t *testing.T) {
+		got := dedupeSameMessageCalls([]llm.ToolCall{
+			newDedupCall("id-A", "fs_read", `{"path":"a"}`),
+			newDedupCall("id-B", "fs_read", `{"path":"a"}`),
+		})
+		if len(got) != 1 {
+			t.Fatalf("want 1 surviving call, got %d: %v", len(got), dedupCallIDs(got))
+		}
+	})
+	t.Run("same id, different arguments: both survive", func(t *testing.T) {
+		got := dedupeSameMessageCalls([]llm.ToolCall{
+			newDedupCall("same-id", "fs_read", `{"path":"a"}`),
+			newDedupCall("same-id", "fs_read", `{"path":"b"}`),
+		})
+		if len(got) != 2 {
+			t.Fatalf("want 2 surviving calls (different args, same id must not collapse), got %d", len(got))
+		}
+	})
+}

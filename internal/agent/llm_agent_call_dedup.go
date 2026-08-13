@@ -93,3 +93,9 @@ func deterministicBlankCallID(name, args string, index int) string {
 	sum := sha256.Sum256(fmt.Appendf(nil, "%s:%s:%d", name, args, index))
 	return "call_" + hex.EncodeToString(sum[:])[:12]
 }
+
+// dedupeSameMessageCalls will drop an exact same-message repeat (D-12). Not
+// yet implemented.
+func dedupeSameMessageCalls(calls []llm.ToolCall) []llm.ToolCall {
+	return calls
+}
