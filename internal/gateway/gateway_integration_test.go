@@ -564,3 +564,7 @@ func TestGatewayApprovalDeclineStaysFailClosed(t *testing.T) {
 		t.Fatalf("production Execute count = %d, want 0 (fail-closed)", prodSpy.count)
 	}
 }
+
+// The D-01/D-04 round-discrimination end-to-end proof for SC#1/SC#2 (45-02-T1) lives in
+// gateway_round_ordinal_integration_test.go — a concern split per CLAUDE.md's 600-LOC cap
+// — reusing envOrSkip/migratedPool/seedConversation/spyTool/insertEnd defined above.
