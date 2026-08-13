@@ -95,14 +95,12 @@ func TestShellApprovalConcurrentConsumeIsOneShot(t *testing.T) {
 
 	var successes int32
 	var wg sync.WaitGroup
-	for i := 0; i < 64; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 64 {
+		wg.Go(func() {
 			if approvals.Consume("sess-concurrent", digest) {
 				atomic.AddInt32(&successes, 1)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if successes != 1 {

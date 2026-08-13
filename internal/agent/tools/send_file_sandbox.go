@@ -102,6 +102,9 @@ func extractFirstRegularFile(tr *tar.Reader, stageDir, fallbackName string, maxB
 		if hdr.Typeflag != tar.TypeReg {
 			continue
 		}
+		// #nosec G304 -- dest is stageDir (os.MkdirTemp) joined with a name already
+		// forced to a single local component by the IsLocal + Base(name)==name guard
+		// above; the tar entry's own name never reaches the filesystem.
 		f, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 		if err != nil {
 			return "", err

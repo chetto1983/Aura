@@ -149,7 +149,8 @@ func foldPlural(t string) string {
 // query always speak the same vocabulary.
 func tokenize(s string) []string {
 	raw := strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
-		return !(r >= 'a' && r <= 'z') && !(r >= '0' && r <= '9')
+		alphanumeric := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
+		return !alphanumeric
 	})
 	out := make([]string, 0, len(raw))
 	for _, t := range raw {

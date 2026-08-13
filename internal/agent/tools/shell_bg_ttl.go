@@ -47,14 +47,7 @@ func reaperIntervalFor(ttl time.Duration) time.Duration {
 	if ttl <= 0 {
 		return 0
 	}
-	iv := ttl / 4
-	if iv > maxReaperInterval {
-		iv = maxReaperInterval
-	}
-	if iv < minReaperInterval {
-		iv = minReaperInterval
-	}
-	return iv
+	return max(min(ttl/4, maxReaperInterval), minReaperInterval)
 }
 
 // age is the wall-clock time since the job started — the shell_poll age metric (MUSR-04).
@@ -107,9 +100,7 @@ func (b *BackgroundShells) StartReaper(ctx context.Context) {
 	if b == nil || b.reaperInterval <= 0 || b.reaperStop == nil {
 		return
 	}
-	b.reaperWG.Add(1)
-	go func() {
-		defer b.reaperWG.Done()
+	b.reaperWG.Go(func() {
 		ticker := time.NewTicker(b.reaperInterval)
 		defer ticker.Stop()
 		for {
@@ -122,7 +113,7 @@ func (b *BackgroundShells) StartReaper(ctx context.Context) {
 				b.sweepExpired(time.Now())
 			}
 		}
-	}()
+	})
 }
 
 // stopReaper signals the sweep goroutine to exit and joins it under a bounded wait so a

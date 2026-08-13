@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 )
@@ -29,9 +30,7 @@ type ActionFunc func(ctx context.Context, args json.RawMessage) (ToolResult, err
 // so a later mutation of the caller's map cannot change dispatch behavior.
 func NewActionRouter(handlers map[string]ActionFunc) *ActionRouter {
 	cp := make(map[string]ActionFunc, len(handlers))
-	for name, fn := range handlers {
-		cp[name] = fn
-	}
+	maps.Copy(cp, handlers)
 	return &ActionRouter{handlers: cp}
 }
 

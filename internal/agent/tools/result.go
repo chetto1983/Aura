@@ -199,10 +199,7 @@ func NewResultReservingTail(ctx context.Context, body, footer string) (ToolResul
 		return ToolResult{Preview: content, Bytes: total, Truncated: false}, nil
 	}
 
-	bodyCap := tc.cap - len(footer)
-	if bodyCap < 0 {
-		bodyCap = 0
-	}
+	bodyCap := max(tc.cap-len(footer), 0)
 	bodyPreview := truncatePreview(body, bodyCap)
 	shown := len(bodyPreview)
 	preview := bodyPreview + footer
@@ -237,9 +234,11 @@ func NewResultReservingTail(ctx context.Context, body, footer string) (ToolResul
 }
 
 // writeSidecar persists the full content to path, creating the per-session dir
-// lazily on first persist.
+// lazily on first persist. The dir is 0o750, not 0o755: it holds spilled tool
+// output, which can carry whatever the tool read, so group-read is the widest
+// access it ever needs and world-read is not justified (gosec G301).
 func writeSidecar(path, content string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return err
 	}
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {

@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -34,7 +35,7 @@ func (f *fakeSkillLoader) Body(name string) (string, bool) {
 func (f *fakeSkillLoader) ManifestDescription() string {
 	var b strings.Builder
 	for _, s := range f.skills {
-		b.WriteString("- " + s.Name + ": " + s.Description + "\n")
+		fmt.Fprintf(&b, "- %s: %s\n", s.Name, s.Description)
 	}
 	return b.String()
 }
@@ -228,12 +229,10 @@ func TestSkillDispatchErrors(t *testing.T) {
 func TestSkillToolConcurrentExecuteInitializesRouterOnce(t *testing.T) {
 	tool := &SkillTool{Loader: newFakeLoader()}
 	var wg sync.WaitGroup
-	for i := 0; i < 64; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 64 {
+		wg.Go(func() {
 			_, _ = tool.Execute(context.Background(), json.RawMessage(`{"action":"bogus"}`))
-		}()
+		})
 	}
 	wg.Wait()
 }

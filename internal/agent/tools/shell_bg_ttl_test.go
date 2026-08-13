@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"context"
 	"strings"
 	"testing"
 	"time"
@@ -127,8 +126,7 @@ func TestBackgroundJobReaperTicksAndReaps(t *testing.T) {
 	}
 	bg.mu.Unlock()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	bg.StartReaper(ctx)
 	// stopReaper joins the ticker goroutine (goleak) without Shutdown's shell-drain,
 	// which would otherwise wait out the timeout on this process-less fixture shell.

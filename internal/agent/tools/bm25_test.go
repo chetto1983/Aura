@@ -210,14 +210,15 @@ func TestBM25Properties(t *testing.T) {
 	rapid.Check(t, func(rt *rapid.T) {
 		// A query built only from non-corpus gibberish tokens yields no match.
 		gibberish := rapid.SliceOfN(rapid.StringMatching(`[xyzqkw]{4,8}`), 1, 4).Draw(rt, "gib")
-		q := ""
+		var q strings.Builder
 		for _, g := range gibberish {
-			q += g + " "
+			q.WriteString(g)
+			q.WriteString(" ")
 		}
-		ranked := idx.rank(q)
+		ranked := idx.rank(q.String())
 		for _, r := range ranked {
 			if r.score > 0 {
-				rt.Fatalf("gibberish query %q scored doc %d at %v > 0", q, r.doc, r.score)
+				rt.Fatalf("gibberish query %q scored doc %d at %v > 0", q.String(), r.doc, r.score)
 			}
 		}
 	})

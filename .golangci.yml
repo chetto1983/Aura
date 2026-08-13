@@ -50,12 +50,21 @@ linters:
   exclusions:
     paths:
       - "internal/db/sqlc"        # sqlc-generated code is golden; we don't lint it
-      - "internal/agent/tools"    # pre-rewrite skeleton — owning slice rewrites
-      - "internal/llm/client.go"  # pre-rewrite skeleton — Slice 1 owns rewrite
       - "third_party"             # vendored / generated trees
       - "web/node_modules"        # local frontend dependencies can contain Go examples
       - ".planning"               # spike harnesses / planning artifacts, not production code
     rules:
+      # Spec() and Execute() are the two methods of the Tool interface (see
+      # internal/agent/tools/spec.go). The interface documents the contract; a
+      # per-implementation "Spec returns the spec" comment on each of ~30 tools is
+      # the exact noise CLAUDE.md §No-comments-unless-why-is-non-obvious forbids,
+      # and Go does not require doc comments on interface implementations. Every
+      # OTHER exported symbol in the package is still checked — that is where
+      # revive found the real gaps (the approvals API, the registry, TrustLevel).
+      - path: internal/agent/tools
+        text: 'exported method \w+\.(Spec|Execute) should have comment'
+        linters:
+          - revive
       - path: _test\.go
         linters:
           - gosec
@@ -78,7 +87,6 @@ formatters:
   exclusions:
     paths:
       - "internal/db/sqlc"
-      - "internal/agent/tools"
       - "internal/llm/client.go"
       - "third_party"
       - "web/node_modules"

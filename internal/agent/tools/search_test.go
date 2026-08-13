@@ -256,14 +256,15 @@ func TestMaxResults(t *testing.T) {
 	}
 
 	// select: with >5 names stays UNCAPPED.
-	sel := "select:"
+	var sel strings.Builder
+	sel.WriteString("select:")
 	for i := range 8 {
 		if i > 0 {
-			sel += ","
+			sel.WriteString(",")
 		}
-		sel += fmt.Sprintf("widget_%d", i)
+		fmt.Fprintf(&sel, "widget_%d", i)
 	}
-	res, err = ts.Execute(ctx, []byte(fmt.Sprintf(`{"query":%q,"max_results":2}`, sel)))
+	res, err = ts.Execute(ctx, fmt.Appendf(nil, `{"query":%q,"max_results":2}`, sel.String()))
 	if err != nil {
 		t.Fatalf("Execute select: %v", err)
 	}
@@ -368,13 +369,11 @@ func TestToolSearchConcurrentExecute(t *testing.T) {
 	)
 	var wg sync.WaitGroup
 	for range 16 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			if _, err := ts.Execute(ctx, []byte(`{"query":"fetch url"}`)); err != nil {
 				t.Errorf("concurrent Execute: %v", err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 }

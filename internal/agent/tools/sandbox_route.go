@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	pathpkg "path"
+	"slices"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
@@ -189,12 +190,7 @@ func boxSweepDeadline(ctx context.Context) (context.Context, context.CancelFunc)
 // directory rule and applies only to directory entries.
 func boxSkippedPath(rel string) bool {
 	segments := strings.Split(rel, "/")
-	for _, segment := range segments[:len(segments)-1] {
-		if skipWalkDir(segment) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(segments[:len(segments)-1], skipWalkDir)
 }
 
 // boxFindPrune renders skipWalkDir's rule as a find(1) predicate. It prunes DIRECTORIES only, so a
