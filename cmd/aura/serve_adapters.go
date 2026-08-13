@@ -475,14 +475,39 @@ func alwaysBlockProvider(cfg *config.Config) func() string {
 		BodyCapBytes: cfg.SkillBodyCapBytes,
 		Blocklist:    cfg.SkillInjectionBlocklist,
 	})
+	// The catalogue renders through the SAME adapter the skill tool's action=list uses,
+	// so there is one manifest renderer (cap + BM25 overflow tail included), not two that
+	// can drift.
+	catalogue := skilladapters.NewLoader(loader, cfg.SkillManifestCapBytes)
 	return func() string {
-		block, present := skills.RenderAlwaysBlock(loader.List())
-		if !present {
-			return ""
+		var b strings.Builder
+		if block, present := skills.RenderAlwaysBlock(loader.List()); present {
+			b.WriteString(block)
 		}
-		return block
+		// The catalogue of installed skills lives HERE, not in the skill tool's
+		// Description. Both are per-turn live state, but messages[1] is the seam built
+		// for that (rebuilt each turn, never touching messages[0]), whereas the tool
+		// Description sits inside the `tools` array — so every skill add/remove rewrote
+		// the tools payload and invalidated the provider's prefix cache. It also made
+		// `skill` the heaviest entry in the manifest at ~1773 tokens against ~400 for the
+		// constant text that replaced it. hermes-agent renders its index into the system
+		// prompt for the same reason; Claude Code keeps the listing beside the tool, not
+		// inside it.
+		if manifest := strings.TrimSpace(catalogue.ManifestDescription()); manifest != "" {
+			if b.Len() > 0 {
+				b.WriteString("\n\n")
+			}
+			b.WriteString(skillCatalogueHeader)
+			b.WriteString(manifest)
+		}
+		return b.String()
 	}
 }
+
+// skillCatalogueHeader is a frozen English literal (D-06): the block must stay
+// byte-stable between skill changes or it defeats the prefix cache it was moved here
+// to protect.
+const skillCatalogueHeader = "Installed skills (call the skill tool with action=use <name> to apply one):\n\n"
 
 // snippetSweeperAdapter bridges the live *skills.Writer onto the handlers.SnippetSweeper
 // seam the skill_ttl_sweep handler drives (D-16): it projects the Writer's SweepResult

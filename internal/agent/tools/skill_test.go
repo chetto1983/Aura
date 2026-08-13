@@ -299,17 +299,25 @@ func TestSkillDescriptionByteStable(t *testing.T) {
 	if first != second {
 		t.Fatalf("skill Description not byte-stable:\n%q\nvs\n%q", first, second)
 	}
-	if !strings.Contains(first, "alpha") {
-		t.Fatalf("Description should embed the manifest: %q", first)
+	// The catalogue must NOT be here. It is per-turn live state, and embedding it put it
+	// inside the `tools` array, so every skill add/remove rewrote the tools payload and
+	// invalidated the prefix cache — while making this the heaviest entry in the manifest.
+	// It renders into the messages[1] always-block instead.
+	if strings.Contains(first, "alpha") {
+		t.Fatalf("Description must not embed the skill catalogue: %q", first)
 	}
 }
 
-func TestSkillNilLoaderManifest(t *testing.T) {
+// TestSkillDescriptionIgnoresTheLoader is the other half of the same contract: a tool
+// whose Description depends on loader state cannot be a byte-stable, cacheable manifest
+// entry. With the catalogue moved out, the wired and unwired tools must render the same
+// bytes.
+func TestSkillDescriptionIgnoresTheLoader(t *testing.T) {
 	t.Parallel()
-	tool := &SkillTool{} // no loader wired (pool-free manifest path)
-	desc := tool.Spec().Description
-	if !strings.Contains(desc, "none loaded") {
-		t.Fatalf("nil-loader Description should note none loaded: %q", desc)
+	wired := (&SkillTool{Loader: newFakeLoader()}).Spec().Description
+	bare := (&SkillTool{}).Spec().Description // no loader (pool-free manifest path)
+	if wired != bare {
+		t.Fatalf("Description varies with the loader: %q vs %q", wired, bare)
 	}
 }
 
