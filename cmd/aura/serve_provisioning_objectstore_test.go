@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 
@@ -70,12 +71,15 @@ type fakeMinter struct {
 	createBucketCalls int
 	createKeyCalls    int
 	allowCalls        int
-	createBucketErr   error
-	createKeyErr      error
-	allowErr          error
-	bucketID          string
-	accessKey         string
-	secretKey         string
+	// grants records every AllowBucketKey as "<accessKey>:owner=<bool>". The owner flag is
+	// the boundary garageadmin.ReadWriteOwner documents, so a test has to be able to see it.
+	grants          []string
+	createBucketErr error
+	createKeyErr    error
+	allowErr        error
+	bucketID        string
+	accessKey       string
+	secretKey       string
 }
 
 func (f *fakeMinter) CreateBucket(_ context.Context, _ string) (string, error) {
@@ -98,10 +102,22 @@ func (f *fakeMinter) CreateKey(_ context.Context, _ string) (string, string, err
 	return f.accessKey, f.secretKey, nil
 }
 
-func (f *fakeMinter) AllowBucketKey(_ context.Context, _, _ string, _ garageadmin.Permissions) error {
+// BucketIDByAlias answers for a bucket that already exists, without counting as a mint --
+// which is the distinction the resolve path depends on.
+func (f *fakeMinter) BucketIDByAlias(_ context.Context, _ string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.bucketID == "" {
+		return "existing-bucket-id", nil
+	}
+	return f.bucketID, nil
+}
+
+func (f *fakeMinter) AllowBucketKey(_ context.Context, _, accessKey string, perms garageadmin.Permissions) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.allowCalls++
+	f.grants = append(f.grants, fmt.Sprintf("%s:owner=%t", accessKey, perms.Owner))
 	return f.allowErr
 }
 

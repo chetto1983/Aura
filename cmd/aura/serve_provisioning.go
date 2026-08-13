@@ -280,6 +280,8 @@ func buildProvisioningPorts(chat *chatEnv) (agui.ObjectStoreProvisioner, agui.Fi
 		return nil, nil, nil
 	}
 	objProv := newObjectStoreProvisionAdapter(client, store)
+	objProv.ensureCORS = browserUploadCORSFor(cfg)
+	objProv.auraAccessKey = cfg.ObjectStoreAccessKey
 	fsProv := newFilesystemProvisionAdapter(cfg)
 	jrnl := sagaJournalAdapter{pool: chat.pool}
 	return objProv, fsProv, jrnl

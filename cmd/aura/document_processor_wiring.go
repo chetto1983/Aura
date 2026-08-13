@@ -111,7 +111,10 @@ func ensuringObjectResolver(cfg *config.Config, resolver *objectstore.IdentitySt
 		slog.Warn("aura assets: garage admin unavailable — buckets are not minted on demand", "err", err)
 		return resolver
 	}
-	return mintingResolver{adapter: newObjectStoreProvisionAdapter(client, resolver)}
+	adapter := newObjectStoreProvisionAdapter(client, resolver)
+	adapter.ensureCORS = browserUploadCORSFor(cfg)
+	adapter.auraAccessKey = cfg.ObjectStoreAccessKey
+	return mintingResolver{adapter: adapter}
 }
 
 type mintingResolver struct{ adapter *objectStoreProvisionAdapter }
