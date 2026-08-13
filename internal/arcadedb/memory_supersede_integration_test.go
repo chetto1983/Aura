@@ -21,7 +21,7 @@ import (
 // D-15/SC#4: an explicit fact_key closes exactly the one edge it names.
 // Siblings sharing the same subject and predicate -- the shape F-2 destroyed
 // -- must survive untouched, and the closed edge stays queryable via as_of.
-func TestUpsertFactByFactKeyClosesOnlyTheNamedSiblingAndKeepsItQueryable(t *testing.T) {
+func TestFactKeyClosesOnlyTheNamedSibling(t *testing.T) {
 	client := integrationClient(t)
 	subject, runID := isolate(t, client)
 	// Business time spread by minutes/hours, not real wall-clock gaps: valid_from
@@ -188,7 +188,7 @@ func TestSupersedeWithNoCandidatesRefusesAgainstALiveGraph(t *testing.T) {
 // siblings AND the unrelated lives_in fact on the same subject -- must
 // still be open afterwards. Asserted per-fact, not by a returned count: a
 // count is exactly what hid the original damage.
-func TestSupersedeReplaysF2EightLearnedLessonFactsRefusedAndLivesInUntouched(t *testing.T) {
+func TestSupersedeReplaysF2EightFactsRefused(t *testing.T) {
 	client := integrationClient(t)
 	subject, runID := isolate(t, client)
 	now := time.Now()

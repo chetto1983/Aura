@@ -134,10 +134,24 @@ const proseObjectRuneBound = 80
 // object becomes a junk node nothing can address by name again; the detail
 // belongs in Statement, the field that gets embedded and searched.
 //
-// TODO(45-06 GREEN): wired into Fact.validate once this stub is replaced --
-// currently always returns false so the RED-phase tests below fail on
-// missing enforcement, not on a missing symbol.
+// Pure function of its input: no shared state, no lock, so concurrent
+// writes are still arbitrated exactly as before, by the pre-existing UNIQUE
+// index on Entity.name -- this adds no new synchronization surface.
 func looksLikeProse(object string) bool {
+	if utf8.RuneCountInString(object) > proseObjectRuneBound {
+		return true
+	}
+	if strings.ContainsAny(object, "\n\r") {
+		return true
+	}
+	trimmed := strings.TrimSpace(object)
+	if trimmed == "" {
+		return false
+	}
+	switch trimmed[len(trimmed)-1] {
+	case '.', '!', '?':
+		return true
+	}
 	return false
 }
 
@@ -148,10 +162,6 @@ func (f Fact) Validate() error {
 
 func (f Fact) validate(limits MemoryLimits) error {
 	limits = limits.normalized()
-	// RED-phase scaffolding: computed but not yet acted on -- GREEN wires this
-	// into a rejection case below. Keeps looksLikeProse a used symbol under
-	// the whole-tree lint gate without enforcing MEM-05 before GREEN lands.
-	_ = looksLikeProse(f.Object)
 	switch {
 	case strings.TrimSpace(f.Subject) == "":
 		return fmt.Errorf("arcadedb: fact subject must be non-empty")
@@ -163,6 +173,13 @@ func (f Fact) validate(limits MemoryLimits) error {
 		return fmt.Errorf("arcadedb: fact statement must be non-empty")
 	case strings.TrimSpace(f.Source.RunID) == "":
 		return fmt.Errorf("arcadedb: fact source run_id must be non-empty")
+	// MEM-05 (D-18): the object names an entity, not prose -- the detail
+	// belongs in statement, which is the field that gets embedded and
+	// searched. Subject is deliberately NOT checked here; MEM-04's subject
+	// work is plan 45-07's.
+	case looksLikeProse(f.Object):
+		return fmt.Errorf("arcadedb: fact object reads as prose, not an entity name; " +
+			"put the detail in statement")
 	case !f.ValidFrom.IsZero() && !f.ValidTo.IsZero() && !f.ValidTo.After(f.ValidFrom):
 		return fmt.Errorf("arcadedb: fact valid_to must be after valid_from")
 	}
