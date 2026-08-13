@@ -168,3 +168,16 @@ None — no external service configuration required.
 ---
 *Phase: 45-harness-correctness*
 *Completed: 2026-08-13*
+
+## Self-Check: PASSED
+
+- FOUND: internal/agent/llm_agent_call_dedup.go
+- FOUND: internal/agent/llm_agent_call_dedup_test.go
+- FOUND: internal/agent/llm_agent_round.go
+- FOUND: .planning/phases/45-harness-correctness/45-04-SUMMARY.md
+- FOUND: 660b9bd73 (Task 1 RED commit)
+- FOUND: 1432c7d9d (Task 1 GREEN commit)
+- FOUND: fd0d6a40f (Task 2 RED commit)
+- FOUND: f5c79601b (Task 2 GREEN commit)
+- FOUND: bf352b7bb (Task 3 wiring/split/fixture-fix commit)
+- FOUND: b96a35e32 (this SUMMARY.md commit)
