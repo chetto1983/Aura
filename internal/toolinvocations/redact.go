@@ -1,10 +1,10 @@
 package toolinvocations
 
 import (
-	"regexp"
 	"unicode/utf8"
 
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/redact"
 )
 
 // WR-02: the append-only aura.tool_invocations ledger captures the VERBATIM tool
@@ -19,75 +19,53 @@ import (
 //
 // Posture: replace DB-invalid NUL bytes, cap the durable footprint, then redact
 // over the capped string (so an over-cap secret tail is already truncated away,
-// and the redactor scans a bounded input). The caps mirror the existing preview
-// discipline: the result preview cap is AURA_CONTEXT_PREVIEW_CAP_BYTES (internal/agent), so
-// result_preview keeps that ceiling here; args_raw gets a larger 8 KiB ceiling
-// because a legitimate multi-tool argument JSON (a long shell script, a write
-// payload) is bulkier than a result preview yet still bounded for the ledger.
+// and the redactor scans a bounded input). The durable result_preview cap is
+// deliberately independent of, and far tighter than, the in-context tool-result
+// preview cap AURA_CONTEXT_PREVIEW_CAP_BYTES (default 30000 bytes,
+// internal/config/config_knobs.go:95 / config_defaults.go:36 defaultToolPreviewCapBytes):
+// the durable column lives in an append-only, DELETE-rejecting ledger (migration
+// 0011's triggers), so its footprint is bounded far below what the model saw
+// rather than tracking it 1:1. args_raw gets a larger 8 KiB ceiling because a
+// legitimate multi-tool argument JSON (a long shell script, a write payload) is
+// bulkier than a result preview yet still bounded for the ledger.
 const (
 	// ArgsRawCapBytes bounds the durable args_raw column (8 KiB). A larger ceiling
 	// than the preview cap because tool argument JSON (scripts, write bodies) is
 	// legitimately bulkier; still bounded so a pathological arg blob cannot bloat
 	// the un-deletable ledger.
 	ArgsRawCapBytes = 8 * 1024
-	// ResultPreviewCapBytes bounds the durable result_preview column (2 KiB),
-	// mirroring AURA_CONTEXT_PREVIEW_CAP_BYTES (the agent's tool-result preview cap)
-	// so the ledger preview never exceeds the in-context preview the model saw.
+	// ResultPreviewCapBytes bounds the durable result_preview column (2 KiB) —
+	// deliberately ~15x tighter than AURA_CONTEXT_PREVIEW_CAP_BYTES's 30000-byte
+	// default (internal/config/config_knobs.go:95), never widened to match it: the
+	// durable column is an append-only, DELETE-rejecting forensic ledger (migration
+	// 0011's triggers), so 2 KiB < 30000 still holds (the ledger preview never
+	// exceeds the in-context preview the model saw), but the two caps are
+	// independently chosen, not mirrored.
 	ResultPreviewCapBytes = 2 * 1024
 
-	redactedPlaceholder = "[REDACTED]"
+	// redactedPlaceholder is the shared marker; the pattern table lives in
+	// internal/redact so a shape added for one caller protects every caller.
+	redactedPlaceholder = redact.Placeholder
 	// capMarker is appended when a value is truncated to its byte cap, so a reader
 	// can tell a capped value from one that happened to end at the boundary.
 	capMarker = "…[capped]"
 )
 
-// secretPattern is one named credential shape redacted out of a ledger value.
-// The table is package-level + deterministic (no NFKC: tool argument JSON and
-// shell command lines are ASCII-credential shaped in practice, and the skills
-// NFKC fold is not importable here without a dependency the WR-02 design rejects
-// as non-trivial). Each pattern replaces its match with [REDACTED]; the order is
-// most-specific-first so a header match wins over a bare-key match on the same span.
-type secretPattern struct {
-	name string
-	re   *regexp.Regexp
-}
-
-// secretPatterns is the redaction table. Patterns are case-insensitive where the
-// credential keyword is (Authorization/Bearer/password/token/api_key); the opaque
-// key shapes (sk-/sk-or-, AKIA) are matched on their literal prefix + charset.
-var secretPatterns = []secretPattern{
-	// Authorization header carrying any scheme value (Bearer/Basic/token), e.g.
-	// `Authorization: Bearer abc.def` or `-H "Authorization: Basic Zm9v"`.
-	{"authorization_header", regexp.MustCompile(`(?i)authorization\s*[:=]\s*[^\r\n]+`)},
-	// A bare Bearer credential not preceded by the Authorization keyword.
-	{"bearer_token", regexp.MustCompile(`(?i)bearer\s+[A-Za-z0-9._\-+/=]+`)},
-	// OpenAI / OpenRouter style keys: sk-… and sk-or-… (sk-or- is a prefix of sk-,
-	// but the charset run captures the whole key either way).
-	{"openai_key", regexp.MustCompile(`sk-(or-)?[A-Za-z0-9]{16,}`)},
-	// AWS access key ids (permanent IAM keys and temporary STS credentials).
-	{"aws_key", regexp.MustCompile(`(AKIA|ASIA|AROA|AIDA|ANPA|ANVA|AIAA)[0-9A-Z]{16}`)},
-	// JSON-encoded credential fields, e.g. {"password":"hunter2"} or "api_key": "abc".
-	// inline_credential misses these because a quote sits between the key and the colon.
-	// The {4,} lower bound avoids redacting trivially short ("" / "x") values.
-	{"json_credential", regexp.MustCompile(`(?i)"(password|api[_-]?key|token|secret)"\s*:\s*"[^"]{4,}"`)},
-	// Inline credential assignments: password=…, token=…, api_key=… / apikey=… —
-	// value runs to the next whitespace, quote, or ampersand (query-string safe).
-	{"inline_credential", regexp.MustCompile(`(?i)(password|api[_-]?key|token|secret)\s*[:=]\s*("?)[^"\s&]+`)},
-}
-
 // RedactForLedger caps s to capBytes (UTF-8 boundary-safe) then redacts every
 // known credential shape, returning the value safe to persist into the append-only
 // ledger. An empty input returns empty (the column stays NULL upstream via the
 // existing valid-flag). capBytes <= 0 means "no cap" (redact only).
+//
+// What is owned HERE is the durability posture — NUL replacement and the byte cap,
+// applied BEFORE redaction so an over-cap secret tail is truncated away and the
+// patterns scan a bounded input. The patterns themselves are redact.String's: this
+// package used to carry a second, divergent table that missed DSNs and URL userinfo
+// while redact's missed sk- keys and Authorization headers.
 func RedactForLedger(s string, capBytes int) string {
 	if s == "" {
 		return ""
 	}
-	capped := capUTF8(db.PostgresTextSafe(s), capBytes)
-	for _, p := range secretPatterns {
-		capped = p.re.ReplaceAllString(capped, redactedPlaceholder)
-	}
-	return capped
+	return redact.String(capUTF8(db.PostgresTextSafe(s), capBytes))
 }
 
 // capUTF8 truncates s to at most capBytes bytes WITHOUT splitting a multi-byte

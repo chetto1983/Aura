@@ -306,6 +306,9 @@ $composeText = Get-Content -LiteralPath $composePath -Raw
 $prometheusBlock = Get-ComposeServiceBlock $composeText 'prometheus'
 $tempoBlock = Get-ComposeServiceBlock $composeText 'tempo'
 $grafanaBlock = Get-ComposeServiceBlock $composeText 'grafana'
+# The aura service owns the metrics listener; what keeps /metrics private is that its port
+# is never published, which is asserted below alongside the sidecar contracts.
+$auraBlock = Get-ComposeServiceBlock $composeText 'aura'
 $imageContracts = @(
     @{ Name = 'Prometheus'; Block = $prometheusBlock; Prefix = 'prom/prometheus:v3.13.1' },
     @{ Name = 'Tempo'; Block = $tempoBlock; Prefix = 'grafana/tempo:2.9.4' },
@@ -318,8 +321,24 @@ foreach ($contract in $imageContracts) {
 Assert-Observability ($prometheusBlock -match 'profiles:\s+\[observability\]') 'Prometheus must be profile-gated'
 Assert-Observability ($tempoBlock -match 'profiles:\s+\[observability\]') 'Tempo must be profile-gated'
 Assert-Observability ($grafanaBlock -match 'profiles:\s+\[observability\]') 'Grafana must be profile-gated'
-Assert-Observability ($prometheusBlock -match 'network_mode:\s+"service:aura"') 'Prometheus must share Aura private network namespace'
-Assert-Observability ($tempoBlock -match 'network_mode:\s+"service:aura"') 'Tempo must share Aura private network namespace'
+# INVERTED on 2026-08-13, deliberately. These used to require the two sidecars to SHARE
+# aura's network namespace, so the metrics listener could stay loopback-only. That is a
+# documented, unfixed Compose trap: when the namespace owner is recreated the sharers keep
+# running attached to the dead namespace, reachable by nobody, and Compose never
+# re-attaches them (docker/compose#6626, #7765, #10263 — all still open). Nothing crashes,
+# so no restart policy helps.
+#
+# Measured cost on this deployment: up{job="aura"} sat at 0 for five and a half hours
+# (07:05 -> 12:35 UTC) after a routine `up -d --no-deps aura`. Every metric kept being
+# recorded and none reached Prometheus.
+#
+# The privacy the old assertion protected is still asserted, by the two lines below and by
+# the aura service having no published metrics port: what makes /metrics private is that
+# the port is NOT PUBLISHED, not that the process bound loopback. The coupling is now
+# forbidden rather than required, so the orphaning cannot come back by accident.
+Assert-Observability ($prometheusBlock -notmatch 'network_mode:') 'Prometheus must NOT share a network namespace (orphaning trap: docker/compose#6626)'
+Assert-Observability ($tempoBlock -notmatch 'network_mode:') 'Tempo must NOT share a network namespace (orphaning trap: docker/compose#6626)'
+Assert-Observability ($auraBlock -notmatch '(?m)^      - "?127\.0\.0\.1:\d+:9464') 'Aura metrics port 9464 must not be host-published'
 Assert-Observability ($prometheusBlock -notmatch '(?m)^    ports:') 'Prometheus scrape port 9090 must not be host-published'
 Assert-Observability ($tempoBlock -notmatch '(?m)^    ports:') 'Tempo ingestion port 4317 must not be host-published'
 Assert-Observability ($grafanaBlock -match '127\.0\.0\.1:\$\{AURA_GRAFANA_PORT:-3000\}:3000') 'Grafana must publish only on host loopback'
@@ -426,19 +445,29 @@ function Invoke-ObservabilitySmoke {
         Invoke-CheckedTool 'smoke network creation' docker @('network', 'create', $network) | Out-Null
         Invoke-CheckedTool 'synthetic Aura endpoint start' docker @('run', '-d', '--name', $keeper, '--network', $network, '--network-alias', 'aura', '--volume', "${smokeRoot}:/synthetic:ro", '--entrypoint', '/bin/busybox', $prometheusImage, 'httpd', '-f', '-p', '9464', '-h', '/synthetic') | Out-Null
         $tempoConfigArgument = ConvertTo-NativeDottedArgument '-config.file=/etc/tempo/tempo.yml'
-        Invoke-CheckedTool 'Tempo smoke start' docker @('run', '-d', '--name', $tempo, '--network', "container:${keeper}", '--user', '0:0', '--volume', "$(Join-Path $repoRoot 'observability/tempo'):/etc/tempo:ro", '--tmpfs', '/var/tempo:rw', $tempoImage, $tempoConfigArgument) | Out-Null
+        # Own namespace with a service alias, mirroring compose. This used to be
+        # `--network container:${keeper}`, which reproduced the namespace sharing that
+        # cost five and a half hours of blind metrics on 2026-08-13; the smoke has to
+        # exercise the topology we actually ship, not the one we removed.
+        Invoke-CheckedTool 'Tempo smoke start' docker @('run', '-d', '--name', $tempo, '--network', $network, '--network-alias', 'tempo', '--user', '0:0', '--volume', "$(Join-Path $repoRoot 'observability/tempo'):/etc/tempo:ro", '--tmpfs', '/var/tempo:rw', $tempoImage, $tempoConfigArgument) | Out-Null
         $prometheusConfigArgument = ConvertTo-NativeDottedArgument '--config.file=/etc/prometheus/prometheus.yml'
         $prometheusStorageArgument = ConvertTo-NativeDottedArgument '--storage.tsdb.path=/prometheus'
-        Invoke-CheckedTool 'Prometheus smoke start' docker @('run', '-d', '--name', $prometheus, '--network', "container:${keeper}", '--user', '0:0', '--volume', "$(Join-Path $repoRoot 'observability/prometheus'):/etc/prometheus:ro", '--tmpfs', '/prometheus:rw', '--entrypoint', '/bin/prometheus', $prometheusImage, $prometheusConfigArgument, $prometheusStorageArgument) | Out-Null
+        Invoke-CheckedTool 'Prometheus smoke start' docker @('run', '-d', '--name', $prometheus, '--network', $network, '--network-alias', 'prometheus', '--user', '0:0', '--volume', "$(Join-Path $repoRoot 'observability/prometheus'):/etc/prometheus:ro", '--tmpfs', '/prometheus:rw', '--entrypoint', '/bin/prometheus', $prometheusImage, $prometheusConfigArgument, $prometheusStorageArgument) | Out-Null
         Invoke-CheckedTool 'Grafana smoke start' docker @('run', '-d', '--name', $grafana, '--network', $network, '--volume', "$(Join-Path $repoRoot 'observability/grafana/provisioning'):/etc/grafana/provisioning:ro", '--volume', "$(Join-Path $repoRoot 'observability/grafana/dashboards'):/var/lib/grafana/dashboards:ro", '--tmpfs', '/tmp/grafana-data:rw,uid=472,gid=0,mode=0755', '-e', 'GF_PATHS_DATA=/tmp/grafana-data', '-e', 'GF_PATHS_PLUGINS=/tmp/grafana-data/plugins', '-e', 'GF_AUTH_ANONYMOUS_ENABLED=true', '-e', 'GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer', '-e', 'GF_AUTH_DISABLE_LOGIN_FORM=true', '-e', 'GF_ANALYTICS_REPORTING_ENABLED=false', '-e', 'GF_ANALYTICS_CHECK_FOR_UPDATES=false', '-e', 'GF_PLUGINS_PREINSTALL_DISABLED=true', $grafanaImage) | Out-Null
 
-        Wait-SmokeEndpoint $keeper 'http://127.0.0.1:3200/ready' 'ready' | Out-Null
-        Wait-SmokeEndpoint $keeper 'http://127.0.0.1:9090/-/ready' 'ready' | Out-Null
+        # Service names, not 127.0.0.1: the sidecars no longer share the keeper's
+        # namespace, so the probes now cross the network exactly as they do in compose.
+        # 9464 stays on loopback because that IS the keeper's own synthetic /metrics.
+        Wait-SmokeEndpoint $keeper 'http://tempo:3200/ready' 'ready' | Out-Null
+        Wait-SmokeEndpoint $keeper 'http://prometheus:9090/-/ready' 'ready' | Out-Null
         Wait-SmokeEndpoint $keeper 'http://127.0.0.1:9464/metrics' 'aura_agent_turn_total' | Out-Null
         Wait-SmokeEndpoint $keeper "http://${grafana}:3000/api/health" 'ok' | Out-Null
-        Invoke-CheckedTool 'synthetic OTLP trace' docker @('exec', $keeper, '/bin/wget', '-qO-', '-T', '5', '--header', 'Content-Type: application/json', '--post-file', '/synthetic/trace.json', 'http://127.0.0.1:4318/v1/traces') | Out-Null
-        Wait-SmokeEndpoint $keeper "http://127.0.0.1:3200/api/traces/${traceHex}" 'observability-verification' | Out-Null
-        Wait-SmokeEndpoint $keeper 'http://127.0.0.1:9090/api/v1/query?query=up%7Bjob%3D%22aura%22%7D%20%3D%3D%201' '"job":"aura"' | Out-Null
+        Invoke-CheckedTool 'synthetic OTLP trace' docker @('exec', $keeper, '/bin/wget', '-qO-', '-T', '5', '--header', 'Content-Type: application/json', '--post-file', '/synthetic/trace.json', 'http://tempo:4318/v1/traces') | Out-Null
+        Wait-SmokeEndpoint $keeper "http://tempo:3200/api/traces/${traceHex}" 'observability-verification' | Out-Null
+        # The assertion that matters most: Prometheus reached the synthetic aura ACROSS
+        # the network and scraped it. Under the old shared namespace this passed even
+        # when the real deployment's target had been dead for hours.
+        Wait-SmokeEndpoint $keeper 'http://prometheus:9090/api/v1/query?query=up%7Bjob%3D%22aura%22%7D%20%3D%3D%201' '"job":"aura"' | Out-Null
         foreach ($uid in $dashboardContracts.Values) {
             Wait-SmokeEndpoint $keeper "http://${grafana}:3000/api/dashboards/uid/${uid}" $uid | Out-Null
         }

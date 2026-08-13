@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/chetto1983/aura/internal/redact"
 )
 
 // TestRecord_RotatesAtCap covers M-06: the append-only JSONL trace must not grow
@@ -141,7 +143,7 @@ func TestRecordRedaction(t *testing.T) {
 	if !strings.Contains(got, "[REDACTED_AURA_SERVICE_TOKEN]") {
 		t.Fatalf("escaped configured-value placeholder missing: %s", got)
 	}
-	if !strings.Contains(got, "postgres://[redacted]") {
+	if !strings.Contains(got, "postgres://"+redact.Placeholder) {
 		t.Fatalf("literal DSN pattern redaction missing: %s", got)
 	}
 	if strings.Count(got, "[REDACTED_EXISTING_TOKEN]") != 1 ||

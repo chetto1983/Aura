@@ -1,0 +1,12 @@
+-- Deliberately empty.
+--
+-- The up migration repairs a broken pointer; it does not add a structure to remove. To
+-- "undo" it we would have to re-NULL the parent_seq of rows we just repaired, and the
+-- table does not record which rows those were — 0017's own backfill wrote the identical
+-- value, so a repaired row and an originally-correct row are indistinguishable.
+--
+-- A down that guessed would re-break the branch walk on conversations that were never
+-- broken. Rolling back to a schema older than 0095 is a no-op here, and that is correct:
+-- the up migration is idempotent (its WHERE clause matches nothing on a second run), so
+-- re-applying after a rollback is safe.
+SELECT 1;

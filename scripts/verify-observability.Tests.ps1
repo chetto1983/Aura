@@ -108,6 +108,26 @@ try {
         param($root)
         Set-ContractText $root 'observability/prometheus/rules/aura-alerts.yml' 'runbook_url: observability/runbooks/aura-readiness.md' 'runbook_url: observability/runbooks/missing.md'
     }
+    # Proves the inverted namespace assertion is not vacuous. Re-introducing the sharing
+    # that was removed on 2026-08-13 must fail the contract: it is the arrangement that
+    # left up{job="aura"} at 0 for five and a half hours with nobody informed, because
+    # Compose never re-attaches a sharer after the namespace owner is recreated
+    # (docker/compose#6626).
+    Assert-NegativeCase -Name 'shared-network-namespace' -Expected 'must NOT share a network namespace' -Mutate {
+        param($root)
+        Set-ContractText $root 'compose.yaml' '    restart: unless-stopped
+    depends_on:
+      aura:
+        condition: service_healthy
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml' '    restart: unless-stopped
+    network_mode: "service:aura"
+    depends_on:
+      aura:
+        condition: service_healthy
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml'
+    }
     Assert-NegativeCase -Name 'unpinned-image' -Expected 'Prometheus image must be digest-pinned' -Mutate {
         param($root)
         $path = Join-Path $root 'compose.yaml'

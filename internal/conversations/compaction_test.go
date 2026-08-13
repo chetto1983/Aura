@@ -8,8 +8,10 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/redact"
 )
 
 type fakeSummarizer struct {
@@ -194,6 +196,46 @@ func TestRenderRoundsForSummary(t *testing.T) {
 	}
 	if !strings.Contains(got, "tool: tool result") {
 		t.Errorf("tool turn must be included: %q", got)
+	}
+}
+
+// TestRenderRoundsForSummary_RedactsCredentials guards the transcript boundary. What
+// goes in is verbatim user text and tool output, so it can carry a credential the model
+// put on a command line; what comes out leaves the process for an external summarizer
+// and, once slice 1b lands, is persisted. A leak here is durable, not transient.
+func TestRenderRoundsForSummary_RedactsCredentials(t *testing.T) {
+	rounds := []llm.Message{
+		{Role: llm.RoleTool, Content: `curl -H "Authorization: Bearer sk-or-v1abcdef1234567890ghij" https://x`},
+		{Role: llm.RoleUser, Content: "connect with postgresql://aura:hunter2@db.internal/aura"},
+		{Role: llm.RoleAssistant, Content: `{"api_key":"live-key-abcdef123456"}`},
+	}
+	got := renderRoundsForSummary(rounds)
+	for _, leak := range []string{
+		"sk-or-v1abcdef1234567890ghij",
+		"hunter2",
+		"live-key-abcdef123456",
+	} {
+		if strings.Contains(got, leak) {
+			t.Errorf("credential reached the summarizer transcript: %q survives in %q", leak, got)
+		}
+	}
+	if !strings.Contains(got, redact.Placeholder) {
+		t.Errorf("expected redaction marker in %q", got)
+	}
+}
+
+// TestRenderRoundsForSummary_CapDoesNotSplitARune asserts the per-turn byte cap lands on
+// a rune boundary. A naive content[:cap] can slice a multi-byte rune in half, and the
+// transcript then carries a replacement char into the summary — and into the DB with 1b.
+func TestRenderRoundsForSummary_CapDoesNotSplitARune(t *testing.T) {
+	// 'à' is 2 bytes, so a cap that lands mid-rune is guaranteed by an odd-length prefix.
+	content := strings.Repeat("a", summaryPerTurnCap-1) + strings.Repeat("à", 40)
+	got := renderRoundsForSummary([]llm.Message{{Role: llm.RoleUser, Content: content}})
+	if !utf8.ValidString(got) {
+		t.Errorf("per-turn cap split a rune: transcript is not valid UTF-8")
+	}
+	if strings.ContainsRune(got, '�') {
+		t.Errorf("per-turn cap produced a replacement char: %.80q", got)
 	}
 }
 

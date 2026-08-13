@@ -1,5 +1,5 @@
 ---
-last_mapped_commit: 5adb3d49b9b8cd7ea4f872fbdb7199b4021c9f5c
+last_mapped_commit: 26745a062dd1017c8e9de39a39089bc63559b553
 ---
 <!-- refreshed: 2026-08-13 -->
 # Architecture
@@ -28,9 +28,9 @@ last_mapped_commit: 5adb3d49b9b8cd7ea4f872fbdb7199b4021c9f5c
 ┌──────────────────────────────────────────────────────────────────────────┐
 │ AGENT CORE — internal/agent (Agent interface, LlmAgent, Budget, Event)    │
 │ prompt build → LLM stream → tool dispatch → history append → loop/finalize│
-└───────┬───────────────────────────────────┬──────────────────────────────┘
-        │ prompt.PromptBuilder                │ tools.Registry.Get/Execute
-        ▼                                     ▼
+└───────┬───────────────────────────────┬──────────────────────────────────┘
+        │ prompt.PromptBuilder            │ tools.Registry.Get/Execute
+        ▼                                 ▼
 ┌──────────────────────────┐   ┌──────────────────────────────────────────┐
 │ internal/agent/prompt     │   │ internal/agent/tools (46 built-ins)       │
 │ messages[0] system prompt │   │ deferred-tool manifest, shell_exec/fs_*   │
@@ -93,6 +93,7 @@ last_mapped_commit: 5adb3d49b9b8cd7ea4f872fbdb7199b4021c9f5c
 - **Shared-pointer Budget tree** — one `*atomic.Int32` step counter bounds an entire agent tree (root + swarm children), never per-branch (`internal/agent/budget.go:47-62`).
 - **Fresh-agent-per-turn, durable-everything-else** — `runner.buildAgent` constructs a new `LlmAgent` every `Turn`/`TurnBranch` call seeded from `LoadManagedHistory`; nothing about a conversation survives in memory between turns (`internal/runner/runner.go:506-554`).
 - **Deferred-tool manifest** — big tool specs (`Deferred: true`) are hidden from the default LLM-visible manifest and loaded on demand via the built-in `tool_search` hook, protecting the KV-cache prefix (`internal/agent/tools/spec.go:1-44`).
+- **Always-active tool set** — a curated set of ~13 structurally and operationally essential tools (text_response, tool_search, ask_user, read_tool_output, shell_exec, read_file, document_search, document_open, patch, write_file, search_files, send_file, skill) remain non-deferred; skill promotion (2026-08-13) moved the skill catalogue from the tool's Description into the messages[1] always-block (`internal/agent/tools/always_active_test.go:74-105`).
 - **Sandbox-routed execution** — every filesystem/shell/file-delivery tool takes an optional `*usersandbox.SandboxRouter`; under a strict profile the box is the ONLY place code runs, never the host (`cmd/aura/main.go:187-280`).
 - **Policy PEP as a single choke point** — `internal/gateway` decides every mutating tool call before `Execute`, independent of tool implementation (`internal/agent/llm_agent_dispatch.go` calls the gateway inside `execTool`, wired via `LlmAgentConfig.Gateway`).
 
@@ -155,7 +156,7 @@ last_mapped_commit: 5adb3d49b9b8cd7ea4f872fbdb7199b4021c9f5c
 4. **L2 (budget gate):** hard cap = `ContextWindow - max(MaxOutputTokens,20000) - 13000 - ProviderErrorReserveTokens` (floored to `ContextWindow/2` on small windows) — `internal/conversations/context.go:107-143`. Under cap → return the L1 result (zero rot). Over 75% of cap → WARN log only.
 5. **L2.4 (LLM compaction, optional):** if `Summarizer` is set and still over cap, `tryCompact` condenses historical rounds into one synthetic summary turn, keeping the protected head and the active user-led round verbatim — `internal/conversations/context.go:256-262`, `internal/conversations/compaction.go`.
 6. **L2.5 (deterministic hard-drop):** `dropOldestPairs` removes the oldest complete user/assistant rounds until under cap, writing exactly one `context_rot` event row for audit — `internal/conversations/context.go:264-286, 457-491`.
-7. `ContextConfig.AlwaysBlock` (the messages[1] always-on skill block, rendered per turn from live skill-loader state) is injected as a PROTECTED turn immediately after the system head, counted toward budget but never evicted — `internal/conversations/context.go:220-223, 296-310`.
+7. `ContextConfig.AlwaysBlock` (the messages[1] always-on skill block, rendered per turn from live skill-loader state via `skills.RenderAlwaysBlock` + catalogue rendering) is injected as a PROTECTED turn immediately after the system head, counted toward budget but never evicted — `internal/conversations/context.go:220-223, 296-310`.
 8. Inside the agent loop itself, a SEPARATE per-call volatile hint (`prompt.Budget`: used/remaining steps, workspace, current time, numbered web-source list, deferred-tool roster) is tail-injected to a COPY of history on every LLM call — never into the persisted/cached `messages[0]` — `internal/agent/prompt/builder.go:23-159`, `internal/agent/llm_agent.go:320-338`.
 9. Token counting throughout the ladder uses a `tiktoken-go` `cl100k_base` encoder (`internal/conversations/tiktoken.go`), with `ProviderErrorReserveTokens` widening the local-llama.cpp headroom to cover Aura's tokenizer-estimate gap versus the real local tokenizer (`internal/llm/capabilities.go`).
 
@@ -197,7 +198,7 @@ last_mapped_commit: 5adb3d49b9b8cd7ea4f872fbdb7199b4021c9f5c
 **Tool / Spec / Registry:**
 - Purpose: The dispatch contract between the agent loop and every capability (built-in, MCP-bridged, or sandbox-routed).
 - Examples: `internal/agent/tools/spec.go`, 46 built-ins under `internal/agent/tools/*.go`.
-- Pattern: `Spec.Deferred=true` hides a tool's full schema from the default manifest until `tool_search` loads it (protects the KV-cache prefix); `Registry` is immutable per run, built once at boot via `buildBaseRegistryWithHandles` (`cmd/aura/main.go:193-296`).
+- Pattern: `Spec.Deferred=true` hides a tool's full schema from the default manifest until `tool_search` loads it (protects the KV-cache prefix); `Registry` is immutable per run, built once at boot via `buildBaseRegistryWithHandles` (`cmd/aura/main.go:193-296`). Always-active tools (non-deferred) are carefully curated — `skill` was promoted to always-active (2026-08-13) when its catalogue moved out of the Description into the messages[1] always-block (`cmd/aura/serve_adapters.go:alwaysBlockProvider`).
 
 **Context ladder (L1/L2/L2.4/L2.5):**
 - Purpose: Deterministic, pure-function history reduction bounding the wire request to the model's context window.
@@ -248,6 +249,7 @@ last_mapped_commit: 5adb3d49b9b8cd7ea4f872fbdb7199b4021c9f5c
 - **No long-lived agent state:** `LlmAgent` is constructed fresh every turn from rehydrated history — there is no persistent in-memory conversation object; a crash mid-turn loses nothing durable because `Runner` persists each `Event` as it streams (`internal/runner/runner.go:455-467`).
 - **Tenant isolation is server-enforced, not query-scoped:** ArcadeDB isolation is one database per identity with an HMAC-derived credential, not a `WHERE identity_id = ?` filter that code could forget (`internal/arcadedb/tenant.go`; see CLAUDE.md §Persistence).
 - **Sandbox routing:** Under a strict deployment profile, every filesystem/shell/file-delivery tool executes inside a per-identity Docker box (`internal/sandbox/usersandbox`) via a `SandboxRouter`; `web_fetch`/`web_search` are deliberately NEVER routed (they stay host-side, already SSRF-guarded) — a scope violation to route them.
+- **Always-active tool set stability:** The set of non-deferred tools is carefully controlled and centrally documented (`internal/agent/tools/always_active_test.go:74-105`, enumerated with measured justification). Additions are not automatic and require editing the test and justifying the cost (tokens billed on every turn, cold and cached).
 
 ## Anti-Patterns
 
@@ -268,6 +270,12 @@ last_mapped_commit: 5adb3d49b9b8cd7ea4f872fbdb7199b4021c9f5c
 **What happens:** A new read path that calls a lower-level store method (e.g. a raw turn fetch) instead of `Store.LoadManagedHistory`/`LoadManagedHistoryForBranch`.
 **Why it's wrong:** Skips L1 tool-eviction, the L2 hard-cap gate, and the L2.5 audited drop — a long conversation would silently overflow the model's context window with no `context_rot` audit trail.
 **Do this instead:** Every history read for an LLM call goes through `conversations.Store.LoadManagedHistory*`.
+
+### Putting skill catalogue in the tool Description instead of the always-block
+
+**What happens:** Tool.Description includes the dynamic list of installed skills and their descriptions.
+**Why it's wrong:** The Description sits inside the `tools` array — each skill add/remove rewrites the entire tools payload and invalidates the provider's KV-cache prefix, negating the deferred-tool optimization. This was the measured cost before skill promotion (2026-08-13): ~1773 tokens, the single heaviest entry in the manifest, paid on every turn cold and cached.
+**Do this instead:** Render the skill catalogue into the messages[1] always-block via `skills.RenderAlwaysBlock` at turn time (`cmd/aura/serve_adapters.go:alwaysBlockProvider`); keep the tool Description constant (D-06 byte-stability). This follows the pattern used by hermes-agent and Claude Code.
 
 ## Error Handling
 

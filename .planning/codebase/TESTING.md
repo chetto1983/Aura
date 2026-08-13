@@ -1,5 +1,5 @@
 ---
-last_mapped_commit: 5adb3d49b9b8cd7ea4f872fbdb7199b4021c9f5c
+last_mapped_commit: 26745a062dd1017c8e9de39a39089bc63559b553
 ---
 
 # Testing Patterns
@@ -159,21 +159,20 @@ compound tag expression.
 `internal/arcadedb/locomo_test.go`,
 `internal/arcadedb/memory_integration_test.go`,
 `internal/arcadedb/memory_vector_live_test.go`,
-`internal/arcadedb/testclient_test.go`). The token `arcadedb_integration` does
-not match `tagged_tier_compile.sh`'s `is_tier_tag`/`is_harness_tag`
-classifiers (it isn't suffixed `_integration`... actually it IS
-`*_integration`-shaped, so it WOULD be picked up by that script's discovery —
-verify this specific claim against a live `bash scripts/tagged_tier_compile.sh
---list` run before treating it as gospel). What is independently confirmed by
-source inspection: the CI job literally named `arcadedb-integration-test` in
-`.github/workflows/ci.yml` brings up a live ArcadeDB + MCP + EmbeddingGemma
-stack but invokes `make agent-memory-eval` → `scripts/agent_memory_eval.py` (a
-Python evaluator), **not** `go test -tags arcadedb_integration`; no workflow,
-Makefile recipe, or coverage script passes that Go build tag anywhere
-(`grep -rn "arcadedb_integration" .github/workflows/*.yml Makefile
-scripts/*.sh` matches only the `Makefile` help string). The Go LOCOMO memory
-suite this tag gates is therefore unexercised by that job regardless of the
-compile-only question above.
+`internal/arcadedb/testclient_test.go`). The token `arcadedb_integration` IS
+`*_integration`-shaped and matches `tagged_tier_compile.sh`'s `is_tier_tag`
+classifier, so running `bash scripts/tagged_tier_compile.sh --list` should
+show it in the compiled tiers (verify this directly before treating as
+gospel). What is independently confirmed by source inspection: the CI job
+literally named `arcadedb-integration-test` in `.github/workflows/ci.yml`
+brings up a live ArcadeDB + MCP + EmbeddingGemma stack but invokes `make
+agent-memory-eval` → `scripts/agent_memory_eval.py` (a Python evaluator),
+**not** `go test -tags arcadedb_integration`; no workflow, Makefile recipe,
+or coverage script passes that Go build tag anywhere (`grep -rn
+"arcadedb_integration" .github/workflows/*.yml Makefile scripts/*.sh` matches
+only the `Makefile` help string). The Go LOCOMO memory suite this tag gates
+is therefore unexercised by that job regardless of the compile-only question
+above.
 
 **No-skip-as-green mechanism** (the actual code, `internal/db/db_test.go:34-49`):
 ```go
@@ -255,6 +254,19 @@ database — `scripts/coverage_gate.sh` independently refuses to run
 `db_integration` against a database literally named `aura` unless
 `GITHUB_ACTIONS` is set or `AURA_COVERAGE_ALLOW_LIVE_AURA_DB=1` is passed
 (guards a documented 2026-07-10 data-loss incident).
+
+**Migration testing and pinning:** `internal/db/migrate_0093_integration_test.go`
+tests migration 0093 in isolation using a helper function `migrateTo0093`
+(`internal/db/migrate_0093_integration_test.go:20-48`) that lands the database
+on **exactly** version 93, not the latest. The helper migrates fresh to head,
+then steps down `MigrateSteps(ctx, migrateURL, -1)` in a bounded loop until
+`currentMigrationVersion` returns 93 — this formulation stays correct as newer
+migrations land, since it targets the version number explicitly rather than
+relying on a fixed step count or a "migrate to head" directive that would
+start reading version 94 the day 0094 merges. The test asserts 0093's own
+round-trip (`migrate to 0093`, call `assert0093Schema`, step down to 0092,
+step up to 0093 again) and validates the down-guard, so pinning to exactly
+version 93 is a load-bearing invariant of the test's contract.
 
 ## Mocking / Fakes
 

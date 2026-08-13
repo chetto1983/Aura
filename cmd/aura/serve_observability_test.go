@@ -6,7 +6,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/obs"
@@ -82,20 +81,36 @@ func metricHasString(attrs []attribute.KeyValue, key, value string) bool {
 	return false
 }
 
-func TestPrivateMetricsListenerRequiresLoopback(t *testing.T) {
+// TestMetricsListenerAllowsNonLoopback inverts what this test used to assert, and the
+// inversion is the point rather than a test bent to go green.
+//
+// It required the bind to be loopback. Inside a container that check is meaningless:
+// the bind address does not decide who can reach the socket — publishing the port does,
+// and that lives in compose where this code cannot see it. So the guard rejected the
+// safe, ordinary arrangement (Prometheus in its own container on a private network) and
+// forced the observability pack into aura's network namespace instead. On 2026-08-13
+// that topology cost five and a half hours of `up{job="aura"} == 0` after the namespace
+// owner was recreated, with nothing reporting it.
+//
+// Loopback remains the DEFAULT (config.go); a non-loopback bind is now allowed and
+// logged at WARN.
+func TestMetricsListenerAllowsNonLoopback(t *testing.T) {
 	called := false
-	_, err := bindPrivateMetricsListener("0.0.0.0:9464", func(string, string) (net.Listener, error) {
+	_, err := bindMetricsListener("0.0.0.0:9464", func(network, address string) (net.Listener, error) {
 		called = true
+		if network != "tcp" || address != "0.0.0.0:9464" {
+			t.Errorf("listener factory called with (%q,%q)", network, address)
+		}
 		return nil, nil
 	})
-	if err == nil || !strings.Contains(err.Error(), "loopback") {
-		t.Fatalf("non-loopback bind error = %v, want loopback rejection", err)
+	if err != nil {
+		t.Fatalf("non-loopback bind = %v, want it to be permitted", err)
 	}
-	if called {
-		t.Fatal("listener factory called for rejected non-loopback address")
+	if !called {
+		t.Fatal("listener factory was not called for a non-loopback address")
 	}
 
-	listener, err := bindPrivateMetricsListener("127.0.0.1:0", net.Listen)
+	listener, err := bindMetricsListener("127.0.0.1:0", net.Listen)
 	if err != nil {
 		t.Fatalf("loopback bind: %v", err)
 	}
@@ -105,11 +120,28 @@ func TestPrivateMetricsListenerRequiresLoopback(t *testing.T) {
 	_ = listener.Close()
 }
 
+// TestMetricsListenerRejectsAMalformedAddress keeps the half of the guard that was
+// always right: an address that cannot be split is a configuration error, and the
+// listener factory must not be called for it.
+func TestMetricsListenerRejectsAMalformedAddress(t *testing.T) {
+	called := false
+	_, err := bindMetricsListener("not-an-address", func(string, string) (net.Listener, error) {
+		called = true
+		return nil, nil
+	})
+	if err == nil {
+		t.Fatal("malformed address was accepted")
+	}
+	if called {
+		t.Fatal("listener factory called for a malformed address")
+	}
+}
+
 func TestPrivateMetricsServerExposesOnlyDedicatedScrapeRoute(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
-	server := newPrivateMetricsServer("127.0.0.1:9464", handler)
+	server := newMetricsServer("127.0.0.1:9464", handler)
 
 	metricsReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	metricsRec := httptest.NewRecorder()
@@ -140,7 +172,7 @@ func TestPrivateMetricsRuntimeFailureCancelsAndJoinsSiblings(t *testing.T) {
 	metricsErr := errors.New("metrics listener sentinel")
 	metrics := &privateMetricsComponent{
 		listener: newFailingMetricsListener(metricsErr),
-		server:   newPrivateMetricsServer("127.0.0.1:0", http.NotFoundHandler()),
+		server:   newMetricsServer("127.0.0.1:0", http.NotFoundHandler()),
 	}
 	schedulerCancelled := make(chan struct{})
 	scheduler := schedulerLifecycleFunc(func(ctx context.Context) error {

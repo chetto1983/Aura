@@ -1,14 +1,18 @@
-// Completion critic gate (amendment #54 / D-43): the spine that turns the
-// prompt's "verify before reporting" from prose into an enforced contract.
-// Before the loop accepts a VOLUNTARY termination (text_response or the
-// content-stop fallback) on a turn that mutated host state, a cheap critic call
-// judges the user's request against the OBSERVED tool results — not the agent's
-// claims — and vetoes ONCE when the promised deliverable is not verifiably
-// present. It reuses the maybeRecover counter discipline (D-08): a dedicated
-// completionAttempts counter (max 1) keeps the veto bounded, the extra turn
-// rides the normal budget gate, and a broken/empty/unparseable critic fails
-// OPEN so a verifier outage can never wedge a turn. Concern-split out of
-// llm_agent.go to keep that file under the no-god-class cap.
+// Completion critic gate (amendment #54 / D-43, widened by D-20a/D-20b): the
+// spine that turns the prompt's "verify before reporting" from prose into an
+// enforced contract. Before the loop accepts ANY VOLUNTARY termination
+// (text_response or the content-stop fallback), a cheap critic call judges the
+// user's request against the OBSERVED tool results — not the agent's claims —
+// and vetoes when the promised deliverable is not verifiably present. This
+// includes a turn that dispatched nothing mutating at all: HARN-06's failure
+// mode is exactly a turn that states an intention and dispatches nothing, which
+// a prior side-effect-only trigger never reached. It reuses the maybeRecover
+// counter discipline (D-08): a dedicated completionAttempts counter (max
+// completionMaxAttempts, 2) keeps the veto bounded — a second veto names what
+// did not run, a third attempt is accepted regardless of the critic's verdict —
+// the extra turns ride the normal budget gate, and a broken/empty/unparseable
+// critic fails OPEN so a verifier outage can never wedge a turn. Concern-split
+// out of llm_agent.go to keep that file under the no-god-class cap.
 package agent
 
 import (
@@ -32,10 +36,23 @@ const completionCriticSystem = "You are a strict completion auditor for an auton
 	"If the user only asked a question and no artifact was requested, a well-supported answer IS done. " +
 	"Reply with a single line: `DONE` if the deliverable is present and verified, or `NOT_DONE: <one short sentence naming what is missing and the next concrete action>`. Output nothing else."
 
-// completionVetoPrefix leads the feedback fed back to the model on a veto. It is
-// also matched by lastUserRequest so a prior veto nudge is never mistaken for the
-// user's actual request when the gate runs a second time in the same run.
+// completionVetoPrefix leads the feedback fed back to the model on the FIRST
+// veto. It is also matched by lastUserRequest so a prior veto nudge is never
+// mistaken for the user's actual request when the gate runs again in the same
+// run.
 const completionVetoPrefix = "Completion check FAILED: "
+
+// completionSecondVetoPrefix leads the feedback on the SECOND (final) veto
+// (D-20b). Unlike the first nudge, it demands the turn state plainly which
+// action did not run and why, rather than repeating the first nudge's generic
+// instruction — and it must never suggest claiming completion, since a third
+// attempt is accepted unconditionally regardless of what the model says here.
+const completionSecondVetoPrefix = "Completion check FAILED again: "
+
+// completionMaxAttempts bounds gateCompletion's veto budget: at most this many
+// vetoes per run (D-20b). A third attempt is accepted regardless of the critic's
+// verdict, so there is no path to an unbounded critic loop.
+const completionMaxAttempts = 2
 
 // criticMaxTokens caps the verdict (one short line); criticArgsCap/ResultCap/
 // DigestCap bound the side-effect digest so a runaway tool result cannot inflate
@@ -48,15 +65,20 @@ const (
 )
 
 // gateCompletion decides whether to VETO a voluntary termination (amendment #54 /
-// D-43). It returns veto=true (with feedback for the model) only when ALL hold:
-// the gate is enabled (Load() default; off in hand-built test configs), the turn
-// mutated host state, the per-run veto budget is unspent, and the critic returns
-// NOT_DONE. Any other case — gate off, read-only turn, counter spent, critic
-// DONE, or critic broken/empty/unparseable (fail-open) — returns veto=false so
-// the termination proceeds unchanged. On a veto it spends the counter so the
-// gate fires at most once per run.
+// D-43, widened by D-20a/D-20b). It returns veto=true (with feedback for the
+// model) only when ALL hold: the gate is enabled (Load() default; off in
+// hand-built test configs), the per-run veto budget is unspent, and the critic
+// returns NOT_DONE. EVERY voluntary termination is judged now, including a turn
+// that dispatched no mutating tool at all — HARN-06's failure mode is a turn that
+// states an intention and dispatches nothing, and the critic's own prompt already
+// treats a well-supported answer to a read-only question as done, so widening the
+// trigger costs tokens, not false vetoes. Any other case — gate off, counter
+// spent, critic DONE, or critic broken/empty/unparseable (fail-open) — returns
+// veto=false so the termination proceeds unchanged. On a veto it spends the
+// counter; the gate fires at most completionMaxAttempts (2) times per run, and a
+// third attempt is accepted regardless of the critic's verdict.
 func (a *LlmAgent) gateCompletion(ic InvocationContext, answer string) (veto bool, feedback string) {
-	if !a.cfg.CompletionGate || !a.sideEffected || a.completionAttempts >= 1 {
+	if !a.cfg.CompletionGate || a.completionAttempts >= completionMaxAttempts {
 		return false, ""
 	}
 	done, reason, ok := a.runCompletionCritic(ic, answer)
@@ -67,16 +89,21 @@ func (a *LlmAgent) gateCompletion(ic InvocationContext, answer string) (veto boo
 	if strings.TrimSpace(reason) == "" {
 		reason = "the requested deliverable is not present in the tool results"
 	}
+	if a.completionAttempts >= completionMaxAttempts {
+		return true, completionSecondVetoPrefix + reason + "\nState in one sentence which action did not run and why — " +
+			"do not claim completion. Then perform that action now, verify it, and only then call text_response."
+	}
 	return true, completionVetoPrefix + reason + "\nThe deliverable is not verified yet. Do NOT end the turn — " +
 		"perform the missing action now (run the script, produce the file), then read it back to confirm, and only then call text_response."
 }
 
 // runCompletionCritic issues the tool-free critic call and parses the verdict. It
-// never spends a budget step (like finalize/synthesize) and is bounded to one
-// call per run by the completionAttempts gate in gateCompletion. ok=false on a
-// transport error, empty stream, or an unparseable verdict → the caller fails
-// open. The request is built directly (NOT through the prompt builder) so it
-// carries only the compact critic context, not the full system prompt + tools.
+// never spends a budget step (like finalize/synthesize) and is bounded to at most
+// completionMaxAttempts (2) calls per run by the completionAttempts gate in
+// gateCompletion. ok=false on a transport error, empty stream, or an unparseable
+// verdict → the caller fails open. The request is built directly (NOT through the
+// prompt builder) so it carries only the compact critic context, not the full
+// system prompt + tools.
 func (a *LlmAgent) runCompletionCritic(ic InvocationContext, answer string) (done bool, reason string, ok bool) {
 	req := llm.Request{
 		Model: a.criticModel(),
@@ -283,5 +310,6 @@ func isAgentNudge(content string) bool {
 		content == recoveryNudgeEmpty ||
 		strings.HasPrefix(content, recoveryNudgeToolPrefix) ||
 		strings.HasPrefix(content, completionVetoPrefix) ||
+		strings.HasPrefix(content, completionSecondVetoPrefix) ||
 		strings.HasPrefix(content, verifyOnStopNudgePrefix)
 }

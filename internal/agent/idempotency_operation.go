@@ -11,9 +11,23 @@ import (
 
 var errUnsupportedParentOperation = errors.New("unsupported parent operation scope")
 
+// errMissingModelRound is returned when a child key must be derived (a parent
+// operation of a different scope is present) but no modelRound is on ctx. This is
+// a fail-closed sentinel, mirroring errUnsupportedParentOperation's shape: a
+// silent fallback to ordinal 0 would restore the pre-D-01 collapsing behaviour
+// that let a deliberate cross-round re-issue replay a stale result (F-1).
+var errMissingModelRound = errors.New("missing model round for tool operation derivation")
+
 // deriveToolOperationContext turns an ingress/scheduler operation into a stable
 // child owned by the tool's Aura-declared scope and canonical argument intent.
 // Request and tool-call IDs stay audit-only and therefore never participate.
+//
+// The child key's fingerprint carries RoundOrdinal (D-01): two derivations that
+// differ only by round produce different keys, so a deliberate cross-round
+// re-issue of a mutating call executes again instead of replaying a stale round's
+// recorded result (HARN-01). A genuine same-round retry, or a scheduler reclaim
+// whose ordinal restarts at 1 against the same stable parent operation, still
+// derives the identical key and collapses onto one execution (HARN-02).
 func deriveToolOperationContext(ctx context.Context, spec tools.Spec, args json.RawMessage) (context.Context, error) {
 	parent, ok := idempotency.OperationFromContext(ctx)
 	if !ok || parent.Key.Scope == spec.OperationScope {
@@ -24,6 +38,10 @@ func deriveToolOperationContext(ctx context.Context, spec tools.Spec, args json.
 		idempotency.ScopeSchedulerRun, idempotency.ScopeApproval:
 	default:
 		return nil, errUnsupportedParentOperation
+	}
+	round, ok := modelRoundFromContext(ctx)
+	if !ok {
+		return nil, errMissingModelRound
 	}
 	toolFingerprint, err := tools.OperationFingerprint(spec, args)
 	if err != nil {
@@ -36,10 +54,11 @@ func deriveToolOperationContext(ctx context.Context, spec tools.Spec, args json.
 		ParentFingerprint string            `json:"parent_fingerprint"`
 		ToolScope         idempotency.Scope `json:"tool_scope"`
 		ToolFingerprint   string            `json:"tool_fingerprint"`
+		RoundOrdinal      uint32            `json:"round_ordinal"`
 	}{
-		Version: "tool-child-v1", ParentScope: parent.Key.Scope, ParentKey: parent.Key.Key,
+		Version: "tool-child-v2", ParentScope: parent.Key.Scope, ParentKey: parent.Key.Key,
 		ParentFingerprint: idempotency.FingerprintHex(parent.Fingerprint), ToolScope: spec.OperationScope,
-		ToolFingerprint: idempotency.FingerprintHex(toolFingerprint),
+		ToolFingerprint: idempotency.FingerprintHex(toolFingerprint), RoundOrdinal: round.ordinal,
 	})
 	if err != nil {
 		return nil, err

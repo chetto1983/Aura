@@ -1,5 +1,5 @@
 ---
-last_mapped_commit: 5adb3d49b9b8cd7ea4f872fbdb7199b4021c9f5c
+last_mapped_commit: 26745a062dd1017c8e9de39a39089bc63559b553
 ---
 # Codebase Structure
 
@@ -24,7 +24,7 @@ Aura/
 ├── observability/             # Grafana dashboards, Prometheus rules, Tempo config, runbooks
 ├── scripts/                   # Bash/Python/Go operational scripts (coverage gates, smoke tests, migrations helpers)
 ├── docs/                      # Design docs, ADRs, audit reports, quality snapshot
-├── spikes/                    # Throwaway measurement spikes (cocoindex, retrieval benchmarks)
+├── spikes/                    # Throwaway measurement spikes (cocoindex-ingestion, document-routing benchmarks, two-store-catalog, cot-as-memory)
 ├── searxng/                   # SearXNG config for the web_search tool's backend
 ├── public/                    # Static marketing/readme assets
 ├── .planning/                 # GSD workflow state (regenerated per milestone; see CLAUDE.md)
@@ -37,7 +37,7 @@ Aura/
 **`cmd/aura`:**
 - Purpose: The single production binary. Every verb (`serve`, `chat`, `shell`, `db`, `identity`, `mcp`, `memory`, `docs`, `skills`, `retention`, `task`, `paused-states`, `swarm-demo`, `web`, `doctor`, `tools`, `config`, `version`, `toolpipe`) is a hand-rolled subcommand.
 - Contains: Composition roots (`main.go`, `serve*.go`, `chat*.go`), tool-registry wiring, HTTP-layer glue for AG-UI (`serve_webui*.go`, `serve_agui.go`), asset/document processing workers, idempotency middleware.
-- Key files: `main.go` (top-level dispatch + `buildBaseRegistryWithHandles`, the SHARED tool-registry composition root every boot path funnels through), `serve.go` (daemon lifecycle), `chat.go` (REPL), `db.go` (migrate/ping/status/reset).
+- Key files: `main.go` (top-level dispatch + `buildBaseRegistryWithHandles`, the SHARED tool-registry composition root every boot path funnels through), `serve.go` (daemon lifecycle), `chat.go` (REPL), `db.go` (migrate/ping/status/reset), `serve_adapters.go` (composition-root adapters including `alwaysBlockProvider` that renders the skill catalogue into messages[1]).
 
 **`cmd/arcadedb-mcp`:**
 - Purpose: MCP server process exposing memory (facts) and document-retrieval/graph-schema tools over the Model Context Protocol.
@@ -46,23 +46,23 @@ Aura/
 **`internal/agent`:**
 - Purpose: The agent runtime core — the open `Agent` interface, `Budget`, `Event`, and `LlmAgent` (the concrete tool-dispatch loop).
 - Contains: `agent.go` (contract), `budget*.go` (resource control), `event*.go` (wire shape), `llm_agent*.go` (~30 files, the loop split by concern: `_dispatch`, `_tool`, `_finalize`, `_pause`, `_retry`, `_truncation`, `_verification`, `_promote`, `_reasoning`), `hooks*.go` (extension seam), `verification_*.go` (evidence ledger / verify-on-stop gate).
-- Subpackages: `internal/agent/prompt` (request builder + reasoning classifier), `internal/agent/tools` (46 built-in tools), `internal/agent/mcptools` (MCP-to-tool bridge), `internal/agent/display` (typed tool-result display payloads), `internal/agent/mcp` (nothing — see `internal/mcp` instead), `internal/agent/agenttest` (test-support fakes, excluded from coverage floor).
+- Subpackages: `internal/agent/prompt` (request builder + reasoning classifier), `internal/agent/tools` (46 built-in tools including always-active and deferred tools), `internal/agent/mcptools` (MCP-to-tool bridge), `internal/agent/display` (typed tool-result display payloads), `internal/agent/mcp` (nothing — see `internal/mcp` instead), `internal/agent/agenttest` (test-support fakes, excluded from coverage floor).
 
 **`internal/agent/tools`:**
-- Purpose: Every built-in tool the agent loop can dispatch, plus the deferred-tool manifest machinery.
-- Contains: One file per tool (`shell_exec.go`, `read_file.go`, `document_search.go`, `document_open.go`, `send_file.go`, `skill*.go`, `ask_user.go`, ...), `spec.go` (`Tool`/`Spec`/`Registry` contract), `manifest.go` (LLM-visible rendering + `tool_search`), `registry.go` (`Without` — clone-minus-names for swarm children).
+- Purpose: Every built-in tool the agent loop can dispatch, plus the deferred-tool manifest machinery. As of 2026-08-13, the always-active set is carefully curated (~13 tools); the `skill` tool was promoted to always-active with its catalogue moved from the tool Description into the messages[1] always-block.
+- Contains: One file per tool (`shell_exec.go`, `read_file.go`, `document_search.go`, `document_open.go`, `send_file.go`, `skill*.go`, `ask_user.go`, ...), `spec.go` (`Tool`/`Spec`/`Registry` contract with deferred-tool pattern and replay-policy metadata), `manifest.go` (LLM-visible rendering + `tool_search`), `registry.go` (`Without` — clone-minus-names for swarm children), `always_active_test.go` (documents and validates the carefully-curated set of non-deferred tools).
 
 **`internal/agent/prompt`:**
 - Purpose: The single chokepoint assembling the wire `llm.Request` from history + registry + config + volatile `Budget` hints; also the local embedding-based reasoning-tier classifier.
 - Key files: `builder.go` (`PromptBuilder.Build/BuildWithReasoningTier/BuildWithReasoningOverride`), `cache_anthropic.go` (provider `cache_control` injection), `reasoning_classifier.go`, `reasoning_router.go`, `reasoning_policy.go`.
 
 **`internal/runner`:**
-- Purpose: Channel-agnostic orchestration — the SOLE driver of `agent.Run` per turn, and the SOLE writer of `paused_states`.
-- Contains: `runner.go` (`Runner`, `Deps`, `Turn`/`TurnBranch`), `runner_context.go` (context-config + memory digest wiring), `runner_history.go`, `runner_persist.go`, `runner_resume*.go`, `runner_session.go` (per-thread locks + live-turn cancel registry), `runner_verification.go`.
+- Purpose: Channel-agnostic orchestration — the SOLE driver of `agent.Run` per turn, and the SOLE writer of `paused_states`. Coordinates composition-root adapters like `alwaysBlockProvider` (the skill catalogue renderer) into the per-turn context.
+- Contains: `runner.go` (`Runner`, `Deps`, `Turn`/`TurnBranch`), `runner_context.go` (context-config + memory digest wiring + always-block injection), `runner_history.go`, `runner_persist.go`, `runner_resume*.go`, `runner_session.go` (per-thread locks + live-turn cancel registry), `runner_verification.go`.
 
 **`internal/conversations`:**
 - Purpose: The Postgres-backed conversation Store PLUS the deterministic context ladder (L1/L2/L2.4/L2.5) and compaction.
-- Contains: `store*.go` (CRUD, branching, search, purge), `context.go` (the ladder), `compaction.go` (L2.4 LLM summarizer interface), `context_rot.go`/`context_tail.go`, `tiktoken.go` (token counting), `sweeper.go`, `orphan_scan.go`, `title.go` (auto-title).
+- Contains: `store*.go` (CRUD, branching, search, purge), `context.go` (the ladder, including L1/L2 stages + always-block injection), `compaction.go` (L2.4 LLM summarizer interface), `context_rot.go`/`context_tail.go`, `tiktoken.go` (token counting), `sweeper.go`, `orphan_scan.go`, `title.go` (auto-title).
 
 **`internal/documents`:**
 - Purpose: The document catalog, ingestion-job bookkeeping, and the retrieval cascade (card + lexical + dense legs).
@@ -140,17 +140,19 @@ Aura/
 - `internal/conversations/context.go`: The context ladder.
 - `internal/documents/retrieval.go`: The retrieval cascade.
 - `internal/arcadedb/memory.go`: The bitemporal fact graph model.
+- `cmd/aura/serve_adapters.go`: Composition-root adapters including `alwaysBlockProvider` (skill catalogue renderer into messages[1]).
 
 **Testing:**
 - Co-located `*_test.go` next to the file under test throughout (no separate `tests/` tree in Go code).
 - `internal/agent/agenttest`: Shared test-support fakes (e.g. `CountingAgent`), excluded from the coverage floor.
+- `internal/agent/tools/always_active_test.go`: Documents and validates the curated set of always-active (non-deferred) tools.
 - `services/ingest/tests/`: Python test tree for the CocoIndex app.
 - `scripts/coverage_gate.sh`, `scripts/coverage_docker.sh`: The coverage-floor gate scripts (see CLAUDE.md §Quality tooling).
 
 ## Naming Conventions
 
 **Files:**
-- `<package>.go` for the primary type/entry, then `<name>_<concern>.go` splits once a file nears the 600-LOC ceiling — heavily used in `cmd/aura` (`serve_webui.go`, `serve_webui_auth_config.go`, `serve_webui_composer.go`, `serve_webui_musr.go`, `serve_webui_scheduler.go`, `serve_webui_share.go`, `serve_webui_voice.go`), `internal/agent` (`llm_agent.go` + ~25 `llm_agent_<concern>.go` files), `internal/channels/telegram` (`bot_dispatch.go` + `bot_dispatch_{auth,asset,callbacks,hitl,turn}.go`), `internal/documents` (`catalog_store.go` + `catalog_store_{asset,digest,identity}.go`).
+- `<package>.go` for the primary type/entry, then `<name>_<concern>.go` splits once a file nears the 600-LOC ceiling — heavily used in `cmd/aura` (`serve_webui.go`, `serve_webui_auth_config.go`, `serve_webui_composer.go`, `serve_webui_musr.go`, `serve_webui_scheduler.go`, `serve_webui_share.go`, `serve_webui_voice.go`, `serve_adapters.go`), `internal/agent` (`llm_agent.go` + ~25 `llm_agent_<concern>.go` files), `internal/channels/telegram` (`bot_dispatch.go` + `bot_dispatch_{auth,asset,callbacks,hitl,turn}.go`), `internal/documents` (`catalog_store.go` + `catalog_store_{asset,digest,identity}.go`).
 - `<file>_test.go` is the STANDARD unit-test sibling; `<file>_internal_test.go` marks a test that reaches unexported internals of that specific file's concern (e.g. `llm_agent_pause_internal_test.go`); a bare `_test.go` file with no matching non-test file (e.g. `main_test.go`, `cover_test.go`) hosts package-wide test scaffolding or coverage-padding cases.
 
 **Build tags (test-tier gating):**
@@ -178,6 +180,7 @@ A test carrying a `_integration`/`_live` tag MUST `t.Fatal` (never silently `t.S
 - Implementation: `internal/agent/tools/<name>.go` (+ `<name>_test.go`).
 - Register it in `cmd/aura/main.go` `buildBaseRegistryWithHandles` (or `buildRegistryWithMCP` if MCP-mounted).
 - Set `Deferred: true` in its `Spec` if the description/schema is large (CLAUDE.md's deferred-tool pattern).
+- If promoting a tool from deferred to always-active, update `internal/agent/tools/always_active_test.go:want` with justification in the comment above it.
 
 **New AG-UI HTTP endpoint:**
 - Handler: `internal/agui/<concern>_api.go`.

@@ -70,6 +70,32 @@ func TestPrompt_Directive(t *testing.T) {
 	if !strings.Contains(SystemPrompt, "Always respond in the operator's language") {
 		t.Error(`system prompt is missing the "Always respond in the operator's language" directive`)
 	}
+	// D-21: "the operator's language" means the language of the operator's most
+	// recent message, which overrides a stored profile preference when the two
+	// differ. This is the only language rule in the prompt (grep -c "operator's
+	// language" == 1 is an acceptance criterion) — it is sharpened in place
+	// rather than duplicated as a second line.
+	if !strings.Contains(SystemPrompt, "most recent message") {
+		t.Error(`system prompt no longer clarifies "the operator's language" as the language of the most recent message (D-21)`)
+	}
+	if strings.Count(SystemPrompt, "operator's language") != 1 {
+		t.Errorf("system prompt must carry exactly ONE language rule, found %d occurrences of \"operator's language\"", strings.Count(SystemPrompt, "operator's language"))
+	}
+}
+
+// TestPrompt_NoLeakedDeliberation asserts the D-21 rule that planning,
+// self-critique and tool-selection reasoning never appear in a user-facing
+// reply — the genuinely missing half of D-21 (the language half already existed
+// and is pinned by TestPrompt_Directive above).
+func TestPrompt_NoLeakedDeliberation(t *testing.T) {
+	for _, needle := range []string{
+		"self-critique",
+		"working notes",
+	} {
+		if !strings.Contains(SystemPrompt, needle) {
+			t.Errorf("system prompt is missing the no-leaked-deliberation rule %q (D-21)", needle)
+		}
+	}
 }
 
 // The shell-call reduction doctrine is no longer asserted here. It did not go away

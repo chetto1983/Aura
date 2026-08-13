@@ -6374,3 +6374,39 @@ non dopo. Oggi vivono solo in scratchpad usa-e-getta.
 > active specification and MUST NOT be re-implemented without a new PRD amendment.
 
 Phase 42 was governed by IC-01..IC-14 and Section 17 of the (now-removed) industrial-conversation-compaction design spec. It delivered provider capability preflight, exact budgets, semantic units and recent tail, proactive L2.4 before L2.5, distributed claim/out-of-transaction inference/serializable CAS finalize, branch manifests, safe structured summaries and authority ledger, typed multimodal references, recursive rebase, separate consent-bound durable memory, LKG recovery, common operator surfaces, and evidence-gated rollout — all dark, none reachable from a live turn.
+
+## §Harness correctness — the ROADMAP `ReplayPolicy` vocabulary claim is withdrawn (Amendment #121, 2026-08-13)
+
+> **Amendment #121 (2026-08-13, Phase 45 planning, D-08 BLOCKING) — two ROADMAP.md claims about
+> a new `ReplayPolicy` vocabulary are falsified by reading the code, and are corrected here
+> before any Phase 45 code lands.**
+>
+> **What was measured, against this working tree at commit `09f91a865`.** The identifier
+> `ReplayReissueExecutes` exists nowhere in the tree — `grep -rn "ReplayReissueExecutes"
+> internal/ cmd/` returns zero matches; it appears only in `.planning/` planning prose.
+> `internal/agent/tools/spec.go:79` declares `ReplayToolResult` as the sole `ReplayPolicy`
+> constant, and `internal/gateway/reserve.go:43` is its only comparison site
+> (`spec.ReplayPolicy != tools.ReplayToolResult`) — a single exact-match guard, not a switch.
+> No file anywhere branches on more than one `ReplayPolicy` value. Separately,
+> `internal/agent/model_round.go` already defines `modelRound{requestID, ordinal}`, already
+> advanced once per non-retry LLM call (`llm_agent.go:353`) and already held across a transport
+> retry (`llm_agent.go:346`) — the round-boundary discriminator ROADMAP §45 said still needed
+> confirming was already present and already correct.
+>
+> **What changes as a result.** ROADMAP.md §Phase 45's `**Rationale**` no longer claims this
+> phase introduces a new `ReplayPolicy` value; the corrected text names `RoundOrdinal` in the
+> child operation key (`deriveToolOperationContext`'s `FingerprintTyped` struct) as the
+> discriminator, citing `internal/agent/model_round.go` as the pre-existing mechanism. ROADMAP
+> §Phase 46's `**Depends on**` line is narrowed in a companion commit to the risk-override and
+> hide-list work only, since `applyMCPOperationMetadata`
+> (`internal/agent/mcptools/bridge.go:230-240`) already fills `OperationScope`,
+> `OperationNormalizer` and `ReplayPolicy` for every `Mutating` bridged tool with the uniform
+> default — there is no second vocabulary value for it to wait for.
+>
+> **What this measurement does NOT prove.** It does not prove no future tool will ever need a
+> second replay policy — the reopening trigger is a tool whose recorded result must never be
+> returned even on a genuine scheduler reclaim, which would also require amending HARN-02 (see
+> `.planning/phases/45-harness-correctness/45-CONTEXT.md` D-07/deferred). It does not prove the
+> round ordinal is correct under concurrent swarm workers: two workers sharing one `RequestID`
+> each run their own ordinal from 1, so identical calls at round 1 can still collide — a
+> pre-existing hazard, unchanged by this phase, deferred to Phase 51 / SWARM-07 (D-05).

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/askuser"
+	"github.com/chetto1983/aura/internal/redact"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/google/uuid"
 )
@@ -301,7 +302,7 @@ func TestApprovalsAPI_ListProjectionSanitizes(t *testing.T) {
 	if strings.Contains(body, "sk-supersecret") {
 		t.Errorf("projection did not sanitize the question (V7): %s", body)
 	}
-	if !strings.Contains(body, "[redacted]") {
-		t.Errorf("projection missing the [redacted] marker: %s", body)
+	if !strings.Contains(body, redact.Placeholder) {
+		t.Errorf("projection missing the %s marker: %s", redact.Placeholder, body)
 	}
 }

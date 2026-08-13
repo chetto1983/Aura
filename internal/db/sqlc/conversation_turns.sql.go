@@ -81,8 +81,8 @@ const insertConversationTurn = `-- name: InsertConversationTurn :exec
 INSERT INTO aura.conversation_turns (
     conversation_id, seq, role, content, content_sidecar_path,
     tool_call_id, tool_calls, input_tokens, output_tokens, cached_tokens,
-    reasoning, reasoning_duration_ms
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    reasoning, reasoning_duration_ms, parent_seq
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NULLIF($2::int - 1, 0))
 `
 
 type InsertConversationTurnParams struct {
@@ -100,6 +100,15 @@ type InsertConversationTurnParams struct {
 	ReasoningDurationMs pgtype.Int8 `json:"reasoning_duration_ms"`
 }
 
+// parent_seq maintains the canonical leaf->root chain the branch walk recurses on
+// (ListRecentTurnsByBranchPath joins `t.seq = p.parent_seq`). It is derived here rather
+// than bound as a parameter so no call site can forget it — which is exactly what
+// happened: 0017 added the column, backfilled `seq - 1` for the rows present at
+// migration time, and gave it no default, so EVERY turn appended since carried NULL. A
+// NULL breaks the join, so a forked branch reconstructed to the forked turn ALONE —
+// measured 2026-08-13 against the live schema, one turn, not even the system head — and
+// the model lost the whole prior conversation on any edit/regenerate.
+// NULLIF keeps seq=1 (the root) at NULL, matching that backfill's `WHERE seq > 1`.
 func (q *Queries) InsertConversationTurn(ctx context.Context, arg InsertConversationTurnParams) error {
 	_, err := q.db.Exec(ctx, insertConversationTurn,
 		arg.ConversationID,

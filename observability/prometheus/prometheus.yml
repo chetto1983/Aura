@@ -9,11 +9,16 @@ rule_files:
   - /etc/prometheus/rules/aura-alerts.yml
 
 scrape_configs:
+  # Service names, not 127.0.0.1. These used to be loopback because Prometheus shared
+  # aura's network namespace; when that namespace was recreated the sharers stayed
+  # attached to the dead one and every target silently went to 0 — measured at five and
+  # a half hours of blind on 2026-08-13. The namespace sharing is gone (see compose),
+  # so a target now resolves through the project network and survives any recreate.
   - job_name: aura
     metrics_path: /metrics
     fallback_scrape_protocol: PrometheusText0.0.4
     static_configs:
-      - targets: [127.0.0.1:9464]
+      - targets: [aura:9464]
 
   - job_name: prometheus
     static_configs:
@@ -21,4 +26,4 @@ scrape_configs:
 
   - job_name: tempo
     static_configs:
-      - targets: [127.0.0.1:3200]
+      - targets: [tempo:3200]

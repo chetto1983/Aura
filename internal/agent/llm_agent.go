@@ -544,6 +544,10 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				return
 			}
 			a.history = append(a.history, llm.Message{Role: llm.RoleAssistant, ToolCalls: calls})
+			// executeBatch dispatches on ic.Ctx, not spanCtx (llm_agent_dispatch.go), so the
+			// tool path never sees the round unless it is re-pointed here — mirrors the
+			// turnCtx/ic.WithContext precedent above for RequestID (D-03).
+			ic = ic.WithContext(withModelRound(ic.Ctx, modelRound))
 			done, infraErr := a.dispatch(ic, spanID, parentSpanID, requestID, calls, &turnU, yield)
 			if infraErr != nil {
 				turnReason = "dispatch_infra_error"

@@ -1,5 +1,5 @@
 ---
-last_mapped_commit: 5adb3d49b9b8cd7ea4f872fbdb7199b4021c9f5c
+last_mapped_commit: 26745a062dd1017c8e9de39a39089bc63559b553
 ---
 
 # External Integrations
@@ -41,7 +41,7 @@ last_mapped_commit: 5adb3d49b9b8cd7ea4f872fbdb7199b4021c9f5c
 **Databases:**
 - **PostgreSQL 18** (`postgres:18.4-alpine3.24`, `compose.yaml:457-476`) — the control plane: schema `aura.*`, `sqlc`-generated typed client (`internal/db/sqlc/`, 31 files), `golang-migrate/migrate/v4` migrations (`internal/db/migrations/`, 94 numbered migrations as of `0094_verification_evidence`). Three role-separated connection strings: `AURA_DB_URL` (`aura_app` role, request path), `AURA_DB_MIGRATE_URL` (`aura_migrate` role, DDL), `AURA_DB_BOOTSTRAP_URL` (superuser bootstrap) — same split pattern reused for ArcadeDB below.
   - Row-level security: `internal/db/rls.go` — multi-tenant isolation enforced at the Postgres layer, not just in application WHERE clauses (`rls_integration_test.go`, `rls_seed_test.go` present across several packages: `agui`, `gateway`, `telegram`).
-- **ArcadeDB 26.7.3** (`arcadedata/arcadedb:26.7.3`, `compose.yaml:506-567`) — long-term bitemporal memory (facts with `valid_from`/`valid_to` + supersede), native vector index (`LSM_VECTOR`) and full-text search in the same engine. **One database per identity** (`mem_<uuid>`), created on first use by the tenant resolver (`cmd/arcadedb-mcp/main.go:78-101`), never at boot. Requires ≥26.4.2 (CVE-2026-44221 gate, `VerifySecureVersion`). HTTP API (`:2480`) is Aura's own client's transport (`internal/arcadedb/client.go` — chosen over ArcadeDB's *own* MCP server because that one's `query` tool has no bind parameters and only 10 generic tools). A Bolt plugin (`:7687`) is also enlisted — load-bearing for the Python ingest sidecar, which writes via CocoIndex's stock Neo4j/Bolt connector rather than a bespoke writer.
+- **ArcadeDB 26.7.3** (`arcadedata/arcadedb:26.7.3`, `compose.yaml:506-567`) — long-term bitemporal memory (facts with `valid_from`/`valid_to` + supersede), native vector index (`LSM_VECTOR`) and full-text search in the same engine. **One database per identity** (`mem_<uuid>`), created on first use by the tenant resolver (`cmd/arcadedb-mcp/main.go:78-101`), never at boot. Requires ≥26.4.2 (CVE-2026-44221 gate, `VerifySecureVersion` reiects lower versions). HTTP API (`:2480`) is Aura's own client's transport (`internal/arcadedb/client.go` — chosen over ArcadeDB's *own* MCP server because that one's `query` tool has no bind parameters and only 10 generic tools). A Bolt plugin (`:7687`) is also enlisted — load-bearing for the Python ingest sidecar, which writes via CocoIndex's stock Neo4j/Bolt connector rather than a bespoke writer.
   - Credential derivation: `internal/arcadedb/tenant.go` — per-tenant password is `base64(HMAC-SHA256(AURA_ARCADEDB_TENANT_SECRET, database_name))`, never stored (`internal/arcadedb/tenant.go:69-77,109-112`). Two credential tiers: `ARCADEDB_APP_USER`/`ARCADEDB_APP_PASSWORD` (per-database, scoped) and `ARCADEDB_ADMIN_USER=root`/`ARCADEDB_PASSWORD` (server-level, DDL/database-create/drop only).
   - Backup: ArcadeDB's own `AutoBackupSchedulerPlugin` (`docker/arcadedb/backup.json`), hot/non-blocking, tiered retention (7 daily / 4 weekly / 6 monthly) — chosen because nothing outside ArcadeDB knows the full tenant-database list.
 
@@ -60,7 +60,7 @@ last_mapped_commit: 5adb3d49b9b8cd7ea4f872fbdb7199b4021c9f5c
 ## Authentication & Identity
 
 **Auth Provider:**
-- **Authula** (`github.com/Authula/authula` v1.34.0) — embedded (in-process, not a separate service) auth/session provider, wired through `internal/webauth/authula.go`. Backed by its own Postgres tables (`AURA_AUTHULA_DATABASE_URL`, falls back to the main `AURA_DB_URL` when unset) and secret (`AURA_AUTHULA_SECRET`). Rate-limited (`AURA_AUTHULA_RATE_LIMIT_MAX`, default 30) and supports a designated operator identity (`AURA_AUTHULA_OPERATOR_IDENTITY`).
+- **Authula** (`github.com/Authula/authula` v1.40.0) — embedded (in-process, not a separate service) auth/session provider, wired through `internal/webauth/authula.go`. Backed by its own Postgres tables (`AURA_AUTHULA_DATABASE_URL`, falls back to the main `AURA_DB_URL` when unset) and secret (`AURA_AUTHULA_SECRET`). Rate-limited (`AURA_AUTHULA_RATE_LIMIT_MAX`, default 30) and supports a designated operator identity (`AURA_AUTHULA_OPERATOR_IDENTITY`).
 - `AURA_WEB_AUTH_PROVIDER` defaults to `authula`; `AURA_WEB_TRUST_PROXY` gates whether the cockpit's `0.0.0.0:9080` bind is allowed to boot without Authula configured (reverse-proxy-trusted alternative).
 - Session validation: `internal/webauth/session_validate.go`; identity linking (e.g. Telegram account ↔ web identity): `internal/webauth/identity_link.go`.
 - MUSR (multi-user single-role) isolation is a separate deployment-time flag (`AURA_MUSR_ISOLATION`), gating whether onboarding provisions more than one identity — independent of which auth provider is configured.
@@ -71,7 +71,7 @@ last_mapped_commit: 5adb3d49b9b8cd7ea4f872fbdb7199b4021c9f5c
 - None found — no Sentry/Rollbar/Bugsnag-style SDK in `go.mod`.
 
 **Metrics & Tracing:**
-- **OpenTelemetry** (`go.opentelemetry.io/otel` v1.44.0 family) — `internal/obs`, `internal/tracesink`; exporter selectable via `AURA_OTEL_EXPORTER` (`none` default) and `AURA_OTEL_ENDPOINT` (OTLP gRPC target, default `localhost:4317`), or `stdouttrace` for local debug.
+- **OpenTelemetry** (`go.opentelemetry.io/otel` v1.45.0 family) — `internal/obs`, `internal/tracesink`; exporter selectable via `AURA_OTEL_EXPORTER` (`none` default) and `AURA_OTEL_ENDPOINT` (OTLP gRPC target, default `localhost:4317`), or `stdouttrace` for local debug.
 - **Prometheus** (`github.com/prometheus/client_golang`) — `/metrics` exposition mounted in `internal/agui/server.go` (`promhttp` import), scraped by the optional `prometheus` compose service (`profiles:[observability]`, shares `aura`'s network namespace so the loopback metrics listener stays private).
 - **Tempo** (`grafana/tempo:2.9.4`) — trace storage, same `observability` profile, receives via OTLP.
 - **Grafana** (`grafana/grafana:12.3.9`) — dashboards, published on loopback only (`AURA_GRAFANA_PORT`, default 3000), anonymous-viewer auth enabled for local convenience (`GF_AUTH_ANONYMOUS_ENABLED=true`), depends on both Prometheus and Tempo being healthy.
@@ -124,6 +124,14 @@ last_mapped_commit: 5adb3d49b9b8cd7ea4f872fbdb7199b4021c9f5c
 - `whatsapp` → `ghcr.io/chetto1983/whatsapp-mcp:sidecar` (forked `whatsmeow` bridge), streamable-HTTP
 - Generic stdio MCP servers declared via `AURA_MCP_CONFIG`/operator config (`internal/mcp/client.go` spawns any `command`+`args`+`env` server speaking newline-delimited JSON-RPC 2.0, protocol version `2024-11-05`)
 - SSRF/egress policy (`internal/mcp/ssrf.go`, `internal/mcp/egress_policy.go`) and per-server trust classification (`internal/mcp/classify.go`) govern what a mounted server's tools are allowed to reach and how they are surfaced to the LLM
+
+## Skills Integration
+
+**Built-in Skill Tool:**
+- `internal/agent/tools/skill.go` — defines the read-only `skill` tool (list, info, use actions), non-deferred and non-mutating. The manifest of installed skills is now rendered into the messages[1] always-block (via `skills.RenderAlwaysBlock`) rather than embedded in this tool's Description, protecting the prompt cache from invalidation on every skill add/remove. The tool carries a constant byte-stable description directing the model to read that always-block.
+- `internal/agent/tools/skill_manage.go` — defines the `skill_manage` tool (create, update, delete, install, save_snippet, restore, archive actions), deferred and mutating, dispatches against the same underlying `SkillTool` loader/writer/alerter seams so writes are visible to reads in the same turn. The read tool is non-deferred to keep skill discovery cheap; the write tool is deferred to split the authoring grammar into a separate manifest entry (measured 1081 tokens as a floor, 74% of it prose per-action).
+- Both tools dispatched through `internal/agent/tools/action.go` ActionRouter pattern (mirroring the `task` tool's architecture), with per-action error handling and no panic surface.
+- Skill catalogue composition: `internal/skills/registry.go` → `Loader.ManifestDescription()` renders alphabetical installed-skills list (D-06, byte-stable) and `Loader.List()` ranks by BM25 when the manifest is too large for overflow (`skill_manage` action=list query=<query>).
 
 ## AG-UI / SSE Gateway
 

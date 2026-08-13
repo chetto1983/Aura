@@ -40,26 +40,48 @@ func bindServeListener(address string, listen listenFunc) (net.Listener, error) 
 	return listener, nil
 }
 
-func bindPrivateMetricsListener(address string, listen listenFunc) (net.Listener, error) {
+// bindMetricsListener binds the /metrics listener. It defaults to loopback (config.go)
+// and WARNS on anything else, where it used to refuse outright.
+//
+// The refusal was checking the wrong thing. Inside a container the bind address says
+// nothing about who can reach the socket: what decides exposure is whether the port is
+// PUBLISHED, and that lives in compose, not here. Refusing 0.0.0.0 therefore blocked the
+// ordinary, private arrangement — Prometheus in its own container on the project network
+// — while doing nothing about the genuinely dangerous one, a published port, which this
+// function cannot even see.
+//
+// The cost of that mistake was measured on 2026-08-13: to keep the listener on loopback
+// the observability pack had to share aura's network namespace, and when the namespace
+// owner was recreated the sharers stayed attached to a dead one. `up{job="aura"}` sat at
+// 0 for five and a half hours with nobody informed (docker/compose#6626 — still open, no
+// fix upstream). A guard that forces a fragile topology is not a safety feature.
+//
+// A non-loopback bind is still worth saying out loud, so it is logged at WARN with the
+// one condition that makes it safe.
+func bindMetricsListener(address string, listen listenFunc) (net.Listener, error) {
 	if listen == nil {
-		return nil, errors.New("bind private metrics listener: listener factory is nil")
+		return nil, errors.New("bind metrics listener: listener factory is nil")
 	}
 	host, _, err := net.SplitHostPort(address)
 	if err != nil {
-		return nil, fmt.Errorf("bind private metrics listener %s: %w", address, err)
+		return nil, fmt.Errorf("bind metrics listener %s: %w", address, err)
 	}
 	ip := net.ParseIP(host)
 	if host != "localhost" && (ip == nil || !ip.IsLoopback()) {
-		return nil, fmt.Errorf("bind private metrics listener %s: address must be loopback", address)
+		slog.Warn("metrics listener is not loopback",
+			"address", address,
+			"safe_when", "the port is not published to the host and the network is private",
+			"detail", "/metrics carries no credentials but does expose token counts, "+
+				"tool names and error classes")
 	}
 	listener, err := listen("tcp", address)
 	if err != nil {
-		return nil, fmt.Errorf("bind private metrics listener %s: %w", address, err)
+		return nil, fmt.Errorf("bind metrics listener %s: %w", address, err)
 	}
 	return listener, nil
 }
 
-func newPrivateMetricsServer(address string, handler http.Handler) *http.Server {
+func newMetricsServer(address string, handler http.Handler) *http.Server {
 	mux := http.NewServeMux()
 	mux.Handle("GET /metrics", handler)
 	return &http.Server{
