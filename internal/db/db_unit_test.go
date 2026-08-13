@@ -357,12 +357,14 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A deliberate pin, moved deliberately: 0094_verification_evidence landed the
-	// coding verification ledger. The test exists so a migration added without
-	// noticing breaks the build rather than the deployment, so bumping it is the
-	// intended way to acknowledge one -- never a fixup to make a red go away.
-	if head != 94 {
-		t.Fatalf("MigrationHead=%d, want embedded head 94", head)
+	// A deliberate pin, moved deliberately: 0095_backfill_parent_seq repairs the canonical
+	// parent_seq chain on rows written before InsertConversationTurn started deriving it
+	// (measured on the live deployment: 662 turns whose branch walk still died on a NULL).
+	// The test exists so a migration added without noticing breaks the build rather than
+	// the deployment, so bumping it is the intended way to acknowledge one -- never a
+	// fixup to make a red go away.
+	if head != 95 {
+		t.Fatalf("MigrationHead=%d, want embedded head 95", head)
 	}
 }
 
