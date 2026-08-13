@@ -337,6 +337,10 @@
           "items": {
             "additionalProperties": false,
             "properties": {
+              "fact_key": {
+                "description": "identifies this fact for a later correction; pass it back as supersedes_fact_key",
+                "type": "string"
+              },
               "object": {
                 "type": "string"
               },
@@ -635,6 +639,10 @@
           "items": {
             "additionalProperties": false,
             "properties": {
+              "fact_key": {
+                "description": "identifies this fact for a later correction; pass it back as supersedes_fact_key",
+                "type": "string"
+              },
               "object": {
                 "type": "string"
               },
@@ -823,6 +831,10 @@
           "items": {
             "additionalProperties": false,
             "properties": {
+              "fact_key": {
+                "description": "identifies this fact for a later correction; pass it back as supersedes_fact_key",
+                "type": "string"
+              },
               "object": {
                 "type": "string"
               },
@@ -928,7 +940,7 @@
       "idempotentHint": false,
       "readOnlyHint": false
     },
-    "description": "Store one fact as a bitemporal edge between two entities. A fact is never overwritten: when it is superseded its validity window is closed, so both what is true now and what was true then stay answerable.",
+    "description": "Store one fact as a bitemporal edge between two entities. A fact is never overwritten: when it is superseded its validity window is closed, so both what is true now and what was true then stay answerable. To correct a fact precisely, set supersedes_fact_key to the fact_key a prior recall returned. Without it, supersedes:true resolves the subject+predicate match itself: exactly one candidate closes; zero or more than one candidate REFUSES -- the call still succeeds, refused is true, and candidates carries the previews (each with its own fact_key) to retry with supersedes_fact_key.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -984,6 +996,10 @@
           "description": "close any still-valid fact with the same subject and predicate",
           "type": "boolean"
         },
+        "supersedes_fact_key": {
+          "description": "the fact_key of the exact fact to close, taken from a prior recall result; set this to disambiguate after a refused correction",
+          "type": "string"
+        },
         "user_identifier": {
           "description": "the Aura identity whose memory this is; each identity has its own database and cannot reach another's",
           "type": "string"
@@ -1011,6 +1027,89 @@
     "outputSchema": {
       "additionalProperties": false,
       "properties": {
+        "candidates": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "fact_key": {
+                "description": "identifies this fact for a later correction; pass it back as supersedes_fact_key",
+                "type": "string"
+              },
+              "object": {
+                "type": "string"
+              },
+              "object_kind": {
+                "type": "string"
+              },
+              "predicate": {
+                "type": "string"
+              },
+              "sources": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "memory_ids": {
+                      "description": "message or memory ids supporting this fact",
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": [
+                        "null",
+                        "array"
+                      ]
+                    },
+                    "run_id": {
+                      "description": "the extraction or operator run supporting this fact",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "run_id"
+                  ],
+                  "type": "object"
+                },
+                "type": [
+                  "null",
+                  "array"
+                ]
+              },
+              "statement": {
+                "type": "string"
+              },
+              "subject": {
+                "type": "string"
+              },
+              "subject_kind": {
+                "type": "string"
+              },
+              "valid_from": {
+                "type": "string"
+              },
+              "valid_to": {
+                "description": "absent while the fact still holds",
+                "type": "string"
+              }
+            },
+            "required": [
+              "statement",
+              "predicate",
+              "subject",
+              "object",
+              "sources"
+            ],
+            "type": "object"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "refused": {
+          "type": "boolean"
+        },
         "statement": {
           "type": "string"
         },
@@ -1021,7 +1120,8 @@
       },
       "required": [
         "statement",
-        "superseded"
+        "superseded",
+        "refused"
       ],
       "type": "object"
     },

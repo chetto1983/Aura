@@ -67,7 +67,12 @@ func addMemoryUpsertFactTool(server *mcp.Server, tenants *tenants, now clock) {
 		Title: "Remember a fact",
 		Description: "Store one fact as a bitemporal edge between two entities. A fact is " +
 			"never overwritten: when it is superseded its validity window is closed, so " +
-			"both what is true now and what was true then stay answerable.",
+			"both what is true now and what was true then stay answerable. To correct a " +
+			"fact precisely, set supersedes_fact_key to the fact_key a prior recall " +
+			"returned. Without it, supersedes:true resolves the subject+predicate match " +
+			"itself: exactly one candidate closes; zero or more than one candidate " +
+			"REFUSES -- the call still succeeds, refused is true, and candidates carries " +
+			"the previews (each with its own fact_key) to retry with supersedes_fact_key.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false},
 	}, memoryUpsertFactHandler(tenants, now))
 }
@@ -93,6 +98,7 @@ func memoryUpsertFactHandler(
 		if err != nil {
 			return nil, MemoryUpsertFactOutput{}, err
 		}
+		targetFactKey := strings.TrimSpace(in.SupersedesFactKey)
 		fact := arcadedb.Fact{
 			Subject:     in.Subject,
 			SubjectKind: in.SubjectKind,
@@ -102,7 +108,12 @@ func memoryUpsertFactHandler(
 			Statement:   in.Statement,
 			ValidFrom:   validFrom,
 			ValidTo:     validTo,
-			Supersedes:  in.Supersedes,
+			// A supplied supersedes_fact_key always means "close this one
+			// fact" (D-15), whether or not the model also set supersedes --
+			// naming an exact key and forgetting the boolean must not
+			// silently no-op the correction.
+			Supersedes:    in.Supersedes || targetFactKey != "",
+			TargetFactKey: targetFactKey,
 			Source: arcadedb.FactSource{
 				RunID: in.Source.RunID, MemoryIDs: in.Source.MemoryIDs,
 			},
@@ -114,6 +125,9 @@ func memoryUpsertFactHandler(
 		return nil, MemoryUpsertFactOutput{
 			Statement:  written.Statement,
 			Superseded: written.Superseded,
+			Refused:    written.Refused,
+			Reason:     written.Reason,
+			Candidates: toHits(written.Candidates),
 		}, nil
 	}
 }
@@ -334,6 +348,7 @@ func toHits(hits []arcadedb.FactHit) []MemorySearchHit {
 			ValidFrom:   hit.ValidFrom,
 			ValidTo:     hit.ValidTo,
 			Sources:     sources,
+			FactKey:     hit.FactKey,
 		})
 	}
 	return out
