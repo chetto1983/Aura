@@ -2,11 +2,15 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/idempotency"
 	"github.com/chetto1983/aura/internal/scoring"
 	"github.com/chetto1983/aura/internal/toolinvocations"
 )
@@ -95,8 +99,11 @@ func TestReserveFailClosed(t *testing.T) {
 	}
 }
 
-// TestReplayResultMissingSidecar proves Pitfall 6: a recorded end whose sidecar is gone
-// replays the capped preview plus a result-expired marker with no error and no FullPath.
+// TestReplayResultMissingSidecar proves Pitfall 6 AND D-10's composition rule: a
+// recorded end whose sidecar is gone replays the capped preview plus BOTH the
+// result-expired marker and the replayed marker, with no error and no FullPath.
+// The two markers answer different questions (the body is gone / this result was
+// not produced by this call) and neither replaces the other.
 func TestReplayResultMissingSidecar(t *testing.T) {
 	res := replayResult(&toolinvocations.Event{
 		ResultPreview:     "partial preview",
@@ -108,6 +115,26 @@ func TestReplayResultMissingSidecar(t *testing.T) {
 	}
 	if !strings.Contains(res.Preview, "partial preview") || !strings.Contains(res.Preview, "result expired") {
 		t.Fatalf("preview = %q, want the partial preview + a result-expired marker", res.Preview)
+	}
+	if !strings.Contains(res.Preview, "replayed") {
+		t.Fatalf("preview = %q, want it to ALSO carry the replayed marker (D-10 composition)", res.Preview)
+	}
+}
+
+// TestReplayResultAppendsReplayedMarkerOnDuplicate proves D-10's core Layer A case:
+// a normal (sidecar-present) reservation duplicate carries the recorded preview
+// text AND the replayed marker, so the model can tell this result apart from a
+// fresh execution.
+func TestReplayResultAppendsReplayedMarkerOnDuplicate(t *testing.T) {
+	res := replayResult(&toolinvocations.Event{
+		ResultPreview: "recorded-output",
+		ResultBytes:   15,
+	})
+	if !strings.Contains(res.Preview, "recorded-output") {
+		t.Fatalf("preview = %q, want the recorded output preserved", res.Preview)
+	}
+	if !strings.Contains(res.Preview, "replayed") {
+		t.Fatalf("preview = %q, want the replayed marker appended", res.Preview)
 	}
 }
 
@@ -139,10 +166,69 @@ func TestReserveDeniesAnUnaccountedPriorDispatch(t *testing.T) {
 }
 
 // The defensive branch of replayResult is unreachable through reserve, but if a future caller
-// reintroduces it the wording must not imply the effect happened.
+// reintroduces it the wording must not imply the effect happened. It must also NOT gain the
+// replayed marker (D-10 probe edge, empty case): this is not a replay of a result, and
+// labelling it as one would tell the model a recorded result exists where none does.
 func TestReplayResultNilEndSaysTheToolDidNotRun(t *testing.T) {
 	res := replayResult(nil)
 	if !strings.Contains(res.Preview, "did NOT run") {
 		t.Fatalf("preview = %q, want it to state the tool did not run", res.Preview)
+	}
+	if strings.Contains(res.Preview, "replayed") {
+		t.Fatalf("preview = %q, must NOT carry the replayed marker (no result was recorded)", res.Preview)
+	}
+}
+
+// TestDecodeOperationReplayAppendsReplayedMarkerFromBody proves D-10's Layer B case
+// on the JSON-Body branch: decodeOperationReplay's decoded result carries the
+// replayed marker in its Preview.
+func TestDecodeOperationReplayAppendsReplayedMarkerFromBody(t *testing.T) {
+	body, err := json.Marshal(tools.ToolResult{Preview: "layer-b-body-output", Bytes: 20})
+	if err != nil {
+		t.Fatalf("marshal fixture: %v", err)
+	}
+	res, err := decodeOperationReplay(&idempotency.ReplayResult{Body: body, ExpiresAt: time.Now().UTC()})
+	if err != nil {
+		t.Fatalf("decodeOperationReplay err: %v", err)
+	}
+	if !strings.Contains(res.Preview, "layer-b-body-output") {
+		t.Fatalf("preview = %q, want the decoded body preview preserved", res.Preview)
+	}
+	if !strings.Contains(res.Preview, "replayed") {
+		t.Fatalf("preview = %q, want the replayed marker appended", res.Preview)
+	}
+}
+
+// TestDecodeOperationReplayAppendsReplayedMarkerFromPreviewSidecar proves D-10's
+// Layer B case on the preview/sidecar branch (no Body): the marker is appended
+// here too — this is genuinely new code, not a mirror of an existing append site
+// (PATTERNS.md §1).
+func TestDecodeOperationReplayAppendsReplayedMarkerFromPreviewSidecar(t *testing.T) {
+	res, err := decodeOperationReplay(&idempotency.ReplayResult{
+		Preview: "layer-b-sidecar-output", SidecarRef: "/some/sidecar.result", ExpiresAt: time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("decodeOperationReplay err: %v", err)
+	}
+	if !strings.Contains(res.Preview, "layer-b-sidecar-output") {
+		t.Fatalf("preview = %q, want the sidecar-branch preview preserved", res.Preview)
+	}
+	if !strings.Contains(res.Preview, "replayed") {
+		t.Fatalf("preview = %q, want the replayed marker appended", res.Preview)
+	}
+	if res.FullPath != "/some/sidecar.result" {
+		t.Fatalf("FullPath = %q, want the sidecar ref preserved", res.FullPath)
+	}
+}
+
+// TestDecodeOperationReplayNilOrEmptyReturnsErrorNoMarker proves D-10's probe edge
+// (empty case) for Layer B: a nil replay, and a fully-empty replay, both keep their
+// existing error and gain no marker — there is no result to label as replayed.
+func TestDecodeOperationReplayNilOrEmptyReturnsErrorNoMarker(t *testing.T) {
+	if _, err := decodeOperationReplay(nil); err == nil {
+		t.Fatal("decodeOperationReplay(nil) must return an error")
+	}
+	if _, err := decodeOperationReplay(&idempotency.ReplayResult{}); err == nil {
+		t.Fatal("decodeOperationReplay(empty) must return an error")
 	}
 }
