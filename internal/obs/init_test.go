@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/chetto1983/aura/internal/redact"
 )
 
 type secretStringer string
@@ -102,7 +104,7 @@ func TestInitRedactsErrorsStringersLogValuersAndNestedGroups(t *testing.T) {
 			t.Fatalf("JSON log leaked %q: %s", secret, line)
 		}
 	}
-	if got := strings.Count(line, "[redacted]"); got < 4 {
+	if got := strings.Count(line, redact.Placeholder); got < 4 {
 		t.Fatalf("JSON log redaction count = %d, want at least 4: %s", got, line)
 	}
 }

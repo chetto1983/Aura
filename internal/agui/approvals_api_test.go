@@ -20,6 +20,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/redact"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/db"
@@ -145,7 +146,7 @@ func TestApprovalsAPI_ListCrossThread(t *testing.T) {
 	if strings.Contains(question[tokC], "supersecret") {
 		t.Errorf("question leaked a secret unredacted: %q", question[tokC])
 	}
-	if !strings.Contains(question[tokC], "[redacted]") {
-		t.Errorf("question was not sanitized (no [redacted] marker): %q", question[tokC])
+	if !strings.Contains(question[tokC], redact.Placeholder) {
+		t.Errorf("question was not sanitized (no %s marker): %q", redact.Placeholder, question[tokC])
 	}
 }

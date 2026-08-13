@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/events"
+	"github.com/chetto1983/aura/internal/redact"
 )
 
 // TestRendererRunErrorRendersSanitizedReason proves a RUN_ERROR is surfaced to the
@@ -33,8 +34,8 @@ func TestRendererRunErrorRendersSanitizedReason(t *testing.T) {
 	if strings.Contains(last.text, "s3cr3t") || strings.Contains(last.text, "postgres://aura:") {
 		t.Errorf("the failure send must be sanitized (no DSN/credential), got %q", last.text)
 	}
-	if !strings.Contains(last.text, "[redacted]") {
-		t.Errorf("the DSN must collapse to a [redacted] marker, got %q", last.text)
+	if !strings.Contains(last.text, redact.Placeholder) {
+		t.Errorf("the DSN must collapse to a %s marker, got %q", redact.Placeholder, last.text)
 	}
 }
 
