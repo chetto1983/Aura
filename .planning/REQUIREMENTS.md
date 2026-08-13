@@ -27,8 +27,8 @@
 ### Harness correctness
 
 - [ ] **HARN-01**: A mutating tool call re-issued in the same turn with identical arguments executes again and returns a fresh result, never a recorded one
-- [ ] **HARN-02**: A genuinely retried dispatch (CLI or scheduler restart, approval resume) still executes at most once
-- [ ] **HARN-03**: When a replay is correct, the returned result is labelled as replayed so the model can tell it apart from a fresh execution
+- [x] **HARN-02**: A genuinely retried dispatch (CLI or scheduler restart, approval resume) still executes at most once
+- [x] **HARN-03**: When a replay is correct, the returned result is labelled as replayed so the model can tell it apart from a fresh execution
 - [ ] **HARN-04**: A memory correction closes exactly the fact it names and leaves sibling facts sharing the same subject and predicate untouched
 - [ ] **HARN-05**: Several memory operations apply as one atomic call, validated on the final state, so a correction cannot destroy what it was meant to replace
 - [ ] **HARN-06**: A turn does not end on a stated-but-unexecuted intention — either the action runs, or the turn says plainly it did not and why
@@ -69,6 +69,7 @@
   all — but those 16 cover coding alone, while these 14 must also carry documents, memory,
   comms, scheduling and delegation. The budget is stricter than the comparison suggests
   and has no slack
+
 - [ ] **TOOL-02**: The model is never asked to supply a parameter the host overwrites and discards
 - [ ] **TOOL-03**: A withheld destructive action is raised and resolved by the host; the model never relays a resume payload. **Carve-out:** the swarm relay fields (`proxied_from_child_id`, `proxied_tool_call_id`) stay — a headless worker has already returned its report by the time the parent relays its question, so which worker asked is knowledge only the parent holds. Removing them would leave a worker's question unattributed or undeliverable
 - [ ] **TOOL-04**: Scheduling a task takes one natural-language `when` instead of five mutually exclusive time fields
@@ -82,11 +83,13 @@
 - [ ] **TOOL-13**: `read_tool_output` stops occupying a loaded slot. Paging a large output should use the file tool that already exists — **neither reference harness has a bespoke paging tool**: hermes writes the spill to a file (*"the model can `read_file` to access the full output"*) and Claude Code's 16 tools have none either (`Read` takes `offset`/`limit`; `BashOutput` is for live background shells, not completed results). Two independent harnesses, no third way.
 
   **Deleting it outright is the goal, and it is not trivial — three sub-problems, to be sized before committing to the full form:**
+
   1. **Filesystem boundary.** Sidecars live host-side in `AURA_RUN_DIR` (absolute, swept on a timer); `fs_read` reads inside the sandbox container under `/workspace`. The spill must land somewhere the sandboxed reader can reach.
   2. **Description debt.** `fs_read`'s own text says *"A large result pages to a sidecar you read with read_tool_output"* — every description naming the tool has to be rewritten with it (SURF-02 territory).
   3. **GC contract.** `AURA_RUN_DIR` is swept and `reserve.go`'s `resultExpiredMarker` depends on that. A spill in the persistent `/workspace` either accumulates in the operator's own space or needs its own sweep.
 
   **Fallback if (1) proves expensive: keep the tool but make it deferred rather than loaded.** That recovers the manifest slot — the actual scarce resource under TOOL-01 — at near-zero cost, and paging a result is rare enough that one search round trip is acceptable. The L1 eviction pointer keeps working unchanged
+
 - [ ] **TOOL-14**: The PRD amendment ratifying the tool-surface tier change is committed **before** any of its code. It must (a) supersede amendment **A4** (2026-05-30, `prd.md:751,783`) by name, which declares `read_tool_output` a *"Builtin non-deferred"* with a byte-paging contract that TOOL-13 changes; (b) extend amendment **#44** (`prd.md:1371`), which already ratified `sandbox_exec` as *"non-deferred di proposito"* because a live E2E showed the model cramming a whole command line into one argument when it could not see the schema — *"il modello DEVE vedere lo schema"*; and (c) change the tiering axis stated at `prd.md:154` from **size** (*"Tool grandi → Deferred: true"*) to **frequency plus a hard count budget**. Covers TOOL-01, TOOL-13 and MCP-04. This is an extension of ratified reasoning, not a reversal of it
 - [ ] **TOOL-11**: Finding files by name and searching their contents are one tool (`target: files | content`). **This reverses an earlier decision in this document.** The research established that five of six vendor harnesses — Claude Code included — keep them separate, and on that evidence the merge was parked pending telemetry. TOOL-01's hard cap overrules it: those vendors spend 16 slots on coding alone and can afford two, while Aura must fit documents, memory, comms, scheduling and delegation into the same budget. The cap forces the merge; the vendor evidence still says it is the weaker shape, and that tension is recorded rather than resolved
 
@@ -180,7 +183,7 @@
 ### Acceptance
 
 - [ ] **ACC-01**: **Mandatory, every requirement, no exceptions.** A requirement is verified only by a real conversation with the running Aura, scored on the answer she actually gave and the artifact or state she actually produced. A passing test — unit, integration, race, or smoke — is **not** evidence that a requirement is met. Tests keep the code honest; they say nothing about whether the agent behaves. Any requirement whose only evidence is a green suite is **not done**
-- [ ] **ACC-02**: Phase evidence is read from OpenTelemetry traces, `aura.tool_invocations`, `aura.conversation_turns` and `aura.context_rot_events` — no new eval harness is built
+- [x] **ACC-02**: Phase evidence is read from OpenTelemetry traces, `aura.tool_invocations`, `aura.conversation_turns` and `aura.context_rot_events` — no new eval harness is built
 - [ ] **ACC-03**: **Milestone exit gate.** With the nine `learned_lesson` facts and the `always-deliver-files` skill deleted, replaying the audited scenarios produces correct tool choice, automatic delivery and successful self-retrieval — and Aura does not re-learn any retired lesson
 
 ## v2 Requirements
@@ -229,7 +232,7 @@ Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-54).
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | ACC-01 | Phase 45 | Pending |
-| ACC-02 | Phase 45 | Pending |
+| ACC-02 | Phase 45 | Complete |
 | ACC-03 | Phase 54 | Pending |
 | AUTO-01 | Phase 47 | Pending |
 | AUTO-02 | Phase 47 | Pending |
@@ -247,8 +250,8 @@ Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-54).
 | CTX-07 | Phase 50 | Pending |
 | CTX-08 | Phase 50 | Pending |
 | HARN-01 | Phase 45 | Pending |
-| HARN-02 | Phase 45 | Pending |
-| HARN-03 | Phase 45 | Pending |
+| HARN-02 | Phase 45 | Complete |
+| HARN-03 | Phase 45 | Complete |
 | HARN-04 | Phase 45 | Pending |
 | HARN-05 | Phase 49 | Pending |
 | HARN-06 | Phase 45 | Pending |
@@ -307,6 +310,7 @@ Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-54).
 | TOOL-14 | Phase 46 | Pending |
 
 **Coverage:**
+
 - v1 requirements: 77 total
 - Mapped to phases: 77
 - Unmapped: 0 ✓

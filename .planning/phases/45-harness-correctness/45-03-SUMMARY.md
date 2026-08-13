@@ -179,3 +179,19 @@ All three tasks show a `test(...)` commit immediately followed by a `feat(...)` 
 ---
 *Phase: 45-harness-correctness*
 *Completed: 2026-08-13*
+
+## Self-Check: PASSED
+
+- FOUND: internal/gateway/guard.go
+- FOUND: internal/gateway/guard_test.go
+- FOUND: internal/agent/llm_agent_replay_layer_test.go
+- FOUND: internal/gateway/reserve.go
+- FOUND: .planning/phases/45-harness-correctness/45-03-SUMMARY.md
+- FOUND: ecd5cd09f (Task 1 RED)
+- FOUND: 90dfdd21d (Task 1 GREEN)
+- FOUND: 58c282893 (Task 1 chore — bring onto phase branch)
+- FOUND: 2893c1110 (Task 2 RED)
+- FOUND: 75c0fb660 (Task 2 GREEN)
+- FOUND: fac25ba38 (Task 3 RED)
+- FOUND: 6be1324b7 (Task 3 GREEN)
+- FOUND: 8310206d5 (SUMMARY.md commit)
