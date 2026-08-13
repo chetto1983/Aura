@@ -15,7 +15,7 @@ import (
 func TestToolManifestMatchesServer(t *testing.T) {
 	ctx := t.Context()
 	clientTransport, serverTransport := mcp.NewInMemoryTransports()
-	serverSession, err := newServer(nil, time.Now).Connect(ctx, serverTransport, nil)
+	serverSession, err := newServer(nil, time.Now, "").Connect(ctx, serverTransport, nil)
 	if err != nil {
 		t.Fatalf("connect server: %v", err)
 	}

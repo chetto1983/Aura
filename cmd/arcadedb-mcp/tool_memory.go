@@ -61,7 +61,7 @@ type MemoryUpsertFactOutput struct {
 	Candidates []MemorySearchHit `json:"candidates,omitempty"`
 }
 
-func addMemoryUpsertFactTool(server *mcp.Server, tenants *tenants, now clock) {
+func addMemoryUpsertFactTool(server *mcp.Server, tenants *tenants, now clock, operatorDisplayName string) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:  "memory_upsert_fact",
 		Title: "Remember a fact",
@@ -74,12 +74,13 @@ func addMemoryUpsertFactTool(server *mcp.Server, tenants *tenants, now clock) {
 			"REFUSES -- the call still succeeds, refused is true, and candidates carries " +
 			"the previews (each with its own fact_key) to retry with supersedes_fact_key.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false},
-	}, memoryUpsertFactHandler(tenants, now))
+	}, memoryUpsertFactHandler(tenants, now, operatorDisplayName))
 }
 
 func memoryUpsertFactHandler(
 	tenants *tenants,
 	now clock,
+	operatorDisplayName string,
 ) mcp.ToolHandlerFor[MemoryUpsertFactInput, MemoryUpsertFactOutput] {
 	return func(
 		ctx context.Context,
@@ -99,8 +100,12 @@ func memoryUpsertFactHandler(
 			return nil, MemoryUpsertFactOutput{}, err
 		}
 		targetFactKey := strings.TrimSpace(in.SupersedesFactKey)
+		// MEM-04 (D-19): rewritten here, before arcadedb.Fact is built, so the
+		// bridge, the CLI and host-driven writes are all covered -- the bridge
+		// alone (withMemoryUserIdentifier) would miss the latter two.
+		subject := canonicalSubject(in.Subject, in.UserIdentifier, operatorDisplayName)
 		fact := arcadedb.Fact{
-			Subject:     in.Subject,
+			Subject:     subject,
 			SubjectKind: in.SubjectKind,
 			Predicate:   in.Predicate,
 			Object:      in.Object,
@@ -352,4 +357,13 @@ func toHits(hits []arcadedb.FactHit) []MemorySearchHit {
 		})
 	}
 	return out
+}
+
+// canonicalSubject rewrites a subject naming the operator -- by identity
+// UUID or by the configured display name -- to one canonical form (MEM-04,
+// D-19). RED stub: identity passthrough, wired at the call site but not yet
+// implemented, so the call site compiles and today's behaviour is
+// unchanged until the GREEN commit gives it a body.
+func canonicalSubject(subject, identityID, displayName string) string {
+	return subject
 }

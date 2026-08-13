@@ -86,7 +86,7 @@ func upsert(
 	in MemoryUpsertFactInput,
 ) (MemoryUpsertFactOutput, error) {
 	t.Helper()
-	_, out, err := memoryUpsertFactHandler(singleTenant(t, client), testClock)(
+	_, out, err := memoryUpsertFactHandler(singleTenant(t, client), testClock, "")(
 		context.Background(), nil, in)
 	return out, err
 }

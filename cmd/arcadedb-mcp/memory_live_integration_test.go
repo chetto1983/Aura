@@ -69,7 +69,7 @@ type agentMemoryLiveUpsertOutput struct {
 
 func TestAgentMemoryMCPLiveInitializeListCallAndIsolation(t *testing.T) {
 	verifyAgentMemoryLiveNoLeaks(t)
-	client, identities, runtime := newAgentMemoryLiveMCP(t, 2)
+	client, identities, runtime := newAgentMemoryLiveMCP(t, 2, "")
 	runtimeJSON, err := json.Marshal(runtime)
 	if err != nil {
 		t.Fatalf("encode runtime evidence: %v", err)
@@ -163,7 +163,7 @@ func TestAgentMemoryMCPLiveInitializeListCallAndIsolation(t *testing.T) {
 
 func TestAgentMemoryMCPLiveAbstainsOnNonexistentFact(t *testing.T) {
 	verifyAgentMemoryLiveNoLeaks(t)
-	client, identities, _ := newAgentMemoryLiveMCP(t, 1)
+	client, identities, _ := newAgentMemoryLiveMCP(t, 1, "")
 	ctx, cancel := context.WithTimeout(t.Context(), agentMemoryLiveTimeout)
 	defer cancel()
 
@@ -206,7 +206,7 @@ func TestAgentMemoryMCPLiveAbstainsOnNonexistentFact(t *testing.T) {
 // leaving the sibling untouched.
 func TestAgentMemoryMCPLiveSupersedeRefusalThenFactKeyCloses(t *testing.T) {
 	verifyAgentMemoryLiveNoLeaks(t)
-	client, identities, _ := newAgentMemoryLiveMCP(t, 1)
+	client, identities, _ := newAgentMemoryLiveMCP(t, 1, "")
 	ctx, cancel := context.WithTimeout(t.Context(), agentMemoryLiveTimeout)
 	defer cancel()
 
@@ -304,6 +304,7 @@ func TestAgentMemoryMCPLiveSupersedeRefusalThenFactKeyCloses(t *testing.T) {
 func newAgentMemoryLiveMCP(
 	t *testing.T,
 	identityCount int,
+	operatorDisplayName string,
 ) (*auramcp.HTTPClient, []string, agentMemoryRuntimeEvidence) {
 	t.Helper()
 	adminPassword := os.Getenv("ARCADEDB_ADMIN_PASSWORD")
@@ -366,7 +367,7 @@ func newAgentMemoryLiveMCP(
 		cleanupAgentMemoryLiveTenants(t, admin, base, credentials, identities)
 	})
 
-	server := newServer(newTenants(base, admin, embedder, credentials), time.Now)
+	server := newServer(newTenants(base, admin, embedder, credentials), time.Now, operatorDisplayName)
 	httpServer := httptest.NewServer(officialmcp.NewStreamableHTTPHandler(
 		func(*http.Request) *officialmcp.Server { return server }, nil))
 	t.Cleanup(httpServer.Close)

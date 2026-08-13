@@ -110,7 +110,8 @@ func run(logger *slog.Logger) error {
 		// design exists to prevent, and it would do it silently.
 		return fmt.Errorf("memory isolation: %w", cerr)
 	}
-	server := newServer(newTenants(cfg, admin, embedder, credentials), time.Now)
+	server := newServer(newTenants(cfg, admin, embedder, credentials), time.Now,
+		os.Getenv("AURA_MEMORY_OPERATOR_DISPLAY_NAME"))
 	handler := cappedBodyHandler(bodyMaxBytes,
 		mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil))
 
@@ -160,14 +161,20 @@ func run(logger *slog.Logger) error {
 
 // newServer builds the MCP server and registers every tool. One line per tool,
 // so the surface is readable in one place.
-func newServer(tenants *tenants, now clock) *mcp.Server {
+//
+// operatorDisplayName is MEM-04's configured canonical form (D-19): optional,
+// read from AURA_MEMORY_OPERATOR_DISPLAY_NAME, following the same env-var
+// convention as every other knob this binary reads. Empty means no display
+// name is configured yet -- canonicalSubject still normalizes a UUID-named
+// subject to itself, but has nothing to rewrite it TO.
+func newServer(tenants *tenants, now clock, operatorDisplayName string) *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    serverName,
 		Title:   "Aura ArcadeDB",
 		Version: serverVersion,
 	}, nil)
 	addGraphSchemaTool(server, tenants)
-	addMemoryUpsertFactTool(server, tenants, now)
+	addMemoryUpsertFactTool(server, tenants, now, operatorDisplayName)
 	addMemoryRecallTool(server, tenants)
 	addMemoryFactsAboutTool(server, tenants)
 	addMemorySearchTool(server, tenants)

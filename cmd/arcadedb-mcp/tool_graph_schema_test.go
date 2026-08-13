@@ -175,7 +175,7 @@ func TestGraphSchemaWrapsDatabaseFailure(t *testing.T) {
 
 func TestNewServerRegistersTheTools(t *testing.T) {
 	client := schemaClient(t, http.StatusOK, schemaRows)
-	if server := newServer(singleTenant(t, client), time.Now); server == nil {
+	if server := newServer(singleTenant(t, client), time.Now, ""); server == nil {
 		t.Fatal("newServer returned nil")
 	}
 }
