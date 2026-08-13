@@ -19,20 +19,28 @@ import (
 //
 // Posture: replace DB-invalid NUL bytes, cap the durable footprint, then redact
 // over the capped string (so an over-cap secret tail is already truncated away,
-// and the redactor scans a bounded input). The caps mirror the existing preview
-// discipline: the result preview cap is AURA_CONTEXT_PREVIEW_CAP_BYTES (internal/agent), so
-// result_preview keeps that ceiling here; args_raw gets a larger 8 KiB ceiling
-// because a legitimate multi-tool argument JSON (a long shell script, a write
-// payload) is bulkier than a result preview yet still bounded for the ledger.
+// and the redactor scans a bounded input). The durable result_preview cap is
+// deliberately independent of, and far tighter than, the in-context tool-result
+// preview cap AURA_CONTEXT_PREVIEW_CAP_BYTES (default 30000 bytes,
+// internal/config/config_knobs.go:95 / config_defaults.go:36 defaultToolPreviewCapBytes):
+// the durable column lives in an append-only, DELETE-rejecting ledger (migration
+// 0011's triggers), so its footprint is bounded far below what the model saw
+// rather than tracking it 1:1. args_raw gets a larger 8 KiB ceiling because a
+// legitimate multi-tool argument JSON (a long shell script, a write payload) is
+// bulkier than a result preview yet still bounded for the ledger.
 const (
 	// ArgsRawCapBytes bounds the durable args_raw column (8 KiB). A larger ceiling
 	// than the preview cap because tool argument JSON (scripts, write bodies) is
 	// legitimately bulkier; still bounded so a pathological arg blob cannot bloat
 	// the un-deletable ledger.
 	ArgsRawCapBytes = 8 * 1024
-	// ResultPreviewCapBytes bounds the durable result_preview column (2 KiB),
-	// mirroring AURA_CONTEXT_PREVIEW_CAP_BYTES (the agent's tool-result preview cap)
-	// so the ledger preview never exceeds the in-context preview the model saw.
+	// ResultPreviewCapBytes bounds the durable result_preview column (2 KiB) —
+	// deliberately ~15x tighter than AURA_CONTEXT_PREVIEW_CAP_BYTES's 30000-byte
+	// default (internal/config/config_knobs.go:95), never widened to match it: the
+	// durable column is an append-only, DELETE-rejecting forensic ledger (migration
+	// 0011's triggers), so 2 KiB < 30000 still holds (the ledger preview never
+	// exceeds the in-context preview the model saw), but the two caps are
+	// independently chosen, not mirrored.
 	ResultPreviewCapBytes = 2 * 1024
 
 	// redactedPlaceholder is the shared marker; the pattern table lives in
