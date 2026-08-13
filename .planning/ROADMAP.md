@@ -126,7 +126,15 @@ validation depends on this methodology already being lived practice, not policy 
   3. When a call is legitimately replayed, the tool result surfaced to the model carries a visible replay marker, observable in the transcript / OTel span attributes.
   4. Asking Aura to correct one fact among several sharing the same subject and predicate leaves the sibling facts valid — inspecting the ArcadeDB graph afterward shows only the named fact's validity window closed.
   5. Across this scenario, Aura's replies are in the operator's language, no raw deliberation leaks into user-facing text, and every stated intention either ran or the turn says plainly it didn't.
-**Plans**: TBD
+**Plans**: 8 plans in 5 waves
+- [ ] 45-01-PLAN.md — BLOCKING D-08 amendments (ROADMAP §45/§46 + prd.md) and the two fix-on-touch doc corrections *(wave 1)*
+- [ ] 45-02-PLAN.md — TRACER: `RoundOrdinal` in the child operation key, fail-closed, proved with SQL against `aura.tool_invocations` *(wave 2)*
+- [ ] 45-03-PLAN.md — `replayedMarker` on both replay layers, OTel replay attributes, boot-time operation-metadata guard *(wave 3)*
+- [ ] 45-04-PLAN.md — deterministic tool-call-id repair and same-message `(name, args)` dedup *(wave 3)*
+- [ ] 45-05-PLAN.md — completion critic on every voluntary termination, veto budget 2, reply-discipline prompt rule *(wave 3)*
+- [ ] 45-06-PLAN.md — `fact_key` exact-match supersede, ambiguity refusal, prose guard on the object endpoint *(wave 3)*
+- [ ] 45-07-PLAN.md — MCP surface: `supersedes_fact_key`, refusal payload, operator-subject canonicalization *(wave 4)*
+- [ ] 45-08-PLAN.md — live scenario scored >9.8, full gate matrix, quality-snapshot re-attestation *(wave 5)*
 
 ### Phase 46: MCP trust and facade
 **Goal**: MCP servers Aura ships or bundles are trusted in the model's own context, without
@@ -392,7 +400,7 @@ the real exported 234+10-turn audit corpus already in hand
 recovers what the deterministic ladder drops, against summarization, and against both —
 using a "known-correct answer" methodology this phase must define first, since none exists
 yet. **This phase's result is not assumed.** If it selects the summarization arm (in whole
-or in part), a follow-on phase must be added (an integer phase after 52, or inserted as a
+or in part), a follow-on phase must be added (an integer phase after 54, or inserted as a
 decimal) carrying the design ARCHITECTURE.md §3 already prepared (a sibling
 `context_summary.go`, a `PriorSummary` field, Runner-owned two-pass orchestration, a
 dedicated second `llm.Breaker`) plus hermes' anti-thrash/cooldown/fallback guards budgeted
