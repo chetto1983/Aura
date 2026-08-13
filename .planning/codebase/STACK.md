@@ -1,5 +1,5 @@
 ---
-last_mapped_commit: 5adb3d49b9b8cd7ea4f872fbdb7199b4021c9f5c
+last_mapped_commit: 26745a062dd1017c8e9de39a39089bc63559b553
 ---
 
 # Technology Stack
@@ -38,14 +38,14 @@ last_mapped_commit: 5adb3d49b9b8cd7ea4f872fbdb7199b4021c9f5c
 - `github.com/jackc/pgx/v5` v5.10.0 — Postgres driver + connection pooling (`internal/db`)
 - `sqlc` (installed via `go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1`, `Makefile:6-8`) — generates `internal/db/sqlc/` (31 files) from `internal/db/queries/`; NOT in `go.mod` (build-time codegen tool, not a runtime dependency)
 - `github.com/golang-migrate/migrate/v4` v4.19.1 — Postgres schema migrations, driven by `aura db migrate` (`compose.yaml:341-364`), migration files in `internal/db/migrations/` (94 numbered migrations as of `0094_verification_evidence`, 138 files total incl. down-migrations)
-- `github.com/Authula/authula` v1.34.0 — embedded auth provider (`internal/webauth/authula.go`), pulls a large transitive tree (Kafka/NATS/RabbitMQ/Redis/Watermill message-bus adapters, SQLite/MySQL/Bun ORM support) that Aura does not use directly — Aura's own auth path is Postgres-only
+- `github.com/Authula/authula` v1.40.0 — embedded auth provider (`internal/webauth/authula.go`), pulls a large transitive tree (Kafka/NATS/RabbitMQ/Redis/Watermill message-bus adapters, SQLite/MySQL/Bun ORM support) that Aura does not use directly — Aura's own auth path is Postgres-only
 - `gopkg.in/telebot.v4` v4.0.0-beta.10 — Telegram Bot API client (`internal/channels/telegram`)
 - `github.com/aws/aws-sdk-go-v2` (+ `config`, `credentials`, `service/s3`, `smithy-go`) — S3-compatible client used against Garage (`internal/objectstore/s3.go`)
-- `go.opentelemetry.io/otel/*` v1.44.0 family (sdk, trace, metric, otlptracegrpc, stdouttrace) + `go.opentelemetry.io/otel/exporters/prometheus` v0.66.0 — tracing/metrics (`internal/obs`, `internal/tracesink`)
+- `go.opentelemetry.io/otel/*` v1.45.0 family (sdk, trace, metric, otlptracegrpc, stdouttrace) + `go.opentelemetry.io/otel/exporters/prometheus` v0.67.0 — tracing/metrics (`internal/obs`, `internal/tracesink`)
 - `github.com/prometheus/client_golang` v1.24.1 — `/metrics` exposition
-- `github.com/moby/moby/client` v0.5.0 + `github.com/moby/moby/api` v1.55.0 — Docker Engine API client used by the sandbox router (`internal/sandbox`) to spawn per-identity boxes
+- `github.com/moby/moby/client` v0.5.1 + `github.com/moby/moby/api` v1.55.0 — Docker Engine API client used by the sandbox router (`internal/sandbox`) to spawn per-identity boxes
 - `github.com/pkoukk/tiktoken-go` v0.1.8 — token counting for context budgeting
-- `github.com/adhocore/gronx` v1.20.0 — cron expression parsing (`internal/cron`)
+- `github.com/adhocore/gronx` v1.20.1 — cron expression parsing (`internal/cron`)
 - `github.com/goccy/go-yaml` v1.19.2, `github.com/google/shlex`, `codeberg.org/readeck/go-readability/v2`, `github.com/JohannesKaufmann/html-to-markdown/v2`, `github.com/PaulSonOfLars/gotg_md2html` — parsing/rendering helpers (readability extraction, HTML→Markdown, Telegram MarkdownV2)
 - `github.com/mdp/qrterminal/v3` + `rsc.io/qr` — terminal QR rendering for the Telegram onboarding/link flow
 - `github.com/sergi/go-diff` — diff rendering
@@ -71,7 +71,7 @@ last_mapped_commit: 5adb3d49b9b8cd7ea4f872fbdb7199b4021c9f5c
 
 **Build/Dev:**
 - `Makefile` — the canonical local/CI task runner: `make quality` (deadcode, vet, file-size, lint, race tests, vuln, build — no containers), `make quality-full` (+ coverage gate against the live container stack), `make coverage`/`make coverage-docker` (`scripts/coverage_gate.sh` / `scripts/coverage_docker.sh`), `make web-lint`/`make web-test`/`make web-mutation`
-- `golangci-lint` v2.12.2 (pinned, `.golangci.yml`, `Makefile:44`) — linters enabled: errcheck, govet, ineffassign, staticcheck, unused (+ `dupl` at threshold 100, tests excluded)
+- `golangci-lint` v2.12.2 (pinned, `.golangci.yml`, `Makefile:44`) — linters enabled: errcheck, govet, ineffassign, staticcheck, unused, misspell, gosec, revive, dupl (at threshold 100, tests excluded), modernize (Go 1.21+ simplifications)
 - `staticcheck`, `govulncheck`, `dupl`, `gotestsum`, `deadcode`, `goimports` — installed via `make tools` into `$GOPATH/bin`
 - Vite 8 (`web/vite.config.ts`) — web bundler; `tsc -b` for typechecking; ESLint 10 + Prettier 3.8 for the web lint/format gate
 - Docker Compose (`compose.yaml`, top-level `name: aura`) — orchestrates the full stack; `docker/*/Dockerfile` per service (`arcadedb`, `arcadedb-mcp`, `aura`, `aura-egress`, `aura-ingest`, `aura-sandbox`, `garage`)
@@ -81,7 +81,7 @@ last_mapped_commit: 5adb3d49b9b8cd7ea4f872fbdb7199b4021c9f5c
 
 **Critical:**
 - `github.com/jackc/pgx/v5` v5.10.0 — sole Postgres driver; `sqlc`-generated typed queries in `internal/db/sqlc/` sit on top of it
-- `github.com/Authula/authula` v1.34.0 — the embedded web-auth/session provider backing `internal/webauth`; a large dependency surface (message brokers, multiple SQL dialects) most of which Aura never exercises
+- `github.com/Authula/authula` v1.40.0 — the embedded web-auth/session provider backing `internal/webauth`; a large dependency surface (message brokers, multiple SQL dialects) most of which Aura never exercises
 - `github.com/ag-ui-protocol/ag-ui/sdks/community/go` — defines the wire contract (`events.Event`, SSE encoding) the cockpit and any AG-UI-speaking client rely on; `internal/agui` re-exports `agui.Event` so call sites never import the SDK directly
 - `github.com/modelcontextprotocol/go-sdk` v1.7.0 — MCP tool/schema types shared by both `internal/mcp` (client, consumed servers) and `cmd/arcadedb-mcp` (hosted server)
 - `github.com/moby/moby/client` — Docker Engine API access for `internal/sandbox`'s per-identity box lifecycle (gated to strict deployment profiles only)
@@ -103,7 +103,7 @@ last_mapped_commit: 5adb3d49b9b8cd7ea4f872fbdb7199b4021c9f5c
 
 **Build:**
 - `web/vite.config.ts` — sets `build.outDir = ../internal/webui/dist` so the Go `//go:embed` picks up the SPA build (`docker/aura/Dockerfile:6-8`)
-- `.golangci.yml` — lint rule set, `version: "2"`, deliberately minimal core linter set (`errcheck`, `govet`, `ineffassign`, `staticcheck`, `unused`, `dupl`)
+- `.golangci.yml` — lint rule set, `version: "2"`, linter set includes core staple (errcheck, govet, ineffassign, staticcheck, unused) plus misspell (typo detection), gosec (security issues), revive (style), modernize (Go 1.21+ idioms), and dupl (code duplication at threshold 100 for production code, excluded in test files)
 - `Makefile` — single source of truth for local/CI parity; `golangci-lint` version there must match `.github/workflows/ci.yml`
 - `scripts/go_packages.sh` — resolves the canonical Go package set used consistently across `make vet`/`lint`/`deadcode`/`test`/`test-race`/CI, to avoid drift between local and CI package lists
 

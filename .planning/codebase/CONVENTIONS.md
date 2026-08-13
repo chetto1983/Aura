@@ -1,5 +1,5 @@
 ---
-last_mapped_commit: 5adb3d49b9b8cd7ea4f872fbdb7199b4021c9f5c
+last_mapped_commit: 26745a062dd1017c8e9de39a39089bc63559b553
 ---
 
 # Coding Conventions
@@ -73,17 +73,19 @@ mirrored in CI, `.github/workflows/ci.yml` `build-and-lint` job), configured in
 - Enabled linters: `errcheck`, `govet`, `ineffassign`, `staticcheck`, `unused`,
   `misspell`, `gosec`, `revive`, `dupl`, `modernize` (Go 1.21+ idiom
   modernizations — `min`/`max`, `slices`/`maps` helpers, range-over-int,
-  `strings.Cut`).
+  `strings.Cut`, `any`-type simplifications).
 - `gosec` excludes `G115` (integer overflow, noisy on `int32` pool fields) and
   `G404` is NOT excluded (restore `math/rand/v2` usage if flagged).
 - `dupl` threshold is `100` tokens; `_test.go` files are exempt from `dupl` and
   `gosec`/`errcheck` (table-driven test boilerplate is intentionally
   repetitive).
 - Path exclusions (never linted): `internal/db/sqlc` (generated, golden),
-  `internal/agent/tools` (flagged in the config as a "pre-rewrite skeleton" —
-  verify against current package state before assuming this still applies),
   `internal/llm/client.go`, `third_party`, `web/node_modules`, `.planning`.
-- `revive`'s `exported` rule runs with `disableStutteringCheck`.
+- `revive`'s `exported` rule runs with `disableStutteringCheck`; a special
+  exception suppresses the "Spec/Execute missing comment" check in
+  `internal/agent/tools` because the interface contract is documented on the
+  Tool interface itself (`internal/agent/tools/spec.go`), not duplicated on
+  every implementation.
 
 **Vet / static analysis:** `go vet` is a required pre-push and CI gate
 (`Makefile` `vet:`, `.github/workflows/ci.yml` `build-and-lint` job). `gofmt`
@@ -223,8 +225,11 @@ arguments") rather than describing what the function does line-by-line.
 **Citations:** comments cite external documentation pages when behavior is
 surprising ("Cite the page in the code comment when the behaviour is
 surprising" — CLAUDE.md), and cite dates/measurements when recording an
-empirical finding (`internal/agent/tools/skill.go`: "1.638 token, il singolo
-tool piu' caro del manifest e il 12% di OGNI prompt").
+empirical finding. Example from `internal/agent/tools/always_active_test.go`:
+"2026-08-07: the set was aligned to the reference coding agent's own
+always-active tools, which is a measured configuration rather than an opinion."
+Another from `internal/agent/tools/skill.go`: "1.638 token, il singolo
+tool piu' caro del manifest e il 12% di OGNI prompt".
 
 **JSDoc/TSDoc (web/):** not systematically enforced; TypeScript types carry
 most of the contract. `eslint` + `tsc --noEmit` are the frontend static gates
@@ -317,7 +322,7 @@ Convention:
   `Deferred: false`.
 - One tool implementation lives in one file:
   `internal/agent/tools/<name>.go` (e.g. `ask_user.go`, `send_file.go`,
-  `web_fetch.go`, `web_search.go`). Multi-action tools use
+  `skill.go`, `web_fetch.go`, `web_search.go`). Multi-action tools use
   `internal/agent/tools/action.go`'s `ActionRouter` to dispatch one manifest
   entry to N per-action handlers instead of N near-duplicate tool files — the
   documented anti-pattern it replaces is a "587-LOC scheduler.go god-tool".
