@@ -7,8 +7,10 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/redact"
 	"github.com/pkoukk/tiktoken-go"
 )
 
@@ -168,9 +170,23 @@ func renderRoundsForSummary(rounds []llm.Message) string {
 			continue
 		}
 		if len(content) > summaryPerTurnCap {
-			content = content[:summaryPerTurnCap] + " […]"
+			// Walk back to a rune boundary: a naive byte slice can cut a multi-byte rune
+			// in half and hand the summarizer invalid UTF-8 (continuation bytes are
+			// 0b10xxxxxx).
+			cut := summaryPerTurnCap
+			for cut > 0 && !utf8.RuneStart(content[cut]) {
+				cut--
+			}
+			content = content[:cut] + " […]"
 		}
-		rendered = append(rendered, m.Role+": "+content)
+		// Cap first, then redact: an over-cap secret tail is already truncated away and
+		// the patterns scan a bounded input (the ledger's ordering, same reason).
+		//
+		// The transcript carries verbatim user text and tool output, so it can carry a
+		// credential the model put on a command line. It leaves the process for an
+		// external summarizer, and the summary it produces is about to become DURABLE
+		// (slice 1b persists it), which turns a transient exposure into a stored one.
+		rendered = append(rendered, m.Role+": "+redact.String(content))
 	}
 	if len(rendered) == 0 {
 		return ""
