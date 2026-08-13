@@ -24,7 +24,16 @@ import (
 func TestUpsertFactByFactKeyClosesOnlyTheNamedSiblingAndKeepsItQueryable(t *testing.T) {
 	client := integrationClient(t)
 	subject, runID := isolate(t, client)
+	// Business time spread by minutes/hours, not real wall-clock gaps: valid_from
+	// and valid_to travel the wire as RFC3339 with SECOND granularity, so two
+	// timestamps captured milliseconds apart in a fast test round to the same
+	// second and a strict `>`/`<=` boundary check goes the wrong way. The
+	// existing live analog (TestSupersessionClosesTheWindowAndKeepsThePastQueryable)
+	// avoids this the same way: years apart, never relying on sub-second order.
 	now := time.Now()
+	learned := now.Add(-time.Hour) // when the siblings were learned
+	corrected := now               // when the correction happens
+	wellInsideTheWindow := now.Add(-30 * time.Minute)
 
 	var keys [3]string
 	for i, lesson := range []string{"first lesson", "second lesson", "third lesson"} {
@@ -32,7 +41,7 @@ func TestUpsertFactByFactKeyClosesOnlyTheNamedSiblingAndKeepsItQueryable(t *test
 		write(t, client, Fact{
 			Subject: subject, Predicate: "learned_lesson", Object: object,
 			Statement: subject + " learned: " + lesson,
-			Source:    FactSource{RunID: runID},
+			Source:    FactSource{RunID: runID}, ValidFrom: learned,
 		}, now)
 		hits, err := client.FactsAbout(context.Background(), subject, "learned_lesson", 10, time.Time{})
 		if err != nil {
@@ -48,10 +57,10 @@ func TestUpsertFactByFactKeyClosesOnlyTheNamedSiblingAndKeepsItQueryable(t *test
 	// Close only the first sibling by its exact fact_key.
 	written, err := client.UpsertFact(context.Background(), Fact{
 		Subject: subject, Predicate: "learned_lesson", Object: subject + "_lesson_0_corrected",
-		Statement:  subject + " learned: first lesson, corrected",
-		Source:     FactSource{RunID: runID},
+		Statement: subject + " learned: first lesson, corrected",
+		Source:    FactSource{RunID: runID}, ValidFrom: corrected,
 		Supersedes: true, TargetFactKey: keys[0],
-	}, now.Add(time.Second))
+	}, now)
 	if err != nil {
 		t.Fatalf("UpsertFact by fact_key: %v", err)
 	}
@@ -85,7 +94,7 @@ func TestUpsertFactByFactKeyClosesOnlyTheNamedSiblingAndKeepsItQueryable(t *test
 	}
 
 	// The closed fact stays queryable in the past -- closed, not deleted.
-	past, err := client.FactsAbout(context.Background(), subject, "learned_lesson", 10, now)
+	past, err := client.FactsAbout(context.Background(), subject, "learned_lesson", 10, wellInsideTheWindow)
 	if err != nil {
 		t.Fatalf("FactsAbout(as_of): %v", err)
 	}

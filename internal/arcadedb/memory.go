@@ -179,20 +179,6 @@ const upsertEntityStatement = "UPDATE Entity SET name = :name UPSERT " +
 const upsertTypedEntityStatement = "UPDATE Entity SET name = :name, kind = :kind UPSERT " +
 	"RETURN AFTER WHERE name = :name"
 
-// closeSupersededStatement ends the validity window of every still-valid fact
-// with the same subject and predicate. It does not delete: the row stays
-// queryable through `as_of`.
-//
-// The object is deliberately NOT in the WHERE clause -- the object is the thing
-// that changed, so matching on it would mean the statement could never fire.
-//
-// Endpoints are read with outV()/inV(). The dotted `out.name` form returns NULL
-// on an edge rather than failing, so getting this wrong is silent.
-const closeSupersededStatement = "UPDATE " + factEdgeType + " SET valid_to = :valid_to, " +
-	"expired_at = :expired_at, fact_key = NULL WHERE predicate = :predicate AND expired_at IS NULL " +
-	"AND (valid_to IS NULL OR valid_to > :valid_to) " +
-	"AND fact_key <> :fact_key AND outV().name = :subject_name"
-
 const createFactStatement = "CREATE EDGE " + factEdgeType +
 	" FROM (SELECT FROM Entity WHERE name = :subject_name)" +
 	" TO (SELECT FROM Entity WHERE name = :object_name)" +
@@ -245,17 +231,19 @@ func (c *Client) UpsertFact(ctx context.Context, fact Fact, now time.Time) (Fact
 		return written, nil
 	}
 	if fact.Supersedes {
-		rows, err := c.Command(ctx, closeSupersededStatement, map[string]any{
-			"valid_to":     validFrom.UTC().Format(time.RFC3339),
-			"expired_at":   now.UTC().Format(time.RFC3339),
-			"predicate":    fact.Predicate,
-			"subject_name": fact.Subject,
-			"fact_key":     factKey,
-		})
+		outcome, err := c.closeSuperseded(ctx, fact, factKey, validFrom, now)
 		if err != nil {
-			return FactWrite{}, fmt.Errorf("arcadedb: close superseded facts: %w", err)
+			return FactWrite{}, err
 		}
-		written.Superseded = countUpdated(rows)
+		if outcome.Refused {
+			return FactWrite{
+				Statement:  fact.Statement,
+				Refused:    true,
+				Reason:     outcome.Reason,
+				Candidates: outcome.Candidates,
+			}, nil
+		}
+		written.Superseded = outcome.Closed
 	}
 	params := map[string]any{
 		"subject_name": fact.Subject,
@@ -308,7 +296,7 @@ type FactHit struct {
 // edges directly, so endpoints resolve -- outV()/inV(), never the dotted
 // `out.name` form, which yields NULL on an edge instead of failing.
 const searchFactsStatement = "SELECT statement, predicate, valid_from, valid_to, " +
-	"sources, outV().name AS subject, outV().kind AS subject_kind, " +
+	"sources, fact_key, outV().name AS subject, outV().kind AS subject_kind, " +
 	"inV().name AS object, inV().kind AS object_kind " +
 	"FROM " + factEdgeType + " WHERE SEARCH_INDEX('" + factEdgeType +
 	"[statement]', :query) = true AND $score >= :min_lexical_score"
@@ -370,7 +358,7 @@ func (c *Client) SearchFacts(
 // and the hubs of any real graph sit on that side. memory_forget already walked
 // both directions, so the surface disagreed with itself as well.
 const factsAboutStatement = "SELECT statement, predicate, valid_from, valid_to, " +
-	"sources, outV().name AS subject, outV().kind AS subject_kind, " +
+	"sources, fact_key, outV().name AS subject, outV().kind AS subject_kind, " +
 	"inV().name AS object, inV().kind AS object_kind " +
 	"FROM " + factEdgeType + " WHERE (outV().name = :entity OR inV().name = :entity)"
 
@@ -453,6 +441,7 @@ func factHitFromRow(row map[string]any) FactHit {
 		ValidFrom:   rowString(row, "valid_from"),
 		ValidTo:     rowString(row, "valid_to"),
 		Sources:     factSources(row["sources"]),
+		FactKey:     rowString(row, "fact_key"),
 	}
 }
 
