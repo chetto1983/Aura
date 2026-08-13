@@ -94,11 +94,17 @@ asserzioni, `internal/eval/skills_snippet_reuse_cot_eval_test.go`, è stato canc
 
 **3.3 — `recall@1` del routing documentale è UNKNOWN e nulla lo misura.**
 `docs/aura-quality-snapshot.md:62` non porta nessun numero. I due harness esistono
-(`internal/documents/retrieval_fusion_bench_test.go`, `retrieval_abstention_eval_test.go`) ma
-sono dietro `//go:build retrieval_eval`, e quel tag **non compare in nessun workflow, Makefile o
-script** — solo compilato. Peggio: due delle tre leve citate dalla riga sono morte
-(`AURA_DOCUMENT_OCR_ENABLED` ha zero occorrenze nel codice; Docling è stato rimosso).
-*Confidenza: alta.*
+(`internal/documents/retrieval_fusion_bench_test.go`, `retrieval_abstention_eval_test.go`) e
+**vengono compilati** — `scripts/tagged_tier_compile.sh:30` intercetta ogni tag che finisce in
+`_eval`, quindi non possono marcire in silenzio. Ma **nessuno li esegue**: né CI, né Makefile, né
+script. Il repo lo dice già di suo, alla lettera, in `.planning/codebase/TESTING.md:136`.
+Attenzione a un falso indizio: il `retrieval_eval` che compare in
+`docs/aura-quality-snapshot.md:21` è un harness RET-05 del 2026-06-28 sotto `internal/eval/`,
+albero cancellato il 2026-08-02 — non è prova che il recall documentale sia stato misurato.
+Peggio ancora, due delle tre leve citate dalla riga sono morte: `AURA_DOCUMENT_OCR_ENABLED` ha
+zero occorrenze nel codice e Docling è stato rimosso.
+*Confidenza: alta. L'apparato di misura esiste e compila; il numero non lo produrrà mai nessuno
+finché le cose stanno così.*
 
 **3.4 — Il North-Star xlsx delle skills non ha più l'harness Go.**
 `internal/eval/skills_cot_eval_test.go::TestSkillsE2E` cancellato in `acd029d47`.
