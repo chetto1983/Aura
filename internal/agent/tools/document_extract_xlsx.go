@@ -14,7 +14,6 @@ import (
 // distinct concern from the shared XML-tree walker and the docx/notebook extractors.
 
 const spreadsheetNS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
-const relationshipsNS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 const packageRelNS = "http://schemas.openxmlformats.org/package/2006/relationships"
 
 // maxXlsxRowsPerSheet / maxXlsxCols bound the rendered text: a sheet is read whole (openpyxl-style,

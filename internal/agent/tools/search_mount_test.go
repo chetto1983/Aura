@@ -87,21 +87,17 @@ func TestToolSearch_ConcurrentMountAndSearch(t *testing.T) {
 	var wg sync.WaitGroup
 	// Searchers.
 	for range 12 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			if _, err := ts.Execute(ctx, []byte(`{"query":"capability number 3"}`)); err != nil {
 				t.Errorf("concurrent Execute: %v", err)
 			}
-		}()
+		})
 	}
 	// Refreshers (the mount seam) racing the searches.
 	for range 6 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			ts.InvalidateIndex()
-		}()
+		})
 	}
 	wg.Wait()
 }

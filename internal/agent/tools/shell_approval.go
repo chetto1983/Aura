@@ -19,6 +19,10 @@ type ShellApprovals struct {
 	pending  map[string]ShellApprovalChallenge
 }
 
+// ShellApprovalChallenge is one pending approval prompt: the command as it will
+// run, and the exact Question the operator was shown. ApproveChallenge re-checks
+// that Question, so the text the operator agreed to is bound to the command that
+// executes.
 type ShellApprovalChallenge struct {
 	Command  string
 	Cwd      string
@@ -26,6 +30,7 @@ type ShellApprovalChallenge struct {
 	Question string
 }
 
+// NewShellApprovals returns an empty approval store with both maps initialized.
 func NewShellApprovals() *ShellApprovals {
 	return &ShellApprovals{
 		approved: map[string]struct{}{},
@@ -49,6 +54,9 @@ func ShellApprovalDigest(command, cwd string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// Approve grants a one-shot approval for the command digest and clears any
+// pending challenge for it. A nil receiver or empty key is a no-op, so callers
+// on a build with approvals disabled need no nil check.
 func (a *ShellApprovals) Approve(sessionID, digest string) {
 	if a == nil || sessionID == "" || digest == "" {
 		return
@@ -63,6 +71,9 @@ func (a *ShellApprovals) Approve(sessionID, digest string) {
 	delete(a.pending, key)
 }
 
+// Consume redeems an approval, reporting whether one was present. It deletes the
+// approval on success: approvals are one-shot, so a second run of the same
+// command prompts again.
 func (a *ShellApprovals) Consume(sessionID, digest string) bool {
 	if a == nil || sessionID == "" || digest == "" {
 		return false
@@ -77,6 +88,9 @@ func (a *ShellApprovals) Consume(sessionID, digest string) bool {
 	return true
 }
 
+// CreateChallenge records a pending approval for the command and returns the
+// challenge to put to the operator. The challenge is returned even on a nil
+// receiver so the caller can always render a prompt.
 func (a *ShellApprovals) CreateChallenge(sessionID, command, cwd string) ShellApprovalChallenge {
 	digest := ShellApprovalDigest(command, cwd)
 	challenge := ShellApprovalChallenge{
@@ -97,6 +111,7 @@ func (a *ShellApprovals) CreateChallenge(sessionID, command, cwd string) ShellAp
 	return challenge
 }
 
+// PendingChallenge returns the outstanding challenge for a digest, if any.
 func (a *ShellApprovals) PendingChallenge(sessionID, digest string) (ShellApprovalChallenge, bool) {
 	if a == nil || sessionID == "" || digest == "" {
 		return ShellApprovalChallenge{}, false
@@ -107,6 +122,10 @@ func (a *ShellApprovals) PendingChallenge(sessionID, digest string) (ShellApprov
 	return challenge, ok
 }
 
+// ApproveChallenge promotes a pending challenge to an approval, but only if
+// question matches the text stored when the challenge was created. That equality
+// check is the anti-swap guard: it stops an approval collected for one prompt
+// from authorizing a command the operator never saw.
 func (a *ShellApprovals) ApproveChallenge(sessionID, digest, question string) error {
 	if a == nil || sessionID == "" || digest == "" {
 		return fmt.Errorf("shell approval challenge %q not found", digest)

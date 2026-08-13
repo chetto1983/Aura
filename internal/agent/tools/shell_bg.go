@@ -360,6 +360,8 @@ func (b *BackgroundShells) runningCountLocked() int {
 	return n
 }
 
+// Shutdown stops the TTL reaper and terminates every live background shell. The
+// reaper is stopped first so it cannot race the group-terminate below.
 func (b *BackgroundShells) Shutdown(ctx context.Context) error {
 	if b == nil {
 		return nil

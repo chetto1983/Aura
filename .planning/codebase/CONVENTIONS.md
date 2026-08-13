@@ -1,114 +1,363 @@
+---
+last_mapped_commit: 5adb3d49b9b8cd7ea4f872fbdb7199b4021c9f5c
+---
+
 # Coding Conventions
 
-**Analysis Date:** 2026-08-02
+**Analysis Date:** 2026-08-13
 
 ## Naming Patterns
 
-**Files:**
-- Name Go files in lowercase `snake_case` and split large responsibilities by concern: `internal/agent/llm_agent_retry.go`, `internal/agent/llm_agent_stream_retry.go`, and `cmd/aura/serve_memory_readiness.go` are representative. Keep every owned `.go`, `.ts`, and `.tsx` file at or below 600 lines; `scripts/check-file-size.sh` enforces the cap and recommends `<name>_<concern>.{go,ts,tsx}` splits.
-- Name Go tests `<subject>_test.go`; use explicit suffixes such as `_integration_test.go`, `_property_test.go`, `_fuzz_test.go`, `_bench_test.go`, and `_live_test.go` when the tier matters. Put a build constraint on line 1 of tagged tests, as in `internal/db/tx_integration_test.go`.
-- Name React component files and their exported components in PascalCase, for example `web/src/onboarding/OnboardingWizard.tsx` and `web/src/graph/GraphExplorer.tsx`. Name non-component TypeScript modules in camelCase, for example `web/src/chat/durationFormat.ts` and `web/src/governance/governanceApi.ts`.
-- Name frontend unit tests `*.test.ts` or `*.test.tsx`, either beside the implementation (`web/src/api/json.test.ts`) or in a feature `__tests__/` directory (`web/src/governance/__tests__/governanceApi.test.ts`). Name browser tests `*.spec.ts` under `web/e2e/`.
-- Name Python release-gate tests `scripts/<gate>_test.py` and shell self-tests `scripts/<gate>_test.sh`.
+**Files (Go):**
+- `snake_case.go`, one primary concern per file. Multi-file components split by
+  `<component>_<concern>.go`: `internal/runner/runner_delete.go`,
+  `internal/runner/runner_resume_batch_atomic.go`,
+  `internal/agui/governance_write_scheduler.go`,
+  `internal/agui/governance_write_skills_api.go`. This is the mandated response
+  to the ≤600 LOC cap (CLAUDE.md "no god class") — never one file that grows
+  past the cap, always a split file that keeps the same package.
+- Test files mirror the file they test: `runner.go` → `runner_test.go`; a
+  focused sub-concern gets its own test file even without a matching prod file
+  (`internal/agui/approvals_api_unit_test.go`,
+  `internal/agui/conversations_api_unit_test.go`).
+- Build-tag-gated files carry a tier suffix in the name even though the tag is
+  what actually gates them: `*_integration_test.go`, `*_live_test.go`,
+  `*_live_e2e_test.go` (see TESTING.md for the full tag inventory).
+- `main_test.go` is the reserved name for a package's `TestMain` — used to wire
+  `goleak.VerifyTestMain` (22 packages, see TESTING.md).
 
-**Functions:**
-- Use PascalCase for exported Go functions and camelCase for package-private functions. Constructors use `New<Type>` (`internal/arcadedb/embedding.go`) and context/functional options use `With<Concern>` (`internal/db/tx.go`, `internal/sandbox/usersandbox/docker_backend.go`).
-- Use `Test<Subject>_<Case>`, `Benchmark<Subject>`, and `Fuzz<Subject>` for Go test entry points. Use named `t.Run` cases for table-driven tests, as demonstrated by `TestSanitizeName` in `internal/skills/validator_test.go`.
-- Use camelCase for TypeScript functions and PascalCase for React components. Hooks must start with `use`, such as `web/src/approvals/useThreadApprovals.ts`. API methods should be verb-led and state their domain, such as `createPimAccount` in `web/src/governance/pimApi.ts`.
-- Use `snake_case` for Python functions and `test_<behavior>` for `unittest` methods, as in `scripts/critical_mutation_gate_test.py`.
+**Packages:**
+- Short, lower-case, no underscores: `agent`, `runner`, `agui`, `conversations`,
+  `skills`, `arcadedb`. Sub-concerns get their own package under the owner
+  (`internal/agent/tools`, `internal/agent/mcptools`, `internal/agent/workflow`,
+  `internal/agent/prompt`, `internal/agent/agenttest`) rather than filename
+  prefixes inside one flat package.
+- Package doc comment on the `package` line explains ownership boundary and
+  what does *not* belong there — e.g. `internal/config/config.go`: "Per
+  CONTEXT.md D-row 'Composition': per-subsystem configs (db, llm) live in
+  their owning packages; this file only wires the top-level fields."
 
-**Variables:**
-- Keep Go locals short only when their scope is obvious (`ctx`, `err`, `tx`, `q`); use descriptive names at package and API boundaries. Exported sentinel errors use `Err<Condition>`, for example `ErrBlocklisted` in `internal/skills/validator.go`.
-- Use lower camelCase for TypeScript values, SCREAMING_SNAKE_CASE for fixed module constants (`SERVE_ENV_KEYS` in `web/playwright.config.ts`), and `as const` for closed literal sets (`THEMES` in `web/src/theme/applyTheme.ts`).
-- Prefix repository-owned environment variables with `AURA_`; third-party variables retain upstream names. Tests reference the exact variable names through helpers such as `envOrSkip` in `internal/db/db_test.go`.
+**Functions / identifiers:**
+- Standard Go `MixedCaps`/`mixedCaps`; exported identifiers get a doc comment
+  starting with the identifier name (enforced by `revive`'s `exported` rule,
+  `.golangci.yml`, with `disableStutteringCheck` so `tools.ToolResult`-style
+  names are allowed).
+- Sentinel/marker identifiers are prefixed by kind: `Err*` for `error` values
+  (`agent.ErrBudgetExhausted`, `agui.ErrBootstrapAlreadyConfigured`,
+  `agui.ErrMCPServerExists`), `Kind*` for string enums
+  (`tools.KindClarification`, `tools.KindApproval`, `tools.KindChoice`).
+- Unexported sentinel errors use a lower-case `err*` prefix
+  (`errUnsupportedParentOperation`, `errInvalidArcadeRID`,
+  `errInvalidIdempotencyKey`) — exported only when a cross-package caller needs
+  `errors.Is`/`errors.As`.
 
-**Types:**
-- Use PascalCase for Go structs and interfaces. Keep small dependency interfaces close to the consumer, such as `StoreBackend` in `internal/assets/service.go` and `Runner` in `internal/agui/server.go`; verify important implementations with compile-time assignments such as `var _ llm.Client = (*FakeClient)(nil)` in `internal/agent/agenttest/fakeclient.go`.
-- Use PascalCase for TypeScript interfaces and type aliases. Mark component props and immutable collections `readonly` where mutation is not part of the contract, as in `SourcesButton` tests at `web/src/chat/displays/__tests__/SourcesButton.test.tsx`.
-- Represent closed domains with typed string unions and constants rather than free-form strings, as in `GraphOp` in `web/src/graph/types.ts` and `Density` in `web/src/theme/density.ts`.
+**Env vars:** `AURA_<DOMAIN>_<UNIT>` (e.g. `AURA_SWARM_MAX_GOALS`,
+`AURA_CONTEXT_COMPACTION_ENABLED`, `AURA_SKILL_BODY_CAP_BYTES`). Third-party
+sidecar/library env vars keep their upstream canonical names without the
+`AURA_` prefix (`TELEGRAM_BOT_TOKEN`, `OPENROUTER_API_KEY`,
+`POSTGRES_PASSWORD`, `SEARXNG_URL`). Every field in `internal/config/config.go`
+documents its backing env var inline as a trailing comment.
 
 ## Code Style
 
 **Formatting:**
-- Treat `gofmt` as mandatory. `.golangci.yml` enables the `gofmt` formatter, `lefthook.yml` formats staged Go files through `scripts/gofmt-staged.sh`, and `.editorconfig` requires tabs for Go and Makefiles.
-- Use UTF-8, LF endings, a final newline, and trimmed trailing whitespace from `.editorconfig`; Markdown alone preserves trailing whitespace for hard line breaks.
-- Format `web/` with Prettier using single quotes, semicolons, trailing commas, a 100-column print width, and two-space indentation from `web/.prettierrc.json`.
-- Do not hand-format generated code in `internal/db/sqlc/` or built assets in `internal/webui/dist/`; their generators and freshness gates own those files.
+- `gofmt` is enforced as a CI/hook gate, not a suggestion (`.golangci.yml`
+  `formatters: enable: [gofmt]`; `lefthook.yml` pre-commit `gofmt` step runs
+  `scripts/gofmt-staged.sh {staged_files}` with `stage_fixed: true`).
+- Frontend: `prettier --check` at `web-lint` (`Makefile` `web-lint` target;
+  `.github/workflows/ci.yml` job `web-lint`).
 
-**Linting:**
-- Run the Go packages selected by `scripts/go_packages.sh`; it deliberately excludes Go examples inside `web/node_modules`. Use `make vet`, `make lint`, and `make quality` from `Makefile`.
-- Follow `.golangci.yml`: `errcheck`, `govet`, `ineffassign`, `staticcheck`, `unused`, `misspell`, `gosec`, `revive`, `dupl`, and `modernize` are enabled with warnings treated as failures in CI. Production duplication is rejected at 100 tokens; `_test.go` is exempt because test tables are intentionally repetitive.
-- Fix lint findings instead of suppressing them. If a suppression is unavoidable, scope `//nolint:<linter>` to the specific linter and include the non-obvious justification; `.golangci.yml` contains narrow, documented path/rule exclusions.
-- Run `npm run lint`, `npm run typecheck`, and `npm run format:check` in `web/`. `web/eslint.config.js` uses strict and stylistic type-aware TypeScript rules, React Hooks rules, JSX accessibility rules, import ordering, and Prettier compatibility. `web/tsconfig.json` enables `strict`, unused checks, `noUncheckedIndexedAccess`, and `exactOptionalPropertyTypes`.
-- Keep both languages free of dead code and copy/paste clones. Go uses `deadcode` and `dupl`; TypeScript uses `web/knip.json` and `web/.jscpd.json` through `scripts/check-deadcode-web.sh` and `scripts/check-dup.sh`.
-- Preserve the 600-line cap enforced for both source and tests by `scripts/check-file-size.sh`; split by cohesive concern before extending an overgrown file.
+**Linting:** `golangci-lint` v2.12.2 (version pinned in `Makefile` `tools:` and
+mirrored in CI, `.github/workflows/ci.yml` `build-and-lint` job), configured in
+`.golangci.yml`:
+- Enabled linters: `errcheck`, `govet`, `ineffassign`, `staticcheck`, `unused`,
+  `misspell`, `gosec`, `revive`, `dupl`, `modernize` (Go 1.21+ idiom
+  modernizations — `min`/`max`, `slices`/`maps` helpers, range-over-int,
+  `strings.Cut`).
+- `gosec` excludes `G115` (integer overflow, noisy on `int32` pool fields) and
+  `G404` is NOT excluded (restore `math/rand/v2` usage if flagged).
+- `dupl` threshold is `100` tokens; `_test.go` files are exempt from `dupl` and
+  `gosec`/`errcheck` (table-driven test boilerplate is intentionally
+  repetitive).
+- Path exclusions (never linted): `internal/db/sqlc` (generated, golden),
+  `internal/agent/tools` (flagged in the config as a "pre-rewrite skeleton" —
+  verify against current package state before assuming this still applies),
+  `internal/llm/client.go`, `third_party`, `web/node_modules`, `.planning`.
+- `revive`'s `exported` rule runs with `disableStutteringCheck`.
+
+**Vet / static analysis:** `go vet` is a required pre-push and CI gate
+(`Makefile` `vet:`, `.github/workflows/ci.yml` `build-and-lint` job). `gofmt`
+and `go vet` both run before `golangci-lint` in every gate ordering.
+
+**Dead code:** `deadcode -test` via `scripts/deadcode_gate.sh` (`Makefile`
+`deadcode:` target; wired at both pre-push (`lefthook.yml` →
+`scripts/deadcode_pre_push.sh`) and CI (`build-and-lint` job)).
+
+**File size:** hard 600-LOC cap enforced by `scripts/check-file-size.sh` over
+`*.go`, `*.ts`, `*.tsx` (excludes `internal/db/sqlc`, `third_party`, `vendor`,
+`node_modules`, `dist`, `*.d.ts`). Runs on staged files at pre-commit
+(`lefthook.yml`) and on the whole tree at pre-push and in CI
+(`.github/workflows/ci.yml` step "File-size cap (600 LOC)"). At HEAD the
+largest owned files sit just under the cap (`internal/agui/server_run_resume_test.go`
+600, `internal/agent/tools/skill_write_test.go` 596, `internal/config/config.go`
+592) — the convention in practice is "split before you hit 600", confirmed by
+the extensive `<name>_<concern>.go` file families under `internal/runner/` and
+`internal/agui/`.
 
 ## Import Organization
 
-**Order:**
-1. Go standard-library imports.
-2. One blank line, then module and third-party imports, formatted by `gofmt`/`goimports`; see `internal/db/tx_integration_test.go`.
-3. In TypeScript, builtin/external packages first, project alias imports next, then parent/sibling/index imports. `web/eslint.config.js` enforces that group order without blank lines and reports ordering as a warning; CI's zero-warning command makes it blocking.
-4. Use inline type imports (`type Page`, `type ComponentProps`) when values and types share an import, and `import type` for type-only dependencies; examples are in `web/playwright.config.ts` and `web/src/chat/displays/__tests__/SourcesButton.test.tsx`.
+**Order:** standard library, blank line, then everything else (module-internal
+`github.com/chetto1983/aura/...` imports and third-party imports share one
+group, alphabetized) — standard `goimports`/`gofmt` grouping, no custom import
+grouping tool enforced beyond that. Example
+(`internal/config/config.go:10-25`):
+```go
+import (
+	"fmt"
+	"net"
+	"net/url"
+	"os"
+	"strings"
 
-**Path Aliases:**
-- Use the `@/*` alias for shared frontend code under `web/src/`; it is defined consistently in `web/tsconfig.json`, `web/vite.config.ts`, and `web/vitest.config.ts`.
-- Use relative imports within the same feature or test directory. Use `@/components/ui/*`, `@/lib/utils`, and the aliases recorded in `web/components.json` for cross-feature/shared UI imports.
-- Go imports use the full module path `github.com/chetto1983/aura/...`; do not introduce relative Go imports.
+	"github.com/chetto1983/aura/internal/conversations"
+	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/envutil"
+	"github.com/chetto1983/aura/internal/idroot"
+	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/mcp"
+	"github.com/chetto1983/aura/internal/secret"
+	"github.com/joho/godotenv"
+)
+```
+
+**Module path:** `github.com/chetto1983/aura` (see `go.mod`). All intra-repo
+imports use the full module path, no relative imports.
+
+**Path Aliases:** none in Go (module-path imports only). The web app uses a
+single alias `@` → `web/src` (`web/vite.config.ts`, `web/tsconfig.json`,
+mirrored in `web/vitest.config.ts`).
 
 ## Error Handling
 
-**Patterns:**
-- Return errors instead of panicking for expected failures. Create stable sentinel errors with `errors.New`, wrap them with contextual lowercase messages and `%w`, and classify them with `errors.Is`/`errors.As`; `internal/skills/validator.go` is the canonical compact example.
-- Combine independent cleanup/state errors with `errors.Join` where callers need both causes, as in `internal/agent/llm_agent_retry.go`. Preserve panic only at explicit lifecycle boundaries that must roll back and re-panic, such as `internal/db/tx.go`.
-- Check every returned error. If an error is intentionally ignored during best-effort cleanup, make that reason explicit at the narrow call site; transaction rollback in `internal/db/tx.go` is an example.
-- Log an error or return it, but avoid doing both at the same layer. Add context while propagating and let command/server boundaries emit structured logs.
-- In frontend API code, reject non-2xx responses and keep the status available through a typed error (`HttpError` in `web/src/api/json.ts`) when callers branch on status. Shared response parsing belongs in helpers such as `web/src/chat/http.ts`, not duplicated per client.
-- Catch frontend errors as `unknown`, narrow with `instanceof Error`, and convert them to user-visible state or a deliberate fallback. Use `void promise.catch(...)` only for explicitly fire-and-forget work. Unexpected render failures are contained by `web/src/ErrorBoundary.tsx`.
+**Wrapping:** `fmt.Errorf("<pkg-or-scope>: <what failed>: %w", err)` — over
+1,100 occurrences of `%w` wrapping across `internal/`
+(`internal/config/config.go:303`: `fmt.Errorf("config: load llm: %w", err)`).
+The prefix names the failing scope (`"config: …"`, `"graphview: …"`), so a
+wrapped chain reads as a breadcrumb without needing a stack trace.
+
+**Sentinel errors:** exported package-level `var Err… = errors.New("…")` for
+conditions a caller checks with `errors.Is` (`internal/agent/errors.go`:
+`ErrBudgetExhausted`; `internal/agui/bootstrap_api.go`:
+`ErrBootstrapAlreadyConfigured`, `ErrBootstrapInvalid`;
+`internal/agui/governance_write_seam.go`: `ErrMCPServerExists`,
+`ErrMCPServerNotFound`, `ErrSkillActiveExists`, `ErrSkillInvalidInput`). Each
+sentinel carries a doc comment explaining WHY a caller needs `errors.Is`
+rather than string matching.
+
+**Structured error types (not plain sentinels):** a control-flow signal that
+must carry a payload is a named `struct` implementing `error`, matched with
+`errors.As`, never a formatted string. Canonical example —
+`internal/agent/tools/ask_user.go`:
+```go
+type ErrAwaitingUserInput struct {
+	Question   string
+	Options    []Option
+	Kind       string
+	Priority   int
+	ToolCallID string
+	ResumeContext json.RawMessage
+	ProxiedFromChildID string
+	ProxiedToolCallID  string
+}
+
+func (e *ErrAwaitingUserInput) Error() string { return "awaiting user input" }
+```
+The agent dispatch loop (`internal/agent/llm_agent_pause.go`) intercepts this
+type via `errors.As` to pause a turn — it is a control signal, not a failure
+to be logged and swallowed. Unknown-input errors also favor a structured,
+actionable message over a bare string:
+`internal/agent/tools/action.go` `Dispatch`:
+```go
+return ToolResult{}, fmt.Errorf("unknown action %q: valid actions are %s", action, strings.Join(r.Actions(), ", "))
+```
+
+**Never silent:** `errcheck` is a hard lint gate (unchecked errors fail the
+build); the Python EOL rule from CLAUDE.md ("Errors should never pass
+silently. Unless explicitly silenced.") is enforced mechanically, not just by
+convention.
 
 ## Logging
 
-**Framework:** `log/slog` for Go; UI-visible state and error boundaries for the browser.
+**Framework:** `log/slog` (standard library structured logging) — no
+third-party logging framework. 73+ files call `slog.*` directly (no
+package-level logger wrapper).
 
-**Patterns:**
-- Emit structured `slog.Info`, `slog.Warn`, and `slog.Error` records at process, server, scheduler, and degradation boundaries. Keep message templates stable and attach identifiers, durations, and errors as key/value attributes; examples are in `cmd/aura/serve.go` and `internal/gateway/reconcile.go`.
-- Never log credentials, reset tokens, raw private payloads, or other secrets. `cmd/aura/recovery.go` documents the exceptional stdout-only operator handoff.
-- Do not add browser `console` logging as a substitute for product error handling. Surface actionable failures in components and let tests assert the visible state.
+**Levels in practice:**
+- `slog.Warn` for a degraded-but-continuing path — the majority of call sites.
+  Pattern: name the subsystem and the consequence in the message itself, e.g.
+  `internal/runner/runner_delete.go:181`:
+  `slog.Warn("delete lifecycle: expire pauses failed (cascade delete will reconcile)", ...)`.
+  `internal/runner/runner_persist.go:105`:
+  `slog.Warn("tool invocation ledger insert failed (continuing)", ...)`.
+- `slog.Error` for failures that corrupt state going forward, e.g.
+  `internal/runner/runner.go:451`:
+  `slog.Error("runner: flush pause assistant turn failed; resume history may be malformed", ...)`.
+
+**Attribute convention:** `slog.Warn("<subsystem>: <what and consequence>", "key", value, ...)`
+— key/value pairs are the identifiers relevant to reproducing the failure
+(`identity_id`, `conv`, `err`), never string-interpolated into the message.
 
 ## Comments
 
-**When to Comment:**
-- Comment hidden constraints, security boundaries, protocol quirks, concurrency/lifecycle invariants, and surprising dependency behavior. `internal/db/tx.go`, `web/playwright.config.ts`, and `web/vite.config.ts` demonstrate the expected “why” level.
-- Include the relevant PRD decision/threat identifier when it makes a load-bearing rule traceable. Avoid comments that merely restate an identifier or the next statement.
-- Tagged integration tests should state required services/environment and the exact invocation near the file header, as in `internal/db/db_test.go` and `cmd/aura/serve_smoke_test.go`.
+**Policy (CLAUDE.md, enforced in review):** "NO COMMENTS UNLESS WHY IS
+NON-OBVIOUS. Identifier names already explain what. Comments only for hidden
+constraints, workarounds, or surprising behavior." In practice this produces
+long, dense doc comments on exported types/functions that explain a *design
+decision or measured trade-off*, frequently citing a PRD requirement ID
+(`D-05`, `SC#1`), a phase number, or a dated incident. Example —
+`internal/agent/tools/manifest.go` `RenderToolDefs` doc comment cites the
+specific bug it fixes ("the old code emitted every deferred tool as a callable
+function with an EMPTY parameter schema, which made the model hallucinate
+arguments") rather than describing what the function does line-by-line.
 
-**JSDoc/TSDoc:**
-- Go exported identifiers require proper doc comments under `revive`; package-level architectural contracts belong in `doc.go`, for example `internal/web/doc.go`.
-- TypeScript predominantly uses concise `//` comments for non-obvious runtime constraints. Use JSDoc for a shared API contract only when types and names do not already explain it; `web/src/chat/http.ts` is an example of a justified module-level contract comment.
+**Citations:** comments cite external documentation pages when behavior is
+surprising ("Cite the page in the code comment when the behaviour is
+surprising" — CLAUDE.md), and cite dates/measurements when recording an
+empirical finding (`internal/agent/tools/skill.go`: "1.638 token, il singolo
+tool piu' caro del manifest e il 12% di OGNI prompt").
+
+**JSDoc/TSDoc (web/):** not systematically enforced; TypeScript types carry
+most of the contract. `eslint` + `tsc --noEmit` are the frontend static gates
+(`web-lint`), not a comment-coverage tool.
 
 ## Function Design
 
-**Size:** Keep functions focused and keep their files under 600 lines. Extract pure parsing, validation, formatting, and state-reduction logic so it is directly testable; examples include `internal/skills/validator.go`, `web/src/chat/durationFormat.ts`, and `web/src/graph/ArcadeGraphCanvas_data.ts`.
+**Size:** governed indirectly by the 600-LOC file cap — a function that grows
+large enough to push its file over the cap gets extracted into a sibling
+`_<concern>.go` file, not compressed. No standalone function-length linter is
+configured.
 
-**Parameters:**
-- Put `context.Context` first in Go operations that may block or cross a boundary. Accept dependency interfaces or configuration structs instead of global lookups and long positional argument lists.
-- Use functional options for optional Go constructor behavior (`internal/sandbox/usersandbox/docker_backend.go`) and explicit dependency structs for larger compositions (`internal/channels/telegram/bot.go`).
-- Use typed props interfaces and destructuring for React components. Mark props `readonly` and use optional properties only when absence is semantically valid under `exactOptionalPropertyTypes`.
+**Context propagation:** every I/O-bound or cancelable function takes
+`ctx context.Context` as its first parameter — confirmed across
+`internal/runner/runner.go` (`Turn`, `TurnBranch`, `runTurn`, `turnLocked`,
+`scopeContextToConversation`, `appendUserTurn`, `buildAgent`, all
+`ctx context.Context`-first). Streaming responses use
+`iter.Seq2[*agent.Event, error]` (Go 1.23+ range-over-func iterators) instead
+of channels for agent turn output (`Runner.Turn`, `Runner.TurnBranch`).
 
-**Return Values:**
-- Use Go's `(value, error)` contract and return zero values with the error. Use named returns only when a deferred lifecycle genuinely needs to update the result, as in `internal/db/tx.go`.
-- Use `Promise<T>` for frontend API operations, `void` for intentional side-effect-only helpers, and discriminated unions/typed status values for multi-state results.
+**Tool handlers:** the multi-action tool pattern
+(`internal/agent/tools/action.go`) — `ActionFunc = func(ctx context.Context, args json.RawMessage) (ToolResult, error)` —
+receives the *whole* raw JSON args object including the discriminator field;
+each handler re-unmarshals only the fields it needs. `ActionRouter.Dispatch`
+never panics on an unknown action; it returns a structured error naming the
+valid actions.
 
-## Module Design
+**Return values:** Go idiomatic `(value, error)`; no custom `Result[T]`
+generic wrapper for ordinary functions. Tool execution instead uses a
+domain-specific `ToolResult` type (`internal/agent/tools/result.go`) alongside
+the error return, so "tool succeeded but reports failure to the model" and "Go
+call itself errored" are distinct channels.
 
-**Exports:**
-- Prefer small, explicit Go package APIs and keep implementation helpers unexported. Define interfaces at the consuming boundary and place reusable deterministic test doubles in dedicated support packages such as `internal/agent/agenttest/`.
-- Prefer named TypeScript exports for components, helpers, and types. Default exports are reserved mainly for lazy-loaded workspace/page modules such as `web/src/graph/GraphExplorer.tsx` and `web/src/documents/DocumentsWorkspace.tsx`.
-- For shadcn-derived UI, use the installed Radix-backed wrappers in `web/src/components/ui/`, the `cn()` helper in `web/src/lib/utils.ts`, semantic Aura tokens, configured Lucide icons, and accessible component composition. Preserve required dialog titles, native button semantics, focus behavior, and `aria-*` state.
+## Module Design (Go)
 
-**Barrel Files:**
-- Barrel files are intentionally rare; direct imports are the norm. `web/src/components/skeleton/index.ts` is a narrow exception. Do not add broad `index.ts` barrels that hide ownership or create cycles.
+**Exports:** small, focused interfaces at consumption points rather than one
+large interface per concrete type — e.g. `llm.Client` is satisfied by both the
+production client and `agenttest.FakeClient` (`var _ llm.Client = (*FakeClient)(nil)`
+compile-time assertion pattern, used throughout for interface-satisfaction
+checks without a runtime cost).
+
+**Composition root:** `internal/config` composes only top-level wiring;
+subsystem configuration (DB pool config, LLM client config, MCP server
+config) is owned by its subsystem package and merely aggregated into the root
+`Config` struct (`internal/config/config.go` `Config` struct embeds
+`db.Config`, `llm.Config`, `mcp.ServerConfig`/`mcp.ManagedServer` maps, etc.).
+Loading is staged: `Load()`, `LoadServe()`, `LoadDB()` — increasingly-strict
+subsets of the same root, so a subcommand only pays for the validation it
+needs (`internal/config/config.go:297-354`).
+
+**Barrel files:** not used — Go has no barrel/index-file idiom; each package
+exports directly from its own files.
+
+## Deferred-tool `Spec` pattern (`internal/agent/tools/`)
+
+This is the mandatory shape for adding a new agent tool (CLAUDE.md "Tool
+design — deferred-tool pattern"). The `Spec` struct
+(`internal/agent/tools/spec.go:39`) is the full contract:
+
+```go
+type Spec struct {
+	Name        string
+	Summary     string          // one line, always shown in the manifest
+	Description string          // full description; only shown when not Deferred OR after a tool_search hit
+	Parameters  json.RawMessage // JSON-schema for the tool arguments
+	Deferred    bool            // true → full spec hidden until tool_search loads it
+	Mutating    bool            // runtime-only hint: can this call change host state?
+	Destructive bool            // runtime-only hint: destructive/irreversible mutation
+	Multiplexed bool            // runtime-only hint: multi-action tool (task/skill/swarm_spawn)
+	OperationScope      idempotency.Scope
+	OperationNormalizer string
+	ReplayPolicy        ReplayPolicy
+}
+```
+
+Convention:
+- Big tools (long description, complex schema, examples) set `Deferred: true`
+  and get a comment quantifying the token cost that justifies deferring them —
+  e.g. `internal/agent/tools/skill.go:168-171` ("1.638 token, il singolo tool
+  piu' caro del manifest e il 12% di OGNI prompt … Deferred: true"),
+  `internal/agent/tools/todo.go:69-71`, `internal/agent/tools/task.go:137-139`,
+  `internal/agent/tools/current_time.go:32-33`. A `Deferred: true` tool is
+  fully excluded from the LLM-visible callable set until `tool_search`
+  promotes it (`internal/agent/tools/manifest.go` `RenderToolDefs`) — this
+  fixed a hallucinated-argument bug from an earlier design that shipped
+  deferred tools with an empty schema.
+- Small, always-needed tools (`ask_user`, `document_open`, `document_search`,
+  `patch`, `read_file`, `read_tool_output`, `search`, `search_files`,
+  `send_file`, `shell_exec`, `text_response`, `write_file`) set
+  `Deferred: false`.
+- One tool implementation lives in one file:
+  `internal/agent/tools/<name>.go` (e.g. `ask_user.go`, `send_file.go`,
+  `web_fetch.go`, `web_search.go`). Multi-action tools use
+  `internal/agent/tools/action.go`'s `ActionRouter` to dispatch one manifest
+  entry to N per-action handlers instead of N near-duplicate tool files — the
+  documented anti-pattern it replaces is a "587-LOC scheduler.go god-tool".
+- The manifest never re-orders: `Registry.Render()` /
+  `Registry.RenderToolDefs()` / `Registry.RenderJSON()` all sort by `Name`
+  before returning — any non-deterministic ordering would invalidate the
+  provider-side prompt cache (`internal/agent/tools/manifest.go:23-25`).
+- `Mutating`/`Destructive`/`Multiplexed` are never wire-encoded to the model —
+  they are runtime-only hints consumed by the policy gateway
+  (`internal/gateway`) and the agent's completion-gate critic.
+
+## Config loading (`internal/config/`)
+
+- One file per config concern: `config.go` (root composite + `Load`/
+  `LoadServe`/`LoadDB`), `config_env.go` (raw env accessors), `config_defaults.go`,
+  `config_knobs.go`, `config_paths.go`, `config_sandbox.go`, `config_embed.go`,
+  `config_mcp.go`, `config_retention.go`, `config_routes.go`,
+  `config_runtimeprofile.go`, `config_share.go`, `config_agui_run.go`,
+  `config_document_pipeline.go`, `arcadedb.go` — each with a matching
+  `_test.go`.
+- **Fail-fast vs silent-fallback split is deliberate and load-bearing**: a
+  required secret/credential fails boot loudly (`fmt.Errorf` returned from
+  `Load`); an ad-hoc numeric/boolean tuning knob absorbs a malformed or unset
+  value to a hardcoded fallback via `internal/envutil` (`IntDefault`,
+  `BoolDefault`) rather than blocking startup. See
+  `internal/envutil/envutil.go` doc comment: "a typo in an ad-hoc env tweak
+  should never block startup; the REQUIRED secrets fail fast in their own
+  Validate paths instead."
+- Every `Config` struct field is documented inline with its backing
+  `AURA_*`/upstream env var name as a trailing comment
+  (`internal/config/config.go:33-120`), which is the de facto env-var catalog
+  cross-referenced from `prd.md` §Caps & Limits.
+- `.env` is loaded via `github.com/joho/godotenv` (`config.go:24`); secrets are
+  never logged (`internal/secret` package is imported for redaction —
+  `config_secret_redactor_test.go` exists as its dedicated test).
+- Composed DSNs (`AURA_DB_URL`, `AURA_DB_MIGRATE_URL`) are assembled from
+  `POSTGRES_*` primitives at `Load()`-time rather than read as a single
+  pre-composed var by the application, but integration TESTS read the
+  composed DSNs directly (see TESTING.md).
 
 ---
 
-*Convention analysis: 2026-08-02*
+*Convention analysis: 2026-08-13*

@@ -11,10 +11,15 @@ import (
 	"github.com/chetto1983/aura/internal/documents"
 )
 
+// DocumentLibrary is the retrieval seam the document_search tool depends on,
+// narrowed to the one method it calls so tests can supply a fake without the
+// whole documents service.
 type DocumentLibrary interface {
 	Retrieve(context.Context, documents.RetrievalRequest) (documents.RetrievalResponse, error)
 }
 
+// DocumentSearch is the tool that answers questions about the user's uploaded
+// documents, returning passages that carry their own provenance.
 type DocumentSearch struct {
 	Library DocumentLibrary
 }

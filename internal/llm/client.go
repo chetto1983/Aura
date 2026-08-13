@@ -132,6 +132,8 @@ type Request struct {
 // its `reasoning.effort` object field.
 type ReasoningEffort string
 
+// The effort levels, descending. They pass through to the provider verbatim, and
+// ReasoningEffortNone disables reasoning entirely.
 const (
 	// ReasoningEffortMax is OpenRouter's own top effort token; it serializes 1:1 as
 	// `reasoning.effort:"max"` (spike 096) and backs the Composer's "max" UI level

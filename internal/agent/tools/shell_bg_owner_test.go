@@ -38,7 +38,7 @@ func TestBackgroundJobID(t *testing.T) {
 	seqRe := regexp.MustCompile(`^sh_\d+$`)
 
 	seen := make(map[string]bool, 512)
-	for i := 0; i < 512; i++ {
+	for range 512 {
 		id, err := newBackgroundShellID()
 		if err != nil {
 			t.Fatalf("newBackgroundShellID: %v", err)

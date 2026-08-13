@@ -47,7 +47,7 @@ func TestReadToolOutput_ByteSlice(t *testing.T) {
 	// Build a 100KB fixture whose bytes encode their own index mod 10 so we can
 	// assert the exact slice content.
 	var b strings.Builder
-	for i := 0; i < 100_000; i++ {
+	for i := range 100_000 {
 		b.WriteByte(byte('0' + i%10))
 	}
 	content := b.String()

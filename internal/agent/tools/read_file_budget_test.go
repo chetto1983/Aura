@@ -30,7 +30,7 @@ func TestTruncateToCharBudgetCutsOnALineBoundary(t *testing.T) {
 	if lines != strings.Count(kept, "\n")+1 {
 		t.Errorf("linesKept = %d does not match the lines in %q", lines, kept)
 	}
-	for _, line := range strings.Split(kept, "\n") {
+	for line := range strings.SplitSeq(kept, "\n") {
 		if !strings.Contains(content, line) {
 			t.Errorf("line %q is not a whole line of the source", line)
 		}

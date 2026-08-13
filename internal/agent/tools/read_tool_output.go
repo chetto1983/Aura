@@ -87,9 +87,13 @@ func (ReadToolOutput) Execute(ctx context.Context, raw json.RawMessage) (ToolRes
 		return ToolResult{}, fmt.Errorf("read_tool_output: %w", err)
 	}
 
+	// #nosec G304 -- path is not attacker-controlled: sidecarPath runs both ids
+	// through validateID's [A-Za-z0-9_-] allowlist BEFORE filepath.Join, so no
+	// separator or dot can survive, and runDir is asserted absolute above.
 	f, err := os.Open(path)
 	if err != nil && os.IsNotExist(err) && a.ToolCallID == tc.toolCallID && tc.sidecarID != "" && tc.sidecarID != a.ToolCallID {
 		if altPath, altErr := sidecarPath(tc.runDir, tc.sessionID, tc.sidecarID); altErr == nil {
+			// #nosec G304 -- altPath comes from the same validated sidecarPath.
 			alt, altOpenErr := os.Open(altPath)
 			if altOpenErr == nil || !os.IsNotExist(altOpenErr) {
 				path, f, err = altPath, alt, altOpenErr
@@ -104,7 +108,7 @@ func (ReadToolOutput) Execute(ctx context.Context, raw json.RawMessage) (ToolRes
 		}
 		return ToolResult{}, fmt.Errorf("read_tool_output: read sidecar: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	info, err := f.Stat()
 	if err != nil {
@@ -115,10 +119,7 @@ func (ReadToolOutput) Execute(ctx context.Context, raw json.RawMessage) (ToolRes
 	}
 
 	total := info.Size()
-	start := int64(a.Offset)
-	if start > total {
-		start = total
-	}
+	start := min(int64(a.Offset), total)
 	if _, err := f.Seek(start, io.SeekStart); err != nil {
 		return ToolResult{}, fmt.Errorf("read_tool_output: read sidecar: %w", err)
 	}

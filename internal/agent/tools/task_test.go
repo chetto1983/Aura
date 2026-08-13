@@ -304,12 +304,10 @@ func TestTaskUnknownActionStructuredError(t *testing.T) {
 func TestTaskToolConcurrentExecuteInitializesRouterOnce(t *testing.T) {
 	tool := &TaskTool{Store: &fakeTaskStore{}}
 	var wg sync.WaitGroup
-	for i := 0; i < 64; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 64 {
+		wg.Go(func() {
 			_, _ = tool.Execute(context.Background(), json.RawMessage(`{"action":"explode"}`))
-		}()
+		})
 	}
 	wg.Wait()
 }

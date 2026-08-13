@@ -163,12 +163,18 @@ func (t *SkillTool) Spec() Spec {
 	return Spec{
 		Name:        "skill",
 		Summary:     "List, inspect, and apply skills that extend your capabilities.",
-		Description: t.manifestDescription(),
+		Description: skillReadDescription,
 		Parameters:  json.RawMessage(skillParamsSchemaHonest),
-		// Deferred: 1.638 token, il singolo tool piu' caro del manifest e il 12% di OGNI
-		// prompt, pagato anche per rispondere "ok". Le skill sono un'azione deliberata, non
-		// un riflesso: il costo di un tool_search quando servono e' irrisorio in confronto.
-		Deferred: true,
+		// NOT deferred, and cheap enough to say so: the catalogue of installed skills no
+		// longer rides this Description — it is rendered into the messages[1] always-block
+		// beside the always-on skill bodies, which is where hermes-agent and Claude Code
+		// both keep it. Measured on the live registry (11 skills installed): the tool was
+		// 7091 bytes (~1773 tokens) and the single heaviest entry in the manifest; the
+		// constant text below is ~400. Deferring the READ verb was buying ~400 tokens at
+		// the price of a tool_search round trip before the model could see that skills
+		// exist at all — the same "capability it cannot see is a capability it does not
+		// use" failure the prompt-manifest guard exists to stop.
+		Deferred: false,
 		// READ-ONLY (the write half is skill_manage). list/info/use were ALREADY pinned to
 		// scoring.Safe by the gateway's skillFixedTiers, and classify gives a non-Mutating
 		// tool exactly Safe, so splitting them out changes no tier: it only stops the reads
@@ -178,30 +184,26 @@ func (t *SkillTool) Spec() Spec {
 	}
 }
 
-// manifestDescription renders the loader's turn-stable manifest, or a fixed
-// notice when no loader is wired (the pool/loader-free manifest path, e.g.
-// `aura tools`, still lists the tool's Spec without a half-wired loader).
-func (t *SkillTool) manifestDescription() string {
-	// The lead names ONLY the read/author verbs (amendment #51 / D-40): discovery+
-	// install of third-party skills is NOT a tool action — the always-on find-skills
-	// skill teaches the model to self-extend via the skills CLI in the sandbox. Fixed
-	// const: turn-stable, D-06.
-	const lead = "Skills are packaged capabilities (instructions and runnable snippets) that extend you for specific tasks. " +
-		"Call action=use with a skill name to apply its instructions to the current task; action=info reads a skill without applying it; action=list shows what is available. " +
-		"When NO installed skill covers a reusable task family (spreadsheets, documents, file formats, integrations, recurring workflows), an always-on skill teaches how to discover and install skills from the open ecosystem.\n\n" +
-		// The order used to live in the system prompt, thousands of tokens from the
-		// decision. It belongs with the schema, where it is read at the moment the
-		// question "skill or hand-code?" is actually being answered.
-		"Order for a reusable task family: look here FIRST, install second, hand-write last. " +
-		"Having the libraries (openpyxl, pandas, a node package) is not a reason to skip it — the skill is the tested playbook for the family, the library is not. " +
-		"Installing is skill_manage action=install source=<owner/repo>: one call and the skill is usable this same turn. NEVER install by running the skills CLI yourself — it writes into whatever directory it is standing in, which is not the library, and the skill will not load however encouraging the CLI output looks. " +
-		"Skill work is bounded: apply the obvious skill once, then execute. A skill that is instructions-only, or that points at a script which is not there, is guidance — implement with the tools you have instead of hunting for the missing file.\n\n" +
-		"Available skills:\n"
-	if t.Loader == nil {
-		return lead + "(none loaded)\n"
-	}
-	return lead + t.Loader.ManifestDescription()
-}
+// skillReadDescription is the CONSTANT read-verb description (D-06 byte-stability).
+//
+// It deliberately carries no catalogue. The manifest of installed skills is per-turn
+// live state, and embedding it here put it inside the `tools` array, so every skill
+// add/remove rewrote the tools payload and invalidated the provider's prefix cache —
+// while also making this the most expensive tool in the manifest. The catalogue now
+// renders into the messages[1] always-block (skills.RenderAlwaysBlock's caller), which
+// is already the seam for "rebuilt per turn from live skill state, without touching
+// messages[0]". What stays here is what the model needs at the moment it decides
+// whether to reach for a skill at all.
+const skillReadDescription = "Skills are packaged capabilities (instructions and runnable snippets) that extend you for specific tasks. " +
+	"Call action=use with a skill name to apply its instructions to the current task; action=info reads a skill without applying it; action=list shows what is available (with an optional query to rank it). " +
+	"The skills installed right now are listed for you in the always-on block near the start of this conversation — read that list before assuming a capability is missing.\n\n" +
+	// The order used to live in the system prompt, thousands of tokens from the
+	// decision. It belongs with the schema, where it is read at the moment the
+	// question "skill or hand-code?" is actually being answered.
+	"Order for a reusable task family: look there FIRST, install second, hand-write last. " +
+	"Having the libraries (openpyxl, pandas, a node package) is not a reason to skip it — the skill is the tested playbook for the family, the library is not. " +
+	"Installing is skill_manage action=install source=<owner/repo>: one call and the skill is usable this same turn. NEVER install by running the skills CLI yourself — it writes into whatever directory it is standing in, which is not the library, and the skill will not load however encouraging the CLI output looks. " +
+	"Skill work is bounded: apply the obvious skill once, then execute. A skill that is instructions-only, or that points at a script which is not there, is guidance — implement with the tools you have instead of hunting for the missing file."
 
 // Execute parses the `action` discriminator and dispatches through the
 // ActionRouter (lazily built once, bound to this tool's loader). It never panics

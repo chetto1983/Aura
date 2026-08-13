@@ -186,14 +186,8 @@ func renderReadFile(content string, offset, limit int, extracted bool) string {
 	lines := splitLines(content)
 	totalLines := len(lines)
 
-	start := offset - 1
-	if start > totalLines {
-		start = totalLines
-	}
-	end := start + limit
-	if end > totalLines {
-		end = totalLines
-	}
+	start := min(offset-1, totalLines)
+	end := min(start+limit, totalLines)
 	page := lines[start:end]
 
 	var gutter strings.Builder
@@ -303,7 +297,7 @@ func (t *ReadFile) notFoundWithSuggestions(ctx context.Context, h usersandbox.Bo
 		return msg
 	}
 	var candidates []string
-	for _, name := range strings.Split(strings.TrimRight(string(res.Stdout), "\n"), "\n") {
+	for name := range strings.SplitSeq(strings.TrimRight(string(res.Stdout), "\n"), "\n") {
 		if name != "" {
 			candidates = append(candidates, name)
 		}
@@ -382,10 +376,7 @@ func charOverlapRatio(a, b string) float64 {
 			counted[r] = true
 		}
 	}
-	longer := len(a)
-	if len(b) > longer {
-		longer = len(b)
-	}
+	longer := max(len(b), len(a))
 	if longer == 0 {
 		return 0
 	}

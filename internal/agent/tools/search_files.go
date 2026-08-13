@@ -103,14 +103,8 @@ func (t *SearchFiles) Execute(ctx context.Context, raw json.RawMessage) (ToolRes
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
-	offset := a.Offset
-	if offset < 0 {
-		offset = 0
-	}
-	context := a.Context
-	if context < 0 {
-		context = 0
-	}
+	offset := max(a.Offset, 0)
+	context := max(a.Context, 0)
 	root, err := boxPathArg("search_files", a.Path)
 	if err != nil {
 		return ToolResult{}, err

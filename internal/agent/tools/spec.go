@@ -72,6 +72,9 @@ type Spec struct {
 // ReplayPolicy is the finite way a completed mutation can be returned safely.
 type ReplayPolicy string
 
+// The replay policy, idempotency scopes, and argument normalizer a mutating tool
+// declares in its Spec. ReplayToolResult is the only safe replay today: a repeated
+// call returns the recorded ToolResult instead of re-running the mutation.
 const (
 	ReplayToolResult             ReplayPolicy      = "tool_result"
 	OperationScopeAgent          idempotency.Scope = idempotency.ScopeAgentTool
@@ -110,6 +113,8 @@ func OperationFingerprint(spec Spec, raw json.RawMessage) ([32]byte, error) {
 type TrustLevel string
 
 const (
+	// TrustUntrusted marks a result as attacker-controllable external bytes, the
+	// posture every tool that reaches the network or the filesystem must declare.
 	TrustUntrusted TrustLevel = "untrusted"
 	// TrustTrusted marks a result as host/operator-trusted, short-circuiting the
 	// name-based untrusted-by-default fallback (AG-052). Used by the MCP bridge:
@@ -162,6 +167,7 @@ type Registry struct {
 	tools map[string]Tool
 }
 
+// NewRegistry returns an empty Registry ready for boot-time Register calls.
 func NewRegistry() *Registry {
 	return &Registry{tools: make(map[string]Tool)}
 }
@@ -182,11 +188,14 @@ func (r *Registry) Register(t Tool) {
 	r.tools[name] = t
 }
 
+// Get returns the tool registered under name, reporting whether it exists.
 func (r *Registry) Get(name string) (Tool, bool) {
 	t, ok := r.tools[name]
 	return t, ok
 }
 
+// All returns the registered tools in map-iteration order. Callers that render a
+// manifest must sort the result — the order is deliberately not stable here.
 func (r *Registry) All() []Tool {
 	out := make([]Tool, 0, len(r.tools))
 	for _, t := range r.tools {

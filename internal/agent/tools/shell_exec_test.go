@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -457,8 +458,8 @@ func TestShellExecBadJSONSteersLargeContentToFileTools(t *testing.T) {
 
 func lastNonEmptyLine(s string) string {
 	lines := strings.Split(s, "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		if line := strings.TrimSpace(lines[i]); line != "" {
+	for _, v := range slices.Backward(lines) {
+		if line := strings.TrimSpace(v); line != "" {
 			return line
 		}
 	}

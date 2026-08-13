@@ -57,9 +57,17 @@ import (
 // Two more MATCH the reference agent's set but stay deferred here for a reason the set alone
 // does not capture — Aura's descriptions are several times larger than the equivalents, and the
 // manifest is billed on every turn, cold and cached:
-//   - skill: 1,638 tokens, 12% of every prompt, because it multiplexes read + authoring +
-//     snippet lifecycle behind one `action` enum.
 //   - swarm_spawn: swarmSpawnDescription is 4,364 chars (~1,100 tokens).
+//
+// skill was on that list and has been PROMOTED, which is the outcome the note above
+// anticipated ("promotion candidates once their descriptions are cut to the reference
+// size"). Two cuts did it. The authoring half moved to skill_manage, and then the
+// catalogue of installed skills moved out of the Description into the messages[1]
+// always-block — the seam built for per-turn live state. Measured on the live registry
+// with 11 skills installed: 7,091 bytes (~1,773 tokens) before, ~400 after, and the
+// tools array stopped being rewritten every time a skill is added or removed. What is
+// billed every turn is now a constant, and the model can see that skills exist without
+// spending a tool_search round trip to find out.
 //
 // Both are promotion candidates once their descriptions are cut to the reference size. Matching
 // the set is not enough on its own: the bytes are the other half.
@@ -68,6 +76,7 @@ func TestOnlyTheWorkingSetIsAlwaysActive(t *testing.T) {
 	want := []string{
 		"ask_user", "document_open", "document_search", "patch", "read_file",
 		"read_tool_output", "search_files", "send_file", "shell_exec",
+		"skill",
 		"text_response", "tool_search", "write_file",
 	}
 
