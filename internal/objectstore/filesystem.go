@@ -42,13 +42,17 @@ func (s *FilesystemStore) PresignPut(ctx context.Context, req PresignPutRequest)
 	if err != nil {
 		return PresignedPut{}, err
 	}
+	// The headers are declared, but this store keeps only bytes on disk: it has nowhere to
+	// put user metadata without inventing a sidecar file per object. So a filename does not
+	// survive a Put here, and the ingest sweep falls back to the key-derived name — which is
+	// exactly what every backend did before this channel existed. Said plainly rather than
+	// left to be discovered: this is the local development backend, and the deployment runs
+	// on S3/Garage, where the metadata does survive (measured 2026-08-13).
 	return PresignedPut{
-		URL:    u.String(),
-		Method: "PUT",
-		RequiredHeaders: map[string]string{
-			"Content-Type": req.MIMEType,
-		},
-		ExpiresAt: time.Now().Add(expiresIn),
+		URL:             u.String(),
+		Method:          "PUT",
+		RequiredHeaders: presignRequiredHeaders(req.MIMEType, req.Metadata),
+		ExpiresAt:       time.Now().Add(expiresIn),
 	}, nil
 }
 

@@ -44,12 +44,10 @@ func (s *FakeStore) PresignPut(ctx context.Context, req PresignPutRequest) (Pres
 		Path:   "/" + req.Ref.Key,
 	}
 	return PresignedPut{
-		URL:    u.String(),
-		Method: "PUT",
-		RequiredHeaders: map[string]string{
-			"Content-Type": req.MIMEType,
-		},
-		ExpiresAt: time.Now().Add(expiresIn),
+		URL:             u.String(),
+		Method:          "PUT",
+		RequiredHeaders: presignRequiredHeaders(req.MIMEType, req.Metadata),
+		ExpiresAt:       time.Now().Add(expiresIn),
 	}, nil
 }
 
@@ -65,6 +63,7 @@ func (s *FakeStore) Put(ctx context.Context, ref ObjectRef, body io.Reader, opts
 		SizeBytes: int64(len(data)),
 		ETag:      etag(data),
 		MIMEType:  opts.MIMEType,
+		Metadata:  opts.Metadata,
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()

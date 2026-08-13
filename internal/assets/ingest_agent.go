@@ -68,7 +68,8 @@ func (s *Service) ingestObject(ctx context.Context, in objectIngest) (Asset, err
 		return Asset{}, err
 	}
 	assetID := newAssetID()
-	key := objectstore.AssetKey(assetID, name)
+	place := objectstore.PlaceAsset(assetID, name)
+	key := place.Key
 	asset, err := s.Store.Create(ctx, CreateRequest{
 		IdentityID:        in.identityID,
 		ThreadID:          in.threadID,
@@ -87,7 +88,8 @@ func (s *Service) ingestObject(ctx context.Context, in objectIngest) (Asset, err
 		return Asset{}, err
 	}
 	ref := objectstore.ObjectRef{Bucket: bucket, Key: key}
-	attrs, err := objects.Put(ctx, ref, in.reader, objectstore.PutOptions{MIMEType: mimeType, Size: in.sizeBytes})
+	attrs, err := objects.Put(ctx, ref, in.reader,
+		objectstore.PutOptions{MIMEType: mimeType, Size: in.sizeBytes, Metadata: place.Metadata})
 	if err != nil {
 		_, _ = s.Store.SetStatus(ctx, asset.ID, in.identityID, StatusFailed, "object_put_failed", err.Error())
 		return Asset{}, err

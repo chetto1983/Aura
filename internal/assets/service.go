@@ -100,7 +100,8 @@ func (s *Service) Presign(ctx context.Context, req PresignRequest) (PresignRespo
 		return PresignResponse{}, err
 	}
 	assetID := newAssetID()
-	key := objectstore.AssetKey(assetID, name)
+	place := objectstore.PlaceAsset(assetID, name)
+	key := place.Key
 	asset, err := s.Store.Create(ctx, CreateRequest{
 		IdentityID:        req.IdentityID,
 		SourceKind:        req.SourceKind,
@@ -121,6 +122,7 @@ func (s *Service) Presign(ctx context.Context, req PresignRequest) (PresignRespo
 		Ref:       objectstore.ObjectRef{Bucket: bucket, Key: key},
 		MIMEType:  asset.MIMEType,
 		Size:      req.DeclaredSizeBytes,
+		Metadata:  place.Metadata,
 		ExpiresIn: s.ttl(),
 	})
 	if err != nil {

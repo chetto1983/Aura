@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/chetto1983/aura/internal/objectstore"
 )
 
 // The presign half of the asset service: what it refuses, what scope it assigns, and what
@@ -67,6 +69,46 @@ func TestServicePresignNeverPutsFilenameInObjectKey(t *testing.T) {
 	}
 	if resp.Asset.FileName != "Quarterly Secrets.pdf" {
 		t.Fatalf("FileName = %q, want sanitized basename", resp.Asset.FileName)
+	}
+}
+
+// The other half of the same decision, and the half that was missing. Keeping the name out
+// of the key is only half a design if nothing else carries it: the ingest sweep then derives
+// a name from the key, so the document reaches the index — and the operator's search — as
+// "<assetID>.pdf". The name rides in user metadata, which reaches the object and not the URL.
+//
+// Asserted through the presign response because that is where the browser learns of it: the
+// header is signed into the URL, so a client that does not send it cannot upload at all.
+func TestServicePresignCarriesTheFilenameInSignedMetadata(t *testing.T) {
+	svc, _ := newAssetServiceTestRig(t, Limits{
+		MaxDocumentBytes: 100,
+		MaxImageBytes:    100,
+		MaxAudioBytes:    100,
+	})
+
+	resp, err := svc.Presign(context.Background(), PresignRequest{
+		IdentityID:        serviceIdentityID,
+		SourceKind:        SourceWeb,
+		ThreadID:          "thread-1",
+		FileName:          "Perizia città di Ghèdi.pdf",
+		DeclaredSizeBytes: 10,
+	})
+	if err != nil {
+		t.Fatalf("Presign() error = %v", err)
+	}
+
+	// Percent-encoded, because S3 user metadata is an HTTP header and therefore US-ASCII:
+	// measured against the running Garage on 2026-08-13, the accented form is refused by the
+	// protocol itself. The sidecar undoes exactly this.
+	got := resp.Upload.RequiredHeaders["x-amz-meta-"+objectstore.MetadataFileName]
+	if got == "" {
+		t.Fatalf("presign declared no filename header: %v", resp.Upload.RequiredHeaders)
+	}
+	if objectstore.DecodeFileName(got) != "Perizia città di Ghèdi.pdf" {
+		t.Fatalf("filename header %q decodes to %q", got, objectstore.DecodeFileName(got))
+	}
+	if strings.Contains(strings.ToLower(resp.Asset.ObjectKey), "perizia") {
+		t.Fatalf("the name reached the key after all: %q", resp.Asset.ObjectKey)
 	}
 }
 
