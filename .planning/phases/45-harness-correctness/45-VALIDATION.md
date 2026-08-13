@@ -85,9 +85,9 @@ to automated rows, so no three consecutive tasks lack automated verification.
 | 45-01-T1 | 45-01 | 1 | HARN-01, HARN-02 | T-45-01, T-45-02 | Amendment cites the measurement, not a preference; amendment number computed from the file | docs assertion | `grep -c "ReplayReissueExecutes" .planning/ROADMAP.md; grep -q "RoundOrdinal" .planning/ROADMAP.md && grep -q "model_round.go" prd.md && echo OK` | ⬜ | ⬜ pending |
 | 45-01-T2 | 45-01 | 1 | HARN-02 | T-45-01 | Phase 46 dependency narrowed against a re-read of `bridge.go`, not against prose | docs assertion | `sed -n '/### Phase 46/,/^\*\*Requirements/p' .planning/ROADMAP.md \| grep -i "depends on" \| grep -qiv "vocabulary" && echo OK` | ⬜ | ⬜ pending |
 | 45-01-T3 | 45-01 | 1 | HARN-01 | T-45-03 | Comment-only; redaction logic and preview cap untouched | unit (build) | `go vet ./internal/toolinvocations/ && go build ./... && grep -q "agent-memory-eval" CLAUDE.md && echo OK` | ⬜ | ⬜ pending |
-| 45-02-T1 | 45-02 | 2 | HARN-01, HARN-02, HARN-09 | T-45-04, T-45-05, T-45-06 | Fail-closed `errMissingModelRound`; no silent ordinal-0 fallback | unit + `db_integration` | `go vet ./... && go build ./... && go test -race -run 'TestDeriveToolOperationContext' ./internal/agent/ && go test -race ./internal/agent/ ./internal/gateway/ ./internal/idempotency/` · `go test -race -tags=db_integration -run 'RoundOrdinal\|CrossRound' -count=1 ./internal/gateway/` | ⬜ | ⬜ pending |
-| 45-02-T2 | 45-02 | 2 | HARN-02, ACC-02 | T-45-07, T-45-08 | Reclaim executes once; unaccounted prior dispatch still DENIED, never fabricated | `db_integration` | `go vet ./internal/gateway/ && go test -race -tags=db_integration -count=1 -v ./internal/gateway/ 2>&1 \| tail -40` | ⬜ | ⬜ pending |
-| 45-02-T3 | 45-02 | 2 | HARN-02 | T-45-07 | Deploy-drain hazard (D-06) recorded before deploy, not after | docs assertion | `test "$(awk -F'\|' '/^\| 45-02-T/ && $(NF-1) ~ /pending/ {n++} END {print n+0}' .planning/phases/45-harness-correctness/45-VALIDATION.md)" -eq 0 && echo OK` | ⬜ | ⬜ pending |
+| 45-02-T1 | 45-02 | 2 | HARN-01, HARN-02, HARN-09 | T-45-04, T-45-05, T-45-06 | Fail-closed `errMissingModelRound`; no silent ordinal-0 fallback | unit + `db_integration` | `go vet ./... && go build ./... && go test -race -run 'TestDeriveToolOperationContext' ./internal/agent/ && go test -race ./internal/agent/ ./internal/gateway/ ./internal/idempotency/` · `go test -race -tags=db_integration -run 'RoundOrdinal\|CrossRound' -count=1 ./internal/gateway/` | ✅ | ✅ green |
+| 45-02-T2 | 45-02 | 2 | HARN-02, ACC-02 | T-45-07, T-45-08 | Reclaim executes once; unaccounted prior dispatch still DENIED, never fabricated | `db_integration` | `go vet ./internal/gateway/ && go test -race -tags=db_integration -count=1 -v ./internal/gateway/ 2>&1 \| tail -40` | ✅ | ✅ green |
+| 45-02-T3 | 45-02 | 2 | HARN-02 | T-45-07 | Deploy-drain hazard (D-06) recorded before deploy, not after | docs assertion | `test "$(awk -F'\|' '/^\| 45-02-T/ && $(NF-1) ~ /pending/ {n++} END {print n+0}' .planning/phases/45-harness-correctness/45-VALIDATION.md)" -eq 0 && echo OK` | ✅ | ✅ green |
 | 45-03-T1 | 45-03 | 3 | HARN-03 | T-45-09, T-45-12 | Both replay layers label their result through ONE helper; nil case gains no marker | unit | `go vet ./internal/gateway/ && go test -race -run 'Replay' ./internal/gateway/ && go test -race ./internal/gateway/` | ⬜ | ⬜ pending |
 | 45-03-T2 | 45-03 | 3 | HARN-03, ACC-02 | T-45-10 | Replay answerable from the span; derivation unit-tested, not an inline conditional | unit | `go vet ./... && go build ./... && go test -race ./internal/agent/ ./internal/gateway/ && grep -rq "aura.tool.replay_layer" internal/agent/ && echo OK` | ⬜ | ⬜ pending |
 | 45-03-T3 | 45-03 | 3 | HARN-02 | T-45-11 | Boot-time fail-closed on incomplete mutating-tool metadata (ASVS V4); emptiness only | unit | `go vet ./internal/gateway/ && go test -race -run 'Validate' ./internal/gateway/ && go build ./... && go test -race ./internal/gateway/ ./internal/agent/mcptools/` | ⬜ | ⬜ pending |
@@ -313,8 +313,10 @@ recorded by plan 45-08 Task 3.
 
 ## Wave 0 Requirements
 
-- [ ] Test stubs for the round-ordinal key discrimination (SC#1/#2) before the key shape changes
-      — owned by **45-02-T1** (`internal/agent/idempotency_operation_test.go`, new file; RED recorded)
+- [x] Test stubs for the round-ordinal key discrimination (SC#1/#2) before the key shape changes
+      — owned by **45-02-T1** (`internal/agent/idempotency_operation_test.go`, new file; RED
+      recorded — commit `26c352bef`, `go build` fails with `undefined: errMissingModelRound`
+      against the unmodified source; GREEN in commit `4728b77f8`).
 - [ ] Test stubs for the `replayedMarker` seam (SC#3), mirroring the existing `resultExpiredMarker`
       tests — owned by **45-03-T1** (`internal/gateway/reserve_test.go`, pattern-matched on
       `TestReplayResultMissingSidecar`)
@@ -326,9 +328,11 @@ recorded by plan 45-08 Task 3.
       zero matches on the `"tool-child-v1"` literal; all 8 `FingerprintTyped` test occurrences build
       a PARENT struct, never the child literal. No golden test blocks D-01.** Recorded in
       `45-01-PLAN.md` `<assumption_delta_decision>` and in `45-RESEARCH.md` Open Question 2's
-      resolution. **45-02-T1 re-runs the identical grep as a task step** (RESEARCH.md's 14-day
-      validity window + an active branch make a stale answer possible); if the re-run disagrees, the
-      pinning test is updated in the same commit rather than worked around.
+      resolution. **45-02-T1 RE-RAN the identical grep as its own task step, 2026-08-13, and got
+      the SAME answer: `grep -rn "tool-child-v1\|FingerprintTyped" internal/ --include=*_test.go`
+      returns the same 8 `FingerprintTyped` occurrences (all parent structs) and zero
+      `"tool-child-v1"` matches — the planning-time answer was not stale.** No pinning test
+      needed updating.
 
 *Framework install: not required — `go test` and all tiers already exist.*
 
