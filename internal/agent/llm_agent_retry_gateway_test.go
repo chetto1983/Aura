@@ -15,6 +15,7 @@ import (
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/mcp"
 	"github.com/chetto1983/aura/internal/toolinvocations"
+	"github.com/google/uuid"
 )
 
 // fakeReserveStore satisfies the gateway's (unexported) reservationStore seam so the
@@ -388,6 +389,11 @@ func TestExecToolDerivesStableChildFromHTTPMutation(t *testing.T) {
 	}
 	base = tools.WithRequestID(base, "22222222-2222-2222-2222-222222222222")
 	base = tools.WithToolCallContext(base, "session-1", "call-1", t.TempDir(), 4096)
+	// D-04: the child key derivation now fails closed without a round on ctx. Both
+	// calls below share this SAME base ctx/round on purpose — "identical tool intent
+	// derives a stable child operation" is exactly the same-round retry shape D-01/D-02
+	// require to collapse onto one execution.
+	base = withModelRound(base, modelRound{requestID: uuid.New(), ordinal: 1})
 
 	if _, err := a.execTool(base, spy, true, args); err != nil {
 		t.Fatalf("first exec from HTTP parent: %v", err)
