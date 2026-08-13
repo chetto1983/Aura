@@ -3,6 +3,43 @@
 **Aggiornato: 2026-08-13.** Sostituisce dodici handoff sparsi (`docs/superpowers/*-handoff.md`,
 `.planning/handoffs/*`, `docs/handoff-2026-08-13.md`), cancellati con questo commit.
 
+---
+
+## 0. Lavorato in questa sessione (2026-08-13, sera)
+
+Su `gsd/phase-45-harness-correctness`, **non pushato, non mergiato** (il branch porta anche
+lavoro fase-45 di una sessione parallela, quindi non è mergiabile così com'è).
+
+| Voce | Stato | Prova |
+|---|---|---|
+| **2.3** test `db_integration` sul DB vivo | **CHIUSA** (`11f49cd9b`) | Tier intero verde con il DB vivo come bersaglio e il suo stato identico prima/dopo (version=95 dirty=f, identities=2 documents=1 jobs=0), zero identità di test in produzione, zero database usa-e-getta rimasti. Erano **8** test, non 4: `digestSearchPool` scriveva in produzione senza migrare. |
+| **2.2** gate Content-Type file-manager | **CHIUSA** (`6104cc49b`) | E2E nel browser reale contro il container: create 200 e delete 200 entrambi `application/json`; la stessa create ri-etichettata `text/plain` sul filo → **400**, niente creato. Causa: `RestDataProvider.send` sovrascrive `Rest.sendRequest` e ne perde il default. |
+| **4.5** nome dell'allegato | **canale fatto** (`a5afccfc3`), **E2E bloccato** | Vedi §0.1. |
+
+**0.1 — Il nome viaggia, ma il browser non può caricare affatto.**
+Il canale metadati è completo e testato da entrambi i lati (Go `PlaceAsset` + percent-encoding,
+sidecar `decode_file_name` + `head_object`; CocoIndex non ha superficie metadati — enumerata:
+`S3File` espone solo `content_fingerprint/file_path/read/read_text/size`). Misurato su Garage:
+i metadati sopravvivono, ma **S3 li ammette solo in ASCII**, quindi gli accenti vanno codificati.
+
+Guidandolo è emerso un difetto **più vecchio e più grave, non in questo documento**: *nessun
+upload da browser funziona*. `ConfigureBrowserUploadCORS` gira solo su `cfg.ObjectStoreBucket`
+(il bucket condiviso); i bucket per-identità introdotti dallo split "un bucket per identità"
+non ricevono mai la regola. Prova: in `aura.assets` **ogni riga `web` è ferma a `presigned`**,
+comprese due del **2026-08-08**, mentre ogni riga `agent` (Put server-side, niente browser)
+è `accepted`; e un preflight non autenticato sul bucket per-identità dà **403 anche per il
+solo `content-type`**, senza alcun header nuovo di mezzo.
+
+Il fix è scritto e cablato (hook `ensureCORS` su `objectStoreProvisionAdapter`, sia sul mint
+sia sul resolve, una volta per processo, fail-soft) **ma non funziona**: Garage rifiuta
+`PutBucketCors` con la chiave dell'identità — `Operation is not allowed for this key` — perché
+serve il permesso `owner`, e `garageadmin.ReadWrite` lo nega **di proposito**
+(`types.go:20`: *"an identity must not be able to re-grant or delete its bucket via the S3 data
+plane"*). Alzare quel permesso indebolirebbe un confine deliberato: **decisione aperta**, non
+un dettaglio implementativo. L'alternativa che non tocca il confine è concedere `owner` alla
+chiave **di Aura** (non a quella dell'identità) sul bucket per-identità, e scrivere la CORS con
+quella. Il lavoro CORS è **non committato** nel working tree.
+
 Ogni voce qui sotto è stata **verificata contro il codice di oggi**, non copiata dal documento
 d'origine. Due terzi di ciò che quei documenti chiamavano "aperto" era già chiuso — spesso perché
 il codice a cui si riferiva è stato cancellato. Quella lista sta in fondo, e serve a impedire che
