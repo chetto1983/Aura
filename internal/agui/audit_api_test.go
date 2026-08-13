@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/identity"
+	"github.com/chetto1983/aura/internal/redact"
 )
 
 // fakeAuditReader answers ListActivityForIdentity from an in-memory slice so the handler
@@ -193,7 +194,7 @@ func TestHandleAdminAuditProjectsAndSanitizes(t *testing.T) {
 	if strings.Contains(out.Events[0].Detail, "pass") {
 		t.Fatalf("DSN credential leaked to the wire: %q", out.Events[0].Detail)
 	}
-	if !strings.HasPrefix(out.Events[0].Detail, "postgres://[redacted]") {
+	if !strings.HasPrefix(out.Events[0].Detail, "postgres://"+redact.Placeholder) {
 		t.Fatalf("detail = %q, want redacted DSN", out.Events[0].Detail)
 	}
 }
