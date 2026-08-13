@@ -123,6 +123,24 @@ type FactWrite struct {
 	Candidates []FactHit
 }
 
+// proseObjectRuneBound is the ceiling MEM-05's prose guard enforces on the
+// object endpoint -- strictly tighter than EntityRunes (512). See
+// looksLikeProse for the measurement behind the value.
+const proseObjectRuneBound = 80
+
+// looksLikeProse reports whether object reads as a sentence rather than an
+// entity name (MEM-05). UpsertFact mints an Entity vertex for the object
+// unconditionally under a UNIQUE index on Entity.name, so a sentence-shaped
+// object becomes a junk node nothing can address by name again; the detail
+// belongs in Statement, the field that gets embedded and searched.
+//
+// TODO(45-06 GREEN): wired into Fact.validate once this stub is replaced --
+// currently always returns false so the RED-phase tests below fail on
+// missing enforcement, not on a missing symbol.
+func looksLikeProse(object string) bool {
+	return false
+}
+
 // Validate rejects a fact that could not be answered for later.
 func (f Fact) Validate() error {
 	return f.validate(defaultMemoryLimits)
@@ -130,6 +148,10 @@ func (f Fact) Validate() error {
 
 func (f Fact) validate(limits MemoryLimits) error {
 	limits = limits.normalized()
+	// RED-phase scaffolding: computed but not yet acted on -- GREEN wires this
+	// into a rejection case below. Keeps looksLikeProse a used symbol under
+	// the whole-tree lint gate without enforcing MEM-05 before GREEN lands.
+	_ = looksLikeProse(f.Object)
 	switch {
 	case strings.TrimSpace(f.Subject) == "":
 		return fmt.Errorf("arcadedb: fact subject must be non-empty")
