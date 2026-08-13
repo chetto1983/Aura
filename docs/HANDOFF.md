@@ -14,9 +14,10 @@ lavoro fase-45 di una sessione parallela, quindi non è mergiabile così com'è)
 |---|---|---|
 | **2.3** test `db_integration` sul DB vivo | **CHIUSA** (`11f49cd9b`) | Tier intero verde con il DB vivo come bersaglio e il suo stato identico prima/dopo (version=95 dirty=f, identities=2 documents=1 jobs=0), zero identità di test in produzione, zero database usa-e-getta rimasti. Erano **8** test, non 4: `digestSearchPool` scriveva in produzione senza migrare. |
 | **2.2** gate Content-Type file-manager | **CHIUSA** (`6104cc49b`) | E2E nel browser reale contro il container: create 200 e delete 200 entrambi `application/json`; la stessa create ri-etichettata `text/plain` sul filo → **400**, niente creato. Causa: `RestDataProvider.send` sovrascrive `Rest.sendRequest` e ne perde il default. |
-| **4.5** nome dell'allegato | **canale fatto** (`a5afccfc3`), **E2E bloccato** | Vedi §0.1. |
+| **4.5** nome dell'allegato | **CHIUSA** (`a5afccfc3` + `146ea83dc`) | Vedi §0.1. |
+| **CORS bucket per-identità** (non nel handoff) | **CHIUSA** (`146ea83dc`) | Vedi §0.1. |
 
-**0.1 — Il nome viaggia, ma il browser non può caricare affatto.**
+**0.1 — Il nome viaggia, e per farlo viaggiare è emerso che il browser non caricava affatto.**
 Il canale metadati è completo e testato da entrambi i lati (Go `PlaceAsset` + percent-encoding,
 sidecar `decode_file_name` + `head_object`; CocoIndex non ha superficie metadati — enumerata:
 `S3File` espone solo `content_fingerprint/file_path/read/read_text/size`). Misurato su Garage:
@@ -30,15 +31,27 @@ comprese due del **2026-08-08**, mentre ogni riga `agent` (Put server-side, nien
 è `accepted`; e un preflight non autenticato sul bucket per-identità dà **403 anche per il
 solo `content-type`**, senza alcun header nuovo di mezzo.
 
-Il fix è scritto e cablato (hook `ensureCORS` su `objectStoreProvisionAdapter`, sia sul mint
-sia sul resolve, una volta per processo, fail-soft) **ma non funziona**: Garage rifiuta
-`PutBucketCors` con la chiave dell'identità — `Operation is not allowed for this key` — perché
-serve il permesso `owner`, e `garageadmin.ReadWrite` lo nega **di proposito**
-(`types.go:20`: *"an identity must not be able to re-grant or delete its bucket via the S3 data
-plane"*). Alzare quel permesso indebolirebbe un confine deliberato: **decisione aperta**, non
-un dettaglio implementativo. L'alternativa che non tocca il confine è concedere `owner` alla
-chiave **di Aura** (non a quella dell'identità) sul bucket per-identità, e scrivere la CORS con
-quella. Il lavoro CORS è **non committato** nel working tree.
+Il fix è l'hook `ensureCORS` su `objectStoreProvisionAdapter`, sul mint **e sul resolve** (i
+bucket rotti esistono già: riparare solo il mint non avrebbe riparato nulla), una volta per
+bucket per processo, fail-soft con WARN.
+
+Garage però gatea `PutBucketCors` dietro il permesso `owner`, che `garageadmin.ReadWrite` nega
+all'identità **di proposito** (`types.go`: *"an identity must not be able to re-grant or delete
+its bucket via the S3 data plane"*). La scorciatoia da un carattere avrebbe sfondato quel
+confine; l'ownership va invece alla chiave **di Aura**, il processo che il bucket lo crea, e
+l'identità resta read+write. `TestOnlyAurasOwnKeyIsEverGrantedBucketOwnership` lo asserisce
+invece di affidarlo al commento.
+
+**Misurato prima → dopo sul deployment vivo:**
+```
+preflight (PUT, content-type + x-amz-meta-filename)   403  →  200
+ultima riga asset 'web'                         presigned  →  processing
+IndexedDocument.file_name    <assetID>.txt (derivato)  →  'Perizia città di Ghèdi 2026.txt'
+```
+Il primo upload da browser mai completato su questo deployment. La chiave resta
+`chat/<assetID>.txt`, senza nome: il confine anti-leak tiene, il nome viaggia accanto.
+`web/e2e/attachment-filename.spec.ts` lo fissa e asserisce esplicitamente lo stato `Failed`,
+perché è quello che la CORS mancante produceva mentre un'attesa nuda di `Ready` restava muta.
 
 Ogni voce qui sotto è stata **verificata contro il codice di oggi**, non copiata dal documento
 d'origine. Due terzi di ciò che quei documenti chiamavano "aperto" era già chiuso — spesso perché
