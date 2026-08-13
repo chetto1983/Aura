@@ -102,23 +102,33 @@ func TestCompletionGate_Off_AcceptsWithoutCritic(t *testing.T) {
 	}
 }
 
-// TestCompletionGate_ReadOnlyTurn_Skipped: gate ON but the turn dispatched only a
-// read-only tool → no side effect → the gate is skipped (no critic call).
-func TestCompletionGate_ReadOnlyTurn_Skipped(t *testing.T) {
+// TestCompletionGate_ReadOnlyTurn_NowJudged: gate ON, the turn dispatched only a
+// read-only tool (no side effect at all) → the gate now REACHES the critic (D-20a
+// drops the !a.sideEffected short-circuit), because HARN-06's failure mode is
+// exactly a turn that states an intention and dispatches nothing mutating. The
+// critic's existing prompt already says a well-supported answer to a question IS
+// done, so a DONE verdict here is expected, not a false veto — widening the
+// trigger costs one extra critic call, not a wrong outcome.
+func TestCompletionGate_ReadOnlyTurn_NowJudged(t *testing.T) {
 	fc := agenttest.NewFakeClient(
 		agenttest.ToolCallTurn(echoCall("c1")),
 		agenttest.ToolCallTurn(textResponseCall("c2", "here is the answer")),
+		agenttest.TextChunks("stop", "DONE"),
 	)
 	a := newGateAgent(t, fc, true)
 	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{})))
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if fc.CallCount() != 2 {
-		t.Errorf("CallCount = %d, want 2 (read-only turn must skip the gate)", fc.CallCount())
+	if fc.CallCount() != 3 {
+		t.Fatalf("CallCount = %d, want 3 (a read-only turn now reaches the critic)", fc.CallCount())
 	}
 	if got := finalContent(t, evs); got != "here is the answer" {
 		t.Errorf("final = %q, want the accepted answer", got)
+	}
+	critic := fc.Requests[2]
+	if critic.ToolChoice != "none" {
+		t.Errorf("critic request ToolChoice = %q, want \"none\" (read-only turn is still critic-judged)", critic.ToolChoice)
 	}
 }
 
@@ -152,23 +162,25 @@ func TestCompletionGate_Done_AcceptsAfterCritic(t *testing.T) {
 }
 
 // TestCompletionGate_NotDone_VetoesOnceThenAccepts: gate ON, side effect, critic
-// returns NOT_DONE → the first text_response is VETOED (loop continues), and the
-// second text_response is accepted (the veto is bounded to one per run). The
-// terminal answer is the SECOND text_response, never the first.
+// returns NOT_DONE once → the first text_response is VETOED (loop continues),
+// the critic is consulted again on the second attempt (the veto budget is now 2,
+// D-20b) and returns DONE, so the second text_response is accepted. The terminal
+// answer is the SECOND text_response, never the first.
 func TestCompletionGate_NotDone_VetoesOnceThenAccepts(t *testing.T) {
 	fc := agenttest.NewFakeClient(
 		agenttest.ToolCallTurn(mutatingCall("c1")),
 		agenttest.ToolCallTurn(textResponseCall("c2", "I wrote the script, you run it")),
 		agenttest.TextChunks("stop", "NOT_DONE: the xlsx was never produced; run the script and read it back"),
 		agenttest.ToolCallTurn(textResponseCall("c3", "file produced and verified at /tmp/out.xlsx")),
+		agenttest.TextChunks("stop", "DONE"),
 	)
 	a := newGateAgent(t, fc, true)
 	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{})))
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if fc.CallCount() != 4 {
-		t.Errorf("CallCount = %d, want 4 (mutating + textResp + critic + textResp)", fc.CallCount())
+	if fc.CallCount() != 5 {
+		t.Errorf("CallCount = %d, want 5 (mutating + textResp + critic(NOT_DONE) + textResp + critic(DONE))", fc.CallCount())
 	}
 	got := finalContent(t, evs)
 	if got != "file produced and verified at /tmp/out.xlsx" {
@@ -176,6 +188,47 @@ func TestCompletionGate_NotDone_VetoesOnceThenAccepts(t *testing.T) {
 	}
 	if got == "I wrote the script, you run it" {
 		t.Error("the vetoed hand-off answer was accepted as terminal")
+	}
+}
+
+// TestCompletionGate_NotDone_VetoesTwiceThenAccepts: gate ON, a critic that
+// answers NOT_DONE on every call it is given — the bounds-exhaustion probe edge
+// (D-20b). The first two attempts are vetoed (attempts 1 and 2), the second nudge
+// demanding the turn name what did not run. The THIRD attempt is accepted
+// UNCONDITIONALLY: completionAttempts >= completionMaxAttempts (2) skips the
+// critic entirely, so a third NOT_DONE verdict scripted in the fake client is
+// never even consumed — proving the bound is exactly 2, not fail-open masking an
+// unbounded loop.
+func TestCompletionGate_NotDone_VetoesTwiceThenAccepts(t *testing.T) {
+	fc := agenttest.NewFakeClient(
+		agenttest.ToolCallTurn(mutatingCall("c1")),
+		agenttest.ToolCallTurn(textResponseCall("c2", "attempt 1: I wrote the script, you run it")),
+		agenttest.TextChunks("stop", "NOT_DONE: nothing was executed"),
+		agenttest.ToolCallTurn(textResponseCall("c3", "attempt 2: still just a plan")),
+		agenttest.TextChunks("stop", "NOT_DONE: still nothing executed"),
+		agenttest.ToolCallTurn(textResponseCall("c4", "attempt 3: accepted regardless of critic verdict")),
+		agenttest.TextChunks("stop", "NOT_DONE: this third verdict must never be consumed"),
+	)
+	a := newGateAgent(t, fc, true)
+	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{})))
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if fc.CallCount() != 6 {
+		t.Fatalf("CallCount = %d, want 6 (mutating+textResp+critic+textResp+critic+textResp; NO third critic call)", fc.CallCount())
+	}
+	got := finalContent(t, evs)
+	if got != "attempt 3: accepted regardless of critic verdict" {
+		t.Errorf("final = %q, want the THIRD answer accepted unconditionally", got)
+	}
+	criticCalls := 0
+	for _, req := range fc.Requests {
+		if req.ToolChoice == "none" {
+			criticCalls++
+		}
+	}
+	if criticCalls != 2 {
+		t.Errorf("critic was consulted %d times, want exactly 2 (the bound must not exceed completionMaxAttempts)", criticCalls)
 	}
 }
 
@@ -245,21 +298,24 @@ func TestCompletionGate_CriticRetryExhaustedFailsOpen(t *testing.T) {
 
 // TestCompletionGate_ContentStop_Veto: the content-stop fallback (model emits
 // prose, no tool call) is also a voluntary termination. A NOT_DONE veto continues
-// the loop one more turn; the second content-stop is accepted.
+// the loop one more turn; the critic is consulted again on the second attempt
+// (the veto budget is now 2, D-20b) and returns DONE, so the second content-stop
+// is accepted.
 func TestCompletionGate_ContentStop_Veto(t *testing.T) {
 	fc := agenttest.NewFakeClient(
 		agenttest.ToolCallTurn(mutatingCall("c1")),
 		agenttest.TextChunks("stop", "here, run create.py yourself"),
 		agenttest.TextChunks("stop", "NOT_DONE: nothing was executed; run it now"),
 		agenttest.TextChunks("stop", "produced and verified the output file"),
+		agenttest.TextChunks("stop", "DONE"),
 	)
 	a := newGateAgent(t, fc, true)
 	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{})))
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if fc.CallCount() != 4 {
-		t.Errorf("CallCount = %d, want 4 (content-stop veto then accept)", fc.CallCount())
+	if fc.CallCount() != 5 {
+		t.Errorf("CallCount = %d, want 5 (mutating + contentStop + critic(NOT_DONE) + contentStop + critic(DONE))", fc.CallCount())
 	}
 	if got := finalContent(t, evs); got != "produced and verified the output file" {
 		t.Errorf("final = %q, want the second (accepted) content-stop answer", got)
