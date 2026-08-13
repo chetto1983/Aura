@@ -187,3 +187,84 @@ func TestCommandHookDefaultPolicyNeverSilentAllows(t *testing.T) {
 		})
 	}
 }
+
+// --- HookManager.With: the per-turn derivation the verification hook needs ---
+
+// countingHook records every point it is asked at, so a derived manager can be shown
+// to run the original's hooks as well as its own.
+type countingHook struct{ points *[]string }
+
+func (h countingHook) OnTurnStart(context.Context, agent.HookTurn) error {
+	*h.points = append(*h.points, "turn_start")
+	return nil
+}
+
+func (h countingHook) BeforeModel(context.Context, *llm.Request) (*agent.ModelHookResult, error) {
+	return nil, nil
+}
+
+func (h countingHook) BeforeTool(context.Context, llm.ToolCall) (*agent.ToolHookResult, error) {
+	return nil, nil
+}
+
+func (h countingHook) AfterTool(context.Context, llm.ToolCall, tools.ToolResult) (*agent.ToolResultHookResult, error) {
+	*h.points = append(*h.points, "after_tool")
+	return nil, nil
+}
+
+func (h countingHook) OnTurnEnd(context.Context, agent.HookTurn) error { return nil }
+
+func TestHookManagerWith_KeepsTheOriginalHooksAndAddsTheNewOne(t *testing.T) {
+	var base, added []string
+	m := agent.NewHookManager(countingHook{points: &base})
+	derived := m.With(countingHook{points: &added}, agent.FailOpen)
+
+	if _, err := derived.AfterTool(context.Background(), llm.ToolCall{}, tools.ToolResult{}); err != nil {
+		t.Fatalf("AfterTool: %v", err)
+	}
+	if len(base) != 1 || len(added) != 1 {
+		t.Fatalf("derived manager ran base=%v added=%v, want one call each", base, added)
+	}
+
+	// The process-wide manager is shared by every turn: appending to it would leak a
+	// per-turn hook (and its session id) into the next turn.
+	if _, err := m.AfterTool(context.Background(), llm.ToolCall{}, tools.ToolResult{}); err != nil {
+		t.Fatalf("AfterTool on the original: %v", err)
+	}
+	if len(added) != 1 {
+		t.Fatalf("the original manager gained the derived hook: added=%v", added)
+	}
+}
+
+func TestHookManagerWith_HonoursTheRequestedPolicy(t *testing.T) {
+	// FailOpen is what the verification hook is registered with: a ledger write that
+	// faults must never abort the turn it was observing. Register's default would.
+	open := agent.NewHookManager().With(faultyHook{failPoint: "after_tool"}, agent.FailOpen)
+	if _, err := open.AfterTool(context.Background(), llm.ToolCall{}, tools.ToolResult{}); err != nil {
+		t.Fatalf("a fail_open hook fault must be contained, got %v", err)
+	}
+
+	closed := agent.NewHookManager().With(faultyHook{failPoint: "after_tool"}, agent.FailClosed)
+	if _, err := closed.AfterTool(context.Background(), llm.ToolCall{}, tools.ToolResult{}); err == nil {
+		t.Fatal("a fail_closed hook fault must abort the turn")
+	}
+}
+
+func TestHookManagerWith_NilsAreNotSpecialCases(t *testing.T) {
+	var added []string
+	// A nil receiver is the "no command hooks configured" boot: the derived manager
+	// still has to work, because that is the common deployment.
+	var absent *agent.HookManager
+	derived := absent.With(countingHook{points: &added}, agent.FailOpen)
+	if _, err := derived.AfterTool(context.Background(), llm.ToolCall{}, tools.ToolResult{}); err != nil {
+		t.Fatalf("AfterTool on a manager derived from nil: %v", err)
+	}
+	if len(added) != 1 {
+		t.Fatalf("hook ran %d times, want 1", len(added))
+	}
+
+	m := agent.NewHookManager()
+	if got := m.With(nil, agent.FailOpen); got != m {
+		t.Fatal("With(nil) must return the receiver unchanged")
+	}
+}

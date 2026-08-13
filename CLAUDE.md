@@ -69,12 +69,21 @@ Ogni slice attraversa 3 gate (formalizzati nel PRD §Slice Q&A discipline). Mapp
 
 Installazione: `.claude/` con 67 commands + 33 agents + 9 hooks attivi (13 script in `.claude/hooks/`, 9 wired — vedi `.claude/settings.json`). Versione: 1.1.0.
 
-> **`.planning/` NON ESISTE in questo momento** — è stata cancellata alla chiusura della
-> milestone v2.0.0 e viene **rigenerata** dai comandi GSD (`/gsd-map-codebase`,
-> `/gsd-ingest-docs`, `/gsd-graphify`) all'apertura della prossima. Ogni riferimento qui
-> sotto a `.planning/...` descrive la struttura che quei comandi ricreano, non un percorso
-> leggibile adesso. Non è un albero rotto: è un albero non ancora ricostruito, e la storia
-> resta in git.
+> **`.planning/` ESISTE ed è tracciata in git.** Cancellata alla chiusura della milestone
+> v2.0.0, è stata **rigenerata il 2026-08-05** (`b1a95faf8`, apertura di v2.1.0
+> HERMES-CLAUDE_PARITY) dai comandi GSD `/gsd-ingest-docs`, `/gsd-map-codebase`,
+> `/gsd-graphify`. Contiene oggi `PROJECT.md`, `ROADMAP.md`, `REQUIREMENTS.md`,
+> `STATE.md`, `INGEST-CONFLICTS.md`, `config.json` e le directory `codebase/`, `intel/`,
+> `phases/`, `handoffs/`, `research/`, `debug/`. Gli unici percorsi non versionati sono
+> `.planning/tmp/` e `.planning/graphs/*` (vedi `.gitignore`). I riferimenti a
+> `.planning/...` qui sotto sono quindi percorsi leggibili adesso, non una struttura
+> promessa.
+>
+> **Ma il contenuto invecchia.** `STATE.md` è fermo al 2026-08-05 (Phase 45 di 52, `status:
+> planning`, 0 fasi completate) e `phases/` ne conserva una sola, `32-quality-cleanup-dead-code-shared-helpers`,
+> residuo della milestone precedente. Prima di trattare un file di `.planning/` come stato
+> corrente, confronta il suo `last_updated` con `git log`: la data nel file è un'asserzione,
+> non una misura.
 
 > **Slice → Phase (Rosetta).** Il PRD numera per **Slice** (0.5, 0.7, 1, 3, 11a-e, 13 — vocabolario storico, tuttora in `prd.md`); `.planning/ROADMAP.md`, `.planning/phases/` e gli scope dei commit numerano per **Phase** (0-43). Le due sequenze NON coincidono: una Slice può atterrare in una Phase con numero diverso. Per qualunque decisione di ordine/atterraggio (migrations su tutte) vale l'**ordine-fase**, mai l'ordine-slice.
 

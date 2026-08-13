@@ -121,7 +121,7 @@ func (t *SkillTool) actionUse(ctx context.Context, raw json.RawMessage) (ToolRes
 // renderSnippetUse frames a snippet's by-path invocation for the model: the instructions, then a
 // shell_exec call running the snippet at its in-box path. It names shell_exec and no other tool
 // (amendment #96). The literal command shape ("<interpreter> '<runPath>'") mirrors the shell_exec
-// arg schema so the model assembles a correct call. Quoting goes through shellQuoteArg — runPath
+// arg schema so the model assembles a correct call. Quoting goes through ShellQuoteArg — runPath
 // is a POSIX box path now, so the Windows-path normalization the old host-path quoter carried is
 // guarding an input that can no longer be constructed.
 func renderSnippetUse(instructions, runPath, interpreter string) string {
@@ -132,7 +132,7 @@ func renderSnippetUse(instructions, runPath, interpreter string) string {
 		b.WriteString("\n")
 	}
 	fmt.Fprintf(&b, "Run this stored snippet by path with shell_exec: command=%q (append further args as needed).\n",
-		interpreter+" "+shellQuoteArg(runPath))
+		interpreter+" "+ShellQuoteArg(runPath))
 	return b.String()
 }
 
