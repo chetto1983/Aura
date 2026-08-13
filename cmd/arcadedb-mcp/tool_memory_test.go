@@ -175,6 +175,141 @@ func TestSupersedingClosesTheWindowAndDoesNotDelete(t *testing.T) {
 	}
 }
 
+// D-15: supersedes_fact_key targets exactly the one fact it names, skipping
+// the legacy subject+predicate candidate resolution entirely.
+func TestUpsertFactClosesByFactKey(t *testing.T) {
+	client, rec := newRecordingDB(t,
+		`{"result":[]}`,            // entity upsert: subject
+		`{"result":[]}`,            // entity upsert: object
+		`{"result":[]}`,            // attachFactSource: release expired identity
+		`{"result":[]}`,            // attachFactSource: exact replay lookup
+		`{"result":[{"count":1}]}`, // the exact-match close by fact_key
+	)
+	in := validFactInput()
+	in.SupersedesFactKey = "target-key-abc"
+	out, err := upsert(t, client, in)
+	if err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	if out.Refused {
+		t.Fatalf("output = %+v, want refused=false", out)
+	}
+	if out.Superseded != 1 {
+		t.Fatalf("superseded = %d, want 1", out.Superseded)
+	}
+	statement, params, ok := rec.find("WHERE fact_key = :target_fact_key")
+	if !ok {
+		t.Fatalf("no exact-match close by fact_key issued; statements = %v", rec.statements)
+	}
+	if params["target_fact_key"] != "target-key-abc" {
+		t.Fatalf("target_fact_key = %v, want the supplied key", params["target_fact_key"])
+	}
+	if strings.Contains(statement, "outV().name = :subject_name") {
+		t.Fatalf("fact_key close must not use the legacy subject+predicate WHERE: %s", statement)
+	}
+	if _, _, found := rec.find("outV().name = :entity OR inV().name = :entity"); found {
+		t.Fatalf("fact_key close must skip subject+predicate candidate resolution: %v", rec.statements)
+	}
+}
+
+// D-15: a supersedes_fact_key naming no still-valid fact refuses -- as a
+// successful call, never an mcp.ToolCallError (D-17) -- and writes nothing.
+func TestUpsertFactRefusesOnFactKeyMiss(t *testing.T) {
+	client, rec := newRecordingDB(t,
+		`{"result":[]}`, // entity upsert: subject
+		`{"result":[]}`, // entity upsert: object
+		`{"result":[]}`, // attachFactSource: release expired identity
+		`{"result":[]}`, // attachFactSource: exact replay lookup
+		`{"result":[]}`, // the exact-match close: 0 rows -> refusal
+	)
+	in := validFactInput()
+	in.SupersedesFactKey = "nonexistent-key"
+	out, err := upsert(t, client, in)
+	if err != nil {
+		t.Fatalf("a refusal must return a nil error (D-17), got: %v", err)
+	}
+	if !out.Refused {
+		t.Fatalf("output = %+v, want refused=true", out)
+	}
+	if out.Superseded != 0 {
+		t.Fatalf("superseded = %d, want 0 on refusal", out.Superseded)
+	}
+	if strings.TrimSpace(out.Reason) == "" {
+		t.Fatal("refusal has no reason")
+	}
+	if _, _, found := rec.find("CREATE EDGE"); found {
+		t.Fatalf("a refused correction must create no fact; statements = %v", rec.statements)
+	}
+}
+
+// D-16: the legacy supersedes:true path refuses on more than one distinct
+// candidate, returns every preview (with its fact_key, so the model can
+// disambiguate), and creates nothing.
+func TestUpsertFactRefusesOnAmbiguousSupersede(t *testing.T) {
+	const twoFactRows = `{"result":[
+{"statement":"Davide lives in Caraglio.","predicate":"lives_in","subject":"Davide","subject_kind":"Person",
+"object":"Caraglio","object_kind":"Location","valid_from":"2026-01-01T00:00:00Z",
+"sources":[{"run_id":"run-1","memory_ids":["mem-1"]}],"fact_key":"key-a"},
+{"statement":"Davide lives in Torino.","predicate":"lives_in","subject":"Davide","subject_kind":"Person",
+"object":"Torino","object_kind":"Location","valid_from":"2026-02-01T00:00:00Z",
+"sources":[{"run_id":"run-2","memory_ids":["mem-2"]}],"fact_key":"key-b"}]}`
+	client, rec := newRecordingDB(t,
+		`{"result":[]}`,
+		`{"result":[]}`,
+		`{"result":[]}`,
+		`{"result":[]}`,
+		twoFactRows,
+	)
+	in := validFactInput()
+	in.Supersedes = true
+	out, err := upsert(t, client, in)
+	if err != nil {
+		t.Fatalf("a refusal must return a nil error (D-17), got: %v", err)
+	}
+	if !out.Refused || out.Superseded != 0 {
+		t.Fatalf("output = %+v, want refused=true, superseded=0", out)
+	}
+	if len(out.Candidates) != 2 {
+		t.Fatalf("candidates = %+v, want both previews", out.Candidates)
+	}
+	for _, candidate := range out.Candidates {
+		if candidate.FactKey == "" {
+			t.Fatalf("candidate preview missing fact_key, the value needed to disambiguate: %+v", candidate)
+		}
+	}
+	if !strings.Contains(out.Reason, "supersedes_fact_key") {
+		t.Fatalf("reason = %q, want it to name supersedes_fact_key as the disambiguation path", out.Reason)
+	}
+	if _, _, found := rec.find("CREATE EDGE"); found {
+		t.Fatal("an ambiguous refusal must create no fact")
+	}
+}
+
+// D-15: a recall's fact_key is the identifier a correction later names --
+// without it surfacing here, an ambiguous refusal has nothing to retry with.
+func TestSearchAndFactsAboutSurfaceFactKey(t *testing.T) {
+	t.Run("memory_search", func(t *testing.T) {
+		client, _ := newRecordingDB(t, oneFactRow)
+		out, err := search(t, client, MemorySearchInput{UserIdentifier: testIdentity, Query: "where does Davide live"})
+		if err != nil {
+			t.Fatalf("search: %v", err)
+		}
+		if len(out.Facts) != 1 || out.Facts[0].FactKey != "solo-key" {
+			t.Fatalf("facts = %+v, want fact_key threaded through", out.Facts)
+		}
+	})
+	t.Run("memory_facts_about", func(t *testing.T) {
+		client, _ := newRecordingDB(t, oneFactRow)
+		out, err := factsAbout(t, client, MemoryFactsAboutInput{UserIdentifier: testIdentity, Entity: "Davide"})
+		if err != nil {
+			t.Fatalf("facts_about: %v", err)
+		}
+		if len(out.Facts) != 1 || out.Facts[0].FactKey != "solo-key" {
+			t.Fatalf("facts = %+v, want fact_key threaded through", out.Facts)
+		}
+	})
+}
+
 func TestUpsertFactWithoutSupersedesLeavesPriorFactsAlone(t *testing.T) {
 	client, rec := newRecordingDB(t)
 	if _, err := upsert(t, client, validFactInput()); err != nil {
@@ -247,7 +382,7 @@ func search(
 
 const oneFactRow = `{"result":[{"statement":"Davide lives in Caraglio.","predicate":"lives_in",
 "subject":"Davide","subject_kind":"Person","object":"Caraglio","object_kind":"Location",
-"valid_from":"2026-01-01T00:00:00Z",
+"valid_from":"2026-01-01T00:00:00Z","fact_key":"solo-key",
 "sources":[{"run_id":"run-1","memory_ids":["mem-1"]}]}]}`
 
 func TestSearchUsesTheFullTextIndexAndKeepsProvenance(t *testing.T) {

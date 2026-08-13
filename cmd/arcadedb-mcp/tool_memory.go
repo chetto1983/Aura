@@ -35,14 +35,30 @@ type MemoryUpsertFactInput struct {
 	ValidTo        string `json:"valid_to,omitempty" jsonschema:"RFC3339 instant when the fact stopped being true; omit while it still holds"`
 	// Supersedes is explicit because some predicates are single-valued
 	// ("lives_in") and others are not ("likes"); guessing gets one of them wrong.
-	Supersedes bool             `json:"supersedes,omitempty" jsonschema:"close any still-valid fact with the same subject and predicate"`
-	Source     MemoryFactSource `json:"source" jsonschema:"required provenance supporting this fact"`
+	Supersedes bool `json:"supersedes,omitempty" jsonschema:"close any still-valid fact with the same subject and predicate"`
+	// SupersedesFactKey, when set, closes exactly the one fact it names
+	// instead of resolving the subject+predicate candidate set; it comes
+	// from a fact_key a prior memory_search/memory_facts_about/memory_recall
+	// result returned, and is the way to disambiguate after a refused
+	// correction (D-15/D-17).
+	SupersedesFactKey string           `json:"supersedes_fact_key,omitempty" jsonschema:"the fact_key of the exact fact to close, taken from a prior recall result; set this to disambiguate after a refused correction"`
+	Source            MemoryFactSource `json:"source" jsonschema:"required provenance supporting this fact"`
 }
 
 // MemoryUpsertFactOutput reports what changed.
 type MemoryUpsertFactOutput struct {
 	Statement  string `json:"statement"`
 	Superseded int    `json:"superseded" jsonschema:"how many previously-valid facts had their window closed"`
+	// Refused is true when Supersedes could not identify exactly one fact to
+	// close -- either supersedes_fact_key named no still-valid fact, or the
+	// subject+predicate resolution matched 0 or more than 1 distinct fact.
+	// The call still succeeded: nothing was written, Reason explains why,
+	// and Candidates carries the fact_key-bearing previews needed to retry
+	// with supersedes_fact_key (D-17). Never an mcp.ToolCallError: an
+	// effect-free refusal is not a failed mutation.
+	Refused    bool              `json:"refused"`
+	Reason     string            `json:"reason,omitempty"`
+	Candidates []MemorySearchHit `json:"candidates,omitempty"`
 }
 
 func addMemoryUpsertFactTool(server *mcp.Server, tenants *tenants, now clock) {
@@ -121,6 +137,10 @@ type MemorySearchHit struct {
 	ValidFrom   string             `json:"valid_from,omitempty"`
 	ValidTo     string             `json:"valid_to,omitempty" jsonschema:"absent while the fact still holds"`
 	Sources     []MemoryFactSource `json:"sources"`
+	// FactKey identifies this fact for a later correction: pass it back as
+	// supersedes_fact_key to close exactly this edge. Empty when the fact is
+	// already closed (D-15).
+	FactKey string `json:"fact_key,omitempty" jsonschema:"identifies this fact for a later correction; pass it back as supersedes_fact_key"`
 }
 
 // MemorySearchOutput carries the hits.
