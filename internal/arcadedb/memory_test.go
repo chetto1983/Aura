@@ -72,6 +72,10 @@ const oneFactRow = `{"result":[{"statement":"Davide lives in Caraglio.","predica
 "subject":"Davide","object":"Caraglio","valid_from":"2026-01-01T00:00:00Z",
 "sources":[{"run_id":"run-1","memory_ids":["m1"]}]}]}`
 
+const oneFactRowWithKey = `{"result":[{"statement":"Davide lives in Caraglio.","predicate":"lives_in",
+"subject":"Davide","object":"Caraglio","valid_from":"2026-01-01T00:00:00Z","fact_key":"key-abc123",
+"sources":[{"run_id":"run-1","memory_ids":["m1"]}]}]}`
+
 // This test used to assert the OPPOSITE — that the schema carried no vector
 // index at all — on the reasoning that retrieval was the graph plus Lucene and a
 // vector index would reintroduce an embedding call on every read and write.
@@ -269,6 +273,87 @@ func TestUpsertFactSupersedesByClosingTheWindow(t *testing.T) {
 	}
 }
 
+// D-15: an explicit fact_key closes exactly the one edge it names, skipping
+// candidate resolution entirely -- it never falls back to the broad
+// subject+predicate match.
+func TestUpsertFactClosesExactlyOneFactByTargetFactKey(t *testing.T) {
+	client, requests := routedClient(t, func(request recordedRequest) testResponse {
+		statement, _ := request.Payload["command"].(string)
+		if strings.Contains(statement, "fact_key = :target_fact_key") {
+			return testResponse{Body: `{"result":[{"count":1}]}`}
+		}
+		return testResponse{Body: `{"result":[]}`}
+	})
+	fact := validFact()
+	fact.Supersedes = true
+	fact.TargetFactKey = "target-key-1"
+	written, err := client.UpsertFact(context.Background(), fact, now)
+	if err != nil {
+		t.Fatalf("UpsertFact: %v", err)
+	}
+	if written.Refused {
+		t.Fatalf("written = %+v, want a clean close, not a refusal", written)
+	}
+	if written.Superseded != 1 {
+		t.Fatalf("superseded = %d, want 1", written.Superseded)
+	}
+	statements := make([]string, 0, len(*requests))
+	for _, request := range *requests {
+		statement, _ := request.Payload["command"].(string)
+		statements = append(statements, statement)
+	}
+	all := strings.Join(statements, "\n")
+	if !strings.Contains(all, "fact_key = :target_fact_key") {
+		t.Fatalf("exact-match close statement never issued:\n%s", all)
+	}
+	// The broad statement's own self-exclusion clause -- must not fire
+	// alongside the exact-match close.
+	if strings.Contains(all, "fact_key <> :fact_key") {
+		t.Fatalf("an explicit target must skip the broad-match statement entirely:\n%s", all)
+	}
+	if !strings.Contains(all, "expired_at IS NULL") {
+		t.Fatalf("exact-match close must only touch a still-valid fact:\n%s", all)
+	}
+}
+
+// An explicit fact_key naming nothing still-valid closes 0, refuses, and
+// never falls back to the broad match -- the fallback is what F-2 needs
+// this plan to remove, not relocate.
+func TestUpsertFactWithUnknownTargetFactKeyRefusesAndWritesNothing(t *testing.T) {
+	client, requests := routedClient(t, func(request recordedRequest) testResponse {
+		statement, _ := request.Payload["command"].(string)
+		if strings.Contains(statement, "fact_key = :target_fact_key") {
+			return testResponse{Body: `{"result":[{"count":0}]}`}
+		}
+		return testResponse{Body: `{"result":[]}`}
+	})
+	fact := validFact()
+	fact.Supersedes = true
+	fact.TargetFactKey = "does-not-exist"
+	written, err := client.UpsertFact(context.Background(), fact, now)
+	if err != nil {
+		t.Fatalf("UpsertFact: %v", err)
+	}
+	if !written.Refused {
+		t.Fatalf("written = %+v, want a refusal for an unknown fact_key", written)
+	}
+	if written.Superseded != 0 {
+		t.Fatalf("superseded = %d, want 0", written.Superseded)
+	}
+	if written.Reason == "" {
+		t.Fatal("a refusal must explain why")
+	}
+	for _, request := range *requests {
+		statement, _ := request.Payload["command"].(string)
+		if strings.HasPrefix(statement, "CREATE EDGE") {
+			t.Fatalf("a refused correction must write nothing, but the new fact was created: %s", statement)
+		}
+		if strings.Contains(statement, "outV().name = :subject_name") {
+			t.Fatalf("an explicit target must never fall back to the broad-match statement: %s", statement)
+		}
+	}
+}
+
 func TestUpsertFactWithoutSupersedesLeavesPriorFactsAlone(t *testing.T) {
 	client, rec := recordingClient(t, `{"result":[]}`)
 	if _, err := client.UpsertFact(context.Background(), validFact(), now); err != nil {
@@ -306,6 +391,22 @@ func TestSearchFactsUsesTheFullTextIndexAndReadsEndpoints(t *testing.T) {
 	}
 	if len(hits) != 1 || hits[0].Subject != "Davide" || len(hits[0].Sources) != 1 || hits[0].Sources[0].RunID != "run-1" {
 		t.Fatalf("hits = %+v", hits)
+	}
+}
+
+// fact_key is what a correction names to close exactly one edge (D-15); a
+// hit that omits it cannot be targeted, only guessed at.
+func TestSearchFactsCarriesFactKey(t *testing.T) {
+	client, rec := recordingClient(t, oneFactRowWithKey)
+	hits, err := client.SearchFacts(context.Background(), "where does Davide live", 3, time.Time{})
+	if err != nil {
+		t.Fatalf("SearchFacts: %v", err)
+	}
+	if !strings.Contains(rec.statements[0], "fact_key") {
+		t.Fatalf("search projection omits fact_key: %s", rec.statements[0])
+	}
+	if len(hits) != 1 || hits[0].FactKey != "key-abc123" {
+		t.Fatalf("hits = %+v, want fact_key key-abc123", hits)
 	}
 }
 
@@ -405,6 +506,23 @@ func TestFactsAboutWalksTheEntitysEdges(t *testing.T) {
 	}
 	if len(hits) != 1 || hits[0].Object != "Caraglio" {
 		t.Fatalf("hits = %+v", hits)
+	}
+}
+
+// factHitFromRow is the single mapper both readers share (REUSABLE CODE,
+// 45-PATTERNS.md); this proves FactsAbout gets fact_key through it exactly
+// like SearchFacts does above, not via a second mapping.
+func TestFactsAboutCarriesFactKey(t *testing.T) {
+	client, rec := recordingClient(t, oneFactRowWithKey)
+	hits, err := client.FactsAbout(context.Background(), "Davide", "", 0, time.Time{})
+	if err != nil {
+		t.Fatalf("FactsAbout: %v", err)
+	}
+	if !strings.Contains(rec.statements[0], "fact_key") {
+		t.Fatalf("facts-about projection omits fact_key: %s", rec.statements[0])
+	}
+	if len(hits) != 1 || hits[0].FactKey != "key-abc123" {
+		t.Fatalf("hits = %+v, want fact_key key-abc123", hits)
 	}
 }
 

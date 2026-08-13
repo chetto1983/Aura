@@ -1,0 +1,148 @@
+//go:build arcadedb_integration
+
+// Live-graph proof for the supersede concern (memory_supersede.go): an
+// exact-match close touches only the fact it names (D-15), the legacy
+// ambiguity contract refuses rather than guesses (D-16), and F-2's own
+// eight-fact shape is replayed and survives. Split out of
+// memory_integration_test.go, which the file-size gate caps at 600 LOC --
+// the same reasoning memory_supersede.go itself documents.
+//
+// Run: go test -tags arcadedb_integration ./internal/arcadedb/
+package arcadedb
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"testing"
+	"time"
+)
+
+// D-15/SC#4: an explicit fact_key closes exactly the one edge it names.
+// Siblings sharing the same subject and predicate -- the shape F-2 destroyed
+// -- must survive untouched, and the closed edge stays queryable via as_of.
+func TestUpsertFactByFactKeyClosesOnlyTheNamedSiblingAndKeepsItQueryable(t *testing.T) {
+	client := integrationClient(t)
+	subject, runID := isolate(t, client)
+	now := time.Now()
+
+	var keys [3]string
+	for i, lesson := range []string{"first lesson", "second lesson", "third lesson"} {
+		object := fmt.Sprintf("%s_lesson_%d", subject, i)
+		write(t, client, Fact{
+			Subject: subject, Predicate: "learned_lesson", Object: object,
+			Statement: subject + " learned: " + lesson,
+			Source:    FactSource{RunID: runID},
+		}, now)
+		hits, err := client.FactsAbout(context.Background(), subject, "learned_lesson", 10, time.Time{})
+		if err != nil {
+			t.Fatalf("FactsAbout: %v", err)
+		}
+		hit, ok := findByObject(hits, object)
+		if !ok || hit.FactKey == "" {
+			t.Fatalf("fact %d has no fact_key after write: %+v", i, hits)
+		}
+		keys[i] = hit.FactKey
+	}
+
+	// Close only the first sibling by its exact fact_key.
+	written, err := client.UpsertFact(context.Background(), Fact{
+		Subject: subject, Predicate: "learned_lesson", Object: subject + "_lesson_0_corrected",
+		Statement:  subject + " learned: first lesson, corrected",
+		Source:     FactSource{RunID: runID},
+		Supersedes: true, TargetFactKey: keys[0],
+	}, now.Add(time.Second))
+	if err != nil {
+		t.Fatalf("UpsertFact by fact_key: %v", err)
+	}
+	if written.Refused {
+		t.Fatalf("written = %+v, want a clean close", written)
+	}
+	if written.Superseded != 1 {
+		t.Fatalf("superseded = %d, want exactly 1", written.Superseded)
+	}
+
+	present, err := client.FactsAbout(context.Background(), subject, "learned_lesson", 10, time.Time{})
+	if err != nil {
+		t.Fatalf("FactsAbout after close: %v", err)
+	}
+	// N-1 siblings survive open: the second and third lessons, plus the
+	// corrected replacement -- three still-open facts.
+	openCount := 0
+	for _, hit := range present {
+		if hit.ValidTo == "" {
+			openCount++
+		}
+	}
+	if openCount != 3 {
+		t.Fatalf("open facts = %d, want 3 (two untouched siblings + the correction): %+v", openCount, present)
+	}
+	if _, ok := findByObject(present, subject+"_lesson_1"); !ok {
+		t.Fatalf("sibling 1 was closed by a targeted correction naming sibling 0: %+v", present)
+	}
+	if _, ok := findByObject(present, subject+"_lesson_2"); !ok {
+		t.Fatalf("sibling 2 was closed by a targeted correction naming sibling 0: %+v", present)
+	}
+
+	// The closed fact stays queryable in the past -- closed, not deleted.
+	past, err := client.FactsAbout(context.Background(), subject, "learned_lesson", 10, now)
+	if err != nil {
+		t.Fatalf("FactsAbout(as_of): %v", err)
+	}
+	closedHit, ok := findByObject(past, subject+"_lesson_0")
+	if !ok {
+		t.Fatalf("the closed fact is no longer queryable as_of its own valid_from: %+v", past)
+	}
+	if closedHit.ValidTo == "" {
+		t.Fatal("closed fact has no valid_to: the window was not closed")
+	}
+}
+
+// D-15: a fact_key naming no still-valid edge closes nothing and never falls
+// back to the broad subject+predicate match -- that fallback is F-2's defect.
+func TestUpsertFactWithUnknownFactKeyRefusesAgainstALiveGraph(t *testing.T) {
+	client := integrationClient(t)
+	subject, runID := isolate(t, client)
+	now := time.Now()
+
+	write(t, client, Fact{
+		Subject: subject, Predicate: "lives_in", Object: subject + "_Torino",
+		Statement: subject + " lives in Torino.",
+		Source:    FactSource{RunID: runID},
+	}, now)
+
+	written, err := client.UpsertFact(context.Background(), Fact{
+		Subject: subject, Predicate: "lives_in", Object: subject + "_Caraglio",
+		Statement:  subject + " lives in Caraglio.",
+		Source:     FactSource{RunID: runID},
+		Supersedes: true, TargetFactKey: "fact-key-that-does-not-exist",
+	}, now.Add(time.Second))
+	if err != nil {
+		t.Fatalf("UpsertFact: %v", err)
+	}
+	if !written.Refused {
+		t.Fatalf("written = %+v, want a refusal for an unknown fact_key", written)
+	}
+	if written.Superseded != 0 {
+		t.Fatalf("superseded = %d, want 0", written.Superseded)
+	}
+
+	present, err := client.FactsAbout(context.Background(), subject, "lives_in", 10, time.Time{})
+	if err != nil {
+		t.Fatalf("FactsAbout: %v", err)
+	}
+	// The original Torino fact must still be open, and the Caraglio
+	// correction must never have been written -- a refusal writes nothing.
+	if len(present) != 1 || present[0].ValidTo != "" || !strings.Contains(present[0].Statement, "Torino") {
+		t.Fatalf("present facts = %+v, want only the untouched original", present)
+	}
+}
+
+func findByObject(hits []FactHit, object string) (FactHit, bool) {
+	for _, hit := range hits {
+		if hit.Object == object {
+			return hit, true
+		}
+	}
+	return FactHit{}, false
+}

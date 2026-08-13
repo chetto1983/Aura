@@ -99,12 +99,28 @@ type Fact struct {
 	// It is explicit rather than inferred because some predicates are
 	// single-valued ("lives in") and others are not ("likes").
 	Supersedes bool
+	// TargetFactKey, when set alongside Supersedes, closes exactly the fact
+	// identified by this key instead of resolving a subject+predicate
+	// candidate set. Empty uses the legacy ambiguity-resolved path (D-16).
+	TargetFactKey string
 }
 
 // FactWrite reports what an upsert did.
 type FactWrite struct {
 	Statement  string
 	Superseded int
+	// Refused is true when Supersedes could not identify exactly one fact to
+	// close: an explicit TargetFactKey matching no still-valid fact (always
+	// 0-or-1, since fact_key is UNIQUE-indexed), or a subject+predicate match
+	// of 0 or more than 1 distinct fact. Nothing was written in either case --
+	// no fact closed, and the new fact itself was not created, so a refused
+	// correction never adds to the ambiguity it could not resolve. Reason
+	// explains why, and Candidates carries the preview set (empty for a
+	// fact_key miss) so the caller can retry. This is the shape plan 45-07
+	// renders as MemoryUpsertFactOutput.refused/reason/candidates (D-17).
+	Refused    bool
+	Reason     string
+	Candidates []FactHit
 }
 
 // Validate rejects a fact that could not be answered for later.
@@ -281,6 +297,10 @@ type FactHit struct {
 	ValidFrom   string       `json:"valid_from"`
 	ValidTo     string       `json:"valid_to,omitempty"`
 	Sources     []FactSource `json:"sources"`
+	// FactKey is this fact's content-derived identity (factIdentity), the
+	// same value a correction names to close exactly this edge. Empty for a
+	// fact that is already closed -- the property is NULLed on close.
+	FactKey string `json:"fact_key,omitempty"`
 }
 
 // searchFactsStatement is the entry point for when the question does not name
