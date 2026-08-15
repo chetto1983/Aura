@@ -29,10 +29,12 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/conversations"
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/identity"
@@ -219,9 +221,16 @@ func TestTwoIdentityCrossDeny(t *testing.T) {
 			t.Errorf("B SetCard on A's document = %v, want ErrDocumentNotCatalogued", err)
 		}
 
+		// Read back AS A. aura.documents carries the fail-closed owner-isolation policy
+		// (migration 0087), so a raw pool connection — which binds no
+		// app.current_identity — sees ZERO rows no matter what was written. Reading it
+		// unbound and expecting a row asserts that RLS does NOT filter, which is the
+		// opposite of what this test exists to prove; it only ever passed where the
+		// connecting role bypassed RLS (the owner), never as aura_app.
 		var card string
-		if err := pool.QueryRow(ctx,
-			`SELECT card FROM aura.documents WHERE id = $1`, doc.ID).Scan(&card); err != nil {
+		if err := db.WithIdentityTxRaw(ctx, pool, idA, func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT card FROM aura.documents WHERE id = $1`, doc.ID).Scan(&card)
+		}); err != nil {
 			t.Fatalf("read back A's card: %v", err)
 		}
 		if card != "A card "+term {
