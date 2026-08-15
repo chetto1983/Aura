@@ -20,43 +20,11 @@ ON CONFLICT (identity_id, source_kind, source_key) WHERE deleted_at IS NULL
 DO UPDATE SET updated_at = now()
     WHERE documents.status <> 'deleting'
 RETURNING *;
--- name: ListDocuments :many
-SELECT * FROM aura.documents
-WHERE identity_id = sqlc.arg(identity_id)
-  AND deleted_at IS NULL
-  AND (sqlc.arg(scope_filter)::text = '' OR scope = sqlc.arg(scope_filter))
-  AND (
-    sqlc.arg(query)::text = ''
-    OR title ILIKE '%' || sqlc.arg(query) || '%'
-    OR sqlc.arg(query) = ANY(tags)
-  )
-  AND (sqlc.arg(tag_filter)::text = '' OR tags @> ARRAY[sqlc.arg(tag_filter)]::text[])
-ORDER BY updated_at DESC, created_at DESC
-LIMIT sqlc.arg(row_limit) OFFSET sqlc.arg(row_offset);
--- name: GetDocument :one
-SELECT * FROM aura.documents
-WHERE id = sqlc.arg(id)
-  AND identity_id = sqlc.arg(identity_id)
-  AND deleted_at IS NULL;
 -- name: GetDocumentBySearchID :one
 SELECT * FROM aura.documents
 WHERE identity_id = sqlc.arg(identity_id)
   AND search_document_id = sqlc.arg(search_document_id)
   AND deleted_at IS NULL;
--- name: UpdateDocument :one
-UPDATE aura.documents
-SET scope = sqlc.arg(scope),
-    title = sqlc.arg(title),
-    tags = sqlc.arg(tags),
-    metadata = sqlc.arg(metadata),
-    active_version_id = sqlc.narg(active_version_id),
-    status = sqlc.arg(status),
-    pipeline_generation = GREATEST(pipeline_generation, sqlc.arg(pipeline_generation)),
-    updated_at = now()
-WHERE id = sqlc.arg(id)
-  AND identity_id = sqlc.arg(identity_id)
-  AND deleted_at IS NULL
-RETURNING *;
 -- name: DeleteDocumentTags :exec
 DELETE FROM aura.document_tags WHERE document_id = sqlc.arg(document_id);
 -- name: UpsertDocumentTag :exec
@@ -73,12 +41,6 @@ WHERE identity_id = sqlc.arg(identity_id)
   AND status <> 'object_deleted'
   AND (sqlc.arg(prefix)::text = '' OR object_key LIKE sqlc.arg(prefix) || '%')
 ORDER BY object_key;
--- name: ListDocumentVersions :many
-SELECT * FROM aura.document_versions
-WHERE identity_id = sqlc.arg(identity_id)
-  AND document_id = sqlc.arg(document_id)
-  AND deleted_at IS NULL
-ORDER BY version_number DESC;
 -- name: CreateIngestionJob :one
 INSERT INTO aura.ingestion_jobs (
     identity_id, job_type, asset_id, document_id, version_id, status,

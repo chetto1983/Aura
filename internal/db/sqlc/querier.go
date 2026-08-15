@@ -118,7 +118,6 @@ type Querier interface {
 	// conversation has no request-bearing turn yet.
 	GetConversationLastInputTokens(ctx context.Context, conversationID pgtype.UUID) (int32, error)
 	GetConversationVersionForIdentity(ctx context.Context, arg GetConversationVersionForIdentityParams) (int64, error)
-	GetDocument(ctx context.Context, arg GetDocumentParams) (AuraDocuments, error)
 	GetDocumentBySearchID(ctx context.Context, arg GetDocumentBySearchIDParams) (AuraDocuments, error)
 	GetDocumentIngestJob(ctx context.Context, arg GetDocumentIngestJobParams) (AuraDocumentIngestJobs, error)
 	GetDocumentIngestJobByDocumentID(ctx context.Context, arg GetDocumentIngestJobByDocumentIDParams) (AuraDocumentIngestJobs, error)
@@ -232,8 +231,6 @@ type Querier interface {
 	// Owner-scoped conversation list (Phase 36 MUSR-01): ListConversations restricted to one
 	// identity. identity_id is NOT NULL (0005) so every conversation is attributable.
 	ListConversationsForIdentity(ctx context.Context, arg ListConversationsForIdentityParams) ([]AuraConversations, error)
-	ListDocumentVersions(ctx context.Context, arg ListDocumentVersionsParams) ([]AuraDocumentVersions, error)
-	ListDocuments(ctx context.Context, arg ListDocumentsParams) ([]AuraDocuments, error)
 	// fix-plan 1.7 / Amendment #92 (REVISED): the per-tick approval-reminder sweep. Every
 	// pending_approval task with an ORIGIN CONVERSATION whose throttle stamp is due (never
 	// reminded, or older than the cadence cutoff computed in Go: now() -
@@ -382,7 +379,6 @@ type Querier interface {
 	// Owner-scoped status transition (archive/unarchive, Phase 36 MUSR-01 / D-06). Serves the
 	// /archive + /unarchive routes; rows-affected==0 drives the handler's 403-vs-404 split.
 	UpdateConversationStatusForIdentity(ctx context.Context, arg UpdateConversationStatusForIdentityParams) (int64, error)
-	UpdateDocument(ctx context.Context, arg UpdateDocumentParams) (AuraDocuments, error)
 	UpdateDocumentIngestJobProgress(ctx context.Context, arg UpdateDocumentIngestJobProgressParams) (AuraDocumentIngestJobs, error)
 	UpdateDocumentIngestJobStatus(ctx context.Context, arg UpdateDocumentIngestJobStatusParams) (AuraDocumentIngestJobs, error)
 	UpdateHeartbeat(ctx context.Context, id pgtype.UUID) error
