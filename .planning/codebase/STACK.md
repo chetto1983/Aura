@@ -9,7 +9,7 @@ last_mapped_commit: 26745a062dd1017c8e9de39a39089bc63559b553
 ## Languages
 
 **Primary:**
-- Go 1.26.5 (`go.mod:3`) — the daemon (`cmd/aura`), the memory MCP server (`cmd/arcadedb-mcp`), the filecard CLI (`cmd/aura-filecard`), and all `internal/*` packages (~68 packages under `internal/`)
+- Go 1.26.6 (`go.mod:3`) — the daemon (`cmd/aura`), the memory MCP server (`cmd/arcadedb-mcp`), the filecard CLI (`cmd/aura-filecard`), and all `internal/*` packages (~68 packages under `internal/`)
 - TypeScript (React 19.2.7) — the web cockpit under `web/src/`, built by Vite and embedded into the Go binary via `internal/webui/dist` (`//go:embed`, see `docker/aura/Dockerfile:6-9`)
 
 **Secondary:**
@@ -19,7 +19,7 @@ last_mapped_commit: 26745a062dd1017c8e9de39a39089bc63559b553
 ## Runtime
 
 **Environment:**
-- Go 1.26.5 toolchain (`go.mod:3`); the runtime container builds with `golang:1.26.5-alpine` (`docker/aura/Dockerfile:24`) and the ingest sidecar builds Go 1.26 code (`golang:1.26-bookworm`, `docker/aura-ingest/Dockerfile:16`) purely to compile `aura-filecard` as a vendored binary
+- Go 1.26.6 toolchain (`go.mod:3`); the runtime container builds with `golang:1.26.6-alpine` (`docker/aura/Dockerfile:24`) and the ingest sidecar builds Go 1.26 code (`golang:1.26-bookworm`, `docker/aura-ingest/Dockerfile:16`) purely to compile `aura-filecard` as a vendored binary
 - Runtime image: `debian:bookworm-slim` (`docker/aura/Dockerfile:38`), with Node 24 LTS installed via NodeSource for skill-snippet execution (JS skills, `npx skills` self-extension) — orthogonal to the SPA, which is pre-built and embedded (`docker/aura/Dockerfile:53-63`)
 - Node.js `>=24.16.0 <25` for the web cockpit build (`web/package.json:6-9`), built in a discardable `node:24-bookworm-slim` stage (`docker/aura/Dockerfile:9`)
 - Python 3.12 in the ingest sidecar container only; the main `aura` container also carries `python3`/`python3-pip`/`python3-venv` for agent-driven skill execution (`docker/aura/Dockerfile:48-50`)

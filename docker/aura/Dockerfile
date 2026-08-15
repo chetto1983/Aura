@@ -21,7 +21,7 @@ RUN npm run build
 # CLI talks native RPC to the server and Garage wants matched versions.
 FROM dxflrs/garage:v2.3.0 AS garagebin
 
-FROM golang:1.26.5-alpine AS build
+FROM golang:1.26.6-alpine AS build
 
 WORKDIR /src
 RUN apk add --no-cache ca-certificates git
