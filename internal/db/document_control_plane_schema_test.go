@@ -48,8 +48,6 @@ func TestDocumentControlPlaneQueryContract(t *testing.T) {
 		"-- name: HeartbeatIngestionJob :one",
 		"-- name: UpdateIngestionJobStatus :one",
 		"-- name: RetryIngestionJob :one",
-		"-- name: ManualRetryIngestionJobByKey :one",
-		"-- name: AppendIngestionEvent :one",
 		"-- name: CreateDeleteJob :one",
 		"-- name: ClaimDeleteJobs :many",
 		"-- name: FinalizeDocumentDelete :one",

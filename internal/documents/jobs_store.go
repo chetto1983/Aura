@@ -107,15 +107,6 @@ type HeartbeatIngestionJobRequest struct {
 	LeaseDuration   time.Duration
 }
 
-// ManualRetryIngestionJobRequest identifies a terminal job by its stable key.
-type ManualRetryIngestionJobRequest struct {
-	IdentityID     string
-	JobType        string
-	IdempotencyKey string
-	Stage          string
-	NextAttemptAt  time.Time
-}
-
 // PostgresIngestionJobStore implements the durable ingestion queue with RLS.
 type PostgresIngestionJobStore struct {
 	pool *pgxpool.Pool
@@ -262,27 +253,6 @@ func (s *PostgresIngestionJobStore) CountByStatus(ctx context.Context, identityI
 	return count, nil
 }
 
-// ManualRetryByKey reopens only a terminal job and advances both retry fences.
-func (s *PostgresIngestionJobStore) ManualRetryByKey(ctx context.Context, req ManualRetryIngestionJobRequest) (IngestionJob, error) {
-	identityID, err := pgUUID("ingestion job identity id", req.IdentityID)
-	if err != nil {
-		return IngestionJob{}, err
-	}
-	var row sqlc.ManualRetryIngestionJobByKeyRow
-	err = s.withIdentity(ctx, req.IdentityID, func(q *sqlc.Queries) error {
-		var queryErr error
-		row, queryErr = q.ManualRetryIngestionJobByKey(ctx, sqlc.ManualRetryIngestionJobByKeyParams{
-			IdentityID: identityID, JobType: req.JobType, IdempotencyKey: req.IdempotencyKey,
-			Stage: req.Stage, NextAttemptAt: pgTime(req.NextAttemptAt),
-		})
-		return queryErr
-	})
-	if err != nil {
-		return IngestionJob{}, err
-	}
-	return ingestionJobFromSQL(row)
-}
-
 func (s *PostgresIngestionJobStore) withIdentity(ctx context.Context, identityID string, fn func(*sqlc.Queries) error) error {
 	if s == nil || s.pool == nil {
 		return fmt.Errorf("ingestion job store is not configured")
@@ -357,13 +327,13 @@ func fencedIngestionJobError(action string, err error) error {
 
 // ingestionJobRow is the set of row structs sqlc emits for the ingestion job queries.
 // Every one of those queries returns the full aura.ingestion_jobs column list in table
-// order, so the five generated structs are field-identical to the model and each converts
+// order, so the four generated structs are field-identical to the model and each converts
 // straight into it — which is what lets a single mapper serve all of them. A query that
 // projects a narrower or reordered column list stops compiling here rather than silently
-// growing a sixth copy of this mapping.
+// growing a fifth copy of this mapping.
 type ingestionJobRow interface {
 	sqlc.AuraIngestionJobs | sqlc.ClaimIngestionJobsRow | sqlc.UpdateIngestionJobStatusRow |
-		sqlc.RetryIngestionJobRow | sqlc.ManualRetryIngestionJobByKeyRow
+		sqlc.RetryIngestionJobRow
 }
 
 func ingestionJobFromSQL[R ingestionJobRow](row R) (IngestionJob, error) {
@@ -394,6 +364,19 @@ func ingestionJobPayloadJSON(payload map[string]any) ([]byte, error) {
 	out, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("ingestion job payload: %w", err)
+	}
+	return out, nil
+}
+
+// ingestionEventDetailJSON encodes the detail blob the transition statement writes into
+// aura.ingestion_events. NOT NULL with a jsonb default, so a nil map must travel as `{}`.
+func ingestionEventDetailJSON(detail map[string]any) ([]byte, error) {
+	if detail == nil {
+		detail = map[string]any{}
+	}
+	out, err := json.Marshal(detail)
+	if err != nil {
+		return nil, fmt.Errorf("ingestion event detail: %w", err)
 	}
 	return out, nil
 }

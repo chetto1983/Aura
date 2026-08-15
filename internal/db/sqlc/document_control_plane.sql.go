@@ -11,73 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const appendIngestionEvent = `-- name: AppendIngestionEvent :one
-INSERT INTO aura.ingestion_events (
-    identity_id, entity_type, entity_id, job_id, from_status, to_status,
-    event_type, message, detail, trace_id,
-    pipeline_generation, attempt_generation, lease_generation
-) VALUES (
-    $1, $2, $3,
-    $4, $5, $6,
-    $7, $8, $9, $10,
-    $11, $12, $13
-)
-RETURNING id, entity_type, entity_id, job_id, from_status, to_status, event_type, message, detail, trace_id, created_at, identity_id, pipeline_generation, attempt_generation, lease_generation
-`
-
-type AppendIngestionEventParams struct {
-	IdentityID         pgtype.UUID `json:"identity_id"`
-	EntityType         string      `json:"entity_type"`
-	EntityID           pgtype.UUID `json:"entity_id"`
-	JobID              pgtype.UUID `json:"job_id"`
-	FromStatus         pgtype.Text `json:"from_status"`
-	ToStatus           pgtype.Text `json:"to_status"`
-	EventType          string      `json:"event_type"`
-	Message            string      `json:"message"`
-	Detail             []byte      `json:"detail"`
-	TraceID            string      `json:"trace_id"`
-	PipelineGeneration int64       `json:"pipeline_generation"`
-	AttemptGeneration  int64       `json:"attempt_generation"`
-	LeaseGeneration    int64       `json:"lease_generation"`
-}
-
-func (q *Queries) AppendIngestionEvent(ctx context.Context, arg AppendIngestionEventParams) (AuraIngestionEvents, error) {
-	row := q.db.QueryRow(ctx, appendIngestionEvent,
-		arg.IdentityID,
-		arg.EntityType,
-		arg.EntityID,
-		arg.JobID,
-		arg.FromStatus,
-		arg.ToStatus,
-		arg.EventType,
-		arg.Message,
-		arg.Detail,
-		arg.TraceID,
-		arg.PipelineGeneration,
-		arg.AttemptGeneration,
-		arg.LeaseGeneration,
-	)
-	var i AuraIngestionEvents
-	err := row.Scan(
-		&i.ID,
-		&i.EntityType,
-		&i.EntityID,
-		&i.JobID,
-		&i.FromStatus,
-		&i.ToStatus,
-		&i.EventType,
-		&i.Message,
-		&i.Detail,
-		&i.TraceID,
-		&i.CreatedAt,
-		&i.IdentityID,
-		&i.PipelineGeneration,
-		&i.AttemptGeneration,
-		&i.LeaseGeneration,
-	)
-	return i, err
-}
-
 const claimDeleteJobs = `-- name: ClaimDeleteJobs :many
 WITH candidates AS (
     SELECT queued_job.id, queued_job.status AS prior_status FROM aura.delete_jobs queued_job
@@ -382,6 +315,9 @@ type CreateDeleteJobParams struct {
 	DeleteGeneration int64              `json:"delete_generation"`
 }
 
+// aura.ingestion_events has no standalone statement of its own: every row is written by
+// the `events` CTE inside the job statement that caused it, so the timeline can never
+// disagree with the transition it records.
 func (q *Queries) CreateDeleteJob(ctx context.Context, arg CreateDeleteJobParams) (AuraDeleteJobs, error) {
 	row := q.db.QueryRow(ctx, createDeleteJob,
 		arg.IdentityID,
@@ -1149,53 +1085,6 @@ func (q *Queries) ListDocuments(ctx context.Context, arg ListDocumentsParams) ([
 	return items, nil
 }
 
-const listIngestionEventsByJob = `-- name: ListIngestionEventsByJob :many
-SELECT id, entity_type, entity_id, job_id, from_status, to_status, event_type, message, detail, trace_id, created_at, identity_id, pipeline_generation, attempt_generation, lease_generation FROM aura.ingestion_events
-WHERE identity_id = $1 AND job_id = $2
-ORDER BY created_at, id
-`
-
-type ListIngestionEventsByJobParams struct {
-	IdentityID pgtype.UUID `json:"identity_id"`
-	JobID      pgtype.UUID `json:"job_id"`
-}
-
-func (q *Queries) ListIngestionEventsByJob(ctx context.Context, arg ListIngestionEventsByJobParams) ([]AuraIngestionEvents, error) {
-	rows, err := q.db.Query(ctx, listIngestionEventsByJob, arg.IdentityID, arg.JobID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []AuraIngestionEvents{}
-	for rows.Next() {
-		var i AuraIngestionEvents
-		if err := rows.Scan(
-			&i.ID,
-			&i.EntityType,
-			&i.EntityID,
-			&i.JobID,
-			&i.FromStatus,
-			&i.ToStatus,
-			&i.EventType,
-			&i.Message,
-			&i.Detail,
-			&i.TraceID,
-			&i.CreatedAt,
-			&i.IdentityID,
-			&i.PipelineGeneration,
-			&i.AttemptGeneration,
-			&i.LeaseGeneration,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listStorageObjects = `-- name: ListStorageObjects :many
 SELECT id, identity_id, document_id, version_id, asset_id, bucket, object_key, kind, sha1, sha256, etag, size_bytes, content_type, retention_class, created_at, deleted_at, status, pipeline_generation, deletion_generation, deletion_verified_at FROM aura.storage_objects
 WHERE identity_id = $1
@@ -1326,108 +1215,6 @@ func (q *Queries) ManualRetryIngestionJob(ctx context.Context, arg ManualRetryIn
 		arg.NextAttemptAt,
 	)
 	var i ManualRetryIngestionJobRow
-	err := row.Scan(
-		&i.ID,
-		&i.JobType,
-		&i.DocumentID,
-		&i.VersionID,
-		&i.Status,
-		&i.IdempotencyKey,
-		&i.Stage,
-		&i.AttemptCount,
-		&i.MaxAttempts,
-		&i.LockedBy,
-		&i.LockedUntil,
-		&i.NextAttemptAt,
-		&i.Payload,
-		&i.ErrorCode,
-		&i.ErrorMessage,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.CompletedAt,
-		&i.IdentityID,
-		&i.AssetID,
-		&i.PipelineGeneration,
-		&i.AttemptGeneration,
-		&i.LeaseGeneration,
-	)
-	return i, err
-}
-
-const manualRetryIngestionJobByKey = `-- name: ManualRetryIngestionJobByKey :one
-WITH target AS (
-    SELECT target_job.id, target_job.status AS prior_status FROM aura.ingestion_jobs target_job
-    WHERE target_job.identity_id = $1
-      AND target_job.job_type = $2
-      AND target_job.idempotency_key = $3
-      AND target_job.status IN ('failed', 'dead_letter', 'canceled')
-    FOR UPDATE
-), retried AS (
-    UPDATE aura.ingestion_jobs job
-    SET status = 'queued', stage = $4, attempt_count = 0,
-        attempt_generation = attempt_generation + 1,
-        lease_generation = lease_generation + 1,
-        error_code = '', error_message = '', locked_by = NULL, locked_until = NULL,
-        next_attempt_at = $5, completed_at = NULL, updated_at = now()
-    FROM target WHERE job.id = target.id
-    RETURNING job.id, job.job_type, job.document_id, job.version_id, job.status, job.idempotency_key, job.stage, job.attempt_count, job.max_attempts, job.locked_by, job.locked_until, job.next_attempt_at, job.payload, job.error_code, job.error_message, job.created_at, job.updated_at, job.completed_at, job.identity_id, job.asset_id, job.pipeline_generation, job.attempt_generation, job.lease_generation, target.prior_status
-), events AS (
-    INSERT INTO aura.ingestion_events (
-        identity_id, entity_type, entity_id, job_id, from_status, to_status,
-        event_type, pipeline_generation, attempt_generation, lease_generation
-    )
-    SELECT retried.identity_id, 'ingestion_job', retried.id, retried.id,
-           retried.prior_status, 'queued', 'job_manual_retry',
-           retried.pipeline_generation, retried.attempt_generation, retried.lease_generation
-    FROM retried
-    RETURNING job_id
-)
-SELECT retried.id, retried.job_type, retried.document_id, retried.version_id, retried.status, retried.idempotency_key, retried.stage, retried.attempt_count, retried.max_attempts, retried.locked_by, retried.locked_until, retried.next_attempt_at, retried.payload, retried.error_code, retried.error_message, retried.created_at, retried.updated_at, retried.completed_at, retried.identity_id, retried.asset_id, retried.pipeline_generation, retried.attempt_generation, retried.lease_generation FROM retried JOIN events ON events.job_id = retried.id
-`
-
-type ManualRetryIngestionJobByKeyParams struct {
-	IdentityID     pgtype.UUID        `json:"identity_id"`
-	JobType        string             `json:"job_type"`
-	IdempotencyKey string             `json:"idempotency_key"`
-	Stage          string             `json:"stage"`
-	NextAttemptAt  pgtype.Timestamptz `json:"next_attempt_at"`
-}
-
-type ManualRetryIngestionJobByKeyRow struct {
-	ID                 pgtype.UUID        `json:"id"`
-	JobType            string             `json:"job_type"`
-	DocumentID         pgtype.UUID        `json:"document_id"`
-	VersionID          pgtype.UUID        `json:"version_id"`
-	Status             string             `json:"status"`
-	IdempotencyKey     string             `json:"idempotency_key"`
-	Stage              string             `json:"stage"`
-	AttemptCount       int32              `json:"attempt_count"`
-	MaxAttempts        int32              `json:"max_attempts"`
-	LockedBy           pgtype.Text        `json:"locked_by"`
-	LockedUntil        pgtype.Timestamptz `json:"locked_until"`
-	NextAttemptAt      pgtype.Timestamptz `json:"next_attempt_at"`
-	Payload            []byte             `json:"payload"`
-	ErrorCode          string             `json:"error_code"`
-	ErrorMessage       string             `json:"error_message"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
-	CompletedAt        pgtype.Timestamptz `json:"completed_at"`
-	IdentityID         pgtype.UUID        `json:"identity_id"`
-	AssetID            pgtype.UUID        `json:"asset_id"`
-	PipelineGeneration int64              `json:"pipeline_generation"`
-	AttemptGeneration  int64              `json:"attempt_generation"`
-	LeaseGeneration    int64              `json:"lease_generation"`
-}
-
-func (q *Queries) ManualRetryIngestionJobByKey(ctx context.Context, arg ManualRetryIngestionJobByKeyParams) (ManualRetryIngestionJobByKeyRow, error) {
-	row := q.db.QueryRow(ctx, manualRetryIngestionJobByKey,
-		arg.IdentityID,
-		arg.JobType,
-		arg.IdempotencyKey,
-		arg.Stage,
-		arg.NextAttemptAt,
-	)
-	var i ManualRetryIngestionJobByKeyRow
 	err := row.Scan(
 		&i.ID,
 		&i.JobType,

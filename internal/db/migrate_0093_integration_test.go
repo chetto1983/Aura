@@ -197,41 +197,11 @@ func TestMigrate0093OwnerScopedJobReclaimFenceAndManualRetry(t *testing.T) {
 		t.Fatalf("reclaimed lease generation = %d, want %d", reclaimed.LeaseGeneration, claimed.LeaseGeneration+1)
 	}
 
-	err = WithIdentityTx(ctx, app, seededOperatorIdentity, func(q *sqlc.Queries) error {
-		terminal, queryErr := q.CreateIngestionJob(ctx, sqlc.CreateIngestionJobParams{
-			IdentityID: identityID, JobType: "embed", Status: "dead_letter",
-			IdempotencyKey: "manual", Stage: "embed", MaxAttempts: 5,
-			NextAttemptAt: now, Payload: []byte(`{}`), PipelineGeneration: 8,
-		})
-		if queryErr != nil {
-			return queryErr
-		}
-		retried, queryErr := q.ManualRetryIngestionJobByKey(ctx, sqlc.ManualRetryIngestionJobByKeyParams{
-			IdentityID: identityID, JobType: "embed", IdempotencyKey: "manual",
-			Stage: "embed", NextAttemptAt: now,
-		})
-		if queryErr != nil {
-			return queryErr
-		}
-		if retried.ID != terminal.ID || retried.Status != "queued" || retried.AttemptCount != 0 ||
-			retried.AttemptGeneration != terminal.AttemptGeneration+1 ||
-			retried.LeaseGeneration != terminal.LeaseGeneration+1 {
-			t.Fatalf("manual retry = %#v, terminal = %#v", retried, terminal)
-		}
-		events, queryErr := q.ListIngestionEventsByJob(ctx, sqlc.ListIngestionEventsByJobParams{
-			IdentityID: identityID, JobID: retried.ID,
-		})
-		if queryErr != nil {
-			return queryErr
-		}
-		if len(events) != 1 || events[0].EventType != "job_manual_retry" {
-			t.Fatalf("manual retry events = %#v", events)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("manual retry: %v", err)
-	}
+	// A manual-retry leg used to sit here, driving ManualRetryIngestionJobByKey and
+	// ListIngestionEventsByJob. Both statements were deleted on 2026-08-15 for having no
+	// caller, and the leg asserted the STATEMENT's own semantics (fences advanced, one
+	// job_manual_retry event) rather than anything 0093 contributes. The fencing 0093 does
+	// own is still driven above, through ClaimIngestionJobs and UpdateIngestionJobStatus.
 
 	var invisible int
 	if err := app.QueryRow(ctx, `SELECT count(*) FROM aura.ingestion_jobs`).Scan(&invisible); err != nil {

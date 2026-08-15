@@ -12,7 +12,6 @@ import (
 
 type Querier interface {
 	AggregateCacheMetricsSince(ctx context.Context, since pgtype.Timestamptz) (AggregateCacheMetricsSinceRow, error)
-	AppendIngestionEvent(ctx context.Context, arg AppendIngestionEventParams) (AuraIngestionEvents, error)
 	// Flip a pending_approval task to active (the cockpit approval, parity with the CLI
 	// `aura task approve`). Returns rows affected so the caller distinguishes a hit (1) from
 	// a task that is not awaiting approval (0).
@@ -66,6 +65,9 @@ type Querier interface {
 	CountTurns(ctx context.Context, conversationID pgtype.UUID) (int64, error)
 	CreateAsset(ctx context.Context, arg CreateAssetParams) (AuraAssets, error)
 	CreateConversation(ctx context.Context, arg CreateConversationParams) (AuraConversations, error)
+	// aura.ingestion_events has no standalone statement of its own: every row is written by
+	// the `events` CTE inside the job statement that caused it, so the timeline can never
+	// disagree with the transition it records.
 	CreateDeleteJob(ctx context.Context, arg CreateDeleteJobParams) (AuraDeleteJobs, error)
 	// Get-or-create by source, refusing a document that is already being deleted.
 	// DO UPDATE rather than DO NOTHING because :one needs a row back, and it touches ONLY
@@ -260,7 +262,6 @@ type Querier interface {
 	ListIdentities(ctx context.Context) ([]AuraIdentities, error)
 	ListIdentityAudit(ctx context.Context, arg ListIdentityAuditParams) ([]AuraIdentityAudit, error)
 	ListInFlightToolInvocationsBefore(ctx context.Context, startedAt pgtype.Timestamptz) ([]AuraToolInvocations, error)
-	ListIngestionEventsByJob(ctx context.Context, arg ListIngestionEventsByJobParams) ([]AuraIngestionEvents, error)
 	// The cockpit scheduler board (GOV-03 write): active AND pending_approval tasks, so an
 	// operator can approve a gated task on-screen. Ordered by next fire (pending rows have a
 	// non-null next_run_at too — it is the first fire computed at schedule time).
@@ -307,7 +308,6 @@ type Querier interface {
 	LockOperationReceipt(ctx context.Context, arg LockOperationReceiptParams) (LockOperationReceiptRow, error)
 	LookupRecoveryByEmail(ctx context.Context, email string) (LookupRecoveryByEmailRow, error)
 	ManualRetryIngestionJob(ctx context.Context, arg ManualRetryIngestionJobParams) (ManualRetryIngestionJobRow, error)
-	ManualRetryIngestionJobByKey(ctx context.Context, arg ManualRetryIngestionJobByKeyParams) (ManualRetryIngestionJobByKeyRow, error)
 	// Stamp the throttle after a reminder ATTEMPT (delivered or not) so a pending approval
 	// re-nudges at most once per cadence and a failing channel cannot spam the tick.
 	MarkApprovalReminded(ctx context.Context, id pgtype.UUID) error
