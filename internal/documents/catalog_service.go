@@ -22,7 +22,6 @@ type CatalogStore interface {
 	UpdateDocument(context.Context, UpdateDocumentRequest) (Document, error)
 	ListDocuments(context.Context, ListDocumentsRequest) ([]DocumentSummary, error)
 	GetDocument(ctx context.Context, identityID, documentID string) (DocumentDetail, error)
-	SoftDeleteDocument(ctx context.Context, identityID, documentID string) (Document, error)
 	RecordAssetVersion(context.Context, RecordAssetVersionRequest) (DocumentVersionRecord, error)
 }
 
@@ -82,20 +81,6 @@ func (s *CatalogService) GetDocument(ctx context.Context, identityID, documentID
 		return DocumentDetail{}, fmt.Errorf("document_id is required")
 	}
 	return s.Store.GetDocument(ctx, identityID, documentID)
-}
-
-// DeleteDocument soft-deletes one logical document scoped to an identity.
-func (s *CatalogService) DeleteDocument(ctx context.Context, identityID, documentID string) (Document, error) {
-	if s.Store == nil {
-		return Document{}, fmt.Errorf("document catalog service has no store")
-	}
-	if strings.TrimSpace(identityID) == "" {
-		return Document{}, fmt.Errorf("identity_id is required")
-	}
-	if strings.TrimSpace(documentID) == "" {
-		return Document{}, fmt.Errorf("document_id is required")
-	}
-	return s.Store.SoftDeleteDocument(ctx, identityID, documentID)
 }
 
 // RecordAssetVersion records a stored asset as a non-visible candidate version.

@@ -6,9 +6,10 @@ package documents
 // only these two are declared. The other ten named the in-process stages — queued,
 // converting, chunking, embedding, projecting, ready, failed, dead_letter, deleting,
 // deleted — and Go stopped writing any of them when that pipeline was deleted on
-// 2026-08-08: extraction, chunking, embedding and indexing are CocoIndex's, and deletion
-// sets the column from SQL. A constant nothing writes is not a vocabulary, it is a
-// promise about a lifecycle this process no longer has.
+// 2026-08-08: extraction, chunking, embedding and indexing are CocoIndex's, and the
+// asynchronous delete workflow that set the last two is gone with its unclaimed queue.
+// A constant nothing writes is not a vocabulary, it is a promise about a lifecycle this
+// process no longer has.
 //
 // The constraint still admits all twelve, and that asymmetry is deliberate: rows written
 // before the convergence carry those values, and reads decode whatever the column holds.

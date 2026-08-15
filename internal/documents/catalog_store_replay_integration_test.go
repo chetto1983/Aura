@@ -81,9 +81,9 @@ func TestCatalogStoreSameSHAReplay(t *testing.T) {
 		t.Fatalf("second asset search document id = %q, want %q", secondSearchID, fixture.searchID)
 	}
 
-	// The duplicate's bytes must stay reachable by document deletion. SoftDeleteDocument
-	// sweeps aura.storage_objects on document_id with no kind filter, so an unbound row
-	// would leave its object in Garage forever.
+	// The duplicate's bytes must stay reachable from the document that owns them: the
+	// ledger row is the only record tying a Garage object to a document_id, and an unbound
+	// row is an object no future sweep can find.
 	if got := fixture.count(t, ctx,
 		`SELECT count(*) FROM aura.storage_objects
 		 WHERE document_id = $1 AND kind <> 'raw' AND status = 'live' AND deleted_at IS NULL`); got != 1 {

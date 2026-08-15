@@ -32,7 +32,6 @@ type Querier interface {
 	CanonicalBranchLeafSeq(ctx context.Context, conversationID pgtype.UUID) (int32, error)
 	CaptureBenchmarkSetting(ctx context.Context, arg CaptureBenchmarkSettingParams) error
 	ClaimConversationDeleteTeardown(ctx context.Context, arg ClaimConversationDeleteTeardownParams) (int64, error)
-	ClaimDeleteJobs(ctx context.Context, arg ClaimDeleteJobsParams) ([]ClaimDeleteJobsRow, error)
 	ClaimIngestionJobs(ctx context.Context, arg ClaimIngestionJobsParams) ([]ClaimIngestionJobsRow, error)
 	ClaimRetentionItems(ctx context.Context, arg ClaimRetentionItemsParams) ([]AuraRetentionOperationItems, error)
 	CleanupResumedOlderThan(ctx context.Context, resumedAt pgtype.Timestamptz) error
@@ -55,9 +54,6 @@ type Querier interface {
 	CountBenchmarkSettingsRestoreMismatches(ctx context.Context, runID pgtype.UUID) (int32, error)
 	CountConversationsForIdentityPurge(ctx context.Context, identityID pgtype.UUID) (int64, error)
 	CountIngestionJobsByStatus(ctx context.Context, arg CountIngestionJobsByStatusParams) (int64, error)
-	// Fail-closed evidence for the finalize gate: a delete that cannot prove erasure
-	// must not report success.
-	CountLiveDocumentPassages(ctx context.Context, arg CountLiveDocumentPassagesParams) (int64, error)
 	// Current durable work that has not reached a terminal completed/failed item state.
 	// This query owns the restart-safe backlog gauge; transition counters are not state.
 	CountRetentionBacklog(ctx context.Context) (int64, error)
@@ -65,18 +61,15 @@ type Querier interface {
 	CountTurns(ctx context.Context, conversationID pgtype.UUID) (int64, error)
 	CreateAsset(ctx context.Context, arg CreateAssetParams) (AuraAssets, error)
 	CreateConversation(ctx context.Context, arg CreateConversationParams) (AuraConversations, error)
-	// aura.ingestion_events has no standalone statement of its own: every row is written by
-	// the `events` CTE inside the job statement that caused it, so the timeline can never
-	// disagree with the transition it records.
-	CreateDeleteJob(ctx context.Context, arg CreateDeleteJobParams) (AuraDeleteJobs, error)
-	// Get-or-create by source, refusing a document that is already being deleted.
+	// Get-or-create by source, refusing a document left mid-delete.
 	// DO UPDATE rather than DO NOTHING because :one needs a row back, and it touches ONLY
 	// updated_at: re-ingesting a file must not overwrite a title or tags the operator edited,
 	// and aura.document_identity_immutable raises 23514 on any write to identity, source,
-	// search id, or a lowered pipeline_generation. The status guard matters because deletion
-	// is asynchronous: deleted_at is set by FinalizeDocumentDelete, not by the soft delete, so
-	// without it a re-upload mid-delete would silently join a document the finalize erases.
-	// Zero rows is that case, and the caller turns it into ErrDocumentDeleteInFlight.
+	// search id, or a lowered pipeline_generation. The status guard outlives the asynchronous
+	// delete workflow it was written for: no statement here sets 'deleting' any more, but rows
+	// the retired workflow stranded in that state are still on disk, and joining one would
+	// hand the caller a document whose bytes are half gone. Zero rows is that case, and the
+	// caller turns it into ErrDocumentDeleteInFlight.
 	CreateDocument(ctx context.Context, arg CreateDocumentParams) (AuraDocuments, error)
 	// Legacy queue kept owner-scoped during retirement. New ingress uses aura.ingestion_jobs.
 	CreateDocumentIngestJob(ctx context.Context, arg CreateDocumentIngestJobParams) (AuraDocumentIngestJobs, error)
@@ -109,7 +102,6 @@ type Querier interface {
 	// is what makes each due task a singleton across concurrent workers.
 	DueTasks(ctx context.Context, limit int32) ([]AuraSchedulerTasks, error)
 	FailRetentionItem(ctx context.Context, arg FailRetentionItemParams) (int64, error)
-	FinalizeDocumentDelete(ctx context.Context, arg FinalizeDocumentDeleteParams) (FinalizeDocumentDeleteRow, error)
 	FinalizeRetentionItem(ctx context.Context, arg FinalizeRetentionItemParams) (int64, error)
 	FinalizeRetentionOperation(ctx context.Context, arg FinalizeRetentionOperationParams) (AuraRetentionOperations, error)
 	GetActivePasswordResetChallenge(ctx context.Context, identityID pgtype.UUID) (AuraPasswordResetChallenges, error)
@@ -162,7 +154,6 @@ type Querier interface {
 	GrantCapability(ctx context.Context, arg GrantCapabilityParams) error
 	HasCapability(ctx context.Context, arg HasCapabilityParams) (bool, error)
 	HeartbeatBenchmarkSettingsOverride(ctx context.Context, arg HeartbeatBenchmarkSettingsOverrideParams) (int64, error)
-	HeartbeatDeleteJob(ctx context.Context, arg HeartbeatDeleteJobParams) (AuraDeleteJobs, error)
 	HeartbeatIngestionJob(ctx context.Context, arg HeartbeatIngestionJobParams) (AuraIngestionJobs, error)
 	IncrementPasswordResetChallengeAttempts(ctx context.Context, id pgtype.UUID) error
 	IncrementPasswordResetTokenAttempts(ctx context.Context, tokenHash string) error
@@ -288,10 +279,9 @@ type Querier interface {
 	// (orphan_scan.go) reconciles the live .content files against this referenced
 	// set, so no ORDER BY is needed. Read-only — no schema change (D-07 holds).
 	ListSpilledSeqsForConversation(ctx context.Context, conversationID pgtype.UUID) ([]int32, error)
-	// The only storage-object statement Go still issues. The ledger's writes travel with the
-	// rows they belong to: ReservePipelineCandidateVersion inserts the object, and
-	// SoftDeleteDocument marks the document's objects delete_pending in the same statement
-	// that soft-deletes the document, so neither has a standalone query to call.
+	// The only storage-object statement Go still issues. The ledger's one writer travels with
+	// the row it belongs to — ReservePipelineCandidateVersion inserts the object as part of
+	// reserving the version that owns those bytes — so it has no standalone query to call.
 	ListStorageObjects(ctx context.Context, arg ListStorageObjectsParams) ([]AuraStorageObjects, error)
 	ListTelegramAccounts(ctx context.Context) ([]AuraTelegramAccounts, error)
 	ListToolInvocationsByConversation(ctx context.Context, conversationID pgtype.UUID) ([]AuraToolInvocations, error)
@@ -313,7 +303,6 @@ type Querier interface {
 	MarkApprovalReminded(ctx context.Context, id pgtype.UUID) error
 	MarkAssetDeleted(ctx context.Context, arg MarkAssetDeletedParams) (AuraAssets, error)
 	MarkBenchmarkSettingsOverrideRestoring(ctx context.Context, runID pgtype.UUID) (int64, error)
-	MarkDeleteJobStorageObjectDeleted(ctx context.Context, arg MarkDeleteJobStorageObjectDeletedParams) (MarkDeleteJobStorageObjectDeletedRow, error)
 	MarkNotificationDelivered(ctx context.Context, id pgtype.UUID) error
 	MarkNotificationFailed(ctx context.Context, arg MarkNotificationFailedParams) error
 	MarkOperationIndeterminate(ctx context.Context, arg MarkOperationIndeterminateParams) (int64, error)
@@ -323,12 +312,6 @@ type Querier interface {
 	NextAssetEventSeq(ctx context.Context, assetID pgtype.UUID) (int32, error)
 	NextConversationTurnSeq(ctx context.Context, conversationID pgtype.UUID) (int32, error)
 	PromoteAssetToLibrary(ctx context.Context, arg PromoteAssetToLibraryParams) (AuraAssets, error)
-	// Physically erases the document body. Amendment #117: for these two tables
-	// "marked deleted" means DELETE, because document_chunks.text is the document text
-	// itself and a deleted_at tombstone is retained PII. The fence row is READ, never
-	// locked, matching MarkDeleteJobStorageObjectDeleted. Chunks go first so the
-	// document_embeddings FK cascade fires in the same order the writer inserted.
-	PurgeDocumentPassages(ctx context.Context, arg PurgeDocumentPassagesParams) (int64, error)
 	RecordRetentionArtifactResult(ctx context.Context, arg RecordRetentionArtifactResultParams) (int64, error)
 	// A byte-identical deterministic plan receives a fresh authorization window only
 	// while it has not crossed the first-apply durability boundary. In-flight and
@@ -361,7 +344,6 @@ type Querier interface {
 	ReservePipelineCandidateVersion(ctx context.Context, arg ReservePipelineCandidateVersionParams) (ReservePipelineCandidateVersionRow, error)
 	ResetAssetForIngestionRetry(ctx context.Context, arg ResetAssetForIngestionRetryParams) (AuraAssets, error)
 	RestoreBenchmarkSetting(ctx context.Context, arg RestoreBenchmarkSettingParams) error
-	RetryDeleteJob(ctx context.Context, arg RetryDeleteJobParams) (RetryDeleteJobRow, error)
 	RetryIngestionJob(ctx context.Context, arg RetryIngestionJobParams) (RetryIngestionJobRow, error)
 	RetryRetentionItem(ctx context.Context, arg RetryRetentionItemParams) (int64, error)
 	RevokeCapability(ctx context.Context, arg RevokeCapabilityParams) error
@@ -382,7 +364,6 @@ type Querier interface {
 	// uses when an edit/regenerate forks a new sibling branch off an existing parent turn.
 	SetTurnBranchPointers(ctx context.Context, arg SetTurnBranchPointersParams) error
 	SoftDeleteAsset(ctx context.Context, arg SoftDeleteAssetParams) (AuraAssets, error)
-	SoftDeleteDocument(ctx context.Context, arg SoftDeleteDocumentParams) (SoftDeleteDocumentRow, error)
 	SweepDueNotifications(ctx context.Context, arg SweepDueNotificationsParams) ([]AuraPendingNotifications, error)
 	TouchTelegramLastSeen(ctx context.Context, telegramUserID int64) error
 	TryRecoverExpiredOperation(ctx context.Context, arg TryRecoverExpiredOperationParams) (int64, error)
@@ -405,7 +386,6 @@ type Querier interface {
 	// Owner-scoped status transition (archive/unarchive, Phase 36 MUSR-01 / D-06). Serves the
 	// /archive + /unarchive routes; rows-affected==0 drives the handler's 403-vs-404 split.
 	UpdateConversationStatusForIdentity(ctx context.Context, arg UpdateConversationStatusForIdentityParams) (int64, error)
-	UpdateDeleteJobStatus(ctx context.Context, arg UpdateDeleteJobStatusParams) (UpdateDeleteJobStatusRow, error)
 	UpdateDocument(ctx context.Context, arg UpdateDocumentParams) (AuraDocuments, error)
 	UpdateDocumentIngestJobProgress(ctx context.Context, arg UpdateDocumentIngestJobProgressParams) (AuraDocumentIngestJobs, error)
 	UpdateDocumentIngestJobStatus(ctx context.Context, arg UpdateDocumentIngestJobStatusParams) (AuraDocumentIngestJobs, error)

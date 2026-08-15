@@ -70,13 +70,6 @@ func (s *PostgresCatalogStore) GetDocument(ctx context.Context, identityID, docu
 	})
 }
 
-// SoftDeleteDocument starts the durable, owner-scoped delete workflow.
-func (s *PostgresCatalogStore) SoftDeleteDocument(ctx context.Context, identityID, documentID string) (Document, error) {
-	return scopedValue(ctx, s, identityID, func(sc catalogTx) (Document, error) {
-		return sc.softDeleteDocument(ctx, identityID, documentID)
-	})
-}
-
 // ListStorageObjects returns the caller identity's live ledger refs for orphan detection.
 func (s *PostgresCatalogStore) ListStorageObjects(ctx context.Context, bucket, prefix string) ([]objectstore.ObjectRef, error) {
 	identityID := identityctx.IdentityID(ctx)
@@ -235,25 +228,6 @@ func (sc catalogTx) getDocument(ctx context.Context, identityID, documentID stri
 	return DocumentDetail{Document: doc, Versions: versions}, nil
 }
 
-func (sc catalogTx) softDeleteDocument(ctx context.Context, identityID, documentID string) (Document, error) {
-	pgDocumentID, err := pgUUID("document_id", documentID)
-	if err != nil {
-		return Document{}, err
-	}
-	pgIdentityID, err := pgUUID("identity_id", identityID)
-	if err != nil {
-		return Document{}, err
-	}
-	row, err := sc.q.SoftDeleteDocument(ctx, sqlc.SoftDeleteDocumentParams{
-		ID:         pgDocumentID,
-		IdentityID: pgIdentityID,
-	})
-	if err != nil {
-		return Document{}, err
-	}
-	return catalogDocumentFromSQL(sqlc.AuraDocuments(row))
-}
-
 // attachActiveVersionSizes denormalizes each summary's active-version size and
 // content type in ONE batched query (never N+1), so the list view renders a size
 // and kind per row without fetching each document's detail.
@@ -331,7 +305,7 @@ func (sc catalogTx) replaceDocumentTags(ctx context.Context, documentID, actorId
 
 // catalogDocumentFromSQL is the single decoder for a document row.
 //
-// sqlc emits a distinct row type per query, but the delete-path statements return
+// sqlc emits a distinct row type per query, but every statement here returns
 // aura.documents in table order, so those rows convert to sqlc.AuraDocuments outright.
 // Callers use that conversion instead of restating the twenty fields: a column added to
 // the table but missing from a query then becomes a compile error here, where a

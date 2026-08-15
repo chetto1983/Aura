@@ -48,12 +48,23 @@ func TestDocumentControlPlaneQueryContract(t *testing.T) {
 		"-- name: HeartbeatIngestionJob :one",
 		"-- name: UpdateIngestionJobStatus :one",
 		"-- name: RetryIngestionJob :one",
-		"-- name: CreateDeleteJob :one",
-		"-- name: ClaimDeleteJobs :many",
-		"-- name: FinalizeDocumentDelete :one",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("document control-plane queries missing %q", want)
+		}
+	}
+	// The delete-job queue's statements are gone, and must not come back by accident: the
+	// aura.delete_jobs table still stands, so a query re-added here would compile and run
+	// against a queue no worker claims from, which is how the workflow stayed alive on
+	// paper for months after its worker was deleted.
+	for _, forbidden := range []string{
+		"-- name: SoftDeleteDocument",
+		"-- name: CreateDeleteJob",
+		"-- name: ClaimDeleteJobs",
+		"-- name: FinalizeDocumentDelete",
+	} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("document control-plane queries revive the unclaimed delete queue via %q", forbidden)
 		}
 	}
 }

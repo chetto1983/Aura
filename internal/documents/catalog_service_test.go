@@ -177,17 +177,6 @@ func TestCatalogServiceRecordAssetVersionDefaultsReadyDocument(t *testing.T) {
 	}
 }
 
-func TestCatalogServiceDeleteDocumentRequiresIdentityAndDocument(t *testing.T) {
-	svc := &CatalogService{Store: &fakeCatalogStore{}}
-
-	if _, err := svc.DeleteDocument(context.Background(), "", "doc-1"); err == nil {
-		t.Fatal("expected missing identity error")
-	}
-	if _, err := svc.DeleteDocument(context.Background(), "identity-1", ""); err == nil {
-		t.Fatal("expected missing document error")
-	}
-}
-
 func TestCatalogDocumentFromSQLDecodesMetadataAndUUIDs(t *testing.T) {
 	activeVersionID := mustCatalogTestUUID(t, "20000000-0000-0000-0000-000000000001")
 	row := sqlc.AuraDocuments{
@@ -234,14 +223,12 @@ func TestCatalogDocumentFromSQLReturnsEmptyTags(t *testing.T) {
 }
 
 type fakeCatalogStore struct {
-	createCalled     bool
-	createReq        CreateDocumentRequest
-	updateReq        UpdateDocumentRequest
-	listReq          ListDocumentsRequest
-	recordReq        RecordAssetVersionRequest
-	detail           DocumentDetail
-	deleteIdentityID string
-	deleteDocumentID string
+	createCalled bool
+	createReq    CreateDocumentRequest
+	updateReq    UpdateDocumentRequest
+	listReq      ListDocumentsRequest
+	recordReq    RecordAssetVersionRequest
+	detail       DocumentDetail
 	// getIdentityID/getDocumentID/getErr let a test assert WHICH identity a lookup
 	// was scoped to, and simulate the not-found a non-owner receives. Additive:
 	// zero values keep the previous always-succeeds behaviour.
@@ -292,14 +279,6 @@ func (f *fakeCatalogStore) GetDocument(_ context.Context, identityID, documentID
 		return f.detail, nil
 	}
 	return DocumentDetail{Document: Document{ID: documentID, IdentityID: identityID}}, nil
-}
-
-func (f *fakeCatalogStore) SoftDeleteDocument(_ context.Context, identityID, documentID string) (Document, error) {
-	f.deleteIdentityID = identityID
-	f.deleteDocumentID = documentID
-	// The literal SoftDeleteDocument's own UPDATE writes. Go declares no constant for it:
-	// the status is set in SQL, so nothing in this package ever names it.
-	return Document{ID: documentID, IdentityID: identityID, Status: "deleting"}, nil
 }
 
 func (f *fakeCatalogStore) RecordAssetVersion(_ context.Context, req RecordAssetVersionRequest) (DocumentVersionRecord, error) {
