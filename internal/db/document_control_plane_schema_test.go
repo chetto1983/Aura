@@ -35,7 +35,6 @@ func TestDocumentControlPlaneQueryContract(t *testing.T) {
 		"-- name: ListDocuments :many",
 		"-- name: GetDocument :one",
 		"-- name: UpdateDocument :one",
-		"-- name: UpdateDocumentTags :one",
 		"-- name: DeleteDocumentTags :exec",
 		"-- name: UpsertDocumentTag :exec",
 		"-- name: CreateDocumentVersion :one",

@@ -547,32 +547,6 @@ func (q *Queries) HeartbeatIngestionJob(ctx context.Context, arg HeartbeatIngest
 	return i, err
 }
 
-const listDocumentTags = `-- name: ListDocumentTags :many
-SELECT tag FROM aura.document_tags
-WHERE document_id = $1
-ORDER BY tag
-`
-
-func (q *Queries) ListDocumentTags(ctx context.Context, documentID pgtype.UUID) ([]string, error) {
-	rows, err := q.db.Query(ctx, listDocumentTags, documentID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []string{}
-	for rows.Next() {
-		var tag string
-		if err := rows.Scan(&tag); err != nil {
-			return nil, err
-		}
-		items = append(items, tag)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listDocumentVersions = `-- name: ListDocumentVersions :many
 SELECT id, document_id, asset_id, version_number, status, sha1, sha256, content_type, size_bytes, storage_object_id, chunking_config_hash, pipeline_config_hash, ready_at, activated_at, created_at, updated_at, deleted_at, error_code, error_message, identity_id, search_document_id, pipeline_generation FROM aura.document_versions
 WHERE identity_id = $1
@@ -1007,49 +981,6 @@ func (q *Queries) UpdateDocument(ctx context.Context, arg UpdateDocumentParams) 
 		arg.ID,
 		arg.IdentityID,
 	)
-	var i AuraDocuments
-	err := row.Scan(
-		&i.ID,
-		&i.IdentityID,
-		&i.Scope,
-		&i.Title,
-		&i.Tags,
-		&i.Metadata,
-		&i.ActiveVersionID,
-		&i.Status,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.DeletedAt,
-		&i.Digest,
-		&i.Card,
-		&i.DigestTsv,
-		&i.SourceKind,
-		&i.SourceKey,
-		&i.SearchDocumentID,
-		&i.PipelineGeneration,
-		&i.ErrorCode,
-		&i.ErrorMessage,
-	)
-	return i, err
-}
-
-const updateDocumentTags = `-- name: UpdateDocumentTags :one
-UPDATE aura.documents
-SET tags = $1, updated_at = now()
-WHERE id = $2
-  AND identity_id = $3
-  AND deleted_at IS NULL
-RETURNING id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, card, digest_tsv, source_kind, source_key, search_document_id, pipeline_generation, error_code, error_message
-`
-
-type UpdateDocumentTagsParams struct {
-	Tags       []string    `json:"tags"`
-	ID         pgtype.UUID `json:"id"`
-	IdentityID pgtype.UUID `json:"identity_id"`
-}
-
-func (q *Queries) UpdateDocumentTags(ctx context.Context, arg UpdateDocumentTagsParams) (AuraDocuments, error) {
-	row := q.db.QueryRow(ctx, updateDocumentTags, arg.Tags, arg.ID, arg.IdentityID)
 	var i AuraDocuments
 	err := row.Scan(
 		&i.ID,

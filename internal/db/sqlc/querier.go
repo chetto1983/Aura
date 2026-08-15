@@ -234,7 +234,6 @@ type Querier interface {
 	// Owner-scoped conversation list (Phase 36 MUSR-01): ListConversations restricted to one
 	// identity. identity_id is NOT NULL (0005) so every conversation is attributable.
 	ListConversationsForIdentity(ctx context.Context, arg ListConversationsForIdentityParams) ([]AuraConversations, error)
-	ListDocumentTags(ctx context.Context, documentID pgtype.UUID) ([]string, error)
 	ListDocumentVersions(ctx context.Context, arg ListDocumentVersionsParams) ([]AuraDocumentVersions, error)
 	ListDocuments(ctx context.Context, arg ListDocumentsParams) ([]AuraDocuments, error)
 	// fix-plan 1.7 / Amendment #92 (REVISED): the per-tick approval-reminder sweep. Every
@@ -389,7 +388,6 @@ type Querier interface {
 	UpdateDocument(ctx context.Context, arg UpdateDocumentParams) (AuraDocuments, error)
 	UpdateDocumentIngestJobProgress(ctx context.Context, arg UpdateDocumentIngestJobProgressParams) (AuraDocumentIngestJobs, error)
 	UpdateDocumentIngestJobStatus(ctx context.Context, arg UpdateDocumentIngestJobStatusParams) (AuraDocumentIngestJobs, error)
-	UpdateDocumentTags(ctx context.Context, arg UpdateDocumentTagsParams) (AuraDocuments, error)
 	UpdateHeartbeat(ctx context.Context, id pgtype.UUID) error
 	UpdateIngestionJobStatus(ctx context.Context, arg UpdateIngestionJobStatusParams) (UpdateIngestionJobStatusRow, error)
 	UpdateNextRunAt(ctx context.Context, arg UpdateNextRunAtParams) error

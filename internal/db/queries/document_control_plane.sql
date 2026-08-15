@@ -57,23 +57,12 @@ WHERE id = sqlc.arg(id)
   AND identity_id = sqlc.arg(identity_id)
   AND deleted_at IS NULL
 RETURNING *;
--- name: UpdateDocumentTags :one
-UPDATE aura.documents
-SET tags = sqlc.arg(tags), updated_at = now()
-WHERE id = sqlc.arg(id)
-  AND identity_id = sqlc.arg(identity_id)
-  AND deleted_at IS NULL
-RETURNING *;
 -- name: DeleteDocumentTags :exec
 DELETE FROM aura.document_tags WHERE document_id = sqlc.arg(document_id);
 -- name: UpsertDocumentTag :exec
 INSERT INTO aura.document_tags (document_id, tag, created_by)
 VALUES (sqlc.arg(document_id), sqlc.arg(tag), sqlc.narg(created_by))
 ON CONFLICT (document_id, tag) DO NOTHING;
--- name: ListDocumentTags :many
-SELECT tag FROM aura.document_tags
-WHERE document_id = sqlc.arg(document_id)
-ORDER BY tag;
 -- The only storage-object statement Go still issues. The ledger's one writer travels with
 -- the row it belongs to — ReservePipelineCandidateVersion inserts the object as part of
 -- reserving the version that owns those bytes — so it has no standalone query to call.
