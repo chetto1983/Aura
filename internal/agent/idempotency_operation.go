@@ -25,9 +25,19 @@ var errMissingModelRound = errors.New("missing model round for tool operation de
 // The child key's fingerprint carries RoundOrdinal (D-01): two derivations that
 // differ only by round produce different keys, so a deliberate cross-round
 // re-issue of a mutating call executes again instead of replaying a stale round's
-// recorded result (HARN-01). A genuine same-round retry, or a scheduler reclaim
-// whose ordinal restarts at 1 against the same stable parent operation, still
-// derives the identical key and collapses onto one execution (HARN-02).
+// recorded result (HARN-01). A genuine same-round retry — the same parent operation,
+// the same ordinal, the same canonical arguments — still derives the identical key and
+// collapses onto one execution (HARN-02).
+//
+// A scheduler RECLAIM does not, and this once said it did. The parent a scheduler
+// dispatch builds is keyed `task.ID + ":" + claim.RunID` with RunID also in its
+// fingerprint (cron/dispatch.go), and every claim mints a fresh run id — there is one
+// INSERT INTO aura.agent_job_runs in the tree, it takes newUUID(), and nothing
+// re-dispatches an existing row (recoverOrphans marks unknown_recovery instead). So a
+// re-fire is always a different parent, hence a different child key, hence never a
+// replay. Pinned by TestSchedulerReclaimCannotReplayAcrossRuns, which fails loudly if
+// someone makes the parent stable across a reclaim — the change that would make the
+// old sentence true, and would also make HARN-03 provable without a probe.
 func deriveToolOperationContext(ctx context.Context, spec tools.Spec, args json.RawMessage) (context.Context, error) {
 	parent, ok := idempotency.OperationFromContext(ctx)
 	if !ok || parent.Key.Scope == spec.OperationScope {

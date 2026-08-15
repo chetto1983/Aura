@@ -3,9 +3,12 @@ package cron
 // recover.go is the boot reconciliation (D-02/D-18): the orphan scan that marks
 // runs whose heartbeat lapsed (>90s) as unknown_recovery, and the missed catch-up
 // that collapses multiple skipped windows of an overdue task into a SINGLE
-// catch-up fire carrying MissedSince. Both run once at Start (scheduler.go) before
-// the first tick. A scan failure is a WARN-level degradation, never a boot blocker
-// (mirroring conversations.ScanOrphans, cmd/aura/chat.go).
+// catch-up fire carrying MissedSince. The missed catch-up runs once at Start
+// (scheduler.go) before the first tick; the orphan scan runs at Start AND on every
+// tick, because a run turns stale long after the worker died and a boot-only scan
+// cannot see a crash that happens while the daemon keeps running. A scan failure is a
+// WARN-level degradation, never a boot blocker (mirroring conversations.ScanOrphans,
+// cmd/aura/chat.go).
 
 import (
 	"context"
@@ -20,7 +23,10 @@ import (
 // query: the heartbeat-staleness scan is the liveness-based half. A scan or mark
 // failure is logged WARN and does NOT abort boot (a degraded recovery still lets the
 // daemon serve), so the returned error is ALWAYS nil — Start treats a degraded
-// recovery as non-fatal (it calls this for its side effect, discarding the nil). The
+// recovery as non-fatal (it calls this for its side effect, discarding the nil), and
+// the per-tick sweep discards it the same way. Idempotent by construction: a row
+// already marked unknown_recovery no longer matches the status='running' scan, so
+// repeating it every tick re-marks nothing. The
 // error return is kept only to leave room for a future hard-fail policy without a
 // signature change; today there is no failure the caller acts on.
 func (s *Scheduler) recoverOrphans(ctx context.Context) error {

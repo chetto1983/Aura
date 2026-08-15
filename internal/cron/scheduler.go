@@ -213,10 +213,31 @@ func (s *Scheduler) Start(ctx context.Context) error {
 			observeErr = ctx.Err()
 			return nil
 		case <-ticker.C:
-			if err := s.runScheduledScan(ctx); err != nil {
-				slog.Warn("scheduler tick failed", "err", err)
-			}
+			s.tickOnce(ctx)
 		}
+	}
+}
+
+// tickOnce is one scheduler tick: repudiate dead runs, then dispatch due ones. Split
+// out of Start's select so the ordering is testable rather than only observable by
+// running the loop.
+//
+// The orphan sweep runs on EVERY tick, not only at boot, because a run turns stale
+// staleRecoverySeconds AFTER its worker dies — so a boot-only scan cannot see a crash
+// that happens while the daemon keeps running. Measured 2026-08-15: a killed run stayed
+// 'running' across two restarts (20s and 82s stale, both correctly under the threshold)
+// and was repudiated only by a third. On a long-lived deployment that leaves a dead run
+// holding 'running' indefinitely, and D-06's pre-deploy drain check — "zero in-progress
+// runs" — never clears on its own.
+//
+// Sweeping FIRST is deliberate: a run repudiated this tick should not also be competing
+// for a claim in the same tick. Both halves are WARN-only; ScanStaleRuns is one indexed
+// query over the running rows, so the added per-tick cost is a scan of what is already
+// in flight.
+func (s *Scheduler) tickOnce(ctx context.Context) {
+	_ = s.recoverOrphans(ctx)
+	if err := s.runScheduledScan(ctx); err != nil {
+		slog.Warn("scheduler tick failed", "err", err)
 	}
 }
 
