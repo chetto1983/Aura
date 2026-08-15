@@ -3,17 +3,19 @@ phase: 45-harness-correctness
 status: gaps_found
 verified_by: orchestrator (inline)
 verified_on: 2026-08-15
-build_verified: a85627198
-score: 9/12 requirements closed by live evidence
+build_verified: 5e1b9265d
+score: 10/12 requirements closed by live evidence
 nyquist_compliant: false
 ---
 
 # Phase 45: harness-correctness — Verification
 
-**Verdict: `gaps_found`.** Nine of twelve requirements are closed by live evidence on the
-running stack. Three are not, and are recorded as open rather than rounded up: HARN-03's
-replay marker was never reachable live, ACC-01 cannot be satisfied while any requirement
-lacks live evidence, and HARN-09's same-message half could not be induced.
+**Verdict: `gaps_found`.** Ten of twelve requirements are closed by live evidence on the
+running stack, including HARN-03 — the phase's centrepiece — which was open until a
+verification seam made its one reachable trigger inducible. Two remain open and are
+recorded as open rather than rounded up: HARN-09's same-message half could not be induced
+from this provider, and ACC-01 cannot close while that and HARN-08's repair are
+unit-proven only.
 
 Written inline by the orchestrator after four consecutive `gsd-verifier` dispatches
 stalled on the 600s stream watchdog. That is a process deviation and is disclosed here
@@ -28,7 +30,7 @@ or a transport-level count that can be re-executed, not a judgement.
 |---|---|---|---|
 | HARN-01 | **LIVE** | closed | SC#1: `2 end rows / 2 distinct ids / 2 distinct previews` for two `shell_exec` executions in one turn, both executed |
 | HARN-02 | **LIVE** | closed | Same SQL as HARN-01, plus SC#2's single-execution retry (`1 start / 1 end`) |
-| HARN-03 | **UNIT ONLY** | **OPEN** | `replayedMarker` on both layers and `aura.tool.replayed`/`replay_layer` are unit-proven (45-03). The replay layer was never reached live — see Gap 1 |
+| HARN-03 | **LIVE** | **closed** | Proven on build `5e1b9265d`: the model received `replayedMarker` verbatim, and Tempo returned `aura.tool.replayed=true` + `aura.tool.replay_layer=operation` on the `tool.execute` span. Reached via the `AURA_TEST_FORCE_REPLAY_PROBE` seam, which induces the one reachable trigger rather than simulating a replay. Layer A stays unit-proven |
 | HARN-04 | **LIVE** | closed | MEM-05 step g: prose object rejected, then recovered unaided; `fact_key`/`supersedes_fact_key` contract visible at the model boundary |
 | HARN-06 | **LIVE** | closed | 45-09 re-drive: 0 deliberation markers in `TEXT_MESSAGE_CONTENT` on the shape that previously leaked 6 |
 | HARN-07 | **LIVE** | closed | Same re-drive; the reply stayed in the operator's language end to end and delivered the stated intention in full |
@@ -36,26 +38,28 @@ or a transport-level count that can be re-executed, not a judgement.
 | HARN-09 | **SPLIT** | partially open | Cross-round half proved LIVE by SC#1. Same-message half **NOT REPRODUCED**: asked twice for a naturally repeated action, the model batched both reads into one call both times. Stays unit-proven — see Gap 3 |
 | MEM-04 | **LIVE** | closed | Entity traversal on `Davide` returns 10 facts with `distinct subjects == {'Davide'}`; a fact written with the UUID as subject comes back canonicalized, UUID preserved in `statement` |
 | MEM-05 | **LIVE** | closed | Rejection quoted verbatim, naming `statement` as the destination, followed by unaided recovery in the same turn |
-| ACC-01 | — | **OPEN** | ACC-01 states a requirement without live evidence is not done. HARN-03 has none, so ACC-01 cannot close while it stands |
+| ACC-01 | **PARTIAL** | **OPEN** | HARN-03's blocker is gone. Still open because HARN-09's same-message half and HARN-08's repair remain unit-proven only — both for measured provider reasons, not for want of trying |
 | ACC-02 | **LIVE** | closed | Evidence surfaces exercised: `aura.tool_invocations` SQL, persisted `conversation_turns.tool_calls`, and the SSE transport |
 
 ## Gaps
 
-### Gap 1 (largest) — HARN-03 has no live evidence
+### Gap 1 — HARN-03: CLOSED (was the largest gap)
 
-The replay marker and its span attributes are the phase's most load-bearing fix: they are
-what stops Aura acting on a result she did not produce. They remain unit-proven.
+Closed on build `5e1b9265d`. The model received `replayedMarker` verbatim, and Tempo
+returned `aura.tool.replayed=true` with `aura.tool.replay_layer=operation` on the
+`tool.execute` span. Full evidence, including the scope of what is and is not claimed, in
+`45-VALIDATION.md` §"HARN-03 (SC#3) - CLOSED, proven live".
 
-The only non-destructive induction available — replaying a request with a duplicate
-`Idempotency-Key` — is refused at the HTTP layer (`operation outcome is indeterminate; do
-not retry automatically`) before the agent loop runs, so the reservation-ledger and
-operation-registry layers are never entered. Reaching them live needs a scheduler reclaim
-or a container killed mid-tool-execution against the operator's live deployment, which was
-not performed without an explicit instruction.
+Reaching it required admitting that the four candidate inductions are all genuinely
+blocked — a crash repudiates rather than re-runs, a scheduler re-fire mints a new run id
+and therefore a new operation key, an HTTP duplicate-key retry is refused before the loop
+starts, and `end` rows flush at round completion — leaving a same-round retry as the only
+reachable trigger. `AURA_TEST_FORCE_REPLAY_PROBE` induces that trigger by re-dispatching a
+completed mutating call through the real `execTool -> Decide -> reserve` path; the registry
+answers `DecisionReplay` itself, so the production path executes rather than being
+simulated. The seam is off by default and was disarmed immediately after the run.
 
-**To close:** induce a reclaim deliberately (kill `aura` mid-`shell_exec` and let the
-scheduler reclaim), then read the tool result for `replayedMarker` and the `tool.execute`
-span for `aura.tool.replayed=true` with the correct `replay_layer`.
+Layer A (reservation-ledger) replay was not the layer exercised and stays unit-proven.
 
 ### Gap 2 — SC#4's target fact does not exist
 
@@ -110,17 +114,35 @@ under WSL without the tag.
 
 ## CI
 
-`ci.yml` triggers only on `master`/`main`/`tabula-rasa`, so the push to
-`gsd/phase-45-harness-correctness` started no run. **`master` is currently RED**
-(run `31875818698`): `TestTwoIdentityCrossDeny/documents_cross_deny` fails in `cmd/aura`.
-Attribution checked — that test file's recent history is entirely document-plane work
-(`53391eb6d`, `4426c4b6a`, `7dd7ca6ac`) and Phase 45 touched no document-plane code. It is
-NOT this phase's regression, but it does mean the branch cannot be validated by CI in its
-current state, and phase-45 work is already merged into that red master.
+`ci.yml` triggers only on `master`/`main`/`tabula-rasa`, so pushes to
+`gsd/phase-45-harness-correctness` start no run — this branch cannot be validated by CI
+until it reaches master.
+
+`master` was RED (run `31875818698`) on
+`TestTwoIdentityCrossDeny/documents_cross_deny`. **Diagnosed and fixed on this branch.**
+The assertion was the bug, not the document plane: it read RLS-protected `aura.documents`
+on a raw pool connection binding no `app.current_identity`, so migration 0087's fail-closed
+policy correctly returned zero rows. Proven by running the same test against the same live
+database at the same commit under two roles — as `aura` (table owner, bypasses RLS) it
+passes, as `aura_app` (what the harness documents and CI uses) it fails with exactly the CI
+error. The test was therefore asserting that RLS does NOT filter, the opposite of what a
+two-identity cross-deny acceptance test exists to prove.
+
+Fixed by reading through `db.WithIdentityTxRaw` bound to A — the carrier production uses,
+already used elsewhere in the same harness. Verified as `aura_app`: all five runnable
+subtests pass (garage skips locally, wanting the admin endpoint CI provides). No production
+code changed.
 
 ## Recommendation
 
-Do not mark Phase 45 complete. Close Gap 1 (HARN-03) first — it is the phase's central
-claim and the only one whose absence undermines the rest. Gaps 2 and 3 are candidates for
-a documented waiver rather than more work, since one target does not exist and the other
-depends on provider behaviour, but that is the operator's call, not this document's.
+HARN-03 is closed, and with it the objection that mattered most. What remains is a judgement
+call rather than more work: HARN-09's same-message half and HARN-08's repair are unit-proven
+because this provider consolidates repeated calls and never emitted a malformed batch — both
+measured, neither a coverage hole someone can close by trying harder. SC#4's target fact does
+not exist in the identity's memory.
+
+Marking the phase complete therefore means accepting those three as documented waivers. That
+is defensible on the evidence, and it is the operator's call, not this document's. What
+should NOT happen is closing them silently: each is recorded above with the measurement that
+justifies it, and `nyquist_compliant` stays `false` until they are either waived explicitly
+or proven.

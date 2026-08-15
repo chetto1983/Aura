@@ -1025,6 +1025,73 @@ genuine gap in the phase and is recorded as one; it is NOT closed.
 
 ---
 
+## HARN-03 (SC#3) - CLOSED, proven live
+
+Build `5e1b9265d` (`aura version` commit == `git rev-parse HEAD`, porcelain empty),
+conversation `01a0068b-2427-7e2f-8f95-7a4bec8d0d6f`, model
+`deepseek/deepseek-v4-flash-0731`, probe armed via `AURA_TEST_FORCE_REPLAY_PROBE=1`
+(confirmed inside the container as `probe=[1]` before the run).
+
+The four blockers recorded above are all real and none of them was worked around. The
+seam instead makes the ONE trigger that is reachable - a genuine same-round retry -
+inducible on demand, by re-dispatching a completed mutating call through the real
+`execTool -> Decide -> reserve` path. It builds no replay result and sets no marker; the
+registry answers `DecisionReplay` on its own, so what follows is the production path
+executing, not a simulation of it.
+
+### Half 1 - the marker reaches the model
+
+The tool result Aura received, verbatim from the SSE `TOOL_CALL_RESULT`:
+
+```
+-rw-r--r-- 1 root root 11 Aug 15 17:49 /tmp/replaycheck.txt
+replaycheck[aura_shell {"exit_code":0,"cwd":"/workspace","duration_ms":91,"timed_out":false}]
+
+[replayed: this result is from a prior dispatch of this call, not a fresh execution]
+```
+
+That trailing line is `replayedMarker` (`internal/gateway/reserve.go:36`) byte for byte,
+appended by `markReplayed` on a real result delivered to a real model turn. HARN-03's
+model-facing half - a replayed result must never reach the model unlabelled - holds live.
+
+### Half 2 - the span carries the evidence
+
+Read back from Tempo, not from the process that wrote it. TraceQL
+`{ .aura.tool.replayed = true }` returned trace `fcfdfc6143e57d8b71093df26fc509d4`,
+span `c251419f953ef873`, service `aura`; fetching the trace gives that span's attributes:
+
+```
+SPAN: tool.execute
+   aura.tool.replay_layer = operation
+   aura.tool.replayed     = True
+   tool.class             = shell
+   tool.mutating          = True
+   tool.success           = True
+```
+
+`replay_layer = operation` is the correct layer and is itself corroborating: a same-round
+re-dispatch derives the IDENTICAL child operation key, so Layer B (the operation
+registry) is precisely the layer that should answer `DecisionReplay`. A reservation-ledger
+answer here would have meant the key derivation was not doing what D-01 says it does.
+
+### Scope of the claim
+
+Proven: `replayedMarker` on a live replayed result, and `aura.tool.replayed=true` with
+`aura.tool.replay_layer=operation` on the `tool.execute` span, on the running stack at a
+build whose SHA matches HEAD.
+
+Not proven, and not claimed: the reservation-ledger (Layer A) replay was not the layer
+exercised here - it stays unit-proven from 45-03 - and the probe induces the retry rather
+than a provider producing one, so what is demonstrated is that the path behaves correctly
+WHEN the trigger occurs, not that the trigger occurs in production. Given the four
+measured blockers, that is the strongest live claim available without a real transport
+failure.
+
+The probe was disarmed immediately after the run (`probe=[<UNSET-DISARMED>]`, stack
+healthy) so no deployment is left with a replay seam armed.
+
+---
+
 ## Validation Sign-Off
 
 - [ ] All tasks have `<automated>` verify or an explicit checkpoint justification (23/23 rows)
