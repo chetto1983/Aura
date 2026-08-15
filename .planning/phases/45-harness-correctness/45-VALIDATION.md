@@ -62,6 +62,13 @@ Plan 45-08 Task 1 step 6 closes this (`ARG VCS_REF` + `-X main.commit=${VCS_REF}
 timestamp heuristic. Until it lands, no live-tier evidence in this file should be treated as
 attributable to a known commit.
 
+**Landed 2026-08-15 (commit `77189a9c3`).** Mechanism verified: `docker run --rm aura:local version`
+prints `commit: 77189a9c3e847fa69ea6bb496e3c5ed636d0e7e7`, equal to `git rev-parse HEAD` at build
+time. See §Task 1 Full Gate Results, item 6, for the full verification transcript. **Not yet true of
+the RUNNING container** — the live `aura` container was started before this stamp landed and has not
+been recreated; Task 2 must rebuild from the HEAD it actually drives the live scenario against and
+recreate the container before treating precondition 1 as satisfied.
+
 ---
 
 ## Sampling Rate
@@ -82,31 +89,189 @@ to automated rows, so no three consecutive tasks lack automated verification.
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 45-01-T1 | 45-01 | 1 | HARN-01, HARN-02 | T-45-01, T-45-02 | Amendment cites the measurement, not a preference; amendment number computed from the file | docs assertion | `grep -c "ReplayReissueExecutes" .planning/ROADMAP.md; grep -q "RoundOrdinal" .planning/ROADMAP.md && grep -q "model_round.go" prd.md && echo OK` | ⬜ | ⬜ pending |
-| 45-01-T2 | 45-01 | 1 | HARN-02 | T-45-01 | Phase 46 dependency narrowed against a re-read of `bridge.go`, not against prose | docs assertion | `sed -n '/### Phase 46/,/^\*\*Requirements/p' .planning/ROADMAP.md \| grep -i "depends on" \| grep -qiv "vocabulary" && echo OK` | ⬜ | ⬜ pending |
-| 45-01-T3 | 45-01 | 1 | HARN-01 | T-45-03 | Comment-only; redaction logic and preview cap untouched | unit (build) | `go vet ./internal/toolinvocations/ && go build ./... && grep -q "agent-memory-eval" CLAUDE.md && echo OK` | ⬜ | ⬜ pending |
+| 45-01-T1 | 45-01 | 1 | HARN-01, HARN-02 | T-45-01, T-45-02 | Amendment cites the measurement, not a preference; amendment number computed from the file | docs assertion | `grep -c "ReplayReissueExecutes" .planning/ROADMAP.md; grep -q "RoundOrdinal" .planning/ROADMAP.md && grep -q "model_round.go" prd.md && echo OK` | ✅ | ✅ green |
+| 45-01-T2 | 45-01 | 1 | HARN-02 | T-45-01 | Phase 46 dependency narrowed against a re-read of `bridge.go`, not against prose | docs assertion | `sed -n '/### Phase 46/,/^\*\*Requirements/p' .planning/ROADMAP.md \| grep -i "depends on" \| grep -qiv "vocabulary" && echo OK` | ✅ | ✅ green |
+| 45-01-T3 | 45-01 | 1 | HARN-01 | T-45-03 | Comment-only; redaction logic and preview cap untouched | unit (build) | `go vet ./internal/toolinvocations/ && go build ./... && grep -q "agent-memory-eval" CLAUDE.md && echo OK` | ✅ | ✅ green |
 | 45-02-T1 | 45-02 | 2 | HARN-01, HARN-02, HARN-09 | T-45-04, T-45-05, T-45-06 | Fail-closed `errMissingModelRound`; no silent ordinal-0 fallback | unit + `db_integration` | `go vet ./... && go build ./... && go test -race -run 'TestDeriveToolOperationContext' ./internal/agent/ && go test -race ./internal/agent/ ./internal/gateway/ ./internal/idempotency/` · `go test -race -tags=db_integration -run 'RoundOrdinal\|CrossRound' -count=1 ./internal/gateway/` | ✅ | ✅ green |
 | 45-02-T2 | 45-02 | 2 | HARN-02, ACC-02 | T-45-07, T-45-08 | Reclaim executes once; unaccounted prior dispatch still DENIED, never fabricated | `db_integration` | `go vet ./internal/gateway/ && go test -race -tags=db_integration -count=1 -v ./internal/gateway/ 2>&1 \| tail -40` | ✅ | ✅ green |
 | 45-02-T3 | 45-02 | 2 | HARN-02 | T-45-07 | Deploy-drain hazard (D-06) recorded before deploy, not after | docs assertion | `test "$(awk -F'\|' '/^\| 45-02-T/ && $(NF-1) ~ /pending/ {n++} END {print n+0}' .planning/phases/45-harness-correctness/45-VALIDATION.md)" -eq 0 && echo OK` | ✅ | ✅ green |
-| 45-03-T1 | 45-03 | 3 | HARN-03 | T-45-09, T-45-12 | Both replay layers label their result through ONE helper; nil case gains no marker | unit | `go vet ./internal/gateway/ && go test -race -run 'Replay' ./internal/gateway/ && go test -race ./internal/gateway/` | ⬜ | ⬜ pending |
-| 45-03-T2 | 45-03 | 3 | HARN-03, ACC-02 | T-45-10 | Replay answerable from the span; derivation unit-tested, not an inline conditional | unit | `go vet ./... && go build ./... && go test -race ./internal/agent/ ./internal/gateway/ && grep -rq "aura.tool.replay_layer" internal/agent/ && echo OK` | ⬜ | ⬜ pending |
-| 45-03-T3 | 45-03 | 3 | HARN-02 | T-45-11 | Boot-time fail-closed on incomplete mutating-tool metadata (ASVS V4); emptiness only | unit | `go vet ./internal/gateway/ && go test -race -run 'Validate' ./internal/gateway/ && go build ./... && go test -race ./internal/gateway/ ./internal/agent/mcptools/` | ⬜ | ⬜ pending |
-| 45-04-T1 | 45-04 | 3 | HARN-08 | T-45-13, T-45-14, T-45-16 | No randomness source; deterministic ids preserve cache-prefix stability | unit | `go vet ./internal/agent/ && go test -race -run 'TestUniquifyToolCallIDs' ./internal/agent/ && ! grep -qE "uuid\|rand\.\|time\.Now" internal/agent/llm_agent_call_dedup.go && echo OK` | ⬜ | ⬜ pending |
-| 45-04-T2 | 45-04 | 3 | HARN-09 | T-45-15, T-45-17 | Dropped duplicate leaves no orphan `tool_call` and gets no synthesized result | unit | `go vet ./internal/agent/ && go test -race -run 'TestDedupeSameMessageCalls\|TestUniquifyToolCallIDs' ./internal/agent/ && go test -race ./internal/agent/` | ⬜ | ⬜ pending |
-| 45-04-T3 | 45-04 | 3 | HARN-08, HARN-09 | T-45-13, T-45-15 | Repairs run before ANY downstream consumer (validation, reservation key, history, wire) | unit + LOC gate | `go vet ./... && go build ./... && go test -race ./internal/agent/ ./internal/gateway/ && test "$(wc -l < internal/agent/llm_agent.go)" -lt 600 && echo OK` | ⬜ | ⬜ pending |
-| 45-05-T1 | 45-05 | 3 | HARN-06 | T-45-18, T-45-19, T-45-20 | Critic judges every voluntary termination; bounded at 2 vetoes; fail-open preserved | unit | `go vet ./internal/agent/ && go test -race -run 'TestCompletionGate' ./internal/agent/ && go test -race ./internal/agent/` | ⬜ | ⬜ pending |
-| 45-05-T2 | 45-05 | 3 | HARN-07 | T-45-21, T-45-22 | `messages[0]` stays byte-stable and volatile-free; exactly one language rule | unit | `go vet ./... && go test -race ./internal/agent/ ./internal/agent/prompt/ && test "$(grep -c "operator's language" internal/agent/prompt.go)" -eq 1 && echo OK` | ⬜ | ⬜ pending |
-| 45-06-T1 | 45-06 | 3 | HARN-04 | T-45-23 | Exact-match close keyed on `fact_key`; broad statement unchanged and still reachable | unit + `arcadedb_integration` | `go vet ./internal/arcadedb/ && go test -race ./internal/arcadedb/ && go build ./... && test "$(wc -l < internal/arcadedb/memory.go)" -lt 600` · `go test -race -tags=arcadedb_integration -run 'FactKey' -count=1 ./internal/arcadedb/` | ⬜ | ⬜ pending |
-| 45-06-T2 | 45-06 | 3 | HARN-04 | T-45-24, T-45-25, T-45-28 | Refuse-with-candidates on 0 or >1; no recency/similarity/cardinality inference | unit + `arcadedb_integration` | `go vet ./internal/arcadedb/ && go test -race ./internal/arcadedb/ && go build ./...` · `go test -race -tags=arcadedb_integration -run 'Ambig\|Supersede' -count=1 ./internal/arcadedb/` | ⬜ | ⬜ pending |
-| 45-06-T3 | 45-06 | 3 | MEM-05 | T-45-26, T-45-27 | Prose object rejected before any statement is issued (ASVS V5); bound set from a measurement | unit + `arcadedb_integration` | `go vet ./internal/arcadedb/ && go test -race -run 'Validate' ./internal/arcadedb/ && go test -race ./internal/arcadedb/ && go build ./...` · `go test -race -tags=arcadedb_integration -run 'Prose' -count=1 ./internal/arcadedb/` | ⬜ | ⬜ pending |
-| 45-07-T1 | 45-07 | 4 | HARN-04, MEM-04 | T-45-29, T-45-30 | Published-contract shape frozen at a decision gate BEFORE it is written | **checkpoint:decision** — no automated command by design; bracketed by 45-06-T3 and 45-07-T2, both automated | *(n/a — checkpoint)* | ⬜ | ⬜ pending |
-| 45-07-T2 | 45-07 | 4 | HARN-04 | T-45-29, T-45-30 | Refusal is a SUCCESSFUL, effect-free call with a nil error — never `mcp.ToolCallError` | unit + `arcadedb_integration` | `go vet ./cmd/arcadedb-mcp/ && go test -race ./cmd/arcadedb-mcp/ && go build ./... && test "$(wc -l < cmd/arcadedb-mcp/tool_memory.go)" -lt 600` · `go test -race -tags=arcadedb_integration -count=1 ./cmd/arcadedb-mcp/` | ⬜ | ⬜ pending |
-| 45-07-T3 | 45-07 | 4 | MEM-04 | T-45-31, T-45-32, T-45-33 | Exact two-identifier equality only; a substring match is NOT rewritten (ASVS V5) | unit + `arcadedb_integration` | `go vet ./cmd/arcadedb-mcp/ && go test -race -run 'TestCanonicalSubject' ./cmd/arcadedb-mcp/ && go test -race ./cmd/arcadedb-mcp/ && go build ./...` · `go test -race -tags=arcadedb_integration -run '^TestAgentMemoryMCPLiveCanonical' -count=1 ./cmd/arcadedb-mcp/` | ⬜ | ⬜ pending |
-| 45-08-T1 | 45-08 | 5 | ACC-01 | T-45-38 | Coverage gate uses the disposable `aura_cov`, never the live `aura` database | full matrix + mutation | `go vet ./... && go build ./... && go test -race ./internal/agent/ ./internal/gateway/ ./internal/arcadedb/ ./cmd/arcadedb-mcp/` (then `make quality-full`, `bash scripts/coverage_docker.sh`, `make agent-memory-eval`, `go-mutesting`) | ⬜ | ⬜ pending |
-| 45-08-T2 | 45-08 | 5 | ACC-01, ACC-02, HARN-01..09, MEM-04, MEM-05 | T-45-34, T-45-35, T-45-36, T-45-37, T-45-39 | Evidence gathered only against a HEAD-built image, a drained scheduler and a named live model | **checkpoint:human-verify** — live E2E is the only tier that samples SC#5; no automated command exists or should be invented. Bracketed by 45-08-T1 and 45-08-T3, both automated | *(n/a — live E2E, steps a–h)* | ⬜ | ⬜ pending |
-| 45-08-T3 | 45-08 | 5 | ACC-01, ACC-02 | T-45-34 | A requirement with no live evidence stays OPEN; snapshot verified locally before the push | docs + gate script | `AURA_QUALITY_CHANGED_FILES="$(git diff --name-only origin/master..HEAD)" AURA_QUALITY_BASE_DATE="$(git log -1 --format=%cs origin/master)" bash scripts/quality_snapshot_gate.sh` | ⬜ | ⬜ pending |
+| 45-03-T1 | 45-03 | 3 | HARN-03 | T-45-09, T-45-12 | Both replay layers label their result through ONE helper; nil case gains no marker | unit | `go vet ./internal/gateway/ && go test -race -run 'Replay' ./internal/gateway/ && go test -race ./internal/gateway/` | ✅ | ✅ green |
+| 45-03-T2 | 45-03 | 3 | HARN-03, ACC-02 | T-45-10 | Replay answerable from the span; derivation unit-tested, not an inline conditional | unit | `go vet ./... && go build ./... && go test -race ./internal/agent/ ./internal/gateway/ && grep -rq "aura.tool.replay_layer" internal/agent/ && echo OK` | ✅ | ✅ green |
+| 45-03-T3 | 45-03 | 3 | HARN-02 | T-45-11 | Boot-time fail-closed on incomplete mutating-tool metadata (ASVS V4); emptiness only | unit | `go vet ./internal/gateway/ && go test -race -run 'Validate' ./internal/gateway/ && go build ./... && go test -race ./internal/gateway/ ./internal/agent/mcptools/` | ✅ | ✅ green |
+| 45-04-T1 | 45-04 | 3 | HARN-08 | T-45-13, T-45-14, T-45-16 | No randomness source; deterministic ids preserve cache-prefix stability | unit | `go vet ./internal/agent/ && go test -race -run 'TestUniquifyToolCallIDs' ./internal/agent/ && ! grep -qE "uuid\|rand\.\|time\.Now" internal/agent/llm_agent_call_dedup.go && echo OK` | ✅ | ✅ green |
+| 45-04-T2 | 45-04 | 3 | HARN-09 | T-45-15, T-45-17 | Dropped duplicate leaves no orphan `tool_call` and gets no synthesized result | unit | `go vet ./internal/agent/ && go test -race -run 'TestDedupeSameMessageCalls\|TestUniquifyToolCallIDs' ./internal/agent/ && go test -race ./internal/agent/` | ✅ | ✅ green |
+| 45-04-T3 | 45-04 | 3 | HARN-08, HARN-09 | T-45-13, T-45-15 | Repairs run before ANY downstream consumer (validation, reservation key, history, wire) | unit + LOC gate | `go vet ./... && go build ./... && go test -race ./internal/agent/ ./internal/gateway/ && test "$(wc -l < internal/agent/llm_agent.go)" -lt 600 && echo OK` | ✅ | ✅ green |
+| 45-05-T1 | 45-05 | 3 | HARN-06 | T-45-18, T-45-19, T-45-20 | Critic judges every voluntary termination; bounded at 2 vetoes; fail-open preserved | unit | `go vet ./internal/agent/ && go test -race -run 'TestCompletionGate' ./internal/agent/ && go test -race ./internal/agent/` | ✅ | ✅ green |
+| 45-05-T2 | 45-05 | 3 | HARN-07 | T-45-21, T-45-22 | `messages[0]` stays byte-stable and volatile-free; exactly one language rule | unit | `go vet ./... && go test -race ./internal/agent/ ./internal/agent/prompt/ && test "$(grep -c "operator's language" internal/agent/prompt.go)" -eq 1 && echo OK` | ✅ | ✅ green |
+| 45-06-T1 | 45-06 | 3 | HARN-04 | T-45-23 | Exact-match close keyed on `fact_key`; broad statement unchanged and still reachable | unit + `arcadedb_integration` | `go vet ./internal/arcadedb/ && go test -race ./internal/arcadedb/ && go build ./... && test "$(wc -l < internal/arcadedb/memory.go)" -lt 600` · `go test -race -tags=arcadedb_integration -run 'FactKey' -count=1 ./internal/arcadedb/` | ✅ | ✅ green |
+| 45-06-T2 | 45-06 | 3 | HARN-04 | T-45-24, T-45-25, T-45-28 | Refuse-with-candidates on 0 or >1; no recency/similarity/cardinality inference | unit + `arcadedb_integration` | `go vet ./internal/arcadedb/ && go test -race ./internal/arcadedb/ && go build ./...` · `go test -race -tags=arcadedb_integration -run 'Ambig\|Supersede' -count=1 ./internal/arcadedb/` | ✅ | ✅ green |
+| 45-06-T3 | 45-06 | 3 | MEM-05 | T-45-26, T-45-27 | Prose object rejected before any statement is issued (ASVS V5); bound set from a measurement | unit + `arcadedb_integration` | `go vet ./internal/arcadedb/ && go test -race -run 'Validate' ./internal/arcadedb/ && go test -race ./internal/arcadedb/ && go build ./...` · `go test -race -tags=arcadedb_integration -run 'Prose' -count=1 ./internal/arcadedb/` | ✅ | ✅ green |
+| 45-07-T1 | 45-07 | 4 | HARN-04, MEM-04 | T-45-29, T-45-30 | Published-contract shape frozen at a decision gate BEFORE it is written | **checkpoint:decision** — no automated command by design; bracketed by 45-06-T3 and 45-07-T2, both automated | *(n/a — checkpoint)* | ✅ | ✅ green (resolved `ship-as-specified`) |
+| 45-07-T2 | 45-07 | 4 | HARN-04 | T-45-29, T-45-30 | Refusal is a SUCCESSFUL, effect-free call with a nil error — never `mcp.ToolCallError` | unit + `arcadedb_integration` | `go vet ./cmd/arcadedb-mcp/ && go test -race ./cmd/arcadedb-mcp/ && go build ./... && test "$(wc -l < cmd/arcadedb-mcp/tool_memory.go)" -lt 600` · `go test -race -tags=arcadedb_integration -count=1 ./cmd/arcadedb-mcp/` | ✅ | ✅ green |
+| 45-07-T3 | 45-07 | 4 | MEM-04 | T-45-31, T-45-32, T-45-33 | Exact two-identifier equality only; a substring match is NOT rewritten (ASVS V5) | unit + `arcadedb_integration` | `go vet ./cmd/arcadedb-mcp/ && go test -race -run 'TestCanonicalSubject' ./cmd/arcadedb-mcp/ && go test -race ./cmd/arcadedb-mcp/ && go build ./...` · `go test -race -tags=arcadedb_integration -run '^TestAgentMemoryMCPLiveCanonical' -count=1 ./cmd/arcadedb-mcp/` | ✅ | ✅ green |
+| 45-08-T1 | 45-08 | 5 | ACC-01 | T-45-38 | Coverage gate uses the disposable `aura_cov`, never the live `aura` database | full matrix + mutation | `go vet ./... && go build ./... && go test -race ./internal/agent/ ./internal/gateway/ ./internal/arcadedb/ ./cmd/arcadedb-mcp/` (then `make quality-full`, `bash scripts/coverage_docker.sh`, `make agent-memory-eval`, `go-mutesting`) | ✅ | ✅ green (see §Task 1 Full Gate Results — one sub-gate, `make vuln`, is RED for a reason unrelated to this phase's code; logged, not silently passed) |
+| 45-08-T2 | 45-08 | 5 | ACC-01, ACC-02, HARN-01..09, MEM-04, MEM-05 | T-45-34, T-45-35, T-45-36, T-45-37, T-45-39 | Evidence gathered only against a HEAD-built image, a drained scheduler and a named live model | **checkpoint:human-verify** — live E2E is the only tier that samples SC#5; no automated command exists or should be invented. Bracketed by 45-08-T1 and 45-08-T3, both automated | *(n/a — live E2E, steps a–h)* | ⬜ | ⬜ pending — awaiting human checkpoint |
+| 45-08-T3 | 45-08 | 5 | ACC-01, ACC-02 | T-45-34 | A requirement with no live evidence stays OPEN; snapshot verified locally before the push | docs + gate script | `AURA_QUALITY_CHANGED_FILES="$(git diff --name-only origin/master..HEAD)" AURA_QUALITY_BASE_DATE="$(git log -1 --format=%cs origin/master)" bash scripts/quality_snapshot_gate.sh` | ⬜ | ⬜ pending — gated on 45-08-T2 |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
+
+---
+
+## Task 1 Full Gate Results (2026-08-15, WSL `/mnt/d/Repo/Aura`, stack up)
+
+Recorded verbatim per plan instruction, not paraphrased. All commands run in WSL
+(Ubuntu, `/mnt/d/Repo/Aura`) with `PATH="$HOME/.local/bin:$HOME/go/bin:$PATH"` and the
+full docker compose stack already up.
+
+### 1. `make quality`
+
+Sequential prerequisite order (`Makefile:110`: `deadcode vet file-size
+embedding-model-contract lint test-race vuln`, then `go build`). `make` runs
+prerequisites in listed order without `-j`, so a later target only runs if every
+earlier one succeeded — confirmed by direct observation below.
+
+| Sub-gate | Result |
+|---|---|
+| `deadcode` | green (`bash scripts/deadcode_gate.sh`, whole tree) |
+| `vet` | green (`go vet` over all discovered packages) |
+| `file-size` | green — `check-file-size: all 2223 tracked source file(s) within the 600-LOC cap.` |
+| `embedding-model-contract` | green — `ok: EmbeddingGemma fetch validates and atomically refreshes the cache` |
+| `lint` (golangci-lint incl. dupl) | green — `0 issues.` |
+| `test-race` | green — every package `ok`, e.g. `internal/agent 31.061s`, `internal/agent/mcptools 12.425s`, `internal/mcp 21.748s`, `internal/agui 16.944s`; two packages report `[no test files]` (`cmd/aura-filecard`, `finetune/exporter`) |
+| `vuln` (govulncheck) | **RED** — 7 Go stdlib CVEs, all fixed in go1.26.6, all against the pinned go1.26.5 toolchain: GO-2026-6218 (net/url), GO-2026-6091 (html/template), GO-2026-6090 (crypto/tls), GO-2026-6089 (net/http), GO-2026-6088 (encoding/xml), GO-2026-5972 (encoding/asn1), GO-2026-5026 (net/http via x/net/idna) |
+
+**`vuln` disposition — logged, not fixed, not silently rounded to green.** Confirmed
+pre-existing/environmental rather than a Phase 45 regression: the most recent green CI
+run on `master` (`31720548572`, 2026-08-13T16:24:54Z — two days before this
+measurement) shows the `Supply-chain vulnerability scan (govulncheck)` job as
+`success`. The govulncheck vulnerability database updates independent of any code
+change in this repo; these 7 CVEs were evidently added between 2026-08-13 and
+2026-08-15. None of the trace paths touch anything Phase 45 changed (idempotency key
+derivation, call-id dedup, memory supersede, MCP contract) — every trace is through
+ordinary stdlib call sites used throughout the whole tree. Bumping `go1.26.5` →
+`go1.26.6` touches `go.mod`, `docker/aura/Dockerfile`'s base image, and CI `setup-go`
+pins — outside 45-08's declared `files_modified` and not "directly caused by" this
+task's Dockerfile/compose changes (executor SCOPE BOUNDARY rule). Full detail in
+`.planning/phases/45-harness-correctness/deferred-items.md`. **This is the one open
+item this task surfaces to the human before Task 2** — see the completion report.
+
+### 2. `make quality-full` (quality + coverage)
+
+`make quality-full` as a literal invocation inherits `quality`'s `vuln` failure
+(sequential prerequisite). The coverage half was verified independently via
+`bash scripts/coverage_docker.sh` (disposable `aura_cov`, never the live `aura` DB):
+
+- First two attempts hit shared-tree races from a concurrent session's WIP on
+  `internal/documents` (a mid-edit file open error, then a mid-edit coverage-instrument
+  error) — confirmed transient by direct rebuild after a short poll, not a Phase 45
+  defect (`git log` shows zero Phase 45 commits touch `internal/documents`).
+  Retried and resolved both times.
+- One genuine, in-scope defect found and fixed (see next section): 5 `db_integration`
+  gateway test assertions pinned a replayed preview byte-for-byte, broken by plan
+  45-03's `replayedMarker` (this phase's own change), never exercised by 45-03's own
+  WSL race verification because that verification did not carry the `db_integration`
+  tag.
+- Third attempt, after the fix: **`ok: owned coverage 25820/30079 (85.8% displayed) >=
+  85%`** — measured 2026-08-15, tag set `db_integration`, owned-surface floor per
+  CLAUDE.md.
+
+### 3. `make agent-memory-eval`
+
+CI's most recent `Agent Memory MRS (live ArcadeDB + MCP + EmbeddingGemma)` job was
+`success` on `master` two days prior (same run `31720548572`), so no pre-existing red
+baseline exists to misread this phase's result against.
+
+- **Attempt 1** (env: `ARCADEDB_PASSWORD`, `ARCADEDB_URL`, `ARCADEDB_DATABASE`,
+  `AURA_EMBED_BASE_URL` only): `agent-memory-eval: FAIL: MRS=78.00` — hard gates
+  `zero_cross_tenant_leakage`, `live_mcp_initialize_list_call`,
+  `explicit_abstention`, `bounded_p95` all `SKIP` (not `FAIL`) because `CI` was unset in
+  my own run env, so the suites' own no-skip-as-green guards did not fire loud. Root
+  cause identified by running the `arcadedb_mcp_live` suite directly with `CI=true`:
+  `AURA_ARCADEDB_TENANT_SECRET` was not exported.
+- **Attempt 2** (adds `AURA_ARCADEDB_TENANT_SECRET`, read from the running
+  `aura-arcadedb-mcp` container, never echoed): `MRS=98.00` (already above the 96.5
+  threshold), but `passed: false` — `suite_integrity`/`no_missing_or_skipped_scenarios`/
+  `bounded_p95` still `FAIL` because `live_mcp_bounded_p95`
+  (`TestAgentMemoryCLILiveSearchP95`, `./cmd/aura/`) needs `AURA_DB_URL`, which was not
+  yet exported.
+- Probed `TestAgentMemoryCLILiveSearchP95` alone (read-only `memory_search` call
+  against the LIVE `aura` Postgres DB — safe, no mutation) with `AURA_DB_URL` composed
+  from the running `aura` container's own DSN password:
+  `AURA_AGENT_MEMORY_LATENCY_JSON={"samples":25,"p50_ms":81.319,"p95_ms":141.61,"max_ms":210.059,"cold_retained":true,"path":"cli_identity_mcp_search"}`
+  — `--- PASS (2.34s)`, p95 141.61ms, well under the 1000ms bound.
+- **Attempt 3** (all four env vars set): `agent-memory-eval: PASS: MRS=100.00; report=artifacts/production-readiness/agent-memory-eval-report.json`. Duration: 204s
+  (unittest self-test + full `--tier all` run).
+
+**Disposition:** green. The three missing env vars (`AURA_ARCADEDB_TENANT_SECRET`,
+`AURA_DB_URL`) were an operational gap in this executor's own invocation, not a code
+defect — `make agent-memory-eval`'s own doc comment ("blocking MRS over the
+already-running live memory stack") assumes an operator shell that already has them
+exported; a fresh WSL shell does not.
+
+### 4. `go test -race -tags=db_integration -count=1 ./internal/gateway/`
+
+Run against a disposable Postgres (`aura_gw_dbint`, port 5434, dropped on exit) with
+the composed `AURA_DB_URL`/`AURA_DB_MIGRATE_URL` DSNs, `-v`:
+
+- **First run** (before the fix below): 5 failures, all pinning a replayed preview
+  byte-for-byte against the pre-marker content —
+  `TestSameToolCallIDRetryReplaysViaLayerA`,
+  `TestIdempotentReplay`, `TestApprovedCallReservedAndIdempotent`,
+  `TestGatewayApprovalResumeReentersAndReservesOnce`,
+  `TestRoundOrdinalSameRoundRetryExecutesOnce` — e.g. `retry preview =
+  "first-attempt-output\n\n[replayed: this result is from a prior dispatch of this
+  call, not a fresh execution]", want the first attempt's recorded preview
+  "first-attempt-output"`.
+- **Fix (commit `34a3cb810`):** all five expected values now include `+replayedMarker`
+  (in-package, `internal/gateway`), mirroring the fix plan 45-03 already applied across
+  the `agent`/`gateway` package boundary in `llm_agent_retry_gateway_test.go`.
+- **Second run:** `PASS`, **78/78 subtests**, 0 FAIL. `ok
+  github.com/chetto1983/aura/internal/gateway 3.001s`.
+- **Measured duration: 14s** (includes schema migration into the disposable DB) / test
+  binary reported runtime **3.001s** — both well above 1s, not a skip tell.
+
+### 5. Mutation spot-check (`go-mutesting`, WSL, `PATH=~/go/bin:$PATH`)
+
+| File | Score | Killed/Total | Notes |
+|---|---|---|---|
+| `internal/agent/idempotency_operation.go` | **1.000000** | 9/9 | Clean run. One benign diagnostic line (`undefined: modelRoundFromContext`) from go-mutesting's single-file AST pre-check — `modelRoundFromContext` is defined in the sibling file `model_round.go` in the same package; the actual per-mutant build+test cycle uses the whole package and produced the 9 real PASS/FAIL results below it. |
+| `internal/agent/llm_agent_call_dedup.go` | **1.000000** | 32/32 (1 duplicated) | Clean run. |
+| `internal/arcadedb/memory_supersede.go` | **0.777778** | 21/27 (1 duplicated) | Run TWICE — once plain, once with `GOFLAGS=-tags=arcadedb_integration` plus the live ArcadeDB DSN env — byte-identical result both times. All 6 survivors are `fmt.Errorf(...)`-wrapped error-return statements on a failed DB call (`_, _ = fmt.Errorf, err` mutant swallowing the error) plus one `switch len(candidates) { case 0: ... }` → `case -1:` constant mutation. This is the SAME documented go-mutesting limitation already recorded elsewhere in this repo's quality snapshot (`writer.go`, `internal/cron/schedule.go`): the tool's relocated `/tmp/go-mutesting-*` subprocess exec does not reliably re-run `arcadedb_integration`-gated tests even with the tag set, so DB-failure branches genuinely exercised only by `arcadedb_integration` tests (per 45-06-SUMMARY: `TestFactKeyClosesOnlyTheNamedSibling`, `TestSupersedeReplaysF2EightFactsRefused`, the 0-candidate legacy refusal) show as false survivors. Correctness of these branches is witnessed live by those exact tests passing (45-06-SUMMARY Task Commits, `c7467294a`/`bde3b5107`). |
+
+All three files clear the 70% floor; two are perfect.
+
+### 6. Image provenance stamp (blocking Task 2 precondition 1)
+
+`docker/aura/Dockerfile` gained `ARG VCS_REF=""` plus `-X main.commit=${VCS_REF}` on
+the build-stage ldflags; `compose.yaml` threads it through via `build.args`
+(commit `77189a9c3`). Verified:
+
+```
+$ VCS_REF=$(git rev-parse HEAD) docker compose build aura   # HEAD was 77189a9c3
+$ docker run --rm aura:local version
+aura dev
+commit: 77189a9c3e847fa69ea6bb496e3c5ed636d0e7e7
+built:  unknown
+go:     go1.26.5 linux/amd64
+$ git rev-parse HEAD
+77189a9c3e847fa69ea6bb496e3c5ed636d0e7e7
+$ docker image inspect aura:local --format '{{.Id}} {{.Created}}'
+sha256:b808ea9a3569fc0e2b4448ccd1646202d6d0dfeda56b72d4e8a27da587a19753 2026-08-15T07:02:57.521142624Z
+```
+
+`commit:` equals `git rev-parse HEAD` exactly. `git diff <parent> 77189a9c3 --stat`
+shows only `compose.yaml` (+4) and `docker/aura/Dockerfile` (+9/-1) — no other build
+change rode along.
+
+**Note for Task 2:** the RUNNING `aura` container (started before this session) is
+still on the PRE-stamp image (`a804c38d9753`, no commit baked in) — `aura:local` was
+rebuilt but the container was not recreated, since further commits (the gateway test
+fix, this VALIDATION.md update) landed after the rebuild and HEAD keeps moving while a
+concurrent session commits to this same branch. **Task 2 must rebuild
+`aura:local` from the HEAD it actually starts the live scenario against, and recreate
+the `aura` container from that image, before precondition 1 can be satisfied — the
+build above proves the MECHANISM works, not that the currently-running container
+matches current HEAD.**
 
 ---
 
@@ -123,39 +288,39 @@ hazard accepted with a disposition and an owning phase, deliberately NOT closed 
 
 | # | Plan | Category | Edge | Class | Verified (test / justification) |
 |---|------|----------|------|-------|-------------------------------|
-| PE-01 | 45-02 | empty / single-element | No parent operation, or parent scope == tool scope → `(ctx, nil)` unchanged; the round is required only on the deriving path | backstop | ⬜ |
-| PE-02 | 45-02 | equality / determinism | Same round + identical inputs → byte-equal key; different round → byte-different key | explicit | ⬜ |
-| PE-03 | 45-02 | bounds | `"child:" + 64 hex` = 70 bytes, inside `MaxOperationKeyBytes = 200` and the `octet_length BETWEEN 1 AND 200` CHECK | explicit | ⬜ |
-| PE-04 | 45-02 | absent input / fail-closed | `modelRoundFromContext` `ok=false` with a differently-scoped parent → `errMissingModelRound`, never a silent ordinal 0 | explicit | ⬜ |
-| PE-05 | 45-02 | idempotency | Scheduler reclaim (stable parent op, fresh `RequestID`, ordinal restarting at 1) derives the SAME key → exactly one execution | explicit | ⬜ |
+| PE-01 | 45-02 | empty / single-element | No parent operation, or parent scope == tool scope → `(ctx, nil)` unchanged; the round is required only on the deriving path | backstop | `TestDeriveToolOperationContextPassesThroughWithoutParent` (`internal/agent/idempotency_operation_test.go`) exercises the pass-through shape directly; kept as `backstop` per the plan's own classification since the planner recorded no separate assertion contract for it beyond this test |
+| PE-02 | 45-02 | equality / determinism | Same round + identical inputs → byte-equal key; different round → byte-different key | explicit | `TestDeriveToolOperationContextIsStableWithinARound` (same round) + `TestDeriveToolOperationContextDiscriminatesRounds` (different round), `internal/agent/idempotency_operation_test.go` |
+| PE-03 | 45-02 | bounds | `"child:" + 64 hex` = 70 bytes, inside `MaxOperationKeyBytes = 200` and the `octet_length BETWEEN 1 AND 200` CHECK | explicit | `internal/agent/idempotency_operation_test.go` (45-02-SUMMARY: "the 70-byte key-length bound" asserted alongside the four named unit tests) |
+| PE-04 | 45-02 | absent input / fail-closed | `modelRoundFromContext` `ok=false` with a differently-scoped parent → `errMissingModelRound`, never a silent ordinal 0 | explicit | `TestDeriveToolOperationContextFailsClosedWithoutRound` (`internal/agent/idempotency_operation_test.go`) |
+| PE-05 | 45-02 | idempotency | Scheduler reclaim (stable parent op, fresh `RequestID`, ordinal restarting at 1) derives the SAME key → exactly one execution | explicit | `TestSchedulerReclaimExecutesExactlyOnceAcrossTurns` (`internal/gateway/gateway_adversarial_triad_integration_test.go`, `db_integration`) |
 | PE-06 | 45-02 | concurrency | Concurrent swarm workers sharing a `RequestID`, each at their own round 1, still collide on one key | flagged-assumption | Pre-existing and unchanged (D-05, T-45-08 accept). Owned by Phase 51 / SWARM-07. This phase neither regresses nor fixes it |
-| PE-07 | 45-03 | empty | `replayResult(nil)` keeps its "the tool did NOT run" preview and must NOT gain `replayedMarker`; `decodeOperationReplay` on nil/empty returns its error with no marker | explicit ↑lifted | ⬜ |
-| PE-08 | 45-03 | composition / ordering | A GC'd-sidecar replay carries BOTH `resultExpiredMarker` and `replayedMarker`; neither replaces the other | explicit ↑lifted | ⬜ |
-| PE-09 | 45-03 | negative scoping | A NON-mutating tool with all three operation fields empty does NOT panic; a complete mutating tool does NOT panic | explicit ↑lifted | ⬜ |
-| PE-10 | 45-03 | negative | A freshly executed call ends its span WITHOUT `aura.tool.replayed=true` | explicit | ⬜ |
-| PE-11 | 45-04 | empty / single-element | nil, empty and single-element `[]llm.ToolCall` are identity — no repair, no drop | explicit | ⬜ |
-| PE-12 | 45-04 | equality | Ids compared by exact bytes (no trim/case-fold/NFC); `(name, arguments)` compared through `canonicaljson.CanonicalArgs` | explicit | ⬜ |
-| PE-13 | 45-04 | idempotency / determinism | The same input slice run twice yields byte-identical output ids (distinct from, and not satisfied by, the no-randomness grep) | explicit ↑lifted | ⬜ |
-| PE-14 | 45-04 | collision transitivity | `["abc", "abc", "abc_d2"]` → three DISTINCT ids; the counter keeps incrementing past a later original | explicit ↑lifted | ⬜ |
-| PE-15 | 45-04 | ordering | Uniquify at the `consume` return, dedupe at the history append — AND the surviving calls keep their exact relative order | explicit ↑lifted (order half) | ⬜ |
-| PE-16 | 45-04 | concurrency / atomicity | Both functions pure and synchronous over one slice; the repaired slice replaces the original before any consumer observes it, so an interruption leaves no partially-repaired batch | explicit | ⬜ |
-| PE-17 | 45-05 | bounds exhaustion | `completionAttempts` bounds at exactly 2 vetoes; a third attempt is accepted regardless of the critic's verdict | explicit ↑lifted | ⬜ |
-| PE-18 | 45-05 | empty | A tool-only round producing no user-facing text is vacuously HARN-07-compliant | explicit | ⬜ |
-| PE-19 | 45-05 | fail-open | A critic error, timeout or unavailable model still lets the turn end | explicit | ⬜ |
-| PE-20 | 45-05 | idempotency | `systemMessage()` called twice in one process returns byte-identical strings (the cache-prefix invariant) | explicit | ⬜ |
+| PE-07 | 45-03 | empty | `replayResult(nil)` keeps its "the tool did NOT run" preview and must NOT gain `replayedMarker`; `decodeOperationReplay` on nil/empty returns its error with no marker | explicit ↑lifted | `TestReplayResultNilEndSaysTheToolDidNotRun` + `TestDecodeOperationReplayNilOrEmptyReturnsErrorNoMarker` (`internal/gateway/reserve_test.go`) |
+| PE-08 | 45-03 | composition / ordering | A GC'd-sidecar replay carries BOTH `resultExpiredMarker` and `replayedMarker`; neither replaces the other | explicit ↑lifted | `TestReplayResultMissingSidecar` (`internal/gateway/reserve_test.go`) — asserts both `"result expired"` and `"replayed"` substrings present in the same preview |
+| PE-09 | 45-03 | negative scoping | A NON-mutating tool with all three operation fields empty does NOT panic; a complete mutating tool does NOT panic | explicit ↑lifted | `TestValidateClassifiableIgnoresNonMutatingEmptyOperationMetadata` + `TestValidateClassifiableAcceptsCompleteMutatingTool` (`internal/gateway/guard_test.go`) |
+| PE-10 | 45-03 | negative | A freshly executed call ends its span WITHOUT `aura.tool.replayed=true` | explicit | `TestReplayLayerAttributes` (`internal/agent/llm_agent_replay_layer_test.go`) — the "fresh" branch of the 3-way (operation/reservation/fresh) table test |
+| PE-11 | 45-04 | empty / single-element | nil, empty and single-element `[]llm.ToolCall` are identity — no repair, no drop | explicit | `TestUniquifyToolCallIDs` + `TestDedupeSameMessageCalls` (`internal/agent/llm_agent_call_dedup_test.go`) — both table-driven with nil/empty/single-element subtests |
+| PE-12 | 45-04 | equality | Ids compared by exact bytes (no trim/case-fold/NFC); `(name, arguments)` compared through `canonicaljson.CanonicalArgs` | explicit | `TestUniquifyToolCallIDs`, `TestDedupeSameMessageCallsIgnoresIDs` (`internal/agent/llm_agent_call_dedup_test.go`) |
+| PE-13 | 45-04 | idempotency / determinism | The same input slice run twice yields byte-identical output ids (distinct from, and not satisfied by, the no-randomness grep) | explicit ↑lifted | `TestUniquifyToolCallIDsIsDeterministic` (`internal/agent/llm_agent_call_dedup_test.go`) |
+| PE-14 | 45-04 | collision transitivity | `["abc", "abc", "abc_d2"]` → three DISTINCT ids; the counter keeps incrementing past a later original | explicit ↑lifted | `TestUniquifyToolCallIDs` (`internal/agent/llm_agent_call_dedup_test.go`) — the collision-transitivity subtest named in 45-04-SUMMARY's tech-tracking patterns |
+| PE-15 | 45-04 | ordering | Uniquify at the `consume` return, dedupe at the history append — AND the surviving calls keep their exact relative order | explicit ↑lifted (order half) | `TestDedupeSameMessageCallsPreservesOrder` (`internal/agent/llm_agent_call_dedup_test.go`); call-site ordering itself verified by reading `internal/agent/llm_agent.go`'s two wiring points (45-04-SUMMARY Accomplishments), not a standalone assertion |
+| PE-16 | 45-04 | concurrency / atomicity | Both functions pure and synchronous over one slice; the repaired slice replaces the original before any consumer observes it, so an interruption leaves no partially-repaired batch | explicit | `TestDedupeSameMessageCallsAcrossSeparateInvocationsBothSurvive` (`internal/agent/llm_agent_call_dedup_test.go`) plus the pure-function property confirmed by both functions' signatures (`[]llm.ToolCall -> []llm.ToolCall`, no shared state, no goroutine) |
+| PE-17 | 45-05 | bounds exhaustion | `completionAttempts` bounds at exactly 2 vetoes; a third attempt is accepted regardless of the critic's verdict | explicit ↑lifted | `TestCompletionGate_NotDone_VetoesTwiceThenAccepts` (`internal/agent/llm_agent_completion_test.go`) — scripts a 3rd critic turn and asserts it is never consumed |
+| PE-18 | 45-05 | empty | A tool-only round producing no user-facing text is vacuously HARN-07-compliant | explicit | `TestCompletionGate_ReadOnlyTurn_NowJudged` (`internal/agent/llm_agent_completion_test.go`) |
+| PE-19 | 45-05 | fail-open | A critic error, timeout or unavailable model still lets the turn end | explicit | `TestCompletionGate_CriticError_FailsOpen` + `TestCompletionGate_CriticRetryExhaustedFailsOpen` (`internal/agent/llm_agent_completion_test.go`) |
+| PE-20 | 45-05 | idempotency | `systemMessage()` called twice in one process returns byte-identical strings (the cache-prefix invariant) | explicit | `TestPrompt_ByteStable` (`internal/agent/prompt_test.go`) |
 | PE-21 | 45-05 | equality / definition | Whose "operator's language" applies — the most recent user message overrides the stored preference | backstop | No detector and no enforcement gate exists in Aura or hermes. This is a prompt rule; ACC-01's live conversation is the only tier that samples it, and fabricating an automated check would be worse than none |
-| PE-22 | 45-06 | empty / single-element | A `fact_key` naming no still-valid fact is the 0-match refusal (never a silent no-op success); exactly one candidate closes that one | explicit | ⬜ |
-| PE-23 | 45-06 | equality | `fact_key` is hex of a length-prefixed SHA-256 over `TrimSpace` of `(Subject, Predicate, Object, Statement)`, compared as an exact string — no folding, no normalization, no fuzzy subject match | explicit | ⬜ |
-| PE-24 | 45-06 | ordering | The legacy `supersedes: true` path RESOLVES the candidate set before closing anything | explicit | ⬜ |
-| PE-25 | 45-06 | idempotency | The prose check is a pure function — running it twice on the same fact yields the same verdict | explicit | ⬜ |
-| PE-26 | 45-06 | atomicity | A rejected write leaves no partial graph state: validation runs before any statement is issued, so no `Entity` vertex and no FACT edge are created | explicit | ⬜ |
-| PE-27 | 45-06 | concurrency | Validation adds no shared state and no lock; concurrent writes are arbitrated exactly as before, by the pre-existing `UNIQUE` index on `Entity.name` | explicit | ⬜ |
-| PE-28 | 45-06 | negative / no-regression | A short entity-name object Aura writes today is still ACCEPTED; the rune bound sits strictly above the longest legitimate object MEASURED, with the margin recorded | explicit ↑lifted | ⬜ |
-| PE-29 | 45-07 | empty | A blank or whitespace-only subject is NOT canonicalized — it falls through to `Fact.validate`, which rejects it. Canonicalization never invents a subject | explicit | ⬜ |
-| PE-30 | 45-07 | equality | `TrimSpace` + case-insensitive against the resolved identity UUID and the configured display name; anything else passes through byte-unchanged | explicit | ⬜ |
-| PE-31 | 45-07 | ordering | Canonicalization runs BEFORE `arcadedb.Fact{}` is constructed, so bridge, CLI and host-driven writes are all covered | explicit | ⬜ |
-| PE-32 | 45-07 | idempotency | `canonicalSubject(canonicalSubject(x)) == canonicalSubject(x)` — the canonical form canonicalizes to itself | explicit ↑lifted | ⬜ |
-| PE-33 | 45-07 | negative | A subject that merely CONTAINS the operator's name or UUID is NOT rewritten — substring matching would re-attribute third-party facts to the operator | explicit ↑lifted | ⬜ |
+| PE-22 | 45-06 | empty / single-element | A `fact_key` naming no still-valid fact is the 0-match refusal (never a silent no-op success); exactly one candidate closes that one | explicit | `TestUpsertFactWithUnknownTargetFactKeyRefusesAndWritesNothing` (0-match) + `TestUpsertFactSupersedesClosesOnExactlyOneCandidate` (1-match), `internal/arcadedb/memory_supersede_test.go` |
+| PE-23 | 45-06 | equality | `fact_key` is hex of a length-prefixed SHA-256 over `TrimSpace` of `(Subject, Predicate, Object, Statement)`, compared as an exact string — no folding, no normalization, no fuzzy subject match | explicit | `TestSearchFactsCarriesFactKey` + `TestFactsAboutCarriesFactKey` (`internal/arcadedb/memory_test.go`); exact-match close proven live by `TestFactKeyClosesOnlyTheNamedSibling` (`memory_supersede_integration_test.go`) |
+| PE-24 | 45-06 | ordering | The legacy `supersedes: true` path RESOLVES the candidate set before closing anything | explicit | `TestUpsertFactSupersedesRefusesOnMultipleDistinctCandidates` + `TestUpsertFactSupersedesRefusesOnZeroCandidates` (`internal/arcadedb/memory_supersede_test.go`) — both require candidate resolution to run before any close decision |
+| PE-25 | 45-06 | idempotency | The prose check is a pure function — running it twice on the same fact yields the same verdict | explicit | `TestValidateProseRuleIsIdempotent` (`internal/arcadedb/memory_test.go`) |
+| PE-26 | 45-06 | atomicity | A rejected write leaves no partial graph state: validation runs before any statement is issued, so no `Entity` vertex and no FACT edge are created | explicit | `TestUpsertFactRejectsProseObjectAndCreatesNoEntity` (`internal/arcadedb/memory_prose_integration_test.go`, live graph, before/after vertex count) |
+| PE-27 | 45-06 | concurrency | Validation adds no shared state and no lock; concurrent writes are arbitrated exactly as before, by the pre-existing `UNIQUE` index on `Entity.name` | explicit | `looksLikeProse` is a pure function over `f.Object` with no shared state (45-06-SUMMARY Accomplishments); the pre-existing `UNIQUE` index arbitration is unchanged and untested by this plan by design (no new concurrency surface introduced) |
+| PE-28 | 45-06 | negative / no-regression | A short entity-name object Aura writes today is still ACCEPTED; the rune bound sits strictly above the longest legitimate object MEASURED, with the margin recorded | explicit ↑lifted | `TestValidateProseRuleAppliesOnlyToObjectNotSubject` + `TestValidateRejectsProseObject` (`internal/arcadedb/memory_test.go`); bound (80 runes) and margin (2.2x over the measured 36-rune longest legitimate value) recorded in 45-06-SUMMARY key-decisions |
+| PE-29 | 45-07 | empty | A blank or whitespace-only subject is NOT canonicalized — it falls through to `Fact.validate`, which rejects it. Canonicalization never invents a subject | explicit | `TestCanonicalSubjectNeverInventsABlankSubject` (`cmd/arcadedb-mcp/tool_memory_subject_test.go`) |
+| PE-30 | 45-07 | equality | `TrimSpace` + case-insensitive against the resolved identity UUID and the configured display name; anything else passes through byte-unchanged | explicit | `TestCanonicalSubject` (`cmd/arcadedb-mcp/tool_memory_subject_test.go`) — 12 subtests incl. UUID match, display-name match, case-insensitivity, unrelated-subject passthrough |
+| PE-31 | 45-07 | ordering | Canonicalization runs BEFORE `arcadedb.Fact{}` is constructed, so bridge, CLI and host-driven writes are all covered | explicit | `TestUpsertFactCanonicalizesOperatorSubject` (`cmd/arcadedb-mcp/tool_memory_subject_test.go`) — asserts the canonicalized value on the constructed `Fact`, not a pre-construction intermediate |
+| PE-32 | 45-07 | idempotency | `canonicalSubject(canonicalSubject(x)) == canonicalSubject(x)` — the canonical form canonicalizes to itself | explicit ↑lifted | `TestCanonicalSubjectIsIdempotent` (`cmd/arcadedb-mcp/tool_memory_subject_test.go`) |
+| PE-33 | 45-07 | negative | A subject that merely CONTAINS the operator's name or UUID is NOT rewritten — substring matching would re-attribute third-party facts to the operator | explicit ↑lifted | `TestCanonicalSubject` (`cmd/arcadedb-mcp/tool_memory_subject_test.go`) — the two negative containment subtests named in 45-07-SUMMARY ("two negative tests: a subject merely CONTAINING the display name, and one merely containing the UUID") |
 
 ### Tally
 
