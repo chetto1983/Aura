@@ -9,6 +9,20 @@ but are NOT caused by Phase 45's code and are outside this plan's declared
 
 ## 1. `make vuln` (govulncheck) red — 7 newly-disclosed stdlib CVEs, go1.26.5 → go1.26.6
 
+**RESOLVED 2026-08-15 by `81b55b961`** ("build: bump the Go toolchain to 1.26.6 to
+clear 7 stdlib CVEs") — the human chose bump-first over accept-and-defer at the
+Task 1 → Task 2 checkpoint and applied it directly: `go.mod:3` → `go 1.26.6`,
+`docker/aura/Dockerfile:24` → `golang:1.26.6-alpine`,
+`.planning/codebase/STACK.md` doc pins updated. No CI workflow edit was needed —
+every `setup-go` step already resolves `go-version-file: go.mod`. Independently
+re-verified by the executor (not just the human's report): `go version` → `go1.26.6
+linux/amd64`; `govulncheck ./...` → `No vulnerabilities found` (0, down from 7),
+2026-08-15T08:35:30Z, WSL. `git grep 1.26.5` over `go.mod docker/ .github/
+.planning/codebase/` returns nothing. Full transcript in `45-VALIDATION.md` §Task 1
+Full Gate Results. This entry is kept below for the record of what was found and
+why it was originally deferred rather than silently fixed inline — it is NOT an open
+item.
+
 **Found:** 2026-08-15, running `make quality` in WSL as part of 45-08 Task 1.
 
 **Measured:** `deadcode`, `vet`, `file-size`, `embedding-model-contract`, `lint` (0 issues),

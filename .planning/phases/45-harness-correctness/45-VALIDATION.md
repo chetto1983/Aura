@@ -109,7 +109,7 @@ to automated rows, so no three consecutive tasks lack automated verification.
 | 45-07-T1 | 45-07 | 4 | HARN-04, MEM-04 | T-45-29, T-45-30 | Published-contract shape frozen at a decision gate BEFORE it is written | **checkpoint:decision** — no automated command by design; bracketed by 45-06-T3 and 45-07-T2, both automated | *(n/a — checkpoint)* | ✅ | ✅ green (resolved `ship-as-specified`) |
 | 45-07-T2 | 45-07 | 4 | HARN-04 | T-45-29, T-45-30 | Refusal is a SUCCESSFUL, effect-free call with a nil error — never `mcp.ToolCallError` | unit + `arcadedb_integration` | `go vet ./cmd/arcadedb-mcp/ && go test -race ./cmd/arcadedb-mcp/ && go build ./... && test "$(wc -l < cmd/arcadedb-mcp/tool_memory.go)" -lt 600` · `go test -race -tags=arcadedb_integration -count=1 ./cmd/arcadedb-mcp/` | ✅ | ✅ green |
 | 45-07-T3 | 45-07 | 4 | MEM-04 | T-45-31, T-45-32, T-45-33 | Exact two-identifier equality only; a substring match is NOT rewritten (ASVS V5) | unit + `arcadedb_integration` | `go vet ./cmd/arcadedb-mcp/ && go test -race -run 'TestCanonicalSubject' ./cmd/arcadedb-mcp/ && go test -race ./cmd/arcadedb-mcp/ && go build ./...` · `go test -race -tags=arcadedb_integration -run '^TestAgentMemoryMCPLiveCanonical' -count=1 ./cmd/arcadedb-mcp/` | ✅ | ✅ green |
-| 45-08-T1 | 45-08 | 5 | ACC-01 | T-45-38 | Coverage gate uses the disposable `aura_cov`, never the live `aura` database | full matrix + mutation | `go vet ./... && go build ./... && go test -race ./internal/agent/ ./internal/gateway/ ./internal/arcadedb/ ./cmd/arcadedb-mcp/` (then `make quality-full`, `bash scripts/coverage_docker.sh`, `make agent-memory-eval`, `go-mutesting`) | ✅ | ✅ green (see §Task 1 Full Gate Results — one sub-gate, `make vuln`, is RED for a reason unrelated to this phase's code; logged, not silently passed) |
+| 45-08-T1 | 45-08 | 5 | ACC-01 | T-45-38 | Coverage gate uses the disposable `aura_cov`, never the live `aura` database | full matrix + mutation | `go vet ./... && go build ./... && go test -race ./internal/agent/ ./internal/gateway/ ./internal/arcadedb/ ./cmd/arcadedb-mcp/` (then `make quality-full`, `bash scripts/coverage_docker.sh`, `make agent-memory-eval`, `go-mutesting`) | ✅ | ✅ green — `make vuln` went RED→GREEN via `81b55b961` (Go toolchain 1.26.5→1.26.6), independently re-verified; see §Task 1 Full Gate Results |
 | 45-08-T2 | 45-08 | 5 | ACC-01, ACC-02, HARN-01..09, MEM-04, MEM-05 | T-45-34, T-45-35, T-45-36, T-45-37, T-45-39 | Evidence gathered only against a HEAD-built image, a drained scheduler and a named live model | **checkpoint:human-verify** — live E2E is the only tier that samples SC#5; no automated command exists or should be invented. Bracketed by 45-08-T1 and 45-08-T3, both automated | *(n/a — live E2E, steps a–h)* | ⬜ | ⬜ pending — awaiting human checkpoint |
 | 45-08-T3 | 45-08 | 5 | ACC-01, ACC-02 | T-45-34 | A requirement with no live evidence stays OPEN; snapshot verified locally before the push | docs + gate script | `AURA_QUALITY_CHANGED_FILES="$(git diff --name-only origin/master..HEAD)" AURA_QUALITY_BASE_DATE="$(git log -1 --format=%cs origin/master)" bash scripts/quality_snapshot_gate.sh` | ⬜ | ⬜ pending — gated on 45-08-T2 |
 
@@ -138,28 +138,62 @@ earlier one succeeded — confirmed by direct observation below.
 | `embedding-model-contract` | green — `ok: EmbeddingGemma fetch validates and atomically refreshes the cache` |
 | `lint` (golangci-lint incl. dupl) | green — `0 issues.` |
 | `test-race` | green — every package `ok`, e.g. `internal/agent 31.061s`, `internal/agent/mcptools 12.425s`, `internal/mcp 21.748s`, `internal/agui 16.944s`; two packages report `[no test files]` (`cmd/aura-filecard`, `finetune/exporter`) |
-| `vuln` (govulncheck) | **RED** — 7 Go stdlib CVEs, all fixed in go1.26.6, all against the pinned go1.26.5 toolchain: GO-2026-6218 (net/url), GO-2026-6091 (html/template), GO-2026-6090 (crypto/tls), GO-2026-6089 (net/http), GO-2026-6088 (encoding/xml), GO-2026-5972 (encoding/asn1), GO-2026-5026 (net/http via x/net/idna) |
+| `vuln` (govulncheck) | **RED → GREEN**, see below |
 
-**`vuln` disposition — logged, not fixed, not silently rounded to green.** Confirmed
-pre-existing/environmental rather than a Phase 45 regression: the most recent green CI
-run on `master` (`31720548572`, 2026-08-13T16:24:54Z — two days before this
+**`vuln` — RED at first measurement, fixed at the human checkpoint, GREEN now.**
+Initially RED: 7 Go stdlib CVEs, all fixed in go1.26.6, all against the pinned
+go1.26.5 toolchain: GO-2026-6218 (net/url), GO-2026-6091 (html/template), GO-2026-6090
+(crypto/tls), GO-2026-6089 (net/http), GO-2026-6088 (encoding/xml), GO-2026-5972
+(encoding/asn1), GO-2026-5026 (net/http via x/net/idna). Confirmed
+pre-existing/environmental, not a Phase 45 regression: the most recent green CI run on
+`master` (`31720548572`, 2026-08-13T16:24:54Z — two days before the first
 measurement) shows the `Supply-chain vulnerability scan (govulncheck)` job as
-`success`. The govulncheck vulnerability database updates independent of any code
-change in this repo; these 7 CVEs were evidently added between 2026-08-13 and
-2026-08-15. None of the trace paths touch anything Phase 45 changed (idempotency key
-derivation, call-id dedup, memory supersede, MCP contract) — every trace is through
-ordinary stdlib call sites used throughout the whole tree. Bumping `go1.26.5` →
-`go1.26.6` touches `go.mod`, `docker/aura/Dockerfile`'s base image, and CI `setup-go`
-pins — outside 45-08's declared `files_modified` and not "directly caused by" this
-task's Dockerfile/compose changes (executor SCOPE BOUNDARY rule). Full detail in
-`.planning/phases/45-harness-correctness/deferred-items.md`. **This is the one open
-item this task surfaces to the human before Task 2** — see the completion report.
+`success`; the govulncheck vulnerability database updates independent of any code
+change in this repo, and these 7 CVEs were evidently added between 2026-08-13 and
+2026-08-15. Logged (not silently fixed) at Task 1's first pass and surfaced at the
+Task 1→Task 2 checkpoint, per the plan's own "STOP and report... do not proceed to
+the live scenario on a red gate."
+
+**Resolved at the checkpoint: the human chose bump-first over accept-and-defer**,
+and applied it directly — commit `81b55b961` ("build: bump the Go toolchain to
+1.26.6 to clear 7 stdlib CVEs"): `go.mod:3` → `go 1.26.6`,
+`docker/aura/Dockerfile:24` → `golang:1.26.6-alpine`,
+`.planning/codebase/STACK.md` doc pins updated. No CI workflow edit was needed —
+every `setup-go` step already resolves `go-version-file: go.mod`, so the module
+directive alone re-points CI. The ingest sidecar tracks the floating
+`golang:1.26-bookworm` and picks the patch up on its next build.
+
+**Independently re-verified by this executor** (not just trusting the human's report),
+2026-08-15T08:35:30Z, WSL:
+```
+$ go version
+go version go1.26.6 linux/amd64
+$ govulncheck ./...
+=== Symbol Results ===
+
+No vulnerabilities found.
+
+Your code is affected by 0 vulnerabilities.
+```
+`git grep 1.26.5` over `go.mod docker/ .github/ .planning/codebase/` returns nothing
+(re-confirmed). Deferred item moved to resolved in
+`.planning/phases/45-harness-correctness/deferred-items.md`, citing `81b55b961`.
+
+**Carried forward as a live consequence for Task 2:** this is the FIRST time
+`aura:local` compiles on `golang:1.26.6-alpine` (the prior rebuild in this plan, whose
+provenance stamp is verified in §6 below, was still on `golang:1.26.5-alpine`). Task 2
+rebuilds again from current HEAD before the live run, so that rebuild is also the first
+real test of the new base image — if it fails, that is reported as a finding, not
+worked around.
 
 ### 2. `make quality-full` (quality + coverage)
 
-`make quality-full` as a literal invocation inherits `quality`'s `vuln` failure
-(sequential prerequisite). The coverage half was verified independently via
-`bash scripts/coverage_docker.sh` (disposable `aura_cov`, never the live `aura` DB):
+At the time this coverage measurement was taken, `make quality-full` as a literal
+invocation still inherited `quality`'s then-red `vuln` sub-gate (sequential
+prerequisite) — the toolchain bump above landed after this measurement. The coverage
+half was verified independently via `bash scripts/coverage_docker.sh` (disposable
+`aura_cov`, never the live `aura` DB), and with `vuln` now green too (see above),
+`make quality-full` has no remaining red component:
 
 - First two attempts hit shared-tree races from a concurrent session's WIP on
   `internal/documents` (a mid-edit file open error, then a mid-edit coverage-instrument
