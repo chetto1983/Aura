@@ -8,6 +8,12 @@
 // at all, and the live catalog reported three ready documents behind a single version.
 // A constant that no longer matches its constraint is a 23514 in production and a green
 // test suite everywhere else; this is the assertion that makes that divergence a red build.
+//
+// The assertion is CONTAINMENT, not equality. It was equality until 2026-08-15, when the
+// constants for the stages the in-process pipeline used to write were deleted: Go now
+// declares two document statuses and one version status where the constraints admit
+// twelve and sixteen. A value the constraint admits and Go never writes cannot fail an
+// INSERT — the failure this test was written for is only ever the other direction.
 
 package documents
 
@@ -49,9 +55,11 @@ func TestDocumentVocabulariesMatchTheDatabase(t *testing.T) {
 		{"aura.document_versions", "document_versions_status_check", versionValues},
 	} {
 		admitted := constraintValues(t, ctx, pool, tc.table, tc.constraint)
-		declared := slices.Sorted(slices.Values(tc.declared))
-		if !slices.Equal(declared, admitted) {
-			t.Errorf("%s admits %v; Go declares %v", tc.constraint, admitted, declared)
+		for _, declared := range tc.declared {
+			if !slices.Contains(admitted, declared) {
+				t.Errorf("Go declares %q; %s admits only %v — that write is a 23514",
+					declared, tc.constraint, admitted)
+			}
 		}
 	}
 }

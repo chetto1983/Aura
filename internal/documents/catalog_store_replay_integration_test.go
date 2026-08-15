@@ -175,8 +175,9 @@ INSERT INTO aura.assets (
 		// "queued" is a legal value for both aura.documents_status_check and
 		// aura.document_versions_status_check -- this is the vocabulary the constraints
 		// admit, not a workaround. The recorder used to default to "processing" for
-		// both, which neither constraint accepted; commit 38d78e403 fixed that.
-		DocumentStatus: DocumentStatusQueued, VersionStatus: "queued",
+		// both, which neither constraint accepted; commit 38d78e403 fixed that. Both
+		// are literals because Go declares no constant for a stage it never writes.
+		DocumentStatus: "queued", VersionStatus: "queued",
 		StorageKind: defaultStorageKind, RetentionClass: defaultRetentionClass,
 	})
 	if err != nil {

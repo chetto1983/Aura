@@ -91,7 +91,7 @@ func TestCatalogServiceUpdateDocumentNormalizesTags(t *testing.T) {
 		Title:      "Updated Manual",
 		Tags:       []string{"Line   Automation", "line automation"},
 		Metadata:   map[string]any{},
-		Status:     DocumentStatusReady,
+		Status:     DocumentStatusStored,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -297,7 +297,9 @@ func (f *fakeCatalogStore) GetDocument(_ context.Context, identityID, documentID
 func (f *fakeCatalogStore) SoftDeleteDocument(_ context.Context, identityID, documentID string) (Document, error) {
 	f.deleteIdentityID = identityID
 	f.deleteDocumentID = documentID
-	return Document{ID: documentID, IdentityID: identityID, Status: DocumentStatusDeleting}, nil
+	// The literal SoftDeleteDocument's own UPDATE writes. Go declares no constant for it:
+	// the status is set in SQL, so nothing in this package ever names it.
+	return Document{ID: documentID, IdentityID: identityID, Status: "deleting"}, nil
 }
 
 func (f *fakeCatalogStore) RecordAssetVersion(_ context.Context, req RecordAssetVersionRequest) (DocumentVersionRecord, error) {
