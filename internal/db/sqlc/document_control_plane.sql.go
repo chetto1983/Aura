@@ -665,88 +665,6 @@ func (q *Queries) CreateIngestionJob(ctx context.Context, arg CreateIngestionJob
 	return i, err
 }
 
-const createStorageObject = `-- name: CreateStorageObject :one
-INSERT INTO aura.storage_objects (
-    identity_id, document_id, version_id, asset_id, bucket, object_key, kind,
-    sha1, sha256, etag, size_bytes, content_type, retention_class,
-    status, pipeline_generation
-) VALUES (
-    $1, $2, $3,
-    $4, $5, $6, $7,
-    $8, $9, $10, $11,
-    $12, $13, $14,
-    $15
-)
-ON CONFLICT (bucket, object_key) DO UPDATE
-SET etag = EXCLUDED.etag,
-    size_bytes = EXCLUDED.size_bytes,
-    content_type = EXCLUDED.content_type
-WHERE aura.storage_objects.identity_id = EXCLUDED.identity_id
-RETURNING id, identity_id, document_id, version_id, asset_id, bucket, object_key, kind, sha1, sha256, etag, size_bytes, content_type, retention_class, created_at, deleted_at, status, pipeline_generation, deletion_generation, deletion_verified_at
-`
-
-type CreateStorageObjectParams struct {
-	IdentityID         pgtype.UUID `json:"identity_id"`
-	DocumentID         pgtype.UUID `json:"document_id"`
-	VersionID          pgtype.UUID `json:"version_id"`
-	AssetID            pgtype.UUID `json:"asset_id"`
-	Bucket             string      `json:"bucket"`
-	ObjectKey          string      `json:"object_key"`
-	Kind               string      `json:"kind"`
-	Sha1               string      `json:"sha1"`
-	Sha256             string      `json:"sha256"`
-	Etag               string      `json:"etag"`
-	SizeBytes          int64       `json:"size_bytes"`
-	ContentType        string      `json:"content_type"`
-	RetentionClass     string      `json:"retention_class"`
-	Status             string      `json:"status"`
-	PipelineGeneration int64       `json:"pipeline_generation"`
-}
-
-func (q *Queries) CreateStorageObject(ctx context.Context, arg CreateStorageObjectParams) (AuraStorageObjects, error) {
-	row := q.db.QueryRow(ctx, createStorageObject,
-		arg.IdentityID,
-		arg.DocumentID,
-		arg.VersionID,
-		arg.AssetID,
-		arg.Bucket,
-		arg.ObjectKey,
-		arg.Kind,
-		arg.Sha1,
-		arg.Sha256,
-		arg.Etag,
-		arg.SizeBytes,
-		arg.ContentType,
-		arg.RetentionClass,
-		arg.Status,
-		arg.PipelineGeneration,
-	)
-	var i AuraStorageObjects
-	err := row.Scan(
-		&i.ID,
-		&i.IdentityID,
-		&i.DocumentID,
-		&i.VersionID,
-		&i.AssetID,
-		&i.Bucket,
-		&i.ObjectKey,
-		&i.Kind,
-		&i.Sha1,
-		&i.Sha256,
-		&i.Etag,
-		&i.SizeBytes,
-		&i.ContentType,
-		&i.RetentionClass,
-		&i.CreatedAt,
-		&i.DeletedAt,
-		&i.Status,
-		&i.PipelineGeneration,
-		&i.DeletionGeneration,
-		&i.DeletionVerifiedAt,
-	)
-	return i, err
-}
-
 const deleteDocumentTags = `-- name: DeleteDocumentTags :exec
 DELETE FROM aura.document_tags WHERE document_id = $1
 `
@@ -1077,60 +995,6 @@ func (q *Queries) HeartbeatIngestionJob(ctx context.Context, arg HeartbeatIngest
 	return i, err
 }
 
-const listDocumentStorageObjects = `-- name: ListDocumentStorageObjects :many
-SELECT id, identity_id, document_id, version_id, asset_id, bucket, object_key, kind, sha1, sha256, etag, size_bytes, content_type, retention_class, created_at, deleted_at, status, pipeline_generation, deletion_generation, deletion_verified_at FROM aura.storage_objects
-WHERE identity_id = $1
-  AND document_id = $2
-  AND status <> 'object_deleted'
-ORDER BY created_at, id
-`
-
-type ListDocumentStorageObjectsParams struct {
-	IdentityID pgtype.UUID `json:"identity_id"`
-	DocumentID pgtype.UUID `json:"document_id"`
-}
-
-func (q *Queries) ListDocumentStorageObjects(ctx context.Context, arg ListDocumentStorageObjectsParams) ([]AuraStorageObjects, error) {
-	rows, err := q.db.Query(ctx, listDocumentStorageObjects, arg.IdentityID, arg.DocumentID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []AuraStorageObjects{}
-	for rows.Next() {
-		var i AuraStorageObjects
-		if err := rows.Scan(
-			&i.ID,
-			&i.IdentityID,
-			&i.DocumentID,
-			&i.VersionID,
-			&i.AssetID,
-			&i.Bucket,
-			&i.ObjectKey,
-			&i.Kind,
-			&i.Sha1,
-			&i.Sha256,
-			&i.Etag,
-			&i.SizeBytes,
-			&i.ContentType,
-			&i.RetentionClass,
-			&i.CreatedAt,
-			&i.DeletedAt,
-			&i.Status,
-			&i.PipelineGeneration,
-			&i.DeletionGeneration,
-			&i.DeletionVerifiedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listDocumentTags = `-- name: ListDocumentTags :many
 SELECT tag FROM aura.document_tags
 WHERE document_id = $1
@@ -1347,6 +1211,10 @@ type ListStorageObjectsParams struct {
 	Prefix     string      `json:"prefix"`
 }
 
+// The only storage-object statement Go still issues. The ledger's writes travel with the
+// rows they belong to: ReservePipelineCandidateVersion inserts the object, and
+// SoftDeleteDocument marks the document's objects delete_pending in the same statement
+// that soft-deletes the document, so neither has a standalone query to call.
 func (q *Queries) ListStorageObjects(ctx context.Context, arg ListStorageObjectsParams) ([]AuraStorageObjects, error) {
 	rows, err := q.db.Query(ctx, listStorageObjects, arg.IdentityID, arg.Bucket, arg.Prefix)
 	if err != nil {
@@ -1659,95 +1527,6 @@ func (q *Queries) MarkDeleteJobStorageObjectDeleted(ctx context.Context, arg Mar
 		arg.DeletionGeneration,
 	)
 	var i MarkDeleteJobStorageObjectDeletedRow
-	err := row.Scan(
-		&i.ID,
-		&i.IdentityID,
-		&i.DocumentID,
-		&i.VersionID,
-		&i.AssetID,
-		&i.Bucket,
-		&i.ObjectKey,
-		&i.Kind,
-		&i.Sha1,
-		&i.Sha256,
-		&i.Etag,
-		&i.SizeBytes,
-		&i.ContentType,
-		&i.RetentionClass,
-		&i.CreatedAt,
-		&i.DeletedAt,
-		&i.Status,
-		&i.PipelineGeneration,
-		&i.DeletionGeneration,
-		&i.DeletionVerifiedAt,
-	)
-	return i, err
-}
-
-const markStorageObjectDeletePending = `-- name: MarkStorageObjectDeletePending :one
-UPDATE aura.storage_objects
-SET status = 'delete_pending',
-    deletion_generation = deletion_generation + 1
-WHERE id = $1
-  AND identity_id = $2
-  AND status <> 'object_deleted'
-RETURNING id, identity_id, document_id, version_id, asset_id, bucket, object_key, kind, sha1, sha256, etag, size_bytes, content_type, retention_class, created_at, deleted_at, status, pipeline_generation, deletion_generation, deletion_verified_at
-`
-
-type MarkStorageObjectDeletePendingParams struct {
-	ID         pgtype.UUID `json:"id"`
-	IdentityID pgtype.UUID `json:"identity_id"`
-}
-
-func (q *Queries) MarkStorageObjectDeletePending(ctx context.Context, arg MarkStorageObjectDeletePendingParams) (AuraStorageObjects, error) {
-	row := q.db.QueryRow(ctx, markStorageObjectDeletePending, arg.ID, arg.IdentityID)
-	var i AuraStorageObjects
-	err := row.Scan(
-		&i.ID,
-		&i.IdentityID,
-		&i.DocumentID,
-		&i.VersionID,
-		&i.AssetID,
-		&i.Bucket,
-		&i.ObjectKey,
-		&i.Kind,
-		&i.Sha1,
-		&i.Sha256,
-		&i.Etag,
-		&i.SizeBytes,
-		&i.ContentType,
-		&i.RetentionClass,
-		&i.CreatedAt,
-		&i.DeletedAt,
-		&i.Status,
-		&i.PipelineGeneration,
-		&i.DeletionGeneration,
-		&i.DeletionVerifiedAt,
-	)
-	return i, err
-}
-
-const markStorageObjectDeleted = `-- name: MarkStorageObjectDeleted :one
-UPDATE aura.storage_objects
-SET status = 'object_deleted',
-    deleted_at = COALESCE(deleted_at, now()),
-    deletion_verified_at = now()
-WHERE id = $1
-  AND identity_id = $2
-  AND status = 'delete_pending'
-  AND deletion_generation = $3
-RETURNING id, identity_id, document_id, version_id, asset_id, bucket, object_key, kind, sha1, sha256, etag, size_bytes, content_type, retention_class, created_at, deleted_at, status, pipeline_generation, deletion_generation, deletion_verified_at
-`
-
-type MarkStorageObjectDeletedParams struct {
-	ID                 pgtype.UUID `json:"id"`
-	IdentityID         pgtype.UUID `json:"identity_id"`
-	DeletionGeneration int64       `json:"deletion_generation"`
-}
-
-func (q *Queries) MarkStorageObjectDeleted(ctx context.Context, arg MarkStorageObjectDeletedParams) (AuraStorageObjects, error) {
-	row := q.db.QueryRow(ctx, markStorageObjectDeleted, arg.ID, arg.IdentityID, arg.DeletionGeneration)
-	var i AuraStorageObjects
 	err := row.Scan(
 		&i.ID,
 		&i.IdentityID,

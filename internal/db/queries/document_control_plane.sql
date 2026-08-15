@@ -115,24 +115,10 @@ ON CONFLICT (document_id, tag) DO NOTHING;
 SELECT tag FROM aura.document_tags
 WHERE document_id = sqlc.arg(document_id)
 ORDER BY tag;
--- name: CreateStorageObject :one
-INSERT INTO aura.storage_objects (
-    identity_id, document_id, version_id, asset_id, bucket, object_key, kind,
-    sha1, sha256, etag, size_bytes, content_type, retention_class,
-    status, pipeline_generation
-) VALUES (
-    sqlc.arg(identity_id), sqlc.narg(document_id), sqlc.narg(version_id),
-    sqlc.narg(asset_id), sqlc.arg(bucket), sqlc.arg(object_key), sqlc.arg(kind),
-    sqlc.arg(sha1), sqlc.arg(sha256), sqlc.arg(etag), sqlc.arg(size_bytes),
-    sqlc.arg(content_type), sqlc.arg(retention_class), sqlc.arg(status),
-    sqlc.arg(pipeline_generation)
-)
-ON CONFLICT (bucket, object_key) DO UPDATE
-SET etag = EXCLUDED.etag,
-    size_bytes = EXCLUDED.size_bytes,
-    content_type = EXCLUDED.content_type
-WHERE aura.storage_objects.identity_id = EXCLUDED.identity_id
-RETURNING *;
+-- The only storage-object statement Go still issues. The ledger's writes travel with the
+-- rows they belong to: ReservePipelineCandidateVersion inserts the object, and
+-- SoftDeleteDocument marks the document's objects delete_pending in the same statement
+-- that soft-deletes the document, so neither has a standalone query to call.
 -- name: ListStorageObjects :many
 SELECT * FROM aura.storage_objects
 WHERE identity_id = sqlc.arg(identity_id)
@@ -140,30 +126,6 @@ WHERE identity_id = sqlc.arg(identity_id)
   AND status <> 'object_deleted'
   AND (sqlc.arg(prefix)::text = '' OR object_key LIKE sqlc.arg(prefix) || '%')
 ORDER BY object_key;
--- name: ListDocumentStorageObjects :many
-SELECT * FROM aura.storage_objects
-WHERE identity_id = sqlc.arg(identity_id)
-  AND document_id = sqlc.arg(document_id)
-  AND status <> 'object_deleted'
-ORDER BY created_at, id;
--- name: MarkStorageObjectDeletePending :one
-UPDATE aura.storage_objects
-SET status = 'delete_pending',
-    deletion_generation = deletion_generation + 1
-WHERE id = sqlc.arg(id)
-  AND identity_id = sqlc.arg(identity_id)
-  AND status <> 'object_deleted'
-RETURNING *;
--- name: MarkStorageObjectDeleted :one
-UPDATE aura.storage_objects
-SET status = 'object_deleted',
-    deleted_at = COALESCE(deleted_at, now()),
-    deletion_verified_at = now()
-WHERE id = sqlc.arg(id)
-  AND identity_id = sqlc.arg(identity_id)
-  AND status = 'delete_pending'
-  AND deletion_generation = sqlc.arg(deletion_generation)
-RETURNING *;
 -- name: CreateDocumentVersion :one
 WITH locked_document AS (
     SELECT document.id, document.identity_id, document.search_document_id, document.pipeline_generation

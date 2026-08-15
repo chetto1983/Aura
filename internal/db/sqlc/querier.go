@@ -83,7 +83,6 @@ type Querier interface {
 	CreateIngestionJob(ctx context.Context, arg CreateIngestionJobParams) (AuraIngestionJobs, error)
 	CreateRetentionItem(ctx context.Context, arg CreateRetentionItemParams) (AuraRetentionOperationItems, error)
 	CreateRetentionOperation(ctx context.Context, arg CreateRetentionOperationParams) (AuraRetentionOperations, error)
-	CreateStorageObject(ctx context.Context, arg CreateStorageObjectParams) (AuraStorageObjects, error)
 	CreateTask(ctx context.Context, arg CreateTaskParams) (AuraSchedulerTasks, error)
 	DeleteConversation(ctx context.Context, id pgtype.UUID) error
 	// Owner-scoped hard delete (Phase 36 MUSR-01 / D-06): affects a row ONLY when the caller
@@ -242,7 +241,6 @@ type Querier interface {
 	// Owner-scoped conversation list (Phase 36 MUSR-01): ListConversations restricted to one
 	// identity. identity_id is NOT NULL (0005) so every conversation is attributable.
 	ListConversationsForIdentity(ctx context.Context, arg ListConversationsForIdentityParams) ([]AuraConversations, error)
-	ListDocumentStorageObjects(ctx context.Context, arg ListDocumentStorageObjectsParams) ([]AuraStorageObjects, error)
 	ListDocumentTags(ctx context.Context, documentID pgtype.UUID) ([]string, error)
 	ListDocumentVersions(ctx context.Context, arg ListDocumentVersionsParams) ([]AuraDocumentVersions, error)
 	ListDocuments(ctx context.Context, arg ListDocumentsParams) ([]AuraDocuments, error)
@@ -289,6 +287,10 @@ type Querier interface {
 	// (orphan_scan.go) reconciles the live .content files against this referenced
 	// set, so no ORDER BY is needed. Read-only — no schema change (D-07 holds).
 	ListSpilledSeqsForConversation(ctx context.Context, conversationID pgtype.UUID) ([]int32, error)
+	// The only storage-object statement Go still issues. The ledger's writes travel with the
+	// rows they belong to: ReservePipelineCandidateVersion inserts the object, and
+	// SoftDeleteDocument marks the document's objects delete_pending in the same statement
+	// that soft-deletes the document, so neither has a standalone query to call.
 	ListStorageObjects(ctx context.Context, arg ListStorageObjectsParams) ([]AuraStorageObjects, error)
 	ListTelegramAccounts(ctx context.Context) ([]AuraTelegramAccounts, error)
 	ListToolInvocationsByConversation(ctx context.Context, conversationID pgtype.UUID) ([]AuraToolInvocations, error)
@@ -317,8 +319,6 @@ type Querier interface {
 	MarkOperationIndeterminate(ctx context.Context, arg MarkOperationIndeterminateParams) (int64, error)
 	MarkOperationRejected(ctx context.Context, arg MarkOperationRejectedParams) (int64, error)
 	MarkPausedStateResumed(ctx context.Context, arg MarkPausedStateResumedParams) (int64, error)
-	MarkStorageObjectDeletePending(ctx context.Context, arg MarkStorageObjectDeletePendingParams) (AuraStorageObjects, error)
-	MarkStorageObjectDeleted(ctx context.Context, arg MarkStorageObjectDeletedParams) (AuraStorageObjects, error)
 	MarkUnknownRecovery(ctx context.Context, id pgtype.UUID) error
 	NextAssetEventSeq(ctx context.Context, assetID pgtype.UUID) (int32, error)
 	NextConversationTurnSeq(ctx context.Context, conversationID pgtype.UUID) (int32, error)
