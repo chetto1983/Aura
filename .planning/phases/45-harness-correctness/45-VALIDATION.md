@@ -653,6 +653,129 @@ Live and returning real span names before the run, not merely resolvable.
 
 ---
 
+## Task 2 - Live Run: Results (INCOMPLETE - two blocking findings)
+
+Conversation `01a004e0-843f-764e-9272-e6327a130a27`, operator identity
+`b130c94d-a213-463a-a797-ec124104363a`, model `deepseek/deepseek-v4-flash-0731`
+(OpenRouter), build `ed252f6b6`. Driven through the authenticated cockpit
+(`POST /agent/run`, SSE), in Italian, so the SC#5 language rule was under real test.
+
+### PROVEN
+
+**SC#1 (step a) - PASS.** Two distinct `shell_exec` calls in ONE assistant turn against the
+same target with the world changed between them (`terzo` -> `quarto`):
+
+```
+SELECT count(*) AS end_rows, count(DISTINCT tool_call_id) AS distinct_ids,
+       count(DISTINCT result_preview) AS distinct_previews
+FROM aura.tool_invocations
+WHERE conversation_id='01a004e0-843f-764e-9272-e6327a130a27'
+  AND request_id='01a004e1-d392-7175-909b-b618e0519505'
+  AND event_kind='end' AND tool_name='shell_exec';
+
+ end_rows | distinct_ids | distinct_previews
+----------+--------------+-------------------
+        2 |            2 |                 2
+```
+
+Both EXECUTED; neither collapsed into a replay. This is what 45-02's round-discriminated
+key exists to permit. The first attempt at step a did NOT produce this shape - the model
+batched write/read/write/read into a single `shell_exec`. That is a legitimate model
+choice, not a harness fault; the shape was obtained by asking for two distinct executions.
+
+**45-07's contract is live at the model-facing boundary.** The deferred-tool description
+Aura fetched via `tool_search` before writing quotes it verbatim: "To correct a fact
+precisely, set supersedes_fact_key to the fact_key a prior recall returned. Without it,
+supersedes:true resolves the subject+predicate match itself: exactly one candidate closes;
+zero or more than one candidate REFUSES -- the call still succeeds, refused is true, and
+candidates carries the previews (each with its own fact_key)."
+
+**`fact_key` is returned on recall hits**, e.g.
+`ff855593cc64b320e7b93385133fd84bdd3e083b40a7b7ee095d4799a1ddbe51` for the caffe-ristretto
+fact, copied from the tool output.
+
+**Abstention holds.** Two recalls for the D-23 target returned
+`{"facts":[],"retrieval":{"abstained":true,"path":"hybrid","reason":"no_qualified_candidates"}}`
+and Aura reported the absence plainly instead of confabulating a fact.
+
+### FINDING 1 (BLOCKING) - SC#5 FAILS: deliberation, in the wrong language, carrying invented identifiers
+
+On a turn asking for all 9 recalled facts verbatim with their identifiers, raw deliberation
+was emitted into the USER-FACING channel. Verified by channel, not by eye:
+
+```
+REASONING_MESSAGE_CONTENT: 15108 chars | deliberation phrases present: []
+TEXT_MESSAGE_CONTENT:      14989 chars | deliberation phrases present:
+  ['Hmm, wait', "I shouldn't truncate", 'OK stop', "I'm making this up",
+   'Let me be careful', "shouldn't fake hashes"]
+```
+
+Excerpt from `TEXT_MESSAGE_CONTENT`, verbatim:
+
+> `| 0a1b2c... (7f99... | prefers | usare lo spazio di memoria per autocorreggersi... |`
+> `Hmm, wait. I shouldn't truncate - the user asked verbatim. Let me just write out each`
+> `fact fully. ... Let me be careful to copy them exactly from the tool output.`
+
+and later, still user-facing: `I'm making this up. I shouldn't fake hashes.`
+
+Three distinct defects in one turn:
+
+1. **Leaked deliberation** into user-facing text. 45-05 shipped a no-leaked-deliberation
+   rule in the byte-stable system prompt (D-21); it did not hold here.
+2. **Language break** - the leaked passage is in ENGLISH while the operator wrote in
+   Italian and the reply opened in Italian.
+3. **Fabricated identifiers** - `0a1b2c...`, `7f996dba64f...` presented as fact_keys in
+   user-facing text, with the model itself then stating it was inventing them. This is
+   precisely the class of harm the phase exists to prevent: a value shown to the operator
+   that was never recorded.
+
+**Load-dependent, not constant.** The immediately following turn, asking for ONE fact_key,
+was clean: Italian, no leak, a real 64-hex key. The trigger is a long "report everything
+verbatim" turn. That makes it a reproducible-by-shape defect, not a flake.
+
+SC#5's bar is >9.8 on a real scenario. This turn is far below it. **The phase cannot close
+on this evidence.**
+
+### FINDING 2 (BLOCKING) - MEM-04 is inert in this deployment
+
+Step f drove both writes in one conversation: one fact with subject `Davide` (the display
+name), one with subject `b130c94d-a213-463a-a797-ec124104363a` (the identity UUID). Both
+were accepted (`refused:false`). A later entity traversal on `Davide` returned 9 facts, and
+Aura confirmed the basso-elettrico (UUID-subject) fact is NOT among them.
+
+Root cause, checked rather than inferred:
+
+```
+docker exec aura sh -c 'echo ${AURA_MEMORY_OPERATOR_DISPLAY_NAME:-<UNSET>}'
+-> <UNSET>
+```
+
+This is NOT a code defect. `canonicalSubject` behaves exactly as written and documented:
+with an empty display name, `Davide` matches neither identifier and passes through, while
+the UUID matches `identityID` but returns `identityID` because there is no display name to
+become. Two subjects therefore mint two entities. 45-07's SUMMARY listed
+`AURA_MEMORY_OPERATOR_DISPLAY_NAME` under "User Setup Required"; it was never set in the
+deployment, so MEM-04's convergence is unreachable live.
+
+Per ACC-01 a requirement without live evidence is not done, so **MEM-04 cannot be closed**
+until the variable is set and step f re-driven.
+
+### NOT REACHED
+
+Steps b (SC#2 retry/reclaim), c (SC#3 replay marker + span attributes), d (SC#4 - its D-23
+target fact does not exist in this identity's memory; recall correctly abstained),
+g (MEM-05 prose guard), h1 (HARN-09 same-message) and h2 (the D-12 join invariant) were not
+driven. They are claimed at no tier by this run.
+
+**Direct-graph-read limitation, disclosed:** ArcadeDB ground truth was read through the
+agent and the MCP tool results rather than by direct SQL against the per-identity database.
+Reading `.env` for the ArcadeDB credential was denied by the operator's permission policy,
+and neither the `aura` nor the `aura-arcadedb-mcp` image ships `curl`/`wget`. The evidence
+quoted here is what the MODEL received, which is the surface 45-07 changed - but it is not
+an independent read, and no claim here should be taken as one.
+
+---
+
 ## Validation Sign-Off
 
 - [ ] All tasks have `<automated>` verify or an explicit checkpoint justification (23/23 rows)
