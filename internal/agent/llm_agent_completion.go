@@ -81,6 +81,15 @@ func (a *LlmAgent) gateCompletion(ic InvocationContext, answer string) (veto boo
 	if !a.cfg.CompletionGate || a.completionAttempts >= completionMaxAttempts {
 		return false, ""
 	}
+	// Local, deterministic checks first (45-09). They cost no tokens and they catch
+	// what the LLM critic structurally cannot: the critic judges whether the WORK is
+	// done, not whether the prose about it is fit to send. 45-08 measured a turn that
+	// was substantively complete AND leaked drafting notes carrying invented
+	// identifiers -- a correct DONE verdict on an unsendable reply.
+	if veto, feedback := a.gateReplyHygiene(answer); veto {
+		a.completionAttempts++
+		return true, feedback
+	}
 	done, reason, ok := a.runCompletionCritic(ic, answer)
 	if !ok || done {
 		return false, "" // fail-open, or the deliverable is verified
