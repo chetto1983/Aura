@@ -550,6 +550,109 @@ recorded by plan 45-08 Task 3.
 
 ---
 
+## Task 2 — Live Run: Preconditions (recorded BEFORE the first message)
+
+Recorded by the orchestrator inline, after the plan's third executor dispatch stalled
+(600s watchdog). All four are BLOCKING and all four are satisfied. Every value below is
+verbatim command output, not a restatement.
+
+### P1 — the image is built from current HEAD
+
+| Artifact | Value |
+|---|---|
+| `git rev-parse HEAD` | `ed252f6b6b0ca9ad6ecbd52a76b3e3c4b2129090` |
+| `git status --porcelain` | *(empty)* |
+| `docker run --rm aura:local version` -> `commit:` | `ed252f6b6b0ca9ad6ecbd52a76b3e3c4b2129090` |
+| `docker image inspect aura:local --format '{{.Id}} {{.Created}}'` | `sha256:ab2b68e8415917fb134014bf52a9f0fb7c9731c1451a396362a26e064b02d2d8 2026-08-15T09:49:24.263242257Z` |
+| running container image (`docker inspect aura --format '{{.Image}}'`) | `sha256:ab2b68e8415917fb134014bf52a9f0fb7c9731c1451a396362a26e064b02d2d8` — identical to the built image |
+| toolchain inside the image | `go1.26.6 linux/amd64` (confirms the 1.26.6 bump, commit `81b55b961`) |
+
+The `commit:` line EQUALS `git rev-parse HEAD`. The `Created` timestamp was not accepted
+as a substitute at any point (T-45-36).
+
+Getting to an empty porcelain took two commits, both recorded rather than quietly done:
+`.gsd/` (the run-scoped isolation sentinel) was gitignored and the generated
+`.planning/intel/API-SURFACE.md` committed; then the two tooling-rewritten config files
+(`.planning/config.json`'s `_auto_chain_active`, and a harness normalization of
+`.claude/settings.json` that also drops the `preset-cli-skills` plugin) were committed
+with that plugin delta named explicitly in the message.
+
+### P2 — the scheduler is drained (D-06)
+
+Schema READ, not guessed: `aura.agent_job_runs.status` is
+`CHECK (status IN ('running','completed','failed','unknown_recovery'))`
+(`internal/db/migrations/0009_scheduler.up.sql:36`). The in-progress state is `running` —
+the plan's illustrative `'in_progress'` does not exist in this schema.
+
+```
+SELECT count(*) AS in_progress_runs FROM aura.agent_job_runs WHERE status = 'running';
+ in_progress_runs
+------------------
+                0
+
+SELECT status, count(*) FROM aura.agent_job_runs GROUP BY status ORDER BY status;
+  status   | count
+-----------+-------
+ completed |  1889
+ failed    |     6
+```
+
+The drain was effected by the `docker compose up -d --no-deps aura` container recreate
+that P1 required; zero runs were in flight afterwards.
+
+Seven `scheduler_tasks` remain `active` with future `next_run_at` — two of them
+(`identity_purge` 10:04:15Z, `memory_embed_backfill` 10:05:18Z) fire during the scenario
+window. That is disclosed rather than suppressed: every assertion in steps a-h is scoped
+to the scenario's own `conversation_id`, so unrelated maintenance cannot satisfy or
+pollute a claim made here.
+
+### P3 — the live model is READ, not assumed
+
+```
+SELECT key, value FROM aura.settings WHERE key ILIKE '%model%' OR key ILIKE '%provider%' OR key ILIKE '%llm%';
+            key            |              value
+---------------------------+---------------------------------
+ AURA_LLM_BASE_URL         | https://openrouter.ai/api/v1
+ AURA_LLM_MAX_TOKENS       | 19767
+ AURA_LLM_MODEL            | deepseek/deepseek-v4-flash-0731
+ AURA_LLM_PROVIDER         | openrouter
+ AURA_MODEL_CONTEXT_WINDOW | 1000000
+```
+
+The live model is **`deepseek/deepseek-v4-flash-0731` via OpenRouter** — a remote model,
+not a local one. Routing is DB-driven and this row is the only authority for it.
+
+### P4 — psql and the trace view are open BEFORE the first message
+
+```
+SELECT current_database(), current_user;
+ current_database | current_user
+------------------+--------------
+ aura             | aura
+
+SELECT now() AS before_first_message;
+     before_first_message
+-------------------------------
+ 2026-08-15 10:00:18.238553+00
+```
+
+That timestamp precedes the scenario's first turn.
+
+Trace surface: Tempo publishes no host port, so it is queried over the compose network
+`aura_default` (the network `aura-tempo-1` is attached to):
+
+```
+docker run --rm --network aura_default curlimages/curl:latest -s http://tempo:3200/ready
+-> 200
+
+docker run --rm --network aura_default curlimages/curl:latest -s "http://tempo:3200/api/search/tag/name/values?limit=5"
+-> {"tagValues":["GET /v1.55/images/aura-sandbox:latest/json","HEAD /_ping","db_query","db_transaction","listener_serve"],...}
+```
+
+Live and returning real span names before the run, not merely resolvable.
+
+---
+
 ## Validation Sign-Off
 
 - [ ] All tasks have `<automated>` verify or an explicit checkpoint justification (23/23 rows)
