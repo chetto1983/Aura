@@ -139,6 +139,11 @@ services:
       AURA_MODEL_MAX_OUTPUT_TOKENS: ${AURA_MODEL_MAX_OUTPUT_TOKENS:-32768}
       AURA_COMPLETION_GATE: ${AURA_COMPLETION_GATE:-true}
       AURA_COMPLETION_CRITIC_MODEL: ${AURA_COMPLETION_CRITIC_MODEL:-}
+      # HARN-03 verification seam. Empty in every normal deployment. Set truthy ONLY to
+      # observe the replay path on a live stack: it re-dispatches ONE completed mutating
+      # call so the same-round retry -- the only reachable replay trigger, see
+      # llm_agent_replay_probe.go -- runs for real, then disarms for the process.
+      AURA_TEST_FORCE_REPLAY_PROBE: ${AURA_TEST_FORCE_REPLAY_PROBE:-}
       SEARXNG_URL: http://searxng:8080/search
       AURA_WEB_DNS_PIN_TTL_SEC: ${AURA_WEB_DNS_PIN_TTL_SEC:-60}
       AURA_WEB_FETCH_MAX_BODY_BYTES: ${AURA_WEB_FETCH_MAX_BODY_BYTES:-5000000}

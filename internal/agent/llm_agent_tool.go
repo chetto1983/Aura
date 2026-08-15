@@ -185,6 +185,14 @@ func (a *LlmAgent) runTool(ctx context.Context, budget *Budget, call llm.ToolCal
 		defer cancel()
 	}
 	res, err := a.execTool(toolCtx, tool, run.Mutating, json.RawMessage(call.Function.Arguments))
+	if err == nil {
+		// HARN-03 verification seam, disarmed unless AURA_TEST_FORCE_REPLAY_PROBE is set
+		// (see llm_agent_replay_probe.go). Re-dispatches this same call once so the
+		// same-round retry path — the only reachable replay trigger — runs for real.
+		if replayed, ok := a.forceSameRoundReplay(toolCtx, tool, run.Mutating, json.RawMessage(call.Function.Arguments)); ok {
+			res = replayed
+		}
+	}
 	run.EndedAt = time.Now().UTC()
 	if err != nil {
 		boundaryErr = err
