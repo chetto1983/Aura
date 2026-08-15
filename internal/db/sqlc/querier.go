@@ -73,7 +73,6 @@ type Querier interface {
 	CreateDocument(ctx context.Context, arg CreateDocumentParams) (AuraDocuments, error)
 	// Legacy queue kept owner-scoped during retirement. New ingress uses aura.ingestion_jobs.
 	CreateDocumentIngestJob(ctx context.Context, arg CreateDocumentIngestJobParams) (AuraDocumentIngestJobs, error)
-	CreateDocumentVersion(ctx context.Context, arg CreateDocumentVersionParams) (AuraDocumentVersions, error)
 	CreateIdentity(ctx context.Context, arg CreateIdentityParams) (AuraIdentities, error)
 	CreateIngestionJob(ctx context.Context, arg CreateIngestionJobParams) (AuraIngestionJobs, error)
 	CreateRetentionItem(ctx context.Context, arg CreateRetentionItemParams) (AuraRetentionOperationItems, error)

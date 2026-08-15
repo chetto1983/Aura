@@ -37,7 +37,6 @@ func TestDocumentControlPlaneQueryContract(t *testing.T) {
 		"-- name: UpdateDocument :one",
 		"-- name: DeleteDocumentTags :exec",
 		"-- name: UpsertDocumentTag :exec",
-		"-- name: CreateDocumentVersion :one",
 		// ListStorageObjects, not CreateStorageObject: the object ledger's writes travel
 		// inside the statements that own them, so the read for orphan detection is the only
 		// storage-object query left with a Go caller.

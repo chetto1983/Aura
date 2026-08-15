@@ -73,38 +73,6 @@ WHERE identity_id = sqlc.arg(identity_id)
   AND status <> 'object_deleted'
   AND (sqlc.arg(prefix)::text = '' OR object_key LIKE sqlc.arg(prefix) || '%')
 ORDER BY object_key;
--- name: CreateDocumentVersion :one
-WITH locked_document AS (
-    SELECT document.id, document.identity_id, document.search_document_id, document.pipeline_generation
-    FROM aura.documents document
-    WHERE document.id = sqlc.arg(document_id)
-      AND document.identity_id = sqlc.arg(identity_id)
-      AND document.deleted_at IS NULL
-      AND document.status NOT IN ('deleting', 'deleted')
-    FOR UPDATE
-), next_version AS (
-    SELECT d.id AS document_id, d.identity_id, d.search_document_id,
-           COALESCE(max(v.version_number), 0)::integer + 1 AS version_number,
-           GREATEST(d.pipeline_generation, COALESCE(max(v.pipeline_generation), 0),
-                    COALESCE(max(v.version_number), 0), sqlc.arg(pipeline_generation)::bigint - 1) + 1 AS pipeline_generation
-    FROM locked_document d
-    LEFT JOIN aura.document_versions v ON v.document_id = d.id
-    GROUP BY d.id, d.identity_id, d.search_document_id, d.pipeline_generation
-)
-INSERT INTO aura.document_versions (
-    id, identity_id, document_id, asset_id, version_number, status, sha1, sha256,
-    content_type, size_bytes, storage_object_id, chunking_config_hash,
-    pipeline_config_hash, search_document_id, pipeline_generation
-)
-SELECT sqlc.arg(id), n.identity_id, n.document_id, sqlc.narg(asset_id),
-       n.version_number, sqlc.arg(status), sqlc.arg(sha1), sqlc.arg(sha256),
-       sqlc.arg(content_type), sqlc.arg(size_bytes), sqlc.arg(storage_object_id),
-       sqlc.arg(chunking_config_hash), sqlc.arg(pipeline_config_hash),
-       n.search_document_id, n.pipeline_generation
-FROM next_version n
-ON CONFLICT (document_id, sha256) WHERE deleted_at IS NULL
-DO UPDATE SET updated_at = aura.document_versions.updated_at
-RETURNING *;
 -- name: ListDocumentVersions :many
 SELECT * FROM aura.document_versions
 WHERE identity_id = sqlc.arg(identity_id)
