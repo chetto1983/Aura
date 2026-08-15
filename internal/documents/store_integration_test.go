@@ -22,13 +22,20 @@ func TestPostgresJobStoreRoundTrip(t *testing.T) {
 	})
 
 	store := NewPostgresJobStore(pool)
-	documentID := DocumentID("hash", sourceID)
 	// The ledger is owner-scoped since 0093: identity_id is NOT NULL with a real FK, so an
 	// ownerless job is no longer a thing the store will accept. Every READ below resolves
 	// its owner from the CONTEXT rather than an argument (callerJobIdentity), so the
 	// principal has to travel on ctx too — Create alone is not enough.
 	identityID := seedDocumentTestIdentity(t, ctx, pool)
 	ctx = identityctx.WithIdentityID(ctx, identityID)
+	sourceKey, err := SourceKey(sourceID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	documentID, err := SearchDocumentID(identityID, "local", sourceKey)
+	if err != nil {
+		t.Fatal(err)
+	}
 	created, err := store.Create(ctx, CreateJobParams{
 		IdentityID:   identityID,
 		SourceID:     sourceID,
