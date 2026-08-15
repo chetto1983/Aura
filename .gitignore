@@ -112,3 +112,8 @@ backups/
 
 # LibreOffice lock files, created during fixture conversion.
 .~lock.*#
+
+# GSD run-scoped executor-isolation sentinel. Records the isolation mode resolved
+# for the current dispatch so the guard hooks can read it; regenerated every run
+# and meaningless across machines.
+.gsd/
