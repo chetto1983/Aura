@@ -33,7 +33,14 @@ COPY . .
 # Overwrite the committed embed source (internal/webui/dist) with the fresh webbuild
 # output so the image's baked-in SPA is a reproducible build, not the committed bytes.
 COPY --from=webbuild /internal/webui/dist ./internal/webui/dist
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/aura ./cmd/aura
+# VCS_REF stamps cmd/aura/version.go's `commit` so a running image's provenance is
+# CHECKABLE (`aura version`) rather than asserted. `.dockerignore` excludes `.git`,
+# so `debug.ReadBuildInfo()` has no vcs.revision to fall back to; goreleaser's
+# `-X main.commit=` stamp only covers the release path, not this local build path
+# (measured 2026-08-13, 45-08-PLAN.md Task 1 step 6). Unset VCS_REF leaves
+# `commit: unknown` exactly as before this change — additive, not a behaviour change.
+ARG VCS_REF=""
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X main.commit=${VCS_REF}" -o /out/aura ./cmd/aura
 
 FROM debian:bookworm-slim
 
