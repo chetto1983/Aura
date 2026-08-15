@@ -72,7 +72,7 @@ harness is built; `internal/eval/` stays deleted.
 - Continues from v2.0.0's Phase 44. This milestone is Phases 45-54.
 - Decimal phases (45.1, 45.2, ...) would be urgent insertions between these, if needed.
 
-- [ ] **Phase 45: Harness correctness** - Idempotency replay fix and memory-write guardrails close the two headline audit defects
+- [x] **Phase 45: Harness correctness** - Idempotency replay fix and memory-write guardrails close the two headline audit defects (completed 2026-08-15)
 - [ ] **Phase 46: MCP trust and facade** - Drop the untrusted-MCP wrapper where it's earned; curate calendar/WhatsApp into one surface
 - [ ] **Phase 47: Tool-surface ceremony strip** - Host-fills drop from schemas, approvals resolve without a resume payload, files auto-deliver and auto-index
 - [ ] **Phase 48: Tool-surface un-defer and merges** - the manifest lands on exactly 14 loaded tools; the system prompt regenerates to match
@@ -489,7 +489,7 @@ and last-among-technical-phases here so its token budget tunes against the final
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 45. Harness correctness | 9/9 | In Progress|  |
+| 45. Harness correctness | 9/9 | Complete    | 2026-08-15 |
 | 46. MCP trust and facade | 0/TBD | Not started | - |
 | 47. Tool-surface ceremony strip | 0/TBD | Not started | - |
 | 48. Tool-surface un-defer and merges | 0/TBD | Not started | - |

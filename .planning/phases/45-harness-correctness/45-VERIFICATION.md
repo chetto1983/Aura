@@ -1,16 +1,16 @@
 ---
 phase: 45-harness-correctness
-status: gaps_found
+status: passed
 verified_by: orchestrator (inline)
 verified_on: 2026-08-15
 build_verified: 5e1b9265d
-score: 10/12 requirements closed by live evidence
-nyquist_compliant: false
+score: 10/12 closed by live evidence, 2 closed by explicit operator waiver
+nyquist_compliant: true
 ---
 
 # Phase 45: harness-correctness — Verification
 
-**Verdict: `gaps_found`.** Ten of twelve requirements are closed by live evidence on the
+**Verdict: `passed`, with three waivers the operator granted explicitly on 2026-08-15 (see §Operator Waiver).** Ten of twelve requirements are closed by live evidence on the
 running stack, including HARN-03 — the phase's centrepiece — which was open until a
 verification seam made its one reachable trigger inducible. Two remain open and are
 recorded as open rather than rounded up: HARN-09's same-message half could not be induced
@@ -133,6 +133,67 @@ already used elsewhere in the same harness. Verified as `aura_app`: all five run
 subtests pass (garage skips locally, wanting the admin endpoint CI provides). No production
 code changed.
 
+
+## Operator Waiver (granted 2026-08-15)
+
+The phase closes with three items NOT proven live. They are waived rather than resolved,
+and they are written here in full because a waiver that is not legible is just a silent
+pass — the exact thing this phase exists to prevent.
+
+### W-1 — HARN-09, same-message half
+
+**What is unproven:** that the same-message dedup drops a byte-identical repeated
+`(name, arguments)` pair from a real provider batch before it reaches history.
+
+**Why it is not closable by more work:** the shape could not be induced. Asked twice, in
+ordinary operator language, for a naturally repeated action ("check free disk space, and
+check it again to be sure"), `deepseek/deepseek-v4-flash-0731` consolidated both reads into
+ONE `shell_exec` each time. A third attempt, in a scheduled job whose goal explicitly
+forbade combining, did split — proving the model CAN be pushed to split, but only by
+instruction, which is a hand-crafted request and therefore not admissible evidence for this
+requirement. This is a property of the provider, not a coverage hole.
+
+**What IS proven:** HARN-09's cross-round half, live, by SC#1 — two executions of the same
+mutating command in one turn, `2 end rows / 2 distinct ids / 2 distinct previews`. And the
+dedup logic itself is unit-proven (45-04).
+
+### W-2 — HARN-08, blank/duplicate tool-call-id repair
+
+**What is unproven:** that the repair fires on a real malformed provider batch.
+
+**Why it is not closable by more work:** zero repairs fired across the whole live run — no
+`_d<n>` suffix and no `call_<12 hex>` shape among 8 `end` rows. A malformed batch cannot be
+requested from the provider, and hand-crafting one would be testing the fixture rather than
+the harness.
+
+**What IS proven:** the invariant the repair exists to protect holds live, in both
+directions — 0 persisted `tool_calls` without a matching `end` row, and 0 `end` rows without
+a matching persisted call. A duplicate dropped from the batch but left in history, or two
+calls collapsed onto one `ReservationKey`, would both have shown up here. Neither did.
+
+### W-3 — SC#4, the D-23 correction target
+
+**What is unproven:** SC#4 as literally written — correcting the specific
+ArcadeDB-orphan-nodes misdiagnosis fact.
+
+**Why it is not closable by more work:** that fact does not exist in the operator identity's
+memory. Two recalls returned
+`{"facts":[],"retrieval":{"abstained":true,"path":"hybrid","reason":"no_qualified_candidates"}}`,
+and Aura reported the absence plainly rather than confabulating one — itself a good signal.
+The step cannot be run against a fact that is not there.
+
+**What IS proven:** the mechanism SC#4 exists to demonstrate. Recall returns a real
+`fact_key` (`ff855593cc64b320…`, quoted from the tool), the refuse-or-close contract is live
+at the model-facing boundary, and MEM-04 and MEM-05 both passed on real writes and a real
+unaided recovery.
+
+### Scope of this waiver
+
+It covers exactly the three items above. It does NOT extend to anything else in this phase,
+and it does not lower the bar for a future one. Each item names the measurement that
+justifies it, so a later reader can re-run the check rather than take this on trust — and if
+the provider changes, W-1 and W-2 should be re-attempted before they are re-waived.
+
 ## Recommendation
 
 HARN-03 is closed, and with it the objection that mattered most. What remains is a judgement
@@ -146,3 +207,5 @@ is defensible on the evidence, and it is the operator's call, not this document'
 should NOT happen is closing them silently: each is recorded above with the measurement that
 justifies it, and `nyquist_compliant` stays `false` until they are either waived explicitly
 or proven.
+
+**Closed 2026-08-15** on the operator's explicit instruction, with W-1, W-2 and W-3 granted as documented waivers. The three remain re-openable: each records what would prove it.

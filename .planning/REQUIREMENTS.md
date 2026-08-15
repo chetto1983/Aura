@@ -26,13 +26,13 @@
 
 ### Harness correctness
 
-- [ ] **HARN-01**: A mutating tool call re-issued in the same turn with identical arguments executes again and returns a fresh result, never a recorded one
+- [x] **HARN-01**: A mutating tool call re-issued in the same turn with identical arguments executes again and returns a fresh result, never a recorded one
 - [x] **HARN-02**: A genuinely retried dispatch (CLI or scheduler restart, approval resume) still executes at most once
 - [x] **HARN-03**: When a replay is correct, the returned result is labelled as replayed so the model can tell it apart from a fresh execution
 - [x] **HARN-04**: A memory correction closes exactly the fact it names and leaves sibling facts sharing the same subject and predicate untouched
 - [ ] **HARN-05**: Several memory operations apply as one atomic call, validated on the final state, so a correction cannot destroy what it was meant to replace
-- [ ] **HARN-06**: A turn does not end on a stated-but-unexecuted intention — either the action runs, or the turn says plainly it did not and why
-- [ ] **HARN-07**: The reply is in the operator's language, and internal deliberation never reaches it as user-facing text
+- [x] **HARN-06**: A turn does not end on a stated-but-unexecuted intention — either the action runs, or the turn says plainly it did not and why
+- [x] **HARN-07**: The reply is in the operator's language, and internal deliberation never reaches it as user-facing text
 - [x] **HARN-08**: Two tool calls arriving in one assistant message with the same id are repaired **deterministically** before the request is sent (`<id>_d<n>`, never a random id, which would break prompt-cache prefix stability). Aura has no such repair today and DeepSeek — her default model — is named by hermes as a provider that rejects duplicate ids outright; a degraded long-context turn emitting two calls under one id fails the request
 - [x] **HARN-09**: Identical `(name, arguments)` calls are distinguished by **where they arrive**, not by their provider-supplied id: two in the *same* assistant message are a model error and only the first runs; two in *different rounds* are a deliberate re-issue and both run. This is the discrimination F-1 lacks — `[058]` and `[062]` in the audit were separate rounds with an `fs_write` between them, and the second was served from the registry
 
@@ -134,7 +134,7 @@
 - [ ] **MEM-01**: Past conversation is semantically searchable, with Postgres remaining the system of record for turns and ArcadeDB holding a derived per-identity projection
 - [ ] **MEM-02**: One retrieval call spans short-term conversation and long-term facts
 - [ ] **MEM-03**: Reasoning traces are persisted to the graph with edges to the entities they touched, and enter context only when explicitly retrieved
-- [ ] **MEM-04**: One person is one entity — the operator's profile and preferences do not split across a name and an identity UUID
+- [x] **MEM-04**: One person is one entity — the operator's profile and preferences do not split across a name and an identity UUID
 - [x] **MEM-05**: Recording a multi-valued fact does not create a junk entity node per distinct value
 - [ ] **MEM-06**: The PRD amendment extending #91 (reasoning persisted to the graph, retrieved only on demand, never summarized or harvested) is committed **before** any reasoning-tier code
 
@@ -182,7 +182,7 @@
 
 ### Acceptance
 
-- [ ] **ACC-01**: **Mandatory, every requirement, no exceptions.** A requirement is verified only by a real conversation with the running Aura, scored on the answer she actually gave and the artifact or state she actually produced. A passing test — unit, integration, race, or smoke — is **not** evidence that a requirement is met. Tests keep the code honest; they say nothing about whether the agent behaves. Any requirement whose only evidence is a green suite is **not done**
+- [x] **ACC-01**: **Mandatory, every requirement, no exceptions.** A requirement is verified only by a real conversation with the running Aura, scored on the answer she actually gave and the artifact or state she actually produced. A passing test — unit, integration, race, or smoke — is **not** evidence that a requirement is met. Tests keep the code honest; they say nothing about whether the agent behaves. Any requirement whose only evidence is a green suite is **not done**
 - [x] **ACC-02**: Phase evidence is read from OpenTelemetry traces, `aura.tool_invocations`, `aura.conversation_turns` and `aura.context_rot_events` — no new eval harness is built
 - [ ] **ACC-03**: **Milestone exit gate.** With the nine `learned_lesson` facts and the `always-deliver-files` skill deleted, replaying the audited scenarios produces correct tool choice, automatic delivery and successful self-retrieval — and Aura does not re-learn any retired lesson
 
@@ -231,7 +231,7 @@ Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-54).
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ACC-01 | Phase 45 | Pending |
+| ACC-01 | Phase 45 | Complete |
 | ACC-02 | Phase 45 | Complete |
 | ACC-03 | Phase 54 | Pending |
 | AUTO-01 | Phase 47 | Pending |
@@ -249,13 +249,13 @@ Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-54).
 | CTX-06 | Phase 53 | Pending |
 | CTX-07 | Phase 50 | Pending |
 | CTX-08 | Phase 50 | Pending |
-| HARN-01 | Phase 45 | Pending |
+| HARN-01 | Phase 45 | Complete |
 | HARN-02 | Phase 45 | Complete |
 | HARN-03 | Phase 45 | Complete |
 | HARN-04 | Phase 45 | Complete |
 | HARN-05 | Phase 49 | Pending |
-| HARN-06 | Phase 45 | Pending |
-| HARN-07 | Phase 45 | Pending |
+| HARN-06 | Phase 45 | Complete |
+| HARN-07 | Phase 45 | Complete |
 | HARN-08 | Phase 45 | Complete |
 | HARN-09 | Phase 45 | Complete |
 | MCP-01 | Phase 46 | Pending |
@@ -266,7 +266,7 @@ Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-54).
 | MEM-01 | Phase 49 | Pending |
 | MEM-02 | Phase 49 | Pending |
 | MEM-03 | Phase 49 | Pending |
-| MEM-04 | Phase 45 | Pending |
+| MEM-04 | Phase 45 | Complete |
 | MEM-05 | Phase 45 | Complete |
 | MEM-06 | Phase 49 | Pending |
 | STEER-01 | Phase 52 | Pending |
