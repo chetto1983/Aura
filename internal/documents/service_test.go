@@ -313,31 +313,10 @@ func (f *fakeJobStore) Get(_ context.Context, id string) (Job, error) {
 	return job, nil
 }
 
-func (f *fakeJobStore) GetByDocumentID(_ context.Context, documentID string) (Job, error) {
-	for _, job := range f.byID {
-		if job.DocumentID == documentID {
-			return job, nil
-		}
-	}
-	return Job{}, errors.New("not found")
-}
-
 func (f *fakeJobStore) UpdateStatus(_ context.Context, id string, status JobStatus, message string) (Job, error) {
 	job := f.byID[id]
 	job.Status = status
 	job.Error = message
-	f.byID[id] = job
-	return job, nil
-}
-
-func (f *fakeJobStore) UpdateProgress(_ context.Context, id string, status JobStatus, sparseChunks, embeddedChunks int) (Job, error) {
-	job := f.byID[id]
-	if f.progressErr != nil {
-		return job, f.progressErr
-	}
-	job.Status = status
-	job.SparseChunks = sparseChunks
-	job.EmbeddedChunks = embeddedChunks
 	f.byID[id] = job
 	return job, nil
 }

@@ -59,22 +59,9 @@ func TestPostgresJobStoreRoundTrip(t *testing.T) {
 	if err != nil || got.DocumentID != documentID {
 		t.Fatalf("Get = (%#v, %v)", got, err)
 	}
-	byDoc, err := store.GetByDocumentID(ctx, documentID)
-	if err != nil || byDoc.ID != created.ID {
-		t.Fatalf("GetByDocumentID = (%#v, %v)", byDoc, err)
-	}
 	failed, err := store.UpdateStatus(ctx, created.ID, JobFailed, "transient ingest failure")
 	if err != nil || failed.Error == "" {
 		t.Fatalf("UpdateStatus failed = (%#v, %v)", failed, err)
-	}
-	searchable, err := store.UpdateProgress(ctx, created.ID, JobSearchable, 3, 0)
-	if err != nil || searchable.Status != JobSearchable || searchable.SparseChunks != 3 ||
-		searchable.Error != "" || searchable.SearchableAt.IsZero() {
-		t.Fatalf("UpdateProgress searchable = (%#v, %v)", searchable, err)
-	}
-	complete, err := store.UpdateProgress(ctx, created.ID, JobComplete, 3, 3)
-	if err != nil || complete.Status != JobComplete || complete.EmbeddedChunks != 3 || complete.CompletedAt.IsZero() {
-		t.Fatalf("UpdateProgress complete = (%#v, %v)", complete, err)
 	}
 	recent, err := store.ListRecent(ctx, 0)
 	if err != nil {
@@ -95,8 +82,5 @@ func TestPostgresJobStoreRejectsInvalidIDs(t *testing.T) {
 	}
 	if _, err := store.UpdateStatus(t.Context(), "bad", JobFailed, "boom"); err == nil {
 		t.Fatal("UpdateStatus accepted invalid uuid")
-	}
-	if _, err := store.UpdateProgress(t.Context(), "bad", JobSearchable, 1, 0); err == nil {
-		t.Fatal("UpdateProgress accepted invalid uuid")
 	}
 }

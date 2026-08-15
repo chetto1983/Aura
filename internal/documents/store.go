@@ -17,9 +17,7 @@ import (
 type JobStore interface {
 	Create(ctx context.Context, params CreateJobParams) (Job, error)
 	Get(ctx context.Context, id string) (Job, error)
-	GetByDocumentID(ctx context.Context, documentID string) (Job, error)
 	UpdateStatus(ctx context.Context, id string, status JobStatus, message string) (Job, error)
-	UpdateProgress(ctx context.Context, id string, status JobStatus, sparseChunks, embeddedChunks int) (Job, error)
 	ListRecent(ctx context.Context, limit int) ([]Job, error)
 }
 
@@ -98,26 +96,6 @@ func (s *PostgresJobStore) Get(ctx context.Context, id string) (Job, error) {
 	return jobFromSQL(row), nil
 }
 
-// GetByDocumentID returns the latest job for a document id.
-func (s *PostgresJobStore) GetByDocumentID(ctx context.Context, documentID string) (Job, error) {
-	identityID, pgIdentityID, err := callerJobIdentity(ctx)
-	if err != nil {
-		return Job{}, err
-	}
-	var row sqlc.AuraDocumentIngestJobs
-	err = s.withIdentity(ctx, identityID, func(q *sqlc.Queries) error {
-		var queryErr error
-		row, queryErr = q.GetDocumentIngestJobByDocumentID(ctx, sqlc.GetDocumentIngestJobByDocumentIDParams{
-			IdentityID: pgIdentityID, DocumentID: documentID,
-		})
-		return queryErr
-	})
-	if err != nil {
-		return Job{}, err
-	}
-	return jobFromSQL(row), nil
-}
-
 // UpdateStatus updates a job lifecycle status and optional error message.
 func (s *PostgresJobStore) UpdateStatus(ctx context.Context, id string, status JobStatus, message string) (Job, error) {
 	pgID, err := pgUUID("job id", id)
@@ -135,33 +113,6 @@ func (s *PostgresJobStore) UpdateStatus(ctx context.Context, id string, status J
 			ID: pgID, IdentityID: pgIdentityID,
 			Status: string(status),
 			Error:  pgText(message),
-		})
-		return queryErr
-	})
-	if err != nil {
-		return Job{}, err
-	}
-	return jobFromSQL(row), nil
-}
-
-// UpdateProgress updates a job status and indexed chunk counters.
-func (s *PostgresJobStore) UpdateProgress(ctx context.Context, id string, status JobStatus, sparseChunks, embeddedChunks int) (Job, error) {
-	pgID, err := pgUUID("job id", id)
-	if err != nil {
-		return Job{}, err
-	}
-	identityID, pgIdentityID, err := callerJobIdentity(ctx)
-	if err != nil {
-		return Job{}, err
-	}
-	var row sqlc.AuraDocumentIngestJobs
-	err = s.withIdentity(ctx, identityID, func(q *sqlc.Queries) error {
-		var queryErr error
-		row, queryErr = q.UpdateDocumentIngestJobProgress(ctx, sqlc.UpdateDocumentIngestJobProgressParams{
-			ID: pgID, IdentityID: pgIdentityID,
-			Status:         string(status),
-			SparseChunks:   int32(sparseChunks),   //nolint:gosec // chunk counts are bounded by in-memory slice length.
-			EmbeddedChunks: int32(embeddedChunks), //nolint:gosec // chunk counts are bounded by in-memory slice length.
 		})
 		return queryErr
 	})

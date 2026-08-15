@@ -141,35 +141,6 @@ func TestPostgresJobStoreGetPropagatesQueryError(t *testing.T) {
 	}
 }
 
-func TestPostgresJobStoreGetByDocumentIDBindsDocumentID(t *testing.T) {
-	id := uuid.New()
-	pgID := pgtype.UUID{Bytes: id, Valid: true}
-	fake := &fakeDocDBTX{
-		rowVal: &fakeDocRow{values: jobRowValues(pgID, "cli", string(JobSearchable), 5, 0, pgtype.Text{}, pgtype.Timestamptz{Time: time.Unix(2000, 0).UTC(), Valid: true}, pgtype.Timestamptz{})},
-	}
-	store := &PostgresJobStore{q: sqlc.New(fake)}
-
-	job, err := store.GetByDocumentID(jobStoreTestContext(t), "doc_1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if job.Status != JobSearchable || job.SearchableAt.IsZero() {
-		t.Fatalf("mapped job = %#v", job)
-	}
-	if len(fake.queryArgs) != 2 || fake.queryArgs[1] != "doc_1" {
-		t.Fatalf("getByDocumentID args = %#v", fake.queryArgs)
-	}
-}
-
-func TestPostgresJobStoreGetByDocumentIDPropagatesError(t *testing.T) {
-	fake := &fakeDocDBTX{rowVal: &fakeDocRow{scanErr: errors.New("no rows in result set")}}
-	store := &PostgresJobStore{q: sqlc.New(fake)}
-	_, err := store.GetByDocumentID(jobStoreTestContext(t), "doc_missing")
-	if err == nil || !strings.Contains(err.Error(), "no rows") {
-		t.Fatalf("want no-rows error, got %v", err)
-	}
-}
-
 func TestPostgresJobStoreUpdateStatusBindsErrorText(t *testing.T) {
 	id := uuid.New()
 	pgID := pgtype.UUID{Bytes: id, Valid: true}
@@ -208,49 +179,6 @@ func TestPostgresJobStoreUpdateStatusPropagatesError(t *testing.T) {
 	_, err := store.UpdateStatus(jobStoreTestContext(t), uuid.NewString(), JobFailed, "boom")
 	if err == nil || !strings.Contains(err.Error(), "deadlock") {
 		t.Fatalf("want deadlock error, got %v", err)
-	}
-}
-
-func TestPostgresJobStoreUpdateProgressBindsCounts(t *testing.T) {
-	id := uuid.New()
-	pgID := pgtype.UUID{Bytes: id, Valid: true}
-	fake := &fakeDocDBTX{
-		rowVal: &fakeDocRow{values: jobRowValues(pgID, "cli", string(JobComplete), 7, 7, pgtype.Text{}, pgtype.Timestamptz{Time: time.Unix(3000, 0).UTC(), Valid: true}, pgtype.Timestamptz{Time: time.Unix(4000, 0).UTC(), Valid: true})},
-	}
-	store := &PostgresJobStore{q: sqlc.New(fake)}
-
-	job, err := store.UpdateProgress(jobStoreTestContext(t), id.String(), JobComplete, 7, 7)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if job.Status != JobComplete || job.SparseChunks != 7 || job.EmbeddedChunks != 7 || job.CompletedAt.IsZero() {
-		t.Fatalf("mapped job = %#v", job)
-	}
-	if len(fake.queryArgs) != 5 {
-		t.Fatalf("updateProgress args = %#v", fake.queryArgs)
-	}
-	if !strings.Contains(fake.queryRowSQL, "error = NULL") {
-		t.Fatalf("successful progress must clear a stale error:\n%s", fake.queryRowSQL)
-	}
-	if fake.queryArgs[1] != int32(7) || fake.queryArgs[2] != int32(7) {
-		t.Fatalf("count args = %#v", fake.queryArgs)
-	}
-}
-
-func TestPostgresJobStoreUpdateProgressRejectsInvalidUUID(t *testing.T) {
-	store := &PostgresJobStore{q: sqlc.New(&fakeDocDBTX{})}
-	_, err := store.UpdateProgress(jobStoreTestContext(t), "bad", JobSearchable, 1, 0)
-	if err == nil || !strings.Contains(err.Error(), "invalid job id") {
-		t.Fatalf("want invalid id error, got %v", err)
-	}
-}
-
-func TestPostgresJobStoreUpdateProgressPropagatesError(t *testing.T) {
-	fake := &fakeDocDBTX{rowVal: &fakeDocRow{scanErr: errors.New("statement timeout")}}
-	store := &PostgresJobStore{q: sqlc.New(fake)}
-	_, err := store.UpdateProgress(jobStoreTestContext(t), uuid.NewString(), JobSearchable, 1, 0)
-	if err == nil || !strings.Contains(err.Error(), "timeout") {
-		t.Fatalf("want timeout error, got %v", err)
 	}
 }
 
