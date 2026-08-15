@@ -629,6 +629,14 @@ services:
       AURA_MEMORY_HYBRID_CANDIDATE_MAX_COUNT: ${AURA_MEMORY_HYBRID_CANDIDATE_MAX_COUNT:-400}
       AURA_MEMORY_DENSE_MAX_DISTANCE_RATIO: ${AURA_MEMORY_DENSE_MAX_DISTANCE_RATIO:-0.55}
       AURA_MEMORY_LEXICAL_MIN_SCORE: ${AURA_MEMORY_LEXICAL_MIN_SCORE:-2}
+      # The operator's human name. canonicalSubject collapses a subject naming the
+      # operator -- by identity UUID or by this name -- onto one canonical form, so a
+      # fact written under either is recallable under the other (MEM-04). Left empty
+      # the collapse is inert BY DESIGN: the UUID stays canonical because there is no
+      # human form to become, and the two spellings mint two Entity vertices. Phase 45
+      # shipped the read without this line, which made the knob unreachable from the
+      # deployment however it was set in .env -- measured 2026-08-15.
+      AURA_MEMORY_OPERATOR_DISPLAY_NAME: ${AURA_MEMORY_OPERATOR_DISPLAY_NAME:-}
       AURA_ARCADEDB_MCP_BODY_MAX_BYTES: ${AURA_ARCADEDB_MCP_BODY_MAX_BYTES:-1048576}
     ports:
       - "127.0.0.1:8096:8096"
