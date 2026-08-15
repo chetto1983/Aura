@@ -8,8 +8,6 @@ import (
 	"strings"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
-	"github.com/chetto1983/aura/internal/identityctx"
-	"github.com/chetto1983/aura/internal/objectstore"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -46,28 +44,6 @@ func NewPostgresCatalogStore(database sqlc.DBTX) *PostgresCatalogStore {
 func (s *PostgresCatalogStore) CreateDocument(ctx context.Context, req CreateDocumentRequest) (Document, error) {
 	return scopedValue(ctx, s, req.IdentityID, func(sc catalogTx) (Document, error) {
 		return sc.createDocument(ctx, req)
-	})
-}
-
-// ListStorageObjects returns the caller identity's live ledger refs for orphan detection.
-func (s *PostgresCatalogStore) ListStorageObjects(ctx context.Context, bucket, prefix string) ([]objectstore.ObjectRef, error) {
-	identityID := identityctx.IdentityID(ctx)
-	owner, err := pgUUID("identity_id", identityID)
-	if err != nil {
-		return nil, err
-	}
-	return scopedValue(ctx, s, identityID, func(sc catalogTx) ([]objectstore.ObjectRef, error) {
-		rows, queryErr := sc.q.ListStorageObjects(ctx, sqlc.ListStorageObjectsParams{
-			IdentityID: owner, Bucket: bucket, Prefix: prefix,
-		})
-		if queryErr != nil {
-			return nil, queryErr
-		}
-		out := make([]objectstore.ObjectRef, 0, len(rows))
-		for _, row := range rows {
-			out = append(out, objectstore.ObjectRef{Bucket: row.Bucket, Key: row.ObjectKey})
-		}
-		return out, nil
 	})
 }
 

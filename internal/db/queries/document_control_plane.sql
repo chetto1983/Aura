@@ -31,16 +31,6 @@ DELETE FROM aura.document_tags WHERE document_id = sqlc.arg(document_id);
 INSERT INTO aura.document_tags (document_id, tag, created_by)
 VALUES (sqlc.arg(document_id), sqlc.arg(tag), sqlc.narg(created_by))
 ON CONFLICT (document_id, tag) DO NOTHING;
--- The only storage-object statement Go still issues. The ledger's one writer travels with
--- the row it belongs to — ReservePipelineCandidateVersion inserts the object as part of
--- reserving the version that owns those bytes — so it has no standalone query to call.
--- name: ListStorageObjects :many
-SELECT * FROM aura.storage_objects
-WHERE identity_id = sqlc.arg(identity_id)
-  AND bucket = sqlc.arg(bucket)
-  AND status <> 'object_deleted'
-  AND (sqlc.arg(prefix)::text = '' OR object_key LIKE sqlc.arg(prefix) || '%')
-ORDER BY object_key;
 -- name: CreateIngestionJob :one
 INSERT INTO aura.ingestion_jobs (
     identity_id, job_type, asset_id, document_id, version_id, status,

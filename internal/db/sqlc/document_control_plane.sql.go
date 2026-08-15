@@ -413,65 +413,6 @@ func (q *Queries) HeartbeatIngestionJob(ctx context.Context, arg HeartbeatIngest
 	return i, err
 }
 
-const listStorageObjects = `-- name: ListStorageObjects :many
-SELECT id, identity_id, document_id, version_id, asset_id, bucket, object_key, kind, sha1, sha256, etag, size_bytes, content_type, retention_class, created_at, deleted_at, status, pipeline_generation, deletion_generation, deletion_verified_at FROM aura.storage_objects
-WHERE identity_id = $1
-  AND bucket = $2
-  AND status <> 'object_deleted'
-  AND ($3::text = '' OR object_key LIKE $3 || '%')
-ORDER BY object_key
-`
-
-type ListStorageObjectsParams struct {
-	IdentityID pgtype.UUID `json:"identity_id"`
-	Bucket     string      `json:"bucket"`
-	Prefix     string      `json:"prefix"`
-}
-
-// The only storage-object statement Go still issues. The ledger's one writer travels with
-// the row it belongs to — ReservePipelineCandidateVersion inserts the object as part of
-// reserving the version that owns those bytes — so it has no standalone query to call.
-func (q *Queries) ListStorageObjects(ctx context.Context, arg ListStorageObjectsParams) ([]AuraStorageObjects, error) {
-	rows, err := q.db.Query(ctx, listStorageObjects, arg.IdentityID, arg.Bucket, arg.Prefix)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []AuraStorageObjects{}
-	for rows.Next() {
-		var i AuraStorageObjects
-		if err := rows.Scan(
-			&i.ID,
-			&i.IdentityID,
-			&i.DocumentID,
-			&i.VersionID,
-			&i.AssetID,
-			&i.Bucket,
-			&i.ObjectKey,
-			&i.Kind,
-			&i.Sha1,
-			&i.Sha256,
-			&i.Etag,
-			&i.SizeBytes,
-			&i.ContentType,
-			&i.RetentionClass,
-			&i.CreatedAt,
-			&i.DeletedAt,
-			&i.Status,
-			&i.PipelineGeneration,
-			&i.DeletionGeneration,
-			&i.DeletionVerifiedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const retryIngestionJob = `-- name: RetryIngestionJob :one
 WITH target AS (
     SELECT target_job.id, target_job.status AS prior_status FROM aura.ingestion_jobs target_job

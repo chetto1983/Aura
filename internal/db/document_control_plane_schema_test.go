@@ -37,10 +37,6 @@ func TestDocumentControlPlaneQueryContract(t *testing.T) {
 		"-- name: GetDocumentBySearchID :one",
 		"-- name: DeleteDocumentTags :exec",
 		"-- name: UpsertDocumentTag :exec",
-		// ListStorageObjects, not CreateStorageObject: the object ledger's writes travel
-		// inside the statements that own them, so the read for orphan detection is the only
-		// storage-object query left with a Go caller.
-		"-- name: ListStorageObjects :many",
 		"-- name: CreateIngestionJob :one",
 		"-- name: ClaimIngestionJobs :many",
 		"-- name: HeartbeatIngestionJob :one",
@@ -64,6 +60,10 @@ func TestDocumentControlPlaneQueryContract(t *testing.T) {
 		"-- name: ListDocuments",
 		"-- name: UpdateDocument ",
 		"-- name: ListDocumentVersions",
+		// aura.storage_objects now has exactly one writer and no reader: the ledger row
+		// is written inside ReservePipelineCandidateVersion, and the orphan reconciler
+		// that read it back was never constructed by anything.
+		"-- name: ListStorageObjects",
 	} {
 		if strings.Contains(body, forbidden) {
 			t.Fatalf("document control-plane queries revive an uncalled statement via %q", forbidden)
