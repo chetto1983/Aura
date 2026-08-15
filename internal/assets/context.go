@@ -51,16 +51,67 @@ func WithAttachmentBlock(userText string, items []Asset) string {
 	return block + "User message:\n" + userText
 }
 
-// BuildKnowledgeCatalog renders a compact, cache-safe index of the thread's searchable
-// documents so the agent knows what it can retrieve with document_search even when the
-// user does not re-attach a file (the no-attachment recall gap; spike 077). Only
-// searchable assets (an indexed document_id) are listed; assets already detailed in this
-// turn's attachment block (exclude) are skipped, and the list is capped. Returns "" when
-// there is nothing searchable to advertise, so a thread with no docs adds no tokens.
-func BuildKnowledgeCatalog(items []Asset, exclude map[string]bool) string {
-	rows := make([]Asset, 0, len(items))
+// DocumentScopeResolver answers the only question that decides whether a document can be
+// retrieved: does the index actually hold it? *documents.ArcadeRetrievalControlPlane
+// satisfies it. Declared here rather than imported so internal/assets keeps no dependency on
+// the documents package.
+type DocumentScopeResolver interface {
+	ResolveDocumentScope(ctx context.Context, identityID string, documentIDs []string) ([]string, error)
+}
+
+// resolveIndexed narrows document ids to the ones the index has, and returns an empty set on
+// any failure. Empty means "advertise nothing": the catalog tells the agent these documents
+// ARE retrievable, and saying that about documents nobody can retrieve sends it hunting for
+// what is not there — worse than staying quiet.
+func resolveIndexed(ctx context.Context, scope DocumentScopeResolver, identityID string, ids []string) map[string]bool {
+	if scope == nil || identityID == "" || len(ids) == 0 {
+		return nil
+	}
+	found, err := scope.ResolveDocumentScope(ctx, identityID, ids)
+	if err != nil {
+		return nil
+	}
+	indexed := make(map[string]bool, len(found))
+	for _, id := range found {
+		indexed[id] = true
+	}
+	return indexed
+}
+
+// BuildKnowledgeCatalog renders a compact, cache-safe index of the documents the agent can
+// retrieve with document_search even when the user does not re-attach a file (the
+// no-attachment recall gap; spike 077). Assets already detailed in this turn's attachment
+// block (exclude) are skipped and the list is capped; "" when there is nothing to advertise,
+// so a thread with no docs adds no tokens.
+//
+// isIndexed decides membership, NOT the asset's status column. That column used to gate this
+// and had stopped meaning anything: on the live deployment no asset had ever reached
+// 'searchable' (measured 2026-08-13: presigned 6 / processing 2 / accepted 2 / searchable 0),
+// so the catalog was permanently empty and the agent was never told about a single uploaded
+// file. Only replayedAssetResult writes that status, and only onto an ACTIVE version, while
+// ActivatePipelineCandidate — the one statement that activates anything — lost its callers
+// when the in-process pipeline was deleted. document_processor.go already names the
+// replacement: searchable is a property of ArcadeDB, not of a Postgres column.
+func BuildKnowledgeCatalog(items []Asset, exclude map[string]bool, isIndexed func([]string) map[string]bool) string {
+	candidates := make([]Asset, 0, len(items))
+	ids := make([]string, 0, len(items))
 	for _, a := range items {
-		if a.Status != StatusSearchable || a.DocumentID == "" || exclude[a.ID] {
+		if a.DocumentID == "" || exclude[a.ID] {
+			continue
+		}
+		candidates = append(candidates, a)
+		ids = append(ids, a.DocumentID)
+	}
+	if len(candidates) == 0 {
+		return ""
+	}
+	indexed := map[string]bool{}
+	if isIndexed != nil {
+		indexed = isIndexed(ids)
+	}
+	rows := make([]Asset, 0, len(candidates))
+	for _, a := range candidates {
+		if !indexed[a.DocumentID] {
 			continue
 		}
 		rows = append(rows, a)
@@ -128,7 +179,9 @@ func (s *Service) BuildTurnContext(ctx context.Context, identityID, threadID str
 		if libraryItems, err := s.ListForLibrary(ctx, identityID, maxCatalogDocs); err == nil {
 			items = appendUniqueAssets(items, libraryItems, seen)
 		}
-		catalogBlock = BuildKnowledgeCatalog(items, excluded)
+		catalogBlock = BuildKnowledgeCatalog(items, excluded, func(ids []string) map[string]bool {
+			return resolveIndexed(ctx, s.DocumentScope, identityID, ids)
+		})
 	}
 	return WithContextBlocks(userText, catalogBlock, attachmentBlock)
 }

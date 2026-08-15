@@ -81,19 +81,22 @@ func (s *S3Store) PresignPut(ctx context.Context, req PresignPutRequest) (Presig
 		Bucket:      aws.String(req.Ref.Bucket),
 		Key:         aws.String(req.Ref.Key),
 		ContentType: aws.String(req.MIMEType),
+		Metadata:    req.Metadata,
 	}, func(o *s3.PresignOptions) {
 		o.Expires = expiresIn
 	})
 	if err != nil {
 		return PresignedPut{}, err
 	}
+	// The metadata headers are SIGNED above, so they are not optional: a client that drops
+	// one gets a signature mismatch, not an object without a name. Returning them here is
+	// what lets the client stay ignorant of the contract — it forwards RequiredHeaders
+	// verbatim.
 	return PresignedPut{
-		URL:    out.URL,
-		Method: "PUT",
-		RequiredHeaders: map[string]string{
-			"Content-Type": req.MIMEType,
-		},
-		ExpiresAt: time.Now().Add(expiresIn),
+		URL:             out.URL,
+		Method:          "PUT",
+		RequiredHeaders: presignRequiredHeaders(req.MIMEType, req.Metadata),
+		ExpiresAt:       time.Now().Add(expiresIn),
 	}, nil
 }
 
@@ -130,6 +133,7 @@ func (s *S3Store) Put(ctx context.Context, ref ObjectRef, body io.Reader, opts P
 		Key:         aws.String(ref.Key),
 		Body:        body,
 		ContentType: aws.String(opts.MIMEType),
+		Metadata:    opts.Metadata,
 	}
 	// Only declare ContentLength when the size is actually known. A zero here for a
 	// non-empty body makes the SDK sign x-amz-content-sha256 over the real bytes while
@@ -161,6 +165,7 @@ func (s *S3Store) Head(ctx context.Context, ref ObjectRef) (Attrs, error) {
 		SizeBytes: aws.ToInt64(out.ContentLength),
 		ETag:      strings.Trim(aws.ToString(out.ETag), `"`),
 		MIMEType:  aws.ToString(out.ContentType),
+		Metadata:  out.Metadata,
 	}, nil
 }
 

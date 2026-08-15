@@ -48,15 +48,71 @@ func (f *fakeFileOps) Delete(_ context.Context, _ string, ids []string) error {
 
 func serveWrite(t *testing.T, ops FileOperations, method, target, body string) *httptest.ResponseRecorder {
 	t.Helper()
+	return serveWriteLabelled(t, ops, method, target, body, "application/json")
+}
+
+func serveWriteLabelled(t *testing.T, ops FileOperations, method, target, body, contentType string) *httptest.ResponseRecorder {
+	t.Helper()
 	server := &Server{}
 	server.fileOps = ops
 	mux := http.NewServeMux()
 	server.registerFileRoutes(mux)
 	req := withPrincipal(httptest.NewRequest(method, target, strings.NewReader(body)), fileAPIIdentityID)
-	req.Header.Set("Content-Type", "application/json")
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	return rec
+}
+
+// The CSRF floor every other write on this server stands on. A cross-origin form can post
+// text/plain, multipart/form-data or application/x-www-form-urlencoded without a preflight;
+// it cannot post application/json. So refusing a body that declares anything else is what
+// makes the browser ask permission first, and these routes are the ones that create, rename,
+// move, copy and delete the operator's files.
+//
+// The gate was dropped once because RestDataProvider.send sends no Content-Type at all --
+// the subclass overrides Rest.sendRequest and loses its "application/json" default -- so the
+// browser labelled every write text/plain and all five 400'd. The provider is labelled at
+// the source now; this test is what stops the gate from being traded away a second time.
+func TestFileWritesRefuseABodyThatIsNotLabelledJSON(t *testing.T) {
+	writes := map[string]struct{ method, target, body string }{
+		"create": {http.MethodPost, fileManagerBase + "/files/%2Fcontabilita", `{"name":"2027","type":"folder"}`},
+		"rename": {http.MethodPut, fileManagerBase + "/files/%2Flistino.pdf", `{"operation":"rename","name":"x.pdf"}`},
+		"bulk":   {http.MethodPut, fileManagerBase + "/files", `{"operation":"move","ids":["/a.txt"],"target":"/archivio"}`},
+		"delete": {http.MethodDelete, fileManagerBase + "/files", `{"ids":["/a.txt"]}`},
+	}
+	// text/plain is the one a cross-origin form can actually send; the other two are the
+	// rest of the simple-request set. An unparseable label must not fall through either.
+	for _, contentType := range []string{"text/plain;charset=UTF-8", "application/x-www-form-urlencoded", "text/plain, text/plain"} {
+		for name, write := range writes {
+			t.Run(name+" "+contentType, func(t *testing.T) {
+				ops := &fakeFileOps{}
+				rec := serveWriteLabelled(t, ops, write.method, write.target, write.body, contentType)
+				if rec.Code != http.StatusBadRequest {
+					t.Fatalf("status = %d, want 400", rec.Code)
+				}
+				if ops.call != "" {
+					t.Fatalf("an unlabelled body reached the store as %q", ops.call)
+				}
+			})
+		}
+	}
+
+	// The label the provider now sends must still get through, parameters and all.
+	for name, write := range writes {
+		t.Run(name+" application/json", func(t *testing.T) {
+			ops := &fakeFileOps{}
+			if got := serveWriteLabelled(t, ops, write.method, write.target, write.body,
+				"application/json; charset=utf-8").Code; got != http.StatusOK {
+				t.Fatalf("status = %d, want 200", got)
+			}
+			if ops.call == "" {
+				t.Fatal("a labelled body never reached the store")
+			}
+		})
+	}
 }
 
 // These four payloads are the component's own, byte for byte what RestDataProvider sends.

@@ -8,7 +8,7 @@
 //	  store returns not-found (404 source) / rows==0 (403 source); the RLS kernel backstop
 //	  hides A's rows from a raw read under B's identity var.
 //	Approvals            — B cannot read A's pause (owner-scoped + RLS).
-//	Documents            — B's scoped document_search is empty; A finds its own doc.
+//	Documents            — B cannot resolve or write A's document by its search id; A can.
 //	Garage               — A's object is unreadable with B's scoped key; the per-identity
 //	  resolver selects B's creds for B and A's for A (request-time selection, not just provisioning).
 //	MUSR-02              — a B-created conversation is owned by B and runs.
@@ -21,6 +21,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -180,18 +181,21 @@ func TestTwoIdentityCrossDeny(t *testing.T) {
 		}
 	})
 
-	// ── Documents plane: identity-scoped digest search — B empty, A finds own ───────
+	// ── Documents plane: search-id resolution — B cannot reach A's document ─────────
 	t.Run("documents_cross_deny", func(t *testing.T) {
-		// document_search ranks aura.documents and the scoping is the SQL's own identity
-		// predicate, so the cross-deny assertion belongs to the catalog store.
+		// SetCard is the deny probe because it is what INGEST runs on every file: it resolves
+		// a `doc_<hex>` search id to a catalog row through an owner-scoped statement, under
+		// 0087's fail-closed RLS floor, and then writes. A foreign identity must not get past
+		// the resolution, and the write it would have made must not have happened.
+		//
+		// It probed SearchDigests until 2026-08-15, when that ranking was deleted for having
+		// no production caller. An isolation property asserted through a query the product
+		// never issues proves the isolation of a dead query — and the catalog's read side
+		// (ListDocuments/GetDocument) has no caller either since the file manager replaced
+		// GET /api/documents, so the honest live surface here is the write path.
 		store := documents.NewPostgresCatalogStore(pool)
 		term := "quetzal" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
 		searchID := "doc_musr_" + uuid.NewString()
-		// Catalogued 'stored', then published. document_search ranks only an activated
-		// document — status 'ready' at a positive pipeline generation with a live active
-		// version — and since 0093 the schema refuses 'ready' at generation 0 outright.
-		// Creating the row 'ready' in one call, as this test used to, is no longer a state
-		// the database will hold.
 		doc, err := store.CreateDocument(ctx, documents.CreateDocumentRequest{
 			IdentityID:       idA,
 			Scope:            documents.DocumentScopeLibrary,
@@ -204,24 +208,24 @@ func TestTwoIdentityCrossDeny(t *testing.T) {
 		if err != nil {
 			t.Fatalf("A catalog document: %v", err)
 		}
-		musrPublishDocument(t, ctx, pool, store, idA, searchID, "A private "+term)
 		t.Cleanup(func() {
 			_, _ = pool.Exec(context.Background(), `DELETE FROM aura.documents WHERE id=$1`, doc.ID)
 		})
 
-		if hits, err := store.SearchDigests(ctx, idB, term, 5); err != nil {
-			t.Fatalf("B document_search: %v", err)
-		} else if len(hits) != 0 {
-			t.Errorf("B document_search returned %d hits, want 0 (empty for foreign identity)", len(hits))
+		if err := store.SetCard(ctx, idA, searchID, "A card "+term); err != nil {
+			t.Fatalf("A SetCard on its own document: %v", err)
 		}
-		hits, err := store.SearchDigests(ctx, idA, term, 5)
-		if err != nil {
-			t.Fatalf("A document_search: %v", err)
+		if err := store.SetCard(ctx, idB, searchID, "B overwrote "+term); !errors.Is(err, documents.ErrDocumentNotCatalogued) {
+			t.Errorf("B SetCard on A's document = %v, want ErrDocumentNotCatalogued", err)
 		}
-		// A hit carries the SEARCH id, not the catalog uuid — that is what document_open
-		// and every retrieval-shaped caller expect.
-		if len(hits) == 0 || hits[0].DocumentID != searchID {
-			t.Errorf("A document_search = %#v, want its own doc %s (%s)", hits, searchID, doc.ID)
+
+		var card string
+		if err := pool.QueryRow(ctx,
+			`SELECT card FROM aura.documents WHERE id = $1`, doc.ID).Scan(&card); err != nil {
+			t.Fatalf("read back A's card: %v", err)
+		}
+		if card != "A card "+term {
+			t.Errorf("A's card = %q, want its own — B's denied write still landed", card)
 		}
 	})
 

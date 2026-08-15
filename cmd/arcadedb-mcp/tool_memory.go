@@ -35,30 +35,52 @@ type MemoryUpsertFactInput struct {
 	ValidTo        string `json:"valid_to,omitempty" jsonschema:"RFC3339 instant when the fact stopped being true; omit while it still holds"`
 	// Supersedes is explicit because some predicates are single-valued
 	// ("lives_in") and others are not ("likes"); guessing gets one of them wrong.
-	Supersedes bool             `json:"supersedes,omitempty" jsonschema:"close any still-valid fact with the same subject and predicate"`
-	Source     MemoryFactSource `json:"source" jsonschema:"required provenance supporting this fact"`
+	Supersedes bool `json:"supersedes,omitempty" jsonschema:"close any still-valid fact with the same subject and predicate"`
+	// SupersedesFactKey, when set, closes exactly the one fact it names
+	// instead of resolving the subject+predicate candidate set; it comes
+	// from a fact_key a prior memory_search/memory_facts_about/memory_recall
+	// result returned, and is the way to disambiguate after a refused
+	// correction (D-15/D-17).
+	SupersedesFactKey string           `json:"supersedes_fact_key,omitempty" jsonschema:"the fact_key of the exact fact to close, taken from a prior recall result; set this to disambiguate after a refused correction"`
+	Source            MemoryFactSource `json:"source" jsonschema:"required provenance supporting this fact"`
 }
 
 // MemoryUpsertFactOutput reports what changed.
 type MemoryUpsertFactOutput struct {
 	Statement  string `json:"statement"`
 	Superseded int    `json:"superseded" jsonschema:"how many previously-valid facts had their window closed"`
+	// Refused is true when Supersedes could not identify exactly one fact to
+	// close -- either supersedes_fact_key named no still-valid fact, or the
+	// subject+predicate resolution matched 0 or more than 1 distinct fact.
+	// The call still succeeded: nothing was written, Reason explains why,
+	// and Candidates carries the fact_key-bearing previews needed to retry
+	// with supersedes_fact_key (D-17). Never an mcp.ToolCallError: an
+	// effect-free refusal is not a failed mutation.
+	Refused    bool              `json:"refused"`
+	Reason     string            `json:"reason,omitempty"`
+	Candidates []MemorySearchHit `json:"candidates,omitempty"`
 }
 
-func addMemoryUpsertFactTool(server *mcp.Server, tenants *tenants, now clock) {
+func addMemoryUpsertFactTool(server *mcp.Server, tenants *tenants, now clock, operatorDisplayName string) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:  "memory_upsert_fact",
 		Title: "Remember a fact",
 		Description: "Store one fact as a bitemporal edge between two entities. A fact is " +
 			"never overwritten: when it is superseded its validity window is closed, so " +
-			"both what is true now and what was true then stay answerable.",
+			"both what is true now and what was true then stay answerable. To correct a " +
+			"fact precisely, set supersedes_fact_key to the fact_key a prior recall " +
+			"returned. Without it, supersedes:true resolves the subject+predicate match " +
+			"itself: exactly one candidate closes; zero or more than one candidate " +
+			"REFUSES -- the call still succeeds, refused is true, and candidates carries " +
+			"the previews (each with its own fact_key) to retry with supersedes_fact_key.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false},
-	}, memoryUpsertFactHandler(tenants, now))
+	}, memoryUpsertFactHandler(tenants, now, operatorDisplayName))
 }
 
 func memoryUpsertFactHandler(
 	tenants *tenants,
 	now clock,
+	operatorDisplayName string,
 ) mcp.ToolHandlerFor[MemoryUpsertFactInput, MemoryUpsertFactOutput] {
 	return func(
 		ctx context.Context,
@@ -77,8 +99,13 @@ func memoryUpsertFactHandler(
 		if err != nil {
 			return nil, MemoryUpsertFactOutput{}, err
 		}
+		targetFactKey := strings.TrimSpace(in.SupersedesFactKey)
+		// MEM-04 (D-19): rewritten here, before arcadedb.Fact is built, so the
+		// bridge, the CLI and host-driven writes are all covered -- the bridge
+		// alone (withMemoryUserIdentifier) would miss the latter two.
+		subject := canonicalSubject(in.Subject, in.UserIdentifier, operatorDisplayName)
 		fact := arcadedb.Fact{
-			Subject:     in.Subject,
+			Subject:     subject,
 			SubjectKind: in.SubjectKind,
 			Predicate:   in.Predicate,
 			Object:      in.Object,
@@ -86,7 +113,12 @@ func memoryUpsertFactHandler(
 			Statement:   in.Statement,
 			ValidFrom:   validFrom,
 			ValidTo:     validTo,
-			Supersedes:  in.Supersedes,
+			// A supplied supersedes_fact_key always means "close this one
+			// fact" (D-15), whether or not the model also set supersedes --
+			// naming an exact key and forgetting the boolean must not
+			// silently no-op the correction.
+			Supersedes:    in.Supersedes || targetFactKey != "",
+			TargetFactKey: targetFactKey,
 			Source: arcadedb.FactSource{
 				RunID: in.Source.RunID, MemoryIDs: in.Source.MemoryIDs,
 			},
@@ -98,6 +130,9 @@ func memoryUpsertFactHandler(
 		return nil, MemoryUpsertFactOutput{
 			Statement:  written.Statement,
 			Superseded: written.Superseded,
+			Refused:    written.Refused,
+			Reason:     written.Reason,
+			Candidates: toHits(written.Candidates),
 		}, nil
 	}
 }
@@ -121,6 +156,10 @@ type MemorySearchHit struct {
 	ValidFrom   string             `json:"valid_from,omitempty"`
 	ValidTo     string             `json:"valid_to,omitempty" jsonschema:"absent while the fact still holds"`
 	Sources     []MemoryFactSource `json:"sources"`
+	// FactKey identifies this fact for a later correction: pass it back as
+	// supersedes_fact_key to close exactly this edge. Empty when the fact is
+	// already closed (D-15).
+	FactKey string `json:"fact_key,omitempty" jsonschema:"identifies this fact for a later correction; pass it back as supersedes_fact_key"`
 }
 
 // MemorySearchOutput carries the hits.
@@ -314,7 +353,54 @@ func toHits(hits []arcadedb.FactHit) []MemorySearchHit {
 			ValidFrom:   hit.ValidFrom,
 			ValidTo:     hit.ValidTo,
 			Sources:     sources,
+			FactKey:     hit.FactKey,
 		})
 	}
 	return out
+}
+
+// canonicalSubject rewrites a subject naming the operator -- by identity
+// UUID or by the configured display name -- to one canonical form (MEM-04,
+// D-19).
+//
+// The canonical form is the display name, not the UUID. Measured 2026-08-13
+// against the live operator graph (mem_b130c94d_a213_463a_a797_ec124104363a):
+// 10 FACT edges already touch the entity "Davide" against 2 touching the
+// identity UUID -- the display name is the prevalent form today (onboarding
+// writes profile-entity facts subject-first off the operator's name; only
+// the preference facts use the identityID directly). Canonicalizing TO the
+// prevalent form is the direction that does NOT deepen the split: choosing
+// the rarer form would rewrite the majority of future writes away from
+// where nine-tenths of the existing graph already sits.
+//
+// When no display name is configured yet (AURA_MEMORY_OPERATOR_DISPLAY_NAME
+// unset), the canonical form falls back to the identity UUID itself -- a
+// UUID-named subject still normalizes (TrimSpace + case), it just has
+// nothing more human to become until an operator configures one.
+//
+// Pure function: TrimSpace + case-insensitive equality against exactly two
+// known identifiers, nothing else. No fuzzy matching, no substring
+// matching, no alias table -- that is Phase 49's general Entity alias
+// mechanism, deliberately not built here (D-19). A blank or whitespace-only
+// subject is never canonicalized: Fact.validate rejects it downstream, and
+// inventing a subject here would hide that rejection behind a silent
+// rewrite. Idempotent by construction: the returned canonical value is
+// always exactly identityID or displayName (both already trimmed), so a
+// second pass matches trivially and returns the same value again.
+func canonicalSubject(subject, identityID, displayName string) string {
+	trimmed := strings.TrimSpace(subject)
+	if trimmed == "" {
+		return subject
+	}
+	identityID = strings.TrimSpace(identityID)
+	displayName = strings.TrimSpace(displayName)
+	matchesIdentity := identityID != "" && strings.EqualFold(trimmed, identityID)
+	matchesDisplayName := displayName != "" && strings.EqualFold(trimmed, displayName)
+	if !matchesIdentity && !matchesDisplayName {
+		return subject
+	}
+	if displayName != "" {
+		return displayName
+	}
+	return identityID
 }

@@ -1,16 +1,7 @@
 package documents
 
 import (
-	"fmt"
-	"sort"
-	"strings"
 	"time"
-	"unicode/utf8"
-)
-
-const (
-	maxDocumentTags     = 32
-	maxDocumentTagRunes = 64
 )
 
 // DocumentScope controls where a logical document is visible.
@@ -40,16 +31,7 @@ type Document struct {
 	CreatedAt          time.Time      `json:"created_at"`
 	UpdatedAt          time.Time      `json:"updated_at"`
 	DeletedAt          time.Time      `json:"deleted_at"`
-	// ActiveSizeBytes and ActiveContentType denormalize the active version's
-	// storage facts onto list rows so a document catalog entry is self-sufficient
-	// (size + kind) without an N+1 detail fetch. They are populated only by
-	// ListDocuments; detail/create/update responses leave them zero (omitempty).
-	ActiveSizeBytes   int64  `json:"active_size_bytes,omitempty"`
-	ActiveContentType string `json:"active_content_type,omitempty"`
 }
-
-// DocumentSummary is returned by catalog list calls.
-type DocumentSummary = Document
 
 // DocumentVersion summarizes an immutable content version.
 type DocumentVersion struct {
@@ -85,12 +67,6 @@ type DocumentVersionRecord struct {
 	ReplayedActive bool            `json:"replayed_active"`
 }
 
-// DocumentDetail returns a document with related control-plane records.
-type DocumentDetail struct {
-	Document Document          `json:"document"`
-	Versions []DocumentVersion `json:"versions"`
-}
-
 // CreateDocumentRequest creates a logical document before or alongside its first version.
 type CreateDocumentRequest struct {
 	IdentityID         string
@@ -103,29 +79,6 @@ type CreateDocumentRequest struct {
 	Tags               []string
 	Metadata           map[string]any
 	Status             DocumentStatus
-}
-
-// UpdateDocumentRequest updates version-independent document metadata.
-type UpdateDocumentRequest struct {
-	IdentityID         string
-	DocumentID         string
-	Scope              DocumentScope
-	Title              string
-	Tags               []string
-	Metadata           map[string]any
-	ActiveVersionID    string
-	Status             DocumentStatus
-	PipelineGeneration int64
-}
-
-// ListDocumentsRequest filters the operator document catalog.
-type ListDocumentsRequest struct {
-	IdentityID string
-	Scope      DocumentScope
-	Query      string
-	Tag        string
-	Limit      int
-	Offset     int
 }
 
 // RecordAssetVersionRequest records a processed asset as a logical document version.
@@ -156,32 +109,4 @@ type RecordAssetVersionRequest struct {
 	PipelineConfigHash string
 	PipelineGeneration int64
 	Metadata           map[string]any
-}
-
-// NormalizeTags canonicalizes operator-supplied document tags for stable
-// storage, filtering, and display.
-func NormalizeTags(tags []string) ([]string, error) {
-	seen := make(map[string]struct{}, len(tags))
-	for _, tag := range tags {
-		normalized := strings.ToLower(strings.Join(strings.Fields(tag), " "))
-		if normalized == "" {
-			continue
-		}
-		if utf8.RuneCountInString(normalized) > maxDocumentTagRunes {
-			return nil, fmt.Errorf("document tag %q exceeds %d characters", normalized, maxDocumentTagRunes)
-		}
-		seen[normalized] = struct{}{}
-	}
-	if len(seen) == 0 {
-		return nil, nil
-	}
-	if len(seen) > maxDocumentTags {
-		return nil, fmt.Errorf("document has %d tags; maximum is %d", len(seen), maxDocumentTags)
-	}
-	out := make([]string, 0, len(seen))
-	for tag := range seen {
-		out = append(out, tag)
-	}
-	sort.Strings(out)
-	return out, nil
 }

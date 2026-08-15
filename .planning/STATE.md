@@ -5,15 +5,15 @@ milestone_name: HERMES-CLAUDE_PARITY
 current_phase: 45
 current_phase_name: harness-correctness
 status: executing
-stopped_at: Phase 45 context gathered
-last_updated: "2026-08-13T13:17:44.901Z"
+stopped_at: Completed 45-06-PLAN.md
+last_updated: "2026-08-13T20:26:45.461Z"
 last_activity: 2026-08-13
 last_activity_desc: Phase 45 execution started
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 8
-  completed_plans: 0
+  completed_plans: 6
 ---
 
 # Project State
@@ -28,14 +28,14 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 ## Current Position
 
 Phase: 45 (harness-correctness) — EXECUTING
-Plan: 1 of 8
-Status: Executing Phase 45
-Last activity: 2026-08-13 — Phase 45 execution started
+Plan: 5 of 8
+Status: Ready to execute
+Last activity: 2026-08-13 — Phase 45 execution resumed (wave continue)
 requirements mapped with 0 unmapped. No phase work since.
 Last reconciliation: 2026-08-13 — this file's counts re-measured against ROADMAP.md (see
 Session Continuity). No work was executed on that date.
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [████████░░] 75%
 
 ## Performance Metrics
 
@@ -57,6 +57,13 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: —
 
 *Updated after each plan completion*
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 45 P03 | 55min | 3 tasks | 3 files |
+| Phase 45 P04 | 70min | 3 tasks | 6 files |
+| Phase 45 P06 | 150min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -91,6 +98,14 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
   corrected from a stated 51 to an actual 52 at definition time — a miscount, not a scope
   change — and then genuinely grew to 77 as delegation, steering and the follow-up
   tool-surface commits landed on 2026-08-05.
+
+- [Phase 45]: Boot-time operation-metadata guard (D-09) checks the three Mutating-tool fields for EMPTINESS only, positioned inside ValidateClassifiable's existing reg.All() loop BEFORE the multiplexed-classifier continue, so non-multiplexed mutating tools are also covered
+- [Phase 45]: 45-03's Task-2 span attributes are set inside execTool on the span already carried by ctx (stampReplayAttributes), the smaller of the two acceptable plumbing shapes named in the plan
+- [Phase 45]: 45-04: RED commits ship a compiling identity-passthrough stub instead of an undefined symbol, because the pre-commit vet gate runs go vet ./... over the whole tree
+- [Phase 45]: 45-04: llm_agent.go crossed the 590-LOC refactor threshold after both dedup call sites landed (583->592); both measured extraction candidates split into new llm_agent_round.go (roundBudget, recordRequestBuilt), landing at 556/70 for headroom against plans 45-05..08
+- [Phase 45]: 45-04: three pre-existing test fixtures (fanout-cap, two panic-recovery tests) used byte-identical (name,args) calls in one message as a convenience fixture; D-12's new dedup now correctly collapses those, so each fixture was given distinct per-call args rather than weakening the new dedup
+- [Phase 45]: 45-06: A refused correction (fact_key miss, or 0/>1 candidates) writes NOTHING -- no fact closed AND the new fact itself is not created, beyond the plan's literal 'closes nothing' text, to avoid orphaning or adding to an already-ambiguous candidate set
+- [Phase 45]: 45-06: proseObjectRuneBound=80, measured live against the operator identity graph (longest legit Entity.name 36 runes, shortest measured prose violation 96 runes) rather than guessed
 
 ### Pending Todos
 
@@ -129,8 +144,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-13T09:28:12.372Z
-Stopped at: Phase 45 context gathered
+Last session: 2026-08-13T20:26:45.447Z
+Stopped at: Completed 45-06-PLAN.md
 exited at its CONTEXT.md gate — Phase 45 has no CONTEXT.md, and discuss-phase must run as a
 top-level command (nested invocation breaks AskUserQuestion, GSD #1009). No phase directory
 was created and no planning agents were spawned.
@@ -143,5 +158,5 @@ build order extended with Phases 51/52 and the 53/54 renumber, requirement count
 to 77, the `tool_call_id` blocker marked resolved by `657c9e383`, and the CTX-V2-01 deferral
 re-pointed at Phase 53. REQUIREMENTS.md's two stale prose lines corrected to match.
 
-Resume file: .planning/phases/45-harness-correctness/45-CONTEXT.md
+Resume file: None
 Next action: `/gsd-discuss-phase 45`, then `/gsd-plan-phase 45`.

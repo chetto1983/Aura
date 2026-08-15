@@ -260,7 +260,20 @@ async def process_file(
     # skips the whole function, print included, on an unchanged rerun.
     print(f"[extract] {key}", flush=True)
     content = await file.read()
-    file_name = pathlib.PurePosixPath(key).name
+    # The object's own name when it carries one, the key's tail when it does not.
+    #
+    # A chat attachment's key is `chat/<assetID>.pdf` on purpose -- a key travels into
+    # presigned URLs and access logs, so the filename is deliberately kept out of it -- and
+    # with nothing else carrying the name, every attachment reached this index as
+    # "019f8a2b-....pdf". That name is not just displayed: it goes into file_name_words
+    # below, so searching for a document by the name the operator gave it found nothing.
+    #
+    # The fallback is not a stopgap: a file the operator dropped into the bucket directly
+    # has no metadata and its key IS its name.
+    file_name = (
+        await source.object_file_name(coco.use_context(S3), _S3_CONFIG, key)
+        or pathlib.PurePosixPath(key).name
+    )
     with tempfile.NamedTemporaryFile(suffix=pathlib.Path(key).suffix) as tmp:
         tmp.write(content)
         tmp.flush()

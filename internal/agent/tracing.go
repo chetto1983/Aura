@@ -197,6 +197,23 @@ func endToolSpan(span oteltrace.Span, errMsg string) {
 	span.End()
 }
 
+// stampReplayAttributes sets aura.tool.replayed and aura.tool.replay_layer on the
+// tool.execute span carried by ctx (D-10/T-45-10) — the trace-facing half of the
+// same fact reserve.go's replayedMarker puts in front of the model. It is a no-op
+// when replayed is false: a fresh execution leaves both attributes ABSENT rather
+// than stamping replayed=false, which is unambiguous on its own (no attribute
+// means nothing was replayed) and costs nothing on the hot path every
+// non-replayed call takes. The two literal attribute names live ONLY here.
+func stampReplayAttributes(ctx context.Context, replayed bool, layer string) {
+	if !replayed {
+		return
+	}
+	oteltrace.SpanFromContext(ctx).SetAttributes(
+		attribute.Bool("aura.tool.replayed", replayed),
+		attribute.String("aura.tool.replay_layer", layer),
+	)
+}
+
 // setSpanAttrs stamps the llm.request span with the cost/identity attributes
 // (Req#13/AI-SPEC §4). It sets llm.model, llm.provider, llm.prompt_tokens,
 // llm.completion_tokens, llm.cache_hit_tokens (= usage.CachedTokens, the cache

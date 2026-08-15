@@ -13,6 +13,10 @@ services:
     build:
       context: .
       dockerfile: docker/aura/Dockerfile
+      # Stamps the running image's commit SHA into `aura version` (45-08-PLAN.md
+      # Task 1 step 6) so provenance is checkable, not asserted. Unset -> empty ARG
+      # default -> `commit: unknown`, identical to pre-stamp behaviour.
+      args: {VCS_REF: "${VCS_REF:-}"}
     image: ${AURA_IMAGE:-aura:local}
     pull_policy: never
     container_name: aura

@@ -4,8 +4,6 @@ package objectstore
 import (
 	"context"
 	"io"
-	"path"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -24,6 +22,10 @@ type Attrs struct {
 	// every S3 listing until a file browser needed a date column, which is the only thing
 	// that can order "recent" for a human.
 	ModifiedAt time.Time
+	// Metadata is the object's user metadata, keyed without the "x-amz-meta-" prefix every
+	// S3 client strips. Nil for a store that has none and for an object written before
+	// anything set any — see MetadataFileName, which is the one entry Aura writes.
+	Metadata map[string]string
 }
 
 type ObjectInfo struct {
@@ -49,13 +51,21 @@ type ListRequest struct {
 type PutOptions struct {
 	MIMEType string
 	Size     int64
+	// Metadata rides with the object. Callers uploading an asset should take it from
+	// PlaceAsset rather than assembling one, so the key and the name it omits are decided
+	// in the same place.
+	Metadata map[string]string
 }
 
 type PresignPutRequest struct {
-	Ref        ObjectRef
-	MIMEType   string
-	Size       int64
-	ExpiresIn  time.Duration
+	Ref       ObjectRef
+	MIMEType  string
+	Size      int64
+	ExpiresIn time.Duration
+	// Metadata is SIGNED into the presigned URL, so the uploading client must send the
+	// matching x-amz-meta-* headers or the store rejects the PUT. They come back in
+	// PresignedPut.RequiredHeaders, which every client already forwards verbatim.
+	Metadata   map[string]string
 	PublicBase string
 }
 
@@ -64,6 +74,19 @@ type PresignedPut struct {
 	Method          string            `json:"method"`
 	RequiredHeaders map[string]string `json:"required_headers"`
 	ExpiresAt       time.Time         `json:"expires_at"`
+}
+
+// presignRequiredHeaders is the header set a client MUST send with a presigned PUT.
+//
+// Shared by all three stores because it is one contract, not three: the S3 signature covers
+// the metadata headers, so a store that forgot to declare one would hand out a URL that
+// fails at upload time with a signature mismatch — the least diagnosable failure in the set.
+func presignRequiredHeaders(mimeType string, metadata map[string]string) map[string]string {
+	headers := map[string]string{"Content-Type": mimeType}
+	for key, value := range metadata {
+		headers["x-amz-meta-"+key] = value
+	}
+	return headers
 }
 
 type Store interface {
@@ -77,49 +100,6 @@ type Store interface {
 	// rename -- which S3 has no primitive for, both being copy-then-delete -- do not have to
 	// stream every byte out through the daemon and back.
 	Copy(ctx context.Context, src, dst ObjectRef) error
-}
-
-// AssetKey places an uploaded file where its owner can see it and the reconciler can read
-// it: "chat/<assetID>-<name>" in the identity's own bucket.
-//
-// It used to be "identity/<id>/asset/<id>/original", and every part of that has stopped
-// earning its place:
-//
-//   - The identity segment was the isolation. It is not any more — each identity has its
-//     own bucket, so a key cannot address another's store at all, and repeating the id
-//     inside a bucket that belongs to that id says nothing.
-//   - "identity/" is excluded from the ingest sweep and hidden from the file manager, so an
-//     attachment landing there was invisible AND unindexed: uploading a document in chat
-//     and then asking about it found nothing.
-//   - "original" has no extension. The extractor routes on it, so a .docx arriving as
-//     "original" was fed to Tika as an unknown type and threw — the errors that made a
-//     working pipeline look broken.
-//
-// The EXTENSION is carried and the name is NOT, and that split is the whole design. A key
-// travels into presigned URLs, S3 access logs and error strings, so "Quarterly Secrets.pdf"
-// in a key leaks the document's subject to everyone who sees a link — the reason
-// TestServicePresignNeverPutsFilenameInObjectKey exists and the reason this function used
-// to carry no name at all. ".pdf" leaks nothing and is exactly what the extractor routes
-// on, so the extension comes along and the name stays behind on the asset row.
-func AssetKey(assetID, fileName string) string {
-	return "chat/" + assetID + assetExtension(fileName)
-}
-
-// assetExtension returns a lowercase ".ext", or "" when the name has none.
-//
-// Bounded and character-checked because it is caller-supplied: a chat client or a Telegram
-// message can send any name, and this fragment becomes part of an object key.
-func assetExtension(name string) string {
-	ext := strings.ToLower(path.Ext(path.Base(strings.ReplaceAll(strings.TrimSpace(name), `\`, "/"))))
-	if len(ext) < 2 || len(ext) > 12 {
-		return ""
-	}
-	for _, r := range ext[1:] {
-		if (r < 'a' || r > 'z') && (r < '0' || r > '9') {
-			return ""
-		}
-	}
-	return ext
 }
 
 // ShareSnapshotKey returns the object-store key for a share's redacted

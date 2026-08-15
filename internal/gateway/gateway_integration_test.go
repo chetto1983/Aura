@@ -321,8 +321,9 @@ func TestIdempotentReplay(t *testing.T) {
 	if spy.count != 1 {
 		t.Fatalf("Execute count after replay = %d, want 1 (idempotent)", spy.count)
 	}
-	if res.Preview != "first-output" {
-		t.Fatalf("replay preview = %q, want the recorded end", res.Preview)
+	// A Layer A replay carries replayedMarker (HARN-03, D-10) appended to the recorded end.
+	if res.Preview != "first-output"+replayedMarker {
+		t.Fatalf("replay preview = %q, want the recorded end plus the replay marker", res.Preview)
 	}
 }
 
@@ -391,8 +392,9 @@ func TestApprovedCallReservedAndIdempotent(t *testing.T) {
 	if rv.Replay == nil || spy.count != 1 {
 		t.Fatalf("approved retry: replay=%v Execute count=%d, want replay + count 1", rv.Replay, spy.count)
 	}
-	if res.Preview != "approved-output" {
-		t.Fatalf("approved replay preview = %q, want the recorded end", res.Preview)
+	// A Layer A replay carries replayedMarker (HARN-03, D-10) appended to the recorded end.
+	if res.Preview != "approved-output"+replayedMarker {
+		t.Fatalf("approved replay preview = %q, want the recorded end plus the replay marker", res.Preview)
 	}
 
 	// ledger shape: exactly one start (operator_id in Meta) + one end for the triple.
@@ -504,8 +506,9 @@ func TestGatewayApprovalResumeReentersAndReservesOnce(t *testing.T) {
 	if rv.Replay == nil || spy.count != 1 {
 		t.Fatalf("resumed retry: replay=%v Execute count=%d, want replay + count 1", rv.Replay, spy.count)
 	}
-	if res.Preview != "swarm-launched" {
-		t.Fatalf("replay preview = %q, want the recorded end", res.Preview)
+	// A Layer A replay carries replayedMarker (HARN-03, D-10) appended to the recorded end.
+	if res.Preview != "swarm-launched"+replayedMarker {
+		t.Fatalf("replay preview = %q, want the recorded end plus the replay marker", res.Preview)
 	}
 
 	// Ledger shape: exactly ONE start (operator_id in Meta) + ONE end for the triple, NO

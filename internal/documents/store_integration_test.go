@@ -5,60 +5,14 @@ package documents
 import (
 	"context"
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
-	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/identityctx"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func documentEnvOrSkip(t *testing.T, key string) string {
-	t.Helper()
-	v := os.Getenv(key)
-	if v == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatalf("document store integration requires %s under CI", key)
-		}
-		t.Skipf("document store integration requires %s", key)
-	}
-	return v
-}
-
-func migratedDocumentPool(t *testing.T) *pgxpool.Pool {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	pwd := documentEnvOrSkip(t, "POSTGRES_PASSWORD")
-	migrateURL := documentEnvOrSkip(t, "AURA_DB_MIGRATE_URL")
-	appURL := documentEnvOrSkip(t, "AURA_DB_URL")
-	host := os.Getenv("PGHOST")
-	if host == "" {
-		host = "127.0.0.1"
-	}
-	port := os.Getenv("PGPORT")
-	if port == "" {
-		port = "5432"
-	}
-	bootstrap := fmt.Sprintf("postgres://aura:%s@%s:%s/aura?sslmode=disable", pwd, host, port)
-	if err := db.EnsureRoles(ctx, bootstrap, pwd); err != nil {
-		t.Fatalf("EnsureRoles: %v", err)
-	}
-	if _, err := db.Migrate(ctx, migrateURL); err != nil {
-		t.Fatalf("Migrate: %v", err)
-	}
-	pool, err := db.Open(ctx, &db.Config{URL: appURL})
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	t.Cleanup(pool.Close)
-	return pool
-}
-
 func TestPostgresJobStoreRoundTrip(t *testing.T) {
-	pool := migratedDocumentPool(t)
+	pool := pipelineDisposablePool(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
@@ -68,13 +22,20 @@ func TestPostgresJobStoreRoundTrip(t *testing.T) {
 	})
 
 	store := NewPostgresJobStore(pool)
-	documentID := DocumentID("hash", sourceID)
 	// The ledger is owner-scoped since 0093: identity_id is NOT NULL with a real FK, so an
 	// ownerless job is no longer a thing the store will accept. Every READ below resolves
 	// its owner from the CONTEXT rather than an argument (callerJobIdentity), so the
 	// principal has to travel on ctx too — Create alone is not enough.
 	identityID := seedDocumentTestIdentity(t, ctx, pool)
 	ctx = identityctx.WithIdentityID(ctx, identityID)
+	sourceKey, err := SourceKey(sourceID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	documentID, err := SearchDocumentID(identityID, "local", sourceKey)
+	if err != nil {
+		t.Fatal(err)
+	}
 	created, err := store.Create(ctx, CreateJobParams{
 		IdentityID:   identityID,
 		SourceID:     sourceID,
@@ -98,22 +59,9 @@ func TestPostgresJobStoreRoundTrip(t *testing.T) {
 	if err != nil || got.DocumentID != documentID {
 		t.Fatalf("Get = (%#v, %v)", got, err)
 	}
-	byDoc, err := store.GetByDocumentID(ctx, documentID)
-	if err != nil || byDoc.ID != created.ID {
-		t.Fatalf("GetByDocumentID = (%#v, %v)", byDoc, err)
-	}
 	failed, err := store.UpdateStatus(ctx, created.ID, JobFailed, "transient ingest failure")
 	if err != nil || failed.Error == "" {
 		t.Fatalf("UpdateStatus failed = (%#v, %v)", failed, err)
-	}
-	searchable, err := store.UpdateProgress(ctx, created.ID, JobSearchable, 3, 0)
-	if err != nil || searchable.Status != JobSearchable || searchable.SparseChunks != 3 ||
-		searchable.Error != "" || searchable.SearchableAt.IsZero() {
-		t.Fatalf("UpdateProgress searchable = (%#v, %v)", searchable, err)
-	}
-	complete, err := store.UpdateProgress(ctx, created.ID, JobComplete, 3, 3)
-	if err != nil || complete.Status != JobComplete || complete.EmbeddedChunks != 3 || complete.CompletedAt.IsZero() {
-		t.Fatalf("UpdateProgress complete = (%#v, %v)", complete, err)
 	}
 	recent, err := store.ListRecent(ctx, 0)
 	if err != nil {
@@ -134,8 +82,5 @@ func TestPostgresJobStoreRejectsInvalidIDs(t *testing.T) {
 	}
 	if _, err := store.UpdateStatus(t.Context(), "bad", JobFailed, "boom"); err == nil {
 		t.Fatal("UpdateStatus accepted invalid uuid")
-	}
-	if _, err := store.UpdateProgress(t.Context(), "bad", JobSearchable, 1, 0); err == nil {
-		t.Fatal("UpdateProgress accepted invalid uuid")
 	}
 }

@@ -4,98 +4,28 @@ import (
 	"context"
 	"fmt"
 	"strings"
-
-	"github.com/google/uuid"
 )
 
 const (
-	defaultCatalogListLimit = 50
-	maxCatalogListLimit     = 100
-	defaultStorageKind      = "raw"
-	defaultRetentionClass   = "standard"
-	defaultConfigHash       = "default"
+	defaultStorageKind    = "raw"
+	defaultRetentionClass = "standard"
+	defaultConfigHash     = "default"
 )
 
-// CatalogStore persists logical documents and related catalog metadata.
+// CatalogStore records an uploaded asset as a logical document version.
+//
+// It is one method wide because that is the whole of what production asks a catalog
+// store for. The operator-facing create/read/update/delete surface that used to sit
+// here had no caller: no CLI verb, no HTTP route and no scheduler path constructed a
+// CatalogService to reach it, and an interface method nobody calls is a promise the
+// store keeps paying for.
 type CatalogStore interface {
-	CreateDocument(context.Context, CreateDocumentRequest) (Document, error)
-	UpdateDocument(context.Context, UpdateDocumentRequest) (Document, error)
-	ListDocuments(context.Context, ListDocumentsRequest) ([]DocumentSummary, error)
-	GetDocument(ctx context.Context, identityID, documentID string) (DocumentDetail, error)
-	SoftDeleteDocument(ctx context.Context, identityID, documentID string) (Document, error)
 	RecordAssetVersion(context.Context, RecordAssetVersionRequest) (DocumentVersionRecord, error)
 }
 
-// CatalogService owns document metadata, tags, and list/detail access.
+// CatalogService normalizes an asset-version record before the store writes it.
 type CatalogService struct {
 	Store CatalogStore
-}
-
-// CreateDocument creates logical document metadata with normalized searchable tags.
-func (s *CatalogService) CreateDocument(ctx context.Context, req CreateDocumentRequest) (Document, error) {
-	if s.Store == nil {
-		return Document{}, fmt.Errorf("document catalog service has no store")
-	}
-	var err error
-	req, err = normalizeCreateDocumentRequest(req)
-	if err != nil {
-		return Document{}, err
-	}
-	return s.Store.CreateDocument(ctx, req)
-}
-
-// UpdateDocument updates logical document metadata without creating a new content version.
-func (s *CatalogService) UpdateDocument(ctx context.Context, req UpdateDocumentRequest) (Document, error) {
-	if s.Store == nil {
-		return Document{}, fmt.Errorf("document catalog service has no store")
-	}
-	var err error
-	req, err = normalizeUpdateDocumentRequest(req)
-	if err != nil {
-		return Document{}, err
-	}
-	return s.Store.UpdateDocument(ctx, req)
-}
-
-// ListDocuments returns document summaries, optionally filtered by normalized tag.
-func (s *CatalogService) ListDocuments(ctx context.Context, req ListDocumentsRequest) ([]DocumentSummary, error) {
-	if s.Store == nil {
-		return nil, fmt.Errorf("document catalog service has no store")
-	}
-	var err error
-	req, err = normalizeListDocumentsRequest(req)
-	if err != nil {
-		return nil, err
-	}
-	return s.Store.ListDocuments(ctx, req)
-}
-
-// GetDocument returns one document detail scoped to an identity.
-func (s *CatalogService) GetDocument(ctx context.Context, identityID, documentID string) (DocumentDetail, error) {
-	if s.Store == nil {
-		return DocumentDetail{}, fmt.Errorf("document catalog service has no store")
-	}
-	if strings.TrimSpace(identityID) == "" {
-		return DocumentDetail{}, fmt.Errorf("identity_id is required")
-	}
-	if strings.TrimSpace(documentID) == "" {
-		return DocumentDetail{}, fmt.Errorf("document_id is required")
-	}
-	return s.Store.GetDocument(ctx, identityID, documentID)
-}
-
-// DeleteDocument soft-deletes one logical document scoped to an identity.
-func (s *CatalogService) DeleteDocument(ctx context.Context, identityID, documentID string) (Document, error) {
-	if s.Store == nil {
-		return Document{}, fmt.Errorf("document catalog service has no store")
-	}
-	if strings.TrimSpace(identityID) == "" {
-		return Document{}, fmt.Errorf("identity_id is required")
-	}
-	if strings.TrimSpace(documentID) == "" {
-		return Document{}, fmt.Errorf("document_id is required")
-	}
-	return s.Store.SoftDeleteDocument(ctx, identityID, documentID)
 }
 
 // RecordAssetVersion records a stored asset as a non-visible candidate version.
@@ -109,97 +39,6 @@ func (s *CatalogService) RecordAssetVersion(ctx context.Context, req RecordAsset
 		return DocumentVersionRecord{}, err
 	}
 	return s.Store.RecordAssetVersion(ctx, req)
-}
-
-func normalizeCreateDocumentRequest(req CreateDocumentRequest) (CreateDocumentRequest, error) {
-	if strings.TrimSpace(req.IdentityID) == "" {
-		return CreateDocumentRequest{}, fmt.Errorf("identity_id is required")
-	}
-	req.Title = strings.TrimSpace(req.Title)
-	if req.Title == "" {
-		return CreateDocumentRequest{}, fmt.Errorf("document title is required")
-	}
-	if req.Scope == "" {
-		req.Scope = DocumentScopeLibrary
-	}
-	if req.Status == "" {
-		req.Status = DocumentStatusAccepted
-	}
-	if strings.TrimSpace(req.SearchDocumentID) == "" {
-		req.SearchDocumentID = "catalog:" + uuid.NewString()
-	}
-	if strings.TrimSpace(req.SourceKind) == "" {
-		req.SourceKind = "manual"
-	}
-	if strings.TrimSpace(req.SourceKey) == "" {
-		req.SourceKey = req.SearchDocumentID
-	}
-	if req.PipelineGeneration < 0 {
-		return CreateDocumentRequest{}, fmt.Errorf("pipeline_generation must be non-negative")
-	}
-	tags, err := NormalizeTags(req.Tags)
-	if err != nil {
-		return CreateDocumentRequest{}, err
-	}
-	req.Tags = tags
-	if req.Metadata == nil {
-		req.Metadata = map[string]any{}
-	}
-	return req, nil
-}
-
-func normalizeUpdateDocumentRequest(req UpdateDocumentRequest) (UpdateDocumentRequest, error) {
-	if strings.TrimSpace(req.IdentityID) == "" {
-		return UpdateDocumentRequest{}, fmt.Errorf("identity_id is required")
-	}
-	if strings.TrimSpace(req.DocumentID) == "" {
-		return UpdateDocumentRequest{}, fmt.Errorf("document_id is required")
-	}
-	req.Title = strings.TrimSpace(req.Title)
-	if req.Title == "" {
-		return UpdateDocumentRequest{}, fmt.Errorf("document title is required")
-	}
-	if req.Scope == "" {
-		req.Scope = DocumentScopeLibrary
-	}
-	if req.Status == "" {
-		req.Status = DocumentStatusAccepted
-	}
-	tags, err := NormalizeTags(req.Tags)
-	if err != nil {
-		return UpdateDocumentRequest{}, err
-	}
-	req.Tags = tags
-	if req.Metadata == nil {
-		req.Metadata = map[string]any{}
-	}
-	return req, nil
-}
-
-func normalizeListDocumentsRequest(req ListDocumentsRequest) (ListDocumentsRequest, error) {
-	if strings.TrimSpace(req.IdentityID) == "" {
-		return ListDocumentsRequest{}, fmt.Errorf("identity_id is required")
-	}
-	req.Query = strings.TrimSpace(req.Query)
-	if strings.TrimSpace(req.Tag) != "" {
-		tags, err := NormalizeTags([]string{req.Tag})
-		if err != nil {
-			return ListDocumentsRequest{}, err
-		}
-		if len(tags) > 0 {
-			req.Tag = tags[0]
-		}
-	}
-	if req.Limit <= 0 {
-		req.Limit = defaultCatalogListLimit
-	}
-	if req.Limit > maxCatalogListLimit {
-		req.Limit = maxCatalogListLimit
-	}
-	if req.Offset < 0 {
-		req.Offset = 0
-	}
-	return req, nil
 }
 
 func normalizeRecordAssetVersionRequest(req RecordAssetVersionRequest) (RecordAssetVersionRequest, error) {

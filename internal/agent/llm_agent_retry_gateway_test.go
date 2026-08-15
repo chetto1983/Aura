@@ -343,8 +343,13 @@ func TestExecToolRetryReusesOperationWhileAuditIDsChange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("replay exec: %v", err)
 	}
-	if second.Preview != "executed" || spy.count != 1 {
-		t.Fatalf("replay result=%+v count=%d, want recorded result and one effect", second, spy.count)
+	// The recorded "executed" content survives the replay verbatim; a replay marker
+	// (D-10/HARN-03) is appended after it so the model can tell this apart from a
+	// fresh execution — asserted here as "not equal to the fresh preview" rather than
+	// pinning the marker's exact bytes, which is gateway package-internal and covered
+	// by its own tests.
+	if !strings.HasPrefix(second.Preview, "executed") || second.Preview == "executed" || spy.count != 1 {
+		t.Fatalf("replay result=%+v count=%d, want recorded result (marked as replayed) and one effect", second, spy.count)
 	}
 	if len(registry.begins) != 2 {
 		t.Fatalf("Begin calls = %d, want 2", len(registry.begins))

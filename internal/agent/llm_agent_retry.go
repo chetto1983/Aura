@@ -52,6 +52,23 @@ func bookkeepingCtx(ctx context.Context) (context.Context, context.CancelFunc) {
 // not a const, so tests can shrink it without sleeping real backoff windows.
 var toolRetryBaseDelay = 200 * time.Millisecond
 
+// replayLayerAttributes derives the OTel evidence for a replayed tool call from
+// state gateway.Verdict already carries — no new field on Verdict (D-10/T-45-10).
+// operationDecision == idempotency.DecisionReplay means the shared operation
+// registry served the replay (Layer B, decide.go:76-79's !proceed short-circuit);
+// any other decision alongside replay==true means the reservation ledger did
+// (Layer A, reserve.go's rows==0 branch). replayed is false only when there is
+// no replay to attribute — a fresh execution.
+func replayLayerAttributes(operationDecision idempotency.Decision, replay bool) (replayed bool, layer string) {
+	if !replay {
+		return false, ""
+	}
+	if operationDecision == idempotency.DecisionReplay {
+		return true, "operation"
+	}
+	return true, "reservation"
+}
+
 // execTool runs one tool, retrying a non-mutating transient failure with a small
 // linear backoff. It returns the last result/error once the tool succeeds, the
 // error is non-transient, the attempt budget is spent, the tool is mutating, or the
@@ -138,7 +155,12 @@ func (a *LlmAgent) execTool(ctx context.Context, tool tools.Tool, mutating bool,
 		// GATE-04: a non-nil Replay means the reservation slot was already held (rows==0) —
 		// the tool ran on a prior (duplicate/retried) dispatch. Return the recorded outcome
 		// WITHOUT calling tool.Execute, so the mutating side effect stays at-most-once.
+		// D-10/T-45-10: stamp the SAME fact on the tool.execute span the ctx already
+		// carries, so a replayed call is distinguishable from a fresh one in a trace too
+		// (the marker on Preview is the model-facing half of this fact — reserve.go).
 		if verdict.Replay != nil {
+			replayed, layer := replayLayerAttributes(verdict.OperationDecision, true)
+			stampReplayAttributes(ctx, replayed, layer)
 			return *verdict.Replay, nil
 		}
 	}

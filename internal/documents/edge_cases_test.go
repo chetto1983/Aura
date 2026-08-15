@@ -28,8 +28,8 @@ func TestContentHashPathReturnsErrorForMissingFile(t *testing.T) {
 	}
 }
 
-func TestContentHashReaderPropagatesReadError(t *testing.T) {
-	_, err := ContentHashReader(failingReader{err: errors.New("disk read failed")})
+func TestContentHashesReaderPropagatesReadError(t *testing.T) {
+	_, err := ContentHashesReader(failingReader{err: errors.New("disk read failed")})
 	if err == nil || !strings.Contains(err.Error(), "disk read failed") {
 		t.Fatalf("want read error, got %v", err)
 	}

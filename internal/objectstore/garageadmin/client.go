@@ -141,7 +141,7 @@ func (c *Client) CreateBucket(ctx context.Context, globalAlias string) (string, 
 	}
 	// Non-2xx (already-exists) or 2xx-without-id: resolve the existing bucket by
 	// alias. Success here means the bucket already existed → idempotent success.
-	if id, lookupErr := c.bucketIDByAlias(ctx, globalAlias); lookupErr == nil && id != "" {
+	if id, lookupErr := c.BucketIDByAlias(ctx, globalAlias); lookupErr == nil && id != "" {
 		return id, nil
 	}
 	if is2xx(status) {
@@ -150,9 +150,11 @@ func (c *Client) CreateBucket(ctx context.Context, globalAlias string) (string, 
 	return "", statusErr("CreateBucket", status, raw)
 }
 
-// bucketIDByAlias resolves a bucket's internal id from its global alias via
-// GET /v2/GetBucketInfo?globalAlias=<alias>.
-func (c *Client) bucketIDByAlias(ctx context.Context, alias string) (string, error) {
+// BucketIDByAlias resolves a bucket's internal id from its global alias via
+// GET /v2/GetBucketInfo?globalAlias=<alias>. Exported because a caller that
+// needs the id of an EXISTING bucket should ask for it, not call CreateBucket
+// and lean on its idempotence -- that reads as "mint" at every call site.
+func (c *Client) BucketIDByAlias(ctx context.Context, alias string) (string, error) {
 	target := c.endpoint + "/v2/GetBucketInfo?" + url.Values{"globalAlias": {alias}}.Encode()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {

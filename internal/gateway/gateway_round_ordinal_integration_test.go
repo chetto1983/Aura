@@ -246,8 +246,10 @@ func TestRoundOrdinalSameRoundRetryExecutesOnce(t *testing.T) {
 	if spy2.count != 0 {
 		t.Fatalf("second attempt Execute count = %d, want 0 (replayed, not re-run)", spy2.count)
 	}
-	if res2.Preview != "same-round-output" {
-		t.Fatalf("second attempt preview = %q, want the replayed first result", res2.Preview)
+	// A Layer B operation replay carries replayedMarker (HARN-03, D-10) appended to the
+	// replayed first result.
+	if res2.Preview != "same-round-output"+replayedMarker {
+		t.Fatalf("second attempt preview = %q, want the replayed first result plus the replay marker", res2.Preview)
 	}
 
 	if got := endRowCount(t, pool, convID, requestID); got != 1 {

@@ -43,6 +43,7 @@ type agentMemoryLiveFact struct {
 	Statement string                  `json:"statement"`
 	Subject   string                  `json:"subject"`
 	Object    string                  `json:"object"`
+	FactKey   string                  `json:"fact_key"`
 	Sources   []agentMemoryLiveSource `json:"sources"`
 }
 
@@ -55,9 +56,20 @@ type agentMemoryLiveSearchOutput struct {
 	} `json:"retrieval"`
 }
 
+// agentMemoryLiveUpsertOutput is memory_upsert_fact's full output shape
+// (D-15/D-17), reusing agentMemoryLiveFact for candidate previews rather
+// than a second fact type.
+type agentMemoryLiveUpsertOutput struct {
+	Statement  string                `json:"statement"`
+	Superseded int                   `json:"superseded"`
+	Refused    bool                  `json:"refused"`
+	Reason     string                `json:"reason"`
+	Candidates []agentMemoryLiveFact `json:"candidates"`
+}
+
 func TestAgentMemoryMCPLiveInitializeListCallAndIsolation(t *testing.T) {
 	verifyAgentMemoryLiveNoLeaks(t)
-	client, identities, runtime := newAgentMemoryLiveMCP(t, 2)
+	client, identities, runtime := newAgentMemoryLiveMCP(t, 2, "")
 	runtimeJSON, err := json.Marshal(runtime)
 	if err != nil {
 		t.Fatalf("encode runtime evidence: %v", err)
@@ -151,7 +163,7 @@ func TestAgentMemoryMCPLiveInitializeListCallAndIsolation(t *testing.T) {
 
 func TestAgentMemoryMCPLiveAbstainsOnNonexistentFact(t *testing.T) {
 	verifyAgentMemoryLiveNoLeaks(t)
-	client, identities, _ := newAgentMemoryLiveMCP(t, 1)
+	client, identities, _ := newAgentMemoryLiveMCP(t, 1, "")
 	ctx, cancel := context.WithTimeout(t.Context(), agentMemoryLiveTimeout)
 	defer cancel()
 
@@ -187,9 +199,112 @@ func TestAgentMemoryMCPLiveAbstainsOnNonexistentFact(t *testing.T) {
 	}
 }
 
+// TestAgentMemoryMCPLiveSupersedeRefusalThenFactKeyCloses replays D-15/D-16/D-17
+// at the model-facing MCP boundary against a live ArcadeDB: recall surfaces
+// fact_key, an ambiguous supersedes:true refuses as a successful, effect-free
+// call, and naming the exact fact_key closes only the one edge it names,
+// leaving the sibling untouched.
+func TestAgentMemoryMCPLiveSupersedeRefusalThenFactKeyCloses(t *testing.T) {
+	verifyAgentMemoryLiveNoLeaks(t)
+	client, identities, _ := newAgentMemoryLiveMCP(t, 1, "")
+	ctx, cancel := context.WithTimeout(t.Context(), agentMemoryLiveTimeout)
+	defer cancel()
+
+	source := agentMemoryLiveSource{RunID: "live-supersede", MemoryIDs: []string{"m1"}}
+	write := func(object, statement string) {
+		callAgentMemoryLiveJSON[agentMemoryLiveUpsertOutput](t, ctx, client, "memory_upsert_fact", map[string]any{
+			"user_identifier": identities[0],
+			"subject":         "Isaac Newton",
+			"subject_kind":    "person",
+			"predicate":       "worked_at",
+			"object":          object,
+			"object_kind":     "place",
+			"statement":       statement,
+			"source":          source,
+		})
+	}
+	write("Cambridge", "Isaac Newton worked at Cambridge.")
+	write("the Royal Mint", "Isaac Newton worked at the Royal Mint.")
+
+	before := callAgentMemoryLiveJSON[agentMemoryLiveSearchOutput](t, ctx, client, "memory_facts_about", map[string]any{
+		"user_identifier": identities[0], "entity": "Isaac Newton",
+	})
+	if len(before.Facts) != 2 {
+		t.Fatalf("facts_about = %+v, want the two facts written above", before.Facts)
+	}
+	keys := map[string]string{}
+	for _, fact := range before.Facts {
+		if fact.FactKey == "" {
+			t.Fatalf("fact %+v has no fact_key -- recall must surface one for a still-valid fact", fact)
+		}
+		keys[fact.Object] = fact.FactKey
+	}
+
+	// An ambiguous correction (two candidates, no fact_key) refuses as a
+	// successful call and touches nothing.
+	refusal := callAgentMemoryLiveJSON[agentMemoryLiveUpsertOutput](t, ctx, client, "memory_upsert_fact", map[string]any{
+		"user_identifier": identities[0],
+		"subject":         "Isaac Newton",
+		"subject_kind":    "person",
+		"predicate":       "worked_at",
+		"object":          "the Royal Society",
+		"object_kind":     "place",
+		"statement":       "Isaac Newton worked at the Royal Society.",
+		"supersedes":      true,
+		"source":          source,
+	})
+	if !refusal.Refused || refusal.Superseded != 0 {
+		t.Fatalf("refusal = %+v, want refused=true, superseded=0", refusal)
+	}
+	if len(refusal.Candidates) != 2 {
+		t.Fatalf("refusal candidates = %+v, want both prior facts", refusal.Candidates)
+	}
+	if !strings.Contains(refusal.Reason, "supersedes_fact_key") {
+		t.Fatalf("reason = %q, want it to name supersedes_fact_key", refusal.Reason)
+	}
+
+	afterRefusal := callAgentMemoryLiveJSON[agentMemoryLiveSearchOutput](t, ctx, client, "memory_facts_about", map[string]any{
+		"user_identifier": identities[0], "entity": "Isaac Newton",
+	})
+	if len(afterRefusal.Facts) != 2 {
+		t.Fatalf("facts after refusal = %+v, want the write to be effect-free", afterRefusal.Facts)
+	}
+
+	// Naming the exact fact_key closes only that one edge.
+	closeResult := callAgentMemoryLiveJSON[agentMemoryLiveUpsertOutput](t, ctx, client, "memory_upsert_fact", map[string]any{
+		"user_identifier":     identities[0],
+		"subject":             "Isaac Newton",
+		"subject_kind":        "person",
+		"predicate":           "worked_at",
+		"object":              "the Royal Society",
+		"object_kind":         "place",
+		"statement":           "Isaac Newton worked at the Royal Society.",
+		"supersedes_fact_key": keys["the Royal Mint"],
+		"source":              source,
+	})
+	if closeResult.Refused || closeResult.Superseded != 1 {
+		t.Fatalf("close result = %+v, want refused=false, superseded=1", closeResult)
+	}
+
+	final := callAgentMemoryLiveJSON[agentMemoryLiveSearchOutput](t, ctx, client, "memory_facts_about", map[string]any{
+		"user_identifier": identities[0], "entity": "Isaac Newton",
+	})
+	if len(final.Facts) != 2 {
+		t.Fatalf("final facts = %+v, want the untouched sibling plus the new fact", final.Facts)
+	}
+	objects := map[string]bool{}
+	for _, fact := range final.Facts {
+		objects[fact.Object] = true
+	}
+	if !objects["Cambridge"] || !objects["the Royal Society"] || objects["the Royal Mint"] {
+		t.Fatalf("final facts = %+v, want Cambridge untouched, the Royal Mint closed, the Royal Society new", final.Facts)
+	}
+}
+
 func newAgentMemoryLiveMCP(
 	t *testing.T,
 	identityCount int,
+	operatorDisplayName string,
 ) (*auramcp.HTTPClient, []string, agentMemoryRuntimeEvidence) {
 	t.Helper()
 	adminPassword := os.Getenv("ARCADEDB_ADMIN_PASSWORD")
@@ -252,7 +367,7 @@ func newAgentMemoryLiveMCP(
 		cleanupAgentMemoryLiveTenants(t, admin, base, credentials, identities)
 	})
 
-	server := newServer(newTenants(base, admin, embedder, credentials), time.Now)
+	server := newServer(newTenants(base, admin, embedder, credentials), time.Now, operatorDisplayName)
 	httpServer := httptest.NewServer(officialmcp.NewStreamableHTTPHandler(
 		func(*http.Request) *officialmcp.Server { return server }, nil))
 	t.Cleanup(httpServer.Close)

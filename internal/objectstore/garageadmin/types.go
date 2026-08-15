@@ -28,6 +28,17 @@ type Permissions struct {
 // ReadWrite is the canonical per-identity grant: read+write, owner=false.
 var ReadWrite = Permissions{Read: true, Write: true, Owner: false}
 
+// ReadWriteOwner is for AURA'S OWN key, never an identity's. Garage gates bucket-level
+// configuration — PutBucketCors among it — behind owner, and the cockpit cannot upload to a
+// bucket with no CORS rule: the browser's PUT dies in the preflight and the asset row sits at
+// 'presigned' forever (measured on the live deployment 2026-08-13).
+//
+// Granting it to the identity's key instead would have been one character, and would have
+// handed that identity the ability to re-grant and delete its own bucket from the S3 data
+// plane — exactly what the comment above refuses. The key that owns the bucket is the process
+// that created it.
+var ReadWriteOwner = Permissions{Read: true, Write: true, Owner: true}
+
 // createBucketRequest is the POST /v2/CreateBucket body: a single global alias
 // (the bucket name aura-<identity>).
 type createBucketRequest struct {

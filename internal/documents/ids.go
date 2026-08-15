@@ -35,15 +35,6 @@ func ContentHashesPath(path string) (ContentHashes, error) {
 	return ContentHashesReader(f)
 }
 
-// ContentHashReader returns the SHA-256 hex digest for bytes read from r.
-func ContentHashReader(r io.Reader) (string, error) {
-	hashes, err := ContentHashesReader(r)
-	if err != nil {
-		return "", err
-	}
-	return hashes.SHA256, nil
-}
-
 // ContentHashesReader returns SHA-1 and SHA-256 hex digests for bytes read from r.
 func ContentHashesReader(r io.Reader) (ContentHashes, error) {
 	sha1Hash := sha1.New() //nolint:gosec // SHA-1 is compatibility metadata; SHA-256 remains canonical.
@@ -55,14 +46,6 @@ func ContentHashesReader(r io.Reader) (ContentHashes, error) {
 		SHA1:   hex.EncodeToString(sha1Hash.Sum(nil)),
 		SHA256: hex.EncodeToString(sha256Hash.Sum(nil)),
 	}, nil
-}
-
-// DocumentID derives the legacy content-sensitive search identifier. New
-// ingestion uses SearchDocumentID so a byte change creates a version rather
-// than a second logical document.
-func DocumentID(contentHash, sourceID string) string {
-	sum := sha256.Sum256([]byte(contentHash + ":" + sourceID))
-	return "doc_" + hex.EncodeToString(sum[:])[:32]
 }
 
 // SourceKey fingerprints a connector-native locator before it enters the

@@ -8,8 +8,6 @@ import (
 	"strings"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
-	"github.com/chetto1983/aura/internal/identityctx"
-	"github.com/chetto1983/aura/internal/objectstore"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -49,56 +47,6 @@ func (s *PostgresCatalogStore) CreateDocument(ctx context.Context, req CreateDoc
 	})
 }
 
-// UpdateDocument updates logical document metadata and replaces its tag rows.
-func (s *PostgresCatalogStore) UpdateDocument(ctx context.Context, req UpdateDocumentRequest) (Document, error) {
-	return scopedValue(ctx, s, req.IdentityID, func(sc catalogTx) (Document, error) {
-		return sc.updateDocument(ctx, req)
-	})
-}
-
-// ListDocuments returns non-deleted document summaries for one identity.
-func (s *PostgresCatalogStore) ListDocuments(ctx context.Context, req ListDocumentsRequest) ([]DocumentSummary, error) {
-	return scopedValue(ctx, s, req.IdentityID, func(sc catalogTx) ([]DocumentSummary, error) {
-		return sc.listDocuments(ctx, req)
-	})
-}
-
-// GetDocument returns one document and its immutable version history.
-func (s *PostgresCatalogStore) GetDocument(ctx context.Context, identityID, documentID string) (DocumentDetail, error) {
-	return scopedValue(ctx, s, identityID, func(sc catalogTx) (DocumentDetail, error) {
-		return sc.getDocument(ctx, identityID, documentID)
-	})
-}
-
-// SoftDeleteDocument starts the durable, owner-scoped delete workflow.
-func (s *PostgresCatalogStore) SoftDeleteDocument(ctx context.Context, identityID, documentID string) (Document, error) {
-	return scopedValue(ctx, s, identityID, func(sc catalogTx) (Document, error) {
-		return sc.softDeleteDocument(ctx, identityID, documentID)
-	})
-}
-
-// ListStorageObjects returns the caller identity's live ledger refs for orphan detection.
-func (s *PostgresCatalogStore) ListStorageObjects(ctx context.Context, bucket, prefix string) ([]objectstore.ObjectRef, error) {
-	identityID := identityctx.IdentityID(ctx)
-	owner, err := pgUUID("identity_id", identityID)
-	if err != nil {
-		return nil, err
-	}
-	return scopedValue(ctx, s, identityID, func(sc catalogTx) ([]objectstore.ObjectRef, error) {
-		rows, queryErr := sc.q.ListStorageObjects(ctx, sqlc.ListStorageObjectsParams{
-			IdentityID: owner, Bucket: bucket, Prefix: prefix,
-		})
-		if queryErr != nil {
-			return nil, queryErr
-		}
-		out := make([]objectstore.ObjectRef, 0, len(rows))
-		for _, row := range rows {
-			out = append(out, objectstore.ObjectRef{Bucket: row.Bucket, Key: row.ObjectKey})
-		}
-		return out, nil
-	})
-}
-
 func (sc catalogTx) createDocument(ctx context.Context, req CreateDocumentRequest) (Document, error) {
 	identityID, err := pgUUID("identity_id", req.IdentityID)
 	if err != nil {
@@ -131,179 +79,6 @@ func (sc catalogTx) createDocument(ctx context.Context, req CreateDocumentReques
 	return doc, nil
 }
 
-func (sc catalogTx) updateDocument(ctx context.Context, req UpdateDocumentRequest) (Document, error) {
-	documentID, err := pgUUID("document_id", req.DocumentID)
-	if err != nil {
-		return Document{}, err
-	}
-	identityID, err := pgUUID("identity_id", req.IdentityID)
-	if err != nil {
-		return Document{}, err
-	}
-	activeVersionID, err := pgOptionalUUID("active_version_id", req.ActiveVersionID)
-	if err != nil {
-		return Document{}, err
-	}
-	metadata, err := catalogMetadataJSON(req.Metadata)
-	if err != nil {
-		return Document{}, err
-	}
-	row, err := sc.q.UpdateDocument(ctx, sqlc.UpdateDocumentParams{
-		ID:                 documentID,
-		IdentityID:         identityID,
-		Scope:              string(req.Scope),
-		Title:              req.Title,
-		Tags:               catalogTagsArray(req.Tags),
-		Metadata:           metadata,
-		ActiveVersionID:    activeVersionID,
-		Status:             string(req.Status),
-		PipelineGeneration: req.PipelineGeneration,
-	})
-	if err != nil {
-		return Document{}, err
-	}
-	doc, err := catalogDocumentFromSQL(row)
-	if err != nil {
-		return Document{}, err
-	}
-	if err := sc.replaceDocumentTags(ctx, doc.ID, req.IdentityID, req.Tags); err != nil {
-		return Document{}, err
-	}
-	return doc, nil
-}
-
-func (sc catalogTx) listDocuments(ctx context.Context, req ListDocumentsRequest) ([]DocumentSummary, error) {
-	identityID, err := pgUUID("identity_id", req.IdentityID)
-	if err != nil {
-		return nil, err
-	}
-	rows, err := sc.q.ListDocuments(ctx, sqlc.ListDocumentsParams{
-		IdentityID:  identityID,
-		ScopeFilter: string(req.Scope),
-		Query:       req.Query,
-		TagFilter:   req.Tag,
-		RowLimit:    int32(req.Limit),  //nolint:gosec // normalized by CatalogService to <= maxCatalogListLimit.
-		RowOffset:   int32(req.Offset), //nolint:gosec // normalized by CatalogService to be non-negative.
-	})
-	if err != nil {
-		return nil, err
-	}
-	out := make([]DocumentSummary, 0, len(rows))
-	for _, row := range rows {
-		doc, err := catalogDocumentFromSQL(row)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, doc)
-	}
-	if err := sc.attachActiveVersionSizes(ctx, out); err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (sc catalogTx) getDocument(ctx context.Context, identityID, documentID string) (DocumentDetail, error) {
-	pgDocumentID, err := pgUUID("document_id", documentID)
-	if err != nil {
-		return DocumentDetail{}, err
-	}
-	pgIdentityID, err := pgUUID("identity_id", identityID)
-	if err != nil {
-		return DocumentDetail{}, err
-	}
-	row, err := sc.q.GetDocument(ctx, sqlc.GetDocumentParams{
-		ID:         pgDocumentID,
-		IdentityID: pgIdentityID,
-	})
-	if err != nil {
-		return DocumentDetail{}, err
-	}
-	doc, err := catalogDocumentFromSQL(row)
-	if err != nil {
-		return DocumentDetail{}, err
-	}
-	versionRows, err := sc.q.ListDocumentVersions(ctx, sqlc.ListDocumentVersionsParams{
-		IdentityID: pgIdentityID, DocumentID: pgDocumentID,
-	})
-	if err != nil {
-		return DocumentDetail{}, err
-	}
-	versions := make([]DocumentVersion, 0, len(versionRows))
-	for _, versionRow := range versionRows {
-		versions = append(versions, catalogVersionFromSQL(versionRow))
-	}
-	return DocumentDetail{Document: doc, Versions: versions}, nil
-}
-
-func (sc catalogTx) softDeleteDocument(ctx context.Context, identityID, documentID string) (Document, error) {
-	pgDocumentID, err := pgUUID("document_id", documentID)
-	if err != nil {
-		return Document{}, err
-	}
-	pgIdentityID, err := pgUUID("identity_id", identityID)
-	if err != nil {
-		return Document{}, err
-	}
-	row, err := sc.q.SoftDeleteDocument(ctx, sqlc.SoftDeleteDocumentParams{
-		ID:         pgDocumentID,
-		IdentityID: pgIdentityID,
-	})
-	if err != nil {
-		return Document{}, err
-	}
-	return catalogDocumentFromSQL(sqlc.AuraDocuments(row))
-}
-
-// attachActiveVersionSizes denormalizes each summary's active-version size and
-// content type in ONE batched query (never N+1), so the list view renders a size
-// and kind per row without fetching each document's detail.
-func (sc catalogTx) attachActiveVersionSizes(ctx context.Context, summaries []DocumentSummary) error {
-	if sc.raw == nil {
-		return nil
-	}
-	ids := make([]string, 0, len(summaries))
-	for i := range summaries {
-		if summaries[i].ActiveVersionID != "" {
-			ids = append(ids, summaries[i].ActiveVersionID)
-		}
-	}
-	if len(ids) == 0 {
-		return nil
-	}
-	rows, err := sc.raw.Query(ctx, `
-SELECT id::text, size_bytes, content_type
-FROM aura.document_versions
-WHERE id::text = ANY($1)
-  AND deleted_at IS NULL`, ids)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	type versionFacts struct {
-		size        int64
-		contentType string
-	}
-	byID := make(map[string]versionFacts, len(ids))
-	for rows.Next() {
-		var id, contentType string
-		var size int64
-		if err := rows.Scan(&id, &size, &contentType); err != nil {
-			return err
-		}
-		byID[id] = versionFacts{size: size, contentType: contentType}
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	for i := range summaries {
-		if facts, ok := byID[summaries[i].ActiveVersionID]; ok {
-			summaries[i].ActiveSizeBytes = facts.size
-			summaries[i].ActiveContentType = facts.contentType
-		}
-	}
-	return nil
-}
-
 // replaceDocumentTags rewrites the searchable tag mirror of one document.
 func (sc catalogTx) replaceDocumentTags(ctx context.Context, documentID, actorIdentityID string, tags []string) error {
 	pgDocumentID, err := pgUUID("document_id", documentID)
@@ -331,7 +106,7 @@ func (sc catalogTx) replaceDocumentTags(ctx context.Context, documentID, actorId
 
 // catalogDocumentFromSQL is the single decoder for a document row.
 //
-// sqlc emits a distinct row type per query, but the delete-path statements return
+// sqlc emits a distinct row type per query, but every statement here returns
 // aura.documents in table order, so those rows convert to sqlc.AuraDocuments outright.
 // Callers use that conversion instead of restating the twenty fields: a column added to
 // the table but missing from a query then becomes a compile error here, where a

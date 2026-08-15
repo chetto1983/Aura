@@ -155,9 +155,6 @@ func TestServiceDoesNotPublishThroughTheLegacyProgressUpdate(t *testing.T) {
 	if err != nil || job.Status != JobAccepted {
 		t.Fatalf("candidate = %#v, error = %v", job, err)
 	}
-	if catalog.failedStatus != "" {
-		t.Fatalf("candidate was incorrectly marked failed: %#v", catalog)
-	}
 }
 
 func TestServiceRefusesFilesOverConfiguredLimit(t *testing.T) {
@@ -247,15 +244,11 @@ func writeNamedTempFile(t *testing.T, name, content string) string {
 }
 
 type fakeIngestCatalog struct {
-	created        CreateDocumentRequest
-	err            error
-	setStatusErr   error
-	setCardErr     error
-	card           string
-	cardTarget     string
-	failedStatus   DocumentStatus
-	failedReason   string
-	failedIdentity string
+	created    CreateDocumentRequest
+	err        error
+	setCardErr error
+	card       string
+	cardTarget string
 }
 
 func (f *fakeIngestCatalog) CreateDocument(_ context.Context, req CreateDocumentRequest) (Document, error) {
@@ -267,15 +260,6 @@ func (f *fakeIngestCatalog) SetCard(_ context.Context, _, documentID, card strin
 	f.cardTarget = documentID
 	f.card = card
 	return f.setCardErr
-}
-
-func (f *fakeIngestCatalog) SetSearchDocumentStatus(
-	_ context.Context, identityID, _ string, status DocumentStatus, reason string,
-) error {
-	f.failedIdentity = identityID
-	f.failedStatus = status
-	f.failedReason = reason
-	return f.setStatusErr
 }
 
 type fakeJobStore struct {
@@ -329,31 +313,10 @@ func (f *fakeJobStore) Get(_ context.Context, id string) (Job, error) {
 	return job, nil
 }
 
-func (f *fakeJobStore) GetByDocumentID(_ context.Context, documentID string) (Job, error) {
-	for _, job := range f.byID {
-		if job.DocumentID == documentID {
-			return job, nil
-		}
-	}
-	return Job{}, errors.New("not found")
-}
-
 func (f *fakeJobStore) UpdateStatus(_ context.Context, id string, status JobStatus, message string) (Job, error) {
 	job := f.byID[id]
 	job.Status = status
 	job.Error = message
-	f.byID[id] = job
-	return job, nil
-}
-
-func (f *fakeJobStore) UpdateProgress(_ context.Context, id string, status JobStatus, sparseChunks, embeddedChunks int) (Job, error) {
-	job := f.byID[id]
-	if f.progressErr != nil {
-		return job, f.progressErr
-	}
-	job.Status = status
-	job.SparseChunks = sparseChunks
-	job.EmbeddedChunks = embeddedChunks
 	f.byID[id] = job
 	return job, nil
 }

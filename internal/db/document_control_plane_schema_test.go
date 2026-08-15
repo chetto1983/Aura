@@ -32,27 +32,41 @@ func TestDocumentControlPlaneQueryContract(t *testing.T) {
 	body := readSchemaContractFile(t, "queries/document_control_plane.sql")
 	for _, want := range []string{
 		"-- name: CreateDocument :one",
-		"-- name: ListDocuments :many",
-		"-- name: GetDocument :one",
-		"-- name: UpdateDocument :one",
-		"-- name: UpdateDocumentTags :one",
+		// GetDocumentBySearchID, not GetDocument: the only lookup Go performs is by the
+		// `doc_<hex>` search id every writer already holds, never by catalog uuid.
+		"-- name: GetDocumentBySearchID :one",
 		"-- name: DeleteDocumentTags :exec",
 		"-- name: UpsertDocumentTag :exec",
-		"-- name: CreateDocumentVersion :one",
-		"-- name: CreateStorageObject :one",
 		"-- name: CreateIngestionJob :one",
 		"-- name: ClaimIngestionJobs :many",
 		"-- name: HeartbeatIngestionJob :one",
 		"-- name: UpdateIngestionJobStatus :one",
 		"-- name: RetryIngestionJob :one",
-		"-- name: ManualRetryIngestionJobByKey :one",
-		"-- name: AppendIngestionEvent :one",
-		"-- name: CreateDeleteJob :one",
-		"-- name: ClaimDeleteJobs :many",
-		"-- name: FinalizeDocumentDelete :one",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("document control-plane queries missing %q", want)
+		}
+	}
+	// These must not come back by accident. Their tables all still stand, so a re-added
+	// statement compiles and runs — against a delete queue no worker claims from, or as a
+	// second operator-facing catalog API with no route, CLI verb or scheduler path to
+	// reach it. That gap between "the SQL is valid" and "something calls it" is how the
+	// delete workflow stayed alive on paper long after its worker was deleted.
+	for _, forbidden := range []string{
+		"-- name: SoftDeleteDocument",
+		"-- name: CreateDeleteJob",
+		"-- name: ClaimDeleteJobs",
+		"-- name: FinalizeDocumentDelete",
+		"-- name: ListDocuments",
+		"-- name: UpdateDocument ",
+		"-- name: ListDocumentVersions",
+		// aura.storage_objects now has exactly one writer and no reader: the ledger row
+		// is written inside ReservePipelineCandidateVersion, and the orphan reconciler
+		// that read it back was never constructed by anything.
+		"-- name: ListStorageObjects",
+	} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("document control-plane queries revive an uncalled statement via %q", forbidden)
 		}
 	}
 }

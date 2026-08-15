@@ -9,8 +9,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// documentLibrary backs every host retrieval surface. It combines identity-scoped
-// PostgreSQL card routing with revalidated ArcadeDB passage candidates.
+// documentLibrary backs every host retrieval surface. Card routing and passage candidates
+// both come from ArcadeDB; the pool is still required because a nil one is how "not
+// configured" is detected, and document_search must fail loudly rather than be absent.
 type documentLibrary struct {
 	pool         *pgxpool.Pool
 	retriever    *documents.HostRetriever
@@ -39,17 +40,4 @@ func (l *documentLibrary) Retrieve(
 		return documents.RetrievalResponse{}, fmt.Errorf("document library is not configured")
 	}
 	return l.retriever.Retrieve(ctx, request)
-}
-
-// SetDigest backs document_describe: the agent writes what it saw after opening
-// a file, and that becomes what the library ranks on. Identity-scoped in SQL.
-func (l *documentLibrary) SetDigest(
-	ctx context.Context,
-	identityID, documentID, description string,
-) error {
-	if l == nil || l.pool == nil {
-		return fmt.Errorf("document library is not configured: no database pool")
-	}
-	return documents.NewPostgresCatalogStore(l.pool).
-		SetDigest(ctx, identityID, documentID, description)
 }

@@ -2,9 +2,6 @@ package agui
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
-	"io"
 	"net/http"
 	"path"
 )
@@ -80,20 +77,19 @@ func (s *Server) fileWriteContext(w http.ResponseWriter, r *http.Request) (strin
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return "", fileMutation{}, false
 	}
-	// Decoded WITHOUT a Content-Type gate, unlike every other write on this server. The
-	// component's own provider sends JSON.stringify(...) and sets no header, so the browser
-	// labels it text/plain and strictDecodeJSON refused every one of them with "invalid
-	// request body" — measured against the running cockpit: create, rename, move, copy and
-	// delete all 400'd while the listing worked, which is what a header check looks like
-	// from the outside.
+	// Gated like every other write on this server. The gate is the CSRF floor: a cross-origin
+	// form can post text/plain or a urlencoded body with no preflight, but it cannot post
+	// application/json, so refusing anything else is what makes the browser ask permission
+	// before a page the operator did not open can rename or delete their files.
 	//
-	// The rest of the discipline stays: the body is bounded and unknown fields are refused,
-	// so this trusts the payload's SHAPE no more than before — only its label.
-	r.Body = http.MaxBytesReader(w, r.Body, maxRunBodyBytes)
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
+	// It was dropped once, and the reason is worth naming so it is not traded away again:
+	// RestDataProvider.send overrides Rest.sendRequest and loses its "application/json"
+	// default, so the browser labelled every write text/plain and create, rename, move, copy
+	// and delete all 400'd against the running cockpit while the listing kept working. The
+	// label belongs on the request, not in a hole in the server — web/src/files/filesApi.ts
+	// puts it back at the source.
 	var body fileMutation
-	if err := decoder.Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+	if err := strictDecodeJSON(w, r, &body, decodeOpts{allowEmpty: true}); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return "", fileMutation{}, false
 	}

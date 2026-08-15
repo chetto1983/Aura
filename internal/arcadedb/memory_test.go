@@ -72,6 +72,10 @@ const oneFactRow = `{"result":[{"statement":"Davide lives in Caraglio.","predica
 "subject":"Davide","object":"Caraglio","valid_from":"2026-01-01T00:00:00Z",
 "sources":[{"run_id":"run-1","memory_ids":["m1"]}]}]}`
 
+const oneFactRowWithKey = `{"result":[{"statement":"Davide lives in Caraglio.","predicate":"lives_in",
+"subject":"Davide","object":"Caraglio","valid_from":"2026-01-01T00:00:00Z","fact_key":"key-abc123",
+"sources":[{"run_id":"run-1","memory_ids":["m1"]}]}]}`
+
 // This test used to assert the OPPOSITE — that the schema carried no vector
 // index at all — on the reasoning that retrieval was the graph plus Lucene and a
 // vector index would reintroduce an embedding call on every read and write.
@@ -188,6 +192,85 @@ func TestValidateRejectsOversizedFactInputs(t *testing.T) {
 	}
 }
 
+// MEM-05: an object must name an entity, not carry prose. The bound was
+// measured 2026-08-13 against mem_b130c94d_a213_463a_a797_ec124104363a (the
+// live operator identity graph): the longest legitimate Entity.name in use
+// is the operator identity UUID below, at 36 runes; the shortest measured
+// prose violation lacking terminal punctuation
+// ("verificare sempre il nome esatto di source/target prima di
+// memory_merge_entities o memory_forget") is 96 runes. proseObjectRuneBound
+// sits strictly between them.
+func TestValidateRejectsProseObject(t *testing.T) {
+	if proseObjectRuneBound >= defaultMemoryLimits.EntityRunes {
+		t.Fatalf("prose bound %d must be strictly tighter than EntityRunes %d",
+			proseObjectRuneBound, defaultMemoryLimits.EntityRunes)
+	}
+	const longestLegitimateMeasuredObject = "b130c94d-a213-463a-a797-ec124104363a"                                                            // 36 runes, live-measured
+	const shortestMeasuredProseViolation = "verificare sempre il nome esatto di source/target prima di memory_merge_entities o memory_forget" // 96 runes, live-measured
+	cases := map[string]struct {
+		object    string
+		wantError bool
+	}{
+		"short entity name accepted":                     {object: "Caraglio"},
+		"longest measured legitimate object accepted":    {object: longestLegitimateMeasuredObject},
+		"at the bound accepted":                          {object: strings.Repeat("a", proseObjectRuneBound)},
+		"one over the bound rejected":                    {object: strings.Repeat("a", proseObjectRuneBound+1), wantError: true},
+		"newline rejected":                               {object: "Caraglio\nTorino", wantError: true},
+		"sentence-terminal period rejected":              {object: "Davide lives in Caraglio.", wantError: true},
+		"sentence-terminal question mark rejected":       {object: "Where does Davide live?", wantError: true},
+		"sentence-terminal exclamation rejected":         {object: "Move to Caraglio now!", wantError: true},
+		"trailing whitespace after punctuation rejected": {object: "Davide lives in Caraglio.   ", wantError: true},
+		"measured prose without terminal punctuation rejected": {
+			object: shortestMeasuredProseViolation, wantError: true,
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			fact := validFact()
+			fact.Object = tc.object
+			err := fact.Validate()
+			if tc.wantError && err == nil {
+				t.Fatalf("expected rejection for object %q", tc.object)
+			}
+			if !tc.wantError && err != nil {
+				t.Fatalf("expected acceptance for object %q, got %v", tc.object, err)
+			}
+			if tc.wantError && err != nil && !strings.Contains(err.Error(), "object") {
+				t.Fatalf("error must name the object field: %v", err)
+			}
+			if tc.wantError && err != nil && !strings.Contains(err.Error(), "statement") {
+				t.Fatalf("error must say the detail belongs in statement: %v", err)
+			}
+		})
+	}
+}
+
+// MEM-05 is about the object endpoint. A subject that reads as a sentence is
+// unaffected -- MEM-04's subject work is plan 45-07's.
+func TestValidateProseRuleAppliesOnlyToObjectNotSubject(t *testing.T) {
+	fact := validFact()
+	fact.Subject = "This looks like a full sentence, not an entity name."
+	if err := fact.Validate(); err != nil {
+		t.Fatalf("the prose rule must not apply to subject: %v", err)
+	}
+}
+
+// Pure function: the same fact validated twice yields the same verdict, and
+// a rejected write leaves no partial state because validation runs before
+// any statement is issued.
+func TestValidateProseRuleIsIdempotent(t *testing.T) {
+	fact := validFact()
+	fact.Object = "This is a full sentence shaped like the learned_lesson prose objects."
+	err1 := fact.Validate()
+	err2 := fact.Validate()
+	if (err1 == nil) != (err2 == nil) {
+		t.Fatalf("validate is not idempotent: first=%v second=%v", err1, err2)
+	}
+	if err1 == nil {
+		t.Fatal("this fixture must be rejected for the idempotency check to be meaningful")
+	}
+}
+
 func TestUpsertFactCreatesEntitiesThenTheEdge(t *testing.T) {
 	client, rec := recordingClient(t, `{"result":[]}`)
 	if _, err := client.UpsertFact(context.Background(), validFact(), now); err != nil {
@@ -225,67 +308,6 @@ func TestUpsertFactCreatesEntitiesThenTheEdge(t *testing.T) {
 	}
 }
 
-func TestUpsertFactSupersedesByClosingTheWindow(t *testing.T) {
-	client, requests := routedClient(t, func(request recordedRequest) testResponse {
-		statement, _ := request.Payload["command"].(string)
-		if strings.HasPrefix(statement, "UPDATE FACT SET valid_to") {
-			return testResponse{Body: `{"result":[{"count":2}]}`}
-		}
-		return testResponse{Body: `{"result":[]}`}
-	})
-	fact := validFact()
-	fact.Supersedes = true
-	written, err := client.UpsertFact(context.Background(), fact, now)
-	if err != nil {
-		t.Fatalf("UpsertFact: %v", err)
-	}
-	if written.Superseded != 2 {
-		t.Fatalf("superseded = %d, want 2", written.Superseded)
-	}
-	statements := make([]string, 0, len(*requests))
-	for _, request := range *requests {
-		statement, _ := request.Payload["command"].(string)
-		statements = append(statements, statement)
-	}
-	all := strings.Join(statements, "\n")
-	if strings.Contains(strings.ToUpper(all), "DELETE") {
-		t.Fatalf("supersession must never delete:\n%s", all)
-	}
-	if !strings.Contains(all, "valid_to IS NULL OR valid_to > :valid_to") ||
-		!strings.Contains(all, "expired_at IS NULL") {
-		t.Fatalf("only facts active at the replacement instant may be closed:\n%s", all)
-	}
-	if !strings.Contains(all, "fact_key = NULL") {
-		t.Fatalf("supersession did not release the active identity key:\n%s", all)
-	}
-	// outV(), not the dotted form: on an edge `out.name` yields NULL rather
-	// than erroring, so the statement would match nothing, silently.
-	if !strings.Contains(all, "outV().name = :subject_name") {
-		t.Fatalf("supersession must match the subject via outV():\n%s", all)
-	}
-	// The object is the thing that changed; requiring it means this never fires.
-	if strings.Contains(all, "inV().name = :object_name") {
-		t.Fatalf("supersession must not filter on the object:\n%s", all)
-	}
-}
-
-func TestUpsertFactWithoutSupersedesLeavesPriorFactsAlone(t *testing.T) {
-	client, rec := recordingClient(t, `{"result":[]}`)
-	if _, err := client.UpsertFact(context.Background(), validFact(), now); err != nil {
-		t.Fatalf("UpsertFact: %v", err)
-	}
-	// The assertion is on the UPDATE, not on the string "expired_at". It used to
-	// look for `expired_at = :expired_at`, which was a fair proxy while only the
-	// supersede statement set that column -- until createFactStatement started
-	// setting it too, so a merge could carry a closed fact's expiry across when it
-	// re-points the edge. The proxy became ambiguous; the behaviour did not.
-	for _, statement := range rec.statements {
-		if strings.HasPrefix(strings.TrimSpace(statement), "UPDATE "+factEdgeType+" SET valid_to") {
-			t.Fatalf("no supersede UPDATE should be issued by default:\n%s", statement)
-		}
-	}
-}
-
 func TestSearchFactsUsesTheFullTextIndexAndReadsEndpoints(t *testing.T) {
 	client, rec := recordingClient(t, oneFactRow)
 	hits, err := client.SearchFacts(context.Background(), "where does Davide live", 3, time.Time{})
@@ -306,6 +328,22 @@ func TestSearchFactsUsesTheFullTextIndexAndReadsEndpoints(t *testing.T) {
 	}
 	if len(hits) != 1 || hits[0].Subject != "Davide" || len(hits[0].Sources) != 1 || hits[0].Sources[0].RunID != "run-1" {
 		t.Fatalf("hits = %+v", hits)
+	}
+}
+
+// fact_key is what a correction names to close exactly one edge (D-15); a
+// hit that omits it cannot be targeted, only guessed at.
+func TestSearchFactsCarriesFactKey(t *testing.T) {
+	client, rec := recordingClient(t, oneFactRowWithKey)
+	hits, err := client.SearchFacts(context.Background(), "where does Davide live", 3, time.Time{})
+	if err != nil {
+		t.Fatalf("SearchFacts: %v", err)
+	}
+	if !strings.Contains(rec.statements[0], "fact_key") {
+		t.Fatalf("search projection omits fact_key: %s", rec.statements[0])
+	}
+	if len(hits) != 1 || hits[0].FactKey != "key-abc123" {
+		t.Fatalf("hits = %+v, want fact_key key-abc123", hits)
 	}
 }
 
@@ -405,6 +443,23 @@ func TestFactsAboutWalksTheEntitysEdges(t *testing.T) {
 	}
 	if len(hits) != 1 || hits[0].Object != "Caraglio" {
 		t.Fatalf("hits = %+v", hits)
+	}
+}
+
+// factHitFromRow is the single mapper both readers share (REUSABLE CODE,
+// 45-PATTERNS.md); this proves FactsAbout gets fact_key through it exactly
+// like SearchFacts does above, not via a second mapping.
+func TestFactsAboutCarriesFactKey(t *testing.T) {
+	client, rec := recordingClient(t, oneFactRowWithKey)
+	hits, err := client.FactsAbout(context.Background(), "Davide", "", 0, time.Time{})
+	if err != nil {
+		t.Fatalf("FactsAbout: %v", err)
+	}
+	if !strings.Contains(rec.statements[0], "fact_key") {
+		t.Fatalf("facts-about projection omits fact_key: %s", rec.statements[0])
+	}
+	if len(hits) != 1 || hits[0].FactKey != "key-abc123" {
+		t.Fatalf("hits = %+v, want fact_key key-abc123", hits)
 	}
 }
 

@@ -99,12 +99,60 @@ type Fact struct {
 	// It is explicit rather than inferred because some predicates are
 	// single-valued ("lives in") and others are not ("likes").
 	Supersedes bool
+	// TargetFactKey, when set alongside Supersedes, closes exactly the fact
+	// identified by this key instead of resolving a subject+predicate
+	// candidate set. Empty uses the legacy ambiguity-resolved path (D-16).
+	TargetFactKey string
 }
 
 // FactWrite reports what an upsert did.
 type FactWrite struct {
 	Statement  string
 	Superseded int
+	// Refused is true when Supersedes could not identify exactly one fact to
+	// close: an explicit TargetFactKey matching no still-valid fact (always
+	// 0-or-1, since fact_key is UNIQUE-indexed), or a subject+predicate match
+	// of 0 or more than 1 distinct fact. Nothing was written in either case --
+	// no fact closed, and the new fact itself was not created, so a refused
+	// correction never adds to the ambiguity it could not resolve. Reason
+	// explains why, and Candidates carries the preview set (empty for a
+	// fact_key miss) so the caller can retry. This is the shape plan 45-07
+	// renders as MemoryUpsertFactOutput.refused/reason/candidates (D-17).
+	Refused    bool
+	Reason     string
+	Candidates []FactHit
+}
+
+// proseObjectRuneBound is the ceiling MEM-05's prose guard enforces on the
+// object endpoint -- strictly tighter than EntityRunes (512). See
+// looksLikeProse for the measurement behind the value.
+const proseObjectRuneBound = 80
+
+// looksLikeProse reports whether object reads as a sentence rather than an
+// entity name (MEM-05). UpsertFact mints an Entity vertex for the object
+// unconditionally under a UNIQUE index on Entity.name, so a sentence-shaped
+// object becomes a junk node nothing can address by name again; the detail
+// belongs in Statement, the field that gets embedded and searched.
+//
+// Pure function of its input: no shared state, no lock, so concurrent
+// writes are still arbitrated exactly as before, by the pre-existing UNIQUE
+// index on Entity.name -- this adds no new synchronization surface.
+func looksLikeProse(object string) bool {
+	if utf8.RuneCountInString(object) > proseObjectRuneBound {
+		return true
+	}
+	if strings.ContainsAny(object, "\n\r") {
+		return true
+	}
+	trimmed := strings.TrimSpace(object)
+	if trimmed == "" {
+		return false
+	}
+	switch trimmed[len(trimmed)-1] {
+	case '.', '!', '?':
+		return true
+	}
+	return false
 }
 
 // Validate rejects a fact that could not be answered for later.
@@ -125,6 +173,13 @@ func (f Fact) validate(limits MemoryLimits) error {
 		return fmt.Errorf("arcadedb: fact statement must be non-empty")
 	case strings.TrimSpace(f.Source.RunID) == "":
 		return fmt.Errorf("arcadedb: fact source run_id must be non-empty")
+	// MEM-05 (D-18): the object names an entity, not prose -- the detail
+	// belongs in statement, which is the field that gets embedded and
+	// searched. Subject is deliberately NOT checked here; MEM-04's subject
+	// work is plan 45-07's.
+	case looksLikeProse(f.Object):
+		return fmt.Errorf("arcadedb: fact object reads as prose, not an entity name; " +
+			"put the detail in statement")
 	case !f.ValidFrom.IsZero() && !f.ValidTo.IsZero() && !f.ValidTo.After(f.ValidFrom):
 		return fmt.Errorf("arcadedb: fact valid_to must be after valid_from")
 	}
@@ -162,20 +217,6 @@ const upsertEntityStatement = "UPDATE Entity SET name = :name UPSERT " +
 
 const upsertTypedEntityStatement = "UPDATE Entity SET name = :name, kind = :kind UPSERT " +
 	"RETURN AFTER WHERE name = :name"
-
-// closeSupersededStatement ends the validity window of every still-valid fact
-// with the same subject and predicate. It does not delete: the row stays
-// queryable through `as_of`.
-//
-// The object is deliberately NOT in the WHERE clause -- the object is the thing
-// that changed, so matching on it would mean the statement could never fire.
-//
-// Endpoints are read with outV()/inV(). The dotted `out.name` form returns NULL
-// on an edge rather than failing, so getting this wrong is silent.
-const closeSupersededStatement = "UPDATE " + factEdgeType + " SET valid_to = :valid_to, " +
-	"expired_at = :expired_at, fact_key = NULL WHERE predicate = :predicate AND expired_at IS NULL " +
-	"AND (valid_to IS NULL OR valid_to > :valid_to) " +
-	"AND fact_key <> :fact_key AND outV().name = :subject_name"
 
 const createFactStatement = "CREATE EDGE " + factEdgeType +
 	" FROM (SELECT FROM Entity WHERE name = :subject_name)" +
@@ -229,17 +270,19 @@ func (c *Client) UpsertFact(ctx context.Context, fact Fact, now time.Time) (Fact
 		return written, nil
 	}
 	if fact.Supersedes {
-		rows, err := c.Command(ctx, closeSupersededStatement, map[string]any{
-			"valid_to":     validFrom.UTC().Format(time.RFC3339),
-			"expired_at":   now.UTC().Format(time.RFC3339),
-			"predicate":    fact.Predicate,
-			"subject_name": fact.Subject,
-			"fact_key":     factKey,
-		})
+		outcome, err := c.closeSuperseded(ctx, fact, factKey, validFrom, now)
 		if err != nil {
-			return FactWrite{}, fmt.Errorf("arcadedb: close superseded facts: %w", err)
+			return FactWrite{}, err
 		}
-		written.Superseded = countUpdated(rows)
+		if outcome.Refused {
+			return FactWrite{
+				Statement:  fact.Statement,
+				Refused:    true,
+				Reason:     outcome.Reason,
+				Candidates: outcome.Candidates,
+			}, nil
+		}
+		written.Superseded = outcome.Closed
 	}
 	params := map[string]any{
 		"subject_name": fact.Subject,
@@ -281,6 +324,10 @@ type FactHit struct {
 	ValidFrom   string       `json:"valid_from"`
 	ValidTo     string       `json:"valid_to,omitempty"`
 	Sources     []FactSource `json:"sources"`
+	// FactKey is this fact's content-derived identity (factIdentity), the
+	// same value a correction names to close exactly this edge. Empty for a
+	// fact that is already closed -- the property is NULLed on close.
+	FactKey string `json:"fact_key,omitempty"`
 }
 
 // searchFactsStatement is the entry point for when the question does not name
@@ -288,7 +335,7 @@ type FactHit struct {
 // edges directly, so endpoints resolve -- outV()/inV(), never the dotted
 // `out.name` form, which yields NULL on an edge instead of failing.
 const searchFactsStatement = "SELECT statement, predicate, valid_from, valid_to, " +
-	"sources, outV().name AS subject, outV().kind AS subject_kind, " +
+	"sources, fact_key, outV().name AS subject, outV().kind AS subject_kind, " +
 	"inV().name AS object, inV().kind AS object_kind " +
 	"FROM " + factEdgeType + " WHERE SEARCH_INDEX('" + factEdgeType +
 	"[statement]', :query) = true AND $score >= :min_lexical_score"
@@ -350,7 +397,7 @@ func (c *Client) SearchFacts(
 // and the hubs of any real graph sit on that side. memory_forget already walked
 // both directions, so the surface disagreed with itself as well.
 const factsAboutStatement = "SELECT statement, predicate, valid_from, valid_to, " +
-	"sources, outV().name AS subject, outV().kind AS subject_kind, " +
+	"sources, fact_key, outV().name AS subject, outV().kind AS subject_kind, " +
 	"inV().name AS object, inV().kind AS object_kind " +
 	"FROM " + factEdgeType + " WHERE (outV().name = :entity OR inV().name = :entity)"
 
@@ -433,6 +480,7 @@ func factHitFromRow(row map[string]any) FactHit {
 		ValidFrom:   rowString(row, "valid_from"),
 		ValidTo:     rowString(row, "valid_to"),
 		Sources:     factSources(row["sources"]),
+		FactKey:     rowString(row, "fact_key"),
 	}
 }
 

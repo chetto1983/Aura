@@ -110,7 +110,6 @@ var httpMutationRoutes = map[string]mutationRouteMeta{
 	"POST /api/shares":                                            httpMutationMeta("share_create"),
 	"PATCH /api/shares/{id}/snapshot":                             httpMutationMeta("share_snapshot"),
 	"DELETE /api/shares/{id}":                                     httpMutationMeta("share_revoke"),
-	"POST /api/storage/orphans/cleanup":                           httpMutationMeta("storage_cleanup"),
 }
 
 func httpMutationMeta(normalizer string) mutationRouteMeta {
