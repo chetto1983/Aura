@@ -17,6 +17,27 @@ lavoro fase-45 di una sessione parallela, quindi non è mergiabile così com'è)
 | **4.5** nome dell'allegato | **CHIUSA** (`a5afccfc3` + `146ea83dc`) | Vedi §0.1. |
 | **CORS bucket per-identità** (non nel handoff) | **CHIUSA** (`146ea83dc`) | Vedi §0.1. |
 
+**0.4 — Il piano documenti è stato potato: 6.965 → 5.833 LOC non-test.**
+Principio applicato (decisione operatore): *Aura mette i byte in Garage e traccia il nome; tutto
+il testo lo fa CocoIndex*. Quindi niente chiamanti = si cancella. Via in 16 commit: le 18 query
+dello stage machine (incl. `ActivatePipelineCandidate`, **l'unica che scriveva `status='ready'`**,
+senza chiamanti — ecco perché nessun documento diventava mai pronto), il sottosistema digest
+Postgres, lo store eventi di ingestione, il workflow di delete asincrono con le sue 9 statement,
+il CRUD del catalogo, il riconciliatore di orfani. `CatalogStore` da 6 metodi a 1.
+
+Trovati **vivi** e tenuti, ognuno per una ragione misurata: `ReservePipelineCandidateVersion`
+(via `RecordAssetVersion`), `CreateDocument` (via l'interfaccia `IngestCatalog`, non via
+`CatalogService`), la famiglia `IngestionJobWorker`, `SupportedDocumentExts` (solo un test lo
+chiama, ma quel test guarda un'invariante di produzione vera: la deriva fra allowlist assets e
+documents faceva 400 silenziosi su pptx/html), `DocumentScopeThread` (nessun riferimento Go, ma
+`document_version_recorder.go` produce quel valore), e `Job.SparseChunks` (senza scrittore ma
+ancora letto).
+
+**Due colonne restano write-only, decisione non presa:** `aura.document_tags` (il lettore era
+`ListDocumentTags`; lo scrittore ha ancora un chiamante) e `aura.storage_objects` (scritta dentro
+`ReservePipelineCandidateVersion`, nessuno la rilegge). E `aura.documents.card` idem. **Nessuna
+migration di drop**: le tabelle orfane stanno in piedi vuote, di proposito.
+
 **0.2 — Il nome è indicizzato ma NON arriva agli occhi dell'agente. Diagnosi completa, fix non fatto.**
 Guidando l'agente vero (`document_search`, stack acceso) risponde con la **chiave** e non con il nome:
 `05129905-ee6b-45df-b6bd-75b2a7b0bad5.txt (contenuto: "Perizia città di Ghèdi 2026")`, mentre
