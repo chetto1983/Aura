@@ -56,16 +56,6 @@ WHERE id = sqlc.arg(id)
   AND identity_id = sqlc.arg(identity_id)
   AND deleted_at IS NULL
 RETURNING *;
--- name: SetDocumentStatus :one
-UPDATE aura.documents
-SET status = sqlc.arg(status),
-    error_code = sqlc.arg(error_code),
-    error_message = sqlc.arg(error_message),
-    updated_at = now()
-WHERE id = sqlc.arg(id)
-  AND identity_id = sqlc.arg(identity_id)
-  AND deleted_at IS NULL
-RETURNING *;
 -- name: UpdateDocumentTags :one
 UPDATE aura.documents
 SET tags = sqlc.arg(tags), updated_at = now()

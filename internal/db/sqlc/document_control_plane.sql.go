@@ -2050,60 +2050,6 @@ func (q *Queries) RetryIngestionJob(ctx context.Context, arg RetryIngestionJobPa
 	return i, err
 }
 
-const setDocumentStatus = `-- name: SetDocumentStatus :one
-UPDATE aura.documents
-SET status = $1,
-    error_code = $2,
-    error_message = $3,
-    updated_at = now()
-WHERE id = $4
-  AND identity_id = $5
-  AND deleted_at IS NULL
-RETURNING id, identity_id, scope, title, tags, metadata, active_version_id, status, created_at, updated_at, deleted_at, digest, card, digest_tsv, source_kind, source_key, search_document_id, pipeline_generation, error_code, error_message
-`
-
-type SetDocumentStatusParams struct {
-	Status       string      `json:"status"`
-	ErrorCode    string      `json:"error_code"`
-	ErrorMessage string      `json:"error_message"`
-	ID           pgtype.UUID `json:"id"`
-	IdentityID   pgtype.UUID `json:"identity_id"`
-}
-
-func (q *Queries) SetDocumentStatus(ctx context.Context, arg SetDocumentStatusParams) (AuraDocuments, error) {
-	row := q.db.QueryRow(ctx, setDocumentStatus,
-		arg.Status,
-		arg.ErrorCode,
-		arg.ErrorMessage,
-		arg.ID,
-		arg.IdentityID,
-	)
-	var i AuraDocuments
-	err := row.Scan(
-		&i.ID,
-		&i.IdentityID,
-		&i.Scope,
-		&i.Title,
-		&i.Tags,
-		&i.Metadata,
-		&i.ActiveVersionID,
-		&i.Status,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.DeletedAt,
-		&i.Digest,
-		&i.Card,
-		&i.DigestTsv,
-		&i.SourceKind,
-		&i.SourceKey,
-		&i.SearchDocumentID,
-		&i.PipelineGeneration,
-		&i.ErrorCode,
-		&i.ErrorMessage,
-	)
-	return i, err
-}
-
 const softDeleteDocument = `-- name: SoftDeleteDocument :one
 WITH target AS (
     SELECT document.id, document.identity_id, document.scope, document.title, document.tags, document.metadata, document.active_version_id, document.status, document.created_at, document.updated_at, document.deleted_at, document.digest, document.card, document.digest_tsv, document.source_kind, document.source_key, document.search_document_id, document.pipeline_generation, document.error_code, document.error_message FROM aura.documents document

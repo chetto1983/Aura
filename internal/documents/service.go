@@ -28,9 +28,6 @@ var ErrFileTooLarge = errors.New("document file too large")
 type IngestCatalog interface {
 	CreateDocument(context.Context, CreateDocumentRequest) (Document, error)
 	SetCard(ctx context.Context, identityID, documentID, card string) error
-	SetSearchDocumentStatus(
-		ctx context.Context, identityID, searchDocumentID string, status DocumentStatus, reason string,
-	) error
 }
 
 // Clock returns the current time; tests inject it for deterministic timestamps.

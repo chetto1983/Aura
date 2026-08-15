@@ -155,9 +155,6 @@ func TestServiceDoesNotPublishThroughTheLegacyProgressUpdate(t *testing.T) {
 	if err != nil || job.Status != JobAccepted {
 		t.Fatalf("candidate = %#v, error = %v", job, err)
 	}
-	if catalog.failedStatus != "" {
-		t.Fatalf("candidate was incorrectly marked failed: %#v", catalog)
-	}
 }
 
 func TestServiceRefusesFilesOverConfiguredLimit(t *testing.T) {
@@ -247,15 +244,11 @@ func writeNamedTempFile(t *testing.T, name, content string) string {
 }
 
 type fakeIngestCatalog struct {
-	created        CreateDocumentRequest
-	err            error
-	setStatusErr   error
-	setCardErr     error
-	card           string
-	cardTarget     string
-	failedStatus   DocumentStatus
-	failedReason   string
-	failedIdentity string
+	created    CreateDocumentRequest
+	err        error
+	setCardErr error
+	card       string
+	cardTarget string
 }
 
 func (f *fakeIngestCatalog) CreateDocument(_ context.Context, req CreateDocumentRequest) (Document, error) {
@@ -267,15 +260,6 @@ func (f *fakeIngestCatalog) SetCard(_ context.Context, _, documentID, card strin
 	f.cardTarget = documentID
 	f.card = card
 	return f.setCardErr
-}
-
-func (f *fakeIngestCatalog) SetSearchDocumentStatus(
-	_ context.Context, identityID, _ string, status DocumentStatus, reason string,
-) error {
-	f.failedIdentity = identityID
-	f.failedStatus = status
-	f.failedReason = reason
-	return f.setStatusErr
 }
 
 type fakeJobStore struct {

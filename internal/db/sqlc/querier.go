@@ -406,7 +406,6 @@ type Querier interface {
 	// alone must never be enough to overwrite what someone else's library says about
 	// their file. A non-owner gets no rows, which the caller reports as not-found.
 	SetDocumentDigest(ctx context.Context, arg SetDocumentDigestParams) (AuraDocuments, error)
-	SetDocumentStatus(ctx context.Context, arg SetDocumentStatusParams) (AuraDocuments, error)
 	// D-09 (CHAT-05): set a turn's branch/parent pointers. The branch-write seam plan 25-07
 	// uses when an edit/regenerate forks a new sibling branch off an existing parent turn.
 	SetTurnBranchPointers(ctx context.Context, arg SetTurnBranchPointersParams) error
