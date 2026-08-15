@@ -361,9 +361,46 @@ func toHits(hits []arcadedb.FactHit) []MemorySearchHit {
 
 // canonicalSubject rewrites a subject naming the operator -- by identity
 // UUID or by the configured display name -- to one canonical form (MEM-04,
-// D-19). RED stub: identity passthrough, wired at the call site but not yet
-// implemented, so the call site compiles and today's behaviour is
-// unchanged until the GREEN commit gives it a body.
+// D-19).
+//
+// The canonical form is the display name, not the UUID. Measured 2026-08-13
+// against the live operator graph (mem_b130c94d_a213_463a_a797_ec124104363a):
+// 10 FACT edges already touch the entity "Davide" against 2 touching the
+// identity UUID -- the display name is the prevalent form today (onboarding
+// writes profile-entity facts subject-first off the operator's name; only
+// the preference facts use the identityID directly). Canonicalizing TO the
+// prevalent form is the direction that does NOT deepen the split: choosing
+// the rarer form would rewrite the majority of future writes away from
+// where nine-tenths of the existing graph already sits.
+//
+// When no display name is configured yet (AURA_MEMORY_OPERATOR_DISPLAY_NAME
+// unset), the canonical form falls back to the identity UUID itself -- a
+// UUID-named subject still normalizes (TrimSpace + case), it just has
+// nothing more human to become until an operator configures one.
+//
+// Pure function: TrimSpace + case-insensitive equality against exactly two
+// known identifiers, nothing else. No fuzzy matching, no substring
+// matching, no alias table -- that is Phase 49's general Entity alias
+// mechanism, deliberately not built here (D-19). A blank or whitespace-only
+// subject is never canonicalized: Fact.validate rejects it downstream, and
+// inventing a subject here would hide that rejection behind a silent
+// rewrite. Idempotent by construction: the returned canonical value is
+// always exactly identityID or displayName (both already trimmed), so a
+// second pass matches trivially and returns the same value again.
 func canonicalSubject(subject, identityID, displayName string) string {
-	return subject
+	trimmed := strings.TrimSpace(subject)
+	if trimmed == "" {
+		return subject
+	}
+	identityID = strings.TrimSpace(identityID)
+	displayName = strings.TrimSpace(displayName)
+	matchesIdentity := identityID != "" && strings.EqualFold(trimmed, identityID)
+	matchesDisplayName := displayName != "" && strings.EqualFold(trimmed, displayName)
+	if !matchesIdentity && !matchesDisplayName {
+		return subject
+	}
+	if displayName != "" {
+		return displayName
+	}
+	return identityID
 }
