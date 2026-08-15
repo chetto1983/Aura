@@ -83,8 +83,10 @@ func TestSameToolCallIDRetryReplaysViaLayerA(t *testing.T) {
 	if spy.count != 1 {
 		t.Fatalf("Execute count after retry = %d, want 1 (replayed, not re-run)", spy.count)
 	}
-	if res2.Preview != res1.Preview {
-		t.Fatalf("retry preview = %q, want the first attempt's recorded preview %q", res2.Preview, res1.Preview)
+	// The retry is a Layer A replay, so it carries replayedMarker (HARN-03, D-10)
+	// appended to the first attempt's recorded preview, not a byte-identical repeat.
+	if res2.Preview != res1.Preview+replayedMarker {
+		t.Fatalf("retry preview = %q, want the first attempt's recorded preview %q plus the replay marker", res2.Preview, res1.Preview)
 	}
 
 	endRows := endRowCountForCall(t, pool, key.ConversationID, key.RequestID, key.ToolCallID)
