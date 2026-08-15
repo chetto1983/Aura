@@ -15,12 +15,16 @@ import (
 
 const cardIngestIdentity = "00000000-0000-0000-0000-0000000000d4"
 
-// TestIngestCardMakesAFileFindableByWhatIsInsideIt is the acceptance test for the
-// whole card: a file is uploaded, NO agent opens it, and document_search finds it
-// by a value that appears nowhere but inside the file. Before the card, ingest
-// wrote a title and nothing else, and this query returned nothing — the library
-// only knew about documents somebody had already found another way.
-func TestIngestCardMakesAFileFindableByWhatIsInsideIt(t *testing.T) {
+// TestIngestWritesACardDescribingWhatIsInsideTheFile is the acceptance test for the
+// card: a file is uploaded, NO agent opens it, and aura.documents.card already describes
+// what is inside by a value that appears nowhere but in the bytes. Before the card, ingest
+// wrote a title and nothing else — the library only knew about documents somebody had
+// already found another way.
+//
+// It reads the column rather than searching it. Postgres ranking over the card was deleted
+// on 2026-08-15 with the rest of the digest subsystem: routing is ArcadeDB's, and asserting
+// through a query with no production caller proved the query, not the write.
+func TestIngestWritesACardDescribingWhatIsInsideTheFile(t *testing.T) {
 	pool := pipelineDisposablePool(t)
 	ctx := context.Background()
 	store := NewPostgresCatalogStore(pool)
@@ -39,51 +43,30 @@ func TestIngestCardMakesAFileFindableByWhatIsInsideIt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ingest: %v", err)
 	}
-	// Ingest registers a candidate and writes its card; it does not publish. Since 0093
-	// only an activated document is rankable, so the card would be unreachable here
-	// without this — which is the pipeline working, not the card failing.
-	publishForSearch(t, ctx, pool, cardIngestIdentity, job.DocumentID, "export_2024_final_v3.csv")
 
-	// GHEDI is in no filename, no tag and no agent note. Only the card has it.
-	hits, err := store.SearchDigests(ctx, cardIngestIdentity, "ghedi", 5)
-	if err != nil {
-		t.Fatalf("search: %v", err)
+	// GHEDI is in no filename and no tag. Only the card has it.
+	title, card := readCatalogCard(t, ctx, pool, job.DocumentID)
+	if title != "export_2024_final_v3.csv" {
+		t.Fatalf("catalogued title = %q", title)
 	}
-	if len(hits) != 1 {
-		t.Fatalf("hits = %d, want exactly the ingested file", len(hits))
+	if !strings.Contains(card, "GHEDI") || !strings.Contains(card, "Area, Localita, Agente") {
+		t.Fatalf("ingest did not describe the file it read:\n%s", card)
 	}
-	if hits[0].Title != "export_2024_final_v3.csv" {
-		t.Fatalf("top hit = %q", hits[0].Title)
-	}
-	if !strings.Contains(hits[0].Card, "GHEDI") || !strings.Contains(hits[0].Card, "Area, Localita, Agente") {
-		t.Fatalf("card did not travel with the hit:\n%s", hits[0].Card)
-	}
-	if hits[0].Digest != "" {
-		t.Fatalf("ingest wrote the agent's column: %q", hits[0].Digest)
-	}
+}
 
-	// The card is the machine's; the note is the agent's. Writing one must not
-	// touch the other, or the first thing document_describe says deletes the
-	// structure ingest measured.
-	if err := store.SetDigest(ctx, cardIngestIdentity, job.DocumentID,
-		"Estrazione clienti per la revisione agenti 2026."); err != nil {
-		t.Fatalf("set digest: %v", err)
+// readCatalogCard returns the title and card ingest wrote for one search document id.
+func readCatalogCard(t *testing.T, ctx context.Context, pool *pgxpool.Pool, searchDocumentID string) (string, string) {
+	t.Helper()
+	var title, card string
+	if err := asDocumentIdentity(ctx, pool, cardIngestIdentity, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
+SELECT title, card FROM aura.documents
+WHERE identity_id = $1 AND deleted_at IS NULL AND search_document_id = $2`,
+			cardIngestIdentity, searchDocumentID).Scan(&title, &card)
+	}); err != nil {
+		t.Fatalf("read catalogued card: %v", err)
 	}
-	after, err := store.SearchDigests(ctx, cardIngestIdentity, "ghedi", 5)
-	if err != nil || len(after) != 1 {
-		t.Fatalf("search after describe: %d hits, err %v", len(after), err)
-	}
-	if !strings.Contains(after[0].Card, "GHEDI") {
-		t.Fatal("the agent's note overwrote the machine card")
-	}
-	if !strings.Contains(after[0].Digest, "revisione agenti") {
-		t.Fatalf("the note did not land: %q", after[0].Digest)
-	}
-	// Both legs are in the ranking vector, so the note is searchable too.
-	byNote, err := store.SearchDigests(ctx, cardIngestIdentity, "revisione agenti", 5)
-	if err != nil || len(byNote) != 1 {
-		t.Fatalf("note is not indexed: %d hits, err %v", len(byNote), err)
-	}
+	return title, card
 }
 
 // TestAssetVersionReusesTheCatalogRowIngestAlreadyWrote pins the duplicate an
@@ -110,11 +93,10 @@ func TestAssetVersionReusesTheCatalogRowIngestAlreadyWrote(t *testing.T) {
 	}
 
 	// The second writer: an asset arrives for the file ingest already catalogued.
-	// publishForSearch runs the same RecordAssetVersion this test was written against —
-	// it now needs a real asset row to bind, which is the only reason it is not inlined
-	// here — and then publishes, so the count below still answers the question that
-	// matters: did recording the asset produce a SECOND library row?
-	publishForSearch(t, ctx, pool, cardIngestIdentity, job.DocumentID, "listino.csv")
+	// recordAssetVersionFor runs the production RecordAssetVersion — it needs a real asset
+	// row to bind, which is the only reason it is not inlined here — so the count below
+	// answers the question that matters: did recording the asset produce a SECOND row?
+	recordAssetVersionFor(t, ctx, pool, cardIngestIdentity, job.DocumentID, "listino.csv")
 
 	var rows int
 	if err := asDocumentIdentity(ctx, pool, cardIngestIdentity, func(tx pgx.Tx) error {
@@ -128,12 +110,8 @@ WHERE identity_id = $1 AND deleted_at IS NULL AND metadata->>'search_document_id
 	if rows != 1 {
 		t.Fatalf("catalog rows for one uploaded file = %d, want 1", rows)
 	}
-	hits, err := store.SearchDigests(ctx, cardIngestIdentity, "acme", 5)
-	if err != nil {
-		t.Fatalf("search: %v", err)
-	}
-	if len(hits) != 1 || !strings.Contains(hits[0].Card, "ACME SPA") {
-		t.Fatalf("recording the asset version lost the card: %d hits", len(hits))
+	if _, card := readCatalogCard(t, ctx, pool, job.DocumentID); !strings.Contains(card, "ACME SPA") {
+		t.Fatalf("recording the asset version lost the card:\n%s", card)
 	}
 }
 

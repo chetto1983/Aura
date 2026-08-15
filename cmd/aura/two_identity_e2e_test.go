@@ -180,18 +180,20 @@ func TestTwoIdentityCrossDeny(t *testing.T) {
 		}
 	})
 
-	// ── Documents plane: identity-scoped digest search — B empty, A finds own ───────
+	// ── Documents plane: identity-scoped catalog list — B empty, A finds own ────────
 	t.Run("documents_cross_deny", func(t *testing.T) {
-		// document_search ranks aura.documents and the scoping is the SQL's own identity
-		// predicate, so the cross-deny assertion belongs to the catalog store.
+		// The catalog list is the identity-scoped read the cockpit makes, and the scoping is
+		// the SQL's own identity predicate under 0087's RLS floor, so the cross-deny
+		// assertion belongs to the catalog store.
+		//
+		// It probed SearchDigests until 2026-08-15. That ranking had no production caller
+		// left — routing is ArcadeDB's — and an isolation property must be asserted through
+		// a surface the product actually uses, or it proves the isolation of a dead query.
+		// Publishing the document to 'ready' went with it: only the digest ranking demanded
+		// that state, and the list does not.
 		store := documents.NewPostgresCatalogStore(pool)
 		term := "quetzal" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
 		searchID := "doc_musr_" + uuid.NewString()
-		// Catalogued 'stored', then published. document_search ranks only an activated
-		// document — status 'ready' at a positive pipeline generation with a live active
-		// version — and since 0093 the schema refuses 'ready' at generation 0 outright.
-		// Creating the row 'ready' in one call, as this test used to, is no longer a state
-		// the database will hold.
 		doc, err := store.CreateDocument(ctx, documents.CreateDocumentRequest{
 			IdentityID:       idA,
 			Scope:            documents.DocumentScopeLibrary,
@@ -204,24 +206,29 @@ func TestTwoIdentityCrossDeny(t *testing.T) {
 		if err != nil {
 			t.Fatalf("A catalog document: %v", err)
 		}
-		musrPublishDocument(t, ctx, pool, store, idA, searchID, "A private "+term)
 		t.Cleanup(func() {
 			_, _ = pool.Exec(context.Background(), `DELETE FROM aura.documents WHERE id=$1`, doc.ID)
 		})
 
-		if hits, err := store.SearchDigests(ctx, idB, term, 5); err != nil {
-			t.Fatalf("B document_search: %v", err)
-		} else if len(hits) != 0 {
-			t.Errorf("B document_search returned %d hits, want 0 (empty for foreign identity)", len(hits))
+		listFor := func(identityID string) []documents.DocumentSummary {
+			t.Helper()
+			found, err := store.ListDocuments(ctx, documents.ListDocumentsRequest{
+				IdentityID: identityID, Query: term, Limit: 5,
+			})
+			if err != nil {
+				t.Fatalf("%s document list: %v", identityID, err)
+			}
+			return found
 		}
-		hits, err := store.SearchDigests(ctx, idA, term, 5)
-		if err != nil {
-			t.Fatalf("A document_search: %v", err)
+
+		if found := listFor(idB); len(found) != 0 {
+			t.Errorf("B document list returned %d rows, want 0 (empty for foreign identity)", len(found))
 		}
-		// A hit carries the SEARCH id, not the catalog uuid — that is what document_open
-		// and every retrieval-shaped caller expect.
-		if len(hits) == 0 || hits[0].DocumentID != searchID {
-			t.Errorf("A document_search = %#v, want its own doc %s (%s)", hits, searchID, doc.ID)
+		found := listFor(idA)
+		// A row carries the SEARCH id as well as the catalog uuid — that is what
+		// document_open and every retrieval-shaped caller expect.
+		if len(found) == 0 || found[0].SearchDocumentID != searchID {
+			t.Errorf("A document list = %#v, want its own doc %s (%s)", found, searchID, doc.ID)
 		}
 	})
 
