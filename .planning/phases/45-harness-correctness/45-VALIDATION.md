@@ -956,6 +956,75 @@ is not closed.
 
 ---
 
+## HARN-03 (SC#3) - live induction ATTEMPTED and structurally blocked
+
+A deliberate attempt was made to reach the replay layer live, on operator instruction, and
+it failed for reasons that are now measured rather than assumed. Recorded here because
+"could not induce it" is only worth anything with the reasons attached.
+
+### What was driven
+
+1. A scheduled `agent_job` was created THROUGH the agent (`task` tool), which correctly
+   returned `status: pending_approval` and raised an approval interrupt - the HITL gate
+   working as designed. Approved via `POST /api/approvals/{token}/resolve`
+   (`{"action":"accept","content":"si"}` - the body is `{action, content}`; an `answer`
+   field is rejected as an unknown field), which returned `{"outcome":"approved","remaining":0}`.
+2. First attempt: the goal asked for a write then a `sleep 120`. The model BATCHED both
+   into one `shell_exec` (`printf 'harn03' > /tmp/harn03.txt && sleep 120`), so no window
+   existed between a completed operation and an in-flight run. The job completed normally.
+3. Second attempt, with the goal explicitly forbidding combination: the model DID emit two
+   separate calls - `printf harn03b > /tmp/harn03b.txt` and `sleep 240`. `aura` was then
+   killed mid-run (`docker kill`, Exited 137) with 3 `start` rows and **0** `end` rows.
+
+### Why the replay path was not reached - three measured reasons
+
+1. **A crash does not re-execute.** `recoverOrphans` (`internal/cron/recover.go`) marks a
+   run whose heartbeat lapsed past `staleRecoverySeconds = 90` as `unknown_recovery` - the
+   repudiation audit trail - and does NOT re-run it. Verified live: the killed run
+   `01a005ea-042c-...` went `running` -> `unknown_recovery` at 2m01s staleness. So a crash
+   produces an audit record, never a replay.
+2. **A one-shot `at` task does not re-fire.** Both scheduled tasks show `next_run_at` NULL
+   after firing, so no catch-up re-derives the same stable parent operation - which is the
+   exact condition `deriveToolOperationContext` names for an identical child key
+   (`internal/agent/idempotency_operation.go:27-29`: "a scheduler reclaim whose ordinal
+   restarts at 1 against the same stable parent operation").
+3. **`end` rows are flushed at round completion.** Both tool calls of one round sat at
+   `start` with no `end` while the round was in flight. There is therefore no window in
+   which a COMPLETED operation coexists with an in-flight run of the SAME round - which is
+   what a same-round retry would need to hit `DecisionReplay`.
+
+To these, add the already-recorded fourth: the duplicate-`Idempotency-Key` HTTP retry is
+refused (`operation outcome is indeterminate; do not retry automatically`) before the agent
+loop runs at all.
+
+### What the attempt DID establish
+
+The kill left both operations `start`-without-`end`, which is precisely the `replay == nil`
+branch of `reserve()` - the case that must return
+`"a prior dispatch of this tool call is still unaccounted for; it was not re-run"` and must
+NOT be dressed as a success. That branch exists because of Aura's own recorded diagnosis
+(`internal/gateway/reserve.go:250-258`), and the ledger state it keys on was reproduced
+live. The branch itself was not re-entered, because the same `ReservationKey` cannot recur
+across requests, so this is corroboration of the precondition, not proof of the branch.
+
+### Operational finding (unrelated to HARN-03, worth recording)
+
+`recoverOrphans` runs ONCE at `Start`. A run that crosses the 90s staleness threshold AFTER
+boot is therefore not reconciled until the NEXT restart - observed directly here: two
+restarts at 20s and 82s staleness correctly declined to mark it, and only the third, at
+2m01s, did. On a long-lived deployment a dead run can sit `running` indefinitely, which
+matters for D-06's drain precondition ("zero in-progress runs") since that check would
+never clear on its own.
+
+### Verdict
+
+HARN-03 remains **UNIT-PROVEN ONLY**. Reaching it live needs either a deliberate test hook
+(a scheduler reclaim that re-executes rather than repudiates) or a recurring task whose
+parent operation key is stable across fires - neither of which exists today. This is a
+genuine gap in the phase and is recorded as one; it is NOT closed.
+
+---
+
 ## Validation Sign-Off
 
 - [ ] All tasks have `<automated>` verify or an explicit checkpoint justification (23/23 rows)
