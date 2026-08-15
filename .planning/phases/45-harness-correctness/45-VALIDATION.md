@@ -813,6 +813,149 @@ but not yet closed, and no sign-off box is ticked on the strength of this alone.
 
 ---
 
+## Task 2 - Live Run: remaining steps, driven against build `a85627198`
+
+Conversation `01a0057d-0988-7293-a54a-893175900718` unless noted. Preconditions re-held:
+`aura version` commit == HEAD == `a85627198`, porcelain empty at build time, model
+`deepseek/deepseek-v4-flash-0731` read from `aura.settings`, MCP sidecar recreated with
+`AURA_MEMORY_OPERATOR_DISPLAY_NAME=Davide` (supplied through compose shell substitution,
+not by editing `.env`).
+
+### Step f - MEM-04: PASS
+
+A fact was written with the subject given literally as the identity UUID
+(`subject: "b130c94d-a213-463a-a797-ec124104363a"`, predicate `colleziona`, object
+`vinili jazz`; the tool returned `{"refused":false,...,"superseded":0}`). An entity
+traversal on `Davide` then returned it, canonicalized:
+
+```
+facts under entity Davide: 10
+distinct subjects: {'Davide'}
+
+VINILI FACT:
+  subject   : 'Davide'
+  predicate : colleziona
+  object    : vinili jazz
+  statement : b130c94d-a213-463a-a797-ec124104363a colleziona vinili jazz
+  fact_key  : 89c7cde58ceca91ce80356af08912a0e6699a22ebd508ceb78419152a3502018
+```
+
+ONE `Entity` vertex, both spellings hanging off it - `distinct subjects` is a set of size
+one. The UUID survives verbatim inside `statement`, which is correct: the statement is
+prose and keeps what the operator said.
+
+This required a code fix found by this run: `compose.yaml` never declared
+`AURA_MEMORY_OPERATOR_DISPLAY_NAME` on the `arcadedb-mcp` service, so the knob was
+unreachable from the deployment however `.env` was set (commit `f104d2dc2`). Before that
+fix the same two writes produced two entities, which is `canonicalSubject` behaving
+exactly as documented with an empty display name - the code was never wrong.
+
+### Step g - MEM-05: PASS, both halves
+
+Prose object REJECTED, error verbatim:
+
+```
+error: mcp "memory": tool memory_upsert_fact error: memory_upsert_fact: arcadedb:
+fact object reads as prose, not an entity name; put the detail in statement
+```
+
+The error names `statement` as the destination, and Aura RECOVERED unaided in the same
+turn - re-issuing with `object: "test di integrazione GSD"` and the full prose moved into
+`statement`, which returned `{"refused":false,...,"superseded":0}`. The rejection is
+therefore actionable, not merely loud, which is the half a unit test cannot show.
+
+### Step b - SC#2: PASS
+
+A genuine client retry was issued: the SAME `/agent/run` body with an identical
+`Idempotency-Key` and message id, sent twice, the second after the first had completed.
+The retry was refused at the HTTP layer:
+
+```
+{"error":"operation outcome is indeterminate; do not retry automatically"}
+```
+
+and the ledger shows the operation executed exactly once:
+
+```
+ tool_name  | event_kind | count
+------------+------------+-------
+ shell_exec | end        |     1
+ shell_exec | start      |     1
+```
+
+Exactly one `end` row, no duplicated side effect. Noted as observed behaviour rather than
+a defect: a run that SUCCEEDED reports `indeterminate` to a retry. For a streamed SSE turn
+that is the conservative answer - the server cannot replay the stream nor prove the client
+saw it - and refusing further automatic retry on a mutating turn is the safe direction.
+It is recorded here because it is surprising, not because it is wrong.
+
+### Step h1 - HARN-09 same-message half: NOT REPRODUCED (fallback taken)
+
+Asked in ordinary operator language for a naturally repeated action ("check free disk
+space with df -h, and check it again right away to be sure"). The model emitted ONE
+`shell_exec` carrying both reads in a single command rather than two calls with identical
+`(name, arguments)`:
+
+```
+shell_exec  args={"command": "echo \"=== 1a lettura ===\" && df -h && echo && echo \"=== 2a lettura ===\" && df -h"}
+```
+
+Per the plan's own fallback for this case, recorded plainly: the induction did not
+reproduce the shape, so HARN-09's same-message half stays UNIT-PROVEN. Its cross-round
+half is proved live by SC#1. Two independent attempts at the same class of induction (this
+one, and step a's first attempt) both came back batched, which suggests this model
+consolidates rather than repeats - a property of the provider, not of the harness.
+
+### Step h2 - the D-12 provider invariant: PASS, both directions
+
+Joining the persisted assistant `tool_calls` jsonb against `aura.tool_invocations` across
+the whole run:
+
+```
+calls_without_end_row : 0     (no orphan call -- nothing dropped from the batch but left in history)
+end_rows_without_call : 0     (no execution without a call -- no id collision collapsing two onto one)
+```
+
+Repaired-id shape census over the same conversation:
+
+```
+ end_rows | dedup_suffix_shape | blank_id_shape | distinct_ids
+        8 |                  0 |              0 |            8
+```
+
+**ZERO repairs fired live**, named as the concession it is and attributed to HARN-08
+alone: the provider never emitted a blank or colliding `tool_call_id` during this run, so
+the repair path was never exercised on real provider output. The invariant it protects
+HOLDS (0/0), and HARN-08's repair itself stays unit-proven. This is exactly the
+"cannot be requested and must not be hand-crafted" case the plan anticipated.
+
+### Step c - SC#3 replay marker + span attributes: NOT PROVEN LIVE
+
+The only non-destructive induction available was the duplicate-`Idempotency-Key` retry of
+step b, and that is refused at the HTTP layer (`indeterminate`) before the agent loop
+runs, so the tool-replay layer is never reached. Reaching Layer A/B live would require a
+scheduler reclaim or an interrupted run - killing the container mid-tool-execution - which
+is a destructive induction against the operator's live deployment and was not performed
+without an explicit instruction to do so.
+
+`replayedMarker` on both layers and the `aura.tool.replayed` / `aura.tool.replay_layer`
+span attributes therefore remain UNIT-PROVEN (45-03), and SC#3 is NOT closed by this run.
+It is the single largest remaining gap in the phase, and it is the phase's most
+load-bearing fix.
+
+### Step d - SC#4: TARGET ABSENT
+
+D-23 names a specific real fact to correct - the ArcadeDB-orphan-nodes misdiagnosis. Two
+recalls returned
+`{"facts":[],"retrieval":{"abstained":true,"path":"hybrid","reason":"no_qualified_candidates"}}`
+and the memory block for the turn carried nothing on the subject. The fact does not exist
+in this identity's memory, so the step as specified cannot be run. The MECHANISM it exists
+to prove (recall returns `fact_key`; a correction closes exactly the fact named) is
+evidenced by steps f and g and by the `fact_key` values quoted above, but SC#4 as written
+is not closed.
+
+---
+
 ## Validation Sign-Off
 
 - [ ] All tasks have `<automated>` verify or an explicit checkpoint justification (23/23 rows)
