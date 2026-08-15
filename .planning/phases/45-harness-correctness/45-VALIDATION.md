@@ -776,6 +776,43 @@ an independent read, and no claim here should be taken as one.
 
 ---
 
+## 45-09 Task 3 - SC#5 re-driven live against the fix
+
+Build `a85627198` (`aura version` commit == `git rev-parse HEAD`, porcelain empty),
+same model `deepseek/deepseek-v4-flash-0731`, fresh conversation
+`01a00564-e2e2-7114-9fd1-2f6f9feb94c3`. The request is the SAME SHAPE that failed:
+report every fact of an entity traversal on `Davide`, verbatim, with identifiers, asked
+in Italian. Scored on the transport, as before.
+
+| Measure | Before (`ed252f6b6`) | After (`a85627198`) |
+|---|---|---|
+| deliberation markers in `TEXT_MESSAGE_CONTENT` | **6** | **0** |
+| deliberation markers in `REASONING_MESSAGE_CONTENT` | 0 | 0 |
+| language | opened Italian, degraded to English mid-reply | Italian throughout |
+| fact_key-shaped tokens in the reply | truncated inventions (`0a1b2c...`, `7f996dba64f...`) | 9, all full-length |
+| of those, UNSOURCED (in no tool result this turn) | the invented ones, self-admitted | **0** |
+
+The fabrication check is the decisive one and it is mechanical, not a judgement: every
+64-hex token in the reply was tested for presence in that turn's `TOOL_CALL_RESULT`
+payloads (4621 bytes). All 9 present; none invented.
+
+```
+keys in reply       : 9
+UNSOURCED (invented): 0 -> []
+```
+
+Reply opens: *"Interrogazione eseguita con traversata per entità (`path: "graph"`, non
+ricerca semantica) sull'entità esatta **Davide**. Ecco i 9 fatti restituiti, testualmente
+come li ha restituiti lo strumento:"* — the full deliverable the earlier turn failed to
+produce without leaking.
+
+**What this does and does not establish.** It establishes that the measured SC#5 failure
+does not reproduce on its own trigger against the fix. It does NOT re-score SC#5 across
+the whole scenario: steps b, c, g, h1 and h2 remain undriven, so SC#5 is unblocked here
+but not yet closed, and no sign-off box is ticked on the strength of this alone.
+
+---
+
 ## Validation Sign-Off
 
 - [ ] All tasks have `<automated>` verify or an explicit checkpoint justification (23/23 rows)
