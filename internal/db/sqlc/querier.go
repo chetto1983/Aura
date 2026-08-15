@@ -294,7 +294,6 @@ type Querier interface {
 	// This must run on transaction-bound Queries because autocommit releases the row lock when the statement returns.
 	LockOperationReceipt(ctx context.Context, arg LockOperationReceiptParams) (LockOperationReceiptRow, error)
 	LookupRecoveryByEmail(ctx context.Context, email string) (LookupRecoveryByEmailRow, error)
-	ManualRetryIngestionJob(ctx context.Context, arg ManualRetryIngestionJobParams) (ManualRetryIngestionJobRow, error)
 	// Stamp the throttle after a reminder ATTEMPT (delivered or not) so a pending approval
 	// re-nudges at most once per cadence and a failing channel cannot spam the tick.
 	MarkApprovalReminded(ctx context.Context, id pgtype.UUID) error

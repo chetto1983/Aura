@@ -210,33 +210,6 @@ WITH target AS (
     RETURNING job_id
 )
 SELECT retried.id, retried.job_type, retried.document_id, retried.version_id, retried.status, retried.idempotency_key, retried.stage, retried.attempt_count, retried.max_attempts, retried.locked_by, retried.locked_until, retried.next_attempt_at, retried.payload, retried.error_code, retried.error_message, retried.created_at, retried.updated_at, retried.completed_at, retried.identity_id, retried.asset_id, retried.pipeline_generation, retried.attempt_generation, retried.lease_generation FROM retried JOIN events ON events.job_id = retried.id;
--- name: ManualRetryIngestionJob :one
-WITH target AS (
-    SELECT target_job.id, target_job.status AS prior_status FROM aura.ingestion_jobs target_job
-    WHERE target_job.id = sqlc.arg(id) AND target_job.identity_id = sqlc.arg(identity_id)
-      AND target_job.status IN ('failed', 'dead_letter', 'canceled')
-    FOR UPDATE
-), retried AS (
-    UPDATE aura.ingestion_jobs job
-    SET status = 'queued', stage = sqlc.arg(stage), attempt_count = 0,
-        attempt_generation = attempt_generation + 1,
-        lease_generation = lease_generation + 1,
-        error_code = '', error_message = '', locked_by = NULL, locked_until = NULL,
-        next_attempt_at = sqlc.arg(next_attempt_at), completed_at = NULL, updated_at = now()
-    FROM target WHERE job.id = target.id
-    RETURNING job.*, target.prior_status
-), events AS (
-    INSERT INTO aura.ingestion_events (
-        identity_id, entity_type, entity_id, job_id, from_status, to_status,
-        event_type, pipeline_generation, attempt_generation, lease_generation
-    )
-    SELECT retried.identity_id, 'ingestion_job', retried.id, retried.id,
-           retried.prior_status, 'queued', 'job_manual_retry',
-           retried.pipeline_generation, retried.attempt_generation, retried.lease_generation
-    FROM retried
-    RETURNING job_id
-)
-SELECT retried.id, retried.job_type, retried.document_id, retried.version_id, retried.status, retried.idempotency_key, retried.stage, retried.attempt_count, retried.max_attempts, retried.locked_by, retried.locked_until, retried.next_attempt_at, retried.payload, retried.error_code, retried.error_message, retried.created_at, retried.updated_at, retried.completed_at, retried.identity_id, retried.asset_id, retried.pipeline_generation, retried.attempt_generation, retried.lease_generation FROM retried JOIN events ON events.job_id = retried.id;
 -- name: CountIngestionJobsByStatus :one
 SELECT count(*) FROM aura.ingestion_jobs
 WHERE identity_id = sqlc.arg(identity_id) AND status = sqlc.arg(status);
