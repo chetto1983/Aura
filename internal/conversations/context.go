@@ -217,6 +217,12 @@ func applyContextLadder(
 	enc *tiktoken.Tiktoken,
 	emit rotEmitter,
 ) ([]llm.Message, error) {
+	// A message the person sent twice because the first run answered nothing is one
+	// message. Collapsed BEFORE anything else so every path below -- the budget count,
+	// the compaction summary and the L2.5 drop -- works on the history as it happened
+	// rather than on the repetition.
+	turns = dropRepeatedUserTurns(turns)
+
 	// Inject the messages[1] always-block (D-07) as a PROTECTED turn right after the
 	// system L0 turn, BEFORE the ladder runs, so it is counted toward the budget and
 	// protected by L1/L2.5 exactly like the system turn (Pitfall 3).
