@@ -24,6 +24,14 @@ func newMCPHTTPTestServerWithTools(t *testing.T, tools []map[string]any) *httpte
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
+		// The SDK opens a standalone SSE stream with a bodiless GET unless
+		// DisableStandaloneSSE is set. This fixture is request/response only, and the
+		// stream is optional per the spec, so decline it — decoding a body that was
+		// never sent is what made this fixture report "decode request: EOF".
+		if r.Method == http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
 		var req struct {
 			ID     int64  `json:"id"`
 			Method string `json:"method"`

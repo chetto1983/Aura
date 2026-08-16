@@ -237,15 +237,22 @@ func (s *MountedServer) deathCause() error {
 }
 
 // drainTools drains session.Tools' paginated iterator into a slice.
+// drainTools is bounded for the same reason the connect is (internal/mcp/bounded_call.go):
+// a server that completes its handshake and then stops answering would otherwise hold the
+// mount past its deadline. Measured 2026-08-16: the hung-server mount guard
+// (TestBuildRegistryWithMCP_HungServerDroppedHealthySurvives) failed here, not at connect —
+// the session opened, and the paginated tools/list never observed the 1s handshake ctx.
 func drainTools(ctx context.Context, session *sdkmcp.ClientSession) ([]*sdkmcp.Tool, error) {
-	var out []*sdkmcp.Tool
-	for t, err := range session.Tools(ctx, nil) {
-		if err != nil {
-			return nil, err
+	return mcp.BoundedCall(ctx, func(ctx context.Context) ([]*sdkmcp.Tool, error) {
+		var out []*sdkmcp.Tool
+		for t, err := range session.Tools(ctx, nil) {
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, t)
 		}
-		out = append(out, t)
-	}
-	return out, nil
+		return out, nil
+	}, nil)
 }
 
 // ListTools drains the current session's paginated tool list.

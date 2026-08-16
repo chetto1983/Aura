@@ -126,10 +126,12 @@ func openSDKHTTP(ctx context.Context, name string, server ManagedServer, egress 
 	headers, bearer := httpAuthFromEnv(server.Env)
 	httpClient = withAuthHeaders(httpClient, headers, bearer)
 
-	session, err := newSDKClient(o).Connect(ctx, &sdkmcp.StreamableClientTransport{
-		Endpoint:   validated.String(),
-		HTTPClient: httpClient,
-	}, nil)
+	// Bounded because the SDK is not: see bounded_call.go.
+	transport := &sdkmcp.StreamableClientTransport{Endpoint: validated.String(), HTTPClient: httpClient}
+	client := newSDKClient(o)
+	session, err := BoundedCall(ctx,
+		func(ctx context.Context) (*sdkmcp.ClientSession, error) { return client.Connect(ctx, transport, nil) },
+		closeSession)
 	if err != nil {
 		return nil, TransportErrorf(name, err)
 	}
@@ -170,7 +172,15 @@ func OpenSDKSessionForConfig(processCtx, handshakeCtx context.Context, name stri
 	// reaps the WHOLE spawned tree instead of leaking grandchildren (F-035).
 	procgroup.SetProcessGroup(cmd)
 
-	session, err := newSDKClient(o).Connect(handshakeCtx, &sdkmcp.CommandTransport{Command: cmd}, nil)
+	// Bounded for the same reason as the HTTP branch (see connect_bounded.go): a peer
+	// that accepts the connection and then never answers the handshake must cost this
+	// caller handshakeCtx and no more. On stdio that peer is a child process Aura just
+	// spawned, so an unbounded wait here is a mount that never returns.
+	transport := &sdkmcp.CommandTransport{Command: cmd}
+	client := newSDKClient(o)
+	session, err := BoundedCall(handshakeCtx,
+		func(ctx context.Context) (*sdkmcp.ClientSession, error) { return client.Connect(ctx, transport, nil) },
+		closeSession)
 	if err != nil {
 		return nil, TransportErrorf(name, err)
 	}

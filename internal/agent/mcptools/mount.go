@@ -135,15 +135,33 @@ func mountStdioWithPolicyHost(processCtx, handshakeCtx context.Context, reg *too
 // explains why that must NOT route through the supervisor), Attach, then mount
 // with the given policy — reaping the session on any failure along the way.
 func openAttachAndMount(srv *MountedServer, processCtx, handshakeCtx context.Context, open openSessionFunc, reg *tools.Registry, name string, policy bridgePolicy) (closer func() error, names []string, host *MountedServer, err error) {
-	srv.setProcessContext(processCtx)
+	// Each mount attempt gets its own cancellable slice of the daemon-lifetime process
+	// context, so a mount that gives up reaps the child it spawned. Without this a stdio
+	// server that hangs during discovery outlives the mount that dropped it: the process
+	// ctx belongs to the whole daemon, nothing else ever kills that child, and the SDK's
+	// own session Close blocks on it forever (observed as a goroutine parked in
+	// pipeRWC.Close). Aura spawned it, so Aura reaps it. On success ownership passes to
+	// the mounted server, whose subprocess must outlive this call — cancelling processCtx
+	// still propagates here, which is the D-06/D-07 lifetime contract unchanged.
+	procCtx, reapChild := context.WithCancel(processCtx)
+	mounted := false
+	defer func() {
+		if !mounted {
+			reapChild()
+		}
+	}()
+	srv.setProcessContext(procCtx)
 
-	session, err := open(processCtx, handshakeCtx, mcp.SessionOptions{})
+	session, err := open(procCtx, handshakeCtx, mcp.SessionOptions{})
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	advertised, err := drainTools(handshakeCtx, session)
 	if err != nil {
-		_ = session.Close()
+		// Released, not Closed: the server that just failed its bounded discovery is
+		// the one whose Close would block on it (see mcp.ReleaseSession). Waiting here
+		// would hand back the whole deadline the drain bound just saved.
+		mcp.ReleaseSession(session)
 		return nil, nil, nil, err
 	}
 	srv.Attach(session)
@@ -154,6 +172,7 @@ func openAttachAndMount(srv *MountedServer, processCtx, handshakeCtx context.Con
 		return nil, nil, nil, fmt.Errorf("mount %q: %w", name, err)
 	}
 	srv.trackAcceptedTools(advertised)
+	mounted = true
 	return srv.Close, names, srv, nil
 }
 
