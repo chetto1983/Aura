@@ -20,4 +20,10 @@ var (
 	httpListBoundary        = newMCPBoundary("mcp_list_tools", "http")
 	httpCallBoundary        = newMCPBoundary("mcp_call_tool", "http")
 	httpPingBoundary        = newMCPBoundary("mcp_ping", "http")
+
+	// SDK-path boundaries. Built from the SAME factory and reusing the SAME transport
+	// labels as the vars above: the metric names and dimension values a dashboard
+	// already watches must not shift just because the client underneath is now the SDK.
+	sdkStdioConnectBoundary = newMCPBoundary("mcp_initialize", "stdio")
+	sdkHTTPConnectBoundary  = newMCPBoundary("mcp_initialize", "http")
 )

@@ -113,23 +113,8 @@ func OpenHTTP(ctx context.Context, name string, cfg HTTPConfig) (*HTTPClient, er
 	return c, nil
 }
 
-func withMCPRedirectGuard(base *http.Client, policy EgressPolicy, res resolver) *http.Client {
-	cloned := *base
-	previous := base.CheckRedirect
-	cloned.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		if _, err := guardEndpointWithPolicy(req.Context(), req.URL.String(), policy, res); err != nil {
-			return fmt.Errorf("mcp redirect blocked: %w", err)
-		}
-		if previous != nil {
-			return previous(req, via)
-		}
-		if len(via) >= 10 {
-			return fmt.Errorf("mcp redirect stopped after %d hops", len(via))
-		}
-		return nil
-	}
-	return &cloned
-}
+// withMCPRedirectGuard moved to transport_ssrf.go: it outlives this file, which is
+// deleted in plan 45.1-03, and it belongs with the rest of the egress defense.
 
 func (c *HTTPClient) initialize(ctx context.Context) (err error) {
 	ctx, end := httpInitializeBoundary.Start(ctx)

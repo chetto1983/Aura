@@ -18,6 +18,31 @@ import (
 
 const mcpDialConnectTimeout = 10 * time.Second
 
+// withMCPRedirectGuard re-validates EVERY hop of a redirect chain against the same
+// policy that cleared the initial endpoint. Without it the endpoint check is a
+// formality: a cleared host can 302 straight into private or metadata space.
+//
+// It lives here rather than beside the HTTP client because it must outlive
+// http_client.go, deleted in plan 45.1-03 — and because Layer-2 egress defense is
+// exactly this file's concern.
+func withMCPRedirectGuard(base *http.Client, policy EgressPolicy, res resolver) *http.Client {
+	cloned := *base
+	previous := base.CheckRedirect
+	cloned.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if _, err := guardEndpointWithPolicy(req.Context(), req.URL.String(), policy, res); err != nil {
+			return fmt.Errorf("mcp redirect blocked: %w", err)
+		}
+		if previous != nil {
+			return previous(req, via)
+		}
+		if len(via) >= 10 {
+			return fmt.Errorf("mcp redirect stopped after %d hops", len(via))
+		}
+		return nil
+	}
+	return &cloned
+}
+
 // dialFunc is the injectable inner-dial seam: a test passes a recorder to assert the
 // transport dials the pinned IP; production uses a real net.Dialer.
 type dialFunc func(ctx context.Context, network, addr string) (net.Conn, error)

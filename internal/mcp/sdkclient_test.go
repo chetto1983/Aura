@@ -95,7 +95,16 @@ func startSDKHTTPServer(t *testing.T, toolCount int) (*httptest.Server, *atomic.
 		requests.Add(1)
 		handler.ServeHTTP(w, r)
 	}))
-	t.Cleanup(ts.Close)
+	t.Cleanup(func() {
+		// The handler owns a server-side session per client, and its closeAll is
+		// unexported — so a client-side Close alone leaves the server's connection
+		// reader goroutine alive and goleak fails the whole package. Close the server
+		// side explicitly, before shutting the listener.
+		for session := range srv.Sessions() {
+			_ = session.Close()
+		}
+		ts.Close()
+	})
 	return ts, &requests
 }
 
@@ -318,10 +327,22 @@ func TestOpenSDKSessionInMemoryRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal advertised capabilities: %v", err)
 	}
-	// Left nil, ClientOptions.Capabilities makes the SDK advertise
-	// {"roots":{"listChanged":true}} for historical reasons — a capability Aura does
-	// not implement. Sampling and logging must be absent for the same reason.
-	for _, capability := range []string{"roots", "sampling", "logging"} {
+	// Measured against go-sdk v1.7.0, because the SDK's own doc overstates this: it
+	// says &ClientCapabilities{} "disables the roots capability", but the key is a
+	// struct VALUE tagged `json:"roots,omitempty"`, and encoding/json ignores
+	// omitempty for struct values. So "roots":{} is on the wire unconditionally and
+	// no option can remove it.
+	//
+	// What the empty value genuinely buys is the part that matters: the
+	// advertisement drops from {"roots":{"listChanged":true}} to {"roots":{}}, and
+	// listChanged is what a server actually reads to decide behaviour (go-sdk
+	// v1.7.0 mcp/client.go:712-716). Assert the effect, not the doc's wording.
+	if strings.Contains(string(advertised), "listChanged") {
+		t.Errorf("advertised roots.listChanged, which Aura does not implement: %s", advertised)
+	}
+	// These two are pointer fields, so absent means absent. Both are deprecated by
+	// SEP-2577 and Aura implements neither.
+	for _, capability := range []string{"sampling", "logging"} {
 		if strings.Contains(string(advertised), capability) {
 			t.Errorf("advertised capability %q that Aura does not implement: %s", capability, advertised)
 		}

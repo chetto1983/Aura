@@ -3,7 +3,6 @@ package mcp
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 )
 
@@ -54,39 +53,5 @@ func OpenServerWithEgress(ctx context.Context, name string, server ManagedServer
 	return Open(ctx, name, ServerConfig{Command: server.Command, Args: server.Args, Env: server.Env})
 }
 
-// ssrfEnforceFromEnv reads the AURA_MCP_SSRF_ENFORCE knob (AURA_<DOMAIN>_<UNIT>).
-// Default OFF: an unset/empty/false value keeps lenient profiles compatible with
-// local sidecars. RuntimeEgressPolicy ORs this with strict-profile enforcement,
-// so the knob can tighten a lenient profile but cannot weaken a strict one.
-func ssrfEnforceFromEnv() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("AURA_MCP_SSRF_ENFORCE"))) {
-	case "1", "true", "yes", "on":
-		return true
-	default:
-		return false
-	}
-}
-
-func httpAuthFromEnv(env []string) (map[string]string, string) {
-	headers := map[string]string{}
-	bearer := ""
-	for _, entry := range env {
-		key, value, ok := strings.Cut(entry, "=")
-		if !ok {
-			continue
-		}
-		switch {
-		case key == "MCP_BEARER_TOKEN":
-			bearer = value
-		case strings.HasPrefix(key, "MCP_HEADER_"):
-			header := strings.ReplaceAll(strings.TrimPrefix(key, "MCP_HEADER_"), "_", "-")
-			if header != "" {
-				headers[header] = value
-			}
-		}
-	}
-	if len(headers) == 0 {
-		headers = nil
-	}
-	return headers, bearer
-}
+// ssrfEnforceFromEnv and httpAuthFromEnv moved to sdkclient.go: they outlive this
+// file, which is deleted in plan 45.1-03.
