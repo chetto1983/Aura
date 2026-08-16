@@ -176,7 +176,7 @@ deleted; Aura's own policy — SSRF resolve-then-pin, egress allowlist, trust cl
 managed-config and per-identity overlay — is preserved on top of the SDK rather than reimplemented
 beside it.
 **Depends on**: Phase 45
-**Requirements**: MCPC-01, MCPC-02, MCPC-03 (to be added to REQUIREMENTS.md before planning)
+**Requirements**: MCPC-01, MCPC-02, MCPC-03, MCPC-04, MCPC-05 (added to REQUIREMENTS.md § Native MCP client, 2026-08-16)
 **Blocks**: Phase 46 — every file Phase 46 touches (`bridge.go`, `bridge_risk.go`,
 `bridge_memory.go`) sits on this client seam, so landing 46 first would mean writing its work twice.
 
@@ -185,10 +185,23 @@ beside it.
 
 - **Deleted, ≈1,970 LOC non-test plus ≈900 LOC of tests** — `internal/mcp/client.go` (583),
   `http_client.go` (426), `internal/agent/mcptools/bridge_reconnect.go` (481), `bridge_ping.go`
-  (113), and `transport.go`/`protocol.go`/`tool_methods.go`/`lifecycle.go`/`probe.go` (364). The SDK
-  ships equivalents: `ClientOptions.KeepAlive` + `KeepAliveFailureThreshold` (`mcp/client.go:199-206`)
-  and automatic reconnect with exponential backoff, `Last-Event-ID` resume and SEP-1699
-  server-initiated reconnect (`mcp/streamable_client.go:122-139`).
+  (113), and `transport.go`/`protocol.go`/`tool_methods.go`/`lifecycle.go` (364; ~~`probe.go`~~ — see
+  amendment). ~~The SDK ships equivalents: `ClientOptions.KeepAlive` + `KeepAliveFailureThreshold`
+  (`mcp/client.go:199-206`) and automatic reconnect with exponential backoff, `Last-Event-ID` resume
+  and SEP-1699 server-initiated reconnect (`mcp/streamable_client.go:122-139`).~~
+  **Amended 2026-08-16 — the replacement mechanism was falsified by reading the pinned SDK source
+  (`45.1-RESEARCH.md` § SDK liveness surface; the citations above were doc comments and design notes,
+  not shipped behaviour).** What the SDK actually provides: **`ClientSession.Wait()`**
+  (`client.go:584`) blocks until the connection closes and returns why — a **push** death signal that
+  removes the need for any Aura poll loop, which is what `bridge_ping.go` really deletes into.
+  `ClientOptions.KeepAlive` is **inert against a 2026-07-28 peer**: not version-gated client-side
+  (`client.go:403`), refused by the SDK server with `CodeMethodNotFound` (`server.go:1879-1887`), and
+  silently self-retiring (`shared.go:869-872`) — configured-looking, dead in practice. The
+  "automatic reconnect with backoff" is the **standalone SSE stream**, unconditionally removed under
+  2026-07-28 (`streamable.go:2095-2098`); recovery works because every call is a fresh HTTP POST.
+  `StreamableClientTransport.MaxRetries` (default 5) is the real HTTP retry knob.
+  **`probe.go` is re-pointed, not deleted** — a use-case function over the SDK, not a facade over its
+  types, with 13 `cmd/aura` diagnostic files depending on it.
 - **Preserved, ≈1,330 LOC with no SDK equivalent** — `ssrf.go` + `transport_ssrf.go` +
   `egress_policy.go` (re-attached as a custom `http.RoundTripper`), `managed_config.go` +
   `managed_config_identity.go`, `classify.go`, `tool_error.go`, `domain_outcome.go`,
@@ -208,8 +221,14 @@ beside it.
   owns both ends. Third-party forks keep argument-shaped inputs. **This changes the memory tool's
   schema — PITFALLS §4 applies** (rehydrated history, paused approvals, scheduled jobs).
 - Elicitation (SEP-2322 MRTR) routes through Aura's existing approval path with a bounded timeout,
-  naming the asking server — hermes parity (`tools/mcp_tool.py:1669-1758`). The SDK auto-fulfills
-  input requests by default and Aura registers no handler today.
+  naming the asking server — hermes parity (`tools/mcp_tool.py:1669-1758`). ~~The SDK auto-fulfills
+  input requests by default and Aura registers no handler today.~~ **Amended 2026-08-16 — falsified
+  by measurement.** With no `ElicitationHandler` the SDK returns
+  `&jsonrpc.Error{Code: CodeInvalidParams, Message: "client does not support elicitation"}`
+  (`mcp/client.go:862-864`, v1.7.0) — it fails **closed**, it does not auto-fulfill. Aura is
+  therefore already fail-closed and the handler closes no hole; the real justification is SEP-2322
+  compliance and operator visibility (today a server needing input gets a flat refusal nobody sees,
+  so a legitimate multi-round-trip tool cannot work at all).
 
 **Success Criteria** (what must be TRUE):
 
