@@ -3,9 +3,12 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -110,6 +113,42 @@ func startSDKHTTPServer(t *testing.T, toolCount, pageSize int) (*httptest.Server
 		ts.Close()
 	})
 	return ts, &requests
+}
+
+// TestSDKHelperProcess is a REAL SDK MCP server over stdio, re-exec'd as a child by
+// sdkHelperServer below. It is not a test.
+//
+// The pre-SDK helper in client_open_test.go hand-rolls JSON-RPC and silently ignores
+// any method it does not recognise, so an SDK client stalls against it — a fake wire
+// only ever answers the questions its author thought to anticipate. This one is the
+// same server implementation Aura's own MCP servers use, so what it proves about the
+// stdio path is real.
+func TestSDKHelperProcess(t *testing.T) {
+	if os.Getenv("AURA_MCP_SDK_HELPER") != "1" {
+		t.Skip("helper process: only runs when re-exec'd as an MCP server")
+	}
+	toolCount, err := strconv.Atoi(os.Getenv("AURA_MCP_SDK_HELPER_TOOLS"))
+	if err != nil || toolCount <= 0 {
+		toolCount = 1
+	}
+	if err := newSDKFixtureServer(toolCount, 0).Run(context.Background(), &sdkmcp.StdioTransport{}); err != nil {
+		fmt.Fprintln(os.Stderr, "sdk helper:", err)
+		os.Exit(1)
+	}
+	os.Exit(0)
+}
+
+// sdkHelperServer describes a stdio ManagedServer that re-execs this test binary as a
+// real SDK MCP server advertising toolCount tools.
+func sdkHelperServer(toolCount int) ManagedServer {
+	return ManagedServer{
+		Command: os.Args[0],
+		Args:    []string{"-test.run=TestSDKHelperProcess"},
+		Env: []string{
+			"AURA_MCP_SDK_HELPER=1",
+			"AURA_MCP_SDK_HELPER_TOOLS=" + strconv.Itoa(toolCount),
+		},
+	}
 }
 
 // recipeServer is a trusted built-in recipe pointed at url — the one shape whose

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // probe.go is the structured, per-server live MCP probe (GOV-01). It is extracted
@@ -61,22 +63,44 @@ func ProbeServerWithEgress(ctx context.Context, name string, server ManagedServe
 		return res
 	}
 
-	client, err := OpenServerWithEgress(ctx, name, server, egress)
+	session, err := OpenSDKSession(ctx, name, server, egress, SessionOptions{})
 	if err != nil {
 		res.Detail = "dial failed"
 		res.Err = RedactSecrets(err.Error())
 		return res
 	}
-	defer func() { _ = client.Close() }()
+	defer func() { _ = session.Close() }()
 
-	tools, err := client.ListTools(ctx)
+	count, err := countTools(ctx, server, session)
 	if err != nil {
 		res.Detail = "tools/list failed"
 		res.Err = RedactSecrets(err.Error())
 		return res
 	}
 	res.OK = true
-	res.ToolCount = len(tools)
-	res.Detail = RedactSecrets(fmt.Sprintf("ok (%d tools)", len(tools)))
+	res.ToolCount = count
+	res.Detail = RedactSecrets(fmt.Sprintf("ok (%d tools)", count))
 	return res
+}
+
+// countTools drains the SDK's paginated tools iterator. Not ListTools: that returns one
+// page, and a server with more tools than a page holds would be reported at its first
+// page's length — a wrong number that looks like a right one. Cursor handling is
+// capability the hand-rolled client never had, and it is the reason this probe is
+// strictly better than the one it replaces, not merely equivalent.
+func countTools(ctx context.Context, server ManagedServer, session *sdkmcp.ClientSession) (count int, err error) {
+	boundary := sdkStdioListBoundary
+	if normalizedServerType(server) == ServerTypeStreamableHTTP {
+		boundary = sdkHTTPListBoundary
+	}
+	ctx, end := boundary.Start(ctx)
+	defer end.PanicSafe(&err)
+
+	for _, iterErr := range session.Tools(ctx, nil) {
+		if iterErr != nil {
+			return 0, iterErr
+		}
+		count++
+	}
+	return count, nil
 }

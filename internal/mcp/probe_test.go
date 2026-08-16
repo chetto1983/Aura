@@ -3,7 +3,6 @@ package mcp
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -23,11 +22,16 @@ func managedFromHelper(mode string) ManagedServer {
 
 // TestMCPProbe_HealthyServerCountsTools proves a reachable stdio server probes OK with
 // the real tools/list count (the helper advertises exactly one tool, "echo").
+//
+// The fixture is a REAL SDK server re-exec'd over stdio, not the hand-rolled helper in
+// client_open_test.go. That helper answers only the methods its author anticipated and
+// silently ignores the rest, so an SDK client hangs on it — which is the whole argument
+// for owning no wire code: a fake wire drifts from the real one and nothing notices.
 func TestMCPProbe_HealthyServerCountsTools(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	got := ProbeServer(ctx, "helper", managedFromHelper(""))
+	got := ProbeServer(ctx, "helper", sdkHelperServer(1))
 	if !got.OK {
 		t.Fatalf("ProbeServer(healthy): want OK, got %+v", got)
 	}
@@ -99,33 +103,9 @@ func TestMCPProbe_EmptyCommand(t *testing.T) {
 // DIALED (initialize + tools/list) and its real tool count reported — the fix for the
 // cockpit board showing 0 tools for every HTTP recipe (memory/calendar/pim/whatsapp).
 func TestMCPProbe_HTTPEndpointDialsAndCountsTools(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodDelete {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		var req rpcReq
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Fatalf("decode request: %v", err)
-		}
-		switch req.Method {
-		case "initialize":
-			w.Header().Set("Mcp-Session-Id", "probe-1")
-			writeHTTPRPC(t, w, req.ID, initializeFixture("2025-06-18", "probe-fixture"))
-		case "notifications/initialized":
-			w.WriteHeader(http.StatusAccepted)
-		case "tools/list":
-			writeHTTPRPC(t, w, req.ID, map[string]any{"tools": []map[string]any{
-				{"name": "memory_search", "description": "Search", "inputSchema": map[string]any{"type": "object"}},
-				{"name": "memory_upsert_fact", "description": "Upsert", "inputSchema": map[string]any{"type": "object"}},
-			}})
-		default:
-			t.Fatalf("unexpected method %q", req.Method)
-		}
-	}))
-	defer server.Close()
+	ts, _ := startSDKHTTPServer(t, 2, 0)
 
-	got := ProbeServer(context.Background(), "memory", ManagedServer{Type: ServerTypeStreamableHTTP, URL: server.URL})
+	got := ProbeServer(context.Background(), "memory", ManagedServer{Type: ServerTypeStreamableHTTP, URL: ts.URL})
 	if !got.OK {
 		t.Fatalf("ProbeServer(http): want OK, got %+v", got)
 	}

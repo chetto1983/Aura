@@ -26,4 +26,6 @@ var (
 	// already watches must not shift just because the client underneath is now the SDK.
 	sdkStdioConnectBoundary = newMCPBoundary("mcp_initialize", "stdio")
 	sdkHTTPConnectBoundary  = newMCPBoundary("mcp_initialize", "http")
+	sdkStdioListBoundary    = newMCPBoundary("mcp_list_tools", "stdio")
+	sdkHTTPListBoundary     = newMCPBoundary("mcp_list_tools", "http")
 )
