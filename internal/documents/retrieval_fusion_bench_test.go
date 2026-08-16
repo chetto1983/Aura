@@ -126,7 +126,10 @@ func TestFusionBenchmark(t *testing.T) {
 			if err != nil {
 				t.Fatalf("fuse %s %q: %v", fusion, question.QID, err)
 			}
-			for _, doc := range rankDocuments(nil, fused, topK, cfg.TopPassages, false) {
+			// nil names: this arm ranks passages only, and the bench resolves its own
+			// display name from SourceKey below, so the lookup map rankDocuments uses
+			// for card enrichment has nothing to contribute here.
+			for _, doc := range rankDocuments(nil, fused, nil, topK, cfg.TopPassages, false) {
 				runs[armIndex].Ranking[question.QID] = append(
 					runs[armIndex].Ranking[question.QID], benchDocName(doc.SourceKey),
 				)
