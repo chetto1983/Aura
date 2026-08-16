@@ -403,10 +403,18 @@ di nuovo mentre misuravo il fix». **Falso**, e l'ho verificato: quel run aveva 
 fallimento diverso — il lavoro c'era, la risposta pure, ed era leggibile ricaricando. Avevo
 scambiato un client caduto per un run morto.
 
-**4.3 — `_embed` del sidecar ingest inghiotte il messaggio del server.**
-`services/ingest/app.py:196-208` — `urlopen` senza try/except: un HTTP 500 diventa un `HTTPError`
-nudo, senza corpo né conteggio token. È la forma esatta che è costata due riproduzioni il
-2026-08-09. *Confidenza: alta.*
+**4.3 — CHIUSA il 2026-08-16 (`f0a2941d2`).** L'`HTTPError` nudo ora porta il **corpo** della
+risposta — dove llama.cpp nomina il guasto vero, *«input is too large to process, increase the
+physical batch size»*, cioè il fix in una riga — e il **conteggio token misurato** accanto al
+tetto del modello, perché la causa stragrande è un chunk che ha sforato. Il file portava già la
+cicatrice: il commento di `process_file` spiega che un chunk dimensionato al tetto nudo sfora
+per via del prefisso e *«the request 500s»*.
+
+Misurare dentro il percorso d'errore è sicuro per costruzione: `count_tokens` degrada a stima
+per carattere quando il server è irraggiungibile, quindi un server giù non può trasformare un
+embed fallito in un **messaggio d'errore** fallito. Idem per un corpo illeggibile (`fp` a None):
+leggerlo avrebbe sostituito il fallimento originale con uno nostro. La catena `raise … from exc`
+resta, quindi il traceback arriva ancora alla causa di trasporto.
 
 **4.4 — `ErrDocumentDeleteInFlight` non è instradato al bordo API.**
 Prodotto a `internal/documents/catalog_store.go:120` su un percorso vivo
