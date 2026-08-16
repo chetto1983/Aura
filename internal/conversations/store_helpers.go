@@ -320,8 +320,13 @@ func toolCallHasID(calls []llm.ToolCall, id string) bool {
 	return false
 }
 
+// compactedToolPointer recognises an L1 eviction pointer in either wording: the marker the
+// producer uses today, and the fixed prefix written before 2026-08-16 -- history is durable,
+// so those rows still load. Matching the marker rather than a full phrase is what stops the
+// two from drifting again.
 func compactedToolPointer(m llm.Message) bool {
-	return strings.HasPrefix(m.Content, "[tool output evicted")
+	return strings.HasPrefix(m.Content, legacyEvictedPointerPrefix) ||
+		(strings.HasPrefix(m.Content, "[") && strings.Contains(m.Content, evictedResultMarker))
 }
 
 func managedToolPointerMessage(m llm.Message) llm.Message {

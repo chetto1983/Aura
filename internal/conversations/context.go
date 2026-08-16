@@ -57,6 +57,12 @@ var readToolOutputCallIDRe = regexp.MustCompile(`read_tool_output\(tool_call_id=
 // turn to a pointer (M-01).
 const spillFooterMarker = "[output truncated:"
 
+// retainedFooterMarker is the sibling of spillFooterMarker for a result that fit under the
+// preview cap but was still written to disk (tools.retainedFooterMarker). It exists so the
+// ladder can evict a large-but-untruncated result: before it, evictability accidentally
+// meant "was truncated", and a 27.5 KB result under a 30 KB cap was permanent.
+const retainedFooterMarker = "[full output also retained:"
+
 // toolSearchName mirrors agent.searchTool. It is duplicated rather than imported because
 // internal/agent depends on this package, not the other way round.
 const toolSearchName = "tool_search"
@@ -294,6 +300,7 @@ func applyL1(turns []Turn, evictAfter int) []Turn {
 	maxSeq := out[len(out)-1].Seq
 	threshold := maxSeq - evictAfter
 	protected := toolSearchResultIDs(out)
+	toolNames := toolNamesByCallID(out)
 	for i := range out {
 		t := &out[i]
 		if t.Seq == 1 || t.Role != llm.RoleTool {
@@ -310,7 +317,10 @@ func applyL1(turns []Turn, evictAfter int) []Turn {
 		if t.Seq < threshold && isSidecarBacked(*t) {
 			// Preserve the spill-id pointer minted by tools.NewResult; old rows that
 			// predate opaque sidecar ids fall back to the provider ToolCallID.
-			t.Content = readToolOutputPointer(readToolOutputSpillID(t.Content, t.ToolCallID))
+			t.Content = describeEvictedResult(
+				evictedResultToolName(*t, toolNames),
+				len(t.Content),
+				readToolOutputSpillID(t.Content, t.ToolCallID))
 			t.ContentSidecarPath = "" // already inlined as a pointer
 		}
 	}
@@ -354,12 +364,17 @@ func isSidecarBacked(t Turn) bool {
 	if t.ContentSidecarPath != "" {
 		return true
 	}
-	return strings.Contains(html.UnescapeString(t.Content), spillFooterMarker)
+	unescaped := html.UnescapeString(t.Content)
+	return strings.Contains(unescaped, spillFooterMarker) ||
+		strings.Contains(unescaped, retainedFooterMarker)
 }
 
 func readToolOutputSpillID(content, fallback string) string {
 	unescaped := html.UnescapeString(content)
 	footerAt := strings.LastIndex(unescaped, spillFooterMarker)
+	if footerAt < 0 {
+		footerAt = strings.LastIndex(unescaped, retainedFooterMarker)
+	}
 	if footerAt < 0 {
 		return fallback
 	}
@@ -374,18 +389,6 @@ func readToolOutputSpillID(content, fallback string) string {
 		}
 	}
 	return fallback
-}
-
-// readToolOutputPointer is the L1 eviction target: a compact instruction telling
-// the model to page the full output back via read_tool_output (the sidecar is
-// still on disk; only the in-history content is replaced).
-// The public parameter stays named tool_call_id, but for new sidecars the value
-// is the opaque spill id from the original footer.
-func readToolOutputPointer(spillID string) string {
-	if spillID == "" {
-		return "[tool output evicted from context; not retrievable]"
-	}
-	return fmt.Sprintf("[tool output evicted to save context; page it back via read_tool_output(tool_call_id=%q)]", spillID)
 }
 
 // splitHeadHistoryActive partitions turns into the protected head (system L0 +

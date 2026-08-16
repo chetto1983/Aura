@@ -144,7 +144,7 @@ func NewResult(ctx context.Context, content string) (ToolResult, error) {
 	content = secret.RedactConfigured(content)
 	total := len(content)
 	if total <= tc.cap {
-		return ToolResult{Preview: content, Bytes: total, Truncated: false}, nil
+		return retainedResult(tc, content, total), nil
 	}
 
 	preview := truncatePreview(content, tc.cap)
@@ -245,4 +245,50 @@ func writeSidecar(path, content string) error {
 		return err
 	}
 	return os.Chmod(path, 0o600)
+}
+
+// spillRetainFloorBytes is the size above which a result gets a sidecar EVEN WHEN IT FITS
+// under the preview cap.
+//
+// The two thresholds answer different questions and were the same number by accident. The
+// cap answers "how much does the model see NOW" and is measured (median result 233 bytes,
+// p90 6.2 KB): paging should be the exception. The floor below answers "how much does the
+// conversation keep PAYING for this later", and until it existed the answer was forever --
+// the context ladder may only evict a tool result it can page back, so a 27.5 KB result
+// that fit under the 30 KB cap stayed verbatim in every subsequent request for the life of
+// the conversation. Measured on the live deployment 2026-08-16: five tool turns, none
+// sidecar-backed, one of them 27,515 bytes, and the window filled with tool traffic.
+//
+// A file write for a minority of calls buys the ladder the right to reclaim them.
+const spillRetainFloorBytes = 8000
+
+// retainedFooterMarker announces a result that is COMPLETE in context and also on disk. It
+// is deliberately different wording from the truncation footer: nothing was cut here, and
+// telling the model to "read more" when it already has everything would earn a pointless
+// round trip.
+const retainedFooterMarker = "[full output also retained:"
+
+// retainedResult returns a result that fits under the cap, spilling it to the sidecar when
+// it is large enough that the ladder will one day want to evict it. A sidecar failure is
+// not an error: the content is intact in context, and the only thing lost is the ladder's
+// later option to reclaim it.
+func retainedResult(tc toolCallContext, content string, total int) ToolResult {
+	if total <= spillRetainFloorBytes {
+		return ToolResult{Preview: content, Bytes: total, Truncated: false}
+	}
+	spillID := tc.sidecarID
+	if spillID == "" {
+		spillID = tc.toolCallID
+	}
+	path, err := sidecarPath(tc.runDir, tc.sessionID, spillID)
+	if err != nil {
+		return ToolResult{Preview: content, Bytes: total, Truncated: false}
+	}
+	if werr := writeSidecar(path, content); werr != nil {
+		return ToolResult{Preview: content, Bytes: total, Truncated: false}
+	}
+	footer := fmt.Sprintf(
+		"\n\n%s %d bytes, page it back with read_tool_output(tool_call_id=%q)]",
+		retainedFooterMarker, total, spillID)
+	return ToolResult{Preview: content + footer, FullPath: path, Bytes: total, Truncated: false}
 }
