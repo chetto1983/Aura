@@ -40,7 +40,7 @@ DIMENSIONS = {
 def default_manifest() -> dict[str, Any]:
     aura_unit_filter = (
         "^(TestMemoryVerbMappingNegativeCases|"
-        "TestStoreConfirmedOpensOneMCPSessionForTheWholeSubmission|"
+        "TestMemoryNotConfigured|"
         "TestMemoryReadinessCheckRunsAnIsolatedFunctionalSearch|"
         "TestMemoryReadinessCheckRejectsSemanticAndTransportFailure)$"
     )
@@ -69,7 +69,13 @@ def default_manifest() -> dict[str, Any]:
         ("hybrid_failure_falls_back", "deterministic", "retrieval_temporal", 2, "negative", "arcadedb_unit", "TestSearchFactsHybridFallsBackToLexical"),
         ("lucene_input_is_escaped", "deterministic", "retrieval_temporal", 2, "negative", "arcadedb_unit", "TestEscapeLuceneEscapesOperators"),
         ("default_search_is_temporal", "deterministic", "retrieval_temporal", 2, "negative", "arcadedb_unit", "TestSearchFactsAlwaysFiltersOnValidity"),
-        ("one_mcp_session_per_submission", "deterministic", "mcp_runtime_resilience", 3, "positive", "aura_memory_unit", "TestStoreConfirmedOpensOneMCPSessionForTheWholeSubmission"),
+        # Was one_mcp_session_per_submission, whose evidence proved a whole onboarding
+        # submission rode ONE MCP session. That property no longer exists to prove: the
+        # operator profile moved to Postgres (migration 0097), so onboarding makes no MCP
+        # call at all and the test went with the code path. The three points stay in this
+        # dimension on the resilience property that IS still real -- the memory CLI degrades
+        # cleanly with no memory server configured instead of panicking or reporting success.
+        ("memory_cli_degrades_without_a_server", "deterministic", "mcp_runtime_resilience", 3, "negative", "aura_memory_unit", "TestMemoryNotConfigured"),
         ("memory_readiness_accepts_typed_empty_result", "deterministic", "mcp_runtime_resilience", 2, "positive", "aura_memory_unit", "TestMemoryReadinessCheckRunsAnIsolatedFunctionalSearch"),
         ("memory_readiness_rejects_failures", "deterministic", "mcp_runtime_resilience", 2, "negative", "aura_memory_unit", "TestMemoryReadinessCheckRejectsSemanticAndTransportFailure"),
         ("memory_cli_rejects_invalid_operations", "deterministic", "mcp_runtime_resilience", 1, "negative", "aura_memory_unit", "TestMemoryVerbMappingNegativeCases"),

@@ -265,6 +265,10 @@ ingest-test: memory-up
 	  -e ARCADE_HTTP=http://arcadedb:2480 \
 	  -e ARCADE_BOLT=bolt://arcadedb:7687 \
 	  -e AURA_EMBED_BASE_URL=http://aura-llama-embed:8081 \
+	  -e AURA_INGEST_IDENTITY_ID=00000000-0000-0000-0000-000000000001 \
+	  -e AURA_INGEST_S3_BUCKET=aura-ingest-test \
+	  -e AURA_INGEST_S3_ACCESS_KEY_ID=test \
+	  -e AURA_INGEST_S3_SECRET_ACCESS_KEY=test \
 	  aura-ingest:local -c 'pip install --quiet pytest && cd /app && python -m pytest ingest/tests -q'
 
 restore-drill: db-migrate memory-up
