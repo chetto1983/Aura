@@ -9,13 +9,15 @@ import (
 	"github.com/chetto1983/aura/internal/arcadedb"
 )
 
-// GraphSchemaInput is deliberately empty of everything but the identity: the
-// schema of the connected database is the whole answer, and taking a database
-// name here would let a caller read across tenants. The schema is per tenant
-// because the database is.
-type GraphSchemaInput struct {
-	UserIdentifier string `json:"user_identifier" jsonschema:"the Aura identity whose memory this is; each identity has its own database and cannot reach another's"`
-}
+// GraphSchemaInput is deliberately empty of everything, including the identity
+// (D-108: it travels in _meta.aura.user_identifier now, not here) — the schema
+// of the connected database is the whole answer, and taking a database name
+// here would let a caller read across tenants. The schema is per tenant because
+// the database is. Keeping the type (rather than deleting it) is deliberate:
+// the "taking a database name here would let a caller read across tenants"
+// reasoning is still exactly right, and now it is enforced structurally by an
+// empty struct rather than merely by convention.
+type GraphSchemaInput struct{}
 
 // GraphSchemaOutput is an alias, not a copy. The statement and its projection now
 // live in internal/arcadedb because the cockpit's schema-only graph view reads the
@@ -39,10 +41,10 @@ func graphSchemaHandler(
 ) mcp.ToolHandlerFor[GraphSchemaInput, GraphSchemaOutput] {
 	return func(
 		ctx context.Context,
-		_ *mcp.CallToolRequest,
-		in GraphSchemaInput,
+		req *mcp.CallToolRequest,
+		_ GraphSchemaInput,
 	) (*mcp.CallToolResult, GraphSchemaOutput, error) {
-		client, err := tenants.For(ctx, in.UserIdentifier)
+		_, client, err := resolveCaller(ctx, tenants, req)
 		if err != nil {
 			return nil, GraphSchemaOutput{}, err
 		}

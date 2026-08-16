@@ -14,14 +14,15 @@ import (
 // run wrote -- a probe, a bad extraction, a batch written under the wrong
 // identity. At least one of source, entity or subject is required: an
 // empty filter is refused, not read as "all".
+// The calling identity is NOT a field here (D-108): it travels in
+// _meta.aura.user_identifier.
 type MemoryForgetInput struct {
-	UserIdentifier string            `json:"user_identifier" jsonschema:"the Aura identity whose memory this is; each identity has its own database and cannot reach another's"`
-	Source         *MemoryFactSource `json:"source,omitempty" jsonschema:"detach support from this source run; facts with other sources remain"`
-	Entity         string            `json:"entity,omitempty" jsonschema:"remove every fact touching this entity, in either direction, and the entity itself"`
-	Subject        string            `json:"subject,omitempty" jsonschema:"remove facts with this subject"`
-	Predicate      string            `json:"predicate,omitempty" jsonschema:"narrow to one relation; cannot be used alone"`
-	Object         string            `json:"object,omitempty" jsonschema:"narrow to one object; cannot be used alone"`
-	DryRun         bool              `json:"dry_run,omitempty" jsonschema:"count what would be removed without removing it"`
+	Source    *MemoryFactSource `json:"source,omitempty" jsonschema:"detach support from this source run; facts with other sources remain"`
+	Entity    string            `json:"entity,omitempty" jsonschema:"remove every fact touching this entity, in either direction, and the entity itself"`
+	Subject   string            `json:"subject,omitempty" jsonschema:"remove facts with this subject"`
+	Predicate string            `json:"predicate,omitempty" jsonschema:"narrow to one relation; cannot be used alone"`
+	Object    string            `json:"object,omitempty" jsonschema:"narrow to one object; cannot be used alone"`
+	DryRun    bool              `json:"dry_run,omitempty" jsonschema:"count what would be removed without removing it"`
 	// KeepOrphanEntities is negative because pruning is the useful default: an
 	// entity whose last fact just went is a name with nothing attached to it.
 	KeepOrphanEntities bool `json:"keep_orphan_entities,omitempty" jsonschema:"keep entities this removal strips of their last fact"`
@@ -58,10 +59,10 @@ func memoryForgetHandler(
 ) mcp.ToolHandlerFor[MemoryForgetInput, MemoryForgetOutput] {
 	return func(
 		ctx context.Context,
-		_ *mcp.CallToolRequest,
+		req *mcp.CallToolRequest,
 		in MemoryForgetInput,
 	) (*mcp.CallToolResult, MemoryForgetOutput, error) {
-		client, err := tenants.For(ctx, in.UserIdentifier)
+		_, client, err := resolveCaller(ctx, tenants, req)
 		if err != nil {
 			return nil, MemoryForgetOutput{}, err
 		}

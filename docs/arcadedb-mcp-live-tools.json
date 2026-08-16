@@ -7,15 +7,6 @@
     "description": "List the vertex, edge and document types in the graph with their properties, indexes and live record counts. Call this before writing a query so the type and property names are the real ones.",
     "inputSchema": {
       "additionalProperties": false,
-      "properties": {
-        "user_identifier": {
-          "description": "the Aura identity whose memory this is; each identity has its own database and cannot reach another's",
-          "type": "string"
-        }
-      },
-      "required": [
-        "user_identifier"
-      ],
       "type": "object"
     },
     "name": "graph_schema",
@@ -194,15 +185,8 @@
         "limit": {
           "description": "how many entities to include; defaults to 50",
           "type": "integer"
-        },
-        "user_identifier": {
-          "description": "the Aura identity whose memory this is; each identity has its own database and cannot reach another's",
-          "type": "string"
         }
       },
-      "required": [
-        "user_identifier"
-      ],
       "type": "object"
     },
     "name": "memory_digest",
@@ -245,15 +229,8 @@
         "limit": {
           "description": "how many entities to return; defaults to 50",
           "type": "integer"
-        },
-        "user_identifier": {
-          "description": "the Aura identity whose memory this is; each identity has its own database and cannot reach another's",
-          "type": "string"
         }
       },
-      "required": [
-        "user_identifier"
-      ],
       "type": "object"
     },
     "name": "memory_entities",
@@ -317,14 +294,9 @@
         "predicate": {
           "description": "narrow to one relation, e.g. works_for",
           "type": "string"
-        },
-        "user_identifier": {
-          "description": "the Aura identity whose memory this is; each identity has its own database and cannot reach another's",
-          "type": "string"
         }
       },
       "required": [
-        "user_identifier",
         "entity"
       ],
       "type": "object"
@@ -501,15 +473,8 @@
         "subject": {
           "description": "remove facts with this subject",
           "type": "string"
-        },
-        "user_identifier": {
-          "description": "the Aura identity whose memory this is; each identity has its own database and cannot reach another's",
-          "type": "string"
         }
       },
-      "required": [
-        "user_identifier"
-      ],
       "type": "object"
     },
     "name": "memory_forget",
@@ -554,14 +519,9 @@
         "target": {
           "description": "the name that survives and receives the facts",
           "type": "string"
-        },
-        "user_identifier": {
-          "description": "the Aura identity whose memory this is; each identity has its own database and cannot reach another's",
-          "type": "string"
         }
       },
       "required": [
-        "user_identifier",
         "source",
         "target"
       ],
@@ -620,15 +580,8 @@
         "query": {
           "description": "what to recall in natural language; required when entity is empty",
           "type": "string"
-        },
-        "user_identifier": {
-          "description": "the Aura identity whose memory this is; each identity has its own database and cannot reach another's",
-          "type": "string"
         }
       },
-      "required": [
-        "user_identifier"
-      ],
       "type": "object"
     },
     "name": "memory_recall",
@@ -759,15 +712,8 @@
         "batch": {
           "description": "how many facts to process in one pass; defaults to 100",
           "type": "integer"
-        },
-        "user_identifier": {
-          "description": "the Aura identity whose memory this is; each identity has its own database and cannot reach another's",
-          "type": "string"
         }
       },
-      "required": [
-        "user_identifier"
-      ],
       "type": "object"
     },
     "name": "memory_reembed",
@@ -811,14 +757,9 @@
         "query": {
           "description": "what to look for, in natural language",
           "type": "string"
-        },
-        "user_identifier": {
-          "description": "the Aura identity whose memory this is; each identity has its own database and cannot reach another's",
-          "type": "string"
         }
       },
       "required": [
-        "user_identifier",
         "query"
       ],
       "type": "object"
@@ -1000,10 +941,6 @@
           "description": "the fact_key of the exact fact to close, taken from a prior recall result; set this to disambiguate after a refused correction",
           "type": "string"
         },
-        "user_identifier": {
-          "description": "the Aura identity whose memory this is; each identity has its own database and cannot reach another's",
-          "type": "string"
-        },
         "valid_from": {
           "description": "RFC3339 instant when the fact became true; defaults to now",
           "type": "string"
@@ -1014,7 +951,6 @@
         }
       },
       "required": [
-        "user_identifier",
         "subject",
         "predicate",
         "object",

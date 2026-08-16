@@ -14,9 +14,9 @@ import (
 // internal/agent/mcptools/bridge_memory.go: re-embedding is an operator decision about
 // infrastructure, not a move an agent should make mid-turn.
 
-// MemoryReembedInput selects the scope of the pass.
+// MemoryReembedInput selects the scope of the pass. The calling identity is NOT
+// a field here (D-108): it travels in _meta.aura.user_identifier.
 type MemoryReembedInput struct {
-	UserIdentifier string `json:"user_identifier" jsonschema:"the Aura identity whose memory this is; each identity has its own database and cannot reach another's"`
 	// All is the difference between healing a gap and redoing the work. Default false so
 	// the cheap, safe pass is what an unqualified call gets.
 	All   bool `json:"all,omitempty" jsonschema:"recompute EVERY fact's vector, not only the facts that have none; use after the embedding model changes"`
@@ -46,10 +46,10 @@ func memoryReembedHandler(
 ) mcp.ToolHandlerFor[MemoryReembedInput, MemoryReembedOutput] {
 	return func(
 		ctx context.Context,
-		_ *mcp.CallToolRequest,
+		req *mcp.CallToolRequest,
 		in MemoryReembedInput,
 	) (*mcp.CallToolResult, MemoryReembedOutput, error) {
-		client, err := tenants.For(ctx, in.UserIdentifier)
+		_, client, err := resolveCaller(ctx, tenants, req)
 		if err != nil {
 			return nil, MemoryReembedOutput{}, err
 		}

@@ -22,17 +22,18 @@ type MemoryFactSource struct {
 }
 
 // MemoryUpsertFactInput mirrors arcadedb.Fact minus the embedding, which the
-// tool computes, and minus created_at, which is always now.
+// tool computes, and minus created_at, which is always now. The calling
+// identity is NOT a field here (D-108): it travels in _meta.aura.user_identifier,
+// read by identityFromMeta, so the model never emits or sees it.
 type MemoryUpsertFactInput struct {
-	UserIdentifier string `json:"user_identifier" jsonschema:"the Aura identity whose memory this is; each identity has its own database and cannot reach another's"`
-	Subject        string `json:"subject" jsonschema:"the entity the fact is about"`
-	SubjectKind    string `json:"subject_kind,omitempty" jsonschema:"optional entity kind, e.g. Person or Organization"`
-	Predicate      string `json:"predicate" jsonschema:"the relation, e.g. lives_in"`
-	Object         string `json:"object" jsonschema:"the entity or value the subject relates to"`
-	ObjectKind     string `json:"object_kind,omitempty" jsonschema:"optional entity kind, e.g. Location or Organization"`
-	Statement      string `json:"statement" jsonschema:"the fact in natural language; this is what gets embedded and searched"`
-	ValidFrom      string `json:"valid_from,omitempty" jsonschema:"RFC3339 instant when the fact became true; defaults to now"`
-	ValidTo        string `json:"valid_to,omitempty" jsonschema:"RFC3339 instant when the fact stopped being true; omit while it still holds"`
+	Subject     string `json:"subject" jsonschema:"the entity the fact is about"`
+	SubjectKind string `json:"subject_kind,omitempty" jsonschema:"optional entity kind, e.g. Person or Organization"`
+	Predicate   string `json:"predicate" jsonschema:"the relation, e.g. lives_in"`
+	Object      string `json:"object" jsonschema:"the entity or value the subject relates to"`
+	ObjectKind  string `json:"object_kind,omitempty" jsonschema:"optional entity kind, e.g. Location or Organization"`
+	Statement   string `json:"statement" jsonschema:"the fact in natural language; this is what gets embedded and searched"`
+	ValidFrom   string `json:"valid_from,omitempty" jsonschema:"RFC3339 instant when the fact became true; defaults to now"`
+	ValidTo     string `json:"valid_to,omitempty" jsonschema:"RFC3339 instant when the fact stopped being true; omit while it still holds"`
 	// Supersedes is explicit because some predicates are single-valued
 	// ("lives_in") and others are not ("likes"); guessing gets one of them wrong.
 	Supersedes bool `json:"supersedes,omitempty" jsonschema:"close any still-valid fact with the same subject and predicate"`
@@ -84,10 +85,10 @@ func memoryUpsertFactHandler(
 ) mcp.ToolHandlerFor[MemoryUpsertFactInput, MemoryUpsertFactOutput] {
 	return func(
 		ctx context.Context,
-		_ *mcp.CallToolRequest,
+		req *mcp.CallToolRequest,
 		in MemoryUpsertFactInput,
 	) (*mcp.CallToolResult, MemoryUpsertFactOutput, error) {
-		client, err := tenants.For(ctx, in.UserIdentifier)
+		identity, client, err := resolveCaller(ctx, tenants, req)
 		if err != nil {
 			return nil, MemoryUpsertFactOutput{}, err
 		}
@@ -103,7 +104,7 @@ func memoryUpsertFactHandler(
 		// MEM-04 (D-19): rewritten here, before arcadedb.Fact is built, so the
 		// bridge, the CLI and host-driven writes are all covered -- the bridge
 		// alone (withMemoryUserIdentifier) would miss the latter two.
-		subject := canonicalSubject(in.Subject, in.UserIdentifier, operatorDisplayName)
+		subject := canonicalSubject(in.Subject, identity, operatorDisplayName)
 		fact := arcadedb.Fact{
 			Subject:     subject,
 			SubjectKind: in.SubjectKind,
@@ -137,12 +138,12 @@ func memoryUpsertFactHandler(
 	}
 }
 
-// MemorySearchInput asks a question of the fact graph.
+// MemorySearchInput asks a question of the fact graph. The calling identity is
+// NOT a field here (D-108): it travels in _meta.aura.user_identifier.
 type MemorySearchInput struct {
-	UserIdentifier string `json:"user_identifier" jsonschema:"the Aura identity whose memory this is; each identity has its own database and cannot reach another's"`
-	Query          string `json:"query" jsonschema:"what to look for, in natural language"`
-	Limit          int    `json:"limit,omitempty" jsonschema:"how many facts to return; defaults to 5"`
-	AsOf           string `json:"as_of,omitempty" jsonschema:"RFC3339 instant; return the facts that were valid then rather than the ones valid now"`
+	Query string `json:"query" jsonschema:"what to look for, in natural language"`
+	Limit int    `json:"limit,omitempty" jsonschema:"how many facts to return; defaults to 5"`
+	AsOf  string `json:"as_of,omitempty" jsonschema:"RFC3339 instant; return the facts that were valid then rather than the ones valid now"`
 }
 
 // MemorySearchHit is one fact, with the provenance needed to check it.
@@ -177,14 +178,16 @@ type MemoryRetrievalMetadata struct {
 
 // MemoryRecallInput is the model-facing read contract. Entity selects the exact
 // graph path; otherwise query selects hybrid retrieval. The path-specific tools
-// remain host operations for the CLI and automatic context.
+// remain host operations for the CLI and automatic context. The calling identity
+// is NOT a field here (D-108): it travels in _meta.aura.user_identifier, and
+// this handler threads the real *mcp.CallToolRequest to its delegates below so
+// THEY read it, rather than resolving it itself.
 type MemoryRecallInput struct {
-	UserIdentifier string `json:"user_identifier" jsonschema:"the Aura identity whose memory this is; each identity has its own database and cannot reach another's"`
-	Query          string `json:"query,omitempty" jsonschema:"what to recall in natural language; required when entity is empty"`
-	Entity         string `json:"entity,omitempty" jsonschema:"exact entity name when known; selects graph traversal instead of semantic search"`
-	Predicate      string `json:"predicate,omitempty" jsonschema:"optional relation filter used with entity"`
-	Limit          int    `json:"limit,omitempty" jsonschema:"how many facts to return"`
-	AsOf           string `json:"as_of,omitempty" jsonschema:"RFC3339 instant; return facts valid then rather than now"`
+	Query     string `json:"query,omitempty" jsonschema:"what to recall in natural language; required when entity is empty"`
+	Entity    string `json:"entity,omitempty" jsonschema:"exact entity name when known; selects graph traversal instead of semantic search"`
+	Predicate string `json:"predicate,omitempty" jsonschema:"optional relation filter used with entity"`
+	Limit     int    `json:"limit,omitempty" jsonschema:"how many facts to return"`
+	AsOf      string `json:"as_of,omitempty" jsonschema:"RFC3339 instant; return facts valid then rather than now"`
 }
 
 func addMemoryRecallTool(server *mcp.Server, tenants *tenants) {
@@ -205,26 +208,35 @@ func memoryRecallHandler(
 ) mcp.ToolHandlerFor[MemoryRecallInput, MemorySearchOutput] {
 	return func(
 		ctx context.Context,
-		_ *mcp.CallToolRequest,
+		req *mcp.CallToolRequest,
 		in MemoryRecallInput,
 	) (*mcp.CallToolResult, MemorySearchOutput, error) {
+		// memory_recall gets its OWN fail-closed identity check, first, like every
+		// other handler — not just a hope that whichever delegate it reaches below
+		// happens to check too. Missing identity refuses before the entity/query
+		// selector is even inspected.
+		if _, err := identityFromMeta(req); err != nil {
+			return nil, MemorySearchOutput{}, err
+		}
 		if strings.TrimSpace(in.Entity) != "" {
-			return memoryFactsAboutHandler(tenants)(ctx, nil, MemoryFactsAboutInput{
-				UserIdentifier: in.UserIdentifier,
-				Entity:         in.Entity,
-				Predicate:      in.Predicate,
-				Limit:          in.Limit,
-				AsOf:           in.AsOf,
+			// The landmine (RESEARCH/plan <action>): this used to pass a literal nil
+			// request. Now that the delegate reads identity from req, nil must become
+			// req — identityFromMeta stays nil-safe anyway so a future delegate that
+			// forgets to thread it refuses cleanly instead of panicking.
+			return memoryFactsAboutHandler(tenants)(ctx, req, MemoryFactsAboutInput{
+				Entity:    in.Entity,
+				Predicate: in.Predicate,
+				Limit:     in.Limit,
+				AsOf:      in.AsOf,
 			})
 		}
 		if strings.TrimSpace(in.Query) == "" {
 			return nil, MemorySearchOutput{}, fmt.Errorf("memory_recall needs query or entity")
 		}
-		result, output, err := memorySearchHandler(tenants)(ctx, nil, MemorySearchInput{
-			UserIdentifier: in.UserIdentifier,
-			Query:          in.Query,
-			Limit:          in.Limit,
-			AsOf:           in.AsOf,
+		result, output, err := memorySearchHandler(tenants)(ctx, req, MemorySearchInput{
+			Query: in.Query,
+			Limit: in.Limit,
+			AsOf:  in.AsOf,
 		})
 		if err != nil {
 			return nil, MemorySearchOutput{}, fmt.Errorf("memory_recall: %w", err)
@@ -250,10 +262,10 @@ func memorySearchHandler(
 ) mcp.ToolHandlerFor[MemorySearchInput, MemorySearchOutput] {
 	return func(
 		ctx context.Context,
-		_ *mcp.CallToolRequest,
+		req *mcp.CallToolRequest,
 		in MemorySearchInput,
 	) (*mcp.CallToolResult, MemorySearchOutput, error) {
-		client, err := tenants.For(ctx, in.UserIdentifier)
+		_, client, err := resolveCaller(ctx, tenants, req)
 		if err != nil {
 			return nil, MemorySearchOutput{}, err
 		}
@@ -287,13 +299,13 @@ func parseOptionalTime(value, field string) (time.Time, error) {
 	return parsed, nil
 }
 
-// MemoryFactsAboutInput asks the graph directly.
+// MemoryFactsAboutInput asks the graph directly. The calling identity is NOT a
+// field here (D-108): it travels in _meta.aura.user_identifier.
 type MemoryFactsAboutInput struct {
-	UserIdentifier string `json:"user_identifier" jsonschema:"the Aura identity whose memory this is; each identity has its own database and cannot reach another's"`
-	Entity         string `json:"entity" jsonschema:"the entity to read the facts of, by exact name"`
-	Predicate      string `json:"predicate,omitempty" jsonschema:"narrow to one relation, e.g. works_for"`
-	Limit          int    `json:"limit,omitempty" jsonschema:"how many facts to return; defaults to 20"`
-	AsOf           string `json:"as_of,omitempty" jsonschema:"RFC3339 instant; the facts valid then rather than now"`
+	Entity    string `json:"entity" jsonschema:"the entity to read the facts of, by exact name"`
+	Predicate string `json:"predicate,omitempty" jsonschema:"narrow to one relation, e.g. works_for"`
+	Limit     int    `json:"limit,omitempty" jsonschema:"how many facts to return; defaults to 20"`
+	AsOf      string `json:"as_of,omitempty" jsonschema:"RFC3339 instant; the facts valid then rather than now"`
 }
 
 func addMemoryFactsAboutTool(server *mcp.Server, tenants *tenants) {
@@ -312,10 +324,10 @@ func memoryFactsAboutHandler(
 ) mcp.ToolHandlerFor[MemoryFactsAboutInput, MemorySearchOutput] {
 	return func(
 		ctx context.Context,
-		_ *mcp.CallToolRequest,
+		req *mcp.CallToolRequest,
 		in MemoryFactsAboutInput,
 	) (*mcp.CallToolResult, MemorySearchOutput, error) {
-		client, err := tenants.For(ctx, in.UserIdentifier)
+		_, client, err := resolveCaller(ctx, tenants, req)
 		if err != nil {
 			return nil, MemorySearchOutput{}, err
 		}

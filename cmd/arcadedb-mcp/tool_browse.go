@@ -15,10 +15,10 @@ import (
 // an exact name, memory_search needs the right words, and graph_schema returns
 // counts rather than names.
 
-// MemoryEntitiesInput bounds the listing.
+// MemoryEntitiesInput bounds the listing. The calling identity is NOT a field
+// here (D-108): it travels in _meta.aura.user_identifier.
 type MemoryEntitiesInput struct {
-	UserIdentifier string `json:"user_identifier" jsonschema:"the Aura identity whose memory this is; each identity has its own database and cannot reach another's"`
-	Limit          int    `json:"limit,omitempty" jsonschema:"how many entities to return; defaults to 50"`
+	Limit int `json:"limit,omitempty" jsonschema:"how many entities to return; defaults to 50"`
 }
 
 // MemoryEntitiesOutput carries the names the memory knows.
@@ -35,10 +35,10 @@ func addMemoryEntitiesTool(server *mcp.Server, tenants *tenants) {
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, func(
 		ctx context.Context,
-		_ *mcp.CallToolRequest,
+		req *mcp.CallToolRequest,
 		in MemoryEntitiesInput,
 	) (*mcp.CallToolResult, MemoryEntitiesOutput, error) {
-		client, err := tenants.For(ctx, in.UserIdentifier)
+		_, client, err := resolveCaller(ctx, tenants, req)
 		if err != nil {
 			return nil, MemoryEntitiesOutput{}, err
 		}
@@ -50,11 +50,11 @@ func addMemoryEntitiesTool(server *mcp.Server, tenants *tenants) {
 	})
 }
 
-// MemoryDigestInput shapes the index.
+// MemoryDigestInput shapes the index. The calling identity is NOT a field here
+// (D-108): it travels in _meta.aura.user_identifier.
 type MemoryDigestInput struct {
-	UserIdentifier string `json:"user_identifier" jsonschema:"the Aura identity whose memory this is; each identity has its own database and cannot reach another's"`
-	Limit          int    `json:"limit,omitempty" jsonschema:"how many entities to include; defaults to 50"`
-	FactsPerEntity int    `json:"facts_per_entity,omitempty" jsonschema:"how many facts to show per entity; defaults to 3"`
+	Limit          int `json:"limit,omitempty" jsonschema:"how many entities to include; defaults to 50"`
+	FactsPerEntity int `json:"facts_per_entity,omitempty" jsonschema:"how many facts to show per entity; defaults to 3"`
 }
 
 func addMemoryDigestTool(server *mcp.Server, tenants *tenants) {
@@ -70,10 +70,10 @@ func addMemoryDigestTool(server *mcp.Server, tenants *tenants) {
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, func(
 		ctx context.Context,
-		_ *mcp.CallToolRequest,
+		req *mcp.CallToolRequest,
 		in MemoryDigestInput,
 	) (*mcp.CallToolResult, arcadedb.DigestResult, error) {
-		client, err := tenants.For(ctx, in.UserIdentifier)
+		_, client, err := resolveCaller(ctx, tenants, req)
 		if err != nil {
 			return nil, arcadedb.DigestResult{}, err
 		}
@@ -85,11 +85,11 @@ func addMemoryDigestTool(server *mcp.Server, tenants *tenants) {
 	})
 }
 
-// MemoryMergeInput names the duplicate and the survivor.
+// MemoryMergeInput names the duplicate and the survivor. The calling identity
+// is NOT a field here (D-108): it travels in _meta.aura.user_identifier.
 type MemoryMergeInput struct {
-	UserIdentifier string `json:"user_identifier" jsonschema:"the Aura identity whose memory this is; each identity has its own database and cannot reach another's"`
-	Source         string `json:"source" jsonschema:"the duplicate name; it is removed"`
-	Target         string `json:"target" jsonschema:"the name that survives and receives the facts"`
+	Source string `json:"source" jsonschema:"the duplicate name; it is removed"`
+	Target string `json:"target" jsonschema:"the name that survives and receives the facts"`
 }
 
 func addMemoryMergeTool(server *mcp.Server, tenants *tenants) {
@@ -107,10 +107,10 @@ func addMemoryMergeTool(server *mcp.Server, tenants *tenants) {
 		},
 	}, func(
 		ctx context.Context,
-		_ *mcp.CallToolRequest,
+		req *mcp.CallToolRequest,
 		in MemoryMergeInput,
 	) (*mcp.CallToolResult, arcadedb.MergeResult, error) {
-		client, err := tenants.For(ctx, in.UserIdentifier)
+		_, client, err := resolveCaller(ctx, tenants, req)
 		if err != nil {
 			return nil, arcadedb.MergeResult{}, err
 		}

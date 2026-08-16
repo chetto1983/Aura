@@ -43,7 +43,7 @@ func schemaClient(t *testing.T, status int, body string) *arcadedb.Client {
 
 func callSchema(t *testing.T, client *arcadedb.Client) (GraphSchemaOutput, error) {
 	t.Helper()
-	_, out, err := graphSchemaHandler(singleTenant(t, client))(context.Background(), nil, GraphSchemaInput{UserIdentifier: testIdentity})
+	_, out, err := graphSchemaHandler(singleTenant(t, client))(context.Background(), reqWithIdentity(testIdentity), GraphSchemaInput{})
 	return out, err
 }
 
