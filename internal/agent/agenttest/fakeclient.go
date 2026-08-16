@@ -83,6 +83,16 @@ func (f *FakeClient) CallCount() int {
 	return f.next
 }
 
+// RecordedRequests returns a snapshot of every request the fake has seen, taken under the
+// same lock Stream writes with. A caller that ranged over the exported Requests field
+// directly would race any background worker still using this client -- the auto-title
+// worker is exactly such a caller.
+func (f *FakeClient) RecordedRequests() []llm.Request {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]llm.Request(nil), f.Requests...)
+}
+
 // LastRequest returns the most recent recorded request, or the zero request when
 // Stream has not been called yet.
 func (f *FakeClient) LastRequest() llm.Request {
