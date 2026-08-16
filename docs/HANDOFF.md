@@ -366,8 +366,26 @@ Ora `recordInterruptedRound` scrive il marcatore, con `context.WithoutCancel` pe
 *proprio perché* il contesto è morto. Provato ripetendo la stessa riproduzione: prima `seq 1
 user` e basta, dopo `seq 2 assistant "[run interrupted before it produced an answer…]"`.
 
-**Non copre un SIGKILL o un crash**: lì non resta alcun momento in cui scrivere. Solo uno
-sweep sui turni sospesi raggiungerebbe quelli — non fatto, decisione non presa.
+**L'altra metà — il SIGKILL — è chiusa senza sweep** (`61e5d92bf`). Lo sweep sembrava
+obbligato, e non lo era: avrebbe dovuto indovinare una soglia oltre la quale un turno
+sospeso è "davvero" morto, e sbagliandola avrebbe dichiarato morto un run lungo ma vivo.
+Guardando hermes-agent (`repair_empty_non_final_messages`) è emersa la strada giusta —
+**riparare la copia di filo in lettura, mai la storia salvata** — e applicata alla forma di
+Aura non serve alcuna soglia: quando una storia viene riletta, il round che l'ha prodotta è
+finito per definizione, quindi un turno utente seguito da un altro turno utente non ha
+ricevuto risposta *per registro*, non per tempistica.
+
+Il passo specifico di hermes **non è stato portato**: sostituisce un segnaposto nei messaggi
+vuoti e non finali, che alcuni provider rifiutano con un 400 che poi avvelena ogni turno
+successivo. Misurato prima di scrivere: Aura ha **zero** righe di quella forma, quindi
+portarlo sarebbe stato curare una malattia che questo corpus non ha.
+
+Provato con un SIGKILL vero a metà run — che lascia solo il turno utente. Al turno dopo
+l'agente ha risposto «No.» citando testualmente `[no answer was produced for the message
+above]`, e si è offerto di scrivere il saggio che non aveva scritto. Effetto collaterale
+utile: due turni utente consecutivi diventano alternati sul filo, quindi un provider che
+pretende l'alternanza stretta è soddisfatto per costruzione invece che perché li fonde in
+silenzio.
 
 **Correzione a quanto avevo scritto qui stamattina.** Avevo detto che il difetto «è successo
 di nuovo mentre misuravo il fix». **Falso**, e l'ho verificato: quel run aveva risposto (seq 86,
