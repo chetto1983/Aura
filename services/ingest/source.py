@@ -187,8 +187,21 @@ def expected_keys(config: S3Config) -> set[str]:
         Bucket=config.bucket, Prefix=config.prefix
     ):
         for obj in page.get("Contents", []):
+            key = obj["Key"]
+            # A key ending in "/" is a folder MARKER: a zero-byte object a UI writes so an
+            # empty prefix shows up in a listing. The walker never offers one to the
+            # pipeline, so expecting a row for it manufactures precisely the discrepancy
+            # this function exists to avoid. MEASURED 2026-08-16: a single "test/" marker
+            # made every catch-up run exit 1 and, once the audit also ran per live cycle,
+            # printed a MISSING line that could never clear -- teaching a reader to skip
+            # the one line that would have named a real loss.
+            #
+            # The test is the trailing slash, NOT the zero size: an empty file a person
+            # actually uploaded is a document, gets a row, and must still be audited.
+            if key.endswith("/"):
+                continue
             # PurePosixPath, not the raw string: is_file_included calls .as_posix() on
             # what it is handed, so a str raises AttributeError on the first object.
-            if matcher.is_file_included(pathlib.PurePosixPath(obj["Key"])):
-                keys.add(obj["Key"])
+            if matcher.is_file_included(pathlib.PurePosixPath(key)):
+                keys.add(key)
     return keys

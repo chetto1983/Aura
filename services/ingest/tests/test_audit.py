@@ -61,6 +61,27 @@ def test_expected_keys_excludes_the_prefixes_the_walker_excludes(monkeypatch):
     assert source.expected_keys(_config()) == {"laws/statute.pdf", "laws/table.csv"}
 
 
+def test_expected_keys_skips_folder_markers(monkeypatch):
+    # A zero-byte key ending in "/" is what a UI writes so an empty prefix appears in a
+    # listing. The walker never offers one to the pipeline, so expecting a row for it
+    # invents a discrepancy that can never clear. MEASURED 2026-08-16: one "test/" marker
+    # made every catch-up run exit 1.
+    _install_fake_s3(monkeypatch, [{"Contents": [
+        {"Key": "test/"},
+        {"Key": "test/statute.pdf"},
+    ]}])
+
+    assert source.expected_keys(_config()) == {"test/statute.pdf"}
+
+
+def test_expected_keys_still_counts_an_empty_file(monkeypatch):
+    # The test is the trailing slash, not the size: an empty file a person uploaded is a
+    # document, gets a row, and must still be audited.
+    _install_fake_s3(monkeypatch, [{"Contents": [{"Key": "vuoto.txt", "Size": 0}]}])
+
+    assert source.expected_keys(_config()) == {"vuoto.txt"}
+
+
 def test_expected_keys_spans_pages(monkeypatch):
     _install_fake_s3(monkeypatch, [
         {"Contents": [{"Key": "a.pdf"}]},

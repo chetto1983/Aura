@@ -425,6 +425,14 @@ async def reconcile(
 ) -> None:
     walker = source.walk(coco.use_context(S3), _S3_CONFIG)
     await coco.mount_each(process_file, walker.items(), identity_id, table, documents)
+    # The audit belongs HERE, at the end of a cycle, and only in live mode. Catch-up runs
+    # it once from __main__ where its count becomes the exit code; live never returns, so
+    # without this the only thing that can tell a lost document from an empty one never
+    # executes at all — which is how two documents went missing on 2026-08-09 under a
+    # clean-looking log. mount_each is awaited, so by this line the cycle's work is done
+    # and nothing in flight can be mistaken for something lost.
+    if _LIVE:
+        audit_cycle()
 
 
 @coco.fn
@@ -471,16 +479,44 @@ def audit_pass() -> int:
 
     Returns the number of missing objects; the caller decides what that is worth.
     """
-    expected = source.expected_keys(_S3_CONFIG)
-    indexed = arcade.indexed_source_keys(
-        ARCADE_HTTP, ARCADE_DB, ("root", ARCADE_PASSWORD), 60.0
-    )
+    expected, indexed = _bucket_versus_index()
     missing = sorted(expected - indexed)
     print(f"[audit] {len(expected)} objects in {_S3_CONFIG.bucket}, "
           f"{len(indexed)} indexed, {len(missing)} missing", flush=True)
     for key in missing:
         print(f"[audit] MISSING {key}", flush=True)
     return len(missing)
+
+
+def _bucket_versus_index() -> tuple[set[str], set[str]]:
+    """The two sets every audit compares, in one place so the two callers cannot drift."""
+    return (
+        source.expected_keys(_S3_CONFIG),
+        arcade.indexed_source_keys(ARCADE_HTTP, ARCADE_DB, ("root", ARCADE_PASSWORD), 60.0),
+    )
+
+
+_missing_previous_cycle: set[str] = set()
+
+
+def audit_cycle() -> None:
+    """Name what stayed missing across TWO consecutive live cycles.
+
+    One cycle is not evidence of loss. An object uploaded after this cycle's walker listed
+    the bucket has simply not been offered to the pipeline yet, and reporting it would train
+    a reader to ignore the line that matters. Two cycles is the cheapest bound that
+    distinguishes them, and it is measured in the pipeline's own cadence rather than in a
+    wall-clock threshold somebody would have to keep in step with the poll interval.
+
+    Prints only. A live ingest that exits on a missing document would take the pipeline down
+    for the one case where it still has work to do for every other file.
+    """
+    global _missing_previous_cycle
+    expected, indexed = _bucket_versus_index()
+    missing = expected - indexed
+    for key in sorted(missing & _missing_previous_cycle):
+        print(f"[audit] MISSING {key}", flush=True)
+    _missing_previous_cycle = missing
 
 
 if __name__ == "__main__":
