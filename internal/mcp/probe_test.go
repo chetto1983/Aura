@@ -13,11 +13,14 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// managedFromHelper turns a helper ServerConfig (the self-exec fake stdio MCP server
-// from client_open_test.go) into a ManagedServer so ProbeServer can dial it.
-func managedFromHelper(mode string) ManagedServer {
-	cfg := helperServerConfig(mode)
-	return ManagedServer{Command: cfg.Command, Args: cfg.Args, Env: cfg.Env}
+// deadStdioServer names a command that can never spawn, so the dial fails
+// immediately without a real handshake attempt — the "dead server" shape
+// ProbeServer's dial-failure branch needs. The pre-SDK "crash" helper mode this
+// used to drive (client_open_test.go, deleted in plan 45.1-03) exercised the same
+// branch through a real subprocess that answered nothing; a missing binary reaches
+// the identical OK=false/non-empty-Err outcome more directly.
+func deadStdioServer() ManagedServer {
+	return ManagedServer{Command: "aura-nonexistent-mcp-binary-45-1-03"}
 }
 
 // TestMCPProbe_HealthyServerCountsTools proves a reachable stdio server probes OK with
@@ -57,7 +60,7 @@ func TestMCPProbe_CanceledContextIsolated(t *testing.T) {
 	cancel() // expired before the probe runs
 
 	start := time.Now()
-	got := ProbeServer(ctx, "slow", managedFromHelper(""))
+	got := ProbeServer(ctx, "slow", sdkHelperServer(1))
 	elapsed := time.Since(start)
 
 	if got.OK {
@@ -78,7 +81,7 @@ func TestMCPProbe_DeadServerIsolated(t *testing.T) {
 	if testing.Short() {
 		t.Skip("spawns a real subprocess")
 	}
-	got := ProbeServer(context.Background(), "dead", managedFromHelper("crash"))
+	got := ProbeServer(context.Background(), "dead", deadStdioServer())
 	if got.OK {
 		t.Errorf("ProbeServer(crash): want OK=false, got %+v", got)
 	}

@@ -1,9 +1,9 @@
 //go:build calendar_integration
 
 // Live Aura PIM sidecar tier (forked calendar-mcp → chetto1983/aura-pim-mcp). Drives
-// the running streamable-HTTP sidecar end to end: initialize + tools/list (exactly the
-// trimmed surface, destructive tools dropped) + a real list_accounts call (clean even
-// with zero connected accounts — the CI smoke shape).
+// the running streamable-HTTP sidecar end to end over the SDK session: connect +
+// tools/list (exactly the trimmed surface, destructive tools dropped) + a real
+// list_accounts call (clean even with zero connected accounts — the CI smoke shape).
 //
 // No-skip-as-green (CLAUDE.md): when AURA_PIM_MCP_URL (or _PORT) is unset under $CI the
 // test t.Fatals (a skipped tier fails the gate, never passes it); locally it t.Skips.
@@ -20,9 +20,10 @@ import (
 )
 
 // reapIdleHTTPConns drains http.DefaultClient's idle keep-alive connections at test
-// end. OpenServer's streamable-HTTP transport uses http.DefaultClient, whose parked
-// readLoop/writeLoop goroutines otherwise trip the package goleak TestMain even after
-// Close() ended the MCP session. Test-only; never touches production Close() semantics.
+// end. The SDK's streamable-HTTP transport falls back to http.DefaultClient when no
+// EgressPolicy is enforced, whose parked readLoop/writeLoop goroutines otherwise trip
+// the package goleak TestMain even after Close() ended the MCP session. Test-only;
+// never touches production Close() semantics.
 func reapIdleHTTPConns(t *testing.T) {
 	t.Helper()
 	t.Cleanup(func() {
@@ -64,7 +65,8 @@ var droppedCalendarTools = []string{
 	"bulk_move_emails", "get_guide", "get_email_attachment",
 }
 
-// TestCalendarServerLive drives the live Aura PIM sidecar over streamable-HTTP.
+// TestCalendarServerLive drives the live Aura PIM sidecar over streamable-HTTP through
+// the SDK session — the same OpenSDKSession construction path production uses.
 func TestCalendarServerLive(t *testing.T) {
 	endpoint := calendarEndpointOrGate(t)
 	reapIdleHTTPConns(t)
@@ -77,19 +79,26 @@ func TestCalendarServerLive(t *testing.T) {
 		URL:   endpoint,
 		Trust: ManagedTrust{Class: TrustTrustedRecipe},
 	}
-	c, err := OpenServer(ctx, "calendar", server)
+	session, err := OpenSDKSession(ctx, "calendar", server, EgressPolicy{}, SessionOptions{})
 	if err != nil {
-		t.Fatalf("OpenServer calendar PIM sidecar at %s: %v", endpoint, err)
+		t.Fatalf("OpenSDKSession calendar PIM sidecar at %s: %v", endpoint, err)
 	}
-	defer func() { _ = c.Close() }()
+	defer func() { _ = session.Close() }()
 
-	defs, err := c.ListTools(ctx)
-	if err != nil {
-		t.Fatalf("ListTools: %v", err)
+	// D-105/RESEARCH Assumption A1: the fork is very likely a Python MCP SDK, whose
+	// negotiated protocol version was never measured against the live sidecar before
+	// this plan. Log it — this is where that question actually gets answered.
+	result := session.InitializeResult()
+	if result == nil || strings.TrimSpace(result.ProtocolVersion) == "" {
+		t.Error("calendar sidecar: InitializeResult().ProtocolVersion is empty")
+	} else {
+		t.Logf("calendar sidecar negotiated protocol version: %s", result.ProtocolVersion)
 	}
-	got := make(map[string]bool, len(defs))
-	names := make([]string, 0, len(defs))
-	for _, d := range defs {
+
+	advertised := drainSDKToolsForTest(t, ctx, session)
+	got := make(map[string]bool, len(advertised))
+	names := make([]string, 0, len(advertised))
+	for _, d := range advertised {
 		got[d.Name] = true
 		names = append(names, d.Name)
 	}
@@ -105,15 +114,15 @@ func TestCalendarServerLive(t *testing.T) {
 			t.Errorf("PIM sidecar still advertises dropped tool %q — fork trim regressed", gone)
 		}
 	}
-	if len(defs) != len(keptCalendarTools) {
-		t.Errorf("PIM sidecar advertises %d tools, want exactly %d (trimmed surface); surface=%v", len(defs), len(keptCalendarTools), names)
+	if len(advertised) != len(keptCalendarTools) {
+		t.Errorf("PIM sidecar advertises %d tools, want exactly %d (trimmed surface); surface=%v", len(advertised), len(keptCalendarTools), names)
 	}
 
 	// list_accounts is read-only and clean even with zero connected accounts — the
 	// CI smoke runs against an empty-config container.
-	out, err := c.CallTool(ctx, "list_accounts", nil)
-	if err != nil {
-		t.Fatalf("CallTool list_accounts: %v", err)
+	out, isErr := callAndDecodeForTest(t, ctx, session, "list_accounts", nil)
+	if isErr {
+		t.Fatalf("CallTool list_accounts reported isError: %s", out)
 	}
 	if strings.TrimSpace(out) == "" {
 		t.Fatal("list_accounts returned empty content")

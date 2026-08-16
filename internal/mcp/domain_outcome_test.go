@@ -1,65 +1,64 @@
 package mcp
 
 import (
-	"context"
 	"encoding/json"
-	"errors"
 	"testing"
+
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func TestCallToolRejectsExplicitDomainFailure(t *testing.T) {
+// domain_outcome_test.go exercises explicitDomainFailure (UNCHANGED logic) through
+// its SDK-era call site: DecodeToolResult -> DecodeToolCallError, the chain
+// bridge_supervisor.go's decodeResult and cmd/aura's callSessionText both use. The
+// pre-SDK glue this used to drive directly (callToolWith, tool_methods.go) is
+// deleted in plan 45.1-03; the fixtures below are unchanged, only the entry point
+// moved to typed *sdkmcp.CallToolResult fields instead of a raw JSON envelope.
+
+func TestDecodeToolResultRejectsExplicitDomainFailure(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		name   string
-		result string
+		name       string
+		text       string
+		structured any
 	}{
 		{
-			name: "structured content",
-			result: `{
-				"content":[{"type":"text","text":"Failed to download media"}],
-				"structuredContent":{"success":false,"message":"Failed to download media"},
-				"isError":false
-			}`,
+			name:       "structured content",
+			text:       "Failed to download media",
+			structured: map[string]any{"success": false, "message": "Failed to download media"},
 		},
 		{
 			name: "text JSON",
-			result: `{
-				"content":[{"type":"text","text":"{\"success\":false,\"message\":\"Failed to download media\"}"}],
-				"isError":false
-			}`,
+			text: `{"success":false,"message":"Failed to download media"}`,
 		},
 		{
 			name: "top-level error field",
-			result: `{
-				"content":[{"type":"text","text":"{\"error\":\"entity not found\"}"}],
-				"isError":false
-			}`,
+			text: `{"error":"entity not found"}`,
 		},
 		{
 			name: "null deletion with reason",
-			result: `{
-				"content":[{"type":"text","text":"{\"deleted\":null,\"reason\":\"forgetting a relationship needs source_id, target_id and relationship_type\"}"}],
-				"isError":false
-			}`,
+			text: `{"deleted":null,"reason":"forgetting a relationship needs source_id, target_id and relationship_type"}`,
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			roundtrip := func(context.Context, string, any) (json.RawMessage, error) {
-				return json.RawMessage(tc.result), nil
+			result := &sdkmcp.CallToolResult{
+				Content:           []sdkmcp.Content{&sdkmcp.TextContent{Text: tc.text}},
+				StructuredContent: tc.structured,
 			}
-			_, err := callToolWith(t.Context(), "whatsapp", "download_media", nil, roundtrip)
-			var toolErr *ToolCallError
-			if !errors.As(err, &toolErr) {
-				t.Fatalf("err = %v, want *ToolCallError", err)
+			text, isErr := DecodeToolResult(result)
+			if !isErr {
+				t.Fatalf("isError = false, want true (explicit domain failure) for %q", tc.text)
+			}
+			if toolErr := DecodeToolCallError("whatsapp", "download_media", text); toolErr == nil {
+				t.Fatal("DecodeToolCallError returned nil for an explicit domain failure")
 			}
 		})
 	}
 }
 
-func TestCallToolPreservesFalseDataFields(t *testing.T) {
+func TestDecodeToolResultPreservesFalseDataFields(t *testing.T) {
 	t.Parallel()
 
 	cases := []string{
@@ -71,20 +70,17 @@ func TestCallToolPreservesFalseDataFields(t *testing.T) {
 	for _, payload := range cases {
 		t.Run(payload, func(t *testing.T) {
 			t.Parallel()
-			roundtrip := func(context.Context, string, any) (json.RawMessage, error) {
-				result, err := json.Marshal(map[string]any{
-					"content": []map[string]any{{
-						"type": "text",
-						"text": payload,
-					}},
-					"structuredContent": json.RawMessage(payload),
-					"isError":           false,
-				})
-				return result, err
+			var structured any
+			if err := json.Unmarshal([]byte(payload), &structured); err != nil {
+				t.Fatalf("unmarshal fixture payload: %v", err)
 			}
-			text, err := callToolWith(t.Context(), "whatsapp", "get_contact", nil, roundtrip)
-			if err != nil {
-				t.Fatalf("callToolWith: %v", err)
+			result := &sdkmcp.CallToolResult{
+				Content:           []sdkmcp.Content{&sdkmcp.TextContent{Text: payload}},
+				StructuredContent: structured,
+			}
+			text, isErr := DecodeToolResult(result)
+			if isErr {
+				t.Fatalf("isError = true, want false for %q", payload)
 			}
 			if text != payload {
 				t.Fatalf("text = %q, want %q", text, payload)

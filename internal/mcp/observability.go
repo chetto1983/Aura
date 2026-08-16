@@ -11,19 +11,18 @@ func newMCPBoundary(operation, transport string) *obs.Boundary {
 	})
 }
 
+// SDK-path boundaries. Built from the SAME factory and reusing the SAME
+// "mcp_initialize"/"mcp_list_tools" operation names and "stdio"/"http" transport
+// labels the pre-SDK bespoke client used for its own initialize/list boundaries
+// (deleted with client.go/http_client.go in plan 45.1-03): the metric names and
+// dimension values a dashboard already watches must not shift just because the
+// client underneath is now the SDK.
+//
+// There is no SDK-path "call"/"ping" boundary pair: the bespoke client's
+// stdioCallBoundary/httpCallBoundary/stdioPingBoundary/httpPingBoundary died with
+// it and nothing in bridge_supervisor.go's CallToolText re-attached an equivalent —
+// a gap noted for a later plan, not silently carried forward as dead vars here.
 var (
-	stdioInitializeBoundary = newMCPBoundary("mcp_initialize", "stdio")
-	stdioListBoundary       = newMCPBoundary("mcp_list_tools", "stdio")
-	stdioCallBoundary       = newMCPBoundary("mcp_call_tool", "stdio")
-	stdioPingBoundary       = newMCPBoundary("mcp_ping", "stdio")
-	httpInitializeBoundary  = newMCPBoundary("mcp_initialize", "http")
-	httpListBoundary        = newMCPBoundary("mcp_list_tools", "http")
-	httpCallBoundary        = newMCPBoundary("mcp_call_tool", "http")
-	httpPingBoundary        = newMCPBoundary("mcp_ping", "http")
-
-	// SDK-path boundaries. Built from the SAME factory and reusing the SAME transport
-	// labels as the vars above: the metric names and dimension values a dashboard
-	// already watches must not shift just because the client underneath is now the SDK.
 	sdkStdioConnectBoundary = newMCPBoundary("mcp_initialize", "stdio")
 	sdkHTTPConnectBoundary  = newMCPBoundary("mcp_initialize", "http")
 	sdkStdioListBoundary    = newMCPBoundary("mcp_list_tools", "stdio")

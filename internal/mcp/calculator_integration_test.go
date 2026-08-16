@@ -1,5 +1,9 @@
 //go:build calculator_integration
 
+// Live calculator sidecar tier (D-110's "prove the real wire" tier), re-pointed at
+// the SDK stdio session. No-skip-as-green (CLAUDE.md): when
+// AURA_MCP_CALCULATOR_SERVER_JSON is unset under $CI the test t.Fatals (a skipped
+// tier fails the gate, never passes it); locally it t.Skips.
 package mcp
 
 import (
@@ -9,45 +13,62 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func TestCalculatorServerLive(t *testing.T) {
-	raw := os.Getenv("AURA_MCP_CALCULATOR_SERVER_JSON")
-	if strings.TrimSpace(raw) == "" {
-		t.Skip("set AURA_MCP_CALCULATOR_SERVER_JSON to a mcp.ServerConfig JSON object")
+// calculatorConfigOrGate resolves the stdio ServerConfig from
+// AURA_MCP_CALCULATOR_SERVER_JSON. Empty under $CI is a HARD failure
+// (no-skip-as-green); empty locally is a skip.
+func calculatorConfigOrGate(t *testing.T) ServerConfig {
+	t.Helper()
+	raw := strings.TrimSpace(os.Getenv("AURA_MCP_CALCULATOR_SERVER_JSON"))
+	if raw == "" {
+		if strings.TrimSpace(os.Getenv("CI")) != "" {
+			t.Fatal("AURA_MCP_CALCULATOR_SERVER_JSON must be set under CI — a skipped calculator_integration tier is never a silent pass (CLAUDE.md no-skip-as-green)")
+		}
+		t.Skip("set AURA_MCP_CALCULATOR_SERVER_JSON to a ServerConfig JSON object to run the calculator_integration tier")
 	}
 	var cfg ServerConfig
 	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
 		t.Fatalf("parse AURA_MCP_CALCULATOR_SERVER_JSON: %v", err)
 	}
+	return cfg
+}
+
+func TestCalculatorServerLive(t *testing.T) {
+	cfg := calculatorConfigOrGate(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	c, err := Open(ctx, "calculator", cfg)
+	session, err := OpenSDKSessionForConfig(ctx, ctx, "calculator", cfg, SessionOptions{})
 	if err != nil {
-		t.Fatalf("Open calculator MCP server: %v", err)
+		t.Fatalf("OpenSDKSessionForConfig calculator MCP server: %v", err)
 	}
-	defer func() { _ = c.Close() }()
+	defer func() { _ = session.Close() }()
 
-	defs, err := c.ListTools(ctx)
-	if err != nil {
-		t.Fatalf("ListTools: %v", err)
-	}
-	if !hasTool(defs, "calculate") {
-		t.Fatalf("calculator server did not advertise calculate: %#v", defs)
+	if result := session.InitializeResult(); result == nil || strings.TrimSpace(result.ProtocolVersion) == "" {
+		t.Error("calculator sidecar: InitializeResult().ProtocolVersion is empty")
+	} else {
+		t.Logf("calculator sidecar negotiated protocol version: %s", result.ProtocolVersion)
 	}
 
-	out, err := c.CallTool(ctx, "calculate", map[string]any{"expression": "2+2"})
-	if err != nil {
-		t.Fatalf("CallTool calculate: %v", err)
+	advertised := drainSDKToolsForTest(t, ctx, session)
+	if !hasCalculatorTool(advertised, "calculate") {
+		t.Fatalf("calculator server did not advertise calculate: %#v", advertised)
+	}
+
+	out, isErr := callAndDecodeForTest(t, ctx, session, "calculate", map[string]any{"expression": "2+2"})
+	if isErr {
+		t.Fatalf("CallTool calculate reported isError: %s", out)
 	}
 	if !strings.Contains(out, "4") {
 		t.Fatalf("calculate 2+2 returned %q, want content containing 4", out)
 	}
 }
 
-func hasTool(defs []ToolDef, name string) bool {
-	for _, def := range defs {
+func hasCalculatorTool(advertised []*sdkmcp.Tool, name string) bool {
+	for _, def := range advertised {
 		if def.Name == name {
 			return true
 		}
