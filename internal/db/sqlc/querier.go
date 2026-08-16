@@ -106,6 +106,10 @@ type Querier interface {
 	GetAsset(ctx context.Context, id pgtype.UUID) (AuraAssets, error)
 	GetAssetForIdentity(ctx context.Context, arg GetAssetForIdentityParams) (AuraAssets, error)
 	GetConversation(ctx context.Context, id pgtype.UUID) (AuraConversations, error)
+	// The durable summary of this branch's earlier turns (migration 0096, HANDOFF 6.1).
+	// Returns pgx.ErrNoRows when the branch has never been compacted, which is the normal
+	// state of every conversation short enough to fit its window.
+	GetConversationCompaction(ctx context.Context, arg GetConversationCompactionParams) (AuraConversationCompactions, error)
 	// Owner-scoped single-conversation read (Phase 36 MUSR-01 / D-06): GetConversation with
 	// an identity_id owner predicate. A miss is the caller's 404 (read hides existence).
 	// Routed through db.WithIdentityTx so the RLS owner policy backstops a forgotten filter.
@@ -383,6 +387,15 @@ type Querier interface {
 	// a cancelled/completed task is not silently revived. Returns rows affected.
 	UpdateTaskScheduleRow(ctx context.Context, arg UpdateTaskScheduleRowParams) (int64, error)
 	UpsertBenchmarkSetting(ctx context.Context, arg UpsertBenchmarkSettingParams) error
+	// Writes the branch's summary, advancing the watermark.
+	//
+	// The WHERE on the DO UPDATE is the whole invariant: a watermark may only move FORWARD.
+	// Two turns can compact concurrently (two requests on one conversation), and the loser
+	// must not replace a summary covering seq 120 with one covering seq 80 -- that would
+	// silently drop forty turns out of the model's view while leaving the ladder believing
+	// they were summarized. Zero rows back means "someone else already went further", which
+	// the caller treats as success and re-reads.
+	UpsertConversationCompaction(ctx context.Context, arg UpsertConversationCompactionParams) (AuraConversationCompactions, error)
 	UpsertDocumentTag(ctx context.Context, arg UpsertDocumentTagParams) error
 	UpsertIdentityRecovery(ctx context.Context, arg UpsertIdentityRecoveryParams) error
 	UpsertSetting(ctx context.Context, arg UpsertSettingParams) (AuraSettings, error)

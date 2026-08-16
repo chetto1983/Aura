@@ -234,3 +234,34 @@ WHERE leaf.conversation_id = $1
         AND child.parent_seq = leaf.seq
   )
 ORDER BY leaf.branch_id ASC, leaf.seq ASC;
+
+-- name: GetConversationCompaction :one
+-- The durable summary of this branch's earlier turns (migration 0096, HANDOFF 6.1).
+-- Returns pgx.ErrNoRows when the branch has never been compacted, which is the normal
+-- state of every conversation short enough to fit its window.
+SELECT conversation_id, branch_id, covers_through_seq, summary, model, source_turns,
+       created_at, updated_at
+FROM aura.conversation_compactions
+WHERE conversation_id = $1 AND branch_id = $2;
+
+-- name: UpsertConversationCompaction :one
+-- Writes the branch's summary, advancing the watermark.
+--
+-- The WHERE on the DO UPDATE is the whole invariant: a watermark may only move FORWARD.
+-- Two turns can compact concurrently (two requests on one conversation), and the loser
+-- must not replace a summary covering seq 120 with one covering seq 80 -- that would
+-- silently drop forty turns out of the model's view while leaving the ladder believing
+-- they were summarized. Zero rows back means "someone else already went further", which
+-- the caller treats as success and re-reads.
+INSERT INTO aura.conversation_compactions (
+    conversation_id, branch_id, covers_through_seq, summary, model, source_turns
+) VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (conversation_id, branch_id) DO UPDATE
+   SET covers_through_seq = EXCLUDED.covers_through_seq,
+       summary            = EXCLUDED.summary,
+       model              = EXCLUDED.model,
+       source_turns       = EXCLUDED.source_turns,
+       updated_at         = now()
+   WHERE conversation_compactions.covers_through_seq < EXCLUDED.covers_through_seq
+RETURNING conversation_id, branch_id, covers_through_seq, summary, model, source_turns,
+          created_at, updated_at;

@@ -156,6 +156,19 @@ type AuraContextRotEvents struct {
 	TokensAfter    int32              `json:"tokens_after"`
 }
 
+// One durable summary per conversation branch. Makes the compacted prompt prefix stable across turns (the provider cache depends on it) and the next compaction incremental. Never a substitute for conversation_turns, which keeps every turn.
+type AuraConversationCompactions struct {
+	ConversationID pgtype.UUID `json:"conversation_id"`
+	BranchID       pgtype.UUID `json:"branch_id"`
+	// Every turn with seq <= this value is represented by the summary. The next compaction folds in only what came after.
+	CoversThroughSeq int32              `json:"covers_through_seq"`
+	Summary          string             `json:"summary"`
+	Model            string             `json:"model"`
+	SourceTurns      int32              `json:"source_turns"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}
+
 // Per-turn rows (Slice 1.8). content NULL + content_sidecar_path set when content > AURA_CONVERSATION_TURN_CAP_BYTES.
 type AuraConversationTurns struct {
 	ConversationID     pgtype.UUID        `json:"conversation_id"`

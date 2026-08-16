@@ -67,81 +67,6 @@ const toolSearchName = "tool_search"
 // `aura chat new`), NEVER the iter.Seq2 error slot.
 var ErrContextWindowExceeded = errors.New("conversation context exceeds the model window; start a new chat with `aura chat new`")
 
-// ContextConfig carries the L1/L2 inputs. ContextWindow + MaxOutputTokens come
-// from llm.Config (04-01); ToolEvictAfterTurns from config.Config
-// (AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS).
-type ContextConfig struct {
-	ContextWindow       int
-	MaxOutputTokens     int
-	ToolEvictAfterTurns int
-	// HistoryHardCapTurns bounds rows fetched, sidecars rehydrated, and turns
-	// tokenized before the L1/L2 ladder. The protected system head counts toward
-	// this aggregate cap.
-	HistoryHardCapTurns int
-	// AlwaysBlock is the rendered messages[1] always-on skill block (D-07). When
-	// non-empty the ladder injects it as a PROTECTED user-role turn immediately after
-	// the system L0 turn — counted toward the budget but never evicted by L1/L2.5
-	// (Pitfall 3). The Runner renders it per turn from current loader state; an empty
-	// string means no always:true skill is active (the turn is omitted).
-	AlwaysBlock string
-	// TransientContext is a non-persisted reference item, budgeted as one unit and
-	// inserted immediately before the current user turn. It is omitted, never
-	// truncated, when the deterministic ladder cannot make room for it.
-	TransientContext *TransientContext
-	// ProviderErrorReserveTokens is the extra L2 hard-cap headroom the configured chat
-	// backend needs for its token-estimation error (Wave 1.10). It is non-zero only on
-	// the local llama.cpp path, which has no provider-side overflow net — an Aura
-	// under-count there is a hard local window overflow, so the cap reserves this many
-	// tokens below the SPEC Req#10 formula. The Runner sets it from
-	// llm.ProviderErrorReserveTokens(cfg); zero (the default) leaves the formula
-	// unchanged for OpenRouter and hand-built test configs.
-	ProviderErrorReserveTokens int
-	// Summarizer, when non-nil, enables L2.4 LLM compaction: over-budget history is
-	// condensed into one synthetic summary turn (keeping the protected head and the
-	// active round verbatim) BEFORE the deterministic L2.5 hard-drop. A nil Summarizer
-	// (the default, and every unit test that does not set it) disables compaction, so
-	// the ladder behaves exactly as before.
-	Summarizer Summarizer
-}
-
-// hardCap computes the L2 hard cap from the config (SPEC Req#10:
-// hard_cap = ContextWindow - max(MaxOutputTokens, 20000) - 13000 -
-// ProviderErrorReserveTokens). ProviderErrorReserveTokens (Wave 1.10) is 0 for
-// OpenRouter and hand-built configs, so the historical formula is unchanged there;
-// on the netless local llama.cpp path it reserves extra headroom for the
-// tiktoken-vs-local-tokenizer gap. The formula is kept whenever it is already
-// positive (normal/large windows). For a small-window model where the fixed
-// reservation exceeds the window the formula is non-positive; instead of clamping to
-// 0 (which disabled L2/L2.5 protection entirely — finding M-03) it floors to a
-// positive smallWindowHardCapFloor so L2.5 truncation stays active. A degenerate
-// ContextWindow <= 0 still yields 0.
-func (c ContextConfig) hardCap() int {
-	out := max(c.MaxOutputTokens, l2MinOutputReservation)
-	cap := c.ContextWindow - out - l2HeadroomTokens - c.ProviderErrorReserveTokens
-	if cap <= 0 {
-		cap = smallWindowHardCapFloor(c.ContextWindow)
-	}
-	return cap
-}
-
-// HardCap exposes the exact history cap to the final model-request guard.
-func (c ContextConfig) HardCap() int {
-	return c.hardCap()
-}
-
-// smallWindowHardCapFloor returns the positive L2 cap used when the SPEC Req#10
-// formula is non-positive (M-03). Adopting the nanobot precedent (a budget <= 0
-// clamps to max(128, window//2) rather than disabling history management), Aura
-// floors to ContextWindow/2 so L2.5 stays active on small windows. A window <= 0 is
-// a misconfiguration with no usable budget, so it returns 0 (the only remaining
-// hardCap==0 path; boot fail-fast is the seam to reject it).
-func smallWindowHardCapFloor(window int) int {
-	if window <= 0 {
-		return 0
-	}
-	return window / 2
-}
-
 // LoadManagedHistory loads the raw turns and applies the L1/L2/L2.5 ladder, the
 // entry point the Runner calls (D-A2-06: the ladder is applied in/around
 // LoadHistory). It uses the Store as the rot emitter. The database retains the
@@ -203,6 +128,7 @@ func (s *Store) managedFromTurns(ctx context.Context, conversationID string, tur
 	if err != nil {
 		return nil, fmt.Errorf("load managed history %s: tiktoken encoder: %w", conversationID, err)
 	}
+	cfg.compactionCache = s
 	return applyContextLadder(ctx, conversationID, turns, cfg, enc, s)
 }
 
@@ -256,6 +182,31 @@ func applyContextLadder(
 			"conversation_id", conversationID, "tokens", totalAfterL1, "hard_cap", hardCap)
 	}
 	if hardCap == 0 || tokensAfterL1 <= ordinaryCap {
+		// EARLY compaction (operator decision, 2026-08-16): condense at half the model
+		// window rather than waiting for the hard cap. Half a window of verbatim history
+		// is the point where a long conversation stops being cheap -- the request is
+		// already tens of thousands of tokens, and the hard cap is close enough that the
+		// first compaction there arrives under time pressure, with the whole history to
+		// read in one call.
+		//
+		// It is affordable only because the summary is durable: the watermark advances
+		// when a round ages out, so the summarizer runs then and not on every turn, and
+		// the compacted prefix stays byte-identical in between (which is what keeps the
+		// provider cache alive -- 90% of input tokens on a real 128-turn conversation).
+		//
+		// Failure here is free: nothing is over budget yet, so a summarizer error simply
+		// returns the L1 history and the next turn tries again.
+		if trigger := cfg.earlyCompactionTokens(); trigger > 0 && tokensAfterL1 > trigger {
+			if compacted, ok := tryCompact(ctx, cfg.Summarizer, cfg.compactionCache,
+				conversationID, "", enc, l1, ordinaryCap); ok {
+				slog.Info("conversation context compacted early",
+					"conversation_id", conversationID,
+					"trigger_tokens", trigger,
+					"tokens_before", totalAfterL1,
+					"tokens_after", totalTokens(enc, compacted)+tailTokens)
+				return injectTransientContext(repairManagedToolMessagePairs(toMessages(compacted)), tail), nil
+			}
+		}
 		return injectTransientContext(repairManagedToolMessagePairs(toMessages(l1)), tail), nil
 	}
 
@@ -264,7 +215,8 @@ func applyContextLadder(
 	// is condensed rather than lost. It runs BEFORE the deterministic L2.5 drop. On any
 	// summarizer error, empty result, or a summary that still overflows, tryCompact
 	// returns false and we fall through to L2.5 (the zero-LLM fail-safe) unchanged.
-	if compacted, ok := tryCompact(ctx, cfg.Summarizer, enc, l1, ordinaryCap); ok {
+	if compacted, ok := tryCompact(ctx, cfg.Summarizer, cfg.compactionCache,
+		conversationID, "", enc, l1, ordinaryCap); ok {
 		slog.Info("conversation context compacted",
 			"conversation_id", conversationID,
 			"tokens_before", totalAfterL1,

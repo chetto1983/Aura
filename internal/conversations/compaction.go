@@ -3,7 +3,6 @@ package conversations
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -57,7 +56,15 @@ func isCompaction(t Turn) bool {
 // active verbatim. It returns (compacted, true) only when a non-empty summary was
 // produced AND the result fits under cap; otherwise (nil, false) so the caller falls
 // through to the deterministic L2.5 drop. It never mutates turns.
-func tryCompact(ctx context.Context, sum Summarizer, enc *tiktoken.Tiktoken, turns []Turn, cap int) ([]Turn, bool) {
+func tryCompact(
+	ctx context.Context,
+	sum Summarizer,
+	cache compactionCache,
+	conversationID, branchID string,
+	enc *tiktoken.Tiktoken,
+	turns []Turn,
+	cap int,
+) ([]Turn, bool) {
 	if sum == nil {
 		return nil, false
 	}
@@ -65,13 +72,8 @@ func tryCompact(ctx context.Context, sum Summarizer, enc *tiktoken.Tiktoken, tur
 	if len(history) == 0 {
 		return nil, false // nothing older than the active round to condense
 	}
-	summary, err := sum.Summarize(ctx, toMessages(history))
-	if err != nil {
-		slog.Warn("context compaction failed; falling back to deterministic drop", "err", err)
-		return nil, false
-	}
-	summary = strings.TrimSpace(summary)
-	if summary == "" {
+	summary, ok := compactionSummary(ctx, sum, cache, conversationID, branchID, history)
+	if !ok {
 		return nil, false
 	}
 	summaryTurn := Turn{

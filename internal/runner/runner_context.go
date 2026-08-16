@@ -38,6 +38,7 @@ func (r *Runner) contextConfig(memory *conversations.TransientContext) conversat
 	}
 	return conversations.ContextConfig{
 		ContextWindow:              r.cfg.ContextWindow,
+		CompactionTriggerPercent:   r.cfg.CompactionTriggerPercent,
 		MaxOutputTokens:            r.cfg.MaxOutputTokens,
 		ToolEvictAfterTurns:        r.evictAfter,
 		HistoryHardCapTurns:        r.historyCap,

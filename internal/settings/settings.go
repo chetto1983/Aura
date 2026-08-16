@@ -50,14 +50,20 @@ var AllowedKeys = map[string]KeyMeta{
 	"AURA_LLM_MAX_TOKENS":          {Kind: KindInt, Label: "Max response tokens"},
 	"AURA_MODEL_CONTEXT_WINDOW":    {Kind: KindInt, Label: "Context window tokens"},
 	"AURA_MODEL_MAX_OUTPUT_TOKENS": {Kind: KindInt, Label: "Reserved output tokens"},
-	"OPENROUTER_API_KEY":           {Secret: true, Kind: KindString, Label: "OpenRouter API key"},
-	"AURA_EMBED_MODEL":             {Kind: KindString, Label: "Embedding cloud model"},
-	"AURA_EMBED_DIMENSIONS":        {Kind: KindInt, Label: "Embedding dimensions"},
-	"AURA_EMBED_BASE_URL":          {Kind: KindString, Label: "Embedding base URL"},
-	"AURA_TTS_MODEL":               {Kind: KindString, Label: "TTS cloud model"},
-	"AURA_STT_CLOUD_MODEL":         {Kind: KindString, Label: "STT cloud model"},
-	"AURA_VISION_CLOUD":            {Kind: KindBool, Label: "Vision uses cloud"},
-	"TELEGRAM_BOT_TOKEN":           {Secret: true, Kind: KindString, Label: "Telegram bot token"},
+	// The share of the window a conversation may spend replaying itself before L2.4
+	// condenses the older rounds. Editable here because the right value depends on what
+	// the operator is doing -- long analytical threads want it high, cheap chat low --
+	// and because it is a percentage, which is the one form of this number a person can
+	// judge without knowing the tokenizer.
+	"AURA_CONTEXT_COMPACTION_TRIGGER_PERCENT": {Kind: KindInt, Label: "Compact history at % of window"},
+	"OPENROUTER_API_KEY":                      {Secret: true, Kind: KindString, Label: "OpenRouter API key"},
+	"AURA_EMBED_MODEL":                        {Kind: KindString, Label: "Embedding cloud model"},
+	"AURA_EMBED_DIMENSIONS":                   {Kind: KindInt, Label: "Embedding dimensions"},
+	"AURA_EMBED_BASE_URL":                     {Kind: KindString, Label: "Embedding base URL"},
+	"AURA_TTS_MODEL":                          {Kind: KindString, Label: "TTS cloud model"},
+	"AURA_STT_CLOUD_MODEL":                    {Kind: KindString, Label: "STT cloud model"},
+	"AURA_VISION_CLOUD":                       {Kind: KindBool, Label: "Vision uses cloud"},
+	"TELEGRAM_BOT_TOKEN":                      {Secret: true, Kind: KindString, Label: "Telegram bot token"},
 }
 
 // Allowed reports whether key may be set through the Settings layer.

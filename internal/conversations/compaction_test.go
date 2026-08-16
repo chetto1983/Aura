@@ -172,7 +172,7 @@ func TestTryCompact_NoHistory_ReturnsFalse(t *testing.T) {
 		{Seq: 1, Role: llm.RoleSystem, Content: "sys"},
 		{Seq: 2, Role: llm.RoleUser, Content: "only round"},
 	}
-	if _, ok := tryCompact(context.Background(), sum, enc, turns, 4000); ok {
+	if _, ok := tryCompact(context.Background(), sum, nil, "", "", enc, turns, 4000); ok {
 		t.Fatal("tryCompact must return false when there is no history to summarize")
 	}
 	if sum.calls != 0 {

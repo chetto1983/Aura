@@ -40,6 +40,14 @@ const (
 	defaultContextWindow   = 1_000_000
 	defaultMaxOutputTokens = 32_768
 
+	// defaultCompactionTriggerPercent is when a conversation starts condensing its own
+	// history: at HALF the window (operator decision, 2026-08-16), long before the L2
+	// hard cap forces it. The cockpit Settings page edits it, so the number a person
+	// tunes is the one they can reason about -- "how much of my window may be spent
+	// replaying the conversation verbatim" -- rather than a token count that shifts with
+	// the output reservation. 0 disables early compaction entirely.
+	defaultCompactionTriggerPercent = 50
+
 	// defaultCompletionGate is the production default for the completion critic
 	// gate (amendment #54 / D-43): ON. The zero-value Config (hand-built in unit
 	// tests) leaves it false, so the gate is OFF unless a test opts in — Load is
@@ -67,6 +75,7 @@ const (
 	envConnectTimeoutSec    = "AURA_LLM_CONNECT_TIMEOUT_SEC"
 	envStreamIdleTimeoutSec = "AURA_LLM_STREAM_IDLE_TIMEOUT_SEC"
 	envContextWindow        = "AURA_MODEL_CONTEXT_WINDOW"
+	envCompactionTrigger    = "AURA_CONTEXT_COMPACTION_TRIGGER_PERCENT"
 	envMaxOutputTokens      = "AURA_MODEL_MAX_OUTPUT_TOKENS" //nolint:gosec // G101 false positive: env var NAME, not a credential
 
 	// Completion gate knobs (amendment #54 / D-43). AURA_COMPLETION_* domain
@@ -120,8 +129,12 @@ type Config struct {
 	ShowReasoning   bool
 	ContextWindow   int // total model context window (tokens); L2 budget input
 	MaxOutputTokens int // output-token reservation cap; L2 budget input
-	Headers         map[string]string
-	Prices          map[string]Price
+	// CompactionTriggerPercent is the share of ContextWindow the replayed history may
+	// occupy before L2.4 condenses it, even though nothing is over budget yet. 0 leaves
+	// compaction to the hard cap alone; 100 is the same thing by another route.
+	CompactionTriggerPercent int
+	Headers                  map[string]string
+	Prices                   map[string]Price
 
 	// CompletionGate enables the agent's completion critic gate (amendment #54 /
 	// D-43): a voluntary termination (text_response / content-stop) on a turn
@@ -219,18 +232,19 @@ func load(allowEmptyKey bool) (*Config, error) {
 	_ = godotenv.Load() // best-effort; .env feeds OPENROUTER_API_KEY into the env
 
 	cfg := &Config{
-		Provider:             defaultProvider,
-		Model:                defaultModel,
-		BaseURL:              defaultBaseURL,
-		Temperature:          defaultTemperature,
-		MaxTokens:            defaultMaxTokens,
-		AdaptiveReasoning:    defaultAdaptiveReasoning,
-		ShowReasoning:        defaultShowReasoning,
-		ContextWindow:        defaultContextWindow,
-		MaxOutputTokens:      defaultMaxOutputTokens,
-		TotalTimeoutSec:      defaultTotalTimeoutSec,
-		ConnectTimeoutSec:    defaultConnectTimeoutSec,
-		StreamIdleTimeoutSec: defaultStreamIdleTimeoutSec,
+		Provider:                 defaultProvider,
+		Model:                    defaultModel,
+		BaseURL:                  defaultBaseURL,
+		Temperature:              defaultTemperature,
+		MaxTokens:                defaultMaxTokens,
+		AdaptiveReasoning:        defaultAdaptiveReasoning,
+		ShowReasoning:            defaultShowReasoning,
+		ContextWindow:            defaultContextWindow,
+		MaxOutputTokens:          defaultMaxOutputTokens,
+		CompactionTriggerPercent: defaultCompactionTriggerPercent,
+		TotalTimeoutSec:          defaultTotalTimeoutSec,
+		ConnectTimeoutSec:        defaultConnectTimeoutSec,
+		StreamIdleTimeoutSec:     defaultStreamIdleTimeoutSec,
 		Headers: map[string]string{
 			"HTTP-Referer": headerReferer,
 			"X-Title":      headerTitle,
@@ -387,6 +401,14 @@ func applyEnvOverrides(cfg *Config) error {
 		return err
 	} else if ok {
 		cfg.MaxOutputTokens = v
+	}
+	if v, ok, err := envInt(envCompactionTrigger); err != nil {
+		return err
+	} else if ok {
+		if v < 0 || v > 100 {
+			return fmt.Errorf("%s must be a percentage between 0 and 100, got %d", envCompactionTrigger, v)
+		}
+		cfg.CompactionTriggerPercent = v
 	}
 	if v, ok, err := envInt(envTotalTimeoutSec); err != nil {
 		return err

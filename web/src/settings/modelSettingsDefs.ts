@@ -16,6 +16,7 @@ export type SettingsKey =
   | 'OPENROUTER_API_KEY'
   | 'AURA_LLM_MAX_TOKENS'
   | 'AURA_MODEL_CONTEXT_WINDOW'
+  | 'AURA_CONTEXT_COMPACTION_TRIGGER_PERCENT'
   | 'AURA_MODEL_MAX_OUTPUT_TOKENS'
   | 'AURA_EMBED_MODEL'
   | 'AURA_EMBED_BASE_URL'
@@ -81,6 +82,15 @@ export const TOKEN_SETTINGS: readonly SettingDef[] = [
     kind: 'int',
     labelKey: 'settings.fields.maxOutputTokens',
     placeholder: '32768',
+  },
+  // A percentage, not a token count: it is the share of the window a conversation may
+  // spend replaying itself verbatim before the older rounds are condensed. Empty means
+  // the backend default (50).
+  {
+    key: 'AURA_CONTEXT_COMPACTION_TRIGGER_PERCENT',
+    kind: 'int',
+    labelKey: 'settings.fields.compactionTrigger',
+    placeholder: '50',
   },
 ];
 

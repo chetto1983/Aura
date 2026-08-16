@@ -43,6 +43,37 @@ func (q *Queries) CountTurns(ctx context.Context, conversationID pgtype.UUID) (i
 	return turn_count, err
 }
 
+const getConversationCompaction = `-- name: GetConversationCompaction :one
+SELECT conversation_id, branch_id, covers_through_seq, summary, model, source_turns,
+       created_at, updated_at
+FROM aura.conversation_compactions
+WHERE conversation_id = $1 AND branch_id = $2
+`
+
+type GetConversationCompactionParams struct {
+	ConversationID pgtype.UUID `json:"conversation_id"`
+	BranchID       pgtype.UUID `json:"branch_id"`
+}
+
+// The durable summary of this branch's earlier turns (migration 0096, HANDOFF 6.1).
+// Returns pgx.ErrNoRows when the branch has never been compacted, which is the normal
+// state of every conversation short enough to fit its window.
+func (q *Queries) GetConversationCompaction(ctx context.Context, arg GetConversationCompactionParams) (AuraConversationCompactions, error) {
+	row := q.db.QueryRow(ctx, getConversationCompaction, arg.ConversationID, arg.BranchID)
+	var i AuraConversationCompactions
+	err := row.Scan(
+		&i.ConversationID,
+		&i.BranchID,
+		&i.CoversThroughSeq,
+		&i.Summary,
+		&i.Model,
+		&i.SourceTurns,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getTurnPointers = `-- name: GetTurnPointers :one
 SELECT seq, branch_id, parent_seq, role
 FROM aura.conversation_turns
@@ -672,4 +703,59 @@ func (q *Queries) SetTurnBranchPointers(ctx context.Context, arg SetTurnBranchPo
 		arg.ParentSeq,
 	)
 	return err
+}
+
+const upsertConversationCompaction = `-- name: UpsertConversationCompaction :one
+INSERT INTO aura.conversation_compactions (
+    conversation_id, branch_id, covers_through_seq, summary, model, source_turns
+) VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (conversation_id, branch_id) DO UPDATE
+   SET covers_through_seq = EXCLUDED.covers_through_seq,
+       summary            = EXCLUDED.summary,
+       model              = EXCLUDED.model,
+       source_turns       = EXCLUDED.source_turns,
+       updated_at         = now()
+   WHERE conversation_compactions.covers_through_seq < EXCLUDED.covers_through_seq
+RETURNING conversation_id, branch_id, covers_through_seq, summary, model, source_turns,
+          created_at, updated_at
+`
+
+type UpsertConversationCompactionParams struct {
+	ConversationID   pgtype.UUID `json:"conversation_id"`
+	BranchID         pgtype.UUID `json:"branch_id"`
+	CoversThroughSeq int32       `json:"covers_through_seq"`
+	Summary          string      `json:"summary"`
+	Model            string      `json:"model"`
+	SourceTurns      int32       `json:"source_turns"`
+}
+
+// Writes the branch's summary, advancing the watermark.
+//
+// The WHERE on the DO UPDATE is the whole invariant: a watermark may only move FORWARD.
+// Two turns can compact concurrently (two requests on one conversation), and the loser
+// must not replace a summary covering seq 120 with one covering seq 80 -- that would
+// silently drop forty turns out of the model's view while leaving the ladder believing
+// they were summarized. Zero rows back means "someone else already went further", which
+// the caller treats as success and re-reads.
+func (q *Queries) UpsertConversationCompaction(ctx context.Context, arg UpsertConversationCompactionParams) (AuraConversationCompactions, error) {
+	row := q.db.QueryRow(ctx, upsertConversationCompaction,
+		arg.ConversationID,
+		arg.BranchID,
+		arg.CoversThroughSeq,
+		arg.Summary,
+		arg.Model,
+		arg.SourceTurns,
+	)
+	var i AuraConversationCompactions
+	err := row.Scan(
+		&i.ConversationID,
+		&i.BranchID,
+		&i.CoversThroughSeq,
+		&i.Summary,
+		&i.Model,
+		&i.SourceTurns,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
