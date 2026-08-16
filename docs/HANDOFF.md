@@ -334,11 +334,29 @@ di codice.** *Confidenza: alta sull'apertura, nulla sulle cause.*
 **nessuna assegnazione in tutto l'albero**. La guardia di invalidazione del rebuild è inerte.
 *Confidenza: alta. Questo non è codice morto: è una protezione che non protegge.*
 
-**4.2 — Un turno utente senza risposta resta nella storia e viene rimandato per sempre.**
-Misurato oggi: conversazione `019ffabe-…`, seq 76 e 77 identici a 3 minuti di distanza, senza
-assistant in mezzo. Il primo run è fallito, l'utente ha rimandato. Niente in
-`internal/conversations/` fonde o scarta due user consecutivi, quindi il modello riceve la stessa
-domanda due volte a ogni turno successivo. *Confidenza: alta.*
+**4.2 — CHIUSA il 2026-08-16 (`02fba5490`).** `dropRepeatedUserTurns` collassa due turni utente
+adiacenti **byte-identici**, tenendo il più recente, prima di `injectAlwaysBlock` — così la testa
+sintetica non può mai essere candidata e il conteggio token, la compaction e il drop L2.5
+lavorano sulla storia com'è avvenuta. Due messaggi *diversi* di fila restano intatti: sono una
+persona che scrive due volte prima che l'agente risponda (`019fa501` seq 72-73, «via non capisci
+un cazzo» / «percè????»), e fonderli le metterebbe parole in bocca.
+
+Provato guidando l'agente sulla conversazione vera, stesso prompt prima e dopo:
+*«la frase compare DUE volte, entrambe dentro un unico messaggio»* → *«1 — compare una sola volta
+come messaggio utente completo»*.
+
+Una correzione alla voce d'origine: diceva che il modello riceve **due messaggi**. Ne riceve
+**uno**, col testo ripetuto dentro — il provider coalesce i messaggi consecutivi dello stesso
+ruolo (Aura non ha alcuna fusione propria: cercata, non c'è). L'effetto è quello descritto, il
+meccanismo no.
+
+**4.2b — APERTA, ed è la causa di 4.2: un run che muore non lascia NESSUNA traccia in
+conversazione.** Non un turno d'errore, non uno vuoto. Su `019ffabe` il turno 76 è seguito solo
+dal 77 identico: il primo tentativo non ha prodotto niente e il silenzio è indistinguibile da
+una risposta lenta, quindi ripetere è l'unica mossa che la persona ha. **È successo di nuovo
+mentre misuravo il fix**, su questo stack, oggi: un run terminato senza risposta e senza traccia.
+Collassare i doppioni toglie il sintomo; finché il fallimento è muto, la persona continuerà a
+generarli. *Confidenza: alta sul fatto, nulla sulla causa del run muto — non indagata.*
 
 **4.3 — `_embed` del sidecar ingest inghiotte il messaggio del server.**
 `services/ingest/app.py:196-208` — `urlopen` senza try/except: un HTTP 500 diventa un `HTTPError`
