@@ -607,7 +607,45 @@ Questo è ciò che è rimasto attaccato:
 
 ## 6. Lavoro progettato e non fatto
 
-**6.1 — Slice 1b (compaction durevole).** `docs/context-compaction-1b-plan.md` esiste, ma **tre
+**6.1 — Slice 1b (compaction durevole). PARZIALMENTE CHIUSA il 2026-08-16 (`1f4b16eab`), e
+validata sullo stack acceso.** Il summary ora è persistito (`aura.conversation_compactions`,
+migration 0096) con un watermark, e la compaction scatta anche **prima** dell'hard cap, a una
+percentuale della finestra che l'operatore modifica dalla pagina Settings
+(`AURA_CONTEXT_COMPACTION_TRIGGER_PERCENT`, default 50).
+
+Misurato guidando l'agente vero su Qwen3.5-9B locale (finestra 81.920, KV q4_0, soglia al 10%):
+
+```
+conversation context compacted early   trigger=8192  tokens_before=12595  tokens_after=3232
+riga durevole dopo il 1° passaggio:    covers_through_seq=20  source_turns=20
+riga durevole dopo il turno seguente:  covers_through_seq=22  source_turns=2
+```
+
+Quel `source_turns=2` è l'intera tesi: il secondo passaggio ha riletto **due** turni invece di
+ventidue, portandosi dentro il summary precedente come materiale. Prima di questo cambio ogni
+turno sopra budget ri-riassumeva tutta la storia — e riscriveva il prefisso, che è come si
+perde la cache di provider misurata al **90%** su una chat vera da 128 turni.
+
+**Tre cose che questa misura NON dimostra, e una che smentisce il piano:**
+- La soglia conta i **token della storia**, non quelli della richiesta: system prompt e
+  manifest dei tool (~19k su questo deployment) non entrano nel conteggio. Con la finestra a
+  81.920 e soglia 30% la compaction NON è scattata benché il provider riportasse 38.941 token
+  di input. Se l'intento è «comprimi quando la richiesta è grande», il numero da confrontare
+  è un altro.
+- Il ramo branch non è coperto: la chiave è (conversazione, branch) ma il percorso path-aware
+  passa branch vuoto, quindi due branch condividono una riga. Da chiudere prima di dichiararla
+  finita.
+- Nessun test di concorrenza vero: l'invariante del watermark è provata con due scritture
+  sequenziali, non con due turni simultanei.
+- **Il piano diceva di iniettare il summary «identical shape to injectAlwaysBlock»**: resta
+  sbagliato, e infatti non è stato fatto così.
+
+**Limite scoperto misurando, e non è di questa slice**: `llm.Config.Validate` pretende
+`window > max(output, 20000) + 13000 = 33.000`, quindi **un modello con finestra ≤ 33k non fa
+partire il daemon** (Qwen a 32.768 falliva per 232 token). Le riserve sono costanti assolute:
+su 1M sono briciole, su 32k sono più della finestra. Vanno rese proporzionali.
+
+**6.1 (voce originale) — Slice 1b (compaction durevole).** `docs/context-compaction-1b-plan.md` esiste, ma **tre
 punti del piano sono stati smentiti misurando** oggi:
 - lo slot di migration nel piano è vecchio — **leggere `ls internal/db/migrations/ | tail -1`
   all'atterraggio**, 0095 è occupato;
