@@ -442,9 +442,20 @@ numero** misurato qui.
 altra perdita resta invisibile. Lo sforamento è coperto adesso; ogni altro modo di perdere un
 documento no.
 
-**4.4 — `ErrDocumentDeleteInFlight` non è instradato al bordo API.**
-Prodotto a `internal/documents/catalog_store.go:120` su un percorso vivo
-(`service.go:130`), nessun `errors.Is` in `internal/agui/` o `cmd/aura/`. *Confidenza: alta.*
+**4.4 — CHIUSA il 2026-08-16 (`34fdf1049`).** Il fatto era esatto (nessun `errors.Is` da
+nessuna parte), ma la conseguenza era più concreta di «non instradato»: `processAsset`
+appiattiva **qualunque** errore in `StatusFailed` con codice `processor_failed`, quindi una
+corsa di cancellazione — che si risolve da sola in secondi e **non è colpa del file** —
+risultava indistinguibile da un formato non supportato o da un upload corrotto. L'unica mossa
+della persona era ricaricare il file, senza che nulla le dicesse che aspettare sarebbe bastato.
+
+Ora porta il suo codice (`delete_in_flight`), classificato con `errors.Is` e non per
+sottostringa: il sentinel è avvolto **due volte** salendo (`"catalog document: %w"` in
+`documents.Service`, poi il ritorno del processor) e solo il sentinel sopravvive intatto. Il
+test asserisce attraverso quello stesso doppio avvolgimento.
+
+**Non fa il retry**, ed è la cosa che risparmierebbe davvero il ri-upload: serve backoff e un
+limite perché una delete che non completa mai non diventi un loop. Decisione a sé.
 
 **4.5 — Un allegato di chat arriva come `<assetID>.pdf`.**
 `internal/objectstore/types.go:104-106` costruisce la chiave senza il nome reale, e
