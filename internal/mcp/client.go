@@ -65,24 +65,6 @@ func newStdioScanner(r io.Reader, maxFrame int) *bufio.Scanner {
 
 var mcpCommandNameRe = regexp.MustCompile(`^[A-Za-z0-9._:/\\~-]+$`)
 
-// ErrTransport marks a broken MCP transport pipe/session. Callers use
-// IsTransportError rather than matching opaque OS error strings.
-var ErrTransport = errors.New("mcp transport error")
-
-// IsTransportError reports whether err wraps ErrTransport.
-func IsTransportError(err error) bool {
-	return errors.Is(err, ErrTransport)
-}
-
-// ServerConfig declares how to launch one stdio MCP server (Claude-Desktop shape).
-// Env entries ("KEY=value") are explicit operator-declared child environment.
-type ServerConfig struct {
-	Command     string        `json:"command"`
-	Args        []string      `json:"args,omitempty"`
-	Env         []string      `json:"env,omitempty"`
-	CallTimeout time.Duration `json:"-"`
-}
-
 // ToolAnnotations carries optional trust/action hints advertised by an MCP
 // server for one tool.
 type ToolAnnotations struct {
