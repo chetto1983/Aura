@@ -26,6 +26,13 @@ type FileBrowser interface {
 	List(ctx context.Context, identityID, prefix string, limit int) (assets.BrowseResult, error)
 }
 
+// FileNamer resolves the display names of stored objects, which their keys do not carry.
+// Optional: without one the manager falls back to the tail of the key, which is what it
+// showed before this existed.
+type FileNamer interface {
+	NamesByKey(ctx context.Context, identityID string, keys []string) (map[string]string, error)
+}
+
 // FileAttrs is what the store knows about an object beyond its bytes.
 type FileAttrs struct {
 	MIMEType  string
@@ -48,6 +55,10 @@ type FileObjectWriter interface {
 // SetFileBrowser wires the listing the file manager reads.
 func (s *Server) SetFileBrowser(browser FileBrowser) { s.files = browser }
 
+// SetFileNamer wires the lookup that turns an object key back into the name a person gave
+// the file. Leaving it unset is supported and degrades to key-derived names.
+func (s *Server) SetFileNamer(namer FileNamer) { s.fileNames = namer }
+
 // SetFileOpener wires the byte stream behind a file manager download.
 func (s *Server) SetFileOpener(opener FileObjectOpener) { s.fileObjects = opener }
 
@@ -65,15 +76,28 @@ func (s *Server) registerFileRoutes(mux *http.ServeMux) {
 // fileEntry is one row in the component's vocabulary.
 //
 // id is an absolute path and carries the whole hierarchy: the widget splits it on the last
-// slash to derive the parent and the display name, so no separate name field is sent. A
-// folder reports neither size nor date because a grouped S3 prefix is not an object and has
-// neither — reporting a zero would be inventing one.
+// slash to derive the parent and the display name. A folder reports neither size nor date
+// because a grouped S3 prefix is not an object and has neither — reporting a zero would be
+// inventing one.
+//
+// Name/Parent/Ext exist to escape that derivation, because a chat attachment's key is a
+// uuid and the widget would otherwise label it with one. MEASURED against the installed
+// store (2.6.0) rather than assumed: `parseId` assigns `name` from the id UNCONDITIONALLY,
+// so a name sent alongside is discarded — except that it returns early when `parent` is 0,
+// and the tree base class then reads `parent || requestedFolder`, which restores correct
+// placement. So parent 0 is not a parent: it is the documented-by-measurement way to say
+// "these fields are mine, do not derive them". Because that skips the derivation entirely,
+// Ext must be sent too or the icon is lost. `web/src/files/filesApi.store.test.ts` pins
+// this behaviour so a widget upgrade fails a test instead of silently restoring uuids.
 type fileEntry struct {
-	ID   string `json:"id"`
-	Type string `json:"type"`
-	Size int64  `json:"size,omitempty"`
-	Date string `json:"date,omitempty"`
-	Lazy bool   `json:"lazy,omitempty"`
+	ID     string `json:"id"`
+	Type   string `json:"type"`
+	Name   string `json:"name,omitempty"`
+	Ext    string `json:"ext,omitempty"`
+	Parent *int   `json:"parent,omitempty"`
+	Size   int64  `json:"size,omitempty"`
+	Date   string `json:"date,omitempty"`
+	Lazy   bool   `json:"lazy,omitempty"`
 }
 
 // handleFileList returns one folder of the caller's own bucket, root included.
@@ -101,14 +125,44 @@ func (s *Server) handleFileList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, sanitizeErr(err), http.StatusBadRequest)
 		return
 	}
-	writeJSON(w, fileEntries(result))
+	writeJSON(w, fileEntries(result, s.displayNames(r.Context(), identityID, result)))
+}
+
+// displayNames resolves this page's real names, and never fails the listing over them.
+//
+// A folder of files the operator can see beats a 500 because one lookup was unavailable:
+// without names the manager shows what it showed before, which for anything dropped
+// straight into the bucket is already the right answer. One statement for the whole page,
+// never a HEAD per row — the same choice garage-webui's own browser makes, where the
+// per-object HEAD is reserved for opening a single object.
+func (s *Server) displayNames(
+	ctx context.Context, identityID string, result assets.BrowseResult,
+) map[string]string {
+	if s.fileNames == nil {
+		return nil
+	}
+	keys := make([]string, 0, len(result.Entries))
+	for _, entry := range result.Entries {
+		if entry.Folder {
+			continue
+		}
+		keys = append(keys, result.Prefix+entry.Key)
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+	names, err := s.fileNames.NamesByKey(ctx, identityID, keys)
+	if err != nil {
+		return nil
+	}
+	return names
 }
 
 // fileEntries turns one browse page into the component's entity list.
 //
 // Never nil: an empty folder must encode as [] rather than null, which the widget would
 // treat as a load failure instead of as an empty folder.
-func fileEntries(result assets.BrowseResult) []fileEntry {
+func fileEntries(result assets.BrowseResult, names map[string]string) []fileEntry {
 	entries := make([]fileEntry, 0, len(result.Entries))
 	for _, entry := range result.Entries {
 		id := "/" + result.Prefix + strings.TrimSuffix(entry.Key, "/")
@@ -121,11 +175,26 @@ func fileEntries(result assets.BrowseResult) []fileEntry {
 			entries = append(entries, fileEntry{ID: id, Type: "folder", Lazy: true})
 			continue
 		}
-		entries = append(entries, fileEntry{
+		row := fileEntry{
 			ID: id, Type: "file", Size: entry.SizeBytes, Date: browseDate(entry.ModifiedAt),
-		})
+		}
+		if name := names[result.Prefix+entry.Key]; name != "" {
+			row.Name, row.Ext, row.Parent = name, entryExt(name), new(0)
+		}
+		entries = append(entries, row)
 	}
 	return entries
+}
+
+// entryExt is the extension the widget derives itself when it is left to parse the id, and
+// which must be supplied whenever it is not: it drives the icon, and a file with none is
+// rendered as a blank sheet rather than as a PDF or a spreadsheet.
+func entryExt(name string) string {
+	ext := strings.TrimPrefix(path.Ext(name), ".")
+	if ext == "" {
+		return ""
+	}
+	return strings.ToLower(ext)
 }
 
 // browseDate formats a timestamp for the widget's date parser.

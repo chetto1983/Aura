@@ -117,6 +117,77 @@ func TestFileListReturnsAbsoluteIDs(t *testing.T) {
 	}
 }
 
+type fakeFileNamer struct {
+	keys  []string
+	names map[string]string
+	err   error
+}
+
+func (f *fakeFileNamer) NamesByKey(
+	_ context.Context, _ string, keys []string,
+) (map[string]string, error) {
+	f.keys = append([]string(nil), keys...)
+	return f.names, f.err
+}
+
+// A chat attachment's key is a uuid on purpose, so the tail of the id -- which is all the
+// widget derives a label from -- is a uuid too. Measured in the browser 2026-08-16: every
+// row of the file manager read as "b4e391e0-6141-48....pdf".
+func TestFileListLabelsAnAttachmentWithItsRealName(t *testing.T) {
+	page := browsePage()
+	page.Entries = append(page.Entries, assets.BrowseEntry{
+		Key: "b4e391e0-6141-4807-b8e5-88ca58f21162.pdf", SizeBytes: 122635,
+	})
+	namer := &fakeFileNamer{names: map[string]string{
+		"contabilita/b4e391e0-6141-4807-b8e5-88ca58f21162.pdf": "colm2025_conference.pdf",
+	}}
+	server := fileServer(&fakeFileBrowser{result: page}, nil)
+	server.fileNames = namer
+
+	entries := decodeEntries(t, serveFiles(t, server, fileManagerBase+"/files/"+"%2Fcontabilita"))
+	named := entries[len(entries)-1]
+	if named.Name != "colm2025_conference.pdf" {
+		t.Fatalf("name = %q, want the indexed name", named.Name)
+	}
+	// The id stays the key: it is the route back to the object, and the anti-leak boundary
+	// is the whole reason the name is not in it.
+	if named.ID != "/contabilita/b4e391e0-6141-4807-b8e5-88ca58f21162.pdf" {
+		t.Fatalf("id = %q, want the object key", named.ID)
+	}
+	// Sent together or not at all: parent 0 is what stops the widget deriving the label,
+	// and skipping that derivation also skips the ext that drives the icon.
+	if named.Parent == nil || *named.Parent != 0 || named.Ext != "pdf" {
+		t.Fatalf("entry = %+v, want parent 0 and an ext", named)
+	}
+	// Folders keep the derived label: a prefix name is a real name.
+	if entries[0].Name != "" || entries[0].Parent != nil {
+		t.Fatalf("folder was renamed: %+v", entries[0])
+	}
+	// An object with no indexed name keeps the old behaviour, which for a file dropped
+	// straight into the bucket is already correct: its key IS its name.
+	if entries[1].Name != "" || entries[1].Parent != nil {
+		t.Fatalf("unnamed object was given a name: %+v", entries[1])
+	}
+	if len(namer.keys) != 2 {
+		t.Fatalf("asked for %v, want only the two objects and never the folder", namer.keys)
+	}
+}
+
+// A folder the operator can see beats a 500 raised because one lookup was unavailable.
+func TestFileListSurvivesANameLookupFailure(t *testing.T) {
+	server := fileServer(&fakeFileBrowser{result: browsePage()}, nil)
+	server.fileNames = &fakeFileNamer{err: errors.New("arcadedb unreachable")}
+
+	rec := serveFiles(t, server, fileManagerBase+"/files/"+"%2Fcontabilita")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
+	}
+	entries := decodeEntries(t, rec)
+	if entries[1].Name != "" || entries[1].ID != "/contabilita/fattura-acme.pdf" {
+		t.Fatalf("entry = %+v, want the key-derived label", entries[1])
+	}
+}
+
 // The percent-encoded id the widget sends must arrive as a real path. If it did not, every
 // folder below the root would list the bucket root instead of itself.
 func TestFileListPassesTheDecodedFolderAndTheCallerIdentity(t *testing.T) {

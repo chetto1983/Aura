@@ -92,6 +92,11 @@ func wireAGUIServer(chat *chatEnv, store *cron.Store, scheduler *cron.Scheduler,
 	fileObjects := buildFileObjectAccess(chat.cfg, chat.pool, objectStore)
 	fileBrowser := buildFileBrowser(chat.cfg, chat.pool, objectStore)
 	aguiServer.SetFileBrowser(fileBrowser)
+	// A nil namer is wired deliberately rather than guarded against: the setter accepts it
+	// and the listing degrades to key-derived names.
+	if namer := buildFileNamer(chat.cfg); namer != nil {
+		aguiServer.SetFileNamer(namer)
+	}
 	aguiServer.SetFileOpener(fileObjects)
 	aguiServer.SetFileWriter(fileObjects)
 	aguiServer.SetFileOperations(fileBrowser)
