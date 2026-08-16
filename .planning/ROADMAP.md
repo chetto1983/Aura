@@ -251,7 +251,7 @@ beside it.
 5. A live turn shows `user_identifier` reaching `cmd/arcadedb-mcp` through `_meta` and no longer as
    a tool argument.
 
-**Plans**: 6/8 plans executed in 6 waves
+**Plans**: 7/8 plans executed in 6 waves
 
 Plans:
 **Wave 1**
@@ -274,7 +274,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 45.1-07-PLAN.md — bounded fail-closed elicitation handler + the chosen consent surface *(wave 5)*
+- [x] 45.1-07-PLAN.md — bounded fail-closed elicitation handler + the chosen consent surface *(wave 5)*
 
 **Wave 6** *(blocked on Wave 5 completion)*
 

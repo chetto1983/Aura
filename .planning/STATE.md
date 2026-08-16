@@ -5,15 +5,15 @@ milestone_name: HERMES-CLAUDE_PARITY
 current_phase: 45.1
 current_phase_name: native-mcp-client
 status: executing
-stopped_at: Phase 45.1 checkpoint 06 decided; next is plan 07 (elicitation handler)
-last_updated: "2026-08-16T20:14:58.000Z"
+stopped_at: Phase 45.1 plan 07 complete; only the 45.1-08 close-out checkpoint remains
+last_updated: "2026-08-16T20:57:02.000Z"
 last_activity: 2026-08-16
 last_activity_desc: 45.1-05 landed — calling identity moved onto _meta, fail-closed, nine user_identifier fields removed
 progress:
   total_phases: 3
   completed_phases: 1
   total_plans: 17
-  completed_plans: 15
+  completed_plans: 16
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 ## Current Position
 
 Phase: 45.1 (native-mcp-client) — EXECUTING
-Plan: 6 of 8
+Plan: 7 of 8
 Status: Ready to execute
 Phase 46 discussion are recorded in `46-CONTEXT.md` D-10..D-16 and in ROADMAP §45.1.
 Last activity: 2026-08-16 — plan 05 complete; next is checkpoint plan 06 (elicitation surface decision)
@@ -118,6 +118,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 45.1]: 45.1-04: completed inline by the orchestrator after three gsd-executor dispatches died to a 600s stream watchdog (one at launch with an empty transcript, two mid-run); operator authorised the deviation
 - [Phase 45.1]: 45.1-06: elicitation_surface = decline-and-surface — the handler declines but delivers the ask on the operator's channel naming the server; no in-flight turn is blocked and no row is written to aura.paused_states. Option B (mint-and-wait) stays available later behind the same ElicitationConsent seam
 - [Phase 45.1]: 45.1-06: elicitation timeout = 300s via its OWN env var AURA_MCP_ELICITATION_TIMEOUT_SEC — the operator asked to reuse the gateway approval default, but measurement showed no approval timeout/TTL exists anywhere (approvals are an async cross-turn ledger with nothing held waiting); the value was honoured, the source could not be
+- [Phase 45.1]: 45.1-07: on protocol 2026-07-28 a server does NOT send elicitation/create mid-request -- the SDK refuses it outright and the live path is an InputRequests map fulfilled by clientMultiRoundTripMiddleware; the first test draft had it wrong and only a real in-memory CallTool revealed it
+- [Phase 45.1]: 45.1-07: obs exposes emission ONLY through Boundary (outcome derived from the error), so the plan's seven-valued action counter was not buildable without widening a shared package; reused MCPCallsID with a new catalog operation value and put the finer action in the structured log
+- [Phase 45.1]: 45.1-07: the consent surface is late-bound because MCP mounts run before the channels Registry exists; follows the existing cron.ChannelDeliverer pattern rather than reordering boot
 
 ### Pending Todos
 
@@ -145,6 +148,8 @@ None yet.
 
 - 45.1-08 (phase close) must re-run bash scripts/coverage_docker.sh (full aggregate 85% owned-surface gate) once plan 45.1-04 lands and the tree is quiescent -- not run during 45.1-03 because a concurrent unrelated in-flight session held compose.yaml and internal/agent/mcptools/bridge_risk.go dirty in the same checkout
 - 45.1-08 must also run a mutation spot-check on internal/agent/mcptools/bridge_risk.go -- not run during 45.1-04; the file is at 100% per-function coverage and bridge_supervisor.go scored 99/99, but neither is a mutation score for this file
+- 45.1-08 must also cover 45.1-07: no mutation spot-check on elicitation.go/elicitation_consent.go, and no LIVE E2E of a real mounted server issuing a real elicitation to a real channel -- the in-memory pair proves the protocol path, not a Telegram delivery
+- Env catalog gap (found in 45.1-07, PRD-amendment shaped): the whole AURA_MCP_* family is uncatalogued in prd.md -- AURA_MCP_MOUNT_TIMEOUT and AURA_MCP_SHUTDOWN_TIMEOUT are absent, AURA_MCP_CALL_TIMEOUT_SEC appears only in amendment prose, and AURA_MCP_ELICITATION_TIMEOUT_SEC was deliberately not added alone
 
 ## Deferred Items
 
