@@ -416,6 +416,32 @@ embed fallito in un **messaggio d'errore** fallito. Idem per un corpo illeggibil
 leggerlo avrebbe sostituito il fallimento originale con uno nostro. La catena `raise … from exc`
 resta, quindi il traceback arriva ancora alla causa di trasporto.
 
+**E l'errore ora si autocorregge** (`a7a0fe61d`), perché leggerlo era metà del lavoro: perdere
+il vettore di UN chunk perde **l'intero file**. CocoIndex cattura il fallimento del componente,
+stampa "component build failed" e prosegue, quindi il documento non arriva mai all'indice — e
+in modalità **live**, che è come gira questo deployment, `audit_pass()` non viene mai eseguito
+per accorgersene. È esattamente così che il 2026-08-09 sparirono due documenti.
+
+Su sforamento ora embedda **la testa che ci sta** invece di niente: la Passage conserva il testo
+intero, quindi `document_open` e la card non cambiano, e solo il vettore è calcolato su meno del
+tutto — degradazione piccola e dichiarata, contro la perdita del file.
+
+Due scelte da non disfare: il trigger è **la misura**, mai la stringa d'errore del provider
+(«input is too large to process» è il fraseggio di llama.cpp, un conteggio oltre il tetto
+significa la stessa cosa ovunque), e un fallimento che **non** è uno sforamento viene sollevato
+e non ritentato, perché mandare meno non ripara un server che sta caricando e il retry lo
+nasconderebbe. Il taglio riusa `chunk.chunk`, lo stesso splitter verificato che dimensiona tutto
+il resto della pipeline: una seconda regola di sizing, in disaccordo con la prima, si
+manifesterebbe proprio come questo errore.
+
+Validato contro il sidecar vivo: 33009 token → HTTP 500 (documento perso), stessa chiamata dopo
+→ vettore da 768 dimensioni. Il corpo del server dice *«input (33009 tokens)»*, cioè **lo stesso
+numero** misurato qui.
+
+**Resta aperto, ed è la vera fragilità**: in live `audit_pass()` non gira mai, quindi qualunque
+altra perdita resta invisibile. Lo sforamento è coperto adesso; ogni altro modo di perdere un
+documento no.
+
 **4.4 — `ErrDocumentDeleteInFlight` non è instradato al bordo API.**
 Prodotto a `internal/documents/catalog_store.go:120` su un percorso vivo
 (`service.go:130`), nessun `errors.Is` in `internal/agui/` o `cmd/aura/`. *Confidenza: alta.*
