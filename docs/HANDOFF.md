@@ -553,24 +553,37 @@ La riscrittura del 2026-08-08 (dodici commit, `14a0d1ae8`→`29bbe0cf9`) ha elim
 in-process, il modello a versioni, Docling, lo store di retrieval Postgres e il delete worker.
 Questo è ciò che è rimasto attaccato:
 
-- **13 delle 14 query in `internal/db/queries/document_pipeline.sql` non hanno chiamanti**, inclusa
-  `ActivatePipelineCandidate` (`:458`) — l'unica istruzione che scrive `status='ready'`. Più le 5
-  legacy in `document_control_plane.sql:421,434,445,456,463`.
-- **`SearchDigests`/`SearchDocumentDigests`** (`catalog_store_digest.go:99`): solo test. E il card
-  Postgres è ormai **write-only** — `service.go:162` lo scrive, il lettore è ArcadeDB
-  (`retrieval_cards.go:41`).
-- **4 query storage-object senza chiamanti** (`CreateStorageObject`, `ListDocumentStorageObjects`,
-  `MarkStorageObjectDeletePending`, `MarkStorageObjectDeleted`). Nota il punto cieco: i metodi
-  sqlc soddisfano il `Querier` usato, quindi `deadcode` li vede raggiungibili.
-- **Il vocabolario di stato è aspirazionale**: `catalog_status.go:15-24` dichiara
-  `queued/converting/chunking/embedding/projecting`; **nessuno ha usi non-test**, e nemmeno
-  `Ready`/`Failed`. L'unico stato che Go scrive è `Stored` (`service.go:133`).
-- **8 simboli senza chiamanti non-test**: `cliOperationFromContext`, `recordLLMDuration`,
-  `panicobs.Count`, `display.Normalize`, `normalizeSwarmStatus`, `agent.NewTracerProvider`,
-  `(*idempotency.Store).RecoverExpired`, più il `generation` di §4.1.
-- **`internal/documents` regge 4.373 LOC non-test**, di cui ~1.465 di superficie catalogo, e la
-  migration di drop non è mai stata scritta. *Confidenza: alta sul fatto che sia intatto; media
-  sul fatto che la rimozione sia ancora voluta.*
+**Rimisurata il 2026-08-16: quasi tutta già chiusa, e non da me.**
+
+- ~~13 delle 14 query in `document_pipeline.sql`~~ — **chiuse da `98d7a136a`** («Delete the
+  in-process pipeline's bookkeeping; CocoIndex does that work»). Il file oggi contiene **una**
+  query, `ReservePipelineCandidateVersion`, e ha un chiamante; `document_control_plane.sql` ne
+  ha dieci e **tutte** hanno chiamanti non-test. Contato eseguendo il grep su ogni `-- name:`,
+  non a occhio.
+- ~~`SearchDigests`/`SearchDocumentDigests`, 4 query storage-object~~ — **sparite** con lo stesso
+  commit: ne restano solo due commenti che ne raccontano la storia.
+- ~~Vocabolario di stato aspirazionale~~ — **già potato**: `catalog_status.go` dichiara oggi i
+  **due** valori che Go scrive davvero (`accepted`, `stored`), spiega perché il CHECK ne ammette
+  dodici, e `TestDocumentVocabulariesMatchTheDatabase` impedisce la deriva nella direzione che
+  fa male (una costante che il vincolo non ammette = 23514 in produzione).
+- **5 simboli rimossi il 2026-08-16 (`b6520a16c`)**, ciascuno dopo aver distinto residuo da
+  *cablaggio mai finito*: `agent.NewTracerProvider` **più tutto il bootstrap dietro** —
+  `newTracerProvider`, `countingSpanExporter` e la metrica
+  `aura_agent_span_export_failures_total`, che non era a zero, era **senza scrittore**, perché il
+  provider vero lo installa `obs.Init`; `recordLLMDuration`, doppione irraggiungibile di
+  `llmCallBoundary` (l'istogramma continua a fluire, i suoi due test ora guidano il boundary
+  reale); `display.Normalize`, wrapper di una riga; `normalizeSwarmStatus`, il cui fatto arriva
+  all'operatore dentro lo swarm report. `cliOperationFromContext` non era superseduto: **non era
+  mai stato codice di produzione**, i suoi unici tre lettori erano test, quindi è sceso nel file
+  di test. −262 righe, +51.
+- **Lasciato apposta**: `(*idempotency.Store).RecoverExpired` non ha chiamanti di produzione ma
+  ha test d'integrazione vivi e **nessun percorso gemello** che ne copra il fatto. È cablaggio
+  non finito, non residuo: cancellarlo chiuderebbe d'ufficio una domanda che nessuno ha posto —
+  cosa recupera un'operazione idempotente rimasta in-progress.
+- **`internal/documents` misura oggi 5.989 LOC non-test su 24 file**, di cui 824 di superficie
+  catalogo (`catalog*.go`) — le cifre precedenti (4.373 / ~1.465) sono superate, e il numero è
+  **cresciuto** nonostante le potature. La migration di drop resta non scritta. *Confidenza:
+  alta sulla misura; la domanda «serve ancora rimuovere?» resta aperta.*
 
 ---
 
