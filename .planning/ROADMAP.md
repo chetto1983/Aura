@@ -21,10 +21,20 @@ call sites, not stylistic preference):
    vocabulary every later phase's tool specs need to declare correctly from day one, rather
    than retrofitting it after the fact.
 
-2. **Phase 46 (MCP trust/facade) needs Phase 45's vocabulary** — `applyMCPOperationMetadata`
-   can't assign anything but the uniform default to a bridged tool without it. Doing this
-   right after Phase 45 leaves exactly one remaining metadata-assignment site (native tool
-   files) to audit in Phases 47-48, not two moving targets.
+1b. **Phase 45.1 (native MCP client) precedes Phase 46** — inserted 2026-08-16. Every file
+   Phase 46 touches (`bridge.go`, `bridge_risk.go`, `bridge_memory.go`) sits on the MCP client
+   seam, so swapping the hand-rolled client afterwards would mean writing 46's work twice. It
+   also keeps a ~1,970-LOC client rewrite reviewable on its own diff, separate from a security
+   decision — the same argument PITFALLS §2 makes for isolating the trust change.
+
+2. ~~**Phase 46 (MCP trust/facade) needs Phase 45's vocabulary** — `applyMCPOperationMetadata`
+   can't assign anything but the uniform default to a bridged tool without it.~~ **SUPERSEDED
+   2026-08-13** (prd.md Amendment #121, and again by the 2026-08-16 discussion): the vocabulary
+   was never introduced — `ReplayToolResult` remains the only value — and
+   `applyMCPOperationMetadata` already fills all three fields correctly. Phase 46's real
+   dependency on Phase 45 is `ValidateClassifiable`'s boot guard (D-09), which the two-tool merge
+   must satisfy. It still leaves exactly one remaining metadata-assignment site (native tool
+   files) to audit in Phases 47-48.
 
 3. **Phases 47-48 (tool-surface) need both prior phases settled** — every touched/merged spec
    needs the correct `Mutating`/`ReplayPolicy`/`OperationScope`/`Multiplexed` combination from
@@ -73,7 +83,8 @@ harness is built; `internal/eval/` stays deleted.
 - Decimal phases (45.1, 45.2, ...) would be urgent insertions between these, if needed.
 
 - [x] **Phase 45: Harness correctness** - Idempotency replay fix and memory-write guardrails close the two headline audit defects (completed 2026-08-15)
-- [ ] **Phase 46: MCP trust and facade** - Drop the untrusted-MCP wrapper where it's earned; curate calendar/WhatsApp into one surface
+- [ ] **Phase 45.1: Native MCP client** - The official Go SDK replaces ~1,970 LOC of bespoke transport and reconnect; Aura's own policy layers survive on top (inserted 2026-08-16)
+- [ ] **Phase 46: MCP trust and facade** - Ratify the trust posture that already shipped; curation moves into the forks, not into Aura
 - [ ] **Phase 47: Tool-surface ceremony strip** - Host-fills drop from schemas, approvals resolve without a resume payload, files auto-deliver and auto-index
 - [ ] **Phase 48: Tool-surface un-defer and merges** - the manifest lands on exactly 14 loaded tools; the system prompt regenerates to match
 - [ ] **Phase 49: Memory tiers** - Short-term searchable retrieval and a PRD-amendment-gated reasoning tier
@@ -153,32 +164,158 @@ validation depends on this methodology already being lived practice, not policy 
 - [x] 45-07-PLAN.md — MCP surface: `supersedes_fact_key`, refusal payload, operator-subject canonicalization *(wave 4)*
 - [x] 45-08-PLAN.md — live scenario scored >9.8, full gate matrix, quality-snapshot re-attestation *(wave 5)*
 
+### Phase 45.1: Native MCP client
+
+**Inserted 2026-08-16** by operator decision (*"use mcp client native no bespoke"*), during the
+Phase 46 discussion. See `.planning/phases/46-mcp-trust-and-facade/46-CONTEXT.md` D-10..D-16 for
+the decisions and the inventory behind them.
+
+**Goal**: Aura speaks MCP through the official Go SDK client instead of a hand-rolled one. The
+bespoke JSON-RPC/stdio client, the streamable-HTTP client, and the reconnect/keepalive layer are
+deleted; Aura's own policy — SSRF resolve-then-pin, egress allowlist, trust classification,
+managed-config and per-identity overlay — is preserved on top of the SDK rather than reimplemented
+beside it.
+**Depends on**: Phase 45
+**Requirements**: MCPC-01, MCPC-02, MCPC-03 (to be added to REQUIREMENTS.md before planning)
+**Blocks**: Phase 46 — every file Phase 46 touches (`bridge.go`, `bridge_risk.go`,
+`bridge_memory.go`) sits on this client seam, so landing 46 first would mean writing its work twice.
+
+**Rationale**: `github.com/modelcontextprotocol/go-sdk v1.7.0` is **already a dependency**
+(`go.mod:27`) but is used **server-side only** (`cmd/arcadedb-mcp/*`). Measured 2026-08-16:
+
+- **Deleted, ≈1,970 LOC non-test plus ≈900 LOC of tests** — `internal/mcp/client.go` (583),
+  `http_client.go` (426), `internal/agent/mcptools/bridge_reconnect.go` (481), `bridge_ping.go`
+  (113), and `transport.go`/`protocol.go`/`tool_methods.go`/`lifecycle.go`/`probe.go` (364). The SDK
+  ships equivalents: `ClientOptions.KeepAlive` + `KeepAliveFailureThreshold` (`mcp/client.go:199-206`)
+  and automatic reconnect with exponential backoff, `Last-Event-ID` resume and SEP-1699
+  server-initiated reconnect (`mcp/streamable_client.go:122-139`).
+- **Preserved, ≈1,330 LOC with no SDK equivalent** — `ssrf.go` + `transport_ssrf.go` +
+  `egress_policy.go` (re-attached as a custom `http.RoundTripper`), `managed_config.go` +
+  `managed_config_identity.go`, `classify.go`, `tool_error.go`, `domain_outcome.go`,
+  `observability.go`, `redact.go`.
+- **The clock**: Aura's client implements the session model (`sessionGate`) that the 2026-07-28
+  spec **deletes** — SEP-2575 removes `initialize`/`initialized`, SEP-2567 removes `Mcp-Session-Id`,
+  and client info moves to `_meta` on every request. **The pinned v1.7.0 already ships that core**
+  (`latestProtocolVersion = "2026-07-28"`, `mcp/shared.go:50-51`) and negotiates down five versions,
+  so this needs **no dependency bump and no sidecar work** — the three sidecars stay where they are.
+
+**Scope decisions carried from the Phase 46 discussion:**
+
+- Middleware is the seam. `Client.AddSendingMiddleware` (`mcp/client.go:1131`) carries host-side
+  argument derivation; `withMemoryUserIdentifier` moves onto it. This is the SDK's own idiom — MRTR
+  itself ships as default-on client middleware (`mcp/mrtr.go:22-31`), not an adaptation.
+- `cmd/arcadedb-mcp` moves off the `user_identifier` **argument** onto stateless `_meta`, since Aura
+  owns both ends. Third-party forks keep argument-shaped inputs. **This changes the memory tool's
+  schema — PITFALLS §4 applies** (rehydrated history, paused approvals, scheduled jobs).
+- Elicitation (SEP-2322 MRTR) routes through Aura's existing approval path with a bounded timeout,
+  naming the asking server — hermes parity (`tools/mcp_tool.py:1669-1758`). The SDK auto-fulfills
+  input requests by default and Aura registers no handler today.
+
+**Success Criteria** (what must be TRUE):
+
+1. A live conversation drives calendar, WhatsApp and memory tools through the SDK client, and
+   `aura.tool_invocations` shows the same tool surface and results as before the swap.
+2. `internal/mcp/client.go`, `http_client.go`, `bridge_reconnect.go` and `bridge_ping.go` are gone
+   from the tree, and no hand-rolled JSON-RPC framing or reconnect loop replaces them elsewhere.
+3. Killing a sidecar mid-conversation and restarting it recovers on the SDK's own reconnect, live —
+   not on a reimplementation.
+4. An SSRF/egress probe against a mounted HTTP server is still refused, proving the policy layers
+   survived re-attachment to the SDK transport.
+5. A live turn shows `user_identifier` reaching `cmd/arcadedb-mcp` through `_meta` and no longer as
+   a tool argument.
+
+**Plans**: TBD
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 45.1 to break down)
+
 ### Phase 46: MCP trust and facade
 
-**Goal**: MCP servers Aura ships or bundles are trusted in the model's own context, without
-losing the two independent guardrails (per-call result fencing, fail-closed risk
-classification) that never depended on that trust in the first place; calendar and WhatsApp
-collapse into a single always-loaded `comms` slot, replacing 28 raw tools.
-**Depends on**: Phase 45 — narrowed 2026-08-13 (prd.md Amendment #121): `applyMCPOperationMetadata`
+> **▶ Revised 2026-08-16 after the phase discussion measured this section against the tree and the
+> MCP specification. Three of six requirements did not survive; the paragraphs below marked
+> SUPERSEDED are kept as the record of what was believed, not as instructions.** Authoritative
+> decisions: `.planning/phases/46-mcp-trust-and-facade/46-CONTEXT.md`.
+
+**Goal**: The trust posture that already shipped is ratified in the PRD and requirements rather
+than re-implemented; every mounted MCP server — bundled recipe, ad hoc mount, or one Aura mints
+herself — works with **zero Aura-side code and zero declaration**; and calendar/WhatsApp collapse
+from 28 raw tools into **two** always-loaded multiplexed tools **curated inside the forks**, not
+behind a facade in Aura's tree.
+
+**What changed, measured:**
+
+- **MCP-01 and MCP-03 already shipped** in `34b892512` (2026-08-12, *"Trust MCP output instead of
+  framing it untrusted"*), un-amended. `frameMCPDescription`/`frameMCPSummary` carry no distrust
+  prefix; the removal is already unscoped, satisfying MCP-03's blanket reading.
+- **That commit also removed result fencing** (`newResult` sets `TrustTrusted`) **and Amendment
+  #110's memory-block header.** The operator ratified this posture on 2026-08-16 — *"when I install
+  one MCP to you there are no shit ceremony"* — after being shown that hermes fences every `mcp_*`
+  result unconditionally and that PITFALLS §2 calls a fencing regression *"the actually dangerous
+  outcome"*. **Recorded as a decision, not an oversight.** Consequence: **the trust axis of this
+  phase needs no code.**
+- **MCP-04's mechanism changed.** Every MCP server Aura ships is a fork Aura controls, so curation
+  moves **into the servers**. No `comms` tool, no curation config, no hide-list, no
+  `bridgePolicy` namespace table in Aura. Aura's bridge stays generic — the property that lets the
+  *next* mounted server work with no Aura code at all.
+- **MCP-05's framing was falsified.** Measured against `internal/agent/tools/testdata/deferred_manifest.json`,
+  `accountId` is two things under one name: a defaultable **routing hint** in `create_event`
+  (*"Omitting uses the first configured account"*) and `get_calendar_events`, and a **required
+  opaque handle** in `get_calendar_event_details` (*"Account ID from get_calendar_events"*).
+  Host-injecting a configured default into the handle case passes the **wrong** account. Fixed in
+  the fork instead. The MCP spec has **no `accountId` concept at all** — identity is the OAuth
+  token, audience-bound per server (RFC 8707); authorization is OPTIONAL; local/stdio servers are
+  told to take credentials from the environment.
+
+**Blocking before any code** (CLAUDE.md PRD-amendment-before-code): one PRD amendment ratifying
+`34b892512`; MCP-02 rewritten to drop its fencing clause; Success Criterion 5 deleted; MCP-04 and
+MCP-05 amended; TOOL-14's own amendment.
+
+**Depends on**: **Phase 45.1** (native MCP client) — inserted 2026-08-16, lands first so this
+phase's remaining work is written once against the surviving seam. And Phase 45 — narrowed
+2026-08-13 (prd.md Amendment #121): `applyMCPOperationMetadata`
 (`internal/agent/mcptools/bridge.go:230-240`) already fills `OperationScope`,
 `OperationNormalizer` and `ReplayPolicy` unconditionally for every `Mutating` bridged tool with
-the uniform default, and that default is correct — there is no vocabulary to wait for. The
-remaining dependency on Phase 45 is the risk-override and hide-list work only.
+the uniform default, and that default is correct — there is no vocabulary to wait for. ~~The
+remaining dependency on Phase 45 is the risk-override and hide-list work only.~~ **Narrowed again
+2026-08-16:** there is no hide-list work — curation moved into the forks (D-17). The remaining
+dependency on Phase 45 is `ValidateClassifiable`'s boot guard (D-09), which the two-tool merge must
+satisfy per D-21.
 **Requirements**: MCP-01, MCP-02, MCP-03, MCP-04, MCP-05, TOOL-14
-**Rationale**: Trust-wrapper scoping and facade groundwork are the same code change
+**Rationale**: ~~Trust-wrapper scoping and facade groundwork are the same code change
 (generalizing `bridgePolicy` into a namespace-keyed table), so they land together
-(ARCHITECTURE.md §2). **Operator decision, 2026-08-05:** wrapper removal is UNCONDITIONAL —
+(ARCHITECTURE.md §2).~~ **SUPERSEDED 2026-08-16 (D-17):** they are no longer the same change and
+neither is a `bridgePolicy` table. The trust half already shipped and needs only an amendment; the
+facade half moved into the forks. ARCHITECTURE.md §2.3's Go-table recommendation is superseded —
+§2.1/§2.2 remain accurate as evidence. **Operator decision, 2026-08-05:** wrapper removal is UNCONDITIONAL —
 every mounted server, present and future, including ad hoc mounts and any MCP server Aura
 mints through self-extension. This roadmap originally scoped removal to
 `bridgePolicy.recipeSource != ""` (the three code-reviewed recipes) per Pitfall 2; the
 operator was shown that recommendation explicitly and chose the blanket reading. The residual
-prompt-injection risk is therefore carried entirely by MCP-02's two independent guardrails and
-by the operator's control over what gets mounted — which makes verifying MCP-02 the
-load-bearing task of this phase, not a checkbox beside it. Independent of the
-context-ladder work (Phase 50) — no package overlap. Verify explicitly that `trust.go`'s
-nonce-wrapped result-fencing and `mcpToolRisk`'s fail-closed classification are untouched by
-this change (MCP-02) — they are a separate mechanism from the description wrapper and a
-reviewer could otherwise assume removing one weakens the other.
+prompt-injection risk is therefore carried entirely by ~~MCP-02's two independent guardrails~~
+**the surviving guardrails (below)** and by the operator's control over what gets mounted.
+Independent of the context-ladder work (Phase 50) — no package overlap.
+
+~~Verify explicitly that `trust.go`'s nonce-wrapped result-fencing and `mcpToolRisk`'s fail-closed
+classification are untouched by this change (MCP-02).~~ **SUPERSEDED 2026-08-16:** result fencing
+for MCP was **already removed** by `34b892512` and that removal is now the ratified posture (D-01).
+The guardrails that remain — and which are therefore the ones this phase must prove live — are:
+`mcpToolRisk`'s fail-closed default (`bridge_risk.go:112-118`, unannotated → `true, true`); the
+model-blind approval gate (`approve.go` — no tool schema exposes it); bridge namespacing plus
+`Registry.Register`'s panic-on-duplicate; and `capSchemaDescriptions`' byte caps. Non-MCP sources
+keep their envelopes unchanged: `web_fetch`, `document_search`/`document_open` (required by
+`prd.md:4579`), user attachments, swarm child output.
+
+**Load-bearing consequence of the two-tool merge (D-21, measured).** A bridged tool never sets
+`Multiplexed`, so `ValidateClassifiable`'s per-action assertion (`guard.go:28`) skips it and
+`classify` assigns **one flat tier to the whole merged tool** — `calendar(action=list_events)` and
+`calendar(action=send_email)` would classify identically, so either every read demands approval or
+`send_email` is un-gated and **Success Criterion 2 fails**. No panic warns you: the guard only fires
+when `Multiplexed` is already true. Fix with existing machinery and no second risk source — re-key
+`trustedRecipeActions` (`bridge_risk.go:23-80`) from raw tool name to action name, set
+`Multiplexed: true` when a curated schema carries an `action` enum, and register the classifier in
+`multiplexedClassifiers`. Do **not** derive tiers from server-declared annotations:
+`explicitDestructive` is deliberately escalate-only.
 **TOOL-14 lands here, before Phase 48 needs it.** Tool tiering is PRD-declared, not an
 implementation detail: `prd.md:154` states the rule, each slice carries a "Deferred-tool
 partition", and two named amendments fix specific tools' tiers — A4 makes `read_tool_output`
@@ -186,21 +323,24 @@ non-deferred (which TOOL-13 changes) and #44 makes `sandbox_exec` non-deferred w
 evidence. Phase 46 is the earliest consumer because MCP-04 changes which MCP tools exist at
 all, so the amendment gates this phase and Phase 48 both.
 
-**Also settle the MCP-trust question here, by reading rather than assuming.** A targeted PRD
-search found the untrusted-data doctrine to be about RESULT fencing (`prd.md:1904`, `:2018` —
-*"its returned content is still fenced as untrusted reference data"*), which MCP-02 preserves,
-and found nothing establishing the description wrapper, which lives in `bridge.go` as an
-implementation defense. On that reading MCP-01/MCP-03 need no amendment. The search was
-targeted, not exhaustive: confirm it in this phase's discussion, and if the PRD does establish
-description wrapping somewhere, add a second amendment before touching `bridge.go`.
+**The MCP-trust question is settled — by reading, as instructed.** The discussion re-ran the
+targeted PRD search and confirmed its finding: **nothing in the PRD establishes description
+wrapping**, so MCP-01/MCP-03 need no amendment on that count. But the search's other half was
+wrong. `prd.md:1904`/`:2018` are **Neo4j/agent-memory-era adaptive text**, already superseded by
+the ArcadeDB move, and the live doctrine that `34b892512` actually contradicts is **Amendment #110**
+(`prd.md:4549`), which specifies the memory block as *"a non-persisted, **untrusted** reference
+item"*. That header was dropped without an amendment. Decision (D-03): **keep it dropped and amend
+#110** — Aura's recalled facts are her own knowledge, and framing them as hostile makes her distrust
+her own memory. `prd.md:4579` is untouched: document passages remain `TrustUntrusted`.
 
 **Success Criteria** (what must be TRUE):
 
-  1. In a live conversation, the tool manifest / `tool_search` index shows calendar and WhatsApp reachable through a small curated action set, not the raw 28 underlying MCP tools.
-  2. A calendar or WhatsApp mutating action (e.g., delete an event, send a message) still produces the fail-closed risk gate / approval flow live — the removal of the description wrapper has not weakened authorization.
+  1. In a live conversation, the tool manifest shows calendar and WhatsApp reachable through **two always-loaded multiplexed tools**, not the raw 28 underlying MCP tools — and the curation is visible in the forks' own `tools/list`, with no Aura-side hide-list doing it.
+  2. A calendar or WhatsApp destructive action (send a message, send an email) produces the fail-closed risk gate / approval flow live, **while a read action in the same merged tool does not** — proving per-action classification survived the merge (see D-21).
   3. Reading the rendered tool descriptions in a live turn shows every mounted MCP server — bundled recipes and any ad hoc mount alike — presented as ordinary text, with no untrusted-data framing anywhere.
-  5. With the description wrapper gone everywhere, a live turn whose MCP tool result carries instruction-shaped text — e.g. an inbound WhatsApp message written to read as a directive overriding Aura's standing orders — does not act on it, proving the result-fencing envelope rather than the description wrapper was what carried the defense.
-  4. `accountId` never appears in the model's dispatched arguments for a live calendar/WhatsApp call — inspecting `aura.tool_invocations` shows it was host-injected, exactly like `user_identifier`.
+  4. `accountId` never appears in the model's dispatched arguments for a live calendar call — `aura.tool_invocations` shows the model passing back only an opaque reference the fork itself issued. **Reworded 2026-08-16 (D-20):** the original *"host-injected, exactly like `user_identifier`"* is superseded — injection cannot work for the handle case.
+  5. ~~A live turn whose MCP tool result carries instruction-shaped text does not act on it, proving the result-fencing envelope carried the defense.~~ **DELETED 2026-08-16 (D-07):** there is no envelope; the criterion cannot pass as written and must not be silently reinterpreted.
+  6. Mounting a **new** MCP server — one with no entry anywhere in Aura's tree — makes its tools usable in a live turn with no code change and no configuration beyond the mount itself, fail-closed at `Mutating+Destructive`.
 
 **Plans**: TBD
 

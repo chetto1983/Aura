@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v2.1.0
 milestone_name: HERMES-CLAUDE_PARITY
-current_phase: 46
-current_phase_name: MCP trust and facade
+current_phase: 45.1
+current_phase_name: Native MCP client
 status: planning
-stopped_at: Phase 46 context gathered
+stopped_at: Phase 46 context gathered; Phase 45.1 inserted ahead of it
 last_updated: "2026-08-16T07:16:46.177Z"
-last_activity: 2026-08-15
-last_activity_desc: Phase 45 complete, transitioned to Phase 46
+last_activity: 2026-08-16
+last_activity_desc: Phase 46 discussed; 45.1 (native MCP client) inserted as its prerequisite
 progress:
   total_phases: 2
   completed_phases: 1
@@ -23,15 +23,20 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-05)
 
 **Core value:** When Aura says she did something, she did it — and she can find what she knew.
-**Current focus:** Phase 45 — harness-correctness
+**Current focus:** Phase 45.1 — native MCP client (prerequisite for Phase 46)
 
 ## Current Position
 
-Phase: 46 — MCP trust and facade
+Phase: 45.1 — Native MCP client
 Plan: Not started
-Status: Ready to plan
-Last activity: 2026-08-15 — Phase 45 complete, transitioned to Phase 46
-requirements mapped with 0 unmapped. No phase work since.
+Status: Ready to plan — needs its own `/gsd-discuss-phase 45.1`; the decisions taken during the
+Phase 46 discussion are recorded in `46-CONTEXT.md` D-10..D-16 and in ROADMAP §45.1.
+Last activity: 2026-08-16 — Phase 46 discussed; the discussion measured three of its six
+requirements as falsified or already-shipped, and inserted Phase 45.1 ahead of it by operator
+decision ("use mcp client native no bespoke").
+
+Phase 46 is context-complete but **blocked on five amendments** (46-CONTEXT.md D-05..D-09) and on
+45.1 landing first: every file it touches sits on the MCP client seam.
 Last reconciliation: 2026-08-13 — this file's counts re-measured against ROADMAP.md (see
 Session Continuity). No work was executed on that date.
 

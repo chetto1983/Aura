@@ -112,11 +112,27 @@
 
 ### MCP trust and facade
 
-- [ ] **MCP-01**: MCP tool descriptions reach the model as ordinary text, without the untrusted-data wrapper
-- [ ] **MCP-02**: Per-call result fencing and fail-closed risk classification for unknown tools remain in force and are proven by test
-- [ ] **MCP-03**: Trust is unconditional across every mounted MCP server — those Aura ships, those added later, and those minted by her own self-extension alike. **Operator decision, 2026-08-05**, taken against the research recommendation to scope removal to code-reviewed recipes: the residual risk is carried by MCP-02's per-call result fencing and fail-closed risk classification, and by the operator's control over what gets mounted at all
-- [ ] **MCP-04**: Calendar, mail, contacts and WhatsApp are reachable through **one** curated `comms` surface — a single loaded slot replacing 28 raw third-party tools, **always loaded, never deferred**. Skills take two of the fourteen slots and connected accounts take one, deliberately: hermes calls skills *"your procedural memory — reusable approaches for recurring task types"*, and Aura extends herself many times a day where she consults a calendar occasionally. Collapsing 28 to a handful is what makes keeping them in front of the model affordable; the two are one move in two steps, not alternatives. Undeferring the 28 raw tools instead would put ~56 definitions in every turn's manifest, which is the exact configuration Aura already measured at ~20k tokens/turn and recorded as the point where tool-choice accuracy collapses (`llm_agent_promote.go:88-93`). Reference point: Claude Code ships **16 tools, all loaded, no deferred pattern** — every one a curated surface rather than an endpoint wrapper
-- [ ] **MCP-05**: `accountId` is resolved host-side from the operator's configuration, like `user_identifier`
+> **▶ Amended 2026-08-16** by the Phase 46 discussion, which measured this block against the tree
+> and the MCP specification. MCP-02, MCP-04 and MCP-05 changed. Evidence and rationale:
+> `.planning/phases/46-mcp-trust-and-facade/46-CONTEXT.md`.
+
+- [x] **MCP-01**: MCP tool descriptions reach the model as ordinary text, without the untrusted-data wrapper. **Delivered ahead of the phase by `34b892512` (2026-08-12), un-amended** — `frameMCPDescription`/`frameMCPSummary` carry no distrust prefix. Phase 46 ratifies it by amendment; there is no code left to write
+- [ ] **MCP-02**: ~~Per-call result fencing and~~ fail-closed risk classification for unknown tools remains in force and is proven **live**. **Amended 2026-08-16 (operator decision):** result fencing for MCP was removed by `34b892512` and that removal is the ratified posture — an operator-installed server is operator-trusted, and mounting must cost no ceremony. The guardrails this requirement now asserts are: `mcpToolRisk`'s fail-closed default (`bridge_risk.go:112-118`, unannotated → `true, true`, escalate-only); the model-blind approval gate; bridge namespacing plus panic-on-duplicate; and `capSchemaDescriptions`' byte caps. The counter-recommendation (hermes fences every `mcp_*` result; PITFALLS §2 calls a fencing regression *"the actually dangerous outcome"*) was put to the operator and declined. **Non-MCP sources are unaffected** and keep the nonce envelope: `web_fetch`, `document_search`/`document_open` (required by `prd.md:4579`), user attachments, swarm child output
+- [x] **MCP-03**: Trust is unconditional across every mounted MCP server — those Aura ships, those added later, and those minted by her own self-extension alike. **Operator decision, 2026-08-05**, taken against the research recommendation to scope removal to code-reviewed recipes: the residual risk is carried by ~~MCP-02's per-call result fencing and~~ fail-closed risk classification, and by the operator's control over what gets mounted at all. **Delivered by `34b892512`, already unscoped.** Reaffirmed and widened 2026-08-16: mounting a server must require **no declaration of any kind** — no curation entry, no trust tier, no allowlist. A server with no entry anywhere works immediately: deferred, discoverable, fail-closed
+- [ ] **MCP-04**: Calendar, mail, contacts and WhatsApp are reachable through ~~**one** curated `comms` surface — a single loaded slot~~ **two curated multiplexed tools — one per sidecar** — replacing 28 raw third-party tools, **always loaded, never deferred**. **Amended 2026-08-16 (D-17/D-18): the curation lives in the forks, not in Aura.** Every MCP server Aura ships is a fork Aura controls (`chetto1983/aura-pim-mcp`, `chetto1983/whatsapp-mcp`, in-tree `cmd/arcadedb-mcp`), so a server exposing a bad surface is fixed at the source. **No `comms` tool, no curation config, no hide-list and no `bridgePolicy` namespace table is built in Aura's tree** — that would be per-integration bespoke the next mounted server gets no benefit from, and Aura's bridge must stay generic. Two slots rather than one because a single MCP tool cannot be served by two servers without merging the forks. The original budget reasoning stands: skills take two of the fourteen slots and connected accounts take one, deliberately — hermes calls skills *"your procedural memory — reusable approaches for recurring task types"*, and Aura extends herself many times a day where she consults a calendar occasionally. Undeferring the 28 raw tools instead would put ~56 definitions in every turn's manifest, the exact configuration Aura already measured at ~20k tokens/turn and recorded as the point where tool-choice accuracy collapses (`llm_agent_promote.go:88-93`). Reference point: Claude Code ships **16 tools, all loaded, no deferred pattern** — every one a curated surface rather than an endpoint wrapper
+- [ ] **MCP-05**: ~~`accountId` is resolved host-side from the operator's configuration, like `user_identifier`~~ **The fork stops requiring a caller-supplied account identity: its detail tools accept the same opaque reference its listing tools return.** **Amended 2026-08-16 (D-20) — the original framing was falsified by measurement.** Against `internal/agent/tools/testdata/deferred_manifest.json`, `accountId` is two different things under one name: a defaultable **routing hint** in `create_event` (*"Omitting uses the first configured account"*) and `get_calendar_events` (*"omit to query all enabled accounts"*), and a **required opaque handle** in `get_calendar_event_details` (*"Account ID from get_calendar_events"*, beside required `calendarId` and `eventId`). Host-injecting a configured default into the handle case passes the **wrong** account for an event that came from another account's listing, so `user_identifier`-style injection cannot satisfy this. The reference shape is the one `prd.md:4579` already uses for documents (`document:<search_document_id>@<version>#<locator>`). **Spec basis:** MCP defines **no `accountId` concept** — identity is the OAuth token, audience-bound per server (RFC 8707); authorization is OPTIONAL; local/stdio servers are told to *"retrieve credentials from the environment"*
+
+### Native MCP client
+
+> **▶ Added 2026-08-16.** New requirement family for **Phase 45.1**, inserted before Phase 46 by
+> operator decision (*"use mcp client native no bespoke"*). Phase 45.1 delivers no MCP-0x
+> requirement, so without these it would have nothing to verify goal-backward against.
+
+- [ ] **MCPC-01**: Aura speaks MCP through the official `github.com/modelcontextprotocol/go-sdk` client — already a dependency (`go.mod:27`, v1.7.0) but used server-side only today (`cmd/arcadedb-mcp/*`). The pinned version already ships the 2026-07-28 stateless core (`latestProtocolVersion`, `mcp/shared.go:50-51`) and negotiates down five protocol versions, so this needs **no dependency bump and no sidecar change**
+- [ ] **MCPC-02**: Aura's own policy layers survive **on top of** the SDK rather than being reimplemented beside it — SSRF resolve-then-pin and egress allowlist re-attached as a custom `http.RoundTripper`, plus `classify.go`'s trust taxonomy, `managed_config*.go`, `tool_error.go`, `domain_outcome.go`, `observability.go`, `redact.go`. Proven by a live SSRF/egress probe still being refused after the swap
+- [ ] **MCPC-03**: The bespoke transport and reconnect layer is **deleted, not left dormant** — `internal/mcp/client.go`, `http_client.go`, `transport.go`, `protocol.go`, `tool_methods.go`, `lifecycle.go`, `probe.go`, and `internal/agent/mcptools/bridge_reconnect.go` + `bridge_ping.go` (≈1,970 LOC non-test, ≈900 LOC of tests), replaced by `ClientOptions.KeepAlive` and the SDK's own backoff/`Last-Event-ID` reconnect. Dark code is forbidden: no hand-rolled JSON-RPC framing or reconnect loop may reappear elsewhere
+- [ ] **MCPC-04**: Host-side argument derivation moves onto the SDK's own extension point, `Client.AddSendingMiddleware` (`mcp/client.go:1131`) — the idiom the SDK uses for its own MRTR feature (`mcp/mrtr.go:22-31`). `cmd/arcadedb-mcp` additionally moves off the `user_identifier` **argument** onto stateless `_meta`, since Aura owns both ends. **This changes the memory tool's schema — PITFALLS §4 applies** (rehydrated history, paused approvals, scheduled jobs)
+- [ ] **MCPC-05**: A server-initiated elicitation (SEP-2322 multi-round-trip) reaches the operator through Aura's existing approval path with a bounded timeout, naming the asking server — hermes parity (`tools/mcp_tool.py:1669-1758`). The SDK auto-fulfills input requests by default and Aura registers no handler today, so the current posture is permissive-by-omission
 
 ### Context management
 
@@ -258,11 +274,16 @@ Populated during roadmap creation (`.planning/ROADMAP.md`, Phases 45-54).
 | HARN-07 | Phase 45 | Complete |
 | HARN-08 | Phase 45 | Complete |
 | HARN-09 | Phase 45 | Complete |
-| MCP-01 | Phase 46 | Pending |
-| MCP-02 | Phase 46 | Pending |
-| MCP-03 | Phase 46 | Pending |
-| MCP-04 | Phase 46 | Pending |
-| MCP-05 | Phase 46 | Pending |
+| MCP-01 | Phase 46 | Shipped early (`34b892512`) — ratify by amendment |
+| MCP-02 | Phase 46 | Pending (amended 2026-08-16 — fencing clause dropped) |
+| MCP-03 | Phase 46 | Shipped early (`34b892512`) — ratify by amendment |
+| MCP-04 | Phase 46 | Pending (amended 2026-08-16 — curation moved into the forks) |
+| MCP-05 | Phase 46 | Pending (amended 2026-08-16 — fixed in the fork, not host-injected) |
+| MCPC-01 | Phase 45.1 | Pending |
+| MCPC-02 | Phase 45.1 | Pending |
+| MCPC-03 | Phase 45.1 | Pending |
+| MCPC-04 | Phase 45.1 | Pending |
+| MCPC-05 | Phase 45.1 | Pending |
 | MEM-01 | Phase 49 | Pending |
 | MEM-02 | Phase 49 | Pending |
 | MEM-03 | Phase 49 | Pending |
