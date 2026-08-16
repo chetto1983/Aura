@@ -21,7 +21,20 @@ type fakeRetrievalControl struct {
 	scopeRequest []string
 	scope        []string
 	cards        []RetrievalCard
+	names        map[string]string
+	namesRequest []string
+	namesErr     error
 	err          error
+}
+
+func (f *fakeRetrievalControl) DocumentNames(
+	_ context.Context, _ string, ids []string,
+) (map[string]string, error) {
+	f.namesRequest = append([]string(nil), ids...)
+	if f.namesErr != nil {
+		return nil, f.namesErr
+	}
+	return f.names, nil
 }
 
 func (f *fakeRetrievalControl) ResolveDocumentScope(
@@ -172,6 +185,71 @@ func TestHostRetrieverReturnsDocumentsThatHaveNoCard(t *testing.T) {
 	// what it found, and the key is what document_open needs.
 	if doc.Title != "fattura-acme.pdf" {
 		t.Fatalf("title = %q, want the object's base name", doc.Title)
+	}
+}
+
+// A chat attachment's key is `chat/<assetID>.pdf` on purpose, so its base name is a uuid.
+// Titling a passage-leg hit with it showed the agent an id where a name belongs: measured
+// 2026-08-16 on the live stack, document_search answered
+// "bc4c9304-7729-4b1e-9009-0882a03ea1a5.pdf" and the agent had to spend a document_open
+// call to learn the file was called colm2025_conference.pdf.
+func TestHostRetrieverTitlesPassageOnlyHitsWithTheirRealName(t *testing.T) {
+	carded := retrievalCandidate(arcadedb.RetrievalLegFused)
+	uncarded := retrievalCandidate(arcadedb.RetrievalLegFused)
+	uncarded.SearchDocumentID, uncarded.PassageID = "doc_bucket", "40000000-0000-0000-0000-000000000001"
+	uncarded.SourceKey = "chat/bc4c9304-7729-4b1e-9009-0882a03ea1a5.pdf"
+	control := &fakeRetrievalControl{
+		cards: []RetrievalCard{retrievalCard()},
+		names: map[string]string{"doc_bucket": "colm2025_conference.pdf"},
+	}
+	response, err := (&HostRetriever{
+		ControlPlane: control,
+		Projection: &fakeRetrievalProjection{
+			fused: []arcadedb.PassageCandidate{carded, uncarded},
+		},
+		Embedder: &fakeRetrievalEmbedder{vector: []float64{0.1, 0.2}},
+	}).Retrieve(t.Context(), RetrievalRequest{IdentityID: retrievalIdentity, Query: "footnotes"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	titles := map[string]string{}
+	for _, doc := range response.Documents {
+		titles[doc.DocumentID] = doc.Title
+	}
+	if titles["doc_bucket"] != "colm2025_conference.pdf" {
+		t.Fatalf("passage-only title = %q, want the indexed name", titles["doc_bucket"])
+	}
+	// The card already carries the name of everything it ranked, so asking again would be a
+	// second answer to a settled question -- and a needlessly wider statement.
+	if !reflect.DeepEqual(control.namesRequest, []string{"doc_bucket"}) {
+		t.Fatalf("names requested for %#v, want only the uncarded hit", control.namesRequest)
+	}
+	if titles["doc_9f2c"] != "Clienti.xlsx" {
+		t.Fatalf("carded title = %q, want the card's own", titles["doc_9f2c"])
+	}
+}
+
+// The name is enrichment: losing it must cost the title, never the passages. This is the
+// one silenced failure in the cascade that does NOT set a DegradationReason, because the
+// answer itself is complete.
+func TestHostRetrieverKeepsTheAnswerWhenTheNameLookupFails(t *testing.T) {
+	candidate := retrievalCandidate(arcadedb.RetrievalLegFused)
+	candidate.SearchDocumentID = "doc_bucket"
+	candidate.SourceKey = "chat/bc4c9304-7729-4b1e-9009-0882a03ea1a5.pdf"
+	response, err := (&HostRetriever{
+		ControlPlane: &fakeRetrievalControl{namesErr: errors.New("arcadedb unreachable")},
+		Projection:   &fakeRetrievalProjection{fused: []arcadedb.PassageCandidate{candidate}},
+		Embedder:     &fakeRetrievalEmbedder{vector: []float64{0.1, 0.2}},
+	}).Retrieve(t.Context(), RetrievalRequest{IdentityID: retrievalIdentity, Query: "footnotes"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Status != RetrievalComplete || response.DegradationReason != "" {
+		t.Fatalf("a missing title degraded the whole response: %#v", response)
+	}
+	doc := response.Documents[0]
+	if doc.Title != "bc4c9304-7729-4b1e-9009-0882a03ea1a5.pdf" || len(doc.Passages) != 1 {
+		t.Fatalf("document = %#v, want the key-derived title and its passage intact", doc)
 	}
 }
 

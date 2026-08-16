@@ -117,29 +117,12 @@ func (d *DocumentIndex) ResolveDocumentScope(
 	if err := validateIdentifier("document identity", identityID); err != nil {
 		return nil, err
 	}
-	requested := make([]string, 0, len(documentIDs))
-	seen := make(map[string]struct{}, len(documentIDs))
-	for _, id := range documentIDs {
-		id = strings.TrimSpace(id)
-		if id == "" {
-			continue
-		}
-		if err := validateIdentifier("document filter id", id); err != nil {
-			return nil, err
-		}
-		if _, duplicate := seen[id]; duplicate {
-			continue
-		}
-		seen[id] = struct{}{}
-		requested = append(requested, id)
+	requested, err := d.normalizeDocumentIDs(documentIDs)
+	if err != nil {
+		return nil, err
 	}
 	if len(requested) == 0 {
 		return nil, nil
-	}
-	if len(requested) > d.config.MaxDocumentFilters {
-		return nil, fmt.Errorf(
-			"arcadedb: document filter count %d exceeds maximum %d",
-			len(requested), d.config.MaxDocumentFilters)
 	}
 	client, err := d.tenantClient(ctx, identityID)
 	if err != nil {
@@ -201,6 +184,84 @@ func (d *DocumentIndex) DocumentByID(
 		return DocumentCard{}, fmt.Errorf("arcadedb: document %s is not unique", searchDocumentID)
 	}
 	return decodeDocumentCard(rows[0])
+}
+
+// normalizeDocumentIDs trims, validates and de-duplicates caller-supplied document ids.
+//
+// Shared by every by-id lookup so a malformed id is refused identically in each, and so
+// the bound on how many ids one statement may carry lives in a single place.
+func (d *DocumentIndex) normalizeDocumentIDs(documentIDs []string) ([]string, error) {
+	requested := make([]string, 0, len(documentIDs))
+	seen := make(map[string]struct{}, len(documentIDs))
+	for _, id := range documentIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if err := validateIdentifier("document filter id", id); err != nil {
+			return nil, err
+		}
+		if _, duplicate := seen[id]; duplicate {
+			continue
+		}
+		seen[id] = struct{}{}
+		requested = append(requested, id)
+	}
+	if len(requested) > d.config.MaxDocumentFilters {
+		return nil, fmt.Errorf(
+			"arcadedb: document filter count %d exceeds maximum %d",
+			len(requested), d.config.MaxDocumentFilters)
+	}
+	return requested, nil
+}
+
+// DocumentNames resolves each id's display name, for hits the card leg never ranked.
+//
+// A Passage mirrors the CHUNK, not the object, so it carries no name: a document that
+// reached the answer through the passage leg alone would be titled with the tail of its
+// key, and a chat attachment's key is a uuid on purpose. The name is one record away in
+// this same database, keyed by the id the hit already carries -- the same lookup
+// document_open makes -- so it costs one statement rather than a field on every chunk.
+func (d *DocumentIndex) DocumentNames(
+	ctx context.Context,
+	identityID string,
+	documentIDs []string,
+) (map[string]string, error) {
+	identityID = strings.TrimSpace(identityID)
+	if err := validateIdentifier("document identity", identityID); err != nil {
+		return nil, err
+	}
+	requested, err := d.normalizeDocumentIDs(documentIDs)
+	if err != nil {
+		return nil, err
+	}
+	if len(requested) == 0 {
+		return nil, nil
+	}
+	client, err := d.tenantClient(ctx, identityID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := client.Query(ctx,
+		"SELECT search_document_id, file_name FROM "+IndexedDocumentType+
+			" WHERE search_document_id IN :ids",
+		map[string]any{"ids": requested})
+	if err != nil {
+		return nil, fmt.Errorf("arcadedb: document names: %w", err)
+	}
+	names := make(map[string]string, len(rows))
+	for index, row := range rows {
+		id, err := requiredString(row, "search_document_id")
+		if err != nil {
+			return nil, fmt.Errorf("arcadedb: document name %d: %w", index, err)
+		}
+		name, err := requiredString(row, "file_name")
+		if err != nil {
+			return nil, fmt.Errorf("arcadedb: document name %s: %w", id, err)
+		}
+		names[id] = name
+	}
+	return names, nil
 }
 
 func decodeDocumentCard(row map[string]any) (DocumentCard, error) {

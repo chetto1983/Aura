@@ -19,9 +19,16 @@ type rankedDocument struct {
 	ordinal int64
 }
 
+// rankCardsOnly is the degraded answer: cards with no passage leg behind them. Names are
+// not looked up because a card already carries the one it was ranked by.
+func rankCardsOnly(cards []RetrievalCard, limit, topPassages int) []RetrievalDocument {
+	return rankDocuments(cards, nil, nil, limit, topPassages, true)
+}
+
 func rankDocuments(
 	cards []RetrievalCard,
 	passages []arcadedb.PassageCandidate,
+	names map[string]string,
 	limit int,
 	topPassages int,
 	forceOpen bool,
@@ -41,7 +48,7 @@ func rankDocuments(
 	// Passages first and their order wins: a document the engine ranked is better
 	// evidenced than one only a card mentions, so cards start after the last passage.
 	for rank, passage := range passages {
-		doc := ensureRankedDocumentFromCandidate(byDocumentID, passage)
+		doc := ensureRankedDocumentFromCandidate(byDocumentID, passage, names)
 		doc.order = min(doc.order, rank)
 		doc.ordinal = min(doc.ordinal, passage.Ordinal)
 		if passage.FusedScore != nil && *passage.FusedScore > doc.document.Score {
@@ -115,9 +122,16 @@ func ensureRankedDocumentFromCard(byDocumentID map[string]*rankedDocument, card 
 
 // ensureRankedDocumentFromCandidate builds the document out of the passage itself, so a
 // document reconciled from the bucket -- which has no card at all -- still reaches the
-// caller. SourceKey is both the title fallback and the route back to the bytes.
+// caller. SourceKey is the route back to the bytes.
+//
+// The title comes from names, which the caller resolved for exactly these documents. The
+// key's tail is the LAST resort and it is only ever right by luck: it is the real name for
+// an object dropped straight into the bucket, and a uuid for a chat attachment, whose name
+// is deliberately kept out of its key so it cannot leak through a presigned URL.
 func ensureRankedDocumentFromCandidate(
-	byDocumentID map[string]*rankedDocument, candidate arcadedb.PassageCandidate,
+	byDocumentID map[string]*rankedDocument,
+	candidate arcadedb.PassageCandidate,
+	names map[string]string,
 ) *rankedDocument {
 	doc := byDocumentID[candidate.SearchDocumentID]
 	if doc == nil {
@@ -126,7 +140,11 @@ func ensureRankedDocumentFromCandidate(
 	}
 	doc.document.SourceKind, doc.document.SourceKey = candidate.SourceKind, candidate.SourceKey
 	if doc.document.Title == "" {
-		doc.document.Title = path.Base(candidate.SourceKey)
+		if name := names[candidate.SearchDocumentID]; name != "" {
+			doc.document.Title = name
+		} else {
+			doc.document.Title = path.Base(candidate.SourceKey)
+		}
 	}
 	if doc.document.OriginalSHA256 == "" {
 		doc.document.OriginalSHA256 = candidate.RawSHA256

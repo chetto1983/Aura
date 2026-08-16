@@ -163,6 +163,27 @@ def _name_words(file_name: str) -> str:
     return file_name + " " + re.sub(r"[^0-9A-Za-z]+", " ", file_name)
 
 
+def _card_name(file_name: str, converted_path: str) -> str:
+    """The real stem under the extension filecard will actually parse.
+
+    The name filecard is given does TWO jobs and both have to be served here.
+
+    It ROUTES: Request.ext() prefers FileName over Path, so carding a converted .ods under
+    the name "x.ods" falls through to "file, 12 KB" -- the conversion happens and is then
+    thrown away. MEASURED: 12/12 fixture formats card structurally when the CONVERTED
+    extension is used, against 4/12 before.
+
+    And it is DISPLAYED: the card opens with this name, that first line is indexed, and the
+    agent reads it back. Passing the converted temp file's whole basename served the routing
+    and lost the name -- measured 2026-08-16, a chat attachment carded as "tmptq9teunw.pdf"
+    while the file_name stored beside it was already correct.
+
+    LibreOffice keeps the stem, so this only ever changes the extension, which is an honest
+    statement of what was parsed. source_key on the row still carries the true original key.
+    """
+    return pathlib.PurePosixPath(file_name).stem + pathlib.PurePosixPath(converted_path).suffix
+
+
 @coco.fn(memo=True)
 def _card(path: str, file_name: str) -> str:
     """Describe the file, by calling Aura's own filecard rather than reimplementing it.
@@ -294,14 +315,7 @@ async def process_file(
             # the two examples above -- is the natural next step, and this leaves the
             # seam for it rather than deciding it here.
             text = extract.extract_text(ready) if extract.extractable(ready) else ""
-            # Routed on the CONVERTED name, not the original. filecard's Request.ext()
-            # prefers FileName over Path, so carding a converted .ods under the name
-            # "x.ods" falls through to "file, 12 KB" -- the conversion happens and is then
-            # thrown away. LibreOffice keeps the stem, so this only changes the extension,
-            # which is an honest statement of what was parsed; source_key on the row still
-            # carries the true original key. MEASURED: 12/12 fixture formats card
-            # structurally this way, against 4/12 before.
-            card = _card(ready, pathlib.PurePosixPath(ready).name)
+            card = _card(ready, _card_name(file_name, ready))
     source_kind = "s3"
     search_document_id = identity.search_document_id(identity_id, source_kind, key)
     # document_budget(), not the bare ceiling: _embed sends EMBED_DOC_PREFIX + text, so a

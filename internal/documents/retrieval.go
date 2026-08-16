@@ -194,6 +194,7 @@ type RetrievalCard struct {
 type RetrievalControlPlane interface {
 	ResolveDocumentScope(context.Context, string, []string) ([]string, error)
 	RouteDocumentCards(context.Context, string, string, []string, int) ([]RetrievalCard, error)
+	DocumentNames(context.Context, string, []string) (map[string]string, error)
 }
 
 // RetrievalProjection is the search index side of the cascade. It is trusted for candidate
@@ -259,7 +260,7 @@ func (r *HostRetriever) Retrieve(ctx context.Context, request RetrievalRequest) 
 	}
 	if r.Projection == nil {
 		response.Status, response.DegradationReason = RetrievalCardOnly, DegradationArcade
-		response.Documents = rankDocuments(cards, nil, request.Limit, cfg.TopPassages, true)
+		response.Documents = rankCardsOnly(cards, request.Limit, cfg.TopPassages)
 		return response, nil
 	}
 	// The embedding comes before the index read because there is one read: the engine
@@ -269,7 +270,7 @@ func (r *HostRetriever) Retrieve(ctx context.Context, request RetrievalRequest) 
 	vectors, embedErr := r.embedQuery(ctx, request.Query)
 	if embedErr != nil {
 		response.Status, response.DegradationReason = RetrievalCardOnly, DegradationEmbedding
-		response.Documents = rankDocuments(cards, nil, request.Limit, cfg.TopPassages, true)
+		response.Documents = rankCardsOnly(cards, request.Limit, cfg.TopPassages)
 		return response, nil
 	}
 	fused, err := r.Projection.FusedCandidates(ctx, arcadedb.FusedCandidateQuery{
@@ -280,11 +281,58 @@ func (r *HostRetriever) Retrieve(ctx context.Context, request RetrievalRequest) 
 	})
 	if err != nil {
 		response.Status, response.DegradationReason = RetrievalCardOnly, DegradationArcade
-		response.Documents = rankDocuments(cards, nil, request.Limit, cfg.TopPassages, true)
+		response.Documents = rankCardsOnly(cards, request.Limit, cfg.TopPassages)
 		return response, nil
 	}
-	response.Documents = rankDocuments(cards, fused, request.Limit, cfg.TopPassages, false)
+	response.Documents = rankDocuments(
+		cards, fused, r.passageLegNames(ctx, request.IdentityID, cards, fused),
+		request.Limit, cfg.TopPassages, false,
+	)
 	return response, nil
+}
+
+// passageLegNames resolves display names for the documents ONLY the passage leg produced.
+//
+// The card leg already carries the name of everything it ranked, so asking for those again
+// would be a second answer to a question already answered. What is left are the hits with
+// no card in the ranking, which is where the name is missing entirely.
+//
+// A failure here is silenced deliberately, and it is the one silence in this cascade that
+// does not set a DegradationReason: the passages are intact and the answer is correct, only
+// its titles fall back to the key -- which is the documented behaviour for an object that
+// never carried a name. Degrading the whole response would be a worse answer, not a safer
+// one.
+func (r *HostRetriever) passageLegNames(
+	ctx context.Context,
+	identityID string,
+	cards []RetrievalCard,
+	passages []arcadedb.PassageCandidate,
+) map[string]string {
+	carded := make(map[string]struct{}, len(cards))
+	for _, card := range cards {
+		carded[card.DocumentID] = struct{}{}
+	}
+	missing := make([]string, 0, len(passages))
+	seen := make(map[string]struct{}, len(passages))
+	for _, passage := range passages {
+		id := passage.SearchDocumentID
+		if _, ranked := carded[id]; ranked {
+			continue
+		}
+		if _, already := seen[id]; already {
+			continue
+		}
+		seen[id] = struct{}{}
+		missing = append(missing, id)
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	names, err := r.ControlPlane.DocumentNames(ctx, identityID, missing)
+	if err != nil {
+		return nil
+	}
+	return names
 }
 
 func (r *HostRetriever) embedQuery(ctx context.Context, query string) ([]float64, error) {

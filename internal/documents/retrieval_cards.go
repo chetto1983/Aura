@@ -32,6 +32,16 @@ func (c *ArcadeRetrievalControlPlane) ResolveDocumentScope(
 	return c.Index.ResolveDocumentScope(ctx, identityID, documentIDs)
 }
 
+// DocumentNames resolves display names for documents the card leg did not rank.
+func (c *ArcadeRetrievalControlPlane) DocumentNames(
+	ctx context.Context, identityID string, documentIDs []string,
+) (map[string]string, error) {
+	if c == nil || c.Index == nil {
+		return nil, errRetrievalControlPlaneUnset
+	}
+	return c.Index.DocumentNames(ctx, identityID, documentIDs)
+}
+
 // RouteDocumentCards ranks documents by their own description.
 //
 // The scope argument is accepted and ignored, and that is not an oversight: the card leg
