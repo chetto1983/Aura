@@ -19,23 +19,24 @@ import (
 // message (a user message must not carry a tool_call_id).
 const compactionMarker = "__aura_compaction__"
 
-// compactionHeader/Footer frame the LLM summary so the model reads it as condensed
-// prior context, not as a fresh user instruction. It is Aura's own faithful summary
-// of the real conversation, so it is trusted context (no distrust wording).
-const compactionHeader = "<earlier_conversation_summary>\n" +
-	"The earlier part of this conversation was condensed to fit the context window. " +
-	"Treat the following as an accurate summary of what was already said.\n"
-const compactionFooter = "\n</earlier_conversation_summary>"
+// compactionHeader/Footer frame the summary. Both live in compaction_template.go with the
+// reasoning for each clause: the framing is what stops a model from reading condensed
+// history as a fresh instruction and resuming work the person already called off.
+const compactionHeader = compactionFraming
+const compactionFooter = compactionFramingEnd
 
 // summaryMaxTokens bounds the summarizer's output; summaryRenderCap bounds the
 // transcript sent to it (a compaction fires because history is large, so the
 // summarizer input must itself be bounded — the recent tail is kept preferentially).
 const (
-	summaryMaxTokens   = 1024
-	summaryPerTurnCap  = 4000
-	summaryRenderCap   = 60000
-	compactionTimeout  = 45 * time.Second
-	summaryTemperature = 0.3
+	summaryMaxTokens  = 1024
+	summaryPerTurnCap = 4000
+	// summaryToolOutputCap is the per-tool-turn slice the summarizer is shown. Deliberately
+	// far below summaryPerTurnCap: see the pruning comment in renderRoundsForSummary.
+	summaryToolOutputCap = 400
+	summaryRenderCap     = 60000
+	compactionTimeout    = 45 * time.Second
+	summaryTemperature   = 0.3
 )
 
 // Summarizer condenses a slice of earlier conversation rounds into a single dense
@@ -69,8 +70,9 @@ func tryCompact(
 		return nil, false
 	}
 	head, history, active := splitHeadHistoryActive(turns)
+	history, active = protectRecentTail(enc, history, active, cap)
 	if len(history) == 0 {
-		return nil, false // nothing older than the active round to condense
+		return nil, false // nothing older than the protected tail to condense
 	}
 	summary, ok := compactionSummary(ctx, sum, cache, conversationID, branchID, history)
 	if !ok {
@@ -107,11 +109,6 @@ func NewLLMSummarizer(client llm.Client, model string) Summarizer {
 	return &llmSummarizer{client: client, model: model}
 }
 
-const summaryPrompt = "You compress an earlier slice of a conversation into a dense factual summary " +
-	"for another assistant to continue from. Preserve decisions, concrete facts, names, numbers, " +
-	"file paths, user preferences, and still-open threads. Drop pleasantries and redundancy. " +
-	"Write the summary ONLY: no preamble, no meta-commentary."
-
 // Summarize renders the rounds to a bounded transcript and asks the model for a
 // summary. It drains the stream fully (interface contract) and requires a clean stop.
 func (s *llmSummarizer) Summarize(ctx context.Context, rounds []llm.Message) (string, error) {
@@ -125,11 +122,15 @@ func (s *llmSummarizer) Summarize(ctx context.Context, rounds []llm.Message) (st
 	ctx, cancel := context.WithTimeout(ctx, compactionTimeout)
 	defer cancel()
 
+	instruction := summaryTemplate(summaryMaxTokens)
+	if carriesPreviousSummary(rounds) {
+		instruction = iterativeUpdateInstruction + "\n" + instruction
+	}
 	req := llm.Request{
 		Model: s.model,
 		Messages: []llm.Message{
-			{Role: llm.RoleSystem, Content: summaryPrompt},
-			{Role: llm.RoleUser, Content: transcript},
+			{Role: llm.RoleSystem, Content: summarySystemPrompt},
+			{Role: llm.RoleUser, Content: transcript + "\n\n---\n" + instruction},
 		},
 		Temperature: summaryTemperature,
 		MaxTokens:   summaryMaxTokens,
@@ -171,11 +172,25 @@ func renderRoundsForSummary(rounds []llm.Message) string {
 		if content == "" {
 			continue
 		}
-		if len(content) > summaryPerTurnCap {
+		// Tool output is pruned HARD before the summarizer sees it, and this is where the
+		// tokens actually are: measured on three real conversations (2026-08-16), tool
+		// content was 211,074 of 345,000 characters -- 61% -- against 18,790 of assistant
+		// prose. It is also the least summarizable material in the transcript, because it
+		// describes HOW something was done rather than WHAT was decided, and a page of
+		// shell transcript reliably drowns the one sentence that mattered.
+		//
+		// The head is kept rather than the tail: a tool result announces its outcome first
+		// (exit code, error class, first rows) and pads afterwards. hermes-agent's
+		// compressor does the same pre-pass for the same reason.
+		cap := summaryPerTurnCap
+		if m.Role == llm.RoleTool {
+			cap = summaryToolOutputCap
+		}
+		if len(content) > cap {
 			// Walk back to a rune boundary: a naive byte slice can cut a multi-byte rune
 			// in half and hand the summarizer invalid UTF-8 (continuation bytes are
 			// 0b10xxxxxx).
-			cut := summaryPerTurnCap
+			cut := cap
 			for cut > 0 && !utf8.RuneStart(content[cut]) {
 				cut--
 			}

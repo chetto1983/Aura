@@ -3,9 +3,11 @@ package conversations
 import (
 	"context"
 	"log/slog"
+	"slices"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/pkoukk/tiktoken-go"
 )
 
 // compactionCache is the durable half of L2.4 (migration 0096). A nil cache disables it
@@ -127,4 +129,44 @@ func turnsAfter(turns []Turn, seq int) []Turn {
 		}
 	}
 	return nil
+}
+
+// carriesPreviousSummary reports whether the first message is a summary carried in from an
+// earlier compaction rather than a real turn. The summarizer needs to know: updating a
+// summary and writing one from scratch are different instructions, and handing the update
+// prompt a transcript with no previous summary asks the model to preserve something that
+// is not there.
+func carriesPreviousSummary(rounds []llm.Message) bool {
+	return len(rounds) > 0 && strings.HasPrefix(rounds[0].Content, carriedSummaryPrompt)
+}
+
+// protectRecentTail moves whole rounds from the end of history into the protected region
+// until the token budget is spent, and returns the two new slices.
+//
+// It stops on a ROUND boundary (a user turn), never mid-round: half a round in the summary
+// and half verbatim would show the model a question whose answer it cannot see, or an
+// answer to a question that is now only a sentence in a summary.
+func protectRecentTail(enc *tiktoken.Tiktoken, history, active []Turn, cap int) ([]Turn, []Turn) {
+	budget := int(float64(cap) * tailProtectionRatio)
+	if budget <= 0 || len(history) == 0 {
+		return history, active
+	}
+	spent := 0
+	boundary := len(history)
+	for i, turn := range slices.Backward(history) {
+		spent += totalTokens(enc, history[i:i+1])
+		if spent > budget {
+			break
+		}
+		if turn.Role == llm.RoleUser {
+			boundary = i
+		}
+	}
+	if boundary == len(history) {
+		return history, active
+	}
+	protected := make([]Turn, 0, len(history)-boundary+len(active))
+	protected = append(protected, history[boundary:]...)
+	protected = append(protected, active...)
+	return history[:boundary], protected
 }
