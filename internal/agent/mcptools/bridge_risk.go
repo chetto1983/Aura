@@ -1,6 +1,7 @@
 package mcptools
 
 import (
+	"log/slog"
 	"strings"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -99,6 +100,14 @@ func managedBridgePolicy(server mcp.ManagedServer) bridgePolicy {
 // be nil — a nil Annotations must take the same branch an unannotated ToolDef
 // took: the fail-closed `return true, true` default, asserted below.
 func mcpToolRisk(policy bridgePolicy, t *sdkmcp.Tool) (mutating, destructive bool) {
+	mutating, destructive = classifyToolRisk(policy, t)
+	logToolAnnotations(t.Name, t.Annotations, mutating, destructive)
+	return mutating, destructive
+}
+
+// classifyToolRisk is the decision itself, kept separate from the logging so every
+// branch can return directly and the log record is emitted exactly once.
+func classifyToolRisk(policy bridgePolicy, t *sdkmcp.Tool) (mutating, destructive bool) {
 	if actions := trustedRecipeActions[policy.recipeSource]; actions != nil {
 		if action, ok := actions[t.Name]; ok {
 			if explicitDestructive(t.Annotations) {
@@ -115,18 +124,78 @@ func mcpToolRisk(policy bridgePolicy, t *sdkmcp.Tool) (mutating, destructive boo
 		}
 	}
 
-	if t.Annotations == nil {
+	// a is captured once so every read below goes through this single pointer —
+	// no scattered `t.Annotations.X` dot chains that would panic on a nil pointer
+	// if the guard above ever moved.
+	a := t.Annotations
+	if a == nil {
 		return true, true
 	}
-	if t.Annotations.ReadOnlyHint && !explicitDestructive(t.Annotations) {
+	if a.ReadOnlyHint && !explicitDestructive(a) {
+		// Reading an open world is still reading: the two new hints cannot move a
+		// declared read-only tool, and must not be allowed to.
 		return false, false
 	}
-	if t.Annotations.DestructiveHint == nil {
+	if a.DestructiveHint == nil {
 		return true, true
 	}
-	return true, *t.Annotations.DestructiveHint
+	// The one escalation D-107 adds. It sits AFTER the read-only and nil-destructive
+	// cases so it can only ever raise a tier, never lower one, and only in the
+	// fallback branch — a recipe-listed tool never reaches here.
+	if unsafeToRepeatBeyondAura(a) {
+		return true, true
+	}
+	return true, *a.DestructiveHint
+}
+
+// logToolAnnotations makes the adoption visible in a boot log, so an operator can see
+// the two-hint truncation is gone without reading code.
+func logToolAnnotations(name string, a *sdkmcp.ToolAnnotations, mutating, destructive bool) {
+	slog.Debug("mcp tool annotations",
+		"tool", name,
+		"read_only", a != nil && a.ReadOnlyHint,
+		"destructive", explicitDestructive(a),
+		"idempotent", annotationIdempotent(a),
+		"open_world", annotationOpenWorld(a),
+		"mutating", mutating,
+		"tier_destructive", destructive,
+	)
 }
 
 func explicitDestructive(annotations *sdkmcp.ToolAnnotations) bool {
 	return annotations != nil && annotations.DestructiveHint != nil && *annotations.DestructiveHint
+}
+
+// annotationIdempotent reads IdempotentHint, whose documented default is FALSE
+// (go-sdk@v1.7.0 mcp/protocol.go, ToolAnnotations struct, field IdempotentHint:
+// "Default: false"). It is a plain bool, so the zero value already is the default;
+// the reader exists so every hint is read through one named place.
+func annotationIdempotent(a *sdkmcp.ToolAnnotations) bool {
+	return a != nil && a.IdempotentHint
+}
+
+// annotationOpenWorld reads OpenWorldHint, whose documented default is TRUE
+// (go-sdk@v1.7.0 mcp/protocol.go, ToolAnnotations struct, field OpenWorldHint:
+// "Default: true").
+//
+// The default is counter-intuitive and is the whole reason this reader exists: an
+// ABSENT pointer means the MORE dangerous reading, not the safer one. Taking Go's
+// zero value here would silently treat every unannotated tool as closed-world.
+func annotationOpenWorld(a *sdkmcp.ToolAnnotations) bool {
+	if a == nil || a.OpenWorldHint == nil {
+		return true
+	}
+	return *a.OpenWorldHint
+}
+
+// This predicate names the condition the new escalation turns on: a tool that
+// writes (not read-only), whose repetition is not declared harmless (not
+// idempotent), and whose effect lands outside anything Aura can undo (open world).
+//
+// Non-idempotent means a redial-and-reissue can never be proven safe; open-world means
+// the effect is beyond Aura's reach once it has happened. Together they describe a call
+// that deserves the operator's eyes even though the server declined to call it
+// destructive.
+func unsafeToRepeatBeyondAura(a *sdkmcp.ToolAnnotations) bool {
+	return a != nil && !a.ReadOnlyHint && !annotationIdempotent(a) && annotationOpenWorld(a)
 }
