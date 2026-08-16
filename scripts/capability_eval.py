@@ -32,9 +32,15 @@ SCENARIOS = (
     Scenario("shell.exec.fail_closed", "shell_containment", "negative", "./internal/agent/tools", "TestShellExec_FailClosedNoHostFallback"),
     Scenario("fs.workspace.allowed", "filesystem_ownership", "positive", "./internal/agent/tools", "TestSendFileExecuteSetsArtifactMeta"),
     Scenario("fs.workspace.escape_denied", "filesystem_ownership", "negative", "./internal/agent/tools", "TestSendFileFencesToBoxWorkspace"),
-    Scenario("mcp.initialize.valid", "mcp_contract", "positive", "./internal/mcp", "TestHTTPInitializeSessionProtocolAndListTools"),
-    Scenario("mcp.domain_error.typed", "mcp_contract", "negative", "./internal/mcp", "TestCallToolRejectsExplicitDomainFailure"),
-    Scenario("mcp.timeout.bounded", "mcp_contract", "negative", "./internal/mcp", "TestHTTPTimeout"),
+    # These three named the bespoke client's tests, which phase 45.1 deleted along with the
+    # client itself (internal/mcp/{http_client,client,client_timeout}_test.go). The
+    # capabilities did not go away with them -- the SDK-backed client owes exactly the same
+    # three -- so they are re-pointed rather than dropped: a scoreboard that loses a row
+    # every time an implementation is swapped stops measuring the system and starts
+    # measuring the file names.
+    Scenario("mcp.initialize.valid", "mcp_contract", "positive", "./internal/mcp", "TestOpenSDKSessionStreamableHTTP"),
+    Scenario("mcp.domain_error.typed", "mcp_contract", "negative", "./internal/mcp", "TestDecodeToolResultRejectsExplicitDomainFailure"),
+    Scenario("mcp.timeout.bounded", "mcp_contract", "negative", "./internal/mcp", "TestOpenSDKSessionHTTPHonoursCallerDeadline"),
     Scenario("mcp.remote_trust.blocked", "mcp_contract", "negative", "./internal/mcp", "TestMountForIdentityRemoteTrustOverrideIgnored"),
     Scenario("memory.cli.mapping", "memory_contract", "positive", "./cmd/aura", "TestMemoryVerbMapping"),
     Scenario("memory.cli.invalid_rejected", "memory_contract", "negative", "./cmd/aura", "TestMemoryVerbMappingNegativeCases"),

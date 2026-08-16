@@ -97,6 +97,21 @@ func newAgentMemoryLiveMCP(
 	httpServer := httptest.NewServer(officialmcp.NewStreamableHTTPHandler(
 		func(*http.Request) *officialmcp.Server { return server }, nil))
 	t.Cleanup(httpServer.Close)
+	// Closing the CLIENT session does not close the server's half of it. The SDK keeps a
+	// per-session jsonrpc2 read loop alive on the server (streamableServerConn.Read), and
+	// httptest's Close only waits for outstanding REQUESTS — a streamable session is not
+	// one. That loop is what goleak reported as a leak on 2026-08-16, failing the live tier
+	// (and with it the MRS gate at 86.00) while every assertion in the test passed.
+	//
+	// Registered here so cleanup order is: client session, then server sessions, then the
+	// HTTP server (t.Cleanup is LIFO).
+	t.Cleanup(func() {
+		for serverSession := range server.Sessions() {
+			if err := serverSession.Close(); err != nil {
+				t.Errorf("close live MCP server session: %v", err)
+			}
+		}
+	})
 
 	// D-108: the bespoke auramcp.HTTPClient/OpenHTTP/HTTPConfig.ToolIdentityArgument
 	// argument-stamping path is DELETED (plan 45.1-03). This is the same
