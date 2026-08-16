@@ -264,6 +264,7 @@ var allowedAttributeValues = map[AttributeKey]map[string]struct{}{
 	AttributeOperation: finiteSet(
 		"turn", "llm_call", "tool_dispatch", "turn_start", "before_model", "before_tool", "after_tool", "turn_end",
 		"pause_create", "pause_answer", "resume", "resume_commit", "mcp_initialize", "mcp_list_tools", "mcp_call_tool", "mcp_ping", "mcp_bridge",
+		"mcp_elicitation",
 		"db_query", "db_transaction", "scheduler_tick", "scheduler_claim", "scheduler_job", "listener_serve", "idempotency_reserve", "idempotency_complete",
 		"idempotency_replay", "retention_plan", "retention_apply", "retention_delete", ValueOther,
 	),
