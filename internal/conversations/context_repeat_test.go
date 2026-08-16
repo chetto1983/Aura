@@ -102,6 +102,88 @@ func TestDropRepeatedUserTurnsNeverTouchesTheSyntheticHead(t *testing.T) {
 	}
 }
 
+func contents(turns []Turn) []string {
+	out := make([]string, 0, len(turns))
+	for _, turn := range turns {
+		out = append(out, turn.Content)
+	}
+	return out
+}
+
+// The half recordInterruptedRound cannot reach: a SIGKILL or a crash leaves no moment in
+// which to write, so the record has to be reconstructed when the history is read back. By
+// then the round that produced it is over by definition — no sweep, no grace period.
+func TestMarkUnansweredUserTurnsRecordsAQuestionNothingAnswered(t *testing.T) {
+	turns := []Turn{
+		userTurn(1, "cosa vedi adesso?"),
+		userTurn(2, "lascia stare, dimmi che ore sono"),
+		assistantTurn(3, "le tre"),
+	}
+
+	got := contents(markUnansweredUserTurns(turns))
+	want := []string{
+		"cosa vedi adesso?", unansweredMarker, "lascia stare, dimmi che ore sono", "le tre",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("contents = %#v, want %#v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("contents = %#v, want %#v", got, want)
+		}
+	}
+}
+
+// An answered question is not unanswered, however the answer arrived.
+func TestMarkUnansweredUserTurnsLeavesAnsweredRoundsAlone(t *testing.T) {
+	turns := []Turn{
+		userTurn(1, "che ore sono?"),
+		assistantTurn(2, "le tre"),
+		userTurn(3, "grazie"),
+	}
+
+	if got := markUnansweredUserTurns(turns); len(got) != 3 {
+		t.Fatalf("turns = %#v, want the history untouched", contents(got))
+	}
+}
+
+// The final user turn is the one being answered right now. Marking it would tell the model
+// its own question had already failed.
+func TestMarkUnansweredUserTurnsNeverMarksTheActiveQuestion(t *testing.T) {
+	turns := []Turn{assistantTurn(1, "eccomi"), userTurn(2, "che ore sono?")}
+
+	if got := markUnansweredUserTurns(turns); len(got) != 2 {
+		t.Fatalf("turns = %#v, want the active question untouched", contents(got))
+	}
+}
+
+// The always-block rides as a user-role turn and is bookkeeping, not anybody's message: no
+// answer was ever owed to it, and a marker after it would sit between the cached prefix and
+// the first real turn.
+func TestMarkUnansweredUserTurnsIgnoresTheSyntheticHead(t *testing.T) {
+	turns := []Turn{
+		{Seq: alwaysBlockSeq, Role: llm.RoleUser, Content: "ricorda", ToolCallID: alwaysBlockMarker},
+		userTurn(3, "che ore sono?"),
+	}
+
+	if got := markUnansweredUserTurns(turns); len(got) != 2 {
+		t.Fatalf("turns = %#v, want no marker after the always-block", contents(got))
+	}
+}
+
+// Composition with the collapse: a repeat is ONE unanswered question, not two.
+func TestRepeatCollapseRunsBeforeTheUnansweredMarker(t *testing.T) {
+	question := "cosa vedi in tutto il tuo contesto adesso?"
+	turns := []Turn{
+		userTurn(76, question), userTurn(77, question), assistantTurn(78, "ecco"),
+	}
+
+	got := markUnansweredUserTurns(dropRepeatedUserTurns(turns))
+	if len(got) != 2 || got[0].Content != question {
+		t.Fatalf("contents = %#v, want the repeat collapsed and no marker", contents(got))
+	}
+}
+
 func TestDropRepeatedUserTurnsLeavesShortHistoriesAlone(t *testing.T) {
 	assertSeqs(t, dropRepeatedUserTurns(nil))
 	assertSeqs(t, dropRepeatedUserTurns([]Turn{userTurn(1, "ciao")}), 1)

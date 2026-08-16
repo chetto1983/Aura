@@ -223,6 +223,11 @@ func applyContextLadder(
 	// rather than on the repetition.
 	turns = dropRepeatedUserTurns(turns)
 
+	// What the repeat above did NOT cover: a question that got no answer and was then
+	// followed by a different one. Collapsing runs first so a repeat is one question, not
+	// two unanswered ones.
+	turns = markUnansweredUserTurns(turns)
+
 	// Inject the messages[1] always-block (D-07) as a PROTECTED turn right after the
 	// system L0 turn, BEFORE the ladder runs, so it is counted toward the budget and
 	// protected by L1/L2.5 exactly like the system turn (Pitfall 3).
