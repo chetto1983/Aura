@@ -61,10 +61,32 @@ convertita.
 - Il ramo di fallimento di `DocumentNames` è coperto da unit test, non esercitato vivo.
 - Non tocca §6.7 (immagini e audio senza famiglia propria).
 
-**Fixture lasciata nel corpus vivo**: `colm2025_conference.pdf`, chiave
-`chat/b4e391e0-6141-4807-b8e5-88ca58f21162.pdf`, identità operatore. Serve a ri-verificare;
-una `delete_object` la rimuove e CocoIndex cancella la riga da sé (verificato sostituendo la
-chiave precedente).
+**La TERZA superficie, segnalata dall'operatore e chiusa** (`eeb35015e`): il file manager del
+cockpit etichettava ogni riga con un uuid. Stessa causa — leggeva la chiave invece del nome —
+e stessa cura: `ObjectNames` deriva la `search_document_id` dalla chiave del bucket
+(`SearchDocumentID` in Go è la stessa funzione di `identity.search_document_id` nel sidecar) e
+riusa `DocumentNames`. **Una query per pagina, mai una HEAD per riga**: la stessa scelta che fa
+il browser di `garage-webui`, che riserva la HEAD per l'apertura del singolo oggetto.
+
+La metà widget è **misurata contro il pacchetto installato**, non assunta: `parseId` assegna
+`name` dall'id in modo INCONDIZIONATO — un nome inviato accanto viene scartato — tranne che
+esce prima quando `parent` è 0, e la classe base legge poi `parent || cartellaRichiesta`,
+ripristinando il posizionamento. `parent: 0` non è un genitore: è l'unico modo di dire «questi
+campi sono miei, non derivarli», e siccome salta la derivazione va inviato anche `ext` o si
+perde l'icona. Comportamento non documentato che su un upgrade regredirebbe **in silenzio**,
+quindi `web/src/files/filesApi.store.test.ts` lo fissa: l'upgrade rompe un test invece di far
+tornare gli uuid in produzione, cosa che nessun test Go può vedere.
+
+**Quattro righe restano uuid e questo non le ripara**: caricate prima del canale metadati, il
+nome che l'indice conosce per loro *è* l'uuid. I nomi veri sono in `aura.assets.file_name`
+(verificati: `report_di_test.md`, `btc_last_week.png`, `phase26-browser-upload.png` ×2). Un
+ripiego su Postgres nel solo file manager lo farebbe **divergere da `document_search`**: la
+riparazione giusta è sull'indice, e resta una decisione non presa.
+
+**Sei fixture lasciate nel corpus vivo** dell'identità operatore: `colm2025_conference.pdf`,
+`clienti_2026.csv` e i quattro `fatturato_q*_2025.csv`. Servono a ri-verificare; una
+`delete_object` le rimuove e CocoIndex cancella la riga da sé (verificato sostituendo una
+chiave).
 
 **Trappola pagata oggi**: l'immagine `aura-ingest:local` era **11 minuti più vecchia** del
 commit che stava verificando. Senza ricostruirla il difetto della card sarebbe stato
@@ -395,10 +417,42 @@ ma il database di destinazione non deve esistere.
 davvero **raschiando** Aura) non è agganciato a niente: né cron, né CI, né Makefile. Il cron di
 Aura ha già `ReschedulesOnRecovery` e manda alert su Telegram — è lì che va.
 
-**6.4 — Confidenza fusa senza consumatore.** `prd.md:6270+` ratifica *"confidenza bassa deve
-spingere verso `document_open`, mai verso il silenzio"*. `internal/documents/retrieval_rank.go:62`
-decide `RequiresOpen` da famiglia e zero-passaggi, **non** da `FusedScore`. È l'unico punto aperto
-con un emendamento PRD già ratificato alle spalle. *Confidenza: alta.*
+**6.4 — Confidenza fusa senza consumatore. APERTA, ma non per la ragione scritta qui prima, e
+bloccata su una misura che nessuno ha fatto** (indagata il 2026-08-16).
+
+Due correzioni alla voce d'origine, che diceva: *«`retrieval_rank.go:62` decide `RequiresOpen`
+da famiglia e zero-passaggi»*.
+
+1. **La logica "da famiglia" non esiste.** È `forceOpen || len(doc.passages) == 0`, e basta.
+   La famiglia non compare in tutto il retrieval.
+2. **Il PRD ratifica una direzione, non una soglia.** L'emendamento #119 promuove il punteggio
+   fuso a *«segnale di affidabilità del ranking»* e dice *«confidenza bassa deve spingere verso
+   `document_open`»* — ma al punto 5 di «cosa NON dimostra» scrive *«nessun numero qui riguarda
+   la latenza o il costo di un eventuale consumatore»*. Riporta ROC AUC 0.880 e **nessun punto
+   di lavoro**. Scrivere un `if score < …` oggi è inventare il numero.
+
+**Due sonde sullo stack acceso, e il fallimento che #119 cita non si riproduce:**
+
+- *Aggregato incrociato* (somma con filtro su città **e** anno, che nessuna card può
+  rispondere): l'agente ha detto «è una domanda di somma con filtro, quindi apro il file»,
+  ha chiamato `document_open` e ha risposto **€ 2.325.167 su 11 clienti — esatto**. Con
+  `requires_open` **false** per tutto il giro: apre per via della prosa del tool, che già dice
+  *«or the question needs the whole file (how many, sum, average, maximum, grouping)»*.
+- *Ambiguità a quattro file* (quattro tabelle trimestrali dello stesso schema, risposta
+  ricomponibile solo aprendoli tutti): ha aperto **tutti e quattro** in parallelo, si è corretto
+  da solo su un bug di delimitatore, e ha risposto **Q3 = 862.523 €** — esatto, incluso un
+  margine del 2,8% sul secondo.
+
+**Cosa questo NON dimostra.** Non refuta #119: il suo caso era un corpus di 130 documenti con
+75 CSV, dove il file giusto stava al rank 2 fra molti simili e l'agente ha speso 24 chiamate
+prima di rifiutare. Le mie sonde hanno 4 file tutti pertinenti — è ambiguità piccola, non
+grande. Dice solo che a questa scala il consumatore non serve.
+
+**Per sbloccarla servirebbe** l'harness che già esiste e compila
+(`retrieval_abstention_eval_test.go`, tag `retrieval_eval`) su `open_ragbench` — 1.914 query
+con qrels veri. Ma quel corpus è **CC-BY-NC-4.0** e §11 registra la licenza come decisione
+**dovuta e non presa**: scaricarlo in pipeline è prendere quella decisione. Blocco esterno,
+non blocco di codice.
 
 **6.5 — filecard scrive OOXML a mano** (`xlsx.go` 442 LOC, `ooxml.go` 270) mentre `excelize` non è
 nemmeno in `go.mod`. *Confidenza: alta.*
