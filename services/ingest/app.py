@@ -223,14 +223,60 @@ def _embed(text: str) -> list[float]:
     payload = json.dumps(
         {"input": chunk.EMBED_DOC_PREFIX + text, "model": "embeddinggemma"}
     ).encode()
+    try:
+        return _embed_once(text)
+    except urllib.error.HTTPError as exc:
+        detail = _embed_failure_detail(exc, text)
+        head = _head_within_ceiling(text)
+        if head is None:
+            raise RuntimeError(detail) from exc
+        # Losing the vector loses the WHOLE FILE: CocoIndex catches the component failure,
+        # prints "component build failed" and carries on, so the document simply never
+        # reaches the index -- and in live mode audit_pass() never runs to notice. Against
+        # that, embedding the head of an over-long chunk is a small, honest degradation:
+        # the Passage keeps its full text, so document_open and the card are unaffected,
+        # and only the vector is computed from less than the whole.
+        print(f"[embed] {detail}; retrying on the head that fits", flush=True)
+        try:
+            return _embed_once(head)
+        except urllib.error.HTTPError as retry:
+            raise RuntimeError(_embed_failure_detail(retry, head)) from retry
+
+
+def _embed_once(text: str) -> list[float]:
+    payload = json.dumps(
+        {"input": chunk.EMBED_DOC_PREFIX + text, "model": "embeddinggemma"}
+    ).encode()
     req = urllib.request.Request(
         f"{EMBED_BASE_URL.rstrip('/')}/v1/embeddings", data=payload,
         headers={"Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            return json.loads(resp.read())["data"][0]["embedding"]
-    except urllib.error.HTTPError as exc:
-        raise RuntimeError(_embed_failure_detail(exc, text)) from exc
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        return json.loads(resp.read())["data"][0]["embedding"]
+
+
+def _head_within_ceiling(text: str) -> str | None:
+    """The head of text the model can actually take, or None when text already fits.
+
+    The decision is the MEASUREMENT, never the provider's error string: a message like
+    "input is too large to process" is llama.cpp's wording and would be a different one
+    behind any other server, while the token count is ours and means the same thing
+    everywhere.
+
+    chunk.chunk does the cutting because it is the same verified splitter that sized every
+    other chunk in the pipeline -- it re-measures each window and shrinks by the overshoot
+    it observes. A second sizing rule here could disagree with it, and the disagreement
+    would only ever surface as this exact failure.
+
+    Returning None when nothing smaller comes back is deliberate: a failure that is not an
+    overflow (a server restarting, a model unloaded) is not made better by sending less, and
+    pretending otherwise would hide it behind a retry.
+    """
+    if chunk.count_tokens(chunk.EMBED_DOC_PREFIX + text, add_special=True) <= chunk.MODEL_MAX_TOKENS:
+        return None
+    pieces = chunk.chunk(text, max_tokens=chunk.document_budget())
+    if not pieces or pieces[0].text == text:
+        return None
+    return pieces[0].text
 
 
 def _embed_failure_detail(exc: urllib.error.HTTPError, text: str) -> str:

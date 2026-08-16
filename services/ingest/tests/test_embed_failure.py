@@ -7,6 +7,7 @@ settled by a token count the error can carry itself.
 """
 
 import io
+import json
 import urllib.error
 
 import pytest
@@ -67,3 +68,60 @@ def test_embed_raises_with_the_detail_instead_of_the_bare_http_error(monkeypatch
     assert "input is too large to process" in str(caught.value)
     # Chained, so the traceback still reaches the transport-level cause.
     assert isinstance(caught.value.__cause__, urllib.error.HTTPError)
+
+
+def test_an_input_that_already_fits_is_never_trimmed():
+    assert app._head_within_ceiling("una perizia corta") is None
+
+
+def test_an_oversized_input_is_cut_to_something_the_model_takes():
+    text = "Perizia tecnica dettagliata. " * 4000
+
+    head = app._head_within_ceiling(text)
+
+    assert head is not None and len(head) < len(text)
+    assert chunk.count_tokens(
+        chunk.EMBED_DOC_PREFIX + head, add_special=True
+    ) <= chunk.MODEL_MAX_TOKENS
+
+
+def test_an_overflow_self_corrects_instead_of_costing_the_whole_document(monkeypatch):
+    """The failure that loses a document is the one worth recovering from.
+
+    CocoIndex catches a component failure, prints "component build failed" and carries on,
+    so a chunk that cannot embed takes the WHOLE FILE out of the index -- and live mode
+    never runs audit_pass() to notice. Embedding the head is the small loss; losing the
+    document is the large one.
+    """
+    seen: list[int] = []
+
+    def urlopen(req, *_args, **_kwargs):
+        body = json.loads(req.data)["input"]
+        seen.append(chunk.count_tokens(body, add_special=True))
+        if len(seen) == 1:
+            raise http_error(500, b"input is too large to process")
+        return io.BytesIO(json.dumps({"data": [{"embedding": [0.5, 0.5]}]}).encode())
+
+    monkeypatch.setattr(app.urllib.request, "urlopen", urlopen)
+
+    vector = app._embed("Perizia tecnica dettagliata. " * 4000)
+
+    assert vector == [0.5, 0.5]
+    assert len(seen) == 2, "the oversized input was not retried"
+    assert seen[1] < seen[0] and seen[1] <= chunk.MODEL_MAX_TOKENS
+
+
+def test_a_failure_that_is_not_an_overflow_is_raised_rather_than_retried(monkeypatch):
+    """Sending less does not fix a server that is restarting, and retrying would hide it."""
+    calls = 0
+
+    def urlopen(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise http_error(503, b"model is loading")
+
+    monkeypatch.setattr(app.urllib.request, "urlopen", urlopen)
+
+    with pytest.raises(RuntimeError, match="503"):
+        app._embed("una perizia corta")
+    assert calls == 1, "a non-overflow failure must not be retried"
