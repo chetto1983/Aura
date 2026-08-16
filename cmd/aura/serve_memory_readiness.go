@@ -11,6 +11,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent/mcptools"
 	"github.com/chetto1983/aura/internal/agui"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/mcp"
 	"github.com/chetto1983/aura/internal/readiness"
 )
@@ -52,15 +53,15 @@ func checkMemoryReadiness(ctx context.Context, client *mcptools.MountedServer) e
 	// properties, so leaving it in failed every probe, answered /readyz with 503,
 	// and took the cockpit down over a memory that worked.
 	//
-	// `user_identifier` stays, and now means more than it did: memory is one
-	// DATABASE per identity, so the synthetic readiness owner gets its own, and a
-	// health check cannot read or disturb a real person's memory. This probe
-	// builds its map literally rather than through the bridge, so it has to stamp
-	// the call itself.
-	text, err := client.CallToolText(ctx, "memory_search", map[string]any{
-		"query":           "Aura readiness",
-		"limit":           1,
-		"user_identifier": memoryReadinessOwner,
+	// The synthetic readiness owner still means more than a probe convenience:
+	// memory is one DATABASE per identity, so it gets its own, and a health check
+	// cannot read or disturb a real person's memory. D-108: identity travels only
+	// in _meta now, stamped by mount.go's IdentityMetaMiddleware from ctx (this
+	// handle is always mounted memory-policy) — not a "user_identifier" argument
+	// the server no longer reads at all.
+	text, err := client.CallToolText(identityctx.WithIdentityID(ctx, memoryReadinessOwner), "memory_search", map[string]any{
+		"query": "Aura readiness",
+		"limit": 1,
 	})
 	if err != nil {
 		return fmt.Errorf("memory functional search: %w", err)

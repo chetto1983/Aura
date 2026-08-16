@@ -36,8 +36,6 @@ func (b *bridgedTool) Execute(ctx context.Context, raw json.RawMessage) (tools.T
 			return tools.ToolResult{}, fmt.Errorf("mcp tool %s args: %w", b.name, err)
 		}
 	}
-	args = b.withMemoryUserIdentifier(ctx, args)
-
 	callCtx := ctx
 	cancel := func() {}
 	if b.callTimeout > 0 {

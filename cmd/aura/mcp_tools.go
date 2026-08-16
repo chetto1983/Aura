@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -11,6 +12,7 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/mcp"
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 )
@@ -162,8 +164,26 @@ func drainSDKTools(ctx context.Context, session *sdkmcp.ClientSession) ([]*sdkmc
 // domain-outcome chain — the ONE CLI decode site in the tree (RESEARCH Pitfall 1;
 // mirrors bridge_supervisor.go's decodeResult). server names the MCP server the
 // session belongs to, for the decoded error's "mcp %q: tool ..." shape.
-func callSessionText(ctx context.Context, session *sdkmcp.ClientSession, server, tool string, args map[string]any) (string, error) {
-	res, err := session.CallTool(ctx, &sdkmcp.CallToolParams{Name: tool, Arguments: args})
+//
+// scoped gates the _meta.aura.user_identifier stamp (D-108): only the memory path
+// carries it, through the same mcp.SetAuraMetaField helper the agent bridge's
+// IdentityMetaMiddleware uses, so a key-name divergence between the two writers is
+// a build-time-testable invariant. A scoped call with no resolvable ctx identity
+// returns the existing "no identity to scope to" error rather than stamping an
+// empty string — runMemory resolves the real owner up front, so an unscoped CLI
+// context here is a wiring bug, not a call the bridge's operator-default should
+// paper over.
+func callSessionText(ctx context.Context, session *sdkmcp.ClientSession, server, tool string, args map[string]any, scoped bool) (string, error) {
+	params := &sdkmcp.CallToolParams{Name: tool, Arguments: args}
+	if scoped {
+		identityID := identityctx.IdentityID(ctx)
+		if identityID == "" {
+			return "", errors.New(
+				"memory call has no identity to scope to: resolve the operator identity before calling")
+		}
+		mcp.SetAuraMetaField(params, mcp.MetaFieldUserIdentifier, identityID)
+	}
+	res, err := session.CallTool(ctx, params)
 	if err != nil {
 		return "", err
 	}

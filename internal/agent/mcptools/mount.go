@@ -72,10 +72,25 @@ func MountManagedServerHostWithEgress(processCtx, handshakeCtx context.Context, 
 }
 
 // sendingMiddleware is the sending middleware stack every Aura MCP session opens
-// with: the _meta.aura operation stamp (Task 1). It is the same slice for both
-// mount branches so a policy fix in one cannot miss the other.
-func sendingMiddleware() []sdkmcp.Middleware {
-	return []sdkmcp.Middleware{mcp.OperationMetaMiddleware()}
+// with: the _meta.aura operation stamp (plan 45.1-02) always, plus the _meta.aura
+// identity stamp (plan 45.1-05/D-108) ONLY when policy.memory — the middleware is
+// registered once on the per-mount Client, so scoping is by mount, not by a
+// per-call branch. It is the same function for both mount branches so a policy
+// fix in one cannot miss the other.
+//
+// Order is {OperationMetaMiddleware(), IdentityMetaMiddleware()}. AddSendingMiddleware
+// applies its arguments right-to-left (go-sdk@v1.7.0 mcp/client.go:1129), so the
+// LAST middleware in this slice actually runs FIRST on the way out. That ordering
+// is irrelevant here ONLY because the two middlewares write disjoint _meta.aura
+// fields (operation_key/scope/fingerprint vs. user_identifier) — say so explicitly,
+// because the next middleware added to this slice may not have that property, and
+// silently relying on "the SDK figures out order" would be wrong for it.
+func sendingMiddleware(policy bridgePolicy) []sdkmcp.Middleware {
+	mw := []sdkmcp.Middleware{mcp.OperationMetaMiddleware()}
+	if policy.memory {
+		mw = append(mw, IdentityMetaMiddleware())
+	}
+	return mw
 }
 
 // mountManagedHTTPHost is the streamable-HTTP mirror of mountStdio: it opens the
@@ -86,7 +101,7 @@ func sendingMiddleware() []sdkmcp.Middleware {
 func mountManagedHTTPHost(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, server mcp.ManagedServer, policy bridgePolicy, egress mcp.EgressPolicy) (closer func() error, names []string, host *MountedServer, err error) {
 	var srv *MountedServer
 	open := func(pctx, hctx context.Context, o mcp.SessionOptions) (*sdkmcp.ClientSession, error) {
-		o.Sending = sendingMiddleware()
+		o.Sending = sendingMiddleware(policy)
 		o.ToolListChanged = srv.onToolListChanged
 		return mcp.OpenSDKSession(hctx, name, server, egress, o)
 	}
@@ -121,7 +136,7 @@ func mountStdioWithPolicy(processCtx, handshakeCtx context.Context, reg *tools.R
 func mountStdioWithPolicyHost(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, cfg mcp.ServerConfig, policy bridgePolicy) (closer func() error, names []string, host *MountedServer, err error) {
 	var srv *MountedServer
 	open := func(pctx, hctx context.Context, o mcp.SessionOptions) (*sdkmcp.ClientSession, error) {
-		o.Sending = sendingMiddleware()
+		o.Sending = sendingMiddleware(policy)
 		o.ToolListChanged = srv.onToolListChanged
 		return mcp.OpenSDKSessionForConfig(pctx, hctx, name, cfg, o)
 	}

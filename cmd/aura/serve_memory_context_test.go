@@ -21,8 +21,13 @@ func TestMountedMemoryContextUsesTheAuthenticatedIdentityDigest(t *testing.T) {
 	}
 	// The fixture round-trips args through a real JSON-RPC wire (no hand-rolled
 	// mcptools double survives, per D-103), so JSON numbers decode as float64.
-	if client.args["user_identifier"] != "identity-a" || client.args["limit"] != float64(50) || client.args["facts_per_entity"] != float64(3) {
-		t.Fatalf("args = %+v", client.args)
+	// D-108: identity travels in _meta, not args.
+	aura, _ := client.meta["aura"].(map[string]any)
+	if aura["user_identifier"] != "identity-a" || client.args["limit"] != float64(50) || client.args["facts_per_entity"] != float64(3) {
+		t.Fatalf("meta.aura = %+v, args = %+v", aura, client.args)
+	}
+	if _, present := client.args["user_identifier"]; present {
+		t.Error("identity leaked into wire arguments; D-108 requires _meta only")
 	}
 	if got != "covered=true entities=2 facts=1\nDavide located_in Caraglio" {
 		t.Fatalf("context = %q", got)
@@ -65,8 +70,9 @@ func TestMountedMemoryContextSearchPreloadsRelevantFacts(t *testing.T) {
 	if client.name != "memory_search" {
 		t.Fatalf("tool = %q, want memory_search", client.name)
 	}
-	if client.args["user_identifier"] != "identity-a" || client.args["query"] != "what does the user prefer" || client.args["limit"] != float64(5) {
-		t.Fatalf("args = %+v", client.args)
+	aura, _ := client.meta["aura"].(map[string]any)
+	if aura["user_identifier"] != "identity-a" || client.args["query"] != "what does the user prefer" || client.args["limit"] != float64(5) {
+		t.Fatalf("meta.aura = %+v, args = %+v", aura, client.args)
 	}
 	if !strings.Contains(got, "Davide prefers Go") || !strings.Contains(got, "lives in Caraglio") {
 		t.Fatalf("preload = %q", got)

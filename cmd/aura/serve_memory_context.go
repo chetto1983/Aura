@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent/mcptools"
+	"github.com/chetto1983/aura/internal/identityctx"
 )
 
 const (
@@ -32,10 +33,15 @@ func (m *mountedMemoryContext) Context(ctx context.Context, identityID string) (
 	if m == nil || m.client == nil {
 		return "", fmt.Errorf("memory MCP is not mounted")
 	}
-	callCtx, cancel := context.WithTimeout(ctx, memoryContextTimeout)
+	// D-108: identity travels only in _meta now. client.CallToolText's underlying
+	// session carries mount.go's IdentityMetaMiddleware (this handle is always
+	// mounted memory-policy, per handles.Memory's construction), which reads
+	// identityctx.IdentityID off ctx on every call — so the intended identity
+	// must ride the ctx, not a "user_identifier" argument the server no longer
+	// reads at all.
+	callCtx, cancel := context.WithTimeout(identityctx.WithIdentityID(ctx, identityID), memoryContextTimeout)
 	defer cancel()
 	text, err := m.client.CallToolText(callCtx, "memory_digest", map[string]any{
-		"user_identifier":  identityID,
 		"limit":            50,
 		"facts_per_entity": 3,
 	})
@@ -74,12 +80,13 @@ func (m *mountedMemoryContext) Search(ctx context.Context, identityID, query str
 	if timeout <= 0 {
 		timeout = memoryContextTimeout
 	}
-	callCtx, cancel := context.WithTimeout(ctx, timeout)
+	// D-108: see Context's identical comment above — the identity rides ctx, the
+	// middleware stamps it into _meta.aura.user_identifier.
+	callCtx, cancel := context.WithTimeout(identityctx.WithIdentityID(ctx, identityID), timeout)
 	defer cancel()
 	text, err := m.client.CallToolText(callCtx, "memory_search", map[string]any{
-		"user_identifier": identityID,
-		"query":           query,
-		"limit":           limit,
+		"query": query,
+		"limit": limit,
 	})
 	if err != nil {
 		return "", fmt.Errorf("memory search: %w", err)

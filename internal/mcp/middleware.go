@@ -21,6 +21,15 @@ const (
 	MetaFieldOperationKey         = "operation_key"
 	MetaFieldOperationScope       = "operation_scope"
 	MetaFieldOperationFingerprint = "operation_fingerprint"
+
+	// MetaFieldUserIdentifier is the _meta.aura field the calling identity travels
+	// in (plan 45.1-05/D-108). It replaces the "user_identifier" tool ARGUMENT: the
+	// model never declares or sees this field, and cmd/arcadedb-mcp reads it from
+	// nowhere else. Both the agent bridge (bridge_memory.go's IdentityMetaMiddleware)
+	// and the CLI (cmd/aura/mcp_tools.go's callSessionText) stamp it through
+	// SetAuraMetaField, so a key-name divergence between the two writers and the
+	// server's own reader is a build-time-testable invariant, not a hope.
+	MetaFieldUserIdentifier = "user_identifier"
 )
 
 // auraMeta fetches (allocating if absent) the "aura" namespace map nested inside
@@ -46,6 +55,15 @@ func auraMeta(params *sdkmcp.CallToolParams) map[string]any {
 	m[MetaNamespaceAura] = aura
 	params.SetMeta(m)
 	return aura
+}
+
+// SetAuraMetaField sets one field under _meta.aura on params, built on auraMeta's
+// fetch-or-allocate merge dance so a second writer (the identity middleware, the
+// CLI's callSessionText) cannot drift from OperationMetaMiddleware's own stamp —
+// one writer, two call sites, per this plan's <key_links> contract.
+func SetAuraMetaField(params *sdkmcp.CallToolParams, field string, value any) {
+	aura := auraMeta(params)
+	aura[field] = value
 }
 
 // OperationMetaMiddleware stamps _meta.aura.{operation_key,operation_scope,

@@ -9,18 +9,23 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/identityctx"
+	"github.com/chetto1983/aura/internal/mcp"
 )
 
+// TestBridgedMemoryToolInjectsContextUserIdentifier proves the identity the
+// bridge forwards is the authenticated ctx identity, stamped in
+// _meta.aura.user_identifier (D-108) — not a caller-supplied ARGUMENT, which no
+// longer exists on any memory tool's schema and is never inspected by the bridge.
 func TestBridgedMemoryToolInjectsContextUserIdentifier(t *testing.T) {
-	var capturedArgs map[string]any
+	var capturedMeta map[string]any
 	server := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "fixture", Version: "0.0.1"}, nil)
-	memTool := mustTool("memory_add_fact", "Store a fact.",
+	memTool := mustTool("memory_upsert_fact", "Store a fact.",
 		map[string]any{"type": "object", "properties": map[string]any{
 			"subject": map[string]any{"type": "string"}, "predicate": map[string]any{"type": "string"},
-			"object_value": map[string]any{"type": "string"}, "user_identifier": map[string]any{"type": "string"},
+			"object_value": map[string]any{"type": "string"},
 		}}, nil)
 	server.AddTool(memTool, func(_ context.Context, req *sdkmcp.CallToolRequest) (*sdkmcp.CallToolResult, error) {
-		_ = json.Unmarshal(req.Params.Arguments, &capturedArgs)
+		capturedMeta = req.Params.GetMeta()
 		return &sdkmcp.CallToolResult{Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: "ok"}}}, nil
 	})
 	clientTransport, serverTransport := sdkmcp.NewInMemoryTransports()
@@ -31,7 +36,10 @@ func TestBridgedMemoryToolInjectsContextUserIdentifier(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = serverSession.Close() })
 	srv := NewMountedServer("fixture", nil)
-	session, err := connectClient(ctx, clientTransport, mcpSessionOptionsFor(srv))
+	session, err := connectClient(ctx, clientTransport, mcp.SessionOptions{
+		Sending:         sendingMiddleware(bridgePolicy{memory: true}),
+		ToolListChanged: srv.onToolListChanged,
+	})
 	if err != nil {
 		t.Fatalf("client.Connect: %v", err)
 	}
@@ -45,27 +53,31 @@ func TestBridgedMemoryToolInjectsContextUserIdentifier(t *testing.T) {
 	callCtx := identityctx.WithIdentityID(context.Background(), "identity-1")
 	callCtx = tools.WithToolCallContext(callCtx, "sess", "tc1", t.TempDir(), 2048)
 
+	// A stale/spoofed user_identifier in the ARGUMENTS (rehydrated history, or an
+	// adversarial payload) must never override the authenticated _meta identity —
+	// the bridge no longer reads or filters this argument at all; it is inert.
 	if _, err := got[0].Execute(callCtx, json.RawMessage(`{"subject":"a","predicate":"b","object_value":"c","user_identifier":"spoofed"}`)); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if capturedArgs["user_identifier"] != "identity-1" {
-		t.Fatalf("user_identifier = %v, want authenticated identity", capturedArgs["user_identifier"])
+	aura, _ := capturedMeta[mcp.MetaNamespaceAura].(map[string]any)
+	if aura == nil || aura[mcp.MetaFieldUserIdentifier] != "identity-1" {
+		t.Fatalf("_meta.aura.user_identifier = %v, want identity-1 (the authenticated ctx identity)", aura)
 	}
 }
 
 // TestBridgedMemoryToolFallsBackToOperatorWhenNoPrincipal guards the fail-open
-// fix: the memory server runs an unscoped GLOBAL query when a call carries no
-// user_identifier, so a no-principal (CLI/unauthenticated) memory call must be
-// scoped to the seeded local operator identity rather than forwarded bare.
+// fix, preserved verbatim from withMemoryUserIdentifier's era: a no-principal
+// (CLI/unauthenticated) memory call is scoped to the seeded local operator
+// identity — never carried unscoped — but now via _meta rather than an argument.
 func TestBridgedMemoryToolFallsBackToOperatorWhenNoPrincipal(t *testing.T) {
-	var capturedArgs map[string]any
+	var capturedMeta map[string]any
 	server := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "fixture", Version: "0.0.1"}, nil)
 	recallTool := mustTool("memory_recall", "Recall memory.",
 		map[string]any{"type": "object", "properties": map[string]any{
-			"query": map[string]any{"type": "string"}, "user_identifier": map[string]any{"type": "string"},
+			"query": map[string]any{"type": "string"},
 		}}, nil)
 	server.AddTool(recallTool, func(_ context.Context, req *sdkmcp.CallToolRequest) (*sdkmcp.CallToolResult, error) {
-		_ = json.Unmarshal(req.Params.Arguments, &capturedArgs)
+		capturedMeta = req.Params.GetMeta()
 		return &sdkmcp.CallToolResult{Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: "ok"}}}, nil
 	})
 	clientTransport, serverTransport := sdkmcp.NewInMemoryTransports()
@@ -76,7 +88,10 @@ func TestBridgedMemoryToolFallsBackToOperatorWhenNoPrincipal(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = serverSession.Close() })
 	srv := NewMountedServer("fixture", nil)
-	session, err := connectClient(ctx, clientTransport, mcpSessionOptionsFor(srv))
+	session, err := connectClient(ctx, clientTransport, mcp.SessionOptions{
+		Sending:         sendingMiddleware(bridgePolicy{memory: true}),
+		ToolListChanged: srv.onToolListChanged,
+	})
 	if err != nil {
 		t.Fatalf("client.Connect: %v", err)
 	}
@@ -93,17 +108,23 @@ func TestBridgedMemoryToolFallsBackToOperatorWhenNoPrincipal(t *testing.T) {
 	if _, err := got[0].Execute(callCtx, json.RawMessage(`{"query":"anything"}`)); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if capturedArgs["user_identifier"] != identityctx.LocalOperatorIdentity {
-		t.Fatalf("no-principal user_identifier = %v, want operator fallback %q (never unscoped)",
-			capturedArgs["user_identifier"], identityctx.LocalOperatorIdentity)
+	aura, _ := capturedMeta[mcp.MetaNamespaceAura].(map[string]any)
+	if aura == nil || aura[mcp.MetaFieldUserIdentifier] != identityctx.LocalOperatorIdentity {
+		t.Fatalf("no-principal _meta.aura.user_identifier = %v, want operator fallback %q (never unscoped)",
+			aura, identityctx.LocalOperatorIdentity)
 	}
 }
 
+// TestBridgedNonMemoryToolDoesNotInjectUserIdentifier proves a non-memory bridge
+// mount never stamps an identity anywhere: not in _meta (no IdentityMetaMiddleware
+// on its Sending slice at all) and not in Arguments (the bridge never touches them).
 func TestBridgedNonMemoryToolDoesNotInjectUserIdentifier(t *testing.T) {
 	var capturedArgs map[string]any
+	var capturedMeta map[string]any
 	server := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "fixture", Version: "0.0.1"}, nil)
 	server.AddTool(sandboxTools()[0], func(_ context.Context, req *sdkmcp.CallToolRequest) (*sdkmcp.CallToolResult, error) {
 		_ = json.Unmarshal(req.Params.Arguments, &capturedArgs)
+		capturedMeta = req.Params.GetMeta()
 		return &sdkmcp.CallToolResult{Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: "ok"}}}, nil
 	})
 	clientTransport, serverTransport := sdkmcp.NewInMemoryTransports()
@@ -114,7 +135,10 @@ func TestBridgedNonMemoryToolDoesNotInjectUserIdentifier(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = serverSession.Close() })
 	srv := NewMountedServer("fixture", nil)
-	session, err := connectClient(ctx, clientTransport, mcpSessionOptionsFor(srv))
+	session, err := connectClient(ctx, clientTransport, mcp.SessionOptions{
+		Sending:         sendingMiddleware(bridgePolicy{memory: false}),
+		ToolListChanged: srv.onToolListChanged,
+	})
 	if err != nil {
 		t.Fatalf("client.Connect: %v", err)
 	}
@@ -132,6 +156,9 @@ func TestBridgedNonMemoryToolDoesNotInjectUserIdentifier(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 	if _, ok := capturedArgs["user_identifier"]; ok {
-		t.Fatalf("non-memory tool received user_identifier: %+v", capturedArgs)
+		t.Fatalf("non-memory tool received user_identifier in Arguments: %+v", capturedArgs)
+	}
+	if aura, ok := capturedMeta[mcp.MetaNamespaceAura]; ok {
+		t.Fatalf("non-memory tool received a _meta.aura namespace at all: %v", aura)
 	}
 }

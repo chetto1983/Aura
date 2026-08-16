@@ -154,3 +154,68 @@ func TestAuraMeta_MergesWithoutClobberingOtherKeys(t *testing.T) {
 		t.Fatalf("aura namespace missing operation_key, got %v", got)
 	}
 }
+
+// TestSetAuraMetaField_StampsOnTheWireAlongsideOperationKey drives a real
+// in-memory pair proving SetAuraMetaField's write survives to the SERVER, and
+// that it composes with OperationMetaMiddleware's own stamp under the same
+// _meta.aura namespace without either clobbering the other — the invariant
+// mount.go's sendingMiddleware() ordering comment depends on.
+func TestSetAuraMetaField_StampsOnTheWireAlongsideOperationKey(t *testing.T) {
+	server, mu, seen := echoMetaServer(t)
+	clientTransport, serverTransport := sdkmcp.NewInMemoryTransports()
+	ctx := context.Background()
+	serverSession, err := server.Connect(ctx, serverTransport, nil)
+	if err != nil {
+		t.Fatalf("server.Connect: %v", err)
+	}
+	t.Cleanup(func() { _ = serverSession.Wait() })
+
+	identityMW := func(next sdkmcp.MethodHandler) sdkmcp.MethodHandler {
+		return func(ctx context.Context, method string, req sdkmcp.Request) (sdkmcp.Result, error) {
+			if method != "tools/call" {
+				return next(ctx, method, req)
+			}
+			if params, ok := req.GetParams().(*sdkmcp.CallToolParams); ok {
+				SetAuraMetaField(params, MetaFieldUserIdentifier, "id-under-test")
+			}
+			return next(ctx, method, req)
+		}
+	}
+
+	client := sdkmcp.NewClient(&sdkmcp.Implementation{Name: "aura-test", Version: "0.0.1"}, nil)
+	client.AddSendingMiddleware(OperationMetaMiddleware(), identityMW)
+	session, err := client.Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatalf("client.Connect: %v", err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+
+	op := idempotency.Operation{
+		Key:         idempotency.OperationKey{IdentityID: identityctx.LocalOperatorIdentity, Scope: idempotency.ScopeMCPTool, Key: "op-2"},
+		Fingerprint: [32]byte{9},
+	}
+	opCtx, err := idempotency.WithOperation(identityctx.WithIdentityID(ctx, identityctx.LocalOperatorIdentity), op)
+	if err != nil {
+		t.Fatalf("WithOperation: %v", err)
+	}
+
+	if _, err := session.CallTool(opCtx, &sdkmcp.CallToolParams{Name: "echo"}); err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	aura, _ := (*seen)[MetaNamespaceAura].(map[string]any)
+	if aura == nil {
+		t.Fatal("server observed no _meta.aura namespace")
+	}
+	if aura[MetaFieldUserIdentifier] != "id-under-test" {
+		t.Fatalf("user_identifier = %v, want id-under-test", aura[MetaFieldUserIdentifier])
+	}
+	if aura[MetaFieldOperationKey] != "op-2" {
+		t.Fatalf("operation_key = %v, want op-2 (composed, not clobbered)", aura[MetaFieldOperationKey])
+	}
+	if _, ok := (*seen)["io.modelcontextprotocol/protocolVersion"]; !ok {
+		t.Fatal("the SDK's own protocolVersion _meta triple must survive both middlewares")
+	}
+}

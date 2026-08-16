@@ -11,7 +11,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -266,38 +265,12 @@ func callMemoryToolText(ctx context.Context, tool string, args map[string]any) (
 		return "", err
 	}
 	defer func() { _ = session.Close() }()
-	scoped, err := scopeMemoryArgs(callCtx, args)
-	if err != nil {
-		return "", err
-	}
-	return callSessionText(callCtx, session, memoryServerName, tool, scoped)
-}
-
-// scopeMemoryArgs stamps the caller's identity on every memory call. The ArcadeDB
-// memory MCP uses user_identifier to resolve the caller's isolated database and
-// credential, so an unstamped call must never reach the wire.
-//
-// It takes the identity off the context and does NOT invent one. runMemory resolves
-// the real owner up front; an unscoped context here is a wiring bug that must fail
-// rather than write memory under the wrong identity.
-//
-// A caller-supplied user_identifier is left alone: the paths that pass one explicitly
-// (for example, a per-conversation owner or an operator inspecting another identity)
-// must not be silently rescoped.
-func scopeMemoryArgs(ctx context.Context, args map[string]any) (map[string]any, error) {
-	if args == nil {
-		args = map[string]any{}
-	}
-	if existing, ok := args["user_identifier"].(string); ok && existing != "" {
-		return args, nil
-	}
-	identityID := identityctx.IdentityID(ctx)
-	if identityID == "" {
-		return nil, errors.New(
-			"memory call has no identity to scope to: resolve the operator identity before calling")
-	}
-	args["user_identifier"] = identityID
-	return args, nil
+	// scoped=true: identity resolution and the _meta.aura.user_identifier stamp
+	// (D-108) now live in callSessionText, the CLI's single decode/dispatch site —
+	// scopeMemoryArgs's argument-based stamp is retired, not replaced in place.
+	// Its "a caller-supplied user_identifier is left alone" branch has no _meta
+	// equivalent to preserve: D-108 is a hard cut with no argument path left.
+	return callSessionText(callCtx, session, memoryServerName, tool, args, true)
 }
 
 func arg(args []string, i int, verb, placeholder string) (string, error) {

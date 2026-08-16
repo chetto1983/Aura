@@ -1,74 +1,146 @@
 package mcptools
 
 import (
+	"context"
 	"encoding/json"
+	"sync"
 	"testing"
+
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/chetto1983/aura/internal/identityctx"
+	"github.com/chetto1983/aura/internal/mcp"
 )
 
-// TestAcceptsUserIdentifier pins the rule that replaced a hand-kept name list. The list had
-// omitted memory_update when that verb shipped in the vendored sidecar, so the bridge forwarded
-// the call with no user_identifier; the server treats a missing identifier as "no scope" on its
-// write verbs and refused the operator's own entity with "not found or not owned by this user".
-func TestAcceptsUserIdentifier(t *testing.T) {
-	t.Parallel()
+// bridge_user_identifier_test.go used to pin acceptsUserIdentifier's schema-probe
+// rule, which withMemoryUserIdentifier needed to decide whether to inject the
+// user_identifier ARGUMENT. D-108 deletes both: identity now travels only in
+// _meta, unconditionally, on every memory-policy mount — there is no schema to
+// probe any more. These tests assert on what the SERVER received, not on what
+// Aura's own struct holds (a middleware that mutates a copy would pass a
+// struct-level assertion and fail on the wire).
 
-	tests := []struct {
-		name       string
-		parameters string
-		want       bool
-	}{
-		{
-			name:       "declared",
-			parameters: `{"type":"object","properties":{"node_id":{"type":"string"},"user_identifier":{"type":"string"}}}`,
-			want:       true,
-		},
-		{
-			name:       "not declared",
-			parameters: `{"type":"object","properties":{"query":{"type":"string"}}}`,
-			want:       false,
-		},
-		{
-			// The memory server is fail-OPEN: an unscoped call returns every tenant's memory.
-			// So an unreadable schema must scope the call, not skip scoping it.
-			name:       "no properties at all",
-			parameters: `{"type":"object"}`,
-			want:       true,
-		},
-		{
-			name:       "unparseable",
-			parameters: `not json`,
-			want:       true,
-		},
+// TestIdentityMetaMiddleware_PassesThroughNonCallToolMethod covers the
+// method != "tools/call" short-circuit directly against the exported Middleware
+// type, without needing a live session (mirrors middleware_test.go's identical
+// coverage for OperationMetaMiddleware).
+func TestIdentityMetaMiddleware_PassesThroughNonCallToolMethod(t *testing.T) {
+	called := false
+	next := func(ctx context.Context, method string, req sdkmcp.Request) (sdkmcp.Result, error) {
+		called = true
+		return nil, nil
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			if got := acceptsUserIdentifier(json.RawMessage(tt.parameters)); got != tt.want {
-				t.Fatalf("acceptsUserIdentifier(%s) = %v, want %v", tt.parameters, got, tt.want)
-			}
-		})
+	mw := IdentityMetaMiddleware()(next)
+	if _, err := mw(context.Background(), "tools/list", nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !called {
+		t.Fatal("a non tools/call method must pass through to next")
 	}
 }
 
-// TestMemoryUpdateSchemaIsScoped is the regression the live failure earned: the exact schema the
-// vendored sidecar advertises for memory_update must make the bridge inject the identity.
-func TestMemoryUpdateSchemaIsScoped(t *testing.T) {
-	t.Parallel()
-
-	// Abridged from the FastMCP-generated schema for mcp/_tools.py::memory_update.
-	const memoryUpdateSchema = `{
-		"type":"object",
-		"properties":{
-			"node_type":{"type":"string"},
-			"node_id":{"type":"string"},
-			"name":{"anyOf":[{"type":"string"},{"type":"null"}]},
-			"user_identifier":{"anyOf":[{"type":"string"},{"type":"null"}]}
-		},
-		"required":["node_type","node_id"]
-	}`
-
-	if !acceptsUserIdentifier(json.RawMessage(memoryUpdateSchema)) {
-		t.Fatal("memory_update must be scoped to the caller; an unscoped update refuses the caller's own data")
+// TestIdentityMetaMiddleware_StampsCtxIdentityOnTheWire drives a real in-memory
+// client/server pair: a call under identityctx.WithIdentityID arrives with
+// exactly that identity in _meta.aura.user_identifier, and NO user_identifier
+// key anywhere in the arguments.
+func TestIdentityMetaMiddleware_StampsCtxIdentityOnTheWire(t *testing.T) {
+	server, mu, seenMeta, seenArgs := echoMetaAndArgsServer(t)
+	clientTransport, serverTransport := sdkmcp.NewInMemoryTransports()
+	ctx := context.Background()
+	serverSession, err := server.Connect(ctx, serverTransport, nil)
+	if err != nil {
+		t.Fatalf("server.Connect: %v", err)
 	}
+	t.Cleanup(func() { _ = serverSession.Wait() })
+
+	session, err := connectClient(ctx, clientTransport, mcp.SessionOptions{
+		Sending: sendingMiddleware(bridgePolicy{memory: true}),
+	})
+	if err != nil {
+		t.Fatalf("client.Connect: %v", err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+
+	callCtx := identityctx.WithIdentityID(ctx, "identity-under-test")
+	if _, err := session.CallTool(callCtx, &sdkmcp.CallToolParams{
+		Name: "echo", Arguments: map[string]any{"query": "q"},
+	}); err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	aura, _ := (*seenMeta)[mcp.MetaNamespaceAura].(map[string]any)
+	if aura == nil {
+		t.Fatal("server observed no _meta.aura namespace")
+	}
+	if aura[mcp.MetaFieldUserIdentifier] != "identity-under-test" {
+		t.Fatalf("user_identifier = %v, want identity-under-test", aura[mcp.MetaFieldUserIdentifier])
+	}
+	if _, ok := (*seenArgs)["user_identifier"]; ok {
+		t.Fatalf("user_identifier leaked into params.Arguments: %#v", *seenArgs)
+	}
+}
+
+// TestIdentityMetaMiddleware_DefaultsToLocalOperatorWithNoCtxIdentity preserves
+// withMemoryUserIdentifier's exact prior behaviour for the no-principal case: a
+// single source (ctx, defaulted), not the dual-source argument fallback D-108
+// forbids.
+func TestIdentityMetaMiddleware_DefaultsToLocalOperatorWithNoCtxIdentity(t *testing.T) {
+	server, mu, seenMeta, _ := echoMetaAndArgsServer(t)
+	clientTransport, serverTransport := sdkmcp.NewInMemoryTransports()
+	ctx := context.Background()
+	serverSession, err := server.Connect(ctx, serverTransport, nil)
+	if err != nil {
+		t.Fatalf("server.Connect: %v", err)
+	}
+	t.Cleanup(func() { _ = serverSession.Wait() })
+
+	session, err := connectClient(ctx, clientTransport, mcp.SessionOptions{
+		Sending: sendingMiddleware(bridgePolicy{memory: true}),
+	})
+	if err != nil {
+		t.Fatalf("client.Connect: %v", err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+
+	if _, err := session.CallTool(ctx, &sdkmcp.CallToolParams{Name: "echo"}); err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	aura, _ := (*seenMeta)[mcp.MetaNamespaceAura].(map[string]any)
+	if aura == nil {
+		t.Fatal("server observed no _meta.aura namespace")
+	}
+	if aura[mcp.MetaFieldUserIdentifier] != identityctx.LocalOperatorIdentity {
+		t.Fatalf("no-ctx-identity user_identifier = %v, want the operator fallback %q",
+			aura[mcp.MetaFieldUserIdentifier], identityctx.LocalOperatorIdentity)
+	}
+}
+
+// echoMetaAndArgsServer builds a real in-memory MCP server with one "echo" tool
+// whose handler records both the _meta AND the arguments the SERVER received,
+// so a test can assert identity arrives in _meta and NOWHERE in Arguments.
+func echoMetaAndArgsServer(t *testing.T) (*sdkmcp.Server, *sync.Mutex, *map[string]any, *map[string]any) {
+	t.Helper()
+	var mu sync.Mutex
+	var seenMeta map[string]any
+	var seenArgs map[string]any
+	server := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "fixture", Version: "0.0.1"}, nil)
+	server.AddTool(&sdkmcp.Tool{
+		Name:        "echo",
+		Description: "echo",
+		InputSchema: map[string]any{"type": "object"},
+	}, func(ctx context.Context, req *sdkmcp.CallToolRequest) (*sdkmcp.CallToolResult, error) {
+		mu.Lock()
+		seenMeta = req.Params.GetMeta()
+		var args map[string]any
+		_ = json.Unmarshal(req.Params.Arguments, &args)
+		seenArgs = args
+		mu.Unlock()
+		return &sdkmcp.CallToolResult{Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: "ok"}}}, nil
+	})
+	return server, &mu, &seenMeta, &seenArgs
 }

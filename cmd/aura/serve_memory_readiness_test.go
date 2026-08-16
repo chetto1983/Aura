@@ -28,6 +28,7 @@ type memoryReadinessClient struct {
 	mu   sync.Mutex
 	name string
 	args map[string]any
+	meta map[string]any
 }
 
 func (c *memoryReadinessClient) mount(t *testing.T) *mcptools.MountedServer {
@@ -38,6 +39,7 @@ func (c *memoryReadinessClient) mount(t *testing.T) *mcptools.MountedServer {
 		c.mu.Lock()
 		c.name = req.Params.Name
 		c.args = args
+		c.meta = req.Params.GetMeta()
 		c.mu.Unlock()
 		if c.err != nil {
 			return nil, c.err
@@ -60,7 +62,12 @@ func (c *memoryReadinessClient) mount(t *testing.T) *mcptools.MountedServer {
 	mounted := mcptools.NewMountedServer("fixture-memory", func(context.Context, context.Context, mcp.SessionOptions) (*sdkmcp.ClientSession, error) {
 		return nil, errors.New("redial not exercised by this fixture")
 	})
-	sdkClient := sdkmcp.NewClient(&sdkmcp.Implementation{Name: "aura-test", Version: "0.0.1"}, nil)
+	// Wired with the SAME memory-policy Sending middleware production mounts open
+	// with (mirrors mount.go's mountManagedHTTPHost) — D-108's identity stamp is
+	// this middleware's job, not the fixture's, and a fixture that skips it would
+	// prove nothing about what checkMemoryReadiness's ctx-carried identity does.
+	sdkClient := sdkmcp.NewClient(&sdkmcp.Implementation{Name: "aura-test", Version: "0.0.1"}, mcp.SDKClientOptions(mcp.SessionOptions{}))
+	sdkClient.AddSendingMiddleware(mcp.OperationMetaMiddleware(), mcptools.IdentityMetaMiddleware())
 	session, err := sdkClient.Connect(ctx, clientTransport, nil)
 	if err != nil {
 		t.Fatalf("client.Connect: %v", err)
@@ -84,9 +91,13 @@ func TestMemoryReadinessCheckRunsAnIsolatedFunctionalSearch(t *testing.T) {
 	// permanently unready.
 	// The isolation is back, and stronger than it was: memory is one database per
 	// identity, so the synthetic owner has its own and readiness cannot read or
-	// disturb a real person's memory.
-	if got, _ := client.args["user_identifier"].(string); got != memoryReadinessOwner {
+	// disturb a real person's memory. D-108: the owner travels in _meta, not args.
+	aura, _ := client.meta["aura"].(map[string]any)
+	if got, _ := aura["user_identifier"].(string); got != memoryReadinessOwner {
 		t.Fatalf("readiness owner = %q, want the isolated synthetic owner", got)
+	}
+	if _, present := client.args["user_identifier"]; present {
+		t.Error("readiness owner leaked into wire arguments; D-108 requires _meta only")
 	}
 	// memory_types belonged to the MCP this replaced; the tool rejects unknown
 	// properties, so its return would fail every probe.

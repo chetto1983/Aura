@@ -2,9 +2,11 @@ package mcptools
 
 import (
 	"context"
-	"encoding/json"
+
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/chetto1983/aura/internal/identityctx"
+	"github.com/chetto1983/aura/internal/mcp"
 )
 
 type bridgePolicy struct {
@@ -42,28 +44,35 @@ func (p bridgePolicy) modelFacing(tool string) bool {
 	return !hidden
 }
 
-func (b *bridgedTool) withMemoryUserIdentifier(ctx context.Context, args map[string]any) map[string]any {
-	if !b.policy.memory || !acceptsUserIdentifier(b.Spec().Parameters) {
-		return args
+// IdentityMetaMiddleware stamps _meta.aura.user_identifier on every tools/call
+// request a memory-policy mount sends, replacing withMemoryUserIdentifier's
+// argument injection (D-108: identity leaves Aura only in _meta now). It lives
+// here, not in internal/mcp, because the memory policy lives here and
+// internal/mcp has no identity concern (mirrors OperationMetaMiddleware's shape
+// exactly: short-circuit on method != "tools/call", type-assert
+// *sdkmcp.CallToolParams, pass through on failure).
+//
+// The ctx-absent default (identityctx.LocalOperatorIdentity) is
+// withMemoryUserIdentifier's preserved behaviour, NOT the dual-source fallback
+// D-108 forbids: it is a single source (ctx, defaulted) writing to a single
+// destination (_meta). D-108's prohibition is specifically an ARGUMENT fallback
+// alongside a _meta value on the SAME call — that path does not exist here.
+func IdentityMetaMiddleware() sdkmcp.Middleware {
+	return func(next sdkmcp.MethodHandler) sdkmcp.MethodHandler {
+		return func(ctx context.Context, method string, req sdkmcp.Request) (sdkmcp.Result, error) {
+			if method != "tools/call" {
+				return next(ctx, method, req)
+			}
+			params, ok := req.GetParams().(*sdkmcp.CallToolParams)
+			if !ok {
+				return next(ctx, method, req)
+			}
+			identityID := identityctx.IdentityID(ctx)
+			if identityID == "" {
+				identityID = identityctx.LocalOperatorIdentity
+			}
+			mcp.SetAuraMetaField(params, mcp.MetaFieldUserIdentifier, identityID)
+			return next(ctx, method, req)
+		}
 	}
-	identityID := identityctx.IdentityID(ctx)
-	if identityID == "" {
-		identityID = identityctx.LocalOperatorIdentity
-	}
-	if args == nil {
-		args = make(map[string]any, 1)
-	}
-	args["user_identifier"] = identityID
-	return args
-}
-
-func acceptsUserIdentifier(parameters json.RawMessage) bool {
-	var schema struct {
-		Properties map[string]json.RawMessage `json:"properties"`
-	}
-	if err := json.Unmarshal(parameters, &schema); err != nil || schema.Properties == nil {
-		return true
-	}
-	_, ok := schema.Properties["user_identifier"]
-	return ok
 }

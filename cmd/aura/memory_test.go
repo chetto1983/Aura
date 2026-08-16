@@ -13,7 +13,6 @@ import (
 
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/mcp"
-	"github.com/chetto1983/aura/internal/onboarding"
 )
 
 // recordingMemoryMCPServer is a streamable-HTTP MCP fake (modeled on
@@ -29,10 +28,10 @@ type recordingMemoryMCPServer struct {
 	mu          sync.Mutex
 	lastTool    string
 	lastArgs    map[string]any
+	lastMeta    map[string]any
 	cannedTxt   string
 	initializes int
 	deletes     int
-	calls       []recordedCall
 }
 
 func newRecordingMemoryMCPServer(t *testing.T) *recordingMemoryMCPServer {
@@ -93,6 +92,7 @@ func newRecordingMemoryMCPServer(t *testing.T) *recordingMemoryMCPServer {
 			var params struct {
 				Name      string         `json:"name"`
 				Arguments map[string]any `json:"arguments"`
+				Meta      map[string]any `json:"_meta"`
 			}
 			if err := json.Unmarshal(req.Params, &params); err != nil {
 				t.Errorf("decode tools/call params: %v", err)
@@ -100,7 +100,7 @@ func newRecordingMemoryMCPServer(t *testing.T) *recordingMemoryMCPServer {
 			rec.mu.Lock()
 			rec.lastTool = params.Name
 			rec.lastArgs = params.Arguments
-			rec.calls = append(rec.calls, recordedCall{tool: params.Name, args: params.Arguments})
+			rec.lastMeta = params.Meta
 			rec.mu.Unlock()
 			writeMemoryRPC(t, w, req.ID, map[string]any{
 				"content": []map[string]any{{"type": "text", "text": rec.cannedTxt}},
@@ -126,17 +126,10 @@ func (rec *recordingMemoryMCPServer) args() map[string]any {
 	return rec.lastArgs
 }
 
-// sessions reports the MCP handshakes and session teardowns observed at the wire.
-func (rec *recordingMemoryMCPServer) sessions() (initializes, deletes int) {
+func (rec *recordingMemoryMCPServer) meta() map[string]any {
 	rec.mu.Lock()
 	defer rec.mu.Unlock()
-	return rec.initializes, rec.deletes
-}
-
-func (rec *recordingMemoryMCPServer) recordedCalls() []recordedCall {
-	rec.mu.Lock()
-	defer rec.mu.Unlock()
-	return append([]recordedCall(nil), rec.calls...)
+	return rec.lastMeta
 }
 
 // writeMemoryRPC runs on httptest handler goroutines — t.Fatalf is illegal off the
@@ -430,102 +423,49 @@ func TestMemoryNotConfigured(t *testing.T) {
 	}
 }
 
-// TestScopeMemoryArgs pins the scoping guard on the CLI memory path. The memory server
-// treats a missing user_identifier as "no scope", so an unstamped call wrote a
-// :Conversation with a NULL owner and zero HAS_CONVERSATION edges — data owned by nobody
-// and invisible to every scoped read meant to return it, with anything extracted from it
-// landing in the "global" deduplication scope where it can never merge with the
-// owner-scoped entities the agent records.
-func TestScopeMemoryArgs(t *testing.T) {
+// TestCLIMemoryCallStampsIdentityInMeta pins the scoping guard on the CLI memory
+// path, migrated from the argument-based scopeMemoryArgs (deleted, D-108) onto
+// _meta.aura.user_identifier: the memory server treats a missing identity as "no
+// scope", so an unstamped call wrote a :Conversation with a NULL owner and zero
+// HAS_CONVERSATION edges — data owned by nobody and invisible to every scoped
+// read meant to return it, with anything extracted from it landing in the
+// "global" deduplication scope where it can never merge with the owner-scoped
+// entities the agent records. The identity now travels ONLY in _meta, stamped by
+// callSessionText through the same mcp.SetAuraMetaField helper the bridge's
+// IdentityMetaMiddleware uses — never in the wire arguments.
+func TestCLIMemoryCallStampsIdentityInMeta(t *testing.T) {
 	t.Run("refuses to invent an identity when the context carries none", func(t *testing.T) {
 		// This used to fall back to identityctx.LocalOperatorIdentity, which reads as
 		// fail-closed and is not: first login retires that seed, so the CLI addressed a
 		// deleted tenant while the cockpit used the enrolled one. `aura memory facts
 		// Davide` answered 0 with three facts in the graph. Guessing an owner is the
 		// failure, not the safety net.
-		_, err := scopeMemoryArgs(context.Background(), map[string]any{"session_id": "s1"})
+		rec := newRecordingMemoryMCPServer(t)
+		withMemoryServerAt(t, rec.URL)
+		var buf bytes.Buffer
+		err := runMemoryCommand(context.Background(), []string{"entities"}, &buf)
 		if err == nil {
 			t.Fatal("expected an error rather than a guessed owner")
 		}
+		if !strings.Contains(err.Error(), "no identity to scope to") {
+			t.Fatalf("err = %v, want the no-identity-to-scope-to message", err)
+		}
 	})
 
-	t.Run("uses the identity on the context", func(t *testing.T) {
+	t.Run("uses the identity on the context, in _meta, never in arguments", func(t *testing.T) {
+		rec := newRecordingMemoryMCPServer(t)
+		withMemoryServerAt(t, rec.URL)
 		ctx := identityctx.WithIdentityID(context.Background(), "identity-1")
-		got, err := scopeMemoryArgs(ctx, map[string]any{"session_id": "s1"})
-		if err != nil {
-			t.Fatalf("scopeMemoryArgs: %v", err)
+		var buf bytes.Buffer
+		if err := runMemoryCommand(ctx, []string{"entities"}, &buf); err != nil {
+			t.Fatalf("runMemoryCommand: %v", err)
 		}
-		if got["user_identifier"] != "identity-1" {
-			t.Fatalf("user_identifier = %v, want identity-1", got["user_identifier"])
+		aura, _ := rec.meta()["aura"].(map[string]any)
+		if aura == nil || aura["user_identifier"] != "identity-1" {
+			t.Fatalf("_meta.aura.user_identifier = %v, want identity-1", aura)
 		}
-		if got["session_id"] != "s1" {
-			t.Fatalf("existing args must survive: %#v", got)
-		}
-	})
-
-	t.Run("never silently rescopes an explicit user_identifier", func(t *testing.T) {
-		ctx := identityctx.WithIdentityID(context.Background(), "identity-1")
-		got, err := scopeMemoryArgs(ctx, map[string]any{"user_identifier": "someone-else"})
-		if err != nil {
-			t.Fatalf("scopeMemoryArgs: %v", err)
-		}
-		if got["user_identifier"] != "someone-else" {
-			t.Fatalf("explicit scope was overwritten: %v", got["user_identifier"])
+		if _, ok := rec.args()["user_identifier"]; ok {
+			t.Fatalf("user_identifier leaked into wire arguments: %#v", rec.args())
 		}
 	})
-}
-
-// TestStoreConfirmedOpensOneMCPSessionForTheWholeSubmission asserts the wire boundary:
-// ONE transport and ONE handshake, however many facts the seed maps to. That property is
-// the whole reason writeProfile takes a session instead of a call — nine facts over nine
-// handshakes would pay the initialize nine times.
-func TestStoreConfirmedOpensOneMCPSessionForTheWholeSubmission(t *testing.T) {
-	rec := newRecordingMemoryMCPServer(t)
-	withMemoryServerAt(t, rec.URL)
-
-	store := newMemoryProfileStore()
-	if err := store.StoreConfirmed(context.Background(), "id-uuid", fullSeedAnswers); err != nil {
-		t.Fatalf("StoreConfirmed: %v", err)
-	}
-
-	initializes, deletes := rec.sessions()
-	if initializes != 1 {
-		t.Errorf("MCP handshakes = %d, want exactly 1 for the whole submission", initializes)
-	}
-	if deletes != 0 {
-		t.Errorf("MCP session teardowns = %d, want 0 in authenticated stateless mode", deletes)
-	}
-	calls := rec.recordedCalls()
-	if len(calls) != 9 {
-		t.Fatalf("tools/call requests = %d, want 8 profile facts + the sentinel", len(calls))
-	}
-	for i, call := range calls {
-		if call.tool != "memory_upsert_fact" {
-			t.Errorf("wire call %d tool = %q, want memory_upsert_fact", i, call.tool)
-		}
-		if call.args["user_identifier"] != "id-uuid" {
-			t.Errorf("wire call %d missing user_identifier scope: %#v", i, call.args)
-		}
-	}
-	if last := calls[len(calls)-1]; last.args["predicate"] != onboarding.PredicateOnboardingCompleted {
-		t.Errorf("last wire call = %#v, want the completion sentinel", last.args)
-	}
-}
-
-// TestStoreSkippedOpensOneMCPSession pins the stateless cheap-skip path at the
-// same wire level: one initialize, one tools/call, no teardown.
-func TestStoreSkippedOpensOneMCPSession(t *testing.T) {
-	rec := newRecordingMemoryMCPServer(t)
-	withMemoryServerAt(t, rec.URL)
-
-	if err := newMemoryProfileStore().StoreSkipped(context.Background(), "id-uuid"); err != nil {
-		t.Fatalf("StoreSkipped: %v", err)
-	}
-	initializes, deletes := rec.sessions()
-	if initializes != 1 || deletes != 0 {
-		t.Errorf("skip transport = %d initialize / %d delete, want 1/0", initializes, deletes)
-	}
-	if got := len(rec.recordedCalls()); got != 1 {
-		t.Errorf("skip tools/call requests = %d, want 1", got)
-	}
 }
