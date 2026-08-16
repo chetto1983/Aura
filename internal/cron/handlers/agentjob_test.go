@@ -290,3 +290,34 @@ func TestAgentJobMeta(t *testing.T) {
 		t.Fatalf("default MaxDuration = %v, want %v", m.MaxDuration, agentJobMaxDuration)
 	}
 }
+
+// TestAgentJobPayloadCarriesNoToolCall proves D-109's scheduler disposition (Task
+// 3 of the 45.1 _meta identity cutover, PITFALLS §4's third blast radius): the
+// agent_job task payload is free-text goal only, with no serialized tool call
+// anywhere in it, so a tool-schema change (like the _meta cutover) cannot reach a
+// scheduled job's persisted state at all. Asserted structurally — the marshaled
+// JSON has exactly one top-level field, "goal" — rather than merely trusted from
+// the struct definition, so a future field addition to agentJobPayload fails this
+// test instead of silently widening what a scheduled job persists.
+func TestAgentJobPayloadCarriesNoToolCall(t *testing.T) {
+	t.Parallel()
+	raw, err := json.Marshal(agentJobPayload{Goal: "check the mailbox for invoices"})
+	if err != nil {
+		t.Fatalf("marshal agentJobPayload: %v", err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatalf("unmarshal agentJobPayload as a generic object: %v", err)
+	}
+	if len(fields) != 1 {
+		t.Fatalf("agentJobPayload fields = %v, want exactly {goal}", fields)
+	}
+	if _, ok := fields["goal"]; !ok {
+		t.Fatalf("agentJobPayload is missing its goal field: %v", fields)
+	}
+	for _, forbidden := range []string{"tool_calls", "tool_call", "arguments", "tool_name", "user_identifier"} {
+		if _, ok := fields[forbidden]; ok {
+			t.Fatalf("agentJobPayload carries a %q field; the scheduler must never persist a serialized tool call", forbidden)
+		}
+	}
+}

@@ -1,8 +1,11 @@
 package gateway
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/config"
@@ -261,6 +264,126 @@ func TestGatewayApproveChallengeRefusedUnderProduction(t *testing.T) {
 	}
 	if _, ok := g.approvals.Consume(conv, tool, fp); ok {
 		t.Fatal("a production-refused ApproveChallenge must record nothing")
+	}
+}
+
+// captureSlog redirects the default logger to a buffer for the duration of the test,
+// restoring the previous default on cleanup — mirrors the pattern already used
+// elsewhere in the tree (e.g. internal/runner/runner_resume_log_test.go). No
+// t.Parallel(): slog.SetDefault is a global mutation.
+func captureSlog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	return &buf
+}
+
+// TestGatewayApprovalLedgerMissLogsNoPendingChallenge proves the first-call shape:
+// a Consume miss with NO pending challenge for this tool at all logs
+// reason=no_pending_challenge and pending_count=0.
+func TestGatewayApprovalLedgerMissLogsNoPendingChallenge(t *testing.T) {
+	logs := captureSlog(t)
+	store := &fakeStore{}
+	g := New(config.ProfileSingleUserHardened, store)
+	ctx := WithResponder(context.Background())
+
+	if _, err := g.Decide(ctx, gatedSpec(), gatedArgs(), testKey()); err != nil {
+		t.Fatalf("Decide err: %v", err)
+	}
+
+	got := logs.String()
+	if !strings.Contains(got, "gateway approval ledger miss") {
+		t.Fatalf("log = %q, want the ledger-miss record", got)
+	}
+	if !strings.Contains(got, "reason=no_pending_challenge") {
+		t.Fatalf("log = %q, want reason=no_pending_challenge", got)
+	}
+	if !strings.Contains(got, "pending_count=0") {
+		t.Fatalf("log = %q, want pending_count=0", got)
+	}
+}
+
+// TestGatewayApprovalLedgerMissLogsArgsFingerprintChanged proves the schema-drift
+// shape: a Consume miss while a DIFFERENT-fingerprint challenge is still pending
+// for the same tool logs reason=args_fingerprint_changed with a non-zero
+// pending_count.
+func TestGatewayApprovalLedgerMissLogsArgsFingerprintChanged(t *testing.T) {
+	store := &fakeStore{}
+	g := New(config.ProfileSingleUserHardened, store)
+	ctx := WithResponder(context.Background())
+
+	// First call issues a Challenge under fp1 and is never approved — the
+	// pending entry stays.
+	firstArgs := mustDecideArgs(t, map[string]any{"action": "delete", "name": "x"})
+	if _, err := g.Decide(ctx, gatedSpec(), firstArgs, testKey()); err != nil {
+		t.Fatalf("first Decide err: %v", err)
+	}
+
+	// A retry with DIFFERENT args (simulating the model re-emitting under a
+	// changed tool schema) Consumes under fp2, misses, and finds fp1 still
+	// pending.
+	logs := captureSlog(t)
+	secondArgs := mustDecideArgs(t, map[string]any{"action": "delete", "name": "y"})
+	if _, err := g.Decide(ctx, gatedSpec(), secondArgs, testKey()); err != nil {
+		t.Fatalf("second Decide err: %v", err)
+	}
+
+	got := logs.String()
+	if !strings.Contains(got, "gateway approval ledger miss") {
+		t.Fatalf("log = %q, want the ledger-miss record", got)
+	}
+	if !strings.Contains(got, "reason=args_fingerprint_changed") {
+		t.Fatalf("log = %q, want reason=args_fingerprint_changed", got)
+	}
+	if strings.Contains(got, "pending_count=0") {
+		t.Fatalf("log = %q, want a non-zero pending_count", got)
+	}
+}
+
+// TestGatewayApprovalSuccessfulConsumeLogsNothing proves the log fires ONLY on a
+// miss: a ledger re-entry that successfully Consumes an approval emits no INFO
+// record at all, so the signal is not drowned by the common case.
+func TestGatewayApprovalSuccessfulConsumeLogsNothing(t *testing.T) {
+	store := &fakeStore{}
+	g := New(config.ProfileSingleUserHardened, store)
+	ctx := WithResponder(context.Background())
+	args := mustDecideArgs(t, map[string]any{"action": "delete", "name": "x"})
+
+	g.RecordResolvedApproval(testKey().ConversationID, gatedSpec().Name,
+		gatewayArgsFingerprint(args), ResolvedApproval{Approved: true, OperatorID: "op-quiet"})
+
+	logs := captureSlog(t)
+	v, err := g.Decide(ctx, gatedSpec(), args, testKey())
+	if err != nil {
+		t.Fatalf("Decide err: %v", err)
+	}
+	if v.Decision != Allow {
+		t.Fatalf("verdict = %+v, want allow (ledger hit)", v)
+	}
+	if got := logs.String(); strings.Contains(got, "gateway approval ledger miss") {
+		t.Fatalf("successful Consume logged a miss record: %q", got)
+	}
+}
+
+// TestGatewayApprovalLedgerMissNeverLogsRawArgs guards the information-disclosure
+// boundary (T-45.1-27): the miss log carries the fingerprint, never the raw
+// argument values that might carry memory content.
+func TestGatewayApprovalLedgerMissNeverLogsRawArgs(t *testing.T) {
+	logs := captureSlog(t)
+	store := &fakeStore{}
+	g := New(config.ProfileSingleUserHardened, store)
+	ctx := WithResponder(context.Background())
+	const secretMarker = "super-secret-argument-value-12345"
+	args := mustDecideArgs(t, map[string]any{"action": "delete", "name": secretMarker})
+
+	if _, err := g.Decide(ctx, gatedSpec(), args, testKey()); err != nil {
+		t.Fatalf("Decide err: %v", err)
+	}
+
+	if got := logs.String(); strings.Contains(got, secretMarker) {
+		t.Fatalf("log leaked a raw argument value: %q", got)
 	}
 }
 

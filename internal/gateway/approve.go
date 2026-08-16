@@ -115,6 +115,29 @@ func (g *Gateway) routeApprove(ctx context.Context, spec tools.Spec, tier scorin
 	if r, ok := g.approvals.Consume(key.ConversationID, spec.Name, fp); ok && r.Approved {
 		return Verdict{Decision: Allow, Tier: tier, OperatorID: r.OperatorID}, nil
 	}
+	// PITFALLS §4 / 45.1 _meta cutover: gatewayArgsFingerprint hashes the MODEL's
+	// own arguments, upstream of any host injection. Dropping a field from a
+	// tool's schema (as the _meta identity cutover does) changes what the model
+	// emits, so an approval withheld before a deploy and resumed after it can miss
+	// this Consume under a shifted fingerprint — fail-closed but otherwise silent.
+	// Logged on EVERY miss, not just this one cutover, because this failure class
+	// is reachable whenever any tool's schema changes: n==0 means no challenge was
+	// ever issued for this tool in this conversation; n>0 means one IS pending,
+	// under a different fingerprint than this Consume attempt. Never logs rawArgs
+	// — the fingerprint is the safe correlate and the arguments may carry memory
+	// content.
+	pendingCount := g.approvals.PendingCountForTool(key.ConversationID, spec.Name)
+	missReason := "args_fingerprint_changed"
+	if pendingCount == 0 {
+		missReason = "no_pending_challenge"
+	}
+	slog.Info("gateway approval ledger miss",
+		"conversation_id", key.ConversationID,
+		"tool", spec.Name,
+		"args_fingerprint", fp,
+		"pending_count", pendingCount,
+		"reason", missReason,
+	)
 	// single_user_hardened + a live responder + no ledger hit → record the server-side
 	// challenge (the gateway-generated question keyed on the AUTHENTICATED triple) THEN
 	// return the shell_exec-style approval-required tool RESULT (mirroring

@@ -179,6 +179,39 @@ func (a *GatewayApprovals) Evict(convID string) {
 // gatewayApprovalKey binds the ledger entry to conversation_id + tool + canonical-args
 // fingerprint (mirrors shellApprovalKey). tool_call_id is DELIBERATELY excluded — it
 // changes on the model's re-emit, so keying on it would break the round-trip match.
+// The (convID, toolName) portion is factored into gatewayApprovalKeyPrefix so this
+// function and PendingCountForTool's prefix scan cannot drift apart.
 func gatewayApprovalKey(convID, toolName, argsFingerprint string) string {
-	return convID + "\x00" + toolName + "\x00" + argsFingerprint
+	return gatewayApprovalKeyPrefix(convID, toolName) + argsFingerprint
+}
+
+// gatewayApprovalKeyPrefix is the (convID, toolName) portion of gatewayApprovalKey,
+// shared by the key builder and PendingCountForTool so the two can never disagree
+// about where one coordinate ends and the fingerprint begins.
+func gatewayApprovalKeyPrefix(convID, toolName string) string {
+	return convID + "\x00" + toolName + "\x00"
+}
+
+// PendingCountForTool reports how many pending challenges exist for (convID,
+// toolName) across EVERY args fingerprint — the 45.1 _meta identity cutover's
+// Consume-miss diagnostic (see approve.go): distinguishing "no challenge was ever
+// issued for this tool in this conversation" (0) from "a challenge IS pending, just
+// under a different fingerprint than the one just Consumed" (>0). A tool-schema
+// change (like this cutover) shifts gatewayArgsFingerprint's input, which is hashed
+// over the MODEL's own arguments upstream of any host injection, so a Consume miss
+// after a schema change is otherwise silent. Nil-receiver-safe; guarded by a.mu.
+func (a *GatewayApprovals) PendingCountForTool(convID, toolName string) int {
+	if a == nil || convID == "" || toolName == "" {
+		return 0
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	prefix := gatewayApprovalKeyPrefix(convID, toolName)
+	n := 0
+	for k := range a.pending {
+		if strings.HasPrefix(k, prefix) {
+			n++
+		}
+	}
+	return n
 }
