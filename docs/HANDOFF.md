@@ -500,11 +500,27 @@ infinito, e CP4 nel ledger di `verification/…/FINDINGS.md` è ancora `_pending
 è del 2026-08-05, cioè precedente sia alla riscrittura dell'08-08 sia alla rimozione del
 workflow: aggiornarne una riga sola lo farebbe sembrare corrente.
 
-**4.5 — Un allegato di chat arriva come `<assetID>.pdf`.**
-`internal/objectstore/types.go:104-106` costruisce la chiave senza il nome reale, e
-`services/ingest/app.py:263` ricava il nome dalla chiave. Non esiste un canale metadati:
-`Attrs` (`types.go:19-27`) non ha un campo nome e `s3.go:127` non imposta user metadata.
-*Confidenza: alta.*
+**4.5 — CHIUSA il 2026-08-16 (`a5afccfc3`), e la voce era già scaduta quando l'ho riletta.**
+Restava scritto che «non esiste un canale metadati». Esiste da stamattina, ed è la stessa
+misura che ha chiuso §0.2: `Attrs.Metadata` porta la user metadata, `PlaceAsset` scrive
+`x-amz-meta-filename` percent-encoded (`asset_placement.go:43`) e il sidecar la rilegge con
+una HEAD (`source.object_file_name`), degradando al nome della chiave — che per un file
+lasciato nel bucket a mano **è** il suo nome.
+
+La chiave resta `chat/<assetID>.<ext>` di proposito: viaggia dentro URL presignate e log di
+accesso, e il nome di un file è spesso il suo contenuto («Perizia città di Ghèdi 2026.txt»).
+
+Verificato oggi sul bucket vivo, non sul codice: **8 oggetti `chat/` su 8** portano il nome
+reale in metadata, accenti compresi, e ArcadeDB li mostra identici lato indice —
+`Perizia città di Ghèdi 2026.txt`, `colm2025_conference.pdf`, i quattro `fatturato_q*_2025.csv`.
+Il nome non è solo esposto: entra in `file_name_words`, quindi prima di questo cambio cercare
+un documento con il nome che gli aveva dato l'operatore non trovava niente.
+
+**Residuo, ed è una decisione aperta, non un baco**: i 7 oggetti storici
+`identity/<id>/asset/<uuid>/original` non hanno metadata (precedono il canale) e non sono
+indicizzati — `identity/` è escluso dal walker — quindi il file manager li mostra per chiave.
+I loro nomi veri stanno in `aura.assets.file_name`; darglieli significa una seconda lookup nel
+file manager, ed è la decisione che resta da prendere.
 
 ---
 
