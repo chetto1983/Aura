@@ -266,7 +266,7 @@ da RLS — **e contiene `OPENROUTER_API_KEY`**. *Confidenza: alta.*
 Content-Type gate, unlike every other write on this server". Difesa in profondità CSRF
 assottigliata rispetto a ogni altra scrittura del server. *Confidenza: alta.*
 
-**2.3 — CHIUSA il 2026-08-16 (`b04b7dd08`), e il perimetro della voce era sbagliato per
+**2.3 — CHIUSA il 2026-08-16 (`0fa214648`), e il perimetro della voce era sbagliato per
 difetto.** `migratedDocumentPool` non esisteva più: `11f49cd9b` aveva già portato
 `internal/documents` su database usa-e-getta. Ma il pericolo non era mai stato lì soltanto —
 **30 file di test in 19 package** prendono `AURA_DB_MIGRATE_URL` dall'ambiente e lo passano a
