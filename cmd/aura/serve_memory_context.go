@@ -16,12 +16,12 @@ const (
 )
 
 type mountedMemoryContext struct {
-	client         mcptools.HostClient
+	client         *mcptools.MountedServer
 	preloadTopK    int
 	preloadTimeout time.Duration
 }
 
-func newMemoryContextProvider(client mcptools.HostClient, preloadTopK int, preloadTimeout time.Duration) *mountedMemoryContext {
+func newMemoryContextProvider(client *mcptools.MountedServer, preloadTopK int, preloadTimeout time.Duration) *mountedMemoryContext {
 	if client == nil {
 		return nil
 	}
@@ -34,7 +34,7 @@ func (m *mountedMemoryContext) Context(ctx context.Context, identityID string) (
 	}
 	callCtx, cancel := context.WithTimeout(ctx, memoryContextTimeout)
 	defer cancel()
-	text, err := m.client.CallTool(callCtx, "memory_digest", map[string]any{
+	text, err := m.client.CallToolText(callCtx, "memory_digest", map[string]any{
 		"user_identifier":  identityID,
 		"limit":            50,
 		"facts_per_entity": 3,
@@ -76,7 +76,7 @@ func (m *mountedMemoryContext) Search(ctx context.Context, identityID, query str
 	}
 	callCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	text, err := m.client.CallTool(callCtx, "memory_search", map[string]any{
+	text, err := m.client.CallToolText(callCtx, "memory_search", map[string]any{
 		"user_identifier": identityID,
 		"query":           query,
 		"limit":           limit,

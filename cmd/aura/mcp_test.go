@@ -536,6 +536,13 @@ func newMCPHTTPTestServer(t *testing.T) *httptest.Server {
 			t.Fatalf("decode request: %v", err)
 		}
 		switch req.Method {
+		case "server/discover":
+			// This fixture speaks the legacy (pre-2026-07-28) handshake only. The
+			// SDK client tries SEP-2575's stateless server/discover FIRST and
+			// falls back to initialize on any non-modern error (go-sdk@v1.7.0
+			// mcp/client.go:371-377) — a plain JSON-RPC method-not-found response
+			// is exactly that fallback trigger, not a test failure.
+			writeMCPHTTPError(t, w, req.ID, -32601, "method not found")
 		case "initialize":
 			w.Header().Set("Mcp-Session-Id", "session-remote")
 			writeMCPHTTPResult(t, w, req.ID, mcpInitializeResult("2025-06-18", "remote-test"))
@@ -555,6 +562,18 @@ func newMCPHTTPTestServer(t *testing.T) *httptest.Server {
 			t.Fatalf("unexpected method %q", req.Method)
 		}
 	}))
+}
+
+func writeMCPHTTPError(t *testing.T, w http.ResponseWriter, id int64, code int, message string) {
+	t.Helper()
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      id,
+		"error":   map[string]any{"code": code, "message": message},
+	}); err != nil {
+		t.Fatalf("encode error response: %v", err)
+	}
 }
 
 func writeMCPHTTPResult(t *testing.T, w http.ResponseWriter, id int64, result any) {

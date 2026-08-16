@@ -57,6 +57,18 @@ func newRecordingMemoryMCPServer(t *testing.T) *recordingMemoryMCPServer {
 			return
 		}
 		switch req.Method {
+		case "server/discover":
+			// Legacy-only fixture: an error response (any non-modern error)
+			// triggers the SDK's documented fallback to initialize
+			// (go-sdk@v1.7.0 mcp/client.go:371-377) rather than a test failure.
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(map[string]any{
+				"jsonrpc": "2.0",
+				"id":      req.ID,
+				"error":   map[string]any{"code": -32601, "message": "method not found"},
+			}); err != nil {
+				t.Errorf("encode discover error: %v", err)
+			}
 		case "initialize":
 			rec.mu.Lock()
 			rec.initializes++

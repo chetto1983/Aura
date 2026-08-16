@@ -4,23 +4,19 @@ import (
 	"context"
 	"testing"
 
-	"github.com/chetto1983/aura/internal/mcp"
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // The memory MCP serves two consumers with different needs: Aura's own Go code
 // (onboarding, recall, the `aura memory` CLI) calls it directly through
-// mcp.Transport.CallTool, while the model's surface is built by this bridge.
+// MountedServer.CallToolText, while the model's surface is built by this bridge.
 // Removing a tool server-side to slim the model's menu breaks the host instead —
 // that is what took onboarding down with "Unknown tool: memory_get_facts". The
 // tools stay on the server; the bridge decides what the model sees.
 func TestBridgeHidesNonModelFacingMemoryTools(t *testing.T) {
 	t.Parallel()
 
-	// The REAL surface of cmd/arcadedb-mcp. This fixture used to enumerate the previous
-	// sidecar's tools — memory_add_fact, memory_get_entity, memory_update,
-	// memory_create_relationship, memory_store_message and friends — none of which the
-	// ArcadeDB server implements. A hiding test whose hidden names can never arrive
-	// proves the filter compiles, not that it filters.
+	// The REAL surface of cmd/arcadedb-mcp.
 	all := []string{
 		// model-facing: one read plan plus three mutation intentions.
 		"memory_recall", "memory_upsert_fact", "memory_merge_entities", "memory_forget",
@@ -28,12 +24,13 @@ func TestBridgeHidesNonModelFacingMemoryTools(t *testing.T) {
 		"memory_search", "memory_facts_about", "memory_entities", "memory_digest",
 		"graph_schema", "memory_reembed",
 	}
-	defs := make([]mcp.ToolDef, 0, len(all))
+	toolDefs := make([]*sdkmcp.Tool, 0, len(all))
 	for _, n := range all {
-		defs = append(defs, mcp.ToolDef{Name: n, Description: "fixture"})
+		toolDefs = append(toolDefs, mustTool(n, "fixture", nil, nil))
 	}
 
-	bridged, err := Bridge(context.Background(), "memory", &fakeServer{defs: defs})
+	srv, _ := newInMemoryMounted(t, toolDefs...)
+	bridged, err := Bridge(context.Background(), "memory", srv)
 	if err != nil {
 		t.Fatalf("Bridge: %v", err)
 	}
@@ -63,16 +60,16 @@ func TestBridgeHidesNonModelFacingMemoryTools(t *testing.T) {
 	}
 }
 
-// Hiding is scoped to the namespace that asked for it. Another server's tools must
-// pass through untouched, including any that happen to share a name.
+// Hiding is scoped to the namespace that asked for it. Another server's tools
+// must pass through untouched, including any that happen to share a name.
 func TestBridgeHidingIsNamespaceScoped(t *testing.T) {
 	t.Parallel()
 
-	defs := []mcp.ToolDef{
-		{Name: "memory_get_facts", Description: "same name, different server"},
-		{Name: "anything", Description: "fixture"},
-	}
-	bridged, err := Bridge(context.Background(), "pim", &fakeServer{defs: defs})
+	srv, _ := newInMemoryMounted(t,
+		mustTool("memory_get_facts", "same name, different server", nil, nil),
+		mustTool("anything", "fixture", nil, nil),
+	)
+	bridged, err := Bridge(context.Background(), "pim", srv)
 	if err != nil {
 		t.Fatalf("Bridge: %v", err)
 	}

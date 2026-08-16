@@ -8,19 +8,13 @@ import (
 	"github.com/chetto1983/aura/internal/mcp"
 )
 
-// mailDefs models a mixed MCP server surface. Aura mounts all advertised tools and
-// keeps them deferred in the agent registry.
-func mailDefs() []mcp.ToolDef {
-	return []mcp.ToolDef{
-		{Name: "send_email", Description: "Send an email."},
-		{Name: "fetch_emails", Description: "Fetch recent emails."},
-		{Name: "delete_mailbox", Description: "Permanently delete a mailbox."},
-	}
-}
-
 func TestMountAllAdvertisedToolsDeferred(t *testing.T) {
 	reg := tools.NewRegistry()
-	srv := &fakeServer{defs: mailDefs()}
+	srv, _ := newInMemoryMounted(t,
+		mustTool("send_email", "Send an email.", nil, nil),
+		mustTool("fetch_emails", "Fetch recent emails.", nil, nil),
+		mustTool("delete_mailbox", "Permanently delete a mailbox.", nil, nil),
+	)
 
 	names, err := Mount(context.Background(), reg, "mail", srv)
 	if err != nil {
@@ -40,9 +34,9 @@ func TestMountAllAdvertisedToolsDeferred(t *testing.T) {
 	}
 }
 
-// TestMountServer_SpawnFailureLeavesRegistryClean asserts that when the MCP server
-// command cannot be spawned, MountServer returns an error and registers nothing: a
-// misconfigured server never half-wires the agent registry.
+// TestMountServer_SpawnFailureLeavesRegistryClean asserts that when the MCP
+// server command cannot be spawned, MountServer returns an error and registers
+// nothing: a misconfigured server never half-wires the agent registry.
 func TestMountServer_SpawnFailureLeavesRegistryClean(t *testing.T) {
 	reg := tools.NewRegistry()
 	closer, names, err := MountServer(context.Background(), context.Background(), reg, "bad",

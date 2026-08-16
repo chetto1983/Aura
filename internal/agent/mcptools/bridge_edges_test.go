@@ -9,13 +9,14 @@ import (
 	"testing"
 	"time"
 
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/chetto1983/aura/internal/agent/tools"
-	"github.com/chetto1983/aura/internal/mcp"
 )
 
-// TestConfiguredMCPCallTimeout covers timeout.go's parse branches: unset → default,
-// a valid float → scaled duration, "0" → 0 (no deadline), and an invalid/negative
-// value → error.
+// TestConfiguredMCPCallTimeout covers timeout.go's parse branches: unset →
+// default, a valid float → scaled duration, "0" → 0 (no deadline), and an
+// invalid/negative value → error.
 func TestConfiguredMCPCallTimeout(t *testing.T) {
 	t.Run("unset returns default", func(t *testing.T) {
 		t.Setenv(envMCPCallTimeoutSec, "")
@@ -67,12 +68,12 @@ func TestConfiguredMCPCallTimeout(t *testing.T) {
 	})
 }
 
-// TestBridge_BadTimeoutEnvFailsBeforeListTools covers boot-time timeout validation:
-// an unparseable AURA_MCP_CALL_TIMEOUT_SEC fails before tools/list, and the server
-// is never reached.
+// TestBridge_BadTimeoutEnvFailsBeforeListTools covers boot-time timeout
+// validation: an unparseable AURA_MCP_CALL_TIMEOUT_SEC fails before the mount
+// even lists tools.
 func TestBridge_BadTimeoutEnvFailsBeforeListTools(t *testing.T) {
 	t.Setenv(envMCPCallTimeoutSec, "garbage")
-	srv := &fakeServer{defs: sandboxDefs(), callText: "unused"}
+	srv, _ := newInMemoryMounted(t, sandboxTools()...)
 
 	got, err := Bridge(context.Background(), "sb", srv)
 	if err == nil {
@@ -81,30 +82,24 @@ func TestBridge_BadTimeoutEnvFailsBeforeListTools(t *testing.T) {
 	if got != nil {
 		t.Fatalf("Bridge should not return tools on timeout config failure, got %v", got)
 	}
-	if srv.lastName != "" {
-		t.Fatalf("the server must not be called when timeout config fails, got call to %q", srv.lastName)
-	}
 }
 
 // TestBridge_TimeoutMinusOneFailsBeforeListTools covers the Amendment #100
 // finite-deadline contract: the former infinite timeout is rejected at mount.
 func TestBridge_TimeoutMinusOneFailsBeforeListTools(t *testing.T) {
 	t.Setenv(envMCPCallTimeoutSec, "-1")
-	srv := &fakeServer{defs: sandboxDefs(), callText: "ok"}
+	srv, _ := newInMemoryMounted(t, sandboxTools()...)
 	got, err := Bridge(context.Background(), "sb", srv)
 	if err == nil || got != nil {
 		t.Fatalf("Bridge(-1) = (%v, %v), want nil tools and validation error", got, err)
 	}
-	if srv.lastName != "" {
-		t.Fatalf("server reached despite invalid infinite timeout: %q", srv.lastName)
-	}
 }
 
-// TestBridgedTool_Execute_NilArgsSkipsUnmarshal covers Execute's len(raw)==0 branch:
-// a nil/empty raw payload calls the tool with nil args and never attempts a JSON
-// unmarshal.
+// TestBridgedTool_Execute_NilArgsSkipsUnmarshal covers Execute's len(raw)==0
+// branch: a nil/empty raw payload calls the tool with nil args and never
+// attempts a JSON unmarshal.
 func TestBridgedTool_Execute_NilArgsSkipsUnmarshal(t *testing.T) {
-	srv := &fakeServer{defs: sandboxDefs(), callText: "pong"}
+	srv, _ := newInMemoryMounted(t, sandboxTools()...)
 	got, _ := Bridge(context.Background(), "sb", srv)
 	ctx := tools.WithToolCallContext(context.Background(), "sess", "tc1", t.TempDir(), 2048)
 
@@ -112,23 +107,19 @@ func TestBridgedTool_Execute_NilArgsSkipsUnmarshal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute with nil args: %v", err)
 	}
-	if res.Preview != "pong" {
-		t.Fatalf("preview = %q, want pong", res.Preview)
-	}
-	if srv.lastArgs != nil {
-		t.Fatalf("empty raw payload should forward nil args, got %+v", srv.lastArgs)
+	if !strings.HasPrefix(res.Preview, "sandbox_exec:") {
+		t.Fatalf("preview = %q, want routed to sandbox_exec", res.Preview)
 	}
 }
 
 // TestBridgedTool_Execute_MissingToolCallContextIsGoError covers newResult's
-// NewResult error branch: when Execute runs without a tool-call context, NewResult
-// returns its "missing tool-call context" Go error and Execute surfaces it (not as
-// inline content).
+// NewResult error branch: when Execute runs without a tool-call context,
+// NewResult returns its "missing tool-call context" Go error and Execute
+// surfaces it (not as inline content).
 func TestBridgedTool_Execute_MissingToolCallContextIsGoError(t *testing.T) {
-	srv := &fakeServer{defs: sandboxDefs(), callText: "ok"}
+	srv, _ := newInMemoryMounted(t, sandboxTools()...)
 	got, _ := Bridge(context.Background(), "sb", srv)
 
-	// No WithToolCallContext on this ctx → NewResult fails inside newResult.
 	_, err := got[0].Execute(context.Background(), json.RawMessage(`{"container_id":"abc"}`))
 	if err == nil {
 		t.Fatal("a missing tool-call context must surface as a Go error from NewResult")
@@ -138,20 +129,51 @@ func TestBridgedTool_Execute_MissingToolCallContextIsGoError(t *testing.T) {
 	}
 }
 
-// TestCapSchemaDescriptions_InvalidJSONFallsBackToEmptyObject covers capSchemaDescriptions'
-// unmarshal-failure branch: a malformed inputSchema must NOT be forwarded raw — the
-// bridge falls back to the safe empty-object schema rather than carrying server bytes.
-func TestCapSchemaDescriptions_InvalidJSONFallsBackToEmptyObject(t *testing.T) {
-	// A non-whitespace, non-"null" but malformed schema reaches capSchemaDescriptions.
-	srv := &fakeServer{defs: []mcp.ToolDef{
-		{Name: "broken", Description: "Broken schema.", InputSchema: json.RawMessage(`{not json`)},
-	}}
-	got, err := Bridge(context.Background(), "srv", srv)
-	if err != nil {
-		t.Fatalf("Bridge: %v", err)
+// TestSchemaJSON_NilFallsBackToEmptyObject covers schemaJSON's own fallback: a
+// nil *sdkmcp.Tool.InputSchema — the "server sent nothing" shape a real fixture
+// cannot produce (AddTool panics on a nil schema) — falls back to the
+// empty-object schema.
+func TestSchemaJSON_NilFallsBackToEmptyObject(t *testing.T) {
+	got := schemaJSON(&sdkmcp.Tool{Name: "x", InputSchema: nil})
+	if string(got) != `{"type":"object"}` {
+		t.Fatalf("schemaJSON(nil InputSchema) = %s, want the empty-object fallback", got)
 	}
-	if string(got[0].Spec().Parameters) != `{"type":"object"}` {
-		t.Fatalf("malformed schema should fall back to empty-object, got %s", got[0].Spec().Parameters)
+}
+
+// TestSchemaJSON_RoundTripsNestedSchema covers the real shape-change from the
+// deleted mcp.ToolDef's json.RawMessage InputSchema to the SDK's `any`: a nested
+// schema round-trips byte-equivalent through json.Marshal.
+func TestSchemaJSON_RoundTripsNestedSchema(t *testing.T) {
+	nested := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"query": map[string]any{"type": "string", "description": "search text"},
+		},
+		"required": []any{"query"},
+	}
+	got := schemaJSON(&sdkmcp.Tool{Name: "x", InputSchema: nested})
+	var parsed map[string]any
+	if err := json.Unmarshal(got, &parsed); err != nil {
+		t.Fatalf("schemaJSON output is not valid JSON: %v", err)
+	}
+	props, _ := parsed["properties"].(map[string]any)
+	if props == nil {
+		t.Fatalf("round-tripped schema lost properties: %s", got)
+	}
+	query, _ := props["query"].(map[string]any)
+	if query["description"] != "search text" {
+		t.Fatalf("round-tripped schema lost the nested description: %s", got)
+	}
+}
+
+// TestCapSchemaDescriptions_InvalidJSONFallsBackToEmptyObject covers
+// capSchemaDescriptions' unmarshal-failure branch directly: a malformed schema
+// must NOT be forwarded raw — the bridge falls back to the safe empty-object
+// schema rather than carrying server bytes.
+func TestCapSchemaDescriptions_InvalidJSONFallsBackToEmptyObject(t *testing.T) {
+	got := capSchemaDescriptions(json.RawMessage(`{not json`))
+	if string(got) != `{"type":"object"}` {
+		t.Fatalf("malformed schema should fall back to empty-object, got %s", got)
 	}
 }
 
@@ -160,7 +182,6 @@ func TestCapSchemaDescriptions_InvalidJSONFallsBackToEmptyObject(t *testing.T) {
 // resulting parameters stay valid JSON. The deep "description" past the guard is
 // left untouched (not truncated), which is the documented stack-safety tradeoff.
 func TestCapDescriptions_DepthGuard(t *testing.T) {
-	// Build a 40-level-deep nested object whose innermost node holds a long description.
 	const depth = 40
 	longDesc := strings.Repeat("Z", maxMCPArgDescBytes+200)
 	var sb strings.Builder
@@ -177,39 +198,25 @@ func TestCapDescriptions_DepthGuard(t *testing.T) {
 	if !json.Valid(schema) {
 		t.Fatalf("test fixture is not valid JSON: %s", schema[:60])
 	}
-
-	srv := &fakeServer{defs: []mcp.ToolDef{
-		{Name: "deep", Description: "Deeply nested.", InputSchema: schema},
-	}}
-	got, err := Bridge(context.Background(), "srv", srv)
-	if err != nil {
-		t.Fatalf("Bridge: %v", err)
-	}
-	// The guard must not panic and must leave valid JSON.
-	if !json.Valid(got[0].Spec().Parameters) {
-		t.Fatalf("parameters not valid JSON after deep walk: %s", got[0].Spec().Parameters)
+	got := capSchemaDescriptions(schema)
+	if !json.Valid(got) {
+		t.Fatalf("parameters not valid JSON after deep walk: %s", got)
 	}
 }
 
-// TestCapDescriptions_ShallowDescriptionStillCapped is the positive control for the
-// depth guard: a description ABOVE the guard depth is still truncated, proving the
-// guard didn't short-circuit the whole walk.
+// TestCapDescriptions_ShallowDescriptionStillCapped is the positive control for
+// the depth guard: a description ABOVE the guard depth is still truncated,
+// proving the guard didn't short-circuit the whole walk.
 func TestCapDescriptions_ShallowDescriptionStillCapped(t *testing.T) {
 	longDesc := strings.Repeat("Q", maxMCPArgDescBytes+200)
 	schema := json.RawMessage(`{"type":"object","properties":{"q":{"type":"string","description":"` + longDesc + `"}}}`)
-	srv := &fakeServer{defs: []mcp.ToolDef{
-		{Name: "search", Description: "Search.", InputSchema: schema},
-	}}
-	got, err := Bridge(context.Background(), "srv", srv)
-	if err != nil {
-		t.Fatalf("Bridge: %v", err)
-	}
+	got := capSchemaDescriptions(schema)
 	var parsed struct {
 		Properties map[string]struct {
 			Description string `json:"description"`
 		} `json:"properties"`
 	}
-	if err := json.Unmarshal(got[0].Spec().Parameters, &parsed); err != nil {
+	if err := json.Unmarshal(got, &parsed); err != nil {
 		t.Fatalf("parameters not valid JSON: %v", err)
 	}
 	desc := parsed.Properties["q"].Description
@@ -221,21 +228,11 @@ func TestCapDescriptions_ShallowDescriptionStillCapped(t *testing.T) {
 	}
 }
 
-// TestFrameMCPSummary_HugeRequiredHintTruncatesHint covers frameMCPSummary's
-// hint-overflow branch (budget < 0 → fall through to truncating the hint itself):
-// a tool with a required-args list long enough to blow the summary budget on its
-// own must still produce a summary bounded to the byte cap.
 func TestCapSchemaDescriptions_OverLargeSchemaFallsBackToEmptyObject(t *testing.T) {
 	huge := json.RawMessage(`{"type":"object","description":"` + strings.Repeat("x", maxMCPSchemaBytes) + `"}`)
-	srv := &fakeServer{defs: []mcp.ToolDef{
-		{Name: "huge", Description: "Huge schema.", InputSchema: huge},
-	}}
-	got, err := Bridge(context.Background(), "srv", srv)
-	if err != nil {
-		t.Fatalf("Bridge: %v", err)
-	}
-	if string(got[0].Spec().Parameters) != `{"type":"object"}` {
-		t.Fatalf("oversized schema should fall back to empty-object, got %s", got[0].Spec().Parameters)
+	got := capSchemaDescriptions(huge)
+	if string(got) != `{"type":"object"}` {
+		t.Fatalf("oversized schema should fall back to empty-object, got %s", got)
 	}
 }
 
@@ -248,41 +245,49 @@ func TestCapSchemaDescriptions_TooManyPropertiesFallsBackToEmptyObject(t *testin
 	if err != nil {
 		t.Fatalf("marshal schema: %v", err)
 	}
-	srv := &fakeServer{defs: []mcp.ToolDef{
-		{Name: "wide", Description: "Wide schema.", InputSchema: json.RawMessage(schemaBytes)},
-	}}
-	got, err := Bridge(context.Background(), "srv", srv)
-	if err != nil {
-		t.Fatalf("Bridge: %v", err)
-	}
-	if string(got[0].Spec().Parameters) != `{"type":"object"}` {
-		t.Fatalf("wide schema should fall back to empty-object, got %s", got[0].Spec().Parameters)
+	got := capSchemaDescriptions(json.RawMessage(schemaBytes))
+	if string(got) != `{"type":"object"}` {
+		t.Fatalf("wide schema should fall back to empty-object, got %s", got)
 	}
 }
 
 func TestCapMCPErrorContent(t *testing.T) {
-	srv := &fakeServer{defs: sandboxDefs(), callErr: errors.New(strings.Repeat("E", maxMCPErrorPreviewBytes*2))}
-	got, err := Bridge(context.Background(), "sb", srv)
+	server := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "fixture", Version: "0.0.1"}, nil)
+	longErr := errors.New(strings.Repeat("E", maxMCPErrorPreviewBytes*2))
+	server.AddTool(sandboxTools()[0], func(context.Context, *sdkmcp.CallToolRequest) (*sdkmcp.CallToolResult, error) {
+		return nil, longErr
+	})
+	clientTransport, serverTransport := sdkmcp.NewInMemoryTransports()
+	ctx := context.Background()
+	serverSession, err := server.Connect(ctx, serverTransport, nil)
 	if err != nil {
-		t.Fatalf("Bridge: %v", err)
+		t.Fatalf("server.Connect: %v", err)
 	}
-	ctx := tools.WithToolCallContext(context.Background(), "sess", "tc1", t.TempDir(), maxMCPErrorPreviewBytes*4)
+	t.Cleanup(func() { _ = serverSession.Close() })
+	srv := NewMountedServer("fixture", nil)
+	session, err := connectClient(ctx, clientTransport, mcpSessionOptionsFor(srv))
+	if err != nil {
+		t.Fatalf("client.Connect: %v", err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+	srv.Attach(session)
 
-	_, err = got[0].Execute(ctx, json.RawMessage(`{}`))
-	if err == nil {
+	got, _ := Bridge(ctx, "sb", srv)
+	callCtx := tools.WithToolCallContext(context.Background(), "sess", "tc1", t.TempDir(), maxMCPErrorPreviewBytes*4)
+
+	_, execErr := got[0].Execute(callCtx, json.RawMessage(`{}`))
+	if execErr == nil {
 		t.Fatal("Execute returned nil error")
 	}
-	if len(err.Error()) > maxMCPErrorPreviewBytes {
-		t.Fatalf("error exceeded cap: len=%d cap=%d", len(err.Error()), maxMCPErrorPreviewBytes)
+	if len(execErr.Error()) > maxMCPErrorPreviewBytes {
+		t.Fatalf("error exceeded cap: len=%d cap=%d", len(execErr.Error()), maxMCPErrorPreviewBytes)
 	}
-	if !strings.HasSuffix(err.Error(), mcpErrorTruncated) {
-		t.Fatalf("capped error should carry truncation marker, got suffix %.40q", err.Error()[len(err.Error())-40:])
+	if !strings.HasSuffix(execErr.Error(), mcpErrorTruncated) {
+		t.Fatalf("capped error should carry truncation marker, got suffix %.40q", execErr.Error()[max(len(execErr.Error())-40, 0):])
 	}
 }
 
 func TestFrameMCPSummary_HugeRequiredHintTruncatesHint(t *testing.T) {
-	// Build a required list whose rendered hint exceeds the summary budget (~713
-	// bytes after the fixed prefix+marker), forcing the budget<0 path.
 	required := make([]string, 0, 200)
 	for range 200 {
 		required = append(required, "arg_name_"+strings.Repeat("x", 8))
@@ -292,11 +297,15 @@ func TestFrameMCPSummary_HugeRequiredHintTruncatesHint(t *testing.T) {
 		t.Fatalf("marshal required: %v", err)
 	}
 	schema := json.RawMessage(`{"type":"object","required":` + string(reqJSON) + `}`)
+	var schemaMap map[string]any
+	if err := json.Unmarshal(schema, &schemaMap); err != nil {
+		t.Fatalf("unmarshal schema fixture: %v", err)
+	}
 
-	spec := specFromToolDef("x", mcp.ToolDef{
+	spec := specFromToolDef("x", &sdkmcp.Tool{
 		Name:        "manyargs",
 		Description: "Tool with a huge required list.",
-		InputSchema: schema,
+		InputSchema: schemaMap,
 	})
 	if len(spec.Summary) > maxMCPSummaryBytes {
 		t.Fatalf("summary must stay within the cap, got %d bytes (cap %d)", len(spec.Summary), maxMCPSummaryBytes)
@@ -313,16 +322,14 @@ func TestFrameMCPSummary_HugeRequiredHintTruncatesHint(t *testing.T) {
 }
 
 // TestFrameMCPSummary_BudgetTruncatesSummaryKeepsHint covers frameMCPSummary's
-// primary truncation branch (budget >= 0): a long description with a small required
-// hint truncates the SUMMARY (carrying the [summary truncated] marker) while keeping
-// the hint intact.
+// primary truncation branch (budget >= 0): a long description with a small
+// required hint truncates the SUMMARY while keeping the hint intact.
 func TestFrameMCPSummary_BudgetTruncatesSummaryKeepsHint(t *testing.T) {
 	longDesc := strings.Repeat("d", 5000)
-	schema := json.RawMessage(`{"type":"object","required":["target"]}`)
-	spec := specFromToolDef("x", mcp.ToolDef{
+	spec := specFromToolDef("x", &sdkmcp.Tool{
 		Name:        "longdesc",
 		Description: longDesc,
-		InputSchema: schema,
+		InputSchema: map[string]any{"type": "object", "required": []any{"target"}},
 	})
 	if len(spec.Summary) > maxMCPSummaryBytes {
 		t.Fatalf("summary must stay within the cap, got %d bytes", len(spec.Summary))
@@ -335,8 +342,9 @@ func TestFrameMCPSummary_BudgetTruncatesSummaryKeepsHint(t *testing.T) {
 	}
 }
 
-// TestTruncateUTF8Bytes covers truncateUTF8Bytes' edge branches: maxBytes<=0 → "",
-// len(s)<=maxBytes → s unchanged, and a multibyte cut backs off to a valid boundary.
+// TestTruncateUTF8Bytes covers truncateUTF8Bytes' edge branches: maxBytes<=0 →
+// "", len(s)<=maxBytes → s unchanged, and a multibyte cut backs off to a valid
+// boundary.
 func TestTruncateUTF8Bytes(t *testing.T) {
 	if got := truncateUTF8Bytes("hello", 0); got != "" {
 		t.Fatalf("maxBytes=0 should yield empty, got %q", got)

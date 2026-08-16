@@ -43,7 +43,7 @@ func memoryReadinessProbe(chat *chatEnv) (agui.ReadinessProbe, bool) {
 	}, true
 }
 
-func checkMemoryReadiness(ctx context.Context, client mcptools.HostClient) error {
+func checkMemoryReadiness(ctx context.Context, client *mcptools.MountedServer) error {
 	if client == nil {
 		return errors.New("memory client is unavailable")
 	}
@@ -57,7 +57,7 @@ func checkMemoryReadiness(ctx context.Context, client mcptools.HostClient) error
 	// health check cannot read or disturb a real person's memory. This probe
 	// builds its map literally rather than through the bridge, so it has to stamp
 	// the call itself.
-	text, err := client.CallTool(ctx, "memory_search", map[string]any{
+	text, err := client.CallToolText(ctx, "memory_search", map[string]any{
 		"query":           "Aura readiness",
 		"limit":           1,
 		"user_identifier": memoryReadinessOwner,

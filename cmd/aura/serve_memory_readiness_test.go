@@ -2,42 +2,79 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"sync"
 	"testing"
 
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/chetto1983/aura/internal/agent/mcptools"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/mcp"
 	"github.com/chetto1983/aura/internal/readiness"
 )
 
+// memoryReadinessClient is a scripted fixture: its mount(t) method builds a real
+// *mcptools.MountedServer over an in-memory SDK session (mcptools.HostClient is
+// gone — MountedServer is the concrete type now, so a hand-rolled double can no
+// longer satisfy anything). Both call sites this package uses ("memory_search",
+// "memory_digest") route to the SAME handler, which always answers with
+// text/err and records the call it observed.
 type memoryReadinessClient struct {
 	text string
 	err  error
+
+	mu   sync.Mutex
 	name string
 	args map[string]any
 }
 
-func (*memoryReadinessClient) ListTools(context.Context) ([]mcp.ToolDef, error) {
-	return nil, nil
-}
+func (c *memoryReadinessClient) mount(t *testing.T) *mcptools.MountedServer {
+	t.Helper()
+	handler := func(_ context.Context, req *sdkmcp.CallToolRequest) (*sdkmcp.CallToolResult, error) {
+		var args map[string]any
+		_ = json.Unmarshal(req.Params.Arguments, &args)
+		c.mu.Lock()
+		c.name = req.Params.Name
+		c.args = args
+		c.mu.Unlock()
+		if c.err != nil {
+			return nil, c.err
+		}
+		return &sdkmcp.CallToolResult{Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: c.text}}}, nil
+	}
+	server := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "fixture-memory", Version: "0.0.1"}, nil)
+	for _, name := range []string{"memory_search", "memory_digest"} {
+		server.AddTool(&sdkmcp.Tool{Name: name, Description: "fixture", InputSchema: map[string]any{"type": "object"}}, handler)
+	}
 
-func (c *memoryReadinessClient) CallTool(
-	_ context.Context,
-	name string,
-	args map[string]any,
-) (string, error) {
-	c.name = name
-	c.args = args
-	return c.text, c.err
-}
+	clientTransport, serverTransport := sdkmcp.NewInMemoryTransports()
+	ctx := context.Background()
+	serverSession, err := server.Connect(ctx, serverTransport, nil)
+	if err != nil {
+		t.Fatalf("server.Connect: %v", err)
+	}
+	t.Cleanup(func() { _ = serverSession.Wait() })
 
-func (*memoryReadinessClient) Ping(context.Context) error { return nil }
+	mounted := mcptools.NewMountedServer("fixture-memory", func(context.Context, context.Context, mcp.SessionOptions) (*sdkmcp.ClientSession, error) {
+		return nil, errors.New("redial not exercised by this fixture")
+	})
+	sdkClient := sdkmcp.NewClient(&sdkmcp.Implementation{Name: "aura-test", Version: "0.0.1"}, nil)
+	session, err := sdkClient.Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatalf("client.Connect: %v", err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+	mounted.Attach(session)
+	return mounted
+}
 
 // The readiness search uses a synthetic owner whose isolated ArcadeDB database
 // cannot expose or disturb a person's memory.
 func TestMemoryReadinessCheckRunsAnIsolatedFunctionalSearch(t *testing.T) {
 	client := &memoryReadinessClient{text: `{"facts":[]}`}
-	if err := checkMemoryReadiness(context.Background(), client); err != nil {
+	if err := checkMemoryReadiness(context.Background(), client.mount(t)); err != nil {
 		t.Fatalf("checkMemoryReadiness: %v", err)
 	}
 	if client.name != "memory_search" {
@@ -65,7 +102,7 @@ func TestMemoryReadinessCheckRejectsSemanticAndTransportFailure(t *testing.T) {
 		{text: `not json`},
 		{err: errors.New("transport unavailable")},
 	} {
-		if err := checkMemoryReadiness(context.Background(), client); err == nil {
+		if err := checkMemoryReadiness(context.Background(), client.mount(t)); err == nil {
 			t.Fatalf("checkMemoryReadiness(%+v) returned nil", client)
 		}
 	}

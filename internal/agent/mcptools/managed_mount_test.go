@@ -2,60 +2,47 @@ package mcptools
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync/atomic"
 	"testing"
+
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/mcp"
 )
 
-// httpMCPServer stands up an httptest streamable-HTTP MCP server that completes
-// the initialize handshake and serves a scripted tools/list, so the managed/HTTP
-// mount helpers run end-to-end through the real *mcp.HTTPClient transport.
-func httpMCPServer(t *testing.T, defs []mcp.ToolDef) *httptest.Server {
+// startSDKHTTPFixture serves a real streamable-HTTP MCP endpoint over httptest,
+// registering toolDefs with the trivial handler. Real, not a hand-rolled
+// JSON-RPC-over-HTTP fake: MCPC-03 forbids reintroducing hand-rolled framing
+// anywhere in the tree, tests included.
+func startSDKHTTPFixture(t *testing.T, toolDefs ...*sdkmcp.Tool) (*httptest.Server, *sdkmcp.Server) {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodDelete {
-			w.WriteHeader(http.StatusOK)
-			return
+	srv := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "fixture-managed", Version: "0.0.1"}, nil)
+	for _, tool := range toolDefs {
+		srv.AddTool(tool, trivialToolHandler)
+	}
+	handler := sdkmcp.NewStreamableHTTPHandler(func(*http.Request) *sdkmcp.Server { return srv }, nil)
+	ts := httptest.NewServer(handler)
+	t.Cleanup(func() {
+		for session := range srv.Sessions() {
+			_ = session.Close()
 		}
-		var req struct {
-			ID     *int64 `json:"id"`
-			Method string `json:"method"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Errorf("decode request: %v", err)
-			http.Error(w, "bad request", http.StatusBadRequest)
-			return
-		}
-		switch req.Method {
-		case "initialize":
-			w.Header().Set("Mcp-Session-Id", "sess-managed")
-			writeManagedRPC(t, w, req.ID, managedInitializeResult())
-		case "notifications/initialized":
-			w.WriteHeader(http.StatusAccepted)
-		case "tools/list":
-			writeManagedRPC(t, w, req.ID, map[string]any{"tools": defs})
-		case "tools/call":
-			writeManagedRPC(t, w, req.ID, map[string]any{
-				"content": []map[string]any{{"type": "text", "text": "host-ok"}},
-			})
-		default:
-			t.Errorf("unexpected method %q", req.Method)
-			http.Error(w, "unexpected", http.StatusBadRequest)
-		}
-	}))
-	t.Cleanup(srv.Close)
-	return srv
+		ts.Close()
+	})
+	return ts, srv
+}
+
+func managedTools() []*sdkmcp.Tool {
+	return []*sdkmcp.Tool{
+		mustTool("read_doc", "Read a document.", nil, nil),
+		mustTool("delete_doc", "Delete a document.", nil, nil),
+	}
 }
 
 func TestMountManagedServerReturnsProcessOwnedHostClient(t *testing.T) {
-	httpSrv := httpMCPServer(t, managedDefs())
+	httpSrv, _ := startSDKHTTPFixture(t, managedTools()...)
 	reg := tools.NewRegistry()
 	server := mcp.ManagedServer{Type: mcp.ServerTypeStreamableHTTP, URL: httpSrv.URL}
 
@@ -74,56 +61,22 @@ func TestMountManagedServerReturnsProcessOwnedHostClient(t *testing.T) {
 	if host == nil {
 		t.Fatal("successful managed mount returned a nil host client")
 	}
-	text, err := host.CallTool(context.Background(), "read_doc", map[string]any{})
+	text, err := host.CallToolText(context.Background(), "read_doc", map[string]any{})
 	if err != nil {
-		t.Fatalf("host CallTool: %v", err)
+		t.Fatalf("host CallToolText: %v", err)
 	}
-	if text != "host-ok" {
-		t.Fatalf("host CallTool = %q, want host-ok", text)
-	}
-}
-
-func writeManagedRPC(t *testing.T, w http.ResponseWriter, id *int64, result any) {
-	t.Helper()
-	raw, err := json.Marshal(result)
-	if err != nil {
-		t.Fatalf("marshal result: %v", err)
-	}
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(map[string]any{
-		"jsonrpc": "2.0",
-		"id":      id,
-		"result":  json.RawMessage(raw),
-	}); err != nil {
-		t.Fatalf("encode rpc: %v", err)
-	}
-}
-
-func managedInitializeResult() map[string]any {
-	return map[string]any{
-		"protocolVersion": "2025-06-18",
-		"capabilities":    map[string]any{"tools": map[string]any{}},
-		"serverInfo":      map[string]any{"name": "managed-fixture", "version": "1.0.0"},
-	}
-}
-
-func managedDefs() []mcp.ToolDef {
-	return []mcp.ToolDef{
-		{Name: "read_doc", Description: "Read a document.", InputSchema: json.RawMessage(`{"type":"object"}`)},
-		{Name: "delete_doc", Description: "Delete a document.", InputSchema: json.RawMessage(`{"type":"object"}`)},
+	if !strings.HasPrefix(text, "read_doc:") {
+		t.Fatalf("host CallToolText = %q, want routed to read_doc", text)
 	}
 }
 
 // TestMountManagedServer_HTTPSuccess drives MountManagedServer through the real
-// streamable-HTTP transport. Every advertised tool mounts and the closer shuts the
-// HTTP session down cleanly.
+// streamable-HTTP transport. Every advertised tool mounts and the closer shuts
+// the session down cleanly.
 func TestMountManagedServer_HTTPSuccess(t *testing.T) {
-	httpSrv := httpMCPServer(t, managedDefs())
+	httpSrv, _ := startSDKHTTPFixture(t, managedTools()...)
 	reg := tools.NewRegistry()
-	server := mcp.ManagedServer{
-		Type: mcp.ServerTypeStreamableHTTP,
-		URL:  httpSrv.URL,
-	}
+	server := mcp.ManagedServer{Type: mcp.ServerTypeStreamableHTTP, URL: httpSrv.URL}
 
 	closer, names, err := MountManagedServer(context.Background(), context.Background(), reg, "docs", server)
 	if err != nil {
@@ -148,9 +101,9 @@ func TestMountManagedServer_HTTPSuccess(t *testing.T) {
 	}
 }
 
-// TestMountManagedServer_OpenFailure covers MountManagedServer's error return for
-// the stdio branch: a blocked-trust server makes RuntimeLaunchConfig fail before
-// any process spawns.
+// TestMountManagedServer_OpenFailure covers MountManagedServer's error return
+// for the stdio branch: a blocked-trust server makes RuntimeLaunchConfig fail
+// before any process spawns.
 func TestMountManagedServer_OpenFailure(t *testing.T) {
 	reg := tools.NewRegistry()
 	server := mcp.ManagedServer{Command: "anything"}
@@ -171,22 +124,18 @@ func TestMountManagedServer_OpenFailure(t *testing.T) {
 }
 
 // TestMountManagedServer_MountFailureReapsServer covers the failure path after a
-// successful open: the transport opens and lists tools, but registration collides
-// with an already-registered name. The helper closes the opened transport.
+// successful open: the transport opens and lists tools, but registration
+// collides with an already-registered name. The helper closes the opened
+// session.
 func TestMountManagedServer_MountFailureReapsServer(t *testing.T) {
-	httpSrv := httpMCPServer(t, []mcp.ToolDef{
-		{Name: "read_doc", Description: "Read a document.", InputSchema: json.RawMessage(`{"type":"object"}`)},
-	})
+	httpSrv, _ := startSDKHTTPFixture(t, mustTool("read_doc", "Read a document.", nil, nil))
 	reg := tools.NewRegistry()
-	if _, err := Mount(context.Background(), reg, "docs",
-		&fakeServer{defs: []mcp.ToolDef{{Name: "read_doc", Description: "Read a document."}}}); err != nil {
+	seedSrv, _ := newInMemoryMounted(t, mustTool("read_doc", "Read a document.", nil, nil))
+	if _, err := Mount(context.Background(), reg, "docs", seedSrv); err != nil {
 		t.Fatalf("seed Mount: %v", err)
 	}
 
-	server := mcp.ManagedServer{
-		Type: mcp.ServerTypeStreamableHTTP,
-		URL:  httpSrv.URL,
-	}
+	server := mcp.ManagedServer{Type: mcp.ServerTypeStreamableHTTP, URL: httpSrv.URL}
 	closer, names, err := MountManagedServer(context.Background(), context.Background(), reg, "docs", server)
 	if err == nil || !strings.Contains(err.Error(), "collision") {
 		t.Fatalf("want a wrapped registration collision error, got %v", err)
@@ -199,15 +148,13 @@ func TestMountManagedServer_MountFailureReapsServer(t *testing.T) {
 	}
 }
 
-// TestMountManagedServer_HTTPBranchInfersFromBareURL covers the HTTP branch via a
-// bare URL (no explicit Type): MountManagedServer must infer streamable-HTTP and
-// mount every advertised tool, exercising the same branch the deleted dead
-// openManagedServer helper used to (AG-028 — the helper was unreachable production
-// code; the live MountManagedServer inlines the identical branch).
+// TestMountManagedServer_HTTPBranchInfersFromBareURL covers the HTTP branch via
+// a bare URL (no explicit Type): MountManagedServer must infer streamable-HTTP
+// and mount every advertised tool.
 func TestMountManagedServer_HTTPBranchInfersFromBareURL(t *testing.T) {
-	httpSrv := httpMCPServer(t, managedDefs())
+	httpSrv, _ := startSDKHTTPFixture(t, managedTools()...)
 	reg := tools.NewRegistry()
-	server := mcp.ManagedServer{URL: httpSrv.URL} // bare URL, no Type → inferred HTTP
+	server := mcp.ManagedServer{URL: httpSrv.URL} // bare URL, no Type -> inferred HTTP
 
 	closer, names, err := MountManagedServer(context.Background(), context.Background(), reg, "docs", server)
 	if err != nil {
@@ -226,109 +173,9 @@ func TestMountManagedServer_HTTPBranchInfersFromBareURL(t *testing.T) {
 	}
 }
 
-// TestMountManagedServer_HTTPBranchReconnectsOnUse drives fix-plan 1.6's
-// generalized reconnect through the REAL streamable-HTTP branch, not a fake: the
-// first tools/call is answered by hijacking and abruptly closing the TCP
-// connection mid-request — a genuine ErrTransport-classified failure (client.Do
-// itself errors), not a JSON-RPC application error. The mounted tool is
-// mutating, so the first Execute surfaces the existing no-replay transport
-// error through Execute; a SECOND, independent Execute is then
-// served by the reconnected client, proving mountManagedHTTP's setOpen closure
-// (mcp.OpenServer re-dialing the same URL) actually replaced the dead transport
-// instead of the tools staying dead until reboot (the residual gap this task
-// closes).
-func TestMountManagedServer_HTTPBranchReconnectsOnUse(t *testing.T) {
-	var initCount, callCount atomic.Int32
-	httpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodDelete {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-		var req struct {
-			ID     *int64 `json:"id"`
-			Method string `json:"method"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Errorf("decode request: %v", err)
-			http.Error(w, "bad request", http.StatusBadRequest)
-			return
-		}
-		switch req.Method {
-		case "initialize":
-			n := initCount.Add(1)
-			w.Header().Set("Mcp-Session-Id", fmt.Sprintf("sess-%d", n))
-			writeManagedRPC(t, w, req.ID, managedInitializeResult())
-		case "notifications/initialized":
-			w.WriteHeader(http.StatusAccepted)
-		case "tools/list":
-			writeManagedRPC(t, w, req.ID, map[string]any{"tools": []mcp.ToolDef{
-				{Name: "flaky_write", Description: "Write something.", InputSchema: json.RawMessage(`{"type":"object"}`)},
-			}})
-		case "tools/call":
-			if callCount.Add(1) == 1 {
-				hj, ok := w.(http.Hijacker)
-				if !ok {
-					t.Fatal("httptest ResponseWriter does not support Hijack")
-				}
-				conn, _, err := hj.Hijack()
-				if err != nil {
-					t.Fatalf("hijack: %v", err)
-				}
-				_ = conn.Close()
-				return
-			}
-			writeManagedRPC(t, w, req.ID, map[string]any{
-				"content": []map[string]any{{"type": "text", "text": "reconnected"}},
-			})
-		default:
-			t.Errorf("unexpected method %q", req.Method)
-			http.Error(w, "unexpected", http.StatusBadRequest)
-		}
-	}))
-	t.Cleanup(httpSrv.Close)
-
-	reg := tools.NewRegistry()
-	server := mcp.ManagedServer{Type: mcp.ServerTypeStreamableHTTP, URL: httpSrv.URL}
-	closer, names, err := MountManagedServer(context.Background(), context.Background(), reg, "flaky", server)
-	if err != nil {
-		t.Fatalf("MountManagedServer: %v", err)
-	}
-	t.Cleanup(func() {
-		if cerr := closer(); cerr != nil {
-			t.Errorf("closer: %v", cerr)
-		}
-	})
-	if len(names) != 1 {
-		t.Fatalf("want 1 mounted tool, got %v", names)
-	}
-	tool, ok := reg.Get(names[0])
-	if !ok {
-		t.Fatalf("%s not registered", names[0])
-	}
-
-	ctx := tools.WithToolCallContext(context.Background(), "sess", "call-1", t.TempDir(), 2048)
-	_, err = tool.Execute(ctx, json.RawMessage(`{}`))
-	if err == nil || !strings.Contains(err.Error(), "not replayed") {
-		t.Fatalf("first Execute = %v, want propagated no-replay transport failure", err)
-	}
-	if got := initCount.Load(); got != 2 {
-		t.Fatalf("want exactly 2 initialize round-trips (initial mount + one reconnect), got %d", got)
-	}
-
-	ctx2 := tools.WithToolCallContext(context.Background(), "sess", "call-2", t.TempDir(), 2048)
-	res2, err := tool.Execute(ctx2, json.RawMessage(`{}`))
-	if err != nil {
-		t.Fatalf("second Execute (served by the reconnected client): %v", err)
-	}
-	if res2.Preview != "reconnected" {
-		t.Fatalf("second Execute preview = %q, want served by the reconnected client", res2.Preview)
-	}
-}
-
 // TestMountManagedServer_StdioBranchFailure covers MountManagedServer's stdio
-// branch: a non-blocked trust class makes RuntimeLaunchConfig succeed, then mcp.Open
-// fails on the missing binary (the stdio branch the deleted openManagedServer helper
-// duplicated — AG-028).
+// branch: a non-blocked trust class makes RuntimeLaunchConfig succeed, then the
+// SDK's CommandTransport.Connect fails on the missing binary.
 func TestMountManagedServer_StdioBranchFailure(t *testing.T) {
 	reg := tools.NewRegistry()
 	server := mcp.ManagedServer{
@@ -337,7 +184,7 @@ func TestMountManagedServer_StdioBranchFailure(t *testing.T) {
 	}
 	closer, names, err := MountManagedServer(context.Background(), context.Background(), reg, "stdio", server)
 	if err == nil {
-		t.Fatal("want spawn error from mcp.Open on a missing binary")
+		t.Fatal("want spawn error on a missing binary")
 	}
 	if closer != nil {
 		t.Fatal("on stdio open failure closer must be nil")

@@ -32,6 +32,10 @@ func newMCPHTTPTestServerWithTools(t *testing.T, tools []map[string]any) *httpte
 			t.Fatalf("decode request: %v", err)
 		}
 		switch req.Method {
+		case "server/discover":
+			// Legacy-only fixture: trigger the SDK's documented fallback to
+			// initialize (go-sdk@v1.7.0 mcp/client.go:371-377) rather than fail.
+			writeMCPHTTPError(t, w, req.ID, -32601, "method not found")
 		case "initialize":
 			w.Header().Set("Mcp-Session-Id", "session-status-test")
 			writeMCPHTTPResult(t, w, req.ID, mcpInitializeResult("2025-06-18", "status-test"))

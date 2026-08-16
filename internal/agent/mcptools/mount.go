@@ -4,18 +4,12 @@ import (
 	"context"
 	"fmt"
 
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/mcp"
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 )
-
-// HostClient is the process-owned, non-model-facing view of a mounted MCP
-// transport. It shares the mounted bridge's auth, breaker, reconnect, egress, and
-// shutdown lifecycle.
-type HostClient interface {
-	Server
-	Ping(context.Context) error
-}
 
 // MountServer spawns one stdio MCP server, mounts all advertised tools into reg,
 // and returns a closer that shuts the subprocess down. On any failure (spawn,
@@ -25,7 +19,7 @@ type HostClient interface {
 //
 // processCtx bounds the spawned subprocess's ENTIRE lifetime (the daemon/boot
 // context — must NOT be a short-lived, deferred-cancel context, see Pitfall #2);
-// handshakeCtx bounds ONLY this mount attempt (Open's initialize round-trip AND the
+// handshakeCtx bounds ONLY this mount attempt (the connect handshake AND the
 // mount-time tools/list): a hung handshake is dropped within handshakeCtx's
 // deadline without affecting processCtx or any other server sharing it.
 func MountServer(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, cfg mcp.ServerConfig) (closer func() error, names []string, err error) {
@@ -64,7 +58,7 @@ func MountManagedServerWithEgress(processCtx, handshakeCtx context.Context, reg 
 // MountManagedServerHostWithEgress is MountManagedServerWithEgress plus the
 // process-owned host view used by trusted daemon integrations such as automatic
 // Memory recall and readiness.
-func MountManagedServerHostWithEgress(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, server mcp.ManagedServer, egress mcp.EgressPolicy) (closer func() error, names []string, host HostClient, err error) {
+func MountManagedServerHostWithEgress(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, server mcp.ManagedServer, egress mcp.EgressPolicy) (closer func() error, names []string, host *MountedServer, err error) {
 	policy := managedBridgePolicy(server)
 	if isStreamableHTTPManagedServer(server) {
 		return mountManagedHTTPHost(processCtx, handshakeCtx, reg, name, server, policy, egress)
@@ -77,49 +71,37 @@ func MountManagedServerHostWithEgress(processCtx, handshakeCtx context.Context, 
 	return mountStdioWithPolicyHost(processCtx, handshakeCtx, reg, name, cfg, policy)
 }
 
-// mountManagedHTTP is the streamable-HTTP mirror of mountStdio: it opens the raw
-// transport and lists tools via handshakeCtx (bounded exactly like mountStdio's
-// raw discovery call — same rationale, see mountStdio's doc comment), then wraps
-// the transport in a reconnectingServer so every CALL after a successful mount
-// gets the same reconnect-on-transport-error behavior the stdio branch already
-// had (fix-plan 1.6 — previously this branch mounted the raw transport directly,
-// so a dropped HTTP session/sidecar restart left those tools dead until reboot).
-// An HTTP client has no subprocess, so the wrapper's open closure ignores
-// processCtx and re-opens via mcp.OpenServer bounded by handshakeCtx alone; the
-// parameter is kept for signature uniformity with mountStdio/openMCPClient.
-func mountManagedHTTPHost(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, server mcp.ManagedServer, policy bridgePolicy, egress mcp.EgressPolicy) (closer func() error, names []string, host HostClient, err error) {
-	srv, err := mcp.OpenServerWithEgress(handshakeCtx, name, server, egress)
-	if err != nil {
-		return nil, nil, nil, err
+// sendingMiddleware is the sending middleware stack every Aura MCP session opens
+// with: the _meta.aura operation stamp (Task 1). It is the same slice for both
+// mount branches so a policy fix in one cannot miss the other.
+func sendingMiddleware() []sdkmcp.Middleware {
+	return []sdkmcp.Middleware{mcp.OperationMetaMiddleware()}
+}
+
+// mountManagedHTTPHost is the streamable-HTTP mirror of mountStdio: it opens the
+// raw session and lists tools via handshakeCtx (bounded exactly like mountStdio's
+// raw discovery call — same rationale, see bridgeFromAdvertised's doc comment),
+// then wraps the session in a MountedServer so every CALL after a successful
+// mount gets the redial-on-transport-error behavior the stdio branch already had.
+func mountManagedHTTPHost(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, server mcp.ManagedServer, policy bridgePolicy, egress mcp.EgressPolicy) (closer func() error, names []string, host *MountedServer, err error) {
+	var srv *MountedServer
+	open := func(pctx, hctx context.Context, o mcp.SessionOptions) (*sdkmcp.ClientSession, error) {
+		o.Sending = sendingMiddleware()
+		o.ToolListChanged = srv.onToolListChanged
+		return mcp.OpenSDKSession(hctx, name, server, egress, o)
 	}
-	defs, err := srv.ListTools(handshakeCtx)
-	if err != nil {
-		_ = srv.Close()
-		return nil, nil, nil, err
-	}
-	wrapper := newReconnectingServer(name, mcp.ServerConfig{}, srv)
-	wrapper.setProcessContext(processCtx)
-	wrapper.setOpen(func(_, handshakeCtx context.Context) (reconnectingClient, error) {
-		return mcp.OpenServerWithEgress(handshakeCtx, name, server, egress)
-	})
-	names, err = mountWithDefsPolicy(reg, name, wrapper, defs, policy)
-	if err != nil {
-		_ = wrapper.Close()
-		return nil, nil, nil, fmt.Errorf("mount %q: %w", name, err)
-	}
-	wrapper.trackAcceptedDefs(defs)
-	wrapper.startPingPoll(configuredMCPPingInterval())
-	return wrapper.Close, names, wrapper, nil
+	srv = NewMountedServer(name, open)
+	return openAttachAndMount(srv, processCtx, handshakeCtx, open, reg, name, policy)
 }
 
 // mountStdio is the shared stdio mount body for MountServer and MountManagedServer's
-// stdio branch. It lists tools via the RAW client (cli.ListTools), NOT through
-// reconnectingServer's ListTools, so the mount-time discovery call is bounded
-// purely by handshakeCtx (see bridgeFromDefs's doc comment for why routing it
-// through the reconnecting wrapper here would silently blow the mount deadline).
-// The reconnecting wrapper is still constructed and returned as the mounted
-// tools' Server, so every CALL after a successful mount gets the normal
-// reconnect-on-transport-error behavior.
+// stdio branch. It lists tools via the RAW session (session.Tools), NOT through
+// MountedServer's ListTools, so the mount-time discovery call is bounded purely
+// by handshakeCtx (see bridgeFromAdvertised's doc comment for why routing it
+// through the mounted supervisor here would silently blow the mount deadline).
+// The supervisor is still constructed and returned as the mounted tools' owner,
+// so every CALL after a successful mount gets the normal redial-on-transport-
+// error behavior.
 func mountStdio(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, cfg mcp.ServerConfig) (closer func() error, names []string, err error) {
 	return mountStdioWithPolicy(processCtx, handshakeCtx, reg, name, cfg, defaultBridgePolicy(name))
 }
@@ -136,37 +118,54 @@ func mountStdioWithPolicy(processCtx, handshakeCtx context.Context, reg *tools.R
 	return closer, names, err
 }
 
-func mountStdioWithPolicyHost(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, cfg mcp.ServerConfig, policy bridgePolicy) (closer func() error, names []string, host HostClient, err error) {
-	cli, err := mcp.OpenWithHandshakeContext(processCtx, handshakeCtx, name, cfg)
-	if err != nil {
-		return nil, nil, nil, err
+func mountStdioWithPolicyHost(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, cfg mcp.ServerConfig, policy bridgePolicy) (closer func() error, names []string, host *MountedServer, err error) {
+	var srv *MountedServer
+	open := func(pctx, hctx context.Context, o mcp.SessionOptions) (*sdkmcp.ClientSession, error) {
+		o.Sending = sendingMiddleware()
+		o.ToolListChanged = srv.onToolListChanged
+		return mcp.OpenSDKSessionForConfig(pctx, hctx, name, cfg, o)
 	}
-	defs, err := cli.ListTools(handshakeCtx)
-	if err != nil {
-		_ = cli.Close()
-		return nil, nil, nil, err
-	}
-	srv := newReconnectingServer(name, cfg, cli)
+	srv = NewMountedServer(name, open)
+	return openAttachAndMount(srv, processCtx, handshakeCtx, open, reg, name, policy)
+}
+
+// openAttachAndMount is the shared body both mount branches reduce to once
+// their own openSessionFunc closure is built: open the first session, list its
+// tools bounded purely by handshakeCtx (bridgeFromAdvertised's doc comment
+// explains why that must NOT route through the supervisor), Attach, then mount
+// with the given policy — reaping the session on any failure along the way.
+func openAttachAndMount(srv *MountedServer, processCtx, handshakeCtx context.Context, open openSessionFunc, reg *tools.Registry, name string, policy bridgePolicy) (closer func() error, names []string, host *MountedServer, err error) {
 	srv.setProcessContext(processCtx)
-	names, err = mountWithDefsPolicy(reg, name, srv, defs, policy)
+
+	session, err := open(processCtx, handshakeCtx, mcp.SessionOptions{})
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	advertised, err := drainTools(handshakeCtx, session)
+	if err != nil {
+		_ = session.Close()
+		return nil, nil, nil, err
+	}
+	srv.Attach(session)
+
+	names, err = mountWithAdvertisedPolicy(reg, name, srv, advertised, policy)
 	if err != nil {
 		_ = srv.Close()
 		return nil, nil, nil, fmt.Errorf("mount %q: %w", name, err)
 	}
-	srv.trackAcceptedDefs(defs)
-	srv.startPingPoll(configuredMCPPingInterval())
+	srv.trackAcceptedTools(advertised)
 	return srv.Close, names, srv, nil
 }
 
 // isStreamableHTTPManagedServer resolves server's transport via the single
-// canonical mcp.Classify (D-01/MCPH-01), replacing the previous ad hoc
-// url/type check that duplicated (and could silently drift from) Classify's own
-// dispatch logic. A Classify error (an ambiguous mixed url+command entry, or an
-// internally-inconsistent explicit type<->trust combination) resolves to true so
-// the caller's OpenServer branch is reached instead of the stdio branch:
-// OpenServer re-classifies and surfaces that SAME error, guaranteeing a
-// rejected/ambiguous config can never silently fall through to a stdio subprocess
-// spawn (the exact F-027 class this call-site previously risked reintroducing).
+// canonical mcp.Classify (D-01/MCPH-01), replacing an ad hoc url/type check that
+// could silently drift from Classify's own dispatch logic. A Classify error (an
+// ambiguous mixed url+command entry, or an internally-inconsistent explicit
+// type<->trust combination) resolves to true so the caller's HTTP branch is
+// reached instead of the stdio branch: mcp.OpenSDKSession re-classifies and
+// surfaces that SAME error, guaranteeing a rejected/ambiguous config can never
+// silently fall through to a stdio subprocess spawn (the F-027 class this call
+// site must not reintroduce).
 func isStreamableHTTPManagedServer(server mcp.ManagedServer) bool {
 	serverType, _, err := mcp.Classify(server)
 	if err != nil {

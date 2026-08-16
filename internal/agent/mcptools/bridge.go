@@ -1,6 +1,6 @@
 // Package mcptools bridges a generic MCP server's tools into Aura's agent tool
 // registry: it lists the server's tools and adapts each to a tools.Tool whose
-// Execute routes through the MCP client's tools/call.
+// Execute routes through the mounted MountedServer's tools/call.
 package mcptools
 
 import (
@@ -14,22 +14,10 @@ import (
 	"time"
 	"unicode/utf8"
 
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/chetto1983/aura/internal/agent/tools"
-	"github.com/chetto1983/aura/internal/mcp"
-	"github.com/chetto1983/aura/internal/obs"
 )
-
-var mcpBridgeBoundary = obs.NewGlobalBoundary("github.com/chetto1983/aura/internal/agent/mcptools", obs.BoundaryConfig{
-	Operation: "mcp_bridge", ToolClass: obs.ToolClassMCP, Transport: "in_process",
-	Count: obs.MCPCallsID, Duration: obs.MCPDurationID,
-})
-
-// Server is the narrow MCP surface the bridge needs; *mcp.Client satisfies it.
-// Declared consumer-side so the bridge is testable without spawning a process.
-type Server interface {
-	ListTools(ctx context.Context) ([]mcp.ToolDef, error)
-	CallTool(ctx context.Context, name string, args map[string]any) (string, error)
-}
 
 // emptyObjectSchema is the Parameters fallback for a tool whose server advertised
 // no inputSchema: a valid "any/no args" JSON-Schema object.
@@ -45,9 +33,9 @@ const mcpArgDescTruncated = " [truncated]"
 const mcpErrorTruncated = " [error truncated]"
 
 // bridgedTool adapts one MCP tool to tools.Tool. The spec is atomically swapped
-// when reconnectingServer refreshes tools/list after a transport reconnect.
+// when MountedServer's onToolListChanged refreshes an in-place spec change.
 type bridgedTool struct {
-	srv         Server
+	srv         *MountedServer
 	name        string
 	callTimeout time.Duration
 	policy      bridgePolicy
@@ -60,8 +48,23 @@ func (b *bridgedTool) storeSpec(spec tools.Spec) {
 	b.spec.Store(spec)
 }
 
-func (b *bridgedTool) refreshSpec(d mcp.ToolDef) {
-	params, summary, description := specFieldsFromToolDef(d)
+// schemaJSON converts an SDK Tool's InputSchema (an `any` holding the client
+// side's default JSON marshaling of the server's schema — a map[string]any, not
+// json.RawMessage) to bytes, falling back to emptyObjectSchema on a nil schema or
+// a marshal error rather than forwarding something unparseable.
+func schemaJSON(t *sdkmcp.Tool) json.RawMessage {
+	if t == nil || t.InputSchema == nil {
+		return emptyObjectSchema
+	}
+	raw, err := json.Marshal(t.InputSchema)
+	if err != nil || len(raw) == 0 || string(raw) == "null" {
+		return emptyObjectSchema
+	}
+	return raw
+}
+
+func (b *bridgedTool) refreshSpec(t *sdkmcp.Tool) {
+	params, summary, description := specFieldsFromToolDef(t)
 	spec := b.Spec()
 	oldMutating := spec.Mutating
 	oldDestructive := spec.Destructive
@@ -70,7 +73,7 @@ func (b *bridgedTool) refreshSpec(d mcp.ToolDef) {
 	spec.Description = description
 	spec.Parameters = params
 	spec.Deferred = b.policy.defaultDeferred()
-	spec.Mutating, spec.Destructive = mcpToolRisk(b.policy, d)
+	spec.Mutating, spec.Destructive = mcpToolRisk(b.policy, t)
 	applyMCPOperationMetadata(&spec)
 	if oldMutating != spec.Mutating {
 		slog.Warn("mcp tool mutating flag changed on reconnect",
@@ -96,126 +99,77 @@ func (b *bridgedTool) refreshSpec(d mcp.ToolDef) {
 	b.spec.Store(spec)
 }
 
-// Execute unmarshals the model's args, calls the MCP tool, and threads successful
-// text through tools.NewResult. MCP isError=true remains a Go error so the agent
-// loop can render an error observation without completing idempotency as success.
-func (b *bridgedTool) Execute(ctx context.Context, raw json.RawMessage) (tools.ToolResult, error) {
-	ctx, end := mcpBridgeBoundary.Start(ctx)
-	var observeErr error
-	defer end.PanicSafe(&observeErr)
-	var args map[string]any
-	if len(raw) > 0 {
-		if err := json.Unmarshal(raw, &args); err != nil {
-			observeErr = err
-			return tools.ToolResult{}, fmt.Errorf("mcp tool %s args: %w", b.name, err)
-		}
-	}
-	args = b.withMemoryUserIdentifier(ctx, args)
-
-	callCtx := ctx
-	cancel := func() {}
-	if b.callTimeout > 0 {
-		callCtx, cancel = context.WithTimeout(ctx, b.callTimeout)
-	}
-	defer cancel()
-
-	text, err := b.srv.CallTool(callCtx, b.name, args)
-	if err != nil {
-		observeErr = err
-		return tools.ToolResult{}, boundedMCPError(err)
-	}
-	return b.newResult(ctx, text)
-}
-
-// newResult wraps an MCP tool's text output. A mounted MCP server is
-// operator-configured infrastructure, so its output is marked TrustTrusted:
-// trusted content like a built-in, never wrapped in the untrusted envelope. Size
-// caps in tools.NewResult still bound it; only the distrust framing is dropped.
-func (b *bridgedTool) newResult(ctx context.Context, text string) (tools.ToolResult, error) {
-	res, err := tools.NewResult(ctx, text)
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-	res.Provenance = &tools.ToolResultProvenance{
-		Source: "mcp:" + b.Spec().Name,
-		Trust:  tools.TrustTrusted,
-	}
-	return res, nil
-}
-
 // Bridge lists srv's tools and adapts each to a tools.Tool, namespacing the
 // model-facing name as <namespace>__<tool> so a mounted server can never silently
-// shadow a built-in. The wire name used by CallTool stays raw.
+// shadow a built-in. The wire name used by CallToolText stays raw.
 //
 // Bridged tools are Deferred by default: a real multi-tool MCP server would
 // otherwise flood every per-turn manifest. tool_search indexes the deferred
 // tool's name, description, and argument-field names, so deferred MCP tools stay
 // discoverable. The memory MCP schemas are therefore reached through tool_search
 // instead of being carried on every turn.
-func Bridge(ctx context.Context, namespace string, srv Server) ([]tools.Tool, error) {
-	defs, err := srv.ListTools(ctx)
+func Bridge(ctx context.Context, namespace string, srv *MountedServer) ([]tools.Tool, error) {
+	advertised, err := srv.ListTools(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return bridgeFromDefs(namespace, srv, defs)
+	return bridgeFromAdvertised(namespace, srv, advertised)
 }
 
-// bridgeFromDefs bridges PRE-LISTED defs, skipping the srv.ListTools round-trip
-// Bridge itself makes. mountWithDefsPolicy (the initial-mount path) uses this so the
-// FIRST discovery listing goes through the raw transport's own ctx bound instead
-// of through a reconnectingServer wrapper: reconnectingServer.ListTools treats any
+// bridgeFromAdvertised bridges PRE-LISTED advertised tools, skipping the
+// srv.ListTools round-trip Bridge itself makes. mountWithAdvertisedPolicy (the
+// initial-mount path) uses this so the FIRST discovery listing goes through the
+// raw session's own ctx bound instead of through MountedServer, which treats any
 // transport error (including a caller's ctx deadline expiring) as a cue to
-// transparently reconnect using ITS OWN reconnectTimeout budget (10s default,
-// context.WithoutCancel-severed from the caller's ctx) — layering that
+// transparently redial using ITS OWN redial-timeout budget
+// (context.WithoutCancel-severed from the caller's ctx) — layering that
 // independent, much longer budget on top of the initial mount's OWN bounded
-// handshake ctx would silently blow through AURA_MCP_MOUNT_TIMEOUT (D-06),
-// defeating the very bound this plan installs. The raw transport's own ListTools
-// (no reconnect layer) is called BEFORE reconnectingServer even wraps it, so this
-// failure mode cannot occur for the initial mount; bridged tools still reference
-// srv (the reconnecting wrapper) for every CALL after mount, so runtime
-// reconnect-on-transport-error is unaffected.
-func bridgeFromDefs(namespace string, srv Server, defs []mcp.ToolDef) ([]tools.Tool, error) {
-	return bridgeFromDefsWithPolicy(namespace, srv, defs, defaultBridgePolicy(namespace))
+// handshake ctx would silently blow through AURA_MCP_MOUNT_TIMEOUT, defeating the
+// very bound mount.go installs. The raw session's own tools/list (no redial
+// layer) is called BEFORE MountedServer even wraps it, so this failure mode
+// cannot occur for the initial mount; bridged tools still reference srv (the
+// mounted supervisor) for every CALL after mount, so runtime redial-on-transport-
+// error is unaffected.
+func bridgeFromAdvertised(namespace string, srv *MountedServer, advertised []*sdkmcp.Tool) ([]tools.Tool, error) {
+	return bridgeFromAdvertisedWithPolicy(namespace, srv, advertised, defaultBridgePolicy(namespace))
 }
 
-func bridgeFromDefsWithPolicy(namespace string, srv Server, defs []mcp.ToolDef, policy bridgePolicy) ([]tools.Tool, error) {
+func bridgeFromAdvertisedWithPolicy(namespace string, srv *MountedServer, advertised []*sdkmcp.Tool, policy bridgePolicy) ([]tools.Tool, error) {
 	callTimeout, err := configuredMCPCallTimeout()
 	if err != nil {
 		return nil, err
 	}
-	bridged := bridgeToolsWithPolicy(namespace, srv, defs, callTimeout, policy)
-	if tracker, ok := srv.(interface{ trackBridgedTools([]tools.Tool) }); ok {
-		tracker.trackBridgedTools(bridged)
-	}
+	bridged := bridgeToolsWithPolicy(namespace, srv, advertised, callTimeout, policy)
+	srv.trackBridgedTools(bridged)
 	return bridged, nil
 }
 
-func bridgeTools(namespace string, srv Server, defs []mcp.ToolDef, callTimeout time.Duration) []tools.Tool {
-	return bridgeToolsWithPolicy(namespace, srv, defs, callTimeout, defaultBridgePolicy(namespace))
+func bridgeTools(namespace string, srv *MountedServer, advertised []*sdkmcp.Tool, callTimeout time.Duration) []tools.Tool {
+	return bridgeToolsWithPolicy(namespace, srv, advertised, callTimeout, defaultBridgePolicy(namespace))
 }
 
-func bridgeToolsWithPolicy(namespace string, srv Server, defs []mcp.ToolDef, callTimeout time.Duration, policy bridgePolicy) []tools.Tool {
-	out := make([]tools.Tool, 0, len(defs))
-	for _, d := range defs {
-		if !policy.modelFacing(d.Name) {
+func bridgeToolsWithPolicy(namespace string, srv *MountedServer, advertised []*sdkmcp.Tool, callTimeout time.Duration, policy bridgePolicy) []tools.Tool {
+	out := make([]tools.Tool, 0, len(advertised))
+	for _, t := range advertised {
+		if !policy.modelFacing(t.Name) {
 			continue
 		}
-		bt := &bridgedTool{srv: srv, name: d.Name, callTimeout: callTimeout, policy: policy}
-		bt.storeSpec(specFromToolDefWithPolicy(namespace, d, policy))
+		bt := &bridgedTool{srv: srv, name: t.Name, callTimeout: callTimeout, policy: policy}
+		bt.storeSpec(specFromToolDefWithPolicy(namespace, t, policy))
 		out = append(out, bt)
 	}
 	return out
 }
 
-func specFromToolDef(namespace string, d mcp.ToolDef) tools.Spec {
-	return specFromToolDefWithPolicy(namespace, d, defaultBridgePolicy(namespace))
+func specFromToolDef(namespace string, t *sdkmcp.Tool) tools.Spec {
+	return specFromToolDefWithPolicy(namespace, t, defaultBridgePolicy(namespace))
 }
 
-func specFromToolDefWithPolicy(namespace string, d mcp.ToolDef, policy bridgePolicy) tools.Spec {
-	params, summary, description := specFieldsFromToolDef(d)
-	mutating, destructive := mcpToolRisk(policy, d)
+func specFromToolDefWithPolicy(namespace string, t *sdkmcp.Tool, policy bridgePolicy) tools.Spec {
+	params, summary, description := specFieldsFromToolDef(t)
+	mutating, destructive := mcpToolRisk(policy, t)
 	spec := tools.Spec{
-		Name:        namespacedName(namespace, d.Name),
+		Name:        namespacedName(namespace, t.Name),
 		Summary:     summary,
 		Description: description,
 		Parameters:  params,
@@ -239,13 +193,10 @@ func applyMCPOperationMetadata(spec *tools.Spec) {
 	spec.ReplayPolicy = ""
 }
 
-func specFieldsFromToolDef(d mcp.ToolDef) (json.RawMessage, string, string) {
-	params := emptyObjectSchema
-	if schema := strings.TrimSpace(string(d.InputSchema)); schema != "" && schema != "null" {
-		params = capSchemaDescriptions(d.InputSchema)
-	}
-	summary := frameMCPSummary(d.Description, params)
-	description := frameMCPDescription(d.Description)
+func specFieldsFromToolDef(t *sdkmcp.Tool) (json.RawMessage, string, string) {
+	params := capSchemaDescriptions(schemaJSON(t))
+	summary := frameMCPSummary(t.Description, params)
+	description := frameMCPDescription(t.Description)
 	return params, summary, description
 }
 
@@ -412,7 +363,7 @@ func truncateUTF8Bytes(s string, maxBytes int) string {
 // into reg, all-or-nothing. Two distinct raw tool names that sanitize to the same
 // namespaced name are disambiguated with a deterministic hash suffix before
 // registration. It still refuses to clobber an existing tool name.
-func Mount(ctx context.Context, reg *tools.Registry, namespace string, srv Server) ([]string, error) {
+func Mount(ctx context.Context, reg *tools.Registry, namespace string, srv *MountedServer) ([]string, error) {
 	bridged, err := Bridge(ctx, namespace, srv)
 	if err != nil {
 		return nil, err
@@ -420,22 +371,20 @@ func Mount(ctx context.Context, reg *tools.Registry, namespace string, srv Serve
 	return finishMount(reg, srv, bridged)
 }
 
-func mountWithDefsPolicy(reg *tools.Registry, namespace string, srv Server, defs []mcp.ToolDef, policy bridgePolicy) ([]string, error) {
-	bridged, err := bridgeFromDefsWithPolicy(namespace, srv, defs, policy)
+func mountWithAdvertisedPolicy(reg *tools.Registry, namespace string, srv *MountedServer, advertised []*sdkmcp.Tool, policy bridgePolicy) ([]string, error) {
+	bridged, err := bridgeFromAdvertisedWithPolicy(namespace, srv, advertised, policy)
 	if err != nil {
 		return nil, err
 	}
 	return finishMount(reg, srv, bridged)
 }
 
-func finishMount(reg *tools.Registry, srv Server, bridged []tools.Tool) ([]string, error) {
+func finishMount(reg *tools.Registry, srv *MountedServer, bridged []tools.Tool) ([]string, error) {
 	names, err := registerBridged(reg, bridged)
 	if err != nil {
 		return nil, err
 	}
-	if hook, ok := srv.(interface{ setRefreshHook(func()) }); ok {
-		hook.setRefreshHook(func() { invalidateToolSearch(reg) })
-	}
+	srv.setRefreshHook(func() { invalidateToolSearch(reg) })
 	return names, nil
 }
 

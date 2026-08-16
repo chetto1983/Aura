@@ -160,7 +160,7 @@ func buildRegistry() *tools.Registry {
 type runtimeToolHandles struct {
 	BackgroundShells *tools.BackgroundShells
 	ShellApprovals   *tools.ShellApprovals
-	Memory           mcptools.HostClient
+	Memory           *mcptools.MountedServer
 	// ShellPoll / ShellKill are retained so serve boot can wire their .Caps to the live
 	// capability store (VERIF-7 / D-18): the pool-free manifest paths construct them with a
 	// nil Caps (owner-only fail-closed), and serve.go sets Caps = the identity store once it
@@ -344,7 +344,7 @@ func buildRegistryWithMCP(
 		// healthy server (whose subprocess lives on ctx) is never killed once this
 		// server's mount deadline elapses (Pitfall #2).
 		handshakeCtx, cancel := context.WithTimeout(ctx, mountTimeout)
-		var mountedHost mcptools.HostClient
+		var mountedHost *mcptools.MountedServer
 		mountOnce := func(c context.Context) (func() error, []string, error) {
 			if _, managed := cfg.MCPPolicies[name]; managed {
 				server := cfg.MCPPolicies[name]

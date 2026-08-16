@@ -3,6 +3,8 @@ package mcptools
 import (
 	"strings"
 
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/chetto1983/aura/internal/mcp"
 )
 
@@ -92,10 +94,14 @@ func managedBridgePolicy(server mcp.ManagedServer) bridgePolicy {
 	return policy
 }
 
-func mcpToolRisk(policy bridgePolicy, def mcp.ToolDef) (mutating, destructive bool) {
+// mcpToolRisk classifies risk from the SDK's own *sdkmcp.Tool. t.Annotations is a
+// POINTER (unlike the deleted mcp.ToolDef.Annotations, which was a value) and may
+// be nil — a nil Annotations must take the same branch an unannotated ToolDef
+// took: the fail-closed `return true, true` default, asserted below.
+func mcpToolRisk(policy bridgePolicy, t *sdkmcp.Tool) (mutating, destructive bool) {
 	if actions := trustedRecipeActions[policy.recipeSource]; actions != nil {
-		if action, ok := actions[def.Name]; ok {
-			if explicitDestructive(def.Annotations) {
+		if action, ok := actions[t.Name]; ok {
+			if explicitDestructive(t.Annotations) {
 				return true, true
 			}
 			switch action {
@@ -109,15 +115,18 @@ func mcpToolRisk(policy bridgePolicy, def mcp.ToolDef) (mutating, destructive bo
 		}
 	}
 
-	if def.Annotations.ReadOnlyHint && !explicitDestructive(def.Annotations) {
-		return false, false
-	}
-	if def.Annotations.DestructiveHint == nil {
+	if t.Annotations == nil {
 		return true, true
 	}
-	return true, *def.Annotations.DestructiveHint
+	if t.Annotations.ReadOnlyHint && !explicitDestructive(t.Annotations) {
+		return false, false
+	}
+	if t.Annotations.DestructiveHint == nil {
+		return true, true
+	}
+	return true, *t.Annotations.DestructiveHint
 }
 
-func explicitDestructive(annotations mcp.ToolAnnotations) bool {
-	return annotations.DestructiveHint != nil && *annotations.DestructiveHint
+func explicitDestructive(annotations *sdkmcp.ToolAnnotations) bool {
+	return annotations != nil && annotations.DestructiveHint != nil && *annotations.DestructiveHint
 }
