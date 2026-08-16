@@ -408,3 +408,18 @@ func TestNilElicitationHandlerDoesNotAdvertiseTheCapability(t *testing.T) {
 		t.Fatalf("error = %v, want one naming elicitation", err)
 	}
 }
+
+// TestElicitationHandlerForNilConsentReturnsNil pins the mount-side posture: a
+// mount with no consent surface must produce a NIL handler, because the SDK
+// tests ClientOptions.ElicitationHandler != nil to decide whether to advertise
+// the capability. A non-nil closure wrapping a nil surface would advertise a
+// capability that always declines — the lie plan 45.1-06 rejected as option C.
+func TestElicitationHandlerForNilConsentReturnsNil(t *testing.T) {
+	t.Parallel()
+	if got := elicitationHandlerFor("fixture", nil); got != nil {
+		t.Fatal("elicitationHandlerFor(nil) returned a non-nil handler; the capability would be advertised with nothing behind it")
+	}
+	if got := elicitationHandlerFor("fixture", &fakeConsent{action: elicitActionDecline}); got == nil {
+		t.Fatal("elicitationHandlerFor with a real surface returned nil")
+	}
+}

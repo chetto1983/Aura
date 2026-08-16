@@ -55,20 +55,55 @@ func MountManagedServerWithEgress(processCtx, handshakeCtx context.Context, reg 
 	return closer, names, err
 }
 
+// MountOptions carries the per-mount choices the composition root owns: the
+// network policy resolved from the server's runtime profile, and the operator
+// consent surface a server-initiated elicitation reaches (plan 45.1-06).
+//
+// A zero Elicitation is meaningful, not merely absent: it leaves
+// SessionOptions.Elicitation nil, and a nil ClientOptions.ElicitationHandler
+// means the client does NOT advertise the elicitation capability. That is
+// today's honest posture — only a mount with a real consent surface should tell
+// servers it can be asked.
+type MountOptions struct {
+	Egress      mcp.EgressPolicy
+	Elicitation ElicitationConsent
+}
+
 // MountManagedServerHostWithEgress is MountManagedServerWithEgress plus the
 // process-owned host view used by trusted daemon integrations such as automatic
-// Memory recall and readiness.
+// Memory recall and readiness. It mounts without a consent surface.
 func MountManagedServerHostWithEgress(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, server mcp.ManagedServer, egress mcp.EgressPolicy) (closer func() error, names []string, host *MountedServer, err error) {
+	return MountManagedServerWithOptions(processCtx, handshakeCtx, reg, name, server, MountOptions{Egress: egress})
+}
+
+// MountManagedServerWithOptions is the one mount entry point that carries the
+// full per-mount option set. The four older exported entry points delegate here
+// with a zero Elicitation, so adding the consent surface stayed additive instead
+// of churning every signature.
+func MountManagedServerWithOptions(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, server mcp.ManagedServer, opts MountOptions) (closer func() error, names []string, host *MountedServer, err error) {
 	policy := managedBridgePolicy(server)
 	if isStreamableHTTPManagedServer(server) {
-		return mountManagedHTTPHost(processCtx, handshakeCtx, reg, name, server, policy, egress)
+		return mountManagedHTTPHost(processCtx, handshakeCtx, reg, name, server, policy, opts)
 	}
 
 	cfg, err := managedStdioConfig(name, server)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	return mountStdioWithPolicyHost(processCtx, handshakeCtx, reg, name, cfg, policy)
+	return mountStdioWithPolicyHost(processCtx, handshakeCtx, reg, name, cfg, policy, opts.Elicitation)
+}
+
+// elicitationHandlerFor returns the per-mount handler, or nil when no consent
+// surface was injected. Returning a typed nil here would be a bug: the SDK tests
+// ClientOptions.ElicitationHandler != nil to decide whether to advertise the
+// capability, so a non-nil closure wrapping a nil surface would advertise a
+// capability that always declines — the "lie told to every mounted server" plan
+// 45.1-06 rejected as option C.
+func elicitationHandlerFor(name string, consent ElicitationConsent) func(context.Context, *sdkmcp.ElicitRequest) (*sdkmcp.ElicitResult, error) {
+	if consent == nil {
+		return nil
+	}
+	return NewElicitationHandler(name, consent)
 }
 
 // sendingMiddleware is the sending middleware stack every Aura MCP session opens
@@ -98,12 +133,14 @@ func sendingMiddleware(policy bridgePolicy) []sdkmcp.Middleware {
 // raw discovery call — same rationale, see bridgeFromAdvertised's doc comment),
 // then wraps the session in a MountedServer so every CALL after a successful
 // mount gets the redial-on-transport-error behavior the stdio branch already had.
-func mountManagedHTTPHost(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, server mcp.ManagedServer, policy bridgePolicy, egress mcp.EgressPolicy) (closer func() error, names []string, host *MountedServer, err error) {
+func mountManagedHTTPHost(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, server mcp.ManagedServer, policy bridgePolicy, opts MountOptions) (closer func() error, names []string, host *MountedServer, err error) {
 	var srv *MountedServer
+	elicit := elicitationHandlerFor(name, opts.Elicitation)
 	open := func(pctx, hctx context.Context, o mcp.SessionOptions) (*sdkmcp.ClientSession, error) {
 		o.Sending = sendingMiddleware(policy)
 		o.ToolListChanged = srv.onToolListChanged
-		return mcp.OpenSDKSession(hctx, name, server, egress, o)
+		o.Elicitation = elicit
+		return mcp.OpenSDKSession(hctx, name, server, opts.Egress, o)
 	}
 	srv = NewMountedServer(name, open)
 	return openAttachAndMount(srv, processCtx, handshakeCtx, open, reg, name, policy)
@@ -129,15 +166,18 @@ func mountStdioWithPolicy(processCtx, handshakeCtx context.Context, reg *tools.R
 		name,
 		cfg,
 		policy,
+		nil,
 	)
 	return closer, names, err
 }
 
-func mountStdioWithPolicyHost(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, cfg mcp.ServerConfig, policy bridgePolicy) (closer func() error, names []string, host *MountedServer, err error) {
+func mountStdioWithPolicyHost(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, cfg mcp.ServerConfig, policy bridgePolicy, consent ElicitationConsent) (closer func() error, names []string, host *MountedServer, err error) {
 	var srv *MountedServer
+	elicit := elicitationHandlerFor(name, consent)
 	open := func(pctx, hctx context.Context, o mcp.SessionOptions) (*sdkmcp.ClientSession, error) {
 		o.Sending = sendingMiddleware(policy)
 		o.ToolListChanged = srv.onToolListChanged
+		o.Elicitation = elicit
 		return mcp.OpenSDKSessionForConfig(pctx, hctx, name, cfg, o)
 	}
 	srv = NewMountedServer(name, open)

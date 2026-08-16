@@ -300,6 +300,7 @@ func buildRegistryWithMCP(
 	cfg *config.Config,
 	ts *cronTaskStore,
 	sandboxRouter *usersandbox.SandboxRouter,
+	consent mcptools.ElicitationConsent,
 ) (*tools.Registry, runtimeToolHandles, []func() error, error) {
 	if cfg.MCPServersErr != nil {
 		return nil, runtimeToolHandles{}, nil, cfg.MCPServersErr
@@ -481,7 +482,7 @@ func printTools(args []string) {
 	// Pool-free manifest path: printing Specs never calls Execute, so a nil router costs nothing
 	// and saves this verb a Docker dial. Were a tool ever executed from here it would DENY, which
 	// is the right answer for a path with no identity and no box.
-	reg, _, closers, err := buildRegistryWithMCP(context.Background(), config.LoadDB(), nil, nil)
+	reg, _, closers, err := buildRegistryWithMCP(context.Background(), config.LoadDB(), nil, nil, nil)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "mcp:", err)
 		os.Exit(1)

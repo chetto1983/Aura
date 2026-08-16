@@ -312,6 +312,12 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// chat + override (both available here) — the per-channel Deliverer capability is
 	// resolved at delivery, not at build, so the late-bound pointer is sufficient.
 	reg, setupSrv := bootChannelsAndSetup(ctx, chat, channelOverride)
+	// Bind the channels Registry onto the elicitation consent surface now that it
+	// exists (plan 45.1-07). The MCP mounts in buildRegistryWithMCP already hold
+	// this holder; elicitation arrives during a live turn, long after this point.
+	if chat.elicitation != nil {
+		chat.elicitation.Set(reg)
+	}
 	dispatch := buildDispatch(chat, store, reg, ownerExports)
 	scheduler := cron.NewScheduler(chat.pool, store, cron.SchedulerConfig{
 		Dispatch:  dispatch,

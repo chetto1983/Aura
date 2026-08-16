@@ -77,11 +77,14 @@ func openProductionToolPipeRuntime(ctx context.Context, cfg *config.Config) (too
 		TurnCapBytes: cfg.ConversationTurnCapBytes,
 	})
 	taskStore := newCronTaskStore(pool, convStore)
+	// nil consent: a one-shot pipe has no operator to surface an elicitation to,
+	// and a nil consent keeps the mount from advertising the capability at all.
 	registry, _, mcpClosers, err := buildRegistryWithMCP(
 		ctx,
 		cfg,
 		taskStore,
 		buildSandboxRouter(cfg),
+		nil,
 	)
 	if err != nil {
 		pool.Close()

@@ -66,6 +66,10 @@ type chatEnv struct {
 	// would be read as "no containment needed". buildDispatch registers it as the
 	// KindSandboxReap reaper; plan 37-07 wires it onto the box-capable tools.
 	sandboxRouter *usersandbox.SandboxRouter
+	// elicitation is the late-bound SEP-2322 consent surface (plan 45.1-06/07).
+	// serve.go binds the channels Registry onto it once that Registry exists;
+	// `aura chat` leaves it unbound, and an unbound holder declines with a WARN.
+	elicitation *surfacingElicitationConsent
 }
 
 // close releases the pool (the OTel TracerProvider is owned by the REPL path).
@@ -377,11 +381,16 @@ func assembleChatEnv(
 	// Retain the task-store adapter: it backs BOTH the `task` tool (registry) AND the
 	// scheduled-task resume hook (on-channel HITL approval) below.
 	taskStore := newCronTaskStore(pool, convStore)
+	// The elicitation consent surface is created BEFORE the mount and bound AFTER
+	// the channels Registry exists (serve.go). Mounts happen here; channels do not
+	// exist yet, so binding at construction would always bind nil.
+	elicitation := newElicitationConsent()
 	reg, toolHandles, mcpClosers, err := buildRegistryWithMCP(
 		ctx,
 		cfg,
 		taskStore,
 		sandboxRouter,
+		elicitation,
 	)
 	if err != nil {
 		// pool + closers released by the deferred close-on-error guard.
@@ -458,7 +467,7 @@ func assembleChatEnv(
 	}
 	run := runner.New(deps)
 	success = true // disarm the close-on-error guard; chatEnv.close now owns the lifecycle.
-	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, gateway: gw, operations: operations, toolInvocations: toolInvocationStore, deleteReconciler: runner.NewDeleteReconciler(run, time.Minute), toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter}, nil
+	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, gateway: gw, operations: operations, toolInvocations: toolInvocationStore, deleteReconciler: runner.NewDeleteReconciler(run, time.Minute), toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter, elicitation: elicitation}, nil
 }
 
 func openSettingsOverlayPool(ctx context.Context) (*pgxpool.Pool, bool, error) {
