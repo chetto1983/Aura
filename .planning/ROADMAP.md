@@ -251,12 +251,12 @@ beside it.
 5. A live turn shows `user_identifier` reaching `cmd/arcadedb-mcp` through `_meta` and no longer as
    a tool argument.
 
-**Plans**: 8 plans in 6 waves
+**Plans**: 1/8 plans executed in 6 waves
 
 Plans:
 **Wave 1**
 
-- [ ] 45.1-01-PLAN.md — TRACER: SDK session construction (both transports) + SSRF/egress/redirect policy re-attached + probe.go re-pointed *(wave 1)*
+- [x] 45.1-01-PLAN.md — TRACER: SDK session construction (both transports) + SSRF/egress/redirect policy re-attached + probe.go re-pointed *(wave 1)*
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
