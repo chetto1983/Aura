@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/agenttest"
@@ -240,34 +239,6 @@ func TestLlmAgent_UsageCostPresent(t *testing.T) {
 }
 
 // TestNewTracerProvider_Exported drives the exported NewTracerProvider for each
-// mode (none/stdout/otlp), asserting construction succeeds and Shutdown is clean.
-func TestNewTracerProvider_Exported(t *testing.T) {
-	for _, mode := range []string{"none", "stdout", "otlp"} {
-		t.Run(mode, func(t *testing.T) {
-			endpoint := ""
-			if mode == "otlp" {
-				endpoint = "127.0.0.1:14317" // nothing listening — must silent-drop
-			}
-			tp, err := agent.NewTracerProvider(context.Background(), mode, endpoint)
-			if err != nil {
-				t.Fatalf("NewTracerProvider(%s): %v", mode, err)
-			}
-			if tp == nil {
-				t.Fatalf("NewTracerProvider(%s) returned nil", mode)
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			if err := tp.Shutdown(ctx); err != nil {
-				t.Logf("Shutdown(%s) returned %v (acceptable for otlp without a collector)", mode, err)
-			}
-		})
-	}
-}
-
-// TestLlmAgent_DispatchStopsOnToolResult drives dispatch's yield-false branch on a
-// tool-result Event (D-14): the consumer stops exactly as the first tool result is
-// yielded, so dispatch returns done=true and Run returns cleanly without a further
-// LLM call. This is a SAFE stop point (unlike a mid-stream consume stop) because
 // dispatch's terminal `return true` is the last yield of the turn.
 func TestLlmAgent_DispatchStopsOnToolResult(t *testing.T) {
 	recordingProvider(t)

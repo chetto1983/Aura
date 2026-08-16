@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 	"testing"
-	"time"
 
 	"go.opentelemetry.io/otel"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -119,39 +118,3 @@ func TestMintSpanID(t *testing.T) {
 
 // TestNewTracerProvider_None asserts none-mode returns a working no-op provider
 // with a nil error and records no spans (D-05/D-06 zero-overhead path).
-func TestNewTracerProvider_None(t *testing.T) {
-	tp, err := newTracerProvider(context.Background(), exporterNone, "")
-	if err != nil {
-		t.Fatalf("none mode errored: %v", err)
-	}
-	if tp == nil {
-		t.Fatal("none mode returned a nil provider")
-	}
-	defer func() { _ = tp.Shutdown(context.Background()) }()
-
-	// A span started under the no-op provider must not panic and must End cleanly.
-	_, span := startLLMSpan(context.Background())
-	span.End()
-}
-
-// TestNewTracerProvider_OTLPNoCollector asserts otlp mode does NOT fail-fast when
-// no collector is reachable (D-05 silent-drop): construction succeeds, the
-// exporter retries in the background, and Shutdown returns without a leak.
-func TestNewTracerProvider_OTLPNoCollector(t *testing.T) {
-	// An endpoint with nothing listening — the gRPC exporter must still construct.
-	tp, err := newTracerProvider(context.Background(), exporterOTLP, "127.0.0.1:14317")
-	if err != nil {
-		t.Fatalf("otlp mode fail-fast without a collector: %v (must silent-drop)", err)
-	}
-	if tp == nil {
-		t.Fatal("otlp mode returned a nil provider")
-	}
-	// Shutdown with a real (short) deadline so the batch processor AND the gRPC
-	// exporter goroutines actually drain and return; a pre-cancelled context would
-	// abort Shutdown early and leak them (goleak then confirms a clean teardown).
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := tp.Shutdown(ctx); err != nil {
-		t.Logf("otlp Shutdown returned %v (acceptable: no collector)", err)
-	}
-}

@@ -85,6 +85,16 @@ func (m *cliMemoryRegistry) RecoverExpired(
 	return m.activeClaimToken, true, nil
 }
 
+// cliOperationFromContext reads back what prepareCLIIdempotency stamped on the context.
+//
+// It was production code until 2026-08-16 and no production caller ever existed: three tests
+// were its only readers, so it lives with them now rather than sitting in cmd/aura pretending
+// the CLI consults it.
+func cliOperationFromContext(ctx context.Context) (string, [32]byte, bool) {
+	operation, ok := idempotency.OperationFromContext(ctx)
+	return operation.Key.Key, operation.Fingerprint, ok
+}
+
 func TestPrepareCLIIdempotencyExplicitKeyIsStable(t *testing.T) {
 	t.Parallel()
 

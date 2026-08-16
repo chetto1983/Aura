@@ -4,7 +4,6 @@ import (
 	"context"
 	"expvar"
 	"log/slog"
-	"time"
 
 	"github.com/chetto1983/aura/internal/agent/panicobs"
 	"github.com/chetto1983/aura/internal/llm"
@@ -33,7 +32,6 @@ type legacyExpvarMetrics struct {
 	completionTokensTotal      *expvar.Int
 	cachedTokensTotal          *expvar.Int
 	costUSDTotal               *expvar.Float
-	spanExportFailuresTotal    *expvar.Int
 	spanIDEntropyFailuresTotal *expvar.Int
 	prefixDriftTotal           *expvar.Int
 }
@@ -47,7 +45,6 @@ type agentMetrics struct {
 	llmStreamRetryTotal        metric.Int64Counter
 	toolDuration               metric.Float64Histogram
 	turnTotal                  metric.Int64Counter
-	llmCallDuration            metric.Float64Histogram
 	llmErrorsTotal             metric.Int64Counter
 	toolErrorsTotal            metric.Int64Counter
 	hookTotal                  metric.Int64Counter
@@ -55,7 +52,6 @@ type agentMetrics struct {
 	completionTokensTotal      metric.Int64Counter
 	cachedTokensTotal          metric.Int64Counter
 	costUSDTotal               metric.Float64Counter
-	spanExportFailuresTotal    metric.Int64Counter
 	spanIDEntropyFailuresTotal metric.Int64Counter
 	prefixDriftTotal           metric.Int64Counter
 }
@@ -100,7 +96,6 @@ func newAgentMetrics(meter metric.Meter, publishExpvar bool) *agentMetrics {
 			completionTokensTotal:      newExpvarInt("aura_agent_completion_tokens_total", publishExpvar),
 			cachedTokensTotal:          newExpvarInt("aura_agent_cached_tokens_total", publishExpvar),
 			costUSDTotal:               newExpvarFloat("aura_agent_cost_usd_total", publishExpvar),
-			spanExportFailuresTotal:    newExpvarInt("aura_agent_span_export_failures_total", publishExpvar),
 			spanIDEntropyFailuresTotal: newExpvarInt("aura_agent_span_id_entropy_failures_total", publishExpvar),
 			prefixDriftTotal:           newExpvarInt("aura_agent_prefix_drift_total", publishExpvar),
 		},
@@ -110,7 +105,6 @@ func newAgentMetrics(meter metric.Meter, publishExpvar bool) *agentMetrics {
 		llmStreamRetryTotal:        mustInt64Counter(meter, obs.AgentLLMStreamRetryID),
 		toolDuration:               mustFloat64Histogram(meter, obs.AgentToolDurationID),
 		turnTotal:                  mustInt64Counter(meter, obs.AgentTurnsID),
-		llmCallDuration:            mustFloat64Histogram(meter, obs.AgentLLMDurationID),
 		llmErrorsTotal:             mustInt64Counter(meter, obs.AgentLLMErrorsID),
 		toolErrorsTotal:            mustInt64Counter(meter, obs.AgentToolErrorsID),
 		hookTotal:                  mustInt64Counter(meter, obs.AgentHooksID),
@@ -118,7 +112,6 @@ func newAgentMetrics(meter metric.Meter, publishExpvar bool) *agentMetrics {
 		completionTokensTotal:      mustInt64Counter(meter, obs.AgentCompletionTokensID),
 		cachedTokensTotal:          mustInt64Counter(meter, obs.AgentCacheReadTokensID),
 		costUSDTotal:               mustFloat64Counter(meter, obs.AgentCostUSDID),
-		spanExportFailuresTotal:    mustInt64Counter(meter, obs.AgentSpanExportFailuresID),
 		spanIDEntropyFailuresTotal: mustInt64Counter(meter, obs.AgentSpanIDEntropyFailuresID),
 		prefixDriftTotal:           mustInt64Counter(meter, obs.AgentPrefixDriftID),
 	}
@@ -157,11 +150,6 @@ func recordHookOutcome(point, outcome string) {
 }
 func recordUsage(usage llm.Usage) { metrics.recordUsage(usage) }
 
-func recordSpanExportFailure() {
-	metrics.legacy.spanExportFailuresTotal.Add(1)
-	metrics.spanExportFailuresTotal.Add(context.Background(), 1)
-}
-
 func recordSpanIDEntropyFailure() {
 	metrics.legacy.spanIDEntropyFailuresTotal.Add(1)
 	metrics.spanIDEntropyFailuresTotal.Add(context.Background(), 1)
@@ -176,16 +164,6 @@ func (m *agentMetrics) recordTurnOutcome(outcome string) {
 	label := obs.NormalizeAttribute(obs.AttributeOutcome, outcome)
 	m.legacy.turnTotal.Add(label, 1)
 	m.turnTotal.Add(context.Background(), 1, metric.WithAttributes(boundedAttr(obs.AttributeOutcome, label)))
-}
-
-func (m *agentMetrics) recordLLMDuration(d time.Duration) {
-	if d < 0 {
-		return
-	}
-	m.llmCallDuration.Record(context.Background(), d.Seconds(), metric.WithAttributes(
-		boundedAttr(obs.AttributeOutcome, obs.ValueOther),
-		boundedAttr(obs.AttributeErrorClass, obs.ValueOther),
-	))
 }
 
 func (m *agentMetrics) recordLLMError(kind string) {

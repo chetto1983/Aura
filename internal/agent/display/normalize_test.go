@@ -24,7 +24,7 @@ func TestNormalizeDispatch(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			p, ok := Normalize(tc.tool, tc.result)
+			p, ok := NormalizeWithRegistry("", tc.tool, tc.result, NewRegistry())
 			if !ok {
 				t.Fatalf("Normalize(%q) recognized=false, want true", tc.tool)
 			}
@@ -38,7 +38,7 @@ func TestNormalizeDispatch(t *testing.T) {
 // TestNormalizeUnknownToolFallback (D-FALLBACK): an unrecognized tool returns
 // (Payload{}, false) so the caller renders the raw escaped card.
 func TestNormalizeUnknownToolFallback(t *testing.T) {
-	p, ok := Normalize("unknown_tool", "whatever")
+	p, ok := NormalizeWithRegistry("", "unknown_tool", "whatever", NewRegistry())
 	if ok {
 		t.Fatalf("unknown tool recognized=true, want false (D-FALLBACK)")
 	}
@@ -51,7 +51,7 @@ func TestNormalizeUnknownToolFallback(t *testing.T) {
 // wrong concrete type falls through to D-FALLBACK rather than panicking.
 func TestNormalizeWrongResultTypeFallback(t *testing.T) {
 	for _, tool := range []string{"web_search", "web_fetch", "swarm_spawn", "shell_exec"} {
-		if _, ok := Normalize(tool, 42); ok {
+		if _, ok := NormalizeWithRegistry("", tool, 42, NewRegistry()); ok {
 			t.Fatalf("Normalize(%q, wrong-type) recognized=true, want false", tool)
 		}
 	}

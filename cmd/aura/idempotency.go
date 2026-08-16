@@ -174,11 +174,6 @@ func prepareCLIIdempotency(ctx context.Context, args []string, output io.Writer)
 	return ctx, cleaned, nil
 }
 
-func cliOperationFromContext(ctx context.Context) (string, [32]byte, bool) {
-	operation, ok := idempotency.OperationFromContext(ctx)
-	return operation.Key.Key, operation.Fingerprint, ok
-}
-
 func executeCLIIdempotentParent(ctx context.Context, args []string, stdout, stderr io.Writer) (bool, int) {
 	meta, mutating := cliMutationForArgs(args)
 	if !mutating {

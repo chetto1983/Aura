@@ -69,33 +69,3 @@ func TestSeverityForUnknownCodeFailsSafe(t *testing.T) {
 		t.Fatalf("severityFor(unmapped) = %q, want error", got)
 	}
 }
-
-// TestNormalizeSwarmStatus (D-07): a failed/needs-input child Status maps to a
-// system_event built from the classified enum ONLY — never the free-form Error text.
-func TestNormalizeSwarmStatus(t *testing.T) {
-	cases := []struct {
-		status   string
-		wantOK   bool
-		severity string
-	}{
-		{StatusFailed, true, "error"},
-		{StatusNeedsUserInput, true, "warning"},
-		{StatusOK, false, ""},
-	}
-	for _, tc := range cases {
-		p, ok := normalizeSwarmStatus("call-1", "w2", tc.status)
-		if ok != tc.wantOK {
-			t.Fatalf("status %q recognized=%v, want %v", tc.status, ok, tc.wantOK)
-		}
-		if !tc.wantOK {
-			continue
-		}
-		if p.System.Class != tc.status || p.System.Severity != tc.severity {
-			t.Fatalf("status %q system = %+v, want class=%q severity=%q", tc.status, p.System, tc.status, tc.severity)
-		}
-		// The free-form Error text must never be in the payload; only the classified enum.
-		if strings.Contains(p.System.Message, "timeout") || strings.Contains(p.System.Message, "panic") {
-			t.Fatalf("status %q message leaked free-form error text: %q", tc.status, p.System.Message)
-		}
-	}
-}

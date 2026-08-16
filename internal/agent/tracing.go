@@ -1,9 +1,10 @@
-// Package agent's OTel wiring (D-03..D-06): the real TracerProvider bootstrap,
-// full-tree crypto/rand SpanID minting (resolving the Phase-2 deferral at
-// agent.go:51-52), and the per-call llm.request span helper. This file REPLACES
-// the otel_deps.go blank-import anchor — the v1.44.0 trace train is now used for
-// real, so the anchor is deleted in the same commit (truth: go.mod keeps the four
-// modules pinned because tracing.go imports them).
+// Package agent's OTel span wiring (D-03..D-06): full-tree crypto/rand SpanID minting
+// (resolving the Phase-2 deferral at agent.go:51-52) and the per-call span helpers.
+//
+// It builds no TracerProvider. It used to, and nothing installed it: the binary edge calls
+// obs.Init (cmd/aura/chat_repl.go), which installs the global provider these spans resolve
+// against, so the exporter built here — with its counting exporter and its export-failure
+// metric — was minting nothing and counting nothing.
 package agent
 
 import (
@@ -14,77 +15,16 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
-	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	oteltrace "go.opentelemetry.io/otel/trace"
 
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/obs"
 )
 
-// OTel exporter modes (D-06). Default is otlp; none is a true zero-overhead no-op.
-const (
-	exporterNone   = "none"
-	exporterStdout = "stdout"
-	exporterOTLP   = "otlp"
-)
-
 // tracerName is the instrumentation scope for every span this package starts.
 const tracerName = "github.com/chetto1983/aura/internal/agent"
 
 var spanIDReader io.Reader = rand.Reader
-
-// newTracerProvider builds the real exporter per AURA_OTEL_EXPORTER ∈
-// {otlp,stdout,none} (D-05/D-06). "none" returns a no-exporter provider (spans
-// are minted but dropped — zero overhead, never an error). "otlp" targets the
-// endpoint over insecure gRPC and SILENT-DROPS without a collector (the exporter
-// retries in the background and logs only at debug; it never fails-fast and never
-// auto-falls-back to stdout, which would pollute the REPL). The caller defers
-// tp.Shutdown(ctx) to flush the batch on exit. It also installs tp as the global
-// provider so otel.Tracer(...) resolves to it.
-func newTracerProvider(ctx context.Context, mode, endpoint string) (*sdktrace.TracerProvider, error) {
-	if mode == exporterNone {
-		tp := sdktrace.NewTracerProvider() // no exporter wired = no-op spans
-		otel.SetTracerProvider(tp)
-		slog.Info("agent tracing exporter configured", "mode", mode, "endpoint", endpoint)
-		return tp, nil
-	}
-
-	var (
-		exp sdktrace.SpanExporter
-		err error
-	)
-	switch mode {
-	case exporterStdout:
-		exp, err = stdouttrace.New()
-	default: // otlp (the D-06 default)
-		// Without a collector the OTel SDK reports export failures (e.g. "export
-		// timeout: connection refused" on the default localhost:4317) through the
-		// GLOBAL error handler. The process-global handler is installed by
-		// obs.Init (rate-limited slog, O-03) so those errors surface but a broken
-		// exporter cannot flood the logs — this branch no longer installs a no-op
-		// that would silently swallow every future export error process-wide.
-		// Spans still batch in the background and ship once a collector appears.
-		exp, err = otlptracegrpc.New(ctx,
-			otlptracegrpc.WithEndpoint(endpoint),
-			otlptracegrpc.WithInsecure())
-	}
-	if err != nil {
-		recordSpanExportFailure()
-		slog.Error("agent tracing exporter setup failed", "mode", mode, "endpoint", endpoint, "err", err)
-		return nil, err
-	}
-
-	tp := sdktrace.NewTracerProvider(sdktrace.WithBatcher(countingSpanExporter{
-		SpanExporter: exp,
-		mode:         mode,
-		endpoint:     endpoint,
-	}))
-	otel.SetTracerProvider(tp)
-	slog.Info("agent tracing exporter configured", "mode", mode, "endpoint", endpoint)
-	return tp, nil
-}
 
 // TracerProvider is the package-edge handle the REPL (cmd/aura chat) and Phase-9
 // swarm hold to flush the span batch on exit (Req#13). It hides the otel SDK type
@@ -93,30 +33,6 @@ type TracerProvider interface {
 	// Shutdown flushes any batched spans and releases the exporter. The caller
 	// defers it on REPL exit; a bounded ctx keeps a missing collector from hanging.
 	Shutdown(ctx context.Context) error
-}
-
-// NewTracerProvider is the exported wiring the binary edge uses to install the
-// real exporter from AURA_OTEL_EXPORTER (D-05/D-06) and obtain a Shutdown handle.
-// It delegates to newTracerProvider (the package-internal builder the agent loop's
-// spans resolve against via the global provider) and returns the SDK provider as
-// the narrow TracerProvider interface.
-func NewTracerProvider(ctx context.Context, mode, endpoint string) (TracerProvider, error) {
-	return newTracerProvider(ctx, mode, endpoint)
-}
-
-type countingSpanExporter struct {
-	sdktrace.SpanExporter
-	mode     string
-	endpoint string
-}
-
-func (e countingSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
-	err := e.SpanExporter.ExportSpans(ctx, spans)
-	if err != nil {
-		recordSpanExportFailure()
-		slog.Warn("agent span export failed", "mode", e.mode, "endpoint", e.endpoint, "err", err)
-	}
-	return err
 }
 
 // mintSpanID returns a fresh 8-byte OTel/W3C SpanID from crypto/rand (D-04). A

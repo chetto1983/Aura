@@ -2,16 +2,10 @@ package display
 
 import "github.com/chetto1983/aura/internal/web"
 
-// Normalize is the dispatch (DISP-01 / D-FALLBACK): it maps a structured tool
-// result to a typed Payload, switching on the tool name. An unrecognized tool — or
-// a recognized tool handed a result of the wrong concrete type — returns
-// (Payload{}, false) so the caller renders the raw, escaped tool card. Only a
-// recognized result yields a typed Payload (HARDEN-08).
-//
-// Normalize builds a fresh per-call Registry, so the returned Payload carries the
-// sources for THIS result alone. A caller threading one source registry across
-// several web_search calls in a turn (for the numbered model preview, D-05) should
-// call the per-tool normalizers with a shared *Registry instead.
+// NormalizeWithRegistry is the dispatch (DISP-01 / D-FALLBACK): it maps a structured
+// tool result to a typed Payload, switching on the tool name. An unrecognized tool --
+// or a recognized tool handed a result of the wrong concrete type -- returns
+// (Payload{}, false) so the caller renders the raw, escaped tool card (HARDEN-08).
 //
 // result must be the concrete decoded value the live path holds (Pitfall 4):
 //   - web_search  -> []web.Result
@@ -19,11 +13,8 @@ import "github.com/chetto1983/aura/internal/web"
 //   - swarm_spawn -> []ChildReport
 //   - shell_exec / sandbox_exec -> CodeInput
 //   - any tool's error -> *web.WebError
-func Normalize(toolName string, result any) (Payload, bool) {
-	return NormalizeWithRegistry("", toolName, result, NewRegistry())
-}
-
-// NormalizeWithRegistry is Normalize with an explicit tool-call id (the sseAdapter
+//
+// It takes an explicit tool-call id (the sseAdapter
 // correlation key) and a caller-owned per-turn source Registry, so several
 // web_search calls in one turn accumulate into one numbered source list (D-05).
 func NormalizeWithRegistry(toolCallID, toolName string, result any, reg *Registry) (Payload, bool) {

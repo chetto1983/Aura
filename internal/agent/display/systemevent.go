@@ -38,33 +38,6 @@ func normalizeWebError(toolCallID string, we *web.WebError) (Payload, bool) {
 	}, true
 }
 
-// normalizeSwarmStatus maps a failed/needs-input swarm child Status to a
-// system_event Payload (D-07). It consumes ONLY the classified Status enum, NEVER
-// the free-form ChildReport.Error text (which could carry a leaky message): a
-// failed child renders "swarm child failed", a needs-input child "swarm child
-// awaiting input". A StatusOK child is not a system event (returns false).
-func normalizeSwarmStatus(toolCallID, childID, status string) (Payload, bool) {
-	var msg, severity string
-	switch status {
-	case StatusFailed:
-		msg, severity = "swarm child failed", "error"
-	case StatusNeedsUserInput:
-		msg, severity = "swarm child awaiting input", "warning"
-	default:
-		return Payload{}, false
-	}
-	return Payload{
-		Type:       KindSystemEvent,
-		ToolCallID: toolCallID,
-		System: &System{
-			Class:    status,
-			Reason:   childID,
-			Message:  msg,
-			Severity: severity,
-		},
-	}, true
-}
-
 // severityFor returns the render-hint severity for a web error code, defaulting to
 // "error" for an unmapped code (fail safe — an unknown class is treated as hard).
 func severityFor(code string) string {

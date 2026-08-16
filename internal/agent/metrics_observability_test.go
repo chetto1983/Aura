@@ -12,10 +12,13 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/obs"
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	otelprometheus "go.opentelemetry.io/otel/exporters/prometheus"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/noop"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -114,7 +117,7 @@ func TestMetrics_DescriptorCompatibilityEmitsEachPrometheusFamilyOnce(t *testing
 	m := newAgentMetrics(provider.Meter(agentMeterName), false)
 	m.recordTurnOutcome("content_stop")
 	m.recordToolError("web_fetch")
-	m.recordLLMDuration(10 * time.Millisecond)
+	recordOneLLMCall(t, provider.Meter(agentMeterName))
 
 	families, err := reg.Gather()
 	if err != nil {
@@ -175,9 +178,28 @@ func TestTurnOutcomeCounter_RunRecordsExactlyOnce(t *testing.T) {
 	}
 }
 
+// recordOneLLMCall drives the boundary the LLM call sites drive, on the caller's own meter.
+//
+// The histogram used to have a second writer, agentMetrics.recordLLMDuration, which no call
+// site ever reached: the duration reaching Prometheus has always been the boundary's. Asserting
+// through the boundary is therefore the only assertion that can fail when the real path breaks.
+func recordOneLLMCall(t *testing.T, meter metric.Meter) {
+	t.Helper()
+	boundary, err := obs.NewBoundary(meter, otel.Tracer("aura.test"), obs.BoundaryConfig{
+		Operation: "llm_call", Count: obs.AgentLLMCallsID, Duration: obs.AgentLLMDurationID,
+	})
+	if err != nil {
+		t.Fatalf("boundary: %v", err)
+	}
+	_, end := boundary.Start(context.Background())
+	end.End(nil)
+}
+
 func TestLLMCallDurationMetric_RecordsHistogram(t *testing.T) {
-	m, reader := newTestAgentMetrics(t)
-	m.recordLLMDuration(25 * time.Millisecond)
+	reader := sdkmetric.NewManualReader()
+	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	t.Cleanup(func() { _ = provider.Shutdown(context.Background()) })
+	recordOneLLMCall(t, provider.Meter(agentMeterName))
 
 	metric := findOTelMetric(t, reader, "aura.agent.llm.call.duration")
 	histogram, ok := metric.Data.(metricdata.Histogram[float64])
