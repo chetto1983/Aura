@@ -1,11 +1,78 @@
 # Aura — handoff unico
 
-**Aggiornato: 2026-08-13.** Sostituisce dodici handoff sparsi (`docs/superpowers/*-handoff.md`,
-`.planning/handoffs/*`, `docs/handoff-2026-08-13.md`), cancellati con questo commit.
+**Aggiornato: 2026-08-16.** Sostituisce dodici handoff sparsi (`docs/superpowers/*-handoff.md`,
+`.planning/handoffs/*`, `docs/handoff-2026-08-13.md`), cancellati il 2026-08-13.
 
 ---
 
-## 0. Lavorato in questa sessione (2026-08-13, sera)
+## 0. Lavorato il 2026-08-16
+
+**0.2 è CHIUSA** (`67b64b144`), e la ricetta che questo documento prescriveva per chiuderla
+**era sbagliata per eccesso**. La correzione vale più della chiusura, perché quella ricetta
+era già scritta e qualcuno l'avrebbe eseguita.
+
+**Misura prima → dopo, stessa domanda al vero agente sullo stack acceso** ("cerca nei miei
+documenti che cosa dicono a proposito dei footnotes, e dimmi da quale file viene la
+risposta"):
+
+```
+document_search title    bc4c9304-…-0882a03ea1a5.pdf  →  colm2025_conference.pdf
+prima riga della card    tmptq9teunw.pdf — PDF, 119 KB →  colm2025_conference.pdf — PDF, 119 KB
+prima frase dell'agente  "il PDF bc4c9304-…"           →  "viene da colm2025_conference.pdf"
+```
+
+**Cosa la vecchia §0.2 sbagliava.** Diceva "non è una riga: il fix tocca quattro punti su
+due linguaggi" — campo nome sulla riga Passage in `app.py`, DDL in `arcade.py`, struct
+`PassageCandidate` + proiezione in Go, fallback in `retrieval_rank.go`. (Il re-ingest
+dell'intero corpus non lo diceva, ma un campo nuovo sulla riga Passage lo impone: senza
+backfill i passaggi già scritti restano senza nome.) Nessuno dei primi tre serviva. Un Passage rispecchia il **chunk**, non
+l'oggetto; il nome sta già in `IndexedDocument`, **nello stesso database**, indicizzato
+UNIQUE sulla stessa `search_document_id` che ogni candidato porta con sé — ed è esattamente
+la riga che `document_open` leggeva da sempre (`DocumentByID`). Denormalizzare il nome su
+ogni chunk avrebbe comprato ciò che una `SELECT … WHERE search_document_id IN :ids` già
+risponde. Il fix è `DocumentNames`, chiesto **solo** per i documenti che la gamba card non
+ha classificato (quelli classificati il nome ce l'hanno già), e la coda della chiave resta
+l'ultima risorsa — dove è ancora giusta, per un oggetto lasciato cadere nel bucket.
+
+**Perché non da Postgres** (era la prima ipotesi ragionevole, ed è misurabilmente falsa):
+`aura.assets` ha **0 righe** per la chiave della Perizia e `aura.documents` ne ha **1 in
+tutto**, mentre il retrieval vede **7 documenti**. I documenti riconciliati dal bucket
+(`test/Costituzione_…pdf`) non hanno **mai** una riga Postgres — è il punto della
+riscrittura del 08-08. Sarebbe stato un fix per un sottoinsieme, con una join cross-store
+dentro il percorso di ricerca.
+
+**Secondo difetto, stessa famiglia, trovato provando il primo.** La card si apriva col nome
+del temporaneo convertito (`tmptq9teunw.pdf`) mentre `file_name` accanto era già giusto.
+`app.py` passa a filecard un nome che fa **due lavori**: instrada (`Request.ext()` preferisce
+`FileName` a `Path`, quindi un `.ods` convertito e cardato come `.ods` ricade in "file, 12
+KB") **e si vede** (quella prima riga è indicizzata e riletta dall'agente). Serviva solo il
+primo. Ora `_card_name()` — funzione pura, 6 test — dà lo stem vero sotto l'estensione
+convertita.
+
+**Cosa questa misura NON dimostra:**
+- **Le righe pre-fix restano con nomi uuid.** `0a0347dc-….md` e i tre `.png` hanno
+  `IndexedDocument.file_name` = uuid perché sono stati ingeriti prima che il canale
+  metadati esistesse (`a5afccfc3`), e i loro oggetti su Garage non portano il metadato:
+  un re-ingest non li ripara. Il nome vero per quei quattro **esiste in
+  `aura.assets.file_name`** — è l'unico caso in cui Postgres è la fonte giusta. Riparazione
+  non fatta, decisione non presa.
+- Un'identità, un corpus di 7 documenti, una query. Non è una misura di recall (§3.3 resta
+  UNKNOWN e questa non la tocca).
+- Il ramo di fallimento di `DocumentNames` è coperto da unit test, non esercitato vivo.
+- Non tocca §6.7 (immagini e audio senza famiglia propria).
+
+**Fixture lasciata nel corpus vivo**: `colm2025_conference.pdf`, chiave
+`chat/b4e391e0-6141-4807-b8e5-88ca58f21162.pdf`, identità operatore. Serve a ri-verificare;
+una `delete_object` la rimuove e CocoIndex cancella la riga da sé (verificato sostituendo la
+chiave precedente).
+
+**Trappola pagata oggi**: l'immagine `aura-ingest:local` era **11 minuti più vecchia** del
+commit che stava verificando. Senza ricostruirla il difetto della card sarebbe stato
+archiviato come dato stantio invece che come bug vivo. Ricostruire prima di misurare, sempre.
+
+---
+
+## 0-bis. Lavorato il 2026-08-13 (sera)
 
 Su `gsd/phase-45-harness-correctness`, **non pushato, non mergiato** (il branch porta anche
 lavoro fase-45 di una sessione parallela, quindi non è mergiabile così com'è).
@@ -38,6 +105,11 @@ ancora letto).
 `ReservePipelineCandidateVersion`, nessuno la rilegge). E `aura.documents.card` idem. **Nessuna
 migration di drop**: le tabelle orfane stanno in piedi vuote, di proposito.
 
+**0.2 — CHIUSA il 2026-08-16 (`67b64b144`) — vedi §0. La diagnosi qui sotto è corretta; la
+ricetta in fondo alla voce NO, ed è superata: i primi tre dei suoi "quattro punti" non
+servivano.** Testo d'origine conservato perché la diagnosi resta il modo giusto di leggere il
+difetto.
+
 **0.2 — Il nome è indicizzato ma NON arriva agli occhi dell'agente. Diagnosi completa, fix non fatto.**
 Guidando l'agente vero (`document_search`, stack acceso) risponde con la **chiave** e non con il nome:
 `05129905-ee6b-45df-b6bd-75b2a7b0bad5.txt (contenuto: "Perizia città di Ghèdi 2026")`, mentre
@@ -49,12 +121,17 @@ passa da `ensureRankedDocumentFromCandidate`, che fa
 invece popola `Title` correttamente (`retrieval_cards.go:57`). `document_search` non formatta
 nulla: serializza `RetrievalDocument` così com'è (`document_search.go:85`).
 
-**Non è una riga**: `arcadedb.PassageCandidate` (`document_retrieval.go:65-86`) non ha alcun campo
+~~**Non è una riga**: `arcadedb.PassageCandidate` (`document_retrieval.go:65-86`) non ha alcun campo
 nome — i record Passage non lo portano. Il fix tocca quattro punti su due linguaggi: il campo sulla
 riga Passage in `services/ingest/app.py` (il nome ce l'ha già, `file_name`), il DDL in
 `services/ingest/arcade.py`, la struct `PassageCandidate` + la proiezione della query in
-`internal/arcadedb/document_retrieval.go`, e infine il fallback in `retrieval_rank.go`.
-Prova di chiusura: la stessa domanda all'agente deve dire il nome, non l'uuid.
+`internal/arcadedb/document_retrieval.go`, e infine il fallback in `retrieval_rank.go`.~~
+
+**Ricetta SBAGLIATA, non eseguirla.** Vera la premessa (`PassageCandidate` non ha campo nome),
+sbagliata la conclusione: da lì non segue che il nome vada messo *sul passaggio*. Sta già in
+`IndexedDocument`, stesso database, chiave `search_document_id` che il candidato porta già —
+un `SELECT … IN :ids`, zero DDL, zero re-ingest. Vedi §0.
+Prova di chiusura (eseguita): la stessa domanda all'agente deve dire il nome, non l'uuid.
 
 **0.3 — 6.6 resta valida.** Avevo scritto che la premessa era falsa perché `document_search`
 risponde: non regge. L'agente ha chiamato `document_search` **tre volte** per compilare la lista —
@@ -108,13 +185,21 @@ Dove una voce non è verificabile dal repo (stato di un database vivo, comportam
 
 ## Stato
 
-Produzione su e sana. `master` è la sola branch pubblicata; `origin/fix/backup-postgres-arcadedb`
-è un residuo da cancellare.
+Produzione su e sana. Misurato il 2026-08-16, e **tre affermazioni di questa sezione erano
+scadute in tre giorni** — conferma che qui il `git branch` vince sul testo:
 
-La fase 45 è gestita da una sessione parallela in sequenza. Il suo lavoro vive su
-`gsd/phase-45-harness-correctness` (**6 commit, mai pushato**) più tre ref `worktree-agent-*`
-senza worktree attaccato (**5 commit**, di cui 2 contengono l'intero 45-04). Registrato come
-stato, non come azione: non è lavoro di chi legge questo file.
+- `master` non è più la sola branch pubblicata: su origin ci sono anche
+  `gsd/phase-45-harness-correctness` (pushata il 2026-08-15, quindi il "**mai pushato**" che
+  stava qui è falso), `fix/backup-postgres-arcadedb` e `fix/unify-credential-redaction`.
+- La fase 45 è **chiusa su master** (`2585ea4be`, tre waiver registrati). Non è più lavoro in
+  corso di una sessione parallela.
+- `master` ha **5 commit non pushati**. Restano quattro ref `worktree-agent-*` del 2026-08-13
+  senza worktree attaccato.
+
+**Una sessione parallela lavora sullo stesso checkout.** Conseguenze pagate oggi: commit con
+pathspec esplicito (l'index conteneva `.planning/phases/45.1-*` non miei) e un
+`.git/index.lock` **stantio** di 447 KB rimasto da un processo git morto — rimosso solo dopo
+aver verificato che nessun git fosse vivo su Windows né in WSL.
 
 ---
 
@@ -402,6 +487,8 @@ catalogo. *Confidenza: alta.*
 | TOOL-07 (split skill use / lifecycle) | `internal/agent/tools/skill_manage.go` |
 | Riga eval CoT live, GraphRAG recall@5, vector p95 | Genuinamente ritirate: il codice misurato non esiste più |
 | Falsi positivi dark-code del 24-07 | `internal/agent/workflow/*`, `NewBudgetFromEnv`, `runServeComponents`, `mcptools.Bridge/Mount`, `recordSpanExportFailure` sono tutti cablati |
+| **0.2** — l'uuid al posto del nome nei risultati di `document_search` | `67b64b144` — `DocumentNames` per id sulla sola gamba passaggi; provato prima/dopo sull'agente vero |
+| La card che si descriveva col nome del file temporaneo | `67b64b144` — `_card_name()`: stem vero + estensione convertita, 6 unit test |
 
 ---
 
