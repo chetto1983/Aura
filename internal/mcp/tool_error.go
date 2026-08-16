@@ -54,7 +54,11 @@ func (e *ToolCallError) DeterministicNoEffect() bool {
 	return e != nil && e.Effect == ToolEffectNone
 }
 
-func decodeToolCallError(serverName, toolName, text string) *ToolCallError {
+// DecodeToolCallError translates a tools/call isError=true text body into the
+// stable ToolCallError vocabulary. Exported for bridge_supervisor.go's
+// CallToolText — the SDK-era result-decode chain's only call site
+// (RESEARCH Pitfall 1); logic is UNCHANGED from the pre-SDK decodeToolCallError.
+func DecodeToolCallError(serverName, toolName, text string) *ToolCallError {
 	toolErr := &ToolCallError{
 		Server: serverName, Tool: toolName,
 		Outcome: ToolOutcomeError, Code: "mcp_tool_error",

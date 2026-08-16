@@ -10,7 +10,7 @@ func TestDecodeToolCallErrorPreservesTypedOutcome(t *testing.T) {
 	t.Parallel()
 
 	text := `{"outcome":"rejected","code":"invalid_argument","message":"subject is required","effect":"none"}`
-	err := decodeToolCallError("memory", "memory_upsert_fact", text)
+	err := DecodeToolCallError("memory", "memory_upsert_fact", text)
 
 	if err.Outcome != ToolOutcomeRejected || err.Code != "invalid_argument" ||
 		err.Message != "subject is required" || !err.DeterministicNoEffect() {
@@ -25,7 +25,7 @@ func TestDecodeToolCallErrorPreservesTypedOutcome(t *testing.T) {
 func TestDecodeToolCallErrorFailsClosedForLegacyText(t *testing.T) {
 	t.Parallel()
 
-	err := decodeToolCallError(
+	err := DecodeToolCallError(
 		"legacy",
 		"write",
 		strings.Repeat("x", maxToolCallErrorMessageBytes+100),
@@ -53,7 +53,7 @@ func TestDecodeToolCallErrorNormalizesWhatsAppMissingChat(t *testing.T) {
 				"  Input should be a valid dictionary [type=dict_type, input_value=None, input_type=NoneType]\n" +
 				"    For further information visit https://errors.pydantic.dev/2.11/v/dict_type"
 
-			err := decodeToolCallError("whatsapp", tc.tool, raw)
+			err := DecodeToolCallError("whatsapp", tc.tool, raw)
 			if err.Outcome != ToolOutcomeRejected || err.Code != "not_found" ||
 				err.Message != tc.want || err.Effect != ToolEffectNone {
 				t.Fatalf("decoded error = %+v", err)
@@ -66,7 +66,7 @@ func TestDecodeToolCallErrorDoesNotNormalizeUnrelatedDictModelError(t *testing.T
 	t.Parallel()
 
 	const raw = "1 validation error for DictModel: input_value=None"
-	err := decodeToolCallError("calendar", "get_chat", raw)
+	err := DecodeToolCallError("calendar", "get_chat", raw)
 	if err.Message != raw || err.Code != "mcp_tool_error" {
 		t.Fatalf("unrelated error was normalized: %+v", err)
 	}
