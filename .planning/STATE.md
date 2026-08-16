@@ -5,15 +5,15 @@ milestone_name: HERMES-CLAUDE_PARITY
 current_phase: 45.1
 current_phase_name: native-mcp-client
 status: executing
-stopped_at: Phase 45.1 context gathered
-last_updated: "2026-08-16T17:38:04.760Z"
+stopped_at: Phase 45.1 wave 3 complete (plans 03, 04)
+last_updated: "2026-08-16T18:36:52.000Z"
 last_activity: 2026-08-16
-last_activity_desc: Phase 46 discussed; 45.1 (native MCP client) inserted as its prerequisite
+last_activity_desc: 45.1 wave 3 landed — bespoke MCP client deleted (03), four-hint annotations adopted escalate-only (04)
 progress:
   total_phases: 3
   completed_phases: 1
   total_plans: 17
-  completed_plans: 12
+  completed_plans: 13
 ---
 
 # Project State
@@ -28,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 ## Current Position
 
 Phase: 45.1 (native-mcp-client) — EXECUTING
-Plan: 2 of 8
+Plan: 4 of 8
 Status: Ready to execute
 Phase 46 discussion are recorded in `46-CONTEXT.md` D-10..D-16 and in ROADMAP §45.1.
-Last activity: 2026-08-16 — Phase 45.1 execution resumed (wave continue)
+Last activity: 2026-08-16 — wave 3 complete; next is wave 4 (plan 05, then checkpoint plan 06)
 requirements as falsified or already-shipped, and inserted Phase 45.1 ahead of it by operator
 decision ("use mcp client native no bespoke").
 
@@ -40,7 +40,7 @@ Phase 46 is context-complete but **blocked on five amendments** (46-CONTEXT.md D
 Last reconciliation: 2026-08-13 — this file's counts re-measured against ROADMAP.md (see
 Session Continuity). No work was executed on that date.
 
-Progress: [███████░░░] 71%
+Progress: [████████░░] 76%
 
 ## Performance Metrics
 
@@ -113,6 +113,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 45]: 45-06: proseObjectRuneBound=80, measured live against the operator identity graph (longest legit Entity.name 36 runes, shortest measured prose violation 96 runes) rather than guessed
 - [Phase 45.1]: 45.1-03: dark-code guard (darkcode_test.go) scans non-test .go files with comments stripped via go/scanner rather than a bare recursive grep -- this phase's own SDK-era wire-emulation test fixtures and doc comments legitimately contain deleted-symbol tokens (Mcp-Session-Id, notifications/initialized, decodeToolResult) that a literal substring scan would false-positive on
 - [Phase 45.1]: 45.1-03: full aggregate coverage gate (scripts/coverage_docker.sh) not run -- a concurrent unrelated session (plan 45.1-04) held compose.yaml and bridge_risk.go dirty in the same checkout for the whole plan; per-package measurement (internal/mcp 90.5%, internal/agent/mcptools 92.1%) used as the honest substitute, aggregate gate deferred to when the tree is quiescent
+- [Phase 45.1]: 45.1-04: trusted-recipe branch left byte-identical when adopting IdempotentHint/OpenWorldHint -- operator curation outranks a server hint, and wiring the new hints there would have re-tiered create_event, download_media and memory_upsert_fact, putting an approval prompt in front of ordinary work
+- [Phase 45.1]: 45.1-04: in the fallback path destructiveHint:false alone no longer earns the mutating tier -- idempotentHint defaults false and openWorldHint defaults true, so a server must now declare the call repeatable or closed-world to earn it; an untrusted server must not talk itself out of an approval gate with the cheapest hint
+- [Phase 45.1]: 45.1-04: completed inline by the orchestrator after three gsd-executor dispatches died to a 600s stream watchdog (one at launch with an empty transcript, two mid-run); operator authorised the deviation
 
 ### Pending Todos
 
@@ -139,6 +142,7 @@ None yet.
   substitution isn't lost during planning.
 
 - 45.1-08 (phase close) must re-run bash scripts/coverage_docker.sh (full aggregate 85% owned-surface gate) once plan 45.1-04 lands and the tree is quiescent -- not run during 45.1-03 because a concurrent unrelated in-flight session held compose.yaml and internal/agent/mcptools/bridge_risk.go dirty in the same checkout
+- 45.1-08 must also run a mutation spot-check on internal/agent/mcptools/bridge_risk.go -- not run during 45.1-04; the file is at 100% per-function coverage and bridge_supervisor.go scored 99/99, but neither is a mutation score for this file
 
 ## Deferred Items
 
