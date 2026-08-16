@@ -84,10 +84,21 @@ func scopedValue[T any](
 // nothing the cockpit's document list can see.
 var ErrDocumentNotCatalogued = errors.New("documents: search document is not in the catalog")
 
-// ErrDocumentDeleteInFlight reports that a document with this source is still being
-// deleted. Its bytes are on their way out, so attaching a new upload to it would hand the
-// caller a document the delete's finalize is about to erase.
-var ErrDocumentDeleteInFlight = errors.New("document with this source is being deleted")
+// ErrDocumentDeleteInFlight reports that this source is held by a document row left in
+// 'deleting'.
+//
+// The name reads as a race, and MEASURED 2026-08-16 it is not one: no statement writes that
+// status any more — 6519956a2 deleted the asynchronous delete workflow that did — so a row
+// found in it was stranded by that workflow and nothing exists to finish it. Waiting does
+// not help and re-uploading helps least of all, because the block is on the source and not
+// on the bytes; the row has to be cleared before this source can be ingested again.
+//
+// The guard stays anyway. Re-attaching an upload to a half-deleted document is exactly the
+// accident it was added to prevent, and a re-introduced delete workflow would make the state
+// transient again — db.TestDocumentControlPlaneQueryContract fails the day a writer comes
+// back, so this paragraph cannot quietly rot into a lie.
+var ErrDocumentDeleteInFlight = errors.New(
+	"document with this source is stranded mid-delete and will not clear on its own")
 
 // catalogIDForSearchDocument resolves the catalog uuid behind a `doc_<hex>` search id.
 //

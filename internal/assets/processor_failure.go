@@ -11,15 +11,21 @@ import (
 // the same way.
 const ProcessorFailedCode = "processor_failed"
 
-// DeleteInFlightCode marks the ONE processing failure that is not the file's fault.
+// DeleteInFlightCode marks the ONE processing failure that is not the file's fault: the
+// source is held by a document row left mid-delete (documents.ErrDocumentDeleteInFlight,
+// whose comment carries the measurement).
 //
-// documents.ErrDocumentDeleteInFlight means another document with this same source is
-// still being deleted, which is a race that resolves on its own in seconds. Recorded as
-// processor_failed it was indistinguishable from an unsupported format or a corrupt
-// upload: same status, same code, and the person's only move was to upload the file again
-// with nothing telling them that waiting would have done. A distinct code is what lets the
-// cockpit say "retry", a support answer be right, and a future re-enqueue key off
-// something better than a substring of an error message.
+// Recorded as processor_failed it was indistinguishable from an unsupported format or a
+// corrupt upload — same status, same code — and re-uploading, the move that code invites, is
+// the one that cannot work: the block is on the source, not on the bytes. The error_message
+// says so in words; this code is what a caller can branch on.
+//
+// The durable queue's retry is deliberately left alone. The worker already backs off
+// exponentially with full jitter and dead-letters at MaxAttempts (documents/jobs_worker.go;
+// 5, from assetProcessingIngestionJobRequest), which is the right behaviour if a delete
+// workflow ever returns and costs four wasted attempts if it never does. Suppressing it
+// would mean adding a permanent-failure channel to the worker whose only user is a state
+// nothing can currently create.
 const DeleteInFlightCode = "delete_in_flight"
 
 // processorFailureCode classifies a processing failure for the asset row.

@@ -71,6 +71,30 @@ func TestDocumentControlPlaneQueryContract(t *testing.T) {
 	}
 }
 
+// The `status <> 'deleting'` guard on CreateDocument — and documents.ErrDocumentDeleteInFlight,
+// the sentinel its zero-row result raises — read that status as a row STRANDED by the delete
+// workflow 6519956a2 removed, not as a delete in progress: nothing writes it, so nothing will
+// ever finish it, and both comments tell the reader that waiting is pointless. That reading
+// survives only while the writer stays gone. Re-adding one makes the state transient again and
+// those comments false, and this is where that has to surface — not in a support conversation
+// with someone told to wait for a delete that is genuinely still running.
+func TestNoQueryRevivesTheStrandedDocumentStatus(t *testing.T) {
+	for _, file := range []string{
+		"queries/document_control_plane.sql",
+		"queries/document_pipeline.sql",
+	} {
+		packed := strings.Join(strings.Fields(readSchemaContractFile(t, file)), "")
+		// Two forms because the column may be assigned first or after another one; packing the
+		// whitespace out first makes both immune to how the statement is laid out.
+		for _, forbidden := range []string{"SETstatus='deleting'", ",status='deleting'"} {
+			if strings.Contains(packed, forbidden) {
+				t.Fatalf("%s writes aura.documents.status = 'deleting' again — revisit "+
+					"documents.ErrDocumentDeleteInFlight, which records that state as permanently stranded", file)
+			}
+		}
+	}
+}
+
 func TestDocumentPipelineConvergenceMigrationContract(t *testing.T) {
 	up := readSchemaContractFile(t, "migrations/0093_document_pipeline_convergence.up.sql")
 	for _, want := range []string{
