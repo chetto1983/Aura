@@ -442,20 +442,63 @@ numero** misurato qui.
 altra perdita resta invisibile. Lo sforamento è coperto adesso; ogni altro modo di perdere un
 documento no.
 
-**4.4 — CHIUSA il 2026-08-16 (`34fdf1049`).** Il fatto era esatto (nessun `errors.Is` da
-nessuna parte), ma la conseguenza era più concreta di «non instradato»: `processAsset`
-appiattiva **qualunque** errore in `StatusFailed` con codice `processor_failed`, quindi una
-corsa di cancellazione — che si risolve da sola in secondi e **non è colpa del file** —
-risultava indistinguibile da un formato non supportato o da un upload corrotto. L'unica mossa
-della persona era ricaricare il file, senza che nulla le dicesse che aspettare sarebbe bastato.
+**4.4 — CHIUSA il 2026-08-16 (`34fdf1049`, poi `a6e81e56e`), e la chiusura di ieri conteneva
+due affermazioni mie che oggi ho misurato false.**
 
-Ora porta il suo codice (`delete_in_flight`), classificato con `errors.Is` e non per
-sottostringa: il sentinel è avvolto **due volte** salendo (`"catalog document: %w"` in
-`documents.Service`, poi il ritorno del processor) e solo il sentinel sopravvive intatto. Il
-test asserisce attraverso quello stesso doppio avvolgimento.
+Il fatto originale era esatto (nessun `errors.Is` da nessuna parte) e la conseguenza era più
+concreta di «non instradato»: `processAsset` appiattiva **qualunque** errore in `StatusFailed`
+con codice `processor_failed`, quindi un blocco che **non è colpa del file** risultava
+indistinguibile da un formato non supportato o da un upload corrotto. Ora porta il suo codice
+(`delete_in_flight`), classificato con `errors.Is` e non per sottostringa: il sentinel è
+avvolto **due volte** salendo (`"catalog document: %w"` in `documents.Service`, poi il ritorno
+del processor) e solo il sentinel sopravvive intatto.
 
-**Non fa il retry**, ed è la cosa che risparmierebbe davvero il ri-upload: serve backoff e un
-limite perché una delete che non completa mai non diventi un loop. Decisione a sé.
+**Prima falsità — «una corsa che si risolve da sola in secondi».** Nessuna istruzione scrive
+più `aura.documents.status='deleting'`: `6519956a2` (ieri) ha cancellato il workflow di delete
+asincrono che lo faceva. Una riga trovata in quello stato è quindi **incagliata**, e non esiste
+niente che la finisca. Aspettare non serve e ricaricare serve meno di tutto — il blocco è sulla
+sorgente, non sui byte. Catalogo vivo al momento della misura: **0 righe** in quello stato (1
+riga totale, `deleted`). Il messaggio del sentinel diceva *«document with this source is being
+deleted»*, presente progressivo, cioè «aspetta» detto a chi non ha niente da aspettare; ora
+dice *«stranded mid-delete and will not clear on its own»* e quella frase arriva intatta fino
+alla riga asset.
+
+**Seconda falsità — «non fa il retry: serve backoff e un limite».** Sbagliata due volte. Il
+backoff e il limite **esistono già**, al posto giusto: `IngestionJobWorker.recordHandlerFailure`
+fa backoff esponenziale con full jitter e manda in `dead_letter` a `MaxAttempts` (5, da
+`assetProcessingIngestionJobRequest`), con due test che lo coprivano da prima che scrivessi la
+riga. E per **questo** errore il retry non ripara niente, perché lo stato non si schiarisce mai.
+
+Il retry resta lì deliberatamente: è il comportamento giusto se un workflow di delete torna, e
+costa quattro tentativi sprecati se non torna. Sopprimerlo significherebbe aggiungere al worker
+un canale «fallimento permanente» il cui unico utente è uno stato che nulla sa creare — codice
+al buio per definizione.
+
+La misura non può marcire in un commento: `db.TestNoQueryRevivesTheStrandedDocumentStatus`
+fallisce il giorno in cui una query torna a scrivere quello stato (verificato facendolo fallire,
+non solo passare).
+
+**Validazione live.** Immagine ricostruita e ridistribuita — `aura version` → `d817a9f54+44`;
+quella che girava non conteneva nemmeno `delete_in_flight`, quindi §4.4 non era mai stata
+provata sullo stack. Due `aura docs ingest --source-id strand-probe-44` sullo stesso file, con
+la riga incagliata a mano fra i due:
+
+```
+status | error_code       | error_message
+failed | delete_in_flight | catalog document: document with this source is stranded mid-delete and will not clear on its own
+```
+
+e il job durevole ha percorso tutta la vita davanti alla misura: `queued`, attempt 1/5, next
+attempt a **+25 s** (full jitter su base 1 minuto), poi **`dead_letter` a 5 tentativi**. Righe e
+oggetti della prova rimossi; catalogo tornato a 1 documento / 5 asset.
+
+**Ricaduta da registrare** (non toccata): il Task 7 di
+`docs/superpowers/plans/2026-08-05-document-pipeline-operator-e2e.md` chiede a un operatore di
+riprodurre la finestra di delete-in-flight e di **ripetere il checkpoint** se la query non trova
+righe. Quella finestra non esiste più per costruzione: l'istruzione è diventata un ciclo
+infinito, e CP4 nel ledger di `verification/…/FINDINGS.md` è ancora `_pending_`. Il piano
+è del 2026-08-05, cioè precedente sia alla riscrittura dell'08-08 sia alla rimozione del
+workflow: aggiornarne una riga sola lo farebbe sembrare corrente.
 
 **4.5 — Un allegato di chat arriva come `<assetID>.pdf`.**
 `internal/objectstore/types.go:104-106` costruisce la chiave senza il nome reale, e
