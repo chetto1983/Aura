@@ -109,7 +109,14 @@ func (o identityObjectOpener) ReadObject(
 	if err != nil {
 		return nil, agui.FileAttrs{}, err
 	}
-	return body, agui.FileAttrs{MIMEType: attrs.MIMEType, SizeBytes: attrs.SizeBytes}, nil
+	return body, agui.FileAttrs{
+		MIMEType:  attrs.MIMEType,
+		SizeBytes: attrs.SizeBytes,
+		// The object's metadata, not the index: it is already in this response, it is right
+		// for an object the ingest sidecar has not reached yet, and it is the same string the
+		// sidecar itself reads to name the document.
+		FileName: objectstore.DecodeFileName(attrs.Metadata[objectstore.MetadataFileName]),
+	}, nil
 }
 
 // PutObject stores an uploaded file in the owner's own bucket. Nothing is enqueued: the

@@ -37,6 +37,7 @@ type fakeFileOpener struct {
 	key      string
 	body     string
 	mime     string
+	fileName string
 	err      error
 }
 
@@ -48,7 +49,7 @@ func (f *fakeFileOpener) ReadObject(
 		return nil, FileAttrs{}, f.err
 	}
 	return io.NopCloser(strings.NewReader(f.body)),
-		FileAttrs{MIMEType: f.mime, SizeBytes: int64(len(f.body))}, nil
+		FileAttrs{MIMEType: f.mime, SizeBytes: int64(len(f.body)), FileName: f.fileName}, nil
 }
 
 func fileServer(browser FileBrowser, opener FileObjectOpener) *Server {
@@ -270,6 +271,51 @@ func TestFileDirectServesAnAttachmentAndNeverTheObjectsOwnType(t *testing.T) {
 	}
 	if opener.identity != fileAPIIdentityID {
 		t.Fatalf("identity = %q, want the authenticated principal", opener.identity)
+	}
+}
+
+// The operator reported this one from their own browser: the listing said
+// saggio_crittografia.md and the download saved deedee78-….md, because the header was built
+// from the key. Both parameters are asserted — a browser that understands filename* uses it,
+// and an older one falls back to the quoted form.
+func TestFileDirectNamesTheDownloadAfterTheObjectAndNotItsKey(t *testing.T) {
+	for name, tc := range map[string]struct{ carried, ascii, extended string }{
+		"plain": {"saggio_crittografia.md", "saggio_crittografia.md", "saggio_crittografia.md"},
+		// An accented name survives whole on the extended parameter and is folded, not
+		// mangled, on the ASCII one.
+		"accented": {"Perizia città di Ghèdi.txt", "Perizia citta di Ghedi.txt", "Perizia%20citt%C3%A0%20di%20Gh%C3%A8di.txt"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			opener := &fakeFileOpener{body: "x", fileName: tc.carried}
+			rec := serveFiles(t, fileServer(nil, opener),
+				fileManagerBase+"/direct?id=%2Fchat%2Fdeedee78-b835-4aab-9d30-44e60f60d4cc.md&download=true")
+			got := rec.Header().Get("Content-Disposition")
+			if !strings.Contains(got, `filename="`+tc.ascii+`"`) {
+				t.Fatalf("Content-Disposition = %q, want the ascii fallback %q", got, tc.ascii)
+			}
+			if !strings.HasSuffix(got, "filename*=UTF-8''"+tc.extended) {
+				t.Fatalf("Content-Disposition = %q, want the extended param %q", got, tc.extended)
+			}
+		})
+	}
+}
+
+// An object carrying no name is not a failure: it is every object written before the metadata
+// channel existed, and its key is the only name there is.
+func TestDownloadFileNameFallsBackToTheKey(t *testing.T) {
+	for name, tc := range map[string]struct {
+		key, carried, want string
+	}{
+		"no name":    {"contabilita/nota.pdf", "", "nota.pdf"},
+		"blank name": {"contabilita/nota.pdf", "   ", "nota.pdf"},
+		"name wins":  {"chat/deedee78.md", "saggio.md", "saggio.md"},
+		"root level": {"nota.pdf", "", "nota.pdf"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := downloadFileName(tc.key, FileAttrs{FileName: tc.carried}); got != tc.want {
+				t.Fatalf("downloadFileName = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 

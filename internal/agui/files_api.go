@@ -37,6 +37,10 @@ type FileNamer interface {
 type FileAttrs struct {
 	MIMEType  string
 	SizeBytes int64
+	// FileName is the name the object itself carries, empty for one that carries none —
+	// every object written before that channel existed, and every backend that has no user
+	// metadata to write it into.
+	FileName string
 }
 
 // FileObjectOpener streams one object out of one identity's own bucket. The implementation
@@ -186,6 +190,24 @@ func fileEntries(result assets.BrowseResult, names map[string]string) []fileEntr
 	return entries
 }
 
+// downloadFileName is what the browser will call the saved file.
+//
+// The object's own name wins over the key, because for a chat attachment the key is a uuid
+// and saving "deedee78-b835-4aab-9d30-44e60f60d4cc.md" hands the operator a file they cannot
+// recognise a week later — the listing right above it already said saggio_crittografia.md.
+// The key remains the answer for everything carrying no name: objects older than that
+// channel, and stores with no user metadata at all.
+//
+// The name is not sanitised here on purpose. It arrives already refused by DecodeFileName if
+// it decodes to a path, and contentDisposition strips or percent-encodes every byte that
+// could inject a header, so a second guard here would be a second place to get it wrong.
+func downloadFileName(key string, attrs FileAttrs) string {
+	if name := strings.TrimSpace(attrs.FileName); name != "" {
+		return name
+	}
+	return path.Base(key)
+}
+
 // entryExt is the extension the widget derives itself when it is left to parse the id, and
 // which must be supplied whenever it is not: it drives the icon, and a file with none is
 // rendered as a blank sheet rather than as a PDF or a spreadsheet.
@@ -251,14 +273,15 @@ func (s *Server) handleFileDirect(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = body.Close() }()
 
+	name := downloadFileName(key, attrs)
 	header := w.Header()
 	header.Set("X-Content-Type-Options", "nosniff")
 	if inlineDisposition(r) && inlineSafeMIME(attrs.MIMEType) {
 		header.Set("Content-Type", attrs.MIMEType)
-		header.Set("Content-Disposition", inlineContentDisposition(path.Base(key)))
+		header.Set("Content-Disposition", inlineContentDisposition(name))
 	} else {
 		header.Set("Content-Type", "application/octet-stream")
-		header.Set("Content-Disposition", contentDisposition(path.Base(key)))
+		header.Set("Content-Disposition", contentDisposition(name))
 	}
 	_, _ = io.Copy(w, body)
 }

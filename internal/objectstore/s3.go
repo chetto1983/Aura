@@ -181,6 +181,12 @@ func (s *S3Store) Get(ctx context.Context, ref ObjectRef) (io.ReadCloser, Attrs,
 		SizeBytes: aws.ToInt64(out.ContentLength),
 		ETag:      strings.Trim(aws.ToString(out.ETag), `"`),
 		MIMEType:  aws.ToString(out.ContentType),
+		// A GET answers with the user metadata a HEAD would, and dropping it here is what made
+		// the file manager offer "deedee78-….md" as the download name for a file the same
+		// listing had just called saggio_crittografia.md: the name was in the response all
+		// along. Reading it from the object rather than from the index also names an object
+		// the sidecar has not reached yet.
+		Metadata: out.Metadata,
 	}, nil
 }
 
