@@ -71,3 +71,35 @@ func TestDecodeToolCallErrorDoesNotNormalizeUnrelatedDictModelError(t *testing.T
 		t.Fatalf("unrelated error was normalized: %+v", err)
 	}
 }
+
+// TestToolCallErrorImplementsError closes a coverage gap the profile named
+// directly: (*ToolCallError).Error() had no test anywhere in the tree — every
+// caller checks the typed fields (Outcome/Code/Message/Effect) and never formats
+// the value through the error interface. It IS still an error (bridge_supervisor.go
+// returns it as one), so its message shape is load-bearing for logs.
+func TestToolCallErrorImplementsError(t *testing.T) {
+	t.Parallel()
+
+	var nilErr *ToolCallError
+	if got, want := nilErr.Error(), "MCP tool reported an error"; got != want {
+		t.Errorf("nil *ToolCallError.Error() = %q, want %q", got, want)
+	}
+
+	populated := &ToolCallError{Server: "memory", Tool: "memory_upsert_fact", Outcome: ToolOutcomeRejected, Message: "subject is required"}
+	if got, want := populated.Error(), `mcp "memory": tool memory_upsert_fact rejected: subject is required`; got != want {
+		t.Errorf("populated.Error() = %q, want %q", got, want)
+	}
+
+	blank := &ToolCallError{Server: "whatsapp", Tool: "send_message", Outcome: ToolOutcomeError, Message: "   "}
+	if got, want := blank.Error(), `mcp "whatsapp": tool send_message error: tool reported an error`; got != want {
+		t.Errorf("blank-message.Error() = %q, want %q (fallback text)", got, want)
+	}
+
+	// A *ToolCallError must satisfy the error interface — asserted structurally, not
+	// merely by calling .Error() directly, since that is what every real caller does
+	// (errors.As, fmt %w/%v).
+	var asErr error = populated
+	if asErr.Error() == "" {
+		t.Fatal("*ToolCallError does not behave as a non-empty error through the interface")
+	}
+}
