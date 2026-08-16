@@ -329,10 +329,20 @@ di codice.** *Confidenza: alta sull'apertura, nulla sulle cause.*
 
 ## 4. Difetti veri, piccoli
 
-**4.1 — `ReasoningClassifier.generation` è letto e confrontato ma mai assegnato.**
-`internal/agent/prompt/reasoning_classifier.go:108` dichiara, `:172` legge, `:181` confronta —
-**nessuna assegnazione in tutto l'albero**. La guardia di invalidazione del rebuild è inerte.
-*Confidenza: alta. Questo non è codice morto: è una protezione che non protegge.*
+**4.1 — CHIUSA il 2026-08-16 (`7b051204e`), ma non come questa voce prescriveva.** Il fatto era
+esatto: `generation` dichiarato, fotografato, confrontato, **mai assegnato**. La conclusione no.
+
+Chiamarla *«una protezione che non protegge»* implica che manchi l'assegnazione. Misurato:
+manca l'intero percorso d'invalidazione. Nulla marca stale la banca, `built` viene solo messo
+a `true`, gli anchor sono statici per costruzione, e `singleflight` già serializza le build
+sulla stessa chiave — quindi la corsa da cui la guardia proteggeva non può avvenire. Renderla
+viva avrebbe voluto dire **inventare un trigger d'invalidazione** per una banca che non ha
+niente da invalidare. Rimossa, e la pubblicazione è incondizionata.
+
+Ciò che rende sicura la rimozione era già fissato da due test esistenti (fallimento non
+cachato, singleflight a freddo). L'unica proprietà senza test proprio — la banca costruita una
+volta e riusata, quella che *sembrava* protetta — è stata aggiunta, asserita come delta per
+fissare il "non ricostruisce" invece del numero di tier.
 
 **4.2 — CHIUSA il 2026-08-16 (`02fba5490`).** `dropRepeatedUserTurns` collassa due turni utente
 adiacenti **byte-identici**, tenendo il più recente, prima di `injectAlwaysBlock` — così la testa
