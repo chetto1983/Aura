@@ -446,18 +446,28 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, input turnInput)
 			flushed = true
 			return r.flushPause(context.WithoutCancel(ctx), tr)
 		}
+		// roundErr carries WHY the round stopped to the deferred recorder below. The
+		// error is yielded to the consumer, which for an HTTP run is a stream that may
+		// already be gone; the conversation keeps no copy unless it is written here.
+		var roundErr error
 		defer func() {
 			if err := flushOnce(); err != nil {
 				slog.Error("runner: flush pause assistant turn failed; resume history may be malformed",
 					"conv", convID, "err", err)
 			}
+			if err := r.recordInterruptedRound(ctx, tr, roundErr); err != nil {
+				slog.Error("runner: could not record an interrupted round; the question stays unanswered with nothing to say so",
+					"conv", convID, "err", err)
+			}
 		}()
 		for ev, runErr := range la.Run(ic) {
 			if runErr != nil {
+				roundErr = runErr
 				yield(nil, runErr)
 				return
 			}
 			if perr := r.persistEvent(ctx, tr, ev); perr != nil {
+				roundErr = perr
 				yield(nil, perr)
 				return
 			}

@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -81,8 +82,19 @@ func TestPersistAssistantAnswer_CacheMetricErrorSurfaces(t *testing.T) {
 	if err := r.Stop(ctx, convID); err != nil {
 		t.Fatalf("stop: %v", err)
 	}
-	if got := len(conv.turns[convID]); got != 1 {
-		t.Fatalf("want only the user turn after rolled-back assistant metric failure, got %d turns", got)
+	// The rollback is the point and it still holds: the ANSWER must not survive a metric
+	// failure. What is new beside it is the marker recording that the round produced no
+	// answer -- before that existed, this conversation ended on the user's question with
+	// nothing saying why, which is the failure recordInterruptedRound was added to end.
+	turns := conv.turns[convID]
+	if len(turns) != 2 {
+		t.Fatalf("turns = %d, want the user turn plus the interruption marker", len(turns))
+	}
+	if strings.Contains(turns[1].Content, "All done.") {
+		t.Fatalf("the rolled-back assistant answer survived: %q", turns[1].Content)
+	}
+	if !strings.Contains(turns[1].Content, "interrupted") {
+		t.Fatalf("second turn = %q, want the interruption marker", turns[1].Content)
 	}
 }
 

@@ -33,7 +33,11 @@ const ledgerInsertTimeout = 5 * time.Second
 type turnTracker struct {
 	convID string
 	paused bool
-	pauses []*agent.AwaitingInput // the round's ask_user pauses, flushed as ONE assistant turn
+	// answered records that the round's assistant answer reached the store. A round ends
+	// well by answering or by pausing; without either, recordInterruptedRound is what says
+	// so in the conversation instead of leaving the question hanging.
+	answered bool
+	pauses   []*agent.AwaitingInput // the round's ask_user pauses, flushed as ONE assistant turn
 	// pauseInserts are the round's paused_states rows (each with its minted token),
 	// accumulated by persistPause; flushPause writes them + the single assistant ask_user
 	// tool_call turn in ONE cross-store tx so a pause is exposed only after durable history (D-05).
@@ -324,6 +328,7 @@ func (r *Runner) persistAssistantAnswer(ctx context.Context, tr *turnTracker, ev
 	if err := r.Conv.AppendAssistantTurnWithCacheMetric(ctx, turn, metric); err != nil {
 		return fmt.Errorf("persist assistant answer: %w", err)
 	}
+	tr.answered = true
 	return nil
 }
 
