@@ -81,6 +81,37 @@ func TestReasoningClassifier_RoutesByProximity(t *testing.T) {
 	}
 }
 
+// ensureAnchors publishes the built bank unconditionally, which is only correct because the
+// bank is static and built once. That property had no test of its own — it merely looked
+// guarded, by a generation counter that was never assigned — so it is pinned here.
+func TestReasoningClassifier_AnchorBankIsBuiltOnceAndReused(t *testing.T) {
+	t.Parallel()
+	embed := &fakeEmbedder{}
+	c := NewReasoningClassifier(embed)
+
+	if _, ok := c.Classify(context.Background(), "debugga il mio script python"); !ok {
+		t.Fatal("the first Classify failed")
+	}
+	embed.mu.Lock()
+	afterBuild := embed.calls
+	embed.mu.Unlock()
+
+	for _, prompt := range []string{"che meteo fa a Roma", "quanto fa 2+2"} {
+		if _, ok := c.Classify(context.Background(), prompt); !ok {
+			t.Fatalf("Classify(%q) failed", prompt)
+		}
+	}
+
+	embed.mu.Lock()
+	defer embed.mu.Unlock()
+	// Asserted as a delta rather than a total so the test pins the property — no rebuild —
+	// instead of the number of anchor groups, which is a tier-table detail free to change.
+	if embed.calls != afterBuild+2 {
+		t.Fatalf("embed calls = %d after %d, want exactly one query embed each and no rebuild",
+			embed.calls, afterBuild)
+	}
+}
+
 func TestReasoningClassifier_GreetingPrefilterSkipsEmbed(t *testing.T) {
 	t.Parallel()
 	f := &fakeEmbedder{}

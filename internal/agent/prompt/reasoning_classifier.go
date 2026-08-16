@@ -103,11 +103,10 @@ var trivialGreetings = map[string]struct{}{
 type ReasoningClassifier struct {
 	embed Embedder
 
-	mu         sync.Mutex
-	build      singleflight.Group
-	generation uint64
-	cls        *semindex.Classifier // per-tier centroid bank; built lazily once
-	built      bool                 // false => the next Classify rebuilds the bank
+	mu    sync.Mutex
+	build singleflight.Group
+	cls   *semindex.Classifier // per-tier centroid bank; built lazily once
+	built bool                 // false => the next Classify rebuilds the bank
 }
 
 // NewReasoningClassifier returns a classifier over the static curated anchors,
@@ -153,6 +152,14 @@ func (c *ReasoningClassifier) Classify(ctx context.Context, userText string) (Re
 // semindex.Classifier into the per-group mean of L2-normalized embeddings). A
 // build failure is NOT cached: the next call retries, so a transiently-down
 // sidecar self-heals (mirror of the semindex build-failure-not-cached rule).
+//
+// The publish is unconditional, and that is the whole invalidation story: the anchors are
+// static, nothing ever marks the bank stale, and singleflight already serialises builds on
+// this key, so two of them can never race to publish. A generation counter guarding this
+// write used to sit here — declared, snapshotted and compared, but assigned NOWHERE, so the
+// comparison was always true and the guard always taken. It was removed rather than
+// completed: making it live would have meant inventing an invalidation trigger for a bank
+// that has nothing to invalidate.
 func (c *ReasoningClassifier) ensureAnchors(ctx context.Context) (*semindex.Classifier, error) {
 	c.mu.Lock()
 	if c.built && c.cls != nil {
@@ -169,7 +176,6 @@ func (c *ReasoningClassifier) ensureAnchors(ctx context.Context) (*semindex.Clas
 			c.mu.Unlock()
 			return cls, nil
 		}
-		generation := c.generation
 		c.mu.Unlock()
 
 		cls, err := c.buildAnchors(ctx)
@@ -178,9 +184,7 @@ func (c *ReasoningClassifier) ensureAnchors(ctx context.Context) (*semindex.Clas
 		}
 
 		c.mu.Lock()
-		if c.generation == generation {
-			c.cls, c.built = cls, true
-		}
+		c.cls, c.built = cls, true
 		c.mu.Unlock()
 		return cls, nil
 	})
