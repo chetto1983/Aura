@@ -145,6 +145,27 @@ func TestCompactionSummarySurvivesAnUnreadableCache(t *testing.T) {
 	}
 }
 
+// The fixed cost of a request -- the tool manifest -- is already on the wire whatever the
+// ladder does, so the trigger spends the percentage on the history that is LEFT. Without
+// this the number means "a share of the part I happen to count", which on this deployment
+// was half the request.
+func TestEarlyCompactionTokensSubtractsTheFixedOverhead(t *testing.T) {
+	cfg := ContextConfig{
+		ContextWindow: 100_000, CompactionTriggerPercent: 30,
+		FixedOverheadTokens: 19_000, Summarizer: &fakeSummarizer{},
+	}
+	if got := cfg.earlyCompactionTokens(); got != 11_000 {
+		t.Fatalf("earlyCompactionTokens() = %d, want 30%% of the window minus the manifest", got)
+	}
+
+	// An overhead that has already eaten the allowance disables the trigger rather than
+	// compacting on every turn to chase a budget compaction cannot recover.
+	cfg.FixedOverheadTokens = 40_000
+	if got := cfg.earlyCompactionTokens(); got != 0 {
+		t.Fatalf("earlyCompactionTokens() = %d, want 0 when the fixed cost exceeds the budget", got)
+	}
+}
+
 func TestEarlyCompactionTokensIsAShareOfTheWindow(t *testing.T) {
 	for name, tc := range map[string]struct {
 		window, percent int

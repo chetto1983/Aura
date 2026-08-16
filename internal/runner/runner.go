@@ -161,8 +161,9 @@ type Runner struct {
 	memoryContext   MemoryContextProvider
 	resumeCommitter ResumeCommitter // cross-store HITL-durability seam (D-03/D-05); split fallback when unset
 
-	client     llm.Client
-	registry   *tools.Registry
+	client   llm.Client
+	registry *tools.Registry
+	overheadFields
 	cfg        llm.Config
 	breaker    *llm.Breaker // SHARED process-lifetime LLM circuit breaker, injected into every per-turn agent (B-05)
 	runDir     string

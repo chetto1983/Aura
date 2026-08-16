@@ -14,6 +14,13 @@ import "github.com/chetto1983/aura/internal/llm"
 // (AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS).
 type ContextConfig struct {
 	ContextWindow int
+	// FixedOverheadTokens is what the request carries BESIDES the history: the tool
+	// manifest the agent renders per turn, and anything else added after the ladder has
+	// run. The ladder cannot see it -- it is handed turns, not a request -- and it is not
+	// small: measured 2026-08-16 on this deployment, a request whose history was ~19k
+	// tokens reached the provider at 38,941. Without it "compact at 30% of the window"
+	// silently means "at 30% of the part I happen to count".
+	FixedOverheadTokens int
 	// CompactionTriggerPercent is the share of ContextWindow the replayed history may
 	// occupy before L2.4 condenses it, ahead of the hard cap. 0 -- the zero value every
 	// hand-built config in the tests carries -- disables early compaction, so adding this
@@ -95,7 +102,17 @@ func (c ContextConfig) earlyCompactionTokens() int {
 	if c.CompactionTriggerPercent <= 0 || c.CompactionTriggerPercent >= 100 {
 		return 0
 	}
-	return c.ContextWindow * c.CompactionTriggerPercent / 100
+	budget := c.ContextWindow * c.CompactionTriggerPercent / 100
+	// Spend the budget on the history alone: the fixed cost is already on the wire no
+	// matter what the ladder does, so counting it here is what makes the percentage mean
+	// "how full the REQUEST is" rather than "how long the transcript is". A fixed cost
+	// larger than the budget yields 0 -- disabled -- because compacting cannot help when
+	// the manifest alone has spent the allowance.
+	budget -= c.FixedOverheadTokens
+	if budget <= 0 {
+		return 0
+	}
+	return budget
 }
 
 // HardCap exposes the exact history cap to the final model-request guard.
