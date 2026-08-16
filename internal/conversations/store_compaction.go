@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"math"
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -89,6 +92,48 @@ func (s *Store) SaveCompaction(ctx context.Context, conversationID, branchID str
 		return fmt.Errorf("save compaction %s: %w", conversationID, err)
 	}
 	return nil
+}
+
+// branchIDForLeaf names the branch a replayed path belongs to: the leaf's own branch id.
+//
+// It costs one primary-key read per branch load, and it buys the thing the compaction row
+// is keyed on. Without it both call sites passed "", so every branch of a conversation
+// wrote and read ONE row: branch B would be handed a summary describing branch A's turns
+// at the same seq numbers, and B's watermark would then bury A's.
+//
+// A failure degrades to the canonical branch rather than failing the turn — that is the
+// behaviour every conversation had before branches existed, and a summary filed under the
+// wrong branch is a worse outcome than an extra summarizer call only when we KNOW the
+// branch; not knowing it, the canonical row is the honest place.
+func (s *Store) branchIDForLeaf(ctx context.Context, conversationID string, leafSeq int) string {
+	if leafSeq <= 0 || leafSeq > math.MaxInt32 {
+		return ""
+	}
+	id, err := db.ParseUUID("conversation_id", conversationID)
+	if err != nil {
+		return ""
+	}
+	var branch pgtype.UUID
+	if err := s.scoped(ctx, func(q *sqlc.Queries) error {
+		row, qErr := q.GetTurnPointers(ctx, sqlc.GetTurnPointersParams{
+			ConversationID: id, Seq: int32(leafSeq),
+		})
+		if qErr != nil {
+			return qErr
+		}
+		branch = row.BranchID
+		return nil
+	}); err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			slog.Warn("branch id unreadable; compaction falls back to the canonical branch",
+				"conversation_id", conversationID, "leaf_seq", leafSeq, "err", err)
+		}
+		return ""
+	}
+	if !branch.Valid || branch.Bytes == CanonicalBranchID {
+		return ""
+	}
+	return uuid.UUID(branch.Bytes).String()
 }
 
 // compactionKey parses the pair every statement is keyed on. An empty branch is the

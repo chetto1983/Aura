@@ -24,10 +24,11 @@ func TestLlmAgent_AppendsClockHintFromBudget(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 	tail := fc.LastRequest().Messages[len(fc.LastRequest().Messages)-1]
-	// The instant and its offset come from the budget clock unchanged; the zone name that
-	// follows is the 2026-08-16 fix (a bare offset left the model to infer the season, and
-	// it inferred wrong).
-	if !strings.Contains(tail.Content, "<current_time>2026-06-09T12:34:56+02:00 (CEST)</current_time>") {
+	// The instant and its offset come from the budget clock unchanged; the weekday before
+	// it and the zone name after it are the 2026-08-16 fixes. A bare offset left the model
+	// to infer the season and it inferred wrong; a bare date left it to compute the weekday
+	// and it computed wrong (it called Sunday 16 August a Monday). Both are now stated.
+	if !strings.Contains(tail.Content, "<current_time>Tuesday, 2026-06-09T12:34:56+02:00 (CEST)</current_time>") {
 		t.Fatalf("clock hint = %q, want injected current_time from budget clock", tail.Content)
 	}
 	if !strings.Contains(tail.Content, "<today>2026-06-09</today>") {

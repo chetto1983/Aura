@@ -241,6 +241,9 @@ func usageStateDelta(usage llm.Usage) map[string]any {
 		"prompt_tokens":     usage.PromptTokens,
 		"completion_tokens": usage.CompletionTokens,
 		"cache_hit_tokens":  usage.CachedTokens,
+		// The window gauge reads this one: prompt_tokens is the round's bill, which on a
+		// tool-calling round is several requests added together.
+		"context_tokens": usage.ContextTokens,
 	}
 	if usage.Cost != nil {
 		d["cost_usd"] = *usage.Cost

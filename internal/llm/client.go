@@ -63,6 +63,19 @@ type Usage struct {
 	CompletionTokens int
 	CachedTokens     int
 	Cost             *float64
+	// ContextTokens is how much of the window the request actually OCCUPIED: the prompt
+	// of the final call, not the sum of the round's calls.
+	//
+	// On a single call the two are the same number, which is why the difference stayed
+	// invisible. On a round with tool calls they are not: PromptTokens sums every call
+	// because that is what the provider billed (each call re-sends the prefix), so a
+	// four-tool round reports roughly five times the prompt that was ever in the window
+	// at once. Measured on the live deployment 2026-08-16, conversation 01a00c4b: the
+	// gauge read 88% of an 81,920-token window on a round whose largest single request
+	// was ~24k (29%), and dropped to 17% on the next tool-free round.
+	//
+	// Zero on a per-call Usage from a provider — only the turn aggregate sets it.
+	ContextTokens int
 }
 
 // Chunk is one streamed delta from the LLM. Exactly one of Text, Reasoning,

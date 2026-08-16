@@ -18,6 +18,10 @@ type turnUsage struct {
 	prompt     int
 	completion int
 	cached     int
+	// lastPrompt is the prompt of the most recent call — the window occupancy, which the
+	// sum above deliberately is not. Both are needed and they answer different questions:
+	// the sum is the bill, this is the fill.
+	lastPrompt int
 	cost       float64
 	hasCost    bool
 }
@@ -25,6 +29,9 @@ type turnUsage struct {
 // add folds one LLM call's usage into the turn total.
 func (t *turnUsage) add(u llm.Usage) {
 	t.prompt += u.PromptTokens
+	if u.PromptTokens > 0 {
+		t.lastPrompt = u.PromptTokens
+	}
 	t.completion += u.CompletionTokens
 	t.cached += u.CachedTokens
 	if u.Cost != nil {
@@ -45,6 +52,7 @@ func (t *turnUsage) total() llm.Usage {
 		PromptTokens:     t.prompt,
 		CompletionTokens: t.completion,
 		CachedTokens:     t.cached,
+		ContextTokens:    t.lastPrompt,
 	}
 	if t.hasCost {
 		c := t.cost

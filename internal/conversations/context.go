@@ -116,6 +116,11 @@ func (s *Store) LoadManagedHistoryForBranch(ctx context.Context, conversationID 
 	if err != nil {
 		return nil, err
 	}
+	// Which branch this path belongs to, so the durable summary is filed under it. The
+	// leaf's branch id is the path's identity and it is stable while the branch grows:
+	// every turn appended to it carries the same id, so the watermark keeps advancing on
+	// one row instead of colliding with a sibling's.
+	cfg.branchID = s.branchIDForLeaf(ctx, conversationID, leafSeq)
 	return s.managedFromTurns(ctx, conversationID, turns, cfg)
 }
 
@@ -204,7 +209,7 @@ func applyContextLadder(
 		// returns the L1 history and the next turn tries again.
 		if trigger := cfg.earlyCompactionTokens(); trigger > 0 && tokensAfterL1 > trigger {
 			if compacted, ok := tryCompact(ctx, cfg.Summarizer, cfg.compactionCache,
-				conversationID, "", enc, l1, ordinaryCap); ok {
+				conversationID, cfg.branchID, enc, l1, ordinaryCap); ok {
 				slog.Info("conversation context compacted early",
 					"conversation_id", conversationID,
 					"trigger_tokens", trigger,
@@ -222,7 +227,7 @@ func applyContextLadder(
 	// summarizer error, empty result, or a summary that still overflows, tryCompact
 	// returns false and we fall through to L2.5 (the zero-LLM fail-safe) unchanged.
 	if compacted, ok := tryCompact(ctx, cfg.Summarizer, cfg.compactionCache,
-		conversationID, "", enc, l1, ordinaryCap); ok {
+		conversationID, cfg.branchID, enc, l1, ordinaryCap); ok {
 		slog.Info("conversation context compacted",
 			"conversation_id", conversationID,
 			"tokens_before", totalAfterL1,

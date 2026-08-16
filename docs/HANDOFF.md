@@ -607,6 +607,62 @@ Questo è ciò che è rimasto attaccato:
 
 ## 6. Lavoro progettato e non fatto
 
+**6.1bis — Compaction: i tre punti aperti chiusi il 2026-08-16 sera, e una cosa che non era
+compaction affatto.**
+
+*Ramo branch — CHIUSO.* `applyContextLadder` passava `""` come branch a entrambi i
+`tryCompact`, quindi ogni ramo di una conversazione leggeva e scriveva **una sola riga**: il
+fork riceveva un summary che descrive turni che non ha, e poi ne seppelliva il watermark.
+Ora `LoadManagedHistoryForBranch` risolve il branch della foglia (`branchIDForLeaf`, una
+lettura per chiave primaria) e lo porta nel `ContextConfig`. Test di regressione live-Postgres
+(`store_compaction_branch_integration_test.go`): **verificato che fallisce senza il fix** —
+rimesso `cfg.branchID = ""` la riga del ramo non esiste.
+
+*Concorrenza — CHIUSA.* Otto writer simultanei sulla stessa coppia (conversazione, ramo):
+sopravvive il watermark più avanti **con il suo** summary, e nessuno degli otto riceve errore.
+hermes-agent tiene lo stesso invariante con un lease attorno al commit
+(`conversation_compression.py` cattura `MAX(id)` sotto lock); qui vive nel `WHERE` del
+`DO UPDATE`, quindi il test che conta è quello che scrive davvero in parallelo.
+
+*55006 (export-delete) — MISURATO, e non si applica.* `aura.conversation_compactions` non ha
+trigger di snapshot-bump, quindi una conversazione riservata all'export **compatta lo stesso**
+(test dedicato, che prima verifica che il guard sia armato scrivendo un turno e ottenendo il
+rifiuto). Questo è anche **la ragione misurata per NON copiare l'`archive_and_compact` di
+hermes**: là la compaction fa `UPDATE` sulle righe dei messaggi (`active=0`), che qui
+sparerebbe `conversation_turns_snapshot_bump` di 0047 → 55006 → niente compaction proprio
+mentre si sta assemblando l'export. Il secondo motivo è strutturale: il flag `active` è
+per-riga e l'albero dei branch di 0017 condivide le righe fra rami, quindi non può esprimere
+"superata su A, viva su B" — il watermark per (conversazione, ramo) sì.
+
+*Quello che l'operatore vedeva all'80% non era la compaction.* Misurato sulla conversazione
+live `01a00c4b` (finestra 81.920): la gauge del cockpit legge
+`conversation_turns.input_tokens`, che è `turnUsage.total().PromptTokens` — **la somma dei
+prompt di ogni chiamata LLM del round**, perché ogni chiamata rimanda l'intero prefisso e il
+provider la fattura. `turn_usage.go` lo dice esplicitamente (*"answers 'what did this turn
+cost', not 'how large was the final prompt'"*), e `store.go:165` chiama lo stesso numero *"the
+CURRENT context-window fill"*.
+
+| tool call nel round | gauge mostrava | finestra vera |
+|---|---|---|
+| 0 | 13.540 (17%) | 13.540 (17%) |
+| 1 | 24.030 (29%) | ~12k (15%) |
+| 4 | 63.866 (78%) | ~13k (16%) |
+| 2 | 72.224 (88%) | ~24k (29%) |
+
+Il dente di sega 80% → 20% era un round con tool contro un round di sola prosa. Ora
+`llm.Usage` porta anche `ContextTokens` (il prompt dell'**ultima** chiamata), l'evento
+terminale lo emette come `context_tokens` e la gauge legge quello; `prompt_tokens` resta la
+somma, che è il conto. Live sul deployment: `billed prompt_tokens = 24.085 | window
+context_tokens = 12.240`. **Nessuna colonna nuova**: al reload la gauge ricade ancora su
+`LastInputTokens`, che è la somma — un limite superiore, non la misura.
+
+*Aperto, misurato oggi:* una soglia di compaction sotto la quota di overhead **disattiva la
+compaction in silenzio**. `earlyCompactionTokens` = `finestra × pct/100 − overhead manifest`,
+e restituisce 0 (= spenta) quando è ≤ 0. Su questo deployment l'overhead è ~19k, quindi
+qualunque percentuale sotto ~24% spegne tutto senza un warning — e la manopola è esposta
+all'operatore in Settings. Va clampata o rifiutata dicendo qual è il minimo utile su questa
+finestra.
+
 **6.1 — Slice 1b (compaction durevole). PARZIALMENTE CHIUSA il 2026-08-16 (`1f4b16eab`), e
 validata sullo stack acceso.** Il summary ora è persistito (`aura.conversation_compactions`,
 migration 0096) con un watermark, e la compaction scatta anche **prima** dell'hard cap, a una

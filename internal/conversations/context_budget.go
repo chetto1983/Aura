@@ -61,6 +61,17 @@ type ContextConfig struct {
 	// turn. Set by managedFromTurns (the Store is the implementation); nil in the unit
 	// tests that drive the ladder directly, which then behave exactly as before.
 	compactionCache compactionCache
+
+	// branchID names WHICH history the durable summary speaks for. A branch is a
+	// different conversation past sharing a prefix, so it needs its own summary and its
+	// own watermark -- the compaction row is keyed (conversation, branch) exactly for
+	// that. It was passed as "" from both call sites until 2026-08-16, which meant two
+	// branches shared one row: the summary written while replaying branch A was handed
+	// to branch B, whose turns at those seq numbers are different turns.
+	//
+	// Empty is the canonical branch (the all-zero uuid the 0017 backfill gives every
+	// pre-branch turn), so the linear path needs no value and the tests keep working.
+	branchID string
 }
 
 // hardCap computes the L2 hard cap from the config (SPEC Req#10:
