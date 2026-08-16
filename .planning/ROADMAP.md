@@ -251,7 +251,7 @@ beside it.
 5. A live turn shows `user_identifier` reaching `cmd/arcadedb-mcp` through `_meta` and no longer as
    a tool argument.
 
-**Plans**: 1/8 plans executed in 6 waves
+**Plans**: 2/8 plans executed in 6 waves
 
 Plans:
 **Wave 1**
@@ -260,7 +260,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 45.1-02-PLAN.md — mcptools seam on *ClientSession: result-decode re-plumb, `MountedServer` supervisor on `Wait()`, bridge_reconnect.go + bridge_ping.go deleted *(wave 2)*
+- [x] 45.1-02-PLAN.md — mcptools seam on *ClientSession: result-decode re-plumb, `MountedServer` supervisor on `Wait()`, bridge_reconnect.go + bridge_ping.go deleted *(wave 2)*
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
