@@ -202,10 +202,12 @@ beside it.
   `StreamableClientTransport.MaxRetries` (default 5) is the real HTTP retry knob.
   **`probe.go` is re-pointed, not deleted** — a use-case function over the SDK, not a facade over its
   types, with 13 `cmd/aura` diagnostic files depending on it.
+
 - **Preserved, ≈1,330 LOC with no SDK equivalent** — `ssrf.go` + `transport_ssrf.go` +
   `egress_policy.go` (re-attached as a custom `http.RoundTripper`), `managed_config.go` +
   `managed_config_identity.go`, `classify.go`, `tool_error.go`, `domain_outcome.go`,
   `observability.go`, `redact.go`.
+
 - **The clock**: Aura's client implements the session model (`sessionGate`) that the 2026-07-28
   spec **deletes** — SEP-2575 removes `initialize`/`initialized`, SEP-2567 removes `Mcp-Session-Id`,
   and client info moves to `_meta` on every request. **The pinned v1.7.0 already ships that core**
@@ -217,9 +219,11 @@ beside it.
 - Middleware is the seam. `Client.AddSendingMiddleware` (`mcp/client.go:1131`) carries host-side
   argument derivation; `withMemoryUserIdentifier` moves onto it. This is the SDK's own idiom — MRTR
   itself ships as default-on client middleware (`mcp/mrtr.go:22-31`), not an adaptation.
+
 - `cmd/arcadedb-mcp` moves off the `user_identifier` **argument** onto stateless `_meta`, since Aura
   owns both ends. Third-party forks keep argument-shaped inputs. **This changes the memory tool's
   schema — PITFALLS §4 applies** (rehydrated history, paused approvals, scheduled jobs).
+
 - Elicitation (SEP-2322 MRTR) routes through Aura's existing approval path with a bounded timeout,
   naming the asking server — hermes parity (`tools/mcp_tool.py:1669-1758`). ~~The SDK auto-fulfills
   input requests by default and Aura registers no handler today.~~ **Amended 2026-08-16 — falsified
@@ -234,26 +238,46 @@ beside it.
 
 1. A live conversation drives calendar, WhatsApp and memory tools through the SDK client, and
    `aura.tool_invocations` shows the same tool surface and results as before the swap.
+
 2. `internal/mcp/client.go`, `http_client.go`, `bridge_reconnect.go` and `bridge_ping.go` are gone
    from the tree, and no hand-rolled JSON-RPC framing or reconnect loop replaces them elsewhere.
+
 3. Killing a sidecar mid-conversation and restarting it recovers on the SDK's own reconnect, live —
    not on a reimplementation.
+
 4. An SSRF/egress probe against a mounted HTTP server is still refused, proving the policy layers
    survived re-attachment to the SDK transport.
+
 5. A live turn shows `user_identifier` reaching `cmd/arcadedb-mcp` through `_meta` and no longer as
    a tool argument.
 
 **Plans**: 8 plans in 6 waves
 
 Plans:
+**Wave 1**
 
 - [ ] 45.1-01-PLAN.md — TRACER: SDK session construction (both transports) + SSRF/egress/redirect policy re-attached + probe.go re-pointed *(wave 1)*
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 45.1-02-PLAN.md — mcptools seam on *ClientSession: result-decode re-plumb, `MountedServer` supervisor on `Wait()`, bridge_reconnect.go + bridge_ping.go deleted *(wave 2)*
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 45.1-03-PLAN.md — 16 cmd/aura consumers re-pointed, bespoke client deleted, anti-dark-code guard, coverage floor restored *(wave 3)*
 - [ ] 45.1-04-PLAN.md — D-107: all four SDK tool annotations, escalate-only proven over every hint combination *(wave 3)*
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 45.1-05-PLAN.md — `_meta` identity cutover, server-side fail-closed, and the three PITFALLS §4 blast radii disposed *(wave 4)*
 - [ ] 45.1-06-PLAN.md — checkpoint: which surface a server-initiated elicitation reaches the operator on *(wave 4)*
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 45.1-07-PLAN.md — bounded fail-closed elicitation handler + the chosen consent surface *(wave 5)*
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
 - [ ] 45.1-08-PLAN.md — live SC#1-5 scored >9.8, full gate matrix, amendments, quality-snapshot re-attestation *(wave 6)*
 
 ### Phase 46: MCP trust and facade
@@ -274,16 +298,19 @@ behind a facade in Aura's tree.
 - **MCP-01 and MCP-03 already shipped** in `34b892512` (2026-08-12, *"Trust MCP output instead of
   framing it untrusted"*), un-amended. `frameMCPDescription`/`frameMCPSummary` carry no distrust
   prefix; the removal is already unscoped, satisfying MCP-03's blanket reading.
+
 - **That commit also removed result fencing** (`newResult` sets `TrustTrusted`) **and Amendment
   #110's memory-block header.** The operator ratified this posture on 2026-08-16 — *"when I install
   one MCP to you there are no shit ceremony"* — after being shown that hermes fences every `mcp_*`
   result unconditionally and that PITFALLS §2 calls a fencing regression *"the actually dangerous
   outcome"*. **Recorded as a decision, not an oversight.** Consequence: **the trust axis of this
   phase needs no code.**
+
 - **MCP-04's mechanism changed.** Every MCP server Aura ships is a fork Aura controls, so curation
   moves **into the servers**. No `comms` tool, no curation config, no hide-list, no
   `bridgePolicy` namespace table in Aura. Aura's bridge stays generic — the property that lets the
   *next* mounted server work with no Aura code at all.
+
 - **MCP-05's framing was falsified.** Measured against `internal/agent/tools/testdata/deferred_manifest.json`,
   `accountId` is two things under one name: a defaultable **routing hint** in `create_event`
   (*"Omitting uses the first configured account"*) and `get_calendar_events`, and a **required

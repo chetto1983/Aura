@@ -5,14 +5,14 @@ milestone_name: HERMES-CLAUDE_PARITY
 current_phase: 45.1
 current_phase_name: Native MCP client
 status: planning
-stopped_at: Phase 46 context gathered; Phase 45.1 inserted ahead of it
-last_updated: "2026-08-16T07:16:46.177Z"
+stopped_at: Phase 45.1 context gathered
+last_updated: "2026-08-16T10:09:13.056Z"
 last_activity: 2026-08-16
 last_activity_desc: Phase 46 discussed; 45.1 (native MCP client) inserted as its prerequisite
 progress:
-  total_phases: 2
+  total_phases: 3
   completed_phases: 1
-  total_plans: 9
+  total_plans: 17
   completed_plans: 9
 ---
 
@@ -149,8 +149,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-16T07:16:46.164Z
-Stopped at: Phase 46 context gathered
+Last session: 2026-08-16T07:38:37.636Z
+Stopped at: Phase 45.1 context gathered
 exited at its CONTEXT.md gate — Phase 45 has no CONTEXT.md, and discuss-phase must run as a
 top-level command (nested invocation breaks AskUserQuestion, GSD #1009). No phase directory
 was created and no planning agents were spawned.
@@ -163,5 +163,5 @@ build order extended with Phases 51/52 and the 53/54 renumber, requirement count
 to 77, the `tool_call_id` blocker marked resolved by `657c9e383`, and the CTX-V2-01 deferral
 re-pointed at Phase 53. REQUIREMENTS.md's two stale prose lines corrected to match.
 
-Resume file: .planning/phases/46-mcp-trust-and-facade/46-CONTEXT.md
+Resume file: .planning/phases/45.1-native-mcp-client/45.1-CONTEXT.md
 Next action: `/gsd-discuss-phase 45`, then `/gsd-plan-phase 45`.
