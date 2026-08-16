@@ -46,6 +46,17 @@ func newRecordingMemoryMCPServer(t *testing.T) *recordingMemoryMCPServer {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
+		// The SDK opens a standalone SSE stream with a bodiless GET on a
+		// pre-2026-07-28 negotiated protocol (this fixture negotiates 2025-06-18)
+		// unless DisableStandaloneSSE is set. This fixture is request/response
+		// only, and the stream is optional per the spec, so decline it — decoding
+		// a body that was never sent is what made this fixture report "decode
+		// request: EOF" once memory.go's CLI path moved onto the SDK client
+		// (mirrors newMCPHTTPTestServerWithTools's identical fix, mcp_status_test.go).
+		if r.Method == http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
 		var req struct {
 			ID     *int64          `json:"id"`
 			Method string          `json:"method"`

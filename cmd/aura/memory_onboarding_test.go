@@ -2,13 +2,16 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/chetto1983/aura/internal/mcp"
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/chetto1983/aura/internal/onboarding"
 )
 
@@ -17,36 +20,40 @@ type recordedCall struct {
 	args map[string]any
 }
 
-// fakeTransport is a recording mcp.Transport. It counts its own Close so the unit tier can
-// assert the open/close pairing; the SESSION count itself is proven at the wire in
-// TestStoreConfirmedOpensOneMCPSessionForTheWholeSubmission, because a fake counting its
-// own invocations is not evidence about the protocol.
+// fakeTransport is a recording in-memory MCP server fixture. The bespoke client
+// interface it used to fake is gone (D-103: MountedServer/*sdkmcp.ClientSession are
+// concrete types, not an interface a hand-rolled double can satisfy), so this fixture
+// opens a REAL *sdkmcp.ClientSession
+// over sdkmcp.NewInMemoryTransports() per open() call and records what its handler
+// observed — the same daemon-free real-SDK-session idiom internal/agent/mcptools and
+// serve_memory_readiness_test.go use. It counts server-side session teardown (via the
+// server session's Wait()) so the unit tier can still assert the open/close pairing;
+// the SESSION count itself is proven at the wire in
+// TestStoreConfirmedOpensOneMCPSessionForTheWholeSubmission, because a fake counting
+// its own invocations is not evidence about the protocol.
 type fakeTransport struct {
 	mu      sync.Mutex
 	calls   []recordedCall
-	closes  int
+	closes  int32
 	callErr error
 	result  string
 }
 
-func (f *fakeTransport) CallTool(_ context.Context, name string, args map[string]any) (string, error) {
+func (f *fakeTransport) handle(_ context.Context, req *sdkmcp.CallToolRequest) (*sdkmcp.CallToolResult, error) {
+	var args map[string]any
+	_ = json.Unmarshal(req.Params.Arguments, &args)
 	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.calls = append(f.calls, recordedCall{tool: name, args: args})
-	if f.callErr != nil {
-		return "", f.callErr
+	f.calls = append(f.calls, recordedCall{tool: req.Params.Name, args: args})
+	callErr := f.callErr
+	result := f.result
+	f.mu.Unlock()
+	if callErr != nil {
+		return &sdkmcp.CallToolResult{
+			IsError: true,
+			Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: callErr.Error()}},
+		}, nil
 	}
-	return f.result, nil
-}
-
-func (f *fakeTransport) ListTools(context.Context) ([]mcp.ToolDef, error) { return nil, nil }
-func (f *fakeTransport) Ping(context.Context) error                       { return nil }
-
-func (f *fakeTransport) Close() error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.closes++
-	return nil
+	return &sdkmcp.CallToolResult{Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: result}}}, nil
 }
 
 func (f *fakeTransport) recorded() []recordedCall {
@@ -56,25 +63,57 @@ func (f *fakeTransport) recorded() []recordedCall {
 }
 
 func (f *fakeTransport) closeCount() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.closes
+	return int(atomic.LoadInt32(&f.closes))
 }
 
-// openCounter is the seam fixture: it hands out ONE fakeTransport and counts how many times
-// the store asked to open a connection.
+// waitForCloseCount polls closeCount up to a bound, because a real SDK session's
+// server-side teardown (the goroutine blocked on serverSession.Wait()) completes a
+// short but genuine moment after the client-side session.Close() call returns — unlike
+// the old hand-rolled fakeTransport.Close(), which incremented synchronously in the
+// same call. This is not a sleep-and-hope: it returns the instant the count matches,
+// and only fails after the bound genuinely elapses.
+func waitForCloseCount(t *testing.T, tr *fakeTransport, want int) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if got := tr.closeCount(); got == want {
+			return
+		} else if time.Now().After(deadline) {
+			t.Fatalf("close count = %d, want %d (timed out waiting for server-side teardown)", got, want)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// openCounter is the seam fixture: it dials a fresh in-memory session against the SAME
+// recording fakeTransport handler on every open() call (mirroring one real dial per
+// submission) and counts how many times the store asked to open a connection.
 type openCounter struct {
 	transport *fakeTransport
 	opens     int
 	openErr   error
 }
 
-func (o *openCounter) open(context.Context) (mcp.Transport, error) {
+func (o *openCounter) open(ctx context.Context) (*sdkmcp.ClientSession, error) {
 	o.opens++
 	if o.openErr != nil {
 		return nil, o.openErr
 	}
-	return o.transport, nil
+	server := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "fixture-memory", Version: "0.0.1"}, nil)
+	for _, name := range []string{"memory_upsert_fact", "memory_facts_about"} {
+		server.AddTool(&sdkmcp.Tool{Name: name, InputSchema: map[string]any{"type": "object"}}, o.transport.handle)
+	}
+	clientTransport, serverTransport := sdkmcp.NewInMemoryTransports()
+	serverSession, err := server.Connect(ctx, serverTransport, nil)
+	if err != nil {
+		return nil, err
+	}
+	go func() {
+		_ = serverSession.Wait()
+		atomic.AddInt32(&o.transport.closes, 1)
+	}()
+	client := sdkmcp.NewClient(&sdkmcp.Implementation{Name: "aura-test", Version: "0.0.1"}, nil)
+	return client.Connect(ctx, clientTransport, nil)
 }
 
 // fakeStore builds a memoryProfileStore over the recording open seam and a fixed clock.
@@ -222,9 +261,7 @@ func TestStoreConfirmedOpensOneSessionSeam(t *testing.T) {
 	if oc.opens != 1 {
 		t.Errorf("opens = %d, want 1 for the whole submission", oc.opens)
 	}
-	if got := oc.transport.closeCount(); got != 1 {
-		t.Errorf("closes = %d, want 1", got)
-	}
+	waitForCloseCount(t, oc.transport, 1)
 }
 
 func TestStoreSkippedWritesOnlySkippedSentinel(t *testing.T) {
@@ -243,9 +280,10 @@ func TestStoreSkippedWritesOnlySkippedSentinel(t *testing.T) {
 		c.args["user_identifier"] != "id-uuid" {
 		t.Errorf("skip sentinel = %#v", c.args)
 	}
-	if oc.opens != 1 || oc.transport.closeCount() != 1 {
-		t.Errorf("skip opened %d / closed %d sessions, want 1/1", oc.opens, oc.transport.closeCount())
+	if oc.opens != 1 {
+		t.Errorf("skip opened %d sessions, want 1", oc.opens)
 	}
+	waitForCloseCount(t, oc.transport, 1)
 }
 
 func TestStoreConfirmedEmptyIdentityRefused(t *testing.T) {
@@ -265,7 +303,7 @@ func TestStoreConfirmedEmptyIdentityRefused(t *testing.T) {
 func TestStoreConfirmedSurfacesSessionAndWriteFailures(t *testing.T) {
 	t.Run("open failure", func(t *testing.T) {
 		m := &memoryProfileStore{
-			open: func(context.Context) (mcp.Transport, error) { return nil, errors.New("sidecar down") },
+			open: func(context.Context) (*sdkmcp.ClientSession, error) { return nil, errors.New("sidecar down") },
 			now:  time.Now,
 		}
 		if err := m.StoreConfirmed(context.Background(), "id-uuid", fullSeedAnswers); err == nil {
@@ -285,9 +323,8 @@ func TestStoreConfirmedSurfacesSessionAndWriteFailures(t *testing.T) {
 		if got := len(tr.recorded()); got != 1 {
 			t.Errorf("calls after a failed write = %d, want 1 (abort, never stamp the sentinel)", got)
 		}
-		if tr.closeCount() != 1 {
-			t.Errorf("a failed submission leaked the session (closes = %d)", tr.closeCount())
-		}
+		// A failed submission must not leak the session either.
+		waitForCloseCount(t, tr, 1)
 	})
 }
 

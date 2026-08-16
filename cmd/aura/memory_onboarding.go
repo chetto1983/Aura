@@ -12,7 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chetto1983/aura/internal/mcp"
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/chetto1983/aura/internal/onboarding"
 )
 
@@ -33,7 +34,7 @@ const (
 // in MUSR mode (mirrors serve_recall.go). The open + now seams make it daemon-free
 // unit-testable.
 type memoryProfileStore struct {
-	open func(ctx context.Context) (mcp.Transport, error)
+	open func(ctx context.Context) (*sdkmcp.ClientSession, error)
 	now  func() time.Time
 }
 
@@ -50,10 +51,10 @@ func (m *memoryProfileStore) StoreConfirmed(ctx context.Context, identityID stri
 	if identityID == "" {
 		return fmt.Errorf("onboarding memory store: empty identity")
 	}
-	return m.withSession(ctx, memorySubmissionTimeout, func(ctx context.Context, cli mcp.Transport) error {
+	return m.withSession(ctx, memorySubmissionTimeout, func(ctx context.Context, session *sdkmcp.ClientSession) error {
 		return m.writeProfile(
 			ctx,
-			cli,
+			session,
 			identityID,
 			onboarding.MapProfile(a),
 			onboarding.PredicateOnboardingCompleted,
@@ -65,10 +66,10 @@ func (m *memoryProfileStore) StoreSkipped(ctx context.Context, identityID string
 	if identityID == "" {
 		return fmt.Errorf("onboarding memory store: empty identity")
 	}
-	return m.withSession(ctx, memoryOneCallTimeout, func(ctx context.Context, cli mcp.Transport) error {
+	return m.withSession(ctx, memoryOneCallTimeout, func(ctx context.Context, session *sdkmcp.ClientSession) error {
 		return m.writeProfile(
 			ctx,
-			cli,
+			session,
 			identityID,
 			onboarding.ProfileMemory{},
 			onboarding.PredicateOnboardingSkipped,
@@ -78,15 +79,15 @@ func (m *memoryProfileStore) StoreSkipped(ctx context.Context, identityID string
 
 // withSession opens one memory MCP connection, runs fn over it, and closes it. budget
 // covers the whole body, so every call fn makes shares one deadline.
-func (m *memoryProfileStore) withSession(ctx context.Context, budget time.Duration, fn func(context.Context, mcp.Transport) error) error {
+func (m *memoryProfileStore) withSession(ctx context.Context, budget time.Duration, fn func(context.Context, *sdkmcp.ClientSession) error) error {
 	sessCtx, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
-	cli, err := m.open(sessCtx)
+	session, err := m.open(sessCtx)
 	if err != nil {
 		return fmt.Errorf("onboarding memory session: %w", err)
 	}
-	defer func() { _ = cli.Close() }()
-	return fn(sessCtx, cli)
+	defer func() { _ = session.Close() }()
+	return fn(sessCtx, session)
 }
 
 // multiValuedPredicates are the ones a person can hold several of at once. Everything
@@ -102,7 +103,7 @@ var multiValuedPredicates = map[string]struct{}{
 
 func (m *memoryProfileStore) writeProfile(
 	ctx context.Context,
-	cli mcp.Transport,
+	session *sdkmcp.ClientSession,
 	identityID string,
 	profile onboarding.ProfileMemory,
 	completionPredicate string,
@@ -110,7 +111,7 @@ func (m *memoryProfileStore) writeProfile(
 	now := m.now()
 	runID := "onboarding-" + now.Format(time.RFC3339)
 	for _, fact := range profileFacts(profile, identityID, completionPredicate, now) {
-		if err := m.upsert(ctx, cli, identityID, runID, fact); err != nil {
+		if err := m.upsert(ctx, session, identityID, runID, fact); err != nil {
 			return err
 		}
 	}
@@ -197,12 +198,12 @@ func profileFacts(
 
 func (m *memoryProfileStore) upsert(
 	ctx context.Context,
-	cli mcp.Transport,
+	session *sdkmcp.ClientSession,
 	identityID, runID string,
 	fact profileFact,
 ) error {
 	_, multi := multiValuedPredicates[fact.predicate]
-	_, err := cli.CallTool(ctx, "memory_upsert_fact", map[string]any{
+	_, err := callSessionText(ctx, session, memoryServerName, "memory_upsert_fact", map[string]any{
 		"user_identifier": identityID,
 		"subject":         fact.subject,
 		"subject_kind":    fact.subjectKind,
@@ -228,8 +229,8 @@ func (m *memoryProfileStore) Status(ctx context.Context, identityID string) (onb
 		return onboarding.OnboardingState{}, nil
 	}
 	var text string
-	err := m.withSession(ctx, memoryOneCallTimeout, func(ctx context.Context, cli mcp.Transport) error {
-		out, err := cli.CallTool(ctx, "memory_facts_about", map[string]any{
+	err := m.withSession(ctx, memoryOneCallTimeout, func(ctx context.Context, session *sdkmcp.ClientSession) error {
+		out, err := callSessionText(ctx, session, memoryServerName, "memory_facts_about", map[string]any{
 			"entity": identityID, "user_identifier": identityID,
 		})
 		text = out

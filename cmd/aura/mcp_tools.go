@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/mcp"
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
@@ -21,31 +23,31 @@ func mcpTools(ctx context.Context, args []string, out io.Writer) error {
 	if server, ok, err := effectiveManagedMCPServer(name); err != nil {
 		return err
 	} else if ok {
-		cli, defs, err := openAndListManagedMCPTools(ctx, name, server)
+		session, advertised, err := openAndListManagedMCPTools(ctx, name, server)
 		if err != nil {
 			return err
 		}
-		defer func() { _ = cli.Close() }()
-		return writeMCPTools(out, defs)
+		defer func() { _ = session.Close() }()
+		return writeMCPTools(out, advertised)
 	}
 	cfg, err := effectiveMCPServer(name)
 	if err != nil {
 		return err
 	}
-	cli, defs, err := openAndListMCPTools(ctx, name, cfg)
+	session, advertised, err := openAndListMCPTools(ctx, name, cfg)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = cli.Close() }()
-	return writeMCPTools(out, defs)
+	defer func() { _ = session.Close() }()
+	return writeMCPTools(out, advertised)
 }
 
-func writeMCPTools(out io.Writer, defs []mcp.ToolDef) error {
-	sort.Slice(defs, func(i, j int) bool { return defs[i].Name < defs[j].Name })
-	for _, def := range defs {
+func writeMCPTools(out io.Writer, advertised []*sdkmcp.Tool) error {
+	sort.Slice(advertised, func(i, j int) bool { return advertised[i].Name < advertised[j].Name })
+	for _, t := range advertised {
 		if err := writef(out, "%s\tmounted\t%s\n",
-			def.Name,
-			firstMCPDescriptionLine(def.Description),
+			t.Name,
+			firstMCPDescriptionLine(t.Description),
 		); err != nil {
 			return err
 		}
@@ -79,54 +81,97 @@ func runtimeMCPEgressPolicy(server mcp.ManagedServer) mcp.EgressPolicy {
 	return mcp.RuntimeEgressPolicy(cfg.Profile.Strict(), server)
 }
 
-func openManagedMCPTransport(ctx context.Context, name string, server mcp.ManagedServer) (mcp.Transport, error) {
-	return mcp.OpenServerWithEgress(ctx, name, server, runtimeMCPEgressPolicy(server))
+// cliSessionOptions is the SessionOptions every CLI-opened session carries: the
+// _meta.aura operation stamp, the same middleware mount.go's sendingMiddleware
+// attaches to every agent-bridge mount — a policy fix in one cannot miss the other.
+func cliSessionOptions() mcp.SessionOptions {
+	return mcp.SessionOptions{Sending: []sdkmcp.Middleware{mcp.OperationMetaMiddleware()}}
+}
+
+// openManagedMCPSession opens a managed server's session through the SDK. Renamed
+// from its pre-SDK "...Transport" name: that word now names a specific, different
+// SDK type, and keeping the old name would mislead a future reader.
+func openManagedMCPSession(ctx context.Context, name string, server mcp.ManagedServer) (*sdkmcp.ClientSession, error) {
+	return mcp.OpenSDKSession(ctx, name, server, runtimeMCPEgressPolicy(server), cliSessionOptions())
 }
 
 func probeManagedMCPServer(ctx context.Context, name string, server mcp.ManagedServer) mcp.ProbeResult {
 	return mcp.ProbeServerWithEgress(ctx, name, server, runtimeMCPEgressPolicy(server))
 }
 
-func openAndListMCPTools(ctx context.Context, name string, cfg mcp.ServerConfig) (*mcp.Client, []mcp.ToolDef, error) {
+func openAndListMCPTools(ctx context.Context, name string, cfg mcp.ServerConfig) (*sdkmcp.ClientSession, []*sdkmcp.Tool, error) {
 	ctx, cancel := context.WithTimeout(ctx, mcpInspectionTimeout())
 	defer cancel()
-	cli, err := mcp.Open(ctx, name, cfg)
+	session, err := mcp.OpenSDKSessionForConfig(ctx, ctx, name, cfg, cliSessionOptions())
 	if err != nil {
 		return nil, nil, err
 	}
-	defs, err := cli.ListTools(ctx)
+	advertised, err := drainSDKTools(ctx, session)
 	if err != nil {
-		_ = cli.Close()
+		mcp.ReleaseSession(session)
 		return nil, nil, err
 	}
-	return cli, defs, nil
+	return session, advertised, nil
 }
 
-func openAndListManagedMCPTools(ctx context.Context, name string, server mcp.ManagedServer) (mcp.Transport, []mcp.ToolDef, error) {
+func openAndListManagedMCPTools(ctx context.Context, name string, server mcp.ManagedServer) (*sdkmcp.ClientSession, []*sdkmcp.Tool, error) {
 	ctx, cancel := context.WithTimeout(ctx, mcpInspectionTimeout())
 	defer cancel()
 	var (
-		cli mcp.Transport
-		err error
+		session *sdkmcp.ClientSession
+		err     error
 	)
 	if strings.TrimSpace(server.Type) == mcp.ServerTypeStreamableHTTP || strings.TrimSpace(server.URL) != "" {
-		cli, err = openManagedMCPTransport(ctx, name, server)
+		session, err = openManagedMCPSession(ctx, name, server)
 	} else {
 		cfg, cfgErr := mcpmanager.RuntimeLaunchConfig(name, server)
 		if cfgErr != nil {
 			return nil, nil, cfgErr
 		}
-		cli, err = mcp.Open(ctx, name, cfg)
+		session, err = mcp.OpenSDKSessionForConfig(ctx, ctx, name, cfg, cliSessionOptions())
 	}
 	if err != nil {
 		return nil, nil, err
 	}
-	defs, err := cli.ListTools(ctx)
+	advertised, err := drainSDKTools(ctx, session)
 	if err != nil {
-		_ = cli.Close()
+		mcp.ReleaseSession(session)
 		return nil, nil, err
 	}
-	return cli, defs, nil
+	return session, advertised, nil
+}
+
+// drainSDKTools drains session's paginated tool list bounded by ctx rather than
+// however long the peer takes to answer — mirrors bridge_supervisor.go's drainTools
+// and probe.go's countTools (internal/mcp/bounded_call.go: the SDK observes a
+// deadline only between whole dual-era handshake rungs, never mid-call).
+func drainSDKTools(ctx context.Context, session *sdkmcp.ClientSession) ([]*sdkmcp.Tool, error) {
+	return mcp.BoundedCall(ctx, func(ctx context.Context) ([]*sdkmcp.Tool, error) {
+		var out []*sdkmcp.Tool
+		for t, err := range session.Tools(ctx, nil) {
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, t)
+		}
+		return out, nil
+	}, nil)
+}
+
+// callSessionText calls tool on session and decodes its result through the shared
+// domain-outcome chain — the ONE CLI decode site in the tree (RESEARCH Pitfall 1;
+// mirrors bridge_supervisor.go's decodeResult). server names the MCP server the
+// session belongs to, for the decoded error's "mcp %q: tool ..." shape.
+func callSessionText(ctx context.Context, session *sdkmcp.ClientSession, server, tool string, args map[string]any) (string, error) {
+	res, err := session.CallTool(ctx, &sdkmcp.CallToolParams{Name: tool, Arguments: args})
+	if err != nil {
+		return "", err
+	}
+	text, isErr := mcp.DecodeToolResult(res)
+	if isErr {
+		return "", mcp.DecodeToolCallError(server, tool, text)
+	}
+	return text, nil
 }
 
 // mcpInspectionTimeout keeps single-server tools/doctor on the same operator-owned

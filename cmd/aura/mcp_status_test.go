@@ -109,14 +109,14 @@ func TestStrictRuntimeProfileOwnsManagedMCPEgress(t *testing.T) {
 			if policy := runtimeMCPEgressPolicy(remote); !policy.Enforced() {
 				t.Fatal("strict runtime profile was weakened by AURA_MCP_SSRF_ENFORCE=false")
 			}
-			if _, err := openManagedMCPTransport(context.Background(), "remote", remote); err == nil || !strings.Contains(err.Error(), "blocked target") {
+			if _, err := openManagedMCPSession(context.Background(), "remote", remote); err == nil || !strings.Contains(err.Error(), "blocked target") {
 				t.Fatalf("strict remote/private open error = %v, want SSRF rejection", err)
 			}
 
 			recipe := remote
 			recipe.Source = "recipe:calendar"
 			recipe.Trust = mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe}
-			client, err := openManagedMCPTransport(context.Background(), "calendar", recipe)
+			client, err := openManagedMCPSession(context.Background(), "calendar", recipe)
 			if err != nil {
 				t.Fatalf("exact trusted recipe destination rejected under strict profile: %v", err)
 			}

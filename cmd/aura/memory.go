@@ -18,10 +18,11 @@ import (
 	"strings"
 	"time"
 
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/identityctx"
-	"github.com/chetto1983/aura/internal/mcp"
 )
 
 const memoryServerName = "memory"
@@ -239,10 +240,10 @@ func callMemoryTool(ctx context.Context, tool string, args map[string]any, out i
 }
 
 // openMemoryMCP resolves the managed memory sidecar and opens ONE connection to it. The
-// returned Transport carries its MCP session across every CallTool until Close, so a
+// returned session carries its MCP session across every call until Close, so a
 // caller with several writes to make (the onboarding seed) handshakes once instead of
 // once per write (Amendment #95). The caller owns the Close.
-func openMemoryMCP(ctx context.Context) (mcp.Transport, error) {
+func openMemoryMCP(ctx context.Context) (*sdkmcp.ClientSession, error) {
 	server, ok, err := effectiveManagedMCPServer(memoryServerName)
 	if err != nil {
 		return nil, err
@@ -250,7 +251,7 @@ func openMemoryMCP(ctx context.Context) (mcp.Transport, error) {
 	if !ok {
 		return nil, fmt.Errorf("memory MCP server is not configured or is disabled; the managed %q recipe must be mounted", memoryServerName)
 	}
-	return openManagedMCPTransport(ctx, memoryServerName, server)
+	return openManagedMCPSession(ctx, memoryServerName, server)
 }
 
 // callMemoryToolText is the text-returning core of callMemoryTool (shared with the
@@ -260,16 +261,16 @@ func openMemoryMCP(ctx context.Context) (mcp.Transport, error) {
 func callMemoryToolText(ctx context.Context, tool string, args map[string]any) (string, error) {
 	callCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	cli, err := openMemoryMCP(callCtx)
+	session, err := openMemoryMCP(callCtx)
 	if err != nil {
 		return "", err
 	}
-	defer func() { _ = cli.Close() }()
+	defer func() { _ = session.Close() }()
 	scoped, err := scopeMemoryArgs(callCtx, args)
 	if err != nil {
 		return "", err
 	}
-	return cli.CallTool(callCtx, tool, scoped)
+	return callSessionText(callCtx, session, memoryServerName, tool, scoped)
 }
 
 // scopeMemoryArgs stamps the caller's identity on every memory call. The ArcadeDB
