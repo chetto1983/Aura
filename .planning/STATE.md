@@ -5,15 +5,15 @@ milestone_name: HERMES-CLAUDE_PARITY
 current_phase: 45.1
 current_phase_name: native-mcp-client
 status: executing
-stopped_at: Phase 45.1 wave 3 complete (plans 03, 04)
-last_updated: "2026-08-16T18:36:52.000Z"
+stopped_at: Phase 45.1 plan 05 complete; next is checkpoint plan 06
+last_updated: "2026-08-16T20:09:55.000Z"
 last_activity: 2026-08-16
-last_activity_desc: 45.1 wave 3 landed — bespoke MCP client deleted (03), four-hint annotations adopted escalate-only (04)
+last_activity_desc: 45.1-05 landed — calling identity moved onto _meta, fail-closed, nine user_identifier fields removed
 progress:
   total_phases: 3
   completed_phases: 1
   total_plans: 17
-  completed_plans: 13
+  completed_plans: 14
 ---
 
 # Project State
@@ -28,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 ## Current Position
 
 Phase: 45.1 (native-mcp-client) — EXECUTING
-Plan: 4 of 8
+Plan: 5 of 8
 Status: Ready to execute
 Phase 46 discussion are recorded in `46-CONTEXT.md` D-10..D-16 and in ROADMAP §45.1.
-Last activity: 2026-08-16 — wave 3 complete; next is wave 4 (plan 05, then checkpoint plan 06)
+Last activity: 2026-08-16 — plan 05 complete; next is checkpoint plan 06 (elicitation surface decision)
 requirements as falsified or already-shipped, and inserted Phase 45.1 ahead of it by operator
 decision ("use mcp client native no bespoke").
 
@@ -40,7 +40,7 @@ Phase 46 is context-complete but **blocked on five amendments** (46-CONTEXT.md D
 Last reconciliation: 2026-08-13 — this file's counts re-measured against ROADMAP.md (see
 Session Continuity). No work was executed on that date.
 
-Progress: [████████░░] 76%
+Progress: [████████░░] 82%
 
 ## Performance Metrics
 

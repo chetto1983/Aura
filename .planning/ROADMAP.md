@@ -251,7 +251,7 @@ beside it.
 5. A live turn shows `user_identifier` reaching `cmd/arcadedb-mcp` through `_meta` and no longer as
    a tool argument.
 
-**Plans**: 4/8 plans executed in 6 waves
+**Plans**: 5/8 plans executed in 6 waves
 
 Plans:
 **Wave 1**
@@ -269,7 +269,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 45.1-05-PLAN.md — `_meta` identity cutover, server-side fail-closed, and the three PITFALLS §4 blast radii disposed *(wave 4)*
+- [x] 45.1-05-PLAN.md — `_meta` identity cutover, server-side fail-closed, and the three PITFALLS §4 blast radii disposed *(wave 4)*
 - [ ] 45.1-06-PLAN.md — checkpoint: which surface a server-initiated elicitation reaches the operator on *(wave 4)*
 
 **Wave 5** *(blocked on Wave 4 completion)*
