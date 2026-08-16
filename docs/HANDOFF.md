@@ -266,12 +266,30 @@ da RLS — **e contiene `OPENROUTER_API_KEY`**. *Confidenza: alta.*
 Content-Type gate, unlike every other write on this server". Difesa in profondità CSRF
 assottigliata rispetto a ogni altra scrittura del server. *Confidenza: alta.*
 
-**2.3 — `migratedDocumentPool(t)` migra qualunque database gli env puntino, ed è usato da quattro
-test.** `internal/documents/store_integration_test.go:29` legge `AURA_DB_MIGRATE_URL` e chiama
-`db.Migrate`. L'alternativa sicura è **accanto**: `integration_pool_helper_test.go:23`
-`pipelineDisposablePool`. **Io oggi ci sono cascato**: un run `db_integration` puntato al DB vivo
-gli ha applicato la migration 0095 fuori da un deploy. *Confidenza: alta. Il fix è una riga per
-test.*
+**2.3 — CHIUSA il 2026-08-16 (`b04b7dd08`), e il perimetro della voce era sbagliato per
+difetto.** `migratedDocumentPool` non esisteva più: `11f49cd9b` aveva già portato
+`internal/documents` su database usa-e-getta. Ma il pericolo non era mai stato lì soltanto —
+**30 file di test in 19 package** prendono `AURA_DB_MIGRATE_URL` dall'ambiente e lo passano a
+`db.Migrate`, che applica ogni migration pendente a qualunque cosa quell'URL indichi. `.env`
+distribuisce il DSN del deployment e ogni operatore ce l'ha esportato per ragioni che con i
+test non c'entrano: fra un normale `go test -tags db_integration` e una migration sul DB vivo
+c'era **una variabile d'ambiente**.
+
+Convertire tutti e 30 a database usa-e-getta sarebbe stato il fix di `documents` trenta volte:
+un `CREATE DATABASE` e una migration completa **per test**, pagati a ogni run di CI, per
+difendersi da un nome. Ciò che separa il sicuro dal pericoloso è la guardia, quindi c'è solo
+quella — una riga per call-site, costo di runtime zero.
+
+La regola è quella di `scripts/coverage_docker.sh`, apposta perché le due non possano
+divergere: un database che si chiama `aura` è rifiutato **se `GITHUB_ACTIONS` non è settato**,
+perché in CI quel nome appartiene a un container che il job ha creato e butterà via. Fallisce e
+non salta: un skip leggerebbe come «questo tier non si applica», il falso verde che la regola
+no-skip-as-green esiste per impedire.
+
+Provata su un test `db_integration` vero, in tre direzioni: puntata a `…/aura` rifiuta **prima
+di aprire la connessione**; puntata a `…/aura_dev` lascia passare e il test fallisce più avanti
+per conto suo; con `GITHUB_ACTIONS=true` il nome vivo è ammesso, quindi nessun job di CI cambia
+comportamento.
 
 ---
 
