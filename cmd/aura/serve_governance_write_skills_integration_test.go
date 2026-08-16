@@ -25,6 +25,7 @@ import (
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/dbtest"
 	"github.com/chetto1983/aura/internal/skills"
 	"github.com/google/uuid"
 )
@@ -86,7 +87,7 @@ func buildSkillsInstall(t *testing.T, cfg *config.Config, skillName, body string
 	defer cancel()
 
 	pwd := skillsBridgeEnvOrSkip(t, "POSTGRES_PASSWORD")
-	migrateURL := skillsBridgeEnvOrSkip(t, "AURA_DB_MIGRATE_URL")
+	migrateURL := dbtest.MigrateURL(t, skillsBridgeEnvOrSkip(t, "AURA_DB_MIGRATE_URL"))
 	appURL := skillsBridgeEnvOrSkip(t, "AURA_DB_URL")
 
 	host := os.Getenv("PGHOST")

@@ -9,9 +9,10 @@
 #   - generated (internal/db/sqlc) and the pre-rewrite llm/client.go skeleton
 #     (owned by Slice 1) are excluded until rewritten. (internal/sandbox was
 #     removed and internal/swarm is now measured — neither is filtered here.)
-#   - internal/agent/agenttest is test-support (shared Agent fakes/mocks for
-#     other packages' tests, like sqlc is generated); its own low self-coverage
-#     dilutes the floor without measuring any owned runtime surface (T-04).
+#   - internal/agent/agenttest and internal/dbtest are test-support (shared Agent
+#     fakes/mocks, and the guard that stops a db_integration run migrating the live
+#     database); like sqlc they are not owned runtime surface, and their own
+#     self-coverage dilutes the floor without measuring any (T-04).
 #
 # Integration tiers REQUIRE the container stack + env (AURA_DB_URL, AURA_DB_MIGRATE_URL).
 # Run after `make db-migrate memory-up`, or in the CI coverage job that has the stack.
@@ -66,7 +67,7 @@ fi
 # dropped from the floor.
 {
   head -1 "${PROFILE}"
-  grep -v '^mode:' "${PROFILE}" | grep -vE '/internal/db/sqlc/|/internal/agent/agenttest/|/internal/llm/client\.go:'
+  grep -v '^mode:' "${PROFILE}" | grep -vE '/internal/db/sqlc/|/internal/agent/agenttest/|/internal/dbtest/|/internal/llm/client\.go:'
 } > "${PROFILE}.filtered"
 
 ROWS="$(grep -c -v '^mode:' "${PROFILE}.filtered" || true)"

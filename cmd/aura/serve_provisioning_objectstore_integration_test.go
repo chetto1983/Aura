@@ -28,6 +28,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/dbtest"
 	"github.com/chetto1983/aura/internal/objectstore"
 )
 
@@ -54,7 +55,7 @@ func objStoreProvMigratedPool(t *testing.T) *pgxpool.Pool {
 	defer cancel()
 
 	pwd := objStoreProvEnvOrSkip(t, "POSTGRES_PASSWORD")
-	migrateURL := objStoreProvEnvOrSkip(t, "AURA_DB_MIGRATE_URL")
+	migrateURL := dbtest.MigrateURL(t, objStoreProvEnvOrSkip(t, "AURA_DB_MIGRATE_URL"))
 	appURL := objStoreProvEnvOrSkip(t, "AURA_DB_URL")
 
 	host := os.Getenv("PGHOST")

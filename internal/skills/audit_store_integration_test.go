@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/dbtest"
 	"github.com/chetto1983/aura/internal/scoring"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -67,7 +68,7 @@ func migratedPool(t *testing.T) *pgxpool.Pool {
 	defer cancel()
 
 	pwd := envOrSkip(t, "POSTGRES_PASSWORD")
-	migrateURL := envOrSkip(t, "AURA_DB_MIGRATE_URL")
+	migrateURL := dbtest.MigrateURL(t, envOrSkip(t, "AURA_DB_MIGRATE_URL"))
 	appURL := envOrSkip(t, "AURA_DB_URL")
 
 	if err := db.EnsureRoles(ctx, bootstrapURL(t, pwd), pwd); err != nil {
@@ -223,7 +224,7 @@ func TestMigration0010_SchemaRoundTrip(t *testing.T) {
 	// Down to 0009: the audit table must disappear and the kind CHECK must no
 	// longer admit skill_ttl_sweep. The step count is computed from the current
 	// head so this test does not rot when 0011+ migrations are added.
-	migrateURL := envOrSkip(t, "AURA_DB_MIGRATE_URL")
+	migrateURL := dbtest.MigrateURL(t, envOrSkip(t, "AURA_DB_MIGRATE_URL"))
 	if err := migrateToVersion(t, ctx, migrateURL, 9); err != nil {
 		t.Fatalf("migrate down to 0009: %v", err)
 	}

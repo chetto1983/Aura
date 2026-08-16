@@ -5,6 +5,7 @@ package idempotency
 import (
 	"context"
 	"errors"
+	"github.com/chetto1983/aura/internal/dbtest"
 	"testing"
 	"time"
 
@@ -15,7 +16,7 @@ import (
 func TestMaintenanceRegistryPostgresContract(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	migrateURL := requiredIntegrationEnv(t, "AURA_DB_MIGRATE_URL")
+	migrateURL := dbtest.MigrateURL(t, requiredIntegrationEnv(t, "AURA_DB_MIGRATE_URL"))
 	migrate := openIdempotencyPool(t, ctx, migrateURL)
 	assertDisposableMaintenanceDatabase(t, ctx, migrate)
 

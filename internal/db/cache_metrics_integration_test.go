@@ -17,6 +17,7 @@ package db
 
 import (
 	"context"
+	"github.com/chetto1983/aura/internal/dbtest"
 	"testing"
 	"time"
 
@@ -40,7 +41,7 @@ func cacheMetricsPool(t *testing.T) *pgxpool.Pool {
 	defer cancel()
 
 	pwd := envOrSkip(t, "POSTGRES_PASSWORD")
-	migrateURL := envOrSkip(t, "AURA_DB_MIGRATE_URL")
+	migrateURL := dbtest.MigrateURL(t, envOrSkip(t, "AURA_DB_MIGRATE_URL"))
 	appURL := envOrSkip(t, "AURA_DB_URL")
 
 	if err := EnsureRoles(ctx, bootstrapURL(t), pwd); err != nil {

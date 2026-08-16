@@ -19,6 +19,7 @@ package db
 import (
 	"context"
 	"errors"
+	"github.com/chetto1983/aura/internal/dbtest"
 	"os"
 	"testing"
 	"time"
@@ -39,7 +40,7 @@ func rlsMigratedPool(t *testing.T) *pgxpool.Pool {
 	if err := EnsureRoles(ctx, bootstrapURL(t), os.Getenv("POSTGRES_PASSWORD")); err != nil {
 		t.Fatalf("EnsureRoles: %v", err)
 	}
-	if _, err := Migrate(ctx, envOrSkip(t, "AURA_DB_MIGRATE_URL")); err != nil {
+	if _, err := Migrate(ctx, dbtest.MigrateURL(t, envOrSkip(t, "AURA_DB_MIGRATE_URL"))); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
 	pool, err := Open(ctx, &Config{URL: envOrSkip(t, "AURA_DB_URL")})

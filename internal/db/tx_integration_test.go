@@ -25,6 +25,7 @@ package db
 import (
 	"context"
 	"errors"
+	"github.com/chetto1983/aura/internal/dbtest"
 	"os"
 	"testing"
 	"time"
@@ -38,7 +39,7 @@ func appPoolMigrated(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	migrateURL := envOrSkip(t, "AURA_DB_MIGRATE_URL")
+	migrateURL := dbtest.MigrateURL(t, envOrSkip(t, "AURA_DB_MIGRATE_URL"))
 	if err := EnsureRoles(ctx, bootstrapURL(t), os.Getenv("POSTGRES_PASSWORD")); err != nil {
 		t.Fatalf("EnsureRoles: %v", err)
 	}

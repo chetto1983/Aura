@@ -27,6 +27,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/dbtest"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/objectstore/garageadmin"
 	"github.com/chetto1983/aura/internal/runner"
@@ -60,7 +61,7 @@ func musrMigratedPool(t *testing.T) *pgxpool.Pool {
 	defer cancel()
 
 	pwd := musrEnvOrSkip(t, "POSTGRES_PASSWORD")
-	migrateURL := musrEnvOrSkip(t, "AURA_DB_MIGRATE_URL")
+	migrateURL := dbtest.MigrateURL(t, musrEnvOrSkip(t, "AURA_DB_MIGRATE_URL"))
 	appURL := musrEnvOrSkip(t, "AURA_DB_URL")
 
 	host := os.Getenv("PGHOST")

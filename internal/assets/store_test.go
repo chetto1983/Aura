@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/dbtest"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -36,7 +37,7 @@ func migratedAssetPool(t *testing.T) *pgxpool.Pool {
 	defer cancel()
 
 	pwd := assetEnvOrSkip(t, "POSTGRES_PASSWORD")
-	migrateURL := assetEnvOrSkip(t, "AURA_DB_MIGRATE_URL")
+	migrateURL := dbtest.MigrateURL(t, assetEnvOrSkip(t, "AURA_DB_MIGRATE_URL"))
 	appURL := assetEnvOrSkip(t, "AURA_DB_URL")
 	host := os.Getenv("PGHOST")
 	if host == "" {

@@ -24,6 +24,7 @@ import (
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/dbtest"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -56,7 +57,7 @@ func migratedRunnerPool(t *testing.T) *pgxpool.Pool {
 	defer cancel()
 
 	pwd := envOrSkip(t, "POSTGRES_PASSWORD")
-	migrateURL := envOrSkip(t, "AURA_DB_MIGRATE_URL")
+	migrateURL := dbtest.MigrateURL(t, envOrSkip(t, "AURA_DB_MIGRATE_URL"))
 	appURL := envOrSkip(t, "AURA_DB_URL")
 
 	host := os.Getenv("PGHOST")

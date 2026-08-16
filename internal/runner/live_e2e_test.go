@@ -43,6 +43,7 @@ import (
 	"github.com/chetto1983/aura/internal/cachemetrics"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/dbtest"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/llm/openai_compat"
@@ -103,7 +104,7 @@ func newLiveHarness(t *testing.T) *liveHarness {
 	defer cancel()
 
 	pwd := envOrSkipLive(t, "POSTGRES_PASSWORD")
-	migrateURL := envOrSkipLive(t, "AURA_DB_MIGRATE_URL")
+	migrateURL := dbtest.MigrateURL(t, envOrSkipLive(t, "AURA_DB_MIGRATE_URL"))
 	appURL := envOrSkipLive(t, "AURA_DB_URL")
 
 	host := os.Getenv("PGHOST")

@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/dbtest"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -66,7 +67,7 @@ func migratedPool(t *testing.T) *pgxpool.Pool {
 	defer cancel()
 
 	pwd := envOrSkip(t, "POSTGRES_PASSWORD")
-	migrateURL := envOrSkip(t, "AURA_DB_MIGRATE_URL")
+	migrateURL := dbtest.MigrateURL(t, envOrSkip(t, "AURA_DB_MIGRATE_URL"))
 	appURL := envOrSkip(t, "AURA_DB_URL")
 
 	if err := db.EnsureRoles(ctx, bootstrapURL(t, pwd), pwd); err != nil {
@@ -164,7 +165,7 @@ func TestMigration0022_SchemaRoundTrip(t *testing.T) {
 	pool := migratedPool(t) // ensures roles + migrations to head first
 	ctx := context.Background()
 
-	migrateURL := envOrSkip(t, "AURA_DB_MIGRATE_URL")
+	migrateURL := dbtest.MigrateURL(t, envOrSkip(t, "AURA_DB_MIGRATE_URL"))
 	if err := migrateToVersion(t, ctx, migrateURL, 21); err != nil {
 		t.Fatalf("migrate down to 0021: %v", err)
 	}

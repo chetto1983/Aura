@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/dbtest"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -69,7 +70,7 @@ func migratedPool(t *testing.T) *pgxpool.Pool {
 	defer cancel()
 
 	pwd := envOrSkip(t, "POSTGRES_PASSWORD")
-	migrateURL := envOrSkip(t, "AURA_DB_MIGRATE_URL")
+	migrateURL := dbtest.MigrateURL(t, envOrSkip(t, "AURA_DB_MIGRATE_URL"))
 	appURL := envOrSkip(t, "AURA_DB_URL")
 
 	if err := db.EnsureRoles(ctx, bootstrapURL(t, pwd), pwd); err != nil {

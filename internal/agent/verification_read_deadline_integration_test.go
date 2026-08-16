@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/dbtest"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -54,7 +55,7 @@ func singleConnPool(t *testing.T) *pgxpool.Pool {
 	defer cancel()
 
 	appURL := dbEnvOrSkip(t, "AURA_DB_URL")
-	if _, err := db.Migrate(ctx, dbEnvOrSkip(t, "AURA_DB_MIGRATE_URL")); err != nil {
+	if _, err := db.Migrate(ctx, dbtest.MigrateURL(t, dbEnvOrSkip(t, "AURA_DB_MIGRATE_URL"))); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
 

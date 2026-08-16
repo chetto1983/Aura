@@ -29,6 +29,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/dbtest"
 	"github.com/chetto1983/aura/internal/mcp"
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 )
@@ -58,7 +59,7 @@ func mcpAuditMigratedPool(t *testing.T) *pgxpool.Pool {
 	defer cancel()
 
 	pwd := mcpAuditEnvOrSkip(t, "POSTGRES_PASSWORD")
-	migrateURL := mcpAuditEnvOrSkip(t, "AURA_DB_MIGRATE_URL")
+	migrateURL := dbtest.MigrateURL(t, mcpAuditEnvOrSkip(t, "AURA_DB_MIGRATE_URL"))
 	appURL := mcpAuditEnvOrSkip(t, "AURA_DB_URL")
 
 	host := os.Getenv("PGHOST")

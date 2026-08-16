@@ -25,6 +25,7 @@ import (
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/chetto1983/aura/internal/dbtest"
 	"github.com/chetto1983/aura/internal/identity"
 )
 
@@ -45,7 +46,7 @@ func TestMintBreakGlassTokenRoundTrip(t *testing.T) {
 	defer cancel()
 
 	pwd := recoveryEnvOrSkip(t, "POSTGRES_PASSWORD")
-	migrateURL := recoveryEnvOrSkip(t, "AURA_DB_MIGRATE_URL")
+	migrateURL := dbtest.MigrateURL(t, recoveryEnvOrSkip(t, "AURA_DB_MIGRATE_URL"))
 	appURL := recoveryEnvOrSkip(t, "AURA_DB_URL")
 
 	host := os.Getenv("PGHOST")

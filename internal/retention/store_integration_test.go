@@ -5,6 +5,7 @@ package retention
 import (
 	"context"
 	"errors"
+	"github.com/chetto1983/aura/internal/dbtest"
 	"os"
 	"sync"
 	"testing"
@@ -23,7 +24,7 @@ func TestRetentionStoreClaimsAreBoundedAndDisjoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(pool.Close)
-	migratePool, err := pgxpool.New(ctx, retentionIntegrationEnv(t, "AURA_DB_MIGRATE_URL"))
+	migratePool, err := pgxpool.New(ctx, dbtest.MigrateURL(t, retentionIntegrationEnv(t, "AURA_DB_MIGRATE_URL")))
 	if err != nil {
 		t.Fatal(err)
 	}
