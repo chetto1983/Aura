@@ -3,6 +3,11 @@ package conversations
 // The budget half of the context ladder: what a conversation is allowed to spend, and the
 // two thresholds derived from it. Split out of context.go when that file crossed the
 // 600-LOC cap; the ladder itself (which SPENDS the budget) stays there.
+//
+// The reserves come from internal/llm rather than being restated here: two copies of the
+// same arithmetic is how the ladder and the request guard come to disagree about what fits.
+
+import "github.com/chetto1983/aura/internal/llm"
 
 // ContextConfig carries the L1/L2 inputs. ContextWindow + MaxOutputTokens come
 // from llm.Config (04-01); ToolEvictAfterTurns from config.Config
@@ -63,8 +68,8 @@ type ContextConfig struct {
 // positive smallWindowHardCapFloor so L2.5 truncation stays active. A degenerate
 // ContextWindow <= 0 still yields 0.
 func (c ContextConfig) hardCap() int {
-	out := max(c.MaxOutputTokens, l2MinOutputReservation)
-	cap := c.ContextWindow - out - l2HeadroomTokens - c.ProviderErrorReserveTokens
+	out := llm.OutputReserve(c.ContextWindow, c.MaxOutputTokens)
+	cap := c.ContextWindow - out - llm.PromptHeadroom(c.ContextWindow) - c.ProviderErrorReserveTokens
 	if cap <= 0 {
 		cap = smallWindowHardCapFloor(c.ContextWindow)
 	}

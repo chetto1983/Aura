@@ -260,8 +260,12 @@ func TestLadder_L2_5_DropsOldestPair_WritesOneRotEvent(t *testing.T) {
 		{Seq: 4, Role: llm.RoleUser, Content: "recent q"},
 		{Seq: 5, Role: llm.RoleAssistant, Content: "recent a"},
 	}
-	// hard_cap small enough to require dropping the first pair but keep the second.
-	cfg := ContextConfig{ContextWindow: 20000 + 13000 + 4000, MaxOutputTokens: 1, ToolEvictAfterTurns: 100}
+	// hard_cap small enough to require dropping the first pair but keep the second. The
+	// window used to be written as 20000 + 13000 + 4000, i.e. the two reserves plus the
+	// wanted cap. Since 2026-08-16 the reserves are the smaller of those constants and a
+	// share of the window (30% / 20%), so on any window this size the cap is w - 0.3w -
+	// 0.2w = w/2: 8000 is what now yields the same 4000-token cap this test needs.
+	cfg := ContextConfig{ContextWindow: 8000, MaxOutputTokens: 1, ToolEvictAfterTurns: 100}
 	msgs, err := applyContextLadder(context.Background(), "conv", turns, cfg, enc, emit)
 	if err != nil {
 		t.Fatalf("ladder: %v", err)
@@ -338,11 +342,14 @@ func TestHardCap(t *testing.T) {
 	if got := c5.hardCap(); got != 100000-30000-13000-4096 {
 		t.Errorf("hardCap with provider reserve: got %d, want %d", got, 100000-30000-13000-4096)
 	}
-	// The reserve can push a borderline window onto the small-window floor (M-03 stays
-	// active): 33000 - 20000 - 13000 = 0 before the reserve, so any reserve makes the
-	// formula non-positive and it floors to ContextWindow/2, never disabling L2.5.
+	// A 33000 window used to land exactly on zero before the provider reserve (33000 -
+	// 20000 - 13000), which pushed it onto the M-03 floor. Since 2026-08-16 the reserves
+	// scale with the window -- 30% and 20%, so 9900 and 6600 here -- and the formula is
+	// positive on its own: 33000 - 9900 - 6600 - 4096. The floor is unchanged and still
+	// catches a genuinely degenerate window; this window simply is not one any more,
+	// which is the entire point of the change (a 32k model booted to a negative budget).
 	c6 := ContextConfig{ContextWindow: 33000, MaxOutputTokens: 1, ProviderErrorReserveTokens: 4096}
-	if got := c6.hardCap(); got != 33000/2 {
-		t.Errorf("hardCap reserve-driven small-window floor: got %d, want %d", got, 33000/2)
+	if got := c6.hardCap(); got != 33000-9900-6600-4096 {
+		t.Errorf("hardCap on a small window: got %d, want %d", got, 33000-9900-6600-4096)
 	}
 }

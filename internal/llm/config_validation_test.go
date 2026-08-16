@@ -27,10 +27,14 @@ func TestConfigValidateTokenBudget(t *testing.T) {
 		{"zero output reserve", func(cfg *llm.Config) { cfg.MaxOutputTokens = 0 }, "max_output_tokens"},
 		{"negative output reserve", func(cfg *llm.Config) { cfg.MaxOutputTokens = -1 }, "max_output_tokens"},
 		{"under reserved output", func(cfg *llm.Config) { cfg.MaxOutputTokens = cfg.MaxTokens - 1 }, "max_output_tokens"},
+		// 33_000 used to be the no-budget case (33000 - 20000 - 13000 = 0). The reserves
+		// scale with the window since 2026-08-16, so that window is valid now -- which is
+		// what lets a 32k local model boot. Asking for 9000 output tokens out of 10000 is
+		// still impossible, and that is the case worth pinning.
 		{"no prompt budget", func(cfg *llm.Config) {
-			cfg.ContextWindow = 33_000
+			cfg.ContextWindow = 10_000
 			cfg.MaxTokens = 1
-			cfg.MaxOutputTokens = 1
+			cfg.MaxOutputTokens = 9_000
 		}, "prompt budget"},
 	}
 	for _, tc := range cases {
@@ -60,8 +64,8 @@ func TestLoadRejectsInvalidTokenBudgetFromEnv(t *testing.T) {
 			"AURA_LLM_MAX_TOKENS": "4096", "AURA_MODEL_MAX_OUTPUT_TOKENS": "4095",
 		}},
 		{"no prompt budget", map[string]string{
-			"AURA_LLM_MAX_TOKENS": "1", "AURA_MODEL_MAX_OUTPUT_TOKENS": "1",
-			"AURA_MODEL_CONTEXT_WINDOW": "33000",
+			"AURA_LLM_MAX_TOKENS": "1", "AURA_MODEL_MAX_OUTPUT_TOKENS": "9000",
+			"AURA_MODEL_CONTEXT_WINDOW": "10000",
 		}},
 	}
 	for _, tc := range cases {
@@ -87,10 +91,15 @@ func TestLoadRejectsInvalidTokenBudgetFromFile(t *testing.T) {
 	}
 	path := filepath.Join(auraDir, "llm.json")
 	for name, payload := range map[string]string{
-		"zero":             `{"context_window":0}`,
-		"negative":         `{"max_tokens":-1}`,
-		"under_reserved":   `{"max_tokens":4096,"max_output_tokens":4095}`,
-		"no_prompt_budget": `{"max_tokens":1,"max_output_tokens":1,"context_window":33000}`,
+		"zero":           `{"context_window":0}`,
+		"negative":       `{"max_tokens":-1}`,
+		"under_reserved": `{"max_tokens":4096,"max_output_tokens":4095}`,
+		// A 33000 window used to be the canonical no-budget case (33000 - 20000 - 13000 = 0).
+		// Since 2026-08-16 the reserves scale with the window, so 33000 is valid and a
+		// 32k-context local model boots. What is still impossible is asking for more output
+		// than the window can hold: 9000 of output on a 10000 window leaves nothing to
+		// prompt with.
+		"no_prompt_budget": `{"max_tokens":1,"max_output_tokens":9000,"context_window":10000}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			if err := os.WriteFile(path, []byte(payload), 0o600); err != nil {

@@ -17,33 +17,7 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/llm"
-	"github.com/pkoukk/tiktoken-go"
 )
-
-// windowFor returns a ContextConfig whose hardCap() is EXACTLY want. With
-// MaxOutputTokens at the 20000 floor, hardCap = ContextWindow - 20000 - 13000, so
-// ContextWindow = want + 33000. ToolEvictAfterTurns is huge so L1 never fires —
-// these tests isolate the L2/L2.5 budget math from L1 eviction.
-func windowFor(want int) ContextConfig {
-	return ContextConfig{ContextWindow: want + l2MinOutputReservation + l2HeadroomTokens, MaxOutputTokens: 1, ToolEvictAfterTurns: 1_000_000}
-}
-
-// pairHistory builds [system, user, assistant] where the user+assistant bodies
-// are sized so the whole history totals exactly `target` tokens. It returns the
-// turns; the caller dials hardCap around target to hit a boundary.
-func sizedTurns(t *testing.T, enc *tiktoken.Tiktoken, bodyTokens int) []Turn {
-	t.Helper()
-	// "word " is 1 token in cl100k_base; repeat to reach the wanted body size.
-	body := strings.Repeat("word ", bodyTokens)
-	turns := []Turn{
-		{Seq: 1, Role: llm.RoleSystem, Content: "s"},
-		{Seq: 2, Role: llm.RoleUser, Content: body},
-		{Seq: 3, Role: llm.RoleAssistant, Content: body},
-		{Seq: 4, Role: llm.RoleUser, Content: "q"},
-		{Seq: 5, Role: llm.RoleAssistant, Content: "a"},
-	}
-	return turns
-}
 
 func toolCallsJSON(t *testing.T, ids ...string) []byte {
 	t.Helper()

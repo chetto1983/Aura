@@ -43,7 +43,7 @@ func overBudgetTurns() []Turn {
 // hardCap = 37000 - 20000 - 13000 = 4000: the two bloated turns blow it, the compacted
 // (summary + active) fits.
 func overBudgetConfig() ContextConfig {
-	return ContextConfig{ContextWindow: 20000 + 13000 + 4000, MaxOutputTokens: 1, ToolEvictAfterTurns: 100}
+	return ContextConfig{ContextWindow: 8000, MaxOutputTokens: 1, ToolEvictAfterTurns: 100}
 }
 
 func joinContent(msgs []llm.Message) string {

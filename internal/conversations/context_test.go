@@ -93,7 +93,7 @@ func TestLoadManagedHistory_L2_5_WritesRotEvent(t *testing.T) {
 		}
 	}
 
-	cfg := ContextConfig{ContextWindow: 20000 + 13000 + 4000, MaxOutputTokens: 1, ToolEvictAfterTurns: 100}
+	cfg := ContextConfig{ContextWindow: 8000, MaxOutputTokens: 1, ToolEvictAfterTurns: 100}
 	msgs, err := s.LoadManagedHistory(ctx, convID, cfg)
 	if err != nil {
 		t.Fatalf("LoadManagedHistory: %v", err)
