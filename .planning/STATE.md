@@ -5,15 +5,15 @@ milestone_name: HERMES-CLAUDE_PARITY
 current_phase: 45.1
 current_phase_name: native-mcp-client
 status: executing
-stopped_at: Phase 45.1 plan 05 complete; next is checkpoint plan 06
-last_updated: "2026-08-16T20:09:55.000Z"
+stopped_at: Phase 45.1 checkpoint 06 decided; next is plan 07 (elicitation handler)
+last_updated: "2026-08-16T20:14:58.000Z"
 last_activity: 2026-08-16
 last_activity_desc: 45.1-05 landed — calling identity moved onto _meta, fail-closed, nine user_identifier fields removed
 progress:
   total_phases: 3
   completed_phases: 1
   total_plans: 17
-  completed_plans: 14
+  completed_plans: 15
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 ## Current Position
 
 Phase: 45.1 (native-mcp-client) — EXECUTING
-Plan: 5 of 8
+Plan: 6 of 8
 Status: Ready to execute
 Phase 46 discussion are recorded in `46-CONTEXT.md` D-10..D-16 and in ROADMAP §45.1.
 Last activity: 2026-08-16 — plan 05 complete; next is checkpoint plan 06 (elicitation surface decision)
@@ -116,6 +116,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 45.1]: 45.1-04: trusted-recipe branch left byte-identical when adopting IdempotentHint/OpenWorldHint -- operator curation outranks a server hint, and wiring the new hints there would have re-tiered create_event, download_media and memory_upsert_fact, putting an approval prompt in front of ordinary work
 - [Phase 45.1]: 45.1-04: in the fallback path destructiveHint:false alone no longer earns the mutating tier -- idempotentHint defaults false and openWorldHint defaults true, so a server must now declare the call repeatable or closed-world to earn it; an untrusted server must not talk itself out of an approval gate with the cheapest hint
 - [Phase 45.1]: 45.1-04: completed inline by the orchestrator after three gsd-executor dispatches died to a 600s stream watchdog (one at launch with an empty transcript, two mid-run); operator authorised the deviation
+- [Phase 45.1]: 45.1-06: elicitation_surface = decline-and-surface — the handler declines but delivers the ask on the operator's channel naming the server; no in-flight turn is blocked and no row is written to aura.paused_states. Option B (mint-and-wait) stays available later behind the same ElicitationConsent seam
+- [Phase 45.1]: 45.1-06: elicitation timeout = 300s via its OWN env var AURA_MCP_ELICITATION_TIMEOUT_SEC — the operator asked to reuse the gateway approval default, but measurement showed no approval timeout/TTL exists anywhere (approvals are an async cross-turn ledger with nothing held waiting); the value was honoured, the source could not be
 
 ### Pending Todos
 
