@@ -67,6 +67,7 @@ type LlmAgent struct {
 	runDir     string
 	sessionID  string
 	workspace  string
+	location   *time.Location
 	builder    *prompt.PromptBuilder
 	hooks      *HookManager
 
@@ -155,7 +156,11 @@ type LlmAgentConfig struct {
 	RunDir      string // config.RunDir — sidecar root
 	SessionID   string // Event.ThreadID; sidecar dir key (D-26)
 	Workspace   string // the shell workspace path, rendered into the per-turn tail hint (#52/D-41); "" omits
-	UserTurns   []llm.Message
+	// Location renders every clock the model reads. Nil means UTC, which is what the tail
+	// hint carried until 2026-08-16 -- and a UTC clock is an arithmetic problem the model
+	// answers wrongly (see internal/agent/tools/clock.go for the measurement).
+	Location  *time.Location
+	UserTurns []llm.Message
 	// Classifier is the SHARED long-lived reasoning-tier classifier (anchors built
 	// once, reused across turns). Production injects this via the Runner so the
 	// static curated-anchor build is amortized rather than paid per turn.

@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 )
@@ -39,9 +40,16 @@ func TestCurrentTime_IANAOffset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	parsed, err := time.Parse(time.RFC3339, res.Preview)
+	// The instant is still RFC-3339; the zone NAME now follows it, deliberately. Reading
+	// "+02:00" alone left the model to infer daylight saving from the month, and on
+	// 2026-08-16 it inferred wrong -- see internal/agent/tools/clock.go.
+	instant, _, _ := strings.Cut(res.Preview, " ")
+	parsed, err := time.Parse(time.RFC3339, instant)
 	if err != nil {
 		t.Fatalf("not RFC-3339: %q", res.Preview)
+	}
+	if !strings.Contains(res.Preview, "CEST") && !strings.Contains(res.Preview, "CET") {
+		t.Fatalf("preview = %q, want the zone name so the season is stated, not inferred", res.Preview)
 	}
 	loc, err := time.LoadLocation("Europe/Rome")
 	if err != nil {

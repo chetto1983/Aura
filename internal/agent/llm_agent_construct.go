@@ -41,6 +41,7 @@ func NewLlmAgent(cfg LlmAgentConfig) *LlmAgent {
 		runDir:            cfg.RunDir,
 		sessionID:         cfg.SessionID,
 		workspace:         cfg.Workspace,
+		location:          cfg.Location,
 		builder:           prompt.NewPromptBuilder(),
 		hooks:             cfg.HookManager,
 		gateway:           cfg.Gateway,

@@ -74,7 +74,10 @@ type Deps struct {
 	ResumeCommitter ResumeCommitter
 	Client          llm.Client
 	Registry        *tools.Registry
-	LLM             llm.Config
+	// Timezone is the IANA zone every clock the model reads is rendered in; empty means
+	// the process zone. See internal/agent/tools/clock.go for why UTC is not neutral.
+	Timezone string
+	LLM      llm.Config
 	// Breaker is the SHARED process-lifetime LLM circuit breaker (B-05). The
 	// composition root may inject one; nil => New mints the default. It is threaded
 	// into every per-turn agent so a provider outage trips cross-turn protection.
@@ -163,6 +166,7 @@ type Runner struct {
 
 	client   llm.Client
 	registry *tools.Registry
+	location *time.Location
 	overheadFields
 	cfg        llm.Config
 	breaker    *llm.Breaker // SHARED process-lifetime LLM circuit breaker, injected into every per-turn agent (B-05)
@@ -265,6 +269,7 @@ func New(d Deps) *Runner {
 		memoryContext:            d.MemoryContext,
 		client:                   d.Client,
 		registry:                 d.Registry,
+		location:                 tools.LocationOrUTC(d.Timezone),
 		cfg:                      d.LLM,
 		runDir:                   d.RunDir,
 		previewCap:               d.PreviewCap,
@@ -544,6 +549,7 @@ func (r *Runner) buildAgent(ctx context.Context, convID string, requestID uuid.U
 		RunDir:     r.runDir,
 		SessionID:  convID, // session_id == conversation_id (D-26)
 		Workspace:  r.workspace,
+		Location:   r.location,
 		UserTurns:  seed,
 		Classifier: r.classifier, // shared, anchors built once
 		Breaker:    r.breaker,    // shared process-lifetime breaker (B-05)

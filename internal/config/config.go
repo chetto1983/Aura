@@ -42,9 +42,15 @@ type Config struct {
 	RunDir           string // absolute — a relative AURA_RUN_DIR is normalized to absolute at load (F-041) so sidecars are not cwd-dependent
 	RunDirErr        error  // non-nil only if filepath.Abs failed (cwd unobtainable); surfaced by Validate so boot fails loudly
 	ToolPreviewCap   int
-	OtelExporter     string // AURA_OTEL_EXPORTER ∈ {stdout,otlp,none} (D-06)
-	OtelEndpoint     string // AURA_OTEL_ENDPOINT — OTLP/gRPC target (D-06)
-	MetricsBind      string // AURA_METRICS_BIND — private loopback Prometheus listener
+	// Timezone is the IANA zone every clock the model reads is rendered in
+	// (AURA_TIMEZONE). Empty means the process's own zone, which in a container is
+	// UTC -- and a UTC clock hands the model an arithmetic problem it gets wrong:
+	// measured 2026-08-16, the agent read 15:49:04Z, called Europe/Rome "+1 ora"
+	// (it is +2 in August) and then answered with the UTC time unchanged.
+	Timezone     string
+	OtelExporter string // AURA_OTEL_EXPORTER ∈ {stdout,otlp,none} (D-06)
+	OtelEndpoint string // AURA_OTEL_ENDPOINT — OTLP/gRPC target (D-06)
+	MetricsBind  string // AURA_METRICS_BIND — private loopback Prometheus listener
 
 	// Phase 33 (Slice runtime-profiles) deployment posture. Distinct from the
 	// Agent.md per-identity ProfileDir below (RESEARCH Pitfall 1). Selects the
@@ -419,6 +425,7 @@ func loadBase() *Config {
 		RunDir:         runDir,
 		RunDirErr:      runDirErr,
 		ToolPreviewCap: envutil.IntDefault("AURA_CONTEXT_PREVIEW_CAP_BYTES", defaultToolPreviewCapBytes),
+		Timezone:       envDefault("AURA_TIMEZONE", ""),
 		OtelExporter:   envDefault("AURA_OTEL_EXPORTER", defaultOtelExporter),
 		OtelEndpoint:   envDefault("AURA_OTEL_ENDPOINT", defaultOtelEndpoint),
 		MetricsBind:    envDefault("AURA_METRICS_BIND", "127.0.0.1:9464"),

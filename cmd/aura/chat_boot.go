@@ -417,6 +417,7 @@ func assembleChatEnv(
 		ResumeCommitter: runner.NewPoolResumeCommitter(pool, convStore, pauseStore),
 		Client:          client,
 		Registry:        reg,
+		Timezone:        cfg.Timezone,
 		LLM:             cfg.LLM,
 		RunDir:          cfg.RunDir,
 		// Amendment #88: the per-turn "Working directory" hint mirrors the fixed

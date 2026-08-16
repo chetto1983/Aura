@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent/prompt"
+	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/reasoningtrace"
 )
@@ -35,8 +36,8 @@ func (a *LlmAgent) roundBudget(ic InvocationContext) prompt.Budget {
 		Used:        ic.Budget.BranchConsumed(),
 		Remaining:   ic.Budget.Remaining(),
 		Workspace:   a.workspace,
-		CurrentTime: now.Format(time.RFC3339),
-		Today:       now.Format("2006-01-02"),
+		CurrentTime: tools.FormatClock(now, clockLocation(a.location, now)),
+		Today:       now.In(clockLocation(a.location, now)).Format("2006-01-02"),
 		// D-05: the volatile numbered source list rides the tail-inject copy
 		// (RenderSourceList is "" until a web tool consulted a source this turn,
 		// so a non-web turn keeps the byte-identical default). messages[0] stays
@@ -67,4 +68,17 @@ func (a *LlmAgent) recordRequestBuilt(requestID string, round modelRound, req ll
 		"reasoning":           req.Reasoning,
 		"history":             a.history,
 	})
+}
+
+// clockLocation is the zone to render a hint in: the configured one, or -- when nothing is
+// configured -- the instant's OWN zone.
+//
+// Nil means "leave it alone", never "UTC". Forcing UTC here rewrote a caller's +02:00 clock
+// into Z and lost the fact the caller had already supplied, which is the same information
+// loss this whole change exists to undo, one layer up.
+func clockLocation(loc *time.Location, now time.Time) *time.Location {
+	if loc == nil {
+		return now.Location()
+	}
+	return loc
 }
