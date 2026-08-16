@@ -19,6 +19,7 @@ import (
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/identity"
+	"github.com/chetto1983/aura/internal/onboarding"
 	"github.com/chetto1983/aura/internal/webauth"
 )
 
@@ -248,7 +249,7 @@ func (a recoverySetupAdapter) UpsertRecovery(ctx context.Context, identityID, qu
 func buildOnboardingService(ctx context.Context, chat *chatEnv, authulaProvider *webauth.Provider) agui.OnboardingService {
 	deps := agui.OnboardingDeps{
 		Capabilities: chat.identity,
-		Profiles:     newMemoryProfileStore(),
+		Profiles:     onboarding.NewProfileStore(chat.pool),
 	}
 	if chat.pool != nil {
 		deps.AuraLeg = auraLegAdapter{pool: chat.pool}
@@ -282,23 +283,23 @@ func buildOnboardingService(ctx context.Context, chat *chatEnv, authulaProvider 
 }
 
 type onboardingStatusAdapter struct {
-	store *memoryProfileStore
+	store *onboarding.ProfileStore
 }
 
-func newOnboardingStatusAdapter(_ *chatEnv) onboardingStatusAdapter {
-	return onboardingStatusAdapter{store: newMemoryProfileStore()}
+func newOnboardingStatusAdapter(chat *chatEnv) onboardingStatusAdapter {
+	return onboardingStatusAdapter{store: onboarding.NewProfileStore(chat.pool)}
 }
 
-// OnboardingStatus reads the onboarding sentinel facts from the memory graph. It fails
-// OPEN to Required (re-prompt) when the memory sidecar is unreachable — matching the
-// previous not-found behavior, never blocking the cockpit on a memory outage.
+// OnboardingStatus reads the gate from aura.identity_profiles. It fails OPEN to Required
+// (re-prompt) when the read fails: a cockpit that shows the form once more is a smaller
+// failure than one that locks the operator out of it.
 func (a onboardingStatusAdapter) OnboardingStatus(ctx context.Context, identityID string) (agui.OnboardingStatus, error) {
 	if a.store == nil || identityID == "" {
 		return agui.OnboardingStatus{Required: true}, nil
 	}
 	st, err := a.store.Status(ctx, identityID)
 	if err != nil {
-		slog.Warn("onboarding status: memory read failed, defaulting to required", "id", identityID, "err", err)
+		slog.Warn("onboarding status: read failed, defaulting to required", "id", identityID, "err", err)
 		return agui.OnboardingStatus{Required: true}, nil
 	}
 	return agui.OnboardingStatus{

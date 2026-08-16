@@ -35,6 +35,7 @@ import (
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/envutil"
 	"github.com/chetto1983/aura/internal/gateway"
+	"github.com/chetto1983/aura/internal/onboarding"
 	"github.com/chetto1983/aura/internal/readiness"
 	"github.com/chetto1983/aura/internal/webauth"
 )
@@ -396,6 +397,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// telegram-status are self-scoped and carry RequireAuth alone.
 	aguiServer.SetOnboardingService(buildOnboardingService(ctx, chat, onboardingAuthulaProvider))
 	aguiServer.SetOnboardingStatusSource(newOnboardingStatusAdapter(chat))
+	aguiServer.SetProfileEditor(onboarding.NewProfileStore(chat.pool))
 	wireBootstrapService(aguiServer, chat.pool, authulaProvider)
 	var resetTokenPepper []byte
 	if authulaProvider != nil {

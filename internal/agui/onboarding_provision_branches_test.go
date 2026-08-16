@@ -27,6 +27,8 @@ func (e errProfileWriter) Status(context.Context, string) (onboarding.Onboarding
 	return onboarding.OnboardingState{}, e.err
 }
 
+func (e errProfileWriter) MarkNudged(context.Context, string) error { return e.err }
+
 func TestCreateTelegramLinkEmptyRequester(t *testing.T) {
 	svc := newOnboardingService(OnboardingDeps{Telegram: &fakeTelegram{}, BotUsername: "AuraBot"})
 	if _, err := svc.CreateTelegramLink(context.Background(), ""); !errors.Is(err, errOnboardingForbidden) {
@@ -55,7 +57,7 @@ func TestCreateTelegramLinkMintError(t *testing.T) {
 
 // seedService builds a service with only the seed-side ports wired, so the SubmitProfile
 // error legs can be driven with an injected profile writer / telegram fake.
-func seedService(pw onboarding.ProfileMemoryStore, tg TelegramMint) *onboardingService {
+func seedService(pw onboarding.Store, tg TelegramMint) *onboardingService {
 	return newOnboardingService(OnboardingDeps{
 		Capabilities: fakeCaps{grants: []string{"agent.run"}},
 		Profiles:     pw,
@@ -75,12 +77,12 @@ func seedService(pw onboarding.ProfileMemoryStore, tg TelegramMint) *onboardingS
 // gate above; the compensation half of it — a mint that fails leaves no pending row — is
 // still asserted here and in TestSubmitProfileWriteErrorCompensatesTelegramPending.
 func TestSubmitProfileSurvivesAnUnavailableTelegramLink(t *testing.T) {
-	for name, svcFor := range map[string]func(onboarding.ProfileMemoryStore) (*onboardingService, *fakeTelegram){
-		"mint fails": func(pw onboarding.ProfileMemoryStore) (*onboardingService, *fakeTelegram) {
+	for name, svcFor := range map[string]func(onboarding.Store) (*onboardingService, *fakeTelegram){
+		"mint fails": func(pw onboarding.Store) (*onboardingService, *fakeTelegram) {
 			tg := &fakeTelegram{insertErr: errors.New("mint down")}
 			return seedService(pw, tg), tg
 		},
-		"no bot configured": func(pw onboarding.ProfileMemoryStore) (*onboardingService, *fakeTelegram) {
+		"no bot configured": func(pw onboarding.Store) (*onboardingService, *fakeTelegram) {
 			tg := &fakeTelegram{}
 			return newOnboardingService(OnboardingDeps{Profiles: pw, Telegram: tg}), tg
 		},

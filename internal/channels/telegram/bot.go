@@ -80,7 +80,7 @@ type Deps struct {
 	// Profile reads the onboarding sentinel back so the channel can point a never-seeded
 	// operator at the cockpit's seed form (Amendment #95 — the interview is gone; the
 	// channel only nudges). Nil disables the nudge entirely.
-	Profile profileflow.ProfileMemoryStore
+	Profile profileflow.Store
 
 	// Multimodal carries the outbound voice-note (TTS) sidecar wiring. Inbound media
 	// no longer reads it: voice/photo/document all ride the shared asset pipeline,

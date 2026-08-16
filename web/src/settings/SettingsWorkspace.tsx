@@ -4,6 +4,7 @@ import { AdminAuditView } from '../audit/AdminAuditView';
 import { useCapabilities } from '../admin/useAdmin';
 import { CapabilityAdminPanel } from './CapabilityAdminPanel';
 import { ModelSettingsPanel } from './ModelSettingsPanel';
+import { ProfilePanel } from './ProfilePanel';
 import { SharedLinksSection } from './SharedLinksSection';
 import { TelegramSettingsPanel } from './TelegramSettingsPanel';
 import { Button } from '@/components/ui/button';
@@ -28,19 +29,25 @@ export default function SettingsWorkspace({ onCreateIdentity }: SettingsWorkspac
     );
   }
 
+  // The profile is every operator's, the runtime settings are the admin's. A non-admin gets
+  // the editor and the explanation, not a bare "not authorized" page that hides the one thing
+  // on this page they DO own.
   if (!isAdmin) {
     return (
       <div className="h-full min-h-0 overflow-y-auto bg-bg">
-        <div className="mx-auto flex w-full max-w-2xl flex-col items-start gap-4 px-4 py-16 sm:px-6">
-          <span className="grid size-12 place-items-center rounded-full border border-border bg-surface text-accent-text">
-            <ShieldAlert aria-hidden="true" />
-          </span>
-          <h1 className="font-display text-[22px] font-semibold text-text">
-            {t('admin.notAuthorized.heading')}
-          </h1>
-          <p className="text-[15.5px] leading-relaxed text-text-muted">
-            {t('admin.notAuthorized.body')}
-          </p>
+        <div className="mx-auto flex w-full max-w-3xl flex-col items-start gap-6 px-4 py-10 sm:px-6">
+          <ProfilePanel />
+          <div className="flex w-full flex-col items-start gap-3 border-t border-border pt-6">
+            <span className="grid size-12 place-items-center rounded-full border border-border bg-surface text-accent-text">
+              <ShieldAlert aria-hidden="true" />
+            </span>
+            <h2 className="font-display text-[22px] font-semibold text-text">
+              {t('admin.notAuthorized.heading')}
+            </h2>
+            <p className="text-[15.5px] leading-relaxed text-text-muted">
+              {t('admin.notAuthorized.body')}
+            </p>
+          </div>
         </div>
       </div>
     );
@@ -58,7 +65,11 @@ export default function SettingsWorkspace({ onCreateIdentity }: SettingsWorkspac
             {t('settings.body')}
           </p>
         </header>
-        <section aria-labelledby="settings-identity" className="flex flex-col gap-4">
+        <ProfilePanel />
+        <section
+          aria-labelledby="settings-identity"
+          className="flex flex-col gap-4 border-t border-border pt-6"
+        >
           <div className="flex flex-col gap-2">
             <h2 id="settings-identity" className="text-[20px] font-semibold text-text">
               {t('settings.identity.heading')}

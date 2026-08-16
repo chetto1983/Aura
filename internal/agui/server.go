@@ -145,9 +145,12 @@ type Server struct {
 	telegramProbe    TelegramBotProbe
 	onboarding       OnboardingService
 	onboardingStatus OnboardingStatusSource
-	bootstrap        BootstrapService
-	passwordReset    *PasswordResetService
-	idgen            IDGenerator
+	// profiles is the operator profile read/write model (profile_api.go). The onboarding
+	// seed writes it once; this is how it gets edited afterwards.
+	profiles      ProfileEditor
+	bootstrap     BootstrapService
+	passwordReset *PasswordResetService
+	idgen         IDGenerator
 	// whatsappBridgeURL is the aura-whatsapp bridge management REST base URL the cockpit
 	// connect routes forward to (AURA_WHATSAPP_BRIDGE_URL via SetWhatsAppBridge). Empty
 	// (unwired) → the three /api/connect/whatsapp/* routes answer 503.
@@ -397,6 +400,9 @@ func (s *Server) Mux() http.Handler {
 	// and telegram-status carry NO capability gate and inherit RequireAuth from the whole-mux
 	// wrap, because each acts only on the caller's own identity.
 	s.registerOnboardingRoutes(mux)
+	// The operator profile editor: GET/PUT /api/profile, self-scoped like the onboarding
+	// status read (no id in the path), so RequireAuth from the whole-mux wrap is the gate.
+	s.registerProfileRoutes(mux)
 	// Authula password-reset routes: public credential-recovery JSON endpoints. These
 	// handlers intentionally do not read a principal; Authula/session auth happens after
 	// the reset completes.

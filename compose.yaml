@@ -102,6 +102,9 @@ services:
       AURA_WORKSPACE_DIR: ${AURA_WORKSPACE_DIR:-/workspace}
       AURA_BACKUP_DIR: /backups
       AURA_CONTEXT_PREVIEW_CAP_BYTES: ${AURA_CONTEXT_PREVIEW_CAP_BYTES:-30000}
+      # The zone every clock the model reads is rendered in. Unset means UTC, and a UTC
+      # clock is an arithmetic problem the model answers wrongly -- measured 2026-08-16.
+      AURA_TIMEZONE: ${AURA_TIMEZONE:-}
       AURA_RUN_DIR_SWEEP_INTERVAL_SEC: ${AURA_RUN_DIR_SWEEP_INTERVAL_SEC:-3600}
       AURA_CONVERSATION_TURN_CAP_BYTES: ${AURA_CONVERSATION_TURN_CAP_BYTES:-65536}
       AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS: ${AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS:-10}

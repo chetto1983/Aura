@@ -29,7 +29,7 @@ func (f fakeCaps) ListCapabilities(_ context.Context, _ string) ([]string, error
 }
 
 // recordingProfileWriter records profile-store calls (by identity) plus the Answers the
-// mapper will consume, so "a blank seed writes only the skip sentinel", "the write is
+// mapper will consume, so "a blank seed writes only the skip", "the write is
 // scoped to the caller" and "the name is byte-identical to the one typed" stay provable.
 type recordingProfileWriter struct {
 	writes    []string
@@ -60,10 +60,12 @@ func (w *recordingProfileWriter) Status(context.Context, string) (onboarding.Onb
 	return onboarding.OnboardingState{}, nil
 }
 
+func (w *recordingProfileWriter) MarkNudged(context.Context, string) error { return nil }
+
 // newSeedService builds the concrete service with only the seed-side ports wired (plus the
 // Telegram mint SubmitProfile requires), mirroring a deployment without the provisioning
 // saga.
-func newSeedService(caps CapabilitySource, pw onboarding.ProfileMemoryStore, tg TelegramMint) *onboardingService {
+func newSeedService(caps CapabilitySource, pw onboarding.Store, tg TelegramMint) *onboardingService {
 	return newOnboardingService(OnboardingDeps{
 		Capabilities: caps,
 		Profiles:     pw,
@@ -241,12 +243,12 @@ func TestSubmitProfileWritesSeedUnderRequesterScope(t *testing.T) {
 		t.Fatalf("stored answers = %+v, want the submitted seed verbatim", pw.confirmed)
 	}
 	if len(pw.skipped) != 0 {
-		t.Fatalf("a filled seed wrote the skip sentinel: %v", pw.skipped)
+		t.Fatalf("a filled seed was recorded as skipped: %v", pw.skipped)
 	}
 }
 
 // TestSubmitProfileBlankSeedWritesOnlySkipSentinel proves the derived skip: submitting
-// nothing costs exactly one store call (the sentinel), so the agent still builds the
+// nothing costs exactly one store call (the skip), so the agent still builds the
 // profile from use.
 func TestSubmitProfileBlankSeedWritesOnlySkipSentinel(t *testing.T) {
 	pw := &recordingProfileWriter{}
@@ -267,7 +269,7 @@ func TestSubmitProfileBlankSeedWritesOnlySkipSentinel(t *testing.T) {
 		t.Fatalf("blank seed wrote a profile: %+v", pw.confirmed)
 	}
 	if len(pw.skipped) != 1 || pw.skipped[0] != "operator-1" {
-		t.Fatalf("skip sentinel writes = %v, want exactly the current operator", pw.skipped)
+		t.Fatalf("skip writes = %v, want exactly the current operator", pw.skipped)
 	}
 }
 

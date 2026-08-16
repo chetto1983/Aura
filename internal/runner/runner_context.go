@@ -31,7 +31,7 @@ func (r *Runner) loadTurnHistory(
 	return r.Conv.LoadManagedHistory(ctx, conversationID, cfg)
 }
 
-func (r *Runner) contextConfig(memory *conversations.TransientContext) conversations.ContextConfig {
+func (r *Runner) contextConfig(ctx context.Context, memory *conversations.TransientContext) conversations.ContextConfig {
 	var summarizer conversations.Summarizer
 	if r.compactionEnabled {
 		summarizer = conversations.NewLLMSummarizer(r.client, r.compactionModel)
@@ -43,7 +43,7 @@ func (r *Runner) contextConfig(memory *conversations.TransientContext) conversat
 		MaxOutputTokens:            r.cfg.MaxOutputTokens,
 		ToolEvictAfterTurns:        r.evictAfter,
 		HistoryHardCapTurns:        r.historyCap,
-		AlwaysBlock:                r.renderContextBlock(),
+		AlwaysBlock:                r.renderContextBlock(ctx),
 		TransientContext:           memory,
 		ProviderErrorReserveTokens: llm.ProviderErrorReserveTokens(r.cfg),
 		Summarizer:                 summarizer,
@@ -113,9 +113,21 @@ func (r *Runner) memoryRecall(ctx context.Context, identityID string, userMsg *s
 	return strings.TrimSpace(content)
 }
 
-func (r *Runner) renderContextBlock() string {
-	if r.alwaysBlock == nil {
-		return ""
+// renderContextBlock builds messages[1]: the always-on skills block plus the operator
+// profile for THIS identity.
+//
+// The profile joins here rather than being retrieved from the memory graph, where it used
+// to live: settings competing for rank against real memories is how "role: programmatore"
+// ends up outranking what the operator actually asked to be remembered.
+func (r *Runner) renderContextBlock(ctx context.Context) string {
+	var parts []string
+	if r.alwaysBlock != nil {
+		if block := strings.TrimSpace(r.alwaysBlock()); block != "" {
+			parts = append(parts, block)
+		}
 	}
-	return strings.TrimSpace(r.alwaysBlock())
+	if profile := r.turnProfileBlock(ctx); profile != "" {
+		parts = append(parts, profile)
+	}
+	return strings.Join(parts, "\n\n")
 }

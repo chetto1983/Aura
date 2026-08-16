@@ -357,14 +357,15 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A deliberate pin, moved deliberately: 0095_backfill_parent_seq repairs the canonical
-	// parent_seq chain on rows written before InsertConversationTurn started deriving it
-	// (measured on the live deployment: 662 turns whose branch walk still died on a NULL).
-	// The test exists so a migration added without noticing breaks the build rather than
-	// the deployment, so bumping it is the intended way to acknowledge one -- never a
-	// fixup to make a red go away.
-	if head != 95 {
-		t.Fatalf("MigrationHead=%d, want embedded head 95", head)
+	// A deliberate pin, moved deliberately: 0096_conversation_compactions makes the summary
+	// durable (a watermark per conversation, so a compaction survives the process that made
+	// it) and 0097_identity_profile moves the operator profile out of the agent-memory graph
+	// into Postgres, where the turn path can read the timezone and the operator can edit
+	// what they declared. The test exists so a migration added without noticing breaks the
+	// build rather than the deployment, so bumping it is the intended way to acknowledge one
+	// -- never a fixup to make a red go away.
+	if head != 97 {
+		t.Fatalf("MigrationHead=%d, want embedded head 97", head)
 	}
 }
 

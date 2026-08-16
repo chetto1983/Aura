@@ -222,6 +222,9 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	mux.Handle(onboardingStartRoute, agui.RequireCapability(aguiHandler, auth, identityCreateCapability))
 	mux.Handle(onboardingProvisionRoute, agui.RequireCapability(aguiHandler, auth, identityCreateCapability))
 	mux.Handle(onboardingTgStatusRoute, aguiHandler)
+	// The profile editor: what onboarding wrote once, the operator can revise forever.
+	mux.Handle(profileGetRoute, aguiHandler)
+	mux.Handle(profilePutRoute, aguiHandler)
 	// The Phase-36 (MUSR-01 / D-03/D-26/D-28) admin/user-distinction mounts live in
 	// serve_webui_musr.go to keep this file under the 600-LOC ceiling: GET /api/me
 	// (self-scoped, RequireAuth only) + the /api/admin/* surface behind

@@ -35,6 +35,7 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/identityctx"
+	"github.com/chetto1983/aura/internal/onboarding"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/chetto1983/aura/internal/setup"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -79,7 +80,7 @@ func buildTelegramDeps(chat *chatEnv, tgCfg telegram.Config) telegram.Deps {
 		Turn:               ensuringTurn(chat.run),
 		Token:              tgCfg.BotToken,
 		Store:              telegram.New(chat.pool),
-		Profile:            newMemoryProfileStore(),
+		Profile:            onboarding.NewProfileStore(chat.pool),
 		Multimodal:         multimodalConfig(chat.cfg),
 		Assets:             chat.assets,
 		Search:             chat.conv,

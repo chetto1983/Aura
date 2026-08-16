@@ -185,3 +185,77 @@ export const settingsIt = {
     },
   },
 } as const;
+
+export const profileEn = {
+  profile: {
+    heading: 'Your profile',
+    body: 'What Aura knows about you by declaration rather than by inference. It rides every turn, so keep it current — and clear anything that stops being true.',
+    loading: 'Loading your profile...',
+    error: "Couldn't load your profile. Check the server and try again.",
+    saved: 'Profile saved.',
+    saveError: "Couldn't save: {{message}}. Your changes are still here — fix the value and try again.",
+    fields: {
+      name: 'Name',
+      role: 'Role',
+      company: 'Company',
+      location: 'Location',
+      timezone: 'Time zone',
+      lang: 'Language',
+      tonePreference: 'Tone',
+      responseLength: 'Response length',
+      expertise: 'Expertise',
+      stack: 'Stack',
+      projects: 'Projects',
+      goals: 'Goals',
+      interests: 'Interests',
+      people: 'People',
+      customInstructions: 'Custom instructions',
+      vetoes: 'Never do',
+    },
+    hints: {
+      list: 'Comma-separated.',
+      customInstructions: 'A sentence or two Aura should follow in every conversation.',
+      vetoes: 'Hard rules, comma-separated. These are prohibitions, not preferences — Aura is told them on every turn.',
+    },
+    actions: {
+      save: 'Save profile',
+    },
+  },
+} as const;
+
+export const profileIt = {
+  profile: {
+    heading: 'Il tuo profilo',
+    body: "Quello che Aura sa di te perche gliel'hai detto, non perche l'ha dedotto. Viaggia in ogni turno: tienilo aggiornato e cancella cio che non e piu vero.",
+    loading: 'Caricamento del profilo...',
+    error: 'Impossibile caricare il profilo. Controlla il server e riprova.',
+    saved: 'Profilo salvato.',
+    saveError: 'Salvataggio non riuscito: {{message}}. Le modifiche sono ancora qui — correggi il valore e riprova.',
+    fields: {
+      name: 'Nome',
+      role: 'Ruolo',
+      company: 'Azienda',
+      location: 'Dove sei',
+      timezone: 'Fuso orario',
+      lang: 'Lingua',
+      tonePreference: 'Tono',
+      responseLength: 'Lunghezza risposte',
+      expertise: 'Competenze',
+      stack: 'Stack',
+      projects: 'Progetti',
+      goals: 'Obiettivi',
+      interests: 'Interessi',
+      people: 'Persone',
+      customInstructions: 'Istruzioni personali',
+      vetoes: 'Non fare mai',
+    },
+    hints: {
+      list: 'Separati da virgola.',
+      customInstructions: 'Una o due frasi che Aura deve seguire in ogni conversazione.',
+      vetoes: 'Regole dure, separate da virgola. Sono divieti, non preferenze — Aura le legge a ogni turno.',
+    },
+    actions: {
+      save: 'Salva profilo',
+    },
+  },
+} as const;

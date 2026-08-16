@@ -23,7 +23,9 @@ function parseOne(row: Record<string, unknown>) {
   const store = new DataStore();
   store.initOnce();
   store.init({ data: [{ id: '/chat', type: 'folder', lazy: true }], mode: 'cards' });
-  store.in.exec('provide-data', { id: '/chat', data: [row] });
+  // exec returns a promise the store resolves synchronously here; the label is readable
+  // immediately after, and awaiting it would make parseOne async for no gain.
+  void store.in.exec('provide-data', { id: '/chat', data: [row] });
   return store.getFile('/chat/b4e391e0-6141-4807-b8e5-88ca58f21162.pdf');
 }
 

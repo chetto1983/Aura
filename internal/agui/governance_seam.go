@@ -109,7 +109,7 @@ type OnboardingService interface {
 	// SubmitProfile is the ONE deterministic seed write (Amendment #95): the whole typed
 	// form arrives in a single stateless call, is mapped to entity/fact/preference writes
 	// with NO LLM anywhere on the path, and mints the Telegram link the completion screen
-	// polls. An entirely blank seed records only the skip sentinel.
+	// polls. An entirely blank seed records only the skip.
 	SubmitProfile(ctx context.Context, requesterIdentityID string, seed OnboardingSeed) (OnboardingProfileComplete, error)
 }
 

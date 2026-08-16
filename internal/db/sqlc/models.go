@@ -483,6 +483,34 @@ type AuraIdentityObjectStore struct {
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }
 
+// Deterministic operator profile from onboarding. Rendered into the always-block, never retrieved: settings, not memories.
+type AuraIdentityProfiles struct {
+	IdentityID          pgtype.UUID        `json:"identity_id"`
+	DisplayName         string             `json:"display_name"`
+	Role                string             `json:"role"`
+	Company             string             `json:"company"`
+	Location            string             `json:"location"`
+	Timezone            string             `json:"timezone"`
+	Lang                string             `json:"lang"`
+	TonePreference      string             `json:"tone_preference"`
+	ResponseLength      string             `json:"response_length"`
+	CustomInstructions  string             `json:"custom_instructions"`
+	VoiceMode           pgtype.Bool        `json:"voice_mode"`
+	CanProactiveMessage pgtype.Bool        `json:"can_proactive_message"`
+	Expertise           []string           `json:"expertise"`
+	Stack               []string           `json:"stack"`
+	Projects            []string           `json:"projects"`
+	Goals               []string           `json:"goals"`
+	Interests           []string           `json:"interests"`
+	People              []string           `json:"people"`
+	Vetoes              []string           `json:"vetoes"`
+	CompletedAt         pgtype.Timestamptz `json:"completed_at"`
+	SkippedAt           pgtype.Timestamptz `json:"skipped_at"`
+	SeedNudgedAt        pgtype.Timestamptz `json:"seed_nudged_at"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+}
+
 // Per-identity recovery question and hashed answer for Telegram password reset. Raw answers are never stored.
 type AuraIdentityRecovery struct {
 	IdentityID        pgtype.UUID        `json:"identity_id"`

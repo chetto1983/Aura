@@ -101,6 +101,7 @@ var httpMutationRoutes = map[string]mutationRouteMeta{
 	"POST /api/governance/skills/{name}/restore":                  httpMutationMeta("skill_restore"),
 	"PATCH /api/governance/skills/{name}":                         httpMutationMeta("skill_update"),
 	"DELETE /api/governance/skills/{name}":                        httpMutationMeta("skill_delete"),
+	"PUT /api/profile":                                            httpMutationMeta("profile_put"),
 	"POST /api/onboarding/profile":                                httpMutationMeta("onboarding_profile"),
 	"POST /api/onboarding/start":                                  httpMutationMeta("onboarding_start"),
 	"POST /api/onboarding/{sessionToken}/provision":               httpMutationMeta("onboarding_provision"),

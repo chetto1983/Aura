@@ -29,16 +29,22 @@ func LocationOrUTC(name string) *time.Location {
 	return loc
 }
 
-// FormatClock renders an instant the way the model should read it: the offset from RFC-3339
-// plus the zone's own name, so "+02:00 CEST" states the daylight-saving fact instead of
-// leaving it to be inferred from the month.
+// FormatClock renders an instant the way the model should read it: the weekday, the offset
+// from RFC-3339, and the zone's own name — so "+02:00 CEST" states the daylight-saving fact
+// instead of leaving it to be inferred from the month.
+//
+// The weekday is spelled out for the same reason the offset is: every calendar fact the
+// model has to DERIVE is one it can get wrong. Measured on the live deployment 2026-08-16,
+// after the zone was fixed — asked the time, the agent answered "21:05 di lunedì 16 agosto
+// 2026". The hour was right (it read it) and the day was wrong (it computed it): 16 August
+// 2026 is a Sunday. A model that must not do arithmetic must not be handed a date either.
 func FormatClock(t time.Time, loc *time.Location) string {
 	if loc == nil {
 		loc = time.UTC
 	}
 	local := t.In(loc)
 	zone, _ := local.Zone()
-	formatted := local.Format(time.RFC3339)
+	formatted := local.Format("Monday, " + time.RFC3339)
 	if zone == "" || zone == "UTC" {
 		return formatted
 	}

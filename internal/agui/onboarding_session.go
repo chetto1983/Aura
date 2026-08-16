@@ -193,7 +193,7 @@ type RecoverySetupWriter interface {
 type onboardingService struct {
 	sessions *sessionStore
 	caps     CapabilitySource
-	profiles onboarding.ProfileMemoryStore
+	profiles onboarding.Store
 
 	// provisioning ports (onboarding_provision.go): the Authula core, the atomic aura-leg
 	// writer + its compensation, recovery challenge writer, Telegram mint/poll/compensation,
@@ -232,7 +232,7 @@ type onboardingService struct {
 type OnboardingDeps struct {
 	TTL          time.Duration
 	Capabilities CapabilitySource
-	Profiles     onboarding.ProfileMemoryStore
+	Profiles     onboarding.Store
 	Authula      AuthulaCore
 	AuraLeg      AuraLegWriter
 	Telegram     TelegramMint

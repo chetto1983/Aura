@@ -270,6 +270,14 @@ const (
 	onboardingTgStatusRoute      = "GET /api/onboarding/{sessionToken}/telegram-status"
 )
 
+// profile* are the operator profile editor (profile_api.go). Self-scoped like the
+// onboarding status read — no id in the path, no way to name another identity — so they
+// carry no capability gate and inherit RequireAuth from the whole-mux wrap.
+const (
+	profileGetRoute = "GET /api/profile"
+	profilePutRoute = "PUT /api/profile"
+)
+
 // approvalsResolveRoute is the mutating resume/decline/cancel endpoint (APRV-02).
 // Resuming or cancelling another thread's (possibly background) run is privileged
 // (Security V4 / T-25-07), so it is interposed with RequireCapability exactly like

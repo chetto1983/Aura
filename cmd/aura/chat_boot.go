@@ -28,6 +28,7 @@ import (
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/onboarding"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 	"github.com/chetto1983/aura/internal/settings"
@@ -418,8 +419,12 @@ func assembleChatEnv(
 		Client:          client,
 		Registry:        reg,
 		Timezone:        cfg.Timezone,
-		LLM:             cfg.LLM,
-		RunDir:          cfg.RunDir,
+		// The operator profile from Postgres (migration 0097): the clock zone this turn
+		// renders in, and the deterministic block on messages[1]. It replaced a memory-graph
+		// read that the turn path could not make.
+		Profiles: onboarding.NewProfileStore(pool),
+		LLM:      cfg.LLM,
+		RunDir:   cfg.RunDir,
 		// Amendment #88: the per-turn "Working directory" hint mirrors the fixed
 		// WorkspaceRoot every host-direct tool now resolves against, replacing the
 		// process-cwd fallback (runner.New still falls back to os.Getwd if this is "").

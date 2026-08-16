@@ -126,7 +126,11 @@ type Querier interface {
 	GetDocumentIngestJob(ctx context.Context, arg GetDocumentIngestJobParams) (AuraDocumentIngestJobs, error)
 	GetIdentityByID(ctx context.Context, id pgtype.UUID) (AuraIdentities, error)
 	GetIdentityByName(ctx context.Context, name string) (AuraIdentities, error)
+	GetIdentityProfile(ctx context.Context, identityID pgtype.UUID) (AuraIdentityProfiles, error)
 	GetIdentityRecoveryByIdentity(ctx context.Context, identityID pgtype.UUID) (AuraIdentityRecovery, error)
+	// The turn path wants one string, not a row: the clock is rendered on every request.
+	GetIdentityTimezone(ctx context.Context, identityID pgtype.UUID) (string, error)
+	GetOnboardingState(ctx context.Context, identityID pgtype.UUID) (GetOnboardingStateRow, error)
 	GetOpenBenchmarkSettingsOverride(ctx context.Context) (AuraBenchmarkSettingsOverrides, error)
 	GetOperation(ctx context.Context, arg GetOperationParams) (GetOperationRow, error)
 	GetPasswordResetToken(ctx context.Context, tokenHash string) (AuraPasswordResetTokens, error)
@@ -297,6 +301,15 @@ type Querier interface {
 	MarkBenchmarkSettingsOverrideRestoring(ctx context.Context, runID pgtype.UUID) (int64, error)
 	MarkNotificationDelivered(ctx context.Context, id pgtype.UUID) error
 	MarkNotificationFailed(ctx context.Context, arg MarkNotificationFailedParams) error
+	// The onboarding gate. Two timestamps rather than a state enum: they say WHEN, which a
+	// boolean cannot, and "completed" plus "skipped" are not mutually exclusive over time --
+	// an operator may skip today and fill the form next week.
+	MarkOnboardingCompleted(ctx context.Context, identityID pgtype.UUID) error
+	// The timestamps themselves, not two booleans: `IS NOT NULL AS completed` comes back
+	// untyped from Postgres and sqlc renders it interface{}, and the answered/unanswered
+	// question is exactly what a nullable timestamp already encodes.
+	MarkOnboardingNudged(ctx context.Context, identityID pgtype.UUID) error
+	MarkOnboardingSkipped(ctx context.Context, identityID pgtype.UUID) error
 	MarkOperationIndeterminate(ctx context.Context, arg MarkOperationIndeterminateParams) (int64, error)
 	MarkOperationRejected(ctx context.Context, arg MarkOperationRejectedParams) (int64, error)
 	MarkPausedStateResumed(ctx context.Context, arg MarkPausedStateResumedParams) (int64, error)
@@ -314,6 +327,11 @@ type Querier interface {
 	RenameConversation(ctx context.Context, arg RenameConversationParams) error
 	// Owner-scoped rename (Phase 36 MUSR-01 / D-06). rows-affected==0 drives the 403-vs-404 split.
 	RenameConversationForIdentity(ctx context.Context, arg RenameConversationForIdentityParams) (int64, error)
+	// The editor's write. It REPLACES every field, because the editor renders every field: a
+	// value arriving empty there means the operator cleared it, and the merge above would make
+	// that impossible -- you could add a veto and never remove one. The onboarding seed keeps
+	// the merge; the editor owns the whole row.
+	ReplaceIdentityProfile(ctx context.Context, arg ReplaceIdentityProfileParams) (AuraIdentityProfiles, error)
 	// Cross-process export-delete fence. This must commit before any runtime teardown.
 	// Reusing the same deterministic reservation is idempotent after a process retry.
 	ReserveConversationDeleteForIdentityIfVersion(ctx context.Context, arg ReserveConversationDeleteForIdentityIfVersionParams) (int64, error)
@@ -397,6 +415,9 @@ type Querier interface {
 	// the caller treats as success and re-reads.
 	UpsertConversationCompaction(ctx context.Context, arg UpsertConversationCompactionParams) (AuraConversationCompactions, error)
 	UpsertDocumentTag(ctx context.Context, arg UpsertDocumentTagParams) error
+	// Deterministic operator profile (migration 0097). It is written by onboarding and the
+	// profile editor, and read on the turn path -- so the reads are narrow on purpose.
+	UpsertIdentityProfile(ctx context.Context, arg UpsertIdentityProfileParams) (AuraIdentityProfiles, error)
 	UpsertIdentityRecovery(ctx context.Context, arg UpsertIdentityRecoveryParams) error
 	UpsertSetting(ctx context.Context, arg UpsertSettingParams) (AuraSettings, error)
 	// The setting half: an edit stales whatever evidence existed. last_event_id is kept so

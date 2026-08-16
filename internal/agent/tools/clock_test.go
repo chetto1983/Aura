@@ -19,8 +19,8 @@ func TestFormatClockStatesTheOffsetAndTheZone(t *testing.T) {
 
 	got := FormatClock(august, rome)
 
-	if !strings.HasPrefix(got, "2026-08-16T17:49:04+02:00") {
-		t.Fatalf("FormatClock = %q, want the instant converted to CEST", got)
+	if !strings.HasPrefix(got, "Sunday, 2026-08-16T17:49:04+02:00") {
+		t.Fatalf("FormatClock = %q, want the weekday and the instant converted to CEST", got)
 	}
 	for _, want := range []string{"Europe/Rome", "CEST"} {
 		if !strings.Contains(got, want) {
@@ -35,11 +35,29 @@ func TestFormatClockStatesTheOffsetAndTheZone(t *testing.T) {
 	}
 }
 
-// UTC keeps the bare RFC-3339 form: appending "(UTC, UTC)" would be noise.
+// UTC drops the zone suffix -- appending "(UTC, UTC)" would be noise -- but keeps the
+// weekday, which is a calendar fact in every zone.
 func TestFormatClockLeavesUTCBare(t *testing.T) {
 	got := FormatClock(time.Date(2026, 8, 16, 15, 49, 4, 0, time.UTC), time.UTC)
-	if got != "2026-08-16T15:49:04Z" {
+	if got != "Sunday, 2026-08-16T15:49:04Z" {
 		t.Fatalf("FormatClock = %q", got)
+	}
+}
+
+// The second half of the same bug: with the zone fixed, the live agent still answered
+// "lunedi 16 agosto 2026" for a Sunday, because it was deriving the weekday from the date.
+// Stating it is the only fix that survives a model swap.
+func TestFormatClockNamesTheWeekday(t *testing.T) {
+	for _, tc := range []struct {
+		day  time.Time
+		want string
+	}{
+		{time.Date(2026, 8, 16, 12, 0, 0, 0, time.UTC), "Sunday"},
+		{time.Date(2026, 8, 17, 12, 0, 0, 0, time.UTC), "Monday"},
+	} {
+		if got := FormatClock(tc.day, time.UTC); !strings.HasPrefix(got, tc.want+", ") {
+			t.Errorf("FormatClock(%s) = %q, want it to open with %q", tc.day.Format(time.DateOnly), got, tc.want)
+		}
 	}
 }
 

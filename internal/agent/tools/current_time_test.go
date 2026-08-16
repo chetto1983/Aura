@@ -13,7 +13,7 @@ func TestCurrentTime_DefaultUTC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	parsed, err := time.Parse(time.RFC3339, res.Preview)
+	parsed, err := time.Parse(time.RFC3339, instantOf(res.Preview))
 	if err != nil {
 		t.Fatalf("not RFC-3339: %q (%v)", res.Preview, err)
 	}
@@ -28,9 +28,20 @@ func TestCurrentTime_ExplicitUTC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if _, err := time.Parse(time.RFC3339, res.Preview); err != nil {
+	if _, err := time.Parse(time.RFC3339, instantOf(res.Preview)); err != nil {
 		t.Fatalf("not RFC-3339: %q", res.Preview)
 	}
+}
+
+// instantOf strips the two things the clock states so the model never derives them: the
+// weekday before the timestamp and the zone name after it. What is left must still parse.
+func instantOf(preview string) string {
+	_, rest, found := strings.Cut(preview, ", ")
+	if !found {
+		rest = preview
+	}
+	instant, _, _ := strings.Cut(rest, " ")
+	return instant
 }
 
 // Test 4c (Req#14): an IANA timezone returns the correct offset for the same
@@ -43,8 +54,7 @@ func TestCurrentTime_IANAOffset(t *testing.T) {
 	// The instant is still RFC-3339; the zone NAME now follows it, deliberately. Reading
 	// "+02:00" alone left the model to infer daylight saving from the month, and on
 	// 2026-08-16 it inferred wrong -- see internal/agent/tools/clock.go.
-	instant, _, _ := strings.Cut(res.Preview, " ")
-	parsed, err := time.Parse(time.RFC3339, instant)
+	parsed, err := time.Parse(time.RFC3339, instantOf(res.Preview))
 	if err != nil {
 		t.Fatalf("not RFC-3339: %q", res.Preview)
 	}

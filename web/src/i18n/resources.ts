@@ -14,7 +14,7 @@ import { governanceEn, governanceIt } from './resources.governance';
 import { graphEn, graphIt } from './resources.graph';
 import { loginEn, loginIt } from './resources.login';
 import { onboardingEn, onboardingIt } from './resources.onboarding';
-import { settingsEn, settingsIt } from './resources.settings';
+import { profileEn, profileIt, settingsEn, settingsIt } from './resources.settings';
 import { shareEn, shareIt } from './resources.share';
 
 export const resources = {
@@ -148,6 +148,7 @@ export const resources = {
       ...governanceEn,
       ...graphEn,
       ...settingsEn,
+      ...profileEn,
       ...adminEn,
       ...onboardingEn,
       conversations: {
@@ -410,6 +411,7 @@ export const resources = {
       ...governanceIt,
       ...graphIt,
       ...settingsIt,
+      ...profileIt,
       ...adminIt,
       ...onboardingIt,
       conversations: {

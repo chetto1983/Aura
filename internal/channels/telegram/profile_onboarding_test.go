@@ -15,16 +15,15 @@ import (
 // interview this file used to drive no longer exists. It also holds the shared
 // profileflow fixtures the rest of the dispatch suite builds on.
 
-// fakeMemoryStore is an in-memory profileflow.ProfileMemoryStore for the telegram tests:
-// it records the confirmed Answers and the completed/skipped sentinel. statusErr forces
-// the Status read-error branch; statusCalls proves the nudge reads the sentinel at most
-// once per chat per process.
+// fakeMemoryStore is an in-memory profileflow.Store for the telegram tests: it records the
+// confirmed Answers and the gate. statusErr forces the Status read-error branch; nudgeErr
+// forces the bookkeeping-failed branch.
 type fakeMemoryStore struct {
-	mu          sync.Mutex
-	states      map[string]profileflow.OnboardingState
-	confirmed   map[string]profileflow.Answers
-	statusErr   error
-	statusCalls int
+	mu        sync.Mutex
+	states    map[string]profileflow.OnboardingState
+	confirmed map[string]profileflow.Answers
+	statusErr error
+	nudgeErr  error
 }
 
 func newFakeMemoryStore() *fakeMemoryStore {
@@ -52,11 +51,22 @@ func (f *fakeMemoryStore) StoreSkipped(_ context.Context, identityID string) err
 func (f *fakeMemoryStore) Status(_ context.Context, identityID string) (profileflow.OnboardingState, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.statusCalls++
 	if f.statusErr != nil {
 		return profileflow.OnboardingState{}, f.statusErr
 	}
 	return f.states[identityID], nil
+}
+
+func (f *fakeMemoryStore) MarkNudged(_ context.Context, identityID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.nudgeErr != nil {
+		return f.nudgeErr
+	}
+	st := f.states[identityID]
+	st.Nudged = true
+	f.states[identityID] = st
+	return nil
 }
 
 // markCompleted seeds the completed sentinel so a test can model an already-onboarded
@@ -73,16 +83,11 @@ func (f *fakeMemoryStore) markSkipped(identityID string) {
 	f.states[identityID] = profileflow.OnboardingState{Skipped: true}
 }
 
-func (f *fakeMemoryStore) reads() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.statusCalls
-}
-
 // TestProfileNudgeFiresOnceForAnUnseededIdentity is the case the nudge exists for: an
-// identity an admin provisioned with a blank seed has NO sentinel, so it would otherwise
-// link Telegram from the admin's QR and never learn the cockpit form exists. It must fire
-// exactly once, and cost exactly one memory read per chat per process.
+// identity an admin provisioned with a blank seed has NO gate, so it would otherwise link
+// Telegram from the admin's QR and never learn the cockpit form exists. It must fire
+// exactly once — and "once" now means once per operator, recorded in the store, not once
+// per daemon lifetime.
 func TestProfileNudgeFiresOnceForAnUnseededIdentity(t *testing.T) {
 	t.Parallel()
 	store := newFakeMemoryStore()
@@ -100,16 +105,18 @@ func TestProfileNudgeFiresOnceForAnUnseededIdentity(t *testing.T) {
 	}
 
 	if _, ok := p.nudge(context.Background(), 42, 555); ok {
-		t.Fatal("the nudge must be one-shot per chat")
+		t.Fatal("the nudge must be one-shot per operator")
 	}
-	if got := store.reads(); got != 1 {
-		t.Fatalf("status reads = %d, want 1 — the latch is checked BEFORE the memory call", got)
+	// The record lives in the store, so a fresh channel (i.e. a restarted daemon) stays quiet.
+	if _, ok := newProfileOnboarding(store, profileAccountFake{acct: profileAccount()}).
+		nudge(context.Background(), 42, 555); ok {
+		t.Fatal("a restarted channel must not re-nudge an operator the store says was told")
 	}
 }
 
-// TestProfileNudgeSilentWhenSentinelExists proves both terminal states suppress it: an
-// operator who filled OR skipped the form is never pestered.
-func TestProfileNudgeSilentWhenSentinelExists(t *testing.T) {
+// TestProfileNudgeSilentWhenGateIsSet proves both terminal states suppress it: an operator
+// who filled OR skipped the form is never pestered.
+func TestProfileNudgeSilentWhenGateIsSet(t *testing.T) {
 	t.Parallel()
 	for name, seed := range map[string]func(*fakeMemoryStore){
 		"completed": func(s *fakeMemoryStore) { s.markCompleted(profileAccount().IdentityID) },
@@ -123,14 +130,8 @@ func TestProfileNudgeSilentWhenSentinelExists(t *testing.T) {
 			if text, ok := p.nudge(context.Background(), 42, 555); ok {
 				t.Fatalf("a %s identity was nudged: %q", name, text)
 			}
-			// A terminal sentinel latches too: nudge runs synchronously on the inbound-message
-			// hot path and Status costs a whole memory-MCP session, so an already-onboarded
-			// operator must not pay one per message.
 			if text, ok := p.nudge(context.Background(), 42, 555); ok {
 				t.Fatalf("a %s identity was nudged on the second message: %q", name, text)
-			}
-			if got := store.reads(); got != 1 {
-				t.Fatalf("status reads = %d, want 1 — a terminal sentinel must latch", got)
 			}
 		})
 	}
@@ -159,19 +160,28 @@ func TestProfileNudgeSilentOnDegradedDeps(t *testing.T) {
 	}
 }
 
-// TestProfileNudgeLatchesPerChat proves the latch is keyed by chat, not global: a second
-// chat on the same process still gets its own nudge.
-func TestProfileNudgeLatchesPerChat(t *testing.T) {
+// TestProfileNudgeIsPerOperatorNotPerChat: the operator has been told the form exists, and
+// telling them again in a second chat is the same message twice, not a new one.
+func TestProfileNudgeIsPerOperatorNotPerChat(t *testing.T) {
 	t.Parallel()
 	p := newProfileOnboarding(newFakeMemoryStore(), profileAccountFake{acct: profileAccount()})
 	if _, ok := p.nudge(context.Background(), 42, 555); !ok {
-		t.Fatal("first chat must be nudged")
+		t.Fatal("first message must be nudged")
 	}
-	if _, ok := p.nudge(context.Background(), 43, 555); !ok {
-		t.Fatal("a different chat must get its own nudge")
+	if _, ok := p.nudge(context.Background(), 43, 555); ok {
+		t.Fatal("the same operator in another chat must not be nudged again")
 	}
-	if _, ok := p.nudge(context.Background(), 42, 555); ok {
-		t.Fatal("the first chat must stay latched")
+}
+
+// TestProfileNudgeSurvivesFailedBookkeeping: losing the record costs a repeated nudge,
+// while swallowing the message costs the operator the only pointer at the form. Send it.
+func TestProfileNudgeSurvivesFailedBookkeeping(t *testing.T) {
+	t.Parallel()
+	store := newFakeMemoryStore()
+	store.nudgeErr = errors.New("write failed")
+	p := newProfileOnboarding(store, profileAccountFake{acct: profileAccount()})
+	if _, ok := p.nudge(context.Background(), 42, 555); !ok {
+		t.Fatal("a failed MarkNudged must not suppress the nudge itself")
 	}
 }
 

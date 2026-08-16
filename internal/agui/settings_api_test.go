@@ -169,9 +169,15 @@ func TestHandlePutSettingRejectsInvalidLLMTokenBudget(t *testing.T) {
 		{"under reserved output", []sqlc.AuraSettings{
 			{Key: "AURA_LLM_MAX_TOKENS", Value: "5000"},
 		}, "AURA_MODEL_MAX_OUTPUT_TOKENS", "4096"},
+		// The window that leaves nothing for the prompt is now one swallowed by the
+		// CONFIGURED output cap, not by the reserves: since 4a679e394 both reserves are the
+		// smaller of their constant and a share of the window, so 33,000 with a 1-token
+		// output cap keeps half the window as prompt budget instead of going negative. A
+		// 30,000-token answer inside a 33,000-token window still leaves none, which is the
+		// rejection this case has always been about.
 		{"no prompt budget", []sqlc.AuraSettings{
-			{Key: "AURA_LLM_MAX_TOKENS", Value: "1"},
-			{Key: "AURA_MODEL_MAX_OUTPUT_TOKENS", Value: "1"},
+			{Key: "AURA_LLM_MAX_TOKENS", Value: "30000"},
+			{Key: "AURA_MODEL_MAX_OUTPUT_TOKENS", Value: "30000"},
 		}, "AURA_MODEL_CONTEXT_WINDOW", "33000"},
 	}
 	for _, tc := range cases {

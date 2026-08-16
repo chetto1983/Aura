@@ -394,7 +394,7 @@ func (s *onboardingService) mintPollableLink(ctx context.Context, identityID str
 // SubmitProfile writes the current identity's typed seed form into the memory graph and,
 // where Telegram is available, mints the recovery link, in ONE stateless call (Amendment
 // #95 — there is no session, no accumulated state and no LLM). A seed whose every field is
-// blank is a skip: only the skip sentinel is written, so the agent still builds the profile
+// blank is a skip: only the skip is recorded, so the agent still builds the profile
 // from use.
 //
 // Telegram is a NICETY on this path, never a gate. Amendment #95 requires skipping to stay

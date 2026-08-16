@@ -74,9 +74,13 @@ type Deps struct {
 	ResumeCommitter ResumeCommitter
 	Client          llm.Client
 	Registry        *tools.Registry
-	// Timezone is the IANA zone every clock the model reads is rendered in; empty means
+	// Timezone is the DEPLOYMENT fallback zone; an identity's own profile wins. Empty means
 	// the process zone. See internal/agent/tools/clock.go for why UTC is not neutral.
 	Timezone string
+	// Profiles serves the operator profile from Postgres (migration 0097): the clock zone
+	// and the deterministic block that rides messages[1]. Optional -- without it the
+	// deployment zone applies and no profile block is rendered.
+	Profiles ProfileProvider
 	LLM      llm.Config
 	// Breaker is the SHARED process-lifetime LLM circuit breaker (B-05). The
 	// composition root may inject one; nil => New mints the default. It is threaded
@@ -167,6 +171,7 @@ type Runner struct {
 	client   llm.Client
 	registry *tools.Registry
 	location *time.Location
+	profiles ProfileProvider
 	overheadFields
 	cfg        llm.Config
 	breaker    *llm.Breaker // SHARED process-lifetime LLM circuit breaker, injected into every per-turn agent (B-05)
@@ -270,6 +275,7 @@ func New(d Deps) *Runner {
 		client:                   d.Client,
 		registry:                 d.Registry,
 		location:                 tools.LocationOrUTC(d.Timezone),
+		profiles:                 d.Profiles,
 		cfg:                      d.LLM,
 		runDir:                   d.RunDir,
 		previewCap:               d.PreviewCap,
@@ -404,7 +410,7 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, input turnInput)
 			}
 		}
 
-		cfg := r.contextConfig(r.loadMemoryContext(ctx, input.visibleUserMsg))
+		cfg := r.contextConfig(ctx, r.loadMemoryContext(ctx, input.visibleUserMsg))
 		history, err := r.loadTurnHistory(ctx, convID, cfg, input.branchLeaf)
 		if err != nil {
 			yield(nil, err)
@@ -549,7 +555,7 @@ func (r *Runner) buildAgent(ctx context.Context, convID string, requestID uuid.U
 		RunDir:     r.runDir,
 		SessionID:  convID, // session_id == conversation_id (D-26)
 		Workspace:  r.workspace,
-		Location:   r.location,
+		Location:   r.turnLocation(ctx),
 		UserTurns:  seed,
 		Classifier: r.classifier, // shared, anchors built once
 		Breaker:    r.breaker,    // shared process-lifetime breaker (B-05)
