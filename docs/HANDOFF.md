@@ -350,13 +350,30 @@ Una correzione alla voce d'origine: diceva che il modello riceve **due messaggi*
 ruolo (Aura non ha alcuna fusione propria: cercata, non c'è). L'effetto è quello descritto, il
 meccanismo no.
 
-**4.2b — APERTA, ed è la causa di 4.2: un run che muore non lascia NESSUNA traccia in
-conversazione.** Non un turno d'errore, non uno vuoto. Su `019ffabe` il turno 76 è seguito solo
-dal 77 identico: il primo tentativo non ha prodotto niente e il silenzio è indistinguibile da
-una risposta lenta, quindi ripetere è l'unica mossa che la persona ha. **È successo di nuovo
-mentre misuravo il fix**, su questo stack, oggi: un run terminato senza risposta e senza traccia.
-Collassare i doppioni toglie il sintomo; finché il fallimento è muto, la persona continuerà a
-generarli. *Confidenza: alta sul fatto, nulla sulla causa del run muto — non indagata.*
+**4.2b — CHIUSA il 2026-08-16 (`5befdd184`) — era la causa di 4.2.** Un run che muore non
+lasciava **nessuna** traccia in conversazione: né un turno d'errore, né uno vuoto. Il silenzio
+era indistinguibile da una risposta lenta, quindi ripetere era l'unica mossa che la persona
+avesse — ed è precisamente come nasceva il doppione di 4.2.
+
+**Causa trovata riproducendola, non leggendola.** Riavviare il daemon a metà run lascia un
+turno utente, nessun turno assistant e **zero righe in `cache_metrics`** — l'impronta identica
+a quella del 2026-08-13. La catena: lo shutdown drena gli stream SSE in volo con un tetto di
+10 secondi (`aguiShutdownTimeout`, `serve.go:42-46`); un round più lungo viene cancellato, il
+suo handler ritorna, e l'operazione di idempotenza viene marcata `indeterminate` — che è **lo
+stesso stato di un `agent_run` riuscito**. Nulla, da nessuna parte, distingueva i due.
+
+Ora `recordInterruptedRound` scrive il marcatore, con `context.WithoutCancel` perché gira
+*proprio perché* il contesto è morto. Provato ripetendo la stessa riproduzione: prima `seq 1
+user` e basta, dopo `seq 2 assistant "[run interrupted before it produced an answer…]"`.
+
+**Non copre un SIGKILL o un crash**: lì non resta alcun momento in cui scrivere. Solo uno
+sweep sui turni sospesi raggiungerebbe quelli — non fatto, decisione non presa.
+
+**Correzione a quanto avevo scritto qui stamattina.** Avevo detto che il difetto «è successo
+di nuovo mentre misuravo il fix». **Falso**, e l'ho verificato: quel run aveva risposto (seq 86,
+20.141 token registrati in `cache_metrics`); era caduto solo il client del mio driver, che è un
+fallimento diverso — il lavoro c'era, la risposta pure, ed era leggibile ricaricando. Avevo
+scambiato un client caduto per un run morto.
 
 **4.3 — `_embed` del sidecar ingest inghiotte il messaggio del server.**
 `services/ingest/app.py:196-208` — `urlopen` senza try/except: un HTTP 500 diventa un `HTTPError`
@@ -561,6 +578,8 @@ catalogo. *Confidenza: alta.*
 | Falsi positivi dark-code del 24-07 | `internal/agent/workflow/*`, `NewBudgetFromEnv`, `runServeComponents`, `mcptools.Bridge/Mount`, `recordSpanExportFailure` sono tutti cablati |
 | **0.2** — l'uuid al posto del nome nei risultati di `document_search` | `67b64b144` — `DocumentNames` per id sulla sola gamba passaggi; provato prima/dopo sull'agente vero |
 | La card che si descriveva col nome del file temporaneo | `67b64b144` — `_card_name()`: stem vero + estensione convertita, 6 unit test |
+| **4.2** — la domanda ripetuta rimandata al modello per sempre | `02fba5490` + `d2afda7a5` (il call-site, dimenticato dal primo) |
+| **4.2b** — il run che muore senza lasciare traccia | `5befdd184` — causa riprodotta col restart a metà run, marcatore provato dal vivo |
 
 ---
 
