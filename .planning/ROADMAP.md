@@ -251,7 +251,7 @@ beside it.
 5. A live turn shows `user_identifier` reaching `cmd/arcadedb-mcp` through `_meta` and no longer as
    a tool argument.
 
-**Plans**: 2/8 plans executed in 6 waves
+**Plans**: 3/8 plans executed in 6 waves
 
 Plans:
 **Wave 1**
@@ -264,7 +264,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 45.1-03-PLAN.md — 16 cmd/aura consumers re-pointed, bespoke client deleted, anti-dark-code guard, coverage floor restored *(wave 3)*
+- [x] 45.1-03-PLAN.md — 16 cmd/aura consumers re-pointed, bespoke client deleted, anti-dark-code guard, coverage floor restored *(wave 3)*
 - [ ] 45.1-04-PLAN.md — D-107: all four SDK tool annotations, escalate-only proven over every hint combination *(wave 3)*
 
 **Wave 4** *(blocked on Wave 3 completion)*

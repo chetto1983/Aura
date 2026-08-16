@@ -6,14 +6,14 @@ current_phase: 45.1
 current_phase_name: native-mcp-client
 status: executing
 stopped_at: Phase 45.1 context gathered
-last_updated: "2026-08-16T12:26:56.556Z"
+last_updated: "2026-08-16T17:38:04.760Z"
 last_activity: 2026-08-16
 last_activity_desc: Phase 46 discussed; 45.1 (native MCP client) inserted as its prerequisite
 progress:
   total_phases: 3
   completed_phases: 1
   total_plans: 17
-  completed_plans: 10
+  completed_plans: 12
 ---
 
 # Project State
@@ -28,8 +28,8 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 ## Current Position
 
 Phase: 45.1 (native-mcp-client) — EXECUTING
-Plan: 1 of 8
-Status: Executing Phase 45.1
+Plan: 2 of 8
+Status: Ready to execute
 Phase 46 discussion are recorded in `46-CONTEXT.md` D-10..D-16 and in ROADMAP §45.1.
 Last activity: 2026-08-16 — Phase 45.1 execution resumed (wave continue)
 requirements as falsified or already-shipped, and inserted Phase 45.1 ahead of it by operator
@@ -40,7 +40,7 @@ Phase 46 is context-complete but **blocked on five amendments** (46-CONTEXT.md D
 Last reconciliation: 2026-08-13 — this file's counts re-measured against ROADMAP.md (see
 Session Continuity). No work was executed on that date.
 
-Progress: [████████░░] 75%
+Progress: [███████░░░] 71%
 
 ## Performance Metrics
 
@@ -111,6 +111,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 45]: 45-04: three pre-existing test fixtures (fanout-cap, two panic-recovery tests) used byte-identical (name,args) calls in one message as a convenience fixture; D-12's new dedup now correctly collapses those, so each fixture was given distinct per-call args rather than weakening the new dedup
 - [Phase 45]: 45-06: A refused correction (fact_key miss, or 0/>1 candidates) writes NOTHING -- no fact closed AND the new fact itself is not created, beyond the plan's literal 'closes nothing' text, to avoid orphaning or adding to an already-ambiguous candidate set
 - [Phase 45]: 45-06: proseObjectRuneBound=80, measured live against the operator identity graph (longest legit Entity.name 36 runes, shortest measured prose violation 96 runes) rather than guessed
+- [Phase 45.1]: 45.1-03: dark-code guard (darkcode_test.go) scans non-test .go files with comments stripped via go/scanner rather than a bare recursive grep -- this phase's own SDK-era wire-emulation test fixtures and doc comments legitimately contain deleted-symbol tokens (Mcp-Session-Id, notifications/initialized, decodeToolResult) that a literal substring scan would false-positive on
+- [Phase 45.1]: 45.1-03: full aggregate coverage gate (scripts/coverage_docker.sh) not run -- a concurrent unrelated session (plan 45.1-04) held compose.yaml and bridge_risk.go dirty in the same checkout for the whole plan; per-package measurement (internal/mcp 90.5%, internal/agent/mcptools 92.1%) used as the honest substitute, aggregate gate deferred to when the tree is quiescent
 
 ### Pending Todos
 
@@ -136,6 +138,8 @@ None yet.
   before/after scenario comparison against `aura.tool_invocations`. Flagged so this
   substitution isn't lost during planning.
 
+- 45.1-08 (phase close) must re-run bash scripts/coverage_docker.sh (full aggregate 85% owned-surface gate) once plan 45.1-04 lands and the tree is quiescent -- not run during 45.1-03 because a concurrent unrelated in-flight session held compose.yaml and internal/agent/mcptools/bridge_risk.go dirty in the same checkout
+
 ## Deferred Items
 
 Items acknowledged and carried forward from previous milestone close:
@@ -149,7 +153,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-16T07:38:37.636Z
+Last session: 2026-08-16T17:37:21.587Z
 Stopped at: Phase 45.1 context gathered
 exited at its CONTEXT.md gate — Phase 45 has no CONTEXT.md, and discuss-phase must run as a
 top-level command (nested invocation breaks AskUserQuestion, GSD #1009). No phase directory
