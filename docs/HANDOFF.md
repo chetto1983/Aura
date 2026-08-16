@@ -516,6 +516,29 @@ reale in metadata, accenti compresi, e ArcadeDB li mostra identici lato indice �
 Il nome non è solo esposto: entra in `file_name_words`, quindi prima di questo cambio cercare
 un documento con il nome che gli aveva dato l'operatore non trovava niente.
 
+**Coda: il download aveva ancora il uuid** (`9a1515f8b`, trovata dall'operatore nel browser).
+Avevo sistemato la lista e lasciato `Content-Disposition` costruito su `path.Base(key)`, quindi
+le due superfici dicevano nomi diversi dello stesso oggetto. Il nome era già nella risposta:
+`S3Store.Get` buttava via `out.Metadata` mentre `Head` la teneva, quindi l'handler aveva
+`attrs` in mano con l'unico campo che gli serviva mancante. Ora `Get` la porta, `ReadObject` la
+decodifica con `DecodeFileName` (che rifiuta già qualunque cosa somigli a un path) e l'handler
+la preferisce alla chiave — metadata dell'oggetto e non indice, perché non costa un giro in più
+su un percorso che l'oggetto l'ha già letto e perché nomina anche un oggetto che il sidecar non
+ha ancora raggiunto. La lista continua a usare l'indice: nominare una pagina intera così
+vorrebbe dire una HEAD per riga.
+
+Misurato sul filo, prima e dopo, con una sessione autenticata dentro la rete:
+
+```
+prima:  attachment; filename="deedee78-b835-4aab-9d30-44e60f60d4cc.md"; filename*=UTF-8''deedee78-…
+dopo:   attachment; filename="saggio_crittografia.md"; filename*=UTF-8''saggio_crittografia.md
+dopo:   attachment; filename="Perizia citta di Ghedi 2026.txt"; filename*=UTF-8''Perizia%20citt%C3%A0%20di%20Gh%C3%A8di%202026.txt
+```
+
+L'accentato è la prova che l'header non è stato toccato: il parametro esteso conserva l'unicode,
+il fallback ASCII piega i diacritici invece di sfigurarli, e la guardia contro l'iniezione di
+header è la stessa di prima.
+
 **Residuo, ed è una decisione aperta, non un baco**: i 7 oggetti storici
 `identity/<id>/asset/<uuid>/original` non hanno metadata (precedono il canale) e non sono
 indicizzati — `identity/` è escluso dal walker — quindi il file manager li mostra per chiave.
