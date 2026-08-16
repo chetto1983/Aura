@@ -243,11 +243,18 @@ beside it.
 5. A live turn shows `user_identifier` reaching `cmd/arcadedb-mcp` through `_meta` and no longer as
    a tool argument.
 
-**Plans**: TBD
+**Plans**: 8 plans in 6 waves
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 45.1 to break down)
+- [ ] 45.1-01-PLAN.md — TRACER: SDK session construction (both transports) + SSRF/egress/redirect policy re-attached + probe.go re-pointed *(wave 1)*
+- [ ] 45.1-02-PLAN.md — mcptools seam on *ClientSession: result-decode re-plumb, `MountedServer` supervisor on `Wait()`, bridge_reconnect.go + bridge_ping.go deleted *(wave 2)*
+- [ ] 45.1-03-PLAN.md — 16 cmd/aura consumers re-pointed, bespoke client deleted, anti-dark-code guard, coverage floor restored *(wave 3)*
+- [ ] 45.1-04-PLAN.md — D-107: all four SDK tool annotations, escalate-only proven over every hint combination *(wave 3)*
+- [ ] 45.1-05-PLAN.md — `_meta` identity cutover, server-side fail-closed, and the three PITFALLS §4 blast radii disposed *(wave 4)*
+- [ ] 45.1-06-PLAN.md — checkpoint: which surface a server-initiated elicitation reaches the operator on *(wave 4)*
+- [ ] 45.1-07-PLAN.md — bounded fail-closed elicitation handler + the chosen consent surface *(wave 5)*
+- [ ] 45.1-08-PLAN.md — live SC#1-5 scored >9.8, full gate matrix, amendments, quality-snapshot re-attestation *(wave 6)*
 
 ### Phase 46: MCP trust and facade
 
