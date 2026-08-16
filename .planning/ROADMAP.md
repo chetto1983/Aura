@@ -83,7 +83,7 @@ harness is built; `internal/eval/` stays deleted.
 - Decimal phases (45.1, 45.2, ...) would be urgent insertions between these, if needed.
 
 - [x] **Phase 45: Harness correctness** - Idempotency replay fix and memory-write guardrails close the two headline audit defects (completed 2026-08-15)
-- [ ] **Phase 45.1: Native MCP client** - The official Go SDK replaces ~1,970 LOC of bespoke transport and reconnect; Aura's own policy layers survive on top (inserted 2026-08-16)
+- [x] **Phase 45.1: Native MCP client** - The official Go SDK replaces ~1,970 LOC of bespoke transport and reconnect; Aura's own policy layers survive on top (inserted 2026-08-16)
 - [ ] **Phase 46: MCP trust and facade** - Ratify the trust posture that already shipped; curation moves into the forks, not into Aura
 - [ ] **Phase 47: Tool-surface ceremony strip** - Host-fills drop from schemas, approvals resolve without a resume payload, files auto-deliver and auto-index
 - [ ] **Phase 48: Tool-surface un-defer and merges** - the manifest lands on exactly 14 loaded tools; the system prompt regenerates to match
@@ -278,7 +278,7 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 45.1-08-PLAN.md — live SC#1-5 scored >9.8, full gate matrix, amendments, quality-snapshot re-attestation *(wave 6)*
+- [x] 45.1-08-PLAN.md — live SC#1-5 scored >9.8, full gate matrix, amendments, quality-snapshot re-attestation *(wave 6)*
 
 ### Phase 46: MCP trust and facade
 

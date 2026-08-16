@@ -4,16 +4,16 @@ milestone: v2.1.0
 milestone_name: HERMES-CLAUDE_PARITY
 current_phase: 45.1
 current_phase_name: native-mcp-client
-status: executing
-stopped_at: Phase 45.1 plan 07 complete; only the 45.1-08 close-out checkpoint remains
-last_updated: "2026-08-16T20:57:02.000Z"
-last_activity: 2026-08-16
-last_activity_desc: 45.1-05 landed — calling identity moved onto _meta, fail-closed, nine user_identifier fields removed
+status: complete
+stopped_at: Phase 45.1 complete (8/8) — PARTIAL per audit-milestone §5.5: validated live, nyquist_compliant still false
+last_updated: "2026-08-17T00:00:00.000Z"
+last_activity: 2026-08-17
+last_activity_desc: 45.1-08 closed the phase — SC#5 measured live instead of inferred, bridge_risk.go mutation 94.4%, CI green on 63b456f8e
 progress:
   total_phases: 3
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 17
-  completed_plans: 16
+  completed_plans: 17
 ---
 
 # Project State
@@ -27,11 +27,10 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 
 ## Current Position
 
-Phase: 45.1 (native-mcp-client) — EXECUTING
-Plan: 7 of 8
-Status: Ready to execute
+Phase: 45.1 (native-mcp-client) — COMPLETE (8 of 8)
+Status: validated live; Nyquist per-task sampling still owed (/gsd-validate-phase 45.1 not run)
 Phase 46 discussion are recorded in `46-CONTEXT.md` D-10..D-16 and in ROADMAP §45.1.
-Last activity: 2026-08-16 — plan 05 complete; next is checkpoint plan 06 (elicitation surface decision)
+Last activity: 2026-08-17 — plan 08 complete; next is Phase 46, still blocked on its five amendments (46-CONTEXT.md D-05..D-09)
 requirements as falsified or already-shipped, and inserted Phase 45.1 ahead of it by operator
 decision ("use mcp client native no bespoke").
 

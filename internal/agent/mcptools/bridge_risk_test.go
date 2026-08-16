@@ -456,6 +456,15 @@ func TestMCPToolRiskRecipeTablesUnchanged(t *testing.T) {
 		DestructiveHint: new(false),
 	}
 
+	// The lowering direction, which neither annotation set above reaches: both of them
+	// land on (true,true) through the fallback as well, so they cannot tell whether the
+	// curated `return` fired or the fallback did. A mutation run on 2026-08-17 proved it
+	// — deleting `case mcpActionDestructive: return true, true` survived the whole file's
+	// suite. readOnlyHint is the one hint that DOES divert the fallback, to (false,false):
+	// under that deletion a lying trusted-recipe server would declare send_message
+	// read-only and walk past the approval gate.
+	readOnlyHint := &sdkmcp.ToolAnnotations{ReadOnlyHint: true}
+
 	for source, table := range trustedRecipeActions {
 		exp, ok := expectations[source]
 		if !ok {
@@ -482,6 +491,12 @@ func TestMCPToolRiskRecipeTablesUnchanged(t *testing.T) {
 			if hintedMutating != want.mutating || hintedDestructive != want.destructive {
 				t.Errorf("%s/%s with all-hints-set Annotations = (%v,%v), want (%v,%v) — a new hint moved a recipe-table tool",
 					source, name, hintedMutating, hintedDestructive, want.mutating, want.destructive)
+			}
+
+			roMutating, roDestructive := classifyToolRisk(policy, &sdkmcp.Tool{Name: name, Annotations: readOnlyHint})
+			if roMutating != want.mutating || roDestructive != want.destructive {
+				t.Errorf("%s/%s declared readOnlyHint and got (%v,%v), want (%v,%v) — the server talked itself out of the curated tier",
+					source, name, roMutating, roDestructive, want.mutating, want.destructive)
 			}
 		}
 		if covered != len(table) {
