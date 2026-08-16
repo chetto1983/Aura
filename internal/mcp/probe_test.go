@@ -1,13 +1,17 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // managedFromHelper turns a helper ServerConfig (the self-exec fake stdio MCP server
@@ -139,6 +143,74 @@ func TestMCPProbe_HTTPEndpointDialFailure(t *testing.T) {
 	}
 	if got.Err == "" {
 		t.Errorf("ProbeServer(dead http): want a redacted Err, got empty")
+	}
+}
+
+// startFailingListHTTPServer serves a real SDK endpoint that fails only tools/list, so
+// the probe's "reached it but could not enumerate" branch is exercised distinctly from
+// a dial failure. It sniffs the buffered body rather than a header so it does not
+// depend on SEP-2243's Mcp-Method routing header being present.
+func startFailingListHTTPServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	srv := newSDKFixtureServer(1, 0)
+	handler := sdkmcp.NewStreamableHTTPHandler(func(*http.Request) *sdkmcp.Server { return srv }, nil)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		_ = r.Body.Close()
+		if strings.Contains(string(body), `"tools/list"`) {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		r.ContentLength = int64(len(body))
+		handler.ServeHTTP(w, r)
+	}))
+	t.Cleanup(func() {
+		for session := range srv.Sessions() {
+			_ = session.Close()
+		}
+		ts.Close()
+	})
+	return ts
+}
+
+// TestMCPProbe_CountsToolsAcrossPages proves the probe reports the TOTAL tool count,
+// not the first page's length. The hand-rolled client had no cursor handling at all, so
+// a real multi-page server would silently under-report — the cockpit board would show a
+// plausible number that happened to be wrong, which is worse than an obvious failure.
+func TestMCPProbe_CountsToolsAcrossPages(t *testing.T) {
+	const tools = 3
+	// PageSize 1 makes tools/list genuinely span three pages without 1001 tools.
+	ts, _ := startSDKHTTPServer(t, tools, 1)
+
+	got := ProbeServer(context.Background(), "paged", ManagedServer{Type: ServerTypeStreamableHTTP, URL: ts.URL})
+	if !got.OK {
+		t.Fatalf("ProbeServer(paged): want OK, got %+v", got)
+	}
+	if got.ToolCount != tools {
+		t.Errorf("ToolCount: want %d across all pages, got %d (detail=%q)", tools, got.ToolCount, got.Detail)
+	}
+	if got.Detail != "ok (3 tools)" {
+		t.Errorf("Detail: want %q, got %q", "ok (3 tools)", got.Detail)
+	}
+}
+
+// TestMCPProbe_ToolsListFailure proves a reachable server whose tools/list fails is
+// reported with its own Detail, distinct from "dial failed" — the two send an operator
+// to different places.
+func TestMCPProbe_ToolsListFailure(t *testing.T) {
+	ts := startFailingListHTTPServer(t)
+
+	got := ProbeServer(context.Background(), "nolist", ManagedServer{Type: ServerTypeStreamableHTTP, URL: ts.URL})
+	if got.OK {
+		t.Fatalf("ProbeServer(failing list): want OK=false, got %+v", got)
+	}
+	if got.Detail != "tools/list failed" {
+		t.Errorf("Detail: want %q, got %q (err=%q)", "tools/list failed", got.Detail, got.Err)
 	}
 }
 

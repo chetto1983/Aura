@@ -27,8 +27,12 @@ type echoOut struct {
 // newSDKFixtureServer builds a real SDK server advertising toolCount trivial tools.
 // Real, not a hand-written JSON-RPC fake: the point of this phase is that Aura no
 // longer owns wire framing, so a fixture that framed its own would prove nothing.
-func newSDKFixtureServer(toolCount int) *sdkmcp.Server {
-	srv := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "fixture", Version: "1.0.0"}, nil)
+//
+// pageSize of 0 means the SDK default (1000, i.e. one page for any realistic fixture);
+// a small value makes tools/list genuinely multi-page without registering 1001 tools.
+func newSDKFixtureServer(toolCount, pageSize int) *sdkmcp.Server {
+	srv := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "fixture", Version: "1.0.0"},
+		&sdkmcp.ServerOptions{PageSize: pageSize})
 	for i := range toolCount {
 		name := "echo"
 		if i > 0 {
@@ -86,9 +90,9 @@ func recordAttrs(r slog.Record) map[string]string {
 
 // startSDKHTTPServer serves a real streamable-HTTP MCP endpoint over httptest and
 // returns the server plus a counter of HTTP requests it actually received.
-func startSDKHTTPServer(t *testing.T, toolCount int) (*httptest.Server, *atomic.Int64) {
+func startSDKHTTPServer(t *testing.T, toolCount, pageSize int) (*httptest.Server, *atomic.Int64) {
 	t.Helper()
-	srv := newSDKFixtureServer(toolCount)
+	srv := newSDKFixtureServer(toolCount, pageSize)
 	handler := sdkmcp.NewStreamableHTTPHandler(func(*http.Request) *sdkmcp.Server { return srv }, nil)
 	var requests atomic.Int64
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -117,7 +121,7 @@ func recipeServer(url string) ManagedServer {
 // TestOpenSDKSessionStreamableHTTP proves the HTTP branch opens a live session under an
 // ENFORCED egress policy and that the negotiated protocol version is logged exactly once.
 func TestOpenSDKSessionStreamableHTTP(t *testing.T) {
-	ts, requests := startSDKHTTPServer(t, 1)
+	ts, requests := startSDKHTTPServer(t, 1, 0)
 	server := recipeServer(ts.URL)
 	egress := EgressPolicyForManagedServer(true, server)
 	if !egress.Enforced() {
@@ -174,7 +178,7 @@ func TestOpenSDKSessionStreamableHTTP(t *testing.T) {
 // the transport is built: a refused endpoint issues ZERO HTTP requests and the error is
 // classifiable as a transport error so MountWithRetry still treats it as retryable.
 func TestOpenSDKSessionRefusesPolicyBlockedEndpoint(t *testing.T) {
-	ts, requests := startSDKHTTPServer(t, 1)
+	ts, requests := startSDKHTTPServer(t, 1, 0)
 	// Not a recipe source: an enforced policy grants this loopback authority nothing.
 	server := ManagedServer{Type: ServerTypeStreamableHTTP, URL: ts.URL, Trust: ManagedTrust{Class: TrustRemoteHTTP}}
 	egress := EgressPolicy{enforcePrivate: true}
@@ -293,7 +297,7 @@ func TestOpenSDKSessionInMemoryRoundTrip(t *testing.T) {
 	defer cancel()
 
 	clientTransport, serverTransport := sdkmcp.NewInMemoryTransports()
-	serverSession, err := newSDKFixtureServer(1).Connect(ctx, serverTransport, nil)
+	serverSession, err := newSDKFixtureServer(1, 0).Connect(ctx, serverTransport, nil)
 	if err != nil {
 		t.Fatalf("server Connect: %v", err)
 	}
