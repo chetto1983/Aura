@@ -21,6 +21,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import urllib.error
 import urllib.request
 
 import cocoindex as coco
@@ -225,8 +226,35 @@ def _embed(text: str) -> list[float]:
     req = urllib.request.Request(
         f"{EMBED_BASE_URL.rstrip('/')}/v1/embeddings", data=payload,
         headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=120) as resp:
-        return json.loads(resp.read())["data"][0]["embedding"]
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            return json.loads(resp.read())["data"][0]["embedding"]
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(_embed_failure_detail(exc, text)) from exc
+
+
+def _embed_failure_detail(exc: urllib.error.HTTPError, text: str) -> str:
+    """What the bare HTTPError does not say, and what it cost to not say it.
+
+    An HTTPError raised out of urlopen renders as "HTTP Error 500: Internal Server Error"
+    and nothing else, while the BODY is where llama.cpp names the actual fault -- "input is
+    too large to process, increase the physical batch size" tells you the fix in one line.
+    Losing it cost two full reproductions on 2026-08-09.
+
+    The token count is measured, not assumed, and it is the second half of the diagnosis:
+    the overwhelmingly common cause is a chunk that overflowed the model ceiling, and the
+    count beside the ceiling settles that in the error itself rather than in a re-run.
+    Counted WITH the prefix and the specials because that is what the server actually sees
+    (the same arithmetic document_budget() does). count_tokens degrades to a character
+    estimate when the server is unreachable, so measuring here cannot fail the failure path.
+    """
+    body = exc.read().decode("utf-8", "replace").strip() if exc.fp is not None else ""
+    tokens = chunk.count_tokens(chunk.EMBED_DOC_PREFIX + text, add_special=True)
+    return (
+        f"embedding request failed: HTTP {exc.code} for a {tokens}-token input "
+        f"(model ceiling {chunk.MODEL_MAX_TOKENS})"
+        + (f": {body}" if body else " with an empty body")
+    )
 
 
 @coco.fn
