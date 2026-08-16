@@ -193,7 +193,8 @@ export const profileEn = {
     loading: 'Loading your profile...',
     error: "Couldn't load your profile. Check the server and try again.",
     saved: 'Profile saved.',
-    saveError: "Couldn't save: {{message}}. Your changes are still here — fix the value and try again.",
+    saveError:
+      "Couldn't save: {{message}}. Your changes are still here — fix the value and try again.",
     fields: {
       name: 'Name',
       role: 'Role',
@@ -215,7 +216,8 @@ export const profileEn = {
     hints: {
       list: 'Comma-separated.',
       customInstructions: 'A sentence or two Aura should follow in every conversation.',
-      vetoes: 'Hard rules, comma-separated. These are prohibitions, not preferences — Aura is told them on every turn.',
+      vetoes:
+        'Hard rules, comma-separated. These are prohibitions, not preferences — Aura is told them on every turn.',
     },
     actions: {
       save: 'Save profile',
@@ -230,7 +232,8 @@ export const profileIt = {
     loading: 'Caricamento del profilo...',
     error: 'Impossibile caricare il profilo. Controlla il server e riprova.',
     saved: 'Profilo salvato.',
-    saveError: 'Salvataggio non riuscito: {{message}}. Le modifiche sono ancora qui — correggi il valore e riprova.',
+    saveError:
+      'Salvataggio non riuscito: {{message}}. Le modifiche sono ancora qui — correggi il valore e riprova.',
     fields: {
       name: 'Nome',
       role: 'Ruolo',
@@ -252,7 +255,8 @@ export const profileIt = {
     hints: {
       list: 'Separati da virgola.',
       customInstructions: 'Una o due frasi che Aura deve seguire in ogni conversazione.',
-      vetoes: 'Regole dure, separate da virgola. Sono divieti, non preferenze — Aura le legge a ogni turno.',
+      vetoes:
+        'Regole dure, separate da virgola. Sono divieti, non preferenze — Aura le legge a ogni turno.',
     },
     actions: {
       save: 'Salva profilo',

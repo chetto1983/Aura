@@ -274,6 +274,7 @@ describe('sseAdapter — usageFromStateDelta', () => {
     ]);
     expect(usage).toEqual({
       promptTokens: 1200,
+      contextTokens: 1200,
       completionTokens: 340,
       cacheHitTokens: 1000,
       costUsd: 0.0042,
@@ -295,12 +296,26 @@ describe('sseAdapter — usageFromStateDelta', () => {
   });
 
   it('cacheHitRatio guards /0 (promptTokens=0 → 0, not NaN)', () => {
-    expect(cacheHitRatio({ promptTokens: 0, completionTokens: 0, cacheHitTokens: 5 })).toBe(0);
     expect(
-      Number.isNaN(cacheHitRatio({ promptTokens: 0, completionTokens: 0, cacheHitTokens: 5 })),
+      cacheHitRatio({ promptTokens: 0, contextTokens: 0, completionTokens: 0, cacheHitTokens: 5 }),
+    ).toBe(0);
+    expect(
+      Number.isNaN(
+        cacheHitRatio({
+          promptTokens: 0,
+          contextTokens: 0,
+          completionTokens: 0,
+          cacheHitTokens: 5,
+        }),
+      ),
     ).toBe(false);
     expect(
-      cacheHitRatio({ promptTokens: 100, completionTokens: 0, cacheHitTokens: 80 }),
+      cacheHitRatio({
+        promptTokens: 100,
+        contextTokens: 100,
+        completionTokens: 0,
+        cacheHitTokens: 80,
+      }),
     ).toBeCloseTo(0.8);
   });
 });

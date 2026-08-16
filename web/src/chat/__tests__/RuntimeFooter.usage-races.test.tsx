@@ -26,6 +26,7 @@ const POST_TURN_AGGREGATE = {
 
 const SETTLED_TURN: TurnUsage = {
   promptTokens: 200,
+  contextTokens: 200,
   completionTokens: 100,
   cacheHitTokens: 50,
   costUsd: 0.01,
@@ -33,6 +34,7 @@ const SETTLED_TURN: TurnUsage = {
 
 const NEXT_TURN: TurnUsage = {
   promptTokens: 100,
+  contextTokens: 100,
   completionTokens: 0,
   cacheHitTokens: 0,
   costUsd: 0.002,
@@ -127,6 +129,7 @@ describe('RuntimeFooter run/session ownership', () => {
     });
     const nextUsage: TurnUsage = {
       promptTokens: 100,
+      contextTokens: 100,
       completionTokens: 0,
       cacheHitTokens: 0,
       costUsd: 0.002,
@@ -246,6 +249,7 @@ describe('RuntimeFooter run/session ownership', () => {
       <RuntimeFooter
         usageState={event(2, 'running', {
           promptTokens: 100,
+          contextTokens: 100,
           completionTokens: 0,
           cacheHitTokens: 0,
           costUsd: 0.002,

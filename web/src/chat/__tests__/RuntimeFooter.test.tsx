@@ -136,6 +136,7 @@ describe('footerMetrics (pure)', () => {
     expect(seed.hasCost).toBe(true);
     const turn: TurnUsage = {
       promptTokens: 200,
+      contextTokens: 200,
       completionTokens: 100,
       cacheHitTokens: 50,
       costUsd: 0.01,
@@ -171,6 +172,7 @@ describe('footerMetrics (pure)', () => {
     const seed = seedSession(undefined);
     const noCost = addTurn(seed, {
       promptTokens: 10,
+      contextTokens: 10,
       completionTokens: 5,
       cacheHitTokens: 0,
     });
@@ -181,6 +183,7 @@ describe('footerMetrics (pure)', () => {
     expect(
       isNoSpendTurn({
         promptTokens: 0,
+        contextTokens: 0,
         completionTokens: 0,
         cacheHitTokens: 0,
       }),
@@ -188,6 +191,7 @@ describe('footerMetrics (pure)', () => {
     expect(
       isNoSpendTurn({
         promptTokens: 1,
+        contextTokens: 1,
         completionTokens: 0,
         cacheHitTokens: 0,
       }),
@@ -211,6 +215,7 @@ describe('RuntimeFooter (CHAT-04 / D-10/D-12)', () => {
   it('renders the per-turn tokens, cache % and cost in mono off the STATE_DELTA usage', () => {
     const usage: TurnUsage = {
       promptTokens: 120,
+      contextTokens: 120,
       completionTokens: 80,
       cacheHitTokens: 60,
       costUsd: 0.0012,
@@ -229,6 +234,7 @@ describe('RuntimeFooter (CHAT-04 / D-10/D-12)', () => {
   it('guards the cache-% /0: promptTokens=0 renders the em-dash, never NaN', () => {
     const usage: TurnUsage = {
       promptTokens: 0,
+      contextTokens: 0,
       completionTokens: 0,
       cacheHitTokens: 0,
       costUsd: 0.001,
@@ -242,6 +248,7 @@ describe('RuntimeFooter (CHAT-04 / D-10/D-12)', () => {
   it('renders the em-dash (not $NaN) when cost_usd is absent', () => {
     const usage: TurnUsage = {
       promptTokens: 100,
+      contextTokens: 100,
       completionTokens: 50,
       cacheHitTokens: 10,
       // costUsd intentionally omitted (provider did not return it).
@@ -277,6 +284,7 @@ describe('RuntimeFooter (CHAT-04 / D-10/D-12)', () => {
   it('seeds the session-cumulative from the conversation aggregate then adds the live delta', async () => {
     const usage: TurnUsage = {
       promptTokens: 200,
+      contextTokens: 200,
       completionTokens: 100,
       cacheHitTokens: 50,
       costUsd: 0.01,
@@ -291,6 +299,7 @@ describe('RuntimeFooter (CHAT-04 / D-10/D-12)', () => {
   it('shows the context gauge value and switches the fill to warning at ≥85%', () => {
     const usage: TurnUsage = {
       promptTokens: 90,
+      contextTokens: 90,
       completionTokens: 0,
       cacheHitTokens: 0,
       costUsd: 0.001,
@@ -311,6 +320,7 @@ describe('RuntimeFooter (CHAT-04 / D-10/D-12)', () => {
   it('falls back to DEFAULT_CONTEXT_WINDOW when no live windowTokens is supplied', () => {
     const usage: TurnUsage = {
       promptTokens: 90,
+      contextTokens: 90,
       completionTokens: 0,
       cacheHitTokens: 0,
       costUsd: 0.001,
@@ -326,6 +336,7 @@ describe('RuntimeFooter (CHAT-04 / D-10/D-12)', () => {
   it('renders the live windowTokens when provided, not the 1M default', () => {
     const usage: TurnUsage = {
       promptTokens: 90,
+      contextTokens: 90,
       completionTokens: 0,
       cacheHitTokens: 0,
       costUsd: 0.001,
@@ -366,6 +377,7 @@ describe('RuntimeFooter (CHAT-04 / D-10/D-12)', () => {
   it('uses the accent fill below the near-full threshold', () => {
     const usage: TurnUsage = {
       promptTokens: 10,
+      contextTokens: 10,
       completionTokens: 0,
       cacheHitTokens: 0,
       costUsd: 0.001,
@@ -378,6 +390,7 @@ describe('RuntimeFooter (CHAT-04 / D-10/D-12)', () => {
   it('uses the warning fill from 70% up to critical', () => {
     const usage: TurnUsage = {
       promptTokens: 75,
+      contextTokens: 75,
       completionTokens: 0,
       cacheHitTokens: 0,
       costUsd: 0.001,
@@ -390,6 +403,7 @@ describe('RuntimeFooter (CHAT-04 / D-10/D-12)', () => {
   it('renders the no-spend label for local zero-usage replies', () => {
     const usage: TurnUsage = {
       promptTokens: 0,
+      contextTokens: 0,
       completionTokens: 0,
       cacheHitTokens: 0,
     };
@@ -418,6 +432,7 @@ describe('RuntimeFooter (CHAT-04 / D-10/D-12)', () => {
   it('updates visible metrics live but announces only once when that run settles', async () => {
     const usage: TurnUsage = {
       promptTokens: 120,
+      contextTokens: 120,
       completionTokens: 80,
       cacheHitTokens: 60,
       costUsd: 0.0012,
@@ -454,6 +469,7 @@ describe('RuntimeFooter (CHAT-04 / D-10/D-12)', () => {
   it('clears the prior settled announcement when the conversation changes', async () => {
     const settled = usageState(7, 'settled', {
       promptTokens: 120,
+      contextTokens: 120,
       completionTokens: 80,
       cacheHitTokens: 60,
       costUsd: 0.0012,
@@ -475,6 +491,7 @@ describe('RuntimeFooter (CHAT-04 / D-10/D-12)', () => {
   it('keeps sequential runs isolated, including a completion with no usage', async () => {
     const first: TurnUsage = {
       promptTokens: 100,
+      contextTokens: 100,
       completionTokens: 50,
       cacheHitTokens: 10,
       costUsd: 0.0005,
@@ -490,6 +507,7 @@ describe('RuntimeFooter (CHAT-04 / D-10/D-12)', () => {
     // A new run starts empty, then streams values without reusing the prior run.
     const second: TurnUsage = {
       promptTokens: 999,
+      contextTokens: 999,
       completionTokens: 1,
       cacheHitTokens: 0,
       costUsd: 0.5,
@@ -518,6 +536,7 @@ describe('RuntimeFooter (CHAT-04 / D-10/D-12)', () => {
   it('renders a mobile disclosure control to expand the full telemetry', () => {
     const usage: TurnUsage = {
       promptTokens: 120,
+      contextTokens: 120,
       completionTokens: 80,
       cacheHitTokens: 60,
       costUsd: 0.0012,
@@ -539,6 +558,7 @@ describe('RuntimeFooter (CHAT-04 / D-10/D-12)', () => {
   it('expands the mobile disclosure on click (aria-expanded toggles true)', () => {
     const usage: TurnUsage = {
       promptTokens: 120,
+      contextTokens: 120,
       completionTokens: 80,
       cacheHitTokens: 60,
       costUsd: 0.0012,

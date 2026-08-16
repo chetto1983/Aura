@@ -14,6 +14,13 @@ export interface TurnUsage {
   readonly promptTokens: number;
   readonly completionTokens: number;
   readonly cacheHitTokens: number;
+  /**
+   * How much of the context window the request actually occupied: the prompt of the
+   * round's FINAL call. promptTokens is the round's BILL — every call in the round added
+   * together, because each re-sends the prefix — so on a tool-calling round it is several
+   * requests summed and reads as a window that is full when it is not.
+   */
+  readonly contextTokens: number;
   readonly costUsd?: number;
 }
 
@@ -46,6 +53,9 @@ export function usageFromStateDelta(ops: readonly JSONPatchOp[]): TurnUsage {
     promptTokens: Number(byPath.get('/prompt_tokens') ?? 0),
     completionTokens: Number(byPath.get('/completion_tokens') ?? 0),
     cacheHitTokens: Number(byPath.get('/cache_hit_tokens') ?? 0),
+    // Older daemons send no context_tokens; fall back to the summed prompt, which is what
+    // the gauge showed before this existed.
+    contextTokens: Number(byPath.get('/context_tokens') ?? byPath.get('/prompt_tokens') ?? 0),
     ...(cost !== undefined ? { costUsd: Number(cost) } : {}),
   };
 }

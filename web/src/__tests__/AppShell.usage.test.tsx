@@ -61,6 +61,7 @@ vi.mock('../chat/ExternalStoreChat', () => ({
                   phase: 'settled',
                   usage: {
                     promptTokens: runId * 20,
+                    contextTokens: runId * 20,
                     completionTokens: 5,
                     cacheHitTokens: 4,
                     costUsd: 0.001,

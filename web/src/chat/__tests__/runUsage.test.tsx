@@ -6,6 +6,7 @@ import type { TurnUsage } from '../sseAdapter';
 function usage(promptTokens: number): TurnUsage {
   return {
     promptTokens,
+    contextTokens: promptTokens,
     completionTokens: promptTokens / 2,
     cacheHitTokens: promptTokens / 4,
     costUsd: promptTokens / 100_000,

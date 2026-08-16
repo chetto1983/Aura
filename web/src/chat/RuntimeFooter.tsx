@@ -87,13 +87,23 @@ export function RuntimeFooter({
     ],
   );
   const settled = useSettledAnnouncement(liveCluster, usageState, conversationId);
-  // The gauge measures the CURRENT request's context fill, so it rides the live
-  // turn's prompt_tokens. On a cold reload / idle (no live turn) it falls back to
-  // the conversation's LastInputTokens — the most recent request-bearing turn's
-  // input_tokens — NOT session.promptTokens, which is the CUMULATIVE input across
-  // every turn (each re-sends the growing prompt) and on a long chat dwarfs the
-  // window, rendering a false "near-full" alarm (BUG-8). 0 only when neither is known.
-  const usedTokens = turn?.promptTokens ?? conv?.LastInputTokens ?? 0;
+  // The gauge measures the CURRENT request's context fill, so it rides the live turn's
+  // context_tokens: the prompt of the round's FINAL call. NOT its prompt_tokens, which
+  // sums every call in the round (the provider bills each one because each re-sends the
+  // prefix) — measured on the live deployment 2026-08-16, a two-tool round read 72,224
+  // against an 81,920 window (88%) when the largest single request was about 24k (29%),
+  // then "dropped" to 17% on the next prose round. The operator saw a window filling and
+  // emptying; it was the bill being added up.
+  //
+  // On a cold reload / idle there is no live turn and the fallback is the conversation's
+  // LastInputTokens, which is still that summed figure — an UPPER BOUND on the fill until
+  // the first turn of the session lands. Never session.promptTokens, which is cumulative
+  // across every turn and dwarfs the window on a long chat (BUG-8).
+  // Switching chat is already covered upstream: AppShell calls resetUsage() when the route
+  // id changes, so `turn` never carries the previous conversation's figure into this one.
+  // The DENOMINATOR is deployment-wide on purpose — the runtime replays every conversation
+  // under the currently configured window, whatever model the chat was started with.
+  const usedTokens = turn?.contextTokens ?? conv?.LastInputTokens ?? 0;
   const window = windowTokens ?? DEFAULT_CONTEXT_WINDOW;
   const ctxPct = contextPercent(usedTokens, window);
 

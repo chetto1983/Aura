@@ -261,11 +261,7 @@ function ProfileTextField({
   );
 }
 
-function ProfileListField({
-  field,
-  value,
-  onChange,
-}: FieldProps & { readonly field: ListField }) {
+function ProfileListField({ field, value, onChange }: FieldProps & { readonly field: ListField }) {
   const { t } = useTranslation();
   const id = useId();
   const hintId = `${id}-hint`;
