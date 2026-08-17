@@ -172,6 +172,13 @@ type runtimeToolHandles struct {
 	// (path-only degrade, D-02), and serve.go sets Assets = the asset service once buildAssetService
 	// has run, so an authenticated channel-driven delivery becomes an owned Garage asset.
 	SendFile *tools.SendFile
+	// MCPViews is the process-wide MCP Apps document catalog the mounts fill, and
+	// ViewCallers maps ONLY the servers that actually catalogued a document to their
+	// mounted supervisor — so a view's callback can never name a server that never
+	// served it one. Both are nil on the pool-free manifest paths, which render
+	// nothing; every *ViewCatalog method tolerates that.
+	MCPViews    *mcp.ViewCatalog
+	ViewCallers mcptools.ViewCallers
 }
 
 // buildBaseRegistry is the shared composition root for every boot path. ts is the
@@ -306,6 +313,8 @@ func buildRegistryWithMCP(
 		return nil, runtimeToolHandles{}, nil, cfg.MCPServersErr
 	}
 	reg, handles := buildBaseRegistryWithHandles(cfg, ts, sandboxRouter)
+	handles.MCPViews = mcp.NewViewCatalog()
+	handles.ViewCallers = mcptools.ViewCallers{}
 	if len(cfg.MCPServers) == 0 && len(cfg.MCPPolicies) == 0 {
 		return reg, handles, nil, nil
 	}
@@ -346,33 +355,28 @@ func buildRegistryWithMCP(
 		// server's mount deadline elapses (Pitfall #2).
 		handshakeCtx, cancel := context.WithTimeout(ctx, mountTimeout)
 		var mountedHost *mcptools.MountedServer
+		sharedAdmin := false
 		mountOnce := func(c context.Context) (func() error, []string, error) {
-			if _, managed := cfg.MCPPolicies[name]; managed {
-				server := cfg.MCPPolicies[name]
-				if mcp.IsSharedAdminGoverned(server) {
-					closer, names, host, mountErr := mcptools.MountManagedServerHostWithEgress(
-						ctx,
-						c,
-						reg,
-						name,
-						server,
-						mcp.RuntimeEgressPolicy(cfg.Profile.Strict(), server),
-					)
-					if mountErr == nil {
-						mountedHost = host
-					}
-					return closer, names, mountErr
-				}
-				return mcptools.MountManagedServerWithEgress(
-					ctx,
-					c,
-					reg,
-					name,
-					server,
-					mcp.RuntimeEgressPolicy(cfg.Profile.Strict(), server),
-				)
+			server, managed := cfg.MCPPolicies[name]
+			if !managed {
+				return mcptools.MountServer(ctx, c, reg, name, cfg.MCPServers[name])
 			}
-			return mcptools.MountServer(ctx, c, reg, name, cfg.MCPServers[name])
+			closer, names, host, mountErr := mcptools.MountManagedServerWithOptions(
+				ctx,
+				c,
+				reg,
+				name,
+				server,
+				mcptools.MountOptions{
+					Egress: mcp.RuntimeEgressPolicy(cfg.Profile.Strict(), server),
+					Views:  handles.MCPViews,
+				},
+			)
+			if mountErr == nil {
+				mountedHost = host
+				sharedAdmin = mcp.IsSharedAdminGoverned(server)
+			}
+			return closer, names, mountErr
 		}
 		closer, mounted, err := mcptools.MountWithRetry(handshakeCtx, name, mcpMountRetryPolicy(), mountOnce)
 		cancel()
@@ -385,7 +389,14 @@ func buildRegistryWithMCP(
 		// silent success — the signal that was missing when memory mounted 0 tools.
 		slog.Info("mcp mounted", "server", name, "tools", len(mounted))
 		if mountedHost != nil {
-			handles.Memory = mountedHost
+			if sharedAdmin {
+				handles.Memory = mountedHost
+			}
+			// A server earns a callback entry by having served a document, not by
+			// being mounted: the catalog is the record, so the two cannot drift.
+			if handles.MCPViews.HasServer(name) {
+				handles.ViewCallers[name] = mountedHost
+			}
 		}
 		closers = append(closers, closer)
 	}

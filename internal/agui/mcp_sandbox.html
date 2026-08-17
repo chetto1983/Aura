@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>MCP view sandbox</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: transparent;
+      }
+      iframe {
+        display: block;
+        width: 100%;
+        height: 100%;
+        border: 0;
+        background: transparent;
+      }
+    </style>
+  </head>
+  <body>
+    <script>
+      /**
+       * The MCP Apps sandbox proxy.
+       *
+       * MCP Apps requires a web host to wrap a view and talk to it through a proxy
+       * on a DIFFERENT origin, because the view needs `allow-same-origin` to run at
+       * all — and `allow-same-origin` on the host's own origin would hand a mounted
+       * server's document the operator's session. This page is that origin. It is
+       * served by Aura but reached only through the second port, so the browser
+       * gives it an origin of its own.
+       *
+       * It is a RELAY and nothing more. It knows no MCP: it does not read a method
+       * name, does not inspect a payload, and has no state beyond one iframe. The
+       * protocol lives entirely in the host, which is the only side that can decide
+       * what a view is allowed to ask for.
+       */
+      (function () {
+        'use strict';
+
+        // The host tells the proxy which origin to answer, in the frame URL. Every
+        // inbound message is checked against it and every outbound one is addressed
+        // to it — never '*'. A page that was framed without one relays nothing,
+        // which is the correct behaviour for a proxy nobody claimed.
+        var hostOrigin = '';
+        try {
+          var raw = new URLSearchParams(location.search).get('host') || '';
+          hostOrigin = raw ? new URL(raw).origin : '';
+        } catch (err) {
+          hostOrigin = '';
+        }
+
+        var view = null;
+
+        function toHost(message) {
+          if (!hostOrigin) return;
+          parent.postMessage(message, hostOrigin);
+        }
+
+        function mount(html) {
+          if (view) view.remove();
+          view = document.createElement('iframe');
+          // allow-scripts + allow-same-origin is what the extension requires of the
+          // VIEW frame. Both resolve to THIS origin, never the cockpit's — which is
+          // the whole reason this page exists on a port of its own.
+          view.setAttribute('sandbox', 'allow-scripts allow-same-origin');
+          view.setAttribute('referrerpolicy', 'no-referrer');
+          view.srcdoc = html;
+          view.addEventListener('load', function () {
+            toHost({ kind: 'mounted' });
+          });
+          document.body.appendChild(view);
+        }
+
+        window.addEventListener('message', function (event) {
+          var data = event.data;
+          if (!data || typeof data !== 'object') return;
+
+          // From the view: relay up. Identity is the WINDOW, not the origin — the
+          // view frame is same-origin with this page, so an origin check would
+          // admit anything else this page ever framed.
+          if (view && event.source === view.contentWindow) {
+            toHost({ kind: 'from_view', message: data });
+            return;
+          }
+
+          // From the host: relay down. Anything arriving from another origin is
+          // not the host and is dropped without an answer.
+          if (!hostOrigin || event.origin !== hostOrigin || event.source !== parent) return;
+          if (data.kind === 'mount' && typeof data.html === 'string') {
+            mount(data.html);
+            return;
+          }
+          if (data.kind === 'to_view' && view && view.contentWindow) {
+            // A srcdoc frame with allow-same-origin inherits THIS origin, so the
+            // relay can address it exactly rather than broadcasting.
+            view.contentWindow.postMessage(data.message, location.origin);
+          }
+        });
+
+        toHost({ kind: 'ready' });
+      })();
+    </script>
+  </body>
+</html>

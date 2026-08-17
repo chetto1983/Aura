@@ -119,6 +119,16 @@ func wireAGUIServer(chat *chatEnv, store *cron.Store, scheduler *cron.Scheduler,
 	// without the sidecar boots fine). The routes mount behind RequireCapability(governance.
 	// write) in serve_webui.go, so the proxy is never an open relay.
 	aguiServer.SetWhatsAppBridge(chat.cfg.WhatsAppBridgeURL)
+	// Wire the MCP Apps view surface: the documents mounted servers served at boot,
+	// the SECOND origin they must be framed from (AURA_MCP_SANDBOX_ORIGIN), and the
+	// read-only callback a rendered view's tools/call reaches. An unset origin leaves
+	// the routes at 503 and the cockpit renders the tool's text instead — a host that
+	// cannot isolate a view must not render one, and mcp_views_api.go refuses rather
+	// than degrading. Best-effort, never boot-fatal.
+	aguiServer.SetMCPViews(chat.toolHandles.MCPViews, chat.cfg.MCPSandboxOrigin, chat.toolHandles.ViewCallers)
+	if views := chat.toolHandles.MCPViews.URIs(); len(views) > 0 {
+		slog.Info("mcp views available", "views", views, "sandbox_origin", chat.cfg.MCPSandboxOrigin)
+	}
 	// Wire the cockpit "Connect Google Calendar" admin-proxy: the aura-pim-mcp sidecar base URL
 	// (AURA_PIM_MCP_URL) + the /admin Bearer token (AURA_PIM_MCP_ADMIN_TOKEN). The five
 	// /api/connect/pim/* routes forward to its token-gated /admin REST, injecting the token

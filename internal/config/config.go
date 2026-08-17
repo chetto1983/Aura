@@ -234,6 +234,14 @@ type Config struct {
 	// connect routes answer 503 at call time so a stack without the sidecar boots fine.
 	WhatsAppBridgeURL string // AURA_WHATSAPP_BRIDGE_URL — aura-whatsapp bridge mgmt REST base, default http://whatsapp:8081
 
+	// MCPSandboxOrigin is the SECOND origin the cockpit frames MCP Apps views from
+	// (AURA_MCP_SANDBOX_ORIGIN, e.g. https://aura.lan:8444). MCP Apps requires a web
+	// host to wrap a view in a sandbox proxy on a different origin, because the view
+	// needs allow-same-origin to run and must not get the cockpit's. Empty is NOT
+	// boot-fatal: the view routes answer 503 and the cockpit renders the tool's text,
+	// which is the extension's own progressive-enhancement contract.
+	MCPSandboxOrigin string // AURA_MCP_SANDBOX_ORIGIN — origin serving /mcp-sandbox, no default
+
 	// Cockpit "Connect Google Calendar" knobs. CalendarMCPURL is the aura-pim-mcp sidecar's
 	// base URL the /api/connect/pim/* admin-proxy forwards to; CalendarMCPAdminToken is the
 	// /admin Bearer token injected server-side (never returned to the client). An unset URL is
@@ -322,34 +330,6 @@ func LoadServe() (*Config, error) {
 	}
 	cfg.LLM = *llmCfg
 	return cfg, nil
-}
-
-// GuardWebBind is the WEB-02 fail-fast boot policy for the cockpit listener (D-05).
-// A loopback bind always boots with no credential, exactly as before; a non-loopback
-// bind boots ONLY when EITHER Authula web auth is configured OR trustProxy is true
-// (the operator vouches a reverse proxy terminates auth).
-// A non-loopback bind with neither credential returns an actionable error so the daemon
-// refuses to silently expose an unauthenticated surface. It is a pure function — total
-// (no panic path) and table-test-friendly — mirroring Validate's "config: …" posture.
-//
-// Wildcards (0.0.0.0, ::, [::]) are NOT special-cased: net.ParseIP(...).IsLoopback()
-// returns false for them, so they fall through to the gated branch, which is correct.
-func GuardWebBind(bind string, authConfigured bool, trustProxy bool) error {
-	host, _, err := net.SplitHostPort(bind)
-	if err != nil {
-		host = bind // tolerate a bare host with no port
-	}
-	ip := net.ParseIP(host)
-	isLoopback := host == "localhost" || (ip != nil && ip.IsLoopback())
-	if isLoopback {
-		return nil // loopback always bootable, exactly as before (D-05)
-	}
-	if authConfigured || trustProxy {
-		return nil // unlocked by either credential (D-05)
-	}
-	return fmt.Errorf("config: AURA_AGUI_BIND=%q is non-loopback but web auth is not configured; "+
-		"set AURA_AUTHULA_SECRET with AURA_AUTHULA_DATABASE_URL or AURA_DB_URL, set "+
-		"AURA_WEB_TRUST_PROXY=true (a reverse proxy terminates auth), or bind a loopback address", bind)
 }
 
 // LoadDB loads the non-LLM configuration only. DB-admin commands
@@ -531,6 +511,10 @@ func loadBase() *Config {
 		ProfileCertaintyN: envutil.IntDefault("AURA_PROFILE_CERTAINTY_N", 3),
 
 		WhatsAppBridgeURL: envDefault("AURA_WHATSAPP_BRIDGE_URL", "http://whatsapp:8081"),
+
+		// No default: an origin guessed by Aura would be wrong for every deployment
+		// but one, and a wrong sandbox origin is a refusal, not a degradation.
+		MCPSandboxOrigin: os.Getenv("AURA_MCP_SANDBOX_ORIGIN"),
 
 		CalendarMCPURL:        envDefault("AURA_PIM_MCP_URL", "http://aura-pim-mcp:8080"),
 		CalendarMCPAdminToken: envDefault("AURA_PIM_MCP_ADMIN_TOKEN", "changeme-aura-pim-local"),

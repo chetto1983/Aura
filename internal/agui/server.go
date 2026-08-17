@@ -15,6 +15,7 @@ import (
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/mcp"
 	runtimereadiness "github.com/chetto1983/aura/internal/readiness"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/google/uuid"
@@ -205,6 +206,18 @@ type Server struct {
 	// (footerMetrics.DEFAULT_CONTEXT_WINDOW). Zero until wired — the DTO then carries 0 and the
 	// frontend keeps its own fallback.
 	contextWindow int
+
+	// mcpViews holds the `ui://` documents mounted MCP servers served at boot, and
+	// mcpSandboxOrigin is the DIFFERENT origin the cockpit must frame them from
+	// (AURA_MCP_SANDBOX_ORIGIN). Both are wired by SetMCPViews; until then the view
+	// route answers 503 — see mcp_views_api.go for why an unset or same-as-host
+	// origin is a refusal rather than a degraded render.
+	mcpViews         *mcp.ViewCatalog
+	mcpSandboxOrigin string
+	// mcpViewCaller runs the tools/call a rendered view asks for. Nil until wired;
+	// the call route then answers 503, so a host that renders views but wired no
+	// caller refuses the request instead of half-answering it.
+	mcpViewCaller MCPViewToolCaller
 }
 
 // NewServer builds the gateway over the supplied driver + store + config. The
@@ -365,6 +378,10 @@ func (s *Server) Mux() http.Handler {
 	// handler (composer_api.go); the parent-mux mount (bare aguiHandler, RequireAuth-only —
 	// NOT governance.read) lives in cmd/aura/serve_webui_composer.go.
 	s.registerComposerRoutes(mux)
+	// MCP Apps view read route: GET /api/mcp/view, the `ui://` document a mounted
+	// server declared, behind the same plain RequireAuth the composer routes inherit.
+	// Colocated with its handler (mcp_views_api.go).
+	s.registerMCPViewRoutes(mux)
 	s.registerFileRoutes(mux)
 	// GRAPH-01 read-only graph-explorer routes (Phase 27 plan 27-02): GET /api/graph/schema
 	// + POST /api/graph/query. Colocated with their handlers; the parent-mux mount behind

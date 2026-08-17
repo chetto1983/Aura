@@ -240,6 +240,7 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	// RequireAuth-only (like voiceCapabilitiesRoute/meRoute) — deliberately NOT
 	// governance.read-gated so an ordinary identity gets the global picker list (D-03).
 	registerComposerRoutes(mux, aguiHandler, auth)
+	registerMCPViewRoutes(mux, aguiHandler, auth)
 	// 37F WEBSHARE-02 share routes live in serve_webui_share.go to keep this file ≤600 LOC.
 	registerShareRoutes(mux, aguiHandler, auth)
 	// The integrations admin proxy (cockpit connect data plane) mounts ahead of the
@@ -265,6 +266,13 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 			return true
 		}
 		if isPublicShareRoute(r) {
+			return true
+		}
+		// The MCP Apps sandbox proxy is fetched from the SECOND origin and carries no
+		// data of its own — everything it relays arrives by postMessage from the
+		// cockpit. Gating it on a cookie scoped to the cockpit's origin would couple
+		// the two origins the extension exists to keep apart.
+		if r.Method == http.MethodGet && r.URL.Path == agui.MCPSandboxPath {
 			return true
 		}
 		return previousPublicRoute != nil && previousPublicRoute(r)
