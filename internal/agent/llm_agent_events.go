@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"encoding/json"
 	"maps"
 	"time"
 
@@ -138,8 +139,16 @@ func (a *LlmAgent) toolResultEvent(ic InvocationContext, spanID [8]byte, parentS
 	// the ONLY route that populates the forward-compat ArtifactDelta field, and the
 	// AG-UI translator's artifact branch keys off it. Purely additive — a run
 	// without the key leaves ArtifactDelta nil, so every existing event is unchanged.
-	if art, ok := metaArtifact(run.Result.Meta); ok {
+	if art, ok := metaMap(run.Result.Meta, "artifact"); ok {
 		ev.Actions.ArtifactDelta = art
+	}
+	// The MCP Apps twin of the artifact lift: a view-bound MCP tool result carries
+	// the server + document + structuredContent its view renders. The correlation
+	// ids are stamped HERE rather than by the bridge, because the bridge does not
+	// know them — and a descriptor whose tool_call_id came from anywhere but the
+	// run itself could attach a view to the wrong tool call.
+	if view, ok := metaMap(run.Result.Meta, "mcp_view"); ok {
+		ev.Actions.ViewDelta = viewDelta(view, run)
 	}
 	// A source-bearing web tool result is normalized to a typed display.Payload and
 	// its sources accumulate into the per-run registry (D-05/DISP-01). This is the
@@ -156,23 +165,42 @@ func (a *LlmAgent) toolResultEvent(ic InvocationContext, spanID [8]byte, parentS
 	return ev
 }
 
-// metaArtifact pulls the `artifact` descriptor off a ToolResult.Meta map, mirroring
+// metaMap pulls one nested descriptor off a ToolResult.Meta map, mirroring
 // toolResultMetaMap/exitCodeFromMeta. It reports ok=false when the meta is nil, the
 // key is absent, or the value is not a map[string]any — so a malformed meta never
-// produces a bogus ArtifactDelta.
-func metaArtifact(meta *tools.ToolResultMeta) (map[string]any, bool) {
+// produces a bogus delta.
+func metaMap(meta *tools.ToolResultMeta, key string) (map[string]any, bool) {
 	if meta == nil {
 		return nil, false
 	}
-	v, ok := (*meta)["artifact"]
+	v, ok := (*meta)[key]
 	if !ok {
 		return nil, false
 	}
-	art, ok := v.(map[string]any)
+	nested, ok := v.(map[string]any)
 	if !ok {
 		return nil, false
 	}
-	return art, true
+	return nested, true
+}
+
+// viewDelta copies the bridge's descriptor and stamps the run's own correlation.
+// The copy is not politeness: the same map is also handed to ToolInvocation.Meta,
+// and writing through it would edit what the audit record already holds.
+//
+// The arguments ride as raw JSON when they are valid JSON, which is what a view
+// receives in ui/notifications/tool-input. A model can emit malformed arguments
+// and the tool can still have run (a lenient tool, a repaired call), so an
+// unparseable string is omitted rather than forwarded as a quoted blob no view
+// could read.
+func viewDelta(descriptor map[string]any, run toolRunResult) map[string]any {
+	delta := maps.Clone(descriptor)
+	delta["tool_call_id"] = run.ToolCallID
+	delta["tool_name"] = run.ToolName
+	if json.Valid([]byte(run.Arguments)) {
+		delta["arguments"] = json.RawMessage(run.Arguments)
+	}
+	return delta
 }
 
 func (a *LlmAgent) toolPreviewEvent(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte, toolCallID, preview string) *Event {

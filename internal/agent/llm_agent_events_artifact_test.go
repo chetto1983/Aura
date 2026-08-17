@@ -83,20 +83,23 @@ func TestToolResultEvent_NoArtifactLeavesNil(t *testing.T) {
 	}
 }
 
-// TestMetaArtifact_WrongTypeIsAbsent pins the metaArtifact type guard: an
-// `artifact` key whose value is NOT a map[string]any is treated as absent
-// (ok=false), so a malformed Meta never produces a bogus ArtifactDelta.
-func TestMetaArtifact_WrongTypeIsAbsent(t *testing.T) {
+// TestMetaMap_WrongTypeIsAbsent pins the metaMap type guard: a key whose value is
+// NOT a map[string]any is treated as absent (ok=false), so a malformed Meta never
+// produces a bogus delta on any of the keys that ride it.
+func TestMetaMap_WrongTypeIsAbsent(t *testing.T) {
 	wrong := &tools.ToolResultMeta{"artifact": "not-a-map"}
-	if art, ok := metaArtifact(wrong); ok {
+	if art, ok := metaMap(wrong, "artifact"); ok {
 		t.Fatalf("a non-map artifact value must report ok=false, got %v", art)
 	}
-	if _, ok := metaArtifact(nil); ok {
+	if _, ok := metaMap(nil, "artifact"); ok {
 		t.Fatal("nil meta must report ok=false")
 	}
 	good := &tools.ToolResultMeta{"artifact": map[string]any{"path": "/x", "filename": "x"}}
-	art, ok := metaArtifact(good)
+	art, ok := metaMap(good, "artifact")
 	if !ok || art["filename"] != "x" {
 		t.Fatalf("a valid artifact map must report ok=true with the descriptor, got %v ok=%v", art, ok)
+	}
+	if _, ok := metaMap(good, "mcp_view"); ok {
+		t.Fatal("a key the meta does not carry must report ok=false")
 	}
 }

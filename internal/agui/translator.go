@@ -25,6 +25,15 @@ const ArtifactEventName = "aura.artifact"
 // application's custom events.
 const DisplayEventName = "aura.display"
 
+// ViewEventName is the stable AG-UI CUSTOM-event name the MCP Apps branch emits:
+// a mounted server bound this tool to a `ui://` document, and here is the payload
+// that document renders (internal/agent/mcptools/bridge_views.go).
+//
+// It carries the DESCRIPTOR, never the HTML. The document is static per server
+// and would otherwise be re-sent on every call — the surface that renders fetches
+// it once, by (server, resource_uri), from an authenticated Aura route.
+const ViewEventName = "aura.mcp_view"
+
 // redactedReasoningDelta is the placeholder the translator substitutes for a real
 // chain-of-thought delta when showReasoning is false (the default privacy posture).
 // A consumer that opts in (Telegram's AURA_TELEGRAM_SHOW_REASONING) receives the real
@@ -370,6 +379,15 @@ func emitToolResultCustom(yield func(events.Event, error) bool, ev *agent.Event)
 	}
 	if ev.Actions.Display != nil {
 		if !yield(events.NewCustomEvent(DisplayEventName, events.WithValue(ev.Actions.Display)), nil) {
+			return false
+		}
+	}
+	// The MCP Apps descriptor has NO standalone branch beside the artifact and
+	// display ones below, and that asymmetry is deliberate: it is lifted only in
+	// toolResultEvent, which always carries a ToolInvocation, so a standalone
+	// branch would be a path nothing can reach.
+	if len(ev.Actions.ViewDelta) > 0 {
+		if !yield(events.NewCustomEvent(ViewEventName, events.WithValue(ev.Actions.ViewDelta)), nil) {
 			return false
 		}
 	}

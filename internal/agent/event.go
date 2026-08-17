@@ -67,9 +67,16 @@ type LLMResponse struct {
 // `awaiting_input` key on the wire (mirrors the MessageID *pointer omitempty
 // trick), keeping decode(encode())==identity.
 type Actions struct {
-	Escalate       bool            `json:"escalate,omitempty"`       // true → stop this branch / cancel siblings
-	StateDelta     map[string]any  `json:"state_delta,omitempty"`    // termination_reason/limit_hit/steps_consumed, etc.
-	ArtifactDelta  map[string]any  `json:"artifact_delta,omitempty"` // produced-artifact deltas (forward-compat)
+	Escalate      bool           `json:"escalate,omitempty"`       // true → stop this branch / cancel siblings
+	StateDelta    map[string]any `json:"state_delta,omitempty"`    // termination_reason/limit_hit/steps_consumed, etc.
+	ArtifactDelta map[string]any `json:"artifact_delta,omitempty"` // produced-artifact deltas (forward-compat)
+	// ViewDelta is the MCP Apps descriptor a view-bound tool result carries: which
+	// mounted server, which `ui://` document, and the server's structuredContent
+	// (internal/agent/mcptools/bridge_views.go). It is an untyped map for the same
+	// reason ArtifactDelta is — the shape is the SERVER's, not Aura's, and pinning
+	// a struct here would make every new field a Go change. The AG-UI translator
+	// fans it out as one CUSTOM event; a channel that renders nothing ignores it.
+	ViewDelta      map[string]any  `json:"view_delta,omitempty"`
 	AwaitingInput  *AwaitingInput  `json:"awaiting_input,omitempty"` // HITL pause payload (Slice 1.5); nil unless ask_user fired
 	ToolInvocation *ToolInvocation `json:"tool_invocation,omitempty"`
 	// Display is the Phase-26 typed-display payload the display normalizer produced
