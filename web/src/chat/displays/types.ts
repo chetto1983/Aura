@@ -11,7 +11,17 @@
 // snake_case (the Go JSON tags); the frontend reads them verbatim — no camelCase
 // remap, so the contract drift surface is exactly one literal pin test.
 
-/** The discriminant — one per Go `display.Kind` constant. */
+import type { McpViewDescriptor } from '../mcpapps/hostProtocol';
+
+/**
+ * The discriminant — one per Go `display.Kind` constant, plus `mcp_view`.
+ *
+ * `mcp_view` is the one kind with NO Go Kind behind it: the backend emits an MCP
+ * Apps descriptor on its own CUSTOM event (`aura.mcp_view`) and the reducer
+ * synthesizes this payload from it, the same way it synthesizes `local_artifact`
+ * from `aura.artifact`. It is listed here because the DisplayRouter switches on
+ * this union — not because the Go normalizer ever produces one.
+ */
 export type DisplayKind =
   | 'web_result'
   | 'document'
@@ -20,7 +30,8 @@ export type DisplayKind =
   | 'table'
   | 'chart'
   | 'system_event'
-  | 'swarm_report';
+  | 'swarm_report'
+  | 'mcp_view';
 
 /** A single web-search result row (type=web_result). Mirrors display.WebItem. */
 export interface WebItem {
@@ -126,6 +137,8 @@ export interface DisplayPayload {
   readonly system?: DisplaySystem;
   readonly swarm?: readonly DisplayChildReport[];
   readonly sources?: readonly DisplaySource[];
+  /** type=mcp_view — the MCP Apps descriptor the frame renders. */
+  readonly mcp_view?: McpViewDescriptor;
 }
 
 /** Narrow an unknown value to a DisplayPayload (a string `tool_call_id` + a string `type`). */

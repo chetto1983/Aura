@@ -1,5 +1,6 @@
 import type { ThreadMessageLike } from '@assistant-ui/react';
 import { isDisplayPayload, type DisplayPayload } from './displays/types';
+import { isMcpViewDescriptor } from './mcpapps/hostProtocol';
 import { errorDetail, type AguiFrame } from './sseAdapter_frames';
 import {
   ensureReasoning,
@@ -211,6 +212,23 @@ export function reduceFrame(state: AssistantTurnState, frame: AguiFrame): Assist
           },
         };
         writeTool(state, { ...part, display });
+      }
+      // MCP Apps (SEP-1865): a mounted server bound this tool to a `ui://`
+      // document. The frame is what renders it; the reducer only correlates the
+      // descriptor to its tool part, exactly like the two branches above. The HTML
+      // is NOT here and never will be — it is static per server and is fetched
+      // once from GET /api/mcp/view, so the stream carries the payload only.
+      if (frame.name === 'aura.mcp_view' && isMcpViewDescriptor(frame.value)) {
+        const d = frame.value;
+        const part = ensureTool(
+          state,
+          d.tool_call_id,
+          state.tools.get(d.tool_call_id)?.toolName ?? '',
+        );
+        writeTool(state, {
+          ...part,
+          display: { type: 'mcp_view', tool_call_id: d.tool_call_id, mcp_view: d },
+        });
       }
       return state;
     }

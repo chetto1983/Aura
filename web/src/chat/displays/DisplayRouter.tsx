@@ -8,6 +8,7 @@ import { LocalArtifactDisplay } from './LocalArtifactDisplay';
 import { DocumentDisplay } from './DocumentDisplay';
 import { WebResultDisplay } from './WebResultDisplay';
 import { CodeDisplay } from './CodeDisplay';
+import { McpViewFrame } from '../mcpapps/McpViewFrame';
 
 // DisplayRouter (DISP-02): the single switch(payload.type) entry point, now
 // hosted INSIDE the compact ToolActivityCard's expanded body (compact-chat spec
@@ -57,6 +58,15 @@ export function DisplayRouter({ payload, argsText, result, onOpenSource }: Displ
       return <WebResultDisplay payload={payload} {...(onOpenSource ? { onOpenSource } : {})} />;
     case 'code':
       return <CodeDisplay payload={payload} />;
+    // MCP Apps (SEP-1865): a document the mounted server wrote, rendered in a
+    // frame on the sandbox origin. A descriptor that did not survive the reducer's
+    // narrowing falls through to the escaped panel like any other malformed payload.
+    case 'mcp_view':
+      return payload.mcp_view ? (
+        <McpViewFrame descriptor={payload.mcp_view} />
+      ) : (
+        <ToolResultPanel argsText={argsText} result={result} />
+      );
     default:
       // D-FALLBACK: the escaped structured raw panel, never null (HARDEN-08).
       // ToolActivityCard now HOSTS this router (compact-chat §3.5), so the
