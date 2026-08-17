@@ -37,6 +37,69 @@ principal passavano in locale e fallivano nel gate. Copia le DSN di `scripts/cov
 
 ---
 
+## Come si chiude
+
+Le sezioni sotto **diagnosticano**; questa **sequenzia**. Ventiquattro punti, e l'ordine non è
+la loro numerazione: prima ciò che sblocca altro, poi ciò che è pericoloso, poi ciò che è solo
+lavoro. Ogni riga dice **cosa fare** e **cosa lo prova** — un punto senza prova non si chiude,
+si sposta.
+
+### Onda 0 — decisioni che solo l'operatore può prendere (nessun codice le muove)
+
+| # | Cosa | Cosa lo chiude |
+|---|---|---|
+| **3.7** | Cinque righe di audit ferme su blocchi esterni: account calendario/email, QR WhatsApp, versione GHCR, ricevuta `send_file`. | `scripts/release_readiness_gate.py` stampa `release_ready=true`. Non è lavoro di codice: o si sbloccano, o si registra perché restano aperte. |
+| **6.4** | `open_ragbench` è **CC-BY-NC-4.0** e §11 registra la licenza come decisione *dovuta e non presa*. Scaricarlo in pipeline **è** prendere quella decisione. | Un ADR che dice sì o no. Un sì sblocca **3.3 e 6.4 insieme**; un no li ridefinisce entrambi su un corpus più piccolo. |
+| **1.1** | Il floor di coverage per-package che CLAUDE.md dichiara non esiste nel gate. | Una scelta, non un task: o si scrive il ciclo per package in `scripts/coverage_gate.sh`, o si corregge CLAUDE.md. Prova: `internal/arcadedb` (36,6%) o fallisce il gate, o non è più descritto come se dovesse. |
+
+### Onda 1 — sicurezza, dalla più grave
+
+| # | Cosa | Cosa lo chiude |
+|---|---|---|
+| **2.3** | **Il punto più grave aperto.** Se skills (`~/.aura/skills`) o pyscripts (`~/.aura/pyscripts`) raggiungono `../mcp/servers.json` per traversal, D-106 è falsa e `sdkclient.go:169` diventa esecuzione di comando arbitrario. | Un test che, da entrambi gli scrittori, prova `../mcp/servers.json` e ottiene un rifiuto. Se invece riesce: il critical è reale e la voce sale sopra tutto il resto. |
+| **2.1** | `aura.settings` ha PK sulla sola `key`, è esclusa da RLS (`0087:248`) e **contiene `OPENROUTER_API_KEY`**. | O si scopa per identità, o si registra perché la guardia di boot che rifiuta il multi-utente lo rende irrilevante — con il commit che lo dice, non a voce. |
+| **2.2** | Le scritture del file-manager decodificano senza gate sul Content-Type, sole fra tutte le scritture del server. | Lo stesso 400 che danno le altre, più il test che lo prova sul filo. |
+
+### Onda 2 — i documenti che mentono (costano poco, e una regola falsa fa fidare)
+
+| # | Cosa | Cosa lo chiude |
+|---|---|---|
+| **1.2** | ADR 0038 è `Accepted` e descrive Neo4j, che non esiste più qui. Zero file `Superseded` in tutta `docs/adr/`. | 0038 marcato `Superseded by 0042`. È l'unica contraddizione dove il codice ha già votato. |
+| **1.3** | Il budget token per chunk dice 512 in tre posti e vale 2048. | I tre posti (`compose.yaml:216`, `CLAUDE.md:24`, `.planning/codebase/INTEGRATIONS.md:24`) allineati a `services/ingest/chunk.py:43`. |
+| **§7.1-7.2** | `.planning/STATE.md` nega file committati quattro ore prima; `ROADMAP.md` sottostima sé stesso. | Rigenerati, o cancellati se nessuno li legge. |
+| **§7.3** | Il corpus di 77 requisiti «already in hand» non è mai esistito su nessun branch. | L'affermazione rimossa da `ROADMAP.md:439-441` e `REQUIREMENTS.md:7`. |
+| **§7.4** | TOOL-11 è «Pending» ma è costruito: manca solo il rename in `fs_search`. | Rename fatto, o riga marcata done. |
+| **§7.6** | Cinque cicli di riferimento incrociato bloccano `/gsd-ingest-docs`. | Il comando gira. |
+
+### Onda 3 — gate che non chiudono
+
+| # | Cosa | Cosa lo chiude |
+|---|---|---|
+| **3.4bis** | **Il più economico di tutti**: la sonda MUSR spostata è misurata a mano ma non è mai stata eseguita. | Il job `musr-e2e` verde. Nessun lavoro, solo una run. |
+| **3.2** | La riga snippet-reuse è ROSSA e il suo harness è cancellato: lo snapshot stampa un comando che punta a un package inesistente. | O la riga si ritira come le sorelle, o l'harness si ricostruisce. Non c'è terza via. |
+| **3.4** | Stessa forma: il North-Star xlsx delle skills non ha più harness Go, e `scripts/chat-e2e-gate.sh` non è invocato da nulla. | Ritiro o ricostruzione. |
+| **3.5** | LOCOMO è saltata da `agent_memory_eval.py:52` e nessun workflow imposta `AURA_LOCOMO_DIR`. | Dataset provisionato e skip rimosso, o suite ritirata. |
+| **3.3** | `recall@1` del routing documentale è UNKNOWN: i due harness compilano e **nessuno li esegue**. | Bloccata su **Onda 0 / 6.4**. Poi: un numero in `docs/aura-quality-snapshot.md:62`. Attenzione, due delle tre leve citate dalla riga sono morte (`AURA_DOCUMENT_OCR_ENABLED`, Docling): la riga va riscritta, non solo riempita. |
+| **3.1** | Il gate di produzione #115 non è mai stato eseguito e il suo runner è cancellato, ma `prd.md:4619` lo mantiene come condizione di chiusura. | O si riscrive il runner, o si emenda il PRD. È l'unica cosa che non è **mai** stata fatta. |
+| **3.6** | Sette report readiness su dieci assenti, i tre presenti legati a commit diversi da HEAD. | Dieci report freschi di 24h su HEAD. Dipende da 3.7. |
+
+### Onda 4 — lavoro di codice
+
+| # | Cosa | Cosa lo chiude |
+|---|---|---|
+| **6.1a** | Una soglia di compaction sotto la quota di overhead la **spegne in silenzio**, e la manopola è esposta in Settings. | Clamp, o rifiuto che dice qual è il minimo utile su questa finestra. Prova: soglia impossibile → errore, non silenzio. |
+| **6.1b** | La soglia conta i token della **storia**, non quelli della richiesta: a 30% non è scattata con 38.941 token di input riportati dal provider. | Decidere quale numero si intende comprimere, e confrontare quello. |
+| **6.1c** | `compactionTimeout` è 3 minuti **per scelta, non per misura**, e un timeout lì è silenzioso. | Misurare quanto dura davvero un riassunto su una storia lunga, poi tenere il numero o renderlo configurabile come fa hermes. |
+| **6.1d** | Al reload la gauge ricade su `LastInputTokens`, che è la somma dei prompt del round: un limite superiore, non la finestra. | Una colonna, o l'accettazione esplicita del limite superiore scritta nella UI. |
+| **6.1e** | `llm.Config.Validate` pretende una finestra > 33.000, quindi **un modello a 32k non fa partire il daemon**. Le riserve sono costanti assolute. | Riserve proporzionali alla finestra. Prova: Qwen a 32.768 parte. |
+| **6.2** | I dump del grafo ci sono, il restore non è mai stato provato. | Un restore eseguito (HTTP, a server acceso, su database che non deve esistere) e `scripts/restore_drill.sh` che non mente più. |
+| **6.3** | `observability_sidecar_check.sh` non è agganciato a niente: né cron, né CI, né Makefile. | Agganciato al cron di Aura, che ha già `ReschedulesOnRecovery` e manda alert su Telegram. |
+| **6.5** | `filecard` scrive OOXML a mano (712 LOC) e `excelize` non è nemmeno in `go.mod`. | Sostituzione, o la ragione misurata per non farla. |
+| **6.6** | «che documenti ho caricato?» non ha niente da chiamare: `cmd/aura/docs.go:201-217` elenca job di ingest, non il catalogo. | Un verbo che risponde alla domanda. |
+| **6.7** | Immagini e audio non hanno una famiglia propria — `services/ingest/app.py:275-282` lo dichiara come seam lasciato aperto. | Famiglia, o seam chiuso dichiarando che non serve. |
+| **§5** | Resta da **misurare**, non da dedurre, se dei 2.012 LOC di `internal/documents` serva rimuovere ancora. | Un conteggio di chiamanti, non una stima. |
+---
+
 ## 1. Regole del progetto che il codice non rispetta
 
 Queste vengono prima di tutto perché una regola falsa è peggio di una regola assente: fa fidare.
