@@ -6,20 +6,16 @@ import '../../i18n/i18n';
 import { ExternalStoreChat } from '../ExternalStoreChat';
 import type { ComposerSkillRow } from '../composer/api';
 
-// The pinned skill is set by the picker into the usePinnedSkill seam; here we mock that seam so
-// the run drives with a known pinned skill (or none) and assert the aura.skill wire path +
-// clear-after-send — mirroring the attachments send-path harness.
-const h = vi.hoisted(() => ({
-  pinnedSkill: null as ComposerSkillRow | null,
-  setPinnedSkill: vi.fn(),
-}));
-
-vi.mock('../composer/usePinnedSkill', () => ({
-  usePinnedSkill: () => ({ pinnedSkill: h.pinnedSkill, setPinnedSkill: h.setPinnedSkill }),
-}));
+// The skill is named INSIDE the message ('/skill-creator build me a skill') and read back
+// out of it on send (operator, 2026-08-17 — "la skill deve stare nel messaggio non sopra"),
+// so the harness mocks the installed-skills list rather than a pinned-chip seam, and
+// asserts the aura.skill wire path — mirroring the attachments send-path harness.
+const SKILLS: readonly ComposerSkillRow[] = [
+  { name: 'skill-creator', description: 'Create a new skill', type: 'instruction' },
+];
 
 vi.mock('../composer/useComposerSkills', () => ({
-  useComposerSkills: () => [],
+  useComposerSkills: () => SKILLS,
 }));
 
 vi.mock('../attachments/useAttachmentUploads', () => ({
@@ -84,34 +80,40 @@ function send(text: string) {
   fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
 }
 
-describe('ExternalStoreChat pinned skill', () => {
+describe('ExternalStoreChat slash-skill', () => {
   beforeEach(() => {
-    h.pinnedSkill = null;
-    h.setPinnedSkill.mockClear();
+    // jsdom has no scrollIntoView; the picker's active-option effect calls it as soon as
+    // the menu opens, which a '/'-text now does in this harness.
+    Element.prototype.scrollIntoView = vi.fn();
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it('carries the pinned skill on the run envelope and clears the pill after send', async () => {
-    h.pinnedSkill = {
-      name: 'skill-creator',
-      description: 'Create a new skill',
-      type: 'instruction',
-    };
+  it('carries the skill named in the message on the run envelope', async () => {
     const fetchMock = stubFetch();
     renderChat(<ExternalStoreChat threadId="conv-1" />);
 
-    send('build me a skill');
+    send('/skill-creator build me a skill');
 
     await waitFor(() => {
       expect(runPostBody(fetchMock)).toMatchObject({ aura: { skill: 'skill-creator' } });
-      expect(h.setPinnedSkill).toHaveBeenCalledWith(null);
     });
   });
 
-  it('sends no aura.skill and does not clear when nothing is pinned', async () => {
+  it('starts a skill invoked with no instruction at all', async () => {
+    const fetchMock = stubFetch();
+    renderChat(<ExternalStoreChat threadId="conv-1" />);
+
+    send('/skill-creator ');
+
+    await waitFor(() => {
+      expect(runPostBody(fetchMock)).toMatchObject({ aura: { skill: 'skill-creator' } });
+    });
+  });
+
+  it('sends no aura.skill for a plain message', async () => {
     const fetchMock = stubFetch();
     renderChat(<ExternalStoreChat threadId="conv-1" />);
 
@@ -121,6 +123,19 @@ describe('ExternalStoreChat pinned skill', () => {
       expect(fetchMock.mock.calls.some((call) => call[0] === '/agent/run')).toBe(true);
     });
     expect(runPostBody(fetchMock)).not.toHaveProperty('aura');
-    expect(h.setPinnedSkill).not.toHaveBeenCalled();
+  });
+
+  // A slash word that names nothing installed must not be turned into a skill: the operator
+  // sees their typo in the transcript instead of an invented attachment to the turn.
+  it('sends no aura.skill for an unknown slash word', async () => {
+    const fetchMock = stubFetch();
+    renderChat(<ExternalStoreChat threadId="conv-1" />);
+
+    send('/nope do something');
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some((call) => call[0] === '/agent/run')).toBe(true);
+    });
+    expect(runPostBody(fetchMock)).not.toHaveProperty('aura');
   });
 });

@@ -22,7 +22,7 @@ import { EmptyThreadStarters } from './EmptyThreadStarters';
 import { listThreadAssets } from './attachments/api';
 import { useAttachmentUploads } from './attachments/useAttachmentUploads';
 import { useComposerSkills } from './composer/useComposerSkills';
-import { usePinnedSkill } from './composer/usePinnedSkill';
+import { resolveSlashSubmission } from './composer/skillPickerModel';
 import { useReasoningCapabilities } from './composer/useReasoningCapabilities';
 import { useReasoningEffort } from './composer/useReasoningEffort';
 import type { Asset } from './attachments/types';
@@ -113,7 +113,6 @@ export function ExternalStoreChat({
   }, []);
   const uploads = useAttachmentUploads(threadId);
   const skills = useComposerSkills();
-  const { pinnedSkill, setPinnedSkill } = usePinnedSkill();
   const reasoningCaps = useReasoningCapabilities();
   const conversation = useConversation(threadId).data;
   const hydratedEffort = conversation?.ReasoningEffort;
@@ -141,7 +140,9 @@ export function ExternalStoreChat({
       historyRequestRef.current += 1;
       historyAbortRef.current?.abort();
       historyAbortRef.current = null;
-      const text = appendMessageText(message);
+      // The '/'-command is part of the message the operator typed, so the skill is read
+      // back out of it here rather than held in a separate pinned-chip state.
+      const { skill, text } = resolveSlashSubmission(appendMessageText(message), skills);
       const readyAttachmentIds = uploads.readyAssetIds;
       const readyAttachments = uploads.items.flatMap((item) =>
         item.status === 'ready' && item.asset !== undefined ? [item.asset] : [],
@@ -184,7 +185,7 @@ export function ExternalStoreChat({
           threadId: runThreadId,
           userText: text,
           attachmentIds: readyAttachmentIds,
-          ...(pinnedSkill !== null ? { skill: pinnedSkill.name } : {}),
+          ...(skill !== null ? { skill } : {}),
           effort,
           signal: controller.signal,
           connectionLostNote: t('chat.error.connectionLost'),
@@ -207,8 +208,6 @@ export function ExternalStoreChat({
           },
         });
         if (readyAttachmentIds.length > 0) uploads.clearReady();
-        // The pinned skill applies to exactly one turn (mirrors uploads.clearReady).
-        if (pinnedSkill !== null) setPinnedSkill(null);
       } catch (err) {
         if (!isAbortError(err)) {
           setMessages((prev) => {
@@ -241,8 +240,7 @@ export function ExternalStoreChat({
       invalidateRuntimeReads,
       t,
       uploads,
-      pinnedSkill,
-      setPinnedSkill,
+      skills,
       effort,
       prepareUsageBaseline,
     ],
@@ -584,8 +582,6 @@ export function ExternalStoreChat({
             draftPrompt={draftPrompt}
             onDraftPromptConsumed={onDraftPromptConsumed}
             skills={skills}
-            pinnedSkill={pinnedSkill}
-            onPinSkill={setPinnedSkill}
             onNewChat={onNewChat}
             effort={effort}
             effortLevels={reasoningCaps.levels}

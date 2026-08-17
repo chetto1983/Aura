@@ -17,7 +17,6 @@ import { useTranslation } from 'react-i18next';
 import { AttachmentChip } from './attachments/AttachmentChip';
 import type { AttachmentUploads } from './attachments/useAttachmentUploads';
 import { SkillPicker } from './composer/SkillPicker';
-import { SkillPill } from './composer/SkillPill';
 import {
   filterPickerItems,
   flattenItems,
@@ -57,8 +56,6 @@ interface ComposerProps {
   readonly draftPrompt?: ComposerDraftPrompt | undefined;
   readonly onDraftPromptConsumed?: ((nonce: number) => void) | undefined;
   readonly skills?: readonly ComposerSkillRow[];
-  readonly pinnedSkill?: ComposerSkillRow | null;
-  readonly onPinSkill?: (row: ComposerSkillRow | null) => void;
   readonly onNewChat?: (() => void | Promise<void>) | undefined;
   /** 37E reasoning-effort selector: the currently selected symbol (default 'auto'). */
   readonly effort?: string;
@@ -84,8 +81,6 @@ export function Composer({
   draftPrompt,
   onDraftPromptConsumed,
   skills,
-  pinnedSkill,
-  onPinSkill,
   onNewChat,
   effort,
   effortLevels,
@@ -209,17 +204,22 @@ export function Composer({
   const handlePickItem = (item: PickerItem) => {
     if (approvalLocked) return;
     if (item.kind === 'skill') {
-      onPinSkill?.({ name: item.name, description: item.description, type: item.type });
-    } else if (item.command === 'add-files') {
+      // The skill goes IN the message, not on a chip above it (operator, 2026-08-17): the
+      // pick completes the command and leaves the caret after it, so the operator keeps
+      // typing the instruction and sends '/pdf estrai le tabelle' as one message. The
+      // trailing space is also what closes the menu — shouldOpen() stops at the first one.
+      aui.composer().setText(`/${item.name} `);
+      return;
+    }
+    if (item.command === 'add-files') {
       fileInputRef.current?.click();
     } else if (item.command === 'new-chat') {
       void onNewChat?.();
     } else {
-      onPinSkill?.(null);
       clearPendingAttachments();
     }
-    // Every pick clears the '/'-filter text (the pinned skill rides the pill, not the text);
-    // the now-empty text makes shouldOpen() false, closing the menu on the next render.
+    // A command consumes the '/'-text; the now-empty text makes shouldOpen() false, which
+    // closes the menu on the next render.
     aui.composer().setText('');
   };
 
@@ -447,25 +447,16 @@ export function Composer({
             onSelect={handlePickItem}
           />
         ) : null}
-        {pinnedSkill != null || (uploads !== undefined && uploads.items.length > 0) ? (
+        {uploads !== undefined && uploads.items.length > 0 ? (
           <div className="flex flex-wrap gap-2">
-            {pinnedSkill != null ? (
-              <SkillPill
-                name={pinnedSkill.name}
+            {uploads.items.map((item) => (
+              <AttachmentChip
+                key={item.localId}
+                item={item}
                 disabled={approvalLocked}
-                onRemove={() => onPinSkill?.(null)}
+                onRemove={uploads.remove}
               />
-            ) : null}
-            {uploads !== undefined
-              ? uploads.items.map((item) => (
-                  <AttachmentChip
-                    key={item.localId}
-                    item={item}
-                    disabled={approvalLocked}
-                    onRemove={uploads.remove}
-                  />
-                ))
-              : null}
+            ))}
           </div>
         ) : null}
         {/* Live region: announces the dictation state to screen readers; kept mounted so the

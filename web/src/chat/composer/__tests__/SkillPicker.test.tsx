@@ -4,10 +4,10 @@ import '../../../i18n/i18n';
 import type { ComposerSkillRow } from '../api';
 import { filterPickerItems, optionId, type PickerItem } from '../skillPickerModel';
 import { SkillPicker } from '../SkillPicker';
-import { SkillPill } from '../SkillPill';
 
 // SkillPicker.test — the presentational ARIA listbox (grouped role=option rows, active
-// aria-selected + JS-scroll-into-view, onSelect, empty→null) and the removable SkillPill.
+// aria-selected + JS-scroll-into-view, onSelect, empty→null). The removable SkillPill it
+// also covered is gone: the skill rides in the message now, not on a chip above it.
 // jsdom has no scrollIntoView, so the effect's JS-scroll (Pitfall 6) is asserted via a spy.
 
 const SKILLS: readonly ComposerSkillRow[] = [
@@ -166,18 +166,5 @@ describe('SkillPicker', () => {
     // The unknown-type skill renders its name (Sparkles fallback icon) with no subtitle node.
     const skillOption = screen.getByText('mystery').closest('[role="option"]');
     expect(skillOption?.textContent).toBe('mystery');
-  });
-});
-
-describe('SkillPill', () => {
-  it('renders the pinned skill name and fires onRemove from the ghost X', () => {
-    const onRemove = vi.fn();
-    render(<SkillPill name="docx-writer" onRemove={onRemove} />);
-
-    expect(screen.getByText('docx-writer')).toBeTruthy();
-    const removeBtn = screen.getByLabelText('Remove pinned skill docx-writer');
-    fireEvent.click(removeBtn);
-
-    expect(onRemove).toHaveBeenCalledTimes(1);
   });
 });

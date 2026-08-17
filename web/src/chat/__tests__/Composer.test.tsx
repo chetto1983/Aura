@@ -196,8 +196,7 @@ describe('Composer approval lock', () => {
     );
   });
 
-  it('literally disables pinned-skill and attachment removal actions', () => {
-    const onPinSkill = vi.fn();
+  it('literally disables attachment removal actions', () => {
     const remove = vi.fn();
     const lockedUploads = uploads({
       items: [
@@ -210,26 +209,13 @@ describe('Composer approval lock', () => {
       ],
       remove,
     });
-    render(
-      <Composer
-        approvalLocked
-        uploads={lockedUploads}
-        pinnedSkill={SKILL_CREATOR}
-        onPinSkill={onPinSkill}
-      />,
-    );
+    render(<Composer approvalLocked uploads={lockedUploads} />);
 
-    const removeSkill = screen.getByRole('button', {
-      name: 'Remove pinned skill skill-creator',
-    });
     const removeAttachment = screen.getByRole('button', { name: 'Remove locked.txt' });
-    expect(removeSkill).toHaveProperty('disabled', true);
     expect(removeAttachment).toHaveProperty('disabled', true);
 
-    fireEvent.click(removeSkill);
     fireEvent.click(removeAttachment);
 
-    expect(onPinSkill).not.toHaveBeenCalled();
     expect(remove).not.toHaveBeenCalled();
   });
 });
@@ -381,18 +367,21 @@ describe('Composer skill picker', () => {
     expect(input.getAttribute('aria-activedescendant')).toBe(ids[1]);
   });
 
-  it('Enter selects the active skill (pins it, clears the filter, does NOT send)', () => {
+  // Rewritten 2026-08-17 on the operator's instruction ("la skill deve stare nel messaggio
+  // non sopra"): selecting a skill no longer pins it to a chip above the composer, it
+  // completes the command INTO the message so '/skill-creator <instruction>' is the turn.
+  it('Enter completes the active skill into the message and does NOT send', () => {
     h.auiState.composer.text = '/creat';
-    const onPinSkill = vi.fn();
-    render(<Composer uploads={uploads()} skills={SKILLS} onPinSkill={onPinSkill} />);
+    render(<Composer uploads={uploads()} skills={SKILLS} />);
     const input = screen.getByLabelText('Ask Aura');
 
     const event = createEvent.keyDown(input, { key: 'Enter' });
     fireEvent(input, event);
 
     expect(event.defaultPrevented).toBe(true); // never fell through to Enter-send
-    expect(onPinSkill).toHaveBeenCalledWith(SKILL_CREATOR);
-    expect(h.setText).toHaveBeenCalledWith('');
+    // The trailing space is load-bearing: it is what closes the menu, so the next Enter
+    // sends the message instead of re-selecting an option.
+    expect(h.setText).toHaveBeenCalledWith('/skill-creator ');
   });
 
   it('Escape closes the menu (preventDefault) and a keystroke re-arms it', () => {
@@ -470,7 +459,6 @@ describe('Composer skill picker', () => {
 
   it('the clear quick action resets the text, pinned pill, and pending attachments', () => {
     h.auiState.composer.text = '/clear';
-    const onPinSkill = vi.fn();
     const remove = vi.fn();
     const withItem = uploads({
       items: [
@@ -483,30 +471,20 @@ describe('Composer skill picker', () => {
       ],
       remove,
     });
-    render(<Composer uploads={withItem} skills={SKILLS} onPinSkill={onPinSkill} />);
+    render(<Composer uploads={withItem} skills={SKILLS} />);
 
     fireEvent.keyDown(screen.getByLabelText('Ask Aura'), { key: 'Enter' });
 
-    expect(onPinSkill).toHaveBeenCalledWith(null);
     expect(remove).toHaveBeenCalledWith('x');
     expect(h.setText).toHaveBeenCalledWith('');
   });
 
-  it('renders a removable pinned-skill pill', () => {
-    const onPinSkill = vi.fn();
-    render(
-      <Composer
-        uploads={uploads()}
-        skills={SKILLS}
-        pinnedSkill={SKILL_CREATOR}
-        onPinSkill={onPinSkill}
-      />,
-    );
-    expect(screen.getByText('skill-creator')).toBeTruthy();
+  // The pinned-skill pill is deliberately gone (operator, 2026-08-17). Removing a skill is
+  // now editing the message that carries it, so there is no chip to render or dismiss.
+  it('renders no pinned-skill chip above the composer', () => {
+    render(<Composer uploads={uploads()} skills={SKILLS} />);
 
-    fireEvent.click(screen.getByLabelText('Remove pinned skill skill-creator'));
-
-    expect(onPinSkill).toHaveBeenCalledWith(null);
+    expect(screen.queryByLabelText('Remove pinned skill skill-creator')).toBeNull();
   });
 });
 

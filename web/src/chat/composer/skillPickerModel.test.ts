@@ -9,6 +9,7 @@ import {
   optionId,
   pickerFilter,
   pickerKeyAction,
+  resolveSlashSubmission,
   shouldOpen,
   type PickerItem,
 } from './skillPickerModel';
@@ -53,6 +54,53 @@ describe('pickerFilter', () => {
     expect(pickerFilter('/')).toBe('');
     expect(pickerFilter('')).toBe('');
     expect(pickerFilter('abc')).toBe('');
+  });
+
+  // The command name ends at the first space; everything after it is the instruction the
+  // operator is writing for the skill, not more filter text. Without this, '/pdf estrai le
+  // tabelle' filters on the whole sentence and matches nothing.
+  it('stops at the first space so the instruction is not part of the filter', () => {
+    expect(pickerFilter('/pdf estrai le tabelle')).toBe('pdf');
+  });
+});
+
+describe('resolveSlashSubmission', () => {
+  // The operator's words: the skill belongs IN the message, not on a chip above it. So the
+  // text is sent verbatim — '/pdf estrai le tabelle' is what the transcript shows — and the
+  // skill name rides beside it for the server to resolve into the model-facing body.
+  it('names the skill and leaves the message exactly as typed', () => {
+    expect(resolveSlashSubmission('/docx-writer scrivi il verbale', SKILLS)).toEqual({
+      skill: 'docx-writer',
+      text: '/docx-writer scrivi il verbale',
+    });
+  });
+
+  it('starts a skill with no instruction at all', () => {
+    expect(resolveSlashSubmission('/docx-writer', SKILLS)).toEqual({
+      skill: 'docx-writer',
+      text: '/docx-writer',
+    });
+  });
+
+  it('matches the skill name case-insensitively', () => {
+    expect(resolveSlashSubmission('/DOCX-Writer ciao', SKILLS).skill).toBe('docx-writer');
+  });
+
+  it('leaves ordinary text alone', () => {
+    expect(resolveSlashSubmission('quanto fa 2+2', SKILLS)).toEqual({
+      skill: null,
+      text: 'quanto fa 2+2',
+    });
+  });
+
+  // An unknown slash word is a typo, not a skill: sending it as a plain message is what
+  // lets the operator see their own mistake instead of it silently becoming a normal turn
+  // with an invented skill attached.
+  it('does not invent a skill for an unknown slash word', () => {
+    expect(resolveSlashSubmission('/nope do something', SKILLS)).toEqual({
+      skill: null,
+      text: '/nope do something',
+    });
   });
 });
 
@@ -99,6 +147,56 @@ describe('filterPickerItems', () => {
 
   it('collapses to no groups when nothing matches', () => {
     expect(filterPickerItems(SKILLS, 'zzz-nope')).toEqual([]);
+  });
+
+  // Measured live on the deployment 2026-08-17: typing '/pdf' listed docx first (its
+  // description says "Do NOT use for PDFs") and Enter pinned DOCX. Matching the
+  // description is right — it is how you find a skill whose name you do not know — but it
+  // must never outrank the skill the operator actually named.
+  it('ranks a name match above a description-only match', () => {
+    const skills: readonly ComposerSkillRow[] = [
+      { name: 'docx', description: 'Do NOT use for PDFs, spreadsheets', type: 'instruction' },
+      { name: 'find-skills', description: 'file formats (xlsx, pdf, docx)', type: 'instruction' },
+      { name: 'pdf', description: 'Anything with PDF files', type: 'instruction' },
+    ];
+
+    const groups = filterPickerItems(skills, 'pdf');
+
+    // All three still match — nothing is hidden — but the named one is the one Enter takes.
+    expect(skillNames(groups[0]?.items ?? [])).toEqual(['pdf', 'docx', 'find-skills']);
+  });
+
+  it('ranks an exact name above a prefix, and a prefix above a substring', () => {
+    const skills: readonly ComposerSkillRow[] = [
+      { name: 'my-pdf-tool', description: '', type: 'instruction' },
+      { name: 'pdf-writer', description: '', type: 'instruction' },
+      { name: 'pdf', description: '', type: 'instruction' },
+    ];
+
+    expect(skillNames(filterPickerItems(skills, 'pdf')[0]?.items ?? [])).toEqual([
+      'pdf',
+      'pdf-writer',
+      'my-pdf-tool',
+    ]);
+  });
+
+  it('keeps the source order within one rank (stable, not alphabetised)', () => {
+    const skills: readonly ComposerSkillRow[] = [
+      { name: 'zeta-pdf', description: '', type: 'instruction' },
+      { name: 'alpha-pdf', description: '', type: 'instruction' },
+    ];
+
+    expect(skillNames(filterPickerItems(skills, 'pdf')[0]?.items ?? [])).toEqual([
+      'zeta-pdf',
+      'alpha-pdf',
+    ]);
+  });
+
+  it('ranks commands the same way, so /clear takes clear and not add-files', () => {
+    // 'clear' is a substring of nothing else, but the ordering rule must hold for the
+    // command group too: the exact id comes first whatever its position in the catalog.
+    expect(commandIds(filterPickerItems(SKILLS, 'clear')[0]?.items ?? [])).toEqual(['clear']);
+    expect(commandIds(filterPickerItems(SKILLS, 'chat')[0]?.items ?? [])).toEqual(['new-chat']);
   });
 });
 
