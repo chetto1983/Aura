@@ -63,6 +63,10 @@ type fakeConvStore struct {
 	// lastBranchLeaf records the leaf passed to LoadManagedHistoryForBranch so the
 	// TurnBranch re-run-from-branch path is assertable (D-09).
 	lastBranchLeaf int
+	// compacted records the ids CompactConversation routed here, so the `/compact`
+	// wiring is assertable without a summarizer.
+	compacted  []string
+	compactErr error // injectable Compact error
 }
 
 func newFakeConvStore() *fakeConvStore {
@@ -248,6 +252,21 @@ func (f *fakeConvStore) LoadManagedHistory(_ context.Context, id string, cfg con
 // (TurnBranch) is assertable, then returns the same in-memory history as the linear
 // loader (the fake has no branch topology — the path-walk fidelity is the conversations
 // integration test's job; here we only prove TurnBranch routes through this method).
+// Compact records the requested compaction and reports the fixed result the tests
+// assert against; the real summarizer path is the conversations package's job.
+func (f *fakeConvStore) Compact(_ context.Context, id string, cfg conversations.ContextConfig) (conversations.CompactionResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.lastCfg = cfg
+	f.compacted = append(f.compacted, id)
+	if f.compactErr != nil {
+		return conversations.CompactionResult{}, f.compactErr
+	}
+	return conversations.CompactionResult{
+		Summary: "compacted", CoversThroughSeq: 4, SourceTurns: 4, TokensBefore: 400, TokensAfter: 40,
+	}, nil
+}
+
 func (f *fakeConvStore) LoadManagedHistoryForBranch(_ context.Context, id string, leafSeq int, cfg conversations.ContextConfig) ([]llm.Message, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

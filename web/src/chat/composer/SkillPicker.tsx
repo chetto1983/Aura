@@ -1,8 +1,10 @@
-import { useMemo } from 'react';
-import { ComposerPrimitive } from '@assistant-ui/react';
-import { BookOpen, Sparkles, SquareTerminal, type LucideIcon } from 'lucide-react';
+import { useCallback, useMemo } from 'react';
+import { ComposerPrimitive, useAui } from '@assistant-ui/react';
+import type { Unstable_TriggerItem } from '@assistant-ui/react';
+import { BookOpen, Scissors, Sparkles, SquareTerminal, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { ComposerSkillRow } from './api';
+import { COMMAND_ITEM_TYPE, COMPOSER_COMMANDS, commandTriggerItem } from './commands';
 import {
   SKILL_TRIGGER_CHAR,
   createSkillDirectiveFormatter,
@@ -10,7 +12,8 @@ import {
 } from './skillTrigger';
 import { cn } from '@/lib/utils';
 
-// SkillPicker: the '/' skill menu, rendered by ComposerPrimitive.Unstable_TriggerPopover.
+// SkillPicker: the '/' menu of skills and commands, rendered by
+// ComposerPrimitive.Unstable_TriggerPopover.
 //
 // This file is presentation ONLY. Trigger detection, the open/close lifecycle, keyboard
 // navigation (arrows / Enter / Escape), the highlighted-item bookkeeping, scroll-into-view
@@ -27,23 +30,52 @@ const SKILL_ICON_FOR_TYPE: Partial<Record<string, LucideIcon>> = {
   executable: SquareTerminal,
 };
 
-function iconFor(skillType: unknown): LucideIcon {
+function iconFor(item: Unstable_TriggerItem): LucideIcon {
+  if (item.type === COMMAND_ITEM_TYPE) return Scissors;
+  const skillType = item.metadata?.skillType;
   return (typeof skillType === 'string' ? SKILL_ICON_FOR_TYPE[skillType] : undefined) ?? Sparkles;
 }
 
 export interface SkillPickerProps {
   readonly skills: readonly ComposerSkillRow[];
   readonly disabled?: boolean;
+  /** Runs the chosen command by name. Absent ⇒ the composer was mounted without a thread to
+   * act on, so no command is offered at all rather than offered and inert. */
+  readonly onCommand?: ((name: string) => void) | undefined;
 }
 
-export function SkillPicker({ skills, disabled = false }: SkillPickerProps) {
+export function SkillPicker({ skills, disabled = false, onCommand }: SkillPickerProps) {
   const { t } = useTranslation();
-  const adapter = useMemo(() => createSkillTriggerAdapter(skills), [skills]);
+  const aui = useAui();
+  const commands = useMemo(
+    () =>
+      onCommand === undefined
+        ? []
+        : COMPOSER_COMMANDS.map((command) =>
+            commandTriggerItem(command, (key) => t(`chat.skillPicker.${key}`)),
+          ),
+    [onCommand, t],
+  );
+  const adapter = useMemo(() => createSkillTriggerAdapter(skills, commands), [skills, commands]);
   const formatter = useMemo(() => createSkillDirectiveFormatter(skills), [skills]);
 
-  // D-09 degrade: with no skills installed the trigger is not registered at all, so '/'
-  // stays a literal character instead of opening an empty menu.
-  if (skills.length === 0) return null;
+  // The behavior primitive inserts the serialized directive and THEN calls this
+  // (triggerSelectionResource: kind 'action' → insertDirective, onExecute). For a skill that
+  // is the whole point — '/pdf ' is the turn the operator sends. For a command the text is
+  // not a message, so the executor takes it back out: `removeOnExecute` would strip it for
+  // both, and the flag belongs to the behavior rather than to the item.
+  const execute = useCallback(
+    (item: Unstable_TriggerItem) => {
+      if (item.type !== COMMAND_ITEM_TYPE || onCommand === undefined) return;
+      aui.composer.setText('');
+      onCommand(item.id);
+    },
+    [aui, onCommand],
+  );
+
+  // D-09 degrade: with nothing to list the trigger is not registered at all, so '/' stays a
+  // literal character instead of opening an empty menu.
+  if (skills.length === 0 && commands.length === 0) return null;
 
   return (
     <ComposerPrimitive.Unstable_TriggerPopover
@@ -52,13 +84,11 @@ export function SkillPicker({ skills, disabled = false }: SkillPickerProps) {
       aria-label={t('chat.skillPicker.skillsHeader')}
       className="absolute bottom-full left-0 z-50 mb-2 w-full min-w-[16rem] max-w-md overflow-hidden rounded-xl border border-border bg-surface-2 shadow-[var(--shadow-popover)]"
     >
-      {/* Directive, not Action: the chosen skill is written INTO the message ('/pdf ') so the
-          turn the operator sends is the turn the transcript shows. */}
-      <ComposerPrimitive.Unstable_TriggerPopover.Directive formatter={formatter} />
+      <ComposerPrimitive.Unstable_TriggerPopover.Action formatter={formatter} onExecute={execute} />
       <ComposerPrimitive.Unstable_TriggerPopoverItems className="max-h-72 overflow-y-auto p-1.5">
         {(items) =>
           items.map((item, index) => {
-            const Icon = iconFor(item.metadata?.skillType);
+            const Icon = iconFor(item);
             return (
               <ComposerPrimitive.Unstable_TriggerPopoverItem
                 key={item.id}
@@ -73,7 +103,10 @@ export function SkillPicker({ skills, disabled = false }: SkillPickerProps) {
                 <Icon
                   data-icon
                   aria-hidden="true"
-                  className="mt-0.5 size-4 shrink-0 text-text-faint"
+                  className={cn(
+                    'mt-0.5 size-4 shrink-0',
+                    item.type === COMMAND_ITEM_TYPE ? 'text-accent-text' : 'text-text-faint',
+                  )}
                 />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[13px] font-medium text-text">

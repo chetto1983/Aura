@@ -3,13 +3,10 @@ package conversations
 import (
 	"context"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/chetto1983/aura/internal/llm"
-	"github.com/chetto1983/aura/internal/redact"
 	"github.com/pkoukk/tiktoken-go"
 )
 
@@ -25,18 +22,17 @@ const compactionMarker = "__aura_compaction__"
 const compactionHeader = compactionFraming
 const compactionFooter = compactionFramingEnd
 
-// summaryMaxTokens bounds the summarizer's output; summaryRenderCap bounds the
-// transcript sent to it (a compaction fires because history is large, so the
-// summarizer input must itself be bounded — the recent tail is kept preferentially).
+// compactionTimeout bounds the summarize call, and is the ONLY ceiling this file imposes on
+// it. The summary's length is asked for in the prompt and never capped on the wire; the
+// transcript it summarizes is bounded in compaction_transcript.go, where hermes-agent's
+// numbers and its reasons are recorded.
+//
+// It is generous because an uncapped summary of a long history takes longer than a
+// truncated one, and because a timeout here is SILENT: the ladder falls through to the
+// deterministic drop, so a compaction that times out looks exactly like history vanishing.
 const (
-	summaryMaxTokens  = 1024
-	summaryPerTurnCap = 4000
-	// summaryToolOutputCap is the per-tool-turn slice the summarizer is shown. Deliberately
-	// far below summaryPerTurnCap: see the pruning comment in renderRoundsForSummary.
-	summaryToolOutputCap = 400
-	summaryRenderCap     = 60000
-	compactionTimeout    = 45 * time.Second
-	summaryTemperature   = 0.3
+	compactionTimeout  = 3 * time.Minute
+	summaryTemperature = 0.3
 )
 
 // Summarizer condenses a slice of earlier conversation rounds into a single dense
@@ -50,6 +46,22 @@ type Summarizer interface {
 // isCompaction reports whether t is the injected synthetic summary turn.
 func isCompaction(t Turn) bool {
 	return t.ToolCallID == compactionMarker && t.Role == llm.RoleUser
+}
+
+// compactionTurn builds the synthetic summary turn, framed and marked.
+//
+// It carries the WATERMARK as its Seq — the seq of the newest turn it speaks for — because
+// a later pass over the same list has to be able to tell what it already stands for:
+// turnsAfter must not hand it back to the summarizer as fresh material (its text arrives
+// there as the carried summary instead), and protectRecentTail must read it as the round
+// boundary it genuinely is. Seq 0 made it look like a turn from before the beginning.
+func compactionTurn(summary string, coversThroughSeq int) Turn {
+	return Turn{
+		Seq:        coversThroughSeq,
+		Role:       llm.RoleUser,
+		Content:    compactionHeader + summary + compactionFooter,
+		ToolCallID: compactionMarker,
+	}
 }
 
 // tryCompact summarizes the historical rounds (everything between the protected head
@@ -78,14 +90,16 @@ func tryCompact(
 	if !ok {
 		return nil, false
 	}
-	summaryTurn := Turn{
-		Role:       llm.RoleUser,
-		Content:    compactionHeader + summary + compactionFooter,
-		ToolCallID: compactionMarker,
+	// The ladder keeps whatever it produced. It only got here because the history no longer
+	// fits, so a summary beats the L2.5 hard drop waiting below even when it saves little.
+	// `/compact` is in the opposite situation — nothing is over budget — and makes the
+	// opposite call; see Store.Compact.
+	if summary.Fresh {
+		storeCompaction(ctx, cache, conversationID, branchID, summary)
 	}
 	out := make([]Turn, 0, len(head)+1+len(active))
 	out = append(out, head...)
-	out = append(out, summaryTurn)
+	out = append(out, compactionTurn(summary.Summary, history[len(history)-1].Seq))
 	out = append(out, active...)
 	if totalTokens(enc, out) > cap {
 		return nil, false // the summary itself (+ active + head) still overflows
@@ -96,17 +110,22 @@ func tryCompact(
 // llmSummarizer is the production Summarizer: it wraps an llm.Client and a model,
 // reusing the same single-call Stream+drain shape as GenerateTitle.
 type llmSummarizer struct {
-	client llm.Client
-	model  string
+	client        llm.Client
+	model         string
+	contextWindow int
 }
 
 // NewLLMSummarizer builds a Summarizer over client+model. A nil client yields nil so
 // callers can wire it unconditionally and let ContextConfig.Summarizer stay nil.
-func NewLLMSummarizer(client llm.Client, model string) Summarizer {
+//
+// contextWindow is the deployment's window: it ceilings the length the prompt asks for, so
+// a 32K model is not asked for the summary a 1M model can afford. Zero means unknown and
+// falls back to the fixed ceiling.
+func NewLLMSummarizer(client llm.Client, model string, contextWindow int) Summarizer {
 	if client == nil {
 		return nil
 	}
-	return &llmSummarizer{client: client, model: model}
+	return &llmSummarizer{client: client, model: model, contextWindow: contextWindow}
 }
 
 // Summarize renders the rounds to a bounded transcript and asks the model for a
@@ -122,7 +141,11 @@ func (s *llmSummarizer) Summarize(ctx context.Context, rounds []llm.Message) (st
 	ctx, cancel := context.WithTimeout(ctx, compactionTimeout)
 	defer cancel()
 
-	instruction := summaryTemplate(summaryMaxTokens)
+	enc, err := encoder()
+	if err != nil {
+		return "", fmt.Errorf("summarize: tiktoken encoder: %w", err)
+	}
+	instruction := summaryTemplate(summaryBudget(enc, transcript, s.contextWindow))
 	if carriesPreviousSummary(rounds) {
 		instruction = iterativeUpdateInstruction + "\n" + instruction
 	}
@@ -133,7 +156,6 @@ func (s *llmSummarizer) Summarize(ctx context.Context, rounds []llm.Message) (st
 			{Role: llm.RoleUser, Content: transcript + "\n\n---\n" + instruction},
 		},
 		Temperature: summaryTemperature,
-		MaxTokens:   summaryMaxTokens,
 		Reasoning:   llm.ReasoningConfig{Effort: llm.ReasoningEffortNone},
 		ToolChoice:  "none",
 	}
@@ -156,76 +178,4 @@ func (s *llmSummarizer) Summarize(ctx context.Context, rounds []llm.Message) (st
 		return "", fmt.Errorf("summarize: incomplete stream (finish_reason=%q)", finishReason)
 	}
 	return strings.TrimSpace(b.String()), nil
-}
-
-// renderRoundsForSummary flattens the rounds into a labelled transcript, capping each
-// turn and the total so a large history cannot blow the summarizer's own window. When
-// over the total cap it keeps the MOST RECENT turns (the oldest are the least useful
-// to a continuation) and prepends an elision note.
-func renderRoundsForSummary(rounds []llm.Message) string {
-	rendered := make([]string, 0, len(rounds))
-	for _, m := range rounds {
-		if m.Role != llm.RoleUser && m.Role != llm.RoleAssistant && m.Role != llm.RoleTool {
-			continue
-		}
-		content := strings.TrimSpace(m.Content)
-		if content == "" {
-			continue
-		}
-		// Tool output is pruned HARD before the summarizer sees it, and this is where the
-		// tokens actually are: measured on three real conversations (2026-08-16), tool
-		// content was 211,074 of 345,000 characters -- 61% -- against 18,790 of assistant
-		// prose. It is also the least summarizable material in the transcript, because it
-		// describes HOW something was done rather than WHAT was decided, and a page of
-		// shell transcript reliably drowns the one sentence that mattered.
-		//
-		// The head is kept rather than the tail: a tool result announces its outcome first
-		// (exit code, error class, first rows) and pads afterwards. hermes-agent's
-		// compressor does the same pre-pass for the same reason.
-		cap := summaryPerTurnCap
-		if m.Role == llm.RoleTool {
-			cap = summaryToolOutputCap
-		}
-		if len(content) > cap {
-			// Walk back to a rune boundary: a naive byte slice can cut a multi-byte rune
-			// in half and hand the summarizer invalid UTF-8 (continuation bytes are
-			// 0b10xxxxxx).
-			cut := cap
-			for cut > 0 && !utf8.RuneStart(content[cut]) {
-				cut--
-			}
-			content = content[:cut] + " […]"
-		}
-		// Cap first, then redact: an over-cap secret tail is already truncated away and
-		// the patterns scan a bounded input (the ledger's ordering, same reason).
-		//
-		// The transcript carries verbatim user text and tool output, so it can carry a
-		// credential the model put on a command line. It leaves the process for an
-		// external summarizer, and the summary it produces is about to become DURABLE
-		// (slice 1b persists it), which turns a transient exposure into a stored one.
-		rendered = append(rendered, m.Role+": "+redact.String(content))
-	}
-	if len(rendered) == 0 {
-		return ""
-	}
-	elided := false
-	total := 0
-	kept := make([]string, 0, len(rendered))
-	// Walk backward so the budget is spent on the MOST RECENT turns, then restore
-	// chronological order — a summarizer reading the tail out of sequence would invent
-	// a causality the conversation never had.
-	for _, line := range slices.Backward(rendered) {
-		if total+len(line) > summaryRenderCap && len(kept) > 0 {
-			elided = true
-			break
-		}
-		total += len(line)
-		kept = append(kept, line)
-	}
-	slices.Reverse(kept)
-	out := strings.Join(kept, "\n")
-	if elided {
-		out = "[earlier turns omitted]\n" + out
-	}
-	return out
 }

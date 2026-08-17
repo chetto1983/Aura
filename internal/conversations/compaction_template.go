@@ -55,10 +55,14 @@ const summarySystemPrompt = "You are compacting an earlier slice of a conversati
 // loses first. "Blocked" and "Pending" are the two that matter most -- an unstructured
 // summary reliably keeps what was DONE and drops what was still owed, which is exactly the
 // half the next turn needs.
+//
+// budgetTokens is asked for in the last line and enforced NOWHERE — see the no-wire-cap
+// contract in compaction_transcript.go. It used to be the same number that capped the
+// response on the wire, and the two together made a full template unfillable.
 func summaryTemplate(budgetTokens int) string {
 	return fmt.Sprintf(`Write the summary using EXACTLY these sections, omitting a section only when it would be empty:
 
-%s
+`+historicalTaskHeading+`
 [What the conversation was working on BEFORE the latest exchange. Finished history: the reader must not resume it.]
 
 ## Goal
@@ -89,8 +93,7 @@ Be specific: file paths, commands, identifiers, numbers, results. Continue the n
 ## Critical Context
 [Specific values, identifiers, error strings or data that would be lost otherwise. NEVER reproduce API keys, tokens or passwords — write [REDACTED].]
 
-Target ~%d tokens. Be concrete: exact names, paths, numbers and error text beat adjectives. Never write "made some changes".`,
-		historicalTaskHeading, budgetTokens)
+Target ~%d tokens. Be concrete: exact names, paths, numbers and error text beat adjectives. Never write "made some changes".`, budgetTokens)
 }
 
 // iterativeUpdateInstruction is used when a previous summary is carried in. Rewriting from

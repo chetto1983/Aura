@@ -52,7 +52,13 @@ test('a chat attachment carries its real name to the object store', async ({ pag
     if (req.method() === 'PUT') blocked.push(req.failure()?.errorText ?? 'unknown');
   });
 
-  await page.locator('input[type="file"][aria-label="Add files"]').setInputFiles(path);
+  // The file input is the LIBRARY's now: ComposerPrimitive.AddAttachment creates it on click,
+  // clicks it, and removes it again (ComposerAddAttachment.js), so there is no persistent
+  // element to setInputFiles on. The file chooser the click opens is what Playwright hands
+  // back, and it is the same event a real operator's picker fires.
+  const chooser = page.waitForEvent('filechooser', { timeout: 30_000 });
+  await page.getByRole('button', { name: 'Add files' }).click();
+  await (await chooser).setFiles(path);
 
   const presignBody = (await (await presigned).json()) as {
     readonly asset?: { readonly id?: string; readonly object_key?: string };

@@ -190,6 +190,12 @@ func (m *memConvStore) LoadManagedHistoryForBranch(ctx context.Context, id strin
 	return m.LoadManagedHistory(ctx, id, cfg)
 }
 
+// Compact satisfies the operator-requested compaction seam. The cmd-level fakes drive
+// CLI wiring, not the summarizer, so it reports that there is nothing to condense.
+func (m *memConvStore) Compact(context.Context, string, conversations.ContextConfig) (conversations.CompactionResult, error) {
+	return conversations.CompactionResult{}, conversations.ErrNothingToCompact
+}
+
 // messagesLocked rebuilds the loop messages from the persisted turns (the same
 // shape conversations.Store.LoadHistory yields). Caller holds the lock.
 func (m *memConvStore) messagesLocked(id string) ([]llm.Message, error) {

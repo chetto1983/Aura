@@ -413,7 +413,11 @@ test.describe('real-agent Calm Prism acceptance', () => {
         { timeout: 30_000 },
       );
       const fileName = basename(documentPath);
-      await page.locator('input[type="file"][aria-label="Add files"]').setInputFiles(documentPath);
+      // See attachment-filename.spec.ts: the hidden input belongs to
+      // ComposerPrimitive.AddAttachment and exists only for the duration of the click.
+      const chooser = page.waitForEvent('filechooser', { timeout: 30_000 });
+      await page.getByRole('button', { name: 'Add files' }).click();
+      await (await chooser).setFiles(documentPath);
       const presignResponse = await presignResponsePromise;
       expect(presignResponse.status()).toBe(200);
       const presignBody = (await presignResponse.json()) as {

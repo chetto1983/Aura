@@ -224,50 +224,89 @@ func TestRenderRoundsForSummary_RedactsCredentials(t *testing.T) {
 	}
 }
 
-// TestRenderRoundsForSummary_CapDoesNotSplitARune asserts the per-turn byte cap lands on
-// a rune boundary. A naive content[:cap] can slice a multi-byte rune in half, and the
-// transcript then carries a replacement char into the summary — and into the DB with 1b.
-func TestRenderRoundsForSummary_CapDoesNotSplitARune(t *testing.T) {
-	// 'à' is 2 bytes, so a cap that lands mid-rune is guaranteed by an odd-length prefix.
-	content := strings.Repeat("a", summaryPerTurnCap-1) + strings.Repeat("à", 40)
+// TestRenderRoundsForSummary_BoundDoesNotSplitARune asserts the per-message bound lands on
+// a rune boundary. A naive content[:n] can slice a multi-byte rune in half, and the
+// transcript then carries a replacement char into the summary — and from there into the DB.
+func TestRenderRoundsForSummary_BoundDoesNotSplitARune(t *testing.T) {
+	// 'à' is 2 bytes, so a cut that lands mid-rune is guaranteed by an odd-length prefix.
+	content := strings.Repeat("a", summaryContentHead-1) + strings.Repeat("à", 4000)
 	got := renderRoundsForSummary([]llm.Message{{Role: llm.RoleUser, Content: content}})
 	if !utf8.ValidString(got) {
-		t.Errorf("per-turn cap split a rune: transcript is not valid UTF-8")
+		t.Errorf("the per-message bound split a rune: transcript is not valid UTF-8")
 	}
 	if strings.ContainsRune(got, '�') {
-		t.Errorf("per-turn cap produced a replacement char: %.80q", got)
+		t.Errorf("the per-message bound produced a replacement char: %.80q", got)
 	}
 }
 
-func TestRenderRoundsForSummary_CapsAndElides(t *testing.T) {
-	// One turn over the per-turn cap must be truncated with an ellipsis.
-	long := []llm.Message{{Role: llm.RoleUser, Content: strings.Repeat("x", summaryPerTurnCap+500)}}
-	got := renderRoundsForSummary(long)
-	if !strings.Contains(got, "[…]") {
-		t.Errorf("an over-cap turn must be truncated with an ellipsis: %.60q", got)
+// Both edges of an over-long message survive. Keeping only the head — which this did before,
+// and at a fifteenth of the size for a tool result — reliably keeps a command and drops the
+// exit code it produced, which is the half a summary is written to remember.
+func TestRenderRoundsForSummary_KeepsBothEdgesOfALongMessage(t *testing.T) {
+	body := "HEAD-MARKER" + strings.Repeat("x", summaryContentMax) + "TAIL-MARKER"
+	for _, role := range []string{llm.RoleUser, llm.RoleAssistant, llm.RoleTool} {
+		got := renderRoundsForSummary([]llm.Message{{Role: role, Content: body}})
+		for _, want := range []string{"HEAD-MARKER", "TAIL-MARKER", "[truncated]"} {
+			if !strings.Contains(got, want) {
+				t.Errorf("%s message: %q missing from the bounded render", role, want)
+			}
+		}
+		if len(got) > summaryContentMax+len(summaryTruncationMarker)+64 {
+			t.Errorf("%s message: per-message bound not enforced, len=%d", role, len(got))
+		}
 	}
-	if len(got) > summaryPerTurnCap+64 {
-		t.Errorf("per-turn cap not enforced, len=%d", len(got))
-	}
+}
 
-	// Enough turns to blow the total cap: the oldest must be elided, newest kept.
-	many := make([]llm.Message, 0, 40)
-	for range 40 {
-		many = append(many, llm.Message{Role: llm.RoleUser, Content: strings.Repeat("y", 3000)})
+// The aggregate bound keeps both edges too, and NAMES what it dropped: a summarizer handed a
+// silently-cut transcript writes a confident summary of a conversation that never happened.
+func TestRenderRoundsForSummary_AggregateBoundKeepsBothEndsAndSaysSo(t *testing.T) {
+	many := []llm.Message{{Role: llm.RoleUser, Content: "OLDEST-MARKER"}}
+	for range summaryInputMaxChars/summaryContentMax + 10 {
+		many = append(many, llm.Message{Role: llm.RoleUser, Content: strings.Repeat("y", summaryContentMax)})
 	}
 	many = append(many, llm.Message{Role: llm.RoleAssistant, Content: "NEWEST-MARKER"})
-	rendered := renderRoundsForSummary(many)
-	if !strings.Contains(rendered, "earlier turns omitted") {
-		t.Errorf("over-total render must carry the elision note: %.80q", rendered)
+
+	got := renderRoundsForSummary(many)
+	if len(got) > summaryInputMaxChars {
+		t.Fatalf("aggregate bound not enforced: len=%d, want <= %d", len(got), summaryInputMaxChars)
 	}
-	if !strings.Contains(rendered, "NEWEST-MARKER") {
-		t.Errorf("the most recent turn must always be kept")
+	for _, want := range []string{"OLDEST-MARKER", "NEWEST-MARKER", "omitted", "chars from the middle"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("%q missing from the bounded transcript", want)
+		}
+	}
+}
+
+// summaryBudget is guidance for the prompt, so what matters is that it stays inside the
+// envelope: never below the floor that makes the template fillable, never above what the
+// window can afford.
+func TestSummaryBudget_StaysInsideTheEnvelope(t *testing.T) {
+	enc, err := encoder()
+	if err != nil {
+		t.Fatalf("encoder: %v", err)
+	}
+	for _, tc := range []struct {
+		name          string
+		transcript    string
+		contextWindow int
+		want          int
+	}{
+		{"short history floors at the minimum", "ciao", 200000, summaryMinTokens},
+		{"a small window ceilings below the floor is still the floor", strings.Repeat("word ", 200000), 8000, summaryMinTokens},
+		{"a large history ceilings at 5% of the window", strings.Repeat("word ", 400000), 100000, 5000},
+		{"an unknown window falls back to the fixed ceiling", strings.Repeat("word ", 400000), 0, summaryTokensCeiling},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := summaryBudget(enc, tc.transcript, tc.contextWindow); got != tc.want {
+				t.Errorf("summaryBudget = %d, want %d", got, tc.want)
+			}
+		})
 	}
 }
 
 func TestLLMSummarizer_Success(t *testing.T) {
 	client := titleTextClient("stop", "condensed ", "summary")
-	s := NewLLMSummarizer(client, "test-model")
+	s := NewLLMSummarizer(client, "test-model", 200000)
 	out, err := s.Summarize(context.Background(), []llm.Message{{Role: llm.RoleUser, Content: "hello"}})
 	if err != nil {
 		t.Fatalf("Summarize: %v", err)
@@ -276,14 +315,25 @@ func TestLLMSummarizer_Success(t *testing.T) {
 		t.Errorf("summary = %q, want %q", out, "condensed summary")
 	}
 	req := client.LastRequest()
-	if req.Model != "test-model" || req.MaxTokens != summaryMaxTokens || req.ToolChoice != "none" {
-		t.Errorf("request shape wrong: model=%q maxtokens=%d toolchoice=%q", req.Model, req.MaxTokens, req.ToolChoice)
+	if req.Model != "test-model" || req.ToolChoice != "none" {
+		t.Errorf("request shape wrong: model=%q toolchoice=%q", req.Model, req.ToolChoice)
+	}
+	// The no-wire-cap contract, and the reason this test exists: a max_tokens on the
+	// summarize call cuts the summary mid-section (a reasoning model spends the cap on
+	// reasoning first), the stream ends finish_reason="length", and Summarize fails — the
+	// ladder then hard-drops the history it was asked to condense. hermes-agent guards the
+	// same invariant with the same kind of test. The length is asked for in the PROMPT.
+	if req.MaxTokens != 0 {
+		t.Errorf("max_tokens = %d on the summarize call, want none: an output cap must never truncate a summary", req.MaxTokens)
+	}
+	if !strings.Contains(req.Messages[len(req.Messages)-1].Content, "Target ~") {
+		t.Errorf("the prompt must carry the length target instead: %.200q", req.Messages[len(req.Messages)-1].Content)
 	}
 }
 
 func TestLLMSummarizer_IncompleteStreamErrors(t *testing.T) {
 	client := titleTextClient("length", "half a ") // finish_reason != stop
-	s := NewLLMSummarizer(client, "m")
+	s := NewLLMSummarizer(client, "m", 200000)
 	if _, err := s.Summarize(context.Background(), []llm.Message{{Role: llm.RoleUser, Content: "x"}}); err == nil {
 		t.Fatal("an incomplete stream must return an error")
 	}
@@ -291,7 +341,7 @@ func TestLLMSummarizer_IncompleteStreamErrors(t *testing.T) {
 
 func TestLLMSummarizer_EmptyTranscriptErrors(t *testing.T) {
 	client := titleTextClient("stop", "unused")
-	s := NewLLMSummarizer(client, "m")
+	s := NewLLMSummarizer(client, "m", 200000)
 	// Only a system message → renderRoundsForSummary yields "" → error before any call.
 	if _, err := s.Summarize(context.Background(), []llm.Message{{Role: llm.RoleSystem, Content: "sys"}}); err == nil {
 		t.Fatal("an empty transcript must return an error")
@@ -299,7 +349,7 @@ func TestLLMSummarizer_EmptyTranscriptErrors(t *testing.T) {
 }
 
 func TestNewLLMSummarizer_NilClient(t *testing.T) {
-	if s := NewLLMSummarizer(nil, "m"); s != nil {
+	if s := NewLLMSummarizer(nil, "m", 200000); s != nil {
 		t.Fatal("a nil client must yield a nil Summarizer so ContextConfig.Summarizer stays nil")
 	}
 }

@@ -7,36 +7,21 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 )
 
-// Tool output is 61% of a real conversation's bytes and the least summarizable part of it,
-// so it is cut an order of magnitude harder than prose. If this ever equalises again, the
-// summarizer goes back to reading shell transcripts instead of decisions.
-func TestRenderForSummaryPrunesToolOutputFarHarderThanProse(t *testing.T) {
-	long := strings.Repeat("x", 20000)
+// A tool result is bounded like any other message body — same size, same both-edges rule.
+//
+// This used to assert the opposite (tool output cut to 400 head-only chars against 4000 for
+// prose, on the measurement that tool content is 61% of a real conversation's bytes). The
+// policy is now hermes-agent's, which bounds every body the same way, and the reason is what
+// this test checks: at 400 head-only chars a tool result kept its command and lost its
+// outcome, so the summarizer read what was ATTEMPTED and never what happened.
+func TestRenderForSummaryKeepsBothEndsOfAToolResult(t *testing.T) {
 	rendered := renderRoundsForSummary([]llm.Message{
-		{Role: llm.RoleAssistant, Content: long},
-		{Role: llm.RoleTool, Content: long},
+		{Role: llm.RoleTool, Content: "running the migration" + strings.Repeat(" padding", 2000) + "exit code 1: permission denied"},
 	})
-
-	lines := strings.Split(strings.TrimSpace(rendered), "\n")
-	if len(lines) != 2 {
-		t.Fatalf("rendered %d lines, want one per turn:\n%s", len(lines), rendered)
-	}
-	assistant, tool := len(lines[0]), len(lines[1])
-	if assistant <= summaryToolOutputCap*2 {
-		t.Fatalf("assistant line = %d bytes, want the prose cap to be far larger", assistant)
-	}
-	if tool > summaryToolOutputCap+64 {
-		t.Fatalf("tool line = %d bytes, want it pruned to about %d", tool, summaryToolOutputCap)
-	}
-}
-
-// The head, not the tail: a tool result announces its outcome first and pads afterwards.
-func TestRenderForSummaryKeepsTheHeadOfAToolResult(t *testing.T) {
-	rendered := renderRoundsForSummary([]llm.Message{
-		{Role: llm.RoleTool, Content: "exit code 1: permission denied" + strings.Repeat(" padding", 500)},
-	})
-	if !strings.Contains(rendered, "permission denied") {
-		t.Fatalf("the outcome was pruned away:\n%s", rendered)
+	for _, want := range []string{"running the migration", "permission denied"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("%q was pruned away:\n%.400s", want, rendered)
+		}
 	}
 }
 

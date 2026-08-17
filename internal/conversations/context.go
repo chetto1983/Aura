@@ -154,24 +154,15 @@ func applyContextLadder(
 	enc *tiktoken.Tiktoken,
 	emit rotEmitter,
 ) ([]llm.Message, error) {
-	// A message the person sent twice because the first run answered nothing is one
-	// message. Collapsed BEFORE anything else so every path below -- the budget count,
-	// the compaction summary and the L2.5 drop -- works on the history as it happened
-	// rather than on the repetition.
-	turns = dropRepeatedUserTurns(turns)
+	l1 := prepareTurns(turns, cfg)
 
-	// What the repeat above did NOT cover: a question that got no answer and was then
-	// followed by a different one. Collapsing runs first so a repeat is one question, not
-	// two unanswered ones.
-	turns = markUnansweredUserTurns(turns)
-
-	// Inject the messages[1] always-block (D-07) as a PROTECTED turn right after the
-	// system L0 turn, BEFORE the ladder runs, so it is counted toward the budget and
-	// protected by L1/L2.5 exactly like the system turn (Pitfall 3).
-	turns = injectAlwaysBlock(turns, cfg.AlwaysBlock)
-
-	// L1: microcompact — rewrite old role='tool' turns to a read_tool_output pointer.
-	l1 := applyL1(turns, cfg.ToolEvictAfterTurns)
+	// L2.3: a compaction this branch already has stays in force, whether or not the budget
+	// asks for one. It costs one primary-key read and no model call, and it is what an
+	// operator's `/compact` acts through — see applyStoredCompaction for why a summary is a
+	// state of the branch rather than a cache of a computation.
+	if compacted, ok := applyStoredCompaction(ctx, cfg.compactionCache, conversationID, cfg.branchID, l1); ok {
+		l1 = compacted
+	}
 
 	hardCap := cfg.hardCap()
 	tail, tailTokens := usableTransientContext(cfg.TransientContext, enc, hardCap)
@@ -258,6 +249,28 @@ func applyContextLadder(
 		return nil, err
 	}
 	return injectTransientContext(repairManagedToolMessagePairs(toMessages(reduced)), tail), nil
+}
+
+// prepareTurns is everything both the ladder and an operator-requested compaction do to a
+// raw turn list before anything decides what to keep. It is shared so the summary a
+// `/compact` writes describes the same history the next turn will replay: two copies of this
+// sequence is how the two come to disagree about what a turn even is.
+//
+//   - A message the person sent twice because the first run answered nothing is ONE message.
+//     Collapsed first so every count below — the budget, the summary, the L2.5 drop — works
+//     on the history as it happened rather than on the repetition.
+//   - What the repeat pass does NOT cover: a question that got no answer and was then
+//     followed by a different one. It runs second so a repeat is one unanswered question,
+//     not two.
+//   - The messages[1] always-block (D-07) is injected as a PROTECTED turn right after the
+//     system L0 turn, so it is counted toward the budget and protected by L1/L2.5 exactly
+//     like the system turn (Pitfall 3). An empty block is a no-op.
+//   - L1 microcompact: old role='tool' turns become a read_tool_output pointer.
+func prepareTurns(turns []Turn, cfg ContextConfig) []Turn {
+	turns = dropRepeatedUserTurns(turns)
+	turns = markUnansweredUserTurns(turns)
+	turns = injectAlwaysBlock(turns, cfg.AlwaysBlock)
+	return applyL1(turns, cfg.ToolEvictAfterTurns)
 }
 
 // injectAlwaysBlock inserts the messages[1] always-block as a protected user-role

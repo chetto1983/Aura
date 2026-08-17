@@ -23,6 +23,9 @@ import { listThreadAssets } from './attachments/api';
 import { createAuraAttachmentAdapter } from './attachments/auraAttachmentAdapter';
 import { useComposerSkills } from './composer/useComposerSkills';
 import { resolveSlashSubmission } from './composer/skillTrigger';
+import { CompactionMarker } from './compaction/CompactionMarker';
+import { CompactionStatus } from './compaction/CompactionStatus';
+import { useThreadCompaction } from './compaction/useThreadCompaction';
 import { useReasoningCapabilities } from './composer/useReasoningCapabilities';
 import { useReasoningEffort } from './composer/useReasoningEffort';
 import type { Asset } from './attachments/types';
@@ -33,13 +36,15 @@ import {
   assistantErrorMessage,
   attachAssetsToUserMessages,
   foldAgentOntoAssistant,
+  isAbortError,
   isAbortSignalAborted,
   userMessage,
 } from './ExternalStoreChat_folds';
 import { useAssetActions } from './ExternalStoreChat_assets';
+import { useStreamFolds } from './ExternalStoreChat_streams';
 import { useBranchEdits } from './ExternalStoreChat_branches';
 import { useLiveRunAttach } from './ExternalStoreChat_liveRun';
-import { fetchThreadMessages, streamPost, type TurnUsage } from './sseAdapter';
+import { fetchThreadMessages } from './sseAdapter';
 import { cancelRun, streamRunResilient } from './sseResume';
 import { useRunUsageLifecycle, type RunUsageEvent } from './runUsage';
 import { useRunUsageBaseline, type RunSessionBaselineListener } from './useRunUsageBaseline';
@@ -48,8 +53,6 @@ import { useVoiceRuntime } from './voice/useVoiceRuntime';
 import { useApprovalFocus } from './useApprovalFocus';
 
 const ignoreDraftPrompt = () => undefined;
-const isAbortError = (error: unknown) =>
-  error instanceof DOMException && error.name === 'AbortError';
 
 export interface ExternalStoreChatProps {
   /** Conversation/thread id the run is POSTed against. */
@@ -113,6 +116,7 @@ export function ExternalStoreChat({
   // holding component state beside it; the composer renders progress straight off it.
   const attachments = useMemo(() => createAuraAttachmentAdapter({ threadId }), [threadId]);
   const skills = useComposerSkills();
+  const compaction = useThreadCompaction(threadId, messages);
   const reasoningCaps = useReasoningCapabilities();
   const conversation = useConversation(threadId).data;
   const hydratedEffort = conversation?.ReasoningEffort;
@@ -141,7 +145,14 @@ export function ExternalStoreChat({
       historyAbortRef.current = null;
       // The '/'-command is part of the message the operator typed, so the skill is read
       // back out of it here rather than held in a separate pinned-chip state.
-      const { skill, text } = resolveSlashSubmission(appendMessageText(message), skills);
+      const { skill, command, text } = resolveSlashSubmission(appendMessageText(message), skills);
+      // A command is not a message. The menu normally executes it on selection, but the
+      // text can reach a send whole — typed out, menu dismissed — and a '/compact' that
+      // silently became a question to the agent would be the worst of both.
+      if (command !== null) {
+        compaction.runCommand(command);
+        return;
+      }
       // The runtime only hands over attachments it has already sent (adapter.send ran), so
       // there is no separate "is anything still uploading" gate to consult here.
       // The attachment id is the adapter's stable client id, so the ASSET id the run
@@ -246,6 +257,7 @@ export function ExternalStoreChat({
       skills,
       effort,
       prepareUsageBaseline,
+      compaction,
     ],
   );
 
@@ -352,114 +364,24 @@ export function ExternalStoreChat({
   // Attachment-chip actions live in ./ExternalStoreChat_assets (600-LOC split).
   const { handleAssetRetry, handleAssetPromote, handleAssetRemove } = useAssetActions(setMessages);
 
-  const foldReRun = useCallback(
-    async (url: string, body: unknown, base: ThreadMessageLike[]) => {
-      historyRequestRef.current += 1;
-      historyAbortRef.current?.abort();
-      historyAbortRef.current = null;
-      isRunningRef.current = true;
-      setIsRunning(true);
-      const controller = new AbortController();
-      abortRef.current = controller;
-      usageThreadRef.current = threadId;
-      const usageRunId = usageLifecycle.start();
-      try {
-        if (!(await prepareUsageBaseline(threadId, usageRunId, controller.signal))) return;
-        await streamPost({
-          url,
-          body,
-          signal: controller.signal,
-          ...(onArtifact !== undefined ? { onArtifact } : {}),
-          onUpdate: (assistant, usage) => {
-            usageLifecycle.update(usageRunId, usage);
-            setMessages([...base, assistant]);
-          },
-        });
-      } catch (error) {
-        if (!isAbortError(error)) {
-          setMessages([...base, assistantErrorMessage(t('chat.error.stream'))]);
-        }
-      } finally {
-        usageLifecycle.settle(usageRunId);
-        if (abortRef.current === controller) {
-          isRunningRef.current = false;
-          setIsRunning(false);
-          abortRef.current = null;
-        }
-        invalidateRuntimeReads();
-      }
-    },
-    [usageLifecycle, onArtifact, invalidateRuntimeReads, t, threadId, prepareUsageBaseline],
-  );
-
-  // Shared scaffolding for streams that APPEND a fresh assistant turn to the
-  // current list (HITL resume + the RS-07 live-run attach): one usage lifecycle,
-  // one AbortController, the append-then-replace-last message fold, the error
-  // surface, and the settle/invalidate tail. Extracted so the callers cannot drift.
-  const foldAppendedStream = useCallback(
-    async (
-      runThreadId: string,
-      run: (
-        controller: AbortController,
-        onUpdate: (assistant: ThreadMessageLike, usage: TurnUsage | undefined) => void,
-      ) => Promise<unknown>,
-    ) => {
-      historyRequestRef.current += 1;
-      historyAbortRef.current?.abort();
-      historyAbortRef.current = null;
-      const controller = new AbortController();
-      abortRef.current = controller;
-      usageThreadRef.current = runThreadId;
-      isRunningRef.current = true;
-      setIsRunning(true);
-      let appended = false;
-      const usageRunId = usageLifecycle.start();
-      try {
-        if (!(await prepareUsageBaseline(runThreadId, usageRunId, controller.signal))) return;
-        await run(controller, (assistant, usage) => {
-          usageLifecycle.update(usageRunId, usage);
-          setMessages((prev) => {
-            if (!appended) {
-              appended = true;
-              return [...prev, assistant];
-            }
-            const next = prev.slice();
-            next[next.length - 1] = assistant;
-            return next;
-          });
-        });
-      } catch (error) {
-        if (!isAbortError(error)) {
-          const message = assistantErrorMessage(t('chat.error.stream'));
-          setMessages((prev) => (appended ? [...prev.slice(0, -1), message] : [...prev, message]));
-        }
-      } finally {
-        usageLifecycle.settle(usageRunId);
-        if (abortRef.current === controller) {
-          isRunningRef.current = false;
-          setIsRunning(false);
-          abortRef.current = null;
-          activeRunIdRef.current = null;
-        }
-        invalidateRuntimeReads(runThreadId);
-      }
-    },
-    [usageLifecycle, invalidateRuntimeReads, t, prepareUsageBaseline],
-  );
-
-  const foldResumeRun = useCallback(
-    (resumeThreadId: string) =>
-      foldAppendedStream(resumeThreadId, (controller, onUpdate) =>
-        streamPost({
-          url: '/agent/run',
-          body: { threadId: resumeThreadId, messages: [] },
-          signal: controller.signal,
-          ...(onArtifact !== undefined ? { onArtifact } : {}),
-          onUpdate,
-        }),
-      ),
-    [foldAppendedStream, onArtifact],
-  );
+  // The stream scaffolding the three non-primary streams share (re-run from a branch point,
+  // HITL resume, live-run attach) lives in ./ExternalStoreChat_streams — 600-LOC split.
+  const { foldReRun, foldAppendedStream, foldResumeRun } = useStreamFolds({
+    threadId,
+    historyRequestRef,
+    historyAbortRef,
+    abortRef,
+    isRunningRef,
+    activeRunIdRef,
+    usageThreadRef,
+    setIsRunning,
+    setMessages,
+    usageLifecycle,
+    prepareUsageBaseline,
+    invalidateRuntimeReads,
+    onArtifact,
+    streamErrorText: t('chat.error.stream'),
+  });
 
   const resumeRun = useCallback(async () => {
     if (threadId.length === 0) return;
@@ -495,8 +417,8 @@ export function ExternalStoreChat({
     };
   }, [requestApprovalFocus]);
 
-  // The D-09 branch-edit callbacks (backendSeqAt + onEdit/onReload) live in
-  // ./ExternalStoreChat_branches (600-LOC split); the stream fold stays here.
+  // The D-09 branch-edit callbacks (onEdit/onReload) live in ./ExternalStoreChat_branches
+  // (600-LOC split); the stream fold stays here.
   const { onEdit, onReload } = useBranchEdits({ threadId, messages, foldReRun });
 
   // 25-07: edit/regenerate + branch nav ride this runtime; onEdit/onReload fork sibling
@@ -538,17 +460,26 @@ export function ExternalStoreChat({
             </AuiIf>
 
             <ThreadPrimitive.Messages>
-              {({ message }) =>
-                message.role === 'user' ? (
-                  <UserMessage
-                    onAssetRetry={handleAssetRetry}
-                    onAssetPromote={handleAssetPromote}
-                    onAssetRemove={handleAssetRemove}
-                  />
-                ) : (
-                  <AssistantMessage />
-                )
-              }
+              {({ message }) => (
+                <>
+                  {message.role === 'user' ? (
+                    <UserMessage
+                      onAssetRetry={handleAssetRetry}
+                      onAssetPromote={handleAssetPromote}
+                      onAssetRemove={handleAssetRemove}
+                    />
+                  ) : (
+                    <AssistantMessage />
+                  )}
+                  {/* The marker belongs BETWEEN two turns, so it is drawn after the last
+                      message the summary speaks for rather than as a message of its own —
+                      a synthetic entry in the list would be one the runtime could branch
+                      from, edit, or hand to a re-run. */}
+                  {message.id === compaction.anchorId ? (
+                    <CompactionMarker state={compaction.state} />
+                  ) : null}
+                </>
+              )}
             </ThreadPrimitive.Messages>
           </ThreadPrimitive.Viewport>
 
@@ -558,6 +489,12 @@ export function ExternalStoreChat({
               {t('chat.running')}
             </p>
           ) : null}
+
+          <CompactionStatus
+            running={compaction.running}
+            failure={compaction.failure}
+            onDismiss={compaction.dismissFailure}
+          />
 
           {/* RS-07 §4.2: while the thread has a live detached run, sending is
               blocked (Stop replaces Send once attached) and this hint explains
@@ -584,6 +521,7 @@ export function ExternalStoreChat({
             draftPrompt={draftPrompt}
             onDraftPromptConsumed={onDraftPromptConsumed}
             skills={skills}
+            onCommand={compaction.runCommand}
             effort={effort}
             effortLevels={reasoningCaps.levels}
             onEffortChange={setEffort}

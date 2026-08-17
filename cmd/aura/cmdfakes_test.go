@@ -160,6 +160,12 @@ func (f *cmdConvFake) LoadManagedHistoryForBranch(_ context.Context, id string, 
 	return f.messages(id), nil
 }
 
+// Compact satisfies the operator-requested compaction seam; this fake drives command
+// wiring, not the summarizer.
+func (f *cmdConvFake) Compact(context.Context, string, conversations.ContextConfig) (conversations.CompactionResult, error) {
+	return conversations.CompactionResult{}, conversations.ErrNothingToCompact
+}
+
 func (f *cmdConvFake) SearchConversationTurns(_ context.Context, _ string, _ int) ([]conversations.SearchResult, error) {
 	return nil, nil
 }

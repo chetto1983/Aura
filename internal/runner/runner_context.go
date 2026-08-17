@@ -34,7 +34,7 @@ func (r *Runner) loadTurnHistory(
 func (r *Runner) contextConfig(ctx context.Context, memory *conversations.TransientContext) conversations.ContextConfig {
 	var summarizer conversations.Summarizer
 	if r.compactionEnabled {
-		summarizer = conversations.NewLLMSummarizer(r.client, r.compactionModel)
+		summarizer = conversations.NewLLMSummarizer(r.client, r.compactionModel, r.cfg.ContextWindow)
 	}
 	return conversations.ContextConfig{
 		ContextWindow:              r.cfg.ContextWindow,

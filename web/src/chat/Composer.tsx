@@ -34,6 +34,9 @@ interface ComposerProps {
   readonly draftPrompt?: ComposerDraftPrompt | undefined;
   readonly onDraftPromptConsumed?: ((nonce: number) => void) | undefined;
   readonly skills?: readonly ComposerSkillRow[];
+  /** Runs a '/' COMMAND (a verb the composer performs) by name. Absent ⇒ the menu lists
+   * skills only — a command row that cannot act is worse than no row. */
+  readonly onCommand?: ((name: string) => void) | undefined;
   /** 37E reasoning-effort selector: the currently selected symbol (default 'auto'). */
   readonly effort?: string;
   /** The advertised effort levels to render — auto-first, dynamic (D-13). Absent/empty ⇒ the
@@ -57,6 +60,7 @@ export function Composer({
   draftPrompt,
   onDraftPromptConsumed,
   skills,
+  onCommand,
   effort,
   effortLevels,
   onEffortChange,
@@ -327,7 +331,7 @@ export function Composer({
             </p>
           ) : null}
           <fieldset disabled={approvalLocked} className="contents">
-            <SkillPicker skills={skillList} disabled={approvalLocked} />
+            <SkillPicker skills={skillList} disabled={approvalLocked} onCommand={onCommand} />
             <div className="flex flex-wrap gap-2 empty:hidden">
               <ComposerPrimitive.Attachments>
                 {({ attachment }) => (

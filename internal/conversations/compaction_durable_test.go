@@ -55,10 +55,10 @@ func TestCompactionSummaryReusesTheStoredSummaryWithoutCallingTheModel(t *testin
 		Summary: "stored summary", CoversThroughSeq: 12,
 	}}
 
-	got, ok := compactionSummary(context.Background(), sum, cache, "conv", "", historyTurns(8, 10, 12))
+	out, ok := compactionSummary(context.Background(), sum, cache, "conv", "", historyTurns(8, 10, 12))
 
-	if !ok || got != "stored summary" {
-		t.Fatalf("summary = (%q, %v), want the stored text", got, ok)
+	if !ok || out.Summary != "stored summary" {
+		t.Fatalf("summary = (%q, %v), want the stored text", out.Summary, ok)
 	}
 	if sum.calls != 0 {
 		t.Fatalf("summarizer called %d times, want 0 when the watermark already covers the slice", sum.calls)
@@ -73,13 +73,13 @@ func TestCompactionSummaryReusesTheStoredSummaryWithoutCallingTheModel(t *testin
 func TestCompactionSummaryFoldsOnlyTheNewTurnsIntoTheStoredSummary(t *testing.T) {
 	sum := &fakeSummarizer{summary: "merged summary"}
 	cache := &fakeCompactionCache{present: true, stored: Compaction{
-		Summary: "stored summary", CoversThroughSeq: 10,
+		Summary: "stored summary", CoversThroughSeq: 10, SourceTurns: 3,
 	}}
 
-	got, ok := compactionSummary(context.Background(), sum, cache, "conv", "", historyTurns(8, 10, 12, 14))
+	out, ok := compactionSummary(context.Background(), sum, cache, "conv", "", historyTurns(8, 10, 12, 14))
 
-	if !ok || got != "merged summary" {
-		t.Fatalf("summary = (%q, %v)", got, ok)
+	if !ok || out.Summary != "merged summary" {
+		t.Fatalf("summary = (%q, %v)", out.Summary, ok)
 	}
 	if sum.calls != 1 {
 		t.Fatalf("summarizer called %d times, want exactly 1", sum.calls)
@@ -90,18 +90,32 @@ func TestCompactionSummaryFoldsOnlyTheNewTurnsIntoTheStoredSummary(t *testing.T)
 	if !strings.Contains(sum.gotRounds[0].Content, "stored summary") {
 		t.Fatalf("first message = %q, want the previous summary carried in", sum.gotRounds[0].Content)
 	}
-	if cache.saved.CoversThroughSeq != 14 || cache.saved.SourceTurns != 2 {
-		t.Fatalf("saved = %+v, want the watermark advanced to 14 over 2 new turns", cache.saved)
+	// The outcome carries the write the CALLER owes, rather than performing it: `/compact`
+	// has to be able to look at the size of what came back before it becomes durable state.
+	if !out.Fresh || out.CoversThroughSeq != 14 {
+		t.Fatalf("outcome = %+v, want a fresh summary advancing the watermark to 14", out)
+	}
+	// 2 new turns folded into a summary that already stood for 3: the number the marker
+	// shows is what the summary speaks for in total, not what this call re-read.
+	if out.SourceTurns != 2+3 {
+		t.Fatalf("source turns = %d, want the carried count plus the two new turns", out.SourceTurns)
+	}
+	if cache.saves != 0 {
+		t.Fatalf("cache written %d times, want 0: compactionSummary no longer persists", cache.saves)
+	}
+	storeCompaction(context.Background(), cache, "conv", "", out)
+	if cache.saved.CoversThroughSeq != 14 || cache.saved.SourceTurns != 5 {
+		t.Fatalf("saved = %+v, want the watermark at 14 over the 5 turns it speaks for", cache.saved)
 	}
 }
 
 func TestCompactionSummaryWithoutACacheBehavesAsBefore(t *testing.T) {
 	sum := &fakeSummarizer{summary: "fresh"}
 
-	got, ok := compactionSummary(context.Background(), sum, nil, "conv", "", historyTurns(2, 4))
+	out, ok := compactionSummary(context.Background(), sum, nil, "conv", "", historyTurns(2, 4))
 
-	if !ok || got != "fresh" {
-		t.Fatalf("summary = (%q, %v)", got, ok)
+	if !ok || out.Summary != "fresh" {
+		t.Fatalf("summary = (%q, %v)", out.Summary, ok)
 	}
 	if sum.calls != 1 || len(sum.gotRounds) != 2 {
 		t.Fatalf("summarizer calls=%d rounds=%d, want one call over the whole slice", sum.calls, len(sum.gotRounds))
@@ -116,10 +130,10 @@ func TestCompactionSummaryKeepsTheStoredSummaryWhenTheModelFails(t *testing.T) {
 		Summary: "stored summary", CoversThroughSeq: 4,
 	}}
 
-	got, ok := compactionSummary(context.Background(), sum, cache, "conv", "", historyTurns(4, 6))
+	out, ok := compactionSummary(context.Background(), sum, cache, "conv", "", historyTurns(4, 6))
 
-	if !ok || got != "stored summary" {
-		t.Fatalf("summary = (%q, %v), want the stored text to survive a failed refresh", got, ok)
+	if !ok || out.Summary != "stored summary" {
+		t.Fatalf("summary = (%q, %v), want the stored text to survive a failed refresh", out.Summary, ok)
 	}
 }
 
@@ -127,8 +141,8 @@ func TestCompactionSummaryFailsClosedWithNothingStored(t *testing.T) {
 	sum := &fakeSummarizer{err: errors.New("upstream down")}
 	cache := &fakeCompactionCache{}
 
-	if got, ok := compactionSummary(context.Background(), sum, cache, "conv", "", historyTurns(2)); ok {
-		t.Fatalf("summary = %q, want no compaction so the ladder falls through to L2.5", got)
+	if out, ok := compactionSummary(context.Background(), sum, cache, "conv", "", historyTurns(2)); ok {
+		t.Fatalf("summary = %q, want no compaction so the ladder falls through to L2.5", out.Summary)
 	}
 }
 
@@ -138,10 +152,10 @@ func TestCompactionSummarySurvivesAnUnreadableCache(t *testing.T) {
 	sum := &fakeSummarizer{summary: "fresh"}
 	cache := &fakeCompactionCache{loadErr: errors.New("db unavailable")}
 
-	got, ok := compactionSummary(context.Background(), sum, cache, "conv", "", historyTurns(2, 4))
+	out, ok := compactionSummary(context.Background(), sum, cache, "conv", "", historyTurns(2, 4))
 
-	if !ok || got != "fresh" || sum.calls != 1 {
-		t.Fatalf("summary = (%q, %v) after %d calls, want a normal fresh summarization", got, ok, sum.calls)
+	if !ok || out.Summary != "fresh" || sum.calls != 1 {
+		t.Fatalf("summary = (%q, %v) after %d calls, want a normal fresh summarization", out.Summary, ok, sum.calls)
 	}
 }
 

@@ -1,13 +1,18 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { gotoAuthenticated } from './auth';
 
-// composer-skills.spec.ts is the Phase-37D terminal acceptance E2E (WEBSKILL-01/02/03): it
-// drives the composer '/' skill-&-command picker end-to-end against the REAL rebuilt cockpit
-// bundle served by `aura serve` (the freshly-baked internal/webui/dist embed). It proves the
-// full flow — open the '/' menu, filter, select a skill, see the removable pill, send — and
+// composer-skills.spec.ts drives the composer '/' skill-&-command menu end-to-end against the
+// REAL rebuilt cockpit bundle served by `aura serve` (the freshly-baked internal/webui/dist
+// embed). It proves the full flow — open the '/' menu, filter, select a skill, send — and
 // asserts the intercepted POST /agent/run body carries `aura.skill` equal to the selected
-// skill name (the WEBSKILL-02 wire proof), plus the two pure-client quick actions (new-chat
-// starts a fresh conversation; clear resets the composer input + pinned pill).
+// skill name (the WEBSKILL-02 wire proof), plus the one COMMAND in the menu: '/compact' POSTs
+// the compaction and draws the in-chat marker, and fires no run.
+//
+// The pinned-pill assertions went with the pill: a selected skill is written INTO the message
+// ('/skill-creator …') by the library's directive formatter, so the transcript shows the turn
+// the operator sent. The `/new` and `/clear` quick actions were removed on the operator's
+// call — one duplicated the sidebar's new-chat button, the other emptied the box you are
+// typing in — so the two tests that drove them are gone rather than skipped.
 //
 // Golden-replay, NOT a live agent turn (plan prohibition): GET /api/composer/skills and the
 // /agent/run SSE are BOTH mocked at the page-network layer (mirroring artifacts.spec.ts /
@@ -22,10 +27,8 @@ import { gotoAuthenticated } from './auth';
 // neither a live serve nor the Authula stack is reachable the shared auth helper THROWS. Runs
 // on chromium (desktop) + mobile-chrome (Pixel 5) so the picker holds on a touch viewport too.
 
-// Stable conversation ids the /c/:id route binds against (mocked below). NEW_CONV_ID is the
-// conversation the new-chat quick action creates + navigates to.
+// The stable conversation id the /c/:id route binds against (mocked below).
 const CONV_ID = '37d5c0de-0000-4a00-9000-5ec0de5177ee';
-const NEW_CONV_ID = '37d5c0de-1111-4a00-9000-5ec0de5177ee';
 const SKILL_NAME = 'skill-creator';
 
 // The mocked GET /api/composer/skills snapshot (37D-02 `{name,description,type}` projection).
@@ -82,23 +85,24 @@ function conversationDetail(id: string): string {
 interface RunTracker {
   runCount: number;
   runBody: string | null;
-  createCount: number;
+  compactCount: number;
 }
 
 // trackRequests counts the two mutating POSTs at the wire (page.on('request') fires for ALL
-// requests, incl. routed ones) WITHOUT touching fulfillment: /agent/run (a send) and the
-// /api/conversations create (new-chat). runBody captures the last /agent/run body so a test can
-// assert `aura.skill` by exact equality. A quick action that fires either POST FAILS its guard.
+// requests, incl. routed ones) WITHOUT touching fulfillment: /agent/run (a send) and
+// /compact (the command). runBody captures the last /agent/run body so a test can assert
+// `aura.skill` by exact equality. A command that fires a run FAILS its guard: a command is
+// not a message, and the whole point of the type split is that it never becomes one.
 function trackRequests(page: Page): RunTracker {
-  const tracker: RunTracker = { runCount: 0, runBody: null, createCount: 0 };
+  const tracker: RunTracker = { runCount: 0, runBody: null, compactCount: 0 };
   page.on('request', (req) => {
     const url = req.url();
     if (req.method() !== 'POST') return;
     if (url.includes('/agent/run')) {
       tracker.runCount += 1;
       tracker.runBody = req.postData();
-    } else if (/\/api\/conversations(\?.*)?$/.test(url)) {
-      tracker.createCount += 1;
+    } else if (url.includes('/compact')) {
+      tracker.compactCount += 1;
     }
   });
   return tracker;
@@ -111,18 +115,11 @@ async function installComposerRoutes(page: Page) {
   await page.route('**/api/composer/skills', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: composerSkillsBody() }),
   );
-  // conversations: POST create → the new conversation (the store projection reads `ID`); a
-  // GET {id} → detail; the list → []. The regex excludes deeper sub-paths (/rot-events,
-  // /messages) via the trailing `$`, so those fall to their own routes below.
+  // conversations: a GET {id} → detail; the list → []. The regex excludes deeper sub-paths
+  // (/rot-events, /messages, /compaction) via the trailing `$`, so those fall to their own
+  // routes below.
   await page.route(/\/api\/conversations(\/[^/?]+)?(\?.*)?$/, (route) => {
     const req = route.request();
-    if (req.method() === 'POST') {
-      return route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ ID: NEW_CONV_ID, Title: '', TitleSet: false }),
-      });
-    }
     const detailId = /\/api\/conversations\/([^/?]+)/.exec(req.url())?.[1];
     if (detailId !== undefined) {
       return route.fulfill({
@@ -135,6 +132,27 @@ async function installComposerRoutes(page: Page) {
   });
   await page.route('**/api/conversations/*/rot-events', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+  );
+  // The thread starts uncompacted; the POST is what moves the watermark (and the marker).
+  await page.route('**/api/conversations/*/compaction', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ covers_through_seq: 0, source_turns: 0, summary: '' }),
+    }),
+  );
+  await page.route('**/api/conversations/*/compact', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        covers_through_seq: 2,
+        source_turns: 2,
+        summary: 'The operator asked about skills; Aura listed them.',
+        tokens_before: 41000,
+        tokens_after: 2600,
+      }),
+    }),
   );
   await page.route('**/api/approvals', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
@@ -154,8 +172,8 @@ async function installComposerRoutes(page: Page) {
   );
 }
 
-test.describe('cockpit composer skill-picker — open→filter→select→pill→send carries aura.skill + new-chat/clear (WEBSKILL-01/02/03)', () => {
-  test('selecting a skill (click) pins the removable pill and the send carries aura.skill === the selected name', async ({
+test.describe('cockpit composer / menu — open→filter→select→send carries aura.skill, and /compact compacts (WEBSKILL-01/02/03)', () => {
+  test('selecting a skill (click) writes it into the message and the send carries aura.skill === the selected name', async ({
     page,
   }) => {
     test.setTimeout(120_000);
@@ -167,12 +185,11 @@ test.describe('cockpit composer skill-picker — open→filter→select→pill�
     const composer = page.getByPlaceholder('Ask Aura');
     await expect(composer).toBeVisible();
 
-    // 1) OPEN: typing '/' at the empty composer opens the APG listbox with BOTH groups
-    // (Quick commands + Skills) and every mocked skill.
+    // 1) OPEN: typing '/' at the empty composer opens the listbox with the command first
+    // (commands are few and explicit, so they lead a bare '/') and every mocked skill after.
     await composer.fill('/');
     await expect(page.getByRole('listbox')).toBeVisible({ timeout: 10000 });
-    await expect(page.getByRole('group', { name: 'Quick commands' })).toBeVisible();
-    await expect(page.getByRole('group', { name: 'Skills' })).toBeVisible();
+    await expect(page.getByRole('option', { name: /Compact/ })).toBeVisible();
     await expect(page.getByRole('option', { name: new RegExp(SKILL_NAME) })).toBeVisible();
     await expect(page.getByRole('option', { name: /pdf-extract/ })).toBeVisible();
     domAssertions += 1;
@@ -188,20 +205,17 @@ test.describe('cockpit composer skill-picker — open→filter→select→pill�
     await expect(page.getByRole('option', { name: /pdf-extract/ })).toHaveCount(0);
     domAssertions += 1;
 
-    // 3) SELECT (click): picking the skill pins the removable SkillPill and clears the
-    // '/'-filter text (the pinned skill rides the pill, not the text), closing the menu.
+    // 3) SELECT (click): the library's directive formatter writes the skill INTO the message
+    // ('/skill-creator ') and closes the menu, so the turn the operator sends is the turn the
+    // transcript shows.
     await page.getByRole('option', { name: new RegExp(SKILL_NAME) }).click();
-    await expect(
-      page.getByRole('button', { name: `Remove pinned skill ${SKILL_NAME}` }),
-    ).toBeVisible();
-    await expect(composer).toHaveValue('');
+    await expect(composer).toHaveValue(new RegExp(`^/${SKILL_NAME}`));
     await expect(page.getByRole('listbox')).toHaveCount(0);
     domAssertions += 1;
 
-    // 4) SEND: a plain message (no leading '/') keeps the menu closed; Enter sends and the
-    // intercepted /agent/run body carries `aura.skill` === the selected name (WEBSKILL-02).
-    await composer.fill('build me a skill');
-    await expect(page.getByRole('listbox')).toHaveCount(0);
+    // 4) SEND: Enter sends and the intercepted /agent/run body carries `aura.skill` === the
+    // selected name (WEBSKILL-02).
+    await composer.fill(`/${SKILL_NAME} build me a skill`);
     await Promise.all([
       page.waitForRequest((req) => req.url().includes('/agent/run') && req.method() === 'POST'),
       composer.press('Enter'),
@@ -210,11 +224,6 @@ test.describe('cockpit composer skill-picker — open→filter→select→pill�
     const parsed = JSON.parse(tracker.runBody ?? '{}') as { aura?: { skill?: string } };
     expect(parsed.aura?.skill).toBe(SKILL_NAME);
     domAssertions += 1;
-
-    // 5) The pinned skill applies to exactly one turn — the pill clears after a successful send.
-    await expect(
-      page.getByRole('button', { name: `Remove pinned skill ${SKILL_NAME}` }),
-    ).toHaveCount(0);
 
     // COUNTED-ASSERTION GUARD: a no-op (menu never opened / body never carried the skill) FAILS.
     expect(domAssertions).toBeGreaterThanOrEqual(4);
@@ -238,15 +247,12 @@ test.describe('cockpit composer skill-picker — open→filter→select→pill�
     await composer.fill(`/${SKILL_NAME.slice(0, 5)}`); // '/skill' → matches skill-creator only
     await expect(page.getByRole('listbox')).toBeVisible({ timeout: 10000 });
     await composer.press('Enter');
-    await expect(
-      page.getByRole('button', { name: `Remove pinned skill ${SKILL_NAME}` }),
-    ).toBeVisible();
-    await expect(composer).toHaveValue('');
+    await expect(composer).toHaveValue(new RegExp(`^/${SKILL_NAME}`));
     expect(tracker.runCount).toBe(0); // the selecting Enter fired NO run
     domAssertions += 1;
 
-    // Now a plain message + Enter (menu closed) SENDS, carrying the pinned skill on the body.
-    await composer.fill('scaffold a new skill');
+    // Now a full message + Enter (menu closed) SENDS, carrying the named skill on the body.
+    await composer.fill(`/${SKILL_NAME} scaffold a new skill`);
     await Promise.all([
       page.waitForRequest((req) => req.url().includes('/agent/run') && req.method() === 'POST'),
       composer.press('Enter'),
@@ -259,69 +265,72 @@ test.describe('cockpit composer skill-picker — open→filter→select→pill�
     expect(domAssertions).toBeGreaterThanOrEqual(2);
   });
 
-  test('the new-chat quick action starts a fresh conversation (POST + route change) and fires no /agent/run', async ({
+  test('the /compact command compacts the thread and marks it in the transcript, firing no run', async ({
     page,
   }) => {
     test.setTimeout(120_000);
     let domAssertions = 0;
     const tracker = trackRequests(page);
     await installComposerRoutes(page);
+    // A two-turn transcript, so the marker has a message to sit under: the snapshot ids
+    // (msg-1, msg-2) are what the client reads back as backendSeq, and the mocked POST
+    // answers covers_through_seq=2 — the second turn.
+    await page.route('**/threads/*/messages', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          type: 'MESSAGES_SNAPSHOT',
+          messages: [
+            { id: 'msg-1', role: 'user', content: 'quali skill hai' },
+            { id: 'msg-2', role: 'assistant', content: 'skill-creator e pdf-extract' },
+          ],
+        }),
+      }),
+    );
 
     await gotoAuthenticated(page, `/c/${CONV_ID}`);
     const composer = page.getByPlaceholder('Ask Aura');
     await expect(composer).toBeVisible();
+    await expect(page.getByText('skill-creator e pdf-extract')).toBeVisible({ timeout: 10000 });
+    // Nothing is compacted yet, so there is no marker to see.
+    await expect(page.getByTestId('compaction-marker')).toHaveCount(0);
+    domAssertions += 1;
 
-    // '/new' filters to the New chat command (no skill's name/description contains 'new').
-    await composer.fill('/new');
+    // '/compact' filters to the command (no skill's name or description contains it).
+    await composer.fill('/compact');
     await expect(page.getByRole('listbox')).toBeVisible({ timeout: 10000 });
-    const newChat = page.getByRole('option', { name: /New chat/ });
-    await expect(newChat).toBeVisible();
+    const compact = page.getByRole('option', { name: /Compact/ });
+    await expect(compact).toBeVisible();
+    await expect(page.getByRole('listbox').getByRole('option')).toHaveCount(1);
     domAssertions += 1;
 
-    // Picking New chat POSTs /api/conversations (create) and navigates to /c/{new id} — a pure
-    // client action: no /agent/run fires for it.
-    await newChat.click();
-    await expect.poll(() => tracker.createCount, { timeout: 10000 }).toBe(1);
-    await expect(page).toHaveURL(new RegExp(`/c/${NEW_CONV_ID}`), { timeout: 10000 });
-    domAssertions += 1;
-    expect(tracker.runCount).toBe(0);
-    domAssertions += 1;
-
-    expect(domAssertions).toBeGreaterThanOrEqual(3);
-  });
-
-  test('the clear quick action resets the composer input and removes the pinned skill, firing no /agent/run', async ({
-    page,
-  }) => {
-    test.setTimeout(120_000);
-    let domAssertions = 0;
-    const tracker = trackRequests(page);
-    await installComposerRoutes(page);
-
-    await gotoAuthenticated(page, `/c/${CONV_ID}`);
-    const composer = page.getByPlaceholder('Ask Aura');
-    await expect(composer).toBeVisible();
-
-    // First pin a skill so the pill is present.
-    await composer.fill('/creator');
-    await page.getByRole('option', { name: new RegExp(SKILL_NAME) }).click();
-    const pillRemove = page.getByRole('button', { name: `Remove pinned skill ${SKILL_NAME}` });
-    await expect(pillRemove).toBeVisible();
-    domAssertions += 1;
-
-    // Re-open the menu with '/clear' (the pinned pill stays), then pick Clear: it empties the
-    // composer input AND unpins the skill — a pure client reset, no /agent/run.
-    await composer.fill('/clear');
-    const clear = page.getByRole('option', { name: /Clear/ });
-    await expect(clear).toBeVisible({ timeout: 10000 });
-    await expect(pillRemove).toBeVisible();
-    await clear.click();
+    // Picking it POSTs the compaction and clears the composer — a command is a verb the
+    // composer performs, not a message, so the text it was invoked with does not survive.
+    await Promise.all([
+      page.waitForRequest((req) => req.url().includes('/compact') && req.method() === 'POST'),
+      compact.click(),
+    ]);
+    await expect.poll(() => tracker.compactCount, { timeout: 10000 }).toBe(1);
     await expect(composer).toHaveValue('');
-    await expect(pillRemove).toHaveCount(0);
     domAssertions += 1;
+
+    // The marker lands in the transcript, carrying what the compaction did, and expands to
+    // the summary the model will now replay in place of those turns.
+    const marker = page.getByTestId('compaction-marker');
+    await expect(marker).toBeVisible({ timeout: 10000 });
+    await expect(marker).toContainText('Context compacted');
+    await expect(marker).toContainText('2 earlier turns');
+    domAssertions += 1;
+
+    await marker.getByRole('button').click();
+    await expect(marker).toContainText('The operator asked about skills');
+    domAssertions += 1;
+
+    // A command never becomes a turn.
     expect(tracker.runCount).toBe(0);
     domAssertions += 1;
 
-    expect(domAssertions).toBeGreaterThanOrEqual(3);
+    expect(domAssertions).toBeGreaterThanOrEqual(6);
   });
 });

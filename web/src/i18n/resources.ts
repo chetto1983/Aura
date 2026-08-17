@@ -1,6 +1,8 @@
 import { adminEn, adminIt } from './resources.admin';
 import { chatReasoningEn, chatReasoningIt, chatToolEn, chatToolIt } from './resources.chatactivity';
 import {
+  chatCompactionEn,
+  chatCompactionIt,
   composerEffortEn,
   composerEffortIt,
   composerSkillPickerEn,
@@ -76,6 +78,7 @@ export const resources = {
           effort: composerEffortEn,
         },
         skillPicker: composerSkillPickerEn,
+        compaction: chatCompactionEn,
         attachments: {
           add: 'Add files',
           remove: 'Remove {{name}}',
@@ -339,6 +342,7 @@ export const resources = {
           effort: composerEffortIt,
         },
         skillPicker: composerSkillPickerIt,
+        compaction: chatCompactionIt,
         attachments: {
           add: 'Aggiungi file',
           remove: 'Rimuovi {{name}}',

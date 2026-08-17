@@ -135,6 +135,11 @@ export function assistantErrorMessage(text: string): ThreadMessageLike {
   };
 }
 
+/** A caller-side abort, which is a cancellation rather than a failure: it must never be
+ * folded into the transcript as an assistant error turn. */
+export const isAbortError = (error: unknown) =>
+  error instanceof DOMException && error.name === 'AbortError';
+
 export function isAbortSignalAborted(signal: AbortSignal): boolean {
   return signal.aborted;
 }

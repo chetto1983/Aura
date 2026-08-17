@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import type { Unstable_TriggerItem } from '@assistant-ui/react';
 import type { ComposerSkillRow } from './api';
+import { COMMAND_ITEM_TYPE } from './commands';
 import {
   createSkillDirectiveFormatter,
   createSkillTriggerAdapter,
-  rankSkills,
+  rankTriggerItems,
   resolveSlashSubmission,
 } from './skillTrigger';
 
@@ -21,6 +23,23 @@ const SKILLS: readonly ComposerSkillRow[] = [
 function names(items: readonly { id: string }[]): string[] {
   return items.map((item) => item.id);
 }
+
+/** The trigger items the adapter builds from skills, so a ranking test can go through the
+ * same projection the popover sees rather than a hand-written shape beside it. */
+function itemsFor(skills: readonly ComposerSkillRow[]): readonly Unstable_TriggerItem[] {
+  return createSkillTriggerAdapter(skills).search?.('') ?? [];
+}
+
+function rankSkills(skills: readonly ComposerSkillRow[], query: string) {
+  return rankTriggerItems(itemsFor(skills), query);
+}
+
+const COMPACT_ITEM: Unstable_TriggerItem = {
+  id: 'compact',
+  type: COMMAND_ITEM_TYPE,
+  label: 'Compact',
+  description: 'Condense the earlier turns into a summary',
+};
 
 describe('rankSkills', () => {
   it('returns every skill, in source order, for an empty query', () => {
@@ -138,6 +157,7 @@ describe('resolveSlashSubmission', () => {
   it('names the skill and leaves the message exactly as typed', () => {
     expect(resolveSlashSubmission('/docx-writer scrivi il verbale', SKILLS)).toEqual({
       skill: 'docx-writer',
+      command: null,
       text: '/docx-writer scrivi il verbale',
     });
   });
@@ -145,6 +165,7 @@ describe('resolveSlashSubmission', () => {
   it('starts a skill invoked with no instruction at all', () => {
     expect(resolveSlashSubmission('/docx-writer', SKILLS)).toEqual({
       skill: 'docx-writer',
+      command: null,
       text: '/docx-writer',
     });
   });
@@ -156,14 +177,64 @@ describe('resolveSlashSubmission', () => {
   it('leaves ordinary text alone', () => {
     expect(resolveSlashSubmission('quanto fa 2+2', SKILLS)).toEqual({
       skill: null,
+      command: null,
       text: 'quanto fa 2+2',
+    });
+  });
+
+  // A command is not a message: the caller runs it and sends nothing. This is the path a
+  // typed-out '/compact' + Enter takes when the menu was dismissed.
+  it('names a command instead of a skill', () => {
+    expect(resolveSlashSubmission('/compact', SKILLS)).toEqual({
+      skill: null,
+      command: 'compact',
+      text: '/compact',
     });
   });
 
   it('does not invent a skill for an unknown slash word', () => {
     expect(resolveSlashSubmission('/nope do something', SKILLS)).toEqual({
       skill: null,
+      command: null,
       text: '/nope do something',
+    });
+  });
+});
+
+describe('commands in the menu', () => {
+  it('lists commands before skills for a bare slash', () => {
+    const adapter = createSkillTriggerAdapter(SKILLS, [COMPACT_ITEM]);
+
+    expect(names(adapter.search?.('') ?? [])[0]).toBe('compact');
+  });
+
+  // The word that INVOKES a command is its id, not its translated label, so '/comp' has to
+  // find it in either language while '/compact' stays an exact hit.
+  it('matches a command on its invoking word and on its label', () => {
+    const adapter = createSkillTriggerAdapter(SKILLS, [
+      { ...COMPACT_ITEM, label: 'Compatta', description: 'Condensa i turni precedenti' },
+    ]);
+
+    expect(names(adapter.search?.('compact') ?? [])).toEqual(['compact']);
+    expect(names(adapter.search?.('compat') ?? [])).toEqual(['compact']);
+  });
+
+  it('parses a leading command into a mention of its own type', () => {
+    expect(createSkillDirectiveFormatter(SKILLS).parse('/compact')).toEqual([
+      { kind: 'mention', type: COMMAND_ITEM_TYPE, label: 'compact', id: 'compact' },
+    ]);
+  });
+
+  // A skill cannot take a verb the composer already owns, or '/compact' would become a turn.
+  it('resolves a command ahead of a skill with the same name', () => {
+    const shadowing: readonly ComposerSkillRow[] = [
+      { name: 'compact', description: 'a skill that shadows the command', type: 'instruction' },
+    ];
+
+    expect(resolveSlashSubmission('/compact', shadowing)).toEqual({
+      skill: null,
+      command: 'compact',
+      text: '/compact',
     });
   });
 });

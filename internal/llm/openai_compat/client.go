@@ -74,13 +74,20 @@ func New(cfg llm.Config) *Client {
 // buildWireRequest sets it there (see the ReasoningTarget branch below), while
 // OpenRouter (which always sends usage) keeps the wire byte-unchanged.
 type wireRequest struct {
-	Model       string         `json:"model"`
-	Messages    []wireMessage  `json:"messages"`
-	Tools       []llm.ToolDef  `json:"tools,omitempty"`
-	ToolChoice  string         `json:"tool_choice,omitempty"`
-	Temperature float64        `json:"temperature"`
-	MaxTokens   int            `json:"max_tokens"`
-	Reasoning   *wireReasoning `json:"reasoning,omitempty"`
+	Model       string        `json:"model"`
+	Messages    []wireMessage `json:"messages"`
+	Tools       []llm.ToolDef `json:"tools,omitempty"`
+	ToolChoice  string        `json:"tool_choice,omitempty"`
+	Temperature float64       `json:"temperature"`
+	// MaxTokens is omitted when non-positive, which is how a caller asks for the model's
+	// own output ceiling instead of one this process invented. Only the summarizer does
+	// (internal/conversations/compaction_transcript.go): an output cap there cuts the
+	// summary mid-section — a reasoning model spends the cap on reasoning first — the
+	// stream ends finish_reason="length", and the compaction that was meant to CONDENSE
+	// history hard-drops it instead. Every other caller sets it from config, so their wire
+	// is byte-unchanged.
+	MaxTokens int            `json:"max_tokens,omitempty"`
+	Reasoning *wireReasoning `json:"reasoning,omitempty"`
 	// ChatTemplateKwargs and ThinkingBudgetTokens are the llama-server per-request
 	// reasoning controls (spike 095). They are populated ONLY on a llama.cpp target
 	// (Reasoning is left nil there — llama-server ignores the OpenRouter object); on

@@ -27,8 +27,29 @@ type compactionCache interface {
 // its source material.
 const carriedSummaryPrompt = "summary_of_still_earlier_turns: "
 
-// compactionSummary returns the summary text for this history slice, reusing the durable
-// one whenever it already speaks for every turn in the slice.
+// compactionOutcome is what one compactionSummary call produced.
+type compactionOutcome struct {
+	Summary string
+	// Fresh is true when Summary came from the model on this call rather than out of the
+	// durable row. It is the caller's cue that a write is OWED — and that it still has a
+	// choice about making one, which is the whole reason this function no longer writes.
+	Fresh bool
+	// SourceTurns is how many turns the summary speaks for IN TOTAL, carried across
+	// iterative updates. It used to be the count this call folded in, which after the first
+	// update said "2" about a summary standing for two hundred turns — and it is the number
+	// the in-chat marker puts in front of the operator.
+	SourceTurns int
+	// CoversThroughSeq is the seq the summary now speaks through.
+	CoversThroughSeq int
+}
+
+// compactionSummary returns the summary for this history slice, reusing the durable one
+// whenever it already speaks for every turn in the slice.
+//
+// It does NOT persist. `/compact` needs that: a summary larger than the turns it replaces
+// must not become the branch's durable state, and by the time its size is known the model has
+// already been paid for — so the decision to keep it has to be separable from the call that
+// produced it.
 //
 // Three outcomes, and only the last one costs an LLM call:
 //
@@ -49,11 +70,18 @@ func compactionSummary(
 	cache compactionCache,
 	conversationID, branchID string,
 	history []Turn,
-) (string, bool) {
+) (compactionOutcome, bool) {
 	watermark := history[len(history)-1].Seq
 	stored, hasStored := loadStoredCompaction(ctx, cache, conversationID, branchID)
+	reuse := func() (compactionOutcome, bool) {
+		return compactionOutcome{
+			Summary:          stored.Summary,
+			SourceTurns:      stored.SourceTurns,
+			CoversThroughSeq: stored.CoversThroughSeq,
+		}, strings.TrimSpace(stored.Summary) != ""
+	}
 	if hasStored && stored.CoversThroughSeq >= watermark && strings.TrimSpace(stored.Summary) != "" {
-		return stored.Summary, true
+		return reuse()
 	}
 
 	fresh := history
@@ -64,30 +92,93 @@ func compactionSummary(
 			// The watermark is ahead of every turn in this slice, which happens when the
 			// caller re-reads a branch that was compacted further along. The stored text
 			// still speaks for all of it.
-			return stored.Summary, strings.TrimSpace(stored.Summary) != ""
+			return reuse()
 		}
 		carried = []llm.Message{{Role: llm.RoleUser, Content: carriedSummaryPrompt + stored.Summary}}
 	}
 
-	summary, err := sum.Summarize(ctx, append(carried, toMessages(fresh)...))
+	produced, err := sum.Summarize(ctx, append(carried, toMessages(fresh)...))
 	if err != nil {
 		slog.Warn("context compaction failed; falling back to deterministic drop", "err", err)
 		// A stored summary that no longer covers everything still beats dropping the
 		// oldest pair outright: it describes the turns it does cover, and L2.5 remains
 		// free to drop what it must.
-		if hasStored && strings.TrimSpace(stored.Summary) != "" {
-			return stored.Summary, true
+		if hasStored {
+			return reuse()
 		}
-		return "", false
+		return compactionOutcome{}, false
 	}
-	summary = strings.TrimSpace(summary)
-	if summary == "" {
-		return "", false
+	produced = strings.TrimSpace(produced)
+	if produced == "" {
+		return compactionOutcome{}, false
 	}
+	folded := len(fresh)
+	if hasStored {
+		folded += stored.SourceTurns
+	}
+	return compactionOutcome{
+		Summary:          produced,
+		Fresh:            true,
+		SourceTurns:      folded,
+		CoversThroughSeq: watermark,
+	}, true
+}
+
+// storeCompaction writes a summary the caller has decided to keep. Only a FRESH outcome is
+// ever handed here: re-writing text that was just read back would bump the row on every turn
+// for no change, which is the opposite of what the durable row is for.
+func storeCompaction(
+	ctx context.Context, cache compactionCache, conversationID, branchID string,
+	out compactionOutcome,
+) {
 	saveCompaction(ctx, cache, conversationID, branchID, Compaction{
-		Summary: summary, CoversThroughSeq: watermark, SourceTurns: len(fresh),
+		Summary:          out.Summary,
+		CoversThroughSeq: out.CoversThroughSeq,
+		SourceTurns:      out.SourceTurns,
 	})
-	return summary, true
+}
+
+// applyStoredCompaction replaces the turns a stored summary already speaks for with the
+// summary turn, and calls no model to do it. It returns false when there is no stored
+// summary, or when none of the turns in front of it are covered by one.
+//
+// This is what makes a compaction a STATE of the branch rather than a reaction to a full
+// window. The summary was paid for once — by the ladder crossing the early trigger, or by
+// an operator asking for it — and reverting to verbatim history on the next turn because
+// the budget happened to fit would spend those tokens again AND move the prompt prefix,
+// which is the one thing the durable row exists to prevent. It is also what gives `/compact`
+// its meaning: without it, an explicit compaction would write a row nothing reads until the
+// conversation grows back over the trigger on its own.
+//
+// The watermark is the entire boundary: turns with seq <= covers_through_seq are the ones
+// the summary describes and nothing else is touched, so a branch replayed from a point the
+// watermark has run past keeps its own turns verbatim.
+func applyStoredCompaction(
+	ctx context.Context, cache compactionCache, conversationID, branchID string, turns []Turn,
+) ([]Turn, bool) {
+	stored, ok := loadStoredCompaction(ctx, cache, conversationID, branchID)
+	if !ok || stored.CoversThroughSeq <= 0 || strings.TrimSpace(stored.Summary) == "" {
+		return nil, false
+	}
+	head, history, active := splitHeadHistoryActive(turns)
+	// A seq of 0 is a synthetic turn (an already-applied summary, the always-block); it is
+	// not something a watermark can speak for, so it ends the covered prefix.
+	covered := 0
+	for _, turn := range history {
+		if turn.Seq <= 0 || turn.Seq > stored.CoversThroughSeq {
+			break
+		}
+		covered++
+	}
+	if covered == 0 {
+		return nil, false
+	}
+	out := make([]Turn, 0, len(head)+1+len(history)-covered+len(active))
+	out = append(out, head...)
+	out = append(out, compactionTurn(stored.Summary, stored.CoversThroughSeq))
+	out = append(out, history[covered:]...)
+	out = append(out, active...)
+	return out, true
 }
 
 // loadStoredCompaction never fails the turn. A cache that cannot be read is a compaction

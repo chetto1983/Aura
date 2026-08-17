@@ -80,6 +80,9 @@ func (s *Server) registerConversationRoutes(mux *http.ServeMux) {
 	// D-09 / CHAT-05 branch tree routes (plan 25-07) — list/edit/select, rides the same
 	// /api/conversations/{id}/ subtree (conversations_branch_api.go).
 	s.registerConversationBranchRoutes(mux)
+	// The composer's `/compact` command + the in-chat marker it leaves
+	// (conversations_compaction_api.go), same subtree.
+	s.registerCompactionRoutes(mux)
 }
 
 // writeJSON encodes v as the JSON body of a 200 response. A late encode failure (the
@@ -279,13 +282,9 @@ func (s *Server) handleSearchConversations(w http.ResponseWriter, r *http.Reques
 // context-budget gauge markers (plan 25-04 Task 2 is the sole consumer). The
 // underlying sqlc query already exists; this adds only the JSON projection.
 func (s *Server) handleConversationRotEvents(w http.ResponseWriter, r *http.Request) {
-	id, ok := parseConvID(w, r)
-	if !ok {
-		return
-	}
 	// Owner gate (MUSR-01 / D-06): a foreign/absent id 404s before the unscoped read.
-	if _, err := s.conv.GetForIdentity(r.Context(), id, scopedIdentityID(r.Context())); err != nil {
-		writeStoreErr(w, err)
+	id, ok := s.ownedConversation(w, r)
+	if !ok {
 		return
 	}
 	events, err := s.conv.ListContextRotEvents(scopedCtx(r.Context()), id)
