@@ -8,21 +8,18 @@ import (
 )
 
 // ImageDocumentProcessor makes an uploaded image both describable inline AND
-// retrievable. It runs the vision summary (Vision) and the document registration
+// retrievable. It runs the vision summary (Vision) and the document naming
 // (Document) over the SAME image, then merges the results. It is fail-soft:
-//   - both succeed  -> StatusSearchable, DocumentID set, vision Summary kept for display;
-//   - ingest fails  -> StatusComplete, vision Summary only;
-//   - vision down   -> still registered, with the Document leg's summary as fallback;
+//   - both succeed  -> the Document leg's status, DocumentID set, vision Summary kept;
+//   - naming fails  -> StatusComplete, vision Summary only;
+//   - vision down   -> still named, with the Document leg's summary as fallback;
 //   - both fail     -> error (the service then marks the asset failed).
 //
-// The Document leg REGISTERS, it does not extract. Image extensions are on the
-// documents ingest allowlist, so an image gets the catalog row document_search
-// ranks and document_open resolves — and nothing more. No OCR, no chunking, no
-// embedding runs on this path, so the only text describing an image is the vision
-// Summary, until the agent opens the file and writes a digest. That also means the
-// Document leg does not fail on "this image has no text": a non-nil docErr is a
-// real ingest failure (object read, size ceiling, unsupported extension, catalog
-// write), never a verdict about the content.
+// The Document leg NAMES, it does not extract: it derives the id the ingest sidecar
+// will file this object under, so document_open can resolve it once the bucket has
+// been reconciled. No OCR, no chunking, no embedding runs on this path, so the only
+// text describing an image is the vision Summary until the agent opens the file and
+// writes a digest. A non-nil docErr is therefore never a verdict about the content.
 type ImageDocumentProcessor struct {
 	Vision   Processor // vision "describe this image" summary (*ImageProcessor)
 	Document Processor // document-catalog registration (*DocumentProcessor)
@@ -45,7 +42,7 @@ func (p *ImageDocumentProcessor) ProcessAsset(ctx context.Context, asset Asset) 
 		maps.Copy(merged.Metadata, visionRes.Metadata)
 	}
 	if docErr == nil {
-		merged.Status = docRes.Status // searchable
+		merged.Status = docRes.Status
 		merged.DocumentID = docRes.DocumentID
 		maps.Copy(merged.Metadata, docRes.Metadata)
 		merged.Metadata["document_indexed"] = true
@@ -53,8 +50,8 @@ func (p *ImageDocumentProcessor) ProcessAsset(ctx context.Context, asset Asset) 
 			merged.Summary = docRes.Summary
 		}
 	} else {
-		// Ingest failed, so the image has no catalog row and document_open cannot reach
-		// it. The vision summary still makes the asset useful in chat.
+		// The image carries no document id, so document_open cannot reach it even once the
+		// sidecar indexes the object. The vision summary still makes the asset useful in chat.
 		merged.Metadata["document_indexed"] = false
 		merged.Metadata["document_index_skipped_reason"] = docErr.Error()
 	}

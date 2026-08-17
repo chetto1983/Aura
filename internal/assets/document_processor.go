@@ -3,44 +3,40 @@ package assets
 
 import (
 	"context"
-	"crypto/sha1" // #nosec G505 -- compatibility metadata only; SHA-256 remains canonical.
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
-	"io"
-	"os"
-	"path/filepath"
 
 	"github.com/chetto1983/aura/internal/documents"
-	"github.com/chetto1983/aura/internal/objectstore"
 )
 
-type DocumentIngestor interface {
-	IngestPath(ctx context.Context, req documents.IngestRequest, path string) (*documents.Job, error)
-}
+// DocumentProcessor settles an uploaded document by naming it the way the index names it.
+//
+// It writes nothing and reads nothing. Indexing belongs to the ingest sidecar: CocoIndex
+// reconciles the identity's bucket and writes IndexedDocument + Passage into ArcadeDB,
+// keyed by SearchDocumentID(identity, "s3", <object key>). Measured on the live stack
+// 2026-08-17: an object that appeared in the bucket at 12:42:47 was answerable at 12:43:24
+// -- 37 seconds, 22 passages -- with no Postgres row involved at any point.
+//
+// What this used to do instead was download the bytes it had just accepted, hash them a
+// second time, register an ingestion job, and mint a SECOND document identity from
+// ("web", "sha256:"+sha256(assetID)). That id cannot appear in the index, because the
+// index derives its own from the object key -- so ResolveDocumentScope could never match
+// it. Measured on three real uploads: Postgres held doc_78824b89…, the index holds
+// doc_403e3fe4… for the same file. The consequence was not subtle. BuildKnowledgeCatalog
+// narrows by exactly that lookup, so it returned "" for every uploaded document and the
+// agent was never told about a single one; and the document_open the attachment block
+// advertises (context.go) pointed at an id nothing could resolve.
+//
+// The status stays "processing" rather than "searchable" because nothing here has produced
+// a passage. Nothing reads it to decide searchability either -- that is ArcadeDB's answer,
+// asked where it belongs (BuildKnowledgeCatalog's isIndexed).
+type DocumentProcessor struct{}
 
-type DocumentVersionRecorder interface {
-	RecordDocumentAsset(
-		ctx context.Context,
-		asset Asset,
-		job documents.Job,
-		hashes documents.ContentHashes,
-	) (documents.DocumentVersionRecord, error)
-}
-
-type DocumentProcessor struct {
-	Objects         objectstore.Store
-	Ingest          DocumentIngestor
-	VersionRecorder DocumentVersionRecorder
-	// PerIdentityObjects, when set, resolves the ASSET OWNER's per-identity store so the
-	// object read targets the owner's bucket with the owner's creds. Nil → the shared Objects.
-	PerIdentityObjects *ObjectResolverBundle
-}
-
+// ProcessAsset returns the document identity the index will file this object under.
+//
+// The fenced claim is still required. The work it guards is gone, but the guarantee is
+// not: it is what proves the queue worker owns this asset, and dropping it would let any
+// caller settle an asset out from under the worker holding its lease.
 func (p *DocumentProcessor) ProcessAsset(ctx context.Context, asset Asset) (Result, error) {
-	if p.Objects == nil || p.Ingest == nil || p.VersionRecorder == nil {
-		return Result{}, fmt.Errorf("document processor is not configured")
-	}
 	claim, ok := documents.ClaimedIngestionJob(ctx)
 	if !ok || claim.ID == "" || claim.LockedBy == "" || claim.LeaseGeneration <= 0 {
 		return Result{}, fmt.Errorf("document processor requires a fenced ingestion claim")
@@ -48,127 +44,23 @@ func (p *DocumentProcessor) ProcessAsset(ctx context.Context, asset Asset) (Resu
 	if claim.IdentityID != asset.IdentityID || (claim.AssetID != "" && claim.AssetID != asset.ID) {
 		return Result{}, fmt.Errorf("document processor ingestion claim does not own the asset")
 	}
-	objects, err := p.PerIdentityObjects.storeForAsset(ctx, p.Objects, asset)
+	// "s3", not asset.SourceKind: the source kind here names the CHANNEL the upload arrived
+	// on (web, telegram, cli), and the channels are wrappers over one door. What the index
+	// records is where the bytes are -- the bucket -- so the id has to be derived from that
+	// or the two sides are naming different things.
+	documentID, err := documents.SearchDocumentID(asset.IdentityID, "s3", asset.ObjectKey)
 	if err != nil {
 		return Result{}, err
 	}
-	ref := objectstore.ObjectRef{Bucket: asset.ObjectBucket, Key: asset.ObjectKey}
-	rc, _, err := objects.Get(ctx, ref)
-	if err != nil {
-		return Result{}, err
-	}
-	defer func() { _ = rc.Close() }()
-	path, hashes, cleanup, err := writeTempAsset(rc, asset.FileName)
-	if err != nil {
-		return Result{}, err
-	}
-	defer cleanup()
-	job, err := p.Ingest.IngestPath(ctx, documents.IngestRequest{
-		SourceID:     firstNonBlank(asset.SourceRef, asset.ID),
-		SourceKind:   string(asset.SourceKind),
-		OriginalPath: "object://" + asset.ObjectBucket + "/" + asset.ObjectKey,
-		FileName:     asset.FileName,
-		MIMEType:     asset.MIMEType,
-		SizeBytes:    asset.SizeBytes,
-		// The owner identity scopes the catalog row: retrieval is identity-scoped in SQL,
-		// so a row written without one is owned by nobody and invisible to every read
-		// meant to return it. Assets already carry it.
-		IdentityID: asset.IdentityID,
-	}, path)
-	if err != nil {
-		return Result{}, err
-	}
-	record, err := p.VersionRecorder.RecordDocumentAsset(ctx, asset, *job, hashes)
-	if err != nil {
-		return Result{}, err
-	}
-	if record.ReplayedActive {
-		return replayedAssetResult(asset, record), nil
-	}
-	// The bytes are in the bucket and the version is on record; indexing is the ingest
-	// sidecar's job now, reconciled from the bucket rather than driven from here.
-	//
-	// StatusProcessing, NOT StatusSearchable, and the difference is not cosmetic: nothing
-	// here has produced a passage, so claiming searchable would be the skip-as-green lie --
-	// context.go:63 hands the agent only StatusSearchable assets, and it would be handing
-	// over documents retrieval cannot find. WHAT FLIPS IT IS AN OPEN GAP: the in-process
-	// pipeline used to, and "searchable" is now a property of ArcadeDB (does this
-	// source_key have passages?) rather than of a Postgres column. Tracked in
-	// docs/superpowers/specs/2026-08-08-document-plane-two-store-design.md.
 	return Result{
 		Status:     StatusProcessing,
-		DocumentID: record.Document.SearchDocumentID,
-		Summary:    fmt.Sprintf("%s is stored; the ingest sidecar indexes it from the bucket.", job.FileName),
-		Metadata: map[string]any{
-			"document_job_id":     job.ID,
-			"document_version_id": record.Version.ID,
-			"object_bucket":       asset.ObjectBucket,
-			"object_key":          asset.ObjectKey,
-		},
-	}, nil
-}
-
-// replayedAssetResult settles an upload whose bytes are ALREADY the document's published
-// version: the passages, embeddings and projections behind them exist, so re-running the
-// pipeline would spend a full conversion — up to fifteen minutes — to arrive back here.
-//
-// Only ReplayedActive earns this. Every other outcome, a replay onto a version still
-// processing included, falls through to Pipeline.Run, whose beginStage resumes from the
-// stage ledger exactly as it does on a first upload.
-//
-// It deliberately omits pipeline_activation_job_id. That key is the ingestion handler's
-// signal that the activation statement already settled the job (asset_processing_handler.go);
-// nothing settled it here, so the key's absence is what lets the queue worker close the job
-// itself instead of leaving it leased until it dead-letters.
-func replayedAssetResult(asset Asset, record documents.DocumentVersionRecord) Result {
-	return Result{
-		Status:     StatusSearchable,
-		DocumentID: record.Document.SearchDocumentID,
+		DocumentID: documentID,
 		Summary: fmt.Sprintf(
-			"%s was already indexed; reused the active version without reprocessing.",
-			asset.FileName,
+			"%s is stored; the ingest sidecar indexes it from the bucket.", asset.FileName,
 		),
 		Metadata: map[string]any{
-			"document_version_id": record.Version.ID,
-			"pipeline_generation": record.Version.PipelineGeneration,
-			"replayed_active":     true,
+			"object_bucket": asset.ObjectBucket,
+			"object_key":    asset.ObjectKey,
 		},
-	}
-}
-
-func firstNonBlank(values ...string) string {
-	for _, value := range values {
-		if value != "" {
-			return value
-		}
-	}
-	return ""
-}
-
-func writeTempAsset(src io.Reader, fileName string) (string, documents.ContentHashes, func(), error) {
-	suffix := filepath.Ext(fileName)
-	if suffix == "" {
-		suffix = ".bin"
-	}
-	f, err := os.CreateTemp("", "aura-asset-doc-*"+suffix)
-	if err != nil {
-		return "", documents.ContentHashes{}, func() {}, err
-	}
-	path := f.Name()
-	sha1Hash := sha1.New() //nolint:gosec // SHA-1 is compatibility metadata; SHA-256 remains canonical.
-	sha256Hash := sha256.New()
-	if _, err = io.Copy(io.MultiWriter(f, sha1Hash, sha256Hash), src); err != nil {
-		_ = f.Close()
-		_ = os.Remove(path)
-		return "", documents.ContentHashes{}, func() {}, err
-	}
-	if err = f.Close(); err != nil {
-		_ = os.Remove(path)
-		return "", documents.ContentHashes{}, func() {}, err
-	}
-	hashes := documents.ContentHashes{
-		SHA1:   hex.EncodeToString(sha1Hash.Sum(nil)),
-		SHA256: hex.EncodeToString(sha256Hash.Sum(nil)),
-	}
-	return path, hashes, func() { _ = os.Remove(path) }, nil
+	}, nil
 }

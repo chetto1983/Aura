@@ -22,15 +22,17 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const docsUsage = "usage: aura docs {ingest <path> [--source-id id] [--source-kind cli]|search <query> [--document-id id] [--limit 8]|status <job-id>|list [--limit 20]}"
+// status and list went with aura.document_ingest_jobs (migration 0098). They read a ledger
+// whose only writer was the catalog ingest, so after that retirement they could only ever
+// print rows describing a pipeline that no longer runs. What replaced them as the answer to
+// "did my file land" is the bucket itself: `aura docs search`, or the file manager.
+const docsUsage = "usage: aura docs {ingest <path> [--source-id id] [--source-kind cli]|search <query> [--document-id id] [--limit 8]}"
 
 // docsCLIService is the surface `aura docs` drives. Search uses the same host
 // retriever as the agent tool and HTTP API, including passage evidence and degradation.
 type docsCLIService interface {
 	IngestDocumentPath(ctx context.Context, req assets.DocumentIngestRequest, path string) (assets.Asset, error)
 	Retrieve(ctx context.Context, request documents.RetrievalRequest) (documents.RetrievalResponse, error)
-	GetJob(ctx context.Context, id string) (*documents.Job, error)
-	ListJobs(ctx context.Context, limit int) ([]documents.Job, error)
 }
 
 type docsServiceFactory func(context.Context) (docsCLIService, func(), error)
@@ -55,10 +57,6 @@ func runDocsCommand(ctx context.Context, args []string, out io.Writer, factory d
 		return docsIngest(ctx, args[1:], out, factory)
 	case "search":
 		return docsSearch(ctx, args[1:], out, factory)
-	case "status":
-		return docsStatus(ctx, args[1:], out, factory)
-	case "list":
-		return docsList(ctx, args[1:], out, factory)
 	default:
 		return fmt.Errorf("unknown docs command %q\n%s", args[0], docsUsage)
 	}
@@ -182,45 +180,8 @@ func parseDocsSearchArgs(args []string) (query string, documentIDs []string, lim
 	return query, documentIDs, limit, nil
 }
 
-func docsStatus(ctx context.Context, args []string, out io.Writer, factory docsServiceFactory) error {
-	if len(args) != 1 {
-		return fmt.Errorf("docs status requires <job-id>")
-	}
-	svc, closeFn, err := factory(ctx)
-	if err != nil {
-		return err
-	}
-	defer closeFn()
-	job, err := svc.GetJob(ctx, args[0])
-	if err != nil {
-		return err
-	}
-	return writeJSON(out, job)
-}
-
-func docsList(ctx context.Context, args []string, out io.Writer, factory docsServiceFactory) error {
-	fs := flag.NewFlagSet("docs list", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	limit := fs.Int("limit", 20, "limit")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	svc, closeFn, err := factory(ctx)
-	if err != nil {
-		return err
-	}
-	defer closeFn()
-	jobs, err := svc.ListJobs(ctx, *limit)
-	if err != nil {
-		return err
-	}
-	return writeJSON(out, map[string]any{"jobs": jobs})
-}
-
-// docsCLI joins the ingest service and the shared document retriever used by the
-// other host surfaces.
+// docsCLI joins the ingress with the shared document retriever the other host surfaces use.
 type docsCLI struct {
-	*documents.Service
 	library  *documentLibrary
 	ingestor *runtimeDocumentIngestor
 }
@@ -250,11 +211,6 @@ func newDocsService(ctx context.Context) (docsCLIService, func(), error) {
 		return nil, nil, err
 	}
 	svc := docsCLI{
-		Service: newDocumentIngestService(documentServiceDeps{
-			cfg:      cfg,
-			pool:     pool,
-			maxBytes: documentMaxBytes(cfg),
-		}),
 		library:  newDocumentLibrary(pool, cfg),
 		ingestor: newRuntimeDocumentIngestor(cfg, pool),
 	}
@@ -262,29 +218,17 @@ func newDocsService(ctx context.Context) (docsCLIService, func(), error) {
 }
 
 type runtimeDocumentIngestor struct {
-	cfg      *config.Config
-	pool     *pgxpool.Pool
-	MaxBytes int64
+	cfg  *config.Config
+	pool *pgxpool.Pool
 }
 
 func newRuntimeDocumentIngestor(cfg *config.Config, pool *pgxpool.Pool) *runtimeDocumentIngestor {
-	return &runtimeDocumentIngestor{cfg: cfg, pool: pool, MaxBytes: documentMaxBytes(cfg)}
-}
-
-func (i *runtimeDocumentIngestor) IngestPath(ctx context.Context, req documents.IngestRequest, path string) (*documents.Job, error) {
-	if i == nil || i.cfg == nil || i.pool == nil {
-		return nil, fmt.Errorf("document ingestor is not configured")
-	}
-	svc := newDocumentIngestService(documentServiceDeps{
-		cfg: i.cfg, pool: i.pool, maxBytes: i.MaxBytes,
-	})
-	return svc.IngestPath(ctx, req, path)
+	return &runtimeDocumentIngestor{cfg: cfg, pool: pool}
 }
 
 // IngestDocument persists a non-presigned document in the owner's object store
-// before enqueueing it. It is the canonical ingress used by document_index; the
-// legacy IngestPath method remains internal to the queued processor until the
-// extraction stage replaces it.
+// before enqueueing it. It is the canonical — and now the only — ingress: putting the
+// bytes in the bucket IS the ingest, because that is what the sidecar reconciles.
 func (i *runtimeDocumentIngestor) IngestDocument(ctx context.Context, req assets.DocumentIngestRequest) (assets.Asset, error) {
 	if i == nil || i.cfg == nil || i.pool == nil {
 		return assets.Asset{}, fmt.Errorf("document ingestor is not configured")

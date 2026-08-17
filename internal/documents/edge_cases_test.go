@@ -2,6 +2,7 @@ package documents
 
 import (
 	"errors"
+	"os"
 	"strings"
 	"testing"
 )
@@ -39,37 +40,11 @@ type failingReader struct{ err error }
 
 func (r failingReader) Read([]byte) (int, error) { return 0, r.err }
 
-// --- service.go normalizeIngestRequest MIME fallback ---
-
-func TestServiceDefaultsMIMEToOctetStreamForUnknownExtension(t *testing.T) {
-	// A .docx file with an extension mime.TypeByExtension may not know on a bare runner;
-	// drive the octet-stream fallback through an extension with no MIME registration while
-	// keeping it in the supported set is not possible, so assert via normalizeIngestRequest
-	// directly for an unsupported-but-named path the helper still normalizes.
-	got := normalizeIngestRequest(IngestRequest{}, "/tmp/data.unknownext", 7)
-	if got.MIMEType != "application/octet-stream" {
-		t.Fatalf("mime fallback = %q, want application/octet-stream", got.MIMEType)
+func writeNamedTempFile(t *testing.T, name, content string) string {
+	t.Helper()
+	path := t.TempDir() + string(os.PathSeparator) + name
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	if got.SourceID != "cli" || got.SourceKind != "local" || got.FileName != "data.unknownext" {
-		t.Fatalf("normalized request = %#v", got)
-	}
-	if got.OriginalPath != "/tmp/data.unknownext" || got.SizeBytes != 7 {
-		t.Fatalf("normalized request = %#v", got)
-	}
-}
-
-func TestServicePreservesProvidedIngestRequestFields(t *testing.T) {
-	got := normalizeIngestRequest(IngestRequest{
-		SourceID:     "telegram",
-		SourceKind:   "chat",
-		OriginalPath: "/orig/path.pdf",
-		FileName:     "custom.pdf",
-		MIMEType:     "application/pdf",
-	}, "/tmp/path.pdf", 99)
-	if got.SourceID != "telegram" || got.SourceKind != "chat" || got.OriginalPath != "/orig/path.pdf" {
-		t.Fatalf("normalized request mutated provided fields: %#v", got)
-	}
-	if got.FileName != "custom.pdf" || got.MIMEType != "application/pdf" || got.SizeBytes != 99 {
-		t.Fatalf("normalized request = %#v", got)
-	}
+	return path
 }

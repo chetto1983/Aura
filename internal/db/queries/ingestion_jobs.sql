@@ -1,44 +1,22 @@
--- Get-or-create by source, refusing a document left mid-delete.
--- DO UPDATE rather than DO NOTHING because :one needs a row back, and it touches ONLY
--- updated_at: re-ingesting a file must not overwrite a title or tags the operator edited,
--- and aura.document_identity_immutable raises 23514 on any write to identity, source,
--- search id, or a lowered pipeline_generation. The status guard outlives the asynchronous
--- delete workflow it was written for: no statement here sets 'deleting' any more, but rows
--- the retired workflow stranded in that state are still on disk, and joining one would
--- hand the caller a document whose bytes are half gone. Zero rows is that case, and the
--- caller turns it into ErrDocumentDeleteInFlight.
--- name: CreateDocument :one
-INSERT INTO aura.documents (
-    identity_id, scope, title, tags, metadata, status,
-    source_kind, source_key, search_document_id, pipeline_generation
-) VALUES (
-    sqlc.arg(identity_id), sqlc.arg(scope), sqlc.arg(title), sqlc.arg(tags),
-    sqlc.arg(metadata), sqlc.arg(status), sqlc.arg(source_kind),
-    sqlc.arg(source_key), sqlc.arg(search_document_id), sqlc.arg(pipeline_generation)
-)
-ON CONFLICT (identity_id, source_kind, source_key) WHERE deleted_at IS NULL
-DO UPDATE SET updated_at = now()
-    WHERE documents.status <> 'deleting'
-RETURNING *;
--- name: GetDocumentBySearchID :one
-SELECT * FROM aura.documents
-WHERE identity_id = sqlc.arg(identity_id)
-  AND search_document_id = sqlc.arg(search_document_id)
-  AND deleted_at IS NULL;
--- name: DeleteDocumentTags :exec
-DELETE FROM aura.document_tags WHERE document_id = sqlc.arg(document_id);
--- name: UpsertDocumentTag :exec
-INSERT INTO aura.document_tags (document_id, tag, created_by)
-VALUES (sqlc.arg(document_id), sqlc.arg(tag), sqlc.narg(created_by))
-ON CONFLICT (document_id, tag) DO NOTHING;
+-- The GENERIC asset queue. Document, image and audio uploads all ride these statements.
+--
+-- This file was document_control_plane.sql until 2026-08-17, when the four statements that
+-- gave it that name — CreateDocument, GetDocumentBySearchID, DeleteDocumentTags,
+-- UpsertDocumentTag — went with the document catalog they wrote (migration 0098). The queue
+-- was always the other half of the file and is the only half with callers.
+--
+-- The job rows lost document_id and version_id in the same migration. They were nullable and
+-- measured NULL on every row in the deployment: the queue dispatches by MODALITY through
+-- ProcessorSet.For and reads its subject out of `payload`, so it never had a use for a link
+-- into a catalog.
+
 -- name: CreateIngestionJob :one
 INSERT INTO aura.ingestion_jobs (
-    identity_id, job_type, asset_id, document_id, version_id, status,
+    identity_id, job_type, asset_id, status,
     idempotency_key, stage, max_attempts, next_attempt_at, payload,
     pipeline_generation
 ) VALUES (
-    sqlc.arg(identity_id), sqlc.arg(job_type), sqlc.narg(asset_id),
-    sqlc.narg(document_id), sqlc.narg(version_id), sqlc.arg(status),
+    sqlc.arg(identity_id), sqlc.arg(job_type), sqlc.narg(asset_id), sqlc.arg(status),
     sqlc.arg(idempotency_key), sqlc.arg(stage), sqlc.arg(max_attempts),
     sqlc.arg(next_attempt_at), sqlc.arg(payload), sqlc.arg(pipeline_generation)
 )
@@ -85,7 +63,7 @@ WITH candidates AS (
     FROM claimed
     RETURNING job_id
 )
-SELECT claimed.id, claimed.job_type, claimed.document_id, claimed.version_id, claimed.status, claimed.idempotency_key, claimed.stage, claimed.attempt_count, claimed.max_attempts, claimed.locked_by, claimed.locked_until, claimed.next_attempt_at, claimed.payload, claimed.error_code, claimed.error_message, claimed.created_at, claimed.updated_at, claimed.completed_at, claimed.identity_id, claimed.asset_id, claimed.pipeline_generation, claimed.attempt_generation, claimed.lease_generation FROM claimed
+SELECT claimed.id, claimed.job_type, claimed.status, claimed.idempotency_key, claimed.stage, claimed.attempt_count, claimed.max_attempts, claimed.locked_by, claimed.locked_until, claimed.next_attempt_at, claimed.payload, claimed.error_code, claimed.error_message, claimed.created_at, claimed.updated_at, claimed.completed_at, claimed.identity_id, claimed.asset_id, claimed.pipeline_generation, claimed.attempt_generation, claimed.lease_generation FROM claimed
 JOIN events ON events.job_id = claimed.id
 ORDER BY claimed.next_attempt_at, claimed.created_at;
 -- name: HeartbeatIngestionJob :one
@@ -133,7 +111,7 @@ WITH target AS (
     FROM transitioned
     RETURNING job_id
 )
-SELECT transitioned.id, transitioned.job_type, transitioned.document_id, transitioned.version_id, transitioned.status, transitioned.idempotency_key, transitioned.stage, transitioned.attempt_count, transitioned.max_attempts, transitioned.locked_by, transitioned.locked_until, transitioned.next_attempt_at, transitioned.payload, transitioned.error_code, transitioned.error_message, transitioned.created_at, transitioned.updated_at, transitioned.completed_at, transitioned.identity_id, transitioned.asset_id, transitioned.pipeline_generation, transitioned.attempt_generation, transitioned.lease_generation FROM transitioned JOIN events ON events.job_id = transitioned.id;
+SELECT transitioned.id, transitioned.job_type, transitioned.status, transitioned.idempotency_key, transitioned.stage, transitioned.attempt_count, transitioned.max_attempts, transitioned.locked_by, transitioned.locked_until, transitioned.next_attempt_at, transitioned.payload, transitioned.error_code, transitioned.error_message, transitioned.created_at, transitioned.updated_at, transitioned.completed_at, transitioned.identity_id, transitioned.asset_id, transitioned.pipeline_generation, transitioned.attempt_generation, transitioned.lease_generation FROM transitioned JOIN events ON events.job_id = transitioned.id;
 -- name: RetryIngestionJob :one
 WITH target AS (
     SELECT target_job.id, target_job.status AS prior_status FROM aura.ingestion_jobs target_job
@@ -161,7 +139,7 @@ WITH target AS (
     FROM retried
     RETURNING job_id
 )
-SELECT retried.id, retried.job_type, retried.document_id, retried.version_id, retried.status, retried.idempotency_key, retried.stage, retried.attempt_count, retried.max_attempts, retried.locked_by, retried.locked_until, retried.next_attempt_at, retried.payload, retried.error_code, retried.error_message, retried.created_at, retried.updated_at, retried.completed_at, retried.identity_id, retried.asset_id, retried.pipeline_generation, retried.attempt_generation, retried.lease_generation FROM retried JOIN events ON events.job_id = retried.id;
+SELECT retried.id, retried.job_type, retried.status, retried.idempotency_key, retried.stage, retried.attempt_count, retried.max_attempts, retried.locked_by, retried.locked_until, retried.next_attempt_at, retried.payload, retried.error_code, retried.error_message, retried.created_at, retried.updated_at, retried.completed_at, retried.identity_id, retried.asset_id, retried.pipeline_generation, retried.attempt_generation, retried.lease_generation FROM retried JOIN events ON events.job_id = retried.id;
 -- name: CountIngestionJobsByStatus :one
 SELECT count(*) FROM aura.ingestion_jobs
 WHERE identity_id = sqlc.arg(identity_id) AND status = sqlc.arg(status);

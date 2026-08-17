@@ -85,31 +85,3 @@ func TestEmbeddingClientUsesDefaultDimensionsWhenUnset(t *testing.T) {
 		t.Fatalf("embedding dims = %d, want default %d", len(got[0]), dim)
 	}
 }
-
-// --- service.go GetJob error path ---
-
-func TestServiceGetJobPropagatesStoreError(t *testing.T) {
-	service := &Service{Jobs: newFakeJobStore()}
-	_, err := service.GetJob(t.Context(), "missing-job")
-	if err == nil || !strings.Contains(err.Error(), "not found") {
-		t.Fatalf("want not-found error, got %v", err)
-	}
-}
-
-// --- service.go IngestPath dependency guards ---
-
-func TestServiceIngestPathRejectsMissingJobStore(t *testing.T) {
-	path := writeNamedTempFile(t, "manual.pdf", "payload")
-	if _, err := (&Service{}).IngestPath(t.Context(), IngestRequest{}, path); err == nil ||
-		!strings.Contains(err.Error(), "job store") {
-		t.Fatalf("missing job store error = %v", err)
-	}
-}
-
-func TestServiceIngestPathRejectsMissingFile(t *testing.T) {
-	service := &Service{Jobs: newFakeJobStore()}
-	_, err := service.IngestPath(t.Context(), IngestRequest{}, t.TempDir()+"/missing.pdf")
-	if err == nil {
-		t.Fatal("want stat error for missing file")
-	}
-}

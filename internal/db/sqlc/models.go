@@ -64,8 +64,6 @@ type AuraAssets struct {
 	CompletedAt        pgtype.Timestamptz `json:"completed_at"`
 	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
-	CatalogDocumentID  pgtype.UUID        `json:"catalog_document_id"`
-	DocumentVersionID  pgtype.UUID        `json:"document_version_id"`
 	PipelineGeneration int64              `json:"pipeline_generation"`
 }
 
@@ -214,206 +212,6 @@ type AuraConversations struct {
 	DeleteLeaseExpiresAt pgtype.Timestamptz `json:"delete_lease_expires_at"`
 }
 
-type AuraDeleteJobs struct {
-	ID               pgtype.UUID        `json:"id"`
-	DocumentID       pgtype.UUID        `json:"document_id"`
-	VersionID        pgtype.UUID        `json:"version_id"`
-	Scope            string             `json:"scope"`
-	Status           string             `json:"status"`
-	Steps            []byte             `json:"steps"`
-	AttemptCount     int32              `json:"attempt_count"`
-	MaxAttempts      int32              `json:"max_attempts"`
-	LockedBy         pgtype.Text        `json:"locked_by"`
-	LockedUntil      pgtype.Timestamptz `json:"locked_until"`
-	NextAttemptAt    pgtype.Timestamptz `json:"next_attempt_at"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
-	CompletedAt      pgtype.Timestamptz `json:"completed_at"`
-	IdentityID       pgtype.UUID        `json:"identity_id"`
-	IdempotencyKey   string             `json:"idempotency_key"`
-	DeleteGeneration int64              `json:"delete_generation"`
-	LeaseGeneration  int64              `json:"lease_generation"`
-	ErrorCode        string             `json:"error_code"`
-	ErrorMessage     string             `json:"error_message"`
-}
-
-type AuraDocumentChunks struct {
-	ID                   pgtype.UUID        `json:"id"`
-	DocumentID           pgtype.UUID        `json:"document_id"`
-	VersionID            pgtype.UUID        `json:"version_id"`
-	ChunkIndex           int32              `json:"chunk_index"`
-	ChunkHash            string             `json:"chunk_hash"`
-	Text                 string             `json:"text"`
-	Locator              []byte             `json:"locator"`
-	Active               bool               `json:"active"`
-	CreatedAt            pgtype.Timestamptz `json:"created_at"`
-	DeletedAt            pgtype.Timestamptz `json:"deleted_at"`
-	IdentityID           pgtype.UUID        `json:"identity_id"`
-	SearchDocumentID     string             `json:"search_document_id"`
-	VersionNumber        int32              `json:"version_number"`
-	OriginalSha256       string             `json:"original_sha256"`
-	PipelineGeneration   int64              `json:"pipeline_generation"`
-	Ordinal              int32              `json:"ordinal"`
-	NormalizedTextSha256 string             `json:"normalized_text_sha256"`
-	SelfRef              string             `json:"self_ref"`
-	HeadingPath          []string           `json:"heading_path"`
-	Captions             []string           `json:"captions"`
-	PageNumber           pgtype.Int4        `json:"page_number"`
-	BoundingBox          []byte             `json:"bounding_box"`
-	CharStart            pgtype.Int4        `json:"char_start"`
-	CharEnd              pgtype.Int4        `json:"char_end"`
-	SheetName            pgtype.Text        `json:"sheet_name"`
-	TableName            pgtype.Text        `json:"table_name"`
-	RowNumber            pgtype.Int4        `json:"row_number"`
-	ColumnNumber         pgtype.Int4        `json:"column_number"`
-	CellRef              pgtype.Text        `json:"cell_ref"`
-}
-
-type AuraDocumentEmbeddings struct {
-	ID                   pgtype.UUID        `json:"id"`
-	DocumentID           pgtype.UUID        `json:"document_id"`
-	VersionID            pgtype.UUID        `json:"version_id"`
-	ChunkID              pgtype.UUID        `json:"chunk_id"`
-	EmbeddingModel       string             `json:"embedding_model"`
-	EmbeddingVersion     string             `json:"embedding_version"`
-	EmbeddingDim         int32              `json:"embedding_dim"`
-	VectorNamespace      string             `json:"vector_namespace"`
-	VectorID             string             `json:"vector_id"`
-	Active               bool               `json:"active"`
-	CreatedAt            pgtype.Timestamptz `json:"created_at"`
-	DeletedAt            pgtype.Timestamptz `json:"deleted_at"`
-	IdentityID           pgtype.UUID        `json:"identity_id"`
-	PipelineGeneration   int64              `json:"pipeline_generation"`
-	EmbeddingFingerprint string             `json:"embedding_fingerprint"`
-	ProjectionStatus     string             `json:"projection_status"`
-	ProjectedAt          pgtype.Timestamptz `json:"projected_at"`
-}
-
-// Durable document ingestion job state: lifecycle, idempotency and operator-visible progress. Postgres is the only store — a document is one catalog row plus a digest, and the file itself lives in the object store.
-type AuraDocumentIngestJobs struct {
-	ID                 pgtype.UUID        `json:"id"`
-	SourceID           string             `json:"source_id"`
-	SourceKind         string             `json:"source_kind"`
-	DocumentID         string             `json:"document_id"`
-	ContentHash        string             `json:"content_hash"`
-	OriginalPath       string             `json:"original_path"`
-	FileName           string             `json:"file_name"`
-	MimeType           string             `json:"mime_type"`
-	SizeBytes          int64              `json:"size_bytes"`
-	Status             string             `json:"status"`
-	SparseChunks       int32              `json:"sparse_chunks"`
-	EmbeddedChunks     int32              `json:"embedded_chunks"`
-	Error              pgtype.Text        `json:"error"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
-	SearchableAt       pgtype.Timestamptz `json:"searchable_at"`
-	CompletedAt        pgtype.Timestamptz `json:"completed_at"`
-	IdentityID         pgtype.UUID        `json:"identity_id"`
-	AssetID            pgtype.UUID        `json:"asset_id"`
-	CatalogDocumentID  pgtype.UUID        `json:"catalog_document_id"`
-	VersionID          pgtype.UUID        `json:"version_id"`
-	PipelineGeneration int64              `json:"pipeline_generation"`
-}
-
-// Migrate-role-only preservation of legacy control-plane rows whose owner cannot be proven through typed foreign keys.
-type AuraDocumentPipelineQuarantine struct {
-	ID            int64              `json:"id"`
-	SourceTable   string             `json:"source_table"`
-	SourcePk      string             `json:"source_pk"`
-	Reason        string             `json:"reason"`
-	RowData       []byte             `json:"row_data"`
-	QuarantinedAt pgtype.Timestamptz `json:"quarantined_at"`
-}
-
-// Owner-scoped immutable-result stage ledger for identify, convert, chunk, embed, project, activate, and card derivation.
-type AuraDocumentPipelineStages struct {
-	ID                      pgtype.UUID        `json:"id"`
-	IdentityID              pgtype.UUID        `json:"identity_id"`
-	DocumentID              pgtype.UUID        `json:"document_id"`
-	VersionID               pgtype.UUID        `json:"version_id"`
-	Stage                   string             `json:"stage"`
-	InputFingerprint        string             `json:"input_fingerprint"`
-	ProducerVersion         string             `json:"producer_version"`
-	PipelineGeneration      int64              `json:"pipeline_generation"`
-	ArtifactStorageObjectID pgtype.UUID        `json:"artifact_storage_object_id"`
-	ArtifactObjectKey       string             `json:"artifact_object_key"`
-	ArtifactSha256          string             `json:"artifact_sha256"`
-	ArtifactSizeBytes       int64              `json:"artifact_size_bytes"`
-	Status                  string             `json:"status"`
-	AttemptCount            int32              `json:"attempt_count"`
-	MaxAttempts             int32              `json:"max_attempts"`
-	LeaseGeneration         int64              `json:"lease_generation"`
-	LockedBy                pgtype.Text        `json:"locked_by"`
-	LockedUntil             pgtype.Timestamptz `json:"locked_until"`
-	NextAttemptAt           pgtype.Timestamptz `json:"next_attempt_at"`
-	ErrorClass              string             `json:"error_class"`
-	ErrorCode               string             `json:"error_code"`
-	ErrorMessage            string             `json:"error_message"`
-	DiagnosticState         []byte             `json:"diagnostic_state"`
-	CreatedAt               pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt               pgtype.Timestamptz `json:"updated_at"`
-	CompletedAt             pgtype.Timestamptz `json:"completed_at"`
-}
-
-type AuraDocumentTags struct {
-	DocumentID pgtype.UUID        `json:"document_id"`
-	Tag        string             `json:"tag"`
-	CreatedBy  pgtype.UUID        `json:"created_by"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
-}
-
-// Immutable document content versions and processing lifecycle state.
-type AuraDocumentVersions struct {
-	ID                 pgtype.UUID        `json:"id"`
-	DocumentID         pgtype.UUID        `json:"document_id"`
-	AssetID            pgtype.UUID        `json:"asset_id"`
-	VersionNumber      int32              `json:"version_number"`
-	Status             string             `json:"status"`
-	Sha1               string             `json:"sha1"`
-	Sha256             string             `json:"sha256"`
-	ContentType        string             `json:"content_type"`
-	SizeBytes          int64              `json:"size_bytes"`
-	StorageObjectID    pgtype.UUID        `json:"storage_object_id"`
-	ChunkingConfigHash string             `json:"chunking_config_hash"`
-	PipelineConfigHash string             `json:"pipeline_config_hash"`
-	ReadyAt            pgtype.Timestamptz `json:"ready_at"`
-	ActivatedAt        pgtype.Timestamptz `json:"activated_at"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
-	ErrorCode          string             `json:"error_code"`
-	ErrorMessage       string             `json:"error_message"`
-	IdentityID         pgtype.UUID        `json:"identity_id"`
-	SearchDocumentID   string             `json:"search_document_id"`
-	PipelineGeneration int64              `json:"pipeline_generation"`
-}
-
-// Stable logical documents across immutable content versions; tags are operator metadata for library search.
-type AuraDocuments struct {
-	ID              pgtype.UUID        `json:"id"`
-	IdentityID      pgtype.UUID        `json:"identity_id"`
-	Scope           string             `json:"scope"`
-	Title           string             `json:"title"`
-	Tags            []string           `json:"tags"`
-	Metadata        []byte             `json:"metadata"`
-	ActiveVersionID pgtype.UUID        `json:"active_version_id"`
-	Status          string             `json:"status"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
-	// What this document IS, in enough words to pick it out of a library: sheets and their column headers with row counts for tabular content, the heading outline for prose. Not the content — document_open hands over the file for that.
-	Digest string `json:"digest"`
-	// Machine-written at ingest from the file itself, with no LLM: sheet names, column headers with their frequent values, sampled rows, or the metadata and page count of a format whose text cannot be read without opening it. A proxy for the file, never the file. aura.documents.digest holds the agent's own note instead.
-	Card               string      `json:"card"`
-	DigestTsv          interface{} `json:"digest_tsv"`
-	SourceKind         string      `json:"source_kind"`
-	SourceKey          string      `json:"source_key"`
-	SearchDocumentID   string      `json:"search_document_id"`
-	PipelineGeneration int64       `json:"pipeline_generation"`
-	ErrorCode          string      `json:"error_code"`
-	ErrorMessage       string      `json:"error_message"`
-}
-
 // Identity-scoped public-operation state and bounded replay metadata linked optionally to the append-only tool invocation audit tuple.
 type AuraIdempotencyOperations struct {
 	IdentityID          pgtype.UUID        `json:"identity_id"`
@@ -555,8 +353,6 @@ type AuraIngestionEvents struct {
 type AuraIngestionJobs struct {
 	ID                 pgtype.UUID        `json:"id"`
 	JobType            string             `json:"job_type"`
-	DocumentID         pgtype.UUID        `json:"document_id"`
-	VersionID          pgtype.UUID        `json:"version_id"`
 	Status             string             `json:"status"`
 	IdempotencyKey     string             `json:"idempotency_key"`
 	Stage              string             `json:"stage"`
@@ -773,30 +569,6 @@ type AuraSkillAudit struct {
 	GateRecommended   bool        `json:"gate_recommended"`
 	GateTaken         bool        `json:"gate_taken"`
 	BlocklistOverride bool        `json:"blocklist_override"`
-}
-
-// Ledger of Garage/S3 objects owned by assets, documents, versions, and derived artifacts.
-type AuraStorageObjects struct {
-	ID                 pgtype.UUID        `json:"id"`
-	IdentityID         pgtype.UUID        `json:"identity_id"`
-	DocumentID         pgtype.UUID        `json:"document_id"`
-	VersionID          pgtype.UUID        `json:"version_id"`
-	AssetID            pgtype.UUID        `json:"asset_id"`
-	Bucket             string             `json:"bucket"`
-	ObjectKey          string             `json:"object_key"`
-	Kind               string             `json:"kind"`
-	Sha1               string             `json:"sha1"`
-	Sha256             string             `json:"sha256"`
-	Etag               string             `json:"etag"`
-	SizeBytes          int64              `json:"size_bytes"`
-	ContentType        string             `json:"content_type"`
-	RetentionClass     string             `json:"retention_class"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
-	Status             string             `json:"status"`
-	PipelineGeneration int64              `json:"pipeline_generation"`
-	DeletionGeneration int64              `json:"deletion_generation"`
-	DeletionVerifiedAt pgtype.Timestamptz `json:"deletion_verified_at"`
 }
 
 // Known Telegram accounts (Slice 9a / Phase 13, amendment #58). PK telegram_user_id; identity_id FKs aura.identities (single-user `local` this phase, D-07).

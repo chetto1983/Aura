@@ -374,7 +374,7 @@ func (s *Service) processAsset(ctx context.Context, asset Asset) (Asset, error) 
 	if err != nil {
 		failed, setErr := s.Store.SetStatus(
 			ctx, processing.ID, processing.IdentityID, StatusFailed,
-			processorFailureCode(err), err.Error())
+			ProcessorFailedCode, err.Error())
 		if setErr != nil {
 			return Asset{}, setErr
 		}

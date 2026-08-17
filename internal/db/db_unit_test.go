@@ -357,15 +357,13 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A deliberate pin, moved deliberately: 0096_conversation_compactions makes the summary
-	// durable (a watermark per conversation, so a compaction survives the process that made
-	// it) and 0097_identity_profile moves the operator profile out of the agent-memory graph
-	// into Postgres, where the turn path can read the timezone and the operator can edit
-	// what they declared. The test exists so a migration added without noticing breaks the
-	// build rather than the deployment, so bumping it is the intended way to acknowledge one
-	// -- never a fixup to make a red go away.
-	if head != 97 {
-		t.Fatalf("MigrationHead=%d, want embedded head 97", head)
+	// A deliberate pin, moved deliberately: 0098_retire_document_catalog drops the ten tables
+	// of the document catalog, whose last writers went when internal/assets stopped minting a
+	// second document identity for objects the ingest sidecar already names. The test exists
+	// so a migration added without noticing breaks the build rather than the deployment, so
+	// bumping it is the intended way to acknowledge one -- never a fixup to make a red go away.
+	if head != 98 {
+		t.Fatalf("MigrationHead=%d, want embedded head 98", head)
 	}
 }
 

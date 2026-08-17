@@ -104,22 +104,12 @@ func TestBuildAssetServiceWiresDocumentProcessor(t *testing.T) {
 	if _, ok := svc.ProcessingJobs.(*runtimeAssetProcessingQueue); !ok {
 		t.Fatalf("asset processing jobs = %T, want *runtimeAssetProcessingQueue", svc.ProcessingJobs)
 	}
+	// The document leg has no dependencies left to wire: it derives the id the ingest
+	// sidecar files the object under and writes nothing, so what is worth pinning is that
+	// the image leg shares the SAME instance rather than that either carries a store.
 	doc, ok := svc.Processors.Document.(*assetspkg.DocumentProcessor)
 	if !ok {
 		t.Fatalf("document processor = %T, want *assets.DocumentProcessor", svc.Processors.Document)
-	}
-	if doc.Objects != objects {
-		t.Fatalf("document processor object store = %T, want shared fake store", doc.Objects)
-	}
-	ingestor, ok := doc.Ingest.(*runtimeDocumentIngestor)
-	if !ok {
-		t.Fatalf("document processor ingestor = %T, want *runtimeDocumentIngestor", doc.Ingest)
-	}
-	if ingestor.MaxBytes != 123 {
-		t.Fatalf("runtime document ingestor MaxBytes = %d, want asset max document bytes 123", ingestor.MaxBytes)
-	}
-	if _, ok := doc.VersionRecorder.(*runtimeDocumentVersionRecorder); !ok {
-		t.Fatalf("document processor version recorder = %T, want *runtimeDocumentVersionRecorder", doc.VersionRecorder)
 	}
 	imageDoc, ok := svc.Processors.Image.(*assetspkg.ImageDocumentProcessor)
 	if !ok {

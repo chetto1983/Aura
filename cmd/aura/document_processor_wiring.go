@@ -18,11 +18,7 @@ import (
 )
 
 func buildAssetService(cfg *config.Config, pool *pgxpool.Pool, objectStore objectstore.Store) *assets.Service {
-	docProcessor := &assets.DocumentProcessor{
-		Objects:         objectStore,
-		Ingest:          newRuntimeDocumentIngestor(cfg, pool),
-		VersionRecorder: newRuntimeDocumentVersionRecorder(pool),
-	}
+	docProcessor := &assets.DocumentProcessor{}
 	imageProc := assets.NewImageProcessor(objectStore, visionConfigFrom(cfg))
 	audioProc := assets.NewAudioProcessor(objectStore, sttConfigFrom(cfg))
 	svc := &assets.Service{
@@ -31,10 +27,10 @@ func buildAssetService(cfg *config.Config, pool *pgxpool.Pool, objectStore objec
 		ProcessingJobs: newRuntimeAssetProcessingQueue(pool),
 		Processors: assets.ProcessorSet{
 			Document: docProcessor,
-			// An uploaded image gets a vision summary (inline chat) AND a catalog row so
-			// document_search can name it and document_open can hand the agent the file.
-			// The document leg REGISTERS only — no OCR, no chunking runs here (see
-			// ImageDocumentProcessor). Fail-soft: either leg can be down.
+			// An uploaded image gets a vision summary (inline chat) AND the document id the
+			// ingest sidecar will file it under, so document_open can hand the agent the file
+			// once the bucket is reconciled. The document leg NAMES only — no OCR, no chunking
+			// runs here (see ImageDocumentProcessor). Fail-soft: either leg can be down.
 			Image: &assets.ImageDocumentProcessor{
 				Vision:   imageProc,
 				Document: docProcessor,
@@ -69,7 +65,6 @@ func buildAssetService(cfg *config.Config, pool *pgxpool.Pool, objectStore objec
 	if bundle := buildObjectResolverBundle(cfg, pool); bundle != nil {
 		svc.IdentityObjects = bundle.Resolver
 		svc.PerIdentityStore = bundle.PerIdentityStore
-		docProcessor.PerIdentityObjects = bundle
 		imageProc.PerIdentityObjects = bundle
 		audioProc.PerIdentityObjects = bundle
 	}

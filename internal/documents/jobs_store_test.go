@@ -11,6 +11,18 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+// mustCatalogTestUUID lived beside the catalog store's own tests until that store was
+// deleted. It moved here rather than being inlined at each call because the job ledger
+// survived the catalog and still keys rows by pgtype.UUID.
+func mustCatalogTestUUID(t *testing.T, value string) pgtype.UUID {
+	t.Helper()
+	var id pgtype.UUID
+	if err := id.Scan(value); err != nil {
+		t.Fatalf("uuid %q: %v", value, err)
+	}
+	return id
+}
+
 func TestIngestionJobFromSQLDecodesPayloadAndLeaseFields(t *testing.T) {
 	row := sqlc.AuraIngestionJobs{
 		ID:                 mustCatalogTestUUID(t, "10000000-0000-0000-0000-000000000001"),

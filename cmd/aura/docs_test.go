@@ -184,21 +184,6 @@ func TestDocsSearchThreadsTheOperatorIdentity(t *testing.T) {
 	}
 }
 
-func TestDocsStatusPrintsJob(t *testing.T) {
-	svc := &fakeDocsService{statusJob: &documents.Job{ID: "job-1", Status: documents.JobSearchable}}
-	var out bytes.Buffer
-	if err := runDocsCommand(t.Context(), []string{"status", "job-1"}, &out, fakeDocsFactory(svc)); err != nil {
-		t.Fatal(err)
-	}
-	var decoded documents.Job
-	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
-		t.Fatal(err)
-	}
-	if decoded.ID != "job-1" || decoded.Status != documents.JobSearchable {
-		t.Fatalf("decoded = %#v", decoded)
-	}
-}
-
 func fakeDocsFactory(svc *fakeDocsService) docsServiceFactory {
 	return func(context.Context) (docsCLIService, func(), error) {
 		return svc, func() {}, nil
@@ -208,7 +193,6 @@ func fakeDocsFactory(svc *fakeDocsService) docsServiceFactory {
 type fakeDocsService struct {
 	ingestAsset      assets.Asset
 	ingestReq        assets.DocumentIngestRequest
-	statusJob        *documents.Job
 	response         documents.RetrievalResponse
 	retrievalRequest documents.RetrievalRequest
 }
@@ -226,12 +210,4 @@ func (f *fakeDocsService) Retrieve(
 	response := f.response
 	response.Query = request.Query
 	return response, nil
-}
-
-func (f *fakeDocsService) GetJob(context.Context, string) (*documents.Job, error) {
-	return f.statusJob, nil
-}
-
-func (f *fakeDocsService) ListJobs(context.Context, int) ([]documents.Job, error) {
-	return nil, nil
 }

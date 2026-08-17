@@ -48,6 +48,9 @@ type IngestionQueueDepthSource interface {
 	CountByStatus(ctx context.Context, identityID, status string) (int64, error)
 }
 
+// Clock returns the current time; tests inject it for deterministic timestamps.
+type Clock func() time.Time
+
 // IngestionJobWorker claims durable ingestion jobs and dispatches by job type.
 type IngestionJobWorker struct {
 	Store         IngestionJobQueue

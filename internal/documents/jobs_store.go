@@ -24,8 +24,6 @@ type IngestionJob struct {
 	IdentityID         string         `json:"identity_id"`
 	JobType            string         `json:"job_type"`
 	AssetID            string         `json:"asset_id,omitempty"`
-	DocumentID         string         `json:"document_id,omitempty"`
-	VersionID          string         `json:"version_id,omitempty"`
 	Status             string         `json:"status"`
 	IdempotencyKey     string         `json:"idempotency_key"`
 	Stage              string         `json:"stage"`
@@ -50,8 +48,6 @@ type CreateIngestionJobRequest struct {
 	IdentityID         string
 	JobType            string
 	AssetID            string
-	DocumentID         string
-	VersionID          string
 	Status             string
 	IdempotencyKey     string
 	Stage              string
@@ -272,21 +268,13 @@ func createIngestionJobParams(req CreateIngestionJobRequest) (sqlc.CreateIngesti
 	if err != nil {
 		return sqlc.CreateIngestionJobParams{}, err
 	}
-	documentID, err := optionalUUIDFromString("document id", req.DocumentID)
-	if err != nil {
-		return sqlc.CreateIngestionJobParams{}, err
-	}
-	versionID, err := optionalUUIDFromString("version id", req.VersionID)
-	if err != nil {
-		return sqlc.CreateIngestionJobParams{}, err
-	}
 	payload, err := ingestionJobPayloadJSON(req.Payload)
 	if err != nil {
 		return sqlc.CreateIngestionJobParams{}, err
 	}
 	return sqlc.CreateIngestionJobParams{
 		IdentityID: identityID, JobType: req.JobType, AssetID: assetID,
-		DocumentID: documentID, VersionID: versionID, Status: req.Status,
+		Status:         req.Status,
 		IdempotencyKey: req.IdempotencyKey, Stage: req.Stage,
 		MaxAttempts:   int32(req.MaxAttempts), //nolint:gosec // caller controls a small retry count.
 		NextAttemptAt: pgTime(req.NextAttemptAt), Payload: payload,
@@ -344,8 +332,7 @@ func ingestionJobFromSQL[R ingestionJobRow](row R) (IngestionJob, error) {
 	}
 	return IngestionJob{
 		ID: uuidString(rec.ID), IdentityID: uuidString(rec.IdentityID), JobType: rec.JobType,
-		AssetID: uuidString(rec.AssetID), DocumentID: uuidString(rec.DocumentID),
-		VersionID: uuidString(rec.VersionID), Status: rec.Status,
+		AssetID: uuidString(rec.AssetID), Status: rec.Status,
 		IdempotencyKey: rec.IdempotencyKey, Stage: rec.Stage,
 		AttemptCount: int(rec.AttemptCount), MaxAttempts: int(rec.MaxAttempts),
 		PipelineGeneration: rec.PipelineGeneration, AttemptGeneration: rec.AttemptGeneration,

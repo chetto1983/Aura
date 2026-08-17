@@ -60,19 +60,18 @@ type Querier interface {
 	CountTurns(ctx context.Context, conversationID pgtype.UUID) (int64, error)
 	CreateAsset(ctx context.Context, arg CreateAssetParams) (AuraAssets, error)
 	CreateConversation(ctx context.Context, arg CreateConversationParams) (AuraConversations, error)
-	// Get-or-create by source, refusing a document left mid-delete.
-	// DO UPDATE rather than DO NOTHING because :one needs a row back, and it touches ONLY
-	// updated_at: re-ingesting a file must not overwrite a title or tags the operator edited,
-	// and aura.document_identity_immutable raises 23514 on any write to identity, source,
-	// search id, or a lowered pipeline_generation. The status guard outlives the asynchronous
-	// delete workflow it was written for: no statement here sets 'deleting' any more, but rows
-	// the retired workflow stranded in that state are still on disk, and joining one would
-	// hand the caller a document whose bytes are half gone. Zero rows is that case, and the
-	// caller turns it into ErrDocumentDeleteInFlight.
-	CreateDocument(ctx context.Context, arg CreateDocumentParams) (AuraDocuments, error)
-	// Legacy queue kept owner-scoped during retirement. New ingress uses aura.ingestion_jobs.
-	CreateDocumentIngestJob(ctx context.Context, arg CreateDocumentIngestJobParams) (AuraDocumentIngestJobs, error)
 	CreateIdentity(ctx context.Context, arg CreateIdentityParams) (AuraIdentities, error)
+	// The GENERIC asset queue. Document, image and audio uploads all ride these statements.
+	//
+	// This file was document_control_plane.sql until 2026-08-17, when the four statements that
+	// gave it that name — CreateDocument, GetDocumentBySearchID, DeleteDocumentTags,
+	// UpsertDocumentTag — went with the document catalog they wrote (migration 0098). The queue
+	// was always the other half of the file and is the only half with callers.
+	//
+	// The job rows lost document_id and version_id in the same migration. They were nullable and
+	// measured NULL on every row in the deployment: the queue dispatches by MODALITY through
+	// ProcessorSet.For and reads its subject out of `payload`, so it never had a use for a link
+	// into a catalog.
 	CreateIngestionJob(ctx context.Context, arg CreateIngestionJobParams) (AuraIngestionJobs, error)
 	CreateRetentionItem(ctx context.Context, arg CreateRetentionItemParams) (AuraRetentionOperationItems, error)
 	CreateRetentionOperation(ctx context.Context, arg CreateRetentionOperationParams) (AuraRetentionOperations, error)
@@ -83,7 +82,6 @@ type Querier interface {
 	DeleteConversationForIdentity(ctx context.Context, arg DeleteConversationForIdentityParams) (int64, error)
 	DeleteConversationForIdentityIfReservation(ctx context.Context, arg DeleteConversationForIdentityIfReservationParams) (int64, error)
 	DeleteConversationsForIdentityPurge(ctx context.Context, identityID pgtype.UUID) (int64, error)
-	DeleteDocumentTags(ctx context.Context, documentID pgtype.UUID) error
 	DeleteExpiredTelegramSetupPending(ctx context.Context) (int64, error)
 	DeleteExpiredVerificationEvents(ctx context.Context, createdAt pgtype.Timestamptz) error
 	// Retention, mirroring the original's two-branch prune: state that was edited before
@@ -122,8 +120,6 @@ type Querier interface {
 	// conversation has no request-bearing turn yet.
 	GetConversationLastInputTokens(ctx context.Context, conversationID pgtype.UUID) (int32, error)
 	GetConversationVersionForIdentity(ctx context.Context, arg GetConversationVersionForIdentityParams) (int64, error)
-	GetDocumentBySearchID(ctx context.Context, arg GetDocumentBySearchIDParams) (AuraDocuments, error)
-	GetDocumentIngestJob(ctx context.Context, arg GetDocumentIngestJobParams) (AuraDocumentIngestJobs, error)
 	GetIdentityByID(ctx context.Context, id pgtype.UUID) (AuraIdentities, error)
 	GetIdentityByName(ctx context.Context, name string) (AuraIdentities, error)
 	GetIdentityProfile(ctx context.Context, identityID pgtype.UUID) (AuraIdentityProfiles, error)
@@ -260,7 +256,6 @@ type Querier interface {
 	ListManageableTasks(ctx context.Context) ([]AuraSchedulerTasks, error)
 	ListMcpAudit(ctx context.Context, arg ListMcpAuditParams) ([]AuraMcpAudit, error)
 	ListPendingPausedStates(ctx context.Context, conversationID pgtype.UUID) ([]AuraPausedStates, error)
-	ListRecentDocumentIngestJobs(ctx context.Context, arg ListRecentDocumentIngestJobsParams) ([]AuraDocumentIngestJobs, error)
 	ListRecentPausedStates(ctx context.Context, limit int32) ([]AuraPausedStates, error)
 	// Managed branch-history query: cap recursive parent traversal itself, then add the
 	// protected system head in a separate O(1) lookup. This keeps branch reconstruction
@@ -335,23 +330,6 @@ type Querier interface {
 	// Cross-process export-delete fence. This must commit before any runtime teardown.
 	// Reusing the same deterministic reservation is idempotent after a process retry.
 	ReserveConversationDeleteForIdentityIfVersion(ctx context.Context, arg ReserveConversationDeleteForIdentityIfVersionParams) (int64, error)
-	// Reserves the version that owns these exact bytes AND writes the asset's storage-object
-	// ledger row AND binds the asset to the resulting document+version -- in one statement.
-	//
-	// One statement rather than four because the four could interleave: a repeat upload of
-	// identical bytes would create a fresh raw object and then attach it to the OLD immutable
-	// version, and a repeat ingest would redo conversion, embedding and projection that the
-	// recorded version already owns.
-	//
-	// The object INSERT names a version that does not exist yet, and the version names that
-	// object, because both foreign keys are DEFERRABLE INITIALLY DEFERRED (0093:378-394) and
-	// the remaining immediate one is checked at end of statement, by which time both rows are
-	// present.
-	//
-	// Data-modifying CTEs cannot observe each other's effects on the underlying tables, so
-	// every hand-off here travels through a RETURNING projection -- `inserted` reads
-	// `asset_object.id`, never aura.storage_objects a second time.
-	ReservePipelineCandidateVersion(ctx context.Context, arg ReservePipelineCandidateVersionParams) (ReservePipelineCandidateVersionRow, error)
 	ResetAssetForIngestionRetry(ctx context.Context, arg ResetAssetForIngestionRetryParams) (AuraAssets, error)
 	RestoreBenchmarkSetting(ctx context.Context, arg RestoreBenchmarkSettingParams) error
 	RetryIngestionJob(ctx context.Context, arg RetryIngestionJobParams) (RetryIngestionJobRow, error)
@@ -365,11 +343,6 @@ type Querier interface {
 	// reuses this EXACT query; only the excerpt rendering differs per channel.
 	SearchConversationTurns(ctx context.Context, arg SearchConversationTurnsParams) ([]SearchConversationTurnsRow, error)
 	SetConversationTitleIfNull(ctx context.Context, arg SetConversationTitleIfNullParams) error
-	// The machine's own description, written at ingest from the file. Identity-scoped:
-	// this is a write reachable from an ingest a tool call can start, so a document id alone
-	// must never be enough to overwrite what someone else's library says about their file.
-	// A non-owner gets no rows, which the caller reports as not-found.
-	SetDocumentCard(ctx context.Context, arg SetDocumentCardParams) (AuraDocuments, error)
 	// D-09 (CHAT-05): set a turn's branch/parent pointers. The branch-write seam plan 25-07
 	// uses when an edit/regenerate forks a new sibling branch off an existing parent turn.
 	SetTurnBranchPointers(ctx context.Context, arg SetTurnBranchPointersParams) error
@@ -396,7 +369,6 @@ type Querier interface {
 	// Owner-scoped status transition (archive/unarchive, Phase 36 MUSR-01 / D-06). Serves the
 	// /archive + /unarchive routes; rows-affected==0 drives the handler's 403-vs-404 split.
 	UpdateConversationStatusForIdentity(ctx context.Context, arg UpdateConversationStatusForIdentityParams) (int64, error)
-	UpdateDocumentIngestJobStatus(ctx context.Context, arg UpdateDocumentIngestJobStatusParams) (AuraDocumentIngestJobs, error)
 	UpdateHeartbeat(ctx context.Context, id pgtype.UUID) error
 	UpdateIngestionJobStatus(ctx context.Context, arg UpdateIngestionJobStatusParams) (UpdateIngestionJobStatusRow, error)
 	UpdateNextRunAt(ctx context.Context, arg UpdateNextRunAtParams) error
@@ -414,7 +386,6 @@ type Querier interface {
 	// they were summarized. Zero rows back means "someone else already went further", which
 	// the caller treats as success and re-reads.
 	UpsertConversationCompaction(ctx context.Context, arg UpsertConversationCompactionParams) (AuraConversationCompactions, error)
-	UpsertDocumentTag(ctx context.Context, arg UpsertDocumentTagParams) error
 	// Deterministic operator profile (migration 0097). It is written by onboarding and the
 	// profile editor, and read on the turn path -- so the reads are narrow on purpose.
 	UpsertIdentityProfile(ctx context.Context, arg UpsertIdentityProfileParams) (AuraIdentityProfiles, error)
