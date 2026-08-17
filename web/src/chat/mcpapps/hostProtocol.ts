@@ -69,7 +69,10 @@ interface JsonRpcMessage {
 export type SandboxEnvelope =
   | { readonly kind: 'ready' }
   | { readonly kind: 'mounted' }
-  | { readonly kind: 'from_view'; readonly message: JsonRpcMessage };
+  // Nullable on purpose: this arrives from postMessage, where the sender decides
+  // the shape. Typing it non-null would only move the check out of the compiler's
+  // sight, not out of the runtime.
+  | { readonly kind: 'from_view'; readonly message: JsonRpcMessage | null };
 
 export interface HostBridgeOptions {
   readonly descriptor: McpViewDescriptor;
@@ -105,13 +108,18 @@ export function createHostBridge(opts: HostBridgeOptions): HostBridge {
   let descriptor = opts.descriptor;
   let nextRequestId = 1;
 
-  const toView = (message: unknown) => opts.post({ kind: 'to_view', message });
-  const notify = (method: string, params: Record<string, unknown>) =>
+  const toView = (message: unknown) => {
+    opts.post({ kind: 'to_view', message });
+  };
+  const notify = (method: string, params: Record<string, unknown>) => {
     toView({ jsonrpc: '2.0', method, params });
-  const reply = (id: number | string, result: unknown) =>
+  };
+  const reply = (id: number | string, result: unknown) => {
     toView({ jsonrpc: '2.0', id, result });
-  const replyError = (id: number | string, message: string) =>
+  };
+  const replyError = (id: number | string, message: string) => {
     toView({ jsonrpc: '2.0', id, error: { code: -32000, message } });
+  };
 
   /**
    * The two notifications that carry the turn. They go out right after
@@ -121,7 +129,7 @@ export function createHostBridge(opts: HostBridgeOptions): HostBridge {
    */
   const sendTurn = () => {
     notify('ui/notifications/tool-input', {
-      arguments: (descriptor.arguments as Record<string, unknown>) ?? {},
+      arguments: descriptor.arguments ?? {},
     });
     notify('ui/notifications/tool-result', {
       structuredContent: descriptor.structured_content ?? null,
@@ -136,7 +144,11 @@ export function createHostBridge(opts: HostBridgeOptions): HostBridge {
    * error to show. Measured 2026-08-17: a host callback threw ("Composer is not
    * available") and the view's send button simply stopped responding forever.
    */
-  const handleRequest = async (id: number | string, method: string, params: Record<string, unknown>) => {
+  const handleRequest = async (
+    id: number | string,
+    method: string,
+    params: Record<string, unknown>,
+  ) => {
     try {
       await dispatchRequest(id, method, params);
     } catch (err) {
@@ -144,7 +156,11 @@ export function createHostBridge(opts: HostBridgeOptions): HostBridge {
     }
   };
 
-  const dispatchRequest = async (id: number | string, method: string, params: Record<string, unknown>) => {
+  const dispatchRequest = async (
+    id: number | string,
+    method: string,
+    params: Record<string, unknown>,
+  ) => {
     switch (method) {
       case 'ui/initialize':
         reply(id, {
@@ -156,7 +172,7 @@ export function createHostBridge(opts: HostBridgeOptions): HostBridge {
         return;
       case 'tools/call': {
         const tool = typeof params.name === 'string' ? params.name : '';
-        const args = (params.arguments as Record<string, unknown>) ?? {};
+        const args = (params.arguments ?? {}) as Record<string, unknown>;
         try {
           // The view reads result.structuredContent (that is what the official
           // ext-apps client and the spec's own sample both do), so the host must
@@ -203,8 +219,8 @@ export function createHostBridge(opts: HostBridgeOptions): HostBridge {
     }
     if (envelope.kind !== 'from_view') return;
     const message = envelope.message;
-    if (!message || message.jsonrpc !== '2.0') return;
-    const params = (message.params as Record<string, unknown>) ?? {};
+    if (message?.jsonrpc !== '2.0') return;
+    const params = message.params ?? {};
     if (typeof message.method !== 'string') return; // a response to us; nothing pending
     if (message.id !== undefined) {
       void handleRequest(message.id, message.method, params);
@@ -217,7 +233,14 @@ export function createHostBridge(opts: HostBridgeOptions): HostBridge {
 
   return {
     onEnvelope,
-    teardown: () => toView({ jsonrpc: '2.0', id: `host-${nextRequestId++}`, method: 'ui/resource-teardown', params: {} }),
+    teardown: () => {
+      toView({
+        jsonrpc: '2.0',
+        id: `host-${String(nextRequestId++)}`,
+        method: 'ui/resource-teardown',
+        params: {},
+      });
+    },
     pushResult: (next: McpViewDescriptor) => {
       descriptor = next;
       sendTurn();

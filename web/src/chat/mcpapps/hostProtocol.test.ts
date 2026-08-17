@@ -21,14 +21,15 @@ function harness(overrides: Partial<Parameters<typeof createHostBridge>[0]> = {}
     descriptor,
     html: '<html>view</html>',
     post: (envelope) => sent.push(envelope),
-    callTool: async () => ({ rows: [] }),
+    callTool: () => Promise.resolve({ rows: [] }),
     hostContext: () => ({ theme: 'dark' }),
     ...overrides,
   });
   const toView = () =>
     sent
-      .filter((e): e is { kind: string; message: Record<string, unknown> } =>
-        typeof e === 'object' && e !== null && (e as { kind?: string }).kind === 'to_view',
+      .filter(
+        (e): e is { kind: string; message: Record<string, unknown> } =>
+          typeof e === 'object' && e !== null && (e as { kind?: string }).kind === 'to_view',
       )
       .map((e) => e.message);
   return { bridge, sent, toView };
@@ -82,9 +83,16 @@ describe('tools/call', () => {
     const { bridge, toView } = harness({ callTool });
     bridge.onEnvelope({
       kind: 'from_view',
-      message: { jsonrpc: '2.0', id: 7, method: 'tools/call', params: { name: 'list_messages', arguments: { page: 1 } } },
+      message: {
+        jsonrpc: '2.0',
+        id: 7,
+        method: 'tools/call',
+        params: { name: 'list_messages', arguments: { page: 1 } },
+      },
     });
-    await vi.waitFor(() => expect(toView()).toHaveLength(1));
+    await vi.waitFor(() => {
+      expect(toView()).toHaveLength(1);
+    });
 
     expect(callTool).toHaveBeenCalledWith('list_messages', { page: 1 });
     expect(toView()[0]).toMatchObject({ id: 7, result: { structuredContent: { rows: [1, 2] } } });
@@ -97,7 +105,9 @@ describe('tools/call', () => {
       kind: 'from_view',
       message: { jsonrpc: '2.0', id: 8, method: 'tools/call', params: { name: 'send_message' } },
     });
-    await vi.waitFor(() => expect(toView()).toHaveLength(1));
+    await vi.waitFor(() => {
+      expect(toView()).toHaveLength(1);
+    });
     expect(toView()[0]).toMatchObject({ id: 8, error: { message: 'refused' } });
   });
 });
@@ -135,7 +145,12 @@ describe('what a view may ask the host to do', () => {
 
     bridge.onEnvelope({
       kind: 'from_view',
-      message: { jsonrpc: '2.0', id: 4, method: 'ui/open-link', params: { url: 'https://ok.test/x' } },
+      message: {
+        jsonrpc: '2.0',
+        id: 4,
+        method: 'ui/open-link',
+        params: { url: 'https://ok.test/x' },
+      },
     });
     await Promise.resolve();
     expect(onOpenLink).toHaveBeenCalledWith('https://ok.test/x');
@@ -148,7 +163,10 @@ describe('what a view may ask the host to do', () => {
       message: { jsonrpc: '2.0', id: 9, method: 'ui/does-not-exist', params: {} },
     });
     await Promise.resolve();
-    expect(toView()[0]).toMatchObject({ id: 9, error: { message: expect.stringContaining('unsupported') } });
+    expect(toView()[0]).toMatchObject({
+      id: 9,
+      error: { message: expect.stringContaining('unsupported') as unknown },
+    });
   });
 
   it('routes a display-mode request and echoes the granted mode', async () => {
@@ -156,7 +174,12 @@ describe('what a view may ask the host to do', () => {
     const { bridge, toView } = harness({ onDisplayMode });
     bridge.onEnvelope({
       kind: 'from_view',
-      message: { jsonrpc: '2.0', id: 5, method: 'ui/request-display-mode', params: { mode: 'fullscreen' } },
+      message: {
+        jsonrpc: '2.0',
+        id: 5,
+        method: 'ui/request-display-mode',
+        params: { mode: 'fullscreen' },
+      },
     });
     await Promise.resolve();
     expect(onDisplayMode).toHaveBeenCalledWith('fullscreen');
@@ -168,11 +191,10 @@ describe('teardown', () => {
   it('is a REQUEST, because the view has to be able to answer it', () => {
     const { bridge, toView } = harness();
     bridge.teardown();
-    const messages = toView();
-    expect(messages).toHaveLength(1);
-    const message = messages[0] as (typeof messages)[number];
-    expect(message.method).toBe('ui/resource-teardown');
-    expect(message.id).toBeDefined();
+    const [message] = toView();
+    expect(message).toBeDefined();
+    expect(message?.method).toBe('ui/resource-teardown');
+    expect(message?.id).toBeDefined();
   });
 });
 

@@ -1,4 +1,5 @@
 import { ToolResultPanel } from '../ToolResultPanel';
+import { McpViewFrame } from '../mcpapps/McpViewFrame';
 import type { DisplayPayload } from './types';
 import { TableDisplay } from './TableDisplay';
 import { ChartDisplay } from './ChartDisplay';
@@ -8,7 +9,6 @@ import { LocalArtifactDisplay } from './LocalArtifactDisplay';
 import { DocumentDisplay } from './DocumentDisplay';
 import { WebResultDisplay } from './WebResultDisplay';
 import { CodeDisplay } from './CodeDisplay';
-import { McpViewFrame } from '../mcpapps/McpViewFrame';
 
 // DisplayRouter (DISP-02): the single switch(payload.type) entry point, now
 // hosted INSIDE the compact ToolActivityCard's expanded body (compact-chat spec

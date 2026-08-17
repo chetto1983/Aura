@@ -58,27 +58,40 @@ export function McpViewFrame({ descriptor }: McpViewFrameProps) {
   const { t } = useTranslation();
   const aui = useAui();
   const frameRef = useRef<HTMLIFrameElement | null>(null);
-  const [doc, setDoc] = useState<McpViewDocument | null>(null);
-  const [status, setStatus] = useState<Status>('loading');
   const [mode, setMode] = useState<'inline' | 'fullscreen'>('inline');
   const [viewError, setViewError] = useState<string | null>(null);
 
+  // The fetch outcome is stored WITH the pair it belongs to, and the pair is
+  // compared during render. Resetting it from inside the effect instead would
+  // mean a setState in an effect body: one cascading render per card, and a
+  // window where a new descriptor is shown the previous one's document.
+  const key = `${descriptor.server}|${descriptor.resource_uri}`;
+  const [fetched, setFetched] = useState<{
+    key: string;
+    doc: McpViewDocument | null;
+    failed: boolean;
+  }>({
+    key,
+    doc: null,
+    failed: false,
+  });
+  const current = fetched.key === key ? fetched : { key, doc: null, failed: false };
+  const doc = current.doc;
+  const status: Status = current.failed ? 'unavailable' : doc ? 'ready' : 'loading';
+
   useEffect(() => {
     let live = true;
-    setStatus('loading');
     fetchViewDocument(descriptor.server, descriptor.resource_uri)
-      .then((fetched) => {
-        if (!live) return;
-        setDoc(fetched);
-        setStatus('ready');
+      .then((document_) => {
+        if (live) setFetched({ key, doc: document_, failed: false });
       })
       .catch(() => {
-        if (live) setStatus('unavailable');
+        if (live) setFetched({ key, doc: null, failed: true });
       });
     return () => {
       live = false;
     };
-  }, [descriptor.server, descriptor.resource_uri]);
+  }, [descriptor.server, descriptor.resource_uri, key]);
 
   const hostContext = useCallback((): HostContext => {
     const root = document.documentElement;
@@ -115,7 +128,7 @@ export function McpViewFrame({ descriptor }: McpViewFrameProps) {
 
   const sandboxSrc = useMemo(() => {
     if (!doc) return '';
-    return `${doc.sandbox_origin}${'/mcp-sandbox'}?host=${encodeURIComponent(window.location.origin)}`;
+    return `${doc.sandbox_origin}/mcp-sandbox?host=${encodeURIComponent(window.location.origin)}`;
   }, [doc]);
 
   useEffect(() => {
@@ -136,9 +149,13 @@ export function McpViewFrame({ descriptor }: McpViewFrameProps) {
       // where the ambient `aui.composer` is that message's EDIT composer — which
       // does not exist unless the human is editing, and throws "Composer is not
       // available" when it is not. Found by driving a real view (2026-08-17).
-      onSendToChat: (text) => threadComposer(aui).setText(text),
+      onSendToChat: (text) => {
+        threadComposer(aui).setText(text);
+      },
       onOpenLink: (url) => window.open(url, '_blank', 'noopener,noreferrer'),
-      onDisplayMode: (requested) => setMode(requested === 'fullscreen' ? 'fullscreen' : 'inline'),
+      onDisplayMode: (requested) => {
+        setMode(requested === 'fullscreen' ? 'fullscreen' : 'inline');
+      },
       onLog: (level, data) => {
         if (level === 'error') setViewError(String(data));
       },
@@ -151,7 +168,8 @@ export function McpViewFrame({ descriptor }: McpViewFrameProps) {
       if (event.origin !== doc.sandbox_origin) return;
       if (event.source !== frame.contentWindow) return;
       const envelope = event.data as SandboxEnvelope | null;
-      if (envelope && typeof envelope === 'object' && 'kind' in envelope) bridge.onEnvelope(envelope);
+      if (envelope && typeof envelope === 'object' && 'kind' in envelope)
+        bridge.onEnvelope(envelope);
     };
 
     window.addEventListener('message', onMessage);
@@ -179,7 +197,9 @@ export function McpViewFrame({ descriptor }: McpViewFrameProps) {
       actions={
         <button
           type="button"
-          onClick={() => setMode(mode === 'inline' ? 'fullscreen' : 'inline')}
+          onClick={() => {
+            setMode(mode === 'inline' ? 'fullscreen' : 'inline');
+          }}
           className="rounded-[var(--radius-sm)] border border-border px-2 py-1 text-[0.75rem] text-text-faint transition-colors hover:border-accent hover:text-accent-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
           {mode === 'inline' ? t('display.expand') : t('display.mcpView.collapse')}

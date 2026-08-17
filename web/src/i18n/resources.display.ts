@@ -239,7 +239,8 @@ export const displayIt = {
       collapse: 'Riduci',
       unavailable: 'Questa vista non si può mostrare qui. Il risultato del tool è qui sotto.',
       callRefused: "L'host ha rifiutato questa richiesta.",
-      payloadDropped: 'Il server ha mandato più dati di quanti una vista ne possa portare, quindi parte vuota.',
+      payloadDropped:
+        'Il server ha mandato più dati di quanti una vista ne possa portare, quindi parte vuota.',
     },
     expand: 'Espandi',
     expandAria: 'Apri vista completa',

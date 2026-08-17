@@ -26,16 +26,11 @@ export function fetchViewDocument(server: string, resourceURI: string): Promise<
     `/api/mcp/view?server=${encodeURIComponent(server)}&uri=${encodeURIComponent(resourceURI)}`,
     { credentials: 'same-origin', headers: { Accept: 'application/json' } },
   ).then(async (res) => {
-    if (!res.ok) throw new Error(`mcp view ${res.status}`);
+    if (!res.ok) throw new Error(`mcp view ${String(res.status)}`);
     return (await res.json()) as McpViewDocument;
   });
 
   pending.catch(() => documents.delete(key));
   documents.set(key, pending);
   return pending;
-}
-
-/** Drop every cached document. Exported for tests; nothing in the app calls it. */
-export function resetViewDocuments() {
-  documents.clear();
 }
