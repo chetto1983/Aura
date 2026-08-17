@@ -1,15 +1,7 @@
 import { useAui, useAuiState, ComposerPrimitive } from '@assistant-ui/react';
+import { useComposerDictate } from '@assistant-ui/core/react';
 import { ArrowUp, ChevronDown, Mic, Paperclip, Square } from 'lucide-react';
-import {
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type ClipboardEvent,
-  type DragEvent,
-  type RefObject,
-} from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AttachmentChip } from './attachments/AttachmentChip';
 import { SkillPicker } from './composer/SkillPicker';
@@ -103,6 +95,14 @@ export function Composer({
   const suppressedDictationRef = useRef<{ readonly draft: string; sawActive: boolean } | undefined>(
     undefined,
   );
+  // The runtime's own availability answer. useComposerDictate reports `disabled` when no
+  // DictationAdapter is configured, and it is the same value ComposerPrimitive.Dictate puts on
+  // its button — so reading it here is not a second opinion, it is the primitive's own, asked
+  // one step earlier. That is what keeps D-10 intact now that the mic IS that primitive: a
+  // disabled button is precisely the dead end D-10 forbids, so the recorder fallback is chosen
+  // on this rather than on caps.stt alone.
+  const { disabled: dictationUnavailable } = useComposerDictate();
+  const canDictate = caps.stt && !dictationUnavailable;
   const isDictating = dictation != null;
   const isRecording = recordingEpoch === captureEpoch;
   const activeDictationPhase = dictationCaptureEpoch === captureEpoch ? dictationPhase : 'idle';
@@ -202,30 +202,11 @@ export function Composer({
     }
   }, [approvalLocked, isDictating, aui, markTurnDictated]);
 
-  const addFiles = (files: FileList | File[]) => {
-    if (approvalLocked) return;
-    // addAttachment drives the adapter; paste and drop therefore take the same path as the
-    // attach button rather than a second one that has to be kept in step with it.
-    for (const file of Array.from(files)) void aui.composer.addAttachment(file);
-  };
-
-  const handlePaste = (event: ClipboardEvent) => {
-    if (approvalLocked) return;
-    if (event.clipboardData.files.length === 0) return;
-    addFiles(event.clipboardData.files);
-  };
-
-  const handleDrop = (event: DragEvent) => {
-    if (approvalLocked) return;
-    if (event.dataTransfer.files.length === 0) return;
-    event.preventDefault();
-    addFiles(event.dataTransfer.files);
-  };
-
-  const handleDragOver = (event: DragEvent) => {
-    if (approvalLocked) return;
-    if (event.dataTransfer.types.includes('Files')) event.preventDefault();
-  };
+  // Paste and drop are the primitives': ComposerPrimitive.Input pastes files itself
+  // (addAttachmentOnPaste, default true) and ComposerPrimitive.AttachmentDropzone owns the
+  // whole drag sequence. Both used to be re-implemented here on top of them — which for paste
+  // was not merely redundant: the primitive added the pasted file and the handler beside it
+  // added the same file again, so one paste produced two attachments.
 
   const stopRecording = () => {
     recorderRef.current?.stop();
@@ -284,41 +265,29 @@ export function Composer({
     }
   };
 
-  // beginDictation opens a runtime dictation session; on any failure (e.g. no adapter
-  // configured) it degrades to the attachment record path so the Mic never dead-ends (D-10).
-  const beginDictation = () => {
+  // armDictation records what the session is about to be measured against. ComposerPrimitive
+  // .Dictate opens the session itself; this only notes the epoch the phase belongs to and the
+  // text length, because "did a transcript arrive" is length-after > length-before and there
+  // is no other signal for an empty transcript or a failed /api/stt.
+  const armDictation = () => {
+    if (approvalLocked) return;
     suppressedDictationRef.current = undefined;
     setDictationCaptureEpoch(captureEpoch);
-    try {
-      dictationStartLen.current = aui.composer.getState().text.length;
-      aui.composer.startDictation();
-      setDictationPhase('listening');
-    } catch {
-      setDictationPhase('error');
-      void startRecording();
-    }
+    dictationStartLen.current = aui.composer.getState().text.length;
+    setDictationPhase('listening');
   };
 
-  const handleMic = () => {
+  const handleRecordToggle = () => {
     if (approvalLocked) return;
-    if (!caps.stt) {
-      if (isRecording) stopRecording();
-      else void startRecording();
-      return;
-    }
-    if (activeDictationPhase === 'listening') {
-      setDictationPhase('transcribing');
-      aui.composer.stopDictation();
-      return;
-    }
-    beginDictation();
+    if (isRecording) stopRecording();
+    else void startRecording();
   };
 
   const visibleDictationPhase = approvalLocked ? 'idle' : activeDictationPhase;
   const dictationBusy =
     visibleDictationPhase === 'listening' || visibleDictationPhase === 'transcribing';
-  const micActive = caps.stt ? dictationBusy : !approvalLocked && isRecording;
-  const micLabel = caps.stt
+  const micActive = canDictate ? dictationBusy : !approvalLocked && isRecording;
+  const micLabel = canDictate
     ? t(dictationBusy ? 'chat.dictation.stop' : 'chat.dictation.start')
     : t(micActive ? 'chat.attachments.micStop' : 'chat.attachments.mic');
   const dictationAnnouncement =
@@ -335,76 +304,61 @@ export function Composer({
     // registers itself by char, so a second trigger (e.g. '@') would be another child here
     // rather than another state machine.
     <ComposerPrimitive.Unstable_TriggerPopoverRoot>
-      <ComposerPrimitive.Root
-        data-testid="chat-composer"
-        aria-disabled={approvalLocked}
-        aria-describedby={approvalLocked ? approvalHintId : undefined}
-        onPaste={handlePaste}
-        onDrop={handleDrop}
-        onDragOver={handleDragOver}
-        className="relative mx-3 mb-3 flex flex-col gap-2 rounded-[var(--radius-xl)] border border-border bg-surface p-2 shadow-[var(--shadow-popover)] sm:mx-4"
-      >
-        {approvalLocked ? (
-          <p id={approvalHintId} className="px-1 text-xs text-warning">
-            {t('approval.lock')}
-          </p>
-        ) : null}
-        <fieldset disabled={approvalLocked} className="contents">
-          <SkillPicker skills={skillList} disabled={approvalLocked} />
-          <div className="flex flex-wrap gap-2 empty:hidden">
-            <ComposerPrimitive.Attachments>
-              {({ attachment }) => (
-                <AttachmentChip attachment={attachment} disabled={approvalLocked} />
-              )}
-            </ComposerPrimitive.Attachments>
-          </div>
-          {/* Live region: announces the dictation state to screen readers; kept mounted so the
+      {/* Root is the FORM — it is what turns Enter and the Send button into a submit — so the
+          dropzone is NESTED inside it, exactly as assistant-ui's own composer nests it. Merging
+          the two by handing Root a `render` of the dropzone replaces the form element with a
+          div, and the composer then looks perfect and sends nothing. */}
+      <ComposerPrimitive.Root className="relative mx-3 mb-3 flex flex-col sm:mx-4">
+        <ComposerPrimitive.AttachmentDropzone
+          data-testid="chat-composer"
+          aria-disabled={approvalLocked}
+          aria-describedby={approvalLocked ? approvalHintId : undefined}
+          // The dropzone owns dragenter/over/leave/drop: it refuses a drop the thread has no
+          // attachment capability for, tracks leaving through a child correctly, and publishes
+          // data-dragging while a file is over the composer — which is what the dashed border
+          // reads. The two handlers it replaced called preventDefault and nothing else, so a
+          // drag gave the operator no feedback at all.
+          disabled={approvalLocked}
+          className="flex flex-col gap-2 rounded-[var(--radius-xl)] border border-border bg-surface p-2 shadow-[var(--shadow-popover)] transition-colors data-[dragging=true]:border-dashed data-[dragging=true]:border-accent"
+        >
+          {approvalLocked ? (
+            <p id={approvalHintId} className="px-1 text-xs text-warning">
+              {t('approval.lock')}
+            </p>
+          ) : null}
+          <fieldset disabled={approvalLocked} className="contents">
+            <SkillPicker skills={skillList} disabled={approvalLocked} />
+            <div className="flex flex-wrap gap-2 empty:hidden">
+              <ComposerPrimitive.Attachments>
+                {({ attachment }) => (
+                  <AttachmentChip attachment={attachment} disabled={approvalLocked} />
+                )}
+              </ComposerPrimitive.Attachments>
+            </div>
+            {/* Live region: announces the dictation state to screen readers; kept mounted so the
           transition is picked up (empty + sr-only while idle). */}
-          <p
-            role="status"
-            aria-live="polite"
-            className={
-              dictationAnnouncement === ''
-                ? 'sr-only'
-                : 'px-1 text-[0.75rem] text-text-muted [font-variant-numeric:tabular-nums]'
-            }
-          >
-            {dictationAnnouncement}
-          </p>
-          <div className="flex items-end gap-2">
-            {/* The hidden input is the primitive's now: AddAttachment opens the dialog,
-                    filters by the adapter's `accept`, and feeds add() directly. */}
-            <ComposerPrimitive.AddAttachment
-              multiple
-              render={
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  aria-label={t('chat.attachments.add')}
-                  disabled={approvalLocked}
-                  className="rounded-full text-text-muted hover:text-text"
-                >
-                  <Paperclip data-icon aria-hidden="true" className="size-4" />
-                </Button>
+            <p
+              role="status"
+              aria-live="polite"
+              className={
+                dictationAnnouncement === ''
+                  ? 'sr-only'
+                  : 'px-1 text-[0.75rem] text-text-muted [font-variant-numeric:tabular-nums]'
               }
-            />
-            <Button
-              type="button"
-              size="icon"
-              variant="ghost"
-              aria-label={micLabel}
-              aria-pressed={micActive}
-              disabled={approvalLocked}
-              onClick={handleMic}
-              className="rounded-full text-text-muted hover:text-text"
             >
-              {micActive ? (
-                <Square data-icon aria-hidden="true" className="size-3.5 fill-current" />
-              ) : (
-                <Mic data-icon aria-hidden="true" className="size-4" />
-              )}
-            </Button>
+              {dictationAnnouncement}
+            </p>
+            {/* Input ABOVE its own toolbar, at every width.
+              The controls used to share one row with the textarea, and on a phone that row has
+              no width to share: measured on the operator's screen, the reasoning pill and the
+              four buttons left the input so narrow that a three-word placeholder wrapped onto
+              three lines. Stacking gives the textarea the full width and puts the toolbar where
+              assistant-ui's own composer puts it.
+              It stacks on the DESKTOP too, and that is the point rather than a side effect: a
+              breakpoint-only stack needs CSS `order` to keep one of the two layouts looking
+              right, and `order` moves the drawing without moving the focus — so the layout that
+              did not get its own DOM order would read in one sequence and tab in another. One
+              shape means DOM order IS reading order at every width. */}
             <ComposerPrimitive.Input
               ref={composerInputRef}
               rows={1}
@@ -415,58 +369,146 @@ export function Composer({
               // the property shell.spec.ts asserts, and the reason screen readers no longer
               // announce a listbox popup on every ordinary message.
               disabled={approvalLocked}
-              className="max-h-40 min-h-[44px] flex-1 resize-none bg-transparent px-3 py-2 text-[1.0625rem] leading-relaxed text-text outline-none placeholder:text-text-faint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              className="max-h-40 min-h-[44px] w-full resize-none bg-transparent px-3 py-2 text-[1.0625rem] leading-relaxed text-text outline-none placeholder:text-text-faint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             />
-            {/* Reasoning-effort selector (WEBMODEL-01/03, D-13): a compact native select — keyboard-
+            <div className="flex items-center gap-1">
+              {/* The hidden input is the primitive's now: AddAttachment opens the dialog,
+                    filters by the adapter's `accept`, and feeds add() directly. */}
+              <ComposerPrimitive.AddAttachment
+                multiple
+                render={
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    aria-label={t('chat.attachments.add')}
+                    disabled={approvalLocked}
+                    className="rounded-full text-text-muted hover:text-text"
+                  >
+                    <Paperclip data-icon aria-hidden="true" className="size-4" />
+                  </Button>
+                }
+              />
+              {/* Dictation is ComposerPrimitive.Dictate / StopDictation — the same two buttons
+                assistant-ui's own composer renders. They call the runtime's dictation session
+                directly and disable themselves when no DictationAdapter is configured, so the
+                onClick here carries only what the primitives do NOT know about: the phase our
+                aria-live region announces, and the text length that tells a transcript-inserted
+                session from an empty one.
+                The MediaRecorder branch stays for !canDictate and is NOT a duplicate of them:
+                it records an audio ATTACHMENT rather than dictating text, which is the whole
+                point of the fallback (D-10) — the mic must not dead-end where STT is
+                unconfigured, and a disabled button is a dead end. */}
+              {canDictate ? (
+                dictationBusy ? (
+                  <ComposerPrimitive.StopDictation
+                    render={
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        aria-label={micLabel}
+                        aria-pressed
+                        disabled={approvalLocked}
+                        onClick={() => {
+                          setDictationPhase('transcribing');
+                        }}
+                        className="rounded-full text-text-muted hover:text-text"
+                      >
+                        <Square data-icon aria-hidden="true" className="size-3.5 fill-current" />
+                      </Button>
+                    }
+                  />
+                ) : (
+                  <ComposerPrimitive.Dictate
+                    render={
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        aria-label={micLabel}
+                        aria-pressed={false}
+                        disabled={approvalLocked}
+                        onClick={armDictation}
+                        className="rounded-full text-text-muted hover:text-text"
+                      >
+                        <Mic data-icon aria-hidden="true" className="size-4" />
+                      </Button>
+                    }
+                  />
+                )
+              ) : (
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  aria-label={micLabel}
+                  aria-pressed={micActive}
+                  disabled={approvalLocked}
+                  onClick={handleRecordToggle}
+                  className="rounded-full text-text-muted hover:text-text"
+                >
+                  {micActive ? (
+                    <Square data-icon aria-hidden="true" className="size-3.5 fill-current" />
+                  ) : (
+                    <Mic data-icon aria-hidden="true" className="size-4" />
+                  )}
+                </Button>
+              )}
+              {/* Reasoning-effort selector (WEBMODEL-01/03, D-13): a compact native select — keyboard-
             and screen-reader-correct out of the box, and separate from the textbox so it never
             reclassifies the input or intercepts Enter-send / paste / drop. It renders ONLY the
             model's advertised levels (effortLevels, auto-first); absent ⇒ not rendered. */}
-            {effortLevels !== undefined && effortLevels.length > 0 ? (
-              <div className="relative flex items-center self-center">
-                <select
-                  aria-label={t('chat.composer.effort.ariaLabel')}
-                  value={effort ?? 'auto'}
-                  disabled={approvalLocked}
-                  onChange={(event) => {
-                    if (approvalLocked) return;
-                    onEffortChange?.(event.currentTarget.value);
-                  }}
-                  className="h-8 cursor-pointer appearance-none rounded-full border border-border bg-surface-2 py-1 pr-7 pl-3 text-[0.75rem] font-medium tracking-tight text-text-muted transition-colors hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent [font-variant-caps:all-small-caps]"
-                >
-                  {effortLevels.map((level) => (
-                    <option key={level} value={level}>
-                      {t(`chat.composer.effort.${level}`)}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown
-                  data-icon
-                  aria-hidden="true"
-                  className="pointer-events-none absolute right-2 size-3.5 text-text-faint"
-                />
-              </div>
-            ) : null}
-            {isRunning ? (
-              <Button asChild size="icon" className="rounded-full">
-                <ComposerPrimitive.Cancel
-                  aria-label={t('chat.composer.stopAria')}
-                  disabled={approvalLocked}
-                >
-                  <Square data-icon aria-hidden="true" className="size-3.5 fill-current" />
-                </ComposerPrimitive.Cancel>
-              </Button>
-            ) : (
-              <Button asChild size="icon" className="rounded-full">
-                <ComposerPrimitive.Send
-                  aria-label={t('chat.composer.sendAria')}
-                  disabled={sendDisabled}
-                >
-                  <ArrowUp data-icon aria-hidden="true" className="size-4" />
-                </ComposerPrimitive.Send>
-              </Button>
-            )}
-          </div>
-        </fieldset>
+              {effortLevels !== undefined && effortLevels.length > 0 ? (
+                <div className="relative ml-1 flex items-center">
+                  <select
+                    aria-label={t('chat.composer.effort.ariaLabel')}
+                    value={effort ?? 'auto'}
+                    disabled={approvalLocked}
+                    onChange={(event) => {
+                      if (approvalLocked) return;
+                      onEffortChange?.(event.currentTarget.value);
+                    }}
+                    className="h-8 cursor-pointer appearance-none rounded-full border border-border bg-surface-2 py-1 pr-7 pl-3 text-[0.75rem] font-medium tracking-tight text-text-muted transition-colors hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent [font-variant-caps:all-small-caps]"
+                  >
+                    {effortLevels.map((level) => (
+                      <option key={level} value={level}>
+                        {t(`chat.composer.effort.${level}`)}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown
+                    data-icon
+                    aria-hidden="true"
+                    className="pointer-events-none absolute right-2 size-3.5 text-text-faint"
+                  />
+                </div>
+              ) : null}
+              {/* ml-auto, not a spacer: the send is the only control anchored to the far end, so
+                the gap between the toolbar and it is the send's own margin rather than an empty
+                element a screen reader would have to skip. */}
+              {isRunning ? (
+                <Button asChild size="icon" className="ml-auto rounded-full">
+                  <ComposerPrimitive.Cancel
+                    aria-label={t('chat.composer.stopAria')}
+                    disabled={approvalLocked}
+                  >
+                    <Square data-icon aria-hidden="true" className="size-3.5 fill-current" />
+                  </ComposerPrimitive.Cancel>
+                </Button>
+              ) : (
+                <Button asChild size="icon" className="ml-auto rounded-full">
+                  <ComposerPrimitive.Send
+                    aria-label={t('chat.composer.sendAria')}
+                    disabled={sendDisabled}
+                  >
+                    <ArrowUp data-icon aria-hidden="true" className="size-4" />
+                  </ComposerPrimitive.Send>
+                </Button>
+              )}
+            </div>
+          </fieldset>
+        </ComposerPrimitive.AttachmentDropzone>
       </ComposerPrimitive.Root>
     </ComposerPrimitive.Unstable_TriggerPopoverRoot>
   );

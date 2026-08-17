@@ -1,9 +1,3 @@
-import type {
-  ReactNode,
-  ButtonHTMLAttributes,
-  HTMLAttributes,
-  TextareaHTMLAttributes,
-} from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import '../../i18n/i18n';
@@ -32,10 +26,16 @@ const h = vi.hoisted(() => {
     auiState: { thread: { isRunning: false }, composer },
     addAttachment,
     caps,
+    dictateAvailable: true,
   };
 });
 
-vi.mock('@assistant-ui/react', () => ({
+vi.mock('@assistant-ui/core/react', async () =>
+  (await import('./composerPrimitiveMock')).coreReactMock(h),
+);
+
+vi.mock('@assistant-ui/react', async () => ({
+  ...(await import('./composerPrimitiveMock')).spread(h),
   useAui: () => ({
     // assistant-ui 0.15 exposes the scopes as PROPERTIES (aui.composer), not calls.
     composer: {
@@ -47,26 +47,6 @@ vi.mock('@assistant-ui/react', () => ({
     },
   }),
   useAuiState: <T,>(selector: (state: typeof h.auiState) => T): T => selector(h.auiState),
-  ComposerPrimitive: {
-    Root: (props: HTMLAttributes<HTMLDivElement>) => <div {...props} />,
-    Input: (props: TextareaHTMLAttributes<HTMLTextAreaElement>) => <textarea {...props} />,
-    Cancel: (props: ButtonHTMLAttributes<HTMLButtonElement>) => <button type="button" {...props} />,
-    Send: (props: ButtonHTMLAttributes<HTMLButtonElement>) => <button type="submit" {...props} />,
-    AddAttachment: (props: ButtonHTMLAttributes<HTMLButtonElement> & { render?: ReactNode }) =>
-      props.render ?? <button type="button" {...props} />,
-    Attachments: ({ children }: { children?: (v: { attachment: unknown }) => ReactNode }) =>
-      children ? null : null,
-    // The trigger popover is stubbed to its MOUNT, not its behaviour: it records the char it
-    // was registered for and swallows the rest. Driving the real popover here would be
-    // testing the library through a mock of the library.
-    Unstable_TriggerPopoverRoot: ({ children }: { children: ReactNode }) => <>{children}</>,
-    Unstable_TriggerPopover: Object.assign(
-      ({ char }: { char: string }) => <div data-testid="trigger-popover" data-char={char} />,
-      { Directive: () => null, Action: () => null },
-    ),
-    Unstable_TriggerPopoverItems: () => null,
-    Unstable_TriggerPopoverItem: () => null,
-  },
 }));
 
 vi.mock('../voice/voiceModeContext', () => ({
@@ -85,6 +65,7 @@ let mediaStub: GetUserMediaStub | undefined;
 beforeEach(() => {
   vi.resetAllMocks();
   h.caps = { tts: false, stt: false };
+  h.dictateAvailable = true;
   h.auiState.thread = { isRunning: false };
   h.auiState.composer = { dictation: undefined, text: '', attachments: [] };
   // jsdom has no scrollIntoView; the SkillPicker's active-option JS-scroll (Pitfall 6) needs it.
@@ -105,29 +86,21 @@ describe('Composer attachments', () => {
     expect(document.activeElement).toBe(screen.getByLabelText('Ask Aura'));
   });
 
-  // The hidden <input type=file> belongs to ComposerPrimitive.AddAttachment now, so what is
-  // worth asserting is that Aura's OWN entry points — paste and drop — reach the same
-  // adapter the button does, instead of a second path that can drift from it.
-  it('paste routes clipboard files to the attachment adapter', () => {
-    const { container } = render(<Composer />);
-    const root = container.firstElementChild;
-    if (root === null) throw new Error('expected composer root');
-    const file = new File(['x'], 'manual.pdf', { type: 'application/pdf' });
+  // Paste and drop are no longer Aura's. ComposerPrimitive.Input pastes files itself
+  // (addAttachmentOnPaste, default true) and ComposerPrimitive.AttachmentDropzone owns the
+  // drag sequence, so the two tests that used to fire a paste and a drop at this component
+  // were exercising handlers that had to exist ALONGSIDE the library's — and for paste that
+  // pairing was a defect, not a duplicate: both fired, and one pasted file became two
+  // attachments. What is left to assert is the wiring, since the behaviour is the library's.
+  it('wraps the composer in the dropzone and hands it the lock', () => {
+    const { rerender } = render(<Composer />);
 
-    fireEvent.paste(root, { clipboardData: { files: [file] } });
+    const shell = screen.getByTestId('chat-composer');
+    expect(shell.getAttribute('data-disabled')).toBeNull();
 
-    expect(h.addAttachment).toHaveBeenCalledWith(file);
-  });
+    rerender(<Composer approvalLocked />);
 
-  it('drop routes dragged files to the attachment adapter', () => {
-    const { container } = render(<Composer />);
-    const root = container.firstElementChild;
-    if (root === null) throw new Error('expected composer root');
-    const file = new File(['x'], 'dragged.pdf', { type: 'application/pdf' });
-
-    fireEvent.drop(root, { dataTransfer: { files: [file] } });
-
-    expect(h.addAttachment).toHaveBeenCalledWith(file);
+    expect(screen.getByTestId('chat-composer').getAttribute('data-disabled')).toBe('true');
   });
 
   it('disables send while an upload is still running', () => {
@@ -301,20 +274,23 @@ describe('Composer dictation', () => {
     expect(status.textContent).toContain('No transcription');
   });
 
+  // D-10, driven by the signal production reads. The mic used to try startDictation and fall
+  // back in the catch; the primitive does not throw when there is no adapter, it renders a
+  // DISABLED button — which is the dead end D-10 forbids — so availability is asked up front
+  // via useComposerDictate and the recorder branch is rendered instead.
   it('caps.stt=true but dictation unavailable → degrades to the attachment record path (D-10)', async () => {
     h.caps = { tts: false, stt: true };
-    h.startDictation.mockImplementation(() => {
-      throw new Error('Dictation adapter not configured');
-    });
+    h.dictateAvailable = false;
     stubMediaRecorder();
     mediaStub = stubGetUserMedia();
     render(<Composer />);
 
-    fireEvent.click(screen.getByLabelText('Dictate'));
+    fireEvent.click(screen.getByLabelText('Record audio'));
 
     await waitFor(() => {
       expect(mediaStub?.getUserMedia).toHaveBeenCalledTimes(1);
     });
+    expect(h.startDictation).not.toHaveBeenCalled();
   });
 });
 

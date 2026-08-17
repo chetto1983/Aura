@@ -81,11 +81,13 @@ describe('ExternalStoreChat attachments', () => {
       return Promise.resolve(sseResponse());
     });
     vi.stubGlobal('fetch', fetchMock);
-    const { container } = renderChat(<ExternalStoreChat threadId="conv-1" />);
+    renderChat(<ExternalStoreChat threadId="conv-1" />);
 
-    const root = container.querySelector('[data-testid="chat-composer"]');
-    if (root === null) throw new Error('expected the composer root');
-    fireEvent.paste(root, {
+    // The paste is fired at the TEXTAREA, which is where a browser delivers it and where
+    // ComposerPrimitive.Input listens for it (addAttachmentOnPaste). It used to be fired at
+    // the composer root because Aura had its own handler there — the one that made a single
+    // pasted file arrive twice, once from each listener.
+    fireEvent.paste(screen.getByPlaceholderText('Ask Aura'), {
       clipboardData: { files: [new File(['x'], 'manual.pdf', { type: 'application/pdf' })] },
     });
 

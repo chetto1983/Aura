@@ -1,9 +1,3 @@
-import type {
-  ReactNode,
-  ButtonHTMLAttributes,
-  HTMLAttributes,
-  TextareaHTMLAttributes,
-} from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import '../../i18n/i18n';
@@ -12,13 +6,22 @@ import { Composer } from '../Composer';
 const h = vi.hoisted(() => ({
   setText: vi.fn(),
   addAttachment: vi.fn(),
+  // This test never touches the mic, but the shared ComposerPrimitive double renders it, so
+  // the handle carries the two spies the double reads rather than the double guessing.
+  startDictation: vi.fn(),
+  stopDictation: vi.fn(),
   auiState: {
     thread: { isRunning: false },
     composer: { text: '', dictation: undefined, attachments: [] },
   },
 }));
 
-vi.mock('@assistant-ui/react', () => ({
+vi.mock('@assistant-ui/core/react', async () =>
+  (await import('./composerPrimitiveMock')).coreReactMock(h),
+);
+
+vi.mock('@assistant-ui/react', async () => ({
+  ...(await import('./composerPrimitiveMock')).spread(h),
   useAui: () => ({
     // assistant-ui 0.15 exposes the scopes as PROPERTIES (aui.composer), not calls.
     composer: {
@@ -29,24 +32,6 @@ vi.mock('@assistant-ui/react', () => ({
     },
   }),
   useAuiState: <T,>(selector: (state: typeof h.auiState) => T): T => selector(h.auiState),
-  ComposerPrimitive: {
-    Root: (props: HTMLAttributes<HTMLDivElement>) => <div {...props} />,
-    Input: (props: TextareaHTMLAttributes<HTMLTextAreaElement>) => <textarea {...props} />,
-    Cancel: (props: ButtonHTMLAttributes<HTMLButtonElement>) => <button type="button" {...props} />,
-    Send: (props: ButtonHTMLAttributes<HTMLButtonElement>) => <button type="submit" {...props} />,
-    AddAttachment: (props: ButtonHTMLAttributes<HTMLButtonElement> & { render?: ReactNode }) =>
-      props.render ?? <button type="button" {...props} />,
-    Attachments: ({ children }: { children?: (v: { attachment: unknown }) => ReactNode }) =>
-      children ? null : null,
-    // Trigger popover stubbed to its mount; behaviour belongs to the library.
-    Unstable_TriggerPopoverRoot: ({ children }: { children: ReactNode }) => <>{children}</>,
-    Unstable_TriggerPopover: Object.assign(
-      ({ char }: { char: string }) => <div data-testid="trigger-popover" data-char={char} />,
-      { Directive: () => null, Action: () => null },
-    ),
-    Unstable_TriggerPopoverItems: () => null,
-    Unstable_TriggerPopoverItem: () => null,
-  },
 }));
 
 vi.mock('../voice/voiceModeContext', () => ({
