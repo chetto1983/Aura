@@ -3,9 +3,12 @@
 > **Audit trail only.** Do not use as input to planning, research, or execution agents.
 > Decisions are captured in CONTEXT.md — this log preserves the alternatives considered.
 
-**Date:** 2026-08-16
+**Date:** 2026-08-16 (first pass) · 2026-08-17 (second pass, after Phase 45.1 closed)
 **Phase:** 46-mcp-trust-and-facade
-**Areas discussed:** Trust posture, Native MCP client, comms facade shape, Per-action risk, accountId
+**Areas discussed (first pass):** Trust posture, Native MCP client, comms facade shape,
+Per-action risk, accountId
+**Areas discussed (second pass):** Fork delivery & pinning, Always-loaded without declaring,
+Amendment batch scope, Landing order, Description budget, Live evidence
 
 **Standing directives given during the session:** research hermes first, do not invent; use the
 native MCP client, no bespoke; no ceremony on installing an MCP; all our MCP servers are forks we
@@ -213,13 +216,207 @@ came from another account's listing.
 
 ---
 
+# Second pass — 2026-08-17
+
+Re-opened after Phase 45.1 closed. Every file:line from the first pass was re-read at `02a291530`
+before any question was asked. Findings that framed the session: D-01..D-04 and D-17..D-22 all held
+verbatim; D-10..D-16 were delivered; **D-06 and D-07 turned out to have been done already** on
+2026-08-16; `prd.md` had received **no** amendment for either phase; `prd.md:6150` still catalogued
+`AURA_MCP_PING_INTERVAL_SEC` against a file 45.1 deleted; and `bridgePolicy.defaultDeferred()`
+returns `true` unconditionally, so MCP-04's "always loaded" had no mechanism at all.
+
+---
+
+## Fork delivery — image pinning
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Immutable `:<sha>` tag | compose defaults move onto the commit-sha tag the forks already publish — what compose's own comment recommends. | ✓ |
+| Digest `@sha256` | Matches the Prometheus/Tempo/Grafana rows and amendment #114's Docling pin. | |
+| Keep floating `:sidecar` | Curation arrives on `docker compose pull` with no Aura commit. | |
+
+**User's choice:** Immutable `:<sha>` tag.
+**Notes:** This choice turned out to be structurally load-bearing — it is what later made the
+two-repo cutover collapse into one atomic commit (Landing order, below).
+
+---
+
+## Fork delivery — what lands in Aura's tree
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Design doc + pin | New `docs/superpowers/specs/` doc for the two curated surfaces, mirroring the 2026-06-16 fork precedent. | ✓ |
+| Pin + phase SUMMARY only | Contract lives in `.planning/` artifacts. | |
+| Pin + checked-in `tools/list` capture | Drift caught by a fixture test. | |
+
+**User's choice:** Design doc + pin.
+**Notes:** The `tools/list` capture idea was not discarded — it reappeared as the mount-time
+reconciliation in the drift question, which catches the same problem without a fixture to regenerate.
+
+---
+
+## Fork delivery — how work in another repo is tracked
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Fork plans inside phase 46 | Design doc first, one plan per fork committing in the fork repo, pin as the join point. | ✓ |
+| Prerequisite, done before the phase | Phase 46 becomes Aura-side only. | |
+| Separate phase per fork (46.1/46.2) | The 45.1 precedent. | |
+
+**User's choice:** Fork plans inside phase 46.
+
+---
+
+## Fork delivery — the 28 raw handlers
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Delete them | The curated tool's action branches are the only path. | ✓ |
+| Keep handlers, stop advertising | Easier upstream merges; the raw names stay callable on the sidecar port. | |
+| Keep + advertise behind an env flag | Debuggable; a second live shape to test. | |
+
+**User's choice:** Delete them.
+**Notes:** Recorded with its cost — this is what makes the change one-way, and it is why the COMPAT
+hazard (persisted rows referencing `calendar__*` / `whatsapp__*`) is written into CONTEXT.md rather
+than left for Phase 47/48 to discover.
+
+---
+
+## Always-loaded without a declaration — the rule
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Tool-count budget | A server exposing ≤ N model-facing tools earns a loaded slot; no declaration anywhere. | ✓ |
+| Server declares in `_meta` | Curation stays in the server; any mounted server could self-promote. | |
+| Both — `_meta` hint capped by count | Most precise; two mechanisms. | |
+
+**User's choice:** Tool-count budget.
+**Notes:** Inventory ran first: MCP's `Tool` carries `Annotations`, `Title`, `Icons`, `OutputSchema`
+and `_meta` — **no priority field exists in the protocol**, so an annotation-derived rule was
+falsified before being offered.
+
+---
+
+## Always-loaded — overflow, threshold, cap, and where the numbers live
+
+| Question | Options | Selected |
+|--------|-------------|----------|
+| Overflow | Fail closed (defer the overflow) / panic at boot / grant all + warn | **Fail closed** |
+| Threshold | N = 3 / N = 1 / N = 4 | **N = 3** |
+| Knobs | Code constants / env vars | **Code constants** |
+| Global cap | 2 slots / 3 / 4 | **2** |
+
+**Notes:** N = 3 was chosen specifically so memory's four model-facing tools stay deferred exactly as
+today, leaving the promote-memory decision to Phase 48, which owns the 14-slot budget. Code constants
+were preferred partly because the `AURA_MCP_*` catalogue is already in measured debt.
+
+---
+
+## Amendment batch — scope
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| 46 + 45.1 + env catalog | Also ratifies 45.1's shipped-but-un-amended changes and repairs the `AURA_MCP_*` rows. | ✓ |
+| 46 + 45.1, env catalog separate | Amendments about decisions, not bookkeeping. | |
+| 46 only | Smallest diff; the PRD keeps describing a deleted ping loop. | |
+
+**User's choice:** 46 + 45.1 + env catalog.
+
+---
+
+## Amendment batch — where the count rule is recorded, and what blocks code
+
+| Question | Options | Selected |
+|--------|-------------|----------|
+| Tiering home | Inside TOOL-14's amendment / its own amendment under MCP-04 | **Inside TOOL-14** |
+| Blocking | Decisions block, bookkeeping rides / all first, one commit / all first, several | **Decisions block** |
+
+**Notes:** TOOL-14 already changes the tiering axis to "frequency plus a hard count budget", and
+D-27's rule *is* a hard count budget — one statement of the axis, inherited by Phase 48.
+
+---
+
+## Amendment batch — document treatment
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Leave the strikethrough inline | The falsification trail is the point. | recommended, **not chosen** |
+| Rewrite clean, history in a dated footnote | Current text reads plainly; superseded wording moves one hop away. | ✓ |
+
+**User's choice:** Rewrite clean with dated footnotes — **against the recommendation**, and extended
+by a follow-up answer to cover the ROADMAP's Phase 46 section (≈6 SUPERSEDED paragraphs) as well.
+**Notes:** The counter-argument was put once and declined. Recorded so the relocation is not later
+mistaken for drift; the footnotes are mandatory, and this is never a deletion of the history.
+
+---
+
+## Landing order — how the two sides meet
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| One atomic Aura commit | Fork publishes first; pin + re-key + `Multiplexed` + classifier land together. | ✓ |
+| Dual-key transition table | Order-independent; a table meaning two things plus a cleanup commit. | |
+| Aura first, behind the old pin | Two reviewable halves with a fail-closed-and-unusable window between them. | |
+
+**User's choice:** One atomic Aura commit.
+
+---
+
+## Landing order — fork drift, and the boot-panic hazard
+
+| Question | Options | Selected |
+|--------|-------------|----------|
+| Unknown action | Loud at mount + fail closed at call / panic at boot / silent fall-through | **Loud at mount** |
+| `Multiplexed` inference | Only when a classifier exists / exempt bridged tools from the guard / keep the panic | **Only when a classifier exists** |
+| Table shape | Leave mixed + document / explicit key kind per source / split in two | **Leave mixed** |
+
+**Notes:** The second row closed a hazard nobody had noticed: inferring `Multiplexed` from any
+`action` enum would make `ValidateClassifiable` **panic on a stranger's server**, directly
+contradicting Success Criterion 6. Gating the inference on the classifier's existence keeps the
+guard whole and gives an unknown server exactly the fail-closed tier SC#6 promises.
+
+---
+
+## Description budget (opened by measurement, not by a question)
+
+Measured over the captured manifest: calendar's 14 descriptions total **4,504 bytes** and WhatsApp's
+**7,578**, against `frameMCPDescription`'s **4,096-byte** cap — and these two tools are now paid on
+every turn.
+
+| Question | Options | Selected |
+|--------|-------------|----------|
+| Budget | Tight ~1.5–2KB / use the full 4,096 / raise the cap for always-loaded tools | **Tight ~1.5–2KB** |
+| Does D-19 still stand? | Stands / switch to `oneOf` per action (newly possible under SEP-2106) | **Stands** |
+
+**Notes:** D-19 was re-examined rather than assumed, because SEP-2106's full JSON Schema 2020-12 was
+genuinely new leverage. It was upheld on measured grounds: the pressure is on the description, not
+the argument shape — 27 and 26 distinct properties are both far under the 128-property cap.
+
+---
+
+## Live evidence
+
+| Question | Options | Selected |
+|--------|-------------|----------|
+| SC#1/#2/#4 | One driven conversation + `tool_invocations` rows / per-criterion probes / both | **Driven conversation** |
+| SC#6 server | The calculator fork / a genuinely unknown public server / one Aura mints herself | **Calculator fork** |
+
+**Notes:** The calculator fork is referenced in Aura's tree (`calculator_integration_test.go`,
+`AURA_MCP_CALCULATOR_SERVER_JSON`), so the evidence must show the mount needs no code and no catalog
+entry — not that the server was unknown. That caveat is written into CONTEXT.md D-38.
+
+---
+
 ## Claude's Discretion
 
 - Exact action names and grouping inside each fork's curated tool.
 - Wording of the PRD amendments; whether they land as one commit or several.
-- The decimal number for the client-swap phase (`45.1` vs a renumber).
+- ~~The decimal number for the client-swap phase (`45.1` vs a renumber).~~ Settled — it shipped as 45.1.
 - Whether `bridge_risk.go`'s re-keying keeps the `recipeSource` map shape or flattens it.
-- Fix-on-touch: the stale `deferred_manifest.json` fixture still carrying pre-`34b892512` text.
+- Fix-on-touch: the stale `deferred_manifest.json` fixture, re-counted 2026-08-17 at **64** occurrences
+  of pre-`34b892512` text.
+- *(second pass)* The deterministic order in which the two always-loaded slots are granted; where the
+  count predicate lives; how `refreshSpec` is stopped from flipping deferral mid-conversation.
 
 ## Deferred Ideas
 
@@ -228,5 +425,14 @@ came from another account's listing.
   multi-tenant grants.
 - hermes' `_scan_mcp_description` warn-only injection scan at mount.
 - `validate_deferred_call_args` probe-validation for deferred tools → Phase 47/48.
-- Adopting the SDK's `IdempotentHint`/`OpenWorldHint` → client-swap phase or Phase 48.
+- ~~Adopting the SDK's `IdempotentHint`/`OpenWorldHint`~~ → **done in 45.1**, as an escalate-only
+  branch in the fallback path.
 - Measuring how much of `managed_config`/`classify`/`probe` the SDK's `server/discover` subsumes.
+- *(second pass)* Promoting memory into the always-loaded set → Phase 48, which owns the budget.
+- *(second pass)* Digest (`@sha256`) pinning for the two sidecars → whenever appliance
+  reproducibility is tightened as a whole.
+- *(second pass)* A `_meta`-declared always-load hint → if a fork ever legitimately needs 4+ loaded.
+- *(second pass)* `oneOf` per-action schemas → if prose-enforced required-per-action proves a real
+  failure source.
+- *(second pass)* `/gsd-validate-phase 45.1` — Nyquist per-task sampling still owed on the seam this
+  phase builds on.
