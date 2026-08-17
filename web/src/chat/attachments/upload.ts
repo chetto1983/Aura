@@ -111,12 +111,30 @@ function hasDocumentExtension(name: string): boolean {
   return false;
 }
 
-/** A document is usable once it is searchable; media only once fully processed. */
+/** An asset is attachable once the SERVER has accepted it — not once it is indexed.
+ *
+ * This used to wait for 'searchable'/'complete', and that wait never ends. internal/assets/
+ * context.go records the measurement: on the live deployment no asset has ever reached
+ * 'searchable' (2026-08-13: presigned 6 / processing 2 / accepted 2 / searchable 0), because
+ * the only statement that activates a version lost its callers when the in-process pipeline
+ * was deleted — "searchable is a property of ArcadeDB, not of a Postgres column". Gating the
+ * composer on that column meant an attached file could never become ready and the turn could
+ * never be sent (seen live 2026-08-17, on the operator's own uploads as well as a fresh one).
+ *
+ * Whether the index actually holds the document is a different question, and it is already
+ * asked where it belongs: BuildKnowledgeCatalog narrows the agent's catalog with isIndexed
+ * rather than with this status. */
 export function isReadyAsset(asset: Asset): boolean {
-  if (asset.modality === 'document')
-    return asset.status === 'searchable' || asset.status === 'complete';
-  if (asset.modality === 'image' || asset.modality === 'audio') return asset.status === 'complete';
-  return asset.status === 'searchable' || asset.status === 'complete';
+  switch (asset.status) {
+    case 'accepted':
+    case 'processing':
+    case 'searchable':
+    case 'embedding':
+    case 'complete':
+      return true;
+    default:
+      return false;
+  }
 }
 
 export function isTerminalAsset(asset: Asset): boolean {
