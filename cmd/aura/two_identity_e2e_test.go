@@ -8,7 +8,7 @@
 //	  store returns not-found (404 source) / rows==0 (403 source); the RLS kernel backstop
 //	  hides A's rows from a raw read under B's identity var.
 //	Approvals            — B cannot read A's pause (owner-scoped + RLS).
-//	Documents            — B cannot resolve or write A's document by its search id; A can.
+//	Documents            — B cannot see or forge A's ingestion job (owner-scoped + RLS).
 //	Garage               — A's object is unreadable with B's scoped key; the per-identity
 //	  resolver selects B's creds for B and A's for A (request-time selection, not just provisioning).
 //	MUSR-02              — a B-created conversation is owned by B and runs.
@@ -21,7 +21,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -36,7 +35,6 @@ import (
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
-	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/objectstore"
@@ -44,6 +42,15 @@ import (
 )
 
 const musrIdentityHeader = "X-Musr-Test-Identity"
+
+// musrIngestionJobInsert is the only statement this file inserts ingestion jobs with. Every
+// NOT NULL column without a default is spelled out, and status carries a value the table's
+// CHECK accepts ('queued'), so that the refusal assertions below can only be refused by the
+// row-level-security policy and by NOTHING else — an insert rejected by a constraint would
+// keep the test passing while the thing it exists to prove was broken.
+const musrIngestionJobInsert = `
+INSERT INTO aura.ingestion_jobs (id, job_type, status, idempotency_key, identity_id)
+VALUES ($1, 'musr-probe', 'queued', $3, $2)`
 
 func TestTwoIdentityCrossDeny(t *testing.T) {
 	pool := musrMigratedPool(t)
@@ -183,58 +190,77 @@ func TestTwoIdentityCrossDeny(t *testing.T) {
 		}
 	})
 
-	// ── Documents plane: search-id resolution — B cannot reach A's document ─────────
+	// ── Document plane: the ingestion job — B cannot see or forge A's ────────────────
 	t.Run("documents_cross_deny", func(t *testing.T) {
-		// SetCard is the deny probe because it is what INGEST runs on every file: it resolves
-		// a `doc_<hex>` search id to a catalog row through an owner-scoped statement, under
-		// 0087's fail-closed RLS floor, and then writes. A foreign identity must not get past
-		// the resolution, and the write it would have made must not have happened.
+		// aura.ingestion_jobs is what is LEFT of the document plane in Postgres. Until
+		// migration 0098 this probe ran against aura.documents through the catalog store's
+		// SetCard; 0098 retired the catalog with the rest of the old control plane, and a
+		// cross-deny asserted against a dropped table proves the isolation of nothing.
 		//
-		// It probed SearchDigests until 2026-08-15, when that ranking was deleted for having
-		// no production caller. An isolation property asserted through a query the product
-		// never issues proves the isolation of a dead query — and the catalog's read side
-		// (ListDocuments/GetDocument) has no caller either since the file manager replaced
-		// GET /api/documents, so the honest live surface here is the write path.
-		store := documents.NewPostgresCatalogStore(pool)
-		term := "quetzal" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
-		searchID := "doc_musr_" + uuid.NewString()
-		doc, err := store.CreateDocument(ctx, documents.CreateDocumentRequest{
-			IdentityID:       idA,
-			Scope:            documents.DocumentScopeLibrary,
-			Title:            "A private " + term,
-			SourceKind:       "musr-test",
-			SourceKey:        searchID,
-			SearchDocumentID: searchID,
-			Status:           documents.DocumentStatusStored,
-		})
-		if err != nil {
-			t.Fatalf("A catalog document: %v", err)
+		// The job row is the honest surface: ingest writes one per file, it carries
+		// identity_id, and it is under the same fail-closed RLS floor (2 policies, verified
+		// on the migrated schema). Everything else the plane owns is bytes in Garage, which
+		// the next sub-test covers with per-identity keys.
+		//
+		// Raw SQL rather than a store method on purpose: the property under test is the
+		// KERNEL's, and routing it through a Go helper that filters by identity itself would
+		// pass even with row security disabled.
+		jobID := uuid.NewString()
+		if err := db.WithIdentityTxRaw(ctx, pool, idA, func(tx pgx.Tx) error {
+			_, e := tx.Exec(ctx, musrIngestionJobInsert, jobID, idA, "musr-"+jobID)
+			return e
+		}); err != nil {
+			t.Fatalf("A creates its own ingestion job: %v", err)
 		}
 		t.Cleanup(func() {
-			_, _ = pool.Exec(context.Background(), `DELETE FROM aura.documents WHERE id=$1`, doc.ID)
+			_, _ = pool.Exec(context.Background(), `DELETE FROM aura.ingestion_jobs WHERE id=$1`, jobID)
 		})
 
-		if err := store.SetCard(ctx, idA, searchID, "A card "+term); err != nil {
-			t.Fatalf("A SetCard on its own document: %v", err)
-		}
-		if err := store.SetCard(ctx, idB, searchID, "B overwrote "+term); !errors.Is(err, documents.ErrDocumentNotCatalogued) {
-			t.Errorf("B SetCard on A's document = %v, want ErrDocumentNotCatalogued", err)
+		// A sees it. Half the proof: the owner must not be locked out of their own row.
+		if err := db.WithIdentityTxRaw(ctx, pool, idA, func(tx pgx.Tx) error {
+			var n int
+			if e := tx.QueryRow(ctx, `SELECT count(*) FROM aura.ingestion_jobs WHERE id=$1`, jobID).Scan(&n); e != nil {
+				return e
+			}
+			if n != 1 {
+				t.Errorf("A sees %d of its own ingestion jobs, want 1 (self-lockout)", n)
+			}
+			return nil
+		}); err != nil {
+			t.Fatalf("A reads own ingestion job: %v", err)
 		}
 
-		// Read back AS A. aura.documents carries the fail-closed owner-isolation policy
-		// (migration 0087), so a raw pool connection — which binds no
-		// app.current_identity — sees ZERO rows no matter what was written. Reading it
-		// unbound and expecting a row asserts that RLS does NOT filter, which is the
-		// opposite of what this test exists to prove; it only ever passed where the
-		// connecting role bypassed RLS (the owner), never as aura_app.
-		var card string
-		if err := db.WithIdentityTxRaw(ctx, pool, idA, func(tx pgx.Tx) error {
-			return tx.QueryRow(ctx, `SELECT card FROM aura.documents WHERE id = $1`, doc.ID).Scan(&card)
+		// B does not, and neither does a connection carrying no identity at all. Assert the
+		// COUNT: a policy that fails open returns MORE rows, never an error.
+		if err := db.WithIdentityTxRaw(ctx, pool, idB, func(tx pgx.Tx) error {
+			var n int
+			if e := tx.QueryRow(ctx, `SELECT count(*) FROM aura.ingestion_jobs WHERE id=$1`, jobID).Scan(&n); e != nil {
+				return e
+			}
+			if n != 0 {
+				t.Errorf("B sees %d of A's ingestion jobs, want 0 — RLS is failing OPEN", n)
+			}
+			return nil
 		}); err != nil {
-			t.Fatalf("read back A's card: %v", err)
+			t.Fatalf("B reads A's ingestion job: %v", err)
 		}
-		if card != "A card "+term {
-			t.Errorf("A's card = %q, want its own — B's denied write still landed", card)
+		var unscoped int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM aura.ingestion_jobs WHERE id=$1`, jobID).Scan(&unscoped); err != nil {
+			t.Fatalf("unscoped read of ingestion_jobs: %v", err)
+		}
+		if unscoped != 0 {
+			t.Errorf("a connection with no app.current_identity sees %d ingestion job(s), want 0", unscoped)
+		}
+
+		// And B cannot write one owned by A. Its own transaction: the refused INSERT aborts
+		// the one it runs in, so folding it into the reads would mask what happened.
+		forged := uuid.NewString()
+		if err := db.WithIdentityTxRaw(ctx, pool, idB, func(tx pgx.Tx) error {
+			_, e := tx.Exec(ctx, musrIngestionJobInsert, forged, idA, "musr-"+forged)
+			return e
+		}); err == nil {
+			_, _ = pool.Exec(context.Background(), `DELETE FROM aura.ingestion_jobs WHERE id=$1`, forged)
+			t.Error("B inserted an ingestion job owned by A, want a row-level-security refusal")
 		}
 	})
 
