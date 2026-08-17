@@ -31,26 +31,13 @@ func MountServer(processCtx, handshakeCtx context.Context, reg *tools.Registry, 
 // closer for the underlying transport. processCtx/handshakeCtx follow MountServer's
 // two-context contract (Pitfall #2).
 func MountManagedServer(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, server mcp.ManagedServer) (closer func() error, names []string, err error) {
-	return MountManagedServerWithEgress(
+	closer, names, _, err = MountManagedServerWithOptions(
 		processCtx,
 		handshakeCtx,
 		reg,
 		name,
 		server,
-		mcp.RuntimeEgressPolicy(false, server),
-	)
-}
-
-// MountManagedServerWithEgress mounts a managed server with the network policy
-// resolved by the composition root from its runtime profile.
-func MountManagedServerWithEgress(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, server mcp.ManagedServer, egress mcp.EgressPolicy) (closer func() error, names []string, err error) {
-	closer, names, _, err = MountManagedServerHostWithEgress(
-		processCtx,
-		handshakeCtx,
-		reg,
-		name,
-		server,
-		egress,
+		MountOptions{Egress: mcp.RuntimeEgressPolicy(false, server)},
 	)
 	return closer, names, err
 }
@@ -67,19 +54,18 @@ func MountManagedServerWithEgress(processCtx, handshakeCtx context.Context, reg 
 type MountOptions struct {
 	Egress      mcp.EgressPolicy
 	Elicitation ElicitationConsent
-}
-
-// MountManagedServerHostWithEgress is MountManagedServerWithEgress plus the
-// process-owned host view used by trusted daemon integrations such as automatic
-// Memory recall and readiness. It mounts without a consent surface.
-func MountManagedServerHostWithEgress(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, server mcp.ManagedServer, egress mcp.EgressPolicy) (closer func() error, names []string, host *MountedServer, err error) {
-	return MountManagedServerWithOptions(processCtx, handshakeCtx, reg, name, server, MountOptions{Egress: egress})
+	// Views is the process-wide store a mount reads its `ui://` documents into
+	// (bridge_views.go). Nil means this host renders nothing, which every
+	// *ViewCatalog method tolerates — so a caller with no rendering surface passes
+	// nothing rather than each mount path growing an enabled/disabled branch.
+	Views *mcp.ViewCatalog
 }
 
 // MountManagedServerWithOptions is the one mount entry point that carries the
-// full per-mount option set. The four older exported entry points delegate here
-// with a zero Elicitation, so adding the consent surface stayed additive instead
-// of churning every signature.
+// full per-mount option set. MountManagedServer is the no-options convenience
+// over it; the two egress-only wrappers that used to sit between them were
+// deleted when the composition root started needing the mounted host for every
+// managed server, not just the memory one.
 func MountManagedServerWithOptions(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, server mcp.ManagedServer, opts MountOptions) (closer func() error, names []string, host *MountedServer, err error) {
 	policy := managedBridgePolicy(server)
 	if isStreamableHTTPManagedServer(server) {
@@ -90,7 +76,7 @@ func MountManagedServerWithOptions(processCtx, handshakeCtx context.Context, reg
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	return mountStdioWithPolicyHost(processCtx, handshakeCtx, reg, name, cfg, policy, opts.Elicitation)
+	return mountStdioWithPolicyHost(processCtx, handshakeCtx, reg, name, cfg, policy, opts)
 }
 
 // elicitationHandlerFor returns the per-mount handler, or nil when no consent
@@ -143,7 +129,7 @@ func mountManagedHTTPHost(processCtx, handshakeCtx context.Context, reg *tools.R
 		return mcp.OpenSDKSession(hctx, name, server, opts.Egress, o)
 	}
 	srv = NewMountedServer(name, open)
-	return openAttachAndMount(srv, processCtx, handshakeCtx, open, reg, name, policy)
+	return openAttachAndMount(srv, processCtx, handshakeCtx, open, reg, name, policy, opts.Views)
 }
 
 // mountStdio is the shared stdio mount body for MountServer and MountManagedServer's
@@ -166,14 +152,14 @@ func mountStdioWithPolicy(processCtx, handshakeCtx context.Context, reg *tools.R
 		name,
 		cfg,
 		policy,
-		nil,
+		MountOptions{},
 	)
 	return closer, names, err
 }
 
-func mountStdioWithPolicyHost(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, cfg mcp.ServerConfig, policy bridgePolicy, consent ElicitationConsent) (closer func() error, names []string, host *MountedServer, err error) {
+func mountStdioWithPolicyHost(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, cfg mcp.ServerConfig, policy bridgePolicy, opts MountOptions) (closer func() error, names []string, host *MountedServer, err error) {
 	var srv *MountedServer
-	elicit := elicitationHandlerFor(name, consent)
+	elicit := elicitationHandlerFor(name, opts.Elicitation)
 	open := func(pctx, hctx context.Context, o mcp.SessionOptions) (*sdkmcp.ClientSession, error) {
 		o.Sending = sendingMiddleware(policy)
 		o.ToolListChanged = srv.onToolListChanged
@@ -181,7 +167,7 @@ func mountStdioWithPolicyHost(processCtx, handshakeCtx context.Context, reg *too
 		return mcp.OpenSDKSessionForConfig(pctx, hctx, name, cfg, o)
 	}
 	srv = NewMountedServer(name, open)
-	return openAttachAndMount(srv, processCtx, handshakeCtx, open, reg, name, policy)
+	return openAttachAndMount(srv, processCtx, handshakeCtx, open, reg, name, policy, opts.Views)
 }
 
 // openAttachAndMount is the shared body both mount branches reduce to once
@@ -189,7 +175,7 @@ func mountStdioWithPolicyHost(processCtx, handshakeCtx context.Context, reg *too
 // tools bounded purely by handshakeCtx (bridgeFromAdvertised's doc comment
 // explains why that must NOT route through the supervisor), Attach, then mount
 // with the given policy — reaping the session on any failure along the way.
-func openAttachAndMount(srv *MountedServer, processCtx, handshakeCtx context.Context, open openSessionFunc, reg *tools.Registry, name string, policy bridgePolicy) (closer func() error, names []string, host *MountedServer, err error) {
+func openAttachAndMount(srv *MountedServer, processCtx, handshakeCtx context.Context, open openSessionFunc, reg *tools.Registry, name string, policy bridgePolicy, views *mcp.ViewCatalog) (closer func() error, names []string, host *MountedServer, err error) {
 	// Each mount attempt gets its own cancellable slice of the daemon-lifetime process
 	// context, so a mount that gives up reaps the child it spawned. Without this a stdio
 	// server that hangs during discovery outlives the mount that dropped it: the process
@@ -227,6 +213,10 @@ func openAttachAndMount(srv *MountedServer, processCtx, handshakeCtx context.Con
 		return nil, nil, nil, fmt.Errorf("mount %q: %w", name, err)
 	}
 	srv.trackAcceptedTools(advertised)
+	// After the mount succeeded, on the SAME raw session and the same bounded
+	// handshake budget: a view read that hangs must cost this mount its deadline
+	// and nothing more, and it must never undo a mount that already worked.
+	hydrateViews(handshakeCtx, session, name, views, advertised, policy)
 	mounted = true
 	return srv.Close, names, srv, nil
 }

@@ -46,16 +46,16 @@ func TestMountManagedServerReturnsProcessOwnedHostClient(t *testing.T) {
 	reg := tools.NewRegistry()
 	server := mcp.ManagedServer{Type: mcp.ServerTypeStreamableHTTP, URL: httpSrv.URL}
 
-	closer, _, host, err := MountManagedServerHostWithEgress(
+	closer, _, host, err := MountManagedServerWithOptions(
 		context.Background(),
 		context.Background(),
 		reg,
 		"docs",
 		server,
-		mcp.RuntimeEgressPolicy(false, server),
+		MountOptions{Egress: mcp.RuntimeEgressPolicy(false, server)},
 	)
 	if err != nil {
-		t.Fatalf("MountManagedServerHostWithEgress: %v", err)
+		t.Fatalf("MountManagedServerWithOptions: %v", err)
 	}
 	t.Cleanup(func() { _ = closer() })
 	if host == nil {

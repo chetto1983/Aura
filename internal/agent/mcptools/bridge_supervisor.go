@@ -266,25 +266,32 @@ func (s *MountedServer) ListTools(ctx context.Context) ([]*sdkmcp.Tool, error) {
 
 // decodeResult is the ONE result-decode call site in the tree (RESEARCH Pitfall
 // 1): bridgedTool.Execute, the two cmd/aura host-memory callers and the
-// readiness check all route through CallToolText, so the domain-outcome chain
+// readiness check all route through CallTool, so the domain-outcome chain
 // cannot be bypassed by adding a caller.
-func (s *MountedServer) decodeResult(name string, res *sdkmcp.CallToolResult) (string, error) {
-	text, isErr := mcp.DecodeToolResult(res)
+func (s *MountedServer) decodeResult(name string, res *sdkmcp.CallToolResult) (mcp.ToolPayload, error) {
+	payload, isErr := mcp.DecodeToolPayload(res)
 	if isErr {
-		return "", mcp.DecodeToolCallError(s.name, name, text)
+		return mcp.ToolPayload{}, mcp.DecodeToolCallError(s.name, name, payload.Text)
 	}
-	return text, nil
+	return payload, nil
 }
 
-// CallToolText calls name and decodes its result. A transport-classified failure
+// CallToolText is the text-only projection of CallTool, which is what every
+// caller wants that has no view to feed.
+func (s *MountedServer) CallToolText(ctx context.Context, name string, args map[string]any) (string, error) {
+	payload, err := s.CallTool(ctx, name, args)
+	return payload.Text, err
+}
+
+// CallTool calls name and decodes its result. A transport-classified failure
 // — the session is already known dead (sessionOrDeath's dead==true), or the
 // immediate call error is transport-shaped — triggers the redial policy below; a
 // plain tool-level error (including a domain isError:true, which never reaches
 // here as a Go error at all) is returned unchanged.
-func (s *MountedServer) CallToolText(ctx context.Context, name string, args map[string]any) (string, error) {
+func (s *MountedServer) CallTool(ctx context.Context, name string, args map[string]any) (mcp.ToolPayload, error) {
 	session, terminalErr, dead := s.sessionOrDeath()
 	if terminalErr != nil {
-		return "", terminalErr
+		return mcp.ToolPayload{}, terminalErr
 	}
 
 	var callErr error
@@ -295,7 +302,7 @@ func (s *MountedServer) CallToolText(ctx context.Context, name string, args map[
 			return s.decodeResult(name, res)
 		}
 		if !s.isDead() && !isSessionTransportFailure(callErr) {
-			return "", callErr
+			return mcp.ToolPayload{}, callErr
 		}
 	}
 	if callErr == nil {
@@ -309,20 +316,20 @@ func (s *MountedServer) CallToolText(ctx context.Context, name string, args map[
 	// signal of that and is checked first, independent of the tool's own
 	// mutating/read-only classification.
 	if operation, ok := idempotency.OperationFromContext(ctx); ok && operation.Key.Scope == idempotency.ScopeMCPTool {
-		return "", fmt.Errorf("%w: mcp %q mutating call %q transport failed after send; not replayed or reconnected: %v", mcp.ErrTransport, s.name, name, callErr)
+		return mcp.ToolPayload{}, fmt.Errorf("%w: mcp %q mutating call %q transport failed after send; not replayed or reconnected: %v", mcp.ErrTransport, s.name, name, callErr)
 	}
 
 	readOnly := s.toolIsReadOnly(name)
 	retry, redialErr := s.redialAfterTransport(ctx, session)
 	if redialErr != nil {
-		return "", redialErr
+		return mcp.ToolPayload{}, redialErr
 	}
 	if !readOnly {
-		return "", fmt.Errorf("%w: mcp %q call %q transport failed after send; reconnected but not replayed: %v", mcp.ErrTransport, s.name, name, callErr)
+		return mcp.ToolPayload{}, fmt.Errorf("%w: mcp %q call %q transport failed after send; reconnected but not replayed: %v", mcp.ErrTransport, s.name, name, callErr)
 	}
 	res, callErr := retry.CallTool(ctx, &sdkmcp.CallToolParams{Name: name, Arguments: args})
 	if callErr != nil {
-		return "", callErr
+		return mcp.ToolPayload{}, callErr
 	}
 	return s.decodeResult(name, res)
 }

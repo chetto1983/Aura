@@ -17,6 +17,7 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/mcp"
 )
 
 // emptyObjectSchema is the Parameters fallback for a tool whose server advertised
@@ -39,7 +40,13 @@ type bridgedTool struct {
 	name        string
 	callTimeout time.Duration
 	policy      bridgePolicy
-	spec        atomic.Value
+	// view is the MCP Apps document this tool's result renders in, zero when the
+	// server declared none or the mount may not render (bridge_views.go). Read at
+	// mount and never refreshed: onToolListChanged accepts a same-name-set change,
+	// and a server that repoints a tool at a different document mid-run would move
+	// the operator's rendering surface underneath them.
+	view mcp.ViewRef
+	spec atomic.Value
 }
 
 func (b *bridgedTool) Spec() tools.Spec { return b.spec.Load().(tools.Spec) }
@@ -154,7 +161,7 @@ func bridgeToolsWithPolicy(namespace string, srv *MountedServer, advertised []*s
 		if !policy.modelFacing(t.Name) {
 			continue
 		}
-		bt := &bridgedTool{srv: srv, name: t.Name, callTimeout: callTimeout, policy: policy}
+		bt := &bridgedTool{srv: srv, name: t.Name, callTimeout: callTimeout, policy: policy, view: viewRefFor(policy, t)}
 		bt.storeSpec(specFromToolDefWithPolicy(namespace, t, policy))
 		out = append(out, bt)
 	}

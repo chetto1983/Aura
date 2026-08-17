@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/mcp"
 	"github.com/chetto1983/aura/internal/obs"
 )
 
@@ -43,26 +44,37 @@ func (b *bridgedTool) Execute(ctx context.Context, raw json.RawMessage) (tools.T
 	}
 	defer cancel()
 
-	text, err := b.srv.CallToolText(callCtx, b.name, args)
+	payload, err := b.srv.CallTool(callCtx, b.name, args)
 	if err != nil {
 		observeErr = err
 		return tools.ToolResult{}, boundedMCPError(err)
 	}
-	return b.newResult(ctx, text)
+	return b.newResult(ctx, payload)
 }
 
-// newResult wraps an MCP tool's text output. A mounted MCP server is
+// newResult wraps an MCP tool's output. A mounted MCP server is
 // operator-configured infrastructure, so its output is marked TrustTrusted:
 // trusted content like a built-in, never wrapped in the untrusted envelope. Size
 // caps in tools.NewResult still bound it; only the distrust framing is dropped.
-func (b *bridgedTool) newResult(ctx context.Context, text string) (tools.ToolResult, error) {
-	res, err := tools.NewResult(ctx, text)
+//
+// A view-bound tool additionally carries the MCP Apps descriptor on the result's
+// Meta. The MODEL never sees it — Meta is not part of the preview threaded back
+// into history — so a server cannot use the view channel to say something extra
+// to the model; it reaches only the surfaces that render (bridge_views.go).
+func (b *bridgedTool) newResult(ctx context.Context, payload mcp.ToolPayload) (tools.ToolResult, error) {
+	res, err := tools.NewResult(ctx, payload.Text)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
 	res.Provenance = &tools.ToolResultProvenance{
 		Source: "mcp:" + b.Spec().Name,
 		Trust:  tools.TrustTrusted,
+	}
+	if descriptor, ok := b.viewDescriptor(payload); ok {
+		if res.Meta == nil {
+			res.Meta = &tools.ToolResultMeta{}
+		}
+		(*res.Meta)[viewMetaKey] = descriptor
 	}
 	return res, nil
 }

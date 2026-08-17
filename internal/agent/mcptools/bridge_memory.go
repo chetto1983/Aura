@@ -12,6 +12,13 @@ import (
 type bridgePolicy struct {
 	memory       bool
 	recipeSource string
+	// views is the MCP Apps gate: may this mount put its own HTML in front of the
+	// operator (bridge_views.go)? It is set from the mount's TRUST CLASS, so a
+	// policy built without one — defaultBridgePolicy, every test double — renders
+	// nothing. That default is deliberate and fail-closed: a plain `mcpServers`
+	// entry declares no trust class at all, and "no class" must not read as "the
+	// most trusted one".
+	views bool
 }
 
 func defaultBridgePolicy(namespace string) bridgePolicy {
