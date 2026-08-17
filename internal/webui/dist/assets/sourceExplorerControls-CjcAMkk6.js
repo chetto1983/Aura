@@ -1,0 +1,1 @@
+import{a as e}from"./rolldown-runtime-BBakyeeW.js";import{K as t}from"./assistant-ui-B0024FZe.js";var n=e(t(),1),r={openSources:()=>void 0},i=(0,n.createContext)(null);function a(){return(0,n.useContext)(i)??r}export{a as n,i as t};

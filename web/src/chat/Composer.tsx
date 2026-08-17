@@ -155,10 +155,10 @@ export function Composer({
       dictationPhase === 'listening' || dictationPhase === 'transcribing' || isDictating;
     if (dictationBusy) {
       suppressedDictationRef.current = {
-        draft: aui.composer().getState().text,
+        draft: aui.composer.getState().text,
         sawActive: isDictating || wasDictating.current,
       };
-      aui.composer().stopDictation();
+      aui.composer.stopDictation();
     }
   }, [approvalLocked, aui, captureEpoch, dictationPhase, isDictating]);
 
@@ -208,7 +208,7 @@ export function Composer({
       // pick completes the command and leaves the caret after it, so the operator keeps
       // typing the instruction and sends '/pdf estrai le tabelle' as one message. The
       // trailing space is also what closes the menu — shouldOpen() stops at the first one.
-      aui.composer().setText(`/${item.name} `);
+      aui.composer.setText(`/${item.name} `);
       return;
     }
     if (item.command === 'add-files') {
@@ -220,7 +220,7 @@ export function Composer({
     }
     // A command consumes the '/'-text; the now-empty text makes shouldOpen() false, which
     // closes the menu on the next render.
-    aui.composer().setText('');
+    aui.composer.setText('');
   };
 
   const handleComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -251,7 +251,7 @@ export function Composer({
     )
       return;
     appliedDraftNonce.current = draftPrompt.nonce;
-    aui.composer().setText(draftPrompt.text);
+    aui.composer.setText(draftPrompt.text);
     composerInputRef.current?.focus();
     onDraftPromptConsumed?.(draftPrompt.nonce);
   }, [approvalLocked, aui, composerInputRef, draftPrompt, onDraftPromptConsumed]);
@@ -267,7 +267,7 @@ export function Composer({
         suppressed.sawActive = true;
         return;
       }
-      const composer = aui.composer();
+      const composer = aui.composer;
       if (composer.getState().text !== suppressed.draft) composer.setText(suppressed.draft);
       if (suppressed.sawActive || !approvalLocked) {
         suppressedDictationRef.current = undefined;
@@ -281,7 +281,7 @@ export function Composer({
     }
     if (!wasDictating.current) return;
     wasDictating.current = false;
-    const inserted = aui.composer().getState().text.length > dictationStartLen.current;
+    const inserted = aui.composer.getState().text.length > dictationStartLen.current;
     if (inserted) {
       markTurnDictated();
       setDictationPhase('idle');
@@ -382,8 +382,8 @@ export function Composer({
     suppressedDictationRef.current = undefined;
     setDictationCaptureEpoch(captureEpoch);
     try {
-      dictationStartLen.current = aui.composer().getState().text.length;
-      aui.composer().startDictation();
+      dictationStartLen.current = aui.composer.getState().text.length;
+      aui.composer.startDictation();
       setDictationPhase('listening');
     } catch {
       setDictationPhase('error');
@@ -400,7 +400,7 @@ export function Composer({
     }
     if (activeDictationPhase === 'listening') {
       setDictationPhase('transcribing');
-      aui.composer().stopDictation();
+      aui.composer.stopDictation();
       return;
     }
     beginDictation();

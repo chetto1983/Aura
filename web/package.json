@@ -24,8 +24,9 @@
     "contrast": "node scripts/contrast-check.mjs"
   },
   "dependencies": {
-    "@assistant-ui/react": "0.14.22",
-    "@assistant-ui/react-markdown": "0.14.4",
+    "@assistant-ui/react": "^0.15.14",
+    "@assistant-ui/react-markdown": "^0.14.10",
+    "@assistant-ui/react-syntax-highlighter": "^0.14.5",
     "@radix-ui/react-dialog": "^1.1.17",
     "@radix-ui/react-hover-card": "1.1.17",
     "@radix-ui/react-label": "^2.1.10",
@@ -57,6 +58,7 @@
     "react-markdown": "10.1.0",
     "react-resizable-panels": "^4.12.0",
     "react-router": "^8.3.0",
+    "react-syntax-highlighter": "^16.1.1",
     "rehype-sanitize": "^6.0.0",
     "remark-gfm": "^4.0.1",
     "shiki": "4.2.0",
@@ -80,6 +82,7 @@
     "@types/node": "^24.13.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
+    "@types/react-syntax-highlighter": "^15.5.13",
     "@vitejs/plugin-react": "^6.0.2",
     "@vitest/coverage-v8": "^4.1.9",
     "axe-core": "^4.12.1",

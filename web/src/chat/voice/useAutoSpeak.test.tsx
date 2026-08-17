@@ -6,7 +6,7 @@ import { useVoiceMode } from './voiceModeContext';
 import { useAutoSpeak } from './useAutoSpeak';
 
 // A fake external-store runtime: `box` is the mutable thread state the mocked
-// useAuiState reads, `speakSpy` records aui.thread().message({id}).speak() calls.
+// useAuiState reads, `speakSpy` records aui.thread.message({id}).speak() calls.
 const hoisted = vi.hoisted(() => {
   const speakSpy = vi.fn<(id: string) => void>();
   const box: { messages: { id: string; role: string }[]; isRunning: boolean } = {
@@ -14,13 +14,14 @@ const hoisted = vi.hoisted(() => {
     isRunning: false,
   };
   const auiApi = {
-    thread: () => ({
+    // assistant-ui 0.15 exposes the scopes as PROPERTIES (aui.thread), not calls.
+    thread: {
       message: (selector: { id: string }) => ({
         speak: () => {
           speakSpy(selector.id);
         },
       }),
-    }),
+    },
   };
   return { speakSpy, box, auiApi };
 });

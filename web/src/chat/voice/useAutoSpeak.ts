@@ -49,7 +49,11 @@ export function useAutoSpeak(): void {
     if (latestId === undefined || latestId === lastSpokenRef.current) return;
     lastSpokenRef.current = latestId;
     if (shouldSpeak(voiceMode, turnWasDictated)) {
-      aui.thread().message({ id: latestId }).speak();
+      // assistant-ui 0.15 marks the whole speech API "under active development"; there is
+      // no stable replacement for per-message speak, and dropping it would silently kill
+      // voice mode's read-back. Pinned deliberately, not ignored wholesale.
+      // eslint-disable-next-line @typescript-eslint/no-deprecated
+      aui.thread.message({ id: latestId }).speak();
     }
     // Consume the dictation flag so the next (typed) turn does not auto-speak.
     clearTurnDictated();

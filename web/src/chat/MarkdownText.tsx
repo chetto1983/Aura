@@ -5,6 +5,7 @@ import {
 import type { Element } from 'hast';
 import type { PluggableList } from 'unified';
 import { baseMarkdownComponents, buildRehypePlugins, remarkPlugins } from './markdownConfig';
+import { CodeHighlighter } from './codeHighlighter';
 
 // MarkdownText: the streaming chat host (the assistant-ui MarkdownTextPrimitive
 // bound to the current message part). It renders through the shared markdownConfig
@@ -93,6 +94,10 @@ export function MarkdownText({
 }: MarkdownTextProps) {
   const components = {
     ...baseMarkdownComponents,
+    // The primitive routes every fenced block through SyntaxHighlighter when one is
+    // supplied, and falls back to the plain pre/code renderers when it is not — which is
+    // what Aura shipped until now. Callers can still override it via extraComponents.
+    SyntaxHighlighter: CodeHighlighter,
     ...(constrainProse ? constrainedProseComponents : {}),
     ...extraComponents,
   } as ExtraMarkdownComponents;

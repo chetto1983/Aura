@@ -12,12 +12,13 @@ const h = vi.hoisted(() => ({
 
 vi.mock('@assistant-ui/react', () => ({
   useAui: () => ({
-    composer: () => ({
+    // assistant-ui 0.15 exposes the scopes as PROPERTIES (aui.composer), not calls.
+    composer: {
       setText: h.setText,
       startDictation: vi.fn(),
       stopDictation: vi.fn(),
       getState: () => h.auiState.composer,
-    }),
+    },
   }),
   useAuiState: <T,>(selector: (state: typeof h.auiState) => T): T => selector(h.auiState),
   ComposerPrimitive: {
