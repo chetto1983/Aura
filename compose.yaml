@@ -166,6 +166,10 @@ services:
       # rides out the sidecar's cold start; the budget is only spent when a sidecar is down.
       AURA_MCP_MOUNT_TIMEOUT: ${AURA_MCP_MOUNT_TIMEOUT:-180}
       AURA_MCP_MOUNT_RETRY_ATTEMPTS: ${AURA_MCP_MOUNT_RETRY_ATTEMPTS:-40}
+      # The origin the cockpit frames MCP Apps views from — the caddy :8444 keyhole.
+      # Unset leaves the view routes at 503 and the cockpit renders the tool's text,
+      # which is the extension's own progressive-enhancement contract.
+      AURA_MCP_SANDBOX_ORIGIN: ${AURA_MCP_SANDBOX_ORIGIN:-}
       AURA_SWARM_MAX_GOALS: ${AURA_SWARM_MAX_GOALS:-8}
       AURA_SWARM_CHILD_TIMEOUT_SEC: ${AURA_SWARM_CHILD_TIMEOUT_SEC:-120}
       AURA_SWARM_MAX_CONCURRENT: ${AURA_SWARM_MAX_CONCURRENT:-4}
@@ -466,6 +470,10 @@ services:
       AURA_ACCESS_TOKEN: ${AURA_ACCESS_TOKEN:?AURA_ACCESS_TOKEN required in .env}
     ports:
       - "0.0.0.0:${AURA_HTTPS_PORT:-443}:443"
+      # The MCP Apps sandbox origin. A second port IS a second origin to a browser,
+      # which is what a view needs to run without inheriting the cockpit's. Only
+      # /mcp-sandbox answers here (see caddy/Caddyfile); everything else 404s.
+      - "0.0.0.0:${AURA_MCP_SANDBOX_PORT:-8444}:8444"
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data

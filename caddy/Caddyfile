@@ -45,3 +45,33 @@
 	# Everything else → the full cockpit + Authula login on 9080.
 	reverse_proxy aura:9080
 }
+
+# The MCP Apps sandbox origin (SEP-1865). A view is HTML a mounted MCP server
+# wrote, and it needs `allow-same-origin` to run at all — so the origin it gets
+# must be one where the operator has no session. A second PORT is a different
+# origin to a browser, which is what the sandbox check in
+# internal/agui/mcp_views_api.go requires, and it needs no second DNS name.
+#
+# It is deliberately a keyhole: exactly one path, the relay document, which holds
+# no data of its own. Everything else 404s here so this port can never become a
+# second door to the cockpit.
+#
+# A separate HOSTNAME would be stronger still, because cookies are scoped by host
+# and IGNORE the port: the session cookie for https://<host> IS sent to
+# https://<host>:8444. Aura compensates by refusing to grant a view any declared
+# domain pointing back at its own host (mcp.ViewPolicy.WithoutHost), and the relay
+# itself is served under `default-src 'none'` so it can fetch nothing regardless.
+# An operator with DNS to spare should still prefer a distinct name.
+:8444 {
+	tls internal {
+		on_demand
+	}
+
+	handle /mcp-sandbox {
+		reverse_proxy aura:9080
+	}
+
+	handle {
+		respond 404
+	}
+}
