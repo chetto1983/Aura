@@ -1,4 +1,9 @@
-import type { ButtonHTMLAttributes, HTMLAttributes, TextareaHTMLAttributes } from 'react';
+import type {
+  ReactNode,
+  ButtonHTMLAttributes,
+  HTMLAttributes,
+  TextareaHTMLAttributes,
+} from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '../../i18n/i18n';
@@ -37,6 +42,14 @@ vi.mock('@assistant-ui/react', () => ({
     Input: (props: TextareaHTMLAttributes<HTMLTextAreaElement>) => <textarea {...props} />,
     Cancel: (props: ButtonHTMLAttributes<HTMLButtonElement>) => <button type="button" {...props} />,
     Send: (props: ButtonHTMLAttributes<HTMLButtonElement>) => <button type="submit" {...props} />,
+    // Trigger popover stubbed to its mount; behaviour belongs to the library.
+    Unstable_TriggerPopoverRoot: ({ children }: { children: ReactNode }) => <>{children}</>,
+    Unstable_TriggerPopover: Object.assign(
+      ({ char }: { char: string }) => <div data-testid="trigger-popover" data-char={char} />,
+      { Directive: () => null, Action: () => null },
+    ),
+    Unstable_TriggerPopoverItems: () => null,
+    Unstable_TriggerPopoverItem: () => null,
   },
 }));
 

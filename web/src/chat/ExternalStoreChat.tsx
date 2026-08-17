@@ -22,7 +22,7 @@ import { EmptyThreadStarters } from './EmptyThreadStarters';
 import { listThreadAssets } from './attachments/api';
 import { useAttachmentUploads } from './attachments/useAttachmentUploads';
 import { useComposerSkills } from './composer/useComposerSkills';
-import { resolveSlashSubmission } from './composer/skillPickerModel';
+import { resolveSlashSubmission } from './composer/skillTrigger';
 import { useReasoningCapabilities } from './composer/useReasoningCapabilities';
 import { useReasoningEffort } from './composer/useReasoningEffort';
 import type { Asset } from './attachments/types';
@@ -69,7 +69,6 @@ export interface ExternalStoreChatProps {
   readonly onDraftPromptConsumed?: (nonce: number) => void;
   readonly onRequestDraftPrompt?: (text: string) => void;
   /** 37D: threads AppShell's startNewConversation to the composer's new-chat quick action. */
-  readonly onNewChat?: () => void | Promise<void>;
 }
 
 export function ExternalStoreChat({
@@ -82,7 +81,6 @@ export function ExternalStoreChat({
   draftPrompt,
   onDraftPromptConsumed,
   onRequestDraftPrompt = ignoreDraftPrompt,
-  onNewChat,
 }: ExternalStoreChatProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -582,7 +580,6 @@ export function ExternalStoreChat({
             draftPrompt={draftPrompt}
             onDraftPromptConsumed={onDraftPromptConsumed}
             skills={skills}
-            onNewChat={onNewChat}
             effort={effort}
             effortLevels={reasoningCaps.levels}
             onEffortChange={setEffort}

@@ -24,6 +24,7 @@
     "contrast": "node scripts/contrast-check.mjs"
   },
   "dependencies": {
+    "@assistant-ui/core": "^0.3.13",
     "@assistant-ui/react": "^0.15.14",
     "@assistant-ui/react-markdown": "^0.14.10",
     "@assistant-ui/react-syntax-highlighter": "^0.14.5",

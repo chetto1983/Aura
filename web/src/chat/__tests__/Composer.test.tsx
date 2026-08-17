@@ -1,6 +1,11 @@
-import type { ButtonHTMLAttributes, HTMLAttributes, TextareaHTMLAttributes } from 'react';
+import type {
+  ReactNode,
+  ButtonHTMLAttributes,
+  HTMLAttributes,
+  TextareaHTMLAttributes,
+} from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import '../../i18n/i18n';
 import { Composer } from '../Composer';
 import type { ComposerSkillRow } from '../composer/api';
@@ -41,6 +46,16 @@ vi.mock('@assistant-ui/react', () => ({
     Input: (props: TextareaHTMLAttributes<HTMLTextAreaElement>) => <textarea {...props} />,
     Cancel: (props: ButtonHTMLAttributes<HTMLButtonElement>) => <button type="button" {...props} />,
     Send: (props: ButtonHTMLAttributes<HTMLButtonElement>) => <button type="submit" {...props} />,
+    // The trigger popover is stubbed to its MOUNT, not its behaviour: it records the char it
+    // was registered for and swallows the rest. Driving the real popover here would be
+    // testing the library through a mock of the library.
+    Unstable_TriggerPopoverRoot: ({ children }: { children: ReactNode }) => <>{children}</>,
+    Unstable_TriggerPopover: Object.assign(
+      ({ char }: { char: string }) => <div data-testid="trigger-popover" data-char={char} />,
+      { Directive: () => null, Action: () => null },
+    ),
+    Unstable_TriggerPopoverItems: () => null,
+    Unstable_TriggerPopoverItem: () => null,
   },
 }));
 
@@ -328,160 +343,30 @@ const CODEQL: ComposerSkillRow = {
 };
 const SKILLS: readonly ComposerSkillRow[] = [SKILL_CREATOR, CODEQL];
 
-describe('Composer skill picker', () => {
-  it("typing '/' opens the ARIA combobox and keeps focus on the input", () => {
-    h.auiState.composer.text = '/';
-    render(<Composer uploads={uploads()} skills={SKILLS} />);
-    const input = screen.getByLabelText('Ask Aura');
-    input.focus();
-
-    const listbox = screen.getByRole('listbox');
-    const options = within(listbox).getAllByRole('option');
-    expect(input.getAttribute('role')).toBe('combobox');
-    expect(input.getAttribute('aria-expanded')).toBe('true');
-    expect(input.getAttribute('aria-controls')).toBe(listbox.id);
-    expect(input.getAttribute('aria-activedescendant')).toBe(options[0]?.id);
-    // APG combobox: DOM focus never leaves the input for the listbox.
-    expect(document.activeElement).toBe(input);
-  });
-
-  it('filters incrementally to the matching skill', () => {
-    h.auiState.composer.text = '/creat';
+// The '/'-menu is ComposerPrimitive.Unstable_TriggerPopover now, so its open/close
+// lifecycle, incremental filter, keyboard navigation and combobox ARIA are the library's
+// contract and are not re-asserted here — that would be testing the dependency. What Aura
+// still owns is WHICH items exist and how a chosen one is written into the message, covered
+// in composer/skillTrigger.test.ts, plus the mount decision below.
+//
+// Deleted with the hand-rolled picker, deliberately: the three quick commands. A trigger
+// popover carries ONE behavior, and the operator asked for skills to be inserted into the
+// message (Directive), which cannot coexist with commands that execute (Action) on the same
+// char. add-files remains the paperclip button and new-chat the sidebar button; clear had no
+// counterpart and is gone.
+describe('Composer skill trigger', () => {
+  it('mounts the trigger when skills are installed', () => {
     render(<Composer uploads={uploads()} skills={SKILLS} />);
 
-    const listbox = screen.getByRole('listbox');
-    expect(within(listbox).getByText('skill-creator')).toBeTruthy();
-    expect(within(listbox).queryByText('codeql')).toBeNull();
+    expect(screen.getByTestId('trigger-popover').getAttribute('data-char')).toBe('/');
   });
 
-  it('ArrowDown moves the active option (aria-activedescendant follows)', () => {
-    h.auiState.composer.text = '/';
-    render(<Composer uploads={uploads()} skills={SKILLS} />);
-    const input = screen.getByLabelText('Ask Aura');
-    const ids = within(screen.getByRole('listbox'))
-      .getAllByRole('option')
-      .map((option) => option.id);
-    expect(input.getAttribute('aria-activedescendant')).toBe(ids[0]);
-
-    fireEvent.keyDown(input, { key: 'ArrowDown' });
-
-    expect(input.getAttribute('aria-activedescendant')).toBe(ids[1]);
-  });
-
-  // Rewritten 2026-08-17 on the operator's instruction ("la skill deve stare nel messaggio
-  // non sopra"): selecting a skill no longer pins it to a chip above the composer, it
-  // completes the command INTO the message so '/skill-creator <instruction>' is the turn.
-  it('Enter completes the active skill into the message and does NOT send', () => {
-    h.auiState.composer.text = '/creat';
-    render(<Composer uploads={uploads()} skills={SKILLS} />);
-    const input = screen.getByLabelText('Ask Aura');
-
-    const event = createEvent.keyDown(input, { key: 'Enter' });
-    fireEvent(input, event);
-
-    expect(event.defaultPrevented).toBe(true); // never fell through to Enter-send
-    // The trailing space is load-bearing: it is what closes the menu, so the next Enter
-    // sends the message instead of re-selecting an option.
-    expect(h.setText).toHaveBeenCalledWith('/skill-creator ');
-  });
-
-  it('Escape closes the menu (preventDefault) and a keystroke re-arms it', () => {
-    h.auiState.composer.text = '/';
-    const { rerender } = render(<Composer uploads={uploads()} skills={SKILLS} />);
-    const input = screen.getByLabelText('Ask Aura');
-    expect(screen.getByRole('listbox')).toBeTruthy();
-
-    const event = createEvent.keyDown(input, { key: 'Escape' });
-    fireEvent(input, event);
-
-    expect(event.defaultPrevented).toBe(true);
-    expect(screen.queryByRole('listbox')).toBeNull();
-
-    h.auiState.composer.text = '/c';
-    rerender(<Composer uploads={uploads()} skills={SKILLS} />);
-    expect(screen.getByRole('listbox')).toBeTruthy();
-  });
-
-  it('does NOT intercept Enter when the menu is closed (Enter-send preserved, D-09)', () => {
-    h.auiState.composer.text = 'hello world';
-    render(<Composer uploads={uploads()} skills={SKILLS} />);
-    const input = screen.getByLabelText('Ask Aura');
-    expect(screen.queryByRole('listbox')).toBeNull();
-
-    const event = createEvent.keyDown(input, { key: 'Enter' });
-    fireEvent(input, event);
-
-    expect(event.defaultPrevented).toBe(false); // the library's Enter-send runs untouched
-  });
-
-  it('a literal slash mid-text never opens the menu (D-05)', () => {
-    h.auiState.composer.text = 'a/b';
-    render(<Composer uploads={uploads()} skills={SKILLS} />);
-    expect(screen.queryByRole('listbox')).toBeNull();
-  });
-
-  it('degrades to a no-op when the skills list is empty ( / never opens, D-09)', () => {
-    h.auiState.composer.text = '/';
+  it('degrades to a no-op when the skills list is empty (D-09)', () => {
     render(<Composer uploads={uploads()} skills={[]} />);
-    const input = screen.getByLabelText('Ask Aura');
-    expect(screen.queryByRole('listbox')).toBeNull();
-    expect(input.getAttribute('aria-expanded')).toBe('false');
-    // Regression guard (shell.spec.ts): the idle composer is a plain textbox, not a combobox.
-    expect(input.getAttribute('role')).toBeNull();
-    expect(screen.getByRole('textbox', { name: 'Ask Aura' })).toBe(input);
 
-    const event = createEvent.keyDown(input, { key: 'Enter' });
-    fireEvent(input, event);
-    expect(event.defaultPrevented).toBe(false);
+    expect(screen.queryByTestId('trigger-popover')).toBeNull();
   });
 
-  it('the add-files quick action clicks the hidden file input (no agent run)', () => {
-    h.auiState.composer.text = '/add';
-    const clickSpy = vi
-      .spyOn(HTMLInputElement.prototype, 'click')
-      .mockImplementation(() => undefined);
-    render(<Composer uploads={uploads()} skills={SKILLS} />);
-
-    fireEvent.keyDown(screen.getByLabelText('Ask Aura'), { key: 'Enter' });
-
-    expect(clickSpy).toHaveBeenCalledTimes(1);
-    clickSpy.mockRestore();
-  });
-
-  it('the new-chat quick action calls onNewChat (no agent run)', () => {
-    h.auiState.composer.text = '/new';
-    const onNewChat = vi.fn();
-    render(<Composer uploads={uploads()} skills={SKILLS} onNewChat={onNewChat} />);
-
-    fireEvent.keyDown(screen.getByLabelText('Ask Aura'), { key: 'Enter' });
-
-    expect(onNewChat).toHaveBeenCalledTimes(1);
-  });
-
-  it('the clear quick action resets the text, pinned pill, and pending attachments', () => {
-    h.auiState.composer.text = '/clear';
-    const remove = vi.fn();
-    const withItem = uploads({
-      items: [
-        {
-          localId: 'x',
-          file: new File(['a'], 'a.txt', { type: 'text/plain' }),
-          progress: 1,
-          status: 'ready',
-        },
-      ],
-      remove,
-    });
-    render(<Composer uploads={withItem} skills={SKILLS} />);
-
-    fireEvent.keyDown(screen.getByLabelText('Ask Aura'), { key: 'Enter' });
-
-    expect(remove).toHaveBeenCalledWith('x');
-    expect(h.setText).toHaveBeenCalledWith('');
-  });
-
-  // The pinned-skill pill is deliberately gone (operator, 2026-08-17). Removing a skill is
-  // now editing the message that carries it, so there is no chip to render or dismiss.
   it('renders no pinned-skill chip above the composer', () => {
     render(<Composer uploads={uploads()} skills={SKILLS} />);
 

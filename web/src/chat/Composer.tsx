@@ -4,28 +4,17 @@ import {
   useEffect,
   useId,
   useLayoutEffect,
-  useMemo,
   useRef,
   useState,
   type ChangeEvent,
   type ClipboardEvent,
   type DragEvent,
-  type KeyboardEvent,
   type RefObject,
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AttachmentChip } from './attachments/AttachmentChip';
 import type { AttachmentUploads } from './attachments/useAttachmentUploads';
 import { SkillPicker } from './composer/SkillPicker';
-import {
-  filterPickerItems,
-  flattenItems,
-  nextActiveIndex,
-  optionId,
-  pickerKeyAction,
-  shouldOpen,
-  type PickerItem,
-} from './composer/skillPickerModel';
 import type { ComposerSkillRow } from './composer/api';
 import { useVoiceMode } from './voice/voiceModeContext';
 import { Button } from '@/components/ui/button';
@@ -56,7 +45,6 @@ interface ComposerProps {
   readonly draftPrompt?: ComposerDraftPrompt | undefined;
   readonly onDraftPromptConsumed?: ((nonce: number) => void) | undefined;
   readonly skills?: readonly ComposerSkillRow[];
-  readonly onNewChat?: (() => void | Promise<void>) | undefined;
   /** 37E reasoning-effort selector: the currently selected symbol (default 'auto'). */
   readonly effort?: string;
   /** The advertised effort levels to render — auto-first, dynamic (D-13). Absent/empty ⇒ the
@@ -81,7 +69,6 @@ export function Composer({
   draftPrompt,
   onDraftPromptConsumed,
   skills,
-  onNewChat,
   effort,
   effortLevels,
   onEffortChange,
@@ -165,83 +152,8 @@ export function Composer({
   // Skill / command picker (WEBSKILL-01/03): the '/'-triggered ARIA combobox. The composer
   // text is read reactively and every decision (trigger, filter, wrap-around active index,
   // key→action) lives in the pure skillPickerModel, so this component only maps state → ARIA.
-  const composerText = useAuiState((s) => s.composer.text);
   const skillList = skills ?? EMPTY_SKILLS;
-  const listboxBaseId = useId();
   const approvalHintId = useId();
-  const listboxId = `${listboxBaseId}-skills`;
-  const pickerFilter = composerText.startsWith('/') ? composerText.slice(1) : '';
-  const pickerGroups = useMemo(
-    () => filterPickerItems(skillList, pickerFilter),
-    [skillList, pickerFilter],
-  );
-  const pickerOptions = useMemo(() => flattenItems(pickerGroups), [pickerGroups]);
-  // Escape records the text it dismissed at; the menu stays closed only while the text is
-  // unchanged, so the next keystroke re-arms it — a purely derived close, no effect needed.
-  const [dismissedAt, setDismissedAt] = useState<string | null>(null);
-  const [activeIndex, setActiveIndex] = useState(0);
-  const [activeIndexFilter, setActiveIndexFilter] = useState(pickerFilter);
-  if (activeIndexFilter !== pickerFilter) {
-    // A changed filter restarts the active option at the top — adjust-during-render (React
-    // re-renders before commit, no cascading paint), not a setState-in-effect.
-    setActiveIndexFilter(pickerFilter);
-    setActiveIndex(0);
-  }
-  const menuOpen =
-    !approvalLocked &&
-    shouldOpen(composerText, skillList.length) &&
-    dismissedAt !== composerText &&
-    pickerOptions.length > 0;
-  const activeOptionIndex =
-    pickerOptions.length > 0 ? Math.min(activeIndex, pickerOptions.length - 1) : 0;
-  const activeOptionId = menuOpen ? optionId(listboxId, activeOptionIndex) : undefined;
-
-  const clearPendingAttachments = () => {
-    if (uploads === undefined) return;
-    for (const item of uploads.items) uploads.remove(item.localId);
-  };
-
-  const handlePickItem = (item: PickerItem) => {
-    if (approvalLocked) return;
-    if (item.kind === 'skill') {
-      // The skill goes IN the message, not on a chip above it (operator, 2026-08-17): the
-      // pick completes the command and leaves the caret after it, so the operator keeps
-      // typing the instruction and sends '/pdf estrai le tabelle' as one message. The
-      // trailing space is also what closes the menu — shouldOpen() stops at the first one.
-      aui.composer.setText(`/${item.name} `);
-      return;
-    }
-    if (item.command === 'add-files') {
-      fileInputRef.current?.click();
-    } else if (item.command === 'new-chat') {
-      void onNewChat?.();
-    } else {
-      clearPendingAttachments();
-    }
-    // A command consumes the '/'-text; the now-empty text makes shouldOpen() false, which
-    // closes the menu on the next render.
-    aui.composer.setText('');
-  };
-
-  const handleComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (approvalLocked) return;
-    // D-09: never intercept a key while the menu is closed — Enter-send / paste / drop stay
-    // intact. Only the four navigation keys are consumed, and only while the menu is open.
-    if (!menuOpen) return;
-    const action = pickerKeyAction(event.key);
-    if (action === 'none') return;
-    event.preventDefault();
-    if (action === 'up' || action === 'down') {
-      setActiveIndex(
-        nextActiveIndex(activeOptionIndex, action === 'down' ? 1 : -1, pickerOptions.length),
-      );
-    } else if (action === 'select') {
-      const item = pickerOptions[activeOptionIndex];
-      if (item !== undefined) handlePickItem(item);
-    } else {
-      setDismissedAt(composerText);
-    }
-  };
 
   useEffect(() => {
     if (
@@ -423,169 +335,158 @@ export function Composer({
           : '';
 
   return (
-    <ComposerPrimitive.Root
-      data-testid="chat-composer"
-      aria-disabled={approvalLocked}
-      aria-describedby={approvalLocked ? approvalHintId : undefined}
-      onPaste={handlePaste}
-      onDrop={handleDrop}
-      onDragOver={handleDragOver}
-      className="relative mx-3 mb-3 flex flex-col gap-2 rounded-[var(--radius-xl)] border border-border bg-surface p-2 shadow-[var(--shadow-popover)] sm:mx-4"
-    >
-      {approvalLocked ? (
-        <p id={approvalHintId} className="px-1 text-xs text-warning">
-          {t('approval.lock')}
-        </p>
-      ) : null}
-      <fieldset disabled={approvalLocked} className="contents">
-        {menuOpen ? (
-          <SkillPicker
-            groups={pickerGroups}
-            activeOptionId={activeOptionId}
-            listboxId={listboxId}
-            disabled={approvalLocked}
-            onSelect={handlePickItem}
-          />
+    // The trigger root groups the '/'-popover with the input it reads from; the popover
+    // registers itself by char, so a second trigger (e.g. '@') would be another child here
+    // rather than another state machine.
+    <ComposerPrimitive.Unstable_TriggerPopoverRoot>
+      <ComposerPrimitive.Root
+        data-testid="chat-composer"
+        aria-disabled={approvalLocked}
+        aria-describedby={approvalLocked ? approvalHintId : undefined}
+        onPaste={handlePaste}
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+        className="relative mx-3 mb-3 flex flex-col gap-2 rounded-[var(--radius-xl)] border border-border bg-surface p-2 shadow-[var(--shadow-popover)] sm:mx-4"
+      >
+        {approvalLocked ? (
+          <p id={approvalHintId} className="px-1 text-xs text-warning">
+            {t('approval.lock')}
+          </p>
         ) : null}
-        {uploads !== undefined && uploads.items.length > 0 ? (
-          <div className="flex flex-wrap gap-2">
-            {uploads.items.map((item) => (
-              <AttachmentChip
-                key={item.localId}
-                item={item}
-                disabled={approvalLocked}
-                onRemove={uploads.remove}
-              />
-            ))}
-          </div>
-        ) : null}
-        {/* Live region: announces the dictation state to screen readers; kept mounted so the
-          transition is picked up (empty + sr-only while idle). */}
-        <p
-          role="status"
-          aria-live="polite"
-          className={
-            dictationAnnouncement === ''
-              ? 'sr-only'
-              : 'px-1 text-[0.75rem] text-text-muted [font-variant-numeric:tabular-nums]'
-          }
-        >
-          {dictationAnnouncement}
-        </p>
-        <div className="flex items-end gap-2">
-          {uploads !== undefined ? (
-            <>
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                className="sr-only"
-                aria-label={t('chat.attachments.add')}
-                disabled={approvalLocked}
-                onChange={handleFileChange}
-              />
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                aria-label={t('chat.attachments.add')}
-                disabled={approvalLocked}
-                onClick={() => {
-                  if (approvalLocked) return;
-                  fileInputRef.current?.click();
-                }}
-                className="rounded-full text-text-muted hover:text-text"
-              >
-                <Paperclip data-icon aria-hidden="true" className="size-4" />
-              </Button>
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                aria-label={micLabel}
-                aria-pressed={micActive}
-                disabled={approvalLocked}
-                onClick={handleMic}
-                className="rounded-full text-text-muted hover:text-text"
-              >
-                {micActive ? (
-                  <Square data-icon aria-hidden="true" className="size-3.5 fill-current" />
-                ) : (
-                  <Mic data-icon aria-hidden="true" className="size-4" />
-                )}
-              </Button>
-            </>
+        <fieldset disabled={approvalLocked} className="contents">
+          <SkillPicker skills={skillList} disabled={approvalLocked} />
+          {uploads !== undefined && uploads.items.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {uploads.items.map((item) => (
+                <AttachmentChip
+                  key={item.localId}
+                  item={item}
+                  disabled={approvalLocked}
+                  onRemove={uploads.remove}
+                />
+              ))}
+            </div>
           ) : null}
-          <ComposerPrimitive.Input
-            ref={composerInputRef}
-            rows={1}
-            placeholder={t('chat.composer.placeholder')}
-            aria-label={t('chat.composer.placeholder')}
-            // The composer is a plain message textbox by default; it only takes on APG
-            // combobox semantics while the '/'-menu is open. Applying role="combobox"
-            // unconditionally reclassifies the input away from role=textbox even when
-            // idle — that regressed shell.spec.ts (getByRole('textbox', 'Ask Aura')) and
-            // made screen readers announce a listbox popup on every plain message.
-            role={menuOpen ? 'combobox' : undefined}
-            aria-expanded={menuOpen}
-            aria-controls={menuOpen ? listboxId : undefined}
-            aria-activedescendant={menuOpen ? activeOptionId : undefined}
-            aria-haspopup={menuOpen ? 'listbox' : undefined}
-            aria-autocomplete={menuOpen ? 'list' : undefined}
-            disabled={approvalLocked}
-            onKeyDown={handleComposerKeyDown}
-            className="max-h-40 min-h-[44px] flex-1 resize-none bg-transparent px-3 py-2 text-[1.0625rem] leading-relaxed text-text outline-none placeholder:text-text-faint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-          />
-          {/* Reasoning-effort selector (WEBMODEL-01/03, D-13): a compact native select — keyboard-
+          {/* Live region: announces the dictation state to screen readers; kept mounted so the
+          transition is picked up (empty + sr-only while idle). */}
+          <p
+            role="status"
+            aria-live="polite"
+            className={
+              dictationAnnouncement === ''
+                ? 'sr-only'
+                : 'px-1 text-[0.75rem] text-text-muted [font-variant-numeric:tabular-nums]'
+            }
+          >
+            {dictationAnnouncement}
+          </p>
+          <div className="flex items-end gap-2">
+            {uploads !== undefined ? (
+              <>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  className="sr-only"
+                  aria-label={t('chat.attachments.add')}
+                  disabled={approvalLocked}
+                  onChange={handleFileChange}
+                />
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  aria-label={t('chat.attachments.add')}
+                  disabled={approvalLocked}
+                  onClick={() => {
+                    if (approvalLocked) return;
+                    fileInputRef.current?.click();
+                  }}
+                  className="rounded-full text-text-muted hover:text-text"
+                >
+                  <Paperclip data-icon aria-hidden="true" className="size-4" />
+                </Button>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  aria-label={micLabel}
+                  aria-pressed={micActive}
+                  disabled={approvalLocked}
+                  onClick={handleMic}
+                  className="rounded-full text-text-muted hover:text-text"
+                >
+                  {micActive ? (
+                    <Square data-icon aria-hidden="true" className="size-3.5 fill-current" />
+                  ) : (
+                    <Mic data-icon aria-hidden="true" className="size-4" />
+                  )}
+                </Button>
+              </>
+            ) : null}
+            <ComposerPrimitive.Input
+              ref={composerInputRef}
+              rows={1}
+              placeholder={t('chat.composer.placeholder')}
+              aria-label={t('chat.composer.placeholder')}
+              // The combobox ARIA is published by the primitive while the '/'-menu is open and
+              // withdrawn when it closes, so the input stays a plain role=textbox at rest —
+              // the property shell.spec.ts asserts, and the reason screen readers no longer
+              // announce a listbox popup on every ordinary message.
+              disabled={approvalLocked}
+              className="max-h-40 min-h-[44px] flex-1 resize-none bg-transparent px-3 py-2 text-[1.0625rem] leading-relaxed text-text outline-none placeholder:text-text-faint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            />
+            {/* Reasoning-effort selector (WEBMODEL-01/03, D-13): a compact native select — keyboard-
             and screen-reader-correct out of the box, and separate from the textbox so it never
             reclassifies the input or intercepts Enter-send / paste / drop. It renders ONLY the
             model's advertised levels (effortLevels, auto-first); absent ⇒ not rendered. */}
-          {effortLevels !== undefined && effortLevels.length > 0 ? (
-            <div className="relative flex items-center self-center">
-              <select
-                aria-label={t('chat.composer.effort.ariaLabel')}
-                value={effort ?? 'auto'}
-                disabled={approvalLocked}
-                onChange={(event) => {
-                  if (approvalLocked) return;
-                  onEffortChange?.(event.currentTarget.value);
-                }}
-                className="h-8 cursor-pointer appearance-none rounded-full border border-border bg-surface-2 py-1 pr-7 pl-3 text-[0.75rem] font-medium tracking-tight text-text-muted transition-colors hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent [font-variant-caps:all-small-caps]"
-              >
-                {effortLevels.map((level) => (
-                  <option key={level} value={level}>
-                    {t(`chat.composer.effort.${level}`)}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown
-                data-icon
-                aria-hidden="true"
-                className="pointer-events-none absolute right-2 size-3.5 text-text-faint"
-              />
-            </div>
-          ) : null}
-          {isRunning ? (
-            <Button asChild size="icon" className="rounded-full">
-              <ComposerPrimitive.Cancel
-                aria-label={t('chat.composer.stopAria')}
-                disabled={approvalLocked}
-              >
-                <Square data-icon aria-hidden="true" className="size-3.5 fill-current" />
-              </ComposerPrimitive.Cancel>
-            </Button>
-          ) : (
-            <Button asChild size="icon" className="rounded-full">
-              <ComposerPrimitive.Send
-                aria-label={t('chat.composer.sendAria')}
-                disabled={sendDisabled}
-              >
-                <ArrowUp data-icon aria-hidden="true" className="size-4" />
-              </ComposerPrimitive.Send>
-            </Button>
-          )}
-        </div>
-      </fieldset>
-    </ComposerPrimitive.Root>
+            {effortLevels !== undefined && effortLevels.length > 0 ? (
+              <div className="relative flex items-center self-center">
+                <select
+                  aria-label={t('chat.composer.effort.ariaLabel')}
+                  value={effort ?? 'auto'}
+                  disabled={approvalLocked}
+                  onChange={(event) => {
+                    if (approvalLocked) return;
+                    onEffortChange?.(event.currentTarget.value);
+                  }}
+                  className="h-8 cursor-pointer appearance-none rounded-full border border-border bg-surface-2 py-1 pr-7 pl-3 text-[0.75rem] font-medium tracking-tight text-text-muted transition-colors hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent [font-variant-caps:all-small-caps]"
+                >
+                  {effortLevels.map((level) => (
+                    <option key={level} value={level}>
+                      {t(`chat.composer.effort.${level}`)}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown
+                  data-icon
+                  aria-hidden="true"
+                  className="pointer-events-none absolute right-2 size-3.5 text-text-faint"
+                />
+              </div>
+            ) : null}
+            {isRunning ? (
+              <Button asChild size="icon" className="rounded-full">
+                <ComposerPrimitive.Cancel
+                  aria-label={t('chat.composer.stopAria')}
+                  disabled={approvalLocked}
+                >
+                  <Square data-icon aria-hidden="true" className="size-3.5 fill-current" />
+                </ComposerPrimitive.Cancel>
+              </Button>
+            ) : (
+              <Button asChild size="icon" className="rounded-full">
+                <ComposerPrimitive.Send
+                  aria-label={t('chat.composer.sendAria')}
+                  disabled={sendDisabled}
+                >
+                  <ArrowUp data-icon aria-hidden="true" className="size-4" />
+                </ComposerPrimitive.Send>
+              </Button>
+            )}
+          </div>
+        </fieldset>
+      </ComposerPrimitive.Root>
+    </ComposerPrimitive.Unstable_TriggerPopoverRoot>
   );
 }

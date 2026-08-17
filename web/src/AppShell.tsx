@@ -376,7 +376,6 @@ export function AppShell() {
               draftPrompt={composerDraftPrompt}
               onDraftPromptConsumed={consumeComposerDraft}
               onRequestDraftPrompt={requestComposerDraft}
-              onNewChat={startNewConversation}
             />
           )}
         </Suspense>
