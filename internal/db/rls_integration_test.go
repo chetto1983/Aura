@@ -170,114 +170,6 @@ func TestRLSBackstop(t *testing.T) {
 	}
 }
 
-// seedRLSDocument inserts a document owned by identityID. Unlike seedRLSConversation it
-// CANNOT run on the bare pool: aura.documents is fail-closed as of migration 0087, so the
-// insert must carry the identity. That it succeeds here is half the proof — the owner is
-// not locked out of their own table.
-func seedRLSDocument(t *testing.T, pool *pgxpool.Pool, identityID string) string {
-	t.Helper()
-	docID := uuid.Must(uuid.NewV7()).String()
-	if err := WithIdentityTxRaw(context.Background(), pool, identityID, func(tx pgx.Tx) error {
-		_, e := tx.Exec(context.Background(), rlsDocumentInsert, docID, identityID, docID)
-		return e
-	}); err != nil {
-		t.Fatalf("seed document for %s: %v", identityID, err)
-	}
-	return docID
-}
-
-// rlsDocumentInsert is the only statement this file inserts documents with, and every
-// column migration 0093 made mandatory is spelled out on purpose.
-//
-// The two refusal assertions below reuse it, which is the whole reason it exists: a
-// negative control must be rejected by the row-level-security policy and by NOTHING
-// else. An insert that omitted source_kind would be refused by a NOT NULL constraint
-// whether the policy held or failed open, so the test would keep passing while the
-// thing it exists to prove was broken.
-//
-// $3 keys both partial-unique indexes 0093 added (identity+source, identity+search id),
-// so every caller passes a value it has not used before.
-const rlsDocumentInsert = `
-INSERT INTO aura.documents
-    (id, identity_id, scope, title, status,
-     source_kind, source_key, search_document_id, pipeline_generation)
-VALUES ($1, $2, 'library', 'rls-doc', 'ready', 'test', $3, $3, 1)`
-
-// TestRLSFailsClosedWithoutIdentity is the migration-0087 regression proof, and it is
-// written against the exact failure that was MEASURED on the live deployment on
-// 2026-08-02: connected as aura_app with no app.current_identity set, every row of every
-// identity-scoped table was readable, because the 0032-era policies said
-// "NULLIF(current_setting(...), ”) IS NULL OR identity_id = ..." and an unset variable
-// made the first branch true.
-//
-// It asserts three things on aura.documents, which 0087 brought under RLS:
-//
-//	no identity  -> zero rows, even though rows exist and the owner can see them
-//	no identity  -> INSERT refused (the restrictive policy's WITH CHECK)
-//	identity A   -> INSERT of a row owned by B refused, own row still visible
-//
-// The read half is the one that regresses silently: a policy that fails open returns
-// MORE rows, never an error, so nothing in the app ever notices. Assert the count.
-func TestRLSFailsClosedWithoutIdentity(t *testing.T) {
-	pool := rlsMigratedPool(t)
-	ctx := context.Background()
-
-	idA := uuid.Must(uuid.NewV7()).String()
-	idB := uuid.Must(uuid.NewV7()).String()
-	seedRLSIdentity(t, pool, idA, "rlsfc-a-"+idA[:8])
-	seedRLSIdentity(t, pool, idB, "rlsfc-b-"+idB[:8])
-	docA := seedRLSDocument(t, pool, idA)
-	seedRLSDocument(t, pool, idB)
-
-	// 1. No identity on the session: the table is invisible, not merely filtered.
-	var visible int
-	if err := pool.QueryRow(ctx, "SELECT count(*) FROM aura.documents").Scan(&visible); err != nil {
-		t.Fatalf("count documents with no identity: %v", err)
-	}
-	if visible != 0 {
-		t.Errorf("aura.documents returned %d row(s) to a connection with no app.current_identity, want 0 — RLS is failing OPEN", visible)
-	}
-
-	// 2. No identity on the session: writes are refused outright.
-	noIdentityDoc := uuid.Must(uuid.NewV7()).String()
-	_, err := pool.Exec(ctx, rlsDocumentInsert, noIdentityDoc, idA, noIdentityDoc)
-	if err == nil {
-		t.Error("INSERT into aura.documents succeeded with no app.current_identity set, want a row-level-security refusal")
-	}
-
-	// 3. Under identity A: A's own row is visible and B's is not.
-	if err := WithIdentityTxRaw(ctx, pool, idA, func(tx pgx.Tx) error {
-		var ownVisible, total int
-		if e := tx.QueryRow(ctx, "SELECT count(*) FROM aura.documents WHERE id = $1", docA).Scan(&ownVisible); e != nil {
-			return e
-		}
-		if ownVisible != 1 {
-			t.Errorf("owner cannot see their own document %s under their own identity (self-lockout)", docA)
-		}
-		if e := tx.QueryRow(ctx, "SELECT count(*) FROM aura.documents").Scan(&total); e != nil {
-			return e
-		}
-		if total != 1 {
-			t.Errorf("identity A sees %d document(s), want exactly its own 1 — B's row leaked", total)
-		}
-		return nil
-	}); err != nil {
-		t.Fatalf("WithIdentityTxRaw(A) read assertions: %v", err)
-	}
-
-	// 4. A cannot forge a row owned by B. This needs its OWN transaction: the refused
-	//    INSERT aborts the one it runs in, so folding it into the reads above would turn
-	//    their COMMIT into a rollback and mask what actually happened.
-	forgedDoc := uuid.Must(uuid.NewV7()).String()
-	err = WithIdentityTxRaw(ctx, pool, idA, func(tx pgx.Tx) error {
-		_, e := tx.Exec(ctx, rlsDocumentInsert, forgedDoc, idB, forgedDoc)
-		return e
-	})
-	if err == nil {
-		t.Error("identity A inserted a document owned by identity B, want a row-level-security refusal")
-	}
-}
-
 // TestVerifyRLSEnforcedAcceptsAuraApp is the live half of the boot gate: the runtime role
 // really does pass the check the daemon runs before serving. The refusal half is unit
 // tested (TestBootChatCompositionRefusesRLSBypassRole) because provoking it needs a
@@ -362,6 +254,13 @@ func TestRLSPausedStatesTriggerAndBackstop(t *testing.T) {
 }
 
 // TestRLSConversationPlaneFailsClosedWithoutIdentity is the migration-0089 regression proof,
+// and since migration 0098 it is the ONLY one: its sibling TestRLSFailsClosedWithoutIdentity
+// asserted the same five properties on aura.documents (0087's half of the same fix), and 0098
+// dropped that table with the rest of the old document control plane. The invariant is
+// unchanged and the root cause it guards is the same — a 0032-era policy whose
+// "NULLIF(current_setting(...), ”) IS NULL OR ..." branch made an unset variable read as
+// permission — so what was removed is a second instance of this test, not coverage.
+//
 // written against the exact reading MEASURED on the live deployment on 2026-08-02: connected
 // as aura_app with no app.current_identity set, all 32 conversations and all 648 turns were
 // visible, because the 0032 policies said "NULLIF(current_setting(...), ”) IS NULL OR
