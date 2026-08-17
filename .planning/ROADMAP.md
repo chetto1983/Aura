@@ -395,7 +395,18 @@ her own memory. `prd.md:4579` is untouched: document passages remain `TrustUntru
   5. ~~A live turn whose MCP tool result carries instruction-shaped text does not act on it, proving the result-fencing envelope carried the defense.~~ **DELETED 2026-08-16 (D-07):** there is no envelope; the criterion cannot pass as written and must not be silently reinterpreted.
   6. Mounting a **new** MCP server — one with no entry anywhere in Aura's tree — makes its tools usable in a live turn with no code change and no configuration beyond the mount itself, fail-closed at `Mutating+Destructive`.
 
-**Plans**: TBD
+**Plans**: 9 plans
+
+Plans:
+- [ ] 46-01-PLAN.md — prd.md amendment batch: ratify 34b892512, MCP-04/05's new mechanism, TOOL-14's tiering axis + count budget, 45.1 ratification + AURA_MCP_* catalogue repair (BLOCKING, docs only)
+- [ ] 46-02-PLAN.md — curated-surface design doc (the fork contract) + the one-way operator decision on the WhatsApp action scope and the curated tool names
+- [ ] 46-03-PLAN.md — REQUIREMENTS.md MCP-02/04/05 rows and ROADMAP §46 rewritten clean, superseded wording relocated to dated footnotes (D-31)
+- [ ] 46-04-PLAN.md — D-27's deferral count rule: <=3 model-facing tools earns a slot, global cap 2, frozen at mount, drift warned on reconnect
+- [ ] 46-05-PLAN.md — calendar fork (aura-pim-mcp) curated into one multiplexed tool, accountId handle fixed, immutable :<sha> image published
+- [ ] 46-06-PLAN.md — TRACER: re-key the risk table to action names, gate Multiplexed on classifier existence, register the classifier, reconcile at mount, pin the image — one atomic commit
+- [ ] 46-07-PLAN.md — TRACER GATE: one driven conversation proving SC#1/#2/#4 for calendar live, evidence quoted from aura.tool_invocations, scored >9.8
+- [ ] 46-08-PLAN.md — WhatsApp fork curated + its table re-key, classifier and pin in the second atomic commit
+- [ ] 46-09-PLAN.md — SC#6 via the calculator mount, trust-posture tripwire tests, tool-search fixture repair, and the phase-close gates
 
 ### Phase 47: Tool-surface ceremony strip
 
