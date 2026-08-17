@@ -9,7 +9,6 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import '../../i18n/i18n';
 import { Composer } from '../Composer';
 import type { ComposerSkillRow } from '../composer/api';
-import type { AttachmentUploads } from '../attachments/useAttachmentUploads';
 import { stubGetUserMedia, stubMediaRecorder, type GetUserMediaStub } from '../voice/voiceMocks';
 
 // Shared mutable doubles for the mocked runtime + voice-mode context. vi.hoisted runs
@@ -18,7 +17,12 @@ import { stubGetUserMedia, stubMediaRecorder, type GetUserMediaStub } from '../v
 type MockDictation = { status: { type: string } } | undefined;
 
 const h = vi.hoisted(() => {
-  const composer: { dictation: MockDictation; text: string } = { dictation: undefined, text: '' };
+  const addAttachment = vi.fn();
+  const composer: { dictation: MockDictation; text: string; attachments: never[] } = {
+    dictation: undefined,
+    text: '',
+    attachments: [],
+  };
   const caps: { tts: boolean; stt: boolean } = { tts: false, stt: false };
   return {
     setText: vi.fn(),
@@ -26,6 +30,7 @@ const h = vi.hoisted(() => {
     stopDictation: vi.fn(),
     markTurnDictated: vi.fn(),
     auiState: { thread: { isRunning: false }, composer },
+    addAttachment,
     caps,
   };
 });
@@ -35,6 +40,7 @@ vi.mock('@assistant-ui/react', () => ({
     // assistant-ui 0.15 exposes the scopes as PROPERTIES (aui.composer), not calls.
     composer: {
       setText: h.setText,
+      addAttachment: h.addAttachment,
       startDictation: h.startDictation,
       stopDictation: h.stopDictation,
       getState: () => h.auiState.composer,
@@ -46,6 +52,10 @@ vi.mock('@assistant-ui/react', () => ({
     Input: (props: TextareaHTMLAttributes<HTMLTextAreaElement>) => <textarea {...props} />,
     Cancel: (props: ButtonHTMLAttributes<HTMLButtonElement>) => <button type="button" {...props} />,
     Send: (props: ButtonHTMLAttributes<HTMLButtonElement>) => <button type="submit" {...props} />,
+    AddAttachment: (props: ButtonHTMLAttributes<HTMLButtonElement> & { render?: ReactNode }) =>
+      props.render ?? <button type="button" {...props} />,
+    Attachments: ({ children }: { children?: (v: { attachment: unknown }) => ReactNode }) =>
+      children ? null : null,
     // The trigger popover is stubbed to its MOUNT, not its behaviour: it records the char it
     // was registered for and swallows the rest. Driving the real popover here would be
     // testing the library through a mock of the library.
@@ -70,25 +80,13 @@ vi.mock('../voice/voiceModeContext', () => ({
   }),
 }));
 
-function uploads(overrides: Partial<AttachmentUploads> = {}): AttachmentUploads {
-  return {
-    items: [],
-    readyAssetIds: [],
-    hasBlockingUploads: false,
-    addFiles: vi.fn(),
-    remove: vi.fn(),
-    clearReady: vi.fn(),
-    ...overrides,
-  };
-}
-
 let mediaStub: GetUserMediaStub | undefined;
 
 beforeEach(() => {
   vi.resetAllMocks();
   h.caps = { tts: false, stt: false };
   h.auiState.thread = { isRunning: false };
-  h.auiState.composer = { dictation: undefined, text: '' };
+  h.auiState.composer = { dictation: undefined, text: '', attachments: [] };
   // jsdom has no scrollIntoView; the SkillPicker's active-option JS-scroll (Pitfall 6) needs it.
   Element.prototype.scrollIntoView = vi.fn();
 });
@@ -107,32 +105,41 @@ describe('Composer attachments', () => {
     expect(document.activeElement).toBe(screen.getByLabelText('Ask Aura'));
   });
 
-  it('file input passes selected files to addFiles', () => {
-    const addFiles = vi.fn();
-    const { container } = render(<Composer uploads={uploads({ addFiles })} />);
-    const input = container.querySelector('input[type="file"]');
-    if (!(input instanceof HTMLInputElement)) throw new Error('expected hidden file input');
-    const file = new File(['x'], 'manual.pdf', { type: 'application/pdf' });
-
-    fireEvent.change(input, { target: { files: [file] } });
-
-    expect(Array.from(addFiles.mock.calls[0]?.[0] as FileList | File[])).toEqual([file]);
-  });
-
-  it('paste passes clipboard files to addFiles', () => {
-    const addFiles = vi.fn();
-    const { container } = render(<Composer uploads={uploads({ addFiles })} />);
+  // The hidden <input type=file> belongs to ComposerPrimitive.AddAttachment now, so what is
+  // worth asserting is that Aura's OWN entry points — paste and drop — reach the same
+  // adapter the button does, instead of a second path that can drift from it.
+  it('paste routes clipboard files to the attachment adapter', () => {
+    const { container } = render(<Composer />);
     const root = container.firstElementChild;
     if (root === null) throw new Error('expected composer root');
     const file = new File(['x'], 'manual.pdf', { type: 'application/pdf' });
 
     fireEvent.paste(root, { clipboardData: { files: [file] } });
 
-    expect(Array.from(addFiles.mock.calls[0]?.[0] as FileList | File[])).toEqual([file]);
+    expect(h.addAttachment).toHaveBeenCalledWith(file);
   });
 
-  it('disables send while uploads are blocking', () => {
-    render(<Composer uploads={uploads({ hasBlockingUploads: true })} />);
+  it('drop routes dragged files to the attachment adapter', () => {
+    const { container } = render(<Composer />);
+    const root = container.firstElementChild;
+    if (root === null) throw new Error('expected composer root');
+    const file = new File(['x'], 'dragged.pdf', { type: 'application/pdf' });
+
+    fireEvent.drop(root, { dataTransfer: { files: [file] } });
+
+    expect(h.addAttachment).toHaveBeenCalledWith(file);
+  });
+
+  it('disables send while an upload is still running', () => {
+    h.auiState.composer.attachments = [
+      {
+        id: 'a1',
+        type: 'document',
+        name: 'big.pdf',
+        status: { type: 'running', reason: 'uploading', progress: 0.3 },
+      },
+    ] as never;
+    render(<Composer />);
 
     const send = screen.getByLabelText('Send message');
     expect(send).toHaveProperty('disabled', true);
@@ -149,12 +156,10 @@ describe('Composer attachments', () => {
 describe('Composer approval lock', () => {
   it('exposes a stable localized lock relationship and natively disables every primary action', () => {
     h.auiState.composer.text = '/';
-    const addFiles = vi.fn();
     const onEffortChange = vi.fn();
-    const { container, rerender } = render(
+    const { rerender } = render(
       <Composer
         approvalLocked
-        uploads={uploads({ addFiles })}
         skills={SKILLS}
         effort="auto"
         effortLevels={['auto', 'off']}
@@ -179,20 +184,16 @@ describe('Composer approval lock', () => {
     );
     expect(screen.queryByRole('listbox')).toBeNull();
 
-    const fileInput = container.querySelector('input[type="file"]');
-    if (!(fileInput instanceof HTMLInputElement)) throw new Error('expected hidden file input');
-    fireEvent.change(fileInput, {
-      target: { files: [new File(['x'], 'blocked.txt', { type: 'text/plain' })] },
-    });
+    // The file input itself belongs to ComposerPrimitive.AddAttachment; the disabled button
+    // above is the control Aura renders and therefore the one it can be held to.
     fireEvent.paste(root, {
       clipboardData: { files: [new File(['x'], 'blocked-paste.txt', { type: 'text/plain' })] },
     });
-    expect(addFiles).not.toHaveBeenCalled();
+    expect(h.addAttachment).not.toHaveBeenCalled();
 
     rerender(
       <Composer
         approvalLocked
-        uploads={uploads({ addFiles })}
         skills={SKILLS}
         effort="auto"
         effortLevels={['auto', 'off']}
@@ -204,7 +205,7 @@ describe('Composer approval lock', () => {
 
   it('disables the running Cancel action while approval-locked', () => {
     h.auiState.thread = { isRunning: true };
-    render(<Composer approvalLocked uploads={uploads()} />);
+    render(<Composer approvalLocked />);
 
     expect(screen.getByRole('button', { name: 'Stop the current response' })).toHaveProperty(
       'disabled',
@@ -212,27 +213,13 @@ describe('Composer approval lock', () => {
     );
   });
 
-  it('literally disables attachment removal actions', () => {
-    const remove = vi.fn();
-    const lockedUploads = uploads({
-      items: [
-        {
-          localId: 'locked-file',
-          file: new File(['x'], 'locked.txt', { type: 'text/plain' }),
-          progress: 1,
-          status: 'ready',
-        },
-      ],
-      remove,
-    });
-    render(<Composer approvalLocked uploads={lockedUploads} />);
+  // The chip and its remove control are rendered by ComposerPrimitive.Attachments from
+  // runtime state, so the lock is asserted where Aura still owns it — the attach button —
+  // and the chip's own disabled wiring is covered in AttachmentChip.test.
+  it('literally disables the attach action while approval-locked', () => {
+    render(<Composer approvalLocked />);
 
-    const removeAttachment = screen.getByRole('button', { name: 'Remove locked.txt' });
-    expect(removeAttachment).toHaveProperty('disabled', true);
-
-    fireEvent.click(removeAttachment);
-
-    expect(remove).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Add files')).toHaveProperty('disabled', true);
   });
 });
 
@@ -240,21 +227,21 @@ describe('Composer dictation', () => {
   it('caps.stt=false → the Mic records an audio attachment (no regression, WEBVOICE-04)', async () => {
     stubMediaRecorder();
     mediaStub = stubGetUserMedia();
-    const addFiles = vi.fn();
-    render(<Composer uploads={uploads({ addFiles })} />);
+    render(<Composer />);
 
     fireEvent.click(screen.getByLabelText('Record audio'));
     await waitFor(() => screen.getByLabelText('Stop recording'));
     fireEvent.click(screen.getByLabelText('Stop recording'));
 
     expect(mediaStub.getUserMedia).toHaveBeenCalledTimes(1);
-    expect(addFiles).toHaveBeenCalledTimes(1);
+    // The voice note goes through the same adapter as any other attachment (D-10).
+    expect(h.addAttachment).toHaveBeenCalledTimes(1);
     expect(h.startDictation).not.toHaveBeenCalled(); // never dictation when STT is off
   });
 
   it('caps.stt=true → the Mic starts a runtime dictation session (not an attachment)', () => {
     h.caps = { tts: false, stt: true };
-    render(<Composer uploads={uploads()} />);
+    render(<Composer />);
 
     fireEvent.click(screen.getByLabelText('Dictate'));
 
@@ -264,12 +251,12 @@ describe('Composer dictation', () => {
   it('marks the turn dictated when a transcript is inserted (auto-speak parity, D-07)', () => {
     h.caps = { tts: false, stt: true };
     h.auiState.composer.text = '';
-    const { rerender } = render(<Composer uploads={uploads()} />);
+    const { rerender } = render(<Composer />);
 
     fireEvent.click(screen.getByLabelText('Dictate'));
     // Runtime opens the session (dictation state becomes non-null).
     h.auiState.composer.dictation = { status: { type: 'running' } };
-    rerender(<Composer uploads={uploads()} />);
+    rerender(<Composer />);
 
     fireEvent.click(screen.getByLabelText('Stop dictation'));
     expect(h.stopDictation).toHaveBeenCalledTimes(1);
@@ -277,14 +264,14 @@ describe('Composer dictation', () => {
     // The adapter's onSpeech inserts the transcript, then the session tears down.
     h.auiState.composer.text = 'hello world';
     h.auiState.composer.dictation = undefined;
-    rerender(<Composer uploads={uploads()} />);
+    rerender(<Composer />);
 
     expect(h.markTurnDictated).toHaveBeenCalledTimes(1);
   });
 
   it('announces listening → transcribing via an aria-live region', () => {
     h.caps = { tts: false, stt: true };
-    render(<Composer uploads={uploads()} />);
+    render(<Composer />);
     const status = screen.getByRole('status');
 
     fireEvent.click(screen.getByLabelText('Dictate'));
@@ -298,17 +285,17 @@ describe('Composer dictation', () => {
   it('announces an error when a session ends without inserting a transcript (empty/4xx)', () => {
     h.caps = { tts: false, stt: true };
     h.auiState.composer.text = '';
-    const { rerender } = render(<Composer uploads={uploads()} />);
+    const { rerender } = render(<Composer />);
     const status = screen.getByRole('status');
 
     fireEvent.click(screen.getByLabelText('Dictate'));
     h.auiState.composer.dictation = { status: { type: 'running' } };
-    rerender(<Composer uploads={uploads()} />);
+    rerender(<Composer />);
     fireEvent.click(screen.getByLabelText('Stop dictation'));
 
     // Session tears down with the composer text unchanged (nothing was transcribed).
     h.auiState.composer.dictation = undefined;
-    rerender(<Composer uploads={uploads()} />);
+    rerender(<Composer />);
 
     expect(h.markTurnDictated).not.toHaveBeenCalled();
     expect(status.textContent).toContain('No transcription');
@@ -321,7 +308,7 @@ describe('Composer dictation', () => {
     });
     stubMediaRecorder();
     mediaStub = stubGetUserMedia();
-    render(<Composer uploads={uploads()} />);
+    render(<Composer />);
 
     fireEvent.click(screen.getByLabelText('Dictate'));
 
@@ -356,19 +343,19 @@ const SKILLS: readonly ComposerSkillRow[] = [SKILL_CREATOR, CODEQL];
 // counterpart and is gone.
 describe('Composer skill trigger', () => {
   it('mounts the trigger when skills are installed', () => {
-    render(<Composer uploads={uploads()} skills={SKILLS} />);
+    render(<Composer skills={SKILLS} />);
 
     expect(screen.getByTestId('trigger-popover').getAttribute('data-char')).toBe('/');
   });
 
   it('degrades to a no-op when the skills list is empty (D-09)', () => {
-    render(<Composer uploads={uploads()} skills={[]} />);
+    render(<Composer skills={[]} />);
 
     expect(screen.queryByTestId('trigger-popover')).toBeNull();
   });
 
   it('renders no pinned-skill chip above the composer', () => {
-    render(<Composer uploads={uploads()} skills={SKILLS} />);
+    render(<Composer skills={SKILLS} />);
 
     expect(screen.queryByLabelText('Remove pinned skill skill-creator')).toBeNull();
   });
@@ -376,7 +363,7 @@ describe('Composer skill trigger', () => {
 
 describe('Composer reasoning-effort selector', () => {
   it('renders EXACTLY the advertised levels (dynamic, D-13 — never the full 7)', () => {
-    render(<Composer uploads={uploads()} effort="auto" effortLevels={['auto', 'off', 'high']} />);
+    render(<Composer effort="auto" effortLevels={['auto', 'off', 'high']} />);
     const select = screen.getByRole('combobox', { name: 'Reasoning effort' });
     const options = within(select)
       .getAllByRole('option')
@@ -388,7 +375,7 @@ describe('Composer reasoning-effort selector', () => {
   });
 
   it('shows the hydrated value as the current selection', () => {
-    render(<Composer uploads={uploads()} effort="high" effortLevels={['auto', 'off', 'high']} />);
+    render(<Composer effort="high" effortLevels={['auto', 'off', 'high']} />);
     expect(screen.getByRole('combobox', { name: 'Reasoning effort' })).toHaveProperty(
       'value',
       'high',
@@ -399,7 +386,6 @@ describe('Composer reasoning-effort selector', () => {
     const onEffortChange = vi.fn();
     render(
       <Composer
-        uploads={uploads()}
         effort="auto"
         effortLevels={['auto', 'off', 'high']}
         onEffortChange={onEffortChange}
@@ -412,12 +398,12 @@ describe('Composer reasoning-effort selector', () => {
   });
 
   it('is NOT rendered when no levels are provided (Composer mounted without the effort wiring)', () => {
-    render(<Composer uploads={uploads()} />);
+    render(<Composer />);
     expect(screen.queryByRole('combobox', { name: 'Reasoning effort' })).toBeNull();
   });
 
   it('does not reclassify the message input — the idle textbox is preserved (no regression)', () => {
-    render(<Composer uploads={uploads()} effort="auto" effortLevels={['auto', 'off', 'high']} />);
+    render(<Composer effort="auto" effortLevels={['auto', 'off', 'high']} />);
     // The selector is a separate combobox; the message input stays a plain textbox (shell.spec).
     expect(screen.getByRole('textbox', { name: 'Ask Aura' })).toBeTruthy();
     expect(screen.getByLabelText('Ask Aura').getAttribute('role')).toBeNull();

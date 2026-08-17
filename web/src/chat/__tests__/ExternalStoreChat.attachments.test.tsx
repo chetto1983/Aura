@@ -5,34 +5,40 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import '../../i18n/i18n';
 import { ExternalStoreChat } from '../ExternalStoreChat';
 
-const clearReady = vi.hoisted(() => vi.fn());
+// The upload lifecycle is an assistant-ui AttachmentAdapter now, so the double is the
+// ADAPTER rather than a hook: add() yields a ready attachment immediately and assetFor()
+// hands back the Aura asset the optimistic turn renders. The path under test is therefore
+// the real one — paste → composer.addAttachment → adapter → send → run envelope.
+const READY_ASSET = {
+  id: 'asset-1',
+  status: 'searchable',
+  modality: 'document',
+  file_name: 'manual.pdf',
+  mime_type: 'application/pdf',
+  declared_size_bytes: 9,
+  size_bytes: 9,
+  document_id: 'doc-1',
+  summary: 'indexed',
+};
 
-vi.mock('../attachments/useAttachmentUploads', () => ({
-  useAttachmentUploads: () => ({
-    items: [
-      {
-        localId: 'local-1',
-        file: { name: 'manual.pdf' },
-        asset: {
-          id: 'asset-1',
-          status: 'searchable',
-          modality: 'document',
-          file_name: 'manual.pdf',
-          mime_type: 'application/pdf',
-          declared_size_bytes: 9,
-          size_bytes: 9,
-          document_id: 'doc-1',
-          summary: 'indexed',
-        },
-        progress: 1,
-        status: 'ready',
-      },
-    ],
-    readyAssetIds: ['asset-1'],
-    hasBlockingUploads: false,
-    addFiles: vi.fn(),
-    remove: vi.fn(),
-    clearReady,
+vi.mock('../attachments/auraAttachmentAdapter', () => ({
+  createAuraAttachmentAdapter: () => ({
+    accept: 'application/pdf',
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async *add({ file }: { file: File }) {
+      yield {
+        id: 'asset-1',
+        type: 'document',
+        name: file.name,
+        contentType: file.type,
+        file,
+        status: { type: 'requires-action', reason: 'composer-send' },
+      };
+    },
+    send: (attachment: unknown) =>
+      Promise.resolve({ ...(attachment as object), status: { type: 'complete' }, content: [] }),
+    remove: () => Promise.resolve(),
+    assetFor: (id: string) => (id === 'asset-1' ? READY_ASSET : undefined),
   }),
 }));
 
@@ -60,10 +66,9 @@ function renderChat(ui: ReactElement) {
 describe('ExternalStoreChat attachments', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
-    clearReady.mockClear();
   });
 
-  it('sends ready attachment ids with the run and clears ready chips after success', async () => {
+  it('sends the attachment id the adapter produced with the run', async () => {
     const fetchMock = vi.fn((url: unknown) => {
       if (typeof url === 'string' && url.startsWith('/threads/')) {
         return Promise.resolve(
@@ -76,10 +81,19 @@ describe('ExternalStoreChat attachments', () => {
       return Promise.resolve(sseResponse());
     });
     vi.stubGlobal('fetch', fetchMock);
-    renderChat(<ExternalStoreChat threadId="conv-1" />);
+    const { container } = renderChat(<ExternalStoreChat threadId="conv-1" />);
+
+    const root = container.querySelector('[data-testid="chat-composer"]');
+    if (root === null) throw new Error('expected the composer root');
+    fireEvent.paste(root, {
+      clipboardData: { files: [new File(['x'], 'manual.pdf', { type: 'application/pdf' })] },
+    });
 
     const input = screen.getByPlaceholderText('Ask Aura');
     fireEvent.change(input, { target: { value: 'summarize it' } });
+    await waitFor(() => {
+      expect(screen.getByText('manual.pdf')).toBeTruthy();
+    });
     fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
 
     await waitFor(() => {
@@ -88,11 +102,9 @@ describe('ExternalStoreChat attachments', () => {
         | undefined;
       expect(post).toBeDefined();
       if (post === undefined) throw new Error('expected /agent/run POST');
-      const init = post[1];
-      expect(JSON.parse(init.body as string)).toMatchObject({
+      expect(JSON.parse(post[1].body as string)).toMatchObject({
         aura: { attachment_ids: ['asset-1'] },
       });
-      expect(clearReady).toHaveBeenCalledTimes(1);
     });
   });
 

@@ -229,13 +229,14 @@ describe('ExternalStoreChat message geometry', () => {
     const longName = `${'quarterly-evidence-'.repeat(12)}.pdf`;
     const chipRender = render(
       <AttachmentChip
-        item={{
-          localId: 'upload-1',
+        attachment={{
+          id: 'upload-1',
+          type: 'document',
+          name: longName,
+          contentType: 'application/pdf',
           file: new File(['document'], longName, { type: 'application/pdf' }),
-          progress: 1,
-          status: 'ready',
+          status: { type: 'requires-action', reason: 'composer-send' },
         }}
-        onRemove={vi.fn()}
       />,
     );
     const remove = screen.getByRole('button', { name: `Remove ${longName}` });

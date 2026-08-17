@@ -6,14 +6,12 @@ import {
   useLayoutEffect,
   useRef,
   useState,
-  type ChangeEvent,
   type ClipboardEvent,
   type DragEvent,
   type RefObject,
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AttachmentChip } from './attachments/AttachmentChip';
-import type { AttachmentUploads } from './attachments/useAttachmentUploads';
 import { SkillPicker } from './composer/SkillPicker';
 import type { ComposerSkillRow } from './composer/api';
 import { useVoiceMode } from './voice/voiceModeContext';
@@ -28,7 +26,7 @@ import { Button } from '@/components/ui/button';
 // dictation session (the dictationAdapter's onSpeech inserts an editable transcript
 // natively) and announces listening/transcribing/error via an aria-live region. When
 // STT is unconfigured OR dictation is unavailable it reverts to the KEPT attachment-
-// record path (MediaRecorder → uploads.addFiles), so there is no regression (D-10).
+// record path (MediaRecorder → composer.addAttachment), so there is no regression (D-10).
 //
 // Accent is reserved for the primary Send CTA only (UI-SPEC §Color list item 1);
 // Stop is a neutral danger-tinted control so the accent stays scarce.
@@ -41,7 +39,6 @@ interface ComposerProps {
   readonly approvalLocked?: boolean;
   /** RS-07 §4.2: blocks ONLY Send (typing stays free) while the thread's detached run is live. */
   readonly sendBlocked?: boolean;
-  readonly uploads?: AttachmentUploads;
   readonly draftPrompt?: ComposerDraftPrompt | undefined;
   readonly onDraftPromptConsumed?: ((nonce: number) => void) | undefined;
   readonly skills?: readonly ComposerSkillRow[];
@@ -65,7 +62,6 @@ export function Composer({
   onInputAvailable,
   approvalLocked = false,
   sendBlocked = false,
-  uploads,
   draftPrompt,
   onDraftPromptConsumed,
   skills,
@@ -78,7 +74,6 @@ export function Composer({
   const isRunning = useAuiState((s) => s.thread.isRunning);
   const dictation = useAuiState((s) => s.composer.dictation);
   const { caps, markTurnDictated } = useVoiceMode();
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const fallbackComposerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const composerInputRef = inputRef ?? fallbackComposerInputRef;
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -111,7 +106,12 @@ export function Composer({
   const isDictating = dictation != null;
   const isRecording = recordingEpoch === captureEpoch;
   const activeDictationPhase = dictationCaptureEpoch === captureEpoch ? dictationPhase : 'idle';
-  const sendDisabled = approvalLocked || sendBlocked || uploads?.hasBlockingUploads === true;
+  // An attachment still being uploaded blocks the send, exactly as hasBlockingUploads did —
+  // but the state is the runtime's, published by the adapter's generator.
+  const uploading = useAuiState((s) =>
+    s.composer.attachments.some((a) => a.status.type === 'running'),
+  );
+  const sendDisabled = approvalLocked || sendBlocked || uploading;
 
   useLayoutEffect(() => {
     onInputAvailable?.(composerInputRef.current);
@@ -204,13 +204,9 @@ export function Composer({
 
   const addFiles = (files: FileList | File[]) => {
     if (approvalLocked) return;
-    if (files.length > 0) uploads?.addFiles(files);
-  };
-
-  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    if (approvalLocked) return;
-    if (event.currentTarget.files !== null) addFiles(event.currentTarget.files);
-    event.currentTarget.value = '';
+    // addAttachment drives the adapter; paste and drop therefore take the same path as the
+    // attach button rather than a second one that has to be kept in step with it.
+    for (const file of Array.from(files)) void aui.composer.addAttachment(file);
   };
 
   const handlePaste = (event: ClipboardEvent) => {
@@ -236,7 +232,7 @@ export function Composer({
   };
 
   const startRecording = async () => {
-    if (approvalLocked || uploads === undefined || isRecording || recordingRequestRef.current) {
+    if (approvalLocked || isRecording || recordingRequestRef.current) {
       return;
     }
     const mediaDevices = (navigator as Partial<Pick<Navigator, 'mediaDevices'>>).mediaDevices;
@@ -274,7 +270,7 @@ export function Composer({
         recordingStreamRef.current = null;
         recorderRef.current = null;
         setRecordingEpoch(null);
-        if (shouldAttach) uploads.addFiles([file]);
+        if (shouldAttach) void aui.composer.addAttachment(file);
       };
       recorder.start();
       setRecordingEpoch(captureEpoch);
@@ -355,18 +351,13 @@ export function Composer({
         ) : null}
         <fieldset disabled={approvalLocked} className="contents">
           <SkillPicker skills={skillList} disabled={approvalLocked} />
-          {uploads !== undefined && uploads.items.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
-              {uploads.items.map((item) => (
-                <AttachmentChip
-                  key={item.localId}
-                  item={item}
-                  disabled={approvalLocked}
-                  onRemove={uploads.remove}
-                />
-              ))}
-            </div>
-          ) : null}
+          <div className="flex flex-wrap gap-2 empty:hidden">
+            <ComposerPrimitive.Attachments>
+              {({ attachment }) => (
+                <AttachmentChip attachment={attachment} disabled={approvalLocked} />
+              )}
+            </ComposerPrimitive.Attachments>
+          </div>
           {/* Live region: announces the dictation state to screen readers; kept mounted so the
           transition is picked up (empty + sr-only while idle). */}
           <p
@@ -381,49 +372,39 @@ export function Composer({
             {dictationAnnouncement}
           </p>
           <div className="flex items-end gap-2">
-            {uploads !== undefined ? (
-              <>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  className="sr-only"
-                  aria-label={t('chat.attachments.add')}
-                  disabled={approvalLocked}
-                  onChange={handleFileChange}
-                />
+            {/* The hidden input is the primitive's now: AddAttachment opens the dialog,
+                    filters by the adapter's `accept`, and feeds add() directly. */}
+            <ComposerPrimitive.AddAttachment
+              multiple
+              render={
                 <Button
                   type="button"
                   size="icon"
                   variant="ghost"
                   aria-label={t('chat.attachments.add')}
                   disabled={approvalLocked}
-                  onClick={() => {
-                    if (approvalLocked) return;
-                    fileInputRef.current?.click();
-                  }}
                   className="rounded-full text-text-muted hover:text-text"
                 >
                   <Paperclip data-icon aria-hidden="true" className="size-4" />
                 </Button>
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  aria-label={micLabel}
-                  aria-pressed={micActive}
-                  disabled={approvalLocked}
-                  onClick={handleMic}
-                  className="rounded-full text-text-muted hover:text-text"
-                >
-                  {micActive ? (
-                    <Square data-icon aria-hidden="true" className="size-3.5 fill-current" />
-                  ) : (
-                    <Mic data-icon aria-hidden="true" className="size-4" />
-                  )}
-                </Button>
-              </>
-            ) : null}
+              }
+            />
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              aria-label={micLabel}
+              aria-pressed={micActive}
+              disabled={approvalLocked}
+              onClick={handleMic}
+              className="rounded-full text-text-muted hover:text-text"
+            >
+              {micActive ? (
+                <Square data-icon aria-hidden="true" className="size-3.5 fill-current" />
+              ) : (
+                <Mic data-icon aria-hidden="true" className="size-4" />
+              )}
+            </Button>
             <ComposerPrimitive.Input
               ref={composerInputRef}
               rows={1}

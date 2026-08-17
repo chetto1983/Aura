@@ -8,16 +8,20 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '../../i18n/i18n';
 import { Composer } from '../Composer';
-import type { AttachmentUploads } from '../attachments/useAttachmentUploads';
 import { stubGetUserMedia, stubMediaRecorder, type GetUserMediaStub } from '../voice/voiceMocks';
 
 type MockDictation = { status: { type: string } } | undefined;
 
 const h = vi.hoisted(() => {
-  const composer: { dictation: MockDictation; text: string } = { dictation: undefined, text: '' };
+  const composer: { dictation: MockDictation; text: string; attachments: never[] } = {
+    dictation: undefined,
+    text: '',
+    attachments: [],
+  };
   const caps: { tts: boolean; stt: boolean } = { tts: false, stt: false };
   return {
     setText: vi.fn(),
+    addAttachment: vi.fn(),
     startDictation: vi.fn(),
     stopDictation: vi.fn(),
     markTurnDictated: vi.fn(),
@@ -31,6 +35,7 @@ vi.mock('@assistant-ui/react', () => ({
     // assistant-ui 0.15 exposes the scopes as PROPERTIES (aui.composer), not calls.
     composer: {
       setText: h.setText,
+      addAttachment: h.addAttachment,
       startDictation: h.startDictation,
       stopDictation: h.stopDictation,
       getState: () => h.auiState.composer,
@@ -42,6 +47,10 @@ vi.mock('@assistant-ui/react', () => ({
     Input: (props: TextareaHTMLAttributes<HTMLTextAreaElement>) => <textarea {...props} />,
     Cancel: (props: ButtonHTMLAttributes<HTMLButtonElement>) => <button type="button" {...props} />,
     Send: (props: ButtonHTMLAttributes<HTMLButtonElement>) => <button type="submit" {...props} />,
+    AddAttachment: (props: ButtonHTMLAttributes<HTMLButtonElement> & { render?: ReactNode }) =>
+      props.render ?? <button type="button" {...props} />,
+    Attachments: ({ children }: { children?: (v: { attachment: unknown }) => ReactNode }) =>
+      children ? null : null,
     // Trigger popover stubbed to its mount; behaviour belongs to the library.
     Unstable_TriggerPopoverRoot: ({ children }: { children: ReactNode }) => <>{children}</>,
     Unstable_TriggerPopover: Object.assign(
@@ -63,18 +72,6 @@ vi.mock('../voice/voiceModeContext', () => ({
     clearTurnDictated: vi.fn(),
   }),
 }));
-
-function uploads(overrides: Partial<AttachmentUploads> = {}): AttachmentUploads {
-  return {
-    items: [],
-    readyAssetIds: [],
-    hasBlockingUploads: false,
-    addFiles: vi.fn(),
-    remove: vi.fn(),
-    clearReady: vi.fn(),
-    ...overrides,
-  };
-}
 
 function stubPendingGetUserMedia(): GetUserMediaStub & { resolve: () => void } {
   const trackStop = vi.fn<() => void>();
@@ -111,7 +108,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   h.caps = { tts: false, stt: false };
   h.auiState.thread = { isRunning: false };
-  h.auiState.composer = { dictation: undefined, text: '' };
+  h.auiState.composer = { dictation: undefined, text: '', attachments: [] };
 });
 
 afterEach(() => {
@@ -124,20 +121,18 @@ describe('Composer approval capture lock', () => {
   it('aborts an active attachment recorder and suppresses its stop attachment', async () => {
     const Recorder = stubMediaRecorder();
     mediaStub = stubGetUserMedia();
-    const addFiles = vi.fn();
-    const uploadState = uploads({ addFiles });
-    const { rerender } = render(<Composer uploads={uploadState} />);
+    const { rerender } = render(<Composer />);
 
     fireEvent.click(screen.getByLabelText('Record audio'));
     await waitFor(() => screen.getByLabelText('Stop recording'));
     const recorder = Recorder.instances[0];
     if (recorder === undefined) throw new Error('expected an active recorder');
 
-    rerender(<Composer approvalLocked uploads={uploadState} />);
+    rerender(<Composer approvalLocked />);
 
     expect(recorder.state).toBe('inactive');
     expect(mediaStub.trackStop).toHaveBeenCalled();
-    expect(addFiles).not.toHaveBeenCalled();
+    expect(h.addAttachment).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Record audio' })).toHaveProperty('disabled', true);
   });
 
@@ -145,13 +140,11 @@ describe('Composer approval capture lock', () => {
     const Recorder = stubMediaRecorder();
     const pendingMedia = stubPendingGetUserMedia();
     mediaStub = pendingMedia;
-    const addFiles = vi.fn();
-    const uploadState = uploads({ addFiles });
-    const { rerender } = render(<Composer uploads={uploadState} />);
+    const { rerender } = render(<Composer />);
 
     fireEvent.click(screen.getByLabelText('Record audio'));
     expect(pendingMedia.getUserMedia).toHaveBeenCalledTimes(1);
-    rerender(<Composer approvalLocked uploads={uploadState} />);
+    rerender(<Composer approvalLocked />);
     await act(async () => {
       pendingMedia.resolve();
       await pendingMedia.getUserMedia.mock.results[0]?.value;
@@ -159,7 +152,7 @@ describe('Composer approval capture lock', () => {
 
     expect(pendingMedia.trackStop).toHaveBeenCalledTimes(1);
     expect(Recorder.instances).toHaveLength(0);
-    expect(addFiles).not.toHaveBeenCalled();
+    expect(h.addAttachment).not.toHaveBeenCalled();
     expect(screen.queryByLabelText('Stop recording')).toBeNull();
   });
 
@@ -168,23 +161,22 @@ describe('Composer approval capture lock', () => {
     (phase) => {
       h.caps = { tts: false, stt: true };
       h.auiState.composer.text = 'draft';
-      const uploadState = uploads();
-      const { rerender } = render(<Composer uploads={uploadState} />);
+      const { rerender } = render(<Composer />);
 
       fireEvent.click(screen.getByLabelText('Dictate'));
       h.auiState.composer.dictation = { status: { type: 'running' } };
-      rerender(<Composer uploads={uploadState} />);
+      rerender(<Composer />);
       if (phase === 'transcribing') fireEvent.click(screen.getByLabelText('Stop dictation'));
       const stopCallsBeforeLock = h.stopDictation.mock.calls.length;
 
-      rerender(<Composer approvalLocked uploads={uploadState} />);
+      rerender(<Composer approvalLocked />);
 
       expect(h.stopDictation).toHaveBeenCalledTimes(stopCallsBeforeLock + 1);
       expect(screen.getByRole('button', { name: 'Dictate' })).toHaveProperty('disabled', true);
 
       h.auiState.composer.text = 'draft late transcript';
       h.auiState.composer.dictation = undefined;
-      rerender(<Composer approvalLocked uploads={uploadState} />);
+      rerender(<Composer approvalLocked />);
 
       expect(h.setText).toHaveBeenCalledWith('draft');
       expect(h.markTurnDictated).not.toHaveBeenCalled();

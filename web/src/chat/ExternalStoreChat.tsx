@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useMemo, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -20,7 +20,7 @@ import type { Approval } from '../approvals/useApprovals';
 import { Composer, type ComposerDraftPrompt } from './Composer';
 import { EmptyThreadStarters } from './EmptyThreadStarters';
 import { listThreadAssets } from './attachments/api';
-import { useAttachmentUploads } from './attachments/useAttachmentUploads';
+import { createAuraAttachmentAdapter } from './attachments/auraAttachmentAdapter';
 import { useComposerSkills } from './composer/useComposerSkills';
 import { resolveSlashSubmission } from './composer/skillTrigger';
 import { useReasoningCapabilities } from './composer/useReasoningCapabilities';
@@ -109,7 +109,9 @@ export function ExternalStoreChat({
   const dispatchApprovalFocus = useCallback((next: Approval | undefined) => {
     approvalFocusRef.current(next);
   }, []);
-  const uploads = useAttachmentUploads(threadId);
+  // The upload lifecycle is the runtime's now (assistant-ui AttachmentAdapter), not a hook
+  // holding component state beside it; the composer renders progress straight off it.
+  const attachments = useMemo(() => createAuraAttachmentAdapter({ threadId }), [threadId]);
   const skills = useComposerSkills();
   const reasoningCaps = useReasoningCapabilities();
   const conversation = useConversation(threadId).data;
@@ -134,17 +136,21 @@ export function ExternalStoreChat({
 
   const onNew = useCallback(
     async (message: AppendMessage) => {
-      if (uploads.hasBlockingUploads) return;
       historyRequestRef.current += 1;
       historyAbortRef.current?.abort();
       historyAbortRef.current = null;
       // The '/'-command is part of the message the operator typed, so the skill is read
       // back out of it here rather than held in a separate pinned-chip state.
       const { skill, text } = resolveSlashSubmission(appendMessageText(message), skills);
-      const readyAttachmentIds = uploads.readyAssetIds;
-      const readyAttachments = uploads.items.flatMap((item) =>
-        item.status === 'ready' && item.asset !== undefined ? [item.asset] : [],
-      );
+      // The runtime only hands over attachments it has already sent (adapter.send ran), so
+      // there is no separate "is anything still uploading" gate to consult here.
+      // The attachment id is the adapter's stable client id, so the ASSET id the run
+      // envelope needs comes from the adapter's map rather than from the attachment itself.
+      const readyAttachments = (message.attachments ?? []).flatMap((a) => {
+        const asset = attachments.assetFor(a.id);
+        return asset === undefined ? [] : [asset];
+      });
+      const readyAttachmentIds = readyAttachments.map((asset) => asset.id);
       const user = userMessage(text, readyAttachments);
       let assistantIndex = -1;
       setMessages((prev) => {
@@ -205,7 +211,6 @@ export function ExternalStoreChat({
             });
           },
         });
-        if (readyAttachmentIds.length > 0) uploads.clearReady();
       } catch (err) {
         if (!isAbortError(err)) {
           setMessages((prev) => {
@@ -237,7 +242,7 @@ export function ExternalStoreChat({
       onArtifact,
       invalidateRuntimeReads,
       t,
-      uploads,
+      attachments,
       skills,
       effort,
       prepareUsageBaseline,
@@ -507,7 +512,7 @@ export function ExternalStoreChat({
     onEdit,
     onReload,
     onCancel,
-    adapters: voiceAdapters,
+    adapters: { ...voiceAdapters, attachments },
   });
 
   return (
@@ -576,7 +581,6 @@ export function ExternalStoreChat({
             onInputAvailable={setComposerInput}
             approvalLocked={threadApprovals.isPending}
             sendBlocked={liveRunId !== undefined && liveRunId.length > 0}
-            uploads={uploads}
             draftPrompt={draftPrompt}
             onDraftPromptConsumed={onDraftPromptConsumed}
             skills={skills}

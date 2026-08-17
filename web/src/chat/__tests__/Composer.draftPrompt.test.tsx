@@ -8,11 +8,14 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import '../../i18n/i18n';
 import { Composer } from '../Composer';
-import type { AttachmentUploads } from '../attachments/useAttachmentUploads';
 
 const h = vi.hoisted(() => ({
   setText: vi.fn(),
-  auiState: { thread: { isRunning: false }, composer: { text: '', dictation: undefined } },
+  addAttachment: vi.fn(),
+  auiState: {
+    thread: { isRunning: false },
+    composer: { text: '', dictation: undefined, attachments: [] },
+  },
 }));
 
 vi.mock('@assistant-ui/react', () => ({
@@ -31,6 +34,10 @@ vi.mock('@assistant-ui/react', () => ({
     Input: (props: TextareaHTMLAttributes<HTMLTextAreaElement>) => <textarea {...props} />,
     Cancel: (props: ButtonHTMLAttributes<HTMLButtonElement>) => <button type="button" {...props} />,
     Send: (props: ButtonHTMLAttributes<HTMLButtonElement>) => <button type="submit" {...props} />,
+    AddAttachment: (props: ButtonHTMLAttributes<HTMLButtonElement> & { render?: ReactNode }) =>
+      props.render ?? <button type="button" {...props} />,
+    Attachments: ({ children }: { children?: (v: { attachment: unknown }) => ReactNode }) =>
+      children ? null : null,
     // Trigger popover stubbed to its mount; behaviour belongs to the library.
     Unstable_TriggerPopoverRoot: ({ children }: { children: ReactNode }) => <>{children}</>,
     Unstable_TriggerPopover: Object.assign(
@@ -53,41 +60,18 @@ vi.mock('../voice/voiceModeContext', () => ({
   }),
 }));
 
-function uploads(): AttachmentUploads {
-  return {
-    items: [
-      {
-        localId: 'manual',
-        file: new File(['manual'], 'manual.pdf', { type: 'application/pdf' }),
-        progress: 1,
-        status: 'ready',
-      },
-    ],
-    readyAssetIds: [],
-    hasBlockingUploads: false,
-    addFiles: vi.fn(),
-    remove: vi.fn(),
-    clearReady: vi.fn(),
-  };
-}
-
 beforeEach(() => {
   vi.resetAllMocks();
   h.auiState.thread = { isRunning: false };
-  h.auiState.composer = { text: '', dictation: undefined };
+  h.auiState.composer = { text: '', dictation: undefined, attachments: [] };
 });
 
 describe('Composer draft prompt ownership', () => {
   it('acknowledges an unlocked draft nonce exactly once after applying it', () => {
     const draftPrompt = { text: 'Answer from release-notes.pdf', nonce: 23 };
     const onDraftPromptConsumed = vi.fn();
-    const stableUploads = uploads();
     const { rerender } = render(
-      <Composer
-        draftPrompt={draftPrompt}
-        onDraftPromptConsumed={onDraftPromptConsumed}
-        uploads={stableUploads}
-      />,
+      <Composer draftPrompt={draftPrompt} onDraftPromptConsumed={onDraftPromptConsumed} />,
     );
 
     expect(h.setText).toHaveBeenCalledTimes(1);
@@ -95,51 +79,40 @@ describe('Composer draft prompt ownership', () => {
     expect(onDraftPromptConsumed).toHaveBeenCalledTimes(1);
     expect(onDraftPromptConsumed).toHaveBeenCalledWith(draftPrompt.nonce);
 
-    rerender(
-      <Composer
-        draftPrompt={draftPrompt}
-        onDraftPromptConsumed={onDraftPromptConsumed}
-        uploads={stableUploads}
-      />,
-    );
+    rerender(<Composer draftPrompt={draftPrompt} onDraftPromptConsumed={onDraftPromptConsumed} />);
     expect(h.setText).toHaveBeenCalledTimes(1);
     expect(onDraftPromptConsumed).toHaveBeenCalledTimes(1);
   });
 
   it('defers a locked draft and applies it exactly once after unlock', () => {
     const draftPrompt = { text: 'Answer from manual.pdf', nonce: 17 };
-    const stableUploads = uploads();
-    const { container, rerender } = render(
-      <Composer approvalLocked draftPrompt={draftPrompt} uploads={stableUploads} />,
-    );
+    const { rerender } = render(<Composer approvalLocked draftPrompt={draftPrompt} />);
     const input = screen.getByLabelText('Ask Aura');
-    const fileInput = container.querySelector('input[type="file"]');
-    if (!(fileInput instanceof HTMLInputElement)) throw new Error('expected attachment picker');
+    // The hidden file input belongs to ComposerPrimitive.AddAttachment now; the attach
+    // button is the control Aura renders, and it is what must stay untouched here.
     const pickerClicks = vi.fn();
     const sendClicks = vi.fn();
-    fileInput.addEventListener('click', pickerClicks);
+    screen.getByLabelText('Add files').addEventListener('click', pickerClicks);
     screen.getByRole('button', { name: 'Send message' }).addEventListener('click', sendClicks);
 
     expect(h.setText).not.toHaveBeenCalled();
     expect(input).toHaveProperty('disabled', true);
     expect(document.activeElement).not.toBe(input);
-    expect(screen.getByText('manual.pdf')).toBeTruthy();
 
-    rerender(<Composer draftPrompt={draftPrompt} uploads={stableUploads} />);
+    rerender(<Composer draftPrompt={draftPrompt} />);
 
     expect(h.setText).toHaveBeenCalledTimes(1);
     expect(h.setText).toHaveBeenCalledWith(draftPrompt.text);
     expect(document.activeElement).toBe(input);
     expect(input).toHaveProperty('disabled', false);
-    expect(screen.getByText('manual.pdf')).toBeTruthy();
     fireEvent.change(input, { target: { value: 'editable follow-up' } });
     expect(input).toHaveProperty('value', 'editable follow-up');
 
-    rerender(<Composer draftPrompt={draftPrompt} uploads={stableUploads} />);
+    rerender(<Composer draftPrompt={draftPrompt} />);
     expect(h.setText).toHaveBeenCalledTimes(1);
     expect(pickerClicks).not.toHaveBeenCalled();
     expect(sendClicks).not.toHaveBeenCalled();
-    expect(stableUploads.addFiles).not.toHaveBeenCalled();
-    expect(stableUploads.clearReady).not.toHaveBeenCalled();
+    // Applying a draft must not touch attachments: the adapter is never called.
+    expect(h.addAttachment).not.toHaveBeenCalled();
   });
 });
