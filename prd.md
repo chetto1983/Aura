@@ -6152,7 +6152,19 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_ARCADEDB_MCP_BODY_MAX_BYTES` | `1048576` (1 MiB) | cap | Agent Memory convergence | Maximum Streamable HTTP MCP request body; oversized requests are rejected before JSON decoding. |
 | `AURA_ARCADEDB_MCP_HOST` | `0.0.0.0` | operative | Agent Memory convergence | Bind host of the production Go `arcadedb-mcp` service. Compose publishes it on loopback. |
 | `AURA_ARCADEDB_MCP_PORT` | `8096` | operative | Agent Memory convergence | Host port of the production Go `arcadedb-mcp` Streamable HTTP endpoint at `/mcp/`. |
-| `AURA_MCP_PING_INTERVAL_SEC` | `60` | cap | fix-plan 1.6 | Background per-server MCP liveness-poll interval (`internal/agent/mcptools/bridge_ping.go`), started after a successful mount on both the stdio and streamable-HTTP branches. Each ping is bounded to `min(10s, interval)`. `<=0` disables the poller entirely. A ping classified as a transport error (`mcp.IsTransportError`) triggers the existing reactive `reconnectAfterTransport` machinery (breaker+backoff already bound a runaway reconnect storm); a non-transport ping error is WARN-logged only. |
+| `AURA_MCP_MOUNT_TIMEOUT` | `10` (seconds) | cap | Phase 38 / Amendment #124 | Bounds ONE server's whole `MountWithRetry` budget at boot (every attempt + backoff together, not one attempt individually); `cmd/aura/main.go` `mcpMountTimeout`. |
+| `AURA_MCP_SHUTDOWN_TIMEOUT` | `5` (seconds) | cap | Phase 38 / Amendment #124 | Bounds the aggregate `closeMCPServers` fan-out at shutdown (the whole set of closers, not any one closer); `cmd/aura/main.go` `mcpShutdownTimeout`. |
+| `AURA_MCP_CALL_TIMEOUT_SEC` | `60` (seconds; `0` = bounded default) | cap | Amendment #100 / Amendment #124 | Per-call MCP tool-invocation deadline (`internal/agent/mcptools/timeout.go`); a negative value is rejected at mount before tool registration. |
+| `AURA_MCP_ELICITATION_TIMEOUT_SEC` | `300` (seconds) | cap | Phase 45.1 / Amendment #124 | Bounds Aura's decline-and-surface elicitation handling (`internal/agent/mcptools/elicitation.go`); `<=0` disables elicitation outright (the handler declines immediately rather than waiting forever). |
+| `AURA_MCP_MOUNT_RETRY_ATTEMPTS` | `6` | cap | Amendment #124 | Overrides the boot-time MCP mount retry attempt budget (`cmd/aura/main.go` `mcpMountRetryPolicy`); `1` disables retry. Backoff bounds are fixed constants (1s base / 5s cap), not separately configurable. |
+| `AURA_MCP_CONFIG` | unset -> `~/.aura/mcp/servers.json` | operative | Amendment #124 | Test/operator override of the managed MCP config file path (`internal/mcp/managed_config.go` `ManagedConfigPath`). |
+| `AURA_MCP_SANDBOX_ORIGIN` | unset, no default | operative | Amendment #124 | The second origin the cockpit frames MCP Apps views from (`internal/config/config.go`); required only when a mounted server ships a view. |
+| `AURA_MCP_SERVERS_JSON` | unset, empty | operative | Amendment #44 (D-21) / Amendment #124 | Legacy inline MCP server config, additive to the managed config; disabled under the `server_production` profile unless `AURA_MCP_LEGACY_ENV_COMPAT=1` is explicitly set. |
+| `AURA_MCP_LEGACY_ENV_COMPAT` | `false` | operative | Amendment #124 | Explicit escape hatch that re-permits `AURA_MCP_SERVERS_JSON` under the `server_production` profile; `internal/config/config_validate.go`. |
+| `AURA_MCP_NETWORK_ALLOW` | derived per server, no operator default | operative | Amendment #124 | Aura-injected (not operator-set) egress-allowlist value forwarded into a docker-runtime MCP server's own process env (`internal/mcp/manager/runtime.go`), derived from that server's managed-config `Runtime.Network` list. |
+| `AURA_MCP_WHATSAPP_BRIDGE_URL` | unset -> `mcpmanager.WhatsAppBridgeBaseURL()` | operative | Amendment #124 | Overrides the base URL the WhatsApp bridge doctor/status probe targets (`cmd/aura/mcp.go`). |
+| `AURA_MCP_SSRF_ENFORCE` | `false` | operative | Amendment #124 | Tightens a lenient egress profile to enforce SSRF checks (`internal/mcp/sdkclient.go`); ORed with strict-profile enforcement, so it can only tighten a lenient profile, never weaken a strict one. |
+| `AURA_MCP_PROBE_TIMEOUT` | `5` (seconds) | cap | Amendment #124 | Bounds one `aura mcp status`/doctor probe call (`cmd/aura/mcp_status.go`). |
 | `AURA_LLM_LOCAL_BASE_URL` | `http://aura-vllm-chat:8083/v1` | operative | 13 | Local LLM endpoint (vLLM o llama.cpp fallback). |
 | `AURA_LLM_LOCAL_MODEL` | `gemma-3-12b-it` | operative | 13 | Local LLM model id. |
 | `AURA_LLM_OFFLINE_DETECTION_INTERVAL_SEC` | `30` | cap | 13 | TCP probe interval verso remote per offline detection. |
@@ -6179,7 +6191,7 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 
 **Convenzione naming**: env Aura-controlled usano prefix `AURA_<DOMAIN>_<UNIT>` (es. `AURA_SWARM_MAX_DEPTH`). Env per librerie/sidecar di terze parti (`TELEGRAM_BOT_TOKEN`, `OPENROUTER_API_KEY`, `MULTIMODAL_*`, `LLAMA_*`) mantengono il loro naming canonico per compatibilità con tooling esterno (compose, libreria bot, ecc.).
 
-**Nota MCP server registration (amendment #44, D-21)**: NON esistono env vars `AURA_MCP_{MAIL,WHATSAPP}_SERVER`. La registrazione dei server MCP (mail, whatsapp, e ogni altro) avviene via la **managed config** `~/.aura/mcp/servers.json`, gestita dal CLI shippato `aura mcp {install,add,list,doctor,enable,disable,remove}`. Il boot li monta da lì (`buildRegistryWithMCP`). Gli unici env MCP sono gli override test-tier `AURA_MCP_*_SERVER_JSON` usati da `internal/mcp/*_integration_test.go`. Questo supersede la lista env del D-23 (artefatto pre-spike): lo spike 001/002 ha scoperto che il path managed-config esisteva già (Codex commit `ae11737a`).
+**Nota MCP server registration (amendment #44, D-21)**: NON esistono env vars `AURA_MCP_{MAIL,WHATSAPP}_SERVER`. La registrazione dei server MCP (mail, whatsapp, e ogni altro) avviene via la **managed config** `~/.aura/mcp/servers.json`, gestita dal CLI shippato `aura mcp {install,add,list,doctor,enable,disable,remove}`. Il boot li monta da lì (`buildRegistryWithMCP`). Questo supersede la lista env del D-23 (artefatto pre-spike): lo spike 001/002 ha scoperto che il path managed-config esisteva già (Codex commit `ae11737a`). **Corretto 2026-08-17 (Amendment #124):** la frase "gli unici env MCP sono i test-tier `AURA_MCP_*_SERVER_JSON`" non è più vera — il catalogo sopra ora elenca gli `AURA_MCP_*` operativi/cap reali misurati nel tree. Restano test-tier, non operator-facing, e quindi fuori dal catalogo: `AURA_MCP_CALCULATOR_SERVER_JSON` e `AURA_MCP_WHATSAPP_SERVER_JSON` (usati da `internal/mcp/*_integration_test.go`), e `AURA_MCP_HELPER`/`AURA_MCP_HELPER_MODE`/`AURA_MCP_HELPER_TOOLS`/`AURA_MCP_SDK_HELPER`/`AURA_MCP_SDK_HELPER_TOOLS` (subprocess-helper knobs unici alla test suite di `cmd/aura`).
 
 **Amendment #45 / CAP-09 / MCP-V2-01 (Phase 16, 2026-06-04): Aura MCP Manager + Third-Party Trust.** The deferred generic MCP manager is promoted into v1 as Phase 16. Aura owns a local MCP control plane over `~/.aura/mcp/servers.json`: profiles, richer trusted recipes, Calendar fixture support, catalog metadata, redacted profile export, status/doctor/logs, Streamable HTTP, and mount-time risk-policy enforcement. Trust classes are `trusted_recipe`, `trusted_local`, `sandboxed_local`, `remote_http`, and `blocked`; arbitrary third-party local commands default to `blocked` until the operator explicitly trusts them or routes them through a sandboxed/Docker runtime. `aura chat` must fail soft and must not launch a blocked local MCP command. Doctor/status checks availability and auth; policy decides whether tools enter the runtime registry. OpenClaw plugin hosting, marketplace auto-install, typed plugin RPC, and a background restart supervisor stay out-of-scope for this amendment.
 
@@ -6547,3 +6559,52 @@ Phase 42 was governed by IC-01..IC-14 and Section 17 of the (now-removed) indust
 > And it does not prove a server that later grows past 3 tools will be noticed by anything other than
 > the deferral-drift warning this phase adds at `refreshSpec` — a silent mid-conversation deferral
 > flip is a distinct hazard this amendment does not itself close.
+
+## §Phase 45.1 ratification and the AURA_MCP_* catalogue (Amendment #124, 2026-08-17)
+
+> **Amendment #124 (2026-08-17, Phase 46 planning — records what already shipped; blocks nothing)
+> — Phase 45.1's shipped-but-un-amended changes are ratified in prose, and the `AURA_MCP_*` env
+> catalogue is repaired to match the tree.**
+>
+> **What was measured.** `grep -rho "AURA_MCP_[A-Z_]*" --include=*.go internal cmd | sort -u`
+> returns **21 distinct names**. Of those: **1 names a dead poller knob** — the background
+> per-server MCP liveness-poll-interval env var, still catalogued (before this amendment) at the
+> old `prd.md` row as a live knob describing the bounded poll loop that Phase 45.1 deleted outright;
+> its only remaining mention anywhere in the tree is a passing cross-reference inside an unrelated
+> comment at `internal/sandbox/usersandbox/reap.go:29`, and no `os.Getenv` call for it exists
+> anywhere. **7 are test-tier,
+> not operator-facing** — `AURA_MCP_CALCULATOR_SERVER_JSON`, `AURA_MCP_WHATSAPP_SERVER_JSON`,
+> `AURA_MCP_HELPER`, `AURA_MCP_HELPER_MODE`, `AURA_MCP_HELPER_TOOLS`, `AURA_MCP_SDK_HELPER`,
+> `AURA_MCP_SDK_HELPER_TOOLS`, read only from `internal/mcp/*_integration_test.go` and
+> `cmd/aura/*_test.go`. **The remaining 13 are live, operator-facing or Aura-injected, and were
+> absent from the catalogue before this amendment**: `AURA_MCP_MOUNT_TIMEOUT`,
+> `AURA_MCP_SHUTDOWN_TIMEOUT`, `AURA_MCP_MOUNT_RETRY_ATTEMPTS`, `AURA_MCP_CONFIG`,
+> `AURA_MCP_SANDBOX_ORIGIN`, `AURA_MCP_SERVERS_JSON`, `AURA_MCP_LEGACY_ENV_COMPAT`,
+> `AURA_MCP_NETWORK_ALLOW`, `AURA_MCP_WHATSAPP_BRIDGE_URL`, `AURA_MCP_SSRF_ENFORCE`,
+> `AURA_MCP_PROBE_TIMEOUT`, plus `AURA_MCP_CALL_TIMEOUT_SEC` (which existed only in Amendment #100's
+> prose, never as a catalogue row) and `AURA_MCP_ELICITATION_TIMEOUT_SEC` (shipped by 45.1, never
+> catalogued at all).
+>
+> **What changes.**
+> (a) The dead poller's catalogue row (previously the sole `AURA_MCP_*` entry in this table) is
+> **deleted outright** — the poller it described no longer exists; the SDK's `ClientSession.Wait()`
+> replaced the poll loop with push, not another poll.
+> (b) The table gains 13 rows (listed above, immediately preceding this amendment in the catalogue),
+> each with its measured default read from the code, its kind (cap/operative), and one sentence of
+> what it bounds.
+> (c) **45.1's shipped-but-un-amended changes are ratified in prose.** Identity travels in
+> `_meta.aura.user_identifier` (`internal/mcp/middleware.go:11-98`) and the memory tool no longer
+> takes a `user_identifier` **argument** — a tool-schema change covered by COMPAT-01/02/03, not this
+> amendment. `cmd/arcadedb-mcp` refuses a call whose identity `_meta` is absent or empty as a
+> model-readable tool error (`IsError: true`), never a protocol error. The fallback risk branch
+> (`bridge_risk.go:205-207`, `unsafeToRepeatBeyondAura`) escalates a non-read-only, non-idempotent,
+> open-world tool to Destructive, escalate-only by construction — it never de-escalates and never
+> touches the trusted-recipe branch. Elicitation (`internal/agent/mcptools/elicitation.go`) is
+> decline-and-surface: the handler declines the server's request but delivers the ask on the
+> operator's channel, naming the asking server, with no row written to `aura.paused_states` and no
+> turn blocked.
+>
+> **What this measurement does NOT prove.** It does not prove the catalogue is complete for any env
+> family other than `AURA_MCP_*` — other prefixes were not re-swept by this amendment. And it does
+> not prove the `_meta.aura.user_identifier` schema change in (c) is safe for persisted history;
+> COMPAT-01/02/03 are Phase 47/48's requirements to prove that, not this amendment's.
