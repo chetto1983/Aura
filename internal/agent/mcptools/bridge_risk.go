@@ -9,13 +9,22 @@ import (
 	"github.com/chetto1983/aura/internal/mcp"
 )
 
-type mcpActionClass uint8
+// MCPActionClass is the per-action risk tier a trusted-recipe MCP source's
+// action table assigns. Exported (renamed from the unexported mcpActionClass) so
+// internal/gateway's per-action classifier can map it straight to a
+// scoring.RiskTier without inventing a second vocabulary (D-21).
+type MCPActionClass uint8
 
+// The four MCPActionClass values, in ascending risk order: MCPActionUnknown is
+// the fail-closed zero value (an action absent from the table, or a tool that is
+// not a known curated multiplex), MCPActionRead never gates, MCPActionMutate
+// gates as an ordinary reversible write, and MCPActionDestructive gates as an
+// externally irreversible action.
 const (
-	mcpActionUnknown mcpActionClass = iota
-	mcpActionRead
-	mcpActionMutate
-	mcpActionDestructive
+	MCPActionUnknown MCPActionClass = iota
+	MCPActionRead
+	MCPActionMutate
+	MCPActionDestructive
 )
 
 const (
@@ -23,38 +32,38 @@ const (
 	whatsAppRecipeSource = "recipe:whatsapp"
 )
 
-var trustedRecipeActions = map[string]map[string]mcpActionClass{
+var trustedRecipeActions = map[string]map[string]MCPActionClass{
 	calendarRecipeSource: {
-		"list_accounts":              mcpActionRead,
-		"get_emails":                 mcpActionRead,
-		"get_email_details":          mcpActionRead,
-		"search_emails":              mcpActionRead,
-		"list_calendars":             mcpActionRead,
-		"get_calendar_events":        mcpActionRead,
-		"get_calendar_event_details": mcpActionRead,
-		"get_contacts":               mcpActionRead,
-		"search_contacts":            mcpActionRead,
-		"get_contact_details":        mcpActionRead,
-		"create_event":               mcpActionMutate,
-		"update_event":               mcpActionMutate,
-		"respond_to_event":           mcpActionDestructive,
-		"send_email":                 mcpActionDestructive,
+		"list_accounts":              MCPActionRead,
+		"get_emails":                 MCPActionRead,
+		"get_email_details":          MCPActionRead,
+		"search_emails":              MCPActionRead,
+		"list_calendars":             MCPActionRead,
+		"get_calendar_events":        MCPActionRead,
+		"get_calendar_event_details": MCPActionRead,
+		"get_contacts":               MCPActionRead,
+		"search_contacts":            MCPActionRead,
+		"get_contact_details":        MCPActionRead,
+		"create_event":               MCPActionMutate,
+		"update_event":               MCPActionMutate,
+		"respond_to_event":           MCPActionDestructive,
+		"send_email":                 MCPActionDestructive,
 	},
 	whatsAppRecipeSource: {
-		"list_chats":                 mcpActionRead,
-		"list_messages":              mcpActionRead,
-		"search_contacts":            mcpActionRead,
-		"get_contact":                mcpActionRead,
-		"get_chat":                   mcpActionRead,
-		"get_contact_chats":          mcpActionRead,
-		"get_direct_chat_by_contact": mcpActionRead,
-		"get_last_interaction":       mcpActionRead,
-		"get_message_context":        mcpActionRead,
-		"download_media":             mcpActionMutate,
-		"send_audio_message":         mcpActionDestructive,
-		"send_file":                  mcpActionDestructive,
-		"send_message":               mcpActionDestructive,
-		"send_reaction":              mcpActionDestructive,
+		"list_chats":                 MCPActionRead,
+		"list_messages":              MCPActionRead,
+		"search_contacts":            MCPActionRead,
+		"get_contact":                MCPActionRead,
+		"get_chat":                   MCPActionRead,
+		"get_contact_chats":          MCPActionRead,
+		"get_direct_chat_by_contact": MCPActionRead,
+		"get_last_interaction":       MCPActionRead,
+		"get_message_context":        MCPActionRead,
+		"download_media":             MCPActionMutate,
+		"send_audio_message":         MCPActionDestructive,
+		"send_file":                  MCPActionDestructive,
+		"send_message":               MCPActionDestructive,
+		"send_reaction":              MCPActionDestructive,
 	},
 	// The tools cmd/arcadedb-mcp actually serves. The names here were the
 	// PREVIOUS memory server's — memory_add_fact, memory_add_entity, memory_update,
@@ -69,16 +78,16 @@ var trustedRecipeActions = map[string]map[string]mcpActionClass{
 	// empty forget filter, isolates tenants, and audits the call; the gateway must not
 	// turn an explicit memory operation into a second confirmation loop.
 	mcp.SourceRecipeMemory: {
-		"graph_schema":          mcpActionRead,
-		"memory_recall":         mcpActionRead,
-		"memory_search":         mcpActionRead,
-		"memory_entities":       mcpActionRead,
-		"memory_facts_about":    mcpActionRead,
-		"memory_digest":         mcpActionRead,
-		"memory_upsert_fact":    mcpActionMutate,
-		"memory_merge_entities": mcpActionMutate,
-		"memory_reembed":        mcpActionMutate,
-		"memory_forget":         mcpActionMutate,
+		"graph_schema":          MCPActionRead,
+		"memory_recall":         MCPActionRead,
+		"memory_search":         MCPActionRead,
+		"memory_entities":       MCPActionRead,
+		"memory_facts_about":    MCPActionRead,
+		"memory_digest":         MCPActionRead,
+		"memory_upsert_fact":    MCPActionMutate,
+		"memory_merge_entities": MCPActionMutate,
+		"memory_reembed":        MCPActionMutate,
+		"memory_forget":         MCPActionMutate,
 	},
 }
 
@@ -120,11 +129,11 @@ func classifyToolRisk(policy bridgePolicy, t *sdkmcp.Tool) (mutating, destructiv
 				return true, true
 			}
 			switch action {
-			case mcpActionRead:
+			case MCPActionRead:
 				return false, false
-			case mcpActionMutate:
+			case MCPActionMutate:
 				return true, false
-			case mcpActionDestructive:
+			case MCPActionDestructive:
 				return true, true
 			}
 		}

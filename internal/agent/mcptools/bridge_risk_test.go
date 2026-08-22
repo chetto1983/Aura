@@ -515,3 +515,35 @@ func TestMCPToolRiskNilAnnotations(t *testing.T) {
 		t.Fatalf("nil Annotations must classify (true,true), got (%v,%v)", mutating, destructive)
 	}
 }
+
+// calendarDesignDocActions is docs/superpowers/specs/2026-08-17-mcp-curated-surface-design.md
+// §5a's calendar action list, hard-coded here (NOT derived from trustedRecipeActions) so a
+// table edit that silently drops or adds a key fails this test rather than passing vacuously.
+var calendarDesignDocActions = []string{
+	"list_accounts", "get_emails", "get_email_details", "search_emails",
+	"list_calendars", "get_calendar_events", "get_calendar_event_details",
+	"get_contacts", "search_contacts", "get_contact_details",
+	"create_event", "update_event", "respond_to_event", "send_email",
+}
+
+// TestTrustedRecipeCalendarActionsMatchDesignDoc pins D-21's re-key: calendar's
+// 14 keys already equal the fork's curated action enum values one-for-one (46-05
+// re-registered them without re-tiering any), so this asserts the design doc and
+// the live table agree exactly — an extra or a missing key fails.
+func TestTrustedRecipeCalendarActionsMatchDesignDoc(t *testing.T) {
+	t.Parallel()
+	table := trustedRecipeActions[calendarRecipeSource]
+	if len(table) != len(calendarDesignDocActions) {
+		t.Fatalf("trustedRecipeActions[calendarRecipeSource] has %d keys, design doc lists %d", len(table), len(calendarDesignDocActions))
+	}
+	for _, action := range calendarDesignDocActions {
+		if _, ok := table[action]; !ok {
+			t.Errorf("design doc action %q is missing from trustedRecipeActions[calendarRecipeSource]", action)
+		}
+	}
+	for action := range table {
+		if !slices.Contains(calendarDesignDocActions, action) {
+			t.Errorf("trustedRecipeActions[calendarRecipeSource] has %q, which the design doc does not list", action)
+		}
+	}
+}

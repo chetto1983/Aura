@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/scoring"
 )
 
 // fakeTool is a test fixture implementing tools.Tool with a caller-chosen Spec so the
@@ -199,4 +200,36 @@ func TestValidateClassifiableIgnoresNonMutatingEmptyOperationMetadata(t *testing
 	}()
 
 	ValidateClassifiable(reg)
+}
+
+// TestMultiplexedNotInferredFromSchemaShape pins D-34's fail-closed-not-panic
+// promise: a Mutating tool whose schema carries an `action` property, but whose
+// Multiplexed is deliberately false (no classifier entry), boots cleanly and
+// classifies at the generic Mutating/Destructive floor — never a panic, never a
+// silent promotion. This is what lets a stranger's server mount safely even
+// though its schema happens to look like Aura's own multiplexed tools.
+func TestMultiplexedNotInferredFromSchemaShape(t *testing.T) {
+	reg := tools.NewRegistry()
+	spec := tools.Spec{
+		Name:                "stranger__do_thing",
+		Parameters:          json.RawMessage(`{"type":"object","properties":{"action":{"type":"string"}}}`),
+		Mutating:            true,
+		Destructive:         true,
+		Multiplexed:         false,
+		OperationScope:      tools.OperationScopeMCP,
+		OperationNormalizer: tools.OperationNormalizerCanonical,
+		ReplayPolicy:        tools.ReplayToolResult,
+	}
+	reg.Register(fakeTool{spec: spec})
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("ValidateClassifiable panicked on a non-multiplexed tool whose schema merely has an action property: %v", r)
+		}
+	}()
+	ValidateClassifiable(reg)
+
+	if got := classify(spec, json.RawMessage(`{"action":"whatever"}`)); got != scoring.Destructive {
+		t.Fatalf("classify = %q, want the generic Destructive floor (spec.Destructive=true)", got)
+	}
 }
