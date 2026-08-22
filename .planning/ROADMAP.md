@@ -354,7 +354,7 @@ passages remain `TrustUntrusted`, so instructions inside a document stay data, n
   5. ~~A live turn whose MCP tool result carries instruction-shaped text does not act on it, proving the result-fencing envelope carried the defense.~~ **DELETED 2026-08-16 (D-07):** there is no envelope; the criterion cannot pass as written and must not be silently reinterpreted.
   6. Mounting a **new** MCP server — one with no entry anywhere in Aura's tree — makes its tools usable in a live turn with no code change and no configuration beyond the mount itself, fail-closed at `Mutating+Destructive`.
 
-**Plans**: 2/9 plans executed
+**Plans**: 3/9 plans executed
 
 Plans:
 **Wave 1**
@@ -364,7 +364,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 46-03-PLAN.md — REQUIREMENTS.md MCP-02/04/05 rows and ROADMAP §46 rewritten clean, superseded wording relocated to dated footnotes (D-31)
+- [x] 46-03-PLAN.md — REQUIREMENTS.md MCP-02/04/05 rows and ROADMAP §46 rewritten clean, superseded wording relocated to dated footnotes (D-31)
 - [ ] 46-04-PLAN.md — D-27's deferral count rule: <=3 model-facing tools earns a slot, global cap 2, frozen at mount, drift warned on reconnect
 - [ ] 46-05-PLAN.md — calendar fork (aura-pim-mcp) curated into one multiplexed tool, accountId handle fixed, immutable :<sha> image published
 
@@ -682,7 +682,7 @@ and last-among-technical-phases here so its token budget tunes against the final
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 45. Harness correctness | 9/9 | Complete    | 2026-08-15 |
-| 46. MCP trust and facade | 2/9 | In Progress|  |
+| 46. MCP trust and facade | 3/9 | In Progress|  |
 | 47. Tool-surface ceremony strip | 0/TBD | Not started | - |
 | 48. Tool-surface un-defer and merges | 0/TBD | Not started | - |
 | 49. Memory tiers | 0/TBD | Not started | - |

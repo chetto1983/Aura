@@ -4,16 +4,16 @@ milestone: v2.1.0
 current_phase: 46
 current_phase_name: MCP trust and facade
 status: executing
-stopped_at: Completed 46-02-PLAN.md
-last_updated: "2026-08-22T14:05:42.730Z"
+stopped_at: Completed 46-03-PLAN.md
+last_updated: "2026-08-22T14:36:55.000Z"
 last_activity: 2026-08-22
-last_activity_desc: Phase 46 plan 46-02 (curated-surface design doc) complete — WhatsApp views-exempt decision recorded
-state_head: 2012ce81ee746226db08924a4c11c44d6c5ddfa3
+last_activity_desc: Phase 46 plan 46-03 (REQUIREMENTS/ROADMAP clean rewrite, D-31) complete
+state_head: fe8cfdc5338c6aedae1ea3bfa8a681c2553888f6
 progress:
   total_phases: 11
   completed_phases: 1
   total_plans: 26
-  completed_plans: 19
+  completed_plans: 20
 milestone_name: HERMES-CLAUDE_PARITY
 ---
 
@@ -28,18 +28,19 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 
 ## Current Position
 
-Phase: 46 (MCP trust and facade) — EXECUTING (2/9 plans complete)
+Phase: 46 (MCP trust and facade) — EXECUTING (3/9 plans complete)
 Status: Executing Phase 46
 Phase 46 discussion are recorded in `46-CONTEXT.md` D-10..D-16 and in ROADMAP §45.1.
-Last activity: 2026-08-22 — Plan 46-02 (curated-surface design doc) complete:
-`docs/superpowers/specs/2026-08-17-mcp-curated-surface-design.md` landed at `2012ce81e`,
-recording the operator's `views-exempt` decision (WhatsApp keeps `list_chats`/`list_messages`
-raw and advertised, ending at 3 model-facing tools) and the `calendar__calendar` /
-`whatsapp__messages` naming decision. Both are the contract plans 46-05..46-08 implement.
+Last activity: 2026-08-22 — Plan 46-03 (REQUIREMENTS/ROADMAP clean rewrite, D-31) complete:
+REQUIREMENTS.md MCP-02/04/05 rows and ROADMAP §46 rewritten clean at `aa33e710f` / `ed3b9384e`,
+with every superseded pre-34b892512 wording relocated to dated footnotes rather than deleted.
+Both now state the post-amendment posture: frequency+count tiering (#123), curation in the forks,
+and WhatsApp at 3 model-facing tools.
 
-Next: Plan 46-03 (REQUIREMENTS/ROADMAP clean rewrite, D-31) — must say "WhatsApp: 1 curated +
-2 exempted = 3 model-facing tools" per 46-02, never "1". See
-`.planning/phases/46-mcp-trust-and-facade/46-02-SUMMARY.md` for full detail.
+Next: Plan 46-04 (D-27 deferral count rule) — replace the unconditional `true` in
+`bridgePolicy.defaultDeferred()` with the <=3-model-facing-tools predicate, global cap 2 slots,
+frozen at mount, drift WARNed on reconnect. See
+`.planning/phases/46-mcp-trust-and-facade/46-03-SUMMARY.md` for full detail.
 
 Progress: [████████░░] 82%
 
@@ -171,7 +172,7 @@ Items acknowledged and carried forward from previous milestone close:
 ## Session Continuity
 
 Last session: 2026-08-22T14:05:42.591Z
-Stopped at: Completed 46-02-PLAN.md
+Stopped at: Completed 46-03-PLAN.md
 exited at its CONTEXT.md gate — Phase 45 has no CONTEXT.md, and discuss-phase must run as a
 top-level command (nested invocation breaks AskUserQuestion, GSD #1009). No phase directory
 was created and no planning agents were spawned.
@@ -185,4 +186,4 @@ to 77, the `tool_call_id` blocker marked resolved by `657c9e383`, and the CTX-V2
 re-pointed at Phase 53. REQUIREMENTS.md's two stale prose lines corrected to match.
 
 Resume file: None
-Next action: `/gsd-execute-phase 46` (plan 46-03 — REQUIREMENTS/ROADMAP clean rewrite, D-31).
+Next action: `/gsd-execute-phase 46` (plan 46-04 — D-27 deferral count rule).
