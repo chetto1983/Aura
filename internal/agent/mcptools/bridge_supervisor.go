@@ -424,6 +424,14 @@ func (s *MountedServer) setRefreshHook(hook func()) {
 // tools.Spec in place from advertised — never the registry map, which is what
 // keeps this safe against the frozen-registry invariant.
 func (s *MountedServer) refreshSpecsLocked(advertised []*sdkmcp.Tool) {
+	// The only site holding the whole reconnect listing, so the only place the
+	// model-facing count can be recomputed. Every bridgedTool from one mount
+	// carries the identical frozen policy (bridgeToolsWithPolicy scores it once),
+	// so any tracked tool answers for the mount.
+	for _, bt := range s.bridged {
+		warnIfDeferralWouldFlip(s.name, bt.policy, advertised)
+		break
+	}
 	changed := false
 	for _, t := range advertised {
 		if bt, ok := s.bridged[t.Name]; ok {

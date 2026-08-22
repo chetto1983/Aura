@@ -79,6 +79,13 @@ func (b *bridgedTool) refreshSpec(t *sdkmcp.Tool) {
 	spec.Summary = summary
 	spec.Description = description
 	spec.Parameters = params
+	// Frozen at mount, never recomputed here: b.policy carries the decision
+	// bridgeToolsWithPolicy took once from this mount's model-facing tool count
+	// (D-27 / amendment #123). Recomputing it against THIS listing would let a
+	// fork that briefly advertises a different number of tools during a bad
+	// deploy add or remove a tool from the manifest mid-conversation,
+	// invalidating the KV-cache prefix the model is relying on. Drift is
+	// reported by warnIfDeferralWouldFlip on the reconnect path, never applied.
 	spec.Deferred = b.policy.defaultDeferred()
 	spec.Mutating, spec.Destructive = mcpToolRisk(b.policy, t)
 	applyMCPOperationMetadata(&spec)
