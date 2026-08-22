@@ -445,6 +445,62 @@ func TestRequestBody_ToolChoice(t *testing.T) {
 	})
 }
 
+// A model card's sampling instructions have to reach the wire, or they are only
+// advice. Gemma 4 asks for top_p+top_k; Qwen3.5 adds min_p and presence_penalty.
+// Measured against llama-server b9859 on 2026-08-22: top_k IS honoured on this
+// endpoint (top_k=1 collapses two runs to identical text, top_k=64 does not), so
+// sending them is not decoration.
+func TestRequestBody_CardSampling(t *testing.T) {
+	topP, topK, minP := 0.95, 64, 0.0
+	presence, repetition := 1.5, 1.0
+	bodyBytes := captureBody(t, llm.Request{
+		Model:       "gemma-4-12b",
+		Messages:    []llm.Message{{Role: "user", Content: "ciao"}},
+		Temperature: 1.0,
+		Sampling: llm.Sampling{
+			TopP: &topP, TopK: &topK, MinP: &minP,
+			PresencePenalty: &presence, RepetitionPenalty: &repetition,
+		},
+	})
+	var body map[string]any
+	if err := json.Unmarshal(bodyBytes, &body); err != nil {
+		t.Fatalf("request body not JSON: %v", err)
+	}
+	for key, want := range map[string]float64{
+		"top_p": 0.95, "top_k": 64, "min_p": 0,
+		"presence_penalty": 1.5, "repetition_penalty": 1,
+	} {
+		got, ok := body[key].(float64)
+		if !ok {
+			t.Errorf("%s absent from wire: %s", key, bodyBytes)
+			continue
+		}
+		if got != want {
+			t.Errorf("%s = %v, want %v", key, got, want)
+		}
+	}
+}
+
+// The counterpart that protects every existing deployment: an unconfigured
+// Sampling puts NOTHING on the wire, so the OpenRouter request stays byte-identical
+// to what it was before these knobs existed.
+func TestRequestBody_CardSamplingOmittedWhenUnset(t *testing.T) {
+	bodyBytes := captureBody(t, llm.Request{
+		Model:       "deepseek/deepseek-v4-flash:exacto",
+		Messages:    []llm.Message{{Role: "user", Content: "ciao"}},
+		Temperature: 0.7,
+	})
+	var body map[string]any
+	if err := json.Unmarshal(bodyBytes, &body); err != nil {
+		t.Fatalf("request body not JSON: %v", err)
+	}
+	for _, key := range []string{"top_p", "top_k", "min_p", "presence_penalty", "repetition_penalty"} {
+		if _, present := body[key]; present {
+			t.Errorf("%s must be absent when unconfigured: %s", key, bodyBytes)
+		}
+	}
+}
+
 // TestRequestBody_Reasoning asserts the provider-neutral llm.Request.Reasoning
 // field projects to OpenRouter's unified `reasoning` object, including explicit
 // exclude:false (the default is false, but Aura sends it intentionally so the

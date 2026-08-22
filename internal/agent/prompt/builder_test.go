@@ -146,3 +146,23 @@ func TestCacheControlSeam(t *testing.T) {
 		}
 	})
 }
+
+// The card's sampling has to survive the builder, or it is configured and then dropped
+// one layer before the wire — the failure mode that is hardest to see, because both the
+// config and the wire test would still pass on their own.
+func TestBuildCarriesCardSamplingFromConfig(t *testing.T) {
+	topP, topK, minP := 0.95, 64, 0.0
+	cfg := testConfig()
+	cfg.Sampling = llm.Sampling{TopP: &topP, TopK: &topK, MinP: &minP}
+	b := NewPromptBuilder()
+	req := b.Build(seedHistory(), testRegistry(), "openrouter", cfg, Budget{}, nil)
+	if req.Sampling.TopP == nil || *req.Sampling.TopP != 0.95 {
+		t.Errorf("TopP = %v, want 0.95", req.Sampling.TopP)
+	}
+	if req.Sampling.TopK == nil || *req.Sampling.TopK != 64 {
+		t.Errorf("TopK = %v, want 64", req.Sampling.TopK)
+	}
+	if req.Sampling.MinP == nil || *req.Sampling.MinP != 0 {
+		t.Errorf("MinP = %v, want 0 (set, not absent)", req.Sampling.MinP)
+	}
+}

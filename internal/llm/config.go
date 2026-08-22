@@ -63,12 +63,20 @@ const (
 // AURA_LLM_* env var names (AURA_<DOMAIN>_<UNIT> convention). OPENROUTER_API_KEY
 // stays the canonical third-party secret name (NOT renamed to AURA_*).
 const (
-	envAPIKey               = "OPENROUTER_API_KEY" //nolint:gosec // G101: env var NAME, not a credential
-	envProvider             = "AURA_LLM_PROVIDER"
-	envModel                = "AURA_LLM_MODEL"
-	envBaseURL              = "AURA_LLM_BASE_URL"
-	envTemperature          = "AURA_LLM_TEMPERATURE"
-	envMaxTokens            = "AURA_LLM_MAX_TOKENS" //nolint:gosec // G101 false positive: env var NAME, not a credential
+	envAPIKey      = "OPENROUTER_API_KEY" //nolint:gosec // G101: env var NAME, not a credential
+	envProvider    = "AURA_LLM_PROVIDER"
+	envModel       = "AURA_LLM_MODEL"
+	envBaseURL     = "AURA_LLM_BASE_URL"
+	envTemperature = "AURA_LLM_TEMPERATURE"
+	envMaxTokens   = "AURA_LLM_MAX_TOKENS" //nolint:gosec // G101 false positive: env var NAME, not a credential
+
+	// Model-card sampling (Config.Sampling). Unset leaves the knob off the wire.
+	envTopP              = "AURA_LLM_TOP_P"
+	envTopK              = "AURA_LLM_TOP_K"
+	envMinP              = "AURA_LLM_MIN_P"
+	envPresencePenalty   = "AURA_LLM_PRESENCE_PENALTY"
+	envRepetitionPenalty = "AURA_LLM_REPETITION_PENALTY"
+
 	envAdaptiveReasoning    = "AURA_LLM_ADAPTIVE_REASONING"
 	envShowReasoning        = "AURA_SHOW_REASONING"
 	envTotalTimeoutSec      = "AURA_LLM_TOTAL_TIMEOUT_SEC"
@@ -153,7 +161,10 @@ type Config struct {
 	StreamIdleTimeoutSec int
 	Temperature          float64
 	MaxTokens            int
-	AdaptiveReasoning    bool
+	// Sampling is the rest of the serving model's card: top_p / top_k / min_p /
+	// presence and repetition penalties. Unset fields never reach the wire.
+	Sampling          Sampling
+	AdaptiveReasoning bool
 
 	// ShowReasoning surfaces the model's chain-of-thought instead of redacting it
 	// (AURA_SHOW_REASONING, default true). It is the SINGLE master switch for live
@@ -238,6 +249,11 @@ type fileConfig struct {
 	ConnectTimeoutSec    *int              `json:"connect_timeout_sec,omitempty"`
 	StreamIdleTimeoutSec *int              `json:"stream_idle_timeout_sec,omitempty"`
 	Temperature          *float64          `json:"temperature,omitempty"`
+	TopP                 *float64          `json:"top_p,omitempty"`
+	TopK                 *int              `json:"top_k,omitempty"`
+	MinP                 *float64          `json:"min_p,omitempty"`
+	PresencePenalty      *float64          `json:"presence_penalty,omitempty"`
+	RepetitionPenalty    *float64          `json:"repetition_penalty,omitempty"`
 	MaxTokens            *int              `json:"max_tokens,omitempty"`
 	AdaptiveReasoning    *bool             `json:"adaptive_reasoning,omitempty"`
 	ShowReasoning        *bool             `json:"show_reasoning,omitempty"`
@@ -382,6 +398,21 @@ func overlayFile(cfg *Config, fc *fileConfig) {
 	if fc.Temperature != nil {
 		cfg.Temperature = *fc.Temperature
 	}
+	if fc.TopP != nil {
+		cfg.Sampling.TopP = fc.TopP
+	}
+	if fc.TopK != nil {
+		cfg.Sampling.TopK = fc.TopK
+	}
+	if fc.MinP != nil {
+		cfg.Sampling.MinP = fc.MinP
+	}
+	if fc.PresencePenalty != nil {
+		cfg.Sampling.PresencePenalty = fc.PresencePenalty
+	}
+	if fc.RepetitionPenalty != nil {
+		cfg.Sampling.RepetitionPenalty = fc.RepetitionPenalty
+	}
 	if fc.MaxTokens != nil {
 		cfg.MaxTokens = *fc.MaxTokens
 	}
@@ -423,6 +454,9 @@ func applyEnvOverrides(cfg *Config) error {
 		return err
 	} else if ok {
 		cfg.MaxTokens = v
+	}
+	if err := overlaySamplingEnv(cfg); err != nil {
+		return err
 	}
 	if v := os.Getenv(envAdaptiveReasoning); v != "" {
 		cfg.AdaptiveReasoning = envBool(envAdaptiveReasoning, cfg.AdaptiveReasoning)
@@ -494,6 +528,39 @@ func envBool(key string, fallback bool) bool {
 		return fallback
 	}
 	return b
+}
+
+// overlaySamplingEnv reads the model-card sampling knobs. Each is applied only when
+// the operator set it, so an unconfigured deployment sends none of them and its wire
+// stays byte-identical. Malformed values are fail-fast like every other numeric knob:
+// a typo in top_k must not silently become "no top_k" on a model whose card requires
+// one.
+func overlaySamplingEnv(cfg *Config) error {
+	for _, f := range []struct {
+		key string
+		set func(*float64)
+	}{
+		{envTopP, func(v *float64) { cfg.Sampling.TopP = v }},
+		{envMinP, func(v *float64) { cfg.Sampling.MinP = v }},
+		{envPresencePenalty, func(v *float64) { cfg.Sampling.PresencePenalty = v }},
+		{envRepetitionPenalty, func(v *float64) { cfg.Sampling.RepetitionPenalty = v }},
+	} {
+		v, ok, err := envFloat(f.key)
+		if err != nil {
+			return err
+		}
+		if ok {
+			f.set(&v)
+		}
+	}
+	v, ok, err := envInt(envTopK)
+	if err != nil {
+		return err
+	}
+	if ok {
+		cfg.Sampling.TopK = &v
+	}
+	return nil
 }
 
 // envFloat reads key as a float, fail-fast on a set-but-malformed value.

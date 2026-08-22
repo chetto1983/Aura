@@ -116,6 +116,11 @@ type Request struct {
 	Tools       []ToolDef
 	Temperature float64
 	MaxTokens   int
+	// Sampling carries the rest of what a model card asks for. Temperature above was
+	// the only knob Aura ever sent, which meant a card's top_p/top_k/min_p could reach
+	// the model only as llama-server flags — invisible here, and applied to every model
+	// that server hosts rather than to the one the card describes.
+	Sampling Sampling
 	// Reasoning is an optional provider-neutral request hint for thinking-token
 	// models. Wire clients translate the populated fields they support; callers
 	// must keep it empty when the provider/model should receive no reasoning knob.
@@ -160,6 +165,23 @@ const (
 	ReasoningEffortMinimal ReasoningEffort = "minimal"
 	ReasoningEffortNone    ReasoningEffort = "none"
 )
+
+// Sampling is the model-card sampling set beyond temperature. Every field is a
+// POINTER on purpose: nil means "the operator configured nothing", and the wire layer
+// omits it, so a deployment that never sets these keeps a byte-identical request. A
+// zero VALUE is a real instruction and must survive — Qwen3.5's card asks for
+// min_p=0.0, which is not the same statement as "no min_p".
+//
+// llama-server honours all five on /v1/chat/completions (measured 2026-08-22 against
+// b9859: top_k=1 collapses two runs to identical text where top_k=64 does not), and
+// OpenRouter accepts the same names, so one struct covers both targets.
+type Sampling struct {
+	TopP              *float64
+	TopK              *int
+	MinP              *float64
+	PresencePenalty   *float64
+	RepetitionPenalty *float64
+}
 
 // ReasoningConfig describes request-side reasoning controls without committing
 // the core agent loop to one provider's wire shape. Effort and MaxTokens are

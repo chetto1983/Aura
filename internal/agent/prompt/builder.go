@@ -154,6 +154,7 @@ func (b *PromptBuilder) buildBase(history []llm.Message, reg *tools.Registry, cf
 		Tools:       reg.RenderToolDefs(activated),
 		Temperature: cfg.Temperature,
 		MaxTokens:   cfg.MaxTokens,
+		Sampling:    cfg.Sampling,
 	}
 	return req
 }

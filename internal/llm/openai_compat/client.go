@@ -79,6 +79,13 @@ type wireRequest struct {
 	Tools       []llm.ToolDef `json:"tools,omitempty"`
 	ToolChoice  string        `json:"tool_choice,omitempty"`
 	Temperature float64       `json:"temperature"`
+	// The model-card sampling set. All omitempty pointers: unset stays off the wire,
+	// so the pre-existing OpenRouter request is byte-unchanged (llm.Sampling).
+	TopP              *float64 `json:"top_p,omitempty"`
+	TopK              *int     `json:"top_k,omitempty"`
+	MinP              *float64 `json:"min_p,omitempty"`
+	PresencePenalty   *float64 `json:"presence_penalty,omitempty"`
+	RepetitionPenalty *float64 `json:"repetition_penalty,omitempty"`
 	// MaxTokens is omitted when non-positive, which is how a caller asks for the model's
 	// own output ceiling instead of one this process invented. Only the summarizer does
 	// (internal/conversations/compaction_transcript.go): an output cap there cuts the
@@ -304,10 +311,16 @@ func (c *Client) buildWireRequest(req llm.Request) wireRequest {
 		Tools:       tools,
 		ToolChoice:  choice,
 		Temperature: req.Temperature,
-		MaxTokens:   req.MaxTokens,
-		SessionID:   req.SessionID,
-		Stream:      true,
-		Provider:    providerObj{DataCollection: "deny"},
+
+		TopP:              req.Sampling.TopP,
+		TopK:              req.Sampling.TopK,
+		MinP:              req.Sampling.MinP,
+		PresencePenalty:   req.Sampling.PresencePenalty,
+		RepetitionPenalty: req.Sampling.RepetitionPenalty,
+		MaxTokens:         req.MaxTokens,
+		SessionID:         req.SessionID,
+		Stream:            true,
+		Provider:          providerObj{DataCollection: "deny"},
 	}
 	// The reasoning projection is target-aware. llama-server ignores the OpenRouter
 	// reasoning:{...} object (spike 095), so it gets its own per-request fields and

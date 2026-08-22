@@ -31,6 +31,11 @@ func clearLLMEnv(t *testing.T) {
 		"AURA_COMPLETION_GATE",
 		"AURA_COMPLETION_CRITIC_MODEL",
 		"AURA_LLM_OPENROUTER_MIDDLE_OUT",
+		"AURA_LLM_TOP_P",
+		"AURA_LLM_TOP_K",
+		"AURA_LLM_MIN_P",
+		"AURA_LLM_PRESENCE_PENALTY",
+		"AURA_LLM_REPETITION_PENALTY",
 	} {
 		t.Setenv(k, "")
 	}
@@ -243,6 +248,61 @@ func TestConfigMalformedEnvFailsFast(t *testing.T) {
 }
 
 // TestConfigMalformedNumericEnv covers every fail-fast numeric env knob (the
+// A model card states more than temperature: Gemma 4 asks for top_p + top_k, Qwen3.5
+// adds min_p and presence_penalty. Before this, Aura sent ONLY temperature, so those
+// values could reach the model only as server flags — invisible to the daemon and
+// wrong for any other model on the same server. Each is a POINTER so "unset" stays
+// distinguishable from "set to zero": min_p=0.0 is a real Qwen instruction, not an
+// absence.
+func TestConfigLoadsCardSamplingFromEnv(t *testing.T) {
+	isolateHome(t)
+	clearLLMEnv(t)
+	t.Setenv("OPENROUTER_API_KEY", "sk-test")
+	t.Setenv("AURA_LLM_TOP_P", "0.95")
+	t.Setenv("AURA_LLM_TOP_K", "64")
+	t.Setenv("AURA_LLM_MIN_P", "0")
+	t.Setenv("AURA_LLM_PRESENCE_PENALTY", "1.5")
+	t.Setenv("AURA_LLM_REPETITION_PENALTY", "1")
+
+	cfg, err := llm.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	s := cfg.Sampling
+	if s.TopP == nil || *s.TopP != 0.95 {
+		t.Errorf("TopP = %v, want 0.95", s.TopP)
+	}
+	if s.TopK == nil || *s.TopK != 64 {
+		t.Errorf("TopK = %v, want 64", s.TopK)
+	}
+	if s.MinP == nil || *s.MinP != 0 {
+		t.Errorf("MinP = %v, want 0 (set, not absent)", s.MinP)
+	}
+	if s.PresencePenalty == nil || *s.PresencePenalty != 1.5 {
+		t.Errorf("PresencePenalty = %v, want 1.5", s.PresencePenalty)
+	}
+	if s.RepetitionPenalty == nil || *s.RepetitionPenalty != 1 {
+		t.Errorf("RepetitionPenalty = %v, want 1", s.RepetitionPenalty)
+	}
+}
+
+// Unset means unset: nothing reaches the wire, so every existing deployment (the
+// OpenRouter path above all) keeps the byte-identical request it had before.
+func TestConfigSamplingUnsetStaysNil(t *testing.T) {
+	isolateHome(t)
+	clearLLMEnv(t)
+	t.Setenv("OPENROUTER_API_KEY", "sk-test")
+
+	cfg, err := llm.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	s := cfg.Sampling
+	if s.TopP != nil || s.TopK != nil || s.MinP != nil || s.PresencePenalty != nil || s.RepetitionPenalty != nil {
+		t.Errorf("unset sampling should be all-nil, got %+v", s)
+	}
+}
+
 // float and the three int knobs), so a single operator typo in any of them is a
 // loud Load error rather than a silently-absorbed default.
 func TestConfigMalformedNumericEnv(t *testing.T) {
@@ -253,6 +313,11 @@ func TestConfigMalformedNumericEnv(t *testing.T) {
 		{"AURA_LLM_MAX_TOKENS", "lots"},
 		{"AURA_LLM_TOTAL_TIMEOUT_SEC", "soon"},
 		{"AURA_LLM_CONNECT_TIMEOUT_SEC", "fast"},
+		{"AURA_LLM_TOP_P", "high"},
+		{"AURA_LLM_TOP_K", "many"},
+		{"AURA_LLM_MIN_P", "low"},
+		{"AURA_LLM_PRESENCE_PENALTY", "much"},
+		{"AURA_LLM_REPETITION_PENALTY", "some"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.key, func(t *testing.T) {
