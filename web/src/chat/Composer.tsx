@@ -159,6 +159,16 @@ export function Composer({
   const skillList = skills ?? EMPTY_SKILLS;
   const approvalHintId = useId();
 
+  // Focus + caret at the end of whatever the composer now holds. The '/' picker needs it
+  // after a mouse pick (see SkillPicker.execute); it is also simply where the caret belongs
+  // once text has been written into the composer on the operator's behalf.
+  const focusComposerEnd = () => {
+    const input = composerInputRef.current;
+    if (!input) return;
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  };
+
   useEffect(() => {
     if (
       approvalLocked ||
@@ -331,7 +341,12 @@ export function Composer({
             </p>
           ) : null}
           <fieldset disabled={approvalLocked} className="contents">
-            <SkillPicker skills={skillList} disabled={approvalLocked} onCommand={onCommand} />
+            <SkillPicker
+              skills={skillList}
+              disabled={approvalLocked}
+              onCommand={onCommand}
+              onSelect={focusComposerEnd}
+            />
             <div className="flex flex-wrap gap-2 empty:hidden">
               <ComposerPrimitive.Attachments>
                 {({ attachment }) => (

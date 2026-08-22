@@ -42,9 +42,11 @@ export interface SkillPickerProps {
   /** Runs the chosen command by name. Absent ⇒ the composer was mounted without a thread to
    * act on, so no command is offered at all rather than offered and inert. */
   readonly onCommand?: ((name: string) => void) | undefined;
+  /** Puts focus and the caret back in the composer after a selection — see onSelect. */
+  readonly onSelect?: (() => void) | undefined;
 }
 
-export function SkillPicker({ skills, disabled = false, onCommand }: SkillPickerProps) {
+export function SkillPicker({ skills, disabled = false, onCommand, onSelect }: SkillPickerProps) {
   const { t } = useTranslation();
   const aui = useAui();
   const commands = useMemo(
@@ -64,13 +66,22 @@ export function SkillPicker({ skills, disabled = false, onCommand }: SkillPicker
   // is the whole point — '/pdf ' is the turn the operator sends. For a command the text is
   // not a message, so the executor takes it back out: `removeOnExecute` would strip it for
   // both, and the flag belongs to the behavior rather than to the item.
+  // The primitive derives "menu open" from the trigger it detects at the CURSOR, and the
+  // cursor only ever moves when the textarea itself reports it (ComposerInput forwards
+  // onChange/onSelect). A pick made with the MOUSE never touches the textarea, so the cursor
+  // stays where the operator stopped typing — inside '/creator' — and the menu re-detects its
+  // own trigger and stays open over the message it just wrote. Keyboard Enter does not show
+  // it because the textarea is focused and reports the caret. Returning focus and the caret
+  // is the composer's job either way: after picking a skill the operator keeps typing.
   const execute = useCallback(
     (item: Unstable_TriggerItem) => {
-      if (item.type !== COMMAND_ITEM_TYPE || onCommand === undefined) return;
-      aui.composer.setText('');
-      onCommand(item.id);
+      if (item.type === COMMAND_ITEM_TYPE && onCommand !== undefined) {
+        aui.composer.setText('');
+        onCommand(item.id);
+      }
+      onSelect?.();
     },
-    [aui, onCommand],
+    [aui, onCommand, onSelect],
   );
 
   // D-09 degrade: with nothing to list the trigger is not registered at all, so '/' stays a

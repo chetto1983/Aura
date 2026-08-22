@@ -1,4 +1,5 @@
 import { expect, type Page, type Route } from '@playwright/test';
+import { stubNoCompaction } from './compactionRoute';
 
 export const CONV_ID = '88888888-8888-8888-8888-888888888888';
 export const EMPTY_CONV_ID = '88888888-8888-8888-8888-888888888889';
@@ -249,6 +250,7 @@ export async function installCalmPrismFixture(
     json(route, empty ? { type: 'MESSAGES_SNAPSHOT', messages: [] } : fixtureSnapshot()),
   );
   await page.route('**/api/conversations/*/rot-events', (route) => json(route, []));
+  await stubNoCompaction(page);
   await page.route(/\/api\/assets\?thread_id=/, (route) =>
     json(route, empty ? [] : fixtureAssets()),
   );

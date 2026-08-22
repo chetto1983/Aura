@@ -5,6 +5,7 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 import type { Conversation } from '../src/conversations/useConversations';
 import { gotoAuthenticated } from './auth';
 import { collectBrowserHealth } from './support/browserHealth';
+import { stubNoCompaction } from './support/compactionRoute';
 
 // chat.spec.ts is the phase-proving E2E (CHAT-01 / D-03 / APRV-02 / CHAT-04): it drives
 // the Core-Value loop end-to-end against the REAL served SPA + the REAL sseAdapter/runtime
@@ -277,6 +278,7 @@ async function installGoldenRoutes(
     }),
   );
 
+  await stubNoCompaction(page);
   await page.route('**/api/conversations/*/rot-events', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
   );
@@ -351,6 +353,7 @@ async function installTimelineRoutes(page: Page, g: GoldenFrames) {
       body: messagesSnapshotBody([]),
     }),
   );
+  await stubNoCompaction(page);
   await page.route('**/api/conversations/*/rot-events', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
   );

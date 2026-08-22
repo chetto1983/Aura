@@ -1,5 +1,6 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { gotoAuthenticated } from './auth';
+import { stubNoCompaction } from './support/compactionRoute';
 
 // composer-skills.spec.ts drives the composer '/' skill-&-command menu end-to-end against the
 // REAL rebuilt cockpit bundle served by `aura serve` (the freshly-baked internal/webui/dist
@@ -134,13 +135,7 @@ async function installComposerRoutes(page: Page) {
     route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
   );
   // The thread starts uncompacted; the POST is what moves the watermark (and the marker).
-  await page.route('**/api/conversations/*/compaction', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ covers_through_seq: 0, source_turns: 0, summary: '' }),
-    }),
-  );
+  await stubNoCompaction(page);
   await page.route('**/api/conversations/*/compact', (route) =>
     route.fulfill({
       status: 200,

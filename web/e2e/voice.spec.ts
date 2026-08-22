@@ -1,5 +1,6 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { gotoAuthenticated } from './auth';
+import { stubNoCompaction } from './support/compactionRoute';
 
 // voice.spec.ts is the Phase-37C terminal acceptance E2E (WEBVOICE-01..04): it drives the
 // web voice lane end-to-end against the REAL rebuilt cockpit bundle served by the live
@@ -105,6 +106,7 @@ async function installConversationRoutes(page: Page) {
     }
     return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
   });
+  await stubNoCompaction(page);
   await page.route('**/api/conversations/*/rot-events', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
   );
