@@ -2,6 +2,7 @@ import { useId, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Spinner } from '../components/Spinner';
+import { HttpError } from '../api/json';
 import { PimDeviceCodePanel } from './PimDeviceCodePanel';
 import {
   AdvancedSection,
@@ -12,6 +13,8 @@ import {
   StartFailedPanel,
 } from './CalendarConnectFields';
 import {
+  normalizePimAccountId,
+  pimAccountIdError,
   pimInitialValues,
   pimMissingRequired,
   pimProviderById,
@@ -184,6 +187,14 @@ async function startConnect(id: string, flow: PimAuthFlow): Promise<CreateResult
   }
 }
 
+/** serverReason pulls the sidecar's own sentence out of a failed mutation. A validation refusal
+ * names the exact field to fix, which the generic board error cannot; anything else (a transport
+ * failure, a 502) has no sentence and falls back to it. */
+function serverReason(error: unknown): string | null {
+  if (error instanceof HttpError && error.reason !== '') return error.reason;
+  return null;
+}
+
 function AddAccountForm({ onCreated }: { readonly onCreated: () => void }) {
   const { t } = useTranslation();
   const ids = { provider: useId(), accountId: useId(), displayName: useId() };
@@ -200,10 +211,10 @@ function AddAccountForm({ onCreated }: { readonly onCreated: () => void }) {
   const [submitted, setSubmitted] = useState(false);
   const [result, setResult] = useState<CreateResult | null>(null);
 
-  const accountIdEmpty = accountId.trim() === '';
+  const accountIdError = pimAccountIdError(accountId);
   const displayNameEmpty = displayName.trim() === '';
   const missingConfig = new Set(pimMissingRequired(def, values));
-  const hasEmpty = accountIdEmpty || displayNameEmpty || missingConfig.size > 0;
+  const invalidForm = accountIdError !== null || displayNameEmpty || missingConfig.size > 0;
 
   const create = useMutation({
     mutationFn: async (): Promise<CreateResult> => {
@@ -246,7 +257,7 @@ function AddAccountForm({ onCreated }: { readonly onCreated: () => void }) {
 
   function submit() {
     setSubmitted(true);
-    if (hasEmpty) return;
+    if (invalidForm) return;
     create.mutate();
   }
 
@@ -268,8 +279,11 @@ function AddAccountForm({ onCreated }: { readonly onCreated: () => void }) {
         id={ids.accountId}
         label={t('governance.mcp.calendar.accountIdLabel')}
         value={accountId}
-        onChange={setAccountId}
-        invalid={submitted && accountIdEmpty}
+        onChange={(next) => {
+          setAccountId(normalizePimAccountId(next));
+        }}
+        invalid={submitted && accountIdError !== null}
+        error={accountIdError === 'slug' ? t('governance.mcp.calendar.accountIdSlug') : undefined}
         hint={t('governance.mcp.calendar.accountIdHint')}
       />
       <Field
@@ -313,7 +327,7 @@ function AddAccountForm({ onCreated }: { readonly onCreated: () => void }) {
 
       {create.isError ? (
         <p role="alert" className="text-[13px] text-danger">
-          {t('governance.error')}
+          {serverReason(create.error) ?? t('governance.error')}
         </p>
       ) : null}
 

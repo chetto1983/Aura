@@ -253,6 +253,7 @@ export function Field({
   onChange,
   invalid,
   hint,
+  error,
   type = 'text',
   placeholder,
 }: {
@@ -262,6 +263,8 @@ export function Field({
   readonly onChange: (value: string) => void;
   readonly invalid: boolean;
   readonly hint?: string | undefined;
+  /** Replaces the default "required" text when the field fails a rule other than emptiness. */
+  readonly error?: string | undefined;
   readonly type?: 'text' | 'password';
   readonly placeholder?: string | undefined;
 }) {
@@ -311,7 +314,7 @@ export function Field({
       ) : null}
       {invalid ? (
         <p id={errId} role="alert" className="text-[13px] text-danger">
-          {t('governance.mcp.calendar.required')}
+          {error ?? t('governance.mcp.calendar.required')}
         </p>
       ) : null}
     </div>

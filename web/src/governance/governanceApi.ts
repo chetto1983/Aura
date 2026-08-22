@@ -12,7 +12,7 @@
 // `Error("HTTP <n>")`), and every `{name}` path segment is encodeURIComponent'd. The MCP
 // probe is a per-server GET keyed by name so each row resolves independently (T-28-03-05).
 
-import { getJSON, isTrue } from '../api/json';
+import { getJSON, httpErrorFrom, isTrue } from '../api/json';
 
 export const GOV_MCP_PATH = '/api/governance/mcp';
 export const GOV_SKILLS_PATH = '/api/governance/skills';
@@ -134,7 +134,7 @@ async function sendJSON<T>(method: string, url: string, body?: unknown): Promise
   }
   const res = await fetch(url, init);
   if (!res.ok) {
-    throw new Error(`HTTP ${String(res.status)}`);
+    throw await httpErrorFrom(res);
   }
   // A 204 No Content (remove/restore/archive) has an empty body — coerce to {} so the
   // generic T resolves without a JSON-parse throw on the empty stream.

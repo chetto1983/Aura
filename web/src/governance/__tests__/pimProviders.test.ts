@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   PIM_PROVIDERS,
+  normalizePimAccountId,
+  pimAccountIdError,
   pimFieldVisible,
   pimInitialValues,
   pimMissingRequired,
@@ -102,6 +104,39 @@ describe('pimSubmitConfig', () => {
       authAccountId: 'ms',
     });
     expect(out).toEqual({ source: 'local', filePath: '/tmp/cal.json' });
+  });
+});
+
+// The sidecar enforces AccountValidation.SlugRegex `^[a-z0-9][a-z0-9\-_]*$` and answers 400 with
+// the reason. Measured 2026-08-22: an operator typing a name or an email address gets that 400, and
+// the cockpit showed only "HTTP 400" — so the rule has to hold here, before the request is sent.
+describe('normalizePimAccountId', () => {
+  it('lowercases what the operator types', () => {
+    expect(normalizePimAccountId('Davide')).toBe('davide');
+    expect(normalizePimAccountId('WORK-2')).toBe('work-2');
+  });
+  it('leaves an already-valid slug alone', () => {
+    expect(normalizePimAccountId('work')).toBe('work');
+  });
+});
+
+describe('pimAccountIdError', () => {
+  it('accepts the slugs the sidecar accepts', () => {
+    expect(pimAccountIdError('work')).toBeNull();
+    expect(pimAccountIdError('personale-2')).toBeNull();
+    expect(pimAccountIdError('a_b')).toBeNull();
+    expect(pimAccountIdError('9lives')).toBeNull();
+  });
+  it('reports an empty id as required, not as a slug violation', () => {
+    expect(pimAccountIdError('')).toBe('required');
+    expect(pimAccountIdError('   ')).toBe('required');
+  });
+  it('rejects exactly what the sidecar rejects', () => {
+    expect(pimAccountIdError('dvd@gmail.com')).toBe('slug');
+    expect(pimAccountIdError('work id')).toBe('slug');
+    expect(pimAccountIdError('Work')).toBe('slug');
+    expect(pimAccountIdError('-work')).toBe('slug');
+    expect(pimAccountIdError('_work')).toBe('slug');
   });
 });
 

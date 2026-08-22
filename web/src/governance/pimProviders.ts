@@ -213,6 +213,26 @@ export function pimSubmitConfig(
 }
 
 /** The visible required fields that are still empty — drives inline validation before submit. */
+// PIM_ACCOUNT_ID_RE mirrors the sidecar's AccountValidation.SlugRegex (`^[a-z0-9][a-z0-9\-_]*$`):
+// a lowercase letter or digit, then lowercase letters, digits, hyphens and underscores. Anything
+// else is a 400 from the sidecar, so the wizard has to refuse it before the request is sent.
+const PIM_ACCOUNT_ID_RE = /^[a-z0-9][a-z0-9\-_]*$/;
+
+/** normalizePimAccountId case-folds what the operator types. Case is the one violation with a
+ * single obvious correction, so it is fixed silently; everything else is reported rather than
+ * rewritten, because guessing at what a space or an @ was meant to be would change their input. */
+export function normalizePimAccountId(raw: string): string {
+  return raw.toLowerCase();
+}
+
+/** pimAccountIdError classifies the id the wizard would submit (trimmed, as the submit path trims):
+ * null when the sidecar will accept it, 'required' when empty, 'slug' when it breaks the rule. */
+export function pimAccountIdError(raw: string): 'required' | 'slug' | null {
+  const id = raw.trim();
+  if (id === '') return 'required';
+  return PIM_ACCOUNT_ID_RE.test(id) ? null : 'slug';
+}
+
 export function pimMissingRequired(
   def: PimProviderDef,
   values: Record<string, string>,

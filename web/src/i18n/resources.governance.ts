@@ -75,7 +75,10 @@ export const governanceEn = {
           json: 'JSON file',
         },
         accountIdLabel: 'Account ID',
-        accountIdHint: 'A short slug, e.g. work or personal.',
+        accountIdHint:
+          'A short slug: lowercase letters, digits, hyphens, underscores. e.g. work or personal.',
+        accountIdSlug:
+          'Use lowercase letters, digits, hyphens and underscores only, starting with a letter or a digit.',
         displayNameLabel: 'Display name',
         fields: {
           clientId: 'Client ID',
@@ -282,7 +285,10 @@ export const governanceIt = {
           json: 'File JSON',
         },
         accountIdLabel: 'ID account',
-        accountIdHint: 'Uno slug breve, es. lavoro o personale.',
+        accountIdHint:
+          'Uno slug breve: lettere minuscole, cifre, trattini, trattini bassi. Es. lavoro o personale.',
+        accountIdSlug:
+          'Usa solo lettere minuscole, cifre, trattini e trattini bassi, iniziando con una lettera o una cifra.',
         displayNameLabel: 'Nome visualizzato',
         fields: {
           clientId: 'Client ID',

@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '../../i18n/i18n';
 import type { PimAccount, PimAuthStatus, PimDeviceStart, PimGoogleStart } from '../pimApi';
+import { HttpError } from '../../api/json';
 
 // CalendarConnect test — the cockpit calendar/PIM connect section. It mocks the connect API to drive:
 // the accounts list (render + disconnect), the empty/offline states, and the provider-driven add
@@ -167,6 +168,50 @@ describe('CalendarConnect', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Show Password' }));
     expect(password.getAttribute('type')).toBe('text');
+  });
+
+  // Measured live 2026-08-22: the sidecar rejects any id outside `^[a-z0-9][a-z0-9\-_]*$` with a
+  // 400 whose sentence the cockpit threw away, so an operator typing a name or an email saw only
+  // "HTTP 400". The wizard now folds case as they type and refuses the rest before sending.
+  it('folds the account id to lowercase as the operator types', async () => {
+    listPimAccounts.mockResolvedValue({ accounts: [] });
+    renderConnect();
+    await screen.findByText(/No calendar accounts yet/i);
+
+    fillField(/Account ID/i, 'Davide');
+    expect(screen.getByLabelText(/Account ID/i).getAttribute('value')).toBe('davide');
+  });
+
+  it('refuses a non-slug account id without calling the API, and names the rule', async () => {
+    listPimAccounts.mockResolvedValue({ accounts: [] });
+    renderConnect();
+    await screen.findByText(/No calendar accounts yet/i);
+
+    fillField(/Account ID/i, 'dvd@gmail.com');
+    fillField(/Display name/i, 'Personale');
+    fillField(/^Client ID/i, 'client-id-123');
+    fillField(/^Client secret/i, 'client-secret-456');
+    fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
+
+    expect(await screen.findByText(/starting with a letter or a digit/i)).toBeTruthy();
+    expect(createPimAccount).not.toHaveBeenCalled();
+  });
+
+  it('shows the server reason when creation is refused, not a generic error', async () => {
+    listPimAccounts.mockResolvedValue({ accounts: [] });
+    createPimAccount.mockRejectedValue(
+      new HttpError(400, "ProviderConfig is missing required key 'ClientSecret'."),
+    );
+    renderConnect();
+    await screen.findByText(/No calendar accounts yet/i);
+
+    fillField(/Account ID/i, 'work');
+    fillField(/Display name/i, 'Work calendar');
+    fillField(/^Client ID/i, 'client-id-123');
+    fillField(/^Client secret/i, 'client-secret-456');
+    fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
+
+    expect(await screen.findByText(/missing required key 'ClientSecret'/i)).toBeTruthy();
   });
 
   it('Google: create → google/start shows the redirect URI + the Connect Google link', async () => {

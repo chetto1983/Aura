@@ -314,6 +314,33 @@ describe('governanceApi same-origin throwing fetch', () => {
     await expect(createPimAccount(body)).rejects.toThrow('HTTP 409');
   });
 
+  // A validation 400 carries the sidecar's own sentence. Throwing a bare "HTTP 400" discards the
+  // one thing the operator needs (measured live 2026-08-22: an operator hit two of these and could
+  // not see why), so the reason travels in the Error the boards render.
+  it('surfaces the server reason on a non-2xx instead of a bare status', async () => {
+    const reason =
+      'Account ID must contain only lowercase letters, digits, hyphens, and underscores.';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(new Response(JSON.stringify({ error: reason }), { status: 400 })),
+      ),
+    );
+    await expect(
+      createPimAccount({ id: 'Work', displayName: 'w', provider: 'google', providerConfig: {} }),
+    ).rejects.toThrow(reason);
+  });
+
+  it('falls back to the bare status when the error body carries no reason', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('<html>gateway</html>', { status: 502 }))),
+    );
+    await expect(
+      createPimAccount({ id: 'work', displayName: 'w', provider: 'google', providerConfig: {} }),
+    ).rejects.toThrow('HTTP 502');
+  });
+
   it('deletePimAccount DELETEs the encoded id route (204)', async () => {
     const fetchMock = vi.fn(() => Promise.resolve(new Response(null, { status: 204 })));
     vi.stubGlobal('fetch', fetchMock);
