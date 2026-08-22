@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v2.1.0
 current_phase: 46
-current_phase_name: mcp-trust-and-facade
-status: blocked
-stopped_at: "Phase 46 HALTED at dispatch: 46-02 Task 1 premise falsified by live measurement (see 46-HALT-2026-08-22.md)"
-last_updated: "2026-08-22T13:23:22.390Z"
+current_phase_name: MCP trust and facade
+status: executing
+stopped_at: "Phase 46 plan 46-01 (PRD amendment batch) complete; Amendments #122/#123/#124 landed. Next: 46-02 (curated-surface design doc + WhatsApp scope decision)."
+last_updated: "2026-08-22T13:49:58.328Z"
 last_activity: 2026-08-22
-last_activity_desc: Phase 46 execution halted before wave 1 — WhatsApp mount premise falsified, replan pending
-state_head: e041b4b2de2e239146ecd0dc8bc040be30120f0a
+last_activity_desc: Phase 46 plan 46-01 (PRD amendment batch) complete — Amendments #122/#123/#124 landed
+state_head: bf70241246ead61b8828a94335008e1e3743a882
 progress:
   total_phases: 11
-  completed_phases: 2
+  completed_phases: 1
   total_plans: 26
-  completed_plans: 17
+  completed_plans: 18
 milestone_name: HERMES-CLAUDE_PARITY
 ---
 
@@ -24,21 +24,20 @@ milestone_name: HERMES-CLAUDE_PARITY
 See: .planning/PROJECT.md (updated 2026-08-05)
 
 **Core value:** When Aura says she did something, she did it — and she can find what she knew.
-**Current focus:** Phase 46 — mcp-trust-and-facade
+**Current focus:** Phase 46 — MCP trust and facade
 
 ## Current Position
 
-Phase: 46 (mcp-trust-and-facade) — READY TO EXECUTE
-Status: Blocked — 46-02/46-08/46-09 rest on a falsified premise; see 46-HALT-2026-08-22.md
+Phase: 46 (MCP trust and facade) — EXECUTING (1/9 plans complete)
+Status: Executing Phase 46
 Phase 46 discussion are recorded in `46-CONTEXT.md` D-10..D-16 and in ROADMAP §45.1.
-Last activity: 2026-08-22 — execution halted at dispatch; live measurement of the running sidecar contradicts 46-RESEARCH
-requirements as falsified or already-shipped, and inserted Phase 45.1 ahead of it by operator
-decision ("use mcp client native no bespoke").
+Last activity: 2026-08-22 — Plan 46-01 (PRD amendment batch) complete: Amendments #122
+(MCP trust/curated-surface mechanism), #123 (TOOL-14 tiering axis), #124 (Phase 45.1
+ratification + AURA_MCP_* catalogue repair) landed at `bf7024124`. Every code plan in this
+phase is now unblocked (CLAUDE.md PRD-amendment-before-code).
 
-Phase 46 is context-complete but **blocked on five amendments** (46-CONTEXT.md D-05..D-09) and on
-45.1 landing first: every file it touches sits on the MCP client seam.
-Last reconciliation: 2026-08-13 — this file's counts re-measured against ROADMAP.md (see
-Session Continuity). No work was executed on that date.
+Next: Plan 46-02 (curated-surface design doc + the one-way operator decision on the WhatsApp
+action scope). See `.planning/phases/46-mcp-trust-and-facade/46-01-SUMMARY.md` for full detail.
 
 Progress: [████████░░] 82%
 
@@ -69,6 +68,7 @@ Progress: [████████░░] 82%
 | Phase 45 P03 | 55min | 3 tasks | 3 files |
 | Phase 45 P04 | 70min | 3 tasks | 6 files |
 | Phase 45 P06 | 150min | 3 tasks | 7 files |
+| Phase 46 P01 | 35min | 3 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -121,6 +121,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 45.1]: 45.1-07: on protocol 2026-07-28 a server does NOT send elicitation/create mid-request -- the SDK refuses it outright and the live path is an InputRequests map fulfilled by clientMultiRoundTripMiddleware; the first test draft had it wrong and only a real in-memory CallTool revealed it
 - [Phase 45.1]: 45.1-07: obs exposes emission ONLY through Boundary (outcome derived from the error), so the plan's seven-valued action counter was not buildable without widening a shared package; reused MCPCallsID with a new catalog operation value and put the finer action in the structured log
 - [Phase 45.1]: 45.1-07: the consent surface is late-bound because MCP mounts run before the channels Registry exists; follows the existing cron.ChannelDeliverer pattern rather than reordering boot
+- [Phase 46]: Amendment numbers 122/123/124 assigned to the MCP trust/curated-surface, TOOL-14 tiering-axis, and Phase 45.1+env-catalogue amendments (46-01)
 
 ### Pending Todos
 
@@ -164,8 +165,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-17T07:52:25.550Z
-Stopped at: Phase 46 context re-measured after 45.1 (D-23..D-38 added)
+Last session: 2026-08-22T13:49:58.190Z
+Stopped at: Phase 46 plan 46-01 (PRD amendment batch) complete; Amendments #122/#123/#124 landed. Next: 46-02 (curated-surface design doc + WhatsApp scope decision).
 exited at its CONTEXT.md gate — Phase 45 has no CONTEXT.md, and discuss-phase must run as a
 top-level command (nested invocation breaks AskUserQuestion, GSD #1009). No phase directory
 was created and no planning agents were spawned.
@@ -178,5 +179,5 @@ build order extended with Phases 51/52 and the 53/54 renumber, requirement count
 to 77, the `tool_call_id` blocker marked resolved by `657c9e383`, and the CTX-V2-01 deferral
 re-pointed at Phase 53. REQUIREMENTS.md's two stale prose lines corrected to match.
 
-Resume file: .planning/phases/46-mcp-trust-and-facade/46-CONTEXT.md
-Next action: `/gsd-discuss-phase 45`, then `/gsd-plan-phase 45`.
+Resume file: .planning/phases/46-mcp-trust-and-facade/46-02-PLAN.md
+Next action: `/gsd-execute-phase 46` (plan 46-02 — curated-surface design doc + WhatsApp scope decision).
