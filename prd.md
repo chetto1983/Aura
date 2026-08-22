@@ -6410,3 +6410,78 @@ Phase 42 was governed by IC-01..IC-14 and Section 17 of the (now-removed) indust
 > round ordinal is correct under concurrent swarm workers: two workers sharing one `RequestID`
 > each run their own ordinal from 1, so identical calls at round 1 can still collide — a
 > pre-existing hazard, unchanged by this phase, deferred to Phase 51 / SWARM-07 (D-05).
+
+## §MCP trust and curated surface (Amendment #122, 2026-08-17)
+
+> **Amendment #122 (2026-08-17, Phase 46 planning, D-01..D-05/D-08/D-09/D-20 BLOCKING) — this PRD
+> was the last document still describing the pre-`34b892512` posture on five points; every one of
+> them was already superseded in the tree, and this amendment is the record that makes the PRD
+> agree with what shipped.**
+>
+> **What was measured, against this working tree at commit `807cbfb10`.** `grep 34b892512 prd.md`
+> returned nothing before this amendment — commit `34b892512` (2026-08-12, *"Trust MCP output
+> instead of framing it untrusted"*) shipped un-amended. `internal/agent/mcptools/bridge_call.go:64-80`'s
+> `newResult` sets `Trust: tools.TrustTrusted` on every MCP tool result, unconditionally.
+> `internal/agent/mcptools/bridge.go:319-353`'s `frameMCPSummary`/`frameMCPDescription` carry no
+> distrust prefix — the server's raw text passes through with only a byte cap applied. Against
+> `internal/agent/tools/testdata/deferred_manifest.json`, MCP-05's `accountId` is one name for two
+> different things: a defaultable **routing hint** in `create_event` (`:69`, *"Omitting uses the
+> first configured account"*) and in `get_calendar_events` (`:186`, *"or omit to query all enabled
+> accounts"*), but a **required opaque handle** in `get_calendar_event_details` (`:151-153`,
+> *"Account ID from get_calendar_events"*, listed as `required` at `:170`) — a host that injects a
+> configured default answers the routing-hint case correctly and passes the **wrong account** in
+> the handle case, because the two calls need two different values under the same argument name.
+>
+> **What changes.**
+> (a) **MCP-01/MCP-03 — descriptions and summaries are ordinary text; trust is unconditional.**
+> Every mounted MCP server — bundled recipe, ad hoc mount, or one Aura mints through her own
+> self-extension — reaches the model with its description and summary as plain text, with no
+> distrust wrapper and no declaration of any kind required to mount it.
+> (b) **MCP-02 — per-call result fencing for MCP is removed, and that removal is the ratified
+> posture.** The guardrails that survive it are named explicitly, not left implicit: `mcpToolRisk`'s
+> fail-closed default (`bridge_risk.go:108-155`, whose fallback branch returns `true, true` on a nil
+> `Annotations` at `:136-138`); `unsafeToRepeatBeyondAura`'s escalate-only escalation
+> (`bridge_risk.go:205-207` — a non-read-only, non-idempotent, open-world tool escalates to
+> Destructive, and only in the fallback branch, never the trusted-recipe branch); the model-blind
+> approval gate in `internal/gateway/approve.go`, which no tool schema exposes to the model; bridge
+> namespacing plus `Registry.Register`'s panic-on-duplicate (`internal/agent/tools/spec.go:183-189`),
+> backed by `registerBridged`'s own pre-registration collision check (`bridge.go:406-441`); and
+> `capSchemaDescriptions`' byte caps (`bridge.go:27-31,215-235`: 16KB schema / 4096-byte description
+> / 512-byte per-argument / 128 properties). The counter-recommendation was put to the operator and
+> declined: hermes fences every `mcp_*` result (`tool_dispatch_helpers.py:538-700`), and PITFALLS §2
+> calls a fencing regression *"the actually dangerous outcome."*
+> (c) **Amendment #110 is amended, not restored.** Its *"non-persisted, untrusted reference item"*
+> wording for the injected memory block is superseded; the block keeps the plain framing `34b892512`
+> already gave it. The document-passage line at `prd.md`'s Provenance contract is **UNTOUCHED**:
+> *"passage text remains `TrustUntrusted`, so instructions inside a document are data, not
+> authority"* stands exactly as written, and so do `web_fetch`, user-uploaded attachments, and swarm
+> child output — the trust exemption this amendment ratifies is MCP-only.
+> (d) **MCP-04's mechanism — curation lives in the forks.** `chetto1983/aura-pim-mcp`,
+> `chetto1983/whatsapp-mcp`, and in-tree `cmd/arcadedb-mcp` are all forks Aura controls, so a server
+> exposing a bad surface is fixed at the source, never wrapped at the host. The result is **two
+> curated always-loaded slots** — one multiplexed tool per sidecar, plus whatever a fork deliberately
+> exempts from its own merge. This is deliberately stated as **slots**, not tools: how many tools
+> live behind a slot is a fork-side design decision this amendment does not pre-empt (see plan
+> 46-02). There is no `comms` tool anywhere in Aura's Go tree, no curation config, no hide-list, and
+> no `bridgePolicy` namespace table — a single MCP tool cannot be served by two servers without
+> merging the forks, and Aura's bridge must stay generic so that the next mounted server needs zero
+> Aura code, exactly as it does today.
+> (e) **MCP-05's fix lives in the fork, not in host-side injection.** The fork's detail tool is
+> changed to accept the same opaque reference its listing tool already returns — the shape
+> `prd.md`'s document citation token already uses (`document:<search_document_id>@<version>#<locator>`).
+> **Spec basis:** MCP defines **no `accountId` concept** at all. Identity is the OAuth token,
+> audience-bound per server (RFC 8707); authorization is OPTIONAL; and local/stdio servers are told
+> to retrieve credentials from the environment. `accountId` is the sidecar's own invention, not a
+> protocol concept a host could correctly resolve on the sidecar's behalf.
+> (f) **The image pin.** Both sidecars move off the floating `:sidecar` tag onto the immutable
+> `:<sha>` tag their own `aura-publish-image` workflow already publishes — `compose.yaml`'s
+> `AURA_PIM_MCP_IMAGE` and `AURA_WHATSAPP_MCP_IMAGE` defaults — so *"which tool surface is live"* is
+> answerable from `compose.yaml` alone, without cross-referencing either fork's commit history.
+>
+> **What this measurement does NOT prove.** It does not widen trust for any non-MCP source —
+> `web_fetch`, `document_search`/`document_open`, user attachments, and swarm child output all keep
+> the nonce envelope untouched. It does not prove any specific fork's curated surface is correct;
+> that is proven live, per fork, in the plans that follow this one (46-02 and its successors). And
+> removing the per-call envelope removes a defense whose absence is carried by the guardrails named
+> in (b) plus the operator's control over what gets mounted at all — that is an accepted residual
+> risk, recorded as such here, not an eliminated one.
