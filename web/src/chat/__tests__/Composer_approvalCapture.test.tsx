@@ -7,8 +7,14 @@ import { stubGetUserMedia, stubMediaRecorder, type GetUserMediaStub } from '../v
 type MockDictation = { status: { type: string } } | undefined;
 
 const h = vi.hoisted(() => {
-  const composer: { dictation: MockDictation; text: string; attachments: never[] } = {
+  const composer: {
+    dictation: MockDictation;
+    isEditing: boolean;
+    text: string;
+    attachments: never[];
+  } = {
     dictation: undefined,
+    isEditing: true,
     text: '',
     attachments: [],
   };
@@ -19,14 +25,10 @@ const h = vi.hoisted(() => {
     startDictation: vi.fn(),
     stopDictation: vi.fn(),
     markTurnDictated: vi.fn(),
-    auiState: { thread: { isRunning: false }, composer },
+    auiState: { thread: { isRunning: false, capabilities: { dictation: true } }, composer },
     caps,
   };
 });
-
-vi.mock('@assistant-ui/core/react', async () =>
-  (await import('./composerPrimitiveMock')).coreReactMock(h),
-);
 
 vi.mock('@assistant-ui/react', async () => ({
   ...(await import('./composerPrimitiveMock')).spread(h),
@@ -88,8 +90,8 @@ let mediaStub: GetUserMediaStub | undefined;
 beforeEach(() => {
   vi.resetAllMocks();
   h.caps = { tts: false, stt: false };
-  h.auiState.thread = { isRunning: false };
-  h.auiState.composer = { dictation: undefined, text: '', attachments: [] };
+  h.auiState.thread = { isRunning: false, capabilities: { dictation: true } };
+  h.auiState.composer = { dictation: undefined, isEditing: true, text: '', attachments: [] };
 });
 
 afterEach(() => {

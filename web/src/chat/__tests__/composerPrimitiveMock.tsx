@@ -22,21 +22,6 @@ export interface ComposerPrimitiveMockHandle {
   // handle declare a dictation surface it does not exercise.
   readonly startDictation?: (() => void) | undefined;
   readonly stopDictation?: (() => void) | undefined;
-  /** Mirrors useComposerDictate().disabled inverted: false ⇒ no DictationAdapter is
-   * configured. Read at call time so a test can flip it between renders. */
-  dictateAvailable?: boolean;
-}
-
-/** coreReact doubles @assistant-ui/core/react, which the Composer reads for ONE thing: whether
- * dictation is actually available. Mocking it is what lets a test drive the D-10 fallback from
- * the same signal production uses, instead of from a caps flag that only stands in for it. */
-export function coreReactMock(h: ComposerPrimitiveMockHandle) {
-  return {
-    useComposerDictate: () => ({
-      startDictation: h.startDictation ?? noop,
-      disabled: h.dictateAvailable === false,
-    }),
-  };
 }
 
 interface RenderProp {

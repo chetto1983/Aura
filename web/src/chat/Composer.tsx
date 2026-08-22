@@ -1,5 +1,4 @@
 import { useAui, useAuiState, ComposerPrimitive } from '@assistant-ui/react';
-import { useComposerDictate } from '@assistant-ui/core/react';
 import { ArrowUp, ChevronDown, Mic, Paperclip, Square } from 'lucide-react';
 import { useEffect, useId, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -99,13 +98,20 @@ export function Composer({
   const suppressedDictationRef = useRef<{ readonly draft: string; sawActive: boolean } | undefined>(
     undefined,
   );
-  // The runtime's own availability answer. useComposerDictate reports `disabled` when no
-  // DictationAdapter is configured, and it is the same value ComposerPrimitive.Dictate puts on
-  // its button — so reading it here is not a second opinion, it is the primitive's own, asked
-  // one step earlier. That is what keeps D-10 intact now that the mic IS that primitive: a
-  // disabled button is precisely the dead end D-10 forbids, so the recorder fallback is chosen
-  // on this rather than on caps.stt alone.
-  const { disabled: dictationUnavailable } = useComposerDictate();
+  // Whether the mic can be a DICTATION button at all — if it cannot, the recorder fallback
+  // takes its place, because ComposerPrimitive.Dictate renders itself DISABLED rather than
+  // absent, and a disabled button is precisely the dead end D-10 forbids.
+  //
+  // Read from the runtime state directly rather than through useComposerDictate's `disabled`,
+  // which answers a different question: it is `dictation != null || !capabilities.dictation ||
+  // !isEditing`, so it is ALSO true while a session is running. Gating availability on it
+  // swapped the mic back to the recorder the instant dictation started — the operator could
+  // not stop what they had just begun. Measured 2026-08-22 in Linux Chrome, where the fake
+  // media device starts the session immediately; on a host whose real device is slower the
+  // session never opened and the bug stayed invisible.
+  const dictationUnavailable = useAuiState(
+    (s) => !s.thread.capabilities.dictation || !s.composer.isEditing,
+  );
   const canDictate = caps.stt && !dictationUnavailable;
   const isDictating = dictation != null;
   const isRecording = recordingEpoch === captureEpoch;

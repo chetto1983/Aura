@@ -12,8 +12,14 @@ type MockDictation = { status: { type: string } } | undefined;
 
 const h = vi.hoisted(() => {
   const addAttachment = vi.fn();
-  const composer: { dictation: MockDictation; text: string; attachments: never[] } = {
+  const composer: {
+    dictation: MockDictation;
+    isEditing: boolean;
+    text: string;
+    attachments: never[];
+  } = {
     dictation: undefined,
+    isEditing: true,
     text: '',
     attachments: [],
   };
@@ -23,16 +29,11 @@ const h = vi.hoisted(() => {
     startDictation: vi.fn(),
     stopDictation: vi.fn(),
     markTurnDictated: vi.fn(),
-    auiState: { thread: { isRunning: false }, composer },
+    auiState: { thread: { isRunning: false, capabilities: { dictation: true } }, composer },
     addAttachment,
     caps,
-    dictateAvailable: true,
   };
 });
-
-vi.mock('@assistant-ui/core/react', async () =>
-  (await import('./composerPrimitiveMock')).coreReactMock(h),
-);
 
 vi.mock('@assistant-ui/react', async () => ({
   ...(await import('./composerPrimitiveMock')).spread(h),
@@ -65,9 +66,8 @@ let mediaStub: GetUserMediaStub | undefined;
 beforeEach(() => {
   vi.resetAllMocks();
   h.caps = { tts: false, stt: false };
-  h.dictateAvailable = true;
-  h.auiState.thread = { isRunning: false };
-  h.auiState.composer = { dictation: undefined, text: '', attachments: [] };
+  h.auiState.thread = { isRunning: false, capabilities: { dictation: true } };
+  h.auiState.composer = { dictation: undefined, isEditing: true, text: '', attachments: [] };
   // jsdom has no scrollIntoView; the SkillPicker's active-option JS-scroll (Pitfall 6) needs it.
   Element.prototype.scrollIntoView = vi.fn();
 });
@@ -177,7 +177,7 @@ describe('Composer approval lock', () => {
   });
 
   it('disables the running Cancel action while approval-locked', () => {
-    h.auiState.thread = { isRunning: true };
+    h.auiState.thread = { ...h.auiState.thread, isRunning: true };
     render(<Composer approvalLocked />);
 
     expect(screen.getByRole('button', { name: 'Stop the current response' })).toHaveProperty(
@@ -277,10 +277,10 @@ describe('Composer dictation', () => {
   // D-10, driven by the signal production reads. The mic used to try startDictation and fall
   // back in the catch; the primitive does not throw when there is no adapter, it renders a
   // DISABLED button — which is the dead end D-10 forbids — so availability is asked up front
-  // via useComposerDictate and the recorder branch is rendered instead.
+  // (the thread's dictation CAPABILITY) and the recorder branch is rendered instead.
   it('caps.stt=true but dictation unavailable → degrades to the attachment record path (D-10)', async () => {
     h.caps = { tts: false, stt: true };
-    h.dictateAvailable = false;
+    h.auiState.thread = { ...h.auiState.thread, capabilities: { dictation: false } };
     stubMediaRecorder();
     mediaStub = stubGetUserMedia();
     render(<Composer />);

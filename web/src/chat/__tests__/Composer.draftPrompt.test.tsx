@@ -11,14 +11,10 @@ const h = vi.hoisted(() => ({
   startDictation: vi.fn(),
   stopDictation: vi.fn(),
   auiState: {
-    thread: { isRunning: false },
-    composer: { text: '', dictation: undefined, attachments: [] },
+    thread: { isRunning: false, capabilities: { dictation: true } },
+    composer: { text: '', dictation: undefined, isEditing: true, attachments: [] },
   },
 }));
-
-vi.mock('@assistant-ui/core/react', async () =>
-  (await import('./composerPrimitiveMock')).coreReactMock(h),
-);
 
 vi.mock('@assistant-ui/react', async () => ({
   ...(await import('./composerPrimitiveMock')).spread(h),
@@ -47,8 +43,8 @@ vi.mock('../voice/voiceModeContext', () => ({
 
 beforeEach(() => {
   vi.resetAllMocks();
-  h.auiState.thread = { isRunning: false };
-  h.auiState.composer = { text: '', dictation: undefined, attachments: [] };
+  h.auiState.thread = { isRunning: false, capabilities: { dictation: true } };
+  h.auiState.composer = { text: '', dictation: undefined, isEditing: true, attachments: [] };
 });
 
 describe('Composer draft prompt ownership', () => {
