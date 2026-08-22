@@ -460,7 +460,15 @@ services:
       start_period: 10s
 
   caddy:
-    image: caddy:2
+    # Built, not pulled: the official caddy image ships no ACME DNS provider
+    # modules, and DNS-01 is what lets this appliance hold a certificate a browser
+    # already trusts while publishing exactly one port. The image is caddy:2 plus
+    # one module, so it costs the default deployment nothing.
+    build:
+      context: .
+      dockerfile: docker/caddy/Dockerfile
+    image: ${AURA_CADDY_IMAGE:-aura-caddy:local}
+    pull_policy: never
     container_name: aura-caddy
     restart: unless-stopped
     depends_on:
@@ -468,14 +476,32 @@ services:
         condition: service_healthy
     environment:
       AURA_ACCESS_TOKEN: ${AURA_ACCESS_TOKEN:?AURA_ACCESS_TOKEN required in .env}
+      # Read only by caddy/Caddyfile.domain. Empty on the default IP/localhost
+      # path, where the internal CA needs no DNS credential.
+      DESEC_TOKEN: ${DESEC_TOKEN:-}
+      AURA_PUBLIC_HOST: ${AURA_PUBLIC_HOST:-}
+      AURA_VIEWS_HOST: ${AURA_VIEWS_HOST:-}
     ports:
       - "0.0.0.0:${AURA_HTTPS_PORT:-443}:443"
       # The MCP Apps sandbox origin. A second port IS a second origin to a browser,
       # which is what a view needs to run without inheriting the cockpit's. Only
       # /mcp-sandbox answers here (see caddy/Caddyfile); everything else 404s.
-      - "0.0.0.0:${AURA_MCP_SANDBOX_PORT:-8444}:8444"
+      #
+      # LOOPBACK by default, like every other service in this file — Caddy's :443 is
+      # the ONE port this appliance publishes, and a keyhole is still a second door.
+      # Measured 2026-08-22: on a deployment reachable from outside, this had been
+      # published on 0.0.0.0 without that being anyone's decision.
+      #
+      # An operator serving views to a browser that is not on this host must widen it
+      # DELIBERATELY (AURA_MCP_SANDBOX_BIND=0.0.0.0) — and should prefer a second
+      # HOSTNAME on :443 instead, which needs no extra port and is stronger isolation
+      # besides, because cookies are scoped by host and ignore the port.
+      - "${AURA_MCP_SANDBOX_BIND:-127.0.0.1}:${AURA_MCP_SANDBOX_PORT:-8444}:8444"
     volumes:
-      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Which front door: the default IP/localhost one on an internal CA, or
+      # Caddyfile.domain, which serves two real hostnames off one wildcard.
+      # Explicit selection rather than conditionals inside one config.
+      - ./caddy/${AURA_CADDYFILE:-Caddyfile}:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
     healthcheck:
       test: ["CMD", "caddy", "version"]

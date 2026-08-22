@@ -1,0 +1,91 @@
+# Caddyfile.domain — the appliance fronted by REAL hostnames with a publicly
+# trusted certificate, issued over ACME DNS-01.
+#
+# Select it with AURA_CADDYFILE=Caddyfile.domain. The default Caddyfile stays the
+# IP/localhost path with an internal CA; this one is what you want the moment a
+# browser other than the one that clicked through the warning has to work.
+#
+# WHY DNS-01 rather than the usual HTTP-01:
+#
+#   - It issues WILDCARDS. HTTP-01 cannot, because it cannot prove control of a
+#     name it was never asked about. The wildcard is the whole point here: the
+#     cockpit and the MCP Apps sandbox are two different origins, and with
+#     *.<domain> the second one costs nothing.
+#   - It needs NOTHING inbound at issuance time. The challenge is a TXT record,
+#     not a request, so the appliance can hold a publicly trusted certificate
+#     while publishing exactly one port.
+#
+# The two origins are two HOSTNAMES on the same :443, not two ports. That is
+# strictly stronger than the port split the default Caddyfile uses: a cookie is
+# scoped by host and IGNORES the port, so the session cookie for the cockpit is
+# sent to <cockpit>:8444 but is NOT sent to a different hostname. It also means
+# no second published port.
+#
+# Requires the caddy image built from docker/caddy/Dockerfile — the official one
+# ships no DNS provider modules.
+#
+# Set in .env:
+#   AURA_CADDYFILE=Caddyfile.domain
+#   AURA_PUBLIC_HOST=aura.<name>.dedyn.io
+#   AURA_VIEWS_HOST=views.<name>.dedyn.io
+#   AURA_MCP_SANDBOX_ORIGIN=https://views.<name>.dedyn.io
+#   DESEC_TOKEN=<token from desec.io>
+# The token goes in a block, not as a bare argument — that is the syntax
+# caddy-dns/desec documents, and the shorthand other providers accept is a parse
+# error here. `resolvers` is set because the challenge has to be checked against
+# public DNS, not against whatever the container inherited.
+(desec_tls) {
+	tls {
+		dns desec {
+			token {$DESEC_TOKEN}
+		}
+		resolvers 1.1.1.1
+	}
+}
+
+{$AURA_PUBLIC_HOST} {
+	import desec_tls
+
+	# Google OAuth redirect callback → PIM calendar sidecar. Unauthenticated by design
+	# (Google sends the browser here with ?code&state and no Aura session; the OAuth state
+	# binds the exchange). Register AURA_PIM_EXTERNAL_BASE_URL as https://<host> so the
+	# sidecar builds this exact /admin/auth/google/callback redirect URI. Ahead of the catch-all.
+	handle /admin/auth/google/callback {
+		reverse_proxy aura-pim-mcp:8080
+	}
+
+	# Presigned object-store downloads (chat/document assets) → garage.
+	handle /aura-assets/* {
+		reverse_proxy garage:3900
+	}
+
+	# First-run operator setup wizard (the 9081 server gates itself with AURA_SETUP_TOKEN).
+	handle /setup {
+		reverse_proxy aura:9081
+	}
+	handle /setup/* {
+		reverse_proxy aura:9081
+	}
+
+	# Everything else → the full cockpit + Authula login on 9080.
+	reverse_proxy aura:9080
+}
+
+# The MCP Apps sandbox origin (SEP-1865). A view is HTML a mounted MCP server
+# wrote and it needs `allow-same-origin` to run, so the origin it gets must be one
+# where the operator has no session — a DIFFERENT HOSTNAME, which is what makes
+# the cockpit's cookie unreachable from inside the frame.
+#
+# Still a keyhole: exactly one path, the relay document, which holds no data of
+# its own. Everything else 404s, so this name can never become a second door.
+{$AURA_VIEWS_HOST} {
+	import desec_tls
+
+	handle /mcp-sandbox {
+		reverse_proxy aura:9080
+	}
+
+	handle {
+		respond 404
+	}
+}
