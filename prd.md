@@ -6613,3 +6613,83 @@ Phase 42 was governed by IC-01..IC-14 and Section 17 of the (now-removed) indust
 > family other than `AURA_MCP_*` — other prefixes were not re-swept by this amendment. And it does
 > not prove the `_meta.aura.user_identifier` schema change in (c) is safe for persisted history;
 > COMPAT-01/02/03 are Phase 47/48's requirements to prove that, not this amendment's.
+
+> **Amendment #125 (2026-08-22, gemma-4-12B multimodal evaluation — records a measurement;
+> changes no code and blocks nothing).** The local answering model became
+> `gemma-4-12B-it-qat` (see the `aura-llm` block in `compose.yaml`), and llama.cpp reports it
+> as multimodal, which raises the obvious question: can it replace the two dedicated sidecars
+> `aura-ocr-vl` (GLM-OCR, GPU) and `aura-stt` (faster-whisper large-v3-turbo, CPU)? This
+> amendment records what was measured on the live stack and the decision that follows. **No
+> service was changed**: the projector was fetched, measured, and removed again, and both
+> sidecars were returned to the state they were in.
+>
+> **The projector.** `mmproj-F16.gguf` from the same pinned repo commit
+> `980b060c40a8539ac159e0501a3e0f66a6365af3` (175,115,840 bytes, sha256
+> `ecc4e93128da8363b7dbf2193eab98cf1142353f52ceaa0c95c0872997aaadd3`, cross-checked against the
+> HF blobs API and sha256sum over the downloaded bytes). With it loaded, `/props` reports
+> `{"vision": true, "video": true, "audio": true}`.
+>
+> **Audio — measured, and gemma wins on every axis but one.** Two clips, both with exact known
+> text rather than a judged transcript. (1) whisper.cpp's own `jfk.wav` (11.0s English):
+> gemma **100% word recall in 1.1s**. (2) An Italian sentence synthesized by this deployment's
+> own `aura-tts` (Kokoro-82M, voice `if_sara`, 6.05s) so the truth is the string that was
+> submitted: gemma **4.01s**, faster-whisper large-v3-turbo **13.50s**, and the two transcripts
+> are **byte-identical**, accents included (both normalize "ventiquattro" to "24"). Both figures
+> are warm — whisper's first, cold request was 13.70s, so the gap is not model-load. **The one
+> axis where it loses is the one that matters for capacity:** `aura-stt` runs on CPU and costs
+> ZERO VRAM (compose keeps it there deliberately — this host's driver 573.91 is below the
+> hwdsl2 `:cuda` image's CUDA >= 12.9 floor). Folding STT into gemma does not remove a cost, it
+> moves ~1.6GB of work onto a 12GB card that is already the binding constraint.
+>
+> **OCR — measured, and the answer depends entirely on image resolution.** The page is
+> `scripts/fixtures/document_pipeline_e2e/sample.pdf` rendered at the same 300 DPI
+> markitdown-ocr hardcodes, scored by word-diff against the PDF's own text layer. The fixture's
+> canary sentence sits in justified text and deliberately spells `sovranita` and `piu` WITHOUT
+> accents; recovering it verbatim is the property that keeps a document findable by exact
+> phrase, which is the whole reason the fixture exists.
+>
+> | configuration | wall | word recall | canary verbatim |
+> |---|---|---|---|
+> | gemma, default image tokens (305 prompt tok), thinking on, `-c 81920` | 6.5s | 96.8% | NO |
+> | gemma, `--image-max-tokens 4096` (3,835 prompt tok), thinking on, `-c 16384` | 14.6s | **100%** | **YES** |
+> | gemma, `--image-max-tokens 4096`, thinking off, `-c 16384` | 7.8s | 97.9% | NO |
+> | GLM-OCR sidecar (4,059 prompt tok, no thinking) | 9.0s | 98.9% | YES |
+>
+> At the default the model does not misread pixels — it cannot SEE the missing accents at that
+> scale and fills them in from language priors, writing `sovranità`, `più` and `riflusse`. An
+> explicit "reproduce misspellings and missing accents verbatim, do NOT correct to standard
+> Italian" instruction does not fix it: it produced 37,477 characters of reasoning over 152.7s
+> and the same three substitutions. No prompt recovers information the image tokens never
+> carried. Given the resolution, it reads the page exactly and beats the incumbent — but only
+> with thinking ON; thinking OFF is faster than GLM-OCR and loses the canary again.
+>
+> **The blocking constraint is VRAM, and it is not marginal.** High-resolution vision needs
+> `-b/-ub` at least as large as the image-token count, because the vision encoder runs
+> non-causal attention. At the production `-c 81920`, `-ub 4096` costs ~2.6GB more (11,742 MiB
+> used, **374 MiB free**) and generation collapses from ~60 tok/s to **1.79 tok/s** — while prompt
+> eval on that same request stayed healthy at 590 tok/s, so this is spill during generation, not
+> a slow encoder. At `-c 16384` the same
+> configuration is comfortable (10,329 MiB used, 64.7 tok/s). **On this 12GB RTX 3060 one
+> llama-server cannot serve both the 81,920-token chat lane and high-resolution OCR.** Running
+> gemma+projector and GLM-OCR side by side left 188 MiB free.
+>
+> **Operational trap worth its own line.** If the image-token count exceeds the batch,
+> llama.cpp does not degrade or error — it **segfaults** (exit 139) with
+> `GGML_ASSERT((cparams.causal_attn || cparams.n_ubatch >= n_tokens_all) && "non-causal
+> attention requires n_ubatch >= n_tokens") failed` inside `mtmd_helper_decode_image_chunk`.
+> Any future multimodal configuration must set `-b`/`-ub` from the image-token cap, not leave
+> the 512 default.
+>
+> **Decision.** Neither sidecar is replaced now. `aura-ocr-vl` stays: it costs ~2.7GB, runs
+> without contending for the chat lane's context, and already preserves the exact phrase.
+> `aura-stt` stays: it is slower but free in VRAM, which is the scarce resource here. Both
+> conclusions are about THIS host; a card with more memory inverts the OCR one.
+>
+> **What this measurement does NOT prove.** The Italian ASR figure is clean synthetic speech
+> from a TTS, not a human on a phone in a noisy room — read it as an upper bound, not as field
+> accuracy; no real recorded Italian was tested. The OCR figures come from ONE born-digital
+> page rendered to an image, not from a genuine scan: skew, noise, low-contrast paper and
+> handwriting are all unmeasured, and so is every non-Latin script. Nothing was measured about
+> video despite `/props` advertising it. Throughput was measured single-request with `-np 1`;
+> concurrent multimodal load is unknown. And the VRAM conclusions hold for a 12GB RTX 3060 with
+> `aura-llama-embed` resident — they say nothing about the DGX Spark target.
