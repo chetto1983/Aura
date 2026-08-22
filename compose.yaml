@@ -1035,19 +1035,21 @@ services:
   # CI-built + published to GHCR (public) by the fork's aura-publish-image workflow.
   # Aura's catalog points at the loopback publish; Aura boot never depends on this service.
   #
-  # PINNED BY COMMIT — for a plainer reason than the whatsapp service above. Only one
-  # workflow writes `:sidecar` here, so the tag is uncontested; it still MOVES. It moved on
-  # 2026-08-22, when the fork merged upstream through 3c0ae72d7 and the publish reran, and
-  # with pull_policy=missing an already-pulled host keeps serving the OLD bytes under the
-  # unchanged name (sha256:39e11bf9… where the tag now means sha256:48c9119a…). That silent
-  # divergence is what a floating tag cannot report. The 40-hex form exists here because the
-  # fork's aura-publish-image workflow tags the raw github.sha alongside `:sidecar`.
-  # 10383276961828bc19f34a9372ba2c64a14e2b62 = that merge, digest
-  # sha256:48c9119ae40f1ce944a47064b303ea528df9ef3c0728a38f3e15d86779991b9a, serving the
-  # trimmed 14-tool surface of calendar-mcp 1.4.1. Bump by reading the 40-hex tag the
-  # workflow minted for the target commit.
+  # PINNED BY COMMIT, re-pinned 2026-08-22 (46-05/46-06, D-32) past the pre-curation
+  # merge this comment used to describe: the fork collapsed its 14 registered tools
+  # into ONE curated `calendar` tool with a 14-value `action` enum (docs/superpowers/
+  # specs/2026-08-17-mcp-curated-surface-design.md §5a). Only one workflow writes
+  # `:sidecar` here, so the tag is uncontested, but it still MOVES — a floating tag
+  # cannot report that divergence, and with pull_policy=missing an already-pulled
+  # host keeps serving old bytes under an unchanged name if it moves again. The
+  # 40-hex form exists here because the fork's aura-publish-image workflow tags the
+  # raw github.sha alongside `:sidecar`.
+  # 38c94fd9d22d85c4b89f3d5b1f8202970faed117 = the curated-surface commit, digest
+  # sha256:db4deb805a011dc1f6d0f6388fd5b307b4abe8e2e1c76286a813283dbcedbb25, serving
+  # the ONE `calendar` tool (14 actions) in place of the prior 14 registered tools.
+  # Bump by reading the 40-hex tag the workflow minted for the target commit.
   aura-pim-mcp:
-    image: ${AURA_PIM_MCP_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:10383276961828bc19f34a9372ba2c64a14e2b62}
+    image: ${AURA_PIM_MCP_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:38c94fd9d22d85c4b89f3d5b1f8202970faed117}
     pull_policy: ${AURA_PIM_MCP_PULL_POLICY:-missing}
     container_name: aura-pim-mcp
     restart: unless-stopped

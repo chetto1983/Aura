@@ -191,14 +191,28 @@ func specFromToolDef(namespace string, t *sdkmcp.Tool) tools.Spec {
 func specFromToolDefWithPolicy(namespace string, t *sdkmcp.Tool, policy bridgePolicy) tools.Spec {
 	params, summary, description := specFieldsFromToolDef(t)
 	mutating, destructive := mcpToolRisk(policy, t)
+	name := namespacedName(namespace, t.Name)
 	spec := tools.Spec{
-		Name:        namespacedName(namespace, t.Name),
+		Name:        name,
 		Summary:     summary,
 		Description: description,
 		Parameters:  params,
 		Deferred:    policy.defaultDeferred(),
 		Mutating:    mutating,
 		Destructive: destructive,
+	}
+	// D-34: Multiplexed is set ONLY when this tool's namespaced name already has a
+	// classifier (isKnownMultiplexedMCPTool, bridge_multiplex.go) — never inferred
+	// from "does the schema have an action property". That inference would make
+	// gateway.ValidateClassifiable panic at boot for ANY stranger's server whose
+	// schema happens to use an `action` argument, the opposite of what a generic
+	// MCP host promises (SC#6). Gating on classifier existence instead means an
+	// unknown server gets the generic fail-closed tier, not a boot failure.
+	spec.Multiplexed = isKnownMultiplexedMCPTool(name)
+	if spec.Multiplexed {
+		// D-33: the action enum lives in another repository and can drift without
+		// Aura noticing — WARN by name in both directions at mount, never panic.
+		reconcileCuratedActions(name, multiplexedMCPTools[name], params)
 	}
 	applyMCPOperationMetadata(&spec)
 	return spec

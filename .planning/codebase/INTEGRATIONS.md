@@ -84,7 +84,7 @@ last_mapped_commit: 26745a062dd1017c8e9de39a39089bc63559b553
 
 **Hosting:**
 - Self-hosted Docker Compose deployment (`compose.yaml`, service name `aura`), fronted by Caddy 2 for HTTPS ingress (`caddy` service, `AURA_ACCESS_TOKEN`-gated).
-- Container registry: **GHCR** (`ghcr.io`) — the base runtime pulls `ghcr.io/ggml-org/llama.cpp:server-cuda` (embed/LLM/OCR sidecars), `ghcr.io/remsky/kokoro-fastapi-cpu` (TTS), and two Aura-authored sibling projects published from their own forks: `ghcr.io/chetto1983/whatsapp-mcp:sha-e0b8345` (pinned by commit off `main`) and `ghcr.io/chetto1983/aura-pim-mcp:10383276961828bc19f34a9372ba2c64a14e2b62` (pinned by commit off `aura/pim-sidecar`).
+- Container registry: **GHCR** (`ghcr.io`) — the base runtime pulls `ghcr.io/ggml-org/llama.cpp:server-cuda` (embed/LLM/OCR sidecars), `ghcr.io/remsky/kokoro-fastapi-cpu` (TTS), and two Aura-authored sibling projects published from their own forks: `ghcr.io/chetto1983/whatsapp-mcp:sha-e0b8345` (pinned by commit off `main`) and `ghcr.io/chetto1983/aura-pim-mcp:38c94fd9d22d85c4b89f3d5b1f8202970faed117` (pinned by commit off `aura/pim-sidecar`).
 
 **CI Pipeline:**
 - **GitHub Actions**, workflows in `.github/workflows/`: `ci.yml` (build/lint/vet/deadcode/file-size gates, unit tests with `-race`, capability-eval, and more jobs beyond what was inspected), `codeql.yml` (CodeQL static analysis), `production-readiness.yml`, `release.yml`, `retire-aura-images.yml`, `skills.yml` (skills subsystem gate: unit + `db_integration` + fuzz + mutation + coverage, `.github/workflows/skills.yml:35`).
@@ -120,7 +120,7 @@ last_mapped_commit: 26745a062dd1017c8e9de39a39089bc63559b553
 
 **Consumed by Aura (mounted into the agent's tool registry):**
 - `memory` → the same `arcadedb-mcp` above, reached over loopback/compose-DNS (self-consumption, not external)
-- `calendar` → Aura PIM sidecar (`ghcr.io/chetto1983/aura-pim-mcp:10383276961828bc19f34a9372ba2c64a14e2b62`, forked calendar-mcp 1.4.1 @ `aura/pim-sidecar`), unified mail+calendar+contacts, streamable-HTTP
+- `calendar` → Aura PIM sidecar (`ghcr.io/chetto1983/aura-pim-mcp:38c94fd9d22d85c4b89f3d5b1f8202970faed117`, forked calendar-mcp 1.4.1 @ `aura/pim-sidecar`), unified mail+calendar+contacts, streamable-HTTP
 - `whatsapp` → `ghcr.io/chetto1983/whatsapp-mcp:sha-e0b8345` (forked `whatsmeow` bridge @ `main`), streamable-HTTP
 - Generic stdio MCP servers declared via `AURA_MCP_CONFIG`/operator config (`internal/mcp/client.go` spawns any `command`+`args`+`env` server speaking newline-delimited JSON-RPC 2.0, protocol version `2024-11-05`)
 - SSRF/egress policy (`internal/mcp/ssrf.go`, `internal/mcp/egress_policy.go`) and per-server trust classification (`internal/mcp/classify.go`) govern what a mounted server's tools are allowed to reach and how they are surfaced to the LLM

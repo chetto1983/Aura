@@ -12,8 +12,10 @@ import (
 // args at all — once a fork collapses many raw tools into one curated tool, that
 // function has nothing to key its per-action decision on any more. The decision
 // therefore moves entirely to the exported surface below, consumed by
-// internal/gateway's per-call classifier (which DOES see the model-supplied
-// rawArgs).
+// internal/gateway's classifyCalendarAction (classify.go, which DOES see the
+// model-supplied rawArgs). isKnownMultiplexedMCPTool and reconcileCuratedActions
+// are called from bridge.go's specFromToolDefWithPolicy — this file supplies the
+// decision, bridge.go is where it is actually wired into a spec.
 
 const (
 	// calendarCuratedTool is the fork's own advertised tool name (measured live

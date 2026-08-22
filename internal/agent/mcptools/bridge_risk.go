@@ -32,6 +32,19 @@ const (
 	whatsAppRecipeSource = "recipe:whatsapp"
 )
 
+// trustedRecipeActions is keyed by whatever discriminator that source's surface
+// exposes — the keys are NOT uniformly "the raw MCP tool name" (D-35). calendar
+// is ACTION-keyed: its 14 keys already equal the fork's curated `action` enum
+// values (D-21/46-05), so no relabeling was needed here — this half of the table
+// is now read by internal/gateway's classifyCalendarAction via
+// mcptools.MCPActionClassFor, NOT by classifyToolRisk's t.Name lookup below,
+// because the curated tool's own advertised raw name ("calendar") never appears
+// as a key in this map. whatsapp stays RAW-TOOL-NAME-keyed for now (plan 46-08
+// re-keys it alongside its own image pin); memory stays RAW-TOOL-NAME-keyed
+// permanently, because it is not merged — each memory_* call is its own MCP tool
+// name, still classified by classifyToolRisk's t.Name lookup unchanged. One
+// table, one lookup site below, mixed key spaces documented here so a future
+// reader does not assume a uniformity that was never true.
 var trustedRecipeActions = map[string]map[string]MCPActionClass{
 	calendarRecipeSource: {
 		"list_accounts":              MCPActionRead,
@@ -122,6 +135,15 @@ func mcpToolRisk(policy bridgePolicy, t *sdkmcp.Tool) (mutating, destructive boo
 
 // classifyToolRisk is the decision itself, kept separate from the logging so every
 // branch can return directly and the log record is emitted exactly once.
+//
+// For the calendar curated tool this lookup deliberately MISSES: t.Name is the
+// curated tool's own raw name ("calendar"), which is never a key in
+// trustedRecipeActions[calendarRecipeSource] (that map is keyed by ACTION, not
+// by the tool's own name) — so it falls through to this function's fail-closed
+// default below, landing Mutating:true. That is deliberate, not a gap: bridge.go's
+// specFromToolDefWithPolicy also sets Multiplexed:true for it, and
+// internal/gateway's per-action classifier (not this function) is what actually
+// grades each call by its `action` argument (D-21).
 func classifyToolRisk(policy bridgePolicy, t *sdkmcp.Tool) (mutating, destructive bool) {
 	if actions := trustedRecipeActions[policy.recipeSource]; actions != nil {
 		if action, ok := actions[t.Name]; ok {
