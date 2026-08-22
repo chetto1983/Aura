@@ -51,6 +51,11 @@ function threadComposer(aui: unknown): TextSink {
   return sink;
 }
 
+// How long the relay has to say hello before the frame is called dead. It is one
+// document fetch on an origin the browser has already resolved, so seconds is
+// generous; the cost of waiting longer is a grey rectangle nobody can explain.
+const RELAY_TIMEOUT_MS = 6000;
+
 const INLINE_HEIGHT = '26rem';
 const FULLSCREEN_HEIGHT = '80vh';
 
@@ -77,7 +82,19 @@ export function McpViewFrame({ descriptor }: McpViewFrameProps) {
   });
   const current = fetched.key === key ? fetched : { key, doc: null, failed: false };
   const doc = current.doc;
-  const status: Status = current.failed ? 'unavailable' : doc ? 'ready' : 'loading';
+
+  // Fetching the DOCUMENT proves nothing about the FRAME. The frame points at a
+  // second origin, and a cross-origin frame that cannot load — an untrusted
+  // certificate is the ordinary case on an appliance with a local CA — shows the
+  // browser's own failure inside the box and reports nothing to us. Measured
+  // 2026-08-22: the operator saw a dead grey rectangle where the unavailable
+  // message belonged, and Aura had never been asked for the relay at all. So the
+  // relay's own handshake is the readiness signal, and silence is a failure.
+  const [relay, setRelay] = useState<{ key: string; up: boolean }>({ key, up: false });
+  const relayUp = relay.key === key && relay.up;
+  const [relaySilent, setRelaySilent] = useState<string | null>(null);
+  const status: Status =
+    current.failed || relaySilent === key ? 'unavailable' : doc ? 'ready' : 'loading';
 
   useEffect(() => {
     let live = true;
@@ -136,6 +153,10 @@ export function McpViewFrame({ descriptor }: McpViewFrameProps) {
     const frame = frameRef.current;
     if (!frame) return;
 
+    const silence = setTimeout(() => {
+      setRelaySilent(key);
+    }, RELAY_TIMEOUT_MS);
+
     const bridge = createHostBridge({
       descriptor,
       html: doc.html,
@@ -168,16 +189,19 @@ export function McpViewFrame({ descriptor }: McpViewFrameProps) {
       if (event.origin !== doc.sandbox_origin) return;
       if (event.source !== frame.contentWindow) return;
       const envelope = event.data as SandboxEnvelope | null;
-      if (envelope && typeof envelope === 'object' && 'kind' in envelope)
-        bridge.onEnvelope(envelope);
+      if (!envelope || typeof envelope !== 'object' || !('kind' in envelope)) return;
+      clearTimeout(silence);
+      setRelay({ key, up: true });
+      bridge.onEnvelope(envelope);
     };
 
     window.addEventListener('message', onMessage);
     return () => {
+      clearTimeout(silence);
       bridge.teardown();
       window.removeEventListener('message', onMessage);
     };
-  }, [aui, callTool, descriptor, doc, hostContext, status]);
+  }, [aui, callTool, descriptor, doc, hostContext, key, status]);
 
   const label = t('display.type.mcp_view');
 
@@ -215,7 +239,10 @@ export function McpViewFrame({ descriptor }: McpViewFrameProps) {
             sandbox="allow-scripts allow-same-origin"
             referrerPolicy="no-referrer"
             className="w-full rounded-[var(--radius-sm)] border border-border bg-surface"
-            style={{ height: mode === 'inline' ? INLINE_HEIGHT : FULLSCREEN_HEIGHT }}
+            style={{
+              height: mode === 'inline' ? INLINE_HEIGHT : FULLSCREEN_HEIGHT,
+              visibility: relayUp ? 'visible' : 'hidden',
+            }}
           />
         ) : (
           <div
