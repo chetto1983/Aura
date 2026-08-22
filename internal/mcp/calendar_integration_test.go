@@ -71,6 +71,10 @@ var calendarActionEnum = []string{
 	"list_calendars", "get_calendar_events", "get_calendar_event_details",
 	"get_contacts", "search_contacts", "get_contact_details",
 	"create_event", "update_event", "respond_to_event", "send_email",
+	// Amended 2026-08-22: mail management restored. The provider layer exposes 21
+	// operations and only 14 were ever registered as tools, so delete/mark-read/move
+	// were implemented for every provider and reachable by none.
+	"delete_email", "mark_email_read", "move_email",
 }
 
 // TestCalendarServerLive drives the live Aura PIM sidecar over streamable-HTTP through
@@ -189,7 +193,7 @@ func assertOpaqueEventIDNeedsNoAccountID(t *testing.T, ctx context.Context, sess
 	eventMatch := eventIDInResponse.FindStringSubmatch(out)
 	calendarMatch := calendarIDInResponse.FindStringSubmatch(out)
 	if len(eventMatch) < 2 || len(calendarMatch) < 2 {
-		t.Logf("get_calendar_events returned no eventId/calendarId to chain from (expected with zero connected accounts) — MCP-05 round-trip half not exercised, only the schema half was")
+		t.Logf("get_calendar_events returned no eventId/calendarId to chain from — MCP-05 round-trip half not exercised, only the schema half was. Cause is an account with no completed OAuth grant (a configured-but-unauthenticated account looks identical here to no account at all); connect one to close this")
 		return
 	}
 

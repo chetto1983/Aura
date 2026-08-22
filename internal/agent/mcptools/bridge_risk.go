@@ -59,8 +59,17 @@ var trustedRecipeActions = map[string]map[string]MCPActionClass{
 		"get_contact_details":        MCPActionRead,
 		"create_event":               MCPActionMutate,
 		"update_event":               MCPActionMutate,
+		"mark_email_read":            MCPActionMutate,
 		"respond_to_event":           MCPActionDestructive,
 		"send_email":                 MCPActionDestructive,
+		"delete_email":               MCPActionDestructive,
+		// move_email is Destructive even though a move is nominally reversible,
+		// because 'trash' is one of its accepted destinations: tiering it Mutate
+		// would let move_email(destination:"trash") reach the same outcome as
+		// delete_email while bypassing delete_email's approval gate, making that
+		// gate decorative. Same reasoning as escalate-only — the tier follows the
+		// worst reachable outcome, not the usual one.
+		"move_email": MCPActionDestructive,
 	},
 	whatsAppRecipeSource: {
 		"list_chats":                 MCPActionRead,

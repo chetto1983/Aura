@@ -416,8 +416,13 @@ func TestMCPToolRiskRecipeTablesUnchanged(t *testing.T) {
 			"get_contact_details":        {false, false},
 			"create_event":               {true, false},
 			"update_event":               {true, false},
+			"mark_email_read":            {true, false},
 			"respond_to_event":           {true, true},
 			"send_email":                 {true, true},
+			"delete_email":               {true, true},
+			// move_email is destructive because 'trash' is a valid destination —
+			// a cheaper tier here would be a bypass of delete_email's gate.
+			"move_email": {true, true},
 		},
 		whatsAppRecipeSource: {
 			"list_chats":                 {false, false},
@@ -524,12 +529,17 @@ var calendarDesignDocActions = []string{
 	"list_calendars", "get_calendar_events", "get_calendar_event_details",
 	"get_contacts", "search_contacts", "get_contact_details",
 	"create_event", "update_event", "respond_to_event", "send_email",
+	// Amended 2026-08-22: mail management restored to the curated surface. The
+	// provider layer always had these three; only 14 of its 21 operations were
+	// ever registered as tools, so they were implemented and unreachable.
+	"mark_email_read", "delete_email", "move_email",
 }
 
 // TestTrustedRecipeCalendarActionsMatchDesignDoc pins D-21's re-key: calendar's
-// 14 keys already equal the fork's curated action enum values one-for-one (46-05
-// re-registered them without re-tiering any), so this asserts the design doc and
-// the live table agree exactly — an extra or a missing key fails.
+// keys equal the fork's curated action enum values one-for-one (46-05 re-registered
+// the original 14 without re-tiering any; the 2026-08-22 amendment added three mail-
+// management actions), so this asserts the design doc and the live table agree
+// exactly — an extra or a missing key fails.
 func TestTrustedRecipeCalendarActionsMatchDesignDoc(t *testing.T) {
 	t.Parallel()
 	table := trustedRecipeActions[calendarRecipeSource]

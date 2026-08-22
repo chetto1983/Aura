@@ -148,6 +148,7 @@ Curation here means "left alone," not "hidden."
 Calendar declares no `resources` capability at all (confirmed live 2026-08-22 against
 `aura-pim-mcp:10383276961828bc19f34a9372ba2c64a14e2b62`'s `initialize` handshake) and has zero MCP
 Apps views, so there is no views question on this side — all 14 actions merge into one tool.
+(Amended 2026-08-22: the surface is now **17** actions — see the amendment note below the table.)
 
 | action | risk class | required arguments (curated) | underlying provider call |
 |---|---|---|---|
@@ -165,11 +166,41 @@ Apps views, so there is no views question on this side — all 14 actions merge 
 | `update_event` | mutate | `accountId`, `calendarId`, `eventId` | update an existing event |
 | `respond_to_event` | destructive | `eventId`, `response` | accept/decline/tentatively-accept an invite |
 | `send_email` | destructive | `to`, `subject` | send an email |
+| `mark_email_read` | mutate | `accountId`, `emailId`, `isRead` | mark a message read or unread |
+| `delete_email` | destructive | `accountId`, `emailId` | delete a message — Google trashes it, Microsoft deletes outright |
+| `move_email` | destructive | `accountId`, `emailId`, `destination` | move a message to another folder or label |
 
-Classes: 10 read, 2 mutate (`create_event`, `update_event`), 2 destructive (`respond_to_event`,
-`send_email`) — read directly off `bridge_risk.go`'s live `trustedRecipeActions[calendarRecipeSource]`
-table on 2026-08-22 and reproduced here **unchanged**; the merge re-registers these 14 actions, it
-does not re-tier a single one of them.
+Classes: 10 read, 3 mutate (`create_event`, `update_event`, `mark_email_read`), 4 destructive
+(`respond_to_event`, `send_email`, `delete_email`, `move_email`) — the first 14 rows were read
+directly off `bridge_risk.go`'s live `trustedRecipeActions[calendarRecipeSource]` table on
+2026-08-22 and reproduced **unchanged**; the merge re-registers those 14 actions, it does not
+re-tier a single one of them.
+
+**Amended 2026-08-22 — the last three rows are an ADDITION to the surface, not a re-tiering.**
+The fork's `IProviderService` exposes 21 operations; only 14 were ever registered as tools, so
+mail management (`DeleteEmailAsync`, `MarkEmailAsReadAsync`, `MoveEmailAsync`) was implemented for
+every provider and reachable by nobody — `DeleteEmailTool`, `MarkEmailAsReadTool` and
+`MoveEmailTool` existed as DI-registered classes never passed to `.WithTools<>()`. The gap
+predates the 14→1 collapse; it was found when Aura's own agent reported it in a live turn: *"no
+tools to delete, trash, mark as read, or move messages — mail is read-only + send."* Adding them
+as actions rather than as tools is the curated shape paying off: a restored capability costs one
+enum value, not a manifest entry.
+
+**Why `move_email` is destructive and not mutate.** `trash` is one of its accepted destinations,
+so tiering it `mutate` would let `move_email(destination:"trash")` reach `delete_email`'s outcome
+while bypassing `delete_email`'s approval gate — making that gate decorative. The tier follows the
+worst reachable outcome, not the typical one, which is the same escalate-only reasoning that stops
+a server talking itself out of a gate with a `readOnlyHint`. Pinned by
+`TestClassifyCalendarActionTiers/mail_move_to_trash_is_not_cheaper_than_delete`.
+
+`delete_email` is named for what it does on the weakest provider, not the strongest: Google
+trashes (recoverable), Microsoft Graph deletes outright. A name like `trash_email` would promise
+a recoverability the interface cannot guarantee.
+
+Still unregistered after this amendment, and deliberately out of scope here: attachment download
+(`GetEmailAttachmentContentAsync`), `DeleteEventAsync`, and the three contact writes
+(`CreateContactAsync`, `UpdateContactAsync`, `DeleteContactAsync`). They are recorded so the
+remaining gap is visible rather than rediscovered.
 
 **MCP-05's fix, stated concretely.** Today `accountId` is two different things sharing one name:
 a defaultable **routing hint** in `create_event`/`get_calendar_events`, and a required **opaque

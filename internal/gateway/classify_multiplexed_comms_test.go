@@ -48,6 +48,12 @@ func TestClassifyCalendarActionTiers(t *testing.T) {
 		{"mutate", json.RawMessage(`{"action":"create_event"}`), scoring.Normal},
 		{"destructive send", json.RawMessage(`{"action":"send_email"}`), scoring.Destructive},
 		{"destructive respond", json.RawMessage(`{"action":"respond_to_event"}`), scoring.Destructive},
+		{"mail mutate mark read", json.RawMessage(`{"action":"mark_email_read"}`), scoring.Normal},
+		{"mail destructive delete", json.RawMessage(`{"action":"delete_email"}`), scoring.Destructive},
+		// move_email must NOT be cheaper than delete_email: 'trash' is an accepted
+		// destination, so a Mutate tier here would be a bypass of delete_email's gate.
+		{"mail destructive move", json.RawMessage(`{"action":"move_email"}`), scoring.Destructive},
+		{"mail move to trash is not cheaper than delete", json.RawMessage(`{"action":"move_email","destination":"trash"}`), scoring.Destructive},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

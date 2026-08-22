@@ -1037,19 +1037,20 @@ services:
   #
   # PINNED BY COMMIT, re-pinned 2026-08-22 (46-05/46-06, D-32) past the pre-curation
   # merge this comment used to describe: the fork collapsed its 14 registered tools
-  # into ONE curated `calendar` tool with a 14-value `action` enum (docs/superpowers/
+  # into ONE curated `calendar` tool with a 17-value `action` enum (docs/superpowers/
   # specs/2026-08-17-mcp-curated-surface-design.md §5a). Only one workflow writes
   # `:sidecar` here, so the tag is uncontested, but it still MOVES — a floating tag
   # cannot report that divergence, and with pull_policy=missing an already-pulled
   # host keeps serving old bytes under an unchanged name if it moves again. The
   # 40-hex form exists here because the fork's aura-publish-image workflow tags the
   # raw github.sha alongside `:sidecar`.
-  # 38c94fd9d22d85c4b89f3d5b1f8202970faed117 = the curated-surface commit, digest
+  # 4e0f518333773a892f9f5a718981466e6054ae2e = curated surface + restored mail
+  # management (delete_email/mark_email_read/move_email), digest
   # sha256:db4deb805a011dc1f6d0f6388fd5b307b4abe8e2e1c76286a813283dbcedbb25, serving
-  # the ONE `calendar` tool (14 actions) in place of the prior 14 registered tools.
+  # the ONE `calendar` tool (17 actions) in place of the prior 14 registered tools.
   # Bump by reading the 40-hex tag the workflow minted for the target commit.
   aura-pim-mcp:
-    image: ${AURA_PIM_MCP_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:38c94fd9d22d85c4b89f3d5b1f8202970faed117}
+    image: ${AURA_PIM_MCP_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:4e0f518333773a892f9f5a718981466e6054ae2e}
     pull_policy: ${AURA_PIM_MCP_PULL_POLICY:-missing}
     container_name: aura-pim-mcp
     restart: unless-stopped
