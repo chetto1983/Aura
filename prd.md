@@ -6371,8 +6371,14 @@ avrebbe accusato l'harness, non il motore.
 ### Perimetro e licenze
 
 `open_ragbench` è **CC-BY-NC-4.0** (non commerciale) e `snap-research/locomo` è
-**NOASSERTION**: entrambi sono decisioni da prendere prima che una pipeline li scarichi,
-non dopo. Oggi vivono solo in scratchpad usa-e-getta.
+**NOASSERTION**: entrambi erano decisioni da prendere prima che una pipeline li scarichi,
+non dopo. **Decisione presa il 2026-08-22 — ADR 0045: entrambi declinati.** Nessuna pipeline,
+job CI, target Makefile o build di container può scaricarli. Le due misure che li aspettavano
+(`recall@1` del routing documentale, suite LOCOMO) sono **ridefinite, non cancellate**: gli
+harness restano su disco e restano compilati, il corpus va sostituito con uno la cui licenza
+permetta redistribuzione e uso in CI, o con uno nostro. Il working point di abstention di questo
+stesso emendamento resta di conseguenza **non fissato**: ROC AUC 0.880 senza corpus permissibile
+su cui tararlo non produce una soglia, la inventa.
 
 # Industrial conversation context lifecycle (Phase 42) — ❌ REMOVED (superseded by Amendment #86)
 
