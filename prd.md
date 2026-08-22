@@ -151,7 +151,12 @@
 > - Un slice = un commit (atomico, imperativo, Co-Authored-By).
 > - `git push` **mai** senza richiesta esplicita nello stesso turno.
 > - Niente commenti se il WHY è ovvio dal nome dell'identifier.
-> - Tool grandi → `Deferred: true` (manifest pulito, schema on-demand via `tool_search`).
+> - ~~Tool grandi → `Deferred: true` (manifest pulito, schema on-demand via `tool_search`)~~ —
+>   **SUPERSEDED 2026-08-17 (Amendment #123): l'asse cambia da dimensione a frequenza + hard count
+>   budget.** Un server MCP che espone `<= 3` tool model-facing (dopo il filtro
+>   `bridgePolicy.modelFacing`) guadagna uno slot always-loaded; cap globale **2** slot; overflow
+>   fail-closed → resta `Deferred: true`, discoverable via `tool_search`. Testo completo: §Tool
+>   tiering axis (Amendment #123).
 > - **Test discipline** (vedi §Test discipline in fondo): prompts E2E reali, mai citare tool/skill per nome dentro il prompt.
 
 > **D00 — Binario portabile unico (amendment #30, 2026-06-01).** Aura è UN binario che gira su 3 target — **Hetzner cloud / mini-PC 32GB / NVIDIA DGX Spark** — con locale-vs-remoto e provider selezionati da **config per-deployment**, NON build separate (registro `.planning/DECISIONS.md` §0). **6 invarianti di portabilità non-negoziabili:**
@@ -6485,3 +6490,60 @@ Phase 42 was governed by IC-01..IC-14 and Section 17 of the (now-removed) indust
 > removing the per-call envelope removes a defense whose absence is carried by the guardrails named
 > in (b) plus the operator's control over what gets mounted at all — that is an accepted residual
 > risk, recorded as such here, not an eliminated one.
+
+## §Tool tiering axis (Amendment #123, 2026-08-17)
+
+> **Amendment #123 (2026-08-17, Phase 46/TOOL-14 planning, BLOCKING) — the tool-surface tiering
+> axis changes from size to frequency plus a hard count budget, superseding amendment A4 by name
+> and extending amendment #44 by name.**
+>
+> **What was measured.** `prd.md:154` stated the axis as **size** (*"Tool grandi → `Deferred:
+> true`"*). Amendment **A4** (2026-05-30, `prd.md:751,783`) declares `read_tool_output` a *"Builtin
+> non-deferred"* on a byte-paging contract. Amendment **#44** (`prd.md:1371`) already ratified
+> `sandbox_exec` as *"non-deferred di proposito"* on live evidence: a deferred schema made the model
+> cram an entire command line into one argument, because it could not see the `command`/`args`
+> split — *"il modello DEVE vedere lo schema."* Separately, `bridgePolicy.defaultDeferred()`
+> (`internal/agent/mcptools/bridge_memory.go:27-29`) returns `true` **unconditionally** for every
+> bridged MCP tool today — nothing distinguishes a one-tool server from a twenty-eight-tool one.
+> And the MCP protocol itself has **no priority or always-load field**: the pinned SDK's `Tool`
+> struct (`go-sdk@v1.7.0 mcp/protocol.go:1898-1948` — `Meta`, `Annotations`, `Description`,
+> `InputSchema`, `Name`, `OutputSchema`, `Title`, `Icons`) and `ToolAnnotations`
+> (`:1967-1992` — `DestructiveHint`, `IdempotentHint`, `OpenWorldHint`, `ReadOnlyHint`, `Title`)
+> carry no such field, so an annotation-derived always-load rule was falsified before it could be
+> proposed.
+>
+> **What changes.**
+> (a) The axis at `prd.md:154` becomes **frequency plus a hard count budget**, not size. That line
+> is amended in place: the superseded size wording is kept as a struck-through, dated inline note so
+> the trail survives, and the new rule is stated beside it.
+> (b) **A4 is superseded by name** (`prd.md:751,783`). `read_tool_output`'s *"Builtin non-deferred"*
+> declaration no longer stands on a size exception; TOOL-13 changes its byte-paging contract, so
+> A4's specific tier assertion no longer binds. Its tool stays non-deferred, but as an instance of
+> the frequency axis below, not of a size rule.
+> (c) **#44 is extended, not reversed** (`prd.md:1371`). `sandbox_exec`'s non-deferral stands exactly
+> as shipped; it is now an INSTANCE of the frequency axis — *"the model must see the schema for a
+> tool it calls constantly"* — rather than an exception carved out of a size rule. This is an
+> extension of already-ratified reasoning.
+> (d) **The hard count budget, stated numerically.** A mounted MCP server exposing **`<= 3`
+> model-facing tools** — counted AFTER `bridgePolicy.modelFacing` filtering, so a server that
+> advertises more tools than it exposes to the model is counted on what the model actually sees —
+> earns an always-loaded manifest slot. The **global cap is 2** always-loaded MCP slots. Slots are
+> granted in deterministic mount order; overflow **fails closed** — every further qualifying server
+> stays `Deferred: true` and `tool_search`-discoverable, exactly like any other deferred tool. **Both
+> numbers are CODE CONSTANTS, not env vars** — no ceremony at mount time, and the `AURA_MCP_*`
+> catalogue is already in measured debt (see the companion amendment below) without adding a knob
+> nobody but a planner would set. Why the ceiling sits above 1: a single-tool floor is brittle — a
+> fork that later splits one verb into two would silently fall off the cliff and lose its slot with
+> no code change on Aura's side to explain why. Today's one measured example under the ceiling is
+> memory, which exposes 4 model-facing tools and therefore stays deferred exactly as it is today;
+> Phase 48, which owns the 14-slot total manifest budget, decides about memory explicitly instead of
+> inheriting that decision here. The worked example for the two curated MCP forks this phase builds
+> is recorded in `ROADMAP.md` §Phase 46 by plan 46-03, once that fork-side design exists — this
+> amendment states the rule, not any particular fork's resulting tool count.
+>
+> **What this measurement does NOT prove.** It does not prove 3 and 2 are the right numbers for any
+> surface other than the one measured today. It does not prove the 14-slot total manifest budget
+> (Phase 48's) is satisfied by this rule alone — this rule bounds only the MCP slice of that budget.
+> And it does not prove a server that later grows past 3 tools will be noticed by anything other than
+> the deferral-drift warning this phase adds at `refreshSpec` — a silent mid-conversation deferral
+> flip is a distinct hazard this amendment does not itself close.
