@@ -31,6 +31,12 @@ func sandboxTools() []*sdkmcp.Tool {
 }
 
 func TestBridge_TranslatesTools(t *testing.T) {
+	// D-27 (bridge_deferral.go): a 2-tool server is <= maxAlwaysLoadedMCPTools,
+	// so on a fresh global slot budget it now earns an always-loaded slot
+	// instead of the pre-amendment #123 unconditional Deferred:true. Reset so
+	// this assertion doesn't depend on how many slots other tests in this
+	// package already spent.
+	resetLoadedSlotBudgetForTest()
 	srv, _ := newInMemoryMounted(t, sandboxTools()...)
 	got, err := Bridge(context.Background(), "sb", srv)
 	if err != nil {
@@ -48,8 +54,8 @@ func TestBridge_TranslatesTools(t *testing.T) {
 		!strings.Contains(exec.Summary, "Required args: container_id.") {
 		t.Fatalf("summary should carry plain text plus required-args hint, got %q", exec.Summary)
 	}
-	if !exec.Deferred {
-		t.Fatal("bridged tools must be Deferred:true — a multi-tool MCP server floods the manifest")
+	if exec.Deferred {
+		t.Fatal("a 2-tool server (<= the 3-tool ceiling) on a fresh budget must earn an always-loaded slot: Deferred must be false (D-27)")
 	}
 	if !json.Valid(exec.Parameters) || !strings.Contains(string(exec.Parameters), "container_id") {
 		t.Fatalf("parameters should pass the server schema through, got %s", exec.Parameters)
@@ -60,21 +66,39 @@ func TestBridge_TranslatesTools(t *testing.T) {
 	}
 }
 
+// TestBridge_MemoryNamespaceToolsAreDeferredByDefault fixtures the REAL memory
+// tool surface (cmd/arcadedb-mcp's 10 tool names), not a 2-tool stand-in: after
+// D-27, whether a mount stays deferred depends on its model-facing COUNT, and
+// only the real 4-model-facing-tool shape (memory_merge_entities, memory_forget,
+// memory_upsert_fact, memory_recall; the other 6 are memoryHiddenFromModel) can
+// prove memory legitimately stays deferred (4 > maxAlwaysLoadedMCPTools). A
+// 2-tool fixture would now qualify for a slot and assert the wrong thing.
 func TestBridge_MemoryNamespaceToolsAreDeferredByDefault(t *testing.T) {
+	resetLoadedSlotBudgetForTest()
 	srv, _ := newInMemoryMounted(t,
 		mustTool("memory_recall", "Recall memory.", nil, &sdkmcp.ToolAnnotations{ReadOnlyHint: true}),
 		mustTool("memory_upsert_fact", "Store a durable fact.", nil, nil),
+		mustTool("memory_merge_entities", "Merge two entities.", nil, nil),
+		mustTool("memory_forget", "Forget a fact.", nil, nil),
+		mustTool("graph_schema", "Describe the graph schema.", nil, &sdkmcp.ToolAnnotations{ReadOnlyHint: true}),
+		mustTool("memory_search", "Search memory.", nil, &sdkmcp.ToolAnnotations{ReadOnlyHint: true}),
+		mustTool("memory_facts_about", "Facts about an entity.", nil, &sdkmcp.ToolAnnotations{ReadOnlyHint: true}),
+		mustTool("memory_digest", "Digest recent memory.", nil, &sdkmcp.ToolAnnotations{ReadOnlyHint: true}),
+		mustTool("memory_entities", "List known entities.", nil, &sdkmcp.ToolAnnotations{ReadOnlyHint: true}),
+		mustTool("memory_reembed", "Re-embed stored vectors.", nil, nil),
 	)
 	got, err := Bridge(context.Background(), "memory", srv)
 	if err != nil {
 		t.Fatalf("Bridge: %v", err)
 	}
-	if len(got) != 2 {
-		t.Fatalf("want 2 memory tools, got %d", len(got))
+	// 10 advertised, 6 hidden by bridgePolicy.modelFacing (memoryHiddenFromModel):
+	// only the 4 model-facing tools bridge at all.
+	if len(got) != 4 {
+		t.Fatalf("want 4 model-facing memory tools bridged, got %d", len(got))
 	}
 	for _, tool := range got {
 		if !tool.Spec().Deferred {
-			t.Fatalf("%s Deferred = false; every bridged tool is deferred", tool.Spec().Name)
+			t.Fatalf("%s Deferred = false; memory's 4 model-facing tools exceed the 3-tool ceiling and must stay deferred (D-27)", tool.Spec().Name)
 		}
 	}
 }

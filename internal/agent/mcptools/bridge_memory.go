@@ -19,16 +19,37 @@ type bridgePolicy struct {
 	// entry declares no trust class at all, and "no class" must not read as "the
 	// most trusted one".
 	views bool
+	// alwaysLoaded is frozen once, at mount, by bridgeToolsWithPolicy's call to
+	// grantLoadedSlot (bridge_deferral.go, D-27 / TOOL-14 amendment #123): whether
+	// this mount's model-facing tool count won one of the two global
+	// always-loaded slots. Every bridgedTool built from one mount carries the
+	// identical value and never recomputes it — that freeze is what lets
+	// refreshSpec survive a reconnect without flipping a tool's manifest
+	// presence out from under the model's KV-cache prefix.
+	alwaysLoaded bool
+	// modelFacingCount is the model-facing tool count grantLoadedSlot was scored
+	// against at mount, frozen alongside alwaysLoaded so a reconnect can report
+	// what changed (warnIfDeferralWouldFlip) without ever recomputing the
+	// decision itself.
+	modelFacingCount int
 }
 
 func defaultBridgePolicy(namespace string) bridgePolicy {
 	return bridgePolicy{memory: namespace == "memory"}
 }
 
-// Every bridged MCP tool is deferred. tool_search keeps memory discoverable
-// without carrying its full schemas in every model request.
-func (bridgePolicy) defaultDeferred() bool {
-	return true
+// defaultDeferred is D-27's count arithmetic (TOOL-14 / PRD amendment #123): a
+// mount exposing <= maxAlwaysLoadedMCPTools model-facing tools, while the
+// global maxAlwaysLoadedMCPSlots budget has room, earns an always-loaded slot
+// and is therefore NOT deferred. alwaysLoaded is scored once at mount by
+// bridgeToolsWithPolicy (bridge.go) and frozen on every bridgedTool it builds;
+// the zero value (false) is every existing caller's unconditional "deferred",
+// so a bridgePolicy built without going through that arithmetic —
+// defaultBridgePolicy before Bridge scores it, a bare literal, a test double —
+// keeps today's behaviour. tool_search keeps a deferred tool discoverable
+// without carrying its full schema in every model request.
+func (p bridgePolicy) defaultDeferred() bool {
+	return !p.alwaysLoaded
 }
 
 // The model gets one read plan, memory_recall. Path-specific reads remain active

@@ -8,7 +8,16 @@ import (
 	"github.com/chetto1983/aura/internal/mcp"
 )
 
-func TestMountAllAdvertisedToolsDeferred(t *testing.T) {
+// TestMount_ThreeToolServerEarnsAlwaysLoadedSlot was
+// TestMountAllAdvertisedToolsDeferred before D-27 (bridge_deferral.go,
+// PRD amendment #123): this fixture's 3 tools are exactly at
+// maxAlwaysLoadedMCPTools, so on a fresh global slot budget the mount now earns
+// an always-loaded slot and every one of its tools bridges Deferred:false,
+// instead of the pre-amendment unconditional Deferred:true. Mount still
+// registers all advertised tools unconditionally — that part of the name no
+// longer matches what the test proves, hence the rename.
+func TestMount_ThreeToolServerEarnsAlwaysLoadedSlot(t *testing.T) {
+	resetLoadedSlotBudgetForTest()
 	reg := tools.NewRegistry()
 	srv, _ := newInMemoryMounted(t,
 		mustTool("send_email", "Send an email.", nil, nil),
@@ -28,8 +37,8 @@ func TestMountAllAdvertisedToolsDeferred(t *testing.T) {
 		if !ok {
 			t.Fatalf("%s not registered", want)
 		}
-		if !tool.Spec().Deferred {
-			t.Errorf("%s must be Deferred:true", want)
+		if tool.Spec().Deferred {
+			t.Errorf("%s: a 3-tool server (at the ceiling) on a fresh budget must be Deferred:false (D-27)", want)
 		}
 	}
 }

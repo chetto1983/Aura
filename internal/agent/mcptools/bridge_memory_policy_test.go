@@ -13,6 +13,12 @@ import (
 )
 
 func TestMemoryBridgePolicy_AliasKeepsIsolationAndHiddenSurface(t *testing.T) {
+	// D-27 (bridge_deferral.go): this fixture exposes exactly 1 model-facing
+	// tool (memory_recall; the other 3 are hidden by bridgePolicy.modelFacing),
+	// which is <= maxAlwaysLoadedMCPTools, so on a fresh budget it now earns an
+	// always-loaded slot instead of the pre-amendment #123 unconditional
+	// Deferred:true.
+	resetLoadedSlotBudgetForTest()
 	var capturedMeta map[string]any
 	server := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "fixture", Version: "0.0.1"}, nil)
 	// Raw path-specific reads remain available to the host and CLI, but the
@@ -71,8 +77,8 @@ func TestMemoryBridgePolicy_AliasKeepsIsolationAndHiddenSurface(t *testing.T) {
 	if got := recall.Spec().Name; got != "mem__memory_recall" {
 		t.Fatalf("aliased model name = %q, want mem__memory_recall", got)
 	}
-	if !recall.Spec().Deferred {
-		t.Fatal("memory alias recall must be deferred like every other bridged tool")
+	if recall.Spec().Deferred {
+		t.Fatal("memory alias recall exposes only 1 model-facing tool (<= the 3-tool ceiling) and must earn an always-loaded slot on a fresh budget: Deferred must be false (D-27)")
 	}
 
 	callCtx := identityctx.WithIdentityID(context.Background(), "tenant-a")

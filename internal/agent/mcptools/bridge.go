@@ -155,7 +155,16 @@ func bridgeTools(namespace string, srv *MountedServer, advertised []*sdkmcp.Tool
 	return bridgeToolsWithPolicy(namespace, srv, advertised, callTimeout, defaultBridgePolicy(namespace))
 }
 
+// bridgeToolsWithPolicy is the ONLY place bridging scores the always-loaded
+// slot decision (D-27, bridge_deferral.go): it runs at MOUNT only (reached from
+// Mount/mountWithAdvertisedPolicy), never on reconnect, so policy.alwaysLoaded
+// is computed once here and frozen into every bridgedTool this call builds.
+// policy is a value parameter, so this mutation is local to this call and each
+// bridgedTool below receives its own enriched copy — that copy IS the freeze
+// refreshSpec later relies on never being recomputed.
 func bridgeToolsWithPolicy(namespace string, srv *MountedServer, advertised []*sdkmcp.Tool, callTimeout time.Duration, policy bridgePolicy) []tools.Tool {
+	policy.modelFacingCount = countModelFacing(policy, advertised)
+	policy.alwaysLoaded = grantLoadedSlot(namespace, policy.modelFacingCount)
 	out := make([]tools.Tool, 0, len(advertised))
 	for _, t := range advertised {
 		if !policy.modelFacing(t.Name) {
