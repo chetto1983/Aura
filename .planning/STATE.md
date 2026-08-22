@@ -4,16 +4,16 @@ milestone: v2.1.0
 current_phase: 46
 current_phase_name: MCP trust and facade
 status: executing
-stopped_at: Completed 46-03-PLAN.md
-last_updated: "2026-08-22T14:36:55.000Z"
+stopped_at: Completed 46-04-PLAN.md
+last_updated: "2026-08-22T16:48:52.000Z"
 last_activity: 2026-08-22
-last_activity_desc: Phase 46 plan 46-03 (REQUIREMENTS/ROADMAP clean rewrite, D-31) complete
-state_head: fe8cfdc5338c6aedae1ea3bfa8a681c2553888f6
+last_activity_desc: Phase 46 plan 46-04 (D-27 deferral count rule) complete — frozen at mount, drift warned on reconnect
+state_head: f14276bb5dbb4ca1764a612fa3858a85f0ea177e
 progress:
   total_phases: 11
   completed_phases: 1
   total_plans: 26
-  completed_plans: 20
+  completed_plans: 21
 milestone_name: HERMES-CLAUDE_PARITY
 ---
 
@@ -28,19 +28,21 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 
 ## Current Position
 
-Phase: 46 (MCP trust and facade) — EXECUTING (3/9 plans complete)
+Phase: 46 (MCP trust and facade) — EXECUTING (4/9 plans complete)
 Status: Executing Phase 46
 Phase 46 discussion are recorded in `46-CONTEXT.md` D-10..D-16 and in ROADMAP §45.1.
-Last activity: 2026-08-22 — Plan 46-03 (REQUIREMENTS/ROADMAP clean rewrite, D-31) complete:
-REQUIREMENTS.md MCP-02/04/05 rows and ROADMAP §46 rewritten clean at `aa33e710f` / `ed3b9384e`,
-with every superseded pre-34b892512 wording relocated to dated footnotes rather than deleted.
-Both now state the post-amendment posture: frequency+count tiering (#123), curation in the forks,
-and WhatsApp at 3 model-facing tools.
+Last activity: 2026-08-22 — Plan 46-04 (D-27 deferral count rule) complete:
+`bridgePolicy.defaultDeferred()` now implements Amendment #123's arithmetic — a mount exposing
+<=3 model-facing tools earns one of 2 global always-loaded slots, overflow fails closed to
+deferred (`c2b43be2b`). The decision is frozen once per mount and re-read, never recomputed, on
+reconnect; `refreshSpecsLocked` reports drift via `warnIfDeferralWouldFlip` and never applies it
+(`aa78613a4` RED, `f14276bb5` GREEN). No-op on today's surface: memory (4), calendar (14) and
+whatsapp (14) all exceed the ceiling and stay deferred until 46-05/46-08 curate the forks.
 
-Next: Plan 46-04 (D-27 deferral count rule) — replace the unconditional `true` in
-`bridgePolicy.defaultDeferred()` with the <=3-model-facing-tools predicate, global cap 2 slots,
-frozen at mount, drift WARNed on reconnect. See
-`.planning/phases/46-mcp-trust-and-facade/46-03-SUMMARY.md` for full detail.
+Next: Plan 46-05 (calendar fork curation) — collapse aura-pim-mcp's 14 registered tools into one
+`action`-discriminated tool in its own repo, fix MCP-05's accountId, publish an immutable
+`:<40-hex-sha>` image. EXTERNAL repo work: pushes to chetto1983/aura-pim-mcp@aura/pim-sidecar. See
+`.planning/phases/46-mcp-trust-and-facade/46-04-SUMMARY.md` for full detail.
 
 Progress: [████████░░] 82%
 
@@ -128,6 +130,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 46]: Amendment numbers 122/123/124 assigned to the MCP trust/curated-surface, TOOL-14 tiering-axis, and Phase 45.1+env-catalogue amendments (46-01)
 - [Phase 46]: 46-02 selected views-exempt: WhatsApp's list_chats/list_messages stay raw, advertised and unmerged (their live MCP Apps views break under CallReadOnlyTool's Mutating gate if merged); WhatsApp ends the phase at 3 model-facing tools, not 1, amending D-18's worked example for WhatsApp only
 - [Phase 46]: 46-02 confirmed model-facing curated tool names calendar__calendar and whatsapp__messages (D-18's names taken literally through name.go's namespacedName over catalog.go's calendar/whatsapp mount namespaces)
+- [Phase 46]: 46-04 froze the deferral decision at mount rather than recomputing it on reconnect — a fork briefly advertising a different tool count during a bad deploy would otherwise add or remove a tool from the model's manifest mid-conversation, invalidating the KV-cache prefix it is relying on; drift is WARNed, never applied
+- [Phase 46]: 46-04 kept warnIfDeferralWouldFlip out of grantLoadedSlot — recomputing the real decision per reconnect would spend or refuse the global 2-slot budget as a side effect of a health-check-shaped call, corrupting the budget the freeze exists to keep stable
+- [Phase 46]: 46-04 corrected TestBridge_MemoryNamespaceToolsAreDeferredByDefault's fixture from 2 tools to the real cmd/arcadedb-mcp surface (10 advertised, 6 hidden, 4 model-facing) — the old fixture would have wrongly earned a slot under the new arithmetic, so its assertion was accidentally true
 
 ### Pending Todos
 
@@ -172,7 +177,7 @@ Items acknowledged and carried forward from previous milestone close:
 ## Session Continuity
 
 Last session: 2026-08-22T14:05:42.591Z
-Stopped at: Completed 46-03-PLAN.md
+Stopped at: Completed 46-04-PLAN.md
 exited at its CONTEXT.md gate — Phase 45 has no CONTEXT.md, and discuss-phase must run as a
 top-level command (nested invocation breaks AskUserQuestion, GSD #1009). No phase directory
 was created and no planning agents were spawned.
@@ -186,4 +191,4 @@ to 77, the `tool_call_id` blocker marked resolved by `657c9e383`, and the CTX-V2
 re-pointed at Phase 53. REQUIREMENTS.md's two stale prose lines corrected to match.
 
 Resume file: None
-Next action: `/gsd-execute-phase 46` (plan 46-04 — D-27 deferral count rule).
+Next action: `/gsd-execute-phase 46` (plan 46-05 — calendar fork curation, EXTERNAL repo).
