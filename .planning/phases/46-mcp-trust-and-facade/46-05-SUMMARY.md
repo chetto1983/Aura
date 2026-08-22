@@ -50,7 +50,12 @@ key-decisions:
   - "Every action's accountId semantics other than get_calendar_event_details are left exactly as measured in the raw tools (defaultable routing hint on get_emails/search_emails/list_calendars/get_calendar_events/get_contacts/search_contacts/create_event/respond_to_event; required on get_email_details/get_contact_details/update_event) -- MCP-05 fixes the one action whose accountId was actually a mislabeled handle, not the routing-hint uses, matching the design doc's carve-out."
   - "StdioServer/Program.cs and ServiceCollectionExtensions.cs, both independently referencing the same 14 classes outside the plan's literal file list, were updated to keep `dotnet build calendar-mcp.slnx` (the whole solution) compiling -- not just the HttpServer project the Dockerfile publishes. This is Rule 3 (blocking-issue fix caused directly by the current task's deletions), not scope creep."
 
-requirements-completed: [MCP-04, MCP-05]
+requirements-completed: []
+# MCP-04/MCP-05 are NOT marked complete: `requirements ready-ids` reports both BLOCKED
+# (shared with 46-01/46-02/46-03/46-06/46-07/46-08/46-09, several still open — MCP-04's
+# "two curated always-loaded slots" needs WhatsApp curated too, in 46-08). This plan's own
+# truths for the calendar half are verified (see coverage below); `requirements
+# mark-complete` was deliberately not run, matching 46-03-SUMMARY.md's precedent.
 
 coverage:
   - id: D1

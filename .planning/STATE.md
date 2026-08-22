@@ -4,16 +4,16 @@ milestone: v2.1.0
 current_phase: 46
 current_phase_name: MCP trust and facade
 status: executing
-stopped_at: Completed 46-04-PLAN.md
-last_updated: "2026-08-22T16:48:52.000Z"
+stopped_at: Completed 46-05-PLAN.md
+last_updated: "2026-08-22T19:41:37.000Z"
 last_activity: 2026-08-22
-last_activity_desc: Phase 46 plan 46-04 (D-27 deferral count rule) complete — frozen at mount, drift warned on reconnect
-state_head: f14276bb5dbb4ca1764a612fa3858a85f0ea177e
+last_activity_desc: Phase 46 plan 46-05 (calendar fork curation, MCP-04/MCP-05) complete — aura-pim-mcp collapsed 14 tools to 1, published :38c94fd9d
+state_head: c968d3e46de4e074f3de47990499c648fd4b3d61
 progress:
   total_phases: 11
   completed_phases: 1
   total_plans: 26
-  completed_plans: 21
+  completed_plans: 22
 milestone_name: HERMES-CLAUDE_PARITY
 ---
 
@@ -28,21 +28,26 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 
 ## Current Position
 
-Phase: 46 (MCP trust and facade) — EXECUTING (4/9 plans complete)
+Phase: 46 (MCP trust and facade) — EXECUTING (5/9 plans complete)
 Status: Executing Phase 46
 Phase 46 discussion are recorded in `46-CONTEXT.md` D-10..D-16 and in ROADMAP §45.1.
-Last activity: 2026-08-22 — Plan 46-04 (D-27 deferral count rule) complete:
-`bridgePolicy.defaultDeferred()` now implements Amendment #123's arithmetic — a mount exposing
-<=3 model-facing tools earns one of 2 global always-loaded slots, overflow fails closed to
-deferred (`c2b43be2b`). The decision is frozen once per mount and re-read, never recomputed, on
-reconnect; `refreshSpecsLocked` reports drift via `warnIfDeferralWouldFlip` and never applies it
-(`aa78613a4` RED, `f14276bb5` GREEN). No-op on today's surface: memory (4), calendar (14) and
-whatsapp (14) all exceed the ceiling and stay deferred until 46-05/46-08 curate the forks.
+Last activity: 2026-08-22 — Plan 46-05 (calendar fork curation, MCP-04/MCP-05) complete:
+`chetto1983/aura-pim-mcp`'s `aura/pim-sidecar` branch collapsed its 14 registered MCP tools into
+one curated `calendar` action tool (commit `38c94fd9d22d85c4b89f3d5b1f8202970faed117`), fixed
+MCP-05 by having `get_calendar_event_details` resolve the account from an opaque `eventId`
+reference (base64 JSON minted by `get_calendar_events`) instead of a caller-supplied `accountId`,
+and published the immutable image
+`ghcr.io/chetto1983/aura-pim-mcp:38c94fd9d22d85c4b89f3d5b1f8202970faed117` — re-verified live
+against the pulled `:<sha>` tag itself, not just the local build. Finding worth carrying forward:
+`ci.yml` structurally never triggers on `aura/pim-sidecar` (push/PR to `main` only, zero runs ever
+on this branch); the real gate this branch has is `aura-publish-image.yml`, which ran and
+succeeded (run `32594333534`). The Aura repository tree itself is unmodified by this plan — the
+pin lands in 46-06.
 
-Next: Plan 46-05 (calendar fork curation) — collapse aura-pim-mcp's 14 registered tools into one
-`action`-discriminated tool in its own repo, fix MCP-05's accountId, publish an immutable
-`:<40-hex-sha>` image. EXTERNAL repo work: pushes to chetto1983/aura-pim-mcp@aura/pim-sidecar. See
-`.planning/phases/46-mcp-trust-and-facade/46-04-SUMMARY.md` for full detail.
+Next: Plan 46-06 — pin `AURA_PIM_MCP_IMAGE` to the published `:38c94fd9d...` tag, re-key
+`trustedRecipeActions[calendarRecipeSource]` to the 14 measured action names (tiers unchanged),
+set `Multiplexed: true`, add the `calendar__calendar` classifier entry. See
+`.planning/phases/46-mcp-trust-and-facade/46-05-SUMMARY.md` for full detail.
 
 Progress: [████████░░] 82%
 
@@ -75,6 +80,7 @@ Progress: [████████░░] 82%
 | Phase 45 P06 | 150min | 3 tasks | 7 files |
 | Phase 46 P01 | 35min | 3 tasks | 1 files |
 | Phase 46 P02 | 55min | 2 tasks | 1 files |
+| Phase 46 P05 | 180min | 2 tasks | 9 files (external repo) |
 
 ## Accumulated Context
 
@@ -133,6 +139,11 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 46]: 46-04 froze the deferral decision at mount rather than recomputing it on reconnect — a fork briefly advertising a different tool count during a bad deploy would otherwise add or remove a tool from the model's manifest mid-conversation, invalidating the KV-cache prefix it is relying on; drift is WARNed, never applied
 - [Phase 46]: 46-04 kept warnIfDeferralWouldFlip out of grantLoadedSlot — recomputing the real decision per reconnect would spend or refuse the global 2-slot budget as a side effect of a health-check-shaped call, corrupting the budget the freeze exists to keep stable
 - [Phase 46]: 46-04 corrected TestBridge_MemoryNamespaceToolsAreDeferredByDefault's fixture from 2 tools to the real cmd/arcadedb-mcp surface (10 advertised, 6 hidden, 4 model-facing) — the old fixture would have wrongly earned a slot under the new arithmetic, so its assertion was accidentally true
+- [Phase 46]: 46-05 registers the curated `calendar` tool via `McpServerTool.Create(...)` + a `WithCalendarActionTool()` extension, not the SDK's attribute-scanning `.WithTools<T>()` — that overload accepts no schema customization, and a genuine JSON Schema `enum` on `action` together with a named/listed unknown-action error (T-46-18) needs a plain-string parameter with the schema patched after construction
+- [Phase 46]: 46-05 found `AIJsonSchemaCreateOptions.TransformSchemaNode` carries no per-parameter identity when generating a schema from a MethodInfo's parameters (empty Path, null PropertyInfo, measured live via debug instrumentation) — the working fix instead parses and rewrites the already-built `Tool.InputSchema` after `McpServerTool.Create` returns
+- [Phase 46]: 46-05's MCP-05 fix encodes `{accountId, eventId}` as an opaque base64 JSON token minted by `get_calendar_events` and decoded only by `get_calendar_event_details` — the provider call still needs a real accountId server-side, so the reference carries it instead of a caller-supplied argument; a missing/malformed reference is rejected outright, never defaulted to an account
+- [Phase 46]: 46-05 found `ci.yml` structurally never triggers on `aura/pim-sidecar` (push/PR to `main` only, zero runs in the branch's history) — the plan's literal "ci.yml green" acceptance wording cannot be satisfied on this branch; `aura-publish-image.yml` is the actual gate and it succeeded, additionally verified by pulling and re-probing the published `:<sha>` image live
+- [Phase 46]: 46-05 deleted the 14 orphaned MSTest files (2062 LOC) for the deleted raw tool classes rather than porting them to `CalendarActionTool` — no replacement unit coverage was written for the merged tool in this plan; flagged as a known gap/follow-up, not silently absorbed
 
 ### Pending Todos
 
@@ -161,6 +172,8 @@ None yet.
 - 45.1-08 (phase close) must re-run bash scripts/coverage_docker.sh (full aggregate 85% owned-surface gate) once plan 45.1-04 lands and the tree is quiescent -- not run during 45.1-03 because a concurrent unrelated in-flight session held compose.yaml and internal/agent/mcptools/bridge_risk.go dirty in the same checkout
 - 45.1-08 must also run a mutation spot-check on internal/agent/mcptools/bridge_risk.go -- not run during 45.1-04; the file is at 100% per-function coverage and bridge_supervisor.go scored 99/99, but neither is a mutation score for this file
 - 45.1-08 must also cover 45.1-07: no mutation spot-check on elicitation.go/elicitation_consent.go, and no LIVE E2E of a real mounted server issuing a real elicitation to a real channel -- the in-memory pair proves the protocol path, not a Telegram delivery
+- 46-05 (calendar fork curation) deleted 14 orphaned MSTest files (2062 LOC) for the raw tool classes it removed, with no replacement unit coverage written for the merged `CalendarActionTool` -- flagged for a future fork-side follow-up, not something this milestone's own coverage gates measure (aura-pim-mcp is an external repo)
+- 46-05 found `ci.yml` structurally never triggers on `aura/pim-sidecar` (push/PR to `main` only) -- if a future plan expects a green `ci.yml` run on this branch as evidence, it will not exist; use `aura-publish-image.yml`'s run history plus a live pulled-image probe instead
 - Env catalog gap (found in 45.1-07, PRD-amendment shaped): the whole AURA_MCP_* family is uncatalogued in prd.md -- AURA_MCP_MOUNT_TIMEOUT and AURA_MCP_SHUTDOWN_TIMEOUT are absent, AURA_MCP_CALL_TIMEOUT_SEC appears only in amendment prose, and AURA_MCP_ELICITATION_TIMEOUT_SEC was deliberately not added alone
 
 ## Deferred Items
@@ -176,8 +189,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-22T14:05:42.591Z
-Stopped at: Completed 46-04-PLAN.md
+Last session: 2026-08-22T19:41:37.000Z
+Stopped at: Completed 46-05-PLAN.md
 exited at its CONTEXT.md gate — Phase 45 has no CONTEXT.md, and discuss-phase must run as a
 top-level command (nested invocation breaks AskUserQuestion, GSD #1009). No phase directory
 was created and no planning agents were spawned.
@@ -191,4 +204,4 @@ to 77, the `tool_call_id` blocker marked resolved by `657c9e383`, and the CTX-V2
 re-pointed at Phase 53. REQUIREMENTS.md's two stale prose lines corrected to match.
 
 Resume file: None
-Next action: `/gsd-execute-phase 46` (plan 46-05 — calendar fork curation, EXTERNAL repo).
+Next action: `/gsd-execute-phase 46` (plan 46-06 — pin both curated images + re-key trust).
