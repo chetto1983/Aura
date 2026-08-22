@@ -4,16 +4,16 @@ milestone: v2.1.0
 current_phase: 46
 current_phase_name: MCP trust and facade
 status: executing
-stopped_at: Completed 46-05-PLAN.md
-last_updated: "2026-08-22T19:41:37.000Z"
+stopped_at: Completed 46-06-PLAN.md
+last_updated: "2026-08-22T23:05:00.000Z"
 last_activity: 2026-08-22
-last_activity_desc: Phase 46 plan 46-05 (calendar fork curation, MCP-04/MCP-05) complete — aura-pim-mcp collapsed 14 tools to 1, published :38c94fd9d
-state_head: c968d3e46de4e074f3de47990499c648fd4b3d61
+last_activity_desc: Phase 46 plan 46-06 (tracer slice) complete — calendar classifies per action, sidecar pinned to the curated image, one tool live
+state_head: 4d2fe0deb
 progress:
   total_phases: 11
   completed_phases: 1
   total_plans: 26
-  completed_plans: 22
+  completed_plans: 23
 milestone_name: HERMES-CLAUDE_PARITY
 ---
 
@@ -28,26 +28,43 @@ See: .planning/PROJECT.md (updated 2026-08-05)
 
 ## Current Position
 
-Phase: 46 (MCP trust and facade) — EXECUTING (5/9 plans complete)
+Phase: 46 (MCP trust and facade) — EXECUTING (6/9 plans complete)
 Status: Executing Phase 46
 Phase 46 discussion are recorded in `46-CONTEXT.md` D-10..D-16 and in ROADMAP §45.1.
-Last activity: 2026-08-22 — Plan 46-05 (calendar fork curation, MCP-04/MCP-05) complete:
-`chetto1983/aura-pim-mcp`'s `aura/pim-sidecar` branch collapsed its 14 registered MCP tools into
-one curated `calendar` action tool (commit `38c94fd9d22d85c4b89f3d5b1f8202970faed117`), fixed
-MCP-05 by having `get_calendar_event_details` resolve the account from an opaque `eventId`
-reference (base64 JSON minted by `get_calendar_events`) instead of a caller-supplied `accountId`,
-and published the immutable image
-`ghcr.io/chetto1983/aura-pim-mcp:38c94fd9d22d85c4b89f3d5b1f8202970faed117` — re-verified live
-against the pulled `:<sha>` tag itself, not just the local build. Finding worth carrying forward:
-`ci.yml` structurally never triggers on `aura/pim-sidecar` (push/PR to `main` only, zero runs ever
-on this branch); the real gate this branch has is `aura-publish-image.yml`, which ran and
-succeeded (run `32594333534`). The Aura repository tree itself is unmodified by this plan — the
-pin lands in 46-06.
+Last activity: 2026-08-22 — Plan 46-06 (the tracer slice, MCP-04/MCP-02) complete. D-21's silent
+failure is closed: a bridged tool never set `Multiplexed`, so `classify` gave ONE flat tier to the
+whole merged tool — `calendar(action=list_calendars)` and `calendar(action=send_email)` scored
+identically, with no panic to warn anyone. Now `bridge.go:211` sets `spec.Multiplexed =
+isKnownMultiplexedMCPTool(name)` (D-34: earned by having a classifier, NEVER inferred from a schema
+carrying an `action` property, or a stranger's server would panic boot), `internal/gateway`
+registers `classifyCalendarAction`, and `trustedRecipeActions[calendarRecipeSource]`'s 14 keys are
+read as action names — no relabeling needed, the fork's enum already matched. The mixed key spaces
+(calendar action-keyed, memory/whatsapp raw-tool-name-keyed) are documented ON the table per D-35.
+Per D-32 the pin, the re-key, the Multiplexed flip and the classifier entry landed in ONE commit
+(`2edbc3910`), preceded by its RED (`09e87b8d5`), so no window existed where calendar reads demanded
+approval or the merged tool classified flat.
 
-Next: Plan 46-06 — pin `AURA_PIM_MCP_IMAGE` to the published `:38c94fd9d...` tag, re-key
-`trustedRecipeActions[calendarRecipeSource]` to the 14 measured action names (tiers unchanged),
-set `Multiplexed: true`, add the `calendar__calendar` classifier entry. See
-`.planning/phases/46-mcp-trust-and-facade/46-05-SUMMARY.md` for full detail.
+Proven live, not just green: the `aura-pim-mcp` service was recreated onto
+`:38c94fd9d22d85c4b89f3d5b1f8202970faed117` and `tools/list` now returns exactly ONE tool,
+`calendar`; the `calendar_integration` tier ran against it (`TestCalendarServerLive` PASS, protocol
+`2025-11-25`). `-race` green in WSL on both touched packages.
+
+Carried forward, honestly: **the MCP-05 round-trip is only half-proven** — this host has ZERO
+connected accounts, so `get_calendar_events` returns no `eventId` to chain a detail call from. The
+schema half is exercised, the opaque-reference round-trip is not. 46-07 must connect a real account
+or MCP-05 stays unproven for the whole phase. Also inherited from 46-05 and still open: the fork
+deleted 14 MSTest files (2,062 LOC) with no replacement and its `ci.yml` never triggers on
+`aura/pim-sidecar`, so the `calendar_integration` tier is the ONLY automated proof of that surface.
+
+Process note: three gsd-executor dispatches were killed by the harness's 600s stream-idle watchdog
+(the same failure that killed three executors in Phase 45.1). Both plan commits are the executor's,
+made across resumes; the orchestrator ran the gates, recreated the sidecar, ran the live tier and
+wrote the SUMMARY inline at the operator's direction. No plan content was weakened to finish.
+
+Next: Plan 46-07 — the tracer GATE. Drive one real conversation through the running stack, capture
+the per-action evidence rows, and score the scenario into 46-VALIDATION.md. Connect at least one
+real account first, or the MCP-05 round-trip cannot be closed. See
+`.planning/phases/46-mcp-trust-and-facade/46-06-SUMMARY.md` for full detail.
 
 Progress: [████████░░] 82%
 
@@ -81,6 +98,7 @@ Progress: [████████░░] 82%
 | Phase 46 P01 | 35min | 3 tasks | 1 files |
 | Phase 46 P02 | 55min | 2 tasks | 1 files |
 | Phase 46 P05 | 180min | 2 tasks | 9 files (external repo) |
+| Phase 46 P06 | 145min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -139,6 +157,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 46]: 46-04 froze the deferral decision at mount rather than recomputing it on reconnect — a fork briefly advertising a different tool count during a bad deploy would otherwise add or remove a tool from the model's manifest mid-conversation, invalidating the KV-cache prefix it is relying on; drift is WARNed, never applied
 - [Phase 46]: 46-04 kept warnIfDeferralWouldFlip out of grantLoadedSlot — recomputing the real decision per reconnect would spend or refuse the global 2-slot budget as a side effect of a health-check-shaped call, corrupting the budget the freeze exists to keep stable
 - [Phase 46]: 46-04 corrected TestBridge_MemoryNamespaceToolsAreDeferredByDefault's fixture from 2 tools to the real cmd/arcadedb-mcp surface (10 advertised, 6 hidden, 4 model-facing) — the old fixture would have wrongly earned a slot under the new arithmetic, so its assertion was accidentally true
+- [Phase 46]: 46-06 sets Multiplexed ONLY for a namespaced name that already has a gateway classifier (isKnownMultiplexedMCPTool), never inferred from a schema carrying an `action` property — inferring it would panic Aura's boot on a stranger's server, the exact opposite of what a generic MCP host promises (D-34)
+- [Phase 46]: 46-06 kept ONE risk table with two key spaces rather than splitting it — calendar action-keyed, memory/whatsapp raw-tool-name-keyed — and documented the asymmetry on the table itself (D-35), because a second table is precisely the class of bug this phase closes
+- [Phase 46]: 46-06 corrected docker/aura/PROVENANCE.md's "tool surface trimmed 29->14" prose in the same edit as the pin; 46-05 made it false (29->1 curated tool with 14 actions) and a stale provenance claim is worse than none
+- [Phase 46]: 46-06 was finished inline by the orchestrator after three gsd-executor dispatches died to the 600s stream-idle watchdog; both plan commits are the executor's, made across resumes, and no plan content was weakened to finish
 - [Phase 46]: 46-05 registers the curated `calendar` tool via `McpServerTool.Create(...)` + a `WithCalendarActionTool()` extension, not the SDK's attribute-scanning `.WithTools<T>()` — that overload accepts no schema customization, and a genuine JSON Schema `enum` on `action` together with a named/listed unknown-action error (T-46-18) needs a plain-string parameter with the schema patched after construction
 - [Phase 46]: 46-05 found `AIJsonSchemaCreateOptions.TransformSchemaNode` carries no per-parameter identity when generating a schema from a MethodInfo's parameters (empty Path, null PropertyInfo, measured live via debug instrumentation) — the working fix instead parses and rewrites the already-built `Tool.InputSchema` after `McpServerTool.Create` returns
 - [Phase 46]: 46-05's MCP-05 fix encodes `{accountId, eventId}` as an opaque base64 JSON token minted by `get_calendar_events` and decoded only by `get_calendar_event_details` — the provider call still needs a real accountId server-side, so the reference carries it instead of a caller-supplied argument; a missing/malformed reference is rejected outright, never defaulted to an account

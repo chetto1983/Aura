@@ -354,7 +354,7 @@ passages remain `TrustUntrusted`, so instructions inside a document stay data, n
   5. ~~A live turn whose MCP tool result carries instruction-shaped text does not act on it, proving the result-fencing envelope carried the defense.~~ **DELETED 2026-08-16 (D-07):** there is no envelope; the criterion cannot pass as written and must not be silently reinterpreted.
   6. Mounting a **new** MCP server — one with no entry anywhere in Aura's tree — makes its tools usable in a live turn with no code change and no configuration beyond the mount itself, fail-closed at `Mutating+Destructive`.
 
-**Plans**: 5/9 plans executed
+**Plans**: 6/9 plans executed
 
 Plans:
 **Wave 1**
@@ -370,7 +370,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 46-06-PLAN.md — TRACER: re-key the risk table to action names, gate Multiplexed on classifier existence, register the classifier, reconcile at mount, pin the image — one atomic commit
+- [x] 46-06-PLAN.md — TRACER: re-key the risk table to action names, gate Multiplexed on classifier existence, register the classifier, reconcile at mount, pin the image — one atomic commit
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -682,7 +682,7 @@ and last-among-technical-phases here so its token budget tunes against the final
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 45. Harness correctness | 9/9 | Complete    | 2026-08-15 |
-| 46. MCP trust and facade | 5/9 | In Progress|  |
+| 46. MCP trust and facade | 6/9 | In Progress|  |
 | 47. Tool-surface ceremony strip | 0/TBD | Not started | - |
 | 48. Tool-surface un-defer and merges | 0/TBD | Not started | - |
 | 49. Memory tiers | 0/TBD | Not started | - |
