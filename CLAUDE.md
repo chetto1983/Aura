@@ -67,7 +67,19 @@ Ogni slice attraversa 3 gate (formalizzati nel PRD §Slice Q&A discipline). Mapp
 
 ## GSD tooling (workflow ufficiale)
 
-Installazione: `.claude/` con 67 commands + 33 agents + 9 hooks attivi (13 script in `.claude/hooks/`, 9 wired — vedi `.claude/settings.json`). Versione: 1.1.0.
+Installazione: **due copie coesistono e non sono la stessa versione** (misurato 2026-08-22).
+La **globale** (`~/.claude/`) è a **1.11.0**, layout skills-based: 71 skill `gsd-*` in
+`~/.claude/skills/`, tool in `~/.claude/gsd-core/bin/gsd-tools.cjs`. La **project-local**
+(`.claude/`) è ferma a **1.1.0** (`.claude/get-shit-done/VERSION`), vecchio layout a comandi:
+67 commands in `.claude/commands/gsd/`, 33 agents, 13 script in `.claude/hooks/` di cui
+**9 wired** in `.claude/settings.json`.
+
+Quale delle due gira davvero — misurato, non dedotto: in sessione `/gsd-plan-phase` risolve a
+`~/.claude/skills/gsd-plan-phase`, e il preambolo dei workflow GSD cerca
+`<repo>/.claude/gsd-core/bin/gsd-tools.cjs` — che **non esiste**, perché la copia locale vive in
+`.claude/get-shit-done/bin/` — quindi ricade su HOME da solo. Hooks e agents restano invece
+quelli locali. **`gsd-tools.cjs` si invoca sempre da HOME:** la copia nel progetto è indietro
+di dieci minor.
 
 > **`.planning/` ESISTE ed è tracciata in git.** Cancellata alla chiusura della milestone
 > v2.0.0, è stata **rigenerata il 2026-08-05** (`b1a95faf8`, apertura di v2.1.0
@@ -109,7 +121,7 @@ Bootstrap inziale (one-shot):
 - `/gsd-ingest-docs` — importa prd.md esistente in `.planning/` setup (PRD → ADR/SPEC structured)
 - `/gsd-map-codebase` — analizza il codebase esistente in `.planning/codebase/` (v0.0.0 Phase 0-21 + v1.0.0 Phase 22-30 shippate, v2.0.0 Phase 31-42 in corso — **~98k LOC non-test su 68 package**, di cui ~7k sqlc-generated; ~143k LOC di test)
 
-## Skills installate (`.claude/skills/`, 56 totali — 7.0 MB)
+## Skills installate (`.claude/skills/`, 49 totali — 9.7 MB, misurato 2026-08-22)
 
 Skills modulari caricate on-demand quando il task le triggera (markdown SKILL.md con frontmatter description). Installate via `npx skills add`. Mappa skill → utilizzo nel workflow GSD + Slice Q&A:
 
@@ -162,16 +174,24 @@ Skills modulari caricate on-demand quando il task le triggera (markdown SKILL.md
 | `mcp-builder` (anthropics) | **Slice 0.7** | MCP server design pattern (per `cmd/arcadedb-mcp`) |
 | `skill-creator` (anthropics) | **Slice 7 Skills** | Meta-pattern per creating + evaluating Aura skills |
 
-### Frontend/web + tooling (23 skills, installate post-v1.0.0)
+### Documenti + tooling (16 skills)
 
 | Skill | Slice/Phase mappato | Use case |
 |---|---|---|
-| `frontend-design`, `accessibility`, `shadcn`, `vercel-react-best-practices`, `vite` | **v1.0.0 Cockpit** (Phase 22-30) | Design distintivo (vedi §Frontend_aesthetics), WCAG 2.2, componenti, build |
-| `assistant-ui`, `primitives`, `runtime`, `streaming`, `tools` | **v1.0.0 Cockpit chat/SSE** | assistant-ui: runtime selection, primitives, wire protocol AG-UI/SSE |
-| `printing-press` + 9 varianti (`-amend/-catalog/-import/-output-review/-polish/-publish/-reprint/-retro/-score`) | CLI per API esterne | Genera CLI agent-ready per API di terze parti (NON per il codice Aura) |
-| `claude-api` | Slice 1/3 LLM | Anthropic SDK + prompt caching + tool use |
-| `xlsx` | Slice 11b ingest | Spreadsheet come input/output di un task |
+| `printing-press` + 8 varianti (`-amend/-import/-output-review/-polish/-publish/-reprint/-retro/-score`) | CLI per API esterne | Genera CLI agent-ready per API di terze parti (NON per il codice Aura) |
+| `cocoindex` | **Slice 11 ingest** | Pipeline incrementali; la live-mode è `coco.auto_refresh`, non la source |
+| `docx`, `pdf`, `pptx`, `xlsx` | **Slice 11b ingest / filecard** | Office e PDF come input/output di un task |
+| `svar-svelte` | Cockpit filemanager | SVAR components (il cockpit usa i binding `@svar-ui/react-*`) |
 | `spike-findings-Aura` | **meta — auto-caricata** | Blueprint dagli spike (vedi riga 5 di questo file) |
+
+> **Cosa NON è installato, contro quanto questa sezione affermava** (misurato 2026-08-22):
+> `frontend-design` non è una skill di progetto — arriva dal marketplace plugin
+> `claude-plugins-official`; `claude-api` è built-in della CLI. E `accessibility`, `shadcn`,
+> `vercel-react-best-practices`, `vite`, `assistant-ui`, `primitives`, `runtime`, `streaming`,
+> `tools`, `printing-press-catalog` **non esistono da nessuna parte**: né in `.claude/skills/`,
+> né in `~/.claude/skills/`, né tra i plugin, né nella storia git di `.claude/skills/`. Le righe
+> che le elencavano erano un elenco di intenzioni, non un inventario. Per il design del cockpit
+> vale §Frontend_aesthetics di questo file più il plugin `frontend-design`.
 
 ### Trigger automatic
 
