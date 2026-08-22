@@ -107,10 +107,10 @@ const (
 	promptHeadroomTokens = 13_000
 
 	// The two reserves above are absolute token counts sized for a large window, and on a
-	// small one they are the whole window: a 32,768-token model (a local Qwen3.5-9B, which
-	// is exactly what Aura is meant to run on) needs 20,000 + 13,000 = 33,000 and is
-	// refused at boot by 232 tokens. MEASURED 2026-08-16 on the live deployment: `aura
-	// serve` crash-looped with "invalid prompt budget -232".
+	// small one they are the whole window: a 32,768-token window (AURA_LLM_CTX's default on
+	// the local llama.cpp lane, which is exactly what Aura is meant to run on) needs
+	// 20,000 + 13,000 = 33,000 and is refused at boot by 232 tokens. MEASURED 2026-08-16
+	// on the live deployment: `aura serve` crash-looped with "invalid prompt budget -232".
 	//
 	// So each reserve is now the SMALLER of its absolute size and a share of the window.
 	// The shares are set so the absolute value still wins on every window big enough to

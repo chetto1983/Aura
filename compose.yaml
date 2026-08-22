@@ -1089,8 +1089,18 @@ services:
   # then point the daemon at it in .env (the profile can gate a SERVICE, not another
   # service's env, so this half stays explicit):
   #   AURA_LLM_BASE_URL=http://aura-llm:8084/v1
-  #   AURA_LLM_MODEL=qwen3.5-9b
-  # Host-side `go run ./cmd/aura` is unaffected unless you export the same two.
+  #   AURA_LLM_MODEL=gemma-4-12b
+  #   AURA_LLM_PROVIDER=llamacpp
+  #   AURA_LLM_TEMPERATURE=1.0   AURA_LLM_TOP_P=0.95   AURA_LLM_TOP_K=64
+  # Host-side `go run ./cmd/aura` is unaffected unless you export the same.
+  #
+  # That last line is not decoration, and it is the one thing here a reader will get
+  # wrong. llama.cpp honours a CLIENT-supplied sampling value over its own flag, and Aura
+  # always sends temperature (AURA_LLM_TEMPERATURE, default 0.7 — shared with the
+  # OpenRouter path, which is why it is not simply changed to 1.0 here). Leave it alone
+  # and this server answers at 0.7 whatever --temp says below. The other four card knobs
+  # default to UNSET in Aura (llm.Sampling pointers, omitted from the wire), so those DO
+  # fall through to the flags below unless the operator sets the env.
   aura-llm:
     profiles: [localllm]
     image: ${AURA_LLM_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda}
@@ -1099,36 +1109,55 @@ services:
     environment:
       LLAMA_ARG_HOST: 0.0.0.0
     command:
-      # A LOCAL path, not --hf-repo (task-7 RULING 1, 2026-08-07): the previous
+      # LOCAL paths, not --hf-repo (task-7 RULING 1, 2026-08-07): the previous
       # --hf-repo/--hf-file pair needed egress at every first boot and verified nothing
       # about what it fetched — the same restart-loop and same silent-corruption risk
       # aura-llama-embed's own comment above already documents for this exact image.
-      # scripts/fetch_llm_model.sh pins unsloth/Qwen3.5-9B-GGUF's Qwen3.5-9B-UD-Q4_K_XL.gguf
-      # at commit 3885219b6810b007914f3a7950a8d1b469d598a5 (5,966,095,584 bytes, sha256
-      # 6f5d30666c2d8ae16a306e616d95341dcf3cc46810df84d7e6f5a7d1e4c1b293) and refuses
-      # anything else; the file is placed into this volume before the first `up`,
-      # the same appliance-install step ensure_embed_model already performs. unsloth's UD
-      # (dynamic-quant) family, not a plain Q4_K_M, to stay on the pattern this default
-      # already used before this task.
+      # scripts/fetch_llm_model.sh pins BOTH files of unsloth/gemma-4-12B-it-qat-GGUF at
+      # commit 980b060c40a8539ac159e0501a3e0f66a6365af3 — the model
+      # (gemma-4-12B-it-qat-UD-Q4_K_XL.gguf, 6,716,356,800 bytes, sha256 90fd44e2…c370)
+      # and the MTP drafter (mtp-gemma-4-12B-it.gguf, 253,708,800 bytes, sha256
+      # fcb35dea…f4f6) — and refuses anything else; both are placed into this volume
+      # before the first `up`, the same appliance-install step ensure_embed_model performs.
       - -m
-      - ${AURA_LLM_MODEL_PATH:-/root/.cache/llama.cpp/Qwen3.5-9B-UD-Q4_K_XL.gguf}
+      - ${AURA_LLM_MODEL_PATH:-/root/.cache/llama.cpp/gemma-4-12B-it-qat-UD-Q4_K_XL.gguf}
       - -a
-      - ${AURA_LLM_ALIAS:-qwen3.5-9b}
+      - ${AURA_LLM_ALIAS:-gemma-4-12b}
       - --port
       - "8084"
       - -ngl
       - "${AURA_LLM_NGL:-99}"          # full GPU offload
+      # MTP speculative decoding. Not a tuning nicety: MEASURED 2026-08-22 on this host's
+      # 12GB RTX 3060, six prompts through /v1/chat/completions (the endpoint Aura calls)
+      # at production budgets, drafter ON vs OFF — 60.4 vs 34.9 tok/s median, and the same
+      # six prompts finished in 131.0s against 481.7s on the Qwen3.5-9B this block used to
+      # serve. Qwen has no llama.cpp MTP drafter at all (its MTP is SGLang/vLLM NEXTN), so
+      # that 3.7x is model AND drafter together, not the drafter alone. Re-run at this
+      # deployment's actual q4_0 KV rather than the q8_0 default: 127.4s and 60.1 tok/s,
+      # inside the noise of the q8_0 figures, so the KV quant does not move throughput here.
+      #
+      # n-max=4 accepts 61% of what it drafts (mean run ~3.2 tokens of 4). n-max=2 accepts
+      # 74% and finished the same six prompts in 131.6s — indistinguishable on wall-clock;
+      # 4 is kept for its better worst case (32.0s vs 34.8s on the longest prompt). n=8
+      # measurably regresses (38.5% accepted, 50.6 tok/s): past ~4 the drafter is guessing.
+      #
+      # KNOWN-BENIGN log line at boot: "[spec] failed to measure draft model memory:
+      # failed to create llama_context from model". Speculation still runs — the per-slot
+      # acceptance counters prove it — llama.cpp just cannot pre-reserve the drafter's VRAM.
+      - --spec-draft-model
+      - ${AURA_LLM_DRAFT_MODEL_PATH:-/root/.cache/llama.cpp/mtp-gemma-4-12B-it.gguf}
+      - --spec-type
+      - draft-mtp
+      - --spec-draft-n-max
+      - "${AURA_LLM_SPEC_DRAFT_N_MAX:-4}"
+      - --spec-draft-ngl
+      - "${AURA_LLM_SPEC_DRAFT_NGL:-99}"
       - -c
-      # MEASURED on this host's 12GB RTX 3060 (task-7 RULING 2, 2026-08-07; see
-      # task-7-report.md for the full VRAM/tok-s evidence). Qwen3.5-9B's card declares a
-      # 262144-token native context (YaRN-extensible to ~1,010,000) — nothing like
-      # Qwen3-8B's 40960 or the Qwythos-9B-v2 card this block described before this task
-      # (native 16384, needing --rope-scaling yarn --yarn-orig-ctx 16384). Both of those
-      # numbers, and that YaRN pair, belonged to different models and are gone: applying a
-      # YaRN factor computed from 16384 to a model whose native window is 262144 would
-      # distort every position. The value below is the largest this GPU held stable
-      # alongside the resident embed sidecar, not the model's native ceiling — see the
-      # report for what a larger -c did instead.
+      # MEASURED on this host, 2026-08-22: the whole GPU sat at 9,260 MiB of 12,288 with
+      # this model at -c 81920, q8_0 KV, the MTP drafter loaded AND aura-llama-embed
+      # resident — 2,856 MiB free. Production .env runs q4_0 KV, which is smaller still,
+      # so that reading is the pessimistic one. gemma-4-12B-it declares a 262144-token
+      # native context; the value below is what this GPU holds, not the model's ceiling.
       - "${AURA_LLM_CTX:-32768}"
       - -np
       - "${AURA_LLM_PARALLEL:-1}"       # ONE slot so -c is the full context, not c/np
@@ -1138,31 +1167,35 @@ services:
       - "${AURA_LLM_KV_QUANT:-q8_0}"    # 8-bit KV cache (halves KV VRAM)
       - --cache-type-v
       - "${AURA_LLM_KV_QUANT:-q8_0}"
-      - --jinja                         # model chat template → Qwen3 tool-calling
+      # The model card's own sampling, stated in full — including top_p, which happens to
+      # equal llama.cpp's default, so the served configuration is readable HERE rather than
+      # inferred from engine defaults that change between builds. min_p is deliberately
+      # absent: the gemma-4 card states temperature/top_p/top_k and is silent on min_p, so
+      # the engine default stands and is recorded as un-measured rather than invented.
+      - --temp
+      - "${AURA_LLM_SERVER_TEMP:-1.0}"  # card default is 0.80; the card asks for 1.0
+      - --top-p
+      - "${AURA_LLM_SERVER_TOP_P:-0.95}"
+      - --top-k
+      - "${AURA_LLM_SERVER_TOP_K:-64}"  # card: 64, not llama.cpp's 40
+      - --jinja                         # model chat template → gemma-4 tool-calling
       - --reasoning-format
-      - deepseek                        # surface Qwen3 <think> as reasoning_content (Aura accept-both #33)
+      - deepseek                        # surface thinking as reasoning_content (Aura accept-both #33)
       # VERIFIED: Aura's per-turn adaptive reasoning is an OpenRouter `reasoning:{}`
-      # object llama.cpp ignores, so thinking policy lives HERE, server-side. This model
-      # thinks (<think> tags) by default, same as Qwen3.
+      # object llama.cpp ignores, so thinking policy lives HERE, server-side.
       - --reasoning
       - "${AURA_LLM_REASONING:-auto}"   # on|off|auto — auto = template default (thinks)
       - --reasoning-budget
       - "${AURA_LLM_REASONING_BUDGET:--1}"  # thinking token cap: -1 unrestricted, 0 off, N to bound latency
-      # MEASURED (task-7, 2026-08-07): this model thinks BEFORE it answers, and thinking
-      # tokens count against the request's max_tokens/AURA_LLM_MAX_TOKENS budget the SAME
-      # as the answer does. A trivial one-line question spent ~281 completion tokens on
-      # ~909 chars of reasoning before writing a word of the reply. At max_tokens=200 the
-      # response came back with `content` EMPTY and everything in `reasoning_content` —
-      # no error anywhere, no truncation flag a naive caller checks. Any caller (Aura's
-      # OpenRouter-shaped client included) must budget max_tokens for thinking PLUS the
-      # answer, and must treat empty content + non-empty reasoning_content as its own
+      # MEASURED (task-7 2026-08-07 on Qwen, re-measured 2026-08-22 on gemma-4): this model
+      # thinks BEFORE it answers, and thinking tokens count against the request's
+      # max_tokens/AURA_LLM_MAX_TOKENS budget the SAME as the answer does. At max_tokens
+      # 4096, THREE of six prompts came back with `content` EMPTY and everything in
+      # `reasoning_content` — no error anywhere, no truncation flag a naive caller checks.
+      # At this deployment's real AURA_LLM_MAX_TOKENS=32768 it was zero of six. Any caller
+      # (Aura's OpenRouter-shaped client included) must budget max_tokens for thinking PLUS
+      # the answer, and must treat empty content + non-empty reasoning_content as its own
       # failure class, not as "the model had nothing to say."
-      # Qwen3.5-9B-GGUF's model card recommends temperature=1.0, top_p=0.95, top_k=20,
-      # min_p=0.0, presence_penalty=1.5, repetition_penalty=1.0 for general/thinking use.
-      # Deliberately NOT set as server flags here: Aura's own request always carries
-      # AURA_LLM_TEMPERATURE (.env, default 0.7 — shared with the OpenRouter path, so this
-      # task does not change it) and llama.cpp honours a client-supplied value over its own
-      # default. Flagged for the record, not silently applied.
       - -t
       - "4"
     deploy:

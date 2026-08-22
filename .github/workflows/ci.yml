@@ -76,6 +76,8 @@ jobs:
 
       - name: EmbeddingGemma cache helper self-test
         run: make embedding-model-contract
+      - name: LLM model fetch contract (pinned size + sha256, model + MTP drafter)
+        run: make llm-model-contract
 
       - name: Production-evidence contract tests
         run: |

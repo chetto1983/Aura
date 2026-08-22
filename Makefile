@@ -6,7 +6,7 @@
 # sqlc CLI: install with `go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1`
 # (v1.27.0 panics on Windows hosts via wazero out-of-bounds; v1.31.1 verified clean).
 
-.PHONY: help tools sqlc lint vet deadcode vuln coverage coverage-docker quality quality-full test test-race tagged-tier-compile file-size embedding-model-contract web-freshness web-lint web-test web-mutation web-quality evidence-contracts agent-memory-eval-contract agent-memory-eval critical-mutation observability-evidence release-readiness db-up db-migrate db-status db-reset memory-up arcadedb-integration ingest-test restore-drill load-chaos
+.PHONY: help tools sqlc lint vet deadcode vuln coverage coverage-docker quality quality-full test test-race tagged-tier-compile file-size embedding-model-contract llm-model-contract web-freshness web-lint web-test web-mutation web-quality evidence-contracts agent-memory-eval-contract agent-memory-eval critical-mutation observability-evidence release-readiness db-up db-migrate db-status db-reset memory-up arcadedb-integration ingest-test restore-drill load-chaos
 
 # Resolve go-installed tool binaries even when $GOPATH/bin is not on PATH
 # (common in a fresh WSL login shell). Falls back to a bare name on PATH.
@@ -15,6 +15,7 @@ GO_PACKAGES := $(shell bash scripts/go_packages.sh)
 
 help:
 	@echo "make embedding-model-contract — verify validated atomic EmbeddingGemma cache materialization"
+	@echo "make llm-model-contract     — verify pinned gemma-4-12B model+MTP-drafter fetch"
 	@echo "make tools         — go install the quality toolchain (lint/vuln/dupl/mutation/etc.)"
 	@echo "make quality       — pre-push gate: deadcode vet build file-size lint test-race vuln (no containers)"
 	@echo "make quality-full  — quality + coverage gate (requires the container stack up)"
@@ -107,9 +108,9 @@ agent-eval:
 	go test -tags agent_eval -count=1 -v -timeout 30m ./internal/agenteval/
 
 # Pre-push gate that needs NO containers — fast feedback before a push.
-quality: deadcode vet file-size embedding-model-contract lint test-race vuln
+quality: deadcode vet file-size embedding-model-contract llm-model-contract lint test-race vuln
 	go build $(GO_PACKAGES)
-	@echo "ok: quality gate passed (deadcode vet build file-size embedding-model-contract lint test-race vuln)"
+	@echo "ok: quality gate passed (deadcode vet build file-size embedding-model-contract llm-model-contract lint test-race vuln)"
 
 # Full gate including the container-backed coverage floor.
 quality-full: quality coverage
@@ -130,6 +131,12 @@ file-size:
 
 embedding-model-contract:
 	bash scripts/fetch_embedding_model_test.sh
+
+# The same contract for the answering model. It had a test from the day it was written
+# and no target and no CI job to run it, so for two weeks the pins it guards were only
+# ever checked by whoever remembered the script existed.
+llm-model-contract:
+	bash scripts/fetch_llm_model_test.sh
 
 # Rebuild web/ on the local Node toolchain and assert the committed embed source
 # (internal/webui/dist) equals a fresh build (D-05 tamper-evidence). The byte-canonical
