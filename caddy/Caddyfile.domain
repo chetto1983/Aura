@@ -39,7 +39,23 @@
 		dns desec {
 			token {$DESEC_TOKEN}
 		}
-		resolvers 1.1.1.1
+		# deSEC enforces a per-domain minimum TTL and it is 3600 on a free account.
+		# Caddy's default challenge TTL is below it, so deSEC answered 400 ("Ensure
+		# this value is greater than or equal to 3600") and certmagic saw an empty
+		# record set: "expected one record, got 0". Measured against the live API on
+		# 2026-08-22 — ttl=60 rejected, ttl=3600 created.
+		dns_ttl 1h
+		# The propagation check MUST query deSEC's authoritative servers, not a
+		# recursive resolver. With a one-hour floor on the TTL, a recursive resolver
+		# freezes the challenge record set for an hour, and the value Caddy is
+		# waiting for is not in the copy it froze — so the check waits for something
+		# it can never see. Measured 2026-08-22: deSEC held three challenge values,
+		# 1.1.1.1 served two, and issuance sat until the timeout.
+		#
+		# Let's Encrypt validates against the authoritative servers too, so checking
+		# them is checking the thing that actually decides.
+		propagation_timeout 10m
+		resolvers 45.54.76.1 157.53.224.1
 	}
 }
 
@@ -88,4 +104,40 @@
 	handle {
 		respond 404
 	}
+}
+
+# The way in that cannot break. The two named sites above only answer once their
+# names RESOLVE for the client, and deSEC will not publish a private address —
+# it refuses RFC1918 in public DNS, which is the correct behaviour and the reason
+# LAN resolution has to come from somewhere local (a hosts entry, the router, a
+# Pi-hole). Until that exists, or whenever it breaks, this block keeps
+# https://<ip> and https://localhost reachable on the internal CA exactly as the
+# default Caddyfile does.
+#
+# Caddy matches by SNI and prefers the more specific site, so a request for the
+# real hostname still gets the publicly trusted certificate; only everything else
+# lands here. Without it, selecting this file would lock the operator out of the
+# cockpit the moment DNS was not ready — which is a failure mode a front door
+# should not have.
+:443 {
+	tls internal {
+		on_demand
+	}
+
+	handle /admin/auth/google/callback {
+		reverse_proxy aura-pim-mcp:8080
+	}
+
+	handle /aura-assets/* {
+		reverse_proxy garage:3900
+	}
+
+	handle /setup {
+		reverse_proxy aura:9081
+	}
+	handle /setup/* {
+		reverse_proxy aura:9081
+	}
+
+	reverse_proxy aura:9080
 }
