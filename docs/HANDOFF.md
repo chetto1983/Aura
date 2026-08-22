@@ -39,18 +39,26 @@ principal passavano in locale e fallivano nel gate. Copia le DSN di `scripts/cov
 
 ## Come si chiude
 
-Le sezioni sotto **diagnosticano**; questa **sequenzia**. Ventiquattro punti, e l'ordine non è
-la loro numerazione: prima ciò che sblocca altro, poi ciò che è pericoloso, poi ciò che è solo
+Le sezioni sotto **diagnosticano**; questa **sequenzia** — meno **1.1** e **6.4**, chiuse il
+2026-08-23. L'ordine non è la loro numerazione: prima ciò che sblocca altro, poi ciò che è pericoloso, poi ciò che è solo
 lavoro. Ogni riga dice **cosa fare** e **cosa lo prova** — un punto senza prova non si chiude,
 si sposta.
 
 ### Onda 0 — decisioni che solo l'operatore può prendere (nessun codice le muove)
 
+*Due delle tre voci sono chiuse (2026-08-23): **1.1** corretta in `CLAUDE.md`, **6.4** decisa con
+**ADR 0045**. Vedi §10.*
+
 | # | Cosa | Cosa lo chiude |
 |---|---|---|
-| **3.7** | Cinque righe di audit ferme su blocchi esterni: account calendario/email, QR WhatsApp, versione GHCR, ricevuta `send_file`. | `scripts/release_readiness_gate.py` stampa `release_ready=true`. Non è lavoro di codice: o si sbloccano, o si registra perché restano aperte. |
-| **6.4** | `open_ragbench` è **CC-BY-NC-4.0** e §11 registra la licenza come decisione *dovuta e non presa*. Scaricarlo in pipeline **è** prendere quella decisione. | Un ADR che dice sì o no. Un sì sblocca **3.3 e 6.4 insieme**; un no li ridefinisce entrambi su un corpus più piccolo. |
-| **1.1** | Il floor di coverage per-package che CLAUDE.md dichiara non esiste nel gate. | Una scelta, non un task: o si scrive il ciclo per package in `scripts/coverage_gate.sh`, o si corregge CLAUDE.md. Prova: `internal/arcadedb` (36,6%) o fallisce il gate, o non è più descritto come se dovesse. |
+| **3.7** | **Ri-misurata il 2026-08-22: quattro righe su cinque non descrivevano più la realtà**, e il register è stato corretto. Gli account calendario ed email SONO autorizzati, il device WhatsApp È appaiato. Restano aperte per ragioni nuove, non per le vecchie. | Non è più «sbloccare o registrare». EXT-001/002 sono ferme su un **difetto interno** (il daemon ha montato 14 nomi per-azione stantii contro un server che ora ne espone uno solo, multiplexato: ogni chiamata torna `Unknown tool`) e si chiudono quando il daemon rimonta la superficie curata. EXT-003/005 sono ferme su un'**approvazione che il gateway trattiene per progetto** (`gateway_approval_required`). Solo **EXT-004** è ancora esterna. |
+
+**Nota strutturale che l'analisi originale non aveva:** chiudere una riga **è** lavoro di codice.
+`release_ready` è letteralmente `not rows` (`scripts/audit_closure_gate.py:132`) e
+`REQUIRED_CURRENT_IDS` (`:25`) pinna EXT-001..005, quindi togliere una riga dal register senza
+togliere il suo ID dal gate lo fa fallire con `missing current issues`. E `external_blocked` conta
+in `open_total` esattamente come `open`: **non esiste uno stato di waiver**, quindi «registrare
+perché restano aperte» non può in nessun caso far diventare verde quel gate.
 
 ### Onda 1 — sicurezza, dalla più grave
 
@@ -78,8 +86,8 @@ si sposta.
 | **3.4bis** | **Il più economico di tutti**: la sonda MUSR spostata è misurata a mano ma non è mai stata eseguita. | Il job `musr-e2e` verde. Nessun lavoro, solo una run. |
 | **3.2** | La riga snippet-reuse è ROSSA e il suo harness è cancellato: lo snapshot stampa un comando che punta a un package inesistente. | O la riga si ritira come le sorelle, o l'harness si ricostruisce. Non c'è terza via. |
 | **3.4** | Stessa forma: il North-Star xlsx delle skills non ha più harness Go, e `scripts/chat-e2e-gate.sh` non è invocato da nulla. | Ritiro o ricostruzione. |
-| **3.5** | LOCOMO è saltata da `agent_memory_eval.py:52` e nessun workflow imposta `AURA_LOCOMO_DIR`. | Dataset provisionato e skip rimosso, o suite ritirata. |
-| **3.3** | `recall@1` del routing documentale è UNKNOWN: i due harness compilano e **nessuno li esegue**. | Bloccata su **Onda 0 / 6.4**. Poi: un numero in `docs/aura-quality-snapshot.md:62`. Attenzione, due delle tre leve citate dalla riga sono morte (`AURA_DOCUMENT_OCR_ENABLED`, Docling): la riga va riscritta, non solo riempita. |
+| **3.5** | LOCOMO è saltata da `agent_memory_eval.py:52` e nessun workflow imposta `AURA_LOCOMO_DIR`. | **ADR 0045 declina il corpus**, quindi «dataset provisionato» non è più un'opzione: la suite si ritira come specificata, o si rifà su un corpus permissibile. |
+| **3.3** | `recall@1` del routing documentale è UNKNOWN: i due harness compilano e **nessuno li esegue**. | Non più bloccata da una decisione mancante: **ADR 0045** declina `open_ragbench`, quindi la riga deve prima **nominare il corpus che intende** e poi portare un numero in `docs/aura-quality-snapshot.md:62`. Attenzione, due delle tre leve citate dalla riga sono morte (`AURA_DOCUMENT_OCR_ENABLED`, Docling): la riga va riscritta, non solo riempita. |
 | **3.1** | Il gate di produzione #115 non è mai stato eseguito e il suo runner è cancellato, ma `prd.md:4619` lo mantiene come condizione di chiusura. | O si riscrive il runner, o si emenda il PRD. È l'unica cosa che non è **mai** stata fatta. |
 | **3.6** | Sette report readiness su dieci assenti, i tre presenti legati a commit diversi da HEAD. | Dieci report freschi di 24h su HEAD. Dipende da 3.7. |
 
@@ -103,13 +111,6 @@ si sposta.
 ## 1. Regole del progetto che il codice non rispetta
 
 Queste vengono prima di tutto perché una regola falsa è peggio di una regola assente: fa fidare.
-
-**1.1 — CLAUDE.md dichiara un floor di coverage per-package che non esiste.**
-Il testo dice che il ≥85% per-package è *"enforced by the gate on every run"*.
-`scripts/coverage_gate.sh:86-90` somma `covered`/`total` su **tutto** il profilo e `:96-106`
-confronta quell'unico aggregato con `MIN`. Non c'è nessun ciclo per package. È così che un
-package debole viaggia sulle spalle dei forti — `internal/arcadedb` è stato misurato al 36,6%.
-*Confidenza: alta. O si implementa il ciclo, o si corregge CLAUDE.md.*
 
 **1.2 — ADR 0038 è `Accepted` e descrive un datastore che non usiamo.**
 `docs/adr/0038-…:19` dice che Neo4j tiene il grafo e che `mcp-neo4j-cypher` è l'interfaccia LLM;
@@ -210,10 +211,40 @@ girato**: il suo tag set pretende Garage e Authula vivi. Gira per la prima volta
 2026-08-07 e legati a commit diversi da HEAD. Il gate li vuole tutti e dieci, legati a HEAD e
 freschi di 24h (`scripts/release_readiness_gate.py:255-264`). *Confidenza: alta.*
 
-**3.7 — 5 righe di audit restano aperte, tutte a blocco esterno.**
-Verificato oggi eseguendo il gate: `5 current unresolved, 5 external, release_ready=false`.
-Sono account calendario/email, QR WhatsApp, versione GHCR, ricevuta `send_file`. **Non è lavoro
-di codice.** *Confidenza: alta sull'apertura, nulla sulle cause.*
+**3.7 — Le 5 righe di audit restano aperte, ma NON più «tutte a blocco esterno».**
+Ri-misurate sullo stack acceso il 2026-08-22, e il register corretto di conseguenza: il gate ora
+stampa `5 current unresolved, **1** external`, non 5.
+
+- **EXT-001 / EXT-002 — l'account non è più il problema, il daemon sì.** Il calendario ha l'account
+  Google `davide` **abilitato**, e l'email **legge davvero** (`Retrieved 30 emails from Google
+  account davide`, 12:36). Ma il daemon ha montato `server=calendar tools=14` alle 12:50, poi il PIM
+  MCP è stato sostituito col **fork curato che espone UN solo tool multiplexato** (`calendar`, con
+  l'operazione nell'argomento `action`), e il daemon non ha mai rimontato. Risultato: offre 14 nomi
+  per-azione stantii, inoltra l'azione de-prefissata a un server che non ce l'ha, e ogni chiamata
+  torna `error: calling "tools/call": Unknown tool: 'list_accounts'`. **Due run reali dell'agente
+  sono finite in `RUN_ERROR` con zero chiamate riuscite.** Il supporto Aura alla superficie curata è
+  **in volo**: `internal/agent/mcptools/bridge_multiplex.go`, non committato, misura lo stesso fork
+  che advertisce un solo tool.
+- **EXT-003 — il device è appaiato e il piano tool funziona.** Il bridge porta traffico vero e dodici
+  chiamate `whatsapp__*` sono andate a buon fine in un turno `RUN_FINISHED`. L'invio è **trattenuto
+  dal ToolGateway**: `gateway_approval_required`, per progetto. Serve l'approvazione in-band
+  dell'operatore, non un QR.
+- **EXT-005 — due gambe su tre PROVATE.** Consegna sul canale cockpit autenticato e ricevuta sul filo:
+  il frame `aura.artifact` porta `asset_id` `736e1d66-…`, e `aura.assets` lo tiene `accepted`, 29
+  byte, nel bucket per-identità con content hash. La terza gamba (cleanup) **non è osservata**: la
+  stage dir sta sotto `$AURA_RUN_DIR/tmp/`, che `conversations.ScanOrphans` spazza a TTL 24h —
+  finestra più lunga della sessione che misura.
+- **EXT-004 — l'unica ancora davvero esterna.** Non verificabile nemmeno in lettura da qui: il token
+  `gh` di sessione non ha lo scope `read:packages`.
+
+*Trovato strada facendo, deliberatamente NON promosso a sesta riga:*
+`/var/lib/aura/runs/aura-sendfile-3383401088/` e `aura-sendfile-830219956/` tengono un
+`dashboard.html` da 13 KB e uno da 6,6 KB **dal 2026-07-28**. Quel prefisso non esiste più
+nell'albero Go — lo stager attuale è `aura-boxstage-*` sotto `$AURA_RUN_DIR/tmp/` — e le due dir
+stanno **fuori** dal sottoalbero `tmp/` spazzato: nessuno le rimuoverà mai. Residuo legacy di un
+percorso rimosso che tiene contenuto utente, non una perdita viva.
+
+*Confidenza: alta su tutto ciò che è misurato; nulla su EXT-004.*
 
 ---
 
@@ -282,42 +313,28 @@ ma il database di destinazione non deve esistere.
 davvero **raschiando** Aura) non è agganciato a niente: né cron, né CI, né Makefile. Il cron di
 Aura ha già `ReschedulesOnRecovery` e manda alert su Telegram — è lì che va.
 
-**6.4 — Confidenza fusa senza consumatore. APERTA, ma non per la ragione scritta qui prima, e
-bloccata su una misura che nessuno ha fatto** (indagata il 2026-08-16).
+**6.4 — Confidenza fusa senza consumatore. La licenza è DECISA (ADR 0045); la misura resta da
+ridefinire.** Il blocco esterno che teneva ferma questa voce — `open_ragbench` CC-BY-NC-4.0 e
+`snap-research/locomo` NOASSERTION, registrati in `prd.md` come decisione dovuta e non presa — è
+stato sciolto il 2026-08-23: **entrambi i corpora sono declinati**. Nessuna pipeline può scaricarli.
+Gli harness restano su disco e restano compilati: quel che è stato declinato è il corpus, non
+l'apparato.
 
-Due correzioni alla voce d'origine, che diceva: *«`retrieval_rank.go:62` decide `RequiresOpen`
-da famiglia e zero-passaggi»*.
+Resta vero tutto il resto della diagnosi del 2026-08-16, e va riletto perché è ciò che ora determina
+*cosa* si misura al posto loro:
 
 1. **La logica "da famiglia" non esiste.** È `forceOpen || len(doc.passages) == 0`, e basta.
-   La famiglia non compare in tutto il retrieval.
-2. **Il PRD ratifica una direzione, non una soglia.** L'emendamento #119 promuove il punteggio
-   fuso a *«segnale di affidabilità del ranking»* e dice *«confidenza bassa deve spingere verso
-   `document_open`»* — ma al punto 5 di «cosa NON dimostra» scrive *«nessun numero qui riguarda
-   la latenza o il costo di un eventuale consumatore»*. Riporta ROC AUC 0.880 e **nessun punto
-   di lavoro**. Scrivere un `if score < …` oggi è inventare il numero.
+2. **Il PRD ratifica una direzione, non una soglia.** L'emendamento #119 promuove il punteggio fuso a
+   *«segnale di affidabilità del ranking»*, riporta ROC AUC 0.880 e **nessun punto di lavoro**. Con i
+   due corpora declinati, scrivere un `if score < …` resta inventare il numero — ora però per una
+   ragione registrata, invece che per una decisione rimandata.
 
-**Due sonde sullo stack acceso, e il fallimento che #119 cita non si riproduce:**
-
-- *Aggregato incrociato* (somma con filtro su città **e** anno, che nessuna card può
-  rispondere): l'agente ha detto «è una domanda di somma con filtro, quindi apro il file»,
-  ha chiamato `document_open` e ha risposto **€ 2.325.167 su 11 clienti — esatto**. Con
-  `requires_open` **false** per tutto il giro: apre per via della prosa del tool, che già dice
-  *«or the question needs the whole file (how many, sum, average, maximum, grouping)»*.
-- *Ambiguità a quattro file* (quattro tabelle trimestrali dello stesso schema, risposta
-  ricomponibile solo aprendoli tutti): ha aperto **tutti e quattro** in parallelo, si è corretto
-  da solo su un bug di delimitatore, e ha risposto **Q3 = 862.523 €** — esatto, incluso un
-  margine del 2,8% sul secondo.
-
-**Cosa questo NON dimostra.** Non refuta #119: il suo caso era un corpus di 130 documenti con
-75 CSV, dove il file giusto stava al rank 2 fra molti simili e l'agente ha speso 24 chiamate
-prima di rifiutare. Le mie sonde hanno 4 file tutti pertinenti — è ambiguità piccola, non
-grande. Dice solo che a questa scala il consumatore non serve.
-
-**Per sbloccarla servirebbe** l'harness che già esiste e compila
-(`retrieval_abstention_eval_test.go`, tag `retrieval_eval`) su `open_ragbench` — 1.914 query
-con qrels veri. Ma quel corpus è **CC-BY-NC-4.0** e §11 registra la licenza come decisione
-**dovuta e non presa**: scaricarlo in pipeline è prendere quella decisione. Blocco esterno,
-non blocco di codice.
+**Due sonde sullo stack acceso, e il fallimento che #119 cita non si riproduce:** un aggregato
+incrociato (somma con filtro su città **e** anno) ha prodotto **€ 2.325.167 su 11 clienti, esatto**,
+con `requires_open` **false** per tutto il giro — apre per via della prosa del tool. E un'ambiguità a
+quattro file ha prodotto **Q3 = 862.523 €, esatto**, aprendoli tutti e quattro in parallelo.
+**Cosa questo NON dimostra:** non refuta #119, il cui caso era un corpus di 130 documenti con 75 CSV.
+Dice solo che a questa scala il consumatore non serve.
 
 **6.5 — filecard scrive OOXML a mano** (`xlsx.go` 442 LOC, `ooxml.go` 270) mentre `excelize` non è
 nemmeno in `go.mod`. *Confidenza: alta.*
@@ -432,6 +449,8 @@ catalogo. *Confidenza: alta.*
 | Copiare l'`archive_and_compact` di hermes | Rifiutato con misura: là la compaction fa UPDATE sulle righe dei messaggi, che qui spara `conversation_turns_snapshot_bump` (0047) → `55006` → niente compaction proprio durante un export. E il flag `active` è per-riga, mentre l'albero branch di 0017 condivide le righe fra rami: non può esprimere «superata su A, viva su B». Il watermark per (conversazione, ramo) sì |
 | Iniettare il summary «identical shape to `injectAlwaysBlock`» (piano 1b §6) | Sbagliato: sloggerebbe l'always-block da `messages[1]` cambiando il prefisso cachato. Derivato invece da `splitHeadHistoryActive`, **dopo** `injectAlwaysBlock` |
 | `aura.documents` e le nove tabelle sorelle | Migration `0098` |
+| **1.1** — il floor di coverage per-package che il gate non applica | `CLAUDE.md` corretto: il gate confronta **un solo aggregato** (`scripts/coverage_gate.sh:86-107`), e ora la regola lo dice. Il ciclo per package NON è stato implementato perché sotto il solo tag `db_integration` boccerebbe package la cui coverage vera vive in un altro tier (`internal/arcadedb`: 92,81% sotto `arcadedb_integration`) |
+| **6.4** — le licenze dei due corpora di eval | **ADR 0045**: `open_ragbench` (CC-BY-NC-4.0) e `snap-research/locomo` (NOASSERTION) **declinati entrambi**. Nessuna pipeline può scaricarli; le misure che li aspettavano sono ridefinite, non cancellate |
 
 ---
 
@@ -440,5 +459,5 @@ catalogo. *Confidenza: alta.*
 Richiedono una sonda su database/object store vivi o un run reale dell'agente:
 oggetti orfani in Garage e asset bloccati in `accepted`/`failed` (08-06); i 24 fatti e 48 entità
 da ri-embeddare in `aura_memory`; i comportamenti dell'agente del 08-09 (salta il corpus, rifiuta
-invece di aprire, 6 turni su 20 inconcludenti); le licenze dei due corpora — **nessuna pipeline le
-scarica oggi**, quindi la decisione è dovuta ma nulla è in violazione.
+invece di aprire, 6 turni su 20 inconcludenti); *(le licenze dei due corpora non sono più qui:
+decise il 2026-08-23 con ADR 0045.)*
